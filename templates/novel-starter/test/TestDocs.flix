@@ -11,14 +11,15 @@ mod TestDocs {
     def testStoryBrokenJsonFallsBackToDefaults(): Unit \ Assert =
         // 壊れた JSON は既定の台本へ落ちる（ゲームは必ず起動する）。
         let doc = StoryDoc.fromJson("{ broken") |> Option.getWithDefault(StoryDoc.defaults());
-        Assert.assertEq(expected = StoryDoc.defaults()#start, doc#start)
+        Assert.assertEq(expected = StoryDoc.rec(StoryDoc.defaults())#start, StoryDoc.rec(doc)#start)
 
     @Test
     def testStoryOverridesOneField(): Unit \ Assert =
         // 1 フィールドだけ書いた JSON はそこだけ効き、残りは既定のまま。
         let doc = StoryDoc.fromJson("{\"version\":1, \"hint\": \"Zではじめる\"}")
             |> Option.getWithDefault(StoryDoc.defaults());
-        Assert.assertEq(expected = ("Zではじめる", StoryDoc.defaults()#start), (doc#hint, doc#start))
+        Assert.assertEq(expected = ("Zではじめる", StoryDoc.rec(StoryDoc.defaults())#start),
+            (StoryDoc.rec(doc)#hint, StoryDoc.rec(doc)#start))
 
     @Test
     def testStoryRowsLengthFollowsJson(): Unit \ Assert =
@@ -36,7 +37,7 @@ mod TestDocs {
             |> Option.map(ask -> List.length(ask#options))
             |> Option.getWithDefault(-1);
         Assert.assertEq(expected = (2, 2, 1),
-            (List.length(doc#sections), beatsInA, optionsInA))
+            (List.length(StoryDoc.rec(doc)#sections), beatsInA, optionsInA))
 
     // ══════════════════════════════════════════════════════
     // KindDoc（手触りの数値）
@@ -45,13 +46,14 @@ mod TestDocs {
     @Test
     def testKindBrokenJsonFallsBackToDefaults(): Unit \ Assert =
         let doc = KindDoc.fromJson("{ broken") |> Option.getWithDefault(KindDoc.defaults());
-        Assert.assertEq(expected = KindDoc.defaults()#cps, doc#cps)
+        Assert.assertEq(expected = KindDoc.rec(KindDoc.defaults())#cps, KindDoc.rec(doc)#cps)
 
     @Test
     def testKindOverridesOneField(): Unit \ Assert =
         let doc = KindDoc.fromJson("{\"version\":1, \"cps\": 99.0}")
             |> Option.getWithDefault(KindDoc.defaults());
-        Assert.assertEq(expected = (99.0, KindDoc.defaults()#dim), (doc#cps, doc#dim))
+        Assert.assertEq(expected = (99.0, KindDoc.rec(KindDoc.defaults())#dim),
+            (KindDoc.rec(doc)#cps, KindDoc.rec(doc)#dim))
 
     // ══════════════════════════════════════════════════════
     // ThemeDoc（accentLight だけ橋渡しを書く: palette.json の宣言が導出に勝つ規則。
@@ -64,14 +66,14 @@ mod TestDocs {
         let doc = ThemeDoc.overlayAccentLight(
             "{\"accentLight\": {\"rgb\": [0.0, 0.5, 1.0]}}", ThemeDoc.defaults());
         Assert.assertEq(expected = (0.0, 0.5, 1.0),
-            (doc#accentLight#r, doc#accentLight#g, doc#accentLight#b))
+            (ThemeDoc.rec(doc)#accentLight#r, ThemeDoc.rec(doc)#accentLight#g, ThemeDoc.rec(doc)#accentLight#b))
 
     @Test
     def testThemeAccentLightFallsBackToDerived(): Unit \ Assert =
         // palette が壊れている・宣言が無いときは従来どおり accent からの導出のまま。
         let d = ThemeDoc.defaults();
-        let derived = ThemeDoc.lighten(d#accent, 0.5);
+        let derived = ThemeDoc.lighten(ThemeDoc.rec(d)#accent, 0.5);
         let doc = ThemeDoc.overlayAccentLight("{ broken", d);
         Assert.assertEq(expected = (derived#r, derived#g, derived#b),
-            (doc#accentLight#r, doc#accentLight#g, doc#accentLight#b))
+            (ThemeDoc.rec(doc)#accentLight#r, ThemeDoc.rec(doc)#accentLight#g, ThemeDoc.rec(doc)#accentLight#b))
 }

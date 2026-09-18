@@ -51,16 +51,16 @@ mod TestRules {
 
     /// 全面が路面の平らな 2 行コース（置き場も空）。当たりや坂を混ぜたくないテストの土台。
     def flatCourse(): CourseDoc.Doc =
-        { version = 1,
+        CourseDoc.Doc.Doc({ version = 1,
           sections = { len = 2, curve = 0.0, hill = 0.0, width = 300.0, rail = "none",
-                       note = "" } :: Nil }
+                       note = "" } :: Nil })
 
     /// 右へ曲がり続ける全面路面の 2 行コース（置き場は空）。
     /// 「外側 = 左（負）」へ押される・流れる向きを見るテストの土台。
     def rightCurveCourse(): CourseDoc.Doc =
-        { version = 1,
+        CourseDoc.Doc.Doc({ version = 1,
           sections = { len = 2, curve = 6.0, hill = 0.0, width = 300.0, rail = "none",
-                       note = "" } :: Nil }
+                       note = "" } :: Nil })
 
     /// 通し行 n をまたぐ直前の distance（1 フレームで必ず n をまたいで入る位置）。
     /// playerRowOf(d) = floor((d + playerAheadPx) / rowPitch) の境界のすぐ手前に置く。
@@ -94,7 +94,7 @@ mod TestRules {
     def testSteerOnStraightMovesExactly(): Unit \ Assert =
         // 直線（distance = 0 で自機はスタート直線の行に乗る）では、→ 入力どおり
         // steerSpeed * dt だけ右へ動く（カーブの横押しゼロ）。
-        let d = RulesDoc.defaults();
+        let d = RulesDoc.rec(RulesDoc.defaults());
         let w = racing();
         let dt = 0.1;
         let after = World.step({ dir = 1.0 | idle() }, dt, w);
@@ -105,7 +105,7 @@ mod TestRules {
         // gripSpeed 以下ならカーブでも道に付いていく = 道の中心からの横ずれは増えない。
         // distance = 70 で自機は最初の曲がる区間（通し行 3）に乗る。速度を gripSpeed に
         // 置いて 1 フレーム → 超過ゼロなので横ずれは 0 のまま（曲がりは道の側が引き受ける）。
-        let d = RulesDoc.defaults();
+        let d = RulesDoc.rec(RulesDoc.defaults());
         let c = CourseDoc.defaults();
         let dt = 0.1;
         let w = { distance = 70.0, speed = d#gripSpeed | racing() };
@@ -119,7 +119,7 @@ mod TestRules {
         // gripSpeed を超えて右カーブへ入ると、カーブの外側（左 = 負）へ押し出され、
         // 超過を 2 倍にすると押しも強くなる。超過は横押し率が 1.0 で頭打ちになる手前
         // （forwardSpeed / curvePush 未満）に収めて、飽和で差が消えないようにする。
-        let d = RulesDoc.defaults();
+        let d = RulesDoc.rec(RulesDoc.defaults());
         let dt = 0.05;
         let w = { course = rightCurveCourse(), rivals = Nil | racing() };
         let sped = ex -> World.step(idle(), dt, { speed = d#gripSpeed + ex | w });
@@ -137,7 +137,7 @@ mod TestRules {
     def testDriftNeedsHoldAndSteerAndNoSpin(): Unit \ Assert =
         // ドリフトの成立は「X を押しながらハンドルを切る」ときだけ。
         // dir = 0 では成立しない。スピン中も成立しない。
-        let d = RulesDoc.defaults();
+        let d = RulesDoc.rec(RulesDoc.defaults());
         let drift = { dir = 1.0, driftHeld = true | idle() };
         let held = World.step(drift, 0.05, racing());
         let noDir = World.step({ driftHeld = true | idle() }, 0.05, racing());
@@ -152,7 +152,7 @@ mod TestRules {
         // 全面が路面のコースで右 0.5 秒 → 左 0.5 秒と切り返して道の真ん中へ戻す —
         // 片側へ 1 秒切り続けると草へ流れ落ちてスピン（ドリフト失敗）が混ざる。
         // スリップ加算も混ぜない（rivals = Nil）。
-        let d = RulesDoc.defaults();
+        let d = RulesDoc.rec(RulesDoc.defaults());
         let w = { course = flatCourse(), rivals = Nil | racing() };
         let half = World.step({ dir = 1.0, driftHeld = true | idle() }, 0.5, w);
         let after = World.step({ dir = 0.0 - 1.0, driftHeld = true | idle() }, 0.5, half);
@@ -162,7 +162,7 @@ mod TestRules {
     def testDriftSlideFlowsTowardOutside(): Unit \ Assert =
         // 右カーブでのドリフトは、舵の移動（steerSpeed × driftTurnBoost）に加えて
         // 外側（左 = 負）へ driftSlide * dt だけ流れ続ける（速度の超過とは無関係の一定量）。
-        let d = RulesDoc.defaults();
+        let d = RulesDoc.rec(RulesDoc.defaults());
         let dt = 0.05;
         let w = { course = rightCurveCourse(), rivals = Nil | racing() };
         let after = World.step({ dir = 1.0, driftHeld = true | idle() }, dt, w);
@@ -174,7 +174,7 @@ mod TestRules {
     def testDriftFallOntoGrassStartsSpin(): Unit \ Assert =
         // ドリフトのまま草（道の外）にいると、そのフレームでスピンが始まりドリフトは解ける
         // （coolTimers が同フレームで dt を削るので spinLeft = spinDuration - dt）。
-        let d = RulesDoc.defaults();
+        let d = RulesDoc.rec(RulesDoc.defaults());
         let dt = 0.05;
         let half = World.halfWidthAt(0, flatCourse());
         let w = { course = flatCourse(), playerOff = half + 20.0, rivals = Nil | racing() };
@@ -191,7 +191,7 @@ mod TestRules {
     def testSlipActiveOnlyBehindWithinRange(): Unit \ Assert =
         // 前走車の真後ろ（slipRange 内・横ずれ slipWidth/2 以内）で true、
         // 同じ距離でも横へ slipWidth ぶん外すと false。
-        let d = RulesDoc.defaults();
+        let d = RulesDoc.rec(RulesDoc.defaults());
         let w = racing();
         let me = World.playerDistOf(w);
         let inRange = { rivals = rivalAt(me + d#slipRange * 0.5, w#playerOff, 0.0) :: Nil | w };
@@ -209,7 +209,7 @@ mod TestRules {
         // 満タン（1.0）で Z → nitroLeft = nitroDuration が入りゲージは 0 へ。
         // 未満タン（0.5）では発動せず、ゲージもそのまま。
         // coolTimers が同じフレームで dt を削るので nitroLeft の期待値は nitroDuration - dt。
-        let d = RulesDoc.defaults();
+        let d = RulesDoc.rec(RulesDoc.defaults());
         let dt = 0.1;
         let tap = { nitroTap = true | idle() };
         let full = World.step(tap, dt, { nitro = 1.0, rivals = Nil | racing() });
@@ -222,7 +222,7 @@ mod TestRules {
     def testNitroMultipliesForwardSpeed(): Unit \ Assert =
         // ニトロ発動中の前進速度 = forwardSpeed * nitroBoost（直線・路上・他の倍率なし）。
         // speedOf は非公開なので step 後の w#speed で観測する。
-        let d = RulesDoc.defaults();
+        let d = RulesDoc.rec(RulesDoc.defaults());
         let w = { nitroLeft = d#nitroDuration, rivals = Nil | racing() };
         let after = World.step(idle(), 0.1, w);
         Assert.assertEq(expected = d#forwardSpeed * d#nitroBoost, after#speed)
@@ -235,7 +235,7 @@ mod TestRules {
     def testSpinLocksSteeringAndCoolsDown(): Unit \ Assert =
         // スピン中は舵が効かない（横ずれがまったく動かない）。残り時間は dt ずつ減り、
         // spinDuration ぶん経てば 0 に戻る（操作が返ってくる）。
-        let d = RulesDoc.defaults();
+        let d = RulesDoc.rec(RulesDoc.defaults());
         let w = { spinLeft = d#spinDuration | racing() };
         let dt = 0.1;
         let mid = World.step({ dir = 1.0 | idle() }, dt, w);
@@ -257,7 +257,7 @@ mod TestRules {
     @Test
     def testRivalContactPushesPlayerSideways(): Unit \ Assert =
         // 左から接触したライバルに押されて、自機は右へ bumpPush * dt だけずれる。
-        let d = RulesDoc.defaults();
+        let d = RulesDoc.rec(RulesDoc.defaults());
         let dt = 0.01;
         let w = sideBySide();
         let after = World.step(idle(), dt, w);
@@ -278,7 +278,7 @@ mod TestRules {
         // 既定コースで最初に X（障害物）がある行とその列を CourseDoc から探し、
         // その行をまたぐ直前の distance に立つ（justBeforeRow で 1 フレーム必ずまたぐ位置へ）。
         // X の列中心に自機を合わせて直撃 → スピン開始（coolTimers 後 = spinDuration - dt）。
-        let d = RulesDoc.defaults();
+        let d = RulesDoc.rec(RulesDoc.defaults());
         let dt = 0.1;
         let cone = firstPropAt(racing(), PropsDoc.Kind.Cone);
         let w = { distance = justBeforeRow(cone#row), playerOff = cone#off, rivals = Nil | racing() };
@@ -289,7 +289,7 @@ mod TestRules {
     def testObstacleNearMissChargesNitro(): Unit \ Assert =
         // 同じく最初の X から「車の当たり半径 + nearMissDist の半分」だけ横へ外すと、
         // 当たらず（spinLeft = 0 のまま）にすれすれ扱いでゲージが nitroChargeNearMiss 増える。
-        let d = RulesDoc.defaults();
+        let d = RulesDoc.rec(RulesDoc.defaults());
         let cone = firstPropAt(racing(), PropsDoc.Kind.Cone);
         let nearOff = cone#off + World.coneHitR() + d#nearMissDist * 0.5;
         let w = { distance = justBeforeRow(cone#row), playerOff = nearOff, rivals = Nil | racing() };
@@ -301,7 +301,7 @@ mod TestRules {
     @Test
     def testSpinDrainsGaugeAndStopsNitro(): Unit \ Assert =
         // 直撃スピンの瞬間、ゲージは spinNitroLoss の割合を失い、発動中のニトロも打ち切られる。
-        let d = RulesDoc.defaults();
+        let d = RulesDoc.rec(RulesDoc.defaults());
         let cone = firstPropAt(racing(), PropsDoc.Kind.Cone);
         let w = { distance = justBeforeRow(cone#row), playerOff = cone#off,
                   nitro = 0.8, nitroLeft = d#nitroDuration, rivals = Nil | racing() };
@@ -317,7 +317,7 @@ mod TestRules {
     @Test
     def testGateGapIsTheOnlyWayThrough(): Unit \ Assert =
         // 隙間の真ん中を通れば無傷、そこから 2 レーンずらすと土管に刺さってスピン。
-        let d = RulesDoc.defaults();
+        let d = RulesDoc.rec(RulesDoc.defaults());
         let dt = 0.1;
         let w0 = racing();
         let gate = firstPropAt(w0, PropsDoc.Kind.Gate);
@@ -332,7 +332,7 @@ mod TestRules {
     @Test
     def testGateGapChargesFromBothPipes(): Unit \ Assert =
         // 隙間を抜けると左右 2 本の土管それぞれにすれすれが立ち、ゲージが 2 回ぶん貯まる。
-        let d = RulesDoc.defaults();
+        let d = RulesDoc.rec(RulesDoc.defaults());
         let w0 = racing();
         let gate = firstPropAt(w0, PropsDoc.Kind.Gate);
         let after = World.step(idle(), 0.1,
@@ -352,8 +352,8 @@ mod TestRules {
         let a = at(0.3);
         Assert.assertEq(
             expected = (true, true),
-            (Float64.abs(at(0.3 + w#props#barPeriod) - a) < 0.0001,
-             Float64.abs(at(0.3 + w#props#barPeriod / 2.0) + a) < 0.0001))
+            (Float64.abs(at(0.3 + PropsDoc.rec(w#props)#barPeriod) - a) < 0.0001,
+             Float64.abs(at(0.3 + PropsDoc.rec(w#props)#barPeriod / 2.0) + a) < 0.0001))
 
     // ══════════════════════════════════════════════════════
     // 柱 4: ガードレール（擦っても壊れない・道の端で止まる）
@@ -386,7 +386,7 @@ mod TestRules {
     @Test
     def testGuardrailScrapeChargesNitro(): Unit \ Assert =
         // 擦っている間はゲージが nitroChargeRail ぶん/秒 貯まる（遅い代わりに見返りはある）。
-        let d = RulesDoc.defaults();
+        let d = RulesDoc.rec(RulesDoc.defaults());
         let w0 = racing();
         let r = firstRailRow(w0);
         let half = World.halfWidthAt(r#row, w0#course);
@@ -403,14 +403,14 @@ mod TestRules {
 
     /// 勾配 grade の平らでない直線が延々続くコース（当たりも曲がりも混ぜない）。
     def hillCourse(grade: Float64): CourseDoc.Doc =
-        { version = 1,
+        CourseDoc.Doc.Doc({ version = 1,
           sections = { len = 2, curve = 0.0, hill = grade, width = 300.0, rail = "none",
-                       note = "" } :: Nil }
+                       note = "" } :: Nil })
 
     @Test
     def testHillChangesForwardSpeed(): Unit \ Assert =
         // 同じ直線でも、勾配 1.0 の登りでは hillSpeedGain ぶん遅く、下りでは同じだけ速い。
-        let d = RulesDoc.defaults();
+        let d = RulesDoc.rec(RulesDoc.defaults());
         let speedOn = c -> (World.step(idle(), 0.1, { course = c, rivals = Nil | racing() }))#speed;
         Assert.assertEq(
             expected = (d#forwardSpeed * (1.0 - d#hillSpeedGain),
@@ -435,7 +435,7 @@ mod TestRules {
     def testItemEffectDependsOnRank(): Unit \ Assert =
         // 1 位 = スコアだけ / 2 位 = ゲージ / 最下位（4 位）= 即ブースト。
         // boostLeft は coolTimers が同フレームで dt を削るので itemBoostDuration - dt。
-        let d = RulesDoc.defaults();
+        let d = RulesDoc.rec(RulesDoc.defaults());
         let dt = 0.1;
         let first = World.step(idle(), dt, beforeItem(1));
         let second = World.step(idle(), dt, beforeItem(2));
@@ -448,7 +448,7 @@ mod TestRules {
     def testItemNotTakenTwiceOnSameRow(): Unit \ Assert =
         // 同じ通し行はもう一度またいでも二重取得しない（taken の掛け金）。
         // 一度拾ったあと distance を行の手前へ戻してもう 1 フレーム → スコアは 1 回ぶんのまま。
-        let d = RulesDoc.defaults();
+        let d = RulesDoc.rec(RulesDoc.defaults());
         let once = World.step(idle(), 0.1, beforeItem(1));
         let again = World.step(idle(), 0.1, { distance = justBeforeRow(firstItem()#row) | once });
         Assert.assertEq(expected = d#itemScoreBonus, again#score)
@@ -461,7 +461,7 @@ mod TestRules {
     def testRubberBandAdjustsRivalSpeed(): Unit \ Assert =
         // 自機から rubberRange ぶん後ろのライバルは 1 フレームの伸びが baseSpeed * dt より大きく、
         // 同じだけ前のライバルは小さい（corner = 1.0 でコーナー減速は混ぜない）。
-        let cfg = RivalsDoc.defaults();
+        let cfg = RivalsDoc.rec(RivalsDoc.defaults());
         let dt = 0.1;
         let baseSpeed = 100.0;
         let w = racing();
@@ -486,7 +486,7 @@ mod TestRules {
     def testPassingRivalScoresAndRanksUp(): Unit \ Assert =
         // まだ抜いていないライバルを追い越すと scorePerPass が入り、順位が 1 位になり、
         // passed の掛け金が立つ。横は離して接触スピンを混ぜない（当たり幅の外）。
-        let d = RulesDoc.defaults();
+        let d = RulesDoc.rec(RulesDoc.defaults());
         let w = { distance = 100.0, rivals = rivalAt(150.0, 200.0, 0.0) :: Nil | racing() };
         let after = World.step(idle(), 0.01, w);
         let allPassed = after#rivals |> List.forAll(r -> r#passed);
@@ -510,7 +510,7 @@ mod TestRules {
     def testFinishOutcomeDependsOnRank(): Unit \ Assert =
         // totalLaps ぶん走り切ったフレームに: 1 位 = Win + finishBonus / 2 位 = Win（ボーナスなし）/
         // 最下位（既定 3 台 + 自機 = 4 位）= Lose。ライバルは接触もスリップも起きない距離に置く。
-        let d = RulesDoc.defaults();
+        let d = RulesDoc.rec(RulesDoc.defaults());
         let dist = World.lapLength(CourseDoc.defaults()) * Int32.toFloat64(d#totalLaps) + 10.0;
         let me = dist + World.playerAheadPx();
         let first = World.step(idle(), 0.001, { distance = dist, rivals = Nil | racing() });

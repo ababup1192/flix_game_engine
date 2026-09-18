@@ -46,7 +46,7 @@ mod View {
     /// 色は黒でなく寒色へ近づけた暗い色にする（黒で沈めると絵が濁る）。
     def halo(w: World.World): List[Render.PlacedItem] =
         Render.glowAt({ x = w#x, y = w#y }, World.heroBox(w)#x * 1.7,
-            Color.cool(Color.darken(w#theme#bg, 0.3), 0.1),
+            Color.cool(Color.darken(ThemeDoc.rec(w#theme)#bg, 0.3), 0.1),
             { alpha = 0.45, blend = DrawCmd.BlendMode.Multiply }, zHalo())
 
     // ── 10. 主人公（ドット絵 + 塗りの仕上げ） ──
@@ -66,7 +66,7 @@ mod View {
             "hero", "idle", topLeft, false, World.spriteScale(), zHero());
         if (List.isEmpty(items))
             // fail-open: スプライトが無い・読めないときは差し色の四角。
-            { at = topLeft, item = RawDraw.box(box, w#theme#accent, zHero()) } :: Nil
+            { at = topLeft, item = RawDraw.box(box, ThemeDoc.rec(w#theme)#accent, zHero()) } :: Nil
         else
             items
 
@@ -75,7 +75,7 @@ mod View {
     /// 粒はどこにも保存せず、番号と時刻だけから計算する（巻き戻しても同じ絵）。
     /// 数や速さを Doc から調整したくなったら fx.json（FxDoc）へ移す。
     def dust(w: World.World): List[Render.PlacedItem] =
-        let color = ThemeDoc.lighten(w#theme#accent, 0.6);
+        let color = ThemeDoc.lighten(ThemeDoc.rec(w#theme)#accent, 0.6);
         Fx.derive(22, w#t, (_i, rand, t) -> {
             let speed = 5.0 + rand(1) * 12.0;
             let x = Num.wrapTo(World.width(), rand(0) * World.width() + t * speed);

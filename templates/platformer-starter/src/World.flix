@@ -58,7 +58,7 @@ mod World {
                     enemyDoc: EnemyDoc.Doc, stageDoc: StageDoc.Doc, theme: Theme.Doc,
                     uiText: UiText.Doc, pxDoc: PxSpriteDoc.Doc): World =
         let stage = stageOf(stageDoc, 0);
-        let at0 = standingAt(stage, stage#start);
+        let at0 = standingAt(stage, Stage.rec(stage)#start);
         { motion = motion, keys = keys, rules = rules, enemyDoc = enemyDoc, stageDoc = stageDoc, theme = theme,
           uiText = uiText, pxDoc = pxDoc,
           atlas = PxSpriteAtlas.bake(pxDoc, key -> Theme.resolve(theme, key)),
@@ -68,20 +68,21 @@ mod World {
           enemies = enemiesOf(stage), shots = Nil,
           got = Set.empty(), cpOn = Set.empty(), springT = Map.empty(), fx = Nil,
           checkpoint = at0,
-          score = 0, stomps = 0, hearts = rules#maxHearts, invuln = 0.0, freeze = 0.0,
+          score = 0, stomps = 0, hearts = RulesDoc.rec(rules)#maxHearts, invuln = 0.0, freeze = 0.0,
           phase = "play", phaseT = 0.0, t = 0.0,
           cam = at0 }
 
     def stageOf(doc: StageDoc.Doc, ix: Int32): Stage.Stage =
-        let n = List.length(doc#stages);
+        let stages = StageDoc.rec(doc)#stages;
+        let n = List.length(stages);
         let i = if (n <= 0) 0 else Int32.modulo(ix, n);
-        doc#stages |> List.drop(i) |> List.head
-            |> Option.getWithDefault(List.head(StageDoc.defaults()#stages)
+        stages |> List.drop(i) |> List.head
+            |> Option.getWithDefault(List.head(StageDoc.rec(StageDoc.defaults())#stages)
                 |> Option.getWithDefault({ name = "?", kind = "outdoor", rows = "####" :: Nil }))
             |> Stage.make
 
     def enemiesOf(stage: Stage.Stage): List[Enemies.Enemy] =
-        stage#enemies |> List.map(entry -> {
+        Stage.rec(stage)#enemies |> List.map(entry -> {
             let (cell, behavior) = entry;
             Enemies.make(behavior, Stage.centerOf(cell))
         })
@@ -95,7 +96,7 @@ mod World {
     /// 面を差し替えて出発点に立たせる(clear → 次の面 / over → 最初から)。
     pub def loadStage(ix: Int32, w: World): World =
         let stage = stageOf(w#stageDoc, ix);
-        let at0 = standingAt(stage, stage#start);
+        let at0 = standingAt(stage, Stage.rec(stage)#start);
         { stageIx = ix, stage = stage, light = LightGrid.compute(stage),
           player = Player.initial(at0),
           enemies = enemiesOf(stage), shots = Nil,
@@ -107,7 +108,8 @@ mod World {
 
     /// 消える床の点滅: blinkPeriod 秒のうち前半 blinkOnSec 秒だけ硬い(Doc のノブ)。
     /// 位相はマス座標で散らす — 全部の床が同時に消えると詰む。
-    pub def blinkOn(m: MotionDoc.Doc, t: Float64, x: Int32, y: Int32): Bool =
+    pub def blinkOn(md: MotionDoc.Doc, t: Float64, x: Int32, y: Int32): Bool =
+        let m = MotionDoc.rec(md);
         let phase = Int32.toFloat64(Int32.modulo(x * 3 + y * 7, 4)) * 0.3;
         fmod(t + phase, m#blinkPeriod) < m#blinkOnSec
 
@@ -126,7 +128,8 @@ mod World {
     // ── 動く床(横往復・時刻の純関数)──
 
     /// 床の左上 px(時刻 t)。振れ幅と周期は Doc のノブ。位相はマスで散らす。
-    pub def platformPosAt(m: MotionDoc.Doc, p: Stage.Platform, time: Float64): Vec2.Vec2 =
+    pub def platformPosAt(md: MotionDoc.Doc, p: Stage.Platform, time: Float64): Vec2.Vec2 =
+        let m = MotionDoc.rec(md);
         let ts = Physics.tileSize();
         let amp = m#platformAmpTiles * ts;
         let phase = Int32.toFloat64(Int32.modulo(p#cell#x + p#cell#y * 5, 6)) * 1.0;
@@ -158,10 +161,11 @@ mod World {
     /// clear / over の間(みじかい間を置いて次へ)。
     def stepPhase(dt: Float64, w: World): World =
         let pt = w#phaseT + dt;
-        if (w#phase == "clear" and pt >= w#rules#clearWaitSec)
+        let rules = RulesDoc.rec(w#rules);
+        if (w#phase == "clear" and pt >= rules#clearWaitSec)
             loadStage(w#stageIx + 1, w)
-        else if (w#phase == "over" and pt >= w#rules#overWaitSec)
-            loadStage(0, { score = 0, stomps = 0, hearts = w#rules#maxHearts | w })
+        else if (w#phase == "over" and pt >= rules#overWaitSec)
+            loadStage(0, { score = 0, stomps = 0, hearts = rules#maxHearts | w })
         else { phaseT = pt, t = w#t + dt | w }
 
     def stepPlayer(input: Input, dt: Float64, w: World): World =
@@ -183,7 +187,7 @@ mod World {
         let bottom = p#body#pos#y + half#y;
         let ts = Physics.tileSize();
         // 乗っている床の「この tick の移動量」と「上面 y」を 1 回の走査で取る。
-        let ride = w#stage#platforms |> List.filterMap(pf -> {
+        let ride = Stage.rec(w#stage)#platforms |> List.filterMap(pf -> {
             let prev = platformPosAt(w#motion, pf, w#t - dt);
             let now = platformPosAt(w#motion, pf, w#t);
             let width = Int32.toFloat64(pf#wTiles) * ts;
@@ -203,7 +207,7 @@ mod World {
                 let slid = Physics.slideBox(terrainOf(w), Physics.playerSize(), 1.0,
                                             false, 0.0, snapped#pos, { x = dx, y = 0.0 });
                 { player = { body = { pos = slid#pos, vel = snapped#vel, onGround = true },
-                             coyote = w#motion#coyoteTime | p } | w }
+                             coyote = MotionDoc.rec(w#motion)#coyoteTime | p } | w }
         }
 
     /// 触れる物: バネ・コイン・チェックポイント・ゴール旗。
@@ -214,10 +218,10 @@ mod World {
         // 下側で見ると地面の行に入ってバネを踏めない。
         let feet = feetOf(p);
         let fc = (Physics.tileOf(feet#x), Physics.tileOf(feet#y - 1.0));
-        let onSpring = w#stage#springs
+        let onSpring = Stage.rec(w#stage)#springs
             |> List.exists(c -> (c#x, c#y) == fc and p#body#vel#y >= 0.0);
         let w1 = if (onSpring) {
-            let vy = Physics.launchVelocity(w#motion, w#motion#springTiles);
+            let vy = Physics.launchVelocity(w#motion, MotionDoc.rec(w#motion)#springTiles);
             { player = Player.launch(vy, p),
               springT = Map.insert(fc, 0.3, w#springT),
               fx = ({ kind = "spring", pos = feet, t0 = w#t }: Fx) :: w#fx | w }
@@ -225,32 +229,32 @@ mod World {
         // コイン(1 マス矩形と重なったら取得)。
         let ts = Physics.tileSize();
         let hitCell = c -> touches(p, Stage.centerOf(c), { x = ts, y = ts });
-        let newCoins = w1#stage#coins
+        let newCoins = Stage.rec(w1#stage)#coins
             |> List.filter(c -> not Set.memberOf((c#x, c#y), w1#got) and hitCell(c));
         let w2 = if (List.isEmpty(newCoins)) w1 else {
             let got = List.foldLeft((acc, c) -> Set.insert((c#x, c#y), acc), w1#got, newCoins);
             let fx = List.map(c -> ({ kind = "coin", pos = Stage.centerOf(c), t0 = w1#t }: Fx),
                               newCoins) ::: w1#fx;
-            { got = got, score = w1#score + w1#rules#coinScore * List.length(newCoins),
+            { got = got, score = w1#score + RulesDoc.rec(w1#rules)#coinScore * List.length(newCoins),
               fx = fx | w1 }
         };
         // チェックポイント: 戻り先を差し替え、ハートを 1 つ返す。
         // 回復が無いと、長い面は「残機が尽きて最初から」に必ず着地する —
         // 中間ポイントは「ここまで来た」の褒美なので、ひと息つける形にする。
-        let newCp = w2#stage#checkpoints
+        let newCp = Stage.rec(w2#stage)#checkpoints
             |> List.filter(c -> not Set.memberOf((c#x, c#y), w2#cpOn) and hitCell(c));
         let w3 = match List.head(newCp) {
             case None    => w2
             case Some(c) => { cpOn = Set.insert((c#x, c#y), w2#cpOn),
                               checkpoint = standingAt(w2#stage, c),
-                              hearts = Int32.min(w2#rules#maxHearts, w2#hearts + 1) | w2 }
+                              hearts = Int32.min(RulesDoc.rec(w2#rules)#maxHearts, w2#hearts + 1) | w2 }
         };
         // ゴール旗(旗は 2 マスぶんの背)。
-        let g = w3#stage#goal;
+        let g = Stage.rec(w3#stage)#goal;
         let goalC = { x = (Int32.toFloat64(g#x) + 0.5) * ts,
                       y = Int32.toFloat64(g#y) * ts };
         if (touches(p, goalC, { x = ts, y = ts * 2.0 }))
-            { phase = "clear", phaseT = 0.0, score = w3#score + w3#rules#goalScore | w3 }
+            { phase = "clear", phaseT = 0.0, score = w3#score + RulesDoc.rec(w3#rules)#goalScore | w3 }
         else w3
 
     /// 主役の当たり箱と「中心 c・大きさ size の箱」が重なるか。
@@ -282,14 +286,15 @@ mod World {
         let hurting = alive |> List.filter(touching);
         let w1 = if (List.isEmpty(stomped)) w else {
             // 踏みつけ: バウンド(押しっぱなしなら高く)+ hitstop + 星。
-            let hTiles = if (input#jumpHeld) w#motion#jumpHeightTiles
-                         else w#motion#stompBounceTiles;
+            let m = MotionDoc.rec(w#motion);
+            let hTiles = if (input#jumpHeld) m#jumpHeightTiles
+                         else m#stompBounceTiles;
             let vy = Physics.launchVelocity(w#motion, hTiles);
             { player = Player.launch(vy, p),
               enemies = alive,
-              score = w#score + w#rules#stompScore * List.length(stomped),
+              score = w#score + RulesDoc.rec(w#rules)#stompScore * List.length(stomped),
               stomps = w#stomps + List.length(stomped),
-              freeze = w#motion#hitstopSec,
+              freeze = m#hitstopSec,
               fx = List.map(e -> ({ kind = "stomp", pos = e#pos, t0 = w#t }: Fx), stomped)
                   ::: w#fx | w }
         };
@@ -307,18 +312,18 @@ mod World {
                                | p#body } | p };
         if (hearts <= 0)
             { hearts = 0, phase = "over", phaseT = 0.0, player = knocked | w }
-        else { hearts = hearts, invuln = w#motion#invulnSec, player = knocked | w }
+        else { hearts = hearts, invuln = MotionDoc.rec(w#motion)#invulnSec, player = knocked | w }
 
     /// 画面の下へ落ちたらチェックポイントへ(ハートも 1 減る)。
     def fallOut(w: World): World =
-        let limit = Int32.toFloat64(w#stage#height) * Physics.tileSize() + 48.0;
+        let limit = Int32.toFloat64(Stage.rec(w#stage)#height) * Physics.tileSize() + 48.0;
         if (w#player#body#pos#y <= limit) w
         else {
             let back = { body = { pos = w#checkpoint, vel = Vec2.zero(), onGround = false }
                        | Player.initial(w#checkpoint) };
             let hearts = w#hearts - 1;
             if (hearts <= 0) { hearts = 0, phase = "over", phaseT = 0.0 | w }
-            else { player = back, hearts = hearts, invuln = w#motion#invulnSec | w }
+            else { player = back, hearts = hearts, invuln = MotionDoc.rec(w#motion)#invulnSec | w }
         }
 
     /// カメラ: 進行方向へ先読みし、不感帯つきで追う(CameraRig)。
@@ -326,7 +331,7 @@ mod World {
     /// 画面が上下すると酔う。振り向きは横の緩和で滑らかに反転する。
     /// 先読み量も不感帯も motion Doc のノブ — 歩速を上げたら一緒に伸ばす物なので。
     def stepCamera(dt: Float64, w: World): World =
-        let m = w#motion;
+        let m = MotionDoc.rec(w#motion);
         let target = { x = w#player#body#pos#x + w#player#facing * m#camLeadPx,
                        y = w#player#body#pos#y - m#camLiftPx };
         let side: CameraRig.Follow = { deadzone = m#camDeadzoneX, k = m#camFollowKX };

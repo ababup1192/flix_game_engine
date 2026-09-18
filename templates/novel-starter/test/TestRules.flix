@@ -14,7 +14,8 @@ mod TestRules {
         { speaker = speaker, text = text }
 
     def fixture(): StoryDoc.Doc =
-        { version = 1, title = "test", subtitle = "", hint = "", start = "hall", lamps = 2,
+        StoryDoc.Doc.Doc({
+          version = 1, title = "test", subtitle = "", hint = "", start = "hall", lamps = 2,
           sections =
               { id = "hall", beats = beat("", "雨の音。") :: beat("私", "壁の色が違う。") :: Nil,
                 ask = Some({ speaker = "私", text = "誰を疑う?",
@@ -24,7 +25,9 @@ mod TestRules {
                 next = "" }
            :: { id = "endA", beats = beat("", "結末A。") :: Nil, ask = None, next = "" }
            :: { id = "endB", beats = beat("", "結末B。") :: Nil, ask = None, next = "" }
-           :: Nil }
+           :: Nil })
+
+    def fixtureRec(): StoryDoc.Rec = StoryDoc.rec(fixture())
 
     def w0(): World.World =
         World.initial({ story = fixture(), kind = KindDoc.defaults(),
@@ -46,7 +49,7 @@ mod TestRules {
     def testTitleConfirmBeginsStory(): Unit \ Assert =
         // 表紙で決定すると、台本の start の節から物語がはじまる。
         let w = World.advance(w0());
-        Assert.assertEq(expected = (World.Phase.Story, fixture()#start, 0),
+        Assert.assertEq(expected = (World.Phase.Story, fixtureRec()#start, 0),
             (w#phase, w#section, w#idx))
 
     @Test
@@ -56,7 +59,7 @@ mod TestRules {
         let shown = UiDialog.currentLine(w#kit#dialog)
             |> Option.map(line -> RichText.plainText(line#body))
             |> Option.getWithDefault("");
-        let wanted = StoryDoc.sectionOf(fixture()#start, fixture())
+        let wanted = StoryDoc.sectionOf(fixtureRec()#start, fixture())
             |> Option.flatMap(section -> List.nth(1, section#beats))
             |> Option.map(b -> b#text)
             |> Option.getWithDefault("(fixture が壊れている)");
@@ -91,7 +94,7 @@ mod TestRules {
     def testSuspectPickPutsOutOneLamp(): Unit \ Assert =
         // suspect の選択肢を選ぶと灯りがひとつ消える（選択肢が suspect なことも fixture から確かめる）。
         let w = World.pick(0, atAsk());
-        Assert.assertEq(expected = (true, 1, fixture()#lamps - 1),
+        Assert.assertEq(expected = (true, 1, fixtureRec()#lamps - 1),
             (fixtureSuspect(0), w#lightsOut, World.lampsLit(w)))
 
     @Test
@@ -103,9 +106,9 @@ mod TestRules {
     @Test
     def testLightsNeverExceedLamps(): Unit \ Assert =
         // 灯りは台本の lamps より多くは消えない（残りが負にならない）。
-        let dark = { lightsOut = fixture()#lamps | atAsk() };
+        let dark = { lightsOut = fixtureRec()#lamps | atAsk() };
         let w = World.pick(0, dark);
-        Assert.assertEq(expected = (fixture()#lamps, 0), (w#lightsOut, World.lampsLit(w)))
+        Assert.assertEq(expected = (fixtureRec()#lamps, 0), (w#lightsOut, World.lampsLit(w)))
 
     @Test
     def testRestartRelightsLamps(): Unit \ Assert =
@@ -140,7 +143,7 @@ mod TestRules {
     // ── fixture の分岐から期待値を引く小物 ──
 
     def fixtureOption(i: Int32): StoryDoc.Choice =
-        StoryDoc.sectionOf(fixture()#start, fixture())
+        StoryDoc.sectionOf(fixtureRec()#start, fixture())
             |> Option.flatMap(section -> section#ask)
             |> Option.flatMap(ask -> List.nth(i, ask#options))
             |> Option.getWithDefault({ label = "", goto = "(fixture が壊れている)", suspect = false })

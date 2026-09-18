@@ -202,8 +202,8 @@ mod ViewRoad {
                 let (i, lane) = entry;
                 let o0 = furrowOffAt(lane, i, rowNear);
                 let o1 = furrowOffAt(lane, i, rowFar);
-                let near = hazed(w, u0, Color.mix(nearGrass, w#theme#sand, lane#mix));
-                let far = hazed(w, u1, Color.mix(farGrass, w#theme#sand, lane#mix));
+                let near = hazed(w, u0, Color.mix(nearGrass, ThemeDoc.rec(w#theme)#sand, lane#mix));
+                let far = hazed(w, u1, Color.mix(farGrass, ThemeDoc.rec(w#theme)#sand, lane#mix));
                 let quad = g ->
                     { at = { x = 0.0, y = 0.0 },
                       item = Render.gradPolygon(
@@ -226,7 +226,7 @@ mod ViewRoad {
     /// 下地は行の偶奇の縞、手前辺と奥辺で霞みを変えた連続階調にする。
     def roadFace(cam: Proj.Cam, w: World.World, ed: Edges, b: Proj.Segment,
                  e: Strip): List[Render.PlacedItem] =
-        let segColor = if (even(b#n)) w#theme#road else ThemeDoc.roadLight(w#theme);
+        let segColor = if (even(b#n)) ThemeDoc.rec(w#theme)#road else ThemeDoc.roadLight(w#theme);
         let u1 = b#u0 + b#du;
         let base = gradQuad(ed, e,
             { t0 = 0.0, t1 = 1.0,
@@ -256,7 +256,7 @@ mod ViewRoad {
             let u1 = b#u0 + b#du;
             wearLaneSpecs() |> List.map(s -> {
                 let c = if (s#tint < 0.0) Color.darken(segColor, -s#tint)
-                        else Color.mix(segColor, w#theme#lane, s#tint);
+                        else Color.mix(segColor, ThemeDoc.rec(w#theme)#lane, s#tint);
                 gradQuad(ed, e,
                     { t0 = s#t0, t1 = s#t1,
                       near = hazed(w, b#u0, c), far = hazed(w, u1, c) })
@@ -314,7 +314,7 @@ mod ViewRoad {
     /// 道の縁がカーブでどう曲がるかが一番よく見える場所になる。
     def kerbs(w: World.World, ed: Edges, b: Proj.Segment,
               e: Strip): List[Render.PlacedItem] =
-        let base = if (even(b#n / kerbPeriodAt(b#u0))) w#theme#kerb else w#theme#finish;
+        let base = if (even(b#n / kerbPeriodAt(b#u0))) ThemeDoc.rec(w#theme)#kerb else ThemeDoc.rec(w#theme)#finish;
         let color = Color.mix(base, ThemeDoc.hazeTo(w#theme), fadeOf(b#u0));
         let k0 = 6.0 * ed#near#k;
         let k1 = 6.0 * ed#far#k;
@@ -344,7 +344,7 @@ mod ViewRoad {
             let hb = 1.25 * Proj.scaleOf(ub);
             let xa = Proj.screenX(cam, mid(0.2), ua);
             let xb = Proj.screenX(cam, mid(0.8), ub);
-            let color = Color.mix(w#theme#lane, ThemeDoc.hazeTo(w#theme), fadeOf(b#u0));
+            let color = Color.mix(ThemeDoc.rec(w#theme)#lane, ThemeDoc.hazeTo(w#theme), fadeOf(b#u0));
             { at = { x = 0.0, y = 0.0 },
               item = RawDraw.polygon(
                      { x = xa - ha, y = Proj.yAt(cam, ua) }
@@ -370,9 +370,9 @@ mod ViewRoad {
             let yBot = Proj.yAt(cam, b#u0 + 0.05);
             let cx = (Proj.screenX(cam, g#xl, ua) + Proj.screenX(cam, g#xr, ua)) / 2.0;
             let banner = RawDraw.boxAt({ x = cx, y = (yTop + yBot) / 2.0 },
-                    { x = (g#xr - g#xl) * k, y = yBot - yTop }, w#theme#finish, zTrim())
+                    { x = (g#xr - g#xl) * k, y = yBot - yTop }, ThemeDoc.rec(w#theme)#finish, zTrim())
                 |> Render.overItem(Render.checker(
-                       { color = Color.darken(w#theme#road, 0.35), alpha = 1.0,
+                       { color = Color.darken(ThemeDoc.rec(w#theme)#road, 0.35), alpha = 1.0,
                          cell = Float64.max(2.0, 4.0 * k) }));
             banner :: Nil
         }
@@ -410,10 +410,10 @@ mod ViewRoad {
             let posts = if (not b#head or u0 > 14.0) Nil
                 else RawDraw.boxAt({ x = x0, y = g0 - railH() * k0 * 0.35 },
                         { x = Float64.max(1.0, 2.2 * k0), y = railH() * k0 * 0.7 },
-                        Color.mix(Color.darken(w#theme#road, 0.55), ThemeDoc.hazeTo(w#theme),
+                        Color.mix(Color.darken(ThemeDoc.rec(w#theme)#road, 0.55), ThemeDoc.hazeTo(w#theme),
                                   fadeOf(u0)), zTrim() + 1) :: Nil;
-            beam({ top = 1.0, bot = 0.58, color = Color.lighten(w#theme#finish, 0.06) })
-                :: beam({ top = 0.58, bot = 0.30, color = Color.darken(w#theme#road, 0.45) })
+            beam({ top = 1.0, bot = 0.58, color = Color.lighten(ThemeDoc.rec(w#theme)#finish, 0.06) })
+                :: beam({ top = 0.58, bot = 0.30, color = Color.darken(ThemeDoc.rec(w#theme)#road, 0.45) })
                 :: posts
         }
 
@@ -486,7 +486,7 @@ mod ViewRoad {
     /// 土管の地肌（素焼きの土の色）。路面の灰とも縁石の白とも違う暖色にしておかないと、
     /// 立った土管と横たわった管が 1 枚の白い板に溶ける。
     def clayOf(theme: ThemeDoc.Doc): Color =
-        Color.warm(Color.darken(theme#sand, 0.10), 0.06)
+        Color.warm(Color.darken(ThemeDoc.rec(theme)#sand, 0.10), 0.06)
 
     /// 円筒の丸み（0 = 影の側, 1 = 日の当たる側）。単色の面 1 枚では、どれだけ高さを
     /// 取っても路面に貼ったシールに見えるので、丸みは必ずこの階調で出す。
@@ -592,16 +592,16 @@ mod ViewRoad {
         let stopsOf = base -> roundStops(base) |> List.map(st ->
             { t = st#t, color = tint(st#color) });
         let cap = RawDraw.ellipseAt({ x = x, y = topY }, { x = rl, y = rl * 0.40 },
-                                   tint(Color.lighten(w#theme#kerb, 0.14)), z);
+                                   tint(Color.lighten(ThemeDoc.rec(w#theme)#kerb, 0.14)), z);
         let hole = RawDraw.ellipseAt({ x = x, y = topY },
                                     { x = rl * 0.62, y = rl * 0.40 * 0.62 },
-                                    tint(Color.darken(w#theme#road, 0.52)), z);
+                                    tint(Color.darken(ThemeDoc.rec(w#theme)#road, 0.52)), z);
         shadowUnder({ at = { x = x, y = gf }, radii = { x = rl * 1.15, y = rl * 0.42 },
                       segs = 32, alpha = shadowAlpha(s#uc), z = z })
             :: (roundFace({ xl = x - rs, xr = x + rs, yBot = gf, yTop = lipY,
                             axis = false, z = z }, stopsOf(clayOf(w#theme)))
                 ::: roundFace({ xl = x - rl, xr = x + rl, yBot = lipY, yTop = topY,
-                                axis = false, z = z }, stopsOf(w#theme#kerb))
+                                axis = false, z = z }, stopsOf(ThemeDoc.rec(w#theme)#kerb))
                 ::: (cap :: hole :: Nil))
 
     /// 振り子バー。振れ幅の跡 → 真下の落ち影 → 浮いた横棒（斜め縞）→ 両端の握りの順に積む。
@@ -619,27 +619,27 @@ mod ViewRoad {
         let cx = (l + r) / 2.0;
         let wide = Float64.abs(r - l);
         let lift = 13.0 * k;
-        let reach = Float64.max(0.0, World.halfWidthAt(n, w#course) - w#props#barHalfWidth)
-                    + w#props#barHalfWidth;
+        let reach = Float64.max(0.0, World.halfWidthAt(n, w#course) - PropsDoc.rec(w#props)#barHalfWidth)
+                    + PropsDoc.rec(w#props)#barHalfWidth;
         let sl = Proj.screenX(cam, 0.0 - reach, uc);
         let sr = Proj.screenX(cam, reach, uc);
         let sweep = RawDraw.boxAt({ x = (sl + sr) / 2.0, y = groundY - lift },
                 { x = Float64.abs(sr - sl), y = Float64.max(1.0, 5.0 * k) },
-                tint(w#theme#kerb), z)
+                tint(ThemeDoc.rec(w#theme)#kerb), z)
             |> Render.overItem(Render.fade(0.16));
         let shadow = shadowUnder({ at = { x = cx, y = groundY },
                 radii = { x = wide / 2.0, y = Float64.max(1.0, 2.2 * k) },
                 segs = 32, alpha = shadowAlpha(uc), z = z });
         let under = RawDraw.boxAt({ x = cx, y = groundY - lift + 2.6 * k },
                 { x = wide, y = Float64.max(1.0, 2.2 * k) },
-                tint(Color.darken(w#theme#road, 0.42)), z);
+                tint(Color.darken(ThemeDoc.rec(w#theme)#road, 0.42)), z);
         let body = RawDraw.boxAt({ x = cx, y = groundY - lift },
-                { x = wide, y = Float64.max(2.0, 5.4 * k) }, tint(w#theme#finish), z)
-            |> Render.overItem(Render.striped({ color = tint(w#theme#kerb), alpha = 1.0,
+                { x = wide, y = Float64.max(2.0, 5.4 * k) }, tint(ThemeDoc.rec(w#theme)#finish), z)
+            |> Render.overItem(Render.striped({ color = tint(ThemeDoc.rec(w#theme)#kerb), alpha = 1.0,
                     width = Float64.max(1.5, 4.0 * k), period = Float64.max(3.0, 8.5 * k),
                     dir = 0 }));
         let grip = xx -> RawDraw.circleAt({ x = xx, y = groundY - lift },
-                Float64.max(1.5, 3.8 * k), tint(Color.darken(w#theme#kerb, 0.18)), z);
+                Float64.max(1.5, 3.8 * k), tint(Color.darken(ThemeDoc.rec(w#theme)#kerb, 0.18)), z);
         sweep :: shadow :: under :: body :: grip(l) :: grip(r) :: Nil
 
     // ── タイヤ痕（ドリフトの置き土産） ──
@@ -647,7 +647,7 @@ mod ViewRoad {
     /// タイヤ痕。世界座標のまま持たれている点を毎フレーム投影し、左右後輪の 2 点に
     /// 暗い小箱を置く。turn で回した位置に置くので、滑った角度がそのまま路面に残る。
     def skids(cam: Proj.Cam, w: World.World): List[Render.PlacedItem] =
-        let color = Color.darken(w#theme#road, 0.55);
+        let color = Color.darken(ThemeDoc.rec(w#theme)#road, 0.55);
         w#skids |> List.flatMap(s -> {
             let u = Proj.uOf(w, s#dist);
             if (u < -1.2 or u > 14.0) Nil

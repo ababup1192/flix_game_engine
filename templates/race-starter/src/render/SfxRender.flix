@@ -136,17 +136,17 @@ mod SfxRender {
     /// つまみを渡して生成する（名前は project.json の sounds と 1 対 1）。
     pub def renderWith(tune: SfxTuneDoc.Doc): Unit \ IO =
         SfxSynth.renderSet(cfg(), "assets/sfx",
-            ("engine", engineHum(tune#engine)) ::
-            ("skid", skidScrub(tune#skid)) ::
-            ("scrape", railScrape(tune#scrape)) ::
-            ("grip", gripSettle(tune#grip)) ::
-            ("nitro", nitroSurge(tune#nitro)) ::
-            ("crash", crashSmash(tune#crash)) ::
-            ("bump", bumpKnock(tune#bump)) ::
-            ("item", itemChime(tune#item)) ::
-            ("overtake", overtakeWhoosh(tune#overtake)) ::
-            ("lap", lapChime(tune#lap)) ::
-            ("win", winFanfare(tune#win)) ::
-            ("lose", loseFall(tune#lose)) ::
-            ("start", startBlip(tune#start)) :: Nil)
+            ("engine", engineHum(SfxTuneDoc.rec(tune)#engine)) ::
+            ("skid", skidScrub(SfxTuneDoc.rec(tune)#skid)) ::
+            ("scrape", railScrape(SfxTuneDoc.rec(tune)#scrape)) ::
+            ("grip", gripSettle(SfxTuneDoc.rec(tune)#grip)) ::
+            ("nitro", nitroSurge(SfxTuneDoc.rec(tune)#nitro)) ::
+            ("crash", crashSmash(SfxTuneDoc.rec(tune)#crash)) ::
+            ("bump", bumpKnock(SfxTuneDoc.rec(tune)#bump)) ::
+            ("item", itemChime(SfxTuneDoc.rec(tune)#item)) ::
+            ("overtake", overtakeWhoosh(SfxTuneDoc.rec(tune)#overtake)) ::
+            ("lap", lapChime(SfxTuneDoc.rec(tune)#lap)) ::
+            ("win", winFanfare(SfxTuneDoc.rec(tune)#win)) ::
+            ("lose", loseFall(SfxTuneDoc.rec(tune)#lose)) ::
+            ("start", startBlip(SfxTuneDoc.rec(tune)#start)) :: Nil)
 }

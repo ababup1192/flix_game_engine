@@ -4,25 +4,28 @@
 mod SampleDoc {
     use Util.Json.Json
 
-    pub type alias Doc = {
+    // World が持つ record は enum で包む（型検査が record を展開しないため）。
+    pub type alias Rec = {
         version = Int32,
         speed = Float64
     }
+    pub enum Doc(Rec)
+    pub def rec(d: Doc): Rec = match d { case Doc.Doc(r) => r }
 
     pub def path(): String = "assets/sample.kind.json"
 
     /// コード側の既定値（assets/sample.kind.json と同じ値から出発する）。
     pub def defaults(): Doc =
-        { version = 1, speed = 120.0 }
+        Doc.Doc({ version = 1, speed = 120.0 })
 
     /// テキストから Doc へ（fail-open）。JSON でない・形が違うフィールドは既定へ落とす。
     pub def fromJson(text: String): Option[Doc] =
         DocJson.decodeObject(fromRoot, text)
 
     def fromRoot(root: Map[String, Json]): Doc =
-        let d = defaults();
-        { version = JsonCodec.intOr("version", d#version, root),
-          speed = JsonCodec.floatOr("speed", d#speed, root) }
+        let d = rec(defaults());
+        Doc.Doc({ version = JsonCodec.intOr("version", d#version, root),
+                  speed = JsonCodec.floatOr("speed", d#speed, root) })
 
     /// path の Doc を読む。読めない・壊れているときは defaults（fail-open）。
     pub def load(p: String): Doc \ Fs.FileRead =

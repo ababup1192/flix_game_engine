@@ -17,7 +17,7 @@ mod ThemeDoc {
     ///   player / rivalA..C … マシンの車体色（ドット絵の body をこの色で塗り替える）。
     ///   flame / smoke   … ニトロの炎とドリフトの煙。
     ///   finish / text   … ゴール・白線の白と、HUD の文字。
-    pub type alias Doc = {
+    pub type alias Rec = {
         version = Int32,
         skyTop = Color,
         skyLow = Color,
@@ -37,6 +37,11 @@ mod ThemeDoc {
         text = Color
     }
 
+    // 型検査が record を展開しないため、World が持つ公開の型は enum で包む。
+    pub enum Doc(Rec)
+
+    pub def rec(d: Doc): Rec = match d { case Doc.Doc(r) => r }
+
     pub def path(): String = "assets/race.theme.json"
 
     /// 色見本の 6 桁 16 進をそのまま書くための近道。読めない綴りはマゼンタ
@@ -47,7 +52,7 @@ mod ThemeDoc {
     /// コード側の既定値（assets/race.theme.json と同じ色から出発する）。
     /// 真夏の昼。空は青く、海は光り、路面は白く灼けている。
     pub def defaults(): Doc =
-        { version = 1,
+        Doc.Doc({ version = 1,
           skyTop = hex("#1f86dd"),   // 空の上端（コバルト）
           skyLow = hex("#c2e7fc"),   // 地平線ぎわ（淡い水色）
           sea    = hex("#1273b8"),   // 海
@@ -63,49 +68,49 @@ mod ThemeDoc {
           flame  = hex("#ff7a1a"),   // ニトロの炎（芯はコードで白へ導く）
           smoke  = hex("#f2f5f8"),   // ドリフトの白煙
           finish = hex("#eceff2"),   // ゴール・縁石の白
-          text   = hex("#ffffff") }  // HUD の文字
+          text   = hex("#ffffff") })  // HUD の文字
 
     // ── 導出色（基準色から導けるので Doc には置かない） ──
 
     /// 遠くの路面・景色が空気に溶けていく先の色（昼の霞み = 地平線ぎわの空の色へ近づける）。
-    pub def hazeTo(doc: Doc): Color = doc#skyLow
+    pub def hazeTo(doc: Doc): Color = rec(doc)#skyLow
 
     /// 草地の影側。日向側の grassLight と色相でも分ける（明暗だけだと縞が金属的に見える）。
-    pub def grassDark(doc: Doc): Color = Color.cool(Color.darken(doc#grass, 0.22), 0.12)
+    pub def grassDark(doc: Doc): Color = Color.cool(Color.darken(rec(doc)#grass, 0.22), 0.12)
 
     /// 草地の日向側。
-    pub def grassLight(doc: Doc): Color = Color.warm(Color.lighten(doc#grass, 0.12), 0.18)
+    pub def grassLight(doc: Doc): Color = Color.warm(Color.lighten(rec(doc)#grass, 0.12), 0.18)
 
     /// 路面の縞の明るい側。
-    pub def roadLight(doc: Doc): Color = Color.lighten(doc#road, 0.07)
+    pub def roadLight(doc: Doc): Color = Color.lighten(rec(doc)#road, 0.07)
 
     /// 海のきらめき（白い短線）の色。
-    pub def seaGlint(doc: Doc): Color = Color.lighten(doc#sea, 0.65)
+    pub def seaGlint(doc: Doc): Color = Color.lighten(rec(doc)#sea, 0.65)
 
     /// ニトロの炎の芯（外側 flame → 芯は白熱）。
-    pub def flameCore(doc: Doc): Color = Color.mix(doc#flame, doc#text, 0.75)
+    pub def flameCore(doc: Doc): Color = Color.mix(rec(doc)#flame, rec(doc)#text, 0.75)
 
     /// 炎の中ほど（芯の白と外炎のあいだの黄）。芯・中・裾の 3 段階があると
     /// 噴射炎が単色の塊にならない。
-    pub def flameHot(doc: Doc): Color = Color.warm(Color.lighten(doc#flame, 0.3), 0.35)
+    pub def flameHot(doc: Doc): Color = Color.warm(Color.lighten(rec(doc)#flame, 0.3), 0.35)
 
     /// 炎の裾（燃え切る手前の赤）。
-    pub def flameDeep(doc: Doc): Color = Color.warm(Color.darken(doc#flame, 0.42), -0.18)
+    pub def flameDeep(doc: Doc): Color = Color.warm(Color.darken(rec(doc)#flame, 0.42), -0.18)
 
     /// 火花の色（炎を少し黄へ近づける）。
-    pub def spark(doc: Doc): Color = Color.warm(Color.lighten(doc#flame, 0.25), 0.2)
+    pub def spark(doc: Doc): Color = Color.warm(Color.lighten(rec(doc)#flame, 0.25), 0.2)
 
     /// すすけた煙・飛び散る破片の暗い側。白煙だけだと雲の塊にしか見えないので、
     /// 煙の階調と破片の色をここから引く。
-    pub def ash(doc: Doc): Color = Color.darken(Color.cool(doc#smoke, 0.16), 0.5)
+    pub def ash(doc: Doc): Color = Color.darken(Color.cool(rec(doc)#smoke, 0.16), 0.5)
 
     /// テキストから Doc へ（fail-open）。色の表記（#rrggbb）は UiDoc.colorOf に委ねる。
     pub def fromJson(text: String): Option[Doc] =
         DocJson.decodeObject(fromRoot, text)
 
     def fromRoot(root: Map[String, Json]): Doc =
-        let d = defaults();
-        { version = JsonCodec.intOr("version", d#version, root),
+        let d = rec(defaults());
+        Doc.Doc({ version = JsonCodec.intOr("version", d#version, root),
           skyTop = colorOr(d#skyTop, "skyTop", root),
           skyLow = colorOr(d#skyLow, "skyLow", root),
           sea    = colorOr(d#sea, "sea", root),
@@ -121,7 +126,7 @@ mod ThemeDoc {
           flame  = colorOr(d#flame, "flame", root),
           smoke  = colorOr(d#smoke, "smoke", root),
           finish = colorOr(d#finish, "finish", root),
-          text   = colorOr(d#text, "text", root) }
+          text   = colorOr(d#text, "text", root) })
 
     def colorOr(fallbackColor: Color, key: String, obj: Map[String, Json]): Color =
         Map.get(key, obj)

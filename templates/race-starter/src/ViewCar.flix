@@ -140,10 +140,10 @@ mod ViewCar {
     /// ライバルの車体色は index 順に A→B→C。台数が色数を超えたら A にする（fail-open）。
     def rivalColorOf(theme: ThemeDoc.Doc, i: Int32): Color =
         match i {
-            case 0 => theme#rivalA
-            case 1 => theme#rivalB
-            case 2 => theme#rivalC
-            case _ => theme#rivalA
+            case 0 => ThemeDoc.rec(theme)#rivalA
+            case 1 => ThemeDoc.rec(theme)#rivalB
+            case 2 => ThemeDoc.rec(theme)#rivalC
+            case _ => ThemeDoc.rec(theme)#rivalA
         }
 
     // ── 自機 ──
@@ -155,7 +155,7 @@ mod ViewCar {
         let at = { x = Proj.screenX(cam, w#playerOff, u), y = Proj.yAt(cam, u) };
         let f = Proj.scaleOf(u) * 1.05;
         carAt(w, at, { f = f, turn = World.driftTurnOf(w),
-                       color = w#theme#player, z = Proj.zOf(u) })
+                       color = ThemeDoc.rec(w#theme)#player, z = Proj.zOf(u) })
             ::: nitroTrail(w, at, f)
             ::: driftHeat(w, at, f)
 
@@ -186,7 +186,7 @@ mod ViewCar {
         else {
             let rear = { x = at#x, y = at#y + 13.0 * f };
             let flame = Fx.sampleAt(w#fx#flame, 0i64, Num.wrapTo(10.0, w#t), rear);
-            let since = w#rules#nitroDuration - w#nitroLeft;
+            let since = RulesDoc.rec(w#rules)#nitroDuration - w#nitroLeft;
             let shock = Fx.sampleAt(w#fx#shock, 0i64, since, at);
             let ghostTurn = World.driftTurnOf(w);
             let ghostZ = Proj.zOf(Proj.playerU()) - 1;
@@ -255,8 +255,8 @@ mod ViewCar {
         let n = 26;
         let inK = 0.10 + 0.16 * p;
         let midK = 0.84 + 0.10 * p;
-        let cIn = Color.mix(ThemeDoc.flameHot(w#theme), w#theme#flame, p);
-        let cMid = Color.mix(w#theme#flame, ThemeDoc.flameDeep(w#theme), p);
+        let cIn = Color.mix(ThemeDoc.flameHot(w#theme), ThemeDoc.rec(w#theme)#flame, p);
+        let cMid = Color.mix(ThemeDoc.rec(w#theme)#flame, ThemeDoc.flameDeep(w#theme), p);
         let cOut = ThemeDoc.flameDeep(w#theme);
         let base = 1.45 * Float64.pow(base = 1.0 - p, 1.1);
         let al = a -> Num.clamp01(base * (0.22 + 0.78 * shockRear(a)));
@@ -282,7 +282,7 @@ mod ViewCar {
     def shockRays(w: World.World, c: Vec2.Vec2, r: Float64, p: Float64,
                   z: Int32): List[Render.PlacedItem] =
         let n = 13;
-        let color = Color.mix(ThemeDoc.flameHot(w#theme), w#theme#flame, p);
+        let color = Color.mix(ThemeDoc.flameHot(w#theme), ThemeDoc.rec(w#theme)#flame, p);
         let base = 0.45 * Float64.pow(base = 1.0 - p, 1.6);
         List.range(0, n) |> List.map(i -> {
             let a = 2.0 * Vec2.pi() * (Int32.toFloat64(i) + 0.35) / Int32.toFloat64(n);
@@ -302,10 +302,10 @@ mod ViewCar {
     def shockHeat(w: World.World, c: Vec2.Vec2, r: Float64, p: Float64,
                   z: Int32): List[Render.PlacedItem] =
         let a = Float64.pow(base = 1.0 - p, 2.0);
-        Render.glowAt(c, r * 0.55, w#theme#flame,
+        Render.glowAt(c, r * 0.55, ThemeDoc.rec(w#theme)#flame,
                 { alpha = 0.30 * a, blend = DrawCmd.BlendMode.Add }, z)
             ::: (RawDraw.ellipseAt(c, { x = r * 0.52, y = r * 0.52 * 0.42 },
-                        w#theme#flame, z)
+                        ThemeDoc.rec(w#theme)#flame, z)
                     |> Render.overItem(item -> item
                         |> Render.fade(0.16 * a)
                         |> Render.blended(DrawCmd.BlendMode.Add))
@@ -337,7 +337,7 @@ mod ViewCar {
     /// 高速時・ニトロ中の細かい画面揺れ（世界の層だけを動かす。HUD と幕は揺らさない）。
     /// 振幅は 2px で頭打ち — これ以上振ると道の縞と喧嘩して画面が読めなくなる。
     pub def shakeOf(w: World.World): Vec2.Vec2 =
-        let over = Float64.max(0.0, w#speed / w#rules#forwardSpeed - 1.0);
+        let over = Float64.max(0.0, w#speed / RulesDoc.rec(w#rules)#forwardSpeed - 1.0);
         let nitroKick = if (w#nitroLeft > 0.0) 0.9 else 0.0;
         let amp = Float64.min(2.0, over * 1.5 + nitroKick);
         if (amp <= 0.0) Vec2.zero()

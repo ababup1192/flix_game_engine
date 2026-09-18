@@ -150,7 +150,7 @@ mod World {
     /// ただしリセットの回数が上限（maxLockResets）に達していたら猶予は戻さない
     /// （壁蹴りで無限に固定を先延ばしできないための天井）。
     def afterMoveOrRotate(w: World): World =
-        if (w#grounded and w#lockResets < w#doc#maxLockResets)
+        if (w#grounded and w#lockResets < RulesDoc.rec(w#doc)#maxLockResets)
             { lockTimer = 0.0, lockResets = w#lockResets + 1 | w }
         else
             w
@@ -248,11 +248,11 @@ mod World {
 
     /// Playing の 1 フレーム: 重力を積んで 1 行落とし、落ちられなければ接地として固定を待つ。
     def tickPlaying(softDrop: Bool, dt: Float64, w: World): World =
-        let speed = if (softDrop) w#doc#softDropFactor else 1.0;
+        let speed = if (softDrop) RulesDoc.rec(w#doc)#softDropFactor else 1.0;
         let timer = w#gravityTimer + dt * speed;
         // gravityInterval を超えた分だけ落下を試みる（1 フレームに 1 行で十分・素直に）。
         let dropped =
-            if (timer >= w#doc#gravityInterval) {
+            if (timer >= RulesDoc.rec(w#doc)#gravityInterval) {
                 let (w1, moved) = tryMove(0, 1, w);
                 if (moved)
                     { gravityTimer = 0.0, grounded = false | w1 }
@@ -263,7 +263,7 @@ mod World {
         // 接地している間だけ lockTimer を積む。lockDelay 到達 or リセット上限で固定する。
         if (dropped#grounded) {
             let lockTimer = dropped#lockTimer + dt;
-            if (lockTimer >= dropped#doc#lockDelay or dropped#lockResets >= dropped#doc#maxLockResets)
+            if (lockTimer >= RulesDoc.rec(dropped#doc)#lockDelay or dropped#lockResets >= RulesDoc.rec(dropped#doc)#maxLockResets)
                 lockPiece(dropped)
             else
                 { lockTimer = lockTimer | dropped }
@@ -291,7 +291,7 @@ mod World {
     /// [遷移: Clearing→Playing]
     def tickClearing(dt: Float64, w: World): World =
         let t = w#clearTimer + dt;
-        if (t >= w#doc#clearDuration) {
+        if (t >= RulesDoc.rec(w#doc)#clearDuration) {
             let cleared = clearLines(w#clearRows, w#board);
             let gained = RulesDoc.scoreFor(List.length(w#clearRows), w#doc);
             spawnNext({ board = cleared, phase = Phase.Playing, clearRows = Nil, clearTimer = 0.0,

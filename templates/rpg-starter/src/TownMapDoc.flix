@@ -8,18 +8,23 @@ mod TownMapDoc {
 
     /// 街のタイル盤。legend = rows の 1 文字 → タイル名、rows = 敷き方の文字格子。
     /// legend に無い文字のマスは敷かれない（下の色が見えるだけ — 落ちない）。
-    pub type alias Doc = {
+    pub type alias Rec = {
         version = Int32,
         legend = Map[Char, String],
         rows = List[String]
     }
+
+    /// 型検査が record を展開しないため、World が持つ形は名前付きの enum にする。
+    pub enum Doc(Rec)
+
+    pub def rec(d: Doc): Rec = match d { case Doc.Doc(r) => r }
 
     pub def path(): String = "assets/town.map.json"
 
     /// コード側の既定値（assets/town.map.json と同じ盤から出発する）。
     /// 中央に石畳の広場と十字の道、周囲に芝、右側に縦の水路、上辺に漆喰壁の帯。
     pub def defaults(): Doc =
-        { version = 1,
+        Doc.Doc({ version = 1,
           legend = Map#{'g' => "tile_grass", 'p' => "tile_pave",
                         'w' => "tile_water", '#' => "tile_wall"},
           rows =
@@ -38,19 +43,19 @@ mod TownMapDoc {
               :: "ggggggggppggggggwwgg"
               :: "ggggggggppggggggwwgg"
               :: "ggggggggppggggggwwgg"
-              :: Nil }
+              :: Nil })
 
     /// rows の 1 文字 → タイル名。legend に無い文字は None（敷かない = fail-open）。
     pub def tileNameOf(doc: Doc, ch: Char): Option[String] =
-        Map.get(ch, doc#legend)
+        Map.get(ch, rec(doc)#legend)
 
     /// 盤の列数（一番長い行に合わせる。短い行の足りない分は敷かれないだけ）。
     pub def cols(doc: Doc): Int32 =
-        doc#rows |> List.map(String.length) |> List.foldLeft(Int32.max, 0)
+        rec(doc)#rows |> List.map(String.length) |> List.foldLeft(Int32.max, 0)
 
     /// 盤の行数。
     pub def rowCount(doc: Doc): Int32 =
-        List.length(doc#rows)
+        List.length(rec(doc)#rows)
 
     // ── JSON からの読み込み ──
 
@@ -59,12 +64,12 @@ mod TownMapDoc {
         DocJson.decodeObject(fromRoot, text)
 
     def fromRoot(root: Map[String, Json]): Doc =
-        let d = defaults();
-        { version = JsonCodec.intOr("version", d#version, root),
+        let d = rec(defaults());
+        Doc.Doc({ version = JsonCodec.intOr("version", d#version, root),
           legend = legendOf(root) |> Option.getWithDefault(d#legend),
           rows = Map.get("rows", root)
               |> Option.flatMap(JsonCodec.decodeList(JsonCodec.expectString))
-              |> Option.getWithDefault(d#rows) }
+              |> Option.getWithDefault(d#rows) })
 
     /// legend: {"g": "tile_grass", ...}。キーが 1 文字でない・値が文字列でない項は
     /// 黙って捨てる（その文字のマスが敷かれないだけ）。

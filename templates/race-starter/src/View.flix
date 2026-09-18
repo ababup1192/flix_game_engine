@@ -68,22 +68,22 @@ mod View {
 
     /// HUD の文字色。白チップの上に濃紺 — 空や路面のどこに重なっても読める組み合わせ。
     def hudInk(w: World.World): Color =
-        Color.darken(w#theme#sea, 0.5)
+        Color.darken(ThemeDoc.rec(w#theme)#sea, 0.5)
 
     /// 左上のチップ: 順位（大きく）・周回・スコア。順位が一番大きいのは、
     /// このゲームで刻々変わる一番大事な数だから。
     def rankChip(atlas: FontAtlas, w: World.World): List[Render.PlacedItem] =
         let ink = hudInk(w);
         let chip = RawDraw.boxAt({ x = 40.0, y = 28.0 }, { x = 66.0, y = 46.0 },
-                w#theme#text, zHud())
+                ThemeDoc.rec(w#theme)#text, zHud())
             |> Render.overItem(Render.fade(0.9));
-        let lapShow = Int32.min(w#lap + 1, w#rules#totalLaps);
+        let lapShow = Int32.min(w#lap + 1, RulesDoc.rec(w#rules)#totalLaps);
         chip
             :: { at = { x = 13.0, y = 10.0 },
                  item = Render.textTinted(ordinalOf(w#rank), atlas, 14.0, ink, zHud() + 1) }
             :: { at = { x = 13.0, y = 29.0 },
                  item = Render.textTinted(
-                     "LAP ${Int32.toString(lapShow)}/${Int32.toString(w#rules#totalLaps)}",
+                     "LAP ${Int32.toString(lapShow)}/${Int32.toString(RulesDoc.rec(w#rules)#totalLaps)}",
                      atlas, 8.0, ink, zHud() + 1) }
             :: { at = { x = 13.0, y = 40.0 },
                  item = Render.textTinted("SCORE ${Int32.toString(w#score)}",
@@ -102,15 +102,15 @@ mod View {
     /// 右上の状態チップ。ドリフト中は赤の「DRIFT!」、スリップストリーム中は青の「SLIP+」。
     /// 同時なら縦に並べる（どちらもゲージが貯まる合図 — 重ねて片方を隠さない）。
     def statusChips(atlas: FontAtlas, w: World.World): List[Render.PlacedItem] =
-        let drift = if (w#drifting) chipAt(atlas, w, "DRIFT!", w#theme#kerb, 14.0) else Nil;
+        let drift = if (w#drifting) chipAt(atlas, w, "DRIFT!", ThemeDoc.rec(w#theme)#kerb, 14.0) else Nil;
         let slipY = if (w#drifting) 32.0 else 14.0;
-        let slip = if (World.slipActive(w)) chipAt(atlas, w, "SLIP+", w#theme#rivalA, slipY) else Nil;
+        let slip = if (World.slipActive(w)) chipAt(atlas, w, "SLIP+", ThemeDoc.rec(w#theme)#rivalA, slipY) else Nil;
         drift ::: slip
 
     /// 白チップ + 色文字の小さなラベル 1 枚。
     def chipAt(atlas: FontAtlas, w: World.World, label: String, ink: Color, y: Float64): List[Render.PlacedItem] =
         let cx = 204.0;
-        let back = RawDraw.boxAt({ x = cx, y = y }, { x = 58.0, y = 15.0 }, w#theme#text, zHud())
+        let back = RawDraw.boxAt({ x = cx, y = y }, { x = 58.0, y = 15.0 }, ThemeDoc.rec(w#theme)#text, zHud())
             |> Render.overItem(Render.fade(0.85));
         back
             :: TextDraw.centered({ text = label, atlas = atlas, size = 10.0, color = ink,
@@ -122,20 +122,20 @@ mod View {
     def nitroGauge(atlas: FontAtlas, w: World.World): List[Render.PlacedItem] =
         let cy = 337.0;
         let frameChip = RawDraw.boxAt({ x = 120.0, y = cy }, { x = 128.0, y = 13.0 },
-                w#theme#text, zHud())
+                ThemeDoc.rec(w#theme)#text, zHud())
             |> Render.overItem(Render.fade(0.9));
         let barW = 118.0 * Num.clamp01(w#nitro);
         let bar = if (barW < 0.5) Nil
             else RawDraw.boxAt({ x = 61.0 + barW / 2.0, y = cy }, { x = barW, y = 7.0 },
-                    Color.mix(w#theme#flame, ThemeDoc.flameCore(w#theme), w#nitro),
+                    Color.mix(ThemeDoc.rec(w#theme)#flame, ThemeDoc.flameCore(w#theme), w#nitro),
                     zHud() + 1) :: Nil;
         let ready = if (w#nitro < 1.0) Nil
             else {
                 let pulse = 0.5 + 0.5 * Sway.wave(w#t, 0.0, 1.2);
-                Render.glowAt({ x = 120.0, y = cy }, 16.0, w#theme#flame,
+                Render.glowAt({ x = 120.0, y = cy }, 16.0, ThemeDoc.rec(w#theme)#flame,
                         { alpha = 0.35, blend = DrawCmd.BlendMode.Add }, zHud())
                     ::: (TextDraw.centered({ text = "Z", atlas = atlas, size = 10.0,
-                            color = Color.mix(w#theme#text, w#theme#flame, pulse),
+                            color = Color.mix(ThemeDoc.rec(w#theme)#text, ThemeDoc.rec(w#theme)#flame, pulse),
                             z = zHud() + 2, centerX = 120.0, y = 318.0 }) :: Nil)
             };
         frameChip :: (bar ::: ready)
@@ -154,10 +154,10 @@ mod View {
     def titleOverlay(atlas: FontAtlas, w: World.World): List[Render.PlacedItem] =
         let pulse = 0.5 + 0.5 * Sway.wave(w#t, 0.0, 0.5);
         let lines =
-               centered(atlas, "ARROWS STEER / X DRIFT", 9.0, w#theme#text, 176.0)
-            :: centered(atlas, "Z NITRO WHEN FULL", 9.0, w#theme#text, 190.0)
+               centered(atlas, "ARROWS STEER / X DRIFT", 9.0, ThemeDoc.rec(w#theme)#text, 176.0)
+            :: centered(atlas, "Z NITRO WHEN FULL", 9.0, ThemeDoc.rec(w#theme)#text, 190.0)
             :: centered(atlas, "PRESS SPACE", 11.0,
-                   Color.mix(ThemeDoc.hazeTo(w#theme), w#theme#lane, 0.35 + 0.65 * pulse), 240.0)
+                   Color.mix(ThemeDoc.hazeTo(w#theme), ThemeDoc.rec(w#theme)#lane, 0.35 + 0.65 * pulse), 240.0)
             :: Nil;
         curtain(w#theme, 0.25) :: (titleWord(atlas, w, "RACE", 26.0, 116.0) ::: lines)
 
@@ -175,35 +175,35 @@ mod View {
             :: { dx = -1.2, dy = -1.2 } :: { dx =  1.2, dy = -1.2 }
             :: { dx = -1.2, dy =  1.2 } :: { dx =  1.2, dy =  1.2 }
             :: Nil;
-        let shadow = put(Color.darken(w#theme#sea, 0.55))(zOverlay() + 1)({ dx = 2.5, dy = 3.5 });
-        let edge = ring |> List.map(put(w#theme#finish)(zOverlay() + 2));
-        let core = put(w#theme#player)(zOverlay() + 3)({ dx = 0.0, dy = 0.0 });
+        let shadow = put(Color.darken(ThemeDoc.rec(w#theme)#sea, 0.55))(zOverlay() + 1)({ dx = 2.5, dy = 3.5 });
+        let edge = ring |> List.map(put(ThemeDoc.rec(w#theme)#finish)(zOverlay() + 2));
+        let core = put(ThemeDoc.rec(w#theme)#player)(zOverlay() + 3)({ dx = 0.0, dy = 0.0 });
         shadow :: (edge ::: (core :: Nil))
 
     /// 完走（最下位以外）。市松のストリップで「ゴールを切った」ことを形でも祝う。
     def winOverlay(atlas: FontAtlas, w: World.World): List[Render.PlacedItem] =
         curtain(w#theme, 0.45)
             :: checkerStrip(w#theme)
-            :: centered(atlas, "FINISH!", 24.0, w#theme#finish, 124.0)
-            :: centered(atlas, "RANK ${ordinalOf(w#rank)}", 12.0, w#theme#text, 166.0)
-            :: centered(atlas, "SCORE ${Int32.toString(w#score)}", 12.0, w#theme#text, 186.0)
-            :: centered(atlas, "PRESS SPACE", 10.0, Color.darken(w#theme#text, 0.25), 226.0)
+            :: centered(atlas, "FINISH!", 24.0, ThemeDoc.rec(w#theme)#finish, 124.0)
+            :: centered(atlas, "RANK ${ordinalOf(w#rank)}", 12.0, ThemeDoc.rec(w#theme)#text, 166.0)
+            :: centered(atlas, "SCORE ${Int32.toString(w#score)}", 12.0, ThemeDoc.rec(w#theme)#text, 186.0)
+            :: centered(atlas, "PRESS SPACE", 10.0, Color.darken(ThemeDoc.rec(w#theme)#text, 0.25), 226.0)
             :: Nil
 
     /// 最下位で完走。順位を小さく見せてから LOSE — 責める色（縁石の赤）は 1 語だけに使う。
     def loseOverlay(atlas: FontAtlas, w: World.World): List[Render.PlacedItem] =
         curtain(w#theme, 0.5)
-            :: centered(atlas, "${ordinalOf(w#rank)}...", 12.0, w#theme#text, 118.0)
-            :: centered(atlas, "LOSE", 24.0, w#theme#kerb, 140.0)
-            :: centered(atlas, "SCORE ${Int32.toString(w#score)}", 12.0, w#theme#text, 186.0)
-            :: centered(atlas, "PRESS SPACE", 10.0, Color.darken(w#theme#text, 0.25), 226.0)
+            :: centered(atlas, "${ordinalOf(w#rank)}...", 12.0, ThemeDoc.rec(w#theme)#text, 118.0)
+            :: centered(atlas, "LOSE", 24.0, ThemeDoc.rec(w#theme)#kerb, 140.0)
+            :: centered(atlas, "SCORE ${Int32.toString(w#score)}", 12.0, ThemeDoc.rec(w#theme)#text, 186.0)
+            :: centered(atlas, "PRESS SPACE", 10.0, Color.darken(ThemeDoc.rec(w#theme)#text, 0.25), 226.0)
             :: Nil
 
     /// ゴールの市松帯（Win の飾り）。白帯に市松の穴を開けるだけで「ゴール」と読める。
     def checkerStrip(theme: ThemeDoc.Doc): Render.PlacedItem =
         { at = { x = 0.0, y = 96.0 },
-          item = RawDraw.box({ x = World.designW(), y = 12.0 }, theme#finish, zOverlay() + 1)
-              |> Render.checker({ color = Color.darken(theme#sea, 0.4), alpha = 1.0, cell = 6.0 })
+          item = RawDraw.box({ x = World.designW(), y = 12.0 }, ThemeDoc.rec(theme)#finish, zOverlay() + 1)
+              |> Render.checker({ color = Color.darken(ThemeDoc.rec(theme)#sea, 0.4), alpha = 1.0, cell = 6.0 })
               |> Render.fade(0.92) }
 
     /// 画面全体を覆う紺の幕（幕の上に文字を載せて読みやすくする）。
@@ -211,7 +211,7 @@ mod View {
     def curtain(theme: ThemeDoc.Doc, alpha: Float64): Render.PlacedItem =
         { at = { x = 0.0, y = 0.0 },
           item = RawDraw.box({ x = World.designW(), y = World.designH() },
-                     Color.darken(theme#sea, 0.35), zOverlay())
+                     Color.darken(ThemeDoc.rec(theme)#sea, 0.35), zOverlay())
               |> Render.fade(alpha) }
 
     /// 画面中央に 1 行のテキストを置く（幅はエンジンが実測して中央へ揃える）。

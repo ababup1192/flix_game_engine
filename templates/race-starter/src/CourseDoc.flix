@@ -27,10 +27,15 @@ mod CourseDoc {
     }
 
     /// コースの形。sections = スタートから先へ 1 区間ずつ。
-    pub type alias Doc = {
+    pub type alias Rec = {
         version = Int32,
         sections = List[Section]
     }
+
+    // 型検査が record を展開しないため、World が持つ公開の型は enum で包む。
+    pub enum Doc(Rec)
+
+    pub def rec(d: Doc): Rec = match d { case Doc.Doc(r) => r }
 
     pub def path(): String = "assets/race.course.json"
 
@@ -48,7 +53,7 @@ mod CourseDoc {
     /// curve の合計も hill の合計も 0（1 周でちょうど向きと高さが戻る）— 空の流れと
     /// 地平線が周回の継ぎ目で飛ばない。
     pub def defaults(): Doc =
-        { version = 1,
+        Doc.Doc({ version = 1,
           sections =
               { len = 3, curve = 0.0, hill = 0.0, width = 100.0, rail = "none", note = "スタート直線（スリップ勝負）" }
            :: { len = 4, curve = 6.0, hill = 1.0, width = 100.0, rail = "none", note = "緩い右の登り（膨らみを教える）" }
@@ -85,11 +90,11 @@ mod CourseDoc {
            :: { len = 1, curve = 0.0, hill = 0.0, width = 100.0, rail = "none", note = "" }
            :: { len = 2, curve = 0.0 - 10.0, hill = 0.0, width = 100.0, rail = "none", note = "最後の左" }
            :: { len = 2, curve = 0.0, hill = 0.0, width = 100.0, rail = "none", note = "ゴール前の直線（スタート行へ繋がる）" }
-           :: Nil }
+           :: Nil })
 
     /// 行の数（コース 1 周の行数）。前進距離を行に写すときの割り算の分母。
     pub def rowCount(doc: Doc): Int32 =
-        doc#sections |> List.foldLeft((acc, s) -> acc + lenOf(s), 0)
+        rec(doc)#sections |> List.foldLeft((acc, s) -> acc + lenOf(s), 0)
 
     /// 区間の行数（0 以下は 1 行にする — 幅ゼロの区間で表が止まらないように）。
     def lenOf(s: Section): Int32 =
@@ -105,7 +110,7 @@ mod CourseDoc {
     /// ここだけが「行 → 区間」を決める唯一の入口。
     pub def sectionAt(n: Int32, doc: Doc): { sec = Section, idx = Int32 } =
         if (rowCount(doc) <= 0) { sec = straight(), idx = 0 }
-        else walk(wrapRow(n, doc), doc#sections)
+        else walk(wrapRow(n, doc), rec(doc)#sections)
 
     def walk(k: Int32, secs: List[Section]): { sec = Section, idx = Int32 } =
         match secs {
@@ -143,9 +148,9 @@ mod CourseDoc {
         DocJson.decodeObject(fromRoot, text)
 
     def fromRoot(root: Map[String, Json]): Doc =
-        let d = defaults();
-        { version = JsonCodec.intOr("version", d#version, root),
-          sections = sectionsOr(d#sections, root) }
+        let d = rec(defaults());
+        Doc.Doc({ version = JsonCodec.intOr("version", d#version, root),
+          sections = sectionsOr(d#sections, root) })
 
     /// sections（区間の一覧）を読む。配列でない・空のときは既定のコースを使う。
     /// 欄が欠けた区間は、その欄だけ「直線 1 行」の値にする（区間ごと捨てない）。

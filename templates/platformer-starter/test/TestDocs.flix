@@ -9,8 +9,8 @@ mod TestDocs {
     @Test
     def testMotionOverridesOneField(): Unit \ Assert =
         let d = MotionDoc.fromJson("{\"walkSpeed\": 210.5}")
-            |> Option.getWithDefault(MotionDoc.defaults());
-        Assert.assertEq(expected = (210.5, MotionDoc.defaults()#coyoteTime),
+            |> Option.getWithDefault(MotionDoc.defaults()) |> MotionDoc.rec;
+        Assert.assertEq(expected = (210.5, MotionDoc.rec(MotionDoc.defaults())#coyoteTime),
             (d#walkSpeed, d#coyoteTime))
 
     @Test
@@ -18,7 +18,7 @@ mod TestDocs {
         // 壊れた JSON でも組み込みの 1 面で必ず遊べる(fail-open)。
         Assert.assertEq(expected = (true, 1),
             (Option.isEmpty(StageDoc.fromJson("not json")),
-             List.length(StageDoc.defaults()#stages)))
+             List.length(StageDoc.rec(StageDoc.defaults())#stages)))
 
     @Test
     def testStagesCountFollowsJson(): Unit \ Assert =
@@ -26,7 +26,7 @@ mod TestDocs {
         let text = "{\"stages\": ["
             ++ "{\"name\": \"a\", \"kind\": \"outdoor\", \"rows\": [\"..\", \"##\"]},"
             ++ "{\"name\": \"b\", \"kind\": \"cave\", \"rows\": [\"..\"]}]}";
-        let d = StageDoc.fromJson(text) |> Option.getWithDefault(StageDoc.defaults());
+        let d = StageDoc.fromJson(text) |> Option.getWithDefault(StageDoc.defaults()) |> StageDoc.rec;
         let kinds = d#stages |> List.map(s -> s#kind);
         Assert.assertEq(expected = (2, "outdoor" :: "cave" :: Nil),
             (List.length(d#stages), kinds))
@@ -38,8 +38,8 @@ mod TestDocs {
     @Test
     def testRulesOverridesOneField(): Unit \ Assert =
         let d = RulesDoc.fromJson("{\"coinScore\": 7}")
-            |> Option.getWithDefault(RulesDoc.defaults());
-        Assert.assertEq(expected = (7, RulesDoc.defaults()#maxHearts),
+            |> Option.getWithDefault(RulesDoc.defaults()) |> RulesDoc.rec;
+        Assert.assertEq(expected = (7, RulesDoc.rec(RulesDoc.defaults())#maxHearts),
             (d#coinScore, d#maxHearts))
 
     @Test
@@ -49,15 +49,15 @@ mod TestDocs {
     @Test
     def testUiTextOverridesOneField(): Unit \ Assert =
         let d = UiText.fromJson("{\"clear\": \"YATTA\"}")
-            |> Option.getWithDefault(UiText.defaults());
-        Assert.assertEq(expected = ("YATTA", UiText.defaults()#gameOver),
+            |> Option.getWithDefault(UiText.defaults()) |> UiText.rec;
+        Assert.assertEq(expected = ("YATTA", UiText.rec(UiText.defaults())#gameOver),
             (d#clear, d#gameOver))
 
     @Test
     def testEnemyOverridesOneField(): Unit \ Assert =
         let d = EnemyDoc.fromJson("{\"shotCooldown\": 9.0}")
-            |> Option.getWithDefault(EnemyDoc.defaults());
-        Assert.assertEq(expected = (9.0, EnemyDoc.defaults()#walkSpeed),
+            |> Option.getWithDefault(EnemyDoc.defaults()) |> EnemyDoc.rec;
+        Assert.assertEq(expected = (9.0, EnemyDoc.rec(EnemyDoc.defaults())#walkSpeed),
             (d#shotCooldown, d#walkSpeed))
 
     @Test
@@ -109,7 +109,7 @@ mod TestDocs {
     def testKeysDropsUnknownNameOnly(): Unit \ Assert =
         // 書き間違い("Sinistra")はその 1 個だけ落ち、残りは書いた順で生きる。
         let d = KeysDoc.fromJson("{\"left\": [\"Left\", \"Sinistra\", \"A\"]}")
-            |> Option.getWithDefault(KeysDoc.defaults());
+            |> Option.getWithDefault(KeysDoc.defaults()) |> KeysDoc.rec;
         Assert.assertEq(expected = GameEngine.Key.Left :: GameEngine.Key.A :: Nil, d#left)
 
     @Test
@@ -117,8 +117,8 @@ mod TestDocs {
         // 全部知らない名前で操作が空になったら、その操作だけ既定へ落とす(操作不能を
         // 作らない)。書いた操作(dash)と触っていない操作(left)は影響を受けない。
         let d = KeysDoc.fromJson("{\"jump\": [\"Hop\"], \"dash\": [\"Q\"]}")
-            |> Option.getWithDefault(KeysDoc.defaults());
+            |> Option.getWithDefault(KeysDoc.defaults()) |> KeysDoc.rec;
         Assert.assertEq(
-            expected = (KeysDoc.defaults()#jump, GameEngine.Key.Q :: Nil, KeysDoc.defaults()#left),
+            expected = (KeysDoc.rec(KeysDoc.defaults())#jump, GameEngine.Key.Q :: Nil, KeysDoc.rec(KeysDoc.defaults())#left),
             (d#jump, d#dash, d#left))
 }

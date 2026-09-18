@@ -221,9 +221,9 @@ mod World {
           waterMaskRects = TownMap.waterMaskRects(docs#townMap),
           waterShader = docs#waterShader, smokeFx = docs#smokeFx,
           phase = Phase.Title, t = 0.0, npcClock = 0.0,
-          hero = docs#map#start, facing = Dir4.Down, stepGauge = 0.0, steps = 0,
-          herbs = docs#map#herbs, picked = 0, doorOpen = false,
-          heroHp = docs#battle#heroMaxHp, battle = noBattle(),
+          hero = MapDoc.rec(docs#map)#start, facing = Dir4.Down, stepGauge = 0.0, steps = 0,
+          herbs = MapDoc.rec(docs#map)#herbs, picked = 0, doorOpen = false,
+          heroHp = BattleDoc.rec(docs#battle)#heroMaxHp, battle = noBattle(),
           dialog = UiDialog.closed(), talkingTo = None, activeDocsWritten = "" }
 
     /// 戦っていないときの空の戦い（場が無い間の置き物）。
@@ -235,20 +235,20 @@ mod World {
     /// 薬草は全部戻り、扉は閉じ、体力は満タン、主人公は start のマスに立つ。[遷移: Title→Play]
     def begin(w: World): World =
         { phase = Phase.Play,
-          hero = w#map#start, facing = Dir4.Down, stepGauge = 0.0, steps = 0,
-          herbs = w#map#herbs, picked = 0, doorOpen = false,
-          heroHp = w#battleDoc#heroMaxHp, battle = noBattle(),
+          hero = MapDoc.rec(w#map)#start, facing = Dir4.Down, stepGauge = 0.0, steps = 0,
+          herbs = MapDoc.rec(w#map)#herbs, picked = 0, doorOpen = false,
+          heroHp = BattleDoc.rec(w#battleDoc)#heroMaxHp, battle = noBattle(),
           dialog = UiDialog.closed(), talkingTo = None | w }
 
     // ── 収支の導出 ──
 
     /// クリアに要る薬草の数。置いてある数より多くは求めない（詰みを作らない）。最低 1。
     pub def goalOf(w: World): Int32 =
-        Int32.max(1, Int32.min(w#map#goal, List.length(w#map#herbs)))
+        Int32.max(1, Int32.min(MapDoc.rec(w#map)#goal, List.length(MapDoc.rec(w#map)#herbs)))
 
     /// ともっている灯りの数（薬草を拾うたびひとつ点く。灯りの数より多くは点かない）。
     pub def lampsLit(w: World): Int32 =
-        Int32.min(w#picked, List.length(w#map#lamps))
+        Int32.min(w#picked, List.length(MapDoc.rec(w#map)#lamps))
 
     // ── 住人の巡回（Journey: 状態は npcClock だけ・位置は時刻の純関数） ──
 
@@ -320,8 +320,8 @@ mod World {
     pub def walkable(cell: Grid.Cell, w: World): Bool =
         Grid.inRectOf(cell, MapDoc.cols(w#map), MapDoc.rowCount(w#map))
             and not MapDoc.solidAt(cell, w#map)
-            and not List.exists(v -> MapDoc.sameCell(villagerCellAt(w, v), cell), w#map#villagers)
-            and not (MapDoc.sameCell(cell, w#map#door#cell) and not w#doorOpen)
+            and not List.exists(v -> MapDoc.sameCell(villagerCellAt(w, v), cell), MapDoc.rec(w#map)#villagers)
+            and not (MapDoc.sameCell(cell, MapDoc.rec(w#map)#door#cell) and not w#doorOpen)
 
     /// 1 歩の規則: まず向きを変え、行き先に歩ければ進み、薬草があれば拾う。
     /// 歩けなければ向きだけ変わる（壁の前で足踏みしない）。
@@ -351,7 +351,7 @@ mod World {
         let ticked = { t = w#t + dt | w };
         match ticked#phase {
             case Phase.Play => {
-                let talked = { dialog = UiDialog.step(cps = w#kind#cps, dt, ticked#dialog) | ticked };
+                let talked = { dialog = UiDialog.step(cps = KindDoc.rec(w#kind)#cps, dt, ticked#dialog) | ticked };
                 if (UiDialog.isOpen(talked#dialog))
                     // 会話中は住人の巡回も止める — 話し相手が歩き去ると、
                     // ふきだしの根本が誰も居ないマスを指すため。
@@ -381,7 +381,7 @@ mod World {
 
     /// 1 歩にかける秒数（walk マス/秒の逆数。1 未満の walk は 1 マス/秒にする）。
     def stepInterval(w: World): Float64 =
-        1.0 / Float64.max(1.0, w#kind#walk)
+        1.0 / Float64.max(1.0, KindDoc.rec(w#kind)#walk)
 
     // ══════════════════════════════════════════════════════
     // 戦い（歩数で出会い、殴り合い、勝つか負けるか逃げる）
@@ -396,14 +396,15 @@ mod World {
 
     /// この歩数で魔物と出会うか。encounterSteps 歩ごとに 1 回。0 以下なら出会わない。
     pub def meetsFoeAt(steps: Int32, doc: BattleDoc.Doc): Bool =
-        doc#encounterSteps > 0 and steps > 0 and Int32.modulo(steps, doc#encounterSteps) == 0
+        let d = BattleDoc.rec(doc);
+        d#encounterSteps > 0 and steps > 0 and Int32.modulo(steps, d#encounterSteps) == 0
 
     /// 1 歩ぶん進んだあとの出会い判定。里を歩いている間だけ。[遷移: Play→Battle]
     def meetFoe(w: World): World =
         if (w#phase == Phase.Play and meetsFoeAt(w#steps, w#battleDoc))
             { phase = Phase.Battle,
-              battle = { step = BattleStep.Report, cursor = 0, foeHp = w#battleDoc#foeMaxHp,
-                         lines = "${w#battleDoc#foeName} ${w#battleDoc#foeAppears}" :: Nil,
+              battle = { step = BattleStep.Report, cursor = 0, foeHp = BattleDoc.rec(w#battleDoc)#foeMaxHp,
+                         lines = "${BattleDoc.rec(w#battleDoc)#foeName} ${BattleDoc.rec(w#battleDoc)#foeAppears}" :: Nil,
                          foeHurt = false, outcome = None } | w }
         else w
 
@@ -434,7 +435,7 @@ mod World {
 
     /// 「たたかう」1 回分。こちらが殴り、倒せなければ相手が殴り返す。
     def strike(w: World): World =
-        let doc = w#battleDoc;
+        let doc = BattleDoc.rec(w#battleDoc);
         let foeHp = Int32.max(0, w#battle#foeHp - doc#heroAttack);
         let hitLine = "${doc#foeName} に ${Int32.toString(doc#heroAttack)} ${doc#damageSuffix}";
         if (foeHp <= 0)
@@ -457,7 +458,7 @@ mod World {
 
     /// 「にげる」1 回分。必ず逃げられる（starter は詰ませない — 難しさは Doc の数で足す）。
     def flee(w: World): World =
-        { battle = { step = BattleStep.Done, lines = w#battleDoc#heroFlees :: Nil,
+        { battle = { step = BattleStep.Done, lines = BattleDoc.rec(w#battleDoc)#heroFlees :: Nil,
                      foeHurt = false, outcome = Some(Outcome.Flee) | w#battle } | w }
 
     /// 決着して里へ戻る。倒れていたら入口へ戻って体力が満ちる（詰まない）。
@@ -466,7 +467,7 @@ mod World {
         let back = { phase = Phase.Play, battle = noBattle() | w };
         match w#battle#outcome {
             case Some(Outcome.Lose) =>
-                { hero = w#map#start, facing = Dir4.Down, heroHp = w#battleDoc#heroMaxHp | back }
+                { hero = MapDoc.rec(w#map)#start, facing = Dir4.Down, heroHp = BattleDoc.rec(w#battleDoc)#heroMaxHp | back }
             case _ => back
         }
 
@@ -492,7 +493,7 @@ mod World {
 
     /// 目の前のマスに住人がいれば話しかける。いなければ何も起きない。
     def talk(cell: Grid.Cell, w: World): World =
-        match List.find(v -> MapDoc.sameCell(villagerCellAt(w, v), cell), w#map#villagers) {
+        match List.find(v -> MapDoc.sameCell(villagerCellAt(w, v), cell), MapDoc.rec(w#map)#villagers) {
             case None           => w
             case Some(villager) => speak(villager, w)
         }
@@ -501,7 +502,7 @@ mod World {
     /// 扉が閉じている間: 薬草が足りなければ頼まれごと（ask）、足りていれば扉が開いて opened。
     /// それ以外（扉が開いた後も）はその住人のいつもの 1 行。
     def speak(villager: MapDoc.Villager, w: World): World =
-        let door = w#map#door;
+        let door = MapDoc.rec(w#map)#door;
         let isPromise = villager#id == door#promise and not w#doorOpen;
         let fulfilled = isPromise and w#picked >= door#need;
         let line = if (fulfilled) door#opened
@@ -527,7 +528,7 @@ mod World {
 
     /// 戦いの数値・文言の差し替え。体力の上限が動くので、いまの体力もそこへ収める。
     pub def withBattleDoc(doc: BattleDoc.Doc, w: World): World =
-        { battleDoc = doc, heroHp = Int32.min(w#heroHp, doc#heroMaxHp) | w }
+        { battleDoc = doc, heroHp = Int32.min(w#heroHp, BattleDoc.rec(doc)#heroMaxHp) | w }
 
     /// 色票の差し替え。アトラスは色票から実色を組み込んでいるので、2 枚とも作り直す
     /// （作り直さないと、タイルや人だけ古い色のまま画面に残る）。

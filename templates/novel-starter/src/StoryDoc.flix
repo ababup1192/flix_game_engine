@@ -21,7 +21,7 @@ mod StoryDoc {
 
     /// 台本全体。title / subtitle / hint = 表紙の文言（事件の名前・一行・はじめ方のヒント）、
     /// start = 最初に読む節の id、lamps = 館の灯りの数（疑うたびに 1 つ消える）。
-    pub type alias Doc = {
+    pub type alias Rec = {
         version = Int32,
         title = String,
         subtitle = String,
@@ -31,38 +31,43 @@ mod StoryDoc {
         sections = List[Section]
     }
 
+    /// 型検査が record を展開しないため、World が持つ Doc は 1 case の enum で包む。
+    pub enum Doc(Rec)
+
+    pub def rec(d: Doc): Rec = match d { case Doc.Doc(r) => r }
+
     pub def path(): String = "assets/novel.story.json"
 
     /// コード側の既定値。台本が読めなくても「直し方を語る 1 節」でゲームは必ず起動する。
     pub def defaults(): Doc =
-        { version = 1,
-          title = "消えた絵", subtitle = "雨の夜、洋館の書斎から一枚の絵が消えた",
-          hint = "クリックではじめる",
-          start = "start", lamps = 3,
-          sections =
-              { id = "start",
-                beats = { speaker = "", text = "（台本が読めない。assets/novel.story.json を直すと、ここに物語が流れる）" } :: Nil,
-                ask = None, next = "" } :: Nil }
+        Doc.Doc({ version = 1,
+                  title = "消えた絵", subtitle = "雨の夜、洋館の書斎から一枚の絵が消えた",
+                  hint = "クリックではじめる",
+                  start = "start", lamps = 3,
+                  sections =
+                      { id = "start",
+                        beats = { speaker = "", text = "（台本が読めない。assets/novel.story.json を直すと、ここに物語が流れる）" } :: Nil,
+                        ask = None, next = "" } :: Nil })
 
     /// id の節を引く（無ければ None）。
     pub def sectionOf(id: String, doc: Doc): Option[Section] =
-        List.find(section -> section#id == id, doc#sections)
+        List.find(section -> section#id == id, rec(doc)#sections)
 
     /// テキストから Doc へ（fail-open）。JSON でない・形が違うフィールドは既定へ落とす。
     pub def fromJson(text: String): Option[Doc] =
         DocJson.decodeObject(fromRoot, text)
 
     def fromRoot(root: Map[String, Json]): Doc =
-        let d = defaults();
-        { version = JsonCodec.intOr("version", d#version, root),
-          title = JsonCodec.stringOr("title", d#title, root),
-          subtitle = JsonCodec.stringOr("subtitle", d#subtitle, root),
-          hint = JsonCodec.stringOr("hint", d#hint, root),
-          start = JsonCodec.stringOr("start", d#start, root),
-          lamps = JsonCodec.intOr("lamps", d#lamps, root),
-          sections = Map.get("sections", root)
-              |> Option.flatMap(JsonCodec.decodeList(sectionFromJson))
-              |> Option.getWithDefault(d#sections) }
+        let d = rec(defaults());
+        Doc.Doc({ version = JsonCodec.intOr("version", d#version, root),
+                  title = JsonCodec.stringOr("title", d#title, root),
+                  subtitle = JsonCodec.stringOr("subtitle", d#subtitle, root),
+                  hint = JsonCodec.stringOr("hint", d#hint, root),
+                  start = JsonCodec.stringOr("start", d#start, root),
+                  lamps = JsonCodec.intOr("lamps", d#lamps, root),
+                  sections = Map.get("sections", root)
+                      |> Option.flatMap(JsonCodec.decodeList(sectionFromJson))
+                      |> Option.getWithDefault(d#sections) })
 
     /// 節 1 行。欠けたフィールドは行の中で既定へ落とす（行がオブジェクトでない台本は
     /// decodeList が全体を None にし、defaults の台本へ落ちる）。

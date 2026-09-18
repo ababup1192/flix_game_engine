@@ -4,16 +4,22 @@ mod TestRules {
 
     def m(): MotionDoc.Doc = MotionDoc.defaults()
 
+    def mr(): MotionDoc.Rec = MotionDoc.rec(m())
+
     def r(): RulesDoc.Doc = RulesDoc.defaults()
 
+    def rr(): RulesDoc.Rec = RulesDoc.rec(r())
+
     def ed(): EnemyDoc.Doc = EnemyDoc.defaults()
+
+    def edr(): EnemyDoc.Rec = EnemyDoc.rec(ed())
 
     /// 平地に 1 行だけ置く定型の面。空 4 行 + その行 + 床 — 意味のある行だけ書く。
     def flat(row: String): List[String] =
         "........" :: "........" :: "........" :: "........" :: row :: "########" :: Nil
 
     def doc(rows: List[String]): StageDoc.Doc =
-        { version = 1, stages = { name = "t", kind = "outdoor", rows = rows } :: Nil }
+        StageDoc.Doc.Doc({ version = 1, stages = { name = "t", kind = "outdoor", rows = rows } :: Nil })
 
     def world(rows: List[String]): World.World =
         World.initial(m(), KeysDoc.defaults(), r(), EnemyDoc.defaults(), doc(rows), Theme.defaults(),
@@ -51,7 +57,7 @@ mod TestRules {
             :: "..P....."
             :: "########" :: Nil);
         let w1 = World.step(idle(), dt(), w);
-        Assert.assertEq(expected = (r()#coinScore, 1), (w1#score, Set.size(w1#got)))
+        Assert.assertEq(expected = (rr()#coinScore, 1), (w1#score, Set.size(w1#got)))
 
     @Test
     def testCoinCollectsOnlyOnce(): Unit \ Assert =
@@ -63,7 +69,7 @@ mod TestRules {
             :: "..P....."
             :: "########" :: Nil);
         let w1 = stepN(30, idle(), w);
-        Assert.assertEq(expected = r()#coinScore, w1#score)
+        Assert.assertEq(expected = rr()#coinScore, w1#score)
 
     @Test
     def testSpringLaunchesHigherThanJump(): Unit \ Assert =
@@ -71,10 +77,10 @@ mod TestRules {
         let w = world(flat("..P.S..."));
         let startY = w#player#body#pos#y;
         let flew = stepUntil(240, x ->
-            startY - x#player#body#pos#y > (m()#jumpHeightTiles + 1.0) * Physics.tileSize(),
+            startY - x#player#body#pos#y > (mr()#jumpHeightTiles + 1.0) * Physics.tileSize(),
             walkR(), w);
         Assert.assertEq(expected = true,
-            startY - flew#player#body#pos#y > (m()#jumpHeightTiles + 1.0) * Physics.tileSize())
+            startY - flew#player#body#pos#y > (mr()#jumpHeightTiles + 1.0) * Physics.tileSize())
 
     @Test
     def testStompKillsAndBounces(): Unit \ Assert =
@@ -82,8 +88,8 @@ mod TestRules {
         let w = world(flat("..P..a.."));
         let w1 = World.step(idle(), dt(), { player = stompingFrom(w) | w });
         Assert.assertEq(
-            expected = (0, r()#stompScore, m()#hitstopSec,
-                        Physics.launchVelocity(m(), m()#stompBounceTiles)),
+            expected = (0, rr()#stompScore, mr()#hitstopSec,
+                        Physics.launchVelocity(m(), mr()#stompBounceTiles)),
             (List.length(w1#enemies), w1#score, w1#freeze, w1#player#body#vel#y))
 
     /// 1 体目の敵の真上から踏みに降りている主役。
@@ -99,8 +105,8 @@ mod TestRules {
     def testSideTouchHurts(): Unit \ Assert =
         // 横から触れる: ハート -1・無敵 = Doc の invulnSec。
         let w = world(flat("..P.a..."));
-        let hurtW = stepUntil(240, x -> x#hearts < r()#maxHearts, walkR(), w);
-        Assert.assertEq(expected = (r()#maxHearts - 1, m()#invulnSec),
+        let hurtW = stepUntil(240, x -> x#hearts < rr()#maxHearts, walkR(), w);
+        Assert.assertEq(expected = (rr()#maxHearts - 1, mr()#invulnSec),
             (hurtW#hearts, hurtW#invuln))
 
     @Test
@@ -110,8 +116,8 @@ mod TestRules {
             |> Option.getWithDefault({ x = 0.0, y = 0.0 });
         let w = world(flat("..P..b.."));
         let p0 = posOf(w);
-        let p1 = posOf(stepN(ticksFor(ed()#flyPeriod / 4.0), idle(), w));
-        let amp = ed()#flyAmpTiles * Physics.tileSize();
+        let p1 = posOf(stepN(ticksFor(edr()#flyPeriod / 4.0), idle(), w));
+        let amp = edr()#flyAmpTiles * Physics.tileSize();
         // 頂点の手前で止まるぶんの丸めだけ許す(1 tick ぶん = 2px 未満)。
         Assert.assertEq(expected = (p0#x, true),
             (p1#x, Float64.abs((p1#y - p0#y) - amp) < 2.0))
@@ -134,8 +140,8 @@ mod TestRules {
             :: "........"
             :: "........"
             :: "##.#####" :: Nil);
-        let back = stepUntil(600, x -> x#hearts < r()#maxHearts, idle(), w);
-        Assert.assertEq(expected = (r()#maxHearts - 1, true),
+        let back = stepUntil(600, x -> x#hearts < rr()#maxHearts, idle(), w);
+        Assert.assertEq(expected = (rr()#maxHearts - 1, true),
             (back#hearts, back#player#body#pos#y < 60.0))
 
     @Test
@@ -151,11 +157,11 @@ mod TestRules {
         let onCp = stepUntil(240, x -> not Set.isEmpty(x#cpOn), walkR(), w);
         let moved = onCp#checkpoint#x > w#checkpoint#x;
         // 減っていたハートは 1 つ返る(上限は maxHearts)。
-        let hurt = { hearts = r()#maxHearts - 2 | w };
+        let hurt = { hearts = rr()#maxHearts - 2 | w };
         let healed = stepUntil(240, x -> not Set.isEmpty(x#cpOn), walkR(), hurt);
-        Assert.assertEq(expected = r()#maxHearts - 1, healed#hearts);
+        Assert.assertEq(expected = rr()#maxHearts - 1, healed#hearts);
         // そのまま穴へ落ちる → 差し替わった戻り先(最初より右)から再開。
-        let back = stepUntil(600, x -> x#hearts < r()#maxHearts, walkR(), onCp);
+        let back = stepUntil(600, x -> x#hearts < rr()#maxHearts, walkR(), onCp);
         Assert.assertEq(expected = (true, true),
             (moved, back#player#body#pos#x > w#checkpoint#x))
 
@@ -172,28 +178,28 @@ mod TestRules {
         let cleared = stepUntil(240, x -> x#phase == "clear", walkR(), w);
         let advanced = stepN(120, idle(), cleared);
         Assert.assertEq(expected = ("clear", true, "play"),
-            (cleared#phase, cleared#score >= r()#goalScore, advanced#phase))
+            (cleared#phase, cleared#score >= rr()#goalScore, advanced#phase))
 
     @Test
     def testGameOverRestartsFromFirstStage(): Unit \ Assert =
         // 残機が尽きる → over の幕を overWaitSec だけ見せ、そのあと点も残機も
         // まっさらにして 1 面目から。「2 面目で力尽きたのに 2 面目から再開」を捕まえる。
-        let two: StageDoc.Doc = { version = 1,
+        let two: StageDoc.Doc = StageDoc.Doc.Doc({ version = 1,
             stages = { name = "one", kind = "outdoor", rows = "..P....." :: "########" :: Nil }
                   :: { name = "two", kind = "outdoor", rows = "..P....." :: "##.#####" :: Nil }
-                  :: Nil };
+                  :: Nil });
         let w0 = World.initial(m(), KeysDoc.defaults(), r(), EnemyDoc.defaults(), two, Theme.defaults(),
                                UiText.defaults(), PxSpriteDoc.empty());
         // 2 面目・残機 1・点あり の状態から穴へ落ちる。
         let onTwo = { score = 1234, hearts = 1 | World.loadStage(1, w0) };
         let over = stepUntil(600, x -> x#phase == "over", idle(), onTwo);
         // 幕が明ける直前はまだ over、明けたら 1 面目の play。
-        let early = stepN(ticksFor(r()#overWaitSec) - 2, idle(), over);
+        let early = stepN(ticksFor(rr()#overWaitSec) - 2, idle(), over);
         let again = stepN(4, idle(), early);
         Assert.assertEq(
-            expected = ("over", "over", "play", 0, r()#maxHearts, 0, "one"),
+            expected = ("over", "over", "play", 0, rr()#maxHearts, 0, "one"),
             (over#phase, early#phase, again#phase,
-             again#score, again#hearts, again#stageIx, again#stage#name))
+             again#score, again#hearts, again#stageIx, Stage.rec(again#stage)#name))
 
     @Test
     def testPlatformCarriesRider(): Unit \ Assert =
@@ -205,7 +211,7 @@ mod TestRules {
             :: "..~~...."
             :: "........"
             :: "########" :: Nil);
-        let p = List.head(w#stage#platforms)
+        let p = List.head(Stage.rec(w#stage)#platforms)
             |> Option.getWithDefault({ cell = { x = 2, y = 3 }, wTiles = 2 });
         let t1 = w#t + dt();
         let deck = World.platformPosAt(m(), p, t1);
@@ -226,8 +232,8 @@ mod TestRules {
         // 期待値は Doc から導く: 硬い区間の内 / 外 / 次の周期の内。
         Assert.assertEq(expected = (true, false, true),
             (World.blinkOn(m(), 0.1, 0, 0),
-             World.blinkOn(m(), m()#blinkOnSec + 0.1, 0, 0),
-             World.blinkOn(m(), m()#blinkPeriod + 0.1, 0, 0)))
+             World.blinkOn(m(), mr()#blinkOnSec + 0.1, 0, 0),
+             World.blinkOn(m(), mr()#blinkPeriod + 0.1, 0, 0)))
 
     @Test
     def testHitstopFreezesWorld(): Unit \ Assert =
@@ -243,7 +249,7 @@ mod TestRules {
         // カメラの行き先が変わることを固定する — 「JSON にノブはあるが誰も
         // 読んでいない」を捕まえるのがこのテストの仕事(壁ジャンプで一度踏んだ)。
         let w = world(flat("..P....."));
-        let still: MotionDoc.Doc = { camLeadPx = 0.0 | m() };
+        let still: MotionDoc.Doc = MotionDoc.Doc.Doc({ camLeadPx = 0.0 | mr() });
         let far = stepN(60, walkR(), w);
         let near = stepN(60, walkR(), { motion = still | w });
         Assert.assertEq(expected = true, far#cam#x > near#cam#x)

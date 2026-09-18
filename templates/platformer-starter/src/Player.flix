@@ -29,8 +29,9 @@ mod Player {
 
     /// 1 tick 進める。地形 t は呼び手(World)が組む — 消える床も動く床の乗り心地も
     /// ここからは同じ「地形」に見える。
-    pub def step(t: Physics.Terrain, m: MotionDoc.Doc, dt: Float64,
+    pub def step(t: Physics.Terrain, md: MotionDoc.Doc, dt: Float64,
                  input: Input, p: State): State =
+        let m = MotionDoc.rec(md);
         let buffer = if (input#jumpPressed) m#jumpBufferTime
                      else Float64.max(0.0, p#buffer - dt);
         let coyote = if (p#body#onGround) m#coyoteTime
@@ -42,14 +43,14 @@ mod Player {
                      and input#dir * p#wall > 0.0;
         let (vy0, buffer1, coyote1, jumping1) =
             if (buffer > 0.0 and (canJump or onWall))
-                (Physics.jumpVelocity(m), 0.0, 0.0, true)
+                (Physics.jumpVelocity(md), 0.0, 0.0, true)
             else (p#body#vel#y, buffer, coyote, p#jumping);
         let kick = if (buffer > 0.0 and onWall and not canJump)
-                   Some(-p#wall * Physics.topSpeed(m, input#dash)) else None;
+                   Some(-p#wall * Physics.topSpeed(md, input#dash)) else None;
         // 可変ジャンプ: 上昇中に離したら 1 回だけ削る。
         let (vy1, jumping2) =
             if (jumping1 and not input#jumpHeld and vy0 < 0.0)
-                (vy0 * Physics.cutFactor(m), false)
+                (vy0 * Physics.cutFactor(md), false)
             else if (vy0 >= 0.0) (vy0, false)
             else (vy0, jumping1);
         let vx0 = Option.getWithDefault(p#body#vel#x, kick);
@@ -57,7 +58,7 @@ mod Player {
         // 壁を蹴った tick は入力方向を無視する — 壁へ押しっぱなしのまま
         // 蹴っても離れられるように(これが無いと壁に貼り付いて落ちるだけになる)。
         let moveDir = if (Option.isEmpty(kick)) input#dir else -p#wall;
-        let stepped = Physics.stepBody(t, m, dt, moveDir, input#drop, input#dash, body0);
+        let stepped = Physics.stepBody(t, md, dt, moveDir, input#drop, input#dash, body0);
         { body = stepped#body,
           coyote = coyote1,
           buffer = buffer1,

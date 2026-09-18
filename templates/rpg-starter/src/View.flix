@@ -86,7 +86,7 @@ mod View {
                 // 空の面は出さない — 地面のタイル層が画面全体を覆う（bounds が虚空を映さない）。
                 // hud に空の矩形を置くと、常に奥へ敷かれるタイル層より手前に来て地面を塗り潰す。
                 List.flatten(
-                       fogStrips(w#theme)
+                       fogStrips(ThemeDoc.rec(w#theme))
                     // 薄い昼下がりの空気（乗算 1 枚）。幕・文字（z 210..）は染めない。
                     :: Daylight.overlay({ keys = Daylight.defaults(),
                            at = { x = 0.0, y = 0.0 },
@@ -181,7 +181,7 @@ mod View {
     /// 開閉はコマの差し替え（gate_closed / gate_open）— ルールは World の doorOpen のまま。
     def door(w: World.World): List[Render.PlacedItem] =
         let t = World.tileSize();
-        let at = cellTopLeft(w, w#map#door#cell);
+        let at = cellTopLeft(w, MapDoc.rec(w#map)#door#cell);
         let bottom = at#y + t;
         let name = if (w#doorOpen) "gate_open" else "gate_closed";
         let size = PxSprite.sizeOf(w#townSprites, name, "idle", 1)
@@ -266,7 +266,7 @@ mod View {
                                        { x = 0.0, y = 0.0 }
                                     :: { x = 7.0 + swayX, y = 1.5 + swayY }
                                     :: { x = 0.0, y = 4.0 }
-                                    :: Nil, w#theme#accent, 3) };
+                                    :: Nil, ThemeDoc.rec(w#theme)#accent, 3) };
                 Depth.place(depthRange(w), southY, pole :: pennant :: Nil)
         }
 
@@ -279,7 +279,7 @@ mod View {
     /// 灯り。薬草を拾った数だけ、並び順に点いていく（夕暮れの里に灯がともる）。
     def lamps(w: World.World): List[Render.PlacedItem] =
         let lit = World.lampsLit(w);
-        w#map#lamps |> List.zipWithIndex |> List.flatMap(entry -> {
+        MapDoc.rec(w#map)#lamps |> List.zipWithIndex |> List.flatMap(entry -> {
             let (i, cell) = entry;
             lamp(w, cell, i < lit)
         })
@@ -296,15 +296,15 @@ mod View {
         let lantern = { x = center#x + 3.0, y = bottom - 14.0 };
         let glow = if (litNow)
             List.append(
-                Render.glowAt(lantern, 30.0, w#theme#accent,
+                Render.glowAt(lantern, 30.0, ThemeDoc.rec(w#theme)#accent,
                     { alpha = 0.40, blend = DrawCmd.BlendMode.Add }, 1),
-                Render.glowAt(lantern, 12.0, w#theme#accent,
+                Render.glowAt(lantern, 12.0, ThemeDoc.rec(w#theme)#accent,
                     { alpha = 0.55, blend = DrawCmd.BlendMode.Add }, 2))
         else Nil;
         Depth.place(depthRange(w), bottom, List.append(quad, glow))
 
     def villagers(w: World.World): List[Render.PlacedItem] =
-        w#map#villagers |> List.flatMap(villager -> {
+        MapDoc.rec(w#map)#villagers |> List.flatMap(villager -> {
             // 位置は巡回の見本（World.villagerSampleAt）から。絵の位置と
             // 歩ける・話せるの判定（villagerCellAt）が同じ見本を読むのでずれない。
             let smp = World.villagerSampleAt(w, villager);
@@ -317,14 +317,14 @@ mod View {
             let frameName = if (talking) "talk" else if (stepping) "walk" else "idle";
             Depth.place(depthRange(w), smp#pos#y + World.tileSize() / 2.0,
                 spriteAt(w, { name = "villager", frame = frameName, center = smp#pos,
-                              flipX = false, scale = px(), z = 0, fallback = w#theme#cloth }))
+                              flipX = false, scale = px(), z = 0, fallback = ThemeDoc.rec(w#theme)#cloth }))
         })
 
     /// 主人公。向きごとに絵を持ち、歩数の偶奇で足を入れ替える。
     /// 左向きは右向きの絵の左右反転で済ませる（絵を増やさない）。
     def hero(w: World.World): List[Render.PlacedItem] =
         let (frameName, flipX) = heroFrame(w);
-        placeAtFeet(w, w#hero, sprite(w, "hero", frameName, w#hero, flipX, 0, w#theme#accent))
+        placeAtFeet(w, w#hero, sprite(w, "hero", frameName, w#hero, flipX, 0, ThemeDoc.rec(w#theme)#accent))
 
     /// マスに立つ 1 体を前後の深度の範囲へ載せる（足元 = マスの下端）。
     def placeAtFeet(w: World.World, cell: Grid.Cell, items: List[Render.PlacedItem]): List[Render.PlacedItem] =
@@ -372,7 +372,7 @@ mod View {
 
     // ── 霧（決定的なばらつきで横に流れるストリップ。保存も乱数の種も持たない） ──
 
-    def fogStrips(theme: ThemeDoc.Doc): List[Render.PlacedItem] =
+    def fogStrips(theme: ThemeDoc.Rec): List[Render.PlacedItem] =
         List.range(0, 5) |> List.map(i ->
             { at = { x = 0.0, y = Hash01.at(i, 11) * (World.height() - 40.0) },
               item = RawDraw.box({ x = World.width(), y = 30.0 + Hash01.at(i, 12) * 34.0 },
@@ -396,10 +396,10 @@ mod View {
         let fullSpans = UiDialog.currentLine(w#dialog)
             |> Option.map(line -> line#body) |> Option.getWithDefault(Nil);
         // 文字の大きさ・行間・余白・最大幅は手触り（rpg.kind.json）から来る。
-        let fontSize = w#kind#bubbleSize;
-        let lineGap = w#kind#bubbleGap;
-        let pad = w#kind#bubblePad;
-        let maxTextW = w#kind#bubbleWidth;
+        let fontSize = KindDoc.rec(w#kind)#bubbleSize;
+        let lineGap = KindDoc.rec(w#kind)#bubbleGap;
+        let pad = KindDoc.rec(w#kind)#bubblePad;
+        let maxTextW = KindDoc.rec(w#kind)#bubbleWidth;
         // 枠の寸法は「全文」で測る — 文字送りの途中で枠がガタつかない。
         let lineCount = RichText.wrapLinesBy(
             ch -> TextDraw.width(Char.toString(ch), atlas, fontSize),
@@ -419,10 +419,10 @@ mod View {
             speakerCenter#y - World.tileSize() / 2.0 - boxH - 8.0);
         List.flatten(
                ({ at = { x = boxX, y = boxY },
-                  item = RawDraw.box({ x = boxW, y = boxH }, w#theme#paper, zBubble()) } :: Nil)
-            :: tail(speakerCenter, boxY + boxH, w#theme#paper)
+                  item = RawDraw.box({ x = boxW, y = boxH }, ThemeDoc.rec(w#theme)#paper, zBubble()) } :: Nil)
+            :: tail(speakerCenter, boxY + boxH, ThemeDoc.rec(w#theme)#paper)
             :: RichText.place(
-                   { atlas = atlas, size = fontSize, baseTint = w#theme#ink,
+                   { atlas = atlas, size = fontSize, baseTint = ThemeDoc.rec(w#theme)#ink,
                      z = zBubble() + 2, pos = { x = boxX + pad, y = boxY + pad },
                      maxWidth = maxTextW, lineGap = lineGap }, spans)
             :: Nil)
@@ -448,23 +448,23 @@ mod View {
             case World.Phase.Play   => Nil
             case World.Phase.Battle => Nil        // 戦いの画面は overlay を通らない
             case World.Phase.Title  =>
-                List.append(veil(w#theme, w#theme#titleVeil), banner(atlas, w#theme,
-                    { head = w#map#title, headSize = 26.0,
-                      body = w#map#subtitle, hint = w#map#hint }))
+                List.append(veil(ThemeDoc.rec(w#theme), ThemeDoc.rec(w#theme)#titleVeil), banner(atlas, ThemeDoc.rec(w#theme),
+                    { head = MapDoc.rec(w#map)#title, headSize = 26.0,
+                      body = MapDoc.rec(w#map)#subtitle, hint = MapDoc.rec(w#map)#hint }))
             case World.Phase.Clear  =>
-                List.append(veil(w#theme, w#theme#clearVeil), banner(atlas, w#theme,
-                    { head = w#map#title, headSize = 16.0,
-                      body = w#map#clear, hint = w#map#clearHint }))
+                List.append(veil(ThemeDoc.rec(w#theme), ThemeDoc.rec(w#theme)#clearVeil), banner(atlas, ThemeDoc.rec(w#theme),
+                    { head = MapDoc.rec(w#map)#title, headSize = 16.0,
+                      body = MapDoc.rec(w#map)#clear, hint = MapDoc.rec(w#map)#clearHint }))
         }
 
-    def veil(theme: ThemeDoc.Doc, alpha: Float64): List[Render.PlacedItem] =
+    def veil(theme: ThemeDoc.Rec, alpha: Float64): List[Render.PlacedItem] =
         { at = { x = 0.0, y = 0.0 },
           item = RawDraw.box({ x = World.width(), y = World.height() },
                             ThemeDoc.darken(theme#sky, 0.5), zVeil())
               |> Render.fade(alpha) } :: Nil
 
     /// 見出し・一行・操作ヒントを画面の真ん中に積む。
-    def banner(atlas: FontAtlas, theme: ThemeDoc.Doc,
+    def banner(atlas: FontAtlas, theme: ThemeDoc.Rec,
                opts: { head = String, headSize = Float64, body = String, hint = String }): List[Render.PlacedItem] =
            TextDraw.centered({ text = opts#head, atlas = atlas, size = opts#headSize,
                                color = theme#paper, z = zOverlayText(),
@@ -486,14 +486,14 @@ mod View {
 
     def battleWorld(w: World.World): List[Render.PlacedItem] =
         List.flatten(
-               battleSky(w#theme)
-            :: battleMist(w#theme)
-            :: battleGround(w#theme)
+               battleSky(ThemeDoc.rec(w#theme))
+            :: battleMist(ThemeDoc.rec(w#theme))
+            :: battleGround(ThemeDoc.rec(w#theme))
             :: foe(w)
             :: Nil)
 
     /// 夜空。上ほど暗く、下ほど地面の色に近づく縦のグラデ（1px の色帯は積まない）。
-    def battleSky(theme: ThemeDoc.Doc): List[Render.PlacedItem] =
+    def battleSky(theme: ThemeDoc.Rec): List[Render.PlacedItem] =
         { at = { x = 0.0, y = 0.0 },
           item = Render.vgrad({ x = World.width(), y = World.height() },
               { top = ThemeDoc.darken(theme#sky, 0.45),
@@ -502,7 +502,7 @@ mod View {
     /// 遠くにかかる霧。濃さが縦に変わる面を数枚重ねる。里の霧（fogStrips）は四角い面で
     /// よいが、こちらは下地がなめらかなグラデなので、縁が立つと面の四角が見えてしまう —
     /// 上下で薄れる頂点色つきの面にして、境目を消す。
-    def battleMist(theme: ThemeDoc.Doc): List[Render.PlacedItem] =
+    def battleMist(theme: ThemeDoc.Rec): List[Render.PlacedItem] =
         List.range(0, 3) |> List.map(i -> {
             let top = 48.0 + Hash01.at(i, 21) * 72.0;
             let height = 20.0 + Hash01.at(i, 22) * 24.0;
@@ -526,7 +526,7 @@ mod View {
 
     /// 魔物の立っている地面。上端は透けさせて空へなじませ、手前ほど明るくする
     /// （硬い横線が 1 本入ると、そこで絵が 2 枚に割れて見えるため）。
-    def battleGround(theme: ThemeDoc.Doc): List[Render.PlacedItem] =
+    def battleGround(theme: ThemeDoc.Rec): List[Render.PlacedItem] =
         let top = 94.0;
         let near = ThemeDoc.darken(theme#path, 0.25);
         let far = ThemeDoc.darken(theme#path, 0.6);
@@ -552,7 +552,7 @@ mod View {
         let lift = (bob + 4.0) / 8.0;
         let shadow = RawDraw.ellipseAt({ x = center#x, y = groundY + 3.0 },
             { x = 40.0 - lift * 5.0, y = 10.0 - lift * 2.0 },
-            ThemeDoc.darken(w#theme#sky, 0.55), zFoeShadow())
+            ThemeDoc.darken(ThemeDoc.rec(w#theme)#sky, 0.55), zFoeShadow())
             |> (placed -> { item = Render.fade(0.7, placed#item) | placed });
         let frameName = if (w#battle#foeHurt) "hit" else "idle";
         shadow :: spriteAt(w, { name = "foe", frame = frameName, center = center,
@@ -563,7 +563,7 @@ mod View {
 
     /// ウィンドウ 1 枚。紙色の縁を敷き、その内側を濃い地で塗る。中身は呼び側が上に置く。
     /// 角丸や影を足さないのは、この画風のウィンドウが「紙を切って貼った物」だから。
-    def window(rect: Rect2.Rect2, theme: ThemeDoc.Doc): List[Render.PlacedItem] =
+    def window(rect: Rect2.Rect2, theme: ThemeDoc.Rec): List[Render.PlacedItem] =
         let inset = 2.0;
            { at = rect#position, item = RawDraw.box(rect#size, theme#paper, zWindow()) }
         :: { at = { x = rect#position#x + inset, y = rect#position#y + inset },
@@ -578,17 +578,17 @@ mod View {
     /// 体力のウィンドウ（左上）。数だけでなく残りをバーでも出す — 数を読まなくても危なさが判る。
     def statusWindow(atlas: FontAtlas, w: World.World): List[Render.PlacedItem] =
         let rect = { position = { x = 16.0, y = 14.0 }, size = { x = 132.0, y = 44.0 } };
-        let maxHp = Int32.max(1, w#battleDoc#heroMaxHp);
+        let maxHp = Int32.max(1, BattleDoc.rec(w#battleDoc)#heroMaxHp);
         let ratio = Num.clamp01(Int32.toFloat64(w#heroHp) / Int32.toFloat64(maxHp));
         let barW = 100.0;
         // 減るほど灯りの色から離れて危うい色へ寄る（色でも残りが読める）。
-        let barColor = Color.mix(w#theme#cloth, w#theme#accent, ratio);
-        List.append(window(rect, w#theme),
+        let barColor = Color.mix(ThemeDoc.rec(w#theme)#cloth, ThemeDoc.rec(w#theme)#accent, ratio);
+        List.append(window(rect, ThemeDoc.rec(w#theme)),
                windowLine(atlas, "HP ${Int32.toString(w#heroHp)}/${Int32.toString(maxHp)}",
-                   { x = 26.0, y = 22.0 }, w#theme#paper)
+                   { x = 26.0, y = 22.0 }, ThemeDoc.rec(w#theme)#paper)
             :: { at = { x = 26.0, y = 40.0 },
                  item = RawDraw.box({ x = barW, y = 6.0 },
-                     ThemeDoc.darken(w#theme#paper, 0.75), zWindowText()) }
+                     ThemeDoc.darken(ThemeDoc.rec(w#theme)#paper, 0.75), zWindowText()) }
             :: { at = { x = 26.0, y = 40.0 },
                  item = RawDraw.box({ x = barW * ratio, y = 6.0 }, barColor, zWindowText() + 1) }
             :: Nil)
@@ -608,13 +608,13 @@ mod View {
                         { at = { x = 30.0, y = y + 7.0 },
                           item = RawDraw.polygon(
                               { x = 0.0, y = -5.0 } :: { x = 7.0, y = 0.0 } :: { x = 0.0, y = 5.0 } :: Nil,
-                              w#theme#accent, zWindowText() + 1)
+                              ThemeDoc.rec(w#theme)#accent, zWindowText() + 1)
                               |> Render.fade(blink) } :: Nil
                     else Nil;
                 windowLine(atlas, label, { x = 44.0, y = y },
-                    if (chosen) w#theme#paper else ThemeDoc.darken(w#theme#paper, 0.45)) :: mark
+                    if (chosen) ThemeDoc.rec(w#theme)#paper else ThemeDoc.darken(ThemeDoc.rec(w#theme)#paper, 0.45)) :: mark
             });
-            List.append(window(rect, w#theme), rows)
+            List.append(window(rect, ThemeDoc.rec(w#theme)), rows)
         }
 
     /// 文のウィンドウ（下）。いま読ませたい行を上から順に並べる。
@@ -631,7 +631,7 @@ mod View {
                 let (i, line) = entry;
                 windowLine(atlas, line, { x = rect#position#x + 14.0,
                                           y = top + 14.0 + Int32.toFloat64(i) * 20.0 },
-                    w#theme#paper)
+                    ThemeDoc.rec(w#theme)#paper)
             });
             // 読み終えて次へ進める合図（またたく小さな三角）。
             let blink = 0.5 + 0.5 * Sway.wave(w#t, 0.25, 1.4);
@@ -639,8 +639,8 @@ mod View {
                                 y = top + height - 12.0 },
                          item = RawDraw.polygon(
                              { x = -5.0, y = 0.0 } :: { x = 5.0, y = 0.0 } :: { x = 0.0, y = 6.0 } :: Nil,
-                             w#theme#accent, zWindowText() + 1)
+                             ThemeDoc.rec(w#theme)#accent, zWindowText() + 1)
                              |> Render.fade(blink) };
-            List.append(window(rect, w#theme), more :: rows)
+            List.append(window(rect, ThemeDoc.rec(w#theme)), more :: rows)
         }
 }

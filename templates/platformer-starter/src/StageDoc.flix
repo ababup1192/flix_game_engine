@@ -9,13 +9,18 @@ mod StageDoc {
     /// 1 面の宣言。kind は空気(空の色・照明・背後壁)を選ぶ: outdoor / cave / tower。
     pub type alias Spec = { name = String, kind = String, rows = List[String] }
 
-    pub type alias Doc = { version = Int32, stages = List[Spec] }
+    pub type alias Rec = { version = Int32, stages = List[Spec] }
+
+    /// 型検査が record を展開しないため、World が持つ形は名前付きの enum にする。
+    pub enum Doc(Rec)
+
+    pub def rec(d: Doc): Rec = match d { case Doc.Doc(r) => r }
 
     pub def path(): String = "assets/stages.stage.json"
 
     /// 組み込みの 1 面(stage.json が無くても遊べる最小の丘)。
     pub def defaults(): Doc =
-        { version = 1,
+        Doc.Doc({ version = 1,
           stages = { name = "HILL", kind = "outdoor", rows =
                 "........................"
              :: "........................"
@@ -25,20 +30,20 @@ mod StageDoc {
              :: "###...####......####..##"
              :: "###...####......####..##"
              :: "########################"
-             :: Nil } :: Nil }
+             :: Nil } :: Nil })
 
     /// テキストから Doc へ(fail-open)。stages が空・rows が欠けたら既定へ落とす。
     pub def fromJson(text: String): Option[Doc] =
         DocJson.decodeObject(fromRoot, text)
 
     def fromRoot(root: Map[String, Json]): Doc =
-        let d = defaults();
+        let d = rec(defaults());
         let stages = match Map.get("stages", root) {
             case Some(JArray(xs)) => xs |> Vector.toList |> List.filterMap(specOf)
             case _                => Nil
         };
-        { version = JsonCodec.intOr("version", d#version, root),
-          stages  = if (List.isEmpty(stages)) d#stages else stages }
+        Doc.Doc({ version = JsonCodec.intOr("version", d#version, root),
+          stages  = if (List.isEmpty(stages)) d#stages else stages })
 
     def specOf(json: Json): Option[Spec] =
         match json {

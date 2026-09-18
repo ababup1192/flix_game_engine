@@ -59,13 +59,13 @@ mod Sfx {
     /// エンジンの唸り。速さで高さが上がる — 数字を読まなくても、いま伸びているのか
     /// 頭打ちなのかが耳で分かる。スピン中は駆動が切れるので低く落として音量も落とす。
     def engineHum(w: World.World): List[App.Sustain] =
-        let k = w#sfxtune#engine;
+        let k = SfxTuneDoc.rec(w#sfxtune)#engine;
         // ニトロ全開を 1.0 に取る（普段の巡航はこの尺の途中 — 上がしろが残るので、
         // 加速したときに唸りがまだ伸びる）。
-        let top = Float64.max(1.0, w#rules#forwardSpeed * w#rules#nitroBoost);
+        let top = Float64.max(1.0, RulesDoc.rec(w#rules)#forwardSpeed * RulesDoc.rec(w#rules)#nitroBoost);
         let ratio = Num.clamp01(w#speed / top);
-        let lo = w#sfxtune#enginePitchLow;
-        let hi = w#sfxtune#enginePitchHigh;
+        let lo = SfxTuneDoc.rec(w#sfxtune)#enginePitchLow;
+        let hi = SfxTuneDoc.rec(w#sfxtune)#enginePitchHigh;
         let spun = w#spinLeft > 0.0;
         let pitch = (lo + (hi - lo) * ratio) * k#pitch * (if (spun) 0.55 else 1.0);
         let volume = k#volume * (0.6 + 0.4 * ratio) * (if (spun) 0.5 else 1.0);
@@ -78,7 +78,7 @@ mod Sfx {
     def skidHum(w: World.World): List[App.Sustain] =
         if (not w#drifting) Nil
         else {
-            let k = w#sfxtune#skid;
+            let k = SfxTuneDoc.rec(w#sfxtune)#skid;
             { name = "skid",
               volume = Num.clamp01(k#volume * (0.6 + 0.4 * Num.clamp01(w#nitro))),
               pitch = Float64.max(0.1, k#pitch) } :: Nil
@@ -90,7 +90,7 @@ mod Sfx {
     def railHum(w: World.World): List[App.Sustain] =
         if (not World.scraping(w)) Nil
         else {
-            let k = w#sfxtune#scrape;
+            let k = SfxTuneDoc.rec(w#sfxtune)#scrape;
             { name = "scrape",
               volume = Num.clamp01(k#volume),
               pitch = Float64.max(0.1, k#pitch) } :: Nil

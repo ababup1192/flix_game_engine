@@ -14,7 +14,7 @@ mod SfxTuneDoc {
 
     /// 効果音 13 種のつまみ。名前は project.json の sounds の name と同じ
     /// （Studio の音の絵はこの名前で生成した WAV を探す）。
-    pub type alias Doc = {
+    pub type alias Rec = {
         version = Int32,
         enginePitchLow = Float64,   // 止まっているときのエンジン音の高さ
         enginePitchHigh = Float64,  // 最高速のときのエンジン音の高さ
@@ -33,6 +33,11 @@ mod SfxTuneDoc {
         start = Knobs            // 決定（開始・仕切り直し）
     }
 
+    // 型検査が record を展開しないため、World が持つ公開の型は enum で包む。
+    pub enum Doc(Rec)
+
+    pub def rec(d: Doc): Rec = match d { case Doc.Doc(r) => r }
+
     pub def path(): String = "assets/race.sfxtune.json"
 
     /// つまみを触っていない状態（音量だけは音ごとの釣り合いを持つ）。
@@ -40,7 +45,7 @@ mod SfxTuneDoc {
 
     /// コード側の既定値（assets/race.sfxtune.json と同じ値から出発する）。
     pub def defaults(): Doc =
-        { version = 1,
+        Doc.Doc({ version = 1,
           enginePitchLow = 0.7,
           enginePitchHigh = 1.9,
           engine = plain(0.32),
@@ -55,15 +60,15 @@ mod SfxTuneDoc {
           lap = plain(0.7),
           win = plain(0.9),
           lose = plain(0.8),
-          start = plain(0.6) }
+          start = plain(0.6) })
 
     /// テキストから Doc へ（fail-open）。JSON でない・形が違うフィールドは既定へ落とす。
     pub def fromJson(text: String): Option[Doc] =
         DocJson.decodeObject(fromRoot, text)
 
     def fromRoot(root: Map[String, Json]): Doc =
-        let d = defaults();
-        { version = JsonCodec.intOr("version", d#version, root),
+        let d = rec(defaults());
+        Doc.Doc({ version = JsonCodec.intOr("version", d#version, root),
           enginePitchLow = JsonCodec.floatOr("enginePitchLow", d#enginePitchLow, root),
           enginePitchHigh = JsonCodec.floatOr("enginePitchHigh", d#enginePitchHigh, root),
           engine = knobsOr("engine", d#engine, root),
@@ -78,7 +83,7 @@ mod SfxTuneDoc {
           lap = knobsOr("lap", d#lap, root),
           win = knobsOr("win", d#win, root),
           lose = knobsOr("lose", d#lose, root),
-          start = knobsOr("start", d#start, root) }
+          start = knobsOr("start", d#start, root) })
 
     /// 音 1 つぶんの入れ子の節を読む。節ごと無い・object でないときは既定のつまみ。
     /// 倍率は 0 以下だと長さ 0 の無音や逆再生になるので、下限で受け止める。

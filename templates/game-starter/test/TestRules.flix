@@ -20,7 +20,7 @@ mod TestRules {
         // 1 秒右に押し続けると Doc の speed ぶんだけ進む（端に届かない範囲で）。
         let dt = 0.1;
         let w = World.step({ x = 1.0, y = 0.0 }, dt, w0());
-        Assert.assertEq(expected = World.width() / 2.0 + d()#speed * dt, w#x)
+        Assert.assertEq(expected = World.width() / 2.0 + SampleDoc.rec(d())#speed * dt, w#x)
 
     @Test
     def testHeroClampedInsideScreen(): Unit \ Assert =

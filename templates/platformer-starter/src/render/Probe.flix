@@ -44,7 +44,7 @@ mod Probe {
         let font = HeadlessFont.buildUiAtlas("assets/Xolonium-Regular.ttf",
                                             "assets/Xolonium-Regular.ttf");
         List.forEach(ix -> probeStage(font, ix, w0),
-                     List.range(0, List.length(w0#stageDoc#stages)));
+                     List.range(0, List.length(StageDoc.rec(w0#stageDoc)#stages)));
         // 実戦の遷移: clear の間を置いてから次の面へ落ちるところ全部。
         let (_, us) = usOf(_ -> {
             let cleared = { phase = "clear", phaseT = 1.7 | w0 };
@@ -72,7 +72,7 @@ mod Probe {
         let (rendered, renderUs) = usOf(_ -> List.length(View.frame(ctx, w)));
         // 実機の 1 フレームが予算に収まったかを印にする(数字だけだと合否が読めない)。
         let mark = if (liveUs <= budgetUs()) "OK " else "NG ";
-        println("${mark}${w#stage#name}: loadStage ${loadUs} us / 60 tick ${stepUs} us"
+        println("${mark}${Stage.rec(w#stage)#name}: loadStage ${loadUs} us / 60 tick ${stepUs} us"
             + " / tiles ${tiles} 枚 ${tileUs} us"
             + " / 実機 ${live} 部品 ${liveUs} us / 描き出し ${rendered} 部品 ${renderUs} us")
 }

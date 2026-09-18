@@ -9,7 +9,8 @@ mod Controls {
     /// どれか 1 つでも押されていれば効く。ジャンプは「押しっぱなし」(可変ジャンプの
     /// 維持)と「押した瞬間」(先行入力のバッファ)を別に読む — ゆるしの実装は
     /// World/Player 側にある。
-    pub def inputOf(frame: App.Frame, keys: KeysDoc.Doc): World.Input =
+    pub def inputOf(frame: App.Frame, keysDoc: KeysDoc.Doc): World.Input =
+        let keys = KeysDoc.rec(keysDoc);
         let held = ks -> List.exists(k -> App.isDown(k, frame), ks);
         let pressed = ks -> List.exists(k -> App.justPressed(k, frame), ks);
         { dir = (if (held(keys#right)) 1.0 else 0.0) - (if (held(keys#left)) 1.0 else 0.0),

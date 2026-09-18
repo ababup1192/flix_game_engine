@@ -79,7 +79,7 @@ mod TerrainLayers {
 
     /// z の層に乗る全 TileData(面全体 — 固定サイズなので出し惜しみしない)。
     pub def layerTiles(w: World.World, z: Int32): List[TileData] =
-        let st = w#stage;
+        let st = Stage.rec(w#stage);
         forM (y <- List.range(0, st#height);
               x <- List.range(0, st#width);
               g <- cellGroups(w, x, y) |> List.filter(g -> g#z == z);

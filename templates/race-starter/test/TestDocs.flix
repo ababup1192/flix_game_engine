@@ -11,7 +11,7 @@ mod TestDocs {
     def testRulesBrokenJsonFallsBackToDefaults(): Unit \ Assert =
         // 壊れた JSON は既定へ落ちる（ゲームは必ず起動する）。
         let doc = RulesDoc.fromJson("{ broken") |> Option.getWithDefault(RulesDoc.defaults());
-        Assert.assertEq(expected = RulesDoc.defaults()#forwardSpeed, doc#forwardSpeed)
+        Assert.assertEq(expected = RulesDoc.rec(RulesDoc.defaults())#forwardSpeed, RulesDoc.rec(doc)#forwardSpeed)
 
     @Test
     def testRulesOverridesOneField(): Unit \ Assert =
@@ -19,8 +19,8 @@ mod TestDocs {
         let doc = RulesDoc.fromJson("{\"version\":1, \"nitroBoost\": 2.5}")
             |> Option.getWithDefault(RulesDoc.defaults());
         Assert.assertEq(
-            expected = (2.5, RulesDoc.defaults()#forwardSpeed),
-            (doc#nitroBoost, doc#forwardSpeed))
+            expected = (2.5, RulesDoc.rec(RulesDoc.defaults())#forwardSpeed),
+            (RulesDoc.rec(doc)#nitroBoost, RulesDoc.rec(doc)#forwardSpeed))
 
     // ══════════════════════════════════════════════════════
     // RivalsDoc（敵の性格と追いかけ方。rows = 台数）
@@ -31,15 +31,15 @@ mod TestDocs {
         // 壊れた JSON は既定の 3 台へ落ちる。
         let doc = RivalsDoc.fromJson("{ broken") |> Option.getWithDefault(RivalsDoc.defaults());
         Assert.assertEq(
-            expected = List.length(RivalsDoc.defaults()#rows),
-            List.length(doc#rows))
+            expected = List.length(RivalsDoc.rec(RivalsDoc.defaults())#rows),
+            List.length(RivalsDoc.rec(doc)#rows))
 
     @Test
     def testRivalsRowCountFollowsJson(): Unit \ Assert =
         // rows 配列の長さを変えれば台数も追随する（2 台の JSON なら 2 台）。
         let doc = RivalsDoc.fromJson("{\"version\":1, \"rows\":[{\"speed\":100}, {\"speed\":90}]}")
             |> Option.getWithDefault(RivalsDoc.defaults());
-        Assert.assertEq(expected = 2, List.length(doc#rows))
+        Assert.assertEq(expected = 2, List.length(RivalsDoc.rec(doc)#rows))
 
     @Test
     def testRivalsOverridesOneField(): Unit \ Assert =
@@ -47,8 +47,8 @@ mod TestDocs {
         let doc = RivalsDoc.fromJson("{\"version\":1, \"rubberCatchUp\": 0.5}")
             |> Option.getWithDefault(RivalsDoc.defaults());
         Assert.assertEq(
-            expected = (0.5, RivalsDoc.defaults()#rubberRange),
-            (doc#rubberCatchUp, doc#rubberRange))
+            expected = (0.5, RivalsDoc.rec(RivalsDoc.defaults())#rubberRange),
+            (RivalsDoc.rec(doc)#rubberCatchUp, RivalsDoc.rec(doc)#rubberRange))
 
     // ══════════════════════════════════════════════════════
     // ThemeDoc（色。別型 = 色の Or 読みなので橋渡しを 1 本だけ）
@@ -59,10 +59,11 @@ mod TestDocs {
         // 1 色（player）だけ書いた JSON はその色だけ効き、残りは既定のまま。
         let doc = ThemeDoc.fromJson("{\"version\":1, \"player\": \"#010203\"}")
             |> Option.getWithDefault(ThemeDoc.defaults());
-        let d = ThemeDoc.defaults();
+        let d = ThemeDoc.rec(ThemeDoc.defaults());
+        let t = ThemeDoc.rec(doc);
         Assert.assertEq(
             expected = (true, d#road#r),
-            (doc#player#r != d#player#r, doc#road#r))
+            (t#player#r != d#player#r, t#road#r))
 
     // ══════════════════════════════════════════════════════
     // CourseDoc（区間の表。行数は len の合計 + 行 → 区間の割り当て）
@@ -146,15 +147,16 @@ mod TestDocs {
         // 1 つの音（nitro）の音量だけ書いた JSON: そこだけ効き、同じ節の高さも他の音も既定のまま。
         let doc = SfxTuneDoc.fromJson("{\"version\":1, \"nitro\": {\"volume\": 0.25}}")
             |> Option.getWithDefault(SfxTuneDoc.defaults());
-        let d = SfxTuneDoc.defaults();
+        let d = SfxTuneDoc.rec(SfxTuneDoc.defaults());
+        let t = SfxTuneDoc.rec(doc);
         Assert.assertEq(
             expected = (0.25, d#nitro#pitch, d#crash#volume),
-            (doc#nitro#volume, doc#nitro#pitch, doc#crash#volume))
+            (t#nitro#volume, t#nitro#pitch, t#crash#volume))
 
     @Test
     def testSfxTuneRejectsZeroSpeed(): Unit \ Assert =
         // 速さ 0 は長さ 0 の無音になるので下限で受け止める（つまみで音を消させない）。
         let doc = SfxTuneDoc.fromJson("{\"version\":1, \"skid\": {\"speed\": 0.0}}")
             |> Option.getWithDefault(SfxTuneDoc.defaults());
-        Assert.assertEq(expected = true, doc#skid#speed > 0.0)
+        Assert.assertEq(expected = true, SfxTuneDoc.rec(doc)#skid#speed > 0.0)
 }

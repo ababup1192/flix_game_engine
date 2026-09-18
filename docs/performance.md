@@ -6,6 +6,11 @@
 
 経緯と調査の記録は `plans/performance.md`。**決まりの本文はこちら。**
 
+ここで言う性能は**走らせたときの速さ**。`flix check` の速さ（型検査が record の展開で
+伸びる罠と、World が持つ大きな record を enum で包む決まり）は
+`docs/flix-conventions.md`「型の設計」。フェーズ別の秒数は `bin/check-phases <dir>`
+（`--Xbenchmark-phases` はコンパイラ自身のテスト用で、プロジェクトには使えない）。
+
 ---
 
 ## 1. 直す前に通す 3 つの門

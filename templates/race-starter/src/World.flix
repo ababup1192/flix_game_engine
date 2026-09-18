@@ -229,14 +229,14 @@ mod World {
                 case PropsDoc.Kind.Gate => gateBlockers(c#lane, half, w)
                 case PropsDoc.Kind.Bar =>
                     let x = barOffAt(n, w);
-                    let hw = w#props#barHalfWidth;
+                    let hw = PropsDoc.rec(w#props)#barHalfWidth;
                     ({ lo = x - hw, hi = x + hw, kind = c#kind }: Blocker) :: Nil
             })
 
     /// 土管ゲート = 隙間の左右に伸びる 2 つの範囲。土管の外側の端を道の外まで伸ばすのは、
     /// 草へ迂回して隙間を通らずに済ませられないようにするため。
     def gateBlockers(lane: Int32, half: Float64, w: World): List[Blocker] =
-        let gap = Int32.max(1, w#props#gateGapLanes);
+        let gap = Int32.max(1, PropsDoc.rec(w#props)#gateGapLanes);
         let leftLane = lane - (gap - 1) / 2;
         let far = half + grassReach() + 40.0;
         let gapL = PropsDoc.laneEdge(leftLane, half);
@@ -249,9 +249,9 @@ mod World {
     /// 乱数も、覚えておく状態も無い。行番号が位相を決めるので、同じ行のバーは
     /// 何周目でもそっくり同じリズムで往復し、覚えて攻略できる。
     pub def barOffAt(n: Int32, w: World): Float64 =
-        let phase = w#t / w#props#barPeriod + Int32.toFloat64(n) * w#props#barPhaseStep;
+        let phase = w#t / PropsDoc.rec(w#props)#barPeriod + Int32.toFloat64(n) * PropsDoc.rec(w#props)#barPhaseStep;
         let half = halfWidthAt(n, w#course);
-        Vec2.sin(2.0 * Vec2.pi() * phase) * Float64.max(0.0, half - w#props#barHalfWidth)
+        Vec2.sin(2.0 * Vec2.pi() * phase) * Float64.max(0.0, half - PropsDoc.rec(w#props)#barHalfWidth)
 
     // ── ガードレール ──
 
@@ -264,7 +264,7 @@ mod World {
     pub def scraping(w: World): Bool =
         let n = playerRowOf(w#distance);
         let side = railSideAt(n, w);
-        side != 0.0 and w#playerOff * side >= halfWidthAt(n, w#course) - w#rules#railTouch
+        side != 0.0 and w#playerOff * side >= halfWidthAt(n, w#course) - RulesDoc.rec(w#rules)#railTouch
 
     // ── 初期状態と場面の切り替え ──
 
@@ -274,7 +274,7 @@ mod World {
           course = docs#course, props = docs#props, palette = docs#palette,
           sprites = docs#sprites,
           atlas = PxSpriteAtlas.bake(docs#sprites,
-                      PaletteDoc.carInk(docs#palette, docs#theme#player)),
+                      PaletteDoc.carInk(docs#palette, ThemeDoc.rec(docs#theme)#player)),
           atlasGen = 0,
           fx = docs#fx, sfxtune = docs#sfxtune,
           phase = Phase.Title, t = 0.0,
@@ -290,11 +290,11 @@ mod World {
     /// 好みのレーン（laneBias）に応じて左右へ振る。
     def initialRivals(docs: Docs): List[Rival] =
         let half = roadHalfPx(docs#course);
-        docs#rivalsCfg#rows |> List.zipWithIndex |> List.map(entry -> {
+        RivalsDoc.rec(docs#rivalsCfg)#rows |> List.zipWithIndex |> List.map(entry -> {
             let (i, row) = entry;
             // 1 台目でも slipRange の外へ置く — スタートした瞬間からスリップが効くと、
             // 「敵の後ろに付きに行く」という操作がないまま加速だけ手に入ってしまう。
-            { progress = playerAheadPx() + docs#rules#slipRange + 30.0 + Int32.toFloat64(i) * 80.0,
+            { progress = playerAheadPx() + RulesDoc.rec(docs#rules)#slipRange + 30.0 + Int32.toFloat64(i) * 80.0,
               off = row#lane * half * 0.6,
               baseSpeed = row#speed, corner = row#corner, laneBias = row#lane,
               passed = false }
@@ -306,13 +306,13 @@ mod World {
 
     /// 開始時の順位。自機は最後尾から出る（ライバルは全員前にいる）。
     def startRank(rivalsCfg: RivalsDoc.Doc): Int32 =
-        List.length(rivalsCfg#rows) + 1
+        List.length(RivalsDoc.rec(rivalsCfg)#rows) + 1
 
     /// 遊び始め（Title → Racing）。initial から作り直し、時計・効果の通し番号・
     /// 表示中 Doc の名乗りだけ引き継ぐ（絵の流れと Studio への名乗りを巻き戻さない）。
     /// [遷移: Title→Racing]
     pub def startGame(w: World): World =
-        { phase = Phase.Racing, speed = w#rules#forwardSpeed,
+        { phase = Phase.Racing, speed = RulesDoc.rec(w#rules)#forwardSpeed,
           t = w#t, fxSeq = w#fxSeq, activeDocsWritten = w#activeDocsWritten,
           atlas = w#atlas, atlasGen = w#atlasGen
         | initial(docsOf(w)) }
@@ -383,9 +383,9 @@ mod World {
     def steer(inputs: Inputs, dt: Float64, w: World): World =
         if (w#spinLeft > 0.0) w
         else {
-            let boost = if (w#drifting) w#rules#driftTurnBoost else 1.0;
-            let penalty = if (w#nitroLeft > 0.0) w#rules#nitroSteerPenalty else 1.0;
-            let steered = w#playerOff + inputs#dir * w#rules#steerSpeed * boost * penalty * dt;
+            let boost = if (w#drifting) RulesDoc.rec(w#rules)#driftTurnBoost else 1.0;
+            let penalty = if (w#nitroLeft > 0.0) RulesDoc.rec(w#rules)#nitroSteerPenalty else 1.0;
+            let steered = w#playerOff + inputs#dir * RulesDoc.rec(w#rules)#steerSpeed * boost * penalty * dt;
             let rng = offRangeOf(w);
             { playerOff = Num.clamp(rng#lo, rng#hi, steered + curveDrift(dt, w)) | w }
         }
@@ -399,10 +399,10 @@ mod World {
     def curveDrift(dt: Float64, w: World): Float64 =
         let curve = curveAt(playerRowOf(w#distance), w#course);
         if (w#drifting)
-            0.0 - sideOf(curve) * w#rules#driftSlide * dt
+            0.0 - sideOf(curve) * RulesDoc.rec(w#rules)#driftSlide * dt
         else {
-            let excess = Float64.max(0.0, w#speed - w#rules#gripSpeed);
-            let missRate = Num.clamp01(excess * w#rules#curvePush / w#rules#forwardSpeed);
+            let excess = Float64.max(0.0, w#speed - RulesDoc.rec(w#rules)#gripSpeed);
+            let missRate = Num.clamp01(excess * RulesDoc.rec(w#rules)#curvePush / RulesDoc.rec(w#rules)#forwardSpeed);
             0.0 - curve * missRate * w#speed / rowPitch() * dt
         }
 
@@ -423,23 +423,23 @@ mod World {
 
     /// いまの前進速度。危険な走りほど速い、が積の形で読める。
     def speedOf(inputs: Inputs, w: World): Float64 =
-        w#rules#forwardSpeed
+        RulesDoc.rec(w#rules)#forwardSpeed
             * hillMult(w)
-            * (if (onRoad(w)) 1.0 else w#rules#offRoadSlow)
-            * (if (scraping(w)) w#rules#railScrapeSlow else 1.0)
-            * (if (inputs#brake and not w#drifting) w#rules#brakeSlow else 1.0)
-            * (if (slipActive(w)) w#rules#slipBoost else 1.0)
-            * (if (w#nitroLeft > 0.0) w#rules#nitroBoost else 1.0)
-            * (if (w#boostLeft > 0.0) w#rules#itemBoostLow else 1.0)
-            * (if (w#spinLeft > 0.0) w#rules#spinSlow else 1.0)
-            * (if (w#bumpLeft > 0.0) w#rules#bumpSlow else 1.0)
+            * (if (onRoad(w)) 1.0 else RulesDoc.rec(w#rules)#offRoadSlow)
+            * (if (scraping(w)) RulesDoc.rec(w#rules)#railScrapeSlow else 1.0)
+            * (if (inputs#brake and not w#drifting) RulesDoc.rec(w#rules)#brakeSlow else 1.0)
+            * (if (slipActive(w)) RulesDoc.rec(w#rules)#slipBoost else 1.0)
+            * (if (w#nitroLeft > 0.0) RulesDoc.rec(w#rules)#nitroBoost else 1.0)
+            * (if (w#boostLeft > 0.0) RulesDoc.rec(w#rules)#itemBoostLow else 1.0)
+            * (if (w#spinLeft > 0.0) RulesDoc.rec(w#rules)#spinSlow else 1.0)
+            * (if (w#bumpLeft > 0.0) RulesDoc.rec(w#rules)#bumpSlow else 1.0)
 
     /// 坂の速度倍率。登りで遅く、下りで速い。1 行ぶんの勾配にしか掛けないので、
     /// 長い坂ほど効き続ける。0.6〜1.4 で頭打ちにするのは、極端な勾配を書かれても
     /// 止まったり倍速になったりしないため（コースの書き手を信用しすぎない）。
     def hillMult(w: World): Float64 =
         let grade = CourseDoc.hillAt(playerRowOf(w#distance), w#course);
-        Num.clamp(0.6, 1.4, 1.0 - w#rules#hillSpeedGain * grade)
+        Num.clamp(0.6, 1.4, 1.0 - RulesDoc.rec(w#rules)#hillSpeedGain * grade)
 
     /// 通し行 n に入った瞬間の出来事: アイテムを拾う / 障害物に当たる / すれすれをかすめる。
     /// 行ごとに 1 回だけ通るので、同じマスで二重に起きない。
@@ -458,9 +458,9 @@ mod World {
 
     /// 順位に応じたアイテムの効果。
     def applyItem(w: World): World =
-        if (w#rank == 1)      { score = w#score + w#rules#itemScoreBonus | w }
-        else if (w#rank == 2) { nitro = Num.clamp01(w#nitro + w#rules#itemNitroCharge) | w }
-        else                  { boostLeft = w#rules#itemBoostDuration | w }
+        if (w#rank == 1)      { score = w#score + RulesDoc.rec(w#rules)#itemScoreBonus | w }
+        else if (w#rank == 2) { nitro = Num.clamp01(w#nitro + RulesDoc.rec(w#rules)#itemNitroCharge) | w }
+        else                  { boostLeft = RulesDoc.rec(w#rules)#itemBoostDuration | w }
 
     /// 障害物マス: 車体が範囲に触れていればスピン、触れていなくても範囲の端から
     /// nearMissDist 以内なら「すれすれ」（ゲージが貯まり火花が散る）。
@@ -473,11 +473,11 @@ mod World {
             Float64.max(b#lo - (w#playerOff + carHalf), (w#playerOff - carHalf) - b#hi);
         if (blockers |> List.exists(b -> gapOf(b) <= 0.0)) startSpin(w)
         else {
-            let grazes = blockers |> List.count(b -> gapOf(b) <= w#rules#nearMissDist);
+            let grazes = blockers |> List.count(b -> gapOf(b) <= RulesDoc.rec(w#rules)#nearMissDist);
             if (grazes <= 0) w
             else
                 { nitro = Num.clamp01(
-                      w#nitro + w#rules#nitroChargeNearMiss * Int32.toFloat64(grazes))
+                      w#nitro + RulesDoc.rec(w#rules)#nitroChargeNearMiss * Int32.toFloat64(grazes))
                 | burstAt(w#fx#spark, { x = w#playerOff, y = playerDistOf(w) }, w) }
         }
 
@@ -489,7 +489,7 @@ mod World {
     def scrapeRail(dt: Float64, w: World): World =
         if (not scraping(w)) { railClock = 0.0 | w }
         else {
-            let charged = { nitro = Num.clamp01(w#nitro + w#rules#nitroChargeRail * dt) | w };
+            let charged = { nitro = Num.clamp01(w#nitro + RulesDoc.rec(w#rules)#nitroChargeRail * dt) | w };
             let clock = w#railClock + dt;
             if (clock < sparkPeriod()) { railClock = clock | charged }
             else {
@@ -512,20 +512,20 @@ mod World {
     pub def slipActive(w: World): Bool =
         let me = playerDistOf(w);
         w#rivals |> List.exists(r ->
-            r#progress > me and r#progress - me <= w#rules#slipRange
-                and Float64.abs(r#off - w#playerOff) <= w#rules#slipWidth / 2.0)
+            r#progress > me and r#progress - me <= RulesDoc.rec(w#rules)#slipRange
+                and Float64.abs(r#off - w#playerOff) <= RulesDoc.rec(w#rules)#slipWidth / 2.0)
 
     /// 危険な走りがゲージを貯める: ドリフト（最速）とスリップ維持（毎秒）。
     /// すれすれの加算は hitObstacles 側（出来事なので行またぎで 1 回）。
     def chargeNitro(dt: Float64, w: World): World =
-        let rate = (if (w#drifting) w#rules#nitroChargeDrift else 0.0)
-                 + (if (slipActive(w)) w#rules#nitroChargeSlip else 0.0);
+        let rate = (if (w#drifting) RulesDoc.rec(w#rules)#nitroChargeDrift else 0.0)
+                 + (if (slipActive(w)) RulesDoc.rec(w#rules)#nitroChargeSlip else 0.0);
         { nitro = Num.clamp01(w#nitro + rate * dt) | w }
 
     /// Z で発動（満タンのときだけ）。ゲージを使い切り、nitroDuration 秒だけ爆発的に速くなる。
     def fireNitro(inputs: Inputs, w: World): World =
         if (inputs#nitroTap and w#nitro >= 1.0 and w#spinLeft <= 0.0)
-            { nitroLeft = w#rules#nitroDuration, nitro = 0.0 | w }
+            { nitroLeft = RulesDoc.rec(w#rules)#nitroDuration, nitro = 0.0 | w }
         else w
 
     // ── 柱 2: ライバル（ラバーバンド + コーナー減速 + レーン変更） ──
@@ -537,7 +537,7 @@ mod World {
         { rivals = moved | w }
 
     def moveRival(dt: Float64, w: World, r: Rival): Rival =
-        let cfg = w#rivalsCfg;
+        let cfg = RivalsDoc.rec(w#rivalsCfg);
         let theirRow = Num.floorInt(r#progress / rowPitch());
         // コーナー減速: 急さ（1 マス幅 = ゆるい、2 マス幅 = 急）を 0..1 に写し、下手なほど落とす。
         let sharpness = Num.clamp01(Float64.abs(curveAt(theirRow, w#course)) / sharpCurve());
@@ -583,13 +583,13 @@ mod World {
         if (List.isEmpty(dirs)) w
         else {
             let dir = Num.clamp(-1.0, 1.0, List.foldLeft(Add.add, 0.0, dirs));
-            let shove = w#rules#bumpPush * dt;
+            let shove = RulesDoc.rec(w#rules)#bumpPush * dt;
             let rng = offRangeOf(w);
             let pushed = w#rivals |> List.map(r ->
                 if (touching(r)) { off = r#off - pushDirOf(w#playerOff, r#off) * shove | r } else r);
             let moved =
                 { playerOff = Num.clamp(rng#lo, rng#hi, w#playerOff + dir * shove),
-                  rivals = pushed, bumpLeft = w#rules#bumpDuration | w };
+                  rivals = pushed, bumpLeft = RulesDoc.rec(w#rules)#bumpDuration | w };
             if (w#bumpLeft > 0.0) moved
             else burstAt(w#fx#spark, { x = w#playerOff, y = me }, moved)
         }
@@ -603,8 +603,8 @@ mod World {
     def startSpin(w: World): World =
         if (w#spinLeft > 0.0) w
         else
-            { spinLeft = w#rules#spinDuration,
-              nitro = w#nitro * (1.0 - w#rules#spinNitroLoss),
+            { spinLeft = RulesDoc.rec(w#rules)#spinDuration,
+              nitro = w#nitro * (1.0 - RulesDoc.rec(w#rules)#spinNitroLoss),
               nitroLeft = 0.0, drifting = false
             | burstAt(w#fx#crash, { x = w#playerOff, y = playerDistOf(w) }, w) }
 
@@ -617,7 +617,7 @@ mod World {
         let justPassed = r -> not r#passed and me >= r#progress;
         let updated = w#rivals |> List.map(r -> if (justPassed(r)) { passed = true | r } else r);
         let passes = w#rivals |> List.count(justPassed);
-        { rivals = updated, score = w#score + passes * w#rules#scorePerPass,
+        { rivals = updated, score = w#score + passes * RulesDoc.rec(w#rules)#scorePerPass,
           rank = rankOf({ rivals = updated | w }) | w }
 
     /// いまの順位（1 = 先頭）。自機より前にいるライバルの数 + 1。
@@ -650,7 +650,7 @@ mod World {
     /// 車体の傾き（1 周 = 1.0 の turn）。ドリフトは深く、普段の操舵はわずかに、スピンは 2 回転。
     pub def driftTurnOf(w: World): Float64 =
         if (w#spinLeft > 0.0)
-            (w#rules#spinDuration - w#spinLeft) / w#rules#spinDuration * 2.0
+            (RulesDoc.rec(w#rules)#spinDuration - w#spinLeft) / RulesDoc.rec(w#rules)#spinDuration * 2.0
         else if (w#drifting) w#steerDir * 0.06
         else w#steerDir * 0.015
 
@@ -675,12 +675,12 @@ mod World {
     /// 最下位なら Lose、それ以外は Win（1 位だけ finishBonus）。[遷移: Racing→Win/Lose]
     def checkLaps(w: World): World =
         let lapsDone = Num.floorInt(w#distance / lapLength(w#course));
-        if (lapsDone < w#rules#totalLaps) { lap = lapsDone | w }
+        if (lapsDone < RulesDoc.rec(w#rules)#totalLaps) { lap = lapsDone | w }
         else if (w#rank >= startRank(w#rivalsCfg))
-            { phase = Phase.Lose, lap = w#rules#totalLaps | w }
+            { phase = Phase.Lose, lap = RulesDoc.rec(w#rules)#totalLaps | w }
         else
-            { phase = Phase.Win, lap = w#rules#totalLaps,
-              score = w#score + (if (w#rank == 1) w#rules#finishBonus else 0) | w }
+            { phase = Phase.Win, lap = RulesDoc.rec(w#rules)#totalLaps,
+              score = w#score + (if (w#rank == 1) RulesDoc.rec(w#rules)#finishBonus else 0) | w }
 
     // ══════════════════════════════════════════════════════
     // Doc の差し替え（保存即反映）と 表示中の名乗り
@@ -698,7 +698,7 @@ mod World {
     /// テーマ・色票・ドット絵のどれかが変わったらアトラスを生成し直して世代を進める。
     /// 世代の鍵（atlasKey）が変わらないと、App は古い画素のテクスチャを使い続ける。
     def rebakeAtlas(w: World): World =
-        { atlas = PxSpriteAtlas.bake(w#sprites, PaletteDoc.carInk(w#palette, w#theme#player)),
+        { atlas = PxSpriteAtlas.bake(w#sprites, PaletteDoc.carInk(w#palette, ThemeDoc.rec(w#theme)#player)),
           atlasGen = w#atlasGen + 1 | w }
 
     /// ドット絵アトラスの論理名（GL の TextureRegistry と描き出しの texturePath が同じ鍵で引く）。

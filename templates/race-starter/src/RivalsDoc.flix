@@ -19,7 +19,7 @@ mod RivalsDoc {
     ///   rubberSlowDown … 先行したときの減速の上限（0.22 = -22%）。
     ///   laneChangeSpeed … 横へ寄る速さ（px/秒）。
     ///   cornerSlow     … コーナーが下手な敵（corner = 0）が急カーブで落とす速度の底（0..1）。
-    pub type alias Doc = {
+    pub type alias Rec = {
         version = Int32,
         rubberRange = Float64,
         rubberCatchUp = Float64,
@@ -29,13 +29,18 @@ mod RivalsDoc {
         rows = List[Entry]
     }
 
+    // 型検査が record を展開しないため、World が持つ公開の型は enum で包む。
+    pub enum Doc(Rec)
+
+    pub def rec(d: Doc): Rec = match d { case Doc.Doc(r) => r }
+
     pub def path(): String = "assets/race.rivals.json"
 
     /// コード側の既定値（assets/race.rivals.json と同じ値から出発する）。
     /// 3 台の役割: 逃げ役（直線で速いがコーナーで大きく膨らむ）/ ブロック役（平均・右寄りで
     /// 進路を塞ぐ）/ 職人（遅いがコーナーほぼ減速なし — ブレーキで曲がると抜き返される）。
     pub def defaults(): Doc =
-        { version = 1,
+        Doc.Doc({ version = 1,
           rubberRange = 220.0,
           rubberCatchUp = 0.45,
           rubberSlowDown = 0.22,
@@ -45,21 +50,21 @@ mod RivalsDoc {
               { speed = 127.0, corner = 0.3,  lane = -0.9 }
            :: { speed = 120.0, corner = 0.6,  lane = 0.9 }
            :: { speed = 115.0, corner = 0.95, lane = 0.0 }
-           :: Nil }
+           :: Nil })
 
     /// テキストから Doc へ（fail-open）。JSON でない・形が違うフィールドは既定へ落とす。
     pub def fromJson(text: String): Option[Doc] =
         DocJson.decodeObject(fromRoot, text)
 
     def fromRoot(root: Map[String, Json]): Doc =
-        let d = defaults();
-        { version = JsonCodec.intOr("version", d#version, root),
+        let d = rec(defaults());
+        Doc.Doc({ version = JsonCodec.intOr("version", d#version, root),
           rubberRange = JsonCodec.floatOr("rubberRange", d#rubberRange, root),
           rubberCatchUp = JsonCodec.floatOr("rubberCatchUp", d#rubberCatchUp, root),
           rubberSlowDown = JsonCodec.floatOr("rubberSlowDown", d#rubberSlowDown, root),
           laneChangeSpeed = JsonCodec.floatOr("laneChangeSpeed", d#laneChangeSpeed, root),
           cornerSlow = JsonCodec.floatOr("cornerSlow", d#cornerSlow, root),
-          rows = rowsOr(d#rows, root) }
+          rows = rowsOr(d#rows, root) })
 
     /// rows（ライバルの一覧）を読む。配列でない・空のときは既定の 3 台を使う。
     /// 1 台ぶんの欄が欠けた行は、その欄だけ既定 1 台目の値を使う（行ごと捨てない）。

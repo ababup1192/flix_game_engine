@@ -10,8 +10,9 @@ mod Controls {
         let held = ks -> List.exists(k -> App.isDown(k, frame), ks);
         let axis = (negDown, posDown) ->
             (if (posDown) 1.0 else 0.0) - (if (negDown) 1.0 else 0.0);
-        { x = axis(held(keys#left), held(keys#right)),
-          y = axis(held(keys#up), held(keys#down)) }
+        let k = KeysDoc.rec(keys);
+        { x = axis(held(k#left), held(k#right)),
+          y = axis(held(k#up), held(k#down)) }
 
     /// 毎フレームのシステム。
     pub def step(frame: App.Frame, w: World.World): World.World =

@@ -43,13 +43,13 @@ mod TestSfx {
         Assert.assertEq(
             expected = "crash" :: Nil,
             Sfx.events({ before = { drifting = true | w },
-                         after = { spinLeft = w#rules#spinDuration | w } }))
+                         after = { spinLeft = RulesDoc.rec(w#rules)#spinDuration | w } }))
 
     @Test
     def testNitroFires(): Unit \ Assert =
         // ニトロは残り時間が 0 から立ち上がったフレームに鳴る（発動中ずっとではない）。
         let w = racing();
-        let fired = { nitroLeft = w#rules#nitroDuration | w };
+        let fired = { nitroLeft = RulesDoc.rec(w#rules)#nitroDuration | w };
         Assert.assertEq(
             expected = ("nitro" :: Nil, (Nil: List[String])),
             (Sfx.events({ before = w, after = fired }),
@@ -95,7 +95,7 @@ mod TestSfx {
         let w = racing();
         let pitchAt = sp -> Sfx.hums({ speed = sp | w }) |> List.map(h -> h#pitch);
         let slow = pitchAt(0.0);
-        let fast = pitchAt(w#rules#forwardSpeed * w#rules#nitroBoost);
+        let fast = pitchAt(RulesDoc.rec(w#rules)#forwardSpeed * RulesDoc.rec(w#rules)#nitroBoost);
         Assert.assertEq(expected = true, slow < fast)
 
     @Test
@@ -104,8 +104,8 @@ mod TestSfx {
         let w = racing();
         let pitchAt = sp -> Sfx.hums({ speed = sp | w })
             |> List.map(h -> h#pitch) |> List.head |> Option.getWithDefault(0.0);
-        let lo = w#sfxtune#enginePitchLow;
-        let hi = w#sfxtune#enginePitchHigh;
+        let lo = SfxTuneDoc.rec(w#sfxtune)#enginePitchLow;
+        let hi = SfxTuneDoc.rec(w#sfxtune)#enginePitchHigh;
         Assert.assertEq(expected = (lo, hi), (pitchAt(0.0), pitchAt(99999.0)))
 
     @Test

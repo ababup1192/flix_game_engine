@@ -14,7 +14,7 @@ mod TestRules {
     // ══════════════════════════════════════════════════════
 
     def fixture(): MapDoc.Doc =
-        { version = 1, title = "test", subtitle = "", clear = "",
+        MapDoc.Doc.Doc({ version = 1, title = "test", subtitle = "", clear = "",
           hint = "", clearHint = "",
           start = { x = 3, y = 1 },
           rows =
@@ -30,7 +30,7 @@ mod TestRules {
                    ask = "薬草を 1つ たのむよ", opened = "約束どおりだ。通っていいよ" },
           herbs = { x = 1, y = 1 } :: { x = 7, y = 3 } :: Nil,
           lamps = { x = 4, y = 0 } :: Nil,
-          goal = 2 }
+          goal = 2 })
 
     def w0(): World.World =
         World.initial({ map = fixture(), kind = KindDoc.defaults(),
@@ -68,13 +68,13 @@ mod TestRules {
     def testTitleConfirmStartsWalk(): Unit \ Assert =
         // 表紙で決定すると、間取りの start のマスから歩き出す。
         let w = atStart();
-        Assert.assertEq(expected = (World.Phase.Play, at(fixture()#start)), (w#phase, at(w#hero)))
+        Assert.assertEq(expected = (World.Phase.Play, at(MapDoc.rec(fixture())#start)), (w#phase, at(w#hero)))
 
     @Test
     def testTitleIgnoresWalk(): Unit \ Assert =
         // 表紙では矢印を押しても歩かない(歩けるのは里の中だけ)。
         let w = World.step(Some(Dir4.Right), 10.0, w0());
-        Assert.assertEq(expected = at(fixture()#start), at(w#hero))
+        Assert.assertEq(expected = at(MapDoc.rec(fixture())#start), at(w#hero))
 
     @Test
     def testClearConfirmRestartsFresh(): Unit \ Assert =
@@ -82,7 +82,7 @@ mod TestRules {
         // 薬草は全部戻り、木戸は閉じ、拾った数は 0 から(死なない・詰まない)。
         let restarted = clearedWorld() |> World.confirm |> World.confirm;
         Assert.assertEq(
-            expected = (World.Phase.Play, 0, false, List.length(fixture()#herbs)),
+            expected = (World.Phase.Play, 0, false, List.length(MapDoc.rec(fixture())#herbs)),
             (restarted#phase, restarted#picked, restarted#doorOpen, List.length(restarted#herbs)))
 
     // ══════════════════════════════════════════════════════
@@ -95,7 +95,7 @@ mod TestRules {
         let blocked = World.stepOnce(Dir4.Up, atStart());
         let moved = World.stepOnce(Dir4.Right, atStart());
         Assert.assertEq(
-            expected = (at(fixture()#start), Dir4.Up, at(Grid.neighborOf(fixture()#start, Dir4.Right))),
+            expected = (at(MapDoc.rec(fixture())#start), Dir4.Up, at(Grid.neighborOf(MapDoc.rec(fixture())#start, Dir4.Right))),
             (at(blocked#hero), blocked#facing, at(moved#hero)))
 
     @Test
@@ -111,7 +111,7 @@ mod TestRules {
         let closed = World.stepOnce(Dir4.Down, beforeDoor);
         let opened = World.stepOnce(Dir4.Down, { doorOpen = true | beforeDoor });
         Assert.assertEq(
-            expected = (at(beforeDoor#hero), at(fixture()#door#cell)),
+            expected = (at(beforeDoor#hero), at(MapDoc.rec(fixture())#door#cell)),
             (at(closed#hero), at(opened#hero)))
 
     // ══════════════════════════════════════════════════════
@@ -129,7 +129,7 @@ mod TestRules {
         // 薬草が足りないうちは、約束の相手は頼まれごと(ask)を話し、木戸は閉じたまま。
         let w = World.confirm(atGate());
         Assert.assertEq(
-            expected = (fixture()#door#ask, false),
+            expected = (MapDoc.rec(fixture())#door#ask, false),
             (shownLine(w), w#doorOpen))
 
     @Test
@@ -137,7 +137,7 @@ mod TestRules {
         // 頼まれた数の薬草を持って話すと、その場で木戸が開き、opened の 1 行が出る。
         let w = World.confirm(herbInHandAtGate());
         Assert.assertEq(
-            expected = (fixture()#door#opened, true),
+            expected = (MapDoc.rec(fixture())#door#opened, true),
             (shownLine(w), w#doorOpen))
 
     @Test
@@ -164,7 +164,7 @@ mod TestRules {
         let picked = atStart() |> go(Dir4.Left :: Dir4.Left :: Nil);
         let revisited = picked |> go(Dir4.Right :: Dir4.Left :: Nil);
         Assert.assertEq(
-            expected = (1, List.length(fixture()#herbs) - 1),
+            expected = (1, List.length(MapDoc.rec(fixture())#herbs) - 1),
             (revisited#picked, List.length(revisited#herbs)))
 
     @Test
@@ -178,12 +178,12 @@ mod TestRules {
     @Test
     def testGoalClampedToPlacedHerbs(): Unit \ Assert =
         // goal が置いてある薬草より多くても、クリアに要る数は置いた数まで(詰みを作らない)。
-        let greedy = World.initial({ map = { goal = 99 | fixture() }, kind = KindDoc.defaults(),
+        let greedy = World.initial({ map = MapDoc.Doc.Doc({ goal = 99 | MapDoc.rec(fixture()) }), kind = KindDoc.defaults(),
                                      theme = ThemeDoc.defaults(), battle = BattleDoc.defaults(),
                                      sprites = PxSpriteDoc.empty(), townSprites = PxSpriteDoc.empty(),
                                      townMap = TownMapDoc.defaults(), waterShader = ShaderDoc.waterVeins(),
                                      smokeFx = FxDoc.empty() });
-        Assert.assertEq(expected = List.length(fixture()#herbs), World.goalOf(greedy))
+        Assert.assertEq(expected = List.length(MapDoc.rec(fixture())#herbs), World.goalOf(greedy))
 
     // ══════════════════════════════════════════════════════
     // 表示中の Doc の名乗り(Studio のバッジの材料。どの id を名乗るかはルール)
@@ -208,12 +208,12 @@ mod TestRules {
     // ── 脚本の小物(期待値はぜんぶ fixture から引く) ──
 
     def gateCell(): Grid.Cell =
-        List.head(fixture()#villagers)
+        List.head(MapDoc.rec(fixture())#villagers)
             |> Option.map(villager -> villager#cell)
             |> Option.getWithDefault({ x = -1, y = -1 })
 
     def gateLine(): String =
-        List.head(fixture()#villagers)
+        List.head(MapDoc.rec(fixture())#villagers)
             |> Option.map(villager -> villager#line)
             |> Option.getWithDefault("(fixture が壊れている)")
 
@@ -239,7 +239,7 @@ mod TestRules {
 
     /// 魔物と出会った直後の状態（出会いの 1 行を読んでいるところ）。
     def met(): World.World =
-        let d = BattleDoc.defaults();
+        let d = BattleDoc.rec(BattleDoc.defaults());
         { phase = World.Phase.Battle, steps = d#encounterSteps,
           battle = { step = World.BattleStep.Report, cursor = 0, foeHp = d#foeMaxHp,
                      lines = Nil, foeHurt = false, outcome = None } | atStart() }
@@ -254,20 +254,20 @@ mod TestRules {
         Assert.assertEq(
             expected = (false, true, false, true),
             (World.meetsFoeAt(0, d),
-             World.meetsFoeAt(d#encounterSteps, d),
-             World.meetsFoeAt(d#encounterSteps + 1, d),
-             World.meetsFoeAt(d#encounterSteps * 2, d)))
+             World.meetsFoeAt(BattleDoc.rec(d)#encounterSteps, d),
+             World.meetsFoeAt(BattleDoc.rec(d)#encounterSteps + 1, d),
+             World.meetsFoeAt(BattleDoc.rec(d)#encounterSteps * 2, d)))
 
     @Test
     def testFoeNeverAppearsWhenStepsIsZero(): Unit \ Assert =
         // encounterSteps を 0 にすると魔物は出ない（戦いを外した遊びも作れる）。
-        let quiet = { encounterSteps = 0 | BattleDoc.defaults() };
+        let quiet = BattleDoc.Doc.Doc({ encounterSteps = 0 | BattleDoc.rec(BattleDoc.defaults()) });
         Assert.assertEq(expected = false, World.meetsFoeAt(40, quiet))
 
     @Test
     def testStrikeHurtsBothSides(): Unit \ Assert =
         // 「たたかう」1 回で、魔物は heroAttack ぶん減り、こちらは foeAttack ぶん減る。
-        let d = BattleDoc.defaults();
+        let d = BattleDoc.rec(BattleDoc.defaults());
         let after = World.confirm(choosing());
         Assert.assertEq(
             expected = (d#foeMaxHp - d#heroAttack, d#heroMaxHp - d#foeAttack),
@@ -276,7 +276,7 @@ mod TestRules {
     @Test
     def testKillingFoeEndsBattleWithWin(): Unit \ Assert =
         // 魔物の体力が一撃ぶんしか無ければ、その 1 回で決着（勝ち）になり反撃も受けない。
-        let d = BattleDoc.defaults();
+        let d = BattleDoc.rec(BattleDoc.defaults());
         let weak = { battle = { foeHp = d#heroAttack | choosing()#battle } | choosing() };
         let after = World.confirm(weak);
         Assert.assertEq(
@@ -295,14 +295,14 @@ mod TestRules {
     @Test
     def testLosingSendsHeroBackAliveToStart(): Unit \ Assert =
         // 倒れても終わりではない: 入口へ戻り、体力は満タンに戻る（やり直せる）。
-        let d = BattleDoc.defaults();
+        let d = BattleDoc.rec(BattleDoc.defaults());
         let dying = { heroHp = d#foeAttack | choosing() };
         let lost = World.confirm(dying);
         let back = World.confirm(lost);
         Assert.assertEq(
             expected = (Some(World.Outcome.Lose), World.Phase.Play, d#heroMaxHp, true),
             (lost#battle#outcome, back#phase, back#heroHp,
-             MapDoc.sameCell(back#hero, back#map#start)))
+             MapDoc.sameCell(back#hero, MapDoc.rec(back#map)#start)))
 
     @Test
     def testCursorStaysInsideCommandList(): Unit \ Assert =

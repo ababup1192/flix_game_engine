@@ -51,13 +51,14 @@ mod Enemies {
     /// 1 tick。player は撃つ敵の索敵にだけ使う。返りは (敵, 新しく出た弾)。
     pub def step(t: Physics.Terrain, doc: EnemyDoc.Doc, dt: Float64, time: Float64,
                  player: Vec2.Vec2, e: Enemy): (Enemy, List[Shot]) =
+        let d = EnemyDoc.rec(doc);
         match e#behavior {
-            case Behavior.Walking(fallSpeed) => (walk(t, doc, dt, fallSpeed, e), Nil)
-            case Behavior.Flying(centerY)    => (fly(doc, time, centerY, e), Nil)
-            case Behavior.Shooting(cooldown) => shoot(doc, dt, cooldown, player, e)
+            case Behavior.Walking(fallSpeed) => (walk(t, d, dt, fallSpeed, e), Nil)
+            case Behavior.Flying(centerY)    => (fly(d, time, centerY, e), Nil)
+            case Behavior.Shooting(cooldown) => shoot(d, dt, cooldown, player, e)
         }
 
-    def walk(t: Physics.Terrain, doc: EnemyDoc.Doc, dt: Float64, fallSpeed: Float64,
+    def walk(t: Physics.Terrain, doc: EnemyDoc.Rec, dt: Float64, fallSpeed: Float64,
              e: Enemy): Enemy =
         let size = sizeOf(e#behavior);
         let vy = Float64.min(fallSpeed + 900.0 * dt, 480.0);
@@ -76,12 +77,12 @@ mod Enemies {
         not (t#solid(cx, cy) or t#oneWay(cx, cy))
 
     /// 上下の揺れは時刻の純関数(巻き戻し・描き出しと相性が良い)。横には動かない。
-    def fly(doc: EnemyDoc.Doc, time: Float64, centerY: Float64, e: Enemy): Enemy =
+    def fly(doc: EnemyDoc.Rec, time: Float64, centerY: Float64, e: Enemy): Enemy =
         let amp = doc#flyAmpTiles * Physics.tileSize();
         let phase = 2.0 * 3.14159265 * time / doc#flyPeriod;
         { pos = { x = e#pos#x, y = centerY + amp * Vec2.sin(phase) } | e }
 
-    def shoot(doc: EnemyDoc.Doc, dt: Float64, cooldown: Float64, player: Vec2.Vec2, e: Enemy):
+    def shoot(doc: EnemyDoc.Rec, dt: Float64, cooldown: Float64, player: Vec2.Vec2, e: Enemy):
              (Enemy, List[Shot]) =
         let dx = player#x - e#pos#x;
         let dy = player#y - e#pos#y;

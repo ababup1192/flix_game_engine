@@ -31,7 +31,7 @@ mod GifRender {
         discard (new File("debug")).mkdirs();
         let atlas = HeadlessFont.buildUiAtlas(ttf(), ttf());
         let w0 = loadWorld();
-        let bcfg = cfg(atlas, w0#theme#bg);
+        let bcfg = cfg(atlas, ThemeDoc.rec(w0#theme)#bg);
         let ctx = App.viewCtxOf(atlas, design());
         discard HeadlessRender.renderGif(bcfg, script(w0), 2, w -> worldCmds(ctx, w), "showcase");
         println("rendered: debug/showcase.gif")

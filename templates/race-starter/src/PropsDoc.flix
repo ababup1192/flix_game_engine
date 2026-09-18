@@ -26,7 +26,7 @@ mod PropsDoc {
     /// 置き場の表と、置き物の寸法・周期。寸法をここに持つのは「G や P を並べ替える作業と
     /// 同時に触る値」だから — 速度係数やゲージ収支（手触り）は rules 側に残る。
     ///   rows … スタートの行から 1 行ずつ。
-    pub type alias Doc = {
+    pub type alias Rec = {
         version = Int32,
         rows = List[String],
         gateGapLanes = Int32,   // 土管ゲートの隙間の広さ（レーン何本ぶん）
@@ -34,6 +34,11 @@ mod PropsDoc {
         barPhaseStep = Float64, // 行が 1 つ進むごとにずれる位相（周）
         barHalfWidth = Float64  // 振り子バーの半分の長さ（px）
     }
+
+    // 型検査が record を展開しないため、World が持つ公開の型は enum で包む。
+    pub enum Doc(Rec)
+
+    pub def rec(d: Doc): Rec = match d { case Doc.Doc(r) => r }
 
     pub def path(): String = "assets/race.props.json"
 
@@ -69,19 +74,19 @@ mod PropsDoc {
     /// コード側の既定値（assets/race.props.json と同じ置き場から出発する）。
     pub def defaults(): Doc =
         let table = List.toMap(marks());
-        { version = 1,
+        Doc.Doc({ version = 1,
           rows = List.range(0, defaultRows())
               |> List.map(n -> Map.getWithDefault(n, emptyRow(), table)),
           gateGapLanes = 3,
           barPeriod = 2.6,
           barPhaseStep = 0.37,
-          barHalfWidth = 26.0 }
+          barHalfWidth = 26.0 })
 
     /// 行 m（コース 1 周の中の行。周回の巻き戻しは呼ぶ側の仕事）に置かれた物。
     /// 行が足りない所は何も無い（fail-open — 置き場が短くてもゲームは走れる）。
     pub def cellsAt(m: Int32, doc: Doc): List[Cell] =
         if (m < 0) Nil
-        else List.drop(m, doc#rows) |> List.head
+        else List.drop(m, rec(doc)#rows) |> List.head
             |> Option.map(cellsOfRow) |> Option.getWithDefault(Nil)
 
     /// 1 行を左から読んで、立っている物だけを拾う。レーン数より右の文字は捨てる。
@@ -117,13 +122,13 @@ mod PropsDoc {
         DocJson.decodeObject(fromRoot, text)
 
     def fromRoot(root: Map[String, Json]): Doc =
-        let d = defaults();
-        { version = JsonCodec.intOr("version", d#version, root),
+        let d = rec(defaults());
+        Doc.Doc({ version = JsonCodec.intOr("version", d#version, root),
           rows = rowsOr(d#rows, root),
           gateGapLanes = JsonCodec.intOr("gateGapLanes", d#gateGapLanes, root),
           barPeriod = Float64.max(0.1, JsonCodec.floatOr("barPeriod", d#barPeriod, root)),
           barPhaseStep = JsonCodec.floatOr("barPhaseStep", d#barPhaseStep, root),
-          barHalfWidth = JsonCodec.floatOr("barHalfWidth", d#barHalfWidth, root) }
+          barHalfWidth = JsonCodec.floatOr("barHalfWidth", d#barHalfWidth, root) })
 
     /// rows（置き場の表）を読む。配列でない・空のときは既定の置き場を使う。
     def rowsOr(fallback: List[String], root: Map[String, Json]): List[String] =

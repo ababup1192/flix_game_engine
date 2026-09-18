@@ -77,7 +77,7 @@ mod SceneRender {
         discard (new File(outDir)).mkdirs();
         let atlas = HeadlessFont.buildUiAtlas(ttf(), ttf());
         let w0 = loadWorld();
-        let (cfg, texInfo) = withAtlasOf(cfgOf(outDir, atlas, w0#theme#bg), w0);
+        let (cfg, texInfo) = withAtlasOf(cfgOf(outDir, atlas, ThemeDoc.rec(w0#theme)#bg), w0);
         let ctx = App.viewCtxOf(atlas, design());
         shotNames() |> List.filter(keep) |> List.filterMap(name ->
             sceneOf(name, w0) |> Option.map(w -> shoot(cfg, texInfo, ctx, w, name)))
@@ -126,7 +126,7 @@ mod SceneRender {
             discard (new File("debug/atelier/${f}")).delete());
         let atlas = HeadlessFont.buildUiAtlas(ttf(), ttf());
         let theme = run { ThemeDoc.load(ThemeDoc.path()) } with Fs.FileRead.runWithIO;
-        let cfg = cfgOf("debug/atelier", atlas, theme#bg);
+        let cfg = cfgOf("debug/atelier", atlas, ThemeDoc.rec(theme)#bg);
         let ctx = App.viewCtxOf(atlas, design());
         // スプライト: 候補 + 現行。
         let jobs = List.append(
@@ -150,7 +150,7 @@ mod SceneRender {
                         with Fs.FileRead.runWithIO;
                     // 候補テーマは配色ごと変わる = アトラスの画素も変わるので、候補ごとに作り直す。
                     let candWorld = World.withTheme(cand, sprites, w);
-                    let (candCfg, candTex) = withAtlasOf({ background = cand#bg | cfg }, candWorld);
+                    let (candCfg, candTex) = withAtlasOf({ background = ThemeDoc.rec(cand)#bg | cfg }, candWorld);
                     discard shoot(candCfg, candTex, ctx, candWorld, stripJson(f))
                 }
             }

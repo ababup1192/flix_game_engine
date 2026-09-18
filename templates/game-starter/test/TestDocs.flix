@@ -4,13 +4,13 @@ mod TestDocs {
     @Test
     def testSampleBrokenJsonFallsBackToDefaults(): Unit \ Assert =
         let doc = SampleDoc.fromJson("{ broken") |> Option.getWithDefault(SampleDoc.defaults());
-        Assert.assertEq(expected = SampleDoc.defaults()#speed, doc#speed)
+        Assert.assertEq(expected = SampleDoc.rec(SampleDoc.defaults())#speed, SampleDoc.rec(doc)#speed)
 
     @Test
     def testSampleOverridesOneField(): Unit \ Assert =
         let doc = SampleDoc.fromJson("{\"version\":1, \"speed\": 99.0}")
             |> Option.getWithDefault(SampleDoc.defaults());
-        Assert.assertEq(expected = 99.0, doc#speed)
+        Assert.assertEq(expected = 99.0, SampleDoc.rec(doc)#speed)
 
     @Test
     def testKeysBrokenFallsBack(): Unit \ Assert =
@@ -23,6 +23,6 @@ mod TestDocs {
         let d = KeysDoc.fromJson("{\"left\": [\"Left\", \"Sinistra\"], \"up\": [\"Hop\"]}")
             |> Option.getWithDefault(KeysDoc.defaults());
         Assert.assertEq(
-            expected = (GameEngine.Key.Left :: Nil, KeysDoc.defaults()#up, KeysDoc.defaults()#down),
-            (d#left, d#up, d#down))
+            expected = (GameEngine.Key.Left :: Nil, KeysDoc.rec(KeysDoc.defaults())#up, KeysDoc.rec(KeysDoc.defaults())#down),
+            (KeysDoc.rec(d)#left, KeysDoc.rec(d)#up, KeysDoc.rec(d)#down))
 }

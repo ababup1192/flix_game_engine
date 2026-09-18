@@ -6,34 +6,37 @@
 mod ThemeDoc {
     use Util.Json.Json
 
-    pub type alias Doc = {
+    // World が持つ record は enum で包む（型検査が record を展開しないため）。
+    pub type alias Rec = {
         version = Int32,
         bg = Color,
         accent = Color,
         shade = PxShade.Spec
     }
+    pub enum Doc(Rec)
+    pub def rec(d: Doc): Rec = match d { case Doc.Doc(r) => r }
 
     pub def path(): String = "assets/__NAME__.theme.json"
 
     /// コード側の既定値（assets/__NAME__.theme.json と同じ値から出発する）。
     /// 仕上げは「光は左上から・ふち光と接地影は全部・ディザは半分・粒は無し」。
     pub def defaults(): Doc =
-        { version = 1,
-          bg     = Color.rgb(0.066667, 0.066667, 0.101961),
-          accent = Color.rgb(0.388235, 0.690196, 1.0),
-          shade  = { rim = 1.0, contact = 1.0, dither = 0.5, grain = 0.0,
-                     grainScale = 1, lightX = -1, lightY = -1 } }
+        Doc.Doc({ version = 1,
+                  bg     = Color.rgb(0.066667, 0.066667, 0.101961),
+                  accent = Color.rgb(0.388235, 0.690196, 1.0),
+                  shade  = { rim = 1.0, contact = 1.0, dither = 0.5, grain = 0.0,
+                             grainScale = 1, lightX = -1, lightY = -1 } })
 
     /// テキストから Doc へ（fail-open）。色の表記（#rrggbb）は UiDoc.colorOf に委ねる。
     pub def fromJson(text: String): Option[Doc] =
         DocJson.decodeObject(fromRoot, text)
 
     def fromRoot(root: Map[String, Json]): Doc =
-        let d = defaults();
-        { version = JsonCodec.intOr("version", d#version, root),
-          bg     = colorOr(d#bg, "bg", root),
-          accent = colorOr(d#accent, "accent", root),
-          shade  = shadeOr(d#shade, root) }
+        let d = rec(defaults());
+        Doc.Doc({ version = JsonCodec.intOr("version", d#version, root),
+                  bg     = colorOr(d#bg, "bg", root),
+                  accent = colorOr(d#accent, "accent", root),
+                  shade  = shadeOr(d#shade, root) })
 
     def colorOr(fallbackColor: Color, key: String, obj: Map[String, Json]): Color =
         Map.get(key, obj)
@@ -68,10 +71,11 @@ mod ThemeDoc {
     /// accentLight / accentDark は PxShade のふち光・接地影が使う 3 段階の明暗
     /// （絵は accent 1 色で平らに塗り、明暗はここから導く）。
     pub def resolver(doc: Doc, key: String): Color =
+        let accent = rec(doc)#accent;
         match key {
-            case "accent"      => doc#accent
-            case "accentLight" => Color.warm(lighten(doc#accent, 0.5), 0.15)
-            case "accentDark"  => Color.cool(Color.darken(doc#accent, 0.45), 0.15)
+            case "accent"      => accent
+            case "accentLight" => Color.warm(lighten(accent, 0.5), 0.15)
+            case "accentDark"  => Color.cool(Color.darken(accent, 0.45), 0.15)
             case _             => { r = 1.0, g = 0.0, b = 1.0 }
         }
 }

@@ -7,7 +7,7 @@ mod ThemeDoc {
     /// 画面の色票と幕の暗さ。sky = 夕暮れの空（背景）、path = 道、field = 畑、wall = 石垣、
     /// fog = 霧、paper = ふきだしの紙、ink = 文字と輪郭、accent = 灯り、cloth = 住人の服、
     /// titleVeil / clearVeil = 表紙・クリア画面の幕の暗さ（0〜1）。
-    pub type alias Doc = {
+    pub type alias Rec = {
         version = Int32,
         sky = Color,
         path = Color,
@@ -22,6 +22,11 @@ mod ThemeDoc {
         clearVeil = Float64
     }
 
+    /// 型検査が record を展開しないため、World が持つ形は名前付きの enum にする。
+    pub enum Doc(Rec)
+
+    pub def rec(d: Doc): Rec = match d { case Doc.Doc(r) => r }
+
     pub def path(): String = "assets/rpg.theme.json"
 
     /// 色見本の 6 桁 16 進をそのまま書くための近道。読めない綴りはマゼンタ
@@ -31,7 +36,7 @@ mod ThemeDoc {
 
     /// コード側の既定値（assets/rpg.theme.json と同じ色から出発する）。
     pub def defaults(): Doc =
-        { version = 1,
+        Doc.Doc({ version = 1,
           sky    = hex("#73a6d9"),   // 晴れた昼の空
           path   = hex("#6e5f4e"),   // 道
           field  = hex("#46603f"),   // 畑
@@ -42,15 +47,15 @@ mod ThemeDoc {
           accent = hex("#ffb454"),   // 灯り・主人公の外套
           cloth  = hex("#4f7f9e"),   // 住人の服
           titleVeil = 0.45,
-          clearVeil = 0.55 }
+          clearVeil = 0.55 })
 
     /// テキストから Doc へ（fail-open）。色の表記（#rrggbb）は UiDoc.colorOf に委ねる。
     pub def fromJson(text: String): Option[Doc] =
         DocJson.decodeObject(fromRoot, text)
 
     def fromRoot(root: Map[String, Json]): Doc =
-        let d = defaults();
-        { version = JsonCodec.intOr("version", d#version, root),
+        let d = rec(defaults());
+        Doc.Doc({ version = JsonCodec.intOr("version", d#version, root),
           sky    = colorOr(d#sky, "sky", root),
           path   = colorOr(d#path, "path", root),
           field  = colorOr(d#field, "field", root),
@@ -61,7 +66,7 @@ mod ThemeDoc {
           accent = colorOr(d#accent, "accent", root),
           cloth  = colorOr(d#cloth, "cloth", root),
           titleVeil = JsonCodec.floatOr("titleVeil", d#titleVeil, root),
-          clearVeil = JsonCodec.floatOr("clearVeil", d#clearVeil, root) }
+          clearVeil = JsonCodec.floatOr("clearVeil", d#clearVeil, root) })
 
     def colorOr(fallbackColor: Color, key: String, obj: Map[String, Json]): Color =
         Map.get(key, obj)
@@ -83,17 +88,18 @@ mod ThemeDoc {
         Color.darken(c, k)
 
     /// 屋根の赤茶の基準色（煉瓦の赤 3/4 + 灯りの橙 1/4）。
-    def roofBase(doc: Doc): Color =
+    def roofBase(doc: Rec): Color =
         Color.mix(doc#accent, Color.rgb(0.47, 0.20, 0.15), 0.74)
 
     /// 藁の麦わら色の基準（灯りの橙と道の褐色の中間を、彩度を残して沈める）。
-    def strawBase(doc: Doc): Color =
+    def strawBase(doc: Rec): Color =
         Color.warm(darken(Color.mix(doc#accent, doc#path, 0.45), 0.16), 0.06)
 
     /// スプライトの意味色キー → 実色。未知のキーはマゼンタ（描き忘れが目に見える）。
     /// wall*/fieldShade は基準色（wall/field）から導く派生色
     /// （導出できる値は Doc に置かない）。
-    pub def resolver(doc: Doc, key: String): Color =
+    pub def resolver(d: Doc, key: String): Color =
+        let doc = rec(d);
         match key {
             case "accent"      => doc#accent
             case "accentLight" => lighten(doc#accent, 0.5)

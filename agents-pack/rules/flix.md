@@ -90,6 +90,43 @@ How と What をコメントに書かない。実装の由来・旧実装・移�
 
 詳しくと例は `.claude/skills/flix-docs/SKILL.md` の「型の設計」。
 
+### World が直接持つ大きな record は enum で包む（型検査の速さ）
+
+`pub type alias Doc = { ... }` のような record の型エイリアスは、使われるたびに中身の
+まま展開される。`World` がそれを何個も持つと、`w: World` を取る全 def で型の木が巨大に
+なり、`flix check` の Typer が行数と釣り合わずに伸びる（17k 行のゲームで Typer 22 秒
+→ 包んで 9 秒。合成では 33 秒 → 3 秒）。名前付きの型（enum）で包むと展開が止まる。
+
+- **対象**: `World` が直接フィールドに持つ大きな record — Doc（`*Doc.Doc`）、盤や
+  戦いの場のような「状態のかたまり」。数値・文字列・小さな record（`Vec2` 程度）は対象外
+- **形**: 中身は `Rec`、公開の型は 1 case の enum、読むのは `rec`
+
+  ```flix
+  mod PuzzleDoc {
+      pub type alias Rec = { swapSeconds = Float64, ... }
+      pub enum Doc(Rec)
+      pub def rec(d: Doc): Rec = match d { case Doc.Doc(r) => r }
+      pub def defaults(): Doc = Doc.Doc({ swapSeconds = 0.12, ... })
+      pub def swapSecondsOf(d: Doc): Float64 = rec(d)#swapSeconds
+  }
+  ```
+
+- **ロジックの内部は record のまま**。`{ x = v | s }` を連ねる規則の本体は `Rec` を
+  受け渡し、World に戻す公開の入口（`start` / `step` など）だけで包み直す。1 行ごとに
+  `rec()` を挟むと読めなくなる
+- モジュール名と同じ enum（`mod Battle { pub enum Battle(...) }`）は companion 扱いで、
+  **モジュールの先頭の宣言に置く**
+- 包んだ enum に `Eq` は derive できない（payload が record）。比較したい値は
+  `rec(a) == rec(b)` の形か、比較する部分だけを取り出して比べる
+- モジュールの外から値を作るときは `PuzzleDoc.Doc.Doc({ ... })` と 2 段（enum 名 + case 名）。
+  `PuzzleDoc.Doc({ ... })` は E2136 で止まる。テストの fixture でまず踏む
+- 同じ関数で欄を何度も読むなら先頭で `let r = rec(doc)` を 1 回。`doc: Doc` を引数に取る
+  private ヘルパが多いモジュール（View）は、ヘルパの引数を `Rec` にして呼び側で 1 回だけ
+  剥がす方が差分が小さい
+- 置き換え漏れは `fixture()#start` のような「Doc を返す関数の戻り値に直接 `#`」と、
+  `{ x = v | defaults() }` のような「既定値の上書き」（`Doc.Doc({ x = v | rec(defaults()) })`）に
+  集まる。E6794（`Doc` と record の unify）が出たらこの 2 つを疑う
+
 ## 二乗を書かない
 
 N はゲームが決める。エンジンは N を知らない（今のテンプレが 9 要素だから軽い、は

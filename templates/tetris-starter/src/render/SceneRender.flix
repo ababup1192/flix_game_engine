@@ -71,7 +71,7 @@ mod SceneRender {
         discard (new File(outDir)).mkdirs();
         let atlas = HeadlessFont.buildUiAtlas(ttf(), ttf());
         let w0 = loadWorld();
-        let cfg = cfgOf(outDir, atlas, w0#theme#bg);
+        let cfg = cfgOf(outDir, atlas, ThemeDoc.rec(w0#theme)#bg);
         let ctx = App.viewCtxOf(atlas, design());
         shotNames() |> List.filter(keep) |> List.filterMap(name ->
             sceneOf(name, w0) |> Option.map(w -> shoot(cfg, ctx, w, name)))
@@ -108,7 +108,7 @@ mod SceneRender {
             Map.insert((c, bottom - 2), World.Kind.J, b), full);
         { board = withTower, phase = World.Phase.Clearing,
           clearRows = bottom :: (bottom - 1) :: Nil,
-          clearTimer = w0#doc#clearDuration * 0.4, t = 2.6 | w0 }
+          clearTimer = RulesDoc.rec(w0#doc)#clearDuration * 0.4, t = 2.6 | w0 }
 
     /// GAME OVER の幕。盤を上まで積んで overlay を写す。
     def overScene(w0: World.World): World.World =

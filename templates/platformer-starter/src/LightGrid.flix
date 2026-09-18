@@ -28,9 +28,10 @@ mod LightGrid {
 
     /// 面全体の明度場。outdoor / tower は空(= どこでも白)。
     pub def compute(st: Stage.Stage): Map[(Int32, Int32), Rgb] =
-        if (st#kind != "cave") Map.empty()
+        let grid = Stage.rec(st);
+        if (grid#kind != "cave") Map.empty()
         else {
-            let seeds = st#torches |> List.map(c -> (c#x, c#y));
+            let seeds = grid#torches |> List.map(c -> (c#x, c#y));
             let dist = dial(st, Map.empty(), Map#{ 0 => seeds }, 0);
             dist |> Map.map(d -> {
                 let s = Float64.max(0.0, 1.0 - Int32.toFloat64(d) * decay());
@@ -43,7 +44,7 @@ mod LightGrid {
     /// マスの明度。cave 以外と場の外は白 / cave の未到達マスは環境光。
     pub def brightnessAt(st: Stage.Stage, light: Map[(Int32, Int32), Rgb],
                          x: Int32, y: Int32): Rgb =
-        if (st#kind != "cave") (1.0, 1.0, 1.0)
+        if (Stage.rec(st)#kind != "cave") (1.0, 1.0, 1.0)
         else Map.get((x, y), light) |> Option.getWithDefault(ambient())
 
     /// (Float64 の 0..1)³ → 描画色。GPU 層の tint と動的な絵の両方が同じ丸めを通る。
@@ -76,13 +77,14 @@ mod LightGrid {
                       buckets: Map[Int32, List[(Int32, Int32)]]):
                      Map[Int32, List[(Int32, Int32)]] =
         let (x, y) = cell;
+        let s = Stage.rec(st);
         let steps = ((1, 0, 2)) :: ((-1, 0, 2)) :: ((0, 1, 2)) :: ((0, -1, 2))
                  :: ((1, 1, 3)) :: ((1, -1, 3)) :: ((-1, 1, 3)) :: ((-1, -1, 3)) :: Nil;
-        List.foldLeft((acc, s) -> {
-            let (dx, dy, base) = s;
+        List.foldLeft((acc, step) -> {
+            let (dx, dy, base) = step;
             let n = (x + dx, y + dy);
             let (nx, ny) = n;
-            if (nx < 0 or nx >= st#width or ny < 0 or ny >= st#height
+            if (nx < 0 or nx >= s#width or ny < 0 or ny >= s#height
                 or Map.get(n, seen) != None) acc
             else {
                 let cost = if (Stage.solidAt(st, nx, ny)) base * 3 else base;

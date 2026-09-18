@@ -94,7 +94,7 @@ mod SceneRender {
             { texture = TownMap.textureName(), baked = w0#townAtlas } ::
             { texture = World.charAtlasName(), baked = w0#charAtlas } :: Nil);
         let texPaths = HeadlessRender.imagePngs("debug", images);
-        let cfg = { texturePath = texPaths | cfgOf(outDir, atlas, w0#theme#sky) };
+        let cfg = { texturePath = texPaths | cfgOf(outDir, atlas, ThemeDoc.rec(w0#theme)#sky) };
         let shots = shotNames() |> List.filter(keep) |> List.filterMap(name ->
             sceneOf(name, w0) |> Option.map(w -> shoot(cfg, atlas, images, w, name)));
         // 地面の質感: assets/rpg.terrain.json の表で土・石垣・水路・畑を敷いた 1 枚。
@@ -112,7 +112,7 @@ mod SceneRender {
     /// 魔物と出会い、「たたかう」を 1 回選んだ直後。歩数も打ち合いも規則どおりに進める
     /// （World を手で組まない = 規則が変わればこの絵も一緒に変わる）。
     def battleScene(playing: World.World): World.World =
-        let met = walkUntilFoe(playing#battleDoc#encounterSteps, playing);
+        let met = walkUntilFoe(BattleDoc.rec(playing#battleDoc)#encounterSteps, playing);
         // 出会いの 1 行を読み終え（決定）、「たたかう」を選ぶ（決定）。
         World.confirm(World.confirm(met)) |> withClock(2.1)
 
@@ -132,7 +132,7 @@ mod SceneRender {
     /// 話し相手は villagers の末尾 — 約束の相手（先頭に置く習わし）でない住人が選ばれ、
     /// ふつうの 1 行のふきだしが写る。住人がいなければそのまま（fail-open）。
     def talkScene(playing: World.World): World.World =
-        match List.last(playing#map#villagers) {
+        match List.last(MapDoc.rec(playing#map)#villagers) {
             case None           => playing
             case Some(villager) => match standNextTo(villager#cell, playing) {
                 case None    => playing
@@ -142,7 +142,7 @@ mod SceneRender {
 
     /// 閉じた木戸の前に立ち、木戸のほうを向いた状態。
     def doorScene(playing: World.World): World.World =
-        standNextTo(playing#map#door#cell, playing) |> Option.getWithDefault(playing)
+        standNextTo(MapDoc.rec(playing#map)#door#cell, playing) |> Option.getWithDefault(playing)
 
     /// 薬草がそろってクリアになった状態（扉は開き、灯りは全部ともる）。
     /// 収支は World の導出（goalOf / lampsLit）に合わせて置く。
@@ -317,7 +317,7 @@ mod SceneRender {
             { texture = TownMap.textureName(), baked = w#townAtlas } ::
             { texture = World.charAtlasName(), baked = w#charAtlas } :: Nil);
         let texPaths = HeadlessRender.imagePngs("debug", images);
-        let cfg = { texturePath = texPaths | townCfgOf("debug", atlas, w#theme#sky) };
+        let cfg = { texturePath = texPaths | townCfgOf("debug", atlas, ThemeDoc.rec(w#theme)#sky) };
         let ctx = App.viewCtxOf(atlas, cfg#design);
         let ground = TileScene.toItems(TownMap.spec(w#townMap, w#townAtlas));
         let items = List.append(ground, View.frame(ctx, { t = 2.1, npcClock = 2.1 | w }));
@@ -339,7 +339,7 @@ mod SceneRender {
             { texture = TownMap.textureName(), baked = playing#townAtlas } ::
             { texture = World.charAtlasName(), baked = playing#charAtlas } :: Nil);
         let texPaths = HeadlessRender.imagePngs("debug", images);
-        let cfg = { texturePath = texPaths | cfgOf("debug", atlas, playing#theme#sky) };
+        let cfg = { texturePath = texPaths | cfgOf("debug", atlas, ThemeDoc.rec(playing#theme)#sky) };
         // カメラは 1 棟目の民家の見た目の中心（位置を変えても追随する）。
         let nw = buildingCell("house", { x = 10, y = 11 });
         let t = World.tileSize();
@@ -352,7 +352,7 @@ mod SceneRender {
         let front = { hero = { x = nw#x + 1, y = nw#y + 3 }, facing = Dir4.Down | playing };
         discard shootAt(cfg, atlas, images, front, center, "house_front");
         // 門の開閉（絵が切り替わることの証明）。カメラは門のマスを bounds 内へ収めた位置。
-        let doorCell = playing#map#door#cell;
+        let doorCell = MapDoc.rec(playing#map)#door#cell;
         let gc0 = { x = Int32.toFloat64(doorCell#x) * t + t / 2.0,
                     y = Int32.toFloat64(doorCell#y) * t };
         let gc1 = CameraRig.clampCenter(bounds = World.boardRect(playing),
@@ -379,7 +379,7 @@ mod SceneRender {
             { texture = TownMap.textureName(), baked = playing#townAtlas } ::
             { texture = World.charAtlasName(), baked = playing#charAtlas } :: Nil);
         let texPaths = HeadlessRender.imagePngs("debug", images);
-        let cfg = { texturePath = texPaths | cfgOf("debug", atlas, playing#theme#sky) };
+        let cfg = { texturePath = texPaths | cfgOf("debug", atlas, ThemeDoc.rec(playing#theme)#sky) };
         let shaderLoaded = run { ShaderJson.load(Controls.waterShaderPath()) } with Fs.FileRead.runWithIO;
         let shaderOk = Result.isOk(shaderLoaded);
         println(if (shaderOk) "waterShader: parsed ok (custom doc)"
@@ -410,7 +410,7 @@ mod SceneRender {
             { texture = TownMap.textureName(), baked = playing#townAtlas } ::
             { texture = World.charAtlasName(), baked = playing#charAtlas } :: Nil);
         let texPaths = HeadlessRender.imagePngs("debug", images);
-        let cfg = { texturePath = texPaths | cfgOf("debug", atlas, playing#theme#sky) };
+        let cfg = { texturePath = texPaths | cfgOf("debug", atlas, ThemeDoc.rec(playing#theme)#sky) };
         discard shootAt(cfg, atlas, images, playing, { x = 272.5, y = 120.5 }, "seam_half");
         discard shootAt(cfg, atlas, images, playing, { x = 264.25, y = 127.75 }, "seam_cross")
 
@@ -473,7 +473,7 @@ mod SceneRender {
         let images = PxSpriteAtlas.asImages(
             { texture = TownMap.textureName(), baked = baked } :: Nil);
         let texPaths = HeadlessRender.imagePngs("debug", images);
-        let cfg = { texturePath = texPaths | townCfgOf("debug", atlas, theme#sky) };
+        let cfg = { texturePath = texPaths | townCfgOf("debug", atlas, ThemeDoc.rec(theme)#sky) };
         let items = TileScene.toItems(TownMap.spec(townMap, baked));
         let (drawables, polygons) = Render.drawWith(HeadlessRender.imageTextureInfo(images), items);
         HeadlessRender.renderPng(cfg, drawables, polygons, "town_floor_scene");
@@ -492,7 +492,7 @@ mod SceneRender {
             discard (new File("debug/atelier/${f}")).delete());
         let atlas = HeadlessFont.buildUiAtlas(ttf(), ttf());
         let theme = run { ThemeDoc.load(ThemeDoc.path()) } with Fs.FileRead.runWithIO;
-        let cfg = cfgOf("debug/atelier", atlas, theme#sky);
+        let cfg = cfgOf("debug/atelier", atlas, ThemeDoc.rec(theme)#sky);
         // スプライト: 候補 + 現行。
         let jobs = List.append(
             jsonsIn("atelier", ".sprite.json") |> List.map(f -> ("atelier/${f}", stripJson(f))),
@@ -516,7 +516,7 @@ mod SceneRender {
                         { texture = TownMap.textureName(), baked = wc#townAtlas } ::
                         { texture = World.charAtlasName(), baked = wc#charAtlas } :: Nil);
                     let texPaths = HeadlessRender.imagePngs("debug", images);
-                    discard shoot({ background = cand#sky, texturePath = texPaths | cfg },
+                    discard shoot({ background = ThemeDoc.rec(cand)#sky, texturePath = texPaths | cfg },
                         atlas, images, wc, stripJson(f))
                 }
             }

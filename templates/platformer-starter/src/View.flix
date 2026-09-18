@@ -43,7 +43,7 @@ mod View {
     /// 空(視差 0)。kind ごとの二色 + 夕日。design 全面に敷く。
     pub def backdrop(w: World.World): List[Render.PlacedItem] =
         let c = key -> Theme.resolve(w#theme, key);
-        let kind = w#stage#kind;
+        let kind = Stage.rec(w#stage)#kind;
         let (top, bottom) =
             if (kind == "cave") (c("caveTop"), c("caveBottom"))
             else if (kind == "tower") (c("towerTop"), c("towerBottom"))
@@ -82,7 +82,7 @@ mod View {
     def strip(ctx: App.ViewCtx, w: World.World, sprite: String, stripW: Float64,
               bottomFrac: Float64, fillKey: Option[String], z: Int32,
               drift: Float64): List[Render.PlacedItem] =
-        if (w#stage#kind == "cave") Nil
+        if (Stage.rec(w#stage)#kind == "cave") Nil
         else {
             let stripH = PxSprite.sizeOf(w#pxDoc, sprite, "strip", scale())
                 |> Option.map(s -> s#y) |> Option.getWithDefault(0.0);
@@ -131,7 +131,7 @@ mod View {
     /// 画面の外まで地形を組むと、面が大きいほど 1 フレームの絵の数がそのまま増える。
     def cellsIn(visible: Rect2.Rect2, w: World.World): List[Grid.Cell] =
         Grid.cellsIn({ tileSize = Physics.tileSize(), area = visible,
-                       cols = w#stage#width, rows = w#stage#height,
+                       cols = Stage.rec(w#stage)#width, rows = Stage.rec(w#stage)#height,
                        margin = { left = 1, top = 1, right = 1, bottom = 1 } })
 
     /// 画面に写る動く物だけを組む。ここを絞らないと、面が長いほど 1 フレームの
@@ -164,10 +164,10 @@ mod View {
     /// 別レイヤ(丘・空)が覗かないように。
     def apronItems(w: World.World): List[Render.PlacedItem] =
         let ts = Physics.tileSize();
-        let wpx = Int32.toFloat64(w#stage#width) * ts;
-        let hpx = Int32.toFloat64(w#stage#height) * ts;
-        let ground = if (w#stage#kind == "outdoor") "dirtDark" else "stoneDark";
-        let c = litColor(w, 0, w#stage#height - 1, Theme.resolve(w#theme, ground));
+        let wpx = Int32.toFloat64(Stage.rec(w#stage)#width) * ts;
+        let hpx = Int32.toFloat64(Stage.rec(w#stage)#height) * ts;
+        let ground = if (Stage.rec(w#stage)#kind == "outdoor") "dirtDark" else "stoneDark";
+        let c = litColor(w, 0, Stage.rec(w#stage)#height - 1, Theme.resolve(w#theme, ground));
         { at = { x = -240.0, y = hpx },
           item = RawDraw.box({ x = wpx + 480.0, y = 320.0 }, c, zFore()) }
             :: { at = { x = -240.0, y = 0.0 },
@@ -226,7 +226,7 @@ mod View {
     /// 描き出しと実機の絵が構造的に一致する(前は 2 経路で明度の載せ方が違った)。
     def lit(w: World.World, x: Int32, y: Int32,
             items: List[Render.PlacedItem]): List[Render.PlacedItem] =
-        if (w#stage#kind != "cave") items
+        if (Stage.rec(w#stage)#kind != "cave") items
         else Render.tintedAll(
             LightGrid.toColor(LightGrid.brightnessAt(w#stage, w#light, x, y)), items)
 
@@ -245,7 +245,7 @@ mod View {
     /// 動く床(1 マス = 1 コマの並び)。
     def platformItems(vis: Rect2.Rect2, w: World.World): List[Render.PlacedItem] =
         let ts = Physics.tileSize();
-        w#stage#platforms
+        Stage.rec(w#stage)#platforms
             |> List.filter(p -> nearBox(vis, World.platformPosAt(w#motion, p, w#t),
                                         { x = Int32.toFloat64(p#wTiles) * ts, y = ts }))
             |> List.flatMap(p -> {
@@ -268,7 +268,7 @@ mod View {
 
     /// バネ(踏んだ直後だけ伸びたコマ)。
     def springItems(vis: Rect2.Rect2, w: World.World): List[Render.PlacedItem] =
-        w#stage#springs |> List.filter(nearCell(vis)) |> List.flatMap(c -> {
+        Stage.rec(w#stage)#springs |> List.filter(nearCell(vis)) |> List.flatMap(c -> {
             let live = Map.get((c#x, c#y), w#springT) |> Option.getWithDefault(0.0);
             let frame = if (live > 0.0) "launch" else "rest";
             let ts = Physics.tileSize();
@@ -280,7 +280,7 @@ mod View {
     /// コイン(まだ取っていない物だけ・回転はコマ替え)。
     def coinItems(vis: Rect2.Rect2, w: World.World): List[Render.PlacedItem] =
         let frame = if (two(w, 5.0)) "spin_0" else "spin_1";
-        w#stage#coins
+        Stage.rec(w#stage)#coins
             |> List.filter(c -> World.coinAlive(w, c) and nearCell(vis, c))
             |> List.flatMap(c -> {
                 let pos = Stage.centerOf(c);
@@ -289,14 +289,14 @@ mod View {
 
     /// 松明(柄 + コマ替えの炎 + 洞窟では加算のぼんやり)。
     def torchItems(vis: Rect2.Rect2, w: World.World): List[Render.PlacedItem] =
-        w#stage#torches |> List.filter(nearCell(vis)) |> List.flatMap(c -> {
+        Stage.rec(w#stage)#torches |> List.filter(nearCell(vis)) |> List.flatMap(c -> {
             let pos = Stage.centerOf(c);
             let base = spriteAt(w, "torch", "base",
                 { x = pos#x, y = pos#y + 6.0 }, false, zDeco());
             let ff = if (two(w, 8.0)) "flame_0" else "flame_1";
             let flame = spriteAt(w, "flame", ff,
                 { x = pos#x, y = pos#y - 6.0 }, false, zDeco());
-            let glow = if (w#stage#kind == "cave")
+            let glow = if (Stage.rec(w#stage)#kind == "cave")
                 Render.glowAt({ x = pos#x, y = pos#y - 4.0 }, 22.0,
                               Color.rgb(0.95, 0.65, 0.35),
                               { alpha = 0.35, blend = DrawCmd.BlendMode.Add }, zFx())
@@ -306,7 +306,7 @@ mod View {
 
     /// チェックポイントのランタン(点いたら on)。
     def checkpointItems(vis: Rect2.Rect2, w: World.World): List[Render.PlacedItem] =
-        w#stage#checkpoints |> List.filter(nearCell(vis)) |> List.flatMap(c -> {
+        Stage.rec(w#stage)#checkpoints |> List.filter(nearCell(vis)) |> List.flatMap(c -> {
             let on = Set.memberOf((c#x, c#y), w#cpOn);
             let ts = Physics.tileSize();
             spriteAt(w, "checkpoint", if (on) "on" else "off",
@@ -316,7 +316,7 @@ mod View {
 
     /// ゴール旗(旗はコマ替えでなびく)。
     def flagItems(w: World.World): List[Render.PlacedItem] =
-        let g = w#stage#goal;
+        let g = Stage.rec(w#stage)#goal;
         let frame = if (two(w, 3.0)) "wave_0" else "wave_1";
         let ts = Physics.tileSize();
         spriteAt(w, "flag", frame,
@@ -404,13 +404,13 @@ mod View {
     // ── HUD(カメラ非追従)──
 
     pub def hud(ctx: App.ViewCtx, w: World.World): List[Render.PlacedItem] =
-        let hearts = List.range(0, w#rules#maxHearts) |> List.flatMap(i ->
+        let hearts = List.range(0, RulesDoc.rec(w#rules)#maxHearts) |> List.flatMap(i ->
             spriteAt(w, "ui", if (i < w#hearts) "heart" else "heart_empty",
                 { x = 10.0 + Int32.toFloat64(i) * 12.0, y = 18.0 }, false, 100));
         let score = { at = { x = 560.0, y = 10.0 },
                       item = Render.text("${w#score}", ctx#atlas, 14.0, 100) };
         let name = { at = { x = 10.0, y = 24.0 },
-                     item = Render.text(w#stage#name, ctx#atlas, 10.0, 100) };
+                     item = Render.text(Stage.rec(w#stage)#name, ctx#atlas, 10.0, 100) };
         hearts ::: score :: name :: overlayItems(ctx, w)
 
     /// 場面の幕: clear / over の間だけ、薄い覆いと大きな字。
@@ -419,7 +419,7 @@ mod View {
         else {
             let veil = { at = { x = 0.0, y = 0.0 },
                          item = RawDraw.box(design(), Theme.resolve(w#theme, "ink"), 98) };
-            let msg = if (w#phase == "clear") w#uiText#clear else w#uiText#gameOver;
+            let msg = if (w#phase == "clear") UiText.rec(w#uiText)#clear else UiText.rec(w#uiText)#gameOver;
             let label = { at = { x = 250.0, y = 160.0 },
                           item = Render.text(msg, ctx#atlas, 28.0, 99) };
             Render.fadeAll(0.55, veil :: Nil) ::: label :: Nil

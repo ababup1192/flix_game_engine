@@ -89,19 +89,19 @@ mod World {
         { phase = Phase.Title,
           story = docs#story, kind = docs#kind, theme = docs#theme, sprites = docs#sprites,
           atlas = baked, atlasKey = key,
-          t = 0.0, section = docs#story#start, idx = 0,
+          t = 0.0, section = StoryDoc.rec(docs#story)#start, idx = 0,
           kit = NovelKit.closed(), cursor = 0, lightsOut = 0,
           ui = ui, docError = None, activeDocsWritten = "" }
 
     /// いまついている灯りの数（消えた分を引いた残り。負にはならない）。
     pub def lampsLit(w: World): Int32 =
-        Int32.max(0, w#story#lamps - w#lightsOut)
+        Int32.max(0, StoryDoc.rec(w#story)#lamps - w#lightsOut)
 
     // ── 進行の規則 ──
 
     /// 表紙から物語をはじめる。灯りは全部つき直る（新しい夜）。[遷移: Title→Story]
     def begin(w: World): World =
-        enter(w#story#start, 0, { phase = Phase.Story, lightsOut = 0 | w })
+        enter(StoryDoc.rec(w#story)#start, 0, { phase = Phase.Story, lightsOut = 0 | w })
 
     /// 表紙へ戻る（結末を読み終えた・台本が切れた）。部屋の暗さはそのまま残り、
     /// 次に begin したとき灯り直す。[遷移: Story→Title]
@@ -175,7 +175,7 @@ mod World {
     /// 疑ったときだけ灯りをひとつ消す（台本の lamps より多くは消えない）。
     def dimIf(suspect: Bool, w: World): World =
         if (suspect)
-            { lightsOut = Int32.min(w#story#lamps, w#lightsOut + 1) | w }
+            { lightsOut = Int32.min(StoryDoc.rec(w#story)#lamps, w#lightsOut + 1) | w }
         else w
 
     def currentOptions(w: World): List[StoryDoc.Choice] =
@@ -188,7 +188,7 @@ mod World {
     /// 毎フレーム: 文字送りを進め、時計を進める。時計は場面を問わず進む —
     /// 読んでいる間も表紙でも、雨は降り炎は揺れる（動かない絵は止まって見える）。
     pub def step(dt: Float64, w: World): World =
-        let kit = NovelKit.step(cps = w#kind#cps, dt, w#kit);
+        let kit = NovelKit.step(cps = KindDoc.rec(w#kind)#cps, dt, w#kit);
         { kit = kit, ui = NovelKit.apply(kit, w#ui), t = w#t + dt | w }
 
     // ── Doc の差し替え（保存即反映） ──

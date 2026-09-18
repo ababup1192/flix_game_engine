@@ -19,7 +19,7 @@ mod MapDoc {
     /// 知らない文字は道にする）、start = 主人公の最初のマス、goal = クリアに要る薬草の数、
     /// lamps = 灯りの立つマス（薬草を拾うたびひとつ点く）。
     /// title / subtitle / clear / hint / clearHint は画面の文言（hint = 表紙、clearHint = クリア画面の操作ヒント）。
-    pub type alias Doc = {
+    pub type alias Rec = {
         version = Int32,
         title = String,
         subtitle = String,
@@ -35,6 +35,11 @@ mod MapDoc {
         goal = Int32
     }
 
+    /// 型検査が record を展開しないため、World が持つ形は名前付きの enum にする。
+    pub enum Doc(Rec)
+
+    pub def rec(d: Doc): Rec = match d { case Doc.Doc(r) => r }
+
     pub def path(): String = "assets/rpg.map.json"
 
     /// コード側の既定値。間取りが読めなくても小さな里でゲームは必ず起動する。
@@ -45,7 +50,7 @@ mod MapDoc {
     ///   #....#.....#
     ///   ############
     pub def defaults(): Doc =
-        { version = 1,
+        Doc.Doc({ version = 1,
           title = "霧の里",
           subtitle = "薬草を届けに、夕暮れの段々畑へ",
           clear = "薬草はぜんぶ届いた。里に灯がともる",
@@ -67,7 +72,7 @@ mod MapDoc {
                    opened = "約束どおりだ。通っていいよ" },
           herbs = { x = 1, y = 1 } :: { x = 9, y = 2 } :: Nil,
           lamps = { x = 5, y = 0 } :: { x = 8, y = 0 } :: Nil,
-          goal = 2 }
+          goal = 2 })
 
     // ── 盤面の読み取り（マスの中身。歩ける・ぶつかるの判断は World 側） ──
 
@@ -77,15 +82,15 @@ mod MapDoc {
 
     /// 盤の列数（一番長い行に合わせる。短い行の足りない分は石垣とみなす）。
     pub def cols(doc: Doc): Int32 =
-        doc#rows |> List.map(String.length) |> List.foldLeft(Int32.max, 0)
+        rec(doc)#rows |> List.map(String.length) |> List.foldLeft(Int32.max, 0)
 
     /// 盤の行数。
     pub def rowCount(doc: Doc): Int32 =
-        List.length(doc#rows)
+        List.length(rec(doc)#rows)
 
     /// cell のタイル文字。盤の外・短い行の外は '#'（石垣）にする。
     pub def tileAt(cell: Grid.Cell, doc: Doc): Char =
-        List.nth(cell#y, doc#rows)
+        List.nth(cell#y, rec(doc)#rows)
             |> Option.flatMap(row -> List.nth(cell#x, String.toList(row)))
             |> Option.getWithDefault('#')
 
@@ -95,7 +100,7 @@ mod MapDoc {
 
     /// cell に立っている住人（いなければ None）。
     pub def villagerAt(cell: Grid.Cell, doc: Doc): Option[Villager] =
-        List.find(villager -> sameCell(villager#cell, cell), doc#villagers)
+        List.find(villager -> sameCell(villager#cell, cell), rec(doc)#villagers)
 
     // ── JSON からの読み込み ──
 
@@ -104,8 +109,8 @@ mod MapDoc {
         DocJson.decodeObject(fromRoot, text)
 
     def fromRoot(root: Map[String, Json]): Doc =
-        let d = defaults();
-        { version = JsonCodec.intOr("version", d#version, root),
+        let d = rec(defaults());
+        Doc.Doc({ version = JsonCodec.intOr("version", d#version, root),
           title = JsonCodec.stringOr("title", d#title, root),
           subtitle = JsonCodec.stringOr("subtitle", d#subtitle, root),
           clear = JsonCodec.stringOr("clear", d#clear, root),
@@ -127,7 +132,7 @@ mod MapDoc {
           lamps = Map.get("lamps", root)
               |> Option.flatMap(JsonCodec.decodeList(cellFromJson))
               |> Option.getWithDefault(d#lamps),
-          goal = JsonCodec.intOr("goal", d#goal, root) }
+          goal = JsonCodec.intOr("goal", d#goal, root) })
 
     /// {"x": .., "y": ..} をマスに読む（欠けたフィールドは 0）。
     def cellFromJson(json: Json): Option[Grid.Cell] =
@@ -144,7 +149,7 @@ mod MapDoc {
               line = JsonCodec.stringOr("line", "", obj) })
 
     def doorFromJson(json: Json): Option[Door] =
-        let d = defaults()#door;
+        let d = rec(defaults())#door;
         JsonCodec.expectObject(json) |> Option.map(obj ->
             { cell = { x = JsonCodec.intOr("x", 0, obj), y = JsonCodec.intOr("y", 0, obj) },
               promise = JsonCodec.stringOr("promise", d#promise, obj),

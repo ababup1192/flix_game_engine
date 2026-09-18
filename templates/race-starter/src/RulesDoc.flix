@@ -9,7 +9,7 @@ mod RulesDoc {
     use Util.Json.Json
 
     /// 手触りと収支の数値。いじると何が変わるかは assets/rules.schema.json の label が source of truth。
-    pub type alias Doc = {
+    pub type alias Rec = {
         version = Int32,
         // ── 走り ──
         forwardSpeed = Float64,        // 前進の速さ（px/秒）
@@ -57,11 +57,16 @@ mod RulesDoc {
         finishBonus = Int32            // 1 位ゴールの追加得点
     }
 
+    // 型検査が record を展開しないため、World が持つ公開の型は enum で包む。
+    pub enum Doc(Rec)
+
+    pub def rec(d: Doc): Rec = match d { case Doc.Doc(r) => r }
+
     pub def path(): String = "assets/race.rules.json"
 
     /// コード側の既定値（assets/race.rules.json と同じ値から出発する）。
     pub def defaults(): Doc =
-        { version = 1,
+        Doc.Doc({ version = 1,
           forwardSpeed = 118.0,
           steerSpeed = 127.0,
           brakeSlow = 0.72,
@@ -98,15 +103,15 @@ mod RulesDoc {
           itemBoostLow = 1.5,
           itemBoostDuration = 0.8,
           scorePerPass = 300,
-          finishBonus = 1000 }
+          finishBonus = 1000 })
 
     /// テキストから Doc へ（fail-open）。JSON でない・形が違うフィールドは既定へ落とす。
     pub def fromJson(text: String): Option[Doc] =
         DocJson.decodeObject(fromRoot, text)
 
     def fromRoot(root: Map[String, Json]): Doc =
-        let d = defaults();
-        { version = JsonCodec.intOr("version", d#version, root),
+        let d = rec(defaults());
+        Doc.Doc({ version = JsonCodec.intOr("version", d#version, root),
           forwardSpeed = JsonCodec.floatOr("forwardSpeed", d#forwardSpeed, root),
           steerSpeed = JsonCodec.floatOr("steerSpeed", d#steerSpeed, root),
           brakeSlow = JsonCodec.floatOr("brakeSlow", d#brakeSlow, root),
@@ -143,7 +148,7 @@ mod RulesDoc {
           itemBoostLow = JsonCodec.floatOr("itemBoostLow", d#itemBoostLow, root),
           itemBoostDuration = JsonCodec.floatOr("itemBoostDuration", d#itemBoostDuration, root),
           scorePerPass = JsonCodec.intOr("scorePerPass", d#scorePerPass, root),
-          finishBonus = JsonCodec.intOr("finishBonus", d#finishBonus, root) }
+          finishBonus = JsonCodec.intOr("finishBonus", d#finishBonus, root) })
 
     /// path の Doc を読む。読めない・壊れているときは defaults（fail-open）。
     pub def load(p: String): Doc \ Fs.FileRead =

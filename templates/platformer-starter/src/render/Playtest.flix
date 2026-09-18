@@ -45,11 +45,11 @@ mod Playtest {
 
     /// ゴールまでの直線距離(進んでいるかの物差し。縦の面でも効く)。
     def goalDist(w: World.World): Float64 =
-        Vec2.length(Vec2.sub(Stage.centerOf(w#stage#goal), w#player#body#pos))
+        Vec2.length(Vec2.sub(Stage.centerOf(Stage.rec(w#stage)#goal), w#player#body#pos))
 
     pub def all(): Unit \ IO =
         let w0 = load();
-        let n = List.length(w0#stageDoc#stages);
+        let n = List.length(StageDoc.rec(w0#stageDoc)#stages);
         let reports = List.range(0, n) |> List.map(i -> playStage(World.loadStage(i, w0)));
         reports |> List.forEach(r -> println(line(r)));
         let bad = reports |> List.filter(r -> not passed(r));
@@ -103,7 +103,7 @@ mod Playtest {
                           xStall = 0.0, jumpHold = 0.0, dir = 1.0, turnCd = 0.0,
                           hurts = 0, hearts = w#hearts };
         let (wEnd, tally) = loop(w, t0, 0);
-        { name = w#stage#name,
+        { name = Stage.rec(w#stage)#name,
           // clear = ゴール / dead = 残機切れ / stuck = 時間切れ(進めない)
           outcome = if (wEnd#phase == "clear") "clear"
                     else if (wEnd#phase == "over") "dead" else "stuck",
@@ -113,7 +113,7 @@ mod Playtest {
           stuckMax = tally#stuckMax, idleMax = tally#idleMax,
           jumps = tally#jumps,
           stomps = wEnd#stomps,
-          coins = Set.size(wEnd#got), coinsTotal = List.length(w#stage#coins),
+          coins = Set.size(wEnd#got), coinsTotal = List.length(Stage.rec(w#stage)#coins),
           hurts = tally#hurts, stuckAt = tally#stuckAt }
 
     def loop(w: World.World, tally: Tally, n: Int32): (World.World, Tally) =
@@ -158,7 +158,7 @@ mod Playtest {
     def climbTarget(w: World.World): Option[Float64] =
         let p = w#player;
         let ts = Physics.tileSize();
-        if (Stage.centerOf(w#stage#goal)#y > p#body#pos#y - ts * 2.0) None
+        if (Stage.centerOf(Stage.rec(w#stage)#goal)#y > p#body#pos#y - ts * 2.0) None
         else {
             let cx = Physics.tileOf(p#body#pos#x);
             let cy = Physics.tileOf(p#body#pos#y);
@@ -182,7 +182,7 @@ mod Playtest {
     /// これを 1.0 固定にすると、B ダッシュ中は敵に気づいた時にはもう避けられない —
     /// 「面が難しい」ではなく「bot の目が遅い」で不合格が出る。
     def lead(w: World.World): Float64 =
-        Float64.max(1.0, Float64.abs(w#player#body#vel#x) / w#motion#walkSpeed)
+        Float64.max(1.0, Float64.abs(w#player#body#vel#x) / MotionDoc.rec(w#motion)#walkSpeed)
 
     def wantsJump(w: World.World, dir: Float64): Bool =
         let p = w#player;
@@ -214,7 +214,7 @@ mod Playtest {
     /// 1 tick ぶんの集計。
     def tick(w: World.World, w1: World.World, input: World.Input, hold: Float64,
              turnCd: Float64, tally: Tally): Tally =
-        let m = w#motion;
+        let m = MotionDoc.rec(w#motion);
         let vx = Float64.abs(w1#player#body#vel#x);
         let dist = goalDist(w1);
         let movedX = Float64.abs(w1#player#body#pos#x - tally#lastX);

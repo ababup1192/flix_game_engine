@@ -5,6 +5,8 @@ mod TestFeel {
 
     def m(): MotionDoc.Doc = MotionDoc.defaults()
 
+    def mr(): MotionDoc.Rec = MotionDoc.rec(m())
+
     def dt(): Float64 = 1.0 / 120.0
 
     /// 平地: 行 5 から下が全部硬い(地面の上面 y = 80px)。
@@ -36,7 +38,7 @@ mod TestFeel {
         // 崖を離れた直後(コヨーテ残あり)は空中でも跳べる。バッファとコヨーテは消費される。
         let airborne = { body = { pos = { x = 24.0, y = 40.0 }, vel = { x = 0.0, y = 30.0 },
                                   onGround = false },
-                         coyote = m()#coyoteTime * 0.5, buffer = 0.0,
+                         coyote = mr()#coyoteTime * 0.5, buffer = 0.0,
                          facing = 1.0, jumping = false, wall = 0.0 };
         let p = Player.step(flat(), m(), dt(), jump(), airborne);
         Assert.assertEq(expected = (true, 0.0, 0.0),
@@ -55,7 +57,7 @@ mod TestFeel {
         // 着地前に取り置いた入力(buffer 残あり)が、着地の次の tick で自動発火する。
         let falling = { body = { pos = { x = 24.0, y = 80.0 - Physics.playerSize()#y * 0.5 - 1.0 },
                                  vel = { x = 0.0, y = 200.0 }, onGround = false },
-                        coyote = 0.0, buffer = m()#jumpBufferTime, facing = 1.0,
+                        coyote = 0.0, buffer = mr()#jumpBufferTime, facing = 1.0,
                         jumping = false, wall = 0.0 };
         let landed = Player.step(flat(), m(), dt(), idle(), falling);
         let p = Player.step(flat(), m(), dt(), idle(), landed);
@@ -72,14 +74,14 @@ mod TestFeel {
         let p = Player.step(flat(), m(), dt(), release, rising);
         let cut = -200.0 * Physics.cutFactor(m());
         let expected = Float64.min(cut + Physics.gravityFor(m(), cut) * dt(),
-                                   m()#maxFallSpeed);
+                                   mr()#maxFallSpeed);
         Assert.assertEq(expected = (expected, false), (p#body#vel#y, p#jumping))
 
     @Test
     def testFallGravityIsHarder(): Unit \ Assert =
         // 下降中の重力 = 上昇中 × fallGravityMult(Doc から導出)。
         Assert.assertEq(
-            expected = (Physics.gravity(m()) * m()#fallGravityMult, Physics.gravity(m())),
+            expected = (Physics.gravity(m()) * mr()#fallGravityMult, Physics.gravity(m())),
             (Physics.gravityFor(m(), 10.0), Physics.gravityFor(m(), -10.0)))
 
     @Test
@@ -112,7 +114,7 @@ mod TestFeel {
         let pos = { x = 35.0 - size#x * 0.5, y = 50.0 + size#y * 0.5 };
         let vel = { x = 0.0, y = -600.0 };
         let nudged = Physics.slideBox(oneBlock(), size, dt(), false,
-                                      m()#cornerNudgePx, pos, vel);
+                                      mr()#cornerNudgePx, pos, vel);
         let blocked = Physics.slideBox(oneBlock(), size, dt(), false, 0.0, pos, vel);
         Assert.assertEq(expected = (false, true, true),
             (nudged#hitHead, blocked#hitHead, nudged#pos#x < pos#x))
@@ -124,7 +126,7 @@ mod TestFeel {
             Player.step(flat(), m(), dt(),
                 { dir = 1.0, jumpHeld = false, jumpPressed = false, drop = false, dash = false }, acc),
             grounded());
-        Assert.assertEq(expected = m()#walkSpeed, p#body#vel#x)
+        Assert.assertEq(expected = mr()#walkSpeed, p#body#vel#x)
 
     @Test
     def testDashRaisesTopSpeedToDoc(): Unit \ Assert =
@@ -142,7 +144,7 @@ mod TestFeel {
         let fast = List.range(0, 240) |> List.foldLeft((acc, _) ->
             Player.step(flat(), m(), dt(), dash, acc), grounded());
         let walk = Player.step(flat(), m(), dt(), { dash = false | dash }, fast);
-        Assert.assertEq(expected = true, walk#body#vel#x > m()#walkSpeed)
+        Assert.assertEq(expected = true, walk#body#vel#x > mr()#walkSpeed)
 
     /// 右側(x >= 3)が壁の地形。床は無いので接地ジャンプは出ない。
     def rightWall(): Physics.Terrain =
@@ -156,8 +158,8 @@ mod TestFeel {
         let onWall = { body = { pos = { x = 48.0 - Physics.playerSize()#x * 0.5, y = 40.0 },
                                 vel = { x = 60.0, y = 30.0 }, onGround = false },
                        coyote = 0.0, buffer = 0.0, facing = 1.0, jumping = false, wall = 1.0 };
-        let off = Player.step(rightWall(), { wallJump = false | m() }, dt(), push, onWall);
-        let on  = Player.step(rightWall(), { wallJump = true  | m() }, dt(), push, onWall);
+        let off = Player.step(rightWall(), MotionDoc.Doc.Doc({ wallJump = false | mr() }), dt(), push, onWall);
+        let on  = Player.step(rightWall(), MotionDoc.Doc.Doc({ wallJump = true  | mr() }), dt(), push, onWall);
         Assert.assertEq(expected = (false, true, true),
             (off#body#vel#y < 0.0, on#body#vel#y < 0.0, on#body#vel#x < 0.0))
 }

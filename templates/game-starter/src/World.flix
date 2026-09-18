@@ -50,7 +50,7 @@ mod World {
     /// 掛かるのは読み込み直後の 1 回だけで、毎フレームの絵づくりには入らない
     /// （何体出しても走行中の負荷は増えない）。強さと光の向きは theme.json から。
     pub def shaded(theme: ThemeDoc.Doc, doc: PxSpriteDoc.Doc): PxSpriteDoc.Doc =
-        PxShade.shadeDoc(theme#shade, shadeRamp(), doc)
+        PxShade.shadeDoc(ThemeDoc.rec(theme)#shade, shadeRamp(), doc)
 
     /// GPU に登録するアトラスの論理名（View の drawQuad と Main の withSpriteAtlases が
     /// この名前で待ち合わせる）。
@@ -94,7 +94,7 @@ mod World {
     /// 入力と経過時間から次の状態を作る。速さは Doc（sample.kind.json）から。
     /// t は積み上げた秒。空の流れ・塵・待ち姿の揺れがこれを見る。
     pub def step(input: Input, dt: Float64, w: World): World =
-        let speed = w#doc#speed;
+        let speed = SampleDoc.rec(w#doc)#speed;
         let moved = { x = w#x + input#x * speed * dt, y = w#y + input#y * speed * dt };
         let p = clampInside(heroBox(w), moved);
         { x = p#x, y = p#y, t = w#t + dt | w }

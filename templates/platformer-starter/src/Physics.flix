@@ -28,7 +28,8 @@ mod Physics {
     // ── Doc から導く運動の定数 ──
 
     /// ジャンプの初速(負 = 上向き): -2h/t。
-    pub def jumpVelocity(m: MotionDoc.Doc): Float64 =
+    pub def jumpVelocity(md: MotionDoc.Doc): Float64 =
+        let m = MotionDoc.rec(md);
         -2.0 * m#jumpHeightTiles * tileSize() / m#timeToApex
 
     /// 高さ h タイルの頂点に届く初速(バネ・バウンドが使う)。
@@ -36,20 +37,23 @@ mod Physics {
         -Vec2.sqrt(Float64.max(0.0, 2.0 * gravity(m) * hTiles * tileSize()))
 
     /// 上昇中の重力加速度: 2h/t²。
-    pub def gravity(m: MotionDoc.Doc): Float64 =
+    pub def gravity(md: MotionDoc.Doc): Float64 =
+        let m = MotionDoc.rec(md);
         2.0 * m#jumpHeightTiles * tileSize() / (m#timeToApex * m#timeToApex)
 
     /// 今の速度に効く重力。下降中は fallGravityMult 倍 — 山の右側が詰まり
     /// 「ふわっと上がってストンと落ちる」になる。
-    pub def gravityFor(m: MotionDoc.Doc, vy: Float64): Float64 =
-        if (vy > 0.0) gravity(m) * m#fallGravityMult else gravity(m)
+    pub def gravityFor(md: MotionDoc.Doc, vy: Float64): Float64 =
+        if (vy > 0.0) gravity(md) * MotionDoc.rec(md)#fallGravityMult else gravity(md)
 
     /// B ダッシュ中の最高速。歩きの dashMult 倍(MotionDoc のノブ)。
-    pub def topSpeed(m: MotionDoc.Doc, dash: Bool): Float64 =
+    pub def topSpeed(md: MotionDoc.Doc, dash: Bool): Float64 =
+        let m = MotionDoc.rec(md);
         if (dash) m#walkSpeed * m#dashMult else m#walkSpeed
 
     /// ボタンを離した瞬間に上昇速度へ掛ける倍率。
-    pub def cutFactor(m: MotionDoc.Doc): Float64 =
+    pub def cutFactor(md: MotionDoc.Doc): Float64 =
+        let m = MotionDoc.rec(md);
         if (m#jumpHeightTiles <= 0.0) 1.0
         else Vec2.sqrt(Float64.max(0.0, m#jumpTapTiles / m#jumpHeightTiles))
 
@@ -80,9 +84,10 @@ mod Physics {
 
     /// 横入力 dir(-1/0/+1)と重力で速度を進め、地形に当てて止める。
     /// onGround は下向きの衝突があった tick だけ true。
-    pub def stepBody(t: Terrain, m: MotionDoc.Doc, dt: Float64, dir: Float64, drop: Bool,
+    pub def stepBody(t: Terrain, md: MotionDoc.Doc, dt: Float64, dir: Float64, drop: Bool,
                      dash: Bool, body: Body): Step =
-        let top = topSpeed(m, dash);
+        let m = MotionDoc.rec(md);
+        let top = topSpeed(md, dash);
         let vx =
             // ダッシュを離した直後は最高速を超えている — そこは decel でゆるく
             // 落とす(accel で急に戻すと勢いが消えて操作が固く感じる)。
@@ -90,7 +95,7 @@ mod Physics {
             else if (dir * body#vel#x > 0.0 and Float64.abs(body#vel#x) > top)
                 approach(dir * top, m#decel * dt, body#vel#x)
             else approach(dir * top, m#accel * dt, body#vel#x);
-        let vy = Float64.min(body#vel#y + gravityFor(m, body#vel#y) * dt, m#maxFallSpeed);
+        let vy = Float64.min(body#vel#y + gravityFor(md, body#vel#y) * dt, m#maxFallSpeed);
         let slid = slideBox(t, playerSize(), dt, drop, m#cornerNudgePx,
                             body#pos, { x = vx, y = vy });
         { body = { pos = slid#pos, vel = slid#vel, onGround = slid#onGround },

@@ -118,8 +118,9 @@ mod TestRules {
         let landed = { grounded = true, gravityTimer = 0.0, lockTimer = 0.0 |
             withPiece(Kind.O, 0, 4, World.rows() - 2, base()) };
         let d = RulesDoc.defaults();
+        let r = RulesDoc.rec(d);
         // 1 フレームで lockDelay を超えるだけの dt を与える（重力で下がれず即固定へ）。
-        let after = World.step(false, d#lockDelay + 0.01, landed);
+        let after = World.step(false, r#lockDelay + 0.01, landed);
         Assert.assertEq(expected = false, Map.isEmpty(after#board))
 
     @Test
@@ -134,7 +135,8 @@ mod TestRules {
     def testMaxLockResetsForcesLock(): Unit \ Assert =
         // 猶予リセットが上限（maxLockResets）に達していると、猶予が残っていても即固定される。
         let d = RulesDoc.defaults();
-        let landed = { grounded = true, lockTimer = 0.0, lockResets = d#maxLockResets |
+        let r = RulesDoc.rec(d);
+        let landed = { grounded = true, lockTimer = 0.0, lockResets = r#maxLockResets |
             withPiece(Kind.O, 0, 4, World.rows() - 2, base()) };
         // ごく短い dt でも（lockDelay 未満でも）上限に達しているので固定される。
         let after = World.step(false, 0.001, landed);
@@ -206,9 +208,10 @@ mod TestRules {
         // Clearing の演出が終わると、消した行数ぶんの得点（Doc 由来）が score に入る。
         let bottom = World.rows() - 1;
         let d = RulesDoc.defaults();
+        let r = RulesDoc.rec(d);
         let clearing = { phase = World.Phase.Clearing, clearRows = bottom :: Nil, clearTimer = 0.0 |
             withBoard(fullRow(bottom, Kind.I), base()) };
-        let after = World.step(false, d#clearDuration + 0.01, clearing);
+        let after = World.step(false, r#clearDuration + 0.01, clearing);
         Assert.assertEq(
             expected = (RulesDoc.scoreFor(1, d), 1),
             (after#score, after#lines))

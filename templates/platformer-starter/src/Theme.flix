@@ -8,7 +8,12 @@ mod Theme {
     use Util.Json.Json
     use Util.Json.Json.{JObject, JString}
 
-    pub type alias Doc = { version = Int32, colors = Map[String, Color] }
+    pub type alias Rec = { version = Int32, colors = Map[String, Color] }
+
+    /// 型検査が record を展開しないため、World が持つ形は名前付きの enum にする。
+    pub enum Doc(Rec)
+
+    pub def rec(d: Doc): Rec = match d { case Doc.Doc(r) => r }
 
     pub def path(): String = "assets/platformer.theme.json"
 
@@ -16,7 +21,7 @@ mod Theme {
 
     /// 全色キーの既定値。sprite の legend が使う名前 + View の空気の名前。
     pub def defaults(): Doc =
-        { version = 1, colors = Map#{
+        Doc.Doc({ version = 1, colors = Map#{
             // 輪郭と暗部(黒の代わり)
             "ink" => c(35, 40, 58),
             // 地形
@@ -50,12 +55,12 @@ mod Theme {
             "cloud" => c(240, 232, 220), "cloudShade" => c(214, 198, 186),
             "caveTop" => c(28, 32, 48), "caveBottom" => c(40, 44, 66),
             "towerTop" => c(53, 96, 140), "towerBottom" => c(201, 138, 106)
-        } }
+        } })
 
     /// 色キー → 実色。知らないキーは ink(描き忘れが黒穴でなく藍で出る — 気づける)。
     pub def resolve(doc: Doc, key: String): Color =
-        Map.get(key, doc#colors)
-            |> Option.getWithDefault(Map.get("ink", defaults()#colors)
+        Map.get(key, rec(doc)#colors)
+            |> Option.getWithDefault(Map.get("ink", rec(defaults())#colors)
                 |> Option.getWithDefault(Color.rgb(1.0, 1.0, 1.0)))
 
     /// { "colors": { "名前": "#RRGGBB" } } の形。壊れは既定へ(fail-open)。
@@ -63,7 +68,7 @@ mod Theme {
         DocJson.decodeObject(fromRoot, text)
 
     def fromRoot(root: Map[String, Json]): Doc =
-        let d = defaults();
+        let d = rec(defaults());
         let over = match Map.get("colors", root) {
             case Some(JObject(obj)) =>
                 obj |> Map.foldLeftWithKey((acc, k, v) -> match v {
@@ -75,8 +80,8 @@ mod Theme {
                 }, Map.empty())
             case _ => Map.empty()
         };
-        { version = JsonCodec.intOr("version", d#version, root),
-          colors = Map.foldLeftWithKey((acc, k, v) -> Map.insert(k, v, acc), d#colors, over) }
+        Doc.Doc({ version = JsonCodec.intOr("version", d#version, root),
+          colors = Map.foldLeftWithKey((acc, k, v) -> Map.insert(k, v, acc), d#colors, over) })
 
     pub def load(p: String): Doc \ Fs.FileRead =
         DocJson.loadOr(fromJson, defaults(), p)

@@ -50,7 +50,7 @@ mod View {
     pub def frame(_ctx: App.ViewCtx, w: World.World): List[Render.PlacedItem] =
         List.flatten(
                background(w)
-            :: gridLines(w#theme)
+            :: gridLines(ThemeDoc.rec(w#theme))
             :: ghost(w)
             :: dropShadow(w)
             :: lockedCells(w)
@@ -101,7 +101,7 @@ mod View {
     /// 紙は単色の四角ではなく、細かい繊維がごく遅く流れる面。何がどう効くかは Doc の note と
     /// engine の `docs/shader-doc.md` を参照。
     def background(w: World.World): List[Render.PlacedItem] =
-        let theme = w#theme;
+        let theme = ThemeDoc.rec(w#theme);
         let boardW = Int32.toFloat64(World.cols()) * cell();
         let boardH = Int32.toFloat64(World.rows()) * cell();
         // 縁は盤より 2px 外に一回り大きく敷いてから、盤の窪みを上に重ねる（縁取りに見える）。
@@ -115,7 +115,7 @@ mod View {
         :: Nil
 
     /// マス目の薄い線（縦・横）。盤の手触りを出すだけの飾り。
-    def gridLines(theme: ThemeDoc.Doc): List[Render.PlacedItem] =
+    def gridLines(theme: ThemeDoc.Rec): List[Render.PlacedItem] =
         let boardW = Int32.toFloat64(World.cols()) * cell();
         let boardH = Int32.toFloat64(World.rows()) * cell();
         let verticals = List.range(1, World.cols()) |> List.map(c ->
@@ -144,7 +144,7 @@ mod View {
             case World.Phase.Playing =>
                 let color = ThemeDoc.colorOf(w#theme, w#current#kind);
                 let pulse = 0.5 + 0.5 * Sway.wave(w#t, 0.0, 0.8);
-                let edge = { color = w#theme#flash,
+                let edge = { color = ThemeDoc.rec(w#theme)#flash,
                              alpha = 0.30 + 0.45 * pulse,
                              width = 1.0 };
                 World.piecesCells(w#current) |> List.flatMap(cellPos -> {
@@ -167,7 +167,7 @@ mod View {
                     else {
                         let at = cellCenter(c, r);
                         Some(RawDraw.boxAt({ x = at#x + 2.0, y = at#y + 3.0 },
-                            { x = cell() - 1.0, y = cell() - 1.0 }, w#theme#wall, zDropShadow()))
+                            { x = cell() - 1.0, y = cell() - 1.0 }, ThemeDoc.rec(w#theme)#wall, zDropShadow()))
                     }
                 }) |> Render.fadeAll(0.18)
             case _ => Nil
@@ -179,7 +179,7 @@ mod View {
         match w#phase {
             case World.Phase.Playing =>
                 let landed = World.dropToBottom(w);
-                pieceCells(landed#current, w#theme#ghost, zGhost())
+                pieceCells(landed#current, ThemeDoc.rec(w#theme)#ghost, zGhost())
                     |> Render.fadeAll(0.5)
             case _ => Nil
         }
@@ -196,18 +196,18 @@ mod View {
     def clearFx(w: World.World): List[Render.PlacedItem] =
         match w#phase {
             case World.Phase.Clearing =>
-                let t = Num.clamp01(w#clearTimer / Float64.max(0.0001, w#doc#clearDuration));
+                let t = Num.clamp01(w#clearTimer / Float64.max(0.0001, RulesDoc.rec(w#doc)#clearDuration));
                 let fade = 1.0 - t;                                     // 1→0 に減衰
                 let boardW = Int32.toFloat64(World.cols()) * cell();
                 w#clearRows |> List.flatMap(r -> {
                     // 行全幅に閃光（白）を重ねる。
                     let rowFlash = { at = { x = originX(), y = originY() + Int32.toFloat64(r) * cell() },
-                                     item = RawDraw.box({ x = boardW, y = cell() }, w#theme#flash, zClear())
+                                     item = RawDraw.box({ x = boardW, y = cell() }, ThemeDoc.rec(w#theme)#flash, zClear())
                                          |> Render.fade(fade) };
                     // さらに各セルの中心に、紙が白く抜ける柔らかい丸を重ねる（閉形式で安全な glowAt）。
                     // Add でなく Normal なのは画風の決まり — 紙は発光しない（白へ抜けるだけ）。
                     let glows = List.range(0, World.cols()) |> List.flatMap(c ->
-                        Render.glowAt(cellCenter(c, r), cell() * 0.75, w#theme#flash,
+                        Render.glowAt(cellCenter(c, r), cell() * 0.75, ThemeDoc.rec(w#theme)#flash,
                             { alpha = 0.75 * (1.0 - t), blend = DrawCmd.BlendMode.Normal }, zClear() + 1));
                     rowFlash :: glows
                 })
@@ -219,7 +219,7 @@ mod View {
     /// 右パネルに "NEXT" と、次のミノを rot 0 で小さく描く。
     def nextPreview(atlas: FontAtlas, w: World.World): List[Render.PlacedItem] =
         let label = { at = { x = panelX(), y = originY() },
-                      item = Render.textTinted("NEXT", atlas, 10.0, w#theme#wall, zHud()) };
+                      item = Render.textTinted("NEXT", atlas, 10.0, ThemeDoc.rec(w#theme)#wall, zHud()) };
         // プレビューの原点（ラベルの下）。cellsOf の相対座標をここから並べる。
         let px0 = panelX();
         let py0 = originY() + 16.0;
@@ -240,15 +240,15 @@ mod View {
         let scoreY = 120.0;
         let linesY = 160.0;
            { at = { x = x, y = scoreY },
-             item = Render.textTinted("SCORE", atlas, 9.0, w#theme#wall, zHud()) }
+             item = Render.textTinted("SCORE", atlas, 9.0, ThemeDoc.rec(w#theme)#wall, zHud()) }
         :: { at = { x = x, y = scoreY + 12.0 },
              item = Render.textTinted(Int32.toString(w#score), atlas, 12.0,
-                 Color.darken(w#theme#wall, 0.25), zHud()) }
+                 Color.darken(ThemeDoc.rec(w#theme)#wall, 0.25), zHud()) }
         :: { at = { x = x, y = linesY },
-             item = Render.textTinted("LINES", atlas, 9.0, w#theme#wall, zHud()) }
+             item = Render.textTinted("LINES", atlas, 9.0, ThemeDoc.rec(w#theme)#wall, zHud()) }
         :: { at = { x = x, y = linesY + 12.0 },
              item = Render.textTinted(Int32.toString(w#lines), atlas, 12.0,
-                 Color.darken(w#theme#wall, 0.25), zHud()) }
+                 Color.darken(ThemeDoc.rec(w#theme)#wall, 0.25), zHud()) }
         :: Nil
 
     // ── GAME OVER の幕 ──
@@ -258,10 +258,10 @@ mod View {
             case World.Phase.GameOver =>
                    { at = { x = 0.0, y = 0.0 },
                      item = RawDraw.box({ x = designW(), y = designH() },
-                             Color.darken(w#theme#wall, 0.35), zOverlay())
+                             Color.darken(ThemeDoc.rec(w#theme)#wall, 0.35), zOverlay())
                          |> Render.fade(0.62) }
-                :: centered(atlas, "GAME OVER", 20.0, w#theme#flash, 150.0)
-                :: centered(atlas, "PRESS SPACE", 10.0, w#theme#ghost, 180.0)
+                :: centered(atlas, "GAME OVER", 20.0, ThemeDoc.rec(w#theme)#flash, 150.0)
+                :: centered(atlas, "PRESS SPACE", 10.0, ThemeDoc.rec(w#theme)#ghost, 180.0)
                 :: Nil
             case _ => Nil
         }

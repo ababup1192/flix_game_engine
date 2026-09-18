@@ -91,7 +91,7 @@ mod SceneRender {
         let images = PxSpriteAtlas.asImages(
             { texture = World.atlasName(), baked = w0#atlas } :: Nil);
         let cfg = { texturePath = HeadlessRender.imagePngs("debug", images)
-                    | cfgOf(outDir, atlas, w0#theme#grass) };
+                    | cfgOf(outDir, atlas, ThemeDoc.rec(w0#theme)#grass) };
         let texInfo = HeadlessRender.imageTextureInfo(images);
         let ctx = App.viewCtxOf(atlas, design());
         shotNames() |> List.filter(keep) |> List.filterMap(name ->
@@ -133,7 +133,7 @@ mod SceneRender {
                      sceneT - 0.09 * k)
         });
         { phase = World.Phase.Racing, t = sceneT, distance = dist, playerOff = off,
-          speed = w0#rules#forwardSpeed, drifting = true, steerDir = 1.0,
+          speed = RulesDoc.rec(w0#rules)#forwardSpeed, drifting = true, steerDir = 1.0,
           nitro = 0.55, rank = 2, score = 300,
           rivals = rivals, skids = skids, bursts = bursts, fxSeq = 10 | started }
 
@@ -151,8 +151,8 @@ mod SceneRender {
                           passed = true | r }
         });
         { phase = World.Phase.Racing, t = 3.4, distance = dist, playerOff = 0.0,
-          speed = w0#rules#forwardSpeed * w0#rules#nitroBoost,
-          nitroLeft = w0#rules#nitroDuration - 0.05, nitro = 0.0, rank = 2, score = 600,
+          speed = RulesDoc.rec(w0#rules)#forwardSpeed * RulesDoc.rec(w0#rules)#nitroBoost,
+          nitroLeft = RulesDoc.rec(w0#rules)#nitroDuration - 0.05, nitro = 0.0, rank = 2, score = 600,
           rivals = rivals | started }
 
     /// U 字の手前（通し行 9）でコーンに当たった直後: スピンの残り 0.55 秒。
@@ -174,7 +174,7 @@ mod SceneRender {
             :: Fx.burst(w0#fx#spark, 8, { x = off - 6.0, y = pd - 6.0 }, sceneT - 0.10)
             :: Nil;
         { phase = World.Phase.Racing, t = sceneT, distance = dist, playerOff = off,
-          speed = w0#rules#forwardSpeed * w0#rules#spinSlow,
+          speed = RulesDoc.rec(w0#rules)#forwardSpeed * RulesDoc.rec(w0#rules)#spinSlow,
           spinLeft = 0.55, rank = 3, score = 300,
           rivals = rivals, bursts = bursts, fxSeq = 9 | started }
 
@@ -202,7 +202,7 @@ mod SceneRender {
                      sceneT - 0.09 * k)
         });
         { phase = World.Phase.Racing, t = sceneT, distance = dist, playerOff = off,
-          speed = w0#rules#forwardSpeed, drifting = true, steerDir = 0.0 - 1.0,
+          speed = RulesDoc.rec(w0#rules)#forwardSpeed, drifting = true, steerDir = 0.0 - 1.0,
           nitro = 0.8, rank = 2, score = 900,
           rivals = rivals, skids = skids, bursts = bursts, fxSeq = 20 | started }
 
@@ -219,7 +219,7 @@ mod SceneRender {
                           passed = true | r }
         });
         { phase = World.Phase.Racing, t = 4.1, distance = dist, playerOff = 16.0,
-          speed = w0#rules#forwardSpeed, nitro = 0.35, rank = 2, score = 300,
+          speed = RulesDoc.rec(w0#rules)#forwardSpeed, nitro = 0.35, rank = 2, score = 300,
           rivals = rivals | started }
 
     /// 左 U 字（通し行 12）の外側のガードレールに擦り付けて曲がっている所。
@@ -243,7 +243,7 @@ mod SceneRender {
             Fx.burst(w0#fx#spark, i + 30, { x = off, y = pd - 5.0 * k }, sceneT - 0.07 * k)
         });
         { phase = World.Phase.Racing, t = sceneT, distance = dist, playerOff = off,
-          speed = w0#rules#forwardSpeed * w0#rules#railScrapeSlow,
+          speed = RulesDoc.rec(w0#rules)#forwardSpeed * RulesDoc.rec(w0#rules)#railScrapeSlow,
           nitro = 0.62, rank = 2, score = 600,
           rivals = rivals, bursts = bursts, fxSeq = 40 | started }
 
@@ -260,7 +260,7 @@ mod SceneRender {
                           passed = true | r }
         });
         { phase = World.Phase.Racing, t = 2.63, distance = dist, playerOff = 24.0,
-          speed = w0#rules#forwardSpeed, nitro = 0.42, rank = 2, score = 750,
+          speed = RulesDoc.rec(w0#rules)#forwardSpeed, nitro = 0.42, rank = 2, score = 750,
           rivals = rivals | started }
 
     /// 1 場面を PNG に生成し、生成したファイルパスを返す。hud の合流は実機と同じ

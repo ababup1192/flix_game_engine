@@ -21,13 +21,13 @@ mod ViewScene {
     pub def sky(cam: Proj.Cam, w: World.World): List[Render.PlacedItem] =
         let grad = { at = { x = 0.0, y = 0.0 },
                      item = Render.vgrad({ x = World.designW(), y = Proj.horizonYAt(cam) },
-                         { top = w#theme#skyTop, bottom = w#theme#skyLow }, zSky()) };
+                         { top = ThemeDoc.rec(w#theme)#skyTop, bottom = ThemeDoc.rec(w#theme)#skyLow }, zSky()) };
         grad :: (sun(cam, w) ::: clouds(cam, w))
 
     /// 曲がった向きに景色が流れる量（px）。右へ回れば景色は左へ流れるので符号を返す。
     /// 空は一番遠いので、道の折れと違って縮みも遠近も掛からない — 画面ごと横へずらす。
     def skyShift(w: World.World): Float64 =
-        0.0 - World.headingAt(World.playerDistOf(w), w#course) * w#rules#skyParallax
+        0.0 - World.headingAt(World.playerDistOf(w), w#course) * RulesDoc.rec(w#rules)#skyParallax
 
     /// 景色が横へ回りきって画面から消えないよう、画面幅 + 余白で巻き戻す幅。
     def skySpan(): Float64 = World.designW() + 80.0
@@ -45,9 +45,9 @@ mod ViewScene {
     /// 一番遠い物なので、曲がったときに一番よく動く目印になる。
     def sun(cam: Proj.Cam, w: World.World): List[Render.PlacedItem] =
         let at = sunAt(cam, w);
-        Render.glowAt(at, 18.0, w#theme#text,
+        Render.glowAt(at, 18.0, ThemeDoc.rec(w#theme)#text,
                 { alpha = 0.5, blend = DrawCmd.BlendMode.Add }, zSun())
-            ::: (RawDraw.circleAt(at, 7.0, w#theme#text, zSun()) :: Nil)
+            ::: (RawDraw.circleAt(at, 7.0, ThemeDoc.rec(w#theme)#text, zSun()) :: Nil)
 
     /// 雲 4 つ。楕円 3 枚組を右から左へ 3px/s で流す（走らなくても空だけは動く = 時間の下限）。
     /// 曲がったぶんも一緒に流すが、太陽より少しだけ鈍く動かす（雲のほうが手前にある）。
@@ -58,7 +58,7 @@ mod ViewScene {
             let x = Num.wrapTo(span, rand(0) * span - t * 3.0 + skyShift(w) * 0.8) - 30.0;
             let y = Float64.min(Proj.horizonYAt(cam) - 8.0, 18.0 + rand(1) * 34.0);
             let s = 4.0 + (y - 18.0) / 34.0 * 5.0 + rand(2) * 2.0;
-            let c = w#theme#text;
+            let c = ThemeDoc.rec(w#theme)#text;
             RawDraw.ellipseAt({ x = x, y = y }, { x = s * 2.2, y = s }, c, zCloud())
                 :: RawDraw.ellipseAt({ x = x - s * 1.6, y = y + s * 0.35 },
                        { x = s * 1.4, y = s * 0.7 }, c, zCloud())
@@ -89,8 +89,8 @@ mod ViewScene {
     def seaFace(cam: Proj.Cam, theme: ThemeDoc.Doc): List[Render.PlacedItem] =
         let top = seaTopY(cam);
         let bot = Proj.horizonYAt(cam);
-        let up = Color.mix(theme#sea, ThemeDoc.hazeTo(theme), 0.50);
-        let mid = Color.mix(theme#sea, ThemeDoc.hazeTo(theme), 0.12);
+        let up = Color.mix(ThemeDoc.rec(theme)#sea, ThemeDoc.hazeTo(theme), 0.50);
+        let mid = Color.mix(ThemeDoc.rec(theme)#sea, ThemeDoc.hazeTo(theme), 0.12);
         let low = seaNear(theme);
         ramp({ y = top,                           color = up }
           :: { y = top + (bot - top) * 0.26,      color = mid }
@@ -101,7 +101,7 @@ mod ViewScene {
     /// ここを 1 か所にしておかないと海と浜の境に線が出る。
     /// 暗く沈めないのは、海が空と路面より前に出ないようにするため。
     def seaNear(theme: ThemeDoc.Doc): Color =
-        Color.cool(Color.darken(theme#sea, 0.06), 0.10)
+        Color.cool(Color.darken(ThemeDoc.rec(theme)#sea, 0.06), 0.10)
 
     /// 水平線ぎわの輝き。空と海の境に沿って白い光を溜め、太陽の真下だけ手前へ長く伸ばす
     /// （海面に落ちた陽の道）。線 1 本で切るより、光の帯のほうが遠さが出る。
@@ -157,7 +157,7 @@ mod ViewScene {
         let n = 20;
         let wide = World.designW();
         let shift = skyShift(w) * r#drift;
-        let land = Color.cool(Color.darken(w#theme#grass, 0.30), 0.22);
+        let land = Color.cool(Color.darken(ThemeDoc.rec(w#theme)#grass, 0.30), 0.22);
         let low = Color.mix(land, ThemeDoc.hazeTo(w#theme), Num.clamp01(r#haze));
         let high = Color.mix(land, ThemeDoc.hazeTo(w#theme), Num.clamp01(r#haze - 0.18));
         List.range(0, n) |> List.map(i -> {
@@ -213,9 +213,9 @@ mod ViewScene {
         let y0 = Proj.horizonYAt(cam);
         let far = amount -> c -> Color.mix(c, ThemeDoc.hazeTo(theme), amount);
         ramp({ y = y0 - 1.2, color = far(0.0)(seaNear(theme)) }
-          :: { y = y0 - 0.2, color = far(0.20)(theme#finish) }
-          :: { y = y0 + 1.4, color = far(0.56)(Color.cool(Color.darken(theme#sand, 0.30), 0.10)) }
-          :: { y = y0 + 3.2, color = far(0.50)(Color.warm(theme#sand, 0.08)) }
+          :: { y = y0 - 0.2, color = far(0.20)(ThemeDoc.rec(theme)#finish) }
+          :: { y = y0 + 1.4, color = far(0.56)(Color.cool(Color.darken(ThemeDoc.rec(theme)#sand, 0.30), 0.10)) }
+          :: { y = y0 + 3.2, color = far(0.50)(Color.warm(ThemeDoc.rec(theme)#sand, 0.08)) }
           :: { y = y0 + 5.6, color = far(0.88)(ThemeDoc.grassLight(theme)) }
           :: Nil, zBeach())
 
@@ -522,10 +522,10 @@ mod ViewScene {
     def signAt(w: World.World, at: Vec2.Vec2, uc: Float64,
                f: Float64): List[Render.PlacedItem] =
         let s = 6.0 * f;
-        let post = Color.mix(Color.darken(w#theme#road, 0.35), ThemeDoc.hazeTo(w#theme),
+        let post = Color.mix(Color.darken(ThemeDoc.rec(w#theme)#road, 0.35), ThemeDoc.hazeTo(w#theme),
                              Proj.hazeAt(uc));
-        let face = Color.mix(w#theme#finish, ThemeDoc.hazeTo(w#theme), Proj.hazeAt(uc));
-        let mark = Color.mix(w#theme#kerb, ThemeDoc.hazeTo(w#theme), Proj.hazeAt(uc));
+        let face = Color.mix(ThemeDoc.rec(w#theme)#finish, ThemeDoc.hazeTo(w#theme), Proj.hazeAt(uc));
+        let mark = Color.mix(ThemeDoc.rec(w#theme)#kerb, ThemeDoc.hazeTo(w#theme), Proj.hazeAt(uc));
         let leg = dx ->
             RawDraw.boxAt({ x = at#x + dx * s, y = at#y - s * 0.9 },
                     { x = Float64.max(1.0, 0.22 * s), y = 1.8 * s }, post, z(uc));
@@ -577,7 +577,7 @@ mod ViewScene {
                 };
             let len = (14.0 + rand(3) * 22.0) * (0.25 + 0.75 * near);
             RawDraw.lineSeg({ x = x, y = y0 }, { x = x, y = y0 + len }, 1.0,
-                    w#theme#text, zSpeed())
+                    ThemeDoc.rec(w#theme)#text, zSpeed())
                 |> Render.overItem(item -> item
                     |> Render.fade(
                            Num.clamp01(strength * near * (0.10 + rand(4) * 0.10)))

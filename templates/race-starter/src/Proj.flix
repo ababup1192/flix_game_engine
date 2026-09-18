@@ -76,7 +76,7 @@ mod Proj {
                      turnRamp = turnRamp, hillRamp = hillRamp, frac = frac };
         let atMe = bendAt(half, playerU());
         let ahead = bendAt(half, lookU());
-        let yaw = softYaw(w#rules#yawGain * (ahead - atMe));
+        let yaw = softYaw(RulesDoc.rec(w#rules)#yawGain * (ahead - atMe));
         { off = 0.72 * w#playerOff, bend = atMe + yaw,
           lift = hillAt(half, playerU()) | half }
 

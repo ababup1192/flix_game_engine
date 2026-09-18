@@ -47,8 +47,9 @@ mod View {
     pub def hud(ctx: App.ViewCtx, w: World.World): List[Render.PlacedItem] =
         List.flatten(
                UiRender.itemsWith(_ -> ctx#atlas, _ -> None, w#ui, ctx#visible#size)
-            :: NovelKit.body(ctx#atlas, w#theme#ink,
-                   { size = w#kind#bodySize, lineGap = w#kind#bodyGap }, w#ui, w#kit)
+            :: NovelKit.body(ctx#atlas, ThemeDoc.rec(w#theme)#ink,
+                   { size = KindDoc.rec(w#kind)#bodySize, lineGap = KindDoc.rec(w#kind)#bodyGap },
+                   w#ui, w#kit)
             :: TextDraw.errorBanner(ctx#atlas, w#docError)
             :: Nil)
 
@@ -61,7 +62,7 @@ mod View {
     /// 灯りは天井の近くにあるので、壁は上ほど明るく、床は奥（上）ほど明るい。
     /// 平らな 1 色で塗ると、部屋ではなく「色の付いた四角」に見える。
     def room(w: World.World): List[Render.PlacedItem] =
-        let theme = w#theme;
+        let theme = ThemeDoc.rec(w#theme);
         let floorTop = wallBottom();
            { at = { x = 0.0, y = 0.0 },
              item = RawDraw.box({ x = World.width(), y = World.height() }, theme#bg, zRoom()) }
@@ -85,15 +86,15 @@ mod View {
     /// 三角の光線として描かないのは、縁が立つと舞台照明に見えて部屋の空気が消えるため。
     def lightCones(w: World.World): List[Render.PlacedItem] =
         let lit = World.lampsLit(w);
-        let count = w#story#lamps;
+        let count = StoryDoc.rec(w#story)#lamps;
         List.range(0, count) |> List.flatMap(i ->
             if (i >= lit) Nil
-            else Render.glowAt({ x = lampX(count, i), y = 74.0 }, 96.0, w#theme#accent,
+            else Render.glowAt({ x = lampX(count, i), y = 74.0 }, 96.0, ThemeDoc.rec(w#theme)#accent,
                      { alpha = 0.10, blend = DrawCmd.BlendMode.Add }, zWall() + 2))
 
     /// 雨の窓。枠は壁の派生色、雨すじは Hash01 で決定的に散らす（保存も乱数の種も持たない）。
     def window(w: World.World): List[Render.PlacedItem] =
-        let theme = w#theme;
+        let theme = ThemeDoc.rec(w#theme);
         let frameColor = ThemeDoc.lighten(theme#wall, 0.18);
         let paneAt = { x = 336.0, y = 38.0 };
         let paneSize = { x = 88.0, y = 104.0 };
@@ -122,7 +123,7 @@ mod View {
     /// 番号と時刻だけから導く（どこにも保存しない = 巻き戻しても同じ絵）。
     /// 窓の外へはみ出さないよう、ガラスの高さで折り返す。
     def rain(paneAt: Vec2.Vec2, paneSize: Vec2.Vec2, w: World.World): List[Render.PlacedItem] =
-        let theme = w#theme;
+        let theme = ThemeDoc.rec(w#theme);
         let streakColor = ThemeDoc.lighten(theme#window, theme#rainGlow);
         Fx.derive(theme#rainCount, w#t, (_i, rand, t) -> {
             let len = 12.0 + rand(2) * 20.0;
@@ -144,11 +145,11 @@ mod View {
         // 絵があった跡: 長く飾られて壁が焼けなかった、ひとまわり明るい矩形。
         let trace = { at = { x = topLeft#x + cell * 2.0, y = topLeft#y + cell * 2.0 },
                       item = RawDraw.box({ x = cell * 12.0, y = cell * 8.0 },
-                                        ThemeDoc.lighten(w#theme#wall, 0.08), zTrace()) };
+                                        ThemeDoc.lighten(ThemeDoc.rec(w#theme)#wall, 0.08), zTrace()) };
         // 壁に落ちる影（右下へずらした薄い闇）。額縁が壁から浮いて見える。
         let shadow = { at = { x = topLeft#x + 5.0, y = topLeft#y + 6.0 },
                        item = RawDraw.box({ x = cell * 16.0, y = cell * 12.0 },
-                                         ThemeDoc.darken(w#theme#wall, 0.6), zFrameShadow())
+                                         ThemeDoc.darken(ThemeDoc.rec(w#theme)#wall, 0.6), zFrameShadow())
                            |> Render.fade(0.45) };
         // 作ったアトラスから 1 コマ = 1 クアッドで貼る（PxSprite.draw は 1 コマを画素ぶんの
         // 四角に開くので、この額縁だけで毎フレーム百個規模になる）。作る所は World.bakedOf。
@@ -157,20 +158,20 @@ mod View {
         if (List.isEmpty(items))
             // fail-open: スプライトが無い・読めないときは差し色の枠線だけ。
             shadow :: trace :: border(topLeft, { x = cell * 16.0, y = cell * 12.0 }, cell,
-                            w#theme#accent, zFrame())
+                            ThemeDoc.rec(w#theme)#accent, zFrame())
         else
             shadow :: trace :: items
 
     // ── 館の灯り（疑うたびに右からひとつ消える） ──
 
     def lamps(w: World.World): List[Render.PlacedItem] =
-        let count = w#story#lamps;
+        let count = StoryDoc.rec(w#story)#lamps;
         let lit = World.lampsLit(w);
         List.range(0, count) |> List.flatMap(i ->
             // 灯りごとに揺れの位相をずらす（そろって明滅すると機械に見える）。
             lamp({ x = lampX(count, i), litNow = i < lit,
                    flicker = 0.82 + 0.18 * Sway.wave(w#t, Int32.toFloat64(i) * 0.37, 1.9) },
-                 w#theme))
+                 ThemeDoc.rec(w#theme)))
 
     /// i 番目の灯りの x（壁の上に等間隔。1 つなら真ん中）。
     def lampX(count: Int32, i: Int32): Float64 =
@@ -180,7 +181,7 @@ mod View {
     /// 灯りひとつ: 腕木 + 火屋。ついていれば glow（加算の光球）をまとい、炎の強さが揺れる。
     /// 同じ型の値が並ぶので名前で渡す。
     def lamp(spec: { x = Float64, litNow = Bool, flicker = Float64 },
-             theme: ThemeDoc.Doc): List[Render.PlacedItem] =
+             theme: ThemeDoc.Rec): List[Render.PlacedItem] =
         let x = spec#x;
         let head = { x = x - 4.0, y = 28.0 };
         let arm = { at = { x = x - 2.0, y = 36.0 },
@@ -201,7 +202,7 @@ mod View {
     /// 計算する（巻き戻しても同じ絵）。部屋に空気があることを、粒 1 つで見せる。
     def dust(w: World.World): List[Render.PlacedItem] =
         let lit = World.lampsLit(w);
-        let count = w#story#lamps;
+        let count = StoryDoc.rec(w#story)#lamps;
         List.range(0, count) |> List.flatMap(i ->
             if (i >= lit) Nil
             else {
@@ -211,7 +212,7 @@ mod View {
                     let y = 88.0 - Num.wrapTo(rise, rand(1) * rise + t * 7.0);
                     let x = cx - 16.0 + rand(0) * 32.0 + Sway.wave(t, rand(2), 0.4) * 4.0;
                     RawDraw.circleAt({ x = x, y = y }, 0.7 + rand(3) * 0.6,
-                            ThemeDoc.lighten(w#theme#accent, 0.35), zDust())
+                            ThemeDoc.lighten(ThemeDoc.rec(w#theme)#accent, 0.35), zDust())
                         |> Render.overItem(item -> item
                             |> Render.fade(0.10 + rand(4) * 0.16)
                             |> Render.blended(DrawCmd.BlendMode.Add))
@@ -221,7 +222,7 @@ mod View {
     // ── 暗くするオーバーレイ（消えた灯りの数 × dim の濃さで部屋が沈む） ──
 
     def veil(w: World.World): List[Render.PlacedItem] =
-        let alpha = Float64.min(1.0, Int32.toFloat64(w#lightsOut) * w#kind#dim);
+        let alpha = Float64.min(1.0, Int32.toFloat64(w#lightsOut) * KindDoc.rec(w#kind)#dim);
         if (alpha <= 0.0) Nil
         else { at = { x = 0.0, y = 0.0 },
                item = RawDraw.box({ x = World.width(), y = World.height() },
@@ -234,14 +235,14 @@ mod View {
         match w#phase {
             case World.Phase.Story => Nil
             case World.Phase.Title =>
-                   TextDraw.centered({ text = w#story#title, atlas = atlas, size = 30.0,
-                                       color = ThemeDoc.lighten(w#theme#accent, 0.2),
+                   TextDraw.centered({ text = StoryDoc.rec(w#story)#title, atlas = atlas, size = 30.0,
+                                       color = ThemeDoc.lighten(ThemeDoc.rec(w#theme)#accent, 0.2),
                                        z = zTitle(), centerX = World.width() / 2.0, y = 118.0 })
-                :: TextDraw.centered({ text = w#story#subtitle,
-                                       atlas = atlas, size = 10.0, color = w#theme#ink,
+                :: TextDraw.centered({ text = StoryDoc.rec(w#story)#subtitle,
+                                       atlas = atlas, size = 10.0, color = ThemeDoc.rec(w#theme)#ink,
                                        z = zTitle(), centerX = World.width() / 2.0, y = 160.0 })
-                :: TextDraw.centered({ text = w#story#hint, atlas = atlas, size = 9.0,
-                                       color = ThemeDoc.lighten(w#theme#bg, 0.35),
+                :: TextDraw.centered({ text = StoryDoc.rec(w#story)#hint, atlas = atlas, size = 9.0,
+                                       color = ThemeDoc.lighten(ThemeDoc.rec(w#theme)#bg, 0.35),
                                        z = zTitle(), centerX = World.width() / 2.0, y = 196.0 })
                 :: Nil
         }

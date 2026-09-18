@@ -11,15 +11,15 @@ mod TestDocs {
         // 壊れた JSON は既定の間取りへ落ちる(ゲームは必ず起動する)。
         let doc = MapDoc.fromJson("{ broken") |> Option.getWithDefault(MapDoc.defaults());
         Assert.assertEq(
-            expected = (MapDoc.defaults()#start#x, MapDoc.defaults()#start#y, MapDoc.defaults()#goal),
-            (doc#start#x, doc#start#y, doc#goal))
+            expected = (MapDoc.rec(MapDoc.defaults())#start#x, MapDoc.rec(MapDoc.defaults())#start#y, MapDoc.rec(MapDoc.defaults())#goal),
+            (MapDoc.rec(doc)#start#x, MapDoc.rec(doc)#start#y, MapDoc.rec(doc)#goal))
 
     @Test
     def testMapOverridesOneField(): Unit \ Assert =
         // 1 フィールドだけ書いた JSON はそこだけ効き、残りは既定のまま。
         let doc = MapDoc.fromJson("{\"version\":1, \"hint\": \"Xではじめる\"}")
             |> Option.getWithDefault(MapDoc.defaults());
-        Assert.assertEq(expected = ("Xではじめる", MapDoc.defaults()#goal), (doc#hint, doc#goal))
+        Assert.assertEq(expected = ("Xではじめる", MapDoc.rec(MapDoc.defaults())#goal), (MapDoc.rec(doc)#hint, MapDoc.rec(doc)#goal))
 
     @Test
     def testMapRowsLengthFollowsJson(): Unit \ Assert =
@@ -30,7 +30,7 @@ mod TestDocs {
             + " \"herbs\":[{\"x\":1,\"y\":1}]}";
         let doc = MapDoc.fromJson(text) |> Option.getWithDefault(MapDoc.defaults());
         Assert.assertEq(expected = (3, 2, 1),
-            (List.length(doc#rows), List.length(doc#villagers), List.length(doc#herbs)))
+            (List.length(MapDoc.rec(doc)#rows), List.length(MapDoc.rec(doc)#villagers), List.length(MapDoc.rec(doc)#herbs)))
 
     // ══════════════════════════════════════════════════════
     // KindDoc(手触りの数値)
@@ -39,13 +39,13 @@ mod TestDocs {
     @Test
     def testKindBrokenJsonFallsBackToDefaults(): Unit \ Assert =
         let doc = KindDoc.fromJson("{ broken") |> Option.getWithDefault(KindDoc.defaults());
-        Assert.assertEq(expected = KindDoc.defaults()#walk, doc#walk)
+        Assert.assertEq(expected = KindDoc.rec(KindDoc.defaults())#walk, KindDoc.rec(doc)#walk)
 
     @Test
     def testKindOverridesOneField(): Unit \ Assert =
         let doc = KindDoc.fromJson("{\"version\":1, \"walk\": 9.0}")
             |> Option.getWithDefault(KindDoc.defaults());
-        Assert.assertEq(expected = (9.0, KindDoc.defaults()#cps), (doc#walk, doc#cps))
+        Assert.assertEq(expected = (9.0, KindDoc.rec(KindDoc.defaults())#cps), (KindDoc.rec(doc)#walk, KindDoc.rec(doc)#cps))
 
     // ══════════════════════════════════════════════════════
     // TownMapDoc(街のタイル盤: rows と legend)
@@ -57,8 +57,8 @@ mod TestDocs {
         let doc = TownMapDoc.fromJson("{ broken") |> Option.getWithDefault(TownMapDoc.defaults());
         Assert.assertEq(
             expected = (TownMapDoc.rowCount(TownMapDoc.defaults()),
-                        Map.size(TownMapDoc.defaults()#legend)),
-            (TownMapDoc.rowCount(doc), Map.size(doc#legend)))
+                        Map.size(TownMapDoc.rec(TownMapDoc.defaults())#legend)),
+            (TownMapDoc.rowCount(doc), Map.size(TownMapDoc.rec(doc)#legend)))
 
     @Test
     def testTownMapOverridesLegendOnly(): Unit \ Assert =
@@ -82,7 +82,7 @@ mod TestDocs {
     def testGrassEdgeSelectionFollowsNeighbors(): Unit \ Assert =
         // 縁選定の代表ケース: 中央 1 マスの石畳の周囲 8 マスで、
         // 四方は縁、斜めは内角になる（rows は素材の文字のまま、縁はコードが選ぶ）。
-        let doc = { rows = "ggg" :: "gpg" :: "ggg" :: Nil | TownMapDoc.defaults() };
+        let doc = TownMapDoc.Doc.Doc({ rows = "ggg" :: "gpg" :: "ggg" :: Nil | TownMapDoc.rec(TownMapDoc.defaults()) });
         Assert.assertEq(
             expected = ("tile_grass_edge_s", "tile_grass_edge_n",
                         "tile_grass_edge_e", "tile_grass_edge_w",
@@ -107,7 +107,7 @@ mod TestDocs {
         // 住人の巡回路は「歩けるマスしか通らない」— これはルール。角の間も展開して、
         // 実際の間取り Doc の '#'（建物・水路・柵）と突き合わせる。
         let map = run { MapDoc.load(MapDoc.path()) } with Fs.FileRead.runWithIO;
-        let cells = map#villagers |> List.flatMap(v -> World.routeCells(v#id));
+        let cells = MapDoc.rec(map)#villagers |> List.flatMap(v -> World.routeCells(v#id));
         Assert.assertEq(
             expected = (false, cells |> List.map(_ -> true)),
             (List.isEmpty(cells),
@@ -123,7 +123,7 @@ mod TestDocs {
     def testThemeResolverDerivesWallTop(): Unit \ Assert =
         // 派生色はテーマの基準色から導かれる（導出できる値は Doc に置かない）。
         let d = ThemeDoc.defaults();
-        let expectedColor = ThemeDoc.lighten(d#wall, 0.18);
+        let expectedColor = ThemeDoc.lighten(ThemeDoc.rec(d)#wall, 0.18);
         let got = ThemeDoc.resolver(d, "wallTop");
         Assert.assertEq(
             expected = (expectedColor#r, expectedColor#g, expectedColor#b),

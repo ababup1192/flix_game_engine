@@ -36,7 +36,7 @@ mod TownMap {
     /// legend に無い文字・アトラスに無いコマは敷かない（fail-open: そのマスが空くだけで落ちない）。
     def tiles(doc: TownMapDoc.Doc, baked: PxSpriteAtlas.Baked): List[TileData] =
         let t = World.tileSize();
-        doc#rows |> List.zipWithIndex |> List.flatMap(rowEntry -> {
+        TownMapDoc.rec(doc)#rows |> List.zipWithIndex |> List.flatMap(rowEntry -> {
             let (y, row) = rowEntry;
             String.toList(row) |> List.zipWithIndex |> List.flatMap(colEntry -> {
                 let (x, _) = colEntry;
@@ -93,7 +93,7 @@ mod TownMap {
 
     /// マスの素材名（legend 経由）。盤の外は None。
     def materialAt(doc: TownMapDoc.Doc, x: Int32, y: Int32): Option[String] =
-        List.nth(y, doc#rows)
+        List.nth(y, TownMapDoc.rec(doc)#rows)
             |> Option.flatMap(row -> List.nth(x, String.toList(row)))
             |> Option.flatMap(ch -> TownMapDoc.tileNameOf(doc, ch))
 

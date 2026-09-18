@@ -9,7 +9,7 @@ mod MotionDoc {
     use Util.Json.Json
 
     /// プレイヤーの動きのノブ一式。速さは px/秒、加速は px/秒²、高さはタイル数、間は秒。
-    pub type alias Doc = {
+    pub type alias Rec = {
         version = Int32,
         walkSpeed = Float64,       // 歩きの最高速 px/s
         accel = Float64,           // 入力方向への加速 px/s²
@@ -40,11 +40,16 @@ mod MotionDoc {
         camFollowKY = Float64      // カメラ: 縦の追い付きの速さ
     }
 
+    /// 型検査が record を展開しないため、World が持つ形は名前付きの enum にする。
+    pub enum Doc(Rec)
+
+    pub def rec(d: Doc): Rec = match d { case Doc.Doc(r) => r }
+
     pub def path(): String = "assets/player.motion.json"
 
     /// コード側の既定値(assets/player.motion.json と同じ値から出発する)。
     pub def defaults(): Doc =
-        { version = 1,
+        Doc.Doc({ version = 1,
           walkSpeed = 150.0, accel = 1400.0, decel = 1800.0, dashMult = 1.75,
           jumpHeightTiles = 4.4, jumpTapTiles = 1.6, timeToApex = 0.38,
           maxFallSpeed = 540.0, fallGravityMult = 1.6,
@@ -56,15 +61,15 @@ mod MotionDoc {
           platformAmpTiles = 2.5, platformPeriodSec = 3.2,
           camLeadPx = 40.0, camLiftPx = 16.0,
           camDeadzoneX = 8.0, camFollowKX = 6.0,
-          camDeadzoneY = 40.0, camFollowKY = 4.0 }
+          camDeadzoneY = 40.0, camFollowKY = 4.0 })
 
     /// テキストから Doc へ(fail-open)。JSON でない・形が違うフィールドは既定へ落とす。
     pub def fromJson(text: String): Option[Doc] =
         DocJson.decodeObject(fromRoot, text)
 
     def fromRoot(root: Map[String, Json]): Doc =
-        let d = defaults();
-        { version          = JsonCodec.intOr("version", d#version, root),
+        let d = rec(defaults());
+        Doc.Doc({ version          = JsonCodec.intOr("version", d#version, root),
           walkSpeed        = JsonCodec.floatOr("walkSpeed", d#walkSpeed, root),
           accel            = JsonCodec.floatOr("accel", d#accel, root),
           decel            = JsonCodec.floatOr("decel", d#decel, root),
@@ -91,7 +96,7 @@ mod MotionDoc {
           camDeadzoneX     = JsonCodec.floatOr("camDeadzoneX", d#camDeadzoneX, root),
           camFollowKX      = JsonCodec.floatOr("camFollowKX", d#camFollowKX, root),
           camDeadzoneY     = JsonCodec.floatOr("camDeadzoneY", d#camDeadzoneY, root),
-          camFollowKY      = JsonCodec.floatOr("camFollowKY", d#camFollowKY, root) }
+          camFollowKY      = JsonCodec.floatOr("camFollowKY", d#camFollowKY, root) })
 
     /// path の Doc を読む。読めない・壊れているときは defaults(fail-open)。
     pub def load(p: String): Doc \ Fs.FileRead =

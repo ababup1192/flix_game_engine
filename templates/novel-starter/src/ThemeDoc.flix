@@ -11,7 +11,7 @@ mod ThemeDoc {
     /// rainCount = 窓の雨すじの本数、rainGlow = 雨すじの明るさ（0〜1。窓色を白に近づける度合い）。
     /// accentLight は novel.theme.json ではなく assets/ui/palette.json の宣言色
     /// （スプライト legend の意味色キー。宣言が無ければ accent からの導出になる）。
-    pub type alias Doc = {
+    pub type alias Rec = {
         version = Int32,
         bg = Color,
         wall = Color,
@@ -22,6 +22,11 @@ mod ThemeDoc {
         rainCount = Int32,
         rainGlow = Float64
     }
+
+    /// 型検査が record を展開しないため、World が持つ Doc は 1 case の enum で包む。
+    pub enum Doc(Rec)
+
+    pub def rec(d: Doc): Rec = match d { case Doc.Doc(r) => r }
 
     pub def path(): String = "assets/novel.theme.json"
 
@@ -37,32 +42,32 @@ mod ThemeDoc {
     /// accentLight の既定は従来どおり accent からの導出（palette.json が上書きする）。
     pub def defaults(): Doc =
         let accent = hex("#ffc95e");
-        { version = 1,
-          bg     = hex("#10101c"),   // 部屋の闇（床の底）
-          wall   = hex("#2a2438"),   // 書斎の壁
-          window = hex("#1a2333"),   // 雨の窓
-          accent = accent,           // 灯り
-          accentLight = lighten(accent, 0.5),
-          ink    = hex("#ebf0ff"),   // 本文
-          rainCount = 7,
-          rainGlow = 0.22 }
+        Doc.Doc({ version = 1,
+                  bg     = hex("#10101c"),   // 部屋の闇（床の底）
+                  wall   = hex("#2a2438"),   // 書斎の壁
+                  window = hex("#1a2333"),   // 雨の窓
+                  accent = accent,           // 灯り
+                  accentLight = lighten(accent, 0.5),
+                  ink    = hex("#ebf0ff"),   // 本文
+                  rainCount = 7,
+                  rainGlow = 0.22 })
 
     /// テキストから Doc へ（fail-open）。色の表記（#rrggbb）は UiDoc.colorOf に委ねる。
     pub def fromJson(text: String): Option[Doc] =
         DocJson.decodeObject(fromRoot, text)
 
     def fromRoot(root: Map[String, Json]): Doc =
-        let d = defaults();
+        let d = rec(defaults());
         let accent = colorOr(d#accent, "accent", root);
-        { version = JsonCodec.intOr("version", d#version, root),
-          bg     = colorOr(d#bg, "bg", root),
-          wall   = colorOr(d#wall, "wall", root),
-          window = colorOr(d#window, "window", root),
-          accent = accent,
-          accentLight = lighten(accent, 0.5),
-          ink    = colorOr(d#ink, "ink", root),
-          rainCount = JsonCodec.intOr("rainCount", d#rainCount, root),
-          rainGlow = JsonCodec.floatOr("rainGlow", d#rainGlow, root) }
+        Doc.Doc({ version = JsonCodec.intOr("version", d#version, root),
+                  bg     = colorOr(d#bg, "bg", root),
+                  wall   = colorOr(d#wall, "wall", root),
+                  window = colorOr(d#window, "window", root),
+                  accent = accent,
+                  accentLight = lighten(accent, 0.5),
+                  ink    = colorOr(d#ink, "ink", root),
+                  rainCount = JsonCodec.intOr("rainCount", d#rainCount, root),
+                  rainGlow = JsonCodec.floatOr("rainGlow", d#rainGlow, root) })
 
     def colorOr(fallbackColor: Color, key: String, obj: Map[String, Json]): Color =
         Map.get(key, obj)
@@ -83,7 +88,7 @@ mod ThemeDoc {
             |> Option.flatMap(root -> Map.get("accentLight", root))
             |> Option.flatMap(json ->
                 UiDoc.colorOf(Map.empty(), "accentLight", json) |> Result.toOption)
-            |> Option.map(c -> { accentLight = c | doc })
+            |> Option.map(c -> Doc.Doc({ accentLight = c | rec(doc) }))
             |> Option.getWithDefault(doc)
 
     // ── 派生色と resolver ──
@@ -99,8 +104,8 @@ mod ThemeDoc {
     /// スプライトの意味色キー → 実色。未知のキーはマゼンタ（描き忘れが目に見える）。
     pub def resolver(doc: Doc, key: String): Color =
         match key {
-            case "accent"      => doc#accent
-            case "accentLight" => doc#accentLight
+            case "accent"      => rec(doc)#accent
+            case "accentLight" => rec(doc)#accentLight
             case _             => { r = 1.0, g = 0.0, b = 1.0 }
         }
 }
