@@ -13,7 +13,7 @@
 // 注意: `Saveable[CatalogContainer[t]]` の polymorphic instance は付けない。`fromJson` の型に
 //   containerKey を値として渡せないため。代わりに `encode` / `decode` 関数 API を提供し、各 catalog は
 //   wrap enum + 単相 Saveable instance を書く。
-mod CatalogContainer {
+pub mod CatalogContainer {
     use Util.Json.Json
     use Util.Json.Json.{JObject}
 

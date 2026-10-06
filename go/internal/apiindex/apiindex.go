@@ -12,7 +12,7 @@ package apiindex
 //  2. 索引が「Mod.関数」の形で挙げている関数が、ソースに pub def として実在するか
 //
 // WhyNot: 宣言の抽出に flixdecl を使わないのは、ここが数えるのは 1 行で書かれた
-// `^mod ` と `^\s*pub def ` だけで、複数行にまたがる宣言も eff の op も数に入れないため。
+// `^(pub )?mod ` と `^\s*pub def ` だけで、複数行にまたがる宣言も eff の op も数に入れないため。
 // flixdecl に寄せると拾う件数が変わり、「pub def N 本」の数字がずれる。
 // ファイルの並べ方だけは flixdecl.FlixFiles を借りる。
 
@@ -35,7 +35,7 @@ import (
 const pySpace = `[\t\n\v\f\r \x{1c}-\x{1f}\x{85}\p{Z}]`
 
 var (
-	modDeclRe = regexp.MustCompile(`(?m)^mod ([A-Za-z][A-Za-z0-9]*(?:\.[A-Za-z][A-Za-z0-9]*)*)`)
+	modDeclRe = regexp.MustCompile(`(?m)^(?:pub )?mod ([A-Za-z][A-Za-z0-9]*(?:\.[A-Za-z][A-Za-z0-9]*)*)`)
 	pubDefRe  = regexp.MustCompile(`(?m)^` + pySpace + `*pub def ([a-zA-Z][A-Za-z0-9_]*)`)
 	// 索引が関数を指す形は「Mod.func」（func は小文字始まり）。前後の語境界は Go の
 	// 正規表現が ASCII しか見ないので、当てた後に自分で見る（docFuncRefs）。

@@ -19,7 +19,7 @@
 // 永続 List ゆえ past は tail を構造共有する。N 回ぶんの履歴を持っても各 record は先頭 1 セル追加＋
 // cap 超過時の切り詰めだけで、World を丸ごと複製しない — これが巻き戻しが安い理由。
 
-mod Worldline {
+pub mod Worldline {
 
     pub enum Worldline[a] {
         case Worldline({ past = List[a], current = a, future = List[a], cap = Int32 })

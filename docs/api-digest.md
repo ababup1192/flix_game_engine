@@ -1,4 +1,4 @@
-<!-- engine v0.33.5 / 生成: 2026-08-31 -->
+<!-- engine v0.33.5 / 生成: 2026-10-07 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト
@@ -14,6 +14,6 @@ grep 代わりの重い作業になってしまうため）。調べたいモジ
 [module-index.md](module-index.md) を先に引く。
 | パッケージ | モジュール数 | 宣言数 | ファイル |
 |---|---|---|---|
-| engine | 45 | 487 | [api-digest/engine.md](api-digest/engine.md) |
+| engine | 47 | 489 | [api-digest/engine.md](api-digest/engine.md) |
 | engine_world | 98 | 1022 | [api-digest/engine_world.md](api-digest/engine_world.md) |
 | engine_tools | 12 | 104 | [api-digest/engine_tools.md](api-digest/engine_tools.md) |

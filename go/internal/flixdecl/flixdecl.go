@@ -56,7 +56,7 @@ type FileDecls struct {
 const pySpace = `[\t\n\v\f\r \x{1c}-\x{1f}\x{85}\p{Z}]`
 
 var (
-	modRe = regexp.MustCompile(`^mod` + pySpace + `+([A-Za-z][A-Za-z0-9_.]*)` + pySpace + `*\{`)
+	modRe = regexp.MustCompile(`^(?:pub` + pySpace + `+)?mod` + pySpace + `+([A-Za-z][A-Za-z0-9_.]*)` + pySpace + `*\{`)
 	effRe = regexp.MustCompile(`^pub` + pySpace + `+eff` + pySpace + `+([A-Za-z][A-Za-z0-9_]*)`)
 
 	defNameRe   = regexp.MustCompile(`^pub` + pySpace + `+def` + pySpace + `+([A-Za-z][A-Za-z0-9_]*)`)

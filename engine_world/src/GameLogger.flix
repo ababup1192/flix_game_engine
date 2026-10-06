@@ -3,7 +3,7 @@
 // 一括して組み立て直せる。
 // 利用例: 「〇〇が攻撃」を積む / ターン区切りを入れる / 溜まった行を取り出してログ欄を作り直す。
 // 注意: 蓄積先の Ref は `withLogger` の closure に隠れ、外からは見えない。
-mod GameLogger {
+pub mod GameLogger {
 
     pub eff GameLogger {
         /// プレイヤー側のメッセージを白色で 1 行積む

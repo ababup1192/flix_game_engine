@@ -1,4 +1,4 @@
-<!-- engine v0.33.5 / 生成: 2026-08-31 -->
+<!-- engine v0.33.5 / 生成: 2026-10-07 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine
@@ -330,6 +330,9 @@
 - 正の長さを持つか（> 0）。「まだ動いている tween か」等の判定に使う。
   `pub def isPositive(duration: Duration): Bool`
 
+## EngineSentinel.Marker — `engine/src/EngineSentinel/Marker.flix`
+- `pub enum Marker { case M }`
+
 ## GameEngine — `engine/src/GameEngine.flix`
 - テクスチャアセットのマニフェストエントリ
   `pub type alias TextureEntry = { name = String, path = String, hasAlpha = Bool }`
@@ -454,6 +457,10 @@
   `pub def wrapShaderProgram(v: Int32): ShaderProgram`
 - ハンドルから Int32 の実体を取り出す（描画時に使う）。
   `pub def shaderProgramInt(h: ShaderProgram): Int32`
+
+## InputEvent — `engine/src/render/InputEvent.flix`
+- 現在押されているキーのセットを取得する（GameEngine.allKeys() を全て走査）
+  `pub def currentKeys(): Set[GameEngine.Key] \ GameEngine.Game`
 
 ## JoyoKanji — `engine/src/core/JoyoKanji.flix`
 - アトラスにベイクする全コードポイントを 1 行の文字列として返す。

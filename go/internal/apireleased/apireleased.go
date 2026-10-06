@@ -44,10 +44,10 @@ var (
 	// declLineRe は 1 行に対する match()（先頭固定）。
 	declLineRe = regexp.MustCompile(`\A` + declBody)
 
-	modBody     = `mod` + pySpace + `+([A-Za-z_][A-Za-z0-9_.]*)` + pySpace + `*\{`
+	modBody     = `(?:pub` + pySpace + `+)?mod` + pySpace + `+([A-Za-z_][A-Za-z0-9_.]*)` + pySpace + `*\{`
 	modSplitRe  = regexp.MustCompile(`(?m)^` + modBody)
 	modLineRe   = regexp.MustCompile(`\A` + modBody)
-	gitGrepExpr = `^(mod[[:space:]]+[A-Za-z_][A-Za-z0-9_.]*[[:space:]]*\{` +
+	gitGrepExpr = `^((pub[[:space:]]+)?mod[[:space:]]+[A-Za-z_][A-Za-z0-9_.]*[[:space:]]*\{` +
 		`|[[:space:]]*pub[[:space:]]+(def|eff|enum|type[[:space:]]+alias)[[:space:]])`
 )
 

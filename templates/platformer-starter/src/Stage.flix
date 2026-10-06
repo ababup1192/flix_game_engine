@@ -10,7 +10,7 @@
 //
 // 格子は不変(コインの取得などの進行は World が集合で覚える — rows は書き換えない)。
 // 動く床・敵は「湧き場所」だけここが読み、動きは World / Enemies の仕事。
-mod Stage {
+pub mod Stage {
 
     /// 型検査が record を展開しないため、World が持つ形は名前付きの enum にする。
     pub enum Stage(Rec)

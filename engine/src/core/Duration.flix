@@ -11,7 +11,7 @@
 ///   - 継続時間（Tween 1 本の所要時間など）        : `Duration.seconds(0.5)` / `frames(...)`
 ///   - 1 フレーム分の経過（physicsProcess の delta）: gameLoop が毎フレーム生成
 ///   - カウントダウン残時間（Timer の timeLeft）     : 起動値から delta を引き続ける
-mod Duration {
+pub mod Duration {
 
     /// 内部表現は秒。`Of` という単一コンストラクタでラップすることで
     /// `Float64` から区別された型にする。

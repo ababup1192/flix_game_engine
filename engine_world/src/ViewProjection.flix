@@ -27,7 +27,7 @@
 // タイル 1 マスの画面上の大きさ・カメラの置き場所・焦点距離は**ゲーム側の意見**なので、
 // ここには既定値を置かない（Persp が焦点距離と霧の係数を持たないのと同じ線引き）。
 // 組み立ては side / topDown / quarter / firstPerson の 4 本。
-mod ViewProjection {
+pub mod ViewProjection {
 
     /// world → screen の写し方。写し方ごとに要る数が違うので case ごとに持ち物を変える
     /// （持ち物の中身は下の FlatSpec / QuarterSpec / FirstPersonSpec）。
