@@ -15,7 +15,7 @@
 // 依存は Flix 標準ライブラリ + Fs 効果 + java.io.File のみ。ゲーム固有の型を import しないため、
 // そのまま engine 側の汎用パーツへ吸い出せる。品質要素（image-rendering: pixelated / Retina 前提の
 // CSS 幅 / ダーク配色）は生成 HTML に組み込む。
-mod ReferenceSite {
+pub mod ReferenceSite {
     import java.io.File
 
     /// サイト全体の設定。1 サイト 1 レコードで名前渡しする。

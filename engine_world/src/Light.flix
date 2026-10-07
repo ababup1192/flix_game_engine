@@ -1,7 +1,7 @@
 // Light — 簡易2D光源から見せる絵の列を導く純関数。光は状態を持たない値（位置・半径・色・ハロの強さ）。
 // maskSprite（Multiply専用の暗くするオーバーレイ）と haloSprite（Add専用の暖色グロー）は RadialGlow が生成した
 // 別規約のテクスチャで、Light はその2枚をどこに・どれだけ拡大して置くかだけを決める。
-mod Light {
+pub mod Light {
 
     /// 簡易2D光源1個の値。at=位置、radius=光の届く目安半径、color=光の色、
     /// halo=Addハロの強さ0..1。

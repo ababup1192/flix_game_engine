@@ -32,7 +32,7 @@ pub enum Text {
     })
 }
 
-mod Text {
+pub mod Text {
     /// テキストとフォントアトラスから Text を生成する。
     /// 既定は horizontalAlignment = Left, verticalAlignment = Top, 折り返しなし。
     pub def make(text: String, fontAtlas: FontAtlas, fontSize: Float64): Text =

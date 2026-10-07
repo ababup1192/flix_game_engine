@@ -22,7 +22,7 @@ pub type alias TileLayerSpec = {
     zIndex = Int32
 }
 
-mod TileScene {
+pub mod TileScene {
 
     /// Spec を regionRect 付き Sprite の PlacedItem 列に写す（world 座標のまま）。
     /// ヘッドレス描き出し・F8 停止画面・スナップショットテストが GPU 抜きで同じ絵を得るための投影。

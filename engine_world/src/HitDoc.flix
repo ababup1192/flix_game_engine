@@ -1,7 +1,7 @@
 // HitDoc — 当たりの形の宣言（hitbox.json）を読む codec。形の型（Hit.HitShape）は幾何側が持ち、
 // ここは JSON との往復だけ。間違いはキーと位置付き（hit.player[0] など）で loud に断る。
 
-mod HitDoc {
+pub mod HitDoc {
     use Hit.HitShape
     use Util.Json.Json
     use Util.Json.JsonError

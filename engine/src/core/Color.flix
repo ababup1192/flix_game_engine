@@ -8,7 +8,7 @@
 
 pub type alias Color = {r = Float64, g = Float64, b = Float64}
 
-mod Color {
+pub mod Color {
 
     /// 0〜1 の 3 つ組から色を作る。
     pub def rgb(r: Float64, g: Float64, b: Float64): Color =

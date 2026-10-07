@@ -4,7 +4,7 @@
 //
 // 描画規約（box/textured/font/polygon の扱い、z 順）は render_gl/Frame.drawSprite と
 // 一致させてある — 各関数のコメントに規約を記す。design を `scale` 倍に拡大して出力する。
-mod SoftRaster {
+pub mod SoftRaster {
     import java.awt.image.BufferedImage
     import java.awt.image.RescaleOp
     import java.awt.image.ImageObserver

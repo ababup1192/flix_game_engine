@@ -6,7 +6,7 @@
 //   デザインはすべて呼び側が渡す値で、ここは合成の仕組みだけを持つ。バイト列を作る純粋部と、
 //   それをファイルへ書く関数を分けてある。
 
-mod SfxSynth {
+pub mod SfxSynth {
     import java.io.BufferedOutputStream
     import java.io.File
     import java.io.FileOutputStream

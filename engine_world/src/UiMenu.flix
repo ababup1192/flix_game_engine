@@ -7,7 +7,7 @@
 // 動的メニュー（ActionMenu）は空きスロットの meta を `UiStore.clearMeta` で外し、項目数を
 // 可視項目へ追随させる（display:none レイアウトと組でパネルが縮む）。
 
-mod UiMenu {
+pub mod UiMenu {
 
     /// listPath 配下の「meta を持つ子」を order 順に列挙する（選択カーソルの項目列）。
     /// listPath が未登録なら空。

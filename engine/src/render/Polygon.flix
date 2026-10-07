@@ -12,7 +12,7 @@ pub enum Polygon {
     })
 }
 
-mod Polygon {
+pub mod Polygon {
 
     /// 任意の頂点列から Polygon を生成する（alpha=1.0 不透明）。
     pub def make(points: List[Vec2.Vec2], color: Color): Polygon =

@@ -3,7 +3,7 @@
 // 受け取ったゲーム側（ハンドリング時）が行う — 写像と解釈を分ける。
 // 単発の操作（決定・キャンセル）は firstTap、列を消費する操作（移動の fold）は taps / held。
 
-mod InputMap {
+pub mod InputMap {
 
     /// (キー, 意図) の表。同じ意図を複数キーに割り当ててよい（WASD と矢印、Z と Enter）。
     pub type alias Table[a] = List[(GameEngine.Key, a)]

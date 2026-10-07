@@ -13,7 +13,7 @@
 //
 // 検出した違反は Finding。抑制タグ（allow）に該当する rule は suppressed=true を立てて返す
 // （黙殺せず「抑制済み」として別掲するため。呼び側が suppressed で振り分ける）。
-mod RenderLint {
+pub mod RenderLint {
 
     /// 要素の描画種別（リンタ内の分類。ゲームの widget 名とは独立）。
     pub enum Kind with Eq {

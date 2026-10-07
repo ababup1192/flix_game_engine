@@ -2,7 +2,7 @@
 // どのメッセージダイアログでも、進行・早送り・完了判定・文言切替の検出を書き直さずに共有できる。
 // 利用例: start(text) を状態に持ち、毎フレーム step で進め、visibleText を UiStore.setText で流し込む。
 // 制約: 文字は UTF-16 単位で数える。かな・漢字は 1 文字だが、絵文字（サロゲートペア）は途中で割れ得る。
-mod UiTypewriter {
+pub mod UiTypewriter {
 
     /// 文字送りの進み具合。text = 表示したい全文、shown = 見えている文字数（dt を足し込むため小数で持つ）。
     pub type alias Reveal = { text = String, shown = Float64 }

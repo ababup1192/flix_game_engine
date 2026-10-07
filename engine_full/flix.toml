@@ -1,9 +1,6 @@
 [package]
-name        = "flix_game_engine"
-description = "All-in-one, self-contained bundle of the Flix game engine: the contract layer, the OpenGL/GLFW/OpenAL backend with LWJGL natives for Windows / macOS (Intel + ARM) / Linux (x64 + ARM), the App runtime + world/UI toolkit, and the headless bake/reference-image tools — all in one package with no transitive dependencies. Depend on this single package to make a game."
 version     = "0.33.5"
-flix        = "0.75.1"
-authors     = ["ababup1192 <ababup1192@gmail.com>"]
+flix        = "0.76.2"
 repository  = "github:ababup1192/flix_game_engine"
 
 # engine / render_gl / engine_world / engine_tools のソースを1つにまとめた全部入り。

@@ -5,7 +5,7 @@
 // 注意: 幾何は flix_ge_shapes ギャラリーで PNG バイト一致まで検証した実装の逐語移設 —
 // 演算の順序ひとつで検証が壊れるので、見た目の等価な書き換えもしないこと。
 
-mod UiShape {
+pub mod UiShape {
 
     /// パラメトリックな図形。座標を持つもの（line/polyline/bezier/poly 由来の点列）は
     /// 「解決 rect の中心相対」で持ち、placedItems が中心へ写す。

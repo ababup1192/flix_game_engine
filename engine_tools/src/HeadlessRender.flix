@@ -8,7 +8,7 @@
 // Replay はここに含めない（engine_world に住むため）。ゲーム側で Replay.timeline した frames: List[w] を
 // 渡す。投影も engine 型 (GameEngine.Drawable / PolygonRenderCmd) で受け取り、engine_world に依存しない。
 
-mod HeadlessRender {
+pub mod HeadlessRender {
     import java.awt.image.BufferedImage
     import java.io.File
 

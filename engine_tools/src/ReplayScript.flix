@@ -12,7 +12,7 @@
 // applyKey（入力→Ui API）と tick（frameStep→renderUi→フレーム収録）は効果を持つので、
 // record 越しでなく HOF 引数で直接渡す（closure 保存は subeffecting が効かないため）。
 // applyKey と tick は別々の効果多相変数を取り、結果効果はその和になる。
-mod ReplayScript {
+pub mod ReplayScript {
 
     /// 意味入力。メニューの ↑↓←→ と決定 / 取消 / 印付け。
     pub enum Key with Eq, ToString {

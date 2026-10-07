@@ -1,7 +1,7 @@
 // UiLayout — 縦か横に並べる指定から、各 UI 要素の画面上の矩形（位置と大きさ）を自動で決める。
 // 注意: 並びは縦か横の 1 方向のみ。折り返し・格子・割合指定は持たない。すべて純粋な計算。
 
-mod UiLayout {
+pub mod UiLayout {
 
     /// 主軸方向。Row=横並び（主軸=X）、Column=縦並び（主軸=Y）。
     pub enum Dir with Eq { case Row, case Column }

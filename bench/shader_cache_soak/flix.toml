@@ -1,9 +1,6 @@
 [package]
-name        = "bench_shader_cache_soak"
-description = "シェーダープログラムのキャッシュが上限で頭打ちになるかを実機の GL で確かめる harness"
 version     = "0.1.0"
-flix        = "0.75.1"
-authors     = ["ababup1192 <ababup1192@gmail.com>"]
+flix        = "0.76.2"
 
 [dependencies]
 "github:ababup1192/flix_game_engine" = { version = "0.33.5", security = "unrestricted" }

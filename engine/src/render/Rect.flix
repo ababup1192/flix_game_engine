@@ -22,7 +22,7 @@ pub enum Rect {
     })
 }
 
-mod Rect {
+pub mod Rect {
     /// デフォルト値で Rect を生成する（alpha は 1.0 = 不透明）
     pub def make(size: Vec2.Vec2, color: Color): Rect =
         Rect.Rect({

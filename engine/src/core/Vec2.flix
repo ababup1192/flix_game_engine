@@ -2,7 +2,7 @@
 // 座標を1つの値として扱えるので、移動・距離・角度の計算をその場で書き下さずに済む。
 // 利用例: キャラを速度ぶん動かす / 2点間の距離を測る / 狙う方向のベクトルを求める。
 
-mod Vec2 {
+pub mod Vec2 {
     import java.lang.Math
 
     pub type alias Vec2 = {x = Float64, y = Float64}

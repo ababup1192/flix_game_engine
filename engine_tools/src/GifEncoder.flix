@@ -7,7 +7,7 @@
 // SoftRaster.renderToImage が 1 フレームずつ描き出した BufferedImage を集め、ここで 1 本の
 // GIF にまとめる。GL 無しの操作リプレイ動画（呼び出し側が outPath を渡し、任意の場所へ永続化
 // する）を作る経路。
-mod GifEncoder {
+pub mod GifEncoder {
     import java.awt.image.BufferedImage
     import java.awt.image.RenderedImage
     import java.io.File

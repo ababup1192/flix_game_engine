@@ -5,7 +5,7 @@
 // 注意: 持つのは「値のあるマス」だけ（疎な表）。広い盤でも植えたマスの数しか場所を取らない。
 //
 // 日が変わったときの一斉更新は mapValues で 1 回なめるだけ。毎フレーム全マスを見る必要はない。
-mod TileState {
+pub mod TileState {
 
     /// マス → 値 の表。値の型はゲームが決める（畑なら「耕した・濡れ・作物・日数」の record）。
     pub type alias Table[v] = Map[(Int32, Int32), v]

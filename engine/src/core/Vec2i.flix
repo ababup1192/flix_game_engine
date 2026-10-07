@@ -16,7 +16,7 @@
 ///   - 演算: `Vec2i.add(a, b)` / `Vec2i.sub(a, b)`
 ///   - 定数: `Vec2i.zero()` / `Vec2i.up()` 等
 ///   - 同値比較: `Vec2i.eq(a, b)` (record の `==` は使えないので helper 経由)
-mod Vec2i {
+pub mod Vec2i {
 
     pub def make(x: Int32, y: Int32): {x = Int32, y = Int32} = {x = x, y = y}
 

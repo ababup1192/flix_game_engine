@@ -23,7 +23,7 @@ pub enum AudioStreamPlayer {
     })
 }
 
-mod AudioStreamPlayer {
+pub mod AudioStreamPlayer {
 
     /// デフォルト値で AudioStreamPlayer を生成する
     pub def make(stream: String): AudioStreamPlayer =

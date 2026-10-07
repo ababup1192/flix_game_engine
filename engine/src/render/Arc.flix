@@ -19,7 +19,7 @@ pub enum Arc {
     })
 }
 
-mod Arc {
+pub mod Arc {
 
     /// 全周（2π）の既定分割数。小さなインジケータには十分滑らか。
     def defaultSegments(): Int32 = 32

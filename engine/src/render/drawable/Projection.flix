@@ -5,7 +5,7 @@
 /// world → screen のビュー変換と、その投影数式を持つ。カメラ位置に依存しない純関数だけを置く。
 /// カメラは viewTransform でこの ViewTransform を作り、描画側が各描画物の
 /// worldPos を applyToWorldPos に通して screen 座標へ移す。
-mod Projection {
+pub mod Projection {
 
     /// ビュー変換: screenPos = worldPos * scale - offset。
     /// scale は zoom 倍率、offset は screen 原点のずれ。

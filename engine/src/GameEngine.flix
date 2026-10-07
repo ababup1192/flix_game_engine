@@ -3,7 +3,7 @@
 // 各ゲームはここの型とエフェクトだけを見れば、内部実装を知らずに描画や入力を組める。
 // 利用例: 1フレームぶんの描画コマンドを渡す / キー押下を問い合わせる / 経過時間を取る。
 
-mod GameEngine {
+pub mod GameEngine {
     import java.lang.ProcessBuilder
     import java.lang.ProcessHandle
     import java.lang.System

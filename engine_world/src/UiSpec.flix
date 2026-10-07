@@ -6,7 +6,7 @@
 // UiDoc の poly rotation/pivot 拡張は UiStore 経路では未対応 — 黙って無視すると同じ JSON が
 // 経路によって絵を変えてしまうため、loud に Err する。
 
-mod UiSpec {
+pub mod UiSpec {
     use Util.Json.Json
     use Util.Json.JsonError
     use DocJson.PathTag.Root

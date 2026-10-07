@@ -13,7 +13,7 @@
 //
 // fail-open だが無音ではない: Skip の理由と打ち切りは notes に残り、
 // 描き出し側が最後にまとめて報せる — 脚本の誤りはログで見つかる。
-mod SceneSeq {
+pub mod SceneSeq {
 
     /// perform が返す、カット 1 つの行方。
     pub enum Status[p] {

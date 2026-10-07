@@ -21,7 +21,7 @@
 // 色票を渡したときだけ解ける。UiDoc.colorOf と同じ語彙）。
 // WorleyOut は "f1"/"f2"/"f2mf1"、Axis は "u"/"v"。
 
-mod ShaderJson {
+pub mod ShaderJson {
     import java.math.{BigDecimal => JBigDecimal}
     use Util.Json.Json
     use Util.Json.Json.{JObject, JArray, JNumber, JString}

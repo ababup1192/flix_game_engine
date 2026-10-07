@@ -31,7 +31,7 @@ pub enum Sprite {
     })
 }
 
-mod Sprite {
+pub mod Sprite {
     /// デフォルト値で Sprite を生成する（テクスチャ全体を表示）
     pub def make(texture: String, position: Vec2.Vec2, scale: Vec2.Vec2): Sprite =
         Sprite.Sprite({

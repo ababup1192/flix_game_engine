@@ -3,7 +3,7 @@
 // 利用例: スロット 1 にセーブする / スロット 3 を読み込む。
 // 注意: 別のパス規約が要るなら `Persistence` を直接呼ぶ。親ディレクトリ `saves/` の作成は
 //   呼び出し側の責任（`Fs.WriteFile` は親ディレクトリを自動作成しない）。
-mod SaveManager {
+pub mod SaveManager {
 
     /// `saves/slot{N}.json` のパス。
     pub def slotPath(slot: Int32): String = "saves/slot${slot}.json"

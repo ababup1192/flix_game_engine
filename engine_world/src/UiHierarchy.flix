@@ -3,7 +3,7 @@
 // UI ツリーは parents（子→親）と order（兄弟内の並び順）だけで表現される。
 // このモジュールは「ある親の子一覧」「部分木の全 entity」「継承済み可視性」を導出する。
 
-mod UiHierarchy {
+pub mod UiHierarchy {
 
     /// parent を親に持つ entity を order 昇順で返す。
     /// order 未登録の entity は 0 扱い。

@@ -10,7 +10,7 @@
 // 編集する場合はこのファイルだけ書き換えて engine を build-pkg + sync すれば
 // 全ての example に反映される。
 
-mod JoyoKanji {
+pub mod JoyoKanji {
 
     /// アトラスにベイクする全コードポイントを 1 行の文字列として返す。
     /// `LwjglLayer.kanjiCodepoints` がこれを `String.toList` で分解して使う

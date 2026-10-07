@@ -13,7 +13,7 @@ pub type alias Transform = {
     skew = Float64
 }
 
-mod Transform {
+pub mod Transform {
 
     /// 変換なしの初期値（原点・無回転・等倍・せん断なし）。
     pub def identity(): Transform =

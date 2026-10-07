@@ -4,7 +4,7 @@
 // resolve は角1個ぶんの純関数(全マップ一括の関数はない — キャッシュや遅延評価は呼び側の方針)。
 // 初学者向けの概念説明は docs/dual-grid.md。
 
-mod DualGrid {
+pub mod DualGrid {
 
     /// 角のまわり4セルの埋まり方。tl=左上 tr=右上 bl=左下 br=右下。
     pub type alias Corner = { tl = Bool, tr = Bool, bl = Bool, br = Bool }

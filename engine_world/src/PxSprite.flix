@@ -12,7 +12,7 @@
 //   - scale は整数のみ(NEAREST 前提)。0 以下は何も描かない。
 //   - 色は resolver(意味色キー → 実色)が解決する。テーマ替え・個体差(体色)は
 //     resolver の差し替えで行い、格子は共有する。
-mod PxSprite {
+pub mod PxSprite {
 
     /// 結合済みの矩形 1 個(セル単位を px へ展開済み・key は未解決の意味色キー)。
     pub type alias Run = { x = Float64, y = Float64, w = Float64, h = Float64, key = String }

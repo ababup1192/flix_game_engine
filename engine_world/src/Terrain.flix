@@ -3,7 +3,7 @@
 // — Terrain 自身は Theme も Doc も知らない。
 // 初学者向けの概念説明は docs/dual-grid.md。
 
-mod Terrain {
+pub mod Terrain {
 
     /// 表の1行(Surfaces.Entry の一般形)。spec = Material.Spec なので、
     /// 立体感(持ち上げ壁)は spec#height = Material.HeightProfile.Lifted({...}) で表に乗る

@@ -14,7 +14,7 @@
 //   face と Clipped を { face = ..., clip = ... } の対で持ち、視程で filter して、
 //   Painter.zOrdered(p -> p#clip#dist, zBase, zStride, ...) で zIndex を振り、
 //   stripCorners で四隅を求めて遠→近に描く。
-mod Persp {
+pub mod Persp {
 
     /// カメラの置き方。pos = 位置（世界座標）、yaw = 向き（ラジアン。
     /// 0 = +x 方向、+ で時計回り — 画面の y が下向きの座標系）。

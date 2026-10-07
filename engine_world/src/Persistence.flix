@@ -15,7 +15,7 @@ pub trait Saveable[a] {
     pub def fromJson(element: Util.Json.Json): Option[a]
 }
 
-mod Persistence {
+pub mod Persistence {
 
     /// `Saveable` を実装した値を `path` へ JSON で書き出す。
     /// 親ディレクトリは事前に作成されている前提

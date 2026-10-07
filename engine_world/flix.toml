@@ -1,9 +1,6 @@
 [package]
-name        = "flix_engine_world"
-description = "Author-facing game framework on flix_game_engine: the App run-loop (consumes the GameEngine contract, backend-agnostic), an immutable-World ECS (EntityId, Query combinators, Collision broadphase, Physics2D), Camera rigs, a pure UI toolkit (flex layout, widget store, spec/binding, menus, extract), and frontend services (Doc/JSON loading, save/persistence, logging)"
 version     = "0.33.5"
-flix        = "0.75.1"
-authors     = ["ababup1192 <ababup1192@gmail.com>"]
+flix        = "0.76.2"
 repository  = "github:ababup1192/flix_engine_world"
 
 # flix_game_engine（契約層）の上に載る「作家向けフレームワーク」。App ループが契約を

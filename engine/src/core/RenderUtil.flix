@@ -3,7 +3,7 @@
 // GL の uniform やシェーダに渡す前の Float32 変換・丸め・三角関数をまとめる。
 // engine（契約層）に置くことで、フロント・各バックエンド・ゲームが共有して使える。
 
-mod RenderUtil {
+pub mod RenderUtil {
     import java.lang.Math
 
     /// Float64 → Float32 (GL uniform 用)

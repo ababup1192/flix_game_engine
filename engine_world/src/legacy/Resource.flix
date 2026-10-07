@@ -4,7 +4,7 @@
 // 各フィールドに合った入力欄を出せる。
 // 注意: schema が記述するのはフィールド定義だけで、ファイル全体の形（catalog / single 等）は
 // data 側の構造で決まる。Flix 型と schema のズレは `checkConsistency` が起動時に検出する（ゲーム側の責任）。
-mod Resource {
+pub mod Resource {
     use Util.Json.Json
     use Util.Json.Json.{JObject, JString, JNumber, JBool, JArray, JNull}
 

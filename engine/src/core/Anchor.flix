@@ -29,7 +29,7 @@ pub enum Anchor with Eq, ToString {
     case FullRect
 }
 
-mod Anchor {
+pub mod Anchor {
 
     /// 文字列から Anchor を parse する。scene.json の `"anchor": "FullRect"` 等のパース用。
     pub def fromString(s: String): Option[Anchor] =

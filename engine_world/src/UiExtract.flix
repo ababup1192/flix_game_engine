@@ -2,7 +2,7 @@
 // レイアウト結果をそのまま画面に出せる形に落とすので、UI の見た目づくりと描画を切り離せる。
 // 注意: 画面固定の HUD 想定でカメラの拡大縮小は掛けない。文字の実寸は engine の純粋関数を使う。
 
-mod UiExtract {
+pub mod UiExtract {
 
     /// text コンポーネントの内在サイズ（measure）を求める。
     /// atlasOf は font 名→FontAtlas（呼び側が Game.getFontAtlas 等で組む）。

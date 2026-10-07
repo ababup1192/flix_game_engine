@@ -5,7 +5,7 @@
 //
 // 描き出す先は debug/diff/ —リファレンス画像の外なので、リグレッション防護の基準を汚さない。
 // ゲーム内容は一切知らない。入力は「どの絵か」の名前だけ。
-mod ReferenceDiff {
+pub mod ReferenceDiff {
     import java.awt.image.BufferedImage
     import java.io.File
     import java.lang.System

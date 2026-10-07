@@ -5,7 +5,7 @@
 // （render_gl など）だけが `*Int` で取り出して知る。バックエンドを差し替えても、
 // ハンドルの中身の表現だけが変わり、運ぶ側のコードは変わらない。
 
-mod GpuHandle {
+pub mod GpuHandle {
 
     /// タイルマップの GPU インスタンスバッファのハンドル（`initTileBuffer` が返す）。
     pub enum TileVao { case TileVao(Int32) }

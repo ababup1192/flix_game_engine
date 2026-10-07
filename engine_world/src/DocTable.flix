@@ -2,7 +2,7 @@
 // 同じ Doc 一覧を watchFile の配線・一括リロード(F1)・ActiveDocs の名乗りへ別々に
 // 手写しすると、足し忘れで「保存しても効かない」「表示中の印が付かない」がすぐ起きる。
 // ゲームはテーブル 1 枚だけを書き、3 つの形はここが導出する。
-mod DocTable {
+pub mod DocTable {
 
     /// この行がどの読み直しに載るか。Both が既定。
     pub enum ReloadOn with Eq, ToString {

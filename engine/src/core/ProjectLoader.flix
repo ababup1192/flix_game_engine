@@ -21,7 +21,7 @@
 // 文字列に書き換えてから返す。examples は CWD = project root で動くので rootDir = "." を
 // 渡す慣習。
 
-mod ProjectLoader {
+pub mod ProjectLoader {
     use Util.Json.Json.{JObject, JArray, JString, JNumber, JBool}
     use Util.Json.JsonError
     use Util.Json.JsonError.JsonError.Decode

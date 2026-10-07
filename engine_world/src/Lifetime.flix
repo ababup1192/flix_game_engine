@@ -8,7 +8,7 @@
 //
 // なぜ now から導くか — Clock/EcsTween の「dt を毎フレーム足す」蓄積式と違い、これは startedAt を1つ
 // 持って now との差で導くので、巻き戻し・リプレイでも値がぶれない(Fx.Burst と同じ流儀)。
-mod Lifetime {
+pub mod Lifetime {
 
     pub type alias Lifetime = { startedAt = Float64, dur = Float64 }
 

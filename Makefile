@@ -32,14 +32,14 @@ FLIX_TEST := $(CURDIR)/bin/flix
 VERSION := 0.33.5
 
 RENDER_GL_DIR       := render_gl
-RENDER_GL_FPKG_SRC  := $(RENDER_GL_DIR)/artifact/render_gl.fpkg
+RENDER_GL_FPKG_SRC  := $(RENDER_GL_DIR)/artifact/package.fpkg
 RENDER_GL_TOML_SRC  := $(RENDER_GL_DIR)/flix.toml
 RENDER_GL_SUBPATH   := lib/github/ababup1192/flix_render_gl/$(VERSION)
 RENDER_GL_FPKG_NAME := flix_render_gl-$(VERSION).fpkg
 RENDER_GL_TOML_NAME := flix_render_gl-$(VERSION).toml
 
 ENGINE_DIR       := engine
-ENGINE_FPKG_SRC  := $(ENGINE_DIR)/artifact/engine.fpkg
+ENGINE_FPKG_SRC  := $(ENGINE_DIR)/artifact/package.fpkg
 ENGINE_TOML_SRC  := $(ENGINE_DIR)/flix.toml
 ENGINE_SUBPATH   := lib/github/ababup1192/flix_engine_core/$(VERSION)
 ENGINE_FPKG_NAME := flix_engine_core-$(VERSION).fpkg
@@ -47,7 +47,7 @@ ENGINE_TOML_NAME := flix_engine_core-$(VERSION).toml
 
 # engine_world は engine に依存する再利用 ECS lib。ゲームが利用する。
 ENGINE_WORLD_DIR       := engine_world
-ENGINE_WORLD_FPKG_SRC  := $(ENGINE_WORLD_DIR)/artifact/engine_world.fpkg
+ENGINE_WORLD_FPKG_SRC  := $(ENGINE_WORLD_DIR)/artifact/package.fpkg
 ENGINE_WORLD_TOML_SRC  := $(ENGINE_WORLD_DIR)/flix.toml
 ENGINE_WORLD_SUBPATH   := lib/github/ababup1192/flix_engine_world/$(VERSION)
 ENGINE_WORLD_FPKG_NAME := flix_engine_world-$(VERSION).fpkg
@@ -55,7 +55,7 @@ ENGINE_WORLD_TOML_NAME := flix_engine_world-$(VERSION).toml
 
 # engine_tools は engine に依存するヘッドレス描画/スナップショット工具箱 lib。ゲームが利用する。
 ENGINE_TOOLS_DIR       := engine_tools
-ENGINE_TOOLS_FPKG_SRC  := $(ENGINE_TOOLS_DIR)/artifact/engine_tools.fpkg
+ENGINE_TOOLS_FPKG_SRC  := $(ENGINE_TOOLS_DIR)/artifact/package.fpkg
 ENGINE_TOOLS_TOML_SRC  := $(ENGINE_TOOLS_DIR)/flix.toml
 ENGINE_TOOLS_SUBPATH   := lib/github/ababup1192/flix_engine_tools/$(VERSION)
 ENGINE_TOOLS_FPKG_NAME := flix_engine_tools-$(VERSION).fpkg
@@ -66,7 +66,7 @@ ENGINE_TOOLS_TOML_NAME := flix_engine_tools-$(VERSION).toml
 # 依存にでき、公開も既存リポ flix_game_engine の Release 1つで完結する
 # (推移先の別リポを見に行かない)。配布名は flix_game_engine でリポ名と一致させる。
 ENGINE_FULL_DIR       := engine_full
-ENGINE_FULL_FPKG_SRC  := $(ENGINE_FULL_DIR)/artifact/engine_full.fpkg
+ENGINE_FULL_FPKG_SRC  := $(ENGINE_FULL_DIR)/artifact/package.fpkg
 ENGINE_FULL_TOML_SRC  := $(ENGINE_FULL_DIR)/flix.toml
 ENGINE_FULL_SUBPATH   := lib/github/ababup1192/flix_game_engine/$(VERSION)
 ENGINE_FULL_FPKG_NAME := flix_game_engine-$(VERSION).fpkg
@@ -406,6 +406,8 @@ clean-font-cache:
 	@rm -rf "$${FLIX_GE_CACHE_DIR:-$$HOME/.cache/flix_game_engine/font}"
 	@echo "[clean-font-cache] キャッシュを捨てました"
 
+# WhyNot: 配り先の packages.lock は配るたびに消す。fpkg は手元の作り直しで毎回中身が変わるので、
+# 残すと Flix 0.77 以降は「packages.lock の記録と違う」で check ごと止まる。
 sync: clean-locks sync-engine sync-render-gl sync-engine-world sync-engine-tools sync-engine-full sync-root-src
 
 # engine_full は engine / render_gl / engine_world / engine_tools のソースを1つに集めた
@@ -444,6 +446,7 @@ sync-engine-full:
 			rel=$$(printf '../%.0s' $$(seq 1 $$upcnt)); \
 			ln -sfn "$${rel}$(ENGINE_FULL_FPKG_SRC)" "$$target/$(ENGINE_FULL_FPKG_NAME)"; \
 			ln -sfn "$${rel}$(ENGINE_FULL_TOML_SRC)" "$$target/$(ENGINE_FULL_TOML_NAME)"; \
+			rm -f "$${dir}packages.lock"; \
 			echo "[sync-engine-full] $$target"; \
 		fi \
 	done
@@ -596,6 +599,7 @@ sync-render-gl:
 			rel=$$(printf '../%.0s' $$(seq 1 $$upcnt)); \
 			ln -sfn "$${rel}$(RENDER_GL_FPKG_SRC)" "$$target/$(RENDER_GL_FPKG_NAME)"; \
 			ln -sfn "$${rel}$(RENDER_GL_TOML_SRC)" "$$target/$(RENDER_GL_TOML_NAME)"; \
+			rm -f "$${dir}packages.lock"; \
 			echo "[sync-render-gl] $$target"; \
 		fi \
 	done
@@ -615,6 +619,7 @@ sync-engine:
 			rel=$$(printf '../%.0s' $$(seq 1 $$upcnt)); \
 			ln -sfn "$${rel}$(ENGINE_FPKG_SRC)" "$$target/$(ENGINE_FPKG_NAME)"; \
 			ln -sfn "$${rel}$(ENGINE_TOML_SRC)" "$$target/$(ENGINE_TOML_NAME)"; \
+			rm -f "$${dir}packages.lock"; \
 			echo "[sync-engine] $$target"; \
 		fi \
 	done
@@ -633,6 +638,7 @@ sync-engine-world:
 			rel=$$(printf '../%.0s' $$(seq 1 $$upcnt)); \
 			ln -sfn "$${rel}$(ENGINE_WORLD_FPKG_SRC)" "$$target/$(ENGINE_WORLD_FPKG_NAME)"; \
 			ln -sfn "$${rel}$(ENGINE_WORLD_TOML_SRC)" "$$target/$(ENGINE_WORLD_TOML_NAME)"; \
+			rm -f "$${dir}packages.lock"; \
 			echo "[sync-engine-world] $$target"; \
 		fi \
 	done
@@ -651,6 +657,7 @@ sync-engine-tools:
 			rel=$$(printf '../%.0s' $$(seq 1 $$upcnt)); \
 			ln -sfn "$${rel}$(ENGINE_TOOLS_FPKG_SRC)" "$$target/$(ENGINE_TOOLS_FPKG_NAME)"; \
 			ln -sfn "$${rel}$(ENGINE_TOOLS_TOML_SRC)" "$$target/$(ENGINE_TOOLS_TOML_NAME)"; \
+			rm -f "$${dir}packages.lock"; \
 			echo "[sync-engine-tools] $$target"; \
 		fi \
 	done

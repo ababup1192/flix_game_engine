@@ -13,7 +13,7 @@ pub type alias Visual = {
     zIndex = Int32
 }
 
-mod Visual {
+pub mod Visual {
 
     /// 既定の見た目（白で色変調なし・表示・重なり順 0）。
     pub def default(): Visual =

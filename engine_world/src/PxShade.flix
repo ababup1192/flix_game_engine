@@ -1,7 +1,7 @@
 // PxShade — ドット絵の塗りに光の陰影（ふち光・接地影・ディザ・粒）を掛ける純粋な filter。
 // *.sprite.json を読んだ直後に 1 度だけ掛ける（毎フレームには入らない）。
 // Hash01 の channel は 1〜4 を使う。Material の範囲（83 以降）と重ねないこと。
-mod PxShade {
+pub mod PxShade {
 
     /// 仕上げの重み。0 にしたものは掛からない。
     /// lightX / lightY = 光の来る向き（-1 = 左 / 上、+1 = 右 / 下、0 = その軸は効かない）。

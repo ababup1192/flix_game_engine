@@ -1,7 +1,7 @@
 // RandomUtil — 乱数を使うちょっとした操作をまとめる。リストから 1 つ選ぶ・範囲内の実数を引く。
 // 毎回書きがちな長さ計算や範囲変換を隠すので、呼び側は「選ぶ」「範囲で引く」だけを書ける。
 // 利用例: 敵の行動をランダムに選ぶ / 出現位置を範囲内でばらつかせる。
-mod RandomUtil {
+pub mod RandomUtil {
     use Math.Random
 
     pub def pick(l: List[a]): Option[a] \ Math.Random =

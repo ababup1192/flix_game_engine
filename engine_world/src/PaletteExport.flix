@@ -13,7 +13,7 @@
 //
 // 注意: 書き出すのは Studio に見せる色票だけで、ゲームの絵はここを読まない
 // （実行時は resolver を通る）。色票が古くてもゲームの絵は正しく、ずれるのは編集画面だけ。
-mod PaletteExport {
+pub mod PaletteExport {
     use Util.Json.Json
     use Util.Json.Json.{JObject, JString, JNumber}
 

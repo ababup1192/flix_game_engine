@@ -3,7 +3,7 @@
 // 利用例: HP の数字を毎フレーム反映する / 所持金やスコアを表示に反映する / 選択中の項目名を出す。
 // 注意: 値が見つからない（None）名前は、その欄の今の文字をそのまま残す。すべて純粋な変換。
 
-mod UiBinding {
+pub mod UiBinding {
 
     /// bindings store を走査し、resolve が Some を返した entity の text を差し替える。
     /// resolve が None の key、text コンポーネントを持たない entity は据え置く。

@@ -3,7 +3,7 @@
 // 利用例: JSON object から値を取り出す / Map や List を JSON と相互変換する / Vec2 を読み書きする。
 // 注意: decode 系は純粋 (`Json -> Option[T]`)。encode 用の数値変換 (`floatToBd` / `intToBd`) は
 //   内部の `unsafe IO` で副作用を隠すので、呼び出し側は純粋関数として扱える。
-mod JsonCodec {
+pub mod JsonCodec {
     import java.math.{BigDecimal => JBigDecimal}
 
     use Util.Json.Json

@@ -3,7 +3,7 @@
 // 利用例: 画面外へ飛んだ弾を片付ける / 見えなくなった敵を止める / 枠外の演出を打ち切る。
 // 注意: 見つけて返すだけ。出た物をどうするか（消す等）はゲーム側の仕事。
 
-mod Viewport {
+pub mod Viewport {
 
     /// 軸平行の矩形領域。画面なら {0, 0, width, height}。
     pub type alias Bounds = { minX = Float64, minY = Float64, maxX = Float64, maxY = Float64 }

@@ -9,7 +9,7 @@
 //   - `getAtKey(Root, key, map)` / `getAtKeyOpt(...)`
 //   - `jsonError(Root, Set#{...})`
 //   - `parse(text)` (Option 返し)
-mod DocJson {
+pub mod DocJson {
     use IoError.IoError
     use IoError.ErrorKind
     use Util.Json.Json

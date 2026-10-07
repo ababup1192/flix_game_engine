@@ -6,7 +6,7 @@
 // 更新系（addSystem）が World を進め、描画（withView）は進んだ後の World を読むだけで
 // 変えない — 1 フレームは必ずこの順（1 周の全手順は下の loop の doc を見る）。
 
-mod App {
+pub mod App {
     import java.lang.System
 
     // ── システムが受け取る 1 フレームぶんの外界 ──

@@ -5,7 +5,7 @@
 // 端に着いたときの振る舞い(閉じる・音を鳴らす等)はここでは決めない — 端で値が
 // 止まるだけにして、暗黙のモード遷移で誤操作を作らないのは呼び側の規約。
 
-mod UiScroll {
+pub mod UiScroll {
 
     /// 遡れる上限。内容がビューポートに収まるなら 0。
     pub def maxOffset(size: {content = Int32, viewport = Int32}): Int32 =

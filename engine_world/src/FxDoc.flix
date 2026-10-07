@@ -3,7 +3,7 @@
 // （spawn も update も free も無い）。エラーはノードのパス付き（例: `at emitters[0].speed: ...`）
 // で返す — UiDoc と同じ流儀。
 
-mod FxDoc {
+pub mod FxDoc {
     use Util.Json.Json
     use Util.Json.Json.{JObject, JArray, JString}
     use Util.Json.JsonError

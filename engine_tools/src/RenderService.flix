@@ -12,7 +12,7 @@
 //
 // スレッドの取り決め: 応答は HTTP のスレッドがそのまま組む（守るべきゲームループが無いため）。
 // executor を与えないので処理は 1 本ずつ直列に進む。
-mod RenderService {
+pub mod RenderService {
     import java.lang.System
     import java.lang.Exception
     import java.lang.Thread

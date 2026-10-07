@@ -15,7 +15,7 @@
 //
 // 隣の部品: 実行中に矩形で囲んで記録するのは Annotate（Hit）、UI の木の幾何破綻を
 // 見つけるのは RenderLint（engine_tools の Element）。ここは world の物 1 つずつの申告を持つ。
-mod RenderManifest {
+pub mod RenderManifest {
 
     use Util.Json.Json
     use Util.Json.Json.{JObject, JArray, JString, JNumber}

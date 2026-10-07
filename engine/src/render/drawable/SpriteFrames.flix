@@ -11,7 +11,7 @@ pub enum SpriteFrames {
     case SpriteFrames(Map[String, SpriteFrames.Animation])
 }
 
-mod SpriteFrames {
+pub mod SpriteFrames {
 
     /// 1 フレームの定義
     /// duration はそのアニメーションの基本フレーム時間 (1/speed) に対する倍率。

@@ -6,7 +6,7 @@
 // 注意: 巨大な 1 枚の多角形は格子のセル幅を押し広げて broadphase を退化させる
 // （セル幅は最大の形状から決まるため）。地形の多角形は 1〜2 画面幅・〜64 頂点のチャンクに分けること。
 
-mod Collision {
+pub mod Collision {
 
     /// 衝突の形（engine の CollisionShape2D を再利用）＋ layer/mask（engine と同じ意味論）。
     pub type alias Collider = {

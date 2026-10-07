@@ -4,7 +4,7 @@
 // 利用例: カーソルを隣のマスへ滑らせる / ポップアップをふわっと出す / 攻撃時に色を明滅させる。
 // 注意: 進むのは実時間の秒数なので描画フレーム数に左右されない。1 つの物に移動＋フェードなど複数の
 //   動きを同時に持たせられる。結果の値を返すだけで、対象への書き戻しは呼び側が行う。
-mod EcsTween {
+pub mod EcsTween {
 
     /// Vec2 の線形補間（start→target）。Position/Knockback 等のベクトル軌道。
     pub type alias VecLerp   = { start = Vec2.Vec2, target = Vec2.Vec2 }

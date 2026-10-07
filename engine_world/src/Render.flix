@@ -5,7 +5,7 @@
 // パイプ修飾で重ねる。
 // 注意: 置き場所は持たず呼び側が渡す。テキストの実寸計算は engine の純粋関数を使う。
 
-mod Render {
+pub mod Render {
 
     // ── render component（位置を持たない・ノードでない）──
 

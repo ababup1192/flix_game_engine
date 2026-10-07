@@ -4,7 +4,7 @@
 // 小さなビットマップだけで字を出すので、何も読み込まずに 1 枚目から絵を出せる。
 //
 // 素データは BootFontData（生成物）。生成し直しは `make boot-font`。
-mod BootFont {
+pub mod BootFont {
 
     /// フォントの登録名。ゲームが project.json で付ける名前と衝突しない綴りにしてある。
     pub def name(): String = "__boot"

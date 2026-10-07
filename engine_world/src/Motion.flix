@@ -3,7 +3,7 @@
 // 利用例: 弾をまっすぐ飛ばす / 動く床・上下する敵を時刻から導く。
 // 注意: 重力や衝突のはね返りは持たない（必要なら別の処理で）。
 
-mod Motion {
+pub mod Motion {
 
     /// position を velocity で dt 秒積分する。両方持つ entity だけ動く。
     pub def integrate(positions: Map[EntityId, Vec2.Vec2],

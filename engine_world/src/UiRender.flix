@@ -6,7 +6,7 @@
 // root の layer は CanvasLayer.layerStride() 倍して zIndex に加算し、CanvasLayer HUD
 // （TopBar/Minimap/ItemMenu 等）と同じ z 序列に合流させる。
 
-mod UiRender {
+pub mod UiRender {
 
     /// 渡された `ui` の全 UI root を描画データへ射影する。box/text/sprite は Drawable、poly は
     /// PolygonRenderCmd と別チャンネルに出るため、`drawables` と `polygons` の 2 列を一度のレイアウト

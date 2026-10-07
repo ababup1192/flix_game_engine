@@ -6,7 +6,7 @@
 // 積んで応答文字列を待つだけで、パース・実行・応答の組み立てはすべてゲームループ側
 // （App）が行う。ゲームが応答しなければ 10 秒で 503 を返す。
 
-mod RemoteDebug {
+pub mod RemoteDebug {
     import java.lang.System
     import java.net.InetSocketAddress
     import com.sun.net.httpserver.HttpServer

@@ -2,7 +2,7 @@
 // タイルマップの Resource 群。マップ実体 `Level` と素材 `Material` を分けて持ち、
 // 同じ間取りを別 Material に差し替えて複数テーマで再生できる (`Level` は `materialId` で参照)。
 // 自動壁は decorTiles (床) のセルから動的に決まる: 床が無く 8 近傍に床があるセルを壁として扱う。
-mod MapResource {
+pub mod MapResource {
 
     /// Level の中身。フィールドの集合はここに集約し、enum 経由で持ち回す。
     /// - `manualTiles` は Walls 層由来 (自動壁の上書き、衝突は持たない)

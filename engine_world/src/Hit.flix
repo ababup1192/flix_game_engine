@@ -1,7 +1,7 @@
 // Hit — CollisionShape2D とは別実装。こちらは宣言用の 2 形状（円・箱）に限定し、
 // 境界規則を「ちょうど接するのは外」で統一した照会専用。位置の解決（押し出し・反射）は Physics2D の仕事。
 
-mod Hit {
+pub mod Hit {
 
     /// 当たりの形 1 個。dx/dy は持ち主の位置からのずれ（px）で、錨（中心か足元か）は絵に従う。
     pub enum HitShape {

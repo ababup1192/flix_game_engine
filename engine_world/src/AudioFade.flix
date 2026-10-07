@@ -4,7 +4,7 @@
 // 利用例: Transition.Progress で t を進め、毎フレーム volumeOf の値を Audio.setVolume へ渡す。
 // イージングは持たない: 呼び側で t を変形して渡せば効く（例: t*t でゆっくり立ち上がる。Transition と同じ思想）。
 
-mod AudioFade {
+pub mod AudioFade {
 
     /// フェードの端点。start = 進行度 0 のときの音量、target = 進行度 1 のときの音量
     /// （同じ Float64 が並ぶので取り違えないよう名前渡しにする）。

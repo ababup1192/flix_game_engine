@@ -9,7 +9,7 @@
 // GLSL になる。座標変換（Scaled/Warp）は inner の場が見る uv を差し替える形で表す。
 // 時間は uTime uniform として codegen が差し込む（Scroll / cycleRate がこれに掛かる）。
 
-mod ShaderDoc {
+pub mod ShaderDoc {
 
     /// 位置 (u,v) のどちらの軸を読むか。
     pub enum Axis with Eq, ToString {

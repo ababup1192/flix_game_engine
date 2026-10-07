@@ -4,7 +4,7 @@
 // 利用例: openWith(lines) を状態に持ち、毎フレーム step、決定キーで advance。
 // 枠と話者は apply が UiStore へ刻み、本文は視点側が visibleBody を RichText.place で描く
 // （スパンの色分け描画は UiStore の 1 色テキストでは表せないため）。
-mod UiDialog {
+pub mod UiDialog {
 
     /// 会話 1 行。speaker = 話者名（空文字なら地の文）、body = 本文のスパン列。
     pub type alias Line = { speaker = String, body = List[RichText.Span] }

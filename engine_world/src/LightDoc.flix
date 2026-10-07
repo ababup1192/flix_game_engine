@@ -13,7 +13,7 @@
 //
 // エラーはノードのパス付き（例: `at lights[0]: 'radius' is required`）— fx/ui と同じ流儀で
 // 手書きドキュメントの編集箇所へ誘導する。
-mod LightDoc {
+pub mod LightDoc {
     use Util.Json.Json
     use Util.Json.Json.{JObject, JArray, JNumber}
     use Util.Json.JsonError

@@ -6,7 +6,7 @@
 // 呼ぶのはテストからだけ。engine_world のテストからも同じ形で測れるように pub にしてあり、
 // ゲームやエンジン本体の実行経路からは呼ばない。
 
-mod AllocMeter {
+pub mod AllocMeter {
     import java.lang.management.ManagementFactory
     import java.lang.management.{ThreadMXBean => JavaThreadMXBean}
     import com.sun.management.{ThreadMXBean => SunThreadMXBean}

@@ -5,7 +5,7 @@
 // 「チップ絵を描かず色と質感で地形を作る」3層(DualGrid/Material/Terrain)の
 // 初学者向け概念説明は docs/dual-grid.md。
 
-mod Material {
+pub mod Material {
 
     /// 粒の形。Speck = 小さな四角が明滅する(水のきらめき)。
     /// Scales = 下向きの三日月(弧)を整った千鳥格子に敷き、上の弧が下の弧の頭を隠して

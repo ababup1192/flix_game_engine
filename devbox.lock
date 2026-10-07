@@ -114,9 +114,9 @@
         }
       }
     },
-    "github:Cj-bc/flix.nix#flix_0_76_0": {
-      "last_modified": "2026-09-17T10:16:19Z",
-      "resolved": "github:Cj-bc/flix.nix/ff5615a96e7639e09f84d0b66751c6cb1cb8242f?lastModified=1789640179#flix_0_76_0"
+    "github:Cj-bc/flix.nix#flix_0_77_0": {
+      "last_modified": "2026-09-28T13:21:27Z",
+      "resolved": "github:Cj-bc/flix.nix/b951b39ffd134fe111c39d8509415a1beeeafaa2?lastModified=1790601687#flix_0_77_0"
     },
     "github:NixOS/nixpkgs/nixpkgs-unstable": {
       "last_modified": "2026-03-30T07:26:21Z",

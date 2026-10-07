@@ -3,7 +3,7 @@
 // いま何コマ目かを式で求めるだけ。だから巻き戻し・リプレイ・テストがそのまま効く。
 // 利用例: Render.sprite の regionRect に regionAt(...) を渡す。
 
-mod Anim {
+pub mod Anim {
 
     /// クリップ: シート上の 1 行ぶんの連続コマと再生のしかた（純データ）。
     pub type alias Clip = {

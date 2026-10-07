@@ -10,7 +10,7 @@
 // メトリクスと codepoint↔セル座標の対応表だけが要る。生成サイズ・アトラス寸法・グリフ配置は
 // Text.toDrawables が期待するメトリクス規約（yOff = -ascent でセル上端が行トップに一致）に
 // 合わせてある。
-mod HeadlessFont {
+pub mod HeadlessFont {
     import java.awt.image.BufferedImage
     import java.awt.Graphics2D
     import java.awt.Font

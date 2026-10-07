@@ -4,7 +4,7 @@
 // 絵が 1px 単位でずれるため、画素の出どころをここ 1 つにする。
 // engine_tools の RadialGlow と式は同系（smoothstep 減衰）だが、engine から engine_tools
 // へは依存できないため、式はここに自前で持つ。
-mod RadialBuiltin {
+pub mod RadialBuiltin {
 
     /// テクスチャの 1 辺の px 数（正方形）。Render.lightAt / darkAt が
     /// 「見た目半径 = radius」の拡大率をこの値から逆算するため、

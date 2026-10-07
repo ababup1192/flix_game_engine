@@ -7,7 +7,7 @@
 //
 // 利用例: 起動時に Spec を GPU プログラムへ compile（buildProgram）→ 毎フレーム面 1 枚を描く（drawSurface）。
 
-mod ShaderEffect {
+pub mod ShaderEffect {
 
     /// シェーダー面 1 枚ぶんの描画依頼。
     /// program = buildProgram が返した GPU ハンドル、rect = 塗る矩形（スクリーン空間 px・uv=0..1 が

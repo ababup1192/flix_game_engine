@@ -1,9 +1,6 @@
 [package]
-name        = "flix_engine_tools"
-description = "Headless generation & reference-image tooling (software rasterizer, GIF encoder, headless font metrics, audio/SFX synthesis, geometry render-lint, replay scripts, HTML site generator) for games built on flix_engine_core"
 version     = "0.33.5"
-flix        = "0.75.1"
-authors     = ["ababup1192 <ababup1192@gmail.com>"]
+flix        = "0.76.2"
 repository  = "github:ababup1192/flix_engine_tools"
 
 # GL コンテキストの無い場所（リファレンス画像テスト・CI・IDE プレビュー）で成果物を生成・検査する

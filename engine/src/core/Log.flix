@@ -1,6 +1,6 @@
 // Log — 既定値で続けたことを人へ 1 行知らせる口。文面と出し先を 1 箇所に持つ。
 // 出し先の決まりと定型文は docs/error-handling.md の決まり 3 にある。
-mod Log {
+pub mod Log {
     import java.lang.System
 
     /// stderr へ 1 行。効果は `unsafe IO` で隠す

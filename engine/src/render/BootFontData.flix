@@ -5,7 +5,7 @@
 //
 // 素材: PixelMplus10-Regular.ttf / 10px / M+ FONT LICENSE
 //       docs/brand/flix_ge_icon.png
-mod BootFontData {
+pub mod BootFontData {
 
     /// 素材の出どころ（ライセンス表記のため実行時にも名乗れるようにしてある）。
     pub def source(): String = "PixelMplus10-Regular.ttf / 10px / M+ FONT LICENSE"

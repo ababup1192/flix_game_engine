@@ -5,7 +5,7 @@
 // 構造的に起きない。範囲外(全区間を過ぎた・負の時刻)は None = 終わり(Done)。
 // 利用例: 歩く→しゃがむ→戻る、のような一続きの振り付けの現在地を引く。
 
-mod Timeline {
+pub mod Timeline {
 
     /// 区間: 名前と長さ(秒)。列の順に頭から消化される(純データ)。
     pub type alias Seg = { name = String, dur = Float64 }

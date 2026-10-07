@@ -13,7 +13,7 @@
 // IndexColorModel（PNG-8・インデックスカラー）で書く。パレットには実在する色だけを
 // 入れるので減色による劣化は起きない。色数が 256 を超えたら安全側でフルカラー
 // （TYPE_INT_RGB）にフォールバックし、結果（indexed=false）で呼び側に知らせる。
-mod Filmstrip {
+pub mod Filmstrip {
     import java.awt.image.BufferedImage
     import java.awt.image.IndexColorModel
     import java.awt.image.WritableRaster

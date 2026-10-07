@@ -31,7 +31,7 @@ pub type alias TileData = {
     tint  = Color
 }
 
-mod TileLayer {
+pub mod TileLayer {
 
     /// 色変調なし（白 = テクスチャの色のまま）。tint の既定値として使う。
     /// per-tile の照明（松明の暖色・月光）を乗せるゲームは、マスごとの明度色をここに渡す。

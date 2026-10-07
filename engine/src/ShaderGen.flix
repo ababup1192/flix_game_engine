@@ -6,7 +6,7 @@
 // prelude に固定テンプレとして持ち、Spec スナップから分離する（prelude 改訂は 1 か所だけ動く）。
 // 座標変換（Scaled/Warp）は「inner が読む uv の式」を差し替えることで表す。
 
-mod ShaderGen {
+pub mod ShaderGen {
 
     /// vertex シェーダー（面 quad 1 枚・uv を渡すだけ）。Spec に依存しない固定ソース。
     /// vertex.xy = 0..1 の quad ローカル座標を rect（px）へ写し、vertex.zw を uv として渡す。

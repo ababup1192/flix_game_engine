@@ -5,7 +5,7 @@
 // ワープが生まれる。両方が同じ Sample を読めばその食い違いは構造的に消える。
 // walking は歩き始めからの累計 px(歩きコマ = floor(walking / 歩幅) の種)。
 
-mod Journey {
+pub mod Journey {
 
     /// 脚: src から dst へ speed(px/秒)で歩く(純データ)。
     pub type alias Leg = { src = Vec2.Vec2, dst = Vec2.Vec2, speed = Float64 }

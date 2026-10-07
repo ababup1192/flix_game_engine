@@ -6,7 +6,7 @@
 // decode の契約: entries の char 重複は先勝ち・surface の未知 preset 名は除去・
 // edge は uniform 先勝ち(いずれも壊れ扱いにせず静かに受け入れる)。
 
-mod TerrainDoc {
+pub mod TerrainDoc {
     use Util.Json.Json
 
     /// 縁の色の決め方(Material.EdgeKind の色を文字列参照にした Doc 形)。

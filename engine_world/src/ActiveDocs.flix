@@ -5,7 +5,7 @@
 // エディタ側がグループの突き合わせに使うため。値はパス 1 本でも列でもよい。
 // 全 Doc を常時名乗らないこと: いまの場面で絵や進行に効いている物だけを渡す
 // (何でも「表示中」では印の意味が死ぬ)。
-mod ActiveDocs {
+pub mod ActiveDocs {
     use Util.Json.Json.{JObject, JString, JArray}
 
     /// 書き出し先。debug/ は .gitignore 済みの作業用置き場。

@@ -3,7 +3,7 @@
 // 利用例: プレイ状況をファイルに保存する / 保存データから World を復元する / 盤面をデータで用意する。
 // 注意: 値1つ分の変換方法はゲーム側が渡す。ここは表全体の往復だけを引き受ける。
 
-mod EcsCodec {
+pub mod EcsCodec {
 
     use Util.Json.Json
     use Util.Json.Json.{JObject, JNumber, JArray, JBool}

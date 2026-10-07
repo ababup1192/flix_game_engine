@@ -10,7 +10,7 @@
 //   - build（Flex 経路）は bind/meta/layer を使わない（動的束縛・レイヤ重ねは UiSpec/UiStore
 //     の領分）が、Spec には保持する — 同じ JSON が経路を変えても意味を失わないための契約。
 
-mod UiDoc {
+pub mod UiDoc {
     import java.math.BigDecimal
     use Util.Json.Json
     use Util.Json.Json.{JObject, JArray, JString, JNumber, JBool}

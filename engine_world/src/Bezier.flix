@@ -3,7 +3,7 @@
 // 多角形として組み立てられる（塗りは描画側が耳切りで三角形化するので、凹んだ輪郭もよい）。
 // 利用例: spine = quadratic(付け根, 制御点, 先端, 12);
 //         stroke({ spine = spine, color = 緑, z = 2 }, t -> 5.0 - 3.0 * t)
-mod Bezier {
+pub mod Bezier {
 
     /// 2 次ベジエを steps 分割した折れ線にする（始点・終点を含む steps+1 点）。
     pub def quadratic(p0: Vec2.Vec2, ctrl: Vec2.Vec2, p1: Vec2.Vec2,

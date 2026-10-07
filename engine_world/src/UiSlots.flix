@@ -3,7 +3,7 @@
 // 利用例: ui.json に slot0..slotN（各スロットの子に label text）を宣言し、毎フレーム fill で流し込む。
 // 規約: 項目のあるスロットは可視 + meta 設定（UiMenu の選択列に載る）、余りは meta を外して不可視
 // （display:none でパネルが縮む）。あふれた項目は黙って切り捨てるので、呼び側は overflows で検知して守る。
-mod UiSlots {
+pub mod UiSlots {
 
     /// スロット 1 個分の項目。text = 表示文字列（スロットの `label` 子へ）、
     /// meta = 選択時にゲームへ返す目印。None なら見出しなど「選べない行」（UiMenu の項目列に載らない）。

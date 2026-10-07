@@ -8,7 +8,7 @@
 // 差し替え — fontAtlas と同じライフサイクル)。
 // 棚詰め(shelfPack)は RenderFont のシェルフパッキングと同じ規則を関数に切り出したもの
 // (左→右に詰め、行に収まらなければ行の最大高+1px で折り返す。コマ間は 1px の隙間)。
-mod PxSpriteAtlas {
+pub mod PxSpriteAtlas {
 
     /// アトラス内の 1 コマの矩形(px・セル数と同じ)。
     pub type alias Slot = { x = Int32, y = Int32, w = Int32, h = Int32 }

@@ -6,7 +6,7 @@
 //
 // 外形は Doc 規約どおり: version / note 歓迎 / 全フィールド fail-open
 // (欠け・書き損じは既定へ落とす — 壊れたファイルでも empty() で必ず動く)。
-mod PxSpriteDoc {
+pub mod PxSpriteDoc {
     use Util.Json.Json
     use Util.Json.Json.{JObject, JArray, JString}
 

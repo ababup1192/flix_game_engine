@@ -3,6 +3,8 @@
 *.jar
 .GITHUB_TOKEN
 artifact/
+# 手元で作り直す fpkg のハッシュを記録するだけなので、入れると sync のたびに食い違う。
+packages.lock
 build/
 dist/
 dist-win/

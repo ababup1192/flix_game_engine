@@ -6,7 +6,7 @@
 // 依存方向は RawDraw→Render のみ可。UI の入れ子レイアウトは UiLayout.box(別物)。
 // lineQuad+rotated の時計の針イディオムはここに残る(線を引くこと自体は可)。
 
-mod RawDraw {
+pub mod RawDraw {
 
     use Render.Item
     use Render.PlacedItem

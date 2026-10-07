@@ -10,7 +10,7 @@
 ///     +----------+
 ///       size.x
 
-mod Rect2 {
+pub mod Rect2 {
 
     /// 矩形: position = 左上座標、size = 幅と高さ
     pub type alias Rect2 = {position = Vec2.Vec2, size = Vec2.Vec2}

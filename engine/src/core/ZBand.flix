@@ -2,7 +2,7 @@
 // world の絵がどれだけ大きい z を使っても HUD より手前には出ない、を数で保証する。
 // 利用例: composeScene が hud の z を HUD の範囲へ持ち上げる / 描画部が範囲ごとに並べ替える。
 // 範囲の地図（どの範囲が何用か）は docs/z-bands.md にある。
-mod ZBand {
+pub mod ZBand {
 
     /// 範囲 1 本の幅。範囲の中で使える z は 0..innerMax（幅 - 1）まで。
     pub def width(): Int32 = 100_000_000

@@ -2,7 +2,7 @@
 // データの形(type / required / default)はゲームも検証に使うが、見せ方(widget)はエディタ専用でエンジンは中身を開けない封筒として運ぶ。
 // World には catalog の id を持たせ能力値は参照時に引く(値のコピーを埋めない) — 再読込がスポーン済みの相手にも自然に効く。
 // 未知の type タグ・kind は黙って通さず Err にする(綴りミスが「フォームに出ない」沈黙事故になるのを防ぐ)。custom だけが明示的な逃げ道。
-mod Schema {
+pub mod Schema {
     use Util.Json.Json
     use Util.Json.Json.{JObject, JString, JNumber, JBool, JArray}
 

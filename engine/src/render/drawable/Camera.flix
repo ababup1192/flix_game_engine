@@ -17,7 +17,7 @@ pub enum Camera {
     })
 }
 
-mod Camera {
+pub mod Camera {
 
     /// 指定位置を画面中央に映すカメラを作る（zoom = (1, 1) 等倍）。
     pub def make(position: Vec2.Vec2): Camera =

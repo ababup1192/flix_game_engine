@@ -6,7 +6,7 @@
 // セル座標の規約は 2 つある: 左上原点・tileSize 割りの系（cellAt / cellOf）と、
 // セル中心が整数・境界 ±0.5 の系（cellAtCentered — GridRay / WallFaces の疑似 3D 側）。
 
-mod Grid {
+pub mod Grid {
 
     /// `cell` の中心のピクセル位置。原点 (0, 0) がセル (0, 0) の左上であるグリッド上で。
     /// セル (c, r) は x が [c*tileSize, (c+1)*tileSize) に広がるので、中心は半タイル分

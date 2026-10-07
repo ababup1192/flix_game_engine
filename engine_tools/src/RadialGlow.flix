@@ -7,7 +7,7 @@
 // 別関数として分けてある — 呼び違えると効果が出ない事故になるため名前で区別する。
 // PNG 化（Array 敷き詰め・BufferedImage 化）は SoftRaster.writeRadialPng に任せ、
 // ここは画素の値だけを決める（AWT に触れない）。
-mod RadialGlow {
+pub mod RadialGlow {
 
     /// Addハロ用の1画素: rgb=白固定、alpha=中心で高く縁で0（straight alpha）。
     /// Multiplyに使うと白は素通しの式で恒等に潰れて何も起きない — Add専用。

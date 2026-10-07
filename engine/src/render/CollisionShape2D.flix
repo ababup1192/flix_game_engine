@@ -22,7 +22,7 @@ pub enum CollisionShape2D {
     case PolygonShape2D({points = List[Vec2.Vec2]})
 }
 
-mod CollisionShape2D {
+pub mod CollisionShape2D {
 
     // ========================================================================
     // 汎用オーバーラップ判定

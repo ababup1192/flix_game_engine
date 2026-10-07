@@ -22,7 +22,7 @@
 // - z は 1 呼び出しに 1 つ。奥行きで z を刻む視点（クォーター等）は露出面ごとに
 //   fill を分けて呼ぶ — painter の z 順で正しく隠れる
 // - アニメする面（さざ波・草の揺れ）は fill の外で（fill は init で 1 回組む前提）
-mod PxTerrain {
+pub mod PxTerrain {
 
     /// 4x4 Bayer の敷居 0..1。同じ (x, y) からは同じ値が出る（何度描いても同じ絵）。
     pub def bayer4(x: Int32, y: Int32): Float64 =

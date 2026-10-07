@@ -112,7 +112,7 @@
       "dest": "engine_full/flix.toml"
     },
     {
-      "src": "engine_full/artifact/engine_full.fpkg",
+      "src": "engine_full/artifact/package.fpkg",
       "dest": "engine_full/artifact/engine_full.fpkg",
       "why": "生まれたゲームの lib/ に座る engine の fpkg"
     },

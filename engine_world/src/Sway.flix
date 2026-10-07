@@ -8,7 +8,7 @@
 //   浮遊(蓮): pos + Sway.drift(time, phase, { x = 1.5, y = 1.1 })
 //   風(草先端): tipX + Sway.wave(time, phase, 1.3) * windAmp
 
-mod Sway {
+pub mod Sway {
 
     /// 基本の揺れ。sin(time*freq + phase*2π)、範囲 -1..1。phase(0..1)で個体ごとに位相をずらす。
     /// これ 1 本を振幅で掛け・高さで掛け、と使い回すのが芯。

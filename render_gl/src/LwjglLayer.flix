@@ -7,7 +7,7 @@
 //   このファイルは GLFW 外周だけを持って各 effect の本体から呼ぶ。
 //   `withLwjgl` の第1引数 EngineConfig と戻り値の effect 制約は公開 API として固定（ゲーム側を変えずに済む）。
 
-mod LwjglLayer {
+pub mod LwjglLayer {
     import org.lwjgl.glfw.GLFW
     import org.lwjgl.glfw.GLFWGamepadState
     import org.lwjgl.glfw.Callbacks
