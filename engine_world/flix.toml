@@ -1,5 +1,5 @@
 [package]
-version     = "0.33.5"
+version     = "0.34.0"
 flix        = "0.76.2"
 repository  = "github:ababup1192/flix_engine_world"
 
@@ -9,4 +9,4 @@ repository  = "github:ababup1192/flix_engine_world"
 # 契約の純粋パーツ（GameEngine・シーングラフ・土台型）を再利用するため flix_game_engine に依存する。
 
 [dependencies]
-"github:ababup1192/flix_engine_core" = { version = "0.33.5", security = "unrestricted" }
+"github:ababup1192/flix_engine_core" = { version = "0.34.0", security = "unrestricted" }

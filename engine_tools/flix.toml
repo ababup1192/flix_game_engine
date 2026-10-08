@@ -1,5 +1,5 @@
 [package]
-version     = "0.33.5"
+version     = "0.34.0"
 flix        = "0.76.2"
 repository  = "github:ababup1192/flix_engine_tools"
 
@@ -9,4 +9,4 @@ repository  = "github:ababup1192/flix_engine_tools"
 # 一切知らず、engine の純粋パーツ（Drawable・Vec2・FontAtlas・TextLayout）だけに依存する（→ flix_game_engine）。
 
 [dependencies]
-"github:ababup1192/flix_engine_core" = { version = "0.33.5", security = "unrestricted" }
+"github:ababup1192/flix_engine_core" = { version = "0.34.0", security = "unrestricted" }
