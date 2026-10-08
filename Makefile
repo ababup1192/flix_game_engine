@@ -479,7 +479,7 @@ release-guard:
 	@# ゲーム側 lib の flix.toml はここへの symlink なので、別プロセスの依存解決が
 	@# symlink 越しに中身を空にしてしまうことがある。壊れたまま build-pkg へ進まない。
 	@for f in $(ROOT_SRC_PKGS:%=%/flix.toml) $(ENGINE_FULL_DIR)/flix.toml; do \
-	   grep -q '^name' "$$f" || { echo "[release] $$f が壊れています (package.name が無い)。git checkout -- $$f で復元してください"; exit 1; }; \
+	   grep -q '^version' "$$f" || { echo "[release] $$f が壊れています (package.version が無い)。git checkout -- $$f で復元してください"; exit 1; }; \
 	 done
 	@# WhyNot: 全量ゲートの前に flix.jar の在処を見るのは、同梱 zip がこれを要るため。
 	@# 後ろで気づくと、10 分以上かけたテストの後に落ちて全部やり直しになる。
