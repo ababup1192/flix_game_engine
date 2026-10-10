@@ -73,22 +73,4 @@ pub mod Curve {
                     else v0 + (v1 - v0) * ((t - t0) / (t1 - t0))
                 else walk(t1, v1, more, t)
         }
-
-    /// 行き過ぎて戻る進み（0→1）。u = 0..1 の進みで、途中で 1 を超えて膨らみ、1 に収まる
-    /// （出てくる物がぽんと膨らんで落ち着く・白く光って膨らむ）。overshoot = 行き過ぎの強さ
-    /// （0 で行き過ぎなし、1.7 前後でよく見る弾み）。範囲外は端の値で平ら。
-    pub def pop(overshoot: Float64, u: Float64): Float64 =
-        if (u <= 0.0) 0.0
-        else if (u >= 1.0) 1.0
-        else {
-            let x = u - 1.0;
-            1.0 + (overshoot + 1.0) * x * x * x + overshoot * x * x
-        }
-
-    /// a から b へ山なりに飛ぶ物の位置。u = 0..1 の進み、lift = 山の高さ（画面の上向きに px）。
-    /// 横は真っすぐ、縦は真っすぐの線に arch01 の山を足す（u = 0.5 でいちばん高い）。
-    /// 飛んで着く演出（カードが場へ飛ぶ・アイコンが頭の上へ跳ぶ）に使う。
-    pub def flight(a: Vec2.Vec2, b: Vec2.Vec2, lift: Float64, u: Float64): Vec2.Vec2 =
-        let p = Vec2.lerp(a, b, u);
-        { x = p#x, y = p#y - lift * arch01(u) }
 }

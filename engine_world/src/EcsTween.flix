@@ -78,20 +78,17 @@ pub mod EcsTween {
         case Track.Scalar(fl) => Out.ScalarOut(fl#start + (fl#target - fl#start) * p)
     }
 
-    /// 進み t（0..1）にカーブを掛けた値。時刻の純関数で動かす演出（Timeline・Counter）が
-    /// tween と同じカーブを使うための口。
-    pub def eased(e: Easing, t: Float64): Float64 = ease(e, t)
-
-    /// eased の逆: カーブを掛けた値 v（0..1）になる進み t。「i 回目に数が移るのはいつか」を
-    /// 求めるときに使う（Counter.tickAt）。
-    pub def inverseEased(e: Easing, v: Float64): Float64 =
-        let x = Num.clamp01(v);
-        match e {
-            case Easing.Linear    => x
-            case Easing.EaseIn    => Vec2.sqrt(x)
-            case Easing.EaseOut   => 1.0 - Vec2.sqrt(1.0 - x)
-            case Easing.EaseInOut => if (x < 0.5) Vec2.sqrt(x / 2.0) else 1.0 - Vec2.sqrt((1.0 - x) / 2.0)
-        }
+    /// 整数を start から end へ 1 つずつ動かす tween の、進み u（0..1）の時点の値。
+    /// easing は「何回目の移りがいつ来るか」の曲線（EaseOut なら出だしが速く、だんだん遅く止まる
+    /// = ルーレット。Linear なら等間隔の数え下がり）。u の外は端の値。
+    /// 前のフレームの値と比べて変わっていれば、そのフレームで 1 つ移った（刻みの音を鳴らす拍）。
+    /// 利用例: HP や盾の量の数え下がり / 得点の数え上がり / 候補を巡って止まる光る枠。
+    pub def steppedInt(start: Int32, end: Int32, easing: Easing, u: Float64): Int32 =
+        let n = Int32.abs(end - start);
+        let dir = if (end >= start) 1 else -1;
+        // 割り切れる回の境目で浮動小数の誤差に負けて 1 つ手前に落ちないよう、ごくわずかに足す。
+        let done = Int32.min(n, Num.floorInt(ease(easing, Num.clamp01(u)) * Int32.toFloat64(n) + 0.000001));
+        start + dir * done
 
     /// 補間カーブ（全て 0→0・1→1 を保つ）。
     def ease(e: Easing, t: Float64): Float64 = match e {

@@ -11,18 +11,28 @@
 
 pub mod TimeScale {
 
-    /// 区間 1 つ: dur 実秒のあいだ、時間を scale 倍（0 = 止める、1 = 等速）で流す。
+    /// 区間 1 つ: dur 実秒のあいだ、時間を scale 倍（0 に近いほど止まる、1 = 等速）で流す。
     pub type alias Step = { dur = Float64, scale = Float64 }
+
+    /// 速さの下限。ちょうど 0 にしないのは、止めている間ゲームの時計が進まないと、
+    /// 合図からの実秒をゲームの時計から逆に引けず（realAt）、時計が止まったまま動き出せなくなるため。
+    def minScale(): Float64 = 0.001
 
     /// 区間の列（頭から順）と、最後の区間の速さから等速へなめらかに戻す実秒 ramp。
     pub type alias Plan = { steps = List[Step], ramp = Float64 }
 
-    pub def step(dur: Float64, scale: Float64): Step = { dur = Float64.max(0.0, dur), scale = scale }
+    pub def step(dur: Float64, scale: Float64): Step =
+        { dur = Float64.max(0.0, dur), scale = Float64.max(minScale(), scale) }
 
-    /// 「止める → 遅く流す → 戻す」のよくある形。長さ 0 の区間は無い物として扱う。
-    pub def freezeThenSlow(freeze: Float64, freezeScale: Float64, slow: Float64, slowScale: Float64,
-                           ramp: Float64): Plan =
-        { steps = step(freeze, freezeScale) :: step(slow, slowScale) :: Nil, ramp = Float64.max(0.0, ramp) }
+    /// 「止める → 遅く流す → 戻す」のよくある形の秒と速さ（freeze 秒を freezeScale 倍、
+    /// slow 秒を slowScale 倍、ramp 秒で等速へ戻す）。
+    pub type alias FreezeThenSlow = { freeze = Float64, freezeScale = Float64, slow = Float64,
+                                      slowScale = Float64, ramp = Float64 }
+
+    /// FreezeThenSlow から区間の列を作る。長さ 0 の区間は無い物として扱う。
+    pub def freezeThenSlow(f: FreezeThenSlow): Plan =
+        { steps = step(f#freeze, f#freezeScale) :: step(f#slow, f#slowScale) :: Nil,
+          ramp = Float64.max(0.0, f#ramp) }
 
     /// 区間の合計（実秒。この後に ramp が続く）。
     def heldOf(p: Plan): Float64 = p#steps |> List.foldLeft((acc, s) -> acc + s#dur, 0.0)
@@ -32,28 +42,7 @@ pub mod TimeScale {
         p#steps |> List.filter(s -> s#dur > 0.0) |> List.last |> Option.map(s -> s#scale)
                 |> Option.getWithDefault(1.0)
 
-    /// 合図から実秒 r の時点の時間の速さ（0〜1）。戻りは出だしと終わりがゆっくりの曲線でつなぐ。
-    pub def scaleAt(p: Plan, r: Float64): Float64 =
-        if (r < 0.0) 1.0
-        else {
-            def walk(steps, start) = match steps {
-                case s :: rest => if (r < start + s#dur) Some(s#scale) else walk(rest, start + s#dur)
-                case Nil       => None
-            };
-            match walk(p#steps, 0.0) {
-                case Some(scale) => scale
-                case None        =>
-                    let held = heldOf(p);
-                    if (p#ramp > 0.0 and r < held + p#ramp) {
-                        let u = (r - held) / p#ramp;
-                        let s0 = rampFrom(p);
-                        s0 + (1.0 - s0) * (u * u * (3.0 - 2.0 * u))
-                    }
-                    else 1.0
-            }
-        }
-
-    /// 合図から実秒 r までにゲームの時計が進む秒（scaleAt を 0 から r まで足し上げた物。
+    /// 合図から実秒 r までにゲームの時計が進む秒（時間の速さを 0 から r まで足し上げた物。
     /// 戻りの曲線 3u² − 2u³ の足し上げは式で解ける: u³ − u⁴/2）。
     pub def gameAt(p: Plan, r: Float64): Float64 =
         let part = (start, len) -> Num.clamp(0.0, len, r - start);
@@ -72,6 +61,8 @@ pub mod TimeScale {
 
     /// ゲームの時計が合図から g 秒進んだのは、実時間で何秒後か（gameAt の逆。
     /// gameAt は増える一方なので、半分ずつ狭めて探す）。g <= 0 は合図の前なので等速のまま。
+    /// 区間ごとに式で解かないのは、戻りの区間が 4 次式で、解の公式を書くより探す方が読めるため
+    /// （40 回で秒の誤差は 1e-12 より小さい）。
     pub def realAt(p: Plan, g: Float64): Float64 =
         if (g <= 0.0) g
         else {

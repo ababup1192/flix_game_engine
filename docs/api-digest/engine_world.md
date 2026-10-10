@@ -1,4 +1,4 @@
-<!-- engine v0.34.0 / 生成: 2026-10-08 -->
+<!-- engine v0.34.0 / 生成: 2026-10-10 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine_world
@@ -591,6 +591,8 @@
   `pub def isActive(key: (k, c), ts: Tweens[k, c]): Bool with Order[k], Order[c]`
 - 全 tween を dt 秒進める。返り: (更新後 tweens, 補間出力, 今フレーム完了キー)。
   `pub def step(dt: Float64, ts: Tweens[k, c]): (Tweens[k, c], List[((k, c), Out)], List[(k, c)]) with Order[k], Order[c]`
+- 整数を start から end へ 1 つずつ動かす tween の、進み u（0..1）の時点の値。
+  `pub def steppedInt(start: Int32, end: Int32, easing: Easing, u: Float64): Int32`
 
 ## Flex — `engine_world/src/Flex.flix`
 - レイアウトノード。Leaf = 実寸つき描画物、Box = 子を並べる容器、
@@ -770,6 +772,19 @@
   `pub def load(path: String): Result[JsonError, Sheet] \ Fs.FileRead`
 - 起動時用: 読めない・必須キーの欠落は bug! で起動を止めて loud に知らせる。
   `pub def loadOrBug(path: String, required: List[String]): Sheet \ Fs.FileRead`
+
+## HoldPress — `engine_world/src/HoldPress.flix`
+- 貯まった秒・いま貯めているか（ゲージを出すか）・合図を出した後で離すのを待っているか。
+  `pub type alias HoldPress = { charge = Float64, holding = Bool, latched = Bool }`
+- seconds = 合図までに押し続ける秒、drain = 離したときに戻る速さ（押す速さの何倍か）。
+  `pub type alias Config = { seconds = Float64, drain = Float64 }`
+- `pub def empty(): HoldPress`
+- 1 フレーム分。held = キーを押しているか、enabled = いま長押しを受け付ける画面か。
+  `pub def step(cfg: Config, held: Bool, enabled: Bool, dt: Float64, s: HoldPress): (HoldPress, Bool)`
+- ゲージがどこまで満ちたか（0 → 1）。
+  `pub def progress(cfg: Config, s: HoldPress): Float64`
+- 貯めた秒を捨てる（確認の窓を開いた・場面が切り替わった）。離すのを待つ印は残す。
+  `pub def cleared(s: HoldPress): HoldPress`
 
 ## InputEdge — `engine_world/src/InputEdge.flix`
 - キーが押された瞬間のフレームだけ true: 今 (`cur`) は押されていて、前フレーム
@@ -1699,6 +1714,25 @@
 - JSON の並びを表に戻す。decode = JSON 1 個を値にする関数（読めなければ None）。
   `pub def fromJson(decode: Util.Json.Json -> Option[v], element: Util.Json.Json): Table[v]`
 
+## TimeScale — `engine_world/src/TimeScale.flix`
+- 区間 1 つ: dur 実秒のあいだ、時間を scale 倍（0 に近いほど止まる、1 = 等速）で流す。
+  `pub type alias Step = { dur = Float64, scale = Float64 }`
+- 区間の列（頭から順）と、最後の区間の速さから等速へなめらかに戻す実秒 ramp。
+  `pub type alias Plan = { steps = List[Step], ramp = Float64 }`
+- `pub def step(dur: Float64, scale: Float64): Step`
+- 「止める → 遅く流す → 戻す」のよくある形の秒と速さ（freeze 秒を freezeScale 倍、
+  `pub type alias FreezeThenSlow = { freeze = Float64, freezeScale = Float64, slow = Float64, slowScale = Float64, ramp = Float64 }`
+- FreezeThenSlow から区間の列を作る。長さ 0 の区間は無い物として扱う。
+  `pub def freezeThenSlow(f: FreezeThenSlow): Plan`
+- 合図から実秒 r までにゲームの時計が進む秒（時間の速さを 0 から r まで足し上げた物。
+  `pub def gameAt(p: Plan, r: Float64): Float64`
+- ゲームの時計が合図から g 秒進んだのは、実時間で何秒後か（gameAt の逆。
+  `pub def realAt(p: Plan, g: Float64): Float64`
+- 実時間 dt に対して、ゲームの時計を進める秒。age = いまのゲームの時計 − 合図の時刻。
+  `pub def gameDt(p: Plan, age: Float64, dt: Float64): Float64`
+- 全部の秒を k 倍する（「はやさ」の設定）。速さ（scale）は変えない。
+  `pub def scaled(k: Float64, p: Plan): Plan`
+
 ## Timeline — `engine_world/src/Timeline.flix`
 - 区間: 名前と長さ(秒)。列の順に頭から消化される(純データ)。
   `pub type alias Seg = { name = String, dur = Float64 }`
@@ -1707,6 +1741,17 @@
   `pub def total(segs: List[Seg]): Float64`
 - t 秒時点の区間。u は区間の頭からの経過秒(0 <= u < dur)。
   `pub def at(segs: List[Seg], t: Float64): Option[{ name = String, u = Float64 }]`
+- クリップ: start 秒に始まり dur 秒続く。tag = 拍の名前か出来事（純データ）。
+  `pub type alias Clip[a] = { tag = a, start = Float64, dur = Float64 }`
+- `pub def clip(tag: a, start: Float64, dur: Float64): Clip[a]`
+- 頭から順に並ぶ (tag, 長さ) の列を、開始の時刻つきのクリップへ直す。開始の時刻は
+  `pub def toClips(steps: List[(a, Float64)]): List[Clip[a]]`
+- 全部のクリップが終わる時刻（空なら 0）。演出の全体の秒・決定キーで「最後まで飛ばす」先。
+  `pub def totalOfClips(clips: List[Clip[a]]): Float64`
+- tag のクリップの開始の時刻（無ければ None。同じ tag が複数あれば先頭）。
+  `pub def startOf(tag: a, clips: List[Clip[a]]): Option[Float64] with Eq[a]`
+- 前のフレームの時刻 t0 から今の t1 までの間に始まったクリップ（t0 < start <= t1）。
+  `pub def startedBetween(t0: Float64, t1: Float64, clips: List[Clip[a]]): List[Clip[a]]`
 
 ## Transition — `engine_world/src/Transition.flix`
 - `pub enum Kind with Eq { case FadeOut, case FadeIn, case WipeLeft, case WipeRight }`
