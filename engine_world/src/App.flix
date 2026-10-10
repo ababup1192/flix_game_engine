@@ -114,6 +114,8 @@ pub mod App {
         // 「このフレームで鳴り続けていてほしい音」の宣言。宣言が続く間は鳴り続け、消えたフレームで
         // 止まる（風・雨・炎・機械の唸り・足音のループ）。毎フレーム音量と高さを与えられる。
         sustained = w -> List[Sustain] \ ef,
+        // 音の通り道（AudioMixer）。None の間は音を名前のまま鳴らす（バス・ダッキング・間引きなし）。
+        mixer = Option[w -> AudioMixer.Mixer \ ef],
         quit = (Frame, w) -> Bool \ ef,                            // 終了判定（既定 = Escape のエッジ）
         debug = Bool,                                              // デバッグ機能（F8 の時間停止・注釈・巻き戻し）を有効にするか
         // view = None のゲームがデバッグ機能を使うための生投影（フォントアトラス名と、World →
@@ -186,6 +188,7 @@ pub mod App {
           pixelSnap = _ -> 0.0,
           audio = _worlds -> checked_ecast(Nil),
           sustained = _world -> checked_ecast(Nil),
+          mixer = None,
           quit = (frame, _world) -> checked_ecast(justPressed(GameEngine.Key.Escape, frame)),
           debug = false,
           debugView = None,
@@ -378,6 +381,15 @@ pub mod App {
     /// 単発の効果音（当たった・取った）は withAudio の方を使う。
     pub def withSustained(f: w -> List[Sustain] \ ef, app: App[w, ef]): App[w, ef] =
         { sustained = f | app }
+
+    /// 音の通り道（AudioMixer.Mixer）を World から導く関数を繋ぐ。繋ぐと、withAudio の音と
+    /// withSustained の音が名前ごとのバスを通る —— バスの音量・ローパス・ダッキング・連打の間引きが
+    /// 掛かる（中身は AudioMixer の doc）。Doc から読んだ 1 つを返すだけでよく、場面ごとに
+    /// AudioMixer.withLowpass などで差し替えた物を返してもよい。
+    /// 繋いだゲームでは一発の音の音量もミキサーが毎回決める（AudioStreamPlayer.setVolume で
+    /// 一発の音の音量を変える書き方とは混ぜない）。
+    pub def withMixer(f: w -> AudioMixer.Mixer \ ef, app: App[w, ef]): App[w, ef] =
+        { mixer = Some(f) | app }
 
     /// 前のフレームの宣言（名前の列）と今のフレームの宣言から、鳴らし始める音・
     /// 鳴らし続ける音・止める音を仕分ける。同じ名前が 2 回宣言されたら先勝ちで 1 本にまとめる
@@ -661,7 +673,8 @@ pub mod App {
                     prevMouseDown = GameEngine.Game.isMouseButtonPressed(GameEngine.MouseButton.Left),
                     prevCursor = None, anno = Annotate.initial(), history = Nil,
                     bridge = bridge, remoteHold = false, stepState = freshStepState(),
-                    watchState = watch0, sustaining = Nil, tileCache = freshTileCache(),
+                    watchState = watch0, sustaining = Nil, mixState = AudioMixer.initial(),
+                    tileCache = freshTileCache(),
                     glyphSeen = None, budgetWarned = false });
         Option.forEach(RemoteDebug.shutdown, bridge)
 
@@ -680,6 +693,7 @@ pub mod App {
         anno = Annotate.State, history = List[w],
         bridge = Option[RemoteDebug.Bridge], remoteHold = Bool,
         stepState = StepState, watchState = WatchState, sustaining = List[String],
+        mixState = AudioMixer.State,
         tileCache = TileCache, glyphSeen = Option[Int64],
         // 「絵の値段が予算を超えていると 1 回だけ知らせた」印。毎フレーム出すと
         // 遅い画面がさらに遅くなり、ログも読めなくなる。
@@ -792,8 +806,8 @@ pub mod App {
                             let (watched, nextWatchState, watchFired) = applyWatch(app, frame#dt, st#watchState, st#world);
                             let (reloaded, reloadFired) = applyReload(app, frame, watched);
                             let (advanced, nextStepState) = advanceFrame(app, frame, st#stepState, reloaded);
-                            playSounds(app, reloaded, advanced);
-                            let nextSustaining = applySustained(app, st#sustaining, advanced);
+                            let (nextSustaining, nextMix) = applyAudio(app, frame#dt, reloaded, advanced,
+                                                                       st#sustaining, st#mixState);
                             // fps は debug 有効時だけ計測する（本番ビルドは履歴を積まず無負荷）。
                             let measuredAnno = if (app#debug) Annotate.recordDt(frame#dt, st#anno) else st#anno;
                             // Doc の読み直しが起きたフレームはタイル層の世代を進め、同じ key でも作り直す。
@@ -807,7 +821,7 @@ pub mod App {
                             loop(app, { world = advanced, history = nextHistory,
                                         anno = { frame = measuredAnno#frame + 1i64 | measuredAnno },
                                         stepState = nextStepState, watchState = nextWatchState,
-                                        sustaining = nextSustaining, tileCache = cache1,
+                                        sustaining = nextSustaining, mixState = nextMix, tileCache = cache1,
                                         glyphSeen = seen1, budgetWarned = warned1 | carried })
                     }
                 }
@@ -1027,6 +1041,52 @@ pub mod App {
                 (next, { sincePoll = 0.0, mtimes = current }, not List.isEmpty(changed))
             }
         }
+
+    /// 1 フレームの音: ミキサーが無ければ今までどおり名前のまま鳴らし、あればバスを通して鳴らす。
+    /// 返すのは次のフレームへ渡す「いま鳴り続けている名前」とミキサーの状態。
+    def applyAudio(app: App[w, ef], dt: Float64, before: w, after: w,
+                   prev: List[String], mixState: AudioMixer.State):
+            (List[String], AudioMixer.State) \ (ef + GameEngine.Audio) =
+        match app#mixer {
+            case None =>
+                playSounds(app, before, after);
+                (applySustained(app, prev, after), mixState)
+            case Some(mixerOf) =>
+                let derive = app#audio;
+                let declare = app#sustained;
+                applyMixed(mixerOf(after), dt, derive({ before = before, after = after }), declare(after), prev, mixState)
+        }
+
+    /// バスを通して鳴らす。順番: ミキサーを 1 フレーム進める（AudioMixer.step）→ 鳴っている一発の音へ
+    /// 今の音量とローパスを流し直す（ダッキングの最中に下がっていく）→ 通った一発の音を鳴らす →
+    /// 鳴り続ける音を始める・続ける・止める（宣言の音量 × バスの倍率）。
+    /// RemoteDebug / App 本体の内部 API — ゲームからは呼ばない。
+    pub def applyMixed(mixer: AudioMixer.Mixer, dt: Float64, plays: List[String], declared: List[Sustain],
+                       prev: List[String], mixState: AudioMixer.State):
+            (List[String], AudioMixer.State) \ GameEngine.Audio =
+        let ops = sustainOps(prev, declared);
+        let living = List.map(s -> s#name, List.append(ops#start, ops#keep));
+        let (allowed, next) = AudioMixer.step(mixer, name -> GameEngine.Audio.soundSeconds(name), dt,
+                                              plays, living, mixState);
+        let route = name -> {
+            GameEngine.Audio.setVolume(name, AudioMixer.gainOf(mixer, next, name));
+            GameEngine.Audio.setLowpass(name, AudioMixer.lowpassOf(mixer, name))
+        };
+        Map.forEach((name, _) -> route(name), next#voices);
+        allowed |> List.forEach(name -> GameEngine.Audio.playAudio(name));
+        ops#stop |> List.forEach(name -> GameEngine.Audio.stopAudio(name));
+        let level = s -> {
+            GameEngine.Audio.setVolume(s#name, s#volume * AudioMixer.gainOf(mixer, next, s#name));
+            GameEngine.Audio.setPitch(s#name, s#pitch);
+            GameEngine.Audio.setLowpass(s#name, AudioMixer.lowpassOf(mixer, s#name))
+        };
+        ops#start |> List.forEach(s -> {
+            GameEngine.Audio.setLooping(s#name, true);
+            level(s);
+            GameEngine.Audio.playAudio(s#name)
+        });
+        ops#keep |> List.forEach(level);
+        (living, next)
 
     /// audio の導いた音名を鳴らす（システム適用の前後の World から導く）。
     /// 同じ名前が 2 回返っても 1 回にまとめる — 同フレームの二重再生は同じ音源を
