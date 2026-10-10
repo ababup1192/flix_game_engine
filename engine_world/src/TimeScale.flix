@@ -12,16 +12,16 @@
 pub mod TimeScale {
 
     /// 区間 1 つ: dur 実秒のあいだ、時間を scale 倍（0 に近いほど止まる、1 = 等速）で流す。
-    pub type alias Step = { dur = Float64, scale = Float64 }
+    pub type alias Segment = { dur = Float64, scale = Float64 }
 
     /// 速さの下限。ちょうど 0 にしないのは、止めている間ゲームの時計が進まないと、
     /// 合図からの実秒をゲームの時計から逆に引けず（realAt）、時計が止まったまま動き出せなくなるため。
     def minScale(): Float64 = 0.001
 
     /// 区間の列（頭から順）と、最後の区間の速さから等速へなめらかに戻す実秒 ramp。
-    pub type alias Plan = { steps = List[Step], ramp = Float64 }
+    pub type alias Plan = { segments = List[Segment], ramp = Float64 }
 
-    pub def step(dur: Float64, scale: Float64): Step =
+    pub def segment(dur: Float64, scale: Float64): Segment =
         { dur = Float64.max(0.0, dur), scale = Float64.max(minScale(), scale) }
 
     /// 「止める → 遅く流す → 戻す」のよくある形の秒と速さ（freeze 秒を freezeScale 倍、
@@ -31,22 +31,22 @@ pub mod TimeScale {
 
     /// FreezeThenSlow から区間の列を作る。長さ 0 の区間は無い物として扱う。
     pub def freezeThenSlow(f: FreezeThenSlow): Plan =
-        { steps = step(f#freeze, f#freezeScale) :: step(f#slow, f#slowScale) :: Nil,
+        { segments = segment(f#freeze, f#freezeScale) :: segment(f#slow, f#slowScale) :: Nil,
           ramp = Float64.max(0.0, f#ramp) }
 
-    /// 区間の合計（実秒。この後に ramp が続く）。
-    def heldOf(p: Plan): Float64 = p#steps |> List.foldLeft((acc, s) -> acc + s#dur, 0.0)
+    /// 区間の合計（実秒）。この後に ramp 秒かけて等速へ戻る（寄りを引く・光を消す拍を合わせるときに読む）。
+    pub def heldOf(p: Plan): Float64 = p#segments |> List.foldLeft((acc, s) -> acc + s#dur, 0.0)
 
     /// 等速へ戻り始める直前の速さ（長さのある最後の区間の速さ。区間が無ければ 1）。
     def rampFrom(p: Plan): Float64 =
-        p#steps |> List.filter(s -> s#dur > 0.0) |> List.last |> Option.map(s -> s#scale)
+        p#segments |> List.filter(s -> s#dur > 0.0) |> List.last |> Option.map(s -> s#scale)
                 |> Option.getWithDefault(1.0)
 
     /// 合図から実秒 r までにゲームの時計が進む秒（時間の速さを 0 から r まで足し上げた物。
     /// 戻りの曲線 3u² − 2u³ の足し上げは式で解ける: u³ − u⁴/2）。
     pub def gameAt(p: Plan, r: Float64): Float64 =
         let part = (start, len) -> Num.clamp(0.0, len, r - start);
-        let (held, stepped) = p#steps |> List.foldLeft((acc, s) -> {
+        let (held, stepped) = p#segments |> List.foldLeft((acc, s) -> {
             let (start, sum) = acc;
             (start + s#dur, sum + part(start, s#dur) * s#scale)
         }, (0.0, 0.0));
@@ -85,5 +85,5 @@ pub mod TimeScale {
 
     /// 全部の秒を k 倍する（「はやさ」の設定）。速さ（scale）は変えない。
     pub def scaled(k: Float64, p: Plan): Plan =
-        { steps = List.map(s -> { dur = s#dur * k | s }, p#steps), ramp = p#ramp * k }
+        { segments = List.map(s -> { dur = s#dur * k | s }, p#segments), ramp = p#ramp * k }
 }

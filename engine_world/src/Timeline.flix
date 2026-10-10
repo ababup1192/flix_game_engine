@@ -7,7 +7,7 @@
 //
 // 演出の時刻表にはクリップ（Clip: 開始の時刻 + 長さ。重なってよい）を使う。秒は Doc から読み、
 // 絵と効果音が同じクリップの列を読むので、動きの拍と音がずれない。音は startedBetween
-// （前のフレームから今までに始まったクリップ）で鳴らし、全体の秒は totalOfClips で引く。
+// （前のフレームから今までに始まったクリップ）で鳴らし、全体の秒は durationOf で引く。
 
 pub mod Timeline {
 
@@ -56,7 +56,7 @@ pub mod Timeline {
         }, (0.0, Nil)) |> snd |> List.reverse
 
     /// 全部のクリップが終わる時刻（空なら 0）。演出の全体の秒・決定キーで「最後まで飛ばす」先。
-    pub def totalOfClips(clips: List[Clip[a]]): Float64 =
+    pub def durationOf(clips: List[Clip[a]]): Float64 =
         clips |> List.foldLeft((acc, c) -> Float64.max(acc, c#start + c#dur), 0.0)
 
     /// tag のクリップの開始の時刻（無ければ None。同じ tag が複数あれば先頭）。
@@ -65,7 +65,9 @@ pub mod Timeline {
 
     /// 前のフレームの時刻 t0 から今の t1 までの間に始まったクリップ（t0 < start <= t1）。
     /// 音を鳴らす・粒を出すのはこの拍。巻き戻し（t1 < t0）では何も返さない。
-    /// start = 0 のクリップは、時計が 0 より前（負の t0）から回り始めたときだけ拾う。
+    /// start = 0 のクリップは、時計が 0 より前（負の t0）から回り始めたときだけ拾う。演出の頭で
+    /// 音を鳴らしたいときは、最初のフレームを startedBetween(-1.0, age, clips) のように負の t0 で呼ぶか、
+    /// 頭の音は演出を始めた拍（ボタンを押した拍など）で鳴らす。
     pub def startedBetween(t0: Float64, t1: Float64, clips: List[Clip[a]]): List[Clip[a]] =
         List.filter(c -> t0 < c#start and c#start <= t1, clips)
 }

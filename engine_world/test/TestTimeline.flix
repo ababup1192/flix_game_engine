@@ -48,13 +48,13 @@ mod TestTimeline {
         let clips = Timeline.toClips(("walk", 2.0) :: ("pick", 0.5) :: ("back", 2.0) :: Nil);
         Assert.assertEq(expected = (Some(0.0), Some(2.0), Some(2.5), 4.5),
             (Timeline.startOf("walk", clips), Timeline.startOf("pick", clips),
-             Timeline.startOf("back", clips), Timeline.totalOfClips(clips)))
+             Timeline.startOf("back", clips), Timeline.durationOf(clips)))
 
     /// 全体の秒は重なったクリップの一番遅い終わり（足し算ではない）。
     @Test
     def testTotalOfClipsIsTheLatestEnd(): Unit \ Assert =
         let clips = Timeline.clip("long", 0.0, 3.0) :: Timeline.clip("short", 1.0, 0.5) :: Nil;
-        Assert.assertEq(expected = 3.0, Timeline.totalOfClips(clips))
+        Assert.assertEq(expected = 3.0, Timeline.durationOf(clips))
 
     /// 前のフレームから今までに始まったクリップだけ拾う（前のフレームちょうどに始まった物は拾わない
     /// —— 2 回鳴らさない）。

@@ -58,7 +58,7 @@
 | 撃つたびに出る効果を発生・寿命回収・描画で回す | Fx（burst / expire / drawAll）（実例: `templates/race-starter/src/World.flix`） |
 | 値を滑らかに動かす | EcsTween / Curve |
 | 整数を 1 つずつ動かす（数え下がり・数え上がり・巡って止まるルーレット） | EcsTween（steppedInt） |
-| 演出の時刻表（重なってよい拍の並び・音を鳴らす拍・全体の秒）を Doc の秒から組む | Timeline（クリップ: toClips / startedBetween / totalOfClips） |
+| 演出の時刻表（重なってよい拍の並び・音を鳴らす拍・全体の秒）を Doc の秒から組む | Timeline（クリップ: toClips / startedBetween / durationOf） |
 | ヒットストップ・スローモーション（ゲームの時計を一時的に遅くする） | TimeScale |
 | 長押しで決める・飛ばす（会話のスキップ・消去の確認） | HoldPress |
 | スプライトをコマ送りする | Anim（実例: `templates/platformer-starter/src/View.flix`） |
@@ -236,7 +236,7 @@
 - **EcsTween** — 値をある値から別の値へ、時間をかけて滑らかに動かす（補間する）。整数を 1 つずつ動かすのは steppedInt（数え下がり・ルーレット）。
 - **Journey** — 脚(出発点・行き先・速さ)の列を「時刻の純関数」で歩く。到着判定(done)と絵の位置(pos)を同じ戻り値で返す。
 - **Motion** — 物の動かし方の小さな道具箱（等速移動と往復運動）。
-- **Timeline** — 区間(名前+長さ)の列を「時刻の純関数」でサンプルする。範囲外は None = 終わり。履歴・巻き戻しは Worldline（別物）。演出の時刻表には重なってよいクリップ（tag + start + dur。tag はゲームの enum）を使い、音は startedBetween、全体の秒は totalOfClips で引く。
+- **Timeline** — 区間(名前+長さ)の列を「時刻の純関数」でサンプルする。範囲外は None = 終わり。履歴・巻き戻しは Worldline（別物）。演出の時刻表には重なってよいクリップ（tag + start + dur。tag はゲームの enum）を使い、音は startedBetween、全体の秒は durationOf で引く。
 - **TimeScale** — ヒットストップ・スロー。合図からの実秒で「止める → 遅く流す → 等速へ戻す」を決め、毎フレームの dt を gameDt で直す（ゲームの時計ごと遅くする）。光や揺れは realAt の実秒で動かせる。
 - **HoldPress** — 長押しで決める。押している間だけ秒を貯め、満ちたフレームで 1 回だけ合図、合図の後は離すまで貯めない。押した瞬間の拍そのものは InputEdge。
 - **SceneSeq** — カット列の逐次シーケンサ骨格。perform（カットを 1 コマ演じる）と idle（尽きたあと時間だけ流す）を注入し、Skip・打ち切りは notes に残す（fail-open だが無音ではない）。
