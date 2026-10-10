@@ -1,5 +1,5 @@
 [package]
-version     = "0.34.0"
+version     = "0.35.0"
 flix        = "0.76.2"
 
 [dependencies]
