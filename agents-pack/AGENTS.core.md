@@ -207,7 +207,7 @@
 ## スキルと規約の在り処（どのエージェントでも読める）
 
 - スキルの中身はただの markdown（`.claude/skills/<名前>/SKILL.md`。同じ物が `.agents/skills/` にもあり、
-  Codex は `$名前` で呼べる）。一覧はこのファイル末尾。作業に入る前に該当するスキルを読む。
+  Codex は `$名前` で呼べる）。**一覧はこのファイル末尾。作業に入る前に該当するスキルを読む。**
 - `.claude/rules/*.md`（絵の下限 `drawing.md`・Flix の決まり `flix.md`・エラー処理 `error-handling.md`）も
   ただの markdown。Claude Code 本体は対象ファイルを触るとき自動で読むが、この自動読みは
   サブエージェントでは発火しない — **サブエージェントと他のエージェントは作業前に `.claude/rules/*.md` を直接読む**。
@@ -227,8 +227,12 @@ bin/fge sprite [ファイル...]  # ドット絵の画素の並び(浮き・階�
 bin/fge anim [ファイル...]    # コマ間の飛び・接地と 4 方向のそろい
 ```
 
-## 迷ったら読む物（engine リポ）
+## 迷ったら読む物
 
-`docs/module-index.md`（やりたいこと → モジュール）・`docs/doc-conventions.md`（Doc の外形）・
-`docs/shader-doc.md`（宣言シェーダー）・`docs/audio.md`（音）・`docs/glossary.md`（UI に出す言葉）・
-動く見本は `templates/game-starter`（最小）と隣の既存ゲーム。
+- 書き方の癖と定石: `.claude/skills/flix-docs`(構文)・`compile-fix`(コンパイルエラー)・`quality-assurance`(テスト設計)
+- 画風がまだ決まっていない・新しいゲームを作り始める: `.claude/skills/style-interview`(人へ最大 7 問の聞き取り。注文は AGENTS.local.md へ)
+- 見栄えの実装: `.claude/skills/visual-dict`(絵の下限の節のとおり View の前に必読)と engine リポの `docs/shader-doc.md`(宣言シェーダーの語彙とレシピ)
+- ドット絵で行くと決まった後: `.claude/skills/retro-pixel`(色の予算・タイルと材質・キャラの等身・小物の置き場。画風を決めるのは visual-dict が先)
+- 画素の格子に乗せない絵で行くと決まった後: `.claude/skills/smooth-render`(エッジの硬さ・面積と彩度・質感の重ね方・なめらかな面に出る縞の消し方。こちらも画風を決めるのは visual-dict が先)
+- 規約と地図: engine リポの `docs/doc-conventions.md`(Doc の外形)・`docs/module-index.md`(やりたいこと → モジュール)・`docs/audio.md`(音)・`docs/glossary.md`(UI に出す言葉)
+- 動く見本: engine の `templates/game-starter`(最小)と、隣にある既存ゲームのソース
