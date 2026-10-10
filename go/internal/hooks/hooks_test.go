@@ -164,6 +164,9 @@ func TestBrokenPayloadIsSilent(t *testing.T) {
 	if code := RunFlixTouch(&errOut, repoRoot(), strings.NewReader("not json")); code != 0 {
 		t.Errorf("code=%d", code)
 	}
+	if code := RunSessionDiet(&errOut, repoRoot(), strings.NewReader("not json")); code != 0 {
+		t.Errorf("廃止した口が 0 以外を返した: code=%d", code)
+	}
 	if errOut.String() != "" {
 		t.Errorf("黙っていない: %q", errOut.String())
 	}
