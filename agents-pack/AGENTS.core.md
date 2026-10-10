@@ -211,8 +211,9 @@
 - スキルの中身はただの markdown（`.claude/skills/<名前>/SKILL.md`。同じ物が `.agents/skills/` にもあり、
   Codex は `$名前` で呼べる）。一覧はこのファイル末尾。作業に入る前に該当するスキルを読む。
 - `.claude/rules/*.md`（絵の下限 `drawing.md`・Flix の決まり `flix.md`・エラー処理 `error-handling.md`）も
-  ただの markdown。Claude Code 本体は対象ファイルを触るとき自動で読むが、**サブエージェントでは
-  rules の自動読みも skill の自動発動も効かない** — 委譲する親は、読ませる rules と skill を prompt で名指しする
+  ただの markdown。Claude Code 本体は対象ファイルを触るとき自動で読むが、この自動読みは
+  サブエージェントでは発火しない — **サブエージェントと他のエージェントは作業前に `.claude/rules/*.md` を直接読む**。
+  skill の自動発動もサブエージェントでは効かないので、委譲する親は読ませる skill を prompt で名指しする
   （例: 絵なら「`/visual-dict` と、格子に乗る絵なら `/retro-pixel`・乗らない絵なら `/smooth-render` を読んでから描く」）。
 - 「engine リポの `docs/...`」は `Makefile` 冒頭の `ENGINE` が指す場所にある。
 - フック機構を持たないエージェントは手で同じことをする: セッション最初に `make status`・`.flix` を
