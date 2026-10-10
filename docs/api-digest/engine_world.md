@@ -1716,14 +1716,16 @@
 
 ## TimeScale — `engine_world/src/TimeScale.flix`
 - 区間 1 つ: dur 実秒のあいだ、時間を scale 倍（0 に近いほど止まる、1 = 等速）で流す。
-  `pub type alias Step = { dur = Float64, scale = Float64 }`
+  `pub type alias Segment = { dur = Float64, scale = Float64 }`
 - 区間の列（頭から順）と、最後の区間の速さから等速へなめらかに戻す実秒 ramp。
-  `pub type alias Plan = { steps = List[Step], ramp = Float64 }`
-- `pub def step(dur: Float64, scale: Float64): Step`
+  `pub type alias Plan = { segments = List[Segment], ramp = Float64 }`
+- `pub def segment(dur: Float64, scale: Float64): Segment`
 - 「止める → 遅く流す → 戻す」のよくある形の秒と速さ（freeze 秒を freezeScale 倍、
   `pub type alias FreezeThenSlow = { freeze = Float64, freezeScale = Float64, slow = Float64, slowScale = Float64, ramp = Float64 }`
 - FreezeThenSlow から区間の列を作る。長さ 0 の区間は無い物として扱う。
   `pub def freezeThenSlow(f: FreezeThenSlow): Plan`
+- 区間の合計（実秒）。この後に ramp 秒かけて等速へ戻る（寄りを引く・光を消す拍を合わせるときに読む）。
+  `pub def heldOf(p: Plan): Float64`
 - 合図から実秒 r までにゲームの時計が進む秒（時間の速さを 0 から r まで足し上げた物。
   `pub def gameAt(p: Plan, r: Float64): Float64`
 - ゲームの時計が合図から g 秒進んだのは、実時間で何秒後か（gameAt の逆。
@@ -1747,7 +1749,7 @@
 - 頭から順に並ぶ (tag, 長さ) の列を、開始の時刻つきのクリップへ直す。開始の時刻は
   `pub def toClips(steps: List[(a, Float64)]): List[Clip[a]]`
 - 全部のクリップが終わる時刻（空なら 0）。演出の全体の秒・決定キーで「最後まで飛ばす」先。
-  `pub def totalOfClips(clips: List[Clip[a]]): Float64`
+  `pub def durationOf(clips: List[Clip[a]]): Float64`
 - tag のクリップの開始の時刻（無ければ None。同じ tag が複数あれば先頭）。
   `pub def startOf(tag: a, clips: List[Clip[a]]): Option[Float64] with Eq[a]`
 - 前のフレームの時刻 t0 から今の t1 までの間に始まったクリップ（t0 < start <= t1）。
