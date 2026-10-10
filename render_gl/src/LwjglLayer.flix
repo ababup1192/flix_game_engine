@@ -1052,15 +1052,19 @@ pub mod LwjglLayer {
                 };
                 k(())
             }
-            def soundSeconds(name, k) = {
+            def audioSeconds(name, k) = {
                 let seconds = match Map.get(name, audioRegistry) {
                     case Some(src) =>
                         let buffer = AL10.alGetSourcei(src, AL10.AL_BUFFER);
-                        let size = AL10.alGetBufferi(buffer, AL10.AL_SIZE);
-                        let bytesPerFrame = AL10.alGetBufferi(buffer, AL10.AL_CHANNELS) * AL10.alGetBufferi(buffer, AL10.AL_BITS) / 8;
-                        let freq = AL10.alGetBufferi(buffer, AL10.AL_FREQUENCY);
-                        if (buffer == 0 or bytesPerFrame <= 0 or freq <= 0) 0.0
-                        else Int32.toFloat64(size / bytesPerFrame) / Int32.toFloat64(freq)
+                        // バッファが外れている音源（0）には問い合わせない（AL のエラーになる）。
+                        if (buffer == 0) 0.0
+                        else {
+                            let size = AL10.alGetBufferi(buffer, AL10.AL_SIZE);
+                            let bytesPerFrame = AL10.alGetBufferi(buffer, AL10.AL_CHANNELS) * AL10.alGetBufferi(buffer, AL10.AL_BITS) / 8;
+                            let freq = AL10.alGetBufferi(buffer, AL10.AL_FREQUENCY);
+                            if (bytesPerFrame <= 0 or freq <= 0) 0.0
+                            else Int32.toFloat64(size / bytesPerFrame) / Int32.toFloat64(freq)
+                        }
                     case None => 0.0
                 };
                 k(seconds)

@@ -735,7 +735,7 @@ pub mod RemoteDebug {
                 def setMasterVolume(gain, k)    = k(GameEngine.Audio.setMasterVolume(gain))
                 def reloadAudio(name, path, k)  = k(GameEngine.Audio.reloadAudio(name, path))
                 def setLowpass(name, gainHF, k) = k(GameEngine.Audio.setLowpass(name, gainHF))
-                def soundSeconds(name, k)       = k(GameEngine.Audio.soundSeconds(name))
+                def audioSeconds(name, k)       = k(GameEngine.Audio.audioSeconds(name))
             };
             { world = final#world,
               newHistory = List.take(App.historyLimit(), final#acc),

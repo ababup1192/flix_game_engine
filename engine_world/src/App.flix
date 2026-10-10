@@ -1066,11 +1066,11 @@ pub mod App {
             (List[String], AudioMixer.State) \ GameEngine.Audio =
         let ops = sustainOps(prev, declared);
         let living = List.map(s -> s#name, List.append(ops#start, ops#keep));
-        let (allowed, next) = AudioMixer.step(mixer, name -> GameEngine.Audio.soundSeconds(name), dt,
+        let (allowed, next) = AudioMixer.step(mixer, name -> GameEngine.Audio.audioSeconds(name), dt,
                                               plays, living, mixState);
         let route = name -> {
             GameEngine.Audio.setVolume(name, AudioMixer.gainOf(mixer, next, name));
-            GameEngine.Audio.setLowpass(name, AudioMixer.lowpassOf(mixer, name))
+            GameEngine.Audio.setLowpass(name, AudioMixer.lowpassGainHFOf(mixer, next, name))
         };
         Map.forEach((name, _) -> route(name), next#voices);
         allowed |> List.forEach(name -> GameEngine.Audio.playAudio(name));
@@ -1078,7 +1078,7 @@ pub mod App {
         let level = s -> {
             GameEngine.Audio.setVolume(s#name, s#volume * AudioMixer.gainOf(mixer, next, s#name));
             GameEngine.Audio.setPitch(s#name, s#pitch);
-            GameEngine.Audio.setLowpass(s#name, AudioMixer.lowpassOf(mixer, s#name))
+            GameEngine.Audio.setLowpass(s#name, AudioMixer.lowpassGainHFOf(mixer, next, s#name))
         };
         ops#start |> List.forEach(s -> {
             GameEngine.Audio.setLooping(s#name, true);

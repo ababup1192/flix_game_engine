@@ -1,0 +1,89 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "mixer.schema.json",
+  "title": "flix_game_engine mixer.json document",
+  "description": "AudioMixerDoc が読む音の通り道（バス・振り分け・ダッキング・クールダウン・スナップショット）。どの欄も省略でき、省略した欄は何もしない（全部の音が音量 1・素通し）。'//' で始まるキーはコメントとして無視される。",
+  "type": "object",
+  "properties": {
+    "$schema": { "type": "string" },
+    "version": { "type": "integer", "enum": [1], "label": "版" },
+    "note": { "type": "string", "label": "メモ", "description": "いじると何が変わるかの説明（音には影響しない）" },
+    "defaultBus": { "type": "string", "label": "既定のバス", "description": "routes のどれにも当たらない音が流れるバス。既定 sfx" },
+    "transitionSeconds": { "type": "number", "minimum": 0, "label": "移る秒", "description": "スナップショットを選んだとき、バスの音量・ローパスが新しい値へ移り切るまでの秒（0 = 一気に）" },
+    "buses": {
+      "type": "array", "label": "バス", "description": "バスごとの音量と高い音の残り具合。載っていないバスは音量 1・素通し",
+      "items": { "$ref": "#/$defs/bus" }
+    },
+    "routes": {
+      "type": "array", "label": "振り分け", "description": "音の名前の頭でバスを選ぶ。長く一致した方が勝つ",
+      "items": {
+        "type": "object",
+        "properties": {
+          "bus": { "type": "string", "label": "バス" },
+          "prefixes": { "type": "array", "items": { "type": "string" }, "label": "名前の頭", "description": "この頭で始まる音をこのバスへ流す（例: bgm）" }
+        },
+        "required": ["bus", "prefixes"]
+      }
+    },
+    "ducks": {
+      "type": "array", "label": "ダッキング", "description": "by のバスで音が鳴っている間、bus の音量を depth 倍へ下げる",
+      "items": {
+        "type": "object",
+        "properties": {
+          "bus": { "type": "string", "label": "下げるバス" },
+          "by": { "type": "array", "items": { "type": "string" }, "label": "下げさせるバス" },
+          "depth": { "type": "number", "minimum": 0, "maximum": 1, "label": "下げた後の倍率", "description": "0.6 なら 6 割（約 −4.4dB）まで下げる" },
+          "attackSeconds": { "type": "number", "minimum": 0, "label": "下がる秒" },
+          "holdSeconds": { "type": "number", "minimum": 0, "label": "待つ秒", "description": "鳴り終わってから戻り始めるまで" },
+          "releaseSeconds": { "type": "number", "minimum": 0, "label": "戻る秒" }
+        },
+        "required": ["bus", "by"]
+      }
+    },
+    "cooldowns": {
+      "type": "array", "label": "クールダウン", "description": "同じ名前の音が seconds 以内に続いたら鳴らさない（細かい連打の間引き）",
+      "items": {
+        "type": "object",
+        "properties": {
+          "prefix": { "type": "string", "label": "名前の頭" },
+          "seconds": { "type": "number", "minimum": 0, "label": "秒" }
+        },
+        "required": ["prefix", "seconds"]
+      }
+    },
+    "snapshots": {
+      "type": "array", "label": "スナップショット", "description": "場面ごとの聞こえ方。コードは名前を選ぶだけ（AudioMixer.withSnapshot）",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "label": "名前" },
+          "buses": {
+            "type": "array", "label": "上書き",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string", "label": "バス" },
+                "volume": { "type": "number", "minimum": 0, "maximum": 1, "label": "音量" },
+                "lowpassGainHF": { "type": "number", "minimum": 0, "maximum": 1, "label": "高い音の残り" }
+              },
+              "required": ["name"]
+            }
+          }
+        },
+        "required": ["name", "buses"]
+      }
+    }
+  },
+  "patternProperties": { "^//": {} },
+  "$defs": {
+    "bus": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "label": "名前" },
+        "volume": { "type": "number", "minimum": 0, "maximum": 1, "label": "音量", "description": "そのバス全体の音量" },
+        "lowpassGainHF": { "type": "number", "minimum": 0, "maximum": 1, "label": "高い音の残り", "description": "1 = 素通し。小さいほど 5000Hz より上が落ちて籠もる（OpenAL の EFX lowpass と同じ意味）" }
+      },
+      "required": ["name"]
+    }
+  }
+}

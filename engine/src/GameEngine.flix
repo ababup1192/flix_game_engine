@@ -403,7 +403,7 @@ pub mod GameEngine {
         def setLowpass(name: String, gainHF: Float64): Unit
         /// 指定した名前のサウンドの長さ（秒）。知らない名前は 0.0。
         /// AudioMixer が「効果音が鳴っている間」を知るために使う（ダッキングの長さ）。
-        def soundSeconds(name: String): Float64
+        def audioSeconds(name: String): Float64
     }
 
     // ========================================================================

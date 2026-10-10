@@ -70,9 +70,10 @@ pub mod AudioMixdown {
                         case None => ()
                     }, hums);
                 let shelf0 = Map.get(bus, fl) |> Option.getWithDefault(shelfOf(1.0, rate));
-                let lowpass = AudioMixer.getBus(f#mixer, bus)#lowpass;
+                // バスの値は実機（App.applyMixed）と同じ AudioMixer の読み出しで決める。
+                let target = AudioMixer.busGainOf(f#mixer, mix, bus);
+                let lowpass = AudioMixer.busLowpassGainHFOf(f#mixer, mix, bus);
                 let shelf = filterInPlace({ coeffs = coeffsOf(lowpass, rate) | shelf0 }, buf);
-                let target = AudioMixer.getBus(f#mixer, bus)#volume * AudioMixer.duckGainOf(f#mixer, mix, bus);
                 let start = Map.get(bus, lv) |> Option.getWithDefault(target);
                 List.range(0, span) |> List.forEach(k -> {
                     let at = first + k;
@@ -186,10 +187,15 @@ pub mod AudioMixdown {
                             acc + Int16.toFloat64(hdr.getShort(base + c * 2)), 0.0);
                         sum / Int32.toFloat64(channels) / 32768.0
                     };
+                    // 違うサンプルレートは隣り合う 2 点の間をなめらかにつないで読み直す。
                     let ratio = Int32.toFloat64(rate) / Int32.toFloat64(sampleRate);
                     let n = Float64.tryToInt32(Int32.toFloat64(frames) / ratio) |> Option.getWithDefault(0);
-                    Vector.range(0, n) |> Vector.map(i ->
-                        at(Int32.min(frames - 1, Float64.tryToInt32(Int32.toFloat64(i) * ratio) |> Option.getWithDefault(0))))
+                    Vector.range(0, n) |> Vector.map(i -> {
+                        let p = Int32.toFloat64(i) * ratio;
+                        let k = Int32.min(frames - 1, Float64.tryToInt32(floorF(p)) |> Option.getWithDefault(0));
+                        let a = at(k);
+                        a + (at(Int32.min(frames - 1, k + 1)) - a) * (p - floorF(p))
+                    })
             }
         }
 
