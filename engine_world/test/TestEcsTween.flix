@@ -114,4 +114,18 @@ mod TestEcsTween {
             case _ => bug!("expected a single VecOut")
         }
 
+
+    // ── steppedInt（整数を 1 つずつ動かす） ──
+
+    /// 等間隔なら進みの 4 分の 1 ごとに 1 つ移る（境目ちょうどで次の値になる）。
+    @Test
+    def testSteppedIntLinearStepsOnTheBoundary(): Unit \ Assert =
+        let at = u -> EcsTween.steppedInt(4, 0, EcsTween.Easing.Linear, u);
+        Assert.assertEq(expected = (4, 3, 3, 2, 0), (at(0.0), at(0.25), at(0.49), at(0.5), at(1.0)))
+
+    /// EaseOut は出だしで速く移る（進み半分で 4 回中 3 回移っている）。範囲外は端の値。
+    @Test
+    def testSteppedIntEaseOutFrontLoads(): Unit \ Assert =
+        let at = u -> EcsTween.steppedInt(0, 4, EcsTween.Easing.EaseOut, u);
+        Assert.assertEq(expected = (3, 0, 4), (at(0.5), at(-1.0), at(2.0)))
 }
