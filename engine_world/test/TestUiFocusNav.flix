@@ -48,6 +48,13 @@ mod TestUiFocusNav {
             ((hovered#key, hovered#byKey), (keyed#key, keyed#byKey), (back#key, back#byKey)))
 
     @Test
+    def testAMouseFocusFollowsWhatMovesUnderTheStillPointer(): Unit \ Assert =
+        // マウスで a に乗ったまま指を止め、a が動いて b がその場所へ来たら、フォーカスは b に移る。
+        let still = { pointer = { x = 5.0, y = 5.0 } | UiFocusNav.noInput() };
+        let moved = { key = "b", rect = box(0.0, 0.0) } :: { key = "a", rect = box(40.0, 0.0) } :: Nil;
+        Assert.assertEq(expected = Some("b"), UiFocusNav.update(still, moved, UiFocusNav.focusByPointer("a"))#key)
+
+    @Test
     def testAFocusWhoseTargetIsGoneIsDropped(): Unit \ Assert =
         let gone = UiFocusNav.update(UiFocusNav.noInput(), targets(), UiFocusNav.focusByKey("z"));
         Assert.assertEq(expected = None, gone#key)

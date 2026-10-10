@@ -35,6 +35,23 @@ mod TestUiTooltip {
             flat(UiTooltip.computePlacement(request(middle, left :: right :: Nil))))
 
     @Test
+    def testWhenEverySideFailsTheLeastOverflowWins(): Unit \ Assert =
+        // 左右は画面に入るが avoid に重なり、下は画面からはみ出す —— はみ出しの無い向き（重なりの少ない右）を採る。
+        let anchor = rect(110.0, 150.0, 80.0, 40.0);
+        let leftBlock = rect(0.0, 140.0, 105.0, 60.0);
+        let rightBlock = rect(260.0, 140.0, 40.0, 60.0);
+        let req = { sides = UiTooltip.Side.Bottom :: UiTooltip.Side.Left :: UiTooltip.Side.Right :: Nil
+                    | request(anchor, leftBlock :: rightBlock :: Nil) };
+        Assert.assertEq(expected = (194.0, 150.0, 80.0, 40.0), flat(UiTooltip.computePlacement(req)))
+
+    @Test
+    def testSidesAwayFromCenterTriesTheFarSideFirst(): Unit \ Assert =
+        // 右下に寄った物は、左 → 右 → 上 → 下 の順に試す。
+        Assert.assertEq(expected = "Left Right Top Bottom",
+            UiTooltip.sidesAwayFromCenter(rect(250.0, 150.0, 20.0, 20.0), screen())
+                |> List.map(side -> "${side}") |> List.join(" "))
+
+    @Test
     def testTheWindowStaysOnScreenWhenNothingFits(): Unit \ Assert =
         // 画面いっぱいの物の脇はどこも入らない —— 画面の内側へ押し込む。
         let placed = UiTooltip.computePlacement(request(rect(0.0, 0.0, 300.0, 200.0), Nil));
