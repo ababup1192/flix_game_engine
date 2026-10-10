@@ -1,7 +1,7 @@
 {
-  "note": "エージェントのフック（bin/fge hook-*）の判定値。この JSON が source of truth で、bin/fge hook-art-edit / hook-flix-touch / hook-flix-work / hook-flix-edit / hook-session-diet はこれを読んで動く。呼び出しの配線は .claude/settings.json と agents-pack/settings.json・agents-pack/codex-hooks.json にある。",
+  "note": "エージェントのフック（bin/fge hook-*）の判定値。この JSON が source of truth で、bin/fge hook-art-edit / hook-flix-touch / hook-flix-work / hook-flix-edit はこれを読んで動く。呼び出しの配線は .claude/settings.json と agents-pack/settings.json・agents-pack/codex-hooks.json にある。",
   "sessionDiet": {
-    "note": "文脈が太ったら NOTES.md 3 行 + /clear を促す。130000 は実測から: 短いセッションは 100k 未満で終わり、長丁場はここを超えて伸び続ける。",
+    "note": "廃止（hook-session-diet は何もしない。セッションの長さは Claude Code 標準に任せる）。古い bin/fge-go が欠けキーで止まらないよう値だけ 1 リリース残す — 0.36.0 で消す。",
     "thresholdTokens": 130000,
     "stepTokens": 30000,
     "tailBytes": 65536,

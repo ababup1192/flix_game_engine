@@ -10,8 +10,10 @@
 - 動く暗背景（霧・雲・水）
 - コースティクス
 - 画面揺れ
-- 白フラッシュ / hitstop
+- 白フラッシュ / hitstop / スロー
 - イージング / バネ
+- 数の数え上げ・ルーレット
+- 演出の時刻表（拍の並び・音の拍）
 - ドット絵キャラ
 - タイル地形
 - 光の帯 / ハードシャドウ
@@ -32,8 +34,10 @@ canvas の狙い絵 → 実エンジンのヘッドレス生成（静止画 + �
 | 動く暗背景（霧・雲・水） | `ShaderDoc`（`fbm` / `fbmTile` / `warp` / `worley`） | Worley は等方スケールのみ（横長面で潰れる → CPU で組んで小矩形の Add 斑に退避）。**スクロールで継ぎ目を出したくない時は `fbmTile` [新]**（period 指定の周期 Fbm）。ループを閉じるだけなら `time` ノードで逆位相 2 層の「呼吸」でもよい |
 | コースティクス | Worley の `f2mf1` | ShaderDoc で形が届かない時は CPU 計算 + 2×2px の Add 斑 |
 | 画面揺れ | `CameraRig`（減衰ノイズ） | **動き専用**。生成では world 層だけ translate（UI・雨・HUD は外に出す） |
-| 白フラッシュ / hitstop | 白矩形の α を減衰 | **動き専用** — 静止画に入れるなら α を実機の 1/3 程度に（常時の靄に見える） |
+| 白フラッシュ / hitstop / スロー | 白矩形の α を減衰。止める・遅くするのは **`TimeScale`**（`gameDt` でゲームの時計ごと遅くし、光や揺れは `realAt` の実秒で動かす） | **動き専用** — 静止画に入れるなら α を実機の 1/3 程度に（常時の靄に見える）。dt を自前で 0 にして止めない（実時間が引けず動き出せなくなる） |
 | イージング / バネ | `EcsTween.Easing` / `Curve` | 補間は `EcsTween.Easing`（`Linear` / `EaseIn` / `EaseOut` / `EaseInOut` の 4 つ。これ以外の名前は無い）。周期・揺れ・減衰バネは `Curve`（`sine` / `tri` / `arch01` / `pieces` / `dampedSpring`）。`Float64.exp` は標準にある（探せば大抵ある、が教訓） |
+| 数の数え上げ・ルーレット | `EcsTween.steppedInt(start, end, easing, u)` | 前のフレームと値が変わった拍が「1 つ移った」拍（刻みの音を鳴らす所）。EaseOut でだんだん遅く止まるルーレット |
+| 演出の時刻表（拍の並び・音の拍） | `Timeline` のクリップ（`toClips` / `startOf` / `startedBetween` / `durationOf`） | `toClips` は Doc の秒を順に並べる（重ねたい拍は `Timeline.clip(tag, start, dur)` を直接置く）。音は「前のフレームと今の間に始まったクリップ」= `startedBetween` で鳴らす（`t0 < start` なので start = 0 の頭の音は、演出を始めた拍で鳴らすか負の t0 で呼ぶ）。全体の秒は `durationOf`（自前で足し算しない） |
 | ドット絵キャラ | `PxSprite`（文字格子） + **`PxShade`** | scale は整数のみ。伸縮の中間コマは `PxSprite.runs` の矩形を中心周りに伸縮して回避。legend の色に α は持てない（Add 前提で色に織り込む）。**平らに塗った絵を読み込み直後に `PxShade.shadeDoc` へ通す** — ふち光・接地影・ディザ・粒が乗り、走行中の負荷は増えない |
 | タイル地形 | `TileLayer` / `DualGrid` / `Terrain` | タイル角の丸めは明色の欠き取り（チャンファ）で DualGrid 風に。質感は `Material`（粒・きらめき・鱗・泡・発光・染み）を重ねる |
 | 光の帯 / ハードシャドウ | 半透明ポリゴン（`Light` / `Shadow`） | 影は光源と反対へ伸ばす。長さは距離の逆数で減らすと自然 |

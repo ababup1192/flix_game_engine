@@ -17,6 +17,9 @@ sync: 2026-08-19
      （素の `make render` は使い方を出して失敗する。全部いるときだけ `make render-all`）
    - 音: `make gallery-sounds`（assets/sfx/*.wav を debug/sounds/ に集め、debug/sounds.png を描く。
      BGM の WAV（assets/music/ か assets/bgm/）があるときだけ debug/music.png も描く）
+     音どうしの聞こえ方（BGM と効果音の音量差・効果音の間だけ BGM を下げる・籠もらせる・連打の間引き）は
+     WAV を作り直さず mixer.json（`App.withMixer` + `AudioMixer`）で直す。混ぜた後の音を聴くなら
+     `AudioMixdown` で実機と同じ規則の WAV に書き出す（engine の docs/audio.md）
 3. 出力を読む。all.png・各場面 PNG は Read で目視、音は sounds.png（1 音 1 段の波形と
    スペクトログラム。名前・長さ(ms)・サンプルレート・ピーク振幅つき）を Read で目視し、
    debug/sounds/*.wav を聴く。BGM があれば music.png も同じ見方で見る。ループ GIF（コマ 0 に

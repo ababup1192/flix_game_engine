@@ -1,6 +1,6 @@
 ---
 name: wire-doc
-description: "まだコードに繋がっていない Doc(JSON) を、既存の loader パターン（fromJson / defaults / fail-open、watchFile）を踏襲して配線し、橋渡しテストを最大 3 本書く。JSON を作ったがまだコードから読んでいないとき、「この Doc を繋いで」と言われたとき、保存で即反映させたいときに使う。"
+description: "まだコードに繋がっていない Doc(JSON) を loader（defaults・fail-open・watchFile）で配線し、橋渡しテストを最大 3 本書く。JSON を作ったがまだコードから読んでいないとき、「この Doc を繋いで」と言われたときに使う。"
 ---
 
 # wire-doc — 未配線 Doc の配線

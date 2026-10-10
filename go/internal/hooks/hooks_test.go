@@ -165,7 +165,7 @@ func TestBrokenPayloadIsSilent(t *testing.T) {
 		t.Errorf("code=%d", code)
 	}
 	if code := RunSessionDiet(&errOut, repoRoot(), strings.NewReader("not json")); code != 0 {
-		t.Errorf("code=%d", code)
+		t.Errorf("廃止した口が 0 以外を返した: code=%d", code)
 	}
 	if errOut.String() != "" {
 		t.Errorf("黙っていない: %q", errOut.String())
@@ -213,47 +213,6 @@ func tempRootWithRules(t *testing.T) string {
 		writeFile(t, filepath.Join(root, "bin", "lint-rules", name), string(body))
 	}
 	return root
-}
-
-// 文脈がしきい値を越えたら 1 回だけ促す (同じ段で 2 度言わない)。
-func TestSessionDietSpeaksOnce(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("TMPDIR", dir)
-	transcript := filepath.Join(dir, "t.jsonl")
-	writeFile(t, transcript, `{"message":{"usage":{"cache_read_input_tokens":180000,`+
-		`"cache_creation_input_tokens":9000,"input_tokens":123}}}`+"\n")
-	body := map[string]any{"session_id": "diet-1", "transcript_path": transcript}
-
-	var first strings.Builder
-	if code := RunSessionDiet(&first, repoRoot(), payloadOf(t, body)); code != 2 {
-		t.Fatalf("code=%d", code)
-	}
-	if !strings.Contains(first.String(), "/clear") {
-		t.Errorf("促していない: %q", first.String())
-	}
-	var second strings.Builder
-	if code := RunSessionDiet(&second, repoRoot(), payloadOf(t, body)); code != 0 {
-		t.Fatalf("2 度目 code=%d", code)
-	}
-	if second.String() != "" {
-		t.Errorf("2 度言った: %q", second.String())
-	}
-}
-
-// しきい値に届かない文脈では何も言わない。
-func TestSessionDietQuietBelowThreshold(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("TMPDIR", dir)
-	transcript := filepath.Join(dir, "t.jsonl")
-	writeFile(t, transcript, `{"message":{"usage":{"cache_read_input_tokens":1000,`+
-		`"cache_creation_input_tokens":0,"input_tokens":1}}}`+"\n")
-	var out strings.Builder
-	code := RunSessionDiet(&out, repoRoot(), payloadOf(t, map[string]any{
-		"session_id": "diet-2", "transcript_path": transcript,
-	}))
-	if code != 0 || out.String() != "" {
-		t.Fatalf("code=%d out=%q", code, out.String())
-	}
 }
 
 // 書いたファイルの拡張子に当たる検査だけを走らせる。

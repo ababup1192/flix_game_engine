@@ -1,4 +1,0 @@
-# しきい値に届かない文脈では何も言わない (exit 0)。
-TMPDIR=$WORK bin/fge hook-session-diet <<'JSON'
-{"session_id":"lint-case","transcript_path":"testdata/lint/hooks/session-diet-quiet/transcript.jsonl"}
-JSON

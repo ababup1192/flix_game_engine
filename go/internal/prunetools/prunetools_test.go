@@ -114,8 +114,8 @@ func TestRewritesStaleHookCalls(t *testing.T) {
 	if !strings.Contains(got, `\"$CLAUDE_PROJECT_DIR/bin/fge\" hook-flix-work`) {
 		t.Errorf("hook-flix-work へ直っていない: %s", got)
 	}
-	if !strings.Contains(got, `\"$CLAUDE_PROJECT_DIR/bin/fge\" hook-session-diet`) {
-		t.Errorf("hook-session-diet へ直っていない: %s", got)
+	if strings.Contains(got, "session-diet") || strings.Contains(got, "SessionEnd") {
+		t.Errorf("廃止した session-diet の呼び出しが残っている: %s", got)
 	}
 	if !strings.Contains(got, `"make -s status"`) {
 		t.Errorf("関係のない呼び口まで触った: %s", got)

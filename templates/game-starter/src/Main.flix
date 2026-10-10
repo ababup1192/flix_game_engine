@@ -10,9 +10,10 @@
 //   view    = World → 「何をどこに描くか」。World は読むだけで変えない。
 //   reloads = 保存で読み直す Doc（各 1 本の watchFile に展開される）。
 // 場面（表紙・クリア等）が増えたら World にフェーズを持たせ、step / frame を分岐させる。
-// 音（withAudio）や複数システムの明示的な列挙が要る高度なゲームは、make から始める従来の
-// ビルダー（addSystem / withView / …）へ降りる。App.game の外側で足す設定（reloadOn・onRenderRequest・
-// withDebug）は戻り値の App に後ろから pipe で足す。
+// App.game の外側で足す設定（reloadOn・onRenderRequest・withDebug）は戻り値の App に後ろから pipe で足す。
+// 音も同じ形で足す: 起きた音 = App.withAudio・続く音 = withSustained（実例は templates/race-starter/src/Main.flix）、
+// バスの音量やダッキング = withMixer + mixer.json（engine の docs/audio.md の「音の通り道」）。
+// 複数システムの明示的な列挙が要る高度なゲームは、make から始める従来のビルダー（addSystem / withView / …）へ降りる。
 
 def main(): Unit \ IO =
     if (GameEngine.ensureMainThread()) ()

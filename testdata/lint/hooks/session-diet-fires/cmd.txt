@@ -1,5 +1,0 @@
-# 文脈がしきい値を越えたら /clear を促す 1 行を stderr へ返す (exit 2)。
-# TMPDIR を使い捨てに向けて「この段はもう言った」の印を毎回まっさらにする。
-TMPDIR=$WORK bin/fge hook-session-diet <<'JSON'
-{"session_id":"lint-case","transcript_path":"testdata/lint/hooks/session-diet-fires/transcript.jsonl"}
-JSON

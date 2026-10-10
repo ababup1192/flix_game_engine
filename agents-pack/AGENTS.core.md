@@ -53,19 +53,16 @@
 ## Doc 規約（ゲームデータ JSON）
 
 - **1 種類 = 1 Doc + 1 スキーマ**（`<名前>.<種類>.json` と `<種類>.schema.json`）。
-  外側の形は全 Doc 共通: `version` を持ち、`note` フィールド歓迎。
-- **読み込みは fail-open**。書き損じや欠けは既定値へ落とす。既定値はコード側に持つ。
-- **watchFile で保存即反映**。調整のたびに再起動しない。
+  全 Doc が `version` を持ち、`note` 歓迎。
+- **読み込みは fail-open**（書き損じ・欠けは既定値へ。既定値はコード側）。**watchFile で保存即反映**。
 - **データは Doc・振る舞いはコード**。繰り返し調整する数値（テンポ・閾値・収支・確率）、
-  個数が増減するデータ（rows）、色テーマ、文言は Doc へ。描画アルゴリズム・演出の形・
+  増減するデータ（rows）、色テーマ、文言は Doc へ。描画アルゴリズム・演出の形・
   導出できる値・ルールはコードのまま。ロジックを JSON に書き始めたら設計の匂い。
 - **プレイヤーの目に入る文言は必ず Doc に置く（既定値はコード側）**。
   コード直書きの表示文字列は違反 — Studio から変えられない。
-- **ドット絵の `legend` の色キー（名前で塗り分ける色）はパレットに実体を置く**。
-  Studio が名前を実色に解けるのは `*.theme.json` のトップレベル・sprite Doc の
-  `paletteFile` が指すパレット・直下の `palette` の 3 つだけ。つや・影のような派生色を
-  コードで導いたままにすると Studio は仮色で塗り、編集画面と実機で配色が食い違う。
-  導くならパレット JSON を生成して `paletteFile` で指す。
+- **ドット絵の `legend` の色キーはパレットに実体を置く**（`*.theme.json` のトップレベル・
+  sprite Doc の `paletteFile` が指すパレット・直下の `palette` のどれか）。派生色をコードで
+  導いたままにすると Studio は仮色で塗る。導くならパレット JSON を生成して `paletteFile` で指す。
 
 ## atelier/ 規約（採用前の候補置き場）
 
@@ -77,64 +74,51 @@
 
 ## セッションの始め方と終わり方
 
-- 開始時は `.claude/settings.json` の SessionStart フックが `make status` を自動で流す
-  （テスト記録・リファレンス画像一致・アノテーションチケット・git の 1 画面）。**個別に git log を掘ったり
-  テストを回し直したりせず、まずこの 1 画面から入る**。手動で見たいときも `make status`。
-- 終了時（または区切りごと）に `NOTES.md` の先頭へ「今どこまで・次やること」を 3 行残す。
-  次のセッションの status に載り、会話の記憶に頼らず再開できる。
+- 開始時は SessionStart フックが `make status`（テスト記録・リファレンス画像一致・
+  アノテーションチケット・git の 1 画面）を流す。個別に git log を掘ったりテストを回し直したりせず、まずこの 1 画面から入る。
+- 区切りごとに `NOTES.md` の先頭へ「今どこまで・次やること」を 3 行残す（次の status に載る）。
 
 ## make の入口
 
-- `make run` / `make debug`（watchFile・F8 有効）/ `make check`（型検査・一番速い確認）
-- `make test` / `make render SHOT=<場面名>`（その場面 1 枚だけ描き出す。既定の手はこれ）/
-  `make render-all`（決定的な絵を全部描き出す。素の `make render` は使い方を出して失敗する）/
-  `make reference-check`（gallery/ vs reference/ のバイト比較）
-- `make reference-update`（いまの gallery を基準にする）
-- `debug/` のコンタクトシート系ターゲット（例: `make gallery-prologue` の all.png、
-  `make gallery-sounds` の sounds.png — 1 音 1 段の波形とスペクトログラム。BGM の WAV が
-  あれば music.png も）で**目と耳で確かめて**批評する。
-- 口の一覧は `make help`。共通の口の実体はエンジンの `mk/game.mk` で、ゲームの Makefile は
-  それを include している。**共通ターゲットをゲームの Makefile へ写さない** — 写すと
-  エンジンを直しても届かず（`upgrade-game` は Makefile を運ばない）、写経元からずれていく。
-  ゲーム側に置くのは `SHOTS` / `PALETTE` / `RENDER_NOTE` とそのゲーム固有の口だけ。
+- `make check`（型検査・一番速い）/ `make test` / `make run` / `make debug`（watchFile・F8）
+- `make render SHOT=<場面名>`（1 枚だけ。既定の手）/ `make render-all`（全部）/
+  `make reference-check`（gallery/ と reference/ のバイト比較）/ `make reference-update`
+- `debug/` のコンタクトシート（`make gallery-prologue` の all.png、`make gallery-sounds` の
+  sounds.png・BGM があれば music.png）で**目と耳で確かめて**批評する。
+- 口の一覧は `make help`。共通の口の実体はエンジンの `mk/game.mk`（ゲームの Makefile が include）。
+  **共通ターゲットをゲームの Makefile へ写さない**（`upgrade-game` は Makefile を運ばないので、
+  写すとエンジンの修正が届かない）。ゲーム側に置くのは `SHOTS` / `PALETTE` / `RENDER_NOTE` と固有の口だけ。
 
-## テスト方針（要約）
+## テスト方針（要約。詳しくは quality-assurance スキル）
 
 - テストするのは「ゲームの**ルール・進行・収支**」と「JSON とプログラムの橋渡し」だけ。
-  モーション・表示タイミング・座標の丸写しはテストしない（演出はスナップショットと目視の仕事）。
-  ただしクリック当たりの有無はルールなので残す。
+  モーション・表示タイミング・座標の丸写しはテストしない（スナップショットと目視の仕事）。
+  クリック当たりの有無はルールなので残す。
 - **期待値は Doc（JSON 既定値）から導く**。数値リテラルを貼らない。
-- 橋渡しテストは **1 Doc につき最大3本**（壊れた JSON→既定値 / 1 フィールド上書き /
-  rows 長の追随）。initialState の丸写しなど情報量ゼロのテストは書かない。
+- 橋渡しテストは **1 Doc につき最大3本**（壊れた JSON→既定値 / 1 フィールド上書き / rows 長の追随）。
 
 ## エンジン API 優先(車輪の再発明禁止)
 
-- **API の型・引数・エフェクトはソースを grep/unzip する前に** engine リポの
-  `docs/api-digest.md`(全 pub 宣言の生成物)を引く。`make api Q=<名前>` で 1 行でも引ける。
-- 実装の前に engine リポの `docs/module-index.md`(「やりたいこと → モジュール」の逆引き)を引く。
-  メニュー・スクロール・文字折り・当たり判定・タイムライン・**マップ地形(rows を塗るだけの
-  デュアルグリッド = Terrain / TerrainDoc、タイルセット PNG = MapResource)**など、
-  **エンジンにある物を自前で書かない**。
-- 各モジュールの詳しい使い方は `engine_world/src/<名前>.flix` 冒頭の doc コメントと、
-  templates/ のスターターにある実使用例が正。
-- 迷ったら「低い API で書けたか」ではなく「一番高い API で書けたか」を疑う。
-  自前実装が残っていたら、それはレビュー(critique)で指摘される対象。
+- 実装の前に engine リポの `docs/module-index.md`（やりたいこと → モジュールの逆引き）を引く。
+  **エンジンにある物を自前で書かない** — メニュー・スクロール・文字折り・当たり判定・
+  マップ地形（Terrain / TerrainDoc・MapResource）・フォーカス巡りとツールチップ（UiFocusNav / UiTooltip）・
+  音のバスとダッキング（App.withMixer + mixer.json）・演出の時刻表（Timeline のクリップ）・
+  ヒットストップ（TimeScale）・長押し（HoldPress）・数え上げ（EcsTween.steppedInt）など。
+- API の型・引数は、ソースを grep/unzip する前に `docs/api-digest.md`（`make api Q=<名前>` で 1 行）。
+  使い方は `engine_world/src/<名前>.flix` 冒頭の doc コメントと templates/ の実使用例が正。
+- 「一番高い API で書けたか」を疑う。自前実装が残っていたらレビュー（critique-code）の指摘対象。
 
 ## 初学者の足場（生成コードに必須）
 
-このエンジンの成果物は「初学者が仕組みを読み取れる」ことを謳う。以下は飾りでなく
-**生成・拡張の完了条件**。新しいゲームにも、既存への追加にも常に満たす。
+成果物は「初学者が仕組みを読み取れる」ことを謳う。以下は**生成・拡張の完了条件**。
 
-- **読む順序**: README に「まずどのファイルをどの順で読むと全体像が掴めるか」を一節置く。
-  **遊ぶ → 読む順（エントリ→状態→描画）→ JSON をいじる** の 3 段階。専用ファイルは増やさない。
-- **ゲームループの明示**: エントリ（Main 相当）か状態モジュール（World 相当）の冒頭 doc に、
-  **毎フレーム 入力→状態更新→描画 のどれがどこか**を数行で書く（addSystem / withView の
-  どの行が何か）。場面（フェーズ）遷移があれば 1 行の遷移図（`title → play → clear`）。
-- **JSON（Doc）の学びやすさ**: 各 Doc の `note` に「いじると何が変わるか」、調整パラメータに
-  効果の一言。可能なら最小例。schema の `label` / `description` を埋める（空の schema は違反）。
+- **読む順序**: README に一節 — **遊ぶ → 読む順（エントリ→状態→描画）→ JSON をいじる**。専用ファイルは増やさない。
+- **ゲームループの明示**: Main か World の冒頭 doc に、毎フレーム **入力→状態更新→描画** がどの行かを数行で。
+  場面遷移があれば 1 行の遷移図（`title → play → clear`）。
+- **Doc の学びやすさ**: 各 Doc の `note` に「いじると何が変わるか」、調整パラメータに効果の一言。可能なら最小例。
+  schema の `label` / `description` を埋める（空の schema は違反）。
 - **黒箱に触れたら engine 解説へ誘導**: 高抽象 API（`Terrain.fromRows` 等）を呼ぶ箇所に
-  **「これは何をするか」一言 + 解説の在り処（engine の `docs/module-index.md`）**への言及を残す。
-  呼ぶだけで意味の見えない一行を放置しない。
+  「何をするか」一言 + engine の `docs/module-index.md` への言及。
 
 ## 絵の下限（生成コードに必須）
 
@@ -222,31 +206,17 @@
 
 ## スキルと規約の在り処（どのエージェントでも読める）
 
-`/名前` は Claude Code のスキル呼び出しの書き方だが、中身は**ただの markdown**。
-どのエージェントでも `.claude/skills/<名前>/SKILL.md` を直接読めば同じ内容が手に入る
-（同じ物が `.agents/skills/` にもあり、Codex はそちらを `$名前` で呼べる）。
-**このゲームに配られているスキルの一覧は、このファイル末尾の「配られているスキル一覧」
-（sync-agents が自動生成する節）にある。作業に入る前に該当するスキルを読む。**
-
-- `.claude/rules/*.md`（絵の下限 `drawing.md`・Flix の決まり `flix.md`）も同じくただの
-  markdown。Claude Code 本体は対象ファイルを触るとき自動で読むが、**この自動読みは
-  サブエージェントでは発火しない** — サブエージェントと他のエージェントは作業前に
-  `.claude/rules/*.md` を直接読む。
-- **skill の自動発動もサブエージェントでは効かない。** 絵・音・コードの作業を
-  サブエージェントへ委譲する親は、読ませる skill を prompt で名指しする責任がある
-  （例: 絵なら「`/visual-dict` を読み、**画素の格子に乗る絵なら `/retro-pixel`・
-  乗らない絵（高解像度・シェーダーの面）なら `/smooth-render`** も読んでから描く」）。
-- 本文中の「engine リポの `docs/...`」は、このゲームの `Makefile` 冒頭の `ENGINE` 変数が
-  指す場所にある（`make new-game` が実パスへ書き換え済み）。
-
-フック相当の決まり（フック機構を持たないエージェントは、手で同じことをする）:
-
-- **SessionStart フックが無いエージェントは、セッション最初の行動として `make status`**。
-- **保存即型検査が無いエージェントは、`.flix` を編集するたび `make check`**。
-- コミットのゲートは git の pre-commit（エージェント非依存）。未配線なら `make hooks` —
-  clone ごとに 1 回でよい（未配線は `make status` が知らせる）。
-- Codex 向け: `.codex/hooks.json` と `.agents/skills/` は project trust の承認後に有効。
-  承認前でも上の 2 行を手で守れば同じ結果になる。
+- スキルの中身はただの markdown（`.claude/skills/<名前>/SKILL.md`。同じ物が `.agents/skills/` にもあり、
+  Codex は `$名前` で呼べる）。**一覧はこのファイル末尾。作業に入る前に該当するスキルを読む。**
+- `.claude/rules/*.md`（絵の下限 `drawing.md`・Flix の決まり `flix.md`・エラー処理 `error-handling.md`）も
+  ただの markdown。Claude Code 本体は対象ファイルを触るとき自動で読むが、この自動読みは
+  サブエージェントでは発火しない — **サブエージェントと他のエージェントは作業前に `.claude/rules/*.md` を直接読む**。
+  skill の自動発動もサブエージェントでは効かないので、委譲する親は読ませる skill を prompt で名指しする
+  （例: 絵なら「`/visual-dict` と、格子に乗る絵なら `/retro-pixel`・乗らない絵なら `/smooth-render` を読んでから描く」）。
+- 「engine リポの `docs/...`」は `Makefile` 冒頭の `ENGINE` が指す場所にある。
+- フック機構を持たないエージェントは手で同じことをする: セッション最初に `make status`・`.flix` を
+  編集するたび `make check`。コミットのゲートは git の pre-commit（未配線なら `make hooks`、clone ごとに 1 回）。
+  Codex の `.codex/hooks.json` と `.agents/skills/` は project trust の承認後に有効。
 
 人に見せる前に自分で確かめる（OS・エージェントを問わず動く）:
 
@@ -264,5 +234,5 @@ bin/fge anim [ファイル...]    # コマ間の飛び・接地と 4 方向の�
 - 見栄えの実装: `.claude/skills/visual-dict`(絵の下限の節のとおり View の前に必読)と engine リポの `docs/shader-doc.md`(宣言シェーダーの語彙とレシピ)
 - ドット絵で行くと決まった後: `.claude/skills/retro-pixel`(色の予算・タイルと材質・キャラの等身・小物の置き場。画風を決めるのは visual-dict が先)
 - 画素の格子に乗せない絵で行くと決まった後: `.claude/skills/smooth-render`(エッジの硬さ・面積と彩度・質感の重ね方・なめらかな面に出る縞の消し方。こちらも画風を決めるのは visual-dict が先)
-- 規約と地図: engine リポの `docs/doc-conventions.md`(Doc の外形)・`docs/module-index.md`(やりたいこと → モジュール)・`docs/glossary.md`(UI に出す言葉)
+- 規約と地図: engine リポの `docs/doc-conventions.md`(Doc の外形)・`docs/module-index.md`(やりたいこと → モジュール)・`docs/audio.md`(音)・`docs/glossary.md`(UI に出す言葉)
 - 動く見本: engine の `templates/game-starter`(最小)と、隣にある既存ゲームのソース
