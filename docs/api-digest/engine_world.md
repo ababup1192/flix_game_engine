@@ -1,4 +1,4 @@
-<!-- engine v0.35.0 / 生成: 2026-10-11 -->
+<!-- engine v0.35.1 / 生成: 2026-10-11 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine_world
@@ -1097,8 +1097,9 @@
   `pub def fromKeys(resolver: String -> Color, keys: List[String]): Map[String, Color]`
 - 色票 Doc 1 枚ぶんの JSON テキスト（末尾に改行付き）。
   `pub def build(spec: { note = String, colors = Map[String, Color] }): String`
-- 色票 Doc を path へ書き出す。親ディレクトリは作らない（`Fs.WriteFile` の流儀）。
-  `pub def write(path: String, spec: { note = String, colors = Map[String, Color] }): Result[String, Unit] \ Fs.FileWrite`
+- `pub def write(path: String, spec: { note = String, colors = Map[String, Color] }): Result[String, Unit] \ { Fs.FileRead, Fs.FileWrite }`
+- path に text と同じ中身がもうあるか（読めない・無いときは false）。
+  `pub def isSameAsOnDisk(path: String, text: String): Bool \ Fs.FileRead`
 
 ## Persistence — `engine_world/src/Persistence.flix`
 - `Saveable` を実装した値を `path` へ JSON で書き出す。
@@ -1326,11 +1327,14 @@
 
 ## RemoteDebug — `engine_world/src/RemoteDebug.flix`
 - HTTP サーバ本体と、リクエスト / レスポンスを受け渡す 2 本のキュー。
-  `pub type alias Bridge = { server = HttpServer, requests = JQueue[String], responses = JQueue[String] }`
+  `pub type alias Bridge = { server = HttpServer, requests = JQueue[String], responses = JQueue[String], current = AtomicLong }`
 - 環境変数 DEBUG_HTTP_PORT からポート番号を読む。未設定・数値でなければ None。
   `pub def portFromEnv(): Option[Int32] \ IO`
-- 127.0.0.1 の port で HTTP サーバを立てて Bridge を返す。
-  `pub def start(port: Int32): Bridge \ IO`
+- 本文に依頼番号を付ける（キューに積む形）。
+  `pub def tagged(id: Int64, text: String): String`
+- tagged の逆。番号の無い・読めない形は None。
+  `pub def untagged(raw: String): Option[(Int64, String)]`
+- `pub def start(port: Int32): Bridge \ IO`
 - ゲームループが毎フレーム呼ぶ非ブロッキングの受信。届いていなければ None。
   `pub def pollRequest(bridge: Bridge): Option[String] \ IO`
 - 応答本文を HTTP スレッドへ返す（pollRequest で受けた 1 件に必ず 1 回対で呼ぶ）。

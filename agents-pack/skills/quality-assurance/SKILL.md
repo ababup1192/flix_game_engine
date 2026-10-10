@@ -1,7 +1,7 @@
 ---
 name: quality-assurance
 description: "このプロジェクトのテスト設計指針（何をテストするか・期待値を Doc から導く・1 テスト 1 アサート・effect ハンドラのモック）。テストを書く・直すとき、新しいモジュールを作ったとき、ゲームロジックを編集したときに使う。"
-sync: 2026-08-13
+sync: 2026-10-11
 ---
 
 # Flix テスト設計指針
@@ -188,7 +188,7 @@ def testMovesAtConstantVelocity(): Unit \ Assert =
 
 ## 浮動小数点比較
 
-誤差が出る計算（正規化・三角関数・積み重ね）だけ `Float64.abs(actual - expected) < epsilon` で `assertTrue`。
+決まった結果が出る値は `assertEq`。誤差が出る計算（正規化・三角関数・積み重ね）だけ `Float64.abs(actual - expected) < epsilon` で `assertTrue`（epsilon は意味で選ぶ: 位置 0.001・長さ 0.01 など）。
 
 ## `@Test` シグネチャ
 

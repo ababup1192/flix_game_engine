@@ -1,8 +1,8 @@
 ---
 name: compile-fix
-description: "Flix のコンパイルエラーを既知の落とし穴（予約語・import の位置・エフェクト・Channel・Java 例外・Float32/64）と照合して直す。flix check / make check / make test が失敗したとき、Parse error・Unable to unify・「Expected ',' before '='」のような原因の見えないエラーが出たときに使う。"
+description: "Flix のコンパイルエラーを既知の落とし穴（予約語・import の位置・エフェクト・Channel・Java 例外・パターン網羅・Float32/64）と照合して直す。flix check / make check / make test が失敗したとき、E3138・E5252・E6217 等のエラー番号、Parse error・Unable to unify・Non-exhaustive match・Unresolved type、「Expected ',' before '='」のような原因の見えないエラーが出たときに使う。"
 allowed-tools: Read, Grep, Glob, Bash
-sync: 2026-08-13
+sync: 2026-10-11
 ---
 
 # Flix コンパイルエラー診断
@@ -55,7 +55,13 @@ sync: 2026-08-13
 
 **修正**: 関数の型注釈にエフェクトを追加する（`\ IO + ef` など）。不明なら型注釈を外して推論に任せる。
 
-### 6. List/Set/Map リテラルの型推論失敗
+### 6. パターンマッチの網羅性（警告/エラー）
+
+**症状**: `Non-exhaustive match`
+
+**修正**: 不足している case を足す。Doc 由来の String で分岐しているなら、読み込む所で enum へ変えて網羅性を効かせる（`.claude/rules/flix.md` の型の設計）。
+
+### 7. List/Set/Map リテラルの型推論失敗
 
 **症状**: `Unable to unify` / 空リテラルで型が決まらない
 
@@ -63,7 +69,7 @@ sync: 2026-08-13
 
 **修正**: 型注釈を付ける（例: `(Nil: List[Int32])`）、または要素付きで初期化。
 
-### 7. Float32 と Float64 の食い違い
+### 8. Float32 と Float64 の食い違い
 
 **症状**: `Expected Float32 but got Float64`
 

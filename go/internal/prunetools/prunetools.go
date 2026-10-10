@@ -9,6 +9,7 @@ package prunetools
 // 恒久の配布規約ではないので agents-pack/manifest.json には載せない。
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -75,8 +76,12 @@ var staleHookCalls = [][2]string{
 	{`python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/after-flix-touch.py\"`, `\"$CLAUDE_PROJECT_DIR/bin/fge\" hook-flix-touch`},
 	{`python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/after-flix-work.py\"`, `\"$CLAUDE_PROJECT_DIR/bin/fge\" hook-flix-work`},
 	{`python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/after-flix-edit.py\"`, `\"$CLAUDE_PROJECT_DIR/bin/fge\" hook-flix-edit`},
-	{`python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-diet.py\"`, `\"$CLAUDE_PROJECT_DIR/bin/fge\" hook-session-diet`},
 }
+
+// retiredHookCalls は settings.json から呼び出しごと外すフック（口は廃止して何もしない）。
+// WhyNot: 何もしない口へ書き換えて残さないのは、matcher "*" で全ツールのたびにプロセスを
+// 起こし続け、いつか口を消した日にゲームのフックが毎回エラーになるため。
+var retiredHookCalls = []string{"session-diet.py", "hook-session-diet"}
 
 const usage = "使い方: fge prune-stale-tools --game /path/to/game [--dry-run]"
 
@@ -186,10 +191,86 @@ func rewriteHookCalls(path string, dryRun bool) (int, error) {
 		fixed += n
 		text = strings.ReplaceAll(text, pair[0], pair[1])
 	}
+	text, removed, err := dropRetiredHooks(text)
+	if err != nil {
+		return 0, err
+	}
+	fixed += removed
 	if fixed == 0 || dryRun {
 		return fixed, nil
 	}
 	return fixed, os.WriteFile(path, []byte(text), 0o644)
+}
+
+// dropRetiredHooks は retiredHookCalls を呼ぶフックを外し、外した数を返す。
+// 外したせいで空になったグループとイベントも畳む。
+// WhyNot: 当たりが無いときに JSON を組み直さないのは、組み直すとキーの並びが
+// 変わり、関係のない差分がゲーム側に出るため。
+func dropRetiredHooks(text string) (string, int, error) {
+	hit := false
+	for _, c := range retiredHookCalls {
+		hit = hit || strings.Contains(text, c)
+	}
+	if !hit {
+		return text, 0, nil
+	}
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(text), &doc); err != nil {
+		return text, 0, fmt.Errorf(".claude/settings.json が JSON として読めません: %v", err)
+	}
+	events, _ := doc["hooks"].(map[string]any)
+	removed := 0
+	for name, v := range events {
+		groups, _ := v.([]any)
+		var keptGroups []any
+		for _, g := range groups {
+			group, ok := g.(map[string]any)
+			if !ok {
+				keptGroups = append(keptGroups, g)
+				continue
+			}
+			hooks, _ := group["hooks"].([]any)
+			var keptHooks []any
+			for _, h := range hooks {
+				cmd, _ := h.(map[string]any)["command"].(string)
+				if isRetired(cmd) {
+					removed++
+					continue
+				}
+				keptHooks = append(keptHooks, h)
+			}
+			if len(keptHooks) == 0 && len(hooks) > 0 {
+				continue
+			}
+			group["hooks"] = keptHooks
+			keptGroups = append(keptGroups, group)
+		}
+		if len(keptGroups) == 0 {
+			delete(events, name)
+		} else {
+			events[name] = keptGroups
+		}
+	}
+	if removed == 0 {
+		return text, 0, nil
+	}
+	var buf strings.Builder
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(doc); err != nil {
+		return text, 0, err
+	}
+	return buf.String(), removed, nil
+}
+
+func isRetired(cmd string) bool {
+	for _, c := range retiredHookCalls {
+		if strings.Contains(cmd, c) {
+			return true
+		}
+	}
+	return false
 }
 
 func isFile(path string) bool {
