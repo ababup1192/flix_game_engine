@@ -120,6 +120,8 @@
 | 鳴り続ける音を出したい（走行音・風・雨・炎・足音のループ） | App.withSustained（World から「鳴り続けていてほしい音」を宣言。音量と高さを毎フレーム与える。詳しくは [audio.md](audio.md)。実例: `templates/race-starter/src/Sfx.flix`） |
 | BGM を流す・止める・音量やループを変える | AudioStreamPlayer（play / stop / setVolume / setLooping。詳しくは [audio.md](audio.md)） |
 | BGM をだんだん出す・消す・入れ替える（音量カーブ） | AudioFade |
+| 音をバス（曲・効果音・UI・声）に分けて音量を決めたい・効果音の間だけ BGM を下げたい（ダッキング）・高い音を削って籠もらせたい（ローパス）・同じ音の細かい連打を間引きたい・場面ごとの聞こえ方を切り替えたい（スナップショット） | App.withMixer + AudioMixer（mixer.json は AudioMixerDoc。詳しくは [audio.md](audio.md)） |
+| 実機と同じ規則で混ぜた音を WAV に書き出したい（動画の音・聞き比べ） | AudioMixdown（コマごとの withAudio / withSustained / withMixer の結果から波形を作る） |
 | 効果音の素材を録音なしで作りたい（波形合成） | SfxSynth（engine_tools。詳しくは [audio.md](audio.md)。実例: `templates/race-starter/src/render/SfxRender.flix`） |
 | 揺れる演出を作る（浮遊・風のなびき） | Sway（実例: `templates/tetris-starter/src/View.flix`） |
 | リソース JSON の形（型・必須・既定値）を公式スキーマ方言で宣言する | Schema（実例: `templates/race-starter/project.schema.json`） |
@@ -229,6 +231,9 @@
 ## 時間と動き
 
 - **AudioFade** — 進行度 t から音量をひとつ決める（フェードイン・アウト・クロスフェード）。
+- **AudioMixer** — 音の通り道。バス・振り分け・ダッキング・ローパス・クールダウン・スナップショットを State を持ち回す純関数で決める（App.withMixer と AudioMixdown が同じ step を呼ぶ）。
+- **AudioMixerDoc** — mixer.json の fail-open 読み込み（schema は docs/mixer.schema.json）。
+- **AudioMixdown** — AudioMixer を通した音を、ウィンドウ無しで 1 本の波形へ書き出す（実機と同じ規則: 1 つの名前は同時に 1 本・鳴り直すと頭から）。
 - **Calendar** — ゲームの中の時計と暦。実時間の秒を分・時・日・季節・年へ換算し、日またぎを合図する。
 - **Clock** — 経過時間を貯めて「一定間隔で合図」「残り時間を数える」を数値だけで扱う。
 - **Lifetime** — 一過性のもの（発火して時刻で進み寿命で消える）の「誕生時刻＋長さ」から経過・進行(0..1)・残り・生存を now の純関数で導く。得点ポップ等の表示期間や Fx.Burst の寿命に使う（now から導くので巻き戻しに強い）。

@@ -20,6 +20,7 @@ pub mod LwjglLayer {
     import org.lwjgl.opengl.GL20
     import org.lwjgl.openal.AL
     import org.lwjgl.openal.AL10
+    import org.lwjgl.openal.EXTEfx
     import org.lwjgl.openal.ALC
     import org.lwjgl.openal.ALC10
     import org.lwjgl.system.MemoryStack
@@ -310,6 +311,18 @@ pub mod LwjglLayer {
         + "（ここに修正指示を書いてください）\n"
 
     // ========================================================================
+    /// OpenAL のバッファ 1 つの長さ（秒）。バッファが外れている（0）・形が読めないときは 0.0
+    /// （0 のバッファへ問い合わせると AL のエラーになるので先に弾く）。
+    def bufferSeconds(buffer: Int32): Float64 \ IO =
+        if (buffer == 0) 0.0
+        else {
+            let size = AL10.alGetBufferi(buffer, AL10.AL_SIZE);
+            let bytesPerFrame = AL10.alGetBufferi(buffer, AL10.AL_CHANNELS) * AL10.alGetBufferi(buffer, AL10.AL_BITS) / 8;
+            let freq = AL10.alGetBufferi(buffer, AL10.AL_FREQUENCY);
+            if (bytesPerFrame <= 0 or freq <= 0) 0.0
+            else Int32.toFloat64(size / bytesPerFrame) / Int32.toFloat64(freq)
+        }
+
     // LWJGL Handler for GameEngine.Game / GameEngine.Audio effects
     // ========================================================================
 
@@ -846,6 +859,14 @@ pub mod LwjglLayer {
                 Ref.put(Set.insert(name, warned), missingSoundRef)
             }
         };
+        // ローパス（setLowpass）は EFX の lowpass フィルタを音源ごとに 1 つ作って付ける。
+        // EFX の無い環境では何もしない（音は素通しのまま）。フィルタは初めて削る音にだけ作る。
+        let hasEfx = ALC10.alcIsExtensionPresent(alDevice, "ALC_EXT_EFX");
+        let lowpassRef: Ref[Map[String, Int32], Static] = Ref.fresh(Static, Map.empty());
+        // 最後に送った gainHF（音源ごと）。同じ値なら AL へ送り直さない（毎フレーム呼ばれる口なので）。
+        let lastGainHFRef: Ref[Map[String, Float64], Static] = Ref.fresh(Static, Map.empty());
+        // 音の長さ（audioSeconds）の控え。reloadAudio で中身が替わったらその名前を捨てる。
+        let audioSecondsRef: Ref[Map[String, Float64], Static] = Ref.fresh(Static, Map.empty());
         // 注釈保存時のシャッター音（合成なのでゲーム側の音声マニフェストに依存しない）
         let shutterSource = buildShutterSource();
         println("  Audio ready");
@@ -1021,6 +1042,49 @@ pub mod LwjglLayer {
                 AL10.alListenerf(AL10.AL_GAIN, RenderUtil.f32(Float64.max(0.0, Float64.min(1.0, gain))));
                 k(())
             }
+            def setLowpass(name, gainHF, k) = {
+                let g = Float64.max(0.0, Float64.min(1.0, gainHF));
+                let unchanged = Map.get(name, Ref.get(lastGainHFRef)) == Some(g);
+                match Map.get(name, audioRegistry) {
+                    case Some(_) if hasEfx and unchanged => ()
+                    case Some(src) if hasEfx =>
+                        Ref.put(Map.insert(name, g, Ref.get(lastGainHFRef)), lastGainHFRef);
+                        let made = Map.get(name, Ref.get(lowpassRef));
+                        if (g >= 0.999) {
+                            // 素通しへ戻すときはフィルタを外す（削らない音は OpenAL の素の道を通す）。
+                            if (Option.isEmpty(made)) () else AL10.alSourcei(src, EXTEfx.AL_DIRECT_FILTER, EXTEfx.AL_FILTER_NULL)
+                        } else {
+                            let filter = match made {
+                                case Some(existing) => existing
+                                case None    =>
+                                    let fresh = EXTEfx.alGenFilters();
+                                    EXTEfx.alFilteri(fresh, EXTEfx.AL_FILTER_TYPE, EXTEfx.AL_FILTER_LOWPASS);
+                                    Ref.put(Map.insert(name, fresh, Ref.get(lowpassRef)), lowpassRef);
+                                    fresh
+                            };
+                            EXTEfx.alFilterf(filter, EXTEfx.AL_LOWPASS_GAINHF, RenderUtil.f32(g));
+                            // 音源はフィルタの値を写し取るので、値を変えるたびに付け直す。
+                            AL10.alSourcei(src, EXTEfx.AL_DIRECT_FILTER, filter)
+                        }
+                    case Some(_) => ()
+                    case None    => warnMissingSound("setLowpass", name)
+                };
+                k(())
+            }
+            def audioSeconds(name, k) = {
+                // 鳴らすたびに AL へ 5 回問い合わせないよう、名前ごとに覚える（reloadAudio で捨てる）。
+                let seconds = match Map.get(name, Ref.get(audioSecondsRef)) {
+                    case Some(known) => known
+                    case None        =>
+                        let measured = match Map.get(name, audioRegistry) {
+                            case Some(src) => bufferSeconds(AL10.alGetSourcei(src, AL10.AL_BUFFER))
+                            case None      => 0.0
+                        };
+                        Ref.put(Map.insert(name, measured, Ref.get(audioSecondsRef)), audioSecondsRef);
+                        measured
+                };
+                k(seconds)
+            }
             def reloadAudio(name, path, k) = {
                 // 音源（ソース）は作り直さず、載っているバッファだけ差し替える —
                 // ソース ID が変わらないので、registry も音量・ループの設定もそのまま生きる。
@@ -1037,6 +1101,7 @@ pub mod LwjglLayer {
                             AL10.alSourcei(src, AL10.AL_BUFFER, 0);
                             let buffer = RenderAudio.loadBuffer(path);
                             AL10.alSourcei(src, AL10.AL_BUFFER, buffer);
+                            Ref.put(Map.remove(name, Ref.get(audioSecondsRef)), audioSecondsRef);
                             if (old != 0) AL10.alDeleteBuffers(old) else ()
                         }
                 };
@@ -1435,6 +1500,7 @@ pub mod LwjglLayer {
         // OpenAL cleanup
         AL10.alDeleteSources(shutterSource);
         Map.forEach((_, src) -> AL10.alDeleteSources(src), audioRegistry);
+        Map.forEach((_, filter) -> EXTEfx.alDeleteFilters(filter), Ref.get(lowpassRef));
         ALC10.alcDestroyContext(alContext);
         discard ALC10.alcCloseDevice(alDevice);
 

@@ -397,6 +397,13 @@ pub mod GameEngine {
         /// 音源そのもの（音量・ループの設定・再生位置の器）は保たれ、中身だけが入れ替わる。
         /// 知らない名前・読めないファイルは何もしない（鳴っている音を殺さない）。
         def reloadAudio(name: String, path: String): Unit
+        /// 指定した名前のサウンドの高い音を削る（ローパス）。gainHF は高い音の残り具合 0.0〜1.0
+        /// （1.0 = 素通し）。OpenAL の EFX の lowpass と同じ意味で、5000Hz より上をこの倍率まで落とす。
+        /// EFX の無い環境では何もしない（音は素通しのまま鳴る）。AudioMixer のバスの lowpass がここへ届く。
+        def setLowpass(name: String, gainHF: Float64): Unit
+        /// 指定した名前のサウンドの長さ（秒）。知らない名前は 0.0。
+        /// AudioMixer が「効果音が鳴っている間」を知るために使う（ダッキングの長さ）。
+        def audioSeconds(name: String): Float64
     }
 
     // ========================================================================
