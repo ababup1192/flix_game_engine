@@ -1,4 +1,4 @@
-<!-- engine v0.34.0 / 生成: 2026-10-08 -->
+<!-- engine v0.34.0 / 生成: 2026-10-10 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine_world
@@ -1826,6 +1826,34 @@
   `pub def hitTest(scene: HitTestScene, point: Vec2.Vec2): Option[EntityId]`
 - UiWorld 全体を design 空間でレイアウトして最前面ヒットを引く（マウスの hover / click の入口）。
   `pub def hitTestUi(ui: UiStore.UiWorld, design: Vec2.Vec2, point: Vec2.Vec2): Option[EntityId]`
+- UiWorld 全体を design 空間でレイアウトした、面積のある entity の画面矩形
+  `pub def layoutRects(ui: UiStore.UiWorld, design: Vec2.Vec2): Map[EntityId, Rect2.Rect2]`
+
+## UiFocusNav — `engine_world/src/UiFocusNav.flix`
+- 選べる物 1 つ。key = 名前（ゲームが決める。"card:2" のような文字列でも enum でもよい）、
+  `pub type alias Target[k] = { key = k, rect = Rect2.Rect2 }`
+- いまのフォーカス。key = 乗っている物（無ければ None）、byKey = キーで動かしたか
+  `pub type alias Focus[k] = { key = Option[k], byKey = Bool }`
+- 1 フレームの入力。step = 矢印の向き（(-1|0|1, -1|0|1)。y は下が正）、
+  `pub type alias Input = { pointer = Vec2.Vec2, pointerMoved = Bool, step = (Int32, Int32), tab = Int32 }`
+- 何にも乗っていないフォーカス。
+  `pub def empty(): Focus[k]`
+- キーで置いたフォーカス（ゲーム側のカーソルが指している物を写すとき）。
+  `pub def focusByKey(key: k): Focus[k]`
+- マウスで乗ったフォーカス。
+  `pub def focusByPointer(key: k): Focus[k]`
+- 何も押していない入力（マウスは動いていない）。ここからレコード更新で 1 つだけ足して使う。
+  `pub def noInput(): Input`
+- 入力を当てて次のフォーカスを返す。最後に触った入力が勝つ:
+  `pub def update(input: Input, targets: List[Target[k]], focus: Focus[k]): Focus[k] with Eq[k]`
+- 点の下にある物の名前（列の前にある物ほど先に当たる）。
+  `pub def hitTest(point: Vec2.Vec2, targets: List[Target[k]]): Option[k]`
+- フォーカスしている物の枠（乗っていない・列に無いなら None）。
+  `pub def rectOf(focus: Focus[k], targets: List[Target[k]]): Option[Rect2.Rect2] with Eq[k]`
+- キーで動かしたフォーカスか（カーソルの枠を出すかの判定。マウスで乗った物には枠を出さない）。
+  `pub def isFocusVisible(focus: Focus[k]): Bool`
+- UiDoc / UiStore で組んだメニュー（listPath の項目列 = UiMenu.itemIds）を Target の列にする。
+  `pub def targetsOfUi(listPath: String, ui: UiStore.UiWorld, design: Vec2.Vec2): List[Target[String]]`
 
 ## UiHierarchy — `engine_world/src/UiHierarchy.flix`
 - parent を親に持つ entity を order 昇順で返す。
@@ -2051,6 +2079,18 @@
   `pub def focusOn(path: String, ui: UiWorld): UiWorld`
 - フォーカス scope を解除する。
   `pub def clearFocus(ui: UiWorld): UiWorld`
+
+## UiTooltip — `engine_world/src/UiTooltip.flix`
+- 窓を出す向き（見ている物から見て）。Over は脇ではなく見ている物の上に重ねる
+  `pub enum Side with Eq, ToString { case Right case Left case Bottom case Top case Over }`
+- 置き場所の注文。anchor = 見ている物の枠（マウスの指なら大きさ 0 の枠）、size = 窓の大きさ、
+  `pub type alias Request = { anchor = Rect2.Rect2, size = Vec2.Vec2, bounds = Rect2.Rect2, avoid = List[Rect2.Rect2], gap = Float64, sides = List[Side] }`
+- 窓の左上と大きさ（Request の決まりで選んだ 1 か所）。
+  `pub def computePlacement(req: Request): Rect2.Rect2`
+- 既定の向きの順（右 → 左 → 下 → 上。横書きの画面で、読んでいる物の続きに出る順）。
+  `pub def defaultSides(): List[Side]`
+- 画面の真ん中から遠ざかる向きを先に試す順（左半分の物は右 → 左、右半分の物は左 → 右。
+  `pub def sidesAwayFromCenter(anchor: Rect2.Rect2, bounds: Rect2.Rect2): List[Side]`
 
 ## UiTypewriter — `engine_world/src/UiTypewriter.flix`
 - 文字送りの進み具合。text = 表示したい全文、shown = 見えている文字数（dt を足し込むため小数で持つ）。
