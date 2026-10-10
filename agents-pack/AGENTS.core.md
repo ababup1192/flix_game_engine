@@ -85,8 +85,6 @@
   `make reference-check`（gallery/ と reference/ のバイト比較）/ `make reference-update`
 - `debug/` のコンタクトシート（`make gallery-prologue` の all.png、`make gallery-sounds` の
   sounds.png・BGM があれば music.png）で**目と耳で確かめて**批評する。
-- `make test`・`make render-all`・gallery 系のように時間のかかる物はバックグラウンドで回し、
-  終わりの通知で結果を読む（長いタイムアウトで画面を止めて待たない）。
 - 口の一覧は `make help`。共通の口の実体はエンジンの `mk/game.mk`（ゲームの Makefile が include）。
   **共通ターゲットをゲームの Makefile へ写さない**（`upgrade-game` は Makefile を運ばないので、
   写すとエンジンの修正が届かない）。ゲーム側に置くのは `SHOTS` / `PALETTE` / `RENDER_NOTE` と固有の口だけ。
