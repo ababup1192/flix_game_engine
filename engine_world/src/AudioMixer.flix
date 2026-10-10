@@ -61,7 +61,8 @@ pub mod AudioMixer {
     /// busyUntil はバスごとの「いつまで鳴っているか」、ducks はダッキングごとの今の倍率
     /// （キーは duckKeyOf）、voices は鳴っている一発の音の名前と鳴り終わる時刻
     /// （ダッキング中に音量を流し直すため）、levels はバスごとの今の値と移る先（Level）、
-    /// sustainedBuses はこのフレームに鳴り続ける音の宣言があったバス（宣言が続く間は dt によらず「鳴っている」）。
+    /// sustainedBuses はこのフレームに鳴り続ける音の宣言があったバス（宣言が続く間は dt によらず「鳴っている」）、
+    /// busDucks はバスごとのダッキングの倍率の積（音量を読むたびに掛け直さないよう、寄せたときに 1 度だけ作る）。
     pub type alias State = {
         now = Float64,
         lastPlay = Map[String, Float64],
@@ -69,7 +70,8 @@ pub mod AudioMixer {
         ducks = Map[String, Float64],
         voices = Map[String, Float64],
         levels = Map[String, Level],
-        sustainedBuses = Set[String]
+        sustainedBuses = Set[String],
+        busDucks = Map[String, Float64]
     }
 
     /// バス 1 本の今の値と、移っている先。移り始めに「1 秒あたりの速さ」を決めて覚えるので、
@@ -88,7 +90,7 @@ pub mod AudioMixer {
     /// 鳴らし始める前の状態。
     pub def initial(): State =
         { now = 0.0, lastPlay = Map.empty(), busyUntil = Map.empty(), ducks = Map.empty(),
-          voices = Map.empty(), levels = Map.empty(), sustainedBuses = Set.empty() }
+          voices = Map.empty(), levels = Map.empty(), sustainedBuses = Set.empty(), busDucks = Map.empty() }
 
     // ========================================================================
     // 振り分けと値の読み出し
@@ -96,12 +98,14 @@ pub mod AudioMixer {
 
     /// 音の名前が流れるバスの名前（routes の prefixes の一番長い一致。無ければ defaultBus）。
     pub def busOf(mixer: Mixer, name: String): String =
-        mixer#routes
-            |> List.flatMap(r -> List.map(p -> (p, r#bus), r#prefixes))
-            |> List.filter(pair -> String.startsWith(prefix = fst(pair), name))
-            |> List.maximumBy((a, b) -> String.length(fst(a)) <=> String.length(fst(b)))
-            |> Option.map(snd)
-            |> Option.getWithDefault(mixer#defaultBus)
+        // 毎フレーム音の数だけ呼ばれるので、途中のリストを作らずに一番長い一致を数える。
+        let (_, bus) = mixer#routes |> List.foldLeft((best, r) ->
+            r#prefixes |> List.foldLeft((acc, p) -> {
+                let (len, _) = acc;
+                let n = String.length(p);
+                if (n > len and String.startsWith(prefix = p, name)) (n, r#bus) else acc
+            }, best), (-1, mixer#defaultBus));
+        bus
 
     /// バスの宣言（Doc に無いバスは音量 1・素通し）。
     pub def getBus(mixer: Mixer, bus: String): Bus =
@@ -119,7 +123,7 @@ pub mod AudioMixer {
 
     /// バスの音量の倍率 = バスの今の音量 × そのバスに掛かっているダッキング。
     pub def busGainOf(mixer: Mixer, state: State, bus: String): Float64 =
-        fst(levelOf(mixer, state, bus)) * duckGainOf(mixer, state, bus)
+        fst(levelOf(mixer, state, bus)) * duckGainOf(state, bus)
 
     /// バスの今の高い音の残り具合（スナップショットへ移る途中なら途中の値）。
     pub def busLowpassGainHFOf(mixer: Mixer, state: State, bus: String): Float64 =
@@ -137,10 +141,8 @@ pub mod AudioMixer {
         (clamp01(b#volume), clamp01(b#lowpassGainHF))
 
     /// バスに掛かっているダッキングの倍率（同じバスへ何本掛かっていても掛け算）。
-    pub def duckGainOf(mixer: Mixer, state: State, bus: String): Float64 =
-        mixer#ducks
-            |> List.filter(d -> d#bus == bus)
-            |> List.foldLeft((acc, d) -> acc * (Map.get(duckKeyOf(d), state#ducks) |> Option.getWithDefault(1.0)), 1.0)
+    pub def duckGainOf(state: State, bus: String): Float64 =
+        Map.get(bus, state#busDucks) |> Option.getWithDefault(1.0)
 
     /// ダッキングの状態のキー（下げるバスと、下げさせるバスの組）。Doc の ducks の行の並びを
     /// 入れ替えても、by の中の並びを入れ替えても、同じダッキングの倍率が引き継がれる。
@@ -148,11 +150,12 @@ pub mod AudioMixer {
 
     /// 名前に掛かるクールダウンの秒（cooldowns の prefix の一番長い一致。無ければ 0 = 間引かない）。
     pub def cooldownOf(mixer: Mixer, name: String): Float64 =
-        mixer#cooldowns
-            |> List.filter(c -> String.startsWith(prefix = c#prefix, name))
-            |> List.maximumBy((a, b) -> String.length(a#prefix) <=> String.length(b#prefix))
-            |> Option.map(c -> c#seconds)
-            |> Option.getWithDefault(0.0)
+        let (_, seconds) = mixer#cooldowns |> List.foldLeft((acc, c) -> {
+            let (len, _) = acc;
+            let n = String.length(c#prefix);
+            if (n > len and String.startsWith(prefix = c#prefix, name)) (n, c#seconds) else acc
+        }, (-1, 0.0));
+        seconds
 
     // ========================================================================
     // 場面ごとの差し替え（Doc の値の上に、その場面だけ上書きする）
@@ -204,12 +207,14 @@ pub mod AudioMixer {
     /// ダッキングの倍率を目標へ寄せる（鳴っているかは、このフレームの鳴り始めと続く音の宣言まで含めて見る）。
     def stepDucks(mixer: Mixer, dt: Float64, state: State): State =
         let elapsed = Float64.max(0.0, dt);
-        let ducks = mixer#ducks |> List.foldLeft((acc, d) -> {
+        let (ducks, busDucks) = mixer#ducks |> List.foldLeft((acc, d) -> {
+            let (byKey, byBus) = acc;
             let key = duckKeyOf(d);
             let current = Map.get(key, state#ducks) |> Option.getWithDefault(1.0);
-            Map.insert(key, stepDuck(d, isBusy(d, state#now, state), elapsed, current), acc)
-        }, Map.empty());
-        { ducks = ducks | state }
+            let next = stepDuck(d, isBusy(d, state#now, state), elapsed, current);
+            (Map.insert(key, next, byKey), Map.insertWith((a, b) -> a * b, d#bus, next, byBus))
+        }, (Map.empty(), Map.empty()));
+        { ducks = ducks, busDucks = busDucks | state }
 
     /// 時計を dt 秒進め、バスの値を移る先へ寄せ、鳴り終わった一発の音を voices から外す。
     def advance(mixer: Mixer, dt: Float64, state: State): State =
@@ -217,12 +222,12 @@ pub mod AudioMixer {
         let now = state#now + elapsed;
         // routes・ducks・defaultBus に出てくるバスも最初から値を追う（スナップショットで初めて
         // buses に載ったバスが、その拍に新しい値へ飛ばないように）。
-        let buses = List.flatten(
-                List.map(b -> b#name, mixer#buses) :: List.map(r -> r#bus, mixer#routes) ::
-                List.map(d -> d#bus, mixer#ducks) :: (mixer#defaultBus :: Nil) ::
-                (Map.keysOf(state#levels) |> Set.toList) :: Nil)
-            |> List.distinct;
-        let levels = buses |> List.foldLeft((acc, bus) ->
+        let named = Map.keysOf(state#levels)
+            |> Set.insert(mixer#defaultBus)
+            |> (s -> List.foldLeft((acc, b) -> Set.insert(b#name, acc), s, mixer#buses))
+            |> (s -> List.foldLeft((acc, r) -> Set.insert(r#bus, acc), s, mixer#routes))
+            |> (s -> List.foldLeft((acc, d) -> Set.insert(d#bus, acc), s, mixer#ducks));
+        let levels = named |> Set.foldLeft((acc, bus) ->
             Map.insert(bus, stepLevel(targetOf(mixer, bus), mixer#transitionSeconds, elapsed, Map.get(bus, state#levels)), acc),
             Map.empty());
         { now = now, levels = levels,
@@ -282,6 +287,8 @@ pub mod AudioMixer {
         let (tv, tl) = target;
         match prev {
             case None    => { volume = tv, gainHF = tl, targetVolume = tv, targetGainHF = tl, volumeSpeed = 0.0, gainHFSpeed = 0.0 }
+            // 着いていて移る先も変わらなければ、作り直さずにそのまま返す（毎フレームの割り当てを減らす）。
+            case Some(p) if p#volume == tv and p#gainHF == tl and p#targetVolume == tv and p#targetGainHF == tl => p
             case Some(p) =>
                 let speedOf = (current, newTarget, oldTarget, oldSpeed) ->
                     if (newTarget != oldTarget) (if (seconds <= 0.0) 1000000.0 else Float64.abs(newTarget - current) / seconds)
