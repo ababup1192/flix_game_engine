@@ -45,7 +45,7 @@ pub mod TimeScale {
     /// 等速へ戻り始める直前の速さ（長さのある最後の区間の速さ。区間が無ければ 1）。
     def rampFrom(p: Plan): Float64 =
         def loop(segs, last) = match segs {
-            case seg :: rest => loop(rest, if (seg#dur > 0.0) seg#scale else last)
+            case seg :: rest => loop(rest, if (seg#dur > 0.0) Float64.max(minScale(), seg#scale) else last)
             case Nil         => last
         };
         loop(p#segments, 1.0)
@@ -56,7 +56,8 @@ pub mod TimeScale {
     pub def gameAt(p: Plan, r: Float64): Float64 =
         def part(start, len) = Num.clamp(0.0, len, r - start);
         def loop(segs, start, sum) = match segs {
-            case seg :: rest => loop(rest, start + seg#dur, sum + part(start, seg#dur) * seg#scale)
+            // 区間を segment() を通さずに組んでも、速さの下限はここで効かせる。
+            case seg :: rest => loop(rest, start + seg#dur, sum + part(start, seg#dur) * Float64.max(minScale(), seg#scale))
             case Nil         => sum
         };
         let held = heldOf(p);
@@ -96,5 +97,6 @@ pub mod TimeScale {
 
     /// 全部の秒を k 倍する（「はやさ」の設定）。速さ（scale）は変えない。
     pub def scaled(k: Float64, p: Plan): Plan =
-        { segments = List.map(s -> { dur = s#dur * k | s }, p#segments), ramp = p#ramp * k }
+        let f = Float64.max(0.0, k);
+        { segments = List.map(s -> { dur = s#dur * f | s }, p#segments), ramp = p#ramp * f }
 }

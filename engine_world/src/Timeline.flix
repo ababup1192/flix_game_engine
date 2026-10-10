@@ -52,7 +52,8 @@ pub mod Timeline {
         steps |> List.foldLeft((acc, step) -> {
             let (at, out) = acc;
             let (tag, dur) = step;
-            (at + dur, clip(tag, at, dur) :: out)
+            let c = clip(tag, at, dur);
+            (at + c#dur, c :: out)
         }, (0.0, Nil)) |> snd |> List.reverse
 
     /// 全部のクリップが終わる時刻（空なら 0）。演出の全体の秒・決定キーで「最後まで飛ばす」先。

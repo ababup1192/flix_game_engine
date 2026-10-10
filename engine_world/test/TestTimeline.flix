@@ -64,4 +64,13 @@ mod TestTimeline {
         let tags = (t0, t1) -> Timeline.startedBetween(t0, t1, clips) |> List.map(c -> c#tag);
         Assert.assertEq(expected = ("a" :: Nil, Nil, "b" :: Nil, Nil),
             (tags(0.9, 1.0), tags(1.0, 1.1), tags(1.5, 2.5), tags(2.5, 1.5)))
+
+    /// 頭（start = 0）のクリップは、時計を負から回したときだけ拾う。空の列の全体の秒は 0。
+    @Test
+    def testStartedBetweenAtZeroNeedsANegativeStart(): Unit \ Assert =
+        let clips = Timeline.clip("head", 0.0, 1.0) :: Nil;
+        Assert.assertEq(expected = (0, 1, 0.0),
+            (List.length(Timeline.startedBetween(0.0, 0.1, clips)),
+             List.length(Timeline.startedBetween(-1.0, 0.1, clips)),
+             Timeline.durationOf((Nil: List[Timeline.Clip[String]]))))
 }

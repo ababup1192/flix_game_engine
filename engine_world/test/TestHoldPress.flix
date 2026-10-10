@@ -37,4 +37,11 @@ mod TestHoldPress {
         let (held, _) = press(3, HoldPress.empty());
         let (released, _) = HoldPress.step(cfg(), false, true, 0.1, held);
         Assert.assertEq(expected = true, Float64.abs(released#charge - 0.1) < 0.000001)
+
+    /// 秒が 0 以下なら、押した最初のフレームで合図が出る（ゲージは 0 のまま）。
+    @Test
+    def testZeroSecondsFiresAtOnce(): Unit \ Assert =
+        let c = { seconds = 0.0, drain = 2.0 };
+        let (s, f) = HoldPress.step(c, true, true, 0.016, HoldPress.empty());
+        Assert.assertEq(expected = (true, 0.0), (f, HoldPress.progress(c, s)))
 }

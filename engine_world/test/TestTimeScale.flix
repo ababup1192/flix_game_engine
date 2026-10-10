@@ -33,4 +33,17 @@ mod TestTimeScale {
         let age = List.range(0, 90) |> List.foldLeft((acc, _i) -> acc + TimeScale.gameDt(plan(), acc, dt), -0.1);
         // 実秒 1.5 − 0.1（合図の前の等速）を過ぎた時点。
         Assert.assertEq(expected = true, near(age, TimeScale.gameAt(plan(), 1.4)))
+
+    /// 区間を手で組んで速さを 0 にしても、時計は止まったままにならない（下限が効く）。
+    @Test
+    def testHandMadeZeroScaleStillMoves(): Unit \ Assert =
+        let p = { segments = { dur = 0.2, scale = 0.0 } :: Nil, ramp = 0.0 };
+        let age = List.range(0, 30) |> List.foldLeft((acc, _i) -> acc + TimeScale.gameDt(p, acc, 1.0 / 60.0), 0.0);
+        Assert.assertEq(expected = true, age > 0.1)
+
+    /// 区間の無い計画は等速（dt のまま）。
+    @Test
+    def testEmptyPlanRunsAtFullSpeed(): Unit \ Assert =
+        Assert.assertEq(expected = true,
+            near(TimeScale.gameDt({ segments = Nil, ramp = 0.0 }, 0.5, 0.25), 0.25))
 }
