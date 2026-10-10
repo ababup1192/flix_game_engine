@@ -1,6 +1,6 @@
 ---
 name: critique-render
-description: "描き出し系ターゲット（make render SHOT=<場面名> / make render-all 等）を実行し、debug/gallery の PNG・WAV 可視化（sounds.png / music.png）を目視・目聴して、設計原則と絵の下限 5 性質に照らした批評レポートを返す。絵や音を作った・直した直後、報告の前の自己批評として、「見た目はどう？」「音はどう？」と聞かれたとき、スナップショットを更新する前に使う。"
+description: "描き出し（make render SHOT=… / gallery-sounds 等）の PNG・波形を目視・目聴して、設計原則と絵の下限 5 性質で批評する。絵や音を作った・直した直後の報告の前、スナップショットを更新する前、「見た目はどう？」と聞かれたときに使う。"
 sync: 2026-08-19
 ---
 
