@@ -163,6 +163,10 @@ App.make(initialWorld)
   バスを通らないので、ダッキングもスナップショットも効かない（繋いだゲームでは一発の音の音量もミキサーが決める）。
 - `AudioFade` との分担: フェードは宣言の `volume` で作り、ミキサーはその上に掛け算で効く（宣言 × バス × ダッキング）。
 - `withMixer` を繋がないゲームは今までどおり（名前のまま鳴る）。
+- **互換の注意（0.34 の次の版から）**: `GameEngine.Audio` effect に `setLowpass(name, gainHF)` と
+  `audioSeconds(name)` が増えた。エンジンのハンドラ（LwjglLayer・RemoteDebug）は対応済みだが、
+  ゲームやテストが自前で `GameEngine.Audio` のハンドラを書いている場合は、この 2 つを足さないと
+  コンパイルが通らない（偽物なら `def setLowpass(_n, _g, k) = k()` / `def audioSeconds(_n, k) = k(0.0)` でよい）。
 - 実機と同じ規則で混ぜた音を WAV にしたいとき（動画の音・書き換え前後の聞き比べ）は `AudioMixdown.mixdown`。
   コマごとの `{ plays, sustained, mixer }` を並べれば、App と同じ `AudioMixer.step` を通して波形になる。
 

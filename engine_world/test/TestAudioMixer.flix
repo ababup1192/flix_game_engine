@@ -64,8 +64,9 @@ mod TestAudioMixer {
     @Test
     def testSnapshotMovesOverTransitionSeconds(): Unit \ Assert =
         let s0 = advanceFrames(talkMixer(), 1, Nil, Nil, AudioMixer.initial());
-        let s1 = snd(AudioMixer.step(AudioMixer.withSnapshot("talk", talkMixer()), half, 0.125, Nil, Nil, s0));
-        Assert.assertEq(expected = 0.875, AudioMixer.gainOf(talkMixer(), s1, "bgmFight"))
+        let talk = AudioMixer.withSnapshot("talk", talkMixer());
+        let s1 = snd(AudioMixer.step(talk, half, 0.125, Nil, Nil, s0));
+        Assert.assertEq(expected = 0.875, AudioMixer.gainOf(talk, s1, "bgmFight"))
 
     /// スナップショットのローパスも移り切ればその値になる。
     @Test
@@ -73,6 +74,49 @@ mod TestAudioMixer {
         let talk = AudioMixer.withSnapshot("talk", talkMixer());
         let s = advanceFrames(talk, 40, Nil, Nil, advanceFrames(talkMixer(), 1, Nil, Nil, AudioMixer.initial()));
         Assert.assertEq(expected = 0.2, AudioMixer.lowpassGainHFOf(talk, s, "bgmFight"))
+
+    /// 効果音が鳴ったそのフレームから曲は下がり始める（1 フレーム遅れない）。
+    @Test
+    def testDuckStartsOnTheSameFrame(): Unit \ Assert =
+        let (_, s) = AudioMixer.step(mixer(), half, dt(), "slash" :: Nil, Nil, AudioMixer.initial());
+        Assert.assertTrue(AudioMixer.gainOf(mixer(), s, "bgmFight") < 1.0)
+
+    /// 鳴り続ける音の宣言が続く間は、フレームの長さが揺れても曲は下がったまま。
+    @Test
+    def testSustainedDuckSurvivesUnevenFrames(): Unit \ Assert =
+        let s = List.range(0, 30) |> List.foldLeft((acc, i) -> {
+            let frame = if (Int32.modulo(i, 2) == 0) 0.008 else 0.05;
+            snd(AudioMixer.step(mixer(), half, frame, Nil, "rain" :: Nil, acc))
+        }, AudioMixer.initial());
+        Assert.assertEq(expected = duck()#depth, AudioMixer.gainOf(mixer(), s, "bgmFight"))
+
+    /// holdSeconds の間は、鳴り終わっても曲は下がったまま。
+    @Test
+    def testHoldKeepsTheDuck(): Unit \ Assert =
+        let held = { ducks = { holdSeconds = 1.0 | duck() } :: Nil | mixer() };
+        let s = advanceFrames(held, 30, Nil, Nil, advanceFrames(held, 20, Nil, "rain" :: Nil, AudioMixer.initial()));
+        Assert.assertEq(expected = duck()#depth, AudioMixer.gainOf(held, s, "bgmFight"))
+
+    // ── AudioMixdown（実機と同じ規則で書き出す）──
+    // 1 秒 10 サンプル・10fps で、1 コマ = 1 サンプルにして並びを読む。
+
+    def mixFrame(plays: List[String], sustained: List[String]): AudioMixdown.MixFrame =
+        { plays = plays, sustained = List.map(n -> { name = n, volume = 1.0, pitch = 1.0 }, sustained),
+          mixer = AudioMixer.defaults() }
+
+    /// 同じ名前が鳴り直すと頭から（重ねて足さない）: 振れ幅は 1 本ぶんを超えない。
+    @Test
+    def testMixdownRestartsInsteadOfStacking(): Unit \ Assert =
+        let sounds = Map#{"tick" => Vector#{1.0, 1.0, 1.0}};
+        let out = AudioMixdown.mixdown(10, 10.0, sounds, mixFrame("tick" :: Nil, Nil) :: mixFrame("tick" :: Nil, Nil) :: mixFrame(Nil, Nil) :: mixFrame(Nil, Nil) :: mixFrame(Nil, Nil) :: Nil);
+        Assert.assertEq(expected = Vector#{1.0, 1.0, 1.0, 1.0, 0.0}, out)
+
+    /// 鳴り続ける音は宣言が消えたコマで止まる。
+    @Test
+    def testMixdownStopsWhenTheDeclarationEnds(): Unit \ Assert =
+        let sounds = Map#{"hum" => Vector#{0.5}};
+        let out = AudioMixdown.mixdown(10, 10.0, sounds, mixFrame(Nil, "hum" :: Nil) :: mixFrame(Nil, "hum" :: Nil) :: mixFrame(Nil, Nil) :: Nil);
+        Assert.assertEq(expected = Vector#{0.5, 0.5, 0.0}, out)
 
     /// 鳴り続ける音が止まれば、曲は releaseSeconds で元へ戻る。
     @Test

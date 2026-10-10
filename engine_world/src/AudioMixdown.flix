@@ -18,11 +18,11 @@ pub mod AudioMixdown {
     import java.nio.file.Paths
 
     /// 1 コマぶんの音の宣言。
-    pub type alias Frame = { plays = List[String], sustained = List[App.Sustain], mixer = AudioMixer.Mixer }
+    pub type alias MixFrame = { plays = List[String], sustained = List[App.Sustain], mixer = AudioMixer.Mixer }
 
     /// コマの並びを sampleRate の波形へ書き出す。sounds に無い名前は鳴らない（実機と同じ）。
     pub def mixdown(sampleRate: Int32, fps: Float64, sounds: Map[String, Vector[Float64]],
-                    frames: List[Frame]): Vector[Float64] = region rc {
+                    frames: List[MixFrame]): Vector[Float64] = region rc {
         let rate = Int32.toFloat64(sampleRate);
         let count = List.length(frames);
         let total = Float64.tryToInt32(Float64.ceil(Int32.toFloat64(count) / fps * rate)) |> Option.getWithDefault(0);

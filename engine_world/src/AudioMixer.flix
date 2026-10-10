@@ -60,14 +60,16 @@ pub mod AudioMixer {
     /// 持ち回す状態。now は経過秒、lastPlay は名前ごとの最後の鳴り始め、
     /// busyUntil はバスごとの「いつまで鳴っているか」、ducks はダッキングごとの今の倍率
     /// （キーは duckKeyOf）、voices は鳴っている一発の音の名前と鳴り終わる時刻
-    /// （ダッキング中に音量を流し直すため）、levels はバスごとの今の値と移る先（Level）。
+    /// （ダッキング中に音量を流し直すため）、levels はバスごとの今の値と移る先（Level）、
+    /// sustainedBuses はこのフレームに鳴り続ける音の宣言があったバス（宣言が続く間は dt によらず「鳴っている」）。
     pub type alias State = {
         now = Float64,
         lastPlay = Map[String, Float64],
         busyUntil = Map[String, Float64],
         ducks = Map[String, Float64],
         voices = Map[String, Float64],
-        levels = Map[String, Level]
+        levels = Map[String, Level],
+        sustainedBuses = Set[String]
     }
 
     /// バス 1 本の今の値と、移っている先。移り始めに「1 秒あたりの速さ」を決めて覚えるので、
@@ -86,7 +88,7 @@ pub mod AudioMixer {
     /// 鳴らし始める前の状態。
     pub def initial(): State =
         { now = 0.0, lastPlay = Map.empty(), busyUntil = Map.empty(), ducks = Map.empty(),
-          voices = Map.empty(), levels = Map.empty() }
+          voices = Map.empty(), levels = Map.empty(), sustainedBuses = Set.empty() }
 
     // ========================================================================
     // 振り分けと値の読み出し
@@ -189,24 +191,30 @@ pub mod AudioMixer {
     // 1 フレームの進め方（App と AudioMixdown が同じ順で呼ぶ）
     // ========================================================================
 
-    /// 1 フレームぶんを決まった順で進める: 時計・ダッキング・バスの値を進め（advance）→
-    /// 一発の音をクールダウンに通し（applyCooldowns）→ 鳴り続けている音のバスを
-    /// 「次のフレームまで鳴っている」と記す（markSustainedBusy）。返すのは実際に鳴らす一発の音の名前。
+    /// 1 フレームぶんを決まった順で進める: 時計とバスの値を進め（advance）→ 一発の音をクールダウンに
+    /// 通し（applyCooldowns）→ 鳴り続けている音のバスを「このフレームに鳴っている」と記し
+    /// （markSustainedBusy）→ ダッキングを寄せる（stepDucks）。鳴り始めを記してから寄せるので、
+    /// 効果音が鳴ったそのフレームから曲が下がり始める。返すのは実際に鳴らす一発の音の名前。
     /// lengthOf は音の長さ（秒）—— ダッキングが「鳴っている間」を知るのに使う。
     pub def step(mixer: Mixer, lengthOf: String -> Float64 \ ef, dt: Float64,
                  plays: List[String], sustained: List[String], state: State): (List[String], State) \ ef =
         let (allowed, played) = applyCooldowns(mixer, lengthOf, plays, advance(mixer, dt, state));
-        (allowed, markSustainedBusy(mixer, dt, sustained, played))
+        (allowed, stepDucks(mixer, dt, markSustainedBusy(mixer, sustained, played)))
 
-    /// 時計を dt 秒進め、ダッキングの倍率とバスの値を目標へ寄せ、鳴り終わった一発の音を voices から外す。
-    pub def advance(mixer: Mixer, dt: Float64, state: State): State =
+    /// ダッキングの倍率を目標へ寄せる（鳴っているかは、このフレームの鳴り始めと続く音の宣言まで含めて見る）。
+    def stepDucks(mixer: Mixer, dt: Float64, state: State): State =
         let elapsed = Float64.max(0.0, dt);
-        let now = state#now + elapsed;
         let ducks = mixer#ducks |> List.foldLeft((acc, d) -> {
             let key = duckKeyOf(d);
             let current = Map.get(key, state#ducks) |> Option.getWithDefault(1.0);
-            Map.insert(key, stepDuck(d, isBusy(d, now, state), elapsed, current), acc)
+            Map.insert(key, stepDuck(d, isBusy(d, state#now, state), elapsed, current), acc)
         }, Map.empty());
+        { ducks = ducks | state }
+
+    /// 時計を dt 秒進め、バスの値を移る先へ寄せ、鳴り終わった一発の音を voices から外す。
+    def advance(mixer: Mixer, dt: Float64, state: State): State =
+        let elapsed = Float64.max(0.0, dt);
+        let now = state#now + elapsed;
         // routes・ducks・defaultBus に出てくるバスも最初から値を追う（スナップショットで初めて
         // buses に載ったバスが、その拍に新しい値へ飛ばないように）。
         let buses = List.flatten(
@@ -217,7 +225,7 @@ pub mod AudioMixer {
         let levels = buses |> List.foldLeft((acc, bus) ->
             Map.insert(bus, stepLevel(targetOf(mixer, bus), mixer#transitionSeconds, elapsed, Map.get(bus, state#levels)), acc),
             Map.empty());
-        { now = now, ducks = ducks, levels = levels,
+        { now = now, levels = levels,
           voices = Map.filter(endsAt -> endsAt > now, state#voices) | state }
 
     /// このフレームに鳴らしたい一発の音をクールダウンに通す。返すのは「実際に鳴らす名前」と、
@@ -241,10 +249,12 @@ pub mod AudioMixer {
         }, (Nil, state));
         (List.reverse(rev), next)
 
-    /// 鳴り続けている音（withSustained の宣言）のバスを「次のフレームまで鳴っている」と記す
-    /// （by に入ったバスの続く音 —— 声のループや足音 —— でも BGM が下がる）。
-    pub def markSustainedBusy(mixer: Mixer, dt: Float64, names: List[String], state: State): State =
-        names |> List.foldLeft((s, name) -> markBusy(busOf(mixer, name), s#now + Float64.max(0.0, dt), s), state)
+    /// 鳴り続けている音（withSustained の宣言）のバスを「このフレームに鳴っている」と記す
+    /// （by に入ったバスの続く音 —— 声のループや足音 —— でも BGM が下がる）。宣言が続く間は
+    /// フレームの長さ（dt）によらず鳴っている扱いで、宣言が消えたら最後に宣言した時刻から holdSeconds を数える。
+    def markSustainedBusy(mixer: Mixer, names: List[String], state: State): State =
+        let buses = names |> List.map(name -> busOf(mixer, name)) |> List.toSet;
+        buses |> Set.foldLeft((s, bus) -> markBusy(bus, s#now, s), { sustainedBuses = buses | state })
 
     def markBusy(bus: String, until: Float64, state: State): State =
         let was = Map.get(bus, state#busyUntil) |> Option.getWithDefault(-1.0);
@@ -252,10 +262,10 @@ pub mod AudioMixer {
 
     /// 鳴り終わりの時刻 + holdSeconds までを「鳴っている」に数える（ちょうどの拍も含める）。
     def isBusy(d: Duck, now: Float64, state: State): Bool =
-        d#by |> List.exists(bus -> match Map.get(bus, state#busyUntil) {
+        d#by |> List.exists(bus -> Set.memberOf(bus, state#sustainedBuses) or (match Map.get(bus, state#busyUntil) {
             case Some(until) => now <= until + d#holdSeconds
             case None        => false
-        })
+        }))
 
     /// 倍率を目標（鳴っている間は depth・それ以外は 1）へ一定の速さで寄せる。
     /// 速さは「下げ幅を attack / release 秒で渡り切る」速さ（0 秒なら一気に）。

@@ -32,10 +32,10 @@
         "properties": {
           "bus": { "type": "string", "label": "下げるバス" },
           "by": { "type": "array", "items": { "type": "string" }, "label": "下げさせるバス" },
-          "depth": { "type": "number", "minimum": 0, "maximum": 1, "label": "下げた後の倍率", "description": "0.6 なら 6 割（約 −4.4dB）まで下げる" },
-          "attackSeconds": { "type": "number", "minimum": 0, "label": "下がる秒" },
-          "holdSeconds": { "type": "number", "minimum": 0, "label": "待つ秒", "description": "鳴り終わってから戻り始めるまで" },
-          "releaseSeconds": { "type": "number", "minimum": 0, "label": "戻る秒" }
+          "depth": { "type": "number", "minimum": 0, "maximum": 1, "label": "下げた後の倍率", "description": "0.6 なら 6 割（約 −4.4dB）まで下げる。既定 1.0（下げない）" },
+          "attackSeconds": { "type": "number", "minimum": 0, "label": "下がる秒", "description": "既定 0.05" },
+          "holdSeconds": { "type": "number", "minimum": 0, "label": "待つ秒", "description": "鳴り終わってから戻り始めるまで。既定 0" },
+          "releaseSeconds": { "type": "number", "minimum": 0, "label": "戻る秒", "description": "既定 0.3" }
         },
         "required": ["bus", "by"]
       }
