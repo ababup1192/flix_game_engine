@@ -41,13 +41,28 @@ pub mod PaletteExport {
         Util.Json.toPrettyString(2, JObject(top)) + "\n"
 
     /// 色票 Doc を path へ書き出す。親ディレクトリは作らない（`Fs.WriteFile` の流儀）。
+    /// 中身が今のファイルと同じなら書かない。
+    // WhyNot: 同じ中身でも書き直すと更新時刻だけが進み、Studio が「アセットが変わった」と
+    // 見て描き出しを起こす。描き出しの前段がこの書き出しなので、描き出すたびに次の
+    // 描き出しを呼ぶ輪になる。
     pub def write(path: String, spec: { note = String, colors = Map[String, Color] }):
-            Result[String, Unit] \ Fs.FileWrite =
-        let result = run {
-            Fs.WriteFile.write({ str = build(spec) }, path)
-        } with Fs.WriteFile.runWithFileWrite;
-        match result {
-            case Ok(_)      => Ok(())
-            case Err(error) => Err("palette write failed: ${error}")
+            Result[String, Unit] \ { Fs.FileRead, Fs.FileWrite } =
+        let text = build(spec);
+        if (isSameAsOnDisk(path, text)) Ok(())
+        else {
+            let result = run {
+                Fs.WriteFile.write({ str = text }, path)
+            } with Fs.WriteFile.runWithFileWrite;
+            match result {
+                case Ok(_)      => Ok(())
+                case Err(error) => Err("palette write failed: ${error}")
+            }
+        }
+
+    /// path に text と同じ中身がもうあるか（読めない・無いときは false）。
+    pub def isSameAsOnDisk(path: String, text: String): Bool \ Fs.FileRead =
+        match run { Fs.ReadFile.read(path) } with Fs.ReadFile.runWithFileRead {
+            case Ok(existing) => existing == text
+            case Err(_)       => false
         }
 }

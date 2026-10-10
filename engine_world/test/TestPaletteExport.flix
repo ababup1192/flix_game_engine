@@ -1,6 +1,7 @@
 // 色票 Doc の書き出し — Studio が読める外形（version / note / colors）で、
 // 導いた色がそのまま 16 進で載ること。
 mod TestPaletteExport {
+    import java.io.File
 
     def tones(): Map[String, Color] =
         PaletteExport.fromKeys(key -> match key {
@@ -33,4 +34,16 @@ mod TestPaletteExport {
             expected = (Some(1), Some("手で編集しない")),
             (top |> Option.map(m -> JsonCodec.intOr("version", -1, m)),
              top |> Option.flatMap(m -> Map.get("note", m)) |> Option.flatMap(JsonCodec.expectString)))
+
+    @Test
+    def testWriteSkipsWhenContentIsSame(): Unit \ { Assert, IO } =
+        // 同じ中身の 2 回目は書かない（更新時刻が進むと Studio が描き出しを起こし直す）。
+        let file = File.createTempFile("palette", ".json");
+        file.deleteOnExit();
+        let path = file.getPath();
+        let spec = { note = "n", colors = tones() };
+        discard run { PaletteExport.write(path, spec) } with Fs.FileRead.runWithIO with Fs.FileWrite.runWithIO;
+        discard file.setLastModified(1000i64);
+        discard run { PaletteExport.write(path, spec) } with Fs.FileRead.runWithIO with Fs.FileWrite.runWithIO;
+        Assert.assertEq(expected = 1000i64, file.lastModified())
 }

@@ -201,4 +201,15 @@ mod TestRemoteDebug {
         Assert.assertEq(
             expected = true,
             String.startsWith(prefix = "error:", RemoteDebug.renderUnsupportedText()))
+
+    // 依頼番号の付け外し: 本文のタブや改行はそのまま戻る（依頼と答えを番号で対にする）。
+    @Test
+    def testTaggedRoundTripKeepsBody(): Unit \ Assert =
+        Assert.assertEq(expected = Some((42i64, "POST /step\nidle 1\tx")),
+            RemoteDebug.untagged(RemoteDebug.tagged(42i64, "POST /step\nidle 1\tx")))
+
+    // 番号の無い形は番号付きとして読まない（取り違えた答えを渡さない）。
+    @Test
+    def testUntaggedRejectsMissingId(): Unit \ Assert =
+        Assert.assertEq(expected = None, RemoteDebug.untagged("ok rendered=3\tx"))
 }
