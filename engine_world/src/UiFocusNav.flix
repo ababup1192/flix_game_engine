@@ -99,16 +99,18 @@ pub mod UiFocusNav {
             case None         => List.head(targets) |> Option.map(t -> t#key)
             case Some(origin) =>
                 let c = Rect2.center(origin#rect);
-                let scored = targets
-                    |> List.filter(t -> t#key != origin#key)
-                    |> List.filterMap(t -> {
+                // 点数が同じなら列の前の物（番号も組にして比べる —— 標準ライブラリの選び方に頼らない）。
+                let scored = targets |> List.zipWithIndex
+                    |> List.filter(entry -> { let (_, t) = entry; t#key != origin#key })
+                    |> List.filterMap(entry -> {
+                        let (index, t) = entry;
                         let p = Rect2.center(t#rect);
                         let ahead = (p#x - c#x) * Int32.toFloat64(dx) + (p#y - c#y) * Int32.toFloat64(dy);
                         let aside = Float64.abs((p#x - c#x) * Int32.toFloat64(dy) - (p#y - c#y) * Int32.toFloat64(dx));
-                        if (ahead > minAhead()) Some((ahead + aside * asideWeight(), t#key)) else None
+                        if (ahead > minAhead()) Some((ahead + aside * asideWeight(), index, t#key)) else None
                     });
-                match List.minimumBy((a, b) -> { let (sa, _) = a; let (sb, _) = b; sa <=> sb }, scored) {
-                    case Some((_, key)) => Some(key)
+                match List.minimumBy((a, b) -> { let (sa, ia, _) = a; let (sb, ib, _) = b; (sa, ia) <=> (sb, ib) }, scored) {
+                    case Some((_, _, key)) => Some(key)
                     case None           => Some(origin#key)
                 }
         }

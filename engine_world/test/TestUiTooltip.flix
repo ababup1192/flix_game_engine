@@ -52,6 +52,13 @@ mod TestUiTooltip {
                 |> List.map(side -> "${side}") |> List.join(" "))
 
     @Test
+    def testOverLaysTheWindowOnTheAnchor(): Unit \ Assert =
+        // Over はカードの上に重ねる（横は真ん中・上端から gap 下げる）。カード自身への重なりは数えない。
+        let card = rect(100.0, 20.0, 100.0, 120.0);
+        let req = { sides = UiTooltip.Side.Over :: Nil | request(card, Nil) };
+        Assert.assertEq(expected = (110.0, 24.0, 80.0, 40.0), flat(UiTooltip.computePlacement(req)))
+
+    @Test
     def testTheWindowStaysOnScreenWhenNothingFits(): Unit \ Assert =
         // 画面いっぱいの物の脇はどこも入らない —— 画面の内側へ押し込む。
         let placed = UiTooltip.computePlacement(request(rect(0.0, 0.0, 300.0, 200.0), Nil));

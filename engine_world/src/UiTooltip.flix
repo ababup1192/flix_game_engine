@@ -9,16 +9,20 @@
 //   3. 画面に収まり、anchor と avoid のどれにも重ならない最初の向きを採る。
 //      どの向きもだめなら「はみ出す量 → 重なる面積」が一番小さい向きを、画面の内側へ押し込んで採る
 //      （押し込んだ後の重なりは測り直さない —— 画面が狭すぎるときは見ている物に被ることがある）。
+// 脇に出さず、見ている物の上に重ねたい画面（脇に余地の無いカードの並びなど）は sides に Over だけを渡す
+// —— 窓を見ている物の幅に収まる大きさにして、その上端から gap 下げて真ん中にそろえる。
 // 窓の大きさは呼ぶ側が決める（字を折るのは RichText.wrapLinesBy）。ここは置き場所だけを返す純粋な関数。
 
 pub mod UiTooltip {
 
-    /// 窓を出す向き（見ている物から見て）。
+    /// 窓を出す向き（見ている物から見て）。Over は脇ではなく見ている物の上に重ねる
+    /// （見ている物への重なりは数えない。avoid への重なりは数える）。
     pub enum Side with Eq, ToString {
         case Right
         case Left
         case Bottom
         case Top
+        case Over
     }
 
     /// 置き場所の注文。anchor = 見ている物の枠（マウスの指なら大きさ 0 の枠）、size = 窓の大きさ、
@@ -38,7 +42,8 @@ pub mod UiTooltip {
         let sides = if (List.isEmpty(req#sides)) defaultSides() else req#sides;
         let tried = sides |> List.map(side -> {
             let rect = candidate(side, req);
-            (overflow(rect, req#bounds), overlap(rect, req#anchor :: req#avoid), rect)
+            let blockers = if (side == Side.Over) req#avoid else req#anchor :: req#avoid;
+            (overflow(rect, req#bounds), overlap(rect, blockers), rect)
         });
         let pick = match List.find(t -> { let (out, hit, _) = t; out <= 0.0 and hit <= 0.0 }, tried) {
             case Some((_, _, rect)) => rect
@@ -78,6 +83,9 @@ pub mod UiTooltip {
             case Side.Left   => { x = a#position#x - req#gap - s#x,      y = crossY }
             case Side.Bottom => { x = crossX, y = a#position#y + a#size#y + req#gap }
             case Side.Top    => { x = crossX, y = a#position#y - req#gap - s#y }
+            case Side.Over   =>
+                { x = clampAxis(a#position#x + (a#size#x - s#x) / 2.0, s#x, b#position#x, b#size#x),
+                  y = clampAxis(a#position#y + req#gap, s#y, b#position#y, b#size#y) }
         };
         { position = at, size = s }
 

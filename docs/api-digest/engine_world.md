@@ -2081,8 +2081,8 @@
   `pub def clearFocus(ui: UiWorld): UiWorld`
 
 ## UiTooltip — `engine_world/src/UiTooltip.flix`
-- 窓を出す向き（見ている物から見て）。
-  `pub enum Side with Eq, ToString { case Right case Left case Bottom case Top }`
+- 窓を出す向き（見ている物から見て）。Over は脇ではなく見ている物の上に重ねる
+  `pub enum Side with Eq, ToString { case Right case Left case Bottom case Top case Over }`
 - 置き場所の注文。anchor = 見ている物の枠（マウスの指なら大きさ 0 の枠）、size = 窓の大きさ、
   `pub type alias Request = { anchor = Rect2.Rect2, size = Vec2.Vec2, bounds = Rect2.Rect2, avoid = List[Rect2.Rect2], gap = Float64, sides = List[Side] }`
 - 窓の左上と大きさ（Request の決まりで選んだ 1 か所）。
