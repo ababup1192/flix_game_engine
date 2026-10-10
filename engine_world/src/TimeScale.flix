@@ -35,21 +35,32 @@ pub mod TimeScale {
           ramp = Float64.max(0.0, f#ramp) }
 
     /// 区間の合計（実秒）。この後に ramp 秒かけて等速へ戻る（寄りを引く・光を消す拍を合わせるときに読む）。
-    pub def heldOf(p: Plan): Float64 = p#segments |> List.foldLeft((acc, s) -> acc + s#dur, 0.0)
+    pub def heldOf(p: Plan): Float64 =
+        def loop(segs, acc) = match segs {
+            case seg :: rest => loop(rest, acc + seg#dur)
+            case Nil         => acc
+        };
+        loop(p#segments, 0.0)
 
     /// 等速へ戻り始める直前の速さ（長さのある最後の区間の速さ。区間が無ければ 1）。
     def rampFrom(p: Plan): Float64 =
-        p#segments |> List.filter(s -> s#dur > 0.0) |> List.last |> Option.map(s -> s#scale)
-                |> Option.getWithDefault(1.0)
+        def loop(segs, last) = match segs {
+            case seg :: rest => loop(rest, if (seg#dur > 0.0) seg#scale else last)
+            case Nil         => last
+        };
+        loop(p#segments, 1.0)
 
     /// 合図から実秒 r までにゲームの時計が進む秒（時間の速さを 0 から r まで足し上げた物。
     /// 戻りの曲線 3u² − 2u³ の足し上げは式で解ける: u³ − u⁴/2）。
+    /// 毎フレーム realAt から 40 回呼ばれるので、リストやタプルを作らずに区間を足す。
     pub def gameAt(p: Plan, r: Float64): Float64 =
-        let part = (start, len) -> Num.clamp(0.0, len, r - start);
-        let (held, stepped) = p#segments |> List.foldLeft((acc, s) -> {
-            let (start, sum) = acc;
-            (start + s#dur, sum + part(start, s#dur) * s#scale)
-        }, (0.0, 0.0));
+        def part(start, len) = Num.clamp(0.0, len, r - start);
+        def loop(segs, start, sum) = match segs {
+            case seg :: rest => loop(rest, start + seg#dur, sum + part(start, seg#dur) * seg#scale)
+            case Nil         => sum
+        };
+        let held = heldOf(p);
+        let stepped = loop(p#segments, 0.0, 0.0);
         let ramped = if (p#ramp <= 0.0) 0.0 else {
             let x = part(held, p#ramp);
             let u = x / p#ramp;
