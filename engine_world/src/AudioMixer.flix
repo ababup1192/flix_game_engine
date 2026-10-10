@@ -60,14 +60,22 @@ pub mod AudioMixer {
     /// 持ち回す状態。now は経過秒、lastPlay は名前ごとの最後の鳴り始め、
     /// busyUntil はバスごとの「いつまで鳴っているか」、ducks はダッキングごとの今の倍率
     /// （キーは duckKeyOf）、voices は鳴っている一発の音の名前と鳴り終わる時刻
-    /// （ダッキング中に音量を流し直すため）、levels はバスごとの今の (音量, lowpassGainHF)。
+    /// （ダッキング中に音量を流し直すため）、levels はバスごとの今の値と移る先（Level）。
     pub type alias State = {
         now = Float64,
         lastPlay = Map[String, Float64],
         busyUntil = Map[String, Float64],
         ducks = Map[String, Float64],
         voices = Map[String, Float64],
-        levels = Map[String, (Float64, Float64)]
+        levels = Map[String, Level]
+    }
+
+    /// バス 1 本の今の値と、移っている先。移り始めに「1 秒あたりの速さ」を決めて覚えるので、
+    /// 値の距離によらず transitionSeconds でちょうど移り切る。
+    pub type alias Level = {
+        volume = Float64, gainHF = Float64,
+        targetVolume = Float64, targetGainHF = Float64,
+        volumeSpeed = Float64, gainHFSpeed = Float64
     }
 
     /// 何もしないミキサー（全部の音が音量 1・素通し・間引きなし）。Doc が無いときの既定。
@@ -118,7 +126,7 @@ pub mod AudioMixer {
     /// バスの今の (音量, lowpassGainHF)。移っている途中ならその途中の値、まだ鳴らしていないバスは Doc の値。
     def levelOf(mixer: Mixer, state: State, bus: String): (Float64, Float64) =
         match Map.get(bus, state#levels) {
-            case Some(level) => level
+            case Some(level) => (level#volume, level#gainHF)
             case None        => targetOf(mixer, bus)
         }
 
@@ -132,8 +140,9 @@ pub mod AudioMixer {
             |> List.filter(d -> d#bus == bus)
             |> List.foldLeft((acc, d) -> acc * (Map.get(duckKeyOf(d), state#ducks) |> Option.getWithDefault(1.0)), 1.0)
 
-    /// ダッキングの状態のキー（下げるバスと、下げさせるバスの組）。並びを入れ替えても引き継がれる。
-    def duckKeyOf(d: Duck): String = "${d#bus}<-${String.intercalate(",", d#by)}"
+    /// ダッキングの状態のキー（下げるバスと、下げさせるバスの組）。Doc の ducks の行の並びを
+    /// 入れ替えても、by の中の並びを入れ替えても、同じダッキングの倍率が引き継がれる。
+    def duckKeyOf(d: Duck): String = "${d#bus}<-${String.intercalate(",", List.sort(d#by))}"
 
     /// 名前に掛かるクールダウンの秒（cooldowns の prefix の一番長い一致。無ければ 0 = 間引かない）。
     pub def cooldownOf(mixer: Mixer, name: String): Float64 =
@@ -205,12 +214,9 @@ pub mod AudioMixer {
                 List.map(d -> d#bus, mixer#ducks) :: (mixer#defaultBus :: Nil) ::
                 (Map.keysOf(state#levels) |> Set.toList) :: Nil)
             |> List.distinct;
-        let levels = buses |> List.foldLeft((acc, bus) -> {
-            let (tv, tl) = targetOf(mixer, bus);
-            let (cv, cl) = Map.get(bus, state#levels) |> Option.getWithDefault((tv, tl));
-            Map.insert(bus, (approach(cv, tv, elapsed, mixer#transitionSeconds),
-                             approach(cl, tl, elapsed, mixer#transitionSeconds)), acc)
-        }, Map.empty());
+        let levels = buses |> List.foldLeft((acc, bus) ->
+            Map.insert(bus, stepLevel(targetOf(mixer, bus), mixer#transitionSeconds, elapsed, Map.get(bus, state#levels)), acc),
+            Map.empty());
         { now = now, ducks = ducks, levels = levels,
           voices = Map.filter(endsAt -> endsAt > now, state#voices) | state }
 
@@ -260,9 +266,21 @@ pub mod AudioMixer {
         if (seconds <= 0.0 or span <= 0.0) target
         else approachBy(current, target, span * dt / seconds)
 
-    /// 0〜1 の値を target へ「全幅を seconds 秒で渡る」速さで寄せる（0 秒なら一気に）。
-    def approach(current: Float64, target: Float64, dt: Float64, seconds: Float64): Float64 =
-        if (seconds <= 0.0) target else approachBy(current, target, dt / seconds)
+    /// バスの値を移る先へ寄せる。移る先が変わった拍に「残りの距離 ÷ seconds」を速さとして覚え、
+    /// 以後はその速さで進む（距離によらず seconds でちょうど移り切る。0 秒なら一気に）。
+    def stepLevel(target: (Float64, Float64), seconds: Float64, dt: Float64, prev: Option[Level]): Level =
+        let (tv, tl) = target;
+        match prev {
+            case None    => { volume = tv, gainHF = tl, targetVolume = tv, targetGainHF = tl, volumeSpeed = 0.0, gainHFSpeed = 0.0 }
+            case Some(p) =>
+                let speedOf = (current, newTarget, oldTarget, oldSpeed) ->
+                    if (newTarget != oldTarget) (if (seconds <= 0.0) 1000000.0 else Float64.abs(newTarget - current) / seconds)
+                    else oldSpeed;
+                let vs = speedOf(p#volume, tv, p#targetVolume, p#volumeSpeed);
+                let ls = speedOf(p#gainHF, tl, p#targetGainHF, p#gainHFSpeed);
+                { volume = approachBy(p#volume, tv, vs * dt), gainHF = approachBy(p#gainHF, tl, ls * dt),
+                  targetVolume = tv, targetGainHF = tl, volumeSpeed = vs, gainHFSpeed = ls }
+        }
 
     def approachBy(current: Float64, target: Float64, stepSize: Float64): Float64 =
         if (current > target) Float64.max(target, current - stepSize)

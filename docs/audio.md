@@ -7,6 +7,8 @@
   `AudioStreamPlayer`（engine/src/render/AudioStreamPlayer.flix。上の薄いラッパ）・
   `AudioFade`（engine_world/src/AudioFade.flix。フェードの音量カーブを作る純関数）・
   `SfxSynth`（engine_tools/src/SfxSynth.flix。素材ファイル無しで効果音を合成する）
+- `AudioMixer`（engine_world/src/AudioMixer.flix。バス・ダッキング・ローパス・クールダウン・スナップショット）・
+  `AudioMixerDoc`（mixer.json の読み込み）・`AudioMixdown`（実機と同じ規則で WAV 用の波形にする）
 - 音は project.json の `sounds` に載せた名前で鳴らす。ファイルの場所はゲームコードから見えない。
 
 ## 最短手順
@@ -124,6 +126,45 @@ App.make(initialWorld)
   続く音は 1 本の宣言で書く。
 
 単発の効果音（当たった・取った・場面が変わった）は今までどおり `App.withAudio` で書く。
+
+## 音の通り道（`App.withMixer` と mixer.json）
+
+音が増えてくると「効果音が鳴ると BGM に埋もれる」「会話の間は曲を遠くしたい」「ルーレットのカチッが
+細かすぎて頭だけの音になる」が出てくる。これを音ごとの音量の手調整で直さず、**バス**でまとめて決める
+（Godot の Audio Bus・Unity の AudioMixer と同じ考え方）。
+
+```flix
+App.make(initialWorld)
+    |> App.withAudio(Sfx.events)
+    |> App.withSustained(Sfx.hums)
+    |> App.withMixer(w -> w.mixer)                         // AudioMixerDoc.load(AudioMixer.defaults(), "assets/game.mixer.json")
+    // 場面で聞こえ方を変えるなら: w -> if (talking(w)) AudioMixer.withSnapshot("talk", w.mixer) else w.mixer
+```
+
+```json
+{ "version": 1,
+  "transitionSeconds": 0.35,
+  "buses":     [ { "name": "music", "volume": 0.9 }, { "name": "sfx" }, { "name": "ui" } ],
+  "routes":    [ { "bus": "music", "prefixes": ["bgm"] }, { "bus": "ui", "prefixes": ["cursor", "decide"] } ],
+  "ducks":     [ { "bus": "music", "by": ["sfx"], "depth": 0.6, "attackSeconds": 0.03, "holdSeconds": 0.08, "releaseSeconds": 0.45 } ],
+  "cooldowns": [ { "prefix": "cursor", "seconds": 0.045 } ],
+  "snapshots": [ { "name": "talk", "buses": [ { "name": "music", "volume": 0.8, "lowpassGainHF": 0.12 } ] } ] }
+```
+
+| 欄 | 何が起きるか |
+|---|---|
+| `buses` | バスごとの音量と `lowpassGainHF`（高い音の残り具合。1 = 素通し・小さいほど 5000Hz より上が落ちて籠もる。OpenAL の EFX の lowpass と同じ意味）。載っていないバスは音量 1・素通し |
+| `routes` | 音の名前の頭（`prefixes`）でバスを選ぶ。長く一致した方が勝ち、どれにも当たらない音は `defaultBus`（既定 sfx） |
+| `ducks` | `by` のバスで音が鳴っている間（一発の音は音の長さ、鳴り続ける音は宣言が続く間）、`bus` を `depth` 倍へ下げる |
+| `cooldowns` | 同じ名前の音が `seconds` 以内にもう一度来たら鳴らさない（1 つの名前は同時に 1 本しか鳴らず、鳴り直すと頭からなので、細かい連打は頭だけの音になる） |
+| `snapshots` | 名前つきの上書き。`AudioMixer.withSnapshot` で選ぶと `transitionSeconds` でちょうど移り切る |
+
+- ミキサーが掛かるのは **`withAudio` と `withSustained` の音だけ**。`AudioStreamPlayer` で直接鳴らす音は
+  バスを通らないので、ダッキングもスナップショットも効かない（繋いだゲームでは一発の音の音量もミキサーが決める）。
+- `AudioFade` との分担: フェードは宣言の `volume` で作り、ミキサーはその上に掛け算で効く（宣言 × バス × ダッキング）。
+- `withMixer` を繋がないゲームは今までどおり（名前のまま鳴る）。
+- 実機と同じ規則で混ぜた音を WAV にしたいとき（動画の音・書き換え前後の聞き比べ）は `AudioMixdown.mixdown`。
+  コマごとの `{ plays, sustained, mixer }` を並べれば、App と同じ `AudioMixer.step` を通して波形になる。
 
 ## project.json の sounds
 

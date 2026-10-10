@@ -7,7 +7,7 @@
 // - バスの音量・ダッキングはコマの間をなめらかにつなぐ。ローパスはバスごとに掛ける
 //   （OpenAL の EFX の lowpass と同じ「5000Hz より上を gainHF 倍にする」棚の形）。
 //
-// 使い方: コマごとに { plays = その拍の withAudio の結果, hums = withSustained の結果,
+// 使い方: コマごとに { plays = その拍の withAudio の結果, sustained = withSustained の結果,
 // mixer = withMixer の結果 } を並べ、音の名前 → サンプル列（loadWav）の表と一緒に渡す。
 // 返るのは sampleRate の -1〜1 のサンプル列（WAV へは SfxSynth.wavBytes で書く）。
 pub mod AudioMixdown {
@@ -18,7 +18,7 @@ pub mod AudioMixdown {
     import java.nio.file.Paths
 
     /// 1 コマぶんの音の宣言。
-    pub type alias Frame = { plays = List[String], hums = List[App.Sustain], mixer = AudioMixer.Mixer }
+    pub type alias Frame = { plays = List[String], sustained = List[App.Sustain], mixer = AudioMixer.Mixer }
 
     /// コマの並びを sampleRate の波形へ書き出す。sounds に無い名前は鳴らない（実機と同じ）。
     pub def mixdown(sampleRate: Int32, fps: Float64, sounds: Map[String, Vector[Float64]],
@@ -42,12 +42,12 @@ pub mod AudioMixdown {
             let (i, f) = pair;
             let first = Float64.tryToInt32(Int32.toFloat64(i) * dt * rate) |> Option.getWithDefault(0);
             let last = Int32.min(total, Float64.tryToInt32(Int32.toFloat64(i + 1) * dt * rate) |> Option.getWithDefault(0));
-            let living = f#hums |> List.map(h -> h#name) |> List.distinct;
+            let living = f#sustained |> List.map(h -> h#name) |> List.distinct;
             let (allowed, mix) = AudioMixer.step(f#mixer, lengthOf, dt, f#plays, living, st#mix);
             // 鳴り直す一発の音は頭から（OpenAL の 1 音源と同じ）。宣言の消えた続く音は止めて頭へ戻す。
             let shots = allowed |> List.foldLeft((acc, name) -> Map.insert(name, 0, acc), st#shots);
             let loops = Map.filterWithKey((name, _) -> List.memberOf(name, living), st#loops);
-            let hums = f#hums |> List.foldLeft((acc, h) -> if (Map.memberOf(h#name, acc)) acc else Map.insert(h#name, h, acc), Map.empty());
+            let declared = f#sustained |> List.foldLeft((acc, h) -> if (Map.memberOf(h#name, acc)) acc else Map.insert(h#name, h, acc), Map.empty());
             let buses = List.append(Map.keysOf(shots) |> Set.toList, living)
                 |> List.map(name -> AudioMixer.busOf(f#mixer, name)) |> List.distinct;
             let span = Int32.max(1, last - first);
@@ -68,7 +68,7 @@ pub mod AudioMixdown {
                             let pos = Map.get(name, loops) |> Option.getWithDefault(0.0);
                             addLoop(v, pos, h#pitch, h#volume, span, buf)
                         case None => ()
-                    }, hums);
+                    }, declared);
                 let shelf0 = Map.get(bus, fl) |> Option.getWithDefault(shelfOf(1.0, rate));
                 // バスの値は実機（App.applyMixed）と同じ AudioMixer の読み出しで決める。
                 let target = AudioMixer.busGainOf(f#mixer, mix, bus);
@@ -84,7 +84,9 @@ pub mod AudioMixdown {
                 });
                 (Map.insert(bus, target, lv), Map.insert(bus, shelf, fl))
             };
-            let (levels, filters) = List.foldLeft(mixBus, (st#levels, st#filters), buses);
+            let (mixed, filters) = List.foldLeft(mixBus, (st#levels, st#filters), buses);
+            // このコマで鳴らなかったバスの倍率は捨てる（次に鳴ったとき古い値から寄ってこないように）。
+            let levels = Map.filterWithKey((bus, _) -> List.memberOf(bus, buses), mixed);
             // 読み位置を進める。一発の音は鳴り終わったら外す。
             let nextShots = shots
                 |> Map.map(pos -> pos + span)
@@ -92,7 +94,7 @@ pub mod AudioMixdown {
                     case Some(v) => pos < Vector.length(v)
                     case None    => false
                 });
-            let nextLoops = hums |> Map.mapWithKey((name, h) ->
+            let nextLoops = declared |> Map.mapWithKey((name, h) ->
                 (Map.get(name, loops) |> Option.getWithDefault(0.0)) + Float64.max(0.01, h#pitch) * Int32.toFloat64(span));
             { mix = mix, shots = nextShots, loops = nextLoops, levels = levels, filters = filters }
         };

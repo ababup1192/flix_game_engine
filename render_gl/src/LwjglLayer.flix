@@ -851,6 +851,8 @@ pub mod LwjglLayer {
         // EFX の無い環境では何もしない（音は素通しのまま）。フィルタは初めて削る音にだけ作る。
         let hasEfx = ALC10.alcIsExtensionPresent(alDevice, "ALC_EXT_EFX");
         let lowpassRef: Ref[Map[String, Int32], Static] = Ref.fresh(Static, Map.empty());
+        // 最後に送った gainHF（音源ごと）。同じ値なら AL へ送り直さない（毎フレーム呼ばれる口なので）。
+        let lastGainHFRef: Ref[Map[String, Float64], Static] = Ref.fresh(Static, Map.empty());
         // 注釈保存時のシャッター音（合成なのでゲーム側の音声マニフェストに依存しない）
         let shutterSource = buildShutterSource();
         println("  Audio ready");
@@ -1027,9 +1029,12 @@ pub mod LwjglLayer {
                 k(())
             }
             def setLowpass(name, gainHF, k) = {
+                let g = Float64.max(0.0, Float64.min(1.0, gainHF));
+                let unchanged = Map.get(name, Ref.get(lastGainHFRef)) == Some(g);
                 match Map.get(name, audioRegistry) {
+                    case Some(_) if hasEfx and unchanged => ()
                     case Some(src) if hasEfx =>
-                        let g = Float64.max(0.0, Float64.min(1.0, gainHF));
+                        Ref.put(Map.insert(name, g, Ref.get(lastGainHFRef)), lastGainHFRef);
                         let made = Map.get(name, Ref.get(lowpassRef));
                         if (g >= 0.999) {
                             // 素通しへ戻すときはフィルタを外す（削らない音は OpenAL の素の道を通す）。

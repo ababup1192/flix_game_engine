@@ -1,4 +1,4 @@
-<!-- engine v0.34.0 / 生成: 2026-10-08 -->
+<!-- engine v0.34.0 / 生成: 2026-10-10 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine_world
@@ -109,7 +109,7 @@
 - 生成したドット絵アトラス 1 枚ぶんの受け渡し。
   `pub type alias AtlasUpload = { texture = String, key = String, baked = PxSpriteAtlas.Baked }`
 - ゲーム 1 本の宣言。make で空を作り、addStartup / addSystem / reloadOn / withView /
-  `pub type alias App[w: Type, ef: Eff] = { init = Vec2.Vec2 -> w \ ef, startupSystems = List[w -> w \ ef], updateSystems = List[(Frame, w) -> w \ ef], reload = Option[(GameEngine.Key, w -> w \ {Fs.FileRead})], watch = List[(String, w -> w \ {Fs.FileRead})], view = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], passes = w -> List[Render.Pass] \ ef, fonts = List[String], camera = Option[w -> Vec2.Vec2 \ ef], zoom = Option[w -> Float64 \ ef], cameraBounds = Option[w -> Rect2.Rect2 \ ef], parallaxLayers = List[(Float64, (ViewCtx, w) -> List[Render.PlacedItem] \ ef)], hudView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], audio = { before = w, after = w } -> List[String] \ ef, sustained = w -> List[Sustain] \ ef, quit = (Frame, w) -> Bool \ ef, debug = Bool, debugView = Option[(String, w -> (List[GameEngine.Drawable], List[GameEngine.TileMapRenderCmd], List[GameEngine.PolygonRenderCmd]) \ ef)], worldDump = Option[(Rect2.Rect2, w) -> String \ ef], staticLayer = Option[{ key = w -> GameEngine.StaticKey, build = w -> List[Render.PlacedItem] }], tileLayers = Option[w -> List[TileLayerSpec]], spriteAtlases = w -> List[AtlasUpload], pixelSnap = w -> Float64, statusLine = Option[w -> String \ ef], remoteRender = Option[Unit -> List[String] \ IO], remoteHandlers = List[(String, (Map[String, String], w) -> Result[String, w] \ {Fs.FileRead})], fixedStep = Option[Float64] }`
+  `pub type alias App[w: Type, ef: Eff] = { init = Vec2.Vec2 -> w \ ef, startupSystems = List[w -> w \ ef], updateSystems = List[(Frame, w) -> w \ ef], reload = Option[(GameEngine.Key, w -> w \ {Fs.FileRead})], watch = List[(String, w -> w \ {Fs.FileRead})], view = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], passes = w -> List[Render.Pass] \ ef, fonts = List[String], camera = Option[w -> Vec2.Vec2 \ ef], zoom = Option[w -> Float64 \ ef], cameraBounds = Option[w -> Rect2.Rect2 \ ef], parallaxLayers = List[(Float64, (ViewCtx, w) -> List[Render.PlacedItem] \ ef)], hudView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], audio = { before = w, after = w } -> List[String] \ ef, sustained = w -> List[Sustain] \ ef, mixer = Option[w -> AudioMixer.Mixer \ ef], quit = (Frame, w) -> Bool \ ef, debug = Bool, debugView = Option[(String, w -> (List[GameEngine.Drawable], List[GameEngine.TileMapRenderCmd], List[GameEngine.PolygonRenderCmd]) \ ef)], worldDump = Option[(Rect2.Rect2, w) -> String \ ef], staticLayer = Option[{ key = w -> GameEngine.StaticKey, build = w -> List[Render.PlacedItem] }], tileLayers = Option[w -> List[TileLayerSpec]], spriteAtlases = w -> List[AtlasUpload], pixelSnap = w -> Float64, statusLine = Option[w -> String \ ef], remoteRender = Option[Unit -> List[String] \ IO], remoteHandlers = List[(String, (Map[String, String], w) -> Result[String, w] \ {Fs.FileRead})], fixedStep = Option[Float64] }`
 - 初期 World だけを持つ空の App。絵はまだ無い（withView で繋ぐまで何も描かない）。
   `pub def make(init: w): App[w, ef]`
 - 初期 World を design 解像度（project.json の designWidth/Height）から組む入口。
@@ -154,6 +154,8 @@
   `pub type alias Sustain = { name = String, volume = Float64, pitch = Float64 }`
 - 「このフレームで鳴り続けていてほしい音」を World から導く関数を繋ぐ。
   `pub def withSustained(f: w -> List[Sustain] \ ef, app: App[w, ef]): App[w, ef]`
+- 音の通り道（AudioMixer.Mixer）を World から導く関数を繋ぐ。繋ぐと、withAudio の音と
+  `pub def withMixer(f: w -> AudioMixer.Mixer \ ef, app: App[w, ef]): App[w, ef]`
 - 前のフレームの宣言（名前の列）と今のフレームの宣言から、鳴らし始める音・
   `pub def sustainOps(prev: List[String], next: List[Sustain]): { start = List[Sustain], keep = List[Sustain], stop = List[String] }`
 - 終了判定を差し替える。既定は「Escape のエッジで終了」だが、モーダル表示中は
@@ -239,6 +241,76 @@
   `pub def volumeOf(fade: Fade, t: Float64): Float64`
 - 2 曲の入れ替え: 同じ t で「消える側・現れる側」の音量の組を返す。
   `pub def crossfadeOf(t: Float64): (Float64, Float64)`
+
+## AudioMixdown — `engine_world/src/AudioMixdown.flix`
+- 1 コマぶんの音の宣言。
+  `pub type alias Frame = { plays = List[String], sustained = List[App.Sustain], mixer = AudioMixer.Mixer }`
+- コマの並びを sampleRate の波形へ書き出す。sounds に無い名前は鳴らない（実機と同じ）。
+  `pub def mixdown(sampleRate: Int32, fps: Float64, sounds: Map[String, Vector[Float64]], frames: List[Frame]): Vector[Float64]`
+- WAV（PCM 16bit。モノラル・ステレオ）を sampleRate のモノラル -1〜1 へ読む。
+  `pub def loadWav(sampleRate: Int32, path: String): Vector[Float64] \ IO`
+- 波形のいちばん大きな振れ幅（0〜）。割れの確かめと、書き出す前の音量合わせに使う。
+  `pub def peakOf(samples: Vector[Float64]): Float64`
+
+## AudioMixer — `engine_world/src/AudioMixer.flix`
+- バス 1 本。volume は 0.0〜1.0（設定画面の「BGM の音量」のつまみ）、
+  `pub type alias Bus = { name = String, volume = Float64, lowpassGainHF = Float64 }`
+- 名前の頭が prefixes のどれかに当たる音を bus へ流す（"bgm" → music のように）。
+  `pub type alias Route = { bus = String, prefixes = List[String] }`
+- by のバスのどれかが鳴っている間、bus の音量を depth 倍へ下げる。
+  `pub type alias Duck = { bus = String, by = List[String], depth = Float64, attackSeconds = Float64, holdSeconds = Float64, releaseSeconds = Float64 }`
+- 名前の頭が prefix の音は、同じ名前が seconds 以内に続いたら鳴らさない。
+  `pub type alias Cooldown = { prefix = String, seconds = Float64 }`
+- スナップショットの中のバス 1 本の上書き（None の欄は元のまま）。
+  `pub type alias BusOverride = { name = String, volume = Option[Float64], lowpassGainHF = Option[Float64] }`
+- 名前つきの「場面ごとの聞こえ方」。会話の間は曲を籠もらせる・ポーズ中は効果音を絞る、
+  `pub type alias Snapshot = { name = String, buses = List[BusOverride] }`
+- ミキサー全体の宣言（AudioMixerDoc が JSON から作る）。transitionSeconds は
+  `pub type alias Mixer = { buses = List[Bus], routes = List[Route], defaultBus = String, ducks = List[Duck], cooldowns = List[Cooldown], snapshots = List[Snapshot], transitionSeconds = Float64 }`
+- 持ち回す状態。now は経過秒、lastPlay は名前ごとの最後の鳴り始め、
+  `pub type alias State = { now = Float64, lastPlay = Map[String, Float64], busyUntil = Map[String, Float64], ducks = Map[String, Float64], voices = Map[String, Float64], levels = Map[String, Level] }`
+- バス 1 本の今の値と、移っている先。移り始めに「1 秒あたりの速さ」を決めて覚えるので、
+  `pub type alias Level = { volume = Float64, gainHF = Float64, targetVolume = Float64, targetGainHF = Float64, volumeSpeed = Float64, gainHFSpeed = Float64 }`
+- 何もしないミキサー（全部の音が音量 1・素通し・間引きなし）。Doc が無いときの既定。
+  `pub def defaults(): Mixer`
+- 鳴らし始める前の状態。
+  `pub def initial(): State`
+- 音の名前が流れるバスの名前（routes の prefixes の一番長い一致。無ければ defaultBus）。
+  `pub def busOf(mixer: Mixer, name: String): String`
+- バスの宣言（Doc に無いバスは音量 1・素通し）。
+  `pub def getBus(mixer: Mixer, bus: String): Bus`
+- 音 1 本に掛ける音量の倍率 = 流れるバスの busGainOf。
+  `pub def gainOf(mixer: Mixer, state: State, name: String): Float64`
+- 音 1 本の高い音の残り具合（流れるバスの今の lowpassGainHF）。
+  `pub def lowpassGainHFOf(mixer: Mixer, state: State, name: String): Float64`
+- バスの音量の倍率 = バスの今の音量 × そのバスに掛かっているダッキング。
+  `pub def busGainOf(mixer: Mixer, state: State, bus: String): Float64`
+- バスの今の高い音の残り具合（スナップショットへ移る途中なら途中の値）。
+  `pub def busLowpassGainHFOf(mixer: Mixer, state: State, bus: String): Float64`
+- バスに掛かっているダッキングの倍率（同じバスへ何本掛かっていても掛け算）。
+  `pub def duckGainOf(mixer: Mixer, state: State, bus: String): Float64`
+- 名前に掛かるクールダウンの秒（cooldowns の prefix の一番長い一致。無ければ 0 = 間引かない）。
+  `pub def cooldownOf(mixer: Mixer, name: String): Float64`
+- bus の音量を差し替えた新しいミキサー（Doc に無いバスなら足す）。
+  `pub def withBusVolume(bus: String, volume: Float64, mixer: Mixer): Mixer`
+- bus の高い音の残り具合を差し替えた新しいミキサー（夜の場面だけ籠もらせる、など）。
+  `pub def withLowpassGainHF(bus: String, gainHF: Float64, mixer: Mixer): Mixer`
+- 名前のスナップショットを重ねた新しいミキサー（無い名前なら元のまま）。
+  `pub def withSnapshot(name: String, mixer: Mixer): Mixer`
+- 1 フレームぶんを決まった順で進める: 時計・ダッキング・バスの値を進め（advance）→
+  `pub def step(mixer: Mixer, lengthOf: String -> Float64 \ ef, dt: Float64, plays: List[String], sustained: List[String], state: State): (List[String], State) \ ef`
+- 時計を dt 秒進め、ダッキングの倍率とバスの値を目標へ寄せ、鳴り終わった一発の音を voices から外す。
+  `pub def advance(mixer: Mixer, dt: Float64, state: State): State`
+- このフレームに鳴らしたい一発の音をクールダウンに通す。返すのは「実際に鳴らす名前」と、
+  `pub def applyCooldowns(mixer: Mixer, lengthOf: String -> Float64 \ ef, names: List[String], state: State): (List[String], State) \ ef`
+- 鳴り続けている音（withSustained の宣言）のバスを「次のフレームまで鳴っている」と記す
+  `pub def markSustainedBusy(mixer: Mixer, dt: Float64, names: List[String], state: State): State`
+
+## AudioMixerDoc — `engine_world/src/AudioMixerDoc.flix`
+- テキストから Mixer へ（JSON でない・オブジェクトでなければ None）。
+  `pub def fromJson(text: String): Option[AudioMixer.Mixer]`
+- path の mixer.json を読む。読めない・壊れているときは fallback（ふつうは AudioMixer.defaults()）。
+  `pub def load(fallback: AudioMixer.Mixer, path: String): AudioMixer.Mixer \ Fs.FileRead`
 
 ## Bezier — `engine_world/src/Bezier.flix`
 - 2 次ベジエを steps 分割した折れ線にする（始点・終点を含む steps+1 点）。

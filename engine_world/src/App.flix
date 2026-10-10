@@ -385,7 +385,7 @@ pub mod App {
     /// 音の通り道（AudioMixer.Mixer）を World から導く関数を繋ぐ。繋ぐと、withAudio の音と
     /// withSustained の音が名前ごとのバスを通る —— バスの音量・ローパス・ダッキング・連打の間引きが
     /// 掛かる（中身は AudioMixer の doc）。Doc から読んだ 1 つを返すだけでよく、場面ごとに
-    /// AudioMixer.withLowpass などで差し替えた物を返してもよい。
+    /// AudioMixer.withSnapshot・withLowpassGainHF などで差し替えた物を返してもよい。
     /// 繋いだゲームでは一発の音の音量もミキサーが毎回決める（AudioStreamPlayer.setVolume で
     /// 一発の音の音量を変える書き方とは混ぜない）。
     pub def withMixer(f: w -> AudioMixer.Mixer \ ef, app: App[w, ef]): App[w, ef] =
@@ -1060,8 +1060,7 @@ pub mod App {
     /// バスを通して鳴らす。順番: ミキサーを 1 フレーム進める（AudioMixer.step）→ 鳴っている一発の音へ
     /// 今の音量とローパスを流し直す（ダッキングの最中に下がっていく）→ 通った一発の音を鳴らす →
     /// 鳴り続ける音を始める・続ける・止める（宣言の音量 × バスの倍率）。
-    /// RemoteDebug / App 本体の内部 API — ゲームからは呼ばない。
-    pub def applyMixed(mixer: AudioMixer.Mixer, dt: Float64, plays: List[String], declared: List[Sustain],
+    def applyMixed(mixer: AudioMixer.Mixer, dt: Float64, plays: List[String], declared: List[Sustain],
                        prev: List[String], mixState: AudioMixer.State):
             (List[String], AudioMixer.State) \ GameEngine.Audio =
         let ops = sustainOps(prev, declared);

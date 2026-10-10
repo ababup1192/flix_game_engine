@@ -1,4 +1,4 @@
-<!-- engine v0.34.0 / 生成: 2026-10-08 -->
+<!-- engine v0.34.0 / 生成: 2026-10-10 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine
@@ -427,6 +427,10 @@
   `pub eff Audio { def setMasterVolume(gain: Float64): Unit }`
 - すでに登録してある名前の音を、path のファイルから読み直して差し替える。
   `pub eff Audio { def reloadAudio(name: String, path: String): Unit }`
+- 指定した名前のサウンドの高い音を削る（ローパス）。gainHF は高い音の残り具合 0.0〜1.0
+  `pub eff Audio { def setLowpass(name: String, gainHF: Float64): Unit }`
+- 指定した名前のサウンドの長さ（秒）。知らない名前は 0.0。
+  `pub eff Audio { def audioSeconds(name: String): Float64 }`
 - macOS では -XstartOnFirstThread 付きでプロセスを再起動する。
   `pub def ensureMainThread(): Bool \ IO`
 

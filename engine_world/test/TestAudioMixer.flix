@@ -55,15 +55,36 @@ mod TestAudioMixer {
         let s = advanceFrames(mixer(), 20, Nil, "rain" :: Nil, AudioMixer.initial());
         Assert.assertEq(expected = duck()#depth, AudioMixer.gainOf(mixer(), s, "bgmFight"))
 
-    /// スナップショットへは transitionSeconds かけて移る（半分の時間で半分）。
+    def talkMixer(): AudioMixer.Mixer =
+        { transitionSeconds = 0.5,
+          snapshots = { name = "talk", buses = { name = "music", volume = Some(0.5), lowpassGainHF = Some(0.2) } :: Nil } :: Nil
+          | mixer() }
+
+    /// スナップショットへは値の距離によらず transitionSeconds でちょうど移る（4 分の 1 の時間で 4 分の 1）。
     @Test
-    def testSnapshotMovesSmoothly(): Unit \ Assert =
-        let base = { transitionSeconds = 0.5,
-                     snapshots = { name = "talk", buses = { name = "music", volume = Some(0.5), lowpassGainHF = None } :: Nil } :: Nil
-                     | mixer() };
-        let s0 = advanceFrames(base, 1, Nil, Nil, AudioMixer.initial());
-        let s1 = snd(AudioMixer.step(AudioMixer.withSnapshot("talk", base), half, 0.125, Nil, Nil, s0));
-        Assert.assertEq(expected = 0.75, AudioMixer.gainOf(base, s1, "bgmFight"))
+    def testSnapshotMovesOverTransitionSeconds(): Unit \ Assert =
+        let s0 = advanceFrames(talkMixer(), 1, Nil, Nil, AudioMixer.initial());
+        let s1 = snd(AudioMixer.step(AudioMixer.withSnapshot("talk", talkMixer()), half, 0.125, Nil, Nil, s0));
+        Assert.assertEq(expected = 0.875, AudioMixer.gainOf(talkMixer(), s1, "bgmFight"))
+
+    /// スナップショットのローパスも移り切ればその値になる。
+    @Test
+    def testSnapshotLowpassArrives(): Unit \ Assert =
+        let talk = AudioMixer.withSnapshot("talk", talkMixer());
+        let s = advanceFrames(talk, 40, Nil, Nil, advanceFrames(talkMixer(), 1, Nil, Nil, AudioMixer.initial()));
+        Assert.assertEq(expected = 0.2, AudioMixer.lowpassGainHFOf(talk, s, "bgmFight"))
+
+    /// 鳴り続ける音が止まれば、曲は releaseSeconds で元へ戻る。
+    @Test
+    def testMusicReturnsAfterSustainedStops(): Unit \ Assert =
+        let s = advanceFrames(mixer(), 30, Nil, Nil, advanceFrames(mixer(), 20, Nil, "rain" :: Nil, AudioMixer.initial()));
+        Assert.assertEq(expected = 1.0, AudioMixer.gainOf(mixer(), s, "bgmFight"))
+
+    /// クールダウンも名前の頭の一番長い一致で決まる。
+    @Test
+    def testCooldownLongestPrefixWins(): Unit \ Assert =
+        let m = { cooldowns = { prefix = "cur", seconds = 1.0 } :: { prefix = "cursorFast", seconds = 0.0 } :: Nil | mixer() };
+        Assert.assertEq(expected = (1.0, 0.0), (AudioMixer.cooldownOf(m, "cursor"), AudioMixer.cooldownOf(m, "cursorFast")))
 
     /// 壊れた JSON は None（load はそこで既定へ倒す）。
     @Test
