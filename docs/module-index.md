@@ -46,7 +46,7 @@
 | UI 要素を並べる・整列する | UiLayout / Flex（実例: `templates/novel-starter/src/NovelKit.flix`） |
 | UI の文字欄に実行時の値を差し込む | UiBinding |
 | 会話窓・文字送りを出す | UiDialog / UiTypewriter（実例: `templates/novel-starter/src/World.flix`） |
-| マウスの下の UI 要素を知る | UiFocus（実例: `templates/novel-starter/src/Controls.flix`） |
+| マウスの下の UI 要素を知る | UiFocus（実例: `templates/novel-starter/src/Controls.flix`）。UiDoc の画面の各要素の画面矩形は layoutRects |
 | 絵の上に散らばった選べる物を矢印・Tab・ホバーで巡る（キーのフォーカスとホバーを 1 つにする・:focus-visible の枠） | UiFocusNav（Target の列を作るだけ。UiDoc の画面は targetsOfUi。並びの決まったメニューは UiMenu） |
 | 説明の窓（ツールチップ）を見ている物の脇の、画面からはみ出さず他の物に重ならない所へ置く | UiTooltip（computePlacement。脇に余地が無い画面は Side.Over で見ている物の上に重ねる。窓の字を折るのは RichText.wrapLinesBy） |
 | meta "prefix/N" から番号を読む | UiMeta（実例: `templates/novel-starter/src/Controls.flix`） |
@@ -221,7 +221,7 @@
 - **UiExtract** — 配置と表示可否が決まった UI を、描画部が食べられる絵の列に変換する。
 - **UiRender** — UI 全体を毎フレーム、そのまま描ける絵の列に変換する入口。
 - **UiHierarchy** — UI entity の親子ツリー走査（完全純粋）。
-- **UiFocus** — マウス座標の下にある一番手前の UI 要素を見つけて返す。
+- **UiFocus** — マウス座標の下にある一番手前の UI 要素を見つけて返す。layoutRects で UiDoc の画面の各要素の画面矩形も引ける（hitTestUi と UiFocusNav.targetsOfUi が同じ枠を見る）。
 - **UiFocusNav** — 画面の選べる物を名前付きで登録すると、矢印キー・Tab・マウスのホバーでフォーカス（いま見ている物）が巡る。
 - **UiTooltip** — 説明の窓（ツールチップ）を、見ている物の脇の「画面からはみ出さず、大事な物に重ならない」所へ置く。
 - **UiBinding** — UI のテキスト欄に付けた「差し込み名」を実行時の値に置き換える。
