@@ -34,7 +34,7 @@ else
 FLIX   := "$(ENGINE)/bin/flix"
 endif
 
-.PHONY: help status run debug test build check render render-all gallery-sounds reference-check reference-update loc api hooks check-docs-sync
+.PHONY: help status run debug test build check render render-all gallery-sounds reference-check reference-update loc api src src-index hooks check-docs-sync
 
 # 共通の口の一覧。engine を上げるとここも一緒に新しくなる
 # （ゲーム側の Makefile へ写さないので、口が増えても書き足しに回らなくて済む）。
@@ -55,6 +55,8 @@ help:
 	@echo "  make reference-update   いまの gallery をリファレンス画像として更新する"
 	$(if $(PALETTE),@echo "  make palette            Studio が読む色の写し ($(PALETTE)) を無条件に作り直す")
 	@echo "  make api Q=<名前>        エンジン API の型・引数を 1 行で引く（ソースを読む前にまずこれ）"
+	@echo "  make src Q=<名前>        ゲームの src/ の pub 定義を 1 行で引く（.flix を丸読みする前にまずこれ）"
+	@echo "  make src-index          src/ の pub 定義と各ファイル冒頭 doc の 1 行目を debug/src-index.md へ"
 	@echo "  make loc                src/ + test/ の .flix 合計行数（上限 3,000 行）"
 	@echo "  make engine-upgrade     engine の版に追随する（status の「engine 版ズレ」を見たらこれ）"
 	@echo "  make hooks              コミット時のゲートをこの clone に配線する（clone ごとに 1 回）"
@@ -122,6 +124,25 @@ api:
 	@out=$$(grep -h -i -- "$(Q)" "$(ENGINE)/docs/api-digest/"*.md 2>/dev/null | head -40); \
 	if [ -n "$$out" ]; then printf '%s\n' "$$out"; \
 	else echo "[api] '$(Q)' に当たりなし。$(ENGINE)/docs/module-index.md で別名を探す"; fi
+
+# ゲームの src/ の地図。pub の定義と各ファイル冒頭 doc の 1 行目を、ファイル別・行番号つきで
+# debug/src-index.md へ書く（正規表現だけの最小版・数秒）。.flix を丸読みせずに位置を引くための物。
+SRC_INDEX_AWK := $(ENGINE)/mk/src-index.awk
+src-index:
+	@mkdir -p debug
+	@{ echo "# src index ($$(date '+%Y-%m-%d %H:%M'))"; \
+	  echo ""; \
+	  echo "make src-index の生成物。pub の定義と各ファイル冒頭 doc の 1 行目。手で編集しない。"; \
+	  find src -name '*.flix' | sort | xargs awk -v FORMAT=md -f "$(SRC_INDEX_AWK)"; \
+	} > debug/src-index.md
+	@echo "[src-index] debug/src-index.md ($$(wc -l < debug/src-index.md | tr -d ' ') 行)"
+
+# ゲームの src/ の定義を 1 行で引く（make api Q= のゲーム版）。例: make src Q=talkBackdrop
+src:
+	@test -n "$(Q)" || { echo "usage: make src Q=<関数名や型名>"; exit 1; }
+	@out=$$(find src -name '*.flix' | sort | xargs awk -v FORMAT=flat -f "$(SRC_INDEX_AWK)" | grep -i -- "$(Q)" | head -40); \
+	if [ -n "$$out" ]; then printf '%s\n' "$$out"; \
+	else echo "[src] '$(Q)' の pub 定義なし。grep -n '$(Q)' -r src で使われ方を探す"; fi
 
 # 色票を持つゲームでは、入力が変わっていれば先に作り直してから描く。
 render-all: $(PALETTE)
