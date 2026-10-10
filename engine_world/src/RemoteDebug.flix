@@ -4,7 +4,7 @@
 //
 // スレッドの取り決め: HTTP のスレッドは World に一切触れない。リクエストの生文字列をキューへ
 // 積んで応答文字列を待つだけで、パース・実行・応答の組み立てはすべてゲームループ側
-// （App）が行う。ゲームが応答しなければ 10 秒で 503 を返す。
+// （App）が行う。ゲームが応答しなければ 10 秒で 503 を返し、その依頼は取り下げる。
 
 pub mod RemoteDebug {
     import java.lang.System
@@ -14,15 +14,18 @@ pub mod RemoteDebug {
     import com.sun.net.httpserver.HttpExchange
     import java.util.concurrent.{LinkedBlockingQueue => JQueue}
     import java.util.concurrent.TimeUnit
+    import java.util.concurrent.atomic.AtomicLong
     import java.lang.{String => JString}
 
     // ── HTTP スレッドとゲームループを繋ぐ橋 ──
 
     /// HTTP サーバ本体と、リクエスト / レスポンスを受け渡す 2 本のキュー。
+    /// キューの中身は「依頼番号 + タブ + 本文」。番号で依頼と答えを対にする。
     pub type alias Bridge = {
         server = HttpServer,           // 稼働中のサーバ（終了時に stop する）
-        requests = JQueue[String],     // HTTP → ゲームループ（"METHOD /path?query\n台本" の生文字列）
-        responses = JQueue[String]     // ゲームループ → HTTP（text/plain の応答本文）
+        requests = JQueue[String],     // HTTP → ゲームループ（"番号\tMETHOD /path?query\n台本"）
+        responses = JQueue[String],    // ゲームループ → HTTP（"番号\t応答本文"）
+        current = AtomicLong           // ゲームループがいま捌いている依頼の番号
     }
 
     /// 環境変数 DEBUG_HTTP_PORT からポート番号を読む。未設定・数値でなければ None。
@@ -30,12 +33,26 @@ pub mod RemoteDebug {
         let value = System.getenv("DEBUG_HTTP_PORT");
         if (Object.isNull(value)) None else Int32.fromString(value)
 
+    /// 本文に依頼番号を付ける（キューに積む形）。
+    pub def tagged(id: Int64, text: String): String = "${id}\t${text}"
+
+    /// tagged の逆。番号の無い・読めない形は None。
+    pub def untagged(raw: String): Option[(Int64, String)] =
+        String.indexOfLeft({substr = "\t"}, raw)
+            |> Option.flatMap(i -> Int64.fromString(String.takeLeft(i, raw))
+                |> Option.map(id -> (id, String.dropLeft(i + 1, raw))))
+
     /// 127.0.0.1 の port で HTTP サーバを立てて Bridge を返す。
-    /// ハンドラはリクエストを 1 つの文字列にまとめてキューへ積み、応答を最大 10 秒待つ。
+    /// ハンドラはリクエストを 1 つの文字列にまとめてキューへ積み、自分の番号の応答を最大 10 秒待つ。
     /// executor を与えない（null）ので処理は 1 スレッド直列 = 同時リクエストも順番に並ぶ。
+    // WhyNot: 時間切れの依頼をキューに残すと、ゲームは後でそれにも答え、その答えが次の依頼の
+    // 答えとして渡ってしまう（以後ずっと 1 つずつずれる）。だから時間切れでは、まだ取られて
+    // いない依頼を取り下げ、遅れて届いた他の番号の答えは捨てる。
     pub def start(port: Int32): Bridge \ IO =
         let requests: JQueue[String] = new JQueue();
         let responses: JQueue[String] = new JQueue();
+        let current = new AtomicLong(0i64);
+        let issued = new AtomicLong(0i64);
         let server = HttpServer.create(new InetSocketAddress("127.0.0.1", port), 0);
         discard server.createContext("/", new HttpHandler {
             def handle(_this: HttpHandler, exchange: HttpExchange): Unit \ IO = {
@@ -46,14 +63,16 @@ pub mod RemoteDebug {
                 let bodyText = new JString(requestBody.readAllBytes(), "UTF-8");
                 let methodName = exchange.getRequestMethod();
                 let path = uri.getPath();
-                discard requests.offer("${methodName} ${path}${queryPart}\n${bodyText}");
-                let answer = responses.poll(10i64, TimeUnit.SECONDS);
-                let timedOut = Object.isNull(answer);
-                let text = if (timedOut) "error: game loop did not answer within 10s\n" else answer;
+                let id = issued.incrementAndGet();
+                let request = tagged(id, "${methodName} ${path}${queryPart}\n${bodyText}");
+                discard requests.offer(request);
+                let answer = awaitAnswer(responses, id, System.nanoTime() + 10_000_000_000i64);
+                if (Option.isEmpty(answer)) discard requests.remove(request) else ();
+                let text = Option.getWithDefault("error: game loop did not answer within 10s\n", answer);
                 let headers = exchange.getResponseHeaders();
                 headers.set("Content-Type", "text/plain; charset=utf-8");
                 let bytes = text.getBytes("UTF-8");
-                exchange.sendResponseHeaders(if (timedOut) 503 else 200, Int32.toInt64(Array.length(bytes)));
+                exchange.sendResponseHeaders(if (Option.isEmpty(answer)) 503 else 200, Int32.toInt64(Array.length(bytes)));
                 let out = exchange.getResponseBody();
                 out.write(bytes);
                 out.close()
@@ -61,18 +80,39 @@ pub mod RemoteDebug {
         });
         server.start();
         println("[remote-debug] listening on http://127.0.0.1:${port} (GET /help)");
-        { server = server, requests = requests, responses = responses }
+        { server = server, requests = requests, responses = responses, current = current }
+
+    /// 番号 id の答えを deadlineNs（System.nanoTime の値）まで待つ。他の番号の答えは捨てる。
+    def awaitAnswer(responses: JQueue[String], id: Int64, deadlineNs: Int64): Option[String] \ IO =
+        let leftNs = deadlineNs - System.nanoTime();
+        if (leftNs <= 0i64) None
+        else {
+            let raw = responses.poll(leftNs, TimeUnit.NANOSECONDS);
+            if (Object.isNull(raw)) None
+            else match untagged(raw) {
+                case Some((answered, text)) if answered == id => Some(text)
+                case _ => awaitAnswer(responses, id, deadlineNs)
+            }
+        }
 
     /// ゲームループが毎フレーム呼ぶ非ブロッキングの受信。届いていなければ None。
     pub def pollRequest(bridge: Bridge): Option[String] \ IO =
         let queue = bridge#requests;
         let raw = queue.poll();
-        if (Object.isNull(raw)) None else Some(raw)
+        if (Object.isNull(raw)) None
+        else match untagged(raw) {
+            case Some((id, text)) =>
+                let current = bridge#current;
+                current.set(id);
+                Some(text)
+            case None => Some(raw)
+        }
 
     /// 応答本文を HTTP スレッドへ返す（pollRequest で受けた 1 件に必ず 1 回対で呼ぶ）。
     pub def respond(text: String, bridge: Bridge): Unit \ IO =
         let queue = bridge#responses;
-        discard queue.offer(text)
+        let current = bridge#current;
+        discard queue.offer(tagged(current.get(), text))
 
     /// サーバを止める（ゲーム終了時）。待機中のリクエストは切断される。
     pub def shutdown(bridge: Bridge): Unit \ IO =
