@@ -78,6 +78,21 @@ pub mod EcsTween {
         case Track.Scalar(fl) => Out.ScalarOut(fl#start + (fl#target - fl#start) * p)
     }
 
+    /// 進み t（0..1）にカーブを掛けた値。時刻の純関数で動かす演出（Timeline・Counter）が
+    /// tween と同じカーブを使うための口。
+    pub def eased(e: Easing, t: Float64): Float64 = ease(e, t)
+
+    /// eased の逆: カーブを掛けた値 v（0..1）になる進み t。「i 回目に数が移るのはいつか」を
+    /// 求めるときに使う（Counter.tickAt）。
+    pub def inverseEased(e: Easing, v: Float64): Float64 =
+        let x = Num.clamp01(v);
+        match e {
+            case Easing.Linear    => x
+            case Easing.EaseIn    => Vec2.sqrt(x)
+            case Easing.EaseOut   => 1.0 - Vec2.sqrt(1.0 - x)
+            case Easing.EaseInOut => if (x < 0.5) Vec2.sqrt(x / 2.0) else 1.0 - Vec2.sqrt((1.0 - x) / 2.0)
+        }
+
     /// 補間カーブ（全て 0→0・1→1 を保つ）。
     def ease(e: Easing, t: Float64): Float64 = match e {
         case Easing.Linear    => t
