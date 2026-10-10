@@ -21,7 +21,7 @@ func init() {
 	register("hook-flix-touch", "このセッションが .flix を触った印を置く (PostToolUse)", cmdHookFlixTouch)
 	register("hook-flix-work", "作業の区切りで Flix を型検査する (Stop / SubagentStop)", cmdHookFlixWork)
 	register("hook-flix-edit", "保存 1 回ぶんを常駐へ投げて型検査する (手動確認用)", cmdHookFlixEdit)
-	register("hook-session-diet", "文脈が太ったら /clear を促す (PostToolUse)", cmdHookSessionDiet)
+	register("hook-session-diet", "廃止・何もしない (古い settings.json の呼び出しを壊さないため口だけ残す)", cmdHookSessionDiet)
 }
 
 // hookRoot はフックが規約データ・bin/checkd を探す根。

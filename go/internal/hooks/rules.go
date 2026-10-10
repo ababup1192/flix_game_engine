@@ -12,15 +12,6 @@ import (
 // RulesPath は規約データの置き場（リポジトリのルートからの相対）。
 var RulesPath = filepath.Join("bin", "lint-rules", "hooks.json")
 
-// SessionDiet は「文脈が太った」の判定値。
-type SessionDiet struct {
-	ThresholdTokens *int    `json:"thresholdTokens"`
-	StepTokens      *int    `json:"stepTokens"`
-	TailBytes       *int64  `json:"tailBytes"`
-	UsageMark       *string `json:"usageMark"`
-	MarkerPrefix    *string `json:"markerPrefix"`
-}
-
 // MaxDaemons は常駐の数の上限の決め方。
 // WhyNot: 起動予約と常駐本体で別々に持たないのは、機械を変えたとき片方だけ
 // 古い値が残り、歯止めの数と実際に立つ数が食い違うため。
@@ -93,7 +84,6 @@ type ArtEdit struct {
 
 // Rules はフックが使う規約。すべて JSON から来る。
 type Rules struct {
-	SessionDiet SessionDiet `json:"sessionDiet"`
 	Checkd      Checkd      `json:"checkd"`
 	ArtEdit     ArtEdit     `json:"artEdit"`
 }
@@ -111,7 +101,7 @@ func LoadRules(root string) (*Rules, error) {
 	if err := json.Unmarshal(data, &r); err != nil {
 		return nil, fmt.Errorf("規約ファイルが JSON として壊れています (%s): %v", path, err)
 	}
-	sd, cd := r.SessionDiet, r.Checkd
+	cd := r.Checkd
 	// warmTimeoutSec は 2026-08-30 に足した新キー。欠けキーで止める方針の例外として
 	// 1 リリースの間だけ既定値へフォールバックする — 古い hooks.json + 新バイナリの
 	// 組み合わせ (バイナリだけ部分更新した clone) との後方互換のため。次のリリースで
@@ -123,16 +113,6 @@ func LoadRules(root string) (*Rules, error) {
 	}
 	missing := ""
 	switch {
-	case sd.ThresholdTokens == nil:
-		missing = "sessionDiet.thresholdTokens"
-	case sd.StepTokens == nil:
-		missing = "sessionDiet.stepTokens"
-	case sd.TailBytes == nil:
-		missing = "sessionDiet.tailBytes"
-	case sd.UsageMark == nil:
-		missing = "sessionDiet.usageMark"
-	case sd.MarkerPrefix == nil:
-		missing = "sessionDiet.markerPrefix"
 	case cd.CacheDir == nil:
 		missing = "checkd.cacheDir"
 	case cd.StateHashLen == nil:
