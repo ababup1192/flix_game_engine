@@ -16,8 +16,8 @@ pub mod UiTooltip {
     pub enum Side with Eq, ToString {
         case Right
         case Left
-        case Below
-        case Above
+        case Bottom
+        case Top
     }
 
     /// 置き場所の注文。anchor = 見ている物の枠（マウスの指なら大きさ 0 の枠）、size = 窓の大きさ、
@@ -33,7 +33,7 @@ pub mod UiTooltip {
     }
 
     /// 窓の左上と大きさ（Request の決まりで選んだ 1 か所）。
-    pub def place(req: Request): Rect2.Rect2 =
+    pub def computePlacement(req: Request): Rect2.Rect2 =
         let sides = if (List.isEmpty(req#sides)) defaultSides() else req#sides;
         let tried = sides |> List.map(side -> {
             let rect = candidate(side, req);
@@ -54,7 +54,7 @@ pub mod UiTooltip {
         clampInto(req#bounds, pick)
 
     /// 既定の向きの順（右 → 左 → 下 → 上。横書きの画面で、読んでいる物の続きに出る順）。
-    pub def defaultSides(): List[Side] = Side.Right :: Side.Left :: Side.Below :: Side.Above :: Nil
+    pub def defaultSides(): List[Side] = Side.Right :: Side.Left :: Side.Bottom :: Side.Top :: Nil
 
     /// 画面の真ん中から遠ざかる向きを先に試す順（左半分の物は右 → 左、右半分の物は左 → 右。
     /// 縦も同じ）。真ん中に寄った窓は画面の中身を覆いやすいので、外側へ逃がしたいときに使う。
@@ -62,21 +62,21 @@ pub mod UiTooltip {
         let a = Rect2.center(anchor);
         let b = Rect2.center(bounds);
         let (h1, h2) = if (a#x <= b#x) (Side.Right, Side.Left) else (Side.Left, Side.Right);
-        let (v1, v2) = if (a#y <= b#y) (Side.Below, Side.Above) else (Side.Above, Side.Below);
+        let (v1, v2) = if (a#y <= b#y) (Side.Bottom, Side.Top) else (Side.Top, Side.Bottom);
         h1 :: h2 :: v1 :: v2 :: Nil
 
     /// 1 つの向きに置いた窓（出す向きと直角の方向だけ bounds の内側へずらしてある）。
-    pub def candidate(side: Side, req: Request): Rect2.Rect2 =
+    def candidate(side: Side, req: Request): Rect2.Rect2 =
         let a = req#anchor;
         let s = req#size;
         let b = req#bounds;
         let crossX = clampAxis(a#position#x, s#x, b#position#x, b#size#x);
         let crossY = clampAxis(a#position#y, s#y, b#position#y, b#size#y);
         let at = match side {
-            case Side.Right => { x = a#position#x + a#size#x + req#gap, y = crossY }
-            case Side.Left  => { x = a#position#x - req#gap - s#x,      y = crossY }
-            case Side.Below => { x = crossX, y = a#position#y + a#size#y + req#gap }
-            case Side.Above => { x = crossX, y = a#position#y - req#gap - s#y }
+            case Side.Right  => { x = a#position#x + a#size#x + req#gap, y = crossY }
+            case Side.Left   => { x = a#position#x - req#gap - s#x,      y = crossY }
+            case Side.Bottom => { x = crossX, y = a#position#y + a#size#y + req#gap }
+            case Side.Top    => { x = crossX, y = a#position#y - req#gap - s#y }
         };
         { position = at, size = s }
 

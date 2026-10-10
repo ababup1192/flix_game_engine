@@ -2,6 +2,7 @@
 // クリックやホバーがどの要素に当たったかを一箇所で判定できるので、各所で当たり判定を書かずに済む。
 // 利用例: ボタンのクリック先を決める / ホバー中の項目を知る / メニューを掴んでいるか調べる。
 // 注意: 当たった要素を返すだけ。当たった後にどう反応するか（キー入力の宛先など）はゲーム側の仕事。
+// キーのフォーカス（矢印・Tab で巡る・ホバーと同じ 1 つを指す）は UiFocusNav。
 
 pub mod UiFocus {
 
@@ -30,19 +31,23 @@ pub mod UiFocus {
     /// 当たり判定の対象には width/height を Px で持つノード（ボタンのコンテナや図形）を使うこと。
     /// コンテナも rect を持つので当たる（root は画面全面）— 呼び手は meta の有無で選別する。
     pub def hitTestUi(ui: UiStore.UiWorld, design: Vec2.Vec2, point: Vec2.Vec2): Option[EntityId] =
-        let rootRect: Rect2.Rect2 = {position = {x = 0.0, y = 0.0}, size = design};
         let roots = UiStore.rootsOf(ui);
-        let rects = roots |> List.foldLeft((acc, root) -> Map.union(
+        let vis = roots |> List.foldLeft((acc, root) -> Map.union(
+            UiHierarchy.resolveInherited(ui#visible, ui#parents, root, ui#order), acc), Map.empty());
+        hitTest({rects = layoutRects(ui, design), vis = vis,
+                 zOf = id -> zIndexOf(id, ui),
+                 depthOf = id -> UiHierarchy.depthOf(id, ui#parents)}, point)
+
+    /// UiWorld 全体を design 空間でレイアウトした、面積のある entity の画面矩形
+    /// （hitTestUi と UiFocusNav.targetsOfUi が同じ枠を見る）。見えていない entity は入らない。
+    pub def layoutRects(ui: UiStore.UiWorld, design: Vec2.Vec2): Map[EntityId, Rect2.Rect2] =
+        let rootRect: Rect2.Rect2 = {position = {x = 0.0, y = 0.0}, size = design};
+        UiStore.rootsOf(ui) |> List.foldLeft((acc, root) -> Map.union(
             UiLayout.computeLayout(
                 {styles = ui#styles, parents = ui#parents, order = ui#order,
                  measures = Map.empty(), visible = ui#visible},
                 root, rootRect), acc), Map.empty())
-            |> Map.filter(r -> r#size#x > 0.0 and r#size#y > 0.0);
-        let vis = roots |> List.foldLeft((acc, root) -> Map.union(
-            UiHierarchy.resolveInherited(ui#visible, ui#parents, root, ui#order), acc), Map.empty());
-        hitTest({rects = rects, vis = vis,
-                 zOf = id -> zIndexOf(id, ui),
-                 depthOf = id -> UiHierarchy.depthOf(id, ui#parents)}, point)
+            |> Map.filter(r -> r#size#x > 0.0 and r#size#y > 0.0)
 
     /// entity の描画 zIndex（いずれかの描画コンポーネントの zIndex。描画物なしは 0）。
     def zIndexOf(id: EntityId, ui: UiStore.UiWorld): Int32 =

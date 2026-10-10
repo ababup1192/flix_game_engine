@@ -47,6 +47,8 @@
 | UI の文字欄に実行時の値を差し込む | UiBinding |
 | 会話窓・文字送りを出す | UiDialog / UiTypewriter（実例: `templates/novel-starter/src/World.flix`） |
 | マウスの下の UI 要素を知る | UiFocus（実例: `templates/novel-starter/src/Controls.flix`） |
+| 絵の上に散らばった選べる物を矢印・Tab・ホバーで巡る（キーのフォーカスとホバーを 1 つにする・:focus-visible の枠） | UiFocusNav（Target の列を作るだけ。UiDoc の画面は targetsOfUi。並びの決まったメニューは UiMenu） |
+| 説明の窓（ツールチップ）を見ている物の脇の、画面からはみ出さず他の物に重ならない所へ置く | UiTooltip（computePlacement。窓の字を折るのは RichText.wrapLinesBy） |
 | meta "prefix/N" から番号を読む | UiMeta（実例: `templates/novel-starter/src/Controls.flix`） |
 | 粒を舞わせる | Fx / Scatter（実例: `templates/race-starter/src/World.flix`） |
 | 疑似遠近のストリップ（横一列）ごとに立ち物・床を敷く | Scatter.strip（実例: `templates/race-starter/src/ViewScene.flix`） |
@@ -214,6 +216,8 @@
 - **UiRender** — UI 全体を毎フレーム、そのまま描ける絵の列に変換する入口。
 - **UiHierarchy** — UI entity の親子ツリー走査（完全純粋）。
 - **UiFocus** — マウス座標の下にある一番手前の UI 要素を見つけて返す。
+- **UiFocusNav** — 画面の選べる物を名前付きで登録すると、矢印キー・Tab・マウスのホバーでフォーカス（いま見ている物）が巡る。
+- **UiTooltip** — 説明の窓（ツールチップ）を、見ている物の脇の「画面からはみ出さず、大事な物に重ならない」所へ置く。
 - **UiBinding** — UI のテキスト欄に付けた「差し込み名」を実行時の値に置き換える。
 - **UiSlots** — ui.json に用意した固定数のスロットへ、可変個の項目を先頭から流し込む。
 - **UiMenu** — 選択メニュー共通の「項目の並べ方」「選択中の見せ方」「カーソルの動かし方」。
