@@ -485,6 +485,7 @@ release-guard:
 	@# 後ろで気づくと、10 分以上かけたテストの後に落ちて全部やり直しになる。
 	@test -n "$(BUNDLE_FLIX_JAR)" -a -f "$(BUNDLE_FLIX_JAR)" \
 	  || { echo "[release] flix.jar が見つかりません (同梱 zip が作れません)。BUNDLE_FLIX_JAR= で場所を指定してください"; exit 1; }
+	@$(MAKE) --no-print-directory check-bundle-flix
 	@# 追随の材料が bump のときのままか。API を触るコミットが bump の後に入ると古くなる。
 	@bin/fge migration-notes --check
 	@echo "[release] v$(VERSION) を $(RELEASE_SHA) で公開します"
@@ -517,7 +518,20 @@ BUNDLE_SUMS  := SHA256SUMS.txt
 BUNDLE_FLIX_JAR ?= $(shell real=$$(readlink -f .devbox/nix/profile/default/bin/flix 2>/dev/null); \
                      [ -n "$$real" ] && echo "$$(dirname $$(dirname $$real))/share/java/flix/flix.jar")
 BUNDLE_FLIX_WRAPPER ?= bin/flix
-.PHONY: bundle-zip
+.PHONY: bundle-zip check-bundle-flix
+# 同梱する flix.jar の版が devbox.json の版と同じか。
+# WhyNot: 置き場の有無だけで通さないのは、devbox install をし忘れた profile が古い flix を
+# 指したままでも jar は在るため。0.35.5 はこれで 0.75.1 を配り、Studio でゲームが一切
+# ビルドできなくなった (ゲームの flix.toml が求める版に届かない)。
+check-bundle-flix:
+	@want=$$(grep -o 'flix_[0-9]*_[0-9]*_[0-9]*' devbox.json | head -n 1 | sed 's/^flix_//; s/_/./g'); \
+	 java=.devbox/nix/profile/default/bin/java; [ -x "$$java" ] || java=java; \
+	 got=$$("$$java" -jar "$(BUNDLE_FLIX_JAR)" --version 2>/dev/null | grep -o '[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*' | head -n 1); \
+	 if [ -z "$$want" ] || [ "$$want" != "$$got" ]; then \
+	   echo "[release] 同梱する flix.jar の版 ($${got:-読めない}) が devbox.json の版 ($${want:-読めない}) と違います: $(BUNDLE_FLIX_JAR)"; \
+	   echo "[release] devbox install で profile を直してから組み直してください"; exit 1; \
+	 fi; \
+	 echo "[release] 同梱する flix.jar: $$got (devbox.json と一致)"
 # WhyNot: 組む前に必ず go-build を通すのは、検査データ (bin/lint-rules/*.json) が git の
 # 作業ツリーから、検査の中身 (bin/dist の fge-go) が前に組んだ物から来るため。
 # 別々の経路なので、バイナリだけ古いまま配ると「宣言はあるのに入口が無い」バンドルになり、
@@ -525,6 +539,7 @@ BUNDLE_FLIX_WRAPPER ?= bin/flix
 bundle-zip: go-build
 	@test -n "$(BUNDLE_FLIX_JAR)" -a -f "$(BUNDLE_FLIX_JAR)" \
 	  || (echo "!! flix.jar が見つかりません (BUNDLE_FLIX_JAR= で場所を指定してください)" && exit 1)
+	@$(MAKE) --no-print-directory check-bundle-flix
 	rm -rf build/bundle "$(BUNDLE_ZIP)" "$(BUNDLE_SUMS)"
 	bin/fge stage-engine --out "$(BUNDLE_STAGE)" \
 	  --flix-jar "$(BUNDLE_FLIX_JAR)" \
