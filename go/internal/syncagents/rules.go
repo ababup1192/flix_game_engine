@@ -18,6 +18,7 @@ type rulesFile struct {
 	ManifestKeys     *[]string `json:"manifestKeys"`
 	SkillsDir        *string   `json:"skillsDir"`
 	RulesDir         *string   `json:"rulesDir"`
+	LedgerPath       *string   `json:"ledgerPath"`
 	CoreDoc          *string   `json:"coreDoc"`
 	LocalDoc         *string   `json:"localDoc"`
 	AgentsMd         *string   `json:"agentsMd"`
@@ -37,6 +38,7 @@ type Rules struct {
 	ManifestKeys   []string
 	SkillsDir      string
 	RulesDir       string
+	LedgerPath     string
 	CoreDoc        string
 	LocalDoc       string
 	AgentsMd       string
@@ -73,6 +75,8 @@ func LoadRules(root string) (*Rules, error) {
 		missing = "skillsDir"
 	case f.RulesDir == nil:
 		missing = "rulesDir"
+	case f.LedgerPath == nil:
+		missing = "ledgerPath"
 	case f.CoreDoc == nil:
 		missing = "coreDoc"
 	case f.LocalDoc == nil:
@@ -118,6 +122,7 @@ func LoadRules(root string) (*Rules, error) {
 		ManifestKeys:   *f.ManifestKeys,
 		SkillsDir:      *f.SkillsDir,
 		RulesDir:       *f.RulesDir,
+		LedgerPath:     *f.LedgerPath,
 		CoreDoc:        *f.CoreDoc,
 		LocalDoc:       *f.LocalDoc,
 		AgentsMd:       *f.AgentsMd,

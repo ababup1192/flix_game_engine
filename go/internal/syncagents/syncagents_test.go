@@ -361,13 +361,18 @@ func TestMdFilesSortedLikePython(t *testing.T) {
 	}
 }
 
-// copyDirs はミラー — 配り元に無い物は配り先から消える。
+// 前の回に配って配り元から無くなった物は配り先から消える。
 func TestCopyDirsRemovesFilesGoneFromSource(t *testing.T) {
 	root := fixture(t)
 	game := t.TempDir()
+	write(t, root, "agents-pack/skills/zzz-stale/SKILL.md", "x\n", 0o644)
+	write(t, root, "agents-pack/skills/alpha/stale-note.md", "x\n", 0o644)
 	run(t, root, "--game", game)
-	write(t, game, ".claude/skills/zzz-stale/SKILL.md", "x\n", 0o644)
-	write(t, game, ".claude/skills/alpha/stale-note.md", "x\n", 0o644)
+	for _, rel := range []string{"agents-pack/skills/zzz-stale", "agents-pack/skills/alpha/stale-note.md"} {
+		if err := os.RemoveAll(filepath.Join(root, filepath.FromSlash(rel))); err != nil {
+			t.Fatal(err)
+		}
+	}
 	out, _, _ := run(t, root, "--game", game)
 
 	for _, rel := range []string{".claude/skills/zzz-stale", ".claude/skills/alpha/stale-note.md"} {
@@ -375,11 +380,24 @@ func TestCopyDirsRemovesFilesGoneFromSource(t *testing.T) {
 			t.Errorf("%s が消えていない", rel)
 		}
 	}
-	if !strings.Contains(out, "[sync-agents] 消しました: .claude/skills/zzz-stale (配り元にありません)\n") {
+	if !strings.Contains(out, "[sync-agents] 消しました: .claude/skills/zzz-stale/SKILL.md (配り元にありません)\n") {
 		t.Errorf("消した物が報告に出ていない: %q", out)
 	}
 	if _, err := os.Stat(filepath.Join(game, ".claude", "skills", "alpha", "SKILL.md")); err != nil {
 		t.Error("配り元にある物まで消してしまった")
+	}
+}
+
+// engine が配っていない物は copyDirs の配り先にあっても消さない
+// (例: ゲームが自分で置いた .claude/rules/art-style.md)。一覧の無い旧版のゲームでも同じ。
+func TestCopyDirsKeepsGameOwnedFiles(t *testing.T) {
+	root := fixture(t)
+	game := t.TempDir()
+	write(t, game, ".claude/skills/art-style.md", "ゲームの画風\n", 0o644)
+	run(t, root, "--game", game)
+	run(t, root, "--game", game)
+	if _, err := os.Stat(filepath.Join(game, ".claude", "skills", "art-style.md")); err != nil {
+		t.Error("ゲームが置いた art-style.md を消してしまった")
 	}
 }
 
@@ -421,17 +439,20 @@ func TestPruneDoesNotFollowSymlinks(t *testing.T) {
 	root := fixture(t)
 	game := t.TempDir()
 	outside := t.TempDir()
-	write(t, outside, "keep.txt", "x\n", 0o644)
+	write(t, outside, "SKILL.md", "x\n", 0o644)
 	run(t, root, "--game", game)
-	link := filepath.Join(game, ".claude", "skills", "zzz-link")
-	if err := os.Symlink(outside, link); err != nil {
+	alpha := filepath.Join(game, ".claude", "skills", "alpha")
+	if err := os.RemoveAll(alpha); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, alpha); err != nil {
 		t.Skipf("symlink を作れない環境: %v", err)
 	}
-	run(t, root, "--game", game)
-	if _, err := os.Lstat(link); err == nil {
-		t.Error("配り元に無い symlink が残っている")
+	if err := os.RemoveAll(filepath.Join(root, "agents-pack", "skills", "alpha")); err != nil {
+		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(outside, "keep.txt")); err != nil {
+	run(t, root, "--game", game)
+	if _, err := os.Stat(filepath.Join(outside, "SKILL.md")); err != nil {
 		t.Error("symlink の先の木まで消してしまった")
 	}
 }

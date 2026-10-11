@@ -4,6 +4,7 @@
   "manifestKeys": ["copy", "copyIfAbsent", "copyDirs"],
   "skillsDir": "agents-pack/skills",
   "rulesDir": "agents-pack/rules",
+  "ledgerPath": ".agents-pack.json",
   "coreDoc": "agents-pack/AGENTS.core.md",
   "localDoc": "AGENTS.local.md",
   "agentsMd": "AGENTS.md",

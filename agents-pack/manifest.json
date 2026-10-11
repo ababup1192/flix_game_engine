@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "sync-agents の配布物一覧の source of truth。Makefile 版 (bin/fge sync-agents) と Studio 版 (NewGame.flix) はこれを読むだけで、リストを二重に持たない。キー名 copy / copyIfAbsent / copyDirs は Studio の Flix 実装と共有するので変えない。src は engine リポからの相対パス、dst はゲームリポからの相対パス。copyIfAbsent はユーザ編集を守るため既存を上書きしない。copyDirs はミラー: engine が丸ごと持つフォルダなので、配り元に無い物は配り先から消す。",
+  "note": "sync-agents の配布物一覧の source of truth。Makefile 版 (bin/fge sync-agents) と Studio 版 (NewGame.flix) はこれを読むだけで、リストを二重に持たない。キー名 copy / copyIfAbsent / copyDirs は Studio の Flix 実装と共有するので変えない。src は engine リポからの相対パス、dst はゲームリポからの相対パス。copyIfAbsent はユーザ編集を守るため既存を上書きしない。copyDirs は配り先へ重ね書きし、前の回に配って配り元から無くなった物だけを消す（配った物の一覧はゲームの .agents-pack.json。一覧に無いゲームの物は残す）。",
   "copy": [
     {"src": "bin/fge", "dst": "bin/fge"},
     {"src": "bin/fge.cmd", "dst": "bin/fge.cmd"},
