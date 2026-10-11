@@ -202,19 +202,42 @@ func syncGame(out, errOut *strings.Builder, root string, r *Rules, gameArg, vers
 		return 2, err
 	}
 
+	// copyDirs の配り先で消すのは「前の回に engine が配って、今回の配り元に無い物」だけ。
+	// 一覧 (ledger) に載っていない物はゲームが自分で置いた物として残す。
+	ledgerPath := pyJoin(game, r.LedgerPath)
+	prev, hasLedger := loadLedger(ledgerPath)
+	if !hasLedger {
+		// WhyNot: 一覧の無い初回 (旧版から上がってきたゲーム) で消さないのは、どれを
+		// engine が配ったか見分けられないため。今回の配りで一覧を書き、次の回から消し込む。
+		fmt.Fprintf(out, "[sync-agents] %s が無いので今回は消し込みを飛ばします (配った物の一覧を書きます)\n", r.LedgerPath)
+	}
+	next := map[string][]string{}
 	for _, e := range m[keyCopyDirs] {
 		src, dst := pyJoin(root, e.src), pyJoin(game, e.dst)
 		if err := os.MkdirAll(fsPath(dst), 0o777); err != nil {
 			return 2, err
 		}
-		if canPrune(game, src, dst) {
-			if err := pruneDir(out, game, src, dst); err != nil {
-				return 2, err
+		files, err := filesUnder(src)
+		if err != nil {
+			return 2, err
+		}
+		if !canPrune(game, src, dst) {
+			// 消し込めない回は前の一覧も持ち越す (配り元が戻ったときに消し忘れない)。
+			next[e.dst] = unionSorted(prev[e.dst], files)
+		} else {
+			if hasLedger {
+				if err := pruneDistributed(out, game, dst, prev[e.dst], files); err != nil {
+					return 2, err
+				}
 			}
+			next[e.dst] = files
 		}
 		if err := copyDir(src, dst); err != nil {
 			return 2, err
 		}
+	}
+	if err := writeLedger(ledgerPath, next); err != nil {
+		return 2, err
 	}
 	skills, err := skillDirNames(root, r)
 	if err != nil {
@@ -445,7 +468,7 @@ func walkRel(root, rel string, visit func(rel string, isDir bool)) error {
 	return nil
 }
 
-// canPrune は copyDirs の配り先を消し込んでよいかを見る。
+// canPrune は copyDirs の配り先を消し込んでよいかを見る (消すのは一覧に載った物だけ。ledger.go)。
 //
 // WhyNot: 配り元が無い / 空のときに消しへ行かないのは、engine 側の取り違え 1 つで
 // ゲームのフォルダを空にできてしまうため。配り先が symlink のときも辿らずに残す。
@@ -476,46 +499,6 @@ func isUnder(base, p string) bool {
 		}
 	}
 	return true
-}
-
-// pruneDir は配り元に無い物を配り先から消す (copyDirs をミラーにする)。
-func pruneDir(out *strings.Builder, game, src, dst string) error {
-	names, err := dirEntryNames(dst)
-	if err != nil {
-		return err
-	}
-	for _, name := range names {
-		d, s := pyJoin(dst, name), pyJoin(src, name)
-		switch {
-		case isSymlink(d):
-			if pyExists(s) {
-				continue
-			}
-			if err := os.Remove(fsPath(d)); err != nil {
-				return err
-			}
-		case pyIsDir(d):
-			if pyIsDir(s) {
-				if err := pruneDir(out, game, s, d); err != nil {
-					return err
-				}
-				continue
-			}
-			if err := os.RemoveAll(fsPath(d)); err != nil {
-				return err
-			}
-		default:
-			if pyIsFile(s) {
-				continue
-			}
-			if err := os.Remove(fsPath(d)); err != nil {
-				return err
-			}
-		}
-		fmt.Fprintf(out, "[sync-agents] 消しました: %s (配り元にありません)\n",
-			strings.TrimPrefix(d, game+"/"))
-	}
-	return nil
 }
 
 // copyDir は src の中身を dst へ重ね書きする。
