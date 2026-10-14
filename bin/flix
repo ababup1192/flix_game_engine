@@ -101,4 +101,8 @@ fi
 # 再帰するため。既定は OS で違い、Linux は macOS より小さいので、手元で通るソースが
 # CI でだけ StackOverflowError になる。-Xss は仮想アドレスを予約するだけで、
 # 実メモリは使った分しか要らない。
-exec "$JAVA_CMD" -Xss32m $FLAGS -jar "$FLIX_JAR" "$@"
+# ヒープの上限は物理メモリの 50%（GC は JVM の既定 = G1）。flix run はコンパイラとゲームが 1 つの JVM を
+# 分け合い、上限が足りないと Flix の最適化 (Inliner) が OutOfMemoryError になる。既定の 25% は
+# 16GB の機械で 4GB で、大きなゲームでは足りないことがある（2026-10-14・Studio の server の
+# EngineTasks.memoryArgs と .app の engine/flix と同じ値）。絶対値 (-Xmx) にしないのは、ゲームが育つと山も育つため。
+exec "$JAVA_CMD" -Xss32m -XX:MaxRAMPercentage=50 $FLAGS -jar "$FLIX_JAR" "$@"
