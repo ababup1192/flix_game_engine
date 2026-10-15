@@ -37,7 +37,7 @@
 | ある処理が N の二乗で割り当てていないかをテストで確かめたい | AllocMeter（絶対バイトは見ず、N を増やしたときの比だけを見る。呼ぶのはテストから） |
 | 面をシェーダーで塗る「宣言データ」の型そのものを知りたい | ShaderDoc |
 | シェーダー宣言を GLSL のソースへ変換する仕組みを知りたい | ShaderGen |
-| シェーダーの式を GPU なしで検証したい（テスト用） | ShaderEval |
+| シェーダーの式を GPU なしで評価したい（テスト・SoftRaster の描き出し） | ShaderEval |
 | shader.json を読み書きしたい | ShaderJson |
 | シェーダー面を描く GPU 側の効果口を知りたい | ShaderEffect |
 | 位置ベクトルの足し引き・長さ・回転を計算したい | Vec2 |
@@ -86,7 +86,7 @@
 
 - **ShaderDoc** — 面（矩形）を GPU シェーダーで塗るための「宣言データ」。生の GLSL を書かず、少数の部品（値の場・色・出力）を組み合わせて水面のような連続した見た目を作る。部品の型（Spec）と、木の汎用走査 `ShaderDoc.foldField`・Tex が読むテクスチャ名の正典順列挙 `ShaderDoc.texNames`（GLSL の uniform 番号 = sampler unit 番号 = 描画依頼の texNames の並びの正）を持つ。全面でない面から pass を等倍・鏡像で読む Shift の dy 場は、ゲーム側の入口 engine_world の `Render.passStripDy` で組める。
 - **ShaderGen** — Spec を GLSL の fragment シェーダー文字列へ変換する codegen。各部品が自分の GLSL 片（式）を返し、compile が 1 枚の main() に繋ぐ。出力は決定論なのでスナップショットで釘打ちできる。
-- **ShaderEval** — Spec 木を CPU（Float64）で評価する検証用の純関数。描画経路ではなく、式の構造が GLSL 側と揃っているかをテストで確かめるために使う。tex 場つきの評価は `ShaderEval.evalPixelTex` / `ShaderEval.evalAlphaTex`、生成の画素ループは色と α を 1 回の shared 先行評価で返す `ShaderEval.evalPixelAlphaTex` を使う。
+- **ShaderEval** — Spec 木を CPU（Float64）で評価する純関数。GL の描画経路ではないが、SoftRaster（描き出し・動画・スナップショット）はシェーダー面の画素をこれで塗り、テストは式の構造が GLSL 側と揃っているかをこれで確かめる。tex 場つきの評価は `ShaderEval.evalPixelTex` / `ShaderEval.evalAlphaTex`。何万画素も評価する画素ループは `ShaderEval.compileSpec` で面ごとに 1 回だけ組み立ててから呼ぶ（色と α を 1 回の shared 先行評価で返す。SoftRaster はこれを全コアで並べて評価し、`FGE_SOFT_SERIAL=1` で 1 本に戻せる）。
 - **ShaderJson** — シェーダー面の宣言（ShaderDoc.Spec）を JSON と相互変換する codec。engine を触らず `*.shader.json` の保存だけで調整できる（App.watchFile によるホットリロードの受け皿）。
 - **ShaderEffect** — 宣言シェーダー面を GPU で描くための別チャンネルの効果口（`eff Shader`）。`eff Game` に描画オペを足すとハンドラ全てが波及するため、シェーダー面だけ別効果に切り出している。
 

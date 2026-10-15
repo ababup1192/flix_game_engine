@@ -22,6 +22,8 @@ pub mod SoftRaster {
     import java.io.FileInputStream
     import java.lang.System
     import java.lang.{Character => JChar}
+    import java.util.function.IntUnaryOperator
+    import java.util.stream.IntStream
     import javax.imageio.ImageIO
 
     /// ラスタライズ要求。design 解像度の Drawable 群を `scale` 倍に拡大して `outPath` に PNG 出力。
@@ -306,9 +308,11 @@ pub mod SoftRaster {
     }
 
     /// シェーダー面を画素ごとに描き出す。rect を出力ピクセルへ量子化し、各画素の中心を
-    /// uv（rect 内 0..1）に写して ShaderEval.evalPixelAlphaTex（色と α を 1 回の shared
-    /// 先行評価で一緒に返す版 — 別々に呼ぶと bindings を画素ごとに 2 回払う）で評価、
+    /// uv（rect 内 0..1）に写して ShaderEval.compileSpec で組み立てた関数（色と α を 1 回の shared
+    /// 先行評価で一緒に返す — 別々に呼ぶと bindings を画素ごとに 2 回払う）で評価、
     /// blendPixel で本体へ混ぜる（Normal / Add / Multiply とも GL 側と同じ合成式）。
+    /// 描き出しの時間のほとんどはここ（実測 96%）なので、Spec は面ごとに 1 回だけ組み立て、
+    /// 画素は shadeAll でコアの数だけ並べて評価する。
     /// mask が非空なら「どれかの多角形の内側」の画素だけ塗る（GL のステンシル抜きと同じ意図）。
     def drawSurface(image: BufferedImage, sf: Float64, texEnv: Map[String, ShaderEval.TexData],
                     s: SurfaceCmd): Unit \ IO = region rc {
@@ -327,25 +331,44 @@ pub mod SoftRaster {
             let buf: Array[Int32, rc] = Array.empty(rc, n);
             let maskPolys = List.map(List.toVector, s#mask);
             discard image.getRGB(x0, y0, w, h, buf, 0i32, w);
-            Array.forEachWithIndex((i, dst) -> {
+            // Spec は面ごとに 1 回だけ組み立てる（画素ごとに木をたどり直さない）。
+            let eval = ShaderEval.compileSpec(s#spec);
+            let (ox, oy, sw, sh) = (s#rect#position#x, s#rect#position#y, s#rect#size#x, s#rect#size#y);
+            let time = s#time;
+            let blend = s#blend;
+            // 下地の画素（読むだけ）。1 画素の答えは下地と面の式だけで決まる純関数なので、
+            // どの順・どのスレッドで評価しても同じ画素になる。
+            let dstPixels = Array.toVector(buf);
+            let pixelOf = i -> {
                 let px = Int32.remainder(i, w) + x0;
                 let py = i / w + y0;
                 // 出力ピクセル中心 → design px → rect 内 uv（0..1）。
                 let dx = (Int32.toFloat64(px) + 0.5) / sf;
                 let dy = (Int32.toFloat64(py) + 0.5) / sf;
-                if (not insideMask(maskPolys, { x = dx, y = dy })) ()
+                let dst = Vector.get(i, dstPixels);
+                if (not insideMask(maskPolys, { x = dx, y = dy })) dst
                 else {
-                    let uv = { x = (dx - s#rect#position#x) / s#rect#size#x,
-                               y = (dy - s#rect#position#y) / s#rect#size#y };
-                    let (c, a0) = ShaderEval.evalPixelAlphaTex(s#spec, uv, s#time, texEnv);
+                    let uv = { x = (dx - ox) / sw, y = (dy - oy) / sh };
+                    let (c, a0) = eval(uv, time, texEnv);
                     let a = Float64.max(0.0, Float64.min(1.0, a0));
-                    let srcArgb = argbOf(c, a);
-                    Array.put(blendPixel(s#blend, srcArgb, dst), i, buf)
+                    blendPixel(blend, argbOf(c, a), dst)
                 }
-            }, buf);
-            image.setRGB(x0, y0, w, h, buf, 0i32, w)
+            };
+            image.setRGB(x0, y0, w, h, shadeAll(n, pixelOf), 0i32, w)
         }
     }
+
+    /// 画素 0..n−1 を pixelOf で塗った ARGB の列。Java の並列ストリームでコアの数だけ並べて
+    /// 評価する（区間の割り方とスレッドは JDK の共有プールに任せる・どれかの画素が例外を投げれば
+    /// そのまま呼び元へ伝わる）。画素は互いに読まないので、並べても 1 本で回しても同じ列になる。
+    /// 環境変数 FGE_SOFT_SERIAL=1 なら 1 本で評価する（速さを比べるとき・コアを空けたいとき）。
+    def shadeAll(n: Int32, pixelOf: Int32 -> Int32): Array[Int32, Static] \ IO =
+        let serial = System.getenv("FGE_SOFT_SERIAL");
+        let range = IntStream.range(0i32, n);
+        let stream = if (not Object.isNull(serial) and serial == "1") range else range.parallel();
+        stream.map(new IntUnaryOperator {
+            def applyAsInt(_this: IntUnaryOperator, i: Int32): Int32 = pixelOf(i)
+        }).toArray()
 
     /// BufferedImage を ShaderEval の画素表（ARGB・行優先・正立）へ 1 回で写す。
     def texDataOf(img: BufferedImage): ShaderEval.TexData \ IO = region rc {

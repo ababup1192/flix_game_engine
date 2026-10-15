@@ -671,6 +671,8 @@
   `pub def evalAlphaTex(spec: ShaderDoc.Spec, uv: Vec2.Vec2, t: Float64, texEnv: Map[String, TexData]): Float64`
 - 色とアルファを一度に返す版。bindings の先行評価（画素ごとに 1 回）を色と α で共有する —
   `pub def evalPixelAlphaTex(spec: ShaderDoc.Spec, uv: Vec2.Vec2, t: Float64, texEnv: Map[String, TexData]): (Color, Float64)`
+- Spec を「uv・時刻・テクスチャ → (色, α)」の関数へ 1 回だけ組み立てる。木をたどる match と
+  `pub def compileSpec(spec: ShaderDoc.Spec): (Vec2.Vec2, Float64, Map[String, TexData]) -> (Color, Float64)`
 - 場を Float64 へ。uv は「今読むべき座標」（Scaled/Warp が差し替える）。
   `pub def evalField(field: ShaderDoc.Field, uv: Vec2.Vec2, t: Float64): Float64`
 
