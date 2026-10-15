@@ -288,10 +288,10 @@ func Run(out, errOut *strings.Builder, root string, args []string) (int, error) 
 			return 2, err
 		}
 	}
-	return report(out, errOut, rules, hits, all, warn), nil
+	return report(out, errOut, root, rules, hits, all, warn), nil
 }
 
-func report(out, errOut *strings.Builder, rules *Rules, hits []Hit, all, warn bool) int {
+func report(out, errOut *strings.Builder, root string, rules *Rules, hits []Hit, all, warn bool) int {
 	var bad []Hit
 	live := map[string]bool{}
 	for _, h := range hits {
@@ -304,7 +304,10 @@ func report(out, errOut *strings.Builder, rules *Rules, hits []Hit, all, warn bo
 	if all {
 		var stale []string
 		for key := range rules.Exempt {
-			if !live[key] {
+			// WhyNot: このリポに無いファイルの鍵を古いと言わないのは、エンジンの除外
+			// (render_gl/… など) がゲームにも同じ規約ファイルで配られ、そこでは必ず空振りするため。
+			path := key[:strings.Index(key, "::")]
+			if !live[key] && isFile(filepath.Join(root, filepath.FromSlash(path))) {
 				stale = append(stale, key)
 			}
 		}
@@ -339,6 +342,11 @@ func report(out, errOut *strings.Builder, rules *Rules, hits []Hit, all, warn bo
 		"\n  どうしても残すなら bin/lint-rules/quadratic.local.json (ゲーム) か quadratic.json (エンジン) の exempt へ"+
 		" \"パス::def の名前\" と理由 1 行\n", len(bad))
 	return finish(errOut, 1, warn)
+}
+
+func isFile(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular()
 }
 
 // finish は --warn のとき終了コードだけを 0 にする。

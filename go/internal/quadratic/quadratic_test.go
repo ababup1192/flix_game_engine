@@ -149,3 +149,12 @@ func TestLocalExemptIsMerged(t *testing.T) {
 		t.Fatalf("重なった鍵が通った: %v", err)
 	}
 }
+
+// 配られたエンジンの除外 (このリポに無いファイル) は古いと言わない。
+func TestExemptForAbsentFileIsNotStale(t *testing.T) {
+	root := writeRepo(t, `{"render_gl/src/FontCache.flix::fontHash":"N は 8 で決まっている","src/Old.flix::old":"N は 3"}`)
+	var out, errOut strings.Builder
+	if code, _ := Run(&out, &errOut, root, []string{"--all"}); code != 0 {
+		t.Fatalf("code=%d\n%s", code, errOut.String())
+	}
+}
