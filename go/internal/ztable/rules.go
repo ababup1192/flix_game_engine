@@ -22,6 +22,7 @@ type rulesFile struct {
 	ConstPattern   *string   `json:"constPattern"`
 	ZDefPattern    *string   `json:"zDefPattern"`
 	BorrowWarnOnly *bool     `json:"borrowWarnOnly"`
+	RemapPattern   *string   `json:"remapPattern"`
 	// Exempt は「残すと決めた z の数」。鍵は "パス::宣言名"、値は残す理由 (1 行必須)。
 	// WhyNot: 行番号でなく名前で持つのは、上の行が増減しても鍵がずれないため。
 	Exempt *map[string]string `json:"exempt"`
@@ -41,7 +42,9 @@ type Rules struct {
 	// WhyNot: --warn と分けて持つのは、表の外の数と散らばりは止め、借用だけ様子を見る、を
 	// 1 回の呼び出しで両立させるため (precommit は検査ごとに 1 回しか呼ばない)。
 	BorrowWarnOnly bool
-	Exempt         map[string]string
+	// Remap は表を持つパッケージで使わない、z を付け替える呼び出し。
+	Remap  *regexp.Regexp
+	Exempt map[string]string
 }
 
 // LoadRules は規約データを読む。
@@ -72,6 +75,8 @@ func LoadRules(root string) (*Rules, error) {
 		return nil, fmt.Errorf("規約ファイルに zDefPattern がありません (%s)", path)
 	case f.BorrowWarnOnly == nil:
 		return nil, fmt.Errorf("規約ファイルに borrowWarnOnly がありません (%s)", path)
+	case f.RemapPattern == nil:
+		return nil, fmt.Errorf("規約ファイルに remapPattern がありません (%s)", path)
 	case f.Exempt == nil:
 		return nil, fmt.Errorf("規約ファイルに exempt がありません (%s)", path)
 	}
@@ -89,6 +94,10 @@ func LoadRules(root string) (*Rules, error) {
 	if zdef.NumSubexp() != 1 {
 		return nil, fmt.Errorf("規約ファイルの zDefPattern は組を 1 つ (宣言名) 持つ形にしてください (%s)", path)
 	}
+	remap, err := regexp.Compile(*f.RemapPattern)
+	if err != nil {
+		return nil, fmt.Errorf("規約ファイルの remapPattern が正規表現として壊れています (%s): %v", path, err)
+	}
 	for key, reason := range *f.Exempt {
 		if !strings.Contains(key, "::") || strings.TrimSpace(reason) == "" {
 			return nil, fmt.Errorf("規約ファイルの exempt %q は \"パス::宣言名\" と理由 1 行の形にしてください (%s)", key, path)
@@ -102,6 +111,7 @@ func LoadRules(root string) (*Rules, error) {
 		Const:          re,
 		ZDef:           zdef,
 		BorrowWarnOnly: *f.BorrowWarnOnly,
+		Remap:          remap,
 		Exempt:         *f.Exempt,
 	}, nil
 }

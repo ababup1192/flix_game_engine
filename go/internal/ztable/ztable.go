@@ -12,6 +12,7 @@ package ztable
 //   - 表のファイル (tableFileNames) があるパッケージ: 表の外で数を書いたら鳴る
 //   - 表のファイルが無いパッケージ: 数を書くファイルが 2 本以上あったら全部鳴る
 //   - 借用: 同じパッケージの別のモジュールが決めた z を呼ぶ・use で取り込む (borrow.go)
+//   - 付け替え: 表を持つパッケージで、表の外から zMapped などで z を付け替える (remap.go)
 //
 // 数を足し引きした z (zBoard() + 2) と、z を引数で渡す所の数は見ない。帯の中の段として
 // 正しい用法が大半で、行だけでは正しい物と区別できないため。範囲の外れは描き出しの後で
@@ -48,6 +49,8 @@ type Hit struct {
 	Same []string
 	// Borrow は借用のときだけ、貸した側 (z を宣言したファイル)。Name は "モジュール.宣言名"。
 	Borrow string
+	// Remap は付け替えのとき true。Name は呼んだ関数の名前。
+	Remap bool
 }
 
 // DefsOf は 1 ファイルの本文から z を数で決める行を拾う。
@@ -254,7 +257,8 @@ func (r *Rules) scanPackage(root, pkg string, extra []string) ([]Hit, int, error
 		defs[f] = r.DefsOf(f, bodies[f])
 		count += len(defs[f])
 	}
-	return append(r.PackageHits(files, defs), r.BorrowHits(bodies, r.tableFiles(files, defs))...), count, nil
+	hits := append(r.PackageHits(files, defs), r.BorrowHits(bodies, r.tableFiles(files, defs))...)
+	return append(hits, r.RemapHits(bodies)...), count, nil
 }
 
 // Run は fge z-table の本体。
@@ -378,6 +382,8 @@ func report(out, errOut *strings.Builder, rules *Rules, hits []Hit, all, warn bo
 	for _, h := range bad {
 		reason := fmt.Sprintf("表 (%s) の外で z を数で決めています", h.Table)
 		switch {
+		case h.Remap:
+			reason = "表の外で z を関数で付け替えています (付け替えた後の z がどの層に入るかは表から読めません)"
 		case h.Borrow != "":
 			reason = "別のモジュールが決めた z を借りています (その z の帯・層は貸した側にしか書かれていません)"
 		case h.Table == "":
@@ -392,6 +398,10 @@ func report(out, errOut *strings.Builder, rules *Rules, hits []Hit, all, warn bo
 			fmt.Fprintf(errOut, "   %s:%d %s (宣言: %s)\n", h.Path, h.Line, h.Name, h.Borrow)
 			continue
 		}
+		if h.Remap {
+			fmt.Fprintf(errOut, "   %s:%d %s\n", h.Path, h.Line, h.Name)
+			continue
+		}
 		fmt.Fprintf(errOut, "   %s:%d %s = %s", h.Path, h.Line, h.Name, h.Value)
 		if len(h.Same) > 0 {
 			fmt.Fprintf(errOut, "  (同じ数: %s)", strings.Join(h.Same, " / "))
@@ -401,7 +411,7 @@ func report(out, errOut *strings.Builder, rules *Rules, hits []Hit, all, warn bo
 	fmt.Fprintf(errOut, "[lint-z-table] %d 件。z の数が散ると、別のファイルどうしで同じ数を取り合い、"+
 		"どちらが手前かが描き順まかせになります。"+
 		"\n  表のファイル (ZOrder.flix) に名前を足してそこから引くか、表が無ければ 1 ファイルに集めてください。"+
-		"借りている z は、表から自分で引き直してください"+
+		"借りている z・付け替えている z は、表の層・帯の段から作り直してください"+
 		" (範囲の地図は engine の docs/z-bands.md)。"+
 		"\n  どうしても残すなら bin/lint-rules/z-table.json の exempt へ \"パス::宣言名\" と理由 1 行\n", len(bad))
 	blocking := 0

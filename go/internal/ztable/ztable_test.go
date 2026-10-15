@@ -19,6 +19,7 @@ func testRules() *Rules {
 		SkipDirNames:   []string{"lib", "test"},
 		TableFileNames: []string{"ZOrder.flix"},
 		Const:          regexp.MustCompile(`^\s*(?:pub\s+)?def\s+(z[A-Z][A-Za-z0-9_]*)\s*\(\s*\)\s*:\s*Int32\s*=\s*(-?[0-9]+)\s*(?://.*)?$`),
+		Remap:          regexp.MustCompile(`\bzMapped\s*\(`),
 		ZDef:           regexp.MustCompile(`^\s*(?:pub\s+)?def\s+(z[A-Z][A-Za-z0-9_]*)\s*\(\s*(?:[a-z][A-Za-z0-9_]*\s*:\s*Int32\s*)?\)\s*:\s*Int32\b`),
 		Exempt:         map[string]string{},
 	}
@@ -117,7 +118,7 @@ func writeRepo(t *testing.T, exempt string) string {
 		`"skipDirNames":["lib","test"],"tableFileNames":["ZOrder.flix"],`+
 		`"constPattern":"^\\s*(?:pub\\s+)?def\\s+(z[A-Z][A-Za-z0-9_]*)\\s*\\(\\s*\\)\\s*:\\s*Int32\\s*=\\s*(-?[0-9]+)\\s*(?://.*)?$",`+
 		`"zDefPattern":"^\\s*(?:pub\\s+)?def\\s+(z[A-Z][A-Za-z0-9_]*)\\s*\\(\\s*(?:[a-z][A-Za-z0-9_]*\\s*:\\s*Int32\\s*)?\\)\\s*:\\s*Int32\\b",`+
-		`"borrowWarnOnly":true,"exempt":`+exempt+`}`)
+		`"borrowWarnOnly":true,"remapPattern":"\\bzMapped\\s*\\(","exempt":`+exempt+`}`)
 	put("game/flix.toml", "")
 	put("game/src/ZOrder.flix", "mod ZOrder {}")
 	put("game/src/View.flix", "    def zPointer(): Int32 = 1000")
@@ -237,5 +238,19 @@ func TestBorrowAloneDoesNotBlock(t *testing.T) {
 	code, _ := Run(&out, &errOut, root, []string{"game/src/Fight.flix"})
 	if code != 0 || !strings.Contains(errOut.String(), "View.zPointer") || !strings.Contains(errOut.String(), "止めません") {
 		t.Fatalf("code=%d\n%s", code, errOut.String())
+	}
+}
+
+func TestRemapFiresOnlyWhereThereIsATable(t *testing.T) {
+	withTable := map[string]string{
+		"src/ZOrder.flix":  "mod ZOrder {\n    pub def f(): Int32 = 0\n}",
+		"src/Opening.flix": "mod Opening {\n    def a(xs: List[Int32]): List[Int32] = xs |> Render.zMapped(z -> z / 4)\n    // Render.zMapped( はコメント\n}",
+	}
+	if got := hitNames(testRules().RemapHits(withTable)); got != "Opening.flix:zMapped" {
+		t.Fatalf("got %q", got)
+	}
+	delete(withTable, "src/ZOrder.flix")
+	if hits := testRules().RemapHits(withTable); len(hits) != 0 {
+		t.Fatalf("表の無いパッケージで鳴った: %s", hitNames(hits))
 	}
 }

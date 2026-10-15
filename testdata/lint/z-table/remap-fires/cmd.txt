@@ -1,0 +1,1 @@
+bin/fge z-table testdata/lint/z-table/remap-fires/src/OpeningView.flix
