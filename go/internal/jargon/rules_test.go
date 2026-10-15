@@ -32,8 +32,8 @@ func TestLoadRulesFromRepo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(rules) != 33 {
-		t.Fatalf("語が %d 個 (期待 33)", len(rules))
+	if len(rules) != 34 {
+		t.Fatalf("語が %d 個 (期待 34)", len(rules))
 	}
 	stopped := 0
 	for _, r := range rules {
@@ -41,8 +41,8 @@ func TestLoadRulesFromRepo(t *testing.T) {
 			stopped++
 		}
 	}
-	if stopped != 14 {
-		t.Errorf("止める語が %d 個 (期待 14)", stopped)
+	if stopped != 15 {
+		t.Errorf("止める語が %d 個 (期待 15)", stopped)
 	}
 }
 

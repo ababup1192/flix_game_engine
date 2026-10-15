@@ -12,7 +12,8 @@ package ztable
 // (tablePattern。instance SortingLayer[Layer] { ... }) があるファイル。
 //
 // 規則。初めの 2 つは「z を数で決める 1 行」(def zXxx(): Int32 = 数) だけを見る:
-//   - 表のファイルがあるパッケージ: 表の外で数を書いたら鳴る
+//   - 表のファイルがあるパッケージ: 表の外で数を書いたら鳴る。ただし葉の中の小さな z
+//     (leafZRange・0..31) は鳴らさない
 //   - 表のファイルが無いパッケージ: 数を書くファイルが 2 本以上あったら全部鳴る
 //   - 借用: 同じパッケージの別のモジュールが決めた z を呼ぶ・use で取り込む (borrow.go)
 //   - 付け替え: 表を持つパッケージで、表の外から zMapped・zShifted・zShiftedAll・raiseZ・
@@ -32,6 +33,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/ababup1192/flix_game_engine/go/internal/flixdecl"
@@ -103,6 +105,9 @@ func (r *Rules) PackageHits(files []string, defs map[string][]Def, tables map[st
 			continue
 		}
 		for _, d := range defs[f] {
+			if table != "" && r.isLeafZ(d.Value) {
+				continue
+			}
 			h := Hit{Def: d, Table: table, Same: sameValue(d, withDefs, defs)}
 			if table == "" {
 				h.Scatter = withDefs
@@ -111,6 +116,12 @@ func (r *Rules) PackageHits(files []string, defs map[string][]Def, tables map[st
 		}
 	}
 	return hits
+}
+
+// isLeafZ は数が葉の中の小さな z の範囲 (LeafZLow..LeafZHigh) にあるか。
+func (r *Rules) isLeafZ(value string) bool {
+	n, err := strconv.Atoi(value)
+	return err == nil && n >= r.LeafZLow && n <= r.LeafZHigh
 }
 
 // tableFiles は借用を見るときに表として扱うファイル。表のファイルがあればそれ、無ければ

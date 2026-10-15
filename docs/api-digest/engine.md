@@ -1,4 +1,4 @@
-<!-- engine v0.35.15 / 生成: 2026-10-15 -->
+<!-- engine v0.35.15 / 生成: 2026-10-16 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine
@@ -475,6 +475,14 @@
   `pub def warn(line: String): Unit`
 - 既定値へ替えた事実を定型文で 1 行知らせる。
   `pub def fellBack(domain: String, subject: String, fallback: String, reason: String): Unit`
+- stderr へ 1 行知らせてから value を返す。純粋な関数の中で知らせるときはこれ。
+  `pub def warnThen(line: String, value: a): a`
+- fellBack の定型文で 1 行知らせてから value を返す。純粋な関数の中で知らせるときはこれ。
+  `pub def fellBackThen(domain: String, subject: String, fallback: String, reason: String, value: a): a`
+- lines を 1 行ずつ知らせてから value を返す（空なら何も出さない）。
+  `pub def warnAllThen(lines: List[String], value: a): a`
+- fellBack の定型文の 1 行（出さない）。行を集めて warnAllThen へ渡すときに使う。
+  `pub def fellBackLine(domain: String, subject: String, fallback: String, reason: String): String`
 
 ## Num — `engine/src/core/Num.flix`
 - 0 以上 1 以下に収める。濃さ・進み具合・混ぜ具合など「0〜1 のはずの値」を

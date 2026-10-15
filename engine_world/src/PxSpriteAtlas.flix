@@ -75,8 +75,7 @@ pub mod PxSpriteAtlas {
 
     /// パッキングが全部失敗した事実を 1 行知らせてから baked を返す。
     def warnPackFailed(msg: String, baked: Baked): Baked =
-        let _ = Log.fellBack("pxsprite", "アトラス", "空のアトラス", msg);
-        baked
+        Log.fellBackThen("pxsprite", "アトラス", "空のアトラス", msg, baked)
 
     /// 目次に載らなかったコマがあれば 1 行知らせてから baked を返す。
     /// 載らないコマは描かれない(何も知らせないと「絵が出ない」の原因が追えない)。
@@ -85,8 +84,7 @@ pub mod PxSpriteAtlas {
         if (dropped <= 0)
             baked
         else
-            let _ = Log.warn("pxsprite fail-open: ${dropped} 個のコマがアトラスに入らないため描かれません");
-            baked
+            Log.warnThen("pxsprite fail-open: ${dropped} 個のコマがアトラスに入らないため描かれません", baked)
 
     /// (スプライト名, コマ名) → アトラス内矩形(Rect2・px)。regionRect(Item.Sprite)にそのまま渡せる。
     pub def regionOf(baked: Baked, sprite: String, frame: String): Option[Rect2.Rect2] =

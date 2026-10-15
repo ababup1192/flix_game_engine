@@ -81,23 +81,22 @@ pub mod TerrainDoc {
 
     /// 壊れた色表記・知らない style 名を 1 行ずつ知らせてから doc を返す。
     def warnEntries(doc: Doc): Doc =
-        let _ = doc#entries |> List.forEach(e -> {
-            let _ = colorRefsOf(e) |> List.filter(s -> not isKnownColorRef(s)) |> List.distinct
-                |> List.forEach(s -> Log.fellBack("terrain", "'${e#char}' の色 '${s}'", "resolver の未知キー既定", "#rrggbb でも @キー でもありません"));
+        let lines = doc#entries |> List.flatMap(e -> {
+            let colors = colorRefsOf(e) |> List.filter(s -> not isKnownColorRef(s)) |> List.distinct
+                |> List.map(s -> Log.fellBackLine("terrain", "'${e#char}' の色 '${s}'", "resolver の未知キー既定", "#rrggbb でも @キー でもありません"));
             if (isKnownStyle(e#style))
-                ()
+                colors
             else
-                Log.fellBack("terrain", "'${e#char}' の style '${e#style}'", "styleMix の混ぜ", "知らない名前です")
+                colors ::: (Log.fellBackLine("terrain", "'${e#char}' の style '${e#style}'", "styleMix の混ぜ", "知らない名前です") :: Nil)
         });
-        doc
+        Log.warnAllThen(lines, doc)
 
     /// 捨てた preset 名を 1 行ずつ知らせてから doc を返す。名前を元のテキストから
     /// 拾い直すのは、decode が未知の preset を落とした後の Doc には名前が残らないため。
     def warnDroppedPresets(text: String, doc: Doc): Doc =
-        let _ = presetNamesIn(text) |> List.filter(name -> not isKnownPreset(name))
-            |> List.forEach(name ->
-                Log.warn("terrain fail-open: preset '${name}' を捨てました — 知らない名前なので表面の演出は出ません"));
-        doc
+        let lines = presetNamesIn(text) |> List.filter(name -> not isKnownPreset(name))
+            |> List.map(name -> "terrain fail-open: preset '${name}' を捨てました — 知らない名前なので表面の演出は出ません");
+        Log.warnAllThen(lines, doc)
 
     /// 生の JSON に書かれている surface の preset 名を全部拾う。
     def presetNamesIn(text: String): List[String] =

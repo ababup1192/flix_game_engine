@@ -866,8 +866,7 @@ pub mod ShaderJson {
 
     /// 落ちた理由を知らせてから fallback を返す。
     def warnFellBack(fallback: ShaderDoc.Spec, path: String, e: JsonError): ShaderDoc.Spec =
-        let _ = Log.fellBack("shader", path, "既定の面", describeErr(e));
-        fallback
+        Log.fellBackThen("shader", path, "既定の面", describeErr(e), fallback)
 
     /// err が詰めた説明文を、コンテナの定型句（"type mismatch: expected"）を剥がして返す。
     def describeErr(e: JsonError): String =

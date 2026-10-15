@@ -1,0 +1,10 @@
+!! testdata/lint/value-discard/catches-let-underscore/sample.flix:4 値を let _ = で捨てています: let _ = Log.warn("消える");
+!! testdata/lint/value-discard/catches-let-underscore/sample.flix:8 値を let _ = で捨てています: let _ =
+!! testdata/lint/value-discard/catches-let-underscore/sample.flix:13 値を let _ = で捨てています: let _ = if (x < 0) bug!("負") else ();
+let _ = は、式が純粋なら Flix が呼び出しごと消します（知らせも bug! も出ません）。書き直し方:
+  - 効果のある式（\ IO・Ref・Array など）: discard 式;
+  - 純粋な関数の中の知らせ: Log.warnThen(行, 続きの値) / Log.fellBackThen(.., 続きの値) / 行を集めて Log.warnAllThen(行の列, 続きの値)。ViewCtx#warnOnce などは match ctx#warnOnce(行) { case () => 続き }
+  - 条件で止める bug!: if (条件) bug!(..) else 続き
+  - 使わない変数を黙らせたいだけ: 名前を _x にする
+docs/error-handling.md の決まり 3 と docs/flix-conventions.md を見てください
+[exit=1]

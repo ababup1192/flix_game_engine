@@ -854,9 +854,9 @@ pub mod LwjglLayer {
             let warned = Ref.get(missingSoundRef);
             if (Set.memberOf(name, warned)) ()
             else {
-                let _ = Log.warn("audio: 知らない音 '${name}' — ${op} は何もしない"
-                    + "（project.json の sounds に同名の宣言があるか確認）");
-                Ref.put(Set.insert(name, warned), missingSoundRef)
+                Ref.put(Set.insert(name, warned), missingSoundRef);
+                Log.warn("audio: 知らない音 '${name}' — ${op} は何もしない"
+                    + "（project.json の sounds に同名の宣言があるか確認）")
             }
         };
         // ローパス（setLowpass）は EFX の lowpass フィルタを音源ごとに 1 つ作って付ける。

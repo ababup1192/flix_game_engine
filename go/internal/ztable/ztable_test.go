@@ -27,6 +27,8 @@ func testRules() *Rules {
 		LayerZ:         regexp.MustCompile(`\bSortingLayer\.z\s*\(`),
 		LeafAbs:        regexp.MustCompile(`\bleafAbsolute\s*\(`),
 		ZDef:           regexp.MustCompile(`^\s*(?:pub\s+)?def\s+(z[A-Z][A-Za-z0-9_]*)\s*\(\s*(?:[a-z][A-Za-z0-9_]*\s*:\s*Int32\s*)?\)\s*:\s*Int32\b`),
+		LeafZLow:       0,
+		LeafZHigh:      31,
 		Exempt:         map[string]string{},
 	}
 }
@@ -83,6 +85,30 @@ func TestWithTableOnlyOutsideTableFires(t *testing.T) {
 	}
 }
 
+// 葉の中の小さな z (0..31) は表の外でも鳴らさない。32 以上と負の数は層の区画の数と
+// 見分けが付かないので鳴る。
+func TestWithTableLeafZIsQuiet(t *testing.T) {
+	files, defs, tables := defsFor(map[string]string{
+		"src/ZOrder.flix":    "    def zBoard(): Int32 = 0",
+		"src/TitleView.flix": "    def zText(): Int32 = 2\n    def zTop(): Int32 = 31",
+		"src/CardsView.flix": "    def zCard(): Int32 = 32\n    def zBack(): Int32 = -1",
+	})
+	if got := hitNames(testRules().PackageHits(files, defs, tables)); got != "CardsView.flix:zCard CardsView.flix:zBack" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+// 表の無いパッケージは葉の数でも散らばりとして鳴る (葉の数を許すのは表を持つパッケージだけ)。
+func TestWithoutTableLeafZStillScatters(t *testing.T) {
+	files, defs, tables := defsFor(map[string]string{
+		"src/ViewA.flix": "    def zA(): Int32 = 1",
+		"src/ViewB.flix": "    def zB(): Int32 = 2",
+	})
+	if got := hitNames(testRules().PackageHits(files, defs, tables)); got != "ViewA.flix:zA ViewB.flix:zB" {
+		t.Fatalf("got %q", got)
+	}
+}
+
 func TestWithoutTableOneFileIsQuiet(t *testing.T) {
 	files, defs, tables := defsFor(map[string]string{
 		"src/View.flix": "    def zSky(): Int32 = 0\n    def zHero(): Int32 = 10",
@@ -123,7 +149,7 @@ func writeRepo(t *testing.T, exempt string) string {
 	put("bin/lint-rules/z-table.json", `{"scopeSuffixes":[".flix"],"skipPrefixes":["testdata/"],`+
 		`"skipDirNames":["lib","test"],"tableFileNames":["ZOrder.flix"],`+
 		`"tablePattern":"\\binstance\\s+SortingLayer\\s*\\[",`+
-		`"layerZPattern":"\\bSortingLayer\\.z\\s*\\(","leafAbsolutePattern":"\\bleafAbsolute\\s*\\(",`+
+		`"layerZPattern":"\\bSortingLayer\\.z\\s*\\(","leafAbsolutePattern":"\\bleafAbsolute\\s*\\(","leafZRange":[0,31],`+
 		`"constPattern":"^\\s*(?:pub\\s+)?def\\s+(z[A-Z][A-Za-z0-9_]*)\\s*\\(\\s*\\)\\s*:\\s*Int32\\s*=\\s*(-?[0-9]+)\\s*(?://.*)?$",`+
 		`"zDefPattern":"^\\s*(?:pub\\s+)?def\\s+(z[A-Z][A-Za-z0-9_]*)\\s*\\(\\s*(?:[a-z][A-Za-z0-9_]*\\s*:\\s*Int32\\s*)?\\)\\s*:\\s*Int32\\b",`+
 		`"borrowWarnOnly":true,"remapPattern":"\\b(zMapped|zShiftedAll|zShifted|raiseZ|Depth\\.placeOne|Depth\\.place)\\s*\\(",`+
@@ -290,7 +316,7 @@ func TestRemapFiresOnlyWhereThereIsATable(t *testing.T) {
 func TestInstanceDeclarationMakesATable(t *testing.T) {
 	files, defs, tables := defsFor(map[string]string{
 		"src/Layers.flix": "instance SortingLayer[Layer] {\n    pub def zRange(l: Layer): (Int32, Int32) = (0, 9)\n}\n    def zPointer(): Int32 = 1000",
-		"src/Note.flix":   "// instance SortingLayer[Layer] { はコメント\n    def zHud(): Int32 = 5",
+		"src/Note.flix":   "// instance SortingLayer[Layer] { はコメント\n    def zHud(): Int32 = 50",
 	})
 	if got := hitNames(testRules().PackageHits(files, defs, tables)); got != "Note.flix:zHud" {
 		t.Fatalf("got %q", got)

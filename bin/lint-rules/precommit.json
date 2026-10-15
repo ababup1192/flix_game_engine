@@ -39,6 +39,17 @@
       }
     },
     {
+      "id": "value-discard",
+      "sub": "value-discard",
+      "flags": [],
+      "pass": "matched",
+      "when": {
+        "suffixes": [
+          ".flix"
+        ]
+      }
+    },
+    {
       "id": "view",
       "sub": "view",
       "flags": [],

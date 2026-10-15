@@ -16,6 +16,19 @@
 `project`（→ `apply`）、グラデーションの両端の `from` / `to`（→ `top` / `bottom`。
 engine の `Render.vgrad` も同じ理由で `{ top, bottom }`）。
 
+## 値を `let _ =` で捨てない
+
+Flix は純粋な式の値を `let _ =` で捨てると、**コード生成で式ごと消す**（コンパイラの説明文にもそう書いてある）。
+中で `unsafe IO` を使う知らせ（`Log.warn`・`ViewCtx#warnOnce`）も、`let _ = if (c) bug!(..) else ();` の止めも、
+型検査は通ったまま実行時に黙って消える。純粋な関数を渡した `List.forEach` の中の呼び出しも同じく消える。
+
+- 効果のある式（`\ IO`・`Ref`・`Array` など）を捨てる → `discard 式;`（純粋な式に使うと Flix が止めるので、消える心配が無い）
+- 純粋な関数の中で知らせる → `Log.warnThen(行, 返す値)` など（docs/error-handling.md の決まり 3）
+- 条件で止める → `if (c) bug!(..) else 続き`
+- 使わない引数を黙らせる → 名前を `_x` にする
+
+`bin/fge value-discard <ファイル…>`（全量は `--all`）が保存時とコミット時に自動で走る。
+
 ## コメントの流儀
 
 - コードには **How**

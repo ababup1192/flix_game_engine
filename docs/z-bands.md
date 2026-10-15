@@ -54,6 +54,7 @@ ZStack.mapItems(Render.scaledAllAround(1.0 + bump, center), tree)
 - **移行の間だけの口**: `ZStack.leafAbsolute`（今までの絶対値の z をそのまま載せる）と `SortingLayer.z(層, 段)`。
   `bin/fge z-table --all` が残りの数を出す。`Depth.Bands` は非推奨（帯を数で並べる代わりに `of`）。
 - **葉の中の z は 0..31 に収める（決まり。コードでは縛らない）。** 葉は中の z の幅をそのまま使うので、古い z=900 のままの葉は 901 段を使い、区画を越えて知らせが出る。
+  名前を付けるなら葉を作るファイルに `def zText(): Int32 = 2` と書いてよい（表を持つパッケージでも、`bin/fge z-table` は表の外の 0..31 を止めない。32 以上と負の数は止める。範囲は `bin/lint-rules/z-table.json` の `leafZRange`）。
 - **使い回し（キャッシュ）は入れない。** 木は毎フレーム組んで捨てる。費用は O(絵の数 + 節の数 × log + 送った物の数 × log)（log は zIndex と送り先の並べ替え）。mapItems は入れ子 1 段ごとに中の絵を 1 回ずつ写す（今の Render.*All と同じ）。
 
 ## ゲーム側の指針

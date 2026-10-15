@@ -12,6 +12,7 @@ import (
 	"github.com/ababup1192/flix_game_engine/go/internal/quadratic"
 	"github.com/ababup1192/flix_game_engine/go/internal/recordwrap"
 	"github.com/ababup1192/flix_game_engine/go/internal/uioverflow"
+	"github.com/ababup1192/flix_game_engine/go/internal/valuediscard"
 	"github.com/ababup1192/flix_game_engine/go/internal/view"
 	"github.com/ababup1192/flix_game_engine/go/internal/ztable"
 )
@@ -46,6 +47,7 @@ func cmdPrecommit(out, errOut *strings.Builder, rest []string, _ bool) int {
 
 	lints := map[string]precommit.Lint{
 		"flix-reserved": lintOf(flixreserved.Run, abs),
+		"value-discard": lintOf(valuediscard.Run, abs),
 		"view":          lintOf(view.Run, abs),
 		"fallback":      lintOf(fallback.Run, abs),
 		"jargon":        lintOf(jargon.Run, abs),

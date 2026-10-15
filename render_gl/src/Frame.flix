@@ -287,9 +287,9 @@ mod RenderFrame {
         let warned = Ref.get(warnLog);
         if (Set.memberOf(name, warned)) ()
         else {
-            let _ = Log.warn("texture '${name}' が見つからない — 描かない"
-                + "（project.json の textures に同名の宣言があるか確認）");
-            Ref.put(Set.insert(name, warned), warnLog)
+            Ref.put(Set.insert(name, warned), warnLog);
+            Log.warn("texture '${name}' が見つからない — 描かない"
+                + "（project.json の textures に同名の宣言があるか確認）")
         }
 
     /// drawSprite が uniform に詰める model 行列と同じ式を CPU 側で計算して、

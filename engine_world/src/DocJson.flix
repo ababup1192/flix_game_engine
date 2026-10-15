@@ -81,8 +81,7 @@ pub mod DocJson {
     /// 既定値へ替えた事実を 1 行知らせてから fallback を返す。呼ばれるのは読み込み・
     /// リロード時だけで毎フレームは通らない。
     def warnFellBack(fallback: a, path: String, reason: String): a =
-        let _ = Log.fellBack("doc", path, "丸ごと既定値", reason);
-        fallback
+        Log.fellBackThen("doc", path, "丸ごと既定値", reason, fallback)
 
     /// path のファイルを読んで JSON にする。読めない・崩れているときは Err で返す。
     pub def readJson(path: String): Result[JsonError, Json] \ Fs.FileRead =

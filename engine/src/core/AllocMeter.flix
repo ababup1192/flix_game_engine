@@ -45,7 +45,7 @@ pub mod AllocMeter {
             let before = getAllocatedBytes(bean);
             Ref.put(Some(body()), sink);
             let after = getAllocatedBytes(bean);
-            let _ = Ref.get(sink);
+            discard Ref.get(sink);
             Int64.max(0i64, (after - before) - overhead)
         }
 

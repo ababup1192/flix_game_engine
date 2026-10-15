@@ -31,6 +31,7 @@ type rulesFile struct {
 	RemapPattern   *string   `json:"remapPattern"`
 	LayerZPattern  *string   `json:"layerZPattern"`
 	LeafAbsPattern *string   `json:"leafAbsolutePattern"`
+	LeafZRange     *[]int    `json:"leafZRange"`
 	// Exempt は「残すと決めた z の数」。鍵は "パス::宣言名"、値は残す理由 (1 行必須)。
 	// WhyNot: 行番号でなく名前で持つのは、上の行が増減しても鍵がずれないため。
 	Exempt *map[string]string `json:"exempt"`
@@ -59,7 +60,14 @@ type Rules struct {
 	// --all で残りを数え、LayerZ はコミットで新しく足した行を止める。
 	LayerZ  *regexp.Regexp
 	LeafAbs *regexp.Regexp
-	Exempt  map[string]string
+	// LeafZLow..LeafZHigh は葉の中の小さな z (部品の中の前後)。表を持つパッケージでは、
+	// 表の外で数を書いてもこの範囲なら鳴らさない。
+	// WhyNot: 表の外の数を全部止めないのは、層の中は木で積み、1 つの葉の中だけ 0..31 の
+	// 小さな z で前後を書く設計 (docs/z-bands.md「表は根・中は木」) で、その数は層をまたがないため。
+	// 32 以上は層の区画の数と見分けが付かないので止める。
+	LeafZLow  int
+	LeafZHigh int
+	Exempt    map[string]string
 	// ExemptFrom は除外の鍵 → どのファイルに書いてあったか (RulesPath か LocalPath)。古い除外の文面に出す。
 	ExemptFrom map[string]string
 }
@@ -102,6 +110,14 @@ func LoadRules(root string) (*Rules, error) {
 		return nil, fmt.Errorf("規約ファイルに leafAbsolutePattern がありません (%s)", path)
 	case f.Exempt == nil:
 		return nil, fmt.Errorf("規約ファイルに exempt がありません (%s)", path)
+	}
+	// WhyNot: leafZRange だけ無くても止めないのは、0.35.16 で足した鍵で、新しい fge-go が
+	// upgrade-game 前の z-table.json を読んでもコミットを止めないため (無ければ 0..31)。
+	if f.LeafZRange == nil {
+		f.LeafZRange = &[]int{0, 31}
+	}
+	if lr := *f.LeafZRange; len(lr) != 2 || lr[0] > lr[1] {
+		return nil, fmt.Errorf("規約ファイルの leafZRange は [下, 上] の 2 つの数にしてください (%s)", path)
 	}
 	table, err := regexp.Compile(*f.TablePattern)
 	if err != nil {
@@ -161,6 +177,8 @@ func LoadRules(root string) (*Rules, error) {
 		Remap:          remap,
 		LayerZ:         layerZ,
 		LeafAbs:        leafAbs,
+		LeafZLow:       (*f.LeafZRange)[0],
+		LeafZHigh:      (*f.LeafZRange)[1],
 		Exempt:         exempt,
 		ExemptFrom:     from,
 	}, nil

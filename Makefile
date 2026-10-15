@@ -109,6 +109,7 @@ help:
 	@echo "  make lint-fallback        読み込みの途中で bug! していないか検査 (許すのは *OrBug の中だけ)"
 	@echo "  make lint-f32             engine の pub 面に Float32 が出ていないか検査 (Float32 は GL / OpenAL / STB の内側だけ)"
 	@echo "  make lint-z-table         重なり順の z を数で決める所がパッケージに 1 か所か検査 (借用は警告だけ)"
+	@echo "  make lint-value-discard   値を let _ = で捨てていないか検査 (純粋な式だと Flix が呼び出しごと消す)"
 	@echo "  make lint-quadratic       fold の中で蓄積を作り直す二乗の形が無いか検査 (全量)"
 	@echo "  make lint-record-wrap     World が直接持つ大きな record を enum で包んでいるか検査"
 	@echo "  bin/fge digest A B   絵の差を数値で要約 (2 枚 or フォルダ。目視の前にまずこれ)"
@@ -404,6 +405,13 @@ lint-f32:
 .PHONY: lint-z-table
 lint-z-table:
 	@bin/fge z-table --all
+
+# ── ゲート: 値を let _ = で捨てない ──────────────────────────
+# Flix は純粋な式の値を let _ = で捨てると式ごと消す。知らせ (Log.warn) と bug! が黙って消える
+# (docs/error-handling.md の決まり 3)。効果のある式は discard、知らせは Log.warnThen で書く。
+.PHONY: lint-value-discard
+lint-value-discard:
+	@bin/fge value-discard --all
 
 # ── ゲート: fold の中で蓄積を作り直さない ─────────────────
 # List.foldLeft の中で蓄積を List.append の第 1 引数に置く・文字列の蓄積に 1 回ごとに足す形は、

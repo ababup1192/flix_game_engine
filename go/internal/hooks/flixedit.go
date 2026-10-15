@@ -16,6 +16,7 @@ import (
 
 	"github.com/ababup1192/flix_game_engine/go/internal/explainerror"
 	"github.com/ababup1192/flix_game_engine/go/internal/flixreserved"
+	"github.com/ababup1192/flix_game_engine/go/internal/valuediscard"
 )
 
 // RunFlixEdit は 1 ファイル分のペイロードを読んで型検査する。返すのは 0 か 2 だけ。
@@ -44,6 +45,11 @@ func RunFlixEdit(errOut io.Writer, root string, in io.Reader) int {
 	if code := reservedWords(errOut, root, path); code != 0 {
 		return code
 	}
+	// WhyNot: let _ = も型検査を待たずに見る — 型検査は通り、知らせが実行時に黙って消えるだけなので、
+	// 書いたその場で言わないと気づく場面が無い。
+	if code := valueDiscards(errOut, root, path); code != 0 {
+		return code
+	}
 	pkg := FindPkg(r, absolutize(payload, root, path))
 	if pkg == "" {
 		return 0
@@ -62,6 +68,16 @@ func RunFlixEdit(errOut io.Writer, root string, in io.Reader) int {
 		msg += "\n" + fmt.Sprintf(rules.TipFormat, tip)
 	}
 	fmt.Fprintln(errOut, msg)
+	return 2
+}
+
+// valueDiscards は保存したファイル 1 つに let _ = が無いかを見る。規約ファイルが無い (古い配布) なら黙る。
+func valueDiscards(errOut io.Writer, root, path string) int {
+	var body, problems strings.Builder
+	if code, err := valuediscard.Run(&body, &problems, root, []string{path}); err != nil || code == 0 {
+		return 0
+	}
+	fmt.Fprintf(errOut, "# hook-flix-edit: 値を let _ = で捨てています\n%s", problems.String())
 	return 2
 }
 

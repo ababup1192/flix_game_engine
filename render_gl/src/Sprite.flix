@@ -284,7 +284,7 @@ mod RenderSprite {
     /// vertex layout は drawPolygonBatch と同じ 6 floats（位置 2 + 色 4 / 24 bytes）。
     /// GL_STATIC_DRAW で載せ、毎フレームは範囲だけ流して drawStaticRange で描く。
     /// 戻り値: (vao, vbo)。free 時に両方 delete する。
-    pub def buildStaticPolyVBO(data: Array[Float32, Static], vertexCount: Int32): (Int32, Int32) \ IO =
+    pub def buildStaticPolyVBO(data: Array[Float32, Static], _vertexCount: Int32): (Int32, Int32) \ IO =
         let vao = GL30.glGenVertexArrays();
         let vbo = GL15.glGenBuffers();
         GL30.glBindVertexArray(vao);
@@ -296,7 +296,6 @@ mod RenderSprite {
         GL20.glVertexAttribPointer(1, 4, GL11.GL_FLOAT, false, 24, 8i64);
         GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
         GL30.glBindVertexArray(0);
-        let _ = vertexCount;
         (vao, vbo)
 
     /// 永続 VBO の [first, first+count) の頂点範囲を 1 回の draw call で塗る（アップロードなし）。
@@ -342,7 +341,7 @@ mod RenderSprite {
         let f32 = RenderUtil.f32;
         let count = List.length(instances);
         let data = Array.empty(Static, count * 10);
-        let _ = List.foldLeft((i, inst) -> {
+        discard List.foldLeft((i, inst) -> {
             let base = i * 10;
             let px = inst#px;
             Array.put(f32(px#x),       base + 0, data);
@@ -477,7 +476,7 @@ mod RenderSprite {
                 let (a, b, c) = tri; a :: b :: c :: Nil }));
         let n = List.length(flat);
         let data = Array.empty(Static, n * 6);
-        let _ = List.foldLeft((i, v) -> {
+        discard List.foldLeft((i, v) -> {
             let base = i * 6;
             Array.put(f32(v#x), base + 0, data);
             Array.put(f32(v#y), base + 1, data);

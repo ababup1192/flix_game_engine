@@ -1,0 +1,16 @@
+{
+  "note": "lint-value-discard（値を let _ = で捨てていないか）の規約データ。この JSON が source of truth で、bin/fge value-discard はこれを読んで動く。Flix は純粋な式の値を let _ = で捨てると、コード生成で式ごと消す（コンパイラの説明文にそう書いてある）。中で unsafe IO を使う知らせ（Log.warn・ViewCtx#warnOnce）も bug! の止めも黙って消える。効果のある式は discard で捨てられ、discard は純粋な式に使うとコンパイラが止めるので、let _ = は全部止める。除外は持たない（どの let _ = も下の 3 つのどれかに書き直せる）。",
+  "scopeSuffixes": [
+    ".flix"
+  ],
+  "skipPrefixes": [
+    "build/",
+    "lib/",
+    "testdata/",
+    "docs/",
+    "agents-pack/",
+    "engine_full/"
+  ],
+  "pattern": "(?:^|[\\s({;>])let\\s+_\\s*(?::[^=]*)?=(?:[^=>]|$)",
+  "hint": "let _ = は、式が純粋なら Flix が呼び出しごと消します（知らせも bug! も出ません）。書き直し方:\n  - 効果のある式（\\ IO・Ref・Array など）: discard 式;\n  - 純粋な関数の中の知らせ: Log.warnThen(行, 続きの値) / Log.fellBackThen(.., 続きの値) / 行を集めて Log.warnAllThen(行の列, 続きの値)。ViewCtx#warnOnce などは match ctx#warnOnce(行) { case () => 続き }\n  - 条件で止める bug!: if (条件) bug!(..) else 続き\n  - 使わない変数を黙らせたいだけ: 名前を _x にする\ndocs/error-handling.md の決まり 3 と docs/flix-conventions.md を見てください"
+}

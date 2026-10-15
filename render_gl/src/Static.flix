@@ -105,7 +105,7 @@ mod RenderStatic {
         let metas = List.reverse(metasRev);
         // 頂点配列（逆順の cons）を末尾から前へ詰め戻して 1 本の連続配列にする（入力順を守る）。
         let data = Array.empty(Static, folded#total * 6);
-        let _ = List.foldLeft((endIdx, v) -> {
+        discard List.foldLeft((endIdx, v) -> {
             let base = (endIdx - 1) * 6;
             Array.forEachWithIndex((j, x) -> Array.put(x, base + j, data), v);
             endIdx - 1

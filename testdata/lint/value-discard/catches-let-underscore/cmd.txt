@@ -1,0 +1,1 @@
+bin/fge value-discard testdata/lint/value-discard/catches-let-underscore/sample.flix

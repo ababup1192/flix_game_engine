@@ -115,6 +115,7 @@
 | 修飾パイプの末尾で置き場所を与える（`{ at = …, item = … }` の糖衣。中心置きは At 族） | Render.at |
 | 列を丸ごと動かす・pivot 不動点で一様に拡縮する（Clipped の切り抜き矩形も追随） | Render.movedAll / Render.scaledAllAround |
 | Doc を fail-open で読む（読めない・壊れは既定値へ） | DocJson.loadOr / decodeObject |
+| 既定値で続けたことを 1 行知らせる（純粋な関数の中から） | Log.fellBackThen / warnThen / warnAllThen（`let _ = Log.warn(..)` は消える。docs/error-handling.md の決まり 3） |
 | 太さのある線・棒を引く（法線を手計算しない） | RawDraw.lineSeg / Quad.strip |
 | 値を範囲に収める（1 軸） | Num.clamp（カメラの寄せ幅は CameraRig.clampAxis） |
 | 色を明るく・暗くする | Color.lighten / Color.darken |

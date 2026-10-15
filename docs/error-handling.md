@@ -53,8 +53,21 @@
 
 **自分で `System.err.println` を呼ばない。`Log.fellBack(領域, 対象, 既定値の名前, 理由)` を呼ぶ**
 （engine/src/core/Log.flix）。定型に収まらない 1 行だけ `Log.warn` を使う。効果は `Log` の中で
-`unsafe IO` に隠してあるので、知らせるために呼ぶ側の効果行が広がることはない
-（戻り値が純粋な `Unit` なので、文を並べるときは `let _ = Log.fellBack(..);` と書く）。
+`unsafe IO` に隠してあるので、知らせるために呼ぶ側の効果行が広がることはない。
+
+**戻り値が純粋な `Unit` なので、値を捨てると知らせごと消える。** Flix は純粋な式の値を
+`let _ =` で捨てるとコード生成で式ごと消し、純粋な関数を渡した `List.forEach` の中の呼び出しも消す
+（どちらも型検査は通り、実行しても何も出ない）。書き方は呼ぶ場所で決まる:
+
+| 呼ぶ場所 | 書き方 |
+|---|---|
+| 純粋な関数の中（読み込み・decode） | `Log.fellBackThen(領域, 対象, 既定値の名前, 理由, 返す値)` / `Log.warnThen(行, 返す値)` |
+| 純粋な関数の中で何件も | 行を `List.map` で集めて `Log.warnAllThen(行の列, 返す値)`（定型文は `Log.fellBackLine`） |
+| 効果のある関数（`\ IO` など）の中 | 式の値として置く（末尾に `Log.warn(..)`・`if` の枝・`match` の枝） |
+| 関数で渡された知らせ（`ViewCtx#warnOnce`） | `match ctx#warnOnce(行) { case () => 続き }` |
+
+`let _ = Log.warn(..);` は `bin/fge value-discard` が保存時とコミット時に止める
+（`let _ =` は全部止まる。効果のある式を捨てるのは `discard 式;` で、こちらは純粋な式に使うと Flix が止める）。
 
 ## 決まり 4 — `Err` の中身の型
 
