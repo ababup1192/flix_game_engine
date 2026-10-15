@@ -106,3 +106,30 @@ func TestFrameRangesFoldsRuns(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+func TestVideoDiffListsFramesAndWritesSideBySide(t *testing.T) {
+	ff := findFFmpeg()
+	if ff == "" {
+		t.Skip("ffmpeg が無い")
+	}
+	dir := t.TempDir()
+	mk := func(name, color2 string) string {
+		p := filepath.Join(dir, name)
+		// 3 コマ目からだけ色が違う、幅が奇数の 6 コマ。
+		filter := "color=c=black:s=33x20:r=10:d=0.2[a];color=c=" + color2 + ":s=33x20:r=10:d=0.4[b];[a][b]concat=n=2:v=1"
+		if out, err := exec.Command(ff, "-y", "-v", "error", "-filter_complex", filter,
+			"-c:v", "libx264", "-qp", "0", "-pix_fmt", "yuv444p", p).CombinedOutput(); err != nil {
+			t.Fatalf("%s: %s", err, out)
+		}
+		return p
+	}
+	a, b := mk("a.mp4", "white"), mk("b.mp4", "red")
+	o := Options{OutDir: filepath.Join(dir, "out")}
+	detail, pair, video := diffVideo(o, "x.mp4", a, b)
+	if !strings.Contains(detail, "4 / 6 コマ") {
+		t.Fatalf("差のあるコマの数がずれた: %q", detail)
+	}
+	if pair == "" || video == "" {
+		t.Fatalf("最初のコマの前後か左右の mp4 が無い: %q %q (%s)", pair, video, detail)
+	}
+}
