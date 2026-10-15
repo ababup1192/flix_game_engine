@@ -2,7 +2,7 @@ package ztable
 
 // 何を守るか: z を数で決める行だけを拾うこと、表のあるパッケージでは表の外だけが鳴ること、
 // 表の無いパッケージでは 2 本以上に散ったときだけ鳴ること、別のファイルの同じ数を添えること、
-// 除外と --warn の扱い。
+// 借用（修飾付きの呼び出しと use）だけが鳴り表とパッケージの外は鳴らないこと、除外と --warn の扱い。
 
 import (
 	"os"
@@ -19,6 +19,7 @@ func testRules() *Rules {
 		SkipDirNames:   []string{"lib", "test"},
 		TableFileNames: []string{"ZOrder.flix"},
 		Const:          regexp.MustCompile(`^\s*(?:pub\s+)?def\s+(z[A-Z][A-Za-z0-9_]*)\s*\(\s*\)\s*:\s*Int32\s*=\s*(-?[0-9]+)\s*(?://.*)?$`),
+		ZDef:           regexp.MustCompile(`^\s*(?:pub\s+)?def\s+(z[A-Z][A-Za-z0-9_]*)\s*\(\s*(?:[a-z][A-Za-z0-9_]*\s*:\s*Int32\s*)?\)\s*:\s*Int32\b`),
 		Exempt:         map[string]string{},
 	}
 }
@@ -115,6 +116,7 @@ func writeRepo(t *testing.T, exempt string) string {
 	put("bin/lint-rules/z-table.json", `{"scopeSuffixes":[".flix"],"skipPrefixes":["testdata/"],`+
 		`"skipDirNames":["lib","test"],"tableFileNames":["ZOrder.flix"],`+
 		`"constPattern":"^\\s*(?:pub\\s+)?def\\s+(z[A-Z][A-Za-z0-9_]*)\\s*\\(\\s*\\)\\s*:\\s*Int32\\s*=\\s*(-?[0-9]+)\\s*(?://.*)?$",`+
+		`"zDefPattern":"^\\s*(?:pub\\s+)?def\\s+(z[A-Z][A-Za-z0-9_]*)\\s*\\(\\s*(?:[a-z][A-Za-z0-9_]*\\s*:\\s*Int32\\s*)?\\)\\s*:\\s*Int32\\b",`+
 		`"exempt":`+exempt+`}`)
 	put("game/flix.toml", "")
 	put("game/src/ZOrder.flix", "mod ZOrder {}")
@@ -160,5 +162,63 @@ func TestWarnKeepsOutputButExitsZero(t *testing.T) {
 	code, _ := Run(&out, &errOut, root, []string{"--warn", "game/src/View.flix"})
 	if code != 0 || !strings.Contains(errOut.String(), "zPointer") {
 		t.Fatalf("code=%d\n%s", code, errOut.String())
+	}
+}
+
+func borrowNames(hits []Hit) string {
+	var out []string
+	for _, h := range hits {
+		out = append(out, filepath.Base(h.Path)+":"+h.Name)
+	}
+	return strings.Join(out, " ")
+}
+
+func TestBorrowFiresOnQualifiedCallAndUse(t *testing.T) {
+	bodies := map[string]string{
+		"src/CardsView.flix":   "mod CardsView {\n    pub def zPickCard(): Int32 = ZOrder.bandZ(SceneBand.Pick, 3)\n}",
+		"src/FightView.flix":   "mod FightView {\n    def zCard(): Int32 = CardsView.zPickCard() + 1\n}",
+		"src/DeckView.flix":    "mod DeckView {\n    use CardsView.{cardFace, zPickCard}\n}",
+		"src/ZOrder.flix":      "mod ZOrder {\n    pub def zBoard(): Int32 = 0\n}",
+		"src/FeedView.flix":    "mod FeedView {\n    def zFeed(): Int32 = ZOrder.zBoard() + 1\n}",
+		"src/OpeningView.flix": "mod OpeningView {\n    def a(): Int32 = Render.zShiftedAll(3)\n    // CardsView.zPickCard() は使わない\n}",
+	}
+	got := borrowNames(testRules().BorrowHits(bodies, map[string]bool{"src/ZOrder.flix": true}))
+	if got != "DeckView.flix:CardsView.zPickCard FightView.flix:CardsView.zPickCard" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+// z を計算する道具 (z を引数に取る・物を受け取る) は z の値ではないので、借りても鳴らない。
+func TestBorrowIgnoresZTools(t *testing.T) {
+	bodies := map[string]string{
+		"src/Render.flix": "mod Render {\n    pub def zShifted(delta: Int32, item: Item): Item = item\n    pub def zOf(u: Float64): Int32 = 0\n}",
+		"src/View.flix":   "mod View {\n    pub def zLane(step: Int32): Int32 = ZOrder.bandZ(Band.Road, step)\n}",
+		"src/Car.flix":    "mod Car {\n    def a(): Int32 = Render.zOf(1.0) + View.zLane(2)\n}",
+	}
+	if got := borrowNames(testRules().BorrowHits(bodies, map[string]bool{"src/ZOrder.flix": true})); got != "Car.flix:View.zLane" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+// 表のファイルが無くても、z の数を 1 ファイルに集めていれば、そこから引くのは借用ではない。
+func TestBorrowFromTheOnlyZFileIsQuiet(t *testing.T) {
+	bodies := map[string]string{
+		"src/View.flix":    "mod View {\n    pub def zWall(): Int32 = 8\n}",
+		"src/Terrain.flix": "mod Terrain {\n    def a(): Int32 = View.zWall()\n}",
+	}
+	r := testRules()
+	files := []string{"src/Terrain.flix", "src/View.flix"}
+	defs := map[string][]Def{"src/View.flix": r.DefsOf("src/View.flix", bodies["src/View.flix"])}
+	if hits := r.BorrowHits(bodies, r.tableFiles(files, defs)); len(hits) != 0 {
+		t.Fatalf("鳴った: %s", borrowNames(hits))
+	}
+}
+
+func TestBorrowIgnoresOwnModule(t *testing.T) {
+	bodies := map[string]string{
+		"src/FightView.flix": "mod FightView {\n    pub def zFoe(): Int32 = 3\n    def zHit(): Int32 = FightView.zFoe() + 1\n}",
+	}
+	if hits := testRules().BorrowHits(bodies, nil); len(hits) != 0 {
+		t.Fatalf("鳴った: %s", borrowNames(hits))
 	}
 }

@@ -20,6 +20,7 @@ type rulesFile struct {
 	SkipDirNames   *[]string `json:"skipDirNames"`
 	TableFileNames *[]string `json:"tableFileNames"`
 	ConstPattern   *string   `json:"constPattern"`
+	ZDefPattern    *string   `json:"zDefPattern"`
 	// Exempt は「残すと決めた z の数」。鍵は "パス::宣言名"、値は残す理由 (1 行必須)。
 	// WhyNot: 行番号でなく名前で持つのは、上の行が増減しても鍵がずれないため。
 	Exempt *map[string]string `json:"exempt"`
@@ -32,7 +33,9 @@ type Rules struct {
 	SkipDirNames   []string
 	TableFileNames []string
 	// Const は z を数で決める 1 行。1 つ目の組が宣言名、2 つ目が数。
-	Const  *regexp.Regexp
+	Const *regexp.Regexp
+	// ZDef は z を返す関数の宣言 (数で決めた物に限らない)。1 つ目の組が宣言名。借用を見るのに使う。
+	ZDef   *regexp.Regexp
 	Exempt map[string]string
 }
 
@@ -60,6 +63,8 @@ func LoadRules(root string) (*Rules, error) {
 		return nil, fmt.Errorf("規約ファイルに tableFileNames がありません (%s)", path)
 	case f.ConstPattern == nil:
 		return nil, fmt.Errorf("規約ファイルに constPattern がありません (%s)", path)
+	case f.ZDefPattern == nil:
+		return nil, fmt.Errorf("規約ファイルに zDefPattern がありません (%s)", path)
 	case f.Exempt == nil:
 		return nil, fmt.Errorf("規約ファイルに exempt がありません (%s)", path)
 	}
@@ -69,6 +74,13 @@ func LoadRules(root string) (*Rules, error) {
 	}
 	if re.NumSubexp() != 2 {
 		return nil, fmt.Errorf("規約ファイルの constPattern は組を 2 つ (宣言名・数) 持つ形にしてください (%s)", path)
+	}
+	zdef, err := regexp.Compile(*f.ZDefPattern)
+	if err != nil {
+		return nil, fmt.Errorf("規約ファイルの zDefPattern が正規表現として壊れています (%s): %v", path, err)
+	}
+	if zdef.NumSubexp() != 1 {
+		return nil, fmt.Errorf("規約ファイルの zDefPattern は組を 1 つ (宣言名) 持つ形にしてください (%s)", path)
 	}
 	for key, reason := range *f.Exempt {
 		if !strings.Contains(key, "::") || strings.TrimSpace(reason) == "" {
@@ -81,6 +93,7 @@ func LoadRules(root string) (*Rules, error) {
 		SkipDirNames:   *f.SkipDirNames,
 		TableFileNames: *f.TableFileNames,
 		Const:          re,
+		ZDef:           zdef,
 		Exempt:         *f.Exempt,
 	}, nil
 }

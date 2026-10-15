@@ -8,9 +8,10 @@ package ztable
 //	fge-go z-table --warn ...            出す物は同じで、終了コードだけ 0 にする
 //	fge-go z-table --root DIR ...        リポジトリのルートを差し替える
 //
-// 規則は 2 つで、どちらも「z を数で決める 1 行」(def zXxx(): Int32 = 数) だけを見る:
+// 規則は 3 つ。初めの 2 つは「z を数で決める 1 行」(def zXxx(): Int32 = 数) だけを見る:
 //   - 表のファイル (tableFileNames) があるパッケージ: 表の外で数を書いたら鳴る
 //   - 表のファイルが無いパッケージ: 数を書くファイルが 2 本以上あったら全部鳴る
+//   - 借用: 同じパッケージの別のモジュールが決めた z を呼ぶ・use で取り込む (borrow.go)
 //
 // 数を足し引きした z (zBoard() + 2) と、z を引数で渡す所の数は見ない。帯の中の段として
 // 正しい用法が大半で、行だけでは正しい物と区別できないため。範囲の外れは描き出しの後で
@@ -45,6 +46,8 @@ type Hit struct {
 	Scatter []string
 	// Same は同じパッケージの別のファイルで同じ数を持つ宣言 ("zGround (src/ViewRoad.flix)")。
 	Same []string
+	// Borrow は借用のときだけ、貸した側 (z を宣言したファイル)。Name は "モジュール.宣言名"。
+	Borrow string
 }
 
 // DefsOf は 1 ファイルの本文から z を数で決める行を拾う。
@@ -95,6 +98,25 @@ func (r *Rules) PackageHits(files []string, defs map[string][]Def) []Hit {
 		}
 	}
 	return hits
+}
+
+// tableFiles は借用を見るときに表として扱うファイル。表のファイルがあればそれ、無ければ
+// z を数で決めるファイルが 1 本だけのときのそのファイル。
+func (r *Rules) tableFiles(files []string, defs map[string][]Def) map[string]bool {
+	tables := map[string]bool{}
+	var withDefs []string
+	for _, f := range files {
+		if r.IsTable(f) {
+			tables[f] = true
+		}
+		if len(defs[f]) > 0 {
+			withDefs = append(withDefs, f)
+		}
+	}
+	if len(tables) == 0 && len(withDefs) == 1 {
+		tables[withDefs[0]] = true
+	}
+	return tables
 }
 
 func sameValue(d Def, files []string, defs map[string][]Def) []string {
@@ -221,16 +243,18 @@ func (r *Rules) scanPackage(root, pkg string, extra []string) ([]Hit, int, error
 		}
 	}
 	defs := map[string][]Def{}
+	bodies := map[string]string{}
 	count := 0
 	for _, f := range files {
 		body, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(f)))
 		if err != nil {
 			return nil, 0, fmt.Errorf("読めません: %v", err)
 		}
-		defs[f] = r.DefsOf(f, string(body))
+		bodies[f] = string(body)
+		defs[f] = r.DefsOf(f, bodies[f])
 		count += len(defs[f])
 	}
-	return r.PackageHits(files, defs), count, nil
+	return append(r.PackageHits(files, defs), r.BorrowHits(bodies, r.tableFiles(files, defs))...), count, nil
 }
 
 // Run は fge z-table の本体。
@@ -352,13 +376,20 @@ func report(out, errOut *strings.Builder, exempt map[string]string, hits []Hit, 
 	lastReason := ""
 	for _, h := range bad {
 		reason := fmt.Sprintf("表 (%s) の外で z を数で決めています", h.Table)
-		if h.Table == "" {
+		switch {
+		case h.Borrow != "":
+			reason = "別のモジュールが決めた z を借りています (その z の帯・層は貸した側にしか書かれていません)"
+		case h.Table == "":
 			reason = fmt.Sprintf("z を数で決めるファイルが %d 本に散っています: %s",
 				len(h.Scatter), strings.Join(h.Scatter, " / "))
 		}
 		if reason != lastReason {
 			fmt.Fprintf(errOut, "!! %s\n", reason)
 			lastReason = reason
+		}
+		if h.Borrow != "" {
+			fmt.Fprintf(errOut, "   %s:%d %s (宣言: %s)\n", h.Path, h.Line, h.Name, h.Borrow)
+			continue
 		}
 		fmt.Fprintf(errOut, "   %s:%d %s = %s", h.Path, h.Line, h.Name, h.Value)
 		if len(h.Same) > 0 {
@@ -368,7 +399,8 @@ func report(out, errOut *strings.Builder, exempt map[string]string, hits []Hit, 
 	}
 	fmt.Fprintf(errOut, "[lint-z-table] %d 件。z の数が散ると、別のファイルどうしで同じ数を取り合い、"+
 		"どちらが手前かが描き順まかせになります。"+
-		"\n  表のファイル (ZOrder.flix) に名前を足してそこから引くか、表が無ければ 1 ファイルに集めてください"+
+		"\n  表のファイル (ZOrder.flix) に名前を足してそこから引くか、表が無ければ 1 ファイルに集めてください。"+
+		"借りている z は、表から自分で引き直してください"+
 		" (範囲の地図は engine の docs/z-bands.md)。"+
 		"\n  どうしても残すなら bin/lint-rules/z-table.json の exempt へ \"パス::宣言名\" と理由 1 行\n", len(bad))
 	return finish(errOut, 1, warn)
