@@ -330,6 +330,6 @@
 
 - **ActiveDocs** — 「いま表示に使っている Doc(JSON)はどれか」を debug/active-docs.json に名乗る（Studio の「表示中」バッジはこれを読む。同じ内容なら書かない）。
 - **DocTable** — Doc の一覧表（id・パス・読み直し）1 枚から、watchFile の配線・一括リロード・ActiveDocs の名乗りを導出する。一覧の手写しを 1 か所に。既定は `row` で 1 行、外れる行に `watchOnly` / `reloadAllOnly` / `activeWhen` を被せる。
-- **Annotate** — 実行中のゲームを一時停止して、画面の気になる場所を矩形で囲んで記録する。
+- **Annotate** — 実行中のゲームを一時停止して、画面の気になる場所を矩形で囲んで記録する。App.withAnnotationContext でゲームが「その瞬間の文脈」（場面・台本の行など (見出し, 値) の並びと、z の層の名前の表）を渡すと、チケットの README 冒頭と z の横に載る。README では 1 字ずつ置かれた字を 1 行の文字列に束ねて出す。
 - **RemoteDebug** — 起動中のゲームを外部プロセスが HTTP で操作・観測する口。POST /render は App.onRenderRequest で登録した「描き出しの実体」を温まった JVM で実行し、描き出したパス列を返す（プレイ状態には触れない）。
 - **GameLogger** — 起きたことを 1 行ずつログに積み、あとでまとめて取り出す effect。

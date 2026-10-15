@@ -316,4 +316,39 @@ mod TestAnnotate {
         let moved = Render.scaledAllAround(0.5, { x = 100.0, y = 50.0 }, surface :: Nil);
         let probe = { position = { x = 55.0, y = 28.0 }, size = { x = 2.0, y = 2.0 } };
         Assert.assertEq(expected = 1, List.length(Annotate.hits(_ -> None, probe, moved)))
+
+    // 1 字ずつ置かれた同じ行の字は 1 件に束ねる。太字の重ね書き（0.5px ずらし）は字を足さない。
+    @Test
+    def testMergeTextRunsJoinsGlyphsOfOneLine(): Unit \ Assert =
+        let glyph = (ch, x) -> { kind = "text", name = ch, position = { x = x, y = 10.0 }, zIndex = 5,
+                                 aabb = { position = { x = x, y = 10.0 }, size = { x = 8.0, y = 8.0 } } };
+        let hitList = glyph("君", 0.0) :: glyph("君", 0.5) :: glyph("が", 8.0) :: glyph("が", 8.5) :: glyph("い", 16.0) :: Nil;
+        Assert.assertEq(expected = "君がい" :: Nil,
+            Annotate.mergeTextRuns(hitList) |> List.map(h -> h#name))
+
+    // 行の違う字・z の違う字・字の高さより離れた字（ラベルと値）は束ねない。
+    @Test
+    def testMergeTextRunsKeepsOtherRunsApart(): Unit \ Assert =
+        let glyph = (ch, x, y, z) -> { kind = "text", name = ch, position = { x = x, y = y }, zIndex = z,
+                                       aabb = { position = { x = x, y = y }, size = { x = 8.0, y = 8.0 } } };
+        let hitList = glyph("一", 0.0, 0.0, 1) :: glyph("二", 0.0, 12.0, 1) :: glyph("三", 8.0, 12.0, 2)
+            :: glyph("四", 40.0, 12.0, 2) :: Nil;
+        Assert.assertEq(expected = 4, List.length(Annotate.mergeTextRuns(hitList)))
+
+    // ゲームが渡した文脈は README の冒頭に並び、z には層の名前が添う。
+    @Test
+    def testReadmeBodyWithContextLeadsWithFacts(): Unit \ Assert =
+        let rect = { position = { x = 10.0, y = 20.0 }, size = { x = 30.0, y = 40.0 } };
+        let hit = { kind = "sprite", name = "ball", position = { x = 12.0, y = 25.0 }, zIndex = 3, aabb = rect };
+        let context = { facts = ("場面", "Talk") :: Nil, layers = ("Talk", 0, 9) :: Nil, hudLayers = Nil };
+        let body = Annotate.readmeBodyWith(context, { frame = 7i64, rect = rect }, hit :: Nil);
+        Assert.assertEq(expected = (true, true),
+            (String.startsWith(prefix = "## その瞬間の文脈\n\n- 場面: Talk", body),
+             String.contains(substr = "z=3 Talk)", body)))
+
+    // HUD の物は持ち上がった z から HUD の表で引く。
+    @Test
+    def testLayerOfLooksUpHudTableForLiftedZ(): Unit \ Assert =
+        let context = { facts = Nil, layers = ("Scene", 0, 199) :: Nil, hudLayers = ("Hud.Mouse", 1000, 1099) :: Nil };
+        Assert.assertEq(expected = Some("Hud.Mouse"), Annotate.layerOf(context, ZBand.liftHud(1005)))
 }

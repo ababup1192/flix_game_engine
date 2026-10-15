@@ -124,6 +124,8 @@ pub mod App {
         // 注釈の矩形（デザイン座標）と表示中の瞬間の World からテキストを組む。
         // 注釈チケットに world.json として同梱され、リモートデバッグの view=full にもなる。
         worldDump = Option[(Rect2.Rect2, w) -> String \ ef],
+        // 注釈チケットの README 冒頭に載せる「その瞬間の文脈」（場面・台本の行・z の層の名前）。
+        annotationContext = Option[w -> Annotate.Context \ ef],
         // 「1 度だけ GPU に生成して使い回す静的な絵」の宣言（無ければ None）。key = 静的な中身を
         // 決める全入力を 1 文字列にまとめたキャッシュキー（フロア id・テーマ・作り直しの世代など。
         // これが変わるとエンジンが古い VBO を捨てて作り直す）、build = ワールド座標の静的 PlacedItem を
@@ -193,6 +195,7 @@ pub mod App {
           debug = false,
           debugView = None,
           worldDump = None,
+          annotationContext = None,
           statusLine = None,
           remoteRender = None,
           remoteHandlers = Nil,
@@ -442,6 +445,13 @@ pub mod App {
     /// （全フィールドでなく、調査に効く要約でよい）。
     pub def withWorldDump(f: (Rect2.Rect2, w) -> String \ ef, app: App[w, ef]): App[w, ef] =
         { worldDump = Some(f) | app }
+
+    /// 注釈（F8 の矩形）を書き出すとき、README の冒頭と annotation.json の "context" に載せる
+    /// 「その瞬間の文脈」を繋ぐ。f は表示中の瞬間の World から、場面・台本の id と行・話す人と表情・
+    /// 開いている窓のような (見出し, 値) の並びと、z → 層の名前の引き方を返す。
+    /// チケットのコメントから「どの Doc のどこを直すか」をスクショと突き合わせずに引けるようにする。
+    pub def withAnnotationContext(f: w -> Annotate.Context \ ef, app: App[w, ef]): App[w, ef] =
+        { annotationContext = Some(f) | app }
 
     /// World の 1 行サマリ（例: "phase=Playing ball=(163.2,207.9) lives=3"）を繋ぐ。
     /// リモートデバッグ（HTTP）の view=status の本文と、/step の trace の行になる。
@@ -887,6 +897,11 @@ pub mod App {
             case (Some(rect), Some(f)) => f(rect, displayed)
             case _                     => ""
         };
+        let context = match (emitted, app#annotationContext) {
+            case (Some(_), Some(f)) => f(displayed)
+            case _                  => Annotate.noContext()
+        };
+        let dump = { text = dumpText, context = context };
         match app#view {
             case Some(toItems) =>
                 uploadAtlases((app#spriteAtlases)(world));
@@ -906,7 +921,7 @@ pub mod App {
                 };
                 finishPaused({ design = design, cursor = input#cursor, atlas = atlas,
                                historyLen = historyLen, shownFrame = shownFrame },
-                             next, emitted, dumpText,
+                             next, emitted, dump,
                              { drawables = sprites, tileMaps = Nil, polygons = polygons }, hitList)
             case None => match app#debugView {
                 case Some((fontName, toChannels)) =>
@@ -919,7 +934,7 @@ pub mod App {
                     };
                     finishPaused({ design = design, cursor = input#cursor, atlas = atlas,
                                    historyLen = historyLen, shownFrame = shownFrame },
-                                 next, emitted, dumpText,
+                                 next, emitted, dump,
                                  { drawables = drawables, tileMaps = tileMaps, polygons = polygons }, hitList)
                 case None => next
             }
@@ -928,10 +943,11 @@ pub mod App {
     /// 一時停止フレームの締め: 矩形が確定していれば注釈を書き出してトーストを出し、凍結画面を描く。
     def finishPaused(ctx: { design = Vec2.Vec2, cursor = Vec2.Vec2, atlas = FontAtlas,
                             historyLen = Int32, shownFrame = Int64 },
-                     anno: Annotate.State, emitted: Option[Rect2.Rect2], dumpText: String,
+                     anno: Annotate.State, emitted: Option[Rect2.Rect2],
+                     dump: { text = String, context = Annotate.Context },
                      channels: DebugChannels, hitList: List[Annotate.Hit]): Annotate.State \ GameEngine.Game =
         let shown = match emitted {
-            case Some(rect) => match writeAnnotation(ctx#design, rect, ctx#shownFrame, dumpText, channels, hitList) {
+            case Some(rect) => match writeAnnotation(ctx#design, rect, ctx#shownFrame, dump, channels, hitList) {
                 case Some(path) => Annotate.showToast("Saved debug file\n${path}", anno)
                 case None       => anno
             }
@@ -943,12 +959,14 @@ pub mod App {
     /// 確定した矩形の注釈一式（JSON・README の要約・等倍の描画命令）を組んでエンジンへ渡す。
     /// ファイルへの書き出しとスクリーンショット撮影・シャッター音はエンジンの saveAnnotation が
     /// 引き受ける。戻り値は保存先のディレクトリパス（失敗時 None）。
-    def writeAnnotation(design: Vec2.Vec2, rect: Rect2.Rect2, frameNo: Int64, dumpText: String,
+    def writeAnnotation(design: Vec2.Vec2, rect: Rect2.Rect2, frameNo: Int64,
+                        dump: { text = String, context = Annotate.Context },
                         channels: DebugChannels, hitList: List[Annotate.Hit]): Option[String] \ GameEngine.Game =
-        let body = Annotate.readmeBody({ frame = frameNo, rect = rect }, hitList);
+        let dumpText = dump#text;
+        let body = Annotate.readmeBodyWith(dump#context, { frame = frameNo, rect = rect }, hitList);
         GameEngine.Game.saveAnnotation({
             frame = frameNo, rect = rect,
-            json = Annotate.annotationJson({ frame = frameNo, design = design, rect = rect }, hitList),
+            json = Annotate.annotationJsonWith(dump#context, { frame = frameNo, design = design, rect = rect }, hitList),
             readmeBody = if (dumpText == "") body else body + "\n- シム状態のダンプ: world.json",
             worldDump = dumpText,
             sprites = channels#drawables, tileMaps = channels#tileMaps, polygons = channels#polygons })

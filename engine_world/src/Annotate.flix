@@ -359,11 +359,46 @@ pub mod Annotate {
 
     // ── 成果物の本文（文字列の組み立て）──
 
+    // ── ゲームが添える文脈 ──
+
+    /// 注釈を書き出す瞬間の、ゲーム側の文脈（App.withAnnotationContext で繋ぐ）。
+    /// facts は (見出し, 値) の並びで、README の冒頭と annotation.json の "context" にこの順で載る
+    /// （例: ("場面", "Talk") / ("台本", "assets/x.script.json scenes[id=op_desk].lines[3]")）。
+    /// layers / hudLayers は z の範囲の表 (名前, 底, 天井)（天井は含む）。描画物の z に、最初に
+    /// 当たった範囲の名前を添える。hudLayers は HUD の中の z で書く（ZBand.liftHud の持ち上げはここで戻す）。
+    pub type alias Context = {
+        facts = List[(String, String)],
+        layers = List[(String, Int32, Int32)],
+        hudLayers = List[(String, Int32, Int32)]
+    }
+
+    /// 文脈を繋いでいないゲームの既定（README・JSON は従来と同じ形になる）。
+    pub def noContext(): Context = { facts = Nil, layers = Nil, hudLayers = Nil }
+
+    /// z の層の名前（表に無ければ None）。HUD の範囲の z は HUD の表で引く。
+    pub def layerOf(context: Context, z: Int32): Option[String] =
+        let (table, local) = if (z >= ZBand.hudBase() and z < ZBand.debugBase())
+                                 (context#hudLayers, z - ZBand.hudBase())
+                             else (context#layers, z);
+        table
+            |> List.find(row -> { let (_, low, high) = row; low <= local and local <= high })
+            |> Option.map(row -> { let (name, _, _) = row; name })
+
     /// annotation.json の本文。デザイン座標の矩形と、重なっていた描画物の一覧を機械可読に残す。
     pub def annotationJson(meta: { frame = Int64, design = Vec2.Vec2, rect = Rect2.Rect2 },
                            hitList: List[Hit]): String =
+        annotationJsonWith(noContext(), meta, hitList)
+
+    /// annotationJson に文脈を足した版。hits は字ごとのまま（機械が読む側は束ねない）。
+    pub def annotationJsonWith(context: Context,
+                               meta: { frame = Int64, design = Vec2.Vec2, rect = Rect2.Rect2 },
+                               hitList: List[Hit]): String =
         use Util.Json.Json.{JObject, JString, JNumber, JArray};
+        // facts は順番に意味があるので Map ではなく {key, value} の配列で持つ。
+        let facts = context#facts |> List.map(kv ->
+            JObject(Map#{ "key" => JString(fst(kv)), "value" => JString(snd(kv)) }));
         let obj = JObject(Map#{
+            "context" => JArray(List.toVector(facts)),
             "version" => JNumber(JsonCodec.intToBd(1)),
             "frame"   => JNumber(JsonCodec.floatToBd(Int64.toFloat64(meta#frame))),
             "design"  => JObject(Map#{
@@ -371,7 +406,7 @@ pub mod Annotate {
                 "h" => JNumber(JsonCodec.floatToBd(meta#design#y))
             }),
             "rect"    => rectJson(meta#rect),
-            "hits"    => JArray(List.map(h -> hitJson(h), hitList) |> List.toVector)
+            "hits"    => JArray(List.map(h -> hitJson(context, h), hitList) |> List.toVector)
         });
         Util.Json.toPrettyString(2, obj)
 
@@ -384,9 +419,10 @@ pub mod Annotate {
             "h" => JNumber(JsonCodec.floatToBd(rect#size#y))
         })
 
-    def hitJson(hit: Hit): Util.Json.Json =
+    def hitJson(context: Context, hit: Hit): Util.Json.Json =
         use Util.Json.Json.{JObject, JString, JNumber};
         JObject(Map#{
+            "layer"  => JString(Option.getWithDefault("", layerOf(context, hit#zIndex))),
             "kind"   => JString(hit#kind),
             "name"   => JString(hit#name),
             "x"      => JNumber(JsonCodec.floatToBd(hit#position#x)),
@@ -397,20 +433,68 @@ pub mod Annotate {
 
     /// README.md に挟む人間向けの要約（囲った場所と、そこに描かれていた物）。
     pub def readmeBody(meta: { frame = Int64, rect = Rect2.Rect2 }, hitList: List[Hit]): String =
-        let hitLines = match hitList {
-            case Nil => "- （なし）"
-            case _   => hitList |> List.map(h -> hitLine(h)) |> String.intercalate("\n")
+        readmeBodyWith(noContext(), meta, hitList)
+
+    /// readmeBody に文脈を足した版。冒頭に facts を並べ、描画物の z に層の名前を添え、
+    /// 1 字ずつ置かれた文字（RichText.place・文字送り）は 1 行の文字列に束ねて出す。
+    pub def readmeBodyWith(context: Context, meta: { frame = Int64, rect = Rect2.Rect2 },
+                           hitList: List[Hit]): String =
+        let factLines = match context#facts {
+            case Nil => ""
+            case _   =>
+                "## その瞬間の文脈\n\n"
+                + (context#facts |> List.map(kv -> "- ${fst(kv)}: ${snd(kv)}") |> String.intercalate("\n"))
+                + "\n\n"
         };
-        "## 囲った場所\n\n"
+        let merged = mergeTextRuns(hitList);
+        let hitLines = match merged {
+            case Nil => "- （なし）"
+            case _   => merged |> List.map(h -> hitLine(context, h)) |> String.intercalate("\n")
+        };
+        factLines
+        + "## 囲った場所\n\n"
         + "- フレーム: ${meta#frame}\n"
         + "- 矩形: x=${meta#rect#position#x}, y=${meta#rect#position#y}, "
         + "w=${meta#rect#size#x}, h=${meta#rect#size#y}（デザイン座標）\n\n"
         + "## 矩形内の描画物\n\n"
         + hitLines
 
-    def hitLine(hit: Hit): String =
+    def hitLine(context: Context, hit: Hit): String =
         let label = if (hit#name == "") hit#kind else "${hit#kind} `${hit#name}`";
-        "- ${label} (x=${hit#position#x}, y=${hit#position#y}, z=${hit#zIndex})"
+        let z = match layerOf(context, hit#zIndex) {
+            case Some(layer) => "${hit#zIndex} ${layer}"
+            case None        => "${hit#zIndex}"
+        };
+        "- ${label} (x=${hit#position#x}, y=${hit#position#y}, z=${z})"
+
+    /// 同じ行（同じ y・同じ z）に左から右へ続けて置かれた text を 1 件へ束ねる。
+    /// 前の字の右端より手前に置かれた字は太字の重ね書き（0.5px ずらしの複製）なので、字も外形も足さない
+    /// （外形を伸ばすと、次の字まで重ね書きに見えてしまう）。右端から字の高さより離れた字は
+    /// 別の文字列（ラベルと値など）として束ねない。
+    pub def mergeTextRuns(hitList: List[Hit]): List[Hit] =
+        hitList
+            |> List.foldLeft((acc, hit) -> match acc {
+                case prev :: rest if continuesText(prev, hit) =>
+                    let overlaid = hit#position#x < Rect2.end(prev#aabb)#x - 0.25;
+                    if (overlaid) acc
+                    else { name = prev#name + hit#name, aabb = spanRect(prev#aabb, hit#aabb) | prev } :: rest
+                case _ => hit :: acc
+            }, Nil)
+            |> List.reverse
+
+    def continuesText(prev: Hit, hit: Hit): Bool =
+        prev#kind == "text" and hit#kind == "text" and prev#zIndex == hit#zIndex
+            and Float64.abs(prev#position#y - hit#position#y) < 0.01
+            and hit#position#x >= prev#position#x
+            and hit#position#x <= Rect2.end(prev#aabb)#x + Float64.max(1.0, hit#aabb#size#y)
+
+    /// 2 つの矩形をまとめて覆う矩形。
+    def spanRect(a: Rect2.Rect2, b: Rect2.Rect2): Rect2.Rect2 =
+        let lo = { x = Float64.min(a#position#x, b#position#x), y = Float64.min(a#position#y, b#position#y) };
+        let ae = Rect2.end(a);
+        let be = Rect2.end(b);
+        let hi = { x = Float64.max(ae#x, be#x), y = Float64.max(ae#y, be#y) };
+        { position = lo, size = Vec2.sub(hi, lo) }
 
     // ── 一時停止中の表示 ──
 

@@ -1,4 +1,4 @@
-<!-- engine v0.35.12 / 生成: 2026-10-15 -->
+<!-- engine v0.35.13 / 生成: 2026-10-15 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine_world
@@ -78,10 +78,22 @@
   `pub def itemAabb(sizeOf: String -> Option[GameEngine.TextureInfo] \ ef, placed: Render.PlacedItem): Rect2.Rect2 \ ef`
 - 描画命令（Drawable）の列から矩形に重なる物を列挙する。view を持たず生の描画チャンネルを
   `pub def hitsFromDrawables(sizeOf: String -> Option[GameEngine.TextureInfo] \ ef, rect: Rect2.Rect2, ds: List[GameEngine.Drawable]): List[Hit] \ ef`
+- 注釈を書き出す瞬間の、ゲーム側の文脈（App.withAnnotationContext で繋ぐ）。
+  `pub type alias Context = { facts = List[(String, String)], layers = List[(String, Int32, Int32)], hudLayers = List[(String, Int32, Int32)] }`
+- 文脈を繋いでいないゲームの既定（README・JSON は従来と同じ形になる）。
+  `pub def noContext(): Context`
+- z の層の名前（表に無ければ None）。HUD の範囲の z は HUD の表で引く。
+  `pub def layerOf(context: Context, z: Int32): Option[String]`
 - annotation.json の本文。デザイン座標の矩形と、重なっていた描画物の一覧を機械可読に残す。
   `pub def annotationJson(meta: { frame = Int64, design = Vec2.Vec2, rect = Rect2.Rect2 }, hitList: List[Hit]): String`
+- annotationJson に文脈を足した版。hits は字ごとのまま（機械が読む側は束ねない）。
+  `pub def annotationJsonWith(context: Context, meta: { frame = Int64, design = Vec2.Vec2, rect = Rect2.Rect2 }, hitList: List[Hit]): String`
 - README.md に挟む人間向けの要約（囲った場所と、そこに描かれていた物）。
   `pub def readmeBody(meta: { frame = Int64, rect = Rect2.Rect2 }, hitList: List[Hit]): String`
+- readmeBody に文脈を足した版。冒頭に facts を並べ、描画物の z に層の名前を添え、
+  `pub def readmeBodyWith(context: Context, meta: { frame = Int64, rect = Rect2.Rect2 }, hitList: List[Hit]): String`
+- 同じ行（同じ y・同じ z）に左から右へ続けて置かれた text を 1 件へ束ねる。
+  `pub def mergeTextRuns(hitList: List[Hit]): List[Hit]`
 - ドラッグ中の矩形オーバーレイ（薄い塗り + 枠線）。デザイン座標の列に混ぜて描く。
   `pub def overlayItems(dragStart: Vec2.Vec2, cursorDesign: Vec2.Vec2): List[Render.PlacedItem]`
 - 描画命令の列へ見え方（ズーム・パン）を適用する。位置は toScreen、大きさは zoom 倍。
@@ -109,7 +121,7 @@
 - 生成したドット絵アトラス 1 枚ぶんの受け渡し。
   `pub type alias AtlasUpload = { texture = String, key = String, baked = PxSpriteAtlas.Baked }`
 - ゲーム 1 本の宣言。make で空を作り、addStartup / addSystem / reloadOn / withView /
-  `pub type alias App[w: Type, ef: Eff] = { init = Vec2.Vec2 -> w \ ef, startupSystems = List[w -> w \ ef], updateSystems = List[(Frame, w) -> w \ ef], reload = Option[(GameEngine.Key, w -> w \ {Fs.FileRead})], watch = List[(String, w -> w \ {Fs.FileRead})], view = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], passes = w -> List[Render.Pass] \ ef, fonts = List[String], camera = Option[w -> Vec2.Vec2 \ ef], zoom = Option[w -> Float64 \ ef], cameraBounds = Option[w -> Rect2.Rect2 \ ef], parallaxLayers = List[(Float64, (ViewCtx, w) -> List[Render.PlacedItem] \ ef)], hudView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], audio = { before = w, after = w } -> List[String] \ ef, sustained = w -> List[Sustain] \ ef, mixer = Option[w -> AudioMixer.Mixer \ ef], quit = (Frame, w) -> Bool \ ef, debug = Bool, debugView = Option[(String, w -> (List[GameEngine.Drawable], List[GameEngine.TileMapRenderCmd], List[GameEngine.PolygonRenderCmd]) \ ef)], worldDump = Option[(Rect2.Rect2, w) -> String \ ef], staticLayer = Option[{ key = w -> GameEngine.StaticKey, build = w -> List[Render.PlacedItem] }], tileLayers = Option[w -> List[TileLayerSpec]], spriteAtlases = w -> List[AtlasUpload], pixelSnap = w -> Float64, statusLine = Option[w -> String \ ef], remoteRender = Option[Unit -> List[String] \ IO], remoteHandlers = List[(String, (Map[String, String], w) -> Result[String, w] \ {Fs.FileRead})], fixedStep = Option[Float64] }`
+  `pub type alias App[w: Type, ef: Eff] = { init = Vec2.Vec2 -> w \ ef, startupSystems = List[w -> w \ ef], updateSystems = List[(Frame, w) -> w \ ef], reload = Option[(GameEngine.Key, w -> w \ {Fs.FileRead})], watch = List[(String, w -> w \ {Fs.FileRead})], view = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], passes = w -> List[Render.Pass] \ ef, fonts = List[String], camera = Option[w -> Vec2.Vec2 \ ef], zoom = Option[w -> Float64 \ ef], cameraBounds = Option[w -> Rect2.Rect2 \ ef], parallaxLayers = List[(Float64, (ViewCtx, w) -> List[Render.PlacedItem] \ ef)], hudView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], audio = { before = w, after = w } -> List[String] \ ef, sustained = w -> List[Sustain] \ ef, mixer = Option[w -> AudioMixer.Mixer \ ef], quit = (Frame, w) -> Bool \ ef, debug = Bool, debugView = Option[(String, w -> (List[GameEngine.Drawable], List[GameEngine.TileMapRenderCmd], List[GameEngine.PolygonRenderCmd]) \ ef)], worldDump = Option[(Rect2.Rect2, w) -> String \ ef], annotationContext = Option[w -> Annotate.Context \ ef], staticLayer = Option[{ key = w -> GameEngine.StaticKey, build = w -> List[Render.PlacedItem] }], tileLayers = Option[w -> List[TileLayerSpec]], spriteAtlases = w -> List[AtlasUpload], pixelSnap = w -> Float64, statusLine = Option[w -> String \ ef], remoteRender = Option[Unit -> List[String] \ IO], remoteHandlers = List[(String, (Map[String, String], w) -> Result[String, w] \ {Fs.FileRead})], fixedStep = Option[Float64] }`
 - 初期 World だけを持つ空の App。絵はまだ無い（withView で繋ぐまで何も描かない）。
   `pub def make(init: w): App[w, ef]`
 - 初期 World を design 解像度（project.json の designWidth/Height）から組む入口。
@@ -168,6 +180,8 @@
   `pub def withDebugView(font: {font = String}, f: w -> (List[GameEngine.Drawable], List[GameEngine.TileMapRenderCmd], List[GameEngine.PolygonRenderCmd]) \ ef, app: App[w, ef]): App[w, ef]`
 - 注釈（F8 の矩形）を書き出すとき「囲った瞬間の World」をテキストにしてチケットへ
   `pub def withWorldDump(f: (Rect2.Rect2, w) -> String \ ef, app: App[w, ef]): App[w, ef]`
+- 注釈（F8 の矩形）を書き出すとき、README の冒頭と annotation.json の "context" に載せる
+  `pub def withAnnotationContext(f: w -> Annotate.Context \ ef, app: App[w, ef]): App[w, ef]`
 - World の 1 行サマリ（例: "phase=Playing ball=(163.2,207.9) lives=3"）を繋ぐ。
   `pub def withStatusLine(f: w -> String \ ef, app: App[w, ef]): App[w, ef]`
 - リモートデバッグ（HTTP）の POST /render が実行する「描き出しの実体」を繋ぐ。
