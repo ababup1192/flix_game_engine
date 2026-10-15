@@ -453,6 +453,8 @@ pub mod App {
     /// f は Docs から決定的な場面を組み立てて PNG に描き出し、そのファイルパスの列を返す
     /// （SceneRender.all の中身をそのまま渡せる形）。走行中のプレイ状態を読んだり変えたりしない
     /// 関数に限る — /render はゲームの進行に触れず、温まった JVM で描き直すだけのエンドポイント。
+    /// f はゲームループではなく描き出し専用のスレッドで呼ばれる（描いている間もゲームは動く）。
+    /// だから f の中で GL・音・ゲームと共有する可変の値に触れてはいけない。
     /// 繋がないゲームへの /render は「未対応」の応答になる。
     pub def onRenderRequest(f: Unit -> List[String] \ IO, app: App[w, ef]): App[w, ef] =
         { remoteRender = Some(f) | app }
@@ -659,7 +661,8 @@ pub mod App {
         // 出し直す口をここに作ると、間引きも中止スイッチも持たない 2 つ目の経路が生まれる）。
         let world0 = List.foldLeft((acc, sys) -> sys(acc),
                                    init(GameEngine.Game.getViewportRect()#size), app#startupSystems);
-        let bridge = if (canDebug(app)) Option.map(RemoteDebug.start, RemoteDebug.portFromEnv())
+        let bridge = if (canDebug(app)) Option.map(port -> RemoteDebug.start(port, app#remoteRender),
+                                                   RemoteDebug.portFromEnv())
                      else None;
         // 起動時点の更新時刻を「発火なしで」用意しておく — 用意しないと最初のポーリングが
         // 全パスを新規出現と見なし、init 直後にもう一度リロードが走ってしまう。

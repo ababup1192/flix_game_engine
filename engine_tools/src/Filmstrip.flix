@@ -17,7 +17,6 @@ pub mod Filmstrip {
     import java.awt.image.BufferedImage
     import java.awt.image.IndexColorModel
     import java.awt.image.WritableRaster
-    import java.io.File
     import java.lang.{Object => JObject}
     import javax.imageio.ImageIO
 
@@ -58,15 +57,16 @@ pub mod Filmstrip {
     pub def renderFrame(img: BufferedImage, outPath: String): Unit \ IO =
         let fw = Int32.max(1i32, img.getWidth());
         let fh = Int32.max(1i32, img.getHeight());
-        let file = new File(outPath);
-        let parent = file.getParentFile();
-        if (not Object.isNull(parent)) discard parent.mkdirs() else ();
         match collectPalette(img :: Nil, fw, fh) {
             case Some(colors) =>
-                discard ImageIO.write(drawIndexed(img :: Nil, fw, fw, fh, colors), "png", file)
+                writePng(drawIndexed(img :: Nil, fw, fw, fh, colors), outPath)
             case None =>
-                discard ImageIO.write(drawFullColor(img :: Nil, fw, fw, fh), "png", file)
+                writePng(drawFullColor(img :: Nil, fw, fw, fh), outPath)
         }
+
+    /// PNG を書き終えてから outPath へ置き換える（途中で止まっても書きかけを残さない）。
+    def writePng(image: BufferedImage, outPath: String): Unit \ IO =
+        AtomicFile.write(outPath, file -> discard ImageIO.write(image, "png", file))
 
     /// `frames`（同寸の BufferedImage 列）を横連結して `outPath` へ PNG で書き出す。
     /// 256 色以下なら PNG-8（インデックスカラー）、超えたらフルカラーで書く。
@@ -79,19 +79,16 @@ pub mod Filmstrip {
                 let fh = Int32.max(1i32, first.getHeight());
                 let n = List.length(frames);
                 let sheetW = n * fw;
-                let file = new File(outPath);
-                let parent = file.getParentFile();
-                if (not Object.isNull(parent)) discard parent.mkdirs() else ();
                 // Graphics2D（createGraphics）は macOS の -XstartOnFirstThread 下で AWT Toolkit の初期化を
                 // 待ってデッドロックしうる。ここは Raster への直接コピーだけで描くので GraphicsEnvironment に
                 // 一切触れない（headless 設定も不要）。
                 match collectPalette(frames, fw, fh) {
                     case Some(colors) =>
-                        discard ImageIO.write(drawIndexed(frames, fw, sheetW, fh, colors), "png", file);
+                        writePng(drawIndexed(frames, fw, sheetW, fh, colors), outPath);
                         Some({frameCount = n, frameW = fw, frameH = fh, width = sheetW, height = fh,
                               indexed = true, colors = List.length(colors)})
                     case None =>
-                        discard ImageIO.write(drawFullColor(frames, fw, sheetW, fh), "png", file);
+                        writePng(drawFullColor(frames, fw, sheetW, fh), outPath);
                         Some({frameCount = n, frameW = fw, frameH = fh, width = sheetW, height = fh,
                               indexed = false, colors = maxColors() + 1i32})
                 }

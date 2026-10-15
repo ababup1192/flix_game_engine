@@ -5,6 +5,8 @@
 // スレッドの取り決め: HTTP のスレッドは World に一切触れない。リクエストの生文字列をキューへ
 // 積んで応答文字列を待つだけで、パース・実行・応答の組み立てはすべてゲームループ側
 // （App）が行う。ゲームが応答しなければ 10 秒で 503 を返し、その依頼は取り下げる。
+// 例外は /render だけ: 描き出しは World に触れないので、ゲームループには渡さず、描き出し専用の
+// スレッドで走らせる（ゲームの窓は描き出しの間も動き続ける）。
 
 pub mod RemoteDebug {
     import java.lang.System
@@ -14,8 +16,15 @@ pub mod RemoteDebug {
     import com.sun.net.httpserver.HttpExchange
     import java.util.concurrent.{LinkedBlockingQueue => JQueue}
     import java.util.concurrent.TimeUnit
+    import java.util.concurrent.Callable
+    import java.util.concurrent.Executors
+    import java.util.concurrent.ThreadFactory
     import java.util.concurrent.atomic.AtomicLong
+    import java.util.concurrent.atomic.AtomicReference
     import java.lang.{String => JString}
+    import java.lang.Runnable
+    import java.lang.Thread
+    import java.lang.Throwable
 
     // ── HTTP スレッドとゲームループを繋ぐ橋 ──
 
@@ -26,6 +35,16 @@ pub mod RemoteDebug {
         requests = JQueue[String],     // HTTP → ゲームループ（"番号\tMETHOD /path?query\n台本"）
         responses = JQueue[String],    // ゲームループ → HTTP（"番号\t応答本文"）
         current = AtomicLong           // ゲームループがいま捌いている依頼の番号
+    }
+
+    /// /render の帳簿。HTTP のスレッドと描き出しのスレッドが共有する（どれもスレッド安全な Java の部品）。
+    /// 依頼ごとに requested を 1 つ進め、描き出しのスレッドは「頼まれた番号まで」をまとめて 1 回で描く。
+    pub type alias RenderJobs = {
+        requested = AtomicLong,            // 最後に受け付けた依頼の番号
+        done = AtomicLong,                 // 描き終えた（または失敗した）最後の番号
+        running = AtomicLong,              // いま描いている回の番号（0 = 描いていない）
+        last = AtomicReference[String],    // done の回の応答本文（成功なら ok rendered=…、失敗なら error: …）
+        wake = JQueue[String]              // 描き出しのスレッドを起こす印（中身は使わない）
     }
 
     /// 環境変数 DEBUG_HTTP_PORT からポート番号を読む。未設定・数値でなければ None。
@@ -45,14 +64,17 @@ pub mod RemoteDebug {
     /// 127.0.0.1 の port で HTTP サーバを立てて Bridge を返す。
     /// ハンドラはリクエストを 1 つの文字列にまとめてキューへ積み、自分の番号の応答を最大 10 秒待つ。
     /// executor を与えない（null）ので処理は 1 スレッド直列 = 同時リクエストも順番に並ぶ。
+    /// `render` はゲームが App.onRenderRequest で登録した描き出し。/render はキューに積まず、
+    /// ここで描き出しのスレッドへ回す（serveRender）。
     // WhyNot: 時間切れの依頼をキューに残すと、ゲームは後でそれにも答え、その答えが次の依頼の
     // 答えとして渡ってしまう（以後ずっと 1 つずつずれる）。だから時間切れでは、まだ取られて
     // いない依頼を取り下げ、遅れて届いた他の番号の答えは捨てる。
-    pub def start(port: Int32): Bridge \ IO =
+    pub def start(port: Int32, render: Option[Unit -> List[String] \ IO]): Bridge \ IO =
         let requests: JQueue[String] = new JQueue();
         let responses: JQueue[String] = new JQueue();
         let current = new AtomicLong(0i64);
         let issued = new AtomicLong(0i64);
+        let renderJobs = Option.map(startRenderWorker, render);
         let server = HttpServer.create(new InetSocketAddress("127.0.0.1", port), 0);
         discard server.createContext("/", new HttpHandler {
             def handle(_this: HttpHandler, exchange: HttpExchange): Unit \ IO = {
@@ -63,16 +85,22 @@ pub mod RemoteDebug {
                 let bodyText = new JString(requestBody.readAllBytes(), "UTF-8");
                 let methodName = exchange.getRequestMethod();
                 let path = uri.getPath();
-                let id = issued.incrementAndGet();
-                let request = tagged(id, "${methodName} ${path}${queryPart}\n${bodyText}");
-                discard requests.offer(request);
-                let answer = awaitAnswer(responses, id, System.nanoTime() + 10_000_000_000i64);
-                if (Option.isEmpty(answer)) discard requests.remove(request) else ();
-                let text = Option.getWithDefault("error: game loop did not answer within 10s\n", answer);
+                let raw = "${methodName} ${path}${queryPart}\n${bodyText}";
+                let (status, text) =
+                    if (path == "/render") serveRender(renderJobs, parseRequest(raw))
+                    else {
+                        let id = issued.incrementAndGet();
+                        let request = tagged(id, raw);
+                        discard requests.offer(request);
+                        let answer = awaitAnswer(responses, id, System.nanoTime() + 10_000_000_000i64);
+                        if (Option.isEmpty(answer)) discard requests.remove(request) else ();
+                        (if (Option.isEmpty(answer)) 503 else 200,
+                         Option.getWithDefault(busyText(), answer))
+                    };
                 let headers = exchange.getResponseHeaders();
                 headers.set("Content-Type", "text/plain; charset=utf-8");
                 let bytes = text.getBytes("UTF-8");
-                exchange.sendResponseHeaders(if (Option.isEmpty(answer)) 503 else 200, Int32.toInt64(Array.length(bytes)));
+                exchange.sendResponseHeaders(status, Int32.toInt64(Array.length(bytes)));
                 let out = exchange.getResponseBody();
                 out.write(bytes);
                 out.close()
@@ -93,6 +121,119 @@ pub mod RemoteDebug {
                 case Some((answered, text)) if answered == id => Some(text)
                 case _ => awaitAnswer(responses, id, deadlineNs)
             }
+        }
+
+    // ── /render: 描き出しのスレッド ──
+
+    /// 描き出しのスレッドを 1 本立てて帳簿を返す。スレッドは daemon（ゲームを閉じたら一緒に終わる）。
+    /// 描き出し（SoftRaster / HeadlessFont）は Java2D = AWT を使う。macOS の実機起動は
+    /// -XstartOnFirstThread で GLFW が主スレッドを占有しており、AWT が AppKit を起こそうとすると
+    /// 永久ハングし得る。このプロセスは AWT のウィンドウを開かないので、どのスレッドが最初に AWT に
+    /// 触れても困らないよう、ここで 1 回だけ headless を明示しておく。
+    // WhyNot: Flix の region + spawn を使わない — region は出口で中のスレッドの合流を待つので、
+    // 描き出しのスレッドを置いたまま start から戻れない。Runnable でなく Callable を渡すのは `run` が
+    // Flix の予約語で、匿名クラスの手続き名に書けないため（Thread は ThreadFactory が受け取った
+    // Runnable から作るだけ）。
+    def startRenderWorker(render: Unit -> List[String] \ IO): RenderJobs \ IO =
+        discard System.setProperty("java.awt.headless", "true");
+        let jobs = { requested = new AtomicLong(0i64), done = new AtomicLong(0i64),
+                     running = new AtomicLong(0i64), last = new AtomicReference(""),
+                     wake = new JQueue() };
+        let executor = Executors.newSingleThreadExecutor(new ThreadFactory {
+            def newThread(_this: ThreadFactory, task: Runnable): Thread \ IO = {
+                let thread = new Thread(task, "remote-debug-render");
+                thread.setDaemon(true);
+                thread
+            }
+        });
+        // WhyNot: 受けずに放さない — submit は Callable から抜けた例外を Future に飲み込むので、
+        // renderOnce の外（take の割り込みなど）で落ちると、スレッドだけ黙って消えて以後はずっと 503 になる。
+        discard executor.submit(new Callable[String] {
+            def call(_this: Callable[String]): String \ IO = {
+                try {
+                    renderLoop(render, jobs)
+                } catch {
+                    case e: Throwable =>
+                        Log.warn("[remote-debug] 描き出しのスレッドが止まりました（以後の /render は 503） — ${e.toString()}")
+                };
+                ""
+            }
+        });
+        executor.shutdown();
+        jobs
+
+    /// 起こされるたびに、頼まれた番号が描き終えた番号より先なら 1 回描く。ずっと回る。
+    /// 描いている間に来た依頼は印を積むので、描き終えた後の周でまとめて 1 回だけ描き直す。
+    def renderLoop(render: Unit -> List[String] \ IO, jobs: RenderJobs): Unit \ IO =
+        let wake = jobs#wake;
+        discard wake.take();
+        let requested = jobs#requested;
+        let done = jobs#done;
+        match nextRenderTarget(requested.get(), done.get()) {
+            case Some(target) => renderOnce(render, jobs, target)
+            case None         => ()
+        };
+        renderLoop(render, jobs)
+
+    /// 番号 target までの依頼を 1 回の描き出しで済ませる。描き出しの中の bug!（Error で飛ぶ）も
+    /// 受け止めて失敗として記録する — 受けないとスレッドだけ黙って死に、running のまま固まる。
+    /// last を先に書いてから done を進める（done を見た側が、その回以降の last を必ず読める）。
+    def renderOnce(render: Unit -> List[String] \ IO, jobs: RenderJobs, target: Int64): Unit \ IO =
+        let running = jobs#running;
+        let last = jobs#last;
+        let done = jobs#done;
+        running.set(target);
+        let startNs = System.nanoTime();
+        let text = try {
+            let paths = render();
+            renderJobDoneText(target, (System.nanoTime() - startNs) / 1000000i64, paths)
+        } catch {
+            case e: Throwable => renderFailedText(target, e.toString())
+        };
+        last.set(text);
+        done.set(target);
+        running.set(0i64)
+
+    /// /render を HTTP のスレッドで捌く（ゲームループには渡さない）。返すのは (HTTP の状態, 本文)。
+    /// - GET /render: 帳簿を読むだけ。
+    /// - POST /render?async=1: 受け付けて番号をすぐ返す（新しい Studio はこの後 GET で番号の完了を待つ）。
+    /// - POST /render（クエリ無し）: 受け付けて、その番号が済むまで最大 9 秒待つ。済めば今までと同じ
+    ///   ok rendered=… を、済まなければ今までと同じ 503 の「答えなし」を返す。
+    // WhyNot: クエリ無しをすぐ返す形にしない — 古い Studio は 1 行目が "ok " で始まれば描き終えたと
+    // 読むので、描きかけの絵を reference へ写してしまう。待つ上限を 9 秒にするのは、古い Studio の
+    // 読み取りの待ち（15 秒）より先に、Studio が「描いている途中」と読む 503 を返すため。
+    def serveRender(renderJobs: Option[RenderJobs], request: Request): (Int32, String) \ IO =
+        match renderJobs {
+            case None       => (200, renderUnsupportedText())
+            case Some(jobs) =>
+                let requested = jobs#requested;
+                let done = jobs#done;
+                let running = jobs#running;
+                let last = jobs#last;
+                if (request#method == "GET") {
+                    // done を先に読んでから last を読む（renderOnce は last → done の順に書くので、
+                    // こう読めば last は必ず読んだ done 以降の回の本文になる）。
+                    let doneNow = done.get();
+                    let lastNow = last.get();
+                    (200, renderStatusText(requested.get(), doneNow, running.get(), lastNow))
+                } else {
+                    let id = requested.incrementAndGet();
+                    let wake = jobs#wake;
+                    discard wake.offer("render");
+                    if (wantsAsyncRender(request#params)) (200, renderAcceptedText(id))
+                    else if (awaitRender(jobs, id, System.nanoTime() + 9_000_000_000i64)) (200, last.get())
+                    else (503, busyText())
+                }
+        }
+
+    /// 番号 id の依頼が済むまで（後の回でまとめて描き終えても済んだ扱い）、deadlineNs まで待つ。
+    def awaitRender(jobs: RenderJobs, id: Int64, deadlineNs: Int64): Bool \ IO =
+        let done = jobs#done;
+        if (isRenderSettled(id, done.get())) true
+        else if (System.nanoTime() >= deadlineNs) false
+        else {
+            Thread.sleep(50i64);
+            awaitRender(jobs, id, deadlineNs)
         }
 
     /// ゲームループが毎フレーム呼ぶ非ブロッキングの受信。届いていなければ None。
@@ -420,6 +561,46 @@ pub mod RemoteDebug {
         + (if (List.isEmpty(paths)) ""
            else "[rendered]\n" + String.intercalate("\n", paths) + "\n")
 
+    /// 1 回の描き出しが済んだときの応答。renderDoneText の 1 行目の末尾に、その回の番号を足した形
+    /// （古い Studio は 1 行目を "ok " で始まるかだけで読むので、足しても読み方は変わらない）。
+    pub def renderJobDoneText(job: Int64, ms: Int64, paths: List[String]): String =
+        let text = renderDoneText(ms, paths);
+        match String.lines(text) {
+            case first :: rest => String.intercalate("\n", "${first} job=${job}" :: rest) + "\n"
+            case Nil           => text
+        }
+
+    /// 1 回の描き出しが落ちたときの応答（描き出しの中の bug! や例外の文面を 1 行に）。
+    pub def renderFailedText(job: Int64, reason: String): String =
+        let oneLine = reason |> String.replace(src = "\n", dst = " ");
+        "error: render failed job=${job}: ${oneLine}\n"
+
+    /// POST /render?async=1 の応答。番号を受け取った側は GET /render で done がその番号以上になるのを待つ。
+    pub def renderAcceptedText(job: Int64): String = "ok accepted job=${job}\n"
+
+    /// GET /render の応答。1 行目に番号 3 つ（受け付けた最後・描き終えた最後・いま描いている回。0 = 無し）、
+    /// まだ 1 回も描き終えていなければそれだけ、描き終えた回があれば [last] にその回の応答をそのまま載せる。
+    pub def renderStatusText(requested: Int64, done: Int64, running: Int64, last: String): String =
+        "ok render requested=${requested} done=${done} running=${running}\n"
+        + (if (done == 0i64) "" else "[last]\n" + last)
+
+    /// POST /render のクエリが「すぐ返す」を頼んでいるか（async=1）。
+    pub def wantsAsyncRender(params: Map[String, String]): Bool =
+        Map.get("async", params) == Some("1")
+
+    /// 描き出しのスレッドが次に描く番号。頼まれた番号が描き終えた番号より先なら、頼まれた番号まで
+    /// まとめて 1 回で描く（間に何件来ていても 1 回）。追いついていれば None。
+    pub def nextRenderTarget(requested: Int64, done: Int64): Option[Int64] =
+        if (requested > done) Some(requested) else None
+
+    /// 番号 id の依頼が済んだか。後の番号の回でまとめて描き終えていても済んだ扱い
+    /// （その回は id の依頼より後に Docs を読み直しているので、id の時点の変更を含む）。
+    pub def isRenderSettled(id: Int64, done: Int64): Bool = done >= id
+
+    /// 時間内に答えられなかったときの応答。古い Studio はこの 1 行目を「描いている途中」と読む
+    /// （make での描き出しに切り替えない）ので、文面は変えない。
+    pub def busyText(): String = "error: game loop did not answer within 10s\n"
+
     /// 描き出しの実体（App.onRenderRequest）を登録していないゲームへの応答。
     /// Studio はこの error 行を見て自前の描き出し起動（make render-all 等）へフォールバックする。
     pub def renderUnsupportedText(): String =
@@ -434,7 +615,11 @@ pub mod RemoteDebug {
         + "POST /halt                    pause the game (lockstep mode)\n"
         + "POST /resume                  resume realtime play\n"
         + "POST /render                  run the game's registered render (App.onRenderRequest)\n"
-        + "     on the warm JVM; answers the rendered file paths. play state is untouched.\n"
+        + "     on a background thread of the warm JVM (the game keeps running); waits up to 9s\n"
+        + "     and answers the rendered file paths, or 503 if still rendering. play state is untouched.\n"
+        + "POST /render?async=1          accept and answer \"ok accepted job=N\" at once\n"
+        + "GET  /render                  requested= done= running= job numbers, then [last] result.\n"
+        + "     job N is finished once done >= N (requests during a render fold into one rerun)\n"
         + "POST /step?view=&rect=&until=&max=&trace=&dt=\n"
         + "     body = input script; runs it frame by frame, then answers.\n"
         + "     auto-halts first if the game is running.\n"
@@ -484,7 +669,6 @@ pub mod RemoteDebug {
             case ("POST", "/resume") => remoteResume(bridge, ctx)
             case ("GET", "/state")   => remoteState(app, bridge, request, ctx)
             case ("POST", "/step")   => remoteStepCommand(app, bridge, request, ctx)
-            case ("POST", "/render") => remoteRenderCommand(app, bridge, ctx)
             case (m, p)              =>
                 match RemoteDebug.findRoute(p, app#remoteHandlers) {
                     case Some(chosen) => remoteCustom(chosen, bridge, request, ctx)
@@ -537,29 +721,6 @@ pub mod RemoteDebug {
             let resumed = App.resumePoint(ctx#anno, ctx#history, ctx#world);
             answer("ok mode=running frame=${resumed#anno#frame}\n", bridge,
                    { world = resumed#world, anno = resumed#anno, history = resumed#history, hold = false })
-        }
-
-    /// POST /render: 登録された描き出しの実体（App.onRenderRequest）を温まった JVM で実行し、
-    /// 描き出したファイルパスの列を返す。描き出しは Docs から決定的な場面を組み立てるだけなので、
-    /// 走行中のプレイ状態（world・停止状態・履歴）には一切触れない — ctx をそのまま返す。
-    /// 未登録のゲームには「未対応」を返す（Studio はそれを見て自前の描き出し起動へ
-    /// フォールバックする）。同時に来た 2 発目は /step と同じ排他の流儀 — HTTP 側は
-    /// 1 スレッド直列・ゲームループは 1 フレーム 1 件なので、キュー順に必ず直列で捌かれる。
-    def remoteRenderCommand(app: App.App[w, ef], bridge: RemoteDebug.Bridge,
-                          ctx: RemoteNext[w]): RemoteNext[w] \ IO =
-        match app#remoteRender {
-            case None => answer(RemoteDebug.renderUnsupportedText(), bridge, ctx)
-            case Some(renderScenes) =>
-                // 描き出し（SoftRaster / HeadlessFont）は Java2D = AWT を使う。macOS の実機起動は
-                // -XstartOnFirstThread で GLFW が主スレッドを占有しており、ここで AWT が
-                // AppKit を起こそうとすると永久ハングし得る。このプロセスは AWT のウィンドウを
-                // 開かないので、初回の AWT 初期化前に headless を明示しておく
-                // （bin/flix が test / 描き出しの実行に付けるのと同じ理由）。
-                discard System.setProperty("java.awt.headless", "true");
-                let startNs = System.nanoTime();
-                let paths = renderScenes();
-                let elapsedMs = (System.nanoTime() - startNs) / 1000000i64;
-                answer(RemoteDebug.renderDoneText(elapsedMs, paths), bridge, ctx)
         }
 
     /// GET /state: 進めずに観測だけ返す。停止中はスクラブで表示中の瞬間を見る。

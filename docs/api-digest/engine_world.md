@@ -1,4 +1,4 @@
-<!-- engine v0.35.6 / 生成: 2026-10-11 -->
+<!-- engine v0.35.6 / 生成: 2026-10-15 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine_world
@@ -1328,13 +1328,15 @@
 ## RemoteDebug — `engine_world/src/RemoteDebug.flix`
 - HTTP サーバ本体と、リクエスト / レスポンスを受け渡す 2 本のキュー。
   `pub type alias Bridge = { server = HttpServer, requests = JQueue[String], responses = JQueue[String], current = AtomicLong }`
+- /render の帳簿。HTTP のスレッドと描き出しのスレッドが共有する（どれもスレッド安全な Java の部品）。
+  `pub type alias RenderJobs = { requested = AtomicLong, done = AtomicLong, running = AtomicLong, last = AtomicReference[String], wake = JQueue[String] }`
 - 環境変数 DEBUG_HTTP_PORT からポート番号を読む。未設定・数値でなければ None。
   `pub def portFromEnv(): Option[Int32] \ IO`
 - 本文に依頼番号を付ける（キューに積む形）。
   `pub def tagged(id: Int64, text: String): String`
 - tagged の逆。番号の無い・読めない形は None。
   `pub def untagged(raw: String): Option[(Int64, String)]`
-- `pub def start(port: Int32): Bridge \ IO`
+- `pub def start(port: Int32, render: Option[Unit -> List[String] \ IO]): Bridge \ IO`
 - ゲームループが毎フレーム呼ぶ非ブロッキングの受信。届いていなければ None。
   `pub def pollRequest(bridge: Bridge): Option[String] \ IO`
 - 応答本文を HTTP スレッドへ返す（pollRequest で受けた 1 件に必ず 1 回対で呼ぶ）。
@@ -1381,6 +1383,22 @@
   `pub def capBody(text: String): String`
 - POST /render の成功応答。1 行目に枚数と所要ミリ秒、続く [rendered] ブロックに
   `pub def renderDoneText(ms: Int64, paths: List[String]): String`
+- 1 回の描き出しが済んだときの応答。renderDoneText の 1 行目の末尾に、その回の番号を足した形
+  `pub def renderJobDoneText(job: Int64, ms: Int64, paths: List[String]): String`
+- 1 回の描き出しが落ちたときの応答（描き出しの中の bug! や例外の文面を 1 行に）。
+  `pub def renderFailedText(job: Int64, reason: String): String`
+- POST /render?async=1 の応答。番号を受け取った側は GET /render で done がその番号以上になるのを待つ。
+  `pub def renderAcceptedText(job: Int64): String`
+- GET /render の応答。1 行目に番号 3 つ（受け付けた最後・描き終えた最後・いま描いている回。0 = 無し）、
+  `pub def renderStatusText(requested: Int64, done: Int64, running: Int64, last: String): String`
+- POST /render のクエリが「すぐ返す」を頼んでいるか（async=1）。
+  `pub def wantsAsyncRender(params: Map[String, String]): Bool`
+- 描き出しのスレッドが次に描く番号。頼まれた番号が描き終えた番号より先なら、頼まれた番号まで
+  `pub def nextRenderTarget(requested: Int64, done: Int64): Option[Int64]`
+- 番号 id の依頼が済んだか。後の番号の回でまとめて描き終えていても済んだ扱い
+  `pub def isRenderSettled(id: Int64, done: Int64): Bool`
+- 時間内に答えられなかったときの応答。古い Studio はこの 1 行目を「描いている途中」と読む
+  `pub def busyText(): String`
 - 描き出しの実体（App.onRenderRequest）を登録していないゲームへの応答。
   `pub def renderUnsupportedText(): String`
 - GET /help の本文。プロトコルの自己記述（セッション冒頭に 1 回読む想定）。

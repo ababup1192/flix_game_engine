@@ -1028,11 +1028,9 @@ pub mod SoftRaster {
         Int32.max(lo, Int32.min(hi, v))
 
     /// BufferedImage を PNG として書く。親ディレクトリが無ければ作る。
+    /// 書き終えてから path へ置き換える（走行中のゲームの裏で描いていて途中で閉じても、書きかけを残さない）。
     def writePng(image: BufferedImage, path: String): Unit \ IO =
-        let file = new File(path);
-        let parent = file.getParentFile();
-        if (not Object.isNull(parent)) discard parent.mkdirs() else ();
-        discard ImageIO.write(image, "png", file)
+        AtomicFile.write(path, file -> discard ImageIO.write(image, "png", file))
 
     // ════════════════════════════════════════════════════════
     // RadialGlow テクスチャの PNG 書き出し（AWT 依存をここへ閉じ込める）

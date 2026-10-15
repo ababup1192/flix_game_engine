@@ -195,6 +195,66 @@ mod TestRemoteDebug {
             expected = "ok rendered=2 ms=845\n[rendered]\ngallery/title.png\ngallery/ending.png\n",
             RemoteDebug.renderDoneText(845i64, "gallery/title.png" :: "gallery/ending.png" :: Nil))
 
+    // 1 回の描き出しの応答は、1 行目の末尾にその回の番号が付き、パスの並びはそのまま。
+    @Test
+    def testRenderJobDoneTextAppendsJobToFirstLine(): Unit \ Assert =
+        Assert.assertEq(
+            expected = "ok rendered=1 ms=12 job=3\n[rendered]\ngallery/title.png\n",
+            RemoteDebug.renderJobDoneText(3i64, 12i64, "gallery/title.png" :: Nil))
+
+    // 描き出しが落ちた回は error 応答になり、理由の改行は 1 行に潰れる（Studio が 1 行目で読めるように）。
+    @Test
+    def testRenderFailedTextIsOneErrorLine(): Unit \ Assert =
+        Assert.assertEq(
+            expected = "error: render failed job=4: boom at x\n",
+            RemoteDebug.renderFailedText(4i64, "boom\nat x"))
+
+    // 描いている間に何件来ても、次の 1 回は最後に頼まれた番号まで（まとめて 1 回で描く）。
+    @Test
+    def testNextRenderTargetFoldsPendingRequests(): Unit \ Assert =
+        Assert.assertEq(expected = Some(7i64), RemoteDebug.nextRenderTarget(7i64, 3i64))
+
+    // 頼まれた番号まで描き終えていれば、起こされても描かない（余った起こしの印で回り続けない）。
+    @Test
+    def testNextRenderTargetIsNoneWhenCaughtUp(): Unit \ Assert =
+        Assert.assertEq(expected = None, RemoteDebug.nextRenderTarget(7i64, 7i64))
+
+    // 後の番号の回でまとめて描き終えていれば、前の番号の依頼も済んだ扱い。
+    @Test
+    def testRenderSettledByLaterJob(): Unit \ Assert =
+        Assert.assertEq(expected = true, RemoteDebug.isRenderSettled(5i64, 7i64))
+
+    // 走っている途中の回が終わっただけでは、その後に頼んだ番号は済んでいない（描きかけを完了と言わない）。
+    @Test
+    def testRenderNotSettledByEarlierJob(): Unit \ Assert =
+        Assert.assertEq(expected = false, RemoteDebug.isRenderSettled(8i64, 7i64))
+
+    // まだ 1 回も描き終えていない間の状態は、番号の行だけ。
+    @Test
+    def testRenderStatusTextBeforeFirstJob(): Unit \ Assert =
+        Assert.assertEq(
+            expected = "ok render requested=1 done=0 running=1\n",
+            RemoteDebug.renderStatusText(1i64, 0i64, 1i64, ""))
+
+    // 描き終えた回があれば、[last] にその回の応答をそのまま載せる。
+    @Test
+    def testRenderStatusTextCarriesLastResult(): Unit \ Assert =
+        Assert.assertEq(
+            expected = "ok render requested=2 done=2 running=0\n[last]\nok rendered=0 ms=5 job=2\n",
+            RemoteDebug.renderStatusText(2i64, 2i64, 0i64, "ok rendered=0 ms=5 job=2\n"))
+
+    // すぐ返すのは async=1 のときだけ（クエリ無しは古い Studio のために待つ）。
+    @Test
+    def testWantsAsyncRenderOnlyWithAsyncOne(): Unit \ Assert =
+        Assert.assertEq(expected = (true, false),
+            (RemoteDebug.wantsAsyncRender(Map#{"async" => "1"}), RemoteDebug.wantsAsyncRender(Map.empty())))
+
+    // 描き終わらなかったときの文面は、古い Studio が「描いている途中」と読む 1 行目のまま。
+    @Test
+    def testBusyTextKeepsOldStudioPrefix(): Unit \ Assert =
+        Assert.assertEq(expected = true,
+            String.startsWith(prefix = "error: game loop did not answer", RemoteDebug.busyText()))
+
     // 描き出しの実体が未登録なら error 応答（Studio はこの 1 行目を見て自前の描き出しへフォールバック）。
     @Test
     def testRenderUnsupportedTextIsError(): Unit \ Assert =

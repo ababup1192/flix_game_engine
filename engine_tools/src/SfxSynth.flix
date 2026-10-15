@@ -94,10 +94,14 @@ pub mod SfxSynth {
         List.append(header, List.flatMap(s -> le16(clip16(s)), samples))
 
     /// バイト列をそのままファイルへ書き出す（副作用はここだけ）。
+    /// 書き終えてから path へ置き換える — 書き先は元のアセット（assets/sfx/）なので、途中で止まって
+    /// 壊れた WAV が残ると次の起動で鳴らない。
     pub def writeBytes(path: String, bytes: Bytes): Unit \ IO =
-        let out = new BufferedOutputStream(new FileOutputStream(path));
-        List.forEach(b -> out.write(b), bytes);
-        out.close()
+        AtomicFile.write(path, file -> {
+            let out = new BufferedOutputStream(new FileOutputStream(file));
+            List.forEach(b -> out.write(b), bytes);
+            out.close()
+        })
 
     /// 音のセットをまとめて `dir` へ描き出す。`(名前, サンプル列)` ごとに `dir/名前.wav` を書き出す
     /// （ディレクトリは無ければ作る）。ゲームの描き出し入口はデザイン（音の中身）だけ持てばよい。
