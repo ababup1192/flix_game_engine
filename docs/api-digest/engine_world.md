@@ -1,4 +1,4 @@
-<!-- engine v0.35.14 / 生成: 2026-10-15 -->
+<!-- engine v0.35.15 / 生成: 2026-10-15 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine_world
@@ -113,11 +113,13 @@
 - 負方向・正方向のキーの押し下げを -1 / 0 / +1 にまとめる（両押しは打ち消して 0）。
   `pub def axis(negative: {negative = GameEngine.Key}, positive: {positive = GameEngine.Key}, frame: Frame): Float64`
 - view / hudView が受け取る「この 1 フレームの見え方」。atlas は文字描画用の既定フォント、
-  `pub type alias ViewCtx = { atlas = FontAtlas, fontOf = String -> FontAtlas, visible = Rect2.Rect2 }`
+  `pub type alias ViewCtx = { atlas = FontAtlas, fontOf = String -> FontAtlas, visible = Rect2.Rect2, warnOnce = String -> Unit }`
 - ヘッドレス描き出しから view を呼ぶときの ViewCtx。画面全体が見えている扱いにする。
   `pub def viewCtxOf(atlas: FontAtlas, design: Vec2.Vec2): ViewCtx`
 - viewCtxOf の複数フォント版。fontOf には実機と同じ名前で引ける関数を渡す
   `pub def viewCtxOfFonts(atlas: FontAtlas, fontOf: String -> FontAtlas, design: Vec2.Vec2): ViewCtx`
+- 見た文面を seen に覚え、初めての文面だけ Log.warn する口（ViewCtx#warnOnce の実機の形）。
+  `pub def warnOnceWith(seen: Ref[Set[String], Static]): String -> Unit`
 - 生成したドット絵アトラス 1 枚ぶんの受け渡し。
   `pub type alias AtlasUpload = { texture = String, key = String, baked = PxSpriteAtlas.Baked }`
 - ゲーム 1 本の宣言。make で空を作り、addStartup / addSystem / reloadOn / withView /
@@ -231,7 +233,7 @@
 - reloadOn で繋いだキーが押された瞬間だけ、リロード関数で World を作り直す。
   `pub def applyReload(app: App[w, ef], frame: Frame, world: w): (w, Bool) \ {Fs.FileRead}`
 - RemoteDebug 分割用の内部 API — ゲームからは呼ばない。
-  `pub def sceneItems(app: App[w, ef], atlas: FontAtlas, world: w, toItems: (ViewCtx, w) -> List[Render.PlacedItem] \ ef): List[Render.PlacedItem] \ (ef + GameEngine.Game)`
+  `pub def sceneItems(app: App[w, ef], atlas: FontAtlas, warnOnce: String -> Unit, world: w, toItems: (ViewCtx, w) -> List[Render.PlacedItem] \ ef): List[Render.PlacedItem] \ (ef + GameEngine.Game)`
 - タイル層の GPU 生成結果の持ち回し。ループが引数で持ち回す。
   `pub type alias TileCache =`
 - まだ何も生成していない起動時の持ち回し。
@@ -506,11 +508,13 @@
   `pub def forRows(spec: { back = Int32, originY = Float64, rows = Int32, tileSize = Float64 }): ZRange`
 - 足元の高さ footY に対する重なり順。範囲の外に出た足元は端で止める
   `pub def zAt(range: ZRange, footY: Float64): Int32`
+- ZStack の木で足元の順に並べるときの zIndex（1 画素ごとに 1 つ・下にある物ほど大きい）。
+  `pub def orderAt(footY: Float64): Int32`
 - 組み上がった絵の集まりを、足元の高さで決まる層へ持ち上げる。
   `pub def place(range: ZRange, footY: Float64, items: List[Render.PlacedItem]): List[Render.PlacedItem]`
 - place の 1 個版。置き場所の下端（=足元）を自分で渡す。
   `pub def placeOne(range: ZRange, footY: Float64, placed: Render.PlacedItem): Render.PlacedItem`
-- 帯の名前 → その帯の底の zIndex。1 画面を「奥から手前へ」何段かに仕切ったときの地図。
+- 非推奨: 帯を数で並べる代わりに ZStack.of へ奥 → 手前の順に積む（docs/z-bands.md「表は根・中は木」）。
   `pub type alias Bands = Map[String, Int32]`
 - 奥から手前へ並べた名前の列から帯の地図を作る。
   `pub def bands(spec: { base = Int32, stride = Int32 }, names: List[String]): Bands`
@@ -1474,6 +1478,8 @@
   `pub def zShifted(delta: Int32, item: Item): Item`
 - 重なり順（zIndex）を関数 f で写す（zShifted の一般形）。
   `pub def zMapped(f: Int32 -> Int32, item: Item): Item`
+- 描画物 1 つの重なり順（Clipped は中身の z）。
+  `pub def zOf(item: Item): Int32`
 - 置き場所つきの列を丸ごと delta だけずらす（zShifted の列版）。
   `pub def zShiftedAll(delta: Int32, items: List[PlacedItem]): List[PlacedItem]`
 - 組み上がった列を丸ごと d だけ動かす（zShiftedAll の位置版）。
@@ -1711,6 +1717,22 @@
   `pub def itemsFor(light: Light.Light, occluders: List[List[Vec2.Vec2]], cfg: ShadowConfig): List[Render.PlacedItem]`
 - 点 p が凸四角形 quad（4頂点・向きは時計回り/反時計回りのどちらでもよい）の内側にあるか。
   `pub def containsPoint(quad: List[Vec2.Vec2], p: Vec2.Vec2): Bool`
+
+## SortingLayer — `engine_world/src/SortingLayer.flix`
+- 層の中の順番 order（0 = 層の底）の z（移行の間だけ: 場面を木にするまで、表から z の数を引く View 用）。
+  `pub def z(layer: t, order: Int32): Int32 with SortingLayer[t]`
+- 層の底の z（順番 0）。
+  `pub def bottom(layer: t): Int32 with SortingLayer[t]`
+- 層の天井の z。
+  `pub def top(layer: t): Int32 with SortingLayer[t]`
+- 層ごとの木を 1 本の絵の列にする。各層の木はその層の底から積み、topLayer で送った物は送り先の層の
+  `pub def compose(ctx: App.ViewCtx, entries: List[(t, Node[t])]): List[Render.PlacedItem] with SortingLayer[t], ToString[t]`
+- 1 つの層だけの compose。
+  `pub def stack(ctx: App.ViewCtx, layer: t, tree: Node[t]): List[Render.PlacedItem] with SortingLayer[t], ToString[t]`
+- 表の決まりをテストで確かめる用: 奥から手前へ並べた層が、どれも底 <= 天井で、隣どうし交ざらずに上がっていくか。
+  `pub def isStacked(layers: List[t]): Bool with SortingLayer[t]`
+- 表の決まりをテストで確かめる用: どの層も outer（底, 天井）の中に収まるか。
+  `pub def isWithin(outer: (Int32, Int32), layers: List[t]): Bool with SortingLayer[t]`
 
 ## Steering — `engine_world/src/Steering.flix`
 - target から流した距離場を 1 歩下る = target へ最短で近づく隣のマス。
@@ -2404,3 +2426,19 @@
   `pub def slice(fromIdx: Int32, toIdx: Int32, wl: Worldline[a]): List[a]`
 - 世界線上の絶対位置 n（0 = 最古、pastLength = 現在地、length-1 = 最新）へ移動する。
   `pub def scrubTo(n: Int32, wl: Worldline[a]): Worldline[a]`
+
+## ZStack — `engine_world/src/ZStack.flix`
+- 積み木の木。p は topLayer の行き先（ゲームの SortingLayer の層の enum）。
+  `pub enum Node[p] { case Leaf(List[Render.PlacedItem]) case Absolute(List[Render.PlacedItem]) case Stacked(List[Node[p]]) case ZIndexed(Int32, Node[p]) case TopLayer(p, Node[p]) case Mapped(List[Render.PlacedItem] -> List[Render.PlacedItem], Node[p]) }`
+- 葉: 組み上がった絵の列を 1 つの子にする（中の前後は z のまま保つ）。
+  `pub def leaf(items: List[Render.PlacedItem]): Node[p]`
+- 絶対値の z の葉: 今までどおり表から z の数を引いて描いた絵を、そのまま木に載せる（移行の間だけ）。
+  `pub def leafAbsolute(items: List[Render.PlacedItem]): Node[p]`
+- 子を奥 → 手前の順に積む。
+  `pub def of(children: List[Node[p]]): Node[p]`
+- すぐ外の of の中で child を前後へずらす（小さいほど奥・付けない兄弟は 0・同じ数は積んだ順）。
+  `pub def zIndex(order: Int32, child: Node[p]): Node[p]`
+- child を、表の層 target の手前（その層の木と、先に送られた物の上）へ送る。
+  `pub def topLayer(target: p, child: Node[p]): Node[p]`
+- child の絵の列に f を掛ける（`Render.movedAll(d)`・`Render.scaledAllAround(k, pivot)`・
+  `pub def mapItems(f: List[Render.PlacedItem] -> List[Render.PlacedItem], child: Node[p]): Node[p]`
