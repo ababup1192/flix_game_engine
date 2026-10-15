@@ -1,5 +1,5 @@
 {
-  "note": "lint-quadratic（fold の中で蓄積を作り直す二乗の形）の規約データ。この JSON が source of truth で、bin/fge quadratic はこれを読んで動く。List.foldLeft / foldRight に渡したラムダの中で、蓄積（タプルで分解した別名・その欄も含む）を List.append の第 1 引数に置く形と、蓄積の文字列に 1 回ごとに足す形を見る。コミット時はステージした差分の + 行だけを見る（今ある二乗は docs/performance.md の残りの一覧）。",
+  "note": "lint-quadratic（fold の中で蓄積を作り直す二乗の形）の規約データ。この JSON が source of truth で、bin/fge quadratic はこれを読んで動く。List.foldLeft / foldRight に渡したラムダの中で、蓄積（タプルで分解した別名・その欄も含む）を List.append の第 1 引数に置く形と、蓄積の文字列に 1 回ごとに足す形を見る。コミット時はステージした差分の + 行だけを見る（今ある二乗は docs/performance.md の残りの一覧）。 ゲームが自分の除外を足すときは bin/lint-rules/quadratic.local.json（{\"exempt\": {...}}）に書く。ここはエンジンが配るたびに上書きされるが、そちらは残る。",
   "scopeSuffixes": [
     ".flix"
   ],
@@ -17,5 +17,7 @@
     "test",
     "node_modules"
   ],
-  "exempt": {}
+  "exempt": {
+    "render_gl/src/FontCache.flix::fontHash": "N は SHA-256 の先頭 8 バイトで決まっている（組む文字列は常に 16 文字）。ゲームが N を決めない"
+  }
 }

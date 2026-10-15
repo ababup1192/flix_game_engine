@@ -8,7 +8,7 @@ OK: 矩形だけの View はありません（除外 0 件）
   ゲームを書く側は Float64 と Int32 だけで済むのが決まりです。型を Float64 にして、Float32 への変換は GL / OpenAL / STB を呼ぶ手前まで下げてください
   どうしても残すなら bin/lint-f32.py の EXEMPT へ "モジュール名.宣言名" と理由 1 行を書いてください
 [lint-z-table] OK (パッケージ 1 / z を数で決める行 0 / 除外 0 件)
-[lint-quadratic] OK (除外 0 件)
+[lint-quadratic] OK (除外 1 件)
 [lint-record-wrap] OK (展開した大きさ 16 以上の欄なし / 除外 0 件)
 [lint-jargon] OK (34 語で検査)
 [pre-commit] make check-docs-sync が無いので配線検査は飛ばします

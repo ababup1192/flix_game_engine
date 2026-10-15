@@ -588,13 +588,51 @@ func (c *checker) hooksInSettings(base string) []string {
 }
 
 // checkBundleManifest は必須一覧そのものの書き損じ（リポに無い物を必須と言う）を止める。
+// 組み立てで名前を付け替えて作る物は、付け替える前の元 (stage-engine.json の src) がリポにあればよい。
 func (c *checker) checkBundleManifest(problems *[]string) {
+	srcOf := c.bundleSources()
 	for _, rel := range c.rules.BundleRequired {
-		if !c.existsIn(c.root, rel) {
-			*problems = append(*problems, fmt.Sprintf(
-				"BUNDLE_REQUIRED: %s がこのリポにありません (一覧の書き損じ?)", rel))
+		if c.existsIn(c.root, rel) {
+			continue
+		}
+		if src, ok := srcOf[rel]; ok && src != rel && c.existsIn(c.root, src) {
+			continue
+		}
+		*problems = append(*problems, fmt.Sprintf(
+			"BUNDLE_REQUIRED: %s がこのリポにありません (一覧の書き損じ?)", rel))
+	}
+}
+
+// bundleSources は同梱の組み立て (bin/lint-rules/stage-engine.json) の、行き先 → 元。
+// WhyNot: リポの中だけで探さないのは、engine_full/artifact/engine_full.fpkg のように
+// 組み立てのときに名前を付け替えて作る物は、リポには別の名前 (package.fpkg) でしか無いため。
+// 古い作業コピーには昔の名前の物が残っていて通り、新しい clone でだけ止まっていた。
+// stageengine の LoadRules を使わないのは、stageengine が checkrefs を読み込んでいて循環するため。
+// 読めないときは空にする (その場合はリポにある物だけを書き損じでないとみなす、元の判定になる)。
+// 元がリポに無い物は今までどおり止める (同梱の組み立ても、その元が無ければ失敗する)。
+func (c *checker) bundleSources() map[string]string {
+	srcOf := map[string]string{}
+	data, err := os.ReadFile(joinPath(c.root, "bin/lint-rules/stage-engine.json"))
+	if err != nil {
+		return srcOf
+	}
+	var stage struct {
+		Items []struct {
+			Src         string `json:"src"`
+			Dest        string `json:"dest"`
+			DestWindows string `json:"destWindows"`
+		} `json:"items"`
+	}
+	if json.Unmarshal(data, &stage) != nil {
+		return srcOf
+	}
+	for _, it := range stage.Items {
+		srcOf[it.Dest] = it.Src
+		if it.DestWindows != "" {
+			srcOf[it.DestWindows] = it.Src
 		}
 	}
+	return srcOf
 }
 
 func (c *checker) checkBundle(bundleDir string, windows bool) (int, error) {

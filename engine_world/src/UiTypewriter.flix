@@ -39,10 +39,7 @@ pub mod UiTypewriter {
 
     /// いま見えている先頭部分の文字列。UiStore.setText へそのまま渡せる。
     pub def visibleText(reveal: Reveal): String =
-        String.toList(reveal#text)
-            |> List.take(visibleCount(reveal))
-            |> List.map(Char.toString)
-            |> List.foldLeft(String.concat, "")
+        String.take(Int32.max(0, visibleCount(reveal)), reveal#text)
 
     /// 表示すべき全文が変わったら最初からやり直し、同じなら現状維持（文言切替の検出）。
     pub def sync(text: String, reveal: Reveal): Reveal =

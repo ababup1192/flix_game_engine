@@ -205,13 +205,13 @@ mod World {
     def shuffle(xs: List[Kind], s: Int64): (List[Kind], Int64) =
         let n = List.length(xs);
         // 「残り n-i 枚のうち何番目を取り出すか」の index を i=0..n-1 について決めていく。
-        let (picks, s1) = List.range(0, n) |> List.foldLeft((acc, i) -> {
+        let (picksNewestFirst, s1) = List.range(0, n) |> List.foldLeft((acc, i) -> {
             let (chosen, sPrev) = acc;
             let hiExclusive = n - i;
             let (j, sNext) = randInt(hiExclusive, sPrev);
-            (List.append(chosen, j :: Nil), sNext)
+            (j :: chosen, sNext)
         }, (Nil, s));
-        (applyPicks(xs, picks), s1)
+        (applyPicks(xs, List.reverse(picksNewestFirst)), s1)
 
     /// picks[i] = 「残っているカードのうち何番目を i 回目に取り出すか」。これで純粋にシャッフルを組む。
     def applyPicks(remaining: List[Kind], picks: List[Int32]): List[Kind] =

@@ -124,9 +124,7 @@
     {
       "id": "quadratic",
       "sub": "quadratic",
-      "flags": [
-        "--warn"
-      ],
+      "flags": [],
       "pass": "none",
       "when": {
         "suffixes": [

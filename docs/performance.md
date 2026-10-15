@@ -245,9 +245,10 @@ List.reverse(List.reverse(folded#current) :: folded#rows)
 **ループの中の `memberOf` / `nth` と `sortBy` のキーは見ないので、その宿題の置き場はここしか無い**。触るときに見る。
 
 2026-10-15 に `bin/fge quadratic --all` が見つけた、この一覧から漏れていた 3 件
-（どれも 8/13〜8/17 の洗い直しより前に入っていた）:
-`UiTypewriter.visibleText`（`foldLeft(String.concat, "")`。N は見えている文字数で、ゲームが決める）・
-`FontCache.fontHash`（N は 8 で決まっている）・`templates/tetris-starter` の `shuffle`（N は 7 前後。ゲームが写す元）。
+（どれも 8/13〜8/17 の洗い直しより前に入っていた）: `UiTypewriter.visibleText`
+（`foldLeft(String.concat, "")`。N は見えている文字数で、ゲームが決める）と `templates/tetris-starter` の
+`shuffle`（ゲームが写す元）は 3-a として直した。`FontCache.fontHash` は N が 8 で決まっているので
+`bin/lint-rules/quadratic.json` の除外に理由ごと載せた。
 
 ### この一覧が緑のテストに騙されていた（2026-08-17）
 

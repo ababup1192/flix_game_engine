@@ -129,3 +129,23 @@ func TestWarnExitsZero(t *testing.T) {
 		t.Fatalf("code=%d\n%s", code, errOut.String())
 	}
 }
+
+// ゲームの除外 (quadratic.local.json) はエンジンの規約に足される。両方にある鍵は止める。
+func TestLocalExemptIsMerged(t *testing.T) {
+	root := writeRepo(t, `{}`)
+	local := filepath.Join(root, "bin/lint-rules/quadratic.local.json")
+	if err := os.WriteFile(local, []byte(`{"exempt":{"src/Old.flix::old":"描き出しの道具で N は 3"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out, errOut strings.Builder
+	if code, err := Run(&out, &errOut, root, []string{"--all"}); err != nil || code != 0 {
+		t.Fatalf("code=%d err=%v\n%s", code, err, errOut.String())
+	}
+	root2 := writeRepo(t, `{"src/Old.flix::old":"エンジン側"}`)
+	if err := os.WriteFile(filepath.Join(root2, "bin/lint-rules/quadratic.local.json"), []byte(`{"exempt":{"src/Old.flix::old":"ゲーム側"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadRules(root2); err == nil || !strings.Contains(err.Error(), "両方") {
+		t.Fatalf("重なった鍵が通った: %v", err)
+	}
+}

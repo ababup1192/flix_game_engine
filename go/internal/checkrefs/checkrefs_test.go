@@ -201,3 +201,31 @@ func TestExistsInWithGlob(t *testing.T) {
 		t.Error("無いファイルが見つかってしまいました")
 	}
 }
+
+// 組み立てで名前を付け替えて作る物 (package.fpkg → engine_full.fpkg) は、元がリポにあれば書き損じではない。
+// 元も無ければ今までどおり止める。
+func TestBundleManifestAcceptsRenamedArtifact(t *testing.T) {
+	root := t.TempDir()
+	write := func(rel, body string) {
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("bin/lint-rules/stage-engine.json", `{"items":[{"src":"engine_full/artifact/package.fpkg","dest":"engine_full/artifact/engine_full.fpkg"}]}`)
+	c := &checker{rules: &Rules{BundleRequired: []string{"engine_full/artifact/engine_full.fpkg"}}, root: root}
+	var problems []string
+	c.checkBundleManifest(&problems)
+	if len(problems) != 1 {
+		t.Fatalf("元が無いのに通った: %v", problems)
+	}
+	write("engine_full/artifact/package.fpkg", "fpkg")
+	problems = nil
+	c.checkBundleManifest(&problems)
+	if len(problems) != 0 {
+		t.Fatalf("元があるのに止まった: %v", problems)
+	}
+}

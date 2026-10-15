@@ -28,6 +28,11 @@ import (
 // RulesPath は規約データの置き場（リポジトリのルートからの相対）。
 var RulesPath = filepath.Join("bin", "lint-rules", "quadratic.json")
 
+// LocalPath はゲームが自分の除外だけを置く所（無くてよい）。
+// WhyNot: 除外を RulesPath に書かせないのは、bin/lint-rules/ はエンジンが配るたびに
+// 上書きされ、ゲームの除外が次の追従で消えるため。配り元に無いファイルは sync で残る。
+var LocalPath = filepath.Join("bin", "lint-rules", "quadratic.local.json")
+
 type rulesFile struct {
 	ScopeSuffixes *[]string `json:"scopeSuffixes"`
 	SkipPrefixes  *[]string `json:"skipPrefixes"`
@@ -72,8 +77,45 @@ func LoadRules(root string) (*Rules, error) {
 			return nil, fmt.Errorf("規約ファイルの exempt %q は \"パス::def の名前\" と理由 1 行の形にしてください (%s)", key, path)
 		}
 	}
+	exempt := map[string]string{}
+	for key, reason := range *f.Exempt {
+		exempt[key] = reason
+	}
+	if err := mergeLocal(filepath.Join(root, LocalPath), exempt); err != nil {
+		return nil, err
+	}
 	return &Rules{ScopeSuffixes: *f.ScopeSuffixes, SkipPrefixes: *f.SkipPrefixes,
-		SkipDirNames: *f.SkipDirNames, Exempt: *f.Exempt}, nil
+		SkipDirNames: *f.SkipDirNames, Exempt: exempt}, nil
+}
+
+// mergeLocal はゲームの除外 (LocalPath) を足す。ファイルが無ければ何もしない。
+func mergeLocal(path string, exempt map[string]string) error {
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("ゲームの除外を読めません: %v", err)
+	}
+	var local struct {
+		Exempt *map[string]string `json:"exempt"`
+	}
+	if err := json.Unmarshal(data, &local); err != nil {
+		return fmt.Errorf("ゲームの除外が JSON として壊れています (%s): %v", path, err)
+	}
+	if local.Exempt == nil {
+		return fmt.Errorf("ゲームの除外に exempt がありません (%s)", path)
+	}
+	for key, reason := range *local.Exempt {
+		if !strings.Contains(key, "::") || strings.TrimSpace(reason) == "" {
+			return fmt.Errorf("ゲームの除外 %q は \"パス::def の名前\" と理由 1 行の形にしてください (%s)", key, path)
+		}
+		if _, dup := exempt[key]; dup {
+			return fmt.Errorf("除外 %q がエンジンの規約とゲームの除外の両方にあります (%s)", key, path)
+		}
+		exempt[key] = reason
+	}
+	return nil
 }
 
 // InScope は --all とステージの差分で見るファイルか。
@@ -271,7 +313,7 @@ func report(out, errOut *strings.Builder, rules *Rules, hits []Hit, all, warn bo
 			fmt.Fprintf(errOut, "  %s は exempt に載っていますが、もう鳴る所がありません\n", key)
 		}
 		if len(stale) > 0 {
-			fmt.Fprintf(errOut, "[lint-quadratic] 古い除外 %d 件。bin/lint-rules/quadratic.json の exempt から消してください\n", len(stale))
+			fmt.Fprintf(errOut, "[lint-quadratic] 古い除外 %d 件。quadratic.local.json か quadratic.json の exempt から消してください\n", len(stale))
 			code = 1
 		}
 	}
@@ -294,7 +336,8 @@ func report(out, errOut *strings.Builder, rules *Rules, hits []Hit, all, warn bo
 	fmt.Fprintf(errOut, "[lint-quadratic] %d 件。1 回ごとに蓄積を丸ごと作り直すので、要素数 (文字数) の二乗になります。"+
 		"\n  リストは :: で先頭へ積んで最後に List.reverse、文字列は List[Char] に積んで最後に StringBuilder で 1 回だけ組む"+
 		" (docs/performance.md「手本と壊れ方」)。"+
-		"\n  どうしても残すなら bin/lint-rules/quadratic.json の exempt へ \"パス::def の名前\" と理由 1 行\n", len(bad))
+		"\n  どうしても残すなら bin/lint-rules/quadratic.local.json (ゲーム) か quadratic.json (エンジン) の exempt へ"+
+		" \"パス::def の名前\" と理由 1 行\n", len(bad))
 	return finish(errOut, 1, warn)
 }
 

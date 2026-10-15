@@ -1,2 +1,2 @@
-[lint-quadratic] OK (除外 0 件)
+[lint-quadratic] OK (除外 1 件)
 [exit=0]
