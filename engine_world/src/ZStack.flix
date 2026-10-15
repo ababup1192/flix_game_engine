@@ -33,7 +33,7 @@ pub mod ZStack {
 
     /// 絶対値の z の葉: 今までどおり表から z の数を引いて描いた絵を、そのまま木に載せる（移行の間だけ）。
     /// 載せた z が層の続きより奥なら前の兄弟と交ざり、層の底より奥なら層の外に出る（どちらも描いて続け、層の外は
-    /// ViewCtx#warnOnce で知らせる）。天井を越えた分は天井で止める。z-table の lint が数を報告する（期限つきの口）。
+    /// ViewCtx#warnOnce で知らせる）。天井を越えた分は天井で止める。表を持つパッケージでは、表の外で呼ぶと z-table の lint が止める。
     pub def leafAbsolute(items: List[Render.PlacedItem]): Node[p] = Node.Absolute(items)
 
     /// 子を奥 → 手前の順に積む。

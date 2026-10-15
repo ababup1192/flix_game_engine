@@ -26,8 +26,6 @@ type rulesFile struct {
 	TableFileNames *[]string `json:"tableFileNames"`
 	TablePattern   *string   `json:"tablePattern"`
 	ConstPattern   *string   `json:"constPattern"`
-	ZDefPattern    *string   `json:"zDefPattern"`
-	BorrowWarnOnly *bool     `json:"borrowWarnOnly"`
 	RemapPattern   *string   `json:"remapPattern"`
 	LayerZPattern  *string   `json:"layerZPattern"`
 	LeafAbsPattern *string   `json:"leafAbsolutePattern"`
@@ -48,16 +46,10 @@ type Rules struct {
 	Table *regexp.Regexp
 	// Const は z を数で決める 1 行。1 つ目の組が宣言名、2 つ目が数。
 	Const *regexp.Regexp
-	// ZDef は z を返す関数の宣言 (数で決めた物に限らない)。1 つ目の組が宣言名。借用を見るのに使う。
-	ZDef *regexp.Regexp
-	// BorrowWarnOnly は借用を出すだけにして、終了コードに数えないか。
-	// WhyNot: --warn と分けて持つのは、表の外の数と散らばりは止め、借用だけ様子を見る、を
-	// 1 回の呼び出しで両立させるため (precommit は検査ごとに 1 回しか呼ばない)。
-	BorrowWarnOnly bool
 	// Remap は表を持つパッケージで使わない、z を付け替える呼び出し。1 つ目の組が呼んだ関数の名前。
 	Remap *regexp.Regexp
-	// LayerZ と LeafAbs は移行の間だけ残す口 (SortingLayer.z と ZStack.leafAbsolute) の呼び出し。
-	// --all で残りを数え、LayerZ はコミットで新しく足した行を止める。
+	// LayerZ と LeafAbs は移行の口 (SortingLayer.z と ZStack.leafAbsolute) の呼び出し。
+	// 表を持つパッケージでは、表の外の呼び出しを鳴らす。
 	LayerZ  *regexp.Regexp
 	LeafAbs *regexp.Regexp
 	// LeafZLow..LeafZHigh は葉の中の小さな z (部品の中の前後)。表を持つパッケージでは、
@@ -98,10 +90,6 @@ func LoadRules(root string) (*Rules, error) {
 		return nil, fmt.Errorf("規約ファイルに tablePattern がありません (%s)", path)
 	case f.ConstPattern == nil:
 		return nil, fmt.Errorf("規約ファイルに constPattern がありません (%s)", path)
-	case f.ZDefPattern == nil:
-		return nil, fmt.Errorf("規約ファイルに zDefPattern がありません (%s)", path)
-	case f.BorrowWarnOnly == nil:
-		return nil, fmt.Errorf("規約ファイルに borrowWarnOnly がありません (%s)", path)
 	case f.RemapPattern == nil:
 		return nil, fmt.Errorf("規約ファイルに remapPattern がありません (%s)", path)
 	case f.LayerZPattern == nil:
@@ -129,13 +117,6 @@ func LoadRules(root string) (*Rules, error) {
 	}
 	if re.NumSubexp() != 2 {
 		return nil, fmt.Errorf("規約ファイルの constPattern は組を 2 つ (宣言名・数) 持つ形にしてください (%s)", path)
-	}
-	zdef, err := regexp.Compile(*f.ZDefPattern)
-	if err != nil {
-		return nil, fmt.Errorf("規約ファイルの zDefPattern が正規表現として壊れています (%s): %v", path, err)
-	}
-	if zdef.NumSubexp() != 1 {
-		return nil, fmt.Errorf("規約ファイルの zDefPattern は組を 1 つ (宣言名) 持つ形にしてください (%s)", path)
 	}
 	remap, err := regexp.Compile(*f.RemapPattern)
 	if err != nil {
@@ -172,8 +153,6 @@ func LoadRules(root string) (*Rules, error) {
 		TableFileNames: *f.TableFileNames,
 		Table:          table,
 		Const:          re,
-		ZDef:           zdef,
-		BorrowWarnOnly: *f.BorrowWarnOnly,
 		Remap:          remap,
 		LayerZ:         layerZ,
 		LeafAbs:        leafAbs,

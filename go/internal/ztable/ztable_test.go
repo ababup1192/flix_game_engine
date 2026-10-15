@@ -2,13 +2,11 @@ package ztable
 
 // 何を守るか: z を数で決める行だけを拾うこと、表のあるパッケージでは表の外だけが鳴ること、
 // 表の無いパッケージでは 2 本以上に散ったときだけ鳴ること、別のファイルの同じ数を添えること、
-// 借用（修飾付きの呼び出しと use）だけが鳴り表とパッケージの外は鳴らないこと、除外と --warn の扱い、
-// instance SortingLayer[ の宣言も表になること、付け替えの関数の一覧、ゲームの除外 (z-table.local.json)、
-// 移行の口の数え上げ、SortingLayer.z を新しく足した行だけを止めること。
+// 除外と --warn の扱い、instance SortingLayer[ の宣言も表になること、付け替えの関数の一覧、
+// ゲームの除外 (z-table.local.json)、移行の口 (SortingLayer.z・leafAbsolute) を表の外で止めること。
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -26,7 +24,6 @@ func testRules() *Rules {
 		Remap:          regexp.MustCompile(`\b(zMapped|zShiftedAll|zShifted|raiseZ|Depth\.placeOne|Depth\.place)\s*\(`),
 		LayerZ:         regexp.MustCompile(`\bSortingLayer\.z\s*\(`),
 		LeafAbs:        regexp.MustCompile(`\bleafAbsolute\s*\(`),
-		ZDef:           regexp.MustCompile(`^\s*(?:pub\s+)?def\s+(z[A-Z][A-Za-z0-9_]*)\s*\(\s*(?:[a-z][A-Za-z0-9_]*\s*:\s*Int32\s*)?\)\s*:\s*Int32\b`),
 		LeafZLow:       0,
 		LeafZHigh:      31,
 		Exempt:         map[string]string{},
@@ -151,8 +148,7 @@ func writeRepo(t *testing.T, exempt string) string {
 		`"tablePattern":"\\binstance\\s+SortingLayer\\s*\\[",`+
 		`"layerZPattern":"\\bSortingLayer\\.z\\s*\\(","leafAbsolutePattern":"\\bleafAbsolute\\s*\\(","leafZRange":[0,31],`+
 		`"constPattern":"^\\s*(?:pub\\s+)?def\\s+(z[A-Z][A-Za-z0-9_]*)\\s*\\(\\s*\\)\\s*:\\s*Int32\\s*=\\s*(-?[0-9]+)\\s*(?://.*)?$",`+
-		`"zDefPattern":"^\\s*(?:pub\\s+)?def\\s+(z[A-Z][A-Za-z0-9_]*)\\s*\\(\\s*(?:[a-z][A-Za-z0-9_]*\\s*:\\s*Int32\\s*)?\\)\\s*:\\s*Int32\\b",`+
-		`"borrowWarnOnly":true,"remapPattern":"\\b(zMapped|zShiftedAll|zShifted|raiseZ|Depth\\.placeOne|Depth\\.place)\\s*\\(",`+
+		`"remapPattern":"\\b(zMapped|zShiftedAll|zShifted|raiseZ|Depth\\.placeOne|Depth\\.place)\\s*\\(",`+
 		`"exempt":`+exempt+`}`)
 	put("game/flix.toml", "")
 	put("game/src/ZOrder.flix", "mod ZOrder {}")
@@ -160,17 +156,7 @@ func writeRepo(t *testing.T, exempt string) string {
 	put("game/test/TestView.flix", "    def zExpected(): Int32 = 5")
 	put("other/flix.toml", "")
 	put("other/src/View.flix", "    def zSky(): Int32 = 0")
-	// WhyNot: 名指しの呼び出しはステージした差分を読むので、偽のリポも git にしておく。
-	runGit(t, root, "init", "-q")
 	return root
-}
-
-func runGit(t *testing.T, root string, args ...string) {
-	t.Helper()
-	cmd := exec.Command("git", append([]string{"-C", root, "-c", "user.name=t", "-c", "user.email=t@example.com"}, args...)...)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git %v: %v %s", args, err, out)
-	}
 }
 
 func putFile(t *testing.T, root, rel, body string) {
@@ -218,81 +204,6 @@ func TestWarnKeepsOutputButExitsZero(t *testing.T) {
 	var out, errOut strings.Builder
 	code, _ := Run(&out, &errOut, root, []string{"--warn", "game/src/View.flix"})
 	if code != 0 || !strings.Contains(errOut.String(), "zPointer") {
-		t.Fatalf("code=%d\n%s", code, errOut.String())
-	}
-}
-
-func borrowNames(hits []Hit) string {
-	var out []string
-	for _, h := range hits {
-		out = append(out, filepath.Base(h.Path)+":"+h.Name)
-	}
-	return strings.Join(out, " ")
-}
-
-func TestBorrowFiresOnQualifiedCallAndUse(t *testing.T) {
-	bodies := map[string]string{
-		"src/CardsView.flix":   "mod CardsView {\n    pub def zPickCard(): Int32 = ZOrder.bandZ(SceneBand.Pick, 3)\n}",
-		"src/FightView.flix":   "mod FightView {\n    def zCard(): Int32 = CardsView.zPickCard() + 1\n}",
-		"src/DeckView.flix":    "mod DeckView {\n    use CardsView.{cardFace, zPickCard}\n}",
-		"src/ZOrder.flix":      "mod ZOrder {\n    pub def zBoard(): Int32 = 0\n}",
-		"src/FeedView.flix":    "mod FeedView {\n    def zFeed(): Int32 = ZOrder.zBoard() + 1\n}",
-		"src/OpeningView.flix": "mod OpeningView {\n    def a(): Int32 = Render.zShiftedAll(3)\n    // CardsView.zPickCard() は使わない\n}",
-	}
-	got := borrowNames(testRules().BorrowHits(bodies, map[string]bool{"src/ZOrder.flix": true}))
-	if got != "DeckView.flix:CardsView.zPickCard FightView.flix:CardsView.zPickCard" {
-		t.Fatalf("got %q", got)
-	}
-}
-
-// z を計算する道具 (z を引数に取る・物を受け取る) は z の値ではないので、借りても鳴らない。
-func TestBorrowIgnoresZTools(t *testing.T) {
-	bodies := map[string]string{
-		"src/Render.flix": "mod Render {\n    pub def zShifted(delta: Int32, item: Item): Item = item\n    pub def zOf(u: Float64): Int32 = 0\n}",
-		"src/View.flix":   "mod View {\n    pub def zLane(step: Int32): Int32 = ZOrder.bandZ(Band.Road, step)\n}",
-		"src/Car.flix":    "mod Car {\n    def a(): Int32 = Render.zOf(1.0) + View.zLane(2)\n}",
-	}
-	if got := borrowNames(testRules().BorrowHits(bodies, map[string]bool{"src/ZOrder.flix": true})); got != "Car.flix:View.zLane" {
-		t.Fatalf("got %q", got)
-	}
-}
-
-// 表のファイルが無くても、z の数を 1 ファイルに集めていれば、そこから引くのは借用ではない。
-func TestBorrowFromTheOnlyZFileIsQuiet(t *testing.T) {
-	bodies := map[string]string{
-		"src/View.flix":    "mod View {\n    pub def zWall(): Int32 = 8\n}",
-		"src/Terrain.flix": "mod Terrain {\n    def a(): Int32 = View.zWall()\n}",
-	}
-	r := testRules()
-	files := []string{"src/Terrain.flix", "src/View.flix"}
-	defs := map[string][]Def{"src/View.flix": r.DefsOf("src/View.flix", bodies["src/View.flix"])}
-	if hits := r.BorrowHits(bodies, r.tableFiles(files, defs, r.TablesOf(bodies))); len(hits) != 0 {
-		t.Fatalf("鳴った: %s", borrowNames(hits))
-	}
-}
-
-func TestBorrowIgnoresOwnModule(t *testing.T) {
-	bodies := map[string]string{
-		"src/FightView.flix": "mod FightView {\n    pub def zFoe(): Int32 = 3\n    def zHit(): Int32 = FightView.zFoe() + 1\n}",
-	}
-	if hits := testRules().BorrowHits(bodies, nil); len(hits) != 0 {
-		t.Fatalf("鳴った: %s", borrowNames(hits))
-	}
-}
-
-// 借用だけなら出すが止めない。表の外の数と一緒なら止める。
-func TestBorrowAloneDoesNotBlock(t *testing.T) {
-	root := writeRepo(t, `{}`)
-	put := func(rel, body string) {
-		if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(rel)), []byte(body), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	put("game/src/View.flix", "mod View {\n    pub def zPointer(): Int32 = ZOrder.zBoard()\n}\n")
-	put("game/src/Fight.flix", "mod Fight {\n    def zHand(): Int32 = View.zPointer() + 1\n}\n")
-	var out, errOut strings.Builder
-	code, _ := Run(&out, &errOut, root, []string{"game/src/Fight.flix"})
-	if code != 0 || !strings.Contains(errOut.String(), "View.zPointer") || !strings.Contains(errOut.String(), "止めません") {
 		t.Fatalf("code=%d\n%s", code, errOut.String())
 	}
 }
@@ -382,54 +293,33 @@ func TestExemptInBothFilesIsAnError(t *testing.T) {
 	}
 }
 
-// 4. --all のときだけ、表の外の移行の口の残りを 1 行出す (宣言とコメントと表の中は数えない)。
-func TestRunAllCountsMigrationLeft(t *testing.T) {
+// 4. 表を持つパッケージでは、表の外の移行の口を鳴らす (宣言・コメント・表の中は鳴らさない)。
+// 名指しでも --all でも同じ。除外の鍵は "パス::呼んだ口の名前"。
+func TestMigrationCallsOutsideTableFire(t *testing.T) {
 	root := writeRepo(t, `{}`)
-	putFile(t, root, "game/src/ZOrder.flix", "mod ZOrder {\n    def a() = SortingLayer.z(Layer.Hud, 0)\n}")
+	putFile(t, root, "game/src/ZOrder.flix", "mod ZOrder {\n    instance SortingLayer[Layer] {}\n    def a() = SortingLayer.z(Layer.Hud, 0)\n}")
 	putFile(t, root, "game/src/Scene.flix", "mod Scene {\n    def a() = SortingLayer.z(Layer.Scene, 1) + SortingLayer.z(Layer.Scene, 2)\n"+
 		"    def b() = ZStack.leafAbsolute(xs)\n    // SortingLayer.z(Layer.Scene, 3)\n    pub def leafAbsolute(xs: List[Int32]) = xs\n}")
-	var out, errOut strings.Builder
-	Run(&out, &errOut, root, []string{"--all"})
-	if !strings.Contains(out.String(), "移行の残り: SortingLayer.z 2 件 / leafAbsolute 1 件") {
-		t.Fatalf("%s", out.String())
-	}
-	out.Reset()
-	Run(&out, &errOut, root, []string{"game/src/Scene.flix"})
-	if strings.Contains(out.String(), "移行の残り") {
-		t.Fatalf("名指しでも出た: %s", out.String())
-	}
-}
-
-// 5. 名指し (コミット時) は、ステージした差分で SortingLayer.z を足した行だけを止める。
-// 前からある行・表の中・--all は止めない。
-func TestNewLayerZCallInStagedDiffBlocks(t *testing.T) {
-	root := writeRepo(t, `{}`)
-	putFile(t, root, "game/src/View.flix", "mod View {\n    def a() = SortingLayer.z(Layer.Hud, 0)\n}\n")
-	runGit(t, root, "add", "-A")
-	runGit(t, root, "commit", "-q", "-m", "init")
-	putFile(t, root, "game/src/View.flix", "mod View {\n    def a() = SortingLayer.z(Layer.Hud, 0)\n    def b() = SortingLayer.z(Layer.Hud, 1)\n}\n")
-	putFile(t, root, "game/src/ZOrder.flix", "mod ZOrder {\n    def c() = SortingLayer.z(Layer.Hud, 2)\n}")
-	runGit(t, root, "add", "-A")
-	var out, errOut strings.Builder
-	code, err := Run(&out, &errOut, root, []string{"game/src/View.flix", "game/src/ZOrder.flix"})
-	if err != nil || code != 1 || !strings.Contains(errOut.String(), "game/src/View.flix:3 SortingLayer.z") ||
-		strings.Contains(errOut.String(), "View.flix:2 ") || strings.Contains(errOut.String(), "ZOrder.flix:2") {
-		t.Fatalf("code=%d err=%v\n%s", code, err, errOut.String())
-	}
-	errOut.Reset()
-	if code, _ := Run(&out, &errOut, root, []string{"--all"}); code != 0 {
-		t.Fatalf("--all で止めた: code=%d\n%s", code, errOut.String())
+	for _, args := range [][]string{{"--all"}, {"game/src/Scene.flix"}} {
+		var out, errOut strings.Builder
+		code, err := Run(&out, &errOut, root, args)
+		e := errOut.String()
+		if err != nil || code != 1 || strings.Count(e, "Scene.flix:2 SortingLayer.z") != 2 ||
+			!strings.Contains(e, "Scene.flix:3 leafAbsolute") || strings.Contains(e, "ZOrder.flix:") ||
+			strings.Contains(e, "Scene.flix:4") || strings.Contains(e, "Scene.flix:5") {
+			t.Fatalf("%v: code=%d err=%v\n%s", args, code, err, e)
+		}
 	}
 }
 
-// git の差分が取れないときは quadratic と同じくエラーで止める。
-func TestNamedRunOutsideGitIsAnError(t *testing.T) {
-	root := writeRepo(t, `{}`)
-	if err := os.RemoveAll(filepath.Join(root, ".git")); err != nil {
-		t.Fatal(err)
-	}
+// 表の無いパッケージ (エンジン・見本) の移行の口は鳴らさない。除外に載せた口は鳴らさない。
+func TestMigrationOutsideTablePackageIsQuietAndExemptSilences(t *testing.T) {
+	root := writeRepo(t, `{"game/src/Scene.flix::leafAbsolute": "理由"}`)
+	putFile(t, root, "other/src/Scene.flix", "mod Scene {\n    def a() = SortingLayer.z(Layer.Scene, 1)\n}")
+	putFile(t, root, "game/src/ZOrder.flix", "mod ZOrder {\n    instance SortingLayer[Layer] {}\n}")
+	putFile(t, root, "game/src/Scene.flix", "mod Scene {\n    def b() = ZStack.leafAbsolute(xs)\n}")
 	var out, errOut strings.Builder
-	if code, err := Run(&out, &errOut, root, []string{"game/src/View.flix"}); code != 2 || err == nil {
-		t.Fatalf("code=%d err=%v", code, err)
+	if code, _ := Run(&out, &errOut, root, []string{"other/src/Scene.flix", "game/src/Scene.flix"}); code != 0 {
+		t.Fatalf("code=%d\n%s", code, errOut.String())
 	}
 }

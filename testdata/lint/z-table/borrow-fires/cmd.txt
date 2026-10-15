@@ -1,1 +1,0 @@
-bin/fge z-table testdata/lint/z-table/borrow-fires/src/FightView.flix

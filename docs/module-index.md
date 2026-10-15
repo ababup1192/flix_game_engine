@@ -192,7 +192,7 @@
   View に直接並べる完成品ではない。正当な用途は HUD 下地・デバッグ描画・fail-open の仮板。
 - **CameraRig** — world のどこを・どれだけズームして映すかを描画物の列に掛ける道具箱。
 - **Depth** — 見下ろし画面で「足元が下にある物ほど手前」を重なり順（zIndex）の数として決める。ZStack の木では orderAt(足元の y) を zIndex に渡す。Bands（帯に名前を付けて底の数を並べる）は非推奨で、帯は ZStack.of に奥 → 手前で積む。
-- **ZStack** — 描く順を「積んだ順」で決める木（leaf / of / zIndex / topLayer / mapItems / 移行の間だけ leafAbsolute）。z の数は葉の中の小さな前後だけ。
+- **ZStack** — 描く順を「積んだ順」で決める木（leaf / of / zIndex / topLayer / mapItems / 移行の口 leafAbsolute）。z の数は葉の中の小さな前後だけ。
 - **SortingLayer** — 画面全体の層を名前で宣言する表（trait。ゲームが enum の instance で範囲を書く）と、層ごとの ZStack の木を 1 本の絵の列にする compose。区画を越えたら天井で止め、ViewCtx#warnOnce で 1 回だけ知らせる。
 - **Persp** — 疑似 3D（2.5D）カメラの数学一式。世界の点を前後 fwd・左右 lat に分解し、透視除算で画面へ落とす。近クリップ・逆投影（depthAtY）・距離霧の式も持つ。焦点距離や霧の色の実体はゲーム側の意見（theme Doc など）。
 - **WallFaces** — マス目の迷路から「カメラに見える壁の境界面」だけを集める純幾何。壁どうしの内部面と、カメラに背を向けた裏面は落とす。solid の判定は関数で注入する（MapDoc の形を知らない）。

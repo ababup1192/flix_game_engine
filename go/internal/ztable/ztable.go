@@ -15,11 +15,9 @@ package ztable
 //   - 表のファイルがあるパッケージ: 表の外で数を書いたら鳴る。ただし葉の中の小さな z
 //     (leafZRange・0..31) は鳴らさない
 //   - 表のファイルが無いパッケージ: 数を書くファイルが 2 本以上あったら全部鳴る
-//   - 借用: 同じパッケージの別のモジュールが決めた z を呼ぶ・use で取り込む (borrow.go)
 //   - 付け替え: 表を持つパッケージで、表の外から zMapped・zShifted・zShiftedAll・raiseZ・
 //     Depth.place・Depth.placeOne で z を付け替える (remap.go)
-//   - 移行の口: 名指しのとき、表の外で SortingLayer.z を新しく足した行 (ステージした差分の + 行) が鳴る。
-//     --all では止めず、SortingLayer.z と leafAbsolute の残りを数えて最後に 1 行出す (migration.go)
+//   - 移行の口: 表を持つパッケージで、表の外から SortingLayer.z・ZStack.leafAbsolute を呼ぶ (migration.go)
 //
 // 除外はエンジンの z-table.json の exempt と、ゲームの z-table.local.json の exempt を足した物。
 //
@@ -57,12 +55,10 @@ type Hit struct {
 	Scatter []string
 	// Same は同じパッケージの別のファイルで同じ数を持つ宣言 ("zGround (src/ViewRoad.flix)")。
 	Same []string
-	// Borrow は借用のときだけ、貸した側 (z を宣言したファイル)。Name は "モジュール.宣言名"。
-	Borrow string
 	// Remap は付け替えのとき true。Name は呼んだ関数の名前。
 	Remap bool
-	// NewLayerZ は表の外で SortingLayer.z を新しく足した行のとき true。
-	NewLayerZ bool
+	// Migration は表の外から移行の口を呼んだとき true。Name は呼んだ口の名前。
+	Migration bool
 }
 
 // DefsOf は 1 ファイルの本文から z を数で決める行を拾う。
@@ -124,7 +120,6 @@ func (r *Rules) isLeafZ(value string) bool {
 	return err == nil && n >= r.LeafZLow && n <= r.LeafZHigh
 }
 
-// tableFiles は借用を見るときに表として扱うファイル。表のファイルがあればそれ、無ければ
 // z を数で決めるファイルが 1 本だけのときのそのファイル。
 func (r *Rules) tableFiles(files []string, defs map[string][]Def, found map[string]bool) map[string]bool {
 	tables := map[string]bool{}
@@ -252,9 +247,8 @@ func (r *Rules) allPackages(root string) ([]string, error) {
 // packageScan は 1 パッケージを読んだ結果。
 type packageScan struct {
 	hits      []Hit
-	defCount  int
-	tables    map[string]bool
-	migration Migration
+	defCount int
+	tables   map[string]bool
 }
 
 // scanPackage は 1 パッケージを読んで鳴らす物を返す。extra は名指しで渡されたファイル
@@ -287,12 +281,11 @@ func (r *Rules) scanPackage(root, pkg string, extra []string) (packageScan, erro
 		count += len(defs[f])
 	}
 	tables := r.TablesOf(bodies)
-	hits := append(r.PackageHits(files, defs, tables), r.BorrowHits(bodies, r.tableFiles(files, defs, tables))...)
+	hits := append(r.PackageHits(files, defs, tables), r.RemapHits(bodies, tables)...)
 	return packageScan{
-		hits:      append(hits, r.RemapHits(bodies, tables)...),
-		defCount:  count,
-		tables:    tables,
-		migration: r.MigrationCount(bodies, tables),
+		hits:     append(hits, r.MigrationHits(bodies, tables)...),
+		defCount: count,
+		tables:   tables,
 	}, nil
 }
 
@@ -317,7 +310,6 @@ func Run(out, errOut *strings.Builder, root string, args []string) (int, error) 
 	}
 
 	var hits []Hit
-	var left Migration
 	defCount, pkgCount := 0, 0
 	if all {
 		pkgs, err := rules.allPackages(root)
@@ -331,8 +323,6 @@ func Run(out, errOut *strings.Builder, root string, args []string) (int, error) 
 			}
 			hits = append(hits, scan.hits...)
 			defCount += scan.defCount
-			left.LayerZ += scan.migration.LayerZ
-			left.LeafAbs += scan.migration.LeafAbs
 		}
 		pkgCount = len(pkgs)
 	} else {
@@ -356,7 +346,6 @@ func Run(out, errOut *strings.Builder, root string, args []string) (int, error) 
 			pkgs = append(pkgs, pkg)
 		}
 		sort.Strings(pkgs)
-		tables := map[string]bool{}
 		for _, pkg := range pkgs {
 			scan, err := rules.scanPackage(root, pkg, byPkg[pkg])
 			if err != nil {
@@ -367,29 +356,11 @@ func Run(out, errOut *strings.Builder, root string, args []string) (int, error) 
 					hits = append(hits, h)
 				}
 			}
-			for f := range scan.tables {
-				tables[f] = true
-			}
 			defCount += scan.defCount
 		}
 		pkgCount = len(pkgs)
-		wantList := make([]string, 0, len(want))
-		for f := range want {
-			wantList = append(wantList, f)
-		}
-		sort.Strings(wantList)
-		added, err := addedLines(root, wantList)
-		if err != nil {
-			return 2, err
-		}
-		hits = append(hits, rules.LayerZHits(added, tables)...)
 	}
-	code := report(out, errOut, rules, hits, all, warn, pkgCount, defCount)
-	if all {
-		// WhyNot: 終了コードに数えないのは、今ある移行の口は止めずに減らしていく宿題だから。
-		fmt.Fprintf(out, "[lint-z-table] 移行の残り: SortingLayer.z %d 件 / leafAbsolute %d 件\n", left.LayerZ, left.LeafAbs)
-	}
-	return code, nil
+	return report(out, errOut, rules, hits, all, warn, pkgCount, defCount), nil
 }
 
 func absOf(root, path string) string {
@@ -443,12 +414,10 @@ func report(out, errOut *strings.Builder, rules *Rules, hits []Hit, all, warn bo
 	for _, h := range bad {
 		reason := fmt.Sprintf("表 (%s) の外で z を数で決めています", h.Table)
 		switch {
-		case h.NewLayerZ:
-			reason = "表の外で SortingLayer.z を新しく呼んでいます (移行の間だけ残す口です。層の中の順は ZStack の木に積んで決めてください)"
+		case h.Migration:
+			reason = "表の外で移行の口 (SortingLayer.z・ZStack.leafAbsolute) を呼んでいます (層の中の順は ZStack の木に積み、z の数は葉の中だけで書いてください)"
 		case h.Remap:
 			reason = "表の外で z を関数で付け替えています (付け替えた後の z がどの層に入るかは表から読めません)"
-		case h.Borrow != "":
-			reason = "別のモジュールが決めた z を借りています (その z の帯・層は貸した側にしか書かれていません)"
 		case h.Table == "":
 			reason = fmt.Sprintf("z を数で決めるファイルが %d 本に散っています: %s",
 				len(h.Scatter), strings.Join(h.Scatter, " / "))
@@ -457,11 +426,7 @@ func report(out, errOut *strings.Builder, rules *Rules, hits []Hit, all, warn bo
 			fmt.Fprintf(errOut, "!! %s\n", reason)
 			lastReason = reason
 		}
-		if h.Borrow != "" {
-			fmt.Fprintf(errOut, "   %s:%d %s (宣言: %s)\n", h.Path, h.Line, h.Name, h.Borrow)
-			continue
-		}
-		if h.Remap || h.NewLayerZ {
+		if h.Remap || h.Migration {
 			fmt.Fprintf(errOut, "   %s:%d %s\n", h.Path, h.Line, h.Name)
 			continue
 		}
@@ -474,20 +439,10 @@ func report(out, errOut *strings.Builder, rules *Rules, hits []Hit, all, warn bo
 	fmt.Fprintf(errOut, "[lint-z-table] %d 件。z の数が散ると、別のファイルどうしで同じ数を取り合い、"+
 		"どちらが手前かが描き順まかせになります。"+
 		"\n  表のファイル (ZOrder.flix) に名前を足してそこから引くか、表が無ければ 1 ファイルに集めてください。"+
-		"借りている z・付け替えている z は、表の層・帯の段から作り直してください"+
+		"付け替えている z・移行の口で作った z は、ZStack の木に積み直してください"+
 		" (範囲の地図は engine の docs/z-bands.md)。"+
 		"\n  どうしても残すなら bin/lint-rules/z-table.local.json (ゲーム) か z-table.json (エンジン) の exempt へ"+
 		" \"パス::名前\" と理由 1 行\n", len(bad))
-	blocking := 0
-	for _, h := range bad {
-		if h.Borrow == "" || !rules.BorrowWarnOnly {
-			blocking++
-		}
-	}
-	if blocking == 0 {
-		fmt.Fprintln(errOut, "[lint-z-table] 借用は警告だけです (z-table.json の borrowWarnOnly)。止めません")
-		return finish(errOut, code, warn)
-	}
 	return finish(errOut, 1, warn)
 }
 
