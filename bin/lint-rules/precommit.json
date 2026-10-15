@@ -122,6 +122,19 @@
       }
     },
     {
+      "id": "quadratic",
+      "sub": "quadratic",
+      "flags": [
+        "--warn"
+      ],
+      "pass": "none",
+      "when": {
+        "suffixes": [
+          ".flix"
+        ]
+      }
+    },
+    {
       "id": "record-wrap",
       "sub": "record-wrap",
       "flags": [
