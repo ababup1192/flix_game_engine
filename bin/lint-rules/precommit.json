@@ -111,6 +111,19 @@
       }
     },
     {
+      "id": "z-table",
+      "sub": "z-table",
+      "flags": [
+        "--warn"
+      ],
+      "pass": "matched",
+      "when": {
+        "suffixes": [
+          ".flix"
+        ]
+      }
+    },
+    {
       "id": "jargon",
       "sub": "jargon",
       "flags": [],

@@ -1,0 +1,1 @@
+bin/fge z-table testdata/lint/z-table/scattered-fires-with-same-value/src/ViewRoad.flix

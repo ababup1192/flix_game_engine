@@ -1,0 +1,1 @@
+bin/fge z-table testdata/lint/z-table/table-outside-fires/src/View.flix testdata/lint/z-table/table-outside-fires/src/ZOrder.flix

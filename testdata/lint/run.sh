@@ -28,7 +28,7 @@ ENGINE=$(cd "$(dirname "$0")/../.." && pwd)
 export ENGINE
 
 # 根から走らせる検査（ファイル 1 つを引数で渡せば鳴らせる）。
-ROOT_CWD_TOOLS="sprite anim style jargon fallback ui-overflow view f32 explain-error hooks flix-reserved loop"
+ROOT_CWD_TOOLS="sprite anim style jargon fallback ui-overflow view f32 explain-error hooks flix-reserved loop z-table"
 # ケースのフォルダから走らせる検査（リポ全体を見るので使い捨ての偽リポを組む）。
 CASE_CWD_TOOLS="check-refs api-diff check-render-budget check-api-index check-api-released precommit stage-engine fetch-engine palette audio images"
 

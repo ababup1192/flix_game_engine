@@ -1,0 +1,25 @@
+{
+  "note": "lint-z-table（z の数値の表がパッケージに 1 か所か）の規約データ。この JSON が source of truth で、bin/fge z-table はこれを読んで動く。重なり順の z を def zXxx(): Int32 = 数 で決める書き方が、1 つのパッケージ（flix.toml の単位）で複数のファイルに散ると、別々のファイルで同じ数を取り合い、どちらが手前かが描き順まかせになる。表のファイル（tableFileNames の名前）を置いたパッケージでは、そこ以外で z を数で決めると鳴る。表のファイルが無いパッケージでは、z を数で決めるファイルが 2 本以上あると鳴る。",
+  "scopeSuffixes": [
+    ".flix"
+  ],
+  "skipPrefixes": [
+    "build/",
+    "lib/",
+    "testdata/",
+    "docs/",
+    "agents-pack/",
+    "engine_full/"
+  ],
+  "skipDirNames": [
+    "build",
+    "lib",
+    "test",
+    "node_modules"
+  ],
+  "tableFileNames": [
+    "ZOrder.flix"
+  ],
+  "constPattern": "^\\s*(?:pub\\s+)?def\\s+(z[A-Z][A-Za-z0-9_]*)\\s*\\(\\s*\\)\\s*:\\s*Int32\\s*=\\s*(-?[0-9]+)\\s*(?://.*)?$",
+  "exempt": {}
+}

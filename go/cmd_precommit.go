@@ -11,6 +11,7 @@ import (
 	"github.com/ababup1192/flix_game_engine/go/internal/precommit"
 	"github.com/ababup1192/flix_game_engine/go/internal/uioverflow"
 	"github.com/ababup1192/flix_game_engine/go/internal/view"
+	"github.com/ababup1192/flix_game_engine/go/internal/ztable"
 )
 
 func init() {
@@ -47,6 +48,7 @@ func cmdPrecommit(out, errOut *strings.Builder, rest []string, _ bool) int {
 		"fallback":      lintOf(fallback.Run, abs),
 		"jargon":        lintOf(jargon.Run, abs),
 		"ui-overflow":   lintOf(uioverflow.Run, abs),
+		"z-table":       lintOf(ztable.Run, abs),
 		"f32": func(o, e *strings.Builder, args []string) int {
 			code, err := f32.Run(o, e, abs, args, f32.Options{})
 			return orAbort(e, code, err)
