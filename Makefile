@@ -109,6 +109,7 @@ help:
 	@echo "  make lint-fallback        読み込みの途中で bug! していないか検査 (許すのは *OrBug の中だけ)"
 	@echo "  make lint-f32             engine の pub 面に Float32 が出ていないか検査 (Float32 は GL / OpenAL / STB の内側だけ)"
 	@echo "  make lint-z-table         重なり順の z を数で決める所がパッケージに 1 か所か検査 (借用は警告だけ)"
+	@echo "  make lint-quadratic       fold の中で蓄積を作り直す二乗の形が無いか検査 (全量・今は警告だけ)"
 	@echo "  make lint-record-wrap     World が直接持つ大きな record を enum で包んでいるか検査 (今は警告だけ)"
 	@echo "  bin/fge digest A B   絵の差を数値で要約 (2 枚 or フォルダ。目視の前にまずこれ)"
 	@echo "  make go-build             go/ を bin/fge-go と、配る先ごとの 5 種にビルド"
@@ -403,6 +404,14 @@ lint-f32:
 .PHONY: lint-z-table
 lint-z-table:
 	@bin/fge z-table --all
+
+# ── ゲート: fold の中で蓄積を作り直さない ─────────────────
+# List.foldLeft の中で蓄積を List.append の第 1 引数に置く・文字列の蓄積に 1 回ごとに足す形は、
+# 要素数 (文字数) の二乗になる (docs/performance.md「二乗を書かない」)。コミット時は足した行だけを見る。
+# WhyNot: --warn で止めないのは、今ある該当 (engine 3 件) を直すか除外するかを決める前に入れたため。
+.PHONY: lint-quadratic
+lint-quadratic:
+	@bin/fge quadratic --all --warn
 
 # ── ゲート: World が持つ大きな record は enum で包む ─────────────
 # record の型エイリアスは使われるたびに中身のまま展開されるので、World の欄に置くと

@@ -1,0 +1,7 @@
+!! testdata/lint/quadratic/append-and-string-fire/sample.flix:3 (rows) foldLeft / foldRight の中で、蓄積 acc を List.append の第 1 引数に置いています
+!! testdata/lint/quadratic/append-and-string-fire/sample.flix:6 (joined) foldLeft / foldRight の中で、String.concat を渡して、蓄積の文字列に 1 回ごとに足しています
+!! testdata/lint/quadratic/append-and-string-fire/sample.flix:11 (prelude) foldLeft / foldRight の中で、蓄積の文字列 out に 1 回ごとに足しています
+[lint-quadratic] 3 件。1 回ごとに蓄積を丸ごと作り直すので、要素数 (文字数) の二乗になります。
+  リストは :: で先頭へ積んで最後に List.reverse、文字列は List[Char] に積んで最後に StringBuilder で 1 回だけ組む (docs/performance.md「手本と壊れ方」)。
+  どうしても残すなら bin/lint-rules/quadratic.json の exempt へ "パス::def の名前" と理由 1 行
+[exit=1]

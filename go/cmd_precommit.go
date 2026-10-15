@@ -9,6 +9,7 @@ import (
 	"github.com/ababup1192/flix_game_engine/go/internal/flixreserved"
 	"github.com/ababup1192/flix_game_engine/go/internal/jargon"
 	"github.com/ababup1192/flix_game_engine/go/internal/precommit"
+	"github.com/ababup1192/flix_game_engine/go/internal/quadratic"
 	"github.com/ababup1192/flix_game_engine/go/internal/recordwrap"
 	"github.com/ababup1192/flix_game_engine/go/internal/uioverflow"
 	"github.com/ababup1192/flix_game_engine/go/internal/view"
@@ -50,6 +51,7 @@ func cmdPrecommit(out, errOut *strings.Builder, rest []string, _ bool) int {
 		"jargon":        lintOf(jargon.Run, abs),
 		"ui-overflow":   lintOf(uioverflow.Run, abs),
 		"z-table":       lintOf(ztable.Run, abs),
+		"quadratic":     lintOf(quadratic.Run, abs),
 		"record-wrap":   lintOf(recordwrap.Run, abs),
 		"f32": func(o, e *strings.Builder, args []string) int {
 			code, err := f32.Run(o, e, abs, args, f32.Options{})
