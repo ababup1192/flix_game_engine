@@ -162,6 +162,9 @@ func Run(args []string, asJSON bool, o Options) int {
 
 // Resolve は版かパスを、そろえる先のエンジンの場所にする。版の物が無ければ組む。
 func Resolve(target string, o Options) (string, error) {
+	if err := o.fill(); err != nil {
+		return "", err
+	}
 	if !versionRe.MatchString(strings.TrimPrefix(target, "v")) || isDir(target) {
 		dir, err := filepath.Abs(target)
 		if err != nil {
@@ -318,6 +321,9 @@ func engineRepo(o Options) (string, error) {
 
 // Use はゲームの local.mk と lib/ をエンジン dir へそろえる。
 func Use(dir string, o Options) error {
+	if err := o.fill(); err != nil {
+		return err
+	}
 	fpkg, err := findFpkg(dir)
 	if err != nil {
 		return err
@@ -451,6 +457,9 @@ func writeLocalMk(game, engine string, st State) error {
 
 // Restore は最初に use-engine する前の local.mk・flix.toml・lib へ戻す。
 func Restore(o Options) error {
+	if err := o.fill(); err != nil {
+		return err
+	}
 	if err := refuseSharedLib(o.Game); err != nil {
 		return err
 	}

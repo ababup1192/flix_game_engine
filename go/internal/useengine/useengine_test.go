@@ -135,3 +135,15 @@ func TestResolvePrefersInstalledEngine(t *testing.T) {
 		t.Fatalf("置いてある版を使わない: %q %v", got, err)
 	}
 }
+
+func TestResolveFillsDefaultHome(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("FGE_STUDIO_HOME", home)
+	installed := filepath.Join(home, "engines", "0.35.16")
+	write(t, filepath.Join(installed, "mk", "game.mk"), "")
+	write(t, filepath.Join(installed, "engine_full", "artifact", "engine_full.fpkg"), "x")
+	got, err := Resolve("0.35.16", Options{Game: fakeGame(t, true)})
+	if err != nil || got != installed {
+		t.Fatalf("既定の置き場を見ない: %q %v", got, err)
+	}
+}
