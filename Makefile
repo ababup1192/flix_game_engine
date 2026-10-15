@@ -110,7 +110,7 @@ help:
 	@echo "  make lint-f32             engine の pub 面に Float32 が出ていないか検査 (Float32 は GL / OpenAL / STB の内側だけ)"
 	@echo "  make lint-z-table         重なり順の z を数で決める所がパッケージに 1 か所か検査 (借用は警告だけ)"
 	@echo "  make lint-quadratic       fold の中で蓄積を作り直す二乗の形が無いか検査 (全量)"
-	@echo "  make lint-record-wrap     World が直接持つ大きな record を enum で包んでいるか検査 (今は警告だけ)"
+	@echo "  make lint-record-wrap     World が直接持つ大きな record を enum で包んでいるか検査"
 	@echo "  bin/fge digest A B   絵の差を数値で要約 (2 枚 or フォルダ。目視の前にまずこれ)"
 	@echo "  make go-build             go/ を bin/fge-go と、配る先ごとの 5 種にビルド"
 	@echo "  make go-test              go/ のテスト (CIEDE2000 の参照 34 組・外部依存ゼロの検査を含む)"
@@ -415,11 +415,9 @@ lint-quadratic:
 # ── ゲート: World が持つ大きな record は enum で包む ─────────────
 # record の型エイリアスは使われるたびに中身のまま展開されるので、World の欄に置くと
 # World を取る全 def で型の木が大きくなり flix check が伸びる (docs/flix-conventions.md「型の設計」)。
-# WhyNot: --warn で止めないのは、閾値 (bin/lint-rules/record-wrap.json の threshold) を
-# 決める前に入れたため。決まったら --warn を外す (precommit.json の flags も)。
 .PHONY: lint-record-wrap
 lint-record-wrap:
-	@bin/fge record-wrap --all --warn
+	@bin/fge record-wrap --all
 
 # ── 起動画面の素材 ────────────────────────────────────────
 # 組み込みフォント (ASCII の 1bit ビットマップ) とロゴを engine/src/render/BootFontData.flix へ

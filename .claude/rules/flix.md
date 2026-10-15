@@ -62,7 +62,7 @@ AGENTS.md の同名の節が正で、コメントと識別子にもそのまま�
   欄 72 の平らな record と同じだけ重い（合成で、包まないと増える CPU 時間は 19 秒と 18 秒。欄 8 の
   record は 3 秒）。`Option[ReplayTrack.Track]` のように一覧や Option の中にある物も
   重さは同じで、欄の数だけ見ていると見落とす。`bin/fge record-wrap` が展開した大きさ 16 以上の
-  欄をコミット時に警告する（今は止めない。閾値は `bin/lint-rules/record-wrap.json`）
+  欄をコミット時に止める（閾値は `bin/lint-rules/record-wrap.json`）
 - **形**: 中身は `Rec`、公開の型は 1 case の enum、読むのは `rec`
 
   ```flix

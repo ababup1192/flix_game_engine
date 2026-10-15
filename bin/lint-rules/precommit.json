@@ -135,9 +135,7 @@
     {
       "id": "record-wrap",
       "sub": "record-wrap",
-      "flags": [
-        "--warn"
-      ],
+      "flags": [],
       "pass": "matched",
       "when": {
         "suffixes": [
