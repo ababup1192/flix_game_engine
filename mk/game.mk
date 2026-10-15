@@ -34,7 +34,7 @@ else
 FLIX   := "$(ENGINE)/bin/flix"
 endif
 
-.PHONY: help status run debug test build check render render-all gallery-sounds reference-check reference-update loc api src src-index hooks check-docs-sync
+.PHONY: help status run debug test build check render render-all gallery-sounds reference-check reference-update loc api src src-index hooks check-docs-sync compare
 
 # 共通の口の一覧。engine を上げるとここも一緒に新しくなる
 # （ゲーム側の Makefile へ写さないので、口が増えても書き足しに回らなくて済む）。
@@ -60,6 +60,12 @@ help:
 	@echo "  make loc                src/ + test/ の .flix 合計行数（上限 3,000 行）"
 	@echo "  make engine-upgrade     engine の版に追随する（status の「engine 版ズレ」を見たらこれ）"
 	@echo "  make hooks              コミット時のゲートをこの clone に配線する（clone ごとに 1 回）"
+	@echo "  make compare BASE=<ref> [SHOTS=\"a b\" | VIDEOS=\"x-video\"]"
+	@echo "                          基準の版と今を同じ描き出しで並べ、差を debug/compare/ へ（index.html つき）"
+	@echo ""
+	@echo "同じマシンで何本も並んで作業するときの道具 (bin/fge):"
+	@echo "  bin/fge heavy <コマンド...>   重い処理を鍵 (/tmp/fge-heavy.lock) で 1 本ずつ流す。--status で持ち主と列"
+	@echo "  bin/fge use-engine <版|パス>  この作業場の local.mk と lib をそのエンジンへ。--status / --restore"
 	@echo ""
 	@echo "このゲーム固有の口は Makefile の頭のコメントを見る。"
 
@@ -226,6 +232,18 @@ check-docs-sync:
 	  fi; \
 	done; \
 	if [ "$$ok" = "1" ]; then echo "[check-docs-sync] OK"; else exit 1; fi
+
+# 基準の版（BASE）と今の作業場を同じ描き出しで並べる。SHOTS はゲームの Makefile が全場面の
+# 一覧として持っているので、コマンドラインで渡された時だけ絞り込みとして読む。
+# WhyNot: ゲームの bin/fge より $(ENGINE)/bin/fge を先に使うのは、この口と道具の版を
+# そろえるため（ゲームの bin/fge は sync-agents を流すまで古いままのことがある）。
+compare:
+	@test -n "$(BASE)" || { echo "usage: make compare BASE=<ref> [SHOTS=\"a b\" | VIDEOS=\"x-video y-video\"] [BASE_ENGINE=<版|パス>]"; exit 1; }
+	@fge="$(ENGINE)/bin/fge"; "$$fge" --list 2>/dev/null | grep -qx compare || fge=bin/fge; \
+	"$$fge" compare --base "$(BASE)" \
+	  $(if $(filter command line,$(origin SHOTS)),--shots "$(SHOTS)") \
+	  $(if $(VIDEOS),--videos "$(VIDEOS)") \
+	  $(if $(BASE_ENGINE),--base-engine "$(BASE_ENGINE)")
 
 # 色票（Studio の編集画面が読む写し）。PALETTE を決めたゲームにだけ口が生える。
 # render のたびに無条件で走らせると、絵を描くのと同じだけのコンパイル時間を二重に払う。
