@@ -1,0 +1,2 @@
+[lint-record-wrap] OK (展開した大きさ 16 以上の欄なし / 除外 0 件)
+[exit=0]

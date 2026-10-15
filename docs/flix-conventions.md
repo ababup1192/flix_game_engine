@@ -51,6 +51,12 @@ AGENTS.md の同名の節が正で、コメントと識別子にもそのまま�
 
 - **対象**: `World` が直接フィールドに持つ大きな record — Doc（`*Doc.Doc`）、盤や
   戦いの場のような「状態のかたまり」。数値・文字列・小さな record（`Vec2` 程度）は対象外
+- **大きさは欄の数でなく、展開した欄の総数で測る**。入れ子の record と、`List[...]`・
+  `Option[...]` の中の record も展開される。欄 3 つ（中は 24 欄ずつ）の record は、
+  欄 72 の平らな record と同じだけ重い（合成で、包まないと増える CPU 時間は 19 秒と 18 秒。欄 8 の
+  record は 3 秒）。`Option[ReplayTrack.Track]` のように一覧や Option の中にある物も
+  重さは同じで、欄の数だけ見ていると見落とす。`bin/fge record-wrap` が展開した大きさ 16 以上の
+  欄をコミット時に警告する（今は止めない。閾値は `bin/lint-rules/record-wrap.json`）
 - **形**: 中身は `Rec`、公開の型は 1 case の enum、読むのは `rec`
 
   ```flix

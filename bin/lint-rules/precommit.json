@@ -124,6 +124,19 @@
       }
     },
     {
+      "id": "record-wrap",
+      "sub": "record-wrap",
+      "flags": [
+        "--warn"
+      ],
+      "pass": "matched",
+      "when": {
+        "suffixes": [
+          ".flix"
+        ]
+      }
+    },
+    {
       "id": "jargon",
       "sub": "jargon",
       "flags": [],
