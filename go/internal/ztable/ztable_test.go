@@ -117,7 +117,7 @@ func writeRepo(t *testing.T, exempt string) string {
 		`"skipDirNames":["lib","test"],"tableFileNames":["ZOrder.flix"],`+
 		`"constPattern":"^\\s*(?:pub\\s+)?def\\s+(z[A-Z][A-Za-z0-9_]*)\\s*\\(\\s*\\)\\s*:\\s*Int32\\s*=\\s*(-?[0-9]+)\\s*(?://.*)?$",`+
 		`"zDefPattern":"^\\s*(?:pub\\s+)?def\\s+(z[A-Z][A-Za-z0-9_]*)\\s*\\(\\s*(?:[a-z][A-Za-z0-9_]*\\s*:\\s*Int32\\s*)?\\)\\s*:\\s*Int32\\b",`+
-		`"exempt":`+exempt+`}`)
+		`"borrowWarnOnly":true,"exempt":`+exempt+`}`)
 	put("game/flix.toml", "")
 	put("game/src/ZOrder.flix", "mod ZOrder {}")
 	put("game/src/View.flix", "    def zPointer(): Int32 = 1000")
@@ -220,5 +220,22 @@ func TestBorrowIgnoresOwnModule(t *testing.T) {
 	}
 	if hits := testRules().BorrowHits(bodies, nil); len(hits) != 0 {
 		t.Fatalf("鳴った: %s", borrowNames(hits))
+	}
+}
+
+// 借用だけなら出すが止めない。表の外の数と一緒なら止める。
+func TestBorrowAloneDoesNotBlock(t *testing.T) {
+	root := writeRepo(t, `{}`)
+	put := func(rel, body string) {
+		if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(rel)), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	put("game/src/View.flix", "mod View {\n    pub def zPointer(): Int32 = ZOrder.zBoard()\n}\n")
+	put("game/src/Fight.flix", "mod Fight {\n    def zHand(): Int32 = View.zPointer() + 1\n}\n")
+	var out, errOut strings.Builder
+	code, _ := Run(&out, &errOut, root, []string{"game/src/Fight.flix"})
+	if code != 0 || !strings.Contains(errOut.String(), "View.zPointer") || !strings.Contains(errOut.String(), "止めません") {
+		t.Fatalf("code=%d\n%s", code, errOut.String())
 	}
 }

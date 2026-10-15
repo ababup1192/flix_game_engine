@@ -113,9 +113,7 @@
     {
       "id": "z-table",
       "sub": "z-table",
-      "flags": [
-        "--warn"
-      ],
+      "flags": [],
       "pass": "matched",
       "when": {
         "suffixes": [

@@ -21,6 +21,7 @@ type rulesFile struct {
 	TableFileNames *[]string `json:"tableFileNames"`
 	ConstPattern   *string   `json:"constPattern"`
 	ZDefPattern    *string   `json:"zDefPattern"`
+	BorrowWarnOnly *bool     `json:"borrowWarnOnly"`
 	// Exempt は「残すと決めた z の数」。鍵は "パス::宣言名"、値は残す理由 (1 行必須)。
 	// WhyNot: 行番号でなく名前で持つのは、上の行が増減しても鍵がずれないため。
 	Exempt *map[string]string `json:"exempt"`
@@ -35,8 +36,12 @@ type Rules struct {
 	// Const は z を数で決める 1 行。1 つ目の組が宣言名、2 つ目が数。
 	Const *regexp.Regexp
 	// ZDef は z を返す関数の宣言 (数で決めた物に限らない)。1 つ目の組が宣言名。借用を見るのに使う。
-	ZDef   *regexp.Regexp
-	Exempt map[string]string
+	ZDef *regexp.Regexp
+	// BorrowWarnOnly は借用を出すだけにして、終了コードに数えないか。
+	// WhyNot: --warn と分けて持つのは、表の外の数と散らばりは止め、借用だけ様子を見る、を
+	// 1 回の呼び出しで両立させるため (precommit は検査ごとに 1 回しか呼ばない)。
+	BorrowWarnOnly bool
+	Exempt         map[string]string
 }
 
 // LoadRules は規約データを読む。
@@ -65,6 +70,8 @@ func LoadRules(root string) (*Rules, error) {
 		return nil, fmt.Errorf("規約ファイルに constPattern がありません (%s)", path)
 	case f.ZDefPattern == nil:
 		return nil, fmt.Errorf("規約ファイルに zDefPattern がありません (%s)", path)
+	case f.BorrowWarnOnly == nil:
+		return nil, fmt.Errorf("規約ファイルに borrowWarnOnly がありません (%s)", path)
 	case f.Exempt == nil:
 		return nil, fmt.Errorf("規約ファイルに exempt がありません (%s)", path)
 	}
@@ -94,6 +101,7 @@ func LoadRules(root string) (*Rules, error) {
 		TableFileNames: *f.TableFileNames,
 		Const:          re,
 		ZDef:           zdef,
+		BorrowWarnOnly: *f.BorrowWarnOnly,
 		Exempt:         *f.Exempt,
 	}, nil
 }

@@ -3,4 +3,5 @@
 [lint-z-table] 1 件。z の数が散ると、別のファイルどうしで同じ数を取り合い、どちらが手前かが描き順まかせになります。
   表のファイル (ZOrder.flix) に名前を足してそこから引くか、表が無ければ 1 ファイルに集めてください。借りている z は、表から自分で引き直してください (範囲の地図は engine の docs/z-bands.md)。
   どうしても残すなら bin/lint-rules/z-table.json の exempt へ "パス::宣言名" と理由 1 行
-[exit=1]
+[lint-z-table] 借用は警告だけです (z-table.json の borrowWarnOnly)。止めません
+[exit=0]

@@ -108,7 +108,7 @@ help:
 	@echo "  make lint-jargon          コメント・文章に独自の比喩語が混ざっていないか検査 (語は bin/lint-rules/jargon.json の words)"
 	@echo "  make lint-fallback        読み込みの途中で bug! していないか検査 (許すのは *OrBug の中だけ)"
 	@echo "  make lint-f32             engine の pub 面に Float32 が出ていないか検査 (Float32 は GL / OpenAL / STB の内側だけ)"
-	@echo "  make lint-z-table         重なり順の z を数で決める所がパッケージに 1 か所か検査 (今は警告だけ)"
+	@echo "  make lint-z-table         重なり順の z を数で決める所がパッケージに 1 か所か検査 (借用は警告だけ)"
 	@echo "  make lint-record-wrap     World が直接持つ大きな record を enum で包んでいるか検査 (今は警告だけ)"
 	@echo "  bin/fge digest A B   絵の差を数値で要約 (2 枚 or フォルダ。目視の前にまずこれ)"
 	@echo "  make go-build             go/ を bin/fge-go と、配る先ごとの 5 種にビルド"
@@ -397,11 +397,12 @@ lint-f32:
 # ── ゲート: z の数の表は 1 か所 ──────────────────────────────
 # z を数で決める所が 1 つのパッケージで複数のファイルに散ると、別のファイルどうしで
 # 同じ数を取り合い、どちらが手前かが描き順まかせになる (docs/z-bands.md)。
-# WhyNot: --warn で止めないのは、既にある違反 (templates/race-starter) を直すか
-# 除外するかを決める前に入れたため。決まったら --warn を外す (precommit.json の flags も)。
+# 借用 (別のモジュールの z を呼ぶ所) だけは bin/lint-rules/z-table.json の borrowWarnOnly で
+# 出すだけにしてある。templates/race-starter は z の数が 3 ファイルに散ったまま (16 件) なので、
+# ここを --all で回すと止まる。
 .PHONY: lint-z-table
 lint-z-table:
-	@bin/fge z-table --all --warn
+	@bin/fge z-table --all
 
 # ── ゲート: World が持つ大きな record は enum で包む ─────────────
 # record の型エイリアスは使われるたびに中身のまま展開されるので、World の欄に置くと

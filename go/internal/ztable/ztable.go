@@ -328,7 +328,7 @@ func Run(out, errOut *strings.Builder, root string, args []string) (int, error) 
 		}
 		pkgCount = len(pkgs)
 	}
-	return report(out, errOut, rules.Exempt, hits, all, warn, pkgCount, defCount), nil
+	return report(out, errOut, rules, hits, all, warn, pkgCount, defCount), nil
 }
 
 func absOf(root, path string) string {
@@ -338,7 +338,8 @@ func absOf(root, path string) string {
 	return filepath.Join(root, path)
 }
 
-func report(out, errOut *strings.Builder, exempt map[string]string, hits []Hit, all, warn bool, pkgCount, defCount int) int {
+func report(out, errOut *strings.Builder, rules *Rules, hits []Hit, all, warn bool, pkgCount, defCount int) int {
+	exempt := rules.Exempt
 	var bad []Hit
 	live := map[string]bool{}
 	for _, h := range hits {
@@ -403,6 +404,16 @@ func report(out, errOut *strings.Builder, exempt map[string]string, hits []Hit, 
 		"借りている z は、表から自分で引き直してください"+
 		" (範囲の地図は engine の docs/z-bands.md)。"+
 		"\n  どうしても残すなら bin/lint-rules/z-table.json の exempt へ \"パス::宣言名\" と理由 1 行\n", len(bad))
+	blocking := 0
+	for _, h := range bad {
+		if h.Borrow == "" || !rules.BorrowWarnOnly {
+			blocking++
+		}
+	}
+	if blocking == 0 {
+		fmt.Fprintln(errOut, "[lint-z-table] 借用は警告だけです (z-table.json の borrowWarnOnly)。止めません")
+		return finish(errOut, code, warn)
+	}
 	return finish(errOut, 1, warn)
 }
 
