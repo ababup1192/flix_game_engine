@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ababup1192/flix_game_engine/go/internal/fetchengine"
 	"github.com/ababup1192/flix_game_engine/go/internal/heavy"
 	"github.com/ababup1192/flix_game_engine/go/internal/status"
 )
@@ -180,7 +181,51 @@ func Resolve(target string, o Options) (string, error) {
 	if isEngineReady(wt) {
 		return wt, nil
 	}
-	return wt, buildTag(version, wt, o)
+	repo, err := engineRepo(o)
+	if err != nil {
+		// WhyNot: clone が分からなくても止めないのは、ゲームの作業場の多くが
+		// engines/<版>（git ではない）を向いていて、タグを出す元を持たないため。
+		// 公開済みの zip は SHA-256 で照合してから置くので、組んだ物と同じ中身になる。
+		return installed, fetchRelease(version, o)
+	}
+	return wt, buildTag(version, wt, repo, o)
+}
+
+// fetchRelease は公開済みの zip を engines/<版> に置く（Studio の self-update と同じ道具）。
+func fetchRelease(version string, o Options) error {
+	engines := filepath.Join(o.Home, "engines")
+	carry := newestEngine(engines)
+	if carry == "" {
+		return fmt.Errorf("%s に写す元のエンジンが無く、タグを出す clone も分かりません — --repo <engine の clone> を渡す", engines)
+	}
+	fmt.Fprintf(o.Err, "[use-engine] タグを出す clone が分からないので、公開済みの v%s を %s に置きます\n", version, engines)
+	var out, errOut strings.Builder
+	code, err := fetchengine.Run(&out, &errOut,
+		[]string{"--version", version, "--into", engines, "--carry-from", carry}, false)
+	io.WriteString(o.Err, errOut.String())
+	if err != nil {
+		return err
+	}
+	if code != 0 || !isEngineReady(filepath.Join(engines, version)) {
+		return fmt.Errorf("v%s を置けませんでした", version)
+	}
+	return nil
+}
+
+// newestEngine は engines の下で揃っている物のうち、名前の版がいちばん新しい物。
+func newestEngine(engines string) string {
+	entries, _ := os.ReadDir(engines)
+	best := ""
+	for _, e := range entries {
+		dir := filepath.Join(engines, e.Name())
+		if !versionRe.MatchString(e.Name()) || !isEngineReady(dir) {
+			continue
+		}
+		if best == "" || fetchengine.IsNewer(filepath.Base(best), e.Name()) {
+			best = dir
+		}
+	}
+	return best
 }
 
 // isEngineReady はそのまま ENGINE に向けられるか（make の口と組んだ fpkg が揃っているか）。
@@ -203,11 +248,7 @@ func findFpkg(engine string) (string, error) {
 //
 // WhyNot: 組むのを heavy の鍵の内側に置くのは、make sync が JVM を何本も立てる重さだから。
 // 鍵の内側でもう一度揃っているかを見るので、同じ版を 2 本が同時に頼んでも組むのは 1 回。
-func buildTag(version, wt string, o Options) error {
-	repo, err := engineRepo(o)
-	if err != nil {
-		return err
-	}
+func buildTag(version, wt, repo string, o Options) error {
 	fmt.Fprintf(o.Err, "[use-engine] %s が無いので v%s を %s に出して組みます\n",
 		filepath.Join(o.Home, "engines", version), version, wt)
 	var failure error
