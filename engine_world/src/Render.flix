@@ -350,6 +350,17 @@ pub mod Render {
             case other          => other
         }, item)
 
+    /// 描画物 1 つの重なり順（Clipped は中身の z）。
+    pub def zOf(item: Item): Int32 =
+        match item {
+            case Item.Sprite(s)  => s#zIndex
+            case Item.Text(x)    => x#zIndex
+            case Item.Box(b)     => b#zIndex
+            case Item.Poly(p)    => p#zIndex
+            case Item.Shader(s)  => s#zIndex
+            case Item.Clipped(c) => zOf(c#inner)
+        }
+
     /// 置き場所つきの列を丸ごと delta だけずらす（zShifted の列版）。
     pub def zShiftedAll(delta: Int32, items: List[PlacedItem]): List[PlacedItem] =
         items |> List.map(placed -> { item = zShifted(delta, placed#item) | placed })

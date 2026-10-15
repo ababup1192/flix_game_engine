@@ -7,8 +7,9 @@
 // 範囲の外（もっと奥の地面、もっと手前の HUD）とは重ならない数の範囲を選ぶこと。
 // 範囲の幅は「マスの数 + 1」くらいあれば足りる（同じ行に立つ物は同じ数になってよい）。
 //
-// 1 画面に帯が何本も要るとき（奥・遠景・地面・影・中景・近景・手前）は Bands で名前を付けて
-// 並べる。帯の底の数をゲーム側の定数として手で並べると、1 本足すたびに以降を全部書き直す。
+// 1 画面に帯が何本も要るとき（奥・遠景・地面・影・中景・近景・手前）は ZStack.of に奥 → 手前の順で
+// 積む（帯の底の数を持たない）。足元の順は ZStack.zIndex(Depth.orderAt(足元の y), 1 人の葉)。
+// Bands（帯に名前を付けて底の数を並べる形）は非推奨で、木を使わない古いゲームのために残している。
 pub mod Depth {
 
     /// 足元の高さ（world の y）を重なり順に写す z の範囲。
@@ -33,6 +34,12 @@ pub mod Depth {
         let steps = Int32.toFloat64(range#front - range#back);
         range#back + (Float64.round(t * steps) |> Float64.tryToInt32 |> Option.getWithDefault(0))
 
+    /// ZStack の木で足元の順に並べるときの zIndex（1 画素ごとに 1 つ・下にある物ほど大きい）。
+    /// `ZStack.of(people |> List.map(p -> ZStack.zIndex(Depth.orderAt(p.footY), ZStack.leaf(p.parts))))`。
+    /// 範囲（ZRange）を持たないので、帯の幅を数える必要が無い。同じ行に立つ物は積んだ順。
+    pub def orderAt(footY: Float64): Int32 =
+        Float64.floor(footY) |> Float64.tryToInt32 |> Option.getWithDefault(if (footY > 0.0) Int32.maxValue() else Int32.minValue())
+
     /// 組み上がった絵の集まりを、足元の高さで決まる層へ持ち上げる。
     /// 部品どうしの相対的な前後（胴 0・頭 1・持ち物 2 のような小さな差）はそのまま保たれるので、
     /// 呼び側は 0 から数えた小さな z で 1 体を組めばよい。
@@ -47,6 +54,7 @@ pub mod Depth {
     // 帯を何本も並べる（奥・遠景・地面・影・中景・近景・手前 …）
     // ════════════════════════════════════════════════════════
 
+    /// 非推奨: 帯を数で並べる代わりに ZStack.of へ奥 → 手前の順に積む（docs/z-bands.md「表は根・中は木」）。
     /// 帯の名前 → その帯の底の zIndex。1 画面を「奥から手前へ」何段かに仕切ったときの地図。
     /// world の範囲（docs/z-bands.md）の中だけで完結する数で、UI・HUD の範囲には触らない。
     pub type alias Bands = Map[String, Int32]

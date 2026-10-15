@@ -2,6 +2,6 @@
    testdata/lint/z-table/borrow-fires/src/FightView.flix:2 CardsView.zPickCard (宣言: testdata/lint/z-table/borrow-fires/src/CardsView.flix)
 [lint-z-table] 1 件。z の数が散ると、別のファイルどうしで同じ数を取り合い、どちらが手前かが描き順まかせになります。
   表のファイル (ZOrder.flix) に名前を足してそこから引くか、表が無ければ 1 ファイルに集めてください。借りている z・付け替えている z は、表の層・帯の段から作り直してください (範囲の地図は engine の docs/z-bands.md)。
-  どうしても残すなら bin/lint-rules/z-table.json の exempt へ "パス::宣言名" と理由 1 行
+  どうしても残すなら bin/lint-rules/z-table.local.json (ゲーム) か z-table.json (エンジン) の exempt へ "パス::名前" と理由 1 行
 [lint-z-table] 借用は警告だけです (z-table.json の borrowWarnOnly)。止めません
 [exit=0]

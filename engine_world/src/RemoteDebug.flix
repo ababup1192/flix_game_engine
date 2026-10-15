@@ -799,7 +799,7 @@ pub mod RemoteDebug {
                 let atlas = GameEngine.Game.getFontAtlas("default");
                 // 画面座標の矩形と突き合わせるので、カメラ適用後（=画面に出ている）items を使う
                 let hitList = Annotate.hits(name -> GameEngine.Game.getTextureInfo(name), rect,
-                                            App.sceneItems(app, atlas, world, toItems));
+                                            App.sceneItems(app, atlas, _ -> (), world, toItems));
                 RemoteDebug.sceneBlock(rect, hitList)
             case (None, Some((_, toChannels))) =>
                 let (drawables, _, _) = toChannels(world);

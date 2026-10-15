@@ -8,11 +8,19 @@ package ztable
 //	fge-go z-table --warn ...            出す物は同じで、終了コードだけ 0 にする
 //	fge-go z-table --root DIR ...        リポジトリのルートを差し替える
 //
-// 規則は 3 つ。初めの 2 つは「z を数で決める 1 行」(def zXxx(): Int32 = 数) だけを見る:
-//   - 表のファイル (tableFileNames) があるパッケージ: 表の外で数を書いたら鳴る
+// 表のファイルは、名前が tableFileNames にあるか、本文 (コメントを除く) に表の宣言
+// (tablePattern。instance SortingLayer[Layer] { ... }) があるファイル。
+//
+// 規則。初めの 2 つは「z を数で決める 1 行」(def zXxx(): Int32 = 数) だけを見る:
+//   - 表のファイルがあるパッケージ: 表の外で数を書いたら鳴る
 //   - 表のファイルが無いパッケージ: 数を書くファイルが 2 本以上あったら全部鳴る
 //   - 借用: 同じパッケージの別のモジュールが決めた z を呼ぶ・use で取り込む (borrow.go)
-//   - 付け替え: 表を持つパッケージで、表の外から zMapped などで z を付け替える (remap.go)
+//   - 付け替え: 表を持つパッケージで、表の外から zMapped・zShifted・zShiftedAll・raiseZ・
+//     Depth.place・Depth.placeOne で z を付け替える (remap.go)
+//   - 移行の口: 名指しのとき、表の外で SortingLayer.z を新しく足した行 (ステージした差分の + 行) が鳴る。
+//     --all では止めず、SortingLayer.z と leafAbsolute の残りを数えて最後に 1 行出す (migration.go)
+//
+// 除外はエンジンの z-table.json の exempt と、ゲームの z-table.local.json の exempt を足した物。
 //
 // 数を足し引きした z (zBoard() + 2) と、z を引数で渡す所の数は見ない。帯の中の段として
 // 正しい用法が大半で、行だけでは正しい物と区別できないため。範囲の外れは描き出しの後で
@@ -51,6 +59,8 @@ type Hit struct {
 	Borrow string
 	// Remap は付け替えのとき true。Name は呼んだ関数の名前。
 	Remap bool
+	// NewLayerZ は表の外で SortingLayer.z を新しく足した行のとき true。
+	NewLayerZ bool
 }
 
 // DefsOf は 1 ファイルの本文から z を数で決める行を拾う。
@@ -67,13 +77,13 @@ func (r *Rules) DefsOf(rel, text string) []Def {
 }
 
 // PackageHits は 1 パッケージ分の defs (ファイルごと) から鳴らす物を決める。
-// files はパッケージの .flix 全部 (z を書いていないファイルも含む。表のファイルを見つけるため)。
-func (r *Rules) PackageHits(files []string, defs map[string][]Def) []Hit {
+// files はパッケージの .flix 全部、tables はそのうちの表のファイル (TablesOf)。
+// 表が 2 本以上あれば、並びで先の 1 本を表として扱う。
+func (r *Rules) PackageHits(files []string, defs map[string][]Def, tables map[string]bool) []Hit {
 	var table string
 	for _, f := range files {
-		if r.IsTable(f) {
+		if tables[f] && (table == "" || f < table) {
 			table = f
-			break
 		}
 	}
 	var withDefs []string
@@ -105,11 +115,11 @@ func (r *Rules) PackageHits(files []string, defs map[string][]Def) []Hit {
 
 // tableFiles は借用を見るときに表として扱うファイル。表のファイルがあればそれ、無ければ
 // z を数で決めるファイルが 1 本だけのときのそのファイル。
-func (r *Rules) tableFiles(files []string, defs map[string][]Def) map[string]bool {
+func (r *Rules) tableFiles(files []string, defs map[string][]Def, found map[string]bool) map[string]bool {
 	tables := map[string]bool{}
 	var withDefs []string
 	for _, f := range files {
-		if r.IsTable(f) {
+		if found[f] {
 			tables[f] = true
 		}
 		if len(defs[f]) > 0 {
@@ -228,12 +238,20 @@ func (r *Rules) allPackages(root string) ([]string, error) {
 	return pkgs, err
 }
 
+// packageScan は 1 パッケージを読んだ結果。
+type packageScan struct {
+	hits      []Hit
+	defCount  int
+	tables    map[string]bool
+	migration Migration
+}
+
 // scanPackage は 1 パッケージを読んで鳴らす物を返す。extra は名指しで渡されたファイル
 // (歩いても出てこない所にあっても読む)。
-func (r *Rules) scanPackage(root, pkg string, extra []string) ([]Hit, int, error) {
+func (r *Rules) scanPackage(root, pkg string, extra []string) (packageScan, error) {
 	files, err := r.packageFiles(root, pkg)
 	if err != nil {
-		return nil, 0, err
+		return packageScan{}, err
 	}
 	seen := map[string]bool{}
 	for _, f := range files {
@@ -251,14 +269,20 @@ func (r *Rules) scanPackage(root, pkg string, extra []string) ([]Hit, int, error
 	for _, f := range files {
 		body, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(f)))
 		if err != nil {
-			return nil, 0, fmt.Errorf("読めません: %v", err)
+			return packageScan{}, fmt.Errorf("読めません: %v", err)
 		}
 		bodies[f] = string(body)
 		defs[f] = r.DefsOf(f, bodies[f])
 		count += len(defs[f])
 	}
-	hits := append(r.PackageHits(files, defs), r.BorrowHits(bodies, r.tableFiles(files, defs))...)
-	return append(hits, r.RemapHits(bodies)...), count, nil
+	tables := r.TablesOf(bodies)
+	hits := append(r.PackageHits(files, defs, tables), r.BorrowHits(bodies, r.tableFiles(files, defs, tables))...)
+	return packageScan{
+		hits:      append(hits, r.RemapHits(bodies, tables)...),
+		defCount:  count,
+		tables:    tables,
+		migration: r.MigrationCount(bodies, tables),
+	}, nil
 }
 
 // Run は fge z-table の本体。
@@ -282,6 +306,7 @@ func Run(out, errOut *strings.Builder, root string, args []string) (int, error) 
 	}
 
 	var hits []Hit
+	var left Migration
 	defCount, pkgCount := 0, 0
 	if all {
 		pkgs, err := rules.allPackages(root)
@@ -289,12 +314,14 @@ func Run(out, errOut *strings.Builder, root string, args []string) (int, error) 
 			return 2, err
 		}
 		for _, pkg := range pkgs {
-			found, n, err := rules.scanPackage(root, pkg, nil)
+			scan, err := rules.scanPackage(root, pkg, nil)
 			if err != nil {
 				return 2, err
 			}
-			hits = append(hits, found...)
-			defCount += n
+			hits = append(hits, scan.hits...)
+			defCount += scan.defCount
+			left.LayerZ += scan.migration.LayerZ
+			left.LeafAbs += scan.migration.LeafAbs
 		}
 		pkgCount = len(pkgs)
 	} else {
@@ -318,21 +345,40 @@ func Run(out, errOut *strings.Builder, root string, args []string) (int, error) 
 			pkgs = append(pkgs, pkg)
 		}
 		sort.Strings(pkgs)
+		tables := map[string]bool{}
 		for _, pkg := range pkgs {
-			found, n, err := rules.scanPackage(root, pkg, byPkg[pkg])
+			scan, err := rules.scanPackage(root, pkg, byPkg[pkg])
 			if err != nil {
 				return 2, err
 			}
-			for _, h := range found {
+			for _, h := range scan.hits {
 				if want[h.Path] {
 					hits = append(hits, h)
 				}
 			}
-			defCount += n
+			for f := range scan.tables {
+				tables[f] = true
+			}
+			defCount += scan.defCount
 		}
 		pkgCount = len(pkgs)
+		wantList := make([]string, 0, len(want))
+		for f := range want {
+			wantList = append(wantList, f)
+		}
+		sort.Strings(wantList)
+		added, err := addedLines(root, wantList)
+		if err != nil {
+			return 2, err
+		}
+		hits = append(hits, rules.LayerZHits(added, tables)...)
 	}
-	return report(out, errOut, rules, hits, all, warn, pkgCount, defCount), nil
+	code := report(out, errOut, rules, hits, all, warn, pkgCount, defCount)
+	if all {
+		// WhyNot: 終了コードに数えないのは、今ある移行の口は止めずに減らしていく宿題だから。
+		fmt.Fprintf(out, "[lint-z-table] 移行の残り: SortingLayer.z %d 件 / leafAbsolute %d 件\n", left.LayerZ, left.LeafAbs)
+	}
+	return code, nil
 }
 
 func absOf(root, path string) string {
@@ -364,11 +410,15 @@ func report(out, errOut *strings.Builder, rules *Rules, hits []Hit, all, warn bo
 
 	code := 0
 	for _, key := range stale {
-		fmt.Fprintf(errOut, "  %s は exempt に載っていますが、もう鳴る所がありません\n", key)
+		from := rules.ExemptFrom[key]
+		if from == "" {
+			from = filepath.ToSlash(RulesPath)
+		}
+		fmt.Fprintf(errOut, "  %s は %s の exempt に載っていますが、もう鳴る所がありません\n", key, from)
 	}
 	if len(stale) > 0 {
 		fmt.Fprintf(errOut, "[lint-z-table] 古い除外 %d 件。"+
-			"宿題の一覧として読めなくなるので bin/lint-rules/z-table.json の exempt から消してください\n", len(stale))
+			"宿題の一覧として読めなくなるので、書いてあるファイル (z-table.local.json か z-table.json) の exempt から消してください\n", len(stale))
 		code = 1
 	}
 	if len(bad) == 0 {
@@ -382,6 +432,8 @@ func report(out, errOut *strings.Builder, rules *Rules, hits []Hit, all, warn bo
 	for _, h := range bad {
 		reason := fmt.Sprintf("表 (%s) の外で z を数で決めています", h.Table)
 		switch {
+		case h.NewLayerZ:
+			reason = "表の外で SortingLayer.z を新しく呼んでいます (移行の間だけ残す口です。層の中の順は ZStack の木に積んで決めてください)"
 		case h.Remap:
 			reason = "表の外で z を関数で付け替えています (付け替えた後の z がどの層に入るかは表から読めません)"
 		case h.Borrow != "":
@@ -398,7 +450,7 @@ func report(out, errOut *strings.Builder, rules *Rules, hits []Hit, all, warn bo
 			fmt.Fprintf(errOut, "   %s:%d %s (宣言: %s)\n", h.Path, h.Line, h.Name, h.Borrow)
 			continue
 		}
-		if h.Remap {
+		if h.Remap || h.NewLayerZ {
 			fmt.Fprintf(errOut, "   %s:%d %s\n", h.Path, h.Line, h.Name)
 			continue
 		}
@@ -413,7 +465,8 @@ func report(out, errOut *strings.Builder, rules *Rules, hits []Hit, all, warn bo
 		"\n  表のファイル (ZOrder.flix) に名前を足してそこから引くか、表が無ければ 1 ファイルに集めてください。"+
 		"借りている z・付け替えている z は、表の層・帯の段から作り直してください"+
 		" (範囲の地図は engine の docs/z-bands.md)。"+
-		"\n  どうしても残すなら bin/lint-rules/z-table.json の exempt へ \"パス::宣言名\" と理由 1 行\n", len(bad))
+		"\n  どうしても残すなら bin/lint-rules/z-table.local.json (ゲーム) か z-table.json (エンジン) の exempt へ"+
+		" \"パス::名前\" と理由 1 行\n", len(bad))
 	blocking := 0
 	for _, h := range bad {
 		if h.Borrow == "" || !rules.BorrowWarnOnly {

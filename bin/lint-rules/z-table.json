@@ -1,5 +1,5 @@
 {
-  "note": "lint-z-table（z の数値の表がパッケージに 1 か所か）の規約データ。この JSON が source of truth で、bin/fge z-table はこれを読んで動く。重なり順の z を def zXxx(): Int32 = 数 で決める書き方が、1 つのパッケージ（flix.toml の単位）で複数のファイルに散ると、別々のファイルで同じ数を取り合い、どちらが手前かが描き順まかせになる。表のファイル（tableFileNames の名前）を置いたパッケージでは、そこ以外で z を数で決めると鳴る。表のファイルが無いパッケージでは、z を数で決めるファイルが 2 本以上あると鳴る。同じパッケージの別のモジュールが決めた z を呼ぶ・use で取り込む所（借用）も鳴る。その z がどの帯・層の物かは貸した側にしか書かれておらず、貸した側が数を動かすと借りた側の前後も黙って変わるため。表のモジュールから引くのは借用ではない。 表のファイルを持つパッケージでは、表の外で zMapped のように z を関数で付け替えるのも鳴る（付け替えた後の z がどの層に入るかが表から読めなくなるため）。",
+  "note": "lint-z-table（z の数を決める所がパッケージに 1 か所か）の規約データ。この JSON が source of truth で、bin/fge z-table はこれを読んで動く。表のファイルは、名前が tableFileNames にあるファイルか、本文（コメントを除く）に tablePattern の宣言（instance SortingLayer[Layer] { pub def zRange ... }）があるファイル。重なり順の z を def zXxx(): Int32 = 数 で決める書き方が、1 つのパッケージ（flix.toml の単位）で複数のファイルに散ると、別々のファイルで同じ数を取り合い、どちらが手前かが描き順まかせになる。表を持つパッケージでは、表の外で z を数で決めると鳴る。表の無いパッケージでは、z を数で決めるファイルが 2 本以上あると鳴る。同じパッケージの別のモジュールが決めた z を呼ぶ・use で取り込む所（借用）も鳴る（borrowWarnOnly が true の間は出すだけで止めない）。表のモジュールから引くのは借用ではない。表を持つパッケージでは、表の外で z を後から付け替える関数（remapPattern: zMapped・zShifted・zShiftedAll・raiseZ・Depth.place・Depth.placeOne）を呼ぶのも鳴る。付け替えた後の z がどの層に入るかが表から読めなくなるため。層の中は ZStack の積んだ順で作り直す。エンジンのパッケージは表を持たないので見ない。移行の間だけ残す口（layerZPattern の SortingLayer.z と leafAbsolutePattern の leafAbsolute）は、--all のとき表の外の呼び出しを数えて最後に「移行の残り」を 1 行出す（止めない）。コミット時（ファイルを名指しした呼び出し）は、ステージした差分の + 行だけを見て、表の外で SortingLayer.z を足した行を止める（test/ の下は見ない）。除外はこの exempt と、ゲームが自分の除外だけを置く bin/lint-rules/z-table.local.json（{\"exempt\": {\"パス::名前\": \"理由 1 行\"}}・無くてよい）を足した物。両方に同じ鍵があると止まる。--all で、もう鳴らない除外はどちらのファイルの物でも鳴る。",
   "scopeSuffixes": [
     ".flix"
   ],
@@ -20,9 +20,12 @@
   "tableFileNames": [
     "ZOrder.flix"
   ],
+  "tablePattern": "\\binstance\\s+SortingLayer\\s*\\[",
   "constPattern": "^\\s*(?:pub\\s+)?def\\s+(z[A-Z][A-Za-z0-9_]*)\\s*\\(\\s*\\)\\s*:\\s*Int32\\s*=\\s*(-?[0-9]+)\\s*(?://.*)?$",
   "zDefPattern": "^\\s*(?:pub\\s+)?def\\s+(z[A-Z][A-Za-z0-9_]*)\\s*\\(\\s*(?:[a-z][A-Za-z0-9_]*\\s*:\\s*Int32\\s*)?\\)\\s*:\\s*Int32\\b",
   "borrowWarnOnly": true,
-  "remapPattern": "\\bzMapped\\s*\\(",
+  "remapPattern": "\\b(zMapped|zShiftedAll|zShifted|raiseZ|Depth\\.placeOne|Depth\\.place)\\s*\\(",
+  "layerZPattern": "\\bSortingLayer\\.z\\s*\\(",
+  "leafAbsolutePattern": "\\bleafAbsolute\\s*\\(",
   "exempt": {}
 }

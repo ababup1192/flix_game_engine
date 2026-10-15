@@ -184,10 +184,10 @@ mod SceneRender {
                 w: World.World, center: Vec2.Vec2, name: String): String \ IO =
         let design0 = cfg#design;
         let ctx = { atlas = atlas, fontOf = _ -> atlas,
-                    visible = App.visibleOf(Some(center), 1.0, design0) };
+                    visible = App.visibleOf(Some(center), 1.0, design0), warnOnce = Log.warn };
         // hud には常に design 全体が見えている扱い（実機の sceneItems と同じ）。
         let hudCtx = { atlas = atlas, fontOf = _ -> atlas,
-                       visible = App.visibleOf(None, 1.0, design0) };
+                       visible = App.visibleOf(None, 1.0, design0), warnOnce = Log.warn };
         let ground = match w#phase {
             case World.Phase.Battle => Nil
             case _ => TileScene.toItems(TownMap.spec(w#townMap, w#townAtlas))
@@ -432,9 +432,9 @@ mod SceneRender {
             let design0 = design();
             let center = cameraOf(w, design0);
             let ctx = { atlas = atlas, fontOf = _ -> atlas,
-                        visible = App.visibleOf(Some(center), 1.0, design0) };
+                        visible = App.visibleOf(Some(center), 1.0, design0), warnOnce = Log.warn };
             let hudCtx = { atlas = atlas, fontOf = _ -> atlas,
-                          visible = App.visibleOf(None, 1.0, design0) };
+                          visible = App.visibleOf(None, 1.0, design0), warnOnce = Log.warn };
             let items = App.composeScene(Some(center), 1.0, design0,
                 { world = View.frame(ctx, w), hud = View.hud(hudCtx, w) });
             println("${name}: ${Int32.toString(List.length(items))} items")

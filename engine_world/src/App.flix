@@ -54,7 +54,11 @@ pub mod App {
     /// 名前だけ引ける — 知らない名前は既定フォントへ落とす（fail-open）。話し手ごとに字を変える
     /// ようなゲームは、名前を直に書かず「自分の enum → 名前」の関数を 1 つ置いて fontOf に
     /// 渡すと、字の増減が 1 か所で済む。
-    pub type alias ViewCtx = { atlas = FontAtlas, fontOf = String -> FontAtlas, visible = Rect2.Rect2 }
+    /// warnOnce は、毎フレーム通る組み立て（SortingLayer.compose など）が既定値で続けたことを知らせる口。
+    /// 同じ文面は 1 回だけ出る（実機は App がゲームの間ずっと 1 つの集合で覚える。描き出しはゲームが
+    /// 差し替えて、集まった文面で止める）。文面は docs/error-handling.md の決まり 3 の定型にそろえる。
+    pub type alias ViewCtx = { atlas = FontAtlas, fontOf = String -> FontAtlas, visible = Rect2.Rect2,
+                               warnOnce = String -> Unit }
 
     /// ヘッドレス描き出しから view を呼ぶときの ViewCtx。画面全体が見えている扱いにする。
     /// フォント 1 本だけの版 — どの名前で引いても同じ本が返る。
@@ -64,9 +68,22 @@ pub mod App {
     /// viewCtxOf の複数フォント版。fontOf には実機と同じ名前で引ける関数を渡す
     /// （HeadlessFont.buildAtlas に実機と同じ name を渡して組んだ本を返す関数）。
     /// 名前が実機と食い違うと、描き出した絵だけ別の字になる。
+    /// warnOnce は覚えずに毎回 1 行出す（描き出しで止めたいゲームは `{ warnOnce = 集める口 | ctx }` で差し替える）。
     pub def viewCtxOfFonts(atlas: FontAtlas, fontOf: String -> FontAtlas, design: Vec2.Vec2): ViewCtx =
         { atlas = atlas, fontOf = fontOf,
-          visible = { position = { x = 0.0, y = 0.0 }, size = design } }
+          visible = { position = { x = 0.0, y = 0.0 }, size = design },
+          warnOnce = Log.warn }
+
+    /// 見た文面を seen に覚え、初めての文面だけ Log.warn する口（ViewCtx#warnOnce の実機の形）。
+    /// View は純粋なので、効果は Log.warn と同じく `unsafe IO` で隠す。
+    pub def warnOnceWith(seen: Ref[Set[String], Static]): String -> Unit =
+        line -> unsafe IO {
+            if (Set.memberOf(line, Ref.get(seen))) ()
+            else {
+                Ref.put(Set.insert(line, Ref.get(seen)), seen);
+                Log.warn(line)
+            }
+        }
 
     /// 生成したドット絵アトラス 1 枚ぶんの受け渡し。
     /// texture = 絵を引くときの名前、key = その画素の中身を決める全入力を 1 文字列にまとめた物
@@ -688,7 +705,8 @@ pub mod App {
                     bridge = bridge, remoteHold = false, stepState = freshStepState(),
                     watchState = watch0, sustaining = Nil, mixState = AudioMixer.initial(),
                     tileCache = freshTileCache(),
-                    glyphSeen = None, budgetWarned = false });
+                    glyphSeen = None, budgetWarned = false,
+                    warnOnce = warnOnceWith(Ref.fresh(Static, Set.empty())) });
         Option.forEach(RemoteDebug.shutdown, bridge)
 
     /// 時間スクラブ用に持ち回す直近の World の数（60fps で約 30 秒）。
@@ -710,7 +728,9 @@ pub mod App {
         tileCache = TileCache, glyphSeen = Option[Int64],
         // 「絵の値段が予算を超えていると 1 回だけ知らせた」印。毎フレーム出すと
         // 遅い画面がさらに遅くなり、ログも読めなくなる。
-        budgetWarned = Bool
+        budgetWarned = Bool,
+        // View の組み立てが既定値で続けたことを 1 回だけ知らせる口（ViewCtx#warnOnce。見た文面はゲームの間ずっと覚える）。
+        warnOnce = String -> Unit
     }
 
     /// リモートコマンドを捌いた後に残る 3 つの進み方。
@@ -805,13 +825,13 @@ pub mod App {
                     } else ();
                     match decided#branch {
                         case Branch.Paused =>
-                            let nextAnno = pausedStep(app, st#world, st#history, frame, { paused = true | st#anno });
+                            let nextAnno = pausedStep(app, st#warnOnce, st#world, st#history, frame, { paused = true | st#anno });
                             loop(app, { anno = nextAnno | carried })
                         case Branch.Resuming =>
                             // スクラブ位置の World から再開する。巻き戻したぶんの履歴と
                             // フレーム番号も、そこを現在として数え直す。
                             let resumed = resumePoint(st#anno, st#history, st#world);
-                            let (cache1, seen1, warned1) = renderFrame(app, resumed#world, fpsOverlayOf(app, resumed#anno), st#tileCache, st#glyphSeen, st#budgetWarned);
+                            let (cache1, seen1, warned1) = renderFrame(app, st#warnOnce, resumed#world, fpsOverlayOf(app, resumed#anno), st#tileCache, st#glyphSeen, st#budgetWarned);
                             loop(app, { world = resumed#world, anno = resumed#anno, history = resumed#history,
                                         tileCache = cache1, glyphSeen = seen1,
                                         budgetWarned = warned1 | carried })
@@ -824,7 +844,7 @@ pub mod App {
                             // fps は debug 有効時だけ計測する（本番ビルドは履歴を積まず無負荷）。
                             let measuredAnno = if (app#debug) Annotate.recordDt(frame#dt, st#anno) else st#anno;
                             // Doc の読み直しが起きたフレームはタイル層の世代を進め、同じ key でも作り直す。
-                            let (cache1, seen1, warned1) = renderFrame(app, advanced, fpsOverlayOf(app, measuredAnno),
+                            let (cache1, seen1, warned1) = renderFrame(app, st#warnOnce, advanced, fpsOverlayOf(app, measuredAnno),
                                                               bumpTileGen(watchFired or reloadFired, st#tileCache),
                                                               st#glyphSeen, st#budgetWarned);
                             // 時間スクラブ用の履歴（debug が無効なら一切持たない = 本番ビルドは無負荷）
@@ -870,7 +890,7 @@ pub mod App {
     /// その World の絵に見え方とドラッグ中の矩形を重ねて描く。
     /// World には一切触れない（凍結中の絵は選んだ World から毎フレーム投影し直す）。
     /// 絵の出どころは view（PlacedItem 投影）か debugView（生チャンネル投影）のどちらか。
-    def pausedStep(app: App[w, ef], world: w, history: List[w], frame: Frame,
+    def pausedStep(app: App[w, ef], warnOnce: String -> Unit, world: w, history: List[w], frame: Frame,
                    anno: Annotate.State): Annotate.State \ (ef + GameEngine.Game) =
         let design = GameEngine.Game.getViewportRect()#size;
         let historyLen = Int32.max(1, List.length(history));
@@ -911,7 +931,7 @@ pub mod App {
                 // channels に効く別変換なので、retained の camera uniform では追随できないため）。
                 // 停止中は毎フレーム再投影で軽さは問題にならない。
                 let items = List.append(tilePausedItems(app, design, displayed),
-                            List.append(sceneItems(app, atlas, displayed, toItems),
+                            List.append(sceneItems(app, atlas, warnOnce, displayed, toItems),
                                         staticPausedItems(app, design, displayed)));
                 let (sprites, polygons) = Render.drawWith(
                     name -> GameEngine.Game.getTextureInfo(name), items);
@@ -1181,7 +1201,7 @@ pub mod App {
         name -> Map.get(name, table) |> Option.getWithDefault(dflt)
 
     /// RemoteDebug 分割用の内部 API — ゲームからは呼ばない。
-    pub def sceneItems(app: App[w, ef], atlas: FontAtlas, world: w,
+    pub def sceneItems(app: App[w, ef], atlas: FontAtlas, warnOnce: String -> Unit, world: w,
                    toItems: (ViewCtx, w) -> List[Render.PlacedItem] \ ef):
             List[Render.PlacedItem] \ (ef + GameEngine.Game) =
         let design = GameEngine.Game.getViewportRect()#size;
@@ -1190,16 +1210,16 @@ pub mod App {
         let hud = match app#hudView {
             case None    => Nil
             // HUD は画面固定なので、見えている矩形は常に design 全体（原点起点）で zoom も掛けない。
-            case Some(h) => h({ atlas = atlas, fontOf = fontOf, visible = visibleOf(None, 1.0, design) }, world)
+            case Some(h) => h({ atlas = atlas, fontOf = fontOf, visible = visibleOf(None, 1.0, design), warnOnce = warnOnce }, world)
         };
         // 視差レイヤ: 見かけの center（parallaxCenter）で culling も合成も行う。hud は混ぜない。
         let layers = app#parallaxLayers |> List.flatMap(fl -> {
             let (factor, lview) = fl;
             let lcenter = Option.map(c -> CameraRig.parallaxCenter(factor, c, design = design), center);
-            let lctx = { atlas = atlas, fontOf = fontOf, visible = visibleOf(lcenter, z, design) };
+            let lctx = { atlas = atlas, fontOf = fontOf, visible = visibleOf(lcenter, z, design), warnOnce = warnOnce };
             composeScene(lcenter, z, design, { world = lview(lctx, world), hud = Nil })
         });
-        let ctx = { atlas = atlas, fontOf = fontOf, visible = visibleOf(center, z, design) };
+        let ctx = { atlas = atlas, fontOf = fontOf, visible = visibleOf(center, z, design), warnOnce = warnOnce };
         List.append(layers, composeScene(center, z, design, { world = toItems(ctx, world), hud = hud }))
 
     /// debug 有効時だけ、画面右上に小さく fps を出す絵を組む（無効なら空 = 本番に一切出ない）。
@@ -1373,7 +1393,7 @@ pub mod App {
             true
         }
 
-    def renderFrame(app: App[w, ef], world: w, fpsOverlay: List[Render.PlacedItem],
+    def renderFrame(app: App[w, ef], warnOnce: String -> Unit, world: w, fpsOverlay: List[Render.PlacedItem],
                     tileCache: TileCache, glyphSeen: Option[Int64], budgetWarned: Bool):
             (TileCache, Option[Int64], Bool) \ (ef + GameEngine.Game + ShaderEffect.Shader + RenderTarget.Target + IO) =
         match app#view {
@@ -1385,7 +1405,7 @@ pub mod App {
                 let passList = (app#passes)(world);
                 renderPasses(design, passList);
                 // fpsOverlay は本番ビルドで Nil — 空の append で本編全件を cons し直さない。
-                let scene = sceneItems(app, atlas, world, toItems);
+                let scene = sceneItems(app, atlas, warnOnce, world, toItems);
                 let items = if (List.isEmpty(fpsOverlay)) scene else List.append(scene, fpsOverlay);
                 // 字の欠け照合はレンダーターゲットの中の字も一緒に見る（ターゲットも本編と
                 // 同じ「初めて出る字は 1 コマ遅れる」に乗せる）。
