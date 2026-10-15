@@ -1,0 +1,25 @@
+{
+  "note": "lint-record-wrap（World が直接持つ大きな record を enum で包んでいるか）の規約データ。この JSON が source of truth で、bin/fge record-wrap はこれを読んで動く。record の型エイリアスは使われるたびに中身のまま展開されるので、World を取る全 def で型の木が大きくなり flix check が伸びる・メモリを食う（docs/flix-conventions.md「型の設計」）。大きさは欄の数ではなく、入れ子の record・List や Option の中の record まで展開した欄の総数で測る（欄 3 つでも中身が大きければ重い。測った数字は docs/flix-conventions.md）。threshold 以上の欄を鳴らす。パッケージの外（エンジン）の型は見えないので数えない。",
+  "scopeSuffixes": [
+    ".flix"
+  ],
+  "skipPrefixes": [
+    "build/",
+    "lib/",
+    "testdata/",
+    "docs/",
+    "agents-pack/",
+    "engine_full/"
+  ],
+  "skipDirNames": [
+    "build",
+    "lib",
+    "test",
+    "node_modules"
+  ],
+  "roots": [
+    "World.World"
+  ],
+  "threshold": 16,
+  "exempt": {}
+}
