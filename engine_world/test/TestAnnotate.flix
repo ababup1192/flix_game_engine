@@ -306,4 +306,14 @@ mod TestAnnotate {
         let body = Annotate.readmeBody({ frame = 7i64, rect = rect }, hit :: Nil);
         Assert.assertEq(expected = (true, true),
             (String.contains(substr = "x=10.0", body), String.contains(substr = "sprite `ball`", body)))
+
+    // 縮めて動かしたシェーダー面（ページ送りの枠に映した画面など）は、動いた後の場所で当たる。
+    // 0.5 倍・中央 (100, 50) まわりで、左上 (0, 0)・40×20 の面は (50, 25)・20×10 へ動く。
+    @Test
+    def testShaderHitFollowsScaledPosition(): Unit \ Assert =
+        let surface = Render.shaderFill(ShaderDoc.demoSurface(),
+            { position = Vec2.zero(), size = { x = 40.0, y = 20.0 } }, 0.0, 1);
+        let moved = Render.scaledAllAround(0.5, { x = 100.0, y = 50.0 }, surface :: Nil);
+        let probe = { position = { x = 55.0, y = 28.0 }, size = { x = 2.0, y = 2.0 } };
+        Assert.assertEq(expected = 1, List.length(Annotate.hits(_ -> None, probe, moved)))
 }

@@ -289,8 +289,8 @@ pub mod Annotate {
             case Render.Item.Poly(p) =>
                 vertexAabb(pos, p#vertices)
             case Render.Item.Shader(s) =>
-                // シェーダー面の外形は塗る矩形そのもの（rect が位置とサイズを持つ）。
-                s#rect
+                // 置き場所は描く時と同じ pos（scaledAllAround などで動いた後の at）、大きさは塗る矩形。
+                { position = pos, size = s#rect#size }
             case Render.Item.Clipped(c) =>
                 // clip 矩形の外は描かれないので、外形も clip 矩形と交差させる — 完全に切り取られて
                 // 見えない物が注釈やヒット一覧に載る嘘を作らない(交差が空なら負サイズ)。

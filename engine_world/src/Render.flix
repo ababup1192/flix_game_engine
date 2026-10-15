@@ -893,8 +893,9 @@ pub mod Render {
             case Item.Shader(s) =>
                 // GL の無い経路（SoftRaster / F8 注釈）向けの代表色ベタ塗り。本物のシェーダーは
                 // eff Shader が別チャンネルで描くので、ここは「面がそこにある」ことだけ残す。
+                // 置き場所は drawShaders と同じ pos（scaledAllAround などで動いた後の at）。
                 boxDrawable(s#rect#size, ShaderDoc.representativeColor(s#spec), 1.0, 0.0, None,
-                            s#zIndex, s#blend, s#rect#position) :: Nil
+                            s#zIndex, s#blend, pos) :: Nil
             case Item.Clipped(c) =>
                 toDrawables(c#inner, pos)
                     |> List.map(d -> DrawCmd.withClip(mergeClip(c#rect, DrawCmd.clipOf(d)), d))
