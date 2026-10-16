@@ -10,6 +10,14 @@
       "tip": "レコードは Eq/Order を持てない。比較したい値は名前付き 1 フィールド enum で包む"
     },
     {
+      "key": "E2136",
+      "tip": "1 case の enum で包んだ Doc をモジュールの外から作るなら PuzzleDoc.Doc.Doc({..}) と 2 段 (enum 名 + case 名) にする"
+    },
+    {
+      "key": "E6794",
+      "tip": "包んだ Doc と record の取り違えの疑い。Doc を返す関数の戻り値に直接 # で読んでいないか (rec(..)#欄)・既定値の上書きは Doc.Doc({ x = v | rec(defaults()) })"
+    },
+    {
       "key": "E6217",
       "tip": "checked_ecast は不要。dispatch を単一の match に束ねる"
     },

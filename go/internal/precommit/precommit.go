@@ -159,9 +159,16 @@ func (r *runner) gate(staged []string) (int, error) {
 		}
 	}
 
+	if t := r.rules.LocalGate.Target; t != "" && len(staged) > 0 && r.hasTarget(t) {
+		if r.runMake("-s", t, "STAGED="+strings.Join(staged, " ")) != 0 {
+			failed = true
+		}
+	}
+
 	if failed {
-		fmt.Fprint(r.parent, "[pre-commit] 止めました。直してから再コミット"+
-			" (どうしても通すなら git commit --no-verify)\n")
+		// WhyNot: フックを飛ばす書き方を案内しないのは、止めた理由を直さずに通す道を
+		// 止めた本人が示すことになるため（エージェントはそのまま使う）。
+		fmt.Fprint(r.parent, "[pre-commit] 止めました。上の文を読んで直してから再コミット\n")
 		return 1, nil
 	}
 	return 0, nil
@@ -254,6 +261,14 @@ func (r *runner) hasDocsSyncTarget() bool {
 		return false
 	}
 	return true
+}
+
+// hasTarget はゲームの Makefile に口が在るか（無ければ黙って飛ばす。固有の口は無いのが普通）。
+func (r *runner) hasTarget(target string) bool {
+	cmd := exec.Command("make", "-q", target)
+	cmd.Dir = r.root
+	_ = cmd.Run()
+	return cmd.ProcessState != nil && cmd.ProcessState.ExitCode() != r.rules.FailOpen.TargetMissingExitCode
 }
 
 // runMake は出力をそのまま見せて終了コードを返す。

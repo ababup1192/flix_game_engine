@@ -218,7 +218,7 @@ sync: 2026-10-16
 
 engine の **`PxTerrain.fill`**（`rampAt` / `valueAt` / `cell` を渡すと上の型どおりに敷いてくれる）
 と **`PxTerrain.bayer4`**（4x4 Bayer の敷居。同じ座標から必ず同じ値＝描き出しが決定的）が
-これ。**自前で書かない。**（詳細は engine の `docs/module-index.md`）
+これ。**自前で書かない。**（詳細は `make module Q=PxTerrain`）
 
 ### どこに当てて、どこに当てないか
 
@@ -258,7 +258,7 @@ engine の **`PxTerrain.fill`**（`rampAt` / `valueAt` / `cell` を渡すと上�
   サンプルして塗る — タイル単位に丸めると、サイドビューでは矩形の階段(建物に見える)、
   クォーターでは煉瓦塀に見える。**自前で書かずに engine の `PxTerrain.fill` を使う**
   (高さの関数 + 暗→明の色の列 + 明るさの場を渡すと、この決まりどおりに敷いてくれる。
-  init で 1 回組んで持ち回す。詳細は engine の docs/module-index.md)
+  init で 1 回組んで持ち回す。詳細は make module Q=PxTerrain)
 - **模様の縁をタイルの矩形で切らない**。8px の升目でディザを始めて終わらせると、
   模様の境目とタイルの境目が重なり、**面が「ディザ模様のタイル」の反復**に見える。
   ディザの帯は**タイルの縁をまたいで続ける** — 境目が消えて面が 1 枚に繋がる

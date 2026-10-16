@@ -11,7 +11,9 @@ import (
 	"os"
 	"strings"
 
+	"github.com/ababup1192/flix_game_engine/go/internal/anim"
 	"github.com/ababup1192/flix_game_engine/go/internal/hooks"
+	"github.com/ababup1192/flix_game_engine/go/internal/sprite"
 	"github.com/ababup1192/flix_game_engine/go/internal/uioverflow"
 	"github.com/ababup1192/flix_game_engine/go/internal/view"
 )
@@ -47,6 +49,14 @@ func cmdHookArtEdit(_, errOut *strings.Builder, _ []string, _ bool) int {
 		},
 		"palette": func(o, _ *strings.Builder, _ []string) int {
 			return runPalette(o, root, false)
+		},
+		"sprite": func(o, e *strings.Builder, args []string) int {
+			code, err := sprite.Run(o, e, root, args)
+			return orAbort(e, code, err)
+		},
+		"anim": func(o, e *strings.Builder, args []string) int {
+			code, err := anim.Run(o, root, args)
+			return orAbort(e, code, err)
 		},
 	}
 	return hooks.RunArtEdit(errOut, root, os.Stdin, lints)

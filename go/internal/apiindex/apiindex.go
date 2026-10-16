@@ -195,9 +195,16 @@ func sortedKeys(m map[string]map[string]bool) []string {
 
 // scanned は 1 つの (ソースの根, 索引) の走査結果。
 type scanned struct {
-	src  string
-	doc  string
-	mods map[string]map[string]bool
+	src   string
+	doc   string
+	parts string
+	mods  map[string]map[string]bool
+}
+
+// docFile は索引を作る 1 ファイル（根からの相対パスと中身）。
+type docFile struct {
+	rel  string
+	text string
 }
 
 // exemptNote は「索引に載せないと決めたモジュール」1 件。
@@ -238,7 +245,7 @@ func Run(out, errOut *strings.Builder, root string, args []string, opts Options)
 	for _, t := range rules.Targets {
 		mods := scanPackage(absRoot, t.Src, rules.SkipDirs)
 		mergeInto(allDefs, mods)
-		targets = append(targets, scanned{src: t.Src, doc: t.Doc, mods: mods})
+		targets = append(targets, scanned{src: t.Src, doc: t.Doc, parts: t.Parts, mods: mods})
 	}
 	// 幽霊参照の照合には描き出し側 (engine_tools) の pub def も混ぜる。
 	for _, extra := range rules.ExtraDefSources {
@@ -254,7 +261,32 @@ func Run(out, errOut *strings.Builder, root string, args []string, opts Options)
 			fmt.Fprintf(errOut, "読めません: %s\n", t.doc)
 			return 1, nil
 		}
-		doc := string(data)
+		// 索引を分野ごとのファイルへ分けているなら、目次と合わせて 1 つの索引として見る。
+		// 幽霊参照はどのファイルの行かが分かるよう、ファイルごとに名前を付けて照合する。
+		files := []docFile{{rel: t.doc, text: string(data)}}
+		if t.parts != "" {
+			paths, err := filepath.Glob(filepath.Join(absRoot, filepath.FromSlash(t.parts)))
+			if err != nil {
+				return 2, fmt.Errorf("parts の glob が壊れています: %s: %v", t.parts, err)
+			}
+			sort.Strings(paths)
+			for _, p := range paths {
+				rel, _ := filepath.Rel(absRoot, p)
+				rel = filepath.ToSlash(rel)
+				part, err := os.ReadFile(p)
+				if err != nil {
+					fmt.Fprintf(errOut, "読めません: %s\n", rel)
+					return 1, nil
+				}
+				files = append(files, docFile{rel: rel, text: string(part)})
+			}
+		}
+		var whole strings.Builder
+		for _, f := range files {
+			whole.WriteString(f.text)
+			whole.WriteString("\n")
+		}
+		doc := whole.String()
 
 		// 1. モジュールが索引に載っているか。
 		for _, name := range sortedKeys(t.mods) {
@@ -270,18 +302,20 @@ func Run(out, errOut *strings.Builder, root string, args []string, opts Options)
 		}
 
 		// 2. 索引の「Mod.関数」参照が実在するか。
-		for _, ref := range uniqueSorted(docFuncRefs(doc)) {
-			if rules.FileExts[ref.Func] {
-				continue
-			}
-			defs, known := allDefs[ref.Mod]
-			if !known {
-				continue // 標準ライブラリや別リポのモジュールは照合しない
-			}
-			if !defs[ref.Func] {
-				problems = append(problems, fmt.Sprintf(
-					"%s: %s.%s は pub def に見つかりません（改名か削除の可能性）",
-					t.doc, ref.Mod, ref.Func))
+		for _, f := range files {
+			for _, ref := range uniqueSorted(docFuncRefs(f.text)) {
+				if rules.FileExts[ref.Func] {
+					continue
+				}
+				defs, known := allDefs[ref.Mod]
+				if !known {
+					continue // 標準ライブラリや別リポのモジュールは照合しない
+				}
+				if !defs[ref.Func] {
+					problems = append(problems, fmt.Sprintf(
+						"%s: %s.%s は pub def に見つかりません（改名か削除の可能性）",
+						f.rel, ref.Mod, ref.Func))
+				}
 			}
 		}
 	}
@@ -299,7 +333,7 @@ func Run(out, errOut *strings.Builder, root string, args []string, opts Options)
 		fmt.Fprintf(errOut, "%s\n", p)
 	}
 	fmt.Fprintf(errOut, "\n")
-	fmt.Fprintf(errOut, "モジュールを足したら docs/module-index.md（engine_world）か\n"+
+	fmt.Fprintf(errOut, "モジュールを足したら docs/modules/<分野>.md（engine_world）か\n"+
 		"docs/engine-module-index.md（engine）に 1 行足してください。\n"+
 		"内部専用なら bin/check-api-index.py の EXEMPT に理由付きで載せてください。\n")
 	return 1, nil

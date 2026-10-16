@@ -77,15 +77,26 @@ type ArtCheck struct {
 	Prefix string   `json:"prefix"`
 }
 
+// ArtRemind は「絵を描く View を書いたら、セッションに 1 回だけ絵の決まりを指す」の設定。
+// rules の drawing.md は絵の Doc にしか当たらないので、View の .flix からはこの 1 行が入口になる。
+type ArtRemind struct {
+	Suffix       string `json:"suffix"`
+	Pattern      string `json:"pattern"`
+	MinHits      int    `json:"minHits"`
+	MarkerPrefix string `json:"markerPrefix"`
+	Message      string `json:"message"`
+}
+
 // ArtEdit は絵に関わるファイルを書いた直後の検査。
 type ArtEdit struct {
 	Checks []ArtCheck `json:"checks"`
+	Remind ArtRemind  `json:"remind"`
 }
 
 // Rules はフックが使う規約。すべて JSON から来る。
 type Rules struct {
-	Checkd      Checkd      `json:"checkd"`
-	ArtEdit     ArtEdit     `json:"artEdit"`
+	Checkd  Checkd  `json:"checkd"`
+	ArtEdit ArtEdit `json:"artEdit"`
 }
 
 // LoadRules は規約データを読む。
@@ -185,6 +196,9 @@ func LoadRules(root string) (*Rules, error) {
 		missing = "checkd.commentMark"
 	case len(r.ArtEdit.Checks) == 0:
 		missing = "artEdit.checks"
+	case r.ArtEdit.Remind.Suffix == "" || r.ArtEdit.Remind.Pattern == "" ||
+		r.ArtEdit.Remind.MinHits <= 0 || r.ArtEdit.Remind.MarkerPrefix == "" || r.ArtEdit.Remind.Message == "":
+		missing = "artEdit.remind (suffix・pattern・minHits・markerPrefix・message)"
 	}
 	if missing != "" {
 		return nil, fmt.Errorf("規約ファイルに %s がありません (%s)", missing, path)

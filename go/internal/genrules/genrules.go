@@ -24,11 +24,51 @@ func universalNewlines(s string) string {
 	return strings.ReplaceAll(s, "\r", "\n")
 }
 
-// render は 1 本のルールの本文（見出し + 元の doc）を組む。
+// extractCore は元の doc から芯の印で囲った所だけを抜き、末尾に more の 1 行を付ける。
+// 印の行そのものは出さない。囲いが 1 つも無い・閉じていないときは ok=false。
+func extractCore(doc string, m CoreMarkers, more string) (string, bool) {
+	var parts []string
+	var cur []string
+	inside := false
+	for _, line := range strings.Split(universalNewlines(doc), "\n") {
+		switch strings.TrimSpace(line) {
+		case m.Begin:
+			if inside {
+				return "", false
+			}
+			inside, cur = true, nil
+			continue
+		case m.End:
+			if !inside {
+				return "", false
+			}
+			inside = false
+			parts = append(parts, strings.Trim(strings.Join(cur, "\n"), "\n"))
+			continue
+		}
+		if inside {
+			cur = append(cur, line)
+		}
+	}
+	if inside || len(parts) == 0 {
+		return "", false
+	}
+	return strings.Join(parts, "\n\n") + "\n\n" + more + "\n", true
+}
+
+// render は 1 本のルールの本文（見出し + 元の doc。more があれば芯だけ）を組む。
 func (r *Rules) render(root string, spec RuleSpec) (string, error) {
 	data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(spec.Src)))
 	if err != nil {
 		return "", err
+	}
+	body := string(data)
+	if spec.More != "" {
+		core, ok := extractCore(body, r.CoreMarkers, spec.More)
+		if !ok {
+			return "", fmt.Errorf("%s に芯の印 (%s … %s) の組がありません", spec.Src, r.CoreMarkers.Begin, r.CoreMarkers.End)
+		}
+		body = core
 	}
 	head := []string{"---", "paths:"}
 	for _, g := range spec.Globs {
@@ -37,7 +77,7 @@ func (r *Rules) render(root string, spec RuleSpec) (string, error) {
 		head = append(head, `  - "`+g+`"`)
 	}
 	head = append(head, "---", "", strings.ReplaceAll(r.Banner, "{src}", spec.Src), "")
-	return strings.Join(head, "\n") + string(data), nil
+	return strings.Join(head, "\n") + body, nil
 }
 
 // Options は書き出し先の差し替え。OutBase が空なら root の下へ書く。

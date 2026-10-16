@@ -150,6 +150,45 @@ func TestRunGhostReferenceGoesToStderr(t *testing.T) {
 	}
 }
 
+// partsRules は engine_world の索引を目次 + 分野ごとのファイルに分けた規約。
+const partsRules = `{
+  "targets": [
+    {"src": "engine/src", "doc": "docs/engine-module-index.md"},
+    {"src": "engine_world/src", "doc": "docs/module-index.md", "parts": "docs/modules/*.md"}
+  ],
+  "extraDefSources": ["engine_tools/src"],
+  "exempt": {},
+  "skipDirs": ["legacy"],
+  "fileExts": ["flix", "json", "md", "png", "py", "sh"]
+}`
+
+func TestRunModuleListedOnlyInPartIsGreen(t *testing.T) {
+	dir := fakeRepo(t, map[string]string{
+		"bin/lint-rules/check-api-index.json": partsRules,
+		"docs/module-index.md":                "| [map.md](modules/map.md) | 盤面 |\n",
+		"docs/modules/map.md":                 "- **Board** — 盤\n",
+	})
+	_, errOut, code := run(t, dir)
+	if code != 0 {
+		t.Errorf("分野のファイルにだけ載るモジュールを見落としている: %q", errOut)
+	}
+}
+
+func TestRunGhostReferenceInPartNamesThePart(t *testing.T) {
+	dir := fakeRepo(t, map[string]string{
+		"bin/lint-rules/check-api-index.json": partsRules,
+		"docs/modules/map.md":                 "- **Board** — 盤。Board.collapse で畳む\n",
+	})
+	_, errOut, code := run(t, dir)
+	if code != 1 {
+		t.Fatalf("code=%d", code)
+	}
+	want := "docs/modules/map.md: Board.collapse は pub def に見つかりません（改名か削除の可能性）\n"
+	if !strings.HasPrefix(errOut, want) {
+		t.Errorf("errOut=%q", errOut)
+	}
+}
+
 func TestRunFileNameIsNotAFunctionRef(t *testing.T) {
 	dir := fakeRepo(t, map[string]string{
 		"docs/module-index.md": "- Board — 盤。Board.flix にある\n",

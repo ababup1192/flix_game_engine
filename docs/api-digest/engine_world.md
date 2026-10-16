@@ -222,22 +222,12 @@
   `pub def changedPaths(watch: List[String], prev: Map[String, Int64], current: Map[String, Int64]): List[String]`
 - App を走らせる単一の効果多相ランナー。startup を 1 回だけ畳み込み、いま押されているキーを prev の
   `pub def launch(app: App[w, ef]): Unit \ (ef + GameEngine.Game + GameEngine.Audio + ShaderEffect.Shader + RenderTarget.Target + Fs.FileRead + IO)`
-- 時間スクラブ用に持ち回す直近の World の数（60fps で約 30 秒）。
-  `pub def historyLimit(): Int32`
 - リモートコマンドを捌いた後に残る 3 つの進み方。
   `pub enum Branch with Eq, ToString { case Paused case Resuming case Running }`
 - F8 と停止状態から、このフレームの進み方と「F8 が今トグルされたか」を決める。
   `pub def decideBranch(input: { f8Pressed = Bool, canDebug = Bool, remoteHold = Bool, wasPaused = Bool }): { branch = Branch, toggled = Bool }`
-- 一時停止を抜ける地点: スクラブで表示していた瞬間の World を現在とし、
-  `pub def resumePoint(anno: Annotate.State, history: List[w], world: w): { world = w, anno = Annotate.State, history = List[w] }`
-- 履歴の back フレーム前の World（範囲外なら fallback）。先頭が「停止した瞬間」。
-  `pub def worldAt(history: List[w], back: Int32, fallback: w): w`
-- reloadOn で繋いだキーが押された瞬間だけ、リロード関数で World を作り直す。
-  `pub def applyReload(app: App[w, ef], frame: Frame, world: w): (w, Bool) \ {Fs.FileRead}`
 - 一発の音（audio）のうち、鳴らす前にループを外す名前。鳴り続ける音（sustained）として
   `pub def unloopedOneShots(plays: List[String], living: List[String]): List[String]`
-- RemoteDebug 分割用の内部 API — ゲームからは呼ばない。
-  `pub def sceneItems(app: App[w, ef], atlas: FontAtlas, warnOnce: String -> Unit, world: w, toItems: (ViewCtx, w) -> List[Render.PlacedItem] \ ef): List[Render.PlacedItem] \ (ef + GameEngine.Game)`
 - タイル層の GPU 生成結果の持ち回し。ループが引数で持ち回す。
   `pub type alias TileCache =`
 - まだ何も生成していない起動時の持ち回し。
@@ -249,6 +239,89 @@
   `pub def tileCacheVaoAt(slot: String, cache: TileCache): Option[GpuHandle.TileVao]`
 - 生成した結果をスロットへ上書きで置く（一覧表は宣言中のレイヤーの数までしか育たない）。
   `pub def tileCacheStore(slot: String, key: String, vao: GpuHandle.TileVao, count: Int32, cache: TileCache): TileCache`
+
+## App.RemoteDebug — `engine_world/src/App/RemoteDebug.flix`
+- HTTP サーバ本体と、リクエスト / レスポンスを受け渡す 2 本のキュー。
+  `pub type alias Bridge = { server = HttpServer, requests = JQueue[String], responses = JQueue[String], current = AtomicLong }`
+- /render の帳簿。HTTP のスレッドと描き出しのスレッドが共有する（どれもスレッド安全な Java の部品）。
+  `pub type alias RenderJobs = { requested = AtomicLong, done = AtomicLong, running = AtomicLong, last = AtomicReference[String], wake = JQueue[String] }`
+- 環境変数 DEBUG_HTTP_PORT からポート番号を読む。未設定・数値でなければ None。
+  `pub def portFromEnv(): Option[Int32] \ IO`
+- 本文に依頼番号を付ける（キューに積む形）。
+  `pub def tagged(id: Int64, text: String): String`
+- tagged の逆。番号の無い・読めない形は None。
+  `pub def untagged(raw: String): Option[(Int64, String)]`
+- `pub def start(port: Int32, render: Option[Unit -> List[String] \ IO]): Bridge \ IO`
+- ゲームループが毎フレーム呼ぶ非ブロッキングの受信。届いていなければ None。
+  `pub def pollRequest(bridge: Bridge): Option[String] \ IO`
+- 応答本文を HTTP スレッドへ返す（pollRequest で受けた 1 件に必ず 1 回対で呼ぶ）。
+  `pub def respond(text: String, bridge: Bridge): Unit \ IO`
+- サーバを止める（ゲーム終了時）。待機中のリクエストは切断される。
+  `pub def shutdown(bridge: Bridge): Unit \ IO`
+- パース済みリクエスト。1 行目が "METHOD /path?query"、2 行目以降がボディ（台本 DSL）。
+  `pub type alias Request = { method = String, path = String, params = Map[String, String], body = String }`
+- Bridge から受けた生文字列をリクエストへ分解する。
+  `pub def parseRequest(raw: String): Request`
+- ゲーム登録の任意ルート（App.onRequest）から、パスに完全一致する最初の 1 本を選ぶ。
+  `pub def findRoute(path: String, routes: List[(String, a)]): Option[a]`
+- 観測の詳細度。応答のトークン量を必要最小限に抑えるための選択肢。
+  `pub enum View with Eq, ToString { case Status, case Summary, case Full, case Scene, case Silent }`
+- /step を台本の途中で止める条件。「意味のある瞬間」で止まることで往復を減らす。
+  `pub enum Until with Eq, ToString { case Always, case SfxAny, case SfxNamed(Set[String]), case Quiet(Int32) }`
+- /step・/state のクエリを解釈した実行パラメータ。
+  `pub type alias StepParams = { view = View, rect = Option[Rect2.Rect2], stopWhen = Until, maxFrames = Int32, traceEvery = Option[Int32], dtSeconds = Float64 }`
+- クエリ Map を StepParams へ。不正な値は理由つきの Err（応答にそのまま載せる）。
+  `pub def parseParams(queryMap: Map[String, String]): Result[String, StepParams]`
+- 1 リクエストで実行できる合成フレーム数の天井（60fps で 1 分ぶん）。
+  `pub def frameCap(): Int32`
+- until 条件の 1 フレームぶんの判定。このフレームで鳴った音名と「無音が何フレーム
+  `pub def stopCheck(stopWhen: Until, soundsThisFrame: List[String], quietRun: Int32): (String, Int32)`
+- 台本 1 コマ = そのフレームで押しているキーの集合。リストの並びがフレームの並び。
+  `pub type alias Script = List[Set[GameEngine.Key]]`
+- 台本 DSL を 1 フレーム 1 コマのキー集合列へ展開する。# 以降はコメント。
+  `pub def parseScript(body: String): Result[String, Script]`
+- "z" や "Enter" のようなキー名を Key へ。解決は InputMap と同じ 1 本 —
+  `pub def keyOf(name: String): Option[GameEngine.Key]`
+- 台本で使える全キー名（help と unknown key エラーに載せる）。
+  `pub def keyNames(): String`
+- /step 応答の 1 行目。何フレーム進んで何故止まったかを 1 行で伝える。
+  `pub def stepHeader(info: { stepped = Int32, total = Int32, frame = Int64, stoppedBy = String, quit = Bool }): String`
+- 実行中に鳴った音のブロック。「f=フレーム番号 sfx=音名」の行を時系列で並べる。
+  `pub def eventsBlock(sounds: List[(Int64, String)]): String`
+- trace=status:K で集めた status 行のブロック。
+  `pub def traceBlock(lines: List[String]): String`
+- scene ビューの本文。矩形に重なる描画物を z 順に 1 行ずつ（多すぎる場合は打ち切る）。
+  `pub def sceneBlock(rect: Rect2.Rect2, hitList: List[Annotate.Hit]): String`
+- 小数第 1 位までに丸めた表示（座標の長い小数でトークンを浪費しないため）。
+  `pub def fmt1(value: Float64): String`
+- view=full の本文の安全弁。矩形無指定の worldDump は数万文字になり得る
+  `pub def capBody(text: String): String`
+- POST /render の成功応答。1 行目に枚数と所要ミリ秒、続く [rendered] ブロックに
+  `pub def renderDoneText(ms: Int64, paths: List[String]): String`
+- 1 回の描き出しが済んだときの応答。renderDoneText の 1 行目の末尾に、その回の番号を足した形
+  `pub def renderJobDoneText(job: Int64, ms: Int64, paths: List[String]): String`
+- 1 回の描き出しが落ちたときの応答（描き出しの中の bug! や例外の文面を 1 行に）。
+  `pub def renderFailedText(job: Int64, reason: String): String`
+- POST /render?async=1 の応答。番号を受け取った側は GET /render で done がその番号以上になるのを待つ。
+  `pub def renderAcceptedText(job: Int64): String`
+- GET /render の応答。1 行目に番号 3 つ（受け付けた最後・描き終えた最後・いま描いている回。0 = 無し）、
+  `pub def renderStatusText(requested: Int64, done: Int64, running: Int64, last: String): String`
+- POST /render のクエリが「すぐ返す」を頼んでいるか（async=1）。
+  `pub def wantsAsyncRender(params: Map[String, String]): Bool`
+- 描き出しのスレッドが次に描く番号。頼まれた番号が描き終えた番号より先なら、頼まれた番号まで
+  `pub def nextRenderTarget(requested: Int64, done: Int64): Option[Int64]`
+- 番号 id の依頼が済んだか。後の番号の回でまとめて描き終えていても済んだ扱い
+  `pub def isRenderSettled(id: Int64, done: Int64): Bool`
+- 時間内に答えられなかったときの応答。古い Studio はこの 1 行目を「描いている途中」と読む
+  `pub def busyText(): String`
+- 描き出しの実体（App.onRenderRequest）を登録していないゲームへの応答。
+  `pub def renderUnsupportedText(): String`
+- GET /help の本文。プロトコルの自己記述（セッション冒頭に 1 回読む想定）。
+  `pub def helpText(): String`
+- リモートコマンド処理が次の実フレームへ持ち回す状態。
+  `pub type alias RemoteNext[w] = { world = w, anno = Annotate.State, history = List[w], hold = Bool }`
+- リクエスト 1 件を捌き、応答をブリッジへ書いてから次の状態を返す。
+  `pub def handleRemote(app: App.App[w, ef], bridge: Bridge, raw: String, ctx: RemoteNext[w]): RemoteNext[w] \ (ef + GameEngine.Game + GameEngine.Audio + Fs.FileRead + IO)`
 
 ## AudioFade — `engine_world/src/AudioFade.flix`
 - フェードの端点。start = 進行度 0 のときの音量、target = 進行度 1 のときの音量
@@ -1337,89 +1410,6 @@
 - 線分 a→b を太さ width の四角形で描く（任意角度の線の代用）。
   `pub def lineSeg(a: Vec2.Vec2, b: Vec2.Vec2, width: Float64, color: Color, zIndex: Int32): PlacedItem`
 
-## RemoteDebug — `engine_world/src/RemoteDebug.flix`
-- HTTP サーバ本体と、リクエスト / レスポンスを受け渡す 2 本のキュー。
-  `pub type alias Bridge = { server = HttpServer, requests = JQueue[String], responses = JQueue[String], current = AtomicLong }`
-- /render の帳簿。HTTP のスレッドと描き出しのスレッドが共有する（どれもスレッド安全な Java の部品）。
-  `pub type alias RenderJobs = { requested = AtomicLong, done = AtomicLong, running = AtomicLong, last = AtomicReference[String], wake = JQueue[String] }`
-- 環境変数 DEBUG_HTTP_PORT からポート番号を読む。未設定・数値でなければ None。
-  `pub def portFromEnv(): Option[Int32] \ IO`
-- 本文に依頼番号を付ける（キューに積む形）。
-  `pub def tagged(id: Int64, text: String): String`
-- tagged の逆。番号の無い・読めない形は None。
-  `pub def untagged(raw: String): Option[(Int64, String)]`
-- `pub def start(port: Int32, render: Option[Unit -> List[String] \ IO]): Bridge \ IO`
-- ゲームループが毎フレーム呼ぶ非ブロッキングの受信。届いていなければ None。
-  `pub def pollRequest(bridge: Bridge): Option[String] \ IO`
-- 応答本文を HTTP スレッドへ返す（pollRequest で受けた 1 件に必ず 1 回対で呼ぶ）。
-  `pub def respond(text: String, bridge: Bridge): Unit \ IO`
-- サーバを止める（ゲーム終了時）。待機中のリクエストは切断される。
-  `pub def shutdown(bridge: Bridge): Unit \ IO`
-- パース済みリクエスト。1 行目が "METHOD /path?query"、2 行目以降がボディ（台本 DSL）。
-  `pub type alias Request = { method = String, path = String, params = Map[String, String], body = String }`
-- Bridge から受けた生文字列をリクエストへ分解する。
-  `pub def parseRequest(raw: String): Request`
-- ゲーム登録の任意ルート（App.onRequest）から、パスに完全一致する最初の 1 本を選ぶ。
-  `pub def findRoute(path: String, routes: List[(String, a)]): Option[a]`
-- 観測の詳細度。応答のトークン量を必要最小限に抑えるための選択肢。
-  `pub enum View with Eq, ToString { case Status, case Summary, case Full, case Scene, case Silent }`
-- /step を台本の途中で止める条件。「意味のある瞬間」で止まることで往復を減らす。
-  `pub enum Until with Eq, ToString { case Always, case SfxAny, case SfxNamed(Set[String]), case Quiet(Int32) }`
-- /step・/state のクエリを解釈した実行パラメータ。
-  `pub type alias StepParams = { view = View, rect = Option[Rect2.Rect2], stopWhen = Until, maxFrames = Int32, traceEvery = Option[Int32], dtSeconds = Float64 }`
-- クエリ Map を StepParams へ。不正な値は理由つきの Err（応答にそのまま載せる）。
-  `pub def parseParams(queryMap: Map[String, String]): Result[String, StepParams]`
-- 1 リクエストで実行できる合成フレーム数の天井（60fps で 1 分ぶん）。
-  `pub def frameCap(): Int32`
-- until 条件の 1 フレームぶんの判定。このフレームで鳴った音名と「無音が何フレーム
-  `pub def stopCheck(stopWhen: Until, soundsThisFrame: List[String], quietRun: Int32): (String, Int32)`
-- 台本 1 コマ = そのフレームで押しているキーの集合。リストの並びがフレームの並び。
-  `pub type alias Script = List[Set[GameEngine.Key]]`
-- 台本 DSL を 1 フレーム 1 コマのキー集合列へ展開する。# 以降はコメント。
-  `pub def parseScript(body: String): Result[String, Script]`
-- "z" や "Enter" のようなキー名を Key へ。解決は InputMap と同じ 1 本 —
-  `pub def keyOf(name: String): Option[GameEngine.Key]`
-- 台本で使える全キー名（help と unknown key エラーに載せる）。
-  `pub def keyNames(): String`
-- /step 応答の 1 行目。何フレーム進んで何故止まったかを 1 行で伝える。
-  `pub def stepHeader(info: { stepped = Int32, total = Int32, frame = Int64, stoppedBy = String, quit = Bool }): String`
-- 実行中に鳴った音のブロック。「f=フレーム番号 sfx=音名」の行を時系列で並べる。
-  `pub def eventsBlock(sounds: List[(Int64, String)]): String`
-- trace=status:K で集めた status 行のブロック。
-  `pub def traceBlock(lines: List[String]): String`
-- scene ビューの本文。矩形に重なる描画物を z 順に 1 行ずつ（多すぎる場合は打ち切る）。
-  `pub def sceneBlock(rect: Rect2.Rect2, hitList: List[Annotate.Hit]): String`
-- 小数第 1 位までに丸めた表示（座標の長い小数でトークンを浪費しないため）。
-  `pub def fmt1(value: Float64): String`
-- view=full の本文の安全弁。矩形無指定の worldDump は数万文字になり得る
-  `pub def capBody(text: String): String`
-- POST /render の成功応答。1 行目に枚数と所要ミリ秒、続く [rendered] ブロックに
-  `pub def renderDoneText(ms: Int64, paths: List[String]): String`
-- 1 回の描き出しが済んだときの応答。renderDoneText の 1 行目の末尾に、その回の番号を足した形
-  `pub def renderJobDoneText(job: Int64, ms: Int64, paths: List[String]): String`
-- 1 回の描き出しが落ちたときの応答（描き出しの中の bug! や例外の文面を 1 行に）。
-  `pub def renderFailedText(job: Int64, reason: String): String`
-- POST /render?async=1 の応答。番号を受け取った側は GET /render で done がその番号以上になるのを待つ。
-  `pub def renderAcceptedText(job: Int64): String`
-- GET /render の応答。1 行目に番号 3 つ（受け付けた最後・描き終えた最後・いま描いている回。0 = 無し）、
-  `pub def renderStatusText(requested: Int64, done: Int64, running: Int64, last: String): String`
-- POST /render のクエリが「すぐ返す」を頼んでいるか（async=1）。
-  `pub def wantsAsyncRender(params: Map[String, String]): Bool`
-- 描き出しのスレッドが次に描く番号。頼まれた番号が描き終えた番号より先なら、頼まれた番号まで
-  `pub def nextRenderTarget(requested: Int64, done: Int64): Option[Int64]`
-- 番号 id の依頼が済んだか。後の番号の回でまとめて描き終えていても済んだ扱い
-  `pub def isRenderSettled(id: Int64, done: Int64): Bool`
-- 時間内に答えられなかったときの応答。古い Studio はこの 1 行目を「描いている途中」と読む
-  `pub def busyText(): String`
-- 描き出しの実体（App.onRenderRequest）を登録していないゲームへの応答。
-  `pub def renderUnsupportedText(): String`
-- GET /help の本文。プロトコルの自己記述（セッション冒頭に 1 回読む想定）。
-  `pub def helpText(): String`
-- リモートコマンド処理が次の実フレームへ持ち回す状態。
-  `pub type alias RemoteNext[w] = { world = w, anno = Annotate.State, history = List[w], hold = Bool }`
-- リクエスト 1 件を捌き、応答をブリッジへ書いてから次の状態を返す。
-  `pub def handleRemote(app: App.App[w, ef], bridge: RemoteDebug.Bridge, raw: String, ctx: RemoteNext[w]): RemoteNext[w] \ (ef + GameEngine.Game + GameEngine.Audio + Fs.FileRead + IO)`
-
 ## Render — `engine_world/src/Render.flix`
 - 傾き（rotation）の単位は「回転数」— 1 周 = 1.0・正で時計回り。ラジアンへの変換は
   `pub enum Item { case Sprite({ texture = String, tint = Color, alpha = Float64, scale = Vec2.Vec2, rotation = Float64, centered = Bool, flipH = Bool, flipV = Bool, regionRect = Option[Rect2.Rect2], zIndex = Int32, blend = DrawCmd.BlendMode, maskPolys = List[List[Vec2.Vec2]] }) case Text({ text = String, fontAtlas = FontAtlas, fontSize = Float64, tint = Color, alpha = Float64, rotation = Float64, zIndex = Int32, wrapWidth = Option[Float64] }) case Box({ size = Vec2.Vec2, color = Color, alpha = Float64, rotation = Float64, style = Option[GameEngine.BoxStyle], zIndex = Int32, blend = DrawCmd.BlendMode }) case Poly({ vertices = List[Vec2.Vec2], color = Color, alpha = Float64, zIndex = Int32, blend = DrawCmd.BlendMode, grad = Option[List[DrawCmd.VertexTint]] }) case Clipped({ rect = Rect2.Rect2, inner = Item }) case Shader({ rect = Rect2.Rect2, spec = ShaderDoc.Spec, t = Float64, mask = List[List[Vec2.Vec2]], zIndex = Int32, blend = DrawCmd.BlendMode }) }`
@@ -1711,6 +1701,8 @@
   `pub def top(layer: t): Int32 with SortingLayer[t]`
 - 層ごとの木を 1 本の絵の列にする。各層の木はその層の底から積み、topLayer で送った物は送り先の層の
   `pub def compose(ctx: App.ViewCtx, entries: List[(t, Node[t])]): List[Render.PlacedItem] with SortingLayer[t], ToString[t]`
+- point の下にある物のうち、いちばん手前の物（どれにも当たらなければ None）。
+  `pub def pick(point: Vec2.Vec2, entries: List[(t, List[(a, Rect2.Rect2)])]): Option[a] with SortingLayer[t]`
 - 1 つの層だけの compose。
   `pub def stack(ctx: App.ViewCtx, layer: t, tree: Node[t]): List[Render.PlacedItem] with SortingLayer[t], ToString[t]`
 - 表の決まりをテストで確かめる用: 奥から手前へ並べた層が、どれも底 <= 天井で、隣どうし交ざらずに上がっていくか。

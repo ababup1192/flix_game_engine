@@ -81,6 +81,6 @@ rows = [ "WWW",     W を壁の質感に割り当てておくと、
 
 ## 関連
 
-- 逆引き: `docs/module-index.md`（「チップ絵なしでマップ地形を描く」→ DualGrid / Material）
+- 逆引き: `make module Q=地形`（「チップ絵なしでマップ地形を描く」→ DualGrid / Material。分野のファイルは `docs/modules/map.md`）
 - Doc の外形規約: `docs/doc-conventions.md`（`*.terrain.json` の取り決め）
 - ゆらぎの決定性: `engine_world/src/Hash01.flix`

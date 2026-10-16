@@ -1,0 +1,12 @@
+{
+  "note": "notes-rotate（NOTES.md の先頭＝引き継ぎを短く保つ）の規約データ。この JSON が source of truth で、bin/fge notes-rotate はこれを読んで動く。entryPatterns のどれかに当たる行が項の始まり（1 つ目の () が年・2 つ目が月）。先頭から keepEntries 個、または見出しを含めて maxLines 行を超えた古い項を archiveDir/<年-月>.md へ送る（捨てない）。コミット時は NOTES.md をステージしたときに --check で止める（precommit.json）。いじると変わる物: keepEntries・maxLines を下げると先頭が短くなる。",
+  "notesFile": "NOTES.md",
+  "archiveDir": "notes",
+  "keepEntries": 6,
+  "maxLines": 40,
+  "entryPatterns": [
+    "^\\*\\*(\\d{4})-(\\d{2})-\\d{2}",
+    "^#{1,4}\\s+(\\d{4})-(\\d{2})-\\d{2}"
+  ],
+  "archiveHeader": "# NOTES {month}（NOTES.md の先頭から送った古い項。新しい順。送るのは bin/fge notes-rotate）"
+}

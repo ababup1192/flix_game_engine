@@ -44,7 +44,7 @@ else
 HEADLESS_RUN ?= JAVA_TOOL_OPTIONS="-Djava.awt.headless=true" FLIX_CMD=$(FLIX) "$(ENGINE)/bin/headless-run"
 endif
 
-.PHONY: help status run debug test build check render render-all gallery-sounds reference-check reference-update loc api src src-index hooks check-docs-sync compare agent-eval agent-eval-compare agent-eval-release
+.PHONY: help status run debug test build check render render-all gallery-sounds reference-check reference-update loc api module src src-index hooks check-docs-sync compare agent-eval agent-eval-compare agent-eval-release
 
 # 共通の口の一覧。engine を上げるとここも一緒に新しくなる
 # （ゲーム側の Makefile へ写さないので、口が増えても書き足しに回らなくて済む）。
@@ -57,6 +57,7 @@ help:
 	@echo "  make test               テストを headless で実行（記録は .test-logs/）"
 	@echo "  make build              パッケージをビルドする"
 	@echo "  make status             現状 1 画面（テスト記録・絵・チケット・git）。何も実行しない"
+	@echo "  make notes-rotate       NOTES.md の先頭が長すぎたら古い項を notes/<年-月>.md へ送る（閾値は bin/lint-rules/notes-rotate.json）"
 	@echo "  make render SHOT=<場面>  1 枚だけ debug/<場面>.png へ描き出す"
 	@echo "                          場面: $(SHOTS)"
 	@echo "  make render-all         全部 gallery/ へ描き出す（決定的）"
@@ -65,6 +66,7 @@ help:
 	@echo "  make reference-update   いまの gallery をリファレンス画像として更新する"
 	$(if $(PALETTE),@echo "  make palette            Studio が読む色の写し ($(PALETTE)) を無条件に作り直す")
 	@echo "  make api Q=<名前>        エンジン API の型・引数を 1 行で引く（ソースを読む前にまずこれ）"
+	@echo "  make module Q=<語>       やりたいこと → エンジンのモジュールを 1 行ずつ引く（自前で書く前にまずこれ）"
 	@echo "  make src Q=<名前>        ゲームの src/ の pub 定義を 1 行で引く（.flix を丸読みする前にまずこれ）"
 	@echo "  make src-index          src/ の pub 定義と各ファイル冒頭 doc の 1 行目を debug/src-index.md へ"
 	@echo "  make loc                src/ + test/ の .flix 合計行数（上限 3,000 行）"
@@ -144,7 +146,15 @@ api:
 	@test -n "$(Q)" || { echo "usage: make api Q=<関数名やモジュール名>"; exit 1; }
 	@out=$$(grep -h -i -- "$(Q)" "$(ENGINE)/docs/api-digest/"*.md 2>/dev/null | head -40); \
 	if [ -n "$$out" ]; then printf '%s\n' "$$out"; \
-	else echo "[api] '$(Q)' に当たりなし。$(ENGINE)/docs/module-index.md で別名を探す"; fi
+	else echo "[api] '$(Q)' に当たりなし。make module Q=<やりたいこと> で別名を探す"; fi
+
+# やりたいこと → エンジンのモジュールを 1 行ずつ引く ($(ENGINE)/docs/modules/<分野>.md の grep)。
+# 例: make module Q=スクロール 。当たった行に「分野のファイル:行番号」が付く。自前で書く前にまずこれ。
+module:
+	@test -n "$(Q)" || { echo "usage: make module Q=<やりたいこと・モジュール名の一部>"; exit 1; }
+	@out=$$(grep -n -i -F -- "$(Q)" "$(ENGINE)"/docs/modules/*.md 2>/dev/null | sed -f "$(ENGINE)/mk/module.sed" | head -40); \
+	if [ -n "$$out" ]; then printf '%s\n' "$$out"; \
+	else echo "[module] '$(Q)' に当たりなし。別の言い方で引き直すか、分野の目次 $(ENGINE)/docs/module-index.md から分野のファイルを開く"; fi
 
 # ゲームの src/ の地図。pub の定義と各ファイル冒頭 doc の 1 行目を、ファイル別・行番号つきで
 # debug/src-index.md へ書く（正規表現だけの最小版・数秒）。.flix を丸読みせずに位置を引くための物。
@@ -219,6 +229,12 @@ status:
 		$(MAKE) -C "$(ENGINE)" sync-agents GAME="$(CURDIR)" || { echo "[status] 配布に失敗 — engine リポで make sync-agents GAME=$(CURDIR) を実行してください"; exit 1; }; \
 	fi
 	@bin/fge status
+
+# NOTES.md の先頭（引き継ぎ）を短く保つ。古い項を notes/<年-月>.md へ送る（捨てない）。
+# コミット時は NOTES.md をステージすると bin/fge precommit が --check で止める。
+.PHONY: notes-rotate
+notes-rotate:
+	@bin/fge notes-rotate
 
 # engine の版に追随する (flix.toml と lib/ の fpkg 差し替え + pack 配り直し + check)。
 # status の「engine 版ズレ」を見たらこれ。実体は engine 側の upgrade-game。

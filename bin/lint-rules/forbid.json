@@ -14,6 +14,13 @@
       "skip": ["engine/", "engine_world/", "engine_tools/", "engine_full/", "src/engine/", "src/engine_world/", "src/engine_tools/", "render_gl/", "src/render_gl/", "lib/", "build/"],
       "pattern": "\\bEngineInternal\\.",
       "hint": "EngineInternal はエンジンの中だけで使う口（SortingLayer.compose などが z を書く所）。ゲームの重なりは ZStack.of に積む・必ず手前は ZStack.topLayer・画面ごと動かすのは ZStack.mapItems（docs/z-bands.md）"
+    },
+    {
+      "id": "stderr-println",
+      "suffixes": [".flix"],
+      "skip": ["engine/", "engine_world/", "engine_tools/", "engine_full/", "src/engine/", "src/engine_world/", "src/engine_tools/", "render_gl/", "src/render_gl/", "lib/", "build/"],
+      "pattern": "\\bSystem\\.(?:err|out)\\.print",
+      "hint": "知らせは Log を通す。既定値で続けたら Log.fellBack(領域, 対象, 既定値の名前, 理由)（純粋な関数の中は Log.fellBackThen / Log.warnThen）、定型に収まらない 1 行は Log.warn。出し先（stderr / stdout）と文面の型は Log が決める（engine の docs/error-handling.md の決まり 3）"
     }
   ],
   "exempt": {}

@@ -243,7 +243,7 @@ func Run(out, errOut *strings.Builder, root string, args []string) (int, error) 
 			b.path, b.rect, b.total, strings.Join(parts, "、"), rules.Destinations)
 	}
 	fmt.Fprintln(errOut, "")
-	fmt.Fprintf(errOut, "絵の下限 5 性質を満たせていません。%s （詳細は .claude/skills/visual-dict/reference.md）\n",
+	fmt.Fprintf(errOut, "絵の下限 5 性質を満たせていません。%s （決まりは .claude/rules/drawing.md・部品は .claude/skills/visual-dict/reference.md）\n",
 		rules.Destinations)
 	return 1, nil
 }

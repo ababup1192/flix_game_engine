@@ -291,6 +291,53 @@ func TestArtEditIgnoresMissingFile(t *testing.T) {
 	}
 }
 
+// 絵を描く View を書いたら、セッションに 1 回だけ絵の決まりを指す。
+func TestArtRemindOncePerSession(t *testing.T) {
+	r := load(t)
+	dir := t.TempDir()
+	target := filepath.Join(dir, "TitleView.flix")
+	writeFile(t, target, strings.Repeat("Render.vgrad(a, b)\n", r.ArtEdit.Remind.MinHits))
+	markers := t.TempDir()
+	if got := r.artRemind("s1", target, markers); got != r.ArtEdit.Remind.Message {
+		t.Fatalf("1 回目に出なかった: %q", got)
+	}
+	if got := r.artRemind("s1", target, markers); got != "" {
+		t.Errorf("同じセッションで 2 回出た: %q", got)
+	}
+	if got := r.artRemind("s2", target, markers); got == "" {
+		t.Error("別のセッションで出なかった")
+	}
+}
+
+// 描画の呼び出しが少ない .flix（ロジック・z の表など）では黙る。
+func TestArtRemindSkipsNonDrawingFlix(t *testing.T) {
+	r := load(t)
+	target := filepath.Join(t.TempDir(), "ZOrder.flix")
+	writeFile(t, target, strings.Repeat("Render.vgrad(a, b)\n", r.ArtEdit.Remind.MinHits-1))
+	if got := r.artRemind("s1", target, t.TempDir()); got != "" {
+		t.Errorf("描画の少ないファイルで出た: %q", got)
+	}
+}
+
+// apply_patch（command にパッチ本文）でも、含まれるファイルに検査が当たる。
+func TestArtEditReadsPatchPaths(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "a.sprite.json")
+	writeFile(t, target, "{}")
+	ran := false
+	lints := map[string]Lint{
+		"palette": func(o, e *strings.Builder, a []string) int { return 0 },
+		"sprite":  func(o, e *strings.Builder, a []string) int { ran = true; return 0 },
+	}
+	var errOut strings.Builder
+	RunArtEdit(&errOut, repoRoot(), payloadOf(t, map[string]any{
+		"tool_input": map[string]any{"command": "*** Begin Patch\n*** Update File: " + target + "\n*** End Patch\n"},
+	}), lints)
+	if !ran {
+		t.Errorf("パッチの中のファイルを見なかった: %q", errOut.String())
+	}
+}
+
 func writeFile(t *testing.T, path, body string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

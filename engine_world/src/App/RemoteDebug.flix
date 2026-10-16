@@ -1,4 +1,4 @@
-// RemoteDebug — 起動中のゲームを外部プロセス（AI エージェント等）が HTTP で操作・観測する口。
+// App.RemoteDebug — 起動中のゲームを外部プロセス（AI エージェント等）が HTTP で操作・観測する口。
 // curl 一発で「キー入力の台本を N フレーム実行して、結果の状態を受け取る」が完結する。
 // デバッグ専用: App の debug が有効かつ環境変数 DEBUG_HTTP_PORT があるときだけ立ち上がる。
 //
@@ -8,7 +8,7 @@
 // 例外は /render だけ: 描き出しは World に触れないので、ゲームループには渡さず、描き出し専用の
 // スレッドで走らせる（ゲームの窓は描き出しの間も動き続ける）。
 
-pub mod RemoteDebug {
+pub mod App.RemoteDebug {
     import java.lang.System
     import java.net.InetSocketAddress
     import com.sun.net.httpserver.HttpServer
@@ -660,17 +660,17 @@ pub mod RemoteDebug {
 
     /// リクエスト 1 件を捌き、応答をブリッジへ書いてから次の状態を返す。
     /// どの経路でも必ず 1 回 respond する（しないと HTTP 側が 10 秒待って 503 になる）。
-    pub def handleRemote(app: App.App[w, ef], bridge: RemoteDebug.Bridge, raw: String,
+    pub def handleRemote(app: App.App[w, ef], bridge: Bridge, raw: String,
                      ctx: RemoteNext[w]): RemoteNext[w] \ (ef + GameEngine.Game + GameEngine.Audio + Fs.FileRead + IO) =
-        let request = RemoteDebug.parseRequest(raw);
+        let request = parseRequest(raw);
         match (request#method, request#path) {
-            case ("GET", "/help")    => answer(RemoteDebug.helpText(), bridge, ctx)
+            case ("GET", "/help")    => answer(helpText(), bridge, ctx)
             case ("POST", "/halt")   => remoteHalt(app, bridge, ctx)
             case ("POST", "/resume") => remoteResume(bridge, ctx)
             case ("GET", "/state")   => remoteState(app, bridge, request, ctx)
             case ("POST", "/step")   => remoteStepCommand(app, bridge, request, ctx)
             case (m, p)              =>
-                match RemoteDebug.findRoute(p, app#remoteHandlers) {
+                match findRoute(p, app#remoteHandlers) {
                     case Some(chosen) => remoteCustom(chosen, bridge, request, ctx)
                     case None => answer("error: no route for ${m} ${p} (see GET /help)\n", bridge, ctx)
                 }
@@ -680,7 +680,7 @@ pub mod RemoteDebug {
     /// "ok"、Err なら理由をそのまま応答する。停止状態・履歴・hold には触れない —
     /// 走行中なら差し替わった world で次の実フレームから進み、停止中なら /resume でそこから再開する。
     def remoteCustom(apply: (Map[String, String], w) -> Result[String, w] \ {Fs.FileRead},
-                     bridge: RemoteDebug.Bridge, request: RemoteDebug.Request,
+                     bridge: Bridge, request: Request,
                      ctx: RemoteNext[w]): RemoteNext[w] \ (Fs.FileRead + IO) =
         match apply(request#params, ctx#world) {
             case Ok(changed)  => answer("ok\n", bridge, { world = changed | ctx })
@@ -688,8 +688,8 @@ pub mod RemoteDebug {
         }
 
     /// 応答を書いてから next を返すだけの小さな合流点。
-    def answer(text: String, bridge: RemoteDebug.Bridge, next: RemoteNext[w]): RemoteNext[w] \ IO =
-        RemoteDebug.respond(text, bridge);
+    def answer(text: String, bridge: Bridge, next: RemoteNext[w]): RemoteNext[w] \ IO =
+        respond(text, bridge);
         next
 
     /// 停止に入る見た目（ウィンドウタイトルのバッジと十字カーソル）。F8 と同じ絵柄。
@@ -703,7 +703,7 @@ pub mod RemoteDebug {
         GameEngine.Game.setCursor(GameEngine.Cursor.Default)
 
     /// POST /halt: 時間を止めて lockstep モードへ入る。既に停止中でも安全（冪等）。
-    def remoteHalt(app: App.App[w, ef], bridge: RemoteDebug.Bridge,
+    def remoteHalt(app: App.App[w, ef], bridge: Bridge,
                    ctx: RemoteNext[w]): RemoteNext[w] \ (ef + GameEngine.Game + IO) =
         if (not ctx#anno#paused) enterHaltMarkers() else ();
         let shownFrame = ctx#anno#frame - Int32.toInt64(ctx#anno#scrub);
@@ -712,7 +712,7 @@ pub mod RemoteDebug {
                bridge, { anno = { paused = true | ctx#anno }, hold = true | ctx })
 
     /// POST /resume: 実時間の進行へ戻す。スクラブで過去を見ていたらそこから再開する。
-    def remoteResume(bridge: RemoteDebug.Bridge,
+    def remoteResume(bridge: Bridge,
                      ctx: RemoteNext[w]): RemoteNext[w] \ (GameEngine.Game + IO) =
         if (not ctx#anno#paused)
             answer("ok mode=running frame=${ctx#anno#frame}\n", bridge, { hold = false | ctx })
@@ -724,9 +724,9 @@ pub mod RemoteDebug {
         }
 
     /// GET /state: 進めずに観測だけ返す。停止中はスクラブで表示中の瞬間を見る。
-    def remoteState(app: App.App[w, ef], bridge: RemoteDebug.Bridge, request: RemoteDebug.Request,
+    def remoteState(app: App.App[w, ef], bridge: Bridge, request: Request,
                     ctx: RemoteNext[w]): RemoteNext[w] \ (ef + GameEngine.Game + IO) =
-        match RemoteDebug.parseParams(request#params) {
+        match parseParams(request#params) {
             case Err(message) => answer(message + "\n", bridge, ctx)
             case Ok(stepParams) =>
                 let displayed = App.worldAt(ctx#history, ctx#anno#scrub, ctx#world);
@@ -739,9 +739,9 @@ pub mod RemoteDebug {
     /// POST /step: 台本を 1 コマ = 1 フレームで実行し、結果を 1 応答に束ねて返す。
     /// 実行中に来たら自動で停止してから進める。スクラブで過去を見ていたら
     /// 「表示中の瞬間から再開して進める」（F8 解除と同じ意味論。未来側の履歴は捨てる）。
-    def remoteStepCommand(app: App.App[w, ef], bridge: RemoteDebug.Bridge, request: RemoteDebug.Request,
+    def remoteStepCommand(app: App.App[w, ef], bridge: Bridge, request: Request,
                           ctx: RemoteNext[w]): RemoteNext[w] \ (ef + GameEngine.Game + GameEngine.Audio + Fs.FileRead + IO) =
-        match (RemoteDebug.parseParams(request#params), RemoteDebug.parseScript(request#body)) {
+        match (parseParams(request#params), parseScript(request#body)) {
             case (Err(message), _) => answer(message + "\n", bridge, ctx)
             case (_, Err(message)) => answer(message + "\n", bridge, ctx)
             case (Ok(stepParams), Ok(script)) =>
@@ -756,11 +756,11 @@ pub mod RemoteDebug {
                     let historyAfter = List.take(App.historyLimit(),
                                                  List.append(outcome#newHistory, base#history));
                     let total = Int32.min(List.length(script), stepParams#maxFrames);
-                    let text = RemoteDebug.stepHeader({ stepped = outcome#framesRun, total = total,
+                    let text = stepHeader({ stepped = outcome#framesRun, total = total,
                                                         frame = annoAfter#frame,
                                                         stoppedBy = outcome#stoppedBy, quit = outcome#quit })
-                             + RemoteDebug.eventsBlock(outcome#sounds)
-                             + RemoteDebug.traceBlock(outcome#traceLines)
+                             + eventsBlock(outcome#sounds)
+                             + traceBlock(outcome#traceLines)
                              + viewBlock(app, stepParams, outcome#world);
                     answer(text, bridge,
                            { world = outcome#world, anno = annoAfter, history = historyAfter, hold = true })
@@ -768,18 +768,18 @@ pub mod RemoteDebug {
         }
 
     /// 応答に載せる観測本文（[status] / [full] / [scene] のブロック）。
-    def viewBlock(app: App.App[w, ef], stepParams: RemoteDebug.StepParams, world: w): String \ (ef + GameEngine.Game) =
+    def viewBlock(app: App.App[w, ef], stepParams: StepParams, world: w): String \ (ef + GameEngine.Game) =
         match stepParams#view {
-            case RemoteDebug.View.Silent  => ""
-            case RemoteDebug.View.Status  => "[status]\n" + statusText(app, world) + "\n"
-            case RemoteDebug.View.Summary => "[status]\n" + statusText(app, world) + "\n"
-            case RemoteDebug.View.Full    =>
+            case View.Silent  => ""
+            case View.Status  => "[status]\n" + statusText(app, world) + "\n"
+            case View.Summary => "[status]\n" + statusText(app, world) + "\n"
+            case View.Full    =>
                 let rect = Option.getWithDefault(GameEngine.Game.getViewportRect(), stepParams#rect);
                 match app#worldDump {
-                    case Some(dump) => "[full]\n" + RemoteDebug.capBody(dump(rect, world)) + "\n"
+                    case Some(dump) => "[full]\n" + capBody(dump(rect, world)) + "\n"
                     case None       => "[full]\n(no worldDump wired; try view=scene)\n"
                 }
-            case RemoteDebug.View.Scene   =>
+            case View.Scene   =>
                 let rect = Option.getWithDefault(GameEngine.Game.getViewportRect(), stepParams#rect);
                 sceneText(app, rect, world) + "\n"
         }
@@ -800,12 +800,12 @@ pub mod RemoteDebug {
                 // 画面座標の矩形と突き合わせるので、カメラ適用後（=画面に出ている）items を使う
                 let hitList = Annotate.hits(name -> GameEngine.Game.getTextureInfo(name), rect,
                                             App.sceneItems(app, atlas, _ -> (), world, toItems));
-                RemoteDebug.sceneBlock(rect, hitList)
+                sceneBlock(rect, hitList)
             case (None, Some((_, toChannels))) =>
                 let (drawables, _, _) = toChannels(world);
                 let hitList = Annotate.hitsFromDrawables(name -> GameEngine.Game.getTextureInfo(name),
                                                          rect, drawables);
-                RemoteDebug.sceneBlock(rect, hitList)
+                sceneBlock(rect, hitList)
             case (None, None) => "[scene]\n(no view/debugView wired)"
         }
 
@@ -845,8 +845,8 @@ pub mod RemoteDebug {
     /// フレーム精度の操作であり、そこへさらに accumulator のサブステップ化を重ねると
     /// 「台本 N 行 = 何フレーム進んだか」が読めなくなる。fixedStep なゲームで /step を叩くと
     /// 可変 dt 相当の 1 回更新になる。
-    def remoteStep(app: App.App[w, ef], world0: w, frame0: Int64, script: RemoteDebug.Script,
-                   stepParams: RemoteDebug.StepParams): StepOutcome[w] \ (ef + GameEngine.Game + GameEngine.Audio + Fs.FileRead) =
+    def remoteStep(app: App.App[w, ef], world0: w, frame0: Int64, script: Script,
+                   stepParams: StepParams): StepOutcome[w] \ (ef + GameEngine.Game + GameEngine.Audio + Fs.FileRead) =
         region rc {
             let soundsRef: Ref[List[(Int64, String)], rc] = Ref.fresh(rc, Nil);
             let frameNoRef: Ref[Int64, rc] = Ref.fresh(rc, frame0);
@@ -888,7 +888,7 @@ pub mod RemoteDebug {
                                 |> List.take(List.length(Ref.get(soundsRef)) - capturedBefore)
                                 |> List.map(snd);
                             let (stoppedNow, quietNow) =
-                                RemoteDebug.stopCheck(stepParams#stopWhen, soundsNow, state#quietRun);
+                                stopCheck(stepParams#stopWhen, soundsNow, state#quietRun);
                             let traceNow = match stepParams#traceEvery {
                                 case Some(every) =>
                                     if (Int32.modulo(state#done + 1, every) == 0)

@@ -17,6 +17,11 @@
         "hooks": [
           {
             "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/bin/fge\" hook-art-edit",
+            "timeout": 30
+          },
+          {
+            "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR/bin/fge\" hook-flix-touch",
             "timeout": 10
           }

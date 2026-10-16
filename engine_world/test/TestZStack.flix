@@ -1,6 +1,6 @@
 // ZStack の木と SortingLayer.compose の決まり: 積んだ順が描く順になる・葉の中の前後は z のまま・
 // zIndex で兄弟の前後を変えられる・topLayer はどの深さからでも送り先の層の手前へ出る・区画を越えない・
-// 越えた・奥へ送った・同じ層を 2 回渡した時は続けて 1 回だけ知らせる。
+// 越えた・奥へ送った・同じ層を 2 回渡した時は続けて 1 回だけ知らせる・pick は描く時と同じ前後で手前の物が当たる。
 // 描画物は 1 辺の長さを名札にした箱で作り、描く順は (z, 列の中の位置) で並べた名札の列で見る。
 mod TestZStack {
 
@@ -117,6 +117,30 @@ mod TestZStack {
                         zs(items) |> List.sortBy(z -> z));
         Assert.assertEq(expected = 1 :: 3 :: 2 :: Nil, drawOrder(items));
         Assert.assertEq(expected = 2, List.length(warned))
+
+    // ── pick: 押す物の当たり ──
+
+    /// 原点から 1 辺 size の正方形。
+    def square(size: Float64): Rect2.Rect2 = { position = { x = 0.0, y = 0.0 }, size = { x = size, y = size } }
+
+    /// 重なった所では、列の先に渡しても底の大きい層（Front）の物が当たる。
+    @Test
+    def testPickPrefersFrontLayerOverListOrder(): Unit \ Assert =
+        Assert.assertEq(expected = Some("front"),
+            SortingLayer.pick({ x = 5.0, y = 5.0 }, (Tier.Front, ("front", square(10.0)) :: Nil) :: (Tier.Back, ("back", square(10.0)) :: Nil) :: Nil))
+
+    /// 同じ層の中では列の後ろの物が当たる（画面全体を先頭に置いても、後ろのボタンが先に当たる）。
+    @Test
+    def testPickPrefersLaterTargetInSameLayer(): Unit \ Assert =
+        Assert.assertEq(expected = (Some("button"), Some("block")),
+            (SortingLayer.pick({ x = 5.0, y = 5.0 }, (Tier.Top, ("block", square(100.0)) :: ("button", square(10.0)) :: Nil) :: Nil),
+             SortingLayer.pick({ x = 50.0, y = 50.0 }, (Tier.Back, ("back", square(100.0)) :: Nil) :: (Tier.Top, ("block", square(100.0)) :: ("button", square(10.0)) :: Nil) :: Nil)))
+
+    /// どの矩形にも入らない点は None。
+    @Test
+    def testPickMissIsNone(): Unit \ Assert =
+        Assert.assertEq(expected = None,
+            SortingLayer.pick({ x = 50.0, y = 50.0 }, (Tier.Back, ("back", square(10.0)) :: Nil) :: Nil))
 
     /// 足元の順: 下にある（y が大きい）物ほど大きい数。
     @Test

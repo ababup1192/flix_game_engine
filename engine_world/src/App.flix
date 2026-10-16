@@ -728,8 +728,7 @@ pub mod App {
 
     /// 時間スクラブ用に持ち回す直近の World の数（60fps で約 30 秒）。
     /// World は不変値なので、保持しているのは共有構造への参照だけで軽い。
-    /// RemoteDebug 分割用の内部 API — ゲームからは呼ばない。
-    pub def historyLimit(): Int32 = 1800
+    def historyLimit(): Int32 = 1800
 
     /// loop が次のフレームへ渡し続ける物。app（不変）は入れない — 状態に混ぜると
     /// 「フレームごとに変わりうる物」に見える。
@@ -885,15 +884,13 @@ pub mod App {
 
     /// 一時停止を抜ける地点: スクラブで表示していた瞬間の World を現在とし、
     /// 履歴とフレーム番号もそこを基準に数え直す（未来側の履歴は捨てる）。
-    /// RemoteDebug 分割用の内部 API — ゲームからは呼ばない。
-    pub def resumePoint(anno: Annotate.State, history: List[w], world: w): { world = w, anno = Annotate.State, history = List[w] } =
+    def resumePoint(anno: Annotate.State, history: List[w], world: w): { world = w, anno = Annotate.State, history = List[w] } =
         { world = worldAt(history, anno#scrub, world),
           history = List.drop(anno#scrub, history),
           anno = { frame = anno#frame - Int32.toInt64(anno#scrub) | Annotate.resetView(anno) } }
 
     /// 履歴の back フレーム前の World（範囲外なら fallback）。先頭が「停止した瞬間」。
-    /// RemoteDebug 分割用の内部 API — ゲームからは呼ばない。
-    pub def worldAt(history: List[w], back: Int32, fallback: w): w =
+    def worldAt(history: List[w], back: Int32, fallback: w): w =
         history |> List.drop(back) |> List.head |> Option.getWithDefault(fallback)
 
     /// デバッグ機能が使える構成か（debug 有効 かつ 凍結画面を描く手段 = view か debugView がある）。
@@ -1049,8 +1046,7 @@ pub mod App {
 
     /// reloadOn で繋いだキーが押された瞬間だけ、リロード関数で World を作り直す。
     /// 第 2 要素は「このフレームで読み直しが起きたか」（タイル層の世代を進める合図）。
-    /// RemoteDebug 分割用の内部 API — ゲームからは呼ばない。
-    pub def applyReload(app: App[w, ef], frame: Frame, world: w): (w, Bool) \ {Fs.FileRead} =
+    def applyReload(app: App[w, ef], frame: Frame, world: w): (w, Bool) \ {Fs.FileRead} =
         match app#reload {
             case Some((key, f)) => if (justPressed(key, frame)) (f(world), true) else (world, false)
             case None           => (world, false)
@@ -1239,8 +1235,7 @@ pub mod App {
             (Map.empty(): Map[String, FontAtlas]));
         name -> Map.get(name, table) |> Option.getWithDefault(dflt)
 
-    /// RemoteDebug 分割用の内部 API — ゲームからは呼ばない。
-    pub def sceneItems(app: App[w, ef], atlas: FontAtlas, warnOnce: String -> Unit, world: w,
+    def sceneItems(app: App[w, ef], atlas: FontAtlas, warnOnce: String -> Unit, world: w,
                    toItems: (ViewCtx, w) -> List[Render.PlacedItem] \ ef):
             List[Render.PlacedItem] \ (ef + GameEngine.Game) =
         let design = GameEngine.Game.getViewportRect()#size;
@@ -1428,7 +1423,7 @@ pub mod App {
         else {
             System.err.println("budget: この 1 フレームで ${count} 個の描き物を組みました"
                 + "（上限 ${budgetCap()} 個）。盤や群れを毎フレーム組み直していませんか —"
-                + " タイル層は App.withTileLayers（逆引き: docs/module-index.md）");
+                + " タイル層は App.withTileLayers（逆引き: make module Q=毎フレーム）");
             true
         }
 

@@ -1,5 +1,5 @@
 reference-check NG: 絵の値段
   town: 静的層の申告 80 が総数 50 を超えています
-  盤や群れを毎フレーム組んでいないか確かめてください（逆引き: docs/module-index.md）。
+  盤や群れを毎フレーム組んでいないか確かめてください（逆引き: make module Q=毎フレーム）。
   意図した増加なら make reference-update BUDGET=accept で基準を更新します。
 [exit=1]

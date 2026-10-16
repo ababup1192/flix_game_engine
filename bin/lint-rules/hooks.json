@@ -90,7 +90,27 @@
         "sub": "view",
         "args": ["{file}"],
         "prefix": ""
+      },
+      {
+        "suffix": ".sprite.json",
+        "sub": "sprite",
+        "args": ["{file}"],
+        "prefix": "lint-sprite が失敗しました。画素の並び（浮き・階段・細長さ・色数）を直すか、意図した物ならスプライトに \"lint-sprite\": \"対象外(種類) — 理由\" を書いてください。"
+      },
+      {
+        "suffix": ".anim.json",
+        "sub": "anim",
+        "args": ["{file}"],
+        "prefix": "lint-anim が失敗しました。コマ間の飛び・体積・接地と 4 方向のそろいを直してください。"
       }
-    ]
+    ],
+    "remind": {
+      "note": "絵を描く View（pattern に当たる描画の呼び出しが minHits 回以上ある .flix）を書いたら、セッションに 1 回だけ message を返す。.claude/rules/drawing.md の paths は絵の Doc だけに絞ってあり（z や UI の直しのたびに全文を読ませない）、View からの入口はこの 1 行。印は OS の一時フォルダの markerPrefix + セッションの指紋。",
+      "suffix": ".flix",
+      "pattern": "\\b(?:RawDraw|Render|PxSprite|PxShade|ShaderDoc|Material|FxDoc|UiShape)\\.",
+      "minHits": 5,
+      "markerPrefix": "fge-art-remind-",
+      "message": "絵を描く View を書きました。絵を足す・変えるなら .claude/rules/drawing.md（絵の下限 5 性質・人に見せて確かめる・周回は r2 で止める）を先に読んでください（このセッションで 1 回だけ出ます）。"
+    }
   }
 }

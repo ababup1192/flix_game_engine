@@ -175,6 +175,15 @@
       }
     },
     {
+      "id": "notes-rotate",
+      "sub": "notes-rotate",
+      "flags": ["--check"],
+      "pass": "none",
+      "when": {
+        "basenames": ["NOTES.md"]
+      }
+    },
+    {
       "id": "jargon",
       "sub": "jargon",
       "flags": [],
@@ -227,6 +236,9 @@
         }
       ]
     }
+  },
+  "localGate": {
+    "target": "precommit-local"
   },
   "failOpen": {
     "makeMissing": "[pre-commit] make が見つからないので配線検査 (check-docs-sync) は飛ばします",

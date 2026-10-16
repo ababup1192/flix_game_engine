@@ -1,11 +1,16 @@
-// SortingLayer — 画面全体の重なりの層を名前で宣言する表と、ZStack の木を z の数へ戻す組み立て（compose）。
-// 使う場面: 根（Main / View の入口）で 1 回 compose する・新しい層（ポーズ・確認）は enum に case を足す。
+// SortingLayer — 画面全体の重なりの層を名前で宣言する表と、ZStack の木を z の数へ戻す組み立て（compose）と、同じ前後で押す物を選ぶ口（pick）。
+// 使う場面: 根（Main / View の入口）で 1 回 compose する・新しい層（ポーズ・確認）は enum に case を足す・押す物の当たりを描く時と同じ前後で選ぶ。
 // Unity の Sorting Layer（名前つきの層）と同じ考え方。ゲームは層を enum で宣言し、instance で各層の
 // z の範囲を match で書く（case を足すと網羅で止まる）。層の並び（どれが手前か）は範囲の底の順。
 // 表は根（画面全体）にだけ置き、層の中は ZStack の積んだ順、部品の中は葉の中の小さな z で決める。
 // 利用例: 場面の絵 → 会話 → 確認の窓 → 指している物 → 切り替え を層にし、
 //         `SortingLayer.compose(ctx, (Layer.Scene, scene) :: (Layer.Talk, talk) :: Nil)` で 1 本の絵の列にする。
 //         場面の奥から出す説明の窓は `ZStack.topLayer(Layer.Pointer, leaf(tip))` で Pointer の層へ送る。
+// 押す物の当たり（pick）: 描く時と同じ層の前後で、指の下のいちばん手前の物を 1 つ選ぶ。
+//         `SortingLayer.pick(pointer, (Layer.Scene, (Target.Door, doorRect) :: Nil) ::
+//                                     (Layer.Prompt, (Target.Block, screenRect) :: (Target.Yes, yesRect) :: Nil) :: Nil)`
+//         確認の窓が開いている間に奥を押せなくするには、窓の層の列の先頭に画面全体の矩形を 1 つ置く
+//         （窓のボタンは列の後ろなので先に当たり、窓の外は Target.Block が当たって奥へ届かない）。
 // 注意: 区画を越えた分は天井で止めて続け、ViewCtx#warnOnce で層の名前ごとに知らせる（毎フレーム通るので
 //   止めない。描き出しはこの口に集まった名前で止める）。範囲の地図（world / UI / Transition / HUD /
 //   デバッグ）は docs/z-bands.md。
@@ -71,6 +76,20 @@ pub mod SortingLayer {
             if (mark#next - 1 > mark#high)
                 warned(ctx, "z fail-open: 層 ${mark#name} の z を天井 ${mark#high} に替えました — 積んだ高さが区画 ${mark#low}..${mark#high} を越えました", items)
             else items, List.reverse(second#acc), second#ends)
+
+    /// point の下にある物のうち、いちばん手前の物（どれにも当たらなければ None）。
+    /// 層の前後は compose と同じ zRange の底の順（同じ層を 2 回渡したら後の列が手前）。同じ層の中は列の後ろほど
+    /// 手前（ZStack.of に積む順と同じ）。UiFocusNav.hitTest（列の前ほど先に当たる）とは向きが逆。
+    /// 窓の外を押せなくする層は、その層の列の先頭に画面全体の矩形を 1 つ置く（冒頭の例）。
+    pub def pick(point: Vec2.Vec2, entries: List[(t, List[(a, Rect2.Rect2)])]): Option[a] with SortingLayer[t] =
+        entries
+            |> List.zipWithIndex
+            |> List.map(entry -> { let (i, (layer, targets)) = entry; ((bottom(layer), i), targets) })
+            |> List.sortBy(fst)
+            |> List.foldLeft((found, entry) -> List.foldLeft((hit, target) -> {
+                   let (value, rect) = target;
+                   if (Rect2.hasPoint(point, rect)) Some(value) else hit
+               }, found, snd(entry)), None)
 
     /// 1 つの層だけの compose。
     pub def stack(ctx: App.ViewCtx, layer: t, tree: Node[t]): List[Render.PlacedItem]

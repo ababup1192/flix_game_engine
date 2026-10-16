@@ -69,7 +69,7 @@ Flix コンパイラはエンジンリポの `bin/flix` ラッパ経由で呼ぶ
    - `assets/fx/*.fx.json` … 煙・火花・噴射炎・衝撃波・クラッシュの粒。
    - `assets/race.sfxtune.json` … 効果音のつまみ（下の「音」を参照）。
 
-黒箱（エンジンの部品）に出会ったら `docs/module-index.md`（エンジンリポ）で
+黒箱（エンジンの部品）に出会ったら `make module Q=<やりたいこと>`（目次はエンジンリポの `docs/module-index.md`）で
 `Render`（描画）・`Fx` / `FxDoc`（粒）・`PxSprite`（ドット絵）・`App`（ゲームループ）・
 `JsonCodec`（JSON 読み）・`HeadlessRender`（PNG の描き出し）を引きます。
 

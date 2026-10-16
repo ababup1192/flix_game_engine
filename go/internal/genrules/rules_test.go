@@ -56,6 +56,14 @@ func TestRuleWithoutSourceAborts(t *testing.T) {
 	}
 }
 
+func TestMoreWithoutMarkersAborts(t *testing.T) {
+	root := t.TempDir()
+	writeRules(t, root, `{"banner":"x","rules":[{"out":"a.md","src":"a","more":"詳しくは a"}],"outDirs":[]}`)
+	if err := loadErr(t, root); !strings.Contains(err.Error(), "coreMarkers") {
+		t.Errorf("印の無い more を受け入れてしまった: %v", err)
+	}
+}
+
 func TestBrokenRulesFileAborts(t *testing.T) {
 	root := t.TempDir()
 	writeRules(t, root, "{")

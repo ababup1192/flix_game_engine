@@ -408,7 +408,7 @@ func Run(out, errOut *strings.Builder, rulesRoot string, args []string) (int, er
 				"cap と note を書いてください。")
 		} else {
 			fmt.Fprintln(errOut, "  盤や群れを毎フレーム組んでいないか確かめてください"+
-				"（逆引き: docs/module-index.md）。")
+				"（逆引き: make module Q=毎フレーム）。")
 			fmt.Fprintln(errOut, "  意図した増加なら make reference-update BUDGET=accept で基準を更新します。")
 		}
 		return 1, nil

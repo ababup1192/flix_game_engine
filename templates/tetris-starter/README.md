@@ -48,7 +48,7 @@ Flix コンパイラはエンジンリポの `bin/flix` ラッパ経由で呼ぶ
    - `assets/tetris.rules.json` … 落下速度・接地の猶予・得点。
    - `assets/tetris.theme.json` … 盤・枠・ミノ・閃光の色。
 
-黒箱（エンジンの部品）に出会ったら `docs/module-index.md`（エンジンリポ）で
+黒箱（エンジンの部品）に出会ったら `make module Q=<やりたいこと>`（目次はエンジンリポの `docs/module-index.md`）で
 `Render`（描画）・`App`（ゲームループ）・`JsonCodec`（JSON 読み）・`HeadlessRender`（PNG の描き出し）を引きます。
 
 ## いちばん小さな変え方（保存即反映）

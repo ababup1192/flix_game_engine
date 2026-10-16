@@ -70,6 +70,16 @@
       "dest": "docs/module-index.md"
     },
     {
+      "src": "docs/modules/*.md",
+      "dest": "docs/modules",
+      "why": "make module Q= が引く分野ごとの逆引き (docs/module-index.md は目次だけ)"
+    },
+    {
+      "src": "mk/module.sed",
+      "dest": "mk/module.sed",
+      "why": "make module Q= の当たり行を 1 行で読める形にそろえる (mk/game.mk が読む)"
+    },
+    {
       "src": "docs/engine-module-index.md",
       "dest": "docs/engine-module-index.md"
     },
@@ -84,6 +94,21 @@
     {
       "src": "docs/shader-doc.md",
       "dest": "docs/shader-doc.md"
+    },
+    {
+      "src": "docs/drawing-floor.md",
+      "dest": "docs/drawing-floor.md",
+      "why": ".claude/rules/drawing.md は芯だけなので、詳しい所はここを引く"
+    },
+    {
+      "src": "docs/flix-conventions.md",
+      "dest": "docs/flix-conventions.md",
+      "why": ".claude/rules/flix.md は芯だけなので、詳しい所はここを引く"
+    },
+    {
+      "src": "docs/error-handling.md",
+      "dest": "docs/error-handling.md",
+      "why": ".claude/rules/error-handling.md は芯だけなので、詳しい所はここを引く"
     },
     {
       "src": "docs/checkd.md",

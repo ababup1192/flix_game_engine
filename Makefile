@@ -94,6 +94,7 @@ hooks:
 help:
 	@echo "Targets:"
 	@echo "  make status               現状 1 画面 (テスト記録・スナップショット・チケット・git)。何も実行しない"
+	@echo "  make module Q=<語>        やりたいこと → モジュールを 1 行ずつ引く (docs/modules/ の分野:行番号つき)"
 	@echo "  make test                 全パッケージ (engine系 + templates) のテストを headless で実行"
 	@echo "  make test-par             同上を並列実行 (実時間 ≈ 最遅パッケージ 1本分。ログは .test-logs/)"
 	@echo "  make test-<name>          1 つだけテスト (例: make test-rpg-starter / make test-engine)"
@@ -795,10 +796,20 @@ api:
 	@test -n "$(Q)" || { echo "usage: make api Q=<関数名やモジュール名>"; exit 1; }
 	@out=$$(grep -h -i -- "$(Q)" docs/api-digest/*.md 2>/dev/null | head -40); \
 	 if [ -n "$$out" ]; then printf '%s\n' "$$out"; \
-	 else echo "[api] '$(Q)' はダイジェストに無い。docs/module-index.md で別名を探す"; fi
+	 else echo "[api] '$(Q)' はダイジェストに無い。make module Q=<やりたいこと> で別名を探す"; fi
 	@# 2>/dev/null を付けない。この検査の存在理由は「digest の嘘を見えるようにする」ことなので、
 	@# 検査自体が黙って死ぬ形は自己矛盾になる (|| true は助言だから止めない、の意味で残す)。
 	@bin/fge check-api-released "$(Q)" || true
+
+# やりたいこと → モジュールの逆引きを 1 行ずつ引く（docs/modules/<分野>.md の grep）。
+# 例: make module Q=スクロール 。当たった行に「分野のファイル:行番号」が付く。
+# 行の形（表の 1 行 = 1 件・「- **名前** — 説明」= 1 モジュール）は mk/module.sed が読みやすく直す。
+.PHONY: module
+module:
+	@test -n "$(Q)" || { echo "usage: make module Q=<やりたいこと・モジュール名の一部>"; exit 1; }
+	@out=$$(grep -n -i -F -- "$(Q)" docs/modules/*.md 2>/dev/null | sed -f mk/module.sed | head -40); \
+	 if [ -n "$$out" ]; then printf '%s\n' "$$out"; \
+	 else echo "[module] '$(Q)' に当たりなし。別の言い方で引き直すか、分野の目次 docs/module-index.md から分野のファイルを開く"; fi
 
 # 絵の下限（矩形と円だけになっていないか）。どの OS・どのエージェントからも同じ検査。
 .PHONY: lint-view

@@ -164,7 +164,7 @@ func TestFailingLintStopsWithFinalNotice(t *testing.T) {
 	if child != "はみ出します\n" || childErr != "つまずきました\n" {
 		t.Errorf("子の出力が親の側へ混ざっている: %q / %q", child, childErr)
 	}
-	want := "[pre-commit] 止めました。直してから再コミット (どうしても通すなら git commit --no-verify)\n"
+	want := "[pre-commit] 止めました。上の文を読んで直してから再コミット\n"
 	if parent != want {
 		t.Errorf("親の知らせが違う: %q", parent)
 	}
@@ -192,7 +192,7 @@ func TestImageOutsideAllowedPlaceStops(t *testing.T) {
 	want := "[pre-commit] 画像 1 件:\n" +
 		"  gallery/town.png — 追跡してよい置き場ではありません。生成した絵は git に入れない決まりです。" +
 		"人に見せる絵なら docs/gallery/ へ (上限あり)\n" +
-		"[pre-commit] 止めました。直してから再コミット (どうしても通すなら git commit --no-verify)\n"
+		"[pre-commit] 止めました。上の文を読んで直してから再コミット\n"
 	if parent != want {
 		t.Errorf("文面が違う: %q", parent)
 	}
@@ -352,5 +352,31 @@ func TestUseEngineRestoredTomlPasses(t *testing.T) {
 	parent, _, _, code := gateRun(t, root, []string{"--files", "flix.toml"}, okLints(t), nil)
 	if code != 0 || strings.Contains(parent, "use-engine") {
 		t.Errorf("元の版なのに止まった: parent=%q code=%d", parent, code)
+	}
+}
+
+// TestLocalGateGetsStagedFiles はゲームの Makefile の precommit-local が、ステージした
+// ファイルを STAGED で受け取り、失敗すればコミットを止めることを見る。
+func TestLocalGateGetsStagedFiles(t *testing.T) {
+	root := fakeRepo(t)
+	mk := "precommit-local:\n\t@case \"$(STAGED)\" in *.sprite.json*) echo 色の門; exit 1;; esac\n"
+	if err := os.WriteFile(filepath.Join(root, "Makefile"), []byte(mk), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, child, _, code := gateRun(t, root, []string{"--files", "art/a.sprite.json"}, okLints(t), nil)
+	if code != 1 || !strings.Contains(child, "色の門") {
+		t.Errorf("固有の口で止まっていない: code=%d out=%q", code, child)
+	}
+	if _, _, _, code := gateRun(t, root, []string{"--files", "notes.txt"}, okLints(t), nil); code != 0 {
+		t.Errorf("当たらないファイルで止めた: code=%d", code)
+	}
+}
+
+// TestLocalGateMissingIsSilent は口の無いゲームでは何も言わずに通すことを見る。
+func TestLocalGateMissingIsSilent(t *testing.T) {
+	root := fakeRepo(t)
+	parent, _, _, code := gateRun(t, root, []string{"--files", "notes.txt"}, okLints(t), nil)
+	if code != 0 || parent != "" {
+		t.Errorf("口が無いのに何か言った: code=%d %q", code, parent)
 	}
 }

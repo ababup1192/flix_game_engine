@@ -21,6 +21,10 @@ func fixture(t *testing.T) string {
 		"---\nname: alpha\ndescription: \"能書き。〜のときに使う。補足。\"\n---\n", 0o644)
 	write(t, root, "agents-pack/skills/beta/SKILL.md",
 		"---\ndescription: 引き金の無い説明。おまけ。\n---\n", 0o644)
+	write(t, root, "agents-pack/skills/delta/SKILL.md",
+		"---\ndescription: 能書き。A のとき、B のときに使う。\n---\n", 0o644)
+	write(t, root, "agents-pack/skills/epsilon/SKILL.md",
+		"---\ndescription: 詳しい参考（既定では読まない）。長い説明。C のときに使う。\n---\n", 0o644)
 	if err := os.MkdirAll(filepath.Join(root, "agents-pack", "skills", "gamma"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -80,10 +84,12 @@ func TestSyncWritesAgentsMd(t *testing.T) {
 		" 編集しないで。共通部は engine の agents-pack/AGENTS.core.md、" +
 		"ゲーム固有部は AGENTS.local.md を編集して再 sync -->\n\n" +
 		"# core\n\n本文\n\n" +
-		"## 配られているスキル一覧（sync-agents が自動生成。手で編集しない）\n\n" +
-		"- `.claude/skills/alpha/SKILL.md` — 〜のときに使う。\n" +
-		"- `.claude/skills/beta/SKILL.md` — 引き金の無い説明。\n" +
-		"- `.claude/skills/gamma/SKILL.md` — \n"
+		"## 配られているスキル（sync-agents が自動生成。手で編集しない）\n\n" +
+		"- `alpha` — 〜のときに使う。\n" +
+		"- `beta` — 引き金の無い説明。\n" +
+		"- `delta` — A のときなど。\n" +
+		"- `gamma` — \n" +
+		"- 詳しい参考（既定では読まない。入口のスキルから節だけ引く）: `epsilon`\n"
 	if string(body) != want {
 		t.Errorf("AGENTS.md が\n%q\n期待\n%q", string(body), want)
 	}
@@ -111,7 +117,7 @@ func TestSyncAppendsLocalDoc(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasSuffix(string(body), "gamma/SKILL.md` — \n\nゲーム固有\n") {
+	if !strings.HasSuffix(string(body), "`epsilon`\n\nゲーム固有\n") {
 		t.Errorf("AGENTS.local.md の付き方が違う: %q", string(body))
 	}
 }
@@ -154,6 +160,22 @@ func TestSyncDoesNotOverwriteCopyIfAbsent(t *testing.T) {
 	}
 	if string(body) != "人が直した\n" {
 		t.Errorf("既存を上書きした: %q", string(body))
+	}
+}
+
+func TestSyncDropsRetiredHookCall(t *testing.T) {
+	root := fixture(t)
+	game := t.TempDir()
+	write(t, game, ".claude/settings.json", `{"hooks":{"PostToolUse":[`+
+		`{"matcher":"Write|Edit","hooks":[{"type":"command","command":"ゲームのフック"}]},`+
+		`{"matcher":"*","hooks":[{"type":"command","command":"\"$CLAUDE_PROJECT_DIR/bin/fge\" hook-session-diet"}]}]}}`, 0o644)
+	run(t, root, "--game", game)
+	body, err := os.ReadFile(filepath.Join(game, ".claude", "settings.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(body), "hook-session-diet") || !strings.Contains(string(body), "ゲームのフック") {
+		t.Errorf("廃止したフックだけを外していない: %s", body)
 	}
 }
 

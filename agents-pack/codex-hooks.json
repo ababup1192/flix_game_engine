@@ -17,6 +17,11 @@
         "hooks": [
           {
             "type": "command",
+            "command": "bin/fge hook-art-edit",
+            "timeout": 30
+          },
+          {
+            "type": "command",
             "command": "bin/fge hook-flix-touch",
             "timeout": 10
           }

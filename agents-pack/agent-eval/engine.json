@@ -265,6 +265,7 @@
       "avoid": [
         {"re": "glfwSetWindowShouldClose|GLFW\\.", "why": "ゲームから GLFW を直に触る"}
       ]
-    }
+    },
+    {"id": "click-front-layer", "prompt": "確認の窓が開いているときにクリックすると、窓の奥にあるボタンまで反応してしまう。見た目でいちばん手前にある物だけが押されるようにしたい", "expect": [{"re": "SortingLayer\\.pick|\\bpick\\(", "why": "描く時と同じ層の前後で当たりを選ぶ SortingLayer.pick"}], "avoid": [{"re": "Render\\.zOf|sortBy\\([^)]*\\bz", "why": "描いた絵の z を並べ直して当たりを探す"}]}
   ]
 }

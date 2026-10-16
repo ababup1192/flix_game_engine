@@ -1,4 +1,20 @@
+<!-- rules:core -->
 # Flix を書くときの決まり
+
+- **コメント**: コードには How・テストコードには What・コミットログには Why・コードコメントには WhyNot。
+  実装の由来・旧実装・移行史は書かない。独自の比喩を使わない（「局面」ではなくフェーズ）。
+- **取りうる値が決まっている物（状態・モード・種別）は String で持たず enum にする。**
+  Doc(JSON) から来る String は、読み込む所で 1 回だけ enum へ変えて、内側は enum で回す。
+- **その case だけが使う値は、レコードに平らに並べず enum の payload へ入れる。**
+  どの case でも使う値はレコード側に残す。
+- **二乗を書かない**（N はゲームが決める。今は軽い、は理由にならない）:
+  ループの中で `List.exists` / `List.memberOf` を呼ばず `Set` / `Map` で引く・
+  `List.range` を回して `List.nth` で引かず 1 巡で済ませる・
+  `List.sortBy` に重いキー関数を渡すなら先に `(キー, 要素)` を作って `sortBy(fst)`。
+<!-- /rules:core -->
+
+以下は詳しい本文（`.claude/rules/flix.md` には上の芯だけが出る）。保存時とコミット時の検査が止める物も、
+理由と直し方をここに残す。
 
 ## 予約語を識別子に使わない
 
@@ -53,7 +69,7 @@ AGENTS.md の同名の節が正で、コメントと識別子にもそのまま�
   - payload にレコードは置けない（下の `Eq` の落とし穴）。値が 2 つ以上要るときは
     case へ並べるか、`Eq` を derive した別の enum で包む
 
-詳しくと例は `.claude/skills/flix-docs/SKILL.md` の「型の設計」。
+詳しくと例は `.claude/skills/flix-docs/reference.md` の「型の設計の例」。
 
 ### World が直接持つ大きな record は enum で包む（型検査の速さ）
 

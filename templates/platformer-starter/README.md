@@ -27,7 +27,7 @@ make debug   # 保存即反映(watchFile)+ F1 一括リロード + F8 付きで�
    静的地形は GPU タイル層(1 draw call + マスごと照明 tint)、動く物だけ毎フレーム。
 6. `src/Enemies.flix` / `src/Controls.flix` / `src/Theme.flix` — 敵 3 種・入力・色。
 
-エンジン部品の逆引きは engine リポの `docs/module-index.md`。
+エンジン部品の逆引きは `make module Q=<やりたいこと>`（目次は engine リポの `docs/module-index.md`）。
 
 ## JSON をいじる(保存すると即反映)
 

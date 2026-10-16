@@ -19,6 +19,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/ababup1192/flix_game_engine/go/internal/prunetools"
 	"github.com/ababup1192/flix_game_engine/go/internal/pxlib"
 )
 
@@ -263,6 +264,12 @@ func syncGame(out, errOut *strings.Builder, root string, r *Rules, gameArg, vers
 		}
 		fmt.Fprintf(out, "[sync-agents] hooks: %s を配りました (既存があるときは上書きしない)\n", e.dst)
 	}
+	// settings.json は上書きしないので、廃止したフックの呼び出しはここで外す（ゲームが足したフックは残る）。
+	if fixed, err := prunetools.RewriteHookCalls(pyJoin(game, ".claude/settings.json")); err != nil {
+		return 2, err
+	} else if fixed > 0 {
+		fmt.Fprintf(out, "[sync-agents] hooks: .claude/settings.json の古い・廃止した呼び口 %d 件を直しました\n", fixed)
+	}
 
 	ruleNames, err := dirEntryNames(pyJoin(root, r.RulesDir))
 	if err != nil {
@@ -302,19 +309,29 @@ func buildAgentsMD(root string, r *Rules, game, version string) (string, error) 
 	// WhyNot: TrimSuffix ではなく TrimRight なのは、末尾の改行を 1 つだけでなく
 	// 全部落とすため。
 	parts = append(parts, strings.TrimRight(core, "\n"), "",
-		"## 配られているスキル一覧（sync-agents が自動生成。手で編集しない）", "")
+		"## 配られているスキル（sync-agents が自動生成。手で編集しない）", "")
 	skills, err := skillDirNames(root, r)
 	if err != nil {
 		return "", err
 	}
 	skillsDir := pyJoin(root, r.SkillsDir)
+	var refs []string
 	for _, name := range skills {
 		desc, err := skillDescription(pyJoin(pyJoin(skillsDir, name), r.SkillFile))
 		if err != nil {
 			return "", err
 		}
-		parts = append(parts, fmt.Sprintf("- `.claude/skills/%s/%s` — %s",
-			name, r.SkillFile, triggerSentence(r, desc)))
+		// WhyNot: 詳しい参考を 1 行にまとめるのは、既定では読まないスキルの引き金まで
+		// 全部の担当に毎回読ませないため（入口のスキルの表から引かれる）。
+		if r.ReferencePrefix != "" && strings.HasPrefix(desc, r.ReferencePrefix) {
+			refs = append(refs, "`"+name+"`")
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("- `%s` — %s", name, shortTrigger(r, triggerSentence(r, desc))))
+	}
+	if len(refs) > 0 {
+		parts = append(parts, fmt.Sprintf("- %s（既定では読まない。入口のスキルから節だけ引く）: %s",
+			r.ReferencePrefix, strings.Join(refs, "・")))
 	}
 	local := pyJoin(game, r.LocalDoc)
 	if pyIsFile(local) {
@@ -367,6 +384,19 @@ func triggerSentence(r *Rules, desc string) string {
 		}
 	}
 	return pyStrip(parts[0]) + r.SentenceSep
+}
+
+// shortTrigger は「A とき、B とき、C ときに使う。」を「A ときなど。」へ縮める
+// （全文は SKILL.md の description にあり、Claude Code はそちらを別に読む）。
+func shortTrigger(r *Rules, s string) string {
+	if r.ClauseSep == "" {
+		return s
+	}
+	i := strings.Index(s, r.ClauseSep)
+	if i < 0 {
+		return s
+	}
+	return pyStrip(s[:i]) + "など" + r.SentenceSep
 }
 
 // skillDirNames は agents-pack/skills の直下にあるフォルダの名前を名前順で返す。

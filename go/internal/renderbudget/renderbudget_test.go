@@ -67,7 +67,7 @@ func TestOverDefaultCapFails(t *testing.T) {
 	}
 	want := "reference-check NG: 絵の値段\n" +
 		"  town: 動的 2400 個 ≥ 上限 2000 個（既定）\n" +
-		"  盤や群れを毎フレーム組んでいないか確かめてください（逆引き: docs/module-index.md）。\n" +
+		"  盤や群れを毎フレーム組んでいないか確かめてください（逆引き: make module Q=毎フレーム）。\n" +
 		"  意図した増加なら make reference-update BUDGET=accept で基準を更新します。\n"
 	if errOut != want {
 		t.Errorf("stderr が違う:\n%s", errOut)

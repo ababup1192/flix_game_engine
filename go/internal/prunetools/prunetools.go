@@ -172,6 +172,12 @@ func Run(out, errOut *strings.Builder, root string, args []string) (int, error) 
 	return 0, nil
 }
 
+// RewriteHookCalls は sync-agents が配るたびに呼ぶ口。.claude/settings.json の古い呼び口を
+// 今の口へ書き換え、廃止したフックを外して、直した数を返す。
+// WhyNot: prune-stale-tools（一度きり・手で流す）だけに置かないのは、流し忘れたゲームに
+// 廃止したフック（hook-session-diet・matcher "*"）が毎回のツール呼び出しで残り続けたため。
+func RewriteHookCalls(path string) (int, error) { return rewriteHookCalls(path, false) }
+
 // rewriteHookCalls は settings.json の古い呼び口を今の口へ書き換え、直した数を返す。
 func rewriteHookCalls(path string, dryRun bool) (int, error) {
 	raw, err := os.ReadFile(path)

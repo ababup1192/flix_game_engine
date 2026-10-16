@@ -16,6 +16,9 @@ var RulesPath = filepath.Join("bin", "lint-rules", "check-api-index.json")
 type Target struct {
 	Src string `json:"src"`
 	Doc string `json:"doc"`
+	// Parts は索引の本文を分けた先（glob。例: docs/modules/*.md）。Doc と合わせて 1 つの索引として見る。
+	// 省略すると Doc だけ。
+	Parts string `json:"parts,omitempty"`
 }
 
 type rulesFile struct {

@@ -15,5 +15,7 @@
   "skillLinkRoots": ["agents-pack/skills", "agents-pack/rules", "docs"],
   "lintPrefix": "lint-",
   "sentenceSep": "。",
-  "triggerSuffix": "使う"
+  "triggerSuffix": "使う",
+  "clauseSep": "、",
+  "referencePrefix": "詳しい参考"
 }
