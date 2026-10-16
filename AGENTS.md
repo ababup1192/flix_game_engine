@@ -145,8 +145,8 @@ git log 掘りやテスト回し直しから始めない。
 |---|---|
 | 新しいゲームを作り始めるとき・画風がまだ決まっていないとき | `/style-interview` |
 | View / 背景 / キャラ / エフェクトを書く**前** | `/visual-dict` |
-| ドット絵（画素を 1 つずつ置く絵）で行くと決まった後 | `/retro-pixel` |
-| ドット絵のキャラ・生き物を描く・直す・自己批評するとき（顔は faces.md・歩きは animation.md） | `/px-character` |
+| ドット絵（sprite.json）のキャラ・歩き・背景・小物を描く・直す・自己批評するとき（表でお題の種類のファイルだけ読む） | `/pixel-art` |
+| pixel-art で足りない時だけ（詳しい参考: 色の予算・タイル地形は `/retro-pixel`・48px 以上の顔や四足は `/px-character`） | `/retro-pixel` `/px-character` |
 | Flix を書く前・テストを書く前 | `/flix-docs` |
 | コンパイルエラーが出たら | `/compile-fix` |
 | テストを設計するとき | `/quality-assurance` |

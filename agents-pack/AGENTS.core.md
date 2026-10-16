@@ -26,6 +26,7 @@
 | 作業場を別の版・開発中のエンジンへ一時的に向ける | `bin/fge use-engine <版かパス>`（今は `--status`・戻すのは `--restore`） |
 | 直す前と後の絵・音・動画を比べる | `make compare BASE=<ref>`（絞るなら `SHOTS=` か `VIDEOS=`。`debug/compare/index.html`。基準側だけ別のエンジンなら `BASE_ENGINE=`） |
 | 案を並べて依頼主に選んでもらう | `reports/<名前>/proposal.json` → `bin/fge proposal build`（形は引数なしの `bin/fge proposal`・決定後の片付けの残りは `bin/fge proposal knobs`） |
+| ドット絵（sprite.json）のキャラ・歩き・背景・小物を描く・直す | `.claude/skills/pixel-art/SKILL.md` の表で、お題の種類のファイルだけ読む（長いスキルは困った時に節だけ引く） |
 | 道具の選び方が文書で伝わるか測る | `make agent-eval`（お題は `agent-eval/*.json`）・版ごとの比べは `make agent-eval-release`（記録は `agent-eval/history/`・最新は `make status` の 1 行） |
 
 **新しい仕組みを入れる人は**、この表（ゲーム固有なら `AGENTS.local.md` の表）に 1 行と、
@@ -152,7 +153,8 @@
 
 ## 絵の下限（生成コードに必須）
 
-**絵を描く前に `.claude/rules/drawing.md` と `.claude/skills/visual-dict` を読む**（View を書く前に毎回。
+**絵を描く前に `.claude/rules/drawing.md` を読む**。ドット絵（sprite.json）は `.claude/skills/pixel-art/SKILL.md` の表でお題の種類のファイルだけ、
+新しい画面の画風を決める時は `.claude/skills/visual-dict`（詳しい参考）も（
 Claude Code 本体は View 系 `.flix`・`*.sprite.json`・`*.shader.json`・絵を打ち起こす `gen-*.py` などを触ると自動で読むが、
 **サブエージェントは自動読みが効かないので直接読む**）。本文（画風を先に決めて `AGENTS.local.md` へ書く・
 5 性質＝階調か質感 / 主役と背景の分離 / 層 / 時間 / 形・満たせなければ `AGENTS.local.md` に理由）はそちら。
@@ -165,8 +167,9 @@ Claude Code 本体は View 系 `.flix`・`*.sprite.json`・`*.shader.json`・絵
 
 ## ドット絵の打ち方（sprite.json の作法）
 
-画素を置く前に `.claude/skills/retro-pixel/SKILL.md`（格子に乗らない絵なら `smooth-render`）を読む。
-作法（パレットを先に・大きい物は 1 枚・地面タイルは縁と角まで・歩き 4 方向は `carve-sprite`）の本文は `.claude/rules/drawing.md`。
+画素を置く前に `.claude/skills/pixel-art/SKILL.md` を読み、表からお題の種類（キャラ・敵・歩き・小物・背景・地面タイル）のファイルだけを読む
+（格子に乗らない絵なら `smooth-render`）。`retro-pixel`・`px-character`・`figure-drawing`・`visual-dict`・`carve-sprite` は詳しい参考で、既定では読まない
+（pixel-art の「詳しい参考」の表から、困った時にその節だけ引く）。作法（パレットを先に・大きい物は 1 枚・地面タイルは縁と角まで）の本文は `.claude/rules/drawing.md`。
 
 ## スキルと規約の在り処（どのエージェントでも読める）
 
@@ -176,7 +179,7 @@ Claude Code 本体は View 系 `.flix`・`*.sprite.json`・`*.shader.json`・絵
   ただの markdown。Claude Code 本体は対象ファイルを触るとき自動で読むが、この自動読みは
   サブエージェントでは発火しない — **サブエージェントと他のエージェントは作業前に `.claude/rules/*.md` を直接読む**。
   skill の自動発動もサブエージェントでは効かないので、委譲する親は読ませる skill を prompt で名指しする
-  （例: 絵なら「`/visual-dict` と、格子に乗る絵なら `/retro-pixel`・乗らない絵なら `/smooth-render` を読んでから描く」）。
+  （例: 絵なら「格子に乗るドット絵なら `/pixel-art`（表でお題の種類のファイルだけ）・乗らない絵なら `/smooth-render` を読んでから描く」）。
 - 「engine リポの `docs/...`」は `Makefile` 冒頭の `ENGINE` が指す場所にある。
 - フック機構を持たないエージェントは手で同じことをする: セッション最初に `make status`・`.flix` を
   編集するたび `make check`。コミットのゲートは git の pre-commit（未配線なら `make hooks`、clone ごとに 1 回）。
@@ -195,8 +198,8 @@ bin/fge anim [ファイル...]    # コマ間の飛び・接地と 4 方向の�
 
 - 書き方の癖と定石: `.claude/skills/flix-docs`(構文)・`compile-fix`(コンパイルエラー)・`quality-assurance`(テスト設計)
 - 画風がまだ決まっていない・新しいゲームを作り始める: `.claude/skills/style-interview`(人へ最大 7 問の聞き取り。注文は AGENTS.local.md へ)
-- 見栄えの実装: `.claude/skills/visual-dict`(絵の下限の節のとおり View の前に必読)と engine リポの `docs/shader-doc.md`(宣言シェーダーの語彙とレシピ)
-- ドット絵で行くと決まった後: `.claude/skills/retro-pixel`(色の予算・タイルと材質・キャラの等身・小物の置き場。画風を決めるのは visual-dict が先)
+- 見栄えの実装: `.claude/skills/visual-dict`(詳しい参考。新しい画面の画風を決める時)と engine リポの `docs/shader-doc.md`(宣言シェーダーの語彙とレシピ)
+- ドット絵を描く: `.claude/skills/pixel-art`(お題の種類ごとの短い読み分け)。色の予算・タイル地形を決める時だけ `.claude/skills/retro-pixel`(詳しい参考)
 - 画素の格子に乗せない絵で行くと決まった後: `.claude/skills/smooth-render`(エッジの硬さ・面積と彩度・質感の重ね方・なめらかな面に出る縞の消し方。こちらも画風を決めるのは visual-dict が先)
 - 規約と地図: engine リポの `docs/doc-conventions.md`(Doc の外形)・`docs/module-index.md`(やりたいこと → モジュール)・`docs/audio.md`(音)・`docs/glossary.md`(UI に出す言葉)
 - 動く見本: engine の `templates/game-starter`(最小)と、隣にある既存ゲームのソース
