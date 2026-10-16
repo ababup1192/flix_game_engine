@@ -36,11 +36,28 @@ type Result struct {
 	Target, Sheet string
 	Frames        []Frame
 	Elapsed       time.Duration
-	Lint          []string
+	Lint          LintDiff
 }
 
+// LintDiff は bin/fge sprite の注意を、描く前（base）と描いた後で比べた物。
+// 増えた物だけを見せると、直したつもりで消えたかが分からないので 3 つに分ける。
+type LintDiff struct {
+	Added, Removed, Kept []string
+	Ramp                 []string // ランプの並び（暗 → 明）の崩れ
+}
+
+// specKeys は spec の一番外に書ける鍵。知らない鍵は書き損じとして止める（黙って無視しない）。
+var specKeys = map[string]bool{"version": true, "note": true, "target": true, "base": true,
+	"gloss": true, "ramps": true, "shapes": true, "shared": true, "sprites": true, "preview": true}
+
 // Build は spec を読んで描き、target に書き、見本シートを作る。
-func Build(root, specPath string, lint bool) (*Result, error) {
+func Build(root, specPath string, lint bool) (res *Result, err error) {
+	// 書き損じた spec で落ちない（watch ごと止まらない）。どこで何が起きたかを返す。
+	defer func() {
+		if r := recover(); r != nil {
+			res, err = nil, fmt.Errorf("%s: 描いている途中で止まった（spec の形を確かめる）: %v", specPath, r)
+		}
+	}()
 	t0 := time.Now()
 	data, err := os.ReadFile(specPath)
 	if err != nil {
@@ -54,12 +71,17 @@ func Build(root, specPath string, lint bool) (*Result, error) {
 	if !ok {
 		return nil, fmt.Errorf("%s: 一番外はオブジェクト", specPath)
 	}
+	for _, k := range spec.Keys {
+		if !specKeys[k] {
+			return nil, fmt.Errorf("%s: 知らない鍵 %q（書ける鍵: target base gloss ramps shapes shared sprites preview note version）", specPath, k)
+		}
+	}
 	str := func(k string) string { s, _ := spec.Get(k).(string); return s }
 	target, base := str("target"), str("base")
 	if target == "" {
 		return nil, fmt.Errorf("%s: target（書き出す sprite.json。atelier/ の下）が無い", specPath)
 	}
-	if strings.HasPrefix(filepath.ToSlash(target), "assets/") {
+	if isUnderAssets(target) {
 		return nil, fmt.Errorf("%s: target が assets/ を指している — 候補は atelier/ に書く（採用は swap）", specPath)
 	}
 	if base == "" {
@@ -88,21 +110,38 @@ func Build(root, specPath string, lint bool) (*Result, error) {
 	plainSpec := plain(spec).(map[string]any)
 	ramps, _ := plainSpec["ramps"].(map[string]any)
 	shapes, _ := plainSpec["shapes"].(map[string]any)
-	layers, _ := plainSpec["layers"].(map[string]any)
+	layers, _ := plainSpec["shared"].(map[string]any)
 	gloss, _ := plainSpec["gloss"].(string)
 
 	sprites, _ := doc.Get("sprites").(*Obj)
-	specSprites, _ := spec.Get("sprites").(*Obj)
-	res := &Result{Target: target}
+	specSprites, ok := spec.Get("sprites").(*Obj)
+	if !ok || sprites == nil || legend == nil {
+		return nil, fmt.Errorf("%s: sprites は名前 → 指定のオブジェクトで書く（base にも legend と sprites が要る）", specPath)
+	}
+	var before map[string]bool
+	names := map[string]bool{}
+	for _, n := range specSprites.Keys {
+		names[n] = true
+	}
+	if lint {
+		before = lintLines(root, base, names) // 書く前に測る（target と base が同じファイルでも比べられる）
+	}
+	res = &Result{Target: target}
 	for _, name := range specSprites.Keys {
-		ss := plain(specSprites.Vals[name]).(map[string]any)
+		ss, ok := plain(specSprites.Vals[name]).(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("%s: スプライトの指定はオブジェクトで書く", name)
+		}
 		size := nums(ss["size"])
 		if len(size) != 2 {
 			return nil, fmt.Errorf("%s: size [w, h] が無い", name)
 		}
 		rampName, _ := ss["ramp"].(string)
 		ramp := strs(ramps[rampName])
-		framesSpec, _ := specSprites.Vals[name].(*Obj).Get("frames").(*Obj)
+		framesSpec, ok := specSprites.Vals[name].(*Obj).Get("frames").(*Obj)
+		if !ok {
+			return nil, fmt.Errorf("%s: frames（コマ名 → op の列）が無い", name)
+		}
 		entry, _ := sprites.Get(name).(*Obj)
 		if entry == nil {
 			entry = newObj()
@@ -147,13 +186,14 @@ func Build(root, specPath string, lint bool) (*Result, error) {
 	if err := os.WriteFile(out, []byte(dumpPy(doc)), 0o644); err != nil {
 		return nil, err
 	}
-	sheet, err := writeSheet(root, specPath, doc, res.Frames)
+	sheet, err := writeSheet(root, specPath, doc, plainSpec, res.Frames)
 	if err != nil {
 		return nil, err
 	}
 	res.Sheet = sheet
 	if lint {
-		res.Lint = append(rampOrder(paletteOf(root, doc), ramps), lintOf(root, base, target, res.Frames)...)
+		res.Lint = diffLint(before, lintLines(root, target, names))
+		res.Lint.Ramp = rampOrder(paletteOf(root, doc), ramps)
 	}
 	res.Elapsed = time.Since(t0)
 	return res, nil
@@ -186,8 +226,9 @@ func paletteOf(root string, doc *Obj) map[string]pxlib.RGBA {
 }
 
 // writeSheet は描いたコマを 実寸 と 4 倍 で並べた見本を debug/pxkit/<名前>/sheet.png に書く。
-// 夜の深藍の地に置く（透明の抜けと、輪郭が地に溶けていないかを同時に見る）。
-func writeSheet(root, specPath string, doc *Obj, frames []Frame) (string, error) {
+// 地は spec の preview.background（色キーか #rrggbb）。その絵が実際に置かれる面の色にする
+// （昼の駒は紙の上、夜のアイコンは基板の上で見ないと、輪郭が地に溶けるかを判断できない）。
+func writeSheet(root, specPath string, doc *Obj, spec map[string]any, frames []Frame) (string, error) {
 	pal := paletteOf(root, doc)
 	legend, _ := doc.Get("legend").(*Obj)
 	const zoom, gap = 4, 6
@@ -202,7 +243,7 @@ func writeSheet(root, specPath string, doc *Obj, frames []Frame) (string, error)
 	rowsN := (len(frames) + cols - 1) / cols
 	w, h := gap+cols*(cw+gap), gap+rowsN*(ch+gap)
 	img := image.NewRGBA(image.Rect(0, 0, w, h))
-	bg := color.RGBA{0x2a, 0x2a, 0x33, 0xff}
+	bg := backgroundOf(pal, spec)
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
 			img.Set(x, y, bg)
@@ -244,22 +285,45 @@ func writeSheet(root, specPath string, doc *Obj, frames []Frame) (string, error)
 	return path, png.Encode(fh, img)
 }
 
-// lintOf は書き出した Doc に bin/fge sprite と同じ検査を掛け、描いたスプライトについて
-// base には無かった注意だけを返す（もとからある注意を毎回並べると、増えた物が埋もれる）。
-func lintOf(root, base, target string, frames []Frame) []string {
-	names := map[string]bool{}
-	for _, f := range frames {
-		names[f.Sprite] = true
-	}
-	before := lintLines(root, base, names)
-	var hits []string
-	for l := range lintLines(root, target, names) {
-		if !before[l] {
-			hits = append(hits, l)
+func diffLint(before, after map[string]bool) LintDiff {
+	var d LintDiff
+	for l := range after {
+		if before[l] {
+			d.Kept = append(d.Kept, l)
+		} else {
+			d.Added = append(d.Added, l)
 		}
 	}
-	sort.Strings(hits)
-	return hits
+	for l := range before {
+		if !after[l] {
+			d.Removed = append(d.Removed, l)
+		}
+	}
+	sort.Strings(d.Added)
+	sort.Strings(d.Removed)
+	sort.Strings(d.Kept)
+	return d
+}
+
+// isUnderAssets は path が（./ や ../ で回り道しても）ゲームの assets/ の下を指すか。
+func isUnderAssets(path string) bool {
+	clean := filepath.ToSlash(filepath.Clean(path))
+	return clean == "assets" || strings.HasPrefix(clean, "assets/") || strings.Contains(clean, "/assets/") || strings.HasPrefix(clean, "../")
+}
+
+// backgroundOf は見本の地の色。
+func backgroundOf(pal map[string]pxlib.RGBA, spec map[string]any) color.RGBA {
+	p, _ := spec["preview"].(map[string]any)
+	v, _ := p["background"].(string)
+	if c, ok := pal[v]; ok {
+		return color.RGBA{c[0], c[1], c[2], 0xff}
+	}
+	if pxlib.IsHexColor(v) {
+		if c, ok := pxlib.RGBAOfValue(v); ok {
+			return color.RGBA{c[0], c[1], c[2], 0xff}
+		}
+	}
+	return color.RGBA{0x2a, 0x2a, 0x33, 0xff} // 指定が無ければ中くらいの暗い灰
 }
 
 // lintLines は 1 冊の検査の行から、描いたスプライトの行だけを「スプライト: 中身」の形で集める。

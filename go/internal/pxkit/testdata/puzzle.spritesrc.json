@@ -1,9 +1,10 @@
 {
   "version": 1,
-  "note": "昼のパズルの駒（駒 B）の形の指定。fge pxkit build で atelier/ の sprite.json に打ち起こす。いじると変わる物: ramps = 系統ごとの暗→明 4 段（墨・影・地・光）/ shapes = 記号の形（数字は 32×32 の格子の座標）/ tile の radius・inset = 角の丸みと余白 / bands = 斜めの光・地・影の境目（0〜1）。",
+  "note": "昼のパズルの駒（駒 B）の形の指定。fge pxkit build で atelier/ の sprite.json に打ち起こす。いじると変わる物: ramps = 系統ごとの暗→明 4 段（墨・影・地・光）/ shapes = 記号の形（数字は 32×32 の格子の座標。剣は横向きに書いて 1/8 周回す: 22.1 と 17.9 の差が刃の太さ）/ bevelBox の radius・inset = 角の丸みと余白、bands = 斜めの光・地・影の境目（0〜1）/ preview.background = 見本の地（スケッチブックの紙）。",
   "target": "atelier/internet_dungeon.puzzle.sprite.json",
   "base": "assets/internet_dungeon.puzzle.sprite.json",
   "gloss": "tileGloss",
+  "preview": {"background": "#ffffeb"},
   "ramps": {
     "attack": ["tileAtkInk", "tileAtkShade", "tileAtkMid", "tileAtkLight"],
     "guard":  ["tileGdInk", "tileGdShade", "tileGdMid", "tileGdLight"],
@@ -12,29 +13,29 @@
     "rush":   ["tileRshInk", "tileRshShade", "tileRshMid", "tileRshLight"]
   },
   "shapes": {
-    "sword": {"union": [
-      {"poly": [[13.485, 21.485], [23.156, 11.813], [24.5, 7.5], [20.187, 8.844], [10.515, 18.515]]},
-      {"capsule": [15.394, 23.394, 8.606, 16.606, 1.5]},
-      {"capsule": [12, 20, 8.464, 23.536, 1.2]},
-      {"circle": [7.545, 24.455, 1.9]}
-    ]},
+    "sword": {"rotate": -0.125, "about": [12, 20], "of": {"union": [
+      {"poly": [[12, 22.1], [25.678, 22.1], [29.678, 20], [25.678, 17.9], [12, 17.9]]},
+      {"capsule": [12, 24.8, 12, 15.2, 1.5]},
+      {"capsule": [12, 20, 7, 20, 1.2]},
+      {"disk": [5.7, 20, 1.9]}
+    ]}},
     "shield": {"rounded": 0.8, "of": {"poly": [[9.5, 8], [22.5, 8], [22.8, 15], [20, 21], [16, 24.5], [12, 21], [9.2, 15]]}},
     "star": {"rounded": 0.9, "of": {"star": [16, 16.8, 10.0, 4.6]}},
-    "skull": {"smoothUnion": [{"circle": [16, 14.2, 7.8]}, {"rbox": [16, 21.2, 4.6, 3.2, 1.5]}], "k": 2.0},
+    "skull": {"smoothUnion": [{"disk": [16, 14.2, 7.8]}, {"rbox": [16, 21.2, 4.6, 3.2, 1.5]}], "k": 2.0},
     "bolt": {"rounded": 0.5, "of": {"poly": [[17.5, 5.5], [24, 5.5], [19, 13], [24, 13], [11.5, 27], [14.5, 17], [9.5, 17]]}}
   },
-  "layers": {
-    "markAttack": [{"emblem": {"ref": "sword"}}],
-    "markGuard": [{"emblem": {"ref": "shield"}}, {"line": [16, 10, 16, 21], "color": "light", "within": "emblem"}],
-    "markSkill": [{"emblem": {"ref": "star"}}],
+  "shared": {
+    "markAttack": [{"glyph": {"ref": "sword"}}],
+    "markGuard": [{"glyph": {"ref": "shield"}}, {"line": [16, 10, 16, 21], "color": "light", "within": "glyph"}],
+    "markSkill": [{"glyph": {"ref": "star"}}],
     "markHex": [
-      {"emblem": {"ref": "skull"}},
+      {"glyph": {"ref": "skull"}},
       {"fill": {"ellipse": [13, 15.0, 2.2, 2.5]}, "color": "shade"},
       {"fill": {"ellipse": [19, 15.0, 2.2, 2.5]}, "color": "shade"},
       {"put": [[15, 18], [16, 18]], "color": "shade"},
       {"put": [[14, 21], [14, 22], [16, 21], [16, 22], [18, 21], [18, 22]], "color": "mid"}
     ],
-    "markRush": [{"emblem": {"ref": "bolt"}}],
+    "markRush": [{"glyph": {"ref": "bolt"}}],
     "crackH": [
       {"crack": [[2, 15], [6, 17], [10, 14], [14, 17], [18, 14], [22, 17], [26, 14], [30, 16]]},
       {"put": [[2, 15], [2, 16], [29, 16], [29, 15]], "color": ""}
@@ -43,29 +44,29 @@
       {"crack": [[16, 2], [14, 6], [17, 10], [14, 14], [17, 18], [14, 22], [17, 26], [15, 30]]},
       {"put": [[15, 2], [16, 2], [15, 29], [16, 29]], "color": ""}
     ],
-    "chip": [{"tile": {"radius": 3.2, "inset": 1.0}}]
+    "chip": [{"bevelBox": {"radius": 3.2, "inset": 1.0}}]
   },
   "sprites": {
     "pieceAttack": {"size": [32, 32], "ramp": "attack", "frames": {
-      "idle": [{"tile": {}}, {"use": "markAttack"}],
-      "crackLineH": [{"tile": {}}, {"use": "markAttack"}, {"use": "crackH"}],
-      "crackLineV": [{"tile": {}}, {"use": "markAttack"}, {"use": "crackV"}]}},
+      "idle": [{"bevelBox": {}}, {"use": "markAttack"}],
+      "crackLineH": [{"bevelBox": {}}, {"use": "markAttack"}, {"use": "crackH"}],
+      "crackLineV": [{"bevelBox": {}}, {"use": "markAttack"}, {"use": "crackV"}]}},
     "pieceGuard": {"size": [32, 32], "ramp": "guard", "frames": {
-      "idle": [{"tile": {}}, {"use": "markGuard"}],
-      "crackLineH": [{"tile": {}}, {"use": "markGuard"}, {"use": "crackH"}],
-      "crackLineV": [{"tile": {}}, {"use": "markGuard"}, {"use": "crackV"}]}},
+      "idle": [{"bevelBox": {}}, {"use": "markGuard"}],
+      "crackLineH": [{"bevelBox": {}}, {"use": "markGuard"}, {"use": "crackH"}],
+      "crackLineV": [{"bevelBox": {}}, {"use": "markGuard"}, {"use": "crackV"}]}},
     "pieceSkill": {"size": [32, 32], "ramp": "skill", "frames": {
-      "idle": [{"tile": {}}, {"use": "markSkill"}],
-      "crackLineH": [{"tile": {}}, {"use": "markSkill"}, {"use": "crackH"}],
-      "crackLineV": [{"tile": {}}, {"use": "markSkill"}, {"use": "crackV"}]}},
+      "idle": [{"bevelBox": {}}, {"use": "markSkill"}],
+      "crackLineH": [{"bevelBox": {}}, {"use": "markSkill"}, {"use": "crackH"}],
+      "crackLineV": [{"bevelBox": {}}, {"use": "markSkill"}, {"use": "crackV"}]}},
     "pieceHex": {"size": [32, 32], "ramp": "hex", "frames": {
-      "idle": [{"tile": {}}, {"use": "markHex"}],
-      "crackLineH": [{"tile": {}}, {"use": "markHex"}, {"use": "crackH"}],
-      "crackLineV": [{"tile": {}}, {"use": "markHex"}, {"use": "crackV"}]}},
+      "idle": [{"bevelBox": {}}, {"use": "markHex"}],
+      "crackLineH": [{"bevelBox": {}}, {"use": "markHex"}, {"use": "crackH"}],
+      "crackLineV": [{"bevelBox": {}}, {"use": "markHex"}, {"use": "crackV"}]}},
     "pieceRush": {"size": [32, 32], "ramp": "rush", "frames": {
-      "idle": [{"tile": {}}, {"use": "markRush"}],
-      "crackLineH": [{"tile": {}}, {"use": "markRush"}, {"use": "crackH"}],
-      "crackLineV": [{"tile": {}}, {"use": "markRush"}, {"use": "crackV"}]}},
+      "idle": [{"bevelBox": {}}, {"use": "markRush"}],
+      "crackLineH": [{"bevelBox": {}}, {"use": "markRush"}, {"use": "crackH"}],
+      "crackLineV": [{"bevelBox": {}}, {"use": "markRush"}, {"use": "crackV"}]}},
     "pieceAttackMark": {"size": [32, 32], "ramp": "attack", "frames": {"idle": [{"use": "markAttack"}]}},
     "pieceGuardMark": {"size": [32, 32], "ramp": "guard", "frames": {"idle": [{"use": "markGuard"}]}},
     "pieceSkillMark": {"size": [32, 32], "ramp": "skill", "frames": {"idle": [{"use": "markSkill"}]}},

@@ -1,0 +1,39 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ドット絵の形の指定 (*.spritesrc.json)",
+  "description": "bin/fge pxkit が読む形の指定。形・ランプ・数値のつまみ・重ねる順はここ、塗りの作法（光の向き・輪郭の色・帯の段）は op の中（Go）。build すると target の sprite.json の rows を描き直す。試作（spike/pxkit）。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "target", "ramps", "sprites"],
+  "properties": {
+    "version": { "type": "integer", "const": 1 },
+    "note": { "type": "string", "label": "メモ", "description": "いじると何が変わるかを書く（パーサは読まない）" },
+    "target": { "type": "string", "label": "書き出し先", "description": "描いた sprite.json の置き場。atelier/ の下（assets/ を指すと止まる。採用は swap）" },
+    "base": { "type": "string", "label": "元の sprite.json", "description": "legend と、spec に無いスプライトを引き継ぐ元。省くと target 自身" },
+    "gloss": { "type": "string", "label": "つやの色キー", "description": "glyph の白抜きと bevelBox の縁のつやに使う色キー" },
+    "preview": {
+      "type": "object", "label": "見本",
+      "properties": { "background": { "type": "string", "label": "見本の地", "description": "色キーか #rrggbb。その絵が置かれる面の色（昼の駒なら紙）" } }
+    },
+    "ramps": {
+      "type": "object", "label": "ランプ",
+      "description": "名前 → 暗 → 明の 4 段の色キー [ink, shade, mid, light]。輪郭と影は ink（変えられない）",
+      "additionalProperties": { "type": "array", "items": { "type": "string" }, "minItems": 4, "maxItems": 4 }
+    },
+    "shapes": { "type": "object", "label": "名前つきの形", "description": "{\"ref\": 名前} で引く。disk / ellipse / rbox / capsule / poly / star / taper と union / inter / smoothUnion / rounded / rotate（turns）" },
+    "shared": { "type": "object", "label": "名前つきの op の列", "description": "{\"use\": 名前} で差し込む（ShaderDoc の shared と同じ考え）", "additionalProperties": { "type": "array" } },
+    "sprites": {
+      "type": "object", "label": "スプライト",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["size", "frames"],
+        "properties": {
+          "note": { "type": "string" },
+          "size": { "type": "array", "items": { "type": "integer" }, "minItems": 2, "maxItems": 2, "label": "格子の大きさ [w, h]" },
+          "ramp": { "type": "string", "label": "既定のランプ", "description": "op の color の ink / shade / mid / light が指すランプ" },
+          "frames": { "type": "object", "label": "コマ", "description": "コマ名 → op の列（上から順に重ねる）", "additionalProperties": { "type": "array" } }
+        }
+      }
+    }
+  }
+}

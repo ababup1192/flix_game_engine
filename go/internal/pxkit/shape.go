@@ -2,12 +2,15 @@ package pxkit
 
 // 形: 符号付き距離（SDF。負 = 内側）を JSON の木から組む。
 //
-//	{"circle": [cx, cy, r]}            {"ellipse": [cx, cy, rx, ry]}
+//	{"disk": [cx, cy, r]}              {"ellipse": [cx, cy, rx, ry]}
 //	{"rbox": [cx, cy, hw, hh, r]}      {"capsule": [ax, ay, bx, by, r]}
 //	{"poly": [[x, y], ...]}            {"star": [cx, cy, rOut, rIn], "n": 5}
 //	{"union": [形, ...]}               {"inter": [形, 形]}
 //	{"smoothUnion": [形, 形], "k": 2}  {"rounded": 0.8, "of": 形}
-//	{"rotate": 度, "about": [x, y], "of": 形}   {"ref": "名前"}（spec の shapes から引く）
+//	{"rotate": 周（1 周 = 1.0）, "about": [x, y], "of": 形}   {"ref": "名前"}（spec の shapes から引く）
+//	{"taper": [ax, ay, bx, by, r0, r1]}  先細りの棒（塗りの判定専用）
+//
+// 語は ShaderDoc（docs/shader-doc.md）にそろえる: 丸は disk・回転は turns。
 //
 // 画素 (x, y) の中心 (x+0.5, y+0.5) で距離が 0 以下なら塗る。
 
@@ -97,10 +100,10 @@ func polySDF(pts [][2]float64) SDF {
 			bx, by := pts[(i+1)%n][0], pts[(i+1)%n][1]
 			ex, ey := bx-ax, by-ay
 			wx, wy := x-ax, y-ay
-			t := math.Max(0, math.Min(1, (wx*ex+wy*ey)/(ex*ex+ey*ey)))
+			t := math.Max(0, math.Min(1, dot(wx, wy, ex, ey)/dot(ex, ey, ex, ey)))
 			d = math.Min(d, hypot(wx-ex*t, wy-ey*t))
 			if (ay > y) != (by > y) {
-				xi := ax + (y-ay)*ex/ey
+				xi := ax + float64((y-ay)*ex)/ey
 				if x < xi {
 					inside = !inside
 				}
@@ -127,8 +130,8 @@ func ShapeOf(v any, refs map[string]any) (SDF, error) {
 			return nil, fmt.Errorf("shapes に %q が無い", name)
 		}
 		return ShapeOf(body, refs)
-	case m["circle"] != nil:
-		p := nums(m["circle"])
+	case m["disk"] != nil:
+		p := nums(m["disk"])
 		return func(x, y float64) float64 { return hypot(x-p[0], y-p[1]) - p[2] }, nil
 	case m["ellipse"] != nil:
 		p := nums(m["ellipse"])
@@ -147,7 +150,7 @@ func ShapeOf(v any, refs map[string]any) (SDF, error) {
 		return func(x, y float64) float64 {
 			ex, ey := p[2]-p[0], p[3]-p[1]
 			wx, wy := x-p[0], y-p[1]
-			t := math.Max(0, math.Min(1, (wx*ex+wy*ey)/(ex*ex+ey*ey)))
+			t := math.Max(0, math.Min(1, dot(wx, wy, ex, ey)/dot(ex, ey, ex, ey)))
 			return hypot(wx-ex*t, wy-ey*t) - p[4]
 		}, nil
 	case m["taper"] != nil:
@@ -178,7 +181,7 @@ func ShapeOf(v any, refs map[string]any) (SDF, error) {
 				r = p[3]
 			}
 			a := rot + float64(i)*math.Pi/float64(n)
-			pts = append(pts, [2]float64{p[0] + r*math.Cos(a), p[1] + r*math.Sin(a)})
+			pts = append(pts, [2]float64{p[0] + float64(r*math.Cos(a)), p[1] + float64(r*math.Sin(a))})
 		}
 		return polySDF(pts), nil
 	case m["union"] != nil:
@@ -214,7 +217,7 @@ func ShapeOf(v any, refs map[string]any) (SDF, error) {
 		return func(x, y float64) float64 {
 			da, db := fs[0](x, y), fs[1](x, y)
 			h := math.Max(k-math.Abs(da-db), 0) / k
-			return math.Min(da, db) - h*h*k*0.25
+			return math.Min(da, db) - float64(float64(h*h)*k)*0.25
 		}, nil
 	case m["rounded"] != nil:
 		f, err := ShapeOf(m["of"], refs)
@@ -229,11 +232,12 @@ func ShapeOf(v any, refs map[string]any) (SDF, error) {
 			return nil, err
 		}
 		about := nums(m["about"])
-		a := -num(m["rotate"], 0) * math.Pi / 180
+		// 形を turns だけ回す = 点を逆向きに回して元の形に問い合わせる
+		a := -num(m["rotate"], 0) * 2 * math.Pi
 		ca, sa := math.Cos(a), math.Sin(a)
 		return func(x, y float64) float64 {
-			dx, dy := x-about[0], y-about[1]
-			return f(about[0]+dx*ca-dy*sa, about[1]+dx*sa+dy*ca)
+			dx, dy := float64(x-about[0]), float64(y-about[1])
+			return f(about[0]+float64(dx*ca)-float64(dy*sa), about[1]+float64(dx*sa)+float64(dy*ca))
 		}, nil
 	}
 	return nil, fmt.Errorf("知らない形: %v", keysOf(m))
@@ -251,3 +255,7 @@ func shapeList(v any, refs map[string]any) ([]SDF, error) {
 	}
 	return out, nil
 }
+
+// dot は a·b。float64(…) で 1 つずつ丸め、Go が積と和を FMA にまとめるのを止める
+// （Python は融合しないので、まとめられると画素の内外が入れ替わることがある）。
+func dot(ax, ay, bx, by float64) float64 { return float64(ax*bx) + float64(ay*by) }

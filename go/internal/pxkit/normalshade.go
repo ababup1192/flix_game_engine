@@ -1,13 +1,13 @@
 package pxkit
 
-// lit3d — 部品（塊）を高さの場とみなして法線を出し、光の向きとの内積でランプの 4 段に塗る。
+// normalShade — 部品（塊）を高さの場とみなして法線を出し、光の向きとの内積でランプの 4 段に塗る。
 // キャラ・魔物の体のように丸みのある物の作法をまとめて持つ:
 //   - 光は左上（light で向きを変えられる）
 //   - 前の部品が後ろの部品に落とす影（左上 1〜2px に前の部品があれば一段暗く）
 //   - 外周: 右下の縁は墨（outline）、光の側の縁は材質の暗色か rim（暗い材質を闇から抜く明るい縁）
 //   - 内側の境目: 後ろの別グループの部品に接する縁を暗色で締める
 //
-//	{"lit3d": {"light": [-0.55, -0.70, 0.55], "parts": [
+//	{"normalShade": {"light": [-0.55, -0.70, 0.55], "parts": [
 //	   {"shape": 形, "ramp": "pink", "thick": 11, "group": "body"}, ...],
 //	 "details": [op, ...]}}            details は put / line / stamp（顔・つや・小物を手で打つ）
 
@@ -96,7 +96,7 @@ func chamfer(m Mask, w, h int) [][]float64 {
 	return out
 }
 
-func (c *ctx) lit3d(p map[string]any) error {
+func (c *ctx) normalShade(p map[string]any) error {
 	g := c.g
 	lv := nums(p["light"])
 	if len(lv) != 3 {
@@ -174,14 +174,14 @@ func (c *ctx) lit3d(p map[string]any) error {
 						v = dist[py+pad][px+pad]
 					}
 					u := math.Min(1.0, v/pt.thick)
-					return math.Sqrt(u * (2.0 - u))
+					return math.Sqrt(float64(u * (2.0 - u)))
 				}
-				gx := (hh(x+1, y) - hh(x-1, y)) * 0.5
-				gy := (hh(x, y+1) - hh(x, y-1)) * 0.5
+				gx := float64(hh(x+1, y)-hh(x-1, y)) * 0.5
+				gy := float64(hh(x, y+1)-hh(x, y-1)) * 0.5
 				k := pt.thick * 0.9
 				nx, ny, nz := -gx*k, -gy*k, 1.0
-				nl := math.Sqrt(nx*nx + ny*ny + nz*nz)
-				i := (nx*light[0]+ny*light[1]+nz*light[2])/nl + pt.bias
+				nl := math.Sqrt(float64(nx*nx) + float64(ny*ny) + float64(nz*nz))
+				i := (float64(nx*light[0])+float64(ny*light[1])+float64(nz*light[2]))/nl + pt.bias
 				switch {
 				case i < 0.18:
 					level = 0

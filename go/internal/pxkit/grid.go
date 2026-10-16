@@ -58,38 +58,25 @@ func (g *Grid) Fill(m Mask, c string) {
 
 var dirs4 = [4][2]int{{1, 0}, {-1, 0}, {0, 1}, {0, -1}}
 
-// Outline は塊の外側 1px を縁取る。lit を渡すと、塊が右下にある縁（光の側）だけその色。
-func (g *Grid) Outline(m Mask, c, lit string) {
-	type pt struct {
-		x, y int
-		lit  bool
-	}
+// Outline は塊の外側 1px を縁取る。
+func (g *Grid) Outline(m Mask, c string) {
+	type pt struct{ x, y int }
 	var pts []pt
 	for y := 0; y < g.H; y++ {
 		for x := 0; x < g.W; x++ {
 			if m[y][x] {
 				continue
 			}
-			any, allLit := false, true
 			for _, d := range dirs4 {
 				if g.Inside(m, x+d[0], y+d[1]) {
-					any = true
-					if d[0]+d[1] <= 0 {
-						allLit = false
-					}
+					pts = append(pts, pt{x, y})
+					break
 				}
-			}
-			if any {
-				pts = append(pts, pt{x, y, lit != "" && allLit})
 			}
 		}
 	}
 	for _, p := range pts {
-		if p.lit {
-			g.Px[p.y][p.x] = lit
-		} else {
-			g.Px[p.y][p.x] = c
-		}
+		g.Px[p.y][p.x] = c
 	}
 }
 

@@ -4,14 +4,16 @@ package pxkit
 // 作法（光は左上・輪郭はランプの最暗色・帯の境目の市松）は op の中に既定として入っていて、
 // spec からは数値のつまみだけを渡す。ランプは暗 → 明の 4 段 [ink, shade, mid, light]。
 //
-//	{"tile": {"radius": 6.5, "inset": 2}}    角丸タイル（斜めの 3 段 + 縁のつや + 墨の輪郭）
-//	{"emblem": 形}                            白抜きの記号（右下へ墨の影を 1px）
+//	{"bevelBox": {"radius": 6.5, "inset": 2, "bands": [0.30, 0.72], "glossUntil": 0.8}}
+//	                                          角丸の板（斜めの 3 段 + 縁のつや + 墨の輪郭）。格子は正方形
+//	{"glyph": 形}                             白抜きの記号（右下へ墨の影を 1px）
 //	{"fill": 形, "color": "shade"}            塊を 1 色で
 //	{"put": [[x, y], ...], "color": "mid"}    画素を直に（"color": null で透明へ抜く）
-//	{"line": [x0, y0, x1, y1], "color": "light", "within": "emblem"}
+//	{"line": [x0, y0, x1, y1], "color": "light", "within": "glyph"}
 //	{"crack": [[x, y], ...]}                  タイルの割れ目（墨 + 右下に切り口の光）
 //	{"stamp": {"at": [x, y], "rows": [...]}, "colors": {"#": "gloss"}}
-//	{"use": "名前"}                           spec の layers（名前つきの op の列）を差し込む
+//	{"use": "名前"}                           spec の shared（名前つきの op の列）を差し込む
+//	{"normalShade": {...}}                    丸みのある部品の塊を光の向きで塗る（normalshade.go）
 
 import (
 	"fmt"
@@ -25,7 +27,7 @@ type ctx struct {
 	ramps  map[string]any    // spec の ramps（lit3d の部品ごとに引く）
 	keyOf  map[string]string // legend の文字 → 色キー（stamp を legend の文字で打つとき）
 	gloss  string
-	masks  map[string]Mask // 直前の tile / emblem の塊（within・crack が引く）
+	masks  map[string]Mask // 直前の bevelBox / glyph の塊（within・crack が引く）
 	shapes map[string]any
 	layers map[string]any
 	depth  int
@@ -35,6 +37,28 @@ type errUnknownColor string
 
 func (e errUnknownColor) Error() string {
 	return fmt.Sprintf("legend に無い色キー %q", string(e))
+}
+
+// mustColor は op の "color" を引く。書き忘れは黙って透明にせず止める（透明へ抜くのは "" と明記した時だけ）。
+func (c *ctx) mustColor(m map[string]any) (string, error) {
+	v, ok := m["color"]
+	if !ok {
+		return "", fmt.Errorf("color が無い（透明へ抜くなら \"color\": \"\"）")
+	}
+	col := c.color(v)
+	if col != "" && c.keyOf != nil && !c.hasKey(col) {
+		return "", errUnknownColor(col)
+	}
+	return col, nil
+}
+
+func (c *ctx) hasKey(key string) bool {
+	for _, k := range c.keyOf {
+		if k == key {
+			return true
+		}
+	}
+	return false
 }
 
 // color は "ink" "shade" "mid" "light" "gloss" をランプから引き、ほかは legend のキーそのもの。
@@ -80,14 +104,17 @@ func (c *ctx) op(m map[string]any) error {
 		name, _ := m["use"].(string)
 		body, ok := c.layers[name].([]any)
 		if !ok {
-			return fmt.Errorf("layers に %q が無い", name)
+			return fmt.Errorf("shared に %q が無い", name)
 		}
 		return c.run(body)
-	case m["tile"] != nil:
-		p, _ := m["tile"].(map[string]any)
-		c.masks["tile"] = c.tile(num(p["radius"], 6.5), num(p["inset"], 2.0), nums2(p["bands"], 0.30, 0.72))
-	case m["emblem"] != nil:
-		f, err := ShapeOf(m["emblem"], c.shapes)
+	case m["bevelBox"] != nil:
+		p, _ := m["bevelBox"].(map[string]any)
+		if g.W != g.H {
+			return fmt.Errorf("bevelBox は正方形の格子だけ（今は %d×%d）", g.W, g.H)
+		}
+		c.masks["bevelBox"] = c.bevelBox(num(p["radius"], 6.5), num(p["inset"], 2.0), nums2(p["bands"], 0.30, 0.72), num(p["glossUntil"], 0.8))
+	case m["glyph"] != nil:
+		f, err := ShapeOf(m["glyph"], c.shapes)
 		if err != nil {
 			return err
 		}
@@ -100,31 +127,47 @@ func (c *ctx) op(m map[string]any) error {
 			}
 		}
 		g.Fill(em, c.gloss)
-		c.masks["emblem"] = em
+		c.masks["glyph"] = em
 	case m["fill"] != nil:
 		f, err := ShapeOf(m["fill"], c.shapes)
 		if err != nil {
 			return err
 		}
-		g.Fill(g.MaskOf(f), c.color(m["color"]))
+		col, err := c.mustColor(m)
+		if err != nil {
+			return err
+		}
+		g.Fill(g.MaskOf(f), col)
 	case m["put"] != nil:
-		col := c.color(m["color"])
+		col, err := c.mustColor(m)
+		if err != nil {
+			return err
+		}
 		for _, p := range points(m["put"]) {
 			g.Put(int(p[0]), int(p[1]), col)
 		}
 	case m["line"] != nil:
 		p := nums(m["line"])
 		within, _ := m["within"].(string)
-		col := c.color(m["color"])
+		col, err := c.mustColor(m)
+		if err != nil {
+			return err
+		}
+		if within != "" && c.masks[within] == nil {
+			return fmt.Errorf("line の within %q の塊がまだ無い（先に描く）", within)
+		}
 		for _, q := range lerpCells([][2]float64{{p[0], p[1]}, {p[2], p[3]}}) {
 			if within == "" || g.Inside(c.masks[within], q[0], q[1]) {
 				g.Put(q[0], q[1], col)
 			}
 		}
-	case m["lit3d"] != nil:
-		p, _ := m["lit3d"].(map[string]any)
-		return c.lit3d(p)
+	case m["normalShade"] != nil:
+		p, _ := m["normalShade"].(map[string]any)
+		return c.normalShade(p)
 	case m["crack"] != nil:
+		if c.masks["bevelBox"] == nil {
+			return fmt.Errorf("crack は bevelBox の後に書く（割る板が無い）")
+		}
 		c.crack(points(m["crack"]))
 	case m["stamp"] != nil:
 		p, _ := m["stamp"].(map[string]any)
@@ -152,8 +195,8 @@ func (c *ctx) op(m map[string]any) error {
 	return nil
 }
 
-// tile は角丸タイル。左上 → 右下の斜めの帯で 光・地・影、縁の 1px につや（左上）と墨（右下）、外側に墨の輪郭。
-func (c *ctx) tile(radius, inset float64, bands [2]float64) Mask {
+// bevelBox は角丸の板。左上 → 右下の斜めの帯で 光・地・影、縁の 1px につや（左上）と墨（右下）、外側に墨の輪郭。
+func (c *ctx) bevelBox(radius, inset float64, bands [2]float64, glossUntil float64) Mask {
 	g, r := c.g, c.ramp
 	size := g.W
 	half := float64(size) / 2
@@ -191,7 +234,7 @@ func (c *ctx) tile(radius, inset float64, bands [2]float64) Mask {
 			up, left := !g.Inside(m, x, y-1), !g.Inside(m, x-1, y)
 			down, right := !g.Inside(m, x, y+1), !g.Inside(m, x+1, y)
 			if (up || left) && !(down || right) {
-				if float64(x+y) < float64(size)*0.8 {
+				if float64(x+y) < float64(size)*glossUntil {
 					g.Px[y][x] = c.gloss
 				} else {
 					g.Px[y][x] = r[3]
@@ -201,7 +244,7 @@ func (c *ctx) tile(radius, inset float64, bands [2]float64) Mask {
 			}
 		}
 	}
-	g.Outline(m, r[0], "")
+	g.Outline(m, r[0])
 	return m
 }
 
@@ -213,7 +256,7 @@ func lerpCells(pts [][2]float64) [][2]int {
 		n := int(math.Max(math.Abs(bx-ax), math.Abs(by-ay))) + 1
 		for k := 0; k <= n; k++ {
 			t := float64(k) / float64(max(1, n))
-			cells = append(cells, [2]int{int(math.RoundToEven(ax + (bx-ax)*t)), int(math.RoundToEven(ay + (by-ay)*t))})
+			cells = append(cells, [2]int{int(math.RoundToEven(ax + float64((bx-ax)*t))), int(math.RoundToEven(ay + float64((by-ay)*t)))})
 		}
 	}
 	return cells
@@ -221,7 +264,7 @@ func lerpCells(pts [][2]float64) [][2]int {
 
 // crack はタイルの割れ目: 墨の 1px と、その右下に切り口の光 1px。
 func (c *ctx) crack(pts [][2]float64) {
-	g, m := c.g, c.masks["tile"]
+	g, m := c.g, c.masks["bevelBox"]
 	cells := lerpCells(pts)
 	seen := map[[2]int]bool{}
 	for _, q := range cells {
