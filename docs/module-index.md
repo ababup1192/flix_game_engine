@@ -199,8 +199,7 @@
   View に直接並べる完成品ではない。正当な用途は HUD 下地・デバッグ描画・fail-open の仮板。
 - **CameraRig** — world のどこを・どれだけズームして映すかを描画物の列に掛ける道具箱。
 - **Depth** — 見下ろし画面で「足元が下にある物ほど手前」を重なり順（zIndex）の数として決める。ZStack の木では orderAt(足元の y) を zIndex に渡す。帯は ZStack.of に奥 → 手前で積む。
-- **ZStack** — 描く順を「積んだ順」で決める木（leaf / of / zIndex / topLayer / mapItems）。z の数は葉の中の小さな前後（0..31）だけ。木で書けない演出だけ ZLegacy（rawZ・zShiftedAll）で z の数を直に書く。
-- **ZLegacy** — z の数を直に書く古い書き方（rawZ・zShiftedAll）。木で書けない演出だけで使い、ゲームから呼ぶと forbid の zlegacy が止める（除外に理由 1 行）。置き換えは docs/migrations/0.35.24.md。
+- **ZStack** — 描く順を「積んだ順」で決める木（leaf / of / zIndex / topLayer / mapItems）。z の数は葉の中の小さな前後（0..31）だけ。
 - **EngineInternal** — エンジンの中だけで使う口（z を書く zMapped。SortingLayer.compose・App.composeScene・UiRender が使う）。ゲームからは呼ばない（forbid の engine-internal が止める）。
 - **SortingLayer** — 画面全体の層を名前で宣言する表（trait。ゲームが enum の instance で範囲を書く）と、層ごとの ZStack の木を 1 本の絵の列にする compose。区画を越えたら天井で止め、ViewCtx#warnOnce で 1 回だけ知らせる。
 - **Persp** — 疑似 3D（2.5D）カメラの数学一式。世界の点を前後 fwd・左右 lat に分解し、透視除算で画面へ落とす。近クリップ・逆投影（depthAtY）・距離霧の式も持つ。焦点距離や霧の色の実体はゲーム側の意見（theme Doc など）。

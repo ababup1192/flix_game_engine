@@ -2471,10 +2471,6 @@
 - 世界線上の絶対位置 n（0 = 最古、pastLength = 現在地、length-1 = 最新）へ移動する。
   `pub def scrubTo(n: Int32, wl: Worldline[a]): Worldline[a]`
 
-## ZLegacy — `engine_world/src/ZLegacy.flix`
-- `pub def rawZ(layer: t, order: Int32): Int32 with SortingLayer[t]`
-- `pub def zShiftedAll(delta: Int32, items: List[Render.PlacedItem]): List[Render.PlacedItem]`
-
 ## ZStack — `engine_world/src/ZStack.flix`
 - 積み木の木。p は topLayer の行き先（ゲームの SortingLayer の層の enum）。
   `pub enum Node[p] { case Leaf(List[Render.PlacedItem]) case Stacked(List[Node[p]]) case ZIndexed(Int32, Node[p]) case TopLayer(p, Node[p]) case Mapped(List[Render.PlacedItem] -> List[Render.PlacedItem], Node[p]) }`

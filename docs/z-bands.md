@@ -45,14 +45,14 @@ ZStack.mapItems(Render.scaledAllAround(1.0 + bump, center), tree)
 
 - **1 部品 = 1 葉から始める。** 葉を割るのは「前の葉の最大 z < 次の葉の最小 z」を確かめてから。
   同じ z だった物を割ると、描画部の種類順（tiles → sprites → polygons → static → surfaces）が積んだ順に変わる。
-- **z の付け替えをしない。** 移す・縮めるは `mapItems`（z を付け替える公開の関数は 0.35.24 で消した。残るのは木で書けない演出のための `ZLegacy` だけ）。
+- **z の付け替えをしない。** 移す・縮めるは `mapItems`（z を付け替える公開の関数は無い）。
 - **必ず手前の物は `topLayer(層, …)`。** z を大きくして手前に出さない。world（`Layer`）と HUD（`HudLayer`）は
   型が違うので、またいで送れない。送り元より奥の層へは送れない（送り元の手前に置いて知らせる）。
 - **区画を越えたら止めない。** 天井で止め、`ViewCtx#warnOnce` で層の名前ごとに 1 回だけ知らせる。
   描き出しはこの口に集まった文面で止める（ゲームが `{ warnOnce = 集める口 | ctx }` で差し替える）。
-- **木で書けない所だけ `ZLegacy`**: 描き上がった 1 フレームを丸ごと加工する演出（裂く・物ごとに 1 段上へ影を重ねる）のように
-  葉の前後では書けない物は、`ZLegacy.rawZ(層, 段)` と `ZLegacy.zShiftedAll` で z の数を直に書く。ゲームから呼ぶと `bin/fge forbid`（zlegacy）が止めるので、`forbid.local.json` の除外に「なぜ木で書けないか」を 1 行。
-  古い名前（`SortingLayer.z`・`Render.zShiftedAll`）と、消した物（`leafAbsolute`・`Depth.place` / `Bands` など）の置き換えは `docs/migrations/0.35.24.md`。
+- **描き上がった絵を加工する演出（裂く・色ずれの影）も木で書く。** 部品ごとに `mapItems` で裂いた絵と影を作り、
+  奥 → 手前に積む（間に挟む物は間の子に）。見本は internet_dungeon の `FightIntroView.preRollTear`。
+  消した名前の置き換えは `docs/migrations/0.35.24.md` と、ZLegacy を消した版の表。
 - **葉の中の z は 0..31 に収める（決まり。コードでは縛らない）。** 葉は中の z の幅をそのまま使うので、古い z=900 のままの葉は 901 段を使い、区画を越えて知らせが出る。
   名前を付けるなら葉を作るファイルに `def zText(): Int32 = 2` と書いてよい（表を持つパッケージでも、`bin/fge z-table` は表の外の 0..31 を止めない。32 以上と負の数は止める。範囲は `bin/lint-rules/z-table.json` の `leafZRange`）。
 - **使い回し（キャッシュ）は入れない。** 木は毎フレーム組んで捨てる。費用は O(絵の数 + 節の数 × log + 送った物の数 × log)（log は zIndex と送り先の並べ替え）。mapItems は入れ子 1 段ごとに中の絵を 1 回ずつ写す（今の Render.*All と同じ）。

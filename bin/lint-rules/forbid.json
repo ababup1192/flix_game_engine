@@ -14,13 +14,6 @@
       "skip": ["engine/", "engine_world/", "engine_tools/", "engine_full/", "src/engine/", "src/engine_world/", "src/engine_tools/", "render_gl/", "src/render_gl/", "lib/", "build/"],
       "pattern": "\\bEngineInternal\\.",
       "hint": "EngineInternal はエンジンの中だけで使う口（SortingLayer.compose などが z を書く所）。ゲームの重なりは ZStack.of に積む・必ず手前は ZStack.topLayer・画面ごと動かすのは ZStack.mapItems（docs/z-bands.md）"
-    },
-    {
-      "id": "zlegacy",
-      "suffixes": [".flix"],
-      "skip": ["engine/", "engine_world/", "engine_tools/", "engine_full/", "src/engine/", "src/engine_world/", "src/engine_tools/", "render_gl/", "src/render_gl/", "lib/", "build/"],
-      "pattern": "\\bZLegacy\\.",
-      "hint": "ZLegacy は z の数を直に書く古い書き方。ふつうは ZStack.of に積む・必ず手前は ZStack.topLayer・見下ろしは ZStack.zIndex(Depth.orderAt(足元の y), …)。木で書けない演出（描き上がった 1 フレームを加工する等）だけ、bin/lint-rules/forbid.local.json の exempt に \"パス::zlegacy\" と理由 1 行を書いて残す"
     }
   ],
   "exempt": {}

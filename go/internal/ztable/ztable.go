@@ -19,7 +19,7 @@ package ztable
 //     zRange の範囲 (case の行) と、いくつもの View が分け合う葉の中の段だけ
 //
 // z を後から付け替える関数・移行の口 (Render.zShifted・SortingLayer.z・ZStack.leafAbsolute など) は
-// エンジン 0.35.24 で消したか ZLegacy へ移したので、ここでは見ない (型検査が止める)。
+// エンジン 0.35.24 と次の版で消したので、ここでは見ない (型検査が止める)。
 //
 // 除外はエンジンの z-table.json の exempt と、ゲームの z-table.local.json の exempt を足した物。
 //
