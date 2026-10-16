@@ -2,7 +2,8 @@
 
 package heavy
 
-// 何を守るか: 枠の本数より多く同時に流さないこと、長い物どうしを同時に流さないこと、
+// 何を守るか: 枠の本数より多く同時に流さないこと、長い物を長い物の枠の本数（既定 2）より多く
+// 重ねないこと、長い物が枠を埋めても短い物だけの枠で短い物が流れること、
 // 長い物が枠 1 を持っていても短い物が枠 2 で流れること、古い heavy のエントリに枠 2 を配らないこと、
 // 持ち主の死んだ鍵と古い手書きの鍵だけを外すこと、自分の鍵しか外さないこと、
 // 中から呼んだ heavy が自分の鍵を待って止まらないこと。
@@ -41,10 +42,30 @@ func heavyCmd(t *testing.T, lock string, args ...string) *exec.Cmd {
 
 func heavyCmdSlots(t *testing.T, lock string, slots int, args ...string) *exec.Cmd {
 	t.Helper()
+	return heavyCmdLongSlots(t, lock, slots, DefaultLongSlots, args...)
+}
+
+func heavyCmdLongSlots(t *testing.T, lock string, slots, longSlots int, args ...string) *exec.Cmd {
+	t.Helper()
 	c := exec.Command(os.Args[0], append([]string{"-test.run=^$", "--"}, args...)...)
 	c.Env = append(os.Environ(), "FGE_HEAVY_HELPER=1", "FGE_HEAVY_LOCK="+lock, NoDelegateEnv+"=1",
-		fmt.Sprintf("%s=%d", SlotsEnv, slots))
+		fmt.Sprintf("%s=%d", SlotsEnv, slots), fmt.Sprintf("%s=%d", LongSlotsEnv, longSlots))
 	return c
+}
+
+// waitFile は path ができるまで待つ（5 秒で諦める）。
+func waitFile(t *testing.T, path, what string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, err := os.Stat(path); err == nil {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%s", what)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 }
 
 // runAll は同じ鍵で heavy を並べて流し、それぞれの終了コードを返す。
@@ -109,18 +130,113 @@ func TestTwoSlotsRunTwoShortAtMost(t *testing.T) {
 	}
 }
 
-func TestLongRunsDoNotOverlap(t *testing.T) {
+func TestLongRunsDoNotOverlapWithOneLongSlot(t *testing.T) {
 	lock := newLock(t)
 	marker := filepath.Join(t.TempDir(), "running")
 	body := fmt.Sprintf("mkdir %s || exit 9; sleep 0.3; rmdir %s", marker, marker)
 	cmds := []*exec.Cmd{
-		heavyCmd(t, lock, "--long", "sh", "-c", body),
-		heavyCmd(t, lock, "sh", "-c", body+" # make render-all"),
-		heavyCmd(t, lock, "--long", "sh", "-c", body),
+		heavyCmdLongSlots(t, lock, DefaultSlots, 1, "--long", "sh", "-c", body),
+		heavyCmdLongSlots(t, lock, DefaultSlots, 1, "sh", "-c", body+" # make render-all"),
+		heavyCmdLongSlots(t, lock, DefaultSlots, 1, "--long", "sh", "-c", body),
 	}
 	for i, code := range runAll(t, cmds) {
 		if code != 0 {
 			t.Fatalf("長い物の %d 本目が %d で終わった（重なって走った）", i, code)
+		}
+	}
+}
+
+func TestLongRunsTwoAtMost(t *testing.T) {
+	lock := newLock(t)
+	dir := t.TempDir()
+	a, b, both := filepath.Join(dir, "a"), filepath.Join(dir, "b"), filepath.Join(dir, "both")
+	// 長い物が 3 本重なると a も b も取れずに 9 で終わる。2 本が重なった印は both に残る。
+	body := fmt.Sprintf(`if mkdir %[1]s 2>/dev/null; then m=%[1]s; elif mkdir %[2]s 2>/dev/null; then m=%[2]s; else exit 9; fi
+[ -d %[1]s ] && [ -d %[2]s ] && touch %[3]s; sleep 0.5; [ -d %[1]s ] && [ -d %[2]s ] && touch %[3]s; rmdir $m`, a, b, both)
+	var cmds []*exec.Cmd
+	for i := 0; i < 5; i++ {
+		cmds = append(cmds, heavyCmd(t, lock, "--long", "sh", "-c", body))
+	}
+	for i, code := range runAll(t, cmds) {
+		if code != 0 {
+			t.Fatalf("長い物の %d 本目が %d で終わった（3 本が重なって走った）", i, code)
+		}
+	}
+	if _, err := os.Stat(both); err != nil {
+		t.Fatalf("長い物の枠が 2 本あるのに長い物が 1 本ずつしか走らなかった")
+	}
+}
+
+func TestShortSlotStaysFreeBesideTwoLongs(t *testing.T) {
+	lock := newLock(t)
+	dir := t.TempDir()
+	done := filepath.Join(dir, "done")
+	// 長い物 2 本が枠 1・2 を握り、3 本目の長い物が待つ。短い物は枠 3 ですぐ流れるはず。
+	var longs []*exec.Cmd
+	for i := 0; i < 2; i++ {
+		started := filepath.Join(dir, fmt.Sprintf("started%d", i))
+		c := heavyCmd(t, lock, "--long", "sh", "-c",
+			fmt.Sprintf("touch %s; i=0; while [ ! -e %s ] && [ $i -lt 50 ]; do sleep 0.1; i=$((i+1)); done", started, done))
+		if err := c.Start(); err != nil {
+			t.Fatal(err)
+		}
+		longs = append(longs, c)
+		waitFile(t, started, "長い物が始まらない")
+	}
+	defer func() {
+		for _, c := range longs {
+			c.Wait()
+		}
+	}()
+	third := filepath.Join(dir, "third")
+	extra := heavyCmd(t, lock, "--long", "touch", third)
+	if err := extra.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer extra.Wait()
+	t0 := time.Now()
+	if err := heavyCmd(t, lock, "touch", done).Run(); err != nil {
+		t.Fatalf("短い物が失敗: %v", err)
+	}
+	if waited := time.Since(t0); waited > 3*time.Second {
+		t.Fatalf("長い物が 2 本走っている間、短い物が %v 待たされた", waited)
+	}
+	if _, err := os.Stat(slotPath(lock, 2)); err == nil {
+		t.Fatalf("短い物が終わった後も枠 3 が埋まっている（3 本目の長い物が短い物だけの枠を取った）")
+	}
+}
+
+func TestEligibleKeepsShortOnlySlot(t *testing.T) {
+	long := Owner{Long: true, Slots: 3, LongSlots: 2}
+	if got := fmt.Sprint(eligible(long, 3)); got != "[0 1]" {
+		t.Fatalf("長い物の枠が %s（枠 1・2 だけのはず）", got)
+	}
+	short := Owner{AnySlot: true, Slots: 3, LongSlots: 2}
+	if got := fmt.Sprint(eligible(short, 3)); got != "[2 1 0]" {
+		t.Fatalf("短い物の取る順が %s（短い物だけの枠 3 から・枠 1 を最後に）", got)
+	}
+	tooMany := Owner{Long: true, Slots: 3, LongSlots: 5}
+	if got := fmt.Sprint(eligible(tooMany, 3)); got != "[0 1]" {
+		t.Fatalf("長い物の枠を 5 本にしても短い物だけの枠を残すはず (got %s)", got)
+	}
+	// 0.35.32 までの heavy のエントリ（LongSlots が無い）は、長い物は枠 1 だけ・短い物は枠 2 から。
+	oldLong := Owner{Long: true, Slots: 2}
+	if got := fmt.Sprint(eligible(oldLong, 3)); got != "[0]" {
+		t.Fatalf("前の版の長い物のエントリに %s を配った（枠 1 だけのはず）", got)
+	}
+	oldShort := Owner{AnySlot: true, Slots: 2}
+	if got := fmt.Sprint(eligible(oldShort, 3)); got != "[1 0]" {
+		t.Fatalf("前の版の短い物のエントリに %s を配った（枠 2・1 のはず）", got)
+	}
+}
+
+func TestStatusShowsLongSlots(t *testing.T) {
+	lock := newLock(t)
+	var out strings.Builder
+	printStatus(&out, defaults(Options{Lock: lock, Err: io.Discard}), false)
+	for _, want := range []string{"枠 3 本", "枠 1〜2 の 2 本まで", "枠 2 (長い物も短い物も)", "枠 3 (短い物だけ)"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("--status に %q が無い:\n%s", want, out.String())
 		}
 	}
 }
@@ -378,11 +494,11 @@ func TestDeadSlotTwoIsReapedWhileSlotOneBusy(t *testing.T) {
 
 func TestChildOfSlotTwoSeesItsSlotAsLock(t *testing.T) {
 	lock := newLock(t)
-	// 枠 1 を塞いで短い物に枠 2 を取らせる。子の FGE_HEAVY_LOCK が枠 2 なら、中の古い heavy も待たずに流れる。
+	// 枠 1 を塞いで短い物に枠 2 を取らせる（枠 2 本）。子の FGE_HEAVY_LOCK が枠 2 なら、中の古い heavy も待たずに流れる。
 	os.Mkdir(lock, 0o755)
 	writeJSON(filepath.Join(lock, ownerFile), Owner{PID: os.Getpid(), Since: time.Now()})
 	want := slotPath(lock, 1)
-	c := heavyCmd(t, lock, "sh", "-c", fmt.Sprintf(`test "$FGE_HEAVY_LOCK" = %s && grep -q "$FGE_HEAVY_TOKEN" "$FGE_HEAVY_LOCK/owner.json"`, want))
+	c := heavyCmdSlots(t, lock, 2, "sh", "-c", fmt.Sprintf(`test "$FGE_HEAVY_LOCK" = %s && grep -q "$FGE_HEAVY_TOKEN" "$FGE_HEAVY_LOCK/owner.json"`, want))
 	if err := c.Run(); err != nil {
 		t.Fatalf("枠 2 の子に枠 2 の置き場と合言葉が渡っていない: %v", err)
 	}

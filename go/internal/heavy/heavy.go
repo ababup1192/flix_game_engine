@@ -6,13 +6,16 @@
 //	fge heavy --status                枠ごとの持ち主と待っている列
 //	fge heavy --history[=時間]        直近の待ちと走りの合計（鍵を返すたびに <鍵>.log へ 1 行）
 //
-// 鍵は FGE_HEAVY_SLOTS 本（既定 2）の枠。枠 1 は /tmp/fge-heavy.lock（FGE_HEAVY_LOCK で
+// 鍵は FGE_HEAVY_SLOTS 本（既定 3）の枠。枠 1 は /tmp/fge-heavy.lock（FGE_HEAVY_LOCK で
 // 差し替え）、枠 2 からは <鍵>.2・<鍵>.3 … の mkdir。mkdir が成功した方がその枠の持ち主。
 //
-// 長い物（render-all・動画・compare など 10 分を超えうる物）は枠 1 だけを使うので、
-// 長い物どうしは同時に走らない。短い物（check・test・sync）は枠 2 から先に、空いていれば
-// 枠 1 も使う。枠 1 の名前は 1 本だった頃の鍵と同じなので、手書きの `until mkdir …; rmdir` も
-// 古い heavy も枠 1 を取り合い、古い heavy のエントリは「枠 1 だけを待つエントリ」として順番に並ぶ。
+// 長い物（render-all・動画・compare など 10 分を超えうる物）は枠 1〜L（FGE_HEAVY_LONG_SLOTS・
+// 既定 2）だけを使うので、長い物は L 本までしか重ならない。枠 L+1 から先は短い物（check・test・sync）
+// だけの枠で、長い物が並んでも短い物が必ず 1 本は走れる。短い物は短い物だけの枠から先に取り、
+// 空いていれば長い物の枠も使う。枠 1 の名前は 1 本だった頃の鍵と同じなので、手書きの
+// `until mkdir …; rmdir` も古い heavy も枠 1 を取り合い、古い heavy のエントリは「枠 1 だけを待つ
+// エントリ」として順番に並ぶ。0.35.26〜0.35.32 の heavy の長い物も枠 1 だけを取るので、版が混ざっても
+// 長い物が L 本を超えたり、短い物だけの枠を長い物が取ったりはしない。
 // 持ち主は枠の中の owner.json に書き、待っている列は <鍵>.queue/<pid>.json に並ぶ。
 package heavy
 
@@ -41,12 +44,20 @@ const DefaultLock = "/tmp/fge-heavy.lock"
 // SlotsEnv は枠の本数を変える環境変数。
 const SlotsEnv = "FGE_HEAVY_SLOTS"
 
-// DefaultSlots は枠の本数の既定。
+// DefaultSlots は枠の本数の既定（長い物の枠 DefaultLongSlots 本 + 短い物だけの枠 1 本）。
 //
-// WhyNot: 2 本にするのは、64GB のマシンで JVM を 2 本（ヒープの上限は物理メモリの 1/4 ずつ）
-// 立てても詰まらず、長い描き出しの後ろで短い check・test が 30 分待つのを止められるため。
-// 3 本以上は短い物どうしが CPU を取り合い、1 本あたりが遅くなる。
-const DefaultSlots = 2
+// WhyNot: 長い物 2 本 + 短い物 1 本にするのは、長い物が 1 本ずつしか流れないと長い物が 5 本並び、
+// release が 47 分待ったため（2026-10-16）。長い物 2 本の同時は JVM 19.6GB で 64GB の 1/3
+// （heavy3 の測定）。短い物だけの枠を 1 本残すのは、長い物で枠が埋まっても check・test が
+// 長い物の後ろで 30 分待たないようにするため。
+const DefaultSlots = 3
+
+// LongSlotsEnv は長い物が使える枠の本数（枠 1 から数えて）を変える環境変数。
+const LongSlotsEnv = "FGE_HEAVY_LONG_SLOTS"
+
+// DefaultLongSlots は長い物が使える枠の本数の既定。枠が 2 本以上なら、短い物だけの枠を必ず 1 本残す
+// （clampLongSlots）。
+const DefaultLongSlots = 2
 
 // longTarget は「長い物」の make の口の名前。語ごとに丸ごと照らす。
 var longTarget = regexp.MustCompile(`^(render-all|reference-update|gallery-[\w-]+|[\w-]*-video(-[\w-]+)?|video-[\w-]+|compare:?)$`)
@@ -141,7 +152,7 @@ type Owner struct {
 	Command      string    `json:"command"`
 	Since        time.Time `json:"since"`
 	Token        string    `json:"token,omitempty"`
-	// Long は長い物（枠 1 だけを使う）。AnySlot はどの枠でも使える短い物。
+	// Long は長い物（枠 1〜LongSlots を使う）。AnySlot はどの枠でも使える短い物。
 	// 両方とも無いエントリは 1 本だった頃の heavy で、枠 1 だけを待つ。
 	Long    bool `json:"long,omitempty"`
 	AnySlot bool `json:"anySlot,omitempty"`
@@ -150,6 +161,9 @@ type Owner struct {
 	// Slots はこのエントリが知っている枠の本数。FGE_HEAVY_SLOTS が人ごとに違っても、
 	// エントリが使えない枠をそのエントリに取っておかないために読む。
 	Slots int `json:"slots,omitempty"`
+	// LongSlots はこのエントリが知っている長い物の枠の本数。0 は 0.35.32 までの heavy の
+	// エントリで、長い物は枠 1 だけ・短い物は枠 2 から先を取る決まりで読む。
+	LongSlots int `json:"longSlots,omitempty"`
 }
 
 // Options は差し替えられる所。テストが待ち時間と場所を縮める。
@@ -157,6 +171,9 @@ type Options struct {
 	Lock string
 	// Slots は枠の本数（0 なら FGE_HEAVY_SLOTS、それも無ければ DefaultSlots）。
 	Slots int
+	// LongSlots は長い物が使える枠の本数（0 なら FGE_HEAVY_LONG_SLOTS、それも無ければ
+	// DefaultLongSlots）。枠が 2 本以上なら Slots-1 までに詰める。
+	LongSlots int
 	// Long / Short は長い物か短い物かを名前の見分けより優先して決める。
 	Long, Short bool
 	Poll        time.Duration
@@ -182,6 +199,13 @@ func defaults(o Options) Options {
 	if o.Slots > 8 {
 		o.Slots = 8
 	}
+	if o.LongSlots == 0 {
+		o.LongSlots, _ = strconv.Atoi(os.Getenv(LongSlotsEnv))
+	}
+	if o.LongSlots < 1 {
+		o.LongSlots = DefaultLongSlots
+	}
+	o.LongSlots = clampLongSlots(o.LongSlots, o.Slots)
 	if o.Poll == 0 {
 		o.Poll = 3 * time.Second
 	}
@@ -192,6 +216,14 @@ func defaults(o Options) Options {
 		o.Err = os.Stderr
 	}
 	return o
+}
+
+// clampLongSlots は長い物の枠を、短い物だけの枠が 1 本残る数までに詰める（枠が 1 本なら 1）。
+func clampLongSlots(l, slots int) int {
+	if slots <= 1 {
+		return 1
+	}
+	return min(max(l, 1), slots-1)
 }
 
 func queueDir(lock string) string { return lock + ".queue" }
@@ -261,7 +293,7 @@ func Run(args []string, asJSON bool, o Options) int {
 	}
 	if len(cmd) == 0 {
 		fmt.Fprintln(o.Err, "使い方: fge heavy <コマンド...>          鍵を取ってコマンドを流す（CHECKD=0 が既定）")
-		fmt.Fprintln(o.Err, "        fge heavy --long|--short <...>   長い物（枠 1 だけ）か短い物かを名前の見分けより優先")
+		fmt.Fprintf(o.Err, "        fge heavy --long|--short <...>   長い物（枠 1〜%d）か短い物かを名前の見分けより優先\n", o.LongSlots)
 		fmt.Fprintln(o.Err, "        fge heavy --status               枠ごとの持ち主と待っている列")
 		fmt.Fprintln(o.Err, "        fge heavy --history[=時間]       直近 (既定 24 時間) の待ちと走りの合計 (<鍵>.log)")
 		return 2
@@ -283,13 +315,15 @@ type SlotState struct {
 
 // Snapshot は --status の中身。Lock〜Age は枠 1（1 本だった頃の鍵）で、前の形を読む物のために残す。
 type Snapshot struct {
-	Lock    string      `json:"lock"`
-	Held    bool        `json:"held"`
-	Owner   *Owner      `json:"owner,omitempty"`
-	Alive   bool        `json:"alive"`
-	Age     string      `json:"age,omitempty"`
-	Slots   []SlotState `json:"slots"`
-	Waiting []Owner     `json:"waiting"`
+	Lock  string      `json:"lock"`
+	Held  bool        `json:"held"`
+	Owner *Owner      `json:"owner,omitempty"`
+	Alive bool        `json:"alive"`
+	Age   string      `json:"age,omitempty"`
+	Slots []SlotState `json:"slots"`
+	// LongSlots は長い物が使える枠の本数（枠 1 から数えて）。これより後ろの枠は短い物だけ。
+	LongSlots int     `json:"longSlots"`
+	Waiting   []Owner `json:"waiting"`
 }
 
 func readOwner(lock string) (*Owner, error) {
@@ -454,15 +488,16 @@ func Hold(desc, dir string, o Options, fn func(run Runner) int) int {
 	}
 	long := o.Long || (!o.Short && LooksLongIn(desc, wd))
 	me := Owner{
-		Workdir: wd,
-		PID:     os.Getpid(),
-		Started: processStarted(os.Getpid()),
-		Command: desc,
-		Since:   o.Now(),
-		Token:   newToken(),
-		Long:    long,
-		AnySlot: !long,
-		Slots:   o.Slots,
+		Workdir:   wd,
+		PID:       os.Getpid(),
+		Started:   processStarted(os.Getpid()),
+		Command:   desc,
+		Since:     o.Now(),
+		Token:     newToken(),
+		Long:      long,
+		AnySlot:   !long,
+		Slots:     o.Slots,
+		LongSlots: o.LongSlots,
 	}
 
 	sigs := make(chan os.Signal, 4)
@@ -502,20 +537,32 @@ func Hold(desc, dir string, o Options, fn func(run Runner) int) int {
 
 var errInterrupted = errors.New("待っている間に止められました")
 
-// eligible はエントリ w が使える枠を、取りたい順に返す。短い物は枠 2 から先に取り、枠 1 は
-// 長い物のために最後へ回す。長い物と古い heavy のエントリは枠 1 だけ。
+// eligible はエントリ w が使える枠を、取りたい順に返す。長い物は枠 1〜L（L = w.LongSlots）を
+// 前から取る。短い物は短い物だけの枠（枠 L+1 から先）を先に取り、長い物の枠は後ろから
+// （枠 1 を最後に）回す。古い heavy のエントリは枠 1 だけ。L は 0.35.32 までのエントリでは 1 と読む。
 func eligible(w Owner, n int) []int {
-	if !w.AnySlot {
-		return []int{0}
-	}
 	if w.Slots > 0 && w.Slots < n {
 		n = w.Slots
 	}
+	l := clampLongSlots(w.LongSlots, n)
+	if !w.AnySlot {
+		if !w.Long {
+			return []int{0}
+		}
+		order := make([]int, 0, l)
+		for i := 0; i < l; i++ {
+			order = append(order, i)
+		}
+		return order
+	}
 	order := make([]int, 0, n)
-	for i := 1; i < n; i++ {
+	for i := l; i < n; i++ {
 		order = append(order, i)
 	}
-	return append(order, 0)
+	for i := l - 1; i >= 0; i-- {
+		order = append(order, i)
+	}
+	return order
 }
 
 // pick は列の順に空いた枠を配ってみて、自分の取る枠を返す（無ければ -1）。
@@ -706,6 +753,8 @@ func runChild(cmd []string, dir, token string, started func(int), o Options, sig
 // kindLabel はエントリが長い物か短い物か。どちらでもないエントリは 1 本だった頃の heavy。
 func kindLabel(w Owner) string {
 	switch {
+	case w.Long && w.LongSlots > 1:
+		return fmt.Sprintf("長い・枠 1〜%d", w.LongSlots)
 	case w.Long:
 		return "長い・枠 1 だけ"
 	case w.AnySlot:
@@ -740,7 +789,7 @@ func describeHolders(o Options, me *Owner) string {
 }
 
 func snapshot(o Options) Snapshot {
-	s := Snapshot{Lock: o.Lock, Waiting: waiting(o)}
+	s := Snapshot{Lock: o.Lock, LongSlots: o.LongSlots, Waiting: waiting(o)}
 	if s.Waiting == nil {
 		s.Waiting = []Owner{}
 	}
@@ -774,11 +823,15 @@ func printStatus(w io.Writer, o Options, asJSON bool) int {
 		fmt.Fprintln(w, string(data))
 		return 0
 	}
-	fmt.Fprintf(w, "[heavy] 枠 %d 本 (%s で変える)・長い物 (render-all・動画・compare など) は枠 1 だけ\n",
-		len(s.Slots), SlotsEnv)
+	longs := "枠 1 だけ"
+	if s.LongSlots > 1 {
+		longs = fmt.Sprintf("枠 1〜%d の %d 本まで", s.LongSlots, s.LongSlots)
+	}
+	fmt.Fprintf(w, "[heavy] 枠 %d 本 (%s で変える)・長い物 (render-all・動画・compare など) は%s (%s で変える)\n",
+		len(s.Slots), SlotsEnv, longs, LongSlotsEnv)
 	for _, st := range s.Slots {
 		use := "長い物も短い物も"
-		if st.Slot > 1 {
+		if st.Slot > s.LongSlots {
 			use = "短い物だけ"
 		}
 		switch {
