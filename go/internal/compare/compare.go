@@ -193,11 +193,7 @@ func run(o Options) error {
 	if err := os.MkdirAll(o.OutDir, 0o755); err != nil {
 		return err
 	}
-	base, err := renderSide(o, wt, "基準")
-	if err != nil {
-		return err
-	}
-	cur, err := renderSide(o, o.Game, "今")
+	base, cur, err := renderBoth(o, wt)
 	if err != nil {
 		return err
 	}
@@ -254,9 +250,53 @@ func currentEngine(game string) string {
 
 // ── 描き出す ─────────────────────────────────────────────
 
-func renderSide(o Options, dir, label string) (*side, error) {
-	s := &side{dir: dir, images: map[string]string{}, sounds: map[string]string{}, videos: map[string]string{}}
-	start := time.Now().Add(-2 * time.Second)
+// renderBoth は基準側と今側を、heavy の鍵を 1 回だけ取って続けて描き出す。
+//
+// WhyNot: 側ごとに鍵を取り直さないのは、基準側を描き終えたところで列の後ろへ並び直し、
+// 今側を描くまでにもう一度 10 分前後待っていたため（2026-10-16 の記録で 9 分・12 分）。
+// 1 回にすると次の長い物の待ちはそのぶん延びるが、長い物どうしの順番は並んだ順のまま。
+func renderBoth(o Options, wt string) (*side, *side, error) {
+	base := &side{dir: wt, images: map[string]string{}, sounds: map[string]string{}, videos: map[string]string{}}
+	cur := &side{dir: o.Game, images: map[string]string{}, sounds: map[string]string{}, videos: map[string]string{}}
+	steps := renderSteps(o)
+	desc := fmt.Sprintf("compare: 基準と今の描き出し (%s)", strings.Join(steps[0][1:], " "))
+	var baseStart, curStart time.Time
+	code := heavy.Hold(desc, o.Game, o.HeavyOpts, func(run heavy.Runner) int {
+		for _, sd := range []struct {
+			s     *side
+			label string
+			start *time.Time
+		}{{base, "基準", &baseStart}, {cur, "今", &curStart}} {
+			*sd.start = time.Now().Add(-2 * time.Second)
+			for _, step := range steps {
+				if interrupted.Load() {
+					return 130
+				}
+				fmt.Fprintf(o.Err, "[compare] %s: %s\n", sd.label, strings.Join(step, " "))
+				if c := run(sd.s.dir, step...); c != 0 {
+					sd.s.failed = append(sd.s.failed, strings.Join(step[1:], " "))
+					if c == 130 {
+						interrupted.Store(true)
+						return c
+					}
+				}
+			}
+		}
+		return 0
+	})
+	if interrupted.Load() || code == 130 {
+		interrupted.Store(true)
+		return nil, nil, fmt.Errorf("止められました")
+	}
+	if code != 0 {
+		return nil, nil, fmt.Errorf("描き出しで鍵を取れませんでした (終了コード %d)", code)
+	}
+	collectSide(o, base, baseStart)
+	collectSide(o, cur, curStart)
+	return base, cur, nil
+}
+
+func renderSteps(o Options) [][]string {
 	var steps [][]string
 	switch {
 	case len(o.Videos) > 0:
@@ -268,33 +308,15 @@ func renderSide(o Options, dir, label string) (*side, error) {
 	default:
 		steps = append(steps, []string{o.Make, "render-all"})
 	}
-	desc := fmt.Sprintf("compare: %s の描き出し (%s)", label, strings.Join(steps[0][1:], " "))
-	code := heavy.Hold(desc, dir, o.HeavyOpts, func(run heavy.Runner) int {
-		for _, step := range steps {
-			if interrupted.Load() {
-				return 130
-			}
-			fmt.Fprintf(o.Err, "[compare] %s: %s\n", label, strings.Join(step, " "))
-			if c := run(dir, step...); c != 0 {
-				s.failed = append(s.failed, strings.Join(step[1:], " "))
-				if c == 130 {
-					interrupted.Store(true)
-					return c
-				}
-			}
-		}
-		return 0
-	})
-	if interrupted.Load() || code == 130 {
-		interrupted.Store(true)
-		return nil, fmt.Errorf("止められました")
-	}
-	if code != 0 {
-		return nil, fmt.Errorf("%s の描き出しで鍵を取れませんでした (終了コード %d)", label, code)
-	}
+	return steps
+}
+
+// collectSide は描き出した後の絵・音・動画を拾う（鍵の外）。
+func collectSide(o Options, s *side, start time.Time) {
+	dir := s.dir
 	if len(o.Videos) > 0 {
 		collect(s.videos, filepath.Join(dir, o.VideoDir), ".mp4", start, true)
-		return s, nil
+		return
 	}
 	if len(o.Shots) > 0 {
 		for _, shot := range o.Shots {
@@ -327,7 +349,6 @@ func renderSide(o Options, dir, label string) (*side, error) {
 		rel, _ := filepath.Rel(dir, p)
 		s.sounds[rel] = p
 	}
-	return s, nil
 }
 
 // collect は root の下で ext の物を集める。since より古い物は前の描き出しの残りなので外す。

@@ -77,12 +77,17 @@ func TestCompareFindsChangedImageAndCleansUp(t *testing.T) {
 	// 基準側は何も渡さなければ今の作業場と同じエンジンを使う。
 	os.WriteFile(filepath.Join(game, "local.mk"), []byte("ENGINE := "+fakeEngine(t)+"\n"), 0o644)
 
+	lock := filepath.Join(t.TempDir(), "lock")
 	code := Run([]string{"--base", "HEAD"}, Options{
 		Game: game, Out: io.Discard, Err: io.Discard,
-		HeavyOpts: heavy.Options{Lock: filepath.Join(t.TempDir(), "lock"), Err: io.Discard},
+		HeavyOpts: heavy.Options{Lock: lock, Err: io.Discard},
 	})
 	if code != 0 {
 		t.Fatalf("compare が %d で終わった", code)
+	}
+	// 基準側と今側は鍵を 1 回だけ取って続けて描く（鍵の記録は返すたびに 1 行）。
+	if log, _ := os.ReadFile(lock + ".log"); strings.Count(string(log), `"command":"compare:`) != 1 {
+		t.Fatalf("compare が鍵を 1 回だけ取っていない:\n%s", log)
 	}
 	report, err := os.ReadFile(filepath.Join(game, "debug", "compare", "report.tsv"))
 	if err != nil {

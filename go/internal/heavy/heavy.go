@@ -4,11 +4,12 @@
 //	fge heavy <コマンド...>           鍵を取ってコマンドを流し、終わったら（失敗・中断でも）自分の鍵だけ外す
 //	fge heavy --long|--short <...>    長い物か短い物かを名前の見分けより優先して決める
 //	fge heavy --status                枠ごとの持ち主と待っている列
+//	fge heavy --history[=時間]        直近の待ちと走りの合計（鍵を返すたびに <鍵>.log へ 1 行）
 //
 // 鍵は FGE_HEAVY_SLOTS 本（既定 2）の枠。枠 1 は /tmp/fge-heavy.lock（FGE_HEAVY_LOCK で
 // 差し替え）、枠 2 からは <鍵>.2・<鍵>.3 … の mkdir。mkdir が成功した方がその枠の持ち主。
 //
-// 長い物（render-all・動画・agent-eval など 10 分を超えうる物）は枠 1 だけを使うので、
+// 長い物（render-all・動画・compare など 10 分を超えうる物）は枠 1 だけを使うので、
 // 長い物どうしは同時に走らない。短い物（check・test・sync）は枠 2 から先に、空いていれば
 // 枠 1 も使う。枠 1 の名前は 1 本だった頃の鍵と同じなので、手書きの `until mkdir …; rmdir` も
 // 古い heavy も枠 1 を取り合い、古い heavy のエントリは「枠 1 だけを待つエントリ」として順番に並ぶ。
@@ -48,7 +49,15 @@ const SlotsEnv = "FGE_HEAVY_SLOTS"
 const DefaultSlots = 2
 
 // longTarget は「長い物」の make の口の名前。語ごとに丸ごと照らす。
-var longTarget = regexp.MustCompile(`^(render-all|reference-update|gallery-[\w-]+|[\w-]*-video(-[\w-]+)?|video-[\w-]+|agent-eval[\w-]*|compare:?)$`)
+var longTarget = regexp.MustCompile(`^(render-all|reference-update|gallery-[\w-]+|[\w-]*-video(-[\w-]+)?|video-[\w-]+|compare:?)$`)
+
+// noLockTarget は鍵を取らずにそのまま流す口（claude -p を待つだけで CPU をほとんど使わない物）。
+//
+// WhyNot: agent-eval を長い物として枠 1 に並べないのは、返事を待つ間ほぼ CPU を使わないのに
+// 枠 1 を 20 分以上ふさぎ、動画・compare を全部その後ろに並ばせるため。同時に走る本数は
+// fge agent-eval がマシン全体の枠（/tmp/fge-agent-eval.slots）で守り、中の make check は
+// それぞれ heavy を通る。
+var noLockTarget = regexp.MustCompile(`^agent-eval[\w-]*$`)
 
 // cmdWord はコマンドの文字列を語に切る（bash -c '…' の中や compare の説明の中も同じに切る）。
 var cmdWord = regexp.MustCompile(`[^\s'"();&|<>]+`)
@@ -58,11 +67,49 @@ var cmdWord = regexp.MustCompile(`[^\s'"();&|<>]+`)
 // WhyNot: パス（/ を含む語）と代入（= を含む語）を見ないのは、作業場の名前
 // （id-x-video・fge-compare-…）やログの置き場に口の名前が入っていても、中身が make test なら短い物だから。
 func LooksLong(cmd string) bool {
+	return matchesWord(cmd, longTarget)
+}
+
+// matchesWord は cmd の語（パスと代入を除く）のどれかが re に丸ごと合うか。
+func matchesWord(cmd string, re *regexp.Regexp) bool {
 	for _, w := range cmdWord.FindAllString(cmd, -1) {
 		if strings.ContainsAny(w, "/=") {
 			continue
 		}
-		if longTarget.MatchString(w) {
+		if re.MatchString(w) {
+			return true
+		}
+	}
+	return false
+}
+
+// heavyLongLine はゲームの Makefile の `HEAVY_LONG := lab combo-sweep …`（ゲーム固有の長い口）。
+var heavyLongLine = regexp.MustCompile(`(?m)^HEAVY_LONG[ \t]*[:+?]?=[ \t]*(.*?)[ \t]*(?:#.*)?$`)
+
+// LooksLongIn は LooksLong に加えて、dir の Makefile の HEAVY_LONG に書かれた口も長い物と見る。
+//
+// WhyNot: 過去の実行時間で自動に決めないのは、release・test が負荷しだいで 1〜25 分に揺れ、
+// 一度遅かっただけの短い物を長い枠の後ろへ送ってしまうため。長いかどうかは口の持ち主
+// （ゲームの Makefile）が 1 行で宣言し、付け忘れを呼ぶ側のエージェントに任せない。
+func LooksLongIn(cmd, dir string) bool {
+	if LooksLong(cmd) {
+		return true
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "Makefile"))
+	if err != nil {
+		return false
+	}
+	targets := map[string]bool{}
+	for _, m := range heavyLongLine.FindAllSubmatch(data, -1) {
+		for _, t := range strings.Fields(string(m[1])) {
+			targets[t] = true
+		}
+	}
+	if len(targets) == 0 {
+		return false
+	}
+	for _, w := range cmdWord.FindAllString(cmd, -1) {
+		if !strings.ContainsAny(w, "/=") && targets[w] {
 			return true
 		}
 	}
@@ -161,8 +208,17 @@ func slotPath(lock string, i int) string {
 // Run は fge heavy の入口。args は heavy に渡った引数そのまま。
 func Run(args []string, asJSON bool, o Options) int {
 	o = defaults(o)
+	if len(args) == 1 && args[0] == "--revision" {
+		fmt.Println(Revision)
+		return 0
+	}
+	if bin := delegateTarget(); bin != "" {
+		if err := execDelegate(bin, args); err != nil {
+			fmt.Fprintf(o.Err, "[heavy] %s へ委ねられませんでした (%v)・この版のまま流します\n", shortPath(bin), err)
+		}
+	}
 	var cmd []string
-	status := false
+	status, history := false, 0
 	for i, a := range args {
 		if a == "--" {
 			cmd = args[i+1:]
@@ -173,6 +229,13 @@ func Run(args []string, asJSON bool, o Options) int {
 			continue
 		}
 		if a == "--json" {
+			continue
+		}
+		if a == "--history" || strings.HasPrefix(a, "--history=") {
+			history = 24
+			if h, err := strconv.Atoi(strings.TrimPrefix(a, "--history=")); err == nil && h > 0 {
+				history = h
+			}
 			continue
 		}
 		if a == "--long" {
@@ -193,10 +256,14 @@ func Run(args []string, asJSON bool, o Options) int {
 	if status {
 		return printStatus(os.Stdout, o, asJSON)
 	}
+	if history > 0 {
+		return printHistory(os.Stdout, o, history)
+	}
 	if len(cmd) == 0 {
 		fmt.Fprintln(o.Err, "使い方: fge heavy <コマンド...>          鍵を取ってコマンドを流す（CHECKD=0 が既定）")
 		fmt.Fprintln(o.Err, "        fge heavy --long|--short <...>   長い物（枠 1 だけ）か短い物かを名前の見分けより優先")
 		fmt.Fprintln(o.Err, "        fge heavy --status               枠ごとの持ち主と待っている列")
+		fmt.Fprintln(o.Err, "        fge heavy --history[=時間]       直近 (既定 24 時間) の待ちと走りの合計 (<鍵>.log)")
 		return 2
 	}
 	return Exec(cmd, "", o)
@@ -373,13 +440,19 @@ func Hold(desc, dir string, o Options, fn func(run Runner) int) int {
 			}
 		}
 	}
+	if !o.Long && !o.Short && matchesWord(desc, noLockTarget) {
+		fmt.Fprintln(o.Err, "[heavy] agent-eval は鍵を取らずに流します (claude -p の本数は fge agent-eval が自分の枠で守る)")
+		return fn(func(d string, cmd ...string) int {
+			return runChild(cmd, d, "", nil, o, nil, nil)
+		})
+	}
 	wd := dir
 	if wd == "" {
 		wd, _ = os.Getwd()
 	} else if abs, err := filepath.Abs(dir); err == nil {
 		wd = abs
 	}
-	long := o.Long || (!o.Short && LooksLong(desc))
+	long := o.Long || (!o.Short && LooksLongIn(desc, wd))
 	me := Owner{
 		Workdir: wd,
 		PID:     os.Getpid(),
@@ -396,6 +469,7 @@ func Hold(desc, dir string, o Options, fn func(run Runner) int) int {
 	signal.Notify(sigs, InterruptSignals...)
 	defer signal.Stop(sigs)
 
+	queued := me.Since
 	slot, err := acquire(&me, sigs, o)
 	if err != nil {
 		if errors.Is(err, errInterrupted) {
@@ -404,7 +478,12 @@ func Hold(desc, dir string, o Options, fn func(run Runner) int) int {
 		fmt.Fprintf(o.Err, "heavy: %v\n", err)
 		return 2
 	}
-	defer release(slot, me.Token)
+	code := 1
+	defer func() {
+		release(slot, me.Token)
+		appendHistory(o.Lock, Record{Workdir: me.Workdir, PID: me.PID, Command: me.Command, Kind: kindOf(me),
+			Slot: me.Slot, Queued: queued, Acquired: me.Since, Released: o.Now(), Code: code})
+	}()
 	if slot != o.Lock {
 		// WhyNot: 枠 2 からを持つときに子へ枠の置き場を鍵として渡すのは、中で呼ばれた
 		// 古い heavy（合言葉を FGE_HEAVY_LOCK の中だけで探す）が自分の鍵だと気づかず、
@@ -412,12 +491,13 @@ func Hold(desc, dir string, o Options, fn func(run Runner) int) int {
 		o.childEnv = []string{"FGE_HEAVY_LOCK=" + slot}
 	}
 	var stopped atomic.Bool
-	return fn(func(d string, cmd ...string) int {
+	code = fn(func(d string, cmd ...string) int {
 		return runChild(cmd, d, me.Token, func(child int) {
 			me.ChildPID, me.ChildStarted = child, processStarted(child)
 			writeJSON(filepath.Join(slot, ownerFile), me)
 		}, o, sigs, &stopped)
 	})
+	return code
 }
 
 var errInterrupted = errors.New("待っている間に止められました")
@@ -694,7 +774,7 @@ func printStatus(w io.Writer, o Options, asJSON bool) int {
 		fmt.Fprintln(w, string(data))
 		return 0
 	}
-	fmt.Fprintf(w, "[heavy] 枠 %d 本 (%s で変える)・長い物 (render-all・動画・agent-eval など) は枠 1 だけ\n",
+	fmt.Fprintf(w, "[heavy] 枠 %d 本 (%s で変える)・長い物 (render-all・動画・compare など) は枠 1 だけ\n",
 		len(s.Slots), SlotsEnv)
 	for _, st := range s.Slots {
 		use := "長い物も短い物も"

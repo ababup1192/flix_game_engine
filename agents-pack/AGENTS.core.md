@@ -22,7 +22,7 @@
 | 直した後に絵を確かめる | `make render SHOT=<場面>`（1 枚・既定の手）→ 仕上げに `make reference-check` |
 | F8 のチケットから直す所を探す | `debug/annotations/<名前>/` の `README.md` 冒頭の文脈（場面・Doc と行）→ `annotation.json` の `context` → `world.json`（`App.withAnnotationContext` / `withWorldDump`。一覧は `make status`） |
 | API の型・ゲームの定義を引く | `make api Q=<名前>` / `make src Q=<名前>` |
-| 重い処理（check・test・描き出し・make sync）をほかのエージェントと順番に流す | `bin/fge heavy <コマンド...>`（枠 2 本。render-all・動画は長い物として枠 1 だけ・check・test は長い物の横を空いた枠で流れる。見分けは名前・変えるなら `--long` / `--short`。持ち主と待ち列は `bin/fge heavy --status`・CHECKD=0 が既定） |
+| 重い処理（check・test・描き出し・make sync）をほかのエージェントと順番に流す | `bin/fge heavy <コマンド...>`（枠 2 本。render-all・動画・compare は長い物として枠 1 だけ・check・test は長い物の横を空いた枠で流れる。見分けは名前とゲームの Makefile の `HEAVY_LONG`・変えるなら `--long` / `--short`。agent-eval は包んでも鍵を取らない。持ち主と待ち列は `bin/fge heavy --status`・今日の待ちの合計は `--history`・CHECKD=0 が既定） |
 | 作業場を別の版・開発中のエンジンへ一時的に向ける | `bin/fge use-engine <版かパス>`（今は `--status`・戻すのは `--restore`） |
 | 直す前と後の絵・音・動画を比べる | `make compare BASE=<ref>`（絞るなら `SHOTS=` か `VIDEOS=`。`debug/compare/index.html`。基準側だけ別のエンジンなら `BASE_ENGINE=`） |
 | 案を並べて依頼主に選んでもらう | `reports/<名前>/proposal.json` → `bin/fge proposal build`（形は引数なしの `bin/fge proposal`・決定後の片付けの残りは `bin/fge proposal knobs`） |

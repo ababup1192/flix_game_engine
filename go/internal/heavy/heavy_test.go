@@ -42,7 +42,7 @@ func heavyCmd(t *testing.T, lock string, args ...string) *exec.Cmd {
 func heavyCmdSlots(t *testing.T, lock string, slots int, args ...string) *exec.Cmd {
 	t.Helper()
 	c := exec.Command(os.Args[0], append([]string{"-test.run=^$", "--"}, args...)...)
-	c.Env = append(os.Environ(), "FGE_HEAVY_HELPER=1", "FGE_HEAVY_LOCK="+lock,
+	c.Env = append(os.Environ(), "FGE_HEAVY_HELPER=1", "FGE_HEAVY_LOCK="+lock, NoDelegateEnv+"=1",
 		fmt.Sprintf("%s=%d", SlotsEnv, slots))
 	return c
 }
@@ -192,7 +192,7 @@ func TestLooksLong(t *testing.T) {
 		"bash -c 'cd ~/w/id-x-video && make test'": false,
 		"make mix-compare":                         false,
 		"make check > /tmp/fge-compare-1/base.log": false,
-		"make agent-eval-release":                  true,
+		"make agent-eval-release":                  false,
 		"make compare BASE=master":                 true,
 	} {
 		if got := LooksLong(cmd); got != want {
@@ -385,5 +385,122 @@ func TestChildOfSlotTwoSeesItsSlotAsLock(t *testing.T) {
 	c := heavyCmd(t, lock, "sh", "-c", fmt.Sprintf(`test "$FGE_HEAVY_LOCK" = %s && grep -q "$FGE_HEAVY_TOKEN" "$FGE_HEAVY_LOCK/owner.json"`, want))
 	if err := c.Run(); err != nil {
 		t.Fatalf("枠 2 の子に枠 2 の置き場と合言葉が渡っていない: %v", err)
+	}
+}
+
+func TestReleaseAppendsHistory(t *testing.T) {
+	lock := newLock(t)
+	cmds := []*exec.Cmd{
+		heavyCmd(t, lock, "--long", "sh", "-c", "sleep 0.2"),
+		heavyCmd(t, lock, "sh", "-c", "exit 3"),
+	}
+	runAll(t, cmds)
+	recs := readHistory(lock, time.Time{})
+	if len(recs) != 2 {
+		t.Fatalf("記録が %d 行（2 本流したので 2 行のはず）", len(recs))
+	}
+	kinds := map[string]int{}
+	for _, r := range recs {
+		kinds[r.Kind] = r.Code
+		if r.Acquired.Before(r.Queued) || r.Released.Before(r.Acquired) || r.Slot == 0 {
+			t.Fatalf("時刻か枠がおかしい: %+v", r)
+		}
+	}
+	if kinds["long"] != 0 || kinds["short"] != 3 {
+		t.Fatalf("種類と終了コードが記録されていない: %v", kinds)
+	}
+}
+
+func TestLooksLongInReadsGameMakefile(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "Makefile"), []byte("SHOTS := a b\nHEAVY_LONG := lab combo-sweep # ゲーム固有の長い口\n"), 0o644)
+	for cmd, want := range map[string]bool{
+		"make lab LAB_RUNS=200":              true,
+		"bash -c 'make combo-sweep > x.log'": true,
+		"make lab-cache":                     false,
+		"make check":                         false,
+		"make test LOG=/tmp/lab/out":         false,
+		"make render-all":                    true,
+	} {
+		if got := LooksLongIn(cmd, dir); got != want {
+			t.Errorf("LooksLongIn(%q) = %v, want %v", cmd, got, want)
+		}
+	}
+	if LooksLongIn("make lab", t.TempDir()) {
+		t.Errorf("Makefile の無い所で lab を長い物と見た")
+	}
+}
+
+func TestAgentEvalRunsWithoutTakingASlot(t *testing.T) {
+	lock := newLock(t)
+	// 枠 1 も枠 2 も塞がっていても、agent-eval は待たずに流れる。
+	os.Mkdir(lock, 0o755)
+	os.Mkdir(slotPath(lock, 1), 0o755)
+	c := heavyCmd(t, lock, "sh", "-c", "exit 4 # make agent-eval LABEL=x")
+	done := make(chan int, 1)
+	go func() { c.Run(); done <- c.ProcessState.ExitCode() }()
+	select {
+	case code := <-done:
+		if code != 4 {
+			t.Fatalf("終了コードが %d (4 のはず)", code)
+		}
+	case <-time.After(5 * time.Second):
+		c.Process.Kill()
+		t.Fatalf("agent-eval が鍵を待って止まった")
+	}
+}
+
+func TestNewestReleaseComparesVersionsAsNumbers(t *testing.T) {
+	home := t.TempDir()
+	for _, v := range []string{"0.35.9", "0.35.10", "0.36.0-rc", "jre"} {
+		d := filepath.Join(home, "engines", v)
+		os.MkdirAll(filepath.Join(d, "bin"), 0o755)
+		os.WriteFile(filepath.Join(d, "bin", "fge-go"), []byte("#!/bin/sh\n"), 0o755)
+		os.WriteFile(filepath.Join(d, "Makefile"), nil, 0o644)
+	}
+	// 入れている途中（Makefile が無い）の版は選ばない。
+	half := filepath.Join(home, "engines", "0.40.0", "bin")
+	os.MkdirAll(half, 0o755)
+	os.WriteFile(filepath.Join(half, "fge-go"), []byte("#!/bin/sh\n"), 0o755)
+	if got, want := newestRelease(home), filepath.Join(home, "engines", "0.35.10", "bin", "fge-go"); got != want {
+		t.Fatalf("newestRelease = %s, want %s", got, want)
+	}
+}
+
+// 新しい作りの heavy がリリースの置き場にあれば、そちらへ置き換わって流れる。
+func TestDelegatesToNewerReleaseOnce(t *testing.T) {
+	home := t.TempDir()
+	bin := filepath.Join(home, ".flix_ge_studio", "engines", "9.0.0", "bin")
+	os.MkdirAll(bin, 0o755)
+	os.WriteFile(filepath.Join(bin, "..", "Makefile"), nil, 0o644)
+	marker := filepath.Join(home, "delegated")
+	script := fmt.Sprintf(`#!/bin/sh
+if [ "$2" = "--revision" ]; then echo 99; exit 0; fi
+echo "$FGE_HEAVY_DELEGATED $*" > %s
+exit 5
+`, marker)
+	os.WriteFile(filepath.Join(bin, "fge-go"), []byte(script), 0o755)
+
+	run := func(extra ...string) int {
+		c := exec.Command(os.Args[0], "-test.run=^$", "--", "--short", "sh", "-c", "exit 0")
+		c.Env = append(os.Environ(), "FGE_HEAVY_HELPER=1", "FGE_HEAVY_LOCK="+newLock(t), "HOME="+home)
+		c.Env = append(c.Env, extra...)
+		c.Run()
+		return c.ProcessState.ExitCode()
+	}
+	if code := run(); code != 5 {
+		t.Fatalf("委ねた先の終了コード 5 が返らなかった (%d)", code)
+	}
+	if data, _ := os.ReadFile(marker); !strings.HasPrefix(string(data), "1 heavy --short sh -c") {
+		t.Fatalf("委ねた先に印と引数が渡っていない: %q", data)
+	}
+	os.Remove(marker)
+	os.WriteFile(filepath.Join(home, ".flix_ge_studio", "heavy-no-delegate"), nil, 0o644)
+	if code := run(); code != 0 {
+		t.Fatalf("止めスイッチがあるのに委ねた (%d)", code)
+	}
+	os.Remove(filepath.Join(home, ".flix_ge_studio", "heavy-no-delegate"))
+	if code := run(NoDelegateEnv + "=1"); code != 0 {
+		t.Fatalf("%s=1 なのに委ねた (%d)", NoDelegateEnv, code)
 	}
 }

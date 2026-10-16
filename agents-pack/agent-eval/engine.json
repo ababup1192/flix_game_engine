@@ -185,6 +185,17 @@
       "avoid": [
         {"re": "proposal\\.py", "why": "移した後の古い道具"}
       ]
+    },
+    {
+      "id": "heavy-game-long-target",
+      "prompt": "このゲームに 40 分かかるシミュレーションの make の口 sim-sweep を足した。ほかのエージェントが重い処理の鍵で流すとき、毎回印を付けてもらわなくても長い物として扱われるようにしたい。今日どの待ちが長かったかも見たい",
+      "expect": [
+        {"re": "HEAVY_LONG", "why": "ゲームの Makefile の HEAVY_LONG に口を足す"},
+        {"re": "heavy --history", "why": "待ちの合計は heavy の記録から"}
+      ],
+      "avoid": [
+        {"re": "until mkdir", "why": "鍵を手で書く"}
+      ]
     }
   ]
 }
