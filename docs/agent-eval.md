@@ -13,7 +13,8 @@
 
 heavy の鍵は取らない。claude -p は返事を待つ間ほとんど CPU を使わないので、鍵を取るとほかの作業場の
 check・test・リリースを止めるだけになる。同時に走る claude -p の本数は、いくつの作業場から流しても
-マシン全体で 3 本まで（`/tmp/fge-agent-eval.slots` のフォルダで数える・`FGE_AGENT_EVAL_SLOTS` で変える）。
+マシン全体で 3 本まで（`/tmp/fge-agent-eval.slots/<番号>.lock` のファイルロックで数え、持ち主が死ねば OS が外す・`FGE_AGENT_EVAL_SLOTS` で変える。
+Windows はファイルロックが無いので数えず、`--jobs` だけで抑える）。
 `bin/fge heavy make agent-eval` と包まない。
 
 費用は claude の `total_cost_usd`（API の値段に換算した額）。サブスクリプションで流す分は、この額の代わりに利用枠を使う。
@@ -58,4 +59,7 @@ bin/fge agent-eval --tasks agent-eval/engine.json --tasks agent-eval/<ゲーム>
 - **答えに並べた道具は全部当たりになる。** 答えはたいてい本命のほかに関係しそうな道具も並べるので、
   1 本の答えで別のお題の期待の語まで満たすことが多い（0.35.21 では 1 本あたり、他のお題の期待の語 37 個のうち平均 6 個）。
   点は「本命を選んだか」ではなく「本命に触れたか」を見ている。
+- 減点の語は、同じ行に `unless` の語も出たらその行を数えない（道具の説明の行で減点しないため。例: use-engine-temp の
+  「use-engine が local.mk を書き換える」）。打ち消しの「〜していないか」「X を消す」「呼ぶと鳴る」「手で掛けない」は、
+  当たった語の後ろの同じ節の中だけで見る（「ずらして揺れを消す」のような、古い書き方を選んだ行の減点まで消さないため）。
 - 書いたコードの出来は見ない。書かせて確かめるのは手で（`make check`・`bin/fge forbid`・lint z-table）。

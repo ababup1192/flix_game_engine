@@ -5,11 +5,14 @@ package agenteval
 // agent-eval は heavy の鍵を取らない。claude -p は返事を待つ間ほとんど CPU を使わないので、
 // 鍵を取ると 20 分ほど、ほかの作業場の check・test・リリースを止めてしまう。
 // その代わり、いくつの作業場から流しても claude -p の本数がマシン全体で上限を超えないように、
-// ここで枠を数える。枠は <dir>/<番号> のフォルダ（mkdir が成功した方が取る）で、
-// 中の owner.json に持ち主の pid を書く。持ち主が死んで残った枠は、次に枠を探した人が片付ける。
+// ここで枠を数える。枠は <dir>/<番号>.lock のファイルロック（flock）で、持ち主のプロセスが
+// 死ねば OS がロックを外す。
+//
+// WhyNot: mkdir と持ち主の pid のファイルで数えないのは、死んだ持ち主の枠を片付ける間に
+// 別の人が同じ番号を取り直すと、生きている枠まで消してしまうため（片付けの競合が無いロックにした）。
+// Windows は flock が無いので枠を数えず、1 つの agent-eval の中の --jobs だけで本数を抑える。
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -18,8 +21,6 @@ import (
 	"strconv"
 	"sync"
 	"time"
-
-	"github.com/ababup1192/flix_game_engine/go/internal/heavy"
 )
 
 // slotsEnv は上限の本数を変える環境変数。既定は defaultSlots。
@@ -47,12 +48,6 @@ func slotLimit() int {
 	return defaultSlots
 }
 
-type slotOwner struct {
-	PID     int    `json:"pid"`
-	Started string `json:"started"`
-	Task    string `json:"task"`
-}
-
 // slots は 1 つの agent-eval の中で枠を取るときの約束（待っている間の知らせを 1 回だけ出す）。
 type slots struct {
 	dir      string
@@ -67,42 +62,26 @@ func newSlots(log io.Writer) *slots {
 }
 
 // acquire は空いた枠を 1 つ取るまで待ち、返すための関数を返す。
-func (s *slots) acquire(task string) (func(), error) {
+func (s *slots) acquire() (func(), error) {
+	if !slotsSupported {
+		return func() {}, nil
+	}
 	if err := os.MkdirAll(s.dir, 0o777); err != nil {
 		return nil, err
 	}
-	me := slotOwner{PID: os.Getpid(), Started: heavy.ProcessStarted(os.Getpid()), Task: task}
 	for {
 		for k := 0; k < s.limit; k++ {
-			p := filepath.Join(s.dir, strconv.Itoa(k))
-			if os.Mkdir(p, 0o777) == nil {
-				data, _ := json.Marshal(me)
-				if err := os.WriteFile(filepath.Join(p, "owner.json"), data, 0o666); err != nil {
-					os.RemoveAll(p)
-					return nil, err
-				}
-				return func() { os.RemoveAll(p) }, nil
+			release, ok, err := tryLock(filepath.Join(s.dir, strconv.Itoa(k)+".lock"))
+			if err != nil {
+				return nil, err
 			}
-			s.reapIfDead(p)
+			if ok {
+				return release, nil
+			}
 		}
 		s.noteOnce.Do(func() {
 			fmt.Fprintf(s.log, "[agent-eval] claude の枠（マシン全体で %d 本・%s）が埋まっているので空くのを待ちます\n", s.limit, s.dir)
 		})
 		time.Sleep(s.poll)
-	}
-}
-
-// reapIfDead は持ち主の居ない枠を片付ける。owner.json がまだ書かれていない（取った直後の）枠は触らない。
-func (s *slots) reapIfDead(p string) {
-	data, err := os.ReadFile(filepath.Join(p, "owner.json"))
-	if err != nil {
-		if info, statErr := os.Stat(p); statErr == nil && time.Since(info.ModTime()) > time.Minute {
-			os.RemoveAll(p) // 書きかけのまま 1 分経った = 書く前に落ちた
-		}
-		return
-	}
-	var ow slotOwner
-	if json.Unmarshal(data, &ow) != nil || !heavy.ProcessAlive(ow.PID, ow.Started) {
-		os.RemoveAll(p)
 	}
 }

@@ -758,10 +758,3 @@ func quoteCommand(cmd []string) string {
 }
 
 func itoa(n int) string { return strconv.Itoa(n) }
-
-// ProcessAlive は pid と起動時刻（ProcessStarted の値・空なら見ない）のプロセスがまだ居るか。
-// 鍵とは別の枠（agent-eval の同時本数など）が、持ち主の死んだ枠を片付けるのに使う。
-func ProcessAlive(pid int, started string) bool { return processAlive(pid, started) }
-
-// ProcessStarted は pid の起動時刻。読めなければ空（Windows は常に空）。
-func ProcessStarted(pid int) string { return processStarted(pid) }

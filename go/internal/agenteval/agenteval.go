@@ -27,9 +27,12 @@ import (
 )
 
 // Pattern は答えの文に当てる正規表現 1 つ。why は外れたときに表へ出す一言。
+// unless は減点の語だけに効く: 同じ行にこれも出たら数えない（道具の説明の行で減点しないため。
+// 例: 「use-engine が local.mk を書き換える」は local.mk の手直しではない）。
 type Pattern struct {
-	Re  string `json:"re"`
-	Why string `json:"why"`
+	Re     string `json:"re"`
+	Why    string `json:"why"`
+	Unless string `json:"unless,omitempty"`
 }
 
 // Task は 1 つのお題。prompt は依頼の言葉だけにして、道具の名前を入れない。
@@ -333,8 +336,10 @@ func loadSuites(paths []string) ([]Suite, error) {
 		}
 		for _, t := range s.Tasks {
 			for _, pat := range append(append([]Pattern{}, t.Expect...), t.Avoid...) {
-				if _, err := regexp.Compile(pat.Re); err != nil {
-					return nil, fmt.Errorf("%s の %s: 正規表現 %q が読めない: %v", p, t.ID, pat.Re, err)
+				for _, re := range []string{pat.Re, pat.Unless} {
+					if _, err := regexp.Compile(re); err != nil {
+						return nil, fmt.Errorf("%s の %s: 正規表現 %q が読めない: %v", p, t.ID, re, err)
+					}
 				}
 			}
 		}
@@ -378,13 +383,7 @@ func runAll(errOut io.Writer, dir string, jobs []job, opt options) []Result {
 			go func(slot, run int, j job) {
 				defer wg.Done()
 				defer func() { <-sem }()
-				var r Result
-				if release, err := machine.acquire(j.task.ID); err != nil {
-					r = Result{ID: j.task.ID, Suite: j.suite, Run: run, Want: len(j.task.Expect), Err: err.Error()}
-				} else {
-					r = runOne(dir, j, run, opt)
-					release()
-				}
+				r := runInSlot(machine, dir, j, run, opt)
 				results[slot] = r
 				mu.Lock()
 				// WhyNot: errOut（main が最後にまとめて出す）へ書かないのは、数分かかる間に
@@ -396,6 +395,16 @@ func runAll(errOut io.Writer, dir string, jobs []job, opt options) []Result {
 	}
 	wg.Wait()
 	return results
+}
+
+// runInSlot はマシン全体の枠を 1 つ取って 1 本走らせる。枠は失敗しても返す。
+func runInSlot(machine *slots, dir string, j job, run int, opt options) Result {
+	release, err := machine.acquire()
+	if err != nil {
+		return Result{ID: j.task.ID, Suite: j.suite, Run: run, Want: len(j.task.Expect), Err: err.Error()}
+	}
+	defer release()
+	return runOne(dir, j, run, opt)
 }
 
 func runNote(run, repeat int) string {
@@ -572,7 +581,11 @@ func score(j job, raw []byte) Result {
 		}
 	}
 	for _, p := range j.task.Avoid {
-		if adopted(regexp.MustCompile(p.Re), r.Answer) {
+		var unless *regexp.Regexp
+		if p.Unless != "" {
+			unless = regexp.MustCompile(p.Unless)
+		}
+		if adopted(regexp.MustCompile(p.Re), unless, r.Answer) {
 			r.Penalty++
 			r.AvoidHits = append(r.AvoidHits, label(p))
 		}
@@ -582,19 +595,34 @@ func score(j job, raw []byte) Result {
 
 // 「let _ = は使わない」のように打ち消して触れた行は減点しない。
 // 「ない」1 字では見ない（「できない」「足りない」の行で減点が全部消えるため）。
-// 「〜していないか」（lint やレビューが見る物の説明）・「〜を消す」・「呼ぶと鳴る」も、選んだ物ではない。
-var negation = regexp.MustCompile(`(使わ|使え|呼ば|書か|足さ|置か|頼ら|掛け|し)ない|ていないか|使わず|使えず|避け|禁止|NG|消え|消す|消して|鳴る|止ま|止め|代わりに|古い|非推奨|(?i)\b(not|don't|avoid|instead|catch(es)?|lint|forbid|z-table|value-discard)\b`)
+var negation = regexp.MustCompile(`(使わ|使え|呼ば|書か|足さ|置か|頼ら|し)ない|使わず|使えず|避け|禁止|\bNG\b|消え|止ま|止め|代わりに|古い|非推奨|(?i)\b(not|don't|avoid|instead|catch(es)?|lint|forbid|z-table|value-discard)\b`)
+
+// negationAfter は、当たった語の後ろ・同じ節（「。」「、」まで）の中だけで見る打ち消し。
+// 「〜していないか見る」（lint やレビューが見る物の説明）・「X を消す」・「呼ぶと鳴る」・「手で掛けない」。
+//
+// WhyNot: 行のどこかで探さないのは、「zShifted でずらして揺れを消す」「効果音が鳴る」のように、
+// 古い書き方を選んだ行にもこの語は普通に出るため（そうすると本当の減点まで消える）。
+var negationAfter = regexp.MustCompile(`^[^。、]*?ていないか|^\s*[\w./-]*\s*[をも]消(す|し)|^[^。、]*?と鳴る|^[^。、]*?手で掛けない`)
+
+// negated は、行の中で re が当たった所が打ち消されているか。
+func negated(re *regexp.Regexp, line string) bool {
+	if negation.MatchString(line) {
+		return true
+	}
+	loc := re.FindStringIndex(line)
+	return loc != nil && negationAfter.MatchString(line[loc[1]:])
+}
 
 // avoidKey は「使わない物」を並べる JSON の鍵（"avoid": [...]・"使わない": {...}）。語ごとに見る。
 // 読んだファイルの一覧（"files_read"・"読んだファイル"）も入れる —— 「until mkdir を grep した」のように
 // 探した語を書くだけで、選んだ物ではないため。
-var avoidKey = regexp.MustCompile(`(?i)^(files?_?read\w*|read_?files?|.*読んだ.*|.*調べた.*|avoid\w*|dont\w*|do_not\w*|not\w*|forbid\w*|deprecated|ng|old\w*|legacy|anti\w*|pitfalls?|使わない.*|避ける.*|やらない.*|しない.*|禁止.*|古い.*|非推奨.*)$`)
+var avoidKey = regexp.MustCompile(`(?i)^(files?_?read\w*|read_?files?|.*読んだ(ファイル|物|もの).*|.*調べた(ファイル|物|もの).*|avoid\w*|dont\w*|do_not\w*|not(_\w*)?|forbid\w*|deprecated|ng|old\w*|legacy|anti\w*|pitfalls?|使わない.*|避ける.*|やらない.*|しない.*|禁止.*|古い.*|非推奨.*)$`)
 
 var keyOpen = regexp.MustCompile(`^"([^"]+)"\s*:\s*([\[{])`)
 
 // adopted は、打ち消しの無い行に re が出たか（= その書き方を選んだか）。
 // 「使わない物」の鍵の下（JSON の配列・オブジェクト。1 行で閉じる配列も）に並べた行も打ち消しとして読む。
-func adopted(re *regexp.Regexp, answer string) bool {
+func adopted(re, unless *regexp.Regexp, answer string) bool {
 	var stack []bool
 	inAvoid := func() bool {
 		for _, k := range stack {
@@ -610,7 +638,8 @@ func adopted(re *regexp.Regexp, answer string) bool {
 		if m := keyOpen.FindStringSubmatch(t); m != nil {
 			lineAvoid = avoidKey.MatchString(m[1])
 		}
-		hit := re.MatchString(line) && !negation.MatchString(line) && !inAvoid() && !lineAvoid
+		hit := re.MatchString(line) && !negated(re, line) && !inAvoid() && !lineAvoid &&
+			(unless == nil || !unless.MatchString(line))
 		if hit {
 			return true
 		}

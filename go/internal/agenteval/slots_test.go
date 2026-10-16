@@ -1,9 +1,11 @@
+//go:build !windows
+
 package agenteval
 
 import (
-	"encoding/json"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -12,11 +14,11 @@ import (
 // 枠が埋まっていれば、どれかが返されるまで次は始まらない（作業場をまたいで同時本数を守る）。
 func TestSlotsWaitUntilOneIsReleased(t *testing.T) {
 	s := &slots{dir: t.TempDir(), limit: 2, poll: 5 * time.Millisecond, log: io.Discard}
-	a, _ := s.acquire("a")
-	_, _ = s.acquire("b")
+	a, _ := s.acquire()
+	_, _ = s.acquire()
 	got := make(chan struct{})
 	go func() {
-		release, _ := s.acquire("c")
+		release, _ := s.acquire()
 		release()
 		close(got)
 	}()
@@ -33,23 +35,36 @@ func TestSlotsWaitUntilOneIsReleased(t *testing.T) {
 	}
 }
 
-// 持ち主が死んで残った枠は、次に枠を探した人が片付けて使う。
-func TestSlotsReapDeadOwner(t *testing.T) {
+// 持ち主のプロセスが死ねば、片付けなくても枠は空く（OS がロックを外す）。
+func TestSlotFreedWhenOwnerProcessDies(t *testing.T) {
+	if os.Getenv("FGE_SLOT_HOLDER") != "" {
+		s := &slots{dir: os.Getenv("FGE_SLOT_HOLDER"), limit: 1, poll: time.Millisecond, log: io.Discard}
+		s.acquire()
+		os.WriteFile(filepath.Join(s.dir, "held"), nil, 0o666)
+		time.Sleep(time.Minute)
+		return
+	}
 	dir := t.TempDir()
-	stale := filepath.Join(dir, "0")
-	if err := os.Mkdir(stale, 0o777); err != nil {
+	c := exec.Command(os.Args[0], "-test.run=TestSlotFreedWhenOwnerProcessDies")
+	c.Env = append(os.Environ(), "FGE_SLOT_HOLDER="+dir)
+	if err := c.Start(); err != nil {
 		t.Fatal(err)
 	}
-	data, _ := json.Marshal(slotOwner{PID: 999999999})
-	if err := os.WriteFile(filepath.Join(stale, "owner.json"), data, 0o666); err != nil {
-		t.Fatal(err)
+	for i := 0; ; i++ {
+		if _, err := os.Stat(filepath.Join(dir, "held")); err == nil {
+			break
+		}
+		if i > 500 {
+			t.Fatal("子が枠を取らない")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
-	s := &slots{dir: dir, limit: 1, poll: 5 * time.Millisecond, log: io.Discard}
-	done := make(chan struct{})
-	go func() { s.acquire("a"); close(done) }()
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("死んだ持ち主の枠が片付かない")
+	if _, ok, _ := tryLock(filepath.Join(dir, "0.lock")); ok {
+		t.Fatal("子が持っている枠を取れてしまった")
+	}
+	c.Process.Kill()
+	c.Wait()
+	if _, ok, _ := tryLock(filepath.Join(dir, "0.lock")); !ok {
+		t.Fatal("持ち主が死んだのに枠が空かない")
 	}
 }

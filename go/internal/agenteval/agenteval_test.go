@@ -32,12 +32,42 @@ func TestAdoptedReadsNegationAndAvoidLists(t *testing.T) {
 		{"lint が見る物の説明", "\"checks\": \"let _ = で知らせを捨てていないか\"", false},
 		{"手で掛けない", "\"why\": \"let _ = を手で掛けない\"", false},
 		{"消す", "残っている let _ = Log.warn を消す", false},
+		{"も消し、", "Log.warn も消し、let _ = も消す", false},
 		{"呼ぶと鳴る", "\"why\": \"let _ = を呼ぶと鳴る\"", false},
 	}
 	for _, c := range cases {
-		if got := adopted(re, c.answer); got != c.want {
+		if got := adopted(re, nil, c.answer); got != c.want {
 			t.Errorf("%s: got %v", c.name, got)
 		}
+	}
+}
+
+// 打ち消しの語が出ても、古い書き方を選んだ行は減点する（レビューで挙がった、減点が消えてしまう形）。
+func TestNegationDoesNotHideAdoptedOldWays(t *testing.T) {
+	cases := []struct{ re, line string }{
+		{`zShifted`, "zShifted で画面ごとずらして揺れを消す"},
+		{`startedBetween`, "startedBetween で拍の頭に効果音が鳴る"},
+		{`解像度を下げ`, "解像度を下げて負荷を掛けない"},
+		{`-mmin \+40`, "/tmp/fge-heavy.lock が残っていないか見て -mmin +40 なら消す"},
+		{`let _ =`, "\"notes\": [\n  \"let _ = Log.warn で知らせる\"\n]"},
+		{`let _ =`, "\"読んだ上での方針\": [\n  \"let _ = Log.warn で知らせる\"\n]"},
+	}
+	for _, c := range cases {
+		if !adopted(regexp.MustCompile(c.re), nil, c.line) {
+			t.Errorf("減点が消えた: %s", c.line)
+		}
+	}
+}
+
+// unless の語が同じ行にあれば、その行は道具の説明として減点しない。
+func TestUnlessSkipsToolDescription(t *testing.T) {
+	re := regexp.MustCompile(`local\.mk[^\n]{0,30}(書き換|編集|sed)`)
+	unless := regexp.MustCompile(`use-engine`)
+	if adopted(re, unless, "use-engine が local.mk と lib を書き換えるので --restore を忘れない") {
+		t.Error("道具の説明で減点した")
+	}
+	if !adopted(re, unless, "local.mk の ENGINE= を開発中のパスに書き換える") {
+		t.Error("手で書き換える答えを減点しない")
 	}
 }
 

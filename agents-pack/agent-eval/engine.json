@@ -160,7 +160,7 @@
       ],
       "avoid": [
         {"re": "ln -s[^\\n]*lib", "why": "lib を他の作業場へ symlink"},
-        {"re": "local\\.mk[^\\n]{0,30}を?(手で|直接|自分で)(書き換|編集)|sed[^\\n]*local\\.mk", "why": "local.mk を手で書き換える"}
+        {"re": "local\\.mk[^\\n]{0,30}(書き換|編集|sed)|sed[^\\n]*local\\.mk", "why": "local.mk を手で書き換える", "unless": "use-engine"}
       ]
     },
     {
