@@ -1844,24 +1844,10 @@
 ## Timeline — `engine_world/src/Timeline.flix`
 - 組み上がった時刻表。sounds は (時刻, 書いた順) の昇順。
   `pub enum Timeline[a] { case Timeline({ clips = Map[a, Clip[a]], segments = Map[a, Int32], sounds = Vector[SoundAt], waits = List[Float64], fitted = Map[String, Float64], duration = Float64 }) }`
-- 区間: 名前と長さ(秒)。列の順に頭から消化される(純データ)。
-  `pub type alias Seg = { name = String, dur = Float64 }`
-- `pub def seg(name: String, dur: Float64): Seg`
-- 合計の尺(秒)。t がこれ以上なら at は None(終わり)。
-  `pub def total(segs: List[Seg]): Float64`
-- t 秒時点の区間。u は区間の頭からの経過秒(0 <= u < dur)。
-  `pub def at(segs: List[Seg], t: Float64): Option[{ name = String, u = Float64 }]`
-- クリップ: start 秒に始まり dur 秒続く。tag = 拍の名前か出来事（純データ）。
+- クリップ: start 秒に始まり dur 秒続く。tag = 拍の名前か出来事（ゲームの enum。文字列にしないのは、
   `pub type alias Clip[a] = { tag = a, start = Float64, dur = Float64 }`
-- `pub def clip(tag: a, start: Float64, dur: Float64): Clip[a]`
-- 頭から順に並ぶ (tag, 長さ) の列を、開始の時刻つきのクリップへ直す。開始の時刻は
-  `pub def toClips(steps: List[(a, Float64)]): List[Clip[a]]`
-- 全部のクリップが終わる時刻（空なら 0）。演出の全体の秒・決定キーで「最後まで飛ばす」先。
-  `pub def durationOf(clips: List[Clip[a]]): Float64`
-- tag のクリップの開始の時刻（無ければ None。同じ tag が複数あれば先頭）。
-  `pub def startOf(tag: a, clips: List[Clip[a]]): Option[Float64] with Eq[a]`
-- 前のフレームの時刻 t0 から今の t1 までの間に始まったクリップ（t0 < start <= t1）。
-  `pub def startedBetween(t0: Float64, t1: Float64, clips: List[Clip[a]]): List[Clip[a]]`
+- クリップを値として作る（表に無い名前の既定値など。長さは負にしない）。
+  `pub def clip(tag: a, start: Float64, dur: Float64): Clip[a]`
 - 曲の速さ。拍と小節を秒へ直すのはここだけ（譜面の bpm をそのまま渡す）。
   `pub type alias Tempo = { bpm = Float64, beatsPerBar = Int32 }`
 - テンポ。bpm は 1 未満にしない（0 で割らない）・1 小節の拍数は 1 未満にしない。
@@ -1920,13 +1906,13 @@
   `pub def endOf(tl: Timeline[a]): Float64`
 - タグのクリップ（秒）。
   `pub def clipOf(tag: a, tl: Timeline[a]): Option[Clip[a]] with Order[a]`
-- クリップの列（開始の順）。startedBetween や Clip の列を読む古い読み手へ渡す。
+- クリップの列（開始の順。同じ時刻は tag の順）。全部のクリップを順に見る所（索引・ログ）に。
   `pub def clipsOf(tl: Timeline[a]): List[Clip[a]]`
 - 時刻 t にタグのクリップのどこにいるか。境目は soundsOn と同じ (start で Active・長さ 0 なら After)。
   `pub def stateOf(tag: a, head: Playhead, tl: Timeline[a]): ClipState with Order[a]`
 - 進み 0..1（前は 0・後は 1）。
   `pub def progressOf(tag: a, head: Playhead, tl: Timeline[a]): Float64 with Order[a]`
-- 前のフレームの時刻 prev から今の now までに鳴らす効果音。区間は今の startedBetween と同じ
+- 前のフレームの時刻 prev から今の now までに鳴らす効果音。区間は
   `pub def soundsOn(playback: Playback, prev: Playhead, now: Playhead, tl: Timeline[a]): List[String]`
 - 待ちの無い表で、前のフレームの秒 prev から今の now までに鳴らす効果音（soundsOn の Play と同じ (prev, now]）。
   `pub def soundsBetween(prev: Float64, now: Float64, tl: Timeline[a]): List[String]`

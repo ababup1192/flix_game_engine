@@ -76,12 +76,11 @@
 | 整数を 1 つずつ動かす（数え下がり・数え上がり・巡って止まるルーレット） | EcsTween（steppedInt） |
 | 演出の時刻表（動き・効果音・待ちを 1 本に書く。拍・小節で書いて秒はテンポから。音を絵と同じクリップに付ける） | Timeline（build / buildOrBug / append / join / atEndOf / insert / withSound / waitFor → stateOf / progressOf / soundsOn / soundsBetween。手順は `engine_world/src/Timeline.flix` 冒頭） |
 | 曲に乗せる（次の小節の頭まで伸ばす・頭から n 拍目まで・次の小節の頭の n 拍前） | Timeline（Duration.ToNextBar / ToBeat / ToPickup。テンポは Timeline.tempo に譜面の bpm を渡す） |
-| 演出の時刻表を Doc の秒の並びから組むだけ（音は別に鳴らす古い形。新しく書く所は build と insert） | Timeline（クリップ: toClips / startedBetween / durationOf） |
 | ヒットストップ・スローモーション（ゲームの時計を一時的に遅くする） | TimeScale |
 | 長押しで決める・飛ばす（会話のスキップ・消去の確認） | HoldPress |
 | スプライトをコマ送りする | Anim（実例: `templates/platformer-starter/src/View.flix`） |
 | ドット絵を文字格子(*.sprite.json)で宣言して描く | PxSpriteDoc / PxSprite（実例: `templates/game-starter/assets/`配下の `*.sprite.json` + `templates/game-starter/src/Palette.flix`） |
-| 一続きの振り付け(歩く→拾う→戻る)の現在区間を時刻から引く | Timeline |
+| 一続きの振り付け(歩く→拾う→戻る)の現在区間を時刻から引く | Timeline（build の append で並べ、stateOf / progressOf で引く） |
 | 経路(脚の列)の現在地・歩き量・到着を時刻から引く | Journey（実例: `templates/rpg-starter/src/World.flix`。住人巡回） |
 | イベントシーン(カット列)を世界の状態を見ながら順に演じる | SceneSeq |
 | 一定間隔で合図を出す・残り時間を数える | Clock（実例: `templates/rpg-starter/src/World.flix`） |
@@ -269,7 +268,7 @@
 - **EcsTween** — 値をある値から別の値へ、時間をかけて滑らかに動かす（補間する）。整数を 1 つずつ動かすのは steppedInt（数え下がり・ルーレット）。
 - **Journey** — 脚(出発点・行き先・速さ)の列を「時刻の純関数」で歩く。到着判定(done)と絵の位置(pos)を同じ戻り値で返す。
 - **Motion** — 物の動かし方の小さな道具箱（等速移動と往復運動）。
-- **Timeline** — 演出の時刻表。動き・効果音・待ちを 1 本に並べ（append / join / atStartOf / atEndOf / insert = 決まった時刻 / withDelay / waitFor）、長さは秒・拍・小節と ToNextBar / ToBeat / ToPickup（次の小節の頭の n 拍前）で書く。build が秒の表を組み、書き間違い（同じ名前・前方参照・待ちに音など）は Err。描く側は stateOf / progressOf、鳴らす側は soundsOn（Enter / Play / Seek・二分探索。待ちの無い表は soundsBetween(前の秒, 今の秒)）で同じクリップを読む。待ちは playheadOf / resume。小さい部品として区間(Seg / at)とクリップ(Clip / toClips / startedBetween / durationOf)も持つ。履歴・巻き戻しは Worldline（別物）。
+- **Timeline** — 演出の時刻表。動き・効果音・待ちを 1 本に並べ（append / join / atStartOf / atEndOf / insert = 決まった時刻 / withDelay / waitFor）、長さは秒・拍・小節と ToNextBar / ToBeat / ToPickup（次の小節の頭の n 拍前）で書く。build が秒の表を組み、書き間違い（同じ名前・前方参照・待ちに音など）は Err。描く側は stateOf / progressOf、鳴らす側は soundsOn（Enter / Play / Seek・二分探索。待ちの無い表は soundsBetween(前の秒, 今の秒)）で同じクリップを読む。待ちは playheadOf / resume。組んだ表のクリップは clipOf / clipsOf（Clip）で引く。履歴・巻き戻しは Worldline（別物）。
 - **TimeScale** — ヒットストップ・スロー。合図からの実秒で「止める → 遅く流す → 等速へ戻す」を決め、毎フレームの dt を gameDt で直す（ゲームの時計ごと遅くする）。光や揺れは realAt の実秒で動かせる。
 - **HoldPress** — 長押しで決める。押している間だけ秒を貯め、満ちたフレームで 1 回だけ合図、合図の後は離すまで貯めない。押した瞬間の拍そのものは InputEdge。
 - **SceneSeq** — カット列の逐次シーケンサ骨格。perform（カットを 1 コマ演じる）と idle（尽きたあと時間だけ流す）を注入し、Skip・打ち切りは notes に残す（fail-open だが無音ではない）。
@@ -279,8 +278,7 @@
 
 | 抽象 | 決め手 | 向く場面 |
 |---|---|---|
-| Timeline | 尺が既知。時刻 t から現在区間を引くだけの純関数 | 振り付け（歩く→しゃがむ→戻る） |
-| Timeline（build） | 尺が既知（待ちは waitFor で挟める）で拍が重なる。絵と音を同じクリップから引く | 演出の時刻表（WARNING → カットイン → ターン 1・会話の窓・連鎖） |
+| Timeline（build） | 尺が既知（待ちは waitFor で挟める）で拍が重なってよい。絵と音を同じクリップから引く | 振り付け（歩く→しゃがむ→戻る）・演出の時刻表（WARNING → カットイン → ターン 1・会話の窓・連鎖） |
 | Journey | 脚の列（出発点・行き先・速さ）の時刻純関数 | 経路の現在地・到着判定 |
 | Replay | 入力が固定。入力列を tick へ流す再生 | プレイの再現・自動操作 |
 | SceneSeq | 世界を見て尺が決まる再生。終わりは世界の状態から判定 | イベントシーン（カット列） |
