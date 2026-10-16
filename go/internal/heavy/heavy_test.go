@@ -6,9 +6,11 @@ package heavy
 // 重ねないこと、長い物が枠を埋めても短い物だけの枠で短い物が流れること、
 // 長い物が枠 1 を持っていても短い物が枠 2 で流れること、古い heavy のエントリに枠 2 を配らないこと、
 // 持ち主の死んだ鍵と古い手書きの鍵だけを外すこと、自分の鍵しか外さないこと、
-// 中から呼んだ heavy が自分の鍵を待って止まらないこと。
+// 中から呼んだ heavy が自分の鍵を待って止まらないこと、心拍の止まった待ち人が列を塞がないこと、
+// 委ね先が壊れていたり置き換えに失敗したりしたら知らせてこの版のまま流すこと。
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -402,7 +404,8 @@ func TestShortReapsDeadSlotOneWhileSlotTwoBusy(t *testing.T) {
 	dead := exec.Command("true")
 	dead.Run()
 	writeJSON(filepath.Join(lock, ownerFile), Owner{PID: dead.Process.Pid, Command: "make render-all", Since: time.Now()})
-	c := heavyCmd(t, lock, "true")
+	// 枠 2 本で流す（枠 3 本だと短い物は空いた枠 3 を取ってしまい、外しを確かめられない）。
+	c := heavyCmdSlots(t, lock, 2, "true")
 	done := make(chan error, 1)
 	go func() { done <- c.Run() }()
 	select {
@@ -478,7 +481,8 @@ func TestDeadSlotTwoIsReapedWhileSlotOneBusy(t *testing.T) {
 	dead := exec.Command("true")
 	dead.Run()
 	writeJSON(filepath.Join(slotPath(lock, 1), ownerFile), Owner{PID: dead.Process.Pid, Command: "make test", Since: time.Now()})
-	c := heavyCmd(t, lock, "true")
+	// 枠 2 本で流す（枠 3 本だと短い物は空いた枠 3 を取ってしまい、外しを確かめられない）。
+	c := heavyCmdSlots(t, lock, 2, "true")
 	done := make(chan error, 1)
 	go func() { done <- c.Run() }()
 	select {
@@ -618,5 +622,148 @@ exit 5
 	os.Remove(filepath.Join(home, ".flix_ge_studio", "heavy-no-delegate"))
 	if code := run(NoDelegateEnv + "=1"); code != 0 {
 		t.Fatalf("%s=1 なのに委ねた (%d)", NoDelegateEnv, code)
+	}
+}
+
+// 心拍の止まった（Ctrl-Z で止められた）待ち人が列の先頭に居ても、後ろの heavy は空いた枠を取る。
+func TestStaleQueueEntryDoesNotBlockHead(t *testing.T) {
+	lock := newLock(t)
+	stuck := exec.Command("sleep", "30")
+	if err := stuck.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer stuck.Process.Kill()
+	os.MkdirAll(queueDir(lock), 0o777)
+	qp := filepath.Join(queueDir(lock), fmt.Sprint(stuck.Process.Pid)+".json")
+	writeJSON(qp, Owner{PID: stuck.Process.Pid, Started: processStarted(stuck.Process.Pid),
+		Long: true, Since: time.Now().Add(-time.Hour)})
+	old := time.Now().Add(-queueStale - time.Minute)
+	os.Chtimes(qp, old, old)
+	// 枠 1 本・長い物どうしなので、止まった先頭を飛ばさなければ後ろは流れない。
+	c := heavyCmdSlots(t, lock, 1, "--long", "true")
+	done := make(chan error, 1)
+	go func() { done <- c.Run() }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("後ろの heavy が失敗: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		c.Process.Kill()
+		t.Fatalf("心拍の止まった先頭の待ち人が列を塞いだ")
+	}
+	if _, err := os.Stat(qp); err != nil {
+		t.Fatalf("止まっているだけの待ち人のエントリを消した（再開したら並び直せない）")
+	}
+}
+
+// 枠 3（短い物だけの枠）の持ち主が死んでいれば、枠 1・2 が生きた長い物で埋まっていても短い物が外して取る。
+func TestDeadShortOnlySlotIsReaped(t *testing.T) {
+	lock := newLock(t)
+	for i := 0; i < 2; i++ {
+		os.Mkdir(slotPath(lock, i), 0o755)
+		writeJSON(filepath.Join(slotPath(lock, i), ownerFile),
+			Owner{PID: os.Getpid(), Command: "make render-all", Long: true, Since: time.Now()})
+	}
+	dead := exec.Command("true")
+	dead.Run()
+	os.Mkdir(slotPath(lock, 2), 0o755)
+	writeJSON(filepath.Join(slotPath(lock, 2), ownerFile),
+		Owner{PID: dead.Process.Pid, Command: "make test", AnySlot: true, Since: time.Now()})
+	c := heavyCmd(t, lock, "true")
+	done := make(chan error, 1)
+	go func() { done <- c.Run() }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("短い物が失敗: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		c.Process.Kill()
+		t.Fatalf("死んだ枠 3 を外さずに待ち続けた")
+	}
+	for i := 0; i < 2; i++ {
+		if _, err := os.Stat(filepath.Join(slotPath(lock, i), ownerFile)); err != nil {
+			t.Fatalf("生きた持ち主の枠 %d を外した", i+1)
+		}
+	}
+}
+
+// fakeRelease は ~/.flix_ge_studio/engines/9.0.0 に、script を中身にした fge-go を置き、HOME を差し替える。
+func fakeRelease(t *testing.T, script string) {
+	t.Helper()
+	home := t.TempDir()
+	bin := filepath.Join(home, ".flix_ge_studio", "engines", "9.0.0", "bin")
+	os.MkdirAll(bin, 0o755)
+	os.WriteFile(filepath.Join(bin, "..", "Makefile"), []byte("VERSION := 9.0.0\n"), 0o644)
+	os.WriteFile(filepath.Join(bin, "fge-go"), []byte(script), 0o755)
+	t.Setenv("HOME", home)
+	t.Setenv(DelegatedEnv, "")
+	t.Setenv(NoDelegateEnv, "")
+	t.Setenv(TokenEnv, "")
+}
+
+// 委ね先が --revision で落ちる（壊れたリリース）なら、そう 1 行言ってこの版のままコマンドを流す。
+func TestBrokenReleaseRunsHereAndSaysSo(t *testing.T) {
+	fakeRelease(t, "#!/bin/sh\nkill -SEGV $$\n")
+	marker := filepath.Join(t.TempDir(), "ran")
+	var errOut strings.Builder
+	code := Run([]string{"--short", "touch", marker}, false, Options{Lock: newLock(t), Poll: 20 * time.Millisecond, Err: &errOut})
+	if code != 0 {
+		t.Fatalf("この版で流したコマンドの終了コード 0 が返らない (%d)", code)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("委ね先が落ちたのにコマンドを流さなかった")
+	}
+	if !strings.Contains(errOut.String(), "9.0.0") || !strings.Contains(errOut.String(), "この版のまま流します") {
+		t.Fatalf("壊れた委ね先を知らせていない: %q", errOut.String())
+	}
+}
+
+// 委ね先への置き換えが失敗したら、そう 1 行言ってこの版のままコマンドを流す（黙って 0 を返さない）。
+func TestFailedExecRunsHereAndSaysSo(t *testing.T) {
+	fakeRelease(t, "#!/bin/sh\nif [ \"$2\" = \"--revision\" ]; then echo 99; exit 0; fi\nexit 5\n")
+	execDelegateFn = func(string, []string) error { return errors.New("置き換えに失敗") }
+	t.Cleanup(func() { execDelegateFn = execDelegate })
+	var errOut strings.Builder
+	code := Run([]string{"--short", "sh", "-c", "exit 3"}, false, Options{Lock: newLock(t), Poll: 20 * time.Millisecond, Err: &errOut})
+	if code != 3 {
+		t.Fatalf("この版で流したコマンドの終了コード 3 が返らない (%d)", code)
+	}
+	if !strings.Contains(errOut.String(), "委ねられませんでした") {
+		t.Fatalf("置き換えの失敗を知らせていない: %q", errOut.String())
+	}
+}
+
+// --status の 1 行目は、答えている heavy の作りの版と、委ねていないならその理由。
+func TestStatusFirstLineShowsVersionAndDelegation(t *testing.T) {
+	fakeRelease(t, "#!/bin/sh\necho 99\n")
+	t.Setenv(NoDelegateEnv, "1")
+	firstLine := func() string {
+		var out strings.Builder
+		printStatus(&out, defaults(Options{Lock: newLock(t), Err: io.Discard}), false)
+		return strings.SplitN(out.String(), "\n", 2)[0]
+	}
+	if got, want := firstLine(), fmt.Sprintf("作り %d", Revision); !strings.Contains(got, want) || !strings.Contains(got, NoDelegateEnv) {
+		t.Fatalf("1 行目に %q と委ねない理由 (%s) が無い: %q", want, NoDelegateEnv, got)
+	}
+	t.Setenv(DelegatedEnv, "1")
+	if got := firstLine(); !strings.Contains(got, "委ね先の heavy") {
+		t.Fatalf("委ねられた先の 1 行目にそう出ていない: %q", got)
+	}
+}
+
+// --help と -h は使い方の全文を出して 0 で終わる（知らない旗として落ちない）。
+func TestHelpPrintsFullUsage(t *testing.T) {
+	for _, flag := range []string{"--help", "-h"} {
+		out, err := heavyCmd(t, newLock(t), flag).Output()
+		if err != nil {
+			t.Fatalf("%s が 0 で終わらない: %v", flag, err)
+		}
+		for _, want := range []string{LongSlotsEnv, "HEAVY_LONG", "--status", "--history"} {
+			if !strings.Contains(string(out), want) {
+				t.Fatalf("%s の出力に %q が無い:\n%s", flag, want, out)
+			}
+		}
 	}
 }

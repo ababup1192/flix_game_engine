@@ -10,9 +10,12 @@ package heavy
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -87,52 +90,109 @@ func versionLess(a, b []int) bool {
 	return false
 }
 
-// revisionOf は fge-go の heavy の作りの版を聞く。答えなければ 0。
-func revisionOf(bin string) int {
+// revisionOf は fge-go の heavy の作りの版を聞く。
+//
+// 答えなければ 0。普通に終わって数を返さないのは --revision を知らない古いリリース
+// （0.35.29 以前）なので黙って 0 にする。起動できない・シグナルで落ちた・3 秒で答えないのは
+// リリースが壊れているので、0 に加えて理由を返す（呼ぶ側が 1 行知らせる）。
+func revisionOf(bin string) (int, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	c := exec.CommandContext(ctx, bin, "heavy", "--revision")
 	c.Env = append(os.Environ(), DelegatedEnv+"=1")
 	out, err := c.Output()
+	if ctx.Err() != nil {
+		return 0, errors.New("--revision に 3 秒で答えません")
+	}
 	if err != nil {
-		return 0
+		var ee *exec.ExitError
+		if !errors.As(err, &ee) {
+			return 0, fmt.Errorf("起動できません (%v)", err)
+		}
+		if !ee.Exited() {
+			return 0, fmt.Errorf("--revision で落ちました (%v)", ee)
+		}
+		return 0, nil
 	}
 	n, err := strconv.Atoi(strings.TrimSpace(string(out)))
 	if err != nil {
-		return 0
+		return 0, nil
 	}
-	return n
+	return n, nil
 }
 
-// delegateTarget は委ねる先の fge-go を返す（委ねないなら ""）。
+// execDelegateFn は委ね先への置き換え。テストが置き換えの失敗を作るために差し替える。
+var execDelegateFn = execDelegate
+
+// delegateDecision は委ねる先の fge-go を返す（委ねないなら ""）。why は委ねない理由
+// （--status の 1 行目に出す）。warn は委ね先になるはずのリリースが壊れているときの理由で、
+// そのときはこの版のまま流す。
 //
 // 委ねるのは fge heavy の入口だけ。compare と use-engine はプロセスの中で Hold を呼ぶので、
 // その作業場の版の作りのまま並ぶ。
-func delegateTarget() string {
-	if !canDelegate || os.Getenv(DelegatedEnv) != "" || os.Getenv(NoDelegateEnv) == "1" {
-		return ""
+func delegateDecision() (bin, why string, warn error) {
+	switch {
+	case !canDelegate:
+		return "", "この OS は委ねません", nil
+	case os.Getenv(DelegatedEnv) != "":
+		return "", "委ねられた先で流れています", nil
+	case os.Getenv(NoDelegateEnv) == "1":
+		return "", NoDelegateEnv + "=1 なので委ねません", nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return ""
+		return "", "ホームが分からないので委ねません", nil
 	}
 	studio := filepath.Join(home, ".flix_ge_studio")
 	if _, err := os.Stat(filepath.Join(studio, noDelegateFile)); err == nil {
-		return ""
+		return "", shortPath(filepath.Join(studio, noDelegateFile)) + " があるので委ねません", nil
 	}
-	bin := newestRelease(studio)
+	bin = newestRelease(studio)
 	if bin == "" {
-		return ""
+		return "", "リリースが入っていないので委ねません", nil
 	}
 	if self, err := os.Executable(); err == nil {
 		a, _ := filepath.EvalSymlinks(self)
 		b, _ := filepath.EvalSymlinks(bin)
 		if a != "" && a == b {
-			return ""
+			return "", "いちばん新しいリリースそのものです", nil
 		}
 	}
-	if revisionOf(bin) <= Revision {
+	rev, warn := revisionOf(bin)
+	if warn != nil {
+		return "", fmt.Sprintf("いちばん新しいリリース %s が壊れているので委ねません", releaseName(bin)),
+			fmt.Errorf("いちばん新しいリリース %s の heavy が%v", releaseName(bin), warn)
+	}
+	if rev <= Revision {
+		return "", fmt.Sprintf("いちばん新しいリリース %s の作り %d がこの版より新しくないので委ねません", releaseName(bin), rev), nil
+	}
+	return bin, "", nil
+}
+
+// releaseName は engines/<版>/bin/fge-go の <版>。
+func releaseName(bin string) string {
+	return filepath.Base(filepath.Dir(filepath.Dir(bin)))
+}
+
+// makefileVersion は Makefile の `VERSION := 0.35.33` の行。
+var makefileVersion = regexp.MustCompile(`(?m)^VERSION[ \t]*:=[ \t]*(\S+)`)
+
+// selfVersion は今走っている fge-go の版。<engine>/bin/fge-go の <engine>/Makefile から読む。
+// 読めない（go run・テストのバイナリ）なら ""。
+func selfVersion() string {
+	exe, err := os.Executable()
+	if err != nil {
 		return ""
 	}
-	return bin
+	if r, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = r
+	}
+	data, err := os.ReadFile(filepath.Join(filepath.Dir(filepath.Dir(exe)), "Makefile"))
+	if err != nil {
+		return ""
+	}
+	if m := makefileVersion.FindSubmatch(data); m != nil {
+		return string(m[1])
+	}
+	return ""
 }

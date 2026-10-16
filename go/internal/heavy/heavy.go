@@ -179,8 +179,10 @@ type Options struct {
 	Poll        time.Duration
 	// childEnv は子へ足す環境変数（Hold が持っている枠を渡す）。
 	childEnv []string
-	Now      func() time.Time
-	Err      io.Writer
+	// delegateNote は委ねなかった理由（Run が決めて --status の 1 行目に出す）。
+	delegateNote string
+	Now          func() time.Time
+	Err          io.Writer
 }
 
 func defaults(o Options) Options {
@@ -244,11 +246,17 @@ func Run(args []string, asJSON bool, o Options) int {
 		fmt.Println(Revision)
 		return 0
 	}
-	if bin := delegateTarget(); bin != "" {
-		if err := execDelegate(bin, args); err != nil {
+	bin, why, warn := delegateDecision()
+	if warn != nil {
+		fmt.Fprintf(o.Err, "[heavy] %v・この版のまま流します\n", warn)
+	}
+	if bin != "" {
+		if err := execDelegateFn(bin, args); err != nil {
 			fmt.Fprintf(o.Err, "[heavy] %s へ委ねられませんでした (%v)・この版のまま流します\n", shortPath(bin), err)
+			why = fmt.Sprintf("%s へ委ねられなかったのでこの版で流しています", releaseName(bin))
 		}
 	}
+	o.delegateNote = why
 	var cmd []string
 	status, history := false, 0
 	for i, a := range args {
@@ -262,6 +270,10 @@ func Run(args []string, asJSON bool, o Options) int {
 		}
 		if a == "--json" {
 			continue
+		}
+		if a == "--help" || a == "-h" {
+			printUsage(os.Stdout, o)
+			return 0
 		}
 		if a == "--history" || strings.HasPrefix(a, "--history=") {
 			history = 24
@@ -292,13 +304,31 @@ func Run(args []string, asJSON bool, o Options) int {
 		return printHistory(os.Stdout, o, history)
 	}
 	if len(cmd) == 0 {
-		fmt.Fprintln(o.Err, "使い方: fge heavy <コマンド...>          鍵を取ってコマンドを流す（CHECKD=0 が既定）")
-		fmt.Fprintf(o.Err, "        fge heavy --long|--short <...>   長い物（枠 1〜%d）か短い物かを名前の見分けより優先\n", o.LongSlots)
-		fmt.Fprintln(o.Err, "        fge heavy --status               枠ごとの持ち主と待っている列")
-		fmt.Fprintln(o.Err, "        fge heavy --history[=時間]       直近 (既定 24 時間) の待ちと走りの合計 (<鍵>.log)")
+		printUsage(o.Err, o)
 		return 2
 	}
 	return Exec(cmd, "", o)
+}
+
+// printUsage は使い方の全文（--help と、コマンドが無いとき）。
+//
+// WhyNot: 枠の決まりの詳しい説明をここに置くのは、AGENTS.md の早見表には 1 行の案内だけを
+// 残し、本数や見分けの決まりが変わってもこの版の heavy の言うことが正になるようにするため。
+func printUsage(w io.Writer, o Options) {
+	fmt.Fprintln(w, "使い方: fge heavy <コマンド...>          鍵を取ってコマンドを流す（CHECKD=0 が既定）")
+	fmt.Fprintf(w, "        fge heavy --long|--short <...>   長い物（枠 1〜%d）か短い物かを名前の見分けより優先\n", o.LongSlots)
+	fmt.Fprintln(w, "        fge heavy --status               枠ごとの持ち主と待っている列（1 行目に答えている heavy の版）")
+	fmt.Fprintln(w, "        fge heavy --history[=時間]       直近 (既定 24 時間) の待ちと走りの合計 (<鍵>.log)")
+	fmt.Fprintln(w, "        fge heavy --help                 この説明")
+	fmt.Fprintln(w, "")
+	fmt.Fprintf(w, "枠 %d 本 (%s で変える)。render-all・動画・compare は長い物として枠 1〜%d の %d 本まで・"+
+		"枠 %d から先は check・test など短い物だけで、長い物が並んでも短い物は待たない。\n",
+		o.Slots, SlotsEnv, o.LongSlots, o.LongSlots, o.LongSlots+1)
+	fmt.Fprintf(w, "長い物の本数は %s (既定 %d)。見分けは名前とゲームの Makefile の HEAVY_LONG・変えるなら --long / --short。\n",
+		LongSlotsEnv, DefaultLongSlots)
+	fmt.Fprintln(w, "agent-eval は包んでも鍵を取らない。持ち主と待ち列は --status・今日の待ちの合計は --history・CHECKD=0 が既定。")
+	fmt.Fprintf(w, "マシンにもっと新しい作りのリリースの heavy があればそちらへ委ねる（止めるなら %s=1 か ~/.flix_ge_studio/%s）。\n",
+		NoDelegateEnv, noDelegateFile)
 }
 
 // ── 鍵の中身 ─────────────────────────────────────────────
@@ -324,6 +354,12 @@ type Snapshot struct {
 	// LongSlots は長い物が使える枠の本数（枠 1 から数えて）。これより後ろの枠は短い物だけ。
 	LongSlots int     `json:"longSlots"`
 	Waiting   []Owner `json:"waiting"`
+	// Version と Revision は答えている heavy の版と作りの版（委ねたなら委ね先の物）。
+	// Version は読めなければ空。Delegated は委ねられた先で答えているか、DelegateNote は委ねなかった理由。
+	Version      string `json:"version"`
+	Revision     int    `json:"revision"`
+	Delegated    bool   `json:"delegated"`
+	DelegateNote string `json:"delegateNote,omitempty"`
 }
 
 func readOwner(lock string) (*Owner, error) {
@@ -789,7 +825,19 @@ func describeHolders(o Options, me *Owner) string {
 }
 
 func snapshot(o Options) Snapshot {
-	s := Snapshot{Lock: o.Lock, LongSlots: o.LongSlots, Waiting: waiting(o)}
+	s := Snapshot{Lock: o.Lock, LongSlots: o.LongSlots, Waiting: waiting(o),
+		Version: selfVersion(), Revision: Revision, Delegated: os.Getenv(DelegatedEnv) != ""}
+	if !s.Delegated {
+		s.DelegateNote = o.delegateNote
+		if s.DelegateNote == "" {
+			// Run を通らずに呼ばれた（テスト）ときは、ここで決め直す（置き換えはしない）。
+			bin, why, _ := delegateDecision()
+			if bin != "" {
+				why = fmt.Sprintf("委ね先 %s があります", releaseName(bin))
+			}
+			s.DelegateNote = why
+		}
+	}
 	if s.Waiting == nil {
 		s.Waiting = []Owner{}
 	}
@@ -822,6 +870,17 @@ func printStatus(w io.Writer, o Options, asJSON bool) int {
 		data, _ := json.Marshal(s)
 		fmt.Fprintln(w, string(data))
 		return 0
+	}
+	version := s.Version
+	if version == "" {
+		version = "不明 (手元のビルド)"
+	}
+	// WhyNot: 版を 1 行目に出すのは、委ねた先と作業場の版が違うとき、どちらの決まり
+	// （枠の本数・長い物の見分け）で並んでいるのかを --status の頭だけで読めるようにするため。
+	if s.Delegated {
+		fmt.Fprintf(w, "[heavy] 委ね先の heavy (版 %s・作り %d) が答えています\n", version, s.Revision)
+	} else {
+		fmt.Fprintf(w, "[heavy] 委ねずにこの heavy (版 %s・作り %d) が答えています — %s\n", version, s.Revision, s.DelegateNote)
 	}
 	longs := "枠 1 だけ"
 	if s.LongSlots > 1 {
