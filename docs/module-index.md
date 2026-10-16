@@ -183,6 +183,8 @@
 | タイルが多い・タイル宣言の組み立てが毎フレーム走る | App.withTileLayers（tiles はサンク — 鍵が変わるまで評価されない） |
 | 遠くで 1px を切る物まで組み立てている | 倍率の床で place ごと切る（実戦の例: templates/race-starter の propCull / palmCull） |
 | 1 マスを画素ぶんの box で組んでいる（絵は同じでも桁が違う） | PxSprite.drawQuad（1 コマ = 1 クアッド）。アトラスは PxSpriteAtlas.bake + App.withSpriteAtlases |
+| 動画の連番・ギャラリーの描き出しが遅い（コマごとにテクスチャのファイルを読み直している） | SoftRaster.freshTextureCache + renderToImageCached（コマ列の前に 1 本作って持ち回る。画素は同じ） |
+| 描き出しの口を流すたびにコンパイルし直している | mk/game.mk の HEADLESS_RUN（bin/headless-run が jar を 1 回だけ作って使い回す。ゲームの Makefile で上書きしない） |
 | make reference-check / make status が「budget NG」と言う | 絵の値段の検査（決まりと逃がし方は docs/performance.md §9）。静的層ぶんは HeadlessRender.noteStaticItems で申告して引く |
 
 ## 土台（App・ECS）

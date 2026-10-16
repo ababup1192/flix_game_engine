@@ -5,6 +5,8 @@
 //   Multiply = 暗く沈める（白は素通し・黒は黒・alpha 0 で何も変えない）
 mod TestSoftRaster {
     import java.awt.image.BufferedImage
+    import java.io.File
+    import javax.imageio.ImageIO
 
     /// ARGB int の組み立て（テスト入力用）。
     def argb(a: Int32, r: Int32, g: Int32, b: Int32): Int32 =
@@ -159,4 +161,50 @@ mod TestSoftRaster {
         let grayAt = y -> { let (_, r, _, _) = channels(img.getRGB(1i32, y)); r };
         Assert.assertEq(expected = 32 :: 96 :: 159 :: 223 :: Nil,
             grayAt(0i32) :: grayAt(1i32) :: grayAt(2i32) :: grayAt(3i32) :: Nil)
+
+    // ── テクスチャのキャッシュ（コマ列で 1 回だけ読む） ──
+
+    /// 1 色で塗った 4×4 の PNG を書く（テクスチャのファイルの代わり）。
+    def writeSolidPng(path: String, rgb: Int32): Unit \ IO =
+        let img = new BufferedImage(4i32, 4i32, 2i32);
+        List.range(0, 16) |> List.forEach(i -> img.setRGB(Int32.modulo(i, 4), i / 4, rgb));
+        discard ImageIO.write(img, "png", new File(path))
+
+    /// テクスチャ 1 枚を画面いっぱい（4×4）に貼った要求。
+    def texturedReq(path: String): SoftRaster.RasterReq =
+        let sprite = DrawCmd.make({
+          texture = "t", position = { x = 0.0, y = 0.0 }, scale = { x = 4.0, y = 4.0 },
+          rotation = 0.0, color = { r = 1.0, g = 1.0, b = 1.0 }, alpha = 1.0,
+          centered = false, uvOffset = { x = 0.0, y = 0.0 }, uvScale = { x = 1.0, y = 1.0 },
+          zIndex = 0, style = None, clip = None, blend = DrawCmd.BlendMode.Normal, mask = Nil });
+        { drawables = sprite :: Nil, polygons = Nil,
+          design = { x = 4.0, y = 4.0 }, scale = 1, background = black(),
+          texturePath = Map.singleton("t", path),
+          fontTtf = "../templates/game-starter/assets/Xolonium-Regular.ttf",
+          fontAtlas = { textureName = "font_ui", fontSize = 16.0, textureSize = 256.0,
+                        ascent = 12.0, descent = 4.0, lineGap = 0.0, glyphs = Map.empty() },
+          outPath = "", shapeAntialias = true, textAntialias = true }
+
+    def centerOf(img: BufferedImage): Int32 \ IO = img.getRGB(1i32, 1i32)
+
+    /// キャッシュつきの描き出しは、キャッシュ無しと同じ画素を出す。同じキャッシュを使う間は
+    /// ファイルを読み直さない（途中で書き換えても最初に読んだ絵のまま）。
+    @Test
+    def testTextureCacheReadsEachFileOnce(): Unit \ {Assert, IO} =
+        let file: File = File.createTempFile("softraster-cache", ".png");
+        file.deleteOnExit();
+        let path: String = file.getPath();
+        let red = argb(255, 255, 0, 0);
+        let blue = argb(255, 0, 0, 255);
+        writeSolidPng(path, red);
+        let req = texturedReq(path);
+        let cache = SoftRaster.freshTextureCache();
+        let warnLog = SoftRaster.freshTexWarnLog();
+        let plain = SoftRaster.renderToImage(req);
+        let first = SoftRaster.renderToImageCached(req, Nil, Map.empty(), Map.empty(), warnLog, cache);
+        writeSolidPng(path, blue);
+        let second = SoftRaster.renderToImageCached(req, Nil, Map.empty(), Map.empty(), warnLog, cache);
+        let fresh = SoftRaster.renderToImage(req);
+        Assert.assertEq(expected = red :: red :: red :: blue :: Nil,
+            centerOf(plain) :: centerOf(first) :: centerOf(second) :: centerOf(fresh) :: Nil)
 }

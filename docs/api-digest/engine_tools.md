@@ -234,6 +234,12 @@
   `pub def freshTexWarnLog(): TexWarnLog \ IO`
 - renderToImageFull の欠け名控えつき版。控えは知らせの回数にだけ効き、
   `pub def renderToImageLogged(req: RasterReq, surfaces: List[SurfaceCmd], extraFonts: Map[String, FontEntry], extraImages: Map[String, BufferedImage], warnLog: TexWarnLog): BufferedImage \ IO`
+- texturePath の画像を 1 回だけ読むためのキャッシュ（ファイルのパス → ARGB にそろえた画像）。
+  `pub enum TextureCache(ConcurrentHashMap[String, BufferedImage])`
+- 空のキャッシュを作る（コマ列の描き出しの前に 1 本）。
+  `pub def freshTextureCache(): TextureCache \ IO`
+- renderToImageLogged のテクスチャキャッシュつき版。画素は renderToImageLogged と 1 バイトも
+  `pub def renderToImageCached(req: RasterReq, surfaces: List[SurfaceCmd], extraFonts: Map[String, FontEntry], extraImages: Map[String, BufferedImage], warnLog: TexWarnLog, cache: TextureCache): BufferedImage \ IO`
 - pass（レンダーターゲット）描き出し用の入口。req#background は使わない — 塗るかどうか
   `pub def renderPassImage(req: RasterReq, base: Option[BufferedImage], extraImages: Map[String, BufferedImage]): BufferedImage \ IO`
 - ARGB 1 画素の合成（src を dst に重ねた結果。out の alpha は dst のまま —

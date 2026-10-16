@@ -27,6 +27,12 @@
       "why": "同上"
     },
     {
+      "src": "bin/headless-run",
+      "dest": "bin/headless-run",
+      "skipOnWindows": true,
+      "why": "mk/game.mk の HEADLESS_RUN（render-all・render・ゲームの動画の口）が叩く。jar を 1 回だけ作って使い回す"
+    },
+    {
       "src": "bin/githooks/pre-commit",
       "dest": "bin/githooks/pre-commit",
       "why": "生まれたゲームの pre-commit ゲートの実体"

@@ -1,0 +1,141 @@
+#!/usr/bin/env bash
+# headless-run — 描き出しの入口（`flix run --entrypoint X` の X と同じ字）を、先に作った jar から流す。
+#
+# 使い方（ゲームの根で）: headless-run <モジュール.関数>      例: headless-run SceneRender.all
+#
+# flix run は呼ぶたびにパッケージ全体をコンパイルし直す（1 回 30 秒〜数分）。ここでは
+# src・flix.toml・lib のどれかが変わった時だけ jar を 1 本作り直し、あとは java -jar で流す。
+# 動画を何本も続けて描く・make render で 1 枚だけ描く、のどちらもコンパイルの分だけ速くなる。
+#
+# 入口の拾い方: src の `pub def 名前(): Unit \ IO =`（引数なし・効果は IO だけ・1 行）を全部拾い、
+# 環境変数 FGE_ENTRY で選ぶ小さな main（FgeHeadlessMain）を足してから jar にする。
+# Flix は main から届かない関数を jar に入れないので、入口を main に並べておく必要がある。
+# 拾えない形の入口（引数あり・別の効果つき・複数行・mod が 2 つ以上あるファイル）と、jar を
+# 作れなかった時は、今までどおり flix run に回す（速くならないだけで、描き出しは止めない）。
+#
+# jar の置き場: build/headless/（git に入れない）。作る場所は build/headless/proj で、
+# ゲームの src を写した上に FgeHeadlessMain.flix を足す（ゲームの src には何も書かない）。
+# 2 本の make が同時に来ても作るのは 1 本だけ（build/headless/.lock で順番に。鍵に作り手の pid を
+# 書き、作り手が落ちていたら次の人が外す）。
+# 作り直しは別名で書いてから mv するので、走っている JVM の jar は消えない。
+#
+# 環境変数: FLIX_CMD = jar を作る flix（既定はこのエンジンの bin/flix）。1 語のパスで渡す
+# （相対パスはここで絶対パスにする — jar は build/headless/proj へ移って作るため）。
+set -euo pipefail
+
+if [ $# -ne 1 ]; then
+    echo "使い方: headless-run <モジュール.関数>   (ゲームの根で。例: headless-run SceneRender.all)" >&2
+    exit 2
+fi
+entry=$1
+engine="$(cd "$(dirname "$0")/.." && pwd)"
+flix="${FLIX_CMD:-$engine/bin/flix}"
+case "$flix" in
+    /*) ;;
+    */*) flix="$PWD/$flix" ;;
+esac
+out=build/headless
+jar=$out/headless.jar
+proj=$out/proj
+main=FgeHeadlessMain
+
+if [ ! -d src ] || [ ! -f flix.toml ]; then
+    echo "headless-run: ゲームの根（src/ と flix.toml のある所）で呼んでください" >&2
+    exit 2
+fi
+
+# src から入口を拾う。mod の行より後の pub def をそのモジュールの物とする。mod が 2 つ以上ある
+# ファイル（入れ子を含む）はどの mod の物か行だけでは決められないので、丸ごと拾わない。
+list_entries() {
+    find src -name '*.flix' | LC_ALL=C sort | while IFS= read -r f; do
+        mods=$(grep -cE '^[[:space:]]*(pub[[:space:]]+)?mod[[:space:]]' "$f" || true)
+        [ "$mods" = 1 ] || continue
+        sed -nE \
+            -e 's/^[[:space:]]*(pub[[:space:]]+)?mod[[:space:]]+([A-Za-z0-9_.]+).*/M \2/p' \
+            -e 's/^[[:space:]]*pub[[:space:]]+def[[:space:]]+([A-Za-z0-9_]+)\(\):[[:space:]]*Unit[[:space:]]*\\[[:space:]]*IO[[:space:]]*=.*/D \1/p' \
+            "$f" | awk '$1 == "M" { m = $2 } $1 == "D" && m != "" { print m "." $2 }'
+    done
+}
+
+entries="$(list_entries)"
+if ! printf '%s\n' "$entries" | grep -qxF "$entry"; then
+    # 拾えない形の入口は今までどおりコンパイルして流す。
+    exec "$flix" run --entrypoint "$entry"
+fi
+
+build_dispatcher() {
+    echo "// 自動生成（エンジンの bin/headless-run）。手で直さない。"
+    echo "// 環境変数 FGE_ENTRY の名前の入口を 1 つ流す。"
+    echo "mod $main {"
+    echo "    import java.lang.System"
+    echo ""
+    echo "    pub def main(): Unit \\ IO ="
+    echo "        let name = System.getenv(\"FGE_ENTRY\");"
+    echo "        match name {"
+    printf '%s\n' "$entries" | while IFS= read -r e; do
+        echo "            case \"$e\" => $e()"
+    done
+    echo "            case _ => bug!(\"headless-run: 知らない入口 \${name}\")"
+    echo "        }"
+    echo "}"
+}
+
+# jar が古いか: 無い・入口の一覧が変わった・src / flix.toml / lib のどれかが jar より新しい。
+is_stale() {
+    [ -f "$jar" ] || return 0
+    [ -f "$proj/src/$main.flix" ] || return 0
+    [ "$(build_dispatcher)" = "$(cat "$proj/src/$main.flix")" ] || return 0
+    # lib/ と末尾に / を付ける — lib が symlink でも中まで見る。
+    [ -z "$(find src flix.toml lib/ -newer "$jar" -print 2>/dev/null | head -1)" ] || return 0
+    return 1
+}
+
+# 作れたら 0。jar の時刻は「src を写し始めた時刻」にそろえる — 作っている最中に保存された src を
+# 次の回に「jar より新しい」と気づけるように（flix が書き終えた時刻のままだと取りこぼす）。
+build_jar() {
+    touch "$out/.started"
+    rm -rf "$proj/src" "$proj/artifact"
+    mkdir -p "$proj"
+    cp -R src "$proj/src"
+    cp flix.toml "$proj/flix.toml"
+    if [ -d lib ]; then ln -sfn "$PWD/lib" "$proj/lib"; fi
+    build_dispatcher > "$proj/src/$main.flix"
+    echo "[headless-run] jar を作る（src か lib が変わった）" >&2
+    (cd "$proj" && "$flix" build-fatjar --entrypoint "$main.main" >&2) || return 1
+    built=$(ls "$proj"/artifact/*.jar 2>/dev/null | head -1)
+    [ -n "$built" ] || return 1
+    mv "$built" "$jar.tmp.$$"
+    touch -r "$out/.started" "$jar.tmp.$$"
+    mv "$jar.tmp.$$" "$jar"
+}
+
+if is_stale; then
+    mkdir -p "$out"
+    lock="$out/.lock"
+    # 鍵はフォルダ + 作り手の pid。作り手がもう居なければ（落ちた・止められた）外して取り直す。
+    until mkdir "$lock" 2>/dev/null; do
+        owner=$(cat "$lock/pid" 2>/dev/null || true)
+        if [ -n "$owner" ] && ! kill -0 "$owner" 2>/dev/null; then
+            rm -f "$lock/pid"; rmdir "$lock" 2>/dev/null || true
+        fi
+        sleep 2
+    done
+    echo $$ > "$lock/pid"
+    trap 'rm -f "$lock/pid"; rmdir "$lock" 2>/dev/null || true' EXIT
+    # 待っている間に他の make が作り終えていれば、もう一度作らない。
+    built_ok=1
+    if is_stale; then build_jar || built_ok=0; fi
+    rm -f "$lock/pid"; rmdir "$lock" 2>/dev/null || true
+    trap - EXIT
+    if [ "$built_ok" = 0 ]; then
+        echo "[headless-run] jar を作れなかったので flix run で流す（上のコンパイルのエラーを見る）" >&2
+        exec "$flix" run --entrypoint "$entry"
+    fi
+fi
+
+# java の旗は bin/flix と同じ（深い再帰のための -Xss32m・ヒープは物理メモリの 50%）。描き出しは窓を開かないので headless。
+java_cmd="java"
+if ! java -version >/dev/null 2>&1; then
+    java_cmd="$engine/.devbox/nix/profile/default/bin/java"
+fi
+FGE_ENTRY="$entry" exec "$java_cmd" -Xss32m -XX:MaxRAMPercentage=50 -Djava.awt.headless=true -jar "$jar"

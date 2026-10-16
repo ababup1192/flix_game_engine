@@ -34,6 +34,16 @@ else
 FLIX   := "$(ENGINE)/bin/flix"
 endif
 
+# 描き出しの入口（render-all・render・ゲームの動画の口）を流す前置き。後ろに入口の名前を 1 つ書く
+# （`$(HEADLESS_RUN) SceneRender.all`）。macOS/Linux は bin/headless-run が jar を 1 回だけ作って
+# 使い回す（src・flix.toml・lib が変わった時だけ作り直す）ので、2 本目からはコンパイルしない。
+# Windows はラッパ（bash）が無いので今までどおり毎回コンパイルして流す。
+ifeq ($(OS),Windows_NT)
+HEADLESS_RUN ?= JAVA_TOOL_OPTIONS="-Djava.awt.headless=true" $(FLIX) run --entrypoint
+else
+HEADLESS_RUN ?= JAVA_TOOL_OPTIONS="-Djava.awt.headless=true" FLIX_CMD=$(FLIX) "$(ENGINE)/bin/headless-run"
+endif
+
 .PHONY: help status run debug test build check render render-all gallery-sounds reference-check reference-update loc api src src-index hooks check-docs-sync compare agent-eval agent-eval-compare agent-eval-release
 
 # 共通の口の一覧。engine を上げるとここも一緒に新しくなる
@@ -157,7 +167,7 @@ src:
 
 # 色票を持つゲームでは、入力が変わっていれば先に作り直してから描く。
 render-all: $(PALETTE)
-	JAVA_TOOL_OPTIONS="-Djava.awt.headless=true" $(FLIX) run --entrypoint SceneRender.all
+	$(HEADLESS_RUN) SceneRender.all
 
 # 1 枚だけ debug/<場面>.png へ描き出す（gallery/ は render-all だけが書く）。
 render:
@@ -169,7 +179,7 @@ render:
 		$(if $(RENDER_NOTE),echo "  $(RENDER_NOTE)";) \
 		exit 1; \
 	fi
-	JAVA_TOOL_OPTIONS="-Djava.awt.headless=true" SHOT="$(SHOT)" $(FLIX) run --entrypoint SceneRender.one
+	SHOT="$(SHOT)" $(HEADLESS_RUN) SceneRender.one
 
 # 音を目視できる 1 枚にする (debug/sounds.png と、BGM の WAV があれば debug/music.png)。
 # 1 音 1 段で、波形とスペクトログラムに名前・長さ・サンプルレート・ピーク振幅が付く。
@@ -289,10 +299,10 @@ agent-eval-compare:
 ifdef PALETTE
 .PHONY: palette
 $(PALETTE): $(PALETTE_DEPS)
-	JAVA_TOOL_OPTIONS="-Djava.awt.headless=true" $(FLIX) run --entrypoint Palette.write
+	$(HEADLESS_RUN) Palette.write
 
 palette:
-	JAVA_TOOL_OPTIONS="-Djava.awt.headless=true" $(FLIX) run --entrypoint Palette.write
+	$(HEADLESS_RUN) Palette.write
 endif
 
 # 何も指定せず make と打ったらゲームが起動する（テンプレの元の既定と同じ）。

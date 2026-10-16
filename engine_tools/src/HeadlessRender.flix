@@ -363,10 +363,14 @@ pub mod HeadlessRender {
         // コマ別 PNG は「描くたびに 1 枚ずつ」書く（最後に一括ではなく）— 長い生成の最中でも
         // Studio が frames/ をポーリングして、出来上がりつつあるコマを流し見できる。
         // 命名・画素は Filmstrip.renderFrames と同じ経路（renderFrame）なのでバイト列も変わらない。
+        // テクスチャはコマ列で 1 回だけ読む（2 コマ目からはファイルを読まない・画素は同じ）。
+        let warnLog = SoftRaster.freshTexWarnLog();
+        let cache = SoftRaster.freshTextureCache();
         let images = List.zipWithIndex(sampled) |> List.map(pair -> {
             let (i, w) = pair;
             let (drawables, polygons) = toCmds(w);
-            let img = SoftRaster.renderToImageFonts(reqOf(cfg, drawables, polygons, gifPath(cfg, name)), Nil, extraFonts);
+            let img = SoftRaster.renderToImageCached(reqOf(cfg, drawables, polygons, gifPath(cfg, name)),
+                                                     Nil, extraFonts, Map.empty(), warnLog, cache);
             Filmstrip.renderFrame(img, "${cfg#outDir}/frames/${name}/${i}.png");
             img
         });
@@ -390,13 +394,15 @@ pub mod HeadlessRender {
             let (drawables, _, _) = toCmds(w);
             warnDropped(drawables, name)
         });
-        // 欠け名の知らせもコマ列で 1 本の控えを共有する（同じ警告がコマ数ぶん並ばない）。
+        // 欠け名の知らせとテクスチャの読み込みはコマ列で 1 本を共有する
+        //（同じ警告がコマ数ぶん並ばない・同じファイルをコマ数ぶん読まない）。
         let warnLog = SoftRaster.freshTexWarnLog();
+        let cache = SoftRaster.freshTextureCache();
         let images = List.zipWithIndex(sampled) |> List.map(pair -> {
             let (i, w) = pair;
             let (drawables, polygons, surfaces) = toCmds(w);
-            let img = SoftRaster.renderToImageLogged(reqOf(cfg, drawables, polygons, gifPath(cfg, name)),
-                                                     surfaces, Map.empty(), Map.empty(), warnLog);
+            let img = SoftRaster.renderToImageCached(reqOf(cfg, drawables, polygons, gifPath(cfg, name)),
+                                                     surfaces, Map.empty(), Map.empty(), warnLog, cache);
             Filmstrip.renderFrame(img, "${cfg#outDir}/frames/${name}/${i}.png");
             img
         });
@@ -424,16 +430,18 @@ pub mod HeadlessRender {
             passes |> List.forEach(p -> warnDropped(p#drawables, "${name}:pass ${p#name}"));
             warnDropped(drawables, name)
         });
-        // 欠け名の知らせもコマ列で 1 本の控えを共有する（同じ警告がコマ数ぶん並ばない）。
+        // 欠け名の知らせとテクスチャの読み込みはコマ列で 1 本を共有する
+        //（同じ警告がコマ数ぶん並ばない・同じファイルをコマ数ぶん読まない）。
         let warnLog = SoftRaster.freshTexWarnLog();
+        let cache = SoftRaster.freshTextureCache();
         let images = List.zipWithIndex(sampled) |> List.map(pair -> {
             let (i, w) = pair;
             let (passes, drawables, polygons, surfaces) = toCmds(w);
             let passImages = passes |> List.foldLeft((acc, p) -> {
                 Map.insert(p#name, renderPassImageWith(cfg, acc, p, None), acc)
             }, (Map.empty(): Map[String, BufferedImage]));
-            let img = SoftRaster.renderToImageLogged(reqOf(cfg, drawables, polygons, gifPath(cfg, name)),
-                                                     surfaces, Map.empty(), passImages, warnLog);
+            let img = SoftRaster.renderToImageCached(reqOf(cfg, drawables, polygons, gifPath(cfg, name)),
+                                                     surfaces, Map.empty(), passImages, warnLog, cache);
             Filmstrip.renderFrame(img, "${cfg#outDir}/frames/${name}/${i}.png");
             img
         });

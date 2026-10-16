@@ -22,6 +22,7 @@ pub mod SoftRaster {
     import java.io.FileInputStream
     import java.lang.System
     import java.lang.{Character => JChar}
+    import java.util.concurrent.ConcurrentHashMap
     import java.util.function.IntUnaryOperator
     import java.util.stream.IntStream
     import javax.imageio.ImageIO
@@ -204,6 +205,30 @@ pub mod SoftRaster {
                                 extraFonts: Map[String, FontEntry],
                                 extraImages: Map[String, BufferedImage],
                                 warnLog: TexWarnLog): BufferedImage \ IO =
+        renderToImageWithCache(req, surfaces, extraFonts, extraImages, warnLog, None)
+
+    /// texturePath の画像を 1 回だけ読むためのキャッシュ（ファイルのパス → ARGB にそろえた画像）。
+    /// コマ列（動画 1 本・ギャラリー 1 周）の前に 1 本作って持ち回ると、2 コマ目からは
+    /// ファイルを読まない。スレッドをまたいで共有してよい（読むだけ・同じ物を 2 回入れても同じ絵）。
+    /// 寿命は 1 回の描き出しの間だけにする — 長く持つと、保存し直した絵に気づかない。
+    /// 読めなかったファイルは控えない（次のコマでまた探す・今と同じ振る舞い）。
+    pub enum TextureCache(ConcurrentHashMap[String, BufferedImage])
+
+    /// 空のキャッシュを作る（コマ列の描き出しの前に 1 本）。
+    pub def freshTextureCache(): TextureCache \ IO = TextureCache.TextureCache(new ConcurrentHashMap())
+
+    /// renderToImageLogged のテクスチャキャッシュつき版。画素は renderToImageLogged と 1 バイトも
+    /// 変わらない（読む画像が同じで、読む回数だけが減る）。
+    pub def renderToImageCached(req: RasterReq, surfaces: List[SurfaceCmd],
+                                extraFonts: Map[String, FontEntry],
+                                extraImages: Map[String, BufferedImage],
+                                warnLog: TexWarnLog, cache: TextureCache): BufferedImage \ IO =
+        renderToImageWithCache(req, surfaces, extraFonts, extraImages, warnLog, Some(cache))
+
+    def renderToImageWithCache(req: RasterReq, surfaces: List[SurfaceCmd],
+                               extraFonts: Map[String, FontEntry],
+                               extraImages: Map[String, BufferedImage],
+                               warnLog: TexWarnLog, cache: Option[TextureCache]): BufferedImage \ IO =
         HeadlessFont.ensureHeadless();
         let (w, h) = outSize(req);
         let image = new BufferedImage(w, h, 2i32);
@@ -212,7 +237,7 @@ pub mod SoftRaster {
         g.setColor(awtColor(req#background, 1.0f32));
         g.fillRect(0i32, 0i32, w, h);
         g.dispose();
-        drawAllInto(image, req, surfaces, extraFonts, extraImages, warnLog);
+        drawAllInto(image, req, surfaces, extraFonts, extraImages, warnLog, cache);
         image
 
     /// pass（レンダーターゲット）描き出し用の入口。req#background は使わない — 塗るかどうか
@@ -226,7 +251,7 @@ pub mod SoftRaster {
             case Some(b) => toArgb(b)
             case None    => { let (w, h) = outSize(req); new BufferedImage(w, h, 2i32) }
         };
-        drawAllInto(image, req, Nil, Map.empty(), extraImages, freshTexWarnLog());
+        drawAllInto(image, req, Nil, Map.empty(), extraImages, freshTexWarnLog(), None);
         image
 
     /// 出力ピクセル寸法（design × scale、最低 1px）。
@@ -239,7 +264,7 @@ pub mod SoftRaster {
     def drawAllInto(image: BufferedImage, req: RasterReq, surfaces: List[SurfaceCmd],
                     extraFonts: Map[String, FontEntry],
                     extraImages: Map[String, BufferedImage],
-                    warnLog: TexWarnLog): Unit \ IO = region rc {
+                    warnLog: TexWarnLog, cache: Option[TextureCache]): Unit \ IO = region rc {
         let sf = Int32.toFloat64(req#scale);
         let g: Graphics2D = image.createGraphics();
         applyQualityHints(g, hintsOf(req));
@@ -250,7 +275,10 @@ pub mod SoftRaster {
         let textures = Map.foldLeftWithKey((acc, name, img) -> Map.insert(name, img, acc),
             Map.foldLeftWithKey((acc, name, img) -> Map.insert(name, img, acc),
                 builtinRadialImages(req#drawables),
-                loadTextures(req#texturePath)), extraImages);
+                match cache {
+                    case Some(c) => loadTexturesCached(c, req#texturePath)
+                    case None    => loadTextures(req#texturePath)
+                }), extraImages);
         let fctx = buildFontTable(req, extraFonts);
         // tex 場（Field.Tex）が読む画素表。surfaces が実際に使う名前だけ 1 回で Vector 化する —
         // 画素ループの中で BufferedImage を触らない（getRGB を毎画素呼ぶと桁で遅い）。
@@ -626,12 +654,29 @@ pub mod SoftRaster {
     /// indexed / grayscale 等の色モデルは RescaleOp（drawTextured の tint）が扱えないため、
     /// 一律 ARGB へ正規化する。
     def loadTextures(paths: Map[String, String]): Map[String, BufferedImage] \ IO =
+        Map.foldLeftWithKey((acc, name, path) -> match loadTexture(path) {
+            case Some(img) => Map.insert(name, img, acc)
+            case None      => acc
+        }, (Map.empty(): Map[String, BufferedImage]), paths)
+
+    /// 1 枚読んで ARGB にそろえる。無いファイル・読めないファイルは None。
+    def loadTexture(path: String): Option[BufferedImage] \ IO =
+        let file = new File(path);
+        if (file.exists()) {
+            let img = ImageIO.read(file);
+            if (Object.isNull(img)) None else Some(toArgb(img))
+        } else None
+
+    /// loadTextures のキャッシュ版。同じパスは 1 回だけ読む（読み方は loadTextures と同じ）。
+    def loadTexturesCached(cache: TextureCache, paths: Map[String, String]): Map[String, BufferedImage] \ IO =
+        let TextureCache.TextureCache(table) = cache;
         Map.foldLeftWithKey((acc, name, path) -> {
-            let file = new File(path);
-            if (file.exists()) {
-                let img = ImageIO.read(file);
-                if (Object.isNull(img)) acc else Map.insert(name, toArgb(img), acc)
-            } else acc
+            let hit: BufferedImage = table.get(path);
+            if (not Object.isNull(hit)) Map.insert(name, hit, acc)
+            else match loadTexture(path) {
+                case Some(img) => { discard table.put(path, img); Map.insert(name, img, acc) }
+                case None      => acc
+            }
         }, (Map.empty(): Map[String, BufferedImage]), paths)
 
     /// BufferedImage を TYPE_INT_ARGB(2) にコピーする（indexed / grayscale を RescaleOp 可能にする）。
