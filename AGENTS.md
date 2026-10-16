@@ -120,6 +120,7 @@ git log 掘りやテスト回し直しから始めない。
 **新しい仕組み（API・make の口・lint）を入れたら**、`agents-pack/AGENTS.core.md` の早見表に 1 行と
 `agents-pack/agent-eval/engine.json` にお題を 1 本足し、ゲームの足元で `make agent-eval ONLY=<お題>` が当たるのを確かめる。
 古い書き方は `bin/lint-rules/forbid.json`（1 行の正規表現 + 代わりの物）で止める。
+リリースの後は、ゲームを追随させてから `make agent-eval-release`（全部のお題を 3 回・約 20 分・`docs/agent-eval.md`）で前の版と比べる。ゲートではない（知らせるだけ）。
 
 **テストは絞って速く回す。全量の検証はリリース直前の 1 回だけ。**
 変更が波及したパッケージだけ `make test-<name>`、それ以外は `flix check` で足りる。

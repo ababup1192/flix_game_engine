@@ -26,7 +26,7 @@
 | 作業場を別の版・開発中のエンジンへ一時的に向ける | `bin/fge use-engine <版かパス>`（今は `--status`・戻すのは `--restore`） | local.mk を手で書き換える・lib を他の作業場へ symlink |
 | 直す前と後の絵・音・動画を比べる | `make compare BASE=<ref>`（絞るなら `SHOTS=` か `VIDEOS=`。`debug/compare/index.html`。基準側だけ別のエンジンなら `BASE_ENGINE=`） | worktree を手で作って 2 回描き出す・cmp と ffmpeg を手で並べる |
 | 案を並べて依頼主に選んでもらう | `reports/<名前>/proposal.json` → `bin/fge proposal build`（形は引数なしの `bin/fge proposal`・決定後の片付けの残りは `bin/fge proposal knobs`） | HTML を手で書く・ゲームに置いた Python 版の proposal |
-| 道具の選び方が文書で伝わるか測る | `make agent-eval`（お題は `agent-eval/*.json`） | |
+| 道具の選び方が文書で伝わるか測る | `make agent-eval`（お題は `agent-eval/*.json`）・版ごとの比べは `make agent-eval-release`（記録は `agent-eval/history/`・最新は `make status` の 1 行） | 1 回だけ流した点で良し悪しを決める |
 
 **新しい仕組みを入れる人は**、この表（ゲーム固有なら `AGENTS.local.md` の表）に 1 行と、
 `agent-eval/` のお題を 1 本足し、`make agent-eval ONLY=<お題>` で当たるのを確かめてから入れる。

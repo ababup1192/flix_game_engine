@@ -540,6 +540,7 @@ release: release-guard sync $(TEST) gl-parity
 	  "$(ENGINE_FULL_TOML_SRC)#$(ENGINE_FULL_TOML_NAME)" \
 	  "$(BUNDLE_ZIP)" "$(BUNDLE_SUMS)"
 	@echo "[release] 完了。外部 fetch 検証: lib/ を消したサンプルで github:ababup1192/flix_game_engine v$(VERSION) を引けるか確認してください"
+	@echo "[release] 任意: ゲームを追随させた後に make agent-eval-release で道具の選び方を測り、前の版と比べる（約 20 分・下がったお題が出る。docs/agent-eval.md）"
 
 # ── 同梱用 zip ────────────────────────────────────────────
 # Studio に同梱する engine 一式を、そのまま Release に添えられる zip にする。

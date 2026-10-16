@@ -12,6 +12,7 @@
     "section_pack",
     "section_engine_drift",
     "section_builds",
+    "section_agent_eval",
     "section_notes"
   ],
   "ageJustNowSeconds": 90,

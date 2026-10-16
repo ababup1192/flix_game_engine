@@ -53,6 +53,8 @@ type Suite struct {
 type Result struct {
 	ID           string   `json:"id"`
 	Suite        string   `json:"suite"`
+	Run          int      `json:"run,omitempty"`
+	Model        string   `json:"model,omitempty"`
 	Hit          int      `json:"hit"`
 	Want         int      `json:"want"`
 	Penalty      int      `json:"penalty"`
@@ -114,6 +116,7 @@ func Run(out, errOut io.Writer, args []string) (int, error) {
 	if err != nil {
 		return 2, err
 	}
+	started := time.Now()
 	jobs := selectJobs(suites, opt.only)
 	if len(jobs) == 0 {
 		return 2, errors.New("走らせるお題がありません（--tasks と --only を見直す）")
@@ -122,21 +125,66 @@ func Run(out, errOut io.Writer, args []string) (int, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return 2, err
 	}
+	// 同じ版の記録を黙って上書きしない（use-engine で開発中のエンジンを向けると、まだ前の版の番号のまま）。
+	// 付け直し（--rescore）は同じ記録を採点し直すだけなので、そのまま上書きしてよい。
+	historyPath := filepath.Join(opt.history, opt.version+".json")
+	old, hadOld := readHistory(historyPath)
+	if opt.history != "" && hadOld && !opt.rescore && !opt.overwrite {
+		return 2, fmt.Errorf("%s が既にあります（開発中のエンジンで流していないか。上書きするなら --overwrite）", historyPath)
+	}
 	var results []Result
 	if opt.rescore {
-		results, err = rescore(dir, jobs)
+		if opt.repeat == 1 {
+			opt.repeat = detectRepeat(dir, jobs[0].task.ID)
+		}
+		results, err = rescore(dir, jobs, opt.repeat)
 		if err != nil {
 			return 2, err
 		}
 	} else {
 		results = runAll(errOut, dir, jobs, opt)
 	}
+	wall := time.Since(started).Seconds()
 	if err := writeSummary(dir, results); err != nil {
 		return 2, err
 	}
 	writeTable(out, results)
 	fmt.Fprintf(out, "\n記録: %s（summary.json・table.md・お題ごとの .jsonl）\n", dir)
+	if opt.history != "" {
+		h := BuildHistory(opt.version, opt.repeat, wall, results)
+		if opt.rescore {
+			// 付け直しでは走った日と時間が分からないので、前の記録の物を引き継ぐ。
+			h.Totals.WallSeconds = 0
+			if hadOld {
+				h.Date, h.Totals.WallSeconds = old.Date, old.Totals.WallSeconds
+			}
+		}
+		path, err := WriteHistory(opt.history, h)
+		if err != nil {
+			return 2, err
+		}
+		fmt.Fprintf(out, "版ごとの記録: %s\n\n", path)
+		var prevName string
+		prev := PreviousHistory(opt.history, opt.version)
+		if prev != nil {
+			prevName = "v" + prev.Engine
+		}
+		WriteHistoryDiff(out, prev, h, prevName, "v"+opt.version, dir)
+	}
 	return 0, nil
+}
+
+// detectRepeat は記録のフォルダから回数を読む（<id>.1.jsonl, <id>.2.jsonl … があればその数）。
+// 何回か流した記録を --repeat を付け忘れて付け直しても止まらないように。
+func detectRepeat(dir, id string) int {
+	n := 0
+	for {
+		if _, err := os.Stat(filepath.Join(dir, fmt.Sprintf("%s.%d.jsonl", id, n+1))); err != nil {
+			break
+		}
+		n++
+	}
+	return max(n, 1)
 }
 
 const usage = `fge agent-eval — 何も教えていないエージェントがお題に正しい道具を選べるかを測る
@@ -145,32 +193,43 @@ const usage = `fge agent-eval — 何も教えていないエージェントが�
                  [--max-turns 15] [--model 名前] [--add-dir DIR] [--out debug/agent-eval]
   fge agent-eval --tasks ... --label 名前 --rescore   claude を呼ばず、残した記録に点だけ付け直す
   fge agent-eval --compare 前の名前 後の名前 [--out debug/agent-eval]   前後の表
+  fge agent-eval --tasks ... --repeat 3 --history agent-eval/history --version 0.35.22
+                 お題ごとに 3 回流し、版ごとの記録（<history>/<版>.json）を書いて 1 つ前の版と比べる
 
 お題の形: {"version":1,"note":"…","tasks":[{"id":"…","prompt":"依頼の言葉（道具の名前を入れない）",
   "expect":[{"re":"ZStack\\.topLayer","why":"…"}],"avoid":[{"re":"let _ =","why":"…"}]}]}
 点 = (期待の語の当たり − 減点の語の当たり) / 期待の語の数 × 100。答えの文だけに当てる。
 走らせる claude は読むだけの道具に絞る（Edit・Write・Agent なし）。それ以外は使う人の設定（~/.claude・
 プロジェクトのフック・権限のモード）のまま走る —— 実際に使う環境で測るため。engine を読ませるなら --add-dir <engine>。
-1 お題 10 分で打ち切る。重いので何本も流すときは鍵を通す。
+1 お題 10 分で打ち切る。heavy の鍵は取らない（claude -p は待ちが主で CPU をほとんど使わず、鍵を取ると
+ほかの作業場の check・test を止めるため）。代わりに claude -p の同時本数をマシン全体で数える
+（/tmp/fge-agent-eval.slots・既定 3 本・FGE_AGENT_EVAL_SLOTS で変える）。
+--repeat N は同じお題を N 回流す（記録は <id>.<回>.jsonl）。表は最小・平均・最大になる。付け直しでは回数を記録から読む。
+同じ版の記録が既にあると止まる（--overwrite で上書き）。失敗した回（打ち切りなど）は平均に入れず、本数だけ出す。
+版ごとの記録の比べ方: 平均点が 15 点以上下がった・入力トークンの平均が 1.5 倍を超えたお題を「下がった」と出す。
 `
 
 type options struct {
-	tasks    []string
-	only     map[string]bool
-	label    string
-	out      string
-	jobs     int
-	maxTurns int
-	model    string
-	claude   string
-	addDirs  []string
-	rescore  bool
-	help     bool
-	compare  []string
+	tasks     []string
+	only      map[string]bool
+	label     string
+	out       string
+	jobs      int
+	maxTurns  int
+	model     string
+	claude    string
+	addDirs   []string
+	rescore   bool
+	help      bool
+	repeat    int
+	history   string
+	version   string
+	overwrite bool
+	compare   []string
 }
 
 func parseArgs(args []string) (options, error) {
-	o := options{out: "debug/agent-eval", jobs: 3, maxTurns: 15, claude: "claude",
+	o := options{out: "debug/agent-eval", jobs: 3, maxTurns: 15, claude: "claude", repeat: 1,
 		label: time.Now().Format("20060102-150405")}
 	next := func(i *int, name string) (string, error) {
 		if *i+1 >= len(args) {
@@ -188,7 +247,10 @@ func parseArgs(args []string) (options, error) {
 			o.help = true
 		case "--rescore":
 			o.rescore = true
-		case "--tasks", "--only", "--label", "--out", "--jobs", "--max-turns", "--model", "--claude", "--add-dir":
+		case "--overwrite":
+			o.overwrite = true
+		case "--tasks", "--only", "--label", "--out", "--jobs", "--max-turns", "--model", "--claude", "--add-dir",
+			"--repeat", "--history", "--version":
 			if v, err = next(&i, a); err != nil {
 				return o, err
 			}
@@ -212,14 +274,21 @@ func parseArgs(args []string) (options, error) {
 				o.claude = v
 			case "--add-dir":
 				o.addDirs = append(o.addDirs, v)
-			case "--jobs", "--max-turns":
+			case "--history":
+				o.history = v
+			case "--version":
+				o.version = v
+			case "--jobs", "--max-turns", "--repeat":
 				n, convErr := strconv.Atoi(v)
 				if convErr != nil || n < 1 {
 					return o, fmt.Errorf("%s は 1 以上の数: %q", a, v)
 				}
-				if a == "--jobs" {
+				switch a {
+				case "--jobs":
 					o.jobs = n
-				} else {
+				case "--repeat":
+					o.repeat = n
+				default:
 					o.maxTurns = n
 				}
 			}
@@ -236,6 +305,9 @@ func parseArgs(args []string) (options, error) {
 	}
 	if !o.help && len(o.compare) == 0 && len(o.tasks) == 0 {
 		return o, errors.New("--tasks でお題の JSON を 1 つ以上渡す（--help）")
+	}
+	if o.history != "" && o.version == "" {
+		return o, errors.New("--history には --version（記録の名前になる版）も渡す")
 	}
 	return o, nil
 }
@@ -288,28 +360,57 @@ func selectJobs(suites []Suite, only map[string]bool) []job {
 	return jobs
 }
 
+// runAll はお題 × 回数を走らせる。結果はお題の順・回の順に並ぶ。
+// 枠は回の順に取る（1 回目のお題を全部始めてから 2 回目）。
+//
+// WhyNot: お題ごとに 3 回続けて流さないのは、同じお題の 3 回が同じ混み具合の時間に
+// 固まると、マシンの込み具合のぶれがお題のぶれに見えるため。
 func runAll(errOut io.Writer, dir string, jobs []job, opt options) []Result {
-	results := make([]Result, len(jobs))
+	results := make([]Result, len(jobs)*opt.repeat)
 	sem := make(chan struct{}, opt.jobs)
+	machine := newSlots(os.Stderr)
 	var wg sync.WaitGroup
 	var mu sync.Mutex
-	for i, j := range jobs {
-		wg.Add(1)
-		go func(i int, j job) {
-			defer wg.Done()
+	for run := 1; run <= opt.repeat; run++ {
+		for i, j := range jobs {
+			wg.Add(1)
 			sem <- struct{}{}
-			defer func() { <-sem }()
-			r := runOne(dir, j, opt)
-			results[i] = r
-			mu.Lock()
-			// WhyNot: errOut（main が最後にまとめて出す）へ書かないのは、数分かかる間に
-			// 何も出ないと止まったのか走っているのか見分けられないため。
-			fmt.Fprintf(os.Stderr, "[agent-eval] %-28s %3d 点  %4.0f 秒%s\n", j.task.ID, r.Points(), r.Seconds, errNote(r))
-			mu.Unlock()
-		}(i, j)
+			go func(slot, run int, j job) {
+				defer wg.Done()
+				defer func() { <-sem }()
+				var r Result
+				if release, err := machine.acquire(j.task.ID); err != nil {
+					r = Result{ID: j.task.ID, Suite: j.suite, Run: run, Want: len(j.task.Expect), Err: err.Error()}
+				} else {
+					r = runOne(dir, j, run, opt)
+					release()
+				}
+				results[slot] = r
+				mu.Lock()
+				// WhyNot: errOut（main が最後にまとめて出す）へ書かないのは、数分かかる間に
+				// 何も出ないと止まったのか走っているのか見分けられないため。
+				fmt.Fprintf(os.Stderr, "[agent-eval] %-28s %s%3d 点  %4.0f 秒%s\n", j.task.ID, runNote(run, opt.repeat), r.Points(), r.Seconds, errNote(r))
+				mu.Unlock()
+			}(i*opt.repeat+run-1, run, j)
+		}
 	}
 	wg.Wait()
 	return results
+}
+
+func runNote(run, repeat int) string {
+	if repeat == 1 {
+		return ""
+	}
+	return fmt.Sprintf("%d/%d ", run, repeat)
+}
+
+// logName は記録のファイル名。1 回だけなら今までどおり <id>.jsonl。
+func logName(id string, run, repeat int) string {
+	if repeat == 1 {
+		return id + ".jsonl"
+	}
+	return fmt.Sprintf("%s.%d.jsonl", id, run)
 }
 
 func errNote(r Result) string {
@@ -319,7 +420,7 @@ func errNote(r Result) string {
 	return "  （失敗: " + r.Err + "）"
 }
 
-func runOne(dir string, j job, opt options) Result {
+func runOne(dir string, j job, run int, opt options) Result {
 	start := time.Now()
 	args := []string{"-p", j.task.Prompt + suffix,
 		"--output-format", "stream-json", "--verbose",
@@ -341,9 +442,10 @@ func runOne(dir string, j job, opt options) Result {
 	if errors.As(runErr, &exitErr) && len(exitErr.Stderr) > 0 {
 		runErr = fmt.Errorf("%v: %s", runErr, lastLine(string(exitErr.Stderr)))
 	}
-	logPath := filepath.Join(dir, j.task.ID+".jsonl")
+	logPath := filepath.Join(dir, logName(j.task.ID, run, opt.repeat))
 	writeErr := os.WriteFile(logPath, raw, 0o644)
 	r := score(j, raw)
+	r.Run = run
 	r.Seconds = time.Since(start).Seconds()
 	switch {
 	case runErr != nil && r.Answer == "":
@@ -362,14 +464,19 @@ func lastLine(s string) string {
 	return lines[len(lines)-1]
 }
 
-func rescore(dir string, jobs []job) ([]Result, error) {
+func rescore(dir string, jobs []job, repeat int) ([]Result, error) {
 	var results []Result
 	for _, j := range jobs {
-		raw, err := os.ReadFile(filepath.Join(dir, j.task.ID+".jsonl"))
-		if err != nil {
-			return nil, fmt.Errorf("%s の記録が無い（先に走らせる）: %v", j.task.ID, err)
+		for run := 1; run <= repeat; run++ {
+			name := logName(j.task.ID, run, repeat)
+			raw, err := os.ReadFile(filepath.Join(dir, name))
+			if err != nil {
+				return nil, fmt.Errorf("%s の記録が無い（先に走らせる）: %v", name, err)
+			}
+			r := score(j, raw)
+			r.Run = run
+			results = append(results, r)
 		}
-		results = append(results, score(j, raw))
 	}
 	return results, nil
 }
@@ -385,7 +492,9 @@ type streamLine struct {
 		} `json:"content"`
 	} `json:"message"`
 	Result   string  `json:"result"`
+	Model    string  `json:"model"`
 	NumTurns int     `json:"num_turns"`
+	Duration float64 `json:"duration_ms"`
 	CostUSD  float64 `json:"total_cost_usd"`
 	IsError  bool    `json:"is_error"`
 	Subtype  string  `json:"subtype"`
@@ -412,6 +521,10 @@ func score(j job, raw []byte) Result {
 			continue
 		}
 		switch l.Type {
+		case "system":
+			if l.Subtype == "init" {
+				r.Model = l.Model
+			}
 		case "assistant":
 			for _, c := range l.Message.Content {
 				if c.Type != "tool_use" {
@@ -437,6 +550,8 @@ func score(j job, raw []byte) Result {
 			r.Answer = l.Result
 			r.Turns = l.NumTurns
 			r.CostUSD = l.CostUSD
+			// 付け直し（--rescore）でも秒が残るように、記録の側の時間を使う。走らせたときは runOne が上書きする。
+			r.Seconds = l.Duration / 1000
 			// 入力はキャッシュから読んだ分も含めて数える（毎回読まれる AGENTS.md の重さが見えるように）。
 			r.InputTokens = l.Usage.Input + l.Usage.CacheCreate + l.Usage.CacheRead
 			r.OutputTokens = l.Usage.Output
@@ -467,10 +582,12 @@ func score(j job, raw []byte) Result {
 
 // 「let _ = は使わない」のように打ち消して触れた行は減点しない。
 // 「ない」1 字では見ない（「できない」「足りない」の行で減点が全部消えるため）。
-var negation = regexp.MustCompile(`(使わ|呼ば|書か|足さ|置か|頼ら|し)ない|使わず|避け|禁止|NG|消え|止ま|止め|代わりに|古い|非推奨|(?i)\b(not|don't|avoid|instead|catch(es)?|lint|forbid|z-table|value-discard)\b`)
+var negation = regexp.MustCompile(`(使わ|使え|呼ば|書か|足さ|置か|頼ら|し)ない|使わず|使えず|避け|禁止|NG|消え|止ま|止め|代わりに|古い|非推奨|(?i)\b(not|don't|avoid|instead|catch(es)?|lint|forbid|z-table|value-discard)\b`)
 
 // avoidKey は「使わない物」を並べる JSON の鍵（"avoid": [...]・"使わない": {...}）。語ごとに見る。
-var avoidKey = regexp.MustCompile(`(?i)^(avoid\w*|dont\w*|do_not\w*|not\w*|forbid\w*|deprecated|ng|old\w*|legacy|anti\w*|pitfalls?|使わない.*|避ける.*|やらない.*|しない.*|禁止.*|古い.*|非推奨.*)$`)
+// 読んだファイルの一覧（"files_read"・"読んだファイル"）も入れる —— 「until mkdir を grep した」のように
+// 探した語を書くだけで、選んだ物ではないため。
+var avoidKey = regexp.MustCompile(`(?i)^(files?_?read\w*|read_?files?|読んだ.*|調べた.*|avoid\w*|dont\w*|do_not\w*|not\w*|forbid\w*|deprecated|ng|old\w*|legacy|anti\w*|pitfalls?|使わない.*|避ける.*|やらない.*|しない.*|禁止.*|古い.*|非推奨.*)$`)
 
 var keyOpen = regexp.MustCompile(`^"([^"]+)"\s*:\s*([\[{])`)
 
@@ -541,6 +658,10 @@ func writeSummary(dir string, results []Result) error {
 }
 
 func writeTable(out io.Writer, results []Result) {
+	if hasRepeats(results) {
+		writeRepeatTable(out, results)
+		return
+	}
 	fmt.Fprintln(out, "| お題 | 点 | 外れた語 | 減点の語 | 入力 tok | 出力 tok | ターン | 触れたファイル |")
 	fmt.Fprintln(out, "|---|---:|---|---|---:|---:|---:|---:|")
 	var sumP, sumIn, sumOut, sumTurns, sumFiles int
@@ -560,14 +681,22 @@ func writeTable(out io.Writer, results []Result) {
 	}
 }
 
-func loadSummary(path string) (map[string]Result, []string, error) {
+func readSummary(path string) ([]Result, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	var rs []Result
 	if err := json.Unmarshal(data, &rs); err != nil {
-		return nil, nil, fmt.Errorf("%s: %v", path, err)
+		return nil, fmt.Errorf("%s: %v", path, err)
+	}
+	return rs, nil
+}
+
+func loadSummary(path string) (map[string]Result, []string, error) {
+	rs, err := readSummary(path)
+	if err != nil {
+		return nil, nil, err
 	}
 	m := map[string]Result{}
 	var order []string
@@ -579,6 +708,15 @@ func loadSummary(path string) (map[string]Result, []string, error) {
 }
 
 func compare(out io.Writer, opt options) (int, error) {
+	// 何回か流した記録どうしは、1 本ずつではなく平均で比べる。
+	ra, errA := readSummary(filepath.Join(opt.out, opt.compare[0], "summary.json"))
+	rb, errB := readSummary(filepath.Join(opt.out, opt.compare[1], "summary.json"))
+	if errA == nil && errB == nil && (hasRepeats(ra) || hasRepeats(rb)) {
+		prev := BuildHistory(opt.compare[0], 0, 0, ra)
+		WriteHistoryDiff(out, &prev, BuildHistory(opt.compare[1], 0, 0, rb), opt.compare[0], opt.compare[1],
+			filepath.Join(opt.out, opt.compare[1]))
+		return 0, nil
+	}
 	before, order, err := loadSummary(filepath.Join(opt.out, opt.compare[0], "summary.json"))
 	if err != nil {
 		return 2, err

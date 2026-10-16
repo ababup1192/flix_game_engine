@@ -34,7 +34,7 @@ else
 FLIX   := "$(ENGINE)/bin/flix"
 endif
 
-.PHONY: help status run debug test build check render render-all gallery-sounds reference-check reference-update loc api src src-index hooks check-docs-sync compare agent-eval agent-eval-compare
+.PHONY: help status run debug test build check render render-all gallery-sounds reference-check reference-update loc api src src-index hooks check-docs-sync compare agent-eval agent-eval-compare agent-eval-release
 
 # 共通の口の一覧。engine を上げるとここも一緒に新しくなる
 # （ゲーム側の Makefile へ写さないので、口が増えても書き足しに回らなくて済む）。
@@ -65,6 +65,7 @@ help:
 	@echo "                          基準側だけ別のエンジンにするなら BASE_ENGINE=<版|パス>"
 	@echo "  make agent-eval [ONLY=id,…] [LABEL=名前]  何も教えていない claude にお題（agent-eval/*.json）を渡し、選んだ道具を採点して表に"
 	@echo "  make agent-eval-compare A=前 B=後  2 回の点・トークン・ターン・読んだ数を並べる"
+	@echo "  make agent-eval-release [REPEAT=3] [OVERWRITE=1]  エンジンの版ごとに全部のお題を N 回（鍵は取らない）→ agent-eval/history/<版>.json・前の版と比べる"
 	@echo ""
 	@echo "同じマシンで何本も並んで作業するときの道具 (bin/fge):"
 	@echo "  bin/fge heavy <コマンド...>   重い処理を鍵 (/tmp/fge-heavy.lock) で 1 本ずつ流す。--status で持ち主と列"
@@ -253,13 +254,30 @@ compare:
 # お題は agent-eval/*.json（engine.json は engine から配られる共通・それ以外はゲーム固有）。
 # claude -p を 1 お題 1 本（読むだけの道具で）走らせ、記録と表を debug/agent-eval/<LABEL>/ へ。
 # engine の docs と engine_world/src は --add-dir で読めるようにする（早見表がそこを指すため）。
-# WhyNot: 鍵をここで取らないのは、1 人で使うマシンでは要らないため。並んで作業しているなら
-#   bin/fge heavy make agent-eval で流す。
+# WhyNot: heavy の鍵を取らない（bin/fge heavy でも包まない）のは、claude -p は返事を待つ間ほとんど
+#   CPU を使わず、鍵を取ると数十分ほかの作業場の check・test・リリースを止めるため。
+#   同時に走る claude -p の本数は、fge agent-eval がマシン全体の枠（/tmp/fge-agent-eval.slots・既定 3）で守る。
 agent-eval:
 	@ls agent-eval/*.json >/dev/null 2>&1 || { echo "[agent-eval] agent-eval/*.json がありません（engine 側で make sync-agents GAME=$(CURDIR)）"; exit 1; }
 	@fge=bin/fge; [ -x "$$fge" ] || fge="$(ENGINE)/bin/fge"; \
 	"$$fge" agent-eval $(foreach f,$(wildcard agent-eval/*.json),--tasks $(f)) --add-dir "$(ENGINE)" \
-		$(if $(ONLY),--only $(ONLY)) $(if $(LABEL),--label $(LABEL)) $(if $(JOBS),--jobs $(JOBS))
+		$(if $(ONLY),--only $(ONLY)) $(if $(LABEL),--label $(LABEL)) $(if $(JOBS),--jobs $(JOBS)) \
+		$(if $(REPEAT),--repeat $(REPEAT))
+
+# エンジンの版ごとの測り（リリースの後・make engine-upgrade の後に 1 回）。全部のお題を REPEAT 回流し、
+# agent-eval/history/<版>.json（コミットする）に残して 1 つ前の版と比べ、下がったお題を出す。
+# make status が最新の版を 1 行に出す。ログは debug/agent-eval/v<版>/。
+# WhyNot: make release のゲートに入れないのは、claude を 60 本近く呼んで 20 分ほどかかり、
+#   点にもぶれがあるため（止めるのではなく知らせる物）。
+AGENT_EVAL_REPEAT ?= 3
+agent-eval-release:
+	@ls agent-eval/*.json >/dev/null 2>&1 || { echo "[agent-eval] agent-eval/*.json がありません（engine 側で make sync-agents GAME=$(CURDIR)）"; exit 1; }
+	@ver=$$(sed -n 's/^VERSION *:= *//p' "$(ENGINE)/Makefile" | head -1); \
+	test -n "$$ver" || { echo "[agent-eval] $(ENGINE)/Makefile に VERSION が見当たりません"; exit 1; }; \
+	fge=bin/fge; [ -x "$$fge" ] || fge="$(ENGINE)/bin/fge"; \
+	"$$fge" agent-eval $(foreach f,$(wildcard agent-eval/*.json),--tasks $(f)) --add-dir "$(ENGINE)" \
+		--repeat $(or $(REPEAT),$(AGENT_EVAL_REPEAT)) --label "v$$ver" \
+		--history agent-eval/history --version "$$ver" $(if $(JOBS),--jobs $(JOBS)) $(if $(OVERWRITE),--overwrite)
 
 agent-eval-compare:
 	@test -n "$(A)" -a -n "$(B)" || { echo "usage: make agent-eval-compare A=<前の LABEL> B=<後の LABEL>"; exit 1; }

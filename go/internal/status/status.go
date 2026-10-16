@@ -26,6 +26,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ababup1192/flix_game_engine/go/internal/agenteval"
 	"github.com/ababup1192/flix_game_engine/go/internal/renderbudget"
 )
 
@@ -510,6 +511,14 @@ func sectionBuilds(c *ctx, out *[]string) {
 		"(複製と glob が遅くなる。消しても再生成される) → make clean-game-builds", heavy))
 }
 
+// sectionAgentEval は版ごとの agent-eval の記録（make agent-eval-release が書く）の最新を 1 行。
+// 記録が無いゲームでは黙る（測るかどうかは任意）。
+func sectionAgentEval(c *ctx, out *[]string) {
+	if line := agenteval.StatusLine(c.abs("agent-eval/history")); line != "" {
+		*out = append(*out, line)
+	}
+}
+
 func sectionNotes(c *ctx, out *[]string) {
 	if !c.isFile("NOTES.md") {
 		*out = append(*out, "引き継ぎ NOTES.md なし (セッションの終わりに「次やること」を 3 行残すと次が安い)")
@@ -546,6 +555,7 @@ var sectionsByName = map[string]func(*ctx, *[]string){
 	"section_pack":         sectionPack,
 	"section_engine_drift": sectionEngineDrift,
 	"section_builds":       sectionBuilds,
+	"section_agent_eval":   sectionAgentEval,
 	"section_notes":        sectionNotes,
 }
 
