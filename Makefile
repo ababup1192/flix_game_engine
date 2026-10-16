@@ -511,7 +511,11 @@ TEST := test-par
 release-guard:
 	@# WhyNot: 追随の材料も未コミット検査に入れるのは、bump が生成した物をコミットし
 	@# 忘れるとタグの中身に材料が入らず、後からそのバージョンを取り出しても空になるため。
-	@dirty=$$(git status --porcelain -- $(ROOT_SRC_PKGS) docs/migrations); \
+	@# 見る範囲は配る物すべて（go/・agents-pack/・bin/lint-rules/・mk/ など bin/lint-rules/stage-engine.json
+	@# が載せる道。一覧は bin/fge stage-engine --sources が出す）。一部だけ見ると、未コミットの変更が
+	@# zip にだけ入ってタグには入らない。
+	@srcs=$$(bin/fge stage-engine --sources) || { echo "[release] 配る物の一覧を読めません (bin/fge stage-engine --sources)"; exit 1; }; \
+	 dirty=$$(git status --porcelain -- $(ROOT_SRC_PKGS) docs/migrations $$srcs); \
 	 if [ -n "$$dirty" ]; then \
 	   echo "[release] engine ソースが未コミットです。commit してから実行してください:"; echo "$$dirty"; exit 1; \
 	 fi

@@ -5,6 +5,10 @@ package stageengine
 //	fge stage-engine --out DIR [--windows]
 //	                 [--flix-jar PATH] [--flix-wrapper PATH]
 //	                 [--fge-go PATH] [--maven-seed DIR]
+//	fge stage-engine --sources
+//
+// --sources は運ぶ物の元をリポの根からの相対で 1 行ずつ出す（make release-guard が
+// 未コミットを見る範囲。@fge-go は中身の Go のソース go/ に読み替える）。
 //
 // 運ぶ物の一覧は bin/lint-rules/stage-engine.json が source of truth。組み上げたあとに
 // check-refs --bundle と同じ照合をここで通すので、呼ぶ側が忘れられない。
@@ -29,6 +33,7 @@ type Options struct {
 	FlixWrapper string
 	FgeGo       string
 	MavenSeed   string
+	Sources     bool
 }
 
 // Run は組み立てを走らせて終了コードを返す。
@@ -37,6 +42,16 @@ func Run(out, errOut *strings.Builder, root string, args []string) (int, error) 
 	opts, err := parseArgs(args)
 	if err != nil {
 		return 2, err
+	}
+	if opts.Sources {
+		rules, err := LoadRules(root)
+		if err != nil {
+			return 2, err
+		}
+		for _, p := range SourcePaths(rules) {
+			fmt.Fprintln(out, p)
+		}
+		return 0, nil
 	}
 	if opts.Out == "" {
 		fmt.Fprintln(errOut, "usage: fge stage-engine --out DIR [--windows] "+
@@ -106,7 +121,7 @@ func parseArgs(args []string) (Options, error) {
 		name, value := a, ""
 		if eq := strings.Index(a, "="); strings.HasPrefix(a, "--") && eq > 0 {
 			name, value = a[:eq], a[eq+1:]
-		} else if strings.HasPrefix(a, "--") && i+1 < len(args) && a != "--windows" {
+		} else if strings.HasPrefix(a, "--") && i+1 < len(args) && a != "--windows" && a != "--sources" {
 			value = args[i+1]
 			i++
 		}
@@ -115,6 +130,8 @@ func parseArgs(args []string) (Options, error) {
 			opts.Out = value
 		case "--windows":
 			opts.Windows = true
+		case "--sources":
+			opts.Sources = true
 		case "--flix-jar":
 			opts.FlixJar = value
 		case "--flix-wrapper":
@@ -128,6 +145,31 @@ func parseArgs(args []string) (Options, error) {
 		}
 	}
 	return opts, nil
+}
+
+// SourcePaths は運ぶ物の元のうち、このリポの中にある物をリポの根からの相対で返す
+// （重なりは 1 つに・並びは一覧の順）。@ で始まる外の物は運ぶ側が引数で渡すので外し、
+// @fge-go だけは中身を組む Go のソース go/ に読み替える。末尾の /* はフォルダにする。
+func SourcePaths(rules *Rules) []string {
+	seen := map[string]bool{}
+	var paths []string
+	for _, it := range rules.Items {
+		p := it.Src
+		switch {
+		case p == "@fge-go":
+			p = "go"
+		case strings.HasPrefix(p, "@"):
+			continue
+		}
+		if i := strings.LastIndex(p, "/"); i > 0 && strings.Contains(p[i:], "*") {
+			p = p[:i]
+		}
+		if !seen[p] {
+			seen[p] = true
+			paths = append(paths, p)
+		}
+	}
+	return paths
 }
 
 // resolveSrc は運ぶ元の実体を返す。第 1 返り値が空文字なら運ばず、第 2 返り値がその訳。
