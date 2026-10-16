@@ -52,7 +52,7 @@ ZStack.mapItems(Render.scaledAllAround(1.0 + bump, center), tree)
   描き出しはこの口に集まった文面で止める（ゲームが `{ warnOnce = 集める口 | ctx }` で差し替える）。
 - **描き上がった絵を加工する演出（裂く・色ずれの影）も木で書く。** 部品ごとに `mapItems` で裂いた絵と影を作り、
   奥 → 手前に積む（間に挟む物は間の子に）。見本は internet_dungeon の `FightIntroView.preRollTear`。
-  消した名前の置き換えは `docs/migrations/0.35.24.md` と、ZLegacy を消した版の表。
+  消した名前の置き換えは `docs/migrations/0.35.24.md` と `docs/migrations/0.35.31.md`。
 - **葉の中の z は 0..31 に収める（決まり。コードでは縛らない）。** 葉は中の z の幅をそのまま使うので、古い z=900 のままの葉は 901 段を使い、区画を越えて知らせが出る。
   名前を付けるなら葉を作るファイルに `def zText(): Int32 = 2` と書いてよい（表を持つパッケージでも、`bin/fge z-table` は表の外の 0..31 を止めない。32 以上と負の数は止める。範囲は `bin/lint-rules/z-table.json` の `leafZRange`）。
 - **使い回し（キャッシュ）は入れない。** 木は毎フレーム組んで捨てる。費用は O(絵の数 + 節の数 × log + 送った物の数 × log)（log は zIndex と送り先の並べ替え）。mapItems は入れ子 1 段ごとに中の絵を 1 回ずつ写す（今の Render.*All と同じ）。
