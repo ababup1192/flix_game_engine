@@ -20,12 +20,14 @@ import (
 
 // History は 1 つの版の記録。
 type History struct {
-	Version int          `json:"version"`
-	Note    string       `json:"note"`
-	Engine  string       `json:"engine"`
-	Date    string       `json:"date"`
-	Model   string       `json:"model"`
-	Repeat  int          `json:"repeat"`
+	Version int    `json:"version"`
+	Note    string `json:"note"`
+	Engine  string `json:"engine"`
+	Date    string `json:"date"`
+	Model   string `json:"model"`
+	Repeat  int    `json:"repeat"`
+	// Scoring は採点の仕方。"strict" = 本命（"choice"）だけ・空 = 答え全体（0.35.27 までの記録）。
+	Scoring string       `json:"scoring,omitempty"`
 	Totals  HistoryTotal `json:"totals"`
 	Tasks   []TaskRuns   `json:"tasks"`
 }
@@ -53,6 +55,21 @@ type TaskRuns struct {
 	CostUSD      float64   `json:"costUSD"`
 	Failed       int       `json:"failed,omitempty"`
 	Missed       []string  `json:"missed,omitempty"`
+	// strict の記録だけ: 同じ答えを答え全体で数えた点（loose）と、ばらまきの量
+	// （ほかのお題の期待の語が答え全体・choice にいくつ当たったか）。
+	LoosePoints []int `json:"loosePoints,omitempty"`
+	CrossLoose  []int `json:"crossLoose,omitempty"`
+	CrossStrict []int `json:"crossStrict,omitempty"`
+}
+
+const scoringStrict = "strict"
+
+// scoringName は表に出す採点の名前。
+func scoringName(s string) string {
+	if s == scoringStrict {
+		return "本命"
+	}
+	return "答え全体"
 }
 
 const historyNote = "bin/fge agent-eval --history が書く版ごとの記録（お題ごとの N 回の点・トークン・ターン・秒）。" +
@@ -63,6 +80,9 @@ func BuildHistory(engine string, repeat int, wall float64, results []Result) His
 	h := History{Version: 1, Note: historyNote, Engine: engine, Repeat: repeat,
 		Date: time.Now().Format("2006-01-02")}
 	h.Tasks = groupRuns(results)
+	if anyStrict(results) {
+		h.Scoring = scoringStrict
+	}
 	missed := map[string]map[string]int{}
 	for _, r := range results {
 		if h.Model == "" {
@@ -123,6 +143,11 @@ func groupRuns(results []Result) []TaskRuns {
 		t.OutputTokens = append(t.OutputTokens, r.OutputTokens)
 		t.Turns = append(t.Turns, r.Turns)
 		t.Seconds = append(t.Seconds, r.Seconds)
+		if r.Strict {
+			t.LoosePoints = append(t.LoosePoints, r.LoosePoints())
+			t.CrossLoose = append(t.CrossLoose, r.CrossLoose)
+			t.CrossStrict = append(t.CrossStrict, r.CrossStrict)
+		}
 	}
 	return tasks
 }
@@ -141,17 +166,22 @@ func hasRepeats(results []Result) bool {
 // writeRepeatTable は同じお題を何回か流したときの表（最小・平均・最大と、トークンの平均と幅）。
 func writeRepeatTable(out io.Writer, results []Result) {
 	h := BuildHistory("", 0, 0, results)
-	fmt.Fprintln(out, "| お題 | 点 最小/平均/最大 | 入力 tok 平均 (幅) | 出力 tok 平均 | ターン 平均 (幅) | 外れた語・減点の語 (回数) |")
-	fmt.Fprintln(out, "|---|---:|---:|---:|---:|---|")
+	fmt.Fprintln(out, "| お題 | 点 最小/平均/最大 | 答え全体の点 平均 | 入力 tok 平均 (幅) | 出力 tok 平均 | ターン 平均 (幅) | 外れた語・減点の語 (回数) |")
+	fmt.Fprintln(out, "|---|---:|---:|---:|---:|---:|---|")
 	for _, t := range h.Tasks {
 		lo, mean, hi := spread(t.Points)
 		inLo, inMean, inHi := spread(t.InputTokens)
 		_, outMean, _ := spread(t.OutputTokens)
 		tLo, tMean, tHi := spread(t.Turns)
-		fmt.Fprintf(out, "| %s | %d / %.0f / %d | %.0f (%d–%d) | %.0f | %.1f (%d–%d) | %s |\n",
-			t.ID, lo, mean, hi, inMean, inLo, inHi, outMean, tMean, tLo, tHi, strings.Join(t.notes(), "・"))
+		loose := "-"
+		if len(t.LoosePoints) > 0 {
+			_, lm, _ := spread(t.LoosePoints)
+			loose = fmt.Sprintf("%.0f", lm)
+		}
+		fmt.Fprintf(out, "| %s | %d / %.0f / %d | %s | %.0f (%d–%d) | %.0f | %.1f (%d–%d) | %s |\n",
+			t.ID, lo, mean, hi, loose, inMean, inLo, inHi, outMean, tMean, tLo, tHi, strings.Join(t.notes(), "・"))
 	}
-	fmt.Fprintf(out, "| **平均** | %.1f | %.0f |  | %.1f | %d 回・$%.2f |\n",
+	fmt.Fprintf(out, "| **平均** | %.1f |  | %.0f |  | %.1f | %d 回・$%.2f |\n",
 		h.MeanPoints(), h.MeanInputTokens(), h.MeanTurns(), h.Totals.Runs, h.Totals.CostUSD)
 }
 
@@ -177,7 +207,29 @@ func (t TaskRuns) notes() []string {
 }
 
 func (t TaskRuns) meanPoints() float64 { _, m, _ := spread(t.Points); return m }
-func (t TaskRuns) meanInput() float64  { _, m, _ := spread(t.InputTokens); return m }
+
+// pointsScoredAs は、recordScoring の記録のお題を want の採点で数えた点の列
+// （strict の記録を loose で読むときは LoosePoints）。その採点の点が無ければ nil。
+func (t TaskRuns) pointsScoredAs(recordScoring, want string) []int {
+	switch {
+	case recordScoring == want:
+		return t.Points
+	case recordScoring == scoringStrict && want == "":
+		return t.LoosePoints
+	}
+	return nil
+}
+
+// comparableScoring は 2 つの記録を比べる採点。同じならそれ・片方だけ strict なら loose（strict の記録は
+// loose の点も持つ）。
+func comparableScoring(prev, cur History) string {
+	if prev.Scoring == cur.Scoring {
+		return cur.Scoring
+	}
+	return ""
+}
+
+func (t TaskRuns) meanInput() float64 { _, m, _ := spread(t.InputTokens); return m }
 
 // MeanPoints は全部のお題の平均点の平均。
 func (h History) MeanPoints() float64 {
@@ -231,15 +283,19 @@ func Regressions(prev, cur History) []Regression {
 	for _, t := range prev.Tasks {
 		before[t.ID] = t
 	}
+	sc := comparableScoring(prev, cur)
 	var out []Regression
 	for _, t := range cur.Tasks {
 		b, ok := before[t.ID]
-		if !ok || len(t.Points) == 0 || len(b.Points) == 0 {
+		bp, cp := b.pointsScoredAs(prev.Scoring, sc), t.pointsScoredAs(cur.Scoring, sc)
+		if !ok || len(cp) == 0 || len(bp) == 0 {
 			continue // 全部の回が失敗したお題は比べない（失敗の本数は表と status に出る）
 		}
 		var why []string
-		if b.meanPoints()-t.meanPoints() >= dropPoints {
-			why = append(why, fmt.Sprintf("点 %.0f → %.0f", b.meanPoints(), t.meanPoints()))
+		_, bm, _ := spread(bp)
+		_, cm, _ := spread(cp)
+		if bm-cm >= dropPoints {
+			why = append(why, fmt.Sprintf("点 %.0f → %.0f", bm, cm))
 		}
 		if b.meanInput() > 0 && t.meanInput() > b.meanInput()*growTokenRate {
 			why = append(why, fmt.Sprintf("入力 %.0fk → %.0fk tok", b.meanInput()/1000, t.meanInput()/1000))
@@ -327,9 +383,17 @@ func WriteHistoryDiff(out io.Writer, prev *History, cur History, prevName, curNa
 	fmt.Fprintf(out, "費用: %d 回・$%.2f（API 換算）・入力 %dk / 出力 %dk tok・%s1 本ずつ足すと %.0f 分\n",
 		cur.Totals.Runs, cur.Totals.CostUSD, cur.Totals.InputTokens/1000, cur.Totals.OutputTokens/1000,
 		wall, cur.Totals.Seconds/60)
+	if cur.Scoring == scoringStrict {
+		writeScoringSeam(out, cur)
+	}
 	if prev == nil {
 		fmt.Fprintln(out, "前の版の記録がありません（比べるのは次の版から）")
 		return
+	}
+	sc := comparableScoring(*prev, cur)
+	mean := func(recordScoring string, t TaskRuns) float64 {
+		_, m, _ := spread(t.pointsScoredAs(recordScoring, sc))
+		return m
 	}
 	before := map[string]TaskRuns{}
 	for _, t := range prev.Tasks {
@@ -339,12 +403,13 @@ func WriteHistoryDiff(out io.Writer, prev *History, cur History, prevName, curNa
 	for _, r := range Regressions(*prev, cur) {
 		down[r.ID] = r.Reason
 	}
-	fmt.Fprintf(out, "\n| お題 | 点 %s → %s | 入力 tok | ターン | |\n|---|---:|---:|---:|---|\n", prevName, curName)
+	fmt.Fprintf(out, "\n| お題 | 点 %s → %s（%sで採点） | 入力 tok | ターン | |\n|---|---:|---:|---:|---|\n",
+		prevName, curName, scoringName(sc))
 	for _, t := range cur.Tasks {
 		_, tm, _ := spread(t.Turns)
 		b, ok := before[t.ID]
 		if !ok {
-			fmt.Fprintf(out, "| %s | - → %.0f | - → %.0fk | - → %.1f | 新しいお題 |\n", t.ID, t.meanPoints(), t.meanInput()/1000, tm)
+			fmt.Fprintf(out, "| %s | - → %.0f | - → %.0fk | - → %.1f | 新しいお題 |\n", t.ID, mean(cur.Scoring, t), t.meanInput()/1000, tm)
 			continue
 		}
 		_, bm, _ := spread(b.Turns)
@@ -356,16 +421,45 @@ func WriteHistoryDiff(out io.Writer, prev *History, cur History, prevName, curNa
 			mark = strings.TrimSpace(fmt.Sprintf("%s 失敗 %d 回", mark, t.Failed))
 		}
 		fmt.Fprintf(out, "| %s | %.0f → %.0f | %.0fk → %.0fk | %.1f → %.1f | %s |\n", t.ID,
-			b.meanPoints(), t.meanPoints(), b.meanInput()/1000, t.meanInput()/1000, bm, tm, mark)
+			mean(prev.Scoring, b), mean(cur.Scoring, t), b.meanInput()/1000, t.meanInput()/1000, bm, tm, mark)
 	}
 	fmt.Fprintf(out, "| **平均** | %.1f → %.1f | %.0fk → %.0fk | %.1f → %.1f | |\n",
-		prev.MeanPoints(), cur.MeanPoints(), prev.MeanInputTokens()/1000, cur.MeanInputTokens()/1000,
-		prev.MeanTurns(), cur.MeanTurns())
+		prev.meanOf(func(t TaskRuns) float64 { return mean(prev.Scoring, t) }),
+		cur.meanOf(func(t TaskRuns) float64 { return mean(cur.Scoring, t) }),
+		prev.MeanInputTokens()/1000, cur.MeanInputTokens()/1000, prev.MeanTurns(), cur.MeanTurns())
 	if len(down) == 0 {
 		fmt.Fprintln(out, "\n下がったお題: なし")
 		return
 	}
 	fmt.Fprintf(out, "\n下がったお題: %d 本（外れた答えは %s/ の .jsonl）\n", len(down), logDir)
+}
+
+// writeScoringSeam は、同じ答えを答え全体と本命（choice）で数えた点と、ばらまきの量を並べる。
+// 採点を替えた版で、どのお題の点がどう変わったかを残すため。
+func writeScoringSeam(out io.Writer, cur History) {
+	fmt.Fprintln(out, "\n| お題 | 答え全体 → 本命 | ほかのお題の語（答え全体 → choice） |\n|---|---:|---:|")
+	var sumL, sumS, sumCL, sumCS float64
+	n := 0
+	for _, t := range cur.Tasks {
+		if len(t.Points) == 0 {
+			continue
+		}
+		_, l, _ := spread(t.LoosePoints)
+		_, s, _ := spread(t.Points)
+		_, cl, _ := spread(t.CrossLoose)
+		_, cs, _ := spread(t.CrossStrict)
+		mark := ""
+		if l != s {
+			mark = " ◆"
+		}
+		fmt.Fprintf(out, "| %s | %.0f → %.0f%s | %.1f → %.1f |\n", t.ID, l, s, mark, cl, cs)
+		sumL, sumS, sumCL, sumCS = sumL+l, sumS+s, sumCL+cl, sumCS+cs
+		n++
+	}
+	if n > 0 {
+		f := float64(n)
+		fmt.Fprintf(out, "| **平均** | %.1f → %.1f | %.1f → %.1f |\n\n", sumL/f, sumS/f, sumCL/f, sumCS/f)
+	}
 }
 
 // StatusLine は make status に出す 1 行。記録が無ければ空。
@@ -384,8 +478,8 @@ func StatusLine(dir string) string {
 			worst, worstID = m, t.ID
 		}
 	}
-	line := fmt.Sprintf("agent-eval v%s: 平均 %.0f 点（%d 題×%d 回・入力 %.0fk tok/題・$%.2f）", cur.Engine,
-		cur.MeanPoints(), len(cur.Tasks), cur.Repeat, cur.MeanInputTokens()/1000, cur.Totals.CostUSD)
+	line := fmt.Sprintf("agent-eval v%s: 平均 %.0f 点（%sで採点・%d 題×%d 回・入力 %.0fk tok/題・$%.2f）", cur.Engine,
+		cur.MeanPoints(), scoringName(cur.Scoring), len(cur.Tasks), cur.Repeat, cur.MeanInputTokens()/1000, cur.Totals.CostUSD)
 	if worst < 100 {
 		line += fmt.Sprintf(" 最低 %s %.0f", worstID, worst)
 	}

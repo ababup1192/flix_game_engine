@@ -54,15 +54,23 @@ type Suite struct {
 
 // Result は 1 つのお題を 1 回走らせた結果。
 type Result struct {
-	ID           string   `json:"id"`
-	Suite        string   `json:"suite"`
-	Run          int      `json:"run,omitempty"`
-	Model        string   `json:"model,omitempty"`
-	Hit          int      `json:"hit"`
-	Want         int      `json:"want"`
-	Penalty      int      `json:"penalty"`
-	Missed       []string `json:"missed"`
-	AvoidHits    []string `json:"avoidHits"`
+	ID        string   `json:"id"`
+	Suite     string   `json:"suite"`
+	Run       int      `json:"run,omitempty"`
+	Model     string   `json:"model,omitempty"`
+	Hit       int      `json:"hit"`
+	Want      int      `json:"want"`
+	Penalty   int      `json:"penalty"`
+	Missed    []string `json:"missed"`
+	AvoidHits []string `json:"avoidHits"`
+	// 本命の採点（strict）のときだけ: 答えの "choice" と、同じ答えを答え全体で数えた点（loose）。
+	Strict       bool     `json:"strict,omitempty"`
+	Choice       []string `json:"choice,omitempty"`
+	LooseHit     int      `json:"looseHit,omitempty"`
+	LoosePenalty int      `json:"loosePenalty,omitempty"`
+	// ばらまきの量: ほかのお題の期待の語が、答え全体（loose）と choice（strict）にいくつ当たったか。
+	CrossLoose   int      `json:"crossLoose,omitempty"`
+	CrossStrict  int      `json:"crossStrict,omitempty"`
 	InputTokens  int      `json:"inputTokens"`
 	OutputTokens int      `json:"outputTokens"`
 	CostUSD      float64  `json:"costUSD"`
@@ -75,25 +83,24 @@ type Result struct {
 }
 
 // Points は 0..100 の点。期待の語の当たりから、減点の語 1 つにつき 1 つ分を引く。
-func (r Result) Points() int {
-	if r.Want == 0 {
-		if r.Penalty > 0 {
+func (r Result) Points() int { return points(r.Hit, r.Penalty, r.Want) }
+
+// LoosePoints は同じ答えを答え全体で数えた点（strict の記録で、前の版の loose の記録と比べるのに使う）。
+func (r Result) LoosePoints() int { return points(r.LooseHit, r.LoosePenalty, r.Want) }
+
+func points(hit, penalty, want int) int {
+	if want == 0 {
+		if penalty > 0 {
 			return 0
 		}
 		return 100
 	}
-	p := (r.Hit - r.Penalty) * 100 / r.Want
+	p := (hit - penalty) * 100 / want
 	if p < 0 {
 		return 0
 	}
 	return p
 }
-
-// 答えの頼み方。お題の後ろに必ず付ける。
-//
-// WhyNot: お題の JSON ごとに変えられるようにしないのは、言い方が違うと前後・ゲーム間で
-// 点が比べられなくなるため。
-const suffix = "。実装はせず、使う道具（API・make の口・lint・スキル）と、判断のために読んだファイルを JSON で答えて"
 
 // 走らせる claude が使ってよい道具。読むだけに絞る。
 //
@@ -140,12 +147,23 @@ func Run(out, errOut io.Writer, args []string) (int, error) {
 		if opt.repeat == 1 {
 			opt.repeat = detectRepeat(dir, jobs[0].task.ID)
 		}
-		results, err = rescore(dir, jobs, opt.repeat)
+		results, err = rescore(dir, jobs, opt.repeat, opt.loose)
 		if err != nil {
 			return 2, err
 		}
+		if !opt.loose && noChoiceAtAll(results) {
+			return 2, errors.New("どの答えにも \"choice\" がありません。0.35.27 までの記録なら --loose を付けて付け直す")
+		}
 	} else {
 		results = runAll(errOut, dir, jobs, opt)
+	}
+	// ばらまきの量は、--only で絞っても全部のお題の期待の語で数える。
+	all := selectJobs(suites, nil)
+	for i := range results {
+		results[i].CrossLoose = crossHits(results[i].ID, all, results[i].Answer)
+		if !opt.loose {
+			results[i].CrossStrict = crossHits(results[i].ID, all, strings.Join(results[i].Choice, "\n"))
+		}
 	}
 	wall := time.Since(started).Seconds()
 	if err := writeSummary(dir, results); err != nil {
@@ -194,14 +212,17 @@ const usage = `fge agent-eval — 何も教えていないエージェントが�
 
   fge agent-eval --tasks <お題.json> [--tasks <お題.json>...] [--label 名前] [--only id,id] [--jobs 3]
                  [--max-turns 15] [--model 名前] [--add-dir DIR] [--out debug/agent-eval]
-  fge agent-eval --tasks ... --label 名前 --rescore   claude を呼ばず、残した記録に点だけ付け直す
+  fge agent-eval --tasks ... --label 名前 --rescore [--loose]   claude を呼ばず、残した記録に点だけ付け直す
+                 （0.35.27 までの記録は "choice" が無いので --loose で付け直す）
   fge agent-eval --compare 前の名前 後の名前 [--out debug/agent-eval]   前後の表
   fge agent-eval --tasks ... --repeat 3 --history agent-eval/history --version 0.35.22
                  お題ごとに 3 回流し、版ごとの記録（<history>/<版>.json）を書いて 1 つ前の版と比べる
 
 お題の形: {"version":1,"note":"…","tasks":[{"id":"…","prompt":"依頼の言葉（道具の名前を入れない）",
   "expect":[{"re":"ZStack\\.topLayer","why":"…"}],"avoid":[{"re":"let _ =","why":"…"}]}]}
-点 = (期待の語の当たり − 減点の語の当たり) / 期待の語の数 × 100。答えの文だけに当てる。
+点 = (期待の語の当たり − 減点の語の当たり) / 期待の語の数 × 100。
+本命の採点（既定）: 答えの JSON の "choice"（実際に使う物・先頭 4 つ）だけに当てる。ほかの欄に並べた語は点にならない。
+同じ答えを答え全体に当てた点（--loose の採点）も記録に残し、loose の記録しか無い前の版とはそれで比べる。
 走らせる claude は読むだけの道具に絞る（Edit・Write・Agent なし）。それ以外は使う人の設定（~/.claude・
 プロジェクトのフック・権限のモード）のまま走る —— 実際に使う環境で測るため。engine を読ませるなら --add-dir <engine>。
 1 お題 10 分で打ち切る。heavy の鍵は取らない（claude -p は待ちが主で CPU をほとんど使わず、鍵を取ると
@@ -228,6 +249,7 @@ type options struct {
 	history   string
 	version   string
 	overwrite bool
+	loose     bool
 	compare   []string
 }
 
@@ -252,6 +274,8 @@ func parseArgs(args []string) (options, error) {
 			o.rescore = true
 		case "--overwrite":
 			o.overwrite = true
+		case "--loose":
+			o.loose = true
 		case "--tasks", "--only", "--label", "--out", "--jobs", "--max-turns", "--model", "--claude", "--add-dir",
 			"--repeat", "--history", "--version":
 			if v, err = next(&i, a); err != nil {
@@ -453,7 +477,7 @@ func runOne(dir string, j job, run int, opt options) Result {
 	}
 	logPath := filepath.Join(dir, logName(j.task.ID, run, opt.repeat))
 	writeErr := os.WriteFile(logPath, raw, 0o644)
-	r := score(j, raw)
+	r := score(j, raw, !opt.loose)
 	r.Run = run
 	r.Seconds = time.Since(start).Seconds()
 	switch {
@@ -473,7 +497,7 @@ func lastLine(s string) string {
 	return lines[len(lines)-1]
 }
 
-func rescore(dir string, jobs []job, repeat int) ([]Result, error) {
+func rescore(dir string, jobs []job, repeat int, loose bool) ([]Result, error) {
 	var results []Result
 	for _, j := range jobs {
 		for run := 1; run <= repeat; run++ {
@@ -482,7 +506,7 @@ func rescore(dir string, jobs []job, repeat int) ([]Result, error) {
 			if err != nil {
 				return nil, fmt.Errorf("%s の記録が無い（先に走らせる）: %v", name, err)
 			}
-			r := score(j, raw)
+			r := score(j, raw, !loose)
 			r.Run = run
 			results = append(results, r)
 		}
@@ -518,8 +542,8 @@ type streamLine struct {
 // fileArg は Bash の引数のうちファイルの名前に見える物（拡張子つき・Makefile）。
 var fileArg = regexp.MustCompile(`[\w./~$-]*\w\.(md|flix|json|mk|py|txt)\b|\bMakefile\b`)
 
-// score は記録 1 本から点と数を出す。
-func score(j job, raw []byte) Result {
+// score は記録 1 本から点と数を出す。strict なら "choice" だけで採点し、答え全体の点は LooseHit に残す。
+func score(j job, raw []byte, strict bool) Result {
 	r := Result{ID: j.task.ID, Suite: j.suite, Want: len(j.task.Expect)}
 	files := map[string]bool{}
 	sc := bufio.NewScanner(strings.NewReader(string(raw)))
@@ -590,6 +614,17 @@ func score(j job, raw []byte) Result {
 			r.AvoidHits = append(r.AvoidHits, label(p))
 		}
 	}
+	if !strict {
+		return r
+	}
+	r.Strict = true
+	r.LooseHit, r.LoosePenalty = r.Hit, r.Penalty
+	choice, ok := extractChoice(r.Answer)
+	r.Choice = choice
+	scoreChoice(&r, j.task, choice)
+	if !ok {
+		r.Missed = append([]string{"choice が読めない"}, r.Missed...)
+	}
 	return r
 }
 
@@ -616,7 +651,7 @@ func negated(re *regexp.Regexp, line string) bool {
 // avoidKey は「使わない物」を並べる JSON の鍵（"avoid": [...]・"使わない": {...}）。語ごとに見る。
 // 読んだファイルの一覧（"files_read"・"読んだファイル"）も入れる —— 「until mkdir を grep した」のように
 // 探した語を書くだけで、選んだ物ではないため。
-var avoidKey = regexp.MustCompile(`(?i)^(files?_?read\w*|read_?files?|.*読んだ(ファイル|物|もの).*|.*調べた(ファイル|物|もの).*|avoid\w*|dont\w*|do_not\w*|not(_\w*)?|forbid\w*|deprecated|ng|old\w*|legacy|anti\w*|pitfalls?|使わない.*|避ける.*|やらない.*|しない.*|禁止.*|古い.*|非推奨.*)$`)
+var avoidKey = regexp.MustCompile(`(?i)^(others?|read|files?_?read\w*|read_?files?|.*読んだ(ファイル|物|もの).*|.*調べた(ファイル|物|もの).*|avoid\w*|dont\w*|do_not\w*|not(_\w*)?|forbid\w*|deprecated|ng|old\w*|legacy|anti\w*|pitfalls?|使わない.*|避ける.*|やらない.*|しない.*|禁止.*|古い.*|非推奨.*)$`)
 
 var keyOpen = regexp.MustCompile(`^"([^"]+)"\s*:\s*([\[{])`)
 
@@ -741,7 +776,8 @@ func compare(out io.Writer, opt options) (int, error) {
 	// 何回か流した記録どうしは、1 本ずつではなく平均で比べる。
 	ra, errA := readSummary(filepath.Join(opt.out, opt.compare[0], "summary.json"))
 	rb, errB := readSummary(filepath.Join(opt.out, opt.compare[1], "summary.json"))
-	if errA == nil && errB == nil && (hasRepeats(ra) || hasRepeats(rb)) {
+	// 片方でも本命の採点なら、採点をそろえて比べる（BuildHistory が採点を読み、WriteHistoryDiff がそろえる）。
+	if errA == nil && errB == nil && (hasRepeats(ra) || hasRepeats(rb) || anyStrict(ra) || anyStrict(rb)) {
 		prev := BuildHistory(opt.compare[0], 0, 0, ra)
 		WriteHistoryDiff(out, &prev, BuildHistory(opt.compare[1], 0, 0, rb), opt.compare[0], opt.compare[1],
 			filepath.Join(opt.out, opt.compare[1]))

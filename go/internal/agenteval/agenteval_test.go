@@ -98,7 +98,7 @@ func TestScoreReadsStreamJSON(t *testing.T) {
 	j := job{"engine", Task{ID: "t",
 		Expect: []Pattern{{Re: `topLayer`}, {Re: `UiTooltip`}},
 		Avoid:  []Pattern{{Re: `zIndex\s*=\s*\d{3}`}}}}
-	r := score(j, []byte(raw))
+	r := score(j, []byte(raw), false)
 	if r.Model != "claude-x" || r.InputTokens != 60 || r.Turns != 3 || len(r.FilesRead) != 2 {
 		t.Errorf("数え違い: %+v", r)
 	}
