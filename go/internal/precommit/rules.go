@@ -136,7 +136,7 @@ type DocsSync struct {
 }
 
 // LocalGate はゲーム固有の検査を走らせる make の口。ゲームの Makefile に target が
-// 在るときだけ、ステージしたファイルを空白区切りで STAGED に渡して流す。
+// 在るときだけ、ステージしたファイルを 1 行 1 つで書いた一時ファイルのパスを STAGED_FILE に渡して流す。
 // WhyNot: 固有の検査（例: ドット絵の色の門）を precommit.json の checks に足さないのは、
 // あれが engine から配る共通の表で、ゲームごとの道具（python の台本など）を名指しできないため。
 type LocalGate struct {

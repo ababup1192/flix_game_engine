@@ -168,3 +168,33 @@ func writeFile(t *testing.T, path, body string) {
 		t.Fatal(err)
 	}
 }
+
+// & や > を含むコマンドは、手で書いた settings.json の形のまま見つけて二重に足さない。
+func TestAddMissingHooksKeepsAmpersandCommandOnce(t *testing.T) {
+	dir := t.TempDir()
+	cmd := `cd "$CLAUDE_PROJECT_DIR" && make -s status > /dev/null`
+	hook := `{"hooks":{"Stop":[{"hooks":[{"type":"command","command":` + quote(cmd) + `}]}]}}`
+	game := filepath.Join(dir, "game.json")
+	pack := filepath.Join(dir, "pack.json")
+	writeFile(t, game, hook)
+	writeFile(t, pack, hook)
+	if n, err := AddMissingHooks(game, pack); err != nil || n != 0 {
+		t.Errorf("n=%d err=%v（すでにあるのに足した）: %s", n, err, read(t, game))
+	}
+}
+
+// ゲームが最上位の RemovedHooksKey に書いたフックは、配るたびに足し直さない。
+func TestAddMissingHooksSkipsMarkedRemoved(t *testing.T) {
+	dir := t.TempDir()
+	game := filepath.Join(dir, "game.json")
+	pack := filepath.Join(dir, "pack.json")
+	writeFile(t, game, `{"`+RemovedHooksKey+`":["hook-art-edit"],"hooks":{}}`)
+	writeFile(t, pack, `{"hooks":{"PostToolUse":[{"matcher":"Edit|Write","hooks":[`+
+		`{"type":"command","command":"bin/fge hook-art-edit"}]}]}}`)
+	if n, err := AddMissingHooks(game, pack); err != nil || n != 0 {
+		t.Errorf("n=%d err=%v（外した印のあるフックを足した）: %s", n, err, read(t, game))
+	}
+}
+
+// quote は手で書いた JSON と同じく、& や > を逃がさずに引用する。
+func quote(s string) string { return `"` + strings.ReplaceAll(s, `"`, `\"`) + `"` }

@@ -76,7 +76,19 @@ var staleHookCalls = [][2]string{
 	{`python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/after-flix-touch.py\"`, `\"$CLAUDE_PROJECT_DIR/bin/fge\" hook-flix-touch`},
 	{`python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/after-flix-work.py\"`, `\"$CLAUDE_PROJECT_DIR/bin/fge\" hook-flix-work`},
 	{`python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/after-flix-edit.py\"`, `\"$CLAUDE_PROJECT_DIR/bin/fge\" hook-flix-edit`},
+	// .codex/hooks.json は $CLAUDE_PROJECT_DIR を使わず、ゲームの根からの相対パスで呼ぶ。
+	{`python3 .claude/hooks/after-flix-touch.py`, `bin/fge hook-flix-touch`},
+	{`python3 .claude/hooks/after-flix-work.py`, `bin/fge hook-flix-work`},
+	{`python3 .claude/hooks/after-flix-edit.py`, `bin/fge hook-flix-edit`},
 }
+
+// HookFiles はフックの呼び出しを書いた、ゲームの中の設定ファイル（どれも copyIfAbsent で配る）。
+// .codex/hooks.json は settings.json と同じ形（hooks → イベント → matcher・hooks の組）。
+var HookFiles = []string{".claude/settings.json", ".codex/hooks.json"}
+
+// RemovedHooksKey はゲームが意図して外したフックの印を書く、設定ファイルの最上位のキー。
+// 値は command の一部の文字列の並び。当たる物は AddMissingHooks が足し直さない。
+const RemovedHooksKey = "fgeRemovedHooks"
 
 // retiredHookCalls は settings.json から呼び出しごと外すフック（口は廃止して何もしない）。
 // WhyNot: 何もしない口へ書き換えて残さないのは、matcher "*" で全ツールのたびにプロセスを
@@ -130,17 +142,18 @@ func Run(out, errOut *strings.Builder, root string, args []string) (int, error) 
 		}
 	}
 
-	settings := filepath.Join(game, ".claude", "settings.json")
-	fixed, err := rewriteHookCalls(settings, dryRun)
-	if err != nil {
-		return 2, err
-	}
-	if fixed > 0 {
-		verb := "書き換えました"
-		if dryRun {
-			verb = "書き換えます"
+	for _, rel := range HookFiles {
+		fixed, err := rewriteHookCalls(filepath.Join(game, filepath.FromSlash(rel)), dryRun)
+		if err != nil {
+			return 2, err
 		}
-		fmt.Fprintf(out, "[prune-stale-tools] .claude/settings.json のフックの呼び口 %d 件を %s\n", fixed, verb)
+		if fixed > 0 {
+			verb := "書き換えました"
+			if dryRun {
+				verb = "書き換えます"
+			}
+			fmt.Fprintf(out, "[prune-stale-tools] %s のフックの呼び口 %d 件を %s\n", rel, fixed, verb)
+		}
 	}
 
 	if len(kept) > 0 {
@@ -172,7 +185,7 @@ func Run(out, errOut *strings.Builder, root string, args []string) (int, error) 
 	return 0, nil
 }
 
-// RewriteHookCalls は sync-agents が配るたびに呼ぶ口。.claude/settings.json の古い呼び口を
+// RewriteHookCalls は sync-agents が配るたびに呼ぶ口。HookFiles（settings.json・.codex/hooks.json）の古い呼び口を
 // 今の口へ書き換え、廃止したフックを外して、直した数を返す。
 // WhyNot: prune-stale-tools（一度きり・手で流す）だけに置かないのは、流し忘れたゲームに
 // 廃止したフック（hook-session-diet・matcher "*"）が毎回のツール呼び出しで残り続けたため。
@@ -199,6 +212,7 @@ func rewriteHookCalls(path string, dryRun bool) (int, error) {
 	}
 	text, removed, err := dropRetiredHooks(text)
 	if err != nil {
+		err = fmt.Errorf("%s: %w", path, err)
 		return 0, err
 	}
 	fixed += removed
@@ -222,7 +236,7 @@ func dropRetiredHooks(text string) (string, int, error) {
 	}
 	var doc map[string]any
 	if err := json.Unmarshal([]byte(text), &doc); err != nil {
-		return text, 0, fmt.Errorf(".claude/settings.json が JSON として読めません: %v", err)
+		return text, 0, fmt.Errorf("JSON として読めません: %v", err)
 	}
 	events, _ := doc["hooks"].(map[string]any)
 	removed := 0
@@ -282,4 +296,109 @@ func isRetired(cmd string) bool {
 func isFile(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && info.Mode().IsRegular()
+}
+
+// AddMissingHooks は配る側の settings.json（pack）にあってゲームの settings.json に無いフックの
+// 呼び出しを、同じイベント・同じ matcher のグループへ足し、足した数を返す。
+// WhyNot: settings.json を写し直さないのは copyIfAbsent（ゲームが足したフックを守る）のため。
+// その代わり、engine が新しく配線したフック（例: hook-art-edit）が既存のゲームに届かなかった。
+// 呼び出しの文字列がゲームのどこかにあれば足さない（ゲームが別の matcher へ移した物を二重にしない）。
+func AddMissingHooks(gamePath, packPath string) (int, error) {
+	raw, err := os.ReadFile(gamePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	packRaw, err := os.ReadFile(packPath)
+	if err != nil {
+		return 0, err
+	}
+	var game, pack map[string]any
+	// 読めない settings.json は足さずに飛ばす（配る物はほかにもあるので、ここで配りを止めない）。
+	if json.Unmarshal(raw, &game) != nil || json.Unmarshal(packRaw, &pack) != nil {
+		return 0, nil
+	}
+	text := string(raw)
+	removedMarks, _ := game[RemovedHooksKey].([]any)
+	gameEvents, _ := game["hooks"].(map[string]any)
+	if gameEvents == nil {
+		gameEvents = map[string]any{}
+	}
+	packEvents, _ := pack["hooks"].(map[string]any)
+	added := 0
+	for name, v := range packEvents {
+		groups, _ := v.([]any)
+		for _, g := range groups {
+			group, _ := g.(map[string]any)
+			matcher, _ := group["matcher"].(string)
+			hooks, _ := group["hooks"].([]any)
+			for _, h := range hooks {
+				cmd, _ := h.(map[string]any)["command"].(string)
+				if cmd == "" || strings.Contains(text, jsonEscaped(cmd)) || isMarkedRemoved(cmd, removedMarks) {
+					continue
+				}
+				addHook(gameEvents, name, matcher, h)
+				added++
+			}
+		}
+	}
+	if added == 0 {
+		return 0, nil
+	}
+	game["hooks"] = gameEvents
+	// WhyNot: 当たりが無いときは書き直さない（上の return）。組み直すとキーの並びが
+	// 変わり、関係のない差分がゲーム側に出るため。当たった時だけ並びが変わるのは受け入れる。
+	var buf strings.Builder
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(game); err != nil {
+		return 0, err
+	}
+	return added, os.WriteFile(gamePath, []byte(buf.String()), 0o644)
+}
+
+// jsonEscaped は文字列を JSON の中に書いたときの形（両端の引用符を除く）にする。
+// WhyNot: json.Marshal を使わないのは、既定で & < > を \u0026 などへ逃がし、
+// 手で書いた settings.json の "&&" と食い違って毎回足し直してしまうため。
+func jsonEscaped(s string) string {
+	var buf strings.Builder
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	_ = enc.Encode(s)
+	b := strings.TrimSuffix(buf.String(), "\n")
+	return b[1 : len(b)-1]
+}
+
+// isMarkedRemoved は cmd がゲームの外した印（RemovedHooksKey）のどれかを含むか。
+func isMarkedRemoved(cmd string, marks []any) bool {
+	for _, m := range marks {
+		if s, _ := m.(string); s != "" && strings.Contains(cmd, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// addHook は events[name] の中の matcher が同じグループへ hook を足す（無ければグループを作る）。
+func addHook(events map[string]any, name, matcher string, hook any) {
+	groups, _ := events[name].([]any)
+	for _, g := range groups {
+		group, ok := g.(map[string]any)
+		if !ok {
+			continue
+		}
+		if m, _ := group["matcher"].(string); m == matcher {
+			hooks, _ := group["hooks"].([]any)
+			group["hooks"] = append(hooks, hook)
+			return
+		}
+	}
+	group := map[string]any{"hooks": []any{hook}}
+	if matcher != "" {
+		group["matcher"] = matcher
+	}
+	events[name] = append(groups, group)
 }

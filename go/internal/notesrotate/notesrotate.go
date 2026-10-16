@@ -5,7 +5,8 @@ package notesrotate
 //
 //	fge-go notes-rotate              送る（NOTES.md と notes/<年-月>.md を書き換える）
 //	fge-go notes-rotate --dry-run    送る項を出すだけ（何も書かない）
-//	fge-go notes-rotate --check      超えていたら終了コード 1（コミット時のゲートはこれ）
+//	fge-go notes-rotate --check      超えていたら終了コード 1
+//	fge-go notes-rotate --check --staged  作業ツリーではなくステージした NOTES.md を見る（コミット時のゲートはこれ）
 //	fge-go notes-rotate --root DIR   リポジトリのルートを差し替える
 //
 // 項の読み方: 規約データの entryPatterns のどれかに当たる行が項の始まり（1 つ目の () が年・2 つ目が月）。
@@ -21,6 +22,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -239,23 +241,35 @@ func MergeArchive(existing, month string, moved []Entry, r *Rules) string {
 // Run は入口。
 func Run(out, errOut *strings.Builder, root string, args []string) (int, error) {
 	mode := "write"
+	staged := false
 	for _, a := range args {
 		switch a {
 		case "--dry-run":
 			mode = "dry"
 		case "--check":
 			mode = "check"
+		case "--staged":
+			staged = true
 		default:
-			fmt.Fprintf(errOut, "notes-rotate: 知らない引数 %s（--dry-run / --check / --root DIR）\n", a)
+			fmt.Fprintf(errOut, "notes-rotate: 知らない引数 %s（--dry-run / --check [--staged] / --root DIR）\n", a)
 			return 2, nil
 		}
+	}
+	if staged && mode != "check" {
+		fmt.Fprintln(errOut, "notes-rotate: --staged は --check と一緒にだけ使える（ステージした中身は書き換えない）")
+		return 2, nil
 	}
 	r, err := LoadRules(root)
 	if err != nil {
 		return 2, err
 	}
 	notesPath := filepath.Join(root, r.NotesFile)
-	data, err := os.ReadFile(notesPath)
+	var data []byte
+	if staged {
+		data, err = readStaged(root, r.NotesFile)
+	} else {
+		data, err = os.ReadFile(notesPath)
+	}
 	if os.IsNotExist(err) {
 		fmt.Fprintf(out, "[notes-rotate] %s が無い（何もしない）\n", r.NotesFile)
 		return 0, nil
@@ -313,4 +327,15 @@ func Run(out, errOut *strings.Builder, root string, args []string) (int, error) 
 	}
 	fmt.Fprintf(out, "[notes-rotate] %s は項 %d 個に\n", r.NotesFile, len(p.Kept))
 	return 0, nil
+}
+
+// readStaged はステージした中身（git show :<rel>）を読む。ステージに無ければ os.ErrNotExist。
+// WhyNot: コミットのゲートが作業ツリーを読むと、送った後の NOTES.md をステージし忘れても通り、
+// 送る前の長い中身がコミットされるため。
+func readStaged(root, rel string) ([]byte, error) {
+	out, err := exec.Command("git", "-C", root, "show", ":"+filepath.ToSlash(rel)).Output()
+	if err != nil {
+		return nil, os.ErrNotExist
+	}
+	return out, nil
 }

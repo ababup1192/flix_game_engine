@@ -6,6 +6,7 @@ package notesrotate
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -138,6 +139,23 @@ func TestCheckDoesNotWrite(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, "notes")); !os.IsNotExist(err) {
 		t.Fatal("--check が notes/ を作った")
+	}
+}
+
+// --staged は作業ツリーで送った後でも、ステージした長い中身を見て止める。
+func TestCheckStagedReadsIndex(t *testing.T) {
+	root := setup(t, nil)
+	for _, args := range [][]string{{"init", "-q"}, {"add", "NOTES.md"}} {
+		if out, err := exec.Command("git", append([]string{"-C", root}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+	}
+	run(t, root)
+	if code, _ := run(t, root, "--check"); code != 0 {
+		t.Fatalf("作業ツリーは送った後なのに --check が %d", code)
+	}
+	if code, out := run(t, root, "--check", "--staged"); code != 1 {
+		t.Fatalf("ステージした長い中身を見ていない: code %d out %s", code, out)
 	}
 }
 

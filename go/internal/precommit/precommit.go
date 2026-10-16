@@ -160,7 +160,11 @@ func (r *runner) gate(staged []string) (int, error) {
 	}
 
 	if t := r.rules.LocalGate.Target; t != "" && len(staged) > 0 && r.hasTarget(t) {
-		if r.runMake("-s", t, "STAGED="+strings.Join(staged, " ")) != 0 {
+		code, err := r.runLocalGate(t, staged)
+		if err != nil {
+			return 2, err
+		}
+		if code != 0 {
 			failed = true
 		}
 	}
@@ -264,11 +268,48 @@ func (r *runner) hasDocsSyncTarget() bool {
 }
 
 // hasTarget はゲームの Makefile に口が在るか（無ければ黙って飛ばす。固有の口は無いのが普通）。
+// make -q が 2 を返したとき、口が無いのか Makefile が壊れているのかを make の文で見分け、
+// 壊れているときだけ 1 行知らせて飛ばす。
+// WhyNot: LC_ALL=C で流すのは、make の文が訳されていると見分けの文字列が当たらないため。
 func (r *runner) hasTarget(target string) bool {
 	cmd := exec.Command("make", "-q", target)
 	cmd.Dir = r.root
+	cmd.Env = append(os.Environ(), "LC_ALL=C")
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
 	_ = cmd.Run()
-	return cmd.ProcessState != nil && cmd.ProcessState.ExitCode() != r.rules.FailOpen.TargetMissingExitCode
+	if cmd.ProcessState == nil {
+		return false
+	}
+	if cmd.ProcessState.ExitCode() != r.rules.FailOpen.TargetMissingExitCode {
+		return true
+	}
+	msg := stderr.String()
+	if !strings.Contains(msg, "No rule to make target") || strings.Contains(msg, "needed by") {
+		line, _, _ := strings.Cut(strings.TrimSpace(msg), "\n")
+		fmt.Fprintf(r.parent, "[pre-commit] make -q %s が失敗したので %s は飛ばします: %s\n", target, target, line)
+	}
+	return false
+}
+
+// runLocalGate はステージしたファイルを 1 行 1 つで一時ファイルに書き、そのパスを
+// STAGED_FILE で make の口へ渡して流す。
+// WhyNot: ファイル名を make の変数へ直に並べないのは、make が $(...) を展開し、
+// 名前の中の " がレシピの引用を壊すため。一時ファイルなら名前は make を通らない。
+func (r *runner) runLocalGate(target string, staged []string) (int, error) {
+	f, err := os.CreateTemp("", "fge-staged-*.txt")
+	if err != nil {
+		return 0, err
+	}
+	defer os.Remove(f.Name())
+	_, werr := f.WriteString(strings.Join(staged, "\n") + "\n")
+	if cerr := f.Close(); werr == nil {
+		werr = cerr
+	}
+	if werr != nil {
+		return 0, werr
+	}
+	return r.runMake("-s", target, "STAGED_FILE="+f.Name()), nil
 }
 
 // runMake は出力をそのまま見せて終了コードを返す。

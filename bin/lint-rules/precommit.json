@@ -177,7 +177,7 @@
     {
       "id": "notes-rotate",
       "sub": "notes-rotate",
-      "flags": ["--check"],
+      "flags": ["--check", "--staged"],
       "pass": "none",
       "when": {
         "basenames": ["NOTES.md"]

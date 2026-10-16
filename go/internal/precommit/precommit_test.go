@@ -356,10 +356,10 @@ func TestUseEngineRestoredTomlPasses(t *testing.T) {
 }
 
 // TestLocalGateGetsStagedFiles はゲームの Makefile の precommit-local が、ステージした
-// ファイルを STAGED で受け取り、失敗すればコミットを止めることを見る。
+// ファイルを STAGED_FILE（1 行 1 つ）で受け取り、失敗すればコミットを止めることを見る。
 func TestLocalGateGetsStagedFiles(t *testing.T) {
 	root := fakeRepo(t)
-	mk := "precommit-local:\n\t@case \"$(STAGED)\" in *.sprite.json*) echo 色の門; exit 1;; esac\n"
+	mk := "precommit-local:\n\t@if grep -q '\\.sprite\\.json$$' \"$(STAGED_FILE)\"; then echo 色の門; exit 1; fi\n"
 	if err := os.WriteFile(filepath.Join(root, "Makefile"), []byte(mk), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -369,6 +369,33 @@ func TestLocalGateGetsStagedFiles(t *testing.T) {
 	}
 	if _, _, _, code := gateRun(t, root, []string{"--files", "notes.txt"}, okLints(t), nil); code != 0 {
 		t.Errorf("当たらないファイルで止めた: code=%d", code)
+	}
+}
+
+// TestLocalGatePassesNamesVerbatim は $(...) や " を含むファイル名も、make に展開されずに
+// そのまま口へ届くことを見る。
+func TestLocalGatePassesNamesVerbatim(t *testing.T) {
+	root := fakeRepo(t)
+	mk := "precommit-local:\n\t@cat \"$(STAGED_FILE)\"\n"
+	if err := os.WriteFile(filepath.Join(root, "Makefile"), []byte(mk), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	name := `a$(shell echo x)"b.txt`
+	_, child, _, code := gateRun(t, root, []string{"--files", name}, okLints(t), nil)
+	if code != 0 || !strings.Contains(child, name) {
+		t.Errorf("名前がそのまま届いていない: code=%d out=%q", code, child)
+	}
+}
+
+// TestLocalGateBrokenMakefileSays は Makefile が壊れているとき、1 行知らせて飛ばすことを見る。
+func TestLocalGateBrokenMakefileSays(t *testing.T) {
+	root := fakeRepo(t)
+	if err := os.WriteFile(filepath.Join(root, "Makefile"), []byte("$(error 壊れている)\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	parent, _, _, code := gateRun(t, root, []string{"--files", "notes.txt"}, okLints(t), nil)
+	if code != 0 || !strings.Contains(parent, "precommit-local は飛ばします") {
+		t.Errorf("壊れた Makefile を知らせていない: code=%d %q", code, parent)
 	}
 }
 

@@ -264,11 +264,24 @@ func syncGame(out, errOut *strings.Builder, root string, r *Rules, gameArg, vers
 		}
 		fmt.Fprintf(out, "[sync-agents] hooks: %s を配りました (既存があるときは上書きしない)\n", e.dst)
 	}
-	// settings.json は上書きしないので、廃止したフックの呼び出しはここで外す（ゲームが足したフックは残る）。
-	if fixed, err := prunetools.RewriteHookCalls(pyJoin(game, ".claude/settings.json")); err != nil {
-		return 2, err
-	} else if fixed > 0 {
-		fmt.Fprintf(out, "[sync-agents] hooks: .claude/settings.json の古い・廃止した呼び口 %d 件を直しました\n", fixed)
+	// settings.json と .codex/hooks.json は上書きしないので、廃止したフックの呼び出しはここで直す
+	// （ゲームが足したフックは残る）。同じ理由で、engine が新しく配線したフックもここで足す。
+	for _, rel := range prunetools.HookFiles {
+		if fixed, err := prunetools.RewriteHookCalls(pyJoin(game, rel)); err != nil {
+			return 2, err
+		} else if fixed > 0 {
+			fmt.Fprintf(out, "[sync-agents] hooks: %s の古い・廃止した呼び口 %d 件を直しました\n", rel, fixed)
+		}
+		for _, e := range m[keyCopyIfAbsent] {
+			if e.dst != rel {
+				continue
+			}
+			if n, err := prunetools.AddMissingHooks(pyJoin(game, e.dst), pyJoin(root, e.src)); err != nil {
+				return 2, err
+			} else if n > 0 {
+				fmt.Fprintf(out, "[sync-agents] hooks: %s に engine が新しく配線したフック %d 件を足しました\n", rel, n)
+			}
+		}
 	}
 
 	ruleNames, err := dirEntryNames(pyJoin(root, r.RulesDir))

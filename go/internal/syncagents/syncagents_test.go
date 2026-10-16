@@ -179,6 +179,23 @@ func TestSyncDropsRetiredHookCall(t *testing.T) {
 	}
 }
 
+func TestSyncAddsNewlyWiredHook(t *testing.T) {
+	root := fixture(t)
+	write(t, root, "bin/plain.txt", `{"hooks":{"PostToolUse":[{"matcher":"Write|Edit","hooks":[`+
+		`{"type":"command","command":"新しいフック"},{"type":"command","command":"ゲームのフック"}]}]}}`, 0o644)
+	game := t.TempDir()
+	write(t, game, ".claude/settings.json", `{"hooks":{"PostToolUse":[`+
+		`{"matcher":"Write|Edit","hooks":[{"type":"command","command":"ゲームのフック"}]}]}}`, 0o644)
+	run(t, root, "--game", game)
+	body, err := os.ReadFile(filepath.Join(game, ".claude", "settings.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(string(body), "新しいフック") != 1 || strings.Count(string(body), "ゲームのフック") != 1 {
+		t.Errorf("新しいフックを 1 回だけ足していない: %s", body)
+	}
+}
+
 func TestSyncReportsRulesAndLints(t *testing.T) {
 	root := fixture(t)
 	game := t.TempDir()
@@ -476,5 +493,37 @@ func TestPruneDoesNotFollowSymlinks(t *testing.T) {
 	run(t, root, "--game", game)
 	if _, err := os.Stat(filepath.Join(outside, "SKILL.md")); err != nil {
 		t.Error("symlink の先の木まで消してしまった")
+	}
+}
+
+// 既存ゲームの .codex/hooks.json（消えた python の台本を相対パスで呼ぶ形）を今の口へ直し、
+// engine が新しく配線したフックを足す。入力は internet_dungeon の実物の写し。
+func TestSyncFixesCodexHooks(t *testing.T) {
+	root := fixture(t)
+	pack, err := os.ReadFile(filepath.Join(repoRoot(), "agents-pack", "codex-hooks.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, root, "agents-pack/codex-hooks.json", string(pack), 0o644)
+	write(t, root, "agents-pack/manifest.json", `{
+	  "copy": [], "copyDirs": [{"src": "agents-pack/skills", "dst": ".claude/skills"}],
+	  "copyIfAbsent": [{"src": "bin/plain.txt", "dst": ".claude/settings.json"},
+	                   {"src": "agents-pack/codex-hooks.json", "dst": ".codex/hooks.json"}]
+	}`, 0o644)
+	old, err := os.ReadFile(filepath.Join("testdata", "codex-hooks-old.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	game := t.TempDir()
+	write(t, game, ".codex/hooks.json", string(old), 0o644)
+	run(t, root, "--game", game)
+	body, err := os.ReadFile(filepath.Join(game, ".codex", "hooks.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(body)
+	if strings.Contains(s, "after-flix") || strings.Count(s, "bin/fge hook-flix-touch") != 1 ||
+		strings.Count(s, "bin/fge hook-flix-work") != 2 || strings.Count(s, "bin/fge hook-art-edit") != 1 {
+		t.Errorf(".codex/hooks.json を今の口へそろえていない: %s", s)
 	}
 }

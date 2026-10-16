@@ -81,6 +81,7 @@ pub mod SortingLayer {
     /// 層の前後は compose と同じ zRange の底の順（同じ層を 2 回渡したら後の列が手前）。同じ層の中は列の後ろほど
     /// 手前（ZStack.of に積む順と同じ）。UiFocusNav.hitTest（列の前ほど先に当たる）とは向きが逆。
     /// 窓の外を押せなくする層は、その層の列の先頭に画面全体の矩形を 1 つ置く（冒頭の例）。
+    /// 描いた木は見ない: ZStack.topLayer で送った物は送り先の層の列に置き、葉の中の z や zIndex の付け替えは前後に効かない。
     pub def pick(point: Vec2.Vec2, entries: List[(t, List[(a, Rect2.Rect2)])]): Option[a] with SortingLayer[t] =
         entries
             |> List.zipWithIndex

@@ -24,7 +24,7 @@ paths:
 - **画風を先に決めて `AGENTS.local.md` に 2〜3 行**（何を見て育った絵か・色・何をしないか）。既定の画風は無く、
   テンプレや他のゲームの見た目を持ってこない。満たせない性質は、理由をそこへ書いて例外にする。
 - 先に読む物: ドット絵は `.claude/skills/pixel-art/SKILL.md`（表のお題の行だけ）・格子に乗らない絵は
-  `.claude/skills/smooth-render/SKILL.md`・画風決めと部品探しは `.claude/skills/visual-dict`（box と circle で組み始める前に）。
+  `.claude/skills/smooth-render/SKILL.md`・新しい画面の画風決めと部品探しは `.claude/skills/visual-dict`（詳しい参考。box と circle で組み始める前に節だけ引く）。
 
 ## 良し悪しは人が決める
 

@@ -26,7 +26,7 @@ lint・フック・make の口で止まる決まりはここに書かない（�
 | Doc が壊れたら既定値で続けて知らせる | `DocJson.loadOr` + `Log.fellBackThen` / `warnThen` |
 | 直した後に絵を確かめる | `make render SHOT=<場面>` → 仕上げ `make reference-check` |
 | 直す前と後の絵・音・動画を比べる | `make compare BASE=<ref>` |
-| F8 のチケットから探す | `debug/annotations/<名前>/` の README・`annotation.json` |
+| F8 のチケットから探す | `debug/annotations/<名前>/` → `annotation.json` → `world.json` |
 | ゲームの定義を引く | `make src Q=<名前>` |
 | 重い処理を順に流す | `bin/fge heavy <コマンド>`（`--help`・`--status`・`--history`） |
 | 作業場を別の版のエンジンへ一時的に向ける | `bin/fge use-engine <版かパス>`・戻すは `--restore` |
