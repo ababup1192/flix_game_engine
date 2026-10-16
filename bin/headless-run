@@ -16,11 +16,14 @@
 # jar の置き場: build/headless/（git に入れない）。作る場所は build/headless/proj で、
 # ゲームの src を写した上に FgeHeadlessMain.flix を足す（ゲームの src には何も書かない）。
 # 2 本の make が同時に来ても作るのは 1 本だけ（build/headless/.lock で順番に。鍵に作り手の pid を
-# 書き、作り手が落ちていたら次の人が外す）。
+# 書き、作り手が落ちていたら次の人が外す。15 分待っても空かなければ flix run で流す）。
 # 作り直しは別名で書いてから mv するので、走っている JVM の jar は消えない。
+# 作れなかった時は build/headless/.failed に印を残し、src などがそれより新しくなるまで作り直さない
+# （作れない状態のまま毎回コンパイルを 2 回払わないため）。jar を作り直させたい時は rm -rf build/headless。
 #
 # 環境変数: FLIX_CMD = jar を作る flix（既定はこのエンジンの bin/flix）。1 語のパスで渡す
 # （相対パスはここで絶対パスにする — jar は build/headless/proj へ移って作るため）。
+#           JAVA = jar を流す java（既定は PATH の java、無ければエンジンの devbox の java）。
 set -euo pipefail
 
 if [ $# -ne 1 ]; then
@@ -86,8 +89,18 @@ is_stale() {
     [ -f "$proj/src/$main.flix" ] || return 0
     [ "$(build_dispatcher)" = "$(cat "$proj/src/$main.flix")" ] || return 0
     # lib/ と末尾に / を付ける — lib が symlink でも中まで見る。
-    [ -z "$(find src flix.toml lib/ -newer "$jar" -print 2>/dev/null | head -1)" ] || return 0
+    [ -z "$(newer_than "$jar")" ] || return 0
     return 1
+}
+
+# src・flix.toml・lib のうち、$1 より新しい物（1 件だけ）。-L で lib の中の symlink の先も見る。
+newer_than() {
+    find -L src flix.toml lib -newer "$1" -print 2>/dev/null | head -1
+}
+
+# 前に作れなかった時から、入力が何も変わっていないか。
+failed_before() {
+    [ -f "$out/.failed" ] && [ -z "$(newer_than "$out/.failed")" ]
 }
 
 # 作れたら 0。jar の時刻は「src を写し始めた時刻」にそろえる — 作っている最中に保存された src を
@@ -113,10 +126,20 @@ if is_stale; then
     mkdir -p "$out"
     lock="$out/.lock"
     # 鍵はフォルダ + 作り手の pid。作り手がもう居なければ（落ちた・止められた）外して取り直す。
+    # 外すのは別名への mv 1 回だけ — 2 人が同時に古い鍵を見ても、外せるのは 1 人で、
+    # その後に取り直された新しい鍵を消してしまうことはない。
+    waited=0
     until mkdir "$lock" 2>/dev/null; do
         owner=$(cat "$lock/pid" 2>/dev/null || true)
         if [ -n "$owner" ] && ! kill -0 "$owner" 2>/dev/null; then
-            rm -f "$lock/pid"; rmdir "$lock" 2>/dev/null || true
+            if mv "$lock" "$lock.stale.$$" 2>/dev/null; then rm -rf "$lock.stale.$$"; fi
+            continue
+        fi
+        [ "$waited" = 0 ] && echo "[headless-run] pid ${owner:-?} が jar を作っているので待つ" >&2
+        waited=$((waited + 2))
+        if [ "$waited" -ge 900 ]; then
+            echo "[headless-run] 15 分待っても鍵が空かないので flix run で流す（鍵: $lock）" >&2
+            exec "$flix" run --entrypoint "$entry"
         fi
         sleep 2
     done
@@ -124,18 +147,22 @@ if is_stale; then
     trap 'rm -f "$lock/pid"; rmdir "$lock" 2>/dev/null || true' EXIT
     # 待っている間に他の make が作り終えていれば、もう一度作らない。
     built_ok=1
-    if is_stale; then build_jar || built_ok=0; fi
+    if failed_before; then built_ok=0
+    elif is_stale; then
+        if build_jar; then rm -f "$out/.failed"
+        else built_ok=0; touch -r "$out/.started" "$out/.failed"; fi
+    fi
     rm -f "$lock/pid"; rmdir "$lock" 2>/dev/null || true
     trap - EXIT
     if [ "$built_ok" = 0 ]; then
-        echo "[headless-run] jar を作れなかったので flix run で流す（上のコンパイルのエラーを見る）" >&2
+        echo "[headless-run] jar を作れなかったので flix run で流す（前に作った時のエラーを見る。直したら src が新しくなり、次から作り直す）" >&2
         exec "$flix" run --entrypoint "$entry"
     fi
 fi
 
 # java の旗は bin/flix と同じ（深い再帰のための -Xss32m・ヒープは物理メモリの 50%）。描き出しは窓を開かないので headless。
-java_cmd="java"
-if ! java -version >/dev/null 2>&1; then
+java_cmd="${JAVA:-java}"
+if ! "$java_cmd" -version >/dev/null 2>&1; then
     java_cmd="$engine/.devbox/nix/profile/default/bin/java"
 fi
 FGE_ENTRY="$entry" exec "$java_cmd" -Xss32m -XX:MaxRAMPercentage=50 -Djava.awt.headless=true -jar "$jar"
