@@ -14,6 +14,7 @@
     {"src": "agents-pack/skills", "dst": ".claude/skills"},
     {"src": "agents-pack/skills", "dst": ".agents/skills"},
     {"src": "agents-pack/rules", "dst": ".claude/rules"},
-    {"src": "bin/lint-rules", "dst": "bin/lint-rules"}
+    {"src": "bin/lint-rules", "dst": "bin/lint-rules"},
+    {"src": "agents-pack/agent-eval", "dst": "agent-eval"}
   ]
 }

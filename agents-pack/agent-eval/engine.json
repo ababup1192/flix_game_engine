@@ -1,0 +1,105 @@
+{
+  "version": 1,
+  "note": "エンジン共通のお題（どのゲームの足元でも同じ道具が当たるべき物）。bin/fge agent-eval が読む（make agent-eval）。prompt は依頼の言葉だけにし、道具の名前を入れない。expect は答えに出てほしい道具（1 つ 1 点）、avoid は古い書き方（打ち消しの無い行に出たら 1 点引く）。新しい仕組みを入れた人は、早見表の 1 行と一緒にここへお題を 1 本足す。",
+  "tasks": [
+    {
+      "id": "hud-timer",
+      "prompt": "画面の右上に残り時間の表示を足したい。ゲームの絵（爆発など）がどれだけ手前に出ても、この表示は隠れないようにしたい",
+      "expect": [
+        {"re": "withHudView", "why": "App.withHudView"},
+        {"re": "ZStack\\.(of|leaf)", "why": "ZStack の木（of / leaf）"}
+      ],
+      "avoid": [
+        {"re": "\\bz[A-Z]\\w*\\(\\)\\s*(:\\s*Int32\\s*)?=\\s*[1-9]\\d{2,}|\\bzIndex\\s*[=:]\\s*[1-9]\\d{2,}", "why": "z の大きな数を直に書く"}
+      ]
+    },
+    {
+      "id": "topdown-behind-tree",
+      "prompt": "見下ろしの町で、人が木の裏に回ったら木に隠れ、手前に来たら木の前に出るようにしたい",
+      "expect": [
+        {"re": "Depth\\.orderAt|orderAt", "why": "Depth.orderAt"},
+        {"re": "ZStack\\.zIndex|zIndex\\(", "why": "ZStack.zIndex"}
+      ],
+      "avoid": [
+        {"re": "Depth\\.(Bands|place)", "why": "Depth.Bands / place"},
+        {"re": "zShifted|zMapped", "why": "z の付け替え"}
+      ]
+    },
+    {
+      "id": "tooltip-front",
+      "prompt": "カードの一覧の中で、選んだカードの説明の窓を、ほかのどの部品よりも必ず手前に出したい。窓が画面からはみ出さない所に置きたい",
+      "expect": [
+        {"re": "topLayer", "why": "ZStack.topLayer"},
+        {"re": "UiTooltip", "why": "UiTooltip"}
+      ],
+      "avoid": [
+        {"re": "\\bz[A-Z]\\w*\\(\\)\\s*(:\\s*Int32\\s*)?=\\s*[1-9]\\d{2,}|\\bzIndex\\s*[=:]\\s*[1-9]\\d{2,}", "why": "z の大きな数を直に書く"}
+      ]
+    },
+    {
+      "id": "shake-scale-scene",
+      "prompt": "被弾したとき、画面全体を一瞬少し縮めてから戻す演出を入れたい",
+      "expect": [
+        {"re": "mapItems", "why": "ZStack.mapItems"},
+        {"re": "scaledAllAround", "why": "Render.scaledAllAround"}
+      ],
+      "avoid": [
+        {"re": "zShifted|zMapped", "why": "z の付け替え"}
+      ]
+    },
+    {
+      "id": "pause-layer",
+      "prompt": "ポーズ画面を足したい。ゲームの絵と会話の窓のどちらよりも上に重ねたい",
+      "expect": [
+        {"re": "SortingLayer", "why": "SortingLayer の表"},
+        {"re": "compose|topLayer", "why": "SortingLayer.compose / topLayer"}
+      ],
+      "avoid": [
+        {"re": "\\bz[A-Z]\\w*\\(\\)\\s*(:\\s*Int32\\s*)?=\\s*[1-9]\\d{2,}|\\bzIndex\\s*[=:]\\s*[1-9]\\d{2,}", "why": "z の大きな数を直に書く"},
+        {"re": "leafAbsolute|SortingLayer\\.z\\(", "why": "移行の口"}
+      ]
+    },
+    {
+      "id": "doc-fallback-log",
+      "prompt": "設定の JSON が壊れていたら既定値で続け、ログに 1 行だけ知らせたい",
+      "expect": [
+        {"re": "loadOr|decodeObject", "why": "DocJson.loadOr"},
+        {"re": "fellBackThen|warnThen|warnAllThen", "why": "Log.*Then"}
+      ],
+      "avoid": [
+        {"re": "let\\s+_\\s*=", "why": "let _ ="}
+      ]
+    },
+    {
+      "id": "check-render-after-doc",
+      "prompt": "Doc（JSON）の数値を少し直した。絵が崩れていないかを確かめたい",
+      "expect": [
+        {"re": "make render SHOT|render SHOT=", "why": "make render SHOT="},
+        {"re": "reference-check", "why": "make reference-check"}
+      ],
+      "avoid": [
+        {"re": "解像度を下げ|_FRAMES", "why": "速さのための回り道"}
+      ]
+    },
+    {
+      "id": "ticket-find-doc",
+      "prompt": "F8 で囲って書き出した注釈チケットが届いた。どの Doc のどこを直せばよいか探したい",
+      "expect": [
+        {"re": "README", "why": "チケットの README"},
+        {"re": "world\\.json", "why": "world.json"},
+        {"re": "annotation\\.json|withAnnotationContext", "why": "文脈（annotation.json の context）"}
+      ],
+      "avoid": []
+    },
+    {
+      "id": "sfx-on-timeline",
+      "prompt": "演出の 0.4 秒目と 1.2 秒目に効果音を鳴らしたい。秒は Doc から調整できるようにしたい",
+      "expect": [
+        {"re": "Timeline", "why": "Timeline のクリップ"},
+        {"re": "startedBetween", "why": "Timeline.startedBetween"},
+        {"re": "withAudio", "why": "App.withAudio"}
+      ],
+      "avoid": []
+    }
+  ]
+}

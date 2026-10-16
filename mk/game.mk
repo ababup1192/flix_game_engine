@@ -34,7 +34,7 @@ else
 FLIX   := "$(ENGINE)/bin/flix"
 endif
 
-.PHONY: help status run debug test build check render render-all gallery-sounds reference-check reference-update loc api src src-index hooks check-docs-sync compare
+.PHONY: help status run debug test build check render render-all gallery-sounds reference-check reference-update loc api src src-index hooks check-docs-sync compare agent-eval agent-eval-compare
 
 # 共通の口の一覧。engine を上げるとここも一緒に新しくなる
 # （ゲーム側の Makefile へ写さないので、口が増えても書き足しに回らなくて済む）。
@@ -62,6 +62,8 @@ help:
 	@echo "  make hooks              コミット時のゲートをこの clone に配線する（clone ごとに 1 回）"
 	@echo "  make compare BASE=<ref> [SHOTS=\"a b\" | VIDEOS=\"x-video\"]"
 	@echo "                          基準の版と今を同じ描き出しで並べ、差を debug/compare/ へ（index.html つき）"
+	@echo "  make agent-eval [ONLY=id,…] [LABEL=名前]  何も教えていない claude にお題（agent-eval/*.json）を渡し、選んだ道具を採点して表に"
+	@echo "  make agent-eval-compare A=前 B=後  2 回の点・トークン・ターン・読んだ数を並べる"
 	@echo ""
 	@echo "同じマシンで何本も並んで作業するときの道具 (bin/fge):"
 	@echo "  bin/fge heavy <コマンド...>   重い処理を鍵 (/tmp/fge-heavy.lock) で 1 本ずつ流す。--status で持ち主と列"
@@ -244,6 +246,22 @@ compare:
 	  $(if $(filter command line,$(origin SHOTS)),--shots "$(SHOTS)") \
 	  $(if $(VIDEOS),--videos "$(VIDEOS)") \
 	  $(if $(BASE_ENGINE),--base-engine "$(BASE_ENGINE)")
+
+# 文書・スキル・早見表で、何も教えていないエージェントが正しい道具を選べるかを測る。
+# お題は agent-eval/*.json（engine.json は engine から配られる共通・それ以外はゲーム固有）。
+# claude -p を 1 お題 1 本（読むだけの道具で）走らせ、記録と表を debug/agent-eval/<LABEL>/ へ。
+# engine の docs と engine_world/src は --add-dir で読めるようにする（早見表がそこを指すため）。
+# WhyNot: 鍵（同時に重い処理を流さない約束）をここで取らないのは、取り方がマシンごとに違うため。
+#   何本も流すときは呼ぶ側で鍵を通す。
+agent-eval:
+	@ls agent-eval/*.json >/dev/null 2>&1 || { echo "[agent-eval] agent-eval/*.json がありません（engine 側で make sync-agents GAME=$(CURDIR)）"; exit 1; }
+	@fge=bin/fge; [ -x "$$fge" ] || fge="$(ENGINE)/bin/fge"; \
+	"$$fge" agent-eval $(foreach f,$(wildcard agent-eval/*.json),--tasks $(f)) --add-dir "$(ENGINE)" \
+		$(if $(ONLY),--only $(ONLY)) $(if $(LABEL),--label $(LABEL)) $(if $(JOBS),--jobs $(JOBS))
+
+agent-eval-compare:
+	@test -n "$(A)" -a -n "$(B)" || { echo "usage: make agent-eval-compare A=<前の LABEL> B=<後の LABEL>"; exit 1; }
+	@fge=bin/fge; [ -x "$$fge" ] || fge="$(ENGINE)/bin/fge"; "$$fge" agent-eval --compare $(A) $(B)
 
 # 色票（Studio の編集画面が読む写し）。PALETTE を決めたゲームにだけ口が生える。
 # render のたびに無条件で走らせると、絵を描くのと同じだけのコンパイル時間を二重に払う。
