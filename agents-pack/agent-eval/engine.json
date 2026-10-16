@@ -202,7 +202,7 @@
       "prompt": "村の女の子の歩きをドット絵（sprite.json・4 方向 × 3 コマ）で描いてほしい。描き始める前に何を読み、どう進める？",
       "expect": [
         {"re": "pixel-art", "why": "短いスキル pixel-art を読む"},
-        {"re": "walk\\.md", "why": "表からお題の種類（歩き）のファイルを読む"}
+        {"re": "walk\\.md|pixel-art/walk|pixel-art の walk", "why": "表からお題の種類（歩き）のファイルを読む"}
       ],
       "avoid": [
         {"re": "retro-pixel|px-character|visual-dict", "why": "長いスキル（詳しい参考）を既定で読む"}

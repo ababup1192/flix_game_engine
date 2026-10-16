@@ -37,8 +37,8 @@
   "sameAa": 10.0,
   "sameColorRatio": 1.6,
   "handHints": {
-    "coarse": ".claude/skills/retro-pixel（色の予算・タイルと材質）",
-    "fine": ".claude/skills/retro-pixel（色の予算・ディザ）",
+    "coarse": ".claude/skills/pixel-art（お題の種類の表）・色の予算とタイルは retro-pixel",
+    "fine": ".claude/skills/pixel-art（お題の種類の表）・色の予算とディザは retro-pixel",
     "smooth": ".claude/skills/smooth-render（グラデ・ぼかし・banding）"
   },
   "handGuess": [

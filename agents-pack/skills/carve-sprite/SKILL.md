@@ -10,7 +10,7 @@ description: "詳しい参考（既定では読まない。歩きはまず /pixe
 違わない**し、歩きは 4 方向で辻褄が合う。
 
 元の 3 面図を自分で打つとき・彫った後に画素を直すときは、
-先に `.claude/skills/retro-pixel/SKILL.md` を読む（色の予算・等身・輪郭とディザ）。
+先に `.claude/skills/pixel-art/SKILL.md` の表から歩きのファイルを読む（色の予算・ディザを決めるなら `retro-pixel` も）。
 
 ## 使い方
 

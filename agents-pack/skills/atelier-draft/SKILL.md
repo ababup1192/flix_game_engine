@@ -7,9 +7,9 @@ description: "assets のスロットに対する素材候補を atelier/ に複�
 
 引数: スロット（Doc の `entityId` または `assets/` のパス）+ 案数 N + 方向性（例:「もっと暖かい色」「短く鋭い音」）。
 
-**ドット絵（`*.sprite.json`）の候補なら、画素を 1 つ置く前に `.claude/skills/retro-pixel/SKILL.md` を読む。**
+**ドット絵（`*.sprite.json`）の候補なら、画素を 1 つ置く前に `.claude/skills/pixel-art/SKILL.md` を読み、表からお題の種類のファイルだけを読む。**
 案づくりをサブエージェントへ分けるときは skill の自動発動が効かないので、
-**prompt で `/visual-dict` と `/retro-pixel` を名指しして読ませる**（読まずに打つと N 案が全部同じ癖で崩れる）。
+**prompt で `/pixel-art` を名指しして読ませる**（読まずに打つと N 案が全部同じ癖で崩れる）。
 
 ## 手順
 

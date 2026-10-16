@@ -97,7 +97,7 @@ SubagentStop で走り、他人が編集中の赤で止まる。常駐 repl の�
 画風はゲームごとに決め直す（既定は無い。テンプレどうしでもそろえない）。
 図形プリミティブ（RawDraw）は材料。View は完成品の部品で組む。
 
-絵を書く前に必ず `/visual-dict` を引く（本文は `.claude/skills/visual-dict/`。
+新しい画面（View）を書く前に `/visual-dict` を引く（ドット絵の sprite.json は `/pixel-art`。本文は `.claude/skills/visual-dict/`。
 まず `SKILL.md` の手順、部品選びは `reference.md` と `unused-parts.md`）。
 下限の全文は [docs/drawing-floor.md](docs/drawing-floor.md)。
 音も絵と同じ強さで意識する（[docs/audio.md](docs/audio.md)）。
@@ -144,7 +144,7 @@ git log 掘りやテスト回し直しから始めない。
 | いつ | 必ず引く |
 |---|---|
 | 新しいゲームを作り始めるとき・画風がまだ決まっていないとき | `/style-interview` |
-| View / 背景 / キャラ / エフェクトを書く**前** | `/visual-dict` |
+| View / 背景 / エフェクトの画面を書く**前**（ドット絵の sprite.json は下の `/pixel-art`） | `/visual-dict` |
 | ドット絵（sprite.json）のキャラ・歩き・背景・小物を描く・直す・自己批評するとき（表でお題の種類のファイルだけ読む） | `/pixel-art` |
 | pixel-art で足りない時だけ（詳しい参考: 色の予算・タイル地形は `/retro-pixel`・48px 以上の顔や四足は `/px-character`） | `/retro-pixel` `/px-character` |
 | Flix を書く前・テストを書く前 | `/flix-docs` |
@@ -155,7 +155,7 @@ git log 掘りやテスト回し直しから始めない。
 | templates/ を足す・直すとき | `/add-template` |
 | バージョンを上げる・公開するとき | `/release` |
 
-**絵を書き始める前に `/visual-dict` を引いていない場合、その作業は未着手として扱う。**
+**View を書き始める前に `/visual-dict` を、ドット絵を打つ前に `/pixel-art` を引いていない場合、その作業は未着手として扱う。**
 
 ### スキルを持たないエージェントへ
 
