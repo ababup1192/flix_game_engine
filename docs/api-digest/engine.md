@@ -72,6 +72,10 @@
   `pub def alFormat(channels: Int32, bitsPerSample: Int32): Int32`
 - Find the byte offset of the "data" chunk in WAV byte data.
   `pub def findDataChunkOffset(getByte: Int32 -> Int8 \ ef, getInt32LE: Int32 -> Int32 \ ef, limit: Int32, offset: Int32): Option[Int32] \ ef`
+- WAV の中の名前 a b c d（4 文字の ASCII。"smpl" なら 115 109 112 108）のチャンクの位置を探す。
+  `pub def findChunkOffset(a: Int8, b: Int8, c: Int8, d: Int8, getByte: Int32 -> Int8 \ ef, getInt32LE: Int32 -> Int32 \ ef, limit: Int32, offset: Int32): Option[Int32] \ ef`
+- WAV のループ点（"smpl" チャンクの最初のループ）。返すのは (頭, 終わり) のサンプル番号で、
+  `pub def loopPointsOf(getByte: Int32 -> Int8 \ ef, getInt32LE: Int32 -> Int32 \ ef, limit: Int32): Option[(Int32, Int32)] \ ef`
 
 ## BootFont — `engine/src/render/BootFont.flix`
 - フォントの登録名。ゲームが project.json で付ける名前と衝突しない綴りにしてある。

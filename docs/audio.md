@@ -127,6 +127,26 @@ App.make(initialWorld)
 
 単発の効果音（当たった・取った・場面が変わった）は今までどおり `App.withAudio` で書く。
 
+### 曲の頭を 1 回だけ鳴らして、後ろの輪だけを回す（ループ点）
+
+イントロのある曲は、**1 本の WAV にループ点（`smpl` チャンク）を入れて**鳴らす。頭と輪を 2 本の音に割り、
+「頭の長さを過ぎたら輪へ切り替える」時刻をゲームが持つと、手で写した長さと実際の音の長さがずれたり、
+フレームの刻みで継ぎ目に隙間が空いたりする。ループ点なら継ぎ目は音の側で決まり、ゲームは 1 つの名前を
+宣言し続けるだけでよい（Godot の WAV の取り込み・OpenAL Soft の `AL_SOFT_loop_points` と同じ考え方）。
+
+```flix
+// 書き出し（SfxRender）: 譜面のループ点のサンプル番号を渡す
+SfxSynth.renderLooped(cfg(), "assets/sfx", "bgmFight", List.append(intro, body), List.length(intro))
+// 鳴らす側（Sfx.hums）: 頭から終わりまで、同じ名前を宣言し続ける
+{ name = "bgmFight", volume = 0.6, pitch = 1.0 } :: Nil
+```
+
+- 実機（render_gl）は読み込みのときに `smpl` の最初のループ `[頭, 終わり)` をバッファへ付ける。
+  `AL_LOOPING` が ON の間、頭から 1 回鳴った後はループの頭へ戻る。拡張の無い環境では全体を繰り返す。
+- 動画の書き出し（`AudioMixdown.mixdownLooped`）も同じ回り方をする。ループ点は `AudioMixdown.loadLoopStart` で読む。
+- `smpl` を読む口は `AudioUtil.loopPointsOf`（終わりを含まない形で返す）。外のツールで作った WAV でも、
+  `smpl` に前へ進むループが 1 本あれば同じように回る。
+
 ## 音の通り道（`App.withMixer` と mixer.json）
 
 音が増えてくると「効果音が鳴ると BGM に埋もれる」「会話の間は曲を遠くしたい」「ルーレットのカチッが
@@ -207,8 +227,8 @@ App.make(initialWorld)
 
 ゲーム側は `src/render/SfxRender.flix` に「音のデザイン」だけを書き、`SceneRender.all` から
 `renderAll` を呼んで `assets/sfx/` へ WAV を書き出す（`make render-all`）。合成と WAV エンコードは
-engine_tools 側の `SfxSynth.wavBytes` / `writeBytes` / `renderSet` が持つので、ゲーム側は
-波形の足し算だけ書けばよい。
+engine_tools 側の `SfxSynth.wavBytes` / `writeBytes` / `renderSet`（ループ点つきの曲は `renderLooped`）が持つので、
+ゲーム側は波形の足し算だけ書けばよい。
 
 `templates/race-starter/src/render/SfxRender.flix` と同じ組み立て方の抜粋:
 

@@ -59,4 +59,25 @@ mod TestSfxSynth {
     def testWavDeterministic(): Unit \ Assert =
         let voice = SfxSynth.fade(SfxSynth.tone(cfg(), 2.0, 0.4, 20));
         Assert.assertEq(expected = SfxSynth.wavBytes(cfg(), voice), SfxSynth.wavBytes(cfg(), voice))
+
+    /// ループ点つきの WAV: smpl から [頭, 終わり) が読め、RIFF の長さの欄がファイルの長さと合う。
+    /// 頭が範囲外なら smpl を付けない（ふつうの WAV と同じバイト）。
+    @Test
+    def testLoopedWavCarriesItsLoopPoints(): Unit \ Assert =
+        let samples = List.repeat(10, 0.0);
+        let looped = SfxSynth.wavBytesLooped(cfg(), samples, 4);
+        let read = bytes -> {
+            let v = List.toVector(bytes);
+            let at = i -> Vector.get(i, v);
+            AudioUtil.loopPointsOf(i -> Int32.truncateToInt8(at(i)),
+                                   i -> at(i) + at(i + 1) * 256 + at(i + 2) * 65536 + at(i + 3) * 16777216,
+                                   Vector.length(v))
+        };
+        let riff = List.drop(4, looped) |> List.take(4);
+        Assert.assertEq(expected = (Some((4, 10)), None, true, le32Of(List.length(looped) - 8)),
+            (read(looped), read(SfxSynth.wavBytes(cfg(), samples)),
+             SfxSynth.wavBytesLooped(cfg(), samples, 10) == SfxSynth.wavBytes(cfg(), samples), riff))
+
+    def le32Of(v: Int32): List[Int32] =
+        Int32.remainder(v, 256) :: Int32.remainder(v / 256, 256) :: Int32.remainder(v / 65536, 256) :: v / 16777216 :: Nil
 }

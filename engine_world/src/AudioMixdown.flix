@@ -3,7 +3,8 @@
 // 中身は App と同じ AudioMixer.step を 1 コマずつ呼ぶだけなので、実機と同じ規則で混ざる:
 //
 // - 一発の音は 1 つの名前につき同時に 1 本（鳴り直すと頭から = OpenAL の 1 音源と同じ）。
-// - 鳴り続ける音は宣言が続く間ループし、高さ（pitch）はテープの速さとして読み進める。
+// - 鳴り続ける音は宣言が続く間ループし、高さ（pitch）はテープの速さとして読み進める。WAV にループ点
+//   （smpl チャンク）があれば mixdownLooped で頭のイントロを 1 回だけ鳴らし、後ろの輪だけを回す。
 // - バスの音量・ダッキングはコマの間をなめらかにつなぐ。ローパスはバスごとに掛ける
 //   （OpenAL の EFX の lowpass と同じ「5000Hz より上を gainHF 倍にする」棚の形）。
 //
@@ -22,7 +23,14 @@ pub mod AudioMixdown {
 
     /// コマの並びを sampleRate の波形へ書き出す。sounds に無い名前は鳴らない（実機と同じ）。
     pub def mixdown(sampleRate: Int32, fps: Float64, sounds: Map[String, Vector[Float64]],
-                    frames: List[MixFrame]): Vector[Float64] = region rc {
+                    frames: List[MixFrame]): Vector[Float64] =
+        mixdownLooped(sampleRate, fps, sounds, Map.empty(), frames)
+
+    /// mixdown に、鳴り続ける音のループ点を足した物。loopStarts = 名前 → 繰り返しの頭のサンプル番号
+    /// （loadLoopStart で WAV の smpl チャンクから読む）。頭より前（曲のイントロ）は 1 回だけ鳴り、
+    /// 終わりまで読んだら頭へ戻る —— 実機の OpenAL（AL_SOFT_loop_points）と同じ回り方。表に無い名前は全部を繰り返す。
+    pub def mixdownLooped(sampleRate: Int32, fps: Float64, sounds: Map[String, Vector[Float64]],
+                          loopStarts: Map[String, Int32], frames: List[MixFrame]): Vector[Float64] = region rc {
         let rate = Int32.toFloat64(sampleRate);
         let count = List.length(frames);
         let total = Float64.tryToInt32(Float64.ceil(Int32.toFloat64(count) / fps * rate)) |> Option.getWithDefault(0);
@@ -66,7 +74,8 @@ pub mod AudioMixdown {
                     else match Map.get(name, sounds) {
                         case Some(v) =>
                             let pos = Map.get(name, loops) |> Option.getWithDefault(0.0);
-                            addLoop(v, pos, h#pitch, h#volume, span, buf)
+                            let head = Map.get(name, loopStarts) |> Option.getWithDefault(0);
+                            addLoop(v, head, pos, h#pitch, h#volume, span, buf)
                         case None => ()
                     }, declared);
                 let shelf0 = Map.get(bus, fl) |> Option.getWithDefault(shelfOf(1.0, rate));
@@ -108,16 +117,18 @@ pub mod AudioMixdown {
         List.range(0, span) |> List.forEach(k ->
             if (pos + k < n) Array.put(Array.get(k, buf) + Vector.get(pos + k, v), k, buf) else ())
 
-    /// 続く音を読み位置 pos から高さ pitch の速さで読み、音量 volume で足す（端は頭へ回る）。
-    def addLoop(v: Vector[Float64], pos: Float64, pitch: Float64, volume: Float64, span: Int32, buf: Array[Float64, r]): Unit \ r =
+    /// 続く音を読み位置 pos から高さ pitch の速さで読み、音量 volume で足す（端はループの頭 head へ回る）。
+    def addLoop(v: Vector[Float64], head: Int32, pos: Float64, pitch: Float64, volume: Float64, span: Int32, buf: Array[Float64, r]): Unit \ r =
         let n = Vector.length(v);
+        let first = if (head > 0 and head < n) head else 0;
+        let wrap = i -> if (i < n) i else first + Int32.modulo(i - first, n - first);
         if (n == 0) ()
         else List.range(0, span) |> List.forEach(k -> {
             let p = pos + Float64.max(0.01, pitch) * Int32.toFloat64(k);
             let i = Float64.tryToInt32(floorF(p)) |> Option.getWithDefault(0);
             let frac = p - floorF(p);
-            let a = Vector.get(Int32.modulo(i, n), v);
-            let b = Vector.get(Int32.modulo(i + 1, n), v);
+            let a = Vector.get(wrap(i), v);
+            let b = Vector.get(wrap(i + 1), v);
             Array.put(Array.get(k, buf) + (a + (b - a) * frac) * volume, k, buf)
         })
 
@@ -199,6 +210,19 @@ pub mod AudioMixdown {
                         a + (at(Int32.min(frames - 1, k + 1)) - a) * (p - floorF(p))
                     })
             }
+        }
+
+    /// WAV のループ点の頭（smpl チャンク。AudioUtil.loopPointsOf）を、sampleRate で読み直したときの
+    /// サンプル番号で返す（loadWav と同じ読み直し）。ループ点の無い WAV・読めないファイルは None。
+    pub def loadLoopStart(sampleRate: Int32, path: String): Option[Int32] \ IO =
+        let bytes = Files.readAllBytes(Paths.get(path));
+        let hdr = ByteBuffer.wrap(bytes);
+        discard hdr.order(ByteOrder.LITTLE_ENDIAN);
+        if (hdr.limit() < 44) None
+        else {
+            let ratio = Int32.toFloat64(hdr.getInt(24)) / Int32.toFloat64(Int32.max(1, sampleRate));
+            AudioUtil.loopPointsOf(i -> hdr.get(i), i -> hdr.getInt(i), hdr.limit())
+                |> Option.flatMap(points -> { let (start, _) = points; Float64.tryToInt32(Float64.round(Int32.toFloat64(start) / ratio)) })
         }
 
     /// 波形のいちばん大きな振れ幅（0〜）。割れの確かめと、書き出す前の音量合わせに使う。

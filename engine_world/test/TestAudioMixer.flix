@@ -118,6 +118,14 @@ mod TestAudioMixer {
         let out = AudioMixdown.mixdown(10, 10.0, sounds, mixFrame(Nil, "hum" :: Nil) :: mixFrame(Nil, "hum" :: Nil) :: mixFrame(Nil, Nil) :: Nil);
         Assert.assertEq(expected = Vector#{0.5, 0.5, 0.0}, out)
 
+    /// ループ点のある続く音は、頭（イントロ）を 1 回だけ鳴らし、終わりからはループの頭へ戻る。
+    @Test
+    def testMixdownLoopsBackToTheLoopStart(): Unit \ Assert =
+        let sounds = Map#{"hum" => Vector#{0.1, 0.2, 0.3, 0.4}};
+        let hum = List.repeat(7, mixFrame(Nil, "hum" :: Nil));
+        Assert.assertEq(expected = (Vector#{0.1, 0.2, 0.3, 0.4, 0.3, 0.4, 0.3}, Vector#{0.1, 0.2, 0.3, 0.4, 0.1, 0.2, 0.3}),
+            (AudioMixdown.mixdownLooped(10, 10.0, sounds, Map#{"hum" => 2}, hum), AudioMixdown.mixdown(10, 10.0, sounds, hum)))
+
     /// 鳴り続ける音が止まれば、曲は releaseSeconds で元へ戻る。
     @Test
     def testMusicReturnsAfterSustainedStops(): Unit \ Assert =

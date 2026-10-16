@@ -71,7 +71,9 @@
 | 撃つたびに出る効果を発生・寿命回収・描画で回す | Fx（burst / expire / drawAll）（実例: `templates/race-starter/src/World.flix`） |
 | 値を滑らかに動かす | EcsTween / Curve |
 | 整数を 1 つずつ動かす（数え下がり・数え上がり・巡って止まるルーレット） | EcsTween（steppedInt） |
-| 演出の時刻表（重なってよい拍の並び・音を鳴らす拍・全体の秒）を Doc の秒から組む | Timeline（クリップ: toClips / startedBetween / durationOf） |
+| 演出の時刻表（動き・効果音・待ちを 1 本に書く。拍・小節で書いて秒はテンポから。音を絵と同じクリップに付ける） | Timeline（build / append / join / atEndOf / withSound / waitFor → stateOf / progressOf / soundsOn。手順は `engine_world/src/Timeline.flix` 冒頭） |
+| 曲に乗せる（次の小節の頭まで伸ばす・頭から n 拍目まで） | Timeline（Duration.ToNextBar / ToBeat。テンポは Timeline.tempo に譜面の bpm を渡す） |
+| 演出の時刻表を Doc の秒の並びから組むだけ（音は別に鳴らす古い形） | Timeline（クリップ: toClips / startedBetween / durationOf） |
 | ヒットストップ・スローモーション（ゲームの時計を一時的に遅くする） | TimeScale |
 | 長押しで決める・飛ばす（会話のスキップ・消去の確認） | HoldPress |
 | スプライトをコマ送りする | Anim（実例: `templates/platformer-starter/src/View.flix`） |
@@ -135,6 +137,7 @@
 | 効果音を鳴らしたい | App.withAudio（前後 World の差分から鳴らす名前の List を返す。詳しくは [audio.md](audio.md)。実例: `templates/game-starter/src/Main.flix`） |
 | 鳴り続ける音を出したい（走行音・風・雨・炎・足音のループ） | App.withSustained（World から「鳴り続けていてほしい音」を宣言。音量と高さを毎フレーム与える。詳しくは [audio.md](audio.md)。実例: `templates/race-starter/src/Sfx.flix`） |
 | BGM を流す・止める・音量やループを変える | AudioStreamPlayer（play / stop / setVolume / setLooping。詳しくは [audio.md](audio.md)） |
+| 曲の頭（イントロ）を 1 回だけ鳴らし、後ろの輪だけを回す | WAV のループ点（SfxSynth.renderLooped で smpl チャンクを書く・実機と AudioMixdown.mixdownLooped が読む。[audio.md](audio.md) の「ループ点」） |
 | BGM をだんだん出す・消す・入れ替える（音量カーブ） | AudioFade |
 | 音をバス（曲・効果音・UI・声）に分けて音量を決めたい・効果音の間だけ BGM を下げたい（ダッキング）・高い音を削って籠もらせたい（ローパス）・同じ音の細かい連打を間引きたい・場面ごとの聞こえ方を切り替えたい（スナップショット） | App.withMixer + AudioMixer（mixer.json は AudioMixerDoc。詳しくは [audio.md](audio.md)） |
 | 実機と同じ規則で混ぜた音を WAV に書き出したい（動画の音・聞き比べ） | AudioMixdown（コマごとの withAudio / withSustained / withMixer の結果から波形を作る） |
@@ -251,7 +254,7 @@
 - **AudioFade** — 進行度 t から音量をひとつ決める（フェードイン・アウト・クロスフェード）。
 - **AudioMixer** — 音の通り道。バス・振り分け・ダッキング・ローパス・クールダウン・スナップショットを State を持ち回す純関数で決める（App.withMixer と AudioMixdown が同じ step を呼ぶ）。
 - **AudioMixerDoc** — mixer.json の fail-open 読み込み（schema は docs/mixer.schema.json）。
-- **AudioMixdown** — AudioMixer を通した音を、ウィンドウ無しで 1 本の波形へ書き出す（実機と同じ規則: 1 つの名前は同時に 1 本・鳴り直すと頭から）。
+- **AudioMixdown** — AudioMixer を通した音を、ウィンドウ無しで 1 本の波形へ書き出す（実機と同じ規則: 1 つの名前は同時に 1 本・鳴り直すと頭から・ループ点のある曲は mixdownLooped で頭を 1 回だけ鳴らす）。
 - **Calendar** — ゲームの中の時計と暦。実時間の秒を分・時・日・季節・年へ換算し、日またぎを合図する。
 - **Clock** — 経過時間を貯めて「一定間隔で合図」「残り時間を数える」を数値だけで扱う。
 - **Lifetime** — 一過性のもの（発火して時刻で進み寿命で消える）の「誕生時刻＋長さ」から経過・進行(0..1)・残り・生存を now の純関数で導く。得点ポップ等の表示期間や Fx.Burst の寿命に使う（now から導くので巻き戻しに強い）。
@@ -259,7 +262,7 @@
 - **EcsTween** — 値をある値から別の値へ、時間をかけて滑らかに動かす（補間する）。整数を 1 つずつ動かすのは steppedInt（数え下がり・ルーレット）。
 - **Journey** — 脚(出発点・行き先・速さ)の列を「時刻の純関数」で歩く。到着判定(done)と絵の位置(pos)を同じ戻り値で返す。
 - **Motion** — 物の動かし方の小さな道具箱（等速移動と往復運動）。
-- **Timeline** — 区間(名前+長さ)の列を「時刻の純関数」でサンプルする。範囲外は None = 終わり。履歴・巻き戻しは Worldline（別物）。演出の時刻表には重なってよいクリップ（tag + start + dur。tag はゲームの enum）を使い、音は startedBetween、全体の秒は durationOf で引く。
+- **Timeline** — 演出の時刻表。動き・効果音・待ちを 1 本に並べ（append / join / atStartOf / atEndOf / withDelay / waitFor）、長さは秒・拍・小節と ToNextBar / ToBeat で書く。build が秒の表を組み、書き間違い（同じ名前・前方参照・待ちに音など）は Err。描く側は stateOf / progressOf、鳴らす側は soundsOn（Enter / Play / Seek・二分探索）で同じクリップを読む。待ちは playheadOf / resume。小さい部品として区間(Seg / at)とクリップ(Clip / toClips / startedBetween / durationOf)も持つ。履歴・巻き戻しは Worldline（別物）。
 - **TimeScale** — ヒットストップ・スロー。合図からの実秒で「止める → 遅く流す → 等速へ戻す」を決め、毎フレームの dt を gameDt で直す（ゲームの時計ごと遅くする）。光や揺れは realAt の実秒で動かせる。
 - **HoldPress** — 長押しで決める。押している間だけ秒を貯め、満ちたフレームで 1 回だけ合図、合図の後は離すまで貯めない。押した瞬間の拍そのものは InputEdge。
 - **SceneSeq** — カット列の逐次シーケンサ骨格。perform（カットを 1 コマ演じる）と idle（尽きたあと時間だけ流す）を注入し、Skip・打ち切りは notes に残す（fail-open だが無音ではない）。
@@ -270,7 +273,7 @@
 | 抽象 | 決め手 | 向く場面 |
 |---|---|---|
 | Timeline | 尺が既知。時刻 t から現在区間を引くだけの純関数 | 振り付け（歩く→しゃがむ→戻る） |
-| Timeline（クリップ） | 尺が既知で拍が重なる。拍の頭と音の拍を引く | 演出の時刻表（巡る → 止まる → 飛ぶ → 弾む） |
+| Timeline（build） | 尺が既知（待ちは waitFor で挟める）で拍が重なる。絵と音を同じクリップから引く | 演出の時刻表（WARNING → カットイン → ターン 1・会話の窓・連鎖） |
 | Journey | 脚の列（出発点・行き先・速さ）の時刻純関数 | 経路の現在地・到着判定 |
 | Replay | 入力が固定。入力列を tick へ流す再生 | プレイの再現・自動操作 |
 | SceneSeq | 世界を見て尺が決まる再生。終わりは世界の状態から判定 | イベントシーン（カット列） |

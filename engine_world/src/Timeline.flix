@@ -1,15 +1,50 @@
-// Timeline — 区間(名前+長さ)の列を「時刻の純関数」でサンプルする。
-// 履歴・巻き戻し・リプレイは Worldline（別物）。
-// 進行の状態は持たない: 開始からの経過秒 t だけ渡せば「いまどの区間の何秒目か」が
-// 式で決まる。区間は逐次に並ぶので、閾値の if 連鎖で起きがちな「区間の重なり」が
-// 構造的に起きない。範囲外(全区間を過ぎた・負の時刻)は None = 終わり(Done)。
-// 利用例: 歩く→しゃがむ→戻る、のような一続きの振り付けの現在地を引く。
+// Timeline — 演出の時刻表。動き・効果音・待ちを 1 本に書き、描く側と鳴らす側が同じ時刻を読む。
+// 履歴・巻き戻し・リプレイは Worldline（別物）。進行の状態は持たない: 場面に入ってからの秒を渡せば
+// 「どのクリップの何割か」「このフレームに鳴らす音」が式で決まる（render-from-World の View のまま）。
 //
-// 演出の時刻表にはクリップ（Clip: 開始の時刻 + 長さ。重なってよい）を使う。秒は Doc から読み、
-// 絵と効果音が同じクリップの列を読むので、動きの拍と音がずれない。音は startedBetween
-// （前のフレームから今までに始まったクリップ）で鳴らし、全体の秒は durationOf で引く。
+// 書き方（GSAP の timeline・DOTween の Sequence と同じ並べ方）:
+//
+//   let intro = Timeline.build(Timeline.tempo(175.0, 4), List#{
+//       Timeline.append(Intro.Flash, Duration.Seconds(0.32)) |> Timeline.withSound("whoosh"),
+//       Timeline.append(Intro.Wipe, Duration.Seconds(0.3)),
+//       Timeline.append(Intro.Hold, Duration.ToNextBar)      |> Timeline.withSound("slam"),
+//       Timeline.append(Intro.Turn1, Duration.Beats(1.0))
+//   });
+//   Timeline.progressOf(Intro.Hold, head, tl)                  // 描く側: 0..1
+//   Timeline.soundsOn(Playback.Play, before, after, tl)        // 鳴らす側: このフレームの音
+//
+//   - 長さは Seconds / Beats / Bars と、曲に合わせて伸び縮みする ToNextBar（次の小節の頭まで）・
+//     ToBeat(n)（頭から n 拍目まで）で書く。拍と小節は Tempo（譜面の bpm）から秒になる。
+//     中では「拍の分 + 秒の分」の組で足し、秒へ直すのは最後の 1 回（拍を秒にしてから足す誤差を作らない）。
+//   - 置き場所: append = 表の終わり（既定）・join = 直前の行の頭（GSAP の "<"）・atStartOf / atEndOf =
+//     名前のクリップを基準・withDelay = そこから遅らせる（負なら手前へ）。前を延ばすと後ろが付いてくる。
+//   - 効果音はクリップの属性（Unity の Timeline の Audio トラック・Godot の音のトラック・Bevy の
+//     AnimationEvent）。描く側（stateOf）と鳴らす側（soundsOn）が同じ start を読むので、鳴らす時刻を
+//     別の場所に書けない。音が鳴るフレームで stateOf はもう Active か After を返す。
+//   - waitFor は長さの決まらない待ち（会話を読む・決定キー）。World は解けた時刻を resume で記録するだけ。
+//     待ちの位置ちょうどでは、待ちの前に書いた物だけが済む（Playhead = 時刻と解いた待ちの数）。
+//   - 書き間違い（同じ名前・まだ置いていない名前を基準・待ちに音・待ちより前へ置く・長さを合わせる音の
+//     食い違い）は build が Err で返す。場面ごとにテストを 1 本置けば止まる。
+//
+// 時計の決まり: 渡す時刻は、場面に入ってから「dt × はやさ × TimeScale」を積み上げた場面の時計 1 本。
+// resume にも同じ時計の値を渡す。時刻表は World にしまわず Doc から毎回組む（数十行なら µs。
+// しまうと組み直し忘れで View と Sfx が別の表を読む）。曲に乗せる場面は、はやさを掛けない時計を渡す。
+//
+// 毎フレームの探索: stateOf = O(log タグ数)・soundsOn = 二分探索で O(log 音の数 + 鳴る数)・
+// playheadOf = O(待ちの数)。
+//
+// 小さい部品（前からある口）: Seg / at は頭から順に並ぶ区間の現在地、Clip / toClips / startedBetween は
+// 重なってよいクリップの列。新しく書く演出は build を使い、古い読み手へは clipsOf で Clip の列を渡す。
 
 pub mod Timeline {
+
+    /// 組み上がった時刻表。sounds は (時刻, 書いた順) の昇順。
+    pub enum Timeline[a] {
+        case Timeline({ clips = Map[a, Clip[a]], segments = Map[a, Int32], sounds = Vector[SoundAt], waits = List[Float64],
+                        fitted = Map[String, Float64], duration = Float64 })
+    }
+
+    // ── 前からある口: 区間（Seg）とクリップ（Clip）──
 
     /// 区間: 名前と長さ(秒)。列の順に頭から消化される(純データ)。
     pub type alias Seg = { name = String, dur = Float64 }
@@ -71,4 +106,352 @@ pub mod Timeline {
     /// 頭の音は演出を始めた拍（ボタンを押した拍など）で鳴らす。
     pub def startedBetween(t0: Float64, t1: Float64, clips: List[Clip[a]]): List[Clip[a]] =
         List.filter(c -> t0 < c#start and c#start <= t1, clips)
+
+    // ── 時刻表を書く口 ──
+
+    /// 曲の速さ。拍と小節を秒へ直すのはここだけ（譜面の bpm をそのまま渡す）。
+    pub type alias Tempo = { bpm = Float64, beatsPerBar = Int32 }
+
+    /// テンポ。bpm は 1 未満にしない（0 で割らない）・1 小節の拍数は 1 未満にしない。
+    /// 譜面を持つゲームは、譜面の bpm と拍子からここへ渡す（テンポを Doc に 2 か所書かない）。
+    pub def tempo(bpm: Float64, beatsPerBar: Int32): Tempo =
+        { bpm = Float64.max(1.0, bpm), beatsPerBar = Int32.max(1, beatsPerBar) }
+
+    /// 長さの書き方。
+    pub enum Duration with Eq {
+        case Seconds(Float64)
+        case Beats(Float64)
+        case Bars(Float64)
+        /// クリップの頭から、次の小節の頭まで（頭がちょうど小節の頭なら 0）
+        case ToNextBar
+        /// クリップの頭から、表の頭から数えて n 拍目まで（もう過ぎていれば 0）
+        case ToBeat(Float64)
+    }
+
+    /// クリップを置く基準。
+    pub enum Place[a] {
+        /// 表の終わり（それまでのクリップで一番遅い終わり）
+        case End
+        /// 直前に書いた行の頭
+        case WithPrevious
+        case AtStartOf(a)
+        case AtEndOf(a)
+    }
+
+    /// クリップの中で鳴らす効果音。fitted = 書き出す WAV の長さをこのクリップの長さに合わせる音。
+    pub type alias Cue = { sound = String, offset = Duration, fitted = Bool }
+
+    /// 書く人が並べる 1 行。place から delay だけ遅らせて置き、length だけ続く。
+    pub type alias Step[a] = { tag = a, place = Place[a], delay = Duration, length = Duration,
+                               cues = List[Cue], isWait = Bool }
+
+    /// 書き間違い。tag はコードの enum なので、黙って既定の位置へ置かずに止める。
+    pub enum BuildError[a] with Eq, ToString {
+        /// 同じ名前の行が 2 つある（後の行が前の絵を消し、音だけ 2 つ残る形になる）
+        case DuplicateTag(a)
+        /// まだ置いていない名前を基準にした
+        case UnknownAnchor(a)
+        /// 待ちに音を付けた（待ちが解けた後に鳴ってしまう）
+        case SoundOnWait(a)
+        /// 長さを合わせる音が、長さの違う 2 つのクリップに付いている（WAV は 1 本）
+        case FittedLengthConflict(String)
+        /// 待ちの後に書いた行を、待ちより前の時刻へ置いた（待ちを解く前に始まってしまう）
+        case PlacedBeforeWait(a)
+    }
+
+    def step(tag: a, place: Place[a], length: Duration): Step[a] =
+        { tag = tag, place = place, delay = Duration.Seconds(0.0), length = length, cues = Nil, isWait = false }
+
+    /// 表の終わりに並べる。
+    pub def append(tag: a, length: Duration): Step[a] = step(tag, Place.End, length)
+
+    /// 直前に書いた行と同時に始める。
+    pub def join(tag: a, length: Duration): Step[a] = step(tag, Place.WithPrevious, length)
+
+    /// anchor のクリップの頭に置く。
+    pub def atStartOf(anchor: a, tag: a, length: Duration): Step[a] = step(tag, Place.AtStartOf(anchor), length)
+
+    /// anchor のクリップの終わりに置く。
+    pub def atEndOf(anchor: a, tag: a, length: Duration): Step[a] = step(tag, Place.AtEndOf(anchor), length)
+
+    /// 表の終わりで待つ。後ろの行はここから数える。
+    pub def waitFor(tag: a): Step[a] = { isWait = true | step(tag, Place.End, Duration.Seconds(0.0)) }
+
+    /// 置き場所から遅らせる（GSAP の "+=0.5"）。
+    pub def withDelay(delay: Duration, s: Step[a]): Step[a] = { delay = delay | s }
+
+    /// クリップの頭で鳴らす。
+    pub def withSound(name: String, s: Step[a]): Step[a] = withSoundAt(name, Duration.Seconds(0.0), s)
+
+    /// クリップの頭から offset 遅れて鳴らす。
+    pub def withSoundAt(name: String, offset: Duration, s: Step[a]): Step[a] =
+        { cues = List.append(s#cues, { sound = name, offset = offset, fitted = false } :: Nil) | s }
+
+    /// クリップの頭で鳴らし、書き出す WAV の長さをクリップの長さに合わせる（soundLengthOf で引く）。
+    pub def withFittedSound(name: String, s: Step[a]): Step[a] =
+        { cues = List.append(s#cues, { sound = name, offset = Duration.Seconds(0.0), fitted = true } :: Nil) | s }
+
+    // ── 組み立て ──
+
+    /// 時刻表の上の位置。拍の分と秒の分を別々に足し、秒へ直すのは最後の 1 回だけ
+    /// （拍を秒にしてから足すと 14 拍が 4.800000000000001 秒のようにずれる）。
+    /// 秒だけの表は秒を書いた順に足すので、今の Timeline.toClips とビットまで一致する。
+    pub type alias Pos = { beats = Float64, seconds = Float64 }
+
+    def zero(): Pos = { beats = 0.0, seconds = 0.0 }
+
+    def plus(x: Pos, y: Pos): Pos = { beats = x#beats + y#beats, seconds = x#seconds + y#seconds }
+
+    def beatSeconds(tempo: Tempo): Float64 = 60.0 / tempo#bpm
+
+    def toSeconds(tempo: Tempo, p: Pos): Float64 = p#beats * beatSeconds(tempo) + p#seconds
+
+    /// origin から長さ d だけ進んだ位置。
+    def advanceBy(tempo: Tempo, origin: Pos, d: Duration): Pos = match d {
+        case Duration.Seconds(s) => plus(origin, { beats = 0.0, seconds = s })
+        case Duration.Beats(b)   => plus(origin, { beats = b, seconds = 0.0 })
+        case Duration.Bars(n)    => plus(origin, { beats = n * Int32.toFloat64(tempo#beatsPerBar), seconds = 0.0 })
+        case Duration.ToBeat(b)  => latest(tempo, origin, { beats = b, seconds = 0.0 })
+        case Duration.ToNextBar  =>
+            let perBar = Int32.toFloat64(tempo#beatsPerBar);
+            let barsSoFar = toSeconds(tempo, origin) / (perBar * beatSeconds(tempo));
+            // 小節の頭ちょうどを、丸めの誤差で次の小節へ送らない
+            let bars = Float64.ceil(barsSoFar - 1.0e-9);
+            latest(tempo, origin, { beats = bars * perBar, seconds = 0.0 })
+    }
+
+    def latest(tempo: Tempo, x: Pos, y: Pos): Pos = if (toSeconds(tempo, y) > toSeconds(tempo, x)) y else x
+
+    /// 長さを秒へ直す（表の頭から測る ToNextBar / ToBeat は頭から数えた長さ）。
+    pub def secondsOf(tempo: Tempo, d: Duration): Float64 = toSeconds(tempo, advanceBy(tempo, zero(), d))
+
+    /// 並べた行を秒の時刻表にする。前の行にしか頼らないので 1 回の走査で決まる。
+    /// 書き間違いは全部集めて Err で返す（場面ごとのテスト 1 本で止める）。
+    pub def build(tempo: Tempo, steps: List[Step[a]]): Result[List[BuildError[a]], Timeline[a]] with Order[a] =
+        let init = { spans = (Map.empty(): Map[a, (Pos, Pos)]), cues = (Nil: List[(Float64, Int32, Int32, String)]),
+                     waits = (Nil: List[Float64]), fitted = (Map.empty(): Map[String, Float64]),
+                     errors = (Nil: List[BuildError[a]]), prevStart = zero(), end = zero(), order = 0,
+                     segments = (Map.empty(): Map[a, Int32]), lengths = (Map.empty(): Map[a, Pos]),
+                     passed = 0, lastWait = -1.0 };
+        let built = List.foldLeft((acc, s) -> {
+            let anchor = match s#place {
+                case Place.End          => Ok(acc#end)
+                case Place.WithPrevious => Ok(acc#prevStart)
+                case Place.AtStartOf(o) => Map.get(o, acc#spans) |> Option.map(fst) |> Option.toOk(BuildError.UnknownAnchor(o))
+                case Place.AtEndOf(o)   => Map.get(o, acc#spans) |> Option.map(snd) |> Option.toOk(BuildError.UnknownAnchor(o))
+            };
+            match anchor {
+                case Err(e) => { errors = e :: acc#errors | acc }
+                case Ok(_) if Map.memberOf(s#tag, acc#spans) => { errors = BuildError.DuplicateTag(s#tag) :: acc#errors | acc }
+                case Ok(_) if s#isWait and not List.isEmpty(s#cues) => { errors = BuildError.SoundOnWait(s#tag) :: acc#errors | acc }
+                case Ok(base) if not s#isWait and toSeconds(tempo, advanceBy(tempo, base, s#delay)) < acc#lastWait =>
+                    { errors = BuildError.PlacedBeforeWait(s#tag) :: acc#errors | acc }
+                case Ok(base) =>
+                    let start = advanceBy(tempo, base, s#delay);
+                    let finish = advanceBy(tempo, start, s#length);
+                    let startSeconds = toSeconds(tempo, start);
+                    // 長さは長さのまま秒へ直す（終わりから頭を引くと 0.3 が 0.2999999999999998 になる）
+                    let length = match s#length {
+                        case Duration.ToNextBar => { beats = finish#beats - start#beats, seconds = finish#seconds - start#seconds }
+                        case Duration.ToBeat(_) => { beats = finish#beats - start#beats, seconds = finish#seconds - start#seconds }
+                        case other              => advanceBy(tempo, zero(), other)
+                    };
+                    let clipSeconds = Float64.max(0.0, toSeconds(tempo, length));
+                    let segment = acc#passed;
+                    let placed = s#cues |> List.zipWithIndex |> List.map(pair -> {
+                        let (i, cue) = pair;
+                        (toSeconds(tempo, advanceBy(tempo, start, cue#offset)), segment, acc#order + i, cue#sound)
+                    });
+                    let (fitted, conflicts) = s#cues |> List.filter(cue -> cue#fitted) |> List.foldLeft((fc, cue) -> {
+                        let (m, errs) = fc;
+                        match Map.get(cue#sound, m) {
+                            case Some(known) if Float64.abs(known - clipSeconds) > 1.0e-9 =>
+                                (m, BuildError.FittedLengthConflict(cue#sound) :: errs)
+                            case _ => (Map.insert(cue#sound, clipSeconds, m), errs)
+                        }
+                    }, (acc#fitted, acc#errors));
+                    { spans = Map.insert(s#tag, (start, finish), acc#spans),
+                      cues = List.reverse(placed) ::: acc#cues,
+                      waits = if (s#isWait) startSeconds :: acc#waits else acc#waits,
+                      segments = Map.insert(s#tag, segment, acc#segments),
+                      lengths = Map.insert(s#tag, length, acc#lengths),
+                      passed = if (s#isWait) acc#passed + 1 else acc#passed,
+                      lastWait = if (s#isWait) startSeconds else acc#lastWait,
+                      fitted = fitted,
+                      errors = conflicts,
+                      prevStart = start,
+                      end = latest(tempo, acc#end, finish),
+                      order = acc#order + List.length(s#cues) }
+            }
+        }, init, steps);
+        if (not List.isEmpty(built#errors)) Err(List.reverse(built#errors))
+        else {
+            let clips = built#spans |> Map.mapWithKey((tag, span) -> {
+                let (start, _) = span;
+                let length = Map.get(tag, built#lengths) |> Option.getWithDefault(zero());
+                { tag = tag, start = toSeconds(tempo, start), dur = Float64.max(0.0, toSeconds(tempo, length)) }
+            });
+            let sounds = built#cues
+                |> List.sortWith((x, y) -> {
+                    let (ax, sx, ox, _) = x;
+                    let (ay, sy, oy, _) = y;
+                    let byTime = ax <=> ay;
+                    let bySegment = sx <=> sy;
+                    if (byTime != Comparison.EqualTo) byTime
+                    else if (bySegment != Comparison.EqualTo) bySegment
+                    else ox <=> oy
+                })
+                |> List.map(c -> { let (at, segment, _, name) = c; { at = at, segment = segment, sound = name } })
+                |> List.toVector;
+            let lastSound = Vector.foldLeft((m, s) -> Float64.max(m, s#at), 0.0, sounds);
+            Ok(Timeline.Timeline({
+                clips = clips, segments = built#segments, sounds = sounds,
+                waits = built#waits |> List.sortWith((x, y) -> x <=> y),
+                fitted = built#fitted,
+                duration = Float64.max(toSeconds(tempo, built#end), lastSound) }))
+        }
+
+    // ── 読む口（毎フレーム） ──
+
+    /// 鳴らす予定の効果音（秒）。
+    /// segment = その音より前に書いた待ちの数。
+    pub type alias SoundAt = { at = Float64, segment = Int32, sound = String }
+
+    /// 再生位置: 時刻表の上の時刻 t と、解いた待ちの数 passed。待ちの位置ちょうどでは、
+    /// 待ちの前に書いた物は済み・待ちの後に書いた物はまだ（(t, passed) の組で比べる）。
+    pub type alias Playhead = { t = Float64, passed = Int32 }
+
+    /// 待ちの無い表の再生位置。
+    pub def playheadAt(t: Float64): Playhead = { t = t, passed = 0 }
+
+    /// head が (at, segment) より前か。
+    def isBefore(head: Playhead, at: Float64, segment: Int32): Bool =
+        head#t < at or (head#t == at and head#passed < segment)
+
+    /// クリップの中のどこにいるか。
+    pub enum ClipState with Eq, ToString {
+        case Before
+        case Active(Float64)
+        case After
+    }
+
+    /// フレームの進め方。Enter = 場面の最初のフレーム（頭ちょうどの音も鳴らす）・Play = ふつうに進む・
+    /// Seek = 飛ばす（Bevy の set_seek_time と同じく、飛ばした区間の音は鳴らさない）。
+    pub enum Playback with Eq {
+        case Enter
+        case Play
+        case Seek
+    }
+
+    /// 時刻表が終わる時刻（秒）。クリップより後ろの音も含む。
+    pub def endOf(tl: Timeline[a]): Float64 = match tl {
+        case Timeline.Timeline(r) => r#duration
+    }
+
+    /// タグのクリップ（秒）。
+    pub def clipOf(tag: a, tl: Timeline[a]): Option[Clip[a]] with Order[a] = match tl {
+        case Timeline.Timeline(r) => Map.get(tag, r#clips)
+    }
+
+    /// クリップの列（開始の順）。startedBetween や Clip の列を読む古い読み手へ渡す。
+    pub def clipsOf(tl: Timeline[a]): List[Clip[a]] = match tl {
+        case Timeline.Timeline(r) => Map.valuesOf(r#clips) |> List.sortWith((x, y) -> x#start <=> y#start)
+    }
+
+    /// 時刻 t にタグのクリップのどこにいるか。境目は soundsOn と同じ (start で Active・長さ 0 なら After)。
+    pub def stateOf(tag: a, head: Playhead, tl: Timeline[a]): ClipState with Order[a] = match tl {
+        case Timeline.Timeline(r) =>
+            let segment = Map.get(tag, r#segments) |> Option.getWithDefault(0);
+            match Map.get(tag, r#clips) {
+                case None    => ClipState.After
+                case Some(c) =>
+                    if (isBefore(head, c#start, segment)) ClipState.Before
+                    else if (head#t >= c#start + c#dur) ClipState.After
+                    else ClipState.Active((head#t - c#start) / c#dur)
+            }
+    }
+
+    /// 進み 0..1（前は 0・後は 1）。
+    pub def progressOf(tag: a, head: Playhead, tl: Timeline[a]): Float64 with Order[a] =
+        match stateOf(tag, head, tl) {
+            case ClipState.Before    => 0.0
+            case ClipState.Active(u) => u
+            case ClipState.After     => 1.0
+        }
+
+    /// 前のフレームの時刻 prev から今の now までに鳴らす効果音。区間は今の startedBetween と同じ
+    /// (prev, now]（Enter だけ [prev, now]）。音が鳴るフレームで stateOf はもう Active か After を返す。
+    /// 同じ時刻の音は書いた順。巻き戻し（now < prev）では鳴らさない。
+    pub def soundsOn(playback: Playback, prev: Playhead, now: Playhead, tl: Timeline[a]): List[String] = match tl {
+        case Timeline.Timeline(r) =>
+            let skipBelow = match playback {
+                case Playback.Enter => Some(s -> isBefore({ t = s#at, passed = s#segment }, prev#t, prev#passed))
+                case Playback.Play  => Some(s -> not isBefore(prev, s#at, s#segment))
+                case Playback.Seek  => None
+            };
+            match skipBelow {
+                case None    => Nil
+                case Some(_) if isBefore(now, prev#t, prev#passed) => Nil
+                case Some(skip) => takeUntil(r#sounds, firstNot(r#sounds, skip), now, Nil)
+            }
+    }
+
+    /// 長さを合わせる音（withFittedSound）を書き出すときの長さ（秒）。
+    pub def soundLengthOf(name: String, tl: Timeline[a]): Option[Float64] = match tl {
+        case Timeline.Timeline(r) => Map.get(name, r#fitted)
+    }
+
+    // ── 待ち ──
+
+    /// 場面の時計 wall と、待ちが解けた時刻の列から、時刻表の上の時刻を出す。解けていない待ちでは
+    /// そこで止まる。View もこの値を受け取るだけ（時刻の純関数のまま）。O(待ちの数)。
+    pub def playheadOf(wall: Float64, resumes: List[Float64], tl: Timeline[a]): Playhead = match tl {
+        case Timeline.Timeline(r) =>
+            let walked = walkWaits(wall, r#waits, resumes, 0.0, 0);
+            { t = walked#local, passed = walked#passed }
+    }
+
+    /// いま解けていない待ちで止まっているか。
+    pub def isWaiting(wall: Float64, resumes: List[Float64], tl: Timeline[a]): Bool = match tl {
+        case Timeline.Timeline(r) => walkWaits(wall, r#waits, resumes, 0.0, 0)#waiting
+    }
+
+    /// 決定キーを押した。待ちで止まっている間だけ解いた時刻を記録する（待ちに着く前の早押しは数えない）。
+    pub def resume(wall: Float64, resumes: List[Float64], tl: Timeline[a]): List[Float64] =
+        if (isWaiting(wall, resumes, tl)) List.append(resumes, wall :: Nil) else resumes
+
+    def walkWaits(wall: Float64, waits: List[Float64], resumes: List[Float64], waited: Float64, passed: Int32):
+        { local = Float64, waiting = Bool, passed = Int32 } =
+        match waits {
+            case Nil       => { local = wall - waited, waiting = false, passed = passed }
+            case w :: rest =>
+                let reached = w + waited;
+                if (wall < reached) { local = wall - waited, waiting = false, passed = passed }
+                else match resumes {
+                    case Nil => { local = w, waiting = true, passed = passed }
+                    case resumedAt :: more =>
+                        let waitedHere = Float64.max(0.0, resumedAt - reached);
+                        if (wall < reached + waitedHere) { local = w, waiting = true, passed = passed }
+                        else walkWaits(wall, rest, more, waited + waitedHere, passed + 1)
+                }
+        }
+
+    // ── 二分探索 ──
+
+    /// skip が真になる並びの、最初の偽の位置（sounds は時刻順なので skip は頭の側だけ真）。
+    def firstNot(sounds: Vector[SoundAt], skip: SoundAt -> Bool): Int32 =
+        def go(lo, hi) =
+            if (lo >= hi) lo
+            else {
+                let mid = lo + (hi - lo) / 2;
+                if (skip(Vector.get(mid, sounds))) go(mid + 1, hi) else go(lo, mid)
+            };
+        go(0, Vector.length(sounds))
+
+    def takeUntil(sounds: Vector[SoundAt], i: Int32, now: Playhead, acc: List[String]): List[String] =
+        if (i >= Vector.length(sounds)) List.reverse(acc)
+        else {
+            let s = Vector.get(i, sounds);
+            if (not isBefore(now, s#at, s#segment)) takeUntil(sounds, i + 1, now, s#sound :: acc) else List.reverse(acc)
+        }
 }

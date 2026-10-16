@@ -5,6 +5,8 @@
 
 mod RenderAudio {
     import org.lwjgl.openal.AL10
+    import org.lwjgl.openal.AL11
+    import org.lwjgl.openal.SOFTLoopPoints
     import org.lwjgl.stb.STBVorbis
     import org.lwjgl.system.MemoryStack
     import org.lwjgl.system.MemoryUtil
@@ -33,7 +35,7 @@ mod RenderAudio {
             buffer
         }
 
-    /// WAV ファイルをパースし、OpenAL バッファにアップロードする
+    /// WAV ファイルをパースし、OpenAL バッファにアップロードする（smpl チャンクのループ点も付ける）
     pub def loadWavToALBuffer(path: String): Int32 \ IO =
         let wavBytes = Files.readAllBytes(Paths.get(path));
         let hdr = ByteBuffer.wrap(wavBytes);
@@ -54,6 +56,18 @@ mod RenderAudio {
         let buffer = AL10.alGenBuffers();
         AL10.alBufferData(buffer, format, pcmBuf, sampleRate);
         MemoryUtil.memFree(pcmBuf);
+        // ループ点（smpl チャンク）があれば、AL_LOOPING のときに [頭, 終わり) だけを繰り返す。
+        // 音源へ付ける前のバッファにしか設定できない（OpenAL Soft の AL_SOFT_loop_points の決まり）ので、ここで付ける。
+        let frames = dataSize / Int32.max(1, channels * bitsPerSample / 8);
+        let points = AudioUtil.loopPointsOf(i -> hdr.get(i), i -> hdr.getInt(i), hdr.limit());
+        let supported = Option.nonEmpty(points) and AL10.alIsExtensionPresent("AL_SOFT_loop_points");
+        match points {
+            case Some((start, end)) if end <= frames and supported =>
+                let stack = MemoryStack.stackPush();
+                AL11.alBufferiv(buffer, SOFTLoopPoints.AL_LOOP_POINTS_SOFT, stack.ints(start, end));
+                discard MemoryStack.stackPop()
+            case _ => ()
+        };
         buffer
 
     /// 拡張子で読み方を振り分けて OpenAL バッファへ載せる。

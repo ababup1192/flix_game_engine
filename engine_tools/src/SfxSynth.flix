@@ -103,6 +103,36 @@ pub mod SfxSynth {
             out.close()
         })
 
+    /// ループ点つきの WAV の全バイト。wavBytes の後ろに "smpl" チャンク（ループ 1 本）を足す。
+    /// loopStart サンプル目から終わりまでを繰り返す — 曲の頭（イントロ）を 1 回だけ鳴らして、
+    /// 後ろの輪だけを回す曲を 1 本の音で持てる（頭と輪を 2 本に割って、切り替える時刻をゲームが
+    /// 別に持たなくてよい）。読む側は AudioUtil.loopPointsOf（実機の OpenAL と AudioMixdown が読む）。
+    /// loopStart が 0 未満・長さ以上なら smpl を付けない（頭から全部を繰り返す、ふつうの WAV）。
+    pub def wavBytesLooped(cfg: Config, samples: List[Float64], loopStart: Int32): Bytes =
+        let n = List.length(samples);
+        if (loopStart < 0 or loopStart >= n) wavBytes(cfg, samples)
+        else {
+            let plain = wavBytes(cfg, samples);
+            let smpl = List.flatten(
+                tag(115, 109, 112, 108) ::     // "smpl"
+                le32(60) ::                    // 36 + ループ 1 本 24
+                le32(0) :: le32(0) ::          // 作り手・製品（無し）
+                le32(1000000000 / Int32.max(1, cfg#sampleRate)) :: // 1 サンプルの長さ（ナノ秒）
+                le32(60) :: le32(0) ::         // 元の音の高さ（MIDI の 60 = 真ん中の C）・その端数
+                le32(0) :: le32(0) ::          // SMPTE（使わない）
+                le32(1) ::                     // ループの本数
+                le32(0) ::                     // 後ろに付ける独自のデータ（無し）
+                le32(0) ::                     // ループの番号
+                le32(0) ::                     // 前へ進むループ
+                le32(loopStart) ::             // 頭（このサンプルを含む）
+                le32(n - 1) ::                 // 終わり（このサンプルを含む）
+                le32(0) ::                     // 端数
+                le32(0) :: Nil);               // 回数（0 = ずっと）
+            // RIFF の長さの欄（4 バイト目から）だけ smpl の分を足し直す。
+            let riff = le32(36 + n * 2 + List.length(smpl));
+            List.flatten(List.take(4, plain) :: riff :: List.drop(8, plain) :: smpl :: Nil)
+        }
+
     /// 音のセットをまとめて `dir` へ描き出す。`(名前, サンプル列)` ごとに `dir/名前.wav` を書き出す
     /// （ディレクトリは無ければ作る）。ゲームの描き出し入口はデザイン（音の中身）だけ持てばよい。
     pub def renderSet(cfg: Config, dir: String, sounds: List[(String, List[Float64])]): Unit \ IO =
@@ -111,4 +141,9 @@ pub mod SfxSynth {
             let (name, samples) = sound;
             writeBytes("${dir}/${name}.wav", wavBytes(cfg, samples))
         }, sounds)
+
+    /// ループ点つきの曲を `dir/名前.wav` へ書き出す（wavBytesLooped。ディレクトリは無ければ作る）。
+    pub def renderLooped(cfg: Config, dir: String, name: String, samples: List[Float64], loopStart: Int32): Unit \ IO =
+        discard (new File(dir)).mkdirs();
+        writeBytes("${dir}/${name}.wav", wavBytesLooped(cfg, samples, loopStart))
 }

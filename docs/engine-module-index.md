@@ -30,7 +30,7 @@
 |---|---|
 | ゲームとエンジンの境界の共有型・効果（描画・入力・音・時間）を知りたい | GameEngine |
 | 効果音・BGM の再生／停止・音量・高さ（pitch）の低レベル効果口を知りたい（`GameEngine.Audio`） | GameEngine（Audio 効果）/ AudioStreamPlayer（呼び口。鳴り続ける音は engine_world の App.withSustained。詳しくは [audio.md](audio.md)） |
-| WAV ファイルの中身（形式・波形データの位置）を読み解きたい | AudioUtil |
+| WAV ファイルの中身（形式・波形データの位置・ループ点）を読み解きたい | AudioUtil（ループ点は loopPointsOf。smpl チャンク） |
 | engine の fpkg 読み込みを consumer 側で trigger したい | EngineSentinel |
 | project.json を読み込んでエンジン設定と scene 一覧を得たい | ProjectLoader |
 | 既定値で続けたことを人へ 1 行知らせたい | Log（文面と出し先の決まりは [error-handling.md](error-handling.md) の決まり 3） |
@@ -97,7 +97,7 @@
 ## core（基礎の値と計算）
 
 - **Anchor** — 親の枠の中で子をどこに置くか（左上・中央・全面など）を、決まった型で選ぶ。
-- **AudioUtil** — 音声ファイル（WAV）の中身を読み解くための小さな計算。形式（モノラル/ステレオ・ビット数）の判別や波形データの在り処探しを一箇所にまとめる。実際のファイル読み込みや再生はしない。
+- **AudioUtil** — 音声ファイル（WAV）の中身を読み解くための小さな計算。形式（モノラル/ステレオ・ビット数）の判別や波形データの在り処探し・ループ点（smpl チャンク）の読み出しを一箇所にまとめる。実際のファイル読み込みや再生はしない。
 - **Color** — 3 チャンネル sRGB-linear カラー（Float64・0.0〜1.0）。`{ r = 1.0, g = 0.0, b = 1.0 }` と書ける。
 - **DrawCmd** — 1 フレームぶんの描画命令の型。フロント（engine のシーングラフ）が組み立て、バックエンド（GL 描画・SoftRaster）が消費する共有の型。
 - **Duration** — 時間の長さ（継続時間・経過時間・残り時間）を表す型。

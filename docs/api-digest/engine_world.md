@@ -263,8 +263,12 @@
   `pub type alias MixFrame = { plays = List[String], sustained = List[App.Sustain], mixer = AudioMixer.Mixer }`
 - コマの並びを sampleRate の波形へ書き出す。sounds に無い名前は鳴らない（実機と同じ）。
   `pub def mixdown(sampleRate: Int32, fps: Float64, sounds: Map[String, Vector[Float64]], frames: List[MixFrame]): Vector[Float64]`
+- mixdown に、鳴り続ける音のループ点を足した物。loopStarts = 名前 → 繰り返しの頭のサンプル番号
+  `pub def mixdownLooped(sampleRate: Int32, fps: Float64, sounds: Map[String, Vector[Float64]], loopStarts: Map[String, Int32], frames: List[MixFrame]): Vector[Float64]`
 - WAV（PCM 16bit。モノラル・ステレオ）を sampleRate のモノラル -1〜1 へ読む。
   `pub def loadWav(sampleRate: Int32, path: String): Vector[Float64] \ IO`
+- WAV のループ点の頭（smpl チャンク。AudioUtil.loopPointsOf）を、sampleRate で読み直したときの
+  `pub def loadLoopStart(sampleRate: Int32, path: String): Option[Int32] \ IO`
 - 波形のいちばん大きな振れ幅（0〜）。割れの確かめと、書き出す前の音量合わせに使う。
   `pub def peakOf(samples: Vector[Float64]): Float64`
 
@@ -1862,6 +1866,8 @@
   `pub def scaled(k: Float64, p: Plan): Plan`
 
 ## Timeline — `engine_world/src/Timeline.flix`
+- 組み上がった時刻表。sounds は (時刻, 書いた順) の昇順。
+  `pub enum Timeline[a] { case Timeline({ clips = Map[a, Clip[a]], segments = Map[a, Int32], sounds = Vector[SoundAt], waits = List[Float64], fitted = Map[String, Float64], duration = Float64 }) }`
 - 区間: 名前と長さ(秒)。列の順に頭から消化される(純データ)。
   `pub type alias Seg = { name = String, dur = Float64 }`
 - `pub def seg(name: String, dur: Float64): Seg`
@@ -1880,6 +1886,74 @@
   `pub def startOf(tag: a, clips: List[Clip[a]]): Option[Float64] with Eq[a]`
 - 前のフレームの時刻 t0 から今の t1 までの間に始まったクリップ（t0 < start <= t1）。
   `pub def startedBetween(t0: Float64, t1: Float64, clips: List[Clip[a]]): List[Clip[a]]`
+- 曲の速さ。拍と小節を秒へ直すのはここだけ（譜面の bpm をそのまま渡す）。
+  `pub type alias Tempo = { bpm = Float64, beatsPerBar = Int32 }`
+- テンポ。bpm は 1 未満にしない（0 で割らない）・1 小節の拍数は 1 未満にしない。
+  `pub def tempo(bpm: Float64, beatsPerBar: Int32): Tempo`
+- 長さの書き方。
+  `pub enum Duration with Eq { case Seconds(Float64) case Beats(Float64) case Bars(Float64) case ToNextBar case ToBeat(Float64) }`
+- クリップを置く基準。
+  `pub enum Place[a] { case End case WithPrevious case AtStartOf(a) case AtEndOf(a) }`
+- クリップの中で鳴らす効果音。fitted = 書き出す WAV の長さをこのクリップの長さに合わせる音。
+  `pub type alias Cue = { sound = String, offset = Duration, fitted = Bool }`
+- 書く人が並べる 1 行。place から delay だけ遅らせて置き、length だけ続く。
+  `pub type alias Step[a] = { tag = a, place = Place[a], delay = Duration, length = Duration, cues = List[Cue], isWait = Bool }`
+- 書き間違い。tag はコードの enum なので、黙って既定の位置へ置かずに止める。
+  `pub enum BuildError[a] with Eq, ToString { case DuplicateTag(a) case UnknownAnchor(a) case SoundOnWait(a) case FittedLengthConflict(String) case PlacedBeforeWait(a) }`
+- 表の終わりに並べる。
+  `pub def append(tag: a, length: Duration): Step[a]`
+- 直前に書いた行と同時に始める。
+  `pub def join(tag: a, length: Duration): Step[a]`
+- anchor のクリップの頭に置く。
+  `pub def atStartOf(anchor: a, tag: a, length: Duration): Step[a]`
+- anchor のクリップの終わりに置く。
+  `pub def atEndOf(anchor: a, tag: a, length: Duration): Step[a]`
+- 表の終わりで待つ。後ろの行はここから数える。
+  `pub def waitFor(tag: a): Step[a]`
+- 置き場所から遅らせる（GSAP の "+=0.5"）。
+  `pub def withDelay(delay: Duration, s: Step[a]): Step[a]`
+- クリップの頭で鳴らす。
+  `pub def withSound(name: String, s: Step[a]): Step[a]`
+- クリップの頭から offset 遅れて鳴らす。
+  `pub def withSoundAt(name: String, offset: Duration, s: Step[a]): Step[a]`
+- クリップの頭で鳴らし、書き出す WAV の長さをクリップの長さに合わせる（soundLengthOf で引く）。
+  `pub def withFittedSound(name: String, s: Step[a]): Step[a]`
+- 時刻表の上の位置。拍の分と秒の分を別々に足し、秒へ直すのは最後の 1 回だけ
+  `pub type alias Pos = { beats = Float64, seconds = Float64 }`
+- 長さを秒へ直す（表の頭から測る ToNextBar / ToBeat は頭から数えた長さ）。
+  `pub def secondsOf(tempo: Tempo, d: Duration): Float64`
+- 並べた行を秒の時刻表にする。前の行にしか頼らないので 1 回の走査で決まる。
+  `pub def build(tempo: Tempo, steps: List[Step[a]]): Result[List[BuildError[a]], Timeline[a]] with Order[a]`
+- 鳴らす予定の効果音（秒）。
+  `pub type alias SoundAt = { at = Float64, segment = Int32, sound = String }`
+- 再生位置: 時刻表の上の時刻 t と、解いた待ちの数 passed。待ちの位置ちょうどでは、
+  `pub type alias Playhead = { t = Float64, passed = Int32 }`
+- 待ちの無い表の再生位置。
+  `pub def playheadAt(t: Float64): Playhead`
+- クリップの中のどこにいるか。
+  `pub enum ClipState with Eq, ToString { case Before case Active(Float64) case After }`
+- フレームの進め方。Enter = 場面の最初のフレーム（頭ちょうどの音も鳴らす）・Play = ふつうに進む・
+  `pub enum Playback with Eq { case Enter case Play case Seek }`
+- 時刻表が終わる時刻（秒）。クリップより後ろの音も含む。
+  `pub def endOf(tl: Timeline[a]): Float64`
+- タグのクリップ（秒）。
+  `pub def clipOf(tag: a, tl: Timeline[a]): Option[Clip[a]] with Order[a]`
+- クリップの列（開始の順）。startedBetween や Clip の列を読む古い読み手へ渡す。
+  `pub def clipsOf(tl: Timeline[a]): List[Clip[a]]`
+- 時刻 t にタグのクリップのどこにいるか。境目は soundsOn と同じ (start で Active・長さ 0 なら After)。
+  `pub def stateOf(tag: a, head: Playhead, tl: Timeline[a]): ClipState with Order[a]`
+- 進み 0..1（前は 0・後は 1）。
+  `pub def progressOf(tag: a, head: Playhead, tl: Timeline[a]): Float64 with Order[a]`
+- 前のフレームの時刻 prev から今の now までに鳴らす効果音。区間は今の startedBetween と同じ
+  `pub def soundsOn(playback: Playback, prev: Playhead, now: Playhead, tl: Timeline[a]): List[String]`
+- 長さを合わせる音（withFittedSound）を書き出すときの長さ（秒）。
+  `pub def soundLengthOf(name: String, tl: Timeline[a]): Option[Float64]`
+- 場面の時計 wall と、待ちが解けた時刻の列から、時刻表の上の時刻を出す。解けていない待ちでは
+  `pub def playheadOf(wall: Float64, resumes: List[Float64], tl: Timeline[a]): Playhead`
+- いま解けていない待ちで止まっているか。
+  `pub def isWaiting(wall: Float64, resumes: List[Float64], tl: Timeline[a]): Bool`
+- 決定キーを押した。待ちで止まっている間だけ解いた時刻を記録する（待ちに着く前の早押しは数えない）。
+  `pub def resume(wall: Float64, resumes: List[Float64], tl: Timeline[a]): List[Float64]`
 
 ## Transition — `engine_world/src/Transition.flix`
 - `pub enum Kind with Eq { case FadeOut, case FadeIn, case WipeLeft, case WipeRight }`

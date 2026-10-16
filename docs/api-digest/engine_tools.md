@@ -192,8 +192,12 @@
   `pub def wavBytes(cfg: Config, samples: List[Float64]): Bytes`
 - バイト列をそのままファイルへ書き出す（副作用はここだけ）。
   `pub def writeBytes(path: String, bytes: Bytes): Unit \ IO`
+- ループ点つきの WAV の全バイト。wavBytes の後ろに "smpl" チャンク（ループ 1 本）を足す。
+  `pub def wavBytesLooped(cfg: Config, samples: List[Float64], loopStart: Int32): Bytes`
 - 音のセットをまとめて `dir` へ描き出す。`(名前, サンプル列)` ごとに `dir/名前.wav` を書き出す
   `pub def renderSet(cfg: Config, dir: String, sounds: List[(String, List[Float64])]): Unit \ IO`
+- ループ点つきの曲を `dir/名前.wav` へ書き出す（wavBytesLooped。ディレクトリは無ければ作る）。
+  `pub def renderLooped(cfg: Config, dir: String, name: String, samples: List[Float64], loopStart: Int32): Unit \ IO`
 
 ## SoftRaster — `engine_tools/src/SoftRaster.flix`
 - ラスタライズ要求。design 解像度の Drawable 群を `scale` 倍に拡大して `outPath` に PNG 出力。
