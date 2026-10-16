@@ -67,4 +67,16 @@ mod TestAppSustain {
             hum("engine", 0.5, 1.0) :: hum("wind", 0.3, 1.0) :: Nil);
         Assert.assertEq(expected = "wind" :: "engine" :: Nil,
             List.append(names(ops#start), names(ops#keep)))
+
+    /// 鳴り続ける音として使った名前を、止めた後に一発で鳴らすときはループを外す
+    /// （外さないと短い効果音がループし続ける）。
+    @Test
+    def testOneShotOfFormerHumIsUnlooped(): Unit \ Assert =
+        Assert.assertEq(expected = "crtOff" :: Nil, App.oneShotsToUnloop("crtOff" :: Nil, Nil))
+
+    /// いま鳴り続けている名前はループを外さない（鳴り続ける側が切れないように）。
+    @Test
+    def testLivingHumKeepsItsLoop(): Unit \ Assert =
+        Assert.assertEq(expected = "hit" :: Nil,
+            App.oneShotsToUnloop("hit" :: "engine" :: Nil, "engine" :: Nil))
 }
