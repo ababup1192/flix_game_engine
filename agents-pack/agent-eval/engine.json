@@ -118,7 +118,7 @@
     },
     {
       "id": "bgm-intro-loop",
-      "prompt": "戦闘曲にイントロを付けたい。イントロは戦いの頭で 1 回だけ鳴らし、その後は本編だけを繰り返したい。継ぎ目に隙間が空かないようにしたい",
+      "prompt": "新しく足す曲にイントロを付けたい。イントロは鳴らし始めに 1 回だけ鳴らし、その後は本編だけを繰り返したい。継ぎ目に隙間が空かないようにしたい",
       "expect": [
         {"re": "renderLooped|ループ点|smpl|loopPoints", "why": "1 本の WAV のループ点（SfxSynth.renderLooped・smpl）"},
         {"re": "withSustained", "why": "App.withSustained で同じ名前を宣言し続ける"}
