@@ -16,6 +16,8 @@
 | スコア・案内など隠れてはいけない表示 | `App.withHudView`（中の前後は HUD の層の表と木） | world に高い z で描く |
 | 説明の窓の置き場（はみ出さない） | `UiTooltip`（置き場）+ `ZStack.topLayer`（手前へ） | 座標の手計算 |
 | 演出の拍に効果音・動きを合わせる | `Timeline.build`（`append` / `join`・音は `withSound`。秒・拍は Doc）→ 描く側 `progressOf`・鳴らす側 `soundsOn` を `App.withAudio` へ | 経過秒を if で比べる・音の時刻を別に書く |
+| 演出を曲の拍・小節に乗せる（小節の頭で始める・伸ばしても拍から外れない） | `Timeline.build` の長さを `Duration.Beats` / `Bars` / `ToNextBar` / `ToBeat` で書き、テンポは `Timeline.tempo(譜面の bpm, 拍子)` で 1 か所から渡す | `60.0 / bpm` を手で掛けた秒・小節に合わせた秒を Doc に写す |
+| 曲の頭（イントロ）を 1 回だけ鳴らして本編だけループする | 1 本の WAV にループ点を書く `SfxSynth.renderLooped`（実機も `AudioMixdown.mixdownLooped` も smpl から輪の頭へ戻る）。鳴らす側は同じ名前を `App.withSustained` で宣言し続ける | 頭と輪を 2 本の WAV に割り、頭の長さを過ぎたら切り替える |
 | Doc が壊れていたら既定値で続けて知らせる | `DocJson.loadOr` + `Log.fellBackThen` / `warnThen` / `warnAllThen` | `let _ = Log.warn(..)`（消える。lint value-discard が止める） |
 | 直した後に絵を確かめる | `make render SHOT=<場面>`（1 枚・既定の手）→ 仕上げに `make reference-check` | 毎回 `render-all`・解像度を下げる回り道 |
 | F8 のチケットから直す所を探す | `debug/annotations/<名前>/` の `README.md` 冒頭の文脈（場面・Doc と行）→ `annotation.json` の `context` → `world.json`（`App.withAnnotationContext` / `withWorldDump`。一覧は `make status`） | スクショと目で突き合わせる |

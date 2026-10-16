@@ -96,10 +96,34 @@
       "prompt": "演出の 0.4 秒目と 1.2 秒目に効果音を鳴らしたい。秒は Doc から調整できるようにしたい",
       "expect": [
         {"re": "Timeline\\.build|Timeline", "why": "Timeline の時刻表"},
-        {"re": "withSound|soundsOn|startedBetween", "why": "音をクリップに付ける（withSound / soundsOn）"},
+        {"re": "withSound|soundsOn", "why": "音をクリップに付ける（withSound / soundsOn）"},
         {"re": "withAudio", "why": "App.withAudio"}
       ],
-      "avoid": []
+      "avoid": [
+        {"re": "startedBetween", "why": "クリップの列と別に音の時刻を判定する古い形"}
+      ]
+    },
+    {
+      "id": "beat-synced-cutin",
+      "prompt": "BGM のテンポに合わせて、警告の帯を 2 小節見せた後、次の小節の頭ちょうどでカットインを始めたい。帯の長さを変えても、曲の拍からずれないようにしたい",
+      "expect": [
+        {"re": "Bars|ToNextBar|ToBeat", "why": "Duration.Bars / ToNextBar / ToBeat"},
+        {"re": "Timeline\\.tempo|tempo\\(", "why": "Timeline.tempo に譜面の bpm を渡す"}
+      ],
+      "avoid": [
+        {"re": "60(\\.0)?\\s*/\\s*\\w*bpm", "why": "60 / bpm を手で計算する"}
+      ]
+    },
+    {
+      "id": "bgm-intro-loop",
+      "prompt": "戦闘曲にイントロを付けたい。イントロは戦いの頭で 1 回だけ鳴らし、その後は本編だけを繰り返したい。継ぎ目に隙間が空かないようにしたい",
+      "expect": [
+        {"re": "renderLooped|ループ点|smpl|loopPoints", "why": "1 本の WAV のループ点（SfxSynth.renderLooped・smpl）"},
+        {"re": "withSustained", "why": "App.withSustained で同じ名前を宣言し続ける"}
+      ],
+      "avoid": [
+        {"re": "Intro\\.wav|bgm\\w*Intro\\b|イントロの長さを過ぎたら", "why": "頭と輪を 2 本の音に割って時刻で切り替える"}
+      ]
     },
     {
       "id": "heavy-queue",
