@@ -33,7 +33,9 @@ type ctx struct {
 
 type errUnknownColor string
 
-func (e errUnknownColor) Error() string { return fmt.Sprintf("legend に無い色キー %q", string(e)) }
+func (e errUnknownColor) Error() string {
+	return fmt.Sprintf("legend に無い色キー %q", string(e))
+}
 
 // color は "ink" "shade" "mid" "light" "gloss" をランプから引き、ほかは legend のキーそのもの。
 func (c *ctx) color(v any) string {
