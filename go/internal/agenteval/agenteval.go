@@ -467,7 +467,7 @@ func score(j job, raw []byte) Result {
 
 // 「let _ = は使わない」のように打ち消して触れた行は減点しない。
 // 「ない」1 字では見ない（「できない」「足りない」の行で減点が全部消えるため）。
-var negation = regexp.MustCompile(`(使わ|呼ば|書か|足さ|置か|頼ら|し)ない|使わず|避け|禁止|NG|消え|止ま|止め|代わりに|古い|非推奨|(?i)\b(not|don't|avoid|instead)\b`)
+var negation = regexp.MustCompile(`(使わ|呼ば|書か|足さ|置か|頼ら|し)ない|使わず|避け|禁止|NG|消え|止ま|止め|代わりに|古い|非推奨|(?i)\b(not|don't|avoid|instead|catch(es)?|lint|forbid|z-table|value-discard)\b`)
 
 // avoidKey は「使わない物」を並べる JSON の鍵（"avoid": [...]・"使わない": {...}）。語ごとに見る。
 var avoidKey = regexp.MustCompile(`(?i)^(avoid\w*|dont\w*|do_not\w*|not\w*|forbid\w*|deprecated|ng|old\w*|legacy|anti\w*|pitfalls?|使わない.*|避ける.*|やらない.*|しない.*|禁止.*|古い.*|非推奨.*)$`)

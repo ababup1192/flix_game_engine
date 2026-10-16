@@ -21,6 +21,7 @@ func TestAdoptedReadsNegationAndAvoidLists(t *testing.T) {
 		{"使わない物の配列の中のオブジェクトが閉じた後", "\"avoid\": [\n  {\n    \"x\": \"a\"\n  },\n  \"let _ = Log.warn\"\n]", false},
 		{"配列が閉じた後の選んだ行", "\"avoid\": [\n  \"a\"\n],\n\"tools\": [\n  \"let _ = Log.warn\"\n]", true},
 		{"鍵の名前の一部に old が入るだけ", "\"holder\": [\n  \"let _ = Log.warn\"\n]", true},
+		{"lint が止める物の説明", "{\"name\": \"bin/fge forbid\", \"catches\": \"let _ = Log.warn\"}", false},
 		{"「ない」だけでは打ち消さない", "足りない所は let _ = Log.warn で知らせる", true},
 	}
 	for _, c := range cases {
