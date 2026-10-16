@@ -17,7 +17,8 @@
 //   Timeline.soundsOn(Playback.Play, before, after, tl)        // 鳴らす側: このフレームの音
 //
 //   - 長さは Seconds / Beats / Bars と、曲に合わせて伸び縮みする ToNextBar（次の小節の頭まで）・
-//     ToBeat(n)（頭から n 拍目まで）で書く。拍と小節は Tempo（譜面の bpm）から秒になる。
+//     ToBeat(n)（頭から n 拍目まで）・ToPickup(n)（次の小節の頭の n 拍前 = 弱起まで。余裕が n 拍未満なら
+//     その次の小節）で書く。拍と小節は Tempo（譜面の bpm）から秒になる。
 //     中では「拍の分 + 秒の分」の組で足し、秒へ直すのは最後の 1 回（拍を秒にしてから足す誤差を作らない）。
 //   - 置き場所: append = 表の終わり（既定）・join = 直前の行の頭（GSAP の "<"）・atStartOf / atEndOf =
 //     名前のクリップを基準・withDelay = そこから遅らせる（負なら手前へ）。前を延ばすと後ろが付いてくる。
@@ -129,6 +130,9 @@ pub mod Timeline {
         case ToNextBar
         /// クリップの頭から、表の頭から数えて n 拍目まで（もう過ぎていれば 0）
         case ToBeat(Float64)
+        /// クリップの頭から、次の小節の頭の n 拍前（弱起 = pickup）まで。小節の頭まで n 拍以上の余裕が
+        /// 無ければ、その次の小節の n 拍前へ送る（ターン 1 を「本編の頭の 1 拍前」に置くような所）
+        case ToPickup(Float64)
     }
 
     /// クリップを置く基準。
@@ -221,6 +225,10 @@ pub mod Timeline {
             // 小節の頭ちょうどを、丸めの誤差で次の小節へ送らない
             let bars = Float64.ceil(barsSoFar - 1.0e-9);
             latest(tempo, origin, { beats = bars * perBar, seconds = 0.0 })
+        case Duration.ToPickup(n) =>
+            // n 拍先から次の小節の頭を探し、そこから n 拍戻す（余裕が n 拍未満の小節は飛ばす）。
+            let barHead = advanceBy(tempo, plus(origin, { beats = n, seconds = 0.0 }), Duration.ToNextBar);
+            plus(barHead, { beats = 0.0 - n, seconds = 0.0 })
     }
 
     def latest(tempo: Tempo, x: Pos, y: Pos): Pos = if (toSeconds(tempo, y) > toSeconds(tempo, x)) y else x
@@ -257,6 +265,7 @@ pub mod Timeline {
                     let length = match s#length {
                         case Duration.ToNextBar => { beats = finish#beats - start#beats, seconds = finish#seconds - start#seconds }
                         case Duration.ToBeat(_) => { beats = finish#beats - start#beats, seconds = finish#seconds - start#seconds }
+                        case Duration.ToPickup(_) => { beats = finish#beats - start#beats, seconds = finish#seconds - start#seconds }
                         case other              => advanceBy(tempo, zero(), other)
                     };
                     let clipSeconds = Float64.max(0.0, toSeconds(tempo, length));

@@ -344,4 +344,33 @@ mod TestTimeline {
     def testTempoNeverDividesByZero(): Unit \ Assert =
         let t = Timeline.tempo(0.0, 0);
         Assert.assertEq(expected = (1.0, 1, 60.0), (t#bpm, t#beatsPerBar, Timeline.secondsOf(t, Duration.Beats(1.0))))
+
+    // ── 弱起（ToPickup: 次の小節の頭の n 拍前）──
+
+    /// 帯の後に ToPickup(n) で置いた行の頭の時刻（拍子 beatsPerBar・120 BPM = 1 拍 0.5 秒）。
+    def pickupAt(beatsPerBar: Int32, bannerSeconds: Float64, n: Float64): Float64 =
+        let tl = built(Timeline.build(Timeline.tempo(120.0, beatsPerBar), List#{
+            Timeline.append(Lead.Banner, Duration.Seconds(bannerSeconds)),
+            Timeline.append(Lead.Turn, Duration.Seconds(0.0)) |> Timeline.withDelay(Duration.ToPickup(n))
+        }));
+        startOf(Lead.Turn, tl)
+
+    @Test
+    def testPickupLandsOneBeatBeforeTheNextBarLine(): Unit \ Assert =
+        // 4/4・1 小節 2 秒。帯 1.2 秒 → 小節線 2.0 秒の 1 拍前 = 1.5 秒（足場の行と負の遅らせで書いた時刻と同じ）。
+        // 帯が小節線ちょうど（2.0 秒）なら、小節線まで 1 拍の余裕が無いので次の小節線 4.0 秒の 1 拍前 = 3.5 秒。
+        Assert.assertEq(expected = (1.5, startOf(Lead.Turn, lead(1.2)), 3.5),
+                        (pickupAt(4, 1.2, 1.0), pickupAt(4, 1.2, 1.0), pickupAt(4, 2.0, 1.0)))
+
+    @Test
+    def testPickupSkipsABarWithLessThanNBeatsLeft(): Unit \ Assert =
+        // 帯 1.6 秒: 小節線 2.0 秒まで 0.8 拍しか無い → 次の小節線 4.0 秒の 1 拍前 = 3.5 秒。
+        // 2 拍前に置くなら、帯 0.9 秒（小節線まで 2.2 拍）は 1.0 秒・帯 1.1 秒（1.8 拍）は 3.0 秒へ送る。
+        Assert.assertEq(expected = (3.5, 1.0, 3.0),
+                        (pickupAt(4, 1.6, 1.0), pickupAt(4, 0.9, 2.0), pickupAt(4, 1.1, 2.0)))
+
+    @Test
+    def testPickupFollowsAThreeFourBar(): Unit \ Assert =
+        // 3/4・1 小節 1.5 秒。帯 0.4 秒 → 小節線 1.5 秒の 1 拍前 = 1.0 秒・帯 1.2 秒（余裕 0.6 拍）→ 3.0 秒の 1 拍前 = 2.5 秒。
+        Assert.assertEq(expected = (1.0, 2.5), (pickupAt(3, 0.4, 1.0), pickupAt(3, 1.2, 1.0)))
 }

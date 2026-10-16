@@ -105,13 +105,15 @@
     },
     {
       "id": "beat-synced-cutin",
-      "prompt": "BGM のテンポに合わせて、警告の帯を 2 小節見せた後、次の小節の頭ちょうどでカットインを始めたい。帯の長さを変えても、曲の拍からずれないようにしたい",
+      "prompt": "BGM のテンポに合わせて、警告の帯を 2 小節見せた後にカットインを入れ、その後のターン 1 の合図を、次の小節の頭のちょうど 1 拍前に出したい。帯やカットインの長さを変えても、曲の拍からずれないようにしたい",
       "expect": [
-        {"re": "Bars|ToNextBar|ToBeat", "why": "Duration.Bars / ToNextBar / ToBeat"},
+        {"re": "ToPickup", "why": "Duration.ToPickup（次の小節の頭の n 拍前）"},
+        {"re": "Bars|ToNextBar", "why": "Duration.Bars / ToNextBar"},
         {"re": "Timeline\\.tempo|tempo\\(", "why": "Timeline.tempo に譜面の bpm を渡す"}
       ],
       "avoid": [
-        {"re": "60(\\.0)?\\s*/\\s*\\w*bpm", "why": "60 / bpm を手で計算する"}
+        {"re": "60(\\.0)?\\s*/\\s*\\w*bpm", "why": "60 / bpm を手で計算する"},
+        {"re": "withDelay\\(\\s*(Duration\\.)?Beats\\(\\s*(0\\.0\\s*)?-", "why": "足場の行と負の withDelay で拍を戻す"}
       ]
     },
     {

@@ -75,7 +75,7 @@
 | 値を滑らかに動かす | EcsTween / Curve |
 | 整数を 1 つずつ動かす（数え下がり・数え上がり・巡って止まるルーレット） | EcsTween（steppedInt） |
 | 演出の時刻表（動き・効果音・待ちを 1 本に書く。拍・小節で書いて秒はテンポから。音を絵と同じクリップに付ける） | Timeline（build / append / join / atEndOf / withSound / waitFor → stateOf / progressOf / soundsOn。手順は `engine_world/src/Timeline.flix` 冒頭） |
-| 曲に乗せる（次の小節の頭まで伸ばす・頭から n 拍目まで） | Timeline（Duration.ToNextBar / ToBeat。テンポは Timeline.tempo に譜面の bpm を渡す） |
+| 曲に乗せる（次の小節の頭まで伸ばす・頭から n 拍目まで・次の小節の頭の n 拍前） | Timeline（Duration.ToNextBar / ToBeat / ToPickup。テンポは Timeline.tempo に譜面の bpm を渡す） |
 | 演出の時刻表を Doc の秒の並びから組むだけ（音は別に鳴らす古い形） | Timeline（クリップ: toClips / startedBetween / durationOf） |
 | ヒットストップ・スローモーション（ゲームの時計を一時的に遅くする） | TimeScale |
 | 長押しで決める・飛ばす（会話のスキップ・消去の確認） | HoldPress |
@@ -267,7 +267,7 @@
 - **EcsTween** — 値をある値から別の値へ、時間をかけて滑らかに動かす（補間する）。整数を 1 つずつ動かすのは steppedInt（数え下がり・ルーレット）。
 - **Journey** — 脚(出発点・行き先・速さ)の列を「時刻の純関数」で歩く。到着判定(done)と絵の位置(pos)を同じ戻り値で返す。
 - **Motion** — 物の動かし方の小さな道具箱（等速移動と往復運動）。
-- **Timeline** — 演出の時刻表。動き・効果音・待ちを 1 本に並べ（append / join / atStartOf / atEndOf / withDelay / waitFor）、長さは秒・拍・小節と ToNextBar / ToBeat で書く。build が秒の表を組み、書き間違い（同じ名前・前方参照・待ちに音など）は Err。描く側は stateOf / progressOf、鳴らす側は soundsOn（Enter / Play / Seek・二分探索）で同じクリップを読む。待ちは playheadOf / resume。小さい部品として区間(Seg / at)とクリップ(Clip / toClips / startedBetween / durationOf)も持つ。履歴・巻き戻しは Worldline（別物）。
+- **Timeline** — 演出の時刻表。動き・効果音・待ちを 1 本に並べ（append / join / atStartOf / atEndOf / withDelay / waitFor）、長さは秒・拍・小節と ToNextBar / ToBeat / ToPickup（次の小節の頭の n 拍前）で書く。build が秒の表を組み、書き間違い（同じ名前・前方参照・待ちに音など）は Err。描く側は stateOf / progressOf、鳴らす側は soundsOn（Enter / Play / Seek・二分探索）で同じクリップを読む。待ちは playheadOf / resume。小さい部品として区間(Seg / at)とクリップ(Clip / toClips / startedBetween / durationOf)も持つ。履歴・巻き戻しは Worldline（別物）。
 - **TimeScale** — ヒットストップ・スロー。合図からの実秒で「止める → 遅く流す → 等速へ戻す」を決め、毎フレームの dt を gameDt で直す（ゲームの時計ごと遅くする）。光や揺れは realAt の実秒で動かせる。
 - **HoldPress** — 長押しで決める。押している間だけ秒を貯め、満ちたフレームで 1 回だけ合図、合図の後は離すまで貯めない。押した瞬間の拍そのものは InputEdge。
 - **SceneSeq** — カット列の逐次シーケンサ骨格。perform（カットを 1 コマ演じる）と idle（尽きたあと時間だけ流す）を注入し、Skip・打ち切りは notes に残す（fail-open だが無音ではない）。

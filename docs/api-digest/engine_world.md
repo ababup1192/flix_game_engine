@@ -1891,7 +1891,7 @@
 - テンポ。bpm は 1 未満にしない（0 で割らない）・1 小節の拍数は 1 未満にしない。
   `pub def tempo(bpm: Float64, beatsPerBar: Int32): Tempo`
 - 長さの書き方。
-  `pub enum Duration with Eq { case Seconds(Float64) case Beats(Float64) case Bars(Float64) case ToNextBar case ToBeat(Float64) }`
+  `pub enum Duration with Eq { case Seconds(Float64) case Beats(Float64) case Bars(Float64) case ToNextBar case ToBeat(Float64) case ToPickup(Float64) }`
 - クリップを置く基準。
   `pub enum Place[a] { case End case WithPrevious case AtStartOf(a) case AtEndOf(a) }`
 - クリップの中で鳴らす効果音。fitted = 書き出す WAV の長さをこのクリップの長さに合わせる音。
