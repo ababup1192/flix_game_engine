@@ -64,15 +64,17 @@ pub mod Timeline {
     // ── 時刻表を書く口 ──
 
     /// 曲の速さ。拍と小節を秒へ直すのはここだけ（譜面の bpm をそのまま渡す）。
-    pub type alias Tempo = { bpm = Float64, beatsPerBar = Int32 }
+    /// hasBeat = false は noTempo（拍を書かない表）。拍で書いた行があれば build が Err にする。
+    pub type alias Tempo = { bpm = Float64, beatsPerBar = Int32, hasBeat = Bool }
 
     /// テンポ。bpm は 1 未満にしない（0 で割らない）・1 小節の拍数は 1 未満にしない。
     /// 譜面を持つゲームは、譜面の bpm と拍子からここへ渡す（テンポを Doc に 2 か所書かない）。
     pub def tempo(bpm: Float64, beatsPerBar: Int32): Tempo =
-        { bpm = Float64.max(1.0, bpm), beatsPerBar = Int32.max(1, beatsPerBar) }
+        { bpm = Float64.max(1.0, bpm), beatsPerBar = Int32.max(1, beatsPerBar), hasBeat = true }
 
-    /// 拍を書かない表（秒だけで並べる表）に渡すテンポ（1 拍 = 1 秒・4 拍子。拍で書いた行が無いので値は効かない）。
-    pub def noTempo(): Tempo = tempo(60.0, 4)
+    /// 拍を書かない表（秒だけで並べる表）に渡すテンポ。拍・小節で書いた行（Beats・Bars・ToNextBar・
+    /// ToBeat・ToPickup）があれば build が BeatsWithoutTempo で止める（黙って 1 拍 = 1 秒にしない）。
+    pub def noTempo(): Tempo = { hasBeat = false | tempo(60.0, 4) }
 
     /// 長さの書き方。
     pub enum Duration with Eq {
@@ -119,7 +121,24 @@ pub mod Timeline {
         case FittedLengthConflict(String)
         /// 待ちの後に書いた行を、待ちより前の時刻へ置いた（待ちを解く前に始まってしまう）
         case PlacedBeforeWait(a)
+        /// noTempo の表に拍・小節で書いた行がある（曲のテンポを Timeline.tempo で渡す）
+        case BeatsWithoutTempo(a)
     }
+
+    /// 拍・小節で書いた長さか（秒だけの表に混ざると、テンポが無いので秒へ直せない）。
+    def isBeatDuration(d: Duration): Bool = match d {
+        case Duration.Seconds(_) => false
+        case _                   => true
+    }
+
+    /// 行のどこか（置き場所・遅らせ・長さ・音の遅れ）に拍で書いた所があるか。
+    def usesBeats(s: Step[a]): Bool =
+        let placedAt = match s#place {
+            case Place.At(d) => isBeatDuration(d)
+            case _           => false
+        };
+        placedAt or isBeatDuration(s#delay) or isBeatDuration(s#length) or
+            List.exists(cue -> isBeatDuration(cue#offset), s#cues)
 
     def step(tag: a, place: Place[a], length: Duration): Step[a] =
         { tag = tag, place = place, delay = Duration.Seconds(0.0), length = length, cues = Nil, isWait = false }
@@ -214,6 +233,7 @@ pub mod Timeline {
                 case Err(e) => { errors = e :: acc#errors | acc }
                 case Ok(_) if Map.memberOf(s#tag, acc#spans) => { errors = BuildError.DuplicateTag(s#tag) :: acc#errors | acc }
                 case Ok(_) if s#isWait and not List.isEmpty(s#cues) => { errors = BuildError.SoundOnWait(s#tag) :: acc#errors | acc }
+                case Ok(_) if not tempo#hasBeat and usesBeats(s) => { errors = BuildError.BeatsWithoutTempo(s#tag) :: acc#errors | acc }
                 case Ok(base) if not s#isWait and toSeconds(tempo, advanceBy(tempo, base, s#delay)) < acc#lastWait =>
                     { errors = BuildError.PlacedBeforeWait(s#tag) :: acc#errors | acc }
                 case Ok(base) =>

@@ -6,7 +6,7 @@
 mod TestTimeline {
     use Timeline.{Duration, ClipState, Playback, BuildError}
 
-    def tempo(bpm: Float64): Timeline.Tempo = { bpm = bpm, beatsPerBar = 4 }
+    def tempo(bpm: Float64): Timeline.Tempo = Timeline.tempo(bpm, 4)
 
     def built(r: Result[List[BuildError[a]], Timeline.Timeline[a]]): Timeline.Timeline[a] = match r {
         case Ok(tl) => tl
@@ -196,6 +196,21 @@ mod TestTimeline {
     def testSoundOnWaitIsAnError(): Unit \ Assert =
         let r = Timeline.build(tempo(120.0), List#{ Timeline.waitFor(Talk.Read) |> Timeline.withSound("ping") });
         Assert.assertEq(expected = Err(List#{BuildError.SoundOnWait(Talk.Read)}), r |> Result.map(_ -> ()))
+
+    // noTempo の表に拍で書いた行（ここでは音の遅れ）があれば、黙って 1 拍 = 1 秒にせず止める。
+    @Test
+    def testBeatsWithoutTempoIsAnError(): Unit \ Assert =
+        let r = Timeline.build(Timeline.noTempo(), List#{
+            Timeline.append(Talk.Beat, Duration.Seconds(1.0)),
+            Timeline.append(Talk.WindowIn, Duration.Seconds(0.3)) |> Timeline.withSoundAt("ping", Duration.Beats(1.0))
+        });
+        Assert.assertEq(expected = Err(List#{BuildError.BeatsWithoutTempo(Talk.WindowIn)}), r |> Result.map(_ -> ()))
+
+    // 秒だけの表は noTempo で組める。
+    @Test
+    def testSecondsOnlyBuildsWithoutTempo(): Unit \ Assert =
+        let r = Timeline.build(Timeline.noTempo(), List#{ Timeline.append(Talk.Beat, Duration.Seconds(1.0)) });
+        Assert.assertEq(expected = Ok(()), r |> Result.map(_ -> ()))
 
     // ── 場面 3: 連鎖 n 段（溜め → 弾け + しずく）──
 
