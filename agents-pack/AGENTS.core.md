@@ -104,7 +104,7 @@
 - 実装の前に engine リポの `docs/module-index.md`（やりたいこと → モジュールの逆引き）を引く。
   **エンジンにある物を自前で書かない** — メニュー・スクロール・文字折り・当たり判定・
   マップ地形（Terrain / TerrainDoc・MapResource）・フォーカス巡りとツールチップ（UiFocusNav / UiTooltip）・
-  音のバスとダッキング（App.withMixer + mixer.json）・演出の時刻表（Timeline のクリップ）・
+  音のバスとダッキング（App.withMixer + mixer.json）・演出の時刻表（動き・効果音・待ちを 1 本に書く Timeline.build・曲の頭を 1 回だけ鳴らすのは WAV のループ点）・
   ヒットストップ（TimeScale）・長押し（HoldPress）・数え上げ（EcsTween.steppedInt）など。
 - API の型・引数は、ソースを grep/unzip する前に `docs/api-digest.md`（`make api Q=<名前>` で 1 行）。
   使い方は `engine_world/src/<名前>.flix` 冒頭の doc コメントと templates/ の実使用例が正。
