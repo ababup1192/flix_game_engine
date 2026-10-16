@@ -207,6 +207,14 @@
       "avoid": [
         {"re": "retro-pixel|px-character|visual-dict", "why": "長いスキル（詳しい参考）を既定で読む"}
       ]
+    },
+    {
+      "id": "confirm-window-pacing",
+      "prompt": "確認の窓が開くまでの長さと、閉じるまでの長さを決めたい。何を目安に、どのくらいにする？",
+      "expect": [
+        {"re": "pacing\\.md", "why": "演出の間の目安 docs/pacing.md を読む"}
+      ],
+      "avoid": []
     }
   ]
 }
