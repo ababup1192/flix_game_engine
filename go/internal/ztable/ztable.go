@@ -17,9 +17,9 @@ package ztable
 //   - 表のファイルが無いパッケージ: 数を書くファイルが 2 本以上あったら全部鳴る
 //   - 表のファイルの中: 葉の中の z (0..31) の外の数を書いたら鳴る。表に置くのは層の enum と
 //     zRange の範囲 (case の行) と、いくつもの View が分け合う葉の中の段だけ
-//   - 付け替え: 表を持つパッケージで、表の外から zMapped・zShifted・zShiftedAll・raiseZ・
-//     Depth.place・Depth.placeOne で z を付け替える (remap.go)
-//   - 移行の口: 表を持つパッケージで、表の外から SortingLayer.z・ZStack.leafAbsolute を呼ぶ (migration.go)
+//
+// z を後から付け替える関数・移行の口 (Render.zShifted・SortingLayer.z・ZStack.leafAbsolute など) は
+// エンジン 0.35.24 で消したか ZLegacy へ移したので、ここでは見ない (型検査が止める)。
 //
 // 除外はエンジンの z-table.json の exempt と、ゲームの z-table.local.json の exempt を足した物。
 //
@@ -57,10 +57,6 @@ type Hit struct {
 	Scatter []string
 	// Same は同じパッケージの別のファイルで同じ数を持つ宣言 ("zGround (src/ViewRoad.flix)")。
 	Same []string
-	// Remap は付け替えのとき true。Name は呼んだ関数の名前。
-	Remap bool
-	// Migration は表の外から移行の口を呼んだとき true。Name は呼んだ口の名前。
-	Migration bool
 	// InTable は表のファイルの中で 0..31 の外の数を書いたとき true。
 	InTable bool
 }
@@ -255,7 +251,7 @@ func (r *Rules) allPackages(root string) ([]string, error) {
 
 // packageScan は 1 パッケージを読んだ結果。
 type packageScan struct {
-	hits      []Hit
+	hits     []Hit
 	defCount int
 	tables   map[string]bool
 }
@@ -290,9 +286,8 @@ func (r *Rules) scanPackage(root, pkg string, extra []string) (packageScan, erro
 		count += len(defs[f])
 	}
 	tables := r.TablesOf(bodies)
-	hits := append(r.PackageHits(files, defs, tables), r.RemapHits(bodies, tables)...)
 	return packageScan{
-		hits:     append(hits, r.MigrationHits(bodies, tables)...),
+		hits:     r.PackageHits(files, defs, tables),
 		defCount: count,
 		tables:   tables,
 	}, nil
@@ -423,14 +418,10 @@ func report(out, errOut *strings.Builder, rules *Rules, hits []Hit, all, warn bo
 	for _, h := range bad {
 		reason := fmt.Sprintf("表 (%s) の外で z を数で決めています", h.Table)
 		switch {
-		case h.Migration:
-			reason = "表の外で移行の口 (SortingLayer.z・ZStack.leafAbsolute) を呼んでいます (層の中の順は ZStack の木に積み、z の数は葉の中だけで書いてください)"
 		case h.InTable:
 			reason = fmt.Sprintf("表 (%s) に z の数 (葉の中の 0..31 の外) を足しています。"+
 				"新しい層は enum に case を足して zRange に範囲を書き、層の中の順は ZStack の木に積んでください"+
 				" (必ず手前に出す物は ZStack.topLayer。葉の中の段だけ 0..31 で名前を置けます)", h.Table)
-		case h.Remap:
-			reason = "表の外で z を関数で付け替えています (付け替えた後の z がどの層に入るかは表から読めません)"
 		case h.Table == "":
 			reason = fmt.Sprintf("z を数で決めるファイルが %d 本に散っています: %s",
 				len(h.Scatter), strings.Join(h.Scatter, " / "))
@@ -438,10 +429,6 @@ func report(out, errOut *strings.Builder, rules *Rules, hits []Hit, all, warn bo
 		if reason != lastReason {
 			fmt.Fprintf(errOut, "!! %s\n", reason)
 			lastReason = reason
-		}
-		if h.Remap || h.Migration {
-			fmt.Fprintf(errOut, "   %s:%d %s\n", h.Path, h.Line, h.Name)
-			continue
 		}
 		fmt.Fprintf(errOut, "   %s:%d %s = %s", h.Path, h.Line, h.Name, h.Value)
 		if len(h.Same) > 0 {

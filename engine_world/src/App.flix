@@ -637,7 +637,7 @@ pub mod App {
             case Some(c) => CameraRig.centerOn(c, zoom = zoom, design = design, items#world)
         };
         let lifted = items#hud |> List.map(placed ->
-            { item = Render.zMapped(ZBand.liftHud, placed#item) | placed });
+            { item = EngineInternal.zMapped(ZBand.liftHud, placed#item) | placed });
         // hud が空のフレームで List.append に world 全件を cons し直させない。
         // world 側が空のときの分岐は要らない — append は第 1 引数が空なら O(1) で lifted を返す。
         if (List.isEmpty(lifted)) shifted

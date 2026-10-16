@@ -1,6 +1,5 @@
 // SortingLayer — 画面全体の重なりの層を名前で宣言する表と、ZStack の木を z の数へ戻す組み立て（compose）。
 // 使う場面: 根（Main / View の入口）で 1 回 compose する・新しい層（ポーズ・確認）は enum に case を足す。
-// 使わない: View の中で層の z を引く SortingLayer.z（移行の口。表の外では z-table が止める）→ 木ごと topLayer で送る。
 // Unity の Sorting Layer（名前つきの層）と同じ考え方。ゲームは層を enum で宣言し、instance で各層の
 // z の範囲を match で書く（case を足すと網羅で止まる）。層の並び（どれが手前か）は範囲の底の順。
 // 表は根（画面全体）にだけ置き、層の中は ZStack の積んだ順、部品の中は葉の中の小さな z で決める。
@@ -26,11 +25,6 @@ pub trait SortingLayer[t] {
 pub mod SortingLayer {
 
     use ZStack.Node
-
-    /// 層の中の順番 order（0 = 層の底）の z（移行の間だけ: 場面を木にするまで、表から z の数を引く View 用）。
-    /// 範囲の確かめはしない —— 描いた絵が層の天井を越えたかは compose が一手に見る。
-    pub def z(layer: t, order: Int32): Int32 with SortingLayer[t] =
-        bottom(layer) + order
 
     /// 層の底の z（順番 0）。
     pub def bottom(layer: t): Int32 with SortingLayer[t] = fst(SortingLayer.zRange(layer))
@@ -129,7 +123,6 @@ pub mod SortingLayer {
         with SortingLayer[t], ToString[t] =
         match node {
             case Node.Leaf(_)                 => acc
-            case Node.Absolute(_)             => acc
             case Node.Stacked(children)       => List.foldLeft((a, child) -> gather(ctx, source, child, wrap, a), acc, ordered(children))
             case Node.ZIndexed(_, child)      => gather(ctx, source, child, wrap, acc)
             case Node.TopLayer(target, child) => claimed(ctx, source, { target = target, wrap = wrap, child = child }, acc)
@@ -154,7 +147,6 @@ pub mod SortingLayer {
     def walk(ctx: App.ViewCtx, node: Node[t], wrap: Wrap, st: Walk[t]): Walk[t] =
         match node {
             case Node.Leaf(items)             => emitLeaf(items, st)
-            case Node.Absolute(items)         => emitAbsolute(ctx, items, st)
             case Node.Stacked(children)       => List.foldLeft((s, child) -> walk(ctx, child, wrap, s), st, ordered(children))
             case Node.ZIndexed(_, child)      => walk(ctx, child, wrap, st)
             case Node.TopLayer(target, child) =>
@@ -203,22 +195,7 @@ pub mod SortingLayer {
                 let delta = st#next - low;
                 let ceiling = st#high;
                 let acc = List.foldLeft((a, placed) ->
-                    { item = Render.zMapped(z -> Int32.min(ceiling, z + delta), placed#item) | placed } :: a, st#acc, items);
+                    { item = EngineInternal.zMapped(z -> Int32.min(ceiling, z + delta), placed#item) | placed } :: a, st#acc, items);
                 { acc = acc, next = st#next + (high - low + 1) | st }
         }
-
-    /// 絶対値の葉を z のまま出す（天井を越えた分は天井で止める）。層の続きは葉のいちばん手前の上から。
-    /// 層の底より奥の z はそのまま出して知らせる（止めると移行前の絵が変わるため。描き出しはその知らせで止まる）。
-    def emitAbsolute(ctx: App.ViewCtx, items: List[Render.PlacedItem], st: Walk[t]): Walk[t] =
-        let ceiling = st#high;
-        let (acc, lowest, highest) = List.foldLeft((triple, placed) -> {
-            let (a, lo, hi) = triple;
-            let z = Render.zOf(placed#item);
-            let item = if (z > ceiling) Render.zMapped(_ -> ceiling, placed#item) else placed#item;
-            ({ item = item | placed } :: a, Int32.min(lo, z), Int32.max(hi, z))
-        }, (st#acc, st#low, st#next - 1), items);
-        let done = { acc = acc, next = highest + 1 | st };
-        if (lowest < st#low)
-            warned(ctx, "z fail-open: 底 ${st#low} より奥の z ${lowest} を絶対値の葉のまま出しました — leafAbsolute の絵が層の区画の外にあります", done)
-        else done
 }

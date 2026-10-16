@@ -1,7 +1,7 @@
 {
   "note": "lint-view（View が矩形と円だけになっていないか）の規約データ。この JSON が source of truth で、bin/fge view はこれを読んで動く。",
   "rectPattern": "(?:(?:Render|RawDraw)\\.(?:box|boxAt|orBoxAt|circle|circleAt)|Item\\.Box)\\b",
-  "richPattern": "(?:(?:Render|RawDraw)\\.(?:star|ellipse\\w*|sector|ngon)|Render\\.(?:vgrad|gradPolygon|striped|checker|glowAt|outline|outlineA|shaderFill|turned|turnedAll|clipped|clippedAll|zShifted|zShiftedAll|fadeAll|overItem)|PxSprite|PxShade|Material|Scatter|FxDoc|Fx\\.|Anim|Sway|Daylight|Mirror|TileLayer|DualGrid|Terrain|ShaderDoc|UiShape|Color\\.(?:warm|cool))\\b",
+  "richPattern": "(?:(?:Render|RawDraw)\\.(?:star|ellipse\\w*|sector|ngon)|Render\\.(?:vgrad|gradPolygon|striped|checker|glowAt|outline|outlineA|shaderFill|turned|turnedAll|clipped|clippedAll|fadeAll|overItem)|PxSprite|PxShade|Material|Scatter|FxDoc|Fx\\.|Anim|Sway|Daylight|Mirror|TileLayer|DualGrid|Terrain|ShaderDoc|UiShape|Color\\.(?:warm|cool))\\b",
   "minDraws": 5,
   "rectPct": 80,
   "destinations": "空・水面→vgrad/gradPolygon、パネル→outline+rounded、キャラ・物→PxSprite+PxShade、面の質感→shader.json"

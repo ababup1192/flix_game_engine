@@ -506,26 +506,8 @@
   `pub def darkness(keys: List[Key], t: Float64): Float64`
 
 ## Depth — `engine_world/src/Depth.flix`
-- 足元の高さ（world の y）を重なり順に写す z の範囲。
-  `pub type alias ZRange = { back = Int32, front = Int32, top = Float64, bottom = Float64 }`
-- マス目の盤から ZRange を作る近道。1 行に 1 つの zIndex を割り当てる。
-  `pub def forRows(spec: { back = Int32, originY = Float64, rows = Int32, tileSize = Float64 }): ZRange`
-- 足元の高さ footY に対する重なり順。範囲の外に出た足元は端で止める
-  `pub def zAt(range: ZRange, footY: Float64): Int32`
 - ZStack の木で足元の順に並べるときの zIndex（1 画素ごとに 1 つ・下にある物ほど大きい）。
   `pub def orderAt(footY: Float64): Int32`
-- 組み上がった絵の集まりを、足元の高さで決まる層へ持ち上げる。
-  `pub def place(range: ZRange, footY: Float64, items: List[Render.PlacedItem]): List[Render.PlacedItem]`
-- place の 1 個版。置き場所の下端（=足元）を自分で渡す。
-  `pub def placeOne(range: ZRange, footY: Float64, placed: Render.PlacedItem): Render.PlacedItem`
-- 非推奨: 帯を数で並べる代わりに ZStack.of へ奥 → 手前の順に積む（docs/z-bands.md「表は根・中は木」）。
-  `pub type alias Bands = Map[String, Int32]`
-- 奥から手前へ並べた名前の列から帯の地図を作る。
-  `pub def bands(spec: { base = Int32, stride = Int32 }, names: List[String]): Bands`
-- 帯 name の底の zIndex。知らない名前は一番奥（base 側 = 地図の最小値）へ落とす。
-  `pub def bandZ(map: Bands, name: String): Int32`
-- 帯 name の中で「足元が下にある物ほど手前」を作る ZRange。
-  `pub def bandRange(map: Bands, name: String, spec: { stride = Int32, top = Float64, bottom = Float64 }): ZRange`
 
 ## Dir4 — `engine_world/src/Dir4.flix`
 - 四方位のいずれか。斜めも「なし」も無い: 「方向があるかもしれない」を扱う呼び側は
@@ -683,6 +665,10 @@
   `pub def step(dt: Float64, ts: Tweens[k, c]): (Tweens[k, c], List[((k, c), Out)], List[(k, c)]) with Order[k], Order[c]`
 - 整数を start から end へ 1 つずつ動かす tween の、進み u（0..1）の時点の値。
   `pub def steppedInt(start: Int32, end: Int32, easing: Easing, u: Float64): Int32`
+
+## EngineInternal — `engine_world/src/EngineInternal.flix`
+- 描画物の重なり順（zIndex）を f で写す（Clipped は中身の z）。
+  `pub def zMapped(f: Int32 -> Int32, item: Item): Item`
 
 ## Flex — `engine_world/src/Flex.flix`
 - レイアウトノード。Leaf = 実寸つき描画物、Box = 子を並べる容器、
@@ -1478,15 +1464,9 @@
   `pub def fadeAll(alpha: Float64, items: List[PlacedItem]): List[PlacedItem]`
 - ピクセルの重ね方を変える（Sprite / Box / Poly に効く。Text は文字の可読性が第一で対象外）。
   `pub def blended(mode: DrawCmd.BlendMode, item: Item): Item`
-- 重なり順（zIndex）を delta だけずらす。組み上がった絵の相対的な前後関係は保ったまま、
-  `pub def zShifted(delta: Int32, item: Item): Item`
-- 重なり順（zIndex）を関数 f で写す（zShifted の一般形）。
-  `pub def zMapped(f: Int32 -> Int32, item: Item): Item`
 - 描画物 1 つの重なり順（Clipped は中身の z）。
   `pub def zOf(item: Item): Int32`
-- 置き場所つきの列を丸ごと delta だけずらす（zShifted の列版）。使わない場面は zShifted と同じ
-  `pub def zShiftedAll(delta: Int32, items: List[PlacedItem]): List[PlacedItem]`
-- 組み上がった列を丸ごと d だけ動かす（zShiftedAll の位置版）。
+- 組み上がった列を丸ごと d だけ動かす。
   `pub def movedAll(d: Vec2.Vec2, items: List[PlacedItem]): List[PlacedItem]`
 - 組み上がった列を、pivot（画面座標）を不動点に factor 倍へ伸縮する（ズーム演出・
   `pub def scaledAllAround(factor: Float64, pivot: Vec2.Vec2, items: List[PlacedItem]): List[PlacedItem]`
@@ -1528,8 +1508,6 @@
   `pub def checker(c: { color = Color, alpha = Float64, cell = Float64 }, item: Item): Item`
 - 大きさ系の属性を factor 倍する（全種類の item に効く）。camera の zoom 適用の芯:
   `pub def scaled(factor: Float64, item: Item): Item`
-- zIndex を delta だけ持ち上げる（全種類の item に効く）。組み上がった item の列を
-  `pub def raiseZ(delta: Int32, item: Item): Item`
 - 本編より先にレンダーターゲットへ描く 1 枚ぶんの宣言（App.withPasses で列を渡す）。
   `pub type alias Pass = { name = String, clear = RenderTarget.LoadOp, items = List[PlacedItem] }`
 - レンダーターゲット（Pass の name）を design 全面へ等倍で貼る（中心置き）。ターゲットは
@@ -1723,8 +1701,6 @@
   `pub def containsPoint(quad: List[Vec2.Vec2], p: Vec2.Vec2): Bool`
 
 ## SortingLayer — `engine_world/src/SortingLayer.flix`
-- 層の中の順番 order（0 = 層の底）の z（移行の間だけ: 場面を木にするまで、表から z の数を引く View 用）。
-  `pub def z(layer: t, order: Int32): Int32 with SortingLayer[t]`
 - 層の底の z（順番 0）。
   `pub def bottom(layer: t): Int32 with SortingLayer[t]`
 - 層の天井の z。
@@ -2501,13 +2477,15 @@
 - 世界線上の絶対位置 n（0 = 最古、pastLength = 現在地、length-1 = 最新）へ移動する。
   `pub def scrubTo(n: Int32, wl: Worldline[a]): Worldline[a]`
 
+## ZLegacy — `engine_world/src/ZLegacy.flix`
+- `pub def rawZ(layer: t, order: Int32): Int32 with SortingLayer[t]`
+- `pub def zShiftedAll(delta: Int32, items: List[Render.PlacedItem]): List[Render.PlacedItem]`
+
 ## ZStack — `engine_world/src/ZStack.flix`
 - 積み木の木。p は topLayer の行き先（ゲームの SortingLayer の層の enum）。
-  `pub enum Node[p] { case Leaf(List[Render.PlacedItem]) case Absolute(List[Render.PlacedItem]) case Stacked(List[Node[p]]) case ZIndexed(Int32, Node[p]) case TopLayer(p, Node[p]) case Mapped(List[Render.PlacedItem] -> List[Render.PlacedItem], Node[p]) }`
+  `pub enum Node[p] { case Leaf(List[Render.PlacedItem]) case Stacked(List[Node[p]]) case ZIndexed(Int32, Node[p]) case TopLayer(p, Node[p]) case Mapped(List[Render.PlacedItem] -> List[Render.PlacedItem], Node[p]) }`
 - 葉: 組み上がった絵の列を 1 つの子にする（中の前後は z のまま保つ）。
   `pub def leaf(items: List[Render.PlacedItem]): Node[p]`
-- 絶対値の z の葉: 今までどおり表から z の数を引いて描いた絵を、そのまま木に載せる（移行の間だけ）。
-  `pub def leafAbsolute(items: List[Render.PlacedItem]): Node[p]`
 - 子を奥 → 手前の順に積む。
   `pub def of(children: List[Node[p]]): Node[p]`
 - すぐ外の of の中で child を前後へずらす（小さいほど奥・付けない兄弟は 0・同じ数は積んだ順）。

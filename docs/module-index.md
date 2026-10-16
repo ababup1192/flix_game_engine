@@ -147,7 +147,7 @@
 | 効果音の素材を録音なしで作りたい（波形合成） | SfxSynth（engine_tools。詳しくは [audio.md](audio.md)。実例: `templates/race-starter/src/render/SfxRender.flix`） |
 | 揺れる演出を作る（浮遊・風のなびき） | Sway（実例: `templates/tetris-starter/src/View.flix`） |
 | リソース JSON の形（型・必須・既定値）を公式スキーマ方言で宣言する | Schema（実例: `templates/race-starter/project.schema.json`） |
-| 見下ろしで「足元が下にある物ほど手前」に並べる（人が木の裏に回る） | ZStack.zIndex(Depth.orderAt(足元の y), 1 人の葉)（Depth.place / Bands は使わない） |
+| 見下ろしで「足元が下にある物ほど手前」に並べる（人が木の裏に回る） | ZStack.zIndex(Depth.orderAt(足元の y), 1 人の葉) |
 | 一人称・疑似 3D（2.5D）で世界の点を画面へ落とす（透視除算・近クリップ・逆投影・距離霧） | Persp |
 | マス目の迷路から「カメラに見える壁の面」だけを集める（内部面・裏面は落とす） | WallFaces |
 | world 座標を画面へ落とす・戻す（横視点・見下ろし・斜め見下ろし・一人称の 4 通り） | ViewProjection（横視点と見下ろしは CameraRig へ委譲・一人称は Persp・見下ろしの前後は Depth） |
@@ -167,7 +167,7 @@
 | 生成したドット絵アトラスを名前付きテクスチャとして使う（1 体 = 1 クアッド） | App.withSpriteAtlases（実例: `templates/race-starter/src/Main.flix`） |
 | ドット絵の輪郭をにじませない（カメラと頂点を画素の升目に載せる） | App.withPixelSnap / Render.snapped（実例: `templates/platformer-starter/src/Main.flix`） |
 | 同じ絵を色だけ変えて使い回す | Render.tinted |
-| 部品の集まりを丸ごと手前・奥へ動かす | ZStack.of に積む順・ZStack.topLayer（Render.zShifted / zMapped で z を付け替えない） |
+| 部品の集まりを丸ごと手前・奥へ動かす | ZStack.of に積む順・ZStack.topLayer |
 | 画面ごと動かす・縮める・薄める・切り抜く（中から手前の層へ送った物にも掛ける） | ZStack.mapItems(Render.scaledAllAround / movedAll / fadeAll …) |
 | マスごとの「いま」を持つ（耕した・濡れた・置いた。セーブに乗る側） | TileState |
 | 画面を素材にする・複数光源・残像を作る（レンダーターゲットに描いてテクスチャとして貼り戻す） | Pass（`App.withPasses`）。ターゲットは design 解像度・宣言順に本編より先に描かれ、`Render.sprite(name, z)` で貼れる |
@@ -199,8 +199,10 @@
 - **RawDraw** — 単色ベタの図形プリミティブ（box / circle / star / ellipse / sector / ngon など）。材料であって、
   View に直接並べる完成品ではない。正当な用途は HUD 下地・デバッグ描画・fail-open の仮板。
 - **CameraRig** — world のどこを・どれだけズームして映すかを描画物の列に掛ける道具箱。
-- **Depth** — 見下ろし画面で「足元が下にある物ほど手前」を重なり順（zIndex）の数として決める。ZStack の木では orderAt(足元の y) を zIndex に渡す。Bands（帯に名前を付けて底の数を並べる）は非推奨で、帯は ZStack.of に奥 → 手前で積む。
-- **ZStack** — 描く順を「積んだ順」で決める木（leaf / of / zIndex / topLayer / mapItems）。z の数は葉の中の小さな前後（0..31）だけ。leafAbsolute は移行の口で、表を持つパッケージでは表の外で止まる（0.35.17）。
+- **Depth** — 見下ろし画面で「足元が下にある物ほど手前」を重なり順（zIndex）の数として決める。ZStack の木では orderAt(足元の y) を zIndex に渡す。帯は ZStack.of に奥 → 手前で積む。
+- **ZStack** — 描く順を「積んだ順」で決める木（leaf / of / zIndex / topLayer / mapItems）。z の数は葉の中の小さな前後（0..31）だけ。木で書けない演出だけ ZLegacy（rawZ・zShiftedAll）で z の数を直に書く。
+- **ZLegacy** — z の数を直に書く古い書き方（rawZ・zShiftedAll）。木で書けない演出だけで使い、ゲームから呼ぶと forbid の zlegacy が止める（除外に理由 1 行）。置き換えは docs/migrations/0.35.24.md。
+- **EngineInternal** — エンジンの中だけで使う口（z を書く zMapped。SortingLayer.compose・App.composeScene・UiRender が使う）。ゲームからは呼ばない（forbid の engine-internal が止める）。
 - **SortingLayer** — 画面全体の層を名前で宣言する表（trait。ゲームが enum の instance で範囲を書く）と、層ごとの ZStack の木を 1 本の絵の列にする compose。区画を越えたら天井で止め、ViewCtx#warnOnce で 1 回だけ知らせる。
 - **Persp** — 疑似 3D（2.5D）カメラの数学一式。世界の点を前後 fwd・左右 lat に分解し、透視除算で画面へ落とす。近クリップ・逆投影（depthAtY）・距離霧の式も持つ。焦点距離や霧の色の実体はゲーム側の意見（theme Doc など）。
 - **WallFaces** — マス目の迷路から「カメラに見える壁の境界面」だけを集める純幾何。壁どうしの内部面と、カメラに背を向けた裏面は落とす。solid の判定は関数で注入する（MapDoc の形を知らない）。

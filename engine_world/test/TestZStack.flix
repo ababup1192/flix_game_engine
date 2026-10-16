@@ -4,7 +4,7 @@
 // 描画物は 1 辺の長さを名札にした箱で作り、描く順は (z, 列の中の位置) で並べた名札の列で見る。
 mod TestZStack {
 
-    use ZStack.{leaf, leafAbsolute, of, zIndex, topLayer, mapItems}
+    use ZStack.{leaf, of, zIndex, topLayer, mapItems}
 
     /// テスト用の層の表（底の順 = 奥 → 手前）。
     enum Tier with Eq, ToString {
@@ -91,18 +91,6 @@ mod TestZStack {
                             of(leaf(box(1, 0) :: Nil) :: topLayer(Tier.Top, leaf(box(2, 0) :: Nil)) :: Nil));
         let items = SortingLayer.stack(quiet(), Tier.Back, tree);
         Assert.assertEq(expected = 5.0 :: 5.0 :: Nil, List.map(placed -> placed#at#x, items))
-
-    /// 絶対値の葉は z のまま出て、層の続きはそのいちばん手前の上から。
-    @Test
-    def testAbsoluteLeafKeepsItsZ(): Unit \ Assert =
-        let tree = of(leafAbsolute(box(1, 40) :: box(2, 7) :: Nil) :: leaf(box(3, 0) :: Nil) :: Nil);
-        Assert.assertEq(expected = 40 :: 7 :: 41 :: Nil, zs(SortingLayer.stack(quiet(), Tier.Back, tree)))
-
-    /// 絶対値の葉が層の底より奥の z を持つと、z はそのままで知らせる。
-    @Test
-    def testAbsoluteLeafBelowTheFloorWarns(): Unit \ { Assert, IO } =
-        let (items, warned) = collecting(ctx -> SortingLayer.stack(ctx, Tier.Front, leafAbsolute(box(1, 5) :: Nil)));
-        Assert.assertEq(expected = (5 :: Nil, 1), (zs(items), List.length(warned)))
 
     /// 送った物の中の topLayer も zIndex の順に送られる（層の直下と同じ順）。
     @Test

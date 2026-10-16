@@ -180,7 +180,7 @@ pub mod HeadlessRender {
     pub enum SilhouetteScope {
         case WorldBand
         case All
-        /// z の窓（lo 以上 hi 未満）だけ。Depth.Bands で仕切った帯を 1 本ずつ描き出して、
+        /// z の窓（lo 以上 hi 未満）だけ。層の区画（docs/z-bands.md）を 1 本ずつ描き出して、
         /// 地面・主役・手前を別の絵として見比べるための絞り。
         case ZWindow({ lo = Int32, hi = Int32 })
     }

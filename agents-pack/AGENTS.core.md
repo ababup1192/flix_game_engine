@@ -7,26 +7,26 @@
 
 1 行 1 件。型と引数は `make api Q=<名前>`、使い方は engine の `engine_world/src/<名前>.flix` 冒頭の doc。ゲーム固有の行は `AGENTS.local.md` の早見表。
 
-| やりたいこと | 使う道具 | 使わない（古い） |
-|---|---|---|
-| 物を重ねる・手前と奥を決める | View は `ZStack` の木（`of` に奥→手前・`leaf`。葉の中の z は 0..31）。根で `SortingLayer.compose`。engine の `docs/z-bands.md` | z の大きな数・表に数を足す・`leafAbsolute`・`SortingLayer.z` |
-| 必ず手前に出す（確認の窓・説明の窓・ポーズ） | `ZStack.topLayer(層, 木)`。新しい層は `SortingLayer` の enum に case を足す | z を大きくして出す |
-| 見下ろしで人が木の裏に回る | `ZStack.zIndex(Depth.orderAt(足元のy), leaf(人))` | `Depth.place`・`Depth.Bands` |
-| 画面ごと動かす・縮める・薄める | `ZStack.mapItems(Render.scaledAllAround(..))` | `zShifted`・`zMapped` |
-| スコア・案内など隠れてはいけない表示 | `App.withHudView`（中の前後は HUD の層の表と木） | world に高い z で描く |
-| 説明の窓の置き場（はみ出さない） | `UiTooltip`（置き場）+ `ZStack.topLayer`（手前へ） | 座標の手計算 |
-| 演出の拍に効果音・動きを合わせる | `Timeline.build`（`append` / `join`・音は `withSound`。秒・拍は Doc）→ 描く側 `progressOf`・鳴らす側 `soundsOn` を `App.withAudio` へ | 経過秒を if で比べる・音の時刻を別に書く |
-| 演出を曲の拍・小節に乗せる（小節の頭で始める・小節の頭の n 拍前に置く・伸ばしても拍から外れない） | `Timeline.build` の長さと遅らせを `Duration.Beats` / `Bars` / `ToNextBar` / `ToBeat` / `ToPickup`（次の小節の頭の n 拍前）で書き、テンポは `Timeline.tempo(譜面の bpm, 拍子)` で 1 か所から渡す | `60.0 / bpm` を手で掛けた秒・小節に合わせた秒を Doc に写す・足場の行と負の `withDelay` |
-| 曲の頭（イントロ）を 1 回だけ鳴らして本編だけループする | 1 本の WAV にループ点を書く `SfxSynth.renderLooped`（実機も `AudioMixdown.mixdownLooped` も smpl から輪の頭へ戻る）。鳴らす側は同じ名前を `App.withSustained` で宣言し続ける | 頭と輪を 2 本の WAV に割り、頭の長さを過ぎたら切り替える |
-| Doc が壊れていたら既定値で続けて知らせる | `DocJson.loadOr` + `Log.fellBackThen` / `warnThen` / `warnAllThen` | `let _ = Log.warn(..)`（消える。lint value-discard が止める） |
-| 直した後に絵を確かめる | `make render SHOT=<場面>`（1 枚・既定の手）→ 仕上げに `make reference-check` | 毎回 `render-all`・解像度を下げる回り道 |
-| F8 のチケットから直す所を探す | `debug/annotations/<名前>/` の `README.md` 冒頭の文脈（場面・Doc と行）→ `annotation.json` の `context` → `world.json`（`App.withAnnotationContext` / `withWorldDump`。一覧は `make status`） | スクショと目で突き合わせる |
-| API の型・ゲームの定義を引く | `make api Q=<名前>` / `make src Q=<名前>` | ソースの丸読み |
-| 重い処理（check・test・描き出し・make sync）をほかのエージェントと順番に流す | `bin/fge heavy <コマンド...>`（持ち主と待ち列は `bin/fge heavy --status`・CHECKD=0 が既定） | `until mkdir /tmp/fge-heavy.lock …; rmdir` を手で書く |
-| 作業場を別の版・開発中のエンジンへ一時的に向ける | `bin/fge use-engine <版かパス>`（今は `--status`・戻すのは `--restore`） | local.mk を手で書き換える・lib を他の作業場へ symlink |
-| 直す前と後の絵・音・動画を比べる | `make compare BASE=<ref>`（絞るなら `SHOTS=` か `VIDEOS=`。`debug/compare/index.html`。基準側だけ別のエンジンなら `BASE_ENGINE=`） | worktree を手で作って 2 回描き出す・cmp と ffmpeg を手で並べる |
-| 案を並べて依頼主に選んでもらう | `reports/<名前>/proposal.json` → `bin/fge proposal build`（形は引数なしの `bin/fge proposal`・決定後の片付けの残りは `bin/fge proposal knobs`） | HTML を手で書く・ゲームに置いた Python 版の proposal |
-| 道具の選び方が文書で伝わるか測る | `make agent-eval`（お題は `agent-eval/*.json`）・版ごとの比べは `make agent-eval-release`（記録は `agent-eval/history/`・最新は `make status` の 1 行） | 1 回だけ流した点で良し悪しを決める |
+| やりたいこと | 使う道具 |
+|---|---|
+| 物を重ねる・手前と奥を決める | View は `ZStack` の木（`of` に奥→手前・`leaf`。葉の中の z は 0..31）。根で `SortingLayer.compose`。engine の `docs/z-bands.md` |
+| 必ず手前に出す（確認の窓・説明の窓・ポーズ） | `ZStack.topLayer(層, 木)`。新しい層は `SortingLayer` の enum に case を足す |
+| 見下ろしで人が木の裏に回る | `ZStack.zIndex(Depth.orderAt(足元のy), leaf(人))` |
+| 画面ごと動かす・縮める・薄める | `ZStack.mapItems(Render.scaledAllAround(..))` |
+| スコア・案内など隠れてはいけない表示 | `App.withHudView`（中の前後は HUD の層の表と木） |
+| 説明の窓の置き場（はみ出さない） | `UiTooltip`（置き場）+ `ZStack.topLayer`（手前へ） |
+| 演出の拍に効果音・動きを合わせる | `Timeline.build`（`append` / `join`・音は `withSound`。秒・拍は Doc）→ 描く側 `progressOf`・鳴らす側 `soundsOn` を `App.withAudio` へ |
+| 演出を曲の拍・小節に乗せる（小節の頭で始める・小節の頭の n 拍前に置く・伸ばしても拍から外れない） | `Timeline.build` の長さと遅らせを `Duration.Beats` / `Bars` / `ToNextBar` / `ToBeat` / `ToPickup`（次の小節の頭の n 拍前）で書き、テンポは `Timeline.tempo(譜面の bpm, 拍子)` で 1 か所から渡す |
+| 曲の頭（イントロ）を 1 回だけ鳴らして本編だけループする | 1 本の WAV にループ点を書く `SfxSynth.renderLooped`（実機も `AudioMixdown.mixdownLooped` も smpl から輪の頭へ戻る）。鳴らす側は同じ名前を `App.withSustained` で宣言し続ける |
+| Doc が壊れていたら既定値で続けて知らせる | `DocJson.loadOr` + `Log.fellBackThen` / `warnThen` / `warnAllThen` |
+| 直した後に絵を確かめる | `make render SHOT=<場面>`（1 枚・既定の手）→ 仕上げに `make reference-check` |
+| F8 のチケットから直す所を探す | `debug/annotations/<名前>/` の `README.md` 冒頭の文脈（場面・Doc と行）→ `annotation.json` の `context` → `world.json`（`App.withAnnotationContext` / `withWorldDump`。一覧は `make status`） |
+| API の型・ゲームの定義を引く | `make api Q=<名前>` / `make src Q=<名前>` |
+| 重い処理（check・test・描き出し・make sync）をほかのエージェントと順番に流す | `bin/fge heavy <コマンド...>`（持ち主と待ち列は `bin/fge heavy --status`・CHECKD=0 が既定） |
+| 作業場を別の版・開発中のエンジンへ一時的に向ける | `bin/fge use-engine <版かパス>`（今は `--status`・戻すのは `--restore`） |
+| 直す前と後の絵・音・動画を比べる | `make compare BASE=<ref>`（絞るなら `SHOTS=` か `VIDEOS=`。`debug/compare/index.html`。基準側だけ別のエンジンなら `BASE_ENGINE=`） |
+| 案を並べて依頼主に選んでもらう | `reports/<名前>/proposal.json` → `bin/fge proposal build`（形は引数なしの `bin/fge proposal`・決定後の片付けの残りは `bin/fge proposal knobs`） |
+| 道具の選び方が文書で伝わるか測る | `make agent-eval`（お題は `agent-eval/*.json`）・版ごとの比べは `make agent-eval-release`（記録は `agent-eval/history/`・最新は `make status` の 1 行） |
 
 **新しい仕組みを入れる人は**、この表（ゲーム固有なら `AGENTS.local.md` の表）に 1 行と、
 `agent-eval/` のお題を 1 本足し、`make agent-eval ONLY=<お題>` で当たるのを確かめてから入れる。

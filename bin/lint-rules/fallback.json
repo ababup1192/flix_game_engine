@@ -13,7 +13,6 @@
     "engine_world/src/Fx.flix::curveIntegral": "正当 B: flicker / pulse は速度カーブに使えないと FxDoc.parse が先に弾く到達不能な分岐",
     "engine_world/src/Render.flix::atCenter": "正当 B: Poly は at がそのまま中心なので呼び出し規約違反 (呼ぶ側のコードの誤り)",
     "engine_world/src/Render.flix::scaled": "正当 B: onLeaf が Clipped を剥がすので Clipped はここへ届かない到達不能な分岐",
-    "engine_world/src/Render.flix::raiseZ": "正当 B: onLeaf が Clipped を剥がすので Clipped はここへ届かない到達不能な分岐",
     "engine_world/src/Render.flix::toDrawables": "正当 B: Poly は Drawable にならず draw が PolygonRenderCmd へ振り分ける — 届いたら振り分けの誤り",
     "engine_world/src/Render.flix::spriteDrawable": "正当 B: region atlas は未対応で呼ぶ側が regionRect=None を渡す規約 (未実装の明示)",
     "engine_world/src/CatalogContainer.flix::loadWithCheck": "正当 B: Flix の型と *.schema.json の食い違いはコード側の誤り",

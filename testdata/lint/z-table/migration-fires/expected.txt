@@ -1,7 +1,0 @@
-!! 表の外で移行の口 (SortingLayer.z・ZStack.leafAbsolute) を呼んでいます (層の中の順は ZStack の木に積み、z の数は葉の中だけで書いてください)
-   testdata/lint/z-table/migration-fires/src/FightView.flix:2 SortingLayer.z
-   testdata/lint/z-table/migration-fires/src/FightView.flix:3 leafAbsolute
-[lint-z-table] 2 件。z の数が散ると、別のファイルどうしで同じ数を取り合い、どちらが手前かが描き順まかせになります。
-  表のファイル (ZOrder.flix) に名前を足してそこから引くか、表が無ければ 1 ファイルに集めてください。付け替えている z・移行の口で作った z は、ZStack の木に積み直してください (範囲の地図は engine の docs/z-bands.md)。
-  どうしても残すなら bin/lint-rules/z-table.local.json (ゲーム) か z-table.json (エンジン) の exempt へ "パス::名前" と理由 1 行
-[exit=1]

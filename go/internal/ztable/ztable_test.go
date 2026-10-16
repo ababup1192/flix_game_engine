@@ -2,8 +2,8 @@ package ztable
 
 // 何を守るか: z を数で決める行だけを拾うこと、表のあるパッケージでは表の外だけが鳴ること、
 // 表の無いパッケージでは 2 本以上に散ったときだけ鳴ること、別のファイルの同じ数を添えること、
-// 除外と --warn の扱い、instance SortingLayer[ の宣言も表になること、付け替えの関数の一覧、
-// ゲームの除外 (z-table.local.json)、移行の口 (SortingLayer.z・leafAbsolute) を表の外で止めること。
+// 除外と --warn の扱い、instance SortingLayer[ の宣言も表になること、
+// ゲームの除外 (z-table.local.json)。
 
 import (
 	"os"
@@ -21,9 +21,6 @@ func testRules() *Rules {
 		TableFileNames: []string{"ZOrder.flix"},
 		Const:          regexp.MustCompile(`^\s*(?:pub\s+)?def\s+(z[A-Z][A-Za-z0-9_]*)\s*\(\s*\)\s*:\s*Int32\s*=\s*(-?[0-9]+)\s*(?://.*)?$`),
 		Table:          regexp.MustCompile(`\binstance\s+SortingLayer\s*\[`),
-		Remap:          regexp.MustCompile(`\b(zMapped|zShiftedAll|zShifted|raiseZ|Depth\.placeOne|Depth\.place)\s*\(`),
-		LayerZ:         regexp.MustCompile(`\bSortingLayer\.z\s*\(`),
-		LeafAbs:        regexp.MustCompile(`\bleafAbsolute\s*\(`),
 		LeafZLow:       0,
 		LeafZHigh:      31,
 		Exempt:         map[string]string{},
@@ -146,9 +143,8 @@ func writeRepo(t *testing.T, exempt string) string {
 	put("bin/lint-rules/z-table.json", `{"scopeSuffixes":[".flix"],"skipPrefixes":["testdata/"],`+
 		`"skipDirNames":["lib","test"],"tableFileNames":["ZOrder.flix"],`+
 		`"tablePattern":"\\binstance\\s+SortingLayer\\s*\\[",`+
-		`"layerZPattern":"\\bSortingLayer\\.z\\s*\\(","leafAbsolutePattern":"\\bleafAbsolute\\s*\\(","leafZRange":[0,31],`+
+		`"leafZRange":[0,31],`+
 		`"constPattern":"^\\s*(?:pub\\s+)?def\\s+(z[A-Z][A-Za-z0-9_]*)\\s*\\(\\s*\\)\\s*:\\s*Int32\\s*=\\s*(-?[0-9]+)\\s*(?://.*)?$",`+
-		`"remapPattern":"\\b(zMapped|zShiftedAll|zShifted|raiseZ|Depth\\.placeOne|Depth\\.place)\\s*\\(",`+
 		`"exempt":`+exempt+`}`)
 	put("game/flix.toml", "")
 	put("game/src/ZOrder.flix", "mod ZOrder {}")
@@ -208,21 +204,6 @@ func TestWarnKeepsOutputButExitsZero(t *testing.T) {
 	}
 }
 
-func TestRemapFiresOnlyWhereThereIsATable(t *testing.T) {
-	withTable := map[string]string{
-		"src/ZOrder.flix":  "mod ZOrder {\n    pub def f(): Int32 = 0\n}",
-		"src/Opening.flix": "mod Opening {\n    def a(xs: List[Int32]): List[Int32] = xs |> Render.zMapped(z -> z / 4)\n    // Render.zMapped( はコメント\n}",
-	}
-	r := testRules()
-	if got := hitNames(r.RemapHits(withTable, r.TablesOf(withTable))); got != "Opening.flix:zMapped" {
-		t.Fatalf("got %q", got)
-	}
-	delete(withTable, "src/ZOrder.flix")
-	if hits := r.RemapHits(withTable, r.TablesOf(withTable)); len(hits) != 0 {
-		t.Fatalf("表の無いパッケージで鳴った: %s", hitNames(hits))
-	}
-}
-
 // 1. 名前が ZOrder.flix でなくても、instance SortingLayer[ の宣言 (コメントの外) があれば表。
 func TestInstanceDeclarationMakesATable(t *testing.T) {
 	files, defs, tables := defsFor(map[string]string{
@@ -247,31 +228,6 @@ func TestLoadRulesNeedsTablePattern(t *testing.T) {
 	}
 }
 
-// 2. 付け替えの関数は zMapped の他も鳴り、Name は呼んだ関数の名前になる。
-func TestRemapCoversAllShiftFunctions(t *testing.T) {
-	bodies := map[string]string{
-		"src/ZOrder.flix": "mod ZOrder {}",
-		"src/View.flix": "mod View {\n    def a() = Render.zShiftedAll(3, xs) |> List.map(Render.zShifted(1))\n" +
-			"    def b() = Render.raiseZ(2, it)\n    def c() = Depth.place(r, y, xs) :: Depth.placeOne(r, y, p) :: Nil\n}",
-	}
-	r := testRules()
-	if got := hitNames(r.RemapHits(bodies, r.TablesOf(bodies))); got != "View.flix:zShiftedAll View.flix:zShifted View.flix:raiseZ View.flix:Depth.place View.flix:Depth.placeOne" {
-		t.Fatalf("got %q", got)
-	}
-}
-
-// エンジンのパッケージ (表を持たない) で付け替えの関数を使っても鳴らない。
-func TestRemapIgnoresEnginePackageWithoutTable(t *testing.T) {
-	root := writeRepo(t, `{}`)
-	putFile(t, root, "engine_world/flix.toml", "")
-	putFile(t, root, "engine_world/src/Depth.flix", "mod Depth {\n    def a() = Render.zShiftedAll(3, Depth.place(r, y, xs))\n}")
-	var out, errOut strings.Builder
-	Run(&out, &errOut, root, []string{"--all"})
-	if strings.Contains(errOut.String(), "engine_world/") {
-		t.Fatalf("%s", errOut.String())
-	}
-}
-
 // 3. ゲームの除外 (z-table.local.json) で黙り、古くなれば local のファイル名つきで鳴る。
 func TestLocalExemptSilencesAndStaleNamesTheFile(t *testing.T) {
 	root := writeRepo(t, `{}`)
@@ -290,37 +246,6 @@ func TestExemptInBothFilesIsAnError(t *testing.T) {
 	putFile(t, root, "bin/lint-rules/z-table.local.json", `{"exempt":{"game/src/View.flix::zPointer":"ゲーム側"}}`)
 	if _, err := LoadRules(root); err == nil || !strings.Contains(err.Error(), "両方") {
 		t.Fatalf("err=%v", err)
-	}
-}
-
-// 4. 表を持つパッケージでは、表の外の移行の口を鳴らす (宣言・コメント・表の中は鳴らさない)。
-// 名指しでも --all でも同じ。除外の鍵は "パス::呼んだ口の名前"。
-func TestMigrationCallsOutsideTableFire(t *testing.T) {
-	root := writeRepo(t, `{}`)
-	putFile(t, root, "game/src/ZOrder.flix", "mod ZOrder {\n    instance SortingLayer[Layer] {}\n    def a() = SortingLayer.z(Layer.Hud, 0)\n}")
-	putFile(t, root, "game/src/Scene.flix", "mod Scene {\n    def a() = SortingLayer.z(Layer.Scene, 1) + SortingLayer.z(Layer.Scene, 2)\n"+
-		"    def b() = ZStack.leafAbsolute(xs)\n    // SortingLayer.z(Layer.Scene, 3)\n    pub def leafAbsolute(xs: List[Int32]) = xs\n}")
-	for _, args := range [][]string{{"--all"}, {"game/src/Scene.flix"}} {
-		var out, errOut strings.Builder
-		code, err := Run(&out, &errOut, root, args)
-		e := errOut.String()
-		if err != nil || code != 1 || strings.Count(e, "Scene.flix:2 SortingLayer.z") != 2 ||
-			!strings.Contains(e, "Scene.flix:3 leafAbsolute") || strings.Contains(e, "ZOrder.flix:") ||
-			strings.Contains(e, "Scene.flix:4") || strings.Contains(e, "Scene.flix:5") {
-			t.Fatalf("%v: code=%d err=%v\n%s", args, code, err, e)
-		}
-	}
-}
-
-// 表の無いパッケージ (エンジン・見本) の移行の口は鳴らさない。除外に載せた口は鳴らさない。
-func TestMigrationOutsideTablePackageIsQuietAndExemptSilences(t *testing.T) {
-	root := writeRepo(t, `{"game/src/Scene.flix::leafAbsolute": "理由"}`)
-	putFile(t, root, "other/src/Scene.flix", "mod Scene {\n    def a() = SortingLayer.z(Layer.Scene, 1)\n}")
-	putFile(t, root, "game/src/ZOrder.flix", "mod ZOrder {\n    instance SortingLayer[Layer] {}\n}")
-	putFile(t, root, "game/src/Scene.flix", "mod Scene {\n    def b() = ZStack.leafAbsolute(xs)\n}")
-	var out, errOut strings.Builder
-	if code, _ := Run(&out, &errOut, root, []string{"other/src/Scene.flix", "game/src/Scene.flix"}); code != 0 {
-		t.Fatalf("code=%d\n%s", code, errOut.String())
 	}
 }
 

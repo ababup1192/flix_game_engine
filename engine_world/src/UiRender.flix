@@ -62,7 +62,7 @@ pub mod UiRender {
         let items = UiExtract.extract(ui, rects, vis, atlasOf, textureInfoOf);
         let offset = layerOffset(ui, root);
         let raised = items |> List.map(placed ->
-            { item = Render.raiseZ(offset, placed#item) | placed });
+            { item = EngineInternal.zMapped(z -> z + offset, placed#item) | placed });
         let polyItems = UiExtract.extractPolys(ui, rects, vis)
             |> List.flatMap(entry -> {
                 let (_id, _pos, poly) = entry;
@@ -72,7 +72,7 @@ pub mod UiRender {
                       item = RawDraw.polygon(sub, poly#color, poly#zIndex + offset) |> Render.fade(poly#alpha) })
             });
         let shapeItems = UiExtract.extractShapes(ui, rects, vis)
-            |> List.map(placed -> { item = Render.raiseZ(offset, placed#item) | placed });
+            |> List.map(placed -> { item = EngineInternal.zMapped(z -> z + offset, placed#item) | placed });
         List.append(raised, List.append(shapeItems, polyItems))
 
     /// root の layer を layers store から引き、CanvasLayer.layerStride 倍した zIndex 加算量を返す。未登録は 0。

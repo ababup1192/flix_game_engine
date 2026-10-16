@@ -2,18 +2,25 @@
   "note": "lint-forbid（古い書き方を 1 行の正規表現で止め、代わりに使う物を出す）の規約データ。この JSON が source of truth で、bin/fge forbid はこれとゲームの bin/lint-rules/forbid.local.json（ゲーム固有の規則と除外。配り直しでも残る）を足して読む。1 件 = {id, suffixes / basenames / prefixes（見るファイル）, skip, pattern, unlessLine（この行なら見逃す）, hint（代わりに何を使うか。必須）}。.flix は文字列とコメントを除いてから当てる。文脈の要る物（z の表 = z-table・let _ = = value-discard）は専用の lint が持つ。除外は exempt に \"パス::id\" と理由 1 行。コミット時に見るのは .flix と Makefile だけ（precommit.json の forbid の when）。ほかの種類のファイルに規則を足すなら、そちらも足す。",
   "rules": [
     {
-      "id": "depth-place",
-      "suffixes": [".flix"],
-      "skip": ["engine_world/src/Depth.flix", "engine_world/test/", "engine_full/", "lib/", "build/", "test/"],
-      "pattern": "\\bDepth\\.(Bands|place|placeOne|zAt)\\b",
-      "hint": "見下ろしの足元の順は ZStack.zIndex(Depth.orderAt(足元の y), ZStack.leaf(1 体の絵))。帯は ZStack.of に奥 → 手前で積む（docs/z-bands.md）"
-    },
-    {
       "id": "zindex-big-literal",
       "suffixes": [".flix"],
       "skip": ["engine/", "engine_world/", "engine_tools/", "engine_full/", "lib/", "build/", "test/"],
       "pattern": "\\bzIndex\\s*=\\s*[1-9][0-9]{2,}|\\bzIndex\\(\\s*[1-9][0-9]{2,}",
       "hint": "z の大きな数で手前に出さない。部品は ZStack.of に積み、必ず手前の物は ZStack.topLayer(層, …)、隠れてはいけない表示は App.withHudView。葉の中の z は 0..31（docs/z-bands.md）"
+    },
+    {
+      "id": "engine-internal",
+      "suffixes": [".flix"],
+      "skip": ["engine/", "engine_world/", "engine_tools/", "engine_full/", "src/engine/", "src/engine_world/", "src/engine_tools/", "render_gl/", "src/render_gl/", "lib/", "build/"],
+      "pattern": "\\bEngineInternal\\.",
+      "hint": "EngineInternal はエンジンの中だけで使う口（SortingLayer.compose などが z を書く所）。ゲームの重なりは ZStack.of に積む・必ず手前は ZStack.topLayer・画面ごと動かすのは ZStack.mapItems（docs/z-bands.md）"
+    },
+    {
+      "id": "zlegacy",
+      "suffixes": [".flix"],
+      "skip": ["engine/", "engine_world/", "engine_tools/", "engine_full/", "src/engine/", "src/engine_world/", "src/engine_tools/", "render_gl/", "src/render_gl/", "lib/", "build/"],
+      "pattern": "\\bZLegacy\\.",
+      "hint": "ZLegacy は z の数を直に書く古い書き方。ふつうは ZStack.of に積む・必ず手前は ZStack.topLayer・見下ろしは ZStack.zIndex(Depth.orderAt(足元の y), …)。木で書けない演出（描き上がった 1 フレームを加工する等）だけ、bin/lint-rules/forbid.local.json の exempt に \"パス::zlegacy\" と理由 1 行を書いて残す"
     }
   ],
   "exempt": {}

@@ -1,6 +1,6 @@
 // ZStack — 描く順（z）を「積んだ順」で決める木（SwiftUI の ZStack・CSS の stacking context の形）。
 // 使う場面: View が絵を返すところ全部（重ねる・必ず手前へ送る topLayer・足元の順 zIndex・画面ごと動かす mapItems）。
-// 使わない: z の大きな数を書く・Render.zShifted / zMapped で付け替える・leafAbsolute（移行の口。表を持つと止まる）。
+// 使わない: z の大きな数を書く（積む順で決める）。
 // View は z の数を選ぶ代わりに、部品の列を奥 → 手前の順に of へ並べて返す。z の数を書くのは
 // 葉（leaf）の中の小さな前後（胴 0・頭 1・持ち物 2）だけ。木を z の数へ戻すのは SortingLayer.compose
 // （画面全体の層の表の、その層の底から詰める）。
@@ -18,8 +18,6 @@ pub mod ZStack {
     pub enum Node[p] {
         /// 葉。中の z はこの葉の中の前後だけを決める（数の大きさは意味を持たない）。
         case Leaf(List[Render.PlacedItem])
-        /// 絶対値の z の葉（場面を木にするまでの移行の間だけ）。z をそのまま使い、層の続きをその上から始める。
-        case Absolute(List[Render.PlacedItem])
         /// 子を奥 → 手前に積む。子どうしの z の範囲は交ざらない。
         case Stacked(List[Node[p]])
         /// すぐ外の Stacked の中で並べ替える数（CSS の z-index。付けない子は 0）。
@@ -32,11 +30,6 @@ pub mod ZStack {
 
     /// 葉: 組み上がった絵の列を 1 つの子にする（中の前後は z のまま保つ）。
     pub def leaf(items: List[Render.PlacedItem]): Node[p] = Node.Leaf(items)
-
-    /// 絶対値の z の葉: 今までどおり表から z の数を引いて描いた絵を、そのまま木に載せる（移行の間だけ）。
-    /// 載せた z が層の続きより奥なら前の兄弟と交ざり、層の底より奥なら層の外に出る（どちらも描いて続け、層の外は
-    /// ViewCtx#warnOnce で知らせる）。天井を越えた分は天井で止める。表を持つパッケージでは、表の外で呼ぶと z-table の lint が止める。
-    pub def leafAbsolute(items: List[Render.PlacedItem]): Node[p] = Node.Absolute(items)
 
     /// 子を奥 → 手前の順に積む。
     pub def of(children: List[Node[p]]): Node[p] = Node.Stacked(children)

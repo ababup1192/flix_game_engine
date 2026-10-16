@@ -332,27 +332,6 @@ pub mod Render {
             case other          => other
         }, item)
 
-    /// 重なり順（zIndex）を delta だけずらす。組み上がった絵の相対的な前後関係は保ったまま、
-    /// 集まり全体を別の層へ持ち上げる／沈める。
-    /// 使わない場面: View の重なりを決める所（積む順は ZStack.of、手前へは ZStack.topLayer、
-    /// 見下ろしは ZStack.zIndex(Depth.orderAt(y), …)、画面ごと動かすのは ZStack.mapItems）。
-    /// 表（ZOrder.flix）を持つパッケージでは bin/fge z-table が止める。エンジンの内側の写し用。
-    pub def zShifted(delta: Int32, item: Item): Item =
-        zMapped(z -> z + delta, item)
-
-    /// 重なり順（zIndex）を関数 f で写す（zShifted の一般形）。
-    /// 足し算で書けない写し（HUD の範囲への clamp 付き持ち上げ等）はこちらを使う。
-    /// 使わない場面は zShifted と同じ（z を縮める・付け替えると、どの層に入るかが表から読めなくなる）。
-    pub def zMapped(f: Int32 -> Int32, item: Item): Item =
-        onLeaf(leaf -> match leaf {
-            case Item.Sprite(s) => Item.Sprite({ zIndex = f(s#zIndex) | s })
-            case Item.Text(x)   => Item.Text({ zIndex = f(x#zIndex) | x })
-            case Item.Box(b)    => Item.Box({ zIndex = f(b#zIndex) | b })
-            case Item.Poly(p)   => Item.Poly({ zIndex = f(p#zIndex) | p })
-            case Item.Shader(s) => Item.Shader({ zIndex = f(s#zIndex) | s })
-            case other          => other
-        }, item)
-
     /// 描画物 1 つの重なり順（Clipped は中身の z）。
     pub def zOf(item: Item): Int32 =
         match item {
@@ -364,12 +343,7 @@ pub mod Render {
             case Item.Clipped(c) => zOf(c#inner)
         }
 
-    /// 置き場所つきの列を丸ごと delta だけずらす（zShifted の列版）。使わない場面は zShifted と同じ
-    /// （部品の z を持ち上げたいときは、部品の関数に z を引数で渡すか、別の葉にして積む）。
-    pub def zShiftedAll(delta: Int32, items: List[PlacedItem]): List[PlacedItem] =
-        items |> List.map(placed -> { item = zShifted(delta, placed#item) | placed })
-
-    /// 組み上がった列を丸ごと d だけ動かす（zShiftedAll の位置版）。
+    /// 組み上がった列を丸ごと d だけ動かす。
     /// 部品を 0 起点で組んでから最後に置き場所を与える書き方（盤の原点へ動かす・
     /// UI の枠の中へ入れる・粒を発生源へ運ぶ）がこれで 1 行になる。
     /// 中身（大きさ・頂点・z）には触らない — 動かすのは置き場所と、Clipped の clip 矩形。
@@ -634,18 +608,6 @@ pub mod Render {
                               mask = s#mask |> List.map(poly ->
                                   poly |> List.map(v -> Vec2.mul(v, factor))) | s })
             case Item.Clipped(_) => bug!("Render.scaled: onLeaf が Clipped を剥がすのでここには届かない")
-        }, item)
-
-    /// zIndex を delta だけ持ち上げる（全種類の item に効く）。組み上がった item の列を
-    /// まとめて別の z-index の範囲へ移すとき（UI レイヤーの合流など）に使う。
-    pub def raiseZ(delta: Int32, item: Item): Item =
-        onLeaf(leaf -> match leaf {
-            case Item.Sprite(s) => Item.Sprite({ zIndex = s#zIndex + delta | s })
-            case Item.Text(t)   => Item.Text({ zIndex = t#zIndex + delta | t })
-            case Item.Box(b)    => Item.Box({ zIndex = b#zIndex + delta | b })
-            case Item.Poly(p)   => Item.Poly({ zIndex = p#zIndex + delta | p })
-            case Item.Shader(s) => Item.Shader({ zIndex = s#zIndex + delta | s })
-            case Item.Clipped(_) => bug!("Render.raiseZ: onLeaf が Clipped を剥がすのでここには届かない")
         }, item)
 
     /// 修飾の土台になる style（無ければ solid）。

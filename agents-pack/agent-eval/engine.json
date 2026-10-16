@@ -22,7 +22,7 @@
       ],
       "avoid": [
         {"re": "Depth\\.(Bands|place)", "why": "Depth.Bands / place"},
-        {"re": "zShifted|zMapped", "why": "z の付け替え"}
+        {"re": "zShifted|zMapped|ZLegacy", "why": "z の付け替え（ZLegacy は木で書けない演出だけ）"}
       ]
     },
     {
@@ -44,7 +44,7 @@
         {"re": "scaledAllAround", "why": "Render.scaledAllAround"}
       ],
       "avoid": [
-        {"re": "zShifted|zMapped", "why": "z の付け替え"}
+        {"re": "zShifted|zMapped|ZLegacy", "why": "z の付け替え（ZLegacy は木で書けない演出だけ）"}
       ]
     },
     {
@@ -56,7 +56,7 @@
       ],
       "avoid": [
         {"re": "\\bz[A-Z]\\w*\\(\\)\\s*(:\\s*Int32\\s*)?=\\s*[1-9]\\d{2,}|\\bzIndex\\s*[=:]\\s*[1-9]\\d{2,}", "why": "z の大きな数を直に書く"},
-        {"re": "leafAbsolute|SortingLayer\\.z\\(", "why": "移行の口"}
+        {"re": "leafAbsolute|SortingLayer\\.z\\(|ZLegacy", "why": "移行の口・ZLegacy（木で書けない演出だけ）"}
       ]
     },
     {

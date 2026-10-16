@@ -1,5 +1,5 @@
 {
-  "note": "lint-z-table（z の数を決める所がパッケージに 1 か所か）の規約データ。この JSON が source of truth で、bin/fge z-table はこれを読んで動く。表のファイルは、名前が tableFileNames にあるファイルか、本文（コメントを除く）に tablePattern の宣言（instance SortingLayer[Layer] { pub def zRange ... }）があるファイル。重なり順の z を def zXxx(): Int32 = 数 で決める書き方が、1 つのパッケージ（flix.toml の単位）で複数のファイルに散ると、別々のファイルで同じ数を取り合い、どちらが手前かが描き順まかせになる。表を持つパッケージでは、表の外で z を数で決めると鳴る。表のファイルの中でも、葉の中の z（leafZRange）の外の数を def で書くと鳴る（表に置くのは層の enum と zRange の範囲と、いくつもの View が分け合う葉の中の段だけ。新しい層は enum に case を足す）。ただし葉の中の小さな z（leafZRange の 0..31。1 つの葉＝部品の中の前後）は表の外でも鳴らさない。32 以上と負の数は層の区画の数と見分けが付かないので鳴る。表の無いパッケージでは、z を数で決めるファイルが 2 本以上あると鳴る。表を持つパッケージでは、表の外で z を後から付け替える関数（remapPattern: zMapped・zShifted・zShiftedAll・raiseZ・Depth.place・Depth.placeOne）を呼ぶのも鳴る。付け替えた後の z がどの層に入るかが表から読めなくなるため。層の中は ZStack の積んだ順で作り直す。エンジンのパッケージは表を持たないので見ない。移行の口（layerZPattern の SortingLayer.z と leafAbsolutePattern の leafAbsolute。場面を ZStack の木にするまでの間だけ使った口）も、表を持つパッケージでは表の外で呼ぶと鳴る。残すなら除外の鍵 \"パス::SortingLayer.z\" か \"パス::leafAbsolute\" に理由を書く。除外はこの exempt と、ゲームが自分の除外だけを置く bin/lint-rules/z-table.local.json（{\"exempt\": {\"パス::名前\": \"理由 1 行\"}}・無くてよい）を足した物。両方に同じ鍵があると止まる。--all で、もう鳴らない除外はどちらのファイルの物でも鳴る。",
+  "note": "lint-z-table（z の数を決める所がパッケージに 1 か所か）の規約データ。この JSON が source of truth で、bin/fge z-table はこれを読んで動く。表のファイルは、名前が tableFileNames にあるファイルか、本文（コメントを除く）に tablePattern の宣言（instance SortingLayer[Layer] { pub def zRange ... }）があるファイル。重なり順の z を def zXxx(): Int32 = 数 で決める書き方が、1 つのパッケージ（flix.toml の単位）で複数のファイルに散ると、別々のファイルで同じ数を取り合い、どちらが手前かが描き順まかせになる。表を持つパッケージでは、表の外で z を数で決めると鳴る。表のファイルの中でも、葉の中の z（leafZRange）の外の数を def で書くと鳴る（表に置くのは層の enum と zRange の範囲と、いくつもの View が分け合う葉の中の段だけ。新しい層は enum に case を足す）。ただし葉の中の小さな z（leafZRange の 0..31。1 つの葉＝部品の中の前後）は表の外でも鳴らさない。32 以上と負の数は層の区画の数と見分けが付かないので鳴る。表の無いパッケージでは、z を数で決めるファイルが 2 本以上あると鳴る。z を後から付け替える関数と移行の口（Render.zShifted・SortingLayer.z・ZStack.leafAbsolute など）は 0.35.24 で消したか ZLegacy へ移したので見ない（型検査が止める）。除外はこの exempt と、ゲームが自分の除外だけを置く bin/lint-rules/z-table.local.json（{\"exempt\": {\"パス::名前\": \"理由 1 行\"}}・無くてよい）を足した物。両方に同じ鍵があると止まる。--all で、もう鳴らない除外はどちらのファイルの物でも鳴る。",
   "scopeSuffixes": [
     ".flix"
   ],
@@ -22,9 +22,6 @@
   ],
   "tablePattern": "\\binstance\\s+SortingLayer\\s*\\[",
   "constPattern": "^\\s*(?:pub\\s+)?def\\s+(z[A-Z][A-Za-z0-9_]*)\\s*\\(\\s*\\)\\s*:\\s*Int32\\s*=\\s*(-?[0-9]+)\\s*(?://.*)?$",
-  "remapPattern": "\\b(zMapped|zShiftedAll|zShifted|raiseZ|Depth\\.placeOne|Depth\\.place)\\s*\\(",
-  "layerZPattern": "\\bSortingLayer\\.z\\s*\\(",
-  "leafAbsolutePattern": "\\bleafAbsolute\\s*\\(",
   "leafZRange": [
     0,
     31
