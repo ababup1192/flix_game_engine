@@ -11,54 +11,94 @@
 // **これは数ある画風の 1 つでしかない。** 真似してほしいのは「層に分けて、各層に役割を
 // 持たせる」組み方の方で、色や効果ではない。別の作り方の例は `.claude/skills/visual-dict`。
 //
-// ── 画面の層（奥から手前へ。z が大きいほど手前）と「絵の下限」4 性質の受け持ち ──
-//    0.. 2  空(ViewScene)       … 面の階調（空のグラデ）・時間（流れる雲）
-//    3      遠景の岬(ViewScene) … 層（水平線の向こうの陸）・面の階調（頂は明るく裾は霞む）
-//    4.. 5  海(ViewScene)       … 時間（きらめきの明滅）・面の階調（水平線ぎわの輝き）
-//    6      地面のセグメント(ViewRoad)・丘の向こうの平野(ViewScene) … 面の階調（明暗の波 + 遠くの霞み）
-//    7      草の筋(ViewRoad)・浜(ViewScene) … 面の質感（道に沿う縦の筋）・層（海と地面の継ぎ）
-//    8..10  路面・縁石・白線・スタートライン・ガードレール(ViewRoad) … 層（道が地面から分かれる）
-//   10      タイヤ痕(ViewRoad)  … 時間（走った軌跡が残る）
-//   20..76  立ち物: ヤシ・低木・標識(ViewScene)・障害物/アイテム(ViewRoad)・車(ViewCar)
-//                                … 主役の分離（足元の影）。近い物ほど手前（Proj.zOf）
-//   69..82  煙・炎・火の玉・閃光(ViewCar) … 時間・危険の表示（fx の z + 60）
-//   85      速度線(ViewScene)   … 時間（速さが線になる）
-//   90      HUD / 100 幕（この View）
+// ── 画面の層（奥から手前へ。frame の ZStack.of に積んだ順）と「絵の下限」4 性質の受け持ち ──
+//   地面の葉（中の前後は下の「共有の段」）:
+//     空(ViewScene)       … 面の階調（空のグラデ）・時間（流れる雲）
+//     遠景の岬(ViewScene) … 層（水平線の向こうの陸）・面の階調（頂は明るく裾は霞む）
+//     海(ViewScene)       … 時間（きらめきの明滅）・面の階調（水平線ぎわの輝き）
+//     地面のセグメント(ViewRoad)・丘の向こうの平野(ViewScene) … 面の階調（明暗の波 + 遠くの霞み）
+//     草の筋(ViewRoad)・浜(ViewScene) … 面の質感（道に沿う縦の筋）・層（海と地面の継ぎ）
+//     路面・縁石・白線・スタートライン・ガードレール(ViewRoad) … 層（道が地面から分かれる）
+//     タイヤ痕(ViewRoad)  … 時間（走った軌跡が残る）
+//   立ち物（1 つずつ ZStack.zIndex で、近い物ほど手前 = Proj.orderOf）:
+//     ヤシ・低木・標識(ViewScene)・障害物/アイテム(ViewRoad)・車(ViewCar) … 主役の分離（足元の影）
+//     煙・炎・火の玉・閃光(ViewCar) … 時間・危険の表示（fx.json の zIndex を立ち物の順に交ぜる）
+//   速度線(ViewScene)     … 時間（速さが線になる）
+//   HUD → 幕（hud の木。この View）
 //
 // View は fail-open: コースが空でも Doc が既定でも必ず何か描く（プレイヤーの前で白画面にしない）。
 mod View {
 
-    def zHud(): Int32 = 90
-    def zOverlay(): Int32 = 100
+    // ── 重なりの層 ──
+    // world（frame）と画面固定（hud）は別の列で、エンジンが hud を必ず手前の範囲へ持ち上げる。
+    // どちらの列の中にも層を分ける物（会話の窓・確認・切り替え）が無いので、層は 1 つで足りる —
+    // 木を絵の列へ戻す口は SortingLayer.stack しか無く、それが層の enum を要るので 1 層だけの enum を置く。
+
+    pub enum Layer with ToString {
+        case Scene
+    }
+
+    instance SortingLayer[Layer] {
+        pub def zRange(_layer: Layer): (Int32, Int32) = (0, 9999)
+    }
+
+    // ── 共有の段: 地面の葉の中の前後（ViewScene と ViewRoad が同じ葉に描く。0..31） ──
+    pub def zSky(): Int32 = 0
+    pub def zSun(): Int32 = 1
+    pub def zCloud(): Int32 = 2
+    pub def zRidge(): Int32 = 3
+    pub def zSea(): Int32 = 4
+    pub def zHorizon(): Int32 = 5
+    pub def zPlain(): Int32 = 6
+    pub def zGround(): Int32 = 6
+    pub def zBeach(): Int32 = 7
+    pub def zFurrow(): Int32 = 7
+    pub def zRoad(): Int32 = 8
+    pub def zTrim(): Int32 = 9
+    pub def zSkid(): Int32 = 10
+
+    // ── 葉の中の前後: HUD のチップの葉・幕の葉の底 ──
+    def zHud(): Int32 = 0
+    def zOverlay(): Int32 = 0
 
     /// 1 フレームの絵。カメラの注視 x を最初に 1 回だけ決め、全層で共有する
     /// （層ごとに計算すると、丸めの差で道と車が別のカメラを見てしまう）。
     /// HUD と幕は withHudView 側（hud）— 揺れも掛からず、world の z にも隠されない。
-    pub def frame(_ctx: App.ViewCtx, w: World.World): List[Render.PlacedItem] =
+    pub def frame(ctx: App.ViewCtx, w: World.World): List[Render.PlacedItem] =
         let cam = Proj.camOf(w);
         let shake = ViewCar.shakeOf(w);
+        let road = ViewRoad.draw(cam, w);
+        // 奥 → 手前: 地面の葉 → 立ち物（近い物ほど手前）→ 速度線。
+        let scene = ZStack.of(
+               ZStack.leaf(List.flatten(
+                      ViewScene.sky(cam, w)
+                   :: ViewScene.sea(cam, w)
+                   :: ViewScene.plain(cam, w)
+                   :: road#ground
+                   :: Nil))
+            :: ZStack.of(List.flatten(
+                      road#props
+                   :: ViewScene.outfield(cam, w)
+                   :: ViewScene.palms(cam, w)
+                   :: ViewCar.rivals(cam, w)
+                   :: ViewCar.player(cam, w)
+                   :: ViewCar.bursts(cam, w)
+                   :: Nil))
+            :: ZStack.leaf(ViewScene.speedLines(cam, w))
+            :: Nil);
         // 揺れは世界の層だけに掛ける。HUD と幕まで揺らすと、読ませたい文字が読めなくなる。
         // 揺れていないときに掛けないのは、掛けると置き場所を 1 つずつ作り直すため —
         // 走っている画面の描く物は数千個あり、0 を足すためだけに全部を組み直すことになる。
-        let moved = items ->
-            if (shake#x == 0.0 and shake#y == 0.0) items
-            else Render.movedAll(shake, items);
-        moved(List.flatten(
-               ViewScene.sky(cam, w)
-            :: ViewScene.sea(cam, w)
-            :: ViewScene.plain(cam, w)
-            :: ViewRoad.draw(cam, w)
-            :: ViewScene.outfield(cam, w)
-            :: ViewScene.palms(cam, w)
-            :: ViewCar.rivals(cam, w)
-            :: ViewCar.player(cam, w)
-            :: ViewCar.bursts(cam, w)
-            :: ViewScene.speedLines(cam, w)
-            :: Nil))
+        let moved = if (shake#x == 0.0 and shake#y == 0.0) scene
+                    else ZStack.mapItems(Render.movedAll(shake), scene);
+        SortingLayer.stack(ctx, Layer.Scene, moved)
 
     /// 画面固定の絵（HUD のチップ・場面ごとの幕）。App.withHudView へ繋ぐ。
     pub def hud(ctx: App.ViewCtx, w: World.World): List[Render.PlacedItem] =
-        hudChips(ctx#atlas, w) ::: overlay(ctx#atlas, w)
+        SortingLayer.stack(ctx, Layer.Scene, ZStack.of(
+               ZStack.leaf(hudChips(ctx#atlas, w))
+            :: ZStack.leaf(overlay(ctx#atlas, w))
+            :: Nil))
 
     // ── HUD（Racing のときだけ） ──
 

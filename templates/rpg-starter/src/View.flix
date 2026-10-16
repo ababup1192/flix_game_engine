@@ -11,11 +11,12 @@
 // ── 絵は 2 系統（camera の掛かり方が違う）──
 //   frame = world 側（camera が掛かる）: 盤・扉・薬草・灯り・住人・主人公・ふきだし
 //   hud   = 画面固定側（camera を掛けない）: 空・霧・表紙とクリアの幕・戦いのウィンドウ
-// 重なり順は 2 つのリストの並びでなく zIndex が決める（Render.draw が安定ソート）。
+// 重なり順は ZStack の木が決める: 部品を奥 → 手前の順に ZStack.of へ積み、根（frame / hud）で
+// SortingLayer.stack が 1 本の絵の列にする。z の数を書くのは葉の中の小さな前後（0..31）だけ。
 //
 // ── 里の層（奥から手前へ）──
 //   地面のタイル層（エンジンの別チャンネル。縁・角は TownMap が選ぶ）
-//   → 扉・薬草・灯り → 前後の深度の範囲（建物・住人・主人公 — 足元 y で前後が入れ替わる）
+//   → 水面 → 薬草 → 立ち物（扉・柵・灯り・欄干・建物・煙・旗・住人・主人公 — 足元 y で前後が入れ替わる）
 //   → 霧(hud) → ふきだし → 幕(hud)
 // 建物は複数タイルにまたがる大きな 1 枚（town_house.sprite.json の house_*）をアトラスの
 // quad で置く — タイルを 1 枚ずつ独立に描かない。
@@ -23,9 +24,9 @@
 // ── 絵の下限の 4 性質 × 層の担当（agents-pack/AGENTS.core.md「絵の下限」）──
 //   面の階調  … 地面のタイル層（縁・角・散らしのバリエーション）と水面シェーダー
 //               （流れる網目）。ベタの単色面を作らない。
-//   主役の分離 … 前後の深度の範囲のスプライト（彩度のある濃色の輪郭 + 接地影。純黒は使わない）。
-//   層の分かれ … 地面 → 置き物 → 前後の深度の範囲 → 霧 → ふきだし → 幕の z-index の範囲
-//               （下の「z 層」の数が唯一の権威）。
+//   主役の分離 … 立ち物のスプライト（彩度のある濃色の輪郭 + 接地影。純黒は使わない）。
+//   層の分かれ … 地面 → 置き物 → 立ち物 → ふきだし（world の木）/ 霧 → 幕（hud の木）
+//               （village と hud の ZStack.of に積んだ順が唯一の権威）。
 //   時間の流れ … 水面シェーダー・窯の煙(Fx)・旗と住人の歩き（コマ送り）・灯りの明滅。
 //               表紙や幕の下でも t は進み続ける（World の doc 参照）。
 //
@@ -35,30 +36,25 @@
 // 固定される（World.cameraCenter）ので、ずらしは常にゼロになる。
 mod View {
 
-    // ── z 層 ──
-    // 地面はタイル層（エンジンが動的な絵より必ず奥に敷く）なので、ここには出てこない。
-    // 置き物 10..29 / 前後の深度の範囲（人・建物）100..131 / 霧 200 / 幕 210.. / ふきだし 220..
-    // 前後の深度は Depth.forRows が行ごとに 1 つ割り当てる — その範囲の上下の数と重ならないこと。
+    // ── 重なりの層 ──
+    // world（frame）と画面固定（hud）は別の列で、エンジンが hud を必ず手前の範囲へ持ち上げる。
+    // どちらの列の中にも層を分ける物（会話の窓・確認・切り替え）が無いので、層は 1 つで足りる —
+    // 木を絵の列へ戻す口は SortingLayer.stack しか無く、それが層の enum を要るので 1 層だけの enum を置く。
+    // 地面はタイル層（同じ z ではタイル層が奥に描かれる）なので、木には出てこない。
 
-    def zHerb(): Int32 = 12
-    def zDepthBack(): Int32 = 100
-    def zFog(): Int32 = 200
-    def zVeil(): Int32 = 210
-    def zOverlayText(): Int32 = 212
-    def zBubble(): Int32 = 220
+    pub enum Layer with ToString {
+        case Scene
+    }
 
-    /// 人・建物の前後を決める z の範囲。足元が下（南）にある物ほど手前に出る。
-    def depthRange(w: World.World): Depth.ZRange =
-        Depth.forRows({ back = zDepthBack(), originY = 0.0,
-                        rows = MapDoc.rowCount(w#map), tileSize = World.tileSize() })
+    instance SortingLayer[Layer] {
+        pub def zRange(_layer: Layer): (Int32, Int32) = (0, 9999)
+    }
 
-    // ── 戦いの画面の z 層 ──
-    def zBattleSky(): Int32 = 0
-    def zBattleGround(): Int32 = 5
-    def zFoeShadow(): Int32 = 10
-    def zFoe(): Int32 = 12
-    def zWindow(): Int32 = 20
-    def zWindowText(): Int32 = 23
+    // ── 葉の中の前後（0..31） ──
+    def zVeil(): Int32 = 0
+    def zOverlayText(): Int32 = 1
+    def zWindow(): Int32 = 0
+    def zWindowText(): Int32 = 2
 
     /// スプライトの格子は 1 セル = 1px で描く（16×16 の格子 = 16px。タイル 16px にぴったり収まる）。
     def px(): Int32 = 1
@@ -68,53 +64,62 @@ mod View {
 
     /// world 側の絵（camera が掛かる）。
     pub def frame(ctx: App.ViewCtx, w: World.World): List[Render.PlacedItem] =
-        match w#phase {
+        SortingLayer.stack(ctx, Layer.Scene, match w#phase {
             case World.Phase.Battle => battleWorld(w)
             case _                  => village(ctx, w)
-        }
+        })
 
     /// 画面固定側の絵（camera を掛けない。App.withHudView と SceneRender が同じ物を読む）。
     pub def hud(ctx: App.ViewCtx, w: World.World): List[Render.PlacedItem] =
-        match w#phase {
+        SortingLayer.stack(ctx, Layer.Scene, match w#phase {
             case World.Phase.Battle =>
-                List.flatten(
+                // 3 枚のウィンドウは同じ前後（縁 → 地 → 文字）を分け合うので 1 枚の葉に入れる。
+                ZStack.leaf(List.flatten(
                        statusWindow(ctx#atlas, w)
                     :: commandWindow(ctx#atlas, w)
                     :: messageWindow(ctx#atlas, w)
-                    :: Nil)
+                    :: Nil))
             case _ =>
                 // 空の面は出さない — 地面のタイル層が画面全体を覆う（bounds が虚空を映さない）。
                 // hud に空の矩形を置くと、常に奥へ敷かれるタイル層より手前に来て地面を塗り潰す。
-                List.flatten(
-                       fogStrips(ThemeDoc.rec(w#theme))
-                    // 薄い昼下がりの空気（乗算 1 枚）。幕・文字（z 210..）は染めない。
-                    :: Daylight.overlay({ keys = Daylight.defaults(),
+                ZStack.of(
+                       ZStack.leaf(fogStrips(ThemeDoc.rec(w#theme)))
+                    // 薄い昼下がりの空気（乗算 1 枚）。後ろに積む幕・文字は染めない。
+                    :: ZStack.leaf(Daylight.overlay({ keys = Daylight.defaults(),
                            at = { x = 0.0, y = 0.0 },
                            size = { x = World.width(), y = World.height() },
-                           z = 205 }, dayT())
-                    :: overlay(ctx#atlas, w)
+                           z = 0 }, dayT()))
+                    :: ZStack.leaf(overlay(ctx#atlas, w))
                     :: Nil)
-        }
+        })
 
     /// 1 日のどこの空気か（0..1）。昼下がりの薄い暖色 — 画風の3色が濁らない強さに留める。
     def dayT(): Float64 = 0.62
 
     /// 里の world 側（歩く・話す・拾う）。地面はタイル層（TownMap）、霧・幕は hud 側。
-    def village(ctx: App.ViewCtx, w: World.World): List[Render.PlacedItem] =
-        List.flatten(
-               waterSurface(w)
-            :: door(w)
-            :: fencesView(w)
-            :: herbs(w)
-            :: lamps(w)
-            :: bridgeRails(w)
-            :: houses(w)
-            :: smoke(w)
-            :: flags(w)
-            :: villagers(w)
-            :: hero(w)
-            :: bubble(ctx, w)
+    /// 奥 → 手前: 水面 → 薬草 → 立ち物 → ふきだし。立ち物は 1 つずつ足元の y で前後を決める（atFeet）。
+    def village(ctx: App.ViewCtx, w: World.World): ZStack.Node[Layer] =
+        ZStack.of(
+               ZStack.leaf(waterSurface(w))
+            :: ZStack.leaf(herbs(w))
+            :: ZStack.of(List.flatten(
+                      door(w)
+                   :: fencesView(w)
+                   :: lamps(w)
+                   :: bridgeRails(w)
+                   :: houses(w)
+                   :: smoke(w)
+                   :: flags(w)
+                   :: villagers(w)
+                   :: hero(w)
+                   :: Nil))
+            :: ZStack.leaf(bubble(ctx, w))
             :: Nil)
+
+    /// 立ち物 1 つ（建物・柵・人…）を足元の y の順に並べる子にする。足元が下（南）にある物ほど手前に出る。
+    /// 中の前後（壁 0・屋根 1 のような小さな z）はその葉の中だけに効くので、隣の物と部品が交互に重ならない。
+    def atFeet(footY: Float64, items: List[Render.PlacedItem]): List[ZStack.Node[Layer]] =
+        ZStack.zIndex(Depth.orderAt(footY), ZStack.leaf(items)) :: Nil
 
     // ── 盤の位置合わせ ──
 
@@ -137,14 +142,14 @@ mod View {
 
     // ── 建物（複数タイルにまたがる大きな 1 枚をアトラスの quad で置く）──
 
-    /// 建物。壁と屋根は別 sprite だが足元 y（接地の南端）を共有して前後の深度の範囲に載る —
+    /// 建物。壁と屋根は別 sprite だが足元 y（接地の南端）を共有する 1 枚の葉に入る —
     /// 主人公が北側（裏）を歩くと屋根と壁に隠れ、南側では建物の前に立つ。
-    def houses(w: World.World): List[Render.PlacedItem] =
+    def houses(w: World.World): List[ZStack.Node[Layer]] =
         TownMap.buildings() |> List.flatMap(b ->
             buildingAt(w, b#cell, TownMap.buildingSpec(b#kind)))
 
     def buildingAt(w: World.World, nw: Grid.Cell,
-                   spec: { w = Int32, h = Int32, wall = String, roof = String }): List[Render.PlacedItem] =
+                   spec: { w = Int32, h = Int32, wall = String, roof = String }): List[ZStack.Node[Layer]] =
         let t = World.tileSize();
         let southY = Int32.toFloat64(nw#y + spec#h) * t;
         let x0 = Int32.toFloat64(nw#x) * t;
@@ -162,14 +167,14 @@ mod View {
         // （壁の上端の軒の陰と重なって、屋根が壁に載って見える）。
         let roof = PxSprite.drawQuad(w#townSprites, w#townAtlas, tex, spec#roof, "idle",
             { x = x0 + (bodyW - roofSize#x) / 2.0, y = wallTop + 4.0 - roofSize#y }, false, 1, 1);
-        Depth.place(depthRange(w), southY, List.append(wall, roof))
+        atFeet(southY, List.append(wall, roof))
 
     /// 低い柵（門の並び）。当たりは rpg.map の '#' が持ち、ここは絵だけ。
-    def fencesView(w: World.World): List[Render.PlacedItem] =
+    def fencesView(w: World.World): List[ZStack.Node[Layer]] =
         let t = World.tileSize();
         TownMap.fences() |> List.flatMap(cell -> {
             let bottom = Int32.toFloat64(cell#y + 1) * t;
-            Depth.place(depthRange(w), bottom,
+            atFeet(bottom,
                 PxSprite.drawQuad(w#townSprites, w#townAtlas, TownMap.textureName(),
                     "fence", "idle",
                     { x = Int32.toFloat64(cell#x) * t, y = bottom - 12.0 }, false, 1, 0))
@@ -179,22 +184,22 @@ mod View {
 
     /// 家の扉と同じ描法の独立した木の門（門柱2本+板戸+小さな屋根）。
     /// 開閉はコマの差し替え（gate_closed / gate_open）— ルールは World の doorOpen のまま。
-    def door(w: World.World): List[Render.PlacedItem] =
+    def door(w: World.World): List[ZStack.Node[Layer]] =
         let t = World.tileSize();
         let at = cellTopLeft(w, MapDoc.rec(w#map)#door#cell);
         let bottom = at#y + t;
         let name = if (w#doorOpen) "gate_open" else "gate_closed";
         let size = PxSprite.sizeOf(w#townSprites, name, "idle", 1)
             |> Option.getWithDefault({ x = t, y = 24.0 });
-        Depth.place(depthRange(w), bottom,
+        atFeet(bottom,
             PxSprite.drawQuad(w#townSprites, w#townAtlas, TownMap.textureName(),
                 name, "idle", { x = at#x, y = bottom - size#y }, false, 1, 0))
 
-    // ── 橋の欄干（橋面はタイル層。欄干は前後の深度の範囲に立てる）──
+    // ── 橋の欄干（橋面はタイル層。欄干は立ち物として足元の順に並べる）──
 
     /// 北の欄干は主人公の後ろ（足元 = マスの上端）、南の欄干は前
     /// （足元 = 次の行の中ほど）— 渡っている間、体が南の欄干に半分隠れる。
-    def bridgeRails(w: World.World): List[Render.PlacedItem] =
+    def bridgeRails(w: World.World): List[ZStack.Node[Layer]] =
         let t = World.tileSize();
         w#bridgeCells |> List.flatMap(cell -> {
             let x0 = Int32.toFloat64(cell#x) * t;
@@ -204,9 +209,7 @@ mod View {
                 "bridge_rail", "idle", { x = x0, y = top - 3.0 }, false, 1, 0);
             let south = PxSprite.drawQuad(w#townSprites, w#townAtlas, TownMap.textureName(),
                 "bridge_rail", "idle", { x = x0, y = bottom - 3.0 }, false, 1, 0);
-            List.append(
-                Depth.place(depthRange(w), top, north),
-                Depth.place(depthRange(w), bottom + t / 2.0, south))
+            List.append(atFeet(top, north), atFeet(bottom + t / 2.0, south))
         })
 
     // ── 水面（宣言シェーダー。岸と落ち影の 4px はタイルの絵に任せて内側だけ塗る） ──
@@ -227,7 +230,7 @@ mod View {
 
     // ── 窯の煙（閉形式の粒。パン屋の煙突の口から） ──
 
-    def smoke(w: World.World): List[Render.PlacedItem] =
+    def smoke(w: World.World): List[ZStack.Node[Layer]] =
         match List.find(b -> b#kind == "shop", TownMap.buildings()) {
             case None    => Nil
             case Some(b) =>
@@ -240,12 +243,12 @@ mod View {
                 let mouth = { x = roofX + 13.0, y = southY - 32.0 + 4.0 - 40.0 + 1.0 };
                 let dur = Float64.max(0.1, w#smokeFx#duration);
                 let items = Fx.sampleAt(w#smokeFx, 7i64, w#t - dur * Float64.floor(w#t / dur), mouth);
-                Depth.place(depthRange(w), southY, items)
+                atFeet(southY, items)
         }
 
     // ── 旗（教会の尖塔の先。Sway で揺れる — 完全に止まった画面を出さない） ──
 
-    def flags(w: World.World): List[Render.PlacedItem] =
+    def flags(w: World.World): List[ZStack.Node[Layer]] =
         match List.find(b -> b#kind == "church", TownMap.buildings()) {
             case None    => Nil
             case Some(b) =>
@@ -267,17 +270,17 @@ mod View {
                                     :: { x = 7.0 + swayX, y = 1.5 + swayY }
                                     :: { x = 0.0, y = 4.0 }
                                     :: Nil, ThemeDoc.rec(w#theme)#accent, 3) };
-                Depth.place(depthRange(w), southY, pole :: pennant :: Nil)
+                atFeet(southY, pole :: pennant :: Nil)
         }
 
     // ── 薬草・灯り・住人・主人公 ──
 
     def herbs(w: World.World): List[Render.PlacedItem] =
-        w#herbs |> List.flatMap(cell -> sprite(w, "herb", "idle", cell, false, zHerb(),
+        w#herbs |> List.flatMap(cell -> sprite(w, "herb", "idle", cell, false, 0,
             ThemeDoc.resolver(w#theme, "leaf")))
 
     /// 灯り。薬草を拾った数だけ、並び順に点いていく（夕暮れの里に灯がともる）。
-    def lamps(w: World.World): List[Render.PlacedItem] =
+    def lamps(w: World.World): List[ZStack.Node[Layer]] =
         let lit = World.lampsLit(w);
         MapDoc.rec(w#map)#lamps |> List.zipWithIndex |> List.flatMap(entry -> {
             let (i, cell) = entry;
@@ -286,7 +289,7 @@ mod View {
 
     /// 街灯 1 本（木の柱+鉄の腕+吊りランタン）。昼はガラスの暖色だけで光らせない —
     /// 点灯（Daylight 連動は将来）はコマ差し替え + グロー。クリアの「全灯」演出はここが担う。
-    def lamp(w: World.World, cell: Grid.Cell, litNow: Bool): List[Render.PlacedItem] =
+    def lamp(w: World.World, cell: Grid.Cell, litNow: Bool): List[ZStack.Node[Layer]] =
         let center = cellCenter(w, cell);
         let bottom = center#y + World.tileSize() / 2.0;
         let quad = PxSprite.drawQuad(w#townSprites, w#townAtlas, TownMap.textureName(),
@@ -301,9 +304,9 @@ mod View {
                 Render.glowAt(lantern, 12.0, ThemeDoc.rec(w#theme)#accent,
                     { alpha = 0.55, blend = DrawCmd.BlendMode.Add }, 2))
         else Nil;
-        Depth.place(depthRange(w), bottom, List.append(quad, glow))
+        atFeet(bottom, List.append(quad, glow))
 
-    def villagers(w: World.World): List[Render.PlacedItem] =
+    def villagers(w: World.World): List[ZStack.Node[Layer]] =
         MapDoc.rec(w#map)#villagers |> List.flatMap(villager -> {
             // 位置は巡回の見本（World.villagerSampleAt）から。絵の位置と
             // 歩ける・話せるの判定（villagerCellAt）が同じ見本を読むのでずれない。
@@ -315,20 +318,20 @@ mod View {
             let stepping = Int32.modulo(
                 Float64.tryToInt32(Float64.floor(smp#walking / 8.0)) |> Option.getWithDefault(0), 2) == 1;
             let frameName = if (talking) "talk" else if (stepping) "walk" else "idle";
-            Depth.place(depthRange(w), smp#pos#y + World.tileSize() / 2.0,
+            atFeet(smp#pos#y + World.tileSize() / 2.0,
                 spriteAt(w, { name = "villager", frame = frameName, center = smp#pos,
                               flipX = false, scale = px(), z = 0, fallback = ThemeDoc.rec(w#theme)#cloth }))
         })
 
     /// 主人公。向きごとに絵を持ち、歩数の偶奇で足を入れ替える。
     /// 左向きは右向きの絵の左右反転で済ませる（絵を増やさない）。
-    def hero(w: World.World): List[Render.PlacedItem] =
+    def hero(w: World.World): List[ZStack.Node[Layer]] =
         let (frameName, flipX) = heroFrame(w);
         placeAtFeet(w, w#hero, sprite(w, "hero", frameName, w#hero, flipX, 0, ThemeDoc.rec(w#theme)#accent))
 
-    /// マスに立つ 1 体を前後の深度の範囲へ載せる（足元 = マスの下端）。
-    def placeAtFeet(w: World.World, cell: Grid.Cell, items: List[Render.PlacedItem]): List[Render.PlacedItem] =
-        Depth.place(depthRange(w), cellCenter(w, cell)#y + World.tileSize() / 2.0, items)
+    /// マスに立つ 1 体を足元の順に並べる（足元 = マスの下端）。
+    def placeAtFeet(w: World.World, cell: Grid.Cell, items: List[Render.PlacedItem]): List[ZStack.Node[Layer]] =
+        atFeet(cellCenter(w, cell)#y + World.tileSize() / 2.0, items)
 
     /// 向き + 歩数 → 「どのコマを、反転するか」。
     def heroFrame(w: World.World): (String, Bool) =
@@ -376,7 +379,7 @@ mod View {
         List.range(0, 5) |> List.map(i ->
             { at = { x = 0.0, y = Hash01.at(i, 11) * (World.height() - 40.0) },
               item = RawDraw.box({ x = World.width(), y = 30.0 + Hash01.at(i, 12) * 34.0 },
-                                theme#fog, zFog())
+                                theme#fog, 0)
                   |> Render.fade(0.10 + Hash01.at(i, 13) * 0.08) })
 
     // ── ふきだし（住人の頭の上。本文は文字送りの途中まで） ──
@@ -419,11 +422,11 @@ mod View {
             speakerCenter#y - World.tileSize() / 2.0 - boxH - 8.0);
         List.flatten(
                ({ at = { x = boxX, y = boxY },
-                  item = RawDraw.box({ x = boxW, y = boxH }, ThemeDoc.rec(w#theme)#paper, zBubble()) } :: Nil)
+                  item = RawDraw.box({ x = boxW, y = boxH }, ThemeDoc.rec(w#theme)#paper, 0) } :: Nil)
             :: tail(speakerCenter, boxY + boxH, ThemeDoc.rec(w#theme)#paper)
             :: RichText.place(
                    { atlas = atlas, size = fontSize, baseTint = ThemeDoc.rec(w#theme)#ink,
-                     z = zBubble() + 2, pos = { x = boxX + pad, y = boxY + pad },
+                     z = 2, pos = { x = boxX + pad, y = boxY + pad },
                      maxWidth = maxTextW, lineGap = lineGap }, spans)
             :: Nil)
 
@@ -432,7 +435,7 @@ mod View {
         { at = { x = speakerCenter#x, y = fromY },
           item = RawDraw.polygon(
               { x = -4.0, y = 0.0 } :: { x = 4.0, y = 0.0 } :: { x = 0.0, y = 6.0 } :: Nil,
-              color, zBubble() + 1) } :: Nil
+              color, 1) } :: Nil
 
     /// ふきだしの枠を見えている縁から離す幅。0 にすると枠が縁に接して切れて見えるので、
     /// はみ出し止めの最小値ではなく目に見える余白として取る。
@@ -484,12 +487,12 @@ mod View {
     // 里の絵は出さない（盤・霧のストリップ・ふきだしは village 側の物）。ここは
     // 「夜空 → 霧 → 地面 → 魔物」の 4 層（ウィンドウは hud 側）で、視線が魔物と下の文に集まるようにする。
 
-    def battleWorld(w: World.World): List[Render.PlacedItem] =
-        List.flatten(
-               battleSky(ThemeDoc.rec(w#theme))
-            :: battleMist(ThemeDoc.rec(w#theme))
-            :: battleGround(ThemeDoc.rec(w#theme))
-            :: foe(w)
+    def battleWorld(w: World.World): ZStack.Node[Layer] =
+        ZStack.of(
+               ZStack.leaf(battleSky(ThemeDoc.rec(w#theme)))
+            :: ZStack.leaf(battleMist(ThemeDoc.rec(w#theme)))
+            :: ZStack.leaf(battleGround(ThemeDoc.rec(w#theme)))
+            :: ZStack.leaf(foe(w))
             :: Nil)
 
     /// 夜空。上ほど暗く、下ほど地面の色に近づく縦のグラデ（1px の色帯は積まない）。
@@ -497,7 +500,7 @@ mod View {
         { at = { x = 0.0, y = 0.0 },
           item = Render.vgrad({ x = World.width(), y = World.height() },
               { top = ThemeDoc.darken(theme#sky, 0.45),
-                bottom = ThemeDoc.lighten(theme#sky, 0.10) }, zBattleSky()) } :: Nil
+                bottom = ThemeDoc.lighten(theme#sky, 0.10) }, 0) } :: Nil
 
     /// 遠くにかかる霧。濃さが縦に変わる面を数枚重ねる。里の霧（fogStrips）は四角い面で
     /// よいが、こちらは下地がなめらかなグラデなので、縁が立つと面の四角が見えてしまう —
@@ -507,7 +510,7 @@ mod View {
             let top = 48.0 + Hash01.at(i, 21) * 72.0;
             let height = 20.0 + Hash01.at(i, 22) * 24.0;
             let alpha = 0.07 + Hash01.at(i, 23) * 0.05;
-            softStrip(theme#fog, { top = top, bottom = top + height }, alpha, zBattleSky() + 1)
+            softStrip(theme#fog, { top = top, bottom = top + height }, alpha, 0)
         })
 
     /// 上下の縁が透けて消える横帯（霧・地面のなじませに使う）。
@@ -538,7 +541,7 @@ mod View {
                  :: { pos = { x = World.width(), y = World.height() }, color = near, alpha = 1.0 }
                  :: { pos = { x = 0.0, y = World.height() },   color = near, alpha = 1.0 }
                  :: { pos = { x = 0.0, y = top + 40.0 },       color = far,  alpha = 1.0 }
-                 :: Nil, zBattleGround()) }
+                 :: Nil, 0) }
         :: Nil
 
     /// 魔物と、その足元の影。上下にゆっくり息をする（手を止めても画面が止まらない）。
@@ -552,11 +555,11 @@ mod View {
         let lift = (bob + 4.0) / 8.0;
         let shadow = RawDraw.ellipseAt({ x = center#x, y = groundY + 3.0 },
             { x = 40.0 - lift * 5.0, y = 10.0 - lift * 2.0 },
-            ThemeDoc.darken(ThemeDoc.rec(w#theme)#sky, 0.55), zFoeShadow())
+            ThemeDoc.darken(ThemeDoc.rec(w#theme)#sky, 0.55), 0)
             |> (placed -> { item = Render.fade(0.7, placed#item) | placed });
         let frameName = if (w#battle#foeHurt) "hit" else "idle";
         shadow :: spriteAt(w, { name = "foe", frame = frameName, center = center,
-                                flipX = false, scale = foeScale(), z = zFoe(),
+                                flipX = false, scale = foeScale(), z = 1,
                                 fallback = ThemeDoc.resolver(w#theme, "foe") })
 
     // ── ウィンドウ（ドラクエ風の「紙の縁 + 濃い地」）──

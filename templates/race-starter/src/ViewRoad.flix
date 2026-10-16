@@ -5,28 +5,27 @@
 // 距離感は色でも語る（縮みだけに頼ると遠くがうるさいまま残る）。
 mod ViewRoad {
 
-    // ── z 層（地面 6 / 草の筋 7 / 路面 8 / 縁石・白線・スタートライン 9 / タイヤ痕 10） ──
-    def zGround(): Int32 = 6
-    def zFurrow(): Int32 = 7
-    def zRoad(): Int32 = 8
-    def zTrim(): Int32 = 9
-    def zSkid(): Int32 = 10
+    // 地面・路面・縁石・タイヤ痕は地面の葉（View.frame）に入り、葉の中の前後は View の共有の段
+    // （View.zGround など。空・海と同じ葉なので段を分け合う）から引く。アイテム・障害物は立ち物の子。
 
-    /// 道まわり全部。セグメントを手前から地平線まで積む + タイヤ痕。
-    pub def draw(cam: Proj.Cam, w: World.World): List[Render.PlacedItem] =
-        (Proj.segments(w) |> List.flatMap(b -> segment(cam, w, b))) ::: skids(cam, w)
+    /// 道まわり全部。ground = セグメントを手前から地平線まで積んだ地面と路面 + タイヤ痕（地面の葉へ）、
+    /// props = セグメントごとのアイテム・障害物（立ち物の子。足元の u の順に並ぶ）。
+    pub def draw(cam: Proj.Cam, w: World.World): { ground = List[Render.PlacedItem], props = List[ZStack.Node[p]] } =
+        let parts = Proj.segments(w) |> List.map(b -> segment(cam, w, b));
+        { ground = (parts |> List.flatMap(fst)) ::: skids(cam, w),
+          props = parts |> List.flatMap(snd) }
 
     /// セグメント 1 本 = 全幅の地面 + 路面の台形・縁石・白線・スタートライン + 立ち物。
     /// 道が画面の外まで曲がっていったセグメントは地面だけにする — 草の縦筋も道の端から引くので、
     /// 道ごと画面の外なら筋も見えない（見えない物を積むと遠くのセグメントほど無駄が増える）。
-    def segment(cam: Proj.Cam, w: World.World, b: Proj.Segment): List[Render.PlacedItem] =
+    def segment(cam: Proj.Cam, w: World.World, b: Proj.Segment): (List[Render.PlacedItem], List[ZStack.Node[p]]) =
         let e = stripOf(w, b#n);
         // セグメントの手前辺と奥辺は 1 回だけ引いて全部の層で使い回す（地面・轍・縁石は
         // どれも同じ 2 本の辺の上に点を並べるだけなので、層ごとに引き直す意味がない）。
         let ed = edgesOf(cam, b);
-        if (not onScreen(ed, e)) groundStrip(w, ed, b)
+        if (not onScreen(ed, e)) (groundStrip(w, ed, b), Nil)
         else
-            groundStrip(w, ed, b)
+            (groundStrip(w, ed, b)
                 ::: (partsOf(b, e) |> List.flatMap(p -> {
                         let pd = edgesOf(cam, p#seg);
                         furrows(w, pd, p#seg, p#strip)
@@ -35,8 +34,8 @@ mod ViewRoad {
                     }))
                 ::: laneLine(cam, w, b, e)
                 ::: startLine(cam, w, b, e)
-                ::: rails(cam, w, b, e)
-                ::: props(cam, w, b)
+                ::: rails(cam, w, b, e),
+             props(cam, w, b))
 
     /// セグメントを細かく割って積む一番奥の u。ここより手前だけ割る。
     def splitFar(): Float64 = 4.0
@@ -158,7 +157,7 @@ mod ViewRoad {
               :: { pos = { x = wide, y = yTop },  color = far,  alpha = 1.0 }
               :: { pos = { x = wide, y = yBot },  color = near, alpha = 1.0 }
               :: { pos = { x = 0.0, y = yBot },   color = near, alpha = 1.0 }
-              :: Nil, zGround()) } :: Nil
+              :: Nil, View.zGround()) } :: Nil
 
     // ── 草地の縦の筋（乾いた路肩・轍） ──
 
@@ -211,7 +210,7 @@ mod ViewRoad {
                           :: { pos = { x = Proj.edgeX(ed#near, g#nearB), y = y0 }, color = near, alpha = 1.0 }
                           :: { pos = { x = Proj.edgeX(ed#far, g#farB),   y = y1 }, color = far,  alpha = 1.0 }
                           :: { pos = { x = Proj.edgeX(ed#far, g#farA),   y = y1 }, color = far,  alpha = 1.0 }
-                          :: Nil, zFurrow()) };
+                          :: Nil, View.zFurrow()) };
                 quad({ nearA = e#xl0 - o0 - lane#wid, nearB = e#xl0 - o0,
                        farA  = e#xl1 - o1 - lane#wid, farB  = e#xl1 - o1 })
                     :: quad({ nearA = e#xr0 + o0, nearB = e#xr0 + o0 + lane#wid,
@@ -300,7 +299,7 @@ mod ViewRoad {
               :: { pos = { x = xn(q#t1), y = y0 }, color = q#near, alpha = 1.0 }
               :: { pos = { x = xf(q#t1), y = y1 }, color = q#far,  alpha = 1.0 }
               :: { pos = { x = xf(q#t0), y = y1 }, color = q#far,  alpha = 1.0 }
-              :: Nil, zRoad()) }
+              :: Nil, View.zRoad()) }
 
     /// 縁石の縞を何行で 1 色にするか。奥はセグメントが細くなり、1 行おきのままだと赤と白が同じ
     /// 画素に潰れて「1 本の赤い線」になるので、遠いほど粗くして交互を残す。
@@ -324,7 +323,7 @@ mod ViewRoad {
         let l1 = Proj.edgeX(ed#far, e#xl1);
         let r0 = Proj.edgeX(ed#near, e#xr0);
         let r1 = Proj.edgeX(ed#far, e#xr1);
-        let poly = vs -> { at = { x = 0.0, y = 0.0 }, item = RawDraw.polygon(vs, color, zTrim()) };
+        let poly = vs -> { at = { x = 0.0, y = 0.0 }, item = RawDraw.polygon(vs, color, View.zTrim()) };
         poly({ x = l0 - k0, y = y0 } :: { x = l0, y = y0 }
              :: { x = l1, y = y1 } :: { x = l1 - k1, y = y1 } :: Nil)
             :: poly({ x = r0, y = y0 } :: { x = r0 + k0, y = y0 }
@@ -351,7 +350,7 @@ mod ViewRoad {
                   :: { x = xa + ha, y = Proj.yAt(cam, ua) }
                   :: { x = xb + hb, y = Proj.yAt(cam, ub) }
                   :: { x = xb - hb, y = Proj.yAt(cam, ub) }
-                  :: Nil, color, zTrim()) } :: Nil
+                  :: Nil, color, View.zTrim()) } :: Nil
         }
 
     /// スタート/ゴールライン。コース 1 周の先頭行に白帯 + 市松。台形でなく箱で近似する
@@ -370,7 +369,7 @@ mod ViewRoad {
             let yBot = Proj.yAt(cam, b#u0 + 0.05);
             let cx = (Proj.screenX(cam, g#xl, ua) + Proj.screenX(cam, g#xr, ua)) / 2.0;
             let banner = RawDraw.boxAt({ x = cx, y = (yTop + yBot) / 2.0 },
-                    { x = (g#xr - g#xl) * k, y = yBot - yTop }, ThemeDoc.rec(w#theme)#finish, zTrim())
+                    { x = (g#xr - g#xl) * k, y = yBot - yTop }, ThemeDoc.rec(w#theme)#finish, View.zTrim())
                 |> Render.overItem(Render.checker(
                        { color = Color.darken(ThemeDoc.rec(w#theme)#road, 0.35), alpha = 1.0,
                          cell = Float64.max(2.0, 4.0 * k) }));
@@ -405,13 +404,13 @@ mod ViewRoad {
                       :: { x = x1, y = g1 - railH() * k1 * spec#top }
                       :: { x = x1, y = g1 - railH() * k1 * spec#bot }
                       :: { x = x0, y = g0 - railH() * k0 * spec#bot }
-                      :: Nil, c, zTrim() + 1) }
+                      :: Nil, c, View.zTrim() + 1) }
             };
             let posts = if (not b#head or u0 > 14.0) Nil
                 else RawDraw.boxAt({ x = x0, y = g0 - railH() * k0 * 0.35 },
                         { x = Float64.max(1.0, 2.2 * k0), y = railH() * k0 * 0.7 },
                         Color.mix(Color.darken(ThemeDoc.rec(w#theme)#road, 0.55), ThemeDoc.hazeTo(w#theme),
-                                  fadeOf(u0)), zTrim() + 1) :: Nil;
+                                  fadeOf(u0)), View.zTrim() + 1) :: Nil;
             beam({ top = 1.0, bot = 0.58, color = Color.lighten(ThemeDoc.rec(w#theme)#finish, 0.06) })
                 :: beam({ top = 0.58, bot = 0.30, color = Color.darken(ThemeDoc.rec(w#theme)#road, 0.45) })
                 :: posts
@@ -421,8 +420,10 @@ mod ViewRoad {
 
     /// このセグメントの立ち物。置き場所をセグメントの真ん中（u0+0.5）に投影して置く。
     /// 当たりの範囲（World.blockersAt）から絵を引くので、見えている物と当たる物がずれない。
-    def props(cam: Proj.Cam, w: World.World, b: Proj.Segment): List[Render.PlacedItem] =
-        itemsOf(cam, w, b) ::: blockersOf(cam, w, b)
+    /// どれも同じ u に立つので 1 枚の葉にまとめ、ヤシや車と足元の u の順に並べる。
+    def props(cam: Proj.Cam, w: World.World, b: Proj.Segment): List[ZStack.Node[p]] =
+        ZStack.zIndex(Proj.orderOf(b#u0 + 0.5),
+            ZStack.leaf(itemsOf(cam, w, b) ::: blockersOf(cam, w, b))) :: Nil
 
     /// アイテム箱。取った行（taken は通し行番号の集合）は描かない — 消えることが取得の合図。
     /// ふわふわ浮かせ + 金の光で「取って良い物」だと遠目にも判るようにする。
@@ -433,7 +434,7 @@ mod ViewRoad {
             let f = Proj.scaleOf(uc) * 1.6;
             let x = Proj.screenX(cam, propOff, uc);
             let groundY = Proj.yAt(cam, uc);
-            let z = Proj.zOf(uc);
+            let z = 0;
             let bob = Sway.wave(w#t, Int32.toFloat64(b#n) * 0.7, 0.9) * 2.0;
             let center = { x = x, y = groundY - 5.0 * f - 2.0 + bob };
             let shadow = shadowUnder({ at = { x = x, y = groundY },
@@ -466,7 +467,7 @@ mod ViewRoad {
         let f = Proj.scaleOf(uc) * 1.6;
         let x = Proj.screenX(cam, propOff, uc);
         let groundY = Proj.yAt(cam, uc);
-        let z = Proj.zOf(uc);
+        let z = 0;
         let shadow = shadowUnder({ at = { x = x, y = groundY },
                 radii = { x = 4.0 * f, y = 1.4 * f }, segs = 32,
                 alpha = shadowAlpha(uc), z = z });
@@ -551,7 +552,7 @@ mod ViewRoad {
         let kb = Proj.scaleOf(back);
         let gf = Proj.yAt(cam, s#uc);
         let gb = Proj.yAt(cam, back);
-        let z = Proj.zOf(s#uc);
+        let z = 0;
         let tint = c -> Color.mix(c, ThemeDoc.hazeTo(w#theme), Proj.hazeAt(s#uc));
         let xl = Proj.screenX(cam, s#lo, s#uc);
         let xr = Proj.screenX(cam, s#hi, s#uc);
@@ -582,7 +583,7 @@ mod ViewRoad {
                s: { uc = Float64, cx = Float64 }): List[Render.PlacedItem] =
         let kf = Proj.scaleOf(s#uc);
         let gf = Proj.yAt(cam, s#uc);
-        let z = Proj.zOf(s#uc);
+        let z = 0;
         let tint = c -> Color.mix(c, ThemeDoc.hazeTo(w#theme), Proj.hazeAt(s#uc));
         let x = Proj.screenX(cam, s#cx, s#uc);
         let rs = postR() * kf;
@@ -612,7 +613,7 @@ mod ViewRoad {
               bl: World.Blocker): List[Render.PlacedItem] =
         let k = Proj.scaleOf(uc);
         let groundY = Proj.yAt(cam, uc);
-        let z = Proj.zOf(uc);
+        let z = 0;
         let tint = c -> Color.mix(c, ThemeDoc.hazeTo(w#theme), Proj.hazeAt(uc));
         let l = Proj.screenX(cam, bl#lo, uc);
         let r = Proj.screenX(cam, bl#hi, uc);
@@ -656,7 +657,7 @@ mod ViewRoad {
                 Render.rotated(s#turn, { x = -5.0, y = 0.0 } :: { x = 5.0, y = 0.0 } :: Nil)
                     |> List.map(o ->
                         RawDraw.boxAt({ x = p#x + o#x * p#k, y = p#y + o#y * p#k },
-                                { x = 2.5 * p#k, y = 2.5 * p#k }, color, zSkid())
+                                { x = 2.5 * p#k, y = 2.5 * p#k }, color, View.zSkid())
                             |> Render.overItem(Render.fade(0.5)))
             }
         })

@@ -4,16 +4,8 @@
 // （どこにも状態を持たないので、巻き戻しても描き出しでも同じ絵になる）。
 mod ViewScene {
 
-    // ── z 層（空 0..2 / 遠景の岬 3 / 海 4..5 / 丘の向こうの平野 6 / 浜 7 / 速度線 85） ──
-    def zSky(): Int32 = 0
-    def zSun(): Int32 = 1
-    def zCloud(): Int32 = 2
-    def zRidge(): Int32 = 3
-    def zSea(): Int32 = 4
-    def zHorizon(): Int32 = 5
-    def zPlain(): Int32 = 6
-    def zBeach(): Int32 = 7
-    def zSpeed(): Int32 = 85
+    // 空・海・平野は地面の葉（View.frame）に入り、葉の中の前後は View の共有の段（View.zSky など）から引く。
+    // ヤシと道の外の景色は立ち物の子（Proj.orderOf の順）、速度線はいちばん手前の葉。
 
     // ── 空（グラデ + 太陽 + 流れる雲） ──
 
@@ -21,7 +13,7 @@ mod ViewScene {
     pub def sky(cam: Proj.Cam, w: World.World): List[Render.PlacedItem] =
         let grad = { at = { x = 0.0, y = 0.0 },
                      item = Render.vgrad({ x = World.designW(), y = Proj.horizonYAt(cam) },
-                         { top = ThemeDoc.rec(w#theme)#skyTop, bottom = ThemeDoc.rec(w#theme)#skyLow }, zSky()) };
+                         { top = ThemeDoc.rec(w#theme)#skyTop, bottom = ThemeDoc.rec(w#theme)#skyLow }, View.zSky()) };
         grad :: (sun(cam, w) ::: clouds(cam, w))
 
     /// 曲がった向きに景色が流れる量（px）。右へ回れば景色は左へ流れるので符号を返す。
@@ -46,8 +38,8 @@ mod ViewScene {
     def sun(cam: Proj.Cam, w: World.World): List[Render.PlacedItem] =
         let at = sunAt(cam, w);
         Render.glowAt(at, 18.0, ThemeDoc.rec(w#theme)#text,
-                { alpha = 0.5, blend = DrawCmd.BlendMode.Add }, zSun())
-            ::: (RawDraw.circleAt(at, 7.0, ThemeDoc.rec(w#theme)#text, zSun()) :: Nil)
+                { alpha = 0.5, blend = DrawCmd.BlendMode.Add }, View.zSun())
+            ::: (RawDraw.circleAt(at, 7.0, ThemeDoc.rec(w#theme)#text, View.zSun()) :: Nil)
 
     /// 雲 4 つ。楕円 3 枚組を右から左へ 3px/s で流す（走らなくても空だけは動く = 時間の下限）。
     /// 曲がったぶんも一緒に流すが、太陽より少しだけ鈍く動かす（雲のほうが手前にある）。
@@ -59,11 +51,11 @@ mod ViewScene {
             let y = Float64.min(Proj.horizonYAt(cam) - 8.0, 18.0 + rand(1) * 34.0);
             let s = 4.0 + (y - 18.0) / 34.0 * 5.0 + rand(2) * 2.0;
             let c = ThemeDoc.rec(w#theme)#text;
-            RawDraw.ellipseAt({ x = x, y = y }, { x = s * 2.2, y = s }, c, zCloud())
+            RawDraw.ellipseAt({ x = x, y = y }, { x = s * 2.2, y = s }, c, View.zCloud())
                 :: RawDraw.ellipseAt({ x = x - s * 1.6, y = y + s * 0.35 },
-                       { x = s * 1.4, y = s * 0.7 }, c, zCloud())
+                       { x = s * 1.4, y = s * 0.7 }, c, View.zCloud())
                 :: RawDraw.ellipseAt({ x = x + s * 1.7, y = y + s * 0.3 },
-                       { x = s * 1.5, y = s * 0.75 }, c, zCloud())
+                       { x = s * 1.5, y = s * 0.75 }, c, View.zCloud())
                 :: Nil
         }) |> List.flatten
 
@@ -95,7 +87,7 @@ mod ViewScene {
         ramp({ y = top,                           color = up }
           :: { y = top + (bot - top) * 0.26,      color = mid }
           :: { y = bot,                           color = low }
-          :: Nil, zSea())
+          :: Nil, View.zSea())
 
     /// 波打ちぎわ側（一番手前）の海の色。浜のグラデの上端も同じ色から始めるので、
     /// ここを 1 か所にしておかないと海と浜の境に線が出る。
@@ -116,7 +108,7 @@ mod ViewScene {
                               :: { pos = { x = wide, y = top },       color = c, alpha = 0.55 }
                               :: { pos = { x = wide, y = top + 7.0 }, color = c, alpha = 0.0 }
                               :: { pos = { x = 0.0, y = top + 7.0 },  color = c, alpha = 0.0 }
-                              :: Nil, zHorizon())
+                              :: Nil, View.zHorizon())
                               |> Render.blended(DrawCmd.BlendMode.Add) };
         let sx = sunAt(cam, w)#x;
         // 陽が水面に落ちた照り返し。丸い光だまりにすると空に太陽が 2 つあるように読めるので、
@@ -171,7 +163,7 @@ mod ViewScene {
                        color = high, alpha = 1.0 }
                   :: { pos = { x = x1, y = base + 3.0 }, color = low, alpha = 1.0 }
                   :: { pos = { x = x0, y = base + 3.0 }, color = low, alpha = 1.0 }
-                  :: Nil, zRidge()) }
+                  :: Nil, View.zRidge()) }
         })
 
     /// 水面の照り返しの面 1 枚。中心 cx が一番明るく、左右の端と下端で消える。
@@ -186,7 +178,7 @@ mod ViewScene {
                   :: { pos = { x = s#cx, y = s#y0 }, color = c, alpha = s#alpha }
                   :: { pos = { x = s#cx, y = s#y1 }, color = c, alpha = 0.0 }
                   :: { pos = { x = xe, y = s#y1 },   color = c, alpha = 0.0 }
-                  :: Nil, zHorizon())
+                  :: Nil, View.zHorizon())
                   |> Render.blended(DrawCmd.BlendMode.Add) }
         };
         half(-1.0) :: half(1.0) :: Nil
@@ -217,7 +209,7 @@ mod ViewScene {
           :: { y = y0 + 1.4, color = far(0.56)(Color.cool(Color.darken(ThemeDoc.rec(theme)#sand, 0.30), 0.10)) }
           :: { y = y0 + 3.2, color = far(0.50)(Color.warm(ThemeDoc.rec(theme)#sand, 0.08)) }
           :: { y = y0 + 5.6, color = far(0.88)(ThemeDoc.grassLight(theme)) }
-          :: Nil, zBeach())
+          :: Nil, View.zBeach())
 
     /// きらめきと波がしら。白い短い横線が各自の周期で明滅する（Add で海に光を足す）。
     /// 手前（下）ほど長く太くするのは、遠い波ほど 1px に潰れて数だけ増えるのが自然な見え方で、
@@ -234,7 +226,7 @@ mod ViewScene {
             let thick = if (d > 0.55) 2.0 else 1.0;
             let blink = 0.5 + 0.5 * Sway.wave(w#t, rand(3) * 7.0, 0.35 + rand(4) * 0.5);
             RawDraw.lineSeg({ x = x, y = y }, { x = x + len, y = y }, thick,
-                    ThemeDoc.seaGlint(w#theme), zHorizon())
+                    ThemeDoc.seaGlint(w#theme), View.zHorizon())
                 |> Render.overItem(item -> item
                     |> Render.fade(
                            (0.15 + 0.4 * blink) * (0.55 + 0.45 * d))
@@ -262,7 +254,7 @@ mod ViewScene {
             ramp({ y = top, color = far }
               :: { y = top + (crest#y - top) * 0.5, color = Color.mix(near, far, 0.62) }
               :: { y = crest#y + 1.0, color = near }
-              :: Nil, zPlain())
+              :: Nil, View.zPlain())
         }
 
     // ── ヤシの木（道の外の立ち物） ──
@@ -270,7 +262,7 @@ mod ViewScene {
     /// ヤシの木。セグメントのループと同じ通し行 n を見て、Hash01 で「この行に生えるか・左右どちらか・
     /// 道からどれだけ離れるか」を決める — 乱数を保存せず行番号から毎回同じ答えを引くので、
     /// 周回して同じ行に戻ると同じ場所に同じ木が立っている。
-    pub def palms(cam: Proj.Cam, w: World.World): List[Render.PlacedItem] =
+    pub def palms(cam: Proj.Cam, w: World.World): List[ZStack.Node[p]] =
         Proj.segments(w) |> List.flatMap(b ->
             if (Hash01.at(b#n, 11) >= 0.30 or b#u0 > 20.0) Nil
             else {
@@ -281,8 +273,8 @@ mod ViewScene {
                 let off = clearance() + 16.0 * Hash01.at(b#n, 13);
                 let wx = if (leftSide) e#xl - off else e#xr + off;
                 let uc = b#u0 + 0.5;
-                palmAt(cam, w, plantInk(w, uc),
-                       { wx = wx, uc = uc, leftSide = leftSide })
+                ZStack.zIndex(Proj.orderOf(uc), ZStack.leaf(palmAt(cam, w, plantInk(w, uc),
+                       { wx = wx, uc = uc, leftSide = leftSide }))) :: Nil
             })
 
     /// この距離で霞ませた「草木の意味色」をひとまとめに引いておく関数。
@@ -333,7 +325,7 @@ mod ViewScene {
                     sprite = "palm", frame = "base",
                     at = { x = p#at#x + trunkDx, y = p#at#y - 9.0 * p#f },
                     flipX = p#flipX, scale = p#f, turn = p#turn,
-                    tint = hazeTint(w, p#uc), z = z(p#uc) }))
+                    tint = hazeTint(w, p#uc), z = 0 }))
 
     /// 距離の霞をクアッドの tint で近似する。box 列は色そのものを hazeTo へ混ぜる
     /// （Color.mix）が、tint は掛け算なので白側へは近づけられない — クアッドで描く近さ
@@ -373,7 +365,7 @@ mod ViewScene {
                           :: { x = tx + half, y = p#at#y }
                           :: { x = tx + half * 0.9, y = p#at#y - 10.0 * f }
                           :: { x = tx - half * 0.9, y = p#at#y - 10.0 * f }
-                          :: Nil, ink("trunk"), z(p#uc)) };
+                          :: Nil, ink("trunk"), 0) };
         // 葉は 12 頂点の星形 1 枚。丸い面 1 枚では日傘に見えるので、外へ張る葉と
         // 葉のあいだの空きを長短の頂点で作る。頂点をこれ以上増やしても、この大きさでは
         // 隣り合う頂点の間が 1px に満たない。
@@ -384,7 +376,7 @@ mod ViewScene {
                                let reach = if (Int32.modulo(i, 2) == 0) 1.0 else 0.42;
                                ({ x = cx + 9.4 * f * reach * Vec2.cos(a),
                                   y = p#at#y - 12.8 * f + 3.6 * f * reach * Vec2.sin(a) }: Vec2.Vec2)
-                           }), Color.mix(ink("leaf"), ink("leafDark"), 0.35), z(p#uc)) };
+                           }), Color.mix(ink("leaf"), ink("leafDark"), 0.35), 0) };
         trunk :: leaves :: Nil
 
     // ── 草原の遠景（道から遠く離れた所の立ち物） ──
@@ -431,7 +423,7 @@ mod ViewScene {
     /// 画面に入る升番号は投影の式を解いて求める。screenX は off について 1 次
     /// （screenX(off) = screenX(0) + off × 縮み）なので、端の画面 x から off の範囲が直に出る —
     /// 遠くの升まで総当たりしなくて済む。
-    pub def outfield(cam: Proj.Cam, w: World.World): List[Render.PlacedItem] =
+    pub def outfield(cam: Proj.Cam, w: World.World): List[ZStack.Node[p]] =
         Proj.segments(w) |> List.flatMap(b -> {
             let uc = b#u0 + 0.5;
             // 縮みは辺（edgeOf）より先に引く。辺は足し上げの表を 2 度たどるので、
@@ -446,12 +438,13 @@ mod ViewScene {
                 // 画面の縁の余白（outMargin）は strip の reach でなく span へまとめる。
                 // reach は world px 単位で、screen px の余白を渡すと k で割る並びが
                 // 升番号の計算と食い違い、縁のセルの有無が丸めで変わり得る。
-                Scatter.strip(
+                // セグメント 1 本の升目は同じ u に立つので、1 枚の葉にまとめて足元の順に並べる。
+                ZStack.zIndex(Proj.orderOf(uc), ZStack.leaf(Scatter.strip(
                     { lo = (0.0 - outMargin() - x0) / k,
                       hi = (World.designW() + outMargin() - x0) / k },
                     { cell = lattice(), salt = 0, lane = b#n,
                       reach = 0.0, cellsMax = cellsMax() },
-                    (m, r) -> outfieldAt(w, edge, ink, b#n, uc, m, r))
+                    (m, r) -> outfieldAt(w, edge, ink, b#n, uc, m, r)))) :: Nil
             }
         })
 
@@ -510,7 +503,7 @@ mod ViewScene {
         let blob = (dx, dy, rx, ry, c) -> {
             let radii = ({ x = rx * s, y = ry * s }: Vec2.Vec2);
             RawDraw.ellipseSegsAt({ x = at#x + dx * s, y = at#y + dy * s },
-                    radii, RawDraw.ellipseSegsFor(radii), c, z(uc))
+                    radii, RawDraw.ellipseSegsFor(radii), c, 0)
         };
         shadowUnder(at, 1.5 * s, 0.5 * s, uc)
             :: blob(0.0 - 0.5, 0.0 - 0.5, 1.0, 0.7, dark)
@@ -528,13 +521,13 @@ mod ViewScene {
         let mark = Color.mix(ThemeDoc.rec(w#theme)#kerb, ThemeDoc.hazeTo(w#theme), Proj.hazeAt(uc));
         let leg = dx ->
             RawDraw.boxAt({ x = at#x + dx * s, y = at#y - s * 0.9 },
-                    { x = Float64.max(1.0, 0.22 * s), y = 1.8 * s }, post, z(uc));
+                    { x = Float64.max(1.0, 0.22 * s), y = 1.8 * s }, post, 0);
         shadowUnder(at, 1.2 * s, 0.4 * s, uc)
             :: leg(-0.7) :: leg(0.7)
             :: RawDraw.boxAt({ x = at#x, y = at#y - s * 2.4 },
-                    { x = 2.4 * s, y = 1.4 * s }, face, z(uc))
+                    { x = 2.4 * s, y = 1.4 * s }, face, 0)
             :: RawDraw.boxAt({ x = at#x, y = at#y - s * 2.4 },
-                    { x = 2.4 * s, y = Float64.max(1.0, 0.4 * s) }, mark, z(uc))
+                    { x = 2.4 * s, y = Float64.max(1.0, 0.4 * s) }, mark, 0)
             :: Nil
 
     /// 立ち物の接地影（足元の楕円）。遠いほど薄い。形と濃さの式は ViewRoad.shadowUnder が正 —
@@ -542,9 +535,7 @@ mod ViewScene {
     def shadowUnder(at: Vec2.Vec2, rx: Float64, ry: Float64, uc: Float64): Render.PlacedItem =
         let radii = ({ x = rx, y = ry }: Vec2.Vec2);
         ViewRoad.shadowUnder({ at = at, radii = radii, segs = RawDraw.ellipseSegsFor(radii),
-                               alpha = ViewRoad.shadowAlpha(uc), z = z(uc) })
-
-    def z(uc: Float64): Int32 = Proj.zOf(uc)
+                               alpha = ViewRoad.shadowAlpha(uc), z = 0 })
 
     // ── 速度線（画面全体を流れる縦の光の筋） ──
 
@@ -577,7 +568,7 @@ mod ViewScene {
                 };
             let len = (14.0 + rand(3) * 22.0) * (0.25 + 0.75 * near);
             RawDraw.lineSeg({ x = x, y = y0 }, { x = x, y = y0 + len }, 1.0,
-                    ThemeDoc.rec(w#theme)#text, zSpeed())
+                    ThemeDoc.rec(w#theme)#text, 0)
                 |> Render.overItem(item -> item
                     |> Render.fade(
                            Num.clamp01(strength * near * (0.10 + rand(4) * 0.10)))

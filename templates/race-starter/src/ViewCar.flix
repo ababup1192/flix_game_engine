@@ -5,10 +5,21 @@
 //   pxQuadScaled … アトラス 1 クアッドに実数 scale を掛ける（遠景のヤシ・ニトロ残像が使う）。
 mod ViewCar {
 
-    /// 演出（煙・炎・閃光）を立ち物 z-index の範囲（20..76）の上へ持ち上げる量。
-    /// fx.json の zIndex は 9〜22 なので +60 で 69〜82 — クラッシュ閃光が最前面、
+    /// 演出（煙・炎・閃光）の粒を立ち物の並び（Proj.orderOf の 20..76）へ交ぜるときの足し算。
+    /// fx.json の zIndex は 9〜22 なので +60 で 69〜82 の順番になる — クラッシュ閃光が最前面、
     /// 炎の裾は車の少し下に来る（fx.json 側の並び順をそのまま活かす）。
-    def fxLift(): Int32 = 60
+    def fxOrder(): Int32 = 60
+
+    /// 粒の効果を、fx.json の zIndex ごとに立ち物の並びの子へ分ける（同じ zIndex の粒は 1 枚の葉）。
+    /// WhyNot: 効果 1 つを 1 枚の葉にしない —— 葉は 1 つの順番にしか置けないので、炎の裾を車の下・
+    /// 先を車の上へ振り分けられなくなる。
+    def fxChildren(base: Int32, items: List[Render.PlacedItem]): List[ZStack.Node[p]] =
+        items
+            |> List.foldRight((placed, acc) ->
+                   Map.insertWith((fresh, held) -> fresh ::: held, Render.zOf(placed#item), placed :: Nil, acc),
+               Map.empty())
+            |> Map.toList
+            |> List.map(entry -> { let (z, group) = entry; ZStack.zIndex(base + z, ZStack.leaf(group)) })
 
     // ── 実数倍率つきドット絵描画 ──
 
@@ -121,7 +132,7 @@ mod ViewCar {
 
     /// ライバル各台。世界の progress を u に写して遠近で置く。
     /// 後ろ（u < -0.5）と地平線の向こう（u > 14）は描かない。
-    pub def rivals(cam: Proj.Cam, w: World.World): List[Render.PlacedItem] =
+    pub def rivals(cam: Proj.Cam, w: World.World): List[ZStack.Node[p]] =
         w#rivals |> List.zipWithIndex |> List.flatMap(entry -> {
             let (i, r) = entry;
             let u = Proj.uOf(w, r#progress);
@@ -131,9 +142,10 @@ mod ViewCar {
                 // カーブ追従の軽い傾き。道が右へ曲がるなら車体は右（負の turn は見た目の左右と
                 // 逆にならないよう符号をここで固定する）。
                 let turn = World.curveAt(theirRow, w#course) * -0.006;
-                carAt(w, { x = Proj.screenX(cam, r#off, u), y = Proj.yAt(cam, u) },
-                      { f = Proj.scaleOf(u) * 1.05, turn = turn,
-                        color = rivalColorOf(w#theme, i), z = Proj.zOf(u) })
+                ZStack.zIndex(Proj.orderOf(u), ZStack.leaf(
+                    carAt(w, { x = Proj.screenX(cam, r#off, u), y = Proj.yAt(cam, u) },
+                          { f = Proj.scaleOf(u) * 1.05, turn = turn,
+                            color = rivalColorOf(w#theme, i) }))) :: Nil
             }
         })
 
@@ -150,25 +162,25 @@ mod ViewCar {
 
     /// 自機。u は常に Proj.playerU（World.playerAheadPx と対 — 絵と当たりの物差しを分けない）。
     /// 傾きは World.driftTurnOf（普段はわずか・ドリフトは深く・スピンは 2 回転）。
-    pub def player(cam: Proj.Cam, w: World.World): List[Render.PlacedItem] =
+    pub def player(cam: Proj.Cam, w: World.World): List[ZStack.Node[p]] =
         let u = Proj.playerU();
         let at = { x = Proj.screenX(cam, w#playerOff, u), y = Proj.yAt(cam, u) };
         let f = Proj.scaleOf(u) * 1.05;
-        carAt(w, at, { f = f, turn = World.driftTurnOf(w),
-                       color = ThemeDoc.rec(w#theme)#player, z = Proj.zOf(u) })
-            ::: nitroTrail(w, at, f)
-            ::: driftHeat(w, at, f)
+        ZStack.zIndex(Proj.orderOf(u), ZStack.leaf(
+            carAt(w, at, { f = f, turn = World.driftTurnOf(w),
+                           color = ThemeDoc.rec(w#theme)#player })))
+            :: (nitroTrail(w, at, f) ::: driftHeat(w, at, f))
 
     /// 車 1 台 = 足元の楕円影 + ドット絵。影を絵と別に敷くのは、路面の色がどう変わっても
     /// 車が浮いて見えないようにするため（主役の分離は影の仕事 — 暗がりで誤魔化さない）。
     def carAt(w: World.World, at: Vec2.Vec2,
-              look: { f = Float64, turn = Float64, color = Color, z = Int32 }): List[Render.PlacedItem] =
+              look: { f = Float64, turn = Float64, color = Color }): List[Render.PlacedItem] =
         let shadow = ViewRoad.shadowUnder({
                 at = { x = at#x + 2.0, y = at#y + 3.0 },
                 radii = { x = 17.0 * look#f * 0.55 / 2.0, y = 27.0 * look#f * 0.55 / 2.0 },
-                segs = 32, alpha = 0.28, z = look#z });
+                segs = 32, alpha = 0.28, z = 0 });
         shadow :: pxGridAt(carColor(w#palette, look#color), carGrid(w),
-            { at = at, f = look#f, turn = look#turn, z = look#z })
+            { at = at, f = look#f, turn = look#turn, z = 0 })
 
     /// 車の格子。1 台ぶんの格子を自機とライバル全台で使い回す
     /// （1 台ごとにほどくと、同じ絵の読み取りが台数だけ走る）。
@@ -181,7 +193,7 @@ mod ViewCar {
     /// 覚えさせずに、一度だけ広がって消える絵になる。
     /// 残像を後ろ（画面の下）へ置くのは「速すぎて絵が置いていかれる」見せ方 — 速度は線と
     /// 残像で語り、車そのものの形は変えない。
-    def nitroTrail(w: World.World, at: Vec2.Vec2, f: Float64): List[Render.PlacedItem] =
+    def nitroTrail(w: World.World, at: Vec2.Vec2, f: Float64): List[ZStack.Node[p]] =
         if (w#nitroLeft <= 0.0) Nil
         else {
             let rear = { x = at#x, y = at#y + 13.0 * f };
@@ -189,7 +201,8 @@ mod ViewCar {
             let since = RulesDoc.rec(w#rules)#nitroDuration - w#nitroLeft;
             let shock = Fx.sampleAt(w#fx#shock, 0i64, since, at);
             let ghostTurn = World.driftTurnOf(w);
-            let ghostZ = Proj.zOf(Proj.playerU()) - 1;
+            // 残像は車のすぐ奥（車の 1 つ前の順番）。
+            let ghostOrder = Proj.orderOf(Proj.playerU()) - 1;
             // 残像は 1 枚 = 1 クアッド。box 列で描くと 1 枚 ≒ 200 矩形 × 4 枚が
             // 毎フレーム積まれる。車体色はアトラスに焼き込み済み（PaletteDoc.carInk）。
             let ghost = spec -> {
@@ -199,14 +212,14 @@ mod ViewCar {
                     sprite = "car", frame = "base",
                     at = { x = at#x, y = at#y + dy * f },
                     flipX = false, scale = f, turn = ghostTurn,
-                    tint = Color.rgb(1.0, 1.0, 1.0), z = ghostZ })
+                    tint = Color.rgb(1.0, 1.0, 1.0), z = 0 })
                     |> Render.fadeAll(alpha)
             };
             let ghosts = (10.0, 0.42) :: (20.0, 0.28) :: (32.0, 0.17)
                 :: (46.0, 0.09) :: Nil;
-            Render.zShiftedAll(fxLift(), flame ::: shock)
+            fxChildren(fxOrder(), flame ::: shock)
                 ::: shockRing(w, at, f, since)
-                ::: List.flatMap(ghost, ghosts)
+                ::: (ZStack.zIndex(ghostOrder, ZStack.leaf(List.flatMap(ghost, ghosts))) :: Nil)
         }
 
     /// 衝撃の広がりが消え切るまでの秒数。長く残すと、押した瞬間の手応えではなく
@@ -217,7 +230,7 @@ mod ViewCar {
     /// 形は View 側で組む。線 1 本の輪郭にはしない — 細い楕円の線は照準の枠に見える。
     /// 熱の面・厚みのある輪・外へ走る筋の 3 つを重ね、車の後ろへ押し出された形にする。
     def shockRing(w: World.World, at: Vec2.Vec2, f: Float64,
-                  since: Float64): List[Render.PlacedItem] =
+                  since: Float64): List[ZStack.Node[q]] =
         let p = Num.clamp01(since / shockLife());
         if (p <= 0.0 or p >= 1.0) Nil
         else {
@@ -226,10 +239,11 @@ mod ViewCar {
             let r = (14.0 + 78.0 * ease) * f;
             // 波は車の後ろから押し出されるので、広がるほど中心が後ろ（画面の下）へ流れる。
             let c = { x = at#x, y = at#y + (5.0 + 18.0 * ease) * f };
-            // 路面を走る波なので車と残像より下。上に置くと車体に輪が巻き付いて、
+            // 路面を走る波なので車と残像より下（車の 2 つ前の順番）。上に置くと車体に輪が巻き付いて、
             // 地面ではなく空中に立った枠に見える。
-            let z = Proj.zOf(Proj.playerU()) - 2;
-            shockHeat(w, c, r, p, z) ::: shockRingFill(w, c, r, p, z) ::: shockRays(w, c, r, p, z)
+            let z = 0;
+            ZStack.zIndex(Proj.orderOf(Proj.playerU()) - 2, ZStack.leaf(
+                shockHeat(w, c, r, p, z) ::: shockRingFill(w, c, r, p, z) ::: shockRays(w, c, r, p, z))) :: Nil
         }
 
     /// その向きがどれだけ「真後ろ（画面の下）」寄りか（0 = 前方, 1 = 真後ろ）。
@@ -316,7 +330,7 @@ mod ViewCar {
     /// 周期を fx の duration より短く取るのは、粒が全部消えてから次が湧くと点滅して見えるため。
     /// 位相をずらした 2 発を重ねるのは、1 発だけだと粒が湧いた直後と消える直前で密度が
     /// 半分になり、火花が息継ぎして見えるため。
-    def driftHeat(w: World.World, at: Vec2.Vec2, f: Float64): List[Render.PlacedItem] =
+    def driftHeat(w: World.World, at: Vec2.Vec2, f: Float64): List[ZStack.Node[p]] =
         if (not w#drifting) Nil
         else {
             let heat = 0.55 + 0.45 * Num.clamp01(w#nitro);
@@ -327,9 +341,9 @@ mod ViewCar {
             // 車体幅より少し外へ出すのは、後輪の真下だと白煙の芯に入って
             // Add ブレンドの火花が白に溶けるため。
             let both = phase -> wheel(-11.0)(phase) ::: wheel(11.0)(phase);
-            // 煙より上へ持ち上げる。同じ z の範囲だと、後から積まれる白煙（bursts）に
+            // 煙より手前の順番に置く。同じ順番の範囲だと、後から積まれる白煙（bursts）に
             // 火花が全部埋もれて「滑っている熱」が見えなくなる。
-            Render.zShiftedAll(fxLift() + 8, both(0.0) ::: both(0.12))
+            fxChildren(fxOrder() + 8, both(0.0) ::: both(0.12))
         }
 
     // ── 速さの手応え（画面の揺れ） ──
@@ -348,9 +362,9 @@ mod ViewCar {
 
     /// 進行中の粒の効果。at は世界座標（x = 左右, y = 前進距離）で持たれているので、
     /// ここで毎フレーム投影する — 車が進んでも煙はその場に残り、後ろへ流れて見える。
-    pub def bursts(cam: Proj.Cam, w: World.World): List[Render.PlacedItem] =
+    pub def bursts(cam: Proj.Cam, w: World.World): List[ZStack.Node[p]] =
         w#bursts |> List.flatMap(b -> {
             let p = Proj.projectPoint(cam, w, b#at);
             Fx.sampleAt(b#spec, b#seed, Lifetime.elapsedOf(w#t, b#life), { x = p#x, y = p#y })
-        }) |> Render.zShiftedAll(fxLift())
+        }) |> fxChildren(fxOrder())
 }
