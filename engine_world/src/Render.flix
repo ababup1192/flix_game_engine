@@ -24,8 +24,9 @@ pub mod Render {
                       flipH = Bool, flipV = Bool, regionRect = Option[Rect2.Rect2], zIndex = Int32,
                       blend = DrawCmd.BlendMode, maskPolys = List[List[Vec2.Vec2]] })
         /// wrapWidth = Some(w) で、w (design px) を超える字を次の行へ折り返す。None は折らない。
+        /// alpha は字の濃さ 0..1（fade / fadeAll が書く。1.0 = 不透明）。
         case Text({ text = String, fontAtlas = FontAtlas, fontSize = Float64, tint = Color,
-                    rotation = Float64, zIndex = Int32, wrapWidth = Option[Float64] })
+                    alpha = Float64, rotation = Float64, zIndex = Int32, wrapWidth = Option[Float64] })
         case Box({ size = Vec2.Vec2, color = Color, alpha = Float64, rotation = Float64,
                    style = Option[GameEngine.BoxStyle], zIndex = Int32, blend = DrawCmd.BlendMode })
         /// 単色の単純多角形（自己交差しなければ凹でもよい。塗りは描画側が耳切りで三角形化）。
@@ -71,19 +72,19 @@ pub mod Render {
 
     pub def text(content: String, fontAtlas: FontAtlas, fontSize: Float64, zIndex: Int32): Item =
         Item.Text({ text = content, fontAtlas = fontAtlas, fontSize = fontSize, tint = white(),
-                    rotation = 0.0, zIndex = zIndex, wrapWidth = None })
+                    alpha = 1.0, rotation = 0.0, zIndex = zIndex, wrapWidth = None })
 
     /// 着色テキスト。disabled のグレー表示やカーソル色、見出しの強調色などに使う。
     pub def textTinted(content: String, fontAtlas: FontAtlas, fontSize: Float64, tint: Color, zIndex: Int32): Item =
         Item.Text({ text = content, fontAtlas = fontAtlas, fontSize = fontSize, tint = tint,
-                    rotation = 0.0, zIndex = zIndex, wrapWidth = None })
+                    alpha = 1.0, rotation = 0.0, zIndex = zIndex, wrapWidth = None })
 
     /// 折り返し付きの着色テキスト。wrapWidth（design px）を超える字は次の行へ送られる。
     /// fontSize と wrapWidth は同じ Float64 で取り違えやすいのでレコードで名前渡しにする。
     pub def textWrapped(content: String, fontAtlas: FontAtlas,
                         look: { fontSize = Float64, wrapWidth = Float64, tint = Color, zIndex = Int32 }): Item =
         Item.Text({ text = content, fontAtlas = fontAtlas, fontSize = look#fontSize, tint = look#tint,
-                    rotation = 0.0, zIndex = look#zIndex, wrapWidth = Some(look#wrapWidth) })
+                    alpha = 1.0, rotation = 0.0, zIndex = look#zIndex, wrapWidth = Some(look#wrapWidth) })
 
     /// 中心 center に置いた、縁がふわっと消える円の列（ソフトな光の玉）。
     /// look#alpha は中心の濃さ 0..1、look#blend は重ね方（光り物は Add が定番）。
@@ -299,12 +300,13 @@ pub mod Render {
             case other => other
         }, item)
 
-    /// 透明度（alpha）を指定した値にする（Sprite / Box / Poly に効く。Text は tint が濃度を兼ねる）。
+    /// 透明度（alpha）を指定した値にする（Sprite / Box / Poly / Text に効く。Text は字の画素の濃さ）。
     pub def fade(alpha: Float64, item: Item): Item =
         onLeaf(leaf -> match leaf {
             case Item.Sprite(s) => Item.Sprite({ alpha = alpha | s })
             case Item.Box(b)    => Item.Box({ alpha = alpha | b })
             case Item.Poly(p)   => Item.Poly({ alpha = alpha | p })
+            case Item.Text(t)   => Item.Text({ alpha = alpha | t })
             case other                => other
         }, item)
 
@@ -862,7 +864,7 @@ pub mod Render {
                                s#centered, s#flipH, s#flipV, s#regionRect, s#zIndex, s#blend,
                                s#maskPolys, pos) :: Nil
             case Item.Text(t) =>
-                textDrawables(t#text, t#fontAtlas, t#fontSize, t#tint, t#rotation, t#zIndex, t#wrapWidth, pos)
+                textDrawables(t#text, t#fontAtlas, t#fontSize, t#tint, t#alpha, t#rotation, t#zIndex, t#wrapWidth, pos)
             case Item.Box(b) =>
                 boxDrawable(b#size, b#color, b#alpha, b#rotation, b#style, b#zIndex, b#blend, pos) :: Nil
             case Item.Poly(_) =>
@@ -941,7 +943,7 @@ pub mod Render {
     def radiansOf(turns: Float64): Float64 = Vec2.tau() * turns
 
     def textDrawables(content: String, fontAtlas: FontAtlas, fontSize: Float64,
-                      tint: Color, rotation: Float64, zIndex: Int32,
+                      tint: Color, alpha: Float64, rotation: Float64, zIndex: Int32,
                       wrapWidth: Option[Float64], pos: Vec2.Vec2): List[GameEngine.Drawable] =
         // engine の public 純粋射影に委譲。文字色（SDF 描画では color がそのまま文字色）と
         // zIndex は Text の visual に 1 回だけ書き込む — 出来上がった列を withTintAndZIndex で
@@ -951,8 +953,10 @@ pub mod Render {
                 |> Text.setWrapWidth(wrapWidth)
                 |> Text.mapVisual(v -> v |> Visual.setColor(tint) |> Visual.setZIndex(zIndex)),
             pos);
-        if (rotation == 0.0) ds
-        else ds |> List.map(turnGlyph(rotation, fontAtlas#textureSize, pos))
+        // 濃さは薄めた時だけ字ごとに書き直す（不透明の字は作り直さない）。
+        let faded = if (alpha >= 1.0) ds else ds |> List.map(DrawCmd.withAlpha(alpha));
+        if (rotation == 0.0) faded
+        else faded |> List.map(turnGlyph(rotation, fontAtlas#textureSize, pos))
 
     /// 文字 1 つぶんの四角を、文字列の置き場所 pivot のまわりに回して置き直す。
     /// 描画側は四角を自分の中心で回すので、中心を公転させたうえで同じ角度を持たせると

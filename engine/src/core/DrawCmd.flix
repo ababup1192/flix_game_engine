@@ -410,6 +410,17 @@ pub mod DrawCmd {
                           uox, uoy, usx, usy, z,
                           style, clip, blend, mask)
 
+    /// alpha を差し替える（字を薄める Render.fade の Text 用）。
+    pub def withAlpha(alpha: Float64, d: Drawable): Drawable =
+        let Drawable.Drawable(tex, px, py, sx, sy, rot,
+                              cr, cg, cb, _a, cen,
+                              uox, uoy, usx, usy, z,
+                              style, clip, blend, mask) = d;
+        Drawable.Drawable(tex, px, py, sx, sy, rot,
+                          cr, cg, cb, alpha, cen,
+                          uox, uoy, usx, usy, z,
+                          style, clip, blend, mask)
+
     /// color と zIndex を差し替える（テキストの文字色・重なり順の上書き用）。
     pub def withTintAndZIndex(color: Color, zIndex: Int32, d: Drawable): Drawable =
         let Drawable.Drawable(tex, px, py, sx, sy, rot,

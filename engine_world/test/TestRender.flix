@@ -55,6 +55,25 @@ mod TestRender {
         Assert.assertEq(expected = (Some(0.5), 1),
             (ds |> List.head |> Option.map(d -> DrawCmd.alphaOf(d)), List.length(ps)))
 
+    // fadeAll は字にも効く: 字の画素 1 つずつの α が薄めた値になり、色（tint）はそのまま。
+    @Test
+    def testFadeAllReachesTextGlyphs(): Unit \ Assert =
+        let placed = { at = { x = 0.0, y = 0.0 },
+                       item = Render.textTinted("AB", testAtlas(), 1.0, red(), 0) };
+        let (ds, _) = Render.draw(Render.fadeAll(0.25, placed :: Nil));
+        Assert.assertEq(expected = (0.25 :: 0.25 :: Nil, Some((1.0, 0.0, 0.0))),
+            (ds |> List.map(DrawCmd.alphaOf),
+             ds |> List.head |> Option.map(DrawCmd.colorOf) |> Option.map(c -> (c#r, c#g, c#b))))
+
+    // 薄めていない字は不透明のまま（fade(1.0) を掛けても濃さは変わらない）。
+    @Test
+    def testUnfadedTextStaysOpaque(): Unit \ Assert =
+        let placed = { at = { x = 0.0, y = 0.0 }, item = Render.text("AB", testAtlas(), 1.0, 0) };
+        let (plain, _) = Render.draw(placed :: Nil);
+        let (once, _) = Render.draw(Render.fadeAll(1.0, placed :: Nil));
+        Assert.assertEq(expected = (1.0 :: 1.0 :: Nil, 1.0 :: 1.0 :: Nil),
+            (plain |> List.map(DrawCmd.alphaOf), once |> List.map(DrawCmd.alphaOf)))
+
     // outline と striped は同じ Box の style に重なる（枠幅・縞の濃度と周期を同時に pin）。
     @Test
     def testOutlineAndStripedStack(): Unit \ Assert =
