@@ -100,6 +100,53 @@
         {"re": "withAudio", "why": "App.withAudio"}
       ],
       "avoid": []
+    },
+    {
+      "id": "heavy-queue",
+      "prompt": "同じ Mac でほかのエージェントも描き出しやテストを回している。自分も render-all を流したいが、同時に走ってメモリを食い合わないようにしたい。今だれが走らせているかも知りたい",
+      "expect": [
+        {"re": "fge heavy|heavy make|heavy \\S*make", "why": "bin/fge heavy"},
+        {"re": "heavy --status", "why": "持ち主と待ち列"}
+      ],
+      "avoid": [
+        {"re": "until mkdir", "why": "鍵を手で書く"},
+        {"re": "-mmin \\+40", "why": "古さだけで鍵を外す"}
+      ]
+    },
+    {
+      "id": "use-engine-temp",
+      "prompt": "このゲームの作業場だけ、いま別の作業場で直している開発中のエンジンで動くか確かめたい。終わったら元のエンジンに戻したい",
+      "expect": [
+        {"re": "use-engine", "why": "bin/fge use-engine"},
+        {"re": "--restore", "why": "元へ戻す"}
+      ],
+      "avoid": [
+        {"re": "ln -s[^\\n]*lib", "why": "lib を他の作業場へ symlink"},
+        {"re": "local\\.mk[^\\n]{0,30}(書き換|編集|sed)", "why": "local.mk を手で書き換える"}
+      ]
+    },
+    {
+      "id": "compare-before-after",
+      "prompt": "描画の直しを入れた。master の時と比べて、どの場面の絵と効果音が変わったかを一覧と前後を並べた画像で見たい",
+      "expect": [
+        {"re": "make compare", "why": "make compare"},
+        {"re": "BASE=", "why": "基準の ref"}
+      ],
+      "avoid": [
+        {"re": "git worktree add", "why": "worktree を手で作る"},
+        {"re": "hstack", "why": "ffmpeg で手で並べる"}
+      ]
+    },
+    {
+      "id": "proposal-page",
+      "prompt": "演出の案を 3 つ動画で並べて、依頼主に 1 つ選んでもらうページを作りたい",
+      "expect": [
+        {"re": "proposal\\.json", "why": "manifest"},
+        {"re": "fge proposal", "why": "bin/fge proposal build"}
+      ],
+      "avoid": [
+        {"re": "proposal\\.py", "why": "移した後の古い道具"}
+      ]
     }
   ]
 }

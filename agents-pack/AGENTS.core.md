@@ -20,6 +20,10 @@
 | 直した後に絵を確かめる | `make render SHOT=<場面>`（1 枚・既定の手）→ 仕上げに `make reference-check` | 毎回 `render-all`・解像度を下げる回り道 |
 | F8 のチケットから直す所を探す | `debug/annotations/<名前>/` の `README.md` 冒頭の文脈（場面・Doc と行）→ `annotation.json` の `context` → `world.json`（`App.withAnnotationContext` / `withWorldDump`。一覧は `make status`） | スクショと目で突き合わせる |
 | API の型・ゲームの定義を引く | `make api Q=<名前>` / `make src Q=<名前>` | ソースの丸読み |
+| 重い処理（check・test・描き出し・make sync）をほかのエージェントと順番に流す | `bin/fge heavy <コマンド...>`（持ち主と待ち列は `bin/fge heavy --status`・CHECKD=0 が既定） | `until mkdir /tmp/fge-heavy.lock …; rmdir` を手で書く |
+| 作業場を別の版・開発中のエンジンへ一時的に向ける | `bin/fge use-engine <版かパス>`（今は `--status`・戻すのは `--restore`） | local.mk を手で書き換える・lib を他の作業場へ symlink |
+| 直す前と後の絵・音・動画を比べる | `make compare BASE=<ref>`（絞るなら `SHOTS=` か `VIDEOS=`。`debug/compare/index.html`。基準側だけ別のエンジンなら `BASE_ENGINE=`） | worktree を手で作って 2 回描き出す・cmp と ffmpeg を手で並べる |
+| 案を並べて依頼主に選んでもらう | `reports/<名前>/proposal.json` → `bin/fge proposal build`（形は引数なしの `bin/fge proposal`・決定後の片付けの残りは `bin/fge proposal knobs`） | HTML を手で書く・ゲームに置いた Python 版の proposal |
 | 道具の選び方が文書で伝わるか測る | `make agent-eval`（お題は `agent-eval/*.json`） | |
 
 **新しい仕組みを入れる人は**、この表（ゲーム固有なら `AGENTS.local.md` の表）に 1 行と、
