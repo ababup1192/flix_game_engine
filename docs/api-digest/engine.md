@@ -1,4 +1,4 @@
-<!-- engine v0.35.34 / 生成: 2026-10-16 -->
+<!-- engine v0.35.34 / 生成: 2026-10-17 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine
@@ -275,6 +275,8 @@
 - `pub def maskOf(d: Drawable): List[List[Vec2.Vec2]]`
 - clip 矩形を差し替える。
   `pub def withClip(clip: Option[Rect2.Rect2], d: Drawable): Drawable`
+- alpha を差し替える（字を薄める Render.fade の Text 用）。
+  `pub def withAlpha(alpha: Float64, d: Drawable): Drawable`
 - color と zIndex を差し替える（テキストの文字色・重なり順の上書き用）。
   `pub def withTintAndZIndex(color: Color, zIndex: Int32, d: Drawable): Drawable`
 - scale を差し替える。
@@ -388,6 +390,8 @@
 - 既存のタイル VAO のインスタンス VBO へ中身を入れ直す（VAO は増やさない）。
   `pub eff Game { def updateTileBuffer(vaoId: GpuHandle.TileVao, instances: List[TileInstance]): (GpuHandle.TileVao, Int32) }`
 - `pub eff Game { def shouldClose(): Bool }`
+- 窓の閉じる印を立てる・下ろす（GLFW の glfwSetWindowShouldClose）。false で閉じる要求を取り消す
+  `pub eff Game { def setShouldClose(close: Bool): Unit }`
 - 前フレームからの経過時間。EngineConfig#maxDeltaTime で上限クランプ済み
   `pub eff Game { def getDeltaTime(): Duration.Duration }`
 - `pub eff Game { def isKeyPressed(key: Key): Bool }`

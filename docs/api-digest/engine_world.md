@@ -1,4 +1,4 @@
-<!-- engine v0.35.34 / 生成: 2026-10-16 -->
+<!-- engine v0.35.34 / 生成: 2026-10-17 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine_world
@@ -123,7 +123,7 @@
 - 生成したドット絵アトラス 1 枚ぶんの受け渡し。
   `pub type alias AtlasUpload = { texture = String, key = String, baked = PxSpriteAtlas.Baked }`
 - ゲーム 1 本の宣言。make で空を作り、addStartup / addSystem / reloadOn / withView /
-  `pub type alias App[w: Type, ef: Eff] = { init = Vec2.Vec2 -> w \ ef, startupSystems = List[w -> w \ ef], updateSystems = List[(Frame, w) -> w \ ef], reload = Option[(GameEngine.Key, w -> w \ {Fs.FileRead})], watch = List[(String, w -> w \ {Fs.FileRead})], view = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], passes = w -> List[Render.Pass] \ ef, fonts = List[String], camera = Option[w -> Vec2.Vec2 \ ef], zoom = Option[w -> Float64 \ ef], cameraBounds = Option[w -> Rect2.Rect2 \ ef], parallaxLayers = List[(Float64, (ViewCtx, w) -> List[Render.PlacedItem] \ ef)], hudView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], audio = { before = w, after = w } -> List[String] \ ef, sustained = w -> List[Sustain] \ ef, mixer = Option[w -> AudioMixer.Mixer \ ef], quit = (Frame, w) -> Bool \ ef, debug = Bool, debugView = Option[(String, w -> (List[GameEngine.Drawable], List[GameEngine.TileMapRenderCmd], List[GameEngine.PolygonRenderCmd]) \ ef)], worldDump = Option[(Rect2.Rect2, w) -> String \ ef], annotationContext = Option[w -> Annotate.Context \ ef], staticLayer = Option[{ key = w -> GameEngine.StaticKey, build = w -> List[Render.PlacedItem] }], tileLayers = Option[w -> List[TileLayerSpec]], spriteAtlases = w -> List[AtlasUpload], pixelSnap = w -> Float64, statusLine = Option[w -> String \ ef], remoteRender = Option[Unit -> List[String] \ IO], remoteHandlers = List[(String, (Map[String, String], w) -> Result[String, w] \ {Fs.FileRead})], fixedStep = Option[Float64] }`
+  `pub type alias App[w: Type, ef: Eff] = { init = Vec2.Vec2 -> w \ ef, startupSystems = List[w -> w \ ef], updateSystems = List[(Frame, w) -> w \ ef], reload = Option[(GameEngine.Key, w -> w \ {Fs.FileRead})], watch = List[(String, w -> w \ {Fs.FileRead})], view = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], passes = w -> List[Render.Pass] \ ef, fonts = List[String], camera = Option[w -> Vec2.Vec2 \ ef], zoom = Option[w -> Float64 \ ef], cameraBounds = Option[w -> Rect2.Rect2 \ ef], parallaxLayers = List[(Float64, (ViewCtx, w) -> List[Render.PlacedItem] \ ef)], hudView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], audio = { before = w, after = w } -> List[String] \ ef, sustained = w -> List[Sustain] \ ef, mixer = Option[w -> AudioMixer.Mixer \ ef], quit = (Frame, w) -> Bool \ ef, closeRequest = Option[w -> w \ ef], debug = Bool, debugView = Option[(String, w -> (List[GameEngine.Drawable], List[GameEngine.TileMapRenderCmd], List[GameEngine.PolygonRenderCmd]) \ ef)], worldDump = Option[(Rect2.Rect2, w) -> String \ ef], annotationContext = Option[w -> Annotate.Context \ ef], staticLayer = Option[{ key = w -> GameEngine.StaticKey, build = w -> List[Render.PlacedItem] }], tileLayers = Option[w -> List[TileLayerSpec]], spriteAtlases = w -> List[AtlasUpload], pixelSnap = w -> Float64, statusLine = Option[w -> String \ ef], remoteRender = Option[Unit -> List[String] \ IO], remoteHandlers = List[(String, (Map[String, String], w) -> Result[String, w] \ {Fs.FileRead})], fixedStep = Option[Float64] }`
 - 初期 World だけを持つ空の App。絵はまだ無い（withView で繋ぐまで何も描かない）。
   `pub def make(init: w): App[w, ef]`
 - 初期 World を design 解像度（project.json の designWidth/Height）から組む入口。
@@ -174,6 +174,8 @@
   `pub def sustainOps(prev: List[String], next: List[Sustain]): { start = List[Sustain], keep = List[Sustain], stop = List[String] }`
 - 終了判定を差し替える。既定は「Escape のエッジで終了」だが、モーダル表示中は
   `pub def quitWhen(f: (Frame, w) -> Bool \ ef, app: App[w, ef]): App[w, ef]`
+- 窓の閉じるボタン（OS の閉じる要求・GLFW の window close）をすぐの終了にせず、World へ知らせる。
+  `pub def withCloseRequest(f: w -> w \ ef, app: App[w, ef]): App[w, ef]`
 - デバッグ機能（F8 の時間停止・矩形注釈・時間スクラブ）の有効 / 無効を宣言する。
   `pub def withDebug(enabled: Bool, app: App[w, ef]): App[w, ef]`
 - 環境変数 DEBUG が空でない値で設定されていれば true（例: `DEBUG=true flix run`）。
@@ -232,6 +234,8 @@
   `pub def worldAt(history: List[w], back: Int32, fallback: w): w`
 - reloadOn で繋いだキーが押された瞬間だけ、リロード関数で World を作り直す。
   `pub def applyReload(app: App[w, ef], frame: Frame, world: w): (w, Bool) \ {Fs.FileRead}`
+- 一発の音（audio）のうち、鳴らす前にループを外す名前。鳴り続ける音（sustained）として
+  `pub def oneShotsToUnloop(plays: List[String], living: List[String]): List[String]`
 - RemoteDebug 分割用の内部 API — ゲームからは呼ばない。
   `pub def sceneItems(app: App[w, ef], atlas: FontAtlas, warnOnce: String -> Unit, world: w, toItems: (ViewCtx, w) -> List[Render.PlacedItem] \ ef): List[Render.PlacedItem] \ (ef + GameEngine.Game)`
 - タイル層の GPU 生成結果の持ち回し。ループが引数で持ち回す。
@@ -1418,7 +1422,7 @@
 
 ## Render — `engine_world/src/Render.flix`
 - 傾き（rotation）の単位は「回転数」— 1 周 = 1.0・正で時計回り。ラジアンへの変換は
-  `pub enum Item { case Sprite({ texture = String, tint = Color, alpha = Float64, scale = Vec2.Vec2, rotation = Float64, centered = Bool, flipH = Bool, flipV = Bool, regionRect = Option[Rect2.Rect2], zIndex = Int32, blend = DrawCmd.BlendMode, maskPolys = List[List[Vec2.Vec2]] }) case Text({ text = String, fontAtlas = FontAtlas, fontSize = Float64, tint = Color, rotation = Float64, zIndex = Int32, wrapWidth = Option[Float64] }) case Box({ size = Vec2.Vec2, color = Color, alpha = Float64, rotation = Float64, style = Option[GameEngine.BoxStyle], zIndex = Int32, blend = DrawCmd.BlendMode }) case Poly({ vertices = List[Vec2.Vec2], color = Color, alpha = Float64, zIndex = Int32, blend = DrawCmd.BlendMode, grad = Option[List[DrawCmd.VertexTint]] }) case Clipped({ rect = Rect2.Rect2, inner = Item }) case Shader({ rect = Rect2.Rect2, spec = ShaderDoc.Spec, t = Float64, mask = List[List[Vec2.Vec2]], zIndex = Int32, blend = DrawCmd.BlendMode }) }`
+  `pub enum Item { case Sprite({ texture = String, tint = Color, alpha = Float64, scale = Vec2.Vec2, rotation = Float64, centered = Bool, flipH = Bool, flipV = Bool, regionRect = Option[Rect2.Rect2], zIndex = Int32, blend = DrawCmd.BlendMode, maskPolys = List[List[Vec2.Vec2]] }) case Text({ text = String, fontAtlas = FontAtlas, fontSize = Float64, tint = Color, alpha = Float64, rotation = Float64, zIndex = Int32, wrapWidth = Option[Float64] }) case Box({ size = Vec2.Vec2, color = Color, alpha = Float64, rotation = Float64, style = Option[GameEngine.BoxStyle], zIndex = Int32, blend = DrawCmd.BlendMode }) case Poly({ vertices = List[Vec2.Vec2], color = Color, alpha = Float64, zIndex = Int32, blend = DrawCmd.BlendMode, grad = Option[List[DrawCmd.VertexTint]] }) case Clipped({ rect = Rect2.Rect2, inner = Item }) case Shader({ rect = Rect2.Rect2, spec = ShaderDoc.Spec, t = Float64, mask = List[List[Vec2.Vec2]], zIndex = Int32, blend = DrawCmd.BlendMode }) }`
 - 置き場所つきの描画物。View はこの列を組み、draw が描画命令へ変換する。
   `pub type alias PlacedItem = { at = Vec2.Vec2, item = Item }`
 - 全テクスチャ・等倍・中心原点のスプライト（最頻ケース）。反転が要るときは spriteFlipped。
@@ -1456,7 +1460,7 @@
   `pub def clippedAll(rect: Rect2.Rect2, items: List[PlacedItem]): List[PlacedItem]`
 - 角を丸める（Box に効く）。
   `pub def rounded(radius: Float64, item: Item): Item`
-- 透明度（alpha）を指定した値にする（Sprite / Box / Poly に効く。Text は tint が濃度を兼ねる）。
+- 透明度（alpha）を指定した値にする（Sprite / Box / Poly / Text に効く。Text は字の画素の濃さ）。
   `pub def fade(alpha: Float64, item: Item): Item`
 - 置き場所はそのままに、中身（Item）だけ入れ替える。`fade` や `rounded` のような
   `pub def overItem(f: Item -> Item \ ef, placed: PlacedItem): PlacedItem \ ef`
@@ -1849,10 +1853,10 @@
 - クリップを値として作る（表に無い名前の既定値など。長さは負にしない）。
   `pub def clip(tag: a, start: Float64, dur: Float64): Clip[a]`
 - 曲の速さ。拍と小節を秒へ直すのはここだけ（譜面の bpm をそのまま渡す）。
-  `pub type alias Tempo = { bpm = Float64, beatsPerBar = Int32 }`
+  `pub type alias Tempo = { bpm = Float64, beatsPerBar = Int32, hasBeat = Bool }`
 - テンポ。bpm は 1 未満にしない（0 で割らない）・1 小節の拍数は 1 未満にしない。
   `pub def tempo(bpm: Float64, beatsPerBar: Int32): Tempo`
-- 拍を書かない表（秒だけで並べる表）に渡すテンポ（1 拍 = 1 秒・4 拍子。拍で書いた行が無いので値は効かない）。
+- 拍を書かない表（秒だけで並べる表）に渡すテンポ。拍・小節で書いた行（Beats・Bars・ToNextBar・
   `pub def noTempo(): Tempo`
 - 長さの書き方。
   `pub enum Duration with Eq { case Seconds(Float64) case Beats(Float64) case Bars(Float64) case ToNextBar case ToBeat(Float64) case ToPickup(Float64) }`
@@ -1863,7 +1867,7 @@
 - 書く人が並べる 1 行。place から delay だけ遅らせて置き、length だけ続く。
   `pub type alias Step[a] = { tag = a, place = Place[a], delay = Duration, length = Duration, cues = List[Cue], isWait = Bool }`
 - 書き間違い。tag はコードの enum なので、黙って既定の位置へ置かずに止める。
-  `pub enum BuildError[a] with Eq, ToString { case DuplicateTag(a) case UnknownAnchor(a) case SoundOnWait(a) case FittedLengthConflict(String) case PlacedBeforeWait(a) }`
+  `pub enum BuildError[a] with Eq, ToString { case DuplicateTag(a) case UnknownAnchor(a) case SoundOnWait(a) case FittedLengthConflict(String) case PlacedBeforeWait(a) case BeatsWithoutTempo(a) }`
 - 表の終わりに並べる。
   `pub def append(tag: a, length: Duration): Step[a]`
 - 直前に書いた行と同時に始める。

@@ -1171,6 +1171,10 @@ pub mod LwjglLayer {
                 Array.put(padConnected, 0, gamepadConnectedHolder);
                 k(GLFW.glfwWindowShouldClose(window))
             }
+            def setShouldClose(close, k) = {
+                GLFW.glfwSetWindowShouldClose(window, close);
+                k()
+            }
             def getDeltaTime(k) = {
                 let currentTime = System.nanoTime();
                 let prev = Array.get(0, timeHolder);

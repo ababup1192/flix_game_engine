@@ -907,6 +907,7 @@ pub mod RemoteDebug {
                 def isKeyPressed(key, k)        = k(Set.memberOf(key, Ref.get(keysRef)))
                 def renderCommands(_s, _t, _p, _st, k) = k(())
                 def shouldClose(k)              = k(GameEngine.Game.shouldClose())
+                def setShouldClose(c, k)        = k(GameEngine.Game.setShouldClose(c))
                 def initTileBuffer(instances, k) = k(GameEngine.Game.initTileBuffer(instances))
                 def updateTileBuffer(vaoId, instances, k) = k(GameEngine.Game.updateTileBuffer(vaoId, instances))
                 def getMousePosition(k)         = k(GameEngine.Game.getMousePosition())

@@ -134,6 +134,9 @@ pub mod App {
         // 音の通り道（AudioMixer）。None の間は音を名前のまま鳴らす（バス・ダッキング・間引きなし）。
         mixer = Option[w -> AudioMixer.Mixer \ ef],
         quit = (Frame, w) -> Bool \ ef,                            // 終了判定（既定 = Escape のエッジ）
+        // 窓の閉じるボタン（OS の閉じる要求）を World へ知らせる関数。None = 押したらすぐ終わる（既定）。
+        // Some の間は窓を閉じず、閉じるかはゲームが quit（quitWhen）で決める（withCloseRequest）。
+        closeRequest = Option[w -> w \ ef],
         debug = Bool,                                              // デバッグ機能（F8 の時間停止・注釈・巻き戻し）を有効にするか
         // view = None のゲームがデバッグ機能を使うための生投影（フォントアトラス名と、World →
         // 描画チャンネル 3 本）。描画はせずチャンネルを返すだけの関数を繋ぐ。
@@ -209,6 +212,7 @@ pub mod App {
           sustained = _world -> checked_ecast(Nil),
           mixer = None,
           quit = (frame, _world) -> checked_ecast(justPressed(GameEngine.Key.Escape, frame)),
+          closeRequest = None,
           debug = false,
           debugView = None,
           worldDump = None,
@@ -434,6 +438,19 @@ pub mod App {
     /// Escape をパネル閉じに使いたい、といったゲームはここで自分の条件を宣言する。
     pub def quitWhen(f: (Frame, w) -> Bool \ ef, app: App[w, ef]): App[w, ef] =
         { quit = f | app }
+
+    /// 窓の閉じるボタン（OS の閉じる要求・GLFW の window close）をすぐの終了にせず、World へ知らせる。
+    /// 閉じる要求が来たフレームで f(world) を呼び、窓は開いたまま（要求は取り消す）。ゲームはそこで
+    /// 「終了しますか？」の確認を出し、はいなら quitWhen の条件を立てて終わる（終了を頼む口は quitWhen）:
+    ///
+    ///     App.make(init)
+    ///         |> App.withCloseRequest(w -> { askingQuit = true | w })
+    ///         |> App.quitWhen((_frame, w) -> w#quitConfirmed)
+    ///
+    /// quitWhen を差し替えると既定の「Escape で終了」は外れる（Esc も確認へ回すならゲームの入力で拾う）。
+    /// 確認の窓が開いている間にもう一度閉じるボタンを押すと、f がもう一度呼ばれる。
+    pub def withCloseRequest(f: w -> w \ ef, app: App[w, ef]): App[w, ef] =
+        { closeRequest = Some(f) | app }
 
     /// デバッグ機能（F8 の時間停止・矩形注釈・時間スクラブ）の有効 / 無効を宣言する。
     /// 既定は無効。プレイヤーに配るビルドで時間巻き戻しや内部情報の書き出しが
@@ -784,17 +801,20 @@ pub mod App {
     /// stepState も動かさず素通しする（巻き戻すのは World の見た目であって、貯まっていた
     /// 実時間の端数や取り置いたエッジではない）。watchState（watchFile の保存検知）も同じ扱い —
     /// World に触れない分岐では監視も動かさず素通しする。
-    def loop(app: App[w, ef], st: LoopState[w]): Unit \ (ef + GameEngine.Game + GameEngine.Audio + ShaderEffect.Shader + RenderTarget.Target + Fs.FileRead + IO) =
+    def loop(app: App[w, ef], st0: LoopState[w]): Unit \ (ef + GameEngine.Game + GameEngine.Audio + ShaderEffect.Shader + RenderTarget.Target + Fs.FileRead + IO) =
         let currentKeys = InputEvent.currentKeys();
         let mouseDown = GameEngine.Game.isMouseButtonPressed(GameEngine.MouseButton.Left);
         let cursorNow = GameEngine.Game.getMousePosition();
-        let frame = frameOf(prev = st#prevKeys, current = currentKeys, readDt(),
+        let frame = frameOf(prev = st0#prevKeys, current = currentKeys, readDt(),
                             GameEngine.Game.getViewportRect()#size,
-                            { prevCursor = st#prevCursor, cursor = cursorNow },
-                            { prevDown = st#prevMouseDown, down = mouseDown,
+                            { prevCursor = st0#prevCursor, cursor = cursorNow },
+                            { prevDown = st0#prevMouseDown, down = mouseDown,
                               wheel = GameEngine.Game.consumeScrollDelta() });
         let wantsQuit = app#quit;
-        if (GameEngine.Game.shouldClose() or wantsQuit(frame, st#world)) ()
+        // shouldClose は入力の取り込み（poll）も兼ねるので 1 フレームに 1 回だけ呼ぶ。
+        let closing = GameEngine.Game.shouldClose();
+        let st = if (closing) noticeCloseRequest(app, st0) else st0;
+        if ((closing and Option.isEmpty(app#closeRequest)) or wantsQuit(frame, st#world)) ()
         else {
             // 入力の持ち越しはどの分岐でも同じなので、ここで 1 度だけ差し替える。
             let carried = { prevKeys = currentKeys, prevMouseDown = mouseDown,
@@ -1081,6 +1101,15 @@ pub mod App {
                 }, world);
                 (next, { sincePoll = 0.0, mtimes = current }, not List.isEmpty(changed))
             }
+        }
+
+    /// 閉じる要求を World へ渡し、窓の閉じる印を下ろす（withCloseRequest が無ければそのまま）。
+    def noticeCloseRequest(app: App[w, ef], st: LoopState[w]): LoopState[w] \ (ef + GameEngine.Game) =
+        match app#closeRequest {
+            case None    => st
+            case Some(f) =>
+                GameEngine.Game.setShouldClose(false);
+                { world = f(st#world) | st }
         }
 
     /// 1 フレームの音: ミキサーが無ければ今までどおり名前のまま鳴らし、あればバスを通して鳴らす。

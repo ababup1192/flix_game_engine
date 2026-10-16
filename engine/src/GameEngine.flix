@@ -319,6 +319,9 @@ pub mod GameEngine {
         def updateTileBuffer(vaoId: GpuHandle.TileVao,
                              instances: List[TileInstance]): (GpuHandle.TileVao, Int32)
         def shouldClose(): Bool
+        /// 窓の閉じる印を立てる・下ろす（GLFW の glfwSetWindowShouldClose）。false で閉じる要求を取り消す
+        /// （App.withCloseRequest が「終了しますか？」を出す間、窓を開けておくのに使う）。
+        def setShouldClose(close: Bool): Unit
         /// 前フレームからの経過時間。EngineConfig#maxDeltaTime で上限クランプ済み
         def getDeltaTime(): Duration.Duration
         def isKeyPressed(key: Key): Bool

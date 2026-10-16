@@ -13,6 +13,7 @@
 | 必ず手前に出す（確認の窓・説明の窓・ポーズ） | `ZStack.topLayer(層, 木)`。新しい層は `SortingLayer` の enum に case を足す |
 | 見下ろしで人が木の裏に回る | `ZStack.zIndex(Depth.orderAt(足元のy), leaf(人))` |
 | 画面ごと動かす・縮める・薄める | `ZStack.mapItems(Render.scaledAllAround(..))` |
+| 窓の閉じるボタンで「終了しますか？」を出す・ゲームから終了する | `App.withCloseRequest`（閉じる要求を World へ・窓は開いたまま）+ `App.quitWhen`（終わる条件） |
 | スコア・案内など隠れてはいけない表示 | `App.withHudView`（中の前後は HUD の層の表と木） |
 | 説明の窓の置き場（はみ出さない） | `UiTooltip`（置き場）+ `ZStack.topLayer`（手前へ） |
 | 演出の拍に効果音・動きを合わせる | `Timeline.build`（`append` / `join`・決まった時刻は `insert`・音は `withSound`。秒・拍は Doc。並びをコードが書く表は `buildOrBug`）→ 描く側 `progressOf`・鳴らす側 `soundsOn`（待ちの無い表は `soundsBetween`）を `App.withAudio` へ |
