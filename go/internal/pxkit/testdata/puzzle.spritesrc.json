@@ -1,0 +1,81 @@
+{
+  "version": 1,
+  "note": "昼のパズルの駒（駒 B）の形の指定。fge pxkit build で atelier/ の sprite.json に打ち起こす。いじると変わる物: ramps = 系統ごとの暗→明 4 段（墨・影・地・光）/ shapes = 記号の形（数字は 32×32 の格子の座標）/ tile の radius・inset = 角の丸みと余白 / bands = 斜めの光・地・影の境目（0〜1）。",
+  "target": "atelier/internet_dungeon.puzzle.sprite.json",
+  "base": "assets/internet_dungeon.puzzle.sprite.json",
+  "gloss": "tileGloss",
+  "ramps": {
+    "attack": ["tileAtkInk", "tileAtkShade", "tileAtkMid", "tileAtkLight"],
+    "guard":  ["tileGdInk", "tileGdShade", "tileGdMid", "tileGdLight"],
+    "skill":  ["tileSklInk", "tileSklShade", "tileSklMid", "tileSklLight"],
+    "hex":    ["tileHexInk", "tileHexShade", "tileHexMid", "tileHexLight"],
+    "rush":   ["tileRshInk", "tileRshShade", "tileRshMid", "tileRshLight"]
+  },
+  "shapes": {
+    "sword": {"union": [
+      {"poly": [[13.485, 21.485], [23.156, 11.813], [24.5, 7.5], [20.187, 8.844], [10.515, 18.515]]},
+      {"capsule": [15.394, 23.394, 8.606, 16.606, 1.5]},
+      {"capsule": [12, 20, 8.464, 23.536, 1.2]},
+      {"circle": [7.545, 24.455, 1.9]}
+    ]},
+    "shield": {"rounded": 0.8, "of": {"poly": [[9.5, 8], [22.5, 8], [22.8, 15], [20, 21], [16, 24.5], [12, 21], [9.2, 15]]}},
+    "star": {"rounded": 0.9, "of": {"star": [16, 16.8, 10.0, 4.6]}},
+    "skull": {"smoothUnion": [{"circle": [16, 14.2, 7.8]}, {"rbox": [16, 21.2, 4.6, 3.2, 1.5]}], "k": 2.0},
+    "bolt": {"rounded": 0.5, "of": {"poly": [[17.5, 5.5], [24, 5.5], [19, 13], [24, 13], [11.5, 27], [14.5, 17], [9.5, 17]]}}
+  },
+  "layers": {
+    "markAttack": [{"emblem": {"ref": "sword"}}],
+    "markGuard": [{"emblem": {"ref": "shield"}}, {"line": [16, 10, 16, 21], "color": "light", "within": "emblem"}],
+    "markSkill": [{"emblem": {"ref": "star"}}],
+    "markHex": [
+      {"emblem": {"ref": "skull"}},
+      {"fill": {"ellipse": [13, 15.0, 2.2, 2.5]}, "color": "shade"},
+      {"fill": {"ellipse": [19, 15.0, 2.2, 2.5]}, "color": "shade"},
+      {"put": [[15, 18], [16, 18]], "color": "shade"},
+      {"put": [[14, 21], [14, 22], [16, 21], [16, 22], [18, 21], [18, 22]], "color": "mid"}
+    ],
+    "markRush": [{"emblem": {"ref": "bolt"}}],
+    "crackH": [
+      {"crack": [[2, 15], [6, 17], [10, 14], [14, 17], [18, 14], [22, 17], [26, 14], [30, 16]]},
+      {"put": [[2, 15], [2, 16], [29, 16], [29, 15]], "color": ""}
+    ],
+    "crackV": [
+      {"crack": [[16, 2], [14, 6], [17, 10], [14, 14], [17, 18], [14, 22], [17, 26], [15, 30]]},
+      {"put": [[15, 2], [16, 2], [15, 29], [16, 29]], "color": ""}
+    ],
+    "chip": [{"tile": {"radius": 3.2, "inset": 1.0}}]
+  },
+  "sprites": {
+    "pieceAttack": {"size": [32, 32], "ramp": "attack", "frames": {
+      "idle": [{"tile": {}}, {"use": "markAttack"}],
+      "crackLineH": [{"tile": {}}, {"use": "markAttack"}, {"use": "crackH"}],
+      "crackLineV": [{"tile": {}}, {"use": "markAttack"}, {"use": "crackV"}]}},
+    "pieceGuard": {"size": [32, 32], "ramp": "guard", "frames": {
+      "idle": [{"tile": {}}, {"use": "markGuard"}],
+      "crackLineH": [{"tile": {}}, {"use": "markGuard"}, {"use": "crackH"}],
+      "crackLineV": [{"tile": {}}, {"use": "markGuard"}, {"use": "crackV"}]}},
+    "pieceSkill": {"size": [32, 32], "ramp": "skill", "frames": {
+      "idle": [{"tile": {}}, {"use": "markSkill"}],
+      "crackLineH": [{"tile": {}}, {"use": "markSkill"}, {"use": "crackH"}],
+      "crackLineV": [{"tile": {}}, {"use": "markSkill"}, {"use": "crackV"}]}},
+    "pieceHex": {"size": [32, 32], "ramp": "hex", "frames": {
+      "idle": [{"tile": {}}, {"use": "markHex"}],
+      "crackLineH": [{"tile": {}}, {"use": "markHex"}, {"use": "crackH"}],
+      "crackLineV": [{"tile": {}}, {"use": "markHex"}, {"use": "crackV"}]}},
+    "pieceRush": {"size": [32, 32], "ramp": "rush", "frames": {
+      "idle": [{"tile": {}}, {"use": "markRush"}],
+      "crackLineH": [{"tile": {}}, {"use": "markRush"}, {"use": "crackH"}],
+      "crackLineV": [{"tile": {}}, {"use": "markRush"}, {"use": "crackV"}]}},
+    "pieceAttackMark": {"size": [32, 32], "ramp": "attack", "frames": {"idle": [{"use": "markAttack"}]}},
+    "pieceGuardMark": {"size": [32, 32], "ramp": "guard", "frames": {"idle": [{"use": "markGuard"}]}},
+    "pieceSkillMark": {"size": [32, 32], "ramp": "skill", "frames": {"idle": [{"use": "markSkill"}]}},
+    "pieceHexMark": {"size": [32, 32], "ramp": "hex", "frames": {"idle": [{"use": "markHex"}]}},
+    "pieceRushMark": {"size": [32, 32], "ramp": "rush", "frames": {"idle": [{"use": "markRush"}]}},
+    "chipAttack": {"size": [16, 16], "ramp": "attack", "frames": {"idle": [{"use": "chip"},
+      {"stamp": {"at": [5, 5], "rows": ["......##", ".....#.#", "....#.#.", "#..#.#..", ".##.#...", "..##....", ".#..#...", "#......."]}, "colors": {"#": "shade"}},
+      {"stamp": {"at": [4, 4], "rows": ["......##", ".....#.#", "....#.#.", "#..#.#..", ".##.#...", "..##....", ".#..#...", "#......."]}, "colors": {"#": "gloss"}}]}},
+    "chipGuard": {"size": [16, 16], "ramp": "guard", "frames": {"idle": [{"use": "chip"},
+      {"stamp": {"at": [5, 5], "rows": ["########", "#......#", "#......#", "#......#", ".#....#.", ".#....#.", "..#..#..", "...##..."]}, "colors": {"#": "shade"}},
+      {"stamp": {"at": [4, 4], "rows": ["########", "#......#", "#......#", "#......#", ".#....#.", ".#....#.", "..#..#..", "...##..."]}, "colors": {"#": "gloss"}}]}}
+  }
+}
