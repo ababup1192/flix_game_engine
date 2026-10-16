@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>案</title><style>
+:root{color-scheme:light dark;--bg:#f6f7f9;--fg:#1d2330;--sub:#5b6474;--card:#fff;--line:#d9dee6;--rec:#d63c6a;--pick:#1f8f84;--weak:#b3361f;--bar:#1d2330;--barfg:#f6f7f9}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#101b2e;--fg:#e4ecf2;--sub:#9fb0c0;--card:#16243b;--line:#2a3b57;--rec:#ff5c8a;--pick:#6fd7c8;--weak:#ff8a73;--bar:#e4ecf2;--barfg:#101b2e}}
+:root[data-theme="dark"]{--bg:#101b2e;--fg:#e4ecf2;--sub:#9fb0c0;--card:#16243b;--line:#2a3b57;--rec:#ff5c8a;--pick:#6fd7c8;--weak:#ff8a73;--bar:#e4ecf2;--barfg:#101b2e}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.7 system-ui,-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif}
+main{max-width:1000px;margin:0 auto;padding:24px 16px 160px}
+h1{font-size:1.5rem;margin:.2em 0}
+h2{font-size:1.2rem;margin:2em 0 .6em;padding-bottom:.3em;border-bottom:2px solid var(--line)}
+h3{font-size:1rem;margin:0 0 .3em;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.meta{color:var(--sub);font-size:.85rem}
+.lead{color:var(--sub);margin:.2em 0 1em}
+.knob{font-size:.82rem;color:var(--sub)}
+.table-wrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:.88rem;background:var(--card)}
+th,td{border:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}
+th{background:color-mix(in srgb,var(--pick) 12%,var(--card))}
+td.weak{color:var(--weak)}
+.stack{display:grid;gap:14px}
+.stack>*,.grid>*{min-width:0}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;display:block}
+label.card{cursor:pointer}
+label.card:has(input:checked){border:2px solid var(--pick);padding:11px}
+.card input{accent-color:var(--pick);margin:0}
+.card p{margin:.2em 0;font-size:.9rem}
+.tag{font-size:.75rem;font-weight:600;border-radius:4px;padding:0 6px;color:var(--bg);background:var(--rec)}
+.tag.won{background:var(--pick)}
+.tag.base{background:var(--sub)}
+.lost{opacity:.55}
+figure{margin:8px 0 0}
+figcaption{font-size:.8rem;color:var(--sub)}
+video,img{width:100%;height:auto;border-radius:6px;background:#000;display:block}
+.pixel{overflow-x:auto}
+.pixel img{width:auto;max-width:none;image-rendering:pixelated;background:none}
+audio{width:100%}
+.compare{margin-bottom:14px}
+.rec{background:var(--card);border-left:4px solid var(--rec);padding:10px 14px;border-radius:6px}
+.clean{background:var(--card);border-left:4px solid var(--pick);padding:10px 14px;border-radius:6px;margin-top:14px;font-size:.9rem}
+code{font-size:.85em;overflow-wrap:anywhere}
+.bar{position:fixed;left:0;right:0;bottom:0;background:var(--bar);color:var(--barfg);padding:10px 16px;display:flex;gap:12px;align-items:center;justify-content:center;flex-wrap:wrap}
+.bar output{font-weight:700;font-size:1.05rem}
+.bar button{font:inherit;border:0;border-radius:6px;padding:4px 14px;background:var(--pick);color:var(--bg);cursor:pointer}
+.bar small{opacity:.75}
+</style></head><body><main>
+<h1></h1>
+<h2></h2>
+<div class="grid"><div class="card"><h3><span>1 </span><span class="tag won">採用</span> <span class="knob">= <code>"x"</code></span></h3></div>
+<div class="card lost"><h3><span>2 </span> <span class="knob">= <code>"y"</code></span></h3></div></div>
+<div class="clean"><b>片付け</b>: <code>d.json</code> の <code>p</code> を消し、<code>"x"</code> の形だけ残す（負けた値: "y"）。残っているかは <code>bin/fge proposal knobs</code> で数える。</div>
+</main></body></html>

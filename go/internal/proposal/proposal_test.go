@@ -31,7 +31,7 @@ func buildIn(t *testing.T, name string) (string, int) {
 }
 
 func TestPageMatchesPythonOutput(t *testing.T) {
-	for _, name := range []string{"full", "decided", "plain", "tut"} {
+	for _, name := range []string{"full", "decided", "plain", "tut", "num", "pystr", "strlist", "truepick"} {
 		t.Run(name, func(t *testing.T) {
 			got, _ := buildIn(t, name)
 			want, err := os.ReadFile(filepath.Join("testdata", name, "want.html"))
@@ -86,5 +86,13 @@ func TestKnobsCountsLeftoverDocKey(t *testing.T) {
 	var out strings.Builder
 	if code := Knobs([]string{manifest}, &out, io.Discard); code != 1 || !strings.Contains(out.String(), "残っている片付け: 2") {
 		t.Fatalf("Doc のつまみと src の読み替えの 2 件を数えない (code %d):\n%s", code, out.String())
+	}
+}
+
+func TestPickIsMatchedWithPythonEquality(t *testing.T) {
+	// 決定の 1（数）は id "1"（文字列）と同じ物ではない。
+	m, errs := load("x", []byte(`{"sections":[{"id":"A","options":[{"id":"1"}]}],"decision":{"picks":{"A":1}}}`))
+	if m == nil || len(errs) != 1 || !strings.Contains(errs[0], "1 は options に無い") {
+		t.Fatalf("数と文字列の id を同じに見た: %v", errs)
 	}
 }

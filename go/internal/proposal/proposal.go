@@ -45,9 +45,38 @@ import (
 	"strings"
 )
 
-// Usage は引数が足りない時に出す。
-const Usage = `使い方: fge proposal build <proposal.json...>   隣に index.html を書く
-        fge proposal knobs [proposal.json...]   決定済みなのに Doc に残る案のつまみを数える`
+// Usage は引数が足りない時に出す。manifest の形も一緒に出す（ゲームの側から読める所がここだけなので）。
+const Usage = "使い方: fge proposal build <proposal.json...>   隣に index.html を書く\n" +
+	"        fge proposal knobs [proposal.json...]   決定済みなのに Doc に残る案のつまみを数える\n\n" + format
+
+const format = "manifest の形（全部の欄は任意。文言は `code` と **太字** だけ解く。HTML はそのまま出さない）:\n" +
+	"\n" +
+	"{\n" +
+	" \"version\": 1,\n" +
+	" \"title\": \"空振り・盾・加速の演出（案）\",\n" +
+	" \"meta\": \"2026-10-10 ・ ブランチ ababup1192/id-battlefx\",\n" +
+	" \"lead\": \"どの動画も同じ戦いの同じ拍を 60fps で描き出した物。\",\n" +
+	" \"sections\": [\n" +
+	"   {\"title\": \"いまの演出\", \"table\": [[\"拍\", \"絵\"], [\"空振り\", \"!上と同じ\"]]},   // 先頭 ! = 弱い所\n" +
+	"   {\"id\": \"A\", \"title\": \"解除・浄化の空振り\", \"lead\": \"場面: …\",\n" +
+	"    \"knob\": {\"doc\": \"assets/x.cue.json\", \"path\": \"battleFx.missStyle\"},\n" +
+	"    \"compare\": {\"src\": \"miss_compare.mp4\", \"caption\": \"左上 = いま / 右上 = A1 …\"},\n" +
+	"    \"options\": [\n" +
+	"      {\"id\": \"A0\", \"label\": \"いま\", \"value\": \"plain\", \"baseline\": true, \"text\": \"…\", \"media\": [\"miss_before.mp4\"]},\n" +
+	"      {\"id\": \"A1\", \"label\": \"空を切る\", \"value\": \"cut\", \"rec\": true, \"text\": \"…\", \"media\": [\"miss_a1.mp4\"]}\n" +
+	"    ]}\n" +
+	" ],\n" +
+	" \"recommend\": [\"**A は A1**: …\"],\n" +
+	" \"ask\": [\"① どれが良いか\", \"② 続けるか\"],\n" +
+	" \"decision\": {\"picks\": {\"A\": \"A1\"}, \"date\": \"2026-10-11\"}\n" +
+	"}\n" +
+	"\n" +
+	"media の 1 つは文字列（拡張子で img / video / audio）か {\"src\", \"caption\", \"pixel\": true（実寸・ドットのまま）}。\n" +
+	"options のある節は選べる節。ページ下の帯に「決定: A1 B2」が出て、コピーで返事にそのまま貼れる。\n" +
+	"decision を書くと、その節は採用の札が付き、knob を持つ節には「消すつまみ」が並ぶ（knobs が後で数える）。\n" +
+	"\n" +
+	"WhyNot: 部品（会話の窓など、実機の見本を CSS で作り直す物）はここに入れない。実機と二重管理になる。\n" +
+	"素材は実機の描き出しと動画だけ。\n"
 
 // Run は fge proposal の入口。
 func Run(args []string, out, errOut io.Writer) int {
@@ -61,7 +90,7 @@ func Run(args []string, out, errOut io.Writer) int {
 	if len(args) >= 1 && args[0] == "knobs" {
 		return Knobs(args[1:], out, errOut)
 	}
-	fmt.Fprintln(out, Usage)
+	fmt.Fprint(out, Usage)
 	return 2
 }
 
@@ -147,9 +176,25 @@ func has(v any, key string) bool {
 	return false
 }
 
+// list は Python の for で回したときの並び（文字列は 1 文字ずつ・オブジェクトはキー）。
 func list(v any) []any {
-	l, _ := v.([]any)
-	return l
+	switch t := v.(type) {
+	case []any:
+		return t
+	case string:
+		var out []any
+		for _, r := range t {
+			out = append(out, string(r))
+		}
+		return out
+	case *object:
+		out := make([]any, len(t.keys))
+		for i, k := range t.keys {
+			out[i] = k
+		}
+		return out
+	}
+	return nil
 }
 
 // truthy は Python の真偽の読み方（空の文字列・0・空の列は偽）。
@@ -185,9 +230,9 @@ func str(v any) string {
 		}
 		return "False"
 	case json.Number:
-		return string(t)
+		return pyNum(t)
 	}
-	return dumps(v)
+	return pyRepr(v)
 }
 
 // dumps は Python の json.dumps(v, ensure_ascii=False) と同じ形（", " と ": " で区切る）。
@@ -208,7 +253,7 @@ func writeDumps(b *strings.Builder, v any) {
 			b.WriteString("false")
 		}
 	case json.Number:
-		b.WriteString(string(t))
+		b.WriteString(pyNum(t))
 	case string:
 		b.WriteByte('"')
 		for _, r := range t {
@@ -304,8 +349,12 @@ type builder struct {
 
 // extOf は Python の os.path.splitext と同じく、名前の頭の . は拡張子に数えない。
 func extOf(p string) string {
-	base := strings.TrimLeft(filepath.Base(p), ".")
-	return strings.ToLower(filepath.Ext(base))
+	base := p[strings.LastIndex(p, "/")+1:]
+	base = strings.TrimLeft(base, ".")
+	if i := strings.LastIndex(base, "."); i >= 0 {
+		return strings.ToLower(base[i:])
+	}
+	return ""
 }
 
 func (b *builder) media(m any, loop bool) string {
@@ -315,7 +364,11 @@ func (b *builder) media(m any, loop bool) string {
 	}
 	src := str(get(m, "src"))
 	ext := extOf(src)
-	if _, err := os.Stat(filepath.Join(b.root, src)); err != nil {
+	full := src
+	if !filepath.IsAbs(src) {
+		full = filepath.Join(b.root, src)
+	}
+	if _, err := os.Stat(full); err != nil {
 		b.missing = append(b.missing, src)
 	}
 	a := attr(src)
@@ -372,7 +425,7 @@ func (b *builder) table(rows []any) string {
 func (b *builder) option(sec, o any, won any) string {
 	decided := won != nil
 	sid, oid := get(sec, "id"), get(o, "id")
-	isWon := decided && str(won) == str(oid)
+	isWon := decided && pyEq(won, oid)
 	tags := ""
 	if truthy(get(o, "baseline")) {
 		tags += `<span class="tag base">いま</span>`
@@ -433,13 +486,13 @@ func (b *builder) cleanup(sec, won any) string {
 	var lose []string
 	keep := str(won)
 	for _, o := range list(get(sec, "options")) {
-		if str(get(o, "id")) == str(won) {
+		if pyEq(get(o, "id"), won) {
 			keep = valueOrID(o)
 			break
 		}
 	}
 	for _, o := range list(get(sec, "options")) {
-		if str(get(o, "id")) != str(won) && !truthy(get(o, "baseline")) {
+		if !pyEq(get(o, "id"), won) && !truthy(get(o, "baseline")) {
 			lose = append(lose, valueOrID(o))
 		}
 	}
@@ -452,11 +505,13 @@ func (b *builder) cleanup(sec, won any) string {
 		`残っているかは <code>bin/fge proposal knobs</code> で数える。</div>`
 }
 
+// pickOf は節の決定。picks のキーは JSON の文字列なので、id が文字列の節だけが当たる。
 func pickOf(picks any, sec any) any {
-	if !has(sec, "id") {
+	id, ok := get(sec, "id").(string)
+	if !ok {
 		return nil
 	}
-	return get(picks, str(get(sec, "id")))
+	return get(picks, id)
 }
 
 func (b *builder) section(sec, picks any) string {
@@ -568,10 +623,8 @@ func (b *builder) page(m any) string {
 }
 
 func hasPick(picks, sec any) bool {
-	if !has(sec, "id") {
-		return false
-	}
-	return has(picks, str(get(sec, "id")))
+	id, ok := get(sec, "id").(string)
+	return ok && has(picks, id)
 }
 
 // ── 検査 ─────────────────────────────────────────────────
@@ -593,10 +646,10 @@ func validate(m any) []string {
 		switch {
 		case !truthy(id):
 			errs = append(errs, where+": options のある節に id が無い")
-		case ids[str(id)]:
+		case ids[pyKey(id)]:
 			errs = append(errs, fmt.Sprintf("%s: id %s が重なっている", where, str(id)))
 		}
-		ids[str(id)] = true
+		ids[pyKey(id)] = true
 		if has(sec, "knob") && get(sec, "knob") != nil {
 			k := get(sec, "knob")
 			if _, ok := k.(*object); !ok || !truthy(get(k, "doc")) || !truthy(get(k, "path")) {
@@ -624,7 +677,9 @@ func validate(m any) []string {
 	secs := map[string]any{}
 	for _, s := range list(get(m, "sections")) {
 		if truthy(get(s, "options")) {
-			secs[str(get(s, "id"))] = s
+			if id, ok := get(s, "id").(string); ok {
+				secs[id] = s
+			}
 		}
 	}
 	for _, sid := range picks.keys {
@@ -636,7 +691,7 @@ func validate(m any) []string {
 		}
 		found := false
 		for _, o := range list(get(sec, "options")) {
-			if str(get(o, "id")) == str(oid) {
+			if pyEq(get(o, "id"), oid) {
 				found = true
 			}
 		}
@@ -734,7 +789,8 @@ func srcHits(top string, value any) []string {
 	lit := []byte(dumps(value))
 	var hits []string
 	filepath.Walk(filepath.Join(top, "src"), func(p string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() || !strings.HasSuffix(p, ".flix") {
+		// WhyNot: symlink の .flix を読まないのは、元の grep -r が辿らないため（数が変わる）。
+		if err != nil || info.IsDir() || info.Mode()&os.ModeSymlink != 0 || !strings.HasSuffix(p, ".flix") {
 			return nil
 		}
 		if data, err := os.ReadFile(p); err == nil && bytes.Contains(data, lit) {
@@ -802,7 +858,7 @@ func Knobs(paths []string, out, errOut io.Writer) int {
 					it.name, str(get(sec, "id")), str(won), str(get(k, "doc")), str(get(k, "path")))
 			}
 			for _, o := range list(get(sec, "options")) {
-				if str(get(o, "id")) == str(won) || !has(o, "value") {
+				if pyEq(get(o, "id"), won) || !has(o, "value") {
 					continue
 				}
 				if hits := srcHits(top, get(o, "value")); len(hits) > 0 {
