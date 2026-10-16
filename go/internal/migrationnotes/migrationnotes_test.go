@@ -2,7 +2,7 @@ package migrationnotes
 
 // What: 差分の塊の割り方、追随例の絞り込み（識別子の切れ目・削除行のある塊だけ・
 // 大きすぎる塊は捨てる・同じコミットで engine を触っていれば名前だけで拾う）、
-// 追随例が無いときに正直に言うこと、--check の 3 通り、出す口と終了コード。
+// 追随例が無いときに正直に言うこと、手書きの置き換え表の行を引くこと、--check の 3 通り、出す口と終了コード。
 
 import (
 	"fmt"
@@ -344,7 +344,7 @@ func TestTotalDiffBudgetTrimsAndSaysHowMany(t *testing.T) {
 		t.Error("1 件目まで省いています")
 	}
 	var b strings.Builder
-	writeBreaking(&b, apidiff.Result{From: "v0.1.0", Breaking: breaking}, examples)
+	writeBreaking(&b, apidiff.Result{From: "v0.1.0", Breaking: breaking}, examples, nil)
 	if !strings.Contains(b.String(), "件は追随例を省いて") {
 		t.Errorf("省いたことを本文に書いていません:\n%s", b.String())
 	}
@@ -420,5 +420,48 @@ func git(t *testing.T, dir string, args ...string) {
 	cmd.Dir = dir
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+}
+
+// 手書きの置き換え表に行がある非互換は、その行を節へのリンク付きで引き、「自分で考えて」とは言わない。
+func TestBuildQuotesHandWrittenReplacementRow(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "docs/migrations/0.2.0.md", "# 手当て\n\n## 置き換え（1 行 1 件）\n\n"+
+		"| 止まった名前 | 置き換え |\n|---|---|\n"+
+		"| `Depth.zAt(範囲, 足元 y)` | `Depth.orderAt(足元 y)` |\n")
+	res := apidiff.Result{
+		From:     "v0.1.0",
+		Breaking: []apidiff.Change{{Key: apidiff.Key{Package: "engine_world", Mod: "Depth", Name: "zAt"}, Kind: "removed"}},
+	}
+	body, unexplained, _ := build(dir, "0.2.0", res)
+	if unexplained != 0 {
+		t.Errorf("手書きの表で手当てされているのに追随例の無い数=%d", unexplained)
+	}
+	for _, want := range []string{
+		"](0.2.0.md#置き換え1-行-1-件)",
+		"- `Depth.zAt(範囲, 足元 y)` → `Depth.orderAt(足元 y)`",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("%q がありません:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, "自分で考えてください") {
+		t.Errorf("手当てがあるのに自分で考えてと言っています:\n%s", body)
+	}
+}
+
+// 「同上」は前の行の置き換えに読み替え、列の中の \| は | に戻す（1 行だけ抜き出しても読めるように）。
+func TestHandRowsResolveDittoAndEscapedPipe(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "docs/migrations/0.2.0.md", "## 置き換え\n\n| 止まった名前 | 置き換え |\n|---|---|\n"+
+		"| `Render.zShiftedAll(d, 列)` | 別の葉にして積む |\n"+
+		"| `Render.raiseZ(d, 物)` | 同上（1 個でも） |\n"+
+		"| `Timeline.startOf(tag, clips)` | `clipOf(tag, 表) \\|> Option.map(c -> c#start)` |\n")
+	rows := handRowsOf(dir, "0.2.0")
+	if got := handRowsFor(rows, "Render.raiseZ"); len(got) != 1 || got[0].after != "別の葉にして積む（1 個でも）" {
+		t.Errorf("同上を読み替えていません: %+v", got)
+	}
+	if got := handRowsFor(rows, "Timeline.startOf"); len(got) != 1 || !strings.Contains(got[0].after, "|> Option.map") {
+		t.Errorf("\\| を戻していません: %+v", got)
 	}
 }

@@ -27,6 +27,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/ababup1192/flix_game_engine/go/internal/apidiff"
 	"github.com/ababup1192/flix_game_engine/go/internal/pxlib"
@@ -163,7 +164,7 @@ func build(root, version string, res apidiff.Result) (string, int, []string) {
 	}
 
 	examples, notices := findFollowUps(root, res)
-	unexplained := writeBreaking(&b, res, examples)
+	unexplained := writeBreaking(&b, res, examples, handRowsOf(root, version))
 
 	if len(res.Added) > 0 {
 		fmt.Fprintf(&b, "## 増えた宣言（%d 件・読むだけでよい）\n\n", len(res.Added))
@@ -191,7 +192,7 @@ func build(root, version string, res apidiff.Result) (string, int, []string) {
 }
 
 // writeBreaking は「直す物」の節を書いて、追随例が 1 つも無かった非互換の数を返す。
-func writeBreaking(b *strings.Builder, res apidiff.Result, examples map[string][]string) int {
+func writeBreaking(b *strings.Builder, res apidiff.Result, examples map[string][]string, hand []handRow) int {
 	switch {
 	case res.From == "none":
 		b.WriteString("## 直す物\n\n初リリースなので、比べる相手がありません。\n\n")
@@ -210,8 +211,12 @@ func writeBreaking(b *strings.Builder, res apidiff.Result, examples map[string][
 	for i, c := range res.Breaking {
 		fmt.Fprintf(b, "### %d. %s（%s）\n\n", i+1, c.QualifiedName(), c.Package)
 		writeChange(b, c)
+		rows := handRowsFor(hand, c.QualifiedName())
+		writeHandRows(b, rows)
 		hunks := examples[c.QualifiedName()]
 		switch {
+		case len(hunks) == 0 && len(rows) > 0:
+			// 手書きの表が手当てを言っているので、「自分で考えて」とは言わない。
 		case len(hunks) == 0:
 			unexplained++
 			b.WriteString("engine の中に追随例がありません。手当ては自分で考えてください。\n\n")
@@ -655,4 +660,130 @@ func relOf(root, path string) string {
 		return path
 	}
 	return filepath.ToSlash(rel)
+}
+
+// ── 手書きの置き換え表 ───────────────────────────────────
+
+// handRow は手書きの手当て（docs/migrations/<版>.md）の表の 1 行。
+type handRow struct {
+	names   []string // 左の列の `…` に書かれた名前（引数は除く）
+	before  string   // 左の列そのまま
+	after   string   // 右の列（「同上」は前の行の右の列に置き換え済み）
+	file    string   // <版>.md
+	section string   // 表のある節の見出し
+}
+
+// handCodeName は `Render.zShifted(d, 物)` の頭の名前（Render.zShifted）を取る。
+var handCodeName = regexp.MustCompile("`([A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)*)")
+
+// handRowsOf は docs/migrations/<version>.md の表の行を読む。無ければ空（手書きの手当ては任意）。
+//
+// WhyNot: 表の形（左の列 = 止まった名前・右の列 = 置き換え）だけを頼りに、節の名前で
+// 絞らないのは、版ごとに見出しの言い回しが揺れても拾えるようにするため。左の列に
+// `Mod.名前` の無い表（説明の表）は、どの非互換にも当たらないので混ざっても害が無い。
+func handRowsOf(root, version string) []handRow {
+	file := version + ".md"
+	data, err := os.ReadFile(filepath.Join(root, "docs", "migrations", file))
+	if err != nil {
+		return nil
+	}
+	var rows []handRow
+	section, prevAfter := "", ""
+	for _, line := range pxlib.SplitLines(string(data)) {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "## ") {
+			section, prevAfter = strings.TrimSpace(strings.TrimPrefix(line, "## ")), ""
+			continue
+		}
+		cells := tableCells(line)
+		if len(cells) < 2 || strings.Trim(cells[0], "-: ") == "" {
+			continue // 表でない行と、見出しの下の |---|
+		}
+		after := cells[1]
+		// WhyNot: 「同上」を前の行の右の列に置き換えるのは、1 行だけ抜き出すと
+		// 何と同じなのかが読めなくなるため。
+		if rest, ok := strings.CutPrefix(after, "同上"); ok && prevAfter != "" {
+			after = prevAfter + rest
+		} else {
+			prevAfter = after
+		}
+		var names []string
+		for _, m := range handCodeName.FindAllStringSubmatch(cells[0], -1) {
+			names = append(names, m[1])
+		}
+		if len(names) == 0 {
+			continue // 見出しの行（止まった名前 | 置き換え）
+		}
+		rows = append(rows, handRow{names: names, before: cells[0], after: after, file: file, section: section})
+	}
+	return rows
+}
+
+// tableCells は markdown の表の行（| a | b |）を列に切る。表でなければ nil。
+// `\|`（列の中の縦棒）は切らずに `|` へ戻す。
+func tableCells(line string) []string {
+	if !strings.HasPrefix(line, "|") || !strings.HasSuffix(line, "|") || len(line) < 2 {
+		return nil
+	}
+	var cells []string
+	var cur strings.Builder
+	body := line[1 : len(line)-1]
+	for i := 0; i < len(body); i++ {
+		switch {
+		case body[i] == '\\' && i+1 < len(body) && body[i+1] == '|':
+			cur.WriteByte('|')
+			i++
+		case body[i] == '|':
+			cells = append(cells, strings.TrimSpace(cur.String()))
+			cur.Reset()
+		default:
+			cur.WriteByte(body[i])
+		}
+	}
+	return append(cells, strings.TrimSpace(cur.String()))
+}
+
+// handRowsFor は名前 name を左の列に書いた行を返す。
+func handRowsFor(rows []handRow, name string) []handRow {
+	var out []handRow
+	for _, r := range rows {
+		for _, n := range r.names {
+			if n == name {
+				out = append(out, r)
+				break
+			}
+		}
+	}
+	return out
+}
+
+// writeHandRows は手書きの表の行を、その節へのリンクを添えて書く。
+func writeHandRows(b *strings.Builder, rows []handRow) {
+	if len(rows) == 0 {
+		return
+	}
+	r := rows[0]
+	where := r.file
+	if r.section != "" {
+		where = fmt.Sprintf("%s「%s」", r.file, r.section)
+	}
+	fmt.Fprintf(b, "手書きの置き換え（[%s](%s#%s)）:\n\n", where, r.file, headingAnchor(r.section))
+	for _, r := range rows {
+		fmt.Fprintf(b, "- %s → %s\n", r.before, r.after)
+	}
+	b.WriteString("\n")
+}
+
+// headingAnchor は見出しのリンク先（GitHub と同じ作り方: 小文字にし、記号を消し、空白を - に）。
+func headingAnchor(heading string) string {
+	var a strings.Builder
+	for _, r := range strings.ToLower(heading) {
+		switch {
+		case r == ' ':
+			a.WriteRune('-')
+		case r == '-' || r == '_' || unicode.IsLetter(r) || unicode.IsNumber(r) || unicode.Is(unicode.Mn, r):
+			a.WriteRune(r)
+		}
+	}
+	return a.String()
 }
