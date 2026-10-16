@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -145,5 +146,14 @@ func TestResolveFillsDefaultHome(t *testing.T) {
 	got, err := Resolve("0.35.16", Options{Game: fakeGame(t, true)})
 	if err != nil || got != installed {
 		t.Fatalf("既定の置き場を見ない: %q %v", got, err)
+	}
+}
+
+func TestMissingVersionWithoutCloneStopsAndSaysWhatToDo(t *testing.T) {
+	t.Setenv("FGE_ENGINE_REPO", "")
+	game := fakeGame(t, true)
+	_, err := Resolve("0.35.99", opts(game))
+	if err == nil || !strings.Contains(err.Error(), "--repo") || !strings.Contains(err.Error(), "engines") {
+		t.Fatalf("clone が分からない時に止まって手を知らせない: %v", err)
 	}
 }

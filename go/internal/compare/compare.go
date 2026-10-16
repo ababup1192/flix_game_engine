@@ -1,7 +1,7 @@
 // Package compare は、基準の版（BASE）と今の作業場を同じやり方で描き出して並べる。
 //
 //	fge compare --base <ref> [--shots "a b"] [--videos "x-video y-video"] [--out debug/compare]
-//	            [--base-engine <版 | パス>]
+//	            [--base-engine <版 | パス>]   基準側のエンジン（既定は今の作業場と同じ）
 //
 // BASE を一時の worktree に出し（終わったら消す）、両方で描き出す（重い所は heavy の鍵の内側）。
 // 比べるのは PNG・効果音と曲の WAV・音の表（gallery-sounds の sounds.png / music.png）・動画のコマ。
@@ -11,7 +11,7 @@
 //	pairs/<名前>.png      差のある絵: 基準 | 今 | 差の所（変わった画素を赤で）
 //	videos/<名前>.mp4     差のある動画: 基準 | 今 を左右に並べた物
 //	videos/<名前>.first.png  最初に差の出たコマの 基準 | 今 | 差の所
-//	proposal.json        bin/proposal.py の manifest（あれば index.html も組む）
+//	proposal.json        fge proposal の manifest と、それから組んだ index.html
 package compare
 
 import (
@@ -36,6 +36,7 @@ import (
 	"time"
 
 	"github.com/ababup1192/flix_game_engine/go/internal/heavy"
+	"github.com/ababup1192/flix_game_engine/go/internal/proposal"
 	"github.com/ababup1192/flix_game_engine/go/internal/useengine"
 )
 
@@ -201,7 +202,7 @@ func run(o Options) error {
 		return err
 	}
 	items := compareSides(o, base, cur)
-	curEngine := engineOf(o.Game)
+	curEngine := shortPath(currentEngine(o.Game))
 	meta := fmt.Sprintf("基準 %s (%s・エンジン %s) と 今 %s (エンジン %s)",
 		o.Base, sha[:min(10, len(sha))], baseEngine, strings.TrimSpace(head), curEngine)
 	if err := writeReport(o, items); err != nil {
@@ -216,21 +217,9 @@ func run(o Options) error {
 
 // prepareBase は基準の worktree に local.mk と lib を置く。返すのはエンジンの短い名前。
 //
-// WhyNot: 既定のエンジンを今の作業場と同じにせず、基準の flix.toml が指す版にするのは、
-// エンジンの直しを比べるとき（今の作業場が開発中のエンジンを向いているとき）に
-// 差が消えてしまうため。ゲームだけの直しなら同じ版なので結果は変わらない。
+// 既定は今の作業場と同じエンジンで、比べるのはゲームの変更だけになる。
+// エンジンの直しを比べたいときは --base-engine（make compare BASE_ENGINE=）で基準側を変える。
 func prepareBase(o Options, wt string) (string, error) {
-	target := o.BaseEngine
-	if target == "" {
-		text, err := os.ReadFile(filepath.Join(wt, "flix.toml"))
-		if err != nil {
-			return "", err
-		}
-		target = useengine.TomlEngineVersion(text)
-		if target == "" {
-			return "", fmt.Errorf("基準の flix.toml にエンジンの版がありません（--base-engine で渡す）")
-		}
-	}
 	for _, sub := range []string{"external", "cache"} {
 		if src := filepath.Join(o.Game, "lib", sub); isDir(src) {
 			if err := copyTree(src, filepath.Join(wt, "lib", sub)); err != nil {
@@ -239,14 +228,28 @@ func prepareBase(o Options, wt string) (string, error) {
 		}
 	}
 	uo := useengine.Options{Game: wt, Out: io.Discard, Err: o.Err, Make: o.Make, HeavyOpts: o.HeavyOpts}
-	dir, err := useengine.Resolve(target, uo)
-	if err != nil {
-		return "", err
+	dir := currentEngine(o.Game)
+	if o.BaseEngine != "" {
+		var err error
+		if dir, err = useengine.Resolve(o.BaseEngine, uo); err != nil {
+			return "", err
+		}
+	}
+	if dir == "" {
+		return "", fmt.Errorf("今の作業場の local.mk に ENGINE がありません（先に fge use-engine <版>）")
 	}
 	if err := useengine.Use(dir, uo); err != nil {
 		return "", err
 	}
 	return shortPath(dir), nil
+}
+
+func currentEngine(game string) string {
+	data, err := os.ReadFile(filepath.Join(game, "local.mk"))
+	if err != nil {
+		return ""
+	}
+	return useengine.EngineOfLocalMk(string(data))
 }
 
 // ── 描き出す ─────────────────────────────────────────────
@@ -720,14 +723,8 @@ func writeProposal(o Options, items []Item, meta string, baseFailed, curFailed [
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		return err
 	}
-	builder := filepath.Join(o.Game, "bin", "proposal.py")
-	if !isFile(builder) {
-		return nil
-	}
-	cmd := exec.Command("python3", builder, "build", path)
-	cmd.Dir = o.Game
-	if out, err := cmd.CombinedOutput(); err != nil {
-		fmt.Fprintf(o.Err, "[compare] index.html を組めません: %s\n", strings.TrimSpace(string(out)))
+	if proposal.Build(path, io.Discard, o.Err) == 2 {
+		return fmt.Errorf("index.html を組めません")
 	}
 	return nil
 }
@@ -768,17 +765,6 @@ func printSummary(o Options, items []Item, baseFailed, curFailed []string) {
 func gitOut(dir string, args ...string) (string, error) {
 	out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).Output()
 	return strings.TrimSpace(string(out)), err
-}
-
-func engineOf(game string) string {
-	data, err := os.ReadFile(filepath.Join(game, "local.mk"))
-	if err != nil {
-		return "?"
-	}
-	if e := useengine.EngineOfLocalMk(string(data)); e != "" {
-		return shortPath(e)
-	}
-	return "?"
 }
 
 func isFile(p string) bool {

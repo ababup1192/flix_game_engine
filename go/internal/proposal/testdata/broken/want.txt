@@ -1,0 +1,8 @@
+sections[0]: options のある節に id が無い
+sections[0].options[0]: id が無い
+sections[1].knob: doc と path が要る
+sections[1].options[0].media[0]: src が無い
+sections[1].compare: src が無い
+sections[2]: id A が重なっている
+decision.picks.Z: その id の節が無い
+decision.picks.A: A9 は options に無い

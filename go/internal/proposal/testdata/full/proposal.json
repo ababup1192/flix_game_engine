@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "title": "空振り・盾の演出（案） & <テスト>",
+  "meta": "2026-10-10 ・ ブランチ `ababup1192/id-battlefx`",
+  "lead": "どの動画も **同じ戦い** の同じ拍。'引用' と \"二重\" と `a<b` を含む。",
+  "sections": [
+    {"title": "いまの演出", "table": [["拍", "絵", "数"], ["空振り", "!上と同じ", 3], ["盾", "`shield` が **割れる**", 1.5], [true, null, "!"]]},
+    {"title": "読み物", "paragraphs": ["1 段目 **太い**", "2 段目 `code` と ** 片方"]},
+    {"id": "A", "title": "解除の空振り", "lead": "場面: 解除",
+     "knob": {"doc": "assets/x.cue.json", "path": "battleFx.missStyle"},
+     "compare": {"src": "miss_compare.mp4", "caption": "左 = いま / 右 = A1"},
+     "options": [
+       {"id": "A0", "label": "いま", "value": "plain", "baseline": true, "text": "変えない", "media": ["miss_before.mp4"]},
+       {"id": "A1", "label": "空を切る", "value": {"style": "cut", "ms": 120, "ok": true, "list": [1, "x"]}, "rec": true, "text": "…", "media": [{"src": "a1.png", "caption": "実寸", "pixel": true}, "a1.wav"]},
+       {"id": "A2", "label": "", "value": 0, "media": [{"src": "notes.txt"}, {"src": ".hidden"}]}
+     ]},
+    {"id": "B", "title": "盾", "options": [
+       {"id": "B1", "text": "画像だけ", "media": [{"src": "b1.jpg", "caption": ""}]},
+       {"id": "B2", "media": ["B2.GIF"]}
+     ]}
+  ],
+  "recommend": ["**A は A1**: 速い"],
+  "ask": ["① どれが良いか", "② 続けるか"]
+}

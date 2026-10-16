@@ -74,9 +74,10 @@ func TestCompareFindsChangedImageAndCleansUp(t *testing.T) {
 	git(t, game, "commit", "-qm", "base")
 	writePNG(t, filepath.Join(game, "src", "moved.png"), color.RGBA{0, 0, 255, 255})
 	os.Remove(filepath.Join(game, "src", "gone.png"))
-	os.WriteFile(filepath.Join(game, "local.mk"), []byte("ENGINE := /x\n"), 0o644)
+	// 基準側は何も渡さなければ今の作業場と同じエンジンを使う。
+	os.WriteFile(filepath.Join(game, "local.mk"), []byte("ENGINE := "+fakeEngine(t)+"\n"), 0o644)
 
-	code := Run([]string{"--base", "HEAD", "--base-engine", fakeEngine(t)}, Options{
+	code := Run([]string{"--base", "HEAD"}, Options{
 		Game: game, Out: io.Discard, Err: io.Discard,
 		HeavyOpts: heavy.Options{Lock: filepath.Join(t.TempDir(), "lock"), Err: io.Discard},
 	})

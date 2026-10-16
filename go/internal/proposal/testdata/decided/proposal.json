@@ -1,0 +1,15 @@
+{
+  "title": "決まった後",
+  "sections": [
+    {"id": "A", "title": "A", "knob": {"doc": "assets/x.json", "path": "a.b"},
+     "options": [
+       {"id": "A0", "value": "old", "baseline": true},
+       {"id": "A1", "value": "cut", "media": [{"src": "x.png", "pixel": true}]},
+       {"id": "A2", "value": "slow"}
+     ]},
+    {"id": "B", "title": "B", "knob": {"doc": "assets/y.json", "path": "c"},
+     "options": [{"id": "B1"}, {"id": "B2"}]},
+    {"id": "C", "title": "まだ", "options": [{"id": "C1", "rec": true}, {"id": "C2"}]}
+  ],
+  "decision": {"picks": {"A": "A1", "B": "B2"}, "date": "2026-10-11"}
+}

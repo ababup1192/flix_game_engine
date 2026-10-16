@@ -1,0 +1,5 @@
+{"sections": [
+  {"title": "id 無し", "options": [{"label": "x"}]},
+  {"id": "A", "knob": {"doc": "a.json"}, "options": [{"id": "A1", "media": [{"caption": "src 無し"}]}], "compare": {"caption": "c"}},
+  {"id": "A", "options": [{"id": "A2"}]}
+], "decision": {"picks": {"Z": "Z1", "A": "A9"}}}
