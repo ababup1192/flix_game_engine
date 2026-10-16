@@ -7,6 +7,8 @@ package agenteval
 // 答えの文は入れない（重い・読み返すのは debug/agent-eval/<label>/ の .jsonl で足りる）。
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -27,9 +29,13 @@ type History struct {
 	Model   string `json:"model"`
 	Repeat  int    `json:"repeat"`
 	// Scoring は採点の仕方。"strict" = 本命（"choice"）だけ・空 = 答え全体（0.35.27 までの記録）。
-	Scoring string       `json:"scoring,omitempty"`
-	Totals  HistoryTotal `json:"totals"`
-	Tasks   []TaskRuns   `json:"tasks"`
+	Scoring string `json:"scoring,omitempty"`
+	// Docs は流したときに毎回読まれる文書の中身の印（ファイル名 → sha256 の頭 12 字）。
+	// 点やトークンが動いたとき、エンジンの AGENTS.md とゲームの AGENTS.local.md のどちらが
+	// 変わっていたかを後から見分けるため。
+	Docs   map[string]string `json:"docs,omitempty"`
+	Totals HistoryTotal      `json:"totals"`
+	Tasks  []TaskRuns        `json:"tasks"`
 }
 
 // HistoryTotal は 1 回の測りに払った費用。
@@ -496,4 +502,21 @@ func StatusLine(dir string) string {
 		}
 	}
 	return line
+}
+
+// docFiles は Docs に印を残す文書（流した場所からの相対）。
+var docFiles = []string{"AGENTS.md", "AGENTS.local.md"}
+
+// DocHashes は root の docFiles の中身の印。無いファイルは載せない。
+func DocHashes(root string) map[string]string {
+	m := map[string]string{}
+	for _, name := range docFiles {
+		data, err := os.ReadFile(filepath.Join(root, name))
+		if err != nil {
+			continue
+		}
+		sum := sha256.Sum256(data)
+		m[name] = hex.EncodeToString(sum[:])[:12]
+	}
+	return m
 }

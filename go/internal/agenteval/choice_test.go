@@ -72,3 +72,24 @@ func TestExtractChoiceFindsTheRightJSON(t *testing.T) {
 		t.Error("choice: null を読めたことにした")
 	}
 }
+
+// 1 つの choice に API を詰めても、期待の語は 1 つ目の道具にしか当たらない（4 つの上限を抜けない）。
+// 詰めた中の古い書き方は減点する。
+func TestStrictHeadOnlyClosesPacking(t *testing.T) {
+	answer := `{"choice": ["ZStack.topLayer + UiTooltip（zIndex = 900 も併用）"]}`
+	r := score(strictJob(), resultLine(answer), true)
+	if r.Hit != 1 || r.Penalty != 1 {
+		t.Errorf("hit %d penalty %d", r.Hit, r.Penalty)
+	}
+	for in, want := range map[string]string{
+		"Timeline.build(tempo, steps)":      "Timeline.build",
+		"make render SHOT=title":            "make render SHOT=title",
+		"App.withAudio → Timeline.soundsOn": "App.withAudio",
+		"docs/pacing.md":                    "docs/pacing.md",
+		"Log.fellBackThen / warnThen":       "Log.fellBackThen",
+	} {
+		if got := headOf(in); got != want {
+			t.Errorf("headOf(%q) = %q want %q", in, got, want)
+		}
+	}
+}

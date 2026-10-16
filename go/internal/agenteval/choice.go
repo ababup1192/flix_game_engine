@@ -28,7 +28,7 @@ const choiceMax = 4
 // WhyNot: お題の JSON ごとに変えられるようにしないのは、言い方が違うと前後・ゲーム間で
 // 点が比べられなくなるため。0.35.28 で "choice" を足した（それより前の記録は loose だけ）。
 const suffix = "。実装はせず、JSON で答えて。" +
-	`"choice" にはこの依頼で実際に使う物（API・make の口・lint・スキル・見るファイル）だけを、使う順に最大 4 つ。` +
+	`"choice" にはこの依頼で実際に使う物（API・make の口・lint・スキル・見るファイル）だけを、1 つに 1 つずつ名前を省かずに、使う順に最大 4 つ。` +
 	`"others" には関係はあるが今回は使わない物、"read" には判断のために読んだファイル`
 
 // extractChoice は答えの JSON の "choice" を、1 つずつ文字列にして返す（先頭から choiceMax 個）。
@@ -121,11 +121,31 @@ func noChoiceAtAll(results []Result) bool {
 	return len(results) > 0
 }
 
-// scoreChoice は "choice" に期待の語と減点の語を当てる。
+// headSeparator は choice の 1 つの中で、1 つ目の道具の終わりと見なす所（「+」「→」「、」「,」「;」
+// 「 / 」「・」「 と 」「 and 」と括弧の開き）。
+var headSeparator = regexp.MustCompile(`\+|＋|→|->|=>|、|,|，|;|；|\s/\s|／|・|\s(と|and)\s|\(|（|\[|「`)
+
+// headOf は choice の 1 つから、1 つ目の道具の名前だけを切り出す。
+//
+// WhyNot: 期待の語を 1 つ全体に当てないのは、「Timeline.build + withSound + App.withAudio」のように
+// 1 つの中に API を詰めると、4 つの上限を抜けて全部当たってしまうため。減点の語は 1 つ全体に当てる
+// （詰めた中の古い書き方も見逃さない）。
+func headOf(item string) string {
+	if loc := headSeparator.FindStringIndex(item); loc != nil {
+		return strings.TrimSpace(item[:loc[0]])
+	}
+	return strings.TrimSpace(item)
+}
+
+// scoreChoice は "choice" に期待の語（1 つ目の道具の名前だけ）と減点の語（1 つ全体）を当てる。
 func scoreChoice(r *Result, t Task, choice []string) {
 	r.Hit, r.Penalty, r.Missed, r.AvoidHits = 0, 0, nil, nil
+	heads := make([]string, len(choice))
+	for i, c := range choice {
+		heads[i] = headOf(c)
+	}
 	for _, p := range t.Expect {
-		if anyMatch(regexp.MustCompile(p.Re), nil, choice, false) {
+		if anyMatch(regexp.MustCompile(p.Re), nil, heads, false) {
 			r.Hit++
 		} else {
 			r.Missed = append(r.Missed, label(p))

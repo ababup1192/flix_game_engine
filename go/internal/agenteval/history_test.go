@@ -1,6 +1,8 @@
 package agenteval
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -95,5 +97,17 @@ func TestExistingHistoryStopsBeforeRunning(t *testing.T) {
 		"--history", dir + "/h", "--version", "0.1.0"})
 	if code != 2 || err == nil || !strings.Contains(err.Error(), "--overwrite") {
 		t.Errorf("code %d err %v", code, err)
+	}
+}
+
+// 記録には流した場所の AGENTS.md と AGENTS.local.md の印が残る（無いファイルは載せない）。
+func TestDocHashesRecordsAgentsFiles(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "AGENTS.local.md"), []byte("ゲーム固有"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := DocHashes(root)
+	if len(got) != 1 || len(got["AGENTS.local.md"]) != 12 {
+		t.Errorf("got %v", got)
 	}
 }

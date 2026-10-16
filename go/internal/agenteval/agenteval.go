@@ -173,11 +173,13 @@ func Run(out, errOut io.Writer, args []string) (int, error) {
 	fmt.Fprintf(out, "\n記録: %s（summary.json・table.md・お題ごとの .jsonl）\n", dir)
 	if opt.history != "" {
 		h := BuildHistory(opt.version, opt.repeat, wall, results)
+		h.Docs = DocHashes(".")
 		if opt.rescore {
-			// 付け直しでは走った日と時間が分からないので、前の記録の物を引き継ぐ。
+			// 付け直しでは走った日と時間・読んだ文書が分からないので、前の記録の物を引き継ぐ。
 			h.Totals.WallSeconds = 0
+			h.Docs = nil
 			if hadOld {
-				h.Date, h.Totals.WallSeconds = old.Date, old.Totals.WallSeconds
+				h.Date, h.Totals.WallSeconds, h.Docs = old.Date, old.Totals.WallSeconds, old.Docs
 			}
 		}
 		path, err := WriteHistory(opt.history, h)

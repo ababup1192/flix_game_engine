@@ -6,7 +6,7 @@
       "id": "hud-timer",
       "prompt": "画面の右上に残り時間の表示を足したい。ゲームの絵（爆発など）がどれだけ手前に出ても、この表示は隠れないようにしたい",
       "expect": [
-        {"re": "withHudView", "why": "App.withHudView"},
+        {"re": "App\\.withHudView", "why": "App.withHudView"},
         {"re": "ZStack\\.(of|leaf)", "why": "ZStack の木（of / leaf）"}
       ],
       "avoid": [
@@ -17,8 +17,8 @@
       "id": "topdown-behind-tree",
       "prompt": "見下ろしの町で、人が木の裏に回ったら木に隠れ、手前に来たら木の前に出るようにしたい",
       "expect": [
-        {"re": "Depth\\.orderAt|orderAt", "why": "Depth.orderAt"},
-        {"re": "ZStack\\.zIndex|zIndex\\(", "why": "ZStack.zIndex"}
+        {"re": "Depth\\.orderAt", "why": "Depth.orderAt"},
+        {"re": "ZStack\\.zIndex", "why": "ZStack.zIndex"}
       ],
       "avoid": [
         {"re": "Depth\\.(Bands|place)", "why": "Depth.Bands / place"},
@@ -29,7 +29,7 @@
       "id": "tooltip-front",
       "prompt": "カードの一覧の中で、選んだカードの説明の窓を、ほかのどの部品よりも必ず手前に出したい。窓が画面からはみ出さない所に置きたい",
       "expect": [
-        {"re": "topLayer", "why": "ZStack.topLayer"},
+        {"re": "ZStack\\.topLayer", "why": "ZStack.topLayer"},
         {"re": "UiTooltip", "why": "UiTooltip"}
       ],
       "avoid": [
@@ -40,8 +40,8 @@
       "id": "shake-scale-scene",
       "prompt": "被弾したとき、画面全体を一瞬少し縮めてから戻す演出を入れたい",
       "expect": [
-        {"re": "mapItems", "why": "ZStack.mapItems"},
-        {"re": "scaledAllAround", "why": "Render.scaledAllAround"}
+        {"re": "ZStack\\.mapItems", "why": "ZStack.mapItems"},
+        {"re": "Render\\.scaledAllAround", "why": "Render.scaledAllAround"}
       ],
       "avoid": [
         {"re": "zShifted|zMapped|ZLegacy", "why": "z の付け替え"}
@@ -51,8 +51,8 @@
       "id": "pause-layer",
       "prompt": "ポーズ画面を足したい。ゲームの絵と会話の窓のどちらよりも上に重ねたい",
       "expect": [
-        {"re": "SortingLayer|Layer\\s*(の\\s*)?enum|enum\\s+Layer", "why": "SortingLayer の表"},
-        {"re": "compose|topLayer", "why": "SortingLayer.compose / topLayer"}
+        {"re": "SortingLayer", "why": "SortingLayer の表"},
+        {"re": "SortingLayer\\.compose|ZStack\\.topLayer", "why": "SortingLayer.compose / topLayer"}
       ],
       "avoid": [
         {"re": "\\bz[A-Z]\\w*\\(\\)\\s*(:\\s*Int32\\s*)?=\\s*[1-9]\\d{2,}|\\bzIndex\\s*[=:]\\s*[1-9]\\d{2,}", "why": "z の大きな数を直に書く"},
@@ -63,8 +63,8 @@
       "id": "doc-fallback-log",
       "prompt": "設定の JSON が壊れていたら既定値で続け、ログに 1 行だけ知らせたい",
       "expect": [
-        {"re": "loadOr|decodeObject", "why": "DocJson.loadOr"},
-        {"re": "fellBackThen|warnThen|warnAllThen", "why": "Log.*Then"}
+        {"re": "DocJson\\.(loadOr|decodeObject)", "why": "DocJson.loadOr"},
+        {"re": "Log\\.(fellBackThen|warnThen|warnAllThen)", "why": "Log.*Then"}
       ],
       "avoid": [
         {"re": "let\\s+_\\s*=", "why": "let _ ="}
@@ -95,9 +95,9 @@
       "id": "sfx-on-timeline",
       "prompt": "演出の 0.4 秒目と 1.2 秒目に効果音を鳴らしたい。秒は Doc から調整できるようにしたい",
       "expect": [
-        {"re": "Timeline\\.build|Timeline", "why": "Timeline の時刻表"},
-        {"re": "withSound|soundsOn", "why": "音をクリップに付ける（withSound / soundsOn）"},
-        {"re": "withAudio", "why": "App.withAudio"}
+        {"re": "Timeline\\.build", "why": "Timeline の時刻表"},
+        {"re": "Timeline\\.(withSound|soundsOn)", "why": "音をクリップに付ける（withSound / soundsOn）"},
+        {"re": "App\\.withAudio", "why": "App.withAudio"}
       ],
       "avoid": [
         {"re": "startedBetween", "why": "クリップの列と別に音の時刻を判定する古い形"}
@@ -107,9 +107,9 @@
       "id": "beat-synced-cutin",
       "prompt": "BGM のテンポに合わせて、警告の帯を 2 小節見せた後にカットインを入れ、その後のターン 1 の合図を、次の小節の頭のちょうど 1 拍前に出したい。帯やカットインの長さを変えても、曲の拍からずれないようにしたい",
       "expect": [
-        {"re": "ToPickup", "why": "Duration.ToPickup（次の小節の頭の n 拍前）"},
-        {"re": "Bars|ToNextBar", "why": "Duration.Bars / ToNextBar"},
-        {"re": "Timeline\\.tempo|tempo\\(", "why": "Timeline.tempo に譜面の bpm を渡す"}
+        {"re": "Duration\\.ToPickup", "why": "Duration.ToPickup（次の小節の頭の n 拍前）"},
+        {"re": "Duration\\.(Bars|ToNextBar)", "why": "Duration.Bars / ToNextBar"},
+        {"re": "Timeline\\.tempo", "why": "Timeline.tempo に譜面の bpm を渡す"}
       ],
       "avoid": [
         {"re": "60(\\.0)?\\s*/\\s*\\w*bpm", "why": "60 / bpm を手で計算する"},
@@ -120,8 +120,8 @@
       "id": "bgm-intro-loop",
       "prompt": "新しく足す曲にイントロを付けたい。イントロは鳴らし始めに 1 回だけ鳴らし、その後は本編だけを繰り返したい。継ぎ目に隙間が空かないようにしたい",
       "expect": [
-        {"re": "renderLooped|ループ点|smpl|loopPoints", "why": "1 本の WAV のループ点（SfxSynth.renderLooped・smpl）"},
-        {"re": "withSustained", "why": "App.withSustained で同じ名前を宣言し続ける"}
+        {"re": "SfxSynth\\.renderLooped|AudioMixdown\\.mixdownLooped", "why": "1 本の WAV のループ点（SfxSynth.renderLooped・smpl）"},
+        {"re": "App\\.withSustained", "why": "App.withSustained で同じ名前を宣言し続ける"}
       ],
       "avoid": [
         {"re": "Intro\\.wav|イントロの長さを過ぎたら", "why": "頭と輪を 2 本の音に割って時刻で切り替える"}
@@ -215,6 +215,56 @@
         {"re": "pacing\\.md", "why": "演出の間の目安 docs/pacing.md を読む"}
       ],
       "avoid": []
+    },
+    {
+      "id": "timeline-overlay-at",
+      "prompt": "勝ったときの演出の時刻表に、紙吹雪を表の頭から 1.5 秒の所へ、前の物の終わりを待たずに重ねて出したい。待つ所の無い演出なので音を鳴らす側は簡単に済ませたい。並びはコードに書くので、書き間違えたら遊ぶ前に止めたい",
+      "expect": [
+        {"re": "Timeline\\.insert", "why": "決まった時刻に重ねる Timeline.insert"},
+        {"re": "Timeline\\.soundsBetween", "why": "待ちの無い表の音 Timeline.soundsBetween"},
+        {"re": "Timeline\\.buildOrBug", "why": "並びをコードが書く表 Timeline.buildOrBug"}
+      ],
+      "avoid": [
+        {"re": "Timeline\\.startedBetween|startedBetween", "why": "古い音の引き方"}
+      ]
+    },
+    {
+      "id": "enemy-chase-grid",
+      "prompt": "マス目のダンジョンで、敵が壁を回り込みながらプレイヤーを追いかけてくるようにしたい",
+      "expect": [
+        {"re": "Steering\\.chase", "why": "距離場の 1 歩 Steering.chase（早見表に無い・module-index の盤面）"}
+      ],
+      "avoid": [
+        {"re": "A\\*|astar|aStar|ダイクストラを(自前|自分)で", "why": "経路探索を自前で書く"}
+      ]
+    },
+    {
+      "id": "battle-log-scroll",
+      "prompt": "戦いのログを窓の中に出したい。行が窓より多くなったらホイールでさかのぼって読めるようにし、上や下にまだ続きがあるかの印も出したい",
+      "expect": [
+        {"re": "UiScroll", "why": "スクロールの勘定 UiScroll（早見表に無い・module-index の UI）"},
+        {"re": "InputMap\\.wheelSteps|Render\\.clipped", "why": "ホイールの目盛り InputMap.wheelSteps か、窓で切り抜く Render.clipped"}
+      ],
+      "avoid": []
+    },
+    {
+      "id": "dialog-line-count",
+      "prompt": "会話の窓に長い台詞を窓の幅で折り返して出したい。描く前に何行になるかを知って、窓の高さを合わせたい",
+      "expect": [
+        {"re": "RichText\\.wrapLinesBy", "why": "幅で行に折る RichText.wrapLinesBy（早見表に無い・module-index）"}
+      ],
+      "avoid": []
+    },
+    {
+      "id": "window-close-confirm",
+      "prompt": "ウィンドウの閉じるボタンを押したとき、すぐ終わらずに『終了しますか？』と聞いて、はいなら終わるようにしたい",
+      "expect": [
+        {"re": "App\\.withCloseRequest", "why": "閉じる要求を World へ知らせる App.withCloseRequest"},
+        {"re": "App\\.quitWhen", "why": "終了を頼む App.quitWhen"}
+      ],
+      "avoid": [
+        {"re": "glfwSetWindowShouldClose|GLFW\\.", "why": "ゲームから GLFW を直に触る"}
+      ]
     }
   ]
 }
