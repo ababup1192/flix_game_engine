@@ -7,6 +7,7 @@ import (
 	"github.com/ababup1192/flix_game_engine/go/internal/f32"
 	"github.com/ababup1192/flix_game_engine/go/internal/fallback"
 	"github.com/ababup1192/flix_game_engine/go/internal/flixreserved"
+	"github.com/ababup1192/flix_game_engine/go/internal/forbid"
 	"github.com/ababup1192/flix_game_engine/go/internal/jargon"
 	"github.com/ababup1192/flix_game_engine/go/internal/precommit"
 	"github.com/ababup1192/flix_game_engine/go/internal/quadratic"
@@ -53,6 +54,7 @@ func cmdPrecommit(out, errOut *strings.Builder, rest []string, _ bool) int {
 		"jargon":        lintOf(jargon.Run, abs),
 		"ui-overflow":   lintOf(uioverflow.Run, abs),
 		"z-table":       lintOf(ztable.Run, abs),
+		"forbid":        lintOf(forbid.Run, abs),
 		"quadratic":     lintOf(quadratic.Run, abs),
 		"record-wrap":   lintOf(recordwrap.Run, abs),
 		"f32": func(o, e *strings.Builder, args []string) int {

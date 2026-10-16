@@ -226,7 +226,7 @@ func TestRemapFiresOnlyWhereThereIsATable(t *testing.T) {
 // 1. 名前が ZOrder.flix でなくても、instance SortingLayer[ の宣言 (コメントの外) があれば表。
 func TestInstanceDeclarationMakesATable(t *testing.T) {
 	files, defs, tables := defsFor(map[string]string{
-		"src/Layers.flix": "instance SortingLayer[Layer] {\n    pub def zRange(l: Layer): (Int32, Int32) = (0, 9)\n}\n    def zPointer(): Int32 = 1000",
+		"src/Layers.flix": "instance SortingLayer[Layer] {\n    pub def zRange(l: Layer): (Int32, Int32) = (0, 9)\n}\n    def zPointer(): Int32 = 5",
 		"src/Note.flix":   "// instance SortingLayer[Layer] { はコメント\n    def zHud(): Int32 = 50",
 	})
 	if got := hitNames(testRules().PackageHits(files, defs, tables)); got != "Note.flix:zHud" {
@@ -321,5 +321,17 @@ func TestMigrationOutsideTablePackageIsQuietAndExemptSilences(t *testing.T) {
 	var out, errOut strings.Builder
 	if code, _ := Run(&out, &errOut, root, []string{"other/src/Scene.flix", "game/src/Scene.flix"}); code != 0 {
 		t.Fatalf("code=%d\n%s", code, errOut.String())
+	}
+}
+
+// 表のファイルの中でも、葉の中の z (0..31) の外の数は鳴る (表に数を足して手前に出す古い形)。
+// 層の範囲 (zRange の case の行) は def ではないので見ない。
+func TestTableFileBigNumberFires(t *testing.T) {
+	files, defs, tables := defsFor(map[string]string{
+		"src/ZOrder.flix": "    def zShared(): Int32 = 3\n    def zConfirm(): Int32 = 950\n" +
+			"    instance SortingLayer[Layer] {\n        case Layer.Talk => (200, 299)\n    }",
+	})
+	if got := hitNames(testRules().PackageHits(files, defs, tables)); got != "ZOrder.flix:zConfirm" {
+		t.Fatalf("got %q", got)
 	}
 }

@@ -15,6 +15,8 @@ package ztable
 //   - 表のファイルがあるパッケージ: 表の外で数を書いたら鳴る。ただし葉の中の小さな z
 //     (leafZRange・0..31) は鳴らさない
 //   - 表のファイルが無いパッケージ: 数を書くファイルが 2 本以上あったら全部鳴る
+//   - 表のファイルの中: 葉の中の z (0..31) の外の数を書いたら鳴る。表に置くのは層の enum と
+//     zRange の範囲 (case の行) と、いくつもの View が分け合う葉の中の段だけ
 //   - 付け替え: 表を持つパッケージで、表の外から zMapped・zShifted・zShiftedAll・raiseZ・
 //     Depth.place・Depth.placeOne で z を付け替える (remap.go)
 //   - 移行の口: 表を持つパッケージで、表の外から SortingLayer.z・ZStack.leafAbsolute を呼ぶ (migration.go)
@@ -59,6 +61,8 @@ type Hit struct {
 	Remap bool
 	// Migration は表の外から移行の口を呼んだとき true。Name は呼んだ口の名前。
 	Migration bool
+	// InTable は表のファイルの中で 0..31 の外の数を書いたとき true。
+	InTable bool
 }
 
 // DefsOf は 1 ファイルの本文から z を数で決める行を拾う。
@@ -95,6 +99,11 @@ func (r *Rules) PackageHits(files []string, defs map[string][]Def, tables map[st
 	var hits []Hit
 	for _, f := range withDefs {
 		if table != "" && f == table {
+			for _, d := range defs[f] {
+				if !r.isLeafZ(d.Value) {
+					hits = append(hits, Hit{Def: d, Table: table, InTable: true})
+				}
+			}
 			continue
 		}
 		if table == "" && len(withDefs) < 2 {
@@ -416,6 +425,10 @@ func report(out, errOut *strings.Builder, rules *Rules, hits []Hit, all, warn bo
 		switch {
 		case h.Migration:
 			reason = "表の外で移行の口 (SortingLayer.z・ZStack.leafAbsolute) を呼んでいます (層の中の順は ZStack の木に積み、z の数は葉の中だけで書いてください)"
+		case h.InTable:
+			reason = fmt.Sprintf("表 (%s) に z の数 (葉の中の 0..31 の外) を足しています。"+
+				"新しい層は enum に case を足して zRange に範囲を書き、層の中の順は ZStack の木に積んでください"+
+				" (必ず手前に出す物は ZStack.topLayer。葉の中の段だけ 0..31 で名前を置けます)", h.Table)
 		case h.Remap:
 			reason = "表の外で z を関数で付け替えています (付け替えた後の z がどの層に入るかは表から読めません)"
 		case h.Table == "":
@@ -438,8 +451,8 @@ func report(out, errOut *strings.Builder, rules *Rules, hits []Hit, all, warn bo
 	}
 	fmt.Fprintf(errOut, "[lint-z-table] %d 件。z の数が散ると、別のファイルどうしで同じ数を取り合い、"+
 		"どちらが手前かが描き順まかせになります。"+
-		"\n  表のファイル (ZOrder.flix) に名前を足してそこから引くか、表が無ければ 1 ファイルに集めてください。"+
-		"付け替えている z・移行の口で作った z は、ZStack の木に積み直してください"+
+		"\n  代わりに: 部品の並びは ZStack.of に奥 → 手前で積み、必ず手前の物は ZStack.topLayer(層, …)、新しい層は表の enum に case を足す。"+
+		"z の数を書くのは葉の中の前後 (0..31) だけ。表がまだ無ければ 1 ファイルに集めてください"+
 		" (範囲の地図は engine の docs/z-bands.md)。"+
 		"\n  どうしても残すなら bin/lint-rules/z-table.local.json (ゲーム) か z-table.json (エンジン) の exempt へ"+
 		" \"パス::名前\" と理由 1 行\n", len(bad))

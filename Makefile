@@ -110,6 +110,7 @@ help:
 	@echo "  make lint-f32             engine の pub 面に Float32 が出ていないか検査 (Float32 は GL / OpenAL / STB の内側だけ)"
 	@echo "  make lint-z-table         重なり順の z を数で決める所がパッケージに 1 か所か検査 (借用は警告だけ)"
 	@echo "  make lint-value-discard   値を let _ = で捨てていないか検査 (純粋な式だと Flix が呼び出しごと消す)"
+	@echo "  make lint-forbid          古い書き方を止める (bin/lint-rules/forbid.json。代わりの物を出す)"
 	@echo "  make lint-quadratic       fold の中で蓄積を作り直す二乗の形が無いか検査 (全量)"
 	@echo "  make lint-record-wrap     World が直接持つ大きな record を enum で包んでいるか検査"
 	@echo "  bin/fge digest A B   絵の差を数値で要約 (2 枚 or フォルダ。目視の前にまずこれ)"
@@ -399,12 +400,15 @@ lint-f32:
 # ── ゲート: z の数の表は 1 か所 ──────────────────────────────
 # z を数で決める所が 1 つのパッケージで複数のファイルに散ると、別のファイルどうしで
 # 同じ数を取り合い、どちらが手前かが描き順まかせになる (docs/z-bands.md)。
-# 借用 (別のモジュールの z を呼ぶ所) だけは bin/lint-rules/z-table.json の borrowWarnOnly で
-# 出すだけにしてある。templates/race-starter は z の数が 3 ファイルに散ったまま (16 件) なので、
-# ここを --all で回すと止まる。
+# 表のファイルの中でも、葉の中の z (0..31) の外の数は止まる。
 .PHONY: lint-z-table
 lint-z-table:
 	@bin/fge z-table --all
+
+# ── ゲート: 古い書き方 (1 行の正規表現 + 代わりの物) ─────────────
+.PHONY: lint-forbid
+lint-forbid:
+	@bin/fge forbid --all
 
 # ── ゲート: 値を let _ = で捨てない ──────────────────────────
 # Flix は純粋な式の値を let _ = で捨てると式ごと消す。知らせ (Log.warn) と bug! が黙って消える

@@ -133,6 +133,26 @@
       }
     },
     {
+      "id": "forbid",
+      "sub": "forbid",
+      "flags": [],
+      "pass": "matched",
+      "when": {
+        "anyOf": [
+          {
+            "suffixes": [
+              ".flix"
+            ]
+          },
+          {
+            "basenames": [
+              "Makefile"
+            ]
+          }
+        ]
+      }
+    },
+    {
       "id": "quadratic",
       "sub": "quadratic",
       "flags": [],
