@@ -1,4 +1,6 @@
 // Depth — 見下ろし画面で「足元が下にある物ほど手前」を、重なり順（zIndex）の数として決める。
+// 使う口は orderAt だけ: ZStack.zIndex(Depth.orderAt(足元の y), ZStack.leaf(1 人の絵))。
+// 使わない: place / placeOne / zAt / Bands（z の範囲を数で割り当てる古い形。木なら範囲を数えなくてよい）。
 // 人・木・柵・家をひとつの z の範囲（ZRange）の中に並べると、すれ違うたびに前後が入れ替わる。
 // 利用例: 主人公が木の手前に出たり裏に隠れたりする / 柵の向こうに立つ / 落ちている物をまたぐ。
 // 注意: 決めるのは数だけで、並べ替えは描画部の仕事（同じ zIndex 同士は渡した順のまま）。
@@ -41,6 +43,7 @@ pub mod Depth {
         Float64.floor(footY) |> Float64.tryToInt32 |> Option.getWithDefault(if (footY > 0.0) Int32.maxValue() else Int32.minValue())
 
     /// 組み上がった絵の集まりを、足元の高さで決まる層へ持ち上げる。
+    /// 古い形（木を使わない View 用）。新しく書くなら ZStack.zIndex(orderAt(footY), ZStack.leaf(items))。
     /// 部品どうしの相対的な前後（胴 0・頭 1・持ち物 2 のような小さな差）はそのまま保たれるので、
     /// 呼び側は 0 から数えた小さな z で 1 体を組めばよい。
     pub def place(range: ZRange, footY: Float64, items: List[Render.PlacedItem]): List[Render.PlacedItem] =

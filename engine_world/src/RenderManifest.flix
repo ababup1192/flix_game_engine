@@ -45,7 +45,7 @@ pub mod RenderManifest {
     /// | `kind` | 何として描いたか（rock / wall / cloud …） |
     /// | `material` | 色の出どころ（場面のパレットの名前）。材質どうしの色の潰れはここで測る |
     /// | `role` | Subject / Prop / Backdrop / Effect。主役と背景の分離はここで測る |
-    /// | `layer` | 奥から手前への帯の名前（Depth.Bands の帯名をそのまま書ける） |
+    /// | `layer` | 奥から手前への帯の名前（SortingLayer の層の名前や、ZStack で積んだ帯の名前を書く） |
     /// | `zIndex` | 重なり順（Annotate.Hit と同じ名前） |
     /// | `at` | world 座標。配置 Doc の数字と同じ単位 |
     /// | `src` | 配置 Doc の出どころ（"alley.scene.json#place[7]"）。**直しの効き目はここで決まる** |

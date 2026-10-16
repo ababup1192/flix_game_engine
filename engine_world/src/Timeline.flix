@@ -2,6 +2,9 @@
 // 履歴・巻き戻し・リプレイは Worldline（別物）。進行の状態は持たない: 場面に入ってからの秒を渡せば
 // 「どのクリップの何割か」「このフレームに鳴らす音」が式で決まる（render-from-World の View のまま）。
 //
+// 使う場面: 演出の拍（何が何秒・何拍目に起き、何が鳴るか）を 1 本の表に書く（build + withSound）。
+// 使わない: 経過秒を if で比べて拍を決める（絵と音で別々に書くと拍がずれる）。履歴・巻き戻しは Worldline。
+//
 // 書き方（GSAP の timeline・DOTween の Sequence と同じ並べ方）:
 //
 //   let intro = Timeline.build(Timeline.tempo(175.0, 4), List#{

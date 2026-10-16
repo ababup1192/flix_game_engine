@@ -1,4 +1,6 @@
 // SortingLayer — 画面全体の重なりの層を名前で宣言する表と、ZStack の木を z の数へ戻す組み立て（compose）。
+// 使う場面: 根（Main / View の入口）で 1 回 compose する・新しい層（ポーズ・確認）は enum に case を足す。
+// 使わない: View の中で層の z を引く SortingLayer.z（移行の口。表の外では z-table が止める）→ 木ごと topLayer で送る。
 // Unity の Sorting Layer（名前つきの層）と同じ考え方。ゲームは層を enum で宣言し、instance で各層の
 // z の範囲を match で書く（case を足すと網羅で止まる）。層の並び（どれが手前か）は範囲の底の順。
 // 表は根（画面全体）にだけ置き、層の中は ZStack の積んだ順、部品の中は葉の中の小さな z で決める。

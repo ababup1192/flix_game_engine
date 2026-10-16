@@ -3,6 +3,28 @@
 このファイルはエンジンの agents-pack から配られる共通部。ゲーム固有の方針は
 同じフォルダの `AGENTS.local.md` に書く。
 
+## やりたいこと → 道具（早見表。まずここを引く）
+
+1 行 1 件。型と引数は `make api Q=<名前>`、使い方は engine の `engine_world/src/<名前>.flix` 冒頭の doc。ゲーム固有の行は `AGENTS.local.md` の早見表。
+
+| やりたいこと | 使う道具 | 使わない（古い） |
+|---|---|---|
+| 物を重ねる・手前と奥を決める | View は `ZStack` の木（`of` に奥→手前・`leaf`。葉の中の z は 0..31）。根で `SortingLayer.compose`。engine の `docs/z-bands.md` | z の大きな数・表に数を足す・`leafAbsolute`・`SortingLayer.z` |
+| 必ず手前に出す（確認の窓・説明の窓・ポーズ） | `ZStack.topLayer(層, 木)`。新しい層は `SortingLayer` の enum に case を足す | z を大きくして出す |
+| 見下ろしで人が木の裏に回る | `ZStack.zIndex(Depth.orderAt(足元のy), leaf(人))` | `Depth.place`・`Depth.Bands` |
+| 画面ごと動かす・縮める・薄める | `ZStack.mapItems(Render.scaledAllAround(..))` | `zShifted`・`zMapped` |
+| スコア・案内など隠れてはいけない表示 | `App.withHudView`（中の前後は HUD の層の表と木） | world に高い z で描く |
+| 説明の窓の置き場（はみ出さない） | `UiTooltip`（置き場）+ `ZStack.topLayer`（手前へ） | 座標の手計算 |
+| 演出の拍に効果音・動きを合わせる | `Timeline.build`（`append` / `join`・音は `withSound`。秒・拍は Doc）→ 描く側 `progressOf`・鳴らす側 `soundsOn` を `App.withAudio` へ | 経過秒を if で比べる・音の時刻を別に書く |
+| Doc が壊れていたら既定値で続けて知らせる | `DocJson.loadOr` + `Log.fellBackThen` / `warnThen` / `warnAllThen` | `let _ = Log.warn(..)`（消える。lint value-discard が止める） |
+| 直した後に絵を確かめる | `make render SHOT=<場面>`（1 枚・既定の手）→ 仕上げに `make reference-check` | 毎回 `render-all`・解像度を下げる回り道 |
+| F8 のチケットから直す所を探す | `debug/annotations/<名前>/` の `README.md` 冒頭の文脈（場面・Doc と行）→ `annotation.json` の `context` → `world.json`（`App.withAnnotationContext` / `withWorldDump`。一覧は `make status`） | スクショと目で突き合わせる |
+| API の型・ゲームの定義を引く | `make api Q=<名前>` / `make src Q=<名前>` | ソースの丸読み |
+| 道具の選び方が文書で伝わるか測る | `make agent-eval`（お題は `agent-eval/*.json`） | |
+
+**新しい仕組みを入れる人は**、この表（ゲーム固有なら `AGENTS.local.md` の表）に 1 行と、
+`agent-eval/` のお題を 1 本足し、`make agent-eval ONLY=<お題>` で当たるのを確かめてから入れる。
+
 ## 言葉づかい（コメント・会話・ドキュメント）
 
 2 つの層があります。混ぜないでください。

@@ -70,7 +70,7 @@
 | 色変調・可視性・重なり順をまとめて持ちたい（Drawable 経路の値部品） | Visual |
 | 当たり判定の幾何形状（矩形・円・カプセル・坂）を計算したい | CollisionShape2D |
 | 今フレーム押されているキー・マウスボタンの集合を取りたい | InputEvent |
-| HUD を本体より確実に手前に出す zIndex の基準が欲しい | CanvasLayer |
+| HUD を本体より確実に手前に出す | ゲームからは App.withHudView（中は ZStack の木）。CanvasLayer は ui.json の層の内側の仕組み |
 | 放射グラデの組み込みテクスチャ（`__radial_light` / `__radial_dark`）の画素・名前・寸法を知りたい | RadialBuiltin（ゲーム側の入口は engine_world の `Render.lightAt` / `Render.darkAt`） |
 | Drawable 経路のカメラ・投影を知りたい（`view = None` のゲーム以外では使わない） | Camera / Projection |
 | 画面でなくレンダーターゲットに描いてテクスチャとして読み返したい（`eff Target`） | RenderTarget（GL 実装は render_gl の Target.flix / RenderTargetGl。ゲーム側の入口は engine_world の `Render.Pass` + `App.withPasses`、[逆引き](module-index.md)を参照） |
@@ -120,7 +120,7 @@
 - **BootFont** — 起動画面が使う組み込みフォントとロゴを、埋め込みデータ（BootFontData）から組み立てる。ゲームのフォントは起動時にまだ生成できていないため、起動画面専用に持つ。
 - **BootFontData** — 生成物。手で編集しない（`make boot-font` で生成し直す）。Splash が使う組み込みフォントとロゴの素データ。
 - **Camera** — Drawable 経路（`view = None` で renderCommands を自前で組むゲーム）専用のカメラ部品。PlacedItem 経路は `App.withCamera` / `App.withZoom` + `CameraRig` を使うので、そちらでは使わない。
-- **CanvasLayer** — HUD やオーバーレイを本体より手前に重ねるための描画レイヤー番号の基準。レイヤー番号 × layerStride を zIndex に加算する。
+- **CanvasLayer** — HUD やオーバーレイを本体より手前に重ねるための描画レイヤー番号の基準。レイヤー番号 × layerStride を zIndex に加算する（UiRender が使う内側の仕組み。ゲームが重なりを決めるのは ZStack / SortingLayer / App.withHudView で、ここに数を足さない）。
 - **CollisionShape2D** — 当たり判定に使う 2D の幾何形状（矩形・円・カプセル・坂）。形状同士の重なり・点の内外・押し出しベクトルの計算をまとめて持つ。
 - **InputEvent** — 現在フレームで押されているキー・マウスボタンをまとめて取得する。押下エッジは呼び側が前フレームと差分して取る。
 - **Polygon** — 局所座標の単純多角形を単色（color + alpha）で塗り潰す描画物。

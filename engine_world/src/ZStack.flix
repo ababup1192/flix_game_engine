@@ -1,4 +1,6 @@
 // ZStack — 描く順（z）を「積んだ順」で決める木（SwiftUI の ZStack・CSS の stacking context の形）。
+// 使う場面: View が絵を返すところ全部（重ねる・必ず手前へ送る topLayer・足元の順 zIndex・画面ごと動かす mapItems）。
+// 使わない: z の大きな数を書く・Render.zShifted / zMapped で付け替える・leafAbsolute（移行の口。表を持つと止まる）。
 // View は z の数を選ぶ代わりに、部品の列を奥 → 手前の順に of へ並べて返す。z の数を書くのは
 // 葉（leaf）の中の小さな前後（胴 0・頭 1・持ち物 2）だけ。木を z の数へ戻すのは SortingLayer.compose
 // （画面全体の層の表の、その層の底から詰める）。

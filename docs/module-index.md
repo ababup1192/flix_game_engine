@@ -2,6 +2,8 @@
 
 > **丸読みしない**（約 45KB）。見出しを `grep -n '^## ' docs/module-index.md` で引いて Read の offset/limit で
 > その節だけ読むか、モジュール名・関数名が分かっているなら `make api Q=<名前>` で 1 行を引く。
+> よく引く物（重ねる・手前に出す・見下ろしの前後・知らせ・描き出しの確かめ方・チケット）は先に
+> AGENTS.md の「やりたいこと → 道具」の早見表（本文は `agents-pack/AGENTS.core.md`）。ここはその続き。
 
 目次（見出しそのまま。grep の手がかり）:
 [矩形だけの画面から脱する（絵の下限）](#矩形だけの画面から脱する絵の下限) /
@@ -144,7 +146,7 @@
 | 効果音の素材を録音なしで作りたい（波形合成） | SfxSynth（engine_tools。詳しくは [audio.md](audio.md)。実例: `templates/race-starter/src/render/SfxRender.flix`） |
 | 揺れる演出を作る（浮遊・風のなびき） | Sway（実例: `templates/tetris-starter/src/View.flix`） |
 | リソース JSON の形（型・必須・既定値）を公式スキーマ方言で宣言する | Schema（実例: `templates/race-starter/project.schema.json`） |
-| 見下ろしで「足元が下にある物ほど手前」に並べる（人が木の裏に回る） | ZStack.zIndex(Depth.orderAt(足元の y), 1 人の葉)・木を使わない古い形は Depth.zAt（実例: `templates/rpg-starter/src/View.flix`） |
+| 見下ろしで「足元が下にある物ほど手前」に並べる（人が木の裏に回る） | ZStack.zIndex(Depth.orderAt(足元の y), 1 人の葉)（Depth.place / Bands は使わない） |
 | 一人称・疑似 3D（2.5D）で世界の点を画面へ落とす（透視除算・近クリップ・逆投影・距離霧） | Persp |
 | マス目の迷路から「カメラに見える壁の面」だけを集める（内部面・裏面は落とす） | WallFaces |
 | world 座標を画面へ落とす・戻す（横視点・見下ろし・斜め見下ろし・一人称の 4 通り） | ViewProjection（横視点と見下ろしは CameraRig へ委譲・一人称は Persp・見下ろしの前後は Depth） |
@@ -163,7 +165,9 @@
 | 光側は暖色・影側は寒色へ近づけて階調を増やす | Color.warm / Color.cool |
 | 生成したドット絵アトラスを名前付きテクスチャとして使う（1 体 = 1 クアッド） | App.withSpriteAtlases（実例: `templates/race-starter/src/Main.flix`） |
 | ドット絵の輪郭をにじませない（カメラと頂点を画素の升目に載せる） | App.withPixelSnap / Render.snapped（実例: `templates/platformer-starter/src/Main.flix`） |
-| 同じ絵を色だけ変えて使い回す・重なり順をまとめてずらす | Render.tinted / Render.zShifted |
+| 同じ絵を色だけ変えて使い回す | Render.tinted |
+| 部品の集まりを丸ごと手前・奥へ動かす | ZStack.of に積む順・ZStack.topLayer（Render.zShifted / zMapped で z を付け替えない） |
+| 画面ごと動かす・縮める・薄める・切り抜く（中から手前の層へ送った物にも掛ける） | ZStack.mapItems(Render.scaledAllAround / movedAll / fadeAll …) |
 | マスごとの「いま」を持つ（耕した・濡れた・置いた。セーブに乗る側） | TileState |
 | 画面を素材にする・複数光源・残像を作る（レンダーターゲットに描いてテクスチャとして貼り戻す） | Pass（`App.withPasses`）。ターゲットは design 解像度・宣言順に本編より先に描かれ、`Render.sprite(name, z)` で貼れる |
 | Pass を描き出し（HeadlessRender の PassSpec）へ詰め替える（Shader 面の外し忘れを防ぐ） | Render.passSpecOf |
@@ -195,7 +199,7 @@
   View に直接並べる完成品ではない。正当な用途は HUD 下地・デバッグ描画・fail-open の仮板。
 - **CameraRig** — world のどこを・どれだけズームして映すかを描画物の列に掛ける道具箱。
 - **Depth** — 見下ろし画面で「足元が下にある物ほど手前」を重なり順（zIndex）の数として決める。ZStack の木では orderAt(足元の y) を zIndex に渡す。Bands（帯に名前を付けて底の数を並べる）は非推奨で、帯は ZStack.of に奥 → 手前で積む。
-- **ZStack** — 描く順を「積んだ順」で決める木（leaf / of / zIndex / topLayer / mapItems / 移行の口 leafAbsolute）。z の数は葉の中の小さな前後だけ。
+- **ZStack** — 描く順を「積んだ順」で決める木（leaf / of / zIndex / topLayer / mapItems）。z の数は葉の中の小さな前後（0..31）だけ。leafAbsolute は移行の口で、表を持つパッケージでは表の外で止まる（0.35.17）。
 - **SortingLayer** — 画面全体の層を名前で宣言する表（trait。ゲームが enum の instance で範囲を書く）と、層ごとの ZStack の木を 1 本の絵の列にする compose。区画を越えたら天井で止め、ViewCtx#warnOnce で 1 回だけ知らせる。
 - **Persp** — 疑似 3D（2.5D）カメラの数学一式。世界の点を前後 fwd・左右 lat に分解し、透視除算で画面へ落とす。近クリップ・逆投影（depthAtY）・距離霧の式も持つ。焦点距離や霧の色の実体はゲーム側の意見（theme Doc など）。
 - **WallFaces** — マス目の迷路から「カメラに見える壁の境界面」だけを集める純幾何。壁どうしの内部面と、カメラに背を向けた裏面は落とす。solid の判定は関数で注入する（MapDoc の形を知らない）。
@@ -336,6 +340,6 @@
 
 - **ActiveDocs** — 「いま表示に使っている Doc(JSON)はどれか」を debug/active-docs.json に名乗る（Studio の「表示中」バッジはこれを読む。同じ内容なら書かない）。
 - **DocTable** — Doc の一覧表（id・パス・読み直し）1 枚から、watchFile の配線・一括リロード・ActiveDocs の名乗りを導出する。一覧の手写しを 1 か所に。既定は `row` で 1 行、外れる行に `watchOnly` / `reloadAllOnly` / `activeWhen` を被せる。
-- **Annotate** — 実行中のゲームを一時停止して、画面の気になる場所を矩形で囲んで記録する。App.withAnnotationContext でゲームが「その瞬間の文脈」（場面・台本の行など (見出し, 値) の並びと、z の層の名前の表）を渡すと、チケットの README 冒頭と z の横に載る。README では 1 字ずつ置かれた字を 1 行の文字列に束ねて出す。
+- **Annotate** — 実行中のゲームを一時停止して、画面の気になる場所を矩形で囲んで記録する。App.withAnnotationContext でゲームが「その瞬間の文脈」（場面・台本の行など (見出し, 値) の並びと、z の層の名前の表）を渡すと、チケットの README 冒頭と z の横に載る。App.withWorldDump を繋ぐとその瞬間の World の要約が world.json として同梱される（チケットから直す Doc を引く順: README の文脈 → annotation.json → world.json）。README では 1 字ずつ置かれた字を 1 行の文字列に束ねて出す。
 - **RemoteDebug** — 起動中のゲームを外部プロセスが HTTP で操作・観測する口。POST /render は App.onRenderRequest で登録した「描き出しの実体」を温まった JVM で実行し、描き出したパス列を返す（プレイ状態には触れない）。
 - **GameLogger** — 起きたことを 1 行ずつログに積み、あとでまとめて取り出す effect。

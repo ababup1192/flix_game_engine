@@ -95,8 +95,8 @@
       "id": "sfx-on-timeline",
       "prompt": "演出の 0.4 秒目と 1.2 秒目に効果音を鳴らしたい。秒は Doc から調整できるようにしたい",
       "expect": [
-        {"re": "Timeline", "why": "Timeline のクリップ"},
-        {"re": "startedBetween", "why": "Timeline.startedBetween"},
+        {"re": "Timeline\\.build|Timeline", "why": "Timeline の時刻表"},
+        {"re": "withSound|soundsOn|startedBetween", "why": "音をクリップに付ける（withSound / soundsOn）"},
         {"re": "withAudio", "why": "App.withAudio"}
       ],
       "avoid": []

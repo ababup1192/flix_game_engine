@@ -31,7 +31,7 @@ paths:
 |---|---|
 | 面に階調か質感がある | `ShaderDoc` + `Render.shaderFill` / `Render.vgrad`・`gradPolygon` / `Render.lightAt`・`darkAt`（放射の明かり・翳り）/ `Material`（粒・きらめき・染み）/ `Render.striped`・`checker` / `PxShade` のディザ |
 | 主役が背景から分離して読める | `PxShade`（ふち光・接地影）/ `Render.lightAt`・`darkAt` / `Render.glowAt` / `Render.outline` / 明度差・色相差 |
-| 層が分かれている（奥・主役・手前） | `Render.zShifted`・`zShiftedAll` / `Depth` / `Transition` の覆い / `Pass`（光マップを別の紙に集めて Multiply で本編に掛ける） |
+| 層が分かれている（奥・主役・手前） | `ZStack` の木（奥→手前に積む・`topLayer`）+ `SortingLayer` の表 / 見下ろしは `ZStack.zIndex(Depth.orderAt(y), …)` / `Transition` の覆い / `Pass`（光マップを別の紙に集めて Multiply で本編に掛ける） |
 | 時間が流れている | `Fx`・`FxDoc`（粒）/ `Sway`（揺れ）/ `Anim`（コマ替え）/ `Curve`（sine・tri・arch01・pieces・dampedSpring）/ `Scatter` / `Daylight` |
 | 形が物として読める（シルエットだけで何か分かる / 部品同士の接続が破綻していない — 入り口・持ち手・関節 / 接地している / 比率が対象らしい） | シルエットの描き出し（`HeadlessRender.silhouettePng` — 対象を黒・背景を白で描き出して、形だけを取り出して目視する） |
 
@@ -124,7 +124,7 @@ sprite Doc 直下の `palette` のどれかに**実体が無いと Studio が仮
   逃げない（黒い輪郭を画風として選ぶなら `AGENTS.local.md` に書いて選ぶ）。
 - **大きい物は大きい 1 枚で描く**。建物・大道具をタイルのマス目で刻んで組み立てると
   マス目の切れ目が絵に出る。数マスにまたがる 1 枚絵にして、隠れ（キャラが後ろに回る）は
-  描画順（Y ソートか zIndex）で作る。
+  描画順（`ZStack.zIndex(Depth.orderAt(足元の y), …)`）で作る。
 - **地面タイルは縁・角まで一式で作る**（いわゆるオートタイル）。芝⇔石畳⇔水のような
   境目は中央 1 枚で済ませず、縁 4 方・角 4 隅のバリエーションまで最初からデザインする。
   どの縁を貼るかは隣のマスを見てコードが選ぶ仕事で、rows の文字は増やさない。

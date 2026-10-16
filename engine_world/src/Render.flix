@@ -334,12 +334,15 @@ pub mod Render {
 
     /// 重なり順（zIndex）を delta だけずらす。組み上がった絵の相対的な前後関係は保ったまま、
     /// 集まり全体を別の層へ持ち上げる／沈める。
-    /// 見下ろし画面の Y ソート（足元の高さで前後を決める）は Depth がこれを使って作る。
+    /// 使わない場面: View の重なりを決める所（積む順は ZStack.of、手前へは ZStack.topLayer、
+    /// 見下ろしは ZStack.zIndex(Depth.orderAt(y), …)、画面ごと動かすのは ZStack.mapItems）。
+    /// 表（ZOrder.flix）を持つパッケージでは bin/fge z-table が止める。エンジンの内側の写し用。
     pub def zShifted(delta: Int32, item: Item): Item =
         zMapped(z -> z + delta, item)
 
     /// 重なり順（zIndex）を関数 f で写す（zShifted の一般形）。
     /// 足し算で書けない写し（HUD の範囲への clamp 付き持ち上げ等）はこちらを使う。
+    /// 使わない場面は zShifted と同じ（z を縮める・付け替えると、どの層に入るかが表から読めなくなる）。
     pub def zMapped(f: Int32 -> Int32, item: Item): Item =
         onLeaf(leaf -> match leaf {
             case Item.Sprite(s) => Item.Sprite({ zIndex = f(s#zIndex) | s })
@@ -361,7 +364,8 @@ pub mod Render {
             case Item.Clipped(c) => zOf(c#inner)
         }
 
-    /// 置き場所つきの列を丸ごと delta だけずらす（zShifted の列版）。
+    /// 置き場所つきの列を丸ごと delta だけずらす（zShifted の列版）。使わない場面は zShifted と同じ
+    /// （部品の z を持ち上げたいときは、部品の関数に z を引数で渡すか、別の葉にして積む）。
     pub def zShiftedAll(delta: Int32, items: List[PlacedItem]): List[PlacedItem] =
         items |> List.map(placed -> { item = zShifted(delta, placed#item) | placed })
 

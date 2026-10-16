@@ -1484,7 +1484,7 @@
   `pub def zMapped(f: Int32 -> Int32, item: Item): Item`
 - 描画物 1 つの重なり順（Clipped は中身の z）。
   `pub def zOf(item: Item): Int32`
-- 置き場所つきの列を丸ごと delta だけずらす（zShifted の列版）。
+- 置き場所つきの列を丸ごと delta だけずらす（zShifted の列版）。使わない場面は zShifted と同じ
   `pub def zShiftedAll(delta: Int32, items: List[PlacedItem]): List[PlacedItem]`
 - 組み上がった列を丸ごと d だけ動かす（zShiftedAll の位置版）。
   `pub def movedAll(d: Vec2.Vec2, items: List[PlacedItem]): List[PlacedItem]`
