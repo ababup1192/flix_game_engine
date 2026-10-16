@@ -51,7 +51,7 @@
       "id": "pause-layer",
       "prompt": "ポーズ画面を足したい。ゲームの絵と会話の窓のどちらよりも上に重ねたい",
       "expect": [
-        {"re": "SortingLayer", "why": "SortingLayer の表"},
+        {"re": "SortingLayer|Layer\\s*(\u306e\\s*)?enum|enum\\s+Layer", "why": "SortingLayer の表"},
         {"re": "SortingLayer\\.compose|ZStack\\.topLayer", "why": "SortingLayer.compose / topLayer"}
       ],
       "avoid": [

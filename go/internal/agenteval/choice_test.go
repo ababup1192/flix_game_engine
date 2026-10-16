@@ -82,7 +82,7 @@ func TestStrictHeadOnlyClosesPacking(t *testing.T) {
 		t.Errorf("hit %d penalty %d", r.Hit, r.Penalty)
 	}
 	for in, want := range map[string]string{
-		"Timeline.build(tempo, steps)":      "Timeline.build",
+		"Timeline.build(tempo, steps)":      "Timeline.build(tempo",
 		"make render SHOT=title":            "make render SHOT=title",
 		"App.withAudio → Timeline.soundsOn": "App.withAudio",
 		"docs/pacing.md":                    "docs/pacing.md",

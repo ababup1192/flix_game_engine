@@ -211,6 +211,7 @@ pub mod Timeline {
     def latest(tempo: Tempo, x: Pos, y: Pos): Pos = if (toSeconds(tempo, y) > toSeconds(tempo, x)) y else x
 
     /// 長さを秒へ直す（表の頭から測る ToNextBar / ToBeat は頭から数えた長さ）。
+    /// noTempo に拍・小節の長さを渡すと 1 拍 = 1 秒で数える（拍を秒へ直すときは Timeline.tempo を渡す）。
     pub def secondsOf(tempo: Tempo, d: Duration): Float64 = toSeconds(tempo, advanceBy(tempo, zero(), d))
 
     /// 並べた行を秒の時刻表にする。前の行にしか頼らないので 1 回の走査で決まる。

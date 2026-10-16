@@ -813,7 +813,9 @@ pub mod App {
         let wantsQuit = app#quit;
         // shouldClose は入力の取り込み（poll）も兼ねるので 1 フレームに 1 回だけ呼ぶ。
         let closing = GameEngine.Game.shouldClose();
-        let st = if (closing) noticeCloseRequest(app, st0) else st0;
+        // F8 で止めている間は印を下ろさずに持ち越す（止めている間の World は再開で履歴から
+        // 取り直されるので、ここで渡すと知らせが消える）。動き出した最初のフレームで渡す。
+        let st = if (closing and not st0#anno#paused) noticeCloseRequest(app, st0) else st0;
         if ((closing and Option.isEmpty(app#closeRequest)) or wantsQuit(frame, st#world)) ()
         else {
             // 入力の持ち越しはどの分岐でも同じなので、ここで 1 度だけ差し替える。
@@ -1119,8 +1121,7 @@ pub mod App {
             (List[String], AudioMixer.State) \ (ef + GameEngine.Audio) =
         match app#mixer {
             case None =>
-                playSounds(app, before, after, prev);
-                (applySustained(app, prev, after), mixState)
+                (playPlain(app, before, after, prev), mixState)
             case Some(mixerOf) =>
                 let derive = app#audio;
                 let declare = app#sustained;
@@ -1142,9 +1143,11 @@ pub mod App {
             GameEngine.Audio.setLowpass(name, AudioMixer.lowpassGainHFOf(mixer, next, name))
         };
         Map.forEach((name, _) -> route(name), next#voices);
-        oneShotsToUnloop(allowed, living) |> List.forEach(name -> GameEngine.Audio.setLooping(name, false));
-        allowed |> List.forEach(name -> GameEngine.Audio.playAudio(name));
+        // 止める → ループを外す → 一発の音 → 鳴らし始め の順（止める音と同じ名前の一発の音を
+        // 後から止めて消さないため）。
         ops#stop |> List.forEach(name -> GameEngine.Audio.stopAudio(name));
+        unloopedOneShots(allowed, living) |> List.forEach(name -> GameEngine.Audio.setLooping(name, false));
+        allowed |> List.forEach(name -> GameEngine.Audio.playAudio(name));
         let level = s -> {
             GameEngine.Audio.setVolume(s#name, s#volume * AudioMixer.gainOf(mixer, next, s#name));
             GameEngine.Audio.setPitch(s#name, s#pitch);
@@ -1158,28 +1161,20 @@ pub mod App {
         ops#keep |> List.forEach(level);
         (living, next)
 
-    /// audio の導いた音名を鳴らす（システム適用の前後の World から導く）。
-    /// 同じ名前が 2 回返っても 1 回にまとめる — 同フレームの二重再生は同じ音源を
-    /// 頭から鳴らし直して途切れる（sustainOps の先勝ちと同じ理屈）。
-    def playSounds(app: App[w, ef], before: w, after: w, living: List[String]): Unit \ (ef + GameEngine.Audio) =
-        let derive = app#audio;
-        let plays = derive({ before = before, after = after }) |> List.distinct;
-        oneShotsToUnloop(plays, living) |> List.forEach(name -> GameEngine.Audio.setLooping(name, false));
-        plays |> List.forEach(name -> GameEngine.Audio.playAudio(name))
-
-    /// 一発の音（audio）のうち、鳴らす前にループを外す名前。鳴り続ける音（sustained）として
-    /// 一度鳴らした名前は音源にループの設定が残るので、同じ名前を一発で鳴らすと止まらなくなる。
-    /// いま鳴り続けている名前（living）は外さない — 外すと鳴り続ける側が途中で切れる。
-    pub def oneShotsToUnloop(plays: List[String], living: List[String]): List[String] =
-        plays |> List.filter(name -> not List.memberOf(name, living))
-
-    /// sustained の宣言を音へ反映し、次のフレームへ渡す「いま鳴っている名前」を返す。
-    /// 鳴らし始めだけ playAudio を打ち、続いている音には音量と高さだけ流す
-    /// （毎フレーム鳴らし直すと頭から再生され、続く音にならない）。
-    def applySustained(app: App[w, ef], prev: List[String], world: w): List[String] \ (ef + GameEngine.Audio) =
+    /// ミキサーの無いときの 1 フレームの音。一発の音は audio の導いた名前（同じ名前が 2 回返っても
+    /// 1 回にまとめる — 同フレームの二重再生は同じ音源を頭から鳴らし直して途切れる）、鳴り続ける音は
+    /// sustained の宣言。鳴らし始めだけ playAudio を打ち、続いている音には音量と高さだけ流す
+    /// （毎フレーム鳴らし直すと頭から再生され、続く音にならない）。順番は applyMixed と同じ
+    /// 「止める → ループを外す → 一発の音 → 鳴らし始め」。返すのは次のフレームへ渡す「いま鳴っている名前」。
+    def playPlain(app: App[w, ef], before: w, after: w, prev: List[String]): List[String] \ (ef + GameEngine.Audio) =
         let derive = app#sustained;
-        let ops = sustainOps(prev, derive(world));
+        let ops = sustainOps(prev, derive(after));
+        let living = List.map(s -> s#name, List.append(ops#start, ops#keep));
+        let deriveSounds = app#audio;
+        let plays = deriveSounds({ before = before, after = after }) |> List.distinct;
         ops#stop |> List.forEach(name -> GameEngine.Audio.stopAudio(name));
+        unloopedOneShots(plays, living) |> List.forEach(name -> GameEngine.Audio.setLooping(name, false));
+        plays |> List.forEach(name -> GameEngine.Audio.playAudio(name));
         ops#start |> List.forEach(s -> {
             GameEngine.Audio.setLooping(s#name, true);
             GameEngine.Audio.setVolume(s#name, s#volume);
@@ -1190,7 +1185,15 @@ pub mod App {
             GameEngine.Audio.setVolume(s#name, s#volume);
             GameEngine.Audio.setPitch(s#name, s#pitch)
         });
-        List.map(s -> s#name, List.append(ops#start, ops#keep))
+        living
+
+    /// 一発の音（audio）のうち、鳴らす前にループを外す名前。鳴り続ける音（sustained）として
+    /// 一度鳴らした名前は音源にループの設定が残るので、同じ名前を一発で鳴らすと止まらなくなる。
+    /// いま鳴り続けている名前（living）は外さない — 外すと鳴り続ける側が途中で切れる。
+    /// テストのために公開している（ゲームから呼ぶ物ではない）。
+    pub def unloopedOneShots(plays: List[String], living: List[String]): List[String] =
+        let alive = List.toSet(living);
+        plays |> List.filter(name -> not Set.memberOf(name, alive))
 
     /// 時計は World の外に住む。エンジンが値をクランプするので、長いカクつきでも先へワープしない。
     def readDt(): Float64 \ GameEngine.Game =

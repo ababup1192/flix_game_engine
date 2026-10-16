@@ -16,7 +16,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/ababup1192/flix_game_engine/go/internal/pxlib"
@@ -283,16 +282,12 @@ func (r *runner) checkUseEngineToml(staged []string) string {
 	if err != nil {
 		return ""
 	}
-	if m := useEngineDepRe.FindSubmatch(out); m == nil || string(m[1]) != set {
+	if v, ok := status.EnginePinOf(string(out)); !ok || v != set {
 		return ""
 	}
 	return fmt.Sprintf("[pre-commit] flix.toml のエンジンの版 v%s は use-engine が一時的に書いた物です（元は v%s）。\n"+
 		"  bin/fge use-engine --restore で戻してからコミットする（版を上げるなら make engine-upgrade）", set, orig)
 }
-
-// useEngineDepRe はゲームの flix.toml が指すエンジンの版（useengine の depRe と同じ形）。
-var useEngineDepRe = regexp.MustCompile(
-	`"github:ababup1192/flix_game_engine"\s*=\s*\{[^}]*version\s*=\s*"([^"]+)"`)
 
 func containsPath(paths []string, want string) bool {
 	for _, p := range paths {

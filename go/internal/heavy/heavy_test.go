@@ -34,7 +34,18 @@ func TestMain(m *testing.M) {
 		}
 		os.Exit(Run(args, false, Options{Poll: 20 * time.Millisecond}))
 	}
-	os.Exit(m.Run())
+	// WhyNot: 手元の ~/.flix_ge_studio のリリースと、呼ぶ側の委ねない旗に左右されないように、
+	// テストの間はホームを空のフォルダにし、委ねの環境変数を外す（子のプロセスもこれを受け継ぐ）。
+	home, err := os.MkdirTemp("", "heavy-test-home")
+	if err != nil {
+		panic(err)
+	}
+	os.Setenv("HOME", home)
+	os.Unsetenv(NoDelegateEnv)
+	os.Unsetenv(DelegatedEnv)
+	code := m.Run()
+	os.RemoveAll(home)
+	os.Exit(code)
 }
 
 func heavyCmd(t *testing.T, lock string, args ...string) *exec.Cmd {

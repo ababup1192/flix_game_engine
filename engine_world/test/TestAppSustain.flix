@@ -72,11 +72,11 @@ mod TestAppSustain {
     /// （外さないと短い効果音がループし続ける）。
     @Test
     def testOneShotOfFormerHumIsUnlooped(): Unit \ Assert =
-        Assert.assertEq(expected = "crtOff" :: Nil, App.oneShotsToUnloop("crtOff" :: Nil, Nil))
+        Assert.assertEq(expected = "crtOff" :: Nil, App.unloopedOneShots("crtOff" :: Nil, Nil))
 
     /// いま鳴り続けている名前はループを外さない（鳴り続ける側が切れないように）。
     @Test
     def testLivingHumKeepsItsLoop(): Unit \ Assert =
         Assert.assertEq(expected = "hit" :: Nil,
-            App.oneShotsToUnloop("hit" :: "engine" :: Nil, "engine" :: Nil))
+            App.unloopedOneShots("hit" :: "engine" :: Nil, "engine" :: Nil))
 }

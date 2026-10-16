@@ -1,4 +1,4 @@
-<!-- engine v0.35.34 / 生成: 2026-10-17 -->
+<!-- engine v0.35.35 / 生成: 2026-10-17 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine_world
@@ -235,7 +235,7 @@
 - reloadOn で繋いだキーが押された瞬間だけ、リロード関数で World を作り直す。
   `pub def applyReload(app: App[w, ef], frame: Frame, world: w): (w, Bool) \ {Fs.FileRead}`
 - 一発の音（audio）のうち、鳴らす前にループを外す名前。鳴り続ける音（sustained）として
-  `pub def oneShotsToUnloop(plays: List[String], living: List[String]): List[String]`
+  `pub def unloopedOneShots(plays: List[String], living: List[String]): List[String]`
 - RemoteDebug 分割用の内部 API — ゲームからは呼ばない。
   `pub def sceneItems(app: App[w, ef], atlas: FontAtlas, warnOnce: String -> Unit, world: w, toItems: (ViewCtx, w) -> List[Render.PlacedItem] \ ef): List[Render.PlacedItem] \ (ef + GameEngine.Game)`
 - タイル層の GPU 生成結果の持ち回し。ループが引数で持ち回す。

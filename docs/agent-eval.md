@@ -60,7 +60,7 @@ bin/fge agent-eval --tasks agent-eval/engine.json --tasks agent-eval/<ゲーム>
 `"read"`（読んだファイル）を書かせ、期待の語と減点の語は **choice の先頭 4 つだけ**に当てる。
 others や read にいくつ並べても点にならない（依頼主の決定・2026-10-16）。choice が無い答えは 0 点で「choice が読めない」と出る。
 期待の語は choice の 1 つごとに **1 つ目の道具の名前だけ**に当てる（「+」「→」「、」「,」「 / 」「・」「 と 」や括弧の手前まで。
-0.35.34 から）。「Timeline.build + withSound + App.withAudio」と 1 つに詰めて 4 つの上限を抜けられないように。
+0.35.35 から）。「Timeline.build + withSound + App.withAudio」と 1 つに詰めて 4 つの上限を抜けられないように。
 減点の語は 1 つ全体に当てる。期待の語は名前を省かずに書いた形（`App.withHudView`・`ZStack.topLayer`）で当てる。
 
 0.35.27 までは答え全体に当てていた（loose）。答えは本命のほかに関係しそうな道具も並べるので、1 本の答えで

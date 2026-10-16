@@ -71,3 +71,13 @@ func UseEnginePin(game string) (set, orig string, ok bool) {
 	}
 	return st.SetToml, st.OrigToml, true
 }
+
+// EnginePinOf はゲームの flix.toml の中身から、エンジンの依存の版を返す（無ければ ok = false）。
+// make status と pre-commit が同じ読み方をするため、ここに 1 本だけ置く。
+func EnginePinOf(toml string) (string, bool) {
+	m := enginePinRe.FindStringSubmatch(toml)
+	if m == nil {
+		return "", false
+	}
+	return m[1], true
+}

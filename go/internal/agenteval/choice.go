@@ -122,8 +122,11 @@ func noChoiceAtAll(results []Result) bool {
 }
 
 // headSeparator は choice の 1 つの中で、1 つ目の道具の終わりと見なす所（「+」「→」「、」「,」「;」
-// 「 / 」「・」「 と 」「 and 」と括弧の開き）。
-var headSeparator = regexp.MustCompile(`\+|＋|→|->|=>|、|,|，|;|；|\s/\s|／|・|\s(と|and)\s|\(|（|\[|「`)
+// 「 / 」「・」「 と 」「 and 」と、注記の全角括弧「（」「「」）。
+//
+// WhyNot: 半角の ( で切らないのは、`$(call video,…)` や `Timeline.tempo(bpm, 4)` のような
+// 呼び出しの形そのものが道具の名前だから（引数の , で切れば名前は残る）。
+var headSeparator = regexp.MustCompile(`\+|＋|→|->|=>|、|,|，|;|；|\s/\s|／|・|\s(と|and)\s|（|「`)
 
 // headOf は choice の 1 つから、1 つ目の道具の名前だけを切り出す。
 //
