@@ -373,4 +373,27 @@ mod TestTimeline {
     def testPickupFollowsAThreeFourBar(): Unit \ Assert =
         // 3/4・1 小節 1.5 秒。帯 0.4 秒 → 小節線 1.5 秒の 1 拍前 = 1.0 秒・帯 1.2 秒（余裕 0.6 拍）→ 3.0 秒の 1 拍前 = 2.5 秒。
         Assert.assertEq(expected = (1.0, 2.5), (pickupAt(3, 0.4, 1.0), pickupAt(3, 1.2, 1.0)))
+
+    // ── 決まった時刻に置く（insert）──
+
+    @Test
+    def testInsertPlacesAtTheGivenTimeWhateverCameBefore(): Unit \ Assert =
+        // 前に何を並べても、insert の行は表の頭から書いた時刻に始まり、Timeline.clip で置いた時刻とビットまで同じ。
+        // 拍で書けば拍の時刻（120 BPM の 3 拍目 = 1.5 秒）。
+        let tl = built(Timeline.build(tempo(120.0), List#{
+            Timeline.append(Lead.Banner, Duration.Seconds(2.7)),
+            Timeline.insert(Duration.Seconds(0.35), Lead.Gap, Duration.Seconds(0.2)),
+            Timeline.insert(Duration.Beats(3.0), Lead.Turn, Duration.Seconds(0.0))
+        }));
+        Assert.assertEq(expected = (Timeline.clip(Lead.Gap, 0.35, 0.2)#start, 1.5, 2.7),
+                        (startOf(Lead.Gap, tl), startOf(Lead.Turn, tl), Timeline.endOf(tl)))
+
+    @Test
+    def testSoundsBetweenMatchesStartedBetween(): Unit \ Assert =
+        // 待ちの無い表では、soundsBetween は startedBetween と同じ境目 (prev, now] で鳴る（頭の音は負の prev で）。
+        let tl = intro(175.0, 2.0, 0.32);
+        let slam = startOf(Intro.Slam, tl);
+        Assert.assertEq(expected = (List#{"introSlam"}, Nil, List#{"warning"}),
+                        (Timeline.soundsBetween(slam - 0.01, slam, tl), Timeline.soundsBetween(slam, slam + 0.01, tl),
+                         Timeline.soundsBetween(-1.0, 0.0, tl)))
 }

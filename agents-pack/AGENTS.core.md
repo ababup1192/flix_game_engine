@@ -15,7 +15,7 @@
 | 画面ごと動かす・縮める・薄める | `ZStack.mapItems(Render.scaledAllAround(..))` |
 | スコア・案内など隠れてはいけない表示 | `App.withHudView`（中の前後は HUD の層の表と木） |
 | 説明の窓の置き場（はみ出さない） | `UiTooltip`（置き場）+ `ZStack.topLayer`（手前へ） |
-| 演出の拍に効果音・動きを合わせる | `Timeline.build`（`append` / `join`・音は `withSound`。秒・拍は Doc）→ 描く側 `progressOf`・鳴らす側 `soundsOn` を `App.withAudio` へ |
+| 演出の拍に効果音・動きを合わせる | `Timeline.build`（`append` / `join`・決まった時刻は `insert`・音は `withSound`。秒・拍は Doc。並びをコードが書く表は `buildOrBug`）→ 描く側 `progressOf`・鳴らす側 `soundsOn`（待ちの無い表は `soundsBetween`）を `App.withAudio` へ |
 | 演出を曲の拍・小節に乗せる（小節の頭で始める・小節の頭の n 拍前に置く・伸ばしても拍から外れない） | `Timeline.build` の長さと遅らせを `Duration.Beats` / `Bars` / `ToNextBar` / `ToBeat` / `ToPickup`（次の小節の頭の n 拍前）で書き、テンポは `Timeline.tempo(譜面の bpm, 拍子)` で 1 か所から渡す |
 | 曲の頭（イントロ）を 1 回だけ鳴らして本編だけループする | 1 本の WAV にループ点を書く `SfxSynth.renderLooped`（実機も `AudioMixdown.mixdownLooped` も smpl から輪の頭へ戻る）。鳴らす側は同じ名前を `App.withSustained` で宣言し続ける |
 | Doc が壊れていたら既定値で続けて知らせる | `DocJson.loadOr` + `Log.fellBackThen` / `warnThen` / `warnAllThen` |

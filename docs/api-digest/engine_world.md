@@ -1866,10 +1866,12 @@
   `pub type alias Tempo = { bpm = Float64, beatsPerBar = Int32 }`
 - テンポ。bpm は 1 未満にしない（0 で割らない）・1 小節の拍数は 1 未満にしない。
   `pub def tempo(bpm: Float64, beatsPerBar: Int32): Tempo`
+- 拍を書かない表（秒だけで並べる表）に渡すテンポ（1 拍 = 1 秒・4 拍子。拍で書いた行が無いので値は効かない）。
+  `pub def noTempo(): Tempo`
 - 長さの書き方。
   `pub enum Duration with Eq { case Seconds(Float64) case Beats(Float64) case Bars(Float64) case ToNextBar case ToBeat(Float64) case ToPickup(Float64) }`
 - クリップを置く基準。
-  `pub enum Place[a] { case End case WithPrevious case AtStartOf(a) case AtEndOf(a) }`
+  `pub enum Place[a] { case End case WithPrevious case AtStartOf(a) case AtEndOf(a) case At(Duration) }`
 - クリップの中で鳴らす効果音。fitted = 書き出す WAV の長さをこのクリップの長さに合わせる音。
   `pub type alias Cue = { sound = String, offset = Duration, fitted = Bool }`
 - 書く人が並べる 1 行。place から delay だけ遅らせて置き、length だけ続く。
@@ -1884,6 +1886,8 @@
   `pub def atStartOf(anchor: a, tag: a, length: Duration): Step[a]`
 - anchor のクリップの終わりに置く。
   `pub def atEndOf(anchor: a, tag: a, length: Duration): Step[a]`
+- 表の頭から at の時刻に置く（DOTween の Insert・GSAP の時刻を書いた置き方）。重ねて置くクリップに使う。
+  `pub def insert(at: Duration, tag: a, length: Duration): Step[a]`
 - 表の終わりで待つ。後ろの行はここから数える。
   `pub def waitFor(tag: a): Step[a]`
 - 置き場所から遅らせる（GSAP の "+=0.5"）。
@@ -1900,6 +1904,8 @@
   `pub def secondsOf(tempo: Tempo, d: Duration): Float64`
 - 並べた行を秒の時刻表にする。前の行にしか頼らないので 1 回の走査で決まる。
   `pub def build(tempo: Tempo, steps: List[Step[a]]): Result[List[BuildError[a]], Timeline[a]] with Order[a]`
+- build の、書き間違いで止める包み。並びをゲームのコードが書く表（Doc は長さしか持たない）では、Err は
+  `pub def buildOrBug(name: String, tempo: Tempo, steps: List[Step[a]]): Timeline[a] with Order[a], ToString[a]`
 - 鳴らす予定の効果音（秒）。
   `pub type alias SoundAt = { at = Float64, segment = Int32, sound = String }`
 - 再生位置: 時刻表の上の時刻 t と、解いた待ちの数 passed。待ちの位置ちょうどでは、
@@ -1922,6 +1928,8 @@
   `pub def progressOf(tag: a, head: Playhead, tl: Timeline[a]): Float64 with Order[a]`
 - 前のフレームの時刻 prev から今の now までに鳴らす効果音。区間は今の startedBetween と同じ
   `pub def soundsOn(playback: Playback, prev: Playhead, now: Playhead, tl: Timeline[a]): List[String]`
+- 待ちの無い表で、前のフレームの秒 prev から今の now までに鳴らす効果音（soundsOn の Play と同じ (prev, now]）。
+  `pub def soundsBetween(prev: Float64, now: Float64, tl: Timeline[a]): List[String]`
 - 長さを合わせる音（withFittedSound）を書き出すときの長さ（秒）。
   `pub def soundLengthOf(name: String, tl: Timeline[a]): Option[Float64]`
 - 場面の時計 wall と、待ちが解けた時刻の列から、時刻表の上の時刻を出す。解けていない待ちでは

@@ -15,20 +15,23 @@
 //   });
 //   Timeline.progressOf(Intro.Hold, head, tl)                  // 描く側: 0..1
 //   Timeline.soundsOn(Playback.Play, before, after, tl)        // 鳴らす側: このフレームの音
+//   Timeline.soundsBetween(prevAge, age, tl)                  // 待ちの無い表なら秒 2 つで同じ物
 //
 //   - 長さは Seconds / Beats / Bars と、曲に合わせて伸び縮みする ToNextBar（次の小節の頭まで）・
 //     ToBeat(n)（頭から n 拍目まで）・ToPickup(n)（次の小節の頭の n 拍前 = 弱起まで。余裕が n 拍未満なら
 //     その次の小節）で書く。拍と小節は Tempo（譜面の bpm）から秒になる。
 //     中では「拍の分 + 秒の分」の組で足し、秒へ直すのは最後の 1 回（拍を秒にしてから足す誤差を作らない）。
 //   - 置き場所: append = 表の終わり（既定）・join = 直前の行の頭（GSAP の "<"）・atStartOf / atEndOf =
-//     名前のクリップを基準・withDelay = そこから遅らせる（負なら手前へ）。前を延ばすと後ろが付いてくる。
+//     名前のクリップを基準・insert = 表の頭から決まった時刻（DOTween の Insert）・withDelay = そこから遅らせる
+//     （負なら手前へ）。前を延ばすと後ろが付いてくる（insert で置いた物は動かない）。
 //   - 効果音はクリップの属性（Unity の Timeline の Audio トラック・Godot の音のトラック・Bevy の
 //     AnimationEvent）。描く側（stateOf）と鳴らす側（soundsOn）が同じ start を読むので、鳴らす時刻を
 //     別の場所に書けない。音が鳴るフレームで stateOf はもう Active か After を返す。
 //   - waitFor は長さの決まらない待ち（会話を読む・決定キー）。World は解けた時刻を resume で記録するだけ。
 //     待ちの位置ちょうどでは、待ちの前に書いた物だけが済む（Playhead = 時刻と解いた待ちの数）。
 //   - 書き間違い（同じ名前・まだ置いていない名前を基準・待ちに音・待ちより前へ置く・長さを合わせる音の
-//     食い違い）は build が Err で返す。場面ごとにテストを 1 本置けば止まる。
+//     食い違い）は build が Err で返す。並びをコードが書く表は buildOrBug（組めなければ止める）で受け、
+//     場面ごとにテストを 1 本置けば遊ぶ前に止まる。同じ物を何本も並べる所は tag に番号を持たせる（Tick(i)）。
 //
 // 時計の決まり: 渡す時刻は、場面に入ってから「dt × はやさ × TimeScale」を積み上げた場面の時計 1 本。
 // resume にも同じ時計の値を渡す。時刻表は World にしまわず Doc から毎回組む（数十行なら µs。
@@ -121,6 +124,9 @@ pub mod Timeline {
     pub def tempo(bpm: Float64, beatsPerBar: Int32): Tempo =
         { bpm = Float64.max(1.0, bpm), beatsPerBar = Int32.max(1, beatsPerBar) }
 
+    /// 拍を書かない表（秒だけで並べる表）に渡すテンポ（1 拍 = 1 秒・4 拍子。拍で書いた行が無いので値は効かない）。
+    pub def noTempo(): Tempo = tempo(60.0, 4)
+
     /// 長さの書き方。
     pub enum Duration with Eq {
         case Seconds(Float64)
@@ -143,6 +149,8 @@ pub mod Timeline {
         case WithPrevious
         case AtStartOf(a)
         case AtEndOf(a)
+        /// 表の頭から決まった時刻（秒か拍）。前に何を置いたかに左右されない
+        case At(Duration)
     }
 
     /// クリップの中で鳴らす効果音。fitted = 書き出す WAV の長さをこのクリップの長さに合わせる音。
@@ -180,6 +188,9 @@ pub mod Timeline {
 
     /// anchor のクリップの終わりに置く。
     pub def atEndOf(anchor: a, tag: a, length: Duration): Step[a] = step(tag, Place.AtEndOf(anchor), length)
+
+    /// 表の頭から at の時刻に置く（DOTween の Insert・GSAP の時刻を書いた置き方）。重ねて置くクリップに使う。
+    pub def insert(at: Duration, tag: a, length: Duration): Step[a] = step(tag, Place.At(at), length)
 
     /// 表の終わりで待つ。後ろの行はここから数える。
     pub def waitFor(tag: a): Step[a] = { isWait = true | step(tag, Place.End, Duration.Seconds(0.0)) }
@@ -250,6 +261,7 @@ pub mod Timeline {
                 case Place.WithPrevious => Ok(acc#prevStart)
                 case Place.AtStartOf(o) => Map.get(o, acc#spans) |> Option.map(fst) |> Option.toOk(BuildError.UnknownAnchor(o))
                 case Place.AtEndOf(o)   => Map.get(o, acc#spans) |> Option.map(snd) |> Option.toOk(BuildError.UnknownAnchor(o))
+                case Place.At(d)        => Ok(advanceBy(tempo, zero(), d))
             };
             match anchor {
                 case Err(e) => { errors = e :: acc#errors | acc }
@@ -321,6 +333,15 @@ pub mod Timeline {
                 waits = built#waits |> List.sortWith((x, y) -> x <=> y),
                 fitted = built#fitted,
                 duration = Float64.max(toSeconds(tempo, built#end), lastSound) }))
+        }
+
+    /// build の、書き間違いで止める包み。並びをゲームのコードが書く表（Doc は長さしか持たない）では、Err は
+    /// プログラムの書き間違いなので、組めなければ name と書き間違いの一覧を出して止める。場面ごとのテストで
+    /// 1 回組めば、遊ぶ前に止まる。並びを Doc やプレイヤーの入力から作る表は build を使い、Err を捌く。
+    pub def buildOrBug(name: String, tempo: Tempo, steps: List[Step[a]]): Timeline[a] with Order[a], ToString[a] =
+        match build(tempo, steps) {
+            case Ok(tl)      => tl
+            case Err(errors) => bug!("Timeline ${name} の書き間違い: ${errors |> List.map(e -> ToString.toString(e)) |> String.intercalate(", ")}")
         }
 
     // ── 読む口（毎フレーム） ──
@@ -407,6 +428,12 @@ pub mod Timeline {
                 case Some(skip) => takeUntil(r#sounds, firstNot(r#sounds, skip), now, Nil)
             }
     }
+
+    /// 待ちの無い表で、前のフレームの秒 prev から今の now までに鳴らす効果音（soundsOn の Play と同じ (prev, now]）。
+    /// クリップの列を startedBetween で鳴らしていた所の置き換え。場面の頭の音も鳴らすなら最初のフレームは
+    /// prev を負にするか、soundsOn の Enter を使う。
+    pub def soundsBetween(prev: Float64, now: Float64, tl: Timeline[a]): List[String] =
+        soundsOn(Playback.Play, playheadAt(prev), playheadAt(now), tl)
 
     /// 長さを合わせる音（withFittedSound）を書き出すときの長さ（秒）。
     pub def soundLengthOf(name: String, tl: Timeline[a]): Option[Float64] = match tl {
