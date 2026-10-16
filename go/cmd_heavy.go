@@ -8,7 +8,7 @@ import (
 
 func init() {
 	register("heavy",
-		"重い処理を 1 本ずつ流す鍵 (/tmp/fge-heavy.lock)。heavy <コマンド...> / heavy --status",
+		"重い処理を枠 (既定 2 本・長い物は枠 1 だけ) で流す鍵 (/tmp/fge-heavy.lock)。heavy [--long|--short] <コマンド...> / heavy --status",
 		func(out, errOut *strings.Builder, rest []string, asJSON bool) int {
 			// WhyNot: out に貯めず heavy が os.Stdout へ直に書くのは、流すコマンドの出力を
 			// 数分ぶん溜めてから吐くと、呼ぶ側が進み具合も止まった所も見られないため。

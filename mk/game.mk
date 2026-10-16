@@ -68,7 +68,7 @@ help:
 	@echo "  make agent-eval-release [REPEAT=3] [OVERWRITE=1]  エンジンの版ごとに全部のお題を N 回（鍵は取らない）→ agent-eval/history/<版>.json・前の版と比べる"
 	@echo ""
 	@echo "同じマシンで何本も並んで作業するときの道具 (bin/fge):"
-	@echo "  bin/fge heavy <コマンド...>   重い処理を鍵 (/tmp/fge-heavy.lock) で 1 本ずつ流す。--status で持ち主と列"
+	@echo "  bin/fge heavy <コマンド...>   重い処理を枠 2 本で流す (render-all・動画は長い物として枠 1 だけ)。--status で持ち主と列"
 	@echo "  bin/fge use-engine <版|パス>  この作業場の local.mk と lib をそのエンジンへ。--status / --restore"
 	@echo "  bin/fge proposal build <proposal.json>  案を選んでもらうページ (index.html) を組む。knobs で片付けの残りを数える"
 	@echo ""

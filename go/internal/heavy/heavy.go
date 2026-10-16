@@ -1,12 +1,18 @@
 // Package heavy は、同じマシンで並んで走るエージェントが重い処理（描き出し・テスト・
-// エンジンのビルド）を 1 本ずつ流すための鍵。
+// エンジンのビルド）を決まった本数ずつ流すための鍵。
 //
-//	fge heavy <コマンド...>   鍵を取ってコマンドを流し、終わったら（失敗・中断でも）自分の鍵だけ外す
-//	fge heavy --status       今の持ち主と待っている列
+//	fge heavy <コマンド...>           鍵を取ってコマンドを流し、終わったら（失敗・中断でも）自分の鍵だけ外す
+//	fge heavy --long|--short <...>    長い物か短い物かを名前の見分けより優先して決める
+//	fge heavy --status                枠ごとの持ち主と待っている列
 //
-// 鍵は /tmp/fge-heavy.lock（FGE_HEAVY_LOCK で差し替え）の mkdir。mkdir が成功した方が
-// 持ち主で、手書きの `until mkdir …; rmdir` とも同じ鍵を取り合う。
-// 持ち主は鍵の中の owner.json に書き、待っている列は <鍵>.queue/<pid>.json に並ぶ。
+// 鍵は FGE_HEAVY_SLOTS 本（既定 2）の枠。枠 1 は /tmp/fge-heavy.lock（FGE_HEAVY_LOCK で
+// 差し替え）、枠 2 からは <鍵>.2・<鍵>.3 … の mkdir。mkdir が成功した方がその枠の持ち主。
+//
+// 長い物（render-all・動画・agent-eval など 10 分を超えうる物）は枠 1 だけを使うので、
+// 長い物どうしは同時に走らない。短い物（check・test・sync）は枠 2 から先に、空いていれば
+// 枠 1 も使う。枠 1 の名前は 1 本だった頃の鍵と同じなので、手書きの `until mkdir …; rmdir` も
+// 古い heavy も枠 1 を取り合い、古い heavy のエントリは「枠 1 だけを待つエントリ」として順番に並ぶ。
+// 持ち主は枠の中の owner.json に書き、待っている列は <鍵>.queue/<pid>.json に並ぶ。
 package heavy
 
 import (
@@ -20,6 +26,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -30,6 +37,38 @@ import (
 // DefaultLock は鍵の置き場。手書きの書き方と同じ名前にそろえる。
 const DefaultLock = "/tmp/fge-heavy.lock"
 
+// SlotsEnv は枠の本数を変える環境変数。
+const SlotsEnv = "FGE_HEAVY_SLOTS"
+
+// DefaultSlots は枠の本数の既定。
+//
+// WhyNot: 2 本にするのは、64GB のマシンで JVM を 2 本（ヒープの上限は物理メモリの 1/4 ずつ）
+// 立てても詰まらず、長い描き出しの後ろで短い check・test が 30 分待つのを止められるため。
+// 3 本以上は短い物どうしが CPU を取り合い、1 本あたりが遅くなる。
+const DefaultSlots = 2
+
+// longTarget は「長い物」の make の口の名前。語ごとに丸ごと照らす。
+var longTarget = regexp.MustCompile(`^(render-all|reference-update|gallery-[\w-]+|[\w-]*-video(-[\w-]+)?|video-[\w-]+|agent-eval[\w-]*|compare:?)$`)
+
+// cmdWord はコマンドの文字列を語に切る（bash -c '…' の中や compare の説明の中も同じに切る）。
+var cmdWord = regexp.MustCompile(`[^\s'"();&|<>]+`)
+
+// LooksLong は cmd が 10 分を超えうる長い物か（名前で見分ける）。
+//
+// WhyNot: パス（/ を含む語）と代入（= を含む語）を見ないのは、作業場の名前
+// （id-x-video・fge-compare-…）やログの置き場に口の名前が入っていても、中身が make test なら短い物だから。
+func LooksLong(cmd string) bool {
+	for _, w := range cmdWord.FindAllString(cmd, -1) {
+		if strings.ContainsAny(w, "/=") {
+			continue
+		}
+		if longTarget.MatchString(w) {
+			return true
+		}
+	}
+	return false
+}
+
 // TokenEnv は鍵を持っている heavy が子へ渡す合言葉。
 // 子の中でもう一度 heavy を呼んだとき、自分の鍵を待って止まらないために使う。
 const TokenEnv = "FGE_HEAVY_TOKEN"
@@ -39,7 +78,7 @@ const ownerFile = "owner.json"
 // 持ち主の pid が見えない鍵（手書きの書き方）を外してよい古さ。
 const anonymousStale = 40 * time.Minute
 
-// 待ち列の札の心拍（poll ごとに触る）がこれより古ければ、その札は飛ばす。
+// 待ち列のエントリの心拍（poll ごとに触る）がこれより古ければ、そのエントリは飛ばす。
 const queueStale = time.Minute
 
 // 外しの最中に死んだ heavy が残した reap の鍵を外してよい古さ。
@@ -55,14 +94,29 @@ type Owner struct {
 	Command      string    `json:"command"`
 	Since        time.Time `json:"since"`
 	Token        string    `json:"token,omitempty"`
+	// Long は長い物（枠 1 だけを使う）。AnySlot はどの枠でも使える短い物。
+	// 両方とも無いエントリは 1 本だった頃の heavy で、枠 1 だけを待つ。
+	Long    bool `json:"long,omitempty"`
+	AnySlot bool `json:"anySlot,omitempty"`
+	// Slot は持っている枠（1 から数える）。待っている間は 0。
+	Slot int `json:"slot,omitempty"`
+	// Slots はこのエントリが知っている枠の本数。FGE_HEAVY_SLOTS が人ごとに違っても、
+	// エントリが使えない枠をそのエントリに取っておかないために読む。
+	Slots int `json:"slots,omitempty"`
 }
 
 // Options は差し替えられる所。テストが待ち時間と場所を縮める。
 type Options struct {
 	Lock string
-	Poll time.Duration
-	Now  func() time.Time
-	Err  io.Writer
+	// Slots は枠の本数（0 なら FGE_HEAVY_SLOTS、それも無ければ DefaultSlots）。
+	Slots int
+	// Long / Short は長い物か短い物かを名前の見分けより優先して決める。
+	Long, Short bool
+	Poll        time.Duration
+	// childEnv は子へ足す環境変数（Hold が持っている枠を渡す）。
+	childEnv []string
+	Now      func() time.Time
+	Err      io.Writer
 }
 
 func defaults(o Options) Options {
@@ -71,6 +125,15 @@ func defaults(o Options) Options {
 	}
 	if o.Lock == "" {
 		o.Lock = DefaultLock
+	}
+	if o.Slots == 0 {
+		o.Slots, _ = strconv.Atoi(os.Getenv(SlotsEnv))
+	}
+	if o.Slots < 1 {
+		o.Slots = DefaultSlots
+	}
+	if o.Slots > 8 {
+		o.Slots = 8
 	}
 	if o.Poll == 0 {
 		o.Poll = 3 * time.Second
@@ -85,7 +148,15 @@ func defaults(o Options) Options {
 }
 
 func queueDir(lock string) string { return lock + ".queue" }
-func reapDir(lock string) string  { return lock + ".reap" }
+func reapDir(slot string) string  { return slot + ".reap" }
+
+// slotPath は i 番目（0 から）の枠の置き場。枠 1 は 1 本だった頃の鍵そのもの。
+func slotPath(lock string, i int) string {
+	if i == 0 {
+		return lock
+	}
+	return lock + "." + strconv.Itoa(i+1)
+}
 
 // Run は fge heavy の入口。args は heavy に渡った引数そのまま。
 func Run(args []string, asJSON bool, o Options) int {
@@ -104,6 +175,14 @@ func Run(args []string, asJSON bool, o Options) int {
 		if a == "--json" {
 			continue
 		}
+		if a == "--long" {
+			o.Long = true
+			continue
+		}
+		if a == "--short" {
+			o.Short = true
+			continue
+		}
 		if strings.HasPrefix(a, "--") {
 			fmt.Fprintf(o.Err, "heavy: 知らない旗 %s\n", a)
 			return 2
@@ -115,8 +194,9 @@ func Run(args []string, asJSON bool, o Options) int {
 		return printStatus(os.Stdout, o, asJSON)
 	}
 	if len(cmd) == 0 {
-		fmt.Fprintln(o.Err, "使い方: fge heavy <コマンド...>   鍵を取ってコマンドを流す（CHECKD=0 が既定）")
-		fmt.Fprintln(o.Err, "        fge heavy --status       今の持ち主と待っている列")
+		fmt.Fprintln(o.Err, "使い方: fge heavy <コマンド...>          鍵を取ってコマンドを流す（CHECKD=0 が既定）")
+		fmt.Fprintln(o.Err, "        fge heavy --long|--short <...>   長い物（枠 1 だけ）か短い物かを名前の見分けより優先")
+		fmt.Fprintln(o.Err, "        fge heavy --status               枠ごとの持ち主と待っている列")
 		return 2
 	}
 	return Exec(cmd, "", o)
@@ -124,14 +204,25 @@ func Run(args []string, asJSON bool, o Options) int {
 
 // ── 鍵の中身 ─────────────────────────────────────────────
 
-// Snapshot は --status の中身。
+// SlotState は枠 1 本の今。
+type SlotState struct {
+	Slot  int    `json:"slot"`
+	Path  string `json:"path"`
+	Held  bool   `json:"held"`
+	Owner *Owner `json:"owner,omitempty"`
+	Alive bool   `json:"alive"`
+	Age   string `json:"age,omitempty"`
+}
+
+// Snapshot は --status の中身。Lock〜Age は枠 1（1 本だった頃の鍵）で、前の形を読む物のために残す。
 type Snapshot struct {
-	Lock    string  `json:"lock"`
-	Held    bool    `json:"held"`
-	Owner   *Owner  `json:"owner,omitempty"`
-	Alive   bool    `json:"alive"`
-	Age     string  `json:"age,omitempty"`
-	Waiting []Owner `json:"waiting"`
+	Lock    string      `json:"lock"`
+	Held    bool        `json:"held"`
+	Owner   *Owner      `json:"owner,omitempty"`
+	Alive   bool        `json:"alive"`
+	Age     string      `json:"age,omitempty"`
+	Slots   []SlotState `json:"slots"`
+	Waiting []Owner     `json:"waiting"`
 }
 
 func readOwner(lock string) (*Owner, error) {
@@ -187,8 +278,8 @@ func isStale(lock string, now time.Time) (bool, *Owner) {
 //
 // WhyNot: 見てすぐ消さず reap の鍵を挟むのは、2 本が同時に「死んでいる」と見て
 // 片方が外して取り直した直後の鍵を、もう片方が消してしまうため。
-func reap(o Options) bool {
-	rd := reapDir(o.Lock)
+func reap(o Options, slot string) bool {
+	rd := reapDir(slot)
 	if err := os.Mkdir(rd, 0o755); err != nil {
 		if info, err := os.Stat(rd); err == nil && o.Now().Sub(info.ModTime()) > reapStale {
 			os.Remove(rd)
@@ -196,24 +287,24 @@ func reap(o Options) bool {
 		return false
 	}
 	defer os.Remove(rd)
-	stale, ow := isStale(o.Lock, o.Now())
+	stale, ow := isStale(slot, o.Now())
 	if !stale {
 		return false
 	}
 	if ow != nil {
 		fmt.Fprintf(o.Err, "[heavy] 持ち主の居ない鍵を外します (%s pid %d: %s)\n",
 			shortPath(ow.Workdir), ow.PID, ow.Command)
-		os.Remove(filepath.Join(o.Lock, ownerFile))
+		os.Remove(filepath.Join(slot, ownerFile))
 	} else {
-		fmt.Fprintf(o.Err, "[heavy] 持ち主の書かれていない鍵が %d 分を超えたので外します\n",
-			int(anonymousStale.Minutes()))
+		fmt.Fprintf(o.Err, "[heavy] 持ち主の書かれていない鍵 %s が %d 分を超えたので外します\n",
+			slot, int(anonymousStale.Minutes()))
 	}
-	return os.Remove(o.Lock) == nil
+	return os.Remove(slot) == nil
 }
 
 // ── 待っている列 ─────────────────────────────────────────
 
-// waiting は列に並んでいる生きた heavy を、並んだ順に返す。死んだ札はここで掃く。
+// waiting は列に並んでいる生きた heavy を、並んだ順に返す。死んだエントリはここで掃く。
 func waiting(o Options) []Owner {
 	entries, _ := os.ReadDir(queueDir(o.Lock))
 	var list []Owner
@@ -231,7 +322,7 @@ func waiting(o Options) []Owner {
 			os.Remove(path)
 			continue
 		}
-		// WhyNot: 心拍の止まった札（Ctrl-Z で止められた heavy）を飛ばすのは、先頭だけが
+		// WhyNot: 心拍の止まったエントリ（Ctrl-Z で止められた heavy）を飛ばすのは、先頭だけが
 		// 鍵を試す決まりなので、止まった先頭が後ろの全員を待たせ続けるため。
 		if info, err := e.Info(); err == nil && o.Now().Sub(info.ModTime()) > queueStale {
 			continue
@@ -268,15 +359,18 @@ func Exec(cmd []string, dir string, o Options) int {
 
 // Hold は鍵を取ったまま fn を流し、終わったら（失敗・中断でも）鍵を外す。
 // fge の他のサブコマンド（use-engine・compare）が重い段だけを囲む口。fn は run で子を流す。
+// 長い物か短い物かは o.Long / o.Short、どちらも無ければ desc の名前で決める。
 // 途中で止められたら run は 130 を返すので、fn はそれを見て抜ける。
 func Hold(desc, dir string, o Options, fn func(run Runner) int) int {
 	o = defaults(o)
 	// 鍵を持っている heavy の子の中で呼ばれたら、待たずにそのまま流す。
 	if tok := os.Getenv(TokenEnv); tok != "" {
-		if ow, err := readOwner(o.Lock); err == nil && ow.Token == tok {
-			return fn(func(d string, cmd ...string) int {
-				return runChild(cmd, d, tok, nil, o, nil, nil)
-			})
+		for i := 0; i < o.Slots; i++ {
+			if ow, err := readOwner(slotPath(o.Lock, i)); err == nil && ow.Token == tok {
+				return fn(func(d string, cmd ...string) int {
+					return runChild(cmd, d, tok, nil, o, nil, nil)
+				})
+			}
 		}
 	}
 	wd := dir
@@ -285,6 +379,7 @@ func Hold(desc, dir string, o Options, fn func(run Runner) int) int {
 	} else if abs, err := filepath.Abs(dir); err == nil {
 		wd = abs
 	}
+	long := o.Long || (!o.Short && LooksLong(desc))
 	me := Owner{
 		Workdir: wd,
 		PID:     os.Getpid(),
@@ -292,38 +387,108 @@ func Hold(desc, dir string, o Options, fn func(run Runner) int) int {
 		Command: desc,
 		Since:   o.Now(),
 		Token:   newToken(),
+		Long:    long,
+		AnySlot: !long,
+		Slots:   o.Slots,
 	}
 
 	sigs := make(chan os.Signal, 4)
 	signal.Notify(sigs, InterruptSignals...)
 	defer signal.Stop(sigs)
 
-	if err := acquire(&me, sigs, o); err != nil {
+	slot, err := acquire(&me, sigs, o)
+	if err != nil {
 		if errors.Is(err, errInterrupted) {
 			return 130
 		}
 		fmt.Fprintf(o.Err, "heavy: %v\n", err)
 		return 2
 	}
-	defer release(o, me.Token)
+	defer release(slot, me.Token)
+	if slot != o.Lock {
+		// WhyNot: 枠 2 からを持つときに子へ枠の置き場を鍵として渡すのは、中で呼ばれた
+		// 古い heavy（合言葉を FGE_HEAVY_LOCK の中だけで探す）が自分の鍵だと気づかず、
+		// 枠 1 を待って 2 本ぶんを塞ぐため。
+		o.childEnv = []string{"FGE_HEAVY_LOCK=" + slot}
+	}
 	var stopped atomic.Bool
 	return fn(func(d string, cmd ...string) int {
 		return runChild(cmd, d, me.Token, func(child int) {
 			me.ChildPID, me.ChildStarted = child, processStarted(child)
-			writeJSON(filepath.Join(o.Lock, ownerFile), me)
+			writeJSON(filepath.Join(slot, ownerFile), me)
 		}, o, sigs, &stopped)
 	})
 }
 
 var errInterrupted = errors.New("待っている間に止められました")
 
-func acquire(me *Owner, sigs chan os.Signal, o Options) error {
+// eligible はエントリ w が使える枠を、取りたい順に返す。短い物は枠 2 から先に取り、枠 1 は
+// 長い物のために最後へ回す。長い物と古い heavy のエントリは枠 1 だけ。
+func eligible(w Owner, n int) []int {
+	if !w.AnySlot {
+		return []int{0}
+	}
+	if w.Slots > 0 && w.Slots < n {
+		n = w.Slots
+	}
+	order := make([]int, 0, n)
+	for i := 1; i < n; i++ {
+		order = append(order, i)
+	}
+	return append(order, 0)
+}
+
+// pick は列の順に空いた枠を配ってみて、自分の取る枠を返す（無ければ -1）。
+// 取る枠が無いとき、持ち主の居ないかもしれない枠のうち自分が見に行く番の物を reap に返す。
+//
+// WhyNot: 先頭だけが取る決まりを「列の順に配る」に広げるのは、枠 1 を待つ長い物が先頭に
+// 居ても、後ろの短い物が空いた枠 2 で流れられるようにするため。前のエントリが使える枠を
+// 後ろが先に取らないので、空いた瞬間に後から来た方が割り込むことは無い。
+func pick(o Options, list []Owner, pid int) (slot int, reap []int) {
+	free := make([]bool, o.Slots)
+	for i := range free {
+		_, err := os.Stat(slotPath(o.Lock, i))
+		free[i] = errors.Is(err, os.ErrNotExist)
+	}
+	claimed := make([]bool, o.Slots)
+	for _, w := range list {
+		got := -1
+		for _, i := range eligible(w, o.Slots) {
+			if free[i] {
+				got = i
+				break
+			}
+		}
+		if got >= 0 {
+			if w.PID == pid {
+				return got, nil
+			}
+			free[got] = false
+			continue
+		}
+		for _, i := range eligible(w, o.Slots) {
+			if !claimed[i] {
+				claimed[i] = true
+				if w.PID == pid {
+					reap = append(reap, i)
+				}
+			}
+		}
+		if w.PID == pid {
+			return -1, reap
+		}
+	}
+	return -1, nil
+}
+
+// acquire は列に並び、自分の番に空いた枠を取って、その枠の置き場を返す。
+func acquire(me *Owner, sigs chan os.Signal, o Options) (string, error) {
 	if err := os.MkdirAll(queueDir(o.Lock), 0o777); err != nil {
-		return fmt.Errorf("待ちの列 %s を作れません: %v", queueDir(o.Lock), err)
+		return "", fmt.Errorf("待ちの列 %s を作れません: %v", queueDir(o.Lock), err)
 	}
 	qp := queuePath(o, me.PID)
 	if err := writeJSON(qp, me); err != nil {
-		return fmt.Errorf("待ちの列に並べません: %v", err)
+		return "", fmt.Errorf("待ちの列に並べません: %v", err)
 	}
 	defer os.Remove(qp)
 
@@ -331,35 +496,45 @@ func acquire(me *Owner, sigs chan os.Signal, o Options) error {
 	var lastNote time.Time
 	for {
 		list := waiting(o)
-		// WhyNot: 列の先頭だけが mkdir を試すのは、空いた瞬間に後から来た方が
-		// 先に取ると、何本待っているかを見せても順番の目安にならないため。
-		head := len(list) == 0 || list[0].PID == me.PID
-		if head {
-			if err := os.Mkdir(o.Lock, 0o755); err == nil {
+		if position(list, me.PID) == len(list) {
+			// 自分のエントリが心拍切れで飛ばされていても、最後尾に並んでいるとみなす。
+			list = append(list, *me)
+		}
+		slot, toReap := pick(o, list, me.PID)
+		if slot >= 0 {
+			path := slotPath(o.Lock, slot)
+			if err := os.Mkdir(path, 0o755); err == nil {
 				me.Since = o.Now()
-				if err := writeJSON(filepath.Join(o.Lock, ownerFile), me); err != nil {
-					os.Remove(o.Lock)
-					return fmt.Errorf("持ち主を書けません: %v", err)
+				me.Slot = slot + 1
+				if err := writeJSON(filepath.Join(path, ownerFile), me); err != nil {
+					os.Remove(path)
+					return "", fmt.Errorf("持ち主を書けません: %v", err)
 				}
 				if waited := o.Now().Sub(start); waited >= time.Second {
-					fmt.Fprintf(o.Err, "[heavy] 鍵を取りました (待ち %s)\n", roundDuration(waited))
+					fmt.Fprintf(o.Err, "[heavy] 枠 %d を取りました (待ち %s)\n", slot+1, roundDuration(waited))
 				}
-				return nil
+				return path, nil
 			} else if !errors.Is(err, os.ErrExist) {
-				return fmt.Errorf("鍵 %s を作れません: %v", o.Lock, err)
+				return "", fmt.Errorf("鍵 %s を作れません: %v", path, err)
 			}
-			if reap(o) {
-				continue
-			}
+			// 見てから作るまでの間に手書きの mkdir か古い heavy が取った。配り直す。
+			continue
+		}
+		reaped := false
+		for _, i := range toReap {
+			reaped = reap(o, slotPath(o.Lock, i)) || reaped
+		}
+		if reaped {
+			continue
 		}
 		if lastNote.IsZero() || o.Now().Sub(lastNote) >= 2*time.Minute {
-			fmt.Fprintf(o.Err, "[heavy] 鍵を待っています: %s・前に %d 本\n",
-				describeHolder(o), position(list, me.PID))
+			fmt.Fprintf(o.Err, "[heavy] 鍵を待っています (%s): %s・前に %d 本\n",
+				kindLabel(*me), describeHolders(o, me), position(list, me.PID))
 			lastNote = o.Now()
 		}
 		select {
 		case <-sigs:
-			return errInterrupted
+			return "", errInterrupted
 		case <-time.After(o.Poll):
 			now := o.Now()
 			os.Chtimes(qp, now, now)
@@ -377,13 +552,13 @@ func position(list []Owner, pid int) int {
 }
 
 // release は自分の鍵だけを外す。合言葉が違えば（外されて他が取った後なら）触らない。
-func release(o Options, token string) {
-	ow, err := readOwner(o.Lock)
+func release(slot, token string) {
+	ow, err := readOwner(slot)
 	if err != nil || ow.Token != token {
 		return
 	}
-	os.Remove(filepath.Join(o.Lock, ownerFile))
-	os.Remove(o.Lock)
+	os.Remove(filepath.Join(slot, ownerFile))
+	os.Remove(slot)
 }
 
 // Runner は鍵の内側で子を 1 本流す。dir が空なら今の場所。終了コードを返す。
@@ -404,7 +579,7 @@ func runChild(cmd []string, dir, token string, started func(int), o Options, sig
 		// 常駐を温める得が無く、常駐の repl は物理メモリに蓋があって描き出しが収まらない。
 		env = append(env, "CHECKD=0")
 	}
-	c.Env = append(env, TokenEnv+"="+token)
+	c.Env = append(append(env, o.childEnv...), TokenEnv+"="+token)
 	// WhyNot: 中から呼ばれた heavy は子を別のグループへ出さない。外の heavy が
 	// 回したシグナルが孫まで届かず、孫だけが走り残るため。
 	if sigs != nil {
@@ -448,10 +623,23 @@ func runChild(cmd []string, dir, token string, started func(int), o Options, sig
 
 // ── 見せる ───────────────────────────────────────────────
 
-func describeHolder(o Options) string {
-	ow, err := readOwner(o.Lock)
+// kindLabel はエントリが長い物か短い物か。どちらでもないエントリは 1 本だった頃の heavy。
+func kindLabel(w Owner) string {
+	switch {
+	case w.Long:
+		return "長い・枠 1 だけ"
+	case w.AnySlot:
+		return "短い"
+	default:
+		return "古い heavy・枠 1 だけ"
+	}
+}
+
+func describeSlot(o Options, i int) string {
+	path := slotPath(o.Lock, i)
+	ow, err := readOwner(path)
 	if err != nil {
-		info, serr := os.Stat(o.Lock)
+		info, serr := os.Stat(path)
 		if serr != nil {
 			return "空き"
 		}
@@ -461,27 +649,41 @@ func describeHolder(o Options) string {
 		roundDuration(o.Now().Sub(ow.Since)), ow.Command)
 }
 
+// describeHolders は me が使える枠の持ち主を並べる（待っている間の 1 行）。
+func describeHolders(o Options, me *Owner) string {
+	var parts []string
+	for _, i := range eligible(*me, o.Slots) {
+		parts = append(parts, fmt.Sprintf("枠 %d: %s", i+1, describeSlot(o, i)))
+	}
+	sort.Strings(parts)
+	return strings.Join(parts, " / ")
+}
+
 func snapshot(o Options) Snapshot {
 	s := Snapshot{Lock: o.Lock, Waiting: waiting(o)}
 	if s.Waiting == nil {
 		s.Waiting = []Owner{}
 	}
-	info, err := os.Stat(o.Lock)
-	if err != nil {
-		return s
-	}
-	s.Held = true
-	if ow, err := readOwner(o.Lock); err == nil {
-		ow.Token = ""
-		s.Owner = ow
-		s.Alive = isAlive(ow)
-		s.Age = roundDuration(o.Now().Sub(ow.Since))
-	} else {
-		s.Age = roundDuration(o.Now().Sub(info.ModTime()))
-	}
 	for i := range s.Waiting {
 		s.Waiting[i].Token = ""
 	}
+	for i := 0; i < o.Slots; i++ {
+		st := SlotState{Slot: i + 1, Path: slotPath(o.Lock, i)}
+		if info, err := os.Stat(st.Path); err == nil {
+			st.Held = true
+			if ow, err := readOwner(st.Path); err == nil {
+				ow.Token = ""
+				st.Owner = ow
+				st.Alive = isAlive(ow)
+				st.Age = roundDuration(o.Now().Sub(ow.Since))
+			} else {
+				st.Age = roundDuration(o.Now().Sub(info.ModTime()))
+			}
+		}
+		s.Slots = append(s.Slots, st)
+	}
+	first := s.Slots[0]
+	s.Held, s.Owner, s.Alive, s.Age = first.Held, first.Owner, first.Alive, first.Age
 	return s
 }
 
@@ -492,26 +694,34 @@ func printStatus(w io.Writer, o Options, asJSON bool) int {
 		fmt.Fprintln(w, string(data))
 		return 0
 	}
-	switch {
-	case !s.Held:
-		fmt.Fprintf(w, "[heavy] 空き (%s)\n", s.Lock)
-	case s.Owner == nil:
-		fmt.Fprintf(w, "[heavy] 持ち主の書かれていない鍵 (手書きの mkdir)・%s前から\n", s.Age)
-	default:
-		state := "生きている"
-		if !s.Alive {
-			state = "死んでいる・次に待つ heavy が外す"
+	fmt.Fprintf(w, "[heavy] 枠 %d 本 (%s で変える)・長い物 (render-all・動画・agent-eval など) は枠 1 だけ\n",
+		len(s.Slots), SlotsEnv)
+	for _, st := range s.Slots {
+		use := "長い物も短い物も"
+		if st.Slot > 1 {
+			use = "短い物だけ"
 		}
-		fmt.Fprintf(w, "[heavy] 持ち主: %s pid %d (%s)・%s前から\n        %s\n",
-			shortPath(s.Owner.Workdir), s.Owner.PID, state, s.Age, s.Owner.Command)
+		switch {
+		case !st.Held:
+			fmt.Fprintf(w, "[heavy] 枠 %d (%s): 空き (%s)\n", st.Slot, use, st.Path)
+		case st.Owner == nil:
+			fmt.Fprintf(w, "[heavy] 枠 %d (%s): 持ち主の書かれていない鍵 (手書きの mkdir)・%s前から\n", st.Slot, use, st.Age)
+		default:
+			state := "生きている"
+			if !st.Alive {
+				state = "死んでいる・次に待つ heavy が外す"
+			}
+			fmt.Fprintf(w, "[heavy] 枠 %d (%s): %s pid %d (%s・%s)・%s前から\n        %s\n", st.Slot, use,
+				shortPath(st.Owner.Workdir), st.Owner.PID, kindLabel(*st.Owner), state, st.Age, st.Owner.Command)
+		}
 	}
 	if len(s.Waiting) == 0 {
 		fmt.Fprintln(w, "[heavy] 待ち: なし (手書きの until mkdir で待っている物は数えられません)")
 		return 0
 	}
-	fmt.Fprintf(w, "[heavy] 待ち %d 本 (この順で取る):\n", len(s.Waiting))
+	fmt.Fprintf(w, "[heavy] 待ち %d 本 (この順で、使える枠が空いた物から取る):\n", len(s.Waiting))
 	for i, ow := range s.Waiting {
-		fmt.Fprintf(w, "  %d. %s pid %d・%s前から: %s\n", i+1, shortPath(ow.Workdir), ow.PID,
+		fmt.Fprintf(w, "  %d. [%s] %s pid %d・%s前から: %s\n", i+1, kindLabel(ow), shortPath(ow.Workdir), ow.PID,
 			roundDuration(o.Now().Sub(ow.Since)), ow.Command)
 	}
 	return 0

@@ -140,6 +140,18 @@
       ]
     },
     {
+      "id": "heavy-short-beside-long",
+      "prompt": "別のエージェントが動画の描き出しで重い処理の鍵を 30 分握っている。自分は型検査を 1 回流したいだけで、その後ろで 30 分も待ちたくない",
+      "expect": [
+        {"re": "fge heavy[^\\n]*(make check|check)|heavy make check", "why": "短い物は bin/fge heavy で包めば空いた枠で流れる"}
+      ],
+      "avoid": [
+        {"re": "until mkdir", "why": "鍵を手で書く"},
+        {"re": "rmdir /tmp/fge-heavy|rm -r[f]? /tmp/fge-heavy", "why": "人の鍵を外す"},
+        {"re": "heavy --long[^\\n]*check", "why": "短い物に長い物の印を付ける"}
+      ]
+    },
+    {
       "id": "use-engine-temp",
       "prompt": "このゲームの作業場だけ、いま別の作業場で直している開発中のエンジンで動くか確かめたい。終わったら元のエンジンに戻したい",
       "expect": [
