@@ -9,6 +9,7 @@
 package pxkit
 
 import (
+	"encoding/json"
 	"fmt"
 	"image"
 	"image/color"
@@ -48,7 +49,8 @@ type LintDiff struct {
 
 // specKeys は spec の一番外に書ける鍵。知らない鍵は書き損じとして止める（黙って無視しない）。
 var specKeys = map[string]bool{"version": true, "note": true, "target": true, "base": true,
-	"gloss": true, "ramps": true, "shapes": true, "shared": true, "sprites": true, "preview": true}
+	"gloss": true, "ramps": true, "shapes": true, "shared": true, "sprites": true, "preview": true,
+	"legend": true, "palette": true}
 
 // Build は spec を読んで描き、target に書き、見本シートを作る。
 func Build(root, specPath string, lint bool) (res *Result, err error) {
@@ -89,7 +91,19 @@ func Build(root, specPath string, lint bool) (res *Result, err error) {
 	}
 	baseData, err := os.ReadFile(filepath.Join(root, base))
 	if err != nil {
-		return nil, fmt.Errorf("base %s が読めない: %w", base, err)
+		// base がまだ無い新しい絵: spec の legend と palette から sprite.json を起こす
+		lg, okL := spec.Get("legend").(*Obj)
+		pl, okP := spec.Get("palette").(*Obj)
+		if !okL || !okP {
+			return nil, fmt.Errorf("base %s が読めない（新しく作るなら spec に legend と palette を書く）: %w", base, err)
+		}
+		fresh := newObj()
+		fresh.Set("version", json.Number("1"))
+		fresh.Set("note", "fge pxkit が "+filepath.Base(specPath)+" から描いた絵。直すのは spec")
+		fresh.Set("legend", lg)
+		fresh.Set("palette", pl)
+		fresh.Set("sprites", newObj())
+		baseData = []byte(dumpPy(fresh))
 	}
 	docAny, err := decodeOrdered(baseData)
 	if err != nil {
@@ -160,9 +174,6 @@ func Build(root, specPath string, lint bool) (res *Result, err error) {
 			ops, _ := plain(framesSpec.Vals[fname]).([]any)
 			c := &ctx{g: NewGrid(int(size[0]), int(size[1])), ramp: ramp, gloss: gloss,
 				masks: map[string]Mask{}, shapes: shapes, layers: layers, ramps: ramps, keyOf: keyOf}
-			if len(ramp) < 4 {
-				return nil, fmt.Errorf("%s/%s: ramp %q は暗 → 明の 4 段で書く", name, fname, rampName)
-			}
 			if err := c.run(ops); err != nil {
 				return nil, fmt.Errorf("%s/%s: %w", name, fname, err)
 			}

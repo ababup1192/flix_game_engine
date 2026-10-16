@@ -136,3 +136,18 @@ func (g *Grid) Rows(charOf map[string]string) ([]string, error) {
 	}
 	return out, nil
 }
+
+// Flip は格子を左右（vertical=false）か上下に返す。
+func (g *Grid) Flip(vertical bool) {
+	if vertical {
+		for i, j := 0, g.H-1; i < j; i, j = i+1, j-1 {
+			g.Px[i], g.Px[j] = g.Px[j], g.Px[i]
+		}
+		return
+	}
+	for _, row := range g.Px {
+		for i, j := 0, len(row)-1; i < j; i, j = i+1, j-1 {
+			row[i], row[j] = row[j], row[i]
+		}
+	}
+}

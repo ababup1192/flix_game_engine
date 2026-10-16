@@ -98,6 +98,9 @@ func chamfer(m Mask, w, h int) [][]float64 {
 
 func (c *ctx) normalShade(p map[string]any) error {
 	g := c.g
+	if c.ox != 0 || c.oy != 0 {
+		return fmt.Errorf("normalShade は use の at でずらせない（格子全体に描く op）")
+	}
 	lv := nums(p["light"])
 	if len(lv) != 3 {
 		lv = []float64{-0.55, -0.70, 0.55}

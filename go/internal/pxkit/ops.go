@@ -31,6 +31,7 @@ type ctx struct {
 	shapes map[string]any
 	layers map[string]any
 	depth  int
+	ox, oy int // use の at で足すずらし
 }
 
 type errUnknownColor string
@@ -61,18 +62,49 @@ func (c *ctx) hasKey(key string) bool {
 	return false
 }
 
+// rampAt はランプの i 段目。段が足りなければ止める（Build の recover が spec の誤りとして報告する）。
+func (c *ctx) rampAt(i int) string {
+	if i >= len(c.ramp) {
+		panic(fmt.Sprintf("ランプの %d 段目が無い（sprite の ramp が %d 段。ink/shade/mid/light を使うなら 4 段で書く）", i+1, len(c.ramp)))
+	}
+	return c.ramp[i]
+}
+
+// need4 は 4 段のランプが要る op（作法がランプの段を使う物）の前提。
+func (c *ctx) need4(op string) error {
+	if len(c.ramp) < 4 {
+		return fmt.Errorf("%s は暗 → 明の 4 段のランプが要る（sprite の ramp を指定する）", op)
+	}
+	if c.ox != 0 || c.oy != 0 {
+		return fmt.Errorf("%s は use の at でずらせない（格子全体に描く op）", op)
+	}
+	return nil
+}
+
+// put は use の at でずらした位置に置く。
+func (c *ctx) put(x, y int, col string) { c.g.Put(x+c.ox, y+c.oy, col) }
+
+// shifted は形を use の at の分だけずらす。
+func (c *ctx) shifted(f SDF) SDF {
+	if c.ox == 0 && c.oy == 0 {
+		return f
+	}
+	dx, dy := float64(c.ox), float64(c.oy)
+	return func(x, y float64) float64 { return f(x-dx, y-dy) }
+}
+
 // color は "ink" "shade" "mid" "light" "gloss" をランプから引き、ほかは legend のキーそのもの。
 func (c *ctx) color(v any) string {
 	s, _ := v.(string)
 	switch s {
 	case "ink":
-		return c.ramp[0]
+		return c.rampAt(0)
 	case "shade":
-		return c.ramp[1]
+		return c.rampAt(1)
 	case "mid":
-		return c.ramp[2]
+		return c.rampAt(2)
 	case "light":
-		return c.ramp[3]
+		return c.rampAt(3)
 	case "gloss":
 		return c.gloss
 	}
@@ -106,11 +138,27 @@ func (c *ctx) op(m map[string]any) error {
 		if !ok {
 			return fmt.Errorf("shared に %q が無い", name)
 		}
+		at := nums(m["at"])
+		if len(at) == 2 {
+			// 部品を (x, y) だけずらして描く（同じ部品を何か所にも置く・歩きのコマで体を上下させる）
+			c.ox, c.oy = c.ox+int(at[0]), c.oy+int(at[1])
+			defer func() { c.ox, c.oy = c.ox-int(at[0]), c.oy-int(at[1]) }()
+		}
 		return c.run(body)
+	case m["flip"] != nil:
+		// 格子全体を左右（"x"）か上下（"y"）に返す。右向きのコマから左向きを作る
+		axis, _ := m["flip"].(string)
+		g.Flip(axis == "y")
+	case m["tilemap"] != nil:
+		p, _ := m["tilemap"].(map[string]any)
+		return c.tilemap(p)
 	case m["bevelBox"] != nil:
 		p, _ := m["bevelBox"].(map[string]any)
 		if g.W != g.H {
 			return fmt.Errorf("bevelBox は正方形の格子だけ（今は %d×%d）", g.W, g.H)
+		}
+		if err := c.need4("bevelBox"); err != nil {
+			return err
 		}
 		c.masks["bevelBox"] = c.bevelBox(num(p["radius"], 6.5), num(p["inset"], 2.0), nums2(p["bands"], 0.30, 0.72), num(p["glossUntil"], 0.8))
 	case m["glyph"] != nil:
@@ -118,7 +166,10 @@ func (c *ctx) op(m map[string]any) error {
 		if err != nil {
 			return err
 		}
-		em := g.MaskOf(f)
+		if len(c.ramp) < 4 {
+			return fmt.Errorf("glyph は暗 → 明の 4 段のランプが要る")
+		}
+		em := g.MaskOf(c.shifted(f))
 		for y := g.H - 1; y >= 0; y-- {
 			for x := g.W - 1; x >= 0; x-- {
 				if em[y][x] && !g.Inside(em, min(x+1, g.W-1), min(y+1, g.H-1)) {
@@ -137,14 +188,14 @@ func (c *ctx) op(m map[string]any) error {
 		if err != nil {
 			return err
 		}
-		g.Fill(g.MaskOf(f), col)
+		g.Fill(g.MaskOf(c.shifted(f)), col)
 	case m["put"] != nil:
 		col, err := c.mustColor(m)
 		if err != nil {
 			return err
 		}
 		for _, p := range points(m["put"]) {
-			g.Put(int(p[0]), int(p[1]), col)
+			c.put(int(p[0]), int(p[1]), col)
 		}
 	case m["line"] != nil:
 		p := nums(m["line"])
@@ -157,14 +208,17 @@ func (c *ctx) op(m map[string]any) error {
 			return fmt.Errorf("line の within %q の塊がまだ無い（先に描く）", within)
 		}
 		for _, q := range lerpCells([][2]float64{{p[0], p[1]}, {p[2], p[3]}}) {
-			if within == "" || g.Inside(c.masks[within], q[0], q[1]) {
-				g.Put(q[0], q[1], col)
+			if within == "" || g.Inside(c.masks[within], q[0]+c.ox, q[1]+c.oy) {
+				c.put(q[0], q[1], col)
 			}
 		}
 	case m["normalShade"] != nil:
 		p, _ := m["normalShade"].(map[string]any)
 		return c.normalShade(p)
 	case m["crack"] != nil:
+		if err := c.need4("crack"); err != nil {
+			return err
+		}
 		if c.masks["bevelBox"] == nil {
 			return fmt.Errorf("crack は bevelBox の後に書く（割る板が無い）")
 		}
@@ -180,12 +234,16 @@ func (c *ctx) op(m map[string]any) error {
 				x, y := int(at[0])+dx, int(at[1])+dy
 				if hasCols {
 					if v, ok := cols[string(ch)]; ok {
-						g.Put(x, y, c.color(v))
+						c.put(x, y, c.color(v))
 					}
 				} else if ch == '.' {
-					g.Put(x, y, "") // colors が無ければ legend の文字で打つ（' ' は置かない・'.' は透明へ抜く）
+					c.put(x, y, "") // colors が無ければ legend の文字で打つ（' ' は置かない・'.' は透明へ抜く）
 				} else if ch != ' ' {
-					g.Put(x, y, c.keyOf[string(ch)])
+					key, ok := c.keyOf[string(ch)]
+					if !ok {
+						return fmt.Errorf("stamp の文字 %q が legend に無い", string(ch))
+					}
+					c.put(x, y, key)
 				}
 			}
 		}
@@ -291,4 +349,51 @@ func nums2(v any, a, b float64) [2]float64 {
 		return [2]float64{p[0], p[1]}
 	}
 	return [2]float64{a, b}
+}
+
+// tilemap はタイル（legend の文字の格子）を、map の文字の並びどおりに敷き詰める。
+// map の ' ' と '.' はタイルを置かない。タイルの中の '.' は下の絵を残す（重ねて層にできる）。
+//
+//	{"tilemap": {"tileSize": [16, 16], "at": [0, 0],
+//	             "tiles": {"g": ["16 文字 × 16 行"], "w": [...]},
+//	             "map": ["ggggwwgg", ...]}}
+func (c *ctx) tilemap(p map[string]any) error {
+	ts := nums(p["tileSize"])
+	if len(ts) != 2 || ts[0] < 1 || ts[1] < 1 {
+		return fmt.Errorf("tilemap: tileSize [w, h] が無い")
+	}
+	tw, th := int(ts[0]), int(ts[1])
+	at := nums(p["at"])
+	ax, ay := 0, 0
+	if len(at) == 2 {
+		ax, ay = int(at[0]), int(at[1])
+	}
+	tiles, _ := p["tiles"].(map[string]any)
+	rows, _ := p["map"].([]any)
+	for ty, r := range rows {
+		line, _ := r.(string)
+		for tx, ch := range []rune(line) {
+			if ch == ' ' || ch == '.' {
+				continue
+			}
+			tile, ok := tiles[string(ch)].([]any)
+			if !ok {
+				return fmt.Errorf("tilemap: タイル %q が tiles に無い", string(ch))
+			}
+			for y, tr := range tile {
+				s, _ := tr.(string)
+				for x, pc := range []rune(s) {
+					if x >= tw || y >= th || pc == '.' || pc == ' ' {
+						continue
+					}
+					key, ok := c.keyOf[string(pc)]
+					if !ok {
+						return fmt.Errorf("tilemap: タイル %q の文字 %q が legend に無い", string(ch), string(pc))
+					}
+					c.put(ax+tx*tw+x, ay+ty*th+y, key)
+				}
+			}
+		}
+	}
+	return nil
 }
