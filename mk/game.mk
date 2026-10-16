@@ -251,8 +251,8 @@ compare:
 # お題は agent-eval/*.json（engine.json は engine から配られる共通・それ以外はゲーム固有）。
 # claude -p を 1 お題 1 本（読むだけの道具で）走らせ、記録と表を debug/agent-eval/<LABEL>/ へ。
 # engine の docs と engine_world/src は --add-dir で読めるようにする（早見表がそこを指すため）。
-# WhyNot: 鍵（同時に重い処理を流さない約束）をここで取らないのは、取り方がマシンごとに違うため。
-#   何本も流すときは呼ぶ側で鍵を通す。
+# WhyNot: 鍵をここで取らないのは、1 人で使うマシンでは要らないため。並んで作業しているなら
+#   bin/fge heavy make agent-eval で流す。
 agent-eval:
 	@ls agent-eval/*.json >/dev/null 2>&1 || { echo "[agent-eval] agent-eval/*.json がありません（engine 側で make sync-agents GAME=$(CURDIR)）"; exit 1; }
 	@fge=bin/fge; [ -x "$$fge" ] || fge="$(ENGINE)/bin/fge"; \
