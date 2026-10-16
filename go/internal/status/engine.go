@@ -9,6 +9,7 @@ package status
 // 見ている engine が食い違うため。
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 )
@@ -50,4 +51,23 @@ func ReadEngineVersion(engine string) string {
 		}
 	}
 	return ""
+}
+
+// UseEnginePin は use-engine が flix.toml のエンジンの版を一時的に書き換えている間の
+// (書き換えた版, 元の版)。控え lib/.use-engine/state.json が無いか、版を書き換えて
+// いなければ ok = false。pre-commit（コミットを止める）と make status（1 行出す）が読む。
+// WhyNot: useengine に置かないのは、useengine が status を使うので逆向きに引けないため。
+func UseEnginePin(game string) (set, orig string, ok bool) {
+	data, err := os.ReadFile(filepath.Join(game, "lib", ".use-engine", "state.json"))
+	if err != nil {
+		return "", "", false
+	}
+	var st struct {
+		SetToml  string `json:"setTomlVersion"`
+		OrigToml string `json:"origTomlVersion"`
+	}
+	if json.Unmarshal(data, &st) != nil || st.SetToml == "" {
+		return "", "", false
+	}
+	return st.SetToml, st.OrigToml, true
 }

@@ -3,6 +3,7 @@ package precommit
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -307,5 +308,49 @@ func TestMatcherFieldsAreAndAnyOfIsOr(t *testing.T) {
 	}
 	if or.Match("docs/notes.md") {
 		t.Errorf("どちらにも当たらないパスが通った")
+	}
+}
+
+// useEngineRepo は flix.toml を git にステージした偽のゲームと、use-engine の控えを作る。
+func useEngineRepo(t *testing.T, staged string) string {
+	t.Helper()
+	root := fakeRepo(t)
+	toml := func(v string) string {
+		return `[dependencies]` + "\n" +
+			`"github:ababup1192/flix_game_engine" = { version = "` + v + `", security = "unrestricted" }` + "\n"
+	}
+	if err := os.WriteFile(filepath.Join(root, "flix.toml"), []byte(toml(staged)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"init", "-q"}, {"add", "flix.toml"}} {
+		if out, err := exec.Command("git", append([]string{"-C", root}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+	}
+	sd := filepath.Join(root, "lib", ".use-engine")
+	if err := os.MkdirAll(sd, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	state := `{"origTomlVersion": "0.35.33", "setTomlVersion": "0.35.40"}`
+	if err := os.WriteFile(filepath.Join(sd, "state.json"), []byte(state), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
+func TestUseEngineTomlStops(t *testing.T) {
+	root := useEngineRepo(t, "0.35.40")
+	parent, _, _, code := gateRun(t, root, []string{"--files", "flix.toml"}, okLints(t), nil)
+	if code == 0 || !strings.Contains(parent, "use-engine --restore") {
+		t.Errorf("use-engine の版のコミットが通った: parent=%q code=%d", parent, code)
+	}
+}
+
+func TestUseEngineRestoredTomlPasses(t *testing.T) {
+	// 控えがあっても、ステージした版が元の版なら通す（flix.toml の別の行の直し）。
+	root := useEngineRepo(t, "0.35.33")
+	parent, _, _, code := gateRun(t, root, []string{"--files", "flix.toml"}, okLints(t), nil)
+	if code != 0 || strings.Contains(parent, "use-engine") {
+		t.Errorf("元の版なのに止まった: parent=%q code=%d", parent, code)
 	}
 }

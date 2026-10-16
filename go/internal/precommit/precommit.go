@@ -16,9 +16,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/ababup1192/flix_game_engine/go/internal/pxlib"
+	"github.com/ababup1192/flix_game_engine/go/internal/status"
 )
 
 // Lint は 1 本の検査の入口。out が stdout・errOut が stderr へ出す分。
@@ -118,6 +120,11 @@ func (r *runner) gate(staged []string) (int, error) {
 		return 0, nil
 	}
 	failed := false
+
+	if msg := r.checkUseEngineToml(staged); msg != "" {
+		failed = true
+		fmt.Fprintln(r.parent, msg)
+	}
 
 	problems := r.checkStagedImages(staged)
 	if len(problems) > 0 {
@@ -261,4 +268,37 @@ func (r *runner) runMake(args ...string) int {
 		return 1
 	}
 	return cmd.ProcessState.ExitCode()
+}
+
+// checkUseEngineToml は、use-engine が一時的に書き換えた flix.toml のエンジンの版を
+// コミットしようとしていれば知らせを返す（無ければ空）。控え lib/.use-engine/ がある間だけ見る。
+// WhyNot: 版だけを見るのは、use-engine の最中に flix.toml の別の行を直してコミットする
+// のは止めないため（ステージした中身の版が元へ戻っていれば通す）。
+func (r *runner) checkUseEngineToml(staged []string) string {
+	set, orig, ok := status.UseEnginePin(r.root)
+	if !ok || !containsPath(staged, "flix.toml") {
+		return ""
+	}
+	out, err := exec.Command("git", "-C", r.root, "show", ":flix.toml").Output()
+	if err != nil {
+		return ""
+	}
+	if m := useEngineDepRe.FindSubmatch(out); m == nil || string(m[1]) != set {
+		return ""
+	}
+	return fmt.Sprintf("[pre-commit] flix.toml のエンジンの版 v%s は use-engine が一時的に書いた物です（元は v%s）。\n"+
+		"  bin/fge use-engine --restore で戻してからコミットする（版を上げるなら make engine-upgrade）", set, orig)
+}
+
+// useEngineDepRe はゲームの flix.toml が指すエンジンの版（useengine の depRe と同じ形）。
+var useEngineDepRe = regexp.MustCompile(
+	`"github:ababup1192/flix_game_engine"\s*=\s*\{[^}]*version\s*=\s*"([^"]+)"`)
+
+func containsPath(paths []string, want string) bool {
+	for _, p := range paths {
+		if p == want {
+			return true
+		}
+	}
+	return false
 }

@@ -446,6 +446,11 @@ func sectionEngineDrift(c *ctx, out *[]string) {
 	if m == nil {
 		return
 	}
+	if set, orig, ok := UseEnginePin(c.root); ok {
+		*out = append(*out, fmt.Sprintf(
+			"engine   use-engine で flix.toml を v%s に向けています（元は v%s・commit は pre-commit が止める）"+
+				" → 終わったら bin/fge use-engine --restore", set, orig))
+	}
 	engine := ReadEngineDir(c.root)
 	if engine == "" {
 		return
