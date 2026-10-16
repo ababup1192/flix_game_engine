@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "エンジン共通のお題（どのゲームの足元でも同じ道具が当たるべき物）。bin/fge agent-eval が読む（make agent-eval）。prompt は依頼の言葉だけにし、道具の名前を入れない。expect は答えに出てほしい道具（1 つ 1 点）、avoid は古い書き方（打ち消しの無い行に出たら 1 点引く）。新しい仕組みを入れた人は、早見表の 1 行と一緒にここへお題を 1 本足す。",
+  "note": "エンジン共通のお題（どのゲームの足元でも同じ道具が当たるべき物）。bin/fge agent-eval が読む（make agent-eval）。prompt は依頼の言葉だけにし、道具の名前を入れない。expect は答えに出てほしい道具（1 つ 1 点）、avoid は古い書き方（打ち消しの無い行に出たら 1 点引く）。新しい仕組みを入れた人は、早見表の 1 行と一緒にここへお題を 1 本足す。 avoid の正規表現は、ゲームに実在する名前（bgmFightIntro など）や道具の説明（use-engine が local.mk を書き換える）に当てない。今のコードや道具を説明しただけで減点になる。",
   "tasks": [
     {
       "id": "hud-timer",
@@ -124,7 +124,7 @@
         {"re": "withSustained", "why": "App.withSustained で同じ名前を宣言し続ける"}
       ],
       "avoid": [
-        {"re": "Intro\\.wav|bgm\\w*Intro\\b|イントロの長さを過ぎたら", "why": "頭と輪を 2 本の音に割って時刻で切り替える"}
+        {"re": "Intro\\.wav|イントロの長さを過ぎたら", "why": "頭と輪を 2 本の音に割って時刻で切り替える"}
       ]
     },
     {
@@ -148,7 +148,7 @@
       ],
       "avoid": [
         {"re": "ln -s[^\\n]*lib", "why": "lib を他の作業場へ symlink"},
-        {"re": "local\\.mk[^\\n]{0,30}(書き換|編集|sed)", "why": "local.mk を手で書き換える"}
+        {"re": "local\\.mk[^\\n]{0,30}を?(手で|直接|自分で)(書き換|編集)|sed[^\\n]*local\\.mk", "why": "local.mk を手で書き換える"}
       ]
     },
     {

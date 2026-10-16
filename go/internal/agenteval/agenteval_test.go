@@ -27,6 +27,12 @@ func TestAdoptedReadsNegationAndAvoidLists(t *testing.T) {
 		{"使えない", "知らせは Log.fellBackThen で出す（純粋なので let _ = Log.warn は使えない）", false},
 		{"読んだファイルの一覧で探した語", "\"files_read\": [\n  \"engine を grep（let _ = の出どころ）\"\n]", false},
 		{"読んだファイルの一覧（日本語の鍵）", "\"読んだファイル\": [\n  \"let _ = を探した\"\n]", false},
+		// 0.35.22 の 3 回流しで、正しい答えが減点された形。
+		{"頼み方の文どおりの鍵（判断のために読んだファイル）", "\"判断のために読んだファイル\": [\n  \"src/A.flix（let _ = を使っている今の実装）\"\n]", false},
+		{"lint が見る物の説明", "\"checks\": \"let _ = で知らせを捨てていないか\"", false},
+		{"手で掛けない", "\"why\": \"let _ = を手で掛けない\"", false},
+		{"消す", "残っている let _ = Log.warn を消す", false},
+		{"呼ぶと鳴る", "\"why\": \"let _ = を呼ぶと鳴る\"", false},
 	}
 	for _, c := range cases {
 		if got := adopted(re, c.answer); got != c.want {

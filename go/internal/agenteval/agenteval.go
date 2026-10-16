@@ -582,12 +582,13 @@ func score(j job, raw []byte) Result {
 
 // 「let _ = は使わない」のように打ち消して触れた行は減点しない。
 // 「ない」1 字では見ない（「できない」「足りない」の行で減点が全部消えるため）。
-var negation = regexp.MustCompile(`(使わ|使え|呼ば|書か|足さ|置か|頼ら|し)ない|使わず|使えず|避け|禁止|NG|消え|止ま|止め|代わりに|古い|非推奨|(?i)\b(not|don't|avoid|instead|catch(es)?|lint|forbid|z-table|value-discard)\b`)
+// 「〜していないか」（lint やレビューが見る物の説明）・「〜を消す」・「呼ぶと鳴る」も、選んだ物ではない。
+var negation = regexp.MustCompile(`(使わ|使え|呼ば|書か|足さ|置か|頼ら|掛け|し)ない|ていないか|使わず|使えず|避け|禁止|NG|消え|消す|消して|鳴る|止ま|止め|代わりに|古い|非推奨|(?i)\b(not|don't|avoid|instead|catch(es)?|lint|forbid|z-table|value-discard)\b`)
 
 // avoidKey は「使わない物」を並べる JSON の鍵（"avoid": [...]・"使わない": {...}）。語ごとに見る。
 // 読んだファイルの一覧（"files_read"・"読んだファイル"）も入れる —— 「until mkdir を grep した」のように
 // 探した語を書くだけで、選んだ物ではないため。
-var avoidKey = regexp.MustCompile(`(?i)^(files?_?read\w*|read_?files?|読んだ.*|調べた.*|avoid\w*|dont\w*|do_not\w*|not\w*|forbid\w*|deprecated|ng|old\w*|legacy|anti\w*|pitfalls?|使わない.*|避ける.*|やらない.*|しない.*|禁止.*|古い.*|非推奨.*)$`)
+var avoidKey = regexp.MustCompile(`(?i)^(files?_?read\w*|read_?files?|.*読んだ.*|.*調べた.*|avoid\w*|dont\w*|do_not\w*|not\w*|forbid\w*|deprecated|ng|old\w*|legacy|anti\w*|pitfalls?|使わない.*|避ける.*|やらない.*|しない.*|禁止.*|古い.*|非推奨.*)$`)
 
 var keyOpen = regexp.MustCompile(`^"([^"]+)"\s*:\s*([\[{])`)
 
