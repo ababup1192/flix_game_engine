@@ -260,6 +260,13 @@ type rendered struct {
 	spans     [][2]int // 声ごとの [頭, 終わり)（サンプル）
 	breaks    []string // 使った機種の外の手（声の順・重ならない）
 	pans      []float64
+	drones    []voiceDrone // song の鳴りっぱなしの音（声の場所つき）
+}
+
+// voiceDrone は鳴りっぱなしの音と、それを鳴らした op の場所。
+type voiceDrone struct {
+	drone
+	where string
 }
 
 func (r *rendered) frames() int {
@@ -320,6 +327,9 @@ func (r *renderer) render(off map[opRef]bool) (*rendered, error) {
 		x := sig{ch: so.ch, loopStart: so.loopStart}
 		for _, b := range so.breaks {
 			res.addBreak(b)
+		}
+		for _, d := range so.drones {
+			res.drones = append(res.drones, voiceDrone{d, vo.Ops[0].Where})
 		}
 		if s.Channels == 2 {
 			res.pans = append(res.pans, so.pans...)

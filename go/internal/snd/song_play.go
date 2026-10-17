@@ -441,10 +441,14 @@ func sineAt(phase float64) float64 {
 	return sineTable[k] + float64((sineTable[k+1]-sineTable[k])*f)
 }
 
-func renderChannel(s *song, cd chanDef, gain float64, waves map[string][]int, frames []frame, n int) []float64 {
+// renderChannel は 1 本の声を鳴らす（uv は重ねの 1 本・bars は tick ごとの小節の位置。sweep が無ければ nil）。
+func renderChannel(s *song, cd chanDef, uv voiceVar, gain float64, waves map[string][]int, frames []frame, bars []float64, n int) []float64 {
 	out := make([]float64, n)
 	rate := float64(s.rate)
-	phase, subPhase, amp, lfsr := 0.0, 0.0, 0.0, 32767
+	phase, subPhase, amp, lfsr := uv.phase0, 0.0, 0.0, 32767
+	syn := newSynthState(cd, rate)
+	synth := cd.filter != nil || cd.pitchEnv != nil
+	gain = float64(gain * uv.scale)
 	e, _ := crmath.Exp(-1 / float64(0.001*rate))
 	follow := 1 - e
 	sin := &memoFn{m: map[uint64]float64{}, fn: func(x float64) (float64, error) { return crmath.Sin(x), nil }}
@@ -455,7 +459,7 @@ func renderChannel(s *song, cd chanDef, gain float64, waves map[string][]int, fr
 		phase = next - math.Floor(next)
 		return p
 	}
-	detune := cd.cents / 100
+	detune := (cd.cents + uv.cents) / 100
 	for tick, f := range frames {
 		start := s.sampleAt(tick)
 		stop := min(n, s.sampleAt(tick+1))
@@ -465,6 +469,11 @@ func renderChannel(s *song, cd chanDef, gain float64, waves map[string][]int, fr
 		}
 		if f.retrigger {
 			lfsr = 32767
+			syn.onset()
+		}
+		bar := 0.0
+		if bars != nil {
+			bar = bars[min(tick, len(bars)-1)]
 		}
 		table := fallbackWave
 		if f.wave.kind == waveTable {
@@ -484,11 +493,15 @@ func renderChannel(s *song, cd chanDef, gain float64, waves map[string][]int, fr
 			if f.glide {
 				bent = prevPitch + float64((f.pitch-prevPitch)*along)
 			}
+			if synth && syn.age%synthBlock == 0 {
+				syn.block(bar)
+			}
+			syn.age++
 			vib := 0.0
 			if f.vibCents != 0 {
 				vib = float64(f.vibCents/100) * sin.at(float64(float64(tau*f.vibHz)*float64(i))/rate)
 			}
-			freq := 440 * pow2.at((bent+vib+detune-69)/12)
+			freq := 440 * pow2.at((bent+vib+detune+syn.penv-69)/12)
 			var value float64
 			switch cd.part {
 			case partNoise:
@@ -501,6 +514,11 @@ func renderChannel(s *song, cd chanDef, gain float64, waves map[string][]int, fr
 					level = 15 - idx
 				}
 				value = float64(level)/7.5 - 1
+			case partSaw:
+				dt := freq / rate
+				value = sawAt(advance(dt), dt)
+			case partSine:
+				value = sineAt(advance(freq / rate))
 			case partWave:
 				p := advance(freq / rate)
 				idx := min(31, int(p*32))
@@ -513,12 +531,16 @@ func renderChannel(s *song, cd chanDef, gain float64, waves map[string][]int, fr
 				}
 			}
 			amp = amp + float64((f.volume-amp)*follow)
-			if cd.sub > 0 { // 1 オクターブ下のサイン（機種の外の厚み）
+			if cd.sub > 0 && uv.sub { // 1 オクターブ下のサイン（機種の外の厚み）
 				value = value + float64(cd.sub*sineAt(subPhase))
 				next := subPhase + float64(freq/rate)*0.5
 				subPhase = next - math.Floor(next)
 			}
-			out[i] = float64(value*amp) * gain
+			v := float64(value * amp)
+			if syn.filter != nil {
+				v = syn.filter.run(v)
+			}
+			out[i] = float64(v * gain)
 		}
 	}
 	return out
@@ -526,6 +548,7 @@ func renderChannel(s *song, cd chanDef, gain float64, waves map[string][]int, fr
 
 // songOut は鳴らした曲（左右・輪の頭・±1 に切った数・使ったチャンネル・機種の外の手・振った左右）。
 type songOut struct {
+	drones    []drone // 鳴りっぱなしの音（チャンネルごとに一番長い物。song_drone.go）
 	chans     [][]float64
 	loopStart int
 	clamped   int
@@ -583,8 +606,15 @@ func renderSong(s *song, in instruments) songOut {
 	}
 	totalSteps := introSteps + 2*bodySteps + tail
 	total := s.sampleAt(s.tickOfStep(totalSteps))
-	chans := make([][]float64, len(s.chans))
+	chans := make([][][]float64, len(s.chans)) // チャンネル → 重ねの 1 本ずつ
+	voices := make([][]voiceVar, len(s.chans))
 	frames := make([][]frame, len(s.chans))
+	var bars []float64
+	for _, cd := range s.chans {
+		if cd.filter != nil && len(cd.filter.sweep) > 0 && bars == nil {
+			bars = barTimeline(s, s.tickOfStep(totalSteps), introSteps, bodySteps)
+		}
+	}
 	var wg sync.WaitGroup
 	for c := range s.chans {
 		var steps []step
@@ -602,11 +632,21 @@ func renderSong(s *song, in instruments) songOut {
 			res.used = append(res.used, c)
 		}
 		gain := float64(s.chans[c].vol) * s.gain
+		voices[c] = unisonVoices(s.chans[c])
+		chans[c] = make([][]float64, len(voices[c]))
 		wg.Add(1)
 		go func() { // チャンネルは互いに独立。足すのは下でチャンネルの順に 1 本ずつ（足す順が同じなので結果も同じ）
 			defer wg.Done()
 			frames[c] = controlFrames(s, in, s.chans[c].part, steps)
-			chans[c] = renderChannel(s, s.chans[c], gain, in.waves, frames[c], total)
+			var vg sync.WaitGroup
+			for k, uv := range voices[c] {
+				vg.Add(1)
+				go func() {
+					defer vg.Done()
+					chans[c][k] = renderChannel(s, s.chans[c], uv, gain, in.waves, frames[c], bars, total)
+				}()
+			}
+			vg.Wait()
 		}()
 	}
 	wg.Wait()
@@ -618,11 +658,16 @@ func renderSong(s *song, in instruments) songOut {
 		usedFx["delay"] = usedFx["delay"] || (cd.sendDelay > 0 && s.fx.delay != nil)
 		usedFx["sidechain"] = usedFx["sidechain"] || (cd.duck && len(s.fx.duckKeys) > 0)
 		usedFx["sub"] = usedFx["sub"] || cd.sub > 0
-		if cd.pan != 0 {
-			res.pans = append(res.pans, cd.pan)
+		for _, uv := range voices[c] {
+			if uv.pan != 0 {
+				res.pans = append(res.pans, uv.pan)
+			}
+		}
+		for _, b := range synthBreaks(cd) {
+			usedFx[b] = true
 		}
 	}
-	for _, b := range []string{"reverb", "delay", "sidechain", "sub"} {
+	for _, b := range []string{"reverb", "delay", "sidechain", "sub", "saw", "sine", "unison", "filter", "pitchenv"} {
 		if usedFx[b] {
 			res.breaks = append(res.breaks, b)
 		}
@@ -630,6 +675,10 @@ func renderSong(s *song, in instruments) songOut {
 	if usedFx["sidechain"] {
 		duck = duckGains(s, frames, total)
 	}
+	if bars == nil {
+		bars = barTimeline(s, s.tickOfStep(totalSteps), introSteps, bodySteps)
+	}
+	res.drones = findDrones(s, frames, res.used, bars, droneFloorSeconds)
 	left, right := make([]float64, total), make([]float64, total)
 	var rev, dly []float64
 	if usedFx["reverb"] {
@@ -640,18 +689,20 @@ func renderSong(s *song, in instruments) songOut {
 	}
 	for _, c := range res.used {
 		cd := s.chans[c]
-		gl, gr := balance(cd.pan)
-		for i, v := range chans[c] {
-			if cd.duck && duck != nil {
-				v = v * duck[i]
-			}
-			left[i] = left[i] + float64(v*gl)
-			right[i] = right[i] + float64(v*gr)
-			if rev != nil {
-				rev[i] = rev[i] + float64(v*cd.sendReverb)
-			}
-			if dly != nil {
-				dly[i] = dly[i] + float64(v*cd.sendDelay)
+		for k, uv := range voices[c] {
+			gl, gr := balance(uv.pan)
+			for i, v := range chans[c][k] {
+				if cd.duck && duck != nil {
+					v = v * duck[i]
+				}
+				left[i] = left[i] + float64(v*gl)
+				right[i] = right[i] + float64(v*gr)
+				if rev != nil {
+					rev[i] = rev[i] + float64(v*cd.sendReverb)
+				}
+				if dly != nil {
+					dly[i] = dly[i] + float64(v*cd.sendDelay)
+				}
 			}
 		}
 	}
@@ -686,6 +737,7 @@ func renderSong(s *song, in instruments) songOut {
 	if bodySteps > 0 {
 		introEnd := s.sampleAt(s.tickOfStep(introSteps))
 		ls := s.sampleAt(s.tickOfStep(introSteps + bodySteps))
+		seamCrossfade(left, right, ls, s.sampleAt(s.tickOfStep(introSteps+2*bodySteps)), s.rate)
 		cut := func(x []float64) []float64 { return append(x[:introEnd:introEnd], x[ls:]...) }
 		res.chans, res.loopStart = [][]float64{cut(left), cut(right)}, introEnd
 		return res

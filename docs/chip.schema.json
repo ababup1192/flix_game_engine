@@ -16,7 +16,7 @@
       "type": "object"
     },
     "channels": {
-      "description": "チャンネルの並び [{name, part（pulse・triangle・noise・wave）, vol, pan（-1〜1）, cents（デチューン）, sub（1 オクターブ下のサイン。機種の外）, duck（サイドチェインで沈める）, send: {reverb, delay}}]。rows の鍵はこの名前",
+      "description": "チャンネルの並び [{name, part（pulse・triangle・noise・wave。機種の外の saw・sine）, vol, pan（-1〜1）, cents（デチューン）, sub（1 オクターブ下のサイン。機種の外）, duck（サイドチェインで沈める）, send: {reverb, delay}, unison, filter, pitchenv}]。rows の鍵はこの名前。機種の外の音色は下の表",
       "items": {
         "additionalProperties": false,
         "properties": {
@@ -25,6 +25,50 @@
           },
           "duck": {
             "type": "boolean"
+          },
+          "filter": {
+            "additionalProperties": false,
+            "description": "2 極のフィルタ（mode = low・band・high、q 0.3〜12）。切る所 hz から、鳴らした頭に env オクターブ（-8〜8）上がり env_ms で戻る。sweep = [[小節, Hz], …] は頭からの小節で切る所を動かす（間は比で滑らか・ループの 2 周目も同じ位置）",
+            "properties": {
+              "env": {
+                "maximum": 8,
+                "minimum": -8,
+                "type": "number"
+              },
+              "env_ms": {
+                "exclusiveMinimum": 0,
+                "type": "number"
+              },
+              "hz": {
+                "maximum": 20000,
+                "minimum": 20,
+                "type": "number"
+              },
+              "mode": {
+                "enum": [
+                  "low",
+                  "band",
+                  "high"
+                ]
+              },
+              "q": {
+                "maximum": 12,
+                "minimum": 0.3,
+                "type": "number"
+              },
+              "sweep": {
+                "items": {
+                  "items": {
+                    "type": "number"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": "array"
+                },
+                "type": "array"
+              }
+            },
+            "type": "object"
           },
           "name": {
             "type": "string"
@@ -42,8 +86,26 @@
               "pulse",
               "triangle",
               "noise",
-              "wave"
+              "wave",
+              "saw",
+              "sine"
             ]
+          },
+          "pitchenv": {
+            "additionalProperties": false,
+            "description": "鳴らした頭（打ち直しも）に semis 半音（-60〜60）上から ms の速さで指数に落ちる",
+            "properties": {
+              "ms": {
+                "exclusiveMinimum": 0,
+                "type": "number"
+              },
+              "semis": {
+                "maximum": 60,
+                "minimum": -60,
+                "type": "number"
+              }
+            },
+            "type": "object"
           },
           "send": {
             "additionalProperties": false,
@@ -62,6 +124,28 @@
           "sub": {
             "minimum": 0,
             "type": "number"
+          },
+          "unison": {
+            "additionalProperties": false,
+            "description": "同じ音を voices 本（2〜7）、cents（0〜100）の幅でずらして重ね、左右へ width（0〜1）だけ広げる。sub は 1 本目だけ",
+            "properties": {
+              "cents": {
+                "maximum": 100,
+                "minimum": 0,
+                "type": "number"
+              },
+              "voices": {
+                "maximum": 7,
+                "minimum": 2,
+                "type": "integer"
+              },
+              "width": {
+                "maximum": 1,
+                "minimum": 0,
+                "type": "number"
+              }
+            },
+            "type": "object"
           },
           "vol": {
             "minimum": 0,

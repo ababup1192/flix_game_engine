@@ -6,6 +6,7 @@ package snd
 //	fge snd gen <x.snd.star>                                 台本が書いた sndsrc と譜面をファイルへ書く
 //	fge snd snap <x.snd.star|x.sndsrc.json> [--new] [--max N] build して、書いた WAV を fge rounds の周に積む
 //	fge snd compare <前.wav> <後.wav> [--match <フォルダ> --name <名前>]   2 本の差（長さ・ループの頭・音量・差の音）
+//	fge snd bars <x.wav> --bpm N                            小節ごとの音量・帯・左右の広がり（bars.go）
 //	fge snd ops [--md]・fge snd schema [--write]              op の一覧と spec の JSON Schema（op の登録から作る）
 
 import (
@@ -32,6 +33,8 @@ const usage = `使い方: bin/fge snd <口> ...   音の指定（*.sndsrc.json�
   snd compare <前.wav> <後.wav> [--match <フォルダ> --name <名前>]
       2 本の差: サンプル数・ループの頭・LUFS・差の音の RMS（dBFS）と一番大きい所。
       --match は 2 本を同じ LUFS にそろえて <フォルダ>/<名前>.old.wav・<名前>.new.wav に書く（聞き比べ用）
+  snd bars <x.wav> --bpm <速さ> [--beats 4]
+      曲を小節ごとに測る: 音量（K 特性）・低中高の帯・左右の広がり。ループの頭と一番大きい小節に印（山場と継ぎ目の下見）
   snd ops [--md]                op の一覧（--md は docs/snd-ops.md の本文）
   snd schema [--write]          sndsrc の JSON Schema（--write は docs/snd-ops.md と docs/sndsrc.schema.json を書き直す）
 
@@ -57,6 +60,8 @@ func Run(out, errOut *strings.Builder, engineRoot, workRoot string, args []strin
 		return cmdSnap(out, errOut, engineRoot, workRoot, rest)
 	case "compare":
 		return cmdCompare(out, errOut, workRoot, rest, asJSON)
+	case "bars":
+		return cmdBars(out, errOut, workRoot, rest)
 	case "ops":
 		if len(rest) > 0 && rest[0] == "--md" {
 			out.WriteString(opsMarkdown())

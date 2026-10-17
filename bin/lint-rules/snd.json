@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "fge snd の機種の決まりと検査の閾値。styles = 機種ごとの音源の縛り（sndsrc の \"style\" で名指す。voices は部品 → 同時に鳴らせる数・書いていない部品は 0。ops は書ける op。duties はパルスの山の割合。noiseKinds は雑音の作り方。breaks は破ってよい所（機種の外の手 reverb・delay・sidechain・sub・pan（振り切りより細かい左右）。使えば report の breaks に「破った所」として残る）。ops も voices も無い style は縛りなし）。loudness = kind ごとの統合ラウドネスの目安（LUFS。ループする音は輪の 1 周）と幅（lint・normalize の既定。bgm の -16 は依頼主の決定 2026-10-17）。peakDbfs = これを超えるピークは lint。truePeakDbtp = 4 倍に読み直したピークの上限（lint・normalize の既定）。headSilenceMs = 鳴り出しの遅れの上限（pacing.md の「音が先 15ms〜後 45ms」より狭く）。tailClick = ループしない音の終わりのサンプルの大きさの上限。dc = 平均の大きさの上限。seamStepRatio = 継ぎ目の段差 ÷ まわり 20ms の隣り合う差の最大（gate）。seamLevelDb = 継ぎ目の前後 20ms の音量の差（gate）。barTolerance = 輪の長さと整数小節の差の上限（サンプル。gate）。値は仮置き（試作 4 題とゲームの今の WAV から。本番の見比べで決め直す）。",
+  "note": "fge snd の機種の決まりと検査の閾値。styles = 機種ごとの音源の縛り（sndsrc の \"style\" で名指す。voices は部品 → 同時に鳴らせる数・書いていない部品は 0。ops は書ける op。duties はパルスの山の割合。noiseKinds は雑音の作り方。breaks は破ってよい所（機種の外の手 reverb・delay・sidechain・sub・pan（振り切りより細かい左右）・saw・sine・unison・filter・pitchenv（機種の外の音色）。使えば report の breaks に「破った所」として残る）。ops も voices も無い style は縛りなし）。loudness = kind ごとの統合ラウドネスの目安（LUFS。ループする音は輪の 1 周）と幅（lint・normalize の既定。bgm の -16 は依頼主の決定 2026-10-17）。peakDbfs = これを超えるピークは lint。truePeakDbtp = 4 倍に読み直したピークの上限（lint・normalize の既定）。headSilenceMs = 鳴り出しの遅れの上限（pacing.md の「音が先 15ms〜後 45ms」より狭く）。tailClick = ループしない音の終わりのサンプルの大きさの上限。dc = 平均の大きさの上限。seamStepRatio = 継ぎ目の段差 ÷ まわり 20ms の隣り合う差の最大（gate）。seamLevelDb = 継ぎ目の前後 20ms の音量の差（gate）。barTolerance = 輪の長さと整数小節の差の上限（サンプル。gate）。droneSeconds = song の 1 本のチャンネルが打ち直さず高さも変えずに鳴り続けてよい長さ（秒。gate。離し忘れの耳鳴りを止める。依頼主の聞いた不具合 2026-10-17）。値は仮置き（試作 4 題とゲームの今の WAV から。本番の見比べで決め直す）。",
   "styles": {
     "gb": {
       "label": "ゲームボーイ（DMG）",
@@ -32,12 +32,14 @@
     },
     "neo": {
       "label": "チップの音色 + 今のミックス",
-      "note": "音色は機種の部品（パルス・三角・雑音・波形メモリ）だけ。声の数は 1 台より多く（パルス 4・三角 2・波形メモリ 3・雑音 2）、ミックスは今の手を許す: 響き（reverb）・帰還つきディレイ（delay）・キックで沈める（sidechain）・三角の下のサイン（sub）・左右に自由に振る（pan）。破った所は report の breaks に残る。",
+      "note": "音色は機種の部品（パルス・三角・雑音・波形メモリ）が芯。声の数は 1 台より多く（パルス 4・三角 2・波形メモリ 3・雑音 2）、ミックスは今の手を許す: 響き（reverb）・帰還つきディレイ（delay）・キックで沈める（sidechain）・三角の下のサイン（sub）・左右に自由に振る（pan）。今の音色も許す: ノコギリ（saw。4 本）・サイン（sine。2 本）・デチューンした重ね（unison）・2 極のフィルタの開閉（filter）・鳴らした頭の音程の落ち（pitchenv）。破った所は report の breaks に残る。",
       "voices": {
         "pulse": 4,
         "triangle": 2,
         "wave": 3,
-        "noise": 2
+        "noise": 2,
+        "saw": 4,
+        "sine": 2
       },
       "duties": [
         0.125,
@@ -50,7 +52,12 @@
         "delay",
         "sidechain",
         "sub",
-        "pan"
+        "pan",
+        "saw",
+        "sine",
+        "unison",
+        "filter",
+        "pitchenv"
       ]
     },
     "free": {
@@ -79,5 +86,6 @@
   "dc": 0.01,
   "seamStepRatio": 1.5,
   "seamLevelDb": 6,
-  "barTolerance": 2
+  "barTolerance": 2,
+  "droneSeconds": 8
 }
