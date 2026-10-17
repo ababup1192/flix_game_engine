@@ -931,11 +931,10 @@ func (st *starState) writeChip(_ *starlark.Thread, b *starlark.Builtin, args sta
 	if err != nil {
 		return nil, fmt.Errorf("%s(%q): %v", b.Name(), path, err)
 	}
-	data, err := json.MarshalIndent(chip, "", " ")
+	data, err := chipJSON(chip)
 	if err != nil {
 		return nil, err
 	}
-	data = append(data, '\n')
 	probe := &rctx{rate: 44100, files: map[string][]byte{clean: data}}
 	sp, err := loadSong(probe, clean)
 	if err == nil {
@@ -946,4 +945,69 @@ func (st *starState) writeChip(_ *starlark.Thread, b *starlark.Builtin, args sta
 	}
 	st.put(clean, data)
 	return starlark.String(path), nil
+}
+
+// chipJSON は譜面を読みやすい形で書く: 上の鍵は決まった順に 1 行ずつ、phrases・chains・instruments などの中身は 1 つ 1 行。
+func chipJSON(chip map[string]any) ([]byte, error) {
+	var b strings.Builder
+	b.WriteString("{\n")
+	order := []string{"version", "note", "bpm", "ticks", "groove", "gain", "loop", "channels", "fx", "instruments", "waves", "phrases", "chains", "rows"}
+	first := true
+	for _, k := range order {
+		v, ok := chip[k]
+		if !ok {
+			continue
+		}
+		if !first {
+			b.WriteString(",\n")
+		}
+		first = false
+		key, _ := json.Marshal(k)
+		b.WriteString(" ")
+		b.Write(key)
+		b.WriteString(": ")
+		switch x := v.(type) {
+		case map[string]any:
+			if k == "fx" {
+				break
+			}
+			b.WriteString("{")
+			for i, name := range sortedKeys(x) {
+				one, err := json.Marshal(x[name])
+				if err != nil {
+					return nil, err
+				}
+				nk, _ := json.Marshal(name)
+				if i > 0 {
+					b.WriteString(",")
+				}
+				fmt.Fprintf(&b, "\n  %s: %s", nk, one)
+			}
+			b.WriteString("\n }")
+			continue
+		case []any:
+			if k == "channels" || k == "rows" {
+				b.WriteString("[")
+				for i, e := range x {
+					one, err := json.Marshal(e)
+					if err != nil {
+						return nil, err
+					}
+					if i > 0 {
+						b.WriteString(",")
+					}
+					fmt.Fprintf(&b, "\n  %s", one)
+				}
+				b.WriteString("\n ]")
+				continue
+			}
+		}
+		one, err := json.Marshal(v)
+		if err != nil {
+			return nil, err
+		}
+		b.Write(one)
+	}
+	b.WriteString("\n}\n")
+	return []byte(b.String()), nil
 }
