@@ -1,5 +1,5 @@
 {
-  "note": "エージェントのフック（bin/fge hook-*）の判定値。この JSON が source of truth で、bin/fge hook-art-edit / hook-flix-touch / hook-flix-work / hook-flix-edit はこれを読んで動く。呼び出しの配線は .claude/settings.json と agents-pack/settings.json・agents-pack/codex-hooks.json にある。",
+  "note": "エージェントのフック（bin/fge hook-*）の判定値。この JSON が source of truth で、bin/fge hook-art-edit / hook-flix-touch / hook-flix-work / hook-flix-edit / hook-asset-guard / hook-read-guard はこれを読んで動く。呼び出しの配線は .claude/settings.json と agents-pack/settings.json・agents-pack/codex-hooks.json にある。",
   "sessionDiet": {
     "note": "廃止（hook-session-diet は何もしない。セッションの長さは Claude Code 標準に任せる）。古い bin/fge-go が欠けキーで止まらないよう値だけ 1 リリース残す — 0.36.0 で消す。",
     "thresholdTokens": 130000,
@@ -112,5 +112,21 @@
       "markerPrefix": "fge-art-remind-",
       "message": "絵を描く View を書きました。絵を足す・変えるなら .claude/rules/drawing.md（絵の下限 5 性質・人に見せて確かめる・周回は r2 で止める）を先に読んでください（このセッションで 1 回だけ出ます）。"
     }
+  },
+  "assetGuard": {
+    "note": "hook-asset-guard (PreToolUse・Write / Edit / MultiEdit / apply_patch / Bash)。ゲームの assetsDir の下で suffixes に当たる素材へ書く呼び出しを止め、atelierDir の同じ相対パスを返す。調整の Doc（*.cycle.json・*.cue.json・*.shader.json・*.theme.json など）は suffixes に入れない＝止めない。atelierDir が無いリポジトリ（エンジン本体など）では何もしない。message の {path} は止めたパス・{atelier} は代わりに書くパス。 Bash は書く先だけ見る（BashWriteTargets）: リダイレクトの行き先・dd of=・sed -i / perl -i の引数・bashInPlace の道具の引数・bashCopy の道具の行き先（ディレクトリごとも）・スクリプトの open(P, 'w') / Path(P).write_* / .save(P) / writeFileSync(P) の P。素材を読むだけ・読んで atelier/ へ書く・パスを書かない生成スクリプトの実行は止めない。",
+    "assetsDir": "assets",
+    "atelierDir": "atelier",
+    "suffixes": [".sprite.json", ".anim.json", ".chip.json", ".sfx.json", ".png", ".wav", ".ogg", ".mp3", ".ttf", ".otf"],
+    "message": "{path} は素材のスロットなので直に書けません。AI が作る素材は atelier/ に書きます（中身は同じ Doc 形式）。採用は swap で、前の中身は atelier/archive/ に積まれます。代わりに {atelier} へ書いてください。",
+    "bashInPlace": ["tee", "truncate"],
+    "bashCopy": ["cp", "mv", "install", "rsync", "ln"]
+  },
+  "readGuard": {
+    "note": "hook-read-guard (PreToolUse・Read / Bash)。suffix のファイルが maxLines 行を超えるとき、Read を limit 無し（か limit が maxLines を超えて）で呼ぶ・Bash で catCommands をパイプもリダイレクトも無しに呼ぶのを止める。`cat x.flix | grep`・`sed -n` は止めない。message の {path}・{lines}・{max} は置き換わる。",
+    "suffix": ".flix",
+    "maxLines": 300,
+    "catCommands": ["cat"],
+    "message": "{path} は {lines} 行あります（{max} 行を超える .flix は丸ごと読まない）。grep -n か make src Q=<名前> で位置を引き、Read の offset/limit で必要な範囲だけ読んでください。"
   }
 }

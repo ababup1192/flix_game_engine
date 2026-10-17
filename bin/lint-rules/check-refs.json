@@ -17,7 +17,6 @@
     "docs/module-index.md",
     "docs/modules/*.md",
     "mk/module.sed",
-    "docs/engine-module-index.md",
     "docs/doc-conventions.md",
     "docs/glossary.md",
     "docs/shader-doc.md",

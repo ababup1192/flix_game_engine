@@ -401,6 +401,22 @@ func TestEngineDirAcceptsWideSpace(t *testing.T) {
 	}
 }
 
+// FindEngineDir は 根自身 → local.mk → Makefile の ENGINE の順で、marker が実在する所を返す。
+func TestFindEngineDirOrder(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("ENGINE", "")
+	write(t, filepath.Join(root, "eng", "mk", "game.mk"), "")
+	write(t, filepath.Join(root, "Makefile"), "# ENGINE := /comment\nENGINE ?= eng\n")
+	write(t, filepath.Join(root, "local.mk"), "ENGINE := /no/such\n")
+	if got, self := FindEngineDir(root, "mk/game.mk"); got != filepath.Join(root, "eng") || self {
+		t.Errorf("local.mk が無い所なら Makefile の ENGINE へ落ちます: %s %v", got, self)
+	}
+	write(t, filepath.Join(root, "mk", "game.mk"), "")
+	if got, self := FindEngineDir(root, "mk/game.mk"); got != root || !self {
+		t.Errorf("根に marker があれば根自身です: %s %v", got, self)
+	}
+}
+
 func TestParseNowRejectsGarbage(t *testing.T) {
 	if _, err := ParseNow("きのう"); err == nil {
 		t.Fatal("数でない --now はエラーです")

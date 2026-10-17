@@ -4,17 +4,20 @@ import (
 	"os"
 	"strings"
 
+	"github.com/ababup1192/flix_game_engine/go/internal/docshape"
 	"github.com/ababup1192/flix_game_engine/go/internal/f32"
 	"github.com/ababup1192/flix_game_engine/go/internal/fallback"
 	"github.com/ababup1192/flix_game_engine/go/internal/flixreserved"
 	"github.com/ababup1192/flix_game_engine/go/internal/forbid"
 	"github.com/ababup1192/flix_game_engine/go/internal/jargon"
+	"github.com/ababup1192/flix_game_engine/go/internal/makefiledup"
 	"github.com/ababup1192/flix_game_engine/go/internal/notesrotate"
 	"github.com/ababup1192/flix_game_engine/go/internal/precommit"
 	"github.com/ababup1192/flix_game_engine/go/internal/quadratic"
 	"github.com/ababup1192/flix_game_engine/go/internal/recordwrap"
 	"github.com/ababup1192/flix_game_engine/go/internal/uioverflow"
 	"github.com/ababup1192/flix_game_engine/go/internal/valuediscard"
+	"github.com/ababup1192/flix_game_engine/go/internal/verbnames"
 	"github.com/ababup1192/flix_game_engine/go/internal/view"
 	"github.com/ababup1192/flix_game_engine/go/internal/ztable"
 )
@@ -59,6 +62,9 @@ func cmdPrecommit(out, errOut *strings.Builder, rest []string, _ bool) int {
 		"quadratic":     lintOf(quadratic.Run, abs),
 		"notes-rotate":  lintOf(notesrotate.Run, abs),
 		"record-wrap":   lintOf(recordwrap.Run, abs),
+		"doc-shape":     lintOf(docshape.Run, abs),
+		"makefile-dup":  lintOf(makefiledup.Run, abs),
+		"verb-names":    lintOf(verbnames.Run, abs),
 		"f32": func(o, e *strings.Builder, args []string) int {
 			code, err := f32.Run(o, e, abs, args, f32.Options{})
 			return orAbort(e, code, err)

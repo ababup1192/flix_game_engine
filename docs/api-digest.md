@@ -10,8 +10,7 @@ engine / engine_world / engine_tools が公開している `pub def` / `pub enum
 
 パッケージごとに分けている（1 ファイルが大きくなりすぎると、それ自体を読むのが
 grep 代わりの重い作業になってしまうため）。調べたいモジュールがどのパッケージに
-あるか分からないときは `make module Q=<やりたいこと>`（目次は [module-index.md](module-index.md)）か
-[engine-module-index.md](engine-module-index.md) を先に引く。
+あるか分からないときは `make module Q=<やりたいこと>`（目次は [module-index.md](module-index.md)）を先に引く。
 | パッケージ | モジュール数 | 宣言数 | ファイル |
 |---|---|---|---|
 | engine | 47 | 500 | [api-digest/engine.md](api-digest/engine.md) |

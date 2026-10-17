@@ -77,7 +77,7 @@ ENGINE_FULL_TOML_NAME := flix_game_engine-$(VERSION).toml
 # 全体の up 階層数を求め、symlink の相対パスを動的に組み立てる。
 SUBPATH_DEPTH := 5
 
-.PHONY: help status sync sync-engine sync-render-gl sync-engine-world sync-engine-tools sync-engine-full sync-root-src clean-locks clean-game-builds test test-par render render-all render-par render-changed diff gl-parity release release-guard bump lint-palette lint-view lint-loop lint-audio rules check-docs-sync checkd-stop shader-cache-soak
+.PHONY: help status sync sync-engine sync-render-gl sync-engine-world sync-engine-tools sync-engine-full sync-root-src clean-locks clean-game-builds test test-par render render-all render-par render-changed diff gl-parity release release-guard studio-parity bump lint-palette lint-view lint-loop lint-audio rules check-docs-sync checkd-stop shader-cache-soak
 
 # セッション立ち上げの固定費を数百トークンに抑える口。SessionStart フックが毎回呼ぶので
 # 実行や変更は一切せず、残っている記録 (.test-logs/ スナップショット チケット git) を集めるだけ。
@@ -533,8 +533,23 @@ release-guard:
 	@# 追随の材料が bump のときのままか。API を触るコミットが bump の後に入ると古くなる。
 	@bin/fge migration-notes --check
 	@echo "[release] v$(VERSION) を $(RELEASE_SHA) で公開します"
+# Studio の NewGame.flix は AGENTS.md の組み立て（bin/fge sync-agents）を Flix で持ち直している。
+# sync-agents の出力の形を変えた版を出すと、Studio の CI（check-agents-parity）がその版の同梱で落ちる。
+# WhyNot: engine の go test で形を固めるだけにしないのは、固めた期待値ごと書き換えれば通り、
+# Studio 側の直し忘れは止まらないため（0.35.36 で実際に落ちた）。公開の前に Studio の実物と突き合わせる。
+# Studio の clone が無い所では STUDIO=none で飛ばせる（飛ばしたことは出力に残る）。
+STUDIO ?= $(HOME)/Desktop/flix_ge_studio
+studio-parity:
+	@if [ "$(STUDIO)" = "none" ]; then echo "[release] STUDIO=none: Studio との AGENTS の突き合わせを飛ばしました"; exit 0; fi; \
+	 test -f "$(STUDIO)/Makefile" || { echo "[release] Studio の clone が見つかりません ($(STUDIO))。STUDIO=<パス> で指定するか、無い環境なら STUDIO=none"; exit 1; }; \
+	 git -C "$(STUDIO)" fetch -q origin main \
+	   && [ "$$(git -C "$(STUDIO)" rev-parse HEAD)" = "$$(git -C "$(STUDIO)" rev-parse origin/main)" ] \
+	   || { echo "[release] Studio の clone ($(STUDIO)) が origin/main と違います。git -C $(STUDIO) pull --ff-only で最新にしてから"; exit 1; }; \
+	 echo "[release] Studio ($(STUDIO)) の check-agents-parity をこの engine で流します"; \
+	 $(MAKE) --no-print-directory -C "$(STUDIO)" check-agents-parity ENGINE="$(CURDIR)" \
+	   || { echo "[release] sync-agents の出力が Studio の server/src/NewGame.flix とずれています。Studio 側も同じ変更を入れて main へ push してから公開してください"; exit 1; }
 # gl-parity も全量ゲートの一員 — GL と SoftRaster の絵の退行はテストに出ないため。
-release: release-guard sync $(TEST) gl-parity
+release: release-guard studio-parity sync $(TEST) gl-parity
 	cd $(ENGINE_FULL_DIR) && "$(FLIX)" build-pkg
 	@# WhyNot: build-pkg の後に置くのは、zip の中身に engine_full.fpkg が入るため。
 	@# 先に組むと 1 つ前のバージョンの fpkg を配ってしまう。
@@ -915,7 +930,6 @@ check-docs-sync:
 	echo "[check-docs-sync] AGENTS.md から docs/ への導線があるか"; \
 	for kw in \
 	  "docs/audio.md" \
-	  "docs/engine-module-index.md" \
 	  "docs/module-index.md" \
 	  "docs/drawing-floor.md" \
 	  "docs/flix-conventions.md" \

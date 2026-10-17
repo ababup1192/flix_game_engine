@@ -96,7 +96,7 @@ func TestChecksRunInRulesOrder(t *testing.T) {
 		t.Fatalf("通るはずが code=%d", code)
 	}
 	got := strings.Join(order, ",")
-	if got != "flix-reserved,value-discard,view,palette,ui-overflow,fallback,f32,z-table,forbid,quadratic,record-wrap,jargon" {
+	if got != "flix-reserved,value-discard,view,palette,ui-overflow,fallback,f32,z-table,forbid,quadratic,record-wrap,verb-names,jargon" {
 		t.Errorf("並びが規約と違う: %s", got)
 	}
 }

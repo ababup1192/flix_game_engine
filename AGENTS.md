@@ -62,7 +62,6 @@
 - **z-index の範囲の地図（world / UI / Transition / HUD / デバッグの重なり順の仕切り）**: [docs/z-bands.md](docs/z-bands.md)
 - **性能（3 つの門・どこまで直すか・残っている二乗の一覧）**: [docs/performance.md](docs/performance.md)
 - engine_world の「やりたいこと → モジュール」逆引き: `make module Q=<語>` で 1 行ずつ引く（分野の目次は [docs/module-index.md](docs/module-index.md)・本文は `docs/modules/<分野>.md`）
-- engine/ 側（描画・音・入力などの土台）のモジュール索引: [docs/engine-module-index.md](docs/engine-module-index.md)
 - **API の型・引数はソースを grep する前に** [docs/api-digest.md](docs/api-digest.md)（全 pub 宣言の生成物）を引く
 - headless の描き出しを新しい場所で組むときの写経元: [docs/headless-render-recipe.md](docs/headless-render-recipe.md)
 - 音の付け方（効果音づくり・鳴らす配線・音の下限チェックリスト）: [docs/audio.md](docs/audio.md)

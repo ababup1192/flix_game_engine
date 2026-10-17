@@ -74,6 +74,7 @@ const format = "manifest の形（全部の欄は任意。文言は `code` と *
 	"media の 1 つは文字列（拡張子で img / video / audio）か {\"src\", \"caption\", \"pixel\": true（実寸・ドットのまま）}。\n" +
 	"options のある節は選べる節。ページ下の帯に「決定: A1 B2」が出て、コピーで返事にそのまま貼れる。\n" +
 	"decision を書くと、その節は採用の札が付き、knob を持つ節には「消すつまみ」が並ぶ（knobs が後で数える）。\n" +
+	"依頼主の返事「決定: A2 B1」は decision.picks へ写す。選び続ける調整値だけ knob に \"keep\": true（knobs が数えない）。\n" +
 	"\n" +
 	"WhyNot: 部品（会話の窓など、実機の見本を CSS で作り直す物）はここに入れない。実機と二重管理になる。\n" +
 	"素材は実機の描き出しと動画だけ。\n"

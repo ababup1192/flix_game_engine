@@ -3,6 +3,7 @@ package forbid
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -77,5 +78,21 @@ func TestRuleWithoutHintIsAnError(t *testing.T) {
 	root := writeRepo(t, `{"rules":[{"id":"x","pattern":"a","hint":" "}]}`, "", nil)
 	if _, err := LoadRules(root); err == nil {
 		t.Fatal("want error")
+	}
+}
+
+// rawLine の規則は .flix の文字列の中身も見る（View に直に書いた文言を止める）。コメントは見ない。
+func TestRawLineSeesStringContents(t *testing.T) {
+	r := &Rules{List: []Rule{{ID: "lit", Suffixes: []string{"View.flix"}, Pattern: `\btext\s*=\s*"(?:\$\{[^}]*\}|[^"$])*?[A-Za-z]{2,}`, RawLine: true, Hint: "h"}}}
+	r.List[0].re = regexp.MustCompile(r.List[0].Pattern)
+	src := "  TextDraw.centered({ text = \"Press any key\", size = 8.0 })\n" +
+		"  { text = doc#press }\n" +
+		"  { text = \"${doc#a} 1\" }\n" +
+		"  { text = \"HP ${hp}\" }\n" +
+		"  /// 例: text = \"Press\"\n" +
+		"  { size = 8.0 } // text = \"Press\"\n"
+	hits := r.TextHits("src/TitleView.flix", src)
+	if len(hits) != 2 || hits[0].Line != 1 || hits[1].Line != 4 {
+		t.Errorf("1 行目と 4 行目だけ当たるはず: %+v", hits)
 	}
 }

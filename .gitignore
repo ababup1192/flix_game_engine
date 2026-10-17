@@ -39,6 +39,9 @@ __pycache__/
 **/gallery/
 !docs/gallery/
 !docs/gallery/**
+# check-render-budget の負の見本は repo/gallery/ の空の png とサイドカーが入力そのもの。
+!testdata/lint/check-render-budget/*/repo/gallery/
+!testdata/lint/check-render-budget/*/repo/gallery/**
 # リファレンス画像は退行テスト(make reference-check)の基準画像だが、PNG 本体でなく SHA256SUMS.txt を追跡する。
 # title.png だけは Studio のジャンルカードのサムネイルが実体を読むので例外。
 **/reference/*.png
@@ -51,6 +54,8 @@ scratch/
 **/debug/**/*.gif
 # 次の自分への引き継ぎメモ。マシン固有なので git で運ばない
 NOTES.md
+# precommit の負の見本は NOTES.md そのものが入力（jargon が新しい行を裁くか）。
+!testdata/lint/precommit/*/overlay/NOTES.md
 # Go 版の検査 (go/) のビルド成果物。ソースだけを運び、バイナリは各 OS で作る。
 bin/fge-go
 bin/fge-go.exe

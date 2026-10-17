@@ -1,5 +1,6 @@
 {
   "version": 1,
+  "note": "折り返しの無い文字の見本（ui-overflow が止める）。",
   "root": {
     "name": "hud",
     "children": [

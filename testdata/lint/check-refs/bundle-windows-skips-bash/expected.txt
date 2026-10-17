@@ -1,3 +1,3 @@
 [check-refs] Genesis 対照は飛ばしました (Studio の外のバンドル)
-OK: バンドルに必須 28 点が揃っています (bundle / Windows・テンプレ 1 本)
+OK: バンドルに必須 32 点が揃っています (bundle / Windows・テンプレ 1 本)
 [exit=0]

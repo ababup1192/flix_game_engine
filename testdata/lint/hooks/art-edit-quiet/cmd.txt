@@ -1,4 +1,10 @@
-# 下限を満たす View では何も言わない (exit 0)。
+# 下限を満たす View では view の検査は何も言わない (exit 0)。
+# 絵の決まり (drawing.md) を指す 1 行はセッションに 1 回だけなので、同じセッションで
+# 1 回目を読み捨て、2 回目が黙るのを見る。印は OS の一時フォルダに置かれるので $WORK へ向ける。
+export TMPDIR="$WORK"
+bin/fge hook-art-edit >/dev/null 2>&1 <<'JSON'
+{"session_id":"lint-fixture","tool_input":{"file_path":"testdata/lint/hooks/art-edit-quiet/View.flix"}}
+JSON
 bin/fge hook-art-edit <<'JSON'
-{"tool_input":{"file_path":"testdata/lint/hooks/art-edit-quiet/View.flix"}}
+{"session_id":"lint-fixture","tool_input":{"file_path":"testdata/lint/hooks/art-edit-quiet/View.flix"}}
 JSON

@@ -1,2 +1,2 @@
-[lint-fallback] OK (bug! 1 件を検査 / 除外 17 件)
+[lint-fallback] OK (bug! 1 件を検査 / 除外 16 件)
 [exit=0]

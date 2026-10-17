@@ -1,6 +1,6 @@
 docs/module-index.md: モジュール Tilemap（engine_world/src 配下・pub def 2 本）が載っていません
 
 モジュールを足したら docs/modules/<分野>.md（engine_world）か
-docs/engine-module-index.md（engine）に 1 行足してください。
+docs/modules/engine.md（engine）に 1 行足してください。
 内部専用なら bin/check-api-index.py の EXEMPT に理由付きで載せてください。
 [exit=1]

@@ -1,6 +1,6 @@
 {
   "targets": [
-    { "src": "engine/src", "doc": "docs/engine-module-index.md" },
+    { "src": "engine/src", "doc": "docs/modules/engine.md" },
     { "src": "engine_world/src", "doc": "docs/module-index.md", "parts": "docs/modules/*.md" }
   ],
   "extraDefSources": ["engine_tools/src"],

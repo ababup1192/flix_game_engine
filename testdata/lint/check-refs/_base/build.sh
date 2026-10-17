@@ -17,8 +17,10 @@ for p in \
   bin/lint-audio.py bin/lint-images.py bin/lint-ui-overflow.py \
   bin/precommit.py bin/githooks/pre-commit bin/sync-agents.py bin/carve/carve.py \
   docs/api-digest.md docs/api-digest/engine.md docs/api-digest/engine_world.md \
-  docs/api-digest/engine_tools.md docs/module-index.md docs/engine-module-index.md \
+  docs/api-digest/engine_tools.md docs/module-index.md \
   docs/doc-conventions.md docs/glossary.md docs/shader-doc.md docs/checkd.md \
+  docs/modules/engine.md mk/module.sed docs/drawing-floor.md \
+  docs/flix-conventions.md docs/error-handling.md \
   .claude/hooks/after-flix-edit.py .claude/hooks/session-diet.py \
   agents-pack/AGENTS.core.md agents-pack/settings.json agents-pack/manifest.json \
   agents-pack/codex-hooks.json agents-pack/rules/drawing.md agents-pack/rules/flix.md \

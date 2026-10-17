@@ -6,7 +6,7 @@
 //
 // 規則はエンジンの bin/lint-rules/forbid.json (配られる・上書きされる) と、ゲームの
 // bin/lint-rules/forbid.local.json (ゲーム固有・残る) を足した物。1 件は
-// {id, suffixes / basenames / prefixes で見るファイル, pattern, unlessLine, skip, hint}。
+// {id, suffixes / basenames / prefixes で見るファイル, pattern, unlessLine, rawLine, skip, hint}。
 // hint には「代わりに何を使うか」を必ず書く (止めるだけの規則は置かない)。
 //
 // WhyNot: 規則ごとに Go のサブコマンドを足さないのは、古い書き方の大半が 1 行の正規表現で
@@ -41,10 +41,12 @@ type Rule struct {
 	Skip       []string `json:"skip"`
 	Pattern    string   `json:"pattern"`
 	UnlessLine string   `json:"unlessLine"`
-	Hint       string   `json:"hint"`
-	re         *regexp.Regexp
-	unless     *regexp.Regexp
-	from       string
+	// RawLine は .flix でも文字列の中身を消さずに照合する（文字列そのものを見る規則のため）。コメントは落とす。
+	RawLine bool   `json:"rawLine"`
+	Hint    string `json:"hint"`
+	re      *regexp.Regexp
+	unless  *regexp.Regexp
+	from    string
 }
 
 type rulesFile struct {
@@ -158,7 +160,9 @@ func (r *Rules) TextHits(rel, text string) []Hit {
 		}
 		for n, line := range lines {
 			code := line
-			if strings.HasSuffix(rel, ".flix") {
+			if strings.HasSuffix(rel, ".flix") && rule.RawLine {
+				code = stripFlixComment(line)
+			} else if strings.HasSuffix(rel, ".flix") {
 				code = stripFlixNoise(line)
 			}
 			if !rule.re.MatchString(code) {
@@ -171,6 +175,26 @@ func (r *Rules) TextHits(rel, text string) []Hit {
 		}
 	}
 	return hits
+}
+
+// stripFlixComment は 1 行から文字列の外の // 以降と doc コメント（/// で始まる行）を落とす。
+func stripFlixComment(line string) string {
+	if strings.HasPrefix(strings.TrimSpace(line), "//") {
+		return ""
+	}
+	inStr := false
+	for i := 0; i < len(line); i++ {
+		c := line[i]
+		switch {
+		case inStr && c == '\\':
+			i++
+		case c == '"':
+			inStr = !inStr
+		case !inStr && c == '/' && i+1 < len(line) && line[i+1] == '/':
+			return line[:i]
+		}
+	}
+	return line
 }
 
 // stripFlixNoise は 1 行から文字列の中身と // 以降を落とす。

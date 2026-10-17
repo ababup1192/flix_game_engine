@@ -1,6 +1,6 @@
 docs/module-index.md: Board.collapse は pub def に見つかりません（改名か削除の可能性）
 
 モジュールを足したら docs/modules/<分野>.md（engine_world）か
-docs/engine-module-index.md（engine）に 1 行足してください。
+docs/modules/engine.md（engine）に 1 行足してください。
 内部専用なら bin/check-api-index.py の EXEMPT に理由付きで載せてください。
 [exit=1]

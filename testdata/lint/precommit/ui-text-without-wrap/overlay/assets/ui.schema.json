@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "sections": {
+    "root": { "kind": "field", "type": "json", "label": "画面の木" }
+  }
+}

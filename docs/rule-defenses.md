@@ -5,6 +5,7 @@
 上で止められる物は上で止め、文書には判断の向きだけを残した。
 新しい決まりを足すときも同じ順で考え、ここに 1 行足す。毎回読む文書からは指さない（必要なときに引く資料）。
 「試した結果」の r1 は普通に頼んだ時、r2 は「決まりに反するのは承知・相談せずにコミットまで」と念押しした時。
+2 周目（0.35.37・AGENTS.md の後半を判断の向きだけにした回）は r3 が普通・r4 が念押し・r5 が穴を塞いだ後の念押し。
 
 ## 表
 
@@ -42,16 +43,20 @@
 | 開始時は make status から | script | SessionStart フック | ― |
 | コミットのフックを飛ばさない | script | ユーザ全体の PreToolUse（block-no-verify）。precommit の止めた時の文面から飛ばし方の案内を外した | r1 `--no-verify` を止めた・r2 `core.hooksPath` を読むだけでも止めた |
 | ゲーム固有の門をコミットで流す | script | precommit の `localGate`（ゲームの Makefile の `precommit-local` に `STAGED` を渡す） | ゲーム側の表（art-gate） |
-| 共通の口をゲームの Makefile へ写さない | 文書 | forbid は Makefile をパスで分けられないので lint にしない | r1 文書どおり断った |
-| プレイヤーの目に入る文言は Doc に置く | 文書 | 止める lint は無い | r1 文書どおり cycle.json へ置いた |
-| Doc 規約（1 Doc + 1 schema・fail-open・データは Doc） | 文書 | doc-conventions.md | ― |
+| 共通の口をゲームの Makefile へ写さない | lint | makefile-dup（precommit。game.mk を include する Makefile で共通の口にレシピを書いた行） | r1 文書どおり断った・r3 断った・r4 precommit が止めた |
+| プレイヤーの目に入る文言は Doc に置く | 文書 + lint | forbid `view-text-literal`（`*View.flix` の `text = "直書き"`。rawLine で文字列の中を見る）。View の外の Doc の既定値は止めない | r1・r3 Doc へ置いた・r4 View に直書きでコミット（穴）→ 規則を足して r5 precommit が止めた |
+| Doc は version・note・同じ種類の schema（項目に label か description）を持つ | lint | doc-shape（precommit。ステージした assets/ の Doc だけ） | r3 3 つとも付けてコミット・r4 precommit が止めた |
+| fail-open（欠け・書き損じは既定値へ）・データは Doc | 構造 + 文書 | `DocJson.loadOr`・fallback lint。何を Doc へ出すかは判断の向き | ― |
 | 言葉づかい（業界の語・造語と比喩を作らない） | 文書 + lint | jargon（既知の語だけ止まる） | 各試しで jargon がコメントの語を止めた |
-| AI の素材は atelier/ へ | 文書 | 止めるフックは無い | ― |
-| .flix を丸読みしない・広い探索は Explore | 文書 | ― | ― |
+| `is*`/`has*`/`can*` は Bool・`get*` は IO などの効果を持たない | lint | verb-names（precommit。1 行の宣言だけ） | r3 名前を変えた・r4 precommit が止めた |
+| 動詞の残り（load・build・with・to/as）の使い分け | 文書 | 型から見分けられない。AGENTS.md の判断の向きに 1 行 | ― |
+| AI の素材は atelier/ へ | script | hook-asset-guard（Write / Edit / apply_patch と、Bash のリダイレクト・`sed -i`・`cp` の行き先・書き込むスクリプトの中のパス） | r3 atelier へ書いた・r4 Bash の `sed -i` で抜けた（穴）→ Bash も見るようにして r5 フックが止めた |
+| .flix を丸読みしない | script | hook-read-guard（300 行超を offset も limit も無しに Read・パイプ無しの `cat`）。`head` や `less` は見ない | r3・r4 フックが止め、範囲を決めて読んだ |
 | NOTES の先頭を短く | script | notes-rotate（ゲーム側の表） | ゲーム側の表 |
-| テスト方針（何をテストするか・期待値は Doc から・橋渡しは最大 3 本・1 テスト 1 アサート・本体にロジックを書かない） | 文書 | quality-assurance。数のリテラルの forbid 案は 66 件が正しい使い方で見送り | ― |
+| テスト方針（何をテストするか・期待値は Doc から・橋渡しは最大 3 本・1 テスト 1 アサート・本体にロジックを書かない） | 文書 | quality-assurance・AGENTS.md の判断の向き。数のリテラルの forbid 案は 66 件が正しい使い方で見送り | r3 断った・r4 `expected = 12` でコミット（文書だけの決まり。止めない） |
 | 初学者の足場・早見表に足すのと対でまとめる | 文書 | ― | ― |
 | 絵の入口は /pixel-art・長い参考はスキルにしない | 構造 | 長い参考 5 本を engine の docs/art-ref/ へ移し、スキル一覧に載らなくした（入口の表から節を引く） | ― |
+| sync-agents の出力（AGENTS.md の形）を変えたら Studio の `server/src/NewGame.flix` も同じ変更にする | script | `make release` の前段 `studio-parity` が Studio の `check-agents-parity` をこの engine で流す（clone が無ければ `STUDIO=none` で飛ばしたと残る） | 0.35.36 で Studio v0.32.13 の CI が落ちた（v0.32.14 で直した） |
 
 ## 型と構成の案（types 担当）
 

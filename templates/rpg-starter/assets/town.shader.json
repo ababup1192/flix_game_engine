@@ -1,4 +1,5 @@
 {
+  "version": 1,
   "title": "水面のゆらぎ",
   "note": "水路の動く水面（feature_lab の Water.shader.json が出発点）。Worley の網目を南へ流し（scroll.y）、snap で 2px の升目に落としてから quantize で 3 階調に量子化する — 滑らかなグラデはこの画風の禁止事項。色は岸のタイル（waterDeep/water/waterGlint）と同じ系の青緑。流れの速さ=scroll / 網目=scaled.factor / 階調数=quantize.steps / 升目の粗さ=snap.cells。",
   "name": "canal_water",

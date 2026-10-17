@@ -80,10 +80,6 @@
       "why": "make module Q= の当たり行を 1 行で読める形にそろえる (mk/game.mk が読む)"
     },
     {
-      "src": "docs/engine-module-index.md",
-      "dest": "docs/engine-module-index.md"
-    },
-    {
       "src": "docs/doc-conventions.md",
       "dest": "docs/doc-conventions.md"
     },

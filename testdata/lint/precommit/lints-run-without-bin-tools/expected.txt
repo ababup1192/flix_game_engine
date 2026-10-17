@@ -1,10 +1,12 @@
 [lint-flix-reserved] OK (1 ファイル)
 [lint-value-discard] OK (1 ファイル)
 OK: 矩形だけの View はありません（除外 0 件）
-[lint-fallback] OK (bug! 0 件を検査 / 除外 17 件)
+[lint-fallback] OK (bug! 0 件を検査 / 除外 16 件)
 [lint-z-table] OK (パッケージ 1 / z を数で決める行 0 / 除外 0 件)
+[lint-forbid] OK (1 ファイル / 規則 4 / 除外 0)
 [lint-quadratic] OK (除外 1 件)
 [lint-record-wrap] OK (展開した大きさ 16 以上の欄なし / 除外 0 件)
+[lint-verb-names] OK (1 ファイル / 除外 3 件)
 [lint-jargon] OK (34 語で検査)
 [pre-commit] make check-docs-sync が無いので配線検査は飛ばします
 [exit=0]

@@ -93,10 +93,33 @@ type ArtEdit struct {
 	Remind ArtRemind  `json:"remind"`
 }
 
+// AssetGuard は「ゲームの assets/ の素材へエージェントが直に書くのを止める」設定（hook-asset-guard）。
+type AssetGuard struct {
+	AssetsDir  string   `json:"assetsDir"`
+	AtelierDir string   `json:"atelierDir"`
+	Suffixes   []string `json:"suffixes"`
+	Message    string   `json:"message"`
+	// Bash の呼び出しで素材を書く形（BashWriteTargets が使う）。
+	BashInPlace []string `json:"bashInPlace"`
+	BashCopy    []string `json:"bashCopy"`
+}
+
+// ReadGuard は「大きな .flix の丸読みを止める」設定（hook-read-guard）。
+type ReadGuard struct {
+	Suffix      string   `json:"suffix"`
+	MaxLines    int      `json:"maxLines"`
+	CatCommands []string `json:"catCommands"`
+	Message     string   `json:"message"`
+}
+
 // Rules はフックが使う規約。すべて JSON から来る。
+// AssetGuard・ReadGuard は LoadRules では必須にしない（古い hooks.json のゲームで
+// ほかのフックまで止めないため）。欠けていれば各フックが読み直し先を探す（LoadGuardRules）。
 type Rules struct {
-	Checkd  Checkd  `json:"checkd"`
-	ArtEdit ArtEdit `json:"artEdit"`
+	Checkd     Checkd      `json:"checkd"`
+	ArtEdit    ArtEdit     `json:"artEdit"`
+	AssetGuard *AssetGuard `json:"assetGuard"`
+	ReadGuard  *ReadGuard  `json:"readGuard"`
 }
 
 // LoadRules は規約データを読む。

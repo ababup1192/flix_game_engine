@@ -1,4 +1,5 @@
 {
+  "version": 1,
   "title": "窯の煙",
   "note": "パン屋の窯の煙。loop の丸い塊が煙突の口から生まれ、東風に流されながら育って薄れる。glow でなく circle なのは、小さな粒では 24 輪のグローが淡すぎて消えるため（ドット絵の画風にも塊の方が合う）。量=count / 立ち上る速さ=speed / 風=accel.x / 消え際=alphaOver。",
   "name": "oven_smoke",

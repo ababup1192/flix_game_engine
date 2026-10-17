@@ -23,6 +23,8 @@ func init() {
 	register("hook-flix-touch", "このセッションが .flix を触った印を置く (PostToolUse)", cmdHookFlixTouch)
 	register("hook-flix-work", "作業の区切りで Flix を型検査する (Stop / SubagentStop)", cmdHookFlixWork)
 	register("hook-flix-edit", "保存 1 回ぶんを常駐へ投げて型検査する (手動確認用)", cmdHookFlixEdit)
+	register("hook-asset-guard", "ゲームの assets/ の素材へ直に書くのを止め atelier/ を指す (PreToolUse)", cmdHookAssetGuard)
+	register("hook-read-guard", "大きな .flix の丸読み (Read の範囲なし・cat) を止める (PreToolUse)", cmdHookReadGuard)
 	register("hook-session-diet", "廃止・何もしない (古い settings.json の呼び出しを壊さないため口だけ残す)", cmdHookSessionDiet)
 }
 
@@ -76,4 +78,14 @@ func cmdHookFlixEdit(_, errOut *strings.Builder, _ []string, _ bool) int {
 
 func cmdHookSessionDiet(_, errOut *strings.Builder, _ []string, _ bool) int {
 	return hooks.RunSessionDiet(errOut, hookRoot(), os.Stdin)
+}
+
+// WhyNot: 第 3 引数に repoRoot() を渡すのは、ゲームの hooks.json がまだ古く
+// assetGuard・readGuard の節が無いとき、バイナリと一緒に来た規約で門を開けたままにしないため。
+func cmdHookAssetGuard(_, errOut *strings.Builder, _ []string, _ bool) int {
+	return hooks.RunAssetGuard(errOut, hookRoot(), repoRoot(), os.Stdin)
+}
+
+func cmdHookReadGuard(_, errOut *strings.Builder, _ []string, _ bool) int {
+	return hooks.RunReadGuard(errOut, hookRoot(), repoRoot(), os.Stdin)
 }

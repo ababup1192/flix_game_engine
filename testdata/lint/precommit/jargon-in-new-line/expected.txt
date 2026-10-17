@@ -1,6 +1,7 @@
+[notes-rotate] OK（NOTES.md の項 0 個・上限 6 個 / 40 行）
   NOTES.md:3: 「関所」→ ゲート (gate)
       コミット時の関所で止める。
 [lint-jargon] 独自語 1 件。上の言い換えへ直すか、本当に必要なら行末に jargon-ok: 理由 を書いてください
 [pre-commit] make check-docs-sync が無いので配線検査は飛ばします
-[pre-commit] 止めました。直してから再コミット (どうしても通すなら git commit --no-verify)
+[pre-commit] 止めました。上の文を読んで直してから再コミット
 [exit=1]

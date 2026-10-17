@@ -70,7 +70,7 @@ func fakeRepo(t *testing.T, files map[string]string) string {
 	base := map[string]string{
 		"bin/lint-rules/check-api-index.json": `{
   "targets": [
-    {"src": "engine/src", "doc": "docs/engine-module-index.md"},
+    {"src": "engine/src", "doc": "docs/modules/engine.md"},
     {"src": "engine_world/src", "doc": "docs/module-index.md"}
   ],
   "extraDefSources": ["engine_tools/src"],
@@ -81,7 +81,7 @@ func fakeRepo(t *testing.T, files map[string]string) string {
 		"engine/src/App.flix":          "mod App {\n    pub def run(): Unit = ()\n}\n",
 		"engine_world/src/Board.flix":  "mod Board {\n    pub def make(): Unit = ()\n}\n",
 		"engine_tools/src/Bakery.flix": "mod Bakery {\n    pub def bake(): Unit = ()\n}\n",
-		"docs/engine-module-index.md":  "- App — 入口\n",
+		"docs/modules/engine.md":  "- App — 入口\n",
 		"docs/module-index.md":         "- Board — 盤\n",
 	}
 	for path, body := range files {
@@ -153,7 +153,7 @@ func TestRunGhostReferenceGoesToStderr(t *testing.T) {
 // partsRules は engine_world の索引を目次 + 分野ごとのファイルに分けた規約。
 const partsRules = `{
   "targets": [
-    {"src": "engine/src", "doc": "docs/engine-module-index.md"},
+    {"src": "engine/src", "doc": "docs/modules/engine.md"},
     {"src": "engine_world/src", "doc": "docs/module-index.md", "parts": "docs/modules/*.md"}
   ],
   "extraDefSources": ["engine_tools/src"],

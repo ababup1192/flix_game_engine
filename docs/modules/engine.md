@@ -1,10 +1,8 @@
-# engine モジュール索引
+# エンジンの奥（engine/src: core・render・トップレベル）
 
-`engine/src` 側（core / render / トップレベル）の「やりたいこと」からモジュールを引くための
-逆引きと、全モジュールの 1 行紹介。ゲームが日常的に触る `engine_world` 側の索引は
-[module-index.md](module-index.md) を参照。ここに載っているのは主に engine_world の各モジュールが
-内部で使う下請けの型・関数で、ゲーム側から直接触ることは少ない。
-各モジュールの詳しい説明は `engine/src/<パス>.flix` 冒頭の doc コメントにある。
+> [docs/module-index.md](../module-index.md) の分野の 1 つ。1 行 = 1 件で、`make module Q=<語>` が行ごとに引く。
+> ここに載るのは主に engine_world の各モジュールが内部で使う下請けの型・関数で、ゲームから直に触ることは少ない。
+> 詳しい説明は `engine/src/<パス>.flix` 冒頭の doc コメント。
 
 ## 描画の 2 つの経路（Drawable と PlacedItem）
 
@@ -29,11 +27,11 @@
 | やりたいこと | モジュール |
 |---|---|
 | ゲームとエンジンの境界の共有型・効果（描画・入力・音・時間）を知りたい | GameEngine |
-| 効果音・BGM の再生／停止・音量・高さ（pitch）の低レベル効果口を知りたい（`GameEngine.Audio`） | GameEngine（Audio 効果）/ AudioStreamPlayer（呼び口。鳴り続ける音は engine_world の App.withSustained。詳しくは [audio.md](audio.md)） |
+| 効果音・BGM の再生／停止・音量・高さ（pitch）の低レベル効果口を知りたい（`GameEngine.Audio`） | GameEngine（Audio 効果）/ AudioStreamPlayer（呼び口。鳴り続ける音は engine_world の App.withSustained。詳しくは [audio.md](../audio.md)） |
 | WAV ファイルの中身（形式・波形データの位置・ループ点）を読み解きたい | AudioUtil（ループ点は loopPointsOf。smpl チャンク） |
 | engine の fpkg 読み込みを consumer 側で trigger したい | EngineSentinel |
 | project.json を読み込んでエンジン設定と scene 一覧を得たい | ProjectLoader |
-| 既定値で続けたことを人へ 1 行知らせたい | Log（文面と出し先の決まりは [error-handling.md](error-handling.md) の決まり 3） |
+| 既定値で続けたことを人へ 1 行知らせたい | Log（文面と出し先の決まりは [error-handling.md](../error-handling.md) の決まり 3） |
 | ある処理が N の二乗で割り当てていないかをテストで確かめたい | AllocMeter（絶対バイトは見ず、N を増やしたときの比だけを見る。呼ぶのはテストから） |
 | 面をシェーダーで塗る「宣言データ」の型そのものを知りたい | ShaderDoc |
 | シェーダー宣言を GLSL のソースへ変換する仕組みを知りたい | ShaderGen |
@@ -73,7 +71,7 @@
 | HUD を本体より確実に手前に出す | ゲームからは App.withHudView（中は ZStack の木）。CanvasLayer は ui.json の層の内側の仕組み |
 | 放射グラデの組み込みテクスチャ（`__radial_light` / `__radial_dark`）の画素・名前・寸法を知りたい | RadialBuiltin（ゲーム側の入口は engine_world の `Render.lightAt` / `Render.darkAt`） |
 | Drawable 経路のカメラ・投影を知りたい（`view = None` のゲーム以外では使わない） | Camera / Projection |
-| 画面でなくレンダーターゲットに描いてテクスチャとして読み返したい（`eff Target`） | RenderTarget（GL 実装は render_gl の Target.flix / RenderTargetGl。ゲーム側の入口は engine_world の `Render.Pass` + `App.withPasses`、[逆引き](module-index.md)を参照） |
+| 画面でなくレンダーターゲットに描いてテクスチャとして読み返したい（`eff Target`） | RenderTarget（GL 実装は render_gl の Target.flix / RenderTargetGl。ゲーム側の入口は engine_world の `Render.Pass` + `App.withPasses`、[逆引き](../module-index.md)を参照） |
 | いま bind 中のフレームバッファ（FBO でも既定でも）を画像 / PNG に吸い出したい | GlReadback（render_gl の Readback.flix。`readBoundImage`（RGBA・左上原点）/ `readBoundImageRgb`（RGB に落とす皮）/ `readBoundPng`。splashShot・注釈スクショ・GL 突き合わせ（bench/gl_parity）が共有する読み出しの核） |
 
 ## 土台
@@ -92,7 +90,7 @@
 
 ## レンダーターゲット（RenderTarget）
 
-- **RenderTarget** — レンダーターゲット（描いた結果を読み返せる描き込み先）に描いてテクスチャとして読み返すための効果口（`eff Target`）。`eff Game` とは別チャンネルに隔離してあるので、レンダーターゲットを使わないゲームやハンドラには波及しない。GL 側の実体は `render_gl` の **Target.flix**（`mod RenderTargetGl`。FBO 1 枚 + カラーテクスチャ 1 枚を作り・切り替え・破棄する）と `LwjglLayer` のハンドラが持つ。ゲーム側は engine 内部の `eff Target` を直接触らず、engine_world の `Render.Pass` + `App.withPasses` を使う（[逆引き](module-index.md)を参照）。
+- **RenderTarget** — レンダーターゲット（描いた結果を読み返せる描き込み先）に描いてテクスチャとして読み返すための効果口（`eff Target`）。`eff Game` とは別チャンネルに隔離してあるので、レンダーターゲットを使わないゲームやハンドラには波及しない。GL 側の実体は `render_gl` の **Target.flix**（`mod RenderTargetGl`。FBO 1 枚 + カラーテクスチャ 1 枚を作り・切り替え・破棄する）と `LwjglLayer` のハンドラが持つ。ゲーム側は engine 内部の `eff Target` を直接触らず、engine_world の `Render.Pass` + `App.withPasses` を使う（[逆引き](../module-index.md)を参照）。
 
 ## core（基礎の値と計算）
 

@@ -1,4 +1,10 @@
 # 絵のファイルを書いた直後、矩形だけの View なら書いたファイルだけを見て鳴る (exit 2)。
-bin/fge hook-art-edit <<'JSON'
+# セッション ID が無いので絵の決まり (drawing.md) を指す 1 行も毎回付く。
+# フックは書いたパスを絶対パスにして検査へ渡すので、出力から $ENGINE/ を落として突き合わせる。
+out=$(bin/fge hook-art-edit 2>&1 <<'JSON'
 {"tool_input":{"file_path":"testdata/lint/hooks/art-edit-view-fires/View.flix"}}
 JSON
+)
+rc=$?
+printf '%s\n' "$out" | sed "s|$ENGINE/||g"
+exit $rc

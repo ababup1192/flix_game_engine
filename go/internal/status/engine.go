@@ -38,6 +38,44 @@ func ReadEngineDir(base string) string {
 	return ""
 }
 
+// FindEngineDir は base（リポの根）から見た engine の根と、それが base 自身かを返す。
+// 探す順: base に marker（mk/game.mk など engine にだけある物）があれば base 自身（engine のリポ）
+// → 環境変数 ENGINE → base/local.mk の ENGINE → base/Makefile の ENGINE（`ENGINE ?= ../..` の既定）。
+// 相対パスは base から読む。marker が実在する最初の候補を返し、どれも無ければ空文字。
+//
+// WhyNot: lint ごとに探し方を書かないのは、makefile-dup（game.mk）と doc-shape
+// （docs/<種類>.schema.json）で見ている engine が食い違わないようにするため。
+func FindEngineDir(base, marker string) (dir string, self bool) {
+	has := func(d string) bool {
+		info, err := os.Stat(filepath.Join(d, filepath.FromSlash(marker)))
+		return err == nil && info.Mode().IsRegular()
+	}
+	if has(base) {
+		return base, true
+	}
+	cands := []string{ReadEngineDir(base)}
+	if text, err := readTextPy(filepath.Join(base, "Makefile")); err == nil {
+		for _, line := range pyFileLines(text) {
+			if m := engineLineRe.FindStringSubmatch(line); m != nil {
+				cands = append(cands, m[1])
+				break
+			}
+		}
+	}
+	for _, c := range cands {
+		if c == "" {
+			continue
+		}
+		if !filepath.IsAbs(c) {
+			c = filepath.Join(base, c)
+		}
+		if has(c) {
+			return c, false
+		}
+	}
+	return "", false
+}
+
 // ReadEngineVersion は engine の Makefile から VERSION := を読む。
 // 読めなければ空文字（fail-open）。
 func ReadEngineVersion(engine string) string {

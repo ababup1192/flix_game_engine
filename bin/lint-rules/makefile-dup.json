@@ -1,0 +1,7 @@
+{
+  "note": "lint-makefile-dup（ゲームの Makefile が engine の mk/game.mk にある共通の口を作り直していないか）の規約データ。この JSON が source of truth で、bin/fge makefile-dup はこれを読んで動く。共通の口と同じ名前のターゲットにレシピを書いた行を止める（前提を足すだけの行とターゲット別の変数は止めない）。共通の口の一覧は game.mk から毎回読む（ここに写さない）。隣に mk/game.mk がある Makefile（engine 自身）は見ない。ゲームが自分の除外を足すときは bin/lint-rules/makefile-dup.local.json（{\"exempt\": {\"パス::ターゲット名\": \"理由\"}}）に書く。ここはエンジンが配るたびに上書きされるが、そちらは残る。",
+  "gameMk": "mk/game.mk",
+  "basenames": ["Makefile"],
+  "hint": "共通の口はゲームの Makefile へ写さない（upgrade-game は Makefile を運ばないので、写すと engine の修正が届かない）。値を変えるなら変数（SHOTS・PALETTE・RENDER_NOTE など）を設定する・前提を足すだけなら「口: 足す物」の 1 行（レシピは書かない）。",
+  "exempt": {}
+}

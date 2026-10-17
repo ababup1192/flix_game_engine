@@ -1,0 +1,16 @@
+{
+  "note": "lint-doc-shape（ゲームデータの Doc の外形）の規約データ。この JSON が source of truth で、bin/fge doc-shape はこれを読んで動く。assets/ の <名前>.<種類>.json が version（整数）を持つ・メモ（noteKeys）が空でない・スキーマがある（project.json の editor.resources[] → assets/ まで上って <種類>.schema.json → engine の engineDocs/<種類>.schema.json。engine は engineMarker のある所: engine のリポ自身なら根・ゲームなら ENGINE → local.mk → Makefile の ENGINE）、を Doc ごとに見る。スキーマの各項目（sections の値と入れ子の fields の値）に label か description があるかは、スキーマのファイル自体を渡された（ステージした）ときだけ見る（Doc を 1 つ直しただけでスキーマの全項目をそろえさせない）。skipDirNames の段（test など。検査の見本）の下は見ない。skipKinds は Doc として数えない種類（sprite は lint-sprite と palette が見る・palette は生成物）。コミットではステージした Doc とスキーマだけを見る（触った物だけ止める）。ゲームが自分の除外を足すときは bin/lint-rules/doc-shape.local.json（{\"exempt\": {\"パス::version|note|schema|label\": \"理由\"}}）に書く。ここはエンジンが配るたびに上書きされるが、そちらは残る。",
+  "assetsDir": "assets",
+  "skipKinds": ["schema", "sprite", "palette"],
+  "skipPrefixes": ["build/", "lib/", "atelier/", "debug/", "testdata/", "docs/", "agents-pack/", "engine_full/"],
+  "skipDirNames": ["test", "testdata", "lib", "build", "node_modules"],
+  "noteKeys": ["note", "//"],
+  "itemTextKeys": ["label", "description"],
+  "nestKeys": ["fields"],
+  "schemaSuffix": ".schema.json",
+  "projectFile": "project.json",
+  "engineMarker": "mk/game.mk",
+  "engineDocs": "docs",
+  "hint": "Doc の外形（docs/doc-conventions.md）: version を持つ・note に「いじると何が変わるか」・<種類>.schema.json を置く・スキーマの各項目に label（Studio の欄の名前）か description。",
+  "exempt": {}
+}

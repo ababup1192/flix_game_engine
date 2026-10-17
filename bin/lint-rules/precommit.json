@@ -175,6 +175,54 @@
       }
     },
     {
+      "id": "verb-names",
+      "sub": "verb-names",
+      "flags": [],
+      "pass": "matched",
+      "when": {
+        "suffixes": [
+          ".flix"
+        ]
+      }
+    },
+    {
+      "id": "doc-shape",
+      "sub": "doc-shape",
+      "flags": [],
+      "pass": "matched",
+      "when": {
+        "anyOf": [
+          {
+            "prefixes": [
+              "assets/"
+            ],
+            "suffixes": [
+              ".json"
+            ]
+          },
+          {
+            "substrings": [
+              "/assets/"
+            ],
+            "suffixes": [
+              ".json"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "makefile-dup",
+      "sub": "makefile-dup",
+      "flags": [],
+      "pass": "matched",
+      "when": {
+        "basenames": [
+          "Makefile"
+        ]
+      }
+    },
+    {
       "id": "notes-rotate",
       "sub": "notes-rotate",
       "flags": ["--check", "--staged"],

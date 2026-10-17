@@ -334,7 +334,7 @@ func Run(out, errOut *strings.Builder, root string, args []string, opts Options)
 	}
 	fmt.Fprintf(errOut, "\n")
 	fmt.Fprintf(errOut, "モジュールを足したら docs/modules/<分野>.md（engine_world）か\n"+
-		"docs/engine-module-index.md（engine）に 1 行足してください。\n"+
+		"docs/modules/engine.md（engine）に 1 行足してください。\n"+
 		"内部専用なら bin/check-api-index.py の EXEMPT に理由付きで載せてください。\n")
 	return 1, nil
 }

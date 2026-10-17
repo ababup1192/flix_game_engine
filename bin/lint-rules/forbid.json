@@ -1,5 +1,5 @@
 {
-  "note": "lint-forbid（古い書き方を 1 行の正規表現で止め、代わりに使う物を出す）の規約データ。この JSON が source of truth で、bin/fge forbid はこれとゲームの bin/lint-rules/forbid.local.json（ゲーム固有の規則と除外。配り直しでも残る）を足して読む。1 件 = {id, suffixes / basenames / prefixes（見るファイル）, skip, pattern, unlessLine（この行なら見逃す）, hint（代わりに何を使うか。必須）}。.flix は文字列とコメントを除いてから当てる。文脈の要る物（z の表 = z-table・let _ = = value-discard）は専用の lint が持つ。除外は exempt に \"パス::id\" と理由 1 行。コミット時に見るのは .flix と Makefile だけ（precommit.json の forbid の when）。ほかの種類のファイルに規則を足すなら、そちらも足す。",
+  "note": "lint-forbid（古い書き方を 1 行の正規表現で止め、代わりに使う物を出す）の規約データ。この JSON が source of truth で、bin/fge forbid はこれとゲームの bin/lint-rules/forbid.local.json（ゲーム固有の規則と除外。配り直しでも残る）を足して読む。1 件 = {id, suffixes / basenames / prefixes（見るファイル）, skip, pattern, unlessLine（この行なら見逃す）, rawLine（true なら .flix でも文字列の中身を消さずに見る。コメントは落とす）, hint（代わりに何を使うか。必須）}。.flix は文字列とコメントを除いてから当てる。文脈の要る物（z の表 = z-table・let _ = = value-discard）は専用の lint が持つ。除外は exempt に \"パス::id\" と理由 1 行。コミット時に見るのは .flix と Makefile だけ（precommit.json の forbid の when）。ほかの種類のファイルに規則を足すなら、そちらも足す。",
   "rules": [
     {
       "id": "zindex-big-literal",
@@ -21,6 +21,14 @@
       "skip": ["engine/", "engine_world/", "engine_tools/", "engine_full/", "src/engine/", "src/engine_world/", "src/engine_tools/", "render_gl/", "src/render_gl/", "lib/", "build/"],
       "pattern": "\\bSystem\\.(?:err|out)\\.print",
       "hint": "知らせは Log を通す。既定値で続けたら Log.fellBack(領域, 対象, 既定値の名前, 理由)（純粋な関数の中は Log.fellBackThen / Log.warnThen）、定型に収まらない 1 行は Log.warn。出し先（stderr / stdout）と文面の型は Log が決める（engine の docs/error-handling.md の決まり 3）"
+    },
+    {
+      "id": "view-text-literal",
+      "suffixes": ["View.flix"],
+      "rawLine": true,
+      "skip": ["engine/", "engine_world/", "engine_tools/", "engine_full/", "src/engine/", "src/engine_world/", "src/engine_tools/", "render_gl/", "src/render_gl/", "lib/", "build/", "test/"],
+      "pattern": "\\btext\\s*=\\s*\"(?:\\$\\{[^}]*\\}|[^\"$])*?[A-Za-z\\p{Hiragana}\\p{Katakana}\\p{Han}]{2,}",
+      "hint": "プレイヤーの目に入る文言は Doc に置く（コードに書くのは Doc の既定値だけ。View に直に書くと Studio から変えられない）。Doc の欄を足して text = doc#欄 で引く"
     }
   ],
   "exempt": {}

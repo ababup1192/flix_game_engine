@@ -5,7 +5,7 @@
 # 偽リポの bin/ へ check-api-index.py を写して、そこから走らせる。
 set -eu
 R=$1
-mkdir -p "$R/bin" "$R/engine/src" "$R/engine_world/src" "$R/engine_tools/src" "$R/docs"
+mkdir -p "$R/bin" "$R/engine/src" "$R/engine_world/src" "$R/engine_tools/src" "$R/docs/modules"
 
 cat > "$R/engine/src/App.flix" <<'EOF'
 mod App {
@@ -26,7 +26,7 @@ mod Bakery {
 }
 EOF
 
-cat > "$R/docs/engine-module-index.md" <<'EOF'
+cat > "$R/docs/modules/engine.md" <<'EOF'
 # engine の索引
 
 - App — 走らせる入口。App.run で始める

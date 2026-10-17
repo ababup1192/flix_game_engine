@@ -1,0 +1,14 @@
+{
+  "note": "lint-verb-names（.flix の def の名前の頭の動詞と型のずれ）の規約データ。この JSON が source of truth で、bin/fge verb-names はこれを読んで動く。is / has / can で始まるのに Bool を返さない def と、get で始まるのに決まった効果（IO・Fs など大文字の効果）を持つ def を止める。効果の変数（ef など）と \\ {} は純粋と同じ扱い。1 行の宣言だけを見る（複数行の宣言は見ない）。symlink は見ない。ゲームが自分の除外を足すときは bin/lint-rules/verb-names.local.json（{\"exempt\": {\"パス::def の名前\": \"理由\"}}）に書く。ここはエンジンが配るたびに上書きされるが、そちらは残る。",
+  "scopeSuffixes": [".flix"],
+  "skipPrefixes": ["build/", "lib/", "testdata/", "docs/", "agents-pack/", "engine_full/"],
+  "skipDirNames": ["build", "lib", "node_modules"],
+  "boolPrefixes": ["is", "has", "can"],
+  "pureGetPrefixes": ["get"],
+  "hint": "動詞は大手の命名規則: get 取り出すだけ・load/fetch 外から・build/make/compute 計算して作る・is/has/can は Bool・with は新しい値を返す。1 つの動詞に 2 つの意味を持たせない（呼ぶ側が値段を読み違える）。",
+  "exempt": {
+    "engine/src/core/AllocMeter.flix::getBean": "Java の ManagementFactory の getter を包むだけ（安い・失敗しない読み取り）。IO は Java を呼ぶため",
+    "engine/src/core/AllocMeter.flix::getAllocatedBytes": "Java の ThreadMXBean の getter を包むだけ（安い・失敗しない読み取り）。IO は Java を呼ぶため",
+    "engine_tools/src/GifEncoder.flix::getOrCreateChild": "XML の DOM の getOrCreate（無ければ作って返す）。Java の DOM を触るので IO。外には出ない private の def"
+  }
+}

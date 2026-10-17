@@ -1,4 +1,4 @@
 [pre-commit] 画像 1 件:
   docs/gallery/big.png が 391KB — 1 枚の上限 300KB (docs/gallery/README.md)
-[pre-commit] 止めました。直してから再コミット (どうしても通すなら git commit --no-verify)
+[pre-commit] 止めました。上の文を読んで直してから再コミット
 [exit=1]
