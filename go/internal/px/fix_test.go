@@ -40,7 +40,7 @@ func mustDraw(t *testing.T, sprites string) (map[string]string, *buildResult) {
 // 数の引数の範囲の外は、描く前に場所つきの誤りになる（sel_out の負の drop は panic していた）。
 func TestNumberRangeRejected(t *testing.T) {
 	for _, op := range []string{`{"sel_out": {"drop": -1}}`, `{"sel_out": {"lit_drop": -3}}`, `{"sway": {"curve": 0}}`,
-		`{"squash": {"amount": 1}}`, `{"ramp_pick": {"base": "c1", "n": 1000000000}}`, `{"ground_shadow": {"rows": 100000}}`} {
+		`{"sway": {"amp": 100}}`, `{"ground_shadow": {"rows": 100000}}`} {
 		_, _, err := drawSpec(t, `{"s": {"size": [4, 4], "ramp": "r", "parts": [{"id": "p", "shape": {"rect": [1, 1, 2, 2]}, "ops": [`+op+`]}], "frames": {"f": {}}}}`)
 		if err == nil || !strings.Contains(err.Error(), "範囲の外") || !strings.Contains(err.Error(), "p.ops") {
 			t.Errorf("%s: 場所つきの範囲の誤りにならない: %v", op, err)
@@ -57,32 +57,12 @@ func TestSelOutFollowsLight(t *testing.T) {
 	expectRows(t, g, ".bbb.", "acccb", "acccb", "acccb", ".aaa.")
 }
 
-// pixel_perfect が抜いた画素は、線の下の色（先に描いた地）に戻る（透明の穴を開けない）。
-func TestPixelPerfectKeepsGround(t *testing.T) {
-	got, _ := mustDraw(t, `{"s": {"size": [4, 4], "ramp": "r", "parts": [
-	  {"id": "ground", "shape": {"rect": [0, 0, 4, 4]}, "ops": [{"fill": {"color": "light"}}]},
-	  {"id": "line", "ops": [{"put": {"cells": [[0, 0], [1, 0], [1, 1], [2, 1], [2, 2]], "color": "ink"}}, {"pixel_perfect": {}}]}],
-	  "frames": {"f": {}}}}`)
-	if strings.Contains(got["f"], ".") {
-		t.Fatalf("地に穴が開いた: %s", got["f"])
-	}
-}
-
-// post に置いた bob は、描き終えた絵の全体を動かす（post が描いた画素だけを拾って何もしなかった）。
-func TestPostBobMovesPicture(t *testing.T) {
-	got, _ := mustDraw(t, `{"s": {"size": [4, 6], "ramp": "r", "parts": [{"id": "p", "shape": {"rect": [1, 2, 2, 3]}, "ops": [{"fill": {"color": "mid"}}]}],
-	  "post": [{"bob": {"amp": 1}}], "frames": {"f0": {}, "f1": {}, "f2": {}, "f3": {}}}}`)
-	if got["f1"] == got["f3"] {
-		t.Fatalf("post の bob で絵が動かない: %v", got)
-	}
-}
-
-// post の rim_light と aa_corners も、描き終えた絵の外形に当たる（post ではランプが空で何も描かなかった）。
+// post の縁の op（sel_out）も、描き終えた絵の外形に当たる（post ではランプが空で何も描かなかった）。
 func TestPostEdgeOpsDraw(t *testing.T) {
-	plain, _ := mustDraw(t, `{"s": {"size": [6, 6], "ramp": "r", "parts": [{"id": "p", "shape": {"rect": [1, 1, 4, 4]}, "ops": [{"fill": {"color": "shade"}}]}], "frames": {"f": {}}}}`)
-	rim, _ := mustDraw(t, `{"s": {"size": [6, 6], "ramp": "r", "parts": [{"id": "p", "shape": {"rect": [1, 1, 4, 4]}, "ops": [{"fill": {"color": "shade"}}]}], "post": [{"rim_light": {}}], "frames": {"f": {}}}}`)
-	if plain["f"] == rim["f"] {
-		t.Fatal("post の rim_light が何も描かない")
+	plain, _ := mustDraw(t, `{"s": {"size": [6, 6], "ramp": "r", "parts": [{"id": "p", "shape": {"rect": [1, 1, 4, 4]}, "ops": [{"fill": {"color": "mid"}}]}], "frames": {"f": {}}}}`)
+	edge, _ := mustDraw(t, `{"s": {"size": [6, 6], "ramp": "r", "parts": [{"id": "p", "shape": {"rect": [1, 1, 4, 4]}, "ops": [{"fill": {"color": "mid"}}]}], "post": [{"sel_out": {}}], "frames": {"f": {}}}}`)
+	if plain["f"] == edge["f"] {
+		t.Fatal("post の sel_out が何も描かない")
 	}
 }
 

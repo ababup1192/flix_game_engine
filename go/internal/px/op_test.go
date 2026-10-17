@@ -29,7 +29,7 @@ func TestOpRegistryHasDocs(t *testing.T) {
 			}
 		}
 	}
-	for _, name := range []string{"fill", "stamp", "use", "flip", "outline", "shade_step", "shade_parts", "pixel_perfect"} {
+	for _, name := range []string{"fill", "stamp", "use", "flip", "outline", "shade_step", "shade_parts"} {
 		if _, ok := lookupOp(name); !ok {
 			t.Errorf("段 1 の op %s が無い", name)
 		}
@@ -194,19 +194,6 @@ func rowsOfMask(m pxlib.Mask) string {
 		out = append(out, b.String())
 	}
 	return strings.Join(out, " / ")
-}
-
-func TestPixelPerfectExamples(t *testing.T) {
-	for _, c := range []struct{ in, want []string }{
-		{[]string{"##..", ".#..", ".##.", "..##"}, []string{"#...", ".#..", "..#.", "...#"}},
-		{[]string{"###...", "..###."}, []string{"##....", "..###."}},
-		{[]string{"##", "##"}, []string{"##", "##"}},
-	} {
-		got := rowsOfMask(pixelPerfect(maskOf(c.in...)))
-		if want := strings.Join(c.want, " / "); got != want {
-			t.Errorf("%v: got %s want %s", c.in, got, want)
-		}
-	}
 }
 
 func TestShadeStepExamples(t *testing.T) {

@@ -1,6 +1,6 @@
 package px
 
-// 縁の op: 部品ごとの色の輪郭（sel_out）・接地影・光と反対の縁の明るい段（rim_light）・段の角の中間色（aa_corners）。
+// 縁の op: 部品ごとの色の輪郭（sel_out）・接地影・段の角の中間色（aa_corners）。
 
 import (
 	"fmt"
@@ -9,8 +9,8 @@ import (
 	"github.com/ababup1192/flix_game_engine/go/internal/pxlib"
 )
 
-// rampsFor は sel_out が材質のランプを引く並び。names は spec の ramps の名前か、ramp_pick を書いた部品の id。
-// 無ければ今の部品のランプ・ramp_pick が選んだランプ（部品 id の順）・spec のランプ全部。
+// rampsFor は sel_out が材質のランプを引く並び。names は spec の ramps の名前。
+// 無ければ今の部品のランプ・spec のランプ全部。
 func (c *ctx) rampsFor(names []string) ([][]pxlib.Key, error) {
 	var out [][]pxlib.Key
 	for _, n := range names {
@@ -18,20 +18,13 @@ func (c *ctx) rampsFor(names []string) ([][]pxlib.Key, error) {
 			out = append(out, r)
 			continue
 		}
-		if r, ok := c.picked[n]; ok {
-			out = append(out, r)
-			continue
-		}
-		return nil, fmt.Errorf("ramps に %q が無い（spec の ramps の名前か、ramp_pick を書いた部品の id）", n)
+		return nil, fmt.Errorf("ramps に %q が無い（spec の ramps の名前）", n)
 	}
 	if len(out) > 0 {
 		return out, nil
 	}
 	if r := c.Ramp(); len(r) > 0 {
 		out = append(out, r)
-	}
-	for _, id := range sortedKeys(c.picked) {
-		out = append(out, c.picked[id])
 	}
 	for _, n := range sortedKeys(c.Spec.Ramps) {
 		out = append(out, c.Spec.Ramps[n])
@@ -197,24 +190,6 @@ func edgeOutside(g *pxlib.Grid, m pxlib.Mask, against string) func(x, y int) boo
 	}
 }
 
-// rimLight は塊の縁のうち、光と反対の側（外の隣が光の来ない向きにある）の画素を by 段明るくした色を返す。
-// 色の段は、その画素の色を含むランプで数える。
-func rimLight(g *pxlib.Grid, m pxlib.Mask, out func(x, y int) bool, ramps [][]pxlib.Key, sx, sy, by int) map[pxlib.Pt]pxlib.Key {
-	res := map[pxlib.Pt]pxlib.Key{}
-	for _, p := range m.Points() {
-		far := (sx != 0 && out(p.X-sx, p.Y)) || (sy != 0 && out(p.X, p.Y-sy))
-		near := (sx != 0 && !m.At(p.X+sx, p.Y)) || (sy != 0 && !m.At(p.X, p.Y+sy))
-		if !far || near {
-			continue // 光と反対の縁だけ（光の側にも開いた細い所は触らない）
-		}
-		k := g.At(p.X, p.Y)
-		if to := shadeStep(rampOf(ramps, k), k, by); to != k {
-			res[p] = to
-		}
-	}
-	return res
-}
-
 // aaCorners は塊の段の角（外の画素で、横と縦に塊の隣が 1 つずつある L 字の凹み）のうち、
 // どちらかの段が 2px 以上の所に置く画素を返す（45° の 1-1 の段と直線には置かない）。
 // 色は内側の色と外の色を Oklab で mix の割合に混ぜた色に一番近い、両者のランプの色（両端の色より混ぜ色に近い物だけ）。
@@ -327,7 +302,7 @@ func init() {
 		Params: []param{
 			{Name: "drop", Type: tInt, Default: 2.0, Summary: "影の側の縁を暗くする段数", Lo: bound(0), Hi: bound(8)},
 			{Name: "lit_drop", Type: tInt, Default: 1.0, Summary: "光の側（light.dir の向き）の縁を暗くする段数（0 で内側と同じ色）", Lo: bound(0), Hi: bound(8)},
-			{Name: "ramps", Type: tRows, Summary: "材質のランプの名前か ramp_pick を書いた部品の id（省くと部品のランプ・ramp_pick が選んだランプ・spec のランプ全部）"},
+			{Name: "ramps", Type: tRows, Summary: "材質のランプの名前（省くと部品のランプ・spec のランプ全部）"},
 		},
 		Checks: []checkRef{{Check: checkBlackOutline}, {Check: checkGroundContrast}},
 		Apply: func(c *ctx, a opArgs) error {
@@ -372,22 +347,6 @@ func init() {
 				return fmt.Errorf("2 段以上のランプが要る（ramp を書く）")
 			}
 			c.putAll(groundShadow(c.G, obj, ramp, a.int("rows"), a.num("spread")))
-			return nil
-		},
-	})
-	register(&opDef{
-		Name: "rim_light", Quiet: true, Example: `{"rim_light": {}}`,
-		Summary:   "塊の縁のうち光と反対の側の 1px を by 段明るくする（暗い材質を暗い地から抜く）",
-		Technique: "sel-out（光の側は明るく）・照り返しの縁", Finish: "ground-contrast",
-		Params: []param{{Name: "by", Type: tInt, Default: 1.0, Summary: "明るくする段数", Lo: bound(1), Hi: bound(4)}, pAgainst},
-		Checks: []checkRef{{Check: checkGroundContrast}},
-		Apply: func(c *ctx, a opArgs) error {
-			if err := checkAgainst(a); err != nil {
-				return err
-			}
-			sx, sy := c.LightSign()
-			m := c.Region()
-			c.putAll(rimLight(c.G, m, edgeOutside(c.G, m, a.str("against")), c.allRamps(), sx, sy, a.int("by")))
 			return nil
 		},
 	})

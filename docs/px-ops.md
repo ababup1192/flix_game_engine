@@ -11,14 +11,12 @@
 | 光と陰（小物の面） | `directional` | lint pillow・light-dir |
 | 丸い体・キャラ | `shade_parts` | lint pillow・light-dir |
 | 手前の物が落とす影 | `shade_mask` | — |
-| 1px の線・ひげ・髪の線 | `line` | 既存の lint corner（角が 2 重なら pixel_perfect） |
-| 曲線の段の角 | `aa_corners` | lint jaggy・orphan |
+| 1px の線・ひげ・髪の線 | `line` | 既存の lint corner（角が 2 重の画素） |
 | 金属・石・木・布・葉 | `material` | 材質ごと（下の材質の表） |
 | 空・斜面の階調・境目のディザ | `gradient_fill` | lint pillow・light-dir・banding |
 | 色票に無い中間の色 | `dither_pair` | 既存の lint banding・flat-run |
-| 葉・石の斑・草のタイル | `scatter_clusters` → `tile_preview` | 既存の lint orphan・2×2 に並べて見る（tile_preview） / lint seam |
-| 遠景と近景・主役と背景 | `depth_fade` → `contrast` | lint value-sep（contrast で測る） / lint value-sep |
-| 揺れ・呼吸・弾み（on の子も付いていく）・なびく旗（形 flag の t をコマで進める） | `sway` / `bob` / `squash` / 形 `flag` | lint orphan・anim（pop・loop）。欠けは pixel_perfect で整える / anim（bob・ground） / anim（area・ground） |
+| 葉・石の斑・草のタイル | `scatter_clusters` | 既存の lint orphan・2×2 に並べて見る（tile_preview） |
+| 揺れ・呼吸・弾み（on の子も付いていく）・なびく旗（形 flag の t をコマで進める） | `sway` / 形 `flag` | lint orphan・anim（pop・loop） |
 | 水・滝・流れ（波頭を 1px ずつ流す） | `wave_shift` | anim（pop・loop）。輪が閉じるようにコマの数 × speed を塊の幅に合わせる |
 | 煉瓦・瓦・石積みの目地（段ごとに半分ずらす。一人称・遠近の壁は quad） | `courses` | lint banding・flat-run |
 | 葉の玉を重ねた木・茂み・鉢植え | `canopy` | lint pillow・orphan |
@@ -38,7 +36,6 @@
 | UI（体力・気力・時間のゲージ） | `bar` | 体力のバー: 形（省くと部品の塊）の外接箱を、side の端から rate だけ残りの量で塗る（fill を省くとランプの段を太さの向きに Bayer で）。empty は減った所・top は残りの上の 1px のつや・lost は残りの隣の今減った量 | — |
 | 小物の陰影（縁で光と影を分ける） | `bevel` | 小物の陰の段: 光の側の縁を lit、影の側の縁（と影の向きへ 2 つ先が外の画素）を dark、中を face | 既存の lint banding |
 | 陰影（平らな面は 1 色・光源は左上の 1 つ） | `bevel_box` | 角丸の板: 斜めの帯で 光・地・影、縁の 1px につや（光の側）と墨（影の側）、外側に墨の輪郭（格子は正方形） | 既存の lint banding |
-| アニメ（溜め・弾み） | `bob` | 部品を上下に動かす（コマごとに -amp·sin。呼吸・浮遊・歩きの上下） | anim（bob・ground） |
 | 葉の塊（玉を重ねて塊ごとに陰を付ける。全体に 1 つの陰を掛けない） | `canopy` | 葉の玉を重ねた木・茂み: 玉を奥（上）から手前（下）へ重ね、玉ごとに光の向きの陰・葉の斑・光の側のつや。外側に rim の 1px（部品の塊は玉の和） | lint pillow・orphan |
 | 背景の奥行き（遠いほど明度差が小さい）・主役と背景を分ける | `contrast` | 今の部品と相手（部品 against か地の色）の明るさ（Oklab の L）の平均の差を測るだけ（描かない） | lint value-sep |
 | 敷き詰め（煉瓦・瓦は段ごとに半分ずらす。目地は面より暗い 1px） | `courses` | 煉瓦・瓦・石積みの目地を引く: 段の高さごとに横の目地、段ごとに半分（offset）ずらした幅ごとに縦の目地（部品の塊の中だけ。色は下の色を by 段暗く）。quad を書くと奥行きのある壁（一人称の通路・遠近の路地）: 4 隅の四角形に grid の数だけ遠近で並べる（奥ほど細かく。横の目地は消失点へ向かう線・縦の目地は段の上下 1px を空ける） | lint banding・flat-run |
@@ -57,7 +54,7 @@
 | 白抜きの記号（小さなカード・効果のアイコン） | `glyph_rows` | 文字の格子の白抜きの記号: '.' と空白でない字の画素を color で、その右下 1px に shadow の影（影を先に置く） | — |
 | 陰影（光源は 1 つ・平らな面は 1 色）・ディザ（タイルパターン） | `gradient_fill` | 塊を明るさの場（光の向き・x・y・radial）でランプの段に塗る。段の境目は Bayer で混ぜ、band で混ぜる幅を選ぶ | lint pillow・light-dir・banding |
 | 光の側を明るく・影の側を暗く（縁の線の明暗） | `light_bands` | 部品の塊の塗ってある画素を、中心から光の向き（light.dir）へどれだけ寄っているかで lit・base・dark の 3 段に塗り分ける | light-dir（段 3） |
-| 1px の線 | `line` | 折れ線を 1px で引く（clip の部品なら親の塊の中だけ） | 既存の lint corner（角が 2 重なら pixel_perfect） |
+| 1px の線 | `line` | 折れ線を 1px で引く（clip の部品なら親の塊の中だけ） | 既存の lint corner（角が 2 重の画素） |
 | 左右対称に描く（片側を描いて写す） | `mirror` | 今の部品が描いた画素のうち side の側を、軸で左右に写す（左右対称の顔・道具・建物） | — |
 | 輪郭（1 色の外側 1px） | `outline` | 部品の塊の外側 1px を 1 色で縁取る（sel_out の前身） | lint black-outline（部品ごとの色にするなら sel_out） |
 | アニメ（パレットの回転。光のきらめき） | `palette_cycle` | 塊の中で colors の段をコマごとに step ずつ回す（光のきらめきの補助。水の流れは wave_shift の方が見比べで勝った） | anim（pop） |
@@ -69,16 +66,15 @@
 | 1 段ずつ塗る（Aseprite の Shading ink）・影の形を重ねる | `shade_mask` | 別の部品 of の塊を光と反対へ offset ずらした形で、今の部品に塗ってある色を by 段ずらす（手前の物が落とす影） | — |
 | 陰影（丸い体・キャラ。光源は 1 つ） | `shade_parts` | 丸みのある部品を光の向きでランプの 4 段に塗る（前の部品の落とす影・外周の墨・別グループとの境目の線つき） | lint pillow・light-dir |
 | 1 段ずつ塗る（Aseprite の Shading ink） | `shade_step` | 塗ってある色を、部品のランプの隣の段へ by 段ずらす（端で止まる・ランプの外の色は触らない） | — |
-| アニメ（つぶしと伸ばし） | `squash` | 部品を縦に縮めて横に伸ばす（縦 1 − amount·sin・横 1 + amount·sin。足元を止める）。着地・弾み・呼吸 | anim（area・ground） |
 | 手で打った小さな型を置く | `stamp` | 文字の格子を押す（colors が無ければ legend の文字で打ち、'.' は透明へ抜く） | — |
-| アニメ（揺れ。根元を止めて先端を遅らせる） | `sway` | 部品の画素を行ごとに横へずらす（根元 0・先端ほど大きく・コマごとに sin）。木・草・旗・髪の揺れ | lint orphan・anim（pop・loop）。欠けは pixel_perfect で整える |
+| アニメ（揺れ。根元を止めて先端を遅らせる） | `sway` | 部品の画素を行ごとに横へずらす（根元 0・先端ほど大きく・コマごとに sin）。木・草・旗・髪の揺れ | lint orphan・anim（pop・loop） |
 | 字（メニュー・ステータスの表・HUD の数） | `table` | 字の表: rows の升を列 cols（at からの横の位置）にそろえ、行を line ずつ下げて text と同じ字形で置く（升は文字列か [文字列, 色]。align の 1 字が列のそろえ: l は左端・r は右端（送りを含む）・c は真ん中を cols の位置に） | — |
 | 字（町の名前のラベル・看板・HUD） | `text` | 文字列を字形の組（font: 5x7・bold6x8）で並べて 1 色で置く（英大文字・数字・. , ! ? - + : ' / x * %。小文字は大文字で引く。shadow を書くと字ごとに右下 1px の影を先に置く）。階調や縁を付ける字は形 text を部品の shape にして gradient_fill・outline | — |
 | 草のタイル（Aseprite の Tiled Mode。並べて継ぎ目を見る） | `tile_preview` | このスプライトをタイルとして扱う: 3×3 に並べた見本（<名前>.tile.png）を書き、端の継ぎ目を検査する（描かない） | lint seam |
 | 同じ部品を何か所にも置く・コマで体を上下させる | `use` | macros の op の列を、今の部品の中で順に当てる（at でずらせる） | — |
 | アニメ（水の波頭を 1px ずつずらす。見比べで palette_cycle に勝った） | `wave_shift` | 塊の外形は動かさず、中の模様（波頭・流れ）を行ごとにコマごとに speed px 横へ回す。水・滝・流れる雲の既定 | anim（pop・loop）。輪が閉じるようにコマの数 × speed を塊の幅に合わせる |
 
-ほかの op（16px 前後の見比べで差が出なかった物。既定にしない。使う時は `bin/fge px help <op>`）: `ground_shadow`・`pixel_perfect`・`ramp_pick`・`rim_light`・`sel_out`
+ほかの op（16px 前後の見比べで差が出なかった物。既定にしない。使う時は `bin/fge px help <op>`）: `ground_shadow`・`sel_out`
 
 ## 動きのコマ数の目安
 
@@ -224,15 +220,6 @@ px.write_spec("lamp.pxsrc.json", {
 | `inset` | number | 格子の縁からの余白（0〜64）（省くと 2） |
 | `bands` | pair | 光・地・影の境目（0〜1。左上の角が 0）（省くと [0.3,0.72]） |
 | `gloss_until` | number | 縁のつやを置く範囲（x+y が格子の幅のこの割合まで）（0〜2）（省くと 0.8） |
-
-### `bob`
-
-例: `{"bob": {"amp": 1}}`
-
-| 引数 | 型 | 説明 |
-|---|---|---|
-| `amp` | number | 上下の幅（px）（-16〜16）（省くと 1） |
-| `phase` | number | 位相のずれ（1 周 = 1.0。部品ごとに揺れを遅らせる）（-1〜1）（省くと 0） |
 
 ### `canopy`
 
@@ -586,18 +573,6 @@ px.write_spec("lamp.pxsrc.json", {
 | `by` | int | ずらす段数（負で暗く・正で明るく）（-8〜8）（省くと -1） |
 | `shape` | shape | 形（省くと部品の塊） |
 
-### `squash`
-
-例: `{"squash": {"amount": 0.2}}`
-
-部品を描き終えたら、その範囲で検査 `sprite:orphan` を回す。
-
-| 引数 | 型 | 説明 |
-|---|---|---|
-| `amount` | number | 伸び縮みの強さ（0〜0.5 が目安）（0〜0.9）（省くと 0.2） |
-| `phase` | number | 位相のずれ（1 周 = 1.0。部品ごとに揺れを遅らせる）（-1〜1）（省くと 0） |
-| `anchor` | string | 止める所: bottom（足元）・center（真ん中）（省くと "bottom"） |
-
 ### `stamp`
 
 例: `{"stamp": {"at": [3, 3], "rows": ["#.", ".#"], "colors": {"#": "light"}}}`
@@ -738,7 +713,7 @@ pxsrc の一番外に `"style": "snes"` と名前で書くと `bin/lint-rules/px
 | `anim` | lint | anim: コマ列に bin/fge anim の pop・area・ground・bob・loop をかける（動きの op・pose・rotate を使うスプライト、か anim: true） |
 | `black-outline` | advice | black-outline: 小さい絵（blackOutlineMaxSize 未満）で、外の縁が 1 色・絵の中で一番暗い色のまま一周している |
 | `flat-run` | advice | 輪郭の段: 同じ長さの段が続く（直線に読まれる）・長すぎる直線（16px で 4px・32px で 6px を超える）。poly の部品の辺は直線として、段の長さが 3 種類以上に散る時だけ |
-| `flicker` | lint | flicker: コマの間で周り 8 画素が動かないのに色だけ変わる画素（ちらつき。palette_cycle と wave_shift の画素・コマで at か rotate が変わる部品と、sway・bob・squash を持つ部品（on の子も）の画素は除く） |
+| `flicker` | lint | flicker: コマの間で周り 8 画素が動かないのに色だけ変わる画素（ちらつき。palette_cycle と wave_shift の画素・コマで at か rotate が変わる部品と、sway を持つ部品（on の子も）の画素は除く） |
 | `ground-contrast` | lint | 外周の画素と地の色の明るさ（Oklab の L）の差が小さく、輪郭が地に溶ける |
 | `light-dir` | advice | light-dir: 塊の明るさで重みを付けた重心（明るい側 − 暗い側）が光の側（light.dir）に無い（emissive の部品は見ない） |
 | `margin` | advice | margin: 動く絵が格子の左・右・上の縁に触れている（動く余白が無い） |

@@ -31,7 +31,7 @@ var spriteFix = map[string]string{
 	"palette":    "legend と色票に色キーを足すか、ランプの色キーに替える",
 	"jaggy":      "形の半径を変えて段の長さを単調にする。角の段なら aa_corners を足す",
 	"banding":    "gradient_fill の band を上げて境目をディザで混ぜるか、段の境目を斜めにずらす",
-	"corner":     "線の後に pixel_perfect を置く",
+	"corner":     "L 字の角に 2 重に乗った画素を 1 つ消す（線の点を減らすか、角を 1px ずらす）",
 	"silhouette": "形の大きさか輪郭を変えて、塗りつぶしても何か分かる影にする",
 }
 
@@ -260,7 +260,7 @@ func init() {
 	})
 	registerCheck(&checkDef{
 		Name: checkValueSep, Summary: "value-sep: contrast で測った部品と相手の明るさの差が下限（min か valueSepMin）を下回る", Level: levelLint,
-		Fix: "前の層なら ramp_pick の base を明るく（暗く）、奥の層なら depth_fade の depth を上げて差を広げる",
+		Fix: "前の層なら部品のランプを明るい（暗い）段にし、奥の層なら depth_fade の depth を上げて差を広げる",
 		Run: func(g *pxlib.Grid, c *checkCtx) []violation {
 			var out []violation
 			for _, m := range c.Measures {
@@ -278,7 +278,7 @@ func init() {
 	})
 	registerCheck(&checkDef{
 		Name: checkRampOrder, Summary: "ramp-order: ランプの明るさ（Oklab の L）が暗 → 明に単調でない・隣の段の差が rampMinGap に足りない", Level: levelLint,
-		Fix: "ramps の並びを暗 → 明に直すか、ramp_pick の step・min_gap を上げて選び直す",
+		Fix: "ramps の並びを暗 → 明に直すか、隣の段との明るさの差が広い色に替える",
 		Run: func(g *pxlib.Grid, c *checkCtx) []violation {
 			var out []violation
 			for _, name := range sortedKeys(c.Ramps) {
@@ -290,7 +290,7 @@ func init() {
 						continue
 					}
 					if b-a < c.Rules.RampMinGap {
-						out = append(out, violation{Check: checkRampOrder, Level: levelLint, Sprite: c.RampOwner[name],
+						out = append(out, violation{Check: checkRampOrder, Level: levelLint,
 							Msg: fmt.Sprintf("ランプ %s の %d → %d 段（%s → %s）の明るさの差 %+.3f（暗 → 明に %.2f 以上）", name, i-1, i, r[i-1], r[i], b-a, c.Rules.RampMinGap)})
 					}
 				}
@@ -347,11 +347,11 @@ func init() {
 	})
 	registerCheck(&checkDef{
 		Name: checkAnim, Summary: "anim: コマ列に bin/fge anim の pop・area・ground・bob・loop をかける（動きの op・pose・rotate を使うスプライト、か anim: true）", Level: levelLint,
-		Fix: "sway・bob の amp か squash の amount を下げる。輪が閉じないならコマの数を sin の周期に合わせる",
+		Fix: "sway の amp を下げる。輪が閉じないならコマの数を sin の周期に合わせる",
 		Run: func(*pxlib.Grid, *checkCtx) []violation { return nil }, // コマ列を見るので build が直に回す
 	})
 	registerCheck(&checkDef{
-		Name: checkFlicker, Summary: "flicker: コマの間で周り 8 画素が動かないのに色だけ変わる画素（ちらつき。palette_cycle と wave_shift の画素・コマで at か rotate が変わる部品と、sway・bob・squash を持つ部品（on の子も）の画素は除く）", Level: levelLint,
+		Name: checkFlicker, Summary: "flicker: コマの間で周り 8 画素が動かないのに色だけ変わる画素（ちらつき。palette_cycle と wave_shift の画素・コマで at か rotate が変わる部品と、sway を持つ部品（on の子も）の画素は除く）", Level: levelLint,
 		Fix: "その画素を描く op がコマごとに違う色を選んでいないか見る（seed・dither の位置をコマで揃える）。色を回したいなら palette_cycle か wave_shift で書く",
 		Run: func(*pxlib.Grid, *checkCtx) []violation { return nil }, // コマ列を見るので build が直に回す
 	})
@@ -366,12 +366,12 @@ func init() {
 type partPose struct {
 	At     pxlib.Pt
 	Rotate float64
-	Moves  bool // 部品か親（on）が画素を動かす op（sway・bob・squash）を持つ: その画素はコマごとに動くのでちらつきと数えない
+	Moves  bool // 部品か親（on）が画素を動かす op（sway）を持つ: その画素はコマごとに動くのでちらつきと数えない
 }
 
 // moveOps は画素を動かす op（flicker は、これを持つ部品と on の子の画素を動きと見る）。
 // 平らな色の行が 1px ずれると端の 2 画素だけが変わり、周りは変わらないので、ちらつきと見分けられない。
-var moveOps = map[string]bool{"sway": true, "bob": true, "squash": true}
+var moveOps = map[string]bool{"sway": true}
 
 // partPoses はコマの部品の置き方（部品 id → at・rotate・動きの op の有無。on の子は親の動きを受け継ぐ）。
 func partPoses(parts []*part) map[string]partPose {

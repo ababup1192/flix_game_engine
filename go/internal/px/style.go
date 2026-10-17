@@ -2,7 +2,7 @@ package px
 
 // 機種の決まり（色数と解像度の縛り）。pxsrc の一番外に "style": "gb4" と書くと、
 // bin/lint-rules/px.json の styles から引いて、色の集合を色票に足し（"gb0" などの色キーで描ける）、
-// ramp_pick と depth_fade の選ぶ色をその集合に絞り、検査 style（gate）で縛りを見る。
+// depth_fade の選ぶ色をその集合に絞り、検査 style（gate）で縛りを見る。
 // ゲームが独自の機種を持つなら "style": "art/x.pxstyle.json"（同じ形の Doc。ゲームのルートからの相対）。
 //
 // 形をパレットの Doc の差し替えにしなかった理由: 色の集合だけでなく「1 コマの色数・升目ごとの色数・
@@ -151,7 +151,7 @@ func channelOK(v uint8, levels int) bool {
 func init() {
 	registerCheck(&checkDef{
 		Name: checkStyle, Summary: "機種の決まり（spec の style）: 使える色・1 コマの色数・升目ごとの色数・RGB の段数・大きさ", Level: levelGate,
-		Fix: "色はその機種の色キー（gb0 など）か ramp_pick で選び直す。色数が多いなら部品のランプを 1 段減らすか、升目をまたぐ所で色を揃える",
+		Fix: "色はその機種の色キー（gb0 など）で選び直す。色数が多いなら部品のランプを 1 段減らすか、升目をまたぐ所で色を揃える",
 		Run: func(g *pxlib.Grid, c *checkCtx) []violation {
 			st := c.Style
 			if st == nil {
