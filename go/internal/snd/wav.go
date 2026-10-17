@@ -2,7 +2,8 @@ package snd
 
 // WAV の取り決め: 16bit PCM のモノラル（鳴らす側と同じ。書き方は engine_tools の SfxSynth.wavBytes・
 // wavBytesLooped と同じバイト）かステレオ（左右を交互に）。ループのある音は smpl チャンクにループ 1 本
-// （頭のフレーム〜最後のフレーム）。ステレオを鳴らす側が読めるかは採用の時の別仕事。
+// （頭のフレーム〜最後のフレーム）。ステレオ（smpl つきも）は SfxSynth.wavBytesStereo・wavBytesStereoLooped と同じバイトで、
+// 鳴らす側は 0.39.0 から読む（AudioMixdown.loadWavStereo・App.withSustained）。
 
 import (
 	"encoding/binary"

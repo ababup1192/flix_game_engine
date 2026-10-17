@@ -24,6 +24,7 @@ lint・フック・make の口で止まる決まりはここに書かない（�
 | 演出の長さ・待ち・溜めの目安 | engine の `docs/pacing.md` |
 | 音の名前を型で止める（一発と鳴り続ける音を取り違えない） | `Sfx[s]` / `Loop[s]` + `Sfx.collect` / `Loop.collect` |
 | 曲の頭を 1 回だけ鳴らし本編をループ | `SfxSynth.renderLooped` + `App.withSustained` |
+| 効果音・曲を作る・直す（音割れも検査） | 台本 `*.snd.star` か `*.sndsrc.json` を `bin/fge snd build` |
 | Doc が壊れたら既定値で続けて知らせる | `DocJson.loadOr` + `Log.fellBackThen` / `warnThen` |
 | 直した後に絵を確かめる | `make render SHOT=<場面>` → 仕上げ `make reference-check` |
 | 描き出しの字の被り・z の外れを止める | `make render-lint`（許す物は `text-audit.local.json`） |
@@ -33,8 +34,7 @@ lint・フック・make の口で止まる決まりはここに書かない（�
 | 重い処理を順に流す | `bin/fge heavy <コマンド>`（`--help`・`--status`・`--history`） |
 | 作業場を別の版のエンジンへ一時的に向ける | `bin/fge use-engine <版かパス>`・戻すは `--restore` |
 | 案を並べて依頼主に選んでもらう | `reports/<名前>/proposal.json` → `bin/fge proposal` |
-| ドット絵（sprite.json）を描く・直す | `/pixel-art` → 指定 `*.pxsrc.json` を `bin/fge px build`（op は `px ops`） |
-| 繰り返し・変化の要るドット絵の指定 | 台本 `*.px.star` を `bin/fge px gen`（書かずに描くのは `px build`） |
+| ドット絵を描く・直す（繰り返す絵は台本） | `/pixel-art` → `*.pxsrc.json` か `*.px.star` を `bin/fge px build` |
 | 絵の周回を残す・前の周へ戻す | `bin/fge rounds snap` / `restore`（出る案内に従う） |
 | AI が素材（絵・音）を作る・直す | `atelier/` に書く（`assets/` はスロット。採用は swap） |
 | 道具の選び方が文書で伝わるか測る | `make agent-eval`（お題は `agent-eval/*.json`） |
