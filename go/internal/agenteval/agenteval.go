@@ -523,6 +523,7 @@ type streamLine struct {
 		Content []struct {
 			Type  string          `json:"type"`
 			Name  string          `json:"name"`
+			Text  string          `json:"text"`
 			Input json.RawMessage `json:"input"`
 		} `json:"content"`
 	} `json:"message"`
@@ -548,6 +549,7 @@ var fileArg = regexp.MustCompile(`[\w./~$-]*\w\.(md|flix|json|mk|py|txt)\b|\bMak
 func score(j job, raw []byte, strict bool) Result {
 	r := Result{ID: j.task.ID, Suite: j.suite, Want: len(j.task.Expect)}
 	files := map[string]bool{}
+	var texts []string
 	sc := bufio.NewScanner(strings.NewReader(string(raw)))
 	sc.Buffer(make([]byte, 1<<20), 64<<20)
 	for sc.Scan() {
@@ -562,6 +564,9 @@ func score(j job, raw []byte, strict bool) Result {
 			}
 		case "assistant":
 			for _, c := range l.Message.Content {
+				if c.Type == "text" && c.Text != "" {
+					texts = append(texts, c.Text)
+				}
 				if c.Type != "tool_use" {
 					continue
 				}
@@ -599,6 +604,18 @@ func score(j job, raw []byte, strict bool) Result {
 		r.FilesRead = append(r.FilesRead, f)
 	}
 	sort.Strings(r.FilesRead)
+	// WhyNot: JSON で答えた後に、裏の処理の終わりの知らせへ 1 文返すと、最後の文（result）には
+	// JSON が無い。その時だけ、JSON を持つ最後の答えの文で採点する（答えの中身は変わらない）。
+	if strict {
+		if _, ok := extractChoice(r.Answer); !ok {
+			for i := len(texts) - 1; i >= 0; i-- {
+				if _, ok := extractChoice(texts[i]); ok {
+					r.Answer = texts[i]
+					break
+				}
+			}
+		}
+	}
 	for _, p := range j.task.Expect {
 		if regexp.MustCompile(p.Re).MatchString(r.Answer) {
 			r.Hit++

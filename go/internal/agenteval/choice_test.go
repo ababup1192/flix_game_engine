@@ -93,3 +93,15 @@ func TestStrictHeadOnlyClosesPacking(t *testing.T) {
 		}
 	}
 }
+
+// JSON で答えた後に裏の処理の知らせへ 1 文返しても、JSON を持つ最後の答えの文で採点する。
+func TestStrictFallsBackToLastJSONText(t *testing.T) {
+	answer := `{"choice": ["ZStack.topLayer", "UiTooltip"]}`
+	b, _ := json.Marshal(answer)
+	raw := []byte(`{"type":"assistant","message":{"content":[{"type":"text","text":` + string(b) + `}]}}` + "\n")
+	raw = append(raw, resultLine("裏の処理は止まりましたが、答えは上の JSON のままです。")...)
+	r := score(strictJob(), raw, true)
+	if r.Points() != 100 || len(r.Missed) != 0 {
+		t.Errorf("points %d missed %v", r.Points(), r.Missed)
+	}
+}
