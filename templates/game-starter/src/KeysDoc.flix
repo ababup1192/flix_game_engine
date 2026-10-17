@@ -4,8 +4,8 @@
 // fail-open — 読めない・壊れているときは defaults() へ落とす。操作の欄が空・全部
 // 知らない名前のときも、その操作だけ既定へ落とす — 書き間違いで操作不能を作らない。
 mod KeysDoc {
-    use flix_game_engine::{DocJson, InputMap, JsonCodec}
-    use flix_game_engine::GameEngine.Key
+    use fge::{DocJson, InputMap, JsonCodec}
+    use fge::GameEngine.Key
     use Util.Json.Json
 
     /// 操作ごとのキーの列。同じ操作に複数キーを割り当ててよい。

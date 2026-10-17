@@ -1,7 +1,7 @@
 // JSON 橋渡しのテスト（1 Doc につき最大 3 本まで。同型の重複は書かない）。
 mod TestDocs {
 
-    use flix_game_engine::GameEngine
+    use fge::GameEngine
 
     @Test
     def testSampleBrokenJsonFallsBackToDefaults(): Unit \ Assert =

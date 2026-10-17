@@ -13,7 +13,7 @@
 // 遊びの骨格はドリフトとニトロ: X で滑りながら曲がってゲージを貯め、満タンで Z の爆速。
 // 曲がる・滑る・抜く・壊れる・周回する の規則そのものは World.flix にある。
 // まず World 冒頭の「遊びの骨格（5 本柱）」と「場面の移り変わりの図」を読むとよい。
-use flix_game_engine::{ActiveDocs, App, GameEngine, LwjglLayer}
+use fge::{ActiveDocs, App, GameEngine, LwjglLayer}
 
 def main(): Unit \ IO =
     if (GameEngine.ensureMainThread()) ()
@@ -43,10 +43,10 @@ def main(): Unit \ IO =
                     { texture = World.atlasName(), key = World.atlasKey(w),
                       baked = w#atlas } :: Nil)
                 // 音: 1 フレームの前後の World から鳴らす音名を導く（再生は App が持つ）。
-                |> App.withAudio(worlds -> checked_ecast(Sfx.events(worlds)))
+                |> App.withAudio(worlds -> checked_ecast(Sounds.eventNames(worlds)))
                 // 鳴り続ける音: 走っている間のエンジンの唸りと、滑っている間の擦れ。
                 // 宣言が消えたフレームで App が止めるので、ここは「今どう鳴っていてほしいか」だけ書く。
-                |> App.withSustained(w -> checked_ecast(Sfx.hums(w)))
+                |> App.withSustained(w -> checked_ecast(Sounds.sustains(w)))
                 // 走行中の POST /render（Studio の「生成して」）は SceneRender.all と同じ実体を呼ぶ。
                 |> App.onRenderRequest(SceneRender.allShots)
                 |> App.withDebug(App.debugFromEnv())

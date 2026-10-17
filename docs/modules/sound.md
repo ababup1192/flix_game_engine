@@ -8,7 +8,8 @@
 | やりたいこと | モジュール |
 |---|---|
 | 効果音を鳴らしたい | App.withAudio（前後 World の差分から鳴らす名前の List を返す。詳しくは [audio.md](../audio.md)。実例: `templates/game-starter/src/Main.flix`） |
-| 鳴り続ける音を出したい（走行音・風・雨・炎・足音のループ） | App.withSustained（World から「鳴り続けていてほしい音」を宣言。音量と高さを毎フレーム与える。詳しくは [audio.md](../audio.md)。実例: `templates/race-starter/src/Sfx.flix`） |
+| 鳴り続ける音を出したい（走行音・風・雨・炎・足音のループ） | App.withSustained（World から「鳴り続けていてほしい音」を宣言。音量と高さを毎フレーム与える。詳しくは [audio.md](../audio.md)。実例: `templates/race-starter/src/Sounds.flix`） |
+| 音の名前の綴り違い・一発の音と鳴り続ける音の取り違えを型で止めたい | Sfx（effect の op `play` で鳴らし、`Sfx.collect` で withAudio へ）/ Loop（op `hold` で宣言し、`Loop.collect` で withSustained へ）。一発と鳴り続ける音は別の enum。実例: `templates/race-starter/src/Sounds.flix` |
 | BGM を流す・止める・音量やループを変える | AudioStreamPlayer（play / stop / setVolume / setLooping。詳しくは [audio.md](../audio.md)） |
 | 曲の頭（イントロ）を 1 回だけ鳴らし、後ろの輪だけを回す | WAV のループ点（SfxSynth.renderLooped で smpl チャンクを書く・実機と AudioMixdown.mixdownLooped が読む。[audio.md](../audio.md) の「ループ点」） |
 | BGM をだんだん出す・消す・入れ替える（音量カーブ） | AudioFade |
@@ -19,6 +20,7 @@
 ## モジュール 1 行紹介
 
 - **AudioFade** — 進行度 t から音量をひとつ決める（フェードイン・アウト・クロスフェード）。
+- **Sfx** / **Loop** — 一発の音・鳴り続ける音をゲームの enum で鳴らす多相 effect（Flix 0.77 の実験機能）と、App の名前の列へ写す collect。
 - **AudioMixer** — 音の通り道。バス・振り分け・ダッキング・ローパス・クールダウン・スナップショットを State を持ち回す純関数で決める（App.withMixer と AudioMixdown が同じ step を呼ぶ）。
 - **AudioMixerDoc** — mixer.json の fail-open 読み込み（schema は docs/mixer.schema.json）。
 - **AudioMixdown** — AudioMixer を通した音を、ウィンドウ無しで 1 本の波形へ書き出す（実機と同じ規則: 1 つの名前は同時に 1 本・鳴り直すと頭から・ループ点のある曲は mixdownLooped で頭を 1 回だけ鳴らす）。

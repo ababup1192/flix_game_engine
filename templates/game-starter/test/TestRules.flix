@@ -2,7 +2,7 @@
 // 期待値はリテラルでなく Doc の既定値（SampleDoc.defaults）や絵から導く。
 mod TestRules {
 
-    use flix_game_engine::{PxSpriteDoc, ShaderDoc}
+    use fge::{PxSpriteDoc, ShaderDoc, SortingLayer}
 
     def d(): SampleDoc.Doc = SampleDoc.defaults()
 

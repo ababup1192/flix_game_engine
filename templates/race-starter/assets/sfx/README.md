@@ -6,4 +6,4 @@
 - 音量・高さ・長さ … `assets/race.sfxtune.json`（Studio のフォームからも触れます）
 - 音そのものの組み立て … `src/render/SfxRender.flix` の合成レシピ
 
-どの出来事でどれが鳴るかは `src/Sfx.flix`、一覧は `README.md` の「音」の節にあります。
+どの出来事でどれが鳴るかは `src/Sounds.flix`、一覧は `README.md` の「音」の節にあります。

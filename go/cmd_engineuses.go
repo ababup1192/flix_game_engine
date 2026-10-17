@@ -9,7 +9,7 @@ import (
 func init() {
 	// WhyNot: engineOnly にしないのは、直すのが配った先のゲームのソースだから。
 	register("engine-uses",
-		"engine の名前を取り込む `use flix_game_engine::{...}` を mod ごとに足す (Flix 0.78 の mount。--check で検査だけ)",
+		"engine の名前を取り込む `use fge::{...}` を mod ごとに足す (mount 名は flix.toml から。--check で検査だけ)",
 		cmdEngineUses)
 }
 

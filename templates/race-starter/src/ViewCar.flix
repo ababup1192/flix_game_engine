@@ -5,7 +5,7 @@
 //   pxQuadScaled … アトラス 1 クアッドに実数 scale を掛ける（遠景のヤシ・ニトロ残像が使う）。
 mod ViewCar {
 
-    use flix_game_engine::{
+    use fge::{
         Color, DrawCmd, Fx, Hash01, Lifetime, Num, PxSprite, PxSpriteAtlas, PxSpriteDoc, RawDraw,
         Render, Sway, Vec2, ZStack
     }

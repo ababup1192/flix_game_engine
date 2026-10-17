@@ -5,7 +5,7 @@
 // Doc の保存即反映(watchFile)と F1 一括リロードの一覧表もここに 1 枚だけ置く。
 mod Controls {
 
-    use flix_game_engine::{App, DocTable}
+    use fge::{App, DocTable}
 
     /// このフレームのキーを World.Input へ。操作ごとのキーの列(keys Doc)の
     /// どれか 1 つでも押されていれば効く。ジャンプは「押しっぱなし」(可変ジャンプの

@@ -3,7 +3,7 @@
 // 描画量が揺れて、エンジン改修の差分と見分けが付かなくなるため。
 
 mod Bench {
-    use flix_game_engine::{App, Color, FontAtlas, RawDraw, Render, RenderUtil}
+    use fge::{App, Color, FontAtlas, RawDraw, Render, RenderUtil}
 
     import java.lang.System
     import org.lwjgl.glfw.GLFW

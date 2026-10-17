@@ -19,9 +19,7 @@
 // GPU が無いので同じ記述(cellGroups)を全部動的に解釈する — 2 経路の絵は同じ。
 mod View {
 
-    use flix_game_engine::{
-        Anim, App, Color, DrawCmd, Grid, Hit, Num, PxSprite, RawDraw, Rect2, Render, Vec2
-    }
+    use fge::{Anim, App, Color, DrawCmd, Grid, Hit, Num, PxSprite, RawDraw, Rect2, Render, Vec2}
 
     pub def zWall(): Int32 = 8
     pub def zFore(): Int32 = 10

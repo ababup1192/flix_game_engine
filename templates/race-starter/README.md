@@ -54,7 +54,7 @@ Flix コンパイラはエンジンリポの `bin/flix` ラッパ経由で呼ぶ
    4. `src/View.flix` と `src/ViewScene.flix` / `src/ViewRoad.flix` / `src/ViewCar.flix` …
       状態を絵に写す層たち（空と海 → 路面と縁石 → 車とドット絵 → 粒 → HUD → 幕）。
    5. `src/Controls.flix` … キーの割り当てと Doc の読み直し。
-   6. `src/Sfx.flix` … World から「いま鳴らす音」を導く（一発の音と、鳴り続ける音。下の「音」を参照）。
+   6. `src/Sounds.flix` … World から「いま鳴らす音」を導く（一発の音と、鳴り続ける音。下の「音」を参照）。
    7. `src/render/SceneRender.flix` … 決定的な 8 場面を PNG に描き出す（リファレンス画像比較・目視批評）と、
       `src/render/SfxRender.flix` … 効果音 13 本を WAV に描き出す。どちらも `make render-all` の 1 手で走る。
 3. 数値・色・コースをいじる（保存すると走行中のゲームに即反映されます）:
@@ -93,10 +93,11 @@ Flix コンパイラはエンジンリポの `bin/flix` ラッパ経由で呼ぶ
 | ゴール | `win` / `lose` | 上がる 4 音 / 下がる 3 音 |
 | 決定（開始・仕切り直し） | `start` | 短い 2 音のブリップ |
 
-- **鳴らすきっかけ**を変える: `src/Sfx.flix`。一発の音は前後の World の差から名前を導く
-  `events`、鳴り続ける音は今の World から「鳴っていてほしい音」を宣言する `hums` です。
-  どちらも純関数なので、「いつ鳴るか」はここだけを読めば分かり、
-  テスト（`test/TestSfx.flix`）で固定できます。
+- **鳴らすきっかけ**を変える: `src/Sounds.flix`。一発の音は前後の World の差から
+  `Sfx.play(Shot.X)` で鳴らす `events`、鳴り続ける音は今の World から `Loop.hold(Hum.X, ..)` で
+  宣言する `hums` です。一発の音（Shot）と鳴り続ける音（Hum）は別の enum なので、取り違えると
+  コンパイルが止めます。音を足すときは enum に case を足し、`shotName` / `humName` に
+  project.json の名前を書きます。「いつ鳴るか」はテスト（`test/TestSounds.flix`）で固定できます。
 - **音量・高さ・長さ**を変える: `assets/race.sfxtune.json`（音ごとに volume / pitch / speed）。
   これは WAV に書き込まれる値なので、保存したら `make render-all` して起動し直すと届きます。
 - **エンジン音の唸りの幅**を変える: 同じ Doc の `enginePitchLow` / `enginePitchHigh`

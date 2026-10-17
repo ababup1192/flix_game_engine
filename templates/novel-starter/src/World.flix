@@ -21,7 +21,7 @@
 // だからプレイヤーの前でクラッシュしない。台本の編集ミスは既定へ落ちて読みは続く。
 mod World {
 
-    use flix_game_engine::{PxSpriteAtlas, PxSpriteDoc, UiDialog, UiMenu, UiSlots, UiSpec, UiStore}
+    use fge::{PxSpriteAtlas, PxSpriteDoc, UiDialog, UiMenu, UiSlots, UiSpec, UiStore}
 
     /// いま画面が何をしているか。Title = 表紙（決定で物語がはじまる）、Story = 台本を読んでいる。
     pub enum Phase with Eq, ToString {

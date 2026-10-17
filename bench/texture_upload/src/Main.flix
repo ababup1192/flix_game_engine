@@ -10,10 +10,10 @@
 // 1 フレームに 320x240 を 2 枚上げる（material_lab の実際の使い方に合わせた大きさと枚数）。
 // 画素の中身は毎フレーム同じ物を使う — 画素を作る費用を測りたいのではなく、GPU へ上げる
 // 費用だけを見たいので。
-use flix_game_engine::{App, GameEngine, LwjglLayer}
+use fge::{App, GameEngine, LwjglLayer}
 
 mod BenchTextureUpload {
-    use flix_game_engine::{App, GpuHandle, RawDraw, Render, RenderAsset, RenderTexture, RenderUtil}
+    use fge::{App, GpuHandle, RawDraw, Render, RenderAsset, RenderTexture, RenderUtil}
 
     import java.lang.System
     import org.lwjgl.glfw.GLFW

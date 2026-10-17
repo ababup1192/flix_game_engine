@@ -1076,6 +1076,14 @@
 - path を読んで Spec にする。DocJson.readJson と同じ fail 経路
   `pub def load(path: String): Result[JsonError, Spec] \ Fs.FileRead`
 
+## Loop — `engine_world/src/Loop.flix`
+- 鳴り続ける音の音量と高さ。volume は 0.0〜1.0、pitch は 1.0 = 元のまま・2.0 で 1 オクターブ上。
+  `pub type alias Mix = { volume = Float64, pitch = Float64 }`
+- 元の音量・元の高さ。
+  `pub def plain(): Mix`
+- f の中で宣言した音を、宣言した順の App.Sustain の列にする（App.withSustained に渡す形）。
+  `pub def collect(nameOf: s -> String, f: Unit -> Unit \ ef): List[App.Sustain] \ (ef - Loop[s])`
+
 ## Material — `engine_world/src/Material.flix`
 - 粒の形。Speck = 小さな四角が明滅する(水のきらめき)。
   `pub enum SurfaceShape { case Speck case Scales case Bubble case Glow }`
@@ -1592,6 +1600,10 @@
   `pub def toJson(schema: Schema): Json`
 - FieldType を JSON 表現に戻す。fromJson が受け取る形とちょうど対になる。
   `pub def typeToJson(fieldType: FieldType): Json`
+
+## Sfx — `engine_world/src/Sfx.flix`
+- f の中で鳴らした音を、鳴らした順の名前の列にする（App.withAudio に渡す形）。
+  `pub def collect(nameOf: s -> String, f: Unit -> Unit \ ef): List[String] \ (ef - Sfx[s])`
 
 ## Shadow — `engine_world/src/Shadow.flix`
 - 遮蔽物 1 個ぶんの頂点列（絶対座標・閉じたポリゴンとして扱う）に対して光が落とす

@@ -20,6 +20,10 @@
 // 終了の確認の窓（quitPrompt）は Layer.Prompt に置き、場面のどれよりも手前に出る。
 mod View {
 
+    use fge::{
+        App, Color, DrawCmd, Fx, Num, PxSprite, RawDraw, Render, SortingLayer, Sway, TextDraw,
+        Vec2, ZStack
+    }
     use ZOrder.Layer
 
     pub def frame(ctx: App.ViewCtx, w: World.World): List[Render.PlacedItem] =

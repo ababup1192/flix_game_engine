@@ -4,7 +4,7 @@
 // 実行: ../../bin/flix run --entrypoint BenchAllocActiveDocs.main
 mod BenchAllocActiveDocs {
 
-    use flix_game_engine::{ActiveDocs, AllocMeter}
+    use fge::{ActiveDocs, AllocMeter}
 
     pub def main(): Unit \ IO =
         let entries = testEntries();

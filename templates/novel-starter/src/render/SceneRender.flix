@@ -5,7 +5,7 @@
 // 場面は「進めて作る」: 台本が伸びてもビート数を数え直さずに済むよう、
 // 「選択肢待ちになるまで進める」「結末の最後のビートまで進める」で位置を決める。
 mod SceneRender {
-    use flix_game_engine::{
+    use fge::{
         App, Color, FontAtlas, GameEngine, HeadlessFont, HeadlessRender, PxSprite, PxSpriteAtlas,
         PxSpriteDoc, Render, Vec2
     }

@@ -4,7 +4,7 @@
 // World を直接組んで規則関数を当てる。盤の座標は (col, row)、row 0 が最上段。
 mod TestRules {
 
-    use flix_game_engine::ShaderDoc
+    use fge::ShaderDoc
     use World.Kind
     use World.Cell
 

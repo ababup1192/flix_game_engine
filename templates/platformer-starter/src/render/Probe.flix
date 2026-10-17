@@ -7,7 +7,7 @@
 // 描画とロジックのどちらが重いか分からない。ここで数字にしておくと、
 // 「1 面クリアで固まる」が二度と勘の当てっこにならない。
 mod Probe {
-    use flix_game_engine::{App, FontAtlas, HeadlessFont, PxSpriteDoc, Vec2}
+    use fge::{App, FontAtlas, HeadlessFont, PxSpriteDoc, Vec2}
 
     import java.lang.System
 

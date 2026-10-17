@@ -1,7 +1,7 @@
 // engineuses — ゲームの .flix に、engine の名前を取り込む `use <mount>::{...}` を mod ごとに足す層。
 //
 // Flix 0.78 から、依存パッケージ（flix_game_engine）の名前は mount を通す use からしか届かない
-// （`use flix_game_engine::{App, Color}`）。ワイルドカードは無く、use は mod ごとに効く
+// （engine の決まりの mount 名 fge なら `use fge::{App, Color}`）。ワイルドカードは無く、use は mod ごとに効く
 // （ファイル直下の use は `mod View { }` の中へ届かない）。そこで、mod ごとに「その中で
 // 使っている engine の名前」を数え、その mod の頭に 1 行の use を置く。何度回しても同じ結果になる。
 //
@@ -47,6 +47,8 @@ func Run(out, errOut *strings.Builder, opts Options) (int, error) {
 	}
 	if mount == "" {
 		mount = opts.Package
+		fmt.Fprintf(errOut, "[engine-uses] flix.toml の依存に mount がありません。repo 名 %s で数えます"+
+			"（engine の決まりは mount = \"fge\"）\n", mount)
 	}
 	var engineNames map[string]bool
 	if opts.EngineSrc != "" {
@@ -79,7 +81,8 @@ func Run(out, errOut *strings.Builder, opts Options) (int, error) {
 	}
 	changed := 0
 	for _, f := range files {
-		next := Rewrite(fixEngineUses(sources[f], mount, engineNames, declared), mount, engineNames, declared)
+		next := Rewrite(fixEngineUses(renameMount(sources[f], opts.Package, mount), mount, engineNames, declared),
+			mount, engineNames, declared)
 		if next == sources[f] {
 			continue
 		}
@@ -253,45 +256,57 @@ func precededByPub(toks []token, i int) bool {
 	return false
 }
 
-// declaredNames はゲームのソースが宣言・import・use している名前（大文字で始まる物）を集める。
+// declaredNames はゲームの木の一番外（どの mod の中でもない所）で宣言した名前を集める。
+// ゲーム全体で engine の名前より勝つのはこれだけ（`mod Sfx` など）。mod の中の宣言と use は
+// その mod の中だけで勝つので、Rewrite が mod ごとに数える。
 func declaredNames(src string) map[string]bool {
 	toks := tokenize(src)
 	names := map[string]bool{}
 	for i, t := range toks {
-		if t.kind != tokIdent {
-			continue
-		}
-		switch {
-		case declKeywords[t.text]:
-			// `mod A.B` は A と B を宣言する。
-			for j := i + 1; j < len(toks) && toks[j].kind == tokIdent; j++ {
-				names[toks[j].text] = true
-				if j+1 >= len(toks) || toks[j+1].text != "." {
-					break
-				}
-				j++
-			}
-		case t.text == "case":
-			// enum の `case A, B(Int32), C`。match の `case Color.Red =>` は宣言ではない。
-			parens := 0
-			for j := i + 1; j < len(toks) && toks[j].line == t.line; j++ {
-				switch toks[j].text {
-				case "(", "[":
-					parens++
-				case ")", "]":
-					parens--
-				}
-				prev := toks[j-1].text
-				if parens == 0 && toks[j].kind == tokIdent && (prev == "case" || prev == ",") &&
-					(j+1 >= len(toks) || toks[j+1].text != ".") {
-					names[toks[j].text] = true
-				}
-			}
-		case t.text == "import" || (t.text == "use" && !isMountUse(toks, i)):
-			for _, n := range importedNames(toks, i) {
+		if t.kind == tokIdent && t.depth == 0 && declKeywords[t.text] {
+			for _, n := range namesDeclaredAt(toks, i) {
 				names[n] = true
 			}
 		}
+	}
+	return names
+}
+
+// namesDeclaredAt は toks[i] が宣言・import・use で持ち込む名前（無ければ空）。
+func namesDeclaredAt(toks []token, i int) []string {
+	t := toks[i]
+	if t.kind != tokIdent {
+		return nil
+	}
+	var names []string
+	switch {
+	case declKeywords[t.text]:
+		// `mod A.B` は A と B を宣言する。
+		for j := i + 1; j < len(toks) && toks[j].kind == tokIdent; j++ {
+			names = append(names, toks[j].text)
+			if j+1 >= len(toks) || toks[j+1].text != "." {
+				break
+			}
+			j++
+		}
+	case t.text == "case":
+		// enum の `case A, B(Int32), C`。match の `case Color.Red =>` は宣言ではない。
+		parens := 0
+		for j := i + 1; j < len(toks) && toks[j].line == t.line; j++ {
+			switch toks[j].text {
+			case "(", "[":
+				parens++
+			case ")", "]":
+				parens--
+			}
+			prev := toks[j-1].text
+			if parens == 0 && toks[j].kind == tokIdent && (prev == "case" || prev == ",") &&
+				(j+1 >= len(toks) || toks[j+1].text != ".") {
+				names = append(names, toks[j].text)
+			}
+		}
+	case t.text == "import" || (t.text == "use" && !isMountUse(toks, i)):
+		names = importedNames(toks, i)
 	}
 	return names
 }
@@ -331,6 +346,19 @@ func importedNames(toks []token, i int) []string {
 		out = append(out, last)
 	}
 	return out
+}
+
+// renameMount は、前の mount 名（repo 名）で書いた `use old::` を新しい mount 名へ書き換える
+// （flix.toml に mount を足した後に回し直すと、そろう）。
+func renameMount(src, old, mount string) string {
+	if old == mount {
+		return src
+	}
+	return renameRe(old).ReplaceAllString(src, "${1}use "+mount+"::")
+}
+
+func renameRe(old string) *regexp.Regexp {
+	return regexp.MustCompile(`(^|[^A-Za-z0-9_])use ` + regexp.QuoteMeta(old) + `::`)
 }
 
 // fixEngineUses は、engine の名前で始まる素の use（`use Color.darken`）に mount を足す。
@@ -382,8 +410,9 @@ type scope struct {
 	headerLine int    // `mod X {` の行（ファイルの一番外なら -1）
 	indent     string // その中の行の字下げ
 	used       map[string]bool
-	useLine    int // 既にある `use <mount>::` の行（無ければ -1）
-	useEnd     int // その use が続く最後の行
+	local      map[string]bool // この mod の中で宣言・use した名前（ここでは engine の名前より勝つ）
+	useLine    int             // 既にある `use <mount>::` の行（無ければ -1）
+	useEnd     int             // その use が続く最後の行
 }
 
 // skipAfter は、この語の直後の名前を参照として数えない語。
@@ -396,7 +425,7 @@ var skipAfter = map[string]bool{
 func Rewrite(src, mount string, engineNames, declared map[string]bool) string {
 	toks := tokenize(src)
 	lines := strings.Split(src, "\n")
-	root := &scope{headerLine: -1, used: map[string]bool{}, useLine: -1}
+	root := &scope{headerLine: -1, used: map[string]bool{}, local: map[string]bool{}, useLine: -1}
 	scopes := []*scope{root}
 	type frame struct {
 		sc    *scope
@@ -414,13 +443,16 @@ func Rewrite(src, mount string, engineNames, declared map[string]bool) string {
 	pendingMod := -1 // `mod` を見てから `{` までの行
 	skipLine := -1   // use / import の行（その行の名前は数えない）
 	for i, t := range toks {
+		for _, n := range namesDeclaredAt(toks, i) {
+			current().local[n] = true
+		}
 		switch {
 		case t.kind == tokIdent && t.text == "mod":
 			pendingMod = t.line
 		case t.text == "{":
 			if pendingMod >= 0 {
 				sc := &scope{headerLine: t.line, indent: indentOf(lines[pendingMod]) + "    ",
-					used: map[string]bool{}, useLine: -1}
+					used: map[string]bool{}, local: map[string]bool{}, useLine: -1}
 				scopes = append(scopes, sc)
 				stack = append(stack, frame{sc, true})
 				pendingMod = -1
@@ -442,7 +474,9 @@ func Rewrite(src, mount string, engineNames, declared map[string]bool) string {
 			if t.line == skipLine || pendingMod >= 0 {
 				continue
 			}
-			if i > 0 && (toks[i-1].text == "." || toks[i-1].text == "::" || toks[i-1].text == "@" ||
+			// `::` の後ろは読み飛ばさない: mount の `::` は use の行にしか出ず（行ごと飛ばす）、
+			// 式の中の `::` はリストの cons（`x :: TextDraw.f(..)`）。
+			if i > 0 && (toks[i-1].text == "." || toks[i-1].text == "@" ||
 				(toks[i-1].kind == tokIdent && skipAfter[toks[i-1].text])) {
 				continue
 			}
@@ -454,6 +488,9 @@ func Rewrite(src, mount string, engineNames, declared map[string]bool) string {
 	// 下の行から直す（上の行番号がずれないように）。
 	sort.Slice(scopes, func(a, b int) bool { return scopes[a].headerLine > scopes[b].headerLine })
 	for _, sc := range scopes {
+		for n := range sc.local {
+			delete(sc.used, n)
+		}
 		if sc.useLine >= 0 {
 			// 既にある行の名前も残す（字句で拾えない使い方を人が足していることがある）。
 			for _, n := range namesInUse(strings.Join(lines[sc.useLine:sc.useEnd+1], "\n"), mount) {

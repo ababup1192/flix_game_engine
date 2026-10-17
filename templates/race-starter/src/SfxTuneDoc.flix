@@ -1,12 +1,12 @@
 // SfxTuneDoc — race.sfxtune.json（効果音のつまみ）の宣言ドキュメント層。
 // 音の中身（どんな波を重ねるか）は src/render/SfxRender.flix のデザインで、ここはそれに掛ける
-// 3 つのつまみ（音量・高さ・長さ）だけを持つ。どの出来事で鳴らすかは Sfx.flix。
+// 3 つのつまみ（音量・高さ・長さ）だけを持つ。どの出来事で鳴らすかは Sounds.flix。
 // fail-open — 読めない・壊れているときは defaults() へ落とし、ゲームは必ず起動する。
 //
 // つまみは WAV を生成するときに効く（make render-all → 起動し直す）。engine の高さの振れ幅
 // （enginePitchLow / enginePitchHigh）だけは鳴らしながら掛ける値なので保存で即反映される。
 mod SfxTuneDoc {
-    use flix_game_engine::{DocJson, JsonCodec, Num}
+    use fge::{DocJson, JsonCodec, Num}
     use Util.Json.Json
 
     /// 音 1 つぶんのつまみ。volume = 音量（0..1）、pitch = 高さの倍率、

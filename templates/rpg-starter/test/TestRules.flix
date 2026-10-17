@@ -3,7 +3,7 @@
 // 間取りは小さな fixture で、約束の両側(薬草が足りない / 足りる)から確かめる。
 mod TestRules {
 
-    use flix_game_engine::{Dir4, FxDoc, Grid, PxSpriteDoc, RichText, ShaderDoc, UiDialog}
+    use fge::{Dir4, FxDoc, Grid, PxSpriteDoc, RichText, ShaderDoc, UiDialog}
 
     // ══════════════════════════════════════════════════════
     // fixture: 上の通りと下の畑を、約束で開く木戸がへだてる小さな里

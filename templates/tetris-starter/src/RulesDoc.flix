@@ -3,7 +3,7 @@
 // コード（World）側にある。ここに if 文を書き始めたら Doc の境界を越えている合図。
 // fail-open — 読めない・壊れているときは defaults() へ落とし、ゲームは必ず起動する。
 mod RulesDoc {
-    use flix_game_engine::{DocJson, JsonCodec}
+    use fge::{DocJson, JsonCodec}
     use Util.Json.Json
 
     /// 手触りと収支の数値。いじると何が変わるかは各フィールドのコメントのとおり。

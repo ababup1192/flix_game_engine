@@ -5,24 +5,43 @@ engine 同梱の Flix コンパイラが 0.78.0 になった。出す版が決�
 ## なぜ変わったか
 
 0.78.0 のパッケージ管理では、依存パッケージは必ず mount され、その名前は
-`use <mount>::名前` からしか届かない。mount を書かない依存は repo 名で mount される
-（engine なら `flix_game_engine`）。ワイルドカードの use は無く、use は mod ごとに効く
-（ファイル直下の use は `mod View { }` の中へ届かない）。engine の pub でない mod は届かない。
+`use <mount>::名前` からしか届かない。engine の mount 名は `fge`（`use fge::{App, Color}`）。
+ワイルドカードの use は無く、use は mod ごとに効く（ファイル直下の use は `mod View { }` の
+中へ届かない）。engine の pub でない mod は届かない。
 
 ## 直し方
 
-1. `flix.toml` の `flix` を `"0.78.0"` に、engine の依存の版をこの engine の版にする
+1. `flix.toml` の `flix` を `"0.78.0"` にし、engine の依存の行を次の形にする（版はこの engine の版）:
+   `"github:ababup1192/flix_game_engine" = { version = "X.Y.Z", mount = "fge", security = "unrestricted" }`
 2. `devbox.json` の flix を `"github:ababup1192/flix_game_engine?dir=nix/flix#flix_0_78_0"` にして
    `devbox install`（Cj-bc/flix.nix に 0.78.0 が載ったらそちらへ戻してよい）
 3. `make check` を 1 回回して engine の fpkg を lib/ に取る（ここでは名前の誤りで赤くてよい）
-4. `bin/fge engine-uses` — mod ごとに `use flix_game_engine::{App, Color, ...}` を足す。
-   既にある `use Color.darken` のような engine を指す use には `flix_game_engine::` を足す
+4. `bin/fge engine-uses` — mod ごとに `use fge::{App, Color, ...}` を足す（mount 名は flix.toml から読む）。
+   既にある `use Color.darken` のような engine を指す use には `fge::` を足す
 5. `make check` → `make test` → `make reference-check`
 
 `bin/fge engine-uses --check` は書き換えずに、足りない所があれば exit 1 を返す。
+
+## 音の名前を型にする（任意・新しく書く所と直すついでの所から）
+
+一発の音と鳴り続ける音を別の enum にし、取り違えをコンパイルで止める。実例は
+templates/race-starter/src/Sounds.flix。App の口（withAudio・withSustained）は変わらない。
+
+| 前 | 後 |
+|---|---|
+| `events(ws): List[String]` が `"crash" :: Nil` を返す | `events(ws): Unit \ Sfx[Shot]` の中で `Sfx.play(Shot.Crash)` |
+| `App.withAudio(ws -> events(ws))` | `App.withAudio(ws -> Sfx.collect(shotName, () -> events(ws)))` |
+| `hums(w): List[App.Sustain]` が `{ name = "engine", volume = v, pitch = p } :: Nil` | `hums(w): Unit \ Loop[Hum]` の中で `Loop.hold(Hum.Engine, { volume = v, pitch = p })` |
+| `App.withSustained(w -> hums(w))` | `App.withSustained(w -> Loop.collect(humName, () -> hums(w)))` |
+| 音の名前の文字列をあちこちに書く | `shotName: Shot -> String` / `humName: Hum -> String` の 1 か所に書く |
+| テストで `events(ws)` の列を比べる | テストで `Sfx.collect(shotName, () -> events(ws))` の列を比べる |
+
+ゲームに `mod Sfx` / `mod Loop` があると engine の `Sfx` / `Loop` とぶつかる。ゲームの側を
+`Sounds` などへ改名する。名前へ写す関数は `ToString` の制約で書かない（0.78.0 ではコンパイラが落ちる）。
 
 ## 残りやすい誤り
 
 - `Undefined name 'X.y'` が engine の名前で残る: 字句で拾えない書き方。その mod の use に X を足す
 - `InaccessibleModule`: engine の pub でない mod を使っている。engine 側で pub にするか相談する
+- `Mismatched type arguments for effect`（E6795）: 一発の音を Loop へ、鳴り続ける音を Sfx へ渡している
 - `Missing repository`: 自分が依存される側のパッケージなら `[package]` に repository を書く

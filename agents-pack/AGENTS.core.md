@@ -22,6 +22,7 @@ lint・フック・make の口で止まる決まりはここに書かない（�
 | 時刻表を描く・鳴らす | `progressOf`・`soundsOn` / `soundsBetween` → `App.withAudio` |
 | 曲の拍・小節に乗せる | `Duration.Bars` / `ToNextBar` / `ToPickup` + `Timeline.tempo` |
 | 演出の長さ・待ち・溜めの目安 | engine の `docs/pacing.md` |
+| 音の名前を型で止める（一発と鳴り続ける音を取り違えない） | `Sfx[s]` / `Loop[s]` + `Sfx.collect` / `Loop.collect` |
 | 曲の頭を 1 回だけ鳴らし本編をループ | `SfxSynth.renderLooped` + `App.withSustained` |
 | Doc が壊れたら既定値で続けて知らせる | `DocJson.loadOr` + `Log.fellBackThen` / `warnThen` |
 | 直した後に絵を確かめる | `make render SHOT=<場面>` → 仕上げ `make reference-check` |
@@ -47,6 +48,8 @@ lint・フック・make の口で止まる決まりはここに書かない（�
 - **言葉は業界の語**（カタカナか英語）で、説明は平易に。造語・比喩・このリポだけの意味を作らない。
   名前は業界の語 → 他のエンジン（迷ったら Bevy）の順に探す。動詞は `load`/`fetch` 外から取る（失敗しうる）・
   `build`/`compute` 計算して作る・`with` 新しい値を返す・`to` 作り直す / `as` 見方だけ変える（`is`/`get` は lint が見る）。
+- **取り違えは型で止める**。外から作らせない値は pub mod の中の非 pub の enum + `pub type alias`、音の名前は
+  `Sfx[Shot]` / `Loop[Hum]`（`/flix-docs`）。新しく作る型と、直すついでの所から使う（一度に全部は替えない）。
 - **データは Doc・振る舞いはコード**。調整する数値・rows・色・**プレイヤーの目に入る文言**は Doc（コードには既定値だけ）。
   描き方・演出の形・ルールはコード。ロジックを JSON に書き始めたら設計の匂い。
 - **テストはルール・進行・収支と、JSON とコードの橋渡しだけ**。期待値は Doc の既定値から導く（`/quality-assurance`）。

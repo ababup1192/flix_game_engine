@@ -18,7 +18,7 @@
 // だからプレイヤーの前でクラッシュしない。編集ミスは既定へ落ちて遊びは続く。
 mod World {
 
-    use flix_game_engine::{
+    use fge::{
         Clock, Dir4, FxDoc, Grid, Journey, PxSpriteAtlas, PxSpriteDoc, Rect2, RichText, ShaderDoc,
         TileLayerSpec, UiDialog, Vec2
     }

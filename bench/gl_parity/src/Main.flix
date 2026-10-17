@@ -3,10 +3,10 @@
 //
 // GL の絵はリファレンス画像化しない — 基準は「もう片方の経路」であって過去の絵ではない
 // （過去の絵との突き合わせは templates の reference-check / reference-update の役目）。
-use flix_game_engine::GameEngine
+use fge::GameEngine
 
 mod ParityMain {
-    use flix_game_engine::{
+    use fge::{
         Color, FontAtlas, GameEngine, GlReadback, GpuHandle, HeadlessFont, HeadlessRender,
         LwjglLayer, Render, RenderTarget, ShaderEffect
     }

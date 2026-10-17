@@ -7,7 +7,7 @@
 // アトラスは project.json の "px_atlas"(assets/sprites/px_atlas.png)として起動時に
 // 読み込まれる — GL 実行時とヘッドレス(bakeAtlas の PNG)が同一ソース(PxSpriteAtlas.bake)。
 mod BenchPx {
-    use flix_game_engine::{
+    use fge::{
         App, Color, GameEngine, LwjglLayer, PxSprite, PxSpriteAtlas, PxSpriteDoc, Render,
         RenderUtil, SoftRaster, Vec2
     }

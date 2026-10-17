@@ -36,7 +36,7 @@
 // 固定される（World.cameraCenter）ので、ずらしは常にゼロになる。
 mod View {
 
-    use flix_game_engine::{
+    use fge::{
         App, Color, Daylight, Depth, Dir4, DrawCmd, FontAtlas, Fx, Grid, Hash01, Num, PxSprite,
         RawDraw, Rect2, Render, RichText, SortingLayer, Sway, TextDraw, UiDialog, Vec2, ZStack
     }

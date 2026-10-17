@@ -12,7 +12,7 @@
 //
 // 落下・移動・回転・接地/固定・ライン消去・涌き の規則そのものは World.flix にある。
 // まず World 冒頭の「毎フレームの流れ」と「場面の移り変わりの図」を読むとよい。
-use flix_game_engine::{ActiveDocs, App, GameEngine, LwjglLayer}
+use fge::{ActiveDocs, App, GameEngine, LwjglLayer}
 
 def main(): Unit \ IO =
     if (GameEngine.ensureMainThread()) ()

@@ -249,6 +249,7 @@
       ]
     },
     {"id": "art-round-keep", "prompt": "主人公のドット絵（assets/hero.sprite.json）を描き直している。描き直すたびの絵と台本を残して見比べ、前の版の方が良ければそこへ戻せるようにしたい", "expect": [{"re": "bin/fge rounds|fge rounds snap|rounds snap", "why": "絵の周回を残す bin/fge rounds snap / restore"}], "avoid": [{"re": "px\\.py snap", "why": "ゲームの古い snap"}]},
-    {"id": "click-front-layer", "prompt": "確認の窓が開いているときにクリックすると、窓の奥にあるボタンまで反応してしまう。見た目でいちばん手前にある物だけが押されるようにしたい", "expect": [{"re": "SortingLayer\\.pick|\\bpick\\(", "why": "描く時と同じ層の前後で当たりを選ぶ SortingLayer.pick"}], "avoid": [{"re": "Render\\.zOf|sortBy\\([^)]*\\bz", "why": "描いた絵の z を並べ直して当たりを探す"}]}
+    {"id": "click-front-layer", "prompt": "確認の窓が開いているときにクリックすると、窓の奥にあるボタンまで反応してしまう。見た目でいちばん手前にある物だけが押されるようにしたい", "expect": [{"re": "SortingLayer\\.pick|\\bpick\\(", "why": "描く時と同じ層の前後で当たりを選ぶ SortingLayer.pick"}], "avoid": [{"re": "Render\\.zOf|sortBy\\([^)]*\\bz", "why": "描いた絵の z を並べ直して当たりを探す"}]},
+    {"id": "typed-sound-names", "prompt": "効果音の名前を文字列で書いていて、綴りを間違えても気づけない。エンジン音のような鳴り続ける音を一発の音として鳴らしてしまう取り違えも、コンパイルで止めたい", "expect": [{"re": "Sfx\\.(play|collect)|Sfx\\[", "why": "一発の音の Sfx[s]"}, {"re": "Loop\\.(hold|collect)|Loop\\[", "why": "鳴り続ける音の Loop[s]"}], "avoid": [{"re": "with\\s+ToString\\[s\\]", "why": "trait の制約付きのハンドラ（0.78.0 でコンパイラが落ちる）"}]}
   ]
 }

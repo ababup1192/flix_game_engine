@@ -2,7 +2,7 @@
 // 壊れたら既定値 / 1 フィールド上書き / rows(増減データ)の長さ追随。
 mod TestDocs {
 
-    use flix_game_engine::{GameEngine, PxSpriteDoc}
+    use fge::{GameEngine, PxSpriteDoc}
 
     @Test
     def testMotionBrokenFallsBack(): Unit \ Assert =

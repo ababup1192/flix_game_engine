@@ -4,6 +4,8 @@
 // 使い方の全文は engine の engine_world/src/SortingLayer.flix 冒頭と docs/z-bands.md。
 mod ZOrder {
 
+    use fge::SortingLayer
+
     pub enum Layer with Eq, ToString {
         case Scene   // 場面の絵（背景・主人公・塵）
         case Frame   // 画面の縁の枠（App.withStaticLayer で 1 度だけ作る静的な絵。compose を通らないので z は bottom で引く）

@@ -7,7 +7,7 @@
 // 特に coolTimers は発動と同じフレームで dt ぶん削るので、タイマーの期待値は「設定値 - dt」。
 mod TestRules {
 
-    use flix_game_engine::{FxDoc, PxSpriteDoc}
+    use fge::{FxDoc, PxSpriteDoc}
 
     // ══════════════════════════════════════════════════════
     // 場面を組む土台

@@ -10,7 +10,7 @@
 // 掛ける — 減衰しても 3 チャンネルの比が保たれ、遠くでも暖色のまま沈む。
 mod LightGrid {
 
-    use flix_game_engine::{Color, Num}
+    use fge::{Color, Num}
 
     pub type alias Rgb = (Float64, Float64, Float64)
 
