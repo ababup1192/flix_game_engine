@@ -32,7 +32,7 @@ func opsMarkdown() string {
 
 - 声（voices の 1 つ）の ops は「音源の op 1 つ → 効果の op を順に」。声は ` + "`at`" + ` ミリ秒の所に置き、` + "`pan`" + `（-1 左・0 真ん中・1 右）で振って声の順に足す。` + "`post`" + ` は足した後に順に掛ける効果の op。
 - 書き出しはステレオ（` + "`channels`" + ` の既定は ` + "`stereo`" + `。` + "`mono`" + ` で今までどおり 1 本）。左右の振り方は真ん中で両方 1・振り切ると片方 0。効果は左右に 1 本ずつ同じ式で掛ける（normalize・reverb・delay・finish は左右を一緒に見る）。
-- ` + "`style`" + ` は機種の縛り（bin/lint-rules/snd.json の styles: ` + "`gb`" + `・` + "`neo`" + `（チップの音色 + 今のミックス）・` + "`free`" + ` は縛りなし）。機種の外の手（reverb・delay・sidechain・sub・pan と、今の音色 saw・sine・unison・filter・pitchenv）は style の ` + "`breaks`" + ` にある物だけ書け、使えば report の ` + "`breaks`" + ` に「破った所」として残る。` + "`kind`" + `（ui・sfx・bgm）は音量の目安を選ぶ（normalize の既定）。
+- ` + "`style`" + ` は機種の縛り（bin/lint-rules/snd.json の styles: ` + "`gb`" + `・` + "`neo`" + `（チップの音色 + 今のミックス）・` + "`free`" + ` は縛りなし）。機種の外の手（reverb・delay・sidechain・sub・pan と、今の音色 saw・sine・unison・filter・pitchenv・fm）は style の ` + "`breaks`" + ` にある物だけ書け、使えば report の ` + "`breaks`" + ` に「破った所」として残る。` + "`kind`" + `（ui・sfx・bgm）は音量の目安を選ぶ（normalize の既定）。
 - ループ: song の op が譜面のループ点から決めるか、` + "`loop_start_ms`" + `。` + "`tempo`" + `（song は譜面の bpm）があれば輪が整数小節かを見る。
 - 検査（左右を 1 本ずつ見る。音量は左右を足した LUFS で、ループする音は輪の 1 周）: gate = clip（±1 を超えた）・seam（継ぎ目）・bars（小節）・style（機種の外）。gate は「その op を外すと直る」op を原因として付ける。lint = loudness・peak・truepeak（4 倍に読み直したピーク）・head・tail・dc。advice = alias・breaks。
 - 台本から呼べる物: ` + "`snd.write_spec(path, value)`" + `・` + "`snd.write_chip(path, value)`" + `（曲を譜面に。下の節）・` + "`snd.read_json(path)`" + `（作業場の .json を読むだけ）・` + "`op.<名前>(引数=…)`" + `・` + "`mus.*`" + `（曲を書く部品。下の節）・` + "`math`" + `（正しく丸めた値）。箱の決まりは px の台本と同じ（starbox）。
@@ -99,7 +99,7 @@ var chipFields = []struct{ Key, Summary string }{
 	{"loop", "ループの頭の rows の行（無ければループしない）"},
 	{"gain", "全体の倍率"},
 	{"mix", "今の形の 5 本のチャンネルの倍率（channels を書かない時だけ）"},
-	{"channels", "チャンネルの並び [{name, part（pulse・triangle・noise・wave。機種の外の saw・sine）, vol, pan（-1〜1）, cents（デチューン）, sub（1 オクターブ下のサイン。機種の外）, duck（サイドチェインで沈める）, send: {reverb, delay}, unison, filter, pitchenv}]。rows の鍵はこの名前。機種の外の音色は下の表"},
+	{"channels", "チャンネルの並び [{name, part（pulse・triangle・noise・wave。機種の外の saw・sine）, vol, pan（-1〜1）, cents（デチューン）, sub（1 オクターブ下のサイン。機種の外）, duck（サイドチェインで沈める）, send: {reverb, delay}, unison, filter, pitchenv, fm}]。rows の鍵はこの名前。機種の外の音色は下の表"},
 	{"fx", "機種の外の厚み {reverb: {room, damp, wet, predelay_ms}, delay: {steps（段）, feedback, wet, pingpong, lowpass}, sidechain: {key（合図の楽器の名前の並び）, depth_db, release_ms}}"},
 	{"instruments", "楽器（*.instrument.json と同じ形。譜面の方が勝つ）"},
 	{"waves", "波形メモリの形（名前 → 32 段 × 0〜15）"},
@@ -115,6 +115,7 @@ var synthFields = []struct{ Key, Summary, Example string }{
 	{"unison", "同じ音を voices 本（2〜7）、cents（0〜100）の幅でずらして重ね、左右へ width（0〜1）だけ広げる。sub は 1 本目だけ", `{"voices": 5, "cents": 18, "width": 0.8}`},
 	{"filter", "2 極のフィルタ（mode = low・band・high、q 0.3〜12）。切る所 hz から、鳴らした頭に env オクターブ（-8〜8）上がり env_ms で戻る。sweep = [[小節, Hz], …] は頭からの小節で切る所を動かす（間は比で滑らか・ループの 2 周目も同じ位置）", `{"mode": "low", "hz": 900, "q": 1.2, "env": 3, "env_ms": 180, "sweep": [[0, 400], [8, 6000]]}`},
 	{"pitchenv", "鳴らした頭（打ち直しも）に semis 半音（-60〜60）上から ms の速さで指数に落ちる", `{"semis": 24, "ms": 30}`},
+	{"fm", "2 オペレータの FM（part が sine だけ）。サインの高さを ratio（0.25〜16）倍のサインで index（0〜20 ラジアン）だけ揺らし、深さは鳴らした頭（打ち直しも）から decay_ms で floor（0〜1）の割合まで減る。ratio 1 で柔らかいエレピ・3.5 や 7 でベル・オルゴール", `{"ratio": 3.5, "index": 4, "decay_ms": 300, "floor": 0.1}`},
 }
 
 // macroFields は楽器の表の形の欄。
@@ -242,6 +243,11 @@ func chipSchema() map[string]any {
 					"pitchenv": map[string]any{"type": "object", "additionalProperties": false, "description": sdesc["pitchenv"], "properties": map[string]any{
 						"semis": map[string]any{"type": "number", "minimum": -60, "maximum": 60},
 						"ms":    map[string]any{"type": "number", "exclusiveMinimum": 0}}},
+					"fm": map[string]any{"type": "object", "additionalProperties": false, "description": sdesc["fm"], "properties": map[string]any{
+						"ratio":    map[string]any{"type": "number", "minimum": 0.25, "maximum": 16},
+						"index":    map[string]any{"type": "number", "minimum": 0, "maximum": 20},
+						"decay_ms": map[string]any{"type": "number", "exclusiveMinimum": 0},
+						"floor":    map[string]any{"type": "number", "minimum": 0, "maximum": 1}}},
 					"vol": map[string]any{"type": "number", "minimum": 0}, "pan": map[string]any{"type": "number", "minimum": -1, "maximum": 1},
 					"cents": map[string]any{"type": "number"}, "sub": map[string]any{"type": "number", "minimum": 0},
 					"duck": map[string]any{"type": "boolean"}, "note": map[string]any{"type": "string"},

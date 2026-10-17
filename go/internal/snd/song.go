@@ -9,7 +9,7 @@ package snd
 //   - groove: 段ごとの tick の並び（[7, 5] で跳ねる。平均が 1 段の tick・長さは 16 を割り切る数）。
 //   - fx: 機種の外の厚み {"reverb": {…}, "delay": {"steps": 3, …}, "sidechain": {"key": ["kick"], "depth_db": 4, "release_ms": 160}}。
 //   - 機種の外の音色（neo の breaks で許す）: part の saw（ノコギリ）・sine（サイン）、channels の unison（デチューンした重ね）・
-//     filter（2 極のフィルタ。音ごとの開閉と小節での開閉）・pitchenv（鳴らした頭の音程の落ち。太鼓とザップ）。鳴らす所は song_synth.go。
+//     filter（2 極のフィルタ。音ごとの開閉と小節での開閉）・pitchenv（鳴らした頭の音程の落ち。太鼓とザップ）・fm（2 オペレータの FM。エレピ・ベル）。鳴らす所は song_synth.go。
 //   - instruments・waves: 楽器を譜面の中に書ける（instruments のファイルと同じ形。譜面の方が勝つ）。
 //   - 段のコマンド: DLY n（頭を n tick 遅らせる）・CUT n（n tick で離す）・RTG n（n tick ごとに打ち直す）・
 //     VSL n（1 tick に n/8 段ずつ音量を滑らせる）を 1 段に並べて書ける（SLD n は前の音から滑る）。
@@ -31,7 +31,7 @@ func init() {
 	register(&opDef{
 		Name:    "song",
 		Summary: "譜面（*.chip.json）を楽器（譜面の中か *.instrument.json）で鳴らす。左右に振って混ぜ、ループ点があれば頭 + 輪の 1 本と smpl のループの頭を作る",
-		Machine: "譜面のチャンネル（今の形は pulse1・pulse2 = パルス・triangle = 三角・noise = 雑音・wave = 波形メモリ。channels を書けば名前と部品を選べ、saw・sine も書ける）。使った部品を機種の縛りで数え、reverb・delay・sidechain・sub・pan・saw・sine・unison・filter・pitchenv は style の breaks で見る",
+		Machine: "譜面のチャンネル（今の形は pulse1・pulse2 = パルス・triangle = 三角・noise = 雑音・wave = 波形メモリ。channels を書けば名前と部品を選べ、saw・sine も書ける）。使った部品を機種の縛りで数え、reverb・delay・sidechain・sub・pan・saw・sine・unison・filter・pitchenv・fm は style の breaks で見る",
 		Example: `{"song": {"chip": "testdata/snd/tiny.chip.json", "instruments": "testdata/snd/tiny.instrument.json"}}`,
 		Params: []opreg.Param{
 			{Name: "chip", Type: opreg.String, Required: true, Summary: "譜面のパス（作業場の根から。台本の snd.write_chip が書いた物も読める）"},
@@ -120,6 +120,7 @@ type chanDef struct {
 	unison                *unisonDef   // デチューンした重ね（機種の外。song_synth.go）
 	filter                *filterDef   // 2 極のフィルタ（機種の外）
 	pitchEnv              *pitchEnvDef // 鳴らした頭の音程の落ち（機種の外）
+	fm                    *fmDef       // 2 オペレータの FM（機種の外。sine だけ）
 }
 
 // 今の形の 5 本（channels を書かない譜面）。
@@ -468,7 +469,7 @@ var partNames = map[string]part{"pulse": partPulse, "triangle": partTriangle, "n
 	"saw": partSaw, "sine": partSine}
 
 // chanKeys はチャンネルに書ける鍵。
-var chanKeys = []string{"name", "part", "vol", "pan", "cents", "sub", "duck", "send", "unison", "filter", "pitchenv", "note"}
+var chanKeys = []string{"name", "part", "vol", "pan", "cents", "sub", "duck", "send", "unison", "filter", "pitchenv", "fm", "note"}
 
 func parseChannels(root map[string]any) ([]chanDef, error) {
 	raw, ok := root["channels"].([]any)

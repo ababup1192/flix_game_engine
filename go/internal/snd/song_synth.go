@@ -6,6 +6,8 @@ package snd
 //   - filter: 2 極のフィルタ（TPT の SVF。low・band・high）。切る所は hz か sweep（小節 → Hz）で、鳴らした頭に env オクターブ
 //     上がって env_ms で戻る（音ごとの開閉）。sweep は小節で開け閉めする（ビルドアップ・落とす所）。
 //   - pitchenv: 鳴らした頭に semis 半音上から ms で指数に落ちる（808 のキック・タム・ザップ）。
+//   - fm: サインの高さを ratio 倍のサインで揺らす 2 オペレータの FM。揺らす深さ index は鳴らした頭から decay_ms で floor の割合まで減る
+//     （エレピ・ベル・オルゴール。part は sine だけ）。
 // 係数は 16 サンプルごとに作り直す（tan・exp・pow は crmath。2 台で同じ値になる）。
 
 import (
@@ -32,6 +34,9 @@ type filterDef struct {
 
 // pitchEnvDef は鳴らした頭に semis 半音上から ms の速さで指数に落ちる音程。
 type pitchEnvDef struct{ semis, ms float64 }
+
+// fmDef は 2 オペレータの FM（揺らす側の高さの比・頭の深さ・深さが減る速さ・残る深さの割合）。
+type fmDef struct{ ratio, index, decayMs, floor float64 }
 
 // synthBlock は係数を作り直すサンプルの間。
 const synthBlock = 16
@@ -85,6 +90,17 @@ func parseSynth(m map[string]any, d *chanDef) error {
 			return fmt.Errorf("pitchenv.semis は -60〜60・ms は 0 より大きく")
 		}
 	}
+	if f := objectOf(m, "fm"); f != nil {
+		d.fm = &fmDef{ratio: floatOr(f, "ratio", 1), index: floatOr(f, "index", 2), decayMs: floatOr(f, "decay_ms", 400), floor: floatOr(f, "floor", 0.2)}
+		switch {
+		case d.part != partSine:
+			return fmt.Errorf("fm は part が sine のチャンネルにだけ書ける（got %s）", d.part)
+		case d.fm.ratio < 0.25 || d.fm.ratio > 16 || d.fm.index < 0 || d.fm.index > 20:
+			return fmt.Errorf("fm.ratio は 0.25〜16・index は 0〜20")
+		case d.fm.decayMs <= 0 || d.fm.floor < 0 || d.fm.floor > 1:
+			return fmt.Errorf("fm.decay_ms は 0 より大きく・floor は 0〜1")
+		}
+	}
 	return nil
 }
 
@@ -102,6 +118,9 @@ func synthBreaks(cd chanDef) []string {
 	}
 	if cd.pitchEnv != nil {
 		out = append(out, "pitchenv")
+	}
+	if cd.fm != nil {
+		out = append(out, "fm")
 	}
 	return out
 }
@@ -229,6 +248,7 @@ type synthState struct {
 	age    int
 	filter *svf
 	penv   float64 // 今の block の音程の上乗せ（半音）
+	fmIdx  float64 // 今の block の FM の深さ（ラジアン）
 }
 
 func newSynthState(cd chanDef, rate float64) *synthState {
@@ -248,6 +268,10 @@ func (st *synthState) block(bar float64) {
 	if pe := st.cd.pitchEnv; pe != nil {
 		e, _ := crmath.Exp(-ms / pe.ms)
 		st.penv = float64(pe.semis * e)
+	}
+	if fm := st.cd.fm; fm != nil {
+		e, _ := crmath.Exp(-ms / fm.decayMs)
+		st.fmIdx = float64(fm.index * (fm.floor + float64((1-fm.floor)*e)))
 	}
 	if f := st.cd.filter; f != nil {
 		hz := f.hz

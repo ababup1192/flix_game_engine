@@ -4,7 +4,7 @@
 
 - 声（voices の 1 つ）の ops は「音源の op 1 つ → 効果の op を順に」。声は `at` ミリ秒の所に置き、`pan`（-1 左・0 真ん中・1 右）で振って声の順に足す。`post` は足した後に順に掛ける効果の op。
 - 書き出しはステレオ（`channels` の既定は `stereo`。`mono` で今までどおり 1 本）。左右の振り方は真ん中で両方 1・振り切ると片方 0。効果は左右に 1 本ずつ同じ式で掛ける（normalize・reverb・delay・finish は左右を一緒に見る）。
-- `style` は機種の縛り（bin/lint-rules/snd.json の styles: `gb`・`neo`（チップの音色 + 今のミックス）・`free` は縛りなし）。機種の外の手（reverb・delay・sidechain・sub・pan と、今の音色 saw・sine・unison・filter・pitchenv）は style の `breaks` にある物だけ書け、使えば report の `breaks` に「破った所」として残る。`kind`（ui・sfx・bgm）は音量の目安を選ぶ（normalize の既定）。
+- `style` は機種の縛り（bin/lint-rules/snd.json の styles: `gb`・`neo`（チップの音色 + 今のミックス）・`free` は縛りなし）。機種の外の手（reverb・delay・sidechain・sub・pan と、今の音色 saw・sine・unison・filter・pitchenv・fm）は style の `breaks` にある物だけ書け、使えば report の `breaks` に「破った所」として残る。`kind`（ui・sfx・bgm）は音量の目安を選ぶ（normalize の既定）。
 - ループ: song の op が譜面のループ点から決めるか、`loop_start_ms`。`tempo`（song は譜面の bpm）があれば輪が整数小節かを見る。
 - 検査（左右を 1 本ずつ見る。音量は左右を足した LUFS で、ループする音は輪の 1 周）: gate = clip（±1 を超えた）・seam（継ぎ目）・bars（小節）・style（機種の外）。gate は「その op を外すと直る」op を原因として付ける。lint = loudness・peak・truepeak（4 倍に読み直したピーク）・head・tail・dc。advice = alias・breaks。
 - 台本から呼べる物: `snd.write_spec(path, value)`・`snd.write_chip(path, value)`（曲を譜面に。下の節）・`snd.read_json(path)`（作業場の .json を読むだけ）・`op.<名前>(引数=…)`・`mus.*`（曲を書く部品。下の節）・`math`（正しく丸めた値）。箱の決まりは px の台本と同じ（starbox）。
@@ -14,7 +14,7 @@
 | `noise` | 音源 | 雑音を ms ミリ秒。kind = hash（番号のハッシュの白色雑音）・lfsr15 / lfsr7（ゲームボーイの雑音。hz 回/秒で回す） | 雑音のチャンネル（ゲームボーイの ch4 は lfsr15・lfsr7） |
 | `pulse` | 音源 | 矩形波を ms ミリ秒。to_hz を書くと hz から to_hz へ比が一定の速さで滑る | パルスのチャンネル（ゲームボーイの ch1・ch2。滑りは ch1 の sweep に当たる） |
 | `rest` | 音源 | 無音を ms ミリ秒（声の長さをそろえる・曲の休符） | 無し（どの機種でも書ける） |
-| `song` | 音源 | 譜面（*.chip.json）を楽器（譜面の中か *.instrument.json）で鳴らす。左右に振って混ぜ、ループ点があれば頭 + 輪の 1 本と smpl のループの頭を作る | 譜面のチャンネル（今の形は pulse1・pulse2 = パルス・triangle = 三角・noise = 雑音・wave = 波形メモリ。channels を書けば名前と部品を選べ、saw・sine も書ける）。使った部品を機種の縛りで数え、reverb・delay・sidechain・sub・pan・saw・sine・unison・filter・pitchenv は style の breaks で見る |
+| `song` | 音源 | 譜面（*.chip.json）を楽器（譜面の中か *.instrument.json）で鳴らす。左右に振って混ぜ、ループ点があれば頭 + 輪の 1 本と smpl のループの頭を作る | 譜面のチャンネル（今の形は pulse1・pulse2 = パルス・triangle = 三角・noise = 雑音・wave = 波形メモリ。channels を書けば名前と部品を選べ、saw・sine も書ける）。使った部品を機種の縛りで数え、reverb・delay・sidechain・sub・pan・saw・sine・unison・filter・pitchenv・fm は style の breaks で見る |
 | `delay` | 効果 | 帰還つきのディレイ（ms ごとに feedback 倍で返る。pingpong で左右に交互に返す・帰還の道で lowpass）を wet だけ足す | 無し（機種の外。機種の中なら song のチャンネルに遅らせた写しを置く） |
 | `env` | 効果 | 立ち上がり attack_ms・hold_ms 保ってから decay_ms の速さで指数に減衰（decay_ms 0 は減衰なし） | 無し（ゲームボーイの音量は 16 段の steps） |
 | `fade` | 効果 | 頭を 1 倍・終わりを 0 倍へ直線で先細らせる（times 回重ねると急になる） | 無し（ゲームボーイなら steps で書く） |
@@ -227,7 +227,7 @@ song の op が読む譜面。形は docs/chip.schema.json。今の形（phrase 
 | `loop` | ループの頭の rows の行（無ければループしない） |
 | `gain` | 全体の倍率 |
 | `mix` | 今の形の 5 本のチャンネルの倍率（channels を書かない時だけ） |
-| `channels` | チャンネルの並び [{name, part（pulse・triangle・noise・wave。機種の外の saw・sine）, vol, pan（-1〜1）, cents（デチューン）, sub（1 オクターブ下のサイン。機種の外）, duck（サイドチェインで沈める）, send: {reverb, delay}, unison, filter, pitchenv}]。rows の鍵はこの名前。機種の外の音色は下の表 |
+| `channels` | チャンネルの並び [{name, part（pulse・triangle・noise・wave。機種の外の saw・sine）, vol, pan（-1〜1）, cents（デチューン）, sub（1 オクターブ下のサイン。機種の外）, duck（サイドチェインで沈める）, send: {reverb, delay}, unison, filter, pitchenv, fm}]。rows の鍵はこの名前。機種の外の音色は下の表 |
 | `fx` | 機種の外の厚み {reverb: {room, damp, wet, predelay_ms}, delay: {steps（段）, feedback, wet, pingpong, lowpass}, sidechain: {key（合図の楽器の名前の並び）, depth_db, release_ms}} |
 | `instruments` | 楽器（*.instrument.json と同じ形。譜面の方が勝つ） |
 | `waves` | 波形メモリの形（名前 → 32 段 × 0〜15） |
@@ -244,6 +244,7 @@ song の op が読む譜面。形は docs/chip.schema.json。今の形（phrase 
 | `unison` | 同じ音を voices 本（2〜7）、cents（0〜100）の幅でずらして重ね、左右へ width（0〜1）だけ広げる。sub は 1 本目だけ | `{"voices": 5, "cents": 18, "width": 0.8}` |
 | `filter` | 2 極のフィルタ（mode = low・band・high、q 0.3〜12）。切る所 hz から、鳴らした頭に env オクターブ（-8〜8）上がり env_ms で戻る。sweep = [[小節, Hz], …] は頭からの小節で切る所を動かす（間は比で滑らか・ループの 2 周目も同じ位置） | `{"mode": "low", "hz": 900, "q": 1.2, "env": 3, "env_ms": 180, "sweep": [[0, 400], [8, 6000]]}` |
 | `pitchenv` | 鳴らした頭（打ち直しも）に semis 半音（-60〜60）上から ms の速さで指数に落ちる | `{"semis": 24, "ms": 30}` |
+| `fm` | 2 オペレータの FM（part が sine だけ）。サインの高さを ratio（0.25〜16）倍のサインで index（0〜20 ラジアン）だけ揺らし、深さは鳴らした頭（打ち直しも）から decay_ms で floor（0〜1）の割合まで減る。ratio 1 で柔らかいエレピ・3.5 や 7 でベル・オルゴール | `{"ratio": 3.5, "index": 4, "decay_ms": 300, "floor": 0.1}` |
 
 段の文字は `音 楽器 v音量 コマンド…`（`C#5 lead v12 DLY 2 VSL -1`。`OFF` は離す）。コマンドは 1 段に並べて書ける:
 
