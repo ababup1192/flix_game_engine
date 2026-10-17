@@ -11,6 +11,8 @@
 | 光と陰（小物の面） | `directional` | lint pillow・light-dir |
 | 丸い体・キャラ | `shade_parts` | lint pillow・light-dir |
 | 手前の物が落とす影 | `shade_mask` | — |
+| 落ち影（受ける面への投影）・接地の一番暗い影（照り返しは shade_parts の bounce） | `cast_shadow` | — |
+| 明るさの構造 → 1 段ずらし（帯か光の範囲を先に置き、草・レンガ・石・地面の模様を帯ごとに 1 段ずらす） | `band_shift` | lint banding（帯が丸く見えたら by: blob） |
 | 1px の線・ひげ・髪の線 | `line` | 既存の lint corner（角が 2 重の画素） |
 | 金属・石・木・布・葉 | `material` | 材質ごと（下の材質の表） |
 | 空・斜面の階調・境目のディザ | `gradient_fill` | lint pillow・light-dir・banding |
@@ -33,10 +35,12 @@
 | 技法 | op | 何をするか | 仕上げ・検査 |
 |---|---|---|---|
 | 手打ち AA（2px 以上の段の角にだけ中間色） | `aa_corners` | 2px 以上の段の角の凹みにだけ、内側と外の色の中間に一番近いランプの色を 1px 置く（45° と直線には置かない。中間の色が無ければ置かない） | lint jaggy・orphan |
+| 明るさの構造 → 1 段ずらし（帯か光の範囲を先に置き、模様の色を帯ごとに 1 段ずらす・光の範囲の中だけ色を上げる） | `band_shift` | 明るさの帯（光の向き・x・y・radial か光の範囲 center・r）を先に決め、塗ってある模様の色を帯ごとにランプで step 段ずつずらす（暗い帯の先の色が明るい帯の胴の色になる。草・レンガ・石・地面に共通。by: blob / part で帯の境目を模様の塊に沿わせる） | lint banding（帯が丸く見えたら by: blob） |
 | UI（体力・気力・時間のゲージ） | `bar` | 体力のバー: 形（省くと部品の塊）の外接箱を、side の端から rate だけ残りの量で塗る（fill を省くとランプの段を太さの向きに Bayer で）。empty は減った所・top は残りの上の 1px のつや・lost は残りの隣の今減った量 | — |
 | 小物の陰影（縁で光と影を分ける） | `bevel` | 小物の陰の段: 光の側の縁を lit、影の側の縁（と影の向きへ 2 つ先が外の画素）を dark、中を face | 既存の lint banding |
 | 陰影（平らな面は 1 色・光源は左上の 1 つ） | `bevel_box` | 角丸の板: 斜めの帯で 光・地・影、縁の 1px につや（光の側）と墨（影の側）、外側に墨の輪郭（格子は正方形） | 既存の lint banding |
 | 葉の塊（玉を重ねて塊ごとに陰を付ける。全体に 1 つの陰を掛けない） | `canopy` | 葉の玉を重ねた木・茂み: 玉を奥（上）から手前（下）へ重ね、玉ごとに光の向きの陰・葉の斑・光の側のつや。外側に rim の 1px（部品の塊は玉の和） | lint pillow・orphan |
+| 落ち影（受ける面への投影）・接地の一番暗い影（ambient occlusion） | `cast_shadow` | 形 of を光と反対の地面へ倒した落ち影を、受ける面 onto に塗ってある色を by 段ずらして落とす。contact を書くと接地の所（of の真下が面に接する画素の近く）をさらに contact 段暗く（光の届かない一番暗い影） | — |
 | 背景の奥行き（遠いほど明度差が小さい）・主役と背景を分ける | `contrast` | 今の部品と相手（部品 against か地の色）の明るさ（Oklab の L）の平均の差を測るだけ（描かない） | lint value-sep |
 | 敷き詰め（煉瓦・瓦は段ごとに半分ずらす。目地は面より暗い 1px） | `courses` | 煉瓦・瓦・石積みの目地を引く: 段の高さごとに横の目地、段ごとに半分（offset）ずらした幅ごとに縦の目地（部品の塊の中だけ。色は下の色を by 段暗く）。quad を書くと奥行きのある壁（一人称の通路・遠近の路地）: 4 隅の四角形に grid の数だけ遠近で並べる（奥ほど細かく。横の目地は消失点へ向かう線・縦の目地は段の上下 1px を空ける） | lint banding・flat-run |
 | タイルの割れ目 | `crack` | 親（on）の塊の割れ目: 墨の 1px と、その右下に切り口のつや 1px | — |
@@ -179,6 +183,30 @@ px.write_spec("lamp.pxsrc.json", {
 | `mix` | number | 外の色へ寄せる割合（0.5 = 真ん中）（0.1〜0.9）（省くと 0.5） |
 | `against` | string | どの縁に当てるか: clear（絵の外形 = 外が透明な所だけ）・any（ほかの部品との境目にも）（省くと "clear"） |
 
+### `band_shift`
+
+例: `{"band_shift": {"bands": 3, "field": "y", "by": "blob"}}`
+
+部品を描き終えたら、その範囲で検査 `sprite:banding` を回す。
+
+| 引数 | 型 | 説明 |
+|---|---|---|
+| `shape` | shape | 形（省くと部品の塊） |
+| `field` | string | 帯を決める明るさの場: light（光の向き）・y（上が明るい）・x（右が明るい）・radial（塊の中心が明るい）。center を書くと光の範囲（省くと "light"） |
+| `center` | pair | 光の範囲の中心 [x, y]（書くと field の代わりに、中心が 1・半径 r の外が 0 の場） |
+| `r` | number | 光の範囲の半径（center の時）（0.5〜1024）（省くと 16） |
+| `bands` | int | 帯の数（暗い帯から 0, 1, 2…）（2〜8）（省くと 3） |
+| `cuts` | numbers | 帯の境目の明るさ（0〜1 を小さい順に bands − 1 個。省くと等分） |
+| `step` | int | 帯を 1 つ上がるごとにずらす段数（-4〜4）（省くと 1） |
+| `base` | int | 一番暗い帯のずらし（-1 で暗い帯を 1 段下げる）（-8〜8）（省くと 0） |
+| `invert` | bool | 明暗を返す（省くと false） |
+| `band` | number | 帯の境目のうちディザで混ぜる割合（by: pixel だけ。cuts を書くと混ぜない）（0〜1）（省くと 0） |
+| `by` | string | 帯を決める単位: pixel（画素ごと）・blob（書いた部品が同じでつながった塊ごと）・part（書いた部品ごと）（省くと "pixel"） |
+| `sample` | string | 塊の帯を読む所（blob・part の時）: center・top（背の高い葉の先で帯を破る）・bottom・light（省くと "center"） |
+| `seams` | rows | 塊を切る色（目地・葉の間の影）。この色の画素は塊に入れず画素ごとにずらす |
+| `keep` | rows | ずらさない色（輪郭の墨など） |
+| `ramps` | rows | 色を引くランプの名前（省くと部品のランプ・spec のランプ全部。色は最初に含むランプでずらす） |
+
 ### `bar`
 
 例: `{"bar": {"rate": 0.8, "side": "right", "empty": "ink", "from": 1, "band": 0.5, "top": "light"}}`
@@ -241,6 +269,20 @@ px.write_spec("lamp.pxsrc.json", {
 | `keep` | number | 斑を置く割合（0〜1）（省くと 0.5） |
 | `seed` | int | 斑の散らし方の番号（玉 k は seed + k）（0〜1.048576e+06）（省くと 0） |
 | `gloss` | color | 玉の光の側のつやの色（"" で無し）（省くと "ramp[-1]"） |
+
+### `cast_shadow`
+
+例: `{"cast_shadow": {"of": "base", "contact": 1}}`
+
+| 引数 | 型 | 説明 |
+|---|---|---|
+| `of` | string | 影を落とす部品の id（この部品より前の列）（必須） |
+| `onto` | string | 影を受ける部品の id（省くと of の外の塗ってある所全部） |
+| `by` | int | 落ち影のずらす段数（負で暗く）（-8〜0）（省くと -1） |
+| `slant` | pair | 高さ 1px ごとに影が伸びる量 [横, 縦]（光と反対の向きへ。縦が小さいほど地面に寝る）（省くと [0.5,0.2]） |
+| `contact` | int | 接地の所をさらに暗くする段数（0 で付けない）（0〜4）（省くと 0） |
+| `contact_r` | number | 接地の暗い影の広さ（of の接地の画素の真下からの距離）（0.5〜16）（省くと 1.5） |
+| `ramps` | rows | 色を引くランプの名前（省くと部品のランプ・spec のランプ全部） |
 
 ### `contrast`
 
@@ -563,6 +605,7 @@ px.write_spec("lamp.pxsrc.json", {
 | `bias` | number | 明るさの底上げ（正で明るく）（-1〜1）（省くと 0） |
 | `outline` | color | 影の側の外周の色（"" で外す）（省くと "ink"） |
 | `rim` | color | 光の側の外周の色（暗い材質を闇から抜く明るい縁。省くとランプの最暗段）（省くと ""） |
+| `bounce` | number | 照り返し: 一番暗い段のうち、法線が下（地面）を向く割合がこれ以上の所を 1 段明るく（0 で付けない・0.5 で影の下半分。境目の近くは暗いまま残る）（0〜1）（省くと 0） |
 
 ### `shade_step`
 
@@ -714,7 +757,7 @@ pxsrc の一番外に `"style": "snes"` と名前で書くと `bin/lint-rules/px
 | `black-outline` | advice | black-outline: 小さい絵（blackOutlineMaxSize 未満）で、外の縁が 1 色・絵の中で一番暗い色のまま一周している |
 | `flat-run` | advice | 輪郭の段: 同じ長さの段が続く（直線に読まれる）・長すぎる直線（16px で 4px・32px で 6px を超える）。poly の部品の辺は直線として、段の長さが 3 種類以上に散る時だけ |
 | `flicker` | lint | flicker: コマの間で周り 8 画素が動かないのに色だけ変わる画素（ちらつき。palette_cycle と wave_shift の画素・コマで at か rotate が変わる部品と、sway を持つ部品（on の子も）の画素は除く） |
-| `ground-contrast` | lint | 外周の画素と地の色の明るさ（Oklab の L）の差が小さく、輪郭が地に溶ける |
+| `ground-contrast` | lint | 外周の画素と地の色の明るさ（Oklab の L）の差が小さく、輪郭が地に溶ける・地が絵のハイライトより明るい（highlight）・明るい地の彩度が高い（chroma） |
 | `light-dir` | advice | light-dir: 塊の明るさで重みを付けた重心（明るい側 − 暗い側）が光の側（light.dir）に無い（emissive の部品は見ない） |
 | `margin` | advice | margin: 動く絵が格子の左・右・上の縁に触れている（動く余白が無い） |
 | `pillow` | advice | pillow: 塊の縁が光の側でも影の側でも同じように内側より暗い（縁からの距離で塗った陰。emissive の部品は見ない） |

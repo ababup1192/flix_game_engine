@@ -768,6 +768,118 @@
         },
         {
           "type": "object",
+          "description": "明るさの帯（光の向き・x・y・radial か光の範囲 center・r）を先に決め、塗ってある模様の色を帯ごとにランプで step 段ずつずらす（暗い帯の先の色が明るい帯の胴の色になる。草・レンガ・石・地面に共通。by: blob / part で帯の境目を模様の塊に沿わせる）",
+          "additionalProperties": false,
+          "required": [
+            "band_shift"
+          ],
+          "properties": {
+            "band_shift": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "shape": {
+                  "description": "形（省くと部品の塊）",
+                  "$ref": "#/definitions/shape"
+                },
+                "field": {
+                  "description": "帯を決める明るさの場: light（光の向き）・y（上が明るい）・x（右が明るい）・radial（塊の中心が明るい）。center を書くと光の範囲",
+                  "type": "string",
+                  "default": "light"
+                },
+                "center": {
+                  "description": "光の範囲の中心 [x, y]（書くと field の代わりに、中心が 1・半径 r の外が 0 の場）",
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2
+                },
+                "r": {
+                  "description": "光の範囲の半径（center の時）",
+                  "type": "number",
+                  "minimum": 0.5,
+                  "maximum": 1024,
+                  "default": 16
+                },
+                "bands": {
+                  "description": "帯の数（暗い帯から 0, 1, 2…）",
+                  "type": "integer",
+                  "minimum": 2,
+                  "maximum": 8,
+                  "default": 3
+                },
+                "cuts": {
+                  "description": "帯の境目の明るさ（0〜1 を小さい順に bands − 1 個。省くと等分）",
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  }
+                },
+                "step": {
+                  "description": "帯を 1 つ上がるごとにずらす段数",
+                  "type": "integer",
+                  "minimum": -4,
+                  "maximum": 4,
+                  "default": 1
+                },
+                "base": {
+                  "description": "一番暗い帯のずらし（-1 で暗い帯を 1 段下げる）",
+                  "type": "integer",
+                  "minimum": -8,
+                  "maximum": 8,
+                  "default": 0
+                },
+                "invert": {
+                  "description": "明暗を返す",
+                  "type": "boolean",
+                  "default": false
+                },
+                "band": {
+                  "description": "帯の境目のうちディザで混ぜる割合（by: pixel だけ。cuts を書くと混ぜない）",
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1,
+                  "default": 0
+                },
+                "by": {
+                  "description": "帯を決める単位: pixel（画素ごと）・blob（書いた部品が同じでつながった塊ごと）・part（書いた部品ごと）",
+                  "type": "string",
+                  "default": "pixel"
+                },
+                "sample": {
+                  "description": "塊の帯を読む所（blob・part の時）: center・top（背の高い葉の先で帯を破る）・bottom・light",
+                  "type": "string",
+                  "default": "center"
+                },
+                "seams": {
+                  "description": "塊を切る色（目地・葉の間の影）。この色の画素は塊に入れず画素ごとにずらす",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "keep": {
+                  "description": "ずらさない色（輪郭の墨など）",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "ramps": {
+                  "description": "色を引くランプの名前（省くと部品のランプ・spec のランプ全部。色は最初に含むランプでずらす）",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
           "description": "体力のバー: 形（省くと部品の塊）の外接箱を、side の端から rate だけ残りの量で塗る（fill を省くとランプの段を太さの向きに Bayer で）。empty は減った所・top は残りの上の 1px のつや・lost は残りの隣の今減った量",
           "additionalProperties": false,
           "required": [
@@ -1063,6 +1175,74 @@
               "required": [
                 "center",
                 "r"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "形 of を光と反対の地面へ倒した落ち影を、受ける面 onto に塗ってある色を by 段ずらして落とす。contact を書くと接地の所（of の真下が面に接する画素の近く）をさらに contact 段暗く（光の届かない一番暗い影）",
+          "additionalProperties": false,
+          "required": [
+            "cast_shadow"
+          ],
+          "properties": {
+            "cast_shadow": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "of": {
+                  "description": "影を落とす部品の id（この部品より前の列）",
+                  "type": "string"
+                },
+                "onto": {
+                  "description": "影を受ける部品の id（省くと of の外の塗ってある所全部）",
+                  "type": "string"
+                },
+                "by": {
+                  "description": "落ち影のずらす段数（負で暗く）",
+                  "type": "integer",
+                  "minimum": -8,
+                  "maximum": 0,
+                  "default": -1
+                },
+                "slant": {
+                  "description": "高さ 1px ごとに影が伸びる量 [横, 縦]（光と反対の向きへ。縦が小さいほど地面に寝る）",
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "default": [
+                    0.5,
+                    0.2
+                  ]
+                },
+                "contact": {
+                  "description": "接地の所をさらに暗くする段数（0 で付けない）",
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4,
+                  "default": 0
+                },
+                "contact_r": {
+                  "description": "接地の暗い影の広さ（of の接地の画素の真下からの距離）",
+                  "type": "number",
+                  "minimum": 0.5,
+                  "maximum": 16,
+                  "default": 1.5
+                },
+                "ramps": {
+                  "description": "色を引くランプの名前（省くと部品のランプ・spec のランプ全部）",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "of"
               ]
             }
           }
@@ -2316,6 +2496,13 @@
                   "description": "光の側の外周の色（暗い材質を闇から抜く明るい縁。省くとランプの最暗段）",
                   "$ref": "#/definitions/color",
                   "default": ""
+                },
+                "bounce": {
+                  "description": "照り返し: 一番暗い段のうち、法線が下（地面）を向く割合がこれ以上の所を 1 段明るく（0 で付けない・0.5 で影の下半分。境目の近くは暗いまま残る）",
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1,
+                  "default": 0
                 }
               }
             }

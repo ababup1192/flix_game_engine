@@ -36,6 +36,7 @@ func init() {
 			{Name: "bias", Type: tNumber, Default: 0.0, Summary: "明るさの底上げ（正で明るく）", Lo: bound(-1), Hi: bound(1)},
 			{Name: "outline", Type: tColor, Default: "ink", Summary: "影の側の外周の色（\"\" で外す）"},
 			{Name: "rim", Type: tColor, Default: "", Summary: "光の側の外周の色（暗い材質を闇から抜く明るい縁。省くとランプの最暗段）"},
+			{Name: "bounce", Type: tNumber, Default: 0.0, Summary: "照り返し: 一番暗い段のうち、法線が下（地面）を向く割合がこれ以上の所を 1 段明るく（0 で付けない・0.5 で影の下半分。境目の近くは暗いまま残る）", Lo: bound(0), Hi: bound(1)},
 		},
 		Apply: func(c *ctx, a opArgs) error {
 			// 塊は部品の at（pose のずらしを含む）で組むので、ずらせないのは use の at だけ
@@ -116,7 +117,7 @@ func (c *ctx) shadeParts(a opArgs) error {
 	if err != nil {
 		return err
 	}
-	thick, flat, lines, bias := a.num("thick"), a.bool("flat"), a.bool("lines"), a.num("bias")
+	thick, flat, lines, bias, bounce := a.num("thick"), a.bool("flat"), a.bool("lines"), a.num("bias"), a.num("bounce")
 	group := s.groups[idx]
 	ld := c.Spec.Light.Dir
 	n := math.Sqrt(float64(ld[0]*ld[0]) + float64(ld[1]*ld[1]) + float64(ld[2]*ld[2]))
@@ -160,6 +161,10 @@ func (c *ctx) shadeParts(a opArgs) error {
 					level = 2
 				default:
 					level = 3
+				}
+				// 照り返し: 地面で跳ね返った光が影の下側に入る（境目の近くの core shadow は暗いまま）
+				if bounce > 0 && level == 0 && ny/nl >= 1-bounce {
+					level = 1
 				}
 			}
 			// 前の部品が落とす影（光の来る側の 1〜2px に手前の部品があれば一段暗く）

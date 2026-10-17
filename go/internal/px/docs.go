@@ -160,6 +160,8 @@ var quickRows = []quickRow{
 	{"光と陰（小物の面）", []string{"directional"}, false},
 	{"丸い体・キャラ", []string{"shade_parts"}, false},
 	{"手前の物が落とす影", []string{"shade_mask"}, false},
+	{"落ち影（受ける面への投影）・接地の一番暗い影（照り返しは shade_parts の bounce）", []string{"cast_shadow"}, false},
+	{"明るさの構造 → 1 段ずらし（帯か光の範囲を先に置き、草・レンガ・石・地面の模様を帯ごとに 1 段ずらす）", []string{"band_shift"}, false},
 	{"1px の線・ひげ・髪の線", []string{"line"}, false},
 	{"金属・石・木・布・葉", []string{"material"}, false},
 	{"空・斜面の階調・境目のディザ", []string{"gradient_fill"}, false},

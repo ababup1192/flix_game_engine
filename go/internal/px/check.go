@@ -265,20 +265,22 @@ func dropExempt(v violation, g *pxlib.Grid) (violation, bool) {
 
 // pxRules は検査の閾値（bin/lint-rules/px.json）。
 type pxRules struct {
-	FlatRunRepeat     int                 `json:"flatRunRepeat"`
-	FlatRunStraight   int                 `json:"flatRunStraight"`
-	FlatRunPer        int                 `json:"flatRunPer"`
-	GroundContrastMin float64             `json:"groundContrastMin"`
-	RampMinGap        float64             `json:"rampMinGap"`
-	PillowEdgeGap     float64             `json:"pillowEdgeGap"`
-	PillowSideGap     float64             `json:"pillowSideGap"`
-	PillowMinArea     int                 `json:"pillowMinArea"`
-	LightDirMinArea   int                 `json:"lightDirMinArea"`
-	BlackOutlineMax   int                 `json:"blackOutlineMaxSize"`
-	ValueSepMin       float64             `json:"valueSepMin"`
-	SeamRatio         float64             `json:"seamRatio"`
-	BandingRingMin    float64             `json:"bandingRingMin"`
-	Styles            map[string]*pxStyle `json:"styles"`
+	FlatRunRepeat      int                 `json:"flatRunRepeat"`
+	FlatRunStraight    int                 `json:"flatRunStraight"`
+	FlatRunPer         int                 `json:"flatRunPer"`
+	GroundContrastMin  float64             `json:"groundContrastMin"`
+	GroundBrightL      float64             `json:"groundBrightL"`
+	GroundBrightChroma float64             `json:"groundBrightChroma"`
+	RampMinGap         float64             `json:"rampMinGap"`
+	PillowEdgeGap      float64             `json:"pillowEdgeGap"`
+	PillowSideGap      float64             `json:"pillowSideGap"`
+	PillowMinArea      int                 `json:"pillowMinArea"`
+	LightDirMinArea    int                 `json:"lightDirMinArea"`
+	BlackOutlineMax    int                 `json:"blackOutlineMaxSize"`
+	ValueSepMin        float64             `json:"valueSepMin"`
+	SeamRatio          float64             `json:"seamRatio"`
+	BandingRingMin     float64             `json:"bandingRingMin"`
+	Styles             map[string]*pxStyle `json:"styles"`
 }
 
 // loadRules は閾値を読む。読めなければ止める（既定値へ倒すと、消しただけで検査が黙って緩む）。
@@ -292,8 +294,8 @@ func loadRules(root string) (*pxRules, error) {
 	if err := json.Unmarshal(data, &r); err != nil {
 		return nil, fmt.Errorf("%s が JSON として壊れている: %v", path, err)
 	}
-	if r.FlatRunRepeat < 2 || r.FlatRunStraight < 1 || r.FlatRunPer < 1 || r.GroundContrastMin <= 0 {
-		return nil, fmt.Errorf("%s に flatRunRepeat・flatRunStraight・flatRunPer・groundContrastMin を書く", path)
+	if r.FlatRunRepeat < 2 || r.FlatRunStraight < 1 || r.FlatRunPer < 1 || r.GroundContrastMin <= 0 || r.GroundBrightL <= 0 || r.GroundBrightChroma <= 0 {
+		return nil, fmt.Errorf("%s に flatRunRepeat・flatRunStraight・flatRunPer・groundContrastMin・groundBrightL・groundBrightChroma を書く", path)
 	}
 	if r.RampMinGap <= 0 || r.PillowEdgeGap <= 0 || r.PillowSideGap <= 0 || r.PillowMinArea < 1 || r.LightDirMinArea < 1 ||
 		r.BlackOutlineMax < 1 || r.ValueSepMin <= 0 || r.SeamRatio <= 0 || r.BandingRingMin <= 0 {
@@ -413,7 +415,7 @@ func init() {
 		},
 	})
 	registerCheck(&checkDef{
-		Name: checkGroundContrast, Summary: "外周の画素と地の色の明るさ（Oklab の L）の差が小さく、輪郭が地に溶ける", Level: levelLint,
+		Name: checkGroundContrast, Summary: "外周の画素と地の色の明るさ（Oklab の L）の差が小さく、輪郭が地に溶ける・地が絵のハイライトより明るい（highlight）・明るい地の彩度が高い（chroma）", Level: levelLint,
 		Fix: "外周を地から離す（地より暗いならもっと暗い段・明るいならもっと明るい段へ）",
 		Run: func(g *pxlib.Grid, c *checkCtx) []violation {
 			gl, ok := pxlib.Lightness(c.Ground)
@@ -440,16 +442,17 @@ func init() {
 					worst, worstAt = diff, p
 				}
 			}
-			if n == 0 || sum/float64(n) >= c.Rules.GroundContrastMin {
-				return nil
+			var out []violation
+			if n > 0 && sum/float64(n) < c.Rules.GroundContrastMin {
+				// 外周が地より明るいか暗いかで、離す向きを分ける（暗い地で縁をさらに暗くすると溶ける）
+				fix := "外周が地より暗い: 外周をランプのもっと暗い段にする（directional・gradient_fill の from を 0 に）か、地を明るい段にする"
+				if signed > 0 {
+					fix = "外周が地より明るい: 外周をランプのもっと明るい段にする（directional・gradient_fill の to を最明に）か、地を暗い段にする"
+				}
+				out = append(out, violation{Check: checkGroundContrast, Level: levelLint, X: worstAt.X, Y: worstAt.Y, HasAt: true, Fix: fix,
+					Msg: fmt.Sprintf("外周と地 %s の明るさの差が平均 %.3f（%.2f 以上にする）", c.Ground, sum/float64(n), c.Rules.GroundContrastMin)})
 			}
-			// 外周が地より明るいか暗いかで、離す向きを分ける（暗い地で縁をさらに暗くすると溶ける）
-			fix := "外周が地より暗い: 外周をランプのもっと暗い段にする（directional・gradient_fill の from を 0 に）か、地を明るい段にする"
-			if signed > 0 {
-				fix = "外周が地より明るい: 外周をランプのもっと明るい段にする（directional・gradient_fill の to を最明に）か、地を暗い段にする"
-			}
-			return []violation{{Check: checkGroundContrast, Level: levelLint, X: worstAt.X, Y: worstAt.Y, HasAt: true, Fix: fix,
-				Msg: fmt.Sprintf("外周と地 %s の明るさの差が平均 %.3f（%.2f 以上にする）", c.Ground, sum/float64(n), c.Rules.GroundContrastMin)}}
+			return append(out, groundTone(g, c, gl)...)
 		},
 	})
 }
@@ -617,4 +620,29 @@ func fromFinding(f sprite.Finding) violation {
 		lv = levelGate
 	}
 	return violation{Check: checkSprite, Rule: f.Rule, Level: lv, X: f.At.X, Y: f.At.Y, HasAt: f.HasAt, Cells: f.Cells, Msg: f.Msg}
+}
+
+// groundTone は地の色そのものの決まり: 地は絵のハイライト（一番明るい画素）より明るくしない（highlight）・
+// L が groundBrightL 以上の明るい地は彩度（Oklab の a・b の長さ）を groundBrightChroma 未満に（chroma。目が疲れる）。
+func groundTone(g *pxlib.Grid, c *checkCtx, gl float64) []violation {
+	var out []violation
+	top, at, seen := math.Inf(-1), pxlib.Pt{}, false
+	for _, p := range g.Opaque().Points() {
+		if l, ok := pxlib.Lightness(c.HexOf[g.At(p.X, p.Y)]); ok && l > top {
+			top, at, seen = l, p, true
+		}
+	}
+	if seen && gl > top {
+		out = append(out, violation{Check: checkGroundContrast, Rule: "highlight", Level: levelLint, X: at.X, Y: at.Y, HasAt: true,
+			Fix: "地をハイライトより暗い段にする（light.ground）か、ハイライトにランプのもっと明るい段を足す",
+			Msg: fmt.Sprintf("地 %s の明るさ %.3f が絵のハイライト（一番明るい画素 %.3f）より明るい", c.Ground, gl, top)})
+	}
+	if lab, ok := pxlib.OklabOfHex(c.Ground); ok && gl >= c.Rules.GroundBrightL {
+		if ch := math.Hypot(lab[1], lab[2]); ch >= c.Rules.GroundBrightChroma {
+			out = append(out, violation{Check: checkGroundContrast, Rule: "chroma", Level: levelLint,
+				Fix: "明るい地は灰色に寄せる（色相は残して彩度を下げる）か、地を暗くする",
+				Msg: fmt.Sprintf("明るい地 %s（L %.3f）の彩度が %.3f（%.2f 未満にする）", c.Ground, gl, ch, c.Rules.GroundBrightChroma)})
+		}
+	}
+	return out
 }
