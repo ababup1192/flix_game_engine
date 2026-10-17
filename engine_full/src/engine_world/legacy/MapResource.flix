@@ -1,1 +1,0 @@
-../../../../engine_world/src/legacy/MapResource.flix
