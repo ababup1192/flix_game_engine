@@ -42,7 +42,7 @@
 
 
 `RawDraw.box` を並べただけの画面は未完成。求めるのは次の 4 つの**性質**で、**どの画風で
-満たすかは自由**（画風はゲームごとに決める。詳しくは `.claude/skills/visual-dict`、
+満たすかは自由**（画風はゲームごとに決める。詳しくは `docs/art-ref/visual-dict.md`、
 シェーダーの語彙は [shader-doc.md](../shader-doc.md)）。下は手の一例。
 
 | 満たす性質 | 手の例 |

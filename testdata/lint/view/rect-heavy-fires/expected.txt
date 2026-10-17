@@ -1,4 +1,4 @@
 testdata/lint/view/rect-heavy-fires/View.flix: 描画がほぼ矩形と円だけです（矩形系 5 / 全体 5）— box が 5 回。空・水面→vgrad/gradPolygon、パネル→outline+rounded、キャラ・物→PxSprite+PxShade、面の質感→shader.json
 
-絵の下限 5 性質を満たせていません。空・水面→vgrad/gradPolygon、パネル→outline+rounded、キャラ・物→PxSprite+PxShade、面の質感→shader.json （詳細は .claude/skills/visual-dict/reference.md）
+絵の下限 5 性質を満たせていません。空・水面→vgrad/gradPolygon、パネル→outline+rounded、キャラ・物→PxSprite+PxShade、面の質感→shader.json （詳細は engine の docs/art-ref/visual-dict/reference.md）
 [exit=1]

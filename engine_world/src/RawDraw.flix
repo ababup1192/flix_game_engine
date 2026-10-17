@@ -1,5 +1,5 @@
 // RawDraw — 塗りつぶしの箱・円・多角形など、単色ベタの図形プリミティブの置き場。
-// ここから絵を組み始めない(まず docs/drawing-floor.md と /visual-dict)。
+// ここから絵を組み始めない(まず docs/drawing-floor.md と docs/art-ref/visual-dict.md)。
 // 家づくりでいう柱や板のような「材料」で、PxShade・Material・Scatter・Terrain・
 // shader.json などの高レイヤー部品が、図形プリミティブを多数合成して見た目を作る土台。
 // 正当な用途: HUD の下地・デバッグ描画・fail-open の仮板・高レイヤー部品の内部実装。

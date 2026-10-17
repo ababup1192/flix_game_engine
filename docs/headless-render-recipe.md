@@ -86,7 +86,7 @@ mod Scene {
 }
 ```
 
-絵を書く前に `/visual-dict` を引く（このレシピの範囲外。絵の下限 5 性質は
+絵を書く前に `docs/art-ref/visual-dict.md` を引く（このレシピの範囲外。絵の下限 5 性質は
 [docs/drawing-floor.md](drawing-floor.md)）。
 
 ## 5. 描き出しの設定 + HeadlessRender 呼び出し

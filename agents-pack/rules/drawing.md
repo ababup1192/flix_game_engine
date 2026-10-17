@@ -24,7 +24,7 @@ paths:
 - **画風を先に決めて `AGENTS.local.md` に 2〜3 行**（何を見て育った絵か・色・何をしないか）。既定の画風は無く、
   テンプレや他のゲームの見た目を持ってこない。満たせない性質は、理由をそこへ書いて例外にする。
 - 先に読む物: ドット絵は `.claude/skills/pixel-art/SKILL.md`（表のお題の行だけ）・格子に乗らない絵は
-  `.claude/skills/smooth-render/SKILL.md`・新しい画面の画風決めと部品探しは `.claude/skills/visual-dict`（詳しい参考。box と circle で組み始める前に節だけ引く）。
+  `.claude/skills/smooth-render/SKILL.md`・新しい画面の画風決めと部品探しは engine の `docs/art-ref/visual-dict.md`（box と circle で組み始める前に節だけ引く）。
 
 ## 良し悪しは人が決める
 
@@ -40,4 +40,4 @@ paths:
 - r3 以降も 1 周ごとに①を聞き、前の周が良ければ戻す（PNG は `debug/history/`・最大 5 周・拡大で見つけた欠陥は実寸で読める物だけ直す）。
 - 呼び出す側は prompt に「N 周まで・直せなければ報告へ」と書かない（この決まりを上書きする）。この節を指すだけにする。
 
-詳しく（5 性質の手の例と部品の一覧・ドット絵の 3 つの作法・機械で確かめる口・シルエットの描き出し）は engine の `docs/drawing-floor.md`。
+詳しく（5 性質の手の例と部品の一覧・機械で確かめる口・シルエットの描き出し）は engine の `docs/drawing-floor.md`。

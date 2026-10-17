@@ -87,7 +87,7 @@
 - マシンは矩形 1 枚でなくドット絵（`assets/race.sprite.json`・17×27）。車体 3 色だけテーマの
   player / rivalA..C で塗り替え、細部の色は `race.palette.json` が source of truth（`bin/fge palette` が「legend の意味色キーが色票から解けるか」を見張る）。
 - **これは数ある画風の 1 つでしかない。** このテンプレから作るゲームは、画風を自分で決めて
-  ここに書き直し、View の層構成ごと作り替えてよい（決め方は `.claude/skills/visual-dict`）。
+  ここに書き直し、View の層構成ごと作り替えてよい（決め方は engine の `docs/art-ref/visual-dict.md`）。
   真似してほしいのは色や効果ではなく「層に分けて、各層に役割を持たせる」組み方の方。
 
 ## テストの当てどころ（ルールだけ）

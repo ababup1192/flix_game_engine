@@ -328,23 +328,12 @@ func buildAgentsMD(root string, r *Rules, game, version string) (string, error) 
 		return "", err
 	}
 	skillsDir := pyJoin(root, r.SkillsDir)
-	var refs []string
 	for _, name := range skills {
 		desc, err := skillDescription(pyJoin(pyJoin(skillsDir, name), r.SkillFile))
 		if err != nil {
 			return "", err
 		}
-		// WhyNot: 詳しい参考を 1 行にまとめるのは、既定では読まないスキルの引き金まで
-		// 全部の担当に毎回読ませないため（入口のスキルの表から引かれる）。
-		if r.ReferencePrefix != "" && strings.HasPrefix(desc, r.ReferencePrefix) {
-			refs = append(refs, "`"+name+"`")
-			continue
-		}
 		parts = append(parts, fmt.Sprintf("- `%s` — %s", name, shortTrigger(r, triggerSentence(r, desc))))
-	}
-	if len(refs) > 0 {
-		parts = append(parts, fmt.Sprintf("- %s（既定では読まない。入口のスキルから節だけ引く）: %s",
-			r.ReferencePrefix, strings.Join(refs, "・")))
 	}
 	local := pyJoin(game, r.LocalDoc)
 	if pyIsFile(local) {

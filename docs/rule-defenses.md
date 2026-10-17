@@ -37,7 +37,7 @@
 | モジュールを足したら索引に載せる | lint | check-api-index（`parts: docs/modules/*.md`・幽霊参照も出す） | ― |
 | 分けた docs がゲームに届く | script | stage-engine.json・check-refs の bundleRequired | ― |
 | 早見表の heavy の詳しい決まり | script | `bin/fge heavy --help`（表には名前と口だけ） | ― |
-| スキル一覧の引き金を短く・「詳しい参考」は名前だけ | script | sync-agents の生成（TestSyncWritesAgentsMd） | ― |
+| スキル一覧の引き金を短く | script | sync-agents の生成（TestSyncWritesAgentsMd） | ― |
 | 廃止したフックを外し新しいフックを足す | script | sync-agents が settings.json を直す（hook-session-diet を外し hook-art-edit を足す） | ― |
 | 開始時は make status から | script | SessionStart フック | ― |
 | コミットのフックを飛ばさない | script | ユーザ全体の PreToolUse（block-no-verify）。precommit の止めた時の文面から飛ばし方の案内を外した | r1 `--no-verify` を止めた・r2 `core.hooksPath` を読むだけでも止めた |
@@ -51,7 +51,7 @@
 | NOTES の先頭を短く | script | notes-rotate（ゲーム側の表） | ゲーム側の表 |
 | テスト方針（何をテストするか・期待値は Doc から・橋渡しは最大 3 本・1 テスト 1 アサート・本体にロジックを書かない） | 文書 | quality-assurance。数のリテラルの forbid 案は 66 件が正しい使い方で見送り | ― |
 | 初学者の足場・早見表に足すのと対でまとめる | 文書 | ― | ― |
-| スキルの入口は /pixel-art（/retro-pixel は詳しい参考） | 構造 | 案内先を 7 か所直した | ― |
+| 絵の入口は /pixel-art・長い参考はスキルにしない | 構造 | 長い参考 5 本を engine の docs/art-ref/ へ移し、スキル一覧に載らなくした（入口の表から節を引く） | ― |
 
 ## 型と構成の案（types 担当）
 

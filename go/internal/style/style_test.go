@@ -204,7 +204,7 @@ func TestBadGoesToStderrWithHint(t *testing.T) {
 	if !strings.HasPrefix(errOut, "\nNG: ") {
 		t.Errorf("stderr が空行 + NG で始まっていない: %q", errOut)
 	}
-	if !strings.Contains(errOut, "手つきの在り処: .claude/skills/pixel-art（お題の種類の表）・色の予算とタイルは retro-pixel") {
+	if !strings.Contains(errOut, "手つきの在り処: .claude/skills/pixel-art（お題の種類の表）・色の予算とタイルは engine の docs/art-ref/retro-pixel.md") {
 		t.Errorf("手つきの在り処が出ていない: %s", errOut)
 	}
 }

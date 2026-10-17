@@ -1,7 +1,7 @@
 
 NG: fine と smooth の差がほぼありません (中間色の差 +0.0 ポイント・色数 1.00 倍) — 描き手を分けた意味が絵に出ていません
 
-手つきの在り処: .claude/skills/retro-pixel（色の予算・ディザ） / .claude/skills/smooth-render（グラデ・ぼかし・banding）
+手つきの在り処: engine の docs/art-ref/retro-pixel.md（色の予算・ディザ） / .claude/skills/smooth-render（グラデ・ぼかし・banding）
 fine-circle.png  64x64  unit=2(自動)
   中間色 0.0%   格子適合 100%   楕円で説明できる面 46.9%
   色数 2 (画面の 90% を覆う色 2)   平均輝度 145

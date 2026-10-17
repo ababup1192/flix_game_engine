@@ -101,6 +101,11 @@
       "why": ".claude/rules/drawing.md は芯だけなので、詳しい所はここを引く"
     },
     {
+      "src": "docs/art-ref",
+      "dest": "docs/art-ref",
+      "why": "絵の長い参考（pixel-art・smooth-render・drawing-floor の表から節だけ引く）。スキルにすると説明文が毎回の一覧に載るので docs に置く"
+    },
+    {
       "src": "docs/flix-conventions.md",
       "dest": "docs/flix-conventions.md",
       "why": ".claude/rules/flix.md は芯だけなので、詳しい所はここを引く"

@@ -16,6 +16,5 @@
   "lintPrefix": "lint-",
   "sentenceSep": "。",
   "triggerSuffix": "使う",
-  "clauseSep": "、",
-  "referencePrefix": "詳しい参考"
+  "clauseSep": "、"
 }

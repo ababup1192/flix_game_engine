@@ -1,12 +1,6 @@
----
-name: visual-dict
-description: "詳しい参考（既定では読まない。ドット絵の sprite.json を描くだけなら /pixel-art が先）。画面の絵を作る手順（画風の決め方・絵の下限 5 性質）と、web/Canvas/Shadertoy の技法をこのエンジンの部品へ翻訳する辞書。新しいゲーム・新しい画面（View）の画風を決めるとき、エンジンの絵の部品を探すとき、グロー・vignette・グラデ・残像・パーティクルを作る/移植するとき、「〜っぽい絵にして」と言われたときに使う。"
-sync: 2026-10-16
----
-
 # visual-dict — 絵の作り方
 
-**新しい画面（View）の画風を決める時・絵の部品を探す時に引く**（詳しい参考。ドット絵の sprite.json を描くだけなら `/pixel-art` が先）。車輪の再発明と、矩形だけで済ませる退避を防ぐのがこの辞書の仕事。
+**新しい画面（View）の画風を決める時・絵の部品を探す時に引く**（ドット絵の sprite.json を描くだけなら `/pixel-art` が先）。車輪の再発明と、矩形だけで済ませる退避を防ぐのがこの辞書の仕事。
 
 ## 手順
 
@@ -34,7 +28,7 @@ sync: 2026-10-16
 ```
 
 **5 性質の欄に `RawDraw.box` / `RawDraw.circle` しか書けなかったら、まだ辞書を引いていない。**
-先に [reference.md](reference.md) と [unused-parts.md](unused-parts.md) を読む。
+先に [reference.md](visual-dict/reference.md) と [unused-parts.md](visual-dict/unused-parts.md) を読む。
 
 ### 各手順の中身
 
@@ -62,16 +56,16 @@ AGENTS.local.md に人の注文（/style-interview の聞き取り）があれ�
 
 ## 参照
 
-- **[reference.md](reference.md)** — web の技法 → エンジンの部品の対応表（グロー・グラデ・
+- **[reference.md](visual-dict/reference.md)** — web の技法 → エンジンの部品の対応表（グロー・グラデ・
   残像・粒・霧・コースティクス・画面揺れ・イージング・ドット絵・タイル地形・枠）と、
   実証済みの癖。**部品を選ぶときは必ずここを開く。**
-- **[unused-parts.md](unused-parts.md)** — 実装もテストもあるのに採用ゼロ〜1 の部品一覧。
+- **[unused-parts.md](visual-dict/unused-parts.md)** — 実装もテストもあるのに採用ゼロ〜1 の部品一覧。
   **「無いから手組み」の前にここを見る。**
-- **[recipes.md](recipes.md)** — 同じ下限の性質をまったく違う手で満たした実例 4 つ。
+- **[recipes.md](visual-dict/recipes.md)** — 同じ下限の性質をまったく違う手で満たした実例 4 つ。
   **この中から選ぶための物ではない**（選ぶと同じ顔のゲームが並ぶ）。翻訳の例として読む。
-- **[loop-gif.md](loop-gif.md)** — 完全ループ GIF の描き出し方と WebP 変換。
+- **[loop-gif.md](visual-dict/loop-gif.md)** — 完全ループ GIF の描き出し方と WebP 変換。
 - **`/pixel-art`** — 画素を 1 つずつ置くドット絵で行くと決まった後の入口（お題の種類ごとのファイル。
-  色の予算・タイル地形はその「詳しい参考」の表から retro-pixel の節を引く）。
+  色の予算・タイル地形は `docs/art-ref/retro-pixel.md` の節を引く）。
   **画風を決めるのはこちら（この辞書）が先**で、あちらは画風を画素へ落とす下位の道具。
 - **`/smooth-render`** — 画素の格子に乗せない絵（高解像度・なめらかな輪郭・シェーダーで塗る面）で
   行くと決まった後の手つき（エッジの硬さ・面積と彩度・質感の重ね方・なめらかな面に出る縞の消し方）。
@@ -81,11 +75,10 @@ AGENTS.local.md に人の注文（/style-interview の聞き取り）があれ�
 
 ## 画風に依らず効く作法
 
-- 動く値は必ず補間を通す — 値を飛ばさない。座標は float のまま
-- 光の側と影の側は `Color.warm` / `Color.cool` で色そのものを分ける（同じ色の明暗だけにしない）
+絵の下限 5 性質（動く値は補間を通す・止まった画面を出さない も含む）は engine の `docs/drawing-floor.md` が正。それ以外に 1 つ:
+
 - **エッジの硬さを 1 枚の絵の中で使い分ける** — 主役の輪郭はくっきり、遠景と霞は溶かす。
   全部を同じ硬さで作ると距離が読めない（格子に乗らない絵での作り方は `/smooth-render`）
-- 完全に静止した画面を出さない。静けさが画風なら、揺れを極小にする（ゼロにはしない）
 
 ## engine のバージョンと、黙って既定へ落ちる罠
 
@@ -140,6 +133,6 @@ DualGrid（`Terrain.fromRows`）は**半セルずらして角の 4 セルを見�
 
 ## 人（キャラクター）を置くとき
 
-**`.claude/skills/figure-drawing/SKILL.md` を先に読む。** シルエット・重心と接地・塊の比率・
+**`docs/art-ref/figure-drawing.md` を先に読む。** シルエット・重心と接地・塊の比率・
 前後の重なり・向きの手がかり・持ち物、の順で決める判断がそこにある。塗り方はこの辞書と
 `/pixel-art` の `character.md` / `smooth-render` の「人」の節。

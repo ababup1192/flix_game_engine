@@ -8,13 +8,13 @@ sync: 2026-08-13
 
 1 画素ずつ意味を持って置くのではなく、**面を関数で塗り、輪郭をなめらかな図形で作る**絵の
 決まり。ベクター調・水彩調・厚塗り調・フラットのどれにも使う。
-**題材や色の中身はここに書かない** — それは画風の仕事（`/visual-dict`）。
+**題材や色の中身はここに書かない** — それは画風の仕事（engine の `docs/art-ref/visual-dict.md`）。
 
-格子に乗る絵は `/pixel-art`（こちらの連続の階調・ぼかしを持ち込むと予算を壊す）、画風は `/visual-dict`、
-部品選びは visual-dict の翻訳表。`Field` / `Shade` の全 kind は engine の `docs/shader-doc.md` が正
+格子に乗る絵は `/pixel-art`（こちらの連続の階調・ぼかしを持ち込むと予算を壊す）、
+部品選びは engine の `docs/art-ref/visual-dict/reference.md`。`Field` / `Shade` の全 kind は engine の `docs/shader-doc.md` が正
 （知らない kind が 1 つあると Doc 全体が既定値へ落ちる。エラーは出ない）。
 
-**衝突したら**: 人の注文 > `/visual-dict` の画風 > この skill。
+**衝突したら**: 人の注文 > `AGENTS.local.md` の画風 > この skill。
 **絵の下限 5 性質**（engine の `docs/drawing-floor.md`）はどちらにも先立つ。
 
 ## 予算を 1 つ選ぶ（いちばん最初に）
@@ -144,7 +144,7 @@ engine の `docs/drawing-floor.md` の 5 性質は画風に依らない。この
 
 ## 大きい人を塗る（人物の高さがおよそ 48 画素から上）
 
-> **先に `.claude/skills/figure-drawing/SKILL.md` を読む。** 何を先に決めるか（シルエット・
+> **先に engine の `docs/art-ref/figure-drawing.md` を読む。** 何を先に決めるか（シルエット・
 > 重心・比率・前後・向き・持ち物）はそちらにある。ここはその判断を面に落とす手つきだけ。
 >
 > **ドット絵の作法を持ち込まない。** 等身の型・輪郭の段・色の段を数える癖をそのまま

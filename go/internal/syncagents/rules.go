@@ -31,7 +31,6 @@ type rulesFile struct {
 	SentenceSep      *string   `json:"sentenceSep"`
 	TriggerSuffix    *string   `json:"triggerSuffix"`
 	ClauseSep        *string   `json:"clauseSep"`
-	ReferencePrefix  *string   `json:"referencePrefix"`
 }
 
 // Rules は配る側が使う規約。すべて JSON から来る。
@@ -54,8 +53,6 @@ type Rules struct {
 	TriggerSuffix  string
 	// ClauseSep は引き金の文を 1 節に縮める区切り（空なら縮めない）。
 	ClauseSep string
-	// ReferencePrefix で始まる description のスキルは「詳しい参考」として名前だけ 1 行に並べる（空なら分けない）。
-	ReferencePrefix string
 }
 
 // LoadRules は規約データを読む。
@@ -124,24 +121,23 @@ func LoadRules(root string) (*Rules, error) {
 		return nil, fmt.Errorf("規約ファイルの skillLinkPattern に丸括弧が 1 組ありません (%s)", path)
 	}
 	return &Rules{
-		ManifestPath:    *f.ManifestPath,
-		ManifestKeys:    *f.ManifestKeys,
-		SkillsDir:       *f.SkillsDir,
-		RulesDir:        *f.RulesDir,
-		LedgerPath:      *f.LedgerPath,
-		CoreDoc:         *f.CoreDoc,
-		LocalDoc:        *f.LocalDoc,
-		AgentsMd:        *f.AgentsMd,
-		ClaudeMd:        *f.ClaudeMd,
-		ClaudeMdBody:    *f.ClaudeMdBody,
-		SkillFile:       *f.SkillFile,
-		SkillLink:       link,
-		SkillLinkRoots:  *f.SkillLinkRoots,
-		LintPrefix:      *f.LintPrefix,
-		SentenceSep:     *f.SentenceSep,
-		TriggerSuffix:   *f.TriggerSuffix,
-		ClauseSep:       derefOr(f.ClauseSep),
-		ReferencePrefix: derefOr(f.ReferencePrefix),
+		ManifestPath:   *f.ManifestPath,
+		ManifestKeys:   *f.ManifestKeys,
+		SkillsDir:      *f.SkillsDir,
+		RulesDir:       *f.RulesDir,
+		LedgerPath:     *f.LedgerPath,
+		CoreDoc:        *f.CoreDoc,
+		LocalDoc:       *f.LocalDoc,
+		AgentsMd:       *f.AgentsMd,
+		ClaudeMd:       *f.ClaudeMd,
+		ClaudeMdBody:   *f.ClaudeMdBody,
+		SkillFile:      *f.SkillFile,
+		SkillLink:      link,
+		SkillLinkRoots: *f.SkillLinkRoots,
+		LintPrefix:     *f.LintPrefix,
+		SentenceSep:    *f.SentenceSep,
+		TriggerSuffix:  *f.TriggerSuffix,
+		ClauseSep:      derefOr(f.ClauseSep),
 	}, nil
 }
 

@@ -55,7 +55,7 @@ Flix コンパイラはエンジンリポの `bin/flix` ラッパ経由で呼ぶ
 ## 絵の開発ループ
 
 - **画風は最初に決めて `AGENTS.local.md` に書く**。この骨組みの見た目は一例で、
-  そのまま引き継ぐ物ではありません（決め方は `.claude/skills/visual-dict`）。
+  そのまま引き継ぐ物ではありません（決め方は engine の `docs/art-ref/visual-dict.md`）。
 - `make render-all` で `gallery/` に決定的な PNG を描き出し、`make reference-update` で更新、`make reference-check` で防護。
 - 候補のスプライト・テーマは `atelier/` に置き、`make atelier-preview` で `debug/atelier/` に描き出して目視。
 

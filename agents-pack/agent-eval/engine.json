@@ -205,7 +205,7 @@
         {"re": "walk\\.md|pixel-art/walk|pixel-art の walk", "why": "表からお題の種類（歩き）のファイルを読む"}
       ],
       "avoid": [
-        {"re": "retro-pixel|px-character|visual-dict", "why": "長いスキル（詳しい参考）を既定で読む"}
+        {"re": "retro-pixel|px-character|visual-dict", "why": "長い参考（docs/art-ref）を既定で読む"}
       ]
     },
     {

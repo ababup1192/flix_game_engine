@@ -92,7 +92,7 @@ Studio のフォームが「Expecting an OBJECT with a field named `sections`」
 （テンプレごとに別画風にしてある。現物は各 `AGENTS.local.md` の「## この画面の画風」宣言が正）。
 
 **音と粒（パーティクル）も絵と同じ強さで意識する**。詳しくは [docs/audio.md](../../../docs/audio.md) と
-`/visual-dict`。粒を出すときはまず `make module Q=粒` で逆引きを引く。
+`docs/art-ref/visual-dict.md`。粒を出すときはまず `make module Q=粒` で逆引きを引く。
 
 ### 6. Studio に登録する
 

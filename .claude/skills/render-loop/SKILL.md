@@ -94,4 +94,4 @@ docs/headless-render-recipe.md。リファレンス画像の更新は `make -C t
 - [ ] 5. make diff DIR=<game> で前後を並べて見せた
 ```
 
-絵の部品選びは `/visual-dict`。絵の下限 5 性質は docs/drawing-floor.md が正（`.claude/rules/drawing.md` はその生成物）。
+絵の部品選びは `docs/art-ref/visual-dict.md`。絵の下限 5 性質は docs/drawing-floor.md が正（`.claude/rules/drawing.md` はその生成物）。

@@ -22,6 +22,8 @@
     "docs/glossary.md",
     "docs/shader-doc.md",
     "docs/drawing-floor.md",
+    "docs/art-ref/*.md",
+    "docs/art-ref/*/*.md",
     "docs/flix-conventions.md",
     "docs/error-handling.md",
     "docs/checkd.md",

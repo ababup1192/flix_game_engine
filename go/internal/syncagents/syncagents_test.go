@@ -23,8 +23,6 @@ func fixture(t *testing.T) string {
 		"---\ndescription: 引き金の無い説明。おまけ。\n---\n", 0o644)
 	write(t, root, "agents-pack/skills/delta/SKILL.md",
 		"---\ndescription: 能書き。A のとき、B のときに使う。\n---\n", 0o644)
-	write(t, root, "agents-pack/skills/epsilon/SKILL.md",
-		"---\ndescription: 詳しい参考（既定では読まない）。長い説明。C のときに使う。\n---\n", 0o644)
 	if err := os.MkdirAll(filepath.Join(root, "agents-pack", "skills", "gamma"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -88,8 +86,7 @@ func TestSyncWritesAgentsMd(t *testing.T) {
 		"- `alpha` — 〜のときに使う。\n" +
 		"- `beta` — 引き金の無い説明。\n" +
 		"- `delta` — A のときなど。\n" +
-		"- `gamma` — \n" +
-		"- 詳しい参考（既定では読まない。入口のスキルから節だけ引く）: `epsilon`\n"
+		"- `gamma` — \n"
 	if string(body) != want {
 		t.Errorf("AGENTS.md が\n%q\n期待\n%q", string(body), want)
 	}
@@ -117,7 +114,7 @@ func TestSyncAppendsLocalDoc(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasSuffix(string(body), "`epsilon`\n\nゲーム固有\n") {
+	if !strings.HasSuffix(string(body), "- `gamma` — \n\nゲーム固有\n") {
 		t.Errorf("AGENTS.local.md の付き方が違う: %q", string(body))
 	}
 }

@@ -18,15 +18,15 @@ sync: 2026-10-16
 
 周回は `.claude/rules/drawing.md` の「絵の周回」のとおり（r2 で止める）。
 
-## 詳しい参考（既定では読まない）
+## 困った時（既定では読まない）
 
-下の長いスキルは、上のファイルで足りないと分かった時だけ、その節を引く。全部を読むと読む量が 50 倍になり、
+上のファイルで足りないと分かった時だけ、engine の `docs/art-ref/` から当たる節を引く。全部を読むと読む量が 50 倍になり、
 描き比べでは質が上がらなかった（キャラの数値表を足した組は最下位）。
 
-| 困った時 | 引く所 |
+| 困った時 | 引く所（engine の `docs/art-ref/`） |
 |---|---|
-| パレット・色の予算・タイル地形・オートタイルを決める | `.claude/skills/retro-pixel/SKILL.md` |
-| 新しい画面の画風を決める・View の部品を探す | `.claude/skills/visual-dict/SKILL.md` |
-| 48px 以上の顔・会話の顔グラ・四足の生き物 | `.claude/skills/px-character/`（`faces.md`・`animation.md`） |
-| 場面の中に人を置く（光・影・風をそろえる） | `.claude/skills/figure-drawing/SKILL.md` |
-| 3 面図の立ち絵 1 枚から歩き 4 方向を機械で彫る | `.claude/skills/carve-sprite/SKILL.md` |
+| パレット・色の予算・ディザ・タイル地形・オートタイルを決める | `retro-pixel.md` |
+| 新しい画面の画風を決める・View の部品を探す | `visual-dict.md`（部品の表は `visual-dict/reference.md`） |
+| 48px 以上の顔・会話の顔グラ・四足の生き物 | `px-character.md`（`px-character/faces.md`・`animation.md`） |
+| 場面の中に人を置く（光・影・風をそろえる） | `figure-drawing.md` |
+| 3 面図の立ち絵 1 枚から歩き 4 方向を機械で彫る | `carve-sprite.md` |

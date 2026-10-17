@@ -15,7 +15,7 @@
         "**/*.shader.json",
         "**/bin/gen-*.py"
       ],
-      "more": "詳しく（5 性質の手の例と部品の一覧・ドット絵の 3 つの作法・機械で確かめる口・シルエットの描き出し）は engine の `docs/drawing-floor.md`。"
+      "more": "詳しく（5 性質の手の例と部品の一覧・機械で確かめる口・シルエットの描き出し）は engine の `docs/drawing-floor.md`。"
     },
     {
       "out": "flix.md",
