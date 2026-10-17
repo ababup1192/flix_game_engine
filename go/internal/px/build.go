@@ -26,10 +26,11 @@ var techFrameChecks = []checkRef{{Check: checkValueSep}, {Check: checkStyle}}
 
 // buildOptions は build の切り替え。
 type buildOptions struct {
-	RulesRoot string // 検査の閾値を読むリポジトリのルート（bin/lint-rules/）
-	NoCheck   bool   // lint と advice を回さない（色の門は回す）
-	OutDir    string // 見本と report.json の置き場（省くと <root>/debug/px/<名前>/last）
-	Sheet     bool   // 見比べのシート（PNG）も書く（--sheet・px snap。PNG の圧縮が描く時間より重いので既定は書かない）
+	RulesRoot string            // 検査の閾値を読むリポジトリのルート（bin/lint-rules/）
+	NoCheck   bool              // lint と advice を回さない（色の門は回す）
+	OutDir    string            // 見本と report.json の置き場（省くと <root>/debug/px/<名前>/last）
+	Sheet     bool              // 見比べのシート（PNG）も書く（--sheet・px snap。PNG の圧縮が描く時間より重いので既定は書かない）
+	Overlay   map[string][]byte // 台本がメモリの中で書いた物（絶対パス → 中身）。spec と palette はディスクより先にここを見る
 }
 
 // buildTiming は build の中の時間の内訳（--time で出す）。
@@ -104,7 +105,13 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 	if !filepath.IsAbs(full) {
 		full = filepath.Join(root, specPath)
 	}
-	spec, err := loadSpec(full)
+	var spec *specDoc
+	var err error
+	if data, ok := opt.Overlay[filepath.Clean(full)]; ok {
+		spec, err = loadSpecData(full, data)
+	} else {
+		spec, err = loadSpec(full)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -148,9 +155,21 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 	plainDoc := pxlib.Plain(doc).(map[string]any)
 	pal := pxlib.DocPalette(root, plainDoc, nil, pxlib.AnyColor)
 	if spec.Palette != "" {
-		for k, h := range pxlib.ColorTable(pxlib.LoadJSON(filepath.Join(root, spec.Palette)), pxlib.AnyColor) {
-			if _, ok := pal[k]; !ok {
+		palPath := filepath.Join(root, spec.Palette)
+		if data, ok := opt.Overlay[filepath.Clean(palPath)]; ok {
+			// 台本が書いた色票はディスクの古い色票より先に効かせる
+			var v any
+			if err := json.Unmarshal(data, &v); err != nil {
+				return nil, fmt.Errorf("%s: JSON として読めない: %w", spec.Palette, err)
+			}
+			for k, h := range pxlib.ColorTable(v, pxlib.AnyColor) {
 				pal[k] = h
+			}
+		} else {
+			for k, h := range pxlib.ColorTable(pxlib.LoadJSON(palPath), pxlib.AnyColor) {
+				if _, ok := pal[k]; !ok {
+					pal[k] = h
+				}
 			}
 		}
 	}

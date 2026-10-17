@@ -93,6 +93,23 @@
 | `passing` | legB 回転 0・ずらし [0, 0]・legF 回転 0・ずらし [0, 0] |
 | `up` | armB 回転 5・ずらし [0, -1]・armF 回転 -5・ずらし [0, -1]・body 回転 0・ずらし [0, -1]・head 回転 0・ずらし [0, -1]・legB 回転 -10・ずらし [0, 0]・legF 回転 10・ずらし [0, 0] |
 
+## 台本（`<名前>.px.star`）
+
+単純な指定は JSON（pxsrc）、繰り返しや変化が要る所は Starlark（Python とほぼ同じ書き方）の台本で、道具を関数として呼ぶ。
+`bin/fge px gen <名前>.px.star` で台本が書く pxsrc・JSON を書き出し、`bin/fge px build <名前>.px.star` は書き出さずにメモリの中で build する。
+
+| 呼べる物 | 何をするか |
+|---|---|
+| `px.write_spec(path, value)` | pxsrc を書く（spec の検査を当ててから。assets/ の下と作業場の外には書けない） |
+| `px.write_json(path, value)` | 色票などの JSON を書く（`style="python", indent=…` は Python の json.dump と同じ並び。写しの間だけ） |
+| `px.hash01(x, y, seed)`・`px.noise1(x, seed)`・`px.rng(seed)` | 種つきのゆらぎ・乱数（rng は CPython の random.Random と同じ列。写しの間だけ） |
+| `px.round(x, nd)` | Python の round（ちょうど半分は偶数へ） |
+| `math.*` | sin・cos・tan・atan2・hypot・exp・log・pow・sqrt・floor・ceil・radians・pi。答えは正しく丸めた値で、OS・CPU で変わらない |
+
+- 囲い: load は台本と同じフォルダと隣の `tools/` の `.star` だけ。ファイル・ネット・時刻には触れない。手数は 1 本 500000000 手まで。
+- Starlark に無い物: class（dict と関数で書く）・`**`（`math.pow` か `x * x`）・set・連なった比較（`a <= x < b`）・bool の足し算。
+- 決まり（今は advice）: 台本 1 本 600 行・pxsrc 1 本 500 KB・1 部品の put 200 画素・格子の半分を超える stamp・while。使われない関数は止める。
+
 ## 引数
 
 ### `aa_corners`

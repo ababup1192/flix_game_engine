@@ -195,6 +195,11 @@ func loadSpec(path string) (*specDoc, error) {
 	if err != nil {
 		return nil, err
 	}
+	return loadSpecData(path, data)
+}
+
+// loadSpecData は読んだ中身から指定を作る（台本がメモリの中で書いた pxsrc も同じ道）。
+func loadSpecData(path string, data []byte) (*specDoc, error) {
 	v, err := pxlib.DecodeOrdered(data)
 	if err != nil {
 		return nil, fmt.Errorf("%s: JSON として読めない: %w", path, err)
