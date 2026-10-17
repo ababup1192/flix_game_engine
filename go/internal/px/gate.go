@@ -211,23 +211,14 @@ func loadColorGate(root, path string) (*colorGate, error) {
 
 func str(v any) string { s, _ := v.(string); return s }
 
-// gateHint は files に無い sprite.json をどの画風で見るか（spec の style から）。
-type gateHint struct {
-	Style   string // 色の門の styles の名前（spec の style が門の画風を名指した時）
-	Machine bool   // spec の style が機種の決まり（色は検査 style が gate の重さで縛るので、門は deny だけ見る）
-}
-
 // CheckDoc は 1 冊の sprite.json（slot はファイル名。assets/ と atelier/ の同じ名前に同じ決まり）を見る。
-// files に無い時は、spec の style（hint）・門の default の順に画風を決めて見る（新しい絵のたびに files へ足させない）。
-// どれも無ければ止める。known で通した色の名前は known に返す。
-func (g *colorGate) CheckDoc(root string, doc *pxlib.Obj, slot string, hint gateHint) (bad []gateFinding, known []string) {
+// files に無い時は門の default の画風で見る（新しい絵のたびに files へ足させない）。default も無ければ止める。
+// 画風を決めるのは門だけ（spec の style は機種の決まりの上乗せで、門を外す道にはしない。build と px check の判定をそろえる）。
+// known で通した色の名前は known に返す。
+func (g *colorGate) CheckDoc(root string, doc *pxlib.Obj, slot string) (bad []gateFinding, known []string) {
 	f := g.Files[slot]
 	if f == nil {
 		switch {
-		case hint.Style != "" && g.Styles[hint.Style] != nil:
-			f = &gateFile{Style: hint.Style}
-		case hint.Machine:
-			f = &gateFile{Style: freeStyle}
 		case g.Default != "":
 			f = &gateFile{Style: g.Default}
 		default:

@@ -154,22 +154,16 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 			}
 		}
 	}
-	// spec の style は、色の門の画風（styles の名前）か機種の決まり（px.json の styles か *.pxstyle.json）
+	// spec の style は機種の決まり（px.json の styles か *.pxstyle.json）。色の門の画風は門が決め、機種は上乗せの縛り
 	var gate *colorGate
 	if spec.Gate != "" {
 		if gate, err = loadColorGate(root, spec.Gate); err != nil {
 			return nil, err
 		}
 	}
-	var hint gateHint
-	var style *pxStyle
-	if gate != nil && gate.Styles[spec.Style] != nil {
-		hint.Style = spec.Style
-	} else {
-		if style, err = loadStyle(root, opt.RulesRoot, spec.Style); err != nil {
-			return nil, err
-		}
-		hint.Machine = style != nil
+	style, err := loadStyle(root, opt.RulesRoot, spec.Style)
+	if err != nil {
+		return nil, err
 	}
 	if style != nil {
 		for k, h := range style.Colors {
@@ -340,7 +334,7 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 					addViolations([]violation{{Check: checkAnim, Level: levelLint, Msg: note, Fix: checks[checkAnim].Fix}}, sp.Name, "")
 				}
 				t := time.Now()
-				for _, v := range sequenceChecks(seqNames, seqGrids) {
+				for _, v := range sequenceChecks(seqNames, seqGrids, spriteLoops(sp, spec)) {
 					addViolations([]violation{v}, sp.Name, v.Frame)
 				}
 				checkDur += time.Since(t)
@@ -359,7 +353,7 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 	res.Timing.Draw = time.Since(t0) - checkDur
 	tGate := time.Now()
 	if gate != nil {
-		bad, known := gate.CheckDoc(root, doc, filepath.Base(spec.Target), hint)
+		bad, known := gate.CheckDoc(root, doc, filepath.Base(spec.Target))
 		res.Known = known
 		for _, b := range bad {
 			res.Violations = append(res.Violations, gateViolation(b, res.Frames))
@@ -399,6 +393,16 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
+	}
+	if !opt.Sheet {
+		// 前の --sheet の見本を消す（今の report.json と食い違う古い sheet.png を見せない）
+		if old, err := filepath.Glob(filepath.Join(dir, "*.png")); err == nil {
+			for _, p := range old {
+				if err := os.Remove(p); err != nil {
+					return nil, err
+				}
+			}
+		}
 	}
 	if opt.Sheet {
 		tSheet := time.Now()
@@ -445,6 +449,26 @@ func dedupeViolations(vs []violation) []violation {
 		}
 	}
 	return out
+}
+
+// spriteLoops はスプライトのコマ列が輪になるか（sin で回る動きの op を使う。pose だけの列は輪と見ない）。
+func spriteLoops(sp *spriteSpec, spec *specDoc) bool {
+	for _, call := range sp.Post {
+		if animOps[call.Name] {
+			return true
+		}
+	}
+	if len(sp.Frames) == 0 {
+		return false
+	}
+	for _, p := range sp.partsOf(&reader{}, spec, sp.Frames[0]) {
+		for _, call := range p.Ops {
+			if animOps[call.Name] {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // gateViolation は門の違反に、その色を最初に使った画素と、そこを描いた op を付ける。

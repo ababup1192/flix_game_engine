@@ -329,14 +329,19 @@ func init() {
 // flickerExempt は色を回すのが仕事の op（その画素はちらつきと見ない）。
 var flickerExempt = map[string]bool{"palette_cycle": true, "wave_shift": true}
 
-// sequenceChecks はコマ列（並び順・最後から最初へ輪）に flicker と margin をかける。
-func sequenceChecks(names []string, grids []*pxlib.Grid) []violation {
+// sequenceChecks はコマ列（並び順）に flicker と margin をかける。loop なら最後から最初へも輪で比べる
+// （倒れ・攻撃のように輪にならない列で、最後と最初の差をちらつきと読まない）。
+func sequenceChecks(names []string, grids []*pxlib.Grid, loop bool) []violation {
 	var out []violation
 	n := len(grids)
 	if n < 2 {
 		return nil
 	}
-	for i := 0; i < n; i++ {
+	pairs := n - 1
+	if loop {
+		pairs = n
+	}
+	for i := 0; i < pairs; i++ {
 		a, b := grids[i], grids[(i+1)%n]
 		if a.W != b.W || a.H != b.H {
 			continue

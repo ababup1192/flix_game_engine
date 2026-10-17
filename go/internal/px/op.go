@@ -295,8 +295,12 @@ func checkType(p param, v any) error {
 		ok = isObj || isName
 		want = "形のオブジェクトか shapes の名前（{\"disk\": [cx, cy, r]}・\"shield\" など）"
 	case tShapes:
-		ok = isList(v, -1, func(e any) bool { _, isObj := e.(map[string]any); return isObj }) && lenOK(v, p)
-		want = "形の配列"
+		ok = isList(v, -1, func(e any) bool {
+			_, isObj := e.(map[string]any)
+			_, isName := e.(string)
+			return isObj || isName
+		}) && lenOK(v, p)
+		want = "形（か shapes の名前）の配列"
 		if p.Min > 0 {
 			want = fmt.Sprintf("形 %d つ以上の配列", p.Min)
 		}

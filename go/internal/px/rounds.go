@@ -63,6 +63,19 @@ func cmdWatch(errOut *strings.Builder, engineRoot, workRoot, spec string, noChec
 
 // cmdSnap は今の spec で見本つきで描き直し、見本と spec を fge rounds snap で積む。
 func cmdSnap(out, errOut *strings.Builder, engineRoot, workRoot, spec string, fresh bool) int {
+	// 上限を超える周は描く前に断る（描いてから rounds snap に断られると、last だけ進んで周が積まれない）
+	if !fresh {
+		r, err := rounds.LoadRules(engineRoot)
+		if err != nil {
+			fmt.Fprintf(errOut, "px: %v\n", err)
+			return 1
+		}
+		hist := filepath.Join(workRoot, filepath.FromSlash(r.HistoryDir), specName(spec))
+		if rounds.NextRound(hist) > r.MaxRounds {
+			fmt.Fprintf(errOut, "rounds: %d 周を超える。依頼主に終わりを聞くか、--new で別の作業として始める\n", r.MaxRounds)
+			return 1
+		}
+	}
 	res, err := build(workRoot, spec, buildOptions{RulesRoot: engineRoot, Sheet: true})
 	if err != nil {
 		fmt.Fprintf(errOut, "px: %v\n", err)

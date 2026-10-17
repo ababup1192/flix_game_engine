@@ -399,7 +399,7 @@ func specSchema() string {
 			"palette", obj("type", "string", "description", "色票の Doc（base が無いときの paletteFile）"),
 			"gate", obj("type", "string", "description", "色の門の Doc（*.colorgate.json）。外れたら書き出さない"),
 			"indent", obj("description", "書き出す字下げ（\"tab\" か空白の数。省くと base の字面に合わせる）", "oneOf", list(obj("const", "tab"), obj("type", "integer", "minimum", json.Number("1"), "maximum", json.Number("8")))),
-			"style", obj("type", "string", "description", "画風か機種: 色の門（gate）の styles の名前なら、門の files に無くてもその画風の色で門を通す。でなければ機種の決まり（bin/lint-rules/px.json の styles: gb4・nes・snes・pc98・modern など。か *.pxstyle.json）で、色の集合・色数・升目の色数・RGB の段数を検査 style で縛る"),
+			"style", obj("type", "string", "description", "機種の決まり（bin/lint-rules/px.json の styles: gb4・nes・snes・pc98・modern など。か *.pxstyle.json）。色の集合・色数・升目の色数・RGB の段数を検査 style で縛る。色の門（gate）の画風の上に乗る縛りで、門の画風は外さない"),
 			"light", obj("type", "object", "additionalProperties", false, "description", "光（Doc に 1 か所だけ。op はここを読む）",
 				"properties", obj(
 					"dir", obj("type", "array", "items", obj("type", "number"), "minItems", json.Number("2"), "maxItems", json.Number("3"), "description", "光の来る向き [x, y] か [x, y, 高さ]（左上は [-1, -1]）", "default", list(json.Number("-1"), json.Number("-1"))),
@@ -448,12 +448,12 @@ func gateSchema() string {
 		"properties", obj(
 			"version", obj("const", json.Number(fmt.Sprint(gateVersion))),
 			"note", obj("type", "string", "label", "メモ", "description", "いじると何が変わるか"),
-			"default", obj("type", "string", "label", "既定の画風", "description", "files に無い新しい sprite.json に当てる画風（styles の名前）。spec の style が門の画風を名指せばそちらが先。省くと files に無い物は止める"),
+			"default", obj("type", "string", "label", "既定の画風", "description", "files に無い新しい sprite.json に当てる画風（styles の名前）。画風を決めるのは門だけ（pxsrc の style は機種の決まりの上乗せで、門の画風は外れない）。省くと files に無い物は止める"),
 			"styles", obj("type", "object", "label", "画風ごとの色の集合", "description", "名前 → 使ってよい色の出どころ（colors の列挙か from の Doc）。free は書かずに使える", "additionalProperties", style),
 			"deny", obj("type", "array", "label", "どの画風でも使わない色", "items", obj("type", "object", "additionalProperties", false, "required", list("color", "why"), "properties", obj(
 				"color", obj("type", "string", "pattern", "^#[0-9a-fA-F]{6}$"),
 				"why", obj("type", "string", "description", "代わりにどうするか")))),
-			"files", obj("type", "object", "label", "sprite.json ごとの決まり", "description", "鍵は sprite.json のファイル名（assets/ と atelier/ の同じ名前に効く）。ここに無いファイルは spec の style か default の画風で見る（どちらも無ければ止まる）", "additionalProperties", file),
+			"files", obj("type", "object", "label", "sprite.json ごとの決まり", "description", "鍵は sprite.json のファイル名（assets/ と atelier/ の同じ名前に効く）。ここに無いファイルは default の画風で見る（default も無ければ止まる）", "additionalProperties", file),
 		),
 	)
 	return pxlib.ToJSON(root, "  ")

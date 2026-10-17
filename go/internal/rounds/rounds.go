@@ -270,7 +270,11 @@ func restore(out, errOut io.Writer, rules *Rules, gameRoot string, args []string
 	}
 	// 戻す前の台本を退ける（積んでいない書きかけを restore で失わない）
 	if pxlib.HasFile(script) {
-		keep := filepath.Join(filepath.Dir(saved), "before-restore-"+time.Now().Format("20060102-150405")+"."+filepath.Base(script))
+		stamp := "before-restore-" + time.Now().Format("20060102-150405")
+		keep := filepath.Join(filepath.Dir(saved), stamp+"."+filepath.Base(script))
+		for i := 2; pxlib.HasFile(keep); i++ { // 同じ秒に 2 度戻しても前の退避を潰さない
+			keep = filepath.Join(filepath.Dir(saved), fmt.Sprintf("%s-%d.%s", stamp, i, filepath.Base(script)))
+		}
 		if err := copyFile(script, keep); err != nil {
 			return 2, err
 		}

@@ -44,7 +44,7 @@ func TestGateMatchesPython(t *testing.T) {
 			t.Fatal(err)
 		}
 		slot := filepath.Base(path)
-		bad, known := gate.CheckDoc(root, doc, slot, gateHint{})
+		bad, known := gate.CheckDoc(root, doc, slot)
 		got := [][3]string{}
 		for _, b := range bad {
 			got = append(got, [3]string{b.Sprite, b.Key, string(b.Kind)})
@@ -99,8 +99,7 @@ func TestColorGateRejectsMissingWhy(t *testing.T) {
 	}
 }
 
-// files に無い新しい sprite.json は、spec の style（門の画風）か門の default の画風で見る。
-// 決めた色の外は今までどおり止め、どちらも無ければ files に無いことで止める。
+// files に無い新しい sprite.json は門の default の画風で見る。決めた色の外は止め、default が無ければ止める。
 func TestColorGateDefaultStyle(t *testing.T) {
 	dir := t.TempDir()
 	write := func(name, body string) {
@@ -109,7 +108,7 @@ func TestColorGateDefaultStyle(t *testing.T) {
 		}
 	}
 	gateBody := func(def string) string {
-		return `{"version": 2, ` + def + `"styles": {"day": {"label": "昼の外", "colors": {"w": "#ffffeb"}}, "night": {"label": "夜の外", "colors": {"k": "#123456"}}}, "files": {}}`
+		return `{"version": 2, ` + def + `"styles": {"day": {"label": "昼の外", "colors": {"w": "#ffffeb"}}}, "files": {}}`
 	}
 	sprite := func(hex string) *pxlib.Obj {
 		o, err := pxlib.DecodeOrdered([]byte(`{"version": 1, "palette": {"c": "` + hex + `"}, "legend": {"a": "c"}, "sprites": {"s": {"frames": {"f": ["a"]}}}}`))
@@ -118,8 +117,8 @@ func TestColorGateDefaultStyle(t *testing.T) {
 		}
 		return o.(*pxlib.Obj)
 	}
-	kinds := func(g *colorGate, hex string, hint gateHint) string {
-		bad, _ := g.CheckDoc(dir, sprite(hex), "new.sprite.json", hint)
+	kinds := func(g *colorGate, hex string) string {
+		bad, _ := g.CheckDoc(dir, sprite(hex), "new.sprite.json")
 		var ks []string
 		for _, b := range bad {
 			ks = append(ks, string(b.Kind))
@@ -140,17 +139,35 @@ func TestColorGateDefaultStyle(t *testing.T) {
 		name string
 		g    *colorGate
 		hex  string
-		hint gateHint
 		want string
 	}{
-		{"既定も style も無い", none, "#ffffeb", gateHint{}, "no-entry"},
-		{"既定の画風の色", def, "#ffffeb", gateHint{}, ""},
-		{"既定の画風の外", def, "#123456", gateHint{}, "outside"},
-		{"spec の style が先", def, "#123456", gateHint{Style: "night"}, ""},
-		{"spec の style の外", none, "#ffffeb", gateHint{Style: "night"}, "outside"},
+		{"default が無い", none, "#ffffeb", "no-entry"},
+		{"default の画風の色", def, "#ffffeb", ""},
+		{"default の画風の外", def, "#123456", "outside"},
 	} {
-		if got := kinds(tc.g, tc.hex, tc.hint); got != tc.want {
+		if got := kinds(tc.g, tc.hex); got != tc.want {
 			t.Errorf("%s: got %q want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+// spec に機種の style（modern・snes）を書いても、門の default の画風は外れない（機種は上乗せの縛り）。
+func TestMachineStyleDoesNotBypassGate(t *testing.T) {
+	for _, style := range []string{"modern", "snes"} {
+		dir := writeSpec(t, `{"version": 2, "target": "atelier/new.sprite.json", "palette": "assets/t.palette.json", "gate": "g.json", "style": "`+style+`",
+  "ramps": {"r": ["c0", "c1", "c2", "c3"]},
+  "sprites": {"s": {"size": [2, 2], "ramp": "r", "parts": [{"id": "p", "shape": {"rect": [0, 0, 2, 2]}, "ops": [{"fill": {"color": "mid"}}]}], "frames": {"f": {}}}}}`)
+		if err := os.WriteFile(filepath.Join(dir, "g.json"), []byte(`{"version": 2, "default": "day", "styles": {"day": {"label": "昼の外", "colors": {"w": "#ffffeb"}}}, "files": {}}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		for _, noCheck := range []bool{false, true} {
+			res, err := build(dir, "t.pxsrc.json", buildOptions{RulesRoot: engineRoot, NoCheck: noCheck})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if res.Wrote || res.Count().Gate == 0 {
+				t.Errorf("style %s（no-check %v）で門の画風の外の色が通った", style, noCheck)
+			}
 		}
 	}
 }

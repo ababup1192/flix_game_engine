@@ -85,11 +85,16 @@ type opStep struct {
 	index int
 }
 
-// partSteps は部品の ops を描く順に並べる。部品が動かない時は書いた順。動く時（動きの op を持つ・
-// 親が動いた）は「塗りと模様 → 動き → 親の動き → 縁」: 模様も形と一緒に動き、縁は動いた後の塊に付く。
-// 親の動きを当てる所は index = -1 で表す。
-func partSteps(ops []opCall, parentMoves bool) []opStep {
-	moves := parentMoves
+// 並べ替えの印（opStep.index に入れる）。
+const (
+	stepFollow = -1 // 親の動きを受ける
+	stepRotate = -2 // 部品の rotate
+)
+
+// partSteps は部品の ops を描く順に並べる。部品が動かない時は書いた順（rotate は最後）。動く時（動きの op を持つ・
+// rotate がある・親が動いた）は「塗りと模様 → 動き → rotate → 親の動き → 縁」: 模様も形と一緒に動き、縁は動いた後の塊に付く。
+func partSteps(ops []opCall, rotate, parentMoves bool) []opStep {
+	moves := parentMoves || rotate
 	for _, call := range ops {
 		if animOps[call.Name] && call.Name != "palette_cycle" && call.Name != "wave_shift" {
 			moves = true
@@ -109,8 +114,11 @@ func partSteps(ops []opCall, parentMoves bool) []opStep {
 		}
 	}
 	out := append(paint, motion...)
+	if rotate {
+		out = append(out, opStep{index: stepRotate})
+	}
 	if parentMoves {
-		out = append(out, opStep{index: -1})
+		out = append(out, opStep{index: stepFollow})
 	}
 	return append(out, edge...)
 }
@@ -140,15 +148,14 @@ func drawFrame(c *ctx, parts []*part, post []opCall, after func(*partState, []ch
 		}
 		parentMoves := parent != nil && len(parent.follow) > 0
 		var checks []checkRef
-		rotated := false
-		for _, st := range partSteps(p.Ops, parentMoves) {
-			if st.index < 0 {
-				// 自分の回転を先に済ませてから、親の動きを受ける
-				if p.Rotate != 0 {
-					c.ref = pxlib.OpRef{Part: p.ID, Index: len(p.Ops), Op: "rotate"}
-					c.rotatePart(p.Rotate, p.Pivot)
-					rotated = true
-				}
+		for _, st := range partSteps(p.Ops, p.Rotate != 0, parentMoves) {
+			if st.index == stepRotate {
+				c.ref = pxlib.OpRef{Part: p.ID, Index: len(p.Ops), Op: "rotate"}
+				c.rotatePart(p.Rotate, p.Pivot)
+				checks = append(checks, checkRef{Check: checkSprite, Rule: "orphan"})
+				continue
+			}
+			if st.index == stepFollow {
 				c.ref = pxlib.OpRef{Part: p.ID, Index: len(p.Ops), Op: "follow:" + p.On}
 				c.followParent(parent)
 				checks = append(checks, checkRef{Check: checkSprite, Rule: "orphan"})
@@ -160,11 +167,6 @@ func drawFrame(c *ctx, parts []*part, post []opCall, after func(*partState, []ch
 			}
 			op, _ := lookupOp(st.call.Name)
 			checks = append(checks, op.Checks...)
-		}
-		if p.Rotate != 0 && !rotated {
-			c.ref = pxlib.OpRef{Part: p.ID, Index: len(p.Ops), Op: "rotate"}
-			c.rotatePart(p.Rotate, p.Pivot)
-			checks = append(checks, checkRef{Check: checkSprite, Rule: "orphan"})
 		}
 		if after != nil {
 			if err := after(c.Part, checks); err != nil {

@@ -53,7 +53,7 @@
     },
     "style": {
       "type": "string",
-      "description": "画風か機種: 色の門（gate）の styles の名前なら、門の files に無くてもその画風の色で門を通す。でなければ機種の決まり（bin/lint-rules/px.json の styles: gb4・nes・snes・pc98・modern など。か *.pxstyle.json）で、色の集合・色数・升目の色数・RGB の段数を検査 style で縛る"
+      "description": "機種の決まり（bin/lint-rules/px.json の styles: gb4・nes・snes・pc98・modern など。か *.pxstyle.json）。色の集合・色数・升目の色数・RGB の段数を検査 style で縛る。色の門（gate）の画風の上に乗る縛りで、門の画風は外さない"
     },
     "light": {
       "type": "object",

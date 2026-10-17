@@ -50,7 +50,7 @@ func checkFiles(engineRoot, workRoot, gatePath string, paths []string) (*checkRe
 			rep.Gate = append(rep.Gate, gateFinding{Slot: filepath.Base(p), Kind: gateUnreadable, Msg: fmt.Sprintf("%s: 読めない（%v）", p, err)})
 			continue
 		}
-		bad, known := gate.CheckDoc(workRoot, doc, filepath.Base(p), gateHint{})
+		bad, known := gate.CheckDoc(workRoot, doc, filepath.Base(p))
 		for _, b := range bad {
 			b.Msg = shown + "/" + b.Msg
 			rep.Gate = append(rep.Gate, b)
@@ -58,7 +58,7 @@ func checkFiles(engineRoot, workRoot, gatePath string, paths []string) (*checkRe
 		for _, k := range known {
 			knownSet[filepath.Base(p)+"/"+k] = true
 		}
-		rep.Lint = append(rep.Lint, lintDoc(full, doc, spriteRules)...)
+		rep.Lint = append(rep.Lint, lintDoc(full, doc, spriteRules, wrapSprites(workRoot, filepath.Base(p)))...)
 	}
 	for k := range knownSet {
 		rep.Known = append(rep.Known, k)
@@ -73,13 +73,73 @@ func checkFiles(engineRoot, workRoot, gatePath string, paths []string) (*checkRe
 	return rep, nil
 }
 
+// wrapSprites は art/*.pxsrc.json のうち target が slot の指定で、端を回して描くスプライト
+// （tile_preview か scatter_clusters の wrap）の名前。px check もタイルの orphan を build と同じく 3×3 で見る。
+func wrapSprites(workRoot, slot string) map[string]bool {
+	out := map[string]bool{}
+	specs, _ := filepath.Glob(filepath.Join(workRoot, "art", "*.pxsrc.json"))
+	for _, path := range specs {
+		spec, err := loadSpec(path)
+		if err != nil || filepath.Base(spec.Target) != slot {
+			continue
+		}
+		for _, sp := range spec.Sprites {
+			for _, call := range sp.Post {
+				if call.Name == "tile_preview" {
+					out[sp.Name] = true
+				}
+			}
+			for _, f := range sp.Frames {
+				for _, p := range sp.partsOf(&reader{}, spec, f) {
+					for _, call := range p.Ops {
+						if call.Name == "scatter_clusters" && call.Args.bool("wrap") {
+							out[sp.Name] = true
+						}
+					}
+				}
+			}
+		}
+	}
+	return out
+}
+
 // lintDoc は fge sprite と同じ検査を、対象外の指定（lint-sprite）を当てたうえでかける。
-// fge sprite が NG にする件は gate、注意は lint に写す。
-func lintDoc(full string, doc *pxlib.Obj, rules *sprite.Rules) []violation {
+// fge sprite が NG にする件は gate、注意は lint に写す。wrap のスプライトの orphan は 3×3 に並べて見る。
+func lintDoc(full string, doc *pxlib.Obj, rules *sprite.Rules, wrap map[string]bool) []violation {
 	plain, _ := pxlib.Plain(doc).(map[string]any)
 	findings, _, _ := rules.CheckDoc(plain, rules.LegendHexes(sprite.GameDirOf(full), plain), true)
 	out := make([]violation, 0, len(findings))
+	lv, _ := doc.Get("legend")
+	keyOf := pxlib.LegendOf(lv).KeyOf
+	sprites, _ := doc.GetOr("sprites", nil).(*pxlib.Obj)
+	if sprites == nil {
+		wrap = nil
+	}
+	for _, name := range sortedKeys(wrap) {
+		so, _ := sprites.GetOr(name, nil).(*pxlib.Obj)
+		if so == nil {
+			continue
+		}
+		frames, _ := so.GetOr("frames", nil).(*pxlib.Obj)
+		if frames == nil {
+			continue
+		}
+		fnames, fvals := frames.Items()
+		for i, fname := range fnames {
+			g, err := pxlib.GridFromRows(strs(fvals[i]), keyOf)
+			if err != nil {
+				continue
+			}
+			for _, v := range wrappedOrphans(g, &checkCtx{SpriteRules: rules}) {
+				v.Sprite, v.Frame = name, fname
+				out = append(out, v)
+			}
+		}
+	}
 	for _, f := range findings {
+		if f.Rule == "orphan" && wrap[f.Sprite] {
+			continue // 端で回り込んだ塊は 1 枚では 1px に見える（上で 3×3 に並べて見た）
+		}
 		v := fromFinding(f.Finding)
 		v.Sprite, v.Frame = f.Sprite, f.Frame
 		if f.Frame == "" {

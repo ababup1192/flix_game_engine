@@ -435,7 +435,7 @@ func parseSprite(r *reader, s *specDoc, name string, v any) *spriteSpec {
 			continue
 		}
 		if patch.Has("pose") {
-			patch = poseToPatch(r, fw, patch, roles, ids, rawAt(sp.RawParts))
+			patch = poseToPatch(r, fw, patch, roles, ids, rawAt(sp.RawParts), rawOn(sp.RawParts))
 			sp.animated = true
 			if patch == nil {
 				continue
@@ -455,18 +455,35 @@ func parseSprite(r *reader, s *specDoc, name string, v any) *spriteSpec {
 	return sp
 }
 
-// rawAt は部品 id → patch を当てる前の at（pose のずらしはここに足す）。
+// rawAt は部品 id → patch を当てる前の at（pose のずらしはここに足す）。書き損じの at は読み飛ばす
+// （誤りは部品を読む所で場所つきで出る）。
 func rawAt(parts []*pxlib.Obj) map[string][2]int {
 	out := map[string][2]int{}
 	for _, raw := range parts {
 		id, _ := raw.GetOr("id", "").(string)
-		if av, ok := raw.Get("at"); ok {
-			if arr, isArr := av.([]any); isArr && len(arr) == 2 {
-				x, _ := arr[0].(json.Number).Int64()
-				y, _ := arr[1].(json.Number).Int64()
-				out[id] = [2]int{int(x), int(y)}
-			}
+		av, ok := raw.Get("at")
+		arr, isArr := av.([]any)
+		if !ok || !isArr || len(arr) != 2 {
+			continue
 		}
+		xn, okX := arr[0].(json.Number)
+		yn, okY := arr[1].(json.Number)
+		x, errX := xn.Int64()
+		y, errY := yn.Int64()
+		if okX && okY && errX == nil && errY == nil {
+			out[id] = [2]int{int(x), int(y)}
+		}
+	}
+	return out
+}
+
+// rawOn は部品 id → 親の id（on）。
+func rawOn(parts []*pxlib.Obj) map[string]string {
+	out := map[string]string{}
+	for _, raw := range parts {
+		id, _ := raw.GetOr("id", "").(string)
+		on, _ := raw.GetOr("on", "").(string)
+		out[id] = on
 	}
 	return out
 }

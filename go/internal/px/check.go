@@ -379,7 +379,7 @@ func init() {
 	})
 	registerCheck(&checkDef{
 		Name: checkGroundContrast, Summary: "外周の画素と地の色の明るさ（Oklab の L）の差が小さく、輪郭が地に溶ける", Level: levelLint,
-		Fix: "外周を地から離す（地より暗いなら sel_out の drop を増やす・明るいなら rim_light）",
+		Fix: "外周を地から離す（地より暗いならもっと暗い段・明るいならもっと明るい段へ）",
 		Run: func(g *pxlib.Grid, c *checkCtx) []violation {
 			gl, ok := pxlib.Lightness(c.Ground)
 			if !ok {
@@ -409,9 +409,9 @@ func init() {
 				return nil
 			}
 			// 外周が地より明るいか暗いかで、離す向きを分ける（暗い地で縁をさらに暗くすると溶ける）
-			fix := "外周が地より暗い: sel_out の drop を 1 増やして縁をもっと暗くする"
+			fix := "外周が地より暗い: 外周をランプのもっと暗い段にする（directional・gradient_fill の from を 0 に）か、depth_fade で地を明るくする"
 			if signed > 0 {
-				fix = "外周が地より明るい: rim_light で光と反対の縁を明るくするか、sel_out の lit_drop を 0 にして縁を明るいまま残す"
+				fix = "外周が地より明るい: 外周をランプのもっと明るい段にする（directional・gradient_fill の to を最明に）か、地を暗い段にする"
 			}
 			return []violation{{Check: checkGroundContrast, Level: levelLint, X: worstAt.X, Y: worstAt.Y, HasAt: true, Fix: fix,
 				Msg: fmt.Sprintf("外周と地 %s の明るさの差が平均 %.3f（%.2f 以上にする）", c.Ground, sum/float64(n), c.Rules.GroundContrastMin)}}

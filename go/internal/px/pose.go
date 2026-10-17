@@ -65,7 +65,9 @@ func poseNames() []string {
 
 // poseToPatch は {"pose": 名前, "parts": {id: patch}} を部品 id → patch に直す。
 // 姿勢のずらし（at）は部品の元の at に足す（元が [3, 2] なら down で [3, 3]）。
-func poseToPatch(r *reader, where string, frame *pxlib.Obj, roles map[string]string, ids map[string]bool, base map[string][2]int) *pxlib.Obj {
+// ずらしは、ずらしを受ける部品のうち on の親を辿っても同じ姿勢でずらす部品が無い物（一番上の親）にだけ当てる。
+// 子は親のずれを受けるので、両方に当てると 2 倍動く（head が on: body なら down で 2px 下がっていた）。
+func poseToPatch(r *reader, where string, frame *pxlib.Obj, roles map[string]string, ids map[string]bool, base map[string][2]int, on map[string]string) *pxlib.Obj {
 	r.keys(frame, where, []string{"pose", "flip", "parts"})
 	flip := false
 	if fv, ok := frame.Get("flip"); ok {
@@ -82,6 +84,31 @@ func poseToPatch(r *reader, where string, frame *pxlib.Obj, roles map[string]str
 		return nil
 	}
 	out := pxlib.NewObj()
+	idOf := func(role string) string {
+		if id := roles[role]; id != "" {
+			return id
+		}
+		return role
+	}
+	shifted := map[string]bool{}
+	for role, mv := range table {
+		if flip {
+			mv = table[flipRole[role]]
+		}
+		if mv.At != [2]int{} && ids[idOf(role)] {
+			shifted[idOf(role)] = true
+		}
+	}
+	underShifted := func(id string) bool {
+		seen := map[string]bool{id: true}
+		for p := on[id]; p != "" && !seen[p]; p = on[p] {
+			if shifted[p] {
+				return true
+			}
+			seen[p] = true
+		}
+		return false
+	}
 	roleNames := make([]string, 0, len(table))
 	for k := range table {
 		roleNames = append(roleNames, k)
@@ -104,7 +131,7 @@ func poseToPatch(r *reader, where string, frame *pxlib.Obj, roles map[string]str
 		if mv.Rotate != 0 {
 			p.Set("rotate", json.Number(fmt.Sprint(mv.Rotate)))
 		}
-		if mv.At != [2]int{} {
+		if mv.At != [2]int{} && !underShifted(id) {
 			b := base[id]
 			p.Set("at", []any{json.Number(fmt.Sprint(b[0] + mv.At[0])), json.Number(fmt.Sprint(b[1] + mv.At[1]))})
 		}

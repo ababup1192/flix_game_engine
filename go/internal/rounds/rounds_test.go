@@ -114,6 +114,18 @@ func TestRestoreKeepsCurrentScript(t *testing.T) {
 	}
 }
 
+// 同じ秒に 2 度戻しても、前の退避を潰さず番号を足す。
+func TestRestoreTwiceKeepsBoth(t *testing.T) {
+	root := newGame(t)
+	run(t, root, "snap", "hero", "pic.png", "art/hero.src.py")
+	run(t, root, "restore", "hero", "r1", "art/hero.src.py")
+	run(t, root, "restore", "hero", "r1", "art/hero.src.py")
+	kept, _ := filepath.Glob(filepath.Join(root, "debug", "history", "hero", "before-restore-*"))
+	if len(kept) != 2 {
+		t.Fatalf("退避が %d 個（2 のはず）: %v", len(kept), kept)
+	}
+}
+
 func TestSnapDrawsSpriteSheet(t *testing.T) {
 	root := newGame(t)
 	sprite := `{"version":1,"legend":{"a":"#ff0000"},"sprites":{"hero":{"frames":{"0":["a.","aa"],"1":[".a","aa"]}}}}`

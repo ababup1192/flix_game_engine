@@ -637,8 +637,16 @@ func TestRoundsSnapRestoreDiff(t *testing.T) {
 		}
 	}
 	// 周の上限は fge rounds の rounds.json の 1 か所（px.json には持たない）
+	report := filepath.Join(dir, "debug", "px", "t", "last", "report.json")
+	before, _ := os.ReadFile(report)
+	if err := os.WriteFile(spec, []byte(strings.Replace(string(orig), `"mid"`, `"ink"`, 1)), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if code, msg := run("snap", "t.pxsrc.json"); code != 1 || !strings.Contains(msg, "5 周を超える") {
 		t.Fatalf("6 周目が通った: %d %s", code, msg)
+	}
+	if after, _ := os.ReadFile(report); string(after) != string(before) {
+		t.Error("上限で断る前に描いた（上限の判定は build の前）")
 	}
 	if code, msg := run("restore", "t.pxsrc.json", "r1"); code != 2 {
 		t.Fatalf("px restore は消した（fge rounds restore に 1 本化）: %d %s", code, msg)
