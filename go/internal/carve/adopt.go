@@ -12,6 +12,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/ababup1192/flix_game_engine/go/internal/pxlib"
 )
 
 // Pt は 2 次元の位置。
@@ -21,7 +23,7 @@ type Pt struct{ X, Y int }
 type Vox struct{ X, Y, Z int }
 
 // Cells は位置 → 色。
-type Cells = OMap[Pt, RGB]
+type Cells = pxlib.OMap[Pt, RGB]
 
 // Mask は背景とみなした升目。
 type Mask struct {
@@ -221,7 +223,7 @@ func Resample(img *Image, box [4]int, size [2]int, mask *Mask, rules *Rules) *Ce
 	width, height := size[0], size[1]
 	step := rules.QuantStep
 	most := rules.SamplePoints
-	out := NewOMap[Pt, RGB]()
+	out := pxlib.NewOMap[Pt, RGB]()
 	cellBox := func(gx, gy int) (int, int, int, int) {
 		sx0 := x0 + (x1-x0+1)*gx/width
 		sx1 := maxOf([]int{sx0 + 1, x0 + (x1-x0+1)*(gx+1)/width})
@@ -251,7 +253,7 @@ func Resample(img *Image, box [4]int, size [2]int, mask *Mask, rules *Rules) *Ce
 			}
 		}
 	}
-	patch := NewOMap[Pt, RGB]()
+	patch := pxlib.NewOMap[Pt, RGB]()
 	for gy := 0; gy < height; gy++ {
 		for gx := 0; gx < width; gx++ {
 			if out.Has(Pt{gx, gy}) {
@@ -291,7 +293,7 @@ func Resample(img *Image, box [4]int, size [2]int, mask *Mask, rules *Rules) *Ce
 }
 
 // ReduceColors は色数を上限まで落とす。多い色と、他から遠い色の両方を残す。
-func ReduceColors(pieces *OMap[string, *Cells], limit int) *OMap[string, *Cells] {
+func ReduceColors(pieces *pxlib.OMap[string, *Cells], limit int) *pxlib.OMap[string, *Cells] {
 	counts := NewCounter[RGB]()
 	for _, name := range pieces.Keys() {
 		cells, _ := pieces.Get(name)
@@ -352,10 +354,10 @@ func ReduceColors(pieces *OMap[string, *Cells], limit int) *OMap[string, *Cells]
 		}
 		table[color] = near
 	}
-	out := NewOMap[string, *Cells]()
+	out := pxlib.NewOMap[string, *Cells]()
 	for _, name := range pieces.Keys() {
 		cells, _ := pieces.Get(name)
-		made := NewOMap[Pt, RGB]()
+		made := pxlib.NewOMap[Pt, RGB]()
 		for _, k := range cells.Keys() {
 			c, _ := cells.Get(k)
 			made.Set(k, table[c])
@@ -375,7 +377,7 @@ func Place(cells *Cells, size [2]int, rules *Rules) *Cells {
 	}
 	dx := width/2 - (minOf(xs)+maxOf(xs)+1)/2
 	dy := height - rules.Adopt.BottomGap - maxOf(ys)
-	out := NewOMap[Pt, RGB]()
+	out := pxlib.NewOMap[Pt, RGB]()
 	for _, p := range cells.Keys() {
 		c, _ := cells.Get(p)
 		q := Pt{p.X + dx, p.Y + dy}
@@ -430,7 +432,7 @@ func LegBand(cells *Cells, size [2]int, rules *Rules) []int {
 
 // ShearLegs は脚を付け根から足先へ向かって少しずつずらす。
 func ShearLegs(cells *Cells, band []int, size [2]int, phase, swing, dip int, rules *Rules) *Cells {
-	out := NewOMap[Pt, RGB]()
+	out := pxlib.NewOMap[Pt, RGB]()
 	if len(band) == 0 {
 		for _, p := range cells.Keys() {
 			c, _ := cells.Get(p)
@@ -478,9 +480,9 @@ var walkMotions = []struct {
 }{{"walk_l", -1, 1}, {"idle", 0, 0}, {"walk_r", 1, 1}}
 
 // MotionFrames は動きの表からコマを作る。元の絵の画素は描き換えない。
-func MotionFrames(cells *Cells, size [2]int, swing, dip int, rules *Rules) *OMap[string, *Cells] {
+func MotionFrames(cells *Cells, size [2]int, swing, dip int, rules *Rules) *pxlib.OMap[string, *Cells] {
 	band := LegBand(cells, size, rules)
-	made := NewOMap[string, *Cells]()
+	made := pxlib.NewOMap[string, *Cells]()
 	for _, m := range walkMotions {
 		frame := ShearLegs(cells, band, size, m.Phase, swing, m.Sink*dip, rules)
 		if len(ComponentsAdopt(frame)) > 1 {
@@ -645,7 +647,7 @@ func RunAdopt(out *strings.Builder, root string, args []string, rules *Rules) (i
 	if len(spans) != len(order) {
 		fmt.Fprintf(out, "警告: 向きの指定は %d 個だが、絵は %d 体ある\n", len(order), len(spans))
 	}
-	pieces := NewOMap[string, *Cells]()
+	pieces := pxlib.NewOMap[string, *Cells]()
 	for i := 0; i < len(order) && i < len(spans); i++ {
 		box := BoundsOf(img, spans[i], mask, rules)
 		fmt.Fprintf(out, "  %-6s 元の外接枠 %d x %d px\n", order[i],
@@ -659,7 +661,7 @@ func RunAdopt(out *strings.Builder, root string, args []string, rules *Rules) (i
 			xs = append(xs, p.X)
 		}
 		wide := maxOf(xs)
-		mirror := NewOMap[Pt, RGB]()
+		mirror := pxlib.NewOMap[Pt, RGB]()
 		for _, p := range source.Keys() {
 			c, _ := source.Get(p)
 			mirror.Set(Pt{wide - p.X, p.Y}, c)
@@ -674,7 +676,7 @@ func RunAdopt(out *strings.Builder, root string, args []string, rules *Rules) (i
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return 1, err
 	}
-	frames := NewOMap[frameKey, *Cells]()
+	frames := pxlib.NewOMap[frameKey, *Cells]()
 	for _, view := range pieces.Keys() {
 		cells, _ := pieces.Get(view)
 		stand := Place(cells, size, rules)
@@ -703,8 +705,8 @@ func RunAdopt(out *strings.Builder, root string, args []string, rules *Rules) (i
 			every.Add(c, 1)
 		}
 	}
-	palette := NewOMap[string, string]()
-	legend := NewOMap[string, string]()
+	palette := pxlib.NewOMap[string, string]()
+	legend := pxlib.NewOMap[string, string]()
 	paletteNames := map[RGB]string{}
 	chars := []rune(rules.LegendChars)
 	ranked, _ := every.MostCommon()
@@ -719,9 +721,9 @@ func RunAdopt(out *strings.Builder, root string, args []string, rules *Rules) (i
 	}
 	fmt.Fprintf(out, "色票 %d 色 (4 方向ぶんを 1 枚に統合)\n", palette.Len())
 
-	sprites := NewOMap[string, *spriteEntry]()
+	sprites := pxlib.NewOMap[string, *spriteEntry]()
 	for _, view := range pieces.Keys() {
-		made := NewOMap[string, []string]()
+		made := pxlib.NewOMap[string, []string]()
 		for _, pose := range []string{"walk_l", "idle", "walk_r"} {
 			cells, _ := frames.Get(frameKey{view, pose})
 			made.Set(pose, gridOf(cells, size, paletteNames))
@@ -802,7 +804,7 @@ type frameKey struct {
 	view, pose string
 }
 
-func stripRows(frames *OMap[frameKey, *Cells], viewOrder []string, pose string, size [2]int) [][]RGBA {
+func stripRows(frames *pxlib.OMap[frameKey, *Cells], viewOrder []string, pose string, size [2]int) [][]RGBA {
 	var rowsOut [][]RGBA
 	for y := 0; y < size[1]; y++ {
 		var line []RGBA

@@ -11,6 +11,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/ababup1192/flix_game_engine/go/internal/pxlib"
 )
 
 type options struct {
@@ -110,8 +112,8 @@ func applyProfile(profile *Profile, path string) error {
 }
 
 // writeSpriteDoc は sprite.json を字下げ 2 で書く。
-func writeSpriteDoc(path, id, note string, palette, legend *OMap[string, string],
-	sprites *OMap[string, *spriteEntry]) error {
+func writeSpriteDoc(path, id, note string, palette, legend *pxlib.OMap[string, string],
+	sprites *pxlib.OMap[string, *spriteEntry]) error {
 	var b strings.Builder
 	b.WriteString("{\n")
 	b.WriteString("  \"version\": 1,\n")
@@ -169,7 +171,7 @@ func writeSpriteDoc(path, id, note string, palette, legend *OMap[string, string]
 	return os.WriteFile(path, []byte(b.String()), 0o644)
 }
 
-func writeStringMap(b *strings.Builder, name string, m *OMap[string, string], indent string) {
+func writeStringMap(b *strings.Builder, name string, m *pxlib.OMap[string, string], indent string) {
 	fmt.Fprintf(b, "%s%s: {", indent, jsonString(name))
 	keys := m.Keys()
 	for i, k := range keys {

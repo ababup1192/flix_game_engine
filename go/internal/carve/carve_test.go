@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/ababup1192/flix_game_engine/go/internal/pxlib"
 )
 
 func TestRunsOfMatchesPython(t *testing.T) {
@@ -92,7 +94,7 @@ func TestCounterMostCommon1IsFirstMax(t *testing.T) {
 }
 
 func sampleCells() *Cells {
-	cells := NewOMap[Pt, RGB]()
+	cells := pxlib.NewOMap[Pt, RGB]()
 	cells.Set(Pt{0, 0}, RGB{1, 1, 1})
 	cells.Set(Pt{1, 0}, RGB{1, 1, 1})
 	cells.Set(Pt{5, 5}, RGB{2, 2, 2})
@@ -122,7 +124,7 @@ func TestComponentsAdoptIsFourConnected(t *testing.T) {
 }
 
 func TestStanceCenterUsesFeet(t *testing.T) {
-	cells := NewOMap[Pt, RGB]()
+	cells := pxlib.NewOMap[Pt, RGB]()
 	for _, p := range []Pt{{0, 0}, {4, 0}, {1, 9}, {3, 9}} {
 		cells.Set(p, RGB{})
 	}
@@ -163,7 +165,7 @@ func TestRGBAOfHex(t *testing.T) {
 }
 
 func TestHexOfNestedDict(t *testing.T) {
-	obj := NewOMap[string, any]()
+	obj := pxlib.NewOMap[string, any]()
 	obj.Set("hex", "AABBCC")
 	if got := HexOf(obj); got != "#aabbcc" {
 		t.Fatalf("入れ子の色が #aabbcc ではなく %q", got)
@@ -264,7 +266,7 @@ func TestLoadRulesFailsOnPartialTable(t *testing.T) {
 }
 
 func TestOMapKeepsPlaceOnOverwrite(t *testing.T) {
-	m := NewOMap[string, int]()
+	m := pxlib.NewOMap[string, int]()
 	m.Set("a", 1)
 	m.Set("b", 2)
 	m.Set("a", 3)
@@ -275,7 +277,7 @@ func TestOMapKeepsPlaceOnOverwrite(t *testing.T) {
 }
 
 func TestOMapReinsertGoesToEnd(t *testing.T) {
-	m := NewOMap[string, int]()
+	m := pxlib.NewOMap[string, int]()
 	m.Set("a", 1)
 	m.Set("b", 2)
 	m.Delete("a")

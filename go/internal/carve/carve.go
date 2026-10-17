@@ -14,6 +14,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/ababup1192/flix_game_engine/go/internal/pxlib"
 )
 
 // Marks は体の高さの目印。
@@ -23,13 +25,13 @@ type Marks struct {
 }
 
 // Parts は部位ごとのボクセル。
-type Parts = OMap[string, *VoxSet]
+type Parts = pxlib.OMap[string, *VoxSet]
 
 // VoxSet はボクセルの集まり (色は持たない)。
-type VoxSet = OMap[Vox, struct{}]
+type VoxSet = pxlib.OMap[Vox, struct{}]
 
 // VoxMoved は動かした後の位置 → 出身位置。
-type VoxMoved = OMap[Vox, Vox]
+type VoxMoved = pxlib.OMap[Vox, Vox]
 
 // carveViews は描き直す 4 方向。
 var carveViews = []string{"front", "right", "back", "left"}
@@ -58,7 +60,7 @@ func StanceCenter(cells *Cells, share float64) float64 {
 }
 
 // Align は 3 面をまとめて位置合わせする。
-func Align(views *OMap[string, *Cells], size [2]int, rules *Rules) *OMap[string, *Cells] {
+func Align(views *pxlib.OMap[string, *Cells], size [2]int, rules *Rules) *pxlib.OMap[string, *Cells] {
 	width, height := size[0], size[1]
 	floor := 0
 	for i, name := range views.Keys() {
@@ -71,7 +73,7 @@ func Align(views *OMap[string, *Cells], size [2]int, rules *Rules) *OMap[string,
 			floor = v
 		}
 	}
-	out := NewOMap[string, *Cells]()
+	out := pxlib.NewOMap[string, *Cells]()
 	for _, name := range views.Keys() {
 		cells, _ := views.Get(name)
 		dy := (height - 2) - floor
@@ -80,7 +82,7 @@ func Align(views *OMap[string, *Cells], size [2]int, rules *Rules) *OMap[string,
 			target = float64(width-1) - float64(width)/2
 		}
 		dx := int(math.RoundToEven(target - StanceCenter(cells, rules.Profile.FeetShare)))
-		moved := NewOMap[Pt, RGB]()
+		moved := pxlib.NewOMap[Pt, RGB]()
 		for _, p := range cells.Keys() {
 			c, _ := cells.Get(p)
 			q := Pt{p.X + dx, p.Y + dy}
@@ -115,7 +117,7 @@ func Carve(front, side *Cells, size [2]int) *VoxSet {
 	for _, p := range side.Keys() {
 		add(rowsSide, p.Y, p.X)
 	}
-	voxels := NewOMap[Vox, struct{}]()
+	voxels := pxlib.NewOMap[Vox, struct{}]()
 	for y := 0; y < height; y++ {
 		xs, okX := rowsFront[y]
 		zs, okZ := rowsSide[y]
@@ -220,7 +222,7 @@ func Slim(parts *Parts, front, side *Cells, rules *Rules) (*Parts, string) {
 		}
 	}
 
-	kept := NewOMap[string, *VoxSet]()
+	kept := pxlib.NewOMap[string, *VoxSet]()
 	for _, name := range parts.Keys() {
 		cells, _ := parts.Get(name)
 		limb := strings.HasPrefix(name, "arm") || strings.HasPrefix(name, "leg")
@@ -233,7 +235,7 @@ func Slim(parts *Parts, front, side *Cells, rules *Rules) (*Parts, string) {
 				widthOf[v.Y][v.X] = true
 			}
 		}
-		out := NewOMap[Vox, struct{}]()
+		out := pxlib.NewOMap[Vox, struct{}]()
 		for _, v := range cells.Keys() {
 			if cols, ok := toolCols[v.Y]; ok && cols.Contains(v.Z) {
 				if name == holder {
@@ -354,11 +356,11 @@ func SplitParts(voxels *VoxSet, rules *Rules) (*Parts, Marks) {
 	trim := len(core) * rules.Profile.CoreTrimPct / 100
 	inner := [2]int{core[trim], core[len(core)-trim-1]}
 	center := float64(inner[0]+inner[1]) / 2
-	parts := NewOMap[string, *VoxSet]()
+	parts := pxlib.NewOMap[string, *VoxSet]()
 	put := func(name string, v Vox) {
 		cells, ok := parts.Get(name)
 		if !ok {
-			cells = NewOMap[Vox, struct{}]()
+			cells = pxlib.NewOMap[Vox, struct{}]()
 			parts.Set(name, cells)
 		}
 		cells.Set(v, struct{}{})
@@ -421,7 +423,7 @@ func SplitParts(voxels *VoxSet, rules *Rules) (*Parts, Marks) {
 
 // Swing は腕と脚を振り、体を沈める。
 func Swing(name string, cells *VoxMoved, marks Marks, phase, dip, reach int, rise bool, rules *Rules) *VoxMoved {
-	out := NewOMap[Vox, Vox]()
+	out := pxlib.NewOMap[Vox, Vox]()
 	bottom, head, hip := marks.Bottom, marks.Head, marks.Hip
 	for _, v := range cells.Keys() {
 		origin, _ := cells.Get(v)
@@ -493,12 +495,12 @@ func imgX(view string, sx, width int) int {
 }
 
 // FaceOwners は止まった姿で「各向きの各画素をどの部位が見せているか」を確定する。
-func FaceOwners(parts *Parts, size [2]int) map[string]*OMap[Pt, string] {
+func FaceOwners(parts *Parts, size [2]int) map[string]*pxlib.OMap[Pt, string] {
 	width := size[0]
-	owner := map[string]*OMap[Pt, string]{}
+	owner := map[string]*pxlib.OMap[Pt, string]{}
 	best := map[string]map[Pt]int{}
 	for _, view := range carveViews {
-		owner[view] = NewOMap[Pt, string]()
+		owner[view] = pxlib.NewOMap[Pt, string]()
 		best[view] = map[Pt]int{}
 	}
 	for _, name := range parts.Keys() {
@@ -523,11 +525,11 @@ type seenPixel struct {
 }
 
 // Dress は動かした立体を 1 方向へ落とし、色を元図から着せる。
-func Dress(moved *OMap[string, *VoxMoved], view string, owner map[string]*OMap[Pt, string],
+func Dress(moved *pxlib.OMap[string, *VoxMoved], view string, owner map[string]*pxlib.OMap[Pt, string],
 	imgs map[string]*Cells, size [2]int) *Cells {
 	width, height := size[0], size[1]
 	img := imgs[view]
-	screen := NewOMap[Pt, seenPixel]()
+	screen := pxlib.NewOMap[Pt, seenPixel]()
 	for _, name := range moved.Keys() {
 		cells, _ := moved.Get(name)
 		for _, v := range cells.Keys() {
@@ -538,7 +540,7 @@ func Dress(moved *OMap[string, *VoxMoved], view string, owner map[string]*OMap[P
 			}
 		}
 	}
-	out := NewOMap[Pt, RGB]()
+	out := pxlib.NewOMap[Pt, RGB]()
 	for _, key := range screen.Keys() {
 		hit, _ := screen.Get(key)
 		if !(0 <= key.X && key.X < width && 0 <= key.Y && key.Y < height) {
@@ -565,7 +567,7 @@ func Dress(moved *OMap[string, *VoxMoved], view string, owner map[string]*OMap[P
 }
 
 // kinColor は同じ向きでその部位が見せている画素のうち、近い物の色を借りる。
-func kinColor(owned *OMap[Pt, string], img *Cells, view, name string, okey Pt, width int) (RGB, bool) {
+func kinColor(owned *pxlib.OMap[Pt, string], img *Cells, view, name string, okey Pt, width int) (RGB, bool) {
 	sx0, y0 := okey.X, okey.Y
 	for _, dy := range []int{0, -1, 1, -2, 2, -3, 3} {
 		var row []int
@@ -630,7 +632,7 @@ func Components(cells *Cells) []int {
 
 type spriteEntry struct {
 	anchorX, anchorY int
-	frames           *OMap[string, []string]
+	frames           *pxlib.OMap[string, []string]
 }
 
 // RunCarve は carve の入口。root は実行したディレクトリ。
@@ -671,7 +673,7 @@ func RunCarve(out *strings.Builder, root string, args []string, rules *Rules) (i
 	spans := SpansOf(img, mask, rules)
 	fmt.Fprintf(out, "切り分け %d 体\n", len(spans))
 	names := []string{"front", "right", "back"}
-	views := NewOMap[string, *Cells]()
+	views := pxlib.NewOMap[string, *Cells]()
 	for i := 0; i < len(names) && i < len(spans); i++ {
 		box := BoundsOf(img, spans[i], mask, rules)
 		views.Set(names[i], Resample(img, box, size, mask, rules))
@@ -716,10 +718,10 @@ func RunCarve(out *strings.Builder, root string, args []string, rules *Rules) (i
 
 	imgs := map[string]*Cells{"front": front, "right": right, "back": back, "left": right}
 	owner := FaceOwners(parts, size)
-	rest := NewOMap[string, *VoxMoved]()
+	rest := pxlib.NewOMap[string, *VoxMoved]()
 	for _, name := range parts.Keys() {
 		cells, _ := parts.Get(name)
-		still := NewOMap[Vox, Vox]()
+		still := pxlib.NewOMap[Vox, Vox]()
 		for _, v := range cells.Keys() {
 			still.Set(v, v)
 		}
@@ -752,7 +754,7 @@ func RunCarve(out *strings.Builder, root string, args []string, rules *Rules) (i
 		}
 		fmt.Fprintf(out, "  %-6s 投影の一致 %d/%d  ずれ %dpx\n", name, same, cells.Len(), gap)
 	}
-	mirror := NewOMap[Pt, RGB]()
+	mirror := pxlib.NewOMap[Pt, RGB]()
 	for _, p := range idleShot["right"].Keys() {
 		c, _ := idleShot["right"].Get(p)
 		mirror.Set(Pt{size[0] - 1 - p.X, p.Y}, c)
@@ -778,15 +780,15 @@ func RunCarve(out *strings.Builder, root string, args []string, rules *Rules) (i
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return 1, err
 	}
-	frames := NewOMap[frameKey, *Cells]()
+	frames := pxlib.NewOMap[frameKey, *Cells]()
 	for _, m := range walkMotions {
 		if frames.Has(frameKey{"front", m.Name}) {
 			continue
 		}
-		moved := NewOMap[string, *VoxMoved]()
+		moved := pxlib.NewOMap[string, *VoxMoved]()
 		for _, name := range parts.Keys() {
 			cells, _ := parts.Get(name)
-			one := NewOMap[Vox, Vox]()
+			one := pxlib.NewOMap[Vox, Vox]()
 			for _, v := range cells.Keys() {
 				one.Set(v, v)
 			}
@@ -854,8 +856,8 @@ func RunCarve(out *strings.Builder, root string, args []string, rules *Rules) (i
 			strings.Join(counts, ", "), movedCount)
 	}
 
-	palette := NewOMap[string, string]()
-	legend := NewOMap[string, string]()
+	palette := pxlib.NewOMap[string, string]()
+	legend := pxlib.NewOMap[string, string]()
 	table := map[RGB]string{}
 	chars := []rune(rules.LegendChars)
 	every := NewCounter[RGB]()
@@ -876,9 +878,9 @@ func RunCarve(out *strings.Builder, root string, args []string, rules *Rules) (i
 		legend.Set(string(chars[index]), key)
 		table[color] = string(chars[index])
 	}
-	sprites := NewOMap[string, *spriteEntry]()
+	sprites := pxlib.NewOMap[string, *spriteEntry]()
 	for _, view := range carveViews {
-		made := NewOMap[string, []string]()
+		made := pxlib.NewOMap[string, []string]()
 		for _, pose := range poses {
 			cells, _ := frames.Get(frameKey{view, pose})
 			made.Set(pose, gridOf(cells, size, table))

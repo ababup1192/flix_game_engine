@@ -16,6 +16,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/ababup1192/flix_game_engine/go/internal/pxlib"
 )
 
 // RGBA は 1 画素。
@@ -87,7 +89,7 @@ func HexOf(value any) string {
 			return "#" + strings.ToLower(body)
 		}
 	}
-	if m, ok := value.(*OMap[string, any]); ok {
+	if m, ok := value.(*pxlib.OMap[string, any]); ok {
 		for _, key := range []string{"hex", "color", "value"} {
 			if v, ok := m.Get(key); ok {
 				if found := HexOf(v); found != "" {
@@ -107,7 +109,7 @@ func RenderDoc(path, outDir string) ([]string, error) {
 	}
 	palette := map[string]string{}
 	if p, ok := doc.Get("palette"); ok {
-		if obj, ok := p.(*OMap[string, any]); ok {
+		if obj, ok := p.(*pxlib.OMap[string, any]); ok {
 			for _, name := range obj.Keys() {
 				v, _ := obj.Get(name)
 				if hex := HexOf(v); hex != "" {
@@ -118,7 +120,7 @@ func RenderDoc(path, outDir string) ([]string, error) {
 	}
 	legend := map[string]RGBA{}
 	if p, ok := doc.Get("legend"); ok {
-		if obj, ok := p.(*OMap[string, any]); ok {
+		if obj, ok := p.(*pxlib.OMap[string, any]); ok {
 			for _, char := range obj.Keys() {
 				v, _ := obj.Get(char)
 				direct := HexOf(v)
@@ -143,18 +145,18 @@ func RenderDoc(path, outDir string) ([]string, error) {
 	base := strings.Replace(filepath.Base(path), ".sprite.json", "", 1)
 	var written []string
 	sprites, _ := doc.Get("sprites")
-	spriteObj, ok := sprites.(*OMap[string, any])
+	spriteObj, ok := sprites.(*pxlib.OMap[string, any])
 	if !ok {
 		return written, nil
 	}
 	for _, spriteName := range spriteObj.Keys() {
 		specAny, _ := spriteObj.Get(spriteName)
-		spec, isObj := specAny.(*OMap[string, any])
+		spec, isObj := specAny.(*pxlib.OMap[string, any])
 		if strings.HasPrefix(spriteName, "//") || !isObj {
 			continue
 		}
 		framesAny, _ := spec.Get("frames")
-		frames, isObj := framesAny.(*OMap[string, any])
+		frames, isObj := framesAny.(*pxlib.OMap[string, any])
 		if !isObj {
 			continue
 		}

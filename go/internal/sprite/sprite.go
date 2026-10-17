@@ -25,14 +25,6 @@ const exemptTrim = " —-–:"
 // noReason は理由を書かずに対象外と書かれたときの文面。
 const noReason = "（理由が書かれていません）"
 
-type point struct{ X, Y int }
-
-// blob は 4 連結の塊 1 つ (画素数と走査順で最初に見つかった画素)。
-type blob struct {
-	size  int
-	start point
-}
-
 // exclusion は除外の 1 件。sprite が空ならファイル単位。
 type exclusion struct {
 	sprite string
@@ -165,272 +157,171 @@ func colorHexesOf(gameDir string, jsonPaths []string, doc map[string]any) map[st
 
 // ---------------------------------------------------------------- 格子の下ごしらえ
 
-// gridOf は rows を {(x,y): 色キー} にする。
-func (r *Rules) gridOf(rows []string, legend map[string]any) (cells map[point]string, width, height int, unknown []rune) {
-	height = len(rows)
-	if height > 0 {
-		width = len([]rune(rows[0]))
+// gridOf は rows を色キーの格子にする。legend に無い文字（透明の字を除く）を unknown に返す。
+func (r *Rules) gridOf(rows []string, legend map[string]any) (g *pxlib.Grid, unknown []rune) {
+	keys := make(map[string]pxlib.Key, len(legend))
+	for ch, v := range legend {
+		keys[ch] = pxlib.Key(keyText(v))
 	}
-	cells = map[point]string{}
-	seen := map[rune]bool{}
-	for y, row := range rows {
-		x := 0
-		for _, char := range row {
-			if value, ok := legend[string(char)]; ok {
-				cells[point{x, y}] = keyText(value)
-			} else if !r.TransparentChars[char] && !seen[char] {
-				seen[char] = true
-				unknown = append(unknown, char)
-			}
-			x++
+	g, all := pxlib.GridFromRows(rows, keys)
+	for _, ch := range all {
+		if !r.TransparentChars[ch] {
+			unknown = append(unknown, ch)
 		}
 	}
-	sort.Slice(unknown, func(i, j int) bool { return unknown[i] < unknown[j] })
-	return cells, width, height, unknown
-}
-
-func neighbors4(p point) [4]point {
-	return [4]point{{p.X + 1, p.Y}, {p.X - 1, p.Y}, {p.X, p.Y + 1}, {p.X, p.Y - 1}}
-}
-
-func neighbors8(p point) [8]point {
-	var out [8]point
-	i := 0
-	for dx := -1; dx <= 1; dx++ {
-		for dy := -1; dy <= 1; dy++ {
-			if dx == 0 && dy == 0 {
-				continue
-			}
-			out[i] = point{p.X + dx, p.Y + dy}
-			i++
-		}
-	}
-	return out
-}
-
-func bboxOf(pts []point) (x0, y0, x1, y1 int) {
-	x0, y0, x1, y1 = pts[0].X, pts[0].Y, pts[0].X, pts[0].Y
-	for _, p := range pts[1:] {
-		x0 = min(x0, p.X)
-		y0 = min(y0, p.Y)
-		x1 = max(x1, p.X)
-		y1 = max(y1, p.Y)
-	}
-	return x0, y0, x1, y1
-}
-
-func cellPoints(cells map[point]string) []point {
-	pts := make([]point, 0, len(cells))
-	for p := range cells {
-		pts = append(pts, p)
-	}
-	return pts
-}
-
-func sortByXY(pts []point) {
-	sort.Slice(pts, func(i, j int) bool {
-		if pts[i].X != pts[j].X {
-			return pts[i].X < pts[j].X
-		}
-		return pts[i].Y < pts[j].Y
-	})
-}
-
-// distFromEdge は各画素の「透明 (格子外含む) からの距離」。輪郭 = 1、その内側 = 2 …
-func distFromEdge(cells map[point]string) map[point]int {
-	dist := map[point]int{}
-	var queue []point
-	for p := range cells {
-		for _, n := range neighbors4(p) {
-			if _, inside := cells[n]; !inside {
-				dist[p] = 1
-				queue = append(queue, p)
-				break
-			}
-		}
-	}
-	for head := 0; head < len(queue); head++ {
-		p := queue[head]
-		for _, n := range neighbors4(p) {
-			if _, inside := cells[n]; !inside {
-				continue
-			}
-			if _, done := dist[n]; done {
-				continue
-			}
-			dist[n] = dist[p] + 1
-			queue = append(queue, n)
-		}
-	}
-	return dist
+	return g, unknown
 }
 
 // ---------------------------------------------------------------- 各規則
 
-// orphanCells は周り 8 方向すべて透明の画素。
-func (r *Rules) orphanCells(cells map[point]string) []point {
-	if len(cells) < r.MinOrphanCells {
+// Finding は 1 コマの検査で見つかった 1 件。Msg は「スプライト/コマ: 」を除いた本文。
+// At は代表の画素（HasAt が false なら場所を持たない注意）。Cells は関わる画素の全部。
+type Finding struct {
+	Rule    string
+	Problem bool
+	HasAt   bool
+	At      pxlib.Pt
+	Cells   []pxlib.Pt
+	Msg     string
+}
+
+// CheckFrame は 1 コマの形の規則（orphan・connect・jaggy・banding・corner・silhouette）を見る。
+// 全面に近いコマ（テクスチャ）は形の規則を見ない。並びは sprite の検査の出力と同じ。
+func (r *Rules) CheckFrame(g *pxlib.Grid) []Finding {
+	opaque := g.Opaque()
+	count := opaque.Count()
+	if count == 0 || float64(count)/float64(g.W*g.H) >= r.TextureFill {
 		return nil
 	}
-	var found []point
-	for p := range cells {
+	var out []Finding
+	for _, p := range r.orphanCells(opaque, count) {
+		out = append(out, Finding{Rule: "orphan", Problem: true, HasAt: true, At: p, Cells: []pxlib.Pt{p},
+			Msg: fmt.Sprintf("(%d,%d) に浮いた 1 画素 (周り 8 方向すべて透明)", p.X, p.Y)})
+	}
+	if count >= r.MinConnectCells {
+		blobs := opaque.Blobs(4)
+		if len(blobs) > 1 {
+			limit := min(len(blobs), r.ConnectShown)
+			parts := make([]string, 0, limit)
+			for _, b := range blobs[:limit] {
+				parts = append(parts, fmt.Sprintf("(%d,%d) から始まる塊 %dpx", b.Start.X, b.Start.Y, b.Size))
+			}
+			more := ""
+			if len(blobs) > r.ConnectShown {
+				more = "・…"
+			}
+			out = append(out, Finding{Rule: "connect", HasAt: true, At: blobs[1].Start, Msg: fmt.Sprintf(
+				"絵が %d 個の塊に分かれている (%s%s) — 意図して離した絵 (火の粉・浮く飾り) なら対象外に書く",
+				len(blobs), strings.Join(parts, "・"), more)})
+		}
+	}
+	if spots := jaggySpots(opaque); len(spots) >= r.JaggyMinCount {
+		out = append(out, Finding{Rule: "jaggy", HasAt: true, At: spots[0], Cells: spots,
+			Msg: fmt.Sprintf("輪郭の階段が %d 箇所で乱れている (長,1,長 のラン)", len(spots))})
+	}
+	for _, b := range r.bandingKeys(g, opaque) {
+		out = append(out, Finding{Rule: "banding", HasAt: true, At: b.cells[0], Cells: b.cells, Msg: fmt.Sprintf(
+			"色 \"%s\" が輪郭の内側 1px の縁取りとしてしか使われていない (banding の疑い)", b.key)})
+	}
+	if spots := cornerDoubleSpots(g); len(spots) > 0 {
+		out = append(out, Finding{Rule: "corner", HasAt: true, At: spots[0], Cells: spots,
+			Msg: fmt.Sprintf("1px 線の角が %d 箇所で 2 重 (最初は (%d,%d) 付近)", len(spots), spots[0].X, spots[0].Y)})
+	}
+	for _, note := range r.silhouetteNotes(opaque, count) {
+		out = append(out, Finding{Rule: "silhouette", Msg: note})
+	}
+	return out
+}
+
+// orphanCells は周り 8 方向すべて透明の画素。
+func (r *Rules) orphanCells(opaque pxlib.Mask, count int) []pxlib.Pt {
+	if count < r.MinOrphanCells {
+		return nil
+	}
+	var found []pxlib.Pt
+	for _, p := range opaque.Points() {
 		alone := true
-		for _, n := range neighbors8(p) {
-			if _, inside := cells[n]; inside {
-				alone = false
-				break
+		for dx := -1; dx <= 1 && alone; dx++ {
+			for dy := -1; dy <= 1; dy++ {
+				if (dx != 0 || dy != 0) && opaque.At(p.X+dx, p.Y+dy) {
+					alone = false
+					break
+				}
 			}
 		}
 		if alone {
 			found = append(found, p)
 		}
 	}
-	sortByXY(found)
+	pxlib.SortPtsByXY(found)
 	return found
 }
 
-// connectBlobs は 4 連結の塊ごとの (画素数, 左上の画素)。
-func (r *Rules) connectBlobs(cells map[point]string) []blob {
-	if len(cells) < r.MinConnectCells {
-		return nil
-	}
-	order := cellPoints(cells)
-	sort.Slice(order, func(i, j int) bool {
-		if order[i].Y != order[j].Y {
-			return order[i].Y < order[j].Y
-		}
-		return order[i].X < order[j].X
-	})
-	seen := map[point]bool{}
-	var blobs []blob
-	for _, start := range order {
-		if seen[start] {
-			continue
-		}
-		seen[start] = true
-		stack := []point{start}
-		size := 0
-		for len(stack) > 0 {
-			p := stack[len(stack)-1]
-			stack = stack[:len(stack)-1]
-			size++
-			for _, n := range neighbors4(p) {
-				if _, inside := cells[n]; inside && !seen[n] {
-					seen[n] = true
-					stack = append(stack, n)
-				}
+// jaggySpots は輪郭の階段で 長,1,長 (段差 ±1・同方向) と乱れている箇所（1 の段の最初の画素）。
+func jaggySpots(opaque pxlib.Mask) []pxlib.Pt {
+	var spots []pxlib.Pt
+	for side, seq := range opaque.Profiles() {
+		o := 0
+		for _, runs := range pxlib.ProfileRuns(seq) {
+			// 切れ目の前の透明の列を飛ばして、この切れ目の最初の列の番号に合わせる
+			for o < len(seq) && !seq[o].OK {
+				o++
 			}
-		}
-		blobs = append(blobs, blob{size, start})
-	}
-	return blobs
-}
-
-type profileVal struct {
-	v  int
-	ok bool
-}
-
-// contourProfiles は上下左右 4 方向から見た輪郭の高さ列。透明の切れ目で列を分ける。
-func contourProfiles(cells map[point]string, width, height int) [][]profileVal {
-	type axis struct {
-		byX    bool
-		limitO int
-		limitI int
-		flip   bool
-	}
-	var profiles [][]profileVal
-	for _, a := range []axis{
-		{true, width, height, false},  // 上から
-		{true, width, height, true},   // 下から
-		{false, height, width, false}, // 左から
-		{false, height, width, true},  // 右から
-	} {
-		sequence := make([]profileVal, 0, a.limitO)
-		for o := 0; o < a.limitO; o++ {
-			found := false
-			pick := 0
-			for i := 0; i < a.limitI; i++ {
-				p := point{i, o}
-				if a.byX {
-					p = point{o, i}
-				}
-				if _, inside := cells[p]; !inside {
-					continue
-				}
-				if !found {
-					pick = i
-					found = true
-				} else if a.flip {
-					pick = i
-				}
-			}
-			sequence = append(sequence, profileVal{pick, found})
-		}
-		profiles = append(profiles, sequence)
-	}
-	return profiles
-}
-
-// jaggyCount は輪郭の階段で 長,1,長 (段差 ±1・同方向) と乱れている箇所を数える。
-func jaggyCount(cells map[point]string, width, height int) int {
-	count := 0
-	for _, sequence := range contourProfiles(cells, width, height) {
-		chunks := [][]int{{}}
-		for _, pv := range sequence {
-			if !pv.ok {
-				chunks = append(chunks, []int{})
-				continue
-			}
-			chunks[len(chunks)-1] = append(chunks[len(chunks)-1], pv.v)
-		}
-		for _, values := range chunks {
-			type run struct{ value, n int }
-			var runs []run
-			for _, value := range values {
-				if len(runs) > 0 && runs[len(runs)-1].value == value {
-					runs[len(runs)-1].n++
-					continue
-				}
-				runs = append(runs, run{value, 1})
-			}
+			start := o
 			for i := 1; i < len(runs)-1; i++ {
-				stepIn := runs[i].value - runs[i-1].value
-				stepOut := runs[i+1].value - runs[i].value
-				if runs[i].n == 1 && runs[i-1].n >= 2 && runs[i+1].n >= 2 &&
+				stepIn := runs[i].Value - runs[i-1].Value
+				stepOut := runs[i+1].Value - runs[i].Value
+				if runs[i].N == 1 && runs[i-1].N >= 2 && runs[i+1].N >= 2 &&
 					stepIn == stepOut && (stepIn == 1 || stepIn == -1) {
-					count++
+					at := start
+					for _, rr := range runs[:i] {
+						at += rr.N
+					}
+					if side < 2 {
+						spots = append(spots, pxlib.Pt{X: at, Y: runs[i].Value})
+					} else {
+						spots = append(spots, pxlib.Pt{X: runs[i].Value, Y: at})
+					}
 				}
+			}
+			for _, rr := range runs {
+				o += rr.N
 			}
 		}
 	}
-	return count
+	return spots
+}
+
+type bandingKey struct {
+	key   string
+	cells []pxlib.Pt
 }
 
 // bandingKeys は輪郭の内側 1px の縁取りとしてしか使われていない色。
-func (r *Rules) bandingKeys(cells map[point]string) []string {
-	byKey := map[string][]point{}
-	for p, k := range cells {
+func (r *Rules) bandingKeys(g *pxlib.Grid, opaque pxlib.Mask) []bandingKey {
+	byKey := map[pxlib.Key][]pxlib.Pt{}
+	for _, p := range opaque.Points() {
+		k := g.Px[p.Y][p.X]
 		byKey[k] = append(byKey[k], p)
 	}
 	if len(byKey) < 3 {
 		return nil
 	}
-	dist := distFromEdge(cells)
+	dist := opaque.DistFromEdge()
 	keys := make([]string, 0, len(byKey))
 	for k := range byKey {
-		keys = append(keys, k)
+		keys = append(keys, string(k))
 	}
 	sort.Strings(keys)
-	var suspects []string
+	var suspects []bandingKey
 	for _, key := range keys {
-		spots := byKey[key]
+		spots := byKey[pxlib.Key(key)]
 		if len(spots) < r.BandingMinRun {
 			continue
 		}
 		inner := true
 		for _, p := range spots {
-			if dist[p] != 2 {
+			if dist[p.Y][p.X] != 2 {
 				inner = false
 				break
 			}
@@ -438,63 +329,68 @@ func (r *Rules) bandingKeys(cells map[point]string) []string {
 		if !inner {
 			continue
 		}
-		x0, y0, x1, y1 := bboxOf(spots)
+		x0, y0, x1, y1 := pxlib.BBox(spots)
 		if x1-x0 >= 2 && y1-y0 >= 2 {
-			suspects = append(suspects, key)
+			suspects = append(suspects, bandingKey{key, spots})
 		}
 	}
 	return suspects
 }
 
 // cornerDoubleSpots は 1px の斜め線の段が 1 画素重なって太って見える箇所。
-func cornerDoubleSpots(cells map[point]string) []point {
-	same := func(x, y int, key string) bool {
-		v, ok := cells[point{x, y}]
-		return ok && v == key
+func cornerDoubleSpots(g *pxlib.Grid) []pxlib.Pt {
+	same := func(x, y int, key pxlib.Key) bool {
+		return g.In(x, y) && g.Px[y][x] != pxlib.Clear && g.Px[y][x] == key
 	}
-	spots := map[point]bool{}
-	for p, key := range cells {
-		x, y := p.X, p.Y
-		for _, dy := range [2]int{1, -1} {
-			if same(x+1, y, key) &&
-				same(x+1, y+dy, key) &&
-				same(x+2, y+dy, key) &&
-				!same(x, y+dy, key) &&
-				!same(x+2, y, key) &&
-				!same(x, y-dy, key) &&
-				!same(x+1, y-dy, key) &&
-				!same(x+1, y+2*dy, key) &&
-				!same(x+2, y+2*dy, key) {
-				spots[point{x + 1, y}] = true
+	spots := map[pxlib.Pt]bool{}
+	for y := 0; y < g.H; y++ {
+		for x := 0; x < g.W; x++ {
+			key := g.Px[y][x]
+			if key == pxlib.Clear {
+				continue
+			}
+			for _, dy := range [2]int{1, -1} {
+				if same(x+1, y, key) &&
+					same(x+1, y+dy, key) &&
+					same(x+2, y+dy, key) &&
+					!same(x, y+dy, key) &&
+					!same(x+2, y, key) &&
+					!same(x, y-dy, key) &&
+					!same(x+1, y-dy, key) &&
+					!same(x+1, y+2*dy, key) &&
+					!same(x+2, y+2*dy, key) {
+					spots[pxlib.Pt{X: x + 1, Y: y}] = true
+				}
+			}
+			for _, dx := range [2]int{1, -1} {
+				if same(x, y+1, key) &&
+					same(x+dx, y+1, key) &&
+					same(x+dx, y+2, key) &&
+					!same(x+dx, y, key) &&
+					!same(x, y+2, key) &&
+					!same(x-dx, y, key) &&
+					!same(x-dx, y+1, key) &&
+					!same(x+2*dx, y+1, key) &&
+					!same(x+2*dx, y+2, key) {
+					spots[pxlib.Pt{X: x, Y: y + 1}] = true
+				}
 			}
 		}
-		for _, dx := range [2]int{1, -1} {
-			if same(x, y+1, key) &&
-				same(x+dx, y+1, key) &&
-				same(x+dx, y+2, key) &&
-				!same(x+dx, y, key) &&
-				!same(x, y+2, key) &&
-				!same(x-dx, y, key) &&
-				!same(x-dx, y+1, key) &&
-				!same(x+2*dx, y+1, key) &&
-				!same(x+2*dx, y+2, key) {
-				spots[point{x, y + 1}] = true
-			}
-		}
 	}
-	out := make([]point, 0, len(spots))
+	out := make([]pxlib.Pt, 0, len(spots))
 	for p := range spots {
 		out = append(out, p)
 	}
-	sortByXY(out)
+	pxlib.SortPtsByXY(out)
 	return out
 }
 
-func (r *Rules) silhouetteNotes(cells map[point]string, width, height int) []string {
-	x0, y0, x1, y1 := bboxOf(cellPoints(cells))
+func (r *Rules) silhouetteNotes(opaque pxlib.Mask, count int) []string {
+	width, height := opaque.W(), opaque.H()
+	x0, y0, x1, y1 := pxlib.BBox(opaque.Points())
 	boxW, boxH := x1-x0+1, y1-y0+1
 	var notes []string
-	occupancy := float64(len(cells)) / float64(boxW*boxH)
+	occupancy := float64(count) / float64(boxW*boxH)
 	if occupancy < r.SilhouetteMinOcc {
 		notes = append(notes, fmt.Sprintf("シルエットがスカスカ (枠 %dx%d の %.0f%%)", boxW, boxH, occupancy*100))
 	}
@@ -655,7 +551,7 @@ func (r *Rules) checkDoc(doc map[string]any, legendHexes map[string]string, hasH
 				report("structure", true, fmt.Sprintf("%s: rows が矩形でない (行の長さが不揃い)", where))
 				continue
 			}
-			cells, width, height, unknown := r.gridOf(rows, legend)
+			g, unknown := r.gridOf(rows, legend)
 			if len(unknown) > 0 {
 				parts := make([]string, 0, len(unknown))
 				for _, c := range unknown {
@@ -664,16 +560,16 @@ func (r *Rules) checkDoc(doc map[string]any, legendHexes map[string]string, hasH
 				report("structure", true, fmt.Sprintf("%s: legend に無い文字 %s (typo なら透明として消えている)",
 					where, strings.Join(parts, " ")))
 			}
-			if len(cells) == 0 {
+			if g.Count() == 0 {
 				report("structure", true, fmt.Sprintf("%s: 絵が空 (不透明な画素が 1 つも無い)", where))
 				continue
 			}
 			if _, dup := sizes[frameName]; !dup {
 				sizeOrder = append(sizeOrder, frameName)
 			}
-			sizes[frameName] = size{width, height}
-			for _, k := range cells {
-				usedKeys[k] = true
+			sizes[frameName] = size{g.W, g.H}
+			for _, k := range g.Keys() {
+				usedKeys[string(k)] = true
 			}
 			key := rowsKey(rows)
 			if first, dup := seenFrames[key]; dup {
@@ -682,40 +578,8 @@ func (r *Rules) checkDoc(doc map[string]any, legendHexes map[string]string, hasH
 				seenFrames[key] = frameName
 			}
 
-			if float64(len(cells))/float64(width*height) >= r.TextureFill {
-				continue
-			}
-			for _, p := range r.orphanCells(cells) {
-				report("orphan", true, fmt.Sprintf("%s: (%d,%d) に浮いた 1 画素 (周り 8 方向すべて透明)", where, p.X, p.Y))
-			}
-			blobs := r.connectBlobs(cells)
-			if len(blobs) > 1 {
-				limit := min(len(blobs), r.ConnectShown)
-				parts := make([]string, 0, limit)
-				for _, b := range blobs[:limit] {
-					parts = append(parts, fmt.Sprintf("(%d,%d) から始まる塊 %dpx", b.start.X, b.start.Y, b.size))
-				}
-				more := ""
-				if len(blobs) > r.ConnectShown {
-					more = "・…"
-				}
-				report("connect", false, fmt.Sprintf(
-					"%s: 絵が %d 個の塊に分かれている (%s%s) — 意図して離した絵 (火の粉・浮く飾り) なら対象外に書く",
-					where, len(blobs), strings.Join(parts, "・"), more))
-			}
-			if count := jaggyCount(cells, width, height); count >= r.JaggyMinCount {
-				report("jaggy", false, fmt.Sprintf("%s: 輪郭の階段が %d 箇所で乱れている (長,1,長 のラン)", where, count))
-			}
-			for _, keyName := range r.bandingKeys(cells) {
-				report("banding", false, fmt.Sprintf(
-					"%s: 色 \"%s\" が輪郭の内側 1px の縁取りとしてしか使われていない (banding の疑い)", where, keyName))
-			}
-			if spots := cornerDoubleSpots(cells); len(spots) > 0 {
-				report("corner", false, fmt.Sprintf("%s: 1px 線の角が %d 箇所で 2 重 (最初は (%d,%d) 付近)",
-					where, len(spots), spots[0].X, spots[0].Y))
-			}
-			for _, note := range r.silhouetteNotes(cells, width, height) {
-				report("silhouette", false, fmt.Sprintf("%s: %s", where, note))
+			for _, f := range r.CheckFrame(g) {
+				report(f.Rule, f.Problem, where+": "+f.Msg)
 			}
 		}
 
