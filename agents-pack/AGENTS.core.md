@@ -32,6 +32,7 @@ lint・フック・make の口で止まる決まりはここに書かない（�
 | 作業場を別の版のエンジンへ一時的に向ける | `bin/fge use-engine <版かパス>`・戻すは `--restore` |
 | 案を並べて依頼主に選んでもらう | `reports/<名前>/proposal.json` → `bin/fge proposal` |
 | ドット絵（sprite.json）を描く・直す | `/pixel-art` → 指定 `*.pxsrc.json` を `bin/fge px build`（op は `px ops`） |
+| 繰り返し・変化の要るドット絵の指定 | 台本 `*.px.star` を `bin/fge px gen`（書かずに描くのは `px build`） |
 | 絵の周回を残す・前の周へ戻す | `bin/fge rounds snap` / `restore`（出る案内に従う） |
 | AI が素材（絵・音）を作る・直す | `atelier/` に書く（`assets/` はスロット。採用は swap） |
 | 道具の選び方が文書で伝わるか測る | `make agent-eval`（お題は `agent-eval/*.json`） |

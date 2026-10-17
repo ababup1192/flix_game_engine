@@ -8,6 +8,7 @@
 //	fge px watch <spec> [--no-check]            保存のたびに build する
 //	fge px snap <spec> [--new]                  見本つきで描き直し、fge rounds snap で周に積む（戻すのは fge rounds restore）
 //	fge px diff <spec> rA rB                    2 つの周の画素の差と違反の増減
+//	fge px gen <名前>.px.star                   台本を走らせ、台本が書く pxsrc・JSON を書き出す（star.go）
 //
 // 書き出し先は spec の "target"（atelier/ を指す。AI が作る素材は assets/ へ直接書かない）。
 package px
@@ -23,7 +24,8 @@ import (
 	"time"
 )
 
-const usage = `使い方: fge px build <名前>.pxsrc.json [--json] [--no-check] [--sheet] [--time]
+const usage = `使い方: fge px build <名前>.pxsrc.json|<名前>.px.star [--json] [--no-check] [--sheet] [--time]
+        fge px gen <名前>.px.star
         fge px check [--gate <名前>.colorgate.json] <sprite.json…>
         fge px ops [--md] [--check]
         fge px schema [--check]
@@ -59,7 +61,7 @@ func Run(out, errOut *strings.Builder, engineRoot, workRoot string, args []strin
 		}
 	}
 	allowed := map[string][]string{"build": {"--no-check", "--sheet", "--time"}, "check": nil, "ops": {"--md", "--check"}, "schema": {"--check"}, "help": nil,
-		"watch": {"--no-check"}, "snap": {"--new"}, "diff": nil}
+		"watch": {"--no-check"}, "snap": {"--new"}, "diff": nil, "gen": nil}
 	if names, known := allowed[verb]; known {
 		for f := range flags {
 			if !slices.Contains(names, f) {
@@ -78,7 +80,17 @@ func Run(out, errOut *strings.Builder, engineRoot, workRoot string, args []strin
 			errOut.WriteString(usage)
 			return 2
 		}
-		return cmdBuild(out, errOut, engineRoot, workRoot, pos[0], buildOptions{RulesRoot: engineRoot, NoCheck: flags["--no-check"], Sheet: flags["--sheet"]}, flags["--time"], asJSON)
+		opt := buildOptions{RulesRoot: engineRoot, NoCheck: flags["--no-check"], Sheet: flags["--sheet"]}
+		if strings.HasSuffix(pos[0], ".star") {
+			return cmdBuildStar(out, errOut, engineRoot, workRoot, pos[0], opt, flags["--time"], asJSON)
+		}
+		return cmdBuild(out, errOut, engineRoot, workRoot, pos[0], opt, flags["--time"], asJSON)
+	case "gen":
+		if len(pos) != 1 {
+			errOut.WriteString(usage)
+			return 2
+		}
+		return cmdGen(out, errOut, workRoot, pos[0])
 	case "check":
 		if len(pos) == 0 {
 			errOut.WriteString(usage)

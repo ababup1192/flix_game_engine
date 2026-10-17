@@ -107,6 +107,7 @@ func opsMarkdown() string {
 		}
 		fmt.Fprintf(&b, "| `%s` | %s |\n", name, strings.Join(ms, "・"))
 	}
+	b.WriteString(starMarkdown())
 	b.WriteString("\n## 引数\n")
 	for _, op := range allOps() {
 		if op.Quiet {
