@@ -675,7 +675,8 @@ func TestQuickTableFitsAndNamesOps(t *testing.T) {
 	}
 	for _, r := range quickRows {
 		for _, name := range r.Ops {
-			if _, ok := lookupOp(name); !ok && name != "material" {
+			_, isShape := shapeKinds[strings.TrimPrefix(name, "shape:")]
+			if _, ok := lookupOp(name); !ok && name != "material" && quickNames[name] == "" && !(strings.HasPrefix(name, "shape:") && isShape) {
 				t.Errorf("%s: 知らない op %s", r.What, name)
 			}
 		}

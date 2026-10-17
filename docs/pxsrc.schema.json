@@ -147,6 +147,34 @@
         },
         {
           "type": "object",
+          "description": "同じ形を点の列の位置に置いた和（of は [0, 0] を置き場とした形。弾・鋲・窓・編隊）",
+          "additionalProperties": false,
+          "required": [
+            "array",
+            "of"
+          ],
+          "properties": {
+            "array": {
+              "description": "置き場の点 [[x, y], ...]",
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 2,
+                "maxItems": 2
+              },
+              "minItems": 1
+            },
+            "of": {
+              "description": "元の形",
+              "$ref": "#/definitions/shape"
+            }
+          }
+        },
+        {
+          "type": "object",
           "description": "両端の丸い棒",
           "additionalProperties": false,
           "required": [
@@ -283,14 +311,72 @@
         },
         {
           "type": "object",
-          "description": "多角形（点を順に結ぶ）",
+          "description": "同じ形を円・渦に並べた和（of は [0, 0] を置き場とした形。弾の輪・渦・花・時計の目盛り）",
+          "additionalProperties": false,
+          "required": [
+            "polar",
+            "of"
+          ],
+          "properties": {
+            "polar": {
+              "description": "[cx, cy, r]（中心と 1 つ目の輪の半径）",
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 3,
+              "maxItems": 3
+            },
+            "of": {
+              "description": "元の形",
+              "$ref": "#/definitions/shape"
+            },
+            "n": {
+              "description": "1 つの輪に置く数（等しい角度おき）",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 256,
+              "default": 6
+            },
+            "rings": {
+              "description": "輪の数",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 64,
+              "default": 1
+            },
+            "step": {
+              "description": "輪ごとに足す半径",
+              "type": "number",
+              "default": 0
+            },
+            "rot": {
+              "description": "1 つ目の向き（ラジアン。0 は右・正は時計回り）",
+              "type": "number",
+              "default": 0
+            },
+            "twist": {
+              "description": "輪ごとに足す向き（ラジアン。渦巻き）",
+              "type": "number",
+              "default": 0
+            },
+            "snap": {
+              "description": "置き場を画素に丸める（floor(v + 0.5)。of の小数の座標はそのまま）",
+              "type": "boolean",
+              "default": false
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "多角形（点を順に結ぶ）。mirror を書くと、点を縦の軸 x = mirror で左右に写して閉じる（左右対称の機体・人・家を半分の点で）",
           "additionalProperties": false,
           "required": [
             "poly"
           ],
           "properties": {
             "poly": {
-              "description": "[[x, y], ...]（3 点以上）",
+              "description": "[[x, y], ...]（3 点以上。mirror の時は軸の上の点から始めて半分を 2 点以上）",
               "type": "array",
               "items": {
                 "type": "array",
@@ -300,7 +386,11 @@
                 "minItems": 2,
                 "maxItems": 2
               },
-              "minItems": 3
+              "minItems": 2
+            },
+            "mirror": {
+              "description": "左右対称の軸の x（省くと写さない）。点の列の後に、軸の上に無い点を逆の順に x → 2·mirror − x で足す",
+              "type": "number"
             }
           }
         },
@@ -494,6 +584,76 @@
               },
               "minItems": 6,
               "maxItems": 6
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "文字列を字形の組で並べた画素（部品の shape にして gradient_fill・outline で塗りと縁を付ける）",
+          "additionalProperties": false,
+          "required": [
+            "text"
+          ],
+          "properties": {
+            "text": {
+              "description": "並べる文字列（\\n で次の行）",
+              "type": "string"
+            },
+            "at": {
+              "description": "1 字目の左上 [x, y]",
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "minItems": 2,
+              "maxItems": 2,
+              "default": [
+                0,
+                0
+              ]
+            },
+            "font": {
+              "description": "字形の組: 5x7（線 1px）・bold6x8（線 2px の太い字）",
+              "type": "string",
+              "default": "5x7"
+            },
+            "advance": {
+              "description": "1 字ごとの送り（0 は組の既定: 5x7 は 6・bold6x8 は 7）",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 32,
+              "default": 0
+            },
+            "line": {
+              "description": "行の送り（0 は組の既定: 5x7 は 9・bold6x8 は 10）",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 64,
+              "default": 0
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "形をずらす（影・写し。部品の at と違い、op の中の形や inter の片方だけを動かせる）",
+          "additionalProperties": false,
+          "required": [
+            "translate",
+            "of"
+          ],
+          "properties": {
+            "translate": {
+              "description": "[dx, dy]",
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 2,
+              "maxItems": 2
+            },
+            "of": {
+              "description": "元の形",
+              "$ref": "#/definitions/shape"
             }
           }
         },
@@ -1321,6 +1481,11 @@
                   "description": "明暗を返す",
                   "type": "boolean",
                   "default": false
+                },
+                "per": {
+                  "description": "明るさの場を作る単位: part（塊全体で 1 つ）・copy（部品の scroll の写しごと。格子の外へはみ出した写しも写しの全体で 1 つの場）",
+                  "type": "string",
+                  "default": "part"
                 }
               }
             }
@@ -2169,7 +2334,7 @@
         },
         {
           "type": "object",
-          "description": "文字列を 5×7 の字で並べる（英大文字・数字・. , ! ? - + : ' / x * %。小文字は大文字で引く。shadow を書くと字ごとに右下 1px の影を先に置く）",
+          "description": "文字列を字形の組（font: 5x7・bold6x8）で並べて 1 色で置く（英大文字・数字・. , ! ? - + : ' / x * %。小文字は大文字で引く。shadow を書くと字ごとに右下 1px の影を先に置く）。階調や縁を付ける字は形 text を部品の shape にして gradient_fill・outline",
           "additionalProperties": false,
           "required": [
             "text"
@@ -2202,19 +2367,24 @@
                   "$ref": "#/definitions/color",
                   "default": ""
                 },
+                "font": {
+                  "description": "字形の組: 5x7（線 1px）・bold6x8（線 2px の太い字）",
+                  "type": "string",
+                  "default": "5x7"
+                },
                 "advance": {
-                  "description": "1 字ごとの送り（字の幅 5 ＋ 字の間）",
+                  "description": "1 字ごとの送り（0 は組の既定: 5x7 は 6・bold6x8 は 7）",
                   "type": "integer",
-                  "minimum": 1,
+                  "minimum": 0,
                   "maximum": 32,
-                  "default": 6
+                  "default": 0
                 },
                 "line": {
-                  "description": "行の送り（\\n の時）",
+                  "description": "行の送り（\\n の時。0 は組の既定: 5x7 は 9・bold6x8 は 10）",
                   "type": "integer",
-                  "minimum": 1,
+                  "minimum": 0,
                   "maximum": 64,
-                  "default": 9
+                  "default": 0
                 }
               },
               "required": [
@@ -2378,7 +2548,36 @@
         },
         "emissive": {
           "type": "boolean",
-          "description": "true で自分で光る部品（窓の灯り・炎・画面）。光の向きの検査 light-dir の対象から外す"
+          "description": "true で自分で光る部品（窓の灯り・炎・画面）。光の向きの検査 light-dir・pillow の対象から外す"
+        },
+        "scroll": {
+          "description": "縦横のスクロール: 形を period おきに写して格子を埋め、コマ i で at に speed·i を足す（period の既定は speed × コマ数でループが継ぎ目なく閉じる）。写しを 1 つずつ塗るなら gradient_fill の per: component",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "speed"
+          ],
+          "properties": {
+            "speed": {
+              "description": "1 コマにずらす画素 [dx, dy]",
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "minItems": 2,
+              "maxItems": 2
+            },
+            "period": {
+              "description": "写しの間隔 [px, py]（0 はその向きに写さない。省くと speed × コマ数）",
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "minItems": 2,
+              "maxItems": 2
+            }
+          }
         },
         "pivot": {
           "description": "回す中心の画素 [x, y]（整数は画素の中心・.5 は画素の境目。省くと塊の上の真ん中）",

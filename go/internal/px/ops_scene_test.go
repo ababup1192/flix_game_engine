@@ -140,3 +140,37 @@ px.write_json("o.json", {"parts": P, "frames": F})
 func itoa(i int) string { return strconv.Itoa(i) }
 
 func ftoa(f float64) string { return strconv.FormatFloat(f, 'g', -1, 64) }
+
+// canopy の rim は pillow の advice に当たらない。部品の形が canopy の玉より小さく（雲の塊の形に canopy を当てる）、
+// 形の中に下の部品の色が見えていても、pillow はその部品が描いた画素だけを見る。
+func TestCanopyRimIsNotPillow(t *testing.T) {
+	for _, extra := range []string{`"r": 13`, `"r": 16.5, "colors": [], "rim": "c1"`} {
+		dir := writeSpec(t, specHead+`
+  "light": {"dir": [-1, -1]},
+  "sprites": {"s": {"size": [48, 48], "ramp": "r", "parts": [
+    {"id": "sea", "shape": {"rect": [0, 0, 48, 48]}, "ops": [{"fill": {"color": "c0"}}]},
+    {"id": "p", "shape": {"disk": [24, 24, 21]}, "ops": [{"canopy": {"center": [24, 24], `+extra+`}}]}], "frames": {"f": {}}}}}`)
+		res, err := build(dir, "t.pxsrc.json", buildOptions{RulesRoot: engineRoot})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, v := range res.Violations {
+			if v.Check == checkPillow {
+				t.Errorf("canopy {%s} に pillow: %s\n%s", extra, v.Msg, strings.Join(res.Frames[0].Rows, "\n"))
+			}
+		}
+	}
+}
+
+func decodeGIF(t *testing.T, path string) *gif.GIF {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, err := gif.DecodeAll(bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return g
+}

@@ -247,7 +247,7 @@ func init() {
 			}
 			for _, p := range m.Points() {
 				k := ka
-				if bayer(p.X, p.Y) < r {
+				if dx, dy := c.ditherAt(p.X, p.Y); bayer(dx, dy) < r {
 					k = kb
 				}
 				c.PutAbs(p.X, p.Y, k)

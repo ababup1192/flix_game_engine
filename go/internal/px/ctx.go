@@ -18,13 +18,14 @@ import (
 type partState struct {
 	Part    *part
 	Ramp    []pxlib.Key
-	shape   pxlib.Mask  // 形の塊（形が無ければ nil）
-	region  pxlib.Mask  // 塊を作る op が描いた範囲
-	written pxlib.Mask  // 書いた画素
-	before  *pxlib.Grid // この部品を描く前の格子（動かす op が下の画素を戻すのに使う）
-	rest    pxlib.Mask  // 動かす前の塊（子の clip と on はここを見る。動かしていなければ nil）
-	follow  []pixelMove // この部品に当てた動き（自分の動きの op・rotate と、親から受けた動き）。子は同じ動きを受ける
-	isPost  bool        // post（描き終えた絵の全体が対象）
+	shape   pxlib.Mask          // 形の塊（形が無ければ nil）
+	region  pxlib.Mask          // 塊を作る op が描いた範囲
+	written pxlib.Mask          // 書いた画素
+	before  *pxlib.Grid         // この部品を描く前の格子（動かす op が下の画素を戻すのに使う）
+	rest    pxlib.Mask          // 動かす前の塊（子の clip と on はここを見る。動かしていなければ nil）
+	follow  []pixelMove         // この部品に当てた動き（自分の動きの op・rotate と、親から受けた動き）。子は同じ動きを受ける
+	isPost  bool                // post（描き終えた絵の全体が対象）
+	copyOf  func() []pxlib.Mask // scroll の写しを 1 つずつの塊にする（scroll の無い部品は nil。gradient_fill の per: copy）
 }
 
 // pixelMove は部品の画素を動かす 1 手（sway・bob・squash・rotate）。子の部品にも同じ手を当てる。
@@ -133,6 +134,20 @@ func drawFrame(c *ctx, parts []*part, post []opCall, after func(*partState, []ch
 			f, err := shapeOf(p.Shape, c.Spec.Shapes, p.Where+".shape")
 			if err != nil {
 				return err
+			}
+			if p.Scroll != nil {
+				base, offs, at := f, scrollCopies(p.Scroll, p.At, c.G.W, c.G.H), p.At
+				f = arraySDF(f, offs)
+				ps.copyOf = func() []pxlib.Mask {
+					var out []pxlib.Mask
+					for _, o := range offs {
+						m := pxlib.MaskOf(c.G.W, c.G.H, shiftSDF(arraySDF(base, [][2]float64{o}), at.X, at.Y))
+						if len(m.Points()) > 0 {
+							out = append(out, m)
+						}
+					}
+					return out
+				}
 			}
 			ps.shape = pxlib.MaskOf(c.G.W, c.G.H, shiftSDF(f, p.At.X, p.At.Y))
 		}
@@ -440,4 +455,26 @@ func (c *ctx) LightSign() (int, int) {
 		return 0
 	}
 	return sign(c.Spec.Light.Dir[0]), sign(c.Spec.Light.Dir[1])
+}
+
+// scrollCopies は scroll の写しのずらし（period の倍数）。at でずらした後に格子へ掛かりうる写しを全部並べる
+// （形の大きさは見ないので、格子の大きさ 1 つ分の余裕を両側に取る。外れた写しは描かれないだけ）。
+func scrollCopies(sc *scrollSpec, at pxlib.Pt, w, h int) [][2]float64 {
+	rng := func(period, size, off int) (int, int) {
+		if period <= 0 {
+			return 0, 0
+		}
+		lo := -(size+abs(off))/period - 2
+		hi := (size+abs(off))/period + 2
+		return lo, hi
+	}
+	x0, x1 := rng(sc.Period.X, w, at.X)
+	y0, y1 := rng(sc.Period.Y, h, at.Y)
+	var out [][2]float64
+	for ky := y0; ky <= y1; ky++ {
+		for kx := x0; kx <= x1; kx++ {
+			out = append(out, [2]float64{float64(kx * sc.Period.X), float64(ky * sc.Period.Y)})
+		}
+	}
+	return out
 }

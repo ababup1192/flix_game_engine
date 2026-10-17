@@ -15,6 +15,10 @@ var bayer4 = [4][4]float64{{0, 8, 2, 10}, {12, 4, 14, 6}, {3, 11, 1, 9}, {15, 7,
 // bayer は 4×4 の Bayer の閾値（0〜1）。
 func bayer(x, y int) float64 { return (bayer4[y&3][x&3] + 0.5) / 16 }
 
+// ditherAt は格子の画素 (x, y) を、Bayer を引く座標にする: 部品の at（と use の at）を引いて、ディザの網目を部品と一緒に動かす
+// （画面に固定すると、at でずらすコマの間で境目の画素がちらつく）。at が 0 の部品は格子の座標のまま。
+func (c *ctx) ditherAt(x, y int) (int, int) { return x - c.ox, y - c.oy }
+
 // rampIndex は明るさ v（0 = 暗・1 = 明）を n 段のどれかに落とす。段の間は Bayer で混ぜる。
 // band（0〜1）は段の境目のうち混ぜる割合: 端数 f を (f − (0.5 − band/2)) / band で 0〜1 に詰め直してから閾値と比べる。
 func rampIndex(v float64, x, y, n int, band float64) int {
@@ -92,6 +96,7 @@ func init() {
 			{Name: "from", Type: tInt, Default: 0.0, Summary: "使う一番暗い段", Lo: bound(0), Hi: bound(15)},
 			{Name: "to", Type: tInt, Default: -1.0, Summary: "使う一番明るい段（-1 で最明）", Lo: bound(-1), Hi: bound(15)},
 			{Name: "invert", Type: tBool, Default: false, Summary: "明暗を返す"},
+			{Name: "per", Type: tString, Default: "part", Summary: "明るさの場を作る単位: part（塊全体で 1 つ）・copy（部品の scroll の写しごと。格子の外へはみ出した写しも写しの全体で 1 つの場）"},
 		},
 		Checks: []checkRef{{Check: checkPillow}, {Check: checkLightDir}, {Check: checkSprite, Rule: "banding"}},
 		Apply: func(c *ctx, a opArgs) error {
@@ -107,17 +112,31 @@ func init() {
 			if from < 0 || to >= len(ramp) || from > to {
 				return fmt.Errorf("from・to がランプ（%d 段）の外", len(ramp))
 			}
-			f, err := c.fieldOf(a.str("field"), m)
-			if err != nil {
-				return err
+			groups := []pxlib.Mask{m}
+			switch a.str("per") {
+			case "part":
+			case "copy":
+				if c.Part.copyOf == nil || a.has("shape") {
+					return fmt.Errorf("per: copy は scroll のある部品の塊に当てる（shape を書かない）")
+				}
+				groups = c.Part.copyOf()
+			default:
+				return fmt.Errorf("per は part か copy")
 			}
 			sub := ramp[from : to+1]
-			for _, p := range m.Points() {
-				v := f(p.X, p.Y)
-				if a.bool("invert") {
-					v = 1 - v
+			for _, g := range groups {
+				f, err := c.fieldOf(a.str("field"), g)
+				if err != nil {
+					return err
 				}
-				c.PutAbs(p.X, p.Y, sub[rampIndex(v, p.X, p.Y, len(sub), a.num("band"))])
+				for _, p := range g.Points() {
+					v := f(p.X, p.Y)
+					if a.bool("invert") {
+						v = 1 - v
+					}
+					dx, dy := c.ditherAt(p.X, p.Y)
+					c.PutAbs(p.X, p.Y, sub[rampIndex(v, dx, dy, len(sub), a.num("band"))])
+				}
 			}
 			if a.has("shape") {
 				c.AddRegion(m)
@@ -155,7 +174,8 @@ func init() {
 			}
 			f := directional(m, c.Spec.Light.Dir[0], c.Spec.Light.Dir[1])
 			for _, p := range m.Points() {
-				c.PutAbs(p.X, p.Y, ramp[rampIndex(f(p.X, p.Y), p.X, p.Y, len(ramp), a.num("band"))])
+				dx, dy := c.ditherAt(p.X, p.Y)
+				c.PutAbs(p.X, p.Y, ramp[rampIndex(f(p.X, p.Y), dx, dy, len(ramp), a.num("band"))])
 			}
 			if a.has("shape") {
 				c.AddRegion(m)

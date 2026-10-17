@@ -50,6 +50,17 @@ func edgeSides(m pxlib.Mask, sx, sy int) (lit, dark []pxlib.Pt) {
 	return lit, dark
 }
 
+// offBorder は格子の縁（一番外の 1px）に乗っていない点だけを返す。
+func offBorder(pts []pxlib.Pt, w, h int) []pxlib.Pt {
+	var out []pxlib.Pt
+	for _, p := range pts {
+		if p.X > 0 && p.Y > 0 && p.X < w-1 && p.Y < h-1 {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 func signOf(v float64) int {
 	switch {
 	case v < 0:
@@ -75,13 +86,20 @@ func meanLOf(g *pxlib.Grid, hexOf map[pxlib.Key]string, pts []pxlib.Pt) (float64
 }
 
 // innerRing は塊の縁の輪（外の 1px が 1 色の輪郭なら、その内側の輪）と、その内側の塊を返す。
+// 格子の縁で切れた所（画面の外へはみ出した雲など）は形の縁でないので、輪郭かどうかの色の数には入れない。
 func innerRing(g *pxlib.Grid, m pxlib.Mask) (ring, inner pxlib.Mask) {
 	d := m.DistFromEdge()
-	colors := map[pxlib.Key]bool{}
+	colors, all := map[pxlib.Key]bool{}, map[pxlib.Key]bool{}
 	for _, p := range m.Points() {
 		if d[p.Y][p.X] == 1 {
-			colors[g.At(p.X, p.Y)] = true
+			all[g.At(p.X, p.Y)] = true
+			if p.X > 0 && p.Y > 0 && p.X < g.W-1 && p.Y < g.H-1 {
+				colors[g.At(p.X, p.Y)] = true
+			}
 		}
+	}
+	if len(colors) == 0 {
+		colors = all // 縁が全部格子の縁に乗る（格子いっぱいの絵）なら、それを縁と見る
 	}
 	depth := 1
 	if len(colors) == 1 {
@@ -99,14 +117,30 @@ func innerRing(g *pxlib.Grid, m pxlib.Mask) (ring, inner pxlib.Mask) {
 	return ring, inner
 }
 
+// litOpaque は描いた画素から、自分で光る部品（部品の emissive。窓の灯り・炎・爆発・画面）の画素を除いた塊。
+// 光の向きで明るさが決まらないので、光の陰を見る検査（pillow・light-dir）の対象から外す。
+// 部品の検査（c.Part がある時）では、部品の形の中でもほかの部品が描いた画素（形を塗り残した所に見える下の色）を除く。
+func litOpaque(g *pxlib.Grid, c *checkCtx) pxlib.Mask {
+	opaque := g.Opaque()
+	if len(c.Emissive) > 0 || c.Part != "" {
+		for _, p := range opaque.Points() {
+			src := g.SrcAt(p.X, p.Y).Part
+			if c.Emissive[src] || c.Part != "" && src != c.Part {
+				opaque[p.Y][p.X] = false
+			}
+		}
+	}
+	return opaque
+}
+
 func init() {
 	registerCheck(&checkDef{
-		Name: checkPillow, Summary: "pillow: 塊の縁が光の側でも影の側でも同じように内側より暗い（縁からの距離で塗った陰）", Level: levelAdvice,
+		Name: checkPillow, Summary: "pillow: 塊の縁が光の側でも影の側でも同じように内側より暗い（縁からの距離で塗った陰。emissive の部品は見ない）", Level: levelAdvice,
 		Fix: "shade_step・shade_parts の陰を directional（か gradient_fill の field light）に替える。光の側の縁は lit_drop を 0 にする",
 		Run: func(g *pxlib.Grid, c *checkCtx) []violation {
 			sx, sy := signOf(c.Light[0]), signOf(c.Light[1])
 			var out []violation
-			for _, cells := range blobCells(g.Opaque()) {
+			for _, cells := range blobCells(litOpaque(g, c)) {
 				if len(cells) < c.Rules.PillowMinArea {
 					continue
 				}
@@ -117,6 +151,8 @@ func init() {
 				ring, inner := innerRing(g, m)
 				lit, dark := edgeSides(ring.Union(inner), sx, sy)
 				lit, dark = onlyIn(lit, ring), onlyIn(dark, ring)
+				// 格子の縁で切れた所（画面の外へはみ出した雲）は形の縁でないので、光の側・影の側に数えない
+				lit, dark = offBorder(lit, g.W, g.H), offBorder(dark, g.W, g.H)
 				ll, ok1 := meanLOf(g, c.HexOf, lit)
 				ld, ok2 := meanLOf(g, c.HexOf, dark)
 				li, ok3 := meanLOf(g, c.HexOf, inner.Points())
@@ -137,16 +173,7 @@ func init() {
 		Fix: "陰を directional で塗り直すか、gradient_fill の invert を外す。自分で光る部品（灯り・炎）なら部品に \"emissive\": true。light.dir が絵の光と合っているかも見る",
 		Run: func(g *pxlib.Grid, c *checkCtx) []violation {
 			var out []violation
-			opaque := g.Opaque()
-			if len(c.Emissive) > 0 {
-				// 自分で光る部品（窓の灯り・炎・画面）は光の向きと関係なく明るいので見ない
-				for _, p := range opaque.Points() {
-					if c.Emissive[g.SrcAt(p.X, p.Y).Part] {
-						opaque[p.Y][p.X] = false
-					}
-				}
-			}
-			for _, cells := range blobCells(opaque) {
+			for _, cells := range blobCells(litOpaque(g, c)) {
 				if len(cells) < c.Rules.LightDirMinArea {
 					continue
 				}
@@ -324,7 +351,7 @@ func init() {
 		Run: func(*pxlib.Grid, *checkCtx) []violation { return nil }, // コマ列を見るので build が直に回す
 	})
 	registerCheck(&checkDef{
-		Name: checkFlicker, Summary: "flicker: コマの間で周り 8 画素が動かないのに色だけ変わる画素（ちらつき。palette_cycle と wave_shift の画素は除く）", Level: levelLint,
+		Name: checkFlicker, Summary: "flicker: コマの間で周り 8 画素が動かないのに色だけ変わる画素（ちらつき。palette_cycle と wave_shift の画素・コマで at か rotate が変わる部品の画素は除く）", Level: levelLint,
 		Fix: "その画素を描く op がコマごとに違う色を選んでいないか見る（seed・dither の位置をコマで揃える）。色を回したいなら palette_cycle か wave_shift で書く",
 		Run: func(*pxlib.Grid, *checkCtx) []violation { return nil }, // コマ列を見るので build が直に回す
 	})
@@ -335,12 +362,21 @@ func init() {
 	})
 }
 
+// partPose はコマごとの部品の置き方（flicker が動いた部品を見分ける）。
+type partPose struct {
+	At     pxlib.Pt
+	Rotate float64
+}
+
 // flickerExempt は色を回すのが仕事の op（その画素はちらつきと見ない）。
 var flickerExempt = map[string]bool{"palette_cycle": true, "wave_shift": true}
 
 // sequenceChecks はコマ列（並び順）に flicker と margin をかける。loop なら最後から最初へも輪で比べる
 // （倒れ・攻撃のように輪にならない列で、最後と最初の差をちらつきと読まない）。
-func sequenceChecks(names []string, grids []*pxlib.Grid, loop bool) []violation {
+// ats はコマごとの部品の at と rotate（部品 id → 置き方。nil なら見ない）: 2 つのコマで at か rotate が違う部品
+// （at でずらすスクロール・移動・回転）の画素は動きなのでちらつきと数えない（格子の縁から入ってくる写しは、
+// 格子の中の部分だけで陰が決まり塗りがコマで変わる）。
+func sequenceChecks(names []string, grids []*pxlib.Grid, loop bool, ats []map[string]partPose) []violation {
 	var out []violation
 	n := len(grids)
 	if n < 2 {
@@ -355,6 +391,15 @@ func sequenceChecks(names []string, grids []*pxlib.Grid, loop bool) []violation 
 		if a.W != b.W || a.H != b.H {
 			continue
 		}
+		moved := func(string) bool { return false }
+		if len(ats) == n {
+			atA, atB := ats[i], ats[(i+1)%n]
+			moved = func(part string) bool {
+				pa, okA := atA[part]
+				pb, okB := atB[part]
+				return okA && okB && pa != pb
+			}
+		}
 		var cells []pxlib.Pt
 		for y := 0; y < a.H; y++ {
 			for x := 0; x < a.W; x++ {
@@ -363,6 +408,9 @@ func sequenceChecks(names []string, grids []*pxlib.Grid, loop bool) []violation 
 					continue
 				}
 				if flickerExempt[baseOp(a.SrcAt(x, y).Op)] || flickerExempt[baseOp(b.SrcAt(x, y).Op)] {
+					continue
+				}
+				if moved(a.SrcAt(x, y).Part) || moved(b.SrcAt(x, y).Part) {
 					continue
 				}
 				still := true

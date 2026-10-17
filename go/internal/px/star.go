@@ -1028,6 +1028,7 @@ func starMarkdown() string {
 - Starlark に無い物: class（dict と関数で書く）・‵**‵（‵math.pow‵ か ‵x * x‵）・‵round‵（‵px.round‵）・set・連なった比較（‵a <= x < b‵）・bool の足し算・文字列の for（‵s.elems()‵）・‵%%‵ の幅と桁（‵"%%02x"‵ は ‵"%%x%%x" %% (v // 16, v %% 16)‵）。一番外の for は書けるが、ループの変数も 1 度しか代入できない（2 本目のループは別の名前か def の中）。
 - 決まり（どれも advice）: 台本 1 本 %d 行・pxsrc 1 本 %d KB・1 部品の put %d 画素・格子の半分を超える stamp・while・使われない関数・色票の色キーが ink などの名前と重なる。
 - ‵None‵ を渡した引数は省いたのと同じ（‵op.fill(shape = None, color = …)‵ は部品の塊を塗る）。
+- px.frames に渡す lambda は、ループの変数を作った時でなく呼ばれた時に引く（Python と同じ）。ループの中で作る lambda は値を引数で閉じ込める関数から返す（‵def down(speed): return lambda i: [0, i * speed]‵）。そのまま書くと全部の部品が最後の値になる。
 `, starExample, starDefaultMaxSteps, starAdviceLines, starAdviceSpecBytes/1024, starAdvicePuts)
 	return strings.ReplaceAll(t, "‵", "`")
 }
