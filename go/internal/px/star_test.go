@@ -254,10 +254,26 @@ func TestWriteSpecChecksSpec(t *testing.T) {
 
 // ---------------------------------------------------------------- 決まり
 
-func TestUnusedFunctionStops(t *testing.T) {
-	_, err := runScript(t, map[string]string{"a.px.star": "def used():\n    return 1\n\ndef spare():\n    return 2\n\nused()\n"}, "a.px.star", starOptions{})
-	if err == nil || !strings.Contains(err.Error(), "spare") {
-		t.Errorf("使われない関数で止まらない: %v", err)
+func TestUnusedFunctionIsAdvice(t *testing.T) {
+	res, err := runScript(t, map[string]string{"a.px.star": "def used():\n    return 1\n\ndef spare():\n    return 2\n\nused()\n"}, "a.px.star", starOptions{})
+	if err != nil {
+		t.Fatalf("使われない関数で止まった（advice に下げる）: %v", err)
+	}
+	if !strings.Contains(strings.Join(res.Advice, "\n"), "spare") {
+		t.Errorf("使われない関数が advice に無い: %v", res.Advice)
+	}
+}
+
+func TestNoneArgIsOmitted(t *testing.T) {
+	res, err := runScript(t, map[string]string{"a.px.star": "px.write_json(\"o.json\", [op.fill(shape = None, color = \"c0\")])\n"}, "a.px.star", starOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(res.Files[0].Data); !strings.Contains(got, `"fill"`) || strings.Contains(got, "shape") {
+		t.Errorf("None の引数が省かれていない: %s", got)
+	}
+	if _, err := parseOpCall(map[string]any{"fill": map[string]any{"shape": nil, "color": "c0"}}, "t", nil); err != nil {
+		t.Errorf("pxsrc の null が省いたのと同じにならない: %v", err)
 	}
 }
 
@@ -469,5 +485,15 @@ func TestBuildPNGIsDeterministic(t *testing.T) {
 	}
 	if sums[0] != sums[1] {
 		t.Errorf("同じ指定から違う PNG")
+	}
+}
+
+func TestReservedPaletteKeyAdvice(t *testing.T) {
+	res, err := runScript(t, map[string]string{"a.px.star": `px.write_json("t.palette.json", {"version": 1, "ink": "#101010"})` + "\n"}, "a.px.star", starOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(res.Advice, "\n"), `色キー "ink"`) {
+		t.Errorf("ink の色キーが advice に無い: %v", res.Advice)
 	}
 }

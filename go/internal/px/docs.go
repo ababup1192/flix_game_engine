@@ -168,6 +168,8 @@ var quickRows = []quickRow{
 	{"揺れ・呼吸・弾み（on の子も付いていく）", []string{"sway", "bob", "squash"}, false},
 	{"水・滝・流れ（波頭を 1px ずつ流す）", []string{"wave_shift"}, false},
 	{"煉瓦・瓦・石積みの目地（段ごとに半分ずらす）", []string{"courses"}, false},
+	{"葉の玉を重ねた木・茂み・鉢植え", []string{"canopy"}, false},
+	{"字（町の名前のラベル・看板・HUD。5×7）", []string{"text"}, false},
 }
 
 func quickOps(r quickRow) string {
@@ -296,6 +298,8 @@ func paramSchema(p param) *pxlib.Obj {
 		s = obj("type", "object", "additionalProperties", ref("color"))
 	case tAxis:
 		s = obj("enum", list("x", "y"))
+	case tCircles:
+		s = withLen(obj("type", "array", "items", numArray(3)), p)
 	}
 	out := obj("description", p.Summary)
 	keys, vals := s.Items()

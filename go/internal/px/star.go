@@ -6,7 +6,7 @@ package px
 //	fge px build <名前>.px.star   pxsrc・JSON はメモリの中だけに書き、書いた pxsrc を全部 build する（target の sprite.json は書く）
 //	fge px snap <名前>.px.star    gen してから撮る（周の history に台本を積む。rounds.go）
 //
-// 台本から呼べる物は px（write_spec・write_json・palette・rng・hash01・noise1・round）・op（op の registry から作る
+// 台本から呼べる物は px（write_spec・write_json・palette・rng・hash01・noise1・round・frames）・op（op の registry から作る
 // dict の組み立て）・math（star_math.go。正しく丸めた値）だけ。
 // 台本の中のパスは台本のフォルダが起点（"//" で始めると作業場の根から）。pxsrc の target などは根からのパスに直して書く。
 // ファイル・ネット・時刻には触れない。load は台本と同じフォルダと、隣の tools/ の .star だけ。
@@ -126,10 +126,9 @@ func (st *starState) exec(path string) (starlark.StringDict, error) {
 	}
 	st.advice = append(st.advice, starSourceAdvice(st.rel(path), src)...)
 	if len(st.modules) == 1 {
+		// 止めずに advice（試しに 1 つ外した時に gen が通らないと試しにくい）
 		if msg := starUnusedFuncs(path, src); msg != "" {
-			m.loading = false
-			m.err = fmt.Errorf("%s: %s", st.rel(path), msg)
-			return nil, m.err
+			st.advice = append(st.advice, fmt.Sprintf("%s: %s", st.rel(path), msg))
 		}
 	}
 	thread := &starlark.Thread{Name: st.rel(path), Load: func(th *starlark.Thread, module string) (starlark.StringDict, error) {
@@ -202,6 +201,7 @@ func (st *starState) pxModule() *starlarkstruct.Module {
 		"hash01":     starlark.NewBuiltin("px.hash01", starHash01),
 		"noise1":     starlark.NewBuiltin("px.noise1", st.starNoise1),
 		"round":      starlark.NewBuiltin("px.round", starRound),
+		"frames":     starlark.NewBuiltin("px.frames", starFrames),
 	}}
 }
 
@@ -440,6 +440,9 @@ func starOpCall(def *opDef) func(*starlark.Thread, *starlark.Builtin, starlark.T
 		a := starlark.NewDict(len(kwargs))
 		for _, kv := range kwargs {
 			name := string(kv[0].(starlark.String))
+			if kv[1] == starlark.None {
+				continue // None は省いたのと同じ（op.fill(shape = None, …) は部品の塊を塗る）
+			}
 			if _, ok := params[name]; !ok && strings.HasSuffix(name, "_") {
 				if _, ok := params[strings.TrimSuffix(name, "_")]; ok {
 					name = strings.TrimSuffix(name, "_")
@@ -478,6 +481,96 @@ func starOpCall(def *opDef) func(*starlark.Thread, *starlark.Builtin, starlark.T
 		}
 		return out, nil
 	}
+}
+
+// starFrames は px.frames(names, parts): 部品の鍵の値に関数（コマの番号 i → 値）を書くと、
+// 部品にはコマ 0 の値を入れ、コマごとの差し替え（frames）を作る。(部品の列, frames) を返す。
+// names はコマ名の列か数（数 n なら "f0"〜"f{n-1}"）。関数を書いていない部品はそのまま。
+func starFrames(th *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	var namesV starlark.Value
+	var parts *starlark.List
+	if err := starlark.UnpackArgs(b.Name(), args, kwargs, "names", &namesV, "parts", &parts); err != nil {
+		return nil, err
+	}
+	var names []string
+	if n, ok := namesV.(starlark.Int); ok {
+		k, ok := n.Int64()
+		if !ok || k < 1 || k > 1000 {
+			return nil, fmt.Errorf("%s: コマの数は 1〜1000", b.Name())
+		}
+		for i := int64(0); i < k; i++ {
+			names = append(names, fmt.Sprintf("f%d", i))
+		}
+	} else if it, ok := namesV.(starlark.Indexable); ok && namesV.Type() != "string" {
+		for i := 0; i < it.Len(); i++ {
+			s, ok := it.Index(i).(starlark.String)
+			if !ok {
+				return nil, fmt.Errorf("%s: names はコマ名の文字列の列か数", b.Name())
+			}
+			names = append(names, string(s))
+		}
+	} else {
+		return nil, fmt.Errorf("%s: names はコマ名の文字列の列か数（got %s）", b.Name(), namesV.Type())
+	}
+	if len(names) == 0 {
+		return nil, fmt.Errorf("%s: コマが 1 つも無い", b.Name())
+	}
+	frames := make([]*starlark.Dict, len(names))
+	for i := range frames {
+		frames[i] = starlark.NewDict(0)
+	}
+	out := make([]starlark.Value, parts.Len())
+	for pi := 0; pi < parts.Len(); pi++ {
+		d, ok := parts.Index(pi).(*starlark.Dict)
+		if !ok {
+			return nil, fmt.Errorf("%s: parts[%d] は dict（got %s）", b.Name(), pi, parts.Index(pi).Type())
+		}
+		hasFn := false
+		for _, kv := range d.Items() {
+			if _, ok := kv[1].(starlark.Callable); ok {
+				hasFn = true
+			}
+		}
+		if !hasFn {
+			out[pi] = d
+			continue
+		}
+		id, _, _ := d.Get(starlark.String("id"))
+		if _, ok := id.(starlark.String); !ok {
+			return nil, fmt.Errorf("%s: parts[%d] に関数を書くなら id が要る", b.Name(), pi)
+		}
+		nd := starlark.NewDict(d.Len())
+		patches := make([]*starlark.Dict, len(names))
+		for i := range patches {
+			patches[i] = starlark.NewDict(1)
+		}
+		for _, kv := range d.Items() {
+			fn, ok := kv[1].(starlark.Callable)
+			if !ok {
+				_ = nd.SetKey(kv[0], kv[1])
+				continue
+			}
+			for i := range names {
+				v, err := starlark.Call(th, fn, starlark.Tuple{starlark.MakeInt(i)}, nil)
+				if err != nil {
+					return nil, err
+				}
+				if i == 0 {
+					_ = nd.SetKey(kv[0], v)
+				}
+				_ = patches[i].SetKey(kv[0], v)
+			}
+		}
+		for i := range names {
+			_ = frames[i].SetKey(id, patches[i])
+		}
+		out[pi] = nd
+	}
+	fd := starlark.NewDict(len(names))
+	for i, n := range names {
+		_ = fd.SetKey(starlark.String(n), frames[i])
+	}
+	return starlark.Tuple{starlark.NewList(out), fd}, nil
 }
 
 func starInt(name string, v starlark.Value) (*big.Int, error) {
@@ -779,13 +872,23 @@ func starUnusedFuncs(path string, src []byte) string {
 	if len(unused) == 0 {
 		return ""
 	}
-	return "使われない関数がある: " + strings.Join(unused, "・") + "（消す）"
+	return "使われない関数がある: " + strings.Join(unused, "・") + "（使わないなら消す）"
 }
 
 // starOutputAdvice は書き出した pxsrc の目安（大きさ・put の多用・大きな stamp）。
 func starOutputAdvice(files []starFile) []string {
 	var out []string
 	for _, f := range files {
+		if strings.HasSuffix(f.Path, ".palette.json") {
+			var pal map[string]any
+			if json.Unmarshal(f.Data, &pal) == nil {
+				for _, k := range []string{"ink", "shade", "mid", "light", "gloss"} {
+					if _, ok := pal[k]; ok {
+						out = append(out, fmt.Sprintf("%s: 色キー %q は色の参照の名前（ink・shade・mid・light はランプの段・gloss はつや）と重なる。ランプのある部品では色キーを指さない（名前を変える）", f.Path, k))
+					}
+				}
+			}
+		}
 		if !f.Spec {
 			continue
 		}
@@ -904,6 +1007,7 @@ func starMarkdown() string {
 | ‵px.write_json(path, value)‵ | JSON を書く（‵style="python", indent=…‵ は Python の json.dump と同じ並び。写しの間だけ） |
 | ‵px.hash01(x, y, seed)‵・‵px.noise1(x, seed)‵・‵px.rng(seed)‵ | 種つきのゆらぎ・乱数（rng は CPython の random.Random と同じ列。写しの間だけ） |
 | ‵px.round(x, nd)‵ | Python の round（ちょうど半分は偶数へ） |
+| ‵px.frames(names, parts)‵ | 部品の鍵の値に関数（コマの番号 ‵i‵ → 値）を書くと、‵(部品の列, frames)‵ を返す。部品にはコマ 0 の値が入る（‵"ops": lambda i: smoke(i)‵）。‵names‵ はコマ名の列か数 |
 | ‵math.*‵ | sin・cos・tan・atan2・hypot・exp・log・pow・sqrt・floor・ceil・radians・pi。答えは正しく丸めた値で、OS・CPU で変わらない |
 
 最小の台本（version・target・palette・ramps・sprites・parts・frames）:
@@ -921,8 +1025,9 @@ func starMarkdown() string {
 - 置き場: 採用の候補の sprite.json（target）は ‵atelier/‵（assets/ には書けない）。採用しない試し（‵debug/px-scenes/‵ など）は target ごと ‵debug/‵ に置いてよい。見本・report・PNG は build が ‵debug/px/<名前>/‵ に書く。
 - 一番外（def の外）では同じ名前に 2 度代入できない（Starlark の決まり。一番外の for の変数を 2 つのループで使うのも当たる）。ループや組み立ては def の中に入れて呼ぶ。
 - 囲い: load は台本と同じフォルダと隣の ‵tools/‵ の ‵.star‵ だけ。ファイル・ネット・時刻には触れない。手数は 1 本 %d 手まで。
-- Starlark に無い物: class（dict と関数で書く）・‵**‵（‵math.pow‵ か ‵x * x‵）・set・連なった比較（‵a <= x < b‵）・bool の足し算。
-- 決まり（今は advice）: 台本 1 本 %d 行・pxsrc 1 本 %d KB・1 部品の put %d 画素・格子の半分を超える stamp・while。使われない関数は止める。
+- Starlark に無い物: class（dict と関数で書く）・‵**‵（‵math.pow‵ か ‵x * x‵）・‵round‵（‵px.round‵）・set・連なった比較（‵a <= x < b‵）・bool の足し算・文字列の for（‵s.elems()‵）・‵%%‵ の幅と桁（‵"%%02x"‵ は ‵"%%x%%x" %% (v // 16, v %% 16)‵）。一番外の for は書けるが、ループの変数も 1 度しか代入できない（2 本目のループは別の名前か def の中）。
+- 決まり（どれも advice）: 台本 1 本 %d 行・pxsrc 1 本 %d KB・1 部品の put %d 画素・格子の半分を超える stamp・while・使われない関数・色票の色キーが ink などの名前と重なる。
+- ‵None‵ を渡した引数は省いたのと同じ（‵op.fill(shape = None, color = …)‵ は部品の塊を塗る）。
 `, starExample, starDefaultMaxSteps, starAdviceLines, starAdviceSpecBytes/1024, starAdvicePuts)
 	return strings.ReplaceAll(t, "‵", "`")
 }

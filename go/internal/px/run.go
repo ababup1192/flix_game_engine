@@ -43,7 +43,8 @@ var cmdHelps = map[string]string{
   台本（.px.star）はメモリの中で走らせる（pxsrc・色票はファイルに書かない。書くなら gen）。
   --sheet  見比べのシート（sheet.png・前の周との差・玉ねぎの皮）も書く
   --png    debug/px/<名前>/png/ に、スプライトごとの 1 コマ目の実寸（<名>.png）と 4 倍（<名>@4x.png）、
-           全コマを横に並べた実寸と 4 倍（<名>.strip.png・<名>.strip@4x.png）を書く（透明はそのまま）
+           全コマを横に並べた実寸と 4 倍（<名>.strip.png・<名>.strip@4x.png）を書く（透明はそのまま）。
+           2 コマ以上なら 2 倍でコマを回す <名>.gif（1 コマ 200ms・減色しない・同じ絵から同じバイト）も書く
   --no-check  lint と advice を回さない（色の門は回す）   --time  時間の内訳   --json  結果を JSON で
 `,
 	"gen": `fge px gen <名前>.px.star

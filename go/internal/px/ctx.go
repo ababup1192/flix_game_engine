@@ -396,19 +396,18 @@ func (c *ctx) Gloss() (pxlib.Key, error) {
 }
 
 // Color は色の参照を色キーにする: ink・shade・mid・light（ランプの 0〜3 段）・ramp[i]・gloss・""（透明）・色キー。
+// ink などはランプの段が先（ランプが無い部品でだけ同じ名前の色キーを指す。重なる色キーは台本の advice が知らせる）。
 func (c *ctx) Color(ref colorRef) (pxlib.Key, error) {
 	name := string(ref)
 	switch name {
 	case "":
 		return pxlib.Clear, nil
-	case "ink":
-		return c.RampAt(0)
-	case "shade":
-		return c.RampAt(1)
-	case "mid":
-		return c.RampAt(2)
-	case "light":
-		return c.RampAt(3)
+	case "ink", "shade", "mid", "light":
+		i := map[string]int{"ink": 0, "shade": 1, "mid": 2, "light": 3}[name]
+		if i >= len(c.Ramp()) && c.hasKey != nil && c.hasKey(pxlib.Key(name)) {
+			return pxlib.Key(name), nil // ランプが無い（足りない）部品では、同じ名前の色キーを直に指す
+		}
+		return c.RampAt(i)
 	case "gloss":
 		return c.Gloss()
 	}
