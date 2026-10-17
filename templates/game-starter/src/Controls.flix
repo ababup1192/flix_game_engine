@@ -4,7 +4,7 @@
 // Doc の保存即反映（watchFile）と F1 一括リロードの読み直しもここに置く。
 mod Controls {
 
-    use fge::{App, DocTable, GameEngine, PxSpriteDoc, ShaderDoc, ShaderJson}
+    use fge::{App, DocTable, GameEngine, PxSpriteDoc, ShaderDoc, ShaderJson, SortingLayer, Vec2}
 
     /// このフレームのキーを World.Input へ。操作ごとのキーの列（keys Doc）の
     /// どれか 1 つでも押されていれば効き、逆向きが同時なら打ち消して 0。
@@ -16,7 +16,7 @@ mod Controls {
         { x = axis(held(k#left), held(k#right)),
           y = axis(held(k#up), held(k#down)) }
 
-    /// 毎フレームのシステム。終了の確認の窓が出ている間は Enter で終わる・Esc で戻る。
+    /// 毎フレームのシステム。終了の確認の窓が出ている間は Enter で終わる・Esc で戻る（マウスは tapAt）。
     /// Esc と Enter は OS の決まりに合わせた固定のキー（割り当ての Doc には載せない）。
     pub def step(frame: App.Frame, w: World.World): World.World =
         let pressed = key -> App.justPressed(key, frame);
@@ -27,7 +27,17 @@ mod Controls {
                  else w)
             else if (pressed(GameEngine.Key.Escape)) World.askQuit(w)
             else w;
-        World.step(inputOf(frame, w1#keys), frame#dt, w1)
+        let w2 = if (frame#mouseClicked) tapAt(frame#cursor, w1) else w1;
+        World.step(inputOf(frame, w2#keys), frame#dt, w2)
+
+    /// cursor を押した。押した物は絵と同じ木（View.layers）から描く順の手前で選ぶ —— 窓の奥には届かない。
+    pub def tapAt(cursor: Vec2.Vec2, w: World.World): World.World =
+        let ctx = App.pickCtx({ x = World.width(), y = World.height() });
+        match SortingLayer.pickFrom(cursor, View.layers(ctx, w)) {
+            case Some(World.Press.QuitYes) => World.answerQuit(true, w)
+            case Some(World.Press.QuitNo)  => World.answerQuit(false, w)
+            case None                      => w
+        }
 
     // ── Doc の読み直し（watchFile / F1） ──
 

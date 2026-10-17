@@ -58,6 +58,20 @@ mod TestRules {
         Assert.assertEq(expected = asked#x, World.step({ x = 1.0, y = 0.0 }, 0.1, asked)#x)
 
     @Test
+    def testClickInsideQuitWindowQuits(): Unit \ Assert =
+        // 確認の窓の真ん中を押すと Enter と同じ（はい）。
+        let asked = World.askQuit(w0());
+        Assert.assertEq(expected = true,
+            World.isQuitting(Controls.tapAt({ x = World.width() / 2.0, y = World.height() / 2.0 }, asked)))
+
+    @Test
+    def testClickOutsideQuitWindowReturnsToPlay(): Unit \ Assert =
+        // 窓の外（奥の場面の上）を押すと Esc と同じ（いいえ）。奥の場面には届かない。
+        let asked = World.askQuit(w0());
+        Assert.assertEq(expected = (false, false),
+            (World.isAskingQuit(Controls.tapAt({ x = 1.0, y = 1.0 }, asked)), World.isQuitting(Controls.tapAt({ x = 1.0, y = 1.0 }, asked))))
+
+    @Test
     def testLayersAreStackedBackToFront(): Unit \ Assert =
         // 層の表が奥から手前へ交ざらずに並ぶ（範囲を書き換えたときの取り違えを止める）。
         Assert.assertEq(expected = true, SortingLayer.isStacked(ZOrder.layers()))

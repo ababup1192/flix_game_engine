@@ -74,6 +74,16 @@ pub mod App {
           visible = { position = { x = 0.0, y = 0.0 }, size = design },
           warnOnce = Log.warn }
 
+    /// 入力の側（update・テスト）で、押せる物の当たりを出すために View の木を組むときの ViewCtx
+    /// （`SortingLayer.pickFrom(点, View.layers(App.pickCtx(design), w))`）。字の形を持たないフォントで、
+    /// 知らせは黙る（同じ木を描く compose の側で出る）。当たりの矩形は字の幅から作らない —— この ctx では幅が 0 になる。
+    pub def pickCtx(design: Vec2.Vec2): ViewCtx =
+        let blank = { textureName = "", fontSize = 1.0, textureSize = 1.0, ascent = 0.0, descent = 0.0,
+                      lineGap = 0.0, glyphs = Map.empty() };
+        { atlas = blank, fontOf = _ -> blank,
+          visible = { position = { x = 0.0, y = 0.0 }, size = design },
+          warnOnce = _ -> () }
+
     /// 見た文面を seen に覚え、初めての文面だけ Log.warn する口（ViewCtx#warnOnce の実機の形）。
     /// View は純粋なので、効果は Log.warn と同じく `unsafe IO` で隠す。
     pub def warnOnceWith(seen: Ref[Set[String], Static]): String -> Unit =

@@ -264,7 +264,7 @@ mod ViewScene {
     /// ヤシの木。セグメントのループと同じ通し行 n を見て、Hash01 で「この行に生えるか・左右どちらか・
     /// 道からどれだけ離れるか」を決める — 乱数を保存せず行番号から毎回同じ答えを引くので、
     /// 周回して同じ行に戻ると同じ場所に同じ木が立っている。
-    pub def palms(cam: Proj.Cam, w: World.World): List[ZStack.Node[p]] =
+    pub def palms(cam: Proj.Cam, w: World.World): List[ZStack.Tree[p, h]] =
         Proj.segments(w) |> List.flatMap(b ->
             if (Hash01.at(b#n, 11) >= 0.30 or b#u0 > 20.0) Nil
             else {
@@ -425,7 +425,7 @@ mod ViewScene {
     /// 画面に入る升番号は投影の式を解いて求める。screenX は off について 1 次
     /// （screenX(off) = screenX(0) + off × 縮み）なので、端の画面 x から off の範囲が直に出る —
     /// 遠くの升まで総当たりしなくて済む。
-    pub def outfield(cam: Proj.Cam, w: World.World): List[ZStack.Node[p]] =
+    pub def outfield(cam: Proj.Cam, w: World.World): List[ZStack.Tree[p, h]] =
         Proj.segments(w) |> List.flatMap(b -> {
             let uc = b#u0 + 0.5;
             // 縮みは辺（edgeOf）より先に引く。辺は足し上げの表を 2 度たどるので、

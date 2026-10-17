@@ -18,6 +18,9 @@
 //   dust     … 舞う塵                            → 時間が流れる
 // 画面の縁の枠（frameBorder）は動かないので App.withStaticLayer で 1 度だけ GPU に作る（Main）。
 // 終了の確認の窓（quitPrompt）は Layer.Prompt に置き、場面のどれよりも手前に出る。
+// 押せる物の当たりは絵と同じ木に ZStack.hit で積む（layers）。描く compose と押した物を選ぶ
+// SortingLayer.pickFrom（Controls）が同じ木を読むので、当たりの表を別に書かない。窓は blocking で包み、
+// 開いている間は奥を押せない（窓の外を押すと QuitNo）。
 mod View {
 
     use fge::{
@@ -27,12 +30,16 @@ mod View {
     use ZOrder.Layer
 
     pub def frame(ctx: App.ViewCtx, w: World.World): List[Render.PlacedItem] =
+        SortingLayer.compose(ctx, layers(ctx, w))
+
+    /// 層ごとの木（絵と押せる物の当たり）。Controls.tapAt も同じ木から押した物を選ぶ。
+    pub def layers(ctx: App.ViewCtx, w: World.World): List[(Layer, ZStack.Tree[Layer, World.Press])] =
         let scene = ZStack.of(
             ZStack.leaf(backdrop(w) :: Nil)
                 :: ZStack.leaf(halo(w))
                 :: ZStack.leaf(hero(w))
                 :: ZStack.leaf(dust(w)) :: Nil);
-        SortingLayer.compose(ctx, (Layer.Scene, scene) :: (Layer.Prompt, ZStack.leaf(quitPrompt(ctx, w))) :: Nil)
+        (Layer.Scene, scene) :: (Layer.Prompt, quitPrompt(ctx, w)) :: Nil
 
     // ── 背景（宣言シェーダーの面） ──
 
@@ -114,18 +121,22 @@ mod View {
     // ── 終了の確認の窓（Layer.Prompt） ──
 
     /// Esc か閉じるボタンで出る確認。場面を薄く沈める幕・窓・文言（文言は sample.kind.json の quitPrompt）。
-    def quitPrompt(ctx: App.ViewCtx, w: World.World): List[Render.PlacedItem] =
-        if (not World.isAskingQuit(w)) Nil
+    /// 窓の中を押すと QuitYes・外を押すと QuitNo（blocking が奥の当たりを塞ぐ）。
+    def quitPrompt(ctx: App.ViewCtx, w: World.World): ZStack.Tree[Layer, World.Press] =
+        if (not World.isAskingQuit(w)) ZStack.leaf(Nil)
         else {
             let theme = ThemeDoc.rec(w#theme);
             let size = { x = World.width() * 0.6, y = 48.0 };
             let at = { x = (World.width() - size#x) / 2.0, y = (World.height() - size#y) / 2.0 };
-            { at = Vec2.zero(), item = RawDraw.box({ x = World.width(), y = World.height() }, theme#bg, 0)
-                                         |> Render.fade(0.6) }
-                :: { at = at, item = RawDraw.box(size, Color.darken(theme#bg, 0.2), 1) }
-                :: TextDraw.centeredAt({ text = SampleDoc.rec(w#doc)#quitPrompt, atlas = ctx#atlas, size = 16.0,
-                                         color = theme#accent, z = 2,
-                                         center = { x = World.width() / 2.0, y = World.height() / 2.0 } })
-                :: Nil
+            let window =
+                { at = Vec2.zero(), item = RawDraw.box({ x = World.width(), y = World.height() }, theme#bg, 0)
+                                             |> Render.fade(0.6) }
+                    :: { at = at, item = RawDraw.box(size, Color.darken(theme#bg, 0.2), 1) }
+                    :: TextDraw.centeredAt({ text = SampleDoc.rec(w#doc)#quitPrompt, atlas = ctx#atlas, size = 16.0,
+                                             color = theme#accent, z = 2,
+                                             center = { x = World.width() / 2.0, y = World.height() / 2.0 } })
+                    :: Nil;
+            ZStack.blocking(Some(World.Press.QuitNo),
+                ZStack.of(ZStack.leaf(window) :: ZStack.hit(World.Press.QuitYes, { position = at, size = size }) :: Nil))
         }
 }

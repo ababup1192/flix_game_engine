@@ -17,6 +17,12 @@ mod World {
         case Confirmed
     }
 
+    /// マウスで押せる物（View が描く木に ZStack.hit で積み、Controls が SortingLayer.pickFrom で引く）。
+    pub enum Press with Eq, ToString {
+        case QuitYes   // 終了の確認の窓の中（Enter と同じ）
+        case QuitNo    // 窓の外（Esc と同じ）
+    }
+
     pub type alias World = {
         doc = SampleDoc.Doc,
         keys = KeysDoc.Doc,

@@ -12,7 +12,7 @@ mod ViewRoad {
 
     /// 道まわり全部。ground = セグメントを手前から地平線まで積んだ地面と路面 + タイヤ痕（地面の葉へ）、
     /// props = セグメントごとのアイテム・障害物（立ち物の子。足元の u の順に並ぶ）。
-    pub def draw(cam: Proj.Cam, w: World.World): { ground = List[Render.PlacedItem], props = List[ZStack.Node[p]] } =
+    pub def draw(cam: Proj.Cam, w: World.World): { ground = List[Render.PlacedItem], props = List[ZStack.Tree[p, h]] } =
         let parts = Proj.segments(w) |> List.map(b -> segment(cam, w, b));
         { ground = (parts |> List.flatMap(fst)) ::: skids(cam, w),
           props = parts |> List.flatMap(snd) }
@@ -20,7 +20,7 @@ mod ViewRoad {
     /// セグメント 1 本 = 全幅の地面 + 路面の台形・縁石・白線・スタートライン + 立ち物。
     /// 道が画面の外まで曲がっていったセグメントは地面だけにする — 草の縦筋も道の端から引くので、
     /// 道ごと画面の外なら筋も見えない（見えない物を積むと遠くのセグメントほど無駄が増える）。
-    def segment(cam: Proj.Cam, w: World.World, b: Proj.Segment): (List[Render.PlacedItem], List[ZStack.Node[p]]) =
+    def segment(cam: Proj.Cam, w: World.World, b: Proj.Segment): (List[Render.PlacedItem], List[ZStack.Tree[p, h]]) =
         let e = stripOf(w, b#n);
         // セグメントの手前辺と奥辺は 1 回だけ引いて全部の層で使い回す（地面・轍・縁石は
         // どれも同じ 2 本の辺の上に点を並べるだけなので、層ごとに引き直す意味がない）。
@@ -423,7 +423,7 @@ mod ViewRoad {
     /// このセグメントの立ち物。置き場所をセグメントの真ん中（u0+0.5）に投影して置く。
     /// 当たりの範囲（World.blockersAt）から絵を引くので、見えている物と当たる物がずれない。
     /// どれも同じ u に立つので 1 枚の葉にまとめ、ヤシや車と足元の u の順に並べる。
-    def props(cam: Proj.Cam, w: World.World, b: Proj.Segment): List[ZStack.Node[p]] =
+    def props(cam: Proj.Cam, w: World.World, b: Proj.Segment): List[ZStack.Tree[p, h]] =
         ZStack.zIndex(Proj.orderOf(b#u0 + 0.5),
             ZStack.leaf(itemsOf(cam, w, b) ::: blockersOf(cam, w, b))) :: Nil
 

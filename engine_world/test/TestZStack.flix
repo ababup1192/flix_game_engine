@@ -1,10 +1,11 @@
 // ZStack の木と SortingLayer.compose の決まり: 積んだ順が描く順になる・葉の中の前後は z のまま・
 // zIndex で兄弟の前後を変えられる・topLayer はどの深さからでも送り先の層の手前へ出る・区画を越えない・
-// 越えた・奥へ送った・同じ層を 2 回渡した時は続けて 1 回だけ知らせる・pick は描く時と同じ前後で手前の物が当たる。
+// 越えた・奥へ送った・同じ層を 2 回渡した時は続けて 1 回だけ知らせる・pick は描く時と同じ前後で手前の物が当たる・
+// 木に積んだ当たり（hit / modal）は描く順で手前が勝ち、窓の奥には届かない。
 // 描画物は 1 辺の長さを名札にした箱で作り、描く順は (z, 列の中の位置) で並べた名札の列で見る。
 mod TestZStack {
 
-    use ZStack.{leaf, of, zIndex, topLayer, mapItems}
+    use ZStack.{leaf, of, zIndex, topLayer, mapItems, hit, hitAnywhere, blocking, modal}
 
     /// テスト用の層の表（底の順 = 奥 → 手前）。
     enum Tier with Eq, ToString {
@@ -141,6 +142,61 @@ mod TestZStack {
     def testPickMissIsNone(): Unit \ Assert =
         Assert.assertEq(expected = None,
             SortingLayer.pick({ x = 50.0, y = 50.0 }, (Tier.Back, ("back", square(10.0)) :: Nil) :: Nil))
+
+    // ── 木に積んだ当たり（hitsOf / pickFrom） ──
+
+    /// 確認の窓（modal）が開いている間は、奥の層のボタンの上を押しても窓の外の扱いになり、奥のボタンには届かない。
+    @Test
+    def testModalBlocksTheButtonBehindIt(): Unit \ Assert =
+        let layers = (Tier.Back, of(leaf(box(1, 0) :: Nil) :: hit("door", square(10.0)) :: Nil)) ::
+                     (Tier.Front, modal(Tier.Top, Some("no"), hit("yes", { position = { x = 50.0, y = 50.0 }, size = { x = 10.0, y = 10.0 } }))) :: Nil;
+        Assert.assertEq(expected = (Some("no"), Some("yes")),
+            (SortingLayer.pickFrom({ x = 5.0, y = 5.0 }, layers), SortingLayer.pickFrom({ x = 55.0, y = 55.0 }, layers)))
+
+    /// 同じ層の中で重なったら、後に積んだ（手前に描く）当たりが勝つ。zIndex で前に出した物はさらに手前。
+    @Test
+    def testLaterAndRaisedHitsWinInsideOneLayer(): Unit \ Assert =
+        let stacked = of(hit("first", square(10.0)) :: hit("second", square(10.0)) :: Nil);
+        let raised = of(zIndex(1, hit("raised", square(10.0))) :: hit("plain", square(10.0)) :: Nil);
+        Assert.assertEq(expected = (Some("second"), Some("raised")),
+            (SortingLayer.pickFrom({ x = 5.0, y = 5.0 }, (Tier.Back, stacked) :: Nil),
+             SortingLayer.pickFrom({ x = 5.0, y = 5.0 }, (Tier.Back, raised) :: Nil)))
+
+    /// 奥の木の中から開いた確認の窓のボタンは、間の層（Front）の同じ所の当たりより先に当たる（横取りされない）。
+    @Test
+    def testAskOpenedFromBehindIsNotStolenByMiddleLayer(): Unit \ Assert =
+        let back = of(hit("card", square(10.0)) :: modal(Tier.Top, None, hit("yes", square(10.0))) :: Nil);
+        let layers = (Tier.Back, back) :: (Tier.Front, hit("hud", square(10.0))) :: Nil;
+        Assert.assertEq(expected = Some("yes"), SortingLayer.pickFrom({ x = 5.0, y = 5.0 }, layers))
+
+    /// 窓の外が None の blocking は、奥を塞ぐだけで何も返さない。
+    @Test
+    def testBlockingWithoutOutsideReturnsNothing(): Unit \ Assert =
+        let tree = of(hit("behind", square(100.0)) :: blocking(None, hit("button", square(10.0))) :: Nil);
+        Assert.assertEq(expected = None, SortingLayer.pickFrom({ x = 50.0, y = 50.0 }, (Tier.Back, tree) :: Nil))
+
+    /// hitAnywhere は画面のどこでも当たり、奥の物には届かせない。手前に積んだボタンは先に当たる。
+    @Test
+    def testHitAnywhereCoversBehindButNotInFront(): Unit \ Assert =
+        let tree = of(hit("behind", square(10.0)) :: hitAnywhere("next") :: hit("close", square(10.0)) :: Nil);
+        Assert.assertEq(expected = (Some("close"), Some("next")),
+            (SortingLayer.pickFrom({ x = 5.0, y = 5.0 }, (Tier.Back, tree) :: Nil),
+             SortingLayer.pickFrom({ x = 500.0, y = 500.0 }, (Tier.Back, tree) :: Nil)))
+
+    /// mapItems で動かした木の当たりは、絵と同じだけ動く。
+    @Test
+    def testMapItemsMovesHits(): Unit \ Assert =
+        let tree = mapItems(Render.movedAll({ x = 100.0, y = 0.0 }), hit("moved", square(10.0)));
+        Assert.assertEq(expected = (None, Some("moved")),
+            (SortingLayer.pickFrom({ x = 5.0, y = 5.0 }, (Tier.Back, tree) :: Nil),
+             SortingLayer.pickFrom({ x = 105.0, y = 5.0 }, (Tier.Back, tree) :: Nil)))
+
+    /// HUD の当たりを over で場面の手前に重ねると、場面の窓より先に当たる。
+    @Test
+    def testOverPutsFrontHitsFirst(): Unit \ Assert =
+        let scene = SortingLayer.hitsOf((Tier.Top, modal(Tier.Top, Some("scene-out"), leaf(Nil))) :: Nil);
+        let hud = SortingLayer.hitsOf((Tier.Back, hit("hud", square(10.0))) :: Nil);
+        Assert.assertEq(expected = Some("hud"), SortingLayer.pickIn({ x = 5.0, y = 5.0 }, SortingLayer.over(hud, scene)))
 
     /// 足元の順: 下にある（y が大きい）物ほど大きい数。
     @Test

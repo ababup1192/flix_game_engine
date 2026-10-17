@@ -18,7 +18,7 @@ mod ViewCar {
     /// 粒の効果を、fx.json の zIndex ごとに立ち物の並びの子へ分ける（同じ zIndex の粒は 1 枚の葉）。
     /// WhyNot: 効果 1 つを 1 枚の葉にしない —— 葉は 1 つの順番にしか置けないので、炎の裾を車の下・
     /// 先を車の上へ振り分けられなくなる。
-    def fxChildren(base: Int32, items: List[Render.PlacedItem]): List[ZStack.Node[p]] =
+    def fxChildren(base: Int32, items: List[Render.PlacedItem]): List[ZStack.Tree[p, h]] =
         items
             |> List.foldRight((placed, acc) ->
                    Map.insertWith((fresh, held) -> fresh ::: held, Render.zOf(placed#item), placed :: Nil, acc),
@@ -137,7 +137,7 @@ mod ViewCar {
 
     /// ライバル各台。世界の progress を u に写して遠近で置く。
     /// 後ろ（u < -0.5）と地平線の向こう（u > 14）は描かない。
-    pub def rivals(cam: Proj.Cam, w: World.World): List[ZStack.Node[p]] =
+    pub def rivals(cam: Proj.Cam, w: World.World): List[ZStack.Tree[p, h]] =
         w#rivals |> List.zipWithIndex |> List.flatMap(entry -> {
             let (i, r) = entry;
             let u = Proj.uOf(w, r#progress);
@@ -167,7 +167,7 @@ mod ViewCar {
 
     /// 自機。u は常に Proj.playerU（World.playerAheadPx と対 — 絵と当たりの物差しを分けない）。
     /// 傾きは World.driftTurnOf（普段はわずか・ドリフトは深く・スピンは 2 回転）。
-    pub def player(cam: Proj.Cam, w: World.World): List[ZStack.Node[p]] =
+    pub def player(cam: Proj.Cam, w: World.World): List[ZStack.Tree[p, h]] =
         let u = Proj.playerU();
         let at = { x = Proj.screenX(cam, w#playerOff, u), y = Proj.yAt(cam, u) };
         let f = Proj.scaleOf(u) * 1.05;
@@ -198,7 +198,7 @@ mod ViewCar {
     /// 覚えさせずに、一度だけ広がって消える絵になる。
     /// 残像を後ろ（画面の下）へ置くのは「速すぎて絵が置いていかれる」見せ方 — 速度は線と
     /// 残像で語り、車そのものの形は変えない。
-    def nitroTrail(w: World.World, at: Vec2.Vec2, f: Float64): List[ZStack.Node[p]] =
+    def nitroTrail(w: World.World, at: Vec2.Vec2, f: Float64): List[ZStack.Tree[p, h]] =
         if (w#nitroLeft <= 0.0) Nil
         else {
             let rear = { x = at#x, y = at#y + 13.0 * f };
@@ -235,7 +235,7 @@ mod ViewCar {
     /// 形は View 側で組む。線 1 本の輪郭にはしない — 細い楕円の線は照準の枠に見える。
     /// 熱の面・厚みのある輪・外へ走る筋の 3 つを重ね、車の後ろへ押し出された形にする。
     def shockRing(w: World.World, at: Vec2.Vec2, f: Float64,
-                  since: Float64): List[ZStack.Node[q]] =
+                  since: Float64): List[ZStack.Tree[q, h]] =
         let p = Num.clamp01(since / shockLife());
         if (p <= 0.0 or p >= 1.0) Nil
         else {
@@ -335,7 +335,7 @@ mod ViewCar {
     /// 周期を fx の duration より短く取るのは、粒が全部消えてから次が湧くと点滅して見えるため。
     /// 位相をずらした 2 発を重ねるのは、1 発だけだと粒が湧いた直後と消える直前で密度が
     /// 半分になり、火花が息継ぎして見えるため。
-    def driftHeat(w: World.World, at: Vec2.Vec2, f: Float64): List[ZStack.Node[p]] =
+    def driftHeat(w: World.World, at: Vec2.Vec2, f: Float64): List[ZStack.Tree[p, h]] =
         if (not w#drifting) Nil
         else {
             let heat = 0.55 + 0.45 * Num.clamp01(w#nitro);
@@ -367,7 +367,7 @@ mod ViewCar {
 
     /// 進行中の粒の効果。at は世界座標（x = 左右, y = 前進距離）で持たれているので、
     /// ここで毎フレーム投影する — 車が進んでも煙はその場に残り、後ろへ流れて見える。
-    pub def bursts(cam: Proj.Cam, w: World.World): List[ZStack.Node[p]] =
+    pub def bursts(cam: Proj.Cam, w: World.World): List[ZStack.Tree[p, h]] =
         w#bursts |> List.flatMap(b -> {
             let p = Proj.projectPoint(cam, w, b#at);
             Fx.sampleAt(b#spec, b#seed, Lifetime.elapsedOf(w#t, b#life), { x = p#x, y = p#y })

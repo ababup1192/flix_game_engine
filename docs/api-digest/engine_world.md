@@ -122,6 +122,8 @@
   `pub def viewCtxOf(atlas: FontAtlas, design: Vec2.Vec2): ViewCtx`
 - viewCtxOf の複数フォント版。fontOf には実機と同じ名前で引ける関数を渡す
   `pub def viewCtxOfFonts(atlas: FontAtlas, fontOf: String -> FontAtlas, design: Vec2.Vec2): ViewCtx`
+- 入力の側（update・テスト）で、押せる物の当たりを出すために View の木を組むときの ViewCtx
+  `pub def pickCtx(design: Vec2.Vec2): ViewCtx`
 - 見た文面を seen に覚え、初めての文面だけ Log.warn する口（ViewCtx#warnOnce の実機の形）。
   `pub def warnOnceWith(seen: Ref[Set[String], Static]): String -> Unit`
 - 生成したドット絵アトラス 1 枚ぶんの受け渡し。
@@ -1630,16 +1632,31 @@
   `pub def containsPoint(quad: List[Vec2.Vec2], p: Vec2.Vec2): Bool`
 
 ## SortingLayer — `engine_world/src/SortingLayer.flix`
+- `pub type alias Hits[a] = HitList[a]`
+- 当たりの読み出し（hitAt・toList の結果）。rect = None は画面全体（hitAnywhere・modal の窓の外）。
+  `pub type alias Picked[a] = { target = a, rect = Option[Rect2.Rect2] }`
 - 層の底の z（順番 0）。
   `pub def bottom(layer: t): Int32 with SortingLayer[t]`
 - 層の天井の z。
   `pub def top(layer: t): Int32 with SortingLayer[t]`
 - 層ごとの木を 1 本の絵の列にする。各層の木はその層の底から積み、topLayer で送った物は送り先の層の
-  `pub def compose(ctx: App.ViewCtx, entries: List[(t, Node[t])]): List[Render.PlacedItem] with SortingLayer[t], ToString[t]`
-- point の下にある物のうち、いちばん手前の物（どれにも当たらなければ None）。
+  `pub def compose(ctx: App.ViewCtx, entries: List[(t, Tree[t, a])]): List[Render.PlacedItem] with SortingLayer[t], ToString[t]`
+- 木に積んだ当たり（ZStack.hit・hitAnywhere・blocking・modal）の列。前後は compose と同じ道筋で決まる
+  `pub def hitsOf(entries: List[(t, Tree[t, a])]): Hits[a] with SortingLayer[t], ToString[t]`
+- point の下のいちばん手前の押せる物（無い・窓が塞いでいる所は None）。`pickIn(point, hitsOf(entries))`。
+  `pub def pickFrom(point: Vec2.Vec2, entries: List[(t, Tree[t, a])]): Option[a] with SortingLayer[t], ToString[t]`
+- point の下のいちばん手前の押せる物。
+  `pub def pickIn(point: Vec2.Vec2, hits: Hits[a]): Option[a]`
+- point の下のいちばん手前の押せる物と、その矩形（押せる物を光らせる絵に使う）。
+  `pub def hitAt(point: Vec2.Vec2, hits: Hits[a]): Option[Picked[a]]`
+- front（HUD など、いつも手前の木の当たり）を back の手前に重ねる。
+  `pub def over(front: Hits[a], back: Hits[a]): Hits[a]`
+- 押せる物の一覧（手前 → 奥。塞ぐだけの当たりは出さない）。描き出しでマウスを置く所を探すとき用。
+  `pub def toList(hits: Hits[a]): List[Picked[a]]`
+- 0.39 で消す —— 当たりは描く木に ZStack.hit で積み、pickFrom で選ぶ（この口は描く木と別の表を書かせる）。
   `pub def pick(point: Vec2.Vec2, entries: List[(t, List[(a, Rect2.Rect2)])]): Option[a] with SortingLayer[t]`
 - 1 つの層だけの compose。
-  `pub def stack(ctx: App.ViewCtx, layer: t, tree: Node[t]): List[Render.PlacedItem] with SortingLayer[t], ToString[t]`
+  `pub def stack(ctx: App.ViewCtx, layer: t, tree: Tree[t, a]): List[Render.PlacedItem] with SortingLayer[t], ToString[t]`
 - 表の決まりをテストで確かめる用: 奥から手前へ並べた層が、どれも底 <= 天井で、隣どうし交ざらずに上がっていくか。
   `pub def isStacked(layers: List[t]): Bool with SortingLayer[t]`
 - 表の決まりをテストで確かめる用: どの層も outer（底, 天井）の中に収まるか。
@@ -2404,15 +2421,25 @@
   `pub def scrubTo(n: Int32, wl: Worldline[a]): Worldline[a]`
 
 ## ZStack — `engine_world/src/ZStack.flix`
-- 積み木の木。p は topLayer の行き先（ゲームの SortingLayer の層の enum）。
-  `pub enum Node[p] { case Leaf(List[Render.PlacedItem]) case Stacked(List[Node[p]]) case ZIndexed(Int32, Node[p]) case TopLayer(p, Node[p]) case Mapped(List[Render.PlacedItem] -> List[Render.PlacedItem], Node[p]) }`
+- 積み木の木。p は topLayer の行き先（ゲームの SortingLayer の層の enum）、a は押せる物の名前
+  `pub enum Tree[p, a] { case Leaf(List[Render.PlacedItem]) case Stacked(List[Tree[p, a]]) case ZIndexed(Int32, Tree[p, a]) case TopLayer(p, Tree[p, a]) case Mapped(List[Render.PlacedItem] -> List[Render.PlacedItem], Tree[p, a]) case Hit(a, Rect2.Rect2) case Block(Option[a]) }`
+- 0.37 までの木の名前（押せる物を持たない木）。0.39 で消す —— 新しく書く所は Tree[p, a]。
+  `pub type alias Node[p] = Tree[p, Unit]`
 - 葉: 組み上がった絵の列を 1 つの子にする（中の前後は z のまま保つ）。
-  `pub def leaf(items: List[Render.PlacedItem]): Node[p]`
+  `pub def leaf(items: List[Render.PlacedItem]): Tree[p, a]`
 - 子を奥 → 手前の順に積む。
-  `pub def of(children: List[Node[p]]): Node[p]`
+  `pub def of(children: List[Tree[p, a]]): Tree[p, a]`
 - すぐ外の of の中で child を前後へずらす（小さいほど奥・付けない兄弟は 0・同じ数は積んだ順）。
-  `pub def zIndex(order: Int32, child: Node[p]): Node[p]`
+  `pub def zIndex(order: Int32, child: Tree[p, a]): Tree[p, a]`
 - child を、表の層 target の手前（その層の木と、先に送られた物の上）へ送る。
-  `pub def topLayer(target: p, child: Node[p]): Node[p]`
+  `pub def topLayer(target: p, child: Tree[p, a]): Tree[p, a]`
 - child の絵の列に f を掛ける（`Render.movedAll(d)`・`Render.scaledAllAround(k, pivot)`・
-  `pub def mapItems(f: List[Render.PlacedItem] -> List[Render.PlacedItem], child: Node[p]): Node[p]`
+  `pub def mapItems(f: List[Render.PlacedItem] -> List[Render.PlacedItem], child: Tree[p, a]): Tree[p, a]`
+- 押せる物 target の当たりを rect に置く（描かない）。ボタンの絵の葉のすぐ後ろ（手前）に積む。
+  `pub def hit(target: a, rect: Rect2.Rect2): Tree[p, a]`
+- 画面のどこを押しても target（「どこでも次へ」）。これより奥の当たりには届かない。
+  `pub def hitAnywhere(target: a): Tree[p, a]`
+- child より奥を押せなくする（奥の層も含む）。窓の外を押したら outside（None なら何も起きない）。
+  `pub def blocking(outside: Option[a], child: Tree[p, a]): Tree[p, a]`
+- 確認の窓・ポーズ: child を層 target の手前へ送り（topLayer）、開いている間は奥を押せなくする（blocking）。
+  `pub def modal(target: p, outside: Option[a], child: Tree[p, a]): Tree[p, a]`

@@ -103,7 +103,7 @@ mod View {
 
     /// 里の world 側（歩く・話す・拾う）。地面はタイル層（TownMap）、霧・幕は hud 側。
     /// 奥 → 手前: 水面 → 薬草 → 立ち物 → ふきだし。立ち物は 1 つずつ足元の y で前後を決める（atFeet）。
-    def village(ctx: App.ViewCtx, w: World.World): ZStack.Node[Layer] =
+    def village(ctx: App.ViewCtx, w: World.World): ZStack.Tree[Layer, h] =
         ZStack.of(
                ZStack.leaf(waterSurface(w))
             :: ZStack.leaf(herbs(w))
@@ -123,7 +123,7 @@ mod View {
 
     /// 立ち物 1 つ（建物・柵・人…）を足元の y の順に並べる子にする。足元が下（南）にある物ほど手前に出る。
     /// 中の前後（壁 0・屋根 1 のような小さな z）はその葉の中だけに効くので、隣の物と部品が交互に重ならない。
-    def atFeet(footY: Float64, items: List[Render.PlacedItem]): List[ZStack.Node[Layer]] =
+    def atFeet(footY: Float64, items: List[Render.PlacedItem]): List[ZStack.Tree[Layer, h]] =
         ZStack.zIndex(Depth.orderAt(footY), ZStack.leaf(items)) :: Nil
 
     // ── 盤の位置合わせ ──
@@ -149,12 +149,12 @@ mod View {
 
     /// 建物。壁と屋根は別 sprite だが足元 y（接地の南端）を共有する 1 枚の葉に入る —
     /// 主人公が北側（裏）を歩くと屋根と壁に隠れ、南側では建物の前に立つ。
-    def houses(w: World.World): List[ZStack.Node[Layer]] =
+    def houses(w: World.World): List[ZStack.Tree[Layer, h]] =
         TownMap.buildings() |> List.flatMap(b ->
             buildingAt(w, b#cell, TownMap.buildingSpec(b#kind)))
 
     def buildingAt(w: World.World, nw: Grid.Cell,
-                   spec: { w = Int32, h = Int32, wall = String, roof = String }): List[ZStack.Node[Layer]] =
+                   spec: { w = Int32, h = Int32, wall = String, roof = String }): List[ZStack.Tree[Layer, h]] =
         let t = World.tileSize();
         let southY = Int32.toFloat64(nw#y + spec#h) * t;
         let x0 = Int32.toFloat64(nw#x) * t;
@@ -175,7 +175,7 @@ mod View {
         atFeet(southY, List.append(wall, roof))
 
     /// 低い柵（門の並び）。当たりは rpg.map の '#' が持ち、ここは絵だけ。
-    def fencesView(w: World.World): List[ZStack.Node[Layer]] =
+    def fencesView(w: World.World): List[ZStack.Tree[Layer, h]] =
         let t = World.tileSize();
         TownMap.fences() |> List.flatMap(cell -> {
             let bottom = Int32.toFloat64(cell#y + 1) * t;
@@ -189,7 +189,7 @@ mod View {
 
     /// 家の扉と同じ描法の独立した木の門（門柱2本+板戸+小さな屋根）。
     /// 開閉はコマの差し替え（gate_closed / gate_open）— ルールは World の doorOpen のまま。
-    def door(w: World.World): List[ZStack.Node[Layer]] =
+    def door(w: World.World): List[ZStack.Tree[Layer, h]] =
         let t = World.tileSize();
         let at = cellTopLeft(w, MapDoc.rec(w#map)#door#cell);
         let bottom = at#y + t;
@@ -204,7 +204,7 @@ mod View {
 
     /// 北の欄干は主人公の後ろ（足元 = マスの上端）、南の欄干は前
     /// （足元 = 次の行の中ほど）— 渡っている間、体が南の欄干に半分隠れる。
-    def bridgeRails(w: World.World): List[ZStack.Node[Layer]] =
+    def bridgeRails(w: World.World): List[ZStack.Tree[Layer, h]] =
         let t = World.tileSize();
         w#bridgeCells |> List.flatMap(cell -> {
             let x0 = Int32.toFloat64(cell#x) * t;
@@ -235,7 +235,7 @@ mod View {
 
     // ── 窯の煙（閉形式の粒。パン屋の煙突の口から） ──
 
-    def smoke(w: World.World): List[ZStack.Node[Layer]] =
+    def smoke(w: World.World): List[ZStack.Tree[Layer, h]] =
         match List.find(b -> b#kind == "shop", TownMap.buildings()) {
             case None    => Nil
             case Some(b) =>
@@ -253,7 +253,7 @@ mod View {
 
     // ── 旗（教会の尖塔の先。Sway で揺れる — 完全に止まった画面を出さない） ──
 
-    def flags(w: World.World): List[ZStack.Node[Layer]] =
+    def flags(w: World.World): List[ZStack.Tree[Layer, h]] =
         match List.find(b -> b#kind == "church", TownMap.buildings()) {
             case None    => Nil
             case Some(b) =>
@@ -285,7 +285,7 @@ mod View {
             ThemeDoc.resolver(w#theme, "leaf")))
 
     /// 灯り。薬草を拾った数だけ、並び順に点いていく（夕暮れの里に灯がともる）。
-    def lamps(w: World.World): List[ZStack.Node[Layer]] =
+    def lamps(w: World.World): List[ZStack.Tree[Layer, h]] =
         let lit = World.lampsLit(w);
         MapDoc.rec(w#map)#lamps |> List.zipWithIndex |> List.flatMap(entry -> {
             let (i, cell) = entry;
@@ -294,7 +294,7 @@ mod View {
 
     /// 街灯 1 本（木の柱+鉄の腕+吊りランタン）。昼はガラスの暖色だけで光らせない —
     /// 点灯（Daylight 連動は将来）はコマ差し替え + グロー。クリアの「全灯」演出はここが担う。
-    def lamp(w: World.World, cell: Grid.Cell, litNow: Bool): List[ZStack.Node[Layer]] =
+    def lamp(w: World.World, cell: Grid.Cell, litNow: Bool): List[ZStack.Tree[Layer, h]] =
         let center = cellCenter(w, cell);
         let bottom = center#y + World.tileSize() / 2.0;
         let quad = PxSprite.drawQuad(w#townSprites, w#townAtlas, TownMap.textureName(),
@@ -311,7 +311,7 @@ mod View {
         else Nil;
         atFeet(bottom, List.append(quad, glow))
 
-    def villagers(w: World.World): List[ZStack.Node[Layer]] =
+    def villagers(w: World.World): List[ZStack.Tree[Layer, h]] =
         MapDoc.rec(w#map)#villagers |> List.flatMap(villager -> {
             // 位置は巡回の見本（World.villagerSampleAt）から。絵の位置と
             // 歩ける・話せるの判定（villagerCellAt）が同じ見本を読むのでずれない。
@@ -330,12 +330,12 @@ mod View {
 
     /// 主人公。向きごとに絵を持ち、歩数の偶奇で足を入れ替える。
     /// 左向きは右向きの絵の左右反転で済ませる（絵を増やさない）。
-    def hero(w: World.World): List[ZStack.Node[Layer]] =
+    def hero(w: World.World): List[ZStack.Tree[Layer, h]] =
         let (frameName, flipX) = heroFrame(w);
         placeAtFeet(w, w#hero, sprite(w, "hero", frameName, w#hero, flipX, 0, ThemeDoc.rec(w#theme)#accent))
 
     /// マスに立つ 1 体を足元の順に並べる（足元 = マスの下端）。
-    def placeAtFeet(w: World.World, cell: Grid.Cell, items: List[Render.PlacedItem]): List[ZStack.Node[Layer]] =
+    def placeAtFeet(w: World.World, cell: Grid.Cell, items: List[Render.PlacedItem]): List[ZStack.Tree[Layer, h]] =
         atFeet(cellCenter(w, cell)#y + World.tileSize() / 2.0, items)
 
     /// 向き + 歩数 → 「どのコマを、反転するか」。
@@ -492,7 +492,7 @@ mod View {
     // 里の絵は出さない（盤・霧のストリップ・ふきだしは village 側の物）。ここは
     // 「夜空 → 霧 → 地面 → 魔物」の 4 層（ウィンドウは hud 側）で、視線が魔物と下の文に集まるようにする。
 
-    def battleWorld(w: World.World): ZStack.Node[Layer] =
+    def battleWorld(w: World.World): ZStack.Tree[Layer, h] =
         ZStack.of(
                ZStack.leaf(battleSky(ThemeDoc.rec(w#theme)))
             :: ZStack.leaf(battleMist(ThemeDoc.rec(w#theme)))
