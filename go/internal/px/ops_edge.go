@@ -152,7 +152,21 @@ func groundShadow(g *pxlib.Grid, obj pxlib.Mask, ramp []pxlib.Key, rows int, spr
 	cy := float64(y1) + 1
 	rx := float64(xmax-xmin+1)/2 + spread
 	ry := float64(rows)/2 + 0.01
-	for y := y1 - rows + 1; y <= y1+1; y++ {
+	ys, ye := y1-rows+1, y1+1
+	// 足元の下が透明（地を描いていない絵）なら、楕円を物の下に丸ごと置く（rows 行の高さ）。
+	// 地の上では足元の線を中心に置き、上の半分を足の左右に回り込ませる（下の半分は地の模様に任せる）。
+	// WhyNot: 透明の地で地の上と同じ置き方をすると、上の半分は物に隠れ、下の半分は切れて 1 行の直線になる。
+	clear := true
+	for x := xmin; x <= xmax; x++ {
+		if g.In(x, y1+1) && g.At(x, y1+1) != pxlib.Clear {
+			clear = false
+		}
+	}
+	if clear {
+		cy = float64(y1) + 1 + float64(rows)/2
+		ys, ye = y1+1, y1+rows
+	}
+	for y := ys; y <= ye; y++ {
 		for x := 0; x < g.W; x++ {
 			if !g.In(x, y) || obj.At(x, y) {
 				continue

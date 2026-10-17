@@ -152,3 +152,34 @@ func TestSnapAtAskRoundSaysStop(t *testing.T) {
 		t.Errorf("r2 の案内に止める・3 つ聞くが無い:\n%s", out)
 	}
 }
+
+// --max N で任された周回: askAt でも止めて聞かず、N 周目で報告へ積む案内を出し、N+1 周目は断る（--max は覚えている）。
+func TestSnapDelegatedMaxRunsToN(t *testing.T) {
+	root := newGame(t)
+	rules := loadRules(t)
+	n := min(3, rules.MaxRounds)
+	var outs []string
+	for i := 1; i <= n; i++ {
+		args := []string{"snap", "hero", "pic.png", "art/hero.src.py"}
+		if i == 1 {
+			args = append(args, "--max", "3")
+		}
+		code, out, errOut := run(t, root, args...)
+		if code != 0 {
+			t.Fatalf("r%d: code %d: %s", i, code, errOut)
+		}
+		outs = append(outs, out)
+	}
+	if strings.Contains(strings.Join(outs, ""), "ここで止める") {
+		t.Errorf("任された周回なのに askAt で止めて聞く案内が出た:\n%s", strings.Join(outs, ""))
+	}
+	if !strings.Contains(outs[n-1], "任された最後の周") {
+		t.Errorf("N 周目に最後の周の案内が無い:\n%s", outs[n-1])
+	}
+	if code, _, errOut := run(t, root, "snap", "hero", "pic.png", "art/hero.src.py"); code == 0 || !strings.Contains(errOut, "任された") {
+		t.Errorf("任された周を超えても断らない: %d %s", code, errOut)
+	}
+	if code, _, _ := run(t, newGame(t), "snap", "hero", "pic.png", "art/hero.src.py", "--max", "99"); code == 0 {
+		t.Errorf("--max が maxRounds を超えても通った")
+	}
+}

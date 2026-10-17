@@ -133,11 +133,20 @@ func init() {
 		},
 	})
 	registerCheck(&checkDef{
-		Name: checkLightDir, Summary: "light-dir: 塊の明るさで重みを付けた重心（明るい側 − 暗い側）が光の側（light.dir）に無い", Level: levelAdvice,
-		Fix: "陰を directional で塗り直すか、gradient_fill の invert を外す。light.dir が絵の光と合っているかも見る",
+		Name: checkLightDir, Summary: "light-dir: 塊の明るさで重みを付けた重心（明るい側 − 暗い側）が光の側（light.dir）に無い（emissive の部品は見ない）", Level: levelAdvice,
+		Fix: "陰を directional で塗り直すか、gradient_fill の invert を外す。自分で光る部品（灯り・炎）なら部品に \"emissive\": true。light.dir が絵の光と合っているかも見る",
 		Run: func(g *pxlib.Grid, c *checkCtx) []violation {
 			var out []violation
-			for _, cells := range blobCells(g.Opaque()) {
+			opaque := g.Opaque()
+			if len(c.Emissive) > 0 {
+				// 自分で光る部品（窓の灯り・炎・画面）は光の向きと関係なく明るいので見ない
+				for _, p := range opaque.Points() {
+					if c.Emissive[g.SrcAt(p.X, p.Y).Part] {
+						opaque[p.Y][p.X] = false
+					}
+				}
+			}
+			for _, cells := range blobCells(opaque) {
 				if len(cells) < c.Rules.LightDirMinArea {
 					continue
 				}

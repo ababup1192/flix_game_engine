@@ -3,7 +3,7 @@ package rounds
 // rounds — 絵の周回（描き直すたびの絵と台本）を debug/history/<名前>/ に積み、
 // 止まって依頼主に聞く所で案内を出す。
 //
-//	fge-go rounds snap <名前> <PNG か sprite.json> <台本> [--new] [--bg "#2a2a33"]
+//	fge-go rounds snap <名前> <PNG か sprite.json> <台本> [--new] [--max N] [--bg "#2a2a33"]
 //	fge-go rounds restore <名前> rN <台本>
 //	fge-go rounds --help
 //
@@ -26,6 +26,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -77,10 +78,12 @@ func LoadRules(root string) (*Rules, error) {
 // Usage は --help の本文。
 const Usage = `使い方: bin/fge rounds <口> ...   絵の周回を debug/history/<名前>/ に積む（ゲームのルートで流す）
 
-  rounds snap <名前> <PNG か sprite.json> <台本> [--new] [--bg "#2a2a33"]
+  rounds snap <名前> <PNG か sprite.json> <台本> [--new] [--max N] [--bg "#2a2a33"]
       rN.png と rN.<台本のファイル名> を空いている次の番号で積み、次にすることを出す。
       sprite.json は全コマを並べた見本のシートに描く。
       --new  前の周回を debug/history/<名前>-old-<日時> へ退けて r1 から始める（別の作業のとき）
+      --max  依頼主か親に「N 周まで任せる」と言われた時の上限（maxRounds まで）。一度書けば同じ周回の間は覚えていて、
+             N 周までは止まって聞かずに前の周と比べて進み、N 周目で報告へ積む案内を出す
       --bg   見本のシートの背景
   rounds restore <名前> rN <台本>
       その周に保存した台本を <台本> の場所へ戻す（戻したら流し直して描く）。
@@ -115,30 +118,80 @@ func Run(out, errOut io.Writer, rulesRoot, gameRoot string, args []string) (int,
 	return 2, nil
 }
 
-// splitFlags は --new と --bg 値 を取り出し、残りの位置引数を返す。
-func splitFlags(args []string) (positional []string, isNew bool, bg string, err error) {
+// snapFlags は snap の指定。
+type snapFlags struct {
+	isNew bool
+	bg    string
+	max   int // --max N（0 は書いていない）
+}
+
+// splitFlags は --new・--max N・--bg 値 を取り出し、残りの位置引数を返す。
+func splitFlags(args []string) (positional []string, f snapFlags, err error) {
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		switch {
 		case a == "--new":
-			isNew = true
+			f.isNew = true
 		case a == "--bg":
 			if i+1 >= len(args) {
-				return nil, false, "", fmt.Errorf("--bg に色がありません")
+				return nil, f, fmt.Errorf("--bg に色がありません")
 			}
-			bg = args[i+1]
+			f.bg = args[i+1]
 			i++
 		case strings.HasPrefix(a, "--bg="):
-			bg = strings.TrimPrefix(a, "--bg=")
+			f.bg = strings.TrimPrefix(a, "--bg=")
+		case a == "--max":
+			if i+1 < len(args) {
+				f.max, _ = strconv.Atoi(args[i+1])
+			}
+			if f.max < 1 {
+				return nil, f, fmt.Errorf("--max の後に任された周の数（1 以上の整数）を書く")
+			}
+			i++
 		case a == "--json":
-			return nil, false, "", fmt.Errorf("--json は未対応（出力は人と依頼主に向けた案内の文だけ）")
+			return nil, f, fmt.Errorf("--json は未対応（出力は人と依頼主に向けた案内の文だけ）")
 		case strings.HasPrefix(a, "--"):
-			return nil, false, "", fmt.Errorf("知らない指定: %s", a)
+			return nil, f, fmt.Errorf("知らない指定: %s", a)
 		default:
 			positional = append(positional, a)
 		}
 	}
-	return positional, isNew, bg, nil
+	return positional, f, nil
+}
+
+// delegatedFile は --max で任された上限を覚えておく所（周回のフォルダの中。--new で前の周回と一緒に退く）。
+const delegatedFile = "delegated-max.txt"
+
+// DelegatedMax は周回のフォルダに覚えた、任された上限（無ければ 0）。
+func DelegatedMax(hist string) int {
+	data, err := os.ReadFile(filepath.Join(hist, delegatedFile))
+	if err != nil {
+		return 0
+	}
+	n, _ := strconv.Atoi(strings.TrimSpace(string(data)))
+	return n
+}
+
+// CheckNext は次の周を積めるかを見る（描く前に断るため px snap も呼ぶ）。max は --max N（0 は書いていない）。
+// 積めない時は案内の文を error で返す。
+func CheckNext(rules *Rules, hist string, max int) error {
+	if max > rules.MaxRounds {
+		return fmt.Errorf("--max %d は %s の maxRounds（%d）まで", max, filepath.ToSlash(RulesPath), rules.MaxRounds)
+	}
+	limit, delegated := rules.MaxRounds, max
+	if delegated == 0 {
+		delegated = DelegatedMax(hist)
+	}
+	if delegated > 0 {
+		limit = min(delegated, rules.MaxRounds)
+	}
+	if NextRound(hist) <= limit {
+		return nil
+	}
+	if delegated > 0 {
+		return fmt.Errorf("任された %d 周を超える。ここで止め、選んだ周を報告に積む（続けるかは依頼主が決める）", limit)
+	}
+	return fmt.Errorf("%d 周を超える。依頼主に終わりを聞くか、--new で別の作業として始める", rules.MaxRounds)
 }
 
 // checkName は周回の名前がフォルダ 1 つに収まるかを見る。
@@ -173,7 +226,8 @@ func NextRound(hist string) int {
 }
 
 func snap(out, errOut io.Writer, rules *Rules, gameRoot string, args []string) (int, error) {
-	positional, isNew, bg, err := splitFlags(args)
+	positional, fl, err := splitFlags(args)
+	isNew, bg := fl.isNew, fl.bg
 	if err != nil {
 		fmt.Fprintf(errOut, "rounds: %v\n", err)
 		return 2, nil
@@ -210,14 +264,20 @@ func snap(out, errOut io.Writer, rules *Rules, gameRoot string, args []string) (
 		}
 		fmt.Fprintf(out, "前の周回は %s へ退けた\n", relTo(gameRoot, old))
 	}
-	n := NextRound(hist)
-	if n > rules.MaxRounds {
-		fmt.Fprintf(errOut, "rounds: %d 周を超える。依頼主に終わりを聞くか、--new で別の作業として始める\n", rules.MaxRounds)
+	if err := CheckNext(rules, hist, fl.max); err != nil {
+		fmt.Fprintf(errOut, "rounds: %v\n", err)
 		return 1, nil
 	}
+	n := NextRound(hist)
 	if err := os.MkdirAll(hist, 0o755); err != nil {
 		return 2, err
 	}
+	if fl.max > 0 {
+		if err := os.WriteFile(filepath.Join(hist, delegatedFile), []byte(fmt.Sprintf("%d\n", fl.max)), 0o644); err != nil {
+			return 2, err
+		}
+	}
+	delegated := DelegatedMax(hist)
 	pngPath := filepath.Join(hist, fmt.Sprintf("r%d.png", n))
 	if isSprite {
 		frames, err := WriteSpriteSheet(gameRoot, picture, pngPath, bg, errOut)
@@ -234,6 +294,16 @@ func snap(out, errOut io.Writer, rules *Rules, gameRoot string, args []string) (
 	}
 	fmt.Fprintf(out, "周: %s（台本も同じ番号で保存）\n", relTo(gameRoot, pngPath))
 	switch {
+	case delegated > 0:
+		// 任された周回: 上限までは止まって聞かない。前の周と比べて悪くなったら戻し、最後の周で報告へ積む
+		if n > 1 {
+			fmt.Fprintf(out, "r%d: r%d と比べ、悪くなっていたら戻す: bin/fge rounds restore %s r%d %s\n", n, n-1, name, n-1, relTo(gameRoot, script))
+		}
+		if n >= delegated {
+			fmt.Fprintf(out, "r%d が任された最後の周（--max %d）。良い方の周を選び、その周と 1 つ前の周の PNG を並べて報告に積む（続けるかは依頼主が決める）\n", n, delegated)
+		} else {
+			fmt.Fprintf(out, "任された %d 周まで止めずに続けてよい（残り %d 周）。拡大で見つけた欠陥は実寸で読める物だけ直す\n", delegated, delegated-n)
+		}
 	case n == rules.AskAt:
 		fmt.Fprintf(out, "r%d: ここで止める。依頼主に「①r%d と r%d のどちらが良いか ②続けるか終わりか ③続けるなら直す所を 1 つ」だけ聞き、返事まで r%d を描かない\n",
 			n, n-1, n, n+1)
@@ -249,7 +319,7 @@ func snap(out, errOut io.Writer, rules *Rules, gameRoot string, args []string) (
 }
 
 func restore(out, errOut io.Writer, rules *Rules, gameRoot string, args []string) (int, error) {
-	positional, _, _, err := splitFlags(args)
+	positional, _, err := splitFlags(args)
 	if err != nil || len(positional) != 3 {
 		fmt.Fprint(errOut, "rounds restore: <名前> rN <台本> の 3 つが要る\n\n"+Usage)
 		return 2, nil

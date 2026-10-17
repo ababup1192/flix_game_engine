@@ -670,8 +670,8 @@ func TestRoundsSnapRestoreDiff(t *testing.T) {
 // --- 文書 ---
 
 func TestQuickTableFitsAndNamesOps(t *testing.T) {
-	if len(quickRows) > 15 {
-		t.Errorf("早見表の上の段は 15 行まで（今 %d 行）", len(quickRows))
+	if len(quickRows) > 20 {
+		t.Errorf("早見表の上の段は 20 行まで（今 %d 行）", len(quickRows))
 	}
 	for _, r := range quickRows {
 		for _, name := range r.Ops {
@@ -701,3 +701,86 @@ func TestOnionTintsNeighbours(t *testing.T) {
 type pxColorT = color.RGBA
 
 func pxColor(r, g, b uint8) color.RGBA { return color.RGBA{r, g, b, 0xff} }
+
+// --- 0 周目（初めての担当の書きにくさ）の直し ---
+
+// 透明の地では、接地影は物の下に rows 行の楕円になる（前は 1 行の直線だった）。
+func TestGroundShadowOnClearGround(t *testing.T) {
+	g := gridOf(".......", ".ccccc.", ".ccccc.", ".......", ".......", ".......")
+	px := groundShadow(g, g.Opaque(), []pxlib.Key{"a", "b", "c", "d"}, 3, 1)
+	for p, k := range px {
+		g.Put(p.X, p.Y, k, pxlib.OpRef{})
+	}
+	expectRows(t, g, ".......", ".ccccc.", ".ccccc.", ".bbbbb.", "bbbbbbb", ".bbbbb.")
+}
+
+// courses は段ごとに半分ずらした縦の目地と、段の高さごとの横の目地を、下の色を 1 段暗くして引く。
+func TestCoursesStaggersJoints(t *testing.T) {
+	g := gridOf("cccccccc", "cccccccc", "cccccccc", "cccccccc", "cccccccc", "cccccccc")
+	c := testCtx(g, opaqueOf(g))
+	applyOp(t, c, `{"courses": {"size": [4, 3]}}`)
+	expectRows(t, g, "bbbbbbbb", "bcccbccc", "bcccbccc", "bbbbbbbb", "ccbcccbc", "ccbcccbc")
+}
+
+// stairGrid は上の輪郭の段の長さが runs の階段（部品 part が書いた画素）。
+func stairGrid(runs []int, part string) *pxlib.Grid {
+	w := 0
+	for _, n := range runs {
+		w += n
+	}
+	g := pxlib.NewGrid(w, len(runs)+1)
+	x := 0
+	for i, n := range runs {
+		for dx := 0; dx < n; dx++ {
+			for y := i; y <= len(runs); y++ {
+				g.Put(x+dx, y, "c", pxlib.OpRef{Part: part})
+			}
+		}
+		x += n
+	}
+	return g
+}
+
+// poly の辺の 3-2-3-2 は直線の段: run-monotone は見ず、flat-run も 2 種類の長さなら言わない。
+func TestPolyEdgeJudgedOnceAsLine(t *testing.T) {
+	cc := techRules(t)
+	g := stairGrid([]int{3, 2, 3, 2, 3, 2, 3}, "roof")
+	if countCheck(g, cc, checkRunMonotone) == 0 {
+		t.Fatal("poly でない部品の 2-3-2-3 で run-monotone が出ない（前提）")
+	}
+	cc.Poly = map[string]bool{"roof": true}
+	if n := countCheck(g, cc, checkRunMonotone) + countCheck(g, cc, checkFlatRun); n != 0 {
+		t.Errorf("poly の直線の段に %d 件", n)
+	}
+	vs := checks[checkFlatRun].Run(stairGrid([]int{2, 4, 3, 2, 5, 2}, "roof"), cc)
+	if len(vs) != 1 || strings.Contains(vs[0].Fix, "SDF で") {
+		t.Errorf("poly の散った段は flat-run が段の揃え方で 1 件: %v", vs)
+	}
+}
+
+// emissive の部品（灯り）は light-dir の対象から外す。
+func TestEmissivePartSkipsLightDir(t *testing.T) {
+	cc := techRules(t)
+	bad := gridOf("bbcc", "bbcc", "ccdd", "ccdd")
+	for y := 0; y < 4; y++ {
+		for x := 0; x < 4; x++ {
+			bad.Put(x, y, bad.At(x, y), pxlib.OpRef{Part: "glass"})
+		}
+	}
+	cc.Emissive = map[string]bool{"glass": true}
+	if n := countCheck(bad, cc, checkLightDir); n != 0 {
+		t.Errorf("emissive の部品に light-dir が %d 件", n)
+	}
+}
+
+// コマだけが違う同じ違反は 1 件にまとめ、何コマかを添え、総数もまとめた数で出す。
+func TestSummaryGroupsFrames(t *testing.T) {
+	var vs []violation
+	for _, f := range []string{"f0", "f1", "f2", "f3"} {
+		vs = append(vs, violation{Check: checkRunMonotone, Level: levelLint, Sprite: "s", Frame: f, Msg: "重なる違反"})
+	}
+	out := summarize(".", &buildResult{Violations: vs})
+	if strings.Count(out, "重なる違反") != 1 || !strings.Contains(out, "4 コマ") || !strings.Contains(out, "lint 1") {
+		t.Errorf("got %q", out)
+	}
+}

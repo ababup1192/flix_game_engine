@@ -54,7 +54,7 @@ lint・フック・make の口で止まる決まりはここに書かない（�
 - 生成したコードは初学者が読める形に（読む順の README・毎フレームの流れの doc は `templates/` にある形を保つ）。
 - 区切りごとに `NOTES.md` の先頭へ「今どこまで・次やること」を 3 行。広い探索はサブエージェントに任せ、結論だけ返させる。
 - 絵を描く前に `.claude/rules/drawing.md` を読む。入口はドット絵 `/pixel-art`・格子に乗らない絵 `/smooth-render`。
-  絵を委ねる親は prompt に「N 周まで」と書かず、drawing.md の「絵の周回」を指す。
+  絵を委ねる親は prompt に「N 周まで」と文で書かず、drawing.md の「絵の周回」を指す（周を任せる時は snap の `--max N`）。
 - 作業に入る前に当たるスキル（一覧は末尾）を読む。サブエージェントには rules とスキルの自動読みが効かないので、
   委ねる親は読ませる rules とスキルを prompt で名指しする。
 - フックの無いエージェントは手で: 最初に `make status`・`.flix` を直すたび `make check`・clone ごとに `make hooks`。

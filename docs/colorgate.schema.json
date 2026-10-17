@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "ドット絵の色の門 (*.colorgate.json)",
-  "description": "fge px check と fge px build が読む。sprite.json のファイル名ごとに画風と例外を書く。生成物（bin/fge px schema）。直すのは go/internal/px/docs.go",
+  "description": "fge px check と fge px build が読む。sprite.json のファイル名ごとに画風と例外を書く。生成物（bin/fge px schema --write）。直すのは go/internal/px/docs.go",
   "type": "object",
   "additionalProperties": false,
   "required": [

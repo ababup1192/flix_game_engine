@@ -9,6 +9,7 @@ package px
 import (
 	"encoding/json"
 	"fmt"
+	"image"
 	"image/color"
 	"os"
 	"path/filepath"
@@ -30,6 +31,7 @@ type buildOptions struct {
 	NoCheck   bool              // lint と advice を回さない（色の門は回す）
 	OutDir    string            // 見本と report.json の置き場（省くと <root>/debug/px/<名前>/last）
 	Sheet     bool              // 見比べのシート（PNG）も書く（--sheet・px snap。PNG の圧縮が描く時間より重いので既定は書かない）
+	PNG       bool              // 実寸・4 倍・コマの横並びの PNG を debug/px/<名前>/png/ に書く（--png。報告や場面の見本に貼る物）
 	Overlay   map[string][]byte // 台本がメモリの中で書いた物（絶対パス → 中身）。spec と palette はディスクより先にここを見る
 }
 
@@ -63,8 +65,9 @@ type buildResult struct {
 	Known       []string          `json:"known,omitempty"`
 	LegendAdded []string          `json:"legendAdded,omitempty"`
 	Sheet       string            `json:"sheet"`
-	Legend      map[string]string `json:"legend"` // 字 → 色キー（次の周の差の見本に使う）
-	Hex         map[string]string `json:"hex"`    // 色キー → #rrggbb（fge px diff が周の絵を描き直すのに使う）
+	PNGDir      string            `json:"png,omitempty"` // --png の書き出し先
+	Legend      map[string]string `json:"legend"`        // 字 → 色キー（次の周の差の見本に使う）
+	Hex         map[string]string `json:"hex"`           // 色キー → #rrggbb（fge px diff が周の絵を描き直すのに使う）
 	Elapsed     time.Duration     `json:"elapsedNs"`
 	Timing      buildTiming       `json:"timing"`
 	Prev        *levelCounts      `json:"-"`
@@ -74,10 +77,15 @@ type buildResult struct {
 // levelCounts は重さごとの違反の数。
 type levelCounts struct{ Gate, Lint, Advice int }
 
-// Count は重さごとの違反の数。
+// Count は重さごとの違反の数（コマだけが違う同じ違反は 1 件と数える）。
 func (r *buildResult) Count() levelCounts {
 	var c levelCounts
+	seen := map[string]bool{}
 	for _, v := range r.Violations {
+		if seen[v.frameless()] {
+			continue
+		}
+		seen[v.frameless()] = true
 		switch v.Level {
 		case levelGate:
 			c.Gate++
@@ -277,6 +285,11 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 				if len(r.probs) > 0 {
 					return nil, r.probs
 				}
+				cc.Emissive, cc.Poly = map[string]bool{}, map[string]bool{}
+				for _, p := range parts {
+					cc.Emissive[p.ID] = p.Emissive
+					cc.Poly[p.ID] = p.isPoly(spec.Shapes)
+				}
 				fname := f.Name
 				if len(sp.Seeds) > 0 {
 					fname = fmt.Sprintf("%s_v%d", f.Name, seed)
@@ -430,6 +443,13 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 		}
 		res.Sheet = filepath.Join(dir, "sheet.png")
 		res.Timing.Sheet = time.Since(tSheet)
+	}
+	if opt.PNG {
+		pngDir := filepath.Join(root, "debug", "px", specName(specPath), "png")
+		if err := writePNGs(pngDir, res, hexOf); err != nil {
+			return nil, err
+		}
+		res.PNGDir = pngDir
 	}
 	res.Elapsed = time.Since(t0)
 	data, _ := json.MarshalIndent(res, "", "  ")
@@ -626,6 +646,56 @@ func writeSheets(dir string, res *buildResult, prev *buildResult, hexOf map[pxli
 		}
 	}
 	return nil
+}
+
+// writePNGs は --png の書き出し: スプライトごとに 1 コマ目の実寸と 4 倍、全コマを横に並べた実寸と 4 倍。
+// 色はそのまま（減色しない）・透明は透明のまま・前の物は消してから書くので、同じ指定からは毎回同じバイトになる。
+func writePNGs(dir string, res *buildResult, hexOf map[pxlib.Key]string) error {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	if old, err := filepath.Glob(filepath.Join(dir, "*.png")); err == nil {
+		for _, p := range old {
+			if err := os.Remove(p); err != nil {
+				return err
+			}
+		}
+	}
+	bySprite := map[string][][][]color.RGBA{}
+	var order []string
+	for _, f := range res.Frames {
+		if _, ok := bySprite[f.Sprite]; !ok {
+			order = append(order, f.Sprite)
+		}
+		bySprite[f.Sprite] = append(bySprite[f.Sprite], colorsOf(f.Rows, res.Legend, hexOf))
+	}
+	for _, name := range order {
+		frames := bySprite[name]
+		base := filepath.Join(dir, safeName(name))
+		one := pxlib.Strip(frames[:1])
+		strip := pxlib.Strip(frames)
+		for path, img := range map[string]*image.RGBA{
+			base + ".png": one, base + "@4x.png": scaleUp(one, 4),
+			base + ".strip.png": strip, base + ".strip@4x.png": scaleUp(strip, 4),
+		} {
+			if err := pxlib.WritePNG(path, img); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// scaleUp は画素を k 倍の正方形に広げる（なめらかにしない）。
+func scaleUp(img *image.RGBA, k int) *image.RGBA {
+	b := img.Bounds()
+	out := image.NewRGBA(image.Rect(0, 0, b.Dx()*k, b.Dy()*k))
+	for y := 0; y < b.Dy()*k; y++ {
+		for x := 0; x < b.Dx()*k; x++ {
+			out.SetRGBA(x, y, img.RGBAAt(b.Min.X+x/k, b.Min.Y+y/k))
+		}
+	}
+	return out
 }
 
 func safeName(s string) string {
