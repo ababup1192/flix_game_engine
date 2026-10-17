@@ -128,7 +128,7 @@ func fill(img *image.RGBA, r image.Rectangle, c color.RGBA) {
 // Onion は前のコマ（赤）と次のコマ（青）を地の色の上に薄く重ね、今のコマを上に置いた 1 枚の色を返す。
 func Onion(cur, prev, next [][]color.RGBA, ground color.RGBA) [][]color.RGBA {
 	tint := func(base, c color.RGBA, t color.RGBA) color.RGBA {
-		mix := func(a, b uint8, w float64) uint8 { return uint8(float64(a)*(1-w) + float64(b)*w) }
+		mix := func(a, b uint8, w float64) uint8 { return uint8(float64(float64(a)*(1-w)) + float64(float64(b)*w)) }
 		m := color.RGBA{mix(c.R, t.R, 0.5), mix(c.G, t.G, 0.5), mix(c.B, t.B, 0.5), 0xff}
 		return color.RGBA{mix(base.R, m.R, 0.35), mix(base.G, m.G, 0.35), mix(base.B, m.B, 0.35), 0xff}
 	}

@@ -268,6 +268,14 @@ func restore(out, errOut io.Writer, rules *Rules, gameRoot string, args []string
 		fmt.Fprintf(errOut, "rounds: %s が無い\n", relTo(gameRoot, saved))
 		return 1, nil
 	}
+	// 戻す前の台本を退ける（積んでいない書きかけを restore で失わない）
+	if pxlib.HasFile(script) {
+		keep := filepath.Join(filepath.Dir(saved), "before-restore-"+time.Now().Format("20060102-150405")+"."+filepath.Base(script))
+		if err := copyFile(script, keep); err != nil {
+			return 2, err
+		}
+		fmt.Fprintf(out, "戻す前の台本は %s に残した\n", relTo(gameRoot, keep))
+	}
 	if err := copyFile(saved, script); err != nil {
 		return 2, err
 	}

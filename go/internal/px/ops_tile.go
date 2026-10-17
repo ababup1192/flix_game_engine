@@ -14,10 +14,10 @@ func init() {
 		Name: "bevel_box", Example: `{"bevel_box": {"radius": 3.2, "inset": 1}}`, Summary: "角丸の板: 斜めの帯で 光・地・影、縁の 1px につや（光の側）と墨（影の側）、外側に墨の輪郭（格子は正方形）",
 		Technique: "陰影（平らな面は 1 色・光源は左上の 1 つ）", Finish: "既存の lint banding",
 		Params: []param{
-			{Name: "radius", Type: tNumber, Default: 6.5, Summary: "角の丸みの半径"},
-			{Name: "inset", Type: tNumber, Default: 2.0, Summary: "格子の縁からの余白"},
+			{Name: "radius", Type: tNumber, Default: 6.5, Summary: "角の丸みの半径", Lo: bound(0), Hi: bound(64)},
+			{Name: "inset", Type: tNumber, Default: 2.0, Summary: "格子の縁からの余白", Lo: bound(0), Hi: bound(64)},
 			{Name: "bands", Type: tPair, Default: []any{0.30, 0.72}, Summary: "光・地・影の境目（0〜1。左上の角が 0）"},
-			{Name: "gloss_until", Type: tNumber, Default: 0.8, Summary: "縁のつやを置く範囲（x+y が格子の幅のこの割合まで）"},
+			{Name: "gloss_until", Type: tNumber, Default: 0.8, Summary: "縁のつやを置く範囲（x+y が格子の幅のこの割合まで）", Lo: bound(0), Hi: bound(2)},
 		},
 		Exempt: []checkRef{{Check: checkSprite, Rule: "corner"}},
 		Whole:  true,

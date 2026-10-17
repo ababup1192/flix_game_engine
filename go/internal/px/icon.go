@@ -224,7 +224,7 @@ func init() {
 		Technique: "同じ記号を一回り小さく重ねる", Finish: "—",
 		Params: []param{
 			{Name: "macro", Type: tString, Required: true, Summary: "macros の名前"},
-			{Name: "scale", Type: tNumber, Required: true, Summary: "大きさの倍率（0.72 なら 0.72 倍）"},
+			{Name: "scale", Type: tNumber, Required: true, Summary: "大きさの倍率（0.72 なら 0.72 倍）", Lo: bound(0.01), Hi: bound(8)},
 			{Name: "about", Type: tPair, Required: true, Summary: "縮める中心 [x, y]"},
 		},
 		Whole: true,
@@ -272,7 +272,7 @@ func init() {
 		Technique: "円の線（Aseprite の Ellipse の線）", Finish: "既存の lint corner",
 		Params: []param{
 			{Name: "center", Type: tPoint, Required: true, Summary: "中心の画素 [x, y]"},
-			{Name: "r", Type: tInt, Required: true, Summary: "半径（画素の数）"},
+			{Name: "r", Type: tInt, Required: true, Summary: "半径（画素の数）", Lo: bound(0), Hi: bound(256)},
 			pColor,
 		},
 		Apply: func(c *ctx, a opArgs) error {
@@ -338,7 +338,7 @@ func init() {
 			pColor,
 			{Name: "alt", Type: tColor, Summary: "1 画素おきに置く 2 つ目の色（省くと color だけ）"},
 			{Name: "avoid", Type: tShape, Summary: "画素の中心がこの形の中なら置かない（数にも入れない）"},
-			{Name: "steps", Type: tInt, Default: 400.0, Summary: "曲線を刻む数（多いほど取りこぼしが無い）"},
+			{Name: "steps", Type: tInt, Default: 400.0, Summary: "曲線を刻む数（多いほど取りこぼしが無い）", Lo: bound(1), Hi: bound(10000)},
 		},
 		Apply: func(c *ctx, a opArgs) error {
 			k, err := c.Color(a.color("color"))

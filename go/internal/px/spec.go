@@ -17,6 +17,7 @@ package px
 // 書き損じは黙って読み飛ばさず、場所つきの Problem にして全部返す。
 
 import (
+	"math"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -79,11 +80,12 @@ type part struct {
 	Clip   bool
 	Shape  any
 	Ramp   string
-	At     pxlib.Pt
+	At     pxlib.Pt // 描く位置のずらし（コマの patch と親のずれを足した後）
+	BaseAt pxlib.Pt // コマの patch を当てる前の at（親が動いた量 = At − BaseAt を子へ渡す）
 	Ops    []opCall
 	Where  string
 	Rotate float64   // 部品を回す角度（度。正で時計回り。rotsprite の考え方で色を足さない）
-	Pivot  *pxlib.Pt // 回す中心（省くと塊の上の真ん中 = 肩・股の付け根）
+	Pivot  *[2]float64 // 回す中心の画素（.5 で画素の境目。省くと塊の上の真ん中 = 肩・股の付け根）
 }
 
 // problem は指定の書き損じ 1 件。
@@ -376,12 +378,18 @@ func parseSprite(r *reader, s *specDoc, name string, v any) *spriteSpec {
 	}
 	roles := map[string]string{}
 	if rv, ok := o.Get("roles"); ok {
-		ro, isObj := pxlib.Plain(rv).(map[string]any)
+		ro, isObj := rv.(*pxlib.Obj)
 		if !isObj {
 			r.bad(where+".roles", "役の名前（legF・legB・armF・armB・body・head）→ 部品 id のオブジェクトで書く")
+			ro = pxlib.NewObj()
 		}
-		for k, v := range ro {
-			id, _ := v.(string)
+		keys, vals := ro.Items() // 書いた順に回す（誤りの並びを毎回同じにする）
+		for i, k := range keys {
+			id, isStr := vals[i].(string)
+			if !isStr {
+				r.bad(where+".roles."+k, "部品 id を文字列で書く（例 \"legR\"）")
+				continue
+			}
 			if _, known := poseRoles[k]; !known {
 				r.bad(where+".roles."+k, "知らない役（%s）", strings.Join(poseRoleNames(), " "))
 			} else if !ids[id] {
@@ -427,7 +435,7 @@ func parseSprite(r *reader, s *specDoc, name string, v any) *spriteSpec {
 			continue
 		}
 		if patch.Has("pose") {
-			patch = poseToPatch(r, fw, patch, roles, ids)
+			patch = poseToPatch(r, fw, patch, roles, ids, rawAt(sp.RawParts))
 			sp.animated = true
 			if patch == nil {
 				continue
@@ -447,10 +455,27 @@ func parseSprite(r *reader, s *specDoc, name string, v any) *spriteSpec {
 	return sp
 }
 
+// rawAt は部品 id → patch を当てる前の at（pose のずらしはここに足す）。
+func rawAt(parts []*pxlib.Obj) map[string][2]int {
+	out := map[string][2]int{}
+	for _, raw := range parts {
+		id, _ := raw.GetOr("id", "").(string)
+		if av, ok := raw.Get("at"); ok {
+			if arr, isArr := av.([]any); isArr && len(arr) == 2 {
+				x, _ := arr[0].(json.Number).Int64()
+				y, _ := arr[1].(json.Number).Int64()
+				out[id] = [2]int{int(x), int(y)}
+			}
+		}
+	}
+	return out
+}
+
 // partsOf はコマの patch を当てた部品の列。
 func (sp *spriteSpec) partsOf(r *reader, s *specDoc, f frameSpec) []*part {
 	var out []*part
 	seen := map[string]bool{}
+	byID := map[string]*part{}
 	for i, raw := range sp.RawParts {
 		id, _ := raw.GetOr("id", "").(string)
 		obj := raw
@@ -459,6 +484,12 @@ func (sp *spriteSpec) partsOf(r *reader, s *specDoc, f frameSpec) []*part {
 				continue
 			}
 			obj = mergePatch(raw, pv).(*pxlib.Obj)
+			// shape は鍵ごとに重ねず丸ごと替える（{"ref": …} に {"disk": …} を重ねると形が 2 つになる）
+			if po, isObj := pv.(*pxlib.Obj); isObj {
+				if sh, ok := po.Get("shape"); ok && sh != nil {
+					obj.Set("shape", sh)
+				}
+			}
 		}
 		where := fmt.Sprintf("sprites.%s.parts[%d](%s)", sp.Name, i, id)
 		if f.Patch.Has(id) {
@@ -490,6 +521,19 @@ func (sp *spriteSpec) partsOf(r *reader, s *specDoc, f frameSpec) []*part {
 				p.At = pxlib.Pt{X: a[0], Y: a[1]}
 			}
 		}
+		p.BaseAt = p.At
+		if av, ok := raw.Get("at"); ok && obj != raw {
+			if a := r.ints(av, 2, where+".at"); a != nil {
+				p.BaseAt = pxlib.Pt{X: a[0], Y: a[1]}
+			}
+		} else if obj != raw {
+			p.BaseAt = pxlib.Pt{}
+		}
+		// on の子は、親がコマで動いた量だけ一緒に動く（頭の上の目・口・髪が頭に付いていく）
+		if parent := byID[p.On]; parent != nil {
+			p.At.X += parent.At.X - parent.BaseAt.X
+			p.At.Y += parent.At.Y - parent.BaseAt.Y
+		}
 		if rv, ok := obj.Get("rotate"); ok {
 			n, isNum := rv.(json.Number)
 			f, err := n.Float64()
@@ -502,8 +546,19 @@ func (sp *spriteSpec) partsOf(r *reader, s *specDoc, f frameSpec) []*part {
 			}
 		}
 		if pv, ok := obj.Get("pivot"); ok {
-			if a := r.ints(pv, 2, where+".pivot"); a != nil {
-				p.Pivot = &pxlib.Pt{X: a[0], Y: a[1]}
+			arr, isArr := pv.([]any)
+			var xy [2]float64
+			ok := isArr && len(arr) == 2
+			for i := 0; ok && i < 2; i++ {
+				n, isNum := arr[i].(json.Number)
+				f, err := n.Float64()
+				ok = isNum && err == nil && f*2 == math.Trunc(f*2)
+				xy[i] = f
+			}
+			if !ok {
+				r.bad(where+".pivot", "[x, y] で書く（整数か .5。.5 は画素の境目）")
+			} else {
+				p.Pivot = &xy
 			}
 		}
 		if p.Ramp == "" {
@@ -523,6 +578,7 @@ func (sp *spriteSpec) partsOf(r *reader, s *specDoc, f frameSpec) []*part {
 			}
 		}
 		seen[id] = true
+		byID[id] = p
 		out = append(out, p)
 	}
 	return out

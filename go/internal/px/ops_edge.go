@@ -4,25 +4,34 @@ package px
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/ababup1192/flix_game_engine/go/internal/pxlib"
 )
 
-// rampsFor は sel_out が材質のランプを引く並び（引数の名前 → 無ければ今の部品のランプ・spec のランプ全部）。
+// rampsFor は sel_out が材質のランプを引く並び。names は spec の ramps の名前か、ramp_pick を書いた部品の id。
+// 無ければ今の部品のランプ・ramp_pick が選んだランプ（部品 id の順）・spec のランプ全部。
 func (c *ctx) rampsFor(names []string) ([][]pxlib.Key, error) {
 	var out [][]pxlib.Key
 	for _, n := range names {
-		r, ok := c.Spec.Ramps[n]
-		if !ok {
-			return nil, fmt.Errorf("ramps に %q が無い", n)
+		if r, ok := c.Spec.Ramps[n]; ok {
+			out = append(out, r)
+			continue
 		}
-		out = append(out, r)
+		if r, ok := c.picked[n]; ok {
+			out = append(out, r)
+			continue
+		}
+		return nil, fmt.Errorf("ramps に %q が無い（spec の ramps の名前か、ramp_pick を書いた部品の id）", n)
 	}
 	if len(out) > 0 {
 		return out, nil
 	}
 	if r := c.Ramp(); len(r) > 0 {
 		out = append(out, r)
+	}
+	for _, id := range sortedKeys(c.picked) {
+		out = append(out, c.picked[id])
 	}
 	for _, n := range sortedKeys(c.Spec.Ramps) {
 		out = append(out, c.Spec.Ramps[n])
@@ -31,6 +40,16 @@ func (c *ctx) rampsFor(names []string) ([][]pxlib.Key, error) {
 		return nil, fmt.Errorf("ランプが無い")
 	}
 	return out, nil
+}
+
+// rampOf は色 k を含む最初のランプ（無ければ nil）。
+func rampOf(ramps [][]pxlib.Key, k pxlib.Key) []pxlib.Key {
+	for _, r := range ramps {
+		if rampHas(r, k) {
+			return r
+		}
+	}
+	return nil
 }
 
 func sortedKeys[V any](m map[string]V) []string {
@@ -46,10 +65,12 @@ func sortedKeys[V any](m map[string]V) []string {
 	return out
 }
 
-// selOut は塊 m の外側 1px（4 近傍）の画素と色を返す。色は内側の隣（右か下を優先）の色を、
-// その材質のランプで drop 段暗くした物。塊が右下にある縁（光の側）だけは litDrop 段。
-func selOut(g *pxlib.Grid, m pxlib.Mask, ramps [][]pxlib.Key, drop, litDrop int) map[pxlib.Pt]pxlib.Key {
+// selOut は塊 m の外側 1px（4 近傍）の画素と色を返す。色は内側の隣（光から遠い側を優先）の色を、
+// その材質のランプで drop 段暗くした物。塊が光の側にある縁（内側の隣がどれも光と反対の向き）だけは litDrop 段。
+// (sx, sy) は光の来る向きの符号（左上なら (-1, -1)）。
+func selOut(g *pxlib.Grid, m pxlib.Mask, ramps [][]pxlib.Key, drop, litDrop, sx, sy int) map[pxlib.Pt]pxlib.Key {
 	out := map[pxlib.Pt]pxlib.Key{}
+	away := func(d pxlib.Pt) int { return -(d.X*sx + d.Y*sy) } // 光から遠ざかる向きほど大きい
 	for y := 0; y < g.H; y++ {
 		for x := 0; x < g.W; x++ {
 			if m.At(x, y) {
@@ -65,22 +86,19 @@ func selOut(g *pxlib.Grid, m pxlib.Mask, ramps [][]pxlib.Key, drop, litDrop int)
 				continue
 			}
 			best := nb[0]
-			lit := true
+			lit := sx != 0 || sy != 0
 			for _, d := range nb {
-				if d.X+d.Y > best.X+best.Y {
+				if away(d) > away(best) {
 					best = d
 				}
-				if d.X+d.Y <= 0 {
+				if away(d) <= 0 {
 					lit = false
 				}
 			}
 			inner := g.At(x+best.X, y+best.Y)
-			ramp := ramps[0]
-			for _, r := range ramps {
-				if rampHas(r, inner) {
-					ramp = r
-					break
-				}
+			ramp := rampOf(ramps, inner)
+			if ramp == nil {
+				ramp = ramps[0]
 			}
 			i := 0
 			for j, k := range ramp {
@@ -92,7 +110,7 @@ func selOut(g *pxlib.Grid, m pxlib.Mask, ramps [][]pxlib.Key, drop, litDrop int)
 			if lit {
 				d = litDrop
 			}
-			out[pxlib.Pt{X: x, Y: y}] = ramp[max(0, i-d)]
+			out[pxlib.Pt{X: x, Y: y}] = ramp[min(len(ramp)-1, max(0, i-d))]
 		}
 	}
 	return out
@@ -140,7 +158,7 @@ func groundShadow(g *pxlib.Grid, obj pxlib.Mask, ramp []pxlib.Key, rows int, spr
 				continue
 			}
 			dx, dy := (float64(x)+0.5-cx)/rx, (float64(y)+0.5-cy)/ry
-			if dx*dx+dy*dy > 1 {
+			if dot(dx, dy, dx, dy) > 1 {
 				continue
 			}
 			k := g.At(x, y)
@@ -154,28 +172,41 @@ func groundShadow(g *pxlib.Grid, obj pxlib.Mask, ramp []pxlib.Key, rows int, spr
 	return out
 }
 
+// edgeOutside は縁の外を決める: against が "clear" なら外の隣が塊の外で透明な所（絵の外形）だけ、
+// "any" なら塊の外ならどこでも（ほかの部品との境目も）。
+func edgeOutside(g *pxlib.Grid, m pxlib.Mask, against string) func(x, y int) bool {
+	return func(x, y int) bool {
+		if m.At(x, y) {
+			return false
+		}
+		return against == "any" || !g.In(x, y) || g.At(x, y) == pxlib.Clear
+	}
+}
+
 // rimLight は塊の縁のうち、光と反対の側（外の隣が光の来ない向きにある）の画素を by 段明るくした色を返す。
-func rimLight(g *pxlib.Grid, m pxlib.Mask, ramp []pxlib.Key, sx, sy, by int) map[pxlib.Pt]pxlib.Key {
-	out := map[pxlib.Pt]pxlib.Key{}
+// 色の段は、その画素の色を含むランプで数える。
+func rimLight(g *pxlib.Grid, m pxlib.Mask, out func(x, y int) bool, ramps [][]pxlib.Key, sx, sy, by int) map[pxlib.Pt]pxlib.Key {
+	res := map[pxlib.Pt]pxlib.Key{}
 	for _, p := range m.Points() {
-		far := (sx != 0 && !m.At(p.X-sx, p.Y)) || (sy != 0 && !m.At(p.X, p.Y-sy))
+		far := (sx != 0 && out(p.X-sx, p.Y)) || (sy != 0 && out(p.X, p.Y-sy))
 		near := (sx != 0 && !m.At(p.X+sx, p.Y)) || (sy != 0 && !m.At(p.X, p.Y+sy))
 		if !far || near {
 			continue // 光と反対の縁だけ（光の側にも開いた細い所は触らない）
 		}
 		k := g.At(p.X, p.Y)
-		if to := shadeStep(ramp, k, by); to != k {
-			out[p] = to
+		if to := shadeStep(rampOf(ramps, k), k, by); to != k {
+			res[p] = to
 		}
 	}
-	return out
+	return res
 }
 
 // aaCorners は塊の段の角（外の画素で、横と縦に塊の隣が 1 つずつある L 字の凹み）のうち、
 // どちらかの段が 2px 以上の所に置く画素を返す（45° の 1-1 の段と直線には置かない）。
-// 色は横の隣の色をランプで by 段ずらした物。
-func aaCorners(g *pxlib.Grid, m pxlib.Mask, ramp []pxlib.Key, by int) map[pxlib.Pt]pxlib.Key {
-	out := map[pxlib.Pt]pxlib.Key{}
+// 色は内側の色と外の色を Oklab で mix の割合に混ぜた色に一番近い、両者のランプの色（両端の色より混ぜ色に近い物だけ）。
+// 外が透明なら外の色に地の色（ground）を、地も無ければ内側のもう 1 つ奥の色を使う。
+func aaCorners(g *pxlib.Grid, m pxlib.Mask, out func(x, y int) bool, ramps [][]pxlib.Key, hexOf map[pxlib.Key]string, ground string, mix float64) map[pxlib.Pt]pxlib.Key {
+	res := map[pxlib.Pt]pxlib.Key{}
 	run := func(x, y, dx, dy, ox, oy int) int {
 		// (x, y) から (dx, dy) へ、塊の中で (ox, oy) 側が外の画素を数える
 		n := 0
@@ -185,9 +216,10 @@ func aaCorners(g *pxlib.Grid, m pxlib.Mask, ramp []pxlib.Key, by int) map[pxlib.
 		}
 		return n
 	}
+	labOf := func(k pxlib.Key) (pxlib.Oklab, bool) { return pxlib.OklabOfHex(hexOf[k]) }
 	for y := 0; y < g.H; y++ {
 		for x := 0; x < g.W; x++ {
-			if m.At(x, y) {
+			if !out(x, y) || !g.In(x, y) {
 				continue
 			}
 			for _, dx := range [2]int{-1, 1} {
@@ -196,26 +228,81 @@ func aaCorners(g *pxlib.Grid, m pxlib.Mask, ramp []pxlib.Key, by int) map[pxlib.
 					if !m.At(hx, y) || !m.At(x, vy) || m.At(x-dx, y) || m.At(x, y-dy) {
 						continue
 					}
-					// 横の段: (x, vy) から -dx へ、上（-dy 側）が外の画素の数
-					rh := run(x, vy, -dx, 0, 0, -dy)
-					// 縦の段: (hx, y) から -dy へ、横（-dx 側）が外の画素の数
-					rv := run(hx, y, 0, -dy, -dx, 0)
-					if max(rh, rv) < 2 {
+					if max(run(x, vy, -dx, 0, 0, -dy), run(hx, y, 0, -dy, -dx, 0)) < 2 {
 						continue
 					}
-					k := g.At(hx, y)
-					if to := shadeStep(ramp, k, by); to != k {
-						out[pxlib.Pt{X: x, Y: y}] = to
+					in := g.At(hx, y)
+					il, ok := labOf(in)
+					if !ok {
+						continue
+					}
+					var ol pxlib.Oklab
+					outer := g.At(x, y)
+					switch {
+					case outer != pxlib.Clear:
+						if ol, ok = labOf(outer); !ok {
+							continue
+						}
+					case ground != "":
+						if ol, ok = pxlib.OklabOfHex(ground); !ok {
+							continue
+						}
+					default:
+						deep := g.At(hx+dx, y)
+						if !m.At(hx+dx, y) || deep == in {
+							continue
+						}
+						if ol, ok = labOf(deep); !ok {
+							continue
+						}
+					}
+					var want pxlib.Oklab
+					for i := range want {
+						want[i] = float64(il[i]*(1-mix)) + float64(ol[i]*mix)
+					}
+					limit := math.Min(labDist2(want, il), labDist2(want, ol))
+					best, bestD := pxlib.Key(""), limit
+					for _, r := range ramps {
+						if !rampHas(r, in) && (outer == pxlib.Clear || !rampHas(r, outer)) {
+							continue
+						}
+						for _, k := range r {
+							if kl, ok := labOf(k); ok && k != in && k != outer {
+								if d := labDist2(want, kl); d < bestD {
+									best, bestD = k, d
+								}
+							}
+						}
+					}
+					if best != "" {
+						res[pxlib.Pt{X: x, Y: y}] = best
 					}
 				}
 			}
 		}
 	}
-	return out
+	return res
 }
 
 func (c *ctx) putAll(px map[pxlib.Pt]pxlib.Key) {
 	c.dropPixels(px)
+}
+
+var pAgainst = param{Name: "against", Type: tString, Default: "clear", Summary: "どの縁に当てるか: clear（絵の外形 = 外が透明な所だけ）・any（ほかの部品との境目にも）"}
+
+func checkAgainst(a opArgs) error {
+	if s := a.str("against"); s != "clear" && s != "any" {
+		return fmt.Errorf("against は clear か any")
+	}
+	return nil
+}
+
+func hexTable(hexOf map[pxlib.Key]string) map[string]string {
+	out := make(map[string]string, len(hexOf))
+	for k, h := range hexOf {
+		out[string(k)] = h
+	}
+	return out
 }
 
 func init() {
@@ -224,9 +311,9 @@ func init() {
 		Summary:   "塊の外側 1px を、内側の隣の色を材質のランプで drop 段暗くした色で縁取る（光の側は lit_drop 段）",
 		Technique: "sel-out（色トレス。輪郭を部品ごとの色に・黒は下と奥に絞る）", Finish: "lint black-outline",
 		Params: []param{
-			{Name: "drop", Type: tInt, Default: 2.0, Summary: "影の側の縁を暗くする段数"},
-			{Name: "lit_drop", Type: tInt, Default: 1.0, Summary: "光の側（左上）の縁を暗くする段数（0 で内側と同じ色）"},
-			{Name: "ramps", Type: tRows, Summary: "材質のランプの名前（省くと部品のランプと spec のランプ全部）"},
+			{Name: "drop", Type: tInt, Default: 2.0, Summary: "影の側の縁を暗くする段数", Lo: bound(0), Hi: bound(8)},
+			{Name: "lit_drop", Type: tInt, Default: 1.0, Summary: "光の側（light.dir の向き）の縁を暗くする段数（0 で内側と同じ色）", Lo: bound(0), Hi: bound(8)},
+			{Name: "ramps", Type: tRows, Summary: "材質のランプの名前か ramp_pick を書いた部品の id（省くと部品のランプ・ramp_pick が選んだランプ・spec のランプ全部）"},
 		},
 		Checks: []checkRef{{Check: checkBlackOutline}, {Check: checkGroundContrast}},
 		Apply: func(c *ctx, a opArgs) error {
@@ -234,7 +321,8 @@ func init() {
 			if err != nil {
 				return err
 			}
-			c.putAll(selOut(c.G, c.Region(), ramps, a.int("drop"), a.int("lit_drop")))
+			sx, sy := c.LightSign()
+			c.putAll(selOut(c.G, c.Region(), ramps, a.int("drop"), a.int("lit_drop"), sx, sy))
 			return nil
 		},
 	})
@@ -245,8 +333,8 @@ func init() {
 		Params: []param{
 			{Name: "of", Type: tString, Summary: "影を落とす部品の id（省くと今の部品。post では絵の全部）"},
 			{Name: "ramp", Type: tString, Summary: "影の色を引くランプ（省くと部品かスプライトのランプ）"},
-			{Name: "rows", Type: tInt, Default: 2.0, Summary: "影の高さ（行）"},
-			{Name: "spread", Type: tNumber, Default: 1.0, Summary: "足元の幅から左右にはみ出す量"},
+			{Name: "rows", Type: tInt, Default: 2.0, Summary: "影の高さ（行）", Lo: bound(1), Hi: bound(16)},
+			{Name: "spread", Type: tNumber, Default: 1.0, Summary: "足元の幅から左右にはみ出す量", Lo: bound(0), Hi: bound(16)},
 		},
 		Checks: []checkRef{{Check: checkGroundContrast}},
 		Apply: func(c *ctx, a opArgs) error {
@@ -275,23 +363,35 @@ func init() {
 		Name: "rim_light", Example: `{"rim_light": {}}`,
 		Summary:   "塊の縁のうち光と反対の側の 1px を by 段明るくする（暗い材質を暗い地から抜く）",
 		Technique: "sel-out（光の側は明るく）・照り返しの縁", Finish: "ground-contrast",
-		Params: []param{{Name: "by", Type: tInt, Default: 1.0, Summary: "明るくする段数"}},
+		Params: []param{{Name: "by", Type: tInt, Default: 1.0, Summary: "明るくする段数", Lo: bound(1), Hi: bound(4)}, pAgainst},
 		Checks: []checkRef{{Check: checkGroundContrast}},
 		Apply: func(c *ctx, a opArgs) error {
+			if err := checkAgainst(a); err != nil {
+				return err
+			}
 			sx, sy := c.LightSign()
-			c.putAll(rimLight(c.G, c.Region(), c.Ramp(), sx, sy, a.int("by")))
+			m := c.Region()
+			c.putAll(rimLight(c.G, m, edgeOutside(c.G, m, a.str("against")), c.allRamps(), sx, sy, a.int("by")))
 			return nil
 		},
 	})
 	register(&opDef{
 		Name: "aa_corners", Example: `{"aa_corners": {}}`,
-		Summary:   "2px 以上の段の角の凹みにだけ、隣の色を by 段ずらした中間の色を 1px 置く（45° と直線には置かない）",
+		Summary:   "2px 以上の段の角の凹みにだけ、内側と外の色の中間に一番近いランプの色を 1px 置く（45° と直線には置かない。中間の色が無ければ置かない）",
 		Technique: "手打ち AA（2px 以上の段の角にだけ中間色）", Finish: "lint jaggy・orphan",
-		Params: []param{{Name: "by", Type: tInt, Default: -1.0, Summary: "隣の色からずらす段数（負で暗く）"}},
+		Params: []param{
+			{Name: "mix", Type: tNumber, Default: 0.5, Summary: "外の色へ寄せる割合（0.5 = 真ん中）", Lo: bound(0.1), Hi: bound(0.9)},
+			pAgainst,
+		},
 		Checks: []checkRef{{Check: checkSprite, Rule: "jaggy"}},
 		Exempt: []checkRef{{Check: checkSprite, Rule: "orphan"}},
 		Apply: func(c *ctx, a opArgs) error {
-			c.putAll(aaCorners(c.G, c.Region(), c.Ramp(), a.int("by")))
+			if err := checkAgainst(a); err != nil {
+				return err
+			}
+			m := c.Region()
+			ground := groundHex(c.Spec.Light.Ground, hexTable(c.hexOf))
+			c.putAll(aaCorners(c.G, m, edgeOutside(c.G, m, a.str("against")), c.allRamps(), c.hexOf, ground, a.num("mix")))
 			return nil
 		},
 	})

@@ -275,6 +275,8 @@
             "width": {
               "description": "太さ",
               "type": "number",
+              "minimum": 0.1,
+              "maximum": 64,
               "default": 1
             }
           }
@@ -465,6 +467,8 @@
             "n": {
               "description": "角の数",
               "type": "integer",
+              "minimum": 3,
+              "maximum": 64,
               "default": 5
             },
             "rot": {
@@ -521,7 +525,7 @@
       "oneOf": [
         {
           "type": "object",
-          "description": "2px 以上の段の角の凹みにだけ、隣の色を by 段ずらした中間の色を 1px 置く（45° と直線には置かない）",
+          "description": "2px 以上の段の角の凹みにだけ、内側と外の色の中間に一番近いランプの色を 1px 置く（45° と直線には置かない。中間の色が無ければ置かない）",
           "additionalProperties": false,
           "required": [
             "aa_corners"
@@ -531,10 +535,17 @@
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "by": {
-                  "description": "隣の色からずらす段数（負で暗く）",
-                  "type": "integer",
-                  "default": -1
+                "mix": {
+                  "description": "外の色へ寄せる割合（0.5 = 真ん中）",
+                  "type": "number",
+                  "minimum": 0.1,
+                  "maximum": 0.9,
+                  "default": 0.5
+                },
+                "against": {
+                  "description": "どの縁に当てるか: clear（絵の外形 = 外が透明な所だけ）・any（ほかの部品との境目にも）",
+                  "type": "string",
+                  "default": "clear"
                 }
               }
             }
@@ -590,11 +601,15 @@
                 "radius": {
                   "description": "角の丸みの半径",
                   "type": "number",
+                  "minimum": 0,
+                  "maximum": 64,
                   "default": 6.5
                 },
                 "inset": {
                   "description": "格子の縁からの余白",
                   "type": "number",
+                  "minimum": 0,
+                  "maximum": 64,
                   "default": 2
                 },
                 "bands": {
@@ -613,6 +628,8 @@
                 "gloss_until": {
                   "description": "縁のつやを置く範囲（x+y が格子の幅のこの割合まで）",
                   "type": "number",
+                  "minimum": 0,
+                  "maximum": 2,
                   "default": 0.8
                 }
               }
@@ -634,11 +651,15 @@
                 "amp": {
                   "description": "上下の幅（px）",
                   "type": "number",
+                  "minimum": -16,
+                  "maximum": 16,
                   "default": 1
                 },
                 "phase": {
                   "description": "位相のずれ（1 周 = 1.0。部品ごとに揺れを遅らせる）",
                   "type": "number",
+                  "minimum": -1,
+                  "maximum": 1,
                   "default": 0
                 }
               }
@@ -664,6 +685,8 @@
                 "min": {
                   "description": "差の下限（0 で bin/lint-rules/px.json の valueSepMin）",
                   "type": "number",
+                  "minimum": 0,
+                  "maximum": 1,
                   "default": 0
                 }
               }
@@ -743,6 +766,8 @@
                 "steps": {
                   "description": "曲線を刻む数（多いほど取りこぼしが無い）",
                   "type": "integer",
+                  "minimum": 1,
+                  "maximum": 10000,
                   "default": 400
                 }
               },
@@ -772,6 +797,8 @@
                 "depth": {
                   "description": "遠さ（0 = そのまま・1 = 空の色）",
                   "type": "number",
+                  "minimum": 0,
+                  "maximum": 1,
                   "default": 0.5
                 },
                 "toward": {
@@ -802,6 +829,8 @@
                 "band": {
                   "description": "段の境目のディザの幅（0 = ベタの帯）",
                   "type": "number",
+                  "minimum": 0,
+                  "maximum": 8,
                   "default": 0
                 }
               }
@@ -943,6 +972,8 @@
                 "size": {
                   "description": "つやの画素の数（1〜2 が目安）",
                   "type": "integer",
+                  "minimum": 1,
+                  "maximum": 8,
                   "default": 2
                 },
                 "color": {
@@ -1044,16 +1075,22 @@
                 "band": {
                   "description": "段の境目のうちディザで混ぜる割合（1 = 全部・0.25 = 境目だけ・0 = ベタの帯）",
                   "type": "number",
+                  "minimum": 0,
+                  "maximum": 1,
                   "default": 1
                 },
                 "from": {
                   "description": "使う一番暗い段",
                   "type": "integer",
+                  "minimum": 0,
+                  "maximum": 15,
                   "default": 0
                 },
                 "to": {
                   "description": "使う一番明るい段（-1 で最明）",
                   "type": "integer",
+                  "minimum": -1,
+                  "maximum": 15,
                   "default": -1
                 },
                 "invert": {
@@ -1088,11 +1125,15 @@
                 "rows": {
                   "description": "影の高さ（行）",
                   "type": "integer",
+                  "minimum": 1,
+                  "maximum": 16,
                   "default": 2
                 },
                 "spread": {
                   "description": "足元の幅から左右にはみ出す量",
                   "type": "number",
+                  "minimum": 0,
+                  "maximum": 16,
                   "default": 1
                 }
               }
@@ -1240,7 +1281,7 @@
         },
         {
           "type": "object",
-          "description": "塊の中で colors の段をコマごとに step ずつ回す（水・光・滝。形は動かさない）",
+          "description": "塊の中で colors の段をコマごとに step ずつ回す（光のきらめきの補助。水の流れは wave_shift の方が見比べで勝った）",
           "additionalProperties": false,
           "required": [
             "palette_cycle"
@@ -1265,6 +1306,8 @@
                 "step": {
                   "description": "1 コマで進む段数（負で逆回り）",
                   "type": "integer",
+                  "minimum": -16,
+                  "maximum": 16,
                   "default": 1
                 }
               },
@@ -1334,7 +1377,7 @@
         },
         {
           "type": "object",
-          "description": "1px の線の L 字の角（ダブル）を左上から順に抜く",
+          "description": "1px の線の L 字の角（ダブル）を左上から順に抜く（抜いた所は線の下の色に戻す）",
           "additionalProperties": false,
           "required": [
             "pixel_perfect"
@@ -1407,26 +1450,36 @@
                 "n": {
                   "description": "段の数",
                   "type": "integer",
+                  "minimum": 2,
+                  "maximum": 16,
                   "default": 4
                 },
                 "at": {
                   "description": "base を置く段（-1 で n-2 = [墨, 影, 地, 光] の地）",
                   "type": "integer",
+                  "minimum": -1,
+                  "maximum": 15,
                   "default": -1
                 },
                 "step": {
                   "description": "段ごとの明るさ（Oklab の L）の差の狙い。金属は 0.2 ほどに上げる",
                   "type": "number",
+                  "minimum": 0.01,
+                  "maximum": 1,
                   "default": 0.13
                 },
                 "shift": {
                   "description": "段ごとに色相を寄せる度数（0 で hue shift を切る）",
                   "type": "number",
+                  "minimum": 0,
+                  "maximum": 180,
                   "default": 30
                 },
                 "min_gap": {
                   "description": "隣の段との L の差の最小",
                   "type": "number",
+                  "minimum": 0,
+                  "maximum": 1,
                   "default": 0.05
                 }
               },
@@ -1451,7 +1504,14 @@
                 "by": {
                   "description": "明るくする段数",
                   "type": "integer",
+                  "minimum": 1,
+                  "maximum": 4,
                   "default": 1
+                },
+                "against": {
+                  "description": "どの縁に当てるか: clear（絵の外形 = 外が透明な所だけ）・any（ほかの部品との境目にも）",
+                  "type": "string",
+                  "default": "clear"
                 }
               }
             }
@@ -1480,7 +1540,9 @@
                 },
                 "r": {
                   "description": "半径（画素の数）",
-                  "type": "integer"
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 256
                 },
                 "color": {
                   "description": "色（ink・shade・mid・light・ramp[i]・gloss・色キー。\"\" で透明へ抜く）",
@@ -1513,7 +1575,9 @@
                 },
                 "scale": {
                   "description": "大きさの倍率（0.72 なら 0.72 倍）",
-                  "type": "number"
+                  "type": "number",
+                  "minimum": 0.01,
+                  "maximum": 8
                 },
                 "about": {
                   "description": "縮める中心 [x, y]",
@@ -1535,7 +1599,7 @@
         },
         {
           "type": "object",
-          "description": "塊の中に 2〜4px の小さな塊を散らして打つ（辺で接しない・1px の単発は出ない。wrap でタイルの端を回す）",
+          "description": "塊の中に 2〜3px の小さな塊を散らして打つ（辺で接しない・1px の単発は出ない。wrap でタイルの端を回す）",
           "additionalProperties": false,
           "required": [
             "scatter_clusters"
@@ -1567,16 +1631,22 @@
                 "cell": {
                   "description": "散らす升目の大きさ（小さいほど密）",
                   "type": "integer",
-                  "default": 4
+                  "minimum": 1,
+                  "maximum": 64,
+                  "default": 3
                 },
                 "seed": {
                   "description": "散らし方の番号（variants の seed が足される）",
                   "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1.048576e+06,
                   "default": 0
                 },
                 "keep": {
                   "description": "升目に塊を置く割合（0〜1）",
                   "type": "number",
+                  "minimum": 0,
+                  "maximum": 1,
                   "default": 1
                 },
                 "wrap": {
@@ -1603,15 +1673,19 @@
                 "drop": {
                   "description": "影の側の縁を暗くする段数",
                   "type": "integer",
+                  "minimum": 0,
+                  "maximum": 8,
                   "default": 2
                 },
                 "lit_drop": {
-                  "description": "光の側（左上）の縁を暗くする段数（0 で内側と同じ色）",
+                  "description": "光の側（light.dir の向き）の縁を暗くする段数（0 で内側と同じ色）",
                   "type": "integer",
+                  "minimum": 0,
+                  "maximum": 8,
                   "default": 1
                 },
                 "ramps": {
-                  "description": "材質のランプの名前（省くと部品のランプと spec のランプ全部）",
+                  "description": "材質のランプの名前か ramp_pick を書いた部品の id（省くと部品のランプ・ramp_pick が選んだランプ・spec のランプ全部）",
                   "type": "array",
                   "items": {
                     "type": "string"
@@ -1640,6 +1714,8 @@
                 "by": {
                   "description": "ずらす段数（負で暗く）",
                   "type": "integer",
+                  "minimum": -8,
+                  "maximum": 8,
                   "default": -1
                 },
                 "offset": {
@@ -1673,6 +1749,8 @@
                 "thick": {
                   "description": "丸みの厚さ（大きいほど縁から奥まで段が続く）",
                   "type": "number",
+                  "minimum": 0.5,
+                  "maximum": 64,
                   "default": 6
                 },
                 "group": {
@@ -1693,6 +1771,8 @@
                 "bias": {
                   "description": "明るさの底上げ（正で明るく）",
                   "type": "number",
+                  "minimum": -1,
+                  "maximum": 1,
                   "default": 0
                 },
                 "outline": {
@@ -1724,6 +1804,8 @@
                 "by": {
                   "description": "ずらす段数（負で暗く・正で明るく）",
                   "type": "integer",
+                  "minimum": -8,
+                  "maximum": 8,
                   "default": -1
                 },
                 "shape": {
@@ -1749,11 +1831,15 @@
                 "amount": {
                   "description": "伸び縮みの強さ（0〜0.5 が目安）",
                   "type": "number",
+                  "minimum": 0,
+                  "maximum": 0.9,
                   "default": 0.2
                 },
                 "phase": {
                   "description": "位相のずれ（1 周 = 1.0。部品ごとに揺れを遅らせる）",
                   "type": "number",
+                  "minimum": -1,
+                  "maximum": 1,
                   "default": 0
                 },
                 "anchor": {
@@ -1823,16 +1909,22 @@
                 "amp": {
                   "description": "先端のずれの最大（px）",
                   "type": "number",
+                  "minimum": -16,
+                  "maximum": 16,
                   "default": 1
                 },
                 "curve": {
                   "description": "根元から先端への効き方（1 = まっすぐ・2 = 先端だけ大きく）",
                   "type": "number",
+                  "minimum": 0.1,
+                  "maximum": 8,
                   "default": 1
                 },
                 "phase": {
                   "description": "位相のずれ（1 周 = 1.0。部品ごとに揺れを遅らせる）",
                   "type": "number",
+                  "minimum": -1,
+                  "maximum": 1,
                   "default": 0
                 },
                 "root": {
@@ -1843,6 +1935,8 @@
                 "ripple": {
                   "description": "根元から先端へ遅れて伝わる波の数（0 で全体が同じ向き。旗は 0.5 ほど）",
                   "type": "number",
+                  "minimum": 0,
+                  "maximum": 8,
                   "default": 0
                 }
               }
@@ -1893,6 +1987,40 @@
               "required": [
                 "macro"
               ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "塊の外形は動かさず、中の模様（波頭・流れ）を行ごとにコマごとに speed px 横へ回す。水・滝・流れる雲の既定",
+          "additionalProperties": false,
+          "required": [
+            "wave_shift"
+          ],
+          "properties": {
+            "wave_shift": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "shape": {
+                  "description": "形（省くと部品の塊）",
+                  "$ref": "#/definitions/shape"
+                },
+                "speed": {
+                  "description": "1 コマで流れる px（負で左へ）",
+                  "type": "integer",
+                  "minimum": -8,
+                  "maximum": 8,
+                  "default": 1
+                },
+                "ripple": {
+                  "description": "行が 1 つ下がるごとに足すずれ（0 で全部の行がそろって流れる・0.5 で斜めの波）",
+                  "type": "number",
+                  "minimum": -4,
+                  "maximum": 4,
+                  "default": 0
+                }
+              }
             }
           }
         }
@@ -1968,10 +2096,11 @@
           "description": "部品を回す角度（度。正で時計回り。rotsprite の考え方で色を足さない）"
         },
         "pivot": {
-          "description": "回す中心 [x, y]（省くと塊の上の真ん中）",
+          "description": "回す中心の画素 [x, y]（整数は画素の中心・.5 は画素の境目。省くと塊の上の真ん中）",
           "type": "array",
           "items": {
-            "type": "integer"
+            "type": "number",
+            "multipleOf": 0.5
           },
           "minItems": 2,
           "maxItems": 2
@@ -2032,14 +2161,15 @@
         "frames": {
           "type": "object",
           "minProperties": 1,
-          "description": "コマ名 → 部品 id を鍵にした JSON Merge Patch（変えないコマは {}・null で部品を外す）。{\"pose\": 姿勢, \"parts\": {id: patch}} で歩きの姿勢（contact・down・passing・up）から作る",
+          "description": "コマ名 → 部品 id を鍵にした JSON Merge Patch（変えないコマは {}・null で部品を外す・shape は丸ごと替わる）。on の子は親の at と動きに付いていく。{\"pose\": 姿勢, \"flip\": true, \"parts\": {id: patch}} で歩きの姿勢（contact・down・passing・up。flip は手前と奥の手足を入れ替えた逆の姿勢）から作る。並べる順は「始めの姿勢 → 順に起きること → 終わり方（待機へ戻る・ループ・倒れる）」",
           "additionalProperties": {
             "type": "object",
             "additionalProperties": {
               "type": [
                 "object",
                 "null",
-                "string"
+                "string",
+                "boolean"
               ]
             }
           }

@@ -98,14 +98,15 @@ func rampPick(pal map[string]string, base string, o rampPickOpts) ([]string, err
 	out[o.At] = base
 	used := map[string]bool{base: true}
 	pick := func(k int, prevL float64, darker bool) (string, error) {
-		wantL := l0[0] + float64(k)*o.Step
+		wantL := l0[0] + float64(float64(k)*o.Step)
 		best, bestS := "", math.Inf(1)
 		for _, cd := range cands {
 			L := cd.lab[0]
 			if used[cd.name] || (darker && L > prevL-o.MinGap) || (!darker && L < prevL+o.MinGap) {
 				continue
 			}
-			s := (L-wantL)*(L-wantL)*4 + (cd.c-c0)*(cd.c-c0)*4
+			dl, dc := L-wantL, cd.c-c0
+			s := float64(dl*dl*4) + float64(dc*dc*4)
 			switch {
 			case hasH0 && cd.hasHue:
 				target := warmHue
@@ -115,7 +116,7 @@ func rampPick(pal map[string]string, base string, o rampPickOpts) ([]string, err
 				want := hueToward(h0, target, o.Shift*math.Abs(float64(k)))
 				dh := math.Abs(math.Mod(cd.hue-want+540, 360)-180) / 180
 				if cc := math.Min(c0, cd.c); cc >= 0.04 {
-					s += dh * dh * math.Min(1, cc/0.1) // 灰に近いほど色相は効かない
+					s += float64(dh * dh * math.Min(1, cc/0.1)) // 灰に近いほど色相は効かない
 				}
 			case hasH0 != cd.hasHue:
 				s += 0.02 // 灰色と色つきは混ぜにくい
@@ -200,13 +201,13 @@ func init() {
 		Technique: "hue shift のランプ（Pixelorama の Shading tool の Hue Shifting）", Finish: "色の門・ランプの単調さ（ramp-order）",
 		Params: []param{
 			{Name: "base", Type: tString, Required: true, Summary: "地の段に置く色キー"},
-			{Name: "n", Type: tInt, Default: 4.0, Summary: "段の数"},
-			{Name: "at", Type: tInt, Default: -1.0, Summary: "base を置く段（-1 で n-2 = [墨, 影, 地, 光] の地）"},
-			{Name: "step", Type: tNumber, Default: 0.13, Summary: "段ごとの明るさ（Oklab の L）の差の狙い。金属は 0.2 ほどに上げる"},
-			{Name: "shift", Type: tNumber, Default: 30.0, Summary: "段ごとに色相を寄せる度数（0 で hue shift を切る）"},
-			{Name: "min_gap", Type: tNumber, Default: 0.05, Summary: "隣の段との L の差の最小"},
+			{Name: "n", Type: tInt, Default: 4.0, Summary: "段の数", Lo: bound(2), Hi: bound(16)},
+			{Name: "at", Type: tInt, Default: -1.0, Summary: "base を置く段（-1 で n-2 = [墨, 影, 地, 光] の地）", Lo: bound(-1), Hi: bound(15)},
+			{Name: "step", Type: tNumber, Default: 0.13, Summary: "段ごとの明るさ（Oklab の L）の差の狙い。金属は 0.2 ほどに上げる", Lo: bound(0.01), Hi: bound(1)},
+			{Name: "shift", Type: tNumber, Default: 30.0, Summary: "段ごとに色相を寄せる度数（0 で hue shift を切る）", Lo: bound(0), Hi: bound(180)},
+			{Name: "min_gap", Type: tNumber, Default: 0.05, Summary: "隣の段との L の差の最小", Lo: bound(0), Hi: bound(1)},
 		},
-		Checks: []checkRef{{Check: checkRampOrder}, {Check: checkGroundContrast}},
+		Checks: []checkRef{{Check: checkGroundContrast}}, // ramp-order は build の最後に 1 回だけ回す（選んだランプは選んだスプライトの名前で出る）
 		Apply: func(c *ctx, a opArgs) error {
 			n := a.int("n")
 			at := a.int("at")
@@ -238,7 +239,7 @@ func init() {
 		Technique: "1 段ずつ塗る（Aseprite の Shading ink）・影の形を重ねる", Finish: "—",
 		Params: []param{
 			{Name: "of", Type: tString, Required: true, Summary: "影を落とす部品の id（この部品より前の列）"},
-			{Name: "by", Type: tInt, Default: -1.0, Summary: "ずらす段数（負で暗く）"},
+			{Name: "by", Type: tInt, Default: -1.0, Summary: "ずらす段数（負で暗く）", Lo: bound(-8), Hi: bound(8)},
 			{Name: "offset", Type: tPoint, Summary: "影のずれ [dx, dy]（省くと光と反対へ 1px）"},
 		},
 		Apply: func(c *ctx, a opArgs) error {
@@ -276,7 +277,7 @@ func init() {
 		Technique: "背景の奥行き（遠いほど明度差が小さい）・主役と背景を分ける", Finish: "lint value-sep",
 		Params: []param{
 			{Name: "against", Type: tString, Summary: "相手の部品 id（省くと light.ground の地の色）"},
-			{Name: "min", Type: tNumber, Default: 0.0, Summary: "差の下限（0 で bin/lint-rules/px.json の valueSepMin）"},
+			{Name: "min", Type: tNumber, Default: 0.0, Summary: "差の下限（0 で bin/lint-rules/px.json の valueSepMin）", Lo: bound(0), Hi: bound(1)},
 		},
 		Checks: []checkRef{{Check: checkValueSep}},
 		Apply: func(c *ctx, a opArgs) error {

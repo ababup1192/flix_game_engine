@@ -79,7 +79,7 @@ func checkBytesMatch(t *testing.T, dir, specFile, spriteFile string, wantFrames 
 	if err := os.WriteFile(basePath, []byte(pxlib.ToJSON(doc, "\t")), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	res, err := build(root, filepath.Join("art", specFile), buildOptions{RulesRoot: engineRoot})
+	res, err := build(root, filepath.Join("art", specFile), buildOptions{RulesRoot: engineRoot, Sheet: true})
 	if err != nil {
 		t.Fatal(err)
 	}

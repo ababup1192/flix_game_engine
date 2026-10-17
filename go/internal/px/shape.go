@@ -116,7 +116,7 @@ func init() {
 		Make: func(in shapeIn) sdf { return polySDF(in.vecs) }})
 	registerShape(&shapeKind{Name: "path", Summary: "折れ線に太さを付けた物（角と端は丸い）",
 		Main:  param{Type: tVecs, Min: 2, Summary: "[[x, y], ...]（2 点以上）"},
-		Extra: []param{{Name: "width", Type: tNumber, Default: 1.0, Summary: "太さ"}},
+		Extra: []param{{Name: "width", Type: tNumber, Default: 1.0, Summary: "太さ", Lo: bound(0.1), Hi: bound(64)}},
 		Make: func(in shapeIn) sdf {
 			var segs []func(x, y float64) float64
 			for i := 0; i+1 < len(in.vecs); i++ {
@@ -135,7 +135,7 @@ func init() {
 	registerShape(&shapeKind{Name: "star", Summary: "星（外と内の半径を交互に結ぶ多角形）",
 		Main: param{Type: tNums, Len: 4, Summary: "[cx, cy, rOut, rIn]"},
 		Extra: []param{
-			{Name: "n", Type: tInt, Default: 5.0, Summary: "角の数"},
+			{Name: "n", Type: tInt, Default: 5.0, Summary: "角の数", Lo: bound(3), Hi: bound(64)},
 			{Name: "rot", Type: tNumber, Default: -math.Pi / 2, Summary: "最初の角の向き（ラジアン。既定は真上）"},
 		},
 		Make: func(in shapeIn) sdf {

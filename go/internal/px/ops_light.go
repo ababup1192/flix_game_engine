@@ -47,14 +47,14 @@ func directional(m pxlib.Mask, lx, ly float64) func(x, y int) float64 {
 	}
 	lo, hi := math.Inf(1), math.Inf(-1)
 	for _, p := range pts {
-		v := float64(p.X)*lx + float64(p.Y)*ly
+		v := dot(float64(p.X), float64(p.Y), lx, ly)
 		lo, hi = math.Min(lo, v), math.Max(hi, v)
 	}
 	span := hi - lo
 	if span == 0 {
 		span = 1
 	}
-	return func(x, y int) float64 { return (float64(x)*lx + float64(y)*ly - lo) / span }
+	return func(x, y int) float64 { return (dot(float64(x), float64(y), lx, ly) - lo) / span }
 }
 
 // fieldOf は gradient_fill の明るさの場。
@@ -88,9 +88,9 @@ func init() {
 		Params: []param{
 			pShape,
 			{Name: "field", Type: tString, Default: "light", Summary: "明るさの場: light（光の向き。directional）・y（上が明るい）・x（右が明るい）・radial（中心が明るい）"},
-			{Name: "band", Type: tNumber, Default: 1.0, Summary: "段の境目のうちディザで混ぜる割合（1 = 全部・0.25 = 境目だけ・0 = ベタの帯）"},
-			{Name: "from", Type: tInt, Default: 0.0, Summary: "使う一番暗い段"},
-			{Name: "to", Type: tInt, Default: -1.0, Summary: "使う一番明るい段（-1 で最明）"},
+			{Name: "band", Type: tNumber, Default: 1.0, Summary: "段の境目のうちディザで混ぜる割合（1 = 全部・0.25 = 境目だけ・0 = ベタの帯）", Lo: bound(0), Hi: bound(1)},
+			{Name: "from", Type: tInt, Default: 0.0, Summary: "使う一番暗い段", Lo: bound(0), Hi: bound(15)},
+			{Name: "to", Type: tInt, Default: -1.0, Summary: "使う一番明るい段（-1 で最明）", Lo: bound(-1), Hi: bound(15)},
 			{Name: "invert", Type: tBool, Default: false, Summary: "明暗を返す"},
 		},
 		Checks: []checkRef{{Check: checkPillow}, {Check: checkLightDir}, {Check: checkSprite, Rule: "banding"}},
@@ -131,7 +131,7 @@ func init() {
 		Technique: "陰影（光源は 1 つ（左上）。縁を一様に暗くしない）", Finish: "lint pillow・light-dir",
 		Params: []param{
 			pShape,
-			{Name: "band", Type: tNumber, Default: 0.0, Summary: "段の境目のディザの幅（0 = ベタの帯）"},
+			{Name: "band", Type: tNumber, Default: 0.0, Summary: "段の境目のディザの幅（0 = ベタの帯）", Lo: bound(0), Hi: bound(8)},
 		},
 		Checks: []checkRef{{Check: checkPillow}, {Check: checkLightDir}},
 		Apply: func(c *ctx, a opArgs) error {

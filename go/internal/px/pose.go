@@ -51,6 +51,9 @@ var poses = map[string]map[string]poseMove{
 		"armB": {Rotate: 5, At: [2]int{0, -1}}, "body": {At: [2]int{0, -1}}, "head": {At: [2]int{0, -1}}},
 }
 
+// flipRole は flip で動きを入れ替える相手の役（胴と頭はそのまま）。
+var flipRole = map[string]string{"legF": "legB", "legB": "legF", "armF": "armB", "armB": "armF", "body": "body", "head": "head"}
+
 func poseNames() []string {
 	out := make([]string, 0, len(poses))
 	for k := range poses {
@@ -61,8 +64,17 @@ func poseNames() []string {
 }
 
 // poseToPatch は {"pose": 名前, "parts": {id: patch}} を部品 id → patch に直す。
-func poseToPatch(r *reader, where string, frame *pxlib.Obj, roles map[string]string, ids map[string]bool) *pxlib.Obj {
-	r.keys(frame, where, []string{"pose", "parts"})
+// 姿勢のずらし（at）は部品の元の at に足す（元が [3, 2] なら down で [3, 3]）。
+func poseToPatch(r *reader, where string, frame *pxlib.Obj, roles map[string]string, ids map[string]bool, base map[string][2]int) *pxlib.Obj {
+	r.keys(frame, where, []string{"pose", "flip", "parts"})
+	flip := false
+	if fv, ok := frame.Get("flip"); ok {
+		b, isBool := fv.(bool)
+		if !isBool {
+			r.bad(where+".flip", "true か false で書く")
+		}
+		flip = b
+	}
 	name, _ := frame.GetOr("pose", "").(string)
 	table, ok := poses[name]
 	if !ok {
@@ -84,12 +96,17 @@ func poseToPatch(r *reader, where string, frame *pxlib.Obj, roles map[string]str
 			continue // その役の部品が無い絵（腕の無い魔物など）
 		}
 		mv := table[role]
+		if flip {
+			// 手前と奥の手足の動きを入れ替える（逆の足が前に出た contact。歩きの後半の 2 歩目）
+			mv = table[flipRole[role]]
+		}
 		p := pxlib.NewObj()
 		if mv.Rotate != 0 {
 			p.Set("rotate", json.Number(fmt.Sprint(mv.Rotate)))
 		}
 		if mv.At != [2]int{} {
-			p.Set("at", []any{json.Number(fmt.Sprint(mv.At[0])), json.Number(fmt.Sprint(mv.At[1]))})
+			b := base[id]
+			p.Set("at", []any{json.Number(fmt.Sprint(b[0] + mv.At[0])), json.Number(fmt.Sprint(b[1] + mv.At[1]))})
 		}
 		out.Set(id, p)
 	}
@@ -113,9 +130,18 @@ func poseToPatch(r *reader, where string, frame *pxlib.Obj, roles map[string]str
 }
 
 // liftPart は今の部品が書いた画素を取り上げ（下の画素は描く前の格子から戻す）、色キーを返す。
+// post では描き終えた絵の不透明な画素を全部取り上げる（後に残るのは透明）。
 func (c *ctx) liftPart() map[pxlib.Pt]pxlib.Key {
 	out := map[pxlib.Pt]pxlib.Key{}
 	ps := c.Part
+	if ps.isPost {
+		for _, p := range c.G.Opaque().Points() {
+			out[p] = c.G.At(p.X, p.Y)
+			c.G.Put(p.X, p.Y, pxlib.Clear, pxlib.OpRef{})
+			ps.written[p.Y][p.X] = false
+		}
+		return out
+	}
 	for _, p := range ps.written.Points() {
 		out[p] = c.G.At(p.X, p.Y)
 		if ps.before != nil {
@@ -128,7 +154,7 @@ func (c *ctx) liftPart() map[pxlib.Pt]pxlib.Key {
 	return out
 }
 
-// dropPixels は取り上げた画素を置き直す（透明は置かない）。
+// dropPixels は画素を置く（透明は置かない）。
 func (c *ctx) dropPixels(px map[pxlib.Pt]pxlib.Key) {
 	pts := make([]pxlib.Pt, 0, len(px))
 	for p := range px {
@@ -143,26 +169,29 @@ func (c *ctx) dropPixels(px map[pxlib.Pt]pxlib.Key) {
 }
 
 // rotatePart は今の部品を pivot のまわりに deg 度回す（rotsprite の考え方。色を足さない）。
-func (c *ctx) rotatePart(deg float64, pivot *pxlib.Pt) {
-	src := c.liftPart()
-	if len(src) == 0 {
+// 中心は回す前に決めて手に閉じ込める（子の部品も同じ中心で回る）。
+func (c *ctx) rotatePart(deg float64, pivot *[2]float64) {
+	pts := c.Part.written.Points()
+	if len(pts) == 0 {
 		return
 	}
-	pts := make([]pxlib.Pt, 0, len(src))
-	for p := range src {
-		pts = append(pts, p)
-	}
 	x0, y0, x1, _ := pxlib.BBox(pts)
-	pv := pxlib.Pt{X: (x0 + x1) / 2, Y: y0}
+	pv := [2]float64{float64((x0 + x1) / 2), float64(y0)}
 	if pivot != nil {
-		pv = pxlib.Pt{X: pivot.X + c.ox, Y: pivot.Y + c.oy} // 部品の at でずらした分も付いていく
+		pv = [2]float64{pivot[0] + float64(c.ox), pivot[1] + float64(c.oy)} // 部品の at でずらした分も付いていく
 	}
-	c.dropPixels(rotSprite(src, deg, pv, c.G.W, c.G.H))
+	w, h := c.G.W, c.G.H
+	c.moveBy(func(src map[pxlib.Pt]pxlib.Key) map[pxlib.Pt]pxlib.Key {
+		if len(src) == 0 {
+			return src
+		}
+		return rotSprite(src, deg, pv, w, h)
+	})
 }
 
 // rotSprite は画素の集まりを pivot（画素の中心）のまわりに deg 度回す。8 倍に Scale2x してから、
 // 回した先の画素の中心を逆に回して 8 倍の絵から拾う（Xenowhirl の RotSprite の考え方。色を足さない）。
-func rotSprite(src map[pxlib.Pt]pxlib.Key, deg float64, pivot pxlib.Pt, w, h int) map[pxlib.Pt]pxlib.Key {
+func rotSprite(src map[pxlib.Pt]pxlib.Key, deg float64, pivot [2]float64, w, h int) map[pxlib.Pt]pxlib.Key {
 	pts := make([]pxlib.Pt, 0, len(src))
 	for p := range src {
 		pts = append(pts, p)
@@ -183,9 +212,9 @@ func rotSprite(src map[pxlib.Pt]pxlib.Key, deg float64, pivot pxlib.Pt, w, h int
 	const k = 8
 	th := deg * math.Pi / 180
 	cs, sn := math.Cos(th), math.Sin(th)
-	cx, cy := float64(pivot.X)+0.5, float64(pivot.Y)+0.5
+	cx, cy := pivot[0]+0.5, pivot[1]+0.5
 	// 回した先が入る範囲: 元の箱の 4 隅を回した外接箱
-	r := math.Hypot(float64(bw), float64(bh)) + math.Hypot(float64(pivot.X-x0), float64(pivot.Y-y0))
+	r := math.Hypot(float64(bw), float64(bh)) + math.Hypot(pivot[0]-float64(x0), pivot[1]-float64(y0))
 	out := map[pxlib.Pt]pxlib.Key{}
 	for y := int(cy - r); y <= int(cy+r); y++ {
 		for x := int(cx - r); x <= int(cx+r); x++ {
@@ -194,8 +223,8 @@ func rotSprite(src map[pxlib.Pt]pxlib.Key, deg float64, pivot pxlib.Pt, w, h int
 			}
 			dx, dy := float64(x)+0.5-cx, float64(y)+0.5-cy
 			// 逆に回す
-			sx := dx*cs + dy*sn + cx
-			sy := -dx*sn + dy*cs + cy
+			sx := float64(dx*cs) + float64(dy*sn) + cx
+			sy := float64(-dx*sn) + float64(dy*cs) + cy
 			ix := int(math.Floor((sx - float64(x0)) * k))
 			iy := int(math.Floor((sy - float64(y0)) * k))
 			if ix < 0 || iy < 0 || iy >= len(img) || ix >= len(img[0]) {

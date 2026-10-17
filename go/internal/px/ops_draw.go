@@ -165,7 +165,7 @@ func init() {
 		Name: "shade_step", Example: `{"shade_step": {"by": -1, "shape": {"rect": [3, 3, 3, 6]}}}`, Summary: "塗ってある色を、部品のランプの隣の段へ by 段ずらす（端で止まる・ランプの外の色は触らない）",
 		Technique: "1 段ずつ塗る（Aseprite の Shading ink）", Finish: "—",
 		Params: []param{
-			{Name: "by", Type: tInt, Default: -1.0, Summary: "ずらす段数（負で暗く・正で明るく）"},
+			{Name: "by", Type: tInt, Default: -1.0, Summary: "ずらす段数（負で暗く・正で明るく）", Lo: bound(-8), Hi: bound(8)},
 			pShape,
 		},
 		Apply: func(c *ctx, a opArgs) error {
@@ -187,7 +187,7 @@ func init() {
 		},
 	})
 	register(&opDef{
-		Name: "pixel_perfect", Example: `{"pixel_perfect": {"color": "ink"}}`, Summary: "1px の線の L 字の角（ダブル）を左上から順に抜く",
+		Name: "pixel_perfect", Example: `{"pixel_perfect": {"color": "ink"}}`, Summary: "1px の線の L 字の角（ダブル）を左上から順に抜く（抜いた所は線の下の色に戻す）",
 		Technique: "pixel-perfect（Aseprite の Pencil の Pixel Perfect）", Finish: "既存の lint corner",
 		Params: []param{pOptColor},
 		Checks: []checkRef{{Check: checkSprite, Rule: "corner"}},
@@ -209,7 +209,7 @@ func init() {
 			kept := pixelPerfect(m)
 			for _, p := range m.Points() {
 				if !kept[p.Y][p.X] {
-					c.PutAbs(p.X, p.Y, pxlib.Clear)
+					c.PutAbs(p.X, p.Y, c.under(p))
 				}
 			}
 			return nil

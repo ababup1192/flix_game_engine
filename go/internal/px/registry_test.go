@@ -235,10 +235,18 @@ func TestBevelBoxCornerExempt(t *testing.T) {
 // 上位の件は、前の周に無かった物を先に出す。
 func TestSummaryPutsNewFirst(t *testing.T) {
 	old := violation{Check: checkFlatRun, Level: levelGate, Msg: "古い"}
-	nw := violation{Check: checkFlatRun, Level: levelAdvice, Msg: "新しい"}
+	nw := violation{Check: checkFlatRun, Level: levelLint, Msg: "新しい"}
 	res := &buildResult{Violations: []violation{old, nw}, prevKeys: map[string]bool{old.key(): true}}
 	lines := strings.Split(summarize(".", res), "\n")
 	if !strings.Contains(lines[2], "新しい") {
 		t.Fatalf("got %q", lines)
+	}
+}
+
+// advice は上位の件に出さない（数だけ出す。直さなくても絵が崩れない物で周回を回させない）。
+func TestSummaryHidesAdvice(t *testing.T) {
+	res := &buildResult{Violations: []violation{{Check: checkFlatRun, Level: levelAdvice, Msg: "助言"}}}
+	if out := summarize(".", res); strings.Contains(out, "助言") || !strings.Contains(out, "advice 1") {
+		t.Fatalf("got %q", out)
 	}
 }

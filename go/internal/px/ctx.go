@@ -22,7 +22,13 @@ type partState struct {
 	region  pxlib.Mask  // 塊を作る op が描いた範囲
 	written pxlib.Mask  // 書いた画素
 	before  *pxlib.Grid // この部品を描く前の格子（動かす op が下の画素を戻すのに使う）
+	rest    pxlib.Mask  // 動かす前の塊（子の clip と on はここを見る。動かしていなければ nil）
+	follow  []pixelMove // この部品に当てた動き（自分の動きの op・rotate と、親から受けた動き）。子は同じ動きを受ける
+	isPost  bool        // post（描き終えた絵の全体が対象）
 }
+
+// pixelMove は部品の画素を動かす 1 手（sway・bob・squash・rotate）。子の部品にも同じ手を当てる。
+type pixelMove func(map[pxlib.Pt]pxlib.Key) map[pxlib.Pt]pxlib.Key
 
 // Region は部品の塊。
 func (p *partState) Region() pxlib.Mask {
@@ -33,6 +39,14 @@ func (p *partState) Region() pxlib.Mask {
 		return p.region
 	}
 	return p.written
+}
+
+// restRegion は動かす前の塊（子が clip と on で見る所）。
+func (p *partState) restRegion() pxlib.Mask {
+	if p.rest != nil {
+		return p.rest
+	}
+	return p.Region()
 }
 
 // ctx は 1 コマを描く間の状態。
@@ -59,6 +73,46 @@ type ctx struct {
 	picked                 map[string][]pxlib.Key // ramp_pick が選んだランプ（部品 id → 段）
 	measures               []measure              // contrast が測った明度差
 	tile                   bool                   // tile_preview がある（3×3 の見本と継ぎ目の検査）
+	wrap                   bool                   // 端を回して描いた（scatter_clusters の wrap か tile_preview。orphan は 3×3 で見る）
+}
+
+// edgeOps は塊の縁を見て描く op。部品が動く時は、動いた後の塊に当てる（動かしてから縁取る）。
+var edgeOps = map[string]bool{"sel_out": true, "rim_light": true, "aa_corners": true, "outline": true, "pixel_perfect": true, "ground_shadow": true}
+
+// opStep は部品の ops の 1 手（並べ替えても違反の場所は書いた順の番号で出す）。
+type opStep struct {
+	call  opCall
+	index int
+}
+
+// partSteps は部品の ops を描く順に並べる。部品が動かない時は書いた順。動く時（動きの op を持つ・
+// 親が動いた）は「塗りと模様 → 動き → 親の動き → 縁」: 模様も形と一緒に動き、縁は動いた後の塊に付く。
+// 親の動きを当てる所は index = -1 で表す。
+func partSteps(ops []opCall, parentMoves bool) []opStep {
+	moves := parentMoves
+	for _, call := range ops {
+		if animOps[call.Name] && call.Name != "palette_cycle" && call.Name != "wave_shift" {
+			moves = true
+		}
+	}
+	var paint, motion, edge []opStep
+	for i, call := range ops {
+		switch {
+		case !moves:
+			paint = append(paint, opStep{call, i})
+		case animOps[call.Name] && call.Name != "palette_cycle" && call.Name != "wave_shift":
+			motion = append(motion, opStep{call, i})
+		case edgeOps[call.Name]:
+			edge = append(edge, opStep{call, i})
+		default:
+			paint = append(paint, opStep{call, i})
+		}
+	}
+	out := append(paint, motion...)
+	if parentMoves {
+		out = append(out, opStep{index: -1})
+	}
+	return append(out, edge...)
 }
 
 // drawFrame は部品の列と post を描いた格子を返す。after は部品を描き終えるたびに呼ばれる（部品の範囲の検査）。
@@ -80,16 +134,34 @@ func drawFrame(c *ctx, parts []*part, post []opCall, after func(*partState, []ch
 		c.Part = c.parts[p.ID]
 		c.Part.before = c.G.Clone()
 		c.ox, c.oy = p.At.X, p.At.Y
+		var parent *partState
+		if p.On != "" {
+			parent = c.parts[p.On]
+		}
+		parentMoves := parent != nil && len(parent.follow) > 0
 		var checks []checkRef
-		for i, call := range p.Ops {
-			c.ref = pxlib.OpRef{Part: p.ID, Index: i, Op: call.Name}
-			if err := c.apply(call); err != nil {
+		rotated := false
+		for _, st := range partSteps(p.Ops, parentMoves) {
+			if st.index < 0 {
+				// 自分の回転を先に済ませてから、親の動きを受ける
+				if p.Rotate != 0 {
+					c.ref = pxlib.OpRef{Part: p.ID, Index: len(p.Ops), Op: "rotate"}
+					c.rotatePart(p.Rotate, p.Pivot)
+					rotated = true
+				}
+				c.ref = pxlib.OpRef{Part: p.ID, Index: len(p.Ops), Op: "follow:" + p.On}
+				c.followParent(parent)
+				checks = append(checks, checkRef{Check: checkSprite, Rule: "orphan"})
+				continue
+			}
+			c.ref = pxlib.OpRef{Part: p.ID, Index: st.index, Op: st.call.Name}
+			if err := c.apply(st.call); err != nil {
 				return err
 			}
-			op, _ := lookupOp(call.Name)
+			op, _ := lookupOp(st.call.Name)
 			checks = append(checks, op.Checks...)
 		}
-		if p.Rotate != 0 {
+		if p.Rotate != 0 && !rotated {
 			c.ref = pxlib.OpRef{Part: p.ID, Index: len(p.Ops), Op: "rotate"}
 			c.rotatePart(p.Rotate, p.Pivot)
 			checks = append(checks, checkRef{Check: checkSprite, Rule: "orphan"})
@@ -100,11 +172,12 @@ func drawFrame(c *ctx, parts []*part, post []opCall, after func(*partState, []ch
 			}
 		}
 	}
-	c.Part = &partState{Part: &part{ID: "post"}, written: pxlib.NewMask(c.G.W, c.G.H)}
+	c.Part = &partState{Part: &part{ID: "post"}, written: pxlib.NewMask(c.G.W, c.G.H), isPost: true}
 	c.ox, c.oy = 0, 0
 	var postChecks []checkRef
 	for i, call := range post {
 		c.Part.region = c.G.Opaque()
+		c.Part.shape = nil
 		c.Part.before = c.G.Clone()
 		c.ref = pxlib.OpRef{Part: "post", Index: i, Op: call.Name}
 		if err := c.apply(call); err != nil {
@@ -115,9 +188,56 @@ func drawFrame(c *ctx, parts []*part, post []opCall, after func(*partState, []ch
 	}
 	if after != nil && len(postChecks) > 0 {
 		c.Part.region = c.G.Opaque()
+		c.Part.shape = nil
 		return after(c.Part, postChecks)
 	}
 	return nil
+}
+
+// moveBy は今の部品の画素を mv で動かし、塊も動いた先に替える（動かす前の塊は rest に残す）。
+// mv は子の部品にも同じように当てるので follow に積む。
+func (c *ctx) moveBy(mv pixelMove) {
+	ps := c.Part
+	if ps.rest == nil && !ps.isPost {
+		ps.rest = ps.Region()
+	}
+	c.dropPixels(mv(c.liftPart()))
+	if ps.isPost {
+		return
+	}
+	moved := pxlib.NewMask(c.G.W, c.G.H)
+	for _, p := range ps.written.Points() {
+		moved[p.Y][p.X] = true
+	}
+	if ps.shape != nil {
+		ps.shape = moved
+	} else {
+		ps.region = moved
+	}
+	ps.follow = append(ps.follow, mv)
+}
+
+// followParent は親の部品が受けた動きを、今の部品にも同じ順で当てる。
+func (c *ctx) followParent(parent *partState) {
+	ps := c.Part
+	if ps.rest == nil {
+		ps.rest = ps.Region()
+	}
+	src := c.liftPart()
+	for _, mv := range parent.follow {
+		src = mv(src)
+	}
+	c.dropPixels(src)
+	moved := pxlib.NewMask(c.G.W, c.G.H)
+	for _, p := range ps.written.Points() {
+		moved[p.Y][p.X] = true
+	}
+	if ps.shape != nil {
+		ps.shape = moved
+	} else {
+		ps.region = moved
+	}
+	ps.follow = append(ps.follow, parent.follow...)
 }
 
 // apply は op を 1 つ当てる。誤りには op の場所（例 body.ops[1] shade_step）を付ける。
@@ -135,6 +255,36 @@ func (c *ctx) apply(call opCall) error {
 	return nil
 }
 
+// under は今の部品が描く前にその画素にあった色（部品が描いていない画素か post なら透明）。
+// 線から画素を抜く op が、地の上の線に穴を開けないために使う。
+func (c *ctx) under(p pxlib.Pt) pxlib.Key {
+	ps := c.Part
+	if ps.isPost || ps.before == nil || !ps.written.At(p.X, p.Y) {
+		return pxlib.Clear
+	}
+	return ps.before.At(p.X, p.Y)
+}
+
+// allRamps は今の部品のランプ・ramp_pick が選んだランプ（部品 id の順）・spec のランプ全部（色からランプを引く時の順）。
+func (c *ctx) allRamps() [][]pxlib.Key {
+	var out [][]pxlib.Key
+	if r := c.Ramp(); len(r) > 0 {
+		out = append(out, r)
+	}
+	if c.Sprite != nil {
+		if r := c.Spec.Ramps[c.Sprite.Ramp]; len(r) > 0 {
+			out = append(out, r)
+		}
+	}
+	for _, id := range sortedKeys(c.picked) {
+		out = append(out, c.picked[id])
+	}
+	for _, n := range sortedKeys(c.Spec.Ramps) {
+		out = append(out, c.Spec.Ramps[n])
+	}
+	return out
+}
+
 // Ref は今の op の場所。
 func (c *ctx) Ref() pxlib.OpRef { return c.ref }
 
@@ -143,7 +293,7 @@ func (c *ctx) clipMask() pxlib.Mask {
 	if !c.Part.Part.Clip {
 		return nil
 	}
-	return c.parts[c.Part.Part.On].Region()
+	return c.parts[c.Part.Part.On].restRegion()
 }
 
 // OnRegion は親（on）の塊。親が無ければ nil。
@@ -151,7 +301,7 @@ func (c *ctx) OnRegion() pxlib.Mask {
 	if c.Part.Part.On == "" {
 		return nil
 	}
-	return c.parts[c.Part.Part.On].Region()
+	return c.parts[c.Part.Part.On].restRegion()
 }
 
 // PutAbs は格子の座標そのままで 1 画素を書く（clip の範囲の外は書かない）。

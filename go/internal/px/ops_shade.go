@@ -29,16 +29,19 @@ func init() {
 		Technique: "陰影（丸い体・キャラ。光源は 1 つ）", Finish: "lint pillow・light-dir",
 		Checks: []checkRef{{Check: checkPillow}, {Check: checkLightDir}},
 		Params: []param{
-			{Name: "thick", Type: tNumber, Default: 6.0, Summary: "丸みの厚さ（大きいほど縁から奥まで段が続く）"},
+			{Name: "thick", Type: tNumber, Default: 6.0, Summary: "丸みの厚さ（大きいほど縁から奥まで段が続く）", Lo: bound(0.5), Hi: bound(64)},
 			{Name: "group", Type: tString, Default: "", Summary: "同じグループの部品どうしは影と境目の線を付けない"},
 			{Name: "lines", Type: tBool, Default: true, Summary: "後ろの別グループの部品に接する縁を暗い段で締める"},
 			{Name: "flat", Type: tBool, Default: false, Summary: "丸みを付けず地の段で塗る"},
-			{Name: "bias", Type: tNumber, Default: 0.0, Summary: "明るさの底上げ（正で明るく）"},
+			{Name: "bias", Type: tNumber, Default: 0.0, Summary: "明るさの底上げ（正で明るく）", Lo: bound(-1), Hi: bound(1)},
 			{Name: "outline", Type: tColor, Default: "ink", Summary: "影の側の外周の色（\"\" で外す）"},
 			{Name: "rim", Type: tColor, Default: "", Summary: "光の側の外周の色（暗い材質を闇から抜く明るい縁。省くとランプの最暗段）"},
 		},
-		Whole: true,
 		Apply: func(c *ctx, a opArgs) error {
+			// 塊は部品の at（pose のずらしを含む）で組むので、ずらせないのは use の at だけ
+			if c.ox != c.Part.Part.At.X || c.oy != c.Part.Part.At.Y {
+				return fmt.Errorf("use の at でずらせない（部品の at か pose でずらす）")
+			}
 			if err := c.NeedRamp(4); err != nil {
 				return err
 			}

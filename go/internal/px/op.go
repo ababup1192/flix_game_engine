@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/ababup1192/flix_game_engine/go/internal/pxlib"
@@ -42,6 +43,25 @@ type param struct {
 	Summary  string
 	Len      int // tNums の長さ（丁度）
 	Min, Max int // 配列の長さの範囲（0 は見ない）
+	// Lo・Hi は数（tNumber・tInt）の値の範囲（nil は見ない。両端を含む）。外は読む段で場所つきの誤りにする。
+	Lo, Hi *float64
+}
+
+// bound は param の Lo・Hi に書く値。
+func bound(v float64) *float64 { return &v }
+
+// rangeText は数の範囲の文（「0〜1」「0 以上」）。範囲が無ければ ""。
+func rangeText(p param) string {
+	f := func(v float64) string { return strconv.FormatFloat(v, 'g', -1, 64) }
+	switch {
+	case p.Lo != nil && p.Hi != nil:
+		return f(*p.Lo) + "〜" + f(*p.Hi)
+	case p.Lo != nil:
+		return f(*p.Lo) + " 以上"
+	case p.Hi != nil:
+		return f(*p.Hi) + " 以下"
+	}
+	return ""
 }
 
 // colorRef は色の参照: ink・shade・mid・light（部品のランプの 0〜3 段）・ramp[i]・gloss・色キー・""（透明）。
@@ -297,6 +317,11 @@ func checkType(p param, v any) error {
 	}
 	if !ok {
 		return fmt.Errorf("%s で書く", want)
+	}
+	if f, isF := v.(float64); isF && (p.Type == tNumber || p.Type == tInt) {
+		if math.IsNaN(f) || math.IsInf(f, 0) || p.Lo != nil && f < *p.Lo || p.Hi != nil && f > *p.Hi {
+			return fmt.Errorf("%s の数で書く（%v は範囲の外）", rangeText(p), f)
+		}
 	}
 	return nil
 }

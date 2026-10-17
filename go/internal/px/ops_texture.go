@@ -30,7 +30,7 @@ func scatterPoints(w, h, cell, seed int, jitter, keep float64) []pxlib.Pt {
 			}
 			ox := (hash01(i, j, seed+101) - 0.5) * jitter * c
 			oy := (hash01(i, j, seed+202) - 0.5) * jitter * c
-			x, y := int(float64(i)*c+c/2+ox), int(float64(j)*c+c/2+oy)
+			x, y := int(float64(float64(i)*c)+c/2+ox), int(float64(float64(j)*c)+c/2+oy)
 			if x >= 0 && x < w && y >= 0 && y < h {
 				pts = append(pts, pxlib.Pt{X: x, Y: y})
 			}
@@ -39,10 +39,10 @@ func scatterPoints(w, h, cell, seed int, jitter, keep float64) []pxlib.Pt {
 	return pts
 }
 
-// clusterKinds は散らす塊の型（2〜4px）。blob は葉・石の斑、line は木目の筋、crack はひび。
+// clusterKinds は散らす塊の型（2〜3px。見比べで 4px の塊は「ぼやっと・ジェルっぽい」と負けた）。blob は葉・石の斑、line は木目の筋、crack はひび。
 var clusterKinds = map[string][][]string{
-	"blob":  {{"##"}, {"#", "#"}, {"##", "#."}, {"##", ".#"}, {".#", "##"}, {"#.", "##"}, {"###"}, {"##", "##"}, {"#", "#", "#"}, {".#.", "###"}},
-	"line":  {{"###"}, {"####"}, {"##"}, {"###"}, {"##."}},
+	"blob":  {{"##"}, {"#", "#"}, {"##", "#."}, {"##", ".#"}, {".#", "##"}, {"#.", "##"}, {"###"}, {"#", "#", "#"}},
+	"line":  {{"###"}, {"##"}, {"###"}, {"##"}},
 	"crack": {{"##.", "..#"}, {".##", "#.."}, {"#.", ".#", ".#"}, {".#", "#.", "#."}},
 }
 
@@ -122,7 +122,7 @@ func ditherPair(target string, cands []pxlib.Key, hexOf map[pxlib.Key]string) (a
 		return "", "", 0, fmt.Errorf("候補の色が無い")
 	}
 	d2 := func(p, q pxlib.Oklab) float64 {
-		return (p[0]-q[0])*(p[0]-q[0]) + (p[1]-q[1])*(p[1]-q[1]) + (p[2]-q[2])*(p[2]-q[2])
+		return labDist2(p, q)
 	}
 	best := math.Inf(1)
 	for i := range cs {
@@ -132,10 +132,10 @@ func ditherPair(target string, cands []pxlib.Key, hexOf map[pxlib.Key]string) (a
 				t := float64(r) / 16
 				var mix pxlib.RGBA
 				for ch := 0; ch < 3; ch++ {
-					mix[ch] = linSrgb(cs[i].lin[ch]*(1-t) + cs[j].lin[ch]*t)
+					mix[ch] = linSrgb(float64(cs[i].lin[ch]*(1-t)) + float64(cs[j].lin[ch]*t))
 				}
 				mix[3] = 255
-				s := d2(tl, pxlib.OklabOfRGBA(mix)) + pen*ditherPenalty*(math.Abs(t-0.5)+0.5)
+				s := d2(tl, pxlib.OklabOfRGBA(mix)) + float64(pen*ditherPenalty*(math.Abs(t-0.5)+0.5))
 				if s < best {
 					best, a, b, ratio = s, cs[i].k, cs[j].k, t
 				}
@@ -160,7 +160,7 @@ func linSrgb(v float64) byte {
 	if v <= 0.0031308 {
 		v *= 12.92
 	} else {
-		v = 1.055*math.Pow(v, 1/2.4) - 0.055
+		v = float64(1.055*math.Pow(v, 1/2.4)) - 0.055
 	}
 	return byte(math.Round(v * 255))
 }
@@ -180,15 +180,15 @@ func (c *ctx) colorList(refs []string) ([]pxlib.Key, error) {
 func init() {
 	register(&opDef{
 		Name: "scatter_clusters", Example: `{"scatter_clusters": {"colors": ["shade"], "cell": 3, "seed": 1}}`,
-		Summary:   "塊の中に 2〜4px の小さな塊を散らして打つ（辺で接しない・1px の単発は出ない。wrap でタイルの端を回す）",
+		Summary:   "塊の中に 2〜3px の小さな塊を散らして打つ（辺で接しない・1px の単発は出ない。wrap でタイルの端を回す）",
 		Technique: "質感（岩・レンガ・草）・塊と孤立 1px・草のタイル（Aseprite の Tiled Mode）", Finish: "既存の lint orphan・2×2 に並べて見る（tile_preview）",
 		Params: []param{
 			pShape,
 			{Name: "colors", Type: tRows, Default: []any{"shade"}, Summary: "打つ色の並び（塊ごとにハッシュで選ぶ）"},
 			{Name: "kind", Type: tString, Default: "blob", Summary: "塊の型: blob（葉・石の斑）・line（木目の筋）・crack（ひび）"},
-			{Name: "cell", Type: tInt, Default: 4.0, Summary: "散らす升目の大きさ（小さいほど密）"},
-			{Name: "seed", Type: tInt, Default: 0.0, Summary: "散らし方の番号（variants の seed が足される）"},
-			{Name: "keep", Type: tNumber, Default: 1.0, Summary: "升目に塊を置く割合（0〜1）"},
+			{Name: "cell", Type: tInt, Default: 3.0, Summary: "散らす升目の大きさ（小さいほど密）", Lo: bound(1), Hi: bound(64)},
+			{Name: "seed", Type: tInt, Default: 0.0, Summary: "散らし方の番号（variants の seed が足される）", Lo: bound(0), Hi: bound(1 << 20)},
+			{Name: "keep", Type: tNumber, Default: 1.0, Summary: "升目に塊を置く割合（0〜1）", Lo: bound(0), Hi: bound(1)},
 			{Name: "wrap", Type: tBool, Default: false, Summary: "タイルの端をまたいで反対側へ回す（並べた継ぎ目を隠す）"},
 		},
 		Checks: []checkRef{{Check: checkSprite, Rule: "orphan"}},
@@ -210,6 +210,7 @@ func init() {
 			if len(cols) == 0 {
 				return fmt.Errorf("colors が空")
 			}
+			c.wrap = c.wrap || a.bool("wrap")
 			px, _ := scatterClusters(c.G.W, c.G.H, m, cols, a.str("kind"), a.int("cell"), a.int("seed")+c.Seed*7919, a.num("keep"), a.bool("wrap"))
 			c.dropPixels(px)
 			return nil

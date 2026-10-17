@@ -11,7 +11,6 @@ package px
 import (
 	"encoding/json"
 	"fmt"
-	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -90,16 +89,45 @@ func (st *pxStyle) allowsHex(hex string) bool {
 		if !ok {
 			return false
 		}
-		n := float64(st.ChannelLevels - 1)
 		for i := 0; i < 3; i++ {
-			v := float64(c[i])
-			q := math.Round(math.Round(v/255*n) * 255 / n)
-			if math.Abs(q-v) > 1 {
+			if !channelOK(c[i], st.ChannelLevels) {
 				return false
 			}
 		}
 	}
 	return true
+}
+
+// channelOK は 8 bit の値 v が、levels 段の 1 チャンネルを 8 bit に広げた値か（ずれは 0 だけ許す）。
+// 広げ方は機材と道具でまちまちなので、よく使われる 3 つをどれも通す:
+//   - 左へずらすだけ（SNES の v<<3・PC-98 の v<<4。最大は #f8・#f0）
+//   - 上の bit を下へ繰り返す（v<<3 | v>>2。最大は #ff）
+//   - 等分に丸める（round(k·255/(levels−1))。段数が 2 の冪でない時はこれだけ）
+func channelOK(v uint8, levels int) bool {
+	bits := 0
+	for 1<<bits < levels {
+		bits++
+	}
+	pow2 := 1<<bits == levels && bits <= 8
+	for k := 0; k < levels; k++ {
+		if int(v) == (k*255+(levels-1)/2)/(levels-1) {
+			return true
+		}
+		if pow2 {
+			shifted := k << (8 - bits)
+			if int(v) == shifted {
+				return true
+			}
+			rep := shifted
+			for sh := bits; sh < 8; sh += bits {
+				rep |= shifted >> sh
+			}
+			if int(v) == rep {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func init() {

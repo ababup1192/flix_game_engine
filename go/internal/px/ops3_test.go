@@ -4,6 +4,8 @@ package px
 // どれも小さな入力と期待する出力。色は 1 字 = 1 色キー（a < b < c < d の灰の 4 段）、'.' は透明。
 
 import (
+	"fmt"
+	"math"
 	"encoding/json"
 	"image/color"
 	"os"
@@ -12,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/ababup1192/flix_game_engine/go/internal/pxlib"
+	"github.com/ababup1192/flix_game_engine/go/internal/rounds"
 )
 
 var grayHex = map[pxlib.Key]string{"a": "#202020", "b": "#606060", "c": "#a0a0a0", "d": "#e0e0e0"}
@@ -186,14 +189,14 @@ func TestGroundShadowExample(t *testing.T) {
 func TestScatterClustersExample(t *testing.T) {
 	m := maskOf("########", "########", "########", "########", "########", "########", "########", "########")
 	px, n := scatterClusters(8, 8, m, []pxlib.Key{"x"}, "blob", 4, 1, 1, true)
-	if n != 4 {
-		t.Errorf("塊の数 %d（4 のはず）", n)
+	if n != 3 {
+		t.Errorf("塊の数 %d（3 のはず）", n)
 	}
 	g := pxlib.NewGrid(8, 8)
 	for p, k := range px {
 		g.Put(p.X, p.Y, k, pxlib.OpRef{})
 	}
-	expectRows(t, g, "..x.....", "........", ".x....xx", "xxx.....", "........", ".....xxx", "........", ".xx.....")
+	expectRows(t, g, "..x.....", "........", "x.......", "x.......", "x.......", "......x.", ".....xx.", ".xx.....")
 }
 
 func TestShadeMaskCastsShadow(t *testing.T) {
@@ -292,10 +295,11 @@ func TestRampOrderCheck(t *testing.T) {
 
 func TestSeamCheck(t *testing.T) {
 	cc := techRules(t)
-	half := gridOf("aaaadddd", "aaaadddd", "aaaadddd", "aaaadddd")
+	ramp := gridOf("aabbccdd", "aabbccdd", "aabbccdd", "aabbccdd") // 並べると d→a で段が切れる
 	flat := gridOf("abab", "baba", "abab", "baba")
-	if countCheck(half, cc, checkSeam) != 1 || countCheck(flat, cc, checkSeam) != 0 {
-		t.Error("seam: 左右で明るさの切れるタイルを止め、つながるタイルは通す")
+	grout := gridOf("addddadd", "addddadd", "addddadd", "addddadd") // 目地 a は内側にもある（模様の一部）
+	if countCheck(ramp, cc, checkSeam) != 1 || countCheck(flat, cc, checkSeam) != 0 || countCheck(grout, cc, checkSeam) != 0 {
+		t.Error("seam: 端で明るさの切れるタイルを止め、つながるタイルと目地のタイルは通す")
 	}
 }
 
@@ -313,9 +317,34 @@ func TestStyleCheck(t *testing.T) {
 			t.Errorf("%q が無い:\n%s", want, all)
 		}
 	}
-	snes := &pxStyle{ChannelLevels: 32}
-	if !snes.allowsHex("#f8f8f8") || snes.allowsHex("#f3f3f3") {
-		t.Error("channelLevels 32: 5 bit に乗る色だけ通す")
+}
+
+// SNES（5 bit）と PC-98（4 bit）の色を、よく使われる 3 つの広げ方の全段で通し、段の間の値は止める。
+func TestStyleChannelLevelsAllSteps(t *testing.T) {
+	for _, tc := range []struct {
+		levels, bits int
+	}{{32, 5}, {16, 4}} {
+		st := &pxStyle{ChannelLevels: tc.levels}
+		ok := map[int]bool{}
+		for k := 0; k < tc.levels; k++ {
+			shift := k << (8 - tc.bits)
+			rep := shift | shift>>tc.bits
+			if tc.bits == 4 {
+				rep = k * 17
+			}
+			for _, v := range []int{shift, rep, int(math.Round(float64(k) * 255 / float64(tc.levels-1)))} {
+				ok[v] = true
+				hex := fmt.Sprintf("#%02x%02x%02x", v, v, v)
+				if !st.allowsHex(hex) {
+					t.Errorf("%d 段: %s（k=%d）を止めた", tc.levels, hex, k)
+				}
+			}
+		}
+		for v := 0; v < 256; v++ {
+			if !ok[v] && st.allowsHex(fmt.Sprintf("#%02x0000", v)) {
+				t.Errorf("%d 段: 段の間の値 %d を通した", tc.levels, v)
+			}
+		}
 	}
 }
 
@@ -368,10 +397,21 @@ func TestRimLight(t *testing.T) {
 }
 
 func TestAACorners(t *testing.T) {
-	g := gridOf("cc...", "cccc.", "ccccc")
+	// 外が透明: 縁の墨 a と奥の c の中間 b を置く（2px の段の角だけ・45° の (4,1) には置かない）
+	g := gridOf("ca...", "ccaa.", "ccccc")
 	c := testCtx(g, opaqueOf(g))
 	applyOp(t, c, `{"aa_corners": {}}`)
-	expectRows(t, g, "ccb..", "cccc.", "ccccc") // 2px の段の角だけ・45° の (4,1) には置かない
+	expectRows(t, g, "cab..", "ccaa.", "ccccc")
+}
+
+func TestAACornersAgainstOtherPart(t *testing.T) {
+	// 外が別の部品の色 d: against any なら b と d の中間 c、既定（clear）なら置かない
+	for against, want := range map[string]string{"any": "bbcdd", "clear": "bbddd"} {
+		g := gridOf("bbddd", "bbbbd", "bbbbb")
+		c := testCtx(g, maskOf("##...", "####.", "#####"))
+		applyOp(t, c, `{"aa_corners": {"against": "`+against+`"}}`)
+		expectRows(t, g, want, "bbbbd", "bbbbb")
+	}
 }
 
 func TestDepthFade(t *testing.T) {
@@ -439,13 +479,13 @@ func TestPaletteCycle(t *testing.T) {
 
 func TestRotSpriteKeepsColors(t *testing.T) {
 	src := map[pxlib.Pt]pxlib.Key{{X: 3, Y: 1}: "a", {X: 3, Y: 2}: "a", {X: 3, Y: 3}: "b", {X: 3, Y: 4}: "b"}
-	out := rotSprite(src, 90, pxlib.Pt{X: 3, Y: 1}, 6, 6)
+	out := rotSprite(src, 90, [2]float64{3, 1}, 6, 6)
 	g := pxlib.NewGrid(6, 6)
 	for p, k := range out {
 		g.Put(p.X, p.Y, k, pxlib.OpRef{})
 	}
 	expectRows(t, g, "......", "bbaa..", "......", "......", "......", "......")
-	out = rotSprite(src, 30, pxlib.Pt{X: 3, Y: 1}, 8, 8)
+	out = rotSprite(src, 30, [2]float64{3, 1}, 8, 8)
 	for _, k := range out {
 		if k != "a" && k != "b" {
 			t.Fatalf("回すと色 %s が湧いた", k)
@@ -555,7 +595,7 @@ func TestTilePreview(t *testing.T) {
     "parts": [{"id": "g", "shape": {"rect": [0, 0, 8, 8]}, "ops": [{"gradient_fill": {"field": "x", "band": 0}}]}],
     "post": [{"tile_preview": {}}],
     "frames": {"idle": {}}}}}`)
-	res, err := build(dir, "t.pxsrc.json", buildOptions{RulesRoot: engineRoot})
+	res, err := build(dir, "t.pxsrc.json", buildOptions{RulesRoot: engineRoot, Sheet: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -596,11 +636,16 @@ func TestRoundsSnapRestoreDiff(t *testing.T) {
 			t.Errorf("r2 で 3 つを聞かない: %s", msg)
 		}
 	}
-	if code, msg := run("snap", "t.pxsrc.json"); code != 1 || !strings.Contains(msg, "6 周目は描かない") {
+	// 周の上限は fge rounds の rounds.json の 1 か所（px.json には持たない）
+	if code, msg := run("snap", "t.pxsrc.json"); code != 1 || !strings.Contains(msg, "5 周を超える") {
 		t.Fatalf("6 周目が通った: %d %s", code, msg)
 	}
-	if code, msg := run("restore", "t.pxsrc.json", "r1"); code != 0 {
-		t.Fatal(msg)
+	if code, msg := run("restore", "t.pxsrc.json", "r1"); code != 2 {
+		t.Fatalf("px restore は消した（fge rounds restore に 1 本化）: %d %s", code, msg)
+	}
+	var o, e strings.Builder
+	if code, err := rounds.Run(&o, &e, engineRoot, dir, []string{"restore", "t", "r1", "t.pxsrc.json"}); code != 0 || err != nil {
+		t.Fatal(code, err, e.String())
 	}
 	if now, _ := os.ReadFile(spec); string(now) != string(orig) {
 		t.Error("restore で r1 の spec に戻らない")

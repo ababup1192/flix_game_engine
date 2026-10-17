@@ -140,6 +140,8 @@ type checkCtx struct {
 	Ramps       map[string][]pxlib.Key // 名前 → ランプ（spec の ramps と ramp_pick が選んだ物）
 	Measures    []measure              // contrast が測った明度差（今のコマ）
 	Style       *pxStyle               // 機種の決まり（spec の style。無ければ nil）
+	Wrap        bool                   // タイルとして端が回る（orphan は 3×3 に並べた絵で見る）
+	RampOwner   map[string]string      // ramp_pick が選んだランプの名前 → 選んだスプライト（ramp-order の違反の持ち主）
 }
 
 // checkDef は検査 1 つ。
@@ -259,7 +261,7 @@ type pxRules struct {
 	BlackOutlineMax   int                 `json:"blackOutlineMaxSize"`
 	ValueSepMin       float64             `json:"valueSepMin"`
 	SeamRatio         float64             `json:"seamRatio"`
-	MaxRounds         int                 `json:"maxRounds"`
+	BandingRingMin    float64             `json:"bandingRingMin"`
 	Styles            map[string]*pxStyle `json:"styles"`
 }
 
@@ -278,8 +280,8 @@ func loadRules(root string) (*pxRules, error) {
 		return nil, fmt.Errorf("%s に flatRunRepeat・flatRunStraight・flatRunPer・groundContrastMin を書く", path)
 	}
 	if r.RampMinGap <= 0 || r.PillowEdgeGap <= 0 || r.PillowSideGap <= 0 || r.PillowMinArea < 1 || r.LightDirMinArea < 1 ||
-		r.BlackOutlineMax < 1 || r.ValueSepMin <= 0 || r.SeamRatio <= 0 || r.MaxRounds < 1 {
-		return nil, fmt.Errorf("%s に rampMinGap・pillowEdgeGap・pillowSideGap・pillowMinArea・lightDirMinArea・blackOutlineMaxSize・valueSepMin・seamRatio・maxRounds を書く", path)
+		r.BlackOutlineMax < 1 || r.ValueSepMin <= 0 || r.SeamRatio <= 0 || r.BandingRingMin <= 0 {
+		return nil, fmt.Errorf("%s に rampMinGap・pillowEdgeGap・pillowSideGap・pillowMinArea・lightDirMinArea・blackOutlineMaxSize・valueSepMin・seamRatio・bandingRingMin を書く", path)
 	}
 	return &r, nil
 }
@@ -290,7 +292,29 @@ func init() {
 		Run: func(g *pxlib.Grid, c *checkCtx) []violation {
 			var out []violation
 			for _, f := range c.SpriteRules.CheckFrame(g) {
-				out = append(out, fromFinding(f))
+				if c.Wrap && f.Rule == "orphan" {
+					continue // 端で回り込んだ塊は 1 枚では 1px に見える。下で 3×3 に並べて見る
+				}
+				v := fromFinding(f)
+				switch f.Rule {
+				case "corner":
+					// 1px の線の角だけを見る（塗りの塊の縁の段は線ではない）。直さなくても形は崩れないので advice
+					v.Cells = thinLineCells(g, f.Cells)
+					if len(v.Cells) == 0 {
+						continue
+					}
+					v.X, v.Y, v.Level = v.Cells[0].X, v.Cells[0].Y, levelAdvice
+				case "banding":
+					// 内側 1px の縁取りが輪をほぼ一周する時だけ lint（枕のような陰に読まれる）。
+					// 一部の辺だけの縁取り（bevel の光の縁など）は絵が崩れないので advice
+					if !c.Rules.isBandingRing(g, f.Cells) {
+						v.Level = levelAdvice
+					}
+				}
+				out = append(out, v)
+			}
+			if c.Wrap {
+				out = append(out, wrappedOrphans(g, c)...)
 			}
 			return out
 		},
@@ -309,7 +333,8 @@ func init() {
 					} else {
 						same = 1
 					}
-					if same == c.Rules.FlatRunRepeat {
+					// 長さ 1 の段の連続は 45° の斜め（ドット絵の作法どおりの線）なので見ない
+					if same == c.Rules.FlatRunRepeat && r.N > 1 {
 						out = append(out, violation{Check: checkFlatRun, Level: levelAdvice, X: r.At.X, Y: r.At.Y, HasAt: true,
 							Msg: fmt.Sprintf("長さ %d の段が %d 回続く（直線に読まれる。段の長さを変える）", r.N, same)})
 					}
@@ -354,7 +379,7 @@ func init() {
 	})
 	registerCheck(&checkDef{
 		Name: checkGroundContrast, Summary: "外周の画素と地の色の明るさ（Oklab の L）の差が小さく、輪郭が地に溶ける", Level: levelLint,
-		Fix: "sel_out の drop を 1 増やす（縁を暗く）か、rim_light で光と反対の縁を明るくする",
+		Fix: "外周を地から離す（地より暗いなら sel_out の drop を増やす・明るいなら rim_light）",
 		Run: func(g *pxlib.Grid, c *checkCtx) []violation {
 			gl, ok := pxlib.Lightness(c.Ground)
 			if !ok {
@@ -362,7 +387,7 @@ func init() {
 			}
 			opaque := g.Opaque()
 			d := opaque.DistFromEdge()
-			sum, n := 0.0, 0
+			sum, signed, n := 0.0, 0.0, 0
 			worst, worstAt := math.Inf(1), pxlib.Pt{}
 			for _, p := range opaque.Points() {
 				if d[p.Y][p.X] != 1 {
@@ -374,6 +399,7 @@ func init() {
 				}
 				diff := math.Abs(l - gl)
 				sum += diff
+				signed += l - gl
 				n++
 				if diff < worst {
 					worst, worstAt = diff, p
@@ -382,10 +408,99 @@ func init() {
 			if n == 0 || sum/float64(n) >= c.Rules.GroundContrastMin {
 				return nil
 			}
-			return []violation{{Check: checkGroundContrast, Level: levelLint, X: worstAt.X, Y: worstAt.Y, HasAt: true,
-				Msg: fmt.Sprintf("外周と地 %s の明るさの差が平均 %.3f（%.2f 以上にする。外周を暗い段か明るい段へ）", c.Ground, sum/float64(n), c.Rules.GroundContrastMin)}}
+			// 外周が地より明るいか暗いかで、離す向きを分ける（暗い地で縁をさらに暗くすると溶ける）
+			fix := "外周が地より暗い: sel_out の drop を 1 増やして縁をもっと暗くする"
+			if signed > 0 {
+				fix = "外周が地より明るい: rim_light で光と反対の縁を明るくするか、sel_out の lit_drop を 0 にして縁を明るいまま残す"
+			}
+			return []violation{{Check: checkGroundContrast, Level: levelLint, X: worstAt.X, Y: worstAt.Y, HasAt: true, Fix: fix,
+				Msg: fmt.Sprintf("外周と地 %s の明るさの差が平均 %.3f（%.2f 以上にする）", c.Ground, sum/float64(n), c.Rules.GroundContrastMin)}}
 		},
 	})
+}
+
+// wrappedOrphans は 3×3 に並べた絵で orphan を見て、真ん中の 1 枚に当たる物だけを元の座標で返す。
+func wrappedOrphans(g *pxlib.Grid, c *checkCtx) []violation {
+	big := pxlib.NewGrid(3*g.W, 3*g.H)
+	for ty := 0; ty < 3; ty++ {
+		for tx := 0; tx < 3; tx++ {
+			for y := 0; y < g.H; y++ {
+				for x := 0; x < g.W; x++ {
+					if k := g.At(x, y); k != pxlib.Clear {
+						big.Put(tx*g.W+x, ty*g.H+y, k, g.SrcAt(x, y))
+					}
+				}
+			}
+		}
+	}
+	var out []violation
+	for _, f := range c.SpriteRules.CheckFrame(big) {
+		if f.Rule != "orphan" {
+			continue
+		}
+		var cells []pxlib.Pt
+		for _, p := range f.Cells {
+			if p.X >= g.W && p.X < 2*g.W && p.Y >= g.H && p.Y < 2*g.H {
+				cells = append(cells, pxlib.Pt{X: p.X - g.W, Y: p.Y - g.H})
+			}
+		}
+		if len(cells) == 0 {
+			continue
+		}
+		f.Cells, f.At = cells, cells[0]
+		out = append(out, fromFinding(f))
+	}
+	return out
+}
+
+// thinLineCells は corner の画素のうち、同じ色の 8 近傍のつながりが 1px の線の物だけを返す
+// （つながりの中に同じ色の隣が 4 つ以上ある画素があれば、塗りの塊とみなして外す）。
+func thinLineCells(g *pxlib.Grid, cells []pxlib.Pt) []pxlib.Pt {
+	var out []pxlib.Pt
+	for _, start := range cells {
+		k := g.At(start.X, start.Y)
+		seen := map[pxlib.Pt]bool{start: true}
+		stack := []pxlib.Pt{start}
+		thin := true
+		for len(stack) > 0 && thin {
+			p := stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
+			n := 0
+			for dy := -1; dy <= 1; dy++ {
+				for dx := -1; dx <= 1; dx++ {
+					q := pxlib.Pt{X: p.X + dx, Y: p.Y + dy}
+					if (dx == 0 && dy == 0) || !g.In(q.X, q.Y) || g.At(q.X, q.Y) != k {
+						continue
+					}
+					n++
+					if !seen[q] {
+						seen[q] = true
+						stack = append(stack, q)
+					}
+				}
+			}
+			if n >= 4 {
+				thin = false
+			}
+		}
+		if thin {
+			out = append(out, start)
+		}
+	}
+	return out
+}
+
+// isBandingRing は banding の画素が、絵の内側 1px の輪（外周から 2 番目）の bandingRingMin 以上を占めるか。
+func (r *pxRules) isBandingRing(g *pxlib.Grid, cells []pxlib.Pt) bool {
+	op := g.Opaque()
+	d := op.DistFromEdge()
+	ring := 0
+	for _, p := range op.Points() {
+		if d[p.Y][p.X] == 2 {
+			ring++
+		}
+	}
+	return ring > 0 && float64(len(cells)) >= r.BandingRingMin*float64(ring)
 }
 
 type stairRun struct {

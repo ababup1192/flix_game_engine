@@ -96,6 +96,24 @@ func TestRestoreBringsBackSavedScript(t *testing.T) {
 	}
 }
 
+// restore は上書きする前の台本（積んでいない書きかけ）を history に残す。
+func TestRestoreKeepsCurrentScript(t *testing.T) {
+	root := newGame(t)
+	script := filepath.Join(root, "art", "hero.src.py")
+	run(t, root, "snap", "hero", "pic.png", "art/hero.src.py")
+	if err := os.WriteFile(script, []byte("v2"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run(t, root, "restore", "hero", "r1", "art/hero.src.py")
+	kept, _ := filepath.Glob(filepath.Join(root, "debug", "history", "hero", "before-restore-*.hero.src.py"))
+	if len(kept) != 1 {
+		t.Fatalf("戻す前の台本が残っていない: %v", kept)
+	}
+	if got, _ := os.ReadFile(kept[0]); string(got) != "v2" {
+		t.Fatalf("残した台本 = %q, want v2", got)
+	}
+}
+
 func TestSnapDrawsSpriteSheet(t *testing.T) {
 	root := newGame(t)
 	sprite := `{"version":1,"legend":{"a":"#ff0000"},"sprites":{"hero":{"frames":{"0":["a.","aa"],"1":[".a","aa"]}}}}`

@@ -45,6 +45,13 @@ func opHelp(op *opDef) string {
 }
 
 func defaultText(p param) string {
+	if r := rangeText(p); r != "" {
+		return "（" + r + "）" + defaultOnly(p)
+	}
+	return defaultOnly(p)
+}
+
+func defaultOnly(p param) string {
 	if p.Required {
 		return "（必須）"
 	}
@@ -286,6 +293,12 @@ func paramSchema(p param) *pxlib.Obj {
 	for i, k := range keys {
 		out.Set(k, vals[i])
 	}
+	if p.Lo != nil {
+		out.Set("minimum", json.Number(strconv.FormatFloat(*p.Lo, 'g', -1, 64)))
+	}
+	if p.Hi != nil {
+		out.Set("maximum", json.Number(strconv.FormatFloat(*p.Hi, 'g', -1, 64)))
+	}
 	if !p.Required && p.Default != nil {
 		out.Set("default", jsonValue(p.Default))
 	}
@@ -344,7 +357,7 @@ func specSchema() string {
 			"material", obj("description", "材質のレシピ（"+materialNames()+"）。名前か {名前: {引数}}。ops の前に op の並びを差し込む",
 				"oneOf", list(obj("enum", materialEnum()), obj("type", "object", "minProperties", json.Number("1"), "maxProperties", json.Number("1")))),
 			"rotate", obj("type", "number", "description", "部品を回す角度（度。正で時計回り。rotsprite の考え方で色を足さない）"),
-			"pivot", obj("description", "回す中心 [x, y]（省くと塊の上の真ん中）", "type", "array", "items", obj("type", "integer"), "minItems", json.Number("2"), "maxItems", json.Number("2")),
+			"pivot", obj("description", "回す中心の画素 [x, y]（整数は画素の中心・.5 は画素の境目。省くと塊の上の真ん中）", "type", "array", "items", obj("type", "number", "multipleOf", json.Number("0.5")), "minItems", json.Number("2"), "maxItems", json.Number("2")),
 		))
 	spriteS := obj("type", "object", "additionalProperties", false, "required", list("size", "parts", "frames"),
 		"properties", obj(
@@ -355,8 +368,8 @@ func specSchema() string {
 			"parts", obj("type", "array", "items", ref("part"), "minItems", json.Number("1"), "description", "部品の平らな列。列の順が重ねる順"),
 			"post", obj("type", "array", "items", ref("op"), "description", "全部の部品を描いた後に格子全体へ当てる op"),
 			"frames", obj("type", "object", "minProperties", json.Number("1"),
-				"description", "コマ名 → 部品 id を鍵にした JSON Merge Patch（変えないコマは {}・null で部品を外す）。{\"pose\": 姿勢, \"parts\": {id: patch}} で歩きの姿勢（"+strings.Join(poseNames(), "・")+"）から作る",
-				"additionalProperties", obj("type", "object", "additionalProperties", obj("type", list("object", "null", "string")))),
+				"description", "コマ名 → 部品 id を鍵にした JSON Merge Patch（変えないコマは {}・null で部品を外す・shape は丸ごと替わる）。on の子は親の at と動きに付いていく。{\"pose\": 姿勢, \"flip\": true, \"parts\": {id: patch}} で歩きの姿勢（"+strings.Join(poseNames(), "・")+"。flip は手前と奥の手足を入れ替えた逆の姿勢）から作る。並べる順は「始めの姿勢 → 順に起きること → 終わり方（待機へ戻る・ループ・倒れる）」",
+				"additionalProperties", obj("type", "object", "additionalProperties", obj("type", list("object", "null", "string", "boolean")))),
 			"variants", obj("type", "object", "additionalProperties", false, "required", list("seeds"), "description", "変種: seed ごとにコマを <コマ名>_v<seed> で書き出す（散らす op は seed だけで決まる）",
 				"properties", obj("seeds", obj("type", "array", "items", obj("type", "integer", "minimum", json.Number("0")), "minItems", json.Number("1")))),
 			"roles", obj("type", "object", "description", "歩きの姿勢の役 → 部品 id（"+strings.Join(poseRoleNames(), "・")+"。省くと役と同じ id の部品）", "additionalProperties", obj("type", "string")),

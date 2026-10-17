@@ -11,6 +11,12 @@ import (
 	"github.com/ababup1192/flix_game_engine/go/internal/pxlib"
 )
 
+// labDist2 は Oklab の 2 色の距離の 2 乗（積を 1 つずつ丸める）。
+func labDist2(p, q pxlib.Oklab) float64 {
+	a, b, c := p[0]-q[0], p[1]-q[1], p[2]-q[2]
+	return float64(a*a) + float64(b*b) + float64(c*c)
+}
+
 // nearestKey は Oklab の色に一番近い候補の色キー（色を足さない）。
 func nearestKey(t pxlib.Oklab, cands map[string]string) pxlib.Key {
 	best, bestD := "", math.Inf(1)
@@ -19,7 +25,7 @@ func nearestKey(t pxlib.Oklab, cands map[string]string) pxlib.Key {
 		if !ok {
 			continue
 		}
-		d := (lab[0]-t[0])*(lab[0]-t[0]) + (lab[1]-t[1])*(lab[1]-t[1]) + (lab[2]-t[2])*(lab[2]-t[2])
+		d := labDist2(lab, t)
 		if d < bestD {
 			best, bestD = k, d
 		}
@@ -54,7 +60,7 @@ func (c *ctx) fadeCandidates(toward pxlib.Key) map[string]string {
 // glintCells は塊の中で光の来る角に一番近い画素から、光の向きの順に 4 近傍で size 画素を選ぶ（縁の 1px は避ける）。
 func glintCells(m pxlib.Mask, lx, ly float64, size int) []pxlib.Pt {
 	d := m.DistFromEdge()
-	score := func(p pxlib.Pt) float64 { return float64(p.X)*lx + float64(p.Y)*ly }
+	score := func(p pxlib.Pt) float64 { return dot(float64(p.X), float64(p.Y), lx, ly) }
 	var pool []pxlib.Pt
 	for _, p := range m.Points() {
 		if d[p.Y][p.X] >= 2 {
@@ -127,7 +133,7 @@ func init() {
 		Technique: "背景の奥行き（遠いほど明度差が小さく、空の色・青へ寄る）", Finish: "lint value-sep（contrast で測る）",
 		Params: []param{
 			pShape,
-			{Name: "depth", Type: tNumber, Default: 0.5, Summary: "遠さ（0 = そのまま・1 = 空の色）"},
+			{Name: "depth", Type: tNumber, Default: 0.5, Summary: "遠さ（0 = そのまま・1 = 空の色）", Lo: bound(0), Hi: bound(1)},
 			{Name: "toward", Type: tColor, Default: "", Summary: "寄せる空の色（省くと light.ground の地の色）"},
 		},
 		Checks: []checkRef{{Check: checkValueSep}},
@@ -162,7 +168,7 @@ func init() {
 				}
 				var mix pxlib.Oklab
 				for i := range mix {
-					mix[i] = lab[i]*(1-t) + tl[i]*t
+					mix[i] = float64(lab[i]*(1-t)) + float64(tl[i]*t)
 				}
 				if nk := nearestKey(mix, cands); nk != "" && nk != k {
 					c.PutAbs(p.X, p.Y, nk)
@@ -203,7 +209,7 @@ func init() {
 		Summary:   "塊の光の来る角に size 画素のつや（light.gloss、無ければランプの最明段）を置く（縁の 1px は避ける）",
 		Technique: "金属のつや（地・影・白 1〜2px の 3 段）", Finish: "lint orphan（つやは例外）",
 		Params: []param{
-			{Name: "size", Type: tInt, Default: 2.0, Summary: "つやの画素の数（1〜2 が目安）"},
+			{Name: "size", Type: tInt, Default: 2.0, Summary: "つやの画素の数（1〜2 が目安）", Lo: bound(1), Hi: bound(8)},
 			{Name: "color", Type: tColor, Default: "", Summary: "つやの色（省くと gloss か ramp[-1]）"},
 		},
 		Exempt: []checkRef{{Check: checkSprite, Rule: "orphan"}},
@@ -234,7 +240,7 @@ func init() {
 		Whole: true, PostOnly: true,
 		Checks: []checkRef{{Check: checkSeam}},
 		Apply: func(c *ctx, a opArgs) error {
-			c.tile = true
+			c.tile, c.wrap = true, true
 			return nil
 		},
 	})

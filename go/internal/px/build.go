@@ -29,6 +29,15 @@ type buildOptions struct {
 	RulesRoot string // 検査の閾値を読むリポジトリのルート（bin/lint-rules/）
 	NoCheck   bool   // lint と advice を回さない（色の門は回す）
 	OutDir    string // 見本と report.json の置き場（省くと <root>/debug/px/<名前>/last）
+	Sheet     bool   // 見比べのシート（PNG）も書く（--sheet・px snap。PNG の圧縮が描く時間より重いので既定は書かない）
+}
+
+// buildTiming は build の中の時間の内訳（--time で出す）。
+type buildTiming struct {
+	Draw  time.Duration `json:"drawNs"`  // spec を読んでコマを描く（検査を除く）
+	Check time.Duration `json:"checkNs"` // lint・advice の検査
+	Gate  time.Duration `json:"gateNs"`  // 色の門と sprite.json の書き出し
+	Sheet time.Duration `json:"sheetNs"` // 見比べのシート（--sheet の時だけ）
 }
 
 // frameResult は描き上がった 1 コマ。
@@ -56,6 +65,7 @@ type buildResult struct {
 	Legend      map[string]string `json:"legend"` // 字 → 色キー（次の周の差の見本に使う）
 	Hex         map[string]string `json:"hex"`    // 色キー → #rrggbb（fge px diff が周の絵を描き直すのに使う）
 	Elapsed     time.Duration     `json:"elapsedNs"`
+	Timing      buildTiming       `json:"timing"`
 	Prev        *levelCounts      `json:"-"`
 	prevKeys    map[string]bool   // 前の周の違反（上位の件を「新しい物から」出すため）
 }
@@ -84,6 +94,12 @@ const legendPool = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567
 // build は spec を読んで描き、target に書き、見本と report.json を作る。
 func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 	t0 := time.Now()
+	var checkDur time.Duration
+	runCheck := func(ref checkRef, g *pxlib.Grid, c *checkCtx) ([]violation, error) {
+		t := time.Now()
+		defer func() { checkDur += time.Since(t) }()
+		return runCheck(ref, g, c)
+	}
 	full := specPath
 	if !filepath.IsAbs(full) {
 		full = filepath.Join(root, specPath)
@@ -171,7 +187,7 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 		hexOf[pxlib.Key(k)] = h
 	}
 	cc := &checkCtx{Rules: rules, SpriteRules: spriteRules, HexOf: hexOf, Ground: groundHex(spec.Light.Ground, pal),
-		Light: spec.Light.Dir, Ramps: map[string][]pxlib.Key{}, Style: style}
+		Light: spec.Light.Dir, Ramps: map[string][]pxlib.Key{}, Style: style, RampOwner: map[string]string{}}
 	for k, r := range spec.Ramps {
 		cc.Ramps[k] = r
 	}
@@ -243,14 +259,15 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 				var after func(*partState, []checkRef) error
 				if !opt.NoCheck {
 					after = func(ps *partState, names []checkRef) error {
+						for id, r := range c.picked {
+							cc.Ramps[sp.Name+"."+id] = r
+							cc.RampOwner[sp.Name+"."+id] = sp.Name
+						}
 						if len(names) == 0 {
 							return nil
 						}
 						sub := c.G.Only(ps.written.Union(ps.Region()))
-						cc.Measures = c.measures
-						for id, r := range c.picked {
-							cc.Ramps[sp.Name+"."+id] = r
-						}
+						cc.Measures, cc.Wrap = c.measures, c.wrap
 						for _, n := range names {
 							vs, err := runCheck(n, sub, cc)
 							if err != nil {
@@ -294,7 +311,7 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 				res.Frames = append(res.Frames, fr)
 				seqNames, seqRows = append(seqNames, fname), append(seqRows, rows)
 				if !opt.NoCheck {
-					cc.Measures = c.measures
+					cc.Measures, cc.Wrap = c.measures, c.wrap
 					for _, n := range append(frameChecks, techFrameChecks...) {
 						vs, err := runCheck(n, c.G, cc)
 						if err != nil {
@@ -319,6 +336,9 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 		res.Violations = append(res.Violations, vs...)
 	}
 	res.Violations = dedupeViolations(res.Violations)
+	res.Timing.Check = checkDur
+	res.Timing.Draw = time.Since(t0) - checkDur
+	tGate := time.Now()
 	if spec.Gate != "" {
 		gate, err := loadColorGate(root, spec.Gate)
 		if err != nil {
@@ -348,6 +368,7 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 		}
 		res.Wrote = true
 	}
+	res.Timing.Gate = time.Since(tGate)
 	dir := opt.OutDir
 	if dir == "" {
 		dir = filepath.Join(root, "debug", "px", specName(specPath), "last")
@@ -361,10 +382,17 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 			res.prevKeys[v.key()] = true
 		}
 	}
-	if err := writeSheets(dir, res, prev, hexOf, groundColor(cc.Ground)); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
-	res.Sheet = filepath.Join(dir, "sheet.png")
+	if opt.Sheet {
+		tSheet := time.Now()
+		if err := writeSheets(dir, res, prev, hexOf, groundColor(cc.Ground)); err != nil {
+			return nil, err
+		}
+		res.Sheet = filepath.Join(dir, "sheet.png")
+		res.Timing.Sheet = time.Since(tSheet)
+	}
 	res.Elapsed = time.Since(t0)
 	data, _ := json.MarshalIndent(res, "", "  ")
 	if err := os.WriteFile(filepath.Join(dir, "report.json"), append(data, '\n'), 0o644); err != nil {
@@ -517,8 +545,13 @@ func writeSheets(dir string, res *buildResult, prev *buildResult, hexOf map[pxli
 		}
 		bySprite[f.Sprite] = append(bySprite[f.Sprite], px)
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
+	// 前の周の PNG を消してから書く（tile_preview を外した後の .tile.png が rN に写らないように）
+	if old, err := filepath.Glob(filepath.Join(dir, "*.png")); err == nil {
+		for _, p := range old {
+			if err := os.Remove(p); err != nil {
+				return err
+			}
+		}
 	}
 	if err := pxlib.WritePNG(filepath.Join(dir, "sheet.png"), pxlib.Sheet(sheet, ground, 4)); err != nil {
 		return err
