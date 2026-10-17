@@ -996,7 +996,7 @@
         },
         {
           "type": "object",
-          "description": "煉瓦・瓦・石積みの目地を引く: 段の高さごとに横の目地、段ごとに半分（offset）ずらした幅ごとに縦の目地（部品の塊の中だけ。色は下の色を by 段暗く）",
+          "description": "煉瓦・瓦・石積みの目地を引く: 段の高さごとに横の目地、段ごとに半分（offset）ずらした幅ごとに縦の目地（部品の塊の中だけ。色は下の色を by 段暗く）。quad を書くと奥行きのある壁（一人称の通路・遠近の路地）: 4 隅の四角形に grid の数だけ遠近で並べる（奥ほど細かく。横の目地は消失点へ向かう線・縦の目地は段の上下 1px を空ける）",
           "additionalProperties": false,
           "required": [
             "courses"
@@ -1058,6 +1058,40 @@
                   "minimum": -4,
                   "maximum": 4,
                   "default": -1
+                },
+                "quad": {
+                  "description": "奥行きのある壁の 4 隅 [手前の上, 奥の上, 奥の下, 手前の下]（書くと size・origin・shape を使わず、遠近で並べる。clip の部品なら親の塊の中だけ）",
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    },
+                    "minItems": 2,
+                    "maxItems": 2
+                  },
+                  "minItems": 4,
+                  "maxItems": 4
+                },
+                "grid": {
+                  "description": "quad の時の 1 段の個数と段の数 [横, 縦]（整数）",
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "default": [
+                    4,
+                    4
+                  ]
+                },
+                "phase": {
+                  "description": "quad の時の 1 段目の縦の目地の位置（1 個の幅に対する割合。0 で手前の縁から）",
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1,
+                  "default": 0
                 }
               }
             }
@@ -1343,6 +1377,54 @@
         },
         {
           "type": "object",
+          "description": "窓の枠: 形（省くと部品の塊）の外接箱に、外から内へ輪を 1px ずつ引く（輪 k は step × k だけ内側。\"\" は空ける・\"a|b\" は上と左を a・下と右を b にした凹凸の縁）。fill を書くと先に箱を塗る",
+          "additionalProperties": false,
+          "required": [
+            "frame"
+          ],
+          "properties": {
+            "frame": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "shape": {
+                  "description": "形（省くと部品の塊）",
+                  "$ref": "#/definitions/shape"
+                },
+                "rings": {
+                  "description": "外から内への輪の色（\"\" は空ける・\"a|b\" は上と左が a・下と右が b）",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "step": {
+                  "description": "輪 1 つごとに内へ寄せる [横, 縦]（輪 k の寄せは k × step を切り捨て。縦長の画素の機種は [1, 0.5]）",
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "default": [
+                    1,
+                    1
+                  ]
+                },
+                "fill": {
+                  "description": "輪の前に箱を塗る色（省くと塗らない）",
+                  "$ref": "#/definitions/color"
+                }
+              },
+              "required": [
+                "rings"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
           "description": "塊の光の来る角に size 画素のつや（light.gloss、無ければランプの最明段）を置く（縁の 1px は避ける）",
           "additionalProperties": false,
           "required": [
@@ -1366,6 +1448,73 @@
                   "default": ""
                 }
               }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "光の源（centers の点）から丸く減っていくにじみ: 中心からの距離 d（r で割る）で明るさ (1 − d)^power をランプの段に Bayer で落とし、今の色より明るい段の所だけ塗る（重なったにじみは明るい方が残る。ランプの 0 段 = 光の無い色は置かない）。加算の光の層は先に 0 段で fill してから当てる",
+          "additionalProperties": false,
+          "required": [
+            "glow"
+          ],
+          "properties": {
+            "glow": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "centers": {
+                  "description": "光の源の点 [[x, y], ...]（小数も可。画素 (x, y) の中心は x + 0.5）",
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    },
+                    "minItems": 2,
+                    "maxItems": 2
+                  },
+                  "minItems": 1
+                },
+                "r": {
+                  "description": "にじみの半径（縦。横は r × xscale）",
+                  "type": "number",
+                  "minimum": 0.5,
+                  "maximum": 1024
+                },
+                "power": {
+                  "description": "減り方（1 = まっすぐ・大きいほど芯に寄る）",
+                  "type": "number",
+                  "minimum": 0.05,
+                  "maximum": 16,
+                  "default": 1
+                },
+                "xscale": {
+                  "description": "横の伸び（1.5 で横に長い楕円のにじみ）",
+                  "type": "number",
+                  "minimum": 0.05,
+                  "maximum": 16,
+                  "default": 1
+                },
+                "from": {
+                  "description": "使う一番暗い段（この段は光の無い色で、置かない）",
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 15,
+                  "default": 0
+                },
+                "to": {
+                  "description": "使う一番明るい段（-1 で最明）",
+                  "type": "integer",
+                  "minimum": -1,
+                  "maximum": 15,
+                  "default": -1
+                }
+              },
+              "required": [
+                "centers",
+                "r"
+              ]
             }
           }
         },
@@ -2334,6 +2483,112 @@
         },
         {
           "type": "object",
+          "description": "字の表: rows の升を列 cols（at からの横の位置）にそろえ、行を line ずつ下げて text と同じ字形で置く（升は文字列か [文字列, 色]。align の 1 字が列のそろえ: l は左端・r は右端（送りを含む）・c は真ん中を cols の位置に）",
+          "additionalProperties": false,
+          "required": [
+            "table"
+          ],
+          "properties": {
+            "table": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "at": {
+                  "description": "1 行目の左上 [x, y]",
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2
+                },
+                "cols": {
+                  "description": "列の横の位置（at の x から。align が r なら右端）",
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 1
+                },
+                "rows": {
+                  "description": "行の並び [[升, ...], ...]（升は文字列か [文字列, 色]。cols より多い升は誤り）",
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "$ref": "#/definitions/color"
+                            }
+                          ],
+                          "minItems": 2,
+                          "maxItems": 2
+                        }
+                      ]
+                    }
+                  }
+                },
+                "align": {
+                  "description": "列ごとのそろえ（l・r・c を列の数だけ。足りない列は l）",
+                  "type": "string",
+                  "default": ""
+                },
+                "color": {
+                  "description": "升の既定の色",
+                  "$ref": "#/definitions/color",
+                  "default": "ink"
+                },
+                "colors": {
+                  "description": "列ごとの既定の色（省くと color）",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "shadow": {
+                  "description": "右下 1px の影の色（\"\" で影なし）",
+                  "$ref": "#/definitions/color",
+                  "default": ""
+                },
+                "font": {
+                  "description": "字形の組: 5x7・bold6x8",
+                  "type": "string",
+                  "default": "5x7"
+                },
+                "advance": {
+                  "description": "1 字ごとの送り（0 は組の既定）",
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 32,
+                  "default": 0
+                },
+                "line": {
+                  "description": "行の送り（0 は組の既定: 5x7 は 9・bold6x8 は 10）",
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 64,
+                  "default": 0
+                }
+              },
+              "required": [
+                "at",
+                "cols",
+                "rows"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
           "description": "文字列を字形の組（font: 5x7・bold6x8）で並べて 1 色で置く（英大文字・数字・. , ! ? - + : ' / x * %。小文字は大文字で引く。shadow を書くと字ごとに右下 1px の影を先に置く）。階調や縁を付ける字は形 text を部品の shape にして gradient_fill・outline",
           "additionalProperties": false,
           "required": [
@@ -2609,7 +2864,7 @@
           "items": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 512
+            "maximum": 1024
           },
           "minItems": 2,
           "maxItems": 2

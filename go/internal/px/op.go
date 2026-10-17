@@ -25,7 +25,7 @@ const (
 	tPoint    paramType = "point"    // 画素の位置 [x, y]（整数）
 	tPoints   paramType = "points"   // 画素の位置の並び [[x, y], ...]（整数）
 	tPair     paramType = "pair"     // 数 2 つ [a, b]
-	tNums     paramType = "numbers"  // 数の並び（Len で長さを決める）
+	tNums     paramType = "numbers"  // 数の並び（Len で長さを決める。-1 は問わない・Min〜Max）
 	tVecs     paramType = "vectors"  // 座標の並び [[x, y], ...]（小数可。Min 以上）
 	tShape    paramType = "shape"    // 形（shape.go）
 	tShapes   paramType = "shapes"   // 形の並び（Min〜Max）
@@ -33,6 +33,7 @@ const (
 	tColorMap paramType = "colormap" // 文字 → 色の参照
 	tAxis     paramType = "axis"     // "x"（左右）か "y"（上下）
 	tCircles  paramType = "circles"  // 円の並び [[x, y, r], ...]（小数可）
+	tCells    paramType = "cells"    // 表の行の並び [[升, ...], ...]（升は文字列か [文字列, 色の参照]）
 )
 
 // param は引数 1 つ。
@@ -289,7 +290,10 @@ func checkType(p param, v any) error {
 	case tPair:
 		ok, want = isList(v, 2, isNum), "数 2 つの配列"
 	case tNums:
-		ok, want = isList(v, p.Len, isNum), fmt.Sprintf("数 %d つの配列", p.Len)
+		ok, want = isList(v, p.Len, isNum) && lenOK(v, p), fmt.Sprintf("数 %d つの配列", p.Len)
+		if p.Len < 0 {
+			want = "数の配列"
+		}
 	case tVecs:
 		ok = isList(v, -1, func(e any) bool { return isList(e, 2, isNum) }) && lenOK(v, p)
 		want = fmt.Sprintf("点 %d つ以上の配列 [[x, y], ...]", p.Min)
@@ -325,6 +329,11 @@ func checkType(p param, v any) error {
 	case tCircles:
 		ok = isList(v, -1, func(e any) bool { return isList(e, 3, isNum) }) && lenOK(v, p)
 		want = "円の配列 [[x, y, 半径], ...]"
+	case tCells:
+		isStr := func(e any) bool { _, ok := e.(string); return ok }
+		cell := func(e any) bool { return isStr(e) || isList(e, 2, isStr) }
+		ok = isList(v, -1, func(e any) bool { return isList(e, -1, cell) }) && lenOK(v, p)
+		want = "行の配列 [[升, ...], ...]（升は文字列か [文字列, 色]）"
 	case tAxis:
 		s, _ := v.(string)
 		ok, want = s == "x" || s == "y", "\"x\"（左右）か \"y\"（上下）"

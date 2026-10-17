@@ -1,6 +1,7 @@
 package px
 
-// 光と階調の op: 光の向きだけで決まる明るさの場（directional）と、場をランプの段に落とす gradient_fill。
+// 光と階調の op: 光の向きだけで決まる明るさの場（directional）と、場をランプの段に落とす gradient_fill・
+// 光の源から丸く減っていくにじみ（glow。昇格ループ 3 周目: 城下町の窓・街灯・夕日と路地のネオン・HUD）。
 // 段の境目は 4×4 の Bayer で混ぜ、band で混ぜる幅を選ぶ（1 = 段の間を全部ディザ・0 = ベタの帯）。
 
 import (
@@ -180,6 +181,68 @@ func init() {
 			if a.has("shape") {
 				c.AddRegion(m)
 			}
+			return nil
+		},
+	})
+	register(&opDef{
+		Name: "glow", Example: `{"glow": {"centers": [[8, 8]], "r": 6, "power": 1.5}}`,
+		Summary: "光の源（centers の点）から丸く減っていくにじみ: 中心からの距離 d（r で割る）で明るさ (1 − d)^power をランプの段に Bayer で落とし、" +
+			"今の色より明るい段の所だけ塗る（重なったにじみは明るい方が残る。ランプの 0 段 = 光の無い色は置かない）。加算の光の層は先に 0 段で fill してから当てる",
+		Technique: "光のにじみ（窓・街灯・夕日・ネオン。中心から減り、外は地のまま）", Finish: "lint banding",
+		Params: []param{
+			{Name: "centers", Type: tVecs, Required: true, Min: 1, Summary: "光の源の点 [[x, y], ...]（小数も可。画素 (x, y) の中心は x + 0.5）"},
+			{Name: "r", Type: tNumber, Required: true, Summary: "にじみの半径（縦。横は r × xscale）", Lo: bound(0.5), Hi: bound(1024)},
+			{Name: "power", Type: tNumber, Default: 1.0, Summary: "減り方（1 = まっすぐ・大きいほど芯に寄る）", Lo: bound(0.05), Hi: bound(16)},
+			{Name: "xscale", Type: tNumber, Default: 1.0, Summary: "横の伸び（1.5 で横に長い楕円のにじみ）", Lo: bound(0.05), Hi: bound(16)},
+			{Name: "from", Type: tInt, Default: 0.0, Summary: "使う一番暗い段（この段は光の無い色で、置かない）", Lo: bound(0), Hi: bound(15)},
+			{Name: "to", Type: tInt, Default: -1.0, Summary: "使う一番明るい段（-1 で最明）", Lo: bound(-1), Hi: bound(15)},
+		},
+		Checks: []checkRef{{Check: checkSprite, Rule: "banding"}},
+		Apply: func(c *ctx, a opArgs) error {
+			ramp := c.Ramp()
+			from, to := a.int("from"), a.int("to")
+			if to < 0 {
+				to += len(ramp)
+			}
+			if from < 0 || to >= len(ramp) || from >= to {
+				return fmt.Errorf("from・to がランプ（%d 段）の外か 1 段だけ（光の無い段と光る段の 2 段以上が要る）", len(ramp))
+			}
+			sub := ramp[from : to+1]
+			idx := map[pxlib.Key]int{}
+			for i, k := range sub {
+				if _, dup := idx[k]; !dup {
+					idx[k] = i
+				}
+			}
+			r, power, xs := a.num("r"), a.num("power"), a.num("xscale")
+			painted := pxlib.NewMask(c.G.W, c.G.H)
+			for _, ctr := range vecs(a.get("centers")) {
+				cx, cy := ctr[0]+float64(c.ox), ctr[1]+float64(c.oy)
+				for y := int(cy - r - 1); y < int(cy+r+2); y++ {
+					for x := int(cx - float64(r*xs) - 1); x < int(cx+float64(r*xs)+2); x++ {
+						d := hypot((float64(x)+0.5-cx)/xs, float64(y)+0.5-cy) / r
+						if d >= 1 || !c.G.In(x, y) {
+							continue
+						}
+						t, err := crPow(1-d, power)
+						if err != nil {
+							return err
+						}
+						dx, dy := c.ditherAt(x, y)
+						i := rampIndex(t, dx, dy, len(sub), 1)
+						old, ok := idx[c.G.At(x, y)]
+						if !ok || c.G.At(x, y) == pxlib.Clear {
+							old = -1
+						}
+						if i == 0 || i <= old {
+							continue
+						}
+						c.PutAbs(x, y, sub[i])
+						painted[y][x] = true
+					}
+				}
+			}
+			c.AddRegion(painted)
 			return nil
 		},
 	})

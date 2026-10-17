@@ -169,19 +169,20 @@ var quickRows = []quickRow{
 	{"遠景と近景・主役と背景", []string{"depth_fade", "contrast"}, true},
 	{"揺れ・呼吸・弾み（on の子も付いていく）", []string{"sway", "bob", "squash"}, false},
 	{"水・滝・流れ（波頭を 1px ずつ流す）", []string{"wave_shift"}, false},
-	{"煉瓦・瓦・石積みの目地（段ごとに半分ずらす）", []string{"courses"}, false},
+	{"煉瓦・瓦・石積みの目地（段ごとに半分ずらす。一人称・遠近の壁は quad）", []string{"courses"}, false},
 	{"葉の玉を重ねた木・茂み・鉢植え", []string{"canopy"}, false},
-	{"字（ラベル・看板・HUD。5x7・太字 bold6x8。階調と縁は形 text に塗る）", []string{"text", "shape:text"}, false},
+	{"字・表・窓の枠（ラベル・HUD・メニュー。5x7・太字 bold6x8。階調と縁は形 text に塗る）", []string{"text", "table", "frame", "shape:text"}, false},
+	{"光のにじみ（窓・街灯・夕日・ネオン。加算の層は 0 段で fill してから）", []string{"glow"}, false},
 	{"縦横のスクロール（雲・雨・海の光。写しを並べてループ）", []string{"part:scroll", "gradient_fill"}, true},
-	{"同じ形を並べる（弾の輪・渦・編隊・鋲・窓）", []string{"shape:polar", "shape:array"}, false},
-	{"左右対称の機体・人・家（半分の点）・影の写し", []string{"shape:poly", "shape:translate"}, false},
-	{"機種のパレットの本数（16 色 × 4 本など）", []string{"style:palettes"}, false},
+	{"同じ形を並べる・写す（弾の輪・編隊・鋲・左右対称の機体・影）", []string{"shape:polar", "shape:array", "shape:poly", "shape:translate"}, false},
+	{"機種のパレットの本数・縦長の画素（16 色 × 4 本・PC-88 の [1, 2]）", []string{"style:palettes", "style:pixel"}, false},
 }
 
 // quickNames は早見表の op でない名前（形・部品の鍵・機種の決まり）の読み方。
 var quickNames = map[string]string{
 	"part:scroll":    "部品の `scroll`",
 	"style:palettes": "style の `palettes`",
+	"style:pixel":    "style の `pixel`",
 }
 
 func quickOps(r quickRow) string {
@@ -311,6 +312,9 @@ func paramSchema(p param) *pxlib.Obj {
 		s = withLen(obj("type", "array", "items", intArray(2)), p)
 	case tNums:
 		s = numArray(p.Len)
+		if p.Len < 0 {
+			s = withLen(obj("type", "array", "items", obj("type", "number")), p)
+		}
 	case tVecs:
 		s = withLen(obj("type", "array", "items", numArray(2)), p)
 	case tShape:
@@ -325,6 +329,10 @@ func paramSchema(p param) *pxlib.Obj {
 		s = obj("enum", list("x", "y"))
 	case tCircles:
 		s = withLen(obj("type", "array", "items", numArray(3)), p)
+	case tCells:
+		cell := obj("oneOf", list(obj("type", "string"),
+			obj("type", "array", "items", list(obj("type", "string"), ref("color")), "minItems", json.Number("2"), "maxItems", json.Number("2"))))
+		s = withLen(obj("type", "array", "items", obj("type", "array", "items", cell)), p)
 	}
 	out := obj("description", p.Summary)
 	keys, vals := s.Items()
@@ -406,7 +414,7 @@ func specSchema() string {
 	spriteS := obj("type", "object", "additionalProperties", false, "required", list("size", "parts", "frames"),
 		"properties", obj(
 			"note", obj("type", "string"),
-			"size", obj("description", "[w, h]", "type", "array", "items", obj("type", "integer", "minimum", json.Number("1"), "maximum", json.Number("512")), "minItems", json.Number("2"), "maxItems", json.Number("2")),
+			"size", obj("description", "[w, h]", "type", "array", "items", obj("type", "integer", "minimum", json.Number("1"), "maximum", json.Number(strconv.Itoa(maxGrid))), "minItems", json.Number("2"), "maxItems", json.Number("2")),
 			"anchor", obj("description", "足元などの基準点 [x, y]（省くと base のまま）", "type", "array", "items", obj("type", "integer"), "minItems", json.Number("2"), "maxItems", json.Number("2")),
 			"ramp", obj("type", "string", "description", "部品の既定のランプ（ramps の名前）"),
 			"parts", obj("type", "array", "items", ref("part"), "minItems", json.Number("1"), "description", "部品の平らな列。列の順が重ねる順"),
@@ -515,6 +523,7 @@ func styleMarkdown() string {
 		"| `maxColors` | 1 コマの色数（透明を除く） |\n" +
 		"| `tile`・`maxTileColors` | 升目の大きさ [w, h] と升目ごとの色数 |\n" +
 		"| `palettes` | `{\"count\": 4, \"size\": 15}`: 1 コマの色を count 本 × size 色に割り付けられるか（色の多い単位から順に入る本へ入れる。単位は `tile` [w, h] を書けば升目・無ければ部品）。入らないと言い切れる時は gate・貪欲法の取りこぼしかもしれない時は advice |\n" +
-		"| `maxSize` | 絵の最大の大きさ [w, h] |\n\n" +
+		"| `maxSize` | 絵の最大の大きさ [w, h]（1 枚の格子は 1024 まで） |\n" +
+		"| `pixel` | 画素の横:縦（PC-88 の 200 ライン = `[1, 2]`）。縛りではなく `--png` の PNG・GIF をこの比で引き伸ばす（sprite.json は 1:1 のまま） |\n\n" +
 		"色の名前 `ink`・`shade`・`mid`・`light` は部品のランプの 0・1・2・3 段（暗 → 明。5 段以上のランプでも light は 3 段目で、一番明るい段は `ramp[-1]`）。ランプの無い部品では同じ名前の色キー。\n"
 }

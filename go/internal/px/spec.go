@@ -347,6 +347,10 @@ func parseSpec(r *reader, root *pxlib.Obj) *specDoc {
 	return s
 }
 
+// maxGrid は 1 枚の格子の幅と高さの上限（PC-88・PC-98 の 640 幅の画面を 1 枚で描ける）。
+// 機種ごとの大きさの縛りは style の maxSize が検査 style で見る。
+const maxGrid = 1024
+
 func parseSprite(r *reader, s *specDoc, name string, v any) *spriteSpec {
 	where := "sprites." + name
 	o, ok := v.(*pxlib.Obj)
@@ -358,8 +362,8 @@ func parseSprite(r *reader, s *specDoc, name string, v any) *spriteSpec {
 	sp := &spriteSpec{Name: name, Note: r.str(o, "note", where), Ramp: r.str(o, "ramp", where)}
 	if sz, ok := o.Get("size"); ok {
 		if p := r.ints(sz, 2, where+".size"); p != nil {
-			if p[0] < 1 || p[1] < 1 || p[0] > 512 || p[1] > 512 {
-				r.bad(where+".size", "1〜512 の [w, h] で書く")
+			if p[0] < 1 || p[1] < 1 || p[0] > maxGrid || p[1] > maxGrid {
+				r.bad(where+".size", "1〜%d の [w, h] で書く（機種の大きさの縛りは style の maxSize）", maxGrid)
 			}
 			sp.Size = pxlib.Size{W: p[0], H: p[1]}
 		}

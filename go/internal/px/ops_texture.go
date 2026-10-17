@@ -283,7 +283,8 @@ func courses(m pxlib.Mask, w, h int, origin pxlib.Pt, offset float64, vertical b
 func init() {
 	register(&opDef{
 		Name: "courses", Example: `{"courses": {"size": [8, 5], "origin": [2, 3]}}`,
-		Summary:   "煉瓦・瓦・石積みの目地を引く: 段の高さごとに横の目地、段ごとに半分（offset）ずらした幅ごとに縦の目地（部品の塊の中だけ。色は下の色を by 段暗く）",
+		Summary: "煉瓦・瓦・石積みの目地を引く: 段の高さごとに横の目地、段ごとに半分（offset）ずらした幅ごとに縦の目地（部品の塊の中だけ。色は下の色を by 段暗く）。" +
+			"quad を書くと奥行きのある壁（一人称の通路・遠近の路地）: 4 隅の四角形に grid の数だけ遠近で並べる（奥ほど細かく。横の目地は消失点へ向かう線・縦の目地は段の上下 1px を空ける）",
 		Technique: "敷き詰め（煉瓦・瓦は段ごとに半分ずらす。目地は面より暗い 1px）", Finish: "lint banding・flat-run",
 		Params: []param{
 			pShape,
@@ -293,9 +294,15 @@ func init() {
 			{Name: "vertical", Type: tBool, Default: true, Summary: "縦の目地も引く（false で横の目地だけ = 板張り・瓦の段）"},
 			{Name: "color", Type: tColor, Summary: "目地の色（省くと下の色を by 段ずらす）"},
 			{Name: "by", Type: tInt, Default: -1.0, Summary: "color を省いた時に下の色をランプでずらす段数（負で暗く）", Lo: bound(-4), Hi: bound(4)},
+			{Name: "quad", Type: tVecs, Min: 4, Max: 4, Summary: "奥行きのある壁の 4 隅 [手前の上, 奥の上, 奥の下, 手前の下]（書くと size・origin・shape を使わず、遠近で並べる。clip の部品なら親の塊の中だけ）"},
+			{Name: "grid", Type: tPair, Default: []any{4.0, 4.0}, Summary: "quad の時の 1 段の個数と段の数 [横, 縦]（整数）"},
+			{Name: "phase", Type: tNumber, Default: 0.0, Summary: "quad の時の 1 段目の縦の目地の位置（1 個の幅に対する割合。0 で手前の縁から）", Lo: bound(0), Hi: bound(1)},
 		},
 		Checks: []checkRef{{Check: checkSprite, Rule: "banding"}},
 		Apply: func(c *ctx, a opArgs) error {
+			if a.has("quad") {
+				return c.coursesQuad(a)
+			}
 			m, err := c.ShapeOrRegion(a)
 			if err != nil {
 				return err
@@ -328,4 +335,86 @@ func init() {
 			return nil
 		},
 	})
+}
+
+// quadMap は単位の正方形（u: 手前 0 → 奥 1・v: 上 0 → 下 1）を 4 隅 q（手前の上・奥の上・奥の下・手前の下）へ写す
+// 射影の写し（Heckbert）。辺は直線のまま、奥ほど詰まる（一人称の壁の煉瓦・遠近の路地の壁）。
+func quadMap(q [][2]float64) func(u, v float64) (float64, float64) {
+	x0, y0, x1, y1, x2, y2, x3, y3 := q[0][0], q[0][1], q[1][0], q[1][1], q[2][0], q[2][1], q[3][0], q[3][1]
+	sx, sy := x0-x1+x2-x3, y0-y1+y2-y3
+	var a, b, cc, d, e, f, g, h float64
+	if sx == 0 && sy == 0 {
+		a, b, cc, d, e, f = x1-x0, x3-x0, x0, y1-y0, y3-y0, y0
+	} else {
+		dx1, dx2, dy1, dy2 := x1-x2, x3-x2, y1-y2, y3-y2
+		det := float64(dx1*dy2) - float64(dx2*dy1)
+		g = (float64(sx*dy2) - float64(dx2*sy)) / det
+		h = (float64(dx1*sy) - float64(sx*dy1)) / det
+		a, b, cc = x1-x0+float64(g*x1), x3-x0+float64(h*x3), x0
+		d, e, f = y1-y0+float64(g*y1), y3-y0+float64(h*y3), y0
+	}
+	return func(u, v float64) (float64, float64) {
+		w := float64(g*u) + float64(h*v) + 1
+		return (float64(a*u) + float64(b*v) + cc) / w, (float64(d*u) + float64(e*v) + f) / w
+	}
+}
+
+// coursesQuad は courses の quad: 横の目地（段の境目。上下の縁は引かない）を手前から奥へ 1 本ずつ、
+// 縦の目地を段ごとに offset ずつずらして、段の上下を 1px ずつ空けて引く（どれも 1px の線。点は偶数丸め）。
+func (c *ctx) coursesQuad(a opArgs) error {
+	q := vecs(a.get("quad"))
+	gr := a.pair("grid")
+	cols, rows := int(gr[0]), int(gr[1])
+	if float64(cols) != gr[0] || float64(rows) != gr[1] || cols < 1 || rows < 1 {
+		return fmt.Errorf("grid は 1 以上の整数 2 つ [横, 縦]（got %v）", gr)
+	}
+	var fixed pxlib.Key
+	hasColor := a.has("color")
+	if hasColor {
+		var err error
+		if fixed, err = c.Color(a.color("color")); err != nil {
+			return err
+		}
+	}
+	ramps := c.allRamps()
+	put := func(p pxlib.Pt) {
+		k := fixed
+		if !hasColor {
+			cur := c.G.At(p.X+c.ox, p.Y+c.oy)
+			if cur == pxlib.Clear {
+				return
+			}
+			k = shadeStep(rampOf(ramps, cur), cur, a.int("by"))
+		}
+		c.Put(p.X, p.Y, k)
+	}
+	at := quadMap(q)
+	pt := func(u, v float64) [2]float64 { x, y := at(u, v); return [2]float64{x, y} }
+	var cells []pxlib.Pt
+	for j := 1; j < rows; j++ {
+		v := float64(j) / float64(rows)
+		cells = append(cells, lerpCells([][2]float64{pt(0, v), pt(1, v)})...)
+	}
+	if a.bool("vertical") {
+		for i := 0; i < rows; i++ {
+			for k := 0; k < cols; k++ {
+				u := (float64(k) + float64(a.num("offset")*float64(i%2)) + a.num("phase")) / float64(cols)
+				u -= math.Floor(u)
+				if u == 0 {
+					continue // 手前の縁は引かない
+				}
+				p, e := pt(u, float64(i)/float64(rows)), pt(u, float64(i+1)/float64(rows))
+				n := math.Max(math.Abs(e[0]-p[0]), math.Abs(e[1]-p[1]))
+				if n <= 2 {
+					continue
+				}
+				sx, sy := (e[0]-p[0])/n, (e[1]-p[1])/n
+				cells = append(cells, lerpCells([][2]float64{{p[0] + sx, p[1] + sy}, {e[0] - sx, e[1] - sy}})...)
+			}
+		}
+	}
+	for _, p := range cells {
+		put(p)
+	}
+	return nil
 }
