@@ -35,7 +35,7 @@ var musFuncs = []struct{ Name, Sig, Summary string }{
 	{"transpose", "mus.transpose(part, n)", "半音 n だけ上げ下げ（音のある段だけ）"},
 	{"echo", "mus.echo(part, steps=3, vol=-4, inst=, transpose=0)", "機種の中のエコー: steps 段遅らせた写し（はみ出した尾は頭へ回す）。音量は vol 段下げる（別のチャンネルに置く）"},
 	{"with_inst", "mus.with_inst(part, inst)", "音のある段の楽器を替える（B で音色を替える）"},
-	{"rest", "mus.rest(bars=1)", "休みの小節（空の段 16 × bars）"},
+	{"rest", "mus.rest(bars=1)", "休みの小節（頭の段で前の音を離し OFF・残りは空の段。16 × bars）"},
 	{"bars", "mus.bars(part)", "小節の数"},
 }
 
@@ -50,7 +50,7 @@ var writeChipKeys = []struct{ Key, Summary string }{
 	{"waves", "波形メモリの形（32 段 × 0〜15）"},
 	{"fx", "機種の外の厚み {reverb, delay, sidechain}"},
 	{"intro", "頭（1 回だけ鳴らす）{チャンネル: part}"},
-	{"body", "本編（ループする）{チャンネル: part}"},
+	{"body", "本編（ループする）{チャンネル: part}。intro と body の頭の段が空なら OFF に替える（前の周の最後の音を残さない。継ぎ目をまたいで伸ばすなら頭を \"---\"）"},
 }
 
 func musModule() *starlarkstruct.Module {
@@ -785,7 +785,11 @@ func musRest(_ *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwarg
 	if err := starlark.UnpackArgs(b.Name(), args, kwargs, "bars?", &bars); err != nil {
 		return nil, err
 	}
-	return partList(make([]string, phraseSteps*max(0, bars))), nil
+	steps := make([]string, phraseSteps*max(0, bars))
+	if len(steps) > 0 {
+		steps[0] = "OFF" // 休みは前の音を離す（空の段だけだと、持続のループを持つ楽器は次の音まで鳴り続ける）
+	}
+	return partList(steps), nil
 }
 
 func musBars(_ *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
@@ -868,6 +872,9 @@ func buildChip(v map[string]any) (map[string]any, error) {
 			steps := lists[ch]
 			for len(steps) < bars*phraseSteps {
 				steps = append(steps, make([]string, phraseSteps)...)
+			}
+			if len(steps) > 0 && steps[0] == "" { // 部分の頭が空なら前の音を離す（ループの 2 周目に 1 周目の最後の音を残さない）
+				steps = append([]string{"OFF"}, steps[1:]...)
 			}
 			var chain []any
 			for bar := 0; bar < bars; bar++ {

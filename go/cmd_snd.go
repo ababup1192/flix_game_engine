@@ -8,7 +8,7 @@ import (
 )
 
 func init() {
-	register("snd", "音の指定 (*.sndsrc.json・台本 *.snd.star) を鳴らして検査する (build / gen / snap / compare / ops / schema)", cmdSnd)
+	register("snd", "音の指定 (*.sndsrc.json・台本 *.snd.star) を鳴らして検査する (build / gen / snap / compare / bars / ops / schema)", cmdSnd)
 }
 
 func cmdSnd(out, errOut *strings.Builder, rest []string, asJSON bool) int {

@@ -22,6 +22,8 @@ const (
 	partNoise    part = "noise"
 	partWave     part = "wave"
 	partTriangle part = "triangle"
+	partSaw      part = "saw"  // ノコギリ（機種の外の音色。neo の breaks の saw）
+	partSine     part = "sine" // サイン（機種の外の音色。neo の breaks の sine）
 )
 
 // sig は鳴らした音（ch が 1 本ならモノラル・2 本なら左右）とループの頭（無ければ -1）。
@@ -46,6 +48,7 @@ type sourceOut struct {
 	parts     []part      // 鳴らした部品（譜面は使ったチャンネル。ほかは op の Part）
 	breaks    []string    // 機種の外の手（song の reverb・sidechain…。style の breaks で許す物だけ書ける）
 	pans      []float64   // song のチャンネルを振った左右（style の pans で見る）
+	drones    []drone     // song の鳴りっぱなしの音（検査の drone）
 }
 
 // rctx は書き出しの設定。

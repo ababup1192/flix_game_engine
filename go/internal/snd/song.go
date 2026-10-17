@@ -8,6 +8,8 @@ package snd
 //     "sub": 0.3, "duck": true, "send": {"reverb": 0.3, "delay": 0.2}}]。rows の鍵はこの名前。数は style の voices で縛る。
 //   - groove: 段ごとの tick の並び（[7, 5] で跳ねる。平均が 1 段の tick・長さは 16 を割り切る数）。
 //   - fx: 機種の外の厚み {"reverb": {…}, "delay": {"steps": 3, …}, "sidechain": {"key": ["kick"], "depth_db": 4, "release_ms": 160}}。
+//   - 機種の外の音色（neo の breaks で許す）: part の saw（ノコギリ）・sine（サイン）、channels の unison（デチューンした重ね）・
+//     filter（2 極のフィルタ。音ごとの開閉と小節での開閉）・pitchenv（鳴らした頭の音程の落ち。太鼓とザップ）。鳴らす所は song_synth.go。
 //   - instruments・waves: 楽器を譜面の中に書ける（instruments のファイルと同じ形。譜面の方が勝つ）。
 //   - 段のコマンド: DLY n（頭を n tick 遅らせる）・CUT n（n tick で離す）・RTG n（n tick ごとに打ち直す）・
 //     VSL n（1 tick に n/8 段ずつ音量を滑らせる）を 1 段に並べて書ける（SLD n は前の音から滑る）。
@@ -29,7 +31,7 @@ func init() {
 	register(&opDef{
 		Name:    "song",
 		Summary: "譜面（*.chip.json）を楽器（譜面の中か *.instrument.json）で鳴らす。左右に振って混ぜ、ループ点があれば頭 + 輪の 1 本と smpl のループの頭を作る",
-		Machine: "譜面のチャンネル（今の形は pulse1・pulse2 = パルス・triangle = 三角・noise = 雑音・wave = 波形メモリ。channels を書けば名前と部品を選べる）。使った部品を機種の縛りで数え、reverb・delay・sidechain・sub・pan は style の breaks で見る",
+		Machine: "譜面のチャンネル（今の形は pulse1・pulse2 = パルス・triangle = 三角・noise = 雑音・wave = 波形メモリ。channels を書けば名前と部品を選べ、saw・sine も書ける）。使った部品を機種の縛りで数え、reverb・delay・sidechain・sub・pan・saw・sine・unison・filter・pitchenv は style の breaks で見る",
 		Example: `{"song": {"chip": "testdata/snd/tiny.chip.json", "instruments": "testdata/snd/tiny.instrument.json"}}`,
 		Params: []opreg.Param{
 			{Name: "chip", Type: opreg.String, Required: true, Summary: "譜面のパス（作業場の根から。台本の snd.write_chip が書いた物も読める）"},
@@ -108,13 +110,16 @@ type chainEntry struct {
 	transpose int
 }
 
-// chanDef はチャンネル 1 本（名前・部品・音量・左右・デチューン・サブ・沈める・送り）。
+// chanDef はチャンネル 1 本（名前・部品・音量・左右・デチューン・サブ・沈める・送り・重ね・フィルタ・音程の包絡）。
 type chanDef struct {
 	name                  string
 	part                  part
 	vol, pan, cents, sub  float64
 	duck                  bool
 	sendReverb, sendDelay float64
+	unison                *unisonDef   // デチューンした重ね（機種の外。song_synth.go）
+	filter                *filterDef   // 2 極のフィルタ（機種の外）
+	pitchEnv              *pitchEnvDef // 鳴らした頭の音程の落ち（機種の外）
 }
 
 // 今の形の 5 本（channels を書かない譜面）。
@@ -126,7 +131,7 @@ var legacyChannels = []chanDef{
 	{name: "wave", part: partWave, vol: 0.22},
 }
 
-var partVol = map[part]float64{partPulse: 0.2, partTriangle: 0.3, partNoise: 0.16, partWave: 0.22}
+var partVol = map[part]float64{partPulse: 0.2, partTriangle: 0.3, partNoise: 0.16, partWave: 0.22, partSaw: 0.16, partSine: 0.3}
 
 type songFx struct {
 	reverb     *reverbParam
@@ -459,7 +464,11 @@ func objectOf(m map[string]any, k string) map[string]any {
 	return o
 }
 
-var partNames = map[string]part{"pulse": partPulse, "triangle": partTriangle, "noise": partNoise, "wave": partWave}
+var partNames = map[string]part{"pulse": partPulse, "triangle": partTriangle, "noise": partNoise, "wave": partWave,
+	"saw": partSaw, "sine": partSine}
+
+// chanKeys はチャンネルに書ける鍵。
+var chanKeys = []string{"name", "part", "vol", "pan", "cents", "sub", "duck", "send", "unison", "filter", "pitchenv", "note"}
 
 func parseChannels(root map[string]any) ([]chanDef, error) {
 	raw, ok := root["channels"].([]any)
@@ -491,12 +500,12 @@ func parseChannels(root map[string]any) ([]chanDef, error) {
 		case seen[name]:
 			return nil, fmt.Errorf("channels[%d]: name %q が重なっている", i, name)
 		case !okP:
-			return nil, fmt.Errorf("channels[%d](%s): part は pulse・triangle・noise・wave のどれか（got %q）", i, name, pn)
+			return nil, fmt.Errorf("channels[%d](%s): part は pulse・triangle・noise・wave・saw・sine のどれか（got %q）", i, name, pn)
 		}
 		seen[name] = true
 		for k := range m {
-			if !map[string]bool{"name": true, "part": true, "vol": true, "pan": true, "cents": true, "sub": true, "duck": true, "send": true, "note": true}[k] {
-				return nil, fmt.Errorf("channels[%d](%s): 知らない鍵 %q（name part vol pan cents sub duck send）", i, name, k)
+			if !contains(chanKeys, k) {
+				return nil, fmt.Errorf("channels[%d](%s): 知らない鍵 %q（%s）", i, name, k, strings.Join(chanKeys, " "))
 			}
 		}
 		d := chanDef{name: name, part: p, vol: floatOr(m, "vol", partVol[p]), pan: floatOr(m, "pan", 0),
@@ -506,6 +515,9 @@ func parseChannels(root map[string]any) ([]chanDef, error) {
 		d.sendDelay = floatOr(objectOf(m, "send"), "delay", 0)
 		if d.pan < -1 || d.pan > 1 || d.vol < 0 || d.sub < 0 {
 			return nil, fmt.Errorf("channels[%d](%s): pan は -1〜1・vol と sub は 0 以上", i, name)
+		}
+		if err := parseSynth(m, &d); err != nil {
+			return nil, fmt.Errorf("channels[%d](%s): %w", i, name, err)
 		}
 		out = append(out, d)
 	}
@@ -840,7 +852,7 @@ func genSong(c *rctx, a opreg.Args) (sourceOut, error) {
 	sp.rate = int(c.rate) // 書き出しのレートにそろえる（WAV の頭に書く値と食い違うと速さが変わる）
 	r := renderSong(sp, in)
 	out := sourceOut{ch: r.chans, loopStart: r.loopStart, clamped: r.clamped, tempo: &tempo{BPM: sp.bpm, BeatsPerBar: 4},
-		breaks: r.breaks, pans: r.pans}
+		breaks: r.breaks, pans: r.pans, drones: r.drones}
 	for _, ch := range r.used {
 		out.parts = append(out.parts, sp.chans[ch].part)
 	}

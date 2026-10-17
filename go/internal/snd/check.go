@@ -9,6 +9,7 @@ package snd
 //	gate   seam   ループの継ぎ目（終わり → 頭）の段差・前後 20ms の音量の差
 //	gate   bars   輪の長さが tempo の整数小節か
 //	gate   style  機種の外の op・引数・同時に鳴らす数・破ってよい所（breaks）の外の手・左右の振り方
+//	gate   drone  song の 1 本のチャンネルが打ち直さず高さも変えずに droneSeconds 秒より長く鳴る（離し忘れ。song_drone.go）
 //	lint   loudness  統合ラウドネス（LUFS。ループする音は輪の 1 周で測る）が kind の目安から外れる
 //	lint   peak / truepeak / head / tail / dc  ピーク・4 倍に読み直したピーク（dBTP）・鳴り出しの遅れ・終わりのクリック・直流
 //	advice alias  パルスの 3 倍音がナイキスト周波数を超える（折り返す）
@@ -144,6 +145,11 @@ func runChecks(r *renderer, res *rendered, st *sndStyle, rules *sndRules) []find
 	}
 	for _, p := range st.checkStyle(r.s, res) {
 		out = append(out, finding{Check: "style", Level: checklevel.Gate, Msg: p[0], Cause: p[1]})
+	}
+	for _, d := range res.drones {
+		if rules.DroneSeconds > 0 && d.seconds >= rules.DroneSeconds {
+			out = append(out, finding{Check: "drone", Level: checklevel.Gate, Msg: d.String(), Cause: d.where})
+		}
 	}
 	for _, b := range res.breaks {
 		out = append(out, finding{Check: "breaks", Level: checklevel.Advice, Msg: fmt.Sprintf("機種の外の手 %s を使った（%s が許す）", b, st.label())})

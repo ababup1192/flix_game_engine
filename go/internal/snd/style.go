@@ -20,7 +20,7 @@ type sndStyle struct {
 	Ops        []string       `json:"ops"`        // 書ける op
 	Duties     []float64      `json:"duties"`     // パルスの山の割合
 	NoiseKinds []string       `json:"noiseKinds"` // 雑音の作り方
-	Breaks     []string       `json:"breaks"`     // 破ってよい所（機種の外の手: reverb・delay・sidechain・sub・pan。pan は振り切りより細かい左右）
+	Breaks     []string       `json:"breaks"`     // 破ってよい所（機種の外の手: reverb・delay・sidechain・sub・pan・saw・sine・unison・filter・pitchenv。pan は振り切りより細かい左右）
 	name       string
 }
 
@@ -42,6 +42,7 @@ type sndRules struct {
 	SeamStepRatio float64              `json:"seamStepRatio"` // 継ぎ目の段差 ÷ まわりの隣り合う差の最大
 	SeamLevelDB   float64              `json:"seamLevelDb"`   // 継ぎ目の前後 20ms の音量の差
 	BarTolerance  int                  `json:"barTolerance"`  // 輪の長さと整数小節の差（サンプル）
+	DroneSeconds  float64              `json:"droneSeconds"`  // 打ち直さず高さも変えずに鳴り続ける音の上限（秒。gate）
 }
 
 func loadRules(engineRoot string) (*sndRules, error) {
