@@ -1,0 +1,235 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "bpm": {
+      "description": "速さ（4 分音符/分。既定 120）",
+      "type": "number"
+    },
+    "chains": {
+      "additionalProperties": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "description": "名前 → phrase の並び（\"名前 +半音\" で移調）",
+      "type": "object"
+    },
+    "channels": {
+      "description": "チャンネルの並び [{name, part（pulse・triangle・noise・wave）, vol, pan（-1〜1）, cents（デチューン）, sub（1 オクターブ下のサイン。機種の外）, duck（サイドチェインで沈める）, send: {reverb, delay}}]。rows の鍵はこの名前",
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "cents": {
+            "type": "number"
+          },
+          "duck": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "pan": {
+            "maximum": 1,
+            "minimum": -1,
+            "type": "number"
+          },
+          "part": {
+            "enum": [
+              "pulse",
+              "triangle",
+              "noise",
+              "wave"
+            ]
+          },
+          "send": {
+            "additionalProperties": false,
+            "properties": {
+              "delay": {
+                "minimum": 0,
+                "type": "number"
+              },
+              "reverb": {
+                "minimum": 0,
+                "type": "number"
+              }
+            },
+            "type": "object"
+          },
+          "sub": {
+            "minimum": 0,
+            "type": "number"
+          },
+          "vol": {
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "name",
+          "part"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "fx": {
+      "description": "機種の外の厚み {reverb: {room, damp, wet, predelay_ms}, delay: {steps（段）, feedback, wet, pingpong, lowpass}, sidechain: {key（合図の楽器の名前の並び）, depth_db, release_ms}}",
+      "type": "object"
+    },
+    "gain": {
+      "description": "全体の倍率",
+      "type": "number"
+    },
+    "groove": {
+      "description": "段ごとの tick の並び（[7, 5] で跳ねる。平均が拍の速さを決める・長さは 16 を割り切る）",
+      "items": {
+        "minimum": 1,
+        "type": "integer"
+      },
+      "type": "array"
+    },
+    "instruments": {
+      "additionalProperties": {
+        "properties": {
+          "arp": {
+            "description": "音程（半音）の表。arp_fixed: true なら音の高さそのもの（太鼓）",
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": [
+                    "number",
+                    "string"
+                  ]
+                },
+                "type": "array"
+              }
+            ]
+          },
+          "arp_fixed": {
+            "type": "boolean"
+          },
+          "duty": {
+            "description": "デューティ（12・25・50・75）・波形の名前・雑音（long・short）の表",
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": [
+                    "number",
+                    "string"
+                  ]
+                },
+                "type": "array"
+              }
+            ]
+          },
+          "note": {
+            "type": "string"
+          },
+          "pitch": {
+            "description": "音程のずれ（セント）の表",
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": [
+                    "number",
+                    "string"
+                  ]
+                },
+                "type": "array"
+              }
+            ]
+          },
+          "rows": {
+            "description": "今の形の表（1 行に vol・pitch・cents・wave・cmd）",
+            "type": "array"
+          },
+          "speed": {
+            "description": "表を何 tick ごとに進めるか（既定 1）",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "vib": {
+            "description": "\"hz cents 遅れの tick\"（遅れてかかるビブラート）",
+            "type": "string"
+          },
+          "vol": {
+            "description": "音量 0〜15 の表（\"15 13 12 | 11 10 / 6 3 0\": | の後をループ・/ の後は離した後に流す）",
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": [
+                    "number",
+                    "string"
+                  ]
+                },
+                "type": "array"
+              }
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "description": "楽器（*.instrument.json と同じ形。譜面の方が勝つ）",
+      "type": "object"
+    },
+    "loop": {
+      "description": "ループの頭の rows の行（無ければループしない）",
+      "type": "integer"
+    },
+    "mix": {
+      "description": "今の形の 5 本のチャンネルの倍率（channels を書かない時だけ）",
+      "type": "object"
+    },
+    "note": {
+      "type": "string"
+    },
+    "phrases": {
+      "additionalProperties": {
+        "items": {
+          "type": "string"
+        },
+        "maxItems": 16,
+        "type": "array"
+      },
+      "description": "名前 → 16 段の段の文字",
+      "type": "object"
+    },
+    "rows": {
+      "description": "曲の並び（行ごとに {チャンネル: chain}）",
+      "items": {
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "ticks": {
+      "description": "1 段の tick（既定 6）",
+      "minimum": 1,
+      "type": "integer"
+    },
+    "version": {
+      "type": "integer"
+    },
+    "waves": {
+      "description": "波形メモリの形（名前 → 32 段 × 0〜15）",
+      "type": "object"
+    }
+  },
+  "title": "chip（song の op が読む譜面）",
+  "type": "object"
+}

@@ -3,13 +3,16 @@ package snd
 // 検査。重さは 3 段（checklevel）: gate（外れたら WAV を書かず終了コード 1）・lint（報告だけ）・advice（報告だけ）。
 // gate には原因の op（spec の中の場所）を付ける: 「その op を 1 つ外すと直る」op を書き出しの順の後ろから引く（renderer.cause）。
 //
+// どの検査も左右のチャンネルを 1 本ずつ見て、悪い方を出す（音量は左右を足した LUFS）。
+//
 //	gate   clip   ±1 を超えたサンプル（16bit に収める前・song の仕上げで切った数も）
 //	gate   seam   ループの継ぎ目（終わり → 頭）の段差・前後 20ms の音量の差
 //	gate   bars   輪の長さが tempo の整数小節か
-//	gate   style  機種の外の op・引数・同時に鳴らす数
-//	lint   loudness  統合ラウドネス（LUFS）が kind の目安から外れる
-//	lint   peak / head / tail / dc  ピーク・鳴り出しの遅れ・終わりのクリック・直流
+//	gate   style  機種の外の op・引数・同時に鳴らす数・破ってよい所（breaks）の外の手・左右の振り方
+//	lint   loudness  統合ラウドネス（LUFS。ループする音は輪の 1 周で測る）が kind の目安から外れる
+//	lint   peak / truepeak / head / tail / dc  ピーク・4 倍に読み直したピーク（dBTP）・鳴り出しの遅れ・終わりのクリック・直流
 //	advice alias  パルスの 3 倍音がナイキスト周波数を超える（折り返す）
+//	advice breaks 使った機種の外の手（style が許している物。報告に「破った所」として残す）
 
 import (
 	"fmt"
@@ -34,24 +37,51 @@ func (f finding) String() string {
 	return s
 }
 
-func overCount(x []float64) (int, int, float64) {
+func overCount(chans [][]float64) (int, int, float64) {
 	n, first, peak := 0, -1, 0.0
-	for i, v := range x {
-		if a := math.Abs(v); a > 1 {
-			if first < 0 {
-				first = i
+	for _, x := range chans {
+		for i, v := range x {
+			if a := math.Abs(v); a > 1 {
+				if first < 0 || i < first {
+					first = i
+				}
+				n++
+				peak = math.Max(peak, a)
 			}
-			n++
-			peak = math.Max(peak, a)
 		}
 	}
 	return n, first, peak
 }
 
+// loopBody はループする音の輪の 1 周（無ければ全体）。音量はここで測る（頭の 1 回より、くり返し聞く所）。
+func loopBody(chans [][]float64, loopStart int) [][]float64 {
+	if loopStart <= 0 || len(chans) == 0 || loopStart >= len(chans[0]) {
+		return chans
+	}
+	var out [][]float64
+	for _, x := range chans {
+		out = append(out, x[loopStart:])
+	}
+	return out
+}
+
 // seamProblems はループの継ぎ目の困り事（無ければ空）。
 // WhyNot: 前後 5ms の平均（直流）の差は見ない。110Hz の矩形波では 5ms が 1 周期に満たず、継ぎ目が正しくても差が出る。
 func seamProblems(res *rendered, rate int, rules *sndRules) []string {
-	x, ls := res.out, res.loopStart
+	for k, x := range res.out {
+		if ps := seamOf(x, res.loopStart, rate, rules); len(ps) > 0 {
+			if len(res.out) == 2 {
+				for i := range ps {
+					ps[i] = []string{"左", "右"}[k] + ": " + ps[i]
+				}
+			}
+			return ps
+		}
+	}
+	return nil
+}
+
+func seamOf(x []float64, ls, rate int, rules *sndRules) []string {
 	n := len(x)
 	if ls < 0 || ls >= n-1 {
 		return nil
@@ -94,7 +124,7 @@ func barsProblem(res *rendered, rate int, rules *sndRules) string {
 	if res.loopStart < 0 || res.tempo == nil {
 		return ""
 	}
-	loopLen := len(res.out) - res.loopStart
+	loopLen := res.frames() - res.loopStart
 	perBar := float64(rate) * 60 * float64(res.tempo.BeatsPerBar) / res.tempo.BPM
 	bars := math.Round(float64(loopLen) / perBar)
 	off := float64(loopLen) - bars*perBar
@@ -115,6 +145,9 @@ func runChecks(r *renderer, res *rendered, st *sndStyle, rules *sndRules) []find
 	for _, p := range st.checkStyle(r.s, res) {
 		out = append(out, finding{Check: "style", Level: checklevel.Gate, Msg: p[0], Cause: p[1]})
 	}
+	for _, b := range res.breaks {
+		out = append(out, finding{Check: "breaks", Level: checklevel.Advice, Msg: fmt.Sprintf("機種の外の手 %s を使った（%s が許す）", b, st.label())})
+	}
 	if n, first, peak := overCount(res.out); n+res.clamped > 0 {
 		msg := fmt.Sprintf("±1 を超えたサンプルが %d（最大 %+.1f dBFS・最初は %.3f 秒）", n, dBFS(peak), float64(first)/float64(rate))
 		if res.clamped > 0 {
@@ -134,33 +167,45 @@ func runChecks(r *renderer, res *rendered, st *sndStyle, rules *sndRules) []find
 		gate("bars", p, func(x *rendered) bool { return barsProblem(x, rate, rules) != "" })
 	}
 	if lu, ok := rules.Loudness[r.s.Kind]; ok {
-		if l := LUFS(rate, res.out); math.IsInf(l, -1) {
+		if l := LUFS(rate, loopBody(res.out, res.loopStart)); math.IsInf(l, -1) {
 			out = append(out, finding{Check: "loudness", Level: checklevel.Lint, Msg: "無音"})
 		} else if math.Abs(l-lu.Target) > lu.Tolerance {
 			out = append(out, finding{Check: "loudness", Level: checklevel.Lint,
 				Msg: fmt.Sprintf("%.1f LUFS（%s の目安 %.0f ± %.0f）", l, r.s.Kind, lu.Target, lu.Tolerance)})
 		}
 	}
-	if p := dBFS(peakOf(res.out)); p > rules.PeakDBFS && p <= 0 {
+	if p := dBFS(peakOf(res.out...)); p > rules.PeakDBFS && p <= 0 {
 		out = append(out, finding{Check: "peak", Level: checklevel.Lint, Msg: fmt.Sprintf("ピーク %.2f dBFS（%.1f まで）", p, rules.PeakDBFS)})
 	}
-	if res.loopStart < 0 && len(res.out) > 0 {
-		onset := len(res.out)
-		for i, v := range res.out {
-			if math.Abs(v) > 0.001 {
-				onset = i
-				break
+	if tp := dBFS(truePeakOf(res.out...)); tp > rules.TruePeakDBTP && dBFS(peakOf(res.out...)) <= 0 {
+		out = append(out, finding{Check: "truepeak", Level: checklevel.Lint, Msg: fmt.Sprintf("true peak %.2f dBTP（%.1f まで。post に normalize）", tp, rules.TruePeakDBTP)})
+	}
+	if res.loopStart < 0 && res.frames() > 0 {
+		onset := res.frames()
+		for _, x := range res.out {
+			for i, v := range x {
+				if math.Abs(v) > 0.001 {
+					onset = min(onset, i)
+					break
+				}
 			}
 		}
 		if ms := float64(onset) * 1000 / float64(rate); ms > rules.HeadSilenceMs {
 			out = append(out, finding{Check: "head", Level: checklevel.Lint, Msg: fmt.Sprintf("鳴り出しが %.1f ms 遅れる（%.0f ms まで。演出の拍に合わない）", ms, rules.HeadSilenceMs)})
 		}
-		if last := math.Abs(res.out[len(res.out)-1]); last > rules.TailClick {
+		last := 0.0
+		for _, x := range res.out {
+			last = math.Max(last, math.Abs(x[len(x)-1]))
+		}
+		if last > rules.TailClick {
 			out = append(out, finding{Check: "tail", Level: checklevel.Lint, Msg: fmt.Sprintf("終わりのサンプルが %.3f（0 へ戻らずプツと鳴る。%.2f まで）", last, rules.TailClick)})
 		}
 	}
-	if d := mean(res.out); math.Abs(d) > rules.DC {
-		out = append(out, finding{Check: "dc", Level: checklevel.Lint, Msg: fmt.Sprintf("平均 %.4f（直流が %.2f を超える）", d, rules.DC)})
+	for _, x := range res.out {
+		if d := mean(x); math.Abs(d) > rules.DC {
+			out = append(out, finding{Check: "dc", Level: checklevel.Lint, Msg: fmt.Sprintf("平均 %.4f（直流が %.2f を超える）", d, rules.DC)})
+			break
+		}
 	}
 	for _, vo := range r.s.Voices {
 		for _, c := range vo.Ops {

@@ -24,9 +24,12 @@ type buildResult struct {
 	Rate      int       `json:"rate"`
 	Samples   int       `json:"samples"`
 	LoopStart int       `json:"loopStart"`
+	Channels  int       `json:"channels"`
 	Seconds   float64   `json:"seconds"`
-	LUFS      float64   `json:"lufs"`
+	LUFS      float64   `json:"lufs"` // ループする音は輪の 1 周
 	PeakDBFS  float64   `json:"peakDbfs"`
+	TruePeak  float64   `json:"truePeakDbtp"`
+	Breaks    []string  `json:"breaks"` // 破った所（使った機種の外の手）
 	SHA256    string    `json:"sha256"`
 	Findings  []finding `json:"findings"`
 	Report    string    `json:"report"`
@@ -57,16 +60,21 @@ func buildSpec(engineRoot, workRoot string, s *spec, opt buildOptions) (*buildRe
 	if err != nil {
 		return nil, fmt.Errorf("%s: %v", s.Path, err)
 	}
-	r := newRenderer(workRoot, s)
+	kindLUFS := -20.0
+	if lu, ok := rules.Loudness[s.Kind]; ok {
+		kindLUFS = lu.Target
+	}
+	r := newRenderer(&rctx{rate: float64(s.Rate), workRoot: workRoot, files: s.Files, kindLUFS: kindLUFS, truePeak: rules.TruePeakDBTP}, s)
 	res, err := r.render(nil)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %v", s.Path, err)
 	}
 	wav := EncodeWAV(s.Rate, res.out, res.loopStart)
 	sum := sha256.Sum256(wav)
-	br := &buildResult{Spec: s.Path, Target: s.Target, Rate: s.Rate, Samples: len(res.out), LoopStart: res.loopStart,
-		Seconds: float64(len(res.out)) / float64(s.Rate), LUFS: finite(LUFS(s.Rate, res.out)),
-		PeakDBFS: finite(dBFS(peakOf(res.out))), SHA256: hex.EncodeToString(sum[:]), Findings: runChecks(r, res, st, rules)}
+	br := &buildResult{Spec: s.Path, Target: s.Target, Rate: s.Rate, Samples: res.frames(), LoopStart: res.loopStart, Channels: len(res.out),
+		Seconds: float64(res.frames()) / float64(s.Rate), LUFS: finite(LUFS(s.Rate, loopBody(res.out, res.loopStart))),
+		PeakDBFS: finite(dBFS(peakOf(res.out...))), TruePeak: finite(dBFS(truePeakOf(res.out...))), Breaks: res.breaks,
+		SHA256: hex.EncodeToString(sum[:]), Findings: runChecks(r, res, st, rules)}
 	if opt.NoWrite {
 		return br, nil
 	}
@@ -114,8 +122,12 @@ func (b *buildResult) summary() string {
 	if b.LoopStart >= 0 {
 		loop = fmt.Sprintf("・ループの頭 %d", b.LoopStart)
 	}
-	fmt.Fprintf(&sb, "%s → %s: %s（%.3f 秒・%d サンプル%s・%.1f LUFS・ピーク %.1f dBFS・sha256 %s）\n",
-		b.Spec, b.Target, state, b.Seconds, b.Samples, loop, b.LUFS, b.PeakDBFS, b.SHA256[:12])
+	chans := "ステレオ"
+	if b.Channels == 1 {
+		chans = "モノラル"
+	}
+	fmt.Fprintf(&sb, "%s → %s: %s（%s・%.3f 秒・%d サンプル%s・%.1f LUFS・ピーク %.1f dBFS・true peak %.1f dBTP・sha256 %s）\n",
+		b.Spec, b.Target, state, chans, b.Seconds, b.Samples, loop, b.LUFS, b.PeakDBFS, b.TruePeak, b.SHA256[:12])
 	for _, f := range b.Findings {
 		sb.WriteString("  " + f.String() + "\n")
 	}

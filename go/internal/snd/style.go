@@ -20,6 +20,7 @@ type sndStyle struct {
 	Ops        []string       `json:"ops"`        // 書ける op
 	Duties     []float64      `json:"duties"`     // パルスの山の割合
 	NoiseKinds []string       `json:"noiseKinds"` // 雑音の作り方
+	Breaks     []string       `json:"breaks"`     // 破ってよい所（機種の外の手: reverb・delay・sidechain・sub・pan。pan は振り切りより細かい左右）
 	name       string
 }
 
@@ -34,6 +35,7 @@ type sndRules struct {
 	Styles        map[string]*sndStyle `json:"styles"`
 	Loudness      map[string]loudness  `json:"loudness"`
 	PeakDBFS      float64              `json:"peakDbfs"`      // これを超えるピークは lint
+	TruePeakDBTP  float64              `json:"truePeakDbtp"`  // これを超える true peak は lint（normalize の既定の上限）
 	HeadSilenceMs float64              `json:"headSilenceMs"` // 鳴り出しの遅れの上限
 	TailClick     float64              `json:"tailClick"`     // 終わりのサンプルの大きさの上限（ループしない音）
 	DC            float64              `json:"dc"`            // 平均の大きさの上限
@@ -115,6 +117,11 @@ func (s *sndStyle) checkStyle(sp *spec, res *rendered) [][2]string {
 			add(c.Where, "%s は %s の外の op（書ける op: %s）", c.Name, s.label(), strings.Join(s.Ops, "・"))
 		}
 	}
+	for _, b := range res.breaks {
+		if !contains(s.Breaks, b) {
+			add(breakCause(sp, b), "%s は %s の外の手（破ってよい所: %s）", b, s.label(), orNone(s.Breaks))
+		}
+	}
 	if s.Voices == nil {
 		return out
 	}
@@ -146,6 +153,33 @@ func (s *sndStyle) checkStyle(sp *spec, res *rendered) [][2]string {
 		}
 	}
 	return out
+}
+
+// breakCause は機種の外の手を使った op の場所（声の pan・reverb の op・song の op）。
+func breakCause(sp *spec, b string) string {
+	for _, vo := range sp.Voices {
+		if b == "pan" && vo.Pan != 0 && vo.Pan != 1 && vo.Pan != -1 {
+			return fmt.Sprintf("voices(%s).pan", vo.ID)
+		}
+		for _, c := range vo.Ops {
+			if registry[c.Name].Break == b || c.Name == "song" {
+				return c.Where
+			}
+		}
+	}
+	for _, c := range sp.Post {
+		if registry[c.Name].Break == b {
+			return c.Where
+		}
+	}
+	return ""
+}
+
+func orNone(ss []string) string {
+	if len(ss) == 0 {
+		return "無し"
+	}
+	return strings.Join(ss, "・")
 }
 
 func (s *sndStyle) label() string {

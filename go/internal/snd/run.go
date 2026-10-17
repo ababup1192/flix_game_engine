@@ -3,7 +3,7 @@ package snd
 // fge snd の口。
 //
 //	fge snd build <x.snd.star|x.sndsrc.json>... [--check]   鳴らして検査し、gate を通れば target の WAV を書く
-//	fge snd gen <x.snd.star>                                 台本が書いた sndsrc をファイルへ書く
+//	fge snd gen <x.snd.star>                                 台本が書いた sndsrc と譜面をファイルへ書く
 //	fge snd snap <x.snd.star|x.sndsrc.json> [--new] [--max N] build して、書いた WAV を fge rounds の周に積む
 //	fge snd compare <前.wav> <後.wav> [--match <フォルダ> --name <名前>]   2 本の差（長さ・ループの頭・音量・差の音）
 //	fge snd ops [--md]・fge snd schema [--write]              op の一覧と spec の JSON Schema（op の登録から作る）
@@ -24,9 +24,9 @@ import (
 const usage = `使い方: bin/fge snd <口> ...   音の指定（*.sndsrc.json・台本 *.snd.star）を鳴らして検査する（ゲームのルートで流す）
 
   snd build <x.snd.star か x.sndsrc.json>... [--check]
-      鳴らして検査し、gate を通れば target の WAV を書く（--check は検査だけ）。
+      鳴らして検査し、gate を通れば target の WAV を書く（--check は検査だけ。既定はステレオ・"channels": "mono" で 1 本）。
       検査の結果は debug/snd/<名前>/report.json・波形は debug/snd/<名前>/sheet.png。gate で止まれば終了コード 1。
-  snd gen <x.snd.star>          台本が書いた sndsrc をファイルへ書く（中身が同じ物は触らない）
+  snd gen <x.snd.star>          台本が書いた sndsrc と譜面（write_chip）をファイルへ書く（中身が同じ物は触らない）
   snd snap <x.snd.star か x.sndsrc.json> [--new] [--max N]
       build して、書いた WAV（複数なら 0.25 秒の無音で 1 本につないだ物）を fge rounds の周に積む
   snd compare <前.wav> <後.wav> [--match <フォルダ> --name <名前>]
@@ -92,12 +92,22 @@ func specsOf(errOut *strings.Builder, workRoot string, paths []string) ([]*spec,
 				fmt.Fprintf(errOut, "snd: %s は sndsrc を 1 本も書かなかった（snd.write_spec）\n", p)
 				return nil, nil, false
 			}
+			chips := map[string][]byte{}
 			for _, f := range res.Files {
+				if strings.HasSuffix(f.Path, ".chip.json") {
+					chips[f.Path] = f.Data
+				}
+			}
+			for _, f := range res.Files {
+				if !strings.HasSuffix(f.Path, ".sndsrc.json") {
+					continue
+				}
 				s, err := parseSpec(f.Path, f.Data)
 				if err != nil {
 					fmt.Fprintf(errOut, "snd: %v\n", err)
 					return nil, nil, false
 				}
+				s.Files = chips
 				specs = append(specs, s)
 			}
 			continue
@@ -183,7 +193,7 @@ func cmdGen(out, errOut *strings.Builder, workRoot string, args []string) int {
 		}
 		changed++
 	}
-	fmt.Fprintf(out, "%s: sndsrc %d 本（書き替え %d・手数 %d）\n", args[0], len(res.Files), changed, res.Steps)
+	fmt.Fprintf(out, "%s: sndsrc と譜面 %d 本（書き替え %d・手数 %d）\n", args[0], len(res.Files), changed, res.Steps)
 	for _, a := range res.Advice {
 		out.WriteString("advice " + a + "\n")
 	}
@@ -216,8 +226,8 @@ func cmdSnap(out, errOut *strings.Builder, engineRoot, workRoot string, args []s
 	}
 	out.WriteString(b.String())
 	specs, _, _ := specsOf(errOut, workRoot, paths)
-	var clips [][]float64
-	rate := 0
+	var clips [][][]float64
+	rate, nc := 0, 1
 	for _, s := range specs {
 		data, err := os.ReadFile(filepath.Join(workRoot, filepath.FromSlash(s.Target)))
 		if err != nil {
@@ -229,15 +239,17 @@ func cmdSnap(out, errOut *strings.Builder, engineRoot, workRoot string, args []s
 			fmt.Fprintf(errOut, "snd: %s: %v\n", s.Target, err)
 			return 1
 		}
-		rate = c.Rate
-		clips = append(clips, c.Samples)
+		rate, nc = c.Rate, max(nc, len(c.Chans))
+		clips = append(clips, c.Chans)
 	}
-	var joined []float64
+	joined := make([][]float64, nc)
 	for i, c := range clips {
-		if i > 0 {
-			joined = append(joined, make([]float64, rate/4)...)
+		for k := range joined {
+			if i > 0 {
+				joined[k] = append(joined[k], make([]float64, rate/4)...)
+			}
+			joined[k] = append(joined[k], c[min(k, len(c)-1)]...) // モノラルは左右に同じ物
 		}
-		joined = append(joined, c...)
 	}
 	name := specName(paths[0])
 	wav := filepath.Join(workRoot, "debug", "snd", name, "round.wav")
@@ -324,9 +336,14 @@ func cmdCompare(out, errOut *strings.Builder, workRoot string, args []string, as
 		fmt.Fprintf(errOut, "snd compare: サンプルレートが違う（%d と %d）\n", a.Rate, b.Rate)
 		return 1
 	}
-	r := compareResult{A: paths[0], B: paths[1], Rate: a.Rate, SamplesA: len(a.Ints), SamplesB: len(b.Ints),
-		LoopA: a.LoopStart, LoopB: b.LoopStart, LUFSA: finite(LUFS(a.Rate, a.Samples)), LUFSB: finite(LUFS(b.Rate, b.Samples)),
+	if len(a.Chans) != len(b.Chans) {
+		fmt.Fprintf(errOut, "snd compare: チャンネルの数が違う（%d と %d）\n", len(a.Chans), len(b.Chans))
+		return 1
+	}
+	r := compareResult{A: paths[0], B: paths[1], Rate: a.Rate, SamplesA: a.Frames(), SamplesB: b.Frames(),
+		LoopA: a.LoopStart, LoopB: b.LoopStart, LUFSA: finite(LUFS(a.Rate, a.Chans)), LUFSB: finite(LUFS(b.Rate, b.Chans)),
 		FirstDiffAt: -1, SameBytes: string(da) == string(db)}
+	nc := len(a.Chans)
 	n := min(len(a.Ints), len(b.Ints))
 	sum, peak, at := 0.0, 0.0, 0
 	for i := 0; i < n; i++ {
@@ -334,7 +351,7 @@ func cmdCompare(out, errOut *strings.Builder, workRoot string, args []string, as
 		if d != 0 {
 			r.Differ++
 			if r.FirstDiffAt < 0 {
-				r.FirstDiffAt = float64(i) / float64(a.Rate)
+				r.FirstDiffAt = float64(i/nc) / float64(a.Rate)
 			}
 		}
 		sum += d * d
@@ -344,11 +361,11 @@ func cmdCompare(out, errOut *strings.Builder, workRoot string, args []string, as
 	}
 	r.DiffRMSDBFS = finite(dBFS(math.Sqrt(sum / float64(max(1, n)))))
 	r.DiffPeakDBFS = finite(dBFS(peak))
-	r.DiffPeakAt = float64(at) / float64(a.Rate)
+	r.DiffPeakAt = float64(at/nc) / float64(a.Rate)
 	if matchDir != "" {
 		target := math.Min(r.LUFSA, r.LUFSB)
 		ga, gb := math.Pow(10, (target-r.LUFSA)/20), math.Pow(10, (target-r.LUFSB)/20)
-		if p := math.Max(peakOf(a.Samples)*ga, peakOf(b.Samples)*gb); p > 0.98 {
+		if p := math.Max(peakOf(a.Chans...)*ga, peakOf(b.Chans...)*gb); p > 0.98 {
 			ga, gb = ga*0.98/p, gb*0.98/p
 		}
 		dir := filepath.Join(workRoot, matchDir)
@@ -365,12 +382,12 @@ func cmdCompare(out, errOut *strings.Builder, workRoot string, args []string, as
 			g      float64
 		}{{"old", a, ga}, {"new", b, gb}} {
 			p := filepath.Join(dir, name+"."+w.suffix+".wav")
-			if err := os.WriteFile(p, EncodeWAV(w.c.Rate, gainOf(w.g, w.c.Samples), w.c.LoopStart), 0o644); err != nil {
+			if err := os.WriteFile(p, EncodeWAV(w.c.Rate, gainAll(w.g, w.c.Chans), w.c.LoopStart), 0o644); err != nil {
 				fmt.Fprintf(errOut, "snd: %v\n", err)
 				return 1
 			}
 		}
-		fmt.Fprintf(out, "そろえた: %s/%s.old.wav・%s.new.wav（%.1f LUFS・倍率 %.3f と %.3f）\n", matchDir, name, name, LUFS(a.Rate, gainOf(ga, a.Samples)), ga, gb)
+		fmt.Fprintf(out, "そろえた: %s/%s.old.wav・%s.new.wav（%.1f LUFS・倍率 %.3f と %.3f）\n", matchDir, name, name, LUFS(a.Rate, gainAll(ga, a.Chans)), ga, gb)
 	}
 	if asJSON {
 		data, _ := json.MarshalIndent(r, "", "  ")
@@ -383,7 +400,7 @@ func cmdCompare(out, errOut *strings.Builder, workRoot string, args []string, as
 		out.WriteString("バイトまで同じ\n")
 		return 0
 	}
-	fmt.Fprintf(out, "差の音: RMS %.1f dBFS・一番大きい所 %.1f dBFS（%.3f 秒）・違うサンプル %d / %d（最初は %.3f 秒）\n",
+	fmt.Fprintf(out, "差の音: RMS %.1f dBFS・一番大きい所 %.1f dBFS（%.3f 秒）・違うサンプル %d / %d（左右は別に数える・最初は %.3f 秒）\n",
 		r.DiffRMSDBFS, r.DiffPeakDBFS, r.DiffPeakAt, r.Differ, n, r.FirstDiffAt)
 	return 0
 }
@@ -393,4 +410,12 @@ func loopText(n int) string {
 		return "無し"
 	}
 	return strconv.Itoa(n)
+}
+
+func gainAll(g float64, chans [][]float64) [][]float64 {
+	out := make([][]float64, len(chans))
+	for i, x := range chans {
+		out[i] = gainOf(g, x)
+	}
+	return out
 }

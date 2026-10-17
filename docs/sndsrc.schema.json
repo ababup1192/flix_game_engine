@@ -2,6 +2,14 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
+    "channels": {
+      "default": "stereo",
+      "description": "書き出しのチャンネル",
+      "enum": [
+        "stereo",
+        "mono"
+      ]
+    },
     "kind": {
       "default": "sfx",
       "enum": [
@@ -20,6 +28,56 @@
     "post": {
       "items": {
         "oneOf": [
+          {
+            "additionalProperties": false,
+            "description": "帰還つきのディレイ（ms ごとに feedback 倍で返る。pingpong で左右に交互に返す・帰還の道で lowpass）を wet だけ足す",
+            "maxProperties": 1,
+            "minProperties": 1,
+            "properties": {
+              "delay": {
+                "additionalProperties": false,
+                "properties": {
+                  "feedback": {
+                    "default": 0.35,
+                    "description": "返る量（0〜0.95）",
+                    "maximum": 0.95,
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "lowpass": {
+                    "default": 6000,
+                    "description": "帰還の道のローパス（Hz。返るたびに暗くなる）",
+                    "maximum": 20000,
+                    "minimum": 100,
+                    "type": "number"
+                  },
+                  "ms": {
+                    "description": "遅れ（ミリ秒）",
+                    "maximum": 4000,
+                    "minimum": 1,
+                    "type": "number"
+                  },
+                  "pingpong": {
+                    "default": true,
+                    "description": "左右に交互に返す（モノラルの書き出しでは真ん中）",
+                    "type": "boolean"
+                  },
+                  "wet": {
+                    "default": 0.25,
+                    "description": "返りの量",
+                    "maximum": 2,
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "ms"
+                ],
+                "type": "object"
+              }
+            },
+            "type": "object"
+          },
           {
             "additionalProperties": false,
             "description": "立ち上がり attack_ms・hold_ms 保ってから decay_ms の速さで指数に減衰（decay_ms 0 は減衰なし）",
@@ -164,6 +222,33 @@
           },
           {
             "additionalProperties": false,
+            "description": "統合ラウドネスを lufs にそろえ、true peak が peak_dbtp を超えるなら倍率を下げる（倍率だけ。ループする音は輪の 1 周で測る）",
+            "maxProperties": 1,
+            "minProperties": 1,
+            "properties": {
+              "normalize": {
+                "additionalProperties": false,
+                "properties": {
+                  "lufs": {
+                    "description": "目標の統合ラウドネス（LUFS。省くと kind の目安）",
+                    "maximum": 0,
+                    "minimum": -60,
+                    "type": "number"
+                  },
+                  "peak_dbtp": {
+                    "description": "true peak の上限（dBTP。省くと snd.json の truePeakDbtp）",
+                    "maximum": 0,
+                    "minimum": -20,
+                    "type": "number"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
             "description": "隣のサンプルとの差 × 0.7（低い成分を落とした擦れ。times 回重ねる）",
             "maxProperties": 1,
             "minProperties": 1,
@@ -203,6 +288,49 @@
                 "required": [
                   "ratio"
                 ],
+                "type": "object"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "部屋の響き（櫛形 8 本 + 全域通過 4 本の Freeverb 型。左右で長さをずらして広げる）を wet だけ足す",
+            "maxProperties": 1,
+            "minProperties": 1,
+            "properties": {
+              "reverb": {
+                "additionalProperties": false,
+                "properties": {
+                  "damp": {
+                    "default": 0.5,
+                    "description": "響きの高域の減り（0〜1）",
+                    "maximum": 1,
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "predelay_ms": {
+                    "default": 0,
+                    "description": "響きの始まりの遅れ（ミリ秒）",
+                    "maximum": 200,
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "room": {
+                    "default": 0.5,
+                    "description": "部屋の大きさ（0〜1。響きの長さ）",
+                    "maximum": 1,
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "wet": {
+                    "default": 0.2,
+                    "description": "響きの量",
+                    "maximum": 2,
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                },
                 "type": "object"
               }
             },
@@ -480,7 +608,7 @@
                 },
                 {
                   "additionalProperties": false,
-                  "description": "譜面（*.chip.json）を楽器（*.instrument.json）で鳴らす。ループ点があれば頭 + 輪の 1 本と smpl のループの頭を作る",
+                  "description": "譜面（*.chip.json）を楽器（譜面の中か *.instrument.json）で鳴らす。左右に振って混ぜ、ループ点があれば頭 + 輪の 1 本と smpl のループの頭を作る",
                   "maxProperties": 1,
                   "minProperties": 1,
                   "properties": {
@@ -488,17 +616,66 @@
                       "additionalProperties": false,
                       "properties": {
                         "chip": {
-                          "description": "譜面のパス（作業場の根から）",
+                          "description": "譜面のパス（作業場の根から。台本の snd.write_chip が書いた物も読める）",
                           "type": "string"
                         },
                         "instruments": {
-                          "description": "楽器のパス（作業場の根から）",
+                          "description": "楽器のパス（作業場の根から。省くと譜面の中の instruments だけ）",
                           "type": "string"
                         }
                       },
                       "required": [
-                        "chip",
-                        "instruments"
+                        "chip"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "帰還つきのディレイ（ms ごとに feedback 倍で返る。pingpong で左右に交互に返す・帰還の道で lowpass）を wet だけ足す",
+                  "maxProperties": 1,
+                  "minProperties": 1,
+                  "properties": {
+                    "delay": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "feedback": {
+                          "default": 0.35,
+                          "description": "返る量（0〜0.95）",
+                          "maximum": 0.95,
+                          "minimum": 0,
+                          "type": "number"
+                        },
+                        "lowpass": {
+                          "default": 6000,
+                          "description": "帰還の道のローパス（Hz。返るたびに暗くなる）",
+                          "maximum": 20000,
+                          "minimum": 100,
+                          "type": "number"
+                        },
+                        "ms": {
+                          "description": "遅れ（ミリ秒）",
+                          "maximum": 4000,
+                          "minimum": 1,
+                          "type": "number"
+                        },
+                        "pingpong": {
+                          "default": true,
+                          "description": "左右に交互に返す（モノラルの書き出しでは真ん中）",
+                          "type": "boolean"
+                        },
+                        "wet": {
+                          "default": 0.25,
+                          "description": "返りの量",
+                          "maximum": 2,
+                          "minimum": 0,
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "ms"
                       ],
                       "type": "object"
                     }
@@ -649,6 +826,33 @@
                 },
                 {
                   "additionalProperties": false,
+                  "description": "統合ラウドネスを lufs にそろえ、true peak が peak_dbtp を超えるなら倍率を下げる（倍率だけ。ループする音は輪の 1 周で測る）",
+                  "maxProperties": 1,
+                  "minProperties": 1,
+                  "properties": {
+                    "normalize": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "lufs": {
+                          "description": "目標の統合ラウドネス（LUFS。省くと kind の目安）",
+                          "maximum": 0,
+                          "minimum": -60,
+                          "type": "number"
+                        },
+                        "peak_dbtp": {
+                          "description": "true peak の上限（dBTP。省くと snd.json の truePeakDbtp）",
+                          "maximum": 0,
+                          "minimum": -20,
+                          "type": "number"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
                   "description": "隣のサンプルとの差 × 0.7（低い成分を落とした擦れ。times 回重ねる）",
                   "maxProperties": 1,
                   "minProperties": 1,
@@ -688,6 +892,49 @@
                       "required": [
                         "ratio"
                       ],
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "部屋の響き（櫛形 8 本 + 全域通過 4 本の Freeverb 型。左右で長さをずらして広げる）を wet だけ足す",
+                  "maxProperties": 1,
+                  "minProperties": 1,
+                  "properties": {
+                    "reverb": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "damp": {
+                          "default": 0.5,
+                          "description": "響きの高域の減り（0〜1）",
+                          "maximum": 1,
+                          "minimum": 0,
+                          "type": "number"
+                        },
+                        "predelay_ms": {
+                          "default": 0,
+                          "description": "響きの始まりの遅れ（ミリ秒）",
+                          "maximum": 200,
+                          "minimum": 0,
+                          "type": "number"
+                        },
+                        "room": {
+                          "default": 0.5,
+                          "description": "部屋の大きさ（0〜1。響きの長さ）",
+                          "maximum": 1,
+                          "minimum": 0,
+                          "type": "number"
+                        },
+                        "wet": {
+                          "default": 0.2,
+                          "description": "響きの量",
+                          "maximum": 2,
+                          "minimum": 0,
+                          "type": "number"
+                        }
+                      },
                       "type": "object"
                     }
                   },
@@ -778,6 +1025,12 @@
             },
             "minItems": 1,
             "type": "array"
+          },
+          "pan": {
+            "description": "左右（-1 左・0 真ん中・1 右）",
+            "maximum": 1,
+            "minimum": -1,
+            "type": "number"
           }
         },
         "required": [

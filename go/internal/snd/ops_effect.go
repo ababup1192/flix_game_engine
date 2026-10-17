@@ -113,7 +113,7 @@ func init() {
 			{Name: "in_ms", Type: opreg.Number, Default: 2.0, Summary: "頭の絞り（ミリ秒）", Lo: bound(0), Hi: bound(1000)},
 			{Name: "out_ms", Type: opreg.Number, Default: 12.0, Summary: "尾の絞り（ミリ秒）", Lo: bound(0), Hi: bound(1000)},
 		},
-		Fx: fxFinish,
+		Mix: fxFinish,
 	})
 	register(&opDef{
 		Name:    "resample",
@@ -250,46 +250,62 @@ func lowpass1(c *rctx, hz float64, x []float64) ([]float64, error) {
 	return out, nil
 }
 
-// fxFinish は Dsp.finish と同じ手順。
-func fxFinish(c *rctx, x []float64, a opreg.Args) ([]float64, error) {
-	end := len(x)
-	for end > 0 && math.Abs(x[end-1]) < 0.0005 {
+// fxFinish は Dsp.finish と同じ手順（左右は尾の切り方とピークをそろえる）。
+func fxFinish(c *rctx, x sig, a opreg.Args) (sig, error) {
+	end := x.frames()
+	quiet := func(i int) bool {
+		for _, ch := range x.ch {
+			if math.Abs(ch[i]) >= 0.0005 {
+				return false
+			}
+		}
+		return true
+	}
+	for end > 0 && quiet(end-1) {
 		end--
 	}
-	x = x[:end]
-	lp, err := lowpass1(c, 25, x)
-	if err != nil {
-		return nil, err
-	}
-	hp := make([]float64, len(x))
-	for i := range x {
-		hp[i] = x[i] - lp[i]
-	}
-	y, err := lowpass1(c, 8000, hp)
-	if err == nil {
-		y, err = lowpass1(c, 8000, y)
-	}
-	if err != nil {
-		return nil, err
-	}
-	n := len(y)
-	na, nb := c.frames(a.Num("in_ms")), c.frames(a.Num("out_ms"))
 	peak := 0.0
-	for i, s := range y {
-		gIn, gOut := 1.0, 1.0
-		if i < na {
-			gIn = float64(i) / float64(na)
+	var ys [][]float64
+	for _, ch := range x.ch {
+		ch = ch[:end]
+		lp, err := lowpass1(c, 25, ch)
+		if err != nil {
+			return sig{}, err
 		}
-		if n-1-i < nb {
-			gOut = float64(n-1-i) / float64(nb)
+		hp := make([]float64, len(ch))
+		for i := range ch {
+			hp[i] = ch[i] - lp[i]
 		}
-		y[i] = s * gIn * gOut
-		peak = math.Max(peak, math.Abs(y[i]))
+		y, err := lowpass1(c, 8000, hp)
+		if err == nil {
+			y, err = lowpass1(c, 8000, y)
+		}
+		if err != nil {
+			return sig{}, err
+		}
+		n := len(y)
+		na, nb := c.frames(a.Num("in_ms")), c.frames(a.Num("out_ms"))
+		for i, s := range y {
+			gIn, gOut := 1.0, 1.0
+			if i < na {
+				gIn = float64(i) / float64(na)
+			}
+			if n-1-i < nb {
+				gOut = float64(n-1-i) / float64(nb)
+			}
+			y[i] = s * gIn * gOut
+			peak = math.Max(peak, math.Abs(y[i]))
+		}
+		ys = append(ys, y)
+	}
+	ls := x.loopStart
+	if ls >= end {
+		ls = -1
 	}
 	if peak <= 0 {
-		return y, nil
+		return sig{ch: ys, loopStart: ls}, nil
 	}
-	return gainOf(1/peak, y), nil
+	return sig{ch: gainAll(1/peak, ys), loopStart: ls}, nil
 }
 
 // resample は Dsp.resample と同じ（線形の補間。ratio 1 はそのまま）。
