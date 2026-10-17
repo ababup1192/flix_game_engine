@@ -30,6 +30,7 @@ type pxStyle struct {
 	ChannelLevels int               `json:"channelLevels"` // RGB の 1 チャンネルの段数（32 = 5 bit）
 	MaxSize       [2]int            `json:"maxSize"`       // 絵の最大の大きさ
 	Palettes      *paletteRule      `json:"palettes"`      // 色を何本のパレットに分けて持つか（無ければ見ない）
+	Pixel         [2]int            `json:"pixel"`         // 画素の横:縦（PC-88 の 200 ライン = [1, 2]）。--png の PNG・GIF をこの比で引き伸ばす
 	name          string
 }
 
@@ -77,6 +78,14 @@ func loadStyle(workRoot, engineRoot, name string) (*pxStyle, error) {
 	}
 	st.name = name
 	return st, nil
+}
+
+// pixelAspect は --png で引き伸ばす横と縦の倍率（style が無いか pixel を書いていなければ 1:1）。
+func (st *pxStyle) pixelAspect() (int, int) {
+	if st == nil || st.Pixel[0] < 1 || st.Pixel[1] < 1 {
+		return 1, 1
+	}
+	return st.Pixel[0], st.Pixel[1]
 }
 
 // allowsHex は色がこの機種で出せるか。

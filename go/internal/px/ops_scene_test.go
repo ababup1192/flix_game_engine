@@ -105,7 +105,7 @@ func TestGIFIsDeterministic(t *testing.T) {
 	var data [2][]byte
 	for i := range data {
 		p := filepath.Join(dir, itoa(i)+".gif")
-		if err := writeGIF(p, frames, 2, 20); err != nil {
+		if err := writeGIF(p, frames, 2, 2, 20); err != nil {
 			t.Fatal(err)
 		}
 		data[i], _ = os.ReadFile(p)

@@ -457,7 +457,8 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 	}
 	if opt.PNG {
 		pngDir := filepath.Join(root, "debug", "px", specName(specPath), "png")
-		if err := writePNGs(pngDir, res, hexOf, opt.GIFScale, opt.GIFDelay); err != nil {
+		ax, ay := style.pixelAspect()
+		if err := writePNGs(pngDir, res, hexOf, opt.GIFScale, opt.GIFDelay, ax, ay); err != nil {
 			return nil, err
 		}
 		res.PNGDir = pngDir
@@ -662,7 +663,8 @@ func writeSheets(dir string, res *buildResult, prev *buildResult, hexOf map[pxli
 // writePNGs は --png の書き出し: スプライトごとに 1 コマ目の実寸と 4 倍、全コマを横に並べた実寸と 4 倍、
 // 2 コマ以上ならコマを回す GIF（既定は 2 倍・1 コマ 200ms。scale と delayMs が 0 でなければそれ）。
 // 色はそのまま（減色しない）・透明は透明のまま・前の物は消してから書くので、同じ指定からは毎回同じバイトになる。
-func writePNGs(dir string, res *buildResult, hexOf map[pxlib.Key]string, scale, delayMs int) error {
+// ax・ay は style の pixel（画素の横:縦）。1:1 でなければ PNG・GIF をどれも横 ax 倍・縦 ay 倍に引き伸ばす（PC-88 の 200 ライン）。
+func writePNGs(dir string, res *buildResult, hexOf map[pxlib.Key]string, scale, delayMs, ax, ay int) error {
 	if scale <= 0 {
 		scale = gifScale
 	}
@@ -693,8 +695,8 @@ func writePNGs(dir string, res *buildResult, hexOf map[pxlib.Key]string, scale, 
 	for _, name := range order {
 		frames := bySprite[name]
 		base := filepath.Join(dir, safeName(name))
-		one := pxlib.Strip(frames[:1])
-		strip := pxlib.Strip(frames)
+		one := scaleXY(pxlib.Strip(frames[:1]), ax, ay)
+		strip := scaleXY(pxlib.Strip(frames), ax, ay)
 		for path, img := range map[string]*image.RGBA{
 			base + ".png": one, base + "@4x.png": scaleUp(one, 4),
 			base + ".strip.png": strip, base + ".strip@4x.png": scaleUp(strip, 4),
@@ -704,7 +706,7 @@ func writePNGs(dir string, res *buildResult, hexOf map[pxlib.Key]string, scale, 
 			}
 		}
 		if len(frames) >= 2 {
-			if err := writeGIF(base+".gif", frames, scale, delay); err != nil {
+			if err := writeGIF(base+".gif", frames, scale*ax, scale*ay, delay); err != nil {
 				return err
 			}
 		}
@@ -719,7 +721,7 @@ const (
 
 // writeGIF はコマを順に回す GIF を書く（くり返し）。色表は減色しない: コマを上から順に読んで初めて出た色の順に並べ、
 // 透明があれば 0 番を透明にする。同じコマからは毎回同じバイトになる。色が 256 を超える絵は書かずに誤り。
-func writeGIF(path string, frames [][][]color.RGBA, scale, delay int) error {
+func writeGIF(path string, frames [][][]color.RGBA, sx, sy, delay int) error {
 	index := map[color.RGBA]uint8{}
 	var pal color.Palette
 	clear := color.RGBA{}
@@ -767,10 +769,10 @@ func writeGIF(path string, frames [][][]color.RGBA, scale, delay int) error {
 		if h > 0 {
 			w = len(f[0])
 		}
-		img := image.NewPaletted(image.Rect(0, 0, w*scale, h*scale), pal)
-		for y := 0; y < h*scale; y++ {
-			for x := 0; x < w*scale; x++ {
-				c := f[y/scale][x/scale]
+		img := image.NewPaletted(image.Rect(0, 0, w*sx, h*sy), pal)
+		for y := 0; y < h*sy; y++ {
+			for x := 0; x < w*sx; x++ {
+				c := f[y/sy][x/sx]
 				if c.A == 0 {
 					c = clear
 				}
@@ -790,6 +792,21 @@ func writeGIF(path string, frames [][][]color.RGBA, scale, delay int) error {
 		return err
 	}
 	return fh.Close()
+}
+
+// scaleXY は画素を横 sx 倍・縦 sy 倍に広げる（なめらかにしない。1:1 ならそのまま返す）。
+func scaleXY(img *image.RGBA, sx, sy int) *image.RGBA {
+	if sx == 1 && sy == 1 {
+		return img
+	}
+	b := img.Bounds()
+	out := image.NewRGBA(image.Rect(0, 0, b.Dx()*sx, b.Dy()*sy))
+	for y := 0; y < b.Dy()*sy; y++ {
+		for x := 0; x < b.Dx()*sx; x++ {
+			out.SetRGBA(x, y, img.RGBAAt(b.Min.X+x/sx, b.Min.Y+y/sy))
+		}
+	}
+	return out
 }
 
 // scaleUp は画素を k 倍の正方形に広げる（なめらかにしない）。
