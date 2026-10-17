@@ -141,7 +141,7 @@
 
 | 引数 | 型 | 説明 |
 |---|---|---|
-| `points` | points | 折れ線の点 [[x, y], ...]（必須） |
+| `points` | vectors | 折れ線の点 [[x, y], ...]（小数も可。画素には偶数丸めで落とす）（必須） |
 | `color` | color | 色（ink・shade・mid・light・ramp[i]・gloss・色キー。"" で透明へ抜く）（必須） |
 
 ### `outline`

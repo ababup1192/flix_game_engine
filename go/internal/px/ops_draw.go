@@ -11,7 +11,6 @@ import (
 var (
 	pShape    = param{Name: "shape", Type: tShape, Summary: "形（省くと部品の塊）"}
 	pColor    = param{Name: "color", Type: tColor, Required: true, Summary: "色（ink・shade・mid・light・ramp[i]・gloss・色キー。\"\" で透明へ抜く）"}
-	pPoints   = param{Name: "points", Type: tPoints, Required: true, Summary: "折れ線の点 [[x, y], ...]"}
 	pOptColor = param{Name: "color", Type: tColor, Summary: "この色の画素だけを相手にする（省くと部品の全部）"}
 )
 
@@ -54,7 +53,7 @@ func init() {
 	register(&opDef{
 		Name: "line", Example: `{"line": {"points": [[3, 3], [8, 6]], "color": "ink"}}`, Summary: "折れ線を 1px で引く（clip の部品なら親の塊の中だけ）",
 		Technique: "1px の線", Finish: "既存の lint corner（角が 2 重なら pixel_perfect）",
-		Params: []param{pPoints, pColor},
+		Params: []param{pVecPoints, pColor},
 		Apply: func(c *ctx, a opArgs) error {
 			k, err := c.Color(a.color("color"))
 			if err != nil {

@@ -898,16 +898,17 @@
               "additionalProperties": false,
               "properties": {
                 "points": {
-                  "description": "折れ線の点 [[x, y], ...]",
+                  "description": "折れ線の点 [[x, y], ...]（小数も可。画素には偶数丸めで落とす）",
                   "type": "array",
                   "items": {
                     "type": "array",
                     "items": {
-                      "type": "integer"
+                      "type": "number"
                     },
                     "minItems": 2,
                     "maxItems": 2
-                  }
+                  },
+                  "minItems": 2
                 },
                 "color": {
                   "description": "色（ink・shade・mid・light・ramp[i]・gloss・色キー。\"\" で透明へ抜く）",
