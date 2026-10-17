@@ -1,7 +1,8 @@
 package px
 
-// アイコン（小物）の形と op: 画素の範囲で書く角丸の矩形・アイコンの塗り（emblem）・1px の円（ring）・
-// 光の側で段を分ける（light_bands）・2 次ベジェの粒の線（curve）。説明は各定義の Summary・Params にだけ書く。
+// アイコン（小物）の形と op: 画素の範囲で書く角丸の矩形・輪（annulus）・アイコンの塗り（emblem・bevel）・
+// 文字の格子の白抜き（glyph_rows）・1px の円（ring）・光の側で段を分ける（light_bands）・2 次ベジェの粒の線（curve）・
+// 扇ごとに別の系統の色で塗り直す（parquet）・縮めて重ねる（scaled）。説明は各定義の Summary・Params にだけ書く。
 
 import (
 	"fmt"
@@ -10,7 +11,16 @@ import (
 	"github.com/ababup1192/flix_game_engine/go/internal/pxlib"
 )
 
+// pVecPoints は小数も書ける折れ線の点（line・crack）。
+var pVecPoints = param{Name: "points", Type: tVecs, Required: true, Min: 2, Summary: "折れ線の点 [[x, y], ...]（小数も可。画素には偶数丸めで落とす）"}
+
 func init() {
+	registerShape(&shapeKind{Name: "annulus", Summary: "輪（中心から r の円に沿った、幅 2w の帯）",
+		Main: param{Type: tNums, Len: 4, Summary: "[cx, cy, r, w]"},
+		Make: func(in shapeIn) sdf {
+			p := in.nums
+			return func(x, y float64) float64 { return math.Abs(hypot(x-p[0], y-p[1])-p[2]) - p[3] }
+		}})
 	registerShape(&shapeKind{Name: "roundRect", Summary: "画素の範囲で書く角丸の矩形（x0..x1・y0..y1 の画素を含み、角は内側へ r の丸。塗りの判定専用。smoothUnion・rounded には使えない）",
 		Main: param{Type: tNums, Len: 5, Summary: "[x0, y0, x1, y1, r]"},
 		Make: func(in shapeIn) sdf {
@@ -65,6 +75,192 @@ func init() {
 			}
 			if a.has("shape") {
 				c.AddRegion(m)
+			}
+			return nil
+		},
+	})
+
+	register(&opDef{
+		Name: "bevel", Example: `{"bevel": {"shape": {"disk": [8, 8, 4]}}}`,
+		Summary:   "小物の陰の段: 光の側の縁を lit、影の側の縁（と影の向きへ 2 つ先が外の画素）を dark、中を face",
+		Technique: "小物の陰影（縁で光と影を分ける）", Finish: "既存の lint banding",
+		Params: []param{
+			pShape,
+			{Name: "lit", Type: tColor, Default: "light", Summary: "光の側の縁の色"},
+			{Name: "face", Type: tColor, Default: "mid", Summary: "中の色"},
+			{Name: "dark", Type: tColor, Default: "shade", Summary: "影の側の縁の色"},
+		},
+		Apply: func(c *ctx, a opArgs) error {
+			m, err := c.ShapeOrRegion(a)
+			if err != nil {
+				return err
+			}
+			var keys [3]pxlib.Key
+			for i, name := range []string{"lit", "face", "dark"} {
+				if keys[i], err = c.Color(a.color(name)); err != nil {
+					return err
+				}
+			}
+			sx, sy := c.LightSign()
+			for _, p := range m.Points() {
+				lit := (sx != 0 && !m.At(p.X+sx, p.Y)) || (sy != 0 && !m.At(p.X, p.Y+sy))
+				dark := (sx != 0 && !m.At(p.X-sx, p.Y)) || (sy != 0 && !m.At(p.X, p.Y-sy)) || !m.At(p.X-2*sx, p.Y-2*sy)
+				k := keys[1]
+				switch {
+				case dark:
+					k = keys[2]
+				case lit:
+					k = keys[0]
+				}
+				c.PutAbs(p.X, p.Y, k)
+			}
+			if a.has("shape") {
+				c.AddRegion(m)
+			}
+			return nil
+		},
+	})
+
+	register(&opDef{
+		Name: "glyph_rows", Example: `{"glyph_rows": {"at": [4, 4], "rows": ["##", "#."]}}`,
+		Summary:   "文字の格子の白抜きの記号: '.' と空白でない字の画素を color で、その右下 1px に shadow の影（影を先に置く）",
+		Technique: "白抜きの記号（小さなカード・効果のアイコン）", Finish: "—",
+		Params: []param{
+			{Name: "at", Type: tPoint, Required: true, Summary: "記号の左上 [x, y]"},
+			{Name: "rows", Type: tRows, Required: true, Summary: "記号の行（'.' と空白は外）"},
+			{Name: "color", Type: tColor, Default: "gloss", Summary: "記号の色"},
+			{Name: "shadow", Type: tColor, Default: "shade", Summary: "右下 1px の影の色"},
+		},
+		Apply: func(c *ctx, a opArgs) error {
+			fill, err := c.Color(a.color("color"))
+			if err != nil {
+				return err
+			}
+			shadow, err := c.Color(a.color("shadow"))
+			if err != nil {
+				return err
+			}
+			at := a.point("at")
+			for _, pass := range []struct {
+				d int
+				k pxlib.Key
+			}{{1, shadow}, {0, fill}} {
+				for dy, row := range a.rows("rows") {
+					for dx, ch := range []rune(row) {
+						if ch != '.' && ch != ' ' {
+							c.Put(at.X+dx+pass.d, at.Y+dy+pass.d, pass.k)
+						}
+					}
+				}
+			}
+			return nil
+		},
+	})
+
+	register(&opDef{
+		Name: "parquet", Example: `{"parquet": {"from": "r", "ramps": ["r", "r"]}}`,
+		Summary:   "寄せ木: center から ramps の数に等分した扇ごとに、ランプ from の色をその扇のランプで塗り直す（from の墨は墨へ、ほかの段は斜めの帯で光・地・影へ。clip の部品なら親の塊の中だけ）",
+		Technique: "寄せ木（かけらごとに別の系統の色）", Finish: "—",
+		Params: []param{
+			{Name: "from", Type: tString, Required: true, Summary: "塗り直す元のランプの名前"},
+			{Name: "ramps", Type: tRows, Required: true, Summary: "扇ごとのランプの名前（start から時計回りに）"},
+			{Name: "start", Type: tNumber, Default: -math.Pi / 2, Summary: "最初の扇の始まりの向き（ラジアン。既定は真上）"},
+			{Name: "center", Type: tPair, Summary: "扇の中心 [x, y]（省くと格子の中央）"},
+			{Name: "bands", Type: tPair, Default: []any{0.30, 0.72}, Summary: "光・地・影の境目（0〜1。左上の角が 0）"},
+		},
+		Apply: func(c *ctx, a opArgs) error {
+			from := c.Spec.Ramps[a.str("from")]
+			if len(from) < 4 {
+				return fmt.Errorf("ramps に 4 段以上の %q が無い", a.str("from"))
+			}
+			var fans [][]pxlib.Key
+			for _, name := range a.rows("ramps") {
+				r := c.Spec.Ramps[name]
+				if len(r) < 4 {
+					return fmt.Errorf("ramps に 4 段以上の %q が無い", name)
+				}
+				fans = append(fans, r)
+			}
+			if len(fans) == 0 {
+				return fmt.Errorf("ramps に 1 つ以上のランプの名前を書く")
+			}
+			ctr := [2]float64{float64(c.G.W) / 2, float64(c.G.H) / 2}
+			if a.has("center") {
+				ctr = a.pair("center")
+			}
+			b, start := a.pair("bands"), a.num("start")
+			span := 2.0 * float64(c.G.W-1)
+			turn := 2 * math.Pi
+			for y := 0; y < c.G.H; y++ {
+				for x := 0; x < c.G.W; x++ {
+					old := c.G.At(x, y)
+					ang := math.Mod(math.Atan2(float64(y)+0.5-ctr[1], float64(x)+0.5-ctr[0])-start, turn)
+					if ang < 0 {
+						ang += turn
+					}
+					r := fans[int(ang/(turn/float64(len(fans))))%len(fans)]
+					t := float64(x+y) / span
+					switch {
+					case old == from[0]:
+						c.PutAbs(x, y, r[0])
+					case old == from[1] || old == from[2] || old == from[3]:
+						k := r[1]
+						if t < b[0] {
+							k = r[3]
+						} else if t < b[1] {
+							k = r[2]
+						}
+						c.PutAbs(x, y, k)
+					}
+				}
+			}
+			return nil
+		},
+	})
+
+	register(&opDef{
+		Name: "scaled", Example: `{"scaled": {"macro": "eye", "scale": 0.5, "about": [8, 8]}}`,
+		Summary:   "macros の op の列を別の格子に描き、about を中心に scale 倍へ縮め（広げ）て、塗った画素だけ重ねる（近い画素を引く）",
+		Technique: "同じ記号を一回り小さく重ねる", Finish: "—",
+		Params: []param{
+			{Name: "macro", Type: tString, Required: true, Summary: "macros の名前"},
+			{Name: "scale", Type: tNumber, Required: true, Summary: "大きさの倍率（0.72 なら 0.72 倍）"},
+			{Name: "about", Type: tPair, Required: true, Summary: "縮める中心 [x, y]"},
+		},
+		Whole: true,
+		Apply: func(c *ctx, a opArgs) error {
+			body, ok := c.Spec.Macros[a.str("macro")]
+			if !ok {
+				return fmt.Errorf("macros に %q が無い", a.str("macro"))
+			}
+			if a.num("scale") <= 0 {
+				return fmt.Errorf("scale は 0 より大きい数")
+			}
+			if c.depth >= 8 {
+				return fmt.Errorf("use・scaled の入れ子が深すぎる（輪になっていないか）")
+			}
+			// 別の格子に、clip を外した同じ部品として描く
+			sub := *c
+			sub.G = pxlib.NewGrid(c.G.W, c.G.H)
+			p := *c.Part.Part
+			p.Clip = false
+			sub.Part = &partState{Part: &p, Ramp: c.Part.Ramp, shape: c.Part.shape, written: pxlib.NewMask(c.G.W, c.G.H)}
+			sub.depth++
+			for _, call := range body {
+				sub.ref = pxlib.OpRef{Part: c.ref.Part, Index: c.ref.Index, Op: c.ref.Op + ">" + call.Name}
+				if err := sub.apply(call); err != nil {
+					return err
+				}
+			}
+			k, ab := a.num("scale"), a.pair("about")
+			for y := 0; y < c.G.H; y++ {
+				for x := 0; x < c.G.W; x++ {
+					sx := int(math.Trunc(ab[0] + (float64(x)+0.5-ab[0])/k))
+					sy := int(math.Trunc(ab[1] + (float64(y)+0.5-ab[1])/k))
+					if src := sub.G.At(sx, sy); sub.G.In(sx, sy) && src != pxlib.Clear {
+						c.PutAbs(x, y, src)
+					}
+				}
 			}
 			return nil
 		},
@@ -220,4 +416,18 @@ func curveCells(pts [][2]float64, steps int, avoid sdf) []pxlib.Pt {
 		out = append(out, p)
 	}
 	return out
+}
+
+// lerpCells は折れ線を画素に落とす（各区間を長い方の差 + 1 等分し、偶数丸め）。
+func lerpCells(pts [][2]float64) []pxlib.Pt {
+	var cells []pxlib.Pt
+	for i := 0; i+1 < len(pts); i++ {
+		ax, ay, bx, by := pts[i][0], pts[i][1], pts[i+1][0], pts[i+1][1]
+		n := int(math.Max(math.Abs(bx-ax), math.Abs(by-ay))) + 1
+		for k := 0; k <= n; k++ {
+			t := float64(k) / float64(max(1, n))
+			cells = append(cells, pxlib.Pt{X: int(math.RoundToEven(ax + float64((bx-ax)*t))), Y: int(math.RoundToEven(ay + float64((by-ay)*t)))})
+		}
+	}
+	return cells
 }

@@ -76,7 +76,7 @@ func init() {
 	register(&opDef{
 		Name: "crack", Example: `{"crack": {"points": [[3, 8], [6, 9], [9, 7]]}}`, Summary: "親（on）の塊の割れ目: 墨の 1px と、その右下に切り口のつや 1px",
 		Technique: "タイルの割れ目", Finish: "—",
-		Params: []param{pPoints},
+		Params: []param{pVecPoints},
 		Apply: func(c *ctx, a opArgs) error {
 			if err := c.NeedRamp(4); err != nil {
 				return err
@@ -90,7 +90,7 @@ func init() {
 				return err
 			}
 			ink, _ := c.RampAt(0)
-			cells := lerpCells(a.points("points"))
+			cells := lerpCells(vecs(a.get("points")))
 			seen := map[pxlib.Pt]bool{}
 			for _, q := range cells {
 				seen[q] = true

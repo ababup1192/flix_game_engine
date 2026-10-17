@@ -43,7 +43,7 @@ func TestBytesMatchAssets(t *testing.T) {
 		dir, spec, sprite string
 		frames            int
 	}{
-		{"puzzle", "puzzle.pxsrc.json", "internet_dungeon.puzzle.sprite.json", 22},
+		{"puzzle", "puzzle.pxsrc.json", "internet_dungeon.puzzle.sprite.json", 77},
 		{"relic", "relic.pxsrc.json", "internet_dungeon.relic.sprite.json", 3},
 	} {
 		t.Run(tc.dir, func(t *testing.T) { checkBytesMatch(t, tc.dir, tc.spec, tc.sprite, tc.frames) })

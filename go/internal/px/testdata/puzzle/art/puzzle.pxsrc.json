@@ -1,33 +1,38 @@
 {
   "version": 2,
   "title": "パズルの駒",
-  "note": "昼のパズルの駒（駒 B）の指定。fge px build で atelier/ の sprite.json に描く。いじると変わる物: ramps = 系統ごとの暗→明 4 段（墨・影・地・光）/ shapes = 記号の形（数字は 32×32 の格子の座標。剣は横向きに書いて 1/8 周回す: 22.1 と 17.9 の差が刃の太さ）/ bevel_box の radius・inset = 角の丸みと余白、bands = 斜めの光・地・影の境目（0〜1）/ light.ground = 見本の地（スケッチブックの紙）。",
+  "note": "昼のパズルの絵の指定（駒 5 種と特殊な駒の割れ目・記号だけの版・16×16 の小さなカードと効果のアイコン・画面の小物）。fge px build で atelier/ の sprite.json に描く。いじると変わる物: ramps = 系統ごとの暗→明 4 段（墨・影・地・光）/ shapes = 記号の形（数字は 32×32 の格子の座標。剣は横向きに書いて 1/8 周回す: 22.1 と 17.9 の差が刃の太さ）/ bevel_box の radius・inset = 角の丸みと余白、bands = 斜めの光・地・影の境目（0〜1）/ crackBomb の crack の点 = ふくらんだ駒のひび（前の台本が乱数で散らした点を写した物）/ glyph_rows の rows = 小さな記号の形 / light.ground = 見本の地（スケッチブックの紙）。",
   "target": "atelier/internet_dungeon.puzzle.sprite.json",
   "base": "assets/internet_dungeon.puzzle.sprite.json",
+  "palette": "assets/internet_dungeon.palette.json",
   "light": {"dir": [-1, -1], "gloss": "tileGloss", "ground": "#ffffeb"},
   "ramps": {
     "attack": ["tileAtkInk", "tileAtkShade", "tileAtkMid", "tileAtkLight"],
-    "guard":  ["tileGdInk", "tileGdShade", "tileGdMid", "tileGdLight"],
-    "skill":  ["tileSklInk", "tileSklShade", "tileSklMid", "tileSklLight"],
-    "hex":    ["tileHexInk", "tileHexShade", "tileHexMid", "tileHexLight"],
-    "rush":   ["tileRshInk", "tileRshShade", "tileRshMid", "tileRshLight"]
+    "guard": ["tileGdInk", "tileGdShade", "tileGdMid", "tileGdLight"],
+    "skill": ["tileSklInk", "tileSklShade", "tileSklMid", "tileSklLight"],
+    "hex": ["tileHexInk", "tileHexShade", "tileHexMid", "tileHexLight"],
+    "rush": ["tileRshInk", "tileRshShade", "tileRshMid", "tileRshLight"],
+    "heal": ["tileHealInk", "tileHealShade", "tileHealMid", "tileHealLight"],
+    "neutral": ["pearAubergine", "pearGraphite", "pearAsh", "pearCloud"],
+    "metal": ["pearInk", "pearGraphite", "pearAsh", "pearCloud"],
+    "brass": ["pearTerracotta", "pearApricot", "pearPeach", "pearLemon"],
+    "plastic": ["pearInk", "pearIndigo", "pearSky", "pearMint"],
+    "heart": ["pearGrape", "pearRuby", "pearPink", "pearBlush"],
+    "shard": ["pearAubergine", "pearMagenta", "pearPink", "pearBlush"],
+    "starOff": ["pearAsh", "pearCloud", "pearCloud", "pearWhite"],
+    "skin": ["pearRosewood", "pearCoral", "pearBlush", "pearWhite"]
   },
   "shapes": {
-    "sword": {"rotate": -0.125, "about": [12, 20], "of": {"union": [
-      {"poly": [[12, 22.1], [25.678, 22.1], [29.678, 20], [25.678, 17.9], [12, 17.9]]},
-      {"capsule": [12, 24.8, 12, 15.2, 1.5]},
-      {"capsule": [12, 20, 7, 20, 1.2]},
-      {"disk": [5.7, 20, 1.9]}
-    ]}},
+    "sword": {"rotate": -0.125, "about": [12, 20], "of": {"union": [{"poly": [[12, 22.1], [25.678, 22.1], [29.678, 20], [25.678, 17.9], [12, 17.9]]}, {"capsule": [12, 24.8, 12, 15.2, 1.5]}, {"capsule": [12, 20, 7, 20, 1.2]}, {"disk": [5.7, 20, 1.9]}]}},
     "shield": {"rounded": 0.8, "of": {"poly": [[9.5, 8], [22.5, 8], [22.8, 15], [20, 21], [16, 24.5], [12, 21], [9.2, 15]]}},
-    "star": {"rounded": 0.9, "of": {"star": [16, 16.8, 10.0, 4.6]}},
-    "skull": {"smoothUnion": [{"disk": [16, 14.2, 7.8]}, {"rbox": [16, 21.2, 4.6, 3.2, 1.5]}], "k": 2.0},
+    "star": {"rounded": 0.9, "of": {"star": [16, 16.8, 10, 4.6]}},
+    "skull": {"smoothUnion": [{"disk": [16, 14.2, 7.8]}, {"rbox": [16, 21.2, 4.6, 3.2, 1.5]}], "k": 2},
     "bolt": {"rounded": 0.5, "of": {"poly": [[17.5, 5.5], [24, 5.5], [19, 13], [24, 13], [11.5, 27], [14.5, 17], [9.5, 17]]}}
   },
   "macros": {
     "hexFace": [
-      {"fill": {"shape": {"ellipse": [13, 15.0, 2.2, 2.5]}, "color": "shade"}},
-      {"fill": {"shape": {"ellipse": [19, 15.0, 2.2, 2.5]}, "color": "shade"}},
+      {"fill": {"shape": {"ellipse": [13, 15, 2.2, 2.5]}, "color": "shade"}},
+      {"fill": {"shape": {"ellipse": [19, 15, 2.2, 2.5]}, "color": "shade"}},
       {"put": {"cells": [[15, 18], [16, 18]], "color": "shade"}},
       {"put": {"cells": [[14, 21], [14, 22], [16, 21], [16, 22], [18, 21], [18, 22]], "color": "mid"}}
     ],
@@ -39,91 +44,401 @@
       {"crack": {"points": [[16, 2], [14, 6], [17, 10], [14, 14], [17, 18], [14, 22], [17, 26], [15, 30]]}},
       {"put": {"cells": [[15, 2], [16, 2], [15, 29], [16, 29]], "color": ""}}
     ],
-    "chipFace": [
-      {"bevel_box": {"radius": 3.2, "inset": 1.0}}
+    "markAttack": [{"glyph": {"shape": {"ref": "sword"}}}],
+    "markGuard": [
+      {"glyph": {"shape": {"ref": "shield"}}},
+      {"fill": {"shape": {"inter": [{"ref": "shield"}, {"rect": [16, 10, 1, 12]}]}, "color": "light"}}
+    ],
+    "markSkill": [{"glyph": {"shape": {"ref": "star"}}}],
+    "markHex": [
+      {"glyph": {"shape": {"ref": "skull"}}},
+      {"use": {"macro": "hexFace"}}
+    ],
+    "markRush": [{"glyph": {"shape": {"ref": "bolt"}}}],
+    "crackColor": [
+      {"crack": {"points": [[18.66, 7.402], [19.505, 7.71], [19.711, 1.466]]}},
+      {"crack": {"points": [[24.999, 15.873], [24.967, 16.772], [30.969, 15.038]]}},
+      {"crack": {"points": [[18.902, 24.519], [18.037, 24.766], [21.54, 29.939]]}},
+      {"crack": {"points": [[8.794, 21.393], [8.292, 20.646], [4.455, 25.577]]}},
+      {"crack": {"points": [[8.645, 10.814], [9.199, 10.105], [3.324, 7.979]]}}
+    ],
+    "chipFace": [{"bevel_box": {"radius": 3.2, "inset": 1}}],
+    "keyCap": [
+      {"fill": {"shape": {"rbox": [6.5, 8, 6, 6.3, 2.5]}, "color": "pearAsh"}},
+      {"fill": {"shape": {"rbox": [6.5, 6.5, 6, 5.3, 2.5]}, "color": "pearWhite"}}
     ]
   },
   "sprites": {
     "pieceAttack": {"size": [32, 32], "ramp": "attack",
       "parts": [
         {"id": "tile", "ops": [{"bevel_box": {}}]},
-        {"id": "mark", "shape": {"ref": "sword"}, "ops": [{"glyph": {}}]},
-        {"id": "crack", "on": "tile", "ops": []}
+        {"id": "mark", "ops": [{"use": {"macro": "markAttack"}}]},
+        {"id": "parquet", "on": "tile", "clip": true, "ops": []},
+        {"id": "crack", "on": "tile", "ops": []},
+        {"id": "small", "ops": []}
       ],
-      "frames": {"idle": {},
+      "frames": {
+        "idle": {},
         "crackLineH": {"crack": {"ops": [{"use": {"macro": "crackH"}}]}},
-        "crackLineV": {"crack": {"ops": [{"use": {"macro": "crackV"}}]}}}},
-    "pieceGuard": {"size": [32, 32], "ramp": "guard",
-      "parts": [
-        {"id": "tile", "ops": [{"bevel_box": {}}]},
-        {"id": "mark", "shape": {"ref": "shield"}, "ops": [{"glyph": {}}]},
-        {"id": "stripe", "on": "mark", "clip": true, "ops": [{"line": {"points": [[16, 10], [16, 21]], "color": "light"}}]},
-        {"id": "crack", "on": "tile", "ops": []}
-      ],
-      "frames": {"idle": {},
-        "crackLineH": {"crack": {"ops": [{"use": {"macro": "crackH"}}]}},
-        "crackLineV": {"crack": {"ops": [{"use": {"macro": "crackV"}}]}}}},
-    "pieceSkill": {"size": [32, 32], "ramp": "skill",
-      "parts": [
-        {"id": "tile", "ops": [{"bevel_box": {}}]},
-        {"id": "mark", "shape": {"ref": "star"}, "ops": [{"glyph": {}}]},
-        {"id": "crack", "on": "tile", "ops": []}
-      ],
-      "frames": {"idle": {},
-        "crackLineH": {"crack": {"ops": [{"use": {"macro": "crackH"}}]}},
-        "crackLineV": {"crack": {"ops": [{"use": {"macro": "crackV"}}]}}}},
-    "pieceHex": {"size": [32, 32], "ramp": "hex",
-      "parts": [
-        {"id": "tile", "ops": [{"bevel_box": {}}]},
-        {"id": "mark", "shape": {"ref": "skull"}, "ops": [{"glyph": {}}, {"use": {"macro": "hexFace"}}]},
-        {"id": "crack", "on": "tile", "ops": []}
-      ],
-      "frames": {"idle": {},
-        "crackLineH": {"crack": {"ops": [{"use": {"macro": "crackH"}}]}},
-        "crackLineV": {"crack": {"ops": [{"use": {"macro": "crackV"}}]}}}},
-    "pieceRush": {"size": [32, 32], "ramp": "rush",
-      "parts": [
-        {"id": "tile", "ops": [{"bevel_box": {}}]},
-        {"id": "mark", "shape": {"ref": "bolt"}, "ops": [{"glyph": {}}]},
-        {"id": "crack", "on": "tile", "ops": []}
-      ],
-      "frames": {"idle": {},
-        "crackLineH": {"crack": {"ops": [{"use": {"macro": "crackH"}}]}},
-        "crackLineV": {"crack": {"ops": [{"use": {"macro": "crackV"}}]}}}},
+        "crackLineV": {"crack": {"ops": [{"use": {"macro": "crackV"}}]}},
+        "crackBomb": {"tile": {"ops": [{"bevel_box": {"radius": 9.5, "inset": 0.8}}]}, "crack": {"ops": [{"crack": {"points": [[25.96, 19.325], [29.017, 17.474], [30.381, 22.298], [34.261, 17.201]]}}, {"crack": {"points": [[19.879, 25.757], [21.803, 27.744], [25.421, 28.56], [22.684, 33.036]]}}, {"crack": {"points": [[13.835, 26.274], [13.811, 28.916], [16.791, 31.68], [16.693, 34.287]]}}, {"crack": {"points": [[6.425, 20.309], [3.235, 18.945], [3.488, 25.484], [0.783, 26.165]]}}, {"crack": {"points": [[6.517, 11.493], [6.085, 7.438], [2.147, 8.612], [-0.983, 9.184]]}}, {"crack": {"points": [[13.891, 5.714], [10.018, 4.346], [16.202, 0.301], [10.097, -1.322]]}}, {"crack": {"points": [[18.602, 5.827], [16.276, 2.903], [18.121, 0.444], [23.796, -0.556]]}}, {"crack": {"points": [[25.11, 10.779], [27.671, 10.05], [30.224, 9.355], [31.135, 5.713]]}}]}},
+        "crackColor": {"parquet": {"ops": [{"parquet": {"from": "attack", "ramps": ["attack", "guard", "skill", "hex", "rush"], "start": -1.271}}]}, "crack": {"ops": [{"use": {"macro": "crackColor"}}]}, "small": {"ops": [{"scaled": {"macro": "markAttack", "scale": 0.72, "about": [16, 16]}}]}}
+      }},
     "pieceAttackMark": {"size": [32, 32], "ramp": "attack",
-      "parts": [{"id": "mark", "shape": {"ref": "sword"}, "ops": [{"glyph": {}}]}],
-      "frames": {"idle": {}}},
-    "pieceGuardMark": {"size": [32, 32], "ramp": "guard",
       "parts": [
-        {"id": "mark", "shape": {"ref": "shield"}, "ops": [{"glyph": {}}]},
-        {"id": "stripe", "on": "mark", "clip": true, "ops": [{"line": {"points": [[16, 10], [16, 21]], "color": "light"}}]}
+        {"id": "mark", "ops": [{"use": {"macro": "markAttack"}}]}
       ],
-      "frames": {"idle": {}}},
-    "pieceSkillMark": {"size": [32, 32], "ramp": "skill",
-      "parts": [{"id": "mark", "shape": {"ref": "star"}, "ops": [{"glyph": {}}]}],
-      "frames": {"idle": {}}},
-    "pieceHexMark": {"size": [32, 32], "ramp": "hex",
-      "parts": [{"id": "mark", "shape": {"ref": "skull"}, "ops": [{"glyph": {}}, {"use": {"macro": "hexFace"}}]}],
-      "frames": {"idle": {}}},
-    "pieceRushMark": {"size": [32, 32], "ramp": "rush",
-      "parts": [{"id": "mark", "shape": {"ref": "bolt"}, "ops": [{"glyph": {}}]}],
       "frames": {"idle": {}}},
     "chipAttack": {"size": [16, 16], "ramp": "attack",
       "parts": [
         {"id": "tile", "ops": [{"use": {"macro": "chipFace"}}]},
-        {"id": "mark", "ops": [
-          {"stamp": {"at": [5, 5], "rows": ["......##", ".....#.#", "....#.#.", "#..#.#..", ".##.#...", "..##....", ".#..#...", "#......."], "colors": {"#": "shade"}}},
-          {"stamp": {"at": [4, 4], "rows": ["......##", ".....#.#", "....#.#.", "#..#.#..", ".##.#...", "..##....", ".#..#...", "#......."], "colors": {"#": "gloss"}}}
-        ]}
+        {"id": "mark", "ops": [{"glyph_rows": {"at": [4, 4], "rows": ["......##", ".....#.#", "....#.#.", "#..#.#..", ".##.#...", "..##....", ".#..#...", "#......."]}}]}
+      ],
+      "frames": {"idle": {}}},
+    "pieceGuard": {"size": [32, 32], "ramp": "guard",
+      "parts": [
+        {"id": "tile", "ops": [{"bevel_box": {}}]},
+        {"id": "mark", "ops": [{"use": {"macro": "markGuard"}}]},
+        {"id": "parquet", "on": "tile", "clip": true, "ops": []},
+        {"id": "crack", "on": "tile", "ops": []},
+        {"id": "small", "ops": []}
+      ],
+      "frames": {
+        "idle": {},
+        "crackLineH": {"crack": {"ops": [{"use": {"macro": "crackH"}}]}},
+        "crackLineV": {"crack": {"ops": [{"use": {"macro": "crackV"}}]}},
+        "crackBomb": {"tile": {"ops": [{"bevel_box": {"radius": 9.5, "inset": 0.8}}]}, "crack": {"ops": [{"crack": {"points": [[26.081, 18.936], [27.094, 22.967], [31.673, 16.929], [32.81, 23.232]]}}, {"crack": {"points": [[21.565, 24.904], [24.541, 25.933], [20.023, 31.176], [28.244, 29.6]]}}, {"crack": {"points": [[11.438, 25.457], [10.599, 27.935], [9.579, 30.327], [8.099, 32.506]]}}, {"crack": {"points": [[6.866, 21.179], [3.555, 20.09], [4.642, 26.84], [1.716, 27.44]]}}, {"crack": {"points": [[5.711, 13.907], [2.924, 15.205], [0.465, 13.727], [-0.542, 8.173]]}}, {"crack": {"points": [[11.517, 6.505], [7.836, 5.755], [7.317, 2.92], [13.336, -2.105]]}}, {"crack": {"points": [[18.27, 5.748], [19.746, 3.447], [18.257, 0.463], [21.66, -1.403]]}}, {"crack": {"points": [[25.421, 11.364], [28.339, 11.6], [30.077, 9.047], [33.078, 9.425]]}}]}},
+        "crackColor": {"parquet": {"ops": [{"parquet": {"from": "guard", "ramps": ["guard", "attack", "skill", "hex", "rush"], "start": -1.271}}]}, "crack": {"ops": [{"use": {"macro": "crackColor"}}]}, "small": {"ops": [{"scaled": {"macro": "markGuard", "scale": 0.72, "about": [16, 16]}}]}}
+      }},
+    "pieceGuardMark": {"size": [32, 32], "ramp": "guard",
+      "parts": [
+        {"id": "mark", "ops": [{"use": {"macro": "markGuard"}}]}
       ],
       "frames": {"idle": {}}},
     "chipGuard": {"size": [16, 16], "ramp": "guard",
       "parts": [
         {"id": "tile", "ops": [{"use": {"macro": "chipFace"}}]},
-        {"id": "mark", "ops": [
-          {"stamp": {"at": [5, 5], "rows": ["########", "#......#", "#......#", "#......#", ".#....#.", ".#....#.", "..#..#..", "...##..."], "colors": {"#": "shade"}}},
-          {"stamp": {"at": [4, 4], "rows": ["########", "#......#", "#......#", "#......#", ".#....#.", ".#....#.", "..#..#..", "...##..."], "colors": {"#": "gloss"}}}
-        ]}
+        {"id": "mark", "ops": [{"glyph_rows": {"at": [4, 4], "rows": ["########", "#......#", "#......#", "#......#", ".#....#.", ".#....#.", "..#..#..", "...##..."]}}]}
+      ],
+      "frames": {"idle": {}}},
+    "pieceSkill": {"size": [32, 32], "ramp": "skill",
+      "parts": [
+        {"id": "tile", "ops": [{"bevel_box": {}}]},
+        {"id": "mark", "ops": [{"use": {"macro": "markSkill"}}]},
+        {"id": "parquet", "on": "tile", "clip": true, "ops": []},
+        {"id": "crack", "on": "tile", "ops": []},
+        {"id": "small", "ops": []}
+      ],
+      "frames": {
+        "idle": {},
+        "crackLineH": {"crack": {"ops": [{"use": {"macro": "crackH"}}]}},
+        "crackLineV": {"crack": {"ops": [{"use": {"macro": "crackV"}}]}},
+        "crackBomb": {"tile": {"ops": [{"bevel_box": {"radius": 9.5, "inset": 0.8}}]}, "crack": {"ops": [{"crack": {"points": [[25.759, 19.874], [28.508, 19.895], [31.497, 18.517], [31.126, 26.3]]}}, {"crack": {"points": [[21.843, 24.724], [23.272, 26.897], [21.4, 30.742], [29.647, 28.192]]}}, {"crack": {"points": [[11.772, 25.611], [9.9, 27.593], [13.826, 31.549], [9.866, 33.241]]}}, {"crack": {"points": [[6.005, 19.216], [3.65, 20.37], [0.543, 18.753], [0.092, 25.045]]}}, {"crack": {"points": [[5.932, 13.019], [2.919, 15.287], [0.963, 11.486], [0.325, 6.557]]}}, {"crack": {"points": [[12.335, 6.16], [13.5, 3.141], [9.508, 1.705], [12.205, -1.902]]}}, {"crack": {"points": [[18.428, 5.785], [17.413, 2.976], [21.205, 1.188], [22.597, -1.07]]}}, {"crack": {"points": [[25.57, 11.68], [26.257, 7.851], [29.269, 7.608], [31.124, 5.696]]}}]}},
+        "crackColor": {"parquet": {"ops": [{"parquet": {"from": "skill", "ramps": ["skill", "attack", "guard", "hex", "rush"], "start": -1.271}}]}, "crack": {"ops": [{"use": {"macro": "crackColor"}}]}, "small": {"ops": [{"scaled": {"macro": "markSkill", "scale": 0.72, "about": [16, 16]}}]}}
+      }},
+    "pieceSkillMark": {"size": [32, 32], "ramp": "skill",
+      "parts": [
+        {"id": "mark", "ops": [{"use": {"macro": "markSkill"}}]}
+      ],
+      "frames": {"idle": {}}},
+    "chipSkill": {"size": [16, 16], "ramp": "skill",
+      "parts": [
+        {"id": "tile", "ops": [{"use": {"macro": "chipFace"}}]},
+        {"id": "mark", "ops": [{"glyph_rows": {"at": [4, 4], "rows": ["...##...", "...##...", "########", ".######.", "..####..", ".##..##.", ".#....#.", "........"]}}]}
+      ],
+      "frames": {"idle": {}}},
+    "pieceHex": {"size": [32, 32], "ramp": "hex",
+      "parts": [
+        {"id": "tile", "ops": [{"bevel_box": {}}]},
+        {"id": "mark", "ops": [{"use": {"macro": "markHex"}}]},
+        {"id": "parquet", "on": "tile", "clip": true, "ops": []},
+        {"id": "crack", "on": "tile", "ops": []},
+        {"id": "small", "ops": []}
+      ],
+      "frames": {
+        "idle": {},
+        "crackLineH": {"crack": {"ops": [{"use": {"macro": "crackH"}}]}},
+        "crackLineV": {"crack": {"ops": [{"use": {"macro": "crackV"}}]}},
+        "crackBomb": {"tile": {"ops": [{"bevel_box": {"radius": 9.5, "inset": 0.8}}]}, "crack": {"ops": [{"crack": {"points": [[25.582, 20.294], [28.172, 20.842], [30.011, 23.084], [33.754, 20.437]]}}, {"crack": {"points": [[18.774, 26.127], [16.958, 29.065], [18.738, 31.459], [24.308, 32.305]]}}, {"crack": {"points": [[11.902, 25.667], [12.158, 28.524], [12.101, 31.208], [4.598, 30.314]]}}, {"crack": {"points": [[5.697, 18.025], [4.305, 21.902], [0.304, 15.654], [-2.14, 18.412]]}}, {"crack": {"points": [[6.12, 12.446], [3.203, 13.199], [1.865, 9.167], [-1.374, 10.253]]}}, {"crack": {"points": [[12.713, 6.028], [13.125, 3.219], [7.947, 2.522], [13.127, -2.073]]}}, {"crack": {"points": [[21.804, 7.25], [25.99, 7.526], [25.547, 3.536], [21.621, -1.415]]}}, {"crack": {"points": [[24.719, 10.149], [25.026, 6.506], [30.871, 10.965], [29.886, 4.08]]}}]}},
+        "crackColor": {"parquet": {"ops": [{"parquet": {"from": "hex", "ramps": ["hex", "attack", "guard", "skill", "rush"], "start": -1.271}}]}, "crack": {"ops": [{"use": {"macro": "crackColor"}}]}, "small": {"ops": [{"scaled": {"macro": "markHex", "scale": 0.72, "about": [16, 16]}}]}}
+      }},
+    "pieceHexMark": {"size": [32, 32], "ramp": "hex",
+      "parts": [
+        {"id": "mark", "ops": [{"use": {"macro": "markHex"}}]}
+      ],
+      "frames": {"idle": {}}},
+    "chipHex": {"size": [16, 16], "ramp": "hex",
+      "parts": [
+        {"id": "tile", "ops": [{"use": {"macro": "chipFace"}}]},
+        {"id": "mark", "ops": [{"glyph_rows": {"at": [4, 4], "rows": [".######.", "########", "#..##..#", "#..##..#", "########", ".######.", ".#.##.#.", "........"]}}]}
+      ],
+      "frames": {"idle": {}}},
+    "pieceRush": {"size": [32, 32], "ramp": "rush",
+      "parts": [
+        {"id": "tile", "ops": [{"bevel_box": {}}]},
+        {"id": "mark", "ops": [{"use": {"macro": "markRush"}}]},
+        {"id": "parquet", "on": "tile", "clip": true, "ops": []},
+        {"id": "crack", "on": "tile", "ops": []},
+        {"id": "small", "ops": []}
+      ],
+      "frames": {
+        "idle": {},
+        "crackLineH": {"crack": {"ops": [{"use": {"macro": "crackH"}}]}},
+        "crackLineV": {"crack": {"ops": [{"use": {"macro": "crackV"}}]}},
+        "crackBomb": {"tile": {"ops": [{"bevel_box": {"radius": 9.5, "inset": 0.8}}]}, "crack": {"ops": [{"crack": {"points": [[25.776, 19.833], [28.017, 21.216], [28.703, 25.226], [33.171, 22.327]]}}, {"crack": {"points": [[19.988, 25.713], [20.333, 28.363], [24.588, 29.143], [22.829, 32.978]]}}, {"crack": {"points": [[11.483, 25.479], [8.384, 26.658], [12.864, 31.384], [10.127, 33.332]]}}, {"crack": {"points": [[7.084, 21.546], [3.79, 20.745], [1.798, 22.692], [3.667, 29.52]]}}, {"crack": {"points": [[7.249, 10.197], [7.497, 6.034], [3.772, 6.153], [1.486, 4.854]]}}, {"crack": {"points": [[10.695, 6.939], [6.416, 7.07], [8.299, 2.318], [2.949, 3.171]]}}, {"crack": {"points": [[18.788, 5.877], [17.489, 2.985], [15.793, 0.301], [20.477, -1.744]]}}, {"crack": {"points": [[25.602, 11.752], [28.809, 13.256], [30.43, 9.814], [33.299, 10.03]]}}]}},
+        "crackColor": {"parquet": {"ops": [{"parquet": {"from": "rush", "ramps": ["rush", "attack", "guard", "skill", "hex"], "start": -1.271}}]}, "crack": {"ops": [{"use": {"macro": "crackColor"}}]}, "small": {"ops": [{"scaled": {"macro": "markRush", "scale": 0.72, "about": [16, 16]}}]}}
+      }},
+    "pieceRushMark": {"size": [32, 32], "ramp": "rush",
+      "parts": [
+        {"id": "mark", "ops": [{"use": {"macro": "markRush"}}]}
+      ],
+      "frames": {"idle": {}}},
+    "chipRush": {"size": [16, 16], "ramp": "rush",
+      "parts": [
+        {"id": "tile", "ops": [{"use": {"macro": "chipFace"}}]},
+        {"id": "mark", "ops": [{"glyph_rows": {"at": [4, 4], "rows": ["....###.", "...###..", "..###...", ".######.", "...###..", "..###...", ".##.....", "#......."]}}]}
+      ],
+      "frames": {"idle": {}}},
+    "effectIconAttackUp": {"size": [16, 16], "ramp": "attack",
+      "parts": [
+        {"id": "tile", "ops": [{"use": {"macro": "chipFace"}}]},
+        {"id": "mark", "ops": [{"glyph_rows": {"at": [3, 3], "rows": [".......##", "......###", ".....###.", "....###..", ".#.###...", "..###....", "..##.....", ".#..#....", "#........"]}}]}
+      ],
+      "frames": {"idle": {}}},
+    "effectIconMultiHit": {"size": [16, 16], "ramp": "attack",
+      "parts": [
+        {"id": "tile", "ops": [{"use": {"macro": "chipFace"}}]},
+        {"id": "mark", "ops": [{"glyph_rows": {"at": [3, 3], "rows": ["#.......#", "##.....##", ".##...##.", "..##.##..", "...###...", "..##.##..", ".#.#.#.#.", "#.......#"]}}]}
+      ],
+      "frames": {"idle": {}}},
+    "effectIconCritical": {"size": [16, 16], "ramp": "skill",
+      "parts": [
+        {"id": "tile", "ops": [{"use": {"macro": "chipFace"}}]},
+        {"id": "mark", "ops": [{"glyph_rows": {"at": [3, 3], "rows": ["....#....", ".#.###.#.", "..#####..", ".##...##.", "####.####", ".##...##.", "..#####..", ".#.###.#.", "....#...."]}}]}
+      ],
+      "frames": {"idle": {}}},
+    "effectIconMagicAttack": {"size": [16, 16], "ramp": "skill",
+      "parts": [
+        {"id": "tile", "ops": [{"use": {"macro": "chipFace"}}]},
+        {"id": "mark", "ops": [{"glyph_rows": {"at": [3, 3], "rows": [".....###.", "....#####", "....#####", "...######", "...#####.", "..#.###..", ".#.......", "#........"]}}]}
+      ],
+      "frames": {"idle": {}}},
+    "effectIconShieldBash": {"size": [16, 16], "ramp": "guard",
+      "parts": [
+        {"id": "tile", "ops": [{"use": {"macro": "chipFace"}}]},
+        {"id": "mark", "ops": [{"glyph_rows": {"at": [3, 3], "rows": ["#####....", "#####....", "#####.#..", "#####.##.", ".###.####", ".###..##.", "..#...#..", "..#......"]}}]}
+      ],
+      "frames": {"idle": {}}},
+    "effectIconDefenseUp": {"size": [16, 16], "ramp": "guard",
+      "parts": [
+        {"id": "tile", "ops": [{"use": {"macro": "chipFace"}}]},
+        {"id": "mark", "ops": [{"glyph_rows": {"at": [3, 3], "rows": ["#########", "#########", "####.####", "####.####", ".###.###.", ".###.###.", "..##.##..", "...###...", "....#...."]}}]}
+      ],
+      "frames": {"idle": {}}},
+    "effectIconShield": {"size": [16, 16], "ramp": "guard",
+      "parts": [
+        {"id": "tile", "ops": [{"use": {"macro": "chipFace"}}]},
+        {"id": "mark", "ops": [{"glyph_rows": {"at": [3, 3], "rows": ["#########", "##.###.##", ".........", "####.####", "####.####", ".........", "##.###.##", "##.###.##"]}}]}
+      ],
+      "frames": {"idle": {}}},
+    "effectIconRiposte": {"size": [16, 16], "ramp": "skill",
+      "parts": [
+        {"id": "tile", "ops": [{"use": {"macro": "chipFace"}}]},
+        {"id": "mark", "ops": [{"glyph_rows": {"at": [3, 3], "rows": [".######..", ".#######.", ".......##", "...#...##", "..##...##", ".#######.", "#######..", ".##......", "..#......"]}}]}
+      ],
+      "frames": {"idle": {}}},
+    "effectIconHeal": {"size": [16, 16], "ramp": "heal",
+      "parts": [
+        {"id": "tile", "ops": [{"use": {"macro": "chipFace"}}]},
+        {"id": "mark", "ops": [{"glyph_rows": {"at": [3, 3], "rows": ["...###...", "...###...", "#########", "#########", "#########", "...###...", "...###...", "...###..."]}}]}
+      ],
+      "frames": {"idle": {}}},
+    "effectIconRegen": {"size": [16, 16], "ramp": "heal",
+      "parts": [
+        {"id": "tile", "ops": [{"use": {"macro": "chipFace"}}]},
+        {"id": "mark", "ops": [{"glyph_rows": {"at": [3, 3], "rows": [".##...##.", "####.####", "#########", "#########", ".#######.", "..#####..", "...###...", "....#...."]}}]}
+      ],
+      "frames": {"idle": {}}},
+    "effectIconPurify": {"size": [16, 16], "ramp": "heal",
+      "parts": [
+        {"id": "tile", "ops": [{"use": {"macro": "chipFace"}}]},
+        {"id": "mark", "ops": [{"glyph_rows": {"at": [3, 3], "rows": ["...#....#", "...#...##", "..###...#", "#######..", ".#####...", "..###....", "...#.....", "...#....."]}}]}
+      ],
+      "frames": {"idle": {}}},
+    "effectIconWeakenAttack": {"size": [16, 16], "ramp": "hex",
+      "parts": [
+        {"id": "tile", "ops": [{"use": {"macro": "chipFace"}}]},
+        {"id": "mark", "ops": [{"glyph_rows": {"at": [3, 3], "rows": ["........#", ".......##", ".........", ".....##..", ".#..##...", "..###....", "..##.....", ".#..#....", "#........"]}}]}
+      ],
+      "frames": {"idle": {}}},
+    "effectIconWeakenDefense": {"size": [16, 16], "ramp": "hex",
+      "parts": [
+        {"id": "tile", "ops": [{"use": {"macro": "chipFace"}}]},
+        {"id": "mark", "ops": [{"glyph_rows": {"at": [3, 3], "rows": ["#####.###", "####.####", "#####.###", "####.####", ".###.###.", ".####.##.", "..##.##..", "...###...", "....#...."]}}]}
+      ],
+      "frames": {"idle": {}}},
+    "effectIconPoison": {"size": [16, 16], "ramp": "hex",
+      "parts": [
+        {"id": "tile", "ops": [{"use": {"macro": "chipFace"}}]},
+        {"id": "mark", "ops": [{"glyph_rows": {"at": [3, 3], "rows": ["...#.....", "...#...#.", "..###....", "..###....", ".#####...", "#######..", "##.####..", ".#####...", "..###...."]}}]}
+      ],
+      "frames": {"idle": {}}},
+    "effectIconIgnite": {"size": [16, 16], "ramp": "attack",
+      "parts": [
+        {"id": "tile", "ops": [{"use": {"macro": "chipFace"}}]},
+        {"id": "mark", "ops": [{"glyph_rows": {"at": [3, 3], "rows": ["....#....", "...##....", "..###..#.", "..####.##", ".########", "####.####", "###...###", ".##...##.", "..#####.."]}}]}
+      ],
+      "frames": {"idle": {}}},
+    "effectIconDispel": {"size": [16, 16], "ramp": "hex",
+      "parts": [
+        {"id": "tile", "ops": [{"use": {"macro": "chipFace"}}]},
+        {"id": "mark", "ops": [{"glyph_rows": {"at": [3, 3], "rows": ["....#....", "...###...", "..#####..", ".#######.", "...###...", ".........", "...###...", "...###..."]}}]}
+      ],
+      "frames": {"idle": {}}},
+    "effectIconAccel": {"size": [16, 16], "ramp": "rush",
+      "parts": [
+        {"id": "tile", "ops": [{"use": {"macro": "chipFace"}}]},
+        {"id": "mark", "ops": [{"glyph_rows": {"at": [3, 3], "rows": ["....###.", "...###..", "..###...", ".######.", "...###..", "..###...", ".###....", ".#......", "##......"]}}]}
+      ],
+      "frames": {"idle": {}}},
+    "effectIconDecel": {"size": [16, 16], "ramp": "hex",
+      "parts": [
+        {"id": "tile", "ops": [{"use": {"macro": "chipFace"}}]},
+        {"id": "mark", "ops": [{"glyph_rows": {"at": [4, 4], "rows": ["#######", ".#####.", "..###..", "...#...", "..#.#..", ".#...#.", "#######"]}}]}
+      ],
+      "frames": {"idle": {}}},
+    "effectIconBalance": {"size": [16, 16], "ramp": "neutral",
+      "parts": [
+        {"id": "tile", "ops": [{"use": {"macro": "chipFace"}}]},
+        {"id": "mark", "ops": [{"glyph_rows": {"at": [3, 3], "rows": ["....#....", ".#######.", ".#..#..#.", "###.#.###", "###.#.###", "....#....", "....#....", "..#####.."]}}]}
+      ],
+      "frames": {"idle": {}}},
+    "uiNo": {"size": [9, 9],
+      "parts": [
+        {"id": "mark", "shape": {"union": [{"annulus": [4.5, 4.5, 3.5, 0.75]}, {"capsule": [2.3, 2.3, 6.7, 6.7, 0.75]}]}, "ops": [{"fill": {"color": "pearAsh"}}]}
+      ],
+      "frames": {"idle": {}}},
+    "uiNew": {"size": [7, 6], "ramp": "heal",
+      "parts": [
+        {"id": "arrow", "shape": {"mask": ["...#...", "..###..", ".#####.", "#######"], "at": [0, 1]}, "ops": [{"bevel": {}}, {"outline": {}}]}
+      ],
+      "frames": {"idle": {}}},
+    "uiStack": {"size": [11, 10], "ramp": "heal",
+      "parts": [
+        {"id": "plates", "ops": [{"stamp": {"at": [0, 0], "rows": ["...OOOOOOOO", "...OSSSSSSO", "...OSSSSSSO", "OOOOOOOOSSO", "OLLLLLLOSSO", "OLLMMMMOSSO", "OLMMMMMOOOO", "OLMMMMMO...", "OMMMMMMO...", "OOOOOOOO..."], "colors": {"O": "ink", "S": "shade", "M": "mid", "L": "light"}}}]}
+      ],
+      "frames": {"idle": {}}},
+    "uiFoe": {"size": [8, 7],
+      "parts": [
+        {"id": "face", "ops": [{"stamp": {"at": [0, 0], "rows": ["+......+", "+9....*+", "+9*****+", "*77**77*", "*7+**+7*", "+******+", ".++++++."]}}]}
+      ],
+      "frames": {"idle": {}}},
+    "uiPencil": {"size": [86, 10], "ramp": "rush",
+      "parts": [
+        {"id": "pencil", "ops": [{"fill": {"shape": {"rect": [8, 2, 73, 2]}, "color": "light"}}, {"fill": {"shape": {"rect": [8, 4, 73, 2]}, "color": "mid"}}, {"fill": {"shape": {"rect": [8, 6, 73, 2]}, "color": "shade"}}, {"fill": {"shape": {"rect": [81, 2, 2, 6]}, "color": "pearCloud"}}, {"fill": {"shape": {"rect": [83, 2, 2, 6]}, "color": "pearBlush"}}, {"fill": {"shape": {"rect": [81, 2, 4, 1]}, "color": "pearWhite"}}, {"stamp": {"at": [1, 2], "rows": [".....pp", "...pppp", "ppppppp", "aaaaaaa", "...aaaa", ".....aa"], "colors": {"p": "pearPeach", "a": "pearApricot"}}}, {"put": {"cells": [[1, 4], [1, 5], [2, 4], [2, 5], [3, 4], [3, 5]], "color": "pearAubergine"}}]}
+      ],
+      "post": [{"outline": {"color": "pearAubergine"}}],
+      "frames": {"idle": {}}},
+    "uiPencilWorn": {"size": [16, 10], "ramp": "rush",
+      "parts": [
+        {"id": "pencil", "ops": [{"fill": {"shape": {"rect": [8, 2, 3, 2]}, "color": "light"}}, {"fill": {"shape": {"rect": [8, 4, 3, 2]}, "color": "mid"}}, {"fill": {"shape": {"rect": [8, 6, 3, 2]}, "color": "shade"}}, {"fill": {"shape": {"rect": [11, 2, 2, 6]}, "color": "pearCloud"}}, {"fill": {"shape": {"rect": [13, 2, 2, 6]}, "color": "pearBlush"}}, {"fill": {"shape": {"rect": [11, 2, 4, 1]}, "color": "pearWhite"}}, {"stamp": {"at": [1, 2], "rows": [".....pp", "...pppp", "ppppppp", "aaaaaaa", "...aaaa", ".....aa"], "colors": {"p": "pearPeach", "a": "pearApricot"}}}, {"put": {"cells": [[1, 4], [1, 5], [2, 4], [2, 5], [3, 4], [3, 5]], "color": "pearAubergine"}}]}
+      ],
+      "post": [{"outline": {"color": "pearAubergine"}}, {"put": {"cells": [[1, 4], [1, 5]], "color": ""}}],
+      "frames": {"idle": {}}},
+    "chipHidden": {"size": [16, 16], "ramp": "neutral",
+      "parts": [
+        {"id": "tile", "ops": [{"use": {"macro": "chipFace"}}]},
+        {"id": "mark", "ops": [{"glyph_rows": {"at": [4, 4], "rows": ["..####..", ".##..##.", ".....##.", "....##..", "...##...", "...##...", "........", "...##..."]}}]}
+      ],
+      "frames": {"idle": {}}},
+    "uiLock": {"size": [9, 12],
+      "parts": [
+        {"id": "shackle", "ramp": "metal", "shape": {"union": [{"inter": [{"annulus": [4.5, 4, 2.4, 0.8]}, {"rect": [-64, -64, 128, 69.5]}]}, {"capsule": [2.1, 4, 2.1, 6.5, 0.8]}, {"capsule": [6.9, 4, 6.9, 6.5, 0.8]}]}, "ops": [{"fill": {"color": "mid"}}, {"outline": {}}]},
+        {"id": "body", "ramp": "brass", "shape": {"rbox": [4.5, 8.2, 3.3, 2.5, 1]}, "ops": [{"bevel": {}}, {"outline": {}}, {"put": {"cells": [[4, 8], [4, 9]], "color": "pearInk"}}]}
+      ],
+      "frames": {"idle": {}}},
+    "uiLoupe": {"size": [13, 13],
+      "parts": [
+        {"id": "lens", "shape": {"disk": [5, 5, 2.9]}, "ops": [{"fill": {"color": "pearCloud"}}, {"put": {"cells": [[3, 3], [4, 3], [3, 4]], "color": "pearWhite"}}]},
+        {"id": "handle", "shape": {"capsule": [8, 8, 11.2, 11.2, 1.25]}, "ops": [{"fill": {"color": "pearRosewood"}}]},
+        {"id": "rim", "shape": {"annulus": [5, 5, 3.6, 0.9]}, "ops": [{"fill": {"color": "pearGraphite"}}]}
+      ],
+      "post": [{"outline": {"color": "pearInk"}}],
+      "frames": {"idle": {}}},
+    "uiSharpener": {"size": [11, 10], "ramp": "plastic",
+      "parts": [
+        {"id": "body", "shape": {"rbox": [5, 5, 4.4, 4.2, 1.4]}, "ops": [{"bevel": {}}, {"fill": {"shape": {"inter": [{"poly": [[9.8, 2.2], [9.8, 7.8], [5.6, 5]]}, {"rbox": [5, 5, 4.4, 4.2, 1.4]}]}, "color": "ink"}}, {"put": {"cells": [[5, 2], [6, 2], [7, 2], [8, 2]], "color": "pearWhite"}}, {"outline": {}}]}
+      ],
+      "frames": {"idle": {}}},
+    "uiHeart": {"size": [19, 19], "ramp": "heart",
+      "parts": [
+        {"id": "heart", "shape": {"union": [{"disk": [6.231, 6.885, 4.708]}, {"disk": [12.769, 6.885, 4.708]}, {"poly": [[1.785, 7.8], [17.215, 7.8], [9.5, 16.692]]}]}, "ops": [{"bevel": {}}, {"outline": {}}, {"put": {"cells": [[5, 5]], "color": "gloss"}}]}
+      ],
+      "frames": {"idle": {}}},
+    "uiShard": {"size": [11, 13], "ramp": "shard",
+      "parts": [
+        {"id": "shard", "shape": {"poly": [[5.5, 1], [10, 5], [6.5, 12], [1, 7]]}, "ops": [{"bevel": {}}, {"outline": {}}, {"put": {"cells": [[4, 4]], "color": "gloss"}}]}
+      ],
+      "frames": {"idle": {}}},
+    "uiStarOn": {"size": [13, 13], "ramp": "skill",
+      "parts": [
+        {"id": "star", "shape": {"rounded": 0.4, "of": {"star": [6.5, 7.1, 5.5, 2.53]}}, "ops": [{"bevel": {}}, {"outline": {}}, {"put": {"cells": [[6, 4]], "color": "gloss"}}]}
+      ],
+      "frames": {"idle": {}}},
+    "uiStarOff": {"size": [13, 13], "ramp": "starOff",
+      "parts": [
+        {"id": "star", "shape": {"rounded": 0.4, "of": {"star": [6.5, 7.1, 5.5, 2.53]}}, "ops": [{"bevel": {}}, {"outline": {}}]}
+      ],
+      "frames": {"idle": {}}},
+    "uiKeyLeft": {"size": [13, 15],
+      "parts": [
+        {"id": "key", "ops": [{"use": {"macro": "keyCap"}}, {"put": {"cells": [[3, 6], [4, 5], [4, 6], [4, 7], [5, 4], [5, 8], [5, 6], [6, 6], [7, 6], [8, 6]], "color": "pearAubergine"}}]}
+      ],
+      "post": [{"outline": {"color": "pearAubergine"}}],
+      "frames": {"idle": {}}},
+    "uiKeyRight": {"size": [13, 15],
+      "parts": [
+        {"id": "key", "ops": [{"use": {"macro": "keyCap"}}, {"put": {"cells": [[9, 6], [8, 5], [8, 6], [8, 7], [7, 4], [7, 8], [7, 6], [6, 6], [5, 6], [4, 6]], "color": "pearAubergine"}}]}
+      ],
+      "post": [{"outline": {"color": "pearAubergine"}}],
+      "frames": {"idle": {}}},
+    "uiKeyUp": {"size": [13, 15],
+      "parts": [
+        {"id": "key", "ops": [{"use": {"macro": "keyCap"}}, {"put": {"cells": [[6, 3], [5, 4], [6, 4], [7, 4], [4, 5], [8, 5], [6, 5], [6, 6], [6, 7], [6, 8]], "color": "pearAubergine"}}]}
+      ],
+      "post": [{"outline": {"color": "pearAubergine"}}],
+      "frames": {"idle": {}}},
+    "uiKeyDown": {"size": [13, 15],
+      "parts": [
+        {"id": "key", "ops": [{"use": {"macro": "keyCap"}}, {"put": {"cells": [[6, 9], [7, 8], [6, 8], [5, 8], [8, 7], [4, 7], [6, 7], [6, 6], [6, 5], [6, 4]], "color": "pearAubergine"}}]}
+      ],
+      "post": [{"outline": {"color": "pearAubergine"}}],
+      "frames": {"idle": {}}},
+    "uiKeyZ": {"size": [13, 15],
+      "parts": [
+        {"id": "key", "ops": [{"use": {"macro": "keyCap"}}, {"put": {"cells": [[4, 4], [5, 4], [6, 4], [7, 4], [8, 4], [7, 5], [6, 6], [5, 7], [4, 8], [5, 8], [6, 8], [7, 8], [8, 8]], "color": "pearAubergine"}}]}
+      ],
+      "post": [{"outline": {"color": "pearAubergine"}}],
+      "frames": {"idle": {}}},
+    "uiKeyX": {"size": [13, 15],
+      "parts": [
+        {"id": "key", "ops": [{"use": {"macro": "keyCap"}}, {"put": {"cells": [[4, 4], [8, 4], [5, 5], [7, 5], [6, 6], [5, 7], [7, 7], [4, 8], [8, 8]], "color": "pearAubergine"}}]}
+      ],
+      "post": [{"outline": {"color": "pearAubergine"}}],
+      "frames": {"idle": {}}},
+    "uiHandOpen": {"size": [13, 13], "ramp": "skin",
+      "parts": [
+        {"id": "hand", "shape": {"union": [{"rbox": [6.5, 8.5, 4.2, 3.8, 2]}, {"capsule": [3.5, 6, 3.5, 2.8, 1]}, {"capsule": [5.5, 6, 5.5, 1.8, 1]}, {"capsule": [7.5, 6, 7.5, 2.2, 1]}, {"capsule": [9.5, 6, 9.5, 3.4, 1]}, {"capsule": [2, 9.5, 0.8, 7.5, 1]}]}, "ops": [{"bevel": {}}, {"outline": {}}]}
+      ],
+      "frames": {"idle": {}}},
+    "uiHandGrab": {"size": [13, 13], "ramp": "skin",
+      "parts": [
+        {"id": "hand", "shape": {"union": [{"rbox": [6.5, 8.5, 4.2, 3.8, 2]}, {"capsule": [3.5, 6, 3.5, 5.5, 1]}, {"capsule": [5.5, 6, 5.5, 5, 1]}, {"capsule": [7.5, 6, 7.5, 5, 1]}, {"capsule": [9.5, 6, 9.5, 5.5, 1]}, {"capsule": [2, 9.5, 0.8, 7.5, 1]}]}, "ops": [{"bevel": {}}, {"outline": {}}]}
+      ],
+      "frames": {"idle": {}}},
+    "uiHandPoint": {"size": [18, 18], "ramp": "skin",
+      "parts": [
+        {"id": "hand", "shape": {"union": [{"rbox": [11, 11.5, 4.6, 4.2, 2.2]}, {"capsule": [8, 9, 2.5, 3.5, 1.4]}, {"capsule": [14.5, 13, 16, 15.5, 1.3]}, {"capsule": [9, 14.5, 7, 15.5, 1.1]}]}, "ops": [{"bevel": {}}, {"outline": {}}, {"put": {"cells": [[2, 3]], "color": "pearWhite"}}]}
       ],
       "frames": {"idle": {}}}
   }

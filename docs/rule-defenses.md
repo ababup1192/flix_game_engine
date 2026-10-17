@@ -42,7 +42,7 @@
 | 廃止したフックを外し新しいフックを足す | script | sync-agents が settings.json を直す（hook-session-diet を外し hook-art-edit を足す） | ― |
 | 開始時は make status から | script | SessionStart フック | ― |
 | コミットのフックを飛ばさない | script | ユーザ全体の PreToolUse（block-no-verify）。precommit の止めた時の文面から飛ばし方の案内を外した | r1 `--no-verify` を止めた・r2 `core.hooksPath` を読むだけでも止めた |
-| ゲーム固有の門をコミットで流す | script | precommit の `localGate`（ゲームの Makefile の `precommit-local` に `STAGED` を渡す） | ゲーム側の表（art-gate） |
+| ゲーム固有の門をコミットで流す | script | precommit の `localGate`（ゲームの Makefile の `precommit-local` に `STAGED` を渡す） | ゲーム側の表（fge px check） |
 | 共通の口をゲームの Makefile へ写さない | lint | makefile-dup（precommit。game.mk を include する Makefile で共通の口にレシピを書いた行） | r1 文書どおり断った・r3 断った・r4 precommit が止めた |
 | プレイヤーの目に入る文言は Doc に置く | 文書 + lint | forbid `view-text-literal`（`*View.flix` の `text = "直書き"`。rawLine で文字列の中を見る）。View の外の Doc の既定値は止めない | r1・r3 Doc へ置いた・r4 View に直書きでコミット（穴）→ 規則を足して r5 precommit が止めた |
 | Doc は version・note・同じ種類の schema（項目に label か description）を持つ | lint | doc-shape（precommit。ステージした assets/ の Doc だけ） | r3 3 つとも付けてコミット・r4 precommit が止めた |

@@ -124,6 +124,25 @@
       "oneOf": [
         {
           "type": "object",
+          "description": "輪（中心から r の円に沿った、幅 2w の帯）",
+          "additionalProperties": false,
+          "required": [
+            "annulus"
+          ],
+          "properties": {
+            "annulus": {
+              "description": "[cx, cy, r, w]",
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 4,
+              "maxItems": 4
+            }
+          }
+        },
+        {
+          "type": "object",
           "description": "両端の丸い棒",
           "additionalProperties": false,
           "required": [
@@ -498,6 +517,41 @@
       "oneOf": [
         {
           "type": "object",
+          "description": "小物の陰の段: 光の側の縁を lit、影の側の縁（と影の向きへ 2 つ先が外の画素）を dark、中を face",
+          "additionalProperties": false,
+          "required": [
+            "bevel"
+          ],
+          "properties": {
+            "bevel": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "shape": {
+                  "description": "形（省くと部品の塊）",
+                  "$ref": "#/definitions/shape"
+                },
+                "lit": {
+                  "description": "光の側の縁の色",
+                  "$ref": "#/definitions/color",
+                  "default": "light"
+                },
+                "face": {
+                  "description": "中の色",
+                  "$ref": "#/definitions/color",
+                  "default": "mid"
+                },
+                "dark": {
+                  "description": "影の側の縁の色",
+                  "$ref": "#/definitions/color",
+                  "default": "shade"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
           "description": "角丸の板: 斜めの帯で 光・地・影、縁の 1px につや（光の側）と墨（影の側）、外側に墨の輪郭（格子は正方形）",
           "additionalProperties": false,
           "required": [
@@ -553,16 +607,17 @@
               "additionalProperties": false,
               "properties": {
                 "points": {
-                  "description": "折れ線の点 [[x, y], ...]",
+                  "description": "折れ線の点 [[x, y], ...]（小数も可。画素には偶数丸めで落とす）",
                   "type": "array",
                   "items": {
                     "type": "array",
                     "items": {
-                      "type": "integer"
+                      "type": "number"
                     },
                     "minItems": 2,
                     "maxItems": 2
-                  }
+                  },
+                  "minItems": 2
                 }
               },
               "required": [
@@ -730,6 +785,52 @@
         },
         {
           "type": "object",
+          "description": "文字の格子の白抜きの記号: '.' と空白でない字の画素を color で、その右下 1px に shadow の影（影を先に置く）",
+          "additionalProperties": false,
+          "required": [
+            "glyph_rows"
+          ],
+          "properties": {
+            "glyph_rows": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "at": {
+                  "description": "記号の左上 [x, y]",
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2
+                },
+                "rows": {
+                  "description": "記号の行（'.' と空白は外）",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "color": {
+                  "description": "記号の色",
+                  "$ref": "#/definitions/color",
+                  "default": "gloss"
+                },
+                "shadow": {
+                  "description": "右下 1px の影の色",
+                  "$ref": "#/definitions/color",
+                  "default": "shade"
+                }
+              },
+              "required": [
+                "at",
+                "rows"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
           "description": "部品の塊の塗ってある画素を、中心から光の向き（light.dir）へどれだけ寄っているかで lit・base・dark の 3 段に塗り分ける",
           "additionalProperties": false,
           "required": [
@@ -843,6 +944,64 @@
         },
         {
           "type": "object",
+          "description": "寄せ木: center から ramps の数に等分した扇ごとに、ランプ from の色をその扇のランプで塗り直す（from の墨は墨へ、ほかの段は斜めの帯で光・地・影へ。clip の部品なら親の塊の中だけ）",
+          "additionalProperties": false,
+          "required": [
+            "parquet"
+          ],
+          "properties": {
+            "parquet": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "from": {
+                  "description": "塗り直す元のランプの名前",
+                  "type": "string"
+                },
+                "ramps": {
+                  "description": "扇ごとのランプの名前（start から時計回りに）",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "start": {
+                  "description": "最初の扇の始まりの向き（ラジアン。既定は真上）",
+                  "type": "number",
+                  "default": -1.5707963267948966
+                },
+                "center": {
+                  "description": "扇の中心 [x, y]（省くと格子の中央）",
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2
+                },
+                "bands": {
+                  "description": "光・地・影の境目（0〜1。左上の角が 0）",
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "default": [
+                    0.3,
+                    0.72
+                  ]
+                }
+              },
+              "required": [
+                "from",
+                "ramps"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
           "description": "1px の線の L 字の角（ダブル）を左上から順に抜く",
           "additionalProperties": false,
           "required": [
@@ -931,6 +1090,44 @@
                 "center",
                 "r",
                 "color"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "macros の op の列を別の格子に描き、about を中心に scale 倍へ縮め（広げ）て、塗った画素だけ重ねる（近い画素を引く）",
+          "additionalProperties": false,
+          "required": [
+            "scaled"
+          ],
+          "properties": {
+            "scaled": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "macro": {
+                  "description": "macros の名前",
+                  "type": "string"
+                },
+                "scale": {
+                  "description": "大きさの倍率（0.72 なら 0.72 倍）",
+                  "type": "number"
+                },
+                "about": {
+                  "description": "縮める中心 [x, y]",
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2
+                }
+              },
+              "required": [
+                "macro",
+                "scale",
+                "about"
               ]
             }
           }

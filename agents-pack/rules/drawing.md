@@ -1,7 +1,7 @@
 ---
 paths:
   - "**/*.sprite.json"
-  - "**/*.spritesrc.json"
+  - "**/*.pxsrc.json"
   - "**/*.anim.json"
   - "**/*.theme.json"
   - "**/*.palette.json"

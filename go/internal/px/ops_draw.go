@@ -4,7 +4,6 @@ package px
 
 import (
 	"fmt"
-	"math"
 
 	"github.com/ababup1192/flix_game_engine/go/internal/pxlib"
 )
@@ -65,7 +64,7 @@ func init() {
 			if len(pts) < 2 {
 				return fmt.Errorf("points は 2 点以上")
 			}
-			for _, q := range lerpCells(pts) {
+			for _, q := range lerpCells(vecs(a.get("points"))) {
 				c.Put(q.X, q.Y, k)
 			}
 			return nil
@@ -286,18 +285,4 @@ func abs(v int) int {
 		return -v
 	}
 	return v
-}
-
-// lerpCells は折れ線を画素に落とす（各区間を長い方の差 + 1 等分し、偶数丸め）。
-func lerpCells(pts []pxlib.Pt) []pxlib.Pt {
-	var cells []pxlib.Pt
-	for i := 0; i+1 < len(pts); i++ {
-		ax, ay, bx, by := float64(pts[i].X), float64(pts[i].Y), float64(pts[i+1].X), float64(pts[i+1].Y)
-		n := int(math.Max(math.Abs(bx-ax), math.Abs(by-ay))) + 1
-		for k := 0; k <= n; k++ {
-			t := float64(k) / float64(max(1, n))
-			cells = append(cells, pxlib.Pt{X: int(math.RoundToEven(ax + float64((bx-ax)*t))), Y: int(math.RoundToEven(ay + float64((by-ay)*t)))})
-		}
-	}
-	return cells
 }
