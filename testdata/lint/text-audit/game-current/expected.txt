@@ -1,0 +1,5 @@
+[text-audit] 3 件（許した物は bin/lint-rules/text-audit.local.json の allow に理由つきで書く）
+  mid_chain_long         Overlap     11.2px 「-3」 ⇔ 「-4」
+  mid_chain_long         Overlap     10.2px 「-3」 ⇔ 「-4」
+  mid_chain_long         Overlap     12.2px 「-3」 ⇔ 「-4」
+[exit=1]

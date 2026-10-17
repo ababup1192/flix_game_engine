@@ -1,0 +1,35 @@
+[video-entries] src/render/VideoAuditEntries.flix が Makefile の動画の口と食い違います — bin/fge video-entries で書き直す
+[video-entries] src/render/VideoAuditEntries.flix を書き直しました
+[video-entries] OK
+mod VideoAuditEntries {
+
+    /// 見回りで流す動画の入口を、Makefile に並んだ順に全部流す。
+    pub def runAll(): Unit \ IO =
+        BattleVideo.frames();
+        BattleVideo.slime();
+        BattleVideo.cardTiming();
+        BattleVideo.endScreens();
+        PuzzleVideo.frames();
+        PuzzleVideo.shineFrames();
+        DeckVideo.frames();
+        PickVideo.frames();
+        FeedVideo.frames();
+        RelicVideo.all();
+        FeedVideo.result();
+        TransitionVideo.frames();
+        TransitionVideo.entry();
+        OpeningVideo.frames();
+        TutorialVideo.frames();
+        OpeningVideo.diffuse();
+        OpeningVideo.talkTurn();
+        OpeningVideo.loseTurn();
+        OpeningVideo.countLand();
+        OpeningVideo.fightLoss();
+        OpeningVideo.eventIntro();
+        BattleFxVideo.frames();
+        EndFxVideo.frames();
+        EndFxVideo.assistFrames();
+        ReplayVideo.frames();
+        Match3Video.frames()
+}
+[exit=0]

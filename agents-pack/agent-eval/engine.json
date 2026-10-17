@@ -52,6 +52,14 @@
       ]
     },
     {
+      "id": "render-text-overlap",
+      "prompt": "描き出した場面で、字が別の字に重なったり枠からはみ出したりしていないかを lint でまとめて止めたい。わざと重ねている演出は理由を書いて許したい",
+      "expect": [
+        {"re": "render-lint|fge\\s+text-audit", "why": "make render-lint / bin/fge text-audit"},
+        {"re": "text-audit\\.local\\.json", "why": "許す物は text-audit.local.json の allow"}
+      ]
+    },
+    {
       "id": "doc-fallback-log",
       "prompt": "設定の JSON が壊れていたら既定値で続け、ログに 1 行だけ知らせたい",
       "expect": [

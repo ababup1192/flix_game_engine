@@ -66,6 +66,9 @@ ZStack.mapItems(Render.scaledAllAround(1.0 + bump, center), tree)
   散ると別のファイルどうしで同じ数を取り合い、どちらが手前かが描き順まかせになる。
   画面が増えて 1 ファイルに収まらなくなったら `ZOrder.flix` を表にして、他のファイルはそこから引く
   （`bin/fge z-table` がコミット時に警告する。全量は `make lint-z-table`）。
+- 描き出しで場面ごとに描画物の z を層の表と突き合わせ、外れた物を TSV（見出し shot・z・what・allowed・layer）に書けば、
+  `make render-lint`（`bin/fge z-audit`）が描き出しの後から読み直して止める。表の置き場と直し方の 1 行は
+  `bin/lint-rules/z-audit.json`（ゲームは `z-audit.local.json` で上書き）。字の被り・はみ出しの表は `bin/fge text-audit` が同じ形で読む。
 - 別の画面の部品を重ねたいときは、その画面の z の関数を借りずに、部品の列か木（`ZStack.Node`）を受け取って
   自分の木に積む。部品の中の z を外から動かしたいときは、部品の関数に z を引数で渡す。
 - z を後から付け替えない（`z -> z / 4` で縮めると、付け替えた後の z がどの層に入るかが表から読めなくなり、

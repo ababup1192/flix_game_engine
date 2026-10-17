@@ -1,0 +1,5 @@
+{
+  "note": "z-audit（描き出した場面の描画物の z が、その場面で描いてよい層の外）の規約データ。この JSON が source of truth で、bin/fge z-audit はこれを読んで動く。表（table）はゲームの描き出しが外れた物だけを書く TSV（見出し shot・z・what・allowed、あれば layer）。1 行でもあれば止める。hint は件数の後ろに出す直し方（ゲームの z-audit.local.json に table・hint を書けば上書き。層の表の置き場を名指しする）。表が無ければ見ずに通す。",
+  "table": "debug/z-audit.tsv",
+  "hint": "層の表（SortingLayer の enum と各場面で描いてよい層）を見る。木があふれたなら葉の中の z を詰める"
+}

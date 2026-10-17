@@ -1,0 +1,5 @@
+# 表に 1 行でもあれば止める。直し方は engine の z-audit.json の hint。
+cp -R repo/. "$WORK/"
+mkdir -p "$WORK/bin/lint-rules"
+cp "$ENGINE/bin/lint-rules/z-audit.json" "$WORK/bin/lint-rules/"
+"$ENGINE/bin/fge" z-audit --root "$WORK"
