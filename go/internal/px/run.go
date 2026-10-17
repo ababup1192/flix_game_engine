@@ -5,6 +5,10 @@
 //	fge px ops [--md] [--check]                 op の早見表（--md は docs/px-ops.md の中身）
 //	fge px schema [--check]                     docs/pxsrc.schema.json と docs/colorgate.schema.json を作る
 //	fge px help <op>                            op 1 つの説明と引数
+//	fge px watch <spec> [--no-check]            保存のたびに build する
+//	fge px snap <spec> [--new]                  描き直して last を debug/px/<名前>/rN に凍らせる（最大 5 周）
+//	fge px restore <spec> rN                    rN の spec に戻す
+//	fge px diff <spec> rA rB                    2 つの周の画素の差と違反の増減
 //
 // 書き出し先は spec の "target"（atelier/ を指す。AI が作る素材は assets/ へ直接書かない）。
 package px
@@ -24,6 +28,10 @@ const usage = `使い方: fge px build <名前>.pxsrc.json [--json] [--no-check]
         fge px ops [--md] [--check]
         fge px schema [--check]
         fge px help <op>
+        fge px watch <名前>.pxsrc.json [--no-check]
+        fge px snap <名前>.pxsrc.json [--new]
+        fge px restore <名前>.pxsrc.json rN
+        fge px diff <名前>.pxsrc.json rA rB
 `
 
 // Run は fge px の入口。engineRoot は検査の閾値と docs/ を読むリポジトリ、workRoot は指定のパスの起点。
@@ -51,7 +59,8 @@ func Run(out, errOut *strings.Builder, engineRoot, workRoot string, args []strin
 			pos = append(pos, a)
 		}
 	}
-	allowed := map[string][]string{"build": {"--no-check"}, "check": nil, "ops": {"--md", "--check"}, "schema": {"--check"}, "help": nil}
+	allowed := map[string][]string{"build": {"--no-check"}, "check": nil, "ops": {"--md", "--check"}, "schema": {"--check"}, "help": nil,
+		"watch": {"--no-check"}, "snap": {"--new"}, "restore": nil, "diff": nil}
 	if names, known := allowed[verb]; known {
 		for f := range flags {
 			if !slices.Contains(names, f) {
@@ -88,6 +97,30 @@ func Run(out, errOut *strings.Builder, engineRoot, workRoot string, args []strin
 			"docs/pxsrc.schema.json":     specSchema(),
 			"docs/colorgate.schema.json": gateSchema(),
 		}, flags["--check"])
+	case "watch":
+		if len(pos) != 1 {
+			errOut.WriteString(usage)
+			return 2
+		}
+		return cmdWatch(errOut, engineRoot, workRoot, pos[0], flags["--no-check"])
+	case "snap":
+		if len(pos) != 1 {
+			errOut.WriteString(usage)
+			return 2
+		}
+		return cmdSnap(out, errOut, engineRoot, workRoot, pos[0], flags["--new"])
+	case "restore":
+		if len(pos) != 2 {
+			errOut.WriteString(usage)
+			return 2
+		}
+		return cmdRestore(out, errOut, workRoot, pos[0], pos[1])
+	case "diff":
+		if len(pos) != 3 {
+			errOut.WriteString(usage)
+			return 2
+		}
+		return cmdDiff(out, errOut, workRoot, pos[0], pos[1], pos[2])
 	case "help":
 		if len(pos) != 1 {
 			errOut.WriteString(usage)

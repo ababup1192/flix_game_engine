@@ -38,6 +38,10 @@
       "type": "string",
       "description": "色の門の Doc（*.colorgate.json）。外れたら書き出さない"
     },
+    "style": {
+      "type": "string",
+      "description": "機種の決まり（bin/lint-rules/px.json の styles の名前: gb4・nes・snes・pc98・modern など。か *.pxstyle.json）。色の集合・色数・升目の色数・RGB の段数を検査 style で縛る"
+    },
     "light": {
       "type": "object",
       "additionalProperties": false,
@@ -466,6 +470,27 @@
       "oneOf": [
         {
           "type": "object",
+          "description": "2px 以上の段の角の凹みにだけ、隣の色を by 段ずらした中間の色を 1px 置く（45° と直線には置かない）",
+          "additionalProperties": false,
+          "required": [
+            "aa_corners"
+          ],
+          "properties": {
+            "aa_corners": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "by": {
+                  "description": "隣の色からずらす段数（負で暗く）",
+                  "type": "integer",
+                  "default": -1
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
           "description": "角丸の板: 斜めの帯で 光・地・影、縁の 1px につや（光の側）と墨（影の側）、外側に墨の輪郭（格子は正方形）",
           "additionalProperties": false,
           "required": [
@@ -510,6 +535,57 @@
         },
         {
           "type": "object",
+          "description": "部品を上下に動かす（コマごとに -amp·sin。呼吸・浮遊・歩きの上下）",
+          "additionalProperties": false,
+          "required": [
+            "bob"
+          ],
+          "properties": {
+            "bob": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "amp": {
+                  "description": "上下の幅（px）",
+                  "type": "number",
+                  "default": 1
+                },
+                "phase": {
+                  "description": "位相のずれ（1 周 = 1.0。部品ごとに揺れを遅らせる）",
+                  "type": "number",
+                  "default": 0
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "今の部品と相手（部品 against か地の色）の明るさ（Oklab の L）の平均の差を測るだけ（描かない）",
+          "additionalProperties": false,
+          "required": [
+            "contrast"
+          ],
+          "properties": {
+            "contrast": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "against": {
+                  "description": "相手の部品 id（省くと light.ground の地の色）",
+                  "type": "string"
+                },
+                "min": {
+                  "description": "差の下限（0 で bin/lint-rules/px.json の valueSepMin）",
+                  "type": "number",
+                  "default": 0
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
           "description": "親（on）の塊の割れ目: 墨の 1px と、その右下に切り口のつや 1px",
           "additionalProperties": false,
           "required": [
@@ -535,6 +611,95 @@
               },
               "required": [
                 "points"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "遠い層ほど、塗った色を空の色 toward へ depth の割合で寄せ（明度差も縮む）、一番近い候補の色に置き換える（色は足さない）",
+          "additionalProperties": false,
+          "required": [
+            "depth_fade"
+          ],
+          "properties": {
+            "depth_fade": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "shape": {
+                  "description": "形（省くと部品の塊）",
+                  "$ref": "#/definitions/shape"
+                },
+                "depth": {
+                  "description": "遠さ（0 = そのまま・1 = 空の色）",
+                  "type": "number",
+                  "default": 0.5
+                },
+                "toward": {
+                  "description": "寄せる空の色（省くと light.ground の地の色）",
+                  "$ref": "#/definitions/color",
+                  "default": ""
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "光の向きだけで塗る陰（gradient_fill の field light・band 0 の短い書き方。縁を一様に暗くしない）",
+          "additionalProperties": false,
+          "required": [
+            "directional"
+          ],
+          "properties": {
+            "directional": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "shape": {
+                  "description": "形（省くと部品の塊）",
+                  "$ref": "#/definitions/shape"
+                },
+                "band": {
+                  "description": "段の境目のディザの幅（0 = ベタの帯）",
+                  "type": "number",
+                  "default": 0
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "色票に無い中間の色を、候補の 2 色の Bayer の混ぜで作って塊を塗る（Yliluoma の 2 色版）",
+          "additionalProperties": false,
+          "required": [
+            "dither_pair"
+          ],
+          "properties": {
+            "dither_pair": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "shape": {
+                  "description": "形（省くと部品の塊）",
+                  "$ref": "#/definitions/shape"
+                },
+                "color": {
+                  "description": "狙いの色（#rrggbb か色キー）",
+                  "type": "string"
+                },
+                "among": {
+                  "description": "混ぜる候補の色（省くと部品のランプ）",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "color"
               ]
             }
           }
@@ -592,6 +757,32 @@
         },
         {
           "type": "object",
+          "description": "塊の光の来る角に size 画素のつや（light.gloss、無ければランプの最明段）を置く（縁の 1px は避ける）",
+          "additionalProperties": false,
+          "required": [
+            "glint"
+          ],
+          "properties": {
+            "glint": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "size": {
+                  "description": "つやの画素の数（1〜2 が目安）",
+                  "type": "integer",
+                  "default": 2
+                },
+                "color": {
+                  "description": "つやの色（省くと gloss か ramp[-1]）",
+                  "$ref": "#/definitions/color",
+                  "default": ""
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
           "description": "白抜きの記号: 形をつやの色で塗り、右下へ墨の影を 1px",
           "additionalProperties": false,
           "required": [
@@ -605,6 +796,85 @@
                 "shape": {
                   "description": "形（省くと部品の塊）",
                   "$ref": "#/definitions/shape"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "塊を明るさの場（光の向き・x・y・radial）でランプの段に塗る。段の境目は Bayer で混ぜ、band で混ぜる幅を選ぶ",
+          "additionalProperties": false,
+          "required": [
+            "gradient_fill"
+          ],
+          "properties": {
+            "gradient_fill": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "shape": {
+                  "description": "形（省くと部品の塊）",
+                  "$ref": "#/definitions/shape"
+                },
+                "field": {
+                  "description": "明るさの場: light（光の向き。directional）・y（上が明るい）・x（右が明るい）・radial（中心が明るい）",
+                  "type": "string",
+                  "default": "light"
+                },
+                "band": {
+                  "description": "段の境目のうちディザで混ぜる割合（1 = 全部・0.25 = 境目だけ・0 = ベタの帯）",
+                  "type": "number",
+                  "default": 1
+                },
+                "from": {
+                  "description": "使う一番暗い段",
+                  "type": "integer",
+                  "default": 0
+                },
+                "to": {
+                  "description": "使う一番明るい段（-1 で最明）",
+                  "type": "integer",
+                  "default": -1
+                },
+                "invert": {
+                  "description": "明暗を返す",
+                  "type": "boolean",
+                  "default": false
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "塊の足元に横長の楕円の接地影を落とす（物の上には塗らない。地面の色は 1 段暗く・透明の所は ramp[1]）",
+          "additionalProperties": false,
+          "required": [
+            "ground_shadow"
+          ],
+          "properties": {
+            "ground_shadow": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "of": {
+                  "description": "影を落とす部品の id（省くと今の部品。post では絵の全部）",
+                  "type": "string"
+                },
+                "ramp": {
+                  "description": "影の色を引くランプ（省くと部品かスプライトのランプ）",
+                  "type": "string"
+                },
+                "rows": {
+                  "description": "影の高さ（行）",
+                  "type": "integer",
+                  "default": 2
+                },
+                "spread": {
+                  "description": "足元の幅から左右にはみ出す量",
+                  "type": "number",
+                  "default": 1
                 }
               }
             }
@@ -648,6 +918,31 @@
         },
         {
           "type": "object",
+          "description": "今の部品が描いた画素のうち side の側を、軸で左右に写す（左右対称の顔・道具・建物）",
+          "additionalProperties": false,
+          "required": [
+            "mirror"
+          ],
+          "properties": {
+            "mirror": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "side": {
+                  "description": "写す元の側: left（左を右へ）・right（右を左へ）",
+                  "type": "string",
+                  "default": "left"
+                },
+                "axis": {
+                  "description": "軸の x（画素の中心は整数・境目は .5。省くと部品の塊の外接箱の真ん中）",
+                  "type": "number"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
           "description": "部品の塊の外側 1px を 1 色で縁取る（sel_out の前身）",
           "additionalProperties": false,
           "required": [
@@ -664,6 +959,42 @@
                   "default": "ink"
                 }
               }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "塊の中で colors の段をコマごとに step ずつ回す（水・光・滝。形は動かさない）",
+          "additionalProperties": false,
+          "required": [
+            "palette_cycle"
+          ],
+          "properties": {
+            "palette_cycle": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "shape": {
+                  "description": "形（省くと部品の塊）",
+                  "$ref": "#/definitions/shape"
+                },
+                "colors": {
+                  "description": "回す色の並び（2 色以上）",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 2
+                },
+                "step": {
+                  "description": "1 コマで進む段数（負で逆回り）",
+                  "type": "integer",
+                  "default": 1
+                }
+              },
+              "required": [
+                "colors"
+              ]
             }
           }
         },
@@ -719,6 +1050,200 @@
               "required": [
                 "cells",
                 "color"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "地の色 base から暗 → 明 n 段のランプを色票（style があればその色）から選び、この部品のランプにする（hue shift つき）",
+          "additionalProperties": false,
+          "required": [
+            "ramp_pick"
+          ],
+          "properties": {
+            "ramp_pick": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "base": {
+                  "description": "地の段に置く色キー",
+                  "type": "string"
+                },
+                "n": {
+                  "description": "段の数",
+                  "type": "integer",
+                  "default": 4
+                },
+                "at": {
+                  "description": "base を置く段（-1 で n-2 = [墨, 影, 地, 光] の地）",
+                  "type": "integer",
+                  "default": -1
+                },
+                "step": {
+                  "description": "段ごとの明るさ（Oklab の L）の差の狙い。金属は 0.2 ほどに上げる",
+                  "type": "number",
+                  "default": 0.13
+                },
+                "shift": {
+                  "description": "段ごとに色相を寄せる度数（0 で hue shift を切る）",
+                  "type": "number",
+                  "default": 30
+                },
+                "min_gap": {
+                  "description": "隣の段との L の差の最小",
+                  "type": "number",
+                  "default": 0.05
+                }
+              },
+              "required": [
+                "base"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "塊の縁のうち光と反対の側の 1px を by 段明るくする（暗い材質を暗い地から抜く）",
+          "additionalProperties": false,
+          "required": [
+            "rim_light"
+          ],
+          "properties": {
+            "rim_light": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "by": {
+                  "description": "明るくする段数",
+                  "type": "integer",
+                  "default": 1
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "塊の中に 2〜4px の小さな塊を散らして打つ（辺で接しない・1px の単発は出ない。wrap でタイルの端を回す）",
+          "additionalProperties": false,
+          "required": [
+            "scatter_clusters"
+          ],
+          "properties": {
+            "scatter_clusters": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "shape": {
+                  "description": "形（省くと部品の塊）",
+                  "$ref": "#/definitions/shape"
+                },
+                "colors": {
+                  "description": "打つ色の並び（塊ごとにハッシュで選ぶ）",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "default": [
+                    "shade"
+                  ]
+                },
+                "kind": {
+                  "description": "塊の型: blob（葉・石の斑）・line（木目の筋）・crack（ひび）",
+                  "type": "string",
+                  "default": "blob"
+                },
+                "cell": {
+                  "description": "散らす升目の大きさ（小さいほど密）",
+                  "type": "integer",
+                  "default": 4
+                },
+                "seed": {
+                  "description": "散らし方の番号（variants の seed が足される）",
+                  "type": "integer",
+                  "default": 0
+                },
+                "keep": {
+                  "description": "升目に塊を置く割合（0〜1）",
+                  "type": "number",
+                  "default": 1
+                },
+                "wrap": {
+                  "description": "タイルの端をまたいで反対側へ回す（並べた継ぎ目を隠す）",
+                  "type": "boolean",
+                  "default": false
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "塊の外側 1px を、内側の隣の色を材質のランプで drop 段暗くした色で縁取る（光の側は lit_drop 段）",
+          "additionalProperties": false,
+          "required": [
+            "sel_out"
+          ],
+          "properties": {
+            "sel_out": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "drop": {
+                  "description": "影の側の縁を暗くする段数",
+                  "type": "integer",
+                  "default": 2
+                },
+                "lit_drop": {
+                  "description": "光の側（左上）の縁を暗くする段数（0 で内側と同じ色）",
+                  "type": "integer",
+                  "default": 1
+                },
+                "ramps": {
+                  "description": "材質のランプの名前（省くと部品のランプと spec のランプ全部）",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "別の部品 of の塊を光と反対へ offset ずらした形で、今の部品に塗ってある色を by 段ずらす（手前の物が落とす影）",
+          "additionalProperties": false,
+          "required": [
+            "shade_mask"
+          ],
+          "properties": {
+            "shade_mask": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "of": {
+                  "description": "影を落とす部品の id（この部品より前の列）",
+                  "type": "string"
+                },
+                "by": {
+                  "description": "ずらす段数（負で暗く）",
+                  "type": "integer",
+                  "default": -1
+                },
+                "offset": {
+                  "description": "影のずれ [dx, dy]（省くと光と反対へ 1px）",
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2
+                }
+              },
+              "required": [
+                "of"
               ]
             }
           }
@@ -801,6 +1326,37 @@
         },
         {
           "type": "object",
+          "description": "部品を縦に縮めて横に伸ばす（縦 1 − amount·sin・横 1 + amount·sin。足元を止める）。着地・弾み・呼吸",
+          "additionalProperties": false,
+          "required": [
+            "squash"
+          ],
+          "properties": {
+            "squash": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "amount": {
+                  "description": "伸び縮みの強さ（0〜0.5 が目安）",
+                  "type": "number",
+                  "default": 0.2
+                },
+                "phase": {
+                  "description": "位相のずれ（1 周 = 1.0。部品ごとに揺れを遅らせる）",
+                  "type": "number",
+                  "default": 0
+                },
+                "anchor": {
+                  "description": "止める所: bottom（足元）・center（真ん中）",
+                  "type": "string",
+                  "default": "bottom"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
           "description": "文字の格子を押す（colors が無ければ legend の文字で打ち、'.' は透明へ抜く）",
           "additionalProperties": false,
           "required": [
@@ -839,6 +1395,62 @@
                 "at",
                 "rows"
               ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "部品の画素を行ごとに横へずらす（根元 0・先端ほど大きく・コマごとに sin）。木・草・旗・髪の揺れ",
+          "additionalProperties": false,
+          "required": [
+            "sway"
+          ],
+          "properties": {
+            "sway": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "amp": {
+                  "description": "先端のずれの最大（px）",
+                  "type": "number",
+                  "default": 1
+                },
+                "curve": {
+                  "description": "根元から先端への効き方（1 = まっすぐ・2 = 先端だけ大きく）",
+                  "type": "number",
+                  "default": 1
+                },
+                "phase": {
+                  "description": "位相のずれ（1 周 = 1.0。部品ごとに揺れを遅らせる）",
+                  "type": "number",
+                  "default": 0
+                },
+                "root": {
+                  "description": "止める端: bottom（木・草）・top（髪・吊るした旗）",
+                  "type": "string",
+                  "default": "bottom"
+                },
+                "ripple": {
+                  "description": "根元から先端へ遅れて伝わる波の数（0 で全体が同じ向き。旗は 0.5 ほど）",
+                  "type": "number",
+                  "default": 0
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "このスプライトをタイルとして扱う: 3×3 に並べた見本（<名前>.tile.png）を書き、端の継ぎ目を検査する（描かない）",
+          "additionalProperties": false,
+          "required": [
+            "tile_preview"
+          ],
+          "properties": {
+            "tile_preview": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {}
             }
           }
         },
@@ -921,6 +1533,38 @@
         },
         "note": {
           "type": "string"
+        },
+        "material": {
+          "description": "材質のレシピ（cloth・foliage・metal・stone・wood）。名前か {名前: {引数}}。ops の前に op の並びを差し込む",
+          "oneOf": [
+            {
+              "enum": [
+                "cloth",
+                "foliage",
+                "metal",
+                "stone",
+                "wood"
+              ]
+            },
+            {
+              "type": "object",
+              "minProperties": 1,
+              "maxProperties": 1
+            }
+          ]
+        },
+        "rotate": {
+          "type": "number",
+          "description": "部品を回す角度（度。正で時計回り。rotsprite の考え方で色を足さない）"
+        },
+        "pivot": {
+          "description": "回す中心 [x, y]（省くと塊の上の真ん中）",
+          "type": "array",
+          "items": {
+            "type": "integer"
+          },
+          "minItems": 2,
+          "maxItems": 2
         }
       }
     },
@@ -978,16 +1622,46 @@
         "frames": {
           "type": "object",
           "minProperties": 1,
-          "description": "コマ名 → 部品 id を鍵にした JSON Merge Patch（変えないコマは {}・null で部品を外す）",
+          "description": "コマ名 → 部品 id を鍵にした JSON Merge Patch（変えないコマは {}・null で部品を外す）。{\"pose\": 姿勢, \"parts\": {id: patch}} で歩きの姿勢（contact・down・passing・up）から作る",
           "additionalProperties": {
             "type": "object",
             "additionalProperties": {
               "type": [
                 "object",
-                "null"
+                "null",
+                "string"
               ]
             }
           }
+        },
+        "variants": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "seeds"
+          ],
+          "description": "変種: seed ごとにコマを <コマ名>_v<seed> で書き出す（散らす op は seed だけで決まる）",
+          "properties": {
+            "seeds": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "minItems": 1
+            }
+          }
+        },
+        "roles": {
+          "type": "object",
+          "description": "歩きの姿勢の役 → 部品 id（armB・armF・body・head・legB・legF。省くと役と同じ id の部品）",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "anim": {
+          "type": "boolean",
+          "description": "コマ列の検査 anim を回すか（省くと動きの op・pose・rotate があれば回す）"
         }
       }
     }

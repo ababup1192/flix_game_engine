@@ -63,9 +63,35 @@ func opsMarkdown() string {
 	b.WriteString("# fge px の op（技法 → op → 仕上げ）\n\n")
 	b.WriteString("<!-- " + generatedNote + " -->\n\n")
 	b.WriteString("指定（`<名前>.pxsrc.json`）の部品の `ops` に、上から順に当てる。書式は `docs/pxsrc.schema.json`、1 つの説明は `bin/fge px help <op>`。\n\n")
-	b.WriteString("| 技法 | op | 何をするか | 仕上げ・検査 |\n|---|---|---|---|\n")
+	b.WriteString("## 早見表（描く物・技法 → op → 仕上げ）\n\n")
+	b.WriteString("| 描く物・技法 | op（→ は順に当てる・/ はどれか） | 仕上げ・検査 |\n|---|---|---|\n")
+	for _, r := range quickRows {
+		fmt.Fprintf(&b, "| %s | %s | %s |\n", mdCell(r.What), quickOps(r), mdCell(quickFinish(r)))
+	}
+	b.WriteString("\n既定値はどれも仮置き（見本 10 題と作品 5 作の大きい見比べで決め直す）。強さは各 op の引数で選び、使わない技法は書かない。\n")
+	b.WriteString("\n## op の一覧\n\n| 技法 | op | 何をするか | 仕上げ・検査 |\n|---|---|---|---|\n")
 	for _, op := range allOps() {
 		fmt.Fprintf(&b, "| %s | `%s` | %s | %s |\n", mdCell(op.Technique), op.Name, mdCell(op.Summary), mdCell(op.Finish))
+	}
+	b.WriteString("\n## 材質（部品の `material`）\n\n手順を覚えずに `\"material\": \"metal\"` と書く。中身は既存の op の並びで、部品の `ops` の前に差し込む。\n\n")
+	b.WriteString("| 材質 | 何をするか | 引数 | 技法 | 仕上げ |\n|---|---|---|---|---|\n")
+	for _, m := range allMaterials() {
+		var ps []string
+		for _, p := range m.Params {
+			ps = append(ps, "`"+p.Name+"` "+p.Summary+defaultText(p))
+		}
+		fmt.Fprintf(&b, "| `%s` | %s | %s | %s | %s |\n", m.Name, mdCell(m.Summary), mdCell(strings.Join(ps, "・")), mdCell(m.Technique), mdCell(m.Finish))
+	}
+	b.WriteString("\n## 歩きの姿勢（frames の `pose`）\n\n右を向いた横向き 1 方向のコマを作る（4 方向は carve と adopt）。役は `roles` で部品 id に当てる。角度は度・正で時計回り。\n\n")
+	b.WriteString("| 姿勢 | 役ごとの動き |\n|---|---|\n")
+	for _, name := range poseNames() {
+		var ms []string
+		for _, role := range poseRoleNames() {
+			if mv, ok := poses[name][role]; ok {
+				ms = append(ms, fmt.Sprintf("%s 回転 %g・ずらし [%d, %d]", role, mv.Rotate, mv.At[0], mv.At[1]))
+			}
+		}
+		fmt.Fprintf(&b, "| `%s` | %s |\n", name, strings.Join(ms, "・"))
 	}
 	b.WriteString("\n## 引数\n")
 	for _, op := range allOps() {
@@ -99,6 +125,77 @@ func opsMarkdown() string {
 		fmt.Fprintf(&b, "| `%s` | %s | %s |\n", c.Name, c.Level, mdCell(c.Summary))
 	}
 	return b.String()
+}
+
+// quickRow は早見表の 1 行（描く物・技法 → op）。Chain なら上から順に当てる並び、でなければどれか 1 つ。
+// 仕上げは op の Finish から取る（材質は下の材質の表）。
+type quickRow struct {
+	What  string
+	Ops   []string
+	Chain bool
+}
+
+// quickRows は早見表の上の段（15 行まで。技法カード 1 節と早見表の案 3 節から）。
+var quickRows = []quickRow{
+	{"1 素材の色（暗 → 明 4 段）", []string{"ramp_pick"}, false},
+	{"光と陰（小物の面）", []string{"directional"}, false},
+	{"丸い体・キャラ", []string{"shade_parts"}, false},
+	{"手前の物が落とす影", []string{"shade_mask"}, false},
+	{"輪郭（部品ごとの色）", []string{"sel_out"}, false},
+	{"暗い物を暗い地から抜く", []string{"rim_light"}, false},
+	{"1px の線・ひげ・髪の線", []string{"line", "pixel_perfect"}, true},
+	{"曲線の段の角", []string{"aa_corners"}, false},
+	{"金属・石・木・布・葉", []string{"material"}, false},
+	{"空・斜面の階調・境目のディザ", []string{"gradient_fill"}, false},
+	{"色票に無い中間の色", []string{"dither_pair"}, false},
+	{"葉・石の斑・草のタイル", []string{"scatter_clusters", "tile_preview"}, true},
+	{"物を地面に置く", []string{"ground_shadow"}, false},
+	{"遠景と近景・主役と背景", []string{"depth_fade", "contrast"}, true},
+	{"揺れ・呼吸・歩き・水", []string{"sway", "bob", "squash", "palette_cycle"}, false},
+}
+
+func quickOps(r quickRow) string {
+	sep := "` / `"
+	if r.Chain {
+		sep = "` → `"
+	}
+	return "`" + strings.Join(r.Ops, sep) + "`"
+}
+
+// quickFinish は行の op の Finish を重ねずにつなぐ（— は飛ばす）。
+func quickFinish(r quickRow) string {
+	seen := map[string]bool{}
+	var out []string
+	for _, name := range r.Ops {
+		f := "材質ごと（下の材質の表）"
+		if op, ok := lookupOp(name); ok {
+			f = op.Finish
+		}
+		if f != "—" && !seen[f] {
+			seen[f] = true
+			out = append(out, f)
+		}
+	}
+	if len(out) == 0 {
+		return "—"
+	}
+	return strings.Join(out, " / ")
+}
+
+func materialNames() string {
+	var names []string
+	for _, m := range allMaterials() {
+		names = append(names, m.Name)
+	}
+	return strings.Join(names, "・")
+}
+
+func materialEnum() []any {
+	var out []any
+	for _, m := range allMaterials() {
+		out = append(out, m.Name)
+	}
+	return out
 }
 
 // --- スキーマ -------------------------------------------------------------
@@ -244,6 +341,10 @@ func specSchema() string {
 			"at", obj("description", "部品をずらす量 [dx, dy]", "type", "array", "items", obj("type", "integer"), "minItems", json.Number("2"), "maxItems", json.Number("2")),
 			"ops", obj("type", "array", "items", ref("op"), "description", "上から順に当てる op"),
 			"note", obj("type", "string"),
+			"material", obj("description", "材質のレシピ（"+materialNames()+"）。名前か {名前: {引数}}。ops の前に op の並びを差し込む",
+				"oneOf", list(obj("enum", materialEnum()), obj("type", "object", "minProperties", json.Number("1"), "maxProperties", json.Number("1")))),
+			"rotate", obj("type", "number", "description", "部品を回す角度（度。正で時計回り。rotsprite の考え方で色を足さない）"),
+			"pivot", obj("description", "回す中心 [x, y]（省くと塊の上の真ん中）", "type", "array", "items", obj("type", "integer"), "minItems", json.Number("2"), "maxItems", json.Number("2")),
 		))
 	spriteS := obj("type", "object", "additionalProperties", false, "required", list("size", "parts", "frames"),
 		"properties", obj(
@@ -254,8 +355,12 @@ func specSchema() string {
 			"parts", obj("type", "array", "items", ref("part"), "minItems", json.Number("1"), "description", "部品の平らな列。列の順が重ねる順"),
 			"post", obj("type", "array", "items", ref("op"), "description", "全部の部品を描いた後に格子全体へ当てる op"),
 			"frames", obj("type", "object", "minProperties", json.Number("1"),
-				"description", "コマ名 → 部品 id を鍵にした JSON Merge Patch（変えないコマは {}・null で部品を外す）",
-				"additionalProperties", obj("type", "object", "additionalProperties", obj("type", list("object", "null")))),
+				"description", "コマ名 → 部品 id を鍵にした JSON Merge Patch（変えないコマは {}・null で部品を外す）。{\"pose\": 姿勢, \"parts\": {id: patch}} で歩きの姿勢（"+strings.Join(poseNames(), "・")+"）から作る",
+				"additionalProperties", obj("type", "object", "additionalProperties", obj("type", list("object", "null", "string")))),
+			"variants", obj("type", "object", "additionalProperties", false, "required", list("seeds"), "description", "変種: seed ごとにコマを <コマ名>_v<seed> で書き出す（散らす op は seed だけで決まる）",
+				"properties", obj("seeds", obj("type", "array", "items", obj("type", "integer", "minimum", json.Number("0")), "minItems", json.Number("1")))),
+			"roles", obj("type", "object", "description", "歩きの姿勢の役 → 部品 id（"+strings.Join(poseRoleNames(), "・")+"。省くと役と同じ id の部品）", "additionalProperties", obj("type", "string")),
+			"anim", obj("type", "boolean", "description", "コマ列の検査 anim を回すか（省くと動きの op・pose・rotate があれば回す）"),
 		))
 	root := obj(
 		"$schema", "http://json-schema.org/draft-07/schema#",
@@ -272,6 +377,7 @@ func specSchema() string {
 			"base", obj("type", "string", "description", "差し替える元の sprite.json（省くと target）"),
 			"palette", obj("type", "string", "description", "色票の Doc（base が無いときの paletteFile）"),
 			"gate", obj("type", "string", "description", "色の門の Doc（*.colorgate.json）。外れたら書き出さない"),
+			"style", obj("type", "string", "description", "機種の決まり（bin/lint-rules/px.json の styles の名前: gb4・nes・snes・pc98・modern など。か *.pxstyle.json）。色の集合・色数・升目の色数・RGB の段数を検査 style で縛る"),
 			"light", obj("type", "object", "additionalProperties", false, "description", "光（Doc に 1 か所だけ。op はここを読む）",
 				"properties", obj(
 					"dir", obj("type", "array", "items", obj("type", "number"), "minItems", json.Number("2"), "maxItems", json.Number("3"), "description", "光の来る向き [x, y] か [x, y, 高さ]（左上は [-1, -1]）", "default", list(json.Number("-1"), json.Number("-1"))),

@@ -1,8 +1,61 @@
 {
   "version": 1,
-  "note": "fge px の検査の閾値。flatRunRepeat = 同じ長さの段がこの回数続くと flat-run（直線に読まれる）/ flatRunStraight + 絵の長い辺 ÷ flatRunPer = 曲線の中で許す直線の長さ（16px で 4・32px で 6）/ groundContrastMin = 外周と地の色の明るさ（Oklab の L）の差の平均の下限。値はどれも仮置き（大きい見比べで決め直す）。",
+  "note": "fge px の検査の閾値と機種の決まり。値はどれも仮置き（見本 10 題と作品 5 作の大きい見比べで決め直す。盾と草の 1 対 1 は根拠にしない）。flatRunRepeat = 同じ長さの段がこの回数続くと flat-run / flatRunStraight + 絵の長い辺 ÷ flatRunPer = 曲線の中で許す直線の長さ / groundContrastMin = 外周と地の明るさ（Oklab の L）の差の平均の下限 / rampMinGap = ランプの隣り合う段の L の差の下限（ramp-order）/ pillowEdgeGap = 光の側の縁が内側よりこれだけ暗いと pillow / pillowSideGap = 光の側と影の側の縁の L の差がこれ未満だと pillow / pillowMinArea・lightDirMinArea = 検査する塊の最小の画素数 / blackOutlineMaxSize = この大きさ未満の絵で 1 色の最暗の縁を知らせる / valueSepMin = contrast で測った主役と背景の L の差の下限（value-sep）/ seamRatio = タイルの端の差が内側の隣り合う列の差の何倍を超えると継ぎ目（seam）/ maxRounds = fge px snap の周の上限。styles = 機種ごとの色数と解像度の決まり（pxsrc の \"style\" で名指す。colors は使える色の集合・maxColors は 1 コマの色数・tile と maxTileColors は升目ごとの色数・channelLevels は RGB の 1 チャンネルの段数・maxSize は絵の最大の大きさ。0 と省略は見ない）。",
   "flatRunRepeat": 3,
   "flatRunStraight": 2,
   "flatRunPer": 8,
-  "groundContrastMin": 0.1
+  "groundContrastMin": 0.1,
+  "rampMinGap": 0.04,
+  "pillowEdgeGap": 0.04,
+  "pillowSideGap": 0.03,
+  "pillowMinArea": 16,
+  "lightDirMinArea": 12,
+  "blackOutlineMaxSize": 64,
+  "valueSepMin": 0.15,
+  "seamRatio": 2.0,
+  "maxRounds": 5,
+  "styles": {
+    "gb4": {
+      "label": "ゲームボーイ風（4 階調）",
+      "note": "色は DMG の緑 4 段だけ。スプライトは 8×8 の升目ごとに 3 色＋透明。",
+      "colors": {"gb0": "#0f380f", "gb1": "#306230", "gb2": "#8bac0f", "gb3": "#9bbc0f"},
+      "maxColors": 4,
+      "tile": [8, 8],
+      "maxTileColors": 3
+    },
+    "nes": {
+      "label": "ファミコン風",
+      "note": "色は 2C02 の色表（よく使われる近似）の中だけ。スプライトは 8×8 の升目ごとに 3 色＋透明・1 体で 12 色まで。",
+      "colors": {
+        "nes00": "#7c7c7c", "nes01": "#0000fc", "nes02": "#0000bc", "nes03": "#4428bc", "nes04": "#940084", "nes05": "#a80020", "nes06": "#a81000", "nes07": "#881400",
+        "nes08": "#503000", "nes09": "#007800", "nes0a": "#006800", "nes0b": "#005800", "nes0c": "#004058", "nes0f": "#000000",
+        "nes10": "#bcbcbc", "nes11": "#0078f8", "nes12": "#0058f8", "nes13": "#6844fc", "nes14": "#d800cc", "nes15": "#e40058", "nes16": "#f83800", "nes17": "#e45c10",
+        "nes18": "#ac7c00", "nes19": "#00b800", "nes1a": "#00a800", "nes1b": "#00a844", "nes1c": "#008888",
+        "nes20": "#f8f8f8", "nes21": "#3cbcfc", "nes22": "#6888fc", "nes23": "#9878f8", "nes24": "#f878f8", "nes25": "#f85898", "nes26": "#f87858", "nes27": "#fca044",
+        "nes28": "#f8b800", "nes29": "#b8f818", "nes2a": "#58d854", "nes2b": "#58f898", "nes2c": "#00e8d8", "nes2d": "#787878",
+        "nes30": "#fcfcfc", "nes31": "#a4e4fc", "nes32": "#b8b8f8", "nes33": "#d8b8f8", "nes34": "#f8b8f8", "nes35": "#f8a4c0", "nes36": "#f0d0b0", "nes37": "#fce0a8",
+        "nes38": "#f8d878", "nes39": "#d8f878", "nes3a": "#b8f8b8", "nes3b": "#b8f8d8", "nes3c": "#00fcfc", "nes3d": "#f8d8f8"
+      },
+      "maxColors": 12,
+      "tile": [8, 8],
+      "maxTileColors": 3
+    },
+    "snes": {
+      "label": "スーパーファミコン風",
+      "note": "RGB 各 5 bit（32 段）。1 体は 1 つのパレットの 15 色＋透明。",
+      "channelLevels": 32,
+      "maxColors": 15
+    },
+    "pc98": {
+      "label": "PC-98 風",
+      "note": "4096 色（RGB 各 16 段）から 16 色。タイルパターン（市松）で中間を作る。",
+      "channelLevels": 16,
+      "maxColors": 16
+    },
+    "modern": {
+      "label": "今どきのドット絵",
+      "note": "機種の縛りは無い。色数は画風の文書（1 素材 3〜4 色）と色の門で見る。",
+      "maxColors": 0
+    }
+  }
 }

@@ -16,9 +16,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ababup1192/flix_game_engine/go/internal/anim"
 	"github.com/ababup1192/flix_game_engine/go/internal/pxlib"
 	"github.com/ababup1192/flix_game_engine/go/internal/sprite"
 )
+
+// techFrameChecks は段 3 でコマごとに足した全体の検査（value-sep は contrast を書いた時だけ・style は spec に style がある時だけ鳴る）。
+var techFrameChecks = []checkRef{{Check: checkValueSep}, {Check: checkStyle}}
 
 // buildOptions は build の切り替え。
 type buildOptions struct {
@@ -32,8 +36,10 @@ type frameResult struct {
 	Sprite  string   `json:"sprite"`
 	Name    string   `json:"frame"`
 	Rows    []string `json:"rows"`
-	Same    bool     `json:"same"`    // base の同じコマとバイトで同じか
-	HadBase bool     `json:"hadBase"` // base に同じコマがあったか
+	Same    bool     `json:"same"`           // base の同じコマとバイトで同じか
+	HadBase bool     `json:"hadBase"`        // base に同じコマがあったか
+	Tile    bool     `json:"tile,omitempty"` // tile_preview がある（3×3 の見本を書く）
+	Anim    bool     `json:"anim,omitempty"` // コマ列（玉ねぎの皮の列を足す）
 	grid    *pxlib.Grid
 }
 
@@ -48,6 +54,7 @@ type buildResult struct {
 	LegendAdded []string          `json:"legendAdded,omitempty"`
 	Sheet       string            `json:"sheet"`
 	Legend      map[string]string `json:"legend"` // 字 → 色キー（次の周の差の見本に使う）
+	Hex         map[string]string `json:"hex"`    // 色キー → #rrggbb（fge px diff が周の絵を描き直すのに使う）
 	Elapsed     time.Duration     `json:"elapsedNs"`
 	Prev        *levelCounts      `json:"-"`
 	prevKeys    map[string]bool   // 前の周の違反（上位の件を「新しい物から」出すため）
@@ -128,6 +135,17 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 			}
 		}
 	}
+	style, err := loadStyle(root, opt.RulesRoot, spec.Style)
+	if err != nil {
+		return nil, err
+	}
+	if style != nil {
+		for k, h := range style.Colors {
+			if _, ok := pal[k]; !ok {
+				pal[k] = h
+			}
+		}
+	}
 	hasKey := func(k pxlib.Key) bool {
 		if _, ok := lg.CharOf[k]; ok {
 			return true
@@ -149,7 +167,17 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 	for k, h := range pal {
 		hexOf[pxlib.Key(k)] = h
 	}
-	cc := &checkCtx{Rules: rules, SpriteRules: spriteRules, HexOf: hexOf, Ground: groundHex(spec.Light.Ground, pal)}
+	cc := &checkCtx{Rules: rules, SpriteRules: spriteRules, HexOf: hexOf, Ground: groundHex(spec.Light.Ground, pal),
+		Light: spec.Light.Dir, Ramps: map[string][]pxlib.Key{}, Style: style}
+	for k, r := range spec.Ramps {
+		cc.Ramps[k] = r
+	}
+	var animRules *anim.Rules
+	if !opt.NoCheck {
+		if animRules, err = anim.LoadRules(opt.RulesRoot); err != nil {
+			return nil, err
+		}
+	}
 
 	res := &buildResult{Spec: specPath, Target: spec.Target}
 	addViolations := func(vs []violation, sp, frame string) {
@@ -190,70 +218,102 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 			frames = pxlib.NewObj()
 			entry.Set("frames", frames)
 		}
-		for _, f := range sp.Frames {
-			r := &reader{}
-			parts := sp.partsOf(r, spec, f)
-			if len(r.probs) > 0 {
-				return nil, r.probs
-			}
-			c := &ctx{G: pxlib.NewGrid(sp.Size.W, sp.Size.H), Spec: spec, Sprite: sp, Frame: f.Name, hasKey: hasKey, keyOf: lg.KeyOf}
-			var after func(*partState, []checkRef) error
-			if !opt.NoCheck {
-				after = func(ps *partState, names []checkRef) error {
-					if len(names) == 0 {
+		seeds := sp.Seeds
+		if len(seeds) == 0 {
+			seeds = []int{0}
+		}
+		for _, seed := range seeds {
+			var seqNames []string
+			var seqRows [][]string
+			for fi, f := range sp.Frames {
+				r := &reader{}
+				parts := sp.partsOf(r, spec, f)
+				if len(r.probs) > 0 {
+					return nil, r.probs
+				}
+				fname := f.Name
+				if len(sp.Seeds) > 0 {
+					fname = fmt.Sprintf("%s_v%d", f.Name, seed)
+				}
+				c := &ctx{G: pxlib.NewGrid(sp.Size.W, sp.Size.H), Spec: spec, Sprite: sp, Frame: fname, hasKey: hasKey, keyOf: lg.KeyOf,
+					FrameIndex: fi, FrameCount: len(sp.Frames), Seed: seed, hexOf: hexOf, style: style}
+				var after func(*partState, []checkRef) error
+				if !opt.NoCheck {
+					after = func(ps *partState, names []checkRef) error {
+						if len(names) == 0 {
+							return nil
+						}
+						sub := c.G.Only(ps.written.Union(ps.Region()))
+						cc.Measures = c.measures
+						for id, r := range c.picked {
+							cc.Ramps[sp.Name+"."+id] = r
+						}
+						for _, n := range names {
+							vs, err := runCheck(n, sub, cc)
+							if err != nil {
+								return fmt.Errorf("%s: %w", ps.Part.Where, err)
+							}
+							addViolations(vs, sp.Name, fname)
+						}
 						return nil
 					}
-					sub := c.G.Only(ps.written.Union(ps.Region()))
-					for _, n := range names {
-						vs, err := runCheck(n, sub, cc)
+				}
+				if err := drawFrame(c, parts, sp.Post, after); err != nil {
+					return nil, fmt.Errorf("%s/%s: %w", sp.Name, fname, err)
+				}
+				// legend に無い色キー: 色票にあれば空いている字を当てる
+				for _, k := range c.G.Keys() {
+					if _, ok := lg.CharOf[k]; ok {
+						continue
+					}
+					if _, ok := pal[string(k)]; !ok {
+						return nil, fmt.Errorf("%s/%s: 色キー %q が legend にも色票にも無い", sp.Name, fname, string(k))
+					}
+					ch := freeChar(legend)
+					if ch == "" {
+						return nil, fmt.Errorf("legend に当てる字が残っていない")
+					}
+					legend.Set(ch, string(k))
+					lg.Set(ch, k)
+					res.LegendAdded = append(res.LegendAdded, ch+"="+string(k))
+				}
+				rows, err := c.G.Rows(lg.CharOf)
+				if err != nil {
+					return nil, fmt.Errorf("%s/%s: %w", sp.Name, fname, err)
+				}
+				old, had := frames.Get(fname)
+				fr := frameResult{Sprite: sp.Name, Name: fname, Rows: rows, HadBase: had, Tile: c.tile, grid: c.G,
+					Anim: len(sp.Frames) >= 2 && (sp.Anim == nil && sp.animated || sp.Anim != nil && *sp.Anim)}
+				if had {
+					fr.Same = pxlib.DumpPy(old, indent) == pxlib.DumpPy(rows, indent)
+				}
+				frames.Set(fname, rowsAny(rows))
+				res.Frames = append(res.Frames, fr)
+				seqNames, seqRows = append(seqNames, fname), append(seqRows, rows)
+				if !opt.NoCheck {
+					cc.Measures = c.measures
+					for _, n := range append(frameChecks, techFrameChecks...) {
+						vs, err := runCheck(n, c.G, cc)
 						if err != nil {
-							return fmt.Errorf("%s: %w", ps.Part.Where, err)
+							return nil, err
 						}
-						addViolations(vs, sp.Name, f.Name)
+						addViolations(vs, sp.Name, fname)
 					}
-					return nil
 				}
 			}
-			if err := drawFrame(c, parts, sp.Post, after); err != nil {
-				return nil, fmt.Errorf("%s/%s: %w", sp.Name, f.Name, err)
-			}
-			// legend に無い色キー: 色票にあれば空いている字を当てる
-			for _, k := range c.G.Keys() {
-				if _, ok := lg.CharOf[k]; ok {
-					continue
-				}
-				if _, ok := pal[string(k)]; !ok {
-					return nil, fmt.Errorf("%s/%s: 色キー %q が legend にも色票にも無い", sp.Name, f.Name, string(k))
-				}
-				ch := freeChar(legend)
-				if ch == "" {
-					return nil, fmt.Errorf("legend に当てる字が残っていない")
-				}
-				legend.Set(ch, string(k))
-				lg.Set(ch, k)
-				res.LegendAdded = append(res.LegendAdded, ch+"="+string(k))
-			}
-			rows, err := c.G.Rows(lg.CharOf)
-			if err != nil {
-				return nil, fmt.Errorf("%s/%s: %w", sp.Name, f.Name, err)
-			}
-			old, had := frames.Get(f.Name)
-			fr := frameResult{Sprite: sp.Name, Name: f.Name, Rows: rows, HadBase: had, grid: c.G}
-			if had {
-				fr.Same = pxlib.DumpPy(old, indent) == pxlib.DumpPy(rows, indent)
-			}
-			frames.Set(f.Name, rowsAny(rows))
-			res.Frames = append(res.Frames, fr)
-			if !opt.NoCheck {
-				for _, n := range frameChecks {
-					vs, err := runCheck(n, c.G, cc)
-					if err != nil {
-						return nil, err
-					}
-					addViolations(vs, sp.Name, f.Name)
+			if animRules != nil && len(seqNames) >= 2 && (sp.Anim == nil && sp.animated || sp.Anim != nil && *sp.Anim) {
+				for _, note := range animRules.CheckSequence(sp.Name, seqNames, seqRows) {
+					addViolations([]violation{{Check: checkAnim, Level: levelLint, Msg: note, Fix: checks[checkAnim].Fix}}, sp.Name, "")
 				}
 			}
 		}
+	}
+	if !opt.NoCheck {
+		vs, err := runCheck(checkRef{Check: checkRampOrder}, pxlib.NewGrid(1, 1), cc)
+		if err != nil {
+			return nil, err
+		}
+		res.Violations = append(res.Violations, vs...)
 	}
 	res.Violations = dedupeViolations(res.Violations)
 	if spec.Gate != "" {
@@ -268,8 +328,12 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 		}
 	}
 	res.Legend = map[string]string{}
+	res.Hex = map[string]string{}
 	for ch, k := range lg.KeyOf {
 		res.Legend[ch] = string(k)
+		if h, ok := hexOf[k]; ok {
+			res.Hex[string(k)] = h
+		}
 	}
 	if res.Count().Gate == 0 {
 		out := filepath.Join(root, spec.Target)
@@ -412,11 +476,37 @@ func writeSheets(dir string, res *buildResult, prev *buildResult, hexOf map[pxli
 	var sheet []pxlib.SheetFrame
 	bySprite := map[string][][][]color.RGBA{}
 	var order []string
-	for _, f := range res.Frames {
-		px := colorsOf(f.Rows, res.Legend, hexOf)
+	pxOf := make([][][]color.RGBA, len(res.Frames))
+	for i, f := range res.Frames {
+		pxOf[i] = colorsOf(f.Rows, res.Legend, hexOf)
+	}
+	// コマ列の前後（同じスプライトの並びの中で輪にする）
+	seq := map[string][]int{}
+	for i, f := range res.Frames {
+		seq[f.Sprite] = append(seq[f.Sprite], i)
+	}
+	tiles := map[string][][]color.RGBA{}
+	for i, f := range res.Frames {
+		px := pxOf[i]
 		sf := pxlib.SheetFrame{Px: px}
 		if rows, ok := prevRows[f.Sprite+"/"+f.Name]; ok {
 			sf.Prev = colorsOf(rows, prev.Legend, hexOf)
+		}
+		if f.Anim {
+			idx := seq[f.Sprite]
+			at := 0
+			for j, k := range idx {
+				if k == i {
+					at = j
+				}
+			}
+			n := len(idx)
+			sf.Onion = pxlib.Onion(px, pxOf[idx[(at+n-1)%n]], pxOf[idx[(at+1)%n]], ground)
+		}
+		if f.Tile {
+			if _, ok := tiles[f.Sprite]; !ok {
+				tiles[f.Sprite] = px
+			}
 		}
 		sheet = append(sheet, sf)
 		if _, ok := bySprite[f.Sprite]; !ok {
@@ -431,6 +521,11 @@ func writeSheets(dir string, res *buildResult, prev *buildResult, hexOf map[pxli
 		return err
 	}
 	sort.Strings(order)
+	for name, px := range tiles {
+		if err := pxlib.WritePNG(filepath.Join(dir, safeName(name)+".tile.png"), pxlib.Tile3x3(px, ground, 4)); err != nil {
+			return err
+		}
+	}
 	for _, name := range order {
 		if err := pxlib.WritePNG(filepath.Join(dir, safeName(name)+".png"), pxlib.Strip(bySprite[name])); err != nil {
 			return err

@@ -96,6 +96,7 @@ type violation struct {
 	Cells  []pxlib.Pt  `json:"cells,omitempty"`
 	Op     pxlib.OpRef `json:"op"`
 	Msg    string      `json:"msg"`
+	Fix    string      `json:"fix,omitempty"` // 直し方: どの op の何の引数を変えるか
 }
 
 func (v violation) ref() checkRef { return checkRef{v.Check, v.Rule} }
@@ -123,6 +124,9 @@ func (v violation) String() string {
 		fmt.Fprintf(&b, " (%d,%d)", v.X, v.Y)
 	}
 	b.WriteString(": " + v.Msg)
+	if v.Fix != "" {
+		b.WriteString(" → 直し: " + v.Fix)
+	}
 	return b.String()
 }
 
@@ -130,8 +134,12 @@ func (v violation) String() string {
 type checkCtx struct {
 	Rules       *pxRules
 	SpriteRules *sprite.Rules
-	Ground      string               // 地の色 #rrggbb（無ければ ""）
-	HexOf       map[pxlib.Key]string // 色キー → #rrggbb
+	Ground      string                 // 地の色 #rrggbb（無ければ ""）
+	HexOf       map[pxlib.Key]string   // 色キー → #rrggbb
+	Light       [3]float64             // 光の来る向き（spec の light.dir）
+	Ramps       map[string][]pxlib.Key // 名前 → ランプ（spec の ramps と ramp_pick が選んだ物）
+	Measures    []measure              // contrast が測った明度差（今のコマ）
+	Style       *pxStyle               // 機種の決まり（spec の style。無ければ nil）
 }
 
 // checkDef は検査 1 つ。
@@ -139,6 +147,7 @@ type checkDef struct {
 	Name    checkName
 	Summary string
 	Level   level
+	Fix     string // 違反の直し方の既定（違反の側で書いた物が先）
 	Run     func(g *pxlib.Grid, c *checkCtx) []violation
 }
 
@@ -172,6 +181,12 @@ func runCheck(ref checkRef, g *pxlib.Grid, c *checkCtx) ([]violation, error) {
 			continue
 		}
 		if v, keep := dropExempt(v, g); keep {
+			if v.Fix == "" {
+				v.Fix = ck.Fix
+				if v.Check == checkSprite {
+					v.Fix = spriteFix[v.Rule]
+				}
+			}
 			out = append(out, v)
 		}
 	}
@@ -232,10 +247,20 @@ func dropExempt(v violation, g *pxlib.Grid) (violation, bool) {
 
 // pxRules は検査の閾値（bin/lint-rules/px.json）。
 type pxRules struct {
-	FlatRunRepeat     int     `json:"flatRunRepeat"`
-	FlatRunStraight   int     `json:"flatRunStraight"`
-	FlatRunPer        int     `json:"flatRunPer"`
-	GroundContrastMin float64 `json:"groundContrastMin"`
+	FlatRunRepeat     int                 `json:"flatRunRepeat"`
+	FlatRunStraight   int                 `json:"flatRunStraight"`
+	FlatRunPer        int                 `json:"flatRunPer"`
+	GroundContrastMin float64             `json:"groundContrastMin"`
+	RampMinGap        float64             `json:"rampMinGap"`
+	PillowEdgeGap     float64             `json:"pillowEdgeGap"`
+	PillowSideGap     float64             `json:"pillowSideGap"`
+	PillowMinArea     int                 `json:"pillowMinArea"`
+	LightDirMinArea   int                 `json:"lightDirMinArea"`
+	BlackOutlineMax   int                 `json:"blackOutlineMaxSize"`
+	ValueSepMin       float64             `json:"valueSepMin"`
+	SeamRatio         float64             `json:"seamRatio"`
+	MaxRounds         int                 `json:"maxRounds"`
+	Styles            map[string]*pxStyle `json:"styles"`
 }
 
 // loadRules は閾値を読む。読めなければ止める（既定値へ倒すと、消しただけで検査が黙って緩む）。
@@ -251,6 +276,10 @@ func loadRules(root string) (*pxRules, error) {
 	}
 	if r.FlatRunRepeat < 2 || r.FlatRunStraight < 1 || r.FlatRunPer < 1 || r.GroundContrastMin <= 0 {
 		return nil, fmt.Errorf("%s に flatRunRepeat・flatRunStraight・flatRunPer・groundContrastMin を書く", path)
+	}
+	if r.RampMinGap <= 0 || r.PillowEdgeGap <= 0 || r.PillowSideGap <= 0 || r.PillowMinArea < 1 || r.LightDirMinArea < 1 ||
+		r.BlackOutlineMax < 1 || r.ValueSepMin <= 0 || r.SeamRatio <= 0 || r.MaxRounds < 1 {
+		return nil, fmt.Errorf("%s に rampMinGap・pillowEdgeGap・pillowSideGap・pillowMinArea・lightDirMinArea・blackOutlineMaxSize・valueSepMin・seamRatio・maxRounds を書く", path)
 	}
 	return &r, nil
 }
@@ -268,6 +297,7 @@ func init() {
 	})
 	registerCheck(&checkDef{
 		Name: checkFlatRun, Summary: "輪郭の段: 同じ長さの段が続く（直線に読まれる）・長すぎる直線（16px で 4px・32px で 6px を超える）", Level: levelAdvice,
+		Fix: "形（shape）の半径か点を 1px ずらして段の長さを変える。直線にしたい所なら rect で引く",
 		Run: func(g *pxlib.Grid, c *checkCtx) []violation {
 			limit := c.Rules.FlatRunStraight + max(g.W, g.H)/c.Rules.FlatRunPer
 			var out []violation
@@ -295,6 +325,7 @@ func init() {
 	})
 	registerCheck(&checkDef{
 		Name: checkRunMonotone, Summary: "曲線の段の長さが単調でない（3-2-1 は良い・1-2-1-2 と 3-2-1-4 は不可）", Level: levelLint,
+		Fix: "形を SDF（ellipse・capsule・smoothUnion）で引き直す。手で打った stamp・put の段なら長さを 3-2-1 に揃える",
 		Run: func(g *pxlib.Grid, c *checkCtx) []violation {
 			var out []violation
 			eachStair(g.Opaque(), func(runs []stairRun) {
@@ -323,6 +354,7 @@ func init() {
 	})
 	registerCheck(&checkDef{
 		Name: checkGroundContrast, Summary: "外周の画素と地の色の明るさ（Oklab の L）の差が小さく、輪郭が地に溶ける", Level: levelLint,
+		Fix: "sel_out の drop を 1 増やす（縁を暗く）か、rim_light で光と反対の縁を明るくする",
 		Run: func(g *pxlib.Grid, c *checkCtx) []violation {
 			gl, ok := pxlib.Lightness(c.Ground)
 			if !ok {
