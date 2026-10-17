@@ -1,7 +1,7 @@
 [lint-flix-reserved] OK (1 ファイル)
 [lint-value-discard] OK (1 ファイル)
 OK: 矩形だけの View はありません（除外 0 件）
-[lint-fallback] OK (bug! 0 件を検査 / 除外 16 件)
+[lint-fallback] OK (bug! 0 件を検査 / 除外 15 件)
 除外: RenderUtil.f32 — Float64 → Float32 の変換そのもの。GL の uniform へ渡す境界の入り口で、ここが Float32 を返さないと境界の内側が書けない
   engine/src/Wobble.flix: Wobble.amount の pub 面に Float32 があります
       pub def amount(t: Float32): Float32

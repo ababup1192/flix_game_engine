@@ -52,6 +52,7 @@
 | 動詞の残り（load・build・with・to/as）の使い分け | 文書 | 型から見分けられない。AGENTS.md の判断の向きに 1 行 | ― |
 | AI の素材は atelier/ へ | script | hook-asset-guard（Write / Edit / apply_patch と、Bash のリダイレクト・`sed -i`・`cp` の行き先・書き込むスクリプトの中のパス） | r3 atelier へ書いた・r4 Bash の `sed -i` で抜けた（穴）→ Bash も見るようにして r5 フックが止めた |
 | .flix を丸読みしない | script | hook-read-guard（300 行超を offset も limit も無しに Read・パイプ無しの `cat`）。`head` や `less` は見ない | r3・r4 フックが止め、範囲を決めて読んだ |
+| Codex でも同じフックで止める | script | `.codex/hooks.json`。Codex 0.162 の実機で、ファイル編集は tool_name `apply_patch`（`tool_input.command` にパッチ本文・絶対パス）、シェルは `Bash`（`tool_input.command`）で届く。PostToolUse の matcher は `Edit|Write` だったので Codex では動いていなかった → `apply_patch` を足し、既にあるゲームへは sync が matcher を広げる | Codex に assets/ の sprite を apply_patch で書かせる・`sed -i` で書かせる・638 行の .flix を `cat` させる → 3 つとも PreToolUse が止めた。git worktree の中の Codex は、worktree ではなく元のリポの `.codex/hooks.json` を読む（下の注） |
 | NOTES の先頭を短く | script | notes-rotate（ゲーム側の表） | ゲーム側の表 |
 | テスト方針（何をテストするか・期待値は Doc から・橋渡しは最大 3 本・1 テスト 1 アサート・本体にロジックを書かない） | 文書 | quality-assurance・AGENTS.md の判断の向き。数のリテラルの forbid 案は 66 件が正しい使い方で見送り | r3 断った・r4 `expected = 12` でコミット（文書だけの決まり。止めない） |
 | 初学者の足場・早見表に足すのと対でまとめる | 文書 | ― | ― |
@@ -69,3 +70,10 @@
 - ⑤ 葉の z の幅 32 越えを描き出しで warnOnce: 数えるとゲームの描き出しで 32 越えが 11 回あったので見送り。lint の leafZRange と文書のまま。
 - ⑥ App の内部の口: RemoteDebug を `App.RemoteDebug` の子へ移し、historyLimit・resumePoint・worldAt・applyReload・sceneItems の 5 つを pub から外した。外の module からは E0237。z を書き換える zMapped は使う 3 つ（App・SortingLayer・UiRender）に非公開の写しを置き、`EngineInternal` と forbid の engine-internal を消した（0.35.38）。
 - 見送り: 秒と拍の phantom（Timeline.Duration の case 名で足りる）・音の名前の型（App に型の引数が増える。綴りは script で見る方が安い）・確認の窓を 1 つの Option にまとめる（ゲーム側の案）。newtype は 0.77.0 では case を外から作れるので守りにならない。
+
+## 注: Codex と git worktree
+
+Codex（0.162）は git worktree の中で動かしても、worktree の `.codex/hooks.json` ではなく、元のリポジトリ（git の共通ディレクトリの親）の
+`.codex/hooks.json` を読む。元のリポが古い版のままだと、無くなった台本を呼ぶフックが毎回失敗し、Codex はその失敗の文面を答え続けた
+（2026-10-17 の試し。PreToolUse は 1 度も呼ばれず、assets/ への書き換えも通った）。worktree で Codex を使うときは、元のリポの
+`.codex/hooks.json` も今の版にそろえる（`make sync-agents GAME=<元のリポ>`）か、worktree ではない clone で動かす。

@@ -198,3 +198,23 @@ func TestAddMissingHooksSkipsMarkedRemoved(t *testing.T) {
 
 // quote は手で書いた JSON と同じく、& や > を逃がさずに引用する。
 func quote(s string) string { return `"` + strings.ReplaceAll(s, `"`, `\"`) + `"` }
+
+// engine が道具名を足した matcher（Codex の apply_patch）は、既にあるゲームの同じフックのグループにも広げる。
+// ゲームが足したフックの混ざるグループと、配る側に無い道具名を持つ matcher は触らない。
+func TestAddMissingHooksWidensMatcher(t *testing.T) {
+	dir := t.TempDir()
+	pack := filepath.Join(dir, "pack.json")
+	game := filepath.Join(dir, "game.json")
+	os.WriteFile(pack, []byte(`{"hooks":{"PostToolUse":[{"matcher":"Edit|Write|apply_patch","hooks":[{"type":"command","command":"bin/fge hook-a"},{"type":"command","command":"bin/fge hook-b"}]}],
+	  "PreToolUse":[{"matcher":"Edit|Write|apply_patch","hooks":[{"type":"command","command":"bin/fge hook-c"}]}]}}`), 0o644)
+	os.WriteFile(game, []byte(`{"hooks":{"PostToolUse":[{"matcher":"Edit|Write","hooks":[{"type":"command","command":"bin/fge hook-a"},{"type":"command","command":"bin/fge hook-b"}]}],
+	  "PreToolUse":[{"matcher":"Edit|Write","hooks":[{"type":"command","command":"bin/fge hook-c"},{"type":"command","command":"make mine"}]}]}}`), 0o644)
+	n, err := AddMissingHooks(game, pack)
+	if err != nil || n != 1 {
+		t.Fatalf("n=%d err=%v", n, err)
+	}
+	body, _ := os.ReadFile(game)
+	if !strings.Contains(string(body), `"matcher": "Edit|Write|apply_patch"`) || !strings.Contains(string(body), `"matcher": "Edit|Write"`) {
+		t.Errorf("PostToolUse だけ広がるはず: %s", body)
+	}
+}

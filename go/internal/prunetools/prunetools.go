@@ -334,9 +334,19 @@ func AddMissingHooks(gamePath, packPath string) (int, error) {
 			group, _ := g.(map[string]any)
 			matcher, _ := group["matcher"].(string)
 			hooks, _ := group["hooks"].([]any)
+			packCmds := map[string]bool{}
+			for _, h := range hooks {
+				if c, _ := h.(map[string]any)["command"].(string); c != "" {
+					packCmds[c] = true
+				}
+			}
 			for _, h := range hooks {
 				cmd, _ := h.(map[string]any)["command"].(string)
-				if cmd == "" || strings.Contains(text, jsonEscaped(cmd)) || isMarkedRemoved(cmd, removedMarks) {
+				if cmd == "" || isMarkedRemoved(cmd, removedMarks) {
+					continue
+				}
+				if strings.Contains(text, jsonEscaped(cmd)) {
+					added += widenMatcher(gameEvents, name, cmd, matcher, packCmds)
 					continue
 				}
 				addHook(gameEvents, name, matcher, h)
@@ -380,6 +390,51 @@ func isMarkedRemoved(cmd string, marks []any) bool {
 		}
 	}
 	return false
+}
+
+// widenMatcher は、cmd を持つゲームのグループの matcher が配る側の matcher の一部の道具名しか
+// 持たないとき（"Edit|Write" と "Edit|Write|apply_patch"）、配る側の matcher に広げて 1 を返す。
+// WhyNot: 呼び出しの文字列だけで「もうある」と見ると、engine が道具名を足しても既にある
+// ゲームに届かなかった（Codex は編集を apply_patch・シェルを Bash で呼ぶ。0.35.38 で実機で確かめた）。
+// 配る側に無い道具名を持つ matcher（ゲームが選んだ物）と、ゲームが足したフックの混ざるグループは触らない。
+func widenMatcher(events map[string]any, name, cmd, packMatcher string, packCmds map[string]bool) int {
+	if packMatcher == "" {
+		return 0
+	}
+	want := map[string]bool{}
+	for _, t := range strings.Split(packMatcher, "|") {
+		want[t] = true
+	}
+	groups, _ := events[name].([]any)
+	for _, g := range groups {
+		group, ok := g.(map[string]any)
+		if !ok {
+			continue
+		}
+		hooks, _ := group["hooks"].([]any)
+		has, allPack := false, true
+		for _, h := range hooks {
+			c, _ := h.(map[string]any)["command"].(string)
+			has = has || c == cmd
+			allPack = allPack && packCmds[c]
+		}
+		m, _ := group["matcher"].(string)
+		if !has || m == "" || m == packMatcher {
+			continue
+		}
+		parts := strings.Split(m, "|")
+		subset := len(parts) < len(want)
+		for _, t := range parts {
+			if !want[t] {
+				subset = false
+			}
+		}
+		if subset && allPack {
+			group["matcher"] = packMatcher
+			return 1
+		}
+	}
+	return 0
 }
 
 // addHook は events[name] の中の matcher が同じグループへ hook を足す（無ければグループを作る）。

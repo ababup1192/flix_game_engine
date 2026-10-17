@@ -127,6 +127,6 @@
     "suffix": ".flix",
     "maxLines": 300,
     "catCommands": ["cat"],
-    "message": "{path} は {lines} 行あります（{max} 行を超える .flix は丸ごと読まない）。grep -n か make src Q=<名前> で位置を引き、Read の offset/limit で必要な範囲だけ読んでください。"
+    "message": "{path} は {lines} 行あります（{max} 行を超える .flix は丸ごと読まない）。grep -n か make src Q=<名前> で位置を引き、Read の offset/limit（Codex なら sed -n '開始,終わりp'）で必要な範囲だけ読んでください。"
   }
 }
