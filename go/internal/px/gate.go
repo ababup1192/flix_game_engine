@@ -23,10 +23,11 @@ const freeStyle = "free"
 
 // colorGate は読んだ色の門。
 type colorGate struct {
-	Path   string
-	Styles map[string]*gateStyle
-	Deny   []gateDeny
-	Files  map[string]*gateFile
+	Path    string
+	Default string // files に無い sprite.json に当てる画風（省くと files に無い物は止める）
+	Styles  map[string]*gateStyle
+	Deny    []gateDeny
+	Files   map[string]*gateFile
 }
 
 // gateStyle は 1 つの画風で使ってよい色の集合と、その出どころ。
@@ -153,6 +154,12 @@ func loadColorGate(root, path string) (*colorGate, error) {
 		}
 		g.Styles[name] = st
 	}
+	if d, ok := doc["default"]; ok {
+		g.Default, _ = d.(string)
+		if g.Styles[g.Default] == nil {
+			bad("default", "%q が styles に無い（files に無い新しい sprite.json に当てる画風の名前）", g.Default)
+		}
+	}
 	deny, _ := doc["deny"].([]any)
 	for i, e := range deny {
 		m, _ := e.(map[string]any)
@@ -204,13 +211,29 @@ func loadColorGate(root, path string) (*colorGate, error) {
 
 func str(v any) string { s, _ := v.(string); return s }
 
+// gateHint は files に無い sprite.json をどの画風で見るか（spec の style から）。
+type gateHint struct {
+	Style   string // 色の門の styles の名前（spec の style が門の画風を名指した時）
+	Machine bool   // spec の style が機種の決まり（色は検査 style が gate の重さで縛るので、門は deny だけ見る）
+}
+
 // CheckDoc は 1 冊の sprite.json（slot はファイル名。assets/ と atelier/ の同じ名前に同じ決まり）を見る。
-// known で通した色の名前は known に返す。
-func (g *colorGate) CheckDoc(root string, doc *pxlib.Obj, slot string) (bad []gateFinding, known []string) {
+// files に無い時は、spec の style（hint）・門の default の順に画風を決めて見る（新しい絵のたびに files へ足させない）。
+// どれも無ければ止める。known で通した色の名前は known に返す。
+func (g *colorGate) CheckDoc(root string, doc *pxlib.Obj, slot string, hint gateHint) (bad []gateFinding, known []string) {
 	f := g.Files[slot]
 	if f == nil {
-		return []gateFinding{{Slot: slot, Kind: gateNoEntry,
-			Msg: fmt.Sprintf("%s: %s の files に無い（画風 %s のどれかを書く）", slot, g.Path, g.styleNames())}}, nil
+		switch {
+		case hint.Style != "" && g.Styles[hint.Style] != nil:
+			f = &gateFile{Style: hint.Style}
+		case hint.Machine:
+			f = &gateFile{Style: freeStyle}
+		case g.Default != "":
+			f = &gateFile{Style: g.Default}
+		default:
+			return []gateFinding{{Slot: slot, Kind: gateNoEntry,
+				Msg: fmt.Sprintf("%s: %s の files に無い（画風 %s のどれかを書くか、門に default を書く）", slot, g.Path, g.styleNames())}}, nil
+		}
 	}
 	var st *gateStyle
 	if f.Style != freeStyle {

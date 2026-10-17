@@ -17,9 +17,9 @@ package px
 // 書き損じは黙って読み飛ばさず、場所つきの Problem にして全部返す。
 
 import (
-	"math"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -84,7 +84,7 @@ type part struct {
 	BaseAt pxlib.Pt // コマの patch を当てる前の at（親が動いた量 = At − BaseAt を子へ渡す）
 	Ops    []opCall
 	Where  string
-	Rotate float64   // 部品を回す角度（度。正で時計回り。rotsprite の考え方で色を足さない）
+	Rotate float64     // 部品を回す角度（度。正で時計回り。rotsprite の考え方で色を足さない）
 	Pivot  *[2]float64 // 回す中心の画素（.5 で画素の境目。省くと塊の上の真ん中 = 肩・股の付け根）
 }
 

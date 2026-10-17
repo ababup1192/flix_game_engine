@@ -79,6 +79,7 @@ type opDef struct {
 	Exempt    []checkRef // この op が描いた画素は、この検査の対象外（作法として置く形）
 	Whole     bool       // 格子全体に描く（use の at・部品の at でずらせない）
 	PostOnly  bool       // post にだけ書ける（部品の ops には書けない）
+	Quiet     bool       // 見比べで差が出なかった op（docs/px-ops.md の早見表・一覧・引数から外す。fge px help・fge px ops では引ける）
 	Apply     func(c *ctx, a opArgs) error
 }
 

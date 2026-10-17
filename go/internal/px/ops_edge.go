@@ -307,7 +307,7 @@ func hexTable(hexOf map[pxlib.Key]string) map[string]string {
 
 func init() {
 	register(&opDef{
-		Name: "sel_out", Example: `{"sel_out": {}}`,
+		Name: "sel_out", Quiet: true, Example: `{"sel_out": {}}`,
 		Summary:   "塊の外側 1px を、内側の隣の色を材質のランプで drop 段暗くした色で縁取る（光の側は lit_drop 段）",
 		Technique: "sel-out（色トレス。輪郭を部品ごとの色に・黒は下と奥に絞る）", Finish: "lint black-outline",
 		Params: []param{
@@ -327,7 +327,7 @@ func init() {
 		},
 	})
 	register(&opDef{
-		Name: "ground_shadow", Example: `{"ground_shadow": {}}`,
+		Name: "ground_shadow", Quiet: true, Example: `{"ground_shadow": {}}`,
 		Summary:   "塊の足元に横長の楕円の接地影を落とす（物の上には塗らない。地面の色は 1 段暗く・透明の所は ramp[1]）",
 		Technique: "接地影（物を地面に置く）", Finish: "ground-contrast",
 		Params: []param{
@@ -348,7 +348,9 @@ func init() {
 			}
 			ramp := c.Ramp()
 			if n := a.str("ramp"); n != "" {
-				ramp = c.Spec.Ramps[n]
+				if ramp = c.Spec.Ramps[n]; ramp == nil {
+					return fmt.Errorf("ramps に %q が無い", n)
+				}
 			} else if len(ramp) == 0 && c.Sprite != nil {
 				ramp = c.Spec.Ramps[c.Sprite.Ramp]
 			}
@@ -360,7 +362,7 @@ func init() {
 		},
 	})
 	register(&opDef{
-		Name: "rim_light", Example: `{"rim_light": {}}`,
+		Name: "rim_light", Quiet: true, Example: `{"rim_light": {}}`,
 		Summary:   "塊の縁のうち光と反対の側の 1px を by 段明るくする（暗い材質を暗い地から抜く）",
 		Technique: "sel-out（光の側は明るく）・照り返しの縁", Finish: "ground-contrast",
 		Params: []param{{Name: "by", Type: tInt, Default: 1.0, Summary: "明るくする段数", Lo: bound(1), Hi: bound(4)}, pAgainst},

@@ -154,9 +154,22 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 			}
 		}
 	}
-	style, err := loadStyle(root, opt.RulesRoot, spec.Style)
-	if err != nil {
-		return nil, err
+	// spec の style は、色の門の画風（styles の名前）か機種の決まり（px.json の styles か *.pxstyle.json）
+	var gate *colorGate
+	if spec.Gate != "" {
+		if gate, err = loadColorGate(root, spec.Gate); err != nil {
+			return nil, err
+		}
+	}
+	var hint gateHint
+	var style *pxStyle
+	if gate != nil && gate.Styles[spec.Style] != nil {
+		hint.Style = spec.Style
+	} else {
+		if style, err = loadStyle(root, opt.RulesRoot, spec.Style); err != nil {
+			return nil, err
+		}
+		hint.Machine = style != nil
 	}
 	if style != nil {
 		for k, h := range style.Colors {
@@ -244,6 +257,7 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 		for _, seed := range seeds {
 			var seqNames []string
 			var seqRows [][]string
+			var seqGrids []*pxlib.Grid
 			for fi, f := range sp.Frames {
 				r := &reader{}
 				parts := sp.partsOf(r, spec, f)
@@ -309,7 +323,7 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 				}
 				frames.Set(fname, rowsAny(rows))
 				res.Frames = append(res.Frames, fr)
-				seqNames, seqRows = append(seqNames, fname), append(seqRows, rows)
+				seqNames, seqRows, seqGrids = append(seqNames, fname), append(seqRows, rows), append(seqGrids, c.G)
 				if !opt.NoCheck {
 					cc.Measures, cc.Wrap = c.measures, c.wrap
 					for _, n := range append(frameChecks, techFrameChecks...) {
@@ -325,6 +339,11 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 				for _, note := range animRules.CheckSequence(sp.Name, seqNames, seqRows) {
 					addViolations([]violation{{Check: checkAnim, Level: levelLint, Msg: note, Fix: checks[checkAnim].Fix}}, sp.Name, "")
 				}
+				t := time.Now()
+				for _, v := range sequenceChecks(seqNames, seqGrids) {
+					addViolations([]violation{v}, sp.Name, v.Frame)
+				}
+				checkDur += time.Since(t)
 			}
 		}
 	}
@@ -339,12 +358,8 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 	res.Timing.Check = checkDur
 	res.Timing.Draw = time.Since(t0) - checkDur
 	tGate := time.Now()
-	if spec.Gate != "" {
-		gate, err := loadColorGate(root, spec.Gate)
-		if err != nil {
-			return nil, err
-		}
-		bad, known := gate.CheckDoc(root, doc, filepath.Base(spec.Target))
+	if gate != nil {
+		bad, known := gate.CheckDoc(root, doc, filepath.Base(spec.Target), hint)
 		res.Known = known
 		for _, b := range bad {
 			res.Violations = append(res.Violations, gateViolation(b, res.Frames))

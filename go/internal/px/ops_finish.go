@@ -129,7 +129,7 @@ func mirrorPixels(g *pxlib.Grid, m pxlib.Mask, axis float64, left bool) map[pxli
 func init() {
 	register(&opDef{
 		Name: "depth_fade", Example: `{"depth_fade": {"depth": 0.5, "toward": "light"}}`,
-		Summary:   "遠い層ほど、塗った色を空の色 toward へ depth の割合で寄せ（明度差も縮む）、一番近い候補の色に置き換える（色は足さない）",
+		Summary:   "遠い層ほど、塗った色を空の色 toward へ depth の割合で寄せ（明度差も縮む）、一番近い候補の色に置き換える（色は足さない。候補は spec の style があればその色の集合、無ければ spec のランプの色と toward）",
 		Technique: "背景の奥行き（遠いほど明度差が小さく、空の色・青へ寄る）", Finish: "lint value-sep（contrast で測る）",
 		Params: []param{
 			pShape,

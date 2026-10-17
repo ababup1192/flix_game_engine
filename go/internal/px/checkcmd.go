@@ -50,7 +50,7 @@ func checkFiles(engineRoot, workRoot, gatePath string, paths []string) (*checkRe
 			rep.Gate = append(rep.Gate, gateFinding{Slot: filepath.Base(p), Kind: gateUnreadable, Msg: fmt.Sprintf("%s: 読めない（%v）", p, err)})
 			continue
 		}
-		bad, known := gate.CheckDoc(workRoot, doc, filepath.Base(p))
+		bad, known := gate.CheckDoc(workRoot, doc, filepath.Base(p), gateHint{})
 		for _, b := range bad {
 			b.Msg = shown + "/" + b.Msg
 			rep.Gate = append(rep.Gate, b)

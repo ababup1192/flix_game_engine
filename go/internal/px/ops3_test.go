@@ -4,10 +4,10 @@ package px
 // どれも小さな入力と期待する出力。色は 1 字 = 1 色キー（a < b < c < d の灰の 4 段）、'.' は透明。
 
 import (
-	"fmt"
-	"math"
 	"encoding/json"
+	"fmt"
 	"image/color"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"

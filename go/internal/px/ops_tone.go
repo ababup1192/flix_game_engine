@@ -196,7 +196,7 @@ func (c *ctx) meanL(m pxlib.Mask) (float64, pxlib.Pt, bool) {
 
 func init() {
 	register(&opDef{
-		Name: "ramp_pick", Example: `{"ramp_pick": {"base": "c2", "n": 3, "shift": 0}}`,
+		Name: "ramp_pick", Quiet: true, Example: `{"ramp_pick": {"base": "c2", "n": 3, "shift": 0}}`,
 		Summary:   "地の色 base から暗 → 明 n 段のランプを色票（style があればその色）から選び、この部品のランプにする（hue shift つき）",
 		Technique: "hue shift のランプ（Pixelorama の Shading tool の Hue Shifting）", Finish: "色の門・ランプの単調さ（ramp-order）",
 		Params: []param{

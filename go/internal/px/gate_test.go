@@ -44,7 +44,7 @@ func TestGateMatchesPython(t *testing.T) {
 			t.Fatal(err)
 		}
 		slot := filepath.Base(path)
-		bad, known := gate.CheckDoc(root, doc, slot)
+		bad, known := gate.CheckDoc(root, doc, slot, gateHint{})
 		got := [][3]string{}
 		for _, b := range bad {
 			got = append(got, [3]string{b.Sprite, b.Key, string(b.Kind)})
@@ -95,6 +95,62 @@ func TestColorGateRejectsMissingWhy(t *testing.T) {
 	for _, want := range []string{"files.a.sprite.json.style", "files.a.sprite.json.allow[0].why"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("%q が誤りに無い: %v", want, err)
+		}
+	}
+}
+
+// files に無い新しい sprite.json は、spec の style（門の画風）か門の default の画風で見る。
+// 決めた色の外は今までどおり止め、どちらも無ければ files に無いことで止める。
+func TestColorGateDefaultStyle(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, body string) {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	gateBody := func(def string) string {
+		return `{"version": 2, ` + def + `"styles": {"day": {"label": "昼の外", "colors": {"w": "#ffffeb"}}, "night": {"label": "夜の外", "colors": {"k": "#123456"}}}, "files": {}}`
+	}
+	sprite := func(hex string) *pxlib.Obj {
+		o, err := pxlib.DecodeOrdered([]byte(`{"version": 1, "palette": {"c": "` + hex + `"}, "legend": {"a": "c"}, "sprites": {"s": {"frames": {"f": ["a"]}}}}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return o.(*pxlib.Obj)
+	}
+	kinds := func(g *colorGate, hex string, hint gateHint) string {
+		bad, _ := g.CheckDoc(dir, sprite(hex), "new.sprite.json", hint)
+		var ks []string
+		for _, b := range bad {
+			ks = append(ks, string(b.Kind))
+		}
+		return strings.Join(ks, ",")
+	}
+	write("none.json", gateBody(""))
+	write("def.json", gateBody(`"default": "day", `))
+	none, err := loadColorGate(dir, "none.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	def, err := loadColorGate(dir, "def.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name string
+		g    *colorGate
+		hex  string
+		hint gateHint
+		want string
+	}{
+		{"既定も style も無い", none, "#ffffeb", gateHint{}, "no-entry"},
+		{"既定の画風の色", def, "#ffffeb", gateHint{}, ""},
+		{"既定の画風の外", def, "#123456", gateHint{}, "outside"},
+		{"spec の style が先", def, "#123456", gateHint{Style: "night"}, ""},
+		{"spec の style の外", none, "#ffffeb", gateHint{Style: "night"}, "outside"},
+	} {
+		if got := kinds(tc.g, tc.hex, tc.hint); got != tc.want {
+			t.Errorf("%s: got %q want %q", tc.name, got, tc.want)
 		}
 	}
 }

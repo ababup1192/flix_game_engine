@@ -132,6 +132,8 @@ func init() {
 		Params: []param{
 			pShape,
 			{Name: "band", Type: tNumber, Default: 0.0, Summary: "段の境目のディザの幅（0 = ベタの帯）", Lo: bound(0), Hi: bound(8)},
+			{Name: "from", Type: tInt, Default: 0.0, Summary: "使う一番暗い段", Lo: bound(0), Hi: bound(15)},
+			{Name: "to", Type: tInt, Default: -1.0, Summary: "使う一番明るい段（-1 で最明）", Lo: bound(-1), Hi: bound(15)},
 		},
 		Checks: []checkRef{{Check: checkPillow}, {Check: checkLightDir}},
 		Apply: func(c *ctx, a opArgs) error {
@@ -140,8 +142,16 @@ func init() {
 				return err
 			}
 			ramp := c.Ramp()
+			from, to := a.int("from"), a.int("to")
+			if to < 0 {
+				to += len(ramp)
+			}
+			if from < 0 || to >= len(ramp) || from > to {
+				return fmt.Errorf("from・to がランプ（%d 段）の外", len(ramp))
+			}
+			ramp = ramp[from : to+1]
 			if len(ramp) < 2 {
-				return fmt.Errorf("2 段以上のランプが要る")
+				return fmt.Errorf("2 段以上のランプが要る（from・to の間が 1 段）")
 			}
 			f := directional(m, c.Spec.Light.Dir[0], c.Spec.Light.Dir[1])
 			for _, p := range m.Points() {

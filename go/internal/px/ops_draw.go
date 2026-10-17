@@ -187,7 +187,7 @@ func init() {
 		},
 	})
 	register(&opDef{
-		Name: "pixel_perfect", Example: `{"pixel_perfect": {"color": "ink"}}`, Summary: "1px の線の L 字の角（ダブル）を左上から順に抜く（抜いた所は線の下の色に戻す）",
+		Name: "pixel_perfect", Quiet: true, Example: `{"pixel_perfect": {"color": "ink"}}`, Summary: "1px の線の L 字の角（ダブル）を左上から順に抜く（抜いた所は線の下の色に戻す）",
 		Technique: "pixel-perfect（Aseprite の Pencil の Pixel Perfect）", Finish: "既存の lint corner",
 		Params: []param{pOptColor},
 		Checks: []checkRef{{Check: checkSprite, Rule: "corner"}},

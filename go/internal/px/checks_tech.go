@@ -6,6 +6,7 @@ package px
 import (
 	"fmt"
 	"math"
+	"strings"
 
 	"github.com/ababup1192/flix_game_engine/go/internal/pxlib"
 )
@@ -19,6 +20,8 @@ const (
 	checkSeam         checkName = "seam"          // タイルの継ぎ目
 	checkAnim         checkName = "anim"          // コマ列（bin/fge anim の pop・area・ground・bob・loop）
 	checkStyle        checkName = "style"         // 機種の決まり
+	checkFlicker      checkName = "flicker"       // コマの間で周りが動かないのに色だけ変わる画素
+	checkMargin       checkName = "margin"        // 動く絵が格子の縁に詰まっている
 )
 
 // spriteFix は形の規則ごとの直し方。
@@ -311,6 +314,125 @@ func init() {
 		Fix: "sway・bob の amp か squash の amount を下げる。輪が閉じないならコマの数を sin の周期に合わせる",
 		Run: func(*pxlib.Grid, *checkCtx) []violation { return nil }, // コマ列を見るので build が直に回す
 	})
+	registerCheck(&checkDef{
+		Name: checkFlicker, Summary: "flicker: コマの間で周り 8 画素が動かないのに色だけ変わる画素（ちらつき。palette_cycle と wave_shift の画素は除く）", Level: levelLint,
+		Fix: "その画素を描く op がコマごとに違う色を選んでいないか見る（seed・dither の位置をコマで揃える）。色を回したいなら palette_cycle か wave_shift で書く",
+		Run: func(*pxlib.Grid, *checkCtx) []violation { return nil }, // コマ列を見るので build が直に回す
+	})
+	registerCheck(&checkDef{
+		Name: checkMargin, Summary: "margin: 動く絵が格子の左・右・上の縁に触れている（動く余白が無い）", Level: levelAdvice,
+		Fix: "size を広げるか、部品の at で絵を内側へ寄せて、動く向きに 1〜2px の余白を空ける",
+		Run: func(*pxlib.Grid, *checkCtx) []violation { return nil }, // コマ列を見るので build が直に回す
+	})
+}
+
+// flickerExempt は色を回すのが仕事の op（その画素はちらつきと見ない）。
+var flickerExempt = map[string]bool{"palette_cycle": true, "wave_shift": true}
+
+// sequenceChecks はコマ列（並び順・最後から最初へ輪）に flicker と margin をかける。
+func sequenceChecks(names []string, grids []*pxlib.Grid) []violation {
+	var out []violation
+	n := len(grids)
+	if n < 2 {
+		return nil
+	}
+	for i := 0; i < n; i++ {
+		a, b := grids[i], grids[(i+1)%n]
+		if a.W != b.W || a.H != b.H {
+			continue
+		}
+		var cells []pxlib.Pt
+		for y := 0; y < a.H; y++ {
+			for x := 0; x < a.W; x++ {
+				ka, kb := a.At(x, y), b.At(x, y)
+				if ka == kb || ka == pxlib.Clear || kb == pxlib.Clear {
+					continue
+				}
+				if flickerExempt[baseOp(a.SrcAt(x, y).Op)] || flickerExempt[baseOp(b.SrcAt(x, y).Op)] {
+					continue
+				}
+				still := true
+				for dy := -1; dy <= 1 && still; dy++ {
+					for dx := -1; dx <= 1; dx++ {
+						if (dx != 0 || dy != 0) && a.In(x+dx, y+dy) && a.At(x+dx, y+dy) != b.At(x+dx, y+dy) {
+							still = false
+							break
+						}
+					}
+				}
+				if still {
+					cells = append(cells, pxlib.Pt{X: x, Y: y})
+				}
+			}
+		}
+		if len(cells) > 0 {
+			out = append(out, violation{Check: checkFlicker, Level: levelLint, Frame: names[(i+1)%n], X: cells[0].X, Y: cells[0].Y, HasAt: true, Cells: cells,
+				Msg: fmt.Sprintf("%s → %s で、周りが動かないのに色だけ変わる画素が %d 個（ちらつく）", names[i], names[(i+1)%n], len(cells)), Fix: checks[checkFlicker].Fix})
+		}
+	}
+	// 動く絵の外接箱が左・右・上の縁に触れていれば、動く余白が無い（足元の下の縁は地面なので見ない）
+	moving := false
+	for i := 1; i < n && !moving; i++ {
+		for y := 0; y < grids[0].H && !moving; y++ {
+			for x := 0; x < grids[0].W; x++ {
+				if grids[i].At(x, y) != grids[0].At(x, y) {
+					moving = true
+					break
+				}
+			}
+		}
+	}
+	if moving {
+		var sides []string
+		w, h := grids[0].W, grids[0].H
+		touch := func(f func(g *pxlib.Grid) bool) bool {
+			for _, g := range grids {
+				if f(g) {
+					return true
+				}
+			}
+			return false
+		}
+		col := func(x int) func(g *pxlib.Grid) bool {
+			return func(g *pxlib.Grid) bool {
+				for y := 0; y < h; y++ {
+					if g.At(x, y) != pxlib.Clear {
+						return true
+					}
+				}
+				return false
+			}
+		}
+		if touch(col(0)) {
+			sides = append(sides, "左")
+		}
+		if touch(col(w - 1)) {
+			sides = append(sides, "右")
+		}
+		if touch(func(g *pxlib.Grid) bool {
+			for x := 0; x < w; x++ {
+				if g.At(x, 0) != pxlib.Clear {
+					return true
+				}
+			}
+			return false
+		}) {
+			sides = append(sides, "上")
+		}
+		if len(sides) > 0 {
+			out = append(out, violation{Check: checkMargin, Level: levelAdvice,
+				Msg: fmt.Sprintf("動く絵が%sの縁に触れている（動く余白が無いと動きが縮こまる）", strings.Join(sides, "・")), Fix: checks[checkMargin].Fix})
+		}
+	}
+	return out
+}
+
+// baseOp は書き手の op の名前（use の中なら最後の op）。
+func baseOp(op string) string {
+	if i := strings.LastIndex(op, ">"); i >= 0 {
+		return op[i+1:]
+	}
+	return op
 }
 
 func onlyIn(pts []pxlib.Pt, m pxlib.Mask) []pxlib.Pt {

@@ -1,0 +1,18 @@
+{
+  "version": 2,
+  "note": "ドット絵の色の門（bin/fge px build の spec の gate と bin/fge px check が読む。書式は engine の docs/colorgate.schema.json）。破ってはいけない色の決まりだけを見る。default = files に書いていない新しい sprite.json に当てる画風（新しい絵のたびに files へ足さなくてよい）。styles = 画風ごとに使ってよい色の出どころ（game は色票 assets/__NAME__.palette.json の色）。いじると変わる物: 色票に色を足すとその色が門を通る・画風を増やしたら styles に足して files で名指す・deny の色はどの画風でも止まる。",
+  "default": "game",
+  "styles": {
+    "game": {
+      "label": "色票（__NAME__.palette.json）の外",
+      "from": "assets/__NAME__.palette.json"
+    }
+  },
+  "deny": [
+    {
+      "color": "#000000",
+      "why": "輪郭と影はその素材のランプの最暗色にする"
+    }
+  ],
+  "files": {}
+}

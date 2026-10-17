@@ -18,6 +18,11 @@
       "label": "メモ",
       "description": "いじると何が変わるか"
     },
+    "default": {
+      "type": "string",
+      "label": "既定の画風",
+      "description": "files に無い新しい sprite.json に当てる画風（styles の名前）。spec の style が門の画風を名指せばそちらが先。省くと files に無い物は止める"
+    },
     "styles": {
       "type": "object",
       "label": "画風ごとの色の集合",
@@ -86,7 +91,7 @@
     "files": {
       "type": "object",
       "label": "sprite.json ごとの決まり",
-      "description": "鍵は sprite.json のファイル名（assets/ と atelier/ の同じ名前に効く）。ここに無いファイルは門で止まる",
+      "description": "鍵は sprite.json のファイル名（assets/ と atelier/ の同じ名前に効く）。ここに無いファイルは spec の style か default の画風で見る（どちらも無ければ止まる）",
       "additionalProperties": {
         "type": "object",
         "additionalProperties": false,

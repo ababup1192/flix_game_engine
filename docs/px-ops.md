@@ -8,21 +8,18 @@
 
 | 描く物・技法 | op（→ は順に当てる・/ はどれか） | 仕上げ・検査 |
 |---|---|---|
-| 1 素材の色（暗 → 明 4 段） | `ramp_pick` | 色の門・ランプの単調さ（ramp-order） |
 | 光と陰（小物の面） | `directional` | lint pillow・light-dir |
 | 丸い体・キャラ | `shade_parts` | lint pillow・light-dir |
 | 手前の物が落とす影 | `shade_mask` | — |
-| 輪郭（部品ごとの色） | `sel_out` | lint black-outline |
-| 暗い物を暗い地から抜く | `rim_light` | ground-contrast |
-| 1px の線・ひげ・髪の線 | `line` → `pixel_perfect` | 既存の lint corner（角が 2 重なら pixel_perfect） / 既存の lint corner |
+| 1px の線・ひげ・髪の線 | `line` | 既存の lint corner（角が 2 重なら pixel_perfect） |
 | 曲線の段の角 | `aa_corners` | lint jaggy・orphan |
 | 金属・石・木・布・葉 | `material` | 材質ごと（下の材質の表） |
 | 空・斜面の階調・境目のディザ | `gradient_fill` | lint pillow・light-dir・banding |
 | 色票に無い中間の色 | `dither_pair` | 既存の lint banding・flat-run |
 | 葉・石の斑・草のタイル | `scatter_clusters` → `tile_preview` | 既存の lint orphan・2×2 に並べて見る（tile_preview） / lint seam |
-| 物を地面に置く | `ground_shadow` | ground-contrast |
 | 遠景と近景・主役と背景 | `depth_fade` → `contrast` | lint value-sep（contrast で測る） / lint value-sep |
-| 揺れ・呼吸・歩き・水 | `sway` / `bob` / `squash` / `palette_cycle` | lint orphan・anim（pop・loop）。欠けは pixel_perfect で整える / anim（bob・ground） / anim（area・ground） / anim（pop） |
+| 揺れ・呼吸・弾み（on の子も付いていく） | `sway` / `bob` / `squash` | lint orphan・anim（pop・loop）。欠けは pixel_perfect で整える / anim（bob・ground） / anim（area・ground） |
+| 水・滝・流れ（波頭を 1px ずつ流す） | `wave_shift` | anim（pop・loop）。輪が閉じるようにコマの数 × speed を塊の幅に合わせる |
 
 既定値はどれも仮置き（見本 10 題と作品 5 作の大きい見比べで決め直す）。強さは各 op の引数で選び、使わない技法は書かない。
 
@@ -37,7 +34,7 @@
 | 背景の奥行き（遠いほど明度差が小さい）・主役と背景を分ける | `contrast` | 今の部品と相手（部品 against か地の色）の明るさ（Oklab の L）の平均の差を測るだけ（描かない） | lint value-sep |
 | タイルの割れ目 | `crack` | 親（on）の塊の割れ目: 墨の 1px と、その右下に切り口のつや 1px | — |
 | 垂れた紐・鎖（粒を交互の明暗で） | `curve` | 2 次ベジェを 1px の連なった線で引く（alt で 1 画素ごとに色を交互に・avoid の形の中は飛ばす） | 既存の lint corner |
-| 背景の奥行き（遠いほど明度差が小さく、空の色・青へ寄る） | `depth_fade` | 遠い層ほど、塗った色を空の色 toward へ depth の割合で寄せ（明度差も縮む）、一番近い候補の色に置き換える（色は足さない） | lint value-sep（contrast で測る） |
+| 背景の奥行き（遠いほど明度差が小さく、空の色・青へ寄る） | `depth_fade` | 遠い層ほど、塗った色を空の色 toward へ depth の割合で寄せ（明度差も縮む）、一番近い候補の色に置き換える（色は足さない。候補は spec の style があればその色の集合、無ければ spec のランプの色と toward） | lint value-sep（contrast で測る） |
 | 陰影（光源は 1 つ（左上）。縁を一様に暗くしない） | `directional` | 光の向きだけで塗る陰（gradient_fill の field light・band 0 の短い書き方。縁を一様に暗くしない） | lint pillow・light-dir |
 | ディザ（タイルパターン。50% の市松で中間を作る） | `dither_pair` | 色票に無い中間の色を、候補の 2 色の Bayer の混ぜで作って塊を塗る（Yliluoma の 2 色版） | 既存の lint banding・flat-run |
 | 小さなアイコン（輪郭 + 平らな面 + 光の側のつや 1 段） | `emblem` | 塊をアイコンの作りで塗る: 縁（4 近傍で外に接する画素）を edge、光の側の縁のすぐ内側 1 段を top、残りを face | 地との明度差（縁の色が地に沈まないか） |
@@ -47,21 +44,16 @@
 | 白抜きの記号（駒の印） | `glyph` | 白抜きの記号: 形をつやの色で塗り、右下へ墨の影を 1px | — |
 | 白抜きの記号（小さなカード・効果のアイコン） | `glyph_rows` | 文字の格子の白抜きの記号: '.' と空白でない字の画素を color で、その右下 1px に shadow の影（影を先に置く） | — |
 | 陰影（光源は 1 つ・平らな面は 1 色）・ディザ（タイルパターン） | `gradient_fill` | 塊を明るさの場（光の向き・x・y・radial）でランプの段に塗る。段の境目は Bayer で混ぜ、band で混ぜる幅を選ぶ | lint pillow・light-dir・banding |
-| 接地影（物を地面に置く） | `ground_shadow` | 塊の足元に横長の楕円の接地影を落とす（物の上には塗らない。地面の色は 1 段暗く・透明の所は ramp[1]） | ground-contrast |
 | 光の側を明るく・影の側を暗く（縁の線の明暗） | `light_bands` | 部品の塊の塗ってある画素を、中心から光の向き（light.dir）へどれだけ寄っているかで lit・base・dark の 3 段に塗り分ける | light-dir（段 3） |
 | 1px の線 | `line` | 折れ線を 1px で引く（clip の部品なら親の塊の中だけ） | 既存の lint corner（角が 2 重なら pixel_perfect） |
 | 左右対称に描く（片側を描いて写す） | `mirror` | 今の部品が描いた画素のうち side の側を、軸で左右に写す（左右対称の顔・道具・建物） | — |
 | 輪郭（1 色の外側 1px） | `outline` | 部品の塊の外側 1px を 1 色で縁取る（sel_out の前身） | lint black-outline（部品ごとの色にするなら sel_out） |
 | アニメ（パレットの回転。光のきらめき） | `palette_cycle` | 塊の中で colors の段をコマごとに step ずつ回す（光のきらめきの補助。水の流れは wave_shift の方が見比べで勝った） | anim（pop） |
 | 寄せ木（かけらごとに別の系統の色） | `parquet` | 寄せ木: center から ramps の数に等分した扇ごとに、ランプ from の色をその扇のランプで塗り直す（from の墨は墨へ、ほかの段は斜めの帯で光・地・影へ。clip の部品なら親の塊の中だけ） | — |
-| pixel-perfect（Aseprite の Pencil の Pixel Perfect） | `pixel_perfect` | 1px の線の L 字の角（ダブル）を左上から順に抜く（抜いた所は線の下の色に戻す） | 既存の lint corner |
 | 1px を手で打つ（目・つや・星） | `put` | 画素を直に置く | 既存の lint orphan |
-| hue shift のランプ（Pixelorama の Shading tool の Hue Shifting） | `ramp_pick` | 地の色 base から暗 → 明 n 段のランプを色票（style があればその色）から選び、この部品のランプにする（hue shift つき） | 色の門・ランプの単調さ（ramp-order） |
-| sel-out（光の側は明るく）・照り返しの縁 | `rim_light` | 塊の縁のうち光と反対の側の 1px を by 段明るくする（暗い材質を暗い地から抜く） | ground-contrast |
 | 円の線（Aseprite の Ellipse の線） | `ring` | 1px の円を引く（ブレゼンハムの円。角の 2 重が出ず、どこでも 1 画素の太さ） | 既存の lint corner |
 | 同じ記号を一回り小さく重ねる | `scaled` | macros の op の列を別の格子に描き、about を中心に scale 倍へ縮め（広げ）て、塗った画素だけ重ねる（近い画素を引く） | — |
 | 質感（岩・レンガ・草）・塊と孤立 1px・草のタイル（Aseprite の Tiled Mode） | `scatter_clusters` | 塊の中に 2〜3px の小さな塊を散らして打つ（辺で接しない・1px の単発は出ない。wrap でタイルの端を回す） | 既存の lint orphan・2×2 に並べて見る（tile_preview） |
-| sel-out（色トレス。輪郭を部品ごとの色に・黒は下と奥に絞る） | `sel_out` | 塊の外側 1px を、内側の隣の色を材質のランプで drop 段暗くした色で縁取る（光の側は lit_drop 段） | lint black-outline |
 | 1 段ずつ塗る（Aseprite の Shading ink）・影の形を重ねる | `shade_mask` | 別の部品 of の塊を光と反対へ offset ずらした形で、今の部品に塗ってある色を by 段ずらす（手前の物が落とす影） | — |
 | 陰影（丸い体・キャラ。光源は 1 つ） | `shade_parts` | 丸みのある部品を光の向きでランプの 4 段に塗る（前の部品の落とす影・外周の墨・別グループとの境目の線つき） | lint pillow・light-dir |
 | 1 段ずつ塗る（Aseprite の Shading ink） | `shade_step` | 塗ってある色を、部品のランプの隣の段へ by 段ずらす（端で止まる・ランプの外の色は触らない） | — |
@@ -71,6 +63,12 @@
 | 草のタイル（Aseprite の Tiled Mode。並べて継ぎ目を見る） | `tile_preview` | このスプライトをタイルとして扱う: 3×3 に並べた見本（<名前>.tile.png）を書き、端の継ぎ目を検査する（描かない） | lint seam |
 | 同じ部品を何か所にも置く・コマで体を上下させる | `use` | macros の op の列を、今の部品の中で順に当てる（at でずらせる） | — |
 | アニメ（水の波頭を 1px ずつずらす。見比べで palette_cycle に勝った） | `wave_shift` | 塊の外形は動かさず、中の模様（波頭・流れ）を行ごとにコマごとに speed px 横へ回す。水・滝・流れる雲の既定 | anim（pop・loop）。輪が閉じるようにコマの数 × speed を塊の幅に合わせる |
+
+ほかの op（16px 前後の見比べで差が出なかった物。既定にしない。使う時は `bin/fge px help <op>`）: `ground_shadow`・`pixel_perfect`・`ramp_pick`・`rim_light`・`sel_out`
+
+## 動きのコマ数の目安
+
+待機 4〜8・歩き 6〜8・走り 4〜8・攻撃 8〜12・倒れ 6〜8（攻撃は少なすぎても多すぎても締まらない。frames は「始めの姿勢 → 順に起きること → 終わり方」の順に並べる）。
 
 ## 材質（部品の `material`）
 
@@ -194,6 +192,8 @@
 |---|---|---|
 | `shape` | shape | 形（省くと部品の塊） |
 | `band` | number | 段の境目のディザの幅（0 = ベタの帯）（0〜8）（省くと 0） |
+| `from` | int | 使う一番暗い段（0〜15）（省くと 0） |
+| `to` | int | 使う一番明るい段（-1 で最明）（-1〜15）（省くと -1） |
 
 ### `dither_pair`
 
@@ -280,19 +280,6 @@
 | `to` | int | 使う一番明るい段（-1 で最明）（-1〜15）（省くと -1） |
 | `invert` | bool | 明暗を返す（省くと false） |
 
-### `ground_shadow`
-
-例: `{"ground_shadow": {}}`
-
-部品を描き終えたら、その範囲で検査 `ground-contrast` を回す。
-
-| 引数 | 型 | 説明 |
-|---|---|---|
-| `of` | string | 影を落とす部品の id（省くと今の部品。post では絵の全部） |
-| `ramp` | string | 影の色を引くランプ（省くと部品かスプライトのランプ） |
-| `rows` | int | 影の高さ（行）（1〜16）（省くと 2） |
-| `spread` | number | 足元の幅から左右にはみ出す量（0〜16）（省くと 1） |
-
 ### `light_bands`
 
 例: `{"light_bands": {"center": [7, 7], "cut": [1, -1]}}`
@@ -355,16 +342,6 @@
 | `center` | pair | 扇の中心 [x, y]（省くと格子の中央） |
 | `bands` | pair | 光・地・影の境目（0〜1。左上の角が 0）（省くと [0.3,0.72]） |
 
-### `pixel_perfect`
-
-例: `{"pixel_perfect": {"color": "ink"}}`
-
-部品を描き終えたら、その範囲で検査 `sprite:corner` を回す。
-
-| 引数 | 型 | 説明 |
-|---|---|---|
-| `color` | color | この色の画素だけを相手にする（省くと部品の全部） |
-
 ### `put`
 
 例: `{"put": {"cells": [[4, 4], [5, 4]], "color": "light"}}`
@@ -373,32 +350,6 @@
 |---|---|---|
 | `cells` | points | 画素の座標 [[x, y], ...]（必須） |
 | `color` | color | 色（ink・shade・mid・light・ramp[i]・gloss・色キー。"" で透明へ抜く）（必須） |
-
-### `ramp_pick`
-
-例: `{"ramp_pick": {"base": "c2", "n": 3, "shift": 0}}`
-
-部品を描き終えたら、その範囲で検査 `ground-contrast` を回す。
-
-| 引数 | 型 | 説明 |
-|---|---|---|
-| `base` | string | 地の段に置く色キー（必須） |
-| `n` | int | 段の数（2〜16）（省くと 4） |
-| `at` | int | base を置く段（-1 で n-2 = [墨, 影, 地, 光] の地）（-1〜15）（省くと -1） |
-| `step` | number | 段ごとの明るさ（Oklab の L）の差の狙い。金属は 0.2 ほどに上げる（0.01〜1）（省くと 0.13） |
-| `shift` | number | 段ごとに色相を寄せる度数（0 で hue shift を切る）（0〜180）（省くと 30） |
-| `min_gap` | number | 隣の段との L の差の最小（0〜1）（省くと 0.05） |
-
-### `rim_light`
-
-例: `{"rim_light": {}}`
-
-部品を描き終えたら、その範囲で検査 `ground-contrast` を回す。
-
-| 引数 | 型 | 説明 |
-|---|---|---|
-| `by` | int | 明るくする段数（1〜4）（省くと 1） |
-| `against` | string | どの縁に当てるか: clear（絵の外形 = 外が透明な所だけ）・any（ほかの部品との境目にも）（省くと "clear"） |
 
 ### `ring`
 
@@ -437,18 +388,6 @@
 | `seed` | int | 散らし方の番号（variants の seed が足される）（0〜1.048576e+06）（省くと 0） |
 | `keep` | number | 升目に塊を置く割合（0〜1）（0〜1）（省くと 1） |
 | `wrap` | bool | タイルの端をまたいで反対側へ回す（並べた継ぎ目を隠す）（省くと false） |
-
-### `sel_out`
-
-例: `{"sel_out": {}}`
-
-部品を描き終えたら、その範囲で検査 `black-outline`・`ground-contrast` を回す。
-
-| 引数 | 型 | 説明 |
-|---|---|---|
-| `drop` | int | 影の側の縁を暗くする段数（0〜8）（省くと 2） |
-| `lit_drop` | int | 光の側（light.dir の向き）の縁を暗くする段数（0 で内側と同じ色）（0〜8）（省くと 1） |
-| `ramps` | rows | 材質のランプの名前か ramp_pick を書いた部品の id（省くと部品のランプ・ramp_pick が選んだランプ・spec のランプ全部） |
 
 ### `shade_mask`
 
@@ -582,8 +521,10 @@
 | `anim` | lint | anim: コマ列に bin/fge anim の pop・area・ground・bob・loop をかける（動きの op・pose・rotate を使うスプライト、か anim: true） |
 | `black-outline` | advice | black-outline: 小さい絵（blackOutlineMaxSize 未満）で、外の縁が 1 色・絵の中で一番暗い色のまま一周している |
 | `flat-run` | advice | 輪郭の段: 同じ長さの段が続く（直線に読まれる）・長すぎる直線（16px で 4px・32px で 6px を超える） |
+| `flicker` | lint | flicker: コマの間で周り 8 画素が動かないのに色だけ変わる画素（ちらつき。palette_cycle と wave_shift の画素は除く） |
 | `ground-contrast` | lint | 外周の画素と地の色の明るさ（Oklab の L）の差が小さく、輪郭が地に溶ける |
 | `light-dir` | advice | light-dir: 塊の明るさで重みを付けた重心（明るい側 − 暗い側）が光の側（light.dir）に無い |
+| `margin` | advice | margin: 動く絵が格子の左・右・上の縁に触れている（動く余白が無い） |
 | `pillow` | advice | pillow: 塊の縁が光の側でも影の側でも同じように内側より暗い（縁からの距離で塗った陰） |
 | `ramp-order` | lint | ramp-order: ランプの明るさ（Oklab の L）が暗 → 明に単調でない・隣の段の差が rampMinGap に足りない |
 | `run-monotone` | lint | 曲線の段の長さが単調でない（3-2-1 は良い・1-2-1-2 と 3-2-1-4 は不可） |

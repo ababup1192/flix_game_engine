@@ -399,6 +399,12 @@ go-build-host:
 go-test:
 	@cd go && CGO_ENABLED=0 go test ./...
 
+# arm64 の Mac で x86-64 の結果を確かめる（Rosetta）。arm64 は a*b+c を FMA にまとめることがあり、
+# 包み忘れると境目の画素だけが Mac と Windows でずれる（px の積は float64(…) か dot で包む）。
+.PHONY: go-test-amd64
+go-test-amd64:
+	@cd go && CGO_ENABLED=0 GOARCH=amd64 go test ./internal/px ./internal/pxlib ./internal/anim
+
 # ── ゲート: bug! を置く場所 ──────────────────────────────────
 # 読み込みの途中で bug! すると、既定値で続けてよいかを呼ぶ側が選べない
 # (docs/error-handling.md の決まり 2)。*OrBug という名前の関数の中だけを許す。

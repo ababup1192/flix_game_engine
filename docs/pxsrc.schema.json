@@ -53,7 +53,7 @@
     },
     "style": {
       "type": "string",
-      "description": "機種の決まり（bin/lint-rules/px.json の styles の名前: gb4・nes・snes・pc98・modern など。か *.pxstyle.json）。色の集合・色数・升目の色数・RGB の段数を検査 style で縛る"
+      "description": "画風か機種: 色の門（gate）の styles の名前なら、門の files に無くてもその画風の色で門を通す。でなければ機種の決まり（bin/lint-rules/px.json の styles: gb4・nes・snes・pc98・modern など。か *.pxstyle.json）で、色の集合・色数・升目の色数・RGB の段数を検査 style で縛る"
     },
     "light": {
       "type": "object",
@@ -780,7 +780,7 @@
         },
         {
           "type": "object",
-          "description": "遠い層ほど、塗った色を空の色 toward へ depth の割合で寄せ（明度差も縮む）、一番近い候補の色に置き換える（色は足さない）",
+          "description": "遠い層ほど、塗った色を空の色 toward へ depth の割合で寄せ（明度差も縮む）、一番近い候補の色に置き換える（色は足さない。候補は spec の style があればその色の集合、無ければ spec のランプの色と toward）",
           "additionalProperties": false,
           "required": [
             "depth_fade"
@@ -832,6 +832,20 @@
                   "minimum": 0,
                   "maximum": 8,
                   "default": 0
+                },
+                "from": {
+                  "description": "使う一番暗い段",
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 15,
+                  "default": 0
+                },
+                "to": {
+                  "description": "使う一番明るい段（-1 で最明）",
+                  "type": "integer",
+                  "minimum": -1,
+                  "maximum": 15,
+                  "default": -1
                 }
               }
             }
