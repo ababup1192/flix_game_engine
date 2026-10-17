@@ -95,8 +95,9 @@ help:
 	@echo "Targets:"
 	@echo "  make status               現状 1 画面 (テスト記録・スナップショット・チケット・git)。何も実行しない"
 	@echo "  make module Q=<語>        やりたいこと → モジュールを 1 行ずつ引く (docs/modules/ の分野:行番号つき)"
-	@echo "  make test                 全パッケージ (engine系 + templates) のテストを headless で実行"
+	@echo "  make test                 engine 系パッケージのテストを headless で実行 (templates は test-all)"
 	@echo "  make test-par             同上を並列実行 (実時間 ≈ 最遅パッケージ 1本分。ログは .test-logs/)"
+	@echo "  make test-all / test-par-all  templates まで含めた全量 (リリースのゲート)"
 	@echo "  make test-<name>          1 つだけテスト (例: make test-rpg-starter / make test-engine)"
 	@echo "  make lint-palette         ドット絵 legend の意味色キーが Studio から解けるか検査"
 	@echo "  make lint-view            View が矩形と円だけになっていないか検査"
@@ -178,8 +179,11 @@ clean-game-builds:
 # (トークンを置換したコピー側で make new-game が check / test / render を通す)。
 TEMPLATE_DIRS := $(filter-out templates/game-starter,$(wildcard templates/*))
 
-# 全パッケージのテストを順に回す。1 つでも赤ならそこで止まり exit 1。
-TEST_DIRS := $(ENGINE_DIR) $(RENDER_GL_DIR) $(ENGINE_WORLD_DIR) $(ENGINE_TOOLS_DIR) $(TEMPLATE_DIRS)
+# エンジンのパッケージのテストを順に回す。1 つでも赤ならそこで止まり exit 1。
+# テンプレート 5 本は test-all / test-par-all（リリースのゲート）だけで回す。
+# WhyNot: 毎回の test に入れない —— テンプレートのコンパイルがエンジンのテストの約半分を占め、
+#   エンジンを直すたびに払うには重い。退行はリリース前の全量と new-game の産声の確認で拾う。
+TEST_DIRS := $(ENGINE_DIR) $(RENDER_GL_DIR) $(ENGINE_WORLD_DIR) $(ENGINE_TOOLS_DIR)
 
 test:
 	@for dir in $(TEST_DIRS); do \
@@ -188,6 +192,14 @@ test:
 			(cd "$$dir" && "$(FLIX_TEST)" test) || exit 1; \
 		fi \
 	done
+
+# テンプレートまで含めた全量（リリースのゲート・テンプレートを直した後）。
+.PHONY: test-all test-par-all
+test-all:
+	@$(MAKE) --no-print-directory test TEST_DIRS="$(TEST_DIRS) $(TEMPLATE_DIRS)"
+
+test-par-all:
+	@$(MAKE) --no-print-directory test-par TEST_DIRS="$(TEST_DIRS) $(TEMPLATE_DIRS)"
 
 # 並列テスト。各パッケージは独立 (別ディレクトリ・別 JVM) なので同時に回せて、
 # 実時間は最遅パッケージ 1本分まで縮む。ログは .test-logs/ にパッケージ別で残し、
@@ -376,6 +388,13 @@ go-build:
 		echo "  $(GO_DIST)/fge-go-$$os-$$arch$$ext"; \
 	done
 
+# 手元の OS/CPU の 1 本だけ（sync-fge-go が配るのはこの 1 本）。5 種そろえるのは go-build（bundle-zip・リリース）。
+# WhyNot: = で置く（:= にしない）のは、go env を呼ぶのをこの口を使う時だけにするため。
+GO_HOST = $(shell cd go && go env GOOS)/$(shell cd go && go env GOARCH)
+.PHONY: go-build-host
+go-build-host:
+	@$(MAKE) --no-print-directory go-build GO_OSARCH="$(GO_HOST)"
+
 .PHONY: go-test
 go-test:
 	@cd go && CGO_ENABLED=0 go test ./...
@@ -499,16 +518,16 @@ sync-engine-full:
 # 推奨フロー (この3手だけ):
 #   1) make bump FROM=<旧> TO=<新>   … 全 flix.toml と VERSION を一括更新
 #   2) git で変更を commit → main へ push  … リリースするバージョンを GitHub に載せる
-#   3) make release                        … sync → test-par(全量ゲート) → gl-parity(A 段階の全一致) → build-pkg → gh release
+#   3) make release                        … sync → test-par-all(全量ゲート) → gl-parity(A 段階の全一致) → build-pkg → gh release
 #   終了後の案内どおり、lib/ を消したコピーで外部 fetch を検証する。
 #
 # release は sync (clean-locks はパッケージ配下だけ walk するのでもう固まらない) と
 # test-par (並列全量ゲート) を前提に組み、以下の安全策を持つ:
 #   - engine ソースが未コミットだと配布 fpkg がどのコミットにも対応しなくなるため中断する。
 #   - tag は現在の HEAD に固定する。push し忘れていれば gh が「commit が無い」と明示エラーにする。
-# test-par に不審な挙動があれば TEST := test で逐次にフォールバックする (make release TEST=test)。
+# test-par-all に不審な挙動があれば逐次にフォールバックする (make release TEST=test-all)。
 RELEASE_SHA := $(shell git rev-parse HEAD)
-TEST := test-par
+TEST := test-par-all
 release-guard:
 	@# WhyNot: 追随の材料も未コミット検査に入れるのは、bump が生成した物をコミットし
 	@# 忘れるとタグの中身に材料が入らず、後からそのバージョンを取り出しても空になるため。
@@ -772,7 +791,7 @@ prune-stale-tools:
 # 次の実行を即 SIGKILL するため。中身も署名も正しいのに配った先だけが死に、
 # pre-commit がこれを呼ぶ git まで道連れになる (index.lock だけが残る)。
 # mv なら inode が新しくなるので踏まない。
-sync-fge-go: go-build
+sync-fge-go: go-build-host
 	@if [ -z "$(GAME)" ]; then echo "error: GAME を指定してください"; exit 1; fi
 	@os=$$(uname -s | tr 'A-Z' 'a-z'); arch=$$(uname -m); ext=""; \
 	case "$$os" in darwin) ;; linux) ;; mingw*|msys*|cygwin*) os=windows; ext=".exe" ;; \
