@@ -1,0 +1,4 @@
+# 表が無い (まだ描き出していない) ときは 1 行知らせて通す。
+mkdir -p "$WORK/bin/lint-rules"
+cp "$ENGINE/bin/lint-rules/text-audit.json" "$WORK/bin/lint-rules/"
+"$ENGINE/bin/fge" text-audit --root "$WORK"

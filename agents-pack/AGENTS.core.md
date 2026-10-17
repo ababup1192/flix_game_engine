@@ -25,6 +25,7 @@ lint・フック・make の口で止まる決まりはここに書かない（�
 | 曲の頭を 1 回だけ鳴らし本編をループ | `SfxSynth.renderLooped` + `App.withSustained` |
 | Doc が壊れたら既定値で続けて知らせる | `DocJson.loadOr` + `Log.fellBackThen` / `warnThen` |
 | 直した後に絵を確かめる | `make render SHOT=<場面>` → 仕上げ `make reference-check` |
+| 描き出しの字の被り・z の外れを止める | `make render-lint`（許す物は `text-audit.local.json`） |
 | 直す前と後の絵・音・動画を比べる | `make compare BASE=<ref>` |
 | F8 のチケット | `debug/annotations/` の README → `annotation.json` → `world.json` |
 | ゲームの定義を引く | `make src Q=<名前>` |

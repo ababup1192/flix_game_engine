@@ -1,0 +1,9 @@
+# internet_dungeon の 2026-10-17 の Makefile。書く前は --check が止め、書いた後は通る。
+# 書いた本文は前の bin/gen-video-entries.py と見出しの 2 行の外が同じ (27 入口)。
+cp -R repo/. "$WORK/"
+mkdir -p "$WORK/bin/lint-rules" "$WORK/src/render"
+cp "$ENGINE/bin/lint-rules/video-entries.json" "$WORK/bin/lint-rules/"
+"$ENGINE/bin/fge" video-entries --check --root "$WORK"
+"$ENGINE/bin/fge" video-entries --root "$WORK"
+"$ENGINE/bin/fge" video-entries --check --root "$WORK"
+tail -n +3 "$WORK/src/render/VideoAuditEntries.flix"

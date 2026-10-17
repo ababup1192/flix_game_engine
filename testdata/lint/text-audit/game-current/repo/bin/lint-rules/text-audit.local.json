@@ -1,0 +1,52 @@
+{
+  "allow": [
+    {
+      "kind": "Offscreen",
+      "shot": "trans_phone_in",
+      "reason": "スマホに吸い込まれる途中の拍。昼の画面ごと画面の外へ流れていく動きなので、字が外へ出るのが正しい"
+    },
+    {
+      "kind": "Overflow",
+      "shot": "fight_orb",
+      "text": "盾",
+      "reason": "カードの効果が胸の前に浮かぶ大きな字。枠に入れる字ではなく、後ろの光の帯の上を通り過ぎるだけ"
+    },
+    {
+      "kind": "Overflow",
+      "shot": "fight_buff",
+      "text": "+",
+      "reason": "状態アイコンの効果量のバッジ（+N）はタイルの左上の角に掛けて置く形（2026-10-08 依頼主決定の案A）"
+    },
+    {
+      "kind": "Overflow",
+      "shot": "fight_buff_guard",
+      "text": "+",
+      "reason": "同上（状態アイコンの効果量のバッジ）"
+    },
+    {
+      "kind": "Overflow",
+      "shot": "fight_effect_pop",
+      "text": "+",
+      "reason": "同上（頭の上の効果アイコンと状態の列の効果量のバッジ）"
+    },
+    {
+      "kind": "Overflow",
+      "textMatch": "[0-9]+%?|×[0-9]+",
+      "maxExcess": 4.0,
+      "reason": "効果のタイルの量のバッジは、タイルの右下の角に掛けて置く形（2026-10-10 依頼主が決めた案 A+B）。4px までの掛かりだけ許す"
+    },
+    {
+      "kind": "Overlap",
+      "shot": "fight_chain",
+      "textMatch": "-[0-9]+",
+      "reason": "連撃の手番は 1 撃ずつの小さい数を縦に詰めて重ねる演出（2026-10-11 依頼主決定。合計は最後に大きい数で出す）"
+    },
+    {
+      "kind": "Overlap",
+      "shot": "fight_chain_total",
+      "text": "1",
+      "other": "-38",
+      "reason": "ダメージの合計の放送の帯が、相手の状態の列（1/2）に一瞬だけかぶさる演出（2026-10-16 依頼主が許すと決定）"
+    }
+  ]
+}

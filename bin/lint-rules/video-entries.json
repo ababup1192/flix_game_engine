@@ -1,0 +1,9 @@
+{
+  "note": "video-entries（動画の見回りが流す入口の一覧の生成）の規約データ。この JSON が source of truth で、bin/fge video-entries はこれを読んで動く。makefile のレシピの $(call <macro>,入口,…) の行の入口に extraVar の値を足し、skipVar の値を除いて、out に module の runAll() を書く。--check は書いてある物と食い違えば止める（make lint）。ゲームは video-entries.local.json に同じ鍵を書けば上書き。動画の口が無いゲームでは見ずに通す。",
+  "makefile": "Makefile",
+  "out": "src/render/VideoAuditEntries.flix",
+  "module": "VideoAuditEntries",
+  "macro": "video",
+  "extraVar": "Z_VIDEOS_EXTRA",
+  "skipVar": "Z_VIDEOS_SKIP"
+}

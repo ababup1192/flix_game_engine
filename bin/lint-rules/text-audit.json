@@ -1,0 +1,5 @@
+{
+  "note": "text-audit（描き出した場面の字の被り・はみ出し）の規約データ。この JSON が source of truth で、bin/fge text-audit はこれを読んで動く。表（table）はゲームの描き出しが場面ごとに字の置き場所を測って書く TSV（見出し shot・kind・excess・text・other。kind は Offscreen = 画面の外 / Overlap = 別の字と重なり覆う板が無い / Overflow = 乗っている枠から左右へはみ出し）。許す物はゲームの text-audit.local.json の allow に 1 行 1 つ・必ず reason つき（kind・shot は一致、text・other は含むか、textMatch は字全体の正規表現、maxExcess ははみ出しの上限 px。書いた鍵だけで絞る）。local.json に table・hint を書けば上書き。表が無ければ見ずに通す。",
+  "table": "debug/ui-overflow.tsv",
+  "hint": ""
+}

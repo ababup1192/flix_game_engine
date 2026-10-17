@@ -1,0 +1,3 @@
+[z-audit] fight_orb: z=40 World.Fx Box（描いてよい範囲: 0..31）
+[z-audit] 1 件 — 層の表（SortingLayer の enum と各場面で描いてよい層）を見る。木があふれたなら葉の中の z を詰める
+[exit=1]

@@ -1,0 +1,5 @@
+# internet_dungeon の 2026-10-17 の描き出しの表と許す物。前の bin/lint-ui-overflow.py と同じ 3 件が残る
+# (許す物の外の mid_chain_long)。cwd: このケースのフォルダ / 規約は本物の bin/lint-rules から写す。
+cp -R repo/. "$WORK/"
+cp "$ENGINE/bin/lint-rules/text-audit.json" "$WORK/bin/lint-rules/"
+"$ENGINE/bin/fge" text-audit --root "$WORK"

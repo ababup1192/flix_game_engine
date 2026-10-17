@@ -46,7 +46,7 @@ else
 HEADLESS_RUN ?= JAVA_TOOL_OPTIONS="-Djava.awt.headless=true" FLIX_CMD=$(FLIX) "$(ENGINE)/bin/headless-run"
 endif
 
-.PHONY: help status run debug test build check render render-all gallery-sounds reference-check reference-update render-budget loc api module src src-index hooks check-docs-sync compare agent-eval agent-eval-compare agent-eval-release
+.PHONY: help status run debug test build check render render-all gallery-sounds reference-check reference-update render-budget render-lint video-entries loc api module src src-index hooks check-docs-sync compare agent-eval agent-eval-compare agent-eval-release
 
 # 共通の口の一覧。engine を上げるとここも一緒に新しくなる
 # （ゲーム側の Makefile へ写さないので、口が増えても書き足しに回らなくて済む）。
@@ -67,6 +67,8 @@ help:
 	@echo "  make reference-check    描き出した絵をリファレンス画像とバイト比較し、絵の値段（render-budget）も見る"
 	@echo "  make render-budget      gallery/ の記録で 1 場面の描き物の数を予算と比べる（描き直さない・render-all の後）"
 	@echo "  make reference-update   いまの gallery をリファレンス画像として更新する"
+	@echo "  make render-lint        描き出しが残した表を読み直す: 字の被り・はみ出し（text-audit）・z の外れ（z-audit）・動画の入口の写し（video-entries --check）"
+	@echo "  make video-entries      動画の見回りが流す入口の一覧を Makefile の \$$(call video,…) から書き直す"
 	$(if $(PALETTE),@echo "  make palette            Studio が読む色の写し ($(PALETTE)) を無条件に作り直す")
 	@echo "  make api Q=<名前>        エンジン API の型・引数を 1 行で引く（ソースを読む前にまずこれ）"
 	@echo "  make module Q=<語>       やりたいこと → エンジンのモジュールを 1 行ずつ引く（自前で書く前にまずこれ）"
@@ -226,6 +228,19 @@ reference-check: render-all
 # 上限は engine の bin/lint-rules/check-render-budget.json・場面ごとの上限は reference/ITEMS.caps.tsv。
 render-budget:
 	@fge=bin/fge; [ -x "$$fge" ] || fge="$(ENGINE)/bin/fge"; "$$fge" check-render-budget .
+
+# 描き出し（render / render-all）が場面ごとに書いた表を後から読み直して止める（描き直さないので軽い・make lint に束ねる）。
+# 字の被り・はみ出しの許す物は bin/lint-rules/text-audit.local.json の allow に理由つき、表の置き場と直し方の 1 行は
+# bin/lint-rules/{text-audit,z-audit}.json（ゲームは .local.json で上書き）。表が無ければ見ずに通す。
+# 動画の見回りの入口の写し（video-entries）は動画の口が無いゲームでは見ずに通す。
+render-lint:
+	@fge=bin/fge; [ -x "$$fge" ] || fge="$(ENGINE)/bin/fge"; \
+	code=0; "$$fge" text-audit --root . || code=1; "$$fge" z-audit --root . || code=1; \
+	"$$fge" video-entries --check --root . || code=1; exit $$code
+
+# 動画の見回りが流す入口の一覧（bin/lint-rules/video-entries.json の out）を Makefile の動画の口から書き直す。
+video-entries:
+	@fge=bin/fge; [ -x "$$fge" ] || fge="$(ENGINE)/bin/fge"; "$$fge" video-entries --root .
 
 reference-update: render-all
 	"$(ENGINE)/bin/reference-update.sh"

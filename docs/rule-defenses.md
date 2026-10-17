@@ -13,6 +13,7 @@
 |---|---|---|---|
 | 葉の z に大きな数を書いて手前に出さない（topLayer / withHudView を使う） | lint | forbid `zindex-big-literal`・z-table | r1 相談して書かず・r2 precommit が止めた |
 | 葉の中の z は 0..31 | 文書 + lint | z-table（def の数だけ）。描き出しの warnOnce は見送り（下の節⑤） | ― |
+| 描き出した場面の字が重ならない・枠からはみ出さない・描画物の z が描いてよい層の中 | lint | text-audit・z-audit（ゲームの描き出しが書く表を `make render-lint` が読み直す。許す物は `text-audit.local.json` の allow に理由つき）。動画の見回りの入口は video-entries `--check` | ― |
 | legend の色キーはパレットに実体を置く | lint | palette（hook-art-edit・precommit） | r1 相談・r2 precommit が止めた |
 | View が矩形と円だけにならない | lint | view（hook-art-edit・precommit）。呼び出しの数で見る（下限 5） | r1 `List.map` の 1 か所で 12 個描いて通った。lint は変えず穴として記録 |
 | ドット絵の画素の並び・アニメのコマ | script | hook-art-edit の sprite・anim（失敗だけ返す） | ― |
