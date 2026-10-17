@@ -2,7 +2,7 @@
 // Doc は「初期値の宣言」まで: 規則（文字送りの進め方・暗くする条件）はコード側。
 // fail-open — 読めない・壊れているときは defaults() へ落とし、ゲームは必ず起動する。
 mod KindDoc {
-    use flix_game_engine::{DocJson, JsonCodec}
+    use fge::{DocJson, JsonCodec}
     use Util.Json.Json
 
     /// 手触りの数値。cps = 文字送りの速さ（1 秒あたりの文字数）、

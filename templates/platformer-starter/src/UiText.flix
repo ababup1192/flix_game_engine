@@ -3,7 +3,7 @@
 // 遊びながら直したくなるし、翻訳のとき探し回ることになるため。
 // fail-open — 読めない・壊れているときは defaults() へ落とす。
 mod UiText {
-    use flix_game_engine::{DocJson, JsonCodec}
+    use fge::{DocJson, JsonCodec}
     use Util.Json.Json
 
     pub type alias Rec = { version = Int32, clear = String, gameOver = String }

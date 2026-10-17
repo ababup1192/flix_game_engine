@@ -3,7 +3,7 @@
 // 派生色（ゴーストの薄めなど）は基準色から導ける範囲はコードで導く（導出できる値は Doc に置かない）。
 // fail-open: 読めない・壊れているときは defaults() へ落とす。
 mod ThemeDoc {
-    use flix_game_engine::{Color, DocJson, JsonCodec, UiDoc}
+    use fge::{Color, DocJson, JsonCodec, UiDoc}
     use Util.Json.Json
     use World.Kind
 

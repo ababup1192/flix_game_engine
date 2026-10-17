@@ -2,7 +2,7 @@
 // stage.json のバランス調整でこのテストは壊れない。期待値は Doc から導く。
 mod TestRules {
 
-    use flix_game_engine::{PxSpriteDoc, Vec2}
+    use fge::{PxSpriteDoc, Vec2}
 
     def m(): MotionDoc.Doc = MotionDoc.defaults()
 

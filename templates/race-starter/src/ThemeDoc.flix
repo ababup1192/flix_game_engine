@@ -5,7 +5,7 @@
 // race.palette.json（PaletteDoc）— 画面の大きな配色と、ドット絵のパレットは関心が違う。
 // fail-open: 読めない・壊れているときは defaults() へ落とす。
 mod ThemeDoc {
-    use flix_game_engine::{Color, DocJson, JsonCodec, UiDoc}
+    use fge::{Color, DocJson, JsonCodec, UiDoc}
     use Util.Json.Json
 
     /// 画面の色票。

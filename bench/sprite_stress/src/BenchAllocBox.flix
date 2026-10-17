@@ -4,7 +4,7 @@
 // 実行: ../../bin/flix run --entrypoint BenchAllocBox.main
 mod BenchAllocBox {
 
-    use flix_game_engine::{AllocMeter, RawDraw, Render, Vec2}
+    use fge::{AllocMeter, RawDraw, Render, Vec2}
 
     pub def main(): Unit \ IO =
         let n = 1000;

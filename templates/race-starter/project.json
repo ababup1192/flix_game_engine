@@ -22,7 +22,7 @@
       "fontSize": 10.0
     }
   ],
-  "// sounds": "assets/sfx/*.wav は make render-all（SfxRender）が描き出す生成物。鳴らすきっかけは src/Sfx.flix、つまみは assets/race.sfxtune.json。",
+  "// sounds": "assets/sfx/*.wav は make render-all（SfxRender）が描き出す生成物。鳴らすきっかけは src/Sounds.flix、つまみは assets/race.sfxtune.json。",
   "sounds": [
     {
       "name": "engine",

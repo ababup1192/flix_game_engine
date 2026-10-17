@@ -1,8 +1,8 @@
 // 出来事 → 鳴る音の名前だけをテストする（音の中身＝波形は目と耳の仕事なのでテストしない）。
 // 前後の World は「1 つの値だけ変えた 2 つ」で作り、その差分が音の名前になることを見る。
-mod TestSfx {
+mod TestSounds {
 
-    use flix_game_engine::{FxDoc, PxSpriteDoc}
+    use fge::{FxDoc, PxSpriteDoc}
 
     /// 既定の Doc の束（World.initial が読むのと同じ形）。
     def docs(): World.Docs =
@@ -20,7 +20,7 @@ mod TestSfx {
     def testNothingHappensIsSilent(): Unit \ Assert =
         // 何も変わらなかったフレームは無音（毎フレーム鳴り続けない）。
         let w = racing();
-        Assert.assertEq(expected = (Nil: List[String]), Sfx.events({ before = w, after = w }))
+        Assert.assertEq(expected = (Nil: List[String]), Sounds.eventNames({ before = w, after = w }))
 
     @Test
     def testDriftStartIsNotAOneShot(): Unit \ Assert =
@@ -28,7 +28,7 @@ mod TestSfx {
         let w = racing();
         Assert.assertEq(
             expected = (Nil: List[String]),
-            Sfx.events({ before = w, after = { drifting = true | w } }))
+            Sounds.eventNames({ before = w, after = { drifting = true | w } }))
 
     @Test
     def testDriftEndGrips(): Unit \ Assert =
@@ -36,7 +36,7 @@ mod TestSfx {
         let w = racing();
         Assert.assertEq(
             expected = "grip" :: Nil,
-            Sfx.events({ before = { drifting = true | w }, after = w }))
+            Sounds.eventNames({ before = { drifting = true | w }, after = w }))
 
     @Test
     def testCrashSilencesGrip(): Unit \ Assert =
@@ -44,7 +44,7 @@ mod TestSfx {
         let w = racing();
         Assert.assertEq(
             expected = "crash" :: Nil,
-            Sfx.events({ before = { drifting = true | w },
+            Sounds.eventNames({ before = { drifting = true | w },
                          after = { spinLeft = RulesDoc.rec(w#rules)#spinDuration | w } }))
 
     @Test
@@ -54,8 +54,8 @@ mod TestSfx {
         let fired = { nitroLeft = RulesDoc.rec(w#rules)#nitroDuration | w };
         Assert.assertEq(
             expected = ("nitro" :: Nil, (Nil: List[String])),
-            (Sfx.events({ before = w, after = fired }),
-             Sfx.events({ before = fired, after = fired })))
+            (Sounds.eventNames({ before = w, after = fired }),
+             Sounds.eventNames({ before = fired, after = fired })))
 
     @Test
     def testOvertakeAndItemAndLap(): Unit \ Assert =
@@ -65,7 +65,7 @@ mod TestSfx {
                       rivals = w#rivals |> List.map(r -> { passed = true | r }) | w };
         Assert.assertEq(
             expected = "item" :: "overtake" :: "lap" :: Nil,
-            Sfx.events({ before = w, after = after }))
+            Sounds.eventNames({ before = w, after = after }))
 
     @Test
     def testPhaseChangesSound(): Unit \ Assert =
@@ -73,14 +73,14 @@ mod TestSfx {
         let w = World.initial(docs());
         Assert.assertEq(
             expected = ("start" :: Nil, "win" :: Nil),
-            (Sfx.events({ before = w, after = { phase = World.Phase.Racing | w } }),
-             Sfx.events({ before = { phase = World.Phase.Racing | w },
+            (Sounds.eventNames({ before = w, after = { phase = World.Phase.Racing | w } }),
+             Sounds.eventNames({ before = { phase = World.Phase.Racing | w },
                           after = { phase = World.Phase.Win | w } })))
 
     // ── 鳴り続ける音 ──
 
     def humNames(w: World.World): List[String] =
-        Sfx.hums(w) |> List.map(h -> h#name)
+        Sounds.sustains(w) |> List.map(h -> h#name)
 
     @Test
     def testEngineHumsOnlyWhileRacing(): Unit \ Assert =
@@ -95,7 +95,7 @@ mod TestSfx {
     def testEngineHumRisesWithSpeed(): Unit \ Assert =
         // 速いほど唸りが高い（数字を読まなくても伸びているのが耳で分かる）。
         let w = racing();
-        let pitchAt = sp -> Sfx.hums({ speed = sp | w }) |> List.map(h -> h#pitch);
+        let pitchAt = sp -> Sounds.sustains({ speed = sp | w }) |> List.map(h -> h#pitch);
         let slow = pitchAt(0.0);
         let fast = pitchAt(RulesDoc.rec(w#rules)#forwardSpeed * RulesDoc.rec(w#rules)#nitroBoost);
         Assert.assertEq(expected = true, slow < fast)
@@ -104,7 +104,7 @@ mod TestSfx {
     def testEngineHumStaysWithinTheDeclaredRange(): Unit \ Assert =
         // 高さは Doc の下限・上限を出ない（速度がどこまで伸びても甲高くなり切らない）。
         let w = racing();
-        let pitchAt = sp -> Sfx.hums({ speed = sp | w })
+        let pitchAt = sp -> Sounds.sustains({ speed = sp | w })
             |> List.map(h -> h#pitch) |> List.head |> Option.getWithDefault(0.0);
         let lo = SfxTuneDoc.rec(w#sfxtune)#enginePitchLow;
         let hi = SfxTuneDoc.rec(w#sfxtune)#enginePitchHigh;

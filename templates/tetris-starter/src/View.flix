@@ -23,9 +23,7 @@
 // View は fail-open: 盤が空でも Doc が既定でも必ず何かを描く（プレイヤーの前で白画面にしない）。
 mod View {
 
-    use flix_game_engine::{
-        App, Color, DrawCmd, FontAtlas, Num, RawDraw, Render, Sway, TextDraw, Vec2
-    }
+    use fge::{App, Color, DrawCmd, FontAtlas, Num, RawDraw, Render, Sway, TextDraw, Vec2}
     use World.Cell
 
     // ── z 層 ──

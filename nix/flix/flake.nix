@@ -1,7 +1,7 @@
 {
+  # Cj-bc/flix.nix に 0.78.0 が入ったら、devbox.json を "github:Cj-bc/flix.nix#flix_0_78_0" に戻してこの flake を消す。
   # Flix コンパイラの jar を、Cj-bc/flix.nix にまだ載っていない版で取るための flake。
   # flix.nix の包み方（nixpkgs の flix パッケージ）をそのまま使い、jar の版とハッシュだけ差し替える。
-  # flix.nix に同じ版が載ったら、devbox.json を "github:Cj-bc/flix.nix#flix_X_Y_Z" に戻してここを消す。
   # 版を足すときは nix-prefetch-url https://github.com/flix/flix/releases/download/vX.Y.Z/flix.jar で
   # ハッシュを取り、versions に 1 行足す。
   description = "Flix compiler jars not yet in Cj-bc/flix.nix";

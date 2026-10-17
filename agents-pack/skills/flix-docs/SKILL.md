@@ -47,18 +47,20 @@ sync: 2026-10-17
 
 ## 0.77〜0.78 の新しい書き方
 
-- engine の名前は mod ごとに `use flix_game_engine::{App, Color}` で取り込む
-  （0.78 の mount。ファイル直下の use は `mod X { }` の中へ届かない）
-- use を足すのは `bin/fge engine-uses`（足りないかだけ見るなら `--check`）
-- 多相 effect（実験）: `eff Sfx[s] { def play(x: s): Unit }`・`\ Sfx[Sound]`。
-  ハンドラの型は `a \ (ef - Sfx[s]) + Audio`
+- engine の名前は mod ごとに `use fge::{App, Color}` で取り込む（mount 名 fge は
+  flix.toml の依存の `mount = "fge"`。ファイル直下の use は `mod X { }` へ届かない）
+- use を足すのは `bin/fge engine-uses`（mount 名は flix.toml から読む。`--check` で検査）
+- 音の名前は型で鳴らす: 一発の音は `Sfx.play(Shot.X)`（`\ Sfx[Shot]`）、鳴り続ける
+  音は `Loop.hold(Hum.X, mix)`（`\ Loop[Hum]`）。Shot と Hum は別の enum にする
+- App へは `Sfx.collect(shotName, ..)` / `Loop.collect(humName, ..)` で名前の列にして渡す
+- 多相 effect（実験）: `eff E[t] { .. }`・ハンドラの型は `a \ (ef - E[t])`
 - 1 つの関数の中で同じ effect は 1 つの型だけ（`Sfx[A] + Sfx[B]` は E6795）
 - 型変数を effect にはできない（`ef[t]` は E3442）
 - 型引数に trait の制約を付けたハンドラ（`with ToString[s]`）は 0.78.0 で
-  コンパイラが落ちる。名前へ写す関数を引数で渡す
-- 実験なので engine の pub 面には入れない（入れるかは依頼主が決める）
+  コンパイラが落ちる。使わずに、名前へ写す関数（`shotName`）を引数で渡す
 - 外から作らせない値: pub mod の中の非 pub の enum + `pub type alias` で名前だけ出す
-  （外で case を書くと E0459。同名の enum は pub が要る E5848）
+  （外で case を書くと E0459・同名の enum は pub が要る E5848）。新しく作る型と、
+  直すついでの所から使う（一度に全部は替えない）
 
 ## Java より標準ライブラリ
 

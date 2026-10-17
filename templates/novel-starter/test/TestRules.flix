@@ -3,7 +3,7 @@
 // 台本は小さな fixture（分岐 1 つ・結末 2 つ）で、規則を両側（疑う / 疑わない）から確かめる。
 mod TestRules {
 
-    use flix_game_engine::{PxSpriteDoc, RichText, UiDialog, UiStore}
+    use fge::{PxSpriteDoc, RichText, UiDialog, UiStore}
 
     // ══════════════════════════════════════════════════════
     // fixture: hall で 1 分岐 → endA（疑う）/ endB（疑わない）

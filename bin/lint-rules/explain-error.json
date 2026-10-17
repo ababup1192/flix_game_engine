@@ -11,7 +11,7 @@
     },
     {
       "key": "E2916",
-      "tip": "engine の型なら mod の頭に use flix_game_engine::{名前} が要る (Flix 0.78 の mount)。bin/fge engine-uses で足せる"
+      "tip": "engine の型なら mod の頭に use fge::{名前} が要る (Flix 0.78 の mount)。bin/fge engine-uses で足せる"
     },
     {
       "key": "E2136",
@@ -20,6 +20,14 @@
     {
       "key": "E6795",
       "tip": "多相 effect (eff E[t]) を 1 つの関数の中で別の型引数で使っている。型ごとに関数を分けるか、effect を分ける"
+    },
+    {
+      "key": "E9491",
+      "tip": "mod と同名の enum の pub は mod にそろえる (Flix 0.78)。pub でない mod の enum から pub を外す"
+    },
+    {
+      "key": "E5848",
+      "tip": "pub な mod と同名の enum は pub が要る (Flix 0.78)。隠すなら別の名前の非 pub の enum + pub type alias"
     },
     {
       "key": "E3442",

@@ -29,7 +29,7 @@
 // View は fail-open: コースが空でも Doc が既定でも必ず何か描く（プレイヤーの前で白画面にしない）。
 mod View {
 
-    use flix_game_engine::{
+    use fge::{
         App, Color, DrawCmd, FontAtlas, Num, RawDraw, Render, SortingLayer, Sway, TextDraw, ZStack
     }
 

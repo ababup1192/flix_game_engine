@@ -3,8 +3,8 @@
 // Space・Enter = 場面の「決定」（Title→レース / Win・Lose→Title）。
 // 連続入力（ハンドル・ブレーキ・ドリフト）は isDown、単発（ニトロ・決定）は justPressed で拾う。
 mod Controls {
-    use flix_game_engine::{App, Color, DocJson, DocTable, FxDoc, PxSpriteDoc}
-    use flix_game_engine::GameEngine.Key
+    use fge::{App, Color, DocJson, DocTable, FxDoc, PxSpriteDoc}
+    use fge::GameEngine.Key
 
     /// 毎フレームのシステム: 入力を Inputs に組んで World.step へ渡し、
     /// そのあと押した瞬間の「決定」（場面の切り替え）を反映する。

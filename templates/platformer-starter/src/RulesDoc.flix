@@ -3,7 +3,7 @@
 // その規則が読む数値だけ。難易度と褒美の匙加減は遊びながら何度も触るので、
 // コードに埋めるとビルド待ちが調整の邪魔になる。壊れていれば defaults(fail-open)。
 mod RulesDoc {
-    use flix_game_engine::{DocJson, JsonCodec}
+    use fge::{DocJson, JsonCodec}
     use Util.Json.Json
 
     pub type alias Rec = {

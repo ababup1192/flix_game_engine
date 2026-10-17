@@ -5,7 +5,7 @@
 // 画風の決まり(AGENTS.local.md): 夕空の青 / コインの金 / 影の藍。黒は使わない —
 // 最暗部も ink(藍 #23283A)まで。
 mod Theme {
-    use flix_game_engine::{Color, DocJson, JsonCodec}
+    use fge::{Color, DocJson, JsonCodec}
     use Util.Json.Json
     use Util.Json.Json.{JObject, JString}
 

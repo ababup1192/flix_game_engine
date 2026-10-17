@@ -7,7 +7,7 @@
 // ここに置くのは Studio のプレビュー用の基準色（自機の赤）。
 // fail-open: 読めない・壊れているときは defaults() へ落とす。
 mod PaletteDoc {
-    use flix_game_engine::{Color, DocJson, JsonCodec}
+    use fge::{Color, DocJson, JsonCodec}
     use Util.Json.Json
 
     /// 意味色キー → 実色 の表。

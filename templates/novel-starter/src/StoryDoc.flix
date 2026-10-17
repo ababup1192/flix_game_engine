@@ -3,7 +3,7 @@
 // 進め方の規則（どのビートを出すか・灯りをいつ消すか）はコード（World）側。
 // fail-open — 読めない・壊れているときは defaults() へ落とし、ゲームは必ず起動する。
 mod StoryDoc {
-    use flix_game_engine::{DocJson, JsonCodec}
+    use fge::{DocJson, JsonCodec}
     use Util.Json.Json
 
     /// 選択肢 1 つ。label = 画面に出す言葉、goto = 選んだ先の節 id、

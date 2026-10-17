@@ -4,9 +4,7 @@
 // 実演する決定的な台本。SceneRender.flix の静止画とは別に、動きを見せたい GIF だけをここに分ける
 // （gallery/reference は静止画の比較専用なので、ここでは触らない）。
 mod GifRender {
-    use flix_game_engine::{
-        App, Color, FontAtlas, GameEngine, HeadlessFont, HeadlessRender, Render, Vec2
-    }
+    use fge::{App, Color, FontAtlas, GameEngine, HeadlessFont, HeadlessRender, Render, Vec2}
 
     import java.io.File
 

@@ -16,7 +16,7 @@
 //   ダイアログ・本文・エラーバナーは withHudView 側（hud）— 部屋の z に関わらず必ず手前
 mod View {
 
-    use flix_game_engine::{
+    use fge::{
         App, Color, DrawCmd, FontAtlas, Fx, Num, PxSprite, RawDraw, Render, Sway, TextDraw,
         UiRender, Vec2
     }

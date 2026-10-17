@@ -3,7 +3,7 @@
 //       make render SHOT=main → debug/main.png（1 枚だけ）
 //       make atelier-preview → debug/atelier/*.png（スナップショットの外）
 mod SceneRender {
-    use flix_game_engine::{
+    use fge::{
         App, Color, FontAtlas, GameEngine, HeadlessFont, HeadlessRender, PxSprite, PxSpriteAtlas,
         PxSpriteDoc, Render, Vec2
     }

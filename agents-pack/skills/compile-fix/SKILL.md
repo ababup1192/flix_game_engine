@@ -84,7 +84,7 @@ engine の中で境界の内側を書いているなら `1.0f32` のようにサ
 **症状**: engine の名前で `Undefined name 'App.run'`（E2136）・
 `Undefined type 'Color'`（E2916）が大量に出る
 
-**修正**: `bin/fge engine-uses` で mod ごとに `use flix_game_engine::{...}` を足す。
+**修正**: `bin/fge engine-uses` で mod ごとに `use fge::{...}` を足す（mount は toml）。
 手で書くなら use は mod の中に置く（ファイル直下の use は mod へ届かない）。
 engine の非 pub の mod は届かない（`InaccessibleModule`）。
 
@@ -95,7 +95,8 @@ engine の非 pub の mod は届かない（`InaccessibleModule`）。
 
 **修正**: 1 つの関数の中で同じ effect は 1 つの型だけ。型ごとに関数を分ける。
 effect の型変数（`ef[t]`）には型を当てない。型引数に trait の制約を付けた
-ハンドラはコンパイラが落ちるので、写す関数を引数で渡す。
+ハンドラはコンパイラが落ちるので、写す関数を引数で渡す。一発の音を Loop へ・
+鳴り続ける音を Sfx へ渡すと、ここ（E6795）で止まる。enum を見直す。
 
 ### 11. 依存の manifest（パッケージ管理）
 
@@ -103,3 +104,11 @@ effect の型変数（`ef[t]`）には型を当てない。型引数に trait �
 
 **修正**: flix.toml の `[package]` は version・flix・repository の 3 キーだけ。
 依存される側は repository が要る。
+
+### 12. mod と同名の enum の pub（Flix 0.78）
+
+**症状**: `Companion 'X' of non-public module 'X' cannot be 'pub'`（E9491）・
+`Companion 'X' of public module 'X' must be 'pub'`（E5848）
+
+**修正**: mod と同名の enum（companion）の pub は mod にそろえる。
+外から作らせたくないなら、別の名前の非 pub の enum + `pub type alias` にする。

@@ -4,7 +4,7 @@
 // 流し込み）の組み合わせで、クリックの意味は meta 文字列（novel/choice/N）で伝える。
 mod NovelKit {
 
-    use flix_game_engine::{
+    use fge::{
         Color, DocJson, FontAtlas, Render, RichText, UiDialog, UiLayout, UiSlots, UiSpec, UiStore,
         Vec2
     }

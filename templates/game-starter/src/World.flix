@@ -4,7 +4,7 @@
 // この World だけが持つ。
 mod World {
 
-    use flix_game_engine::{Num, PxShade, PxSprite, PxSpriteAtlas, PxSpriteDoc, ShaderDoc, Vec2}
+    use fge::{Num, PxShade, PxSprite, PxSpriteAtlas, PxSpriteDoc, ShaderDoc, Vec2}
 
     /// このフレームの入力（横・縦の軸値。-1 / 0 / +1）。
     pub type alias Input = { x = Float64, y = Float64 }

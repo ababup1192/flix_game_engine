@@ -259,6 +259,7 @@
       "avoid": [
         {"re": "bin/pxkit|bin/px\\.py|gen-[a-z-]+\\.py", "why": "消した Python の部品集・台本で描く"}
       ]
-    }
+    },
+    {"id": "typed-sound-names", "prompt": "効果音の名前を文字列で書いていて、綴りを間違えても気づけない。エンジン音のような鳴り続ける音を一発の音として鳴らしてしまう取り違えも、コンパイルで止めたい", "expect": [{"re": "Sfx\\.(play|collect)|Sfx\\[", "why": "一発の音の Sfx[s]"}, {"re": "Loop\\.(hold|collect)|Loop\\[", "why": "鳴り続ける音の Loop[s]"}], "avoid": [{"re": "with\\s+ToString\\[s\\]", "why": "trait の制約付きのハンドラ（0.78.0 でコンパイラが落ちる）"}]}
   ]
 }

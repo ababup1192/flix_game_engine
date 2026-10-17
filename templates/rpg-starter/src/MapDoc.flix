@@ -3,7 +3,7 @@
 // 歩ける・ぶつかるの規則（衝突・扉の開き方・クリア条件）はコード（World）側。
 // fail-open — 読めない・壊れているときは defaults() へ落とし、ゲームは必ず起動する。
 mod MapDoc {
-    use flix_game_engine::{DocJson, Grid, JsonCodec}
+    use fge::{DocJson, Grid, JsonCodec}
     use Util.Json.Json
 
     /// 住人 1 人。id = 扉の promise が指す名前、cell = 立っているマス、

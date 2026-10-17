@@ -4,7 +4,7 @@
 // 食い違う（しかも Studio は黙って仮色で描くので気付きにくい）。だからここで縛る。
 mod TestPalette {
 
-    use flix_game_engine::PxSpriteDoc
+    use fge::PxSpriteDoc
 
     @Test
     def testPaletteMirrorIsFresh(): Unit \ {Assert, IO} =

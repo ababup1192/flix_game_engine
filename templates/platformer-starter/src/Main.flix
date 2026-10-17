@@ -10,7 +10,7 @@
 // 空・遠山は addParallaxLayer の層(視差 0〜0.25)。withCamera がプレイヤーの
 // 先読み位置(World.cameraFocus)を画面中央に映し、withCameraBounds が面の外の
 // 虚空を映さないよう収める。
-use flix_game_engine::{App, GameEngine, LwjglLayer, PxSpriteDoc}
+use fge::{App, GameEngine, LwjglLayer, PxSpriteDoc}
 
 def main(): Unit \ IO =
     if (GameEngine.ensureMainThread()) ()
