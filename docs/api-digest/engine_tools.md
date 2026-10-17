@@ -1,4 +1,4 @@
-<!-- engine v0.38.0 / 生成: 2026-10-17 -->
+<!-- engine v0.38.0 / 生成: 2026-10-18 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine_tools
@@ -190,14 +190,20 @@
   `pub def sequence(voices: List[List[Float64]]): List[Float64]`
 - 一本のモノラル 16bit PCM WAV の全バイト。ヘッダがそのままファイル書式（RIFF サイズ・
   `pub def wavBytes(cfg: Config, samples: List[Float64]): Bytes`
+- 左右 2 本のステレオ 16bit PCM WAV の全バイト。data には左・右の順に 1 サンプルずつ交互に並べる。
+  `pub def wavBytesStereo(cfg: Config, left: List[Float64], right: List[Float64]): Bytes`
 - バイト列をそのままファイルへ書き出す（副作用はここだけ）。
   `pub def writeBytes(path: String, bytes: Bytes): Unit \ IO`
 - ループ点つきの WAV の全バイト。wavBytes の後ろに "smpl" チャンク（ループ 1 本）を足す。
   `pub def wavBytesLooped(cfg: Config, samples: List[Float64], loopStart: Int32): Bytes`
+- wavBytesLooped のステレオ版（wavBytesStereo の後ろに smpl）。ループ点は左右の組の番号で書くので、
+  `pub def wavBytesStereoLooped(cfg: Config, left: List[Float64], right: List[Float64], loopStart: Int32): Bytes`
 - 音のセットをまとめて `dir` へ描き出す。`(名前, サンプル列)` ごとに `dir/名前.wav` を書き出す
   `pub def renderSet(cfg: Config, dir: String, sounds: List[(String, List[Float64])]): Unit \ IO`
 - ループ点つきの曲を `dir/名前.wav` へ書き出す（wavBytesLooped。ディレクトリは無ければ作る）。
   `pub def renderLooped(cfg: Config, dir: String, name: String, samples: List[Float64], loopStart: Int32): Unit \ IO`
+- ループ点つきのステレオの曲を `dir/名前.wav` へ書き出す（wavBytesStereoLooped。ディレクトリは無ければ作る）。
+  `pub def renderLoopedStereo(cfg: Config, dir: String, name: String, left: List[Float64], right: List[Float64], loopStart: Int32): Unit \ IO`
 
 ## SoftRaster — `engine_tools/src/SoftRaster.flix`
 - ラスタライズ要求。design 解像度の Drawable 群を `scale` 倍に拡大して `outPath` に PNG 出力。

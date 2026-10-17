@@ -2,10 +2,10 @@ package main
 
 // waveform — WAV を目視できる 1 枚の PNG（コンタクトシート）にする。
 // 1 音につき横 1 段。段の中に波形とスペクトログラムを並べ、名前・長さ・
-// サンプルレート・ピーク振幅を書き込む。
+// サンプルレート・ピーク振幅を書き込む。ステレオは波形の欄を上下に割って左（上）と右（下）を描き、
+// 左右それぞれのピークと、左右の差の大きさ（side / mid）を書く。スペクトログラムは左右の平均。
 
 import (
-	"encoding/binary"
 	"fmt"
 	"math"
 	"os"
@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/ababup1192/flix_game_engine/go/internal/pxlib"
+	"github.com/ababup1192/flix_game_engine/go/internal/wavfile"
 )
 
 const (
@@ -40,21 +41,65 @@ var (
 	wfWave     = pxlib.RGBA{0x7C, 0xE0, 0x8A, 255}
 )
 
-// soundClip は 1 音ぶんのモノラル波形 (-1.0 〜 1.0)。
+// soundClip は 1 音ぶんの波形 (-1.0 〜 1.0)。Samples は左右の平均（モノラルならそのまま）、
+// Channels はチャンネルごとの列（モノラルは 1 本・ステレオは左・右の 2 本）。
 type soundClip struct {
 	Name       string
 	SampleRate int
 	Samples    []float64
+	Channels   [][]float64
 }
 
-func (c soundClip) peak() float64 {
+func peakOf(samples []float64) float64 {
 	peak := 0.0
-	for _, s := range c.Samples {
+	for _, s := range samples {
 		if a := math.Abs(s); a > peak {
 			peak = a
 		}
 	}
 	return peak
+}
+
+// peak はどのチャンネルかで一番大きな振れ幅（左右で打ち消し合う音を無音と見誤らない）。
+func (c soundClip) peak() float64 {
+	if len(c.Channels) == 0 {
+		return peakOf(c.Samples)
+	}
+	peak := 0.0
+	for _, ch := range c.Channels {
+		peak = math.Max(peak, peakOf(ch))
+	}
+	return peak
+}
+
+func (c soundClip) isStereo() bool { return len(c.Channels) == 2 }
+
+// sidePeaks は左右それぞれのピーク。モノラルは両方とも同じ値。
+func (c soundClip) sidePeaks() (float64, float64) {
+	if !c.isStereo() {
+		p := c.peak()
+		return p, p
+	}
+	return peakOf(c.Channels[0]), peakOf(c.Channels[1])
+}
+
+// sideToMid は左右の差 (L-R)/2 の RMS を、左右の和 (L+R)/2 の RMS で割った値。
+// 0 = 左右が同じ（モノラルと同じに聞こえる）・大きいほど左右に広がる。モノラルと無音は 0。
+func (c soundClip) sideToMid() float64 {
+	if !c.isStereo() {
+		return 0
+	}
+	var side, mid float64
+	l, r := c.Channels[0], c.Channels[1]
+	for i := 0; i < len(l) && i < len(r); i++ {
+		d, s := (l[i]-r[i])/2, (l[i]+r[i])/2
+		side += d * d
+		mid += s * s
+	}
+	if mid == 0 {
+		return 0
+	}
+	return math.Sqrt(side / mid)
 }
 
 func (c soundClip) durationMS() int {
@@ -64,85 +109,33 @@ func (c soundClip) durationMS() int {
 	return int(math.Round(float64(len(c.Samples)) * 1000.0 / float64(c.SampleRate)))
 }
 
-// decodeWAV は PCM の WAV をモノラルの -1.0 〜 1.0 へ開く。
-//
-// WhyNot: 読めない形式を無音として通さない。黙って白紙の絵が出ると、
-// 音が壊れているのか道具が壊れているのか呼ぶ側から見分けられない。
-func decodeWAV(data []byte) (int, []float64, error) {
-	if len(data) < 12 || string(data[0:4]) != "RIFF" || string(data[8:12]) != "WAVE" {
-		return 0, nil, fmt.Errorf("RIFF/WAVE ではありません")
-	}
-	var (
-		format     uint16
-		channels   int
-		sampleRate int
-		bits       int
-		body       []byte
-		haveFmt    bool
-	)
-	pos := 12
-	for pos+8 <= len(data) {
-		tag := string(data[pos : pos+4])
-		size := int(binary.LittleEndian.Uint32(data[pos+4 : pos+8]))
-		start := pos + 8
-		end := start + size
-		if end > len(data) {
-			end = len(data)
-		}
-		switch tag {
-		case "fmt ":
-			if end-start < 16 {
-				return 0, nil, fmt.Errorf("fmt チャンクが短すぎます")
-			}
-			format = binary.LittleEndian.Uint16(data[start : start+2])
-			channels = int(binary.LittleEndian.Uint16(data[start+2 : start+4]))
-			sampleRate = int(binary.LittleEndian.Uint32(data[start+4 : start+8]))
-			bits = int(binary.LittleEndian.Uint16(data[start+14 : start+16]))
-			haveFmt = true
-		case "data":
-			body = data[start:end]
-		}
-		pos = start + size
-		if size%2 == 1 {
-			pos++
-		}
-	}
-	if !haveFmt {
-		return 0, nil, fmt.Errorf("fmt チャンクがありません")
-	}
-	if format != 1 {
-		return 0, nil, fmt.Errorf("PCM (format 1) ではありません: format %d", format)
-	}
-	if bits != 8 && bits != 16 {
-		return 0, nil, fmt.Errorf("対応していないビット数です: %d bit (8 か 16 だけ)", bits)
-	}
-	if channels < 1 || channels > 2 {
-		return 0, nil, fmt.Errorf("対応していないチャンネル数です: %d (モノラルかステレオだけ)", channels)
-	}
-	if sampleRate <= 0 {
-		return 0, nil, fmt.Errorf("サンプルレートが読めません: %d", sampleRate)
-	}
-	if body == nil {
-		return 0, nil, fmt.Errorf("data チャンクがありません")
-	}
+// decodeWAVChannels は PCM の WAV をチャンネルごとの -1.0 〜 1.0 の列へ開く（ステレオは左・右の順。中身は wavfile.Decode）。
+func decodeWAVChannels(data []byte) (int, [][]float64, error) {
+	return wavfile.Decode(data)
+}
 
-	bytesPerSample := bits / 8
-	frameSize := bytesPerSample * channels
-	frames := len(body) / frameSize
-	samples := make([]float64, frames)
-	for i := 0; i < frames; i++ {
-		sum := 0.0
-		for ch := 0; ch < channels; ch++ {
-			at := i*frameSize + ch*bytesPerSample
-			if bits == 8 {
-				sum += (float64(body[at]) - 128.0) / 128.0
-				continue
-			}
-			sum += float64(int16(binary.LittleEndian.Uint16(body[at:at+2]))) / 32768.0
-		}
-		samples[i] = sum / float64(channels)
+// decodeWAV は PCM の WAV をモノラルの -1.0 〜 1.0 へ開く（ステレオは左右の平均）。
+func decodeWAV(data []byte) (int, []float64, error) {
+	rate, channels, err := decodeWAVChannels(data)
+	if err != nil {
+		return 0, nil, err
 	}
-	return sampleRate, samples, nil
+	return rate, averageOf(channels), nil
+}
+
+func averageOf(channels [][]float64) []float64 {
+	if len(channels) == 1 {
+		return channels[0]
+	}
+	out := make([]float64, len(channels[0]))
+	for i := range out {
+		sum := 0.0
+		for _, ch := range channels {
+			sum += ch[i]
+		}
+		out[i] = sum / float64(len(channels))
+	}
+	return out
 }
 
 func loadClip(path string) (soundClip, error) {
@@ -150,12 +143,12 @@ func loadClip(path string) (soundClip, error) {
 	if err != nil {
 		return soundClip{}, err
 	}
-	rate, samples, err := decodeWAV(data)
+	rate, channels, err := decodeWAVChannels(data)
 	if err != nil {
 		return soundClip{}, fmt.Errorf("%s: %v", filepath.Base(path), err)
 	}
 	name := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
-	return soundClip{Name: name, SampleRate: rate, Samples: samples}, nil
+	return soundClip{Name: name, SampleRate: rate, Samples: averageOf(channels), Channels: channels}, nil
 }
 
 // collectWAVs は渡された道 (ファイルかフォルダ) から *.wav を名前順に集める。
@@ -382,37 +375,22 @@ func (c *canvas) drawText(x, y int, text string, px pxlib.RGBA, scale int) {
 func (c *canvas) drawClip(top int, clip soundClip) {
 	label := fmt.Sprintf("%s  %dms  %dhz  peak %.3f",
 		clip.Name, clip.durationMS(), clip.SampleRate, clip.peak())
+	if clip.isStereo() {
+		l, r := clip.sidePeaks()
+		// 帯の字は横 53 字まで入るので、ステレオは短く: l / r = 左右のピーク・side = 左右の差の大きさ。
+		label = fmt.Sprintf("%s  %dms %dhz  l %.2f r %.2f side %.2f",
+			clip.Name, clip.durationMS(), clip.SampleRate, l, r, clip.sideToMid())
+	}
 	c.drawText(wfPadX, top+3, label, wfText, wfTextSize)
 
 	waveTop := top + wfHeaderH
 	c.fillRect(wfPadX, waveTop, wfPlotW, wfWaveH, wfPanelBG)
-	mid := waveTop + wfWaveH/2
-	for x := 0; x < wfPlotW; x++ {
-		c.set(wfPadX+x, mid, wfZeroLine)
-	}
-	if len(clip.Samples) > 0 {
-		half := float64(wfWaveH/2 - 1)
-		for x := 0; x < wfPlotW; x++ {
-			from := len(clip.Samples) * x / wfPlotW
-			to := len(clip.Samples) * (x + 1) / wfPlotW
-			if to <= from {
-				to = from + 1
-			}
-			lo, hi := 0.0, 0.0
-			for i := from; i < to && i < len(clip.Samples); i++ {
-				if clip.Samples[i] < lo {
-					lo = clip.Samples[i]
-				}
-				if clip.Samples[i] > hi {
-					hi = clip.Samples[i]
-				}
-			}
-			yTop := mid - int(math.Round(hi*half))
-			yBottom := mid - int(math.Round(lo*half))
-			for y := yTop; y <= yBottom; y++ {
-				c.set(wfPadX+x, y, wfWave)
-			}
-		}
+	if clip.isStereo() {
+		// 上半分が左・下半分が右。
+		c.drawWave(waveTop, wfWaveH/2, clip.Channels[0])
+		c.drawWave(waveTop+wfWaveH/2, wfWaveH/2, clip.Channels[1])
+	} else {
+		c.drawWave(waveTop, wfWaveH, clip.Samples)
 	}
 
 	specTop := waveTop + wfWaveH + wfInnerGap
@@ -433,6 +411,39 @@ func (c *canvas) drawClip(top int, clip soundClip) {
 	nyquist := fmt.Sprintf("%dk", clip.SampleRate/2000)
 	c.drawText(wfPadX+3, specTop+2, nyquist, wfText, 1)
 	c.drawText(wfPadX+3, specTop+wfSpecH-9, "0k", wfText, 1)
+}
+
+// drawWave は top から高さ h の帯に、samples の振れ幅を横 wfPlotW に縮めて描く（真ん中が 0）。
+func (c *canvas) drawWave(top, h int, samples []float64) {
+	mid := top + h/2
+	for x := 0; x < wfPlotW; x++ {
+		c.set(wfPadX+x, mid, wfZeroLine)
+	}
+	if len(samples) == 0 {
+		return
+	}
+	half := float64(h/2 - 1)
+	for x := 0; x < wfPlotW; x++ {
+		from := len(samples) * x / wfPlotW
+		to := len(samples) * (x + 1) / wfPlotW
+		if to <= from {
+			to = from + 1
+		}
+		lo, hi := 0.0, 0.0
+		for i := from; i < to && i < len(samples); i++ {
+			if samples[i] < lo {
+				lo = samples[i]
+			}
+			if samples[i] > hi {
+				hi = samples[i]
+			}
+		}
+		yTop := mid - int(math.Round(hi*half))
+		yBottom := mid - int(math.Round(lo*half))
+		for y := yTop; y <= yBottom; y++ {
+			c.set(wfPadX+x, y, wfWave)
+		}
+	}
 }
 
 func rowHeight() int {
@@ -456,6 +467,10 @@ type waveformSound struct {
 	DurationMS int     `json:"durationMs"`
 	SampleRate int     `json:"sampleRate"`
 	Peak       float64 `json:"peak"`
+	Channels   int     `json:"channels"`
+	PeakLeft   float64 `json:"peakLeft"`
+	PeakRight  float64 `json:"peakRight"`
+	SideToMid  float64 `json:"sideToMid"`
 }
 
 // waveformResult は --json 用のまとめ。
@@ -514,14 +529,21 @@ func runWaveform(out, errOut *strings.Builder, paths []string, outPath string, a
 
 	sounds := make([]waveformSound, 0, len(clips))
 	for _, clip := range clips {
+		l, r := clip.sidePeaks()
 		sounds = append(sounds, waveformSound{
-			clip.Name, clip.durationMS(), clip.SampleRate, clip.peak()})
+			clip.Name, clip.durationMS(), clip.SampleRate, clip.peak(),
+			max(1, len(clip.Channels)), l, r, clip.sideToMid()})
 	}
 	if asJSON {
 		emitJSON(out, waveformResult{outPath, sounds, len(sounds), 0})
 		return 0
 	}
 	for _, s := range sounds {
+		if s.Channels == 2 {
+			fmt.Fprintf(out, "  %-12s %5dms %6dHz stereo L %.3f R %.3f side %.2f\n",
+				s.Name, s.DurationMS, s.SampleRate, s.PeakLeft, s.PeakRight, s.SideToMid)
+			continue
+		}
 		fmt.Fprintf(out, "  %-12s %5dms %6dHz peak %.3f\n",
 			s.Name, s.DurationMS, s.SampleRate, s.Peak)
 	}

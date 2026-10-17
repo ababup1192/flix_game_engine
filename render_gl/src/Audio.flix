@@ -35,14 +35,16 @@ mod RenderAudio {
             buffer
         }
 
-    /// WAV ファイルをパースし、OpenAL バッファにアップロードする（smpl チャンクのループ点も付ける）
+    /// WAV ファイル（16bit か 8bit・モノラルかステレオ）をパースし、OpenAL バッファにアップロードする（smpl チャンクのループ点も付ける）。
+    /// ステレオはそのままステレオで鳴る。音量（setVolume）・高さ（setPitch）・ローパスはモノラルと同じに効く。
     pub def loadWavToALBuffer(path: String): Int32 \ IO =
         let wavBytes = Files.readAllBytes(Paths.get(path));
         let hdr = ByteBuffer.wrap(wavBytes);
         discard hdr.order(ByteOrder.LITTLE_ENDIAN);
-        let channels = Int16.toInt32(hdr.getShort(22));
-        let sampleRate = hdr.getInt(24);
-        let bitsPerSample = Int16.toInt32(hdr.getShort(34));
+        // 形式は fmt チャンクから（モノラル・ステレオどちらも。読めなければ従来どおり 44 バイトのヘッダの位置）。
+        let (channels, sampleRate, bitsPerSample) =
+            AudioUtil.formatOf(i -> hdr.get(i), i -> hdr.getInt(i), hdr.limit())
+            |> Option.getWithDefault((Int16.toInt32(hdr.getShort(22)), hdr.getInt(24), Int16.toInt32(hdr.getShort(34))));
         let dataOffset = match AudioUtil.findDataChunkOffset(i -> hdr.get(i), i -> hdr.getInt(i), hdr.limit(), 12) {
             case Some(off) => off
             case None      => bug!("WAV data chunk not found: ${path}")
@@ -58,7 +60,8 @@ mod RenderAudio {
         MemoryUtil.memFree(pcmBuf);
         // ループ点（smpl チャンク）があれば、AL_LOOPING のときに [頭, 終わり) だけを繰り返す。
         // 音源へ付ける前のバッファにしか設定できない（OpenAL Soft の AL_SOFT_loop_points の決まり）ので、ここで付ける。
-        let frames = dataSize / Int32.max(1, channels * bitsPerSample / 8);
+        // ループ点はサンプルの組（ステレオなら左右 1 つずつ）の番号なので、左右は同じ所で継ぎ目を迎える。
+        let frames = AudioUtil.framesOf(dataSize, channels, bitsPerSample);
         let points = AudioUtil.loopPointsOf(i -> hdr.get(i), i -> hdr.getInt(i), hdr.limit());
         let supported = Option.nonEmpty(points) and AL10.alIsExtensionPresent("AL_SOFT_loop_points");
         match points {

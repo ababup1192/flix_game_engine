@@ -38,6 +38,7 @@ import (
 	"github.com/ababup1192/flix_game_engine/go/internal/heavy"
 	"github.com/ababup1192/flix_game_engine/go/internal/proposal"
 	"github.com/ababup1192/flix_game_engine/go/internal/useengine"
+	"github.com/ababup1192/flix_game_engine/go/internal/wavfile"
 )
 
 // Options は fge compare の引数。
@@ -415,7 +416,7 @@ func compareKind(o Options, kind string, base, cur map[string]string) []Item {
 			case "video":
 				it.Detail, it.Pair, it.Video = diffVideo(o, n, b, c)
 			case "sound":
-				it.Detail = diffSize(b, c)
+				it.Detail = diffSound(b, c)
 			}
 		}
 		items = append(items, it)
@@ -449,6 +450,23 @@ func diffSize(a, b string) string {
 		return ""
 	}
 	return fmt.Sprintf("%d → %d バイト", ia.Size(), ib.Size())
+}
+
+// diffSound は WAV の形（チャンネル数・サンプルレート・長さ・左右のピーク）を 基準 → 今 で並べる。
+// モノラル → ステレオの入れ替えや、片側だけ鳴らなくなった音がバイト数だけでは見分けられないため。
+// 読めない WAV はバイト数だけ。
+func diffSound(a, b string) string {
+	da, errA := os.ReadFile(a)
+	db, errB := os.ReadFile(b)
+	if errA != nil || errB != nil {
+		return diffSize(a, b)
+	}
+	sa, errA := wavfile.Summarize(da)
+	sb, errB := wavfile.Summarize(db)
+	if errA != nil || errB != nil {
+		return diffSize(a, b)
+	}
+	return fmt.Sprintf("%s → %s（%s）", sa, sb, diffSize(a, b))
 }
 
 func safeName(name string) string {

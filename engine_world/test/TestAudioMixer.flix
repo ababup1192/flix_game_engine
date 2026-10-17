@@ -2,6 +2,8 @@
 // 確かめるのは規則だけ: 振り分けの最長一致・クールダウン・ダッキングの下がり方と戻り方
 // （一発の音・鳴り続ける音の両方）・スナップショットへなめらかに移ること・Doc の読み込み。
 mod TestAudioMixer {
+    import java.io.File
+    import java.io.FileOutputStream
 
     def dt(): Float64 = 1.0 / 60.0
 
@@ -125,6 +127,70 @@ mod TestAudioMixer {
         let hum = List.repeat(7, mixFrame(Nil, "hum" :: Nil));
         Assert.assertEq(expected = (Vector#{0.1, 0.2, 0.3, 0.4, 0.3, 0.4, 0.3}, Vector#{0.1, 0.2, 0.3, 0.4, 0.1, 0.2, 0.3}),
             (AudioMixdown.mixdownLooped(10, 10.0, sounds, Map#{"hum" => 2}, hum), AudioMixdown.mixdown(10, 10.0, sounds, hum)))
+
+    // ── ステレオ（mixdownStereo / loadWavStereo）──
+
+    def stereo(left: Vector[Float64], right: Vector[Float64]): AudioMixdown.Stereo = { left = left, right = right }
+
+    /// レコードには Eq が無いので、比べるときは (左, 右) の組にする。
+    def sides(st: AudioMixdown.Stereo): (Vector[Float64], Vector[Float64]) = (st#left, st#right)
+
+    /// 左右の違う一発の音と、モノラル（左右に同じ列）の続く音を重ねると、左右それぞれに足される（混ざって平均されない）。
+    @Test
+    def testMixdownStereoKeepsLeftAndRightApart(): Unit \ Assert =
+        let sounds = Map#{"tick" => stereo(Vector#{1.0, 1.0}, Vector#{0.0, 0.5}),
+                          "hum" => stereo(Vector#{0.25}, Vector#{0.25})};
+        let out = AudioMixdown.mixdownStereo(10, 10.0, sounds, Map.empty(),
+            mixFrame("tick" :: Nil, "hum" :: Nil) :: mixFrame(Nil, "hum" :: Nil) :: mixFrame(Nil, "hum" :: Nil) :: Nil);
+        Assert.assertEq(expected = (Vector#{1.25, 1.25, 0.25}, Vector#{0.25, 0.75, 0.25}), sides(out))
+
+    /// ステレオの続く音のループ: 左右とも同じサンプルでループの頭へ戻る（継ぎ目が左右でずれない）。
+    @Test
+    def testMixdownStereoLoopsBothSidesAtTheSameSample(): Unit \ Assert =
+        let sounds = Map#{"hum" => stereo(Vector#{0.1, 0.2, 0.3, 0.4}, Vector#{-0.1, -0.2, -0.3, -0.4})};
+        let out = AudioMixdown.mixdownStereo(10, 10.0, sounds, Map#{"hum" => 2}, List.repeat(7, mixFrame(Nil, "hum" :: Nil)));
+        Assert.assertEq(expected = (Vector#{0.1, 0.2, 0.3, 0.4, 0.3, 0.4, 0.3}, Vector#{-0.1, -0.2, -0.3, -0.4, -0.3, -0.4, -0.3}), sides(out))
+
+    /// モノラルの素材だけなら、mixdownStereo の左右はどちらも mixdown（モノラル）と同じ列。
+    @Test
+    def testMixdownStereoOfMonoMatchesMixdown(): Unit \ Assert =
+        let mono = Map#{"tick" => Vector#{1.0, 0.5, 0.25}};
+        let frames = mixFrame("tick" :: Nil, Nil) :: mixFrame(Nil, Nil) :: mixFrame("tick" :: Nil, Nil) :: mixFrame(Nil, Nil) :: Nil;
+        let out = AudioMixdown.mixdownStereo(10, 10.0, Map.map(v -> stereo(v, v), mono), Map.empty(), frames);
+        let want = AudioMixdown.mixdown(10, 10.0, mono, frames);
+        Assert.assertEq(expected = (want, want), (out#left, out#right))
+
+    def le16Of(v: Int32): List[Int32] =
+        let u = if (v < 0) v + 65536 else v;
+        Int32.remainder(u, 256) :: u / 256 :: Nil
+
+    def le32Of(v: Int32): List[Int32] = List.append(le16Of(Int32.remainder(v, 65536)), le16Of(v / 65536))
+
+    /// 16bit の WAV（channels 本を交互に並べた samples・-32768〜32767）を一時ファイルへ書き、そのパスを返す。
+    def writeWav(channels: Int32, rate: Int32, samples: List[Int32]): String \ IO = region rc {
+        let dataSize = List.length(samples) * 2;
+        let bytes = List.flatten(
+            (82 :: 73 :: 70 :: 70 :: Nil) :: le32Of(36 + dataSize) :: (87 :: 65 :: 86 :: 69 :: Nil) ::
+            (102 :: 109 :: 116 :: 32 :: Nil) :: le32Of(16) :: le16Of(1) :: le16Of(channels) :: le32Of(rate) ::
+            le32Of(rate * 2 * channels) :: le16Of(2 * channels) :: le16Of(16) ::
+            (100 :: 97 :: 116 :: 97 :: Nil) :: le32Of(dataSize) :: List.flatMap(le16Of, samples) :: Nil);
+        let file = File.createTempFile("fge-stereo", ".wav");
+        file.deleteOnExit();
+        let out = new FileOutputStream(file);
+        out.write(List.toArray(rc, List.map(Int32.truncateToInt8, bytes)));
+        out.close();
+        file.getPath()
+    }
+
+    /// ステレオの WAV は左右 2 本に、モノラルは左右に同じ列で読む。サンプルレートの読み直し（20 → 10）は左右とも同じ位置。
+    @Test
+    def testLoadWavStereoReadsBothSides(): Unit \ {Assert, IO} =
+        let st = writeWav(2, 20, 16384 :: -16384 :: 0 :: 0 :: 8192 :: -8192 :: 0 :: 0 :: Nil);
+        let mono = writeWav(1, 10, 16384 :: 8192 :: Nil);
+        let a = AudioMixdown.loadWavStereo(10, st);
+        let b = AudioMixdown.loadWavStereo(10, mono);
+        Assert.assertEq(expected = ((Vector#{0.5, 0.25}, Vector#{-0.5, -0.25}), (Vector#{0.5, 0.25}, Vector#{0.5, 0.25}), Vector#{0.0, 0.0}),
+            (sides(a), sides(b), AudioMixdown.loadWav(10, st)))
 
     /// 鳴り続ける音が止まれば、曲は releaseSeconds で元へ戻る。
     @Test

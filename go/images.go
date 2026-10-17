@@ -22,7 +22,8 @@ const (
 	trackedMaxTotalBytes = 8 * 1024 * 1024
 )
 
-var allowedPrefixes = []string{"docs/gallery/", "docs/brand/"}
+// "assets/" はゲームのリポ直下の assets/（素材の置き場）。"/assets/" だけだと直下に当たらない。
+var allowedPrefixes = []string{"docs/gallery/", "docs/brand/", "assets/"}
 var allowedSubstrings = []string{"/assets/"}
 var allowedSuffixes = []string{"/reference/title.png"}
 var allowedExact = []string{"reference/title.png"}

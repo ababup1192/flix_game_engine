@@ -198,15 +198,19 @@ func TestImageOutsideAllowedPlaceStops(t *testing.T) {
 	}
 }
 
-func TestTopLevelAssetsIsNotAllowed(t *testing.T) {
+func TestTopLevelAssetsIsAllowed(t *testing.T) {
 	root := fakeRepo(t)
-	parent, _, _, _ := gateRun(t, root, []string{"--files", "assets/tiles.png"}, okLints(t), nil)
-	if !strings.Contains(parent, "assets/tiles.png — 追跡してよい置き場ではありません") {
-		t.Errorf("リポ直下の assets/ が通ってしまった: %q", parent)
+	// ゲームのリポでは assets/ が直下にある（素材の置き場）。*/assets/ だけを許すと直下の素材が止まる。
+	for _, path := range []string{"assets/tiles.png", "game/assets/tiles.png"} {
+		parent, _, _, code := gateRun(t, root, []string{"--files", path}, okLints(t), nil)
+		if parent != "" || code != 0 {
+			t.Errorf("%s は通るはず: %q code=%d", path, parent, code)
+		}
 	}
-	parent, _, _, code := gateRun(t, root, []string{"--files", "game/assets/tiles.png"}, okLints(t), nil)
-	if parent != "" || code != 0 {
-		t.Errorf("*/assets/ は通るはず: %q code=%d", parent, code)
+	// 名前の頭が assets で始まるだけの別の置き場は通さない。
+	parent, _, _, _ := gateRun(t, root, []string{"--files", "assets_old/tiles.png"}, okLints(t), nil)
+	if !strings.Contains(parent, "assets_old/tiles.png — 追跡してよい置き場ではありません") {
+		t.Errorf("assets_old/ が通ってしまった: %q", parent)
 	}
 }
 

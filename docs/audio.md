@@ -146,6 +146,19 @@ SfxSynth.renderLooped(cfg(), "assets/sfx", "bgmFight", List.append(intro, body),
 - 動画の書き出し（`AudioMixdown.mixdownLooped`）も同じ回り方をする。ループ点は `AudioMixdown.loadLoopStart` で読む。
 - `smpl` を読む口は `AudioUtil.loopPointsOf`（終わりを含まない形で返す）。外のツールで作った WAV でも、
   `smpl` に前へ進むループが 1 本あれば同じように回る。
+- ステレオの曲も同じ（`SfxSynth.renderLoopedStereo`）。ループ点は左右 1 組の番号なので、左右は同じサンプルで頭へ戻る。
+
+### ステレオの WAV（0.39.0 から）
+
+16bit の WAV はモノラルでもステレオでもそのまま `assets/` に置いて鳴らせる（project.json の書き方も同じ）。
+
+- 実機はステレオをステレオのまま鳴らす。モノラルは今までどおり両耳に同じ音。サンプルレートは WAV ごとに
+  違ってよい（OpenAL が鳴らす側で合わせる）。`setVolume`・`setPitch`・バスの音量とローパスはステレオにも同じに効く。
+  左右の振り（パン）を付ける口は無い。
+- 動画の音をステレオで書き出すなら `AudioMixdown.loadWavStereo` → `mixdownStereo` → `SfxSynth.wavBytesStereo`。
+  モノラルの素材は左右に同じ音で入る。`loadWav` / `mixdown` は今までどおりモノラル（ステレオの素材は左右の平均）。
+- `fge waveform`（`make gallery-sounds`）はステレオを上（左）と下（右）に描き、左右のピークと `side`
+  （左右の差の大きさ。0 = 左右が同じ）を出す。`make compare` の音の差にもチャンネル数・長さ・ピークが出る。
 
 ## 音の通り道（`App.withMixer` と mixer.json）
 
@@ -227,7 +240,8 @@ App.make(initialWorld)
 
 ゲーム側は `src/render/SfxRender.flix` に「音のデザイン」だけを書き、`SceneRender.all` から
 `renderAll` を呼んで `assets/sfx/` へ WAV を書き出す（`make render-all`）。合成と WAV エンコードは
-engine_tools 側の `SfxSynth.wavBytes` / `writeBytes` / `renderSet`（ループ点つきの曲は `renderLooped`）が持つので、
+engine_tools 側の `SfxSynth.wavBytes` / `writeBytes` / `renderSet`（ループ点つきの曲は `renderLooped`・
+ステレオは `wavBytesStereo` / `renderLoopedStereo`）が持つので、
 ゲーム側は波形の足し算だけ書けばよい。
 
 `templates/race-starter/src/render/SfxRender.flix` と同じ組み立て方の抜粋:

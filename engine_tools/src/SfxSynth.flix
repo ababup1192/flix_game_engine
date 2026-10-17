@@ -1,6 +1,6 @@
 // SfxSynth — 短い効果音を、波形の足し算だけで一から作る。録音もサンプル素材も要らず、
 // 矩形波・雑音・減衰・重ね・連結という最小の語彙で「歩く音」「押す音」を組み立て、
-// そのまま 16bit モノラル PCM の WAV バイト列にする。
+// そのまま 16bit モノラル PCM の WAV バイト列にする（左右 2 本ならステレオ: wavBytesStereo）。
 // 利用例: ゲームの効果音をテストで描き出してアセットに置く / 値を変えて即座に鳴らし比べる。
 // 注意: 各サンプルは番号の純粋な関数で決定論的（毎回同じ音）。周波数や長さといった音の
 //   デザインはすべて呼び側が渡す値で、ここは合成の仕組みだけを持つ。バイト列を作る純粋部と、
@@ -74,8 +74,19 @@ pub mod SfxSynth {
 
     /// 一本のモノラル 16bit PCM WAV の全バイト。ヘッダがそのままファイル書式（RIFF サイズ・
     /// PCM を表す "fmt " ブロック・"data" ブロック）。
-    pub def wavBytes(cfg: Config, samples: List[Float64]): Bytes =
-        let dataSize = List.length(samples) * 2;
+    pub def wavBytes(cfg: Config, samples: List[Float64]): Bytes = pcmBytes(cfg, 1, samples)
+
+    /// 左右 2 本のステレオ 16bit PCM WAV の全バイト。data には左・右の順に 1 サンプルずつ交互に並べる。
+    /// 長さは短い方にそろえる（左右の組が欠けないように）。
+    pub def wavBytesStereo(cfg: Config, left: List[Float64], right: List[Float64]): Bytes =
+        pcmBytes(cfg, 2, interleave(left, right))
+
+    def interleave(left: List[Float64], right: List[Float64]): List[Float64] =
+        List.zipWith((l, r) -> l :: r :: Nil, left, right) |> List.flatten
+
+    /// channels 本のサンプルを交互に並べた列（interleaved）から WAV の全バイトを作る。
+    def pcmBytes(cfg: Config, channels: Int32, interleaved: List[Float64]): Bytes =
+        let dataSize = List.length(interleaved) * 2;
         let sr = cfg#sampleRate;
         let header = List.flatten(
             tag(82, 73, 70, 70) ::         // "RIFF"
@@ -84,14 +95,14 @@ pub mod SfxSynth {
             tag(102, 109, 116, 32) ::      // "fmt "
             le32(16) ::                    // PCM ブロックサイズ
             le16(1) ::                     // format 1 = PCM
-            le16(1) ::                     // モノラル
+            le16(channels) ::              // 1 = モノラル・2 = ステレオ
             le32(sr) ::
-            le32(sr * 2) ::                // バイトレート（16bit モノラル）
-            le16(2) ::                     // ブロックアライン
+            le32(sr * 2 * channels) ::     // バイトレート（16bit × チャンネル数）
+            le16(2 * channels) ::          // ブロックアライン（1 組のバイト数）
             le16(16) ::                    // ビット深度
             tag(100, 97, 116, 97) ::       // "data"
             le32(dataSize) :: Nil);
-        List.append(header, List.flatMap(s -> le16(clip16(s)), samples))
+        List.append(header, List.flatMap(s -> le16(clip16(s)), interleaved))
 
     /// バイト列をそのままファイルへ書き出す（副作用はここだけ）。
     /// 書き終えてから path へ置き換える — 書き先は元のアセット（assets/sfx/）なので、途中で止まって
@@ -109,10 +120,18 @@ pub mod SfxSynth {
     /// 別に持たなくてよい）。読む側は AudioUtil.loopPointsOf（実機の OpenAL と AudioMixdown が読む）。
     /// loopStart が 0 未満・長さ以上なら smpl を付けない（頭から全部を繰り返す、ふつうの WAV）。
     pub def wavBytesLooped(cfg: Config, samples: List[Float64], loopStart: Int32): Bytes =
-        let n = List.length(samples);
-        if (loopStart < 0 or loopStart >= n) wavBytes(cfg, samples)
+        loopedBytes(cfg, 1, List.length(samples), wavBytes(cfg, samples), loopStart)
+
+    /// wavBytesLooped のステレオ版（wavBytesStereo の後ろに smpl）。ループ点は左右の組の番号で書くので、
+    /// 鳴らす側（OpenAL・AudioMixdown）は左右とも同じサンプルで頭へ戻る。
+    pub def wavBytesStereoLooped(cfg: Config, left: List[Float64], right: List[Float64], loopStart: Int32): Bytes =
+        let n = Int32.min(List.length(left), List.length(right));
+        loopedBytes(cfg, 2, n, wavBytesStereo(cfg, left, right), loopStart)
+
+    /// plain（n 組・channels 本の WAV）に smpl チャンクを足す。範囲外の頭なら plain のまま。
+    def loopedBytes(cfg: Config, channels: Int32, n: Int32, plain: Bytes, loopStart: Int32): Bytes =
+        if (loopStart < 0 or loopStart >= n) plain
         else {
-            let plain = wavBytes(cfg, samples);
             let smpl = List.flatten(
                 tag(115, 109, 112, 108) ::     // "smpl"
                 le32(60) ::                    // 36 + ループ 1 本 24
@@ -124,12 +143,12 @@ pub mod SfxSynth {
                 le32(0) ::                     // 後ろに付ける独自のデータ（無し）
                 le32(0) ::                     // ループの番号
                 le32(0) ::                     // 前へ進むループ
-                le32(loopStart) ::             // 頭（このサンプルを含む）
-                le32(n - 1) ::                 // 終わり（このサンプルを含む）
+                le32(loopStart) ::             // 頭（この組を含む）
+                le32(n - 1) ::                 // 終わり（この組を含む）
                 le32(0) ::                     // 端数
                 le32(0) :: Nil);               // 回数（0 = ずっと）
             // RIFF の長さの欄（4 バイト目から）だけ smpl の分を足し直す。
-            let riff = le32(36 + n * 2 + List.length(smpl));
+            let riff = le32(36 + n * 2 * channels + List.length(smpl));
             List.flatten(List.take(4, plain) :: riff :: List.drop(8, plain) :: smpl :: Nil)
         }
 
@@ -146,4 +165,9 @@ pub mod SfxSynth {
     pub def renderLooped(cfg: Config, dir: String, name: String, samples: List[Float64], loopStart: Int32): Unit \ IO =
         discard (new File(dir)).mkdirs();
         writeBytes("${dir}/${name}.wav", wavBytesLooped(cfg, samples, loopStart))
+
+    /// ループ点つきのステレオの曲を `dir/名前.wav` へ書き出す（wavBytesStereoLooped。ディレクトリは無ければ作る）。
+    pub def renderLoopedStereo(cfg: Config, dir: String, name: String, left: List[Float64], right: List[Float64], loopStart: Int32): Unit \ IO =
+        discard (new File(dir)).mkdirs();
+        writeBytes("${dir}/${name}.wav", wavBytesStereoLooped(cfg, left, right, loopStart))
 }

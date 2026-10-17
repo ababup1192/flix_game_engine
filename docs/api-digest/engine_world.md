@@ -1,4 +1,4 @@
-<!-- engine v0.38.0 / 生成: 2026-10-17 -->
+<!-- engine v0.38.0 / 生成: 2026-10-18 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine_world
@@ -352,8 +352,14 @@
   `pub def mixdown(sampleRate: Int32, fps: Float64, sounds: Map[String, Vector[Float64]], frames: List[MixFrame]): Vector[Float64]`
 - mixdown に、鳴り続ける音のループ点を足した物。loopStarts = 名前 → 繰り返しの頭のサンプル番号
   `pub def mixdownLooped(sampleRate: Int32, fps: Float64, sounds: Map[String, Vector[Float64]], loopStarts: Map[String, Int32], frames: List[MixFrame]): Vector[Float64]`
+- 左右 2 本の波形（同じ長さ）。モノラルの素材は左右に同じ列を置く（loadWavStereo がそう読む）。
+  `pub type alias Stereo = { left = Vector[Float64], right = Vector[Float64] }`
+- mixdownLooped の左右 2 本版（動画の音をステレオで書き出す）。混ぜ方の規則は mixdownLooped と同じで、
+  `pub def mixdownStereo(sampleRate: Int32, fps: Float64, sounds: Map[String, Stereo], loopStarts: Map[String, Int32], frames: List[MixFrame]): Stereo`
 - WAV（PCM 16bit。モノラル・ステレオ）を sampleRate のモノラル -1〜1 へ読む。
   `pub def loadWav(sampleRate: Int32, path: String): Vector[Float64] \ IO`
+- WAV（PCM 16bit）を sampleRate の左右 2 本へ読む（mixdownStereo へ渡す）。モノラルは左右に同じ列。
+  `pub def loadWavStereo(sampleRate: Int32, path: String): Stereo \ IO`
 - WAV のループ点の頭（smpl チャンク。AudioUtil.loopPointsOf）を、sampleRate で読み直したときの
   `pub def loadLoopStart(sampleRate: Int32, path: String): Option[Int32] \ IO`
 - 波形のいちばん大きな振れ幅（0〜）。割れの確かめと、書き出す前の音量合わせに使う。

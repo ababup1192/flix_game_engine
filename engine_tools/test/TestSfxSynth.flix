@@ -78,6 +78,29 @@ mod TestSfxSynth {
             (read(looped), read(SfxSynth.wavBytes(cfg(), samples)),
              SfxSynth.wavBytesLooped(cfg(), samples, 10) == SfxSynth.wavBytes(cfg(), samples), riff))
 
+    /// ステレオの WAV: fmt のチャンネル数 2・ブロックアライン 4 で、data は左・右の順に交互（短い方の長さにそろう）。
+    @Test
+    def testStereoWavInterleavesLeftAndRight(): Unit \ Assert =
+        let bytes = SfxSynth.wavBytesStereo(cfg(), 1.0 :: 0.0 :: 1.0 :: Nil, 0.0 :: -1.0 :: Nil);
+        let channels = List.drop(22, bytes) |> List.take(2);
+        let align = List.drop(32, bytes) |> List.take(2);
+        let data = List.drop(44, bytes);
+        Assert.assertEq(expected = (2 :: 0 :: Nil, 4 :: 0 :: Nil, 255 :: 127 :: 0 :: 0 :: 0 :: 0 :: 1 :: 128 :: Nil),
+            (channels, align, data))
+
+    /// ループ点つきのステレオの WAV: smpl の頭と終わりは左右の組の番号（バイトやサンプル数の倍ではない）で、
+    /// RIFF の長さの欄がファイルの長さと合う。
+    @Test
+    def testStereoLoopedWavCountsPairs(): Unit \ Assert =
+        let looped = SfxSynth.wavBytesStereoLooped(cfg(), List.repeat(10, 0.0), List.repeat(10, 0.0), 4);
+        let v = List.toVector(looped);
+        let at = i -> Vector.get(i, v);
+        let points = AudioUtil.loopPointsOf(i -> Int32.truncateToInt8(at(i)),
+                                            i -> at(i) + at(i + 1) * 256 + at(i + 2) * 65536 + at(i + 3) * 16777216,
+                                            Vector.length(v));
+        Assert.assertEq(expected = (Some((4, 10)), le32Of(List.length(looped) - 8)),
+            (points, List.drop(4, looped) |> List.take(4)))
+
     def le32Of(v: Int32): List[Int32] =
         Int32.remainder(v, 256) :: Int32.remainder(v / 256, 256) :: Int32.remainder(v / 65536, 256) :: v / 16777216 :: Nil
 }

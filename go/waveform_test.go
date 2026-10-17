@@ -166,3 +166,49 @@ func TestRunWaveformFailsWhenAllSilent(t *testing.T) {
 		t.Errorf("無音である旨を出すはず: %q", errOut.String())
 	}
 }
+
+func TestDecodeWAVChannelsKeepsLeftAndRight(t *testing.T) {
+	data := buildWAV16(44100, 2, [][]int16{{16384, -16384}, {0, 8192}})
+	rate, chans, err := decodeWAVChannels(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rate != 44100 || len(chans) != 2 {
+		t.Fatalf("44100Hz の 2 本のはず: %d %d", rate, len(chans))
+	}
+	if chans[0][0] != 0.5 || chans[1][0] != -0.5 || chans[1][1] != 0.25 {
+		t.Errorf("左右が別の列に入るはず: %v", chans)
+	}
+}
+
+func TestStereoClipThatCancelsIsNotSilent(t *testing.T) {
+	rows := make([][]int16, 500)
+	for i := range rows {
+		v := int16(20000 * math.Sin(2*math.Pi*440*float64(i)/22050))
+		rows[i] = []int16{v, -v}
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "wide.wav"), buildWAV16(22050, 2, rows), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out, errOut strings.Builder
+	if code := runWaveform(&out, &errOut, []string{dir}, filepath.Join(dir, "x.png"), true); code != 0 {
+		t.Fatalf("左右で打ち消し合っても無音ではない: %d %s", code, errOut.String())
+	}
+	for _, want := range []string{`"channels":2`, `"sideToMid":`} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("%s を出すはず: %s", want, out.String())
+		}
+	}
+}
+
+func TestSideToMidIsZeroForSameLeftAndRight(t *testing.T) {
+	same := soundClip{Channels: [][]float64{{0.5, -0.25}, {0.5, -0.25}}}
+	wide := soundClip{Channels: [][]float64{{0.5, 0.5}, {0.25, 0.25}}}
+	if got := same.sideToMid(); got != 0 {
+		t.Errorf("左右が同じなら 0: %v", got)
+	}
+	if got := wide.sideToMid(); math.Abs(got-1.0/3.0) > 1e-9 {
+		t.Errorf("(0.5-0.25)/2 ÷ (0.5+0.25)/2 = 1/3 のはず: %v", got)
+	}
+}

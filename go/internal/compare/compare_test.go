@@ -139,3 +139,40 @@ func TestVideoDiffListsFramesAndWritesSideBySide(t *testing.T) {
 		t.Fatalf("最初のコマの前後か左右の mp4 が無い: %q %q (%s)", pair, video, detail)
 	}
 }
+
+// wavBytes16 は 16bit PCM の WAV（channels 本を交互に並べた samples）を組む。
+func wavBytes16(rate, channels int, samples []int16) []byte {
+	out := []byte("RIFF")
+	le := func(v uint32, n int) {
+		for i := 0; i < n; i++ {
+			out = append(out, byte(v>>(8*i)))
+		}
+	}
+	le(uint32(36+2*len(samples)), 4)
+	out = append(out, "WAVEfmt "...)
+	le(16, 4)
+	le(1, 2)
+	le(uint32(channels), 2)
+	le(uint32(rate), 4)
+	le(uint32(rate*2*channels), 4)
+	le(uint32(2*channels), 2)
+	le(16, 2)
+	out = append(out, "data"...)
+	le(uint32(2*len(samples)), 4)
+	for _, v := range samples {
+		le(uint32(uint16(v)), 2)
+	}
+	return out
+}
+
+func TestSoundDiffShowsMonoToStereo(t *testing.T) {
+	dir := t.TempDir()
+	a, b := filepath.Join(dir, "a.wav"), filepath.Join(dir, "b.wav")
+	os.WriteFile(a, wavBytes16(10, 1, []int16{16384, 0, 0, 0, 0}), 0o644)
+	os.WriteFile(b, wavBytes16(20, 2, []int16{16384, -16384, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}), 0o644)
+	got := diffSound(a, b)
+	want := "1ch 10Hz 0.50 秒 ピーク 0.500 → 2ch 20Hz 0.50 秒 ピーク L 0.500 R 0.500（54 → 84 バイト）"
+	if got != want {
+		t.Errorf("got %q\nwant %q", got, want)
+	}
+}

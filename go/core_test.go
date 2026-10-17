@@ -151,6 +151,12 @@ func TestImageAllowedTitleException(t *testing.T) {
 	}
 }
 
+func TestImageAllowedTopLevelAssets(t *testing.T) {
+	if !imageAllowed("assets/art/title-bg.png") {
+		t.Error("ゲームのリポ直下の assets/ は素材の置き場として通すはず")
+	}
+}
+
 func TestImageAllowedRejectsGeneratedGallery(t *testing.T) {
 	if imageAllowed("templates/rpg-starter/gallery/battle.png") {
 		t.Error("生成した絵の置き場は通さないはず")

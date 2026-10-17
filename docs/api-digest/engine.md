@@ -1,4 +1,4 @@
-<!-- engine v0.38.0 / 生成: 2026-10-17 -->
+<!-- engine v0.38.0 / 生成: 2026-10-18 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine
@@ -74,6 +74,10 @@
   `pub def findDataChunkOffset(getByte: Int32 -> Int8 \ ef, getInt32LE: Int32 -> Int32 \ ef, limit: Int32, offset: Int32): Option[Int32] \ ef`
 - WAV の中の名前 a b c d（4 文字の ASCII。"smpl" なら 115 109 112 108）のチャンクの位置を探す。
   `pub def findChunkOffset(a: Int8, b: Int8, c: Int8, d: Int8, getByte: Int32 -> Int8 \ ef, getInt32LE: Int32 -> Int32 \ ef, limit: Int32, offset: Int32): Option[Int32] \ ef`
+- WAV の形式（"fmt " チャンク）: (チャンネル数, サンプルレート, 1 サンプルのビット数)。
+  `pub def formatOf(getByte: Int32 -> Int8 \ ef, getInt32LE: Int32 -> Int32 \ ef, limit: Int32): Option[(Int32, Int32, Int32)] \ ef`
+- data の長さ（バイト）から、サンプルの組の数（1 組 = 全チャンネルの 1 サンプルずつ）を数える。
+  `pub def framesOf(dataSize: Int32, channels: Int32, bitsPerSample: Int32): Int32`
 - WAV のループ点（"smpl" チャンクの最初のループ）。返すのは (頭, 終わり) のサンプル番号で、
   `pub def loopPointsOf(getByte: Int32 -> Int8 \ ef, getInt32LE: Int32 -> Int32 \ ef, limit: Int32): Option[(Int32, Int32)] \ ef`
 

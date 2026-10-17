@@ -58,6 +58,25 @@ pub mod AudioUtil {
             else findChunkOffset(a, b, c, d, getByte, getInt32LE, limit, offset + 8 + chunkSize + Int32.remainder(chunkSize, 2))
         }
 
+    /// WAV の形式（"fmt " チャンク）: (チャンネル数, サンプルレート, 1 サンプルのビット数)。
+    /// 1 = モノラル・2 = ステレオ（左・右の順に 1 サンプルずつ交互に並ぶ）。
+    /// 決まった位置（22 バイト目）ではなくチャンクを探して読む —— fmt の前に LIST などを置く書き出しもあるため。
+    /// fmt が無い・短いときは None。
+    pub def formatOf(getByte: Int32 -> Int8 \ ef, getInt32LE: Int32 -> Int32 \ ef, limit: Int32): Option[(Int32, Int32, Int32)] \ ef =
+        match findChunkOffset(102i8, 109i8, 116i8, 32i8, getByte, getInt32LE, limit, 12) {
+            case None      => None
+            case Some(off) =>
+                // 16bit の欄も 4 バイトで読んで下の 2 バイトだけを使う（fmt の後ろには必ず次のチャンクの頭がある）。
+                let low16 = i -> Int32.bitwiseAnd(getInt32LE(i), 0xFFFF);
+                if (getInt32LE(off + 4) < 16 or off + 8 + 16 + 2 > limit) None
+                else Some((low16(off + 8 + 2), getInt32LE(off + 8 + 4), low16(off + 8 + 14)))
+        }
+
+    /// data の長さ（バイト）から、サンプルの組の数（1 組 = 全チャンネルの 1 サンプルずつ）を数える。
+    /// ループ点（smpl）もこの組の番号で数える —— ステレオでも左右は同じ番号で継ぎ目を迎える。
+    pub def framesOf(dataSize: Int32, channels: Int32, bitsPerSample: Int32): Int32 =
+        dataSize / Int32.max(1, channels * bitsPerSample / 8)
+
     /// WAV のループ点（"smpl" チャンクの最初のループ）。返すのは (頭, 終わり) のサンプル番号で、
     /// 終わりは含まない（[頭, 終わり) を繰り返す。smpl の end は最後のサンプルを含む書き方なので 1 足す）。
     /// 曲の頭（イントロ）を 1 回だけ鳴らし、後ろの輪だけを繰り返す音に使う（Godot の WAV の取り込みと同じ読み方）。

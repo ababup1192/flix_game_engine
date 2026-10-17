@@ -14,7 +14,8 @@
     "galleryMaxFileBytes": 307200,
     "allowedPrefixes": [
       "docs/gallery/",
-      "docs/brand/"
+      "docs/brand/",
+      "assets/"
     ],
     "allowedSubstrings": [
       "/assets/"

@@ -14,7 +14,8 @@
 | 曲の頭（イントロ）を 1 回だけ鳴らし、後ろの輪だけを回す | WAV のループ点（SfxSynth.renderLooped で smpl チャンクを書く・実機と AudioMixdown.mixdownLooped が読む。[audio.md](../audio.md) の「ループ点」） |
 | BGM をだんだん出す・消す・入れ替える（音量カーブ） | AudioFade |
 | 音をバス（曲・効果音・UI・声）に分けて音量を決めたい・効果音の間だけ BGM を下げたい（ダッキング）・高い音を削って籠もらせたい（ローパス）・同じ音の細かい連打を間引きたい・場面ごとの聞こえ方を切り替えたい（スナップショット） | App.withMixer + AudioMixer（mixer.json は AudioMixerDoc。詳しくは [audio.md](../audio.md)） |
-| 実機と同じ規則で混ぜた音を WAV に書き出したい（動画の音・聞き比べ） | AudioMixdown（コマごとの withAudio / withSustained / withMixer の結果から波形を作る） |
+| 実機と同じ規則で混ぜた音を WAV に書き出したい（動画の音・聞き比べ） | AudioMixdown（コマごとの withAudio / withSustained / withMixer の結果から波形を作る。ステレオは loadWavStereo + mixdownStereo） |
+| ステレオの WAV を鳴らしたい・書き出したい | そのまま置けば鳴る（実機は 16bit のモノラル・ステレオどちらも）。書き出しは SfxSynth.wavBytesStereo / renderLoopedStereo（[audio.md](../audio.md) の「ステレオの WAV」） |
 | 効果音の素材を録音なしで作りたい（波形合成） | SfxSynth（engine_tools。詳しくは [audio.md](../audio.md)。実例: `templates/race-starter/src/render/SfxRender.flix`） |
 
 ## モジュール 1 行紹介
@@ -23,4 +24,4 @@
 - **Sfx** / **Loop** — 一発の音・鳴り続ける音をゲームの enum で鳴らす多相 effect（Flix 0.77 の実験機能）と、App の名前の列へ写す collect。
 - **AudioMixer** — 音の通り道。バス・振り分け・ダッキング・ローパス・クールダウン・スナップショットを State を持ち回す純関数で決める（App.withMixer と AudioMixdown が同じ step を呼ぶ）。
 - **AudioMixerDoc** — mixer.json の fail-open 読み込み（schema は docs/mixer.schema.json）。
-- **AudioMixdown** — AudioMixer を通した音を、ウィンドウ無しで 1 本の波形へ書き出す（実機と同じ規則: 1 つの名前は同時に 1 本・鳴り直すと頭から・ループ点のある曲は mixdownLooped で頭を 1 回だけ鳴らす）。
+- **AudioMixdown** — AudioMixer を通した音を、ウィンドウ無しで 1 本の波形へ書き出す（実機と同じ規則: 1 つの名前は同時に 1 本・鳴り直すと頭から・ループ点のある曲は mixdownLooped で頭を 1 回だけ鳴らす・左右 2 本は mixdownStereo）。

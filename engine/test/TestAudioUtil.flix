@@ -93,3 +93,38 @@ def testFindDataChunkNotFound(): Unit \ Assert =
     let result = AudioUtil.findDataChunkOffset(getByte, getInt, 12, 12);
     Assert.assertEq(expected = (None: Option[Int32]), result)
 
+
+// ========================================================================
+// formatOf / framesOf（ステレオの WAV）
+// ========================================================================
+
+def le16Of(v: Int32): List[Int32] = Int32.remainder(v, 256) :: v / 256 :: Nil
+
+def le32Of(v: Int32): List[Int32] = List.append(le16Of(Int32.remainder(v, 65536)), le16Of(v / 65536))
+
+def tagOf(s: String): List[Int32] = String.toList(s) |> List.map(Char.toBmpCodePoint)
+
+/// RIFF の頭 + LIST（4 バイト）+ fmt（channels・rate・16bit）+ data（dataSize バイトの 0）。
+def wavWithListFirst(channels: Int32, rate: Int32, dataSize: Int32): Vector[Int32] =
+    List.flatten(
+        tagOf("RIFF") :: le32Of(0) :: tagOf("WAVE") ::
+        tagOf("LIST") :: le32Of(4) :: tagOf("INFO") ::
+        tagOf("fmt ") :: le32Of(16) :: le16Of(1) :: le16Of(channels) :: le32Of(rate) ::
+        le32Of(rate * 2 * channels) :: le16Of(2 * channels) :: le16Of(16) ::
+        tagOf("data") :: le32Of(dataSize) :: List.repeat(dataSize, 0) :: Nil) |> List.toVector
+
+def formatOfBytes(v: Vector[Int32]): Option[(Int32, Int32, Int32)] =
+    let at = i -> if (i < Vector.length(v)) Vector.get(i, v) else 0;
+    AudioUtil.formatOf(i -> Int32.truncateToInt8(at(i)),
+                       i -> at(i) + at(i + 1) * 256 + at(i + 2) * 65536 + at(i + 3) * 16777216,
+                       Vector.length(v))
+
+/// fmt の前に LIST があっても、ステレオ・44100Hz・16bit と読める（決まった 22 バイト目を読まない）。
+@Test
+def testFormatOfFindsFmtAfterList(): Unit \ Assert =
+    Assert.assertEq(expected = Some((2, 44100, 16)), formatOfBytes(wavWithListFirst(2, 44100, 8)))
+
+/// ステレオ 16bit は 4 バイトで 1 組: 16 バイトは 4 組（モノラルなら 8 組）。ループ点はこの組の番号。
+@Test
+def testFramesOfCountsStereoPairs(): Unit \ Assert =
+    Assert.assertEq(expected = (4, 8), (AudioUtil.framesOf(16, 2, 16), AudioUtil.framesOf(16, 1, 16)))
