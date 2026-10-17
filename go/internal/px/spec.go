@@ -19,6 +19,7 @@ package px
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/ababup1192/flix_game_engine/go/internal/starbox"
 	"math"
 	"os"
 	"path/filepath"
@@ -701,11 +702,8 @@ func indentOf(r *reader, v any) string {
 	return ""
 }
 
-// isUnderAssets は path が（./ や ../ で回り道しても）ゲームの assets/ の下を指すか。
-func isUnderAssets(path string) bool {
-	clean := filepath.ToSlash(filepath.Clean(path))
-	return clean == "assets" || strings.HasPrefix(clean, "assets/") || strings.Contains(clean, "/assets/") || strings.HasPrefix(clean, "../")
-}
+// isUnderAssets は path が（./ や ../ で回り道しても）ゲームの assets/ の下を指すか（starbox の物）。
+var isUnderAssets = starbox.IsUnderAssets
 
 // specName は spec（か台本）のファイル名から種類の拡張子を外した物（見本の置き場と周の名前）。
 func specName(specPath string) string {

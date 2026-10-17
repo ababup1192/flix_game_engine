@@ -1,11 +1,12 @@
 package px
 
-// 検査。重さは 3 段: gate（色の門。外れたら書き出さず終了コード 1）・lint（報告だけ）・advice（報告だけ）。
+// 検査。重さは 3 段（checklevel）: gate（色の門。外れたら書き出さず終了コード 1）・lint（報告だけ）・advice（報告だけ）。
 // 違反は画素の書き手（Grid.SrcAt）から「どの部品の何番目の op」が原因かを引いて持つ。
 
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/ababup1192/flix_game_engine/go/internal/checklevel"
 	"math"
 	"os"
 	"path/filepath"
@@ -16,48 +17,14 @@ import (
 	"github.com/ababup1192/flix_game_engine/go/internal/sprite"
 )
 
-// level は検査の重さ。0 は不正な値（書き忘れを通さない）。
-type level int
+// level は検査の重さ（checklevel の物）。
+type level = checklevel.Level
 
 const (
-	_           level = iota
-	levelGate         // 外れたら止める
-	levelLint         // 報告だけ
-	levelAdvice       // 報告だけ（技法の助言）
+	levelGate   = checklevel.Gate   // 外れたら止める
+	levelLint   = checklevel.Lint   // 報告だけ
+	levelAdvice = checklevel.Advice // 報告だけ（技法の助言）
 )
-
-var levelNames = map[level]string{levelGate: "gate", levelLint: "lint", levelAdvice: "advice"}
-
-func (l level) String() string {
-	if n, ok := levelNames[l]; ok {
-		return n
-	}
-	return fmt.Sprintf("level(%d)", int(l))
-}
-
-// MarshalJSON は名前で書く。不正な値は書かない。
-func (l level) MarshalJSON() ([]byte, error) {
-	n, ok := levelNames[l]
-	if !ok {
-		return nil, fmt.Errorf("不正な level %d", int(l))
-	}
-	return json.Marshal(n)
-}
-
-// UnmarshalJSON は名前から戻す。読めない名前は誤り。
-func (l *level) UnmarshalJSON(b []byte) error {
-	var s string
-	if err := json.Unmarshal(b, &s); err != nil {
-		return err
-	}
-	for v, n := range levelNames {
-		if n == s {
-			*l = v
-			return nil
-		}
-	}
-	return fmt.Errorf("知らない level %q（gate・lint・advice）", s)
-}
 
 // checkName は検査の名前。
 type checkName string

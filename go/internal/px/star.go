@@ -6,6 +6,7 @@ package px
 //	fge px build <名前>.px.star   pxsrc・JSON はメモリの中だけに書き、書いた pxsrc を全部 build する（target の sprite.json は書く）
 //	fge px snap <名前>.px.star    gen してから撮る（周の history に台本を積む。rounds.go）
 //
+// 箱の決まり（ファイル・ネット・時刻に触れない・load の範囲・手数の上限）は starbox。
 // 台本から呼べる物は px（write_spec・write_json・palette・rng・hash01・noise1・round・frames）・op（op の registry から作る
 // dict の組み立て）・math（star_math.go。正しく丸めた値）だけ。
 // 台本の中のパスは台本のフォルダが起点（"//" で始めると作業場の根から）。pxsrc の target などは根からのパスに直して書く。
@@ -18,11 +19,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"math"
 	"math/big"
 	"os"
-	pathpkg "path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -30,23 +29,18 @@ import (
 	"time"
 
 	"github.com/ababup1192/flix_game_engine/go/internal/pxlib"
+	"github.com/ababup1192/flix_game_engine/go/internal/starbox"
 	"go.starlark.net/starlark"
 	"go.starlark.net/starlarkstruct"
-	"go.starlark.net/syntax"
 )
 
 const (
-	starDefaultMaxSteps = 500_000_000 // 1 本（load した物も 1 本ずつ）の手数の上限
-	starAdviceLines     = 600         // 台本 1 本の行数の目安
-	starAdviceSpecBytes = 500 * 1024  // 書き出す pxsrc 1 本の大きさの目安
-	starAdvicePuts      = 200         // 1 つの部品の put の画素の目安
+	starAdviceSpecBytes = 500 * 1024 // 書き出す pxsrc 1 本の大きさの目安
+	starAdvicePuts      = 200        // 1 つの部品の put の画素の目安
 )
 
-// starOptions は台本の走らせ方。
-type starOptions struct {
-	MaxSteps uint64    // 0 は既定（5 億手）
-	Stderr   io.Writer // print の行き先（nil は捨てる）
-}
+// starOptions は台本の走らせ方（starbox の物）。
+type starOptions = starbox.Options
 
 // starFile は台本が書いた 1 本。
 type starFile struct {
@@ -64,131 +58,26 @@ type starResult struct {
 
 // runStar は台本を走らせ、書いた物をメモリに集める（ファイルへは書かない）。
 func runStar(workRoot, script string, opt starOptions) (*starResult, error) {
-	full := script
-	if !filepath.IsAbs(full) {
-		full = filepath.Join(workRoot, script)
-	}
-	full = filepath.Clean(full)
-	if !strings.HasSuffix(full, ".px.star") {
-		return nil, fmt.Errorf("%s: 台本の名前は <名前>.px.star", script)
-	}
-	if opt.MaxSteps == 0 {
-		opt.MaxSteps = starDefaultMaxSteps
-	}
-	dir := filepath.Dir(full)
-	allowed := []string{dir, filepath.Join(filepath.Dir(dir), "tools")}
-	st := &starState{workRoot: workRoot, scriptDir: filepath.ToSlash(rel(workRoot, dir)), opt: opt, allowed: allowed, modules: map[string]*starModule{}, written: map[string]int{}, noise: map[string][]float64{}, math: newStarMath()}
-	if _, err := st.exec(full); err != nil {
+	box, full, err := starbox.Open(workRoot, script, ".px.star", opt)
+	if err != nil {
 		return nil, err
 	}
-	res := &starResult{Files: st.files, Steps: st.steps}
-	res.Advice = append(st.advice, starOutputAdvice(st.files)...)
+	st := &starState{Box: box, written: map[string]int{}, noise: map[string][]float64{}, math: newStarMath()}
+	if err := box.Run(full, starlark.StringDict{"px": st.pxModule(), "op": starOpModule(), "math": st.math}); err != nil {
+		return nil, err
+	}
+	res := &starResult{Files: st.files, Steps: box.Steps}
+	res.Advice = append(box.Advice, starOutputAdvice(st.files)...)
 	return res, nil
 }
 
-type starModule struct {
-	globals starlark.StringDict
-	err     error
-	loading bool
-}
-
 type starState struct {
-	workRoot  string
-	scriptDir string // 台本のフォルダ（workRoot からの相対。台本の中のパスの起点）
-	opt       starOptions
-	allowed   []string
-	modules   map[string]*starModule
-	files     []starFile
-	written   map[string]int // パス → files の番号（同じパスへ 2 度書いたら後の物）
-	advice    []string
-	steps     uint64
-	noise     map[string][]float64
-	math      *starlarkstruct.Module
+	*starbox.Box
+	files   []starFile
+	written map[string]int // パス → files の番号（同じパスへ 2 度書いたら後の物）
+	noise   map[string][]float64
+	math    *starlarkstruct.Module
 }
-
-var starFileOptions = &syntax.FileOptions{While: true, TopLevelControl: true}
-
-// exec は 1 本を走らせる（load の先も同じ道）。
-func (st *starState) exec(path string) (starlark.StringDict, error) {
-	if m, ok := st.modules[path]; ok {
-		if m.loading {
-			return nil, fmt.Errorf("load が輪になっている: %s", st.rel(path))
-		}
-		return m.globals, m.err
-	}
-	m := &starModule{loading: true}
-	st.modules[path] = m
-	src, err := os.ReadFile(path)
-	if err != nil {
-		m.err = err
-		m.loading = false
-		return nil, err
-	}
-	st.advice = append(st.advice, starSourceAdvice(st.rel(path), src)...)
-	if len(st.modules) == 1 {
-		// 止めずに advice（試しに 1 つ外した時に gen が通らないと試しにくい）
-		if msg := starUnusedFuncs(path, src); msg != "" {
-			st.advice = append(st.advice, fmt.Sprintf("%s: %s", st.rel(path), msg))
-		}
-	}
-	thread := &starlark.Thread{Name: st.rel(path), Load: func(th *starlark.Thread, module string) (starlark.StringDict, error) {
-		target, err := st.resolveLoad(path, module)
-		if err != nil {
-			return nil, err
-		}
-		return st.exec(target)
-	}}
-	thread.Print = func(_ *starlark.Thread, msg string) {
-		if st.opt.Stderr != nil {
-			fmt.Fprintln(st.opt.Stderr, msg)
-		}
-	}
-	thread.SetMaxExecutionSteps(st.opt.MaxSteps)
-	thread.OnMaxSteps = func(th *starlark.Thread) {
-		th.Cancel(fmt.Sprintf("手数の上限（%d 手）を超えた（ループが終わらないか、画素ごとの手打ちが多すぎる。op へ寄せる）", st.opt.MaxSteps))
-	}
-	predeclared := starlark.StringDict{"px": st.pxModule(), "op": starOpModule(), "math": st.math}
-	g, err := starlark.ExecFileOptions(starFileOptions, thread, st.rel(path), src, predeclared)
-	st.steps += thread.ExecutionSteps()
-	m.loading = false
-	if err != nil {
-		if ee, ok := err.(*starlark.EvalError); ok {
-			err = fmt.Errorf("%s", ee.Backtrace())
-		}
-		if strings.Contains(err.Error(), "cannot reassign") {
-			// Starlark の仕様: 一番外の名前は 1 度しか代入できない（一番外の for の変数を 2 つのループで使うのもこれ）
-			err = fmt.Errorf("%v\n  → 一番外（def の外）では同じ名前に 2 度代入できない。ループや組み立てを def の中に入れて呼ぶ", err)
-		}
-		m.err = err
-		return nil, err
-	}
-	m.globals = g
-	return g, nil
-}
-
-// resolveLoad は load の先を決める。台本のフォルダか隣の tools/ の .star だけ。
-func (st *starState) resolveLoad(from, module string) (string, error) {
-	if !strings.HasSuffix(module, ".star") || filepath.IsAbs(module) {
-		return "", fmt.Errorf("load %q: 相対のパスで .star を指す", module)
-	}
-	target := filepath.Clean(filepath.Join(filepath.Dir(from), filepath.FromSlash(module)))
-	real, err := filepath.EvalSymlinks(target)
-	if err != nil {
-		return "", fmt.Errorf("load %q: %v", module, err)
-	}
-	for _, a := range st.allowed {
-		ar, err := filepath.EvalSymlinks(a)
-		if err != nil {
-			continue
-		}
-		if filepath.Dir(real) == ar {
-			return target, nil
-		}
-	}
-	return "", fmt.Errorf("load %q: 台本と同じフォルダか隣の tools/ の .star だけ読める", module)
-}
-
-func (st *starState) rel(p string) string { return filepath.ToSlash(rel(st.workRoot, p)) }
 
 // ---------------------------------------------------------------- px の関数
 
@@ -204,33 +93,6 @@ func (st *starState) pxModule() *starlarkstruct.Module {
 		"frames":     starlark.NewBuiltin("px.frames", starFrames),
 		"cycle":      starlark.NewBuiltin("px.cycle", starCycle),
 	}}
-}
-
-// scriptPath は台本の中のパスを workRoot からのパスにする: "//" で始まれば作業場の根から、ほかは台本のフォルダから。
-func (st *starState) scriptPath(p string) string {
-	if strings.HasPrefix(p, "//") {
-		return p[2:]
-	}
-	if filepath.IsAbs(p) {
-		return p // outPath が断る
-	}
-	return pathpkg.Join(st.scriptDir, p)
-}
-
-// outPath は書き出し先を確かめる（workRoot の中・assets/ の外・決めた拡張子）。path は台本の中の書き方。
-func (st *starState) outPath(fn, path, suffix string) (string, error) {
-	full := st.scriptPath(path)
-	clean := filepath.ToSlash(filepath.Clean(filepath.FromSlash(full)))
-	if filepath.IsAbs(full) || clean == ".." || strings.HasPrefix(clean, "../") {
-		return "", fmt.Errorf("%s: %q は作業場の中の相対のパスで書く（台本のフォルダが起点・// で始めると作業場の根から）", fn, path)
-	}
-	if isUnderAssets(clean) {
-		return "", fmt.Errorf("%s: %q は assets/ の下（AI が作る物は atelier/ か debug/ へ）", fn, path)
-	}
-	if !strings.HasSuffix(clean, suffix) {
-		return "", fmt.Errorf("%s: %q は %s で終わる名前にする", fn, path, suffix)
-	}
-	return clean, nil
 }
 
 func (st *starState) put(path string, data []byte, spec bool) {
@@ -294,7 +156,7 @@ func (st *starState) rootedSpec(d *starlark.Dict) (*starlark.Dict, error) {
 		v := kv[1]
 		if k, ok := kv[0].(starlark.String); ok && specPathKeys[string(k)] {
 			if s, ok := v.(starlark.String); ok && (k != "style" || strings.HasSuffix(string(s), ".json")) {
-				v = starlark.String(filepath.ToSlash(filepath.Clean(filepath.FromSlash(st.scriptPath(string(s))))))
+				v = starlark.String(filepath.ToSlash(filepath.Clean(filepath.FromSlash(st.ScriptPath(string(s))))))
 			}
 		}
 		if err := out.SetKey(kv[0], v); err != nil {
@@ -313,7 +175,7 @@ func (st *starState) writeSpec(_ *starlark.Thread, b *starlark.Builtin, args sta
 	if !ok {
 		return nil, fmt.Errorf("%s: 値は dict（got %s）", b.Name(), value.Type())
 	}
-	clean, err := st.outPath(b.Name(), path, ".pxsrc.json")
+	clean, err := st.OutPath(b.Name(), path, ".pxsrc.json")
 	if err != nil {
 		return nil, err
 	}
@@ -342,7 +204,7 @@ func (st *starState) writeJSON(_ *starlark.Thread, b *starlark.Builtin, args sta
 	if err != nil {
 		return nil, err
 	}
-	clean, err := st.outPath(b.Name(), path, ".json")
+	clean, err := st.OutPath(b.Name(), path, ".json")
 	if err != nil {
 		return nil, err
 	}
@@ -366,7 +228,7 @@ func (st *starState) writePalette(_ *starlark.Thread, b *starlark.Builtin, args 
 	if err := starlark.UnpackArgs(b.Name(), args, kwargs, "path", &path, "colors", &colors, "note?", &note); err != nil {
 		return nil, err
 	}
-	clean, err := st.outPath(b.Name(), path, ".palette.json")
+	clean, err := st.OutPath(b.Name(), path, ".palette.json")
 	if err != nil {
 		return nil, err
 	}
@@ -862,133 +724,7 @@ func (v *starRngValue) Attr(name string) (starlark.Value, error) {
 
 // ---------------------------------------------------------------- JSON
 
-// starJSON は値を JSON にする（Python の json.dump(ensure_ascii=False) と同じ並び。indent < 0 は 1 行）。
-func starJSON(v starlark.Value, indent int) (string, error) {
-	var b strings.Builder
-	err := starJSONTo(&b, v, indent, 0)
-	return b.String(), err
-}
-
-func starJSONTo(b *strings.Builder, v starlark.Value, indent, level int) error {
-	open := func(c byte, n int, item func(i int) error, close byte) error {
-		b.WriteByte(c)
-		if n == 0 {
-			b.WriteByte(close)
-			return nil
-		}
-		sep := ", "
-		pad := ""
-		if indent >= 0 {
-			sep = ","
-			pad = "\n" + strings.Repeat(" ", indent*(level+1))
-		}
-		for i := 0; i < n; i++ {
-			if i > 0 {
-				b.WriteString(sep)
-			}
-			b.WriteString(pad)
-			if err := item(i); err != nil {
-				return err
-			}
-		}
-		if indent >= 0 {
-			b.WriteString("\n" + strings.Repeat(" ", indent*level))
-		}
-		b.WriteByte(close)
-		return nil
-	}
-	switch x := v.(type) {
-	case starlark.NoneType:
-		b.WriteString("null")
-	case starlark.Bool:
-		if x {
-			b.WriteString("true")
-		} else {
-			b.WriteString("false")
-		}
-	case starlark.Int:
-		b.WriteString(x.String())
-	case starlark.Float:
-		s, err := pyFloatRepr(float64(x))
-		if err != nil {
-			return err
-		}
-		b.WriteString(s)
-	case starlark.String:
-		pyJSONString(b, string(x))
-	case starlark.Indexable: // list・tuple
-		return open('[', x.Len(), func(i int) error { return starJSONTo(b, x.Index(i), indent, level+1) }, ']')
-	case *starlark.Dict:
-		items := x.Items()
-		return open('{', len(items), func(i int) error {
-			k, ok := items[i][0].(starlark.String)
-			if !ok {
-				return fmt.Errorf("dict の鍵は文字列（got %s）", items[i][0].Type())
-			}
-			pyJSONString(b, string(k))
-			b.WriteString(": ")
-			return starJSONTo(b, items[i][1], indent, level+1)
-		}, '}')
-	default:
-		return fmt.Errorf("JSON に書けない値（%s）", v.Type())
-	}
-	return nil
-}
-
 // ---------------------------------------------------------------- 決まり（最初は advice）
-
-// starSourceAdvice は台本の文面の目安（行数・while）。
-func starSourceAdvice(name string, src []byte) []string {
-	var out []string
-	if n := bytes.Count(src, []byte("\n")) + 1; n > starAdviceLines {
-		out = append(out, fmt.Sprintf("%s: %d 行（%d 行まで）。繰り返しの型は op へ寄せる", name, n, starAdviceLines))
-	}
-	f, err := starFileOptions.Parse(name, src, 0)
-	if err != nil {
-		return out // 書き損じは走らせた時に行番号つきで止まる
-	}
-	whiles := 0
-	var first syntax.Position
-	syntax.Walk(f, func(n syntax.Node) bool {
-		if w, ok := n.(*syntax.WhileStmt); ok {
-			if whiles == 0 {
-				first, _ = w.Span()
-			}
-			whiles++
-		}
-		return true
-	})
-	if whiles > 0 {
-		out = append(out, fmt.Sprintf("%s:%d: while が %d か所（range に直す）", name, first.Line, whiles))
-	}
-	return out
-}
-
-// starUnusedFuncs は台本の一番外の def で、どこからも呼ばれない物を挙げる（止める）。
-func starUnusedFuncs(path string, src []byte) string {
-	f, err := starFileOptions.Parse(path, src, 0)
-	if err != nil {
-		return ""
-	}
-	uses := map[string]int{}
-	syntax.Walk(f, func(n syntax.Node) bool {
-		if id, ok := n.(*syntax.Ident); ok {
-			uses[id.Name]++
-		}
-		return true
-	})
-	var unused []string
-	for _, s := range f.Stmts {
-		if d, ok := s.(*syntax.DefStmt); ok && uses[d.Name.Name] <= 1 {
-			pos, _ := d.Span()
-			unused = append(unused, fmt.Sprintf("%s（%d 行）", d.Name.Name, pos.Line))
-		}
-	}
-	if len(unused) == 0 {
-		return ""
-	}
-	return "使われない関数がある: " + strings.Join(unused, "・") + "（使わないなら消す）"
-}
 
 // starOutputAdvice は書き出した pxsrc の目安（大きさ・put の多用・大きな stamp）。
 func starOutputAdvice(files []starFile) []string {
@@ -1146,7 +882,7 @@ func starMarkdown() string {
 - 決まり（どれも advice）: 台本 1 本 %d 行・pxsrc 1 本 %d KB・1 部品の put %d 画素・格子の半分を超える stamp・while・使われない関数・色票の色キーが ink などの名前と重なる。
 - ‵None‵ を渡した引数は省いたのと同じ（‵op.fill(shape = None, color = …)‵ は部品の塊を塗る）。
 - px.frames に渡す lambda は、ループの変数を作った時でなく呼ばれた時に引く（Python と同じ）。ループの中で作る lambda は値を引数で閉じ込める関数から返す（‵def down(speed): return lambda i: [0, i * speed]‵）。そのまま書くと全部の部品が最後の値になる。コマの値を先に並べられるなら ‵px.cycle([f(i) for i in range(N)])‵ でも閉じ込められる。
-`, starExample, starDefaultMaxSteps, starAdviceLines, starAdviceSpecBytes/1024, starAdvicePuts)
+`, starExample, starbox.DefaultMaxSteps, starbox.AdviceLines, starAdviceSpecBytes/1024, starAdvicePuts)
 	return strings.ReplaceAll(t, "‵", "`")
 }
 
@@ -1256,3 +992,6 @@ func staleStar(workRoot, spec string) string {
 	}
 	return ""
 }
+
+// starJSON は値を JSON にする（starbox.JSON。Python の json.dump(ensure_ascii=False) と同じ並び）。
+var starJSON = starbox.JSON

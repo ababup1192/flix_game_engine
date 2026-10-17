@@ -141,7 +141,7 @@ func TestCheckRegistryHasDocs(t *testing.T) {
 		if c.Summary == "" {
 			t.Errorf("%s: Summary が空", c.Name)
 		}
-		if _, ok := levelNames[c.Level]; !ok {
+		if !c.Level.Valid() {
 			t.Errorf("%s: Level が不正", c.Name)
 		}
 	}
