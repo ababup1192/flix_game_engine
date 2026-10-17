@@ -2,7 +2,7 @@ package px
 
 // 動きの op: 元の絵（部品の画素）を、コマの番号（frames の並び）に応じて書き換える。
 // 量はどれも sin でコマごとに回り、最後のコマから最初へつながる（輪が閉じる）。
-// 動かした後の欠けや孤立した画素は pixel_perfect と orphan の検査、コマ列は anim の検査で見る。
+// 動かした後の孤立した画素は orphan の検査、コマ列は anim の検査で見る。
 
 import (
 	"fmt"
@@ -12,7 +12,7 @@ import (
 )
 
 // animOps は動きの op（これを使うスプライトには anim の検査を自動でかける）。
-var animOps = map[string]bool{"sway": true, "bob": true, "squash": true, "palette_cycle": true, "wave_shift": true}
+var animOps = map[string]bool{"sway": true, "palette_cycle": true, "wave_shift": true}
 
 // wave はコマの位相の sin（phase は 1 周 = 1.0 で足す）。
 func (c *ctx) wave(phase float64) float64 {
@@ -55,25 +55,6 @@ func swayPixels(src map[pxlib.Pt]pxlib.Key, y0, y1 int, amp, curve, s float64, f
 	return out
 }
 
-// squashPixels は中心 (cx, cy) を基準に、横 sx・縦 sy 倍に伸び縮みさせる（近い画素を拾う）。
-func squashPixels(src map[pxlib.Pt]pxlib.Key, sx, sy, cx, cy float64, w, h int) map[pxlib.Pt]pxlib.Key {
-	if len(src) == 0 || sx <= 0 || sy <= 0 {
-		return src
-	}
-	out := map[pxlib.Pt]pxlib.Key{}
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
-			srcX := cx + (float64(x)+0.5-cx)/sx
-			srcY := cy + (float64(y)+0.5-cy)/sy
-			q := pxlib.Pt{X: int(math.Floor(srcX)), Y: int(math.Floor(srcY))}
-			if k, ok := src[q]; ok {
-				out[pxlib.Pt{X: x, Y: y}] = k
-			}
-		}
-	}
-	return out
-}
-
 // waveShift は塊 m の中の色を、行ごとに横へ shift px 回す（塊の外形は動かさず、模様＝波頭だけが流れる）。
 // ripple は行が 1 つ下がるごとに足すずれ（0 で全部の行が同じ向き・同じ量）。
 func waveShift(g *pxlib.Grid, m pxlib.Mask, shift int, ripple float64) map[pxlib.Pt]pxlib.Key {
@@ -104,7 +85,7 @@ func init() {
 	register(&opDef{
 		Name: "sway", Example: `{"sway": {"amp": 1}}`,
 		Summary:   "部品の画素を行ごとに横へずらす（根元 0・先端ほど大きく・コマごとに sin）。木・草・旗・髪の揺れ",
-		Technique: "アニメ（揺れ。根元を止めて先端を遅らせる）", Finish: "lint orphan・anim（pop・loop）。欠けは pixel_perfect で整える",
+		Technique: "アニメ（揺れ。根元を止めて先端を遅らせる）", Finish: "lint orphan・anim（pop・loop）",
 		Params: []param{
 			{Name: "amp", Type: tNumber, Default: 1.0, Summary: "先端のずれの最大（px）", Lo: bound(-16), Hi: bound(16)},
 			{Name: "curve", Type: tNumber, Default: 1.0, Summary: "根元から先端への効き方（1 = まっすぐ・2 = 先端だけ大きく）", Lo: bound(0.1), Hi: bound(8)},
@@ -127,56 +108,6 @@ func init() {
 			amp, curve, s, ripple := a.num("amp"), a.num("curve"), c.wave(a.num("phase")), a.num("ripple")
 			c.moveBy(func(src map[pxlib.Pt]pxlib.Key) map[pxlib.Pt]pxlib.Key {
 				return swayPixels(src, y0, y1, amp, curve, s, root == "top", ripple, turn)
-			})
-			return nil
-		},
-	})
-	register(&opDef{
-		Name: "bob", Example: `{"bob": {"amp": 1}}`,
-		Summary:   "部品を上下に動かす（コマごとに -amp·sin。呼吸・浮遊・歩きの上下）",
-		Technique: "アニメ（溜め・弾み）", Finish: "anim（bob・ground）",
-		Params: []param{{Name: "amp", Type: tNumber, Default: 1.0, Summary: "上下の幅（px）", Lo: bound(-16), Hi: bound(16)}, pPhase},
-		Apply: func(c *ctx, a opArgs) error {
-			dy := int(math.Round(-a.num("amp") * c.wave(a.num("phase"))))
-			c.moveBy(func(src map[pxlib.Pt]pxlib.Key) map[pxlib.Pt]pxlib.Key {
-				out := map[pxlib.Pt]pxlib.Key{}
-				for p, k := range src {
-					out[pxlib.Pt{X: p.X, Y: p.Y + dy}] = k
-				}
-				return out
-			})
-			return nil
-		},
-	})
-	register(&opDef{
-		Name: "squash", Example: `{"squash": {"amount": 0.2}}`,
-		Summary:   "部品を縦に縮めて横に伸ばす（縦 1 − amount·sin・横 1 + amount·sin。足元を止める）。着地・弾み・呼吸",
-		Technique: "アニメ（つぶしと伸ばし）", Finish: "anim（area・ground）",
-		Params: []param{
-			{Name: "amount", Type: tNumber, Default: 0.2, Summary: "伸び縮みの強さ（0〜0.5 が目安）", Lo: bound(0), Hi: bound(0.9)},
-			pPhase,
-			{Name: "anchor", Type: tString, Default: "bottom", Summary: "止める所: bottom（足元）・center（真ん中）"},
-		},
-		Checks: []checkRef{{Check: checkSprite, Rule: "orphan"}},
-		Apply: func(c *ctx, a opArgs) error {
-			anc := a.str("anchor")
-			if anc != "bottom" && anc != "center" {
-				return fmt.Errorf("anchor は bottom か center")
-			}
-			x0, y0, x1, y1, ok := c.partBox()
-			if !ok {
-				return nil
-			}
-			s := c.wave(a.num("phase"))
-			am := a.num("amount")
-			cx, cy := float64(x0+x1+1)/2, float64(y0+y1+1)/2
-			if anc == "bottom" {
-				cy = float64(y1 + 1)
-			}
-			sx, sy := 1+float64(am*s), 1-float64(am*s)
-			w, h := c.G.W, c.G.H
-			c.moveBy(func(src map[pxlib.Pt]pxlib.Key) map[pxlib.Pt]pxlib.Key {
-				return squashPixels(src, sx, sy, cx, cy, w, h)
 			})
 			return nil
 		},

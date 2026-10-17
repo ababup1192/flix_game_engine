@@ -225,7 +225,7 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 		hexOf[pxlib.Key(k)] = h
 	}
 	cc := &checkCtx{Rules: rules, SpriteRules: spriteRules, HexOf: hexOf, Ground: groundHex(spec.Light.Ground, pal),
-		Light: spec.Light.Dir, Ramps: map[string][]pxlib.Key{}, Style: style, RampOwner: map[string]string{}}
+		Light: spec.Light.Dir, Ramps: map[string][]pxlib.Key{}, Style: style}
 	for k, r := range spec.Ramps {
 		cc.Ramps[k] = r
 	}
@@ -318,10 +318,6 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 				var after func(*partState, []checkRef) error
 				if !opt.NoCheck {
 					after = func(ps *partState, names []checkRef) error {
-						for id, r := range c.picked {
-							cc.Ramps[sp.Name+"."+id] = r
-							cc.RampOwner[sp.Name+"."+id] = sp.Name
-						}
 						if len(names) == 0 {
 							return nil
 						}

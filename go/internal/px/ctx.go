@@ -28,7 +28,7 @@ type partState struct {
 	copyOf  func() []pxlib.Mask // scroll の写しを 1 つずつの塊にする（scroll の無い部品は nil。gradient_fill の per: copy）
 }
 
-// pixelMove は部品の画素を動かす 1 手（sway・bob・squash・rotate）。子の部品にも同じ手を当てる。
+// pixelMove は部品の画素を動かす 1 手（sway・rotate）。子の部品にも同じ手を当てる。
 type pixelMove func(map[pxlib.Pt]pxlib.Key) map[pxlib.Pt]pxlib.Key
 
 // Region は部品の塊。
@@ -67,18 +67,17 @@ type ctx struct {
 	keyOf  map[string]pxlib.Key // legend の文字 → 色キー（stamp を legend の文字で打つとき）
 	shade  *shadeSet
 
-	FrameIndex, FrameCount int                    // コマの番号と数（動きの op が使う）
-	Seed                   int                    // 変種の seed（variants。無ければ 0）
-	hexOf                  map[pxlib.Key]string   // 色キー → #rrggbb
-	style                  *pxStyle               // 機種の決まり（無ければ nil）
-	picked                 map[string][]pxlib.Key // ramp_pick が選んだランプ（部品 id → 段）
-	measures               []measure              // contrast が測った明度差
-	tile                   bool                   // tile_preview がある（3×3 の見本と継ぎ目の検査）
-	wrap                   bool                   // 端を回して描いた（scatter_clusters の wrap か tile_preview。orphan は 3×3 で見る）
+	FrameIndex, FrameCount int                  // コマの番号と数（動きの op が使う）
+	Seed                   int                  // 変種の seed（variants。無ければ 0）
+	hexOf                  map[pxlib.Key]string // 色キー → #rrggbb
+	style                  *pxStyle             // 機種の決まり（無ければ nil）
+	measures               []measure            // contrast が測った明度差
+	tile                   bool                 // tile_preview がある（3×3 の見本と継ぎ目の検査）
+	wrap                   bool                 // 端を回して描いた（scatter_clusters の wrap か tile_preview。orphan は 3×3 で見る）
 }
 
 // edgeOps は塊の縁を見て描く op。部品が動く時は、動いた後の塊に当てる（動かしてから縁取る）。
-var edgeOps = map[string]bool{"sel_out": true, "rim_light": true, "aa_corners": true, "outline": true, "pixel_perfect": true, "ground_shadow": true}
+var edgeOps = map[string]bool{"sel_out": true, "aa_corners": true, "outline": true, "ground_shadow": true}
 
 // opStep は部品の ops の 1 手（並べ替えても違反の場所は書いた順の番号で出す）。
 type opStep struct {
@@ -272,17 +271,7 @@ func (c *ctx) apply(call opCall) error {
 	return nil
 }
 
-// under は今の部品が描く前にその画素にあった色（部品が描いていない画素か post なら透明）。
-// 線から画素を抜く op が、地の上の線に穴を開けないために使う。
-func (c *ctx) under(p pxlib.Pt) pxlib.Key {
-	ps := c.Part
-	if ps.isPost || ps.before == nil || !ps.written.At(p.X, p.Y) {
-		return pxlib.Clear
-	}
-	return ps.before.At(p.X, p.Y)
-}
-
-// allRamps は今の部品のランプ・ramp_pick が選んだランプ（部品 id の順）・spec のランプ全部（色からランプを引く時の順）。
+// allRamps は今の部品のランプ・スプライトのランプ・spec のランプ全部（色からランプを引く時の順）。
 func (c *ctx) allRamps() [][]pxlib.Key {
 	var out [][]pxlib.Key
 	if r := c.Ramp(); len(r) > 0 {
@@ -292,9 +281,6 @@ func (c *ctx) allRamps() [][]pxlib.Key {
 		if r := c.Spec.Ramps[c.Sprite.Ramp]; len(r) > 0 {
 			out = append(out, r)
 		}
-	}
-	for _, id := range sortedKeys(c.picked) {
-		out = append(out, c.picked[id])
 	}
 	for _, n := range sortedKeys(c.Spec.Ramps) {
 		out = append(out, c.Spec.Ramps[n])

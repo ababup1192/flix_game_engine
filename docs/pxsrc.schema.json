@@ -932,36 +932,6 @@
         },
         {
           "type": "object",
-          "description": "部品を上下に動かす（コマごとに -amp·sin。呼吸・浮遊・歩きの上下）",
-          "additionalProperties": false,
-          "required": [
-            "bob"
-          ],
-          "properties": {
-            "bob": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "amp": {
-                  "description": "上下の幅（px）",
-                  "type": "number",
-                  "minimum": -16,
-                  "maximum": 16,
-                  "default": 1
-                },
-                "phase": {
-                  "description": "位相のずれ（1 周 = 1.0。部品ごとに揺れを遅らせる）",
-                  "type": "number",
-                  "minimum": -1,
-                  "maximum": 1,
-                  "default": 0
-                }
-              }
-            }
-          }
-        },
-        {
-          "type": "object",
           "description": "葉の玉を重ねた木・茂み: 玉を奥（上）から手前（下）へ重ね、玉ごとに光の向きの陰・葉の斑・光の側のつや。外側に rim の 1px（部品の塊は玉の和）",
           "additionalProperties": false,
           "required": [
@@ -2045,26 +2015,6 @@
         },
         {
           "type": "object",
-          "description": "1px の線の L 字の角（ダブル）を左上から順に抜く（抜いた所は線の下の色に戻す）",
-          "additionalProperties": false,
-          "required": [
-            "pixel_perfect"
-          ],
-          "properties": {
-            "pixel_perfect": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "color": {
-                  "description": "この色の画素だけを相手にする（省くと部品の全部）",
-                  "$ref": "#/definitions/color"
-                }
-              }
-            }
-          }
-        },
-        {
-          "type": "object",
           "description": "画素を直に置く",
           "additionalProperties": false,
           "required": [
@@ -2096,92 +2046,6 @@
                 "cells",
                 "color"
               ]
-            }
-          }
-        },
-        {
-          "type": "object",
-          "description": "地の色 base から暗 → 明 n 段のランプを色票（style があればその色）から選び、この部品のランプにする（hue shift つき）",
-          "additionalProperties": false,
-          "required": [
-            "ramp_pick"
-          ],
-          "properties": {
-            "ramp_pick": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "base": {
-                  "description": "地の段に置く色キー",
-                  "type": "string"
-                },
-                "n": {
-                  "description": "段の数",
-                  "type": "integer",
-                  "minimum": 2,
-                  "maximum": 16,
-                  "default": 4
-                },
-                "at": {
-                  "description": "base を置く段（-1 で n-2 = [墨, 影, 地, 光] の地）",
-                  "type": "integer",
-                  "minimum": -1,
-                  "maximum": 15,
-                  "default": -1
-                },
-                "step": {
-                  "description": "段ごとの明るさ（Oklab の L）の差の狙い。金属は 0.2 ほどに上げる",
-                  "type": "number",
-                  "minimum": 0.01,
-                  "maximum": 1,
-                  "default": 0.13
-                },
-                "shift": {
-                  "description": "段ごとに色相を寄せる度数（0 で hue shift を切る）",
-                  "type": "number",
-                  "minimum": 0,
-                  "maximum": 180,
-                  "default": 30
-                },
-                "min_gap": {
-                  "description": "隣の段との L の差の最小",
-                  "type": "number",
-                  "minimum": 0,
-                  "maximum": 1,
-                  "default": 0.05
-                }
-              },
-              "required": [
-                "base"
-              ]
-            }
-          }
-        },
-        {
-          "type": "object",
-          "description": "塊の縁のうち光と反対の側の 1px を by 段明るくする（暗い材質を暗い地から抜く）",
-          "additionalProperties": false,
-          "required": [
-            "rim_light"
-          ],
-          "properties": {
-            "rim_light": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "by": {
-                  "description": "明るくする段数",
-                  "type": "integer",
-                  "minimum": 1,
-                  "maximum": 4,
-                  "default": 1
-                },
-                "against": {
-                  "description": "どの縁に当てるか: clear（絵の外形 = 外が透明な所だけ）・any（ほかの部品との境目にも）",
-                  "type": "string",
-                  "default": "clear"
-                }
-              }
             }
           }
         },
@@ -2353,7 +2217,7 @@
                   "default": 1
                 },
                 "ramps": {
-                  "description": "材質のランプの名前か ramp_pick を書いた部品の id（省くと部品のランプ・ramp_pick が選んだランプ・spec のランプ全部）",
+                  "description": "材質のランプの名前（省くと部品のランプ・spec のランプ全部）",
                   "type": "array",
                   "items": {
                     "type": "string"
@@ -2479,41 +2343,6 @@
                 "shape": {
                   "description": "形（省くと部品の塊）",
                   "$ref": "#/definitions/shape"
-                }
-              }
-            }
-          }
-        },
-        {
-          "type": "object",
-          "description": "部品を縦に縮めて横に伸ばす（縦 1 − amount·sin・横 1 + amount·sin。足元を止める）。着地・弾み・呼吸",
-          "additionalProperties": false,
-          "required": [
-            "squash"
-          ],
-          "properties": {
-            "squash": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "amount": {
-                  "description": "伸び縮みの強さ（0〜0.5 が目安）",
-                  "type": "number",
-                  "minimum": 0,
-                  "maximum": 0.9,
-                  "default": 0.2
-                },
-                "phase": {
-                  "description": "位相のずれ（1 周 = 1.0。部品ごとに揺れを遅らせる）",
-                  "type": "number",
-                  "minimum": -1,
-                  "maximum": 1,
-                  "default": 0
-                },
-                "anchor": {
-                  "description": "止める所: bottom（足元）・center（真ん中）",
-                  "type": "string",
-                  "default": "bottom"
                 }
               }
             }

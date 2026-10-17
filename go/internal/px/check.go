@@ -142,11 +142,10 @@ type checkCtx struct {
 	Ground      string                 // 地の色 #rrggbb（無ければ ""）
 	HexOf       map[pxlib.Key]string   // 色キー → #rrggbb
 	Light       [3]float64             // 光の来る向き（spec の light.dir）
-	Ramps       map[string][]pxlib.Key // 名前 → ランプ（spec の ramps と ramp_pick が選んだ物）
+	Ramps       map[string][]pxlib.Key // 名前 → ランプ（spec の ramps）
 	Measures    []measure              // contrast が測った明度差（今のコマ）
 	Style       *pxStyle               // 機種の決まり（spec の style。無ければ nil）
 	Wrap        bool                   // タイルとして端が回る（orphan は 3×3 に並べた絵で見る）
-	RampOwner   map[string]string      // ramp_pick が選んだランプの名前 → 選んだスプライト（ramp-order の違反の持ち主）
 	Emissive    map[string]bool        // 自分で光る部品の id（light-dir の対象外。部品の emissive）
 	Part        string                 // 部品ごとの検査の時の部品 id（pillow・light-dir はその部品が描いた画素だけを見る。コマ全体の検査では ""）
 	Poly        map[string]bool        // 形が poly の部品の id（輪郭の段は直線として flat-run だけで見る）
@@ -445,7 +444,7 @@ func init() {
 				return nil
 			}
 			// 外周が地より明るいか暗いかで、離す向きを分ける（暗い地で縁をさらに暗くすると溶ける）
-			fix := "外周が地より暗い: 外周をランプのもっと暗い段にする（directional・gradient_fill の from を 0 に）か、depth_fade で地を明るくする"
+			fix := "外周が地より暗い: 外周をランプのもっと暗い段にする（directional・gradient_fill の from を 0 に）か、地を明るい段にする"
 			if signed > 0 {
 				fix = "外周が地より明るい: 外周をランプのもっと明るい段にする（directional・gradient_fill の to を最明に）か、地を暗い段にする"
 			}

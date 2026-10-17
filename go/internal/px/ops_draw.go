@@ -52,7 +52,7 @@ func init() {
 	})
 	register(&opDef{
 		Name: "line", Example: `{"line": {"points": [[3, 3], [8, 6]], "color": "ink"}}`, Summary: "折れ線を 1px で引く（clip の部品なら親の塊の中だけ）",
-		Technique: "1px の線", Finish: "既存の lint corner（角が 2 重なら pixel_perfect）",
+		Technique: "1px の線", Finish: "既存の lint corner（角が 2 重の画素）",
 		Params: []param{pVecPoints, pColor},
 		Apply: func(c *ctx, a opArgs) error {
 			k, err := c.Color(a.color("color"))
@@ -186,35 +186,6 @@ func init() {
 			return nil
 		},
 	})
-	register(&opDef{
-		Name: "pixel_perfect", Quiet: true, Example: `{"pixel_perfect": {"color": "ink"}}`, Summary: "1px の線の L 字の角（ダブル）を左上から順に抜く（抜いた所は線の下の色に戻す）",
-		Technique: "pixel-perfect（Aseprite の Pencil の Pixel Perfect）", Finish: "既存の lint corner",
-		Params: []param{pOptColor},
-		Checks: []checkRef{{Check: checkSprite, Rule: "corner"}},
-		Apply: func(c *ctx, a opArgs) error {
-			region := c.Region()
-			want := pxlib.Key("")
-			if a.has("color") {
-				k, err := c.Color(a.color("color"))
-				if err != nil {
-					return err
-				}
-				want = k
-			}
-			m := pxlib.NewMask(c.G.W, c.G.H)
-			for _, p := range region.Points() {
-				k := c.G.At(p.X, p.Y)
-				m[p.Y][p.X] = k != pxlib.Clear && (want == "" || k == want)
-			}
-			kept := pixelPerfect(m)
-			for _, p := range m.Points() {
-				if !kept[p.Y][p.X] {
-					c.PutAbs(p.X, p.Y, c.under(p))
-				}
-			}
-			return nil
-		},
-	})
 }
 
 // shadeStep は color をランプの段で d だけずらす。端で止まる。ランプの外の色はそのまま返す。
@@ -225,59 +196,6 @@ func shadeStep(ramp []pxlib.Key, color pxlib.Key, d int) pxlib.Key {
 		}
 	}
 	return color
-}
-
-// pixelPerfect は 1px の線の塊から、L 字の角の画素を抜いた塊を返す。左上から順に 1 つずつ抜く。
-// 抜くのは次の 3 つがそろう画素: 横の隣と縦の隣が 1 つずつある・その 2 つの間の斜めが空いている・
-// 残りの 8 近傍はどれもその 2 つのどちらかと 8 近傍でつながる。
-func pixelPerfect(m pxlib.Mask) pxlib.Mask {
-	out := pxlib.NewMask(m.W(), m.H())
-	for y := range m {
-		copy(out[y], m[y])
-	}
-	for y := range out {
-		for x := range out[y] {
-			if !out[y][x] {
-				continue
-			}
-			var hs, vs []int
-			for _, d := range [2]int{-1, 1} {
-				if out.At(x+d, y) {
-					hs = append(hs, d)
-				}
-				if out.At(x, y+d) {
-					vs = append(vs, d)
-				}
-			}
-			if len(hs) != 1 || len(vs) != 1 || out.At(x+hs[0], y+vs[0]) {
-				continue // 角でない・2×2 の太い所は残す
-			}
-			keep := [2]pxlib.Pt{{X: x + hs[0], Y: y}, {X: x, Y: y + vs[0]}}
-			ok := true
-			for dy := -1; dy <= 1 && ok; dy++ {
-				for dx := -1; dx <= 1; dx++ {
-					q := pxlib.Pt{X: x + dx, Y: y + dy}
-					if (dx == 0 && dy == 0) || !out.At(q.X, q.Y) || q == keep[0] || q == keep[1] {
-						continue
-					}
-					near := false
-					for _, k := range keep {
-						if abs(q.X-k.X) <= 1 && abs(q.Y-k.Y) <= 1 {
-							near = true
-						}
-					}
-					if !near {
-						ok = false
-						break
-					}
-				}
-			}
-			if ok {
-				out[y][x] = false // 抜いても周りはつながったまま
-			}
-		}
-	}
-	return out
 }
 
 func abs(v int) int {

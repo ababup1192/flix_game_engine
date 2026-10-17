@@ -10,7 +10,7 @@ package px
 //	 "sprites": {"slime": {"size": [24, 24], "anchor": [12, 23], "ramp": "slime",
 //	   "parts": [{"id": "body", "shape": 形, "ops": [op, …]}, {"id": "eye", "on": "body", "clip": true, …}],
 //	   "post": [op, …],
-//	   "frames": {"idle": {}, "squash": {"body": {"shape": 形}}, "blink": {"eye": null}}}}}
+//	   "frames": {"idle": {}, "jump": {"body": {"at": [0, -1]}}, "blink": {"eye": null}}}}}
 //
 // 部品（parts）は平らな列で、列の順が重ねる順。親は "on" で名指しし、"clip" で親の塊の中だけに描く。
 // コマ（frames）は部品 id を鍵にした JSON Merge Patch（RFC 7386）。null でその部品を外し、"at" でずらす。

@@ -91,49 +91,7 @@ func expectRows(t *testing.T, g *pxlib.Grid, want ...string) {
 	}
 }
 
-func pear36(t *testing.T) map[string]string {
-	t.Helper()
-	data, err := os.ReadFile("testdata/gate/art/internet_dungeon.colorgate.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var doc struct {
-		Styles map[string]struct {
-			Colors map[string]string `json:"colors"`
-		} `json:"styles"`
-	}
-	if err := json.Unmarshal(data, &doc); err != nil {
-		t.Fatal(err)
-	}
-	return doc.Styles["day"].Colors
-}
-
 // --- 2 節の例 ---
-
-func TestRampPickExamples(t *testing.T) {
-	pal := pear36(t)
-	opts := rampPickOpts{N: 4, At: 2, Step: 0.13, Shift: 30, MinGap: 0.05}
-	for base, want := range map[string]string{
-		"pearAsh":      "pearSlate pearGray pearAsh pearCloud",
-		"pearLime":     "pearTeal pearJade pearLime pearLimeLight",
-		"pearBlueDeep": "pearIndigoDeep pearIndigo pearBlueDeep pearSky",
-	} {
-		got, err := rampPick(pal, base, opts)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if strings.Join(got, " ") != want {
-			t.Errorf("%s: got %v want %s", base, got, want)
-		}
-	}
-	got, err := rampPick(pal, "pearCloud", opts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got[3] != "pearWhite" {
-		t.Errorf("pearCloud の明るい端: got %s want pearWhite（pearMint にならない）", got[3])
-	}
-}
 
 func TestRampIndexBandExample(t *testing.T) {
 	var got []int
@@ -389,13 +347,6 @@ func TestViolationsCarryFix(t *testing.T) {
 
 // --- 仕上げの op ---
 
-func TestRimLight(t *testing.T) {
-	g := gridOf("bbb", "bbb", "bbb")
-	c := testCtx(g, opaqueOf(g))
-	applyOp(t, c, `{"rim_light": {}}`)
-	expectRows(t, g, "bbb", "bbc", "bcc")
-}
-
 func TestAACorners(t *testing.T) {
 	// 外が透明: 縁の墨 a と奥の c の中間 b を置く（2px の段の角だけ・45° の (4,1) には置かない）
 	g := gridOf("ca...", "ccaa.", "ccccc")
@@ -454,23 +405,6 @@ func TestSway(t *testing.T) {
 	expectRows(t, g, "..c..", "..c..") // 最初のコマは元の絵
 }
 
-func TestBob(t *testing.T) {
-	want := []string{"... / .c. / ...", ".c. / ... / ...", "... / .c. / ...", "... / ... / .c."}
-	for i := 0; i < 4; i++ {
-		g := gridOf("...", ".c.", "...")
-		applyOp(t, animCtx(g, i, 4), `{"bob": {"amp": 1}}`)
-		if got := rowsOfGrid(g); got != want[i] {
-			t.Errorf("コマ %d: got %s want %s", i, got, want[i])
-		}
-	}
-}
-
-func TestSquash(t *testing.T) {
-	g := gridOf("........", "........", "..cccc..", "..cccc..", "..cccc..", "..cccc..")
-	applyOp(t, animCtx(g, 1, 4), `{"squash": {"amount": 0.5}}`)
-	expectRows(t, g, "........", "........", "........", "........", ".cccccc.", ".cccccc.")
-}
-
 func TestPaletteCycle(t *testing.T) {
 	g := gridOf("abc")
 	applyOp(t, animCtx(g, 1, 3), `{"palette_cycle": {"colors": ["a", "b", "c"]}}`)
@@ -522,12 +456,12 @@ func TestPoseFrames(t *testing.T) {
 	}
 }
 
-// 動きの op を使うスプライトには anim の検査がかかる（揺れすぎは bob で止まる）。
+// anim: true のスプライトには anim の検査がかかる（揺れすぎは bob で止まる）。
 func TestAnimCheckRunsOnAnimatedSprite(t *testing.T) {
 	dir := writeSpec(t, specHead+`
   "sprites": {"s": {"size": [8, 12], "ramp": "r",
-    "parts": [{"id": "b", "shape": {"rect": [2, 4, 4, 4]}, "ops": [{"fill": {"color": "mid"}}, {"bob": {"amp": 3}}]}],
-    "frames": {"f0": {}, "f1": {}, "f2": {}, "f3": {}}}}}`)
+    "parts": [{"id": "b", "shape": {"rect": [2, 4, 4, 4]}, "ops": [{"fill": {"color": "mid"}}]}], "anim": true,
+    "frames": {"f0": {}, "f1": {"b": {"at": [0, -3]}}, "f2": {}, "f3": {"b": {"at": [0, 3]}}}}}}`)
 	res, err := build(dir, "t.pxsrc.json", buildOptions{RulesRoot: engineRoot})
 	if err != nil {
 		t.Fatal(err)
@@ -681,8 +615,8 @@ func TestQuickTableFitsAndNamesOps(t *testing.T) {
 			}
 		}
 	}
-	for _, name := range []string{"ramp_pick", "shade_mask", "directional", "gradient_fill", "sel_out", "dither_pair", "ground_shadow",
-		"scatter_clusters", "contrast", "sway", "bob", "squash", "palette_cycle", "rim_light", "aa_corners", "depth_fade", "mirror", "tile_preview", "glint"} {
+	for _, name := range []string{"shade_mask", "directional", "gradient_fill", "sel_out", "dither_pair", "ground_shadow",
+		"scatter_clusters", "contrast", "sway", "palette_cycle", "aa_corners", "depth_fade", "mirror", "tile_preview", "glint"} {
 		if _, ok := lookupOp(name); !ok {
 			t.Errorf("段 3 の op %s が無い", name)
 		}
