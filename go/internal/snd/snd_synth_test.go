@@ -123,9 +123,24 @@ func TestPitchEnvFalls(t *testing.T) {
 	}
 }
 
-// 書き損じは止める（雑音に重ね・知らない mode）。
+// fm は鳴らした頭を明るくし（倍音が多い）、decay_ms で floor まで暗くなる。fm の無いサインは頭も後も同じ明るさ。breaks に fm が残る。
+func TestFMBrightHeadDecays(t *testing.T) {
+	bell := renderChip(t, chipOne(`{"name": "x", "part": "sine", "fm": {"ratio": 3.5, "index": 6, "decay_ms": 60, "floor": 0}}`))
+	if head, late := hiRatio(bell.out[0], 200, 1500), hiRatio(bell.out[0], 11025, 12325); head < 3*late {
+		t.Fatalf("頭が明るいはず: 頭 %.4f・後 %.4f", head, late)
+	}
+	plain := renderChip(t, chipOne(`{"name": "x", "part": "sine"}`))
+	if head, late := hiRatio(plain.out[0], 200, 1500), hiRatio(plain.out[0], 11025, 12325); math.Abs(head-late) > 0.1*late {
+		t.Fatalf("fm の無いサインは同じ明るさ: 頭 %.4f・後 %.4f", head, late)
+	}
+	if !contains(bell.breaks, "fm") {
+		t.Fatalf("破った所に fm: %v", bell.breaks)
+	}
+}
+
+// 書き損じは止める（雑音に重ね・知らない mode・sine でない fm・範囲の外の ratio）。
 func TestSynthRefusesBadKeys(t *testing.T) {
-	for _, ch := range []string{`{"name": "x", "part": "noise", "unison": {"voices": 3}}`, `{"name": "x", "part": "saw", "filter": {"mode": "notch"}}`} {
+	for _, ch := range []string{`{"name": "x", "part": "noise", "unison": {"voices": 3}}`, `{"name": "x", "part": "saw", "filter": {"mode": "notch"}}`, `{"name": "x", "part": "saw", "fm": {"ratio": 2}}`, `{"name": "x", "part": "sine", "fm": {"ratio": 40}}`} {
 		if _, err := parseChannels(map[string]any{"channels": []any{mustJSON(t, ch)}}); err == nil {
 			t.Fatalf("止めるはず: %s", ch)
 		}

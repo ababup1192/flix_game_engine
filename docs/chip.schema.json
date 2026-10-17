@@ -16,7 +16,7 @@
       "type": "object"
     },
     "channels": {
-      "description": "チャンネルの並び [{name, part（pulse・triangle・noise・wave。機種の外の saw・sine）, vol, pan（-1〜1）, cents（デチューン）, sub（1 オクターブ下のサイン。機種の外）, duck（サイドチェインで沈める）, send: {reverb, delay}, unison, filter, pitchenv}]。rows の鍵はこの名前。機種の外の音色は下の表",
+      "description": "チャンネルの並び [{name, part（pulse・triangle・noise・wave。機種の外の saw・sine）, vol, pan（-1〜1）, cents（デチューン）, sub（1 オクターブ下のサイン。機種の外）, duck（サイドチェインで沈める）, send: {reverb, delay}, unison, filter, pitchenv, fm}]。rows の鍵はこの名前。機種の外の音色は下の表",
       "items": {
         "additionalProperties": false,
         "properties": {
@@ -66,6 +66,32 @@
                   "type": "array"
                 },
                 "type": "array"
+              }
+            },
+            "type": "object"
+          },
+          "fm": {
+            "additionalProperties": false,
+            "description": "2 オペレータの FM（part が sine だけ）。サインの高さを ratio（0.25〜16）倍のサインで index（0〜20 ラジアン）だけ揺らし、深さは鳴らした頭（打ち直しも）から decay_ms で floor（0〜1）の割合まで減る。ratio 1 で柔らかいエレピ・3.5 や 7 でベル・オルゴール",
+            "properties": {
+              "decay_ms": {
+                "exclusiveMinimum": 0,
+                "type": "number"
+              },
+              "floor": {
+                "maximum": 1,
+                "minimum": 0,
+                "type": "number"
+              },
+              "index": {
+                "maximum": 20,
+                "minimum": 0,
+                "type": "number"
+              },
+              "ratio": {
+                "maximum": 16,
+                "minimum": 0.25,
+                "type": "number"
               }
             },
             "type": "object"

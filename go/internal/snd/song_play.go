@@ -446,8 +446,9 @@ func renderChannel(s *song, cd chanDef, uv voiceVar, gain float64, waves map[str
 	out := make([]float64, n)
 	rate := float64(s.rate)
 	phase, subPhase, amp, lfsr := uv.phase0, 0.0, 0.0, 32767
+	modPhase := 0.0 // FM の揺らす側の位相
 	syn := newSynthState(cd, rate)
-	synth := cd.filter != nil || cd.pitchEnv != nil
+	synth := cd.filter != nil || cd.pitchEnv != nil || cd.fm != nil
 	gain = float64(gain * uv.scale)
 	e, _ := crmath.Exp(-1 / float64(0.001*rate))
 	follow := 1 - e
@@ -518,7 +519,14 @@ func renderChannel(s *song, cd chanDef, uv voiceVar, gain float64, waves map[str
 				dt := freq / rate
 				value = sawAt(advance(dt), dt)
 			case partSine:
-				value = sineAt(advance(freq / rate))
+				p := advance(freq / rate)
+				if cd.fm != nil { // 揺らす側のサインで位相をずらす（深さ fmIdx ラジアン）
+					p += float64(syn.fmIdx*sineAt(modPhase)) / tau
+					p -= math.Floor(p)
+					next := modPhase + float64(freq*cd.fm.ratio)/rate
+					modPhase = next - math.Floor(next)
+				}
+				value = sineAt(p)
 			case partWave:
 				p := advance(freq / rate)
 				idx := min(31, int(p*32))
@@ -667,7 +675,7 @@ func renderSong(s *song, in instruments) songOut {
 			usedFx[b] = true
 		}
 	}
-	for _, b := range []string{"reverb", "delay", "sidechain", "sub", "saw", "sine", "unison", "filter", "pitchenv"} {
+	for _, b := range []string{"reverb", "delay", "sidechain", "sub", "saw", "sine", "unison", "filter", "pitchenv", "fm"} {
 		if usedFx[b] {
 			res.breaks = append(res.breaks, b)
 		}

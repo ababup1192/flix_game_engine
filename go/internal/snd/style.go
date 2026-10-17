@@ -20,7 +20,7 @@ type sndStyle struct {
 	Ops        []string       `json:"ops"`        // 書ける op
 	Duties     []float64      `json:"duties"`     // パルスの山の割合
 	NoiseKinds []string       `json:"noiseKinds"` // 雑音の作り方
-	Breaks     []string       `json:"breaks"`     // 破ってよい所（機種の外の手: reverb・delay・sidechain・sub・pan・saw・sine・unison・filter・pitchenv。pan は振り切りより細かい左右）
+	Breaks     []string       `json:"breaks"`     // 破ってよい所（機種の外の手: reverb・delay・sidechain・sub・pan・saw・sine・unison・filter・pitchenv・fm。pan は振り切りより細かい左右）
 	name       string
 }
 
