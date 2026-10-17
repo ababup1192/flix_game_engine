@@ -13,8 +13,8 @@ import (
 )
 
 func sectionCloseRequest(c *ctx, out *[]string) {
-	if c.isDir("templates") {
-		return // engine リポ自身。templates の Main は engine 側で面倒を見る
+	if c.isFile("agents-pack/manifest.json") {
+		return // engine リポ自身（配る側）。templates の Main は engine 側で面倒を見る
 	}
 	r := c.rules.CloseRequest
 	launches := false

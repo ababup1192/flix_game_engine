@@ -5,18 +5,20 @@
 mod ZOrder {
 
     pub enum Layer with Eq, ToString {
-        case Scene   // 場面の絵（背景・主人公・塵・静的な枠）
-        case Prompt  // 終了の確認の窓（場面のどれよりも手前）
+        case Scene   // 場面の絵（背景・主人公・塵）
+        case Frame   // 画面の縁の枠（App.withStaticLayer で 1 度だけ作る静的な絵。compose を通らないので z は bottom で引く）
+        case Prompt  // 終了の確認の窓（場面と枠のどれよりも手前）
     }
 
     instance SortingLayer[Layer] {
         pub def zRange(layer: Layer): (Int32, Int32) =
             match layer {
                 case Layer.Scene  => (0, 199)
+                case Layer.Frame  => (200, 209)
                 case Layer.Prompt => (300, 309)
             }
     }
 
     /// 奥から手前へ全部の層（F8 の注釈の文脈・表のテストが使う）。
-    pub def layers(): List[Layer] = Layer.Scene :: Layer.Prompt :: Nil
+    pub def layers(): List[Layer] = Layer.Scene :: Layer.Frame :: Layer.Prompt :: Nil
 }

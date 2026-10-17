@@ -131,6 +131,7 @@ func splitFlags(args []string) (positional []string, isNew bool, bg string, err 
 		case strings.HasPrefix(a, "--bg="):
 			bg = strings.TrimPrefix(a, "--bg=")
 		case a == "--json":
+			return nil, false, "", fmt.Errorf("--json は未対応（出力は人と依頼主に向けた案内の文だけ）")
 		case strings.HasPrefix(a, "--"):
 			return nil, false, "", fmt.Errorf("知らない指定: %s", a)
 		default:

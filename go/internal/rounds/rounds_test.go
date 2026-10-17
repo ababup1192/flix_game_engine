@@ -112,3 +112,13 @@ func TestSnapDrawsSpriteSheet(t *testing.T) {
 		t.Fatalf("見本の最初の画素 = %06x, want ff0000", got)
 	}
 }
+
+// r2（askAt）を積んだら、そこで止めて依頼主に 3 つ聞く案内を出す。
+func TestSnapAtAskRoundSaysStop(t *testing.T) {
+	root := newGame(t)
+	run(t, root, "snap", "hero", "pic.png", "art/hero.src.py")
+	_, out, _ := run(t, root, "snap", "hero", "pic.png", "art/hero.src.py")
+	if !strings.Contains(out, "ここで止める") || !strings.Contains(out, "③") {
+		t.Errorf("r2 の案内に止める・3 つ聞くが無い:\n%s", out)
+	}
+}

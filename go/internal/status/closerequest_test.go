@@ -66,10 +66,20 @@ func TestCloseRequestNoLaunchIsQuiet(t *testing.T) {
 
 func TestCloseRequestSkipsEngineRepo(t *testing.T) {
 	root := t.TempDir()
-	write(t, filepath.Join(root, "templates", "game-starter", "src", "Main.flix"), "    App.game({}) |> App.launch\n")
+	write(t, filepath.Join(root, "agents-pack", "manifest.json"), "{}\n")
 	write(t, filepath.Join(root, "src", "Main.flix"), "    App.game({}) |> App.launch\n")
 	if hasCloseRequestWarning(build(t, root)) {
 		t.Error("engine リポ自身で警告が出ます")
+	}
+}
+
+// templates/ を持つだけのゲームは engine と見なさない（配る側の印は agents-pack/manifest.json）。
+func TestCloseRequestWarnsGameWithTemplatesDir(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "templates", "x.json"), "{}\n")
+	write(t, filepath.Join(root, "src", "Main.flix"), "    App.game({}) |> App.launch\n")
+	if !hasCloseRequestWarning(build(t, root)) {
+		t.Error("templates/ を持つゲームで警告が出ません")
 	}
 }
 

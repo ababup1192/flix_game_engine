@@ -37,4 +37,26 @@ mod TestRules {
         let scale = Int32.toFloat64(World.spriteScale());
         Assert.assertEq(expected = (4.0 * scale, 6.0 * scale),
             (World.heroBox(w)#x, World.heroBox(w)#y))
+
+    @Test
+    def testQuitAskedThenNoReturnsToPlay(): Unit \ Assert =
+        // Esc・閉じるボタンで確認へ、いいえで遊びへ戻る（すぐには終わらない）。
+        let asked = World.askQuit(w0());
+        Assert.assertEq(expected = (true, false, false),
+            (World.isAskingQuit(asked), World.isQuitting(asked), World.isAskingQuit(World.answerQuit(false, asked))))
+
+    @Test
+    def testQuitConfirmedOnlyAfterYes(): Unit \ Assert =
+        Assert.assertEq(expected = true, World.isQuitting(World.answerQuit(true, World.askQuit(w0()))))
+
+    @Test
+    def testHeroStaysWhileAskingQuit(): Unit \ Assert =
+        // 確認の窓が出ている間は押しても動かない。
+        let asked = World.askQuit(w0());
+        Assert.assertEq(expected = asked#x, World.step({ x = 1.0, y = 0.0 }, 0.1, asked)#x)
+
+    @Test
+    def testLayersAreStackedBackToFront(): Unit \ Assert =
+        // 層の表が奥から手前へ交ざらずに並ぶ（範囲を書き換えたときの取り違えを止める）。
+        Assert.assertEq(expected = true, SortingLayer.isStacked(ZOrder.layers()))
 }

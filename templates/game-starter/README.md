@@ -31,10 +31,11 @@ Flix コンパイラはエンジンリポの `bin/flix` ラッパ経由で呼ぶ
    1. `src/Main.flix` … 3 つを App に繋いで起動する目次。冒頭 doc に**毎フレームの流れ
       （入力→状態更新→描画 がどの行か）**が書いてある。まずここ。
    2. `src/World.flix` … ゲームの状態そのものと、次の状態を作る規則（`step` が入力→更新。純粋）。
-   3. `src/View.flix` … 状態を絵に写す（何をどこに描くか）。冒頭 doc に**画面の層**
-      （背景・主役・粒がどの関数か）が並べてある。
-   4. `src/Controls.flix` … キーの割り当てと Doc の読み直し。
-   5. `src/render/SceneRender.flix` … 決定的な場面を PNG に描き出す（リファレンス画像とアトリエ）。
+   3. `src/View.flix` … 状態を絵に写す（何をどこに描くか）。冒頭 doc に場面に**積んだ部品**
+      （背景・主役・粒がどの関数か）と、終了の確認の窓・静的な縁の枠が並べてある。
+   4. `src/ZOrder.flix` … 画面全体の層の表（場面・縁の枠・確認の窓の前後）。新しい層はここに case を足す。
+   5. `src/Controls.flix` … キーの割り当てと Doc の読み直し。Esc で終了の確認を出す（閉じるボタンは Main の `App.withCloseRequest`）。
+   6. `src/render/SceneRender.flix` … 決定的な場面を PNG に描き出す（リファレンス画像とアトリエ）。
 3. 手触り・色・絵は下の `assets/` の Doc を保存即反映でいじる。
 
 数値・色・絵は `assets/` の Doc（保存即反映）:

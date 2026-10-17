@@ -1,5 +1,4 @@
-/// CatalogContainer の汎用 encode / decode の性質と、`loadWithCheck` が外部入力の
-/// 失敗を `Err` で返すことを固定する。
+/// CatalogContainer の汎用 encode / decode の性質を固定する。
 ///
 /// 観点:
 ///   - decode が containerKey 配下を entries、残りを meta に分離する

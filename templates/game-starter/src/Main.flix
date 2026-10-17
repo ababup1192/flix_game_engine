@@ -50,6 +50,7 @@ def main(): Unit \ IO =
                 // F8 で書き出す注釈チケットに、その瞬間の文脈と z の層の名前を添える（層の表は ZOrder）。
                 |> App.withAnnotationContext(w -> checked_ecast(
                     { facts = ("主人公", "x=${w#x} y=${w#y}") :: ("終了の確認", "${w#quit}") :: Nil,
+                      // HUD（App.withHudView）を足したら、HUD の層の enum を ZOrder に作ってその列を渡す。
                       layers = ZOrder.layers(), hudLayers = (Nil: List[ZOrder.Layer]) }))
                 |> App.reloadOn(GameEngine.Key.F1, Controls.reloadAll)
                 // 走行中の POST /render（Studio の「生成して」）は SceneRender.all と同じ実体を呼ぶ。

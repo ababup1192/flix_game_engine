@@ -90,10 +90,10 @@ mod View {
 
     /// 画面の四辺に敷く細い枠。動かないので Main が App.withStaticLayer で 1 度だけ GPU に作り、
     /// 毎フレームは組まない（作り直すのは鍵 staticKey が変わった時 = 色を変えた時だけ）。
-    /// 静的な層は compose を通らないので、z は層の表から引く（場面の層の天井 = 場面のどれよりも手前・窓より奥）。
+    /// 静的な層は compose を通らないので、z は層の表から引く（Layer.Frame = 場面のどれよりも手前・窓より奥）。
     pub def frameBorder(w: World.World): List[Render.PlacedItem] =
         let color = Color.darken(ThemeDoc.rec(w#theme)#bg, 0.4);
-        let z = SortingLayer.top(Layer.Scene);
+        let z = SortingLayer.bottom(Layer.Frame);
         let edge = 3.0;
         let rect = (x, y, rw, rh) -> { at = Vec2.zero(), item = RawDraw.polygon(
             { x = x, y = y } :: { x = x + rw, y = y } :: { x = x + rw, y = y + rh } :: { x = x, y = y + rh } :: Nil, color, z) };
