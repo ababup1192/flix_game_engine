@@ -1,0 +1,295 @@
+{
+ "version": 1,
+ "paletteFile": "assets/internet_dungeon.palette.json",
+ "legend": {
+  "b": "feedGirlHairDark",
+  "g": "feedGirlMouth",
+  "h": "feedGirlEye",
+  "j": "feedGirlCheek",
+  "l": "feedGirlBg",
+  "q": "feedZombieInk",
+  "t": "feedZombieBg",
+  "w": "feedLizardEye",
+  "F": "feedDogLine",
+  "H": "feedDogFur",
+  "K": "feedDogCream",
+  "M": "feedDogShade",
+  "Q": "feedSky",
+  "S": "feedSkyLow",
+  "1": "feedSunCore",
+  "2": "feedSunEdge",
+  "3": "feedGrass",
+  "4": "feedGrassEdge",
+  "5": "feedIcon",
+  "6": "feedBadgeBlue",
+  "8": "feedFanRibbon",
+  "0": "feedYunoPin",
+  "@": "feedBotGray",
+  "%": "feedBotLight",
+  "&": "feedBotGlow",
+  "$": "feedNewsBg",
+  "~": "feedCatLine",
+  "!": "feedCatFur",
+  "<": "feedCatLight",
+  ">": "feedRoomFloor",
+  "(": "feedRoomRug",
+  "=": "feedWhite",
+  "λ": "feedWinDark",
+  "μ": "feedWinMid",
+  "ν": "feedWinLight",
+  "ξ": "feedClearDark",
+  "φ": "feedClearMid",
+  "π": "feedClearLight",
+  "ρ": "feedLoseDark",
+  "σ": "feedLoseMid",
+  "τ": "feedLoseLight",
+  "ы": "feedBotDark",
+  "Д": "feedBotEyeCore",
+  "Ж": "feedNewsLine",
+  "З": "feedPaperShade",
+  "И": "feedNewsText",
+  "Ч": "feedHandLine",
+  "Ш": "feedHandShade",
+  "Щ": "feedHandCuffDark"
+ },
+ "sprites": {
+  "feedDogPost": {
+   "frames": {
+    "idle": [
+     "Q2F1HSKM43"
+    ]
+   }
+  },
+  "feedVerified": {
+   "frames": {
+    "idle": [
+     ".65"
+    ]
+   }
+  },
+  "feedIconReply": {
+   "frames": {
+    "idle": [
+     ".5"
+    ]
+   }
+  },
+  "feedIconHeart": {
+   "frames": {
+    "idle": [
+     ".5"
+    ]
+   }
+  },
+  "feedIconSkull": {
+   "frames": {
+    "idle": [
+     ".5"
+    ]
+   }
+  },
+  "feedIconSword": {
+   "frames": {
+    "idle": [
+     ".5"
+    ]
+   }
+  },
+  "feedIconLogo": {
+   "frames": {
+    "idle": [
+     "5."
+    ]
+   }
+  },
+  "feedIconDog": {
+   "frames": {
+    "idle": [
+     ".5"
+    ]
+   }
+  },
+  "feedBot": {
+   "frames": {
+    "idle": [
+     ".t=&ы@%Д"
+    ]
+   }
+  },
+  "feedNews": {
+   "frames": {
+    "idle": [
+     ".$Ж=З056И"
+    ]
+   }
+  },
+  "feedDogCat": {
+   "frames": {
+    "idle": [
+     "l8wQFH~!jKMhb<>g("
+    ]
+   }
+  },
+  "feedGlitch": {
+   "frames": {
+    "idle": [
+     "q86=&0"
+    ]
+   }
+  },
+  "feedIconEye": {
+   "frames": {
+    "idle": [
+     ".5"
+    ]
+   }
+  },
+  "feedIconQmark": {
+   "frames": {
+    "idle": [
+     ".5"
+    ]
+   }
+  },
+  "feedIconPin": {
+   "frames": {
+    "idle": [
+     ".5"
+    ]
+   }
+  },
+  "feedRailHome": {
+   "frames": {
+    "idle": [
+     ".5"
+    ]
+   }
+  },
+  "feedRailSearch": {
+   "frames": {
+    "idle": [
+     ".5"
+    ]
+   }
+  },
+  "feedRailBell": {
+   "frames": {
+    "idle": [
+     ".5"
+    ]
+   }
+  },
+  "feedRailMail": {
+   "frames": {
+    "idle": [
+     ".5"
+    ]
+   }
+  },
+  "feedIconSealed": {
+   "frames": {
+    "idle": [
+     "5."
+    ]
+   }
+  },
+  "feedIconSwordBig": {
+   "frames": {
+    "idle": [
+     ".5"
+    ]
+   }
+  },
+  "feedIconHeartFill": {
+   "frames": {
+    "idle": [
+     ".5"
+    ]
+   }
+  },
+  "feedIconNext": {
+   "frames": {
+    "idle": [
+     "5."
+    ]
+   }
+  },
+  "feedResultWin": {
+   "frames": {
+    "idle": [
+     ".μλν="
+    ]
+   }
+  },
+  "feedResultClear": {
+   "frames": {
+    "idle": [
+     ".φξπ=0"
+    ]
+   }
+  },
+  "feedResultLose": {
+   "frames": {
+    "idle": [
+     ".σρτ="
+    ]
+   }
+  },
+  "feedIconRepost": {
+   "frames": {
+    "idle": [
+     ".5"
+    ]
+   }
+  },
+  "feedIconViews": {
+   "frames": {
+    "idle": [
+     ".5"
+    ]
+   }
+  },
+  "feedIconCrown": {
+   "frames": {
+    "idle": [
+     ".5"
+    ]
+   }
+  },
+  "feedIconLock": {
+   "frames": {
+    "idle": [
+     ".5"
+    ]
+   }
+  },
+  "feedIconCheck": {
+   "frames": {
+    "idle": [
+     ".5"
+    ]
+   }
+  },
+  "feedIconStar": {
+   "frames": {
+    "idle": [
+     ".5"
+    ]
+   }
+  },
+  "feedIconBack": {
+   "frames": {
+    "idle": [
+     ".5"
+    ]
+   }
+  },
+  "feedPointer": {
+   "frames": {
+    "idle": [
+     ".Ч5=Ш6Щ"
+    ]
+   }
+  }
+ }
+}

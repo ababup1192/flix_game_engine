@@ -1,0 +1,31 @@
+{
+ "version": 1,
+ "paletteFile": "assets/internet_dungeon.palette.json",
+ "palette": {
+  "inkBlack": "#000000",
+  "offPear": "#123456",
+  "pearRed": "#eb564b"
+ },
+ "legend": {
+  "a": "inkBlack",
+  "b": "offPear",
+  "c": "pearRed",
+  "d": "noSuchColor"
+ },
+ "sprites": {
+  "one": {
+   "frames": {
+    "idle": [
+     "ab"
+    ]
+   }
+  },
+  "two": {
+   "frames": {
+    "idle": [
+     "cd"
+    ]
+   }
+  }
+ }
+}

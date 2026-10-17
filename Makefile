@@ -859,6 +859,9 @@ check-docs-sync:
 	fi; \
 	echo "[check-docs-sync] .claude/rules が docs/ と一致しているか"; \
 	bin/fge gen-rules --check || ok=0; \
+	echo "[check-docs-sync] docs/px-ops.md と px のスキーマが op の登録と一致しているか"; \
+	bin/fge px ops --check || ok=0; \
+	bin/fge px schema --check || ok=0; \
 	echo "[check-docs-sync] AGENTS.md のスキル表が実在する skill を指しているか"; \
 	for s in $$(grep -o '`/[a-z][a-z-]*`' AGENTS.md | tr -d '`/' | sort -u); do \
 	  if [ ! -f ".claude/skills/$$s/SKILL.md" ]; then \

@@ -1,0 +1,334 @@
+package px
+
+// 色の門: sprite.json が、破ってはいけない色の決まりを守っているかを見る。
+// どの sprite.json がどの画風（style）か・その画風で使ってよい色の集合の出どころ・
+// 例外（allow）・既存の違反（known）は、ゲームの <名前>.colorgate.json に書く（docs/colorgate.schema.json）。
+// 絵の良し悪しは見ない。それは目と依頼主の仕事。
+
+import (
+	"fmt"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
+
+	"github.com/ababup1192/flix_game_engine/go/internal/pxlib"
+)
+
+// GateVersion は読める色の門の版。
+const GateVersion = 2
+
+// FreeStyle は色の決まりの外（理由を why に書く）。styles に書かなくても使える。
+const FreeStyle = "free"
+
+// ColorGate は読んだ色の門。
+type ColorGate struct {
+	Path   string
+	Styles map[string]*GateStyle
+	Deny   []GateDeny
+	Files  map[string]*GateFile
+}
+
+// GateStyle は 1 つの画風で使ってよい色の集合と、その出どころ。
+type GateStyle struct {
+	Label  string            // 外れた色の言い方（例 "Pear36 の外"）
+	Colors map[string]string // 色の名前 → #rrggbb（列挙）
+	From   string            // 色を引く Doc（ゲームのルートからの相対）
+	Path   string            // From の中の場所（"." 区切り。省くと一番外）
+	Keys   string            // From から引く色の名前の正規表現（省くと全部）
+	hexes  map[string]bool
+}
+
+// GateDeny はどの画風でも使わない色。
+type GateDeny struct{ Color, Why string }
+
+// GateFile は 1 つの sprite.json（ファイル名）の決まり。
+type GateFile struct {
+	Style string
+	Why   string
+	Allow []GateAllow
+	Known []string
+}
+
+// GateAllow は例外にする色の名前（正規表現）と理由。
+type GateAllow struct {
+	Keys string
+	Why  string
+	rx   *regexp.Regexp
+}
+
+// GateViolation は門の違反 1 件。Kind は no-entry・bad-style・no-color・deny・outside。
+type GateViolation struct {
+	Slot, Sprite, Key, Kind, Msg string
+}
+
+// LoadColorGate は色の門を読み、色の集合を root（ゲームのルート）から解く。
+func LoadColorGate(root, path string) (*ColorGate, error) {
+	full := path
+	if !filepath.IsAbs(full) {
+		full = filepath.Join(root, path)
+	}
+	o, err := pxlib.ReadOrdered(full)
+	if err != nil {
+		return nil, err
+	}
+	doc, _ := pxlib.Plain(o).(map[string]any)
+	g := &ColorGate{Path: path, Styles: map[string]*GateStyle{}, Files: map[string]*GateFile{}}
+	var probs ProblemList
+	bad := func(where, format string, a ...any) {
+		probs = append(probs, Problem{where, fmt.Sprintf(format, a...)})
+	}
+	if v, _ := doc["version"].(float64); int(v) != GateVersion {
+		bad("version", "%d と書く", GateVersion)
+	}
+	styles, _ := doc["styles"].(map[string]any)
+	for _, name := range keysOf(styles) {
+		so, _ := styles[name].(map[string]any)
+		where := "styles." + name
+		if name == FreeStyle {
+			bad(where, "free は決まりの外の名前（styles に書かない）")
+			continue
+		}
+		st := &GateStyle{Label: str(so["label"]), From: str(so["from"]), Path: str(so["path"]), Keys: str(so["keys"]),
+			Colors: map[string]string{}, hexes: map[string]bool{}}
+		if st.Label == "" {
+			bad(where+".label", "外れた色の言い方を書く（例 \"Pear36 の外\"）")
+		}
+		cols, _ := so["colors"].(map[string]any)
+		for k, v := range cols {
+			h := pxlib.HexOfValue(v)
+			if h == "" {
+				bad(where+".colors."+k, "#rrggbb で書く")
+				continue
+			}
+			st.Colors[k] = h
+			st.hexes[h] = true
+		}
+		if st.From != "" {
+			var rx *regexp.Regexp
+			if st.Keys != "" {
+				if rx, err = regexp.Compile(st.Keys); err != nil {
+					bad(where+".keys", "正規表現として読めない: %v", err)
+				}
+			}
+			src := pxlib.ReadJSON(filepath.Join(root, st.From))
+			if src == nil {
+				bad(where+".from", "%s が読めない", st.From)
+			}
+			if st.Path != "" {
+				for _, seg := range strings.Split(st.Path, ".") {
+					m, _ := src.(map[string]any)
+					src = m[seg]
+				}
+			}
+			m, isObj := src.(map[string]any)
+			if src != nil && !isObj {
+				bad(where+".path", "%s の %q はオブジェクトでない", st.From, st.Path)
+			}
+			for k, v := range m {
+				if rx != nil && !rx.MatchString(k) {
+					continue
+				}
+				if c, ok := pxlib.RGBAOfValue(v); ok {
+					st.hexes[pxlib.HexOfRGBA(c)] = true
+				}
+			}
+		}
+		if len(st.hexes) == 0 {
+			bad(where, "色が 1 つも無い（colors に列挙するか from で引く）")
+		}
+		g.Styles[name] = st
+	}
+	deny, _ := doc["deny"].([]any)
+	for i, e := range deny {
+		m, _ := e.(map[string]any)
+		h := pxlib.HexOfValue(m["color"])
+		if h == "" || str(m["why"]) == "" {
+			bad(fmt.Sprintf("deny[%d]", i), "color（#rrggbb）と why を書く")
+			continue
+		}
+		g.Deny = append(g.Deny, GateDeny{h, str(m["why"])})
+	}
+	files, _ := doc["files"].(map[string]any)
+	for _, name := range keysOf(files) {
+		fo, _ := files[name].(map[string]any)
+		where := "files." + name
+		f := &GateFile{Style: str(fo["style"]), Why: str(fo["why"])}
+		if f.Style != FreeStyle && g.Styles[f.Style] == nil {
+			bad(where+".style", "%q が styles に無い（free か styles の名前）", f.Style)
+		}
+		if f.Style == FreeStyle && f.Why == "" {
+			bad(where+".why", "free にした理由を書く")
+		}
+		allow, _ := fo["allow"].([]any)
+		for i, e := range allow {
+			m, _ := e.(map[string]any)
+			a := GateAllow{Keys: str(m["keys"]), Why: str(m["why"])}
+			aw := fmt.Sprintf("%s.allow[%d]", where, i)
+			if a.Why == "" {
+				bad(aw+".why", "理由の無い例外は足さない")
+			}
+			if a.rx, err = regexp.Compile(a.Keys); err != nil || a.Keys == "" {
+				bad(aw+".keys", "色の名前の正規表現を書く")
+				continue
+			}
+			f.Allow = append(f.Allow, a)
+		}
+		if ko, ok := fo["known"].(map[string]any); ok {
+			f.Known = strs(ko["keys"])
+			if str(ko["why"]) == "" {
+				bad(where+".known.why", "既存の違反の理由（直すときの手順）を書く")
+			}
+		}
+		g.Files[name] = f
+	}
+	if len(probs) > 0 {
+		return nil, fmt.Errorf("%s:\n%w", path, probs)
+	}
+	return g, nil
+}
+
+func str(v any) string { s, _ := v.(string); return s }
+
+// PaletteOf は sprite.json の色の名前 → #rrggbb（paletteFile と直下の palette。直下が勝つ）。
+func PaletteOf(root string, doc *pxlib.Obj) map[string]string {
+	out := map[string]string{}
+	add := func(v any) {
+		m, _ := pxlib.Plain(v).(map[string]any)
+		for k, val := range m {
+			if c, ok := pxlib.RGBAOfValue(val); ok {
+				out[k] = pxlib.HexOfRGBA(c)
+			}
+		}
+	}
+	if pf, ok := doc.GetOr("paletteFile", "").(string); ok && pf != "" {
+		if o, err := pxlib.ReadOrdered(filepath.Join(root, pf)); err == nil {
+			add(o)
+		}
+	}
+	if p, ok := doc.Get("palette"); ok {
+		add(p)
+	}
+	return out
+}
+
+// CheckDoc は 1 冊の sprite.json（slot はファイル名。assets/ と atelier/ の同じ名前に同じ決まり）を見る。
+// known で通した色の名前は known に返す。
+func (g *ColorGate) CheckDoc(root string, doc *pxlib.Obj, slot string) (bad []GateViolation, known []string) {
+	f := g.Files[slot]
+	if f == nil {
+		return []GateViolation{{Slot: slot, Kind: "no-entry",
+			Msg: fmt.Sprintf("%s: %s の files に無い（画風 %s のどれかを書く）", slot, g.Path, g.styleNames())}}, nil
+	}
+	var st *GateStyle
+	if f.Style != FreeStyle {
+		if st = g.Styles[f.Style]; st == nil {
+			return []GateViolation{{Slot: slot, Kind: "bad-style", Msg: fmt.Sprintf("%s: style %q が styles に無い", slot, f.Style)}}, nil
+		}
+	}
+	pal := PaletteOf(root, doc)
+	used := usedKeys(doc)
+	keys := make([]string, 0, len(used))
+	for k := range used {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	knownSet := map[string]bool{}
+	for _, k := range f.Known {
+		knownSet[k] = true
+	}
+	for _, key := range keys {
+		sp := used[key]
+		h, ok := pal[key]
+		v := GateViolation{Slot: slot, Sprite: sp, Key: key}
+		if !ok {
+			v.Kind, v.Msg = "no-color", fmt.Sprintf("%s/%s: 色の名前 %s の色が色票に無い（paletteFile か palette に足す）", slot, sp, key)
+			bad = append(bad, v)
+			continue
+		}
+		if d := g.denied(h); d != nil {
+			v.Kind, v.Msg = "deny", fmt.Sprintf("%s/%s: %s が %s（%s）", slot, sp, key, h, d.Why)
+			bad = append(bad, v)
+			continue
+		}
+		if st == nil || st.hexes[h] || f.allowed(key) {
+			continue
+		}
+		if knownSet[key] {
+			known = append(known, key)
+			continue
+		}
+		v.Kind, v.Msg = "outside", fmt.Sprintf("%s/%s: %s = %s は%s（決まりの色にする。例外なら %s の allow に理由つきで足す）", slot, sp, key, h, st.Label, g.Path)
+		bad = append(bad, v)
+	}
+	return bad, known
+}
+
+func (g *ColorGate) denied(h string) *GateDeny {
+	for i := range g.Deny {
+		if g.Deny[i].Color == h {
+			return &g.Deny[i]
+		}
+	}
+	return nil
+}
+
+func (f *GateFile) allowed(key string) bool {
+	for _, a := range f.Allow {
+		if a.rx.MatchString(key) {
+			return true
+		}
+	}
+	return false
+}
+
+func (g *ColorGate) styleNames() string {
+	names := make([]string, 0, len(g.Styles)+1)
+	for n := range g.Styles {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return strings.Join(append(names, FreeStyle), " / ")
+}
+
+// usedKeys は使っている色の名前 → 最初に使ったスプライト（Doc に書いた順で見る）。
+func usedKeys(doc *pxlib.Obj) map[string]string {
+	legend := map[string]string{}
+	if lo, ok := doc.GetOr("legend", nil).(*pxlib.Obj); ok {
+		keys, vals := lo.Items()
+		for i, ch := range keys {
+			if s, ok := vals[i].(string); ok {
+				legend[ch] = s
+			}
+		}
+	}
+	used := map[string]string{}
+	sprites, _ := doc.GetOr("sprites", nil).(*pxlib.Obj)
+	if sprites == nil {
+		return used
+	}
+	names, vals := sprites.Items()
+	for i, name := range names {
+		so, _ := vals[i].(*pxlib.Obj)
+		if so == nil {
+			continue
+		}
+		frames, _ := so.GetOr("frames", nil).(*pxlib.Obj)
+		if frames == nil {
+			continue
+		}
+		_, fvals := frames.Items()
+		for _, rows := range fvals {
+			for _, r := range strs(rows) {
+				for _, ch := range r {
+					if k, ok := legend[string(ch)]; ok {
+						if _, seen := used[k]; !seen {
+							used[k] = name
+						}
+					}
+				}
+			}
+		}
+	}
+	return used
+}

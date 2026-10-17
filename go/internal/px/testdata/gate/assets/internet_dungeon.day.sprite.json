@@ -1,0 +1,35 @@
+{
+ "version": 3,
+ "paletteFile": "assets/internet_dungeon.palette.json",
+ "legend": {
+  "A": "pearApricot",
+  "B": "pearAsh",
+  "C": "pearAubergine",
+  "E": "pearBlush",
+  "F": "pearCloud",
+  "G": "pearCoral",
+  "I": "pearGraphite",
+  "J": "pearGray",
+  "M": "pearInk",
+  "O": "pearLemon",
+  "P": "pearLime",
+  "T": "pearMulberry",
+  "V": "pearPeach",
+  "Y": "pearRaspberry",
+  "Z": "pearRed",
+  "a": "pearRosewood",
+  "d": "pearSlate",
+  "e": "pearTangerine",
+  "g": "pearTerracotta",
+  "i": "pearWhite"
+ },
+ "sprites": {
+  "postPicture": {
+   "frames": {
+    "idle": [
+     "igYAEeGFVBTMJaIOCZdP"
+    ]
+   }
+  }
+ }
+}

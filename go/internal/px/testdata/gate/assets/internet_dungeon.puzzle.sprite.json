@@ -1,0 +1,453 @@
+{
+ "version": 1,
+ "paletteFile": "assets/internet_dungeon.palette.json",
+ "legend": {
+  "o": "tileGloss",
+  "D": "tileAtkInk",
+  "E": "tileAtkShade",
+  "I": "tileAtkMid",
+  "J": "tileAtkLight",
+  "L": "tileGdInk",
+  "O": "tileGdShade",
+  "P": "tileGdMid",
+  "T": "tileGdLight",
+  "V": "tileSklInk",
+  "X": "tileSklShade",
+  "Z": "tileSklMid",
+  "k": "tileSklLight",
+  "m": "tileHexInk",
+  "n": "tileHexShade",
+  "p": "tileHexMid",
+  "s": "tileHexLight",
+  "u": "tileRshInk",
+  "v": "tileRshShade",
+  "x": "tileRshMid",
+  "z": "tileRshLight",
+  "C": "pearApricot",
+  "e": "pearPeach",
+  "f": "pearTerracotta",
+  "i": "pearAubergine",
+  "r": "pearCloud",
+  "7": "pearWhite",
+  "9": "pearBlush",
+  "*": "pearPink",
+  "+": "pearGrape",
+  "-": "pearRuby",
+  "/": "pearMagenta",
+  ":": "pearAsh",
+  ";": "pearRosewood",
+  "?": "pearCoral",
+  "R": "tileHealInk",
+  "U": "tileHealShade",
+  "W": "tileHealMid",
+  "c": "tileHealLight",
+  "y": "pearGray",
+  "#": "pearGraphite",
+  "G": "pearInk",
+  "Y": "pearLemon",
+  "N": "pearIndigo",
+  "B": "pearSky",
+  "^": "pearMint"
+ },
+ "sprites": {
+  "pieceAttack": {
+   "frames": {
+    "idle": [
+     ".DoJIEzxspLPOVZmX"
+    ]
+   }
+  },
+  "pieceAttackMark": {
+   "frames": {
+    "idle": [
+     ".oD"
+    ]
+   }
+  },
+  "chipAttack": {
+   "frames": {
+    "idle": [
+     ".DoJIE"
+    ]
+   }
+  },
+  "pieceGuard": {
+   "frames": {
+    "idle": [
+     ".LoTPOzxspDIEZVmX"
+    ]
+   }
+  },
+  "pieceGuardMark": {
+   "frames": {
+    "idle": [
+     ".oLT"
+    ]
+   }
+  },
+  "chipGuard": {
+   "frames": {
+    "idle": [
+     ".LoTPO"
+    ]
+   }
+  },
+  "pieceSkill": {
+   "frames": {
+    "idle": [
+     ".VokZXzxsupDmIEPLO"
+    ]
+   }
+  },
+  "pieceSkillMark": {
+   "frames": {
+    "idle": [
+     ".oV"
+    ]
+   }
+  },
+  "chipSkill": {
+   "frames": {
+    "idle": [
+     ".VokZX"
+    ]
+   }
+  },
+  "pieceHex": {
+   "frames": {
+    "idle": [
+     ".mospnzxkZDIEPLVO"
+    ]
+   }
+  },
+  "pieceHexMark": {
+   "frames": {
+    "idle": [
+     ".omnp"
+    ]
+   }
+  },
+  "chipHex": {
+   "frames": {
+    "idle": [
+     ".mospn"
+    ]
+   }
+  },
+  "pieceRush": {
+   "frames": {
+    "idle": [
+     ".uozxvspkZDIVLEPO"
+    ]
+   }
+  },
+  "pieceRushMark": {
+   "frames": {
+    "idle": [
+     ".ou"
+    ]
+   }
+  },
+  "chipRush": {
+   "frames": {
+    "idle": [
+     ".uozxv"
+    ]
+   }
+  },
+  "effectIconAttackUp": {
+   "frames": {
+    "idle": [
+     ".DoJIE"
+    ]
+   }
+  },
+  "effectIconMultiHit": {
+   "frames": {
+    "idle": [
+     ".DoJIE"
+    ]
+   }
+  },
+  "effectIconCritical": {
+   "frames": {
+    "idle": [
+     ".VokZX"
+    ]
+   }
+  },
+  "effectIconMagicAttack": {
+   "frames": {
+    "idle": [
+     ".VokZX"
+    ]
+   }
+  },
+  "effectIconShieldBash": {
+   "frames": {
+    "idle": [
+     ".LoTPO"
+    ]
+   }
+  },
+  "effectIconDefenseUp": {
+   "frames": {
+    "idle": [
+     ".LoTPO"
+    ]
+   }
+  },
+  "effectIconShield": {
+   "frames": {
+    "idle": [
+     ".LoTPO"
+    ]
+   }
+  },
+  "effectIconRiposte": {
+   "frames": {
+    "idle": [
+     ".VokZX"
+    ]
+   }
+  },
+  "effectIconHeal": {
+   "frames": {
+    "idle": [
+     ".RocWU"
+    ]
+   }
+  },
+  "effectIconRegen": {
+   "frames": {
+    "idle": [
+     ".RocWU"
+    ]
+   }
+  },
+  "effectIconPurify": {
+   "frames": {
+    "idle": [
+     ".RocWU"
+    ]
+   }
+  },
+  "effectIconWeakenAttack": {
+   "frames": {
+    "idle": [
+     ".mospn"
+    ]
+   }
+  },
+  "effectIconWeakenDefense": {
+   "frames": {
+    "idle": [
+     ".mospn"
+    ]
+   }
+  },
+  "effectIconPoison": {
+   "frames": {
+    "idle": [
+     ".mospn"
+    ]
+   }
+  },
+  "effectIconIgnite": {
+   "frames": {
+    "idle": [
+     ".DoJIE"
+    ]
+   }
+  },
+  "effectIconDispel": {
+   "frames": {
+    "idle": [
+     ".mospn"
+    ]
+   }
+  },
+  "effectIconAccel": {
+   "frames": {
+    "idle": [
+     ".uozxv"
+    ]
+   }
+  },
+  "effectIconDecel": {
+   "frames": {
+    "idle": [
+     ".mospn"
+    ]
+   }
+  },
+  "effectIconBalance": {
+   "frames": {
+    "idle": [
+     ".ior:#"
+    ]
+   }
+  },
+  "uiNo": {
+   "frames": {
+    "idle": [
+     ".:"
+    ]
+   }
+  },
+  "uiNew": {
+   "frames": {
+    "idle": [
+     ".RUcW"
+    ]
+   }
+  },
+  "uiStack": {
+   "frames": {
+    "idle": [
+     ".RUcW"
+    ]
+   }
+  },
+  "uiFoe": {
+   "frames": {
+    "idle": [
+     "+.9*7"
+    ]
+   }
+  },
+  "uiPencil": {
+   "frames": {
+    "idle": [
+     ".iez7r9xCv"
+    ]
+   }
+  },
+  "uiPencilWorn": {
+   "frames": {
+    "idle": [
+     ".iez7r9xCv"
+    ]
+   }
+  },
+  "chipHidden": {
+   "frames": {
+    "idle": [
+     ".ior:#"
+    ]
+   }
+  },
+  "uiLock": {
+   "frames": {
+    "idle": [
+     ".G:fYCe"
+    ]
+   }
+  },
+  "uiLoupe": {
+   "frames": {
+    "idle": [
+     ".G#r7;"
+    ]
+   }
+  },
+  "uiSharpener": {
+   "frames": {
+    "idle": [
+     ".G^NB7"
+    ]
+   }
+  },
+  "uiHeart": {
+   "frames": {
+    "idle": [
+     ".+9-*o"
+    ]
+   }
+  },
+  "uiShard": {
+   "frames": {
+    "idle": [
+     ".i/9*o"
+    ]
+   }
+  },
+  "uiStarOn": {
+   "frames": {
+    "idle": [
+     ".VXkZo"
+    ]
+   }
+  },
+  "uiStarOff": {
+   "frames": {
+    "idle": [
+     ".:r7"
+    ]
+   }
+  },
+  "uiKeyLeft": {
+   "frames": {
+    "idle": [
+     ".i7:"
+    ]
+   }
+  },
+  "uiKeyRight": {
+   "frames": {
+    "idle": [
+     ".i7:"
+    ]
+   }
+  },
+  "uiKeyUp": {
+   "frames": {
+    "idle": [
+     ".i7:"
+    ]
+   }
+  },
+  "uiKeyDown": {
+   "frames": {
+    "idle": [
+     ".i7:"
+    ]
+   }
+  },
+  "uiKeyZ": {
+   "frames": {
+    "idle": [
+     ".i7:"
+    ]
+   }
+  },
+  "uiKeyX": {
+   "frames": {
+    "idle": [
+     ".i7:"
+    ]
+   }
+  },
+  "uiHandOpen": {
+   "frames": {
+    "idle": [
+     ".;?79"
+    ]
+   }
+  },
+  "uiHandGrab": {
+   "frames": {
+    "idle": [
+     ".;?79"
+    ]
+   }
+  },
+  "uiHandPoint": {
+   "frames": {
+    "idle": [
+     ".;?79"
+    ]
+   }
+  }
+ }
+}

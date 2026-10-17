@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "note": "fge px の検査の閾値。flatRunRepeat = 同じ長さの段がこの回数続くと flat-run（直線に読まれる）/ flatRunStraight + 絵の長い辺 ÷ flatRunPer = 曲線の中で許す直線の長さ（16px で 4・32px で 6）/ groundContrastMin = 外周と地の色の明るさ（Oklab の L）の差の平均の下限。値はどれも仮置き（大きい見比べで決め直す）。",
+  "flatRunRepeat": 3,
+  "flatRunStraight": 2,
+  "flatRunPer": 8,
+  "groundContrastMin": 0.1
+}

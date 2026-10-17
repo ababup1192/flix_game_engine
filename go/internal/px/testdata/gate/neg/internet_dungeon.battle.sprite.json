@@ -1,0 +1,18 @@
+{
+ "version": 1,
+ "paletteFile": "assets/internet_dungeon.palette.json",
+ "legend": {
+  "a": "dkFoe0",
+  "b": "fbBody",
+  "c": "pearRed"
+ },
+ "sprites": {
+  "bg": {
+   "frames": {
+    "idle": [
+     "abc"
+    ]
+   }
+  }
+ }
+}

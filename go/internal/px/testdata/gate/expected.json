@@ -1,0 +1,105 @@
+{
+ "assets/internet_dungeon.battle.sprite.json": {
+  "bad": [],
+  "known": [
+   "internet_dungeon.battle.sprite.json/dkFoe0",
+   "internet_dungeon.battle.sprite.json/dkFoe2",
+   "internet_dungeon.battle.sprite.json/dkMine0",
+   "internet_dungeon.battle.sprite.json/dkMine2",
+   "internet_dungeon.battle.sprite.json/dkWindow",
+   "internet_dungeon.battle.sprite.json/fbBody",
+   "internet_dungeon.battle.sprite.json/fbBodyHi",
+   "internet_dungeon.battle.sprite.json/fbCapTop",
+   "internet_dungeon.battle.sprite.json/fbCopper",
+   "internet_dungeon.battle.sprite.json/fbCrystal",
+   "internet_dungeon.battle.sprite.json/fbCrystalHi",
+   "internet_dungeon.battle.sprite.json/fbDeep",
+   "internet_dungeon.battle.sprite.json/fbFarDark",
+   "internet_dungeon.battle.sprite.json/fbFarLine",
+   "internet_dungeon.battle.sprite.json/fbFarRim",
+   "internet_dungeon.battle.sprite.json/fbFloor",
+   "internet_dungeon.battle.sprite.json/fbMid",
+   "internet_dungeon.battle.sprite.json/fbMidCopper",
+   "internet_dungeon.battle.sprite.json/fbPad",
+   "internet_dungeon.battle.sprite.json/fbPink",
+   "internet_dungeon.battle.sprite.json/fbPlane",
+   "internet_dungeon.battle.sprite.json/fbResistor",
+   "internet_dungeon.battle.sprite.json/fbSilk",
+   "internet_dungeon.battle.sprite.json/fbSilkFar"
+  ]
+ },
+ "assets/internet_dungeon.day.sprite.json": {
+  "bad": [],
+  "known": []
+ },
+ "assets/internet_dungeon.feed.sprite.json": {
+  "bad": [],
+  "known": []
+ },
+ "assets/internet_dungeon.puzzle.sprite.json": {
+  "bad": [],
+  "known": []
+ },
+ "assets/internet_dungeon.relic.sprite.json": {
+  "bad": [],
+  "known": []
+ },
+ "neg/internet_dungeon.battle.sprite.json": {
+  "bad": [
+   [
+    "bg",
+    "pearRed",
+    "outside"
+   ]
+  ],
+  "known": [
+   "internet_dungeon.battle.sprite.json/dkFoe0",
+   "internet_dungeon.battle.sprite.json/fbBody"
+  ]
+ },
+ "neg/internet_dungeon.day.sprite.json": {
+  "bad": [
+   [
+    "one",
+    "inkBlack",
+    "deny"
+   ],
+   [
+    "two",
+    "noSuchColor",
+    "no-color"
+   ],
+   [
+    "one",
+    "offPear",
+    "outside"
+   ]
+  ],
+  "known": []
+ },
+ "neg/internet_dungeon.relic.sprite.json": {
+  "bad": [
+   [
+    "icon",
+    "dkFoe0",
+    "outside"
+   ],
+   [
+    "icon",
+    "pearRed",
+    "outside"
+   ]
+  ],
+  "known": []
+ },
+ "neg/unknown.sprite.json": {
+  "bad": [
+   [
+    "",
+    "",
+    "no-entry"
+   ]
+  ],
+  "known": []
+ }
+}

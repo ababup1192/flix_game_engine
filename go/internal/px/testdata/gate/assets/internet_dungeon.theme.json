@@ -1,0 +1,39 @@
+{
+  "title": "🌗 昼と夜の色",
+  "version": 1,
+  "note": "色。昼と夜で別の色票を持つ（画風の落差そのものが演出なので、色を共有しない）。いじると何が変わるか: day=自室の UI（base 紙の窓 / main 輪郭と文字のインク / accent 西日と選択の帯。3 色とも Lospec Pear36 のメンバー — 部屋のドット絵そのものは ThemeDoc の pear36 表が固定で持ち、ここを変えても紙と文字だけが追随する）、night=インターネットの画面（base 基板の闇 / main 端末のシアン＝ドット絵の主役 / accent 通知のピンク）、puzzle=パズルの駒のキャンディ 6 色（red ハート / blue 絵の具 / green 消しゴム / yellow 鉛筆 / orange パレットの木地の素 / purple お邪魔の染みの素。コンボカードの色回しもこの 6 色）、pad=コントローラーで遊んでいるときの案内の丸ボタンの色（Xbox の配色。a 決定 / b 戻る・長押しでスキップ / x デッキ一覧 / y 情報・ろくが。昼夜どちらの画面でもこの色 —— 夜の 3 色の例外）。派生色（つや・影）はコードが導くので、ここには基準の色だけ置く。shade はドット絵の塗りの仕上げ — rim=光の側の縁を明るく / contact=影の側の縁を暗く / dither=明暗の境を市松に散らす / grain=面の内側に粒 / lightX,lightY=光の来る向き（-1 左・上 / +1 右・下 / 0 効かない）。",
+  "day": {
+    "base": "#ffffeb",
+    "main": "#3e2347",
+    "accent": "#ffb570"
+  },
+  "night": {
+    "base": "#101b2e",
+    "main": "#6fd7c8",
+    "accent": "#ff5c8a"
+  },
+  "puzzle": {
+    "red": "#f0483e",
+    "orange": "#ffa23a",
+    "yellow": "#ffd93d",
+    "green": "#6fcb4e",
+    "blue": "#4aa8e8",
+    "purple": "#b36ae2",
+    "pink": "#ff5c8a"
+  },
+  "pad": {
+    "a": "#5cba3c",
+    "b": "#e8413c",
+    "x": "#3b82d6",
+    "y": "#f2c230"
+  },
+  "shade": {
+    "rim": 1.0,
+    "contact": 1.0,
+    "dither": 0.6,
+    "grain": 0.0,
+    "grainScale": 1,
+    "lightX": -1,
+    "lightY": -1
+  }
+}

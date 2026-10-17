@@ -1,0 +1,328 @@
+{
+ "version": 1,
+ "paletteFile": "assets/internet_dungeon.palette.json",
+ "legend": {
+  "א": "stkAtk0",
+  "ב": "stkAtk1",
+  "ג": "stkAtk2",
+  "ד": "stkAtk3",
+  "ה": "stkGd0",
+  "ו": "stkGd1",
+  "ז": "stkGd2",
+  "ח": "stkGd3",
+  "ט": "stkSkl0",
+  "י": "stkSkl1",
+  "כ": "stkSkl2",
+  "ל": "stkSkl3",
+  "מ": "stkHex0",
+  "נ": "stkHex1",
+  "ס": "stkHex2",
+  "ע": "stkHex3",
+  "פ": "stkRsh0",
+  "צ": "stkRsh1",
+  "ק": "stkRsh2",
+  "ר": "stkRsh3",
+  "ש": "stkSpec",
+  "ת": "stkInk",
+  "Ա": "fbDeep",
+  "Բ": "fbMid",
+  "Գ": "fbFloor",
+  "Դ": "fbPlane",
+  "Ե": "fbMidCopper",
+  "Զ": "fbCopper",
+  "Է": "fbResistor",
+  "Ը": "fbPad",
+  "Թ": "fbSilk",
+  "Ժ": "fbSilkFar",
+  "Ի": "fbBody",
+  "Լ": "fbBodyHi",
+  "Խ": "fbCapTop",
+  "Ծ": "fbCrystal",
+  "Կ": "fbCrystalHi",
+  "Հ": "fbFarDark",
+  "Ձ": "fbFarRim",
+  "Ղ": "fbFarLine",
+  "Ճ": "fbPink",
+  "Մ": "dkMine0",
+  "Յ": "dkMine1",
+  "Ն": "dkMine2",
+  "Շ": "dkFoe0",
+  "Ո": "dkFoe1",
+  "Չ": "dkFoe2",
+  "Պ": "dkWindow",
+  "ა": "stkHeal0",
+  "ბ": "stkHeal1",
+  "გ": "stkHeal2",
+  "დ": "stkHeal3",
+  "ე": "icoUp",
+  "ვ": "icoDown"
+ },
+ "sprites": {
+  "stackAttack": {
+   "frames": {
+    "idle": [
+     ".תשדאגב"
+    ]
+   }
+  },
+  "stackGuard": {
+   "frames": {
+    "idle": [
+     ".תשחהזו"
+    ]
+   }
+  },
+  "stackSkill": {
+   "frames": {
+    "idle": [
+     ".תשלטכי"
+    ]
+   }
+  },
+  "stackHex": {
+   "frames": {
+    "idle": [
+     ".תשעמסנ"
+    ]
+   }
+  },
+  "stackRush": {
+   "frames": {
+    "idle": [
+     ".תשרפקצ"
+    ]
+   }
+  },
+  "deckStackMine": {
+   "frames": {
+    "idle": [
+     ".תՅՄՆՊ"
+    ]
+   }
+  },
+  "deckStackFoe": {
+   "frames": {
+    "idle": [
+     ".תՈՇՉՊ"
+    ]
+   }
+  },
+  "fightBands": {
+   "frames": {
+    "idle": [
+     "ԲԱԳ"
+    ]
+   }
+  },
+  "fightFar": {
+   "frames": {
+    "idle": [
+     ".ՁՀՂ"
+    ]
+   }
+  },
+  "fightMid": {
+   "frames": {
+    "idle": [
+     ".ԵԺԱԻԸ"
+    ]
+   }
+  },
+  "fightNear": {
+   "frames": {
+    "idle": [
+     "Դ.ԶԹԸԱԼԻԽԳԷՃԾԿ"
+    ]
+   }
+  },
+  "fightQuietHero": {
+   "frames": {
+    "idle": [
+     ".ԲԳ"
+    ]
+   }
+  },
+  "fightQuietFoe": {
+   "frames": {
+    "idle": [
+     ".ԲԳ"
+    ]
+   }
+  },
+  "statusAttackUp": {
+   "frames": {
+    "idle": [
+     ".תეגדשבא"
+    ]
+   }
+  },
+  "statusDefenseUp": {
+   "frames": {
+    "idle": [
+     ".תეזחשוה"
+    ]
+   }
+  },
+  "statusWeakenAttack": {
+   "frames": {
+    "idle": [
+     ".תვסעשנמ"
+    ]
+   }
+  },
+  "statusWeakenDefense": {
+   "frames": {
+    "idle": [
+     ".תვסעשנמ"
+    ]
+   }
+  },
+  "statusPoison": {
+   "frames": {
+    "idle": [
+     ".תסענשמ"
+    ]
+   }
+  },
+  "statusCritical": {
+   "frames": {
+    "idle": [
+     ".תכלישט"
+    ]
+   }
+  },
+  "statusRiposte": {
+   "frames": {
+    "idle": [
+     ".תכלישט"
+    ]
+   }
+  },
+  "statusShield": {
+   "frames": {
+    "idle": [
+     ".תזחושה"
+    ]
+   }
+  },
+  "statusRegen": {
+   "frames": {
+    "idle": [
+     ".תგდბשა"
+    ]
+   }
+  },
+  "effectAttackUp": {
+   "frames": {
+    "idle": [
+     ".תეאדשגב"
+    ]
+   }
+  },
+  "effectDefenseUp": {
+   "frames": {
+    "idle": [
+     ".תეהחשזו"
+    ]
+   }
+  },
+  "effectWeakenAttack": {
+   "frames": {
+    "idle": [
+     ".תვמעשסנ"
+    ]
+   }
+  },
+  "effectWeakenDefense": {
+   "frames": {
+    "idle": [
+     ".תვמעשסנ"
+    ]
+   }
+  },
+  "effectPoison": {
+   "frames": {
+    "idle": [
+     ".תמעשסנ"
+    ]
+   }
+  },
+  "effectCritical": {
+   "frames": {
+    "idle": [
+     ".תטלשכי"
+    ]
+   }
+  },
+  "effectRiposte": {
+   "frames": {
+    "idle": [
+     ".תטלשכי"
+    ]
+   }
+  },
+  "effectShield": {
+   "frames": {
+    "idle": [
+     ".תהחשזו"
+    ]
+   }
+  },
+  "effectRegen": {
+   "frames": {
+    "idle": [
+     ".תადשგბ"
+    ]
+   }
+  },
+  "effectHeal": {
+   "frames": {
+    "idle": [
+     ".תადשგბ"
+    ]
+   }
+  },
+  "effectMagicAttack": {
+   "frames": {
+    "idle": [
+     ".תטלשכי"
+    ]
+   }
+  },
+  "effectAccel": {
+   "frames": {
+    "idle": [
+     ".תפרשקצ"
+    ]
+   }
+  },
+  "effectDecel": {
+   "frames": {
+    "idle": [
+     ".תמעשסנ"
+    ]
+   }
+  },
+  "effectMultiHit": {
+   "frames": {
+    "idle": [
+     ".תאדשגב"
+    ]
+   }
+  },
+  "effectPurify": {
+   "frames": {
+    "idle": [
+     ".תადשგბ"
+    ]
+   }
+  },
+  "effectDispel": {
+   "frames": {
+    "idle": [
+     ".תמעשסנ"
+    ]
+   }
+  }
+ }
+}

@@ -1,0 +1,19 @@
+{
+ "version": 1,
+ "paletteFile": "assets/internet_dungeon.palette.json",
+ "legend": {
+  "a": "relicTeal0",
+  "b": "pearRed",
+  "c": "stkInk",
+  "d": "dkFoe0"
+ },
+ "sprites": {
+  "icon": {
+   "frames": {
+    "idle": [
+     "abcd"
+    ]
+   }
+  }
+ }
+}

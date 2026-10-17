@@ -1,0 +1,2363 @@
+{
+	"title": "🧩 パズルのドット絵",
+	"version": 1,
+	"note": "昼のパズルの絵。駒 5 種（piece*。32×32・scale 1）は「属性色の角丸タイル + 白抜きの記号」（剣=攻撃・赤 / 盾=防御・青 / 星=技巧・黄 / ドクロ=妨害・紫 / 雷=加速・橙）。piece*Mark は記号だけ（消える演出用）、chip* は 16×16 の小さなカード、ui* は画面の小物（鉛筆=残り手数・鉛筆削り・ハート=いいね・欠片・星・キー・手・丸に斜線・緑の ▲・敵の顔）。effectIcon* は 16×16 の効果の種類のアイコン（カードを取る画面の比べる欄とデッキの型。回復の家族だけ tileHeal* の緑、バランス型の天秤は灰）。生成物 — 直すのは bin/gen-puzzle-sprites.py（流し直すと atelier/ に出る）。色の実体は ThemeDoc.resolver（tile* は駒のランプ、pear* は Pear36）。",
+	"paletteFile": "assets/internet_dungeon.palette.json",
+	"entityId": "internet_dungeon.puzzle.sprites",
+	"legend": {
+		"o": "tileGloss",
+		"D": "tileAtkInk",
+		"E": "tileAtkShade",
+		"I": "tileAtkMid",
+		"J": "tileAtkLight",
+		"L": "tileGdInk",
+		"O": "tileGdShade",
+		"P": "tileGdMid",
+		"T": "tileGdLight",
+		"V": "tileSklInk",
+		"X": "tileSklShade",
+		"Z": "tileSklMid",
+		"k": "tileSklLight",
+		"m": "tileHexInk",
+		"n": "tileHexShade",
+		"p": "tileHexMid",
+		"s": "tileHexLight",
+		"u": "tileRshInk",
+		"v": "tileRshShade",
+		"x": "tileRshMid",
+		"z": "tileRshLight",
+		"C": "pearApricot",
+		"e": "pearPeach",
+		"f": "pearTerracotta",
+		"i": "pearAubergine",
+		"r": "pearCloud",
+		"7": "pearWhite",
+		"9": "pearBlush",
+		"*": "pearPink",
+		"+": "pearGrape",
+		"-": "pearRuby",
+		"/": "pearMagenta",
+		":": "pearAsh",
+		";": "pearRosewood",
+		"?": "pearCoral",
+		"R": "tileHealInk",
+		"U": "tileHealShade",
+		"W": "tileHealMid",
+		"c": "tileHealLight",
+		"y": "pearGray",
+		"#": "pearGraphite",
+		"G": "pearInk",
+		"Y": "pearLemon",
+		"N": "pearIndigo",
+		"B": "pearSky",
+		"^": "pearMint"
+	},
+	"sprites": {
+		"pieceAttack": {
+			"note": "Attack の駒（32×32）。属性色の角丸タイル + 白抜きの記号。idle 以外は特殊な駒（crack<LineH|LineV|Bomb|Color>。タイルそのものに割れ目が入った形）。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"................................",
+					"......DDDDDDDDDDDDDDDDDDDD......",
+					"....DDooooooooooooooooooJDDD....",
+					"...DooJJJJJJJJJIIIIIIIIIIIJDD...",
+					"..DoJJJJJJJJJJIIIIIIIIIIIIIIDD..",
+					"..DoJJJJJJJJJIIIIIIIIIIIIIIIDD..",
+					".DoJJJJJJJJJIIIIIIIIIIIIIIIIIDD.",
+					".DoJJJJJJJJIIIIIIIIIIIIIoIIIIDD.",
+					".DoJJJJJJJIIIIIIIIIIIoooIDIIIDD.",
+					".DoJJJJJJIIIIIIIIIIIooooDIIIIDD.",
+					".DoJJJJJIIIIIIIIIIIoooooDIIIIDD.",
+					".DoJJJJIIIIIIIIIIIoooooDDIIIIDD.",
+					".DoJJJIIIIIIIIIIIoooooDDIIIIIDD.",
+					".DoJJIIIIIIIIIIIoooooDDIIIIIIDD.",
+					".DoJIIIIIIIIIIIoooooDDIIIIIIIDD.",
+					".DoIIIIIooIIIIoooooDDIIIIIIIIDD.",
+					".DoIIIIooooIIoooooDDIIIIIIIIIDD.",
+					".DoIIIIooooooooooDDIIIIIIIIIEDD.",
+					".DoIIIIIooooooooDDIIIIIIIIIEEDD.",
+					".DoIIIIIIooooooDDIIIIIIIIIEEEDD.",
+					".DoIIIIIIIoooooDIIIIIIIIIEEEEDD.",
+					".DoIIIIIIoooooooIIIIIIIIEEEEEDD.",
+					".DoIIIIIoooDoooooIIIIIIEEEEEEDD.",
+					".DoIIIooooDDIooooDIIIIEEEEEEEDD.",
+					".DJIIIoooDDIIIooDDIIIEEEEEEEEDD.",
+					".DDIIIoooDIIIIIDDIIIEEEEEEEEEDD.",
+					"..DJIIIDDDIIIIIIIIIEEEEEEEEEDD..",
+					"..DDIIIIIIIIIIIIIIEEEEEEEEEEDD..",
+					"...DDDIIIIIIIIIIIEEEEEEEEEDDD...",
+					"....DDDDDDDDDDDDDDDDDDDDDDDD....",
+					"......DDDDDDDDDDDDDDDDDDDD......",
+					"................................"
+				],
+				"crackLineH": [
+					"................................",
+					"......DDDDDDDDDDDDDDDDDDDD......",
+					"....DDooooooooooooooooooJDDD....",
+					"...DooJJJJJJJJJIIIIIIIIIIIJDD...",
+					"..DoJJJJJJJJJJIIIIIIIIIIIIIIDD..",
+					"..DoJJJJJJJJJIIIIIIIIIIIIIIIDD..",
+					".DoJJJJJJJJJIIIIIIIIIIIIIIIIIDD.",
+					".DoJJJJJJJJIIIIIIIIIIIIIoIIIIDD.",
+					".DoJJJJJJJIIIIIIIIIIIoooIDIIIDD.",
+					".DoJJJJJJIIIIIIIIIIIooooDIIIIDD.",
+					".DoJJJJJIIIIIIIIIIIoooooDIIIIDD.",
+					".DoJJJJIIIIIIIIIIIoooooDDIIIIDD.",
+					".DoJJJIIIIIIIIIIIoooooDDIIIIIDD.",
+					".DoJJIIIIIIIIIIIoooooDDIIIIIIDD.",
+					".DoJIIIIIIDoIIIoooDoDDIIIIDDoDD.",
+					".D.DoIIIDDoDDoooDDoDDoIIDDooD.D.",
+					".D.oDoIDDoooDDoDDoDoDDoDDoIIo.D.",
+					".DoIoDDoooooooDooDDIooDooIIIEoD.",
+					".DoIIooIooooooooDDIIIIoIIIIEEDD.",
+					".DoIIIIIIooooooDDIIIIIIIIIEEEDD.",
+					".DoIIIIIIIoooooDIIIIIIIIIEEEEDD.",
+					".DoIIIIIIoooooooIIIIIIIIEEEEEDD.",
+					".DoIIIIIoooDoooooIIIIIIEEEEEEDD.",
+					".DoIIIooooDDIooooDIIIIEEEEEEEDD.",
+					".DJIIIoooDDIIIooDDIIIEEEEEEEEDD.",
+					".DDIIIoooDIIIIIDDIIIEEEEEEEEEDD.",
+					"..DJIIIDDDIIIIIIIIIEEEEEEEEEDD..",
+					"..DDIIIIIIIIIIIIIIEEEEEEEEEEDD..",
+					"...DDDIIIIIIIIIIIEEEEEEEEEDDD...",
+					"....DDDDDDDDDDDDDDDDDDDDDDDD....",
+					"......DDDDDDDDDDDDDDDDDDDD......",
+					"................................"
+				],
+				"crackLineV": [
+					"................................",
+					"......DDDDDDDDDDDDDDDDDDDD......",
+					"....DDooooooooo..oooooooJDDD....",
+					"...DooJJJJJJJJJIDoIIIIIIIIJDD...",
+					"..DoJJJJJJJJJJIDoIIIIIIIIIIIDD..",
+					"..DoJJJJJJJJJIDoIIIIIIIIIIIIDD..",
+					".DoJJJJJJJJJIIDoIIIIIIIIIIIIIDD.",
+					".DoJJJJJJJJIIIoDoIIIIIIIoIIIIDD.",
+					".DoJJJJJJJIIIIIDDoIIIoooIDIIIDD.",
+					".DoJJJJJJIIIIIIoDoIIooooDIIIIDD.",
+					".DoJJJJJIIIIIIIIoDooooooDIIIIDD.",
+					".DoJJJJIIIIIIIIIDooooooDDIIIIDD.",
+					".DoJJJIIIIIIIIIDDoooooDDIIIIIDD.",
+					".DoJJIIIIIIIIIIDoooooDDIIIIIIDD.",
+					".DoJIIIIIIIIIIDoooooDDIIIIIIIDD.",
+					".DoIIIIIooIIIIoDoooDDIIIIIIIIDD.",
+					".DoIIIIooooIIooDDoDDIIIIIIIIIDD.",
+					".DoIIIIoooooooooDoDIIIIIIIIIEDD.",
+					".DoIIIIIoooooooooDoIIIIIIIIEEDD.",
+					".DoIIIIIIooooooDDoIIIIIIIIEEEDD.",
+					".DoIIIIIIIoooooDDoIIIIIIIEEEEDD.",
+					".DoIIIIIIooooooDoIIIIIIIEEEEEDD.",
+					".DoIIIIIoooDooDooIIIIIIEEEEEEDD.",
+					".DoIIIooooDDIooDoDIIIIEEEEEEEDD.",
+					".DJIIIoooDDIIIoDDoIIIEEEEEEEEDD.",
+					".DDIIIoooDIIIIIoDoIIEEEEEEEEEDD.",
+					"..DJIIIDDDIIIIIIoDoEEEEEEEEEDD..",
+					"..DDIIIIIIIIIIIIIDoEEEEEEEEEDD..",
+					"...DDDIIIIIIIIIIDoEEEEEEEEDDD...",
+					"....DDDDDDDDDDD..DDDDDDDDDDD....",
+					"......DDDDDDDDDDDDDDDDDDDD......",
+					"................................"
+				],
+				"crackBomb": [
+					".......DDDDDDDDDDDDDDDDDD.......",
+					".....DDoooooooDDooDoooooDDD.....",
+					"....DooJJJJJJJDoIDoIIIIIIJDD....",
+					"...DoJJJJJJJDDoIDoIIIIIIIIIDD...",
+					"..DoJJJJJJDDooIIoDoIIIIIIIIIDD..",
+					".DoJJJJJJJoDDDoIIoDoIIIIIIIIIDD.",
+					".DoJJJJJJJJoooDoIIoDoIIIIIIIIDD.",
+					"DoJJJJDoJJJIIIoIIIIoIIIIoIIIIIDD",
+					"DoJDDDDoJJIIIIIIIIIIIoooIDIIIIDD",
+					"DDDoooDoJIIIIIIIIIIIooooDIIIIIDD",
+					"DooJJJDoIIIIIIIIIIIoooooDIIDDDoD",
+					"DoJJJJDDoIIIIIIIIIoooooDDDDoooDD",
+					"DoJJJJooIIIIIIIIIoooooDDIooIIIDD",
+					"DoJJJIIIIIIIIIIIoooooDDIIIIIIIDD",
+					"DoJJIIIIIIIIIIIoooooDDIIIIIIIIDD",
+					"DoJIIIIIooIIIIoooooDDIIIIIIIIIDD",
+					"DoIIIIIooooIIoooooDDIIIIIIIIIEDD",
+					"DoIIIIIooooooooooDDIIIIIIIIIEDoD",
+					"DoIIIIIIooooooooDDIIIIIIIIIDDDoD",
+					"DoIDDoIIIooooooDDIIIIIIIIIDDooDD",
+					"DoIDoDDoIIoooooDIIIIIIIIIEooEEDD",
+					"DoIDoooIIoooooooIIIIIIIIEEEEEEDD",
+					"DoIDoIIIoooDoooooIIIIIIEEEEEEEDD",
+					"DoIDoIooooDDIooooDIIIIEEEEEEEEoD",
+					"DDIDoIoooDDIIIooDDIIIEEEEEEEEEDD",
+					".DJDoIoooDIIIIIDDIIIEEEEEEEEEDD.",
+					".DDDoIIDDDIIIIDoIIIEDoEEEEEEEDD.",
+					"..DoIIIIIIIIIIDoIIEEoDoEEEEEDD..",
+					"...DDIIIIIIIIIDoIEEEEoDDDDoDD...",
+					"....DDDIIIIIIIDoEEEEEEoooDoD....",
+					".....DDDDDDDDDoDoDDDDDDDDDD.....",
+					".......DDDDDDDDDDDDDDDDDD......."
+				],
+				"crackColor": [
+					"................................",
+					"......DDDDDDDDDDDDDDDDDDDD......",
+					"....DDooooooooooooooDoooIDDD....",
+					"...DoozzzzzzzzzzxxxxDoIIIIIDD...",
+					"..DozzzzzzzzzzzxxxxxDoIIIIIIDD..",
+					"..DozzzzzzzzzzxxxxxIDoIIIIIIDD..",
+					".DozzzzzzzzzzxxxxxxIDoIIIIIIIDD.",
+					".DoszzzzzzzzxxxxxxxDDoIIoIIIIDD.",
+					".DoDDozzzzzxxxxxxxIoDoooIDIIIDD.",
+					".DoooDDDozxxxxxxxxIIooooDIIIIDD.",
+					".DossoooDDoxxxxxxxIoooDoDIIIIDD.",
+					".DosssssoDoxxxxxxIoooooDDIIIIDD.",
+					".DossssppopxxxxxxooooDDDIIIIIDD.",
+					".DosssppppppxxxxooooDDDIIIIIIDD.",
+					".DosspppppppppxoooooDDIIIIIIIDD.",
+					".DosppppooooppooooDDDIIIIIIIIDD.",
+					".DoppppooooopooooDDLPPPPPDoDDDD.",
+					".DoppppoooooooooDLLPPPPPPDDoooD.",
+					".DopppppoooooooDDLPPPPPPPooOOLD.",
+					".DoppppppooooooDVPPPPPPPPPOOOLD.",
+					".DopppppppooDooooZPPPPPPPOOOOLD.",
+					".DopppppDoooDooooZPPPPPPOOOOOLD.",
+					".DoppppZDooDoooDDZPPPPPOOOOOOLD.",
+					".DopppoDooDDZooooVZPPPOOOOOOOLD.",
+					".DpppZDooVVZZZooVVZPPOOOOOOOOLD.",
+					".DmZZDoooVZZZZZVVZDDoOOOOOOOOLD.",
+					"..DZDoZVVVZZZZZZZZoDoOOOOOOOLD..",
+					"..DVoZZZZZZZZZZZZZXoDoOOOOOOLD..",
+					"...DVVZZZZZZZZZZZXXXDoOOOOLLD...",
+					"....DDVVVVVVVVVVVVVVoDoLLLDD....",
+					"......DDDDDDDDDDDDDDDDDDDD......",
+					"................................"
+				]
+			}
+		},
+		"pieceAttackMark": {
+			"note": "Attack の記号だけ（消える拍に液体へ溶けて崩れる側）。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"................................",
+					"................................",
+					"................................",
+					"................................",
+					"................................",
+					"................................",
+					"................................",
+					"........................o.......",
+					".....................ooo.D......",
+					"....................ooooD.......",
+					"...................oooooD.......",
+					"..................oooooDD.......",
+					".................oooooDD........",
+					"................oooooDD.........",
+					"...............oooooDD..........",
+					"........oo....oooooDD...........",
+					".......oooo..oooooDD............",
+					".......ooooooooooDD.............",
+					"........ooooooooDD..............",
+					".........ooooooDD...............",
+					"..........oooooD................",
+					".........ooooooo................",
+					"........oooDooooo...............",
+					"......ooooDD.ooooD..............",
+					"......oooDD...ooDD..............",
+					"......oooD.....DD...............",
+					".......DDD......................",
+					"................................",
+					"................................",
+					"................................",
+					"................................",
+					"................................"
+				]
+			}
+		},
+		"chipAttack": {
+			"note": "Attack の小さなカード（16×16）。敵のカード・デッキの束・この手で消した色の印。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"..DDDDDDDDDDDD..",
+					".DooooooooooJDD.",
+					"DoJJJJJIIIIIIIDD",
+					"DoJJJJIIIIIIIIDD",
+					"DoJJJIIIIIooIIDD",
+					"DoJJIIIIIoIoEIDD",
+					"DoJIIIIIoIoIEIDD",
+					"DoIIoIIoIoIEIIDD",
+					"DoIIIooIoIEIIIDD",
+					"DoIIIIooIEIIIEDD",
+					"DoIIIoIEoIIIEEDD",
+					"DoIIoIEIIEIEEEDD",
+					"DJIIIEIIIIEEEEDD",
+					"DDIIIIIIIEEEEEDD",
+					".DDDDDDDDDDDDDD.",
+					"..DDDDDDDDDDDD.."
+				]
+			}
+		},
+		"pieceGuard": {
+			"note": "Guard の駒（32×32）。属性色の角丸タイル + 白抜きの記号。idle 以外は特殊な駒（crack<LineH|LineV|Bomb|Color>。タイルそのものに割れ目が入った形）。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"................................",
+					"......LLLLLLLLLLLLLLLLLLLL......",
+					"....LLooooooooooooooooooTLLL....",
+					"...LooTTTTTTTTTPPPPPPPPPPPTLL...",
+					"..LoTTTTTTTTTTPPPPPPPPPPPPPPLL..",
+					"..LoTTTTTTTTTPPPPPPPPPPPPPPPLL..",
+					".LoTTTTTTTTTPPPPPPPPPPPPPPPPPLL.",
+					".LoTTTTTTooooooooooooooPPPPPPLL.",
+					".LoTTTTTTooooooooooooooLPPPPPLL.",
+					".LoTTTTTTooooooooooooooLPPPPPLL.",
+					".LoTTTTTPoooooooTooooooLPPPPPLL.",
+					".LoTTTTPPoooooooTooooooLPPPPPLL.",
+					".LoTTTPPPoooooooTooooooLPPPPPLL.",
+					".LoTTPPPooooooooToooooooPPPPPLL.",
+					".LoTPPPPooooooooToooooooLPPPPLL.",
+					".LoPPPPPPoooooooTooooooLLPPPPLL.",
+					".LoPPPPPPoooooooTooooooLPPPPPLL.",
+					".LoPPPPPPoooooooTooooooLPPPPOLL.",
+					".LoPPPPPPPooooooToooooLLPPPOOLL.",
+					".LoPPPPPPPooooooToooooLPPPOOOLL.",
+					".LoPPPPPPPPoooooTooooLLPPOOOOLL.",
+					".LoPPPPPPPPoooooTooooLPPOOOOOLL.",
+					".LoPPPPPPPPPooooooooLLPOOOOOOLL.",
+					".LoPPPPPPPPPPLooooLLLPOOOOOOOLL.",
+					".LTPPPPPPPPPPPPooLLPPOOOOOOOOLL.",
+					".LLPPPPPPPPPPPPPLLPPOOOOOOOOOLL.",
+					"..LTPPPPPPPPPPPPPPPOOOOOOOOOLL..",
+					"..LLPPPPPPPPPPPPPPOOOOOOOOOOLL..",
+					"...LLLPPPPPPPPPPPOOOOOOOOOLLL...",
+					"....LLLLLLLLLLLLLLLLLLLLLLLL....",
+					"......LLLLLLLLLLLLLLLLLLLL......",
+					"................................"
+				],
+				"crackLineH": [
+					"................................",
+					"......LLLLLLLLLLLLLLLLLLLL......",
+					"....LLooooooooooooooooooTLLL....",
+					"...LooTTTTTTTTTPPPPPPPPPPPTLL...",
+					"..LoTTTTTTTTTTPPPPPPPPPPPPPPLL..",
+					"..LoTTTTTTTTTPPPPPPPPPPPPPPPLL..",
+					".LoTTTTTTTTTPPPPPPPPPPPPPPPPPLL.",
+					".LoTTTTTTooooooooooooooPPPPPPLL.",
+					".LoTTTTTTooooooooooooooLPPPPPLL.",
+					".LoTTTTTTooooooooooooooLPPPPPLL.",
+					".LoTTTTTPoooooooTooooooLPPPPPLL.",
+					".LoTTTTPPoooooooTooooooLPPPPPLL.",
+					".LoTTTPPPoooooooTooooooLPPPPPLL.",
+					".LoTTPPPooooooooToooooooPPPPPLL.",
+					".LoTPPPPooLoooooToLoooooLPLLoLL.",
+					".L.LoPPPLLoLLoooLLoLLooLLLooL.L.",
+					".L.oLoPLLoooLLoLLoooLLoLLoPPo.L.",
+					".LoPoLLoooooooLoooooooLooPPPOoL.",
+					".LoPPooPPPooooooTooooooLPPPOOLL.",
+					".LoPPPPPPPooooooToooooLPPPOOOLL.",
+					".LoPPPPPPPPoooooTooooLLPPOOOOLL.",
+					".LoPPPPPPPPoooooTooooLPPOOOOOLL.",
+					".LoPPPPPPPPPooooooooLLPOOOOOOLL.",
+					".LoPPPPPPPPPPLooooLLLPOOOOOOOLL.",
+					".LTPPPPPPPPPPPPooLLPPOOOOOOOOLL.",
+					".LLPPPPPPPPPPPPPLLPPOOOOOOOOOLL.",
+					"..LTPPPPPPPPPPPPPPPOOOOOOOOOLL..",
+					"..LLPPPPPPPPPPPPPPOOOOOOOOOOLL..",
+					"...LLLPPPPPPPPPPPOOOOOOOOOLLL...",
+					"....LLLLLLLLLLLLLLLLLLLLLLLL....",
+					"......LLLLLLLLLLLLLLLLLLLL......",
+					"................................"
+				],
+				"crackLineV": [
+					"................................",
+					"......LLLLLLLLLLLLLLLLLLLL......",
+					"....LLooooooooo..oooooooTLLL....",
+					"...LooTTTTTTTTTPLoPPPPPPPPTLL...",
+					"..LoTTTTTTTTTTPLoPPPPPPPPPPPLL..",
+					"..LoTTTTTTTTTPLoPPPPPPPPPPPPLL..",
+					".LoTTTTTTTTTPPLoPPPPPPPPPPPPPLL.",
+					".LoTTTTTTooooooLoooooooPPPPPPLL.",
+					".LoTTTTTTooooooLLooooooLPPPPPLL.",
+					".LoTTTTTToooooooLooooooLPPPPPLL.",
+					".LoTTTTTPooooooooLoooooLPPPPPLL.",
+					".LoTTTTPPoooooooLooooooLPPPPPLL.",
+					".LoTTTPPPooooooLLooooooLPPPPPLL.",
+					".LoTTPPPoooooooLooooooooPPPPPLL.",
+					".LoTPPPPooooooLoToooooooLPPPPLL.",
+					".LoPPPPPPooooooLoooooooLLPPPPLL.",
+					".LoPPPPPPooooooLLooooooLPPPPPLL.",
+					".LoPPPPPPoooooooLooooooLPPPPOLL.",
+					".LoPPPPPPPoooooooLooooLLPPPOOLL.",
+					".LoPPPPPPPooooooLoooooLPPPOOOLL.",
+					".LoPPPPPPPPooooLLooooLLPPOOOOLL.",
+					".LoPPPPPPPPooooLoooooLPPOOOOOLL.",
+					".LoPPPPPPPPPooLoooooLLPOOOOOOLL.",
+					".LoPPPPPPPPPPLoLooLLLPOOOOOOOLL.",
+					".LTPPPPPPPPPPPPLLoLPPOOOOOOOOLL.",
+					".LLPPPPPPPPPPPPoLoPPOOOOOOOOOLL.",
+					"..LTPPPPPPPPPPPPoLoOOOOOOOOOLL..",
+					"..LLPPPPPPPPPPPPPLoOOOOOOOOOLL..",
+					"...LLLPPPPPPPPPPLoOOOOOOOOLLL...",
+					"....LLLLLLLLLLL..LLLLLLLLLLL....",
+					"......LLLLLLLLLLLLLLLLLLLL......",
+					"................................"
+				],
+				"crackBomb": [
+					".......LLLLLLLLLLLLLLLLLL.......",
+					".....LLooLLooooooooLooooLLL.....",
+					"....LooTLooTTTTTPPPLoPPPPTLL....",
+					"...LoTTLoTTTTTTPPPPoLoPPPPPLL...",
+					"..LoTTTLoTTTTTPPPPPLoPPPPPPPLL..",
+					".LoTTTToLoTTTPPPPPPLoPPPPPPPPLL.",
+					".LoTTTTTLLLLoPPPPPLoPPPPPPPPPLL.",
+					"LoTTTTTTooooLooooooooooPPPPPPPLL",
+					"LoTTTTTTTooooooooooooooLPPPPPPLL",
+					"LoTTTTTTTooooooooooooooLPPPPPPLL",
+					"LoTTTTTTPoooooooTooooooLPPPPPLoL",
+					"LoTTTTTPPoooooooTooooooLPLLoPLoL",
+					"LoTTTTPPPoooooooTooooooLPooLLoLL",
+					"LoTTTPPPooooooooToooooooPPPooPLL",
+					"LLoTPLLoooooooooToooooooLPPPPPLL",
+					"LoLLLooPPoooooooTooooooLLPPPPPLL",
+					"LooooPPPPoooooooTooooooLPPPPPOLL",
+					"LoPPPPPPPoooooooTooooooLPPPPOOLL",
+					"LoPPPPPPPPooooooToooooLLPPPOOOLL",
+					"LoPPPPPPPPooooooToooooLPPPLoOOLL",
+					"LoPPLoPPPPPoooooTooooLLPPOLoOLLL",
+					"LoPPLLLLoPPoooooTooooLPPOOLLLooL",
+					"LoPPLoooPPPPooooooooLLPOOOoLLoLL",
+					"LoPPLoPPPPPPPLooooLLLPOOOOOLoOLL",
+					"LLPPLoPPPPPPPPPooLLPPOOOOOOoOOLL",
+					".LTPLoPPPPPLoPPPLLPPOOLLoOOOOLL.",
+					".LLPLoPPPPPLoPPPPPPOOOooLLoOOLL.",
+					"..LLLLoPPPPLoPPPPPOOOOOOLoOOLL..",
+					"...LooPPPPPLoPPPPOOOOOOLoOOLL...",
+					"....LLLPPPLoPPPPOOOOOOLoOLLL....",
+					".....LLLLLLoLLLLLLLLLLoLLLL.....",
+					".......LLLLLLLLLLLLLLLLLL......."
+				],
+				"crackColor": [
+					"................................",
+					"......LLLLLLLLLLLLLLLLLLLL......",
+					"....LLooooooooooooooLoooPLLL....",
+					"...LoozzzzzzzzzzxxxxLoPPPPPLL...",
+					"..LozzzzzzzzzzzxxxxxLoPPPPPPLL..",
+					"..LozzzzzzzzzzxxxxxPLoPPPPPPLL..",
+					".LozzzzzzzzzzxxxxxxPLoPPPPPPPLL.",
+					".LoszzzzzooooooooooLLooPPPPPPLL.",
+					".LoLLozzzoooooooooooLooLPPPPPLL.",
+					".LoooLLLoooooooooooooooLPPPPPLL.",
+					".LossoooLLoooooooooooLoLPPPPPLL.",
+					".LosssssoLoooooooooooLoLPPPPPLL.",
+					".LossssppoooooooTooooLoLPPPPPLL.",
+					".LosssppooooooooTooooLooPPPPPLL.",
+					".LosspppooooooooToooooooLPPPPLL.",
+					".LospppppoooooooTooooLoLLPPPPLL.",
+					".LoppppppoooooooTooooLoDILoLLLL.",
+					".LoppppppoooooooToooLLoDILLoooL.",
+					".LopppppppooooooToooLoDDIooEEDL.",
+					".LopppppppooooooToooLoDIIIEEEDL.",
+					".LopppppppZooooooooLoDDIIEEEEDL.",
+					".LopppppLLooooLooLLLoDIIEEEEEDL.",
+					".LoppppZLoZZooooLoooDDIEEEEEEDL.",
+					".LopppZLoZZZZVooooVDDIEEEEEEEDL.",
+					".LpppZLoZZZZZZZooVVIIEEEEEEEEDL.",
+					".LmZZLoZZZZZZZZZVVLLoEEEEEEEEDL.",
+					"..LZLoZZZZZZZZZZZZoLoEEEEEEEDL..",
+					"..LVoZZZZZZZZZZZZZXoLoEEEEEEDL..",
+					"...LVVZZZZZZZZZZZXXXLoEEEEDDL...",
+					"....LLVVVVVVVVVVVVVVoLoDDDLL....",
+					"......LLLLLLLLLLLLLLLLLLLL......",
+					"................................"
+				]
+			}
+		},
+		"pieceGuardMark": {
+			"note": "Guard の記号だけ（消える拍に液体へ溶けて崩れる側）。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"................................",
+					"................................",
+					"................................",
+					"................................",
+					"................................",
+					"................................",
+					"................................",
+					".........oooooooooooooo.........",
+					".........ooooooooooooooL........",
+					".........ooooooooooooooL........",
+					".........oooooooTooooooL........",
+					".........oooooooTooooooL........",
+					".........oooooooTooooooL........",
+					"........ooooooooTooooooo........",
+					"........ooooooooToooooooL.......",
+					".........oooooooTooooooLL.......",
+					".........oooooooTooooooL........",
+					".........oooooooTooooooL........",
+					"..........ooooooToooooLL........",
+					"..........ooooooToooooL.........",
+					"...........oooooTooooLL.........",
+					"...........oooooTooooL..........",
+					"............ooooooooLL..........",
+					".............LooooLLL...........",
+					"...............ooLL.............",
+					"................LL..............",
+					"................................",
+					"................................",
+					"................................",
+					"................................",
+					"................................",
+					"................................"
+				]
+			}
+		},
+		"chipGuard": {
+			"note": "Guard の小さなカード（16×16）。敵のカード・デッキの束・この手で消した色の印。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"..LLLLLLLLLLLL..",
+					".LooooooooooTLL.",
+					"LoTTTTTPPPPPPPLL",
+					"LoTTTTPPPPPPPPLL",
+					"LoTTooooooooPPLL",
+					"LoTToOOOOOOoOPLL",
+					"LoTPoOPPPPPoOPLL",
+					"LoPPoOPPPPPoOPLL",
+					"LoPPPoPPPPoPOPLL",
+					"LoPPPoOPPPoOPOLL",
+					"LoPPPPoPPoPOOOLL",
+					"LoPPPPPooPOOOOLL",
+					"LTPPPPPPOOOOOOLL",
+					"LLPPPPPPPOOOOOLL",
+					".LLLLLLLLLLLLLL.",
+					"..LLLLLLLLLLLL.."
+				]
+			}
+		},
+		"pieceSkill": {
+			"note": "Skill の駒（32×32）。属性色の角丸タイル + 白抜きの記号。idle 以外は特殊な駒（crack<LineH|LineV|Bomb|Color>。タイルそのものに割れ目が入った形）。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"................................",
+					"......VVVVVVVVVVVVVVVVVVVV......",
+					"....VVooooooooooooooooookVVV....",
+					"...VookkkkkkkkkZZZZZZZZZZZkVV...",
+					"..VokkkkkkkkkkZZZZZZZZZZZZZZVV..",
+					"..VokkkkkkkkkZZZZZZZZZZZZZZZVV..",
+					".VokkkkkkkkkZZZooZZZZZZZZZZZZVV.",
+					".VokkkkkkkkZZZZooVZZZZZZZZZZZVV.",
+					".VokkkkkkkZZZZooooZZZZZZZZZZZVV.",
+					".VokkkkkkZZZZZooooVZZZZZZZZZZVV.",
+					".VokkkkkZZZZZooooooZZZZZZZZZZVV.",
+					".VokkkkZZZZZZooooooVZZZZZZZZZVV.",
+					".VokkkZZZZooooooooooooZZZZZZZVV.",
+					".VokkZooooooooooooooooooooZZZVV.",
+					".VokZZooooooooooooooooooooVZZVV.",
+					".VoZZZZooooooooooooooooooVVZZVV.",
+					".VoZZZZZooooooooooooooooVVZZZVV.",
+					".VoZZZZZZooooooooooooooVVZZZXVV.",
+					".VoZZZZZZZVooooooooooVVVZZZXXVV.",
+					".VoZZZZZZZooooooooooooZZZZXXXVV.",
+					".VoZZZZZZZooooooooooooVZZXXXXVV.",
+					".VoZZZZZZZooooooooooooVZXXXXXVV.",
+					".VoZZZZZZZooooooooooooVXXXXXXVV.",
+					".VoZZZZZZZooooVVVVooooVXXXXXXVV.",
+					".VkZZZZZZooooVVZZZZooooXXXXXXVV.",
+					".VVZZZZZZooVVVZZZZZZVooVXXXXXVV.",
+					"..VkZZZZZZVVZZZZZZZXXXVVXXXXVV..",
+					"..VVZZZZZZZZZZZZZZXXXXXXXXXXVV..",
+					"...VVVZZZZZZZZZZZXXXXXXXXXVVV...",
+					"....VVVVVVVVVVVVVVVVVVVVVVVV....",
+					"......VVVVVVVVVVVVVVVVVVVV......",
+					"................................"
+				],
+				"crackLineH": [
+					"................................",
+					"......VVVVVVVVVVVVVVVVVVVV......",
+					"....VVooooooooooooooooookVVV....",
+					"...VookkkkkkkkkZZZZZZZZZZZkVV...",
+					"..VokkkkkkkkkkZZZZZZZZZZZZZZVV..",
+					"..VokkkkkkkkkZZZZZZZZZZZZZZZVV..",
+					".VokkkkkkkkkZZZooZZZZZZZZZZZZVV.",
+					".VokkkkkkkkZZZZooVZZZZZZZZZZZVV.",
+					".VokkkkkkkZZZZooooZZZZZZZZZZZVV.",
+					".VokkkkkkZZZZZooooVZZZZZZZZZZVV.",
+					".VokkkkkZZZZZooooooZZZZZZZZZZVV.",
+					".VokkkkZZZZZZooooooVZZZZZZZZZVV.",
+					".VokkkZZZZooooooooooooZZZZZZZVV.",
+					".VokkZooooooooooooooooooooZZZVV.",
+					".VokZZooooVoooooooVoooooooVVoVV.",
+					".V.VoZZoVVoVVoooVVoVVoooVVooV.V.",
+					".V.oVoZVVoooVVoVVoooVVoVVoZZo.V.",
+					".VoZoVVoooooooVoooooooVooZZZXoV.",
+					".VoZZooZZZVooooooooooVoVZZZXXVV.",
+					".VoZZZZZZZooooooooooooZZZZXXXVV.",
+					".VoZZZZZZZooooooooooooVZZXXXXVV.",
+					".VoZZZZZZZooooooooooooVZXXXXXVV.",
+					".VoZZZZZZZooooooooooooVXXXXXXVV.",
+					".VoZZZZZZZooooVVVVooooVXXXXXXVV.",
+					".VkZZZZZZooooVVZZZZooooXXXXXXVV.",
+					".VVZZZZZZooVVVZZZZZZVooVXXXXXVV.",
+					"..VkZZZZZZVVZZZZZZZXXXVVXXXXVV..",
+					"..VVZZZZZZZZZZZZZZXXXXXXXXXXVV..",
+					"...VVVZZZZZZZZZZZXXXXXXXXXVVV...",
+					"....VVVVVVVVVVVVVVVVVVVVVVVV....",
+					"......VVVVVVVVVVVVVVVVVVVV......",
+					"................................"
+				],
+				"crackLineV": [
+					"................................",
+					"......VVVVVVVVVVVVVVVVVVVV......",
+					"....VVooooooooo..oooooookVVV....",
+					"...VookkkkkkkkkZVoZZZZZZZZkVV...",
+					"..VokkkkkkkkkkZVoZZZZZZZZZZZVV..",
+					"..VokkkkkkkkkZVoZZZZZZZZZZZZVV..",
+					".VokkkkkkkkkZZVooZZZZZZZZZZZZVV.",
+					".VokkkkkkkkZZZoVoVZZZZZZZZZZZVV.",
+					".VokkkkkkkZZZZoVVoZZZZZZZZZZZVV.",
+					".VokkkkkkZZZZZooVoVZZZZZZZZZZVV.",
+					".VokkkkkZZZZZooooVoZZZZZZZZZZVV.",
+					".VokkkkZZZZZZoooVooVZZZZZZZZZVV.",
+					".VokkkZZZZoooooVVoooooZZZZZZZVV.",
+					".VokkZoooooooooVooooooooooZZZVV.",
+					".VokZZooooooooVoooooooooooVZZVV.",
+					".VoZZZZooooooooVoooooooooVVZZVV.",
+					".VoZZZZZoooooooVVoooooooVVZZZVV.",
+					".VoZZZZZZoooooooVooooooVVZZZXVV.",
+					".VoZZZZZZZVooooooVoooVVVZZZXXVV.",
+					".VoZZZZZZZooooooVoooooZZZZXXXVV.",
+					".VoZZZZZZZoooooVVoooooVZZXXXXVV.",
+					".VoZZZZZZZoooooVooooooVZXXXXXVV.",
+					".VoZZZZZZZooooVoooooooVXXXXXXVV.",
+					".VoZZZZZZZoooooVoVooooVXXXXXXVV.",
+					".VkZZZZZZooooVVVVoZooooXXXXXXVV.",
+					".VVZZZZZZooVVVZoVoZZVooVXXXXXVV.",
+					"..VkZZZZZZVVZZZZoVoXXXVVXXXXVV..",
+					"..VVZZZZZZZZZZZZZVoXXXXXXXXXVV..",
+					"...VVVZZZZZZZZZZVoXXXXXXXXVVV...",
+					"....VVVVVVVVVVV..VVVVVVVVVVV....",
+					"......VVVVVVVVVVVVVVVVVVVV......",
+					"................................"
+				],
+				"crackBomb": [
+					".......VVVVVVVVVVVVVVVVVV.......",
+					".....VVoooVooooooooooVooVVV.....",
+					"....VookkkVVVokkZZZVVoZZZkVV....",
+					"...VokkkkkoooVVoZVVooZZZZZZVV...",
+					"..VokkkkkkkkkVoZZoVoZZZZZZZZVV..",
+					".VokkkkkkkkkkVoZZZVoZZZZZZZZZVV.",
+					".VokkkkkkkkkVoZooZVoZZZZZZZZZVV.",
+					"VokkkkkkkkkZoZZooVoZZZZZZZZZZZVV",
+					"VokkkkkkkkZZZZooooZZZZZZZZVVVVoV",
+					"VVokkkkkkZZZZZooooVZZZZZZZVoooVV",
+					"VVokkkkkZZZZZooooooZZZZZZZVoZZVV",
+					"VVokkkkZZZZZZooooooVZZZZZZVoZZVV",
+					"VVokkkZZZZooooooooooooZZZZVoZZVV",
+					"VoVokZVooooooooooooooooooooZZZVV",
+					"VoVoVVooooooooooooooooooooVZZZVV",
+					"VooVVoZooooooooooooooooooVVZZZVV",
+					"VoZooZZZooooooooooooooooVVZZZXVV",
+					"VoZZZZZZZooooooooooooooVVZZZXXVV",
+					"VoZZZZZZZZVooooooooooVVVZZZXXXVV",
+					"VVoZZZVoZZooooooooooooZZZZXXXXVV",
+					"VoVVVVoZZZooooooooooooVZZXVVVVoV",
+					"VoooooZZZZooooooooooooVZXXooooVV",
+					"VoZZZZZZZZooooooooooooVXXXXXXXVV",
+					"VoZZZZZZZZooooVVVVooooVXXXXXXXVV",
+					"VoZZZZZZZooooVVZZZZooooXXXXXXXVV",
+					".VkZZZZZZooVVVZZZZZZVoVoXXXXXVV.",
+					".VVZZZZZZZVVVoZZZZZXXXoVoXXXXVV.",
+					"..VVZZZZZZZVoZZZZZXXXXXVoXXXVV..",
+					"...VVZZZZZVoZZZZZXXXXXXVoXXVV...",
+					"....VVVZZZoVoZZZXXXXXXVoXVVV....",
+					".....VVVVVVoVoVVVVVVVVVVVVV.....",
+					".......VVVVVVVVVVVVVVVVVV......."
+				],
+				"crackColor": [
+					"................................",
+					"......VVVVVVVVVVVVVVVVVVVV......",
+					"....VVooooooooooooooVoooZVVV....",
+					"...VoozzzzzzzzzzxxxxVoZZZZZVV...",
+					"..VozzzzzzzzzzzxxxxxVoZZZZZZVV..",
+					"..VozzzzzzzzzzxxxxxZVoZZZZZZVV..",
+					".VozzzzzzzzzzxxooxxZVoZZZZZZZVV.",
+					".VoszzzzzzzzxxxoouxVVoZZZZZZZVV.",
+					".VoVVozzzzzxxxooooZoVoZZZZZZZVV.",
+					".VoooVVVozxxxxooooVZoZZZZZZZZVV.",
+					".VossoooVVoxxooooooZZZZZZZZZZVV.",
+					".VosssssoVoxxooooVoVZZZZZZZZZVV.",
+					".VossssppoooooooooVoooZZZZZZZVV.",
+					".VosssooooooooooooooooooooZZZVV.",
+					".VosspooooooooooooooooooooVZZVV.",
+					".VospppoooooooooooooooVVoVVZZVV.",
+					".VopppppooooooooooooooVoDVoVVVV.",
+					".VoppppppoooooooooooVVoDDVVoooV.",
+					".VopppppppmooooooooooDDDIooEEDV.",
+					".VopppppppooooooooooVoIIIIEEEDV.",
+					".VopppppppooooooooooVoDIIEEEEDV.",
+					".VopppppVVoooooVVoooVoDIEEEEEDV.",
+					".VoppppPVoooVVVooooVoVDEEEEEEDV.",
+					".VopppPVoPooVoLLLLooVVDEEEEEEDV.",
+					".VpppPVoPooooLLPPPPooooEEEEEEDV.",
+					".VmPPVoPPooLLLPPPPVVoooDEEEEEDV.",
+					"..VPVoPPPPLLPPPPPPoVoEDDEEEEDV..",
+					"..VLoPPPPPPPPPPPPPOoVoEEEEEEDV..",
+					"...VLLPPPPPPPPPPPOOOVoEEEEDDV...",
+					"....VVLLLLLLLLLLLLLLoVoDDDVV....",
+					"......VVVVVVVVVVVVVVVVVVVV......",
+					"................................"
+				]
+			}
+		},
+		"pieceSkillMark": {
+			"note": "Skill の記号だけ（消える拍に液体へ溶けて崩れる側）。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"................................",
+					"................................",
+					"................................",
+					"................................",
+					"................................",
+					"................................",
+					"...............oo...............",
+					"...............ooV..............",
+					"..............oooo..............",
+					"..............ooooV.............",
+					".............oooooo.............",
+					".............ooooooV............",
+					"..........oooooooooooo..........",
+					"......oooooooooooooooooooo......",
+					"......ooooooooooooooooooooV.....",
+					".......ooooooooooooooooooVV.....",
+					"........ooooooooooooooooVV......",
+					".........ooooooooooooooVV.......",
+					"..........VooooooooooVVV........",
+					"..........oooooooooooo..........",
+					"..........ooooooooooooV.........",
+					"..........ooooooooooooV.........",
+					"..........ooooooooooooV.........",
+					"..........ooooVVVVooooV.........",
+					".........ooooVV....oooo.........",
+					".........ooVVV......VooV........",
+					"..........VV..........VV........",
+					"................................",
+					"................................",
+					"................................",
+					"................................",
+					"................................"
+				]
+			}
+		},
+		"chipSkill": {
+			"note": "Skill の小さなカード（16×16）。敵のカード・デッキの束・この手で消した色の印。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"..VVVVVVVVVVVV..",
+					".VooooooooookVV.",
+					"VokkkkkZZZZZZZVV",
+					"VokkkkZZZZZZZZVV",
+					"VokkkZZooZZZZZVV",
+					"VokkZZZooXZZZZVV",
+					"VokZooooooooZZVV",
+					"VoZZZooooooXXZVV",
+					"VoZZZZooooXXZZVV",
+					"VoZZZooXXooZZXVV",
+					"VoZZZoXXZZoXXXVV",
+					"VoZZZZXZZZZXXXVV",
+					"VkZZZZZZZZXXXXVV",
+					"VVZZZZZZZXXXXXVV",
+					".VVVVVVVVVVVVVV.",
+					"..VVVVVVVVVVVV.."
+				]
+			}
+		},
+		"pieceHex": {
+			"note": "Hex の駒（32×32）。属性色の角丸タイル + 白抜きの記号。idle 以外は特殊な駒（crack<LineH|LineV|Bomb|Color>。タイルそのものに割れ目が入った形）。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"................................",
+					"......mmmmmmmmmmmmmmmmmmmm......",
+					"....mmoooooooooooooooooosmmm....",
+					"...moossssssssspppppppppppsmm...",
+					"..mossssssssssppppppppppppppmm..",
+					"..mossssssssspppppppppppppppmm..",
+					".mossssssssspppooppppppppppppmm.",
+					".mosssssssspoooooooopppppppppmm.",
+					".mossssssspooooooooooppppppppmm.",
+					".mosssssspoooooooooooopppppppmm.",
+					".mossssspooooooooooooooppppppmm.",
+					".mossssppoooooooooooooompppppmm.",
+					".mosssppoooooooooooooooopppppmm.",
+					".mosspppooonnnnoonnnnooomppppmm.",
+					".mosppppooonnnnoonnnnooomppppmm.",
+					".mopppppooonnnnoonnnnooomppppmm.",
+					".moppppppoonnnnoonnnnoommppppmm.",
+					".moppppppoooooooooooooomppppnmm.",
+					".moppppppoooooonnoooooompppnnmm.",
+					".mopppppppoooooooooooommppnnnmm.",
+					".moppppppppoooooooooommppnnnnmm.",
+					".moppppppppooopopopoomppnnnnnmm.",
+					".moppppppppooopopopoompnnnnnnmm.",
+					".mopppppppppoooooooommnnnnnnnmm.",
+					".msppppppppppmmmmmmmmnnnnnnnnmm.",
+					".mmpppppppppppppppppnnnnnnnnnmm.",
+					"..mspppppppppppppppnnnnnnnnnmm..",
+					"..mmppppppppppppppnnnnnnnnnnmm..",
+					"...mmmpppppppppppnnnnnnnnnmmm...",
+					"....mmmmmmmmmmmmmmmmmmmmmmmm....",
+					"......mmmmmmmmmmmmmmmmmmmm......",
+					"................................"
+				],
+				"crackLineH": [
+					"................................",
+					"......mmmmmmmmmmmmmmmmmmmm......",
+					"....mmoooooooooooooooooosmmm....",
+					"...moossssssssspppppppppppsmm...",
+					"..mossssssssssppppppppppppppmm..",
+					"..mossssssssspppppppppppppppmm..",
+					".mossssssssspppooppppppppppppmm.",
+					".mosssssssspoooooooopppppppppmm.",
+					".mossssssspooooooooooppppppppmm.",
+					".mosssssspoooooooooooopppppppmm.",
+					".mossssspooooooooooooooppppppmm.",
+					".mossssppoooooooooooooompppppmm.",
+					".mosssppoooooooooooooooopppppmm.",
+					".mosspppooonnnnoonnnnooomppppmm.",
+					".mosppppoomonnnoonmonooompmmomm.",
+					".m.mopppmmommonommommooommoom.m.",
+					".m.omopmmooommommonommommoppo.m.",
+					".mopommooooooomooooooomoopppnom.",
+					".moppooppoooooonnoooooompppnnmm.",
+					".mopppppppoooooooooooommppnnnmm.",
+					".moppppppppoooooooooommppnnnnmm.",
+					".moppppppppooopopopoomppnnnnnmm.",
+					".moppppppppooopopopoompnnnnnnmm.",
+					".mopppppppppoooooooommnnnnnnnmm.",
+					".msppppppppppmmmmmmmmnnnnnnnnmm.",
+					".mmpppppppppppppppppnnnnnnnnnmm.",
+					"..mspppppppppppppppnnnnnnnnnmm..",
+					"..mmppppppppppppppnnnnnnnnnnmm..",
+					"...mmmpppppppppppnnnnnnnnnmmm...",
+					"....mmmmmmmmmmmmmmmmmmmmmmmm....",
+					"......mmmmmmmmmmmmmmmmmmmm......",
+					"................................"
+				],
+				"crackLineV": [
+					"................................",
+					"......mmmmmmmmmmmmmmmmmmmm......",
+					"....mmooooooooo..ooooooosmmm....",
+					"...moossssssssspmoppppppppsmm...",
+					"..mosssssssssspmopppppppppppmm..",
+					"..mossssssssspmoppppppppppppmm..",
+					".mosssssssssppmooppppppppppppmm.",
+					".mosssssssspooomoooopppppppppmm.",
+					".mossssssspoooommooooppppppppmm.",
+					".mosssssspoooooomooooopppppppmm.",
+					".mossssspoooooooomoooooppppppmm.",
+					".mossssppooooooomoooooompppppmm.",
+					".mosssppooooooommooooooopppppmm.",
+					".mosspppooonnnnmonnnnooomppppmm.",
+					".mosppppooonnnmoonnnnooomppppmm.",
+					".mopppppooonnnomonnnnooomppppmm.",
+					".moppppppoonnnnmmonnnoommppppmm.",
+					".moppppppooooooomoooooomppppnmm.",
+					".moppppppoooooonomooooompppnnmm.",
+					".mopppppppoooooomooooommppnnnmm.",
+					".moppppppppoooommoooommppnnnnmm.",
+					".moppppppppooopmoopoomppnnnnnmm.",
+					".moppppppppooomopopoompnnnnnnmm.",
+					".mopppppppppooomoooommnnnnnnnmm.",
+					".msppppppppppmmmmommmnnnnnnnnmm.",
+					".mmppppppppppppomoppnnnnnnnnnmm.",
+					"..msppppppppppppomonnnnnnnnnmm..",
+					"..mmpppppppppppppmonnnnnnnnnmm..",
+					"...mmmppppppppppmonnnnnnnnmmm...",
+					"....mmmmmmmmmmm..mmmmmmmmmmm....",
+					"......mmmmmmmmmmmmmmmmmmmm......",
+					"................................"
+				],
+				"crackBomb": [
+					".......mmmmmmmmmmmmmmmmmm.......",
+					".....mmooomoooooooooooomomm.....",
+					"....moossmossssspppppppomomm....",
+					"...mosssmmmmmmopppppppppomomm...",
+					"..mossssooooomoppppppppppomomm..",
+					".mossssssssssmopppppppppppmopmm.",
+					".mossssssssspmooopppppppppmopmm.",
+					"mossssssssspooooooooppmmmmmoppmm",
+					"mosssssssspoooooooooopooomomopmm",
+					"mmmossssspoooooooooooopppmoommom",
+					"momosssspooooooooooooooppmopoomm",
+					"momosssppoooooooooooooompoppppom",
+					"moomosmoooooooooooooooooppppppmm",
+					"mosmmmopooonnnnoonnnnooompppppmm",
+					"mosoooppooonnnnoonnnnooompppppmm",
+					"mospppppooonnnnoonnnnooompppppmm",
+					"mopppppppoonnnnoonnnnoommppppnmm",
+					"mmoppppppoooooooooooooomppppnnmm",
+					"momoppmopoooooonnoooooompppnnnmm",
+					"moomomopppoooooooooooommppnnnnmm",
+					"mopmomoppppoooooooooommppnmonnmm",
+					"mopommoppppooopopopoomppnnommomm",
+					"moppmopppppooopopopoompnnnnoomom",
+					"moppopppppppoooooooommnnnnnnnomm",
+					"mmpppppppppppmmmmmmmmnnnnnnnnnom",
+					".mspppppppppppppppppnnnnnnnnnmm.",
+					".mmpppppppppmopppppmonnnnnnnnmm.",
+					"..mmppppppppmoppppmonnnnnnnnmm..",
+					"...mmpppppppmopppnmonnnnnnnmm...",
+					"....mmmpppppmoppnmonnnnnnmmm....",
+					".....mmommmmmommmomommmmmmm.....",
+					".......mmmmmmmmmmmmmmmmmm......."
+				],
+				"crackColor": [
+					"................................",
+					"......mmmmmmmmmmmmmmmmmmmm......",
+					"....mmoooooooooooooomooopmmm....",
+					"...moozzzzzzzzzzxxxxmopppppmm...",
+					"..mozzzzzzzzzzzxxxxxmoppppppmm..",
+					"..mozzzzzzzzzzxxxxxpmoppppppmm..",
+					".mozzzzzzzzzzxxooxxpmopppppppmm.",
+					".mokzzzzzzzzooooooommopppppppmm.",
+					".mommozzzzzooooooooomopppppppmm.",
+					".mooommmozoooooooooooopppppppmm.",
+					".mokkooommoooooooooooooppppppmm.",
+					".mokkkkkomooooooooooooompppppmm.",
+					".mokkkkZooooooooooooomoopppppmm.",
+					".mokkkZZoooooooooooooooomppppmm.",
+					".mokkZZZoooonnnoonnnoooomppppmm.",
+					".mokZZZZoooonnnoonnnoooomppppmm.",
+					".moZZZZZZooonnnoonnnomoDDmommmm.",
+					".moZZZZZZoooooonnoooomoDImmooom.",
+					".moZZZZZZooooooooooommoDIooEEDm.",
+					".moZZZZZZZoooooooooomoDDIIEEEDm.",
+					".moZZZZZZZPoooooppoooDDIIEEEEDm.",
+					".moZZZZZmmooooooooomoDIIEEEEEDm.",
+					".moZZZZPmoPoooPoPoIooDIEEEEEEDm.",
+					".moZZZPmoPPPooooooooDDEEEEEEEDm.",
+					".mZZZPmoPPPPPLLLLLLDDEEEEEEEEDm.",
+					".mVPPmoPPPPPPPPPPPmmoEEEEEEEEDm.",
+					"..mPmoPPPPPPPPPPPPomoEEEEEEEDm..",
+					"..mLoPPPPPPPPPPPPPOomoEEEEEEDm..",
+					"...mLLPPPPPPPPPPPOOOmoEEEEDDm...",
+					"....mmLLLLLLLLLLLLLLomoDDDmm....",
+					"......mmmmmmmmmmmmmmmmmmmm......",
+					"................................"
+				]
+			}
+		},
+		"pieceHexMark": {
+			"note": "Hex の記号だけ（消える拍に液体へ溶けて崩れる側）。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"................................",
+					"................................",
+					"................................",
+					"................................",
+					"................................",
+					"................................",
+					"...............oo...............",
+					"............oooooooo............",
+					"...........oooooooooo...........",
+					"..........oooooooooooo..........",
+					".........oooooooooooooo.........",
+					".........oooooooooooooom........",
+					"........oooooooooooooooo........",
+					"........ooonnnnoonnnnooom.......",
+					"........ooonnnnoonnnnooom.......",
+					"........ooonnnnoonnnnooom.......",
+					".........oonnnnoonnnnoomm.......",
+					".........oooooooooooooom........",
+					".........oooooonnoooooom........",
+					"..........oooooooooooomm........",
+					"...........oooooooooomm.........",
+					"...........ooopopopoom..........",
+					"...........ooopopopoom..........",
+					"............oooooooomm..........",
+					".............mmmmmmmm...........",
+					"................................",
+					"................................",
+					"................................",
+					"................................",
+					"................................",
+					"................................",
+					"................................"
+				]
+			}
+		},
+		"chipHex": {
+			"note": "Hex の小さなカード（16×16）。敵のカード・デッキの束・この手で消した色の印。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"..mmmmmmmmmmmm..",
+					".moooooooooosmm.",
+					"mossssspppppppmm",
+					"mossssppppppppmm",
+					"mosssoooooopppmm",
+					"mossooooooooppmm",
+					"mosponnoonnonpmm",
+					"mopponpoonponpmm",
+					"moppoooooooonpmm",
+					"mopppoooooonnnmm",
+					"moppponoononnnmm",
+					"moppppnpnnpnnnmm",
+					"msppppppppnnnnmm",
+					"mmpppppppnnnnnmm",
+					".mmmmmmmmmmmmmm.",
+					"..mmmmmmmmmmmm.."
+				]
+			}
+		},
+		"pieceRush": {
+			"note": "Rush の駒（32×32）。属性色の角丸タイル + 白抜きの記号。idle 以外は特殊な駒（crack<LineH|LineV|Bomb|Color>。タイルそのものに割れ目が入った形）。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"................................",
+					"......uuuuuuuuuuuuuuuuuuuu......",
+					"....uuoooooooooooooooooozuuu....",
+					"...uoozzzzzzzzzxxxxxxxxxxxzuu...",
+					"..uozzzzzzzzzzxxxxxxxxxxxxxxuu..",
+					"..uozzzzzzzzzxxxxooooooooxxxuu..",
+					".uozzzzzzzzzxxxxoooooooouuxxxuu.",
+					".uozzzzzzzzxxxxoooooooouuxxxxuu.",
+					".uozzzzzzzxxxxxoooooooouxxxxxuu.",
+					".uozzzzzzxxxxxoooooooouuxxxxxuu.",
+					".uozzzzzxxxxxoooooooouuxxxxxxuu.",
+					".uozzzzxxxxxxoooooooouxxxxxxxuu.",
+					".uozzzxxxxxxooooooooooooxxxxxuu.",
+					".uozzxxxxxxooooooooooooouxxxxuu.",
+					".uozxxxxxxxoooooooooooouuxxxxuu.",
+					".uoxxxxxxxoooooooooooouuxxxxxuu.",
+					".uoxxxxxxooooooooooooouxxxxxxuu.",
+					".uoxxxxxxoooooooooooouuxxxxxvuu.",
+					".uoxxxxxxxuuuuoooooouuxxxxxvvuu.",
+					".uoxxxxxxxxxxoooooouuxxxxxvvvuu.",
+					".uoxxxxxxxxxxooooouuxxxxxvvvvuu.",
+					".uoxxxxxxxxxxoooouuxxxxxvvvvvuu.",
+					".uoxxxxxxxxxoooouuxxxxxvvvvvvuu.",
+					".uoxxxxxxxxxooouuxxxxxvvvvvvvuu.",
+					".uzxxxxxxxxxoouuxxxxxvvvvvvvvuu.",
+					".uuxxxxxxxxooouxxxxxvvvvvvvvvuu.",
+					"..uzxxxxxxxoouuxxxxvvvvvvvvvuu..",
+					"..uuxxxxxxxouuxxxxvvvvvvvvvvuu..",
+					"...uuuxxxxxxuxxxxvvvvvvvvvuuu...",
+					"....uuuuuuuuuuuuuuuuuuuuuuuu....",
+					"......uuuuuuuuuuuuuuuuuuuu......",
+					"................................"
+				],
+				"crackLineH": [
+					"................................",
+					"......uuuuuuuuuuuuuuuuuuuu......",
+					"....uuoooooooooooooooooozuuu....",
+					"...uoozzzzzzzzzxxxxxxxxxxxzuu...",
+					"..uozzzzzzzzzzxxxxxxxxxxxxxxuu..",
+					"..uozzzzzzzzzxxxxooooooooxxxuu..",
+					".uozzzzzzzzzxxxxoooooooouuxxxuu.",
+					".uozzzzzzzzxxxxoooooooouuxxxxuu.",
+					".uozzzzzzzxxxxxoooooooouxxxxxuu.",
+					".uozzzzzzxxxxxoooooooouuxxxxxuu.",
+					".uozzzzzxxxxxoooooooouuxxxxxxuu.",
+					".uozzzzxxxxxxoooooooouxxxxxxxuu.",
+					".uozzzxxxxxxooooooooooooxxxxxuu.",
+					".uozzxxxxxxooooooooooooouxxxxuu.",
+					".uozxxxxxxuooooooouoooouuxuuouu.",
+					".u.uoxxxuuouuooouuouuouuuuoou.u.",
+					".u.ouoxuuooouuouuooouuouuoxxo.u.",
+					".uoxouuooooooouooooooouooxxxvou.",
+					".uoxxooxxxuuuuoooooouuoxxxxvvuu.",
+					".uoxxxxxxxxxxoooooouuxxxxxvvvuu.",
+					".uoxxxxxxxxxxooooouuxxxxxvvvvuu.",
+					".uoxxxxxxxxxxoooouuxxxxxvvvvvuu.",
+					".uoxxxxxxxxxoooouuxxxxxvvvvvvuu.",
+					".uoxxxxxxxxxooouuxxxxxvvvvvvvuu.",
+					".uzxxxxxxxxxoouuxxxxxvvvvvvvvuu.",
+					".uuxxxxxxxxooouxxxxxvvvvvvvvvuu.",
+					"..uzxxxxxxxoouuxxxxvvvvvvvvvuu..",
+					"..uuxxxxxxxouuxxxxvvvvvvvvvvuu..",
+					"...uuuxxxxxxuxxxxvvvvvvvvvuuu...",
+					"....uuuuuuuuuuuuuuuuuuuuuuuu....",
+					"......uuuuuuuuuuuuuuuuuuuu......",
+					"................................"
+				],
+				"crackLineV": [
+					"................................",
+					"......uuuuuuuuuuuuuuuuuuuu......",
+					"....uuooooooooo..ooooooozuuu....",
+					"...uoozzzzzzzzzxuoxxxxxxxxzuu...",
+					"..uozzzzzzzzzzxuoxxxxxxxxxxxuu..",
+					"..uozzzzzzzzzxuoxooooooooxxxuu..",
+					".uozzzzzzzzzxxuooooooooouuxxxuu.",
+					".uozzzzzzzzxxxouooooooouuxxxxuu.",
+					".uozzzzzzzxxxxxuuoooooouxxxxxuu.",
+					".uozzzzzzxxxxxoouooooouuxxxxxuu.",
+					".uozzzzzxxxxxoooouooouuxxxxxxuu.",
+					".uozzzzxxxxxxooouoooouxxxxxxxuu.",
+					".uozzzxxxxxxooouuoooooooxxxxxuu.",
+					".uozzxxxxxxoooouoooooooouxxxxuu.",
+					".uozxxxxxxxooouoooooooouuxxxxuu.",
+					".uoxxxxxxxooooouoooooouuxxxxxuu.",
+					".uoxxxxxxoooooouuooooouxxxxxxuu.",
+					".uoxxxxxxooooooouoooouuxxxxxvuu.",
+					".uoxxxxxxxuuuuooouoouuxxxxxvvuu.",
+					".uoxxxxxxxxxxooouoouuxxxxxvvvuu.",
+					".uoxxxxxxxxxxoouuouuxxxxxvvvvuu.",
+					".uoxxxxxxxxxxoououuxxxxxvvvvvuu.",
+					".uoxxxxxxxxxoououuxxxxxvvvvvvuu.",
+					".uoxxxxxxxxxooouoxxxxxvvvvvvvuu.",
+					".uzxxxxxxxxxoouuuoxxxvvvvvvvvuu.",
+					".uuxxxxxxxxooououoxxvvvvvvvvvuu.",
+					"..uzxxxxxxxoouuxouovvvvvvvvvuu..",
+					"..uuxxxxxxxouuxxxuovvvvvvvvvuu..",
+					"...uuuxxxxxxuxxxuovvvvvvvvuuu...",
+					"....uuuuuuuuuuu..uuuuuuuuuuu....",
+					"......uuuuuuuuuuuuuuuuuuuu......",
+					"................................"
+				],
+				"crackBomb": [
+					".......uuuuuuuuuuuuuuuuuu.......",
+					".....uuooooooooouooooooouuu.....",
+					"....uoouuozzzzzzouoxxxxxxzuu....",
+					"...uuuuuuozzzzzxxuoxxxxxxxxuu...",
+					"..uooooouozzzzxxxouoxxxxxxxxuu..",
+					".uuozzzuozzzzxxxxouooooooxxxxuu.",
+					".uouuuuuozzzxxxxooouoooouuxxxuu.",
+					"uozooouuuuuuoxxoooooooouuxxxxxuu",
+					"uozzzzooooooxxxoooooooouxxxxxxuu",
+					"uozzzzzuoxxxxxoooooooouuxxxxxxuu",
+					"uozzzzzuoxxxxoooooooouuxxxxxxxuu",
+					"uozzzzzoxxxxxoooooooouxxxxxxxxuu",
+					"uozzzzxxxxxxooooooooooooxxuoxuuu",
+					"uozzzxxxxxxooooooooooooouxouuuou",
+					"uozzxxxxxxxoooooooooooouuxxooouu",
+					"uozxxxxxxxoooooooooooouuxxxxxxuu",
+					"uoxxxxxxxooooooooooooouxxxxxxvuu",
+					"uoxxxxxxxoooooooooooouuxxxxxvvuu",
+					"uoxxxxxxxxuuuuoooooouuxxxxxvvvuu",
+					"uoxxxxxxxxxxxoooooouuxxxxxvvvvuu",
+					"uoxxxxxxxxxxxooooouuxxxxxvuuovuu",
+					"uoxxuuuoxxxxxoooouuxxxxxvvouuouu",
+					"uoxuooouoxxxoooouuxxxxxvvvvououu",
+					"uouoxxxoxxxxooouuxxxxxvvvvvvuouu",
+					"uuuoxxxxxxxxoouuxxxxxvvvvvvvuuuu",
+					".uuoxxxxxxxuoouxxxxxvvvvvvvvouu.",
+					".uouoxxxxuuuouuxxxxvuovvvvvvvou.",
+					"..uuoxxxuooouuxxxxvvuovvvvvvuu..",
+					"...uoxxxouoxuxxxxvvvuovvvvvuu...",
+					"....uuuxxouuoxxxvvvvouuuuuou....",
+					".....uuuuuoououuuuuuuooouuu.....",
+					".......uuuuuuuuuuuuuuuuuu......."
+				],
+				"crackColor": [
+					"................................",
+					"......uuuuuuuuuuuuuuuuuuuu......",
+					"....uuoooooooooooooouoooxuuu....",
+					"...uoossssssssssppppuoxxxxxuu...",
+					"..uossssssssssspppppuoxxxxxxuu..",
+					"..uosssssssssspppooouooooxxxuu..",
+					".uosssssssssspppoooouooouuxxxuu.",
+					".uoksssssssspppoooouuoouuxxxxuu.",
+					".uouuosssssppppoooooooouxxxxxuu.",
+					".uooouuuosppppoooooooouuxxxxxuu.",
+					".uokkooouuoppoooooooouuxxxxxxuu.",
+					".uokkkkkouoppooooooouuxxxxxxxuu.",
+					".uokkkkZZoZpooooooooooooxxxxxuu.",
+					".uokkkZZZZZooooooooooooouxxxxuu.",
+					".uokkZZZZZZoooooooooooouuxxxxuu.",
+					".uokZZZZZZoooooooooouuuuxxxxxuu.",
+					".uoZZZZZZooooooooooouoDIIuouuuu.",
+					".uoZZZZZZooouuuoooouoDDIIuuooou.",
+					".uoZZZZZZZVVVLoooouuDDIIIooEEDu.",
+					".uoZZZZZZZZPPoooouuDDIIIIIEEEDu.",
+					".uoZZZZZZZPPPooouoDDIIIIIEEEEDu.",
+					".uoZZZZZuuoPPoouuLDIIIIIEEEEEDu.",
+					".uoZZZZPuoPPooooLLIIIIIEEEEEEDu.",
+					".uoZZZPuoPPPoouLLPPIIIEEEEEEEDu.",
+					".uZZZPuoPPPPouuLPPPIIEEEEEEEEDu.",
+					".uVPPuoPPPPoooLPPPuuoEEEEEEEEDu.",
+					"..uPuoPPPPPooLLPPPouoEEEEEEEDu..",
+					"..uLoPPPPPPoLLPPPPOouoEEEEEEDu..",
+					"...uLLPPPPPPLPPPPOOOuoEEEEDDu...",
+					"....uuLLLLLLLLLLLLLLouoDDDuu....",
+					"......uuuuuuuuuuuuuuuuuuuu......",
+					"................................"
+				]
+			}
+		},
+		"pieceRushMark": {
+			"note": "Rush の記号だけ（消える拍に液体へ溶けて崩れる側）。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"................................",
+					"................................",
+					"................................",
+					"................................",
+					"................................",
+					".................oooooooo.......",
+					"................oooooooouu......",
+					"...............oooooooouu.......",
+					"...............oooooooou........",
+					"..............oooooooouu........",
+					".............oooooooouu.........",
+					".............oooooooou..........",
+					"............oooooooooooo........",
+					"...........ooooooooooooou.......",
+					"...........oooooooooooouu.......",
+					"..........oooooooooooouu........",
+					".........ooooooooooooou.........",
+					".........oooooooooooouu.........",
+					"..........uuuuoooooouu..........",
+					".............oooooouu...........",
+					".............ooooouu............",
+					".............oooouu.............",
+					"............oooouu..............",
+					"............ooouu...............",
+					"............oouu................",
+					"...........ooou.................",
+					"...........oouu.................",
+					"...........ouu..................",
+					"............u...................",
+					"................................",
+					"................................",
+					"................................"
+				]
+			}
+		},
+		"chipRush": {
+			"note": "Rush の小さなカード（16×16）。敵のカード・デッキの束・この手で消した色の印。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"..uuuuuuuuuuuu..",
+					".uoooooooooozuu.",
+					"uozzzzzxxxxxxxuu",
+					"uozzzzxxxxxxxxuu",
+					"uozzzxxxoooxxxuu",
+					"uozzxxxooovvxxuu",
+					"uozxxxooovvxxxuu",
+					"uoxxxooooooxxxuu",
+					"uoxxxxvooovvxxuu",
+					"uoxxxxooovvxxvuu",
+					"uoxxxoovvvxxvvuu",
+					"uoxxoxvvxxxvvvuu",
+					"uzxxxvxxxxvvvvuu",
+					"uuxxxxxxxvvvvvuu",
+					".uuuuuuuuuuuuuu.",
+					"..uuuuuuuuuuuu.."
+				]
+			}
+		},
+		"effectIconAttackUp": {
+			"note": "効果の種類 AttackUp のアイコン（16×16）。カードを取る画面の比べる欄とデッキの型のバッジ。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"..DDDDDDDDDDDD..",
+					".DooooooooooJDD.",
+					"DoJJJJJIIIIIIIDD",
+					"DoJJJJIIIIooIIDD",
+					"DoJJJIIIIoooEIDD",
+					"DoJJIIIIoooEEIDD",
+					"DoJIIIIoooEEIIDD",
+					"DoIIoIoooEEIIIDD",
+					"DoIIIoooEEIIIIDD",
+					"DoIIIooEEIIIIEDD",
+					"DoIIoIEoIIIIEEDD",
+					"DoIoIEIIEIIEEEDD",
+					"DJIIEIIIIIEEEEDD",
+					"DDIIIIIIIEEEEEDD",
+					".DDDDDDDDDDDDDD.",
+					"..DDDDDDDDDDDD.."
+				]
+			}
+		},
+		"effectIconMultiHit": {
+			"note": "効果の種類 MultiHit のアイコン（16×16）。カードを取る画面の比べる欄とデッキの型のバッジ。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"..DDDDDDDDDDDD..",
+					".DooooooooooJDD.",
+					"DoJJJJJIIIIIIIDD",
+					"DoJoJJIIIIIoIIDD",
+					"DoJooIIIIIooEIDD",
+					"DoJJooIIIooEEIDD",
+					"DoJIIooIooEEIIDD",
+					"DoIIIIoooEEIIIDD",
+					"DoIIIooEooIIIIDD",
+					"DoIIoIoEoEoIIEDD",
+					"DoIoIEIEIEIoEEDD",
+					"DoIIEIIIIIIEEEDD",
+					"DJIIIIIIIIEEEEDD",
+					"DDIIIIIIIEEEEEDD",
+					".DDDDDDDDDDDDDD.",
+					"..DDDDDDDDDDDD.."
+				]
+			}
+		},
+		"effectIconCritical": {
+			"note": "効果の種類 Critical のアイコン（16×16）。カードを取る画面の比べる欄とデッキの型のバッジ。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"..VVVVVVVVVVVV..",
+					".VooooooooookVV.",
+					"VokkkkkZZZZZZZVV",
+					"VokkkkZoZZZZZZVV",
+					"VokkoZoooZoZZZVV",
+					"VokkZoooooZXZZVV",
+					"VokZooXXXooZZZVV",
+					"VoZooooZooooZZVV",
+					"VoZZooXXZooXXZVV",
+					"VoZZZoooooXXZXVV",
+					"VoZZoZoooXoZXXVV",
+					"VoZZZXZoXXZXXXVV",
+					"VkZZZZZZXZXXXXVV",
+					"VVZZZZZZZXXXXXVV",
+					".VVVVVVVVVVVVVV.",
+					"..VVVVVVVVVVVV.."
+				]
+			}
+		},
+		"effectIconMagicAttack": {
+			"note": "効果の種類 MagicAttack のアイコン（16×16）。カードを取る画面の比べる欄とデッキの型のバッジ。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"..VVVVVVVVVVVV..",
+					".VooooooooookVV.",
+					"VokkkkkZZZZZZZVV",
+					"VokkkkZZoooZZZVV",
+					"VokkkZZoooooZZVV",
+					"VokkZZZoooooXZVV",
+					"VokZZZooooooXZVV",
+					"VoZZZZoooooXXZVV",
+					"VoZZZoZoooXXZZVV",
+					"VoZZoZXZXXXZZXVV",
+					"VoZoZXZZZZZZXXVV",
+					"VoZZXZZZZZZXXXVV",
+					"VkZZZZZZZZXXXXVV",
+					"VVZZZZZZZXXXXXVV",
+					".VVVVVVVVVVVVVV.",
+					"..VVVVVVVVVVVV.."
+				]
+			}
+		},
+		"effectIconShieldBash": {
+			"note": "効果の種類 ShieldBash のアイコン（16×16）。カードを取る画面の比べる欄とデッキの型のバッジ。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"..LLLLLLLLLLLL..",
+					".LooooooooooTLL.",
+					"LoTTTTTPPPPPPPLL",
+					"LoToooooPPPPPPLL",
+					"LoToooooOPPPPPLL",
+					"LoToooooOoPPPPLL",
+					"LoToooooOooPPPLL",
+					"LoPPoooOooooPPLL",
+					"LoPPoooOPooOOPLL",
+					"LoPPPoOOPoOOPOLL",
+					"LoPPPoOPPPOPOOLL",
+					"LoPPPPOPPPPOOOLL",
+					"LTPPPPPPPPOOOOLL",
+					"LLPPPPPPPOOOOOLL",
+					".LLLLLLLLLLLLLL.",
+					"..LLLLLLLLLLLL.."
+				]
+			}
+		},
+		"effectIconDefenseUp": {
+			"note": "効果の種類 DefenseUp のアイコン（16×16）。カードを取る画面の比べる欄とデッキの型のバッジ。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"..LLLLLLLLLLLL..",
+					".LooooooooooTLL.",
+					"LoTTTTTPPPPPPPLL",
+					"LoToooooooooPPLL",
+					"LoToooooooooOPLL",
+					"LoTooooOooooOPLL",
+					"LoTooooOooooOPLL",
+					"LoPPoooOoooOOPLL",
+					"LoPPoooOoooOPPLL",
+					"LoPPPooOooOOPOLL",
+					"LoPPPPoooOOPOOLL",
+					"LoPPPPPoOOPOOOLL",
+					"LTPPPPPPOPOOOOLL",
+					"LLPPPPPPPOOOOOLL",
+					".LLLLLLLLLLLLLL.",
+					"..LLLLLLLLLLLL.."
+				]
+			}
+		},
+		"effectIconShield": {
+			"note": "効果の種類 Shield のアイコン（16×16）。カードを取る画面の比べる欄とデッキの型のバッジ。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"..LLLLLLLLLLLL..",
+					".LooooooooooTLL.",
+					"LoTTTTTPPPPPPPLL",
+					"LoToooooooooPPLL",
+					"LoTooOoooOooOPLL",
+					"LoTTOOPOOOPOOPLL",
+					"LoTooooPooooPPLL",
+					"LoPooooOooooOPLL",
+					"LoPPOOOOPOOOOPLL",
+					"LoPooPoooPooPOLL",
+					"LoPooOoooOooOOLL",
+					"LoPPOOPOOOPOOOLL",
+					"LTPPPPPPPPOOOOLL",
+					"LLPPPPPPPOOOOOLL",
+					".LLLLLLLLLLLLLL.",
+					"..LLLLLLLLLLLL.."
+				]
+			}
+		},
+		"effectIconRiposte": {
+			"note": "効果の種類 Riposte のアイコン（16×16）。カードを取る画面の比べる欄とデッキの型のバッジ。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"..VVVVVVVVVVVV..",
+					".VooooooooookVV.",
+					"VokkkkkZZZZZZZVV",
+					"VokkooooooZZZZVV",
+					"VokkoooooooZZZVV",
+					"VokkZXXXXXooZZVV",
+					"VokZZZoZZZooXZVV",
+					"VoZZZooXZZooXZVV",
+					"VoZZoooooooXXZVV",
+					"VoZoooooooXXZXVV",
+					"VoZZooXXXXXZXXVV",
+					"VoZZZoXZZZZXXXVV",
+					"VkZZZZXZZZXXXXVV",
+					"VVZZZZZZZXXXXXVV",
+					".VVVVVVVVVVVVVV.",
+					"..VVVVVVVVVVVV.."
+				]
+			}
+		},
+		"effectIconHeal": {
+			"note": "効果の種類 Heal のアイコン（16×16）。カードを取る画面の比べる欄とデッキの型のバッジ。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"..RRRRRRRRRRRR..",
+					".RoooooooooocRR.",
+					"RocccccWWWWWWWRR",
+					"RoccccoooWWWWWRR",
+					"RocccWoooUWWWWRR",
+					"RocoooooooooWWRR",
+					"RocoooooooooUWRR",
+					"RoWoooooooooUWRR",
+					"RoWWUUoooUUUUWRR",
+					"RoWWWWoooUWWWURR",
+					"RoWWWWoooUWWUURR",
+					"RoWWWWWUUUWUUURR",
+					"RcWWWWWWWWUUUURR",
+					"RRWWWWWWWUUUUURR",
+					".RRRRRRRRRRRRRR.",
+					"..RRRRRRRRRRRR.."
+				]
+			}
+		},
+		"effectIconRegen": {
+			"note": "効果の種類 Regen のアイコン（16×16）。カードを取る画面の比べる欄とデッキの型のバッジ。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"..RRRRRRRRRRRR..",
+					".RoooooooooocRR.",
+					"RocccccWWWWWWWRR",
+					"RoccooWWWooWWWRR",
+					"RocooooWooooWWRR",
+					"RocoooooooooUWRR",
+					"RocoooooooooUWRR",
+					"RoWWoooooooUUWRR",
+					"RoWWWoooooUUWWRR",
+					"RoWWWWoooUUWWURR",
+					"RoWWWWWoUUWWUURR",
+					"RoWWWWWWUWWUUURR",
+					"RcWWWWWWWWUUUURR",
+					"RRWWWWWWWUUUUURR",
+					".RRRRRRRRRRRRRR.",
+					"..RRRRRRRRRRRR.."
+				]
+			}
+		},
+		"effectIconPurify": {
+			"note": "効果の種類 Purify のアイコン（16×16）。カードを取る画面の比べる欄とデッキの型のバッジ。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"..RRRRRRRRRRRR..",
+					".RoooooooooocRR.",
+					"RocccccWWWWWWWRR",
+					"RoccccoWWWWoWWRR",
+					"RocccWoUWWooUWRR",
+					"RoccWoooWWWoUWRR",
+					"RocoooooooWWUWRR",
+					"RoWWoooooUUWWWRR",
+					"RoWWWoooUUWWWWRR",
+					"RoWWWWoUUWWWWURR",
+					"RoWWWWoUWWWWUURR",
+					"RoWWWWWUWWWUUURR",
+					"RcWWWWWWWWUUUURR",
+					"RRWWWWWWWUUUUURR",
+					".RRRRRRRRRRRRRR.",
+					"..RRRRRRRRRRRR.."
+				]
+			}
+		},
+		"effectIconWeakenAttack": {
+			"note": "効果の種類 WeakenAttack のアイコン（16×16）。カードを取る画面の比べる欄とデッキの型のバッジ。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"..mmmmmmmmmmmm..",
+					".moooooooooosmm.",
+					"mossssspppppppmm",
+					"mosssspppppoppmm",
+					"mossspppppoonpmm",
+					"mosspppppppnnpmm",
+					"mospppppooppppmm",
+					"moppoppoonnpppmm",
+					"mopppooonnppppmm",
+					"mopppoonnppppnmm",
+					"moppopnoppppnnmm",
+					"mopopnppnppnnnmm",
+					"msppnpppppnnnnmm",
+					"mmpppppppnnnnnmm",
+					".mmmmmmmmmmmmmm.",
+					"..mmmmmmmmmmmm.."
+				]
+			}
+		},
+		"effectIconWeakenDefense": {
+			"note": "効果の種類 WeakenDefense のアイコン（16×16）。カードを取る画面の比べる欄とデッキの型のバッジ。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"..mmmmmmmmmmmm..",
+					".moooooooooosmm.",
+					"mossssspppppppmm",
+					"mosooooopoooppmm",
+					"mosoooonoooonpmm",
+					"mosooooopooonpmm",
+					"mosoooonoooonpmm",
+					"moppooonooonnpmm",
+					"moppoooopoonppmm",
+					"mopppoonoonnpnmm",
+					"moppppooonnpnnmm",
+					"moppppponnpnnnmm",
+					"msppppppnpnnnnmm",
+					"mmpppppppnnnnnmm",
+					".mmmmmmmmmmmmmm.",
+					"..mmmmmmmmmmmm.."
+				]
+			}
+		},
+		"effectIconPoison": {
+			"note": "効果の種類 Poison のアイコン（16×16）。カードを取る画面の比べる欄とデッキの型のバッジ。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"..mmmmmmmmmmmm..",
+					".moooooooooosmm.",
+					"mossssspppppppmm",
+					"mossssopppppppmm",
+					"mosssponppopppmm",
+					"mosspooopppnppmm",
+					"mosppooonpppppmm",
+					"moppooooopppppmm",
+					"mopoooooooppppmm",
+					"mopoonoooonppnmm",
+					"moppooooonnpnnmm",
+					"mopppooonnpnnnmm",
+					"msppppnnnpnnnnmm",
+					"mmpppppppnnnnnmm",
+					".mmmmmmmmmmmmmm.",
+					"..mmmmmmmmmmmm.."
+				]
+			}
+		},
+		"effectIconIgnite": {
+			"note": "効果の種類 Ignite のアイコン（16×16）。カードを取る画面の比べる欄とデッキの型のバッジ。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"..DDDDDDDDDDDD..",
+					".DooooooooooJDD.",
+					"DoJJJJJIIIIIIIDD",
+					"DoJJJJIoIIIIIIDD",
+					"DoJJJIooEIIIIIDD",
+					"DoJJIoooEIoIIIDD",
+					"DoJIIooooIooIIDD",
+					"DoIIooooooooEIDD",
+					"DoIooooEooooEIDD",
+					"DoIoooEEIoooEEDD",
+					"DoIIooEIIooEEEDD",
+					"DoIIIoooooEEEEDD",
+					"DJIIIIEEEEEEEEDD",
+					"DDIIIIIIIEEEEEDD",
+					".DDDDDDDDDDDDDD.",
+					"..DDDDDDDDDDDD.."
+				]
+			}
+		},
+		"effectIconDispel": {
+			"note": "効果の種類 Dispel のアイコン（16×16）。カードを取る画面の比べる欄とデッキの型のバッジ。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"..mmmmmmmmmmmm..",
+					".moooooooooosmm.",
+					"mossssspppppppmm",
+					"mosssspoppppppmm",
+					"mossspooopppppmm",
+					"mosspoooooppppmm",
+					"mospooooooopppmm",
+					"mopppnooonnnppmm",
+					"mopppppnnnppppmm",
+					"moppppoooppppnmm",
+					"moppppooonppnnmm",
+					"mopppppnnnpnnnmm",
+					"msppppppppnnnnmm",
+					"mmpppppppnnnnnmm",
+					".mmmmmmmmmmmmmm.",
+					"..mmmmmmmmmmmm.."
+				]
+			}
+		},
+		"effectIconAccel": {
+			"note": "効果の種類 Accel のアイコン（16×16）。カードを取る画面の比べる欄とデッキの型のバッジ。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"..uuuuuuuuuuuu..",
+					".uoooooooooozuu.",
+					"uozzzzzxxxxxxxuu",
+					"uozzzzxoooxxxxuu",
+					"uozzzxooovvxxxuu",
+					"uozzxooovvxxxxuu",
+					"uozxooooooxxxxuu",
+					"uoxxxvooovvxxxuu",
+					"uoxxxooovvxxxxuu",
+					"uoxxooovvxxxxvuu",
+					"uoxxovvvxxxxvvuu",
+					"uoxoovxxxxxvvvuu",
+					"uzxxvvxxxxvvvvuu",
+					"uuxxxxxxxvvvvvuu",
+					".uuuuuuuuuuuuuu.",
+					"..uuuuuuuuuuuu.."
+				]
+			}
+		},
+		"effectIconDecel": {
+			"note": "効果の種類 Decel のアイコン（16×16）。カードを取る画面の比べる欄とデッキの型のバッジ。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"..mmmmmmmmmmmm..",
+					".moooooooooosmm.",
+					"mossssspppppppmm",
+					"mossssppppppppmm",
+					"mossooooooopppmm",
+					"mosspooooonnppmm",
+					"mospppooonnpppmm",
+					"moppppponnppppmm",
+					"moppppopopppppmm",
+					"mopppopnpopppnmm",
+					"moppooooooopnnmm",
+					"mopppnnnnnnnnnmm",
+					"msppppppppnnnnmm",
+					"mmpppppppnnnnnmm",
+					".mmmmmmmmmmmmmm.",
+					"..mmmmmmmmmmmm.."
+				]
+			}
+		},
+		"effectIconBalance": {
+			"note": "効果の種類 Balance のアイコン（16×16）。カードを取る画面の比べる欄とデッキの型のバッジ。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"..iiiiiiiiiiii..",
+					".ioooooooooorii.",
+					"iorrrrr:::::::ii",
+					"iorrrr:o::::::ii",
+					"iorrooooooo:::ii",
+					"iorro##o##o#::ii",
+					"iorooo:o#ooo::ii",
+					"io:ooo#o#ooo#:ii",
+					"io::###o#:###:ii",
+					"io:::::o#::::#ii",
+					"io:::ooooo::##ii",
+					"io::::########ii",
+					"ir::::::::####ii",
+					"ii:::::::#####ii",
+					".iiiiiiiiiiiiii.",
+					"..iiiiiiiiiiii.."
+				]
+			}
+		},
+		"uiNo": {
+			"note": "取っても何も変わらない効果の行の印（丸に斜線・9×9）。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"...:::...",
+					".:::::::.",
+					".:::..::.",
+					":::::..::",
+					"::.:::.::",
+					"::..:::::",
+					".::..:::.",
+					".:::::::.",
+					"...:::..."
+				]
+			}
+		},
+		"uiNew": {
+			"note": "取ると良くなる効果の印（緑の ▲）。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"...R...",
+					"..RUR..",
+					".RcWUR.",
+					"RUUUUUR",
+					"UUUUUUU",
+					"RRRRRRR"
+				]
+			}
+		},
+		"uiStack": {
+			"note": "比べる欄で、数は同じでも重なって強くなる（盾・毒・クリティカル）ことの印（板 2 枚の重なり・11×10。▲ の右隣）。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"...RRRRRRRR",
+					"...RUUUUUUR",
+					"...RUUUUUUR",
+					"RRRRRRRRUUR",
+					"RccccccRUUR",
+					"RccWWWWRUUR",
+					"RcWWWWWRRRR",
+					"RcWWWWWR...",
+					"RWWWWWWR...",
+					"RRRRRRRR..."
+				]
+			}
+		},
+		"uiFoe": {
+			"note": "敵の顔（角と目・8×7）。比べる欄で、敵に掛かったまま残る弱体の印。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"+......+",
+					"+9....*+",
+					"+9*****+",
+					"*77**77*",
+					"*7+**+7*",
+					"+******+",
+					".++++++."
+				]
+			}
+		},
+		"uiPencil": {
+			"note": "残り手数 1 本ぶんの鉛筆（横置き・先は左）。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"......................................................................................",
+					"......iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii.",
+					"....iieezzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz7777i",
+					".iiieeeezzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzrr99i",
+					"iiiieeeexxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxrr99i",
+					"iiiiCCCCxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxrr99i",
+					".iiiCCCCvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvrr99i",
+					"....iiCCvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvrr99i",
+					"......iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii.",
+					"......................................................................................"
+				]
+			}
+		},
+		"uiPencilWorn": {
+			"note": "使い切った手数の短い鉛筆。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"................",
+					"......iiiiiiiii.",
+					"....iieezzz7777i",
+					".iiieeeezzzrr99i",
+					"i.iieeeexxxrr99i",
+					"i.iiCCCCxxxrr99i",
+					".iiiCCCCvvvrr99i",
+					"....iiCCvvvrr99i",
+					"......iiiiiiiii.",
+					"................"
+				]
+			}
+		},
+		"chipHidden": {
+			"note": "伏せたカード（16×16・灰の角丸 + ？）。敵のカードのうち、まだ開示していない物。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"..iiiiiiiiiiii..",
+					".ioooooooooorii.",
+					"iorrrrr:::::::ii",
+					"iorrrr::::::::ii",
+					"iorrr:oooo::::ii",
+					"iorr:oo##oo:::ii",
+					"ior:::##:oo#::ii",
+					"io::::::oo##::ii",
+					"io:::::oo##:::ii",
+					"io:::::oo#:::#ii",
+					"io::::::##::##ii",
+					"io:::::oo::###ii",
+					"ir::::::######ii",
+					"ii:::::::#####ii",
+					".iiiiiiiiiiiiii.",
+					"..iiiiiiiiiiii.."
+				]
+			}
+		},
+		"uiLock": {
+			"note": "錠前（9×11）。敵の情報の窓で、まだ開示していない数とカードの印。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"...GGG...",
+					"..G:::G..",
+					".G::G::G.",
+					"G::G.G::G",
+					"G::G.G::G",
+					"GfffffffG",
+					"fYYYYYCCf",
+					"fYeeeeCCf",
+					"fYeeGCCCf",
+					"fCCCGCCCf",
+					".fCCCCCf.",
+					"..fffff.."
+				]
+			}
+		},
+		"uiLoupe": {
+			"note": "虫めがね（13×13）。敵の情報の窓の「開示請求する」ボタンの印。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"..GGGGGG.....",
+					".G######G....",
+					"G###rr###G...",
+					"G##77rr##G...",
+					"G#r7rrrr#G...",
+					"G#rrrrrr#G...",
+					"G##rrrr##G...",
+					"G###rr###G...",
+					".G######;;G..",
+					"..GGGGGG;;;G.",
+					"........G;;;G",
+					".........G;;G",
+					"..........GG."
+				]
+			}
+		},
+		"uiSharpener": {
+			"note": "鉛筆削り（11×10）。カードを 1 枚取った拍に、削れて消える鉛筆の先に寄り添う。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					".GGGGGGGG..",
+					"G^^^^^^NNG.",
+					"G^BBB7777G.",
+					"G^BBBBBNGG.",
+					"G^BBBBGGGG.",
+					"G^BBBBGGGG.",
+					"G^BBBBBNGG.",
+					"GNNNNNNNNG.",
+					"GNNNNNNNNG.",
+					".GGGGGGGG.."
+				]
+			}
+		},
+		"uiHeart": {
+			"note": "いいね（できばえの点）のハート。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"...................",
+					".....+++...+++.....",
+					"...++99-+++99-++...",
+					"..+99***999***9-+..",
+					".+9************--+.",
+					".+9**o*********--+.",
+					".+9************--+.",
+					".+9************--+.",
+					".+9***********---+.",
+					".+-*********-----+.",
+					"..+--******-----+..",
+					"...++-****----++...",
+					".....+-**----+.....",
+					"......+-*---+......",
+					".......+---+.......",
+					".......+---+.......",
+					"........+-+........",
+					".........+.........",
+					"..................."
+				]
+			}
+		},
+		"uiShard": {
+			"note": "いいねの欠片。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					".....i.....",
+					"....i/i....",
+					"...i9*/i...",
+					"...i9**/i..",
+					"..i9o**//i.",
+					".i9****///i",
+					"i/****///i.",
+					".i/***///i.",
+					"..i/*///i..",
+					"...i////i..",
+					"....i//i...",
+					".....i/i...",
+					"......i...."
+				]
+			}
+		},
+		"uiStarOn": {
+			"note": "カードの格の星（届いた分）。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"......V......",
+					".....VXV.....",
+					".....VXV.....",
+					"....VkZXV....",
+					".VVVVkoXVVVV.",
+					"VXkkkZZZXXXXV",
+					".VXZZZZXXXXV.",
+					"..VXZZZZXXV..",
+					"...VXZZZXV...",
+					"..VXXXXZXXV..",
+					"..VXXXVXXXV..",
+					"..VXVV.VVXV..",
+					"...V.....V..."
+				]
+			}
+		},
+		"uiStarOff": {
+			"note": "カードの格の星（まだの分）。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"......:......",
+					".....:r:.....",
+					".....:r:.....",
+					"....:7rr:....",
+					".::::7rr::::.",
+					":r777rrrrrrr:",
+					".:rrrrrrrrr:.",
+					"..:rrrrrrr:..",
+					"...:rrrrr:...",
+					"..:rrrrrrr:..",
+					"..:rrr:rrr:..",
+					"..:r::.::r:..",
+					"...:.....:..."
+				]
+			}
+		},
+		"uiKeyLeft": {
+			"note": "キー L のキーキャップ。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"..iiiiiiiii..",
+					".i777777777i.",
+					"i77777777777i",
+					"i77777777777i",
+					"77777i7777777",
+					"7777i77777777",
+					"777iiiiii7777",
+					"7777i77777777",
+					"77777i7777777",
+					":77777777777:",
+					":77777777777:",
+					"::777777777::",
+					"i:::::::::::i",
+					"i:::::::::::i",
+					".iiiiiiiiiii."
+				]
+			}
+		},
+		"uiKeyRight": {
+			"note": "キー R のキーキャップ。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"..iiiiiiiii..",
+					".i777777777i.",
+					"i77777777777i",
+					"i77777777777i",
+					"7777777i77777",
+					"77777777i7777",
+					"7777iiiiii777",
+					"77777777i7777",
+					"7777777i77777",
+					":77777777777:",
+					":77777777777:",
+					"::777777777::",
+					"i:::::::::::i",
+					"i:::::::::::i",
+					".iiiiiiiiiii."
+				]
+			}
+		},
+		"uiKeyUp": {
+			"note": "キー U のキーキャップ。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"..iiiiiiiii..",
+					".i777777777i.",
+					"i77777777777i",
+					"i77777i77777i",
+					"77777iii77777",
+					"7777i7i7i7777",
+					"777777i777777",
+					"777777i777777",
+					"777777i777777",
+					":77777777777:",
+					":77777777777:",
+					"::777777777::",
+					"i:::::::::::i",
+					"i:::::::::::i",
+					".iiiiiiiiiii."
+				]
+			}
+		},
+		"uiKeyDown": {
+			"note": "キー D のキーキャップ。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"..iiiiiiiii..",
+					".i777777777i.",
+					"i77777777777i",
+					"i77777777777i",
+					"777777i777777",
+					"777777i777777",
+					"777777i777777",
+					"7777i7i7i7777",
+					"77777iii77777",
+					":77777i77777:",
+					":77777777777:",
+					"::777777777::",
+					"i:::::::::::i",
+					"i:::::::::::i",
+					".iiiiiiiiiii."
+				]
+			}
+		},
+		"uiKeyZ": {
+			"note": "キー Z のキーキャップ。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"..iiiiiiiii..",
+					".i777777777i.",
+					"i77777777777i",
+					"i77777777777i",
+					"7777iiiii7777",
+					"7777777i77777",
+					"777777i777777",
+					"77777i7777777",
+					"7777iiiii7777",
+					":77777777777:",
+					":77777777777:",
+					"::777777777::",
+					"i:::::::::::i",
+					"i:::::::::::i",
+					".iiiiiiiiiii."
+				]
+			}
+		},
+		"uiKeyX": {
+			"note": "キー X のキーキャップ。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"..iiiiiiiii..",
+					".i777777777i.",
+					"i77777777777i",
+					"i77777777777i",
+					"7777i777i7777",
+					"77777i7i77777",
+					"777777i777777",
+					"77777i7i77777",
+					"7777i777i7777",
+					":77777777777:",
+					":77777777777:",
+					"::777777777::",
+					"i:::::::::::i",
+					"i:::::::::::i",
+					".iiiiiiiiiii."
+				]
+			}
+		},
+		"uiHandOpen": {
+			"note": "動かす（開いた手）。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					".....;.;.....",
+					"...;;?;?;;...",
+					"..;779797?;..",
+					".;7999999??;.",
+					".;7999999??;.",
+					".;7999999??;.",
+					";;7999999??;.",
+					"779999999??;.",
+					"?99999999??;.",
+					";?999999???;.",
+					".;?????????;.",
+					"..;???????;..",
+					"...;;;;;;;..."
+				]
+			}
+		},
+		"uiHandGrab": {
+			"note": "つかむ（握った手）。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					".............",
+					".............",
+					".............",
+					"...;.;.;.;...",
+					"..;?;?;?;?;..",
+					".;7979797??;.",
+					";;7999999??;.",
+					"779999999??;.",
+					"?99999999??;.",
+					";?999999???;.",
+					".;?????????;.",
+					"..;???????;..",
+					"...;;;;;;;..."
+				]
+			}
+		},
+		"uiHandPoint": {
+			"note": "指さす手（チュートリアル）。",
+			"anchor": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"frames": {
+				"idle": [
+					"..................",
+					"..;...............",
+					".;?;..............",
+					";?7?;.............",
+					".;?9?;............",
+					"..;?9?;...........",
+					"...;?9?;;;;;;;....",
+					"....;?9777777?;...",
+					".....;79999999?;..",
+					".....;79999999??;.",
+					".....;79999999??;.",
+					".....;79999999??;.",
+					".....;799999999?;.",
+					".....;?99999999?;.",
+					"......;??????99??;",
+					".....;???????????;",
+					"......;;;;;;;;;??;",
+					"...............;;."
+				]
+			}
+		}
+	}
+}

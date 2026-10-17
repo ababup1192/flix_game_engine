@@ -1,0 +1,130 @@
+{
+  "version": 2,
+  "title": "パズルの駒",
+  "note": "昼のパズルの駒（駒 B）の指定。fge px build で atelier/ の sprite.json に描く。いじると変わる物: ramps = 系統ごとの暗→明 4 段（墨・影・地・光）/ shapes = 記号の形（数字は 32×32 の格子の座標。剣は横向きに書いて 1/8 周回す: 22.1 と 17.9 の差が刃の太さ）/ bevel_box の radius・inset = 角の丸みと余白、bands = 斜めの光・地・影の境目（0〜1）/ light.ground = 見本の地（スケッチブックの紙）。",
+  "target": "atelier/internet_dungeon.puzzle.sprite.json",
+  "base": "assets/internet_dungeon.puzzle.sprite.json",
+  "light": {"dir": [-1, -1], "gloss": "tileGloss", "ground": "#ffffeb"},
+  "ramps": {
+    "attack": ["tileAtkInk", "tileAtkShade", "tileAtkMid", "tileAtkLight"],
+    "guard":  ["tileGdInk", "tileGdShade", "tileGdMid", "tileGdLight"],
+    "skill":  ["tileSklInk", "tileSklShade", "tileSklMid", "tileSklLight"],
+    "hex":    ["tileHexInk", "tileHexShade", "tileHexMid", "tileHexLight"],
+    "rush":   ["tileRshInk", "tileRshShade", "tileRshMid", "tileRshLight"]
+  },
+  "shapes": {
+    "sword": {"rotate": -0.125, "about": [12, 20], "of": {"union": [
+      {"poly": [[12, 22.1], [25.678, 22.1], [29.678, 20], [25.678, 17.9], [12, 17.9]]},
+      {"capsule": [12, 24.8, 12, 15.2, 1.5]},
+      {"capsule": [12, 20, 7, 20, 1.2]},
+      {"disk": [5.7, 20, 1.9]}
+    ]}},
+    "shield": {"rounded": 0.8, "of": {"poly": [[9.5, 8], [22.5, 8], [22.8, 15], [20, 21], [16, 24.5], [12, 21], [9.2, 15]]}},
+    "star": {"rounded": 0.9, "of": {"star": [16, 16.8, 10.0, 4.6]}},
+    "skull": {"smoothUnion": [{"disk": [16, 14.2, 7.8]}, {"rbox": [16, 21.2, 4.6, 3.2, 1.5]}], "k": 2.0},
+    "bolt": {"rounded": 0.5, "of": {"poly": [[17.5, 5.5], [24, 5.5], [19, 13], [24, 13], [11.5, 27], [14.5, 17], [9.5, 17]]}}
+  },
+  "macros": {
+    "hexFace": [
+      {"fill": {"shape": {"ellipse": [13, 15.0, 2.2, 2.5]}, "color": "shade"}},
+      {"fill": {"shape": {"ellipse": [19, 15.0, 2.2, 2.5]}, "color": "shade"}},
+      {"put": {"cells": [[15, 18], [16, 18]], "color": "shade"}},
+      {"put": {"cells": [[14, 21], [14, 22], [16, 21], [16, 22], [18, 21], [18, 22]], "color": "mid"}}
+    ],
+    "crackH": [
+      {"crack": {"points": [[2, 15], [6, 17], [10, 14], [14, 17], [18, 14], [22, 17], [26, 14], [30, 16]]}},
+      {"put": {"cells": [[2, 15], [2, 16], [29, 16], [29, 15]], "color": ""}}
+    ],
+    "crackV": [
+      {"crack": {"points": [[16, 2], [14, 6], [17, 10], [14, 14], [17, 18], [14, 22], [17, 26], [15, 30]]}},
+      {"put": {"cells": [[15, 2], [16, 2], [15, 29], [16, 29]], "color": ""}}
+    ],
+    "chipFace": [
+      {"bevel_box": {"radius": 3.2, "inset": 1.0}}
+    ]
+  },
+  "sprites": {
+    "pieceAttack": {"size": [32, 32], "ramp": "attack",
+      "parts": [
+        {"id": "tile", "ops": [{"bevel_box": {}}]},
+        {"id": "mark", "shape": {"ref": "sword"}, "ops": [{"glyph": {}}]},
+        {"id": "crack", "on": "tile", "ops": []}
+      ],
+      "frames": {"idle": {},
+        "crackLineH": {"crack": {"ops": [{"use": {"macro": "crackH"}}]}},
+        "crackLineV": {"crack": {"ops": [{"use": {"macro": "crackV"}}]}}}},
+    "pieceGuard": {"size": [32, 32], "ramp": "guard",
+      "parts": [
+        {"id": "tile", "ops": [{"bevel_box": {}}]},
+        {"id": "mark", "shape": {"ref": "shield"}, "ops": [{"glyph": {}}]},
+        {"id": "stripe", "on": "mark", "clip": true, "ops": [{"line": {"points": [[16, 10], [16, 21]], "color": "light"}}]},
+        {"id": "crack", "on": "tile", "ops": []}
+      ],
+      "frames": {"idle": {},
+        "crackLineH": {"crack": {"ops": [{"use": {"macro": "crackH"}}]}},
+        "crackLineV": {"crack": {"ops": [{"use": {"macro": "crackV"}}]}}}},
+    "pieceSkill": {"size": [32, 32], "ramp": "skill",
+      "parts": [
+        {"id": "tile", "ops": [{"bevel_box": {}}]},
+        {"id": "mark", "shape": {"ref": "star"}, "ops": [{"glyph": {}}]},
+        {"id": "crack", "on": "tile", "ops": []}
+      ],
+      "frames": {"idle": {},
+        "crackLineH": {"crack": {"ops": [{"use": {"macro": "crackH"}}]}},
+        "crackLineV": {"crack": {"ops": [{"use": {"macro": "crackV"}}]}}}},
+    "pieceHex": {"size": [32, 32], "ramp": "hex",
+      "parts": [
+        {"id": "tile", "ops": [{"bevel_box": {}}]},
+        {"id": "mark", "shape": {"ref": "skull"}, "ops": [{"glyph": {}}, {"use": {"macro": "hexFace"}}]},
+        {"id": "crack", "on": "tile", "ops": []}
+      ],
+      "frames": {"idle": {},
+        "crackLineH": {"crack": {"ops": [{"use": {"macro": "crackH"}}]}},
+        "crackLineV": {"crack": {"ops": [{"use": {"macro": "crackV"}}]}}}},
+    "pieceRush": {"size": [32, 32], "ramp": "rush",
+      "parts": [
+        {"id": "tile", "ops": [{"bevel_box": {}}]},
+        {"id": "mark", "shape": {"ref": "bolt"}, "ops": [{"glyph": {}}]},
+        {"id": "crack", "on": "tile", "ops": []}
+      ],
+      "frames": {"idle": {},
+        "crackLineH": {"crack": {"ops": [{"use": {"macro": "crackH"}}]}},
+        "crackLineV": {"crack": {"ops": [{"use": {"macro": "crackV"}}]}}}},
+    "pieceAttackMark": {"size": [32, 32], "ramp": "attack",
+      "parts": [{"id": "mark", "shape": {"ref": "sword"}, "ops": [{"glyph": {}}]}],
+      "frames": {"idle": {}}},
+    "pieceGuardMark": {"size": [32, 32], "ramp": "guard",
+      "parts": [
+        {"id": "mark", "shape": {"ref": "shield"}, "ops": [{"glyph": {}}]},
+        {"id": "stripe", "on": "mark", "clip": true, "ops": [{"line": {"points": [[16, 10], [16, 21]], "color": "light"}}]}
+      ],
+      "frames": {"idle": {}}},
+    "pieceSkillMark": {"size": [32, 32], "ramp": "skill",
+      "parts": [{"id": "mark", "shape": {"ref": "star"}, "ops": [{"glyph": {}}]}],
+      "frames": {"idle": {}}},
+    "pieceHexMark": {"size": [32, 32], "ramp": "hex",
+      "parts": [{"id": "mark", "shape": {"ref": "skull"}, "ops": [{"glyph": {}}, {"use": {"macro": "hexFace"}}]}],
+      "frames": {"idle": {}}},
+    "pieceRushMark": {"size": [32, 32], "ramp": "rush",
+      "parts": [{"id": "mark", "shape": {"ref": "bolt"}, "ops": [{"glyph": {}}]}],
+      "frames": {"idle": {}}},
+    "chipAttack": {"size": [16, 16], "ramp": "attack",
+      "parts": [
+        {"id": "tile", "ops": [{"use": {"macro": "chipFace"}}]},
+        {"id": "mark", "ops": [
+          {"stamp": {"at": [5, 5], "rows": ["......##", ".....#.#", "....#.#.", "#..#.#..", ".##.#...", "..##....", ".#..#...", "#......."], "colors": {"#": "shade"}}},
+          {"stamp": {"at": [4, 4], "rows": ["......##", ".....#.#", "....#.#.", "#..#.#..", ".##.#...", "..##....", ".#..#...", "#......."], "colors": {"#": "gloss"}}}
+        ]}
+      ],
+      "frames": {"idle": {}}},
+    "chipGuard": {"size": [16, 16], "ramp": "guard",
+      "parts": [
+        {"id": "tile", "ops": [{"use": {"macro": "chipFace"}}]},
+        {"id": "mark", "ops": [
+          {"stamp": {"at": [5, 5], "rows": ["########", "#......#", "#......#", "#......#", ".#....#.", ".#....#.", "..#..#..", "...##..."], "colors": {"#": "shade"}}},
+          {"stamp": {"at": [4, 4], "rows": ["########", "#......#", "#......#", "#......#", ".#....#.", ".#....#.", "..#..#..", "...##..."], "colors": {"#": "gloss"}}}
+        ]}
+      ],
+      "frames": {"idle": {}}}
+  }
+}

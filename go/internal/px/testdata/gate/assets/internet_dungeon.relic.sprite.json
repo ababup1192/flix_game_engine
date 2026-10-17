@@ -1,0 +1,46 @@
+{
+ "version": 2,
+ "paletteFile": "assets/internet_dungeon.palette.json",
+ "legend": {
+  "Α": "relicTeal0",
+  "Β": "relicTeal1",
+  "Γ": "relicTeal2",
+  "Δ": "relicTeal3",
+  "Ε": "relicTeal4",
+  "Ζ": "relicMag0",
+  "Η": "relicMag1",
+  "Θ": "relicMag2",
+  "Ι": "relicMag3",
+  "Κ": "relicMag4",
+  "Λ": "relicGold0",
+  "Μ": "relicGold1",
+  "Ν": "relicGold2",
+  "Ξ": "relicGold3",
+  "Ο": "relicGold4",
+  "Π": "stkInk",
+  "Ρ": "stkSpec"
+ },
+ "sprites": {
+  "relicBattery": {
+   "frames": {
+    "idle": [
+     ".ΑΓΔΠΕΒ"
+    ]
+   }
+  },
+  "relicTypo": {
+   "frames": {
+    "idle": [
+     ".ΞΖΝΡΚΜΗΘ"
+    ]
+   }
+  },
+  "relicNotify": {
+   "frames": {
+    "idle": [
+     ".ΛΞΟΡΝΜ"
+    ]
+   }
+  }
+ }
+}

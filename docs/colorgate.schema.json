@@ -1,0 +1,152 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ドット絵の色の門 (*.colorgate.json)",
+  "description": "fge px check と fge px build が読む。sprite.json のファイル名ごとに画風と例外を書く。生成物（bin/fge px schema）。直すのは go/internal/px/docs.go",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "styles",
+    "files"
+  ],
+  "properties": {
+    "version": {
+      "const": 2
+    },
+    "note": {
+      "type": "string",
+      "label": "メモ",
+      "description": "いじると何が変わるか"
+    },
+    "styles": {
+      "type": "object",
+      "label": "画風ごとの色の集合",
+      "description": "名前 → 使ってよい色の出どころ（colors の列挙か from の Doc）。free は書かずに使える",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "label"
+        ],
+        "properties": {
+          "label": {
+            "type": "string",
+            "label": "外れた色の言い方",
+            "description": "例 Pear36 の外"
+          },
+          "colors": {
+            "type": "object",
+            "label": "色の列挙",
+            "description": "色の名前 → #rrggbb",
+            "additionalProperties": {
+              "type": "string",
+              "pattern": "^#[0-9a-fA-F]{6}$"
+            }
+          },
+          "from": {
+            "type": "string",
+            "label": "色を引く Doc",
+            "description": "ゲームのルートからの相対（例 assets/x.theme.json）"
+          },
+          "path": {
+            "type": "string",
+            "label": "Doc の中の場所",
+            "description": "\".\" 区切り（例 night）。省くと一番外"
+          },
+          "keys": {
+            "type": "string",
+            "label": "引く色の名前",
+            "description": "正規表現（例 ^pear）。省くと全部"
+          }
+        }
+      }
+    },
+    "deny": {
+      "type": "array",
+      "label": "どの画風でも使わない色",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "color",
+          "why"
+        ],
+        "properties": {
+          "color": {
+            "type": "string",
+            "pattern": "^#[0-9a-fA-F]{6}$"
+          },
+          "why": {
+            "type": "string",
+            "description": "代わりにどうするか"
+          }
+        }
+      }
+    },
+    "files": {
+      "type": "object",
+      "label": "sprite.json ごとの決まり",
+      "description": "鍵は sprite.json のファイル名（assets/ と atelier/ の同じ名前に効く）。ここに無いファイルは門で止まる",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "style"
+        ],
+        "properties": {
+          "style": {
+            "type": "string",
+            "label": "画風",
+            "description": "styles の名前か free（この決まりの外。理由を why に）"
+          },
+          "why": {
+            "type": "string",
+            "label": "理由",
+            "description": "free にした理由"
+          },
+          "allow": {
+            "type": "array",
+            "label": "例外にする色の名前",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "keys",
+                "why"
+              ],
+              "properties": {
+                "keys": {
+                  "type": "string",
+                  "label": "色の名前（正規表現）",
+                  "description": "例 ^tile"
+                },
+                "why": {
+                  "type": "string",
+                  "label": "理由",
+                  "description": "画風の文書にある例外と同じ物。理由の無い例外は足さない"
+                }
+              }
+            }
+          },
+          "known": {
+            "type": "object",
+            "label": "既存の違反",
+            "additionalProperties": false,
+            "description": "採用した絵で決まりを破っている色の名前を 1 つずつ列挙する（正規表現にしない）。門は通すが件数を毎回出す。直したら消す。新しい絵の色は足さない",
+            "properties": {
+              "keys": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "why": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

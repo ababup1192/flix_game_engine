@@ -1,0 +1,151 @@
+{
+  "version": 2,
+  "note": "ドット絵の色の門（fge px check・fge px build が読む）。破ってはいけない色の決まりだけを見る: 昼の絵は Pear36 の 36 色だけ・夜の絵は夜の 3 色だけ・どの絵も #000000 を使わない。styles = 画風ごとに使ってよい色（day は Pear36 を列挙。palette.json には 36 色のうち 27 色しか無いので引けない。night は theme.json の night から引く）。files は sprite.json のファイル名ごとに style と、allow（画風の文書に書かれた例外。色の名前を正規表現で絞って理由つき）と known（既存の違反。色の名前を 1 つずつ列挙し、門は通すが件数を毎回出す）。いじると変わる物: allow / known に足した名前が門を通る（理由の無い名前は足さない。新しい絵の色を known に足さない）。",
+  "styles": {
+    "day": {
+      "label": "Pear36 の外",
+      "colors": {
+        "pearWhite": "#ffffeb",
+        "pearCloud": "#c2c2d1",
+        "pearAsh": "#7e7e8f",
+        "pearGray": "#606070",
+        "pearGraphite": "#43434f",
+        "pearInk": "#272736",
+        "pearSlate": "#323e4f",
+        "pearIndigoDeep": "#322947",
+        "pearIndigo": "#473b78",
+        "pearBlueDeep": "#4b5bab",
+        "pearSky": "#4da6ff",
+        "pearMint": "#66ffe3",
+        "pearTeal": "#3d6e70",
+        "pearJade": "#3ca370",
+        "pearLime": "#8fde5d",
+        "pearLimeLight": "#cfff70",
+        "pearLemon": "#ffe478",
+        "pearApricot": "#f2a65e",
+        "pearPeach": "#ffb570",
+        "pearTangerine": "#ff9166",
+        "pearCoral": "#e36956",
+        "pearRed": "#eb564b",
+        "pearTerracotta": "#ba6156",
+        "pearRaspberry": "#964253",
+        "pearRosewood": "#8c3f5d",
+        "pearRuby": "#b0305c",
+        "pearMagenta": "#bd4882",
+        "pearPink": "#ff6b97",
+        "pearBlush": "#ffb5b5",
+        "pearOrchid": "#80366b",
+        "pearGrape": "#73275c",
+        "pearMulberry": "#57294b",
+        "pearAubergine": "#3e2347",
+        "pearVioletDeep": "#422445",
+        "pearViolet": "#5a265e",
+        "pearPlumDeep": "#5e315b"
+      }
+    },
+    "night": {
+      "label": "夜の 3 色の外（中間色）",
+      "from": "assets/internet_dungeon.theme.json",
+      "path": "night",
+      "keys": "^(base|main|accent)$"
+    }
+  },
+  "deny": [
+    {
+      "color": "#000000",
+      "why": "輪郭と影はその素材のランプの最暗色にする"
+    }
+  ],
+  "files": {
+    "internet_dungeon.day.sprite.json": {
+      "style": "day"
+    },
+    "internet_dungeon.puzzle.sprite.json": {
+      "style": "day",
+      "allow": [
+        {
+          "keys": "^tile(Atk|Gd|Skl|Hex|Rsh|Heal)(Ink|Shade|Mid|Light)$|^tileGloss$",
+          "why": "パズルの駒は駒 B のタイル（属性色の角丸 + 白抜きの記号）。影・墨・光の段は ThemeDoc.resolver の tile*（art-style.md 昼の例外 1）"
+        }
+      ]
+    },
+    "internet_dungeon.battle.sprite.json": {
+      "style": "night",
+      "allow": [
+        {
+          "keys": "^stk(Atk|Gd|Skl|Hex|Rsh|Heal)[0-3]$|^stk(Ink|Spec)$",
+          "why": "状態アイコン・効果アイコン・スタンバイカードの窓は駒 B と同じ属性色と、その墨・つや（art-style.md 夜の例外。2026-10-08 依頼主決定）"
+        }
+      ],
+      "known": {
+        "keys": [
+          "dkFoe0",
+          "dkFoe2",
+          "dkMine0",
+          "dkMine2",
+          "dkWindow",
+          "fbBody",
+          "fbBodyHi",
+          "fbCapTop",
+          "fbCopper",
+          "fbCrystal",
+          "fbCrystalHi",
+          "fbDeep",
+          "fbFarDark",
+          "fbFarLine",
+          "fbFarRim",
+          "fbFloor",
+          "fbMid",
+          "fbMidCopper",
+          "fbPad",
+          "fbPink",
+          "fbPlane",
+          "fbResistor",
+          "fbSilk",
+          "fbSilkFar"
+        ],
+        "why": "既存の違反: デッキボタンの束（dk*）と戦いの背景の基板のパララックス（fb*。2026-10-08 依頼主決定・案 1b）は、夜の 3 色を混ぜた中間色で描かれている。直すとき（bin/gen-fight-art.py を部品集へ移すとき）に夜の 3 色 + ディザへ寄せ、ここから消す"
+      }
+    },
+    "internet_dungeon.relic.sprite.json": {
+      "style": "night",
+      "allow": [
+        {
+          "keys": "^relic(Teal|Mag|Gold)[0-4]$",
+          "why": "アーティファクトだけは系統色を持つ（relicTeal / relicMag / relicGold の各 5 段。art-style.md 夜の例外・エゴサーチ）"
+        },
+        {
+          "keys": "^stk(Ink|Spec)$",
+          "why": "台の墨とつやは状態アイコンと同じ（駒 B の例外の中）"
+        }
+      ]
+    },
+    "internet_dungeon.feed.sprite.json": {
+      "style": "free",
+      "why": "夜の探索（フィード）画面だけはモダン X 風ダークで、ドット絵の実色も X 風の固定色（art-style.md 夜の例外。2026-09-01 依頼主決定）"
+    },
+    "internet_dungeon.feed.icons16.sprite.json": {
+      "style": "free",
+      "why": "フィードのアイコンの候補（X 風の固定色。上と同じ例外）"
+    },
+    "internet_dungeon.foe.sprite.json": {
+      "style": "night",
+      "known": {
+        "keys": [
+          "foeDeep",
+          "foeInk",
+          "foeLight",
+          "foeMain",
+          "foeMid",
+          "foeNight",
+          "foePink",
+          "foePinkDeep",
+          "foePinkLight",
+          "foePinkMid",
+          "foeShine"
+        ],
+        "why": "既存の違反: 不採用の候補（依頼主が一枚絵の敵に決めたので atelier に退避）。描き直すなら夜の 3 色 + ディザで作り直し、ここから消す"
+      }
+    }
+  }
+}

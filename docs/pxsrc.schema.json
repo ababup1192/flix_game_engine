@@ -1,0 +1,648 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ドット絵の指定 (*.pxsrc.json)",
+  "description": "fge px build が読む。生成物（bin/fge px ops --md）。直すのは go/internal/px の Op の構造体。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "target",
+    "sprites"
+  ],
+  "properties": {
+    "version": {
+      "const": 2
+    },
+    "title": {
+      "type": "string",
+      "label": "名前"
+    },
+    "note": {
+      "type": "string",
+      "label": "メモ",
+      "description": "いじると何が変わるか"
+    },
+    "target": {
+      "type": "string",
+      "description": "書き出す sprite.json（atelier/ の下。assets/ は不可）"
+    },
+    "base": {
+      "type": "string",
+      "description": "差し替える元の sprite.json（省くと target）"
+    },
+    "palette": {
+      "type": "string",
+      "description": "色票の Doc（base が無いときの paletteFile）"
+    },
+    "gate": {
+      "type": "string",
+      "description": "色の門の Doc（*.colorgate.json）。外れたら書き出さない"
+    },
+    "light": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "光（Doc に 1 か所だけ。op はここを読む）",
+      "properties": {
+        "dir": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 2,
+          "maxItems": 3,
+          "description": "光の来る向き [x, y] か [x, y, 高さ]（左上は [-1, -1]）",
+          "default": [
+            -1,
+            -1
+          ]
+        },
+        "gloss": {
+          "type": "string",
+          "description": "つやの色キー（色の名前 gloss）"
+        },
+        "ground": {
+          "type": "string",
+          "description": "絵を置く地の色（色キーか #rrggbb。見本の地と ground-contrast の検査）"
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    },
+    "ramps": {
+      "type": "object",
+      "description": "名前 → 色キーの並び（暗 → 明）",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "minItems": 1
+      }
+    },
+    "shapes": {
+      "type": "object",
+      "description": "名前 → 形（{\"ref\": 名前} で引く）",
+      "additionalProperties": {
+        "$ref": "#/definitions/shape"
+      }
+    },
+    "macros": {
+      "type": "object",
+      "description": "名前 → op の列（op use で差し込む）",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "$ref": "#/definitions/op"
+        }
+      }
+    },
+    "sprites": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "$ref": "#/definitions/sprite"
+      }
+    }
+  },
+  "definitions": {
+    "shape": {
+      "type": "object",
+      "description": "形（符号付き距離）。鍵 1 つ: disk [cx,cy,r]・ellipse [cx,cy,rx,ry]・rect [x,y,w,h]・rbox [cx,cy,hw,hh,r]・capsule [ax,ay,bx,by,r]・taper [ax,ay,bx,by,r0,r1]・poly [[x,y],…]・path [[x,y],…]+width・star [cx,cy,rOut,rIn]+n・mask [rows]+at・union [形…]・inter [形…]・smoothUnion [形,形]+k・rounded 数+of・rotate 周+about+of・ref \"名前\"",
+      "minProperties": 1
+    },
+    "color": {
+      "type": "string",
+      "description": "色: ink・shade・mid・light（部品のランプの 0〜3 段）・ramp[i]（ramp[-1] は一番明るい段）・gloss（light.gloss）・色キー・\"\"（透明）"
+    },
+    "op": {
+      "oneOf": [
+        {
+          "type": "object",
+          "description": "角丸の板: 斜めの帯で 光・地・影、縁の 1px につや（光の側）と墨（影の側）、外側に墨の輪郭（格子は正方形）",
+          "additionalProperties": false,
+          "required": [
+            "bevel_box"
+          ],
+          "properties": {
+            "bevel_box": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "radius": {
+                  "description": "角の丸みの半径",
+                  "type": "number",
+                  "default": 6.5
+                },
+                "inset": {
+                  "description": "格子の縁からの余白",
+                  "type": "number",
+                  "default": 2
+                },
+                "bands": {
+                  "description": "光・地・影の境目（0〜1。左上の角が 0）",
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "default": [
+                    0.3,
+                    0.72
+                  ]
+                },
+                "gloss_until": {
+                  "description": "縁のつやを置く範囲（x+y が格子の幅のこの割合まで）",
+                  "type": "number",
+                  "default": 0.8
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "親（on）の塊の割れ目: 墨の 1px と、その右下に切り口のつや 1px",
+          "additionalProperties": false,
+          "required": [
+            "crack"
+          ],
+          "properties": {
+            "crack": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "points": {
+                  "description": "折れ線の点 [[x, y], ...]",
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    },
+                    "minItems": 2,
+                    "maxItems": 2
+                  }
+                }
+              },
+              "required": [
+                "points"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "塊を 1 色で塗る",
+          "additionalProperties": false,
+          "required": [
+            "fill"
+          ],
+          "properties": {
+            "fill": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "shape": {
+                  "description": "形（省くと部品の塊）",
+                  "$ref": "#/definitions/shape"
+                },
+                "color": {
+                  "description": "色（ink・shade・mid・light・ramp[i]・gloss・色キー。\"\" で透明へ抜く）",
+                  "$ref": "#/definitions/color"
+                }
+              },
+              "required": [
+                "color"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "格子全体を左右（x）か上下（y）に返す（右向きのコマから左向きを作る）",
+          "additionalProperties": false,
+          "required": [
+            "flip"
+          ],
+          "properties": {
+            "flip": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "axis": {
+                  "description": "\"x\" は左右・\"y\" は上下",
+                  "enum": [
+                    "x",
+                    "y"
+                  ],
+                  "default": "x"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "白抜きの記号: 形をつやの色で塗り、右下へ墨の影を 1px",
+          "additionalProperties": false,
+          "required": [
+            "glyph"
+          ],
+          "properties": {
+            "glyph": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "shape": {
+                  "description": "形（省くと部品の塊）",
+                  "$ref": "#/definitions/shape"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "折れ線を 1px で引く（clip の部品なら親の塊の中だけ）",
+          "additionalProperties": false,
+          "required": [
+            "line"
+          ],
+          "properties": {
+            "line": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "points": {
+                  "description": "折れ線の点 [[x, y], ...]",
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    },
+                    "minItems": 2,
+                    "maxItems": 2
+                  }
+                },
+                "color": {
+                  "description": "色（ink・shade・mid・light・ramp[i]・gloss・色キー。\"\" で透明へ抜く）",
+                  "$ref": "#/definitions/color"
+                }
+              },
+              "required": [
+                "points",
+                "color"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "部品の塊の外側 1px を 1 色で縁取る（sel_out の前身）",
+          "additionalProperties": false,
+          "required": [
+            "outline"
+          ],
+          "properties": {
+            "outline": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "color": {
+                  "description": "縁の色",
+                  "$ref": "#/definitions/color",
+                  "default": "ink"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "1px の線の L 字の角（ダブル）を左上から順に抜く",
+          "additionalProperties": false,
+          "required": [
+            "pixel_perfect"
+          ],
+          "properties": {
+            "pixel_perfect": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "color": {
+                  "description": "この色の画素だけを相手にする（省くと部品の全部）",
+                  "$ref": "#/definitions/color"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "画素を直に置く",
+          "additionalProperties": false,
+          "required": [
+            "put"
+          ],
+          "properties": {
+            "put": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "cells": {
+                  "description": "画素の座標 [[x, y], ...]",
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    },
+                    "minItems": 2,
+                    "maxItems": 2
+                  }
+                },
+                "color": {
+                  "description": "色（ink・shade・mid・light・ramp[i]・gloss・色キー。\"\" で透明へ抜く）",
+                  "$ref": "#/definitions/color"
+                }
+              },
+              "required": [
+                "cells",
+                "color"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "丸みのある部品を光の向きでランプの 4 段に塗る（前の部品の落とす影・外周の墨・別グループとの境目の線つき）",
+          "additionalProperties": false,
+          "required": [
+            "shade_parts"
+          ],
+          "properties": {
+            "shade_parts": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "thick": {
+                  "description": "丸みの厚さ（大きいほど縁から奥まで段が続く）",
+                  "type": "number",
+                  "default": 6
+                },
+                "group": {
+                  "description": "同じグループの部品どうしは影と境目の線を付けない",
+                  "type": "string",
+                  "default": ""
+                },
+                "lines": {
+                  "description": "後ろの別グループの部品に接する縁を暗い段で締める",
+                  "type": "boolean",
+                  "default": true
+                },
+                "flat": {
+                  "description": "丸みを付けず地の段で塗る",
+                  "type": "boolean",
+                  "default": false
+                },
+                "bias": {
+                  "description": "明るさの底上げ（正で明るく）",
+                  "type": "number",
+                  "default": 0
+                },
+                "outline": {
+                  "description": "影の側の外周の色（\"\" で外す）",
+                  "$ref": "#/definitions/color",
+                  "default": "ink"
+                },
+                "rim": {
+                  "description": "光の側の外周の色（暗い材質を闇から抜く明るい縁。省くとランプの最暗段）",
+                  "$ref": "#/definitions/color",
+                  "default": ""
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "塗ってある色を、部品のランプの隣の段へ by 段ずらす（端で止まる・ランプの外の色は触らない）",
+          "additionalProperties": false,
+          "required": [
+            "shade_step"
+          ],
+          "properties": {
+            "shade_step": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "by": {
+                  "description": "ずらす段数（負で暗く・正で明るく）",
+                  "type": "integer",
+                  "default": -1
+                },
+                "shape": {
+                  "description": "形（省くと部品の塊）",
+                  "$ref": "#/definitions/shape"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "文字の格子を押す（colors が無ければ legend の文字で打ち、'.' は透明へ抜く）",
+          "additionalProperties": false,
+          "required": [
+            "stamp"
+          ],
+          "properties": {
+            "stamp": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "at": {
+                  "description": "左上の位置 [x, y]",
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2
+                },
+                "rows": {
+                  "description": "文字の行",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "colors": {
+                  "description": "文字 → 色の名前（書いた文字だけ置く）",
+                  "type": "object",
+                  "additionalProperties": {
+                    "$ref": "#/definitions/color"
+                  }
+                }
+              },
+              "required": [
+                "at",
+                "rows"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "macros の op の列を、今の部品の中で順に当てる（at でずらせる）",
+          "additionalProperties": false,
+          "required": [
+            "use"
+          ],
+          "properties": {
+            "use": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "macro": {
+                  "description": "macros の名前",
+                  "type": "string"
+                },
+                "at": {
+                  "description": "ずらす量 [dx, dy]",
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2
+                }
+              },
+              "required": [
+                "macro"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "part": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+          "description": "部品の名前（コマの patch と違反の場所で使う）"
+        },
+        "on": {
+          "type": "string",
+          "description": "親の部品 id（この部品より前の列にある物）"
+        },
+        "clip": {
+          "type": "boolean",
+          "description": "true で親の塊の中だけに描く（on と組）"
+        },
+        "shape": {
+          "$ref": "#/definitions/shape"
+        },
+        "ramp": {
+          "type": "string",
+          "description": "ramps の名前（省くとスプライトの ramp）"
+        },
+        "at": {
+          "description": "部品をずらす量 [dx, dy]",
+          "type": "array",
+          "items": {
+            "type": "integer"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "ops": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/op"
+          },
+          "description": "上から順に当てる op"
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    },
+    "sprite": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "size",
+        "parts",
+        "frames"
+      ],
+      "properties": {
+        "note": {
+          "type": "string"
+        },
+        "size": {
+          "description": "[w, h]",
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 512
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "anchor": {
+          "description": "足元などの基準点 [x, y]（省くと base のまま）",
+          "type": "array",
+          "items": {
+            "type": "integer"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "ramp": {
+          "type": "string",
+          "description": "部品の既定のランプ（ramps の名前）"
+        },
+        "parts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/part"
+          },
+          "minItems": 1,
+          "description": "部品の平らな列。列の順が重ねる順"
+        },
+        "post": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/op"
+          },
+          "description": "全部の部品を描いた後に格子全体へ当てる op"
+        },
+        "frames": {
+          "type": "object",
+          "minProperties": 1,
+          "description": "コマ名 → 部品 id を鍵にした JSON Merge Patch（変えないコマは {}・null で部品を外す）",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": {
+              "type": [
+                "object",
+                "null"
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}
