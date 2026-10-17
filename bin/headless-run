@@ -62,10 +62,18 @@ list_entries() {
     done
 }
 
+# jar を使わずに flix run で流す。HEADLESS_JAVA_OPTS はここでは効かない（旗は bin/flix の物）ので知らせる。
+run_with_flix() {
+    if [ -n "${HEADLESS_JAVA_OPTS:-}" ]; then
+        echo "[headless-run] flix run で流すので HEADLESS_JAVA_OPTS（${HEADLESS_JAVA_OPTS}）は効かない（深い再帰はスタックが足りずに落ちうる）" >&2
+    fi
+    exec "$flix" run --entrypoint "$entry"
+}
+
 entries="$(list_entries)"
 if ! printf '%s\n' "$entries" | grep -qxF "$entry"; then
     # 拾えない形の入口は今までどおりコンパイルして流す。
-    exec "$flix" run --entrypoint "$entry"
+    run_with_flix
 fi
 
 build_dispatcher() {
@@ -141,7 +149,7 @@ if is_stale; then
         waited=$((waited + 2))
         if [ "$waited" -ge 900 ]; then
             echo "[headless-run] 15 分待っても鍵が空かないので flix run で流す（鍵: $lock）" >&2
-            exec "$flix" run --entrypoint "$entry"
+            run_with_flix
         fi
         sleep 2
     done
@@ -158,7 +166,7 @@ if is_stale; then
     trap - EXIT
     if [ "$built_ok" = 0 ]; then
         echo "[headless-run] jar を作れなかったので flix run で流す（前に作った時のエラーを見る。直したら src が新しくなり、次から作り直す）" >&2
-        exec "$flix" run --entrypoint "$entry"
+        run_with_flix
     fi
 fi
 
