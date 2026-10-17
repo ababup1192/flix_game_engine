@@ -1,6 +1,6 @@
 testdata/lint/hooks/art-edit-view-fires/View.flix: 描画がほぼ矩形と円だけです（矩形系 5 / 全体 5）— box が 5 回。空・水面→vgrad/gradPolygon、パネル→outline+rounded、キャラ・物→PxSprite+PxShade、面の質感→shader.json
 
-絵の下限 5 性質を満たせていません。空・水面→vgrad/gradPolygon、パネル→outline+rounded、キャラ・物→PxSprite+PxShade、面の質感→shader.json （決まりは .claude/rules/drawing.md・部品は .claude/skills/visual-dict/reference.md）
+絵の下限 5 性質を満たせていません。空・水面→vgrad/gradPolygon、パネル→outline+rounded、キャラ・物→PxSprite+PxShade、面の質感→shader.json （決まりは .claude/rules/drawing.md・部品は engine の docs/art-ref/visual-dict/reference.md）
 
 絵を描く View を書きました。絵を足す・変えるなら .claude/rules/drawing.md（絵の下限 5 性質・人に見せて確かめる・周回は r2 で止める）を先に読んでください（このセッションで 1 回だけ出ます）。
 [exit=2]

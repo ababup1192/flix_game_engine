@@ -1,3 +1,3 @@
 [check-refs] Genesis 対照 OK: starter 1 件 = テンプレ 1 本 (studio/server/src/Genesis.flix)
-OK: バンドルに必須 34 点が揃っています (studio/app/resources/engine・テンプレ 1 本)
+OK: バンドルに必須 36 点が揃っています (studio/app/resources/engine・テンプレ 1 本)
 [exit=0]

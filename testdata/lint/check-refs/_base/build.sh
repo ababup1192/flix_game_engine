@@ -21,6 +21,7 @@ for p in \
   docs/doc-conventions.md docs/glossary.md docs/shader-doc.md docs/checkd.md \
   docs/modules/engine.md mk/module.sed docs/drawing-floor.md \
   docs/flix-conventions.md docs/error-handling.md \
+  docs/art-ref/README.md docs/art-ref/visual-dict/reference.md \
   .claude/hooks/after-flix-edit.py .claude/hooks/session-diet.py \
   agents-pack/AGENTS.core.md agents-pack/settings.json agents-pack/manifest.json \
   agents-pack/codex-hooks.json agents-pack/rules/drawing.md agents-pack/rules/flix.md \

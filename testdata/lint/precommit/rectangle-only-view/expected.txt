@@ -2,7 +2,7 @@
 [lint-value-discard] OK (1 ファイル)
 src/TitleView.flix: 描画がほぼ矩形と円だけです（矩形系 6 / 全体 6）— box が 4 回、circleAt が 2 回。空・水面→vgrad/gradPolygon、パネル→outline+rounded、キャラ・物→PxSprite+PxShade、面の質感→shader.json
 
-絵の下限 5 性質を満たせていません。空・水面→vgrad/gradPolygon、パネル→outline+rounded、キャラ・物→PxSprite+PxShade、面の質感→shader.json （決まりは .claude/rules/drawing.md・部品は .claude/skills/visual-dict/reference.md）
+絵の下限 5 性質を満たせていません。空・水面→vgrad/gradPolygon、パネル→outline+rounded、キャラ・物→PxSprite+PxShade、面の質感→shader.json （決まりは .claude/rules/drawing.md・部品は engine の docs/art-ref/visual-dict/reference.md）
 [lint-fallback] OK (bug! 0 件を検査 / 除外 16 件)
 [lint-z-table] OK (パッケージ 1 / z を数で決める行 0 / 除外 0 件)
 [lint-forbid] OK (1 ファイル / 規則 4 / 除外 0)
