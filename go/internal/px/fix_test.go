@@ -229,3 +229,12 @@ func TestRolesErrorOrder(t *testing.T) {
 		t.Errorf("値が文字列でない時の文言: %v", first)
 	}
 }
+
+// 形は shapes の名前の文字列でも書ける（{"ref": 名前} の短い書き方。試走で 1 周むだにしていた）。
+func TestShapeNameString(t *testing.T) {
+	dir := writeSpec(t, specHead+`"shapes": {"box": {"rect": [1, 1, 2, 2]}}, "sprites": {"s": {"size": [4, 4], "ramp": "r", "parts": [
+	  {"id": "p", "shape": "box", "ops": [{"fill": {"color": "mid"}}, {"shade_step": {"shape": "box", "by": 1}}]}], "frames": {"f": {}}}}}`)
+	if _, err := build(dir, "t.pxsrc.json", buildOptions{RulesRoot: engineRoot}); err != nil {
+		t.Fatal(err)
+	}
+}

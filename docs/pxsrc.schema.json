@@ -124,7 +124,7 @@
   },
   "definitions": {
     "shape": {
-      "description": "形（符号付き距離。画素の中心が内側なら塗る）",
+      "description": "形（符号付き距離。画素の中心が内側なら塗る）。shapes の名前の文字列でも書ける",
       "oneOf": [
         {
           "type": "object",
@@ -514,6 +514,10 @@
               "minItems": 2
             }
           }
+        },
+        {
+          "type": "string",
+          "description": "shapes の名前（{\"ref\": 名前} の短い書き方）"
         }
       ]
     },

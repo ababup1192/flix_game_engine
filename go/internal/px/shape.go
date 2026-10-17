@@ -240,9 +240,12 @@ func compileShape(v any, refs map[string]any, where string, depth int) (sdf, err
 	if depth > maxShapeDepth {
 		return nil, fmt.Errorf("%s: 形の入れ子が深すぎる（ref が輪になっていないか）", where)
 	}
+	if name, isStr := v.(string); isStr {
+		v = map[string]any{"ref": name} // "shield" は {"ref": "shield"} の短い書き方
+	}
 	m, ok := v.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("%s: 形はオブジェクトで書く（{\"disk\": [cx, cy, r]} など）", where)
+		return nil, fmt.Errorf("%s: 形はオブジェクトか shapes の名前で書く（{\"disk\": [cx, cy, r]}・\"shield\" など）", where)
 	}
 	var kind *shapeKind
 	for _, k := range keysOf(m) {
