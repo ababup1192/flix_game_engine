@@ -9,7 +9,7 @@
 |---|---|
 | メニューを作る（項目列・カーソル・ハイライト） | UiMenu（実例: `templates/novel-starter/src/World.flix`） |
 | 表示範囲より長い内容をスクロールで覗く（ログ・履歴・一覧） | UiScroll |
-| 文章を幅で行に折る・描く前に行数を数える | RichText（wrapLinesBy）（実例: `templates/rpg-starter/src/View.flix`） |
+| 文章を幅で行に折る（折り返し・wrap）・描く前に行数を数える | RichText（wrapLinesBy）（実例: `templates/rpg-starter/src/View.flix`） |
 | 固定スロットに可変個の項目を流し込む | UiSlots（実例: `templates/novel-starter/src/World.flix`） |
 | UI を JSON（ui.json）で宣言する | UiDoc / UiSpec（実例: `templates/novel-starter/assets/ui/dialog.ui.json` / `templates/novel-starter/src/NovelKit.flix`） |
 | 宣言した UI の「名前 → 画面上の矩形」を引く（当たり判定を宣言と共有） | UiDoc（rectsOf / renderWithRects）/ Flex（keyed） |

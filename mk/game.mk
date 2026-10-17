@@ -152,7 +152,8 @@ api:
 # 例: make module Q=スクロール 。当たった行に「分野のファイル:行番号」が付く。自前で書く前にまずこれ。
 module:
 	@test -n "$(Q)" || { echo "usage: make module Q=<やりたいこと・モジュール名の一部>"; exit 1; }
-	@out=$$(grep -n -i -F -- "$(Q)" "$(ENGINE)"/docs/modules/*.md 2>/dev/null | sed -f "$(ENGINE)/mk/module.sed" | head -40); \
+	@# WhyNot: engine.md（engine/src の下請け）を最後に引くのは、ゲームが使う engine_world の行を先に見せるため。
+	@out=$$(grep -n -i -F -- "$(Q)" $$(ls "$(ENGINE)"/docs/modules/*.md | grep -v '/engine\.md$$') "$(ENGINE)/docs/modules/engine.md" 2>/dev/null | sed -f "$(ENGINE)/mk/module.sed" | head -40); \
 	if [ -n "$$out" ]; then printf '%s\n' "$$out"; \
 	else echo "[module] '$(Q)' に当たりなし。別の言い方で引き直すか、分野の目次 $(ENGINE)/docs/module-index.md から分野のファイルを開く"; fi
 

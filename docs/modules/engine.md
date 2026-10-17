@@ -50,7 +50,7 @@
 | フォントアトラスのメタデータの型を知りたい | FontAtlas |
 | フォントに書き込む常用漢字・UI 記号の一覧が欲しい | JoyoKanji |
 | 親の枠の中で子をどこに置くか名前で選びたい（中央・右下など） | Anchor |
-| 文字列の改行・折り返し・中央寄せの座標計算をしたい | TextLayout |
+| 文字列の改行・折り返し・中央寄せの座標計算をしたい（下請け） | TextLayout（ゲームの文章を幅で折るのは engine_world の RichText.wrapLinesBy） |
 | 凹みのある多角形を三角形に分割したい | Triangulate |
 | GL の uniform に渡す前の数値変換・丸めをしたい | RenderUtil |
 | 0〜1 に収める・小数部だけ残す（core 側の基礎計算） | Num |

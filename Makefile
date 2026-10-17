@@ -822,7 +822,7 @@ api:
 .PHONY: module
 module:
 	@test -n "$(Q)" || { echo "usage: make module Q=<やりたいこと・モジュール名の一部>"; exit 1; }
-	@out=$$(grep -n -i -F -- "$(Q)" docs/modules/*.md 2>/dev/null | sed -f mk/module.sed | head -40); \
+	@out=$$(grep -n -i -F -- "$(Q)" $$(ls docs/modules/*.md | grep -v '/engine\.md$$') docs/modules/engine.md 2>/dev/null | sed -f mk/module.sed | head -40); \
 	 if [ -n "$$out" ]; then printf '%s\n' "$$out"; \
 	 else echo "[module] '$(Q)' に当たりなし。別の言い方で引き直すか、分野の目次 docs/module-index.md から分野のファイルを開く"; fi
 
