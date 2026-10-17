@@ -248,6 +248,7 @@
         {"re": "glfwSetWindowShouldClose|GLFW\\.", "why": "ゲームから GLFW を直に触る"}
       ]
     },
+    {"id": "art-round-keep", "prompt": "主人公のドット絵（assets/hero.sprite.json）を描き直している。描き直すたびの絵と台本を残して見比べ、前の版の方が良ければそこへ戻せるようにしたい", "expect": [{"re": "bin/fge rounds|fge rounds snap|rounds snap", "why": "絵の周回を残す bin/fge rounds snap / restore"}], "avoid": [{"re": "px\\.py snap", "why": "ゲームの古い snap"}]},
     {"id": "click-front-layer", "prompt": "確認の窓が開いているときにクリックすると、窓の奥にあるボタンまで反応してしまう。見た目でいちばん手前にある物だけが押されるようにしたい", "expect": [{"re": "SortingLayer\\.pick|\\bpick\\(", "why": "描く時と同じ層の前後で当たりを選ぶ SortingLayer.pick"}], "avoid": [{"re": "Render\\.zOf|sortBy\\([^)]*\\bz", "why": "描いた絵の z を並べ直して当たりを探す"}]}
   ]
 }

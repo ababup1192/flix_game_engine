@@ -18,7 +18,7 @@ description: "assets のスロットに対する素材候補を atelier/ に複�
 2. `atelier/` に N 案の Doc を書く。命名は `<名前>.a.<種類>.json` / `.b` / `.c` …。
    `version`・`entityId` はスロットと合わせ、`note` に方向性の意図を書く。
    **`assets/` には絶対に書かない。**
-3. headless で描き出す。絵なら `make render SHOT=<場面名>`（全部なら `make render-all`）か `make gallery-prologue`、
+3. headless で描き出す。絵なら `make render SHOT=<場面名>`（全部なら `make render-all`）、
    音なら `make gallery-sounds` など、その候補が映る適切なターゲットを選ぶ
    （候補を一時的にスロットへ差して描き出す場合は、描き出し終わったら必ず元に戻す）。
 4. `debug/` のコンタクトシート（all.png）や波形・スペクトログラム
