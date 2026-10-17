@@ -24,6 +24,8 @@
 # 環境変数: FLIX_CMD = jar を作る flix（既定はこのエンジンの bin/flix）。1 語のパスで渡す
 # （相対パスはここで絶対パスにする — jar は build/headless/proj へ移って作るため）。
 #           JAVA = jar を流す java（既定は PATH の java、無ければエンジンの devbox の java）。
+#           HEADLESS_JAVA_OPTS = java へ足す旗（既定の旗の後ろに付くので上書きできる。例: -Xss64m）。
+#           jar から流す時だけ効く（flix run へ回った時は bin/flix の旗のまま）。
 set -euo pipefail
 
 if [ $# -ne 1 ]; then
@@ -165,4 +167,7 @@ java_cmd="${JAVA:-java}"
 if ! "$java_cmd" -version >/dev/null 2>&1; then
     java_cmd="$engine/.devbox/nix/profile/default/bin/java"
 fi
-FGE_ENTRY="$entry" exec "$java_cmd" -Xss32m -XX:MaxRAMPercentage=50 -Djava.awt.headless=true -jar "$jar"
+# HEADLESS_JAVA_OPTS は空白で分けて既定の後ろに足す（同じ旗は後ろが勝つ）。
+# shellcheck disable=SC2086
+FGE_ENTRY="$entry" exec "$java_cmd" -Xss32m -XX:MaxRAMPercentage=50 -Djava.awt.headless=true \
+    ${HEADLESS_JAVA_OPTS:-} -jar "$jar"

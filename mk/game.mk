@@ -38,6 +38,8 @@ endif
 # （`$(HEADLESS_RUN) SceneRender.all`）。macOS/Linux は bin/headless-run が jar を 1 回だけ作って
 # 使い回す（src・flix.toml・lib が変わった時だけ作り直す）ので、2 本目からはコンパイルしない。
 # Windows はラッパ（bash）が無いので今までどおり毎回コンパイルして流す。
+# 描き出しでない長い計算（バランスのシミュレーションなど）も同じ前置きで流せる。深い再帰で
+# スタックが足りなければ `HEADLESS_JAVA_OPTS=-Xss64m $(HEADLESS_RUN) 入口` のように java の旗を足す。
 ifeq ($(OS),Windows_NT)
 HEADLESS_RUN ?= JAVA_TOOL_OPTIONS="-Djava.awt.headless=true" $(FLIX) run --entrypoint
 else
