@@ -31,7 +31,7 @@
 //   - waitFor は長さの決まらない待ち（会話を読む・決定キー）。World は解けた時刻を resume で記録するだけ。
 //     待ちの位置ちょうどでは、待ちの前に書いた物だけが済む（Playhead = 時刻と解いた待ちの数）。
 //   - 書き間違い（同じ名前・まだ置いていない名前を基準・待ちに音・待ちより前へ置く・長さを合わせる音の
-//     食い違い）は build が Err で返す。並びをコードが書く表は buildOrBug（組めなければ止める）で受け、
+//     食い違い）は build が Err で返す。並びをコードが書く表は buildOrPanic（組めなければ止める）で受け、
 //     場面ごとにテストを 1 本置けば遊ぶ前に止まる。同じ物を何本も並べる所は tag に番号を持たせる（Tick(i)）。
 //
 // 時計の決まり: 渡す時刻は、場面に入ってから「dt × はやさ × TimeScale」を積み上げた場面の時計 1 本。
@@ -306,11 +306,16 @@ pub mod Timeline {
     /// build の、書き間違いで止める包み。並びをゲームのコードが書く表（Doc は長さしか持たない）では、Err は
     /// プログラムの書き間違いなので、組めなければ name と書き間違いの一覧を出して止める。場面ごとのテストで
     /// 1 回組めば、遊ぶ前に止まる。並びを Doc やプレイヤーの入力から作る表は build を使い、Err を捌く。
-    pub def buildOrBug(name: String, tempo: Tempo, steps: List[Step[a]]): Timeline[a] with Order[a], ToString[a] =
+    pub def buildOrPanic(name: String, tempo: Tempo, steps: List[Step[a]]): Timeline[a] with Order[a], ToString[a] =
         match build(tempo, steps) {
             case Ok(tl)      => tl
             case Err(errors) => bug!("Timeline ${name} の書き間違い: ${errors |> List.map(e -> ToString.toString(e)) |> String.intercalate(", ")}")
         }
+
+    /// 旧名。次のリリースで消す（ゲームからの呼び出しは forbid の deprecated-name が止める）。
+    @Deprecated
+    pub def buildOrBug(name: String, tempo: Tempo, steps: List[Step[a]]): Timeline[a] with Order[a], ToString[a] =
+        buildOrPanic(name, tempo, steps)
 
     // ── 読む口（毎フレーム） ──
 

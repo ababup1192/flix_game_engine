@@ -346,9 +346,21 @@ mod TestAnnotate {
             (String.startsWith(prefix = "## その瞬間の文脈\n\n- 場面: Talk", body),
              String.contains(substr = "z=3 Talk)", body)))
 
-    // HUD の物は持ち上がった z から HUD の表で引く。
+    enum Band with ToString {
+        case Scene
+        case Mouse
+    }
+
+    instance SortingLayer[Band] {
+        pub def zRange(band: Band): (Int32, Int32) = match band {
+            case Band.Scene => (0, 199)
+            case Band.Mouse => (1000, 1099)
+        }
+    }
+
+    // 層の enum から作った表で、HUD の物は持ち上がった z から HUD の表で引く（名前は Hud.<層>）。
     @Test
     def testLayerOfLooksUpHudTableForLiftedZ(): Unit \ Assert =
-        let context = { facts = Nil, layers = ("Scene", 0, 199) :: Nil, hudLayers = ("Hud.Mouse", 1000, 1099) :: Nil };
-        Assert.assertEq(expected = Some("Hud.Mouse"), Annotate.layerOf(context, ZBand.liftHud(1005)))
+        let table = Annotate.toTable({ facts = Nil, layers = Band.Scene :: Nil, hudLayers = Band.Mouse :: Nil });
+        Assert.assertEq(expected = Some("Hud.Mouse"), Annotate.layerOf(table, ZBand.liftHud(1005)))
 }

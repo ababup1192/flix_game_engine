@@ -145,7 +145,7 @@ pub mod App {
         // 注釈チケットに world.json として同梱され、リモートデバッグの view=full にもなる。
         worldDump = Option[(Rect2.Rect2, w) -> String \ ef],
         // 注釈チケットの README 冒頭に載せる「その瞬間の文脈」（場面・台本の行・z の層の名前）。
-        annotationContext = Option[w -> Annotate.Context \ ef],
+        annotationContext = Option[w -> Annotate.Table \ ef],
         // 「1 度だけ GPU に生成して使い回す静的な絵」の宣言（無ければ None）。key = 静的な中身を
         // 決める全入力を 1 文字列にまとめたキャッシュキー（フロア id・テーマ・作り直しの世代など。
         // これが変わるとエンジンが古い VBO を捨てて作り直す）、build = ワールド座標の静的 PlacedItem を
@@ -482,10 +482,11 @@ pub mod App {
 
     /// 注釈（F8 の矩形）を書き出すとき、README の冒頭と annotation.json の "context" に載せる
     /// 「その瞬間の文脈」を繋ぐ。f は表示中の瞬間の World から、場面・台本の id と行・話す人と表情・
-    /// 開いている窓のような (見出し, 値) の並びと、z → 層の名前の引き方を返す。
+    /// 開いている窓のような (見出し, 値) の並びと、層の enum の列（z の名前を引く表は zRange から作る）を返す。
     /// チケットのコメントから「どの Doc のどこを直すか」をスクショと突き合わせずに引けるようにする。
-    pub def withAnnotationContext(f: w -> Annotate.Context \ ef, app: App[w, ef]): App[w, ef] =
-        { annotationContext = Some(f) | app }
+    pub def withAnnotationContext(f: w -> Annotate.Context[t, h] \ ef, app: App[w, ef]): App[w, ef]
+        with SortingLayer[t], ToString[t], SortingLayer[h], ToString[h] =
+        { annotationContext = Some(w -> Annotate.toTable(f(w))) | app }
 
     /// World の 1 行サマリ（例: "phase=Playing ball=(163.2,207.9) lives=3"）を繋ぐ。
     /// リモートデバッグ（HTTP）の view=status の本文と、/step の trace の行になる。
@@ -654,7 +655,7 @@ pub mod App {
             case Some(c) => CameraRig.centerOn(c, zoom = zoom, design = design, items#world)
         };
         let lifted = items#hud |> List.map(placed ->
-            { item = EngineInternal.zMapped(ZBand.liftHud, placed#item) | placed });
+            { item = zMapped(ZBand.liftHud, placed#item) | placed });
         // hud が空のフレームで List.append に world 全件を cons し直させない。
         // world 側が空のときの分岐は要らない — append は第 1 引数が空なら O(1) で lifted を返す。
         if (List.isEmpty(lifted)) shifted
@@ -721,6 +722,7 @@ pub mod App {
                     prevCursor = None, anno = Annotate.initial(), history = Nil,
                     bridge = bridge, remoteHold = false, stepState = freshStepState(),
                     watchState = watch0, sustaining = Nil, mixState = AudioMixer.initial(),
+                    soundUses = { oneShot = Set.empty(), looped = Set.empty() },
                     tileCache = freshTileCache(),
                     glyphSeen = None, budgetWarned = false,
                     warnOnce = warnOnceWith(Ref.fresh(Static, Set.empty())) });
@@ -740,7 +742,7 @@ pub mod App {
         anno = Annotate.State, history = List[w],
         bridge = Option[RemoteDebug.Bridge], remoteHold = Bool,
         stepState = StepState, watchState = WatchState, sustaining = List[String],
-        mixState = AudioMixer.State,
+        mixState = AudioMixer.State, soundUses = SoundUses,
         tileCache = TileCache, glyphSeen = Option[Int64],
         // 「絵の値段が予算を超えていると 1 回だけ知らせた」印。毎フレーム出すと
         // 遅い画面がさらに遅くなり、ログも読めなくなる。
@@ -860,8 +862,8 @@ pub mod App {
                             let (watched, nextWatchState, watchFired) = applyWatch(app, frame#dt, st#watchState, st#world);
                             let (reloaded, reloadFired) = applyReload(app, frame, watched);
                             let (advanced, nextStepState) = advanceFrame(app, frame, st#stepState, reloaded);
-                            let (nextSustaining, nextMix) = applyAudio(app, frame#dt, reloaded, advanced,
-                                                                       st#sustaining, st#mixState);
+                            let (nextSustaining, nextMix, nextUses) = applyAudio(app, frame#dt, reloaded, advanced,
+                                                                       st#sustaining, st#mixState, st#soundUses, st#warnOnce);
                             // fps は debug 有効時だけ計測する（本番ビルドは履歴を積まず無負荷）。
                             let measuredAnno = if (app#debug) Annotate.recordDt(frame#dt, st#anno) else st#anno;
                             // Doc の読み直しが起きたフレームはタイル層の世代を進め、同じ key でも作り直す。
@@ -875,7 +877,7 @@ pub mod App {
                             loop(app, { world = advanced, history = nextHistory,
                                         anno = { frame = measuredAnno#frame + 1i64 | measuredAnno },
                                         stepState = nextStepState, watchState = nextWatchState,
-                                        sustaining = nextSustaining, mixState = nextMix, tileCache = cache1,
+                                        sustaining = nextSustaining, mixState = nextMix, soundUses = nextUses, tileCache = cache1,
                                         glyphSeen = seen1, budgetWarned = warned1 | carried })
                     }
                 }
@@ -983,7 +985,7 @@ pub mod App {
     def finishPaused(ctx: { design = Vec2.Vec2, cursor = Vec2.Vec2, atlas = FontAtlas,
                             historyLen = Int32, shownFrame = Int64 },
                      anno: Annotate.State, emitted: Option[Rect2.Rect2],
-                     dump: { text = String, context = Annotate.Context },
+                     dump: { text = String, context = Annotate.Table },
                      channels: DebugChannels, hitList: List[Annotate.Hit]): Annotate.State \ GameEngine.Game =
         let shown = match emitted {
             case Some(rect) => match writeAnnotation(ctx#design, rect, ctx#shownFrame, dump, channels, hitList) {
@@ -999,7 +1001,7 @@ pub mod App {
     /// ファイルへの書き出しとスクリーンショット撮影・シャッター音はエンジンの saveAnnotation が
     /// 引き受ける。戻り値は保存先のディレクトリパス（失敗時 None）。
     def writeAnnotation(design: Vec2.Vec2, rect: Rect2.Rect2, frameNo: Int64,
-                        dump: { text = String, context = Annotate.Context },
+                        dump: { text = String, context = Annotate.Table },
                         channels: DebugChannels, hitList: List[Annotate.Hit]): Option[String] \ GameEngine.Game =
         let dumpText = dump#text;
         let body = Annotate.readmeBodyWith(dump#context, { frame = frameNo, rect = rect }, hitList);
@@ -1112,17 +1114,47 @@ pub mod App {
 
     /// 1 フレームの音: ミキサーが無ければ今までどおり名前のまま鳴らし、あればバスを通して鳴らす。
     /// 返すのは次のフレームへ渡す「いま鳴り続けている名前」とミキサーの状態。
+    /// uses は一発とループで鳴らした名前の覚え（noteSoundUses）。両方に出た名前は warn で 1 回だけ知らせる。
     def applyAudio(app: App[w, ef], dt: Float64, before: w, after: w,
-                   prev: List[String], mixState: AudioMixer.State):
-            (List[String], AudioMixer.State) \ (ef + GameEngine.Audio) =
-        match app#mixer {
-            case None =>
-                (playPlain(app, before, after, prev), mixState)
-            case Some(mixerOf) =>
-                let derive = app#audio;
-                let declare = app#sustained;
-                applyMixed(mixerOf(after), dt, derive({ before = before, after = after }), declare(after), prev, mixState)
+                   prev: List[String], mixState: AudioMixer.State, uses: SoundUses, warn: String -> Unit):
+            (List[String], AudioMixer.State, SoundUses) \ (ef + GameEngine.Audio) =
+        let derive = app#audio;
+        let declare = app#sustained;
+        let plays = derive({ before = before, after = after });
+        let declared = declare(after);
+        let (nextUses, clashes) = noteSoundUses(plays, declared |> List.map(s -> s#name), uses);
+        let (living, nextMix) = match app#mixer {
+            case None          => (playPlain(List.distinct(plays), declared, prev), mixState)
+            case Some(mixerOf) => applyMixed(mixerOf(after), dt, plays, declared, prev, mixState)
+        };
+        let lines = clashes |> List.map(name ->
+            "音 ${name} を一発（withAudio）とループ（withSustained）の両方で鳴らしている: " +
+            "ループの設定が残って一発が止まらない・ループが途中で切れることがある。ループの方は別の名前にする（例: ${name}_loop）");
+        warnedAll(warn, lines, (living, nextMix, nextUses))
+
+    /// lines を 1 行ずつ warn で知らせてから value を返す。
+    /// WhyNot: `warn(line);` と書かない —— 純粋な型の呼び出しの値を捨てると、コンパイラが呼び出しごと消す。
+    def warnedAll(warn: String -> Unit, lines: List[String], value: a): a =
+        match lines {
+            case Nil          => value
+            case line :: rest => match warn(line) {
+                case () => warnedAll(warn, rest, value)
+            }
         }
+
+    /// 一発で鳴らした名前とループで鳴らした名前の覚え（ゲームの間ずっと持つ）。
+    pub type alias SoundUses = { oneShot = Set[String], looped = Set[String] }
+
+    /// このフレームの一発の音 plays とループの音 looped を覚えに足し、初めて両方に出た名前を返す。
+    /// 音の名前に「一発用・ループ用」の型が付くまでのつなぎ（同じ名前を両方で使うと、音源に残った
+    /// ループの設定で一発が止まらない・ループが切れる）。テストのために公開している（ゲームから呼ぶ物ではない）。
+    pub def noteSoundUses(plays: List[String], looped: List[String], uses: SoundUses): (SoundUses, List[String]) =
+        let next = { oneShot = Set.union(uses#oneShot, List.toSet(plays)),
+                     looped  = Set.union(uses#looped, List.toSet(looped)) };
+        let isBoth = (u, name) -> Set.memberOf(name, u#oneShot) and Set.memberOf(name, u#looped);
+        let clashes = List.append(plays, looped) |> List.distinct
+            |> List.filter(name -> isBoth(next, name) and not isBoth(uses, name));
+        (next, clashes)
 
     /// バスを通して鳴らす。順番: ミキサーを 1 フレーム進める（AudioMixer.step）→ 鳴っている一発の音へ
     /// 今の音量とローパスを流し直す（ダッキングの最中に下がっていく）→ 通った一発の音を鳴らす →
@@ -1162,12 +1194,9 @@ pub mod App {
     /// sustained の宣言。鳴らし始めだけ playAudio を打ち、続いている音には音量と高さだけ流す
     /// （毎フレーム鳴らし直すと頭から再生され、続く音にならない）。順番は applyMixed と同じ
     /// 「止める → ループを外す → 一発の音 → 鳴らし始め」。返すのは次のフレームへ渡す「いま鳴っている名前」。
-    def playPlain(app: App[w, ef], before: w, after: w, prev: List[String]): List[String] \ (ef + GameEngine.Audio) =
-        let derive = app#sustained;
-        let ops = sustainOps(prev, derive(after));
+    def playPlain(plays: List[String], declared: List[Sustain], prev: List[String]): List[String] \ GameEngine.Audio =
+        let ops = sustainOps(prev, declared);
         let living = List.map(s -> s#name, List.append(ops#start, ops#keep));
-        let deriveSounds = app#audio;
-        let plays = deriveSounds({ before = before, after = after }) |> List.distinct;
         ops#stop |> List.forEach(name -> GameEngine.Audio.stopAudio(name));
         unloopedOneShots(plays, living) |> List.forEach(name -> GameEngine.Audio.setLooping(name, false));
         plays |> List.forEach(name -> GameEngine.Audio.playAudio(name));
@@ -1498,4 +1527,16 @@ pub mod App {
             RenderTarget.Target.endTarget()
         }, passList)
 
+    // WhyNot: 同じ 10 行を UiRender・SortingLayer・App に 1 つずつ置く。pub にするとゲームから z を書き換えられ、
+    //   どの層に入るかが表から読めなくなる（Flix 0.77 にはパッケージの中だけで見える pub が無い）。
+    /// 描画物の重なり順（zIndex）を f で写す（Clipped は中身の z）。HUD を HUD の範囲へ持ち上げる所（composeScene）だけで使う。
+    def zMapped(f: Int32 -> Int32, item: Render.Item): Render.Item =
+        match item {
+            case Render.Item.Sprite(s)  => Render.Item.Sprite({ zIndex = f(s#zIndex) | s })
+            case Render.Item.Text(x)    => Render.Item.Text({ zIndex = f(x#zIndex) | x })
+            case Render.Item.Box(b)     => Render.Item.Box({ zIndex = f(b#zIndex) | b })
+            case Render.Item.Poly(p)    => Render.Item.Poly({ zIndex = f(p#zIndex) | p })
+            case Render.Item.Shader(s)  => Render.Item.Shader({ zIndex = f(s#zIndex) | s })
+            case Render.Item.Clipped(c) => Render.Item.Clipped({ inner = zMapped(f, c#inner) | c })
+        }
 }

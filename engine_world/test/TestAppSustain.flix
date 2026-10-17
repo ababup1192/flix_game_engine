@@ -79,4 +79,19 @@ mod TestAppSustain {
     def testLivingHumKeepsItsLoop(): Unit \ Assert =
         Assert.assertEq(expected = "hit" :: Nil,
             App.unloopedOneShots("hit" :: "engine" :: Nil, "engine" :: Nil))
+
+    /// 一発とループの両方で同じ名前を使ったら、初めて両方に出たフレームだけその名前を返す。
+    @Test
+    def testSameNameAsOneShotAndLoopIsReportedOnce(): Unit \ Assert =
+        let empty = { oneShot = Set.empty(), looped = Set.empty() };
+        let (first, _) = App.noteSoundUses("crtOff" :: Nil, Nil, empty);
+        let (second, clash) = App.noteSoundUses(Nil, "crtOff" :: Nil, first);
+        let (_, again) = App.noteSoundUses("crtOff" :: Nil, "crtOff" :: Nil, second);
+        Assert.assertEq(expected = ("crtOff" :: Nil, Nil), (clash, again))
+
+    /// 別々の名前なら何も返さない。
+    @Test
+    def testDistinctOneShotAndLoopNamesAreQuiet(): Unit \ Assert =
+        let empty = { oneShot = Set.empty(), looped = Set.empty() };
+        Assert.assertEq(expected = Nil, snd(App.noteSoundUses("hit" :: Nil, "engine" :: Nil, empty)))
 }

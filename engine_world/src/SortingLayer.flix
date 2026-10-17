@@ -215,7 +215,20 @@ pub mod SortingLayer {
                 let delta = st#next - low;
                 let ceiling = st#high;
                 let acc = List.foldLeft((a, placed) ->
-                    { item = EngineInternal.zMapped(z -> Int32.min(ceiling, z + delta), placed#item) | placed } :: a, st#acc, items);
+                    { item = zMapped(z -> Int32.min(ceiling, z + delta), placed#item) | placed } :: a, st#acc, items);
                 { acc = acc, next = st#next + (high - low + 1) | st }
+        }
+
+    // WhyNot: 同じ 10 行を UiRender・SortingLayer・App に 1 つずつ置く。pub にするとゲームから z を書き換えられ、
+    //   どの層に入るかが表から読めなくなる（Flix 0.77 にはパッケージの中だけで見える pub が無い）。
+    /// 描画物の重なり順（zIndex）を f で写す（Clipped は中身の z）。木を層の区画へ置く所（emitLeaf）だけで使う。
+    def zMapped(f: Int32 -> Int32, item: Render.Item): Render.Item =
+        match item {
+            case Render.Item.Sprite(s)  => Render.Item.Sprite({ zIndex = f(s#zIndex) | s })
+            case Render.Item.Text(x)    => Render.Item.Text({ zIndex = f(x#zIndex) | x })
+            case Render.Item.Box(b)     => Render.Item.Box({ zIndex = f(b#zIndex) | b })
+            case Render.Item.Poly(p)    => Render.Item.Poly({ zIndex = f(p#zIndex) | p })
+            case Render.Item.Shader(s)  => Render.Item.Shader({ zIndex = f(s#zIndex) | s })
+            case Render.Item.Clipped(c) => Render.Item.Clipped({ inner = zMapped(f, c#inner) | c })
         }
 }

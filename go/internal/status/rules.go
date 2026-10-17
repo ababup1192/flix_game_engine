@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 )
 
 // RulesPath は規約データの置き場（リポジトリのルートからの相対）。
@@ -30,6 +31,24 @@ type rulesFile struct {
 	TestLogsDir        *string  `json:"testLogsDir"`
 	BuildGlobs         []string `json:"buildGlobs"`
 	BuildDirs          []string `json:"buildDirs"`
+	CloseRequest       *struct {
+		SrcDir      *string `json:"srcDir"`
+		AppPattern  *string `json:"appPattern"`
+		HookPattern *string `json:"hookPattern"`
+		Message     *string `json:"message"`
+	} `json:"closeRequest"`
+}
+
+// CloseRequestRules は「閉じるボタンの口が繋がっているか」の規約。
+type CloseRequestRules struct {
+	// SrcDir はゲームのソース根（root からの相対）。
+	SrcDir string
+	// App は窓を開く呼び出し。これがあるファイルが 1 つも無ければ検査しない。
+	App *regexp.Regexp
+	// Hook は閉じるボタンを World へ渡す口。
+	Hook *regexp.Regexp
+	// Message は出す 1 行。
+	Message string
 }
 
 // Rules は 1 画面の組み立てが使う規約。すべて JSON から来る。
@@ -54,6 +73,7 @@ type Rules struct {
 	TestLogsDir        string
 	BuildGlobs         []string
 	BuildDirs          []string
+	CloseRequest       CloseRequestRules
 }
 
 // LoadRules は規約データを読む。
@@ -105,9 +125,27 @@ func LoadRules(root string) (*Rules, error) {
 		missing = "buildGlobs"
 	case f.BuildDirs == nil:
 		missing = "buildDirs"
+	case f.CloseRequest == nil:
+		missing = "closeRequest"
+	case f.CloseRequest.SrcDir == nil:
+		missing = "closeRequest.srcDir"
+	case f.CloseRequest.AppPattern == nil:
+		missing = "closeRequest.appPattern"
+	case f.CloseRequest.HookPattern == nil:
+		missing = "closeRequest.hookPattern"
+	case f.CloseRequest.Message == nil:
+		missing = "closeRequest.message"
 	}
 	if missing != "" {
 		return nil, fmt.Errorf("規約ファイルに %s がありません (%s)", missing, path)
+	}
+	appRe, err := regexp.Compile(*f.CloseRequest.AppPattern)
+	if err != nil {
+		return nil, fmt.Errorf("closeRequest.appPattern が正規表現として壊れています (%s): %v", path, err)
+	}
+	hookRe, err := regexp.Compile(*f.CloseRequest.HookPattern)
+	if err != nil {
+		return nil, fmt.Errorf("closeRequest.hookPattern が正規表現として壊れています (%s): %v", path, err)
 	}
 	return &Rules{
 		MaxLines:           *f.MaxLines,
@@ -127,5 +165,11 @@ func LoadRules(root string) (*Rules, error) {
 		TestLogsDir:        *f.TestLogsDir,
 		BuildGlobs:         f.BuildGlobs,
 		BuildDirs:          f.BuildDirs,
+		CloseRequest: CloseRequestRules{
+			SrcDir:  *f.CloseRequest.SrcDir,
+			App:     appRe,
+			Hook:    hookRe,
+			Message: *f.CloseRequest.Message,
+		},
 	}, nil
 }

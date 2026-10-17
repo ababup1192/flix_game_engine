@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "note": "このゲーム固有のお題（雛形）。エンジン共通のお題（agent-eval/engine.json・engine から配られる）と一緒に make agent-eval が流す。prompt は依頼の言葉だけにし、道具の名前を入れない。expect は答えに出てほしい道具（1 つ 1 点）、avoid は古い書き方（打ち消しの無い行に出たら 1 点引く）。新しい仕組みを入れたら、AGENTS.local.md の早見表の 1 行と一緒にここへお題を 1 本足し、make agent-eval ONLY=<id> で当たるのを確かめる。",
+  "tasks": [
+    {
+      "id": "pause-over-scene",
+      "prompt": "P を押したら、場面の絵の上に「ポーズ中」の窓を重ねて出したい。終了の確認の窓よりは奥でよい",
+      "expect": [
+        {"re": "ZOrder|enum\\s+Layer|Layer\\.\\w+", "why": "層の表 ZOrder の Layer に case を足す"},
+        {"re": "SortingLayer\\.compose|zRange", "why": "SortingLayer.compose / zRange"}
+      ],
+      "avoid": [
+        {"re": "\\bzIndex\\s*[=:]\\s*[1-9]\\d{2,}", "why": "z の大きな数を直に書く"}
+      ]
+    },
+    {
+      "id": "static-decor",
+      "prompt": "画面の下に、動かない地面の帯と草の模様を敷きたい。毎フレーム組み直さず軽く描きたい",
+      "expect": [
+        {"re": "App\\.withStaticLayer|withStaticLayer", "why": "動かない絵を 1 度だけ GPU に作る App.withStaticLayer"}
+      ]
+    }
+  ]
+}

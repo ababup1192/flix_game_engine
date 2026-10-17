@@ -17,6 +17,6 @@
 
 - **RenderManifest** — 描き出した 1 枚の「目録」を JSON にする。1 行（Claim）は kind / material / role（4 つで閉じた enum） / layer / world 座標 / src / intent を持ち、画面ぜんたいの下地の色は design の隣にトップレベルで出る。PNG からは読めない欠陥（材質どうしの色が同じに潰れた・主役が背景に溶けた・地形が Doc と違う高さで描かれた）が数で出る。**検査は作者が intent に書いたことについてだけ動き、書かなかった行は undeclared に id を並べる**（沈黙もさせず、止めもしない）。**aabb と colors は作者の申告であって描き出した画素の計測ではない** — build が unmeasured にその断りを必ず 1 本足す。書き出し（write）は失敗を Result で返す（PaletteExport と同じ形）。
 - **ActiveDocs** — 「いま表示に使っている Doc(JSON)はどれか」を debug/active-docs.json に名乗る（Studio の「表示中」バッジはこれを読む。同じ内容なら書かない）。
-- **Annotate** — 実行中のゲームを一時停止して、画面の気になる場所を矩形で囲んで記録する。App.withAnnotationContext でゲームが「その瞬間の文脈」（場面・台本の行など (見出し, 値) の並びと、z の層の名前の表）を渡すと、チケットの README 冒頭と z の横に載る。App.withWorldDump を繋ぐとその瞬間の World の要約が world.json として同梱される（チケットから直す Doc を引く順: README の文脈 → annotation.json → world.json）。README では 1 字ずつ置かれた字を 1 行の文字列に束ねて出す。
+- **Annotate** — 実行中のゲームを一時停止して、画面の気になる場所を矩形で囲んで記録する。App.withAnnotationContext でゲームが「その瞬間の文脈」（場面・台本の行など (見出し, 値) の並びと、層の enum の列。z の範囲は zRange から引く）を渡すと、チケットの README 冒頭と z の横に載る。App.withWorldDump を繋ぐとその瞬間の World の要約が world.json として同梱される（チケットから直す Doc を引く順: README の文脈 → annotation.json → world.json）。README では 1 字ずつ置かれた字を 1 行の文字列に束ねて出す。
 - **App.RemoteDebug** — 起動中のゲームを外部プロセスが HTTP で操作・観測する口。POST /render は App.onRenderRequest で登録した「描き出しの実体」を温まった JVM で実行し、描き出したパス列を返す（プレイ状態には触れない）。
 - **GameLogger** — 起きたことを 1 行ずつログに積み、あとでまとめて取り出す effect。

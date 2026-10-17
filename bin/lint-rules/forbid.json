@@ -9,13 +9,6 @@
       "hint": "z の大きな数で手前に出さない。部品は ZStack.of に積み、必ず手前の物は ZStack.topLayer(層, …)、隠れてはいけない表示は App.withHudView。葉の中の z は 0..31（docs/z-bands.md）"
     },
     {
-      "id": "engine-internal",
-      "suffixes": [".flix"],
-      "skip": ["engine/", "engine_world/", "engine_tools/", "engine_full/", "src/engine/", "src/engine_world/", "src/engine_tools/", "render_gl/", "src/render_gl/", "lib/", "build/"],
-      "pattern": "\\bEngineInternal\\.",
-      "hint": "EngineInternal はエンジンの中だけで使う口（SortingLayer.compose などが z を書く所）。ゲームの重なりは ZStack.of に積む・必ず手前は ZStack.topLayer・画面ごと動かすのは ZStack.mapItems（docs/z-bands.md）"
-    },
-    {
       "id": "stderr-println",
       "suffixes": [".flix"],
       "skip": ["engine/", "engine_world/", "engine_tools/", "engine_full/", "src/engine/", "src/engine_world/", "src/engine_tools/", "render_gl/", "src/render_gl/", "lib/", "build/"],
@@ -29,6 +22,13 @@
       "skip": ["engine/", "engine_world/", "engine_tools/", "engine_full/", "src/engine/", "src/engine_world/", "src/engine_tools/", "render_gl/", "src/render_gl/", "lib/", "build/", "test/"],
       "pattern": "\\btext\\s*=\\s*\"(?:\\$\\{[^}]*\\}|[^\"$])*?[A-Za-z\\p{Hiragana}\\p{Katakana}\\p{Han}]{2,}",
       "hint": "プレイヤーの目に入る文言は Doc に置く（コードに書くのは Doc の既定値だけ。View に直に書くと Studio から変えられない）。Doc の欄を足して text = doc#欄 で引く"
+    },
+    {
+      "id": "deprecated-name",
+      "suffixes": [".flix"],
+      "skip": ["engine/", "engine_world/", "engine_tools/", "engine_full/", "src/engine/", "src/engine_world/", "src/engine_tools/", "render_gl/", "src/render_gl/", "lib/", "build/"],
+      "pattern": "\\bTimeline\\.buildOrBug\\b",
+      "hint": "旧名。Timeline.buildOrBug は Timeline.buildOrPanic へ改名した（引数は同じ・組めなければ名前と書き間違いの一覧を出して止める）。旧名は次のリリースで消える（engine の docs/migrations/0.35.38.md）"
     }
   ],
   "exempt": {}

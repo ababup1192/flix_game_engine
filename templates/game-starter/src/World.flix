@@ -7,6 +7,14 @@ mod World {
     /// このフレームの入力（横・縦の軸値。-1 / 0 / +1）。
     pub type alias Input = { x = Float64, y = Float64 }
 
+    /// 終了の確認。Esc か窓の閉じるボタンで Asking（確認の窓を出し、主人公は止まる）、
+    /// はいで Confirmed（Main の App.quitWhen がこれを見て閉じる）、いいえで Playing へ戻る。
+    pub enum Quit with Eq, ToString {
+        case Playing
+        case Asking
+        case Confirmed
+    }
+
     pub type alias World = {
         doc = SampleDoc.Doc,
         keys = KeysDoc.Doc,
@@ -19,6 +27,7 @@ mod World {
         x = Float64,
         y = Float64,
         t = Float64,
+        quit = Quit,
         activeDocsWritten = String
     }
 
@@ -84,7 +93,7 @@ mod World {
         let (baked, key) = bakedOf(theme, shadedSprites);
         { doc = doc, keys = keys, theme = theme, sprites = shadedSprites,
           atlas = baked, atlasKey = key, shader = shader,
-          x = width() / 2.0, y = height() / 2.0, t = 0.0, activeDocsWritten = "" }
+          x = width() / 2.0, y = height() / 2.0, t = 0.0, quit = Quit.Playing, activeDocsWritten = "" }
 
     /// 大きさ box の物が画面から出ない位置へ丸める（端で止まるのはルール）。
     pub def clampInside(box: Vec2.Vec2, p: Vec2.Vec2): Vec2.Vec2 =
@@ -93,11 +102,31 @@ mod World {
 
     /// 入力と経過時間から次の状態を作る。速さは Doc（sample.kind.json）から。
     /// t は積み上げた秒。空の流れ・塵・待ち姿の揺れがこれを見る。
+    /// 終了の確認の窓が出ている間は動かない（時刻だけ進むので空や塵は流れ続ける）。
     pub def step(input: Input, dt: Float64, w: World): World =
-        let speed = SampleDoc.rec(w#doc)#speed;
-        let moved = { x = w#x + input#x * speed * dt, y = w#y + input#y * speed * dt };
-        let p = clampInside(heroBox(w), moved);
-        { x = p#x, y = p#y, t = w#t + dt | w }
+        if (w#quit != Quit.Playing) { t = w#t + dt | w }
+        else {
+            let speed = SampleDoc.rec(w#doc)#speed;
+            let moved = { x = w#x + input#x * speed * dt, y = w#y + input#y * speed * dt };
+            let p = clampInside(heroBox(w), moved);
+            { x = p#x, y = p#y, t = w#t + dt | w }
+        }
+
+    // ── 終了の確認 ──
+
+    /// Esc・閉じるボタン: 遊んでいる間なら確認の窓を出す。
+    pub def askQuit(w: World): World =
+        if (w#quit == Quit.Playing) { quit = Quit.Asking | w } else w
+
+    /// 確認の窓への答え（yes なら終わる・no なら遊びへ戻る）。窓が出ていないときは何もしない。
+    pub def answerQuit(yes: Bool, w: World): World =
+        if (w#quit != Quit.Asking) w
+        else if (yes) { quit = Quit.Confirmed | w }
+        else { quit = Quit.Playing | w }
+
+    pub def isAskingQuit(w: World): Bool = w#quit == Quit.Asking
+
+    pub def isQuitting(w: World): Bool = w#quit == Quit.Confirmed
 
     // ── Doc の差し替え（保存即反映） ──
 

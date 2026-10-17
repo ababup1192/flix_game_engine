@@ -1,6 +1,7 @@
 {
   "version": 1,
   "title": "手触り（見本の数値）",
-  "note": "手触りの調整例。いじると何が変わるか: speed=主人公の速さ（px/秒。大きいほど速く動く）。各欄の意味は sample.schema.json の label に。増やしたくなったらフィールドを足し、schema と SampleDoc の defaults も揃える。",
-  "speed": 120.0
+  "note": "手触りの調整例。いじると何が変わるか: speed=主人公の速さ（px/秒。大きいほど速く動く）・quitPrompt=Esc や閉じるボタンで出る終了の確認の文言。各欄の意味は sample.schema.json の label に。増やしたくなったらフィールドを足し、schema と SampleDoc の defaults も揃える。",
+  "speed": 120.0,
+  "quitPrompt": "Quit?  Enter: yes  /  Esc: no"
 }

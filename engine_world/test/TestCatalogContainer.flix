@@ -107,32 +107,4 @@ mod TestCatalogContainer {
             expected = (Some(42), None),
             (CatalogContainer.get("existing", container),
              CatalogContainer.get("missing", container)))
-
-    // ════════════════════════════════════════════════════════
-    // loadWithCheck: 外部入力の失敗は Err
-    // ════════════════════════════════════════════════════════
-
-    /// dataPath に置いたフィクスチャを読む LoadSpec (schema までは進まないケース用)。
-    def specFor(dataPath: String): CatalogContainer.LoadSpec[Int32] =
-        { dataPath       = dataPath,
-          schemaPath     = "test/assets/no_such.schema.json",
-          containerKey   = "items",
-          expectedFields = (Set.empty(): Set[String]),
-          decodeEntry    = JsonCodec.expectInt }
-
-    /// JSON として読めないファイルは Err (bug! で止めず、呼び側に決めさせる)
-    @Test
-    def testLoadWithCheckFailsOnBrokenJson(): Unit \ {Assert, IO} =
-        let got = run {
-            CatalogContainer.loadWithCheck(specFor("test/assets/broken.catalog.json"))
-        } with Fs.FileRead.runWithIO;
-        Assert.assertEq(expected = true, Result.isErr(got))
-
-    /// ファイルが無いときも Err
-    @Test
-    def testLoadWithCheckFailsOnMissingFile(): Unit \ {Assert, IO} =
-        let got = run {
-            CatalogContainer.loadWithCheck(specFor("test/assets/no_such.catalog.json"))
-        } with Fs.FileRead.runWithIO;
-        Assert.assertEq(expected = true, Result.isErr(got))
 }

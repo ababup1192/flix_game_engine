@@ -551,17 +551,18 @@ func sectionNotes(c *ctx, out *[]string) {
 // ---- 入口 ----------------------------------------------------------------
 
 var sectionsByName = map[string]func(*ctx, *[]string){
-	"section_git":          sectionGit,
-	"section_tests":        sectionTests,
-	"section_reference":    sectionReference,
-	"section_budget":       sectionBudget,
-	"section_tickets":      sectionTickets,
-	"section_style":        sectionStyle,
-	"section_pack":         sectionPack,
-	"section_engine_drift": sectionEngineDrift,
-	"section_builds":       sectionBuilds,
-	"section_agent_eval":   sectionAgentEval,
-	"section_notes":        sectionNotes,
+	"section_git":           sectionGit,
+	"section_tests":         sectionTests,
+	"section_reference":     sectionReference,
+	"section_budget":        sectionBudget,
+	"section_tickets":       sectionTickets,
+	"section_style":         sectionStyle,
+	"section_pack":          sectionPack,
+	"section_engine_drift":  sectionEngineDrift,
+	"section_close_request": sectionCloseRequest,
+	"section_builds":        sectionBuilds,
+	"section_agent_eval":    sectionAgentEval,
+	"section_notes":         sectionNotes,
 }
 
 // Options は Run の付加情報。

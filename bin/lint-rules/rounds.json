@@ -1,0 +1,7 @@
+{
+  "note": "rounds（絵の周回を debug/history/<名前>/ に積む口）の規約データ。この JSON が source of truth で、bin/fge rounds はこれを読んで動く。maxRounds 周を超える snap は終了コード 1 で止まる。askAt 周目を積んだら依頼主に 3 つ聞いて止まる案内を出し、それより後は 1 周ごとに前の周との比べを聞く。historyDir はゲームのルートからの相対。defaultBg は sprite.json から見本のシートを描くときの背景（--bg で差し替え）。いじると変わる物: maxRounds を上げると止まるまでの周が増える・askAt を変えると止まって聞く周が変わる。理由は docs/drawing-floor.md の「絵の周回の理由」。",
+  "maxRounds": 5,
+  "askAt": 2,
+  "historyDir": "debug/history",
+  "defaultBg": "#2a2a33"
+}

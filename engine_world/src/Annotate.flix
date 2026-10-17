@@ -364,19 +364,40 @@ pub mod Annotate {
     /// 注釈を書き出す瞬間の、ゲーム側の文脈（App.withAnnotationContext で繋ぐ）。
     /// facts は (見出し, 値) の並びで、README の冒頭と annotation.json の "context" にこの順で載る
     /// （例: ("場面", "Talk") / ("台本", "assets/x.script.json scenes[id=op_desk].lines[3]")）。
-    /// layers / hudLayers は z の範囲の表 (名前, 底, 天井)（天井は含む）。描画物の z に、最初に
+    /// layers / hudLayers は層の enum（SortingLayer の instance を持つ物）の列。z の範囲は zRange から、
+    /// 名前は ToString から作るので、z の数を書き写さない（HUD の層は "Hud.<名前>" で載る）。
+    /// 例: `{ facts = ("場面", "${w#phase}") :: Nil, layers = Layer.Scene :: Layer.Talk :: Nil, hudLayers = HudLayer.Mouse :: Nil }`。
+    pub type alias Context[t, h] = {
+        facts = List[(String, String)],
+        layers = List[t],
+        hudLayers = List[h]
+    }
+
+    /// 書き出しが引く形: 層の z の範囲の表 (名前, 底, 天井)（天井は含む）。描画物の z に、最初に
     /// 当たった範囲の名前を添える。hudLayers は HUD の中の z で書く（ZBand.liftHud の持ち上げはここで戻す）。
-    pub type alias Context = {
+    /// ゲームは作らない（Context を toTable で写す）。
+    pub type alias Table = {
         facts = List[(String, String)],
         layers = List[(String, Int32, Int32)],
         hudLayers = List[(String, Int32, Int32)]
     }
 
+    /// 層の enum の列から書き出しの表を作る。
+    pub def toTable(context: Context[t, h]): Table
+        with SortingLayer[t], ToString[t], SortingLayer[h], ToString[h] =
+        { facts = context#facts,
+          layers = context#layers |> List.map(layer -> {
+              let (low, high) = SortingLayer.zRange(layer);
+              ("${layer}", low, high) }),
+          hudLayers = context#hudLayers |> List.map(layer -> {
+              let (low, high) = SortingLayer.zRange(layer);
+              ("Hud.${layer}", low, high) }) }
+
     /// 文脈を繋いでいないゲームの既定（README・JSON は従来と同じ形になる）。
-    pub def noContext(): Context = { facts = Nil, layers = Nil, hudLayers = Nil }
+    pub def noContext(): Table = { facts = Nil, layers = Nil, hudLayers = Nil }
 
     /// z の層の名前（表に無ければ None）。HUD の範囲の z は HUD の表で引く。
-    pub def layerOf(context: Context, z: Int32): Option[String] =
+    pub def layerOf(context: Table, z: Int32): Option[String] =
         let (table, local) = if (z >= ZBand.hudBase() and z < ZBand.debugBase())
                                  (context#hudLayers, z - ZBand.hudBase())
                              else (context#layers, z);
@@ -390,7 +411,7 @@ pub mod Annotate {
         annotationJsonWith(noContext(), meta, hitList)
 
     /// annotationJson に文脈を足した版。hits は字ごとのまま（機械が読む側は束ねない）。
-    pub def annotationJsonWith(context: Context,
+    pub def annotationJsonWith(context: Table,
                                meta: { frame = Int64, design = Vec2.Vec2, rect = Rect2.Rect2 },
                                hitList: List[Hit]): String =
         use Util.Json.Json.{JObject, JString, JNumber, JArray};
@@ -419,7 +440,7 @@ pub mod Annotate {
             "h" => JNumber(JsonCodec.floatToBd(rect#size#y))
         })
 
-    def hitJson(context: Context, hit: Hit): Util.Json.Json =
+    def hitJson(context: Table, hit: Hit): Util.Json.Json =
         use Util.Json.Json.{JObject, JString, JNumber};
         JObject(Map#{
             "layer"  => JString(Option.getWithDefault("", layerOf(context, hit#zIndex))),
@@ -437,7 +458,7 @@ pub mod Annotate {
 
     /// readmeBody に文脈を足した版。冒頭に facts を並べ、描画物の z に層の名前を添え、
     /// 1 字ずつ置かれた文字（RichText.place・文字送り）は 1 行の文字列に束ねて出す。
-    pub def readmeBodyWith(context: Context, meta: { frame = Int64, rect = Rect2.Rect2 },
+    pub def readmeBodyWith(context: Table, meta: { frame = Int64, rect = Rect2.Rect2 },
                            hitList: List[Hit]): String =
         let factLines = match context#facts {
             case Nil => ""
@@ -459,7 +480,7 @@ pub mod Annotate {
         + "## 矩形内の描画物\n\n"
         + hitLines
 
-    def hitLine(context: Context, hit: Hit): String =
+    def hitLine(context: Table, hit: Hit): String =
         let label = if (hit#name == "") hit#kind else "${hit#kind} `${hit#name}`";
         let z = match layerOf(context, hit#zIndex) {
             case Some(layer) => "${hit#zIndex} ${layer}"

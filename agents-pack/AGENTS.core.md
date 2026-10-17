@@ -18,7 +18,7 @@ lint・フック・make の口で止まる決まりはここに書かない（�
 | 隠れてはいけない表示（スコア・案内） | `App.withHudView` |
 | 押す物を見た目の手前から選ぶ（窓の奥を押させない） | `SortingLayer.pick(点, 層ごとの当たりの列)` |
 | 説明の窓をはみ出さず置く | `UiTooltip` + `ZStack.topLayer` |
-| 演出の時刻表（動き・効果音・待ち） | `Timeline.build`（`insert`・`withSound`・`buildOrBug`） |
+| 演出の時刻表（動き・効果音・待ち） | `Timeline.build`（`insert`・`withSound`・`buildOrPanic`） |
 | 時刻表を描く・鳴らす | `progressOf`・`soundsOn` / `soundsBetween` → `App.withAudio` |
 | 曲の拍・小節に乗せる | `Duration.Bars` / `ToNextBar` / `ToPickup` + `Timeline.tempo` |
 | 演出の長さ・待ち・溜めの目安 | engine の `docs/pacing.md` |

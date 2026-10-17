@@ -7,7 +7,8 @@ mod SampleDoc {
     // World が持つ record は enum で包む（型検査が record を展開しないため）。
     pub type alias Rec = {
         version = Int32,
-        speed = Float64
+        speed = Float64,
+        quitPrompt = String
     }
     pub enum Doc(Rec)
     pub def rec(d: Doc): Rec = match d { case Doc.Doc(r) => r }
@@ -16,7 +17,7 @@ mod SampleDoc {
 
     /// コード側の既定値（assets/sample.kind.json と同じ値から出発する）。
     pub def defaults(): Doc =
-        Doc.Doc({ version = 1, speed = 120.0 })
+        Doc.Doc({ version = 1, speed = 120.0, quitPrompt = "Quit?  Enter: yes  /  Esc: no" })
 
     /// テキストから Doc へ（fail-open）。JSON でない・形が違うフィールドは既定へ落とす。
     pub def fromJson(text: String): Option[Doc] =
@@ -25,7 +26,8 @@ mod SampleDoc {
     def fromRoot(root: Map[String, Json]): Doc =
         let d = rec(defaults());
         Doc.Doc({ version = JsonCodec.intOr("version", d#version, root),
-                  speed = JsonCodec.floatOr("speed", d#speed, root) })
+                  speed = JsonCodec.floatOr("speed", d#speed, root),
+                  quitPrompt = JsonCodec.stringOr("quitPrompt", d#quitPrompt, root) })
 
     /// path の Doc を読む。読めない・壊れているときは defaults（fail-open）。
     pub def load(p: String): Doc \ Fs.FileRead =

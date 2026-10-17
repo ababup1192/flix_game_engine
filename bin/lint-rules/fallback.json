@@ -15,7 +15,6 @@
     "engine_world/src/Render.flix::scaled": "正当 B: onLeaf が Clipped を剥がすので Clipped はここへ届かない到達不能な分岐",
     "engine_world/src/Render.flix::toDrawables": "正当 B: Poly は Drawable にならず draw が PolygonRenderCmd へ振り分ける — 届いたら振り分けの誤り",
     "engine_world/src/Render.flix::spriteDrawable": "正当 B: region atlas は未対応で呼ぶ側が regionRect=None を渡す規約 (未実装の明示)",
-    "engine_world/src/CatalogContainer.flix::loadWithCheck": "正当 B: Flix の型と *.schema.json の食い違いはコード側の誤り",
     "engine_world/src/HitDoc.flix::checkGaps": "正当 A の一部: loadOrBug からしか呼ばれない下請けで、止める判断は loadOrBug が済ませている",
     "render_gl/src/Shader.flix::compileShader": "正当 B: 同梱の GLSL がコンパイルできないのはコード側の誤り",
     "render_gl/src/Shader.flix::createShaderProgram": "正当 B: 同梱の GLSL がリンクできないのはコード側の誤り",

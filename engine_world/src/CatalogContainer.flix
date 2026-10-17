@@ -68,44 +68,4 @@ pub mod CatalogContainer {
                 meta         = meta
             })
         }
-
-    /// `LoadSpec` の各フィールドを使った起動時の典型処理:
-    ///   1. データ JSON を file から読み込む
-    ///   2. parse / decode で `CatalogContainer[t]` を組み立てる
-    ///   3. `Resource.loadSchemaDiagnostic` で `.schema.json` を読む
-    ///   4. `Resource.checkConsistency` で Flix 型と schema のフィールド集合一致を検査
-    /// 外部入力(ファイル・JSON・schema ファイル)の失敗は `Err` で返し、既定値を使うか
-    /// 止めるかは呼び側が決める。Flix の型と schema.json の食い違いだけはコード側の誤りなので
-    /// その場で止める。
-    /// **唯一の effectful 関数**。pure な `encode` / `decode` は別途呼べる。
-    pub def loadWithCheck(spec: LoadSpec[t]): Result[String, CatalogContainer[t]] \ Fs.FileRead =
-        let dataResult = run {
-            Fs.ReadFile.read(spec#dataPath)
-        } with Fs.ReadFile.runWithFileRead;
-        forM (
-            content   <- dataResult |> Result.mapErr(error ->
-                             "CatalogContainer.loadWithCheck file read failed: ${spec#dataPath} :: ${error}");
-            parsed    <- DocJson.parse(content) |> Option.toOk(
-                             "CatalogContainer.loadWithCheck JSON parse failed: ${spec#dataPath}");
-            container <- decode(spec#containerKey, spec#decodeEntry, parsed) |> Option.toOk(
-                             "CatalogContainer.loadWithCheck decode failed: ${spec#dataPath}");
-            schema    <- Resource.loadSchemaDiagnostic(spec#schemaPath) |> Result.mapErr(msg ->
-                             "CatalogContainer.loadWithCheck schema load failed: ${msg}")
-        ) yield {
-            match Resource.checkConsistency(spec#expectedFields, schema) {
-                case Err(msg) =>
-                    bug!("CatalogContainer.loadWithCheck schema/type mismatch (${spec#dataPath}): ${msg}") // bug-ok: Flix の型と schema.json の食い違いはコード側の誤り
-                case Ok(())   => container
-            }
-        }
-
-    /// `loadWithCheck` の引数を 1 つの record にまとめたもの。フィールドが多くなりがちなので
-    /// 名前付きで渡せるようにしている。
-    pub type alias LoadSpec[t] = {
-        dataPath       = String,
-        schemaPath     = String,
-        containerKey   = String,
-        expectedFields = Set[String],
-        decodeEntry    = Json -> Option[t]
-    }
 }

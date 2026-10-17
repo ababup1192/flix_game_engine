@@ -62,7 +62,7 @@ pub mod UiRender {
         let items = UiExtract.extract(ui, rects, vis, atlasOf, textureInfoOf);
         let offset = layerOffset(ui, root);
         let raised = items |> List.map(placed ->
-            { item = EngineInternal.zMapped(z -> z + offset, placed#item) | placed });
+            { item = zMapped(z -> z + offset, placed#item) | placed });
         let polyItems = UiExtract.extractPolys(ui, rects, vis)
             |> List.flatMap(entry -> {
                 let (_id, _pos, poly) = entry;
@@ -72,10 +72,23 @@ pub mod UiRender {
                       item = RawDraw.polygon(sub, poly#color, poly#zIndex + offset) |> Render.fade(poly#alpha) })
             });
         let shapeItems = UiExtract.extractShapes(ui, rects, vis)
-            |> List.map(placed -> { item = EngineInternal.zMapped(z -> z + offset, placed#item) | placed });
+            |> List.map(placed -> { item = zMapped(z -> z + offset, placed#item) | placed });
         List.append(raised, List.append(shapeItems, polyItems))
 
     /// root の layer を layers store から引き、CanvasLayer.layerStride 倍した zIndex 加算量を返す。未登録は 0。
     def layerOffset(ui: UiStore.UiWorld, root: EntityId): Int32 =
         Option.getWithDefault(0, Map.get(root, ui#layers)) * CanvasLayer.layerStride()
+
+    // WhyNot: 同じ 10 行を UiRender・SortingLayer・App に 1 つずつ置く。pub にするとゲームから z を書き換えられ、
+    //   どの層に入るかが表から読めなくなる（Flix 0.77 にはパッケージの中だけで見える pub が無い）。
+    /// 描画物の重なり順（zIndex）を f で写す（Clipped は中身の z）。UI の層の分だけ z を上げる所だけで使う。
+    def zMapped(f: Int32 -> Int32, item: Render.Item): Render.Item =
+        match item {
+            case Render.Item.Sprite(s)  => Render.Item.Sprite({ zIndex = f(s#zIndex) | s })
+            case Render.Item.Text(x)    => Render.Item.Text({ zIndex = f(x#zIndex) | x })
+            case Render.Item.Box(b)     => Render.Item.Box({ zIndex = f(b#zIndex) | b })
+            case Render.Item.Poly(p)    => Render.Item.Poly({ zIndex = f(p#zIndex) | p })
+            case Render.Item.Shader(s)  => Render.Item.Shader({ zIndex = f(s#zIndex) | s })
+            case Render.Item.Clipped(c) => Render.Item.Clipped({ inner = zMapped(f, c#inner) | c })
+        }
 }

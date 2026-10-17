@@ -44,7 +44,7 @@ else
 HEADLESS_RUN ?= JAVA_TOOL_OPTIONS="-Djava.awt.headless=true" FLIX_CMD=$(FLIX) "$(ENGINE)/bin/headless-run"
 endif
 
-.PHONY: help status run debug test build check render render-all gallery-sounds reference-check reference-update loc api module src src-index hooks check-docs-sync compare agent-eval agent-eval-compare agent-eval-release
+.PHONY: help status run debug test build check render render-all gallery-sounds reference-check reference-update render-budget loc api module src src-index hooks check-docs-sync compare agent-eval agent-eval-compare agent-eval-release
 
 # 共通の口の一覧。engine を上げるとここも一緒に新しくなる
 # （ゲーム側の Makefile へ写さないので、口が増えても書き足しに回らなくて済む）。
@@ -62,7 +62,8 @@ help:
 	@echo "                          場面: $(SHOTS)"
 	@echo "  make render-all         全部 gallery/ へ描き出す（決定的）"
 	@echo "  make gallery-sounds     効果音を debug/sounds/ に集め、波形とスペクトログラムを debug/sounds.png に描く"
-	@echo "  make reference-check    描き出した絵をリファレンス画像とバイト比較する"
+	@echo "  make reference-check    描き出した絵をリファレンス画像とバイト比較し、絵の値段（render-budget）も見る"
+	@echo "  make render-budget      gallery/ の記録で 1 場面の描き物の数を予算と比べる（描き直さない・render-all の後）"
 	@echo "  make reference-update   いまの gallery をリファレンス画像として更新する"
 	$(if $(PALETTE),@echo "  make palette            Studio が読む色の写し ($(PALETTE)) を無条件に作り直す")
 	@echo "  make api Q=<名前>        エンジン API の型・引数を 1 行で引く（ソースを読む前にまずこれ）"
@@ -214,8 +215,15 @@ gallery-sounds:
 		"$$fge" waveform $$music --out debug/music.png || exit 1; \
 	fi
 
+# 仕上げの確認: 基準の絵との差（reference-check.sh）と、絵の値段（render-budget）。
 reference-check: render-all
 	"$(ENGINE)/bin/reference-check.sh"
+	@$(MAKE) --no-print-directory render-budget
+
+# 絵の値段（1 場面が組んだ描き物の数）を、render-all が gallery/ に残した記録で裁く。描き直さないので軽い。
+# 上限は engine の bin/lint-rules/check-render-budget.json・場面ごとの上限は reference/ITEMS.caps.tsv。
+render-budget:
+	@fge=bin/fge; [ -x "$$fge" ] || fge="$(ENGINE)/bin/fge"; "$$fge" check-render-budget .
 
 reference-update: render-all
 	"$(ENGINE)/bin/reference-update.sh"

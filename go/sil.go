@@ -67,44 +67,7 @@ func encodePNG(width, height int, grid [][]pxlib.RGBA) []byte {
 // legendColorsOf は legend の 文字 → RGBA と、解けなかった色名 (文字=名前) を返す。
 // 解けない文字は塗らない (palette の縄張り)。
 func legendColorsOf(gameDir string, doc map[string]any) (map[string]pxlib.RGBA, []string) {
-	names := map[string]pxlib.RGBA{}
-	for _, rel := range pxlib.WalkJSON(gameDir, pxlib.SpriteExcludedDirs) {
-		if strings.HasSuffix(rel, ".theme.json") {
-			for k, v := range pxlib.ColorMapOf(pxlib.ReadJSON(filepath.Join(gameDir, rel))) {
-				names[k] = v
-			}
-		}
-	}
-	if ref, ok := doc["paletteFile"].(string); ok {
-		for k, v := range pxlib.ColorMapOf(pxlib.ReadJSON(filepath.Join(gameDir, ref))) {
-			names[k] = v
-		}
-	}
-	for k, v := range pxlib.ColorMapOf(doc["palette"]) {
-		names[k] = v
-	}
-
-	colors := map[string]pxlib.RGBA{}
-	var unresolved []string
-	legend, _ := pxlib.AsObject(doc["legend"])
-	for char, value := range legend {
-		if direct, ok := pxlib.RGBAOfValue(value); ok {
-			colors[char] = direct
-			continue
-		}
-		if s, ok := value.(string); ok {
-			name := strings.TrimPrefix(s, "@")
-			if got, ok := names[name]; ok {
-				colors[char] = got
-				continue
-			}
-			unresolved = append(unresolved, char+"="+name)
-			continue
-		}
-		unresolved = append(unresolved, char)
-	}
-	sort.Strings(unresolved)
-	return colors, unresolved
+	return pxlib.LegendColorsOf(gameDir, doc)
 }
 
 func toGray(px pxlib.RGBA) pxlib.RGBA {

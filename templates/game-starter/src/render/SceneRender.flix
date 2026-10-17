@@ -41,13 +41,14 @@ mod SceneRender {
     /// name をここの名前とそろえる。ラベルを足しても描き出す場面は増えない。
     /// 場面を足したら、ここと sceneOf と Makefile の SHOTS を一緒に足す。
     pub def shotNames(): List[String] =
-        "main" :: Nil
+        "main" :: "quit" :: Nil
 
     /// 名前 → その場面の World。shotNames と対で保つ。名前で引く形にしてあるので、
     /// SHOT で 1 枚だけ生成するときに残りの場面は組まない。
     def sceneOf(name: String, w0: World.World): Option[World.World] =
         match name {
             case "main" => Some(w0)
+            case "quit" => Some(World.askQuit(w0))   // Esc・閉じるボタンで出る終了の確認（Layer.Prompt）
             case _      => None
         }
 
@@ -105,7 +106,8 @@ mod SceneRender {
     /// drawWith を通す。
     def shoot(cfg: HeadlessRender.RenderConfig, texInfo: String -> Option[GameEngine.TextureInfo],
               ctx: App.ViewCtx, w: World.World, name: String): String \ IO =
-        let items = View.frame(ctx, { t = renderTime() | w });
+        // 実機は静的な層（View.frameBorder）を別に敷くので、描き出しでは同じ物を足して並べる。
+        let items = List.append(View.frame(ctx, { t = renderTime() | w }), View.frameBorder(w));
         let surfaces = Render.shaderSurfaces(items);
         let (drawables, polygons) = Render.drawWith(texInfo, Render.withoutShaders(items));
         HeadlessRender.renderPngWith(cfg, drawables, polygons, surfaces, name);

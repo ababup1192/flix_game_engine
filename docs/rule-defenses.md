@@ -67,5 +67,5 @@
 - ③ 押す物の当たりの順を見た目の層とそろえる: 入れた。`SortingLayer.pick` が zRange の底で前後を決める。agent-eval の click-front-layer で確かめる。
 - ④ 層の z の範囲を順の列から作る（`order()`）: 見送り。
 - ⑤ 葉の z の幅 32 越えを描き出しで warnOnce: 数えるとゲームの描き出しで 32 越えが 11 回あったので見送り。lint の leafZRange と文書のまま。
-- ⑥ App の内部の口: RemoteDebug を `App.RemoteDebug` の子へ移し、historyLimit・resumePoint・worldAt・applyReload・sceneItems の 5 つを pub から外した。外の module からは E0237。`EngineInternal` は兄弟 3 つで使うので forbid のまま。
+- ⑥ App の内部の口: RemoteDebug を `App.RemoteDebug` の子へ移し、historyLimit・resumePoint・worldAt・applyReload・sceneItems の 5 つを pub から外した。外の module からは E0237。z を書き換える zMapped は使う 3 つ（App・SortingLayer・UiRender）に非公開の写しを置き、`EngineInternal` と forbid の engine-internal を消した（0.35.38）。
 - 見送り: 秒と拍の phantom（Timeline.Duration の case 名で足りる）・音の名前の型（App に型の引数が増える。綴りは script で見る方が安い）・確認の窓を 1 つの Option にまとめる（ゲーム側の案）。newtype は 0.77.0 では case を外から作れるので守りにならない。

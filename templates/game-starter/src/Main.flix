@@ -10,7 +10,7 @@
 //   view    = World → 「何をどこに描くか」。World は読むだけで変えない。
 //   reloads = 保存で読み直す Doc（各 1 本の watchFile に展開される）。
 // 場面（表紙・クリア等）が増えたら World にフェーズを持たせ、step / frame を分岐させる。
-// App.game の外側で足す設定（reloadOn・onRenderRequest・withDebug）は戻り値の App に後ろから pipe で足す。
+// App.game の外側で足す設定（reloadOn・終了の確認・静的な層・注釈の文脈・withDebug）は戻り値の App に後ろから pipe で足す。
 // 音も同じ形で足す: 起きた音 = App.withAudio・続く音 = withSustained（実例は templates/race-starter/src/Main.flix）、
 // バスの音量やダッキング = withMixer + mixer.json（engine の docs/audio.md の「音の通り道」）。
 // 複数システムの明示的な列挙が要る高度なゲームは、make から始める従来のビルダー（addSystem / withView / …）へ降りる。
@@ -41,6 +41,16 @@ def main(): Unit \ IO =
                 // 鍵が同じ間は上げ直さないので、毎フレームの費用はゼロ。
                 |> App.withSpriteAtlases(w ->
                     { texture = World.atlasName(), key = w#atlasKey, baked = w#atlas } :: Nil)
+                // 動かない絵（画面の縁の枠）は 1 度だけ GPU に作り、鍵が変わるまで使い回す。
+                |> App.withStaticLayer(View.staticKey, View.frameBorder)
+                // 窓の閉じるボタンも Esc と同じ確認へ回し、はいを選んだら終わる（quitWhen を差し替えると
+                // 既定の「Esc ですぐ終了」は外れる。Esc は Controls.step が確認へ回す）。
+                |> App.withCloseRequest(w -> checked_ecast(World.askQuit(w)))
+                |> App.quitWhen((_, w) -> checked_ecast(World.isQuitting(w)))
+                // F8 で書き出す注釈チケットに、その瞬間の文脈と z の層の名前を添える（層の表は ZOrder）。
+                |> App.withAnnotationContext(w -> checked_ecast(
+                    { facts = ("主人公", "x=${w#x} y=${w#y}") :: ("終了の確認", "${w#quit}") :: Nil,
+                      layers = ZOrder.layers(), hudLayers = (Nil: List[ZOrder.Layer]) }))
                 |> App.reloadOn(GameEngine.Key.F1, Controls.reloadAll)
                 // 走行中の POST /render（Studio の「生成して」）は SceneRender.all と同じ実体を呼ぶ。
                 |> App.onRenderRequest(SceneRender.allShots)

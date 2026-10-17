@@ -30,7 +30,6 @@
 - **Render** — 「何をどう見せたいか」だけ書いた Item を、描画部が食べられる形に変換する。
 - **RawDraw** — 単色ベタの図形プリミティブ（box / circle / star / ellipse / sector / ngon など）。材料であって、View に直接並べる完成品ではない。正当な用途は HUD 下地・デバッグ描画・fail-open の仮板。
 - **ZStack** — 描く順を「積んだ順」で決める木（leaf / of / zIndex / topLayer / mapItems）。z の数は葉の中の小さな前後（0..31）だけ。
-- **EngineInternal** — エンジンの中だけで使う口（z を書く zMapped。SortingLayer.compose・App.composeScene・UiRender が使う）。ゲームからは呼ばない（forbid の engine-internal が止める）。
 - **SortingLayer** — 画面全体の層を名前で宣言する表（trait。ゲームが enum の instance で範囲を書く）と、層ごとの ZStack の木を 1 本の絵の列にする compose。区画を越えたら天井で止め、ViewCtx#warnOnce で 1 回だけ知らせる。
 - **TextDraw** — 文字列を「中心をここに置きたい」で配置する。
 - **RichText** — 一部だけ色や太さの違う文章をスパンの列として持ち、描画アイテムへ組む。

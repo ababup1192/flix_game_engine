@@ -10,6 +10,13 @@
       "min": 10,
       "max": 600,
       "default": 120
+    },
+    "quitPrompt": {
+      "kind": "field",
+      "type": "string",
+      "label": "終了の確認の文言（Esc・閉じるボタンで出る窓）",
+      "order": 2,
+      "default": "Quit?  Enter: yes  /  Esc: no"
     }
   }
 }

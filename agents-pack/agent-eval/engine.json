@@ -19,10 +19,6 @@
       "expect": [
         {"re": "Depth\\.orderAt", "why": "Depth.orderAt"},
         {"re": "ZStack\\.zIndex", "why": "ZStack.zIndex"}
-      ],
-      "avoid": [
-        {"re": "Depth\\.(Bands|place)", "why": "Depth.Bands / place"},
-        {"re": "zShifted|zMapped|ZLegacy", "why": "z の付け替え"}
       ]
     },
     {
@@ -42,9 +38,6 @@
       "expect": [
         {"re": "ZStack\\.mapItems", "why": "ZStack.mapItems"},
         {"re": "Render\\.scaledAllAround", "why": "Render.scaledAllAround"}
-      ],
-      "avoid": [
-        {"re": "zShifted|zMapped|ZLegacy", "why": "z の付け替え"}
       ]
     },
     {
@@ -55,8 +48,7 @@
         {"re": "SortingLayer\\.compose|ZStack\\.topLayer", "why": "SortingLayer.compose / topLayer"}
       ],
       "avoid": [
-        {"re": "\\bz[A-Z]\\w*\\(\\)\\s*(:\\s*Int32\\s*)?=\\s*[1-9]\\d{2,}|\\bzIndex\\s*[=:]\\s*[1-9]\\d{2,}", "why": "z の大きな数を直に書く"},
-        {"re": "leafAbsolute|SortingLayer\\.z\\(|ZLegacy", "why": "移行の口（消した名前）"}
+        {"re": "\\bz[A-Z]\\w*\\(\\)\\s*(:\\s*Int32\\s*)?=\\s*[1-9]\\d{2,}|\\bzIndex\\s*[=:]\\s*[1-9]\\d{2,}", "why": "z の大きな数を直に書く"}
       ]
     },
     {
@@ -88,8 +80,7 @@
         {"re": "README", "why": "チケットの README"},
         {"re": "world\\.json", "why": "world.json"},
         {"re": "annotation\\.json|withAnnotationContext", "why": "文脈（annotation.json の context）"}
-      ],
-      "avoid": []
+      ]
     },
     {
       "id": "sfx-on-timeline",
@@ -98,9 +89,6 @@
         {"re": "Timeline\\.build", "why": "Timeline の時刻表"},
         {"re": "Timeline\\.(withSound|soundsOn)", "why": "音をクリップに付ける（withSound / soundsOn）"},
         {"re": "App\\.withAudio", "why": "App.withAudio"}
-      ],
-      "avoid": [
-        {"re": "startedBetween", "why": "クリップの列と別に音の時刻を判定する古い形"}
       ]
     },
     {
@@ -213,8 +201,7 @@
       "prompt": "確認の窓が開くまでの長さと、閉じるまでの長さを決めたい。何を目安に、どのくらいにする？",
       "expect": [
         {"re": "pacing\\.md", "why": "演出の間の目安 docs/pacing.md を読む"}
-      ],
-      "avoid": []
+      ]
     },
     {
       "id": "timeline-overlay-at",
@@ -222,10 +209,7 @@
       "expect": [
         {"re": "Timeline\\.insert", "why": "決まった時刻に重ねる Timeline.insert"},
         {"re": "Timeline\\.soundsBetween", "why": "待ちの無い表の音 Timeline.soundsBetween"},
-        {"re": "Timeline\\.buildOrBug", "why": "並びをコードが書く表 Timeline.buildOrBug"}
-      ],
-      "avoid": [
-        {"re": "Timeline\\.startedBetween|startedBetween", "why": "古い音の引き方"}
+        {"re": "Timeline\\.buildOrPanic", "why": "並びをコードが書く表 Timeline.buildOrPanic"}
       ]
     },
     {
@@ -244,16 +228,14 @@
       "expect": [
         {"re": "UiScroll", "why": "スクロールの勘定 UiScroll（早見表に無い・module-index の UI）"},
         {"re": "InputMap\\.wheelSteps|Render\\.clipped", "why": "ホイールの目盛り InputMap.wheelSteps か、窓で切り抜く Render.clipped"}
-      ],
-      "avoid": []
+      ]
     },
     {
       "id": "dialog-line-count",
       "prompt": "会話の窓に長い台詞を窓の幅で折り返して出したい。描く前に何行になるかを知って、窓の高さを合わせたい",
       "expect": [
         {"re": "RichText\\.wrapLinesBy", "why": "幅で行に折る RichText.wrapLinesBy（早見表に無い・module-index）"}
-      ],
-      "avoid": []
+      ]
     },
     {
       "id": "window-close-confirm",

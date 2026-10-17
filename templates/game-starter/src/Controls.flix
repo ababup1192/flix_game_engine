@@ -14,9 +14,18 @@ mod Controls {
         { x = axis(held(k#left), held(k#right)),
           y = axis(held(k#up), held(k#down)) }
 
-    /// 毎フレームのシステム。
+    /// 毎フレームのシステム。終了の確認の窓が出ている間は Enter で終わる・Esc で戻る。
+    /// Esc と Enter は OS の決まりに合わせた固定のキー（割り当ての Doc には載せない）。
     pub def step(frame: App.Frame, w: World.World): World.World =
-        World.step(inputOf(frame, w#keys), frame#dt, w)
+        let pressed = key -> App.justPressed(key, frame);
+        let w1 =
+            if (World.isAskingQuit(w))
+                (if (pressed(GameEngine.Key.Enter)) World.answerQuit(true, w)
+                 else if (pressed(GameEngine.Key.Escape)) World.answerQuit(false, w)
+                 else w)
+            else if (pressed(GameEngine.Key.Escape)) World.askQuit(w)
+            else w;
+        World.step(inputOf(frame, w1#keys), frame#dt, w1)
 
     // ── Doc の読み直し（watchFile / F1） ──
 

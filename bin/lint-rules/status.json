@@ -11,6 +11,7 @@
     "section_style",
     "section_pack",
     "section_engine_drift",
+    "section_close_request",
     "section_builds",
     "section_agent_eval",
     "section_notes"
@@ -28,5 +29,12 @@
   "notesWidth": 80,
   "testLogsDir": ".test-logs",
   "buildGlobs": ["templates/*/build", "bench/*/build"],
-  "buildDirs": ["engine", "render_gl", "engine_world", "engine_tools"]
+  "buildDirs": ["engine", "render_gl", "engine_world", "engine_tools"],
+  "closeRequest": {
+    "note": "ゲームの src/ に窓を開く呼び出し (appPattern) があるのに、閉じるボタンを World へ渡す口 (hookPattern) がどこにも無いとき 1 行の警告。コメントの中の名前は数えない。engine リポ自身 (templates/ がある所) では流さない。",
+    "srcDir": "src",
+    "appPattern": "\\bApp\\.launch\\b",
+    "hookPattern": "\\bApp\\.withCloseRequest\\b",
+    "message": "終了確認 App.withCloseRequest が繋がっていない: 閉じるボタンで確認なしに終わる → App.withCloseRequest + App.quitWhen（AGENTS.md 早見表「閉じるボタンで『終了しますか？』」）"
+  }
 }

@@ -21,7 +21,7 @@ PALETTE_DEPS := assets/__NAME__.theme.json assets/__NAME__.sprite.json \
                 src/Palette.flix src/ThemeDoc.flix
 # 描き出せる場面の名前（source of truth は SceneRender.shotNames。ここは使い方に出す写し）。
 # 場面を足したら SceneRender.shotNames と一緒にここも足す。
-SHOTS := main
+SHOTS := main quit
 
 # ENGINE の場所が違うと include ごと落ち、make は「そんなファイルは無い」としか言わない。
 # 先に自前で見て、直し方の 1 行を出してから止める（この検査が無いと make status も塞がる）。

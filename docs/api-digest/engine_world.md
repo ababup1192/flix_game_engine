@@ -79,19 +79,23 @@
 - 描画命令（Drawable）の列から矩形に重なる物を列挙する。view を持たず生の描画チャンネルを
   `pub def hitsFromDrawables(sizeOf: String -> Option[GameEngine.TextureInfo] \ ef, rect: Rect2.Rect2, ds: List[GameEngine.Drawable]): List[Hit] \ ef`
 - 注釈を書き出す瞬間の、ゲーム側の文脈（App.withAnnotationContext で繋ぐ）。
-  `pub type alias Context = { facts = List[(String, String)], layers = List[(String, Int32, Int32)], hudLayers = List[(String, Int32, Int32)] }`
+  `pub type alias Context[t, h] = { facts = List[(String, String)], layers = List[t], hudLayers = List[h] }`
+- 書き出しが引く形: 層の z の範囲の表 (名前, 底, 天井)（天井は含む）。描画物の z に、最初に
+  `pub type alias Table = { facts = List[(String, String)], layers = List[(String, Int32, Int32)], hudLayers = List[(String, Int32, Int32)] }`
+- 層の enum の列から書き出しの表を作る。
+  `pub def toTable(context: Context[t, h]): Table with SortingLayer[t], ToString[t], SortingLayer[h], ToString[h]`
 - 文脈を繋いでいないゲームの既定（README・JSON は従来と同じ形になる）。
-  `pub def noContext(): Context`
+  `pub def noContext(): Table`
 - z の層の名前（表に無ければ None）。HUD の範囲の z は HUD の表で引く。
-  `pub def layerOf(context: Context, z: Int32): Option[String]`
+  `pub def layerOf(context: Table, z: Int32): Option[String]`
 - annotation.json の本文。デザイン座標の矩形と、重なっていた描画物の一覧を機械可読に残す。
   `pub def annotationJson(meta: { frame = Int64, design = Vec2.Vec2, rect = Rect2.Rect2 }, hitList: List[Hit]): String`
 - annotationJson に文脈を足した版。hits は字ごとのまま（機械が読む側は束ねない）。
-  `pub def annotationJsonWith(context: Context, meta: { frame = Int64, design = Vec2.Vec2, rect = Rect2.Rect2 }, hitList: List[Hit]): String`
+  `pub def annotationJsonWith(context: Table, meta: { frame = Int64, design = Vec2.Vec2, rect = Rect2.Rect2 }, hitList: List[Hit]): String`
 - README.md に挟む人間向けの要約（囲った場所と、そこに描かれていた物）。
   `pub def readmeBody(meta: { frame = Int64, rect = Rect2.Rect2 }, hitList: List[Hit]): String`
 - readmeBody に文脈を足した版。冒頭に facts を並べ、描画物の z に層の名前を添え、
-  `pub def readmeBodyWith(context: Context, meta: { frame = Int64, rect = Rect2.Rect2 }, hitList: List[Hit]): String`
+  `pub def readmeBodyWith(context: Table, meta: { frame = Int64, rect = Rect2.Rect2 }, hitList: List[Hit]): String`
 - 同じ行（同じ y・同じ z）に左から右へ続けて置かれた text を 1 件へ束ねる。
   `pub def mergeTextRuns(hitList: List[Hit]): List[Hit]`
 - ドラッグ中の矩形オーバーレイ（薄い塗り + 枠線）。デザイン座標の列に混ぜて描く。
@@ -123,7 +127,7 @@
 - 生成したドット絵アトラス 1 枚ぶんの受け渡し。
   `pub type alias AtlasUpload = { texture = String, key = String, baked = PxSpriteAtlas.Baked }`
 - ゲーム 1 本の宣言。make で空を作り、addStartup / addSystem / reloadOn / withView /
-  `pub type alias App[w: Type, ef: Eff] = { init = Vec2.Vec2 -> w \ ef, startupSystems = List[w -> w \ ef], updateSystems = List[(Frame, w) -> w \ ef], reload = Option[(GameEngine.Key, w -> w \ {Fs.FileRead})], watch = List[(String, w -> w \ {Fs.FileRead})], view = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], passes = w -> List[Render.Pass] \ ef, fonts = List[String], camera = Option[w -> Vec2.Vec2 \ ef], zoom = Option[w -> Float64 \ ef], cameraBounds = Option[w -> Rect2.Rect2 \ ef], parallaxLayers = List[(Float64, (ViewCtx, w) -> List[Render.PlacedItem] \ ef)], hudView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], audio = { before = w, after = w } -> List[String] \ ef, sustained = w -> List[Sustain] \ ef, mixer = Option[w -> AudioMixer.Mixer \ ef], quit = (Frame, w) -> Bool \ ef, closeRequest = Option[w -> w \ ef], debug = Bool, debugView = Option[(String, w -> (List[GameEngine.Drawable], List[GameEngine.TileMapRenderCmd], List[GameEngine.PolygonRenderCmd]) \ ef)], worldDump = Option[(Rect2.Rect2, w) -> String \ ef], annotationContext = Option[w -> Annotate.Context \ ef], staticLayer = Option[{ key = w -> GameEngine.StaticKey, build = w -> List[Render.PlacedItem] }], tileLayers = Option[w -> List[TileLayerSpec]], spriteAtlases = w -> List[AtlasUpload], pixelSnap = w -> Float64, statusLine = Option[w -> String \ ef], remoteRender = Option[Unit -> List[String] \ IO], remoteHandlers = List[(String, (Map[String, String], w) -> Result[String, w] \ {Fs.FileRead})], fixedStep = Option[Float64] }`
+  `pub type alias App[w: Type, ef: Eff] = { init = Vec2.Vec2 -> w \ ef, startupSystems = List[w -> w \ ef], updateSystems = List[(Frame, w) -> w \ ef], reload = Option[(GameEngine.Key, w -> w \ {Fs.FileRead})], watch = List[(String, w -> w \ {Fs.FileRead})], view = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], passes = w -> List[Render.Pass] \ ef, fonts = List[String], camera = Option[w -> Vec2.Vec2 \ ef], zoom = Option[w -> Float64 \ ef], cameraBounds = Option[w -> Rect2.Rect2 \ ef], parallaxLayers = List[(Float64, (ViewCtx, w) -> List[Render.PlacedItem] \ ef)], hudView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], audio = { before = w, after = w } -> List[String] \ ef, sustained = w -> List[Sustain] \ ef, mixer = Option[w -> AudioMixer.Mixer \ ef], quit = (Frame, w) -> Bool \ ef, closeRequest = Option[w -> w \ ef], debug = Bool, debugView = Option[(String, w -> (List[GameEngine.Drawable], List[GameEngine.TileMapRenderCmd], List[GameEngine.PolygonRenderCmd]) \ ef)], worldDump = Option[(Rect2.Rect2, w) -> String \ ef], annotationContext = Option[w -> Annotate.Table \ ef], staticLayer = Option[{ key = w -> GameEngine.StaticKey, build = w -> List[Render.PlacedItem] }], tileLayers = Option[w -> List[TileLayerSpec]], spriteAtlases = w -> List[AtlasUpload], pixelSnap = w -> Float64, statusLine = Option[w -> String \ ef], remoteRender = Option[Unit -> List[String] \ IO], remoteHandlers = List[(String, (Map[String, String], w) -> Result[String, w] \ {Fs.FileRead})], fixedStep = Option[Float64] }`
 - 初期 World だけを持つ空の App。絵はまだ無い（withView で繋ぐまで何も描かない）。
   `pub def make(init: w): App[w, ef]`
 - 初期 World を design 解像度（project.json の designWidth/Height）から組む入口。
@@ -185,7 +189,7 @@
 - 注釈（F8 の矩形）を書き出すとき「囲った瞬間の World」をテキストにしてチケットへ
   `pub def withWorldDump(f: (Rect2.Rect2, w) -> String \ ef, app: App[w, ef]): App[w, ef]`
 - 注釈（F8 の矩形）を書き出すとき、README の冒頭と annotation.json の "context" に載せる
-  `pub def withAnnotationContext(f: w -> Annotate.Context \ ef, app: App[w, ef]): App[w, ef]`
+  `pub def withAnnotationContext(f: w -> Annotate.Context[t, h] \ ef, app: App[w, ef]): App[w, ef] with SortingLayer[t], ToString[t], SortingLayer[h], ToString[h]`
 - World の 1 行サマリ（例: "phase=Playing ball=(163.2,207.9) lives=3"）を繋ぐ。
   `pub def withStatusLine(f: w -> String \ ef, app: App[w, ef]): App[w, ef]`
 - リモートデバッグ（HTTP）の POST /render が実行する「描き出しの実体」を繋ぐ。
@@ -226,6 +230,10 @@
   `pub enum Branch with Eq, ToString { case Paused case Resuming case Running }`
 - F8 と停止状態から、このフレームの進み方と「F8 が今トグルされたか」を決める。
   `pub def decideBranch(input: { f8Pressed = Bool, canDebug = Bool, remoteHold = Bool, wasPaused = Bool }): { branch = Branch, toggled = Bool }`
+- 一発で鳴らした名前とループで鳴らした名前の覚え（ゲームの間ずっと持つ）。
+  `pub type alias SoundUses = { oneShot = Set[String], looped = Set[String] }`
+- このフレームの一発の音 plays とループの音 looped を覚えに足し、初めて両方に出た名前を返す。
+  `pub def noteSoundUses(plays: List[String], looped: List[String], uses: SoundUses): (SoundUses, List[String])`
 - 一発の音（audio）のうち、鳴らす前にループを外す名前。鳴り続ける音（sustained）として
   `pub def unloopedOneShots(plays: List[String], living: List[String]): List[String]`
 - タイル層の GPU 生成結果の持ち回し。ループが引数で持ち回す。
@@ -518,10 +526,6 @@
   `pub def encode(encodeEntry: t -> Json, catalog: CatalogContainer[t]): Json`
 - JSON object から containerKey 配下を entries、残りを meta として decode する。
   `pub def decode(containerKey: String, decodeEntry: Json -> Option[t], element: Json): Option[CatalogContainer[t]]`
-- `LoadSpec` の各フィールドを使った起動時の典型処理:
-  `pub def loadWithCheck(spec: LoadSpec[t]): Result[String, CatalogContainer[t]] \ Fs.FileRead`
-- `loadWithCheck` の引数を 1 つの record にまとめたもの。フィールドが多くなりがちなので
-  `pub type alias LoadSpec[t] = { dataPath = String, schemaPath = String, containerKey = String, expectedFields = Set[String], decodeEntry = Json -> Option[t] }`
 
 ## Clock — `engine_world/src/Clock.flix`
 - 反復タイマー: acc に dt を足し、interval に達したら（== も含む）1回 fire（rest に余りを残す）。
@@ -742,10 +746,6 @@
   `pub def step(dt: Float64, ts: Tweens[k, c]): (Tweens[k, c], List[((k, c), Out)], List[(k, c)]) with Order[k], Order[c]`
 - 整数を start から end へ 1 つずつ動かす tween の、進み u（0..1）の時点の値。
   `pub def steppedInt(start: Int32, end: Int32, easing: Easing, u: Float64): Int32`
-
-## EngineInternal — `engine_world/src/EngineInternal.flix`
-- 描画物の重なり順（zIndex）を f で写す（Clipped は中身の z）。
-  `pub def zMapped(f: Int32 -> Int32, item: Item): Item`
 
 ## Flex — `engine_world/src/Flex.flix`
 - レイアウトノード。Leaf = 実寸つき描画物、Box = 子を並べる容器、
@@ -1075,49 +1075,6 @@
   `pub def toLightMapConfigWithLights(spec: Spec, runtimeLights: List[Light.Light], ctx: { occluders = List[List[Vec2.Vec2]], viewport = Vec2.Vec2, passName = String, z = Int32 }): Light.LightMapConfig`
 - path を読んで Spec にする。DocJson.readJson と同じ fail 経路
   `pub def load(path: String): Result[JsonError, Spec] \ Fs.FileRead`
-
-## MapResource — `engine_world/src/legacy/MapResource.flix`
-- Level の中身。フィールドの集合はここに集約し、enum 経由で持ち回す。
-  `pub type alias LevelData = { tileSize = Int32, width = Int32, height = Int32, materialId = String, manualTiles = List[ManualTile], decorTiles = List[ManualTile], entities = List[Entity], editorPalette = Option[EditorPalette], intGrid = Vector[Int32] }`
-- IDE Maps タブの Palette 設定 (Floor / Walls 各層)。
-  `pub type alias EditorPalette = { floor = EditorLayerPalette, walls = EditorLayerPalette }`
-- 1 レイヤー分の Palette 設定。
-  `pub type alias EditorLayerPalette = { textureName = Option[String], cellW = Int32, cellH = Int32, marginX = Int32, marginY = Int32 }`
-- `Saveable[Level]` を実装可能にするための単一 case ラッパ。
-  `pub enum Level { case Level(LevelData) }`
-- `Level` から内部の record を取り出す。
-  `pub def levelData(l: Level): LevelData`
-- 描画タイル 1 枚の記述。autotile の上書きにも、autotile 無しの素描画にも使う。
-  `pub type alias ManualTile = { x = Int32, y = Int32, srcX = Int32, srcY = Int32, flipH = Bool, flipV = Bool }`
-- `pub type alias Entity = { identifier = String, x = Int32, y = Int32, fields = Map[String, FieldValue] }`
-- Entity の custom field 値。文字列 / 整数 / Bool の 3 種類だけ MVP で扱う。
-  `pub enum FieldValue with Eq, ToString { case StringV(String) case IntV(Int32) case BoolV(Bool) }`
-- Material の中身。
-  `pub type alias MaterialData = { tileset = String, tileSize = Int32, wallMap = Map[String, (Int32, Int32)], floorPalette = List[(Int32, Int32)], decorPalette = List[(Int32, Int32)], autoRules = List[AutoRule] }`
-- AutoRule の pattern セル 1 個の値。LDtk の 5 値セマンティクスに揃える。
-  `pub enum PatternCell with Eq, ToString { case Unspecified case Anything case Nothing case Value(Int32) case NotValue(Int32) }`
-- AutoRule: パターンマッチで wallMap の上に重ねる装飾タイルを決める。
-  `pub type alias AutoRule = { name = String, size = Int32, pattern = Vector[PatternCell], srcX = Int32, srcY = Int32 }`
-- `Saveable[Material]` を実装可能にするための単一 case ラッパ。
-  `pub enum Material { case Material(MaterialData) }`
-- `Material` から内部の record を取り出す。
-  `pub def materialData(m: Material): MaterialData`
-- "TRBL" 4-bit 文字列キーの完全集合 (フォールバック用)。
-  `pub def wallMapKeys(): List[String]`
-- PatternCell と intGrid 値 1 個の整合性を判定する。
-  `pub def patternCellMatches(cell: PatternCell, intGridValue: Int32): Bool`
-- rule#pattern をセル `(col, row)` を中央として intGrid と照合する。
-  `pub def ruleMatches(intGrid: Vector[Int32], width: Int32, height: Int32, col: Int32, row: Int32, rule: AutoRule): Bool`
-- intGrid の `(col, row)` 値を返す。境界外は 0 (空セル扱い)。
-  `pub def intGridAt(intGrid: Vector[Int32], width: Int32, height: Int32, col: Int32, row: Int32): Int32`
-
-## MapResourceCodec — `engine_world/src/legacy/MapResource.flix`
-- `pub def encodeLevel(l: Level): Json`
-- `pub def decodeLevel(element: Json): Option[Level]`
-- `pub def encodeFieldValue(v: FieldValue): Json`
-- `pub def decodeFieldValue(element: Json): Option[FieldValue]`
-- `pub def encodeMaterial(m: Material): Json`
-- `pub def decodeMaterial(element: Json): Option[Material]`
 
 ## Material — `engine_world/src/Material.flix`
 - 粒の形。Speck = 小さな四角が明滅する(水のきらめき)。
@@ -1559,40 +1516,6 @@
 - Trace の各フレームを順に並べた列 — GIF・解析・スクラブの原反。initial 自身は
   `pub def timeline(tick: (i, Float64, w) -> w, dt: Float64, cues: List[Cue[i]], initial: w): List[w]`
 
-## Resource — `engine_world/src/legacy/Resource.flix`
-- `KindedRefListT` で使う 1 種別ぶんの記述。
-  `pub type alias KindSpec = { kindId = String, label = String, target = String }`
-- フィールドの値型。IDE はこれと `FieldHint` の組から widget を選ぶ。
-  `pub enum FieldType { case TextT case IntT case FloatT case BoolT case TexturePathT case RefT(String) case RefPercentListT(String) case KindedRefListT(List[KindSpec]) case EnumT(List[String]) case SpriteFramesT case WeaponProfT }`
-- 編集 UI のヒント。`Plain` は型相応の素直な入力欄（数値スピナー / テキスト等）。
-  `pub enum FieldHint { case Plain case Multiline case Slider({min = Float64, max = Float64, step = Float64}) case Spinner({min = Int32, max = Int32}) case FrameGrid({hframesField = String, vframesField = String}) }`
-- 1 フィールドぶんの完全記述。
-  `pub type alias FieldSchema = { ftype = FieldType, hint = FieldHint, label = String, order = Option[Int32] }`
-- レコード 1 件のフィールド木。`Field` は葉、`Nested` はサブレコード。
-  `pub enum FieldEntry { case Field(FieldSchema) case Nested(Map[String, FieldEntry]) }`
-- catalog 外のトップレベル array (例: `players: ["knight", ...]`) の編集 UI を決めるヒント。
-  `pub enum MetaHint with Eq, ToString { case Ref(String) case Text }`
-- ファイル単位の schema。fields は catalog 子レコードのフィールド構造、metaHints は data top の
-  `pub enum ResourceSchema { case ResourceSchema({ fields = Map[String, FieldEntry], metaHints = Map[String, MetaHint] }) }`
-- `ResourceSchema` の中身（フィールド集合）を取り出す。
-  `pub def fieldsOf(schema: ResourceSchema): Map[String, FieldEntry]`
-- メタフィールドの編集ヒントを取り出す。指定されていなければ空 Map。
-  `pub def metaHintsOf(schema: ResourceSchema): Map[String, MetaHint]`
-- `Map[String, FieldEntry]` から `ResourceSchema` を作るコンストラクタ。
-  `pub def mkSchema(fields: Map[String, FieldEntry]): ResourceSchema`
-- fields と metaHints を両方指定するコンストラクタ。
-  `pub def mkSchemaWithMeta(fields: Map[String, FieldEntry], metaHints: Map[String, MetaHint]): ResourceSchema`
-- `_schema.json` をパースして `ResourceSchema` を返す。形式不一致は `None`。
-  `pub def loadSchema(path: String): Option[ResourceSchema] \ Fs.FileRead`
-- `loadSchema` の診断つきバリアント。失敗の段階を文字列で返す。
-  `pub def loadSchemaDiagnostic(path: String): Result[String, ResourceSchema] \ Fs.FileRead`
-- 整合性検査。schema の **トップレベルフィールド集合** が `expected` の部分集合か検証する。
-  `pub def checkConsistency(expected: Set[String], schema: ResourceSchema): Result[String, Unit]`
-
-## ResourceCodec — `engine_world/src/legacy/Resource.flix`
-- `pub def encodeSchema(s: ResourceSchema): Json`
-- `pub def decodeSchema(element: Json): Option[ResourceSchema]`
-
 ## RichText — `engine_world/src/RichText.flix`
 - 1 スパン。tint = None は呼び側の基本色で描く。bold は同じ字を半ピクセルずらして
   `pub type alias Span = { text = String, tint = Option[Color], bold = Bool }`
@@ -1887,7 +1810,8 @@
 - 並べた行を秒の時刻表にする。前の行にしか頼らないので 1 回の走査で決まる。
   `pub def build(tempo: Tempo, steps: List[Step[a]]): Result[List[BuildError[a]], Timeline[a]] with Order[a]`
 - build の、書き間違いで止める包み。並びをゲームのコードが書く表（Doc は長さしか持たない）では、Err は
-  `pub def buildOrBug(name: String, tempo: Tempo, steps: List[Step[a]]): Timeline[a] with Order[a], ToString[a]`
+  `pub def buildOrPanic(name: String, tempo: Tempo, steps: List[Step[a]]): Timeline[a] with Order[a], ToString[a]`
+- `pub def buildOrBug(name: String, tempo: Tempo, steps: List[Step[a]]): Timeline[a] with Order[a], ToString[a]`
 - 鳴らす予定の効果音（秒）。
   `pub type alias SoundAt = { at = Float64, segment = Int32, sound = String }`
 - 再生位置: 時刻表の上の時刻 t と、解いた待ちの数 passed。待ちの位置ちょうどでは、
