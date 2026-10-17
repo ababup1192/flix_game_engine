@@ -107,9 +107,356 @@
   },
   "definitions": {
     "shape": {
-      "type": "object",
-      "description": "形（符号付き距離）。鍵 1 つ: disk [cx,cy,r]・ellipse [cx,cy,rx,ry]・rect [x,y,w,h]・rbox [cx,cy,hw,hh,r]・capsule [ax,ay,bx,by,r]・taper [ax,ay,bx,by,r0,r1]・poly [[x,y],…]・path [[x,y],…]+width・star [cx,cy,rOut,rIn]+n・mask [rows]+at・union [形…]・inter [形…]・smoothUnion [形,形]+k・rounded 数+of・rotate 周+about+of・ref \"名前\"",
-      "minProperties": 1
+      "description": "形（符号付き距離。画素の中心が内側なら塗る）",
+      "oneOf": [
+        {
+          "type": "object",
+          "description": "両端の丸い棒",
+          "additionalProperties": false,
+          "required": [
+            "capsule"
+          ],
+          "properties": {
+            "capsule": {
+              "description": "[ax, ay, bx, by, r]",
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 5,
+              "maxItems": 5
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "丸",
+          "additionalProperties": false,
+          "required": [
+            "disk"
+          ],
+          "properties": {
+            "disk": {
+              "description": "[cx, cy, r]",
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 3,
+              "maxItems": 3
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "楕円",
+          "additionalProperties": false,
+          "required": [
+            "ellipse"
+          ],
+          "properties": {
+            "ellipse": {
+              "description": "[cx, cy, rx, ry]",
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 4,
+              "maxItems": 4
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "積（全部の中）",
+          "additionalProperties": false,
+          "required": [
+            "inter"
+          ],
+          "properties": {
+            "inter": {
+              "description": "[形, 形, ...]（2 つ以上）",
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/shape"
+              },
+              "minItems": 2
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "rows で画素を直に指す（'.' と ' ' が外）",
+          "additionalProperties": false,
+          "required": [
+            "mask"
+          ],
+          "properties": {
+            "mask": {
+              "description": "文字の行",
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            "at": {
+              "description": "左上の位置 [x, y]",
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "minItems": 2,
+              "maxItems": 2,
+              "default": [
+                0,
+                0
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "折れ線に太さを付けた物（角と端は丸い）",
+          "additionalProperties": false,
+          "required": [
+            "path"
+          ],
+          "properties": {
+            "path": {
+              "description": "[[x, y], ...]（2 点以上）",
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 2,
+                "maxItems": 2
+              },
+              "minItems": 2
+            },
+            "width": {
+              "description": "太さ",
+              "type": "number",
+              "default": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "多角形（点を順に結ぶ）",
+          "additionalProperties": false,
+          "required": [
+            "poly"
+          ],
+          "properties": {
+            "poly": {
+              "description": "[[x, y], ...]（3 点以上）",
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 2,
+                "maxItems": 2
+              },
+              "minItems": 3
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "角丸の矩形（中心と半分の幅）",
+          "additionalProperties": false,
+          "required": [
+            "rbox"
+          ],
+          "properties": {
+            "rbox": {
+              "description": "[cx, cy, hw, hh, r]",
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 5,
+              "maxItems": 5
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "画素に揃った矩形（x..x+w-1・y..y+h-1 の画素）",
+          "additionalProperties": false,
+          "required": [
+            "rect"
+          ],
+          "properties": {
+            "rect": {
+              "description": "[x, y, w, h]",
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 4,
+              "maxItems": 4
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "shapes の名前つきの形を引く",
+          "additionalProperties": false,
+          "required": [
+            "ref"
+          ],
+          "properties": {
+            "ref": {
+              "description": "shapes の名前",
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "形を回す（1 周 = 1.0）",
+          "additionalProperties": false,
+          "required": [
+            "rotate",
+            "about",
+            "of"
+          ],
+          "properties": {
+            "rotate": {
+              "description": "回す量（周。正は時計回り）",
+              "type": "number"
+            },
+            "about": {
+              "description": "回す中心 [x, y]",
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 2,
+              "maxItems": 2
+            },
+            "of": {
+              "description": "元の形",
+              "$ref": "#/definitions/shape"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "形を太らせて角を丸める",
+          "additionalProperties": false,
+          "required": [
+            "rounded",
+            "of"
+          ],
+          "properties": {
+            "rounded": {
+              "description": "太らせる量",
+              "type": "number"
+            },
+            "of": {
+              "description": "元の形",
+              "$ref": "#/definitions/shape"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "なめらかにつないだ和",
+          "additionalProperties": false,
+          "required": [
+            "smoothUnion"
+          ],
+          "properties": {
+            "smoothUnion": {
+              "description": "[形, 形]",
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/shape"
+              },
+              "minItems": 2,
+              "maxItems": 2
+            },
+            "k": {
+              "description": "つなぎの幅（0 より大きい）",
+              "type": "number",
+              "default": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "星（外と内の半径を交互に結ぶ多角形）",
+          "additionalProperties": false,
+          "required": [
+            "star"
+          ],
+          "properties": {
+            "star": {
+              "description": "[cx, cy, rOut, rIn]",
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 4,
+              "maxItems": 4
+            },
+            "n": {
+              "description": "角の数",
+              "type": "integer",
+              "default": 5
+            },
+            "rot": {
+              "description": "最初の角の向き（ラジアン。既定は真上）",
+              "type": "number",
+              "default": -1.5707963267948966
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "先細りの棒（塗りの判定専用。smoothUnion・rounded には使えない）",
+          "additionalProperties": false,
+          "required": [
+            "taper"
+          ],
+          "properties": {
+            "taper": {
+              "description": "[ax, ay, bx, by, r0, r1]",
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 6,
+              "maxItems": 6
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "和（どれかの中）",
+          "additionalProperties": false,
+          "required": [
+            "union"
+          ],
+          "properties": {
+            "union": {
+              "description": "[形, 形, ...]（2 つ以上）",
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/shape"
+              },
+              "minItems": 2
+            }
+          }
+        }
+      ]
     },
     "color": {
       "type": "string",
@@ -179,7 +526,7 @@
                   "items": {
                     "type": "array",
                     "items": {
-                      "type": "number"
+                      "type": "integer"
                     },
                     "minItems": 2,
                     "maxItems": 2
@@ -281,7 +628,7 @@
                   "items": {
                     "type": "array",
                     "items": {
-                      "type": "number"
+                      "type": "integer"
                     },
                     "minItems": 2,
                     "maxItems": 2
@@ -358,7 +705,7 @@
                   "items": {
                     "type": "array",
                     "items": {
-                      "type": "number"
+                      "type": "integer"
                     },
                     "minItems": 2,
                     "maxItems": 2
@@ -468,7 +815,7 @@
                   "description": "左上の位置 [x, y]",
                   "type": "array",
                   "items": {
-                    "type": "number"
+                    "type": "integer"
                   },
                   "minItems": 2,
                   "maxItems": 2
@@ -515,7 +862,7 @@
                   "description": "ずらす量 [dx, dy]",
                   "type": "array",
                   "items": {
-                    "type": "number"
+                    "type": "integer"
                   },
                   "minItems": 2,
                   "maxItems": 2

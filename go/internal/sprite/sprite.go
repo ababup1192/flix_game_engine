@@ -47,35 +47,11 @@ func isPySpace(r rune) bool {
 func pyStrip(s string) string     { return strings.TrimFunc(s, isPySpace) }
 func pyLStripSet(s string) string { return strings.TrimLeft(s, exemptTrim) }
 
-// keyText は legend の値を色キーの字面にする。
-// WhyNot: 文字列以外も受けるのは、legend に数値や真偽値を書いた Doc でも
-// それを色キーとして数え、色数の勘定から漏らさないため。
-func keyText(v any) string {
-	switch x := v.(type) {
-	case string:
-		return x
-	case bool:
-		if x {
-			return "True"
-		}
-		return "False"
-	case nil:
-		return "None"
-	case float64:
-		if x == math.Trunc(x) && math.Abs(x) < 1e15 {
-			return strconv.FormatInt(int64(x), 10)
-		}
-		return strconv.FormatFloat(x, 'g', -1, 64)
-	default:
-		return fmt.Sprint(x)
-	}
-}
-
 // numText は anchor の座標を字面にする。整数値は小数点を付けない。
 func numText(v any, missing int) string {
 	f, ok := numOf(v, missing)
 	if !ok {
-		return keyText(v)
+		return pxlib.KeyText(v)
 	}
 	if f == math.Trunc(f) && math.Abs(f) < 1e15 {
 		return strconv.FormatInt(int64(f), 10)
@@ -91,79 +67,11 @@ func numOf(v any, missing int) (float64, bool) {
 	return f, ok
 }
 
-// ---------------------------------------------------------------- 色 (ΔE)
-
-func hexMapOf(v any) map[string]string {
-	found := map[string]string{}
-	m, ok := pxlib.AsObject(v)
-	if !ok {
-		return found
-	}
-	for name, value := range m {
-		if got := pxlib.HexOfValue(value); got != "" {
-			found[name] = got
-		}
-	}
-	// WhyNot: colors を後に回すのは、同じ名前があれば入れ子の colors を勝たせるため。
-	if nested, ok := pxlib.AsObject(m["colors"]); ok {
-		for name, value := range nested {
-			if got := pxlib.HexOfValue(value); got != "" {
-				found[name] = got
-			}
-		}
-	}
-	return found
-}
-
-// colorHexesOf は legend の値 → "#rrggbb"。解けない値は含めない。
-func colorHexesOf(gameDir string, jsonPaths []string, doc map[string]any) map[string]string {
-	names := map[string]string{}
-	merge := func(v any) {
-		for k, hex := range hexMapOf(v) {
-			names[k] = hex
-		}
-	}
-	for _, rel := range jsonPaths {
-		if strings.HasSuffix(rel, ".theme.json") {
-			merge(pxlib.ReadJSON(filepath.Join(gameDir, rel)))
-		}
-	}
-	if ref, ok := doc["paletteFile"].(string); ok {
-		merge(pxlib.ReadJSON(filepath.Join(gameDir, ref)))
-	}
-	merge(doc["palette"])
-
-	resolved := map[string]string{}
-	legend, ok := pxlib.AsObject(doc["legend"])
-	if !ok {
-		return resolved
-	}
-	for _, value := range legend {
-		text, ok := value.(string)
-		if !ok {
-			continue
-		}
-		if direct := pxlib.HexOfValue(text); direct != "" {
-			resolved[text] = direct
-			continue
-		}
-		name := strings.TrimPrefix(text, "@")
-		if hex, ok := names[name]; ok {
-			resolved[text] = hex
-		}
-	}
-	return resolved
-}
-
 // ---------------------------------------------------------------- 格子の下ごしらえ
 
 // gridOf は rows を色キーの格子にする。legend に無い文字（透明の字を除く）を unknown に返す。
 func (r *Rules) gridOf(rows []string, legend map[string]any) (g *pxlib.Grid, unknown []rune) {
-	keys := make(map[string]pxlib.Key, len(legend))
-	for ch, v := range legend {
-		keys[ch] = pxlib.Key(keyText(v))
-	}
-	g, all := pxlib.GridFromRows(rows, keys)
+	g, all := pxlib.GridFromRows(rows, pxlib.LegendOf(legend).KeyOf)
 	for _, ch := range all {
 		if !r.TransparentChars[ch] {
 			unknown = append(unknown, ch)
@@ -216,16 +124,16 @@ func (r *Rules) CheckFrame(g *pxlib.Grid) []Finding {
 		}
 	}
 	if spots := jaggySpots(opaque); len(spots) >= r.JaggyMinCount {
-		out = append(out, Finding{Rule: "jaggy", HasAt: true, At: spots[0], Cells: spots,
-			Msg: fmt.Sprintf("輪郭の階段が %d 箇所で乱れている (長,1,長 のラン)", len(spots))})
+		msg, _ := FindingMsg("jaggy", spots)
+		out = append(out, Finding{Rule: "jaggy", HasAt: true, At: spots[0], Cells: spots, Msg: msg})
 	}
 	for _, b := range r.bandingKeys(g, opaque) {
 		out = append(out, Finding{Rule: "banding", HasAt: true, At: b.cells[0], Cells: b.cells, Msg: fmt.Sprintf(
 			"色 \"%s\" が輪郭の内側 1px の縁取りとしてしか使われていない (banding の疑い)", b.key)})
 	}
 	if spots := cornerDoubleSpots(g); len(spots) > 0 {
-		out = append(out, Finding{Rule: "corner", HasAt: true, At: spots[0], Cells: spots,
-			Msg: fmt.Sprintf("1px 線の角が %d 箇所で 2 重 (最初は (%d,%d) 付近)", len(spots), spots[0].X, spots[0].Y)})
+		msg, _ := FindingMsg("corner", spots)
+		out = append(out, Finding{Rule: "corner", HasAt: true, At: spots[0], Cells: spots, Msg: msg})
 	}
 	for _, note := range r.silhouetteNotes(opaque, count) {
 		out = append(out, Finding{Rule: "silhouette", Msg: note})
@@ -301,7 +209,7 @@ type bandingKey struct {
 func (r *Rules) bandingKeys(g *pxlib.Grid, opaque pxlib.Mask) []bandingKey {
 	byKey := map[pxlib.Key][]pxlib.Pt{}
 	for _, p := range opaque.Points() {
-		k := g.Px[p.Y][p.X]
+		k := g.At(p.X, p.Y)
 		byKey[k] = append(byKey[k], p)
 	}
 	if len(byKey) < 3 {
@@ -340,12 +248,12 @@ func (r *Rules) bandingKeys(g *pxlib.Grid, opaque pxlib.Mask) []bandingKey {
 // cornerDoubleSpots は 1px の斜め線の段が 1 画素重なって太って見える箇所。
 func cornerDoubleSpots(g *pxlib.Grid) []pxlib.Pt {
 	same := func(x, y int, key pxlib.Key) bool {
-		return g.In(x, y) && g.Px[y][x] != pxlib.Clear && g.Px[y][x] == key
+		return g.In(x, y) && g.At(x, y) != pxlib.Clear && g.At(x, y) == key
 	}
 	spots := map[pxlib.Pt]bool{}
 	for y := 0; y < g.H; y++ {
 		for x := 0; x < g.W; x++ {
-			key := g.Px[y][x]
+			key := g.At(x, y)
 			if key == pxlib.Clear {
 				continue
 			}
@@ -445,8 +353,32 @@ func (r *Rules) exemptOf(v any) (exempt, bool) {
 // ---------------------------------------------------------------- 1 Doc の検査
 
 // checkDoc は (NG の列, 注意の列, 除外の列, スプライト数) を返す。行頭にパスは付けない。
+// DocFinding は Doc 1 冊の検査の 1 件。Sprite が空なら Doc 全体の件、Frame が空ならスプライト全体の件。
+// Text は fge sprite が出す 1 行（パスを除く）。
+type DocFinding struct {
+	Finding
+	Sprite, Frame string
+	Text          string
+}
+
+// checkDoc は (NG の列, 注意の列, 除外の列, スプライト数) を返す。行頭にパスは付けない。
 func (r *Rules) checkDoc(doc map[string]any, legendHexes map[string]string, hasHexes bool) (
 	problems, warnings []string, excluded []exclusion, spriteCount int) {
+	findings, excluded, spriteCount := r.CheckDoc(doc, legendHexes, hasHexes)
+	for _, f := range findings {
+		if f.Problem {
+			problems = append(problems, f.Text)
+		} else {
+			warnings = append(warnings, f.Text)
+		}
+	}
+	return problems, warnings, excluded, spriteCount
+}
+
+// CheckDoc は Doc 1 冊を、対象外の指定（lint-sprite）を当てたうえで見る。並びは fge sprite の出力と同じ。
+// legendHexes は legend の値 → #rrggbb（hasHexes が false なら色の近さを見ない）。
+func (r *Rules) CheckDoc(doc map[string]any, legendHexes map[string]string, hasHexes bool) (
+	findings []DocFinding, excluded []exclusion, spriteCount int) {
 
 	legend, _ := pxlib.AsObject(doc["legend"])
 	if legend == nil {
@@ -472,11 +404,26 @@ func (r *Rules) checkDoc(doc map[string]any, legendHexes map[string]string, hasH
 			for _, nameB := range names[i+1:] {
 				de := pxlib.DeltaE(legendHexes[nameA], legendHexes[nameB])
 				if de < r.DeltaEMin && !(hasDocExempt && docExempt.rules["palette"]) {
-					warnings = append(warnings, fmt.Sprintf(
-						"色 \"%s\" (%s) と \"%s\" (%s) が近すぎる (ΔE %.1f)",
-						nameA, legendHexes[nameA], nameB, legendHexes[nameB], de))
+					text := fmt.Sprintf("色 \"%s\" (%s) と \"%s\" (%s) が近すぎる (ΔE %.1f)",
+						nameA, legendHexes[nameA], nameB, legendHexes[nameB], de)
+					findings = append(findings, DocFinding{Finding: Finding{Rule: "palette", Msg: text}, Text: text})
 				}
 			}
+		}
+	}
+
+	// エンジンは legend の値が "" の字も不透明の画素として塗る（検査は透明として数えるので食い違う）
+	if !(hasDocExempt && docExempt.rules["structure"]) {
+		chars := make([]string, 0, len(legend))
+		for ch, v := range legend {
+			if s, ok := v.(string); ok && s == "" {
+				chars = append(chars, ch)
+			}
+		}
+		sort.Strings(chars)
+		for _, ch := range chars {
+			text := fmt.Sprintf("legend の字 '%s' の色キーが空 (エンジンは不透明に塗るが、検査は透明として数える。透明にするなら legend から消して '.' で書く)", ch)
+			findings = append(findings, DocFinding{Finding: Finding{Rule: "structure", Problem: true, Msg: text}, Text: text})
 		}
 	}
 
@@ -496,7 +443,8 @@ func (r *Rules) checkDoc(doc map[string]any, legendHexes map[string]string, hasH
 			frames, _ = pxlib.AsObject(spec["frames"])
 		}
 		if !isObject || frames == nil {
-			problems = append(problems, fmt.Sprintf("%s: frames が無い (スプライトは {frames, anchor} の形)", name))
+			text := fmt.Sprintf("%s: frames が無い (スプライトは {frames, anchor} の形)", name)
+			findings = append(findings, DocFinding{Finding: Finding{Rule: "structure", Problem: true, Msg: text}, Sprite: name, Text: text})
 			continue
 		}
 		spriteCount++
@@ -513,15 +461,14 @@ func (r *Rules) checkDoc(doc map[string]any, legendHexes map[string]string, hasH
 				exemptRules[rule] = true
 			}
 		}
+		reportAt := func(f Finding, frame, text string) {
+			if exemptRules[f.Rule] {
+				return
+			}
+			findings = append(findings, DocFinding{Finding: f, Sprite: name, Frame: frame, Text: text})
+		}
 		report := func(rule string, isProblem bool, text string) {
-			if exemptRules[rule] {
-				return
-			}
-			if isProblem {
-				problems = append(problems, text)
-				return
-			}
-			warnings = append(warnings, text)
+			reportAt(Finding{Rule: rule, Problem: isProblem, Msg: text}, "", text)
 		}
 
 		frameNames := make([]string, 0, len(frames))
@@ -579,7 +526,7 @@ func (r *Rules) checkDoc(doc map[string]any, legendHexes map[string]string, hasH
 			}
 
 			for _, f := range r.CheckFrame(g) {
-				report(f.Rule, f.Problem, where+": "+f.Msg)
+				reportAt(f, frameName, where+": "+f.Msg)
 			}
 		}
 
@@ -625,7 +572,7 @@ func (r *Rules) checkDoc(doc map[string]any, legendHexes map[string]string, hasH
 		}
 	}
 
-	return problems, warnings, excluded, spriteCount
+	return findings, excluded, spriteCount
 }
 
 func sortedKeys[V any](m map[string]V) []string {
@@ -675,8 +622,8 @@ type target struct {
 	gameDir string
 }
 
-// gameDirOf は個別指定されたファイルの色票を探す起点 (assets/ の親、無ければ同じ場所)。
-func gameDirOf(path string) string {
+// GameDirOf は個別指定されたファイルの色票を探す起点 (assets/ の親、無ければ同じ場所)。
+func GameDirOf(path string) string {
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		abs = path
@@ -692,7 +639,7 @@ func (r *Rules) gatherTargets(argvPaths []string, root string) []target {
 	var targets []target
 	if len(argvPaths) > 0 {
 		for _, path := range argvPaths {
-			targets = append(targets, target{path, path, gameDirOf(path)})
+			targets = append(targets, target{path, path, GameDirOf(path)})
 		}
 		return targets
 	}
@@ -743,7 +690,7 @@ func Run(out, errOut *strings.Builder, root string, args []string) (int, error) 
 			continue
 		}
 		docCount++
-		hexes := colorHexesOf(t.gameDir, pxlib.WalkJSON(t.gameDir, rules.ExcludedDirs), doc)
+		hexes := rules.LegendHexes(t.gameDir, doc)
 		gotP, gotW, gotE, gotN := rules.checkDoc(doc, hexes, true)
 		for _, line := range gotP {
 			problems = append(problems, t.shown+": "+line)
@@ -994,4 +941,44 @@ func containsAny(lines []string, needle string) bool {
 		}
 	}
 	return false
+}
+
+// LegendHexes は legend の値 → #rrggbb（gameDir の *.theme.json・paletteFile・palette から。ΔE の検査が使う）。
+func (r *Rules) LegendHexes(gameDir string, doc map[string]any) map[string]string {
+	names := pxlib.DocPalette(gameDir, doc, pxlib.WalkJSON(gameDir, r.ExcludedDirs), pxlib.HexOnly)
+	legend, _ := pxlib.AsObject(doc["legend"])
+	return pxlib.LegendHexes(legend, names)
+}
+
+// ExemptRules は Doc とそのスプライトの lint-sprite が対象外にした規則（px build が自分の描いたコマに当てる）。
+func (r *Rules) ExemptRules(doc map[string]any, spriteName string) map[string]bool {
+	out := map[string]bool{}
+	if got, ok := r.exemptOf(doc["lint-sprite"]); ok {
+		for rule := range got.rules {
+			out[rule] = true
+		}
+	}
+	sprites, _ := pxlib.AsObject(doc["sprites"])
+	if spec, ok := pxlib.AsObject(sprites[spriteName]); ok {
+		if got, ok := r.exemptOf(spec["lint-sprite"]); ok {
+			for rule := range got.rules {
+				out[rule] = true
+			}
+		}
+	}
+	return out
+}
+
+// FindingMsg は画素の並びから文言を作る規則（jaggy・corner）の文言。画素の一部を除いた後に作り直すのに使う。
+func FindingMsg(rule string, cells []pxlib.Pt) (string, bool) {
+	if len(cells) == 0 {
+		return "", false
+	}
+	switch rule {
+	case "jaggy":
+		return fmt.Sprintf("輪郭の階段が %d 箇所で乱れている (長,1,長 のラン)", len(cells)), true
+	case "corner":
+		return fmt.Sprintf("1px 線の角が %d 箇所で 2 重 (最初は (%d,%d) 付近)", len(cells), cells[0].X, cells[0].Y), true
+	}
+	return "", false
 }

@@ -44,7 +44,7 @@ func TestPuzzleBytesMatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	spec, err := Load(filepath.Join(root, "art", "puzzle.pxsrc.json"))
+	spec, err := loadSpec(filepath.Join(root, "art", "puzzle.pxsrc.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ func TestPuzzleBytesMatch(t *testing.T) {
 	if err := os.WriteFile(basePath, []byte(pxlib.DumpPy(doc, "\t")), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	res, err := Build(root, "art/puzzle.pxsrc.json", Options{RulesRoot: engineRoot})
+	res, err := build(root, "art/puzzle.pxsrc.json", buildOptions{RulesRoot: engineRoot})
 	if err != nil {
 		t.Fatal(err)
 	}

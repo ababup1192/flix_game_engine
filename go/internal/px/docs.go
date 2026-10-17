@@ -6,6 +6,7 @@ package px
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/ababup1192/flix_game_engine/go/internal/pxlib"
@@ -13,22 +14,22 @@ import (
 
 const generatedNote = "生成物（bin/fge px ops --md）。直すのは go/internal/px の Op の構造体。"
 
-// OpsTable は端末向けの 1 op 1 行の表。
-func OpsTable() string {
+// opsTable は端末向けの 1 op 1 行の表。
+func opsTable() string {
 	var b strings.Builder
-	for _, op := range Ops() {
+	for _, op := range allOps() {
 		fmt.Fprintf(&b, "%-14s %s\n", op.Name, op.Summary)
 	}
 	b.WriteString("（引数は fge px help <op>・書式は docs/pxsrc.schema.json）\n")
 	return b.String()
 }
 
-// OpHelp は op 1 つの説明。
-func OpHelp(op *Op) string {
+// opHelp は op 1 つの説明。
+func opHelp(op *opDef) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s — %s\n技法: %s\n仕上げ: %s\n", op.Name, op.Summary, op.Technique, op.Finish)
+	fmt.Fprintf(&b, "%s — %s\n技法: %s\n仕上げ: %s\n例: %s\n", op.Name, op.Summary, op.Technique, op.Finish, op.Example)
 	if len(op.Checks) > 0 {
-		fmt.Fprintf(&b, "検査（部品の範囲で自動）: %s\n", strings.Join(op.Checks, "・"))
+		fmt.Fprintf(&b, "検査（部品の範囲で自動）: %s\n", refsText(op.Checks, "・"))
 	}
 	if op.Whole {
 		b.WriteString("格子全体に描く（部品の at・use の at でずらせない）\n")
@@ -43,7 +44,7 @@ func OpHelp(op *Op) string {
 	return b.String()
 }
 
-func defaultText(p Param) string {
+func defaultText(p param) string {
 	if p.Required {
 		return "（必須）"
 	}
@@ -56,24 +57,24 @@ func defaultText(p Param) string {
 
 func mdCell(s string) string { return strings.ReplaceAll(s, "|", "\\|") }
 
-// OpsMarkdown は docs/px-ops.md の中身（技法 → op → 仕上げの早見表と、op ごとの引数）。
-func OpsMarkdown() string {
+// opsMarkdown は docs/px-ops.md の中身（技法 → op → 仕上げの早見表と、op ごとの引数）。
+func opsMarkdown() string {
 	var b strings.Builder
 	b.WriteString("# fge px の op（技法 → op → 仕上げ）\n\n")
 	b.WriteString("<!-- " + generatedNote + " -->\n\n")
 	b.WriteString("指定（`<名前>.pxsrc.json`）の部品の `ops` に、上から順に当てる。書式は `docs/pxsrc.schema.json`、1 つの説明は `bin/fge px help <op>`。\n\n")
 	b.WriteString("| 技法 | op | 何をするか | 仕上げ・検査 |\n|---|---|---|---|\n")
-	for _, op := range Ops() {
+	for _, op := range allOps() {
 		fmt.Fprintf(&b, "| %s | `%s` | %s | %s |\n", mdCell(op.Technique), op.Name, mdCell(op.Summary), mdCell(op.Finish))
 	}
 	b.WriteString("\n## 引数\n")
-	for _, op := range Ops() {
-		fmt.Fprintf(&b, "\n### `%s`\n\n", op.Name)
+	for _, op := range allOps() {
+		fmt.Fprintf(&b, "\n### `%s`\n\n例: `%s`\n\n", op.Name, op.Example)
 		if op.Whole {
 			b.WriteString("格子全体に描く（部品の `at`・`use` の `at` でずらせない）。\n\n")
 		}
 		if len(op.Checks) > 0 {
-			fmt.Fprintf(&b, "部品を描き終えたら、その範囲で検査 %s を回す。\n\n", "`"+strings.Join(op.Checks, "`・`")+"`")
+			fmt.Fprintf(&b, "部品を描き終えたら、その範囲で検査 %s を回す。\n\n", "`"+refsText(op.Checks, "`・`")+"`")
 		}
 		if len(op.Params) == 0 {
 			b.WriteString("引数は無い（`{}` と書く）。\n")
@@ -84,8 +85,17 @@ func OpsMarkdown() string {
 			fmt.Fprintf(&b, "| `%s` | %s | %s%s |\n", p.Name, p.Type, mdCell(p.Summary), mdCell(defaultText(p)))
 		}
 	}
+	b.WriteString("\n## 形\n\n部品の `shape` と op の `shape` に書く。鍵 1 つで種類を決め、ほかの鍵は種類ごとの引数。\n\n")
+	b.WriteString("| 形 | 値 | ほかの鍵 | 何か |\n|---|---|---|---|\n")
+	for _, k := range allShapes() {
+		var extra []string
+		for _, p := range k.Extra {
+			extra = append(extra, "`"+p.Name+"` "+p.Summary+defaultText(p))
+		}
+		fmt.Fprintf(&b, "| `%s` | %s | %s | %s |\n", k.Name, mdCell(k.Main.Summary), mdCell(strings.Join(extra, "・")), mdCell(k.Summary))
+	}
 	b.WriteString("\n## 検査\n\n| 検査 | 重さ | 何を見るか |\n|---|---|---|\n")
-	for _, c := range Checks() {
+	for _, c := range allChecks() {
 		fmt.Fprintf(&b, "| `%s` | %s | %s |\n", c.Name, c.Level, mdCell(c.Summary))
 	}
 	return b.String()
@@ -113,10 +123,23 @@ func intArray(n int) *pxlib.Obj {
 	return obj("type", "array", "items", obj("type", "integer"), "minItems", json.Number(fmt.Sprint(n)), "maxItems", json.Number(fmt.Sprint(n)))
 }
 
+func count(n int) json.Number { return json.Number(fmt.Sprint(n)) }
+
+// withLen は配列の長さの範囲を足す。
+func withLen(s *pxlib.Obj, p param) *pxlib.Obj {
+	if p.Min > 0 {
+		s.Set("minItems", count(p.Min))
+	}
+	if p.Max > 0 {
+		s.Set("maxItems", count(p.Max))
+	}
+	return s
+}
+
 func jsonValue(v any) any {
 	switch t := v.(type) {
 	case float64:
-		return json.Number(strings.TrimSuffix(strings.TrimRight(fmt.Sprintf("%f", t), "0"), "."))
+		return json.Number(strconv.FormatFloat(t, 'g', -1, 64))
 	case []any:
 		out := make([]any, len(t))
 		for i, e := range t {
@@ -127,30 +150,38 @@ func jsonValue(v any) any {
 	return v
 }
 
-func paramSchema(p Param) *pxlib.Obj {
+func paramSchema(p param) *pxlib.Obj {
 	var s *pxlib.Obj
 	switch p.Type {
-	case TNumber:
+	case tNumber:
 		s = obj("type", "number")
-	case TInt:
+	case tInt:
 		s = obj("type", "integer")
-	case TString:
+	case tString:
 		s = obj("type", "string")
-	case TBool:
+	case tBool:
 		s = obj("type", "boolean")
-	case TColor:
+	case tColor:
 		s = ref("color")
-	case TPoint, TPair:
+	case tPoint:
+		s = intArray(2)
+	case tPair:
 		s = numArray(2)
-	case TPoints:
-		s = obj("type", "array", "items", numArray(2))
-	case TShape:
+	case tPoints:
+		s = withLen(obj("type", "array", "items", intArray(2)), p)
+	case tNums:
+		s = numArray(p.Len)
+	case tVecs:
+		s = withLen(obj("type", "array", "items", numArray(2)), p)
+	case tShape:
 		s = ref("shape")
-	case TRows:
-		s = obj("type", "array", "items", obj("type", "string"))
-	case TColorMap:
+	case tShapes:
+		s = withLen(obj("type", "array", "items", ref("shape")), p)
+	case tRows:
+		s = withLen(obj("type", "array", "items", obj("type", "string")), p)
+	case tColorMap:
 		s = obj("type", "object", "additionalProperties", ref("color"))
-	case TAxis:
+	case tAxis:
 		s = obj("enum", list("x", "y"))
 	}
 	out := obj("description", p.Summary)
@@ -164,7 +195,7 @@ func paramSchema(p Param) *pxlib.Obj {
 	return out
 }
 
-func opSchema(op *Op) *pxlib.Obj {
+func opSchema(op *opDef) *pxlib.Obj {
 	props := pxlib.NewObj()
 	var req []any
 	for _, p := range op.Params {
@@ -181,17 +212,26 @@ func opSchema(op *Op) *pxlib.Obj {
 		"required", list(op.Name), "properties", obj(op.Name, args))
 }
 
-// SpecSchema は docs/pxsrc.schema.json の中身。
-func SpecSchema() string {
+// specSchema は docs/pxsrc.schema.json の中身。
+func specSchema() string {
 	var ops []any
-	for _, op := range Ops() {
+	for _, op := range allOps() {
 		ops = append(ops, opSchema(op))
 	}
-	shape := obj("type", "object", "description",
-		"形（符号付き距離）。鍵 1 つ: disk [cx,cy,r]・ellipse [cx,cy,rx,ry]・rect [x,y,w,h]・rbox [cx,cy,hw,hh,r]・capsule [ax,ay,bx,by,r]・"+
-			"taper [ax,ay,bx,by,r0,r1]・poly [[x,y],…]・path [[x,y],…]+width・star [cx,cy,rOut,rIn]+n・mask [rows]+at・"+
-			"union [形…]・inter [形…]・smoothUnion [形,形]+k・rounded 数+of・rotate 周+about+of・ref \"名前\"",
-		"minProperties", json.Number("1"))
+	var shapes []any
+	for _, k := range allShapes() {
+		props := obj(k.Name, paramSchema(k.Main))
+		req := list(k.Name)
+		for _, p := range k.Extra {
+			props.Set(p.Name, paramSchema(p))
+			if p.Required {
+				req = append(req, p.Name)
+			}
+		}
+		shapes = append(shapes, obj("type", "object", "description", k.Summary, "additionalProperties", false,
+			"required", req, "properties", props))
+	}
+	shape := obj("description", "形（符号付き距離。画素の中心が内側なら塗る）", "oneOf", shapes)
 	color := obj("type", "string", "description",
 		"色: ink・shade・mid・light（部品のランプの 0〜3 段）・ramp[i]（ramp[-1] は一番明るい段）・gloss（light.gloss）・色キー・\"\"（透明）")
 	part := obj("type", "object", "additionalProperties", false, "required", list("id"),
@@ -225,7 +265,7 @@ func SpecSchema() string {
 		"additionalProperties", false,
 		"required", list("version", "target", "sprites"),
 		"properties", obj(
-			"version", obj("const", json.Number(fmt.Sprint(SpecVersion))),
+			"version", obj("const", json.Number(fmt.Sprint(specVersion))),
 			"title", obj("type", "string", "label", "名前"),
 			"note", obj("type", "string", "label", "メモ", "description", "いじると何が変わるか"),
 			"target", obj("type", "string", "description", "書き出す sprite.json（atelier/ の下。assets/ は不可）"),
@@ -249,8 +289,8 @@ func SpecSchema() string {
 	return pxlib.DumpPy(root, "  ")
 }
 
-// GateSchema は docs/colorgate.schema.json の中身。
-func GateSchema() string {
+// gateSchema は docs/colorgate.schema.json の中身。
+func gateSchema() string {
 	allow := obj("type", "object", "additionalProperties", false, "required", list("keys", "why"), "properties", obj(
 		"keys", obj("type", "string", "label", "色の名前（正規表現）", "description", "例 ^tile"),
 		"why", obj("type", "string", "label", "理由", "description", "画風の文書にある例外と同じ物。理由の無い例外は足さない"),
@@ -278,7 +318,7 @@ func GateSchema() string {
 		"additionalProperties", false,
 		"required", list("version", "styles", "files"),
 		"properties", obj(
-			"version", obj("const", json.Number(fmt.Sprint(GateVersion))),
+			"version", obj("const", json.Number(fmt.Sprint(gateVersion))),
 			"note", obj("type", "string", "label", "メモ", "description", "いじると何が変わるか"),
 			"styles", obj("type", "object", "label", "画風ごとの色の集合", "description", "名前 → 使ってよい色の出どころ（colors の列挙か from の Doc）。free は書かずに使える", "additionalProperties", style),
 			"deny", obj("type", "array", "label", "どの画風でも使わない色", "items", obj("type", "object", "additionalProperties", false, "required", list("color", "why"), "properties", obj(
@@ -288,4 +328,12 @@ func GateSchema() string {
 		),
 	)
 	return pxlib.DumpPy(root, "  ")
+}
+
+func refsText(refs []checkRef, sep string) string {
+	parts := make([]string, len(refs))
+	for i, r := range refs {
+		parts[i] = r.String()
+	}
+	return strings.Join(parts, sep)
 }

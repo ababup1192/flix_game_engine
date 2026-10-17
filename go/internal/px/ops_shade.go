@@ -24,21 +24,21 @@ type shadeSet struct {
 }
 
 func init() {
-	Register(&Op{
-		Name: "shade_parts", Summary: "丸みのある部品を光の向きでランプの 4 段に塗る（前の部品の落とす影・外周の墨・別グループとの境目の線つき）",
+	register(&opDef{
+		Name: "shade_parts", Example: `{"shade_parts": {"thick": 4, "group": "body"}}`, Summary: "丸みのある部品を光の向きでランプの 4 段に塗る（前の部品の落とす影・外周の墨・別グループとの境目の線つき）",
 		Technique: "陰影（丸い体・キャラ。光源は 1 つ）", Finish: "lint pillow（段 3）",
-		Params: []Param{
-			{Name: "thick", Type: TNumber, Default: 6.0, Summary: "丸みの厚さ（大きいほど縁から奥まで段が続く）"},
-			{Name: "group", Type: TString, Default: "", Summary: "同じグループの部品どうしは影と境目の線を付けない"},
-			{Name: "lines", Type: TBool, Default: true, Summary: "後ろの別グループの部品に接する縁を暗い段で締める"},
-			{Name: "flat", Type: TBool, Default: false, Summary: "丸みを付けず地の段で塗る"},
-			{Name: "bias", Type: TNumber, Default: 0.0, Summary: "明るさの底上げ（正で明るく）"},
-			{Name: "outline", Type: TColor, Default: "ink", Summary: "影の側の外周の色（\"\" で外す）"},
-			{Name: "rim", Type: TColor, Default: "", Summary: "光の側の外周の色（暗い材質を闇から抜く明るい縁。省くとランプの最暗段）"},
+		Params: []param{
+			{Name: "thick", Type: tNumber, Default: 6.0, Summary: "丸みの厚さ（大きいほど縁から奥まで段が続く）"},
+			{Name: "group", Type: tString, Default: "", Summary: "同じグループの部品どうしは影と境目の線を付けない"},
+			{Name: "lines", Type: tBool, Default: true, Summary: "後ろの別グループの部品に接する縁を暗い段で締める"},
+			{Name: "flat", Type: tBool, Default: false, Summary: "丸みを付けず地の段で塗る"},
+			{Name: "bias", Type: tNumber, Default: 0.0, Summary: "明るさの底上げ（正で明るく）"},
+			{Name: "outline", Type: tColor, Default: "ink", Summary: "影の側の外周の色（\"\" で外す）"},
+			{Name: "rim", Type: tColor, Default: "", Summary: "光の側の外周の色（暗い材質を闇から抜く明るい縁。省くとランプの最暗段）"},
 		},
 		Whole: true,
-		Apply: func(c *Ctx, a Args) error {
-			if err := c.Need(4); err != nil {
+		Apply: func(c *ctx, a opArgs) error {
+			if err := c.NeedRamp(4); err != nil {
 				return err
 			}
 			if c.Part.shape == nil {
@@ -50,14 +50,14 @@ func init() {
 }
 
 // shadeSetOf は今のコマで shade_parts を持つ部品の組（初めて呼ばれた時に作る）。
-func (c *Ctx) shadeSetOf() *shadeSet {
+func (c *ctx) shadeSetOf() *shadeSet {
 	if c.shade != nil {
 		return c.shade
 	}
 	s := &shadeSet{idx: map[string]int{}}
 	w, h := c.G.W, c.G.H
 	for _, p := range c.order {
-		var call *OpCall
+		var call *opCall
 		for i := range p.Ops {
 			if p.Ops[i].Name == "shade_parts" {
 				call = &p.Ops[i]
@@ -66,11 +66,11 @@ func (c *Ctx) shadeSetOf() *shadeSet {
 		if call == nil || p.Shape == nil {
 			continue
 		}
-		f, err := ShapeOf(p.Shape, c.Spec.Shapes)
+		f, err := shapeOf(p.Shape, c.Spec.Shapes, p.Where+".shape")
 		if err != nil {
 			continue
 		}
-		f = shiftSDF(f, p.At[0], p.At[1])
+		f = shiftSDF(f, p.At.X, p.At.Y)
 		m := pxlib.NewMask(w+2*pad, h+2*pad)
 		for y := range m {
 			for x := range m[y] {
@@ -81,7 +81,7 @@ func (c *Ctx) shadeSetOf() *shadeSet {
 		s.ids = append(s.ids, p.ID)
 		s.masks = append(s.masks, m)
 		s.fields = append(s.fields, chamfer(m, w+2*pad, h+2*pad))
-		g, _ := call.Args["group"].(string)
+		g := call.Args.str("group")
 		s.groups = append(s.groups, g)
 	}
 	s.label = make([][]int, h)
@@ -100,22 +100,22 @@ func (c *Ctx) shadeSetOf() *shadeSet {
 	return s
 }
 
-func (c *Ctx) shadeParts(a Args) error {
+func (c *ctx) shadeParts(a opArgs) error {
 	s := c.shadeSetOf()
 	idx := s.idx[c.Part.Part.ID]
 	ramp := c.Ramp()
-	outline, err := c.Color(a.Str("outline"))
+	outline, err := c.Color(a.color("outline"))
 	if err != nil {
 		return err
 	}
-	rim, err := c.Color(a.Str("rim"))
+	rim, err := c.Color(a.color("rim"))
 	if err != nil {
 		return err
 	}
-	thick, flat, lines, bias := a.Num("thick"), a.Bool("flat"), a.Bool("lines"), a.Num("bias")
+	thick, flat, lines, bias := a.num("thick"), a.bool("flat"), a.bool("lines"), a.num("bias")
 	group := s.groups[idx]
 	ld := c.Spec.Light.Dir
-	n := math.Sqrt(ld[0]*ld[0] + ld[1]*ld[1] + ld[2]*ld[2])
+	n := math.Sqrt(float64(ld[0]*ld[0]) + float64(ld[1]*ld[1]) + float64(ld[2]*ld[2]))
 	light := [3]float64{ld[0] / n, ld[1] / n, ld[2] / n}
 	w, h := c.G.W, c.G.H
 	lab := func(x, y int) int {
@@ -166,7 +166,7 @@ func (c *Ctx) shadeParts(a Args) error {
 					break
 				}
 			}
-			col := pxlib.Key(ramp[level])
+			col := ramp[level]
 			up, left := lab(x, y-1) < 0, lab(x-1, y) < 0
 			down, right := lab(x, y+1) < 0, lab(x+1, y) < 0
 			if up || left || down || right {
@@ -175,14 +175,14 @@ func (c *Ctx) shadeParts(a Args) error {
 				} else if rim != pxlib.Clear {
 					col = rim
 				} else {
-					col = pxlib.Key(ramp[0])
+					col = ramp[0]
 				}
 			} else if lines {
 				for _, d := range pxlib.Dirs4 {
 					q := lab(x+d.X, y+d.Y)
 					if q >= 0 && q < idx && s.groups[q] != group {
 						if level > 0 || outline == pxlib.Clear {
-							col = pxlib.Key(ramp[0])
+							col = ramp[0]
 						} else {
 							col = outline
 						}

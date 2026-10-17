@@ -261,3 +261,31 @@ func TestFixturesMatchExpected(t *testing.T) {
 		}
 	}
 }
+
+// legend の値が "" の字は、エンジン（不透明に塗る）と検査（透明として数える）が食い違うので NG にする。
+func TestStructureEmptyLegendKey(t *testing.T) {
+	doc := docOfRows(t, "ii", "ix")
+	doc["legend"].(map[string]any)["x"] = ""
+	p, _, _, _ := loadedRules(t).checkDoc(doc, nil, false)
+	onlyLine(t, p, "legend の字 'x' の色キーが空")
+}
+
+// CheckDoc は対象外の指定を当て、コマの件に場所を付けて返す。
+func TestCheckDocFindingsCarryFrameAndExempt(t *testing.T) {
+	doc := docOfRows(t, "ii...", "ii..s", ".....", ".....")
+	got, _, _ := loadedRules(t).CheckDoc(doc, nil, false)
+	found := false
+	for _, f := range got {
+		if f.Rule == "orphan" && f.Sprite == "hero" && f.Frame == "idle" && f.HasAt && f.At.X == 4 && f.At.Y == 1 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("orphan に場所が付かない: %+v", got)
+	}
+	doc["sprites"].(map[string]any)["hero"].(map[string]any)["lint-sprite"] = "対象外(orphan, connect) — 火の粉"
+	got, _, _ = loadedRules(t).CheckDoc(doc, nil, false)
+	if len(got) != 0 {
+		t.Fatalf("対象外が当たらない: %+v", got)
+	}
+}

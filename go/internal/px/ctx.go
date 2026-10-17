@@ -14,17 +14,17 @@ import (
 	"github.com/ababup1192/flix_game_engine/go/internal/pxlib"
 )
 
-// PartState は描いている途中の部品。
-type PartState struct {
-	Part    *Part
-	Ramp    []string
+// partState は描いている途中の部品。
+type partState struct {
+	Part    *part
+	Ramp    []pxlib.Key
 	shape   pxlib.Mask // 形の塊（形が無ければ nil）
 	region  pxlib.Mask // 塊を作る op が描いた範囲
 	written pxlib.Mask // 書いた画素
 }
 
 // Region は部品の塊。
-func (p *PartState) Region() pxlib.Mask {
+func (p *partState) Region() pxlib.Mask {
 	switch {
 	case p.shape != nil:
 		return p.shape
@@ -34,16 +34,16 @@ func (p *PartState) Region() pxlib.Mask {
 	return p.written
 }
 
-// Ctx は 1 コマを描く間の状態。
-type Ctx struct {
+// ctx は 1 コマを描く間の状態。
+type ctx struct {
 	G      *pxlib.Grid
-	Spec   *Spec
-	Sprite *SpriteSpec
+	Spec   *specDoc
+	Sprite *spriteSpec
 	Frame  string
-	Part   *PartState
+	Part   *partState
 
-	parts  map[string]*PartState
-	order  []*Part
+	parts  map[string]*partState
+	order  []*part
 	ref    pxlib.OpRef
 	ox, oy int // use の at で足すずらし（部品の at も含む）
 	depth  int
@@ -53,30 +53,30 @@ type Ctx struct {
 }
 
 // drawFrame は部品の列と post を描いた格子を返す。after は部品を描き終えるたびに呼ばれる（部品の範囲の検査）。
-func drawFrame(c *Ctx, parts []*Part, post []OpCall, after func(*PartState, []string) error) error {
-	c.parts = map[string]*PartState{}
+func drawFrame(c *ctx, parts []*part, post []opCall, after func(*partState, []checkRef) error) error {
+	c.parts = map[string]*partState{}
 	c.order = parts
 	for _, p := range parts {
-		ps := &PartState{Part: p, Ramp: c.Spec.Ramps[p.Ramp], written: pxlib.NewMask(c.G.W, c.G.H)}
+		ps := &partState{Part: p, Ramp: c.Spec.Ramps[p.Ramp], written: pxlib.NewMask(c.G.W, c.G.H)}
 		if p.Shape != nil {
-			f, err := ShapeOf(p.Shape, c.Spec.Shapes)
+			f, err := shapeOf(p.Shape, c.Spec.Shapes, p.Where+".shape")
 			if err != nil {
-				return fmt.Errorf("%s.shape: %w", p.Where, err)
+				return err
 			}
-			ps.shape = pxlib.MaskOf(c.G.W, c.G.H, shiftSDF(f, p.At[0], p.At[1]))
+			ps.shape = pxlib.MaskOf(c.G.W, c.G.H, shiftSDF(f, p.At.X, p.At.Y))
 		}
 		c.parts[p.ID] = ps
 	}
 	for _, p := range parts {
 		c.Part = c.parts[p.ID]
-		c.ox, c.oy = p.At[0], p.At[1]
-		var checks []string
+		c.ox, c.oy = p.At.X, p.At.Y
+		var checks []checkRef
 		for i, call := range p.Ops {
 			c.ref = pxlib.OpRef{Part: p.ID, Index: i, Op: call.Name}
 			if err := c.apply(call); err != nil {
 				return err
 			}
-			op, _ := LookupOp(call.Name)
+			op, _ := lookupOp(call.Name)
 			checks = append(checks, op.Checks...)
 		}
 		if after != nil {
@@ -85,7 +85,7 @@ func drawFrame(c *Ctx, parts []*Part, post []OpCall, after func(*PartState, []st
 			}
 		}
 	}
-	c.Part = &PartState{Part: &Part{ID: "post"}, written: pxlib.NewMask(c.G.W, c.G.H)}
+	c.Part = &partState{Part: &part{ID: "post"}, written: pxlib.NewMask(c.G.W, c.G.H)}
 	c.ox, c.oy = 0, 0
 	for i, call := range post {
 		c.Part.region = c.G.Opaque()
@@ -98,8 +98,8 @@ func drawFrame(c *Ctx, parts []*Part, post []OpCall, after func(*PartState, []st
 }
 
 // apply は op を 1 つ当てる。誤りには op の場所（例 body.ops[1] shade_step）を付ける。
-func (c *Ctx) apply(call OpCall) error {
-	op, ok := LookupOp(call.Name)
+func (c *ctx) apply(call opCall) error {
+	op, ok := lookupOp(call.Name)
 	if !ok {
 		return fmt.Errorf("%s: 知らない op", call.Where)
 	}
@@ -113,10 +113,10 @@ func (c *Ctx) apply(call OpCall) error {
 }
 
 // Ref は今の op の場所。
-func (c *Ctx) Ref() pxlib.OpRef { return c.ref }
+func (c *ctx) Ref() pxlib.OpRef { return c.ref }
 
 // clipMask は clip の部品が描いてよい範囲（親の塊）。clip でなければ nil。
-func (c *Ctx) clipMask() pxlib.Mask {
+func (c *ctx) clipMask() pxlib.Mask {
 	if !c.Part.Part.Clip {
 		return nil
 	}
@@ -124,7 +124,7 @@ func (c *Ctx) clipMask() pxlib.Mask {
 }
 
 // OnRegion は親（on）の塊。親が無ければ nil。
-func (c *Ctx) OnRegion() pxlib.Mask {
+func (c *ctx) OnRegion() pxlib.Mask {
 	if c.Part.Part.On == "" {
 		return nil
 	}
@@ -132,7 +132,7 @@ func (c *Ctx) OnRegion() pxlib.Mask {
 }
 
 // PutAbs は格子の座標そのままで 1 画素を書く（clip の範囲の外は書かない）。
-func (c *Ctx) PutAbs(x, y int, k pxlib.Key) {
+func (c *ctx) PutAbs(x, y int, k pxlib.Key) {
 	if !c.G.In(x, y) {
 		return
 	}
@@ -144,17 +144,17 @@ func (c *Ctx) PutAbs(x, y int, k pxlib.Key) {
 }
 
 // Put は部品の at と use の at でずらして 1 画素を書く。
-func (c *Ctx) Put(x, y int, k pxlib.Key) { c.PutAbs(x+c.ox, y+c.oy, k) }
+func (c *ctx) Put(x, y int, k pxlib.Key) { c.PutAbs(x+c.ox, y+c.oy, k) }
 
 // FillAbs は塊を 1 色で塗る。
-func (c *Ctx) FillAbs(m pxlib.Mask, k pxlib.Key) {
+func (c *ctx) FillAbs(m pxlib.Mask, k pxlib.Key) {
 	for _, p := range m.Points() {
 		c.PutAbs(p.X, p.Y, k)
 	}
 }
 
 // AddRegion は塊を作る op が描いた範囲を部品の塊に足す。
-func (c *Ctx) AddRegion(m pxlib.Mask) {
+func (c *ctx) AddRegion(m pxlib.Mask) {
 	if c.Part.region == nil {
 		c.Part.region = pxlib.NewMask(c.G.W, c.G.H)
 	}
@@ -162,11 +162,11 @@ func (c *Ctx) AddRegion(m pxlib.Mask) {
 }
 
 // Region は今の部品の塊。
-func (c *Ctx) Region() pxlib.Mask { return c.Part.Region() }
+func (c *ctx) Region() pxlib.Mask { return c.Part.Region() }
 
 // MaskOf は形を（at でずらして）塊にする。
-func (c *Ctx) MaskOf(shape any) (pxlib.Mask, error) {
-	f, err := ShapeOf(shape, c.Spec.Shapes)
+func (c *ctx) MaskOf(shape any) (pxlib.Mask, error) {
+	f, err := shapeOf(shape, c.Spec.Shapes, "shape")
 	if err != nil {
 		return nil, err
 	}
@@ -174,14 +174,14 @@ func (c *Ctx) MaskOf(shape any) (pxlib.Mask, error) {
 }
 
 // ShapeOrRegion は引数 shape があればその塊、無ければ部品の塊。
-func (c *Ctx) ShapeOrRegion(a Args) (pxlib.Mask, error) {
-	if a.Has("shape") {
-		return c.MaskOf(a["shape"])
+func (c *ctx) ShapeOrRegion(a opArgs) (pxlib.Mask, error) {
+	if a.has("shape") {
+		return c.MaskOf(a.shape("shape"))
 	}
 	return c.Region(), nil
 }
 
-func shiftSDF(f SDF, dx, dy int) SDF {
+func shiftSDF(f sdf, dx, dy int) sdf {
 	if dx == 0 && dy == 0 {
 		return f
 	}
@@ -190,10 +190,10 @@ func shiftSDF(f SDF, dx, dy int) SDF {
 }
 
 // Ramp は今の部品のランプ（暗 → 明）。
-func (c *Ctx) Ramp() []string { return c.Part.Ramp }
+func (c *ctx) Ramp() []pxlib.Key { return c.Part.Ramp }
 
 // RampAt はランプの i 段目。段が足りなければ誤り。
-func (c *Ctx) RampAt(i int) (pxlib.Key, error) {
+func (c *ctx) RampAt(i int) (pxlib.Key, error) {
 	r := c.Ramp()
 	if i < 0 || i >= len(r) {
 		if len(r) == 0 {
@@ -201,11 +201,11 @@ func (c *Ctx) RampAt(i int) (pxlib.Key, error) {
 		}
 		return "", fmt.Errorf("ランプの %d 段目が無い（ランプ %q は %d 段）", i, c.Part.Part.Ramp, len(r))
 	}
-	return pxlib.Key(r[i]), nil
+	return r[i], nil
 }
 
-// Need は暗 → 明の n 段以上のランプが要る op の前提。
-func (c *Ctx) Need(n int) error {
+// NeedRamp は暗 → 明の n 段以上のランプが要る op の前提。
+func (c *ctx) NeedRamp(n int) error {
 	if len(c.Ramp()) < n {
 		return fmt.Errorf("暗 → 明の %d 段のランプが要る（今は %d 段。部品かスプライトに \"ramp\" を書く）", n, len(c.Ramp()))
 	}
@@ -213,15 +213,16 @@ func (c *Ctx) Need(n int) error {
 }
 
 // Gloss はつやの色（light.gloss）。
-func (c *Ctx) Gloss() (pxlib.Key, error) {
+func (c *ctx) Gloss() (pxlib.Key, error) {
 	if c.Spec.Light.Gloss == "" {
 		return "", fmt.Errorf("つやの色が無い（light.gloss に色キーを書く）")
 	}
-	return pxlib.Key(c.Spec.Light.Gloss), nil
+	return c.Spec.Light.Gloss, nil
 }
 
-// Color は色の名前を色キーにする: ink・shade・mid・light（ランプの 0〜3 段）・ramp[i]・gloss・""（透明）・色キー。
-func (c *Ctx) Color(name string) (pxlib.Key, error) {
+// Color は色の参照を色キーにする: ink・shade・mid・light（ランプの 0〜3 段）・ramp[i]・gloss・""（透明）・色キー。
+func (c *ctx) Color(ref colorRef) (pxlib.Key, error) {
+	name := string(ref)
 	switch name {
 	case "":
 		return pxlib.Clear, nil
@@ -254,7 +255,7 @@ func (c *Ctx) Color(name string) (pxlib.Key, error) {
 }
 
 // LightSign は光の来る向きの符号（左上なら (-1, -1)）。
-func (c *Ctx) LightSign() (int, int) {
+func (c *ctx) LightSign() (int, int) {
 	sign := func(v float64) int {
 		switch {
 		case v < 0:

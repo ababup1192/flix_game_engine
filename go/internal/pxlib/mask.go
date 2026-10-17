@@ -272,3 +272,6 @@ func ProfileRuns(seq []Profile) [][]Run {
 	}
 	return chunks
 }
+
+// Size は格子の大きさ。
+type Size struct{ W, H int }

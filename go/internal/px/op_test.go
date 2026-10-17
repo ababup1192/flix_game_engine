@@ -11,7 +11,7 @@ import (
 
 // op の説明は Op の構造体の 1 か所だけにある。空の欄があれば文書（px-ops.md・スキーマ）に穴が開く。
 func TestOpRegistryHasDocs(t *testing.T) {
-	for _, op := range Ops() {
+	for _, op := range allOps() {
 		if op.Summary == "" || op.Technique == "" || op.Finish == "" {
 			t.Errorf("%s: Summary・Technique・Finish のどれかが空", op.Name)
 		}
@@ -23,15 +23,14 @@ func TestOpRegistryHasDocs(t *testing.T) {
 				t.Errorf("%s.%s: 必須なのに既定値がある", op.Name, p.Name)
 			}
 		}
-		for _, c := range op.Checks {
-			base, _, _ := strings.Cut(c, ":")
-			if checks[base] == nil {
+		for _, c := range append(append([]checkRef(nil), op.Checks...), op.Exempt...) {
+			if checks[c.Check] == nil {
 				t.Errorf("%s: 知らない検査 %q", op.Name, c)
 			}
 		}
 	}
 	for _, name := range []string{"fill", "stamp", "use", "flip", "outline", "shade_step", "shade_parts", "pixel_perfect"} {
-		if _, ok := LookupOp(name); !ok {
+		if _, ok := lookupOp(name); !ok {
 			t.Errorf("段 1 の op %s が無い", name)
 		}
 	}
@@ -40,9 +39,9 @@ func TestOpRegistryHasDocs(t *testing.T) {
 // docs/ の生成物は op の登録とずれていない（ずれたら bin/fge px ops --md・bin/fge px schema で作り直す）。
 func TestDocsUpToDate(t *testing.T) {
 	for path, want := range map[string]string{
-		"docs/px-ops.md":             OpsMarkdown(),
-		"docs/pxsrc.schema.json":     SpecSchema(),
-		"docs/colorgate.schema.json": GateSchema(),
+		"docs/px-ops.md":             opsMarkdown(),
+		"docs/pxsrc.schema.json":     specSchema(),
+		"docs/colorgate.schema.json": gateSchema(),
 	} {
 		got, err := os.ReadFile(filepath.Join(engineRoot, path))
 		if err != nil || string(got) != want {
@@ -78,12 +77,12 @@ func TestViolationPointsToOp(t *testing.T) {
       {"id": "body", "shape": {"rect": [1, 1, 3, 3]}, "ops": [{"fill": {"color": "mid"}}]},
       {"id": "spark", "ops": [{"put": {"cells": [[6, 6]], "color": "light"}}]}],
     "frames": {"idle": {}}}}}`)
-	res, err := Build(dir, "t.pxsrc.json", Options{RulesRoot: engineRoot})
+	res, err := build(dir, "t.pxsrc.json", buildOptions{RulesRoot: engineRoot})
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, v := range res.Violations {
-		if v.Check == "sprite:orphan" {
+		if v.Check == checkSprite && v.Rule == "orphan" {
 			if v.Op.String() != "spark.ops[0] put" || v.X != 6 || v.Y != 6 {
 				t.Fatalf("got %s", v.String())
 			}
@@ -101,7 +100,7 @@ func TestSpecProblemsHaveLocation(t *testing.T) {
       {"id": "body", "ops": [{"fill": {"colour": "mid"}}]},
       {"id": "eye", "on": "hat", "ops": [{"shade_stepp": {}}]}],
     "frames": {"idle": {}, "blink": {"nose": null}}}}}`)
-	_, err := Load(filepath.Join(dir, "t.pxsrc.json"))
+	_, err := loadSpec(filepath.Join(dir, "t.pxsrc.json"))
 	if err == nil {
 		t.Fatal("通ってしまった")
 	}
@@ -121,7 +120,7 @@ func TestFramePatch(t *testing.T) {
       {"id": "a", "shape": {"rect": [0, 0, 1, 1]}, "ops": [{"fill": {"color": "ink"}}]},
       {"id": "b", "shape": {"rect": [0, 1, 1, 1]}, "ops": [{"fill": {"color": "light"}}]}],
     "frames": {"idle": {}, "off": {"b": null}, "moved": {"a": {"at": [2, 0]}}}}}}`)
-	res, err := Build(dir, "t.pxsrc.json", Options{RulesRoot: engineRoot, NoCheck: true})
+	res, err := build(dir, "t.pxsrc.json", buildOptions{RulesRoot: engineRoot, NoCheck: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +158,7 @@ func TestClipStaysInsideParent(t *testing.T) {
       {"id": "a", "shape": {"rect": [1, 0, 2, 1]}, "ops": [{"fill": {"color": "ink"}}]},
       {"id": "b", "on": "a", "clip": true, "ops": [{"line": {"points": [[0, 0], [4, 0]], "color": "light"}}]}],
     "frames": {"idle": {}}}}}`)
-	res, err := Build(dir, "t.pxsrc.json", Options{RulesRoot: engineRoot, NoCheck: true})
+	res, err := build(dir, "t.pxsrc.json", buildOptions{RulesRoot: engineRoot, NoCheck: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,7 +202,7 @@ func TestPixelPerfectExamples(t *testing.T) {
 		{[]string{"###...", "..###."}, []string{"##....", "..###."}},
 		{[]string{"##", "##"}, []string{"##", "##"}},
 	} {
-		got := rowsOfMask(PixelPerfect(maskOf(c.in...)))
+		got := rowsOfMask(pixelPerfect(maskOf(c.in...)))
 		if want := strings.Join(c.want, " / "); got != want {
 			t.Errorf("%v: got %s want %s", c.in, got, want)
 		}
@@ -211,13 +210,13 @@ func TestPixelPerfectExamples(t *testing.T) {
 }
 
 func TestShadeStepExamples(t *testing.T) {
-	ramp := []string{"a", "b", "c", "d"}
+	ramp := []pxlib.Key{"a", "b", "c", "d"}
 	for _, c := range []struct {
 		from pxlib.Key
 		d    int
 		want pxlib.Key
 	}{{"a", -1, "a"}, {"c", 1, "d"}, {"z", 1, "z"}} {
-		if got := ShadeStep(ramp, c.from, c.d); got != c.want {
+		if got := shadeStep(ramp, c.from, c.d); got != c.want {
 			t.Errorf("(%s, %+d): got %s want %s", c.from, c.d, got, c.want)
 		}
 	}
@@ -230,7 +229,7 @@ func TestShadeStepOpStaysInShape(t *testing.T) {
     "parts": [{"id": "a", "shape": {"rect": [0, 0, 4, 1]},
       "ops": [{"fill": {"color": "mid"}}, {"shade_step": {"by": -1, "shape": {"rect": [2, 0, 2, 1]}}}]}],
     "frames": {"idle": {}}}}}`)
-	res, err := Build(dir, "t.pxsrc.json", Options{RulesRoot: engineRoot, NoCheck: true})
+	res, err := build(dir, "t.pxsrc.json", buildOptions{RulesRoot: engineRoot, NoCheck: true})
 	if err != nil {
 		t.Fatal(err)
 	}

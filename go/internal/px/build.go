@@ -20,15 +20,15 @@ import (
 	"github.com/ababup1192/flix_game_engine/go/internal/sprite"
 )
 
-// Options は build の切り替え。
-type Options struct {
+// buildOptions は build の切り替え。
+type buildOptions struct {
 	RulesRoot string // 検査の閾値を読むリポジトリのルート（bin/lint-rules/）
 	NoCheck   bool   // lint と advice を回さない（色の門は回す）
 	OutDir    string // 見本と report.json の置き場（省くと <root>/debug/px/<名前>/last）
 }
 
-// FrameResult は描き上がった 1 コマ。
-type FrameResult struct {
+// frameResult は描き上がった 1 コマ。
+type frameResult struct {
 	Sprite  string   `json:"sprite"`
 	Name    string   `json:"frame"`
 	Rows    []string `json:"rows"`
@@ -37,32 +37,33 @@ type FrameResult struct {
 	grid    *pxlib.Grid
 }
 
-// Result は build 1 回の結果。
-type Result struct {
+// buildResult は build 1 回の結果。
+type buildResult struct {
 	Spec        string            `json:"spec"`
 	Target      string            `json:"target"`
 	Wrote       bool              `json:"wrote"`
-	Frames      []FrameResult     `json:"frames"`
-	Violations  []Violation       `json:"violations"`
+	Frames      []frameResult     `json:"frames"`
+	Violations  []violation       `json:"violations"`
 	Known       []string          `json:"known,omitempty"`
 	LegendAdded []string          `json:"legendAdded,omitempty"`
 	Sheet       string            `json:"sheet"`
 	Legend      map[string]string `json:"legend"` // 字 → 色キー（次の周の差の見本に使う）
 	Elapsed     time.Duration     `json:"elapsedNs"`
-	Prev        *Counts           `json:"-"`
+	Prev        *levelCounts      `json:"-"`
+	prevKeys    map[string]bool   // 前の周の違反（上位の件を「新しい物から」出すため）
 }
 
-// Counts は重さごとの違反の数。
-type Counts struct{ Gate, Lint, Advice int }
+// levelCounts は重さごとの違反の数。
+type levelCounts struct{ Gate, Lint, Advice int }
 
 // Count は重さごとの違反の数。
-func (r *Result) Count() Counts {
-	var c Counts
+func (r *buildResult) Count() levelCounts {
+	var c levelCounts
 	for _, v := range r.Violations {
 		switch v.Level {
-		case Gate:
+		case levelGate:
 			c.Gate++
-		case Lint:
+		case levelLint:
 			c.Lint++
 		default:
 			c.Advice++
@@ -73,14 +74,14 @@ func (r *Result) Count() Counts {
 
 const legendPool = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789#@$%&*+=?!~^"
 
-// Build は spec を読んで描き、target に書き、見本と report.json を作る。
-func Build(root, specPath string, opt Options) (*Result, error) {
+// build は spec を読んで描き、target に書き、見本と report.json を作る。
+func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 	t0 := time.Now()
 	full := specPath
 	if !filepath.IsAbs(full) {
 		full = filepath.Join(root, specPath)
 	}
-	spec, err := Load(full)
+	spec, err := loadSpec(full)
 	if err != nil {
 		return nil, err
 	}
@@ -117,40 +118,27 @@ func Build(root, specPath string, opt Options) (*Result, error) {
 	if legend == nil || sprites == nil {
 		return nil, fmt.Errorf("%s: legend と sprites が要る", base)
 	}
-	keyOf := map[string]pxlib.Key{}
-	charOf := map[pxlib.Key]string{}
-	lchars, lvals := legend.Items()
-	for i, ch := range lchars {
-		if k, ok := lvals[i].(string); ok {
-			keyOf[ch] = pxlib.Key(k)
-			if _, dup := charOf[pxlib.Key(k)]; !dup {
-				charOf[pxlib.Key(k)] = ch
-			}
-		}
-	}
-	pal := PaletteOf(root, doc)
+	lg := pxlib.LegendOf(legend)
+	plainDoc := pxlib.Plain(doc).(map[string]any)
+	pal := pxlib.DocPalette(root, plainDoc, nil, pxlib.AnyColor)
 	if spec.Palette != "" {
-		if po, err := pxlib.ReadOrdered(filepath.Join(root, spec.Palette)); err == nil {
-			tmp := pxlib.NewObj()
-			tmp.Set("palette", po)
-			for k, h := range PaletteOf(root, tmp) {
-				if _, ok := pal[k]; !ok {
-					pal[k] = h
-				}
+		for k, h := range pxlib.ColorTable(pxlib.ReadJSON(filepath.Join(root, spec.Palette)), pxlib.AnyColor) {
+			if _, ok := pal[k]; !ok {
+				pal[k] = h
 			}
 		}
 	}
 	hasKey := func(k pxlib.Key) bool {
-		if _, ok := charOf[k]; ok {
+		if _, ok := lg.CharOf[k]; ok {
 			return true
 		}
 		_, ok := pal[string(k)]
 		return ok
 	}
-	var rules *Rules
+	var rules *pxRules
 	var spriteRules *sprite.Rules
 	if !opt.NoCheck {
-		if rules, err = LoadRules(opt.RulesRoot); err != nil {
+		if rules, err = loadRules(opt.RulesRoot); err != nil {
 			return nil, err
 		}
 		if spriteRules, err = sprite.LoadRules(opt.RulesRoot); err != nil {
@@ -161,11 +149,18 @@ func Build(root, specPath string, opt Options) (*Result, error) {
 	for k, h := range pal {
 		hexOf[pxlib.Key(k)] = h
 	}
-	cc := &CheckCtx{Rules: rules, SpriteRules: spriteRules, HexOf: hexOf, Ground: groundHex(spec.Light.Ground, pal)}
+	cc := &checkCtx{Rules: rules, SpriteRules: spriteRules, HexOf: hexOf, Ground: groundHex(spec.Light.Ground, pal)}
 
-	res := &Result{Spec: specPath, Target: spec.Target}
-	addViolations := func(vs []Violation, sp, frame string) {
+	res := &buildResult{Spec: specPath, Target: spec.Target}
+	addViolations := func(vs []violation, sp, frame string) {
+		exempt := map[string]bool{}
+		if spriteRules != nil {
+			exempt = spriteRules.ExemptRules(plainDoc, sp)
+		}
 		for _, v := range vs {
+			if v.Check == checkSprite && exempt[v.Rule] {
+				continue // base の lint-sprite が対象外にした規則
+			}
 			v.Sprite, v.Frame = sp, frame
 			res.Violations = append(res.Violations, v)
 		}
@@ -186,8 +181,8 @@ func Build(root, specPath string, opt Options) (*Result, error) {
 		}
 		if sp.Anchor != nil {
 			anchor := pxlib.NewObj()
-			anchor.Set("x", json.Number(fmt.Sprint(sp.Anchor[0])))
-			anchor.Set("y", json.Number(fmt.Sprint(sp.Anchor[1])))
+			anchor.Set("x", json.Number(fmt.Sprint(sp.Anchor.X)))
+			anchor.Set("y", json.Number(fmt.Sprint(sp.Anchor.Y)))
 			entry.Set("anchor", anchor)
 		}
 		frames, _ := entry.GetOr("frames", nil).(*pxlib.Obj)
@@ -201,10 +196,10 @@ func Build(root, specPath string, opt Options) (*Result, error) {
 			if len(r.probs) > 0 {
 				return nil, r.probs
 			}
-			c := &Ctx{G: pxlib.NewGrid(sp.Size[0], sp.Size[1]), Spec: spec, Sprite: sp, Frame: f.Name, hasKey: hasKey, keyOf: keyOf}
-			var after func(*PartState, []string) error
+			c := &ctx{G: pxlib.NewGrid(sp.Size.W, sp.Size.H), Spec: spec, Sprite: sp, Frame: f.Name, hasKey: hasKey, keyOf: lg.KeyOf}
+			var after func(*partState, []checkRef) error
 			if !opt.NoCheck {
-				after = func(ps *PartState, names []string) error {
+				after = func(ps *partState, names []checkRef) error {
 					if len(names) == 0 {
 						return nil
 					}
@@ -224,7 +219,7 @@ func Build(root, specPath string, opt Options) (*Result, error) {
 			}
 			// legend に無い色キー: 色票にあれば空いている字を当てる
 			for _, k := range c.G.Keys() {
-				if _, ok := charOf[k]; ok {
+				if _, ok := lg.CharOf[k]; ok {
 					continue
 				}
 				if _, ok := pal[string(k)]; !ok {
@@ -235,22 +230,22 @@ func Build(root, specPath string, opt Options) (*Result, error) {
 					return nil, fmt.Errorf("legend に当てる字が残っていない")
 				}
 				legend.Set(ch, string(k))
-				keyOf[ch], charOf[k] = k, ch
+				lg.Set(ch, k)
 				res.LegendAdded = append(res.LegendAdded, ch+"="+string(k))
 			}
-			rows, err := c.G.Rows(charOf)
+			rows, err := c.G.Rows(lg.CharOf)
 			if err != nil {
 				return nil, fmt.Errorf("%s/%s: %w", sp.Name, f.Name, err)
 			}
 			old, had := frames.Get(f.Name)
-			fr := FrameResult{Sprite: sp.Name, Name: f.Name, Rows: rows, HadBase: had, grid: c.G}
+			fr := frameResult{Sprite: sp.Name, Name: f.Name, Rows: rows, HadBase: had, grid: c.G}
 			if had {
 				fr.Same = pxlib.DumpPy(old, indent) == pxlib.DumpPy(rows, indent)
 			}
 			frames.Set(f.Name, rowsAny(rows))
 			res.Frames = append(res.Frames, fr)
 			if !opt.NoCheck {
-				for _, n := range FrameChecks {
+				for _, n := range frameChecks {
 					vs, err := runCheck(n, c.G, cc)
 					if err != nil {
 						return nil, err
@@ -262,22 +257,19 @@ func Build(root, specPath string, opt Options) (*Result, error) {
 	}
 	res.Violations = dedupeViolations(res.Violations)
 	if spec.Gate != "" {
-		gate, err := LoadColorGate(root, spec.Gate)
+		gate, err := loadColorGate(root, spec.Gate)
 		if err != nil {
 			return nil, err
 		}
 		bad, known := gate.CheckDoc(root, doc, filepath.Base(spec.Target))
 		res.Known = known
 		for _, b := range bad {
-			res.Violations = append(res.Violations, gateViolation(b, res.Frames, keyOf, legend))
+			res.Violations = append(res.Violations, gateViolation(b, res.Frames))
 		}
 	}
 	res.Legend = map[string]string{}
-	lchars, lvals = legend.Items()
-	for i, ch := range lchars {
-		if s, ok := lvals[i].(string); ok {
-			res.Legend[ch] = s
-		}
+	for ch, k := range lg.KeyOf {
+		res.Legend[ch] = string(k)
 	}
 	if res.Count().Gate == 0 {
 		out := filepath.Join(root, spec.Target)
@@ -297,6 +289,10 @@ func Build(root, specPath string, opt Options) (*Result, error) {
 	if prev != nil {
 		c := prev.Count()
 		res.Prev = &c
+		res.prevKeys = map[string]bool{}
+		for _, v := range prev.Violations {
+			res.prevKeys[v.key()] = true
+		}
 	}
 	if err := writeSheets(dir, res, prev, hexOf, groundColor(cc.Ground)); err != nil {
 		return nil, err
@@ -328,11 +324,11 @@ func freeChar(legend *pxlib.Obj) string {
 }
 
 // dedupeViolations は部品の範囲と全体で同じ物を 2 度数えない（先に出た方を残す）。
-func dedupeViolations(vs []Violation) []Violation {
+func dedupeViolations(vs []violation) []violation {
 	seen := map[string]bool{}
-	var out []Violation
+	var out []violation
 	for _, v := range vs {
-		k := fmt.Sprintf("%s|%s|%s|%d|%d|%s", v.Sprite, v.Frame, v.Check, v.X, v.Y, v.Msg)
+		k := v.key()
 		if !seen[k] {
 			seen[k] = true
 			out = append(out, v)
@@ -342,16 +338,16 @@ func dedupeViolations(vs []Violation) []Violation {
 }
 
 // gateViolation は門の違反に、その色を最初に使った画素と、そこを描いた op を付ける。
-func gateViolation(b GateViolation, frames []FrameResult, keyOf map[string]pxlib.Key, legend *pxlib.Obj) Violation {
-	v := Violation{Check: "gate:" + b.Kind, Level: Gate, Sprite: b.Sprite, Msg: b.Msg}
+func gateViolation(b gateFinding, frames []frameResult) violation {
+	v := violation{Check: checkGate, Rule: string(b.Kind), Level: levelGate, Sprite: b.Sprite, Msg: b.Msg}
 	for _, f := range frames {
 		if f.Sprite != b.Sprite || f.grid == nil {
 			continue
 		}
 		for y := 0; y < f.grid.H; y++ {
 			for x := 0; x < f.grid.W; x++ {
-				if string(f.grid.Px[y][x]) == b.Key {
-					v.Frame, v.X, v.Y, v.HasAt, v.Op = f.Name, x, y, true, f.grid.Src[y][x]
+				if string(f.grid.At(x, y)) == b.Key {
+					v.Frame, v.X, v.Y, v.HasAt, v.Op = f.Name, x, y, true, f.grid.SrcAt(x, y)
 					return v
 				}
 			}
@@ -360,11 +356,11 @@ func gateViolation(b GateViolation, frames []FrameResult, keyOf map[string]pxlib
 	return v
 }
 
-func groundHex(ground string, pal map[string]string) string {
-	if h, ok := pal[ground]; ok {
+func groundHex(ground colorRef, pal map[string]string) string {
+	if h, ok := pal[string(ground)]; ok {
 		return h
 	}
-	return pxlib.HexOfValue(ground)
+	return pxlib.HexOfValue(string(ground))
 }
 
 func groundColor(hex string) color.RGBA {
@@ -374,30 +370,16 @@ func groundColor(hex string) color.RGBA {
 	return color.RGBA{0x2a, 0x2a, 0x33, 0xff}
 }
 
-func readPrev(path string) *Result {
+func readPrev(path string) *buildResult {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil
 	}
-	var r Result
+	var r buildResult
 	if json.Unmarshal(data, &r) != nil {
 		return nil
 	}
 	return &r
-}
-
-// UnmarshalJSON は report.json の level を名前から戻す。
-func (l *Level) UnmarshalJSON(b []byte) error {
-	var s string
-	if err := json.Unmarshal(b, &s); err != nil {
-		return err
-	}
-	for i, n := range []string{"gate", "lint", "advice"} {
-		if s == n {
-			*l = Level(i)
-		}
-	}
-	return nil
 }
 
 func colorsOf(rows []string, legend map[string]string, hexOf map[pxlib.Key]string) [][]color.RGBA {
@@ -420,7 +402,7 @@ func colorsOf(rows []string, legend map[string]string, hexOf map[pxlib.Key]strin
 }
 
 // writeSheets は sheet.png（全コマ）と <スプライト>.png（そのスプライトのコマを実寸で横に）を書く。
-func writeSheets(dir string, res *Result, prev *Result, hexOf map[pxlib.Key]string, ground color.RGBA) error {
+func writeSheets(dir string, res *buildResult, prev *buildResult, hexOf map[pxlib.Key]string, ground color.RGBA) error {
 	prevRows := map[string][]string{}
 	if prev != nil {
 		for _, f := range prev.Frames {

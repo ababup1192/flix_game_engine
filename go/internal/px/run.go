@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -37,7 +38,11 @@ func Run(out, errOut *strings.Builder, engineRoot, workRoot string, args []strin
 	gatePath := ""
 	for i := 0; i < len(rest); i++ {
 		switch a := rest[i]; {
-		case a == "--gate" && i+1 < len(rest):
+		case a == "--gate":
+			if i+1 >= len(rest) {
+				fmt.Fprintf(errOut, "px: --gate の後に色の門の Doc を書く\n%s", usage)
+				return 2
+			}
 			gatePath = rest[i+1]
 			i++
 		case strings.HasPrefix(a, "--"):
@@ -45,6 +50,19 @@ func Run(out, errOut *strings.Builder, engineRoot, workRoot string, args []strin
 		default:
 			pos = append(pos, a)
 		}
+	}
+	allowed := map[string][]string{"build": {"--no-check"}, "check": nil, "ops": {"--md", "--check"}, "schema": {"--check"}, "help": nil}
+	if names, known := allowed[verb]; known {
+		for f := range flags {
+			if !slices.Contains(names, f) {
+				fmt.Fprintf(errOut, "px %s: 知らない指定 %s\n%s", verb, f, usage)
+				return 2
+			}
+		}
+	}
+	if gatePath != "" && verb != "check" {
+		fmt.Fprintf(errOut, "px %s: --gate は check だけに書ける\n%s", verb, usage)
+		return 2
 	}
 	switch verb {
 	case "build":
@@ -61,26 +79,26 @@ func Run(out, errOut *strings.Builder, engineRoot, workRoot string, args []strin
 		return cmdCheck(out, errOut, engineRoot, workRoot, gatePath, pos, asJSON)
 	case "ops":
 		if flags["--md"] || flags["--check"] {
-			return writeOrCheck(out, errOut, engineRoot, map[string]string{"docs/px-ops.md": OpsMarkdown()}, flags["--check"])
+			return writeOrCheck(out, errOut, engineRoot, map[string]string{"docs/px-ops.md": opsMarkdown()}, flags["--check"])
 		}
-		out.WriteString(OpsTable())
+		out.WriteString(opsTable())
 		return 0
 	case "schema":
 		return writeOrCheck(out, errOut, engineRoot, map[string]string{
-			"docs/pxsrc.schema.json":     SpecSchema(),
-			"docs/colorgate.schema.json": GateSchema(),
+			"docs/pxsrc.schema.json":     specSchema(),
+			"docs/colorgate.schema.json": gateSchema(),
 		}, flags["--check"])
 	case "help":
 		if len(pos) != 1 {
 			errOut.WriteString(usage)
 			return 2
 		}
-		op, ok := LookupOp(pos[0])
+		op, ok := lookupOp(pos[0])
 		if !ok {
 			fmt.Fprintf(errOut, "px: 知らない op %q（一覧は fge px ops）\n", pos[0])
 			return 2
 		}
-		out.WriteString(OpHelp(op))
+		out.WriteString(opHelp(op))
 		return 0
 	}
 	fmt.Fprintf(errOut, "px: 知らない動詞 %q\n%s", verb, usage)
@@ -115,7 +133,7 @@ func writeOrCheck(out, errOut *strings.Builder, root string, files map[string]st
 }
 
 func cmdBuild(out, errOut *strings.Builder, engineRoot, workRoot, spec string, noCheck, asJSON bool) int {
-	res, err := Build(workRoot, spec, Options{RulesRoot: engineRoot, NoCheck: noCheck})
+	res, err := build(workRoot, spec, buildOptions{RulesRoot: engineRoot, NoCheck: noCheck})
 	if err != nil {
 		fmt.Fprintf(errOut, "px: %v\n", err)
 		return 1
@@ -129,12 +147,12 @@ func cmdBuild(out, errOut *strings.Builder, engineRoot, workRoot, spec string, n
 		out.Write(append(data, '\n'))
 		return code
 	}
-	out.WriteString(Summary(workRoot, res))
+	out.WriteString(summarize(workRoot, res))
 	return code
 }
 
-// Summary は build の結果を 5 行以内にまとめる。
-func Summary(root string, res *Result) string {
+// summarize は build の結果を 5 行以内にまとめる。
+func summarize(root string, res *buildResult) string {
 	same, changed, added := 0, 0, 0
 	for _, f := range res.Frames {
 		switch {
@@ -161,17 +179,24 @@ func Summary(root string, res *Result) string {
 	if len(res.Known) > 0 {
 		gate += fmt.Sprintf("（known %d 色）", len(res.Known))
 	}
-	delta := func(now int, prev func(Counts) int) string {
+	delta := func(now int, prev func(levelCounts) int) string {
 		if res.Prev == nil {
 			return ""
 		}
 		return fmt.Sprintf("（%+d）", now-prev(*res.Prev))
 	}
 	fmt.Fprintf(&b, "%s・lint %d%s・advice %d%s・見本 %s\n", gate,
-		c.Lint, delta(c.Lint, func(p Counts) int { return p.Lint }),
-		c.Advice, delta(c.Advice, func(p Counts) int { return p.Advice }), rel(root, res.Sheet))
-	top := append([]Violation(nil), res.Violations...)
-	sort.SliceStable(top, func(i, j int) bool { return top[i].Level < top[j].Level })
+		c.Lint, delta(c.Lint, func(p levelCounts) int { return p.Lint }),
+		c.Advice, delta(c.Advice, func(p levelCounts) int { return p.Advice }), rel(root, res.Sheet))
+	// 前の周に無かった物を先に、同じなら重い物を先に出す
+	top := append([]violation(nil), res.Violations...)
+	sort.SliceStable(top, func(i, j int) bool {
+		ni, nj := !res.prevKeys[top[i].key()], !res.prevKeys[top[j].key()]
+		if ni != nj {
+			return ni
+		}
+		return top[i].Level < top[j].Level
+	})
 	for i, v := range top {
 		if i == 3 {
 			break

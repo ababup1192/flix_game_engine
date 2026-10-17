@@ -30,11 +30,12 @@ func (r OpRef) String() string {
 	return fmt.Sprintf("%s.ops[%d] %s", r.Part, r.Index, r.Op)
 }
 
-// Grid は W×H の画素。Px[y][x] が色キー、Src[y][x] がそれを書いた op。
+// Grid は W×H の画素。px[y][x] が色キー、src[y][x] がそれを書いた op。
+// 書けるのは Put・Fill・Flip だけ（どれも OpRef を残す）。読むのは At・SrcAt。
 type Grid struct {
 	W, H int
-	Px   [][]Key
-	Src  [][]OpRef
+	px   [][]Key
+	src  [][]OpRef
 }
 
 // NewGrid は透明の格子を作る。
@@ -45,25 +46,33 @@ func NewGrid(w, h int) *Grid {
 		px[y] = make([]Key, w)
 		src[y] = make([]OpRef, w)
 	}
-	return &Grid{W: w, H: h, Px: px, Src: src}
+	return &Grid{W: w, H: h, px: px, src: src}
 }
 
 // In は (x, y) が格子の中か。
 func (g *Grid) In(x, y int) bool { return x >= 0 && x < g.W && y >= 0 && y < g.H }
+
+// SrcAt は (x, y) を最後に書いた op。格子の外は空。
+func (g *Grid) SrcAt(x, y int) OpRef {
+	if !g.In(x, y) {
+		return OpRef{}
+	}
+	return g.src[y][x]
+}
 
 // At は格子の外を透明として引く。
 func (g *Grid) At(x, y int) Key {
 	if !g.In(x, y) {
 		return Clear
 	}
-	return g.Px[y][x]
+	return g.px[y][x]
 }
 
 // Put は 1 画素を書く。格子の外なら何もしない。
 func (g *Grid) Put(x, y int, k Key, ref OpRef) {
 	if g.In(x, y) {
-		g.Px[y][x] = k
-		g.Src[y][x] = ref
+		g.px[y][x] = k
+		g.src[y][x] = ref
 	}
 }
 
@@ -72,8 +81,8 @@ func (g *Grid) Fill(m Mask, k Key, ref OpRef) {
 	for y := 0; y < g.H; y++ {
 		for x := 0; x < g.W; x++ {
 			if m.At(x, y) {
-				g.Px[y][x] = k
-				g.Src[y][x] = ref
+				g.px[y][x] = k
+				g.src[y][x] = ref
 			}
 		}
 	}
@@ -84,7 +93,7 @@ func (g *Grid) Opaque() Mask {
 	m := NewMask(g.W, g.H)
 	for y := range m {
 		for x := range m[y] {
-			m[y][x] = g.Px[y][x] != Clear
+			m[y][x] = g.px[y][x] != Clear
 		}
 	}
 	return m
@@ -96,7 +105,7 @@ func (g *Grid) Count() int { return g.Opaque().Count() }
 // Keys は使っている色キー（透明を除く）を名前の順で。
 func (g *Grid) Keys() []Key {
 	seen := map[Key]bool{}
-	for _, row := range g.Px {
+	for _, row := range g.px {
 		for _, k := range row {
 			if k != Clear {
 				seen[k] = true
@@ -115,8 +124,8 @@ func (g *Grid) Keys() []Key {
 func (g *Grid) Clone() *Grid {
 	c := NewGrid(g.W, g.H)
 	for y := 0; y < g.H; y++ {
-		copy(c.Px[y], g.Px[y])
-		copy(c.Src[y], g.Src[y])
+		copy(c.px[y], g.px[y])
+		copy(c.src[y], g.src[y])
 	}
 	return c
 }
@@ -127,7 +136,7 @@ func (g *Grid) Only(m Mask) *Grid {
 	for y := 0; y < g.H; y++ {
 		for x := 0; x < g.W; x++ {
 			if m.At(x, y) {
-				c.Px[y][x], c.Src[y][x] = g.Px[y][x], g.Src[y][x]
+				c.px[y][x], c.src[y][x] = g.px[y][x], g.src[y][x]
 			}
 		}
 	}
@@ -138,13 +147,13 @@ func (g *Grid) Only(m Mask) *Grid {
 func (g *Grid) Flip(vertical bool) {
 	if vertical {
 		for i, j := 0, g.H-1; i < j; i, j = i+1, j-1 {
-			g.Px[i], g.Px[j] = g.Px[j], g.Px[i]
-			g.Src[i], g.Src[j] = g.Src[j], g.Src[i]
+			g.px[i], g.px[j] = g.px[j], g.px[i]
+			g.src[i], g.src[j] = g.src[j], g.src[i]
 		}
 		return
 	}
-	for y := range g.Px {
-		row, src := g.Px[y], g.Src[y]
+	for y := range g.px {
+		row, src := g.px[y], g.src[y]
 		for i, j := 0, len(row)-1; i < j; i, j = i+1, j-1 {
 			row[i], row[j] = row[j], row[i]
 			src[i], src[j] = src[j], src[i]
@@ -165,7 +174,7 @@ func (g *Grid) Rows(charOf map[Key]string) ([]string, error) {
 	for y := 0; y < g.H; y++ {
 		b := make([]byte, 0, g.W)
 		for x := 0; x < g.W; x++ {
-			k := g.Px[y][x]
+			k := g.px[y][x]
 			if k == Clear {
 				b = append(b, '.')
 				continue
@@ -196,7 +205,7 @@ func GridFromRows(rows []string, legend map[string]Key) (g *Grid, unknown []rune
 		for _, ch := range row {
 			if k, ok := legend[string(ch)]; ok {
 				if x < w {
-					g.Px[y][x] = k
+					g.px[y][x] = k
 				}
 			} else if !seen[ch] {
 				seen[ch] = true

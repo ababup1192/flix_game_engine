@@ -27,72 +27,72 @@ import (
 	"github.com/ababup1192/flix_game_engine/go/internal/pxlib"
 )
 
-// SpecVersion は読める指定の版。
-const SpecVersion = 2
+// specVersion は読める指定の版。
+const specVersion = 2
 
-// Light は光（Doc に 1 か所だけ。op は引数で受けずここを読む）。
-type Light struct {
+// lightSpec は光（Doc に 1 か所だけ。op は引数で受けずここを読む）。
+type lightSpec struct {
 	Dir    [3]float64 // 光の来る向き（x 右・y 下が正。左上なら負）。3 つ目は高さ
-	Gloss  string     // つやの色（色の名前 "gloss" が指す色キー）
-	Ground string     // 絵を置く地の色（色キーか #rrggbb。見本の地と地との明度差の検査に使う）
+	Gloss  pxlib.Key  // つやの色（色の参照 "gloss" が指す色キー）
+	Ground colorRef   // 絵を置く地の色（色キーか #rrggbb。見本の地と地との明度差の検査に使う）
 }
 
-// Spec は読んだ指定。
-type Spec struct {
+// specDoc は読んだ指定。
+type specDoc struct {
 	Path                                     string
 	Version                                  int
 	Title, Note, Target, Base, Palette, Gate string
-	Light                                    Light
-	Ramps                                    map[string][]string
+	Light                                    lightSpec
+	Ramps                                    map[string][]pxlib.Key
 	Shapes                                   map[string]any
-	Macros                                   map[string][]OpCall
-	Sprites                                  []*SpriteSpec
+	Macros                                   map[string][]opCall
+	Sprites                                  []*spriteSpec
 }
 
-// SpriteSpec は 1 スプライトの指定。
-type SpriteSpec struct {
+// spriteSpec は 1 スプライトの指定。
+type spriteSpec struct {
 	Name     string
 	Note     string
-	Size     [2]int
-	Anchor   *[2]int
+	Size     pxlib.Size
+	Anchor   *pxlib.Pt
 	Ramp     string
 	RawParts []*pxlib.Obj // コマの patch を当てる前の部品（鍵の順を保つ）
-	Post     []OpCall
-	Frames   []FrameSpec
+	Post     []opCall
+	Frames   []frameSpec
 }
 
-// FrameSpec は 1 コマ: 部品 id → Merge Patch。
-type FrameSpec struct {
+// frameSpec は 1 コマ: 部品 id → Merge Patch。
+type frameSpec struct {
 	Name  string
 	Patch *pxlib.Obj
 }
 
-// Part は 1 部品（コマの patch を当てた後）。
-type Part struct {
+// part は 1 部品（コマの patch を当てた後）。
+type part struct {
 	ID    string
 	On    string
 	Clip  bool
 	Shape any
 	Ramp  string
-	At    [2]int
-	Ops   []OpCall
+	At    pxlib.Pt
+	Ops   []opCall
 	Where string
 }
 
-// Problem は指定の書き損じ 1 件。
-type Problem struct{ Where, Msg string }
+// problem は指定の書き損じ 1 件。
+type problem struct{ Where, Msg string }
 
-func (p Problem) Error() string {
+func (p problem) Error() string {
 	if p.Where == "" {
 		return p.Msg
 	}
 	return p.Where + ": " + p.Msg
 }
 
-// ProblemList は Problem の並び（error として返す）。
-type ProblemList []Problem
+// problemList は Problem の並び（error として返す）。
+type problemList []problem
 
-func (l ProblemList) Error() string {
+func (l problemList) Error() string {
 	lines := make([]string, len(l))
 	for i, p := range l {
 		lines[i] = p.Error()
@@ -108,10 +108,10 @@ var (
 	idPattern  = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]*$`)
 )
 
-type reader struct{ probs ProblemList }
+type reader struct{ probs problemList }
 
 func (r *reader) bad(where, format string, a ...any) {
-	r.probs = append(r.probs, Problem{where, fmt.Sprintf(format, a...)})
+	r.probs = append(r.probs, problem{where, fmt.Sprintf(format, a...)})
 }
 
 func (r *reader) keys(o *pxlib.Obj, where string, allowed []string) {
@@ -157,17 +157,22 @@ func (r *reader) ints(v any, n int, where string) []int {
 	return out
 }
 
-func (r *reader) ops(v any, where string) []OpCall {
+// ops は op の列を読む。post でなければ post にだけ書ける op を止める。
+func (r *reader) ops(v any, where string, refs map[string]any, post bool) []opCall {
 	arr, ok := v.([]any)
 	if !ok {
 		r.bad(where, "op の配列で書く")
 		return nil
 	}
-	out := make([]OpCall, 0, len(arr))
+	out := make([]opCall, 0, len(arr))
 	for i, e := range arr {
-		call, err := parseOpCall(pxlib.Plain(e), fmt.Sprintf("%s[%d]", where, i))
+		call, err := parseOpCall(pxlib.Plain(e), fmt.Sprintf("%s[%d]", where, i), refs)
 		if err != nil {
-			r.probs = append(r.probs, Problem{Where: "", Msg: err.Error()})
+			r.probs = append(r.probs, problem{Where: "", Msg: err.Error()})
+			continue
+		}
+		if op, _ := lookupOp(call.Name); op.PostOnly && !post {
+			r.bad(call.Where, "格子全体を動かす op なので、スプライトの post にだけ書ける")
 			continue
 		}
 		out = append(out, call)
@@ -175,8 +180,8 @@ func (r *reader) ops(v any, where string) []OpCall {
 	return out
 }
 
-// Load は指定を読む。書き損じは全部 ProblemList で返す（1 件目で止めない）。
-func Load(path string) (*Spec, error) {
+// loadSpec は指定を読む。書き損じは全部 ProblemList で返す（1 件目で止めない）。
+func loadSpec(path string) (*specDoc, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -198,14 +203,14 @@ func Load(path string) (*Spec, error) {
 	return s, nil
 }
 
-func parseSpec(r *reader, root *pxlib.Obj) *Spec {
-	s := &Spec{Ramps: map[string][]string{}, Shapes: map[string]any{}, Macros: map[string][]OpCall{}}
+func parseSpec(r *reader, root *pxlib.Obj) *specDoc {
+	s := &specDoc{Ramps: map[string][]pxlib.Key{}, Shapes: map[string]any{}, Macros: map[string][]opCall{}}
 	r.keys(root, "(一番外)", specKeys)
 	ver, _ := root.Get("version")
-	if n, ok := ver.(json.Number); !ok || n.String() != fmt.Sprint(SpecVersion) {
-		r.bad("version", "%d と書く（今読めるのは version %d の指定）", SpecVersion, SpecVersion)
+	if n, ok := ver.(json.Number); !ok || n.String() != fmt.Sprint(specVersion) {
+		r.bad("version", "%d と書く（今読めるのは version %d の指定）", specVersion, specVersion)
 	}
-	s.Version = SpecVersion
+	s.Version = specVersion
 	s.Title, s.Note = r.str(root, "title", ""), r.str(root, "note", "")
 	s.Target, s.Base = r.str(root, "target", ""), r.str(root, "base", "")
 	s.Palette, s.Gate = r.str(root, "palette", ""), r.str(root, "gate", "")
@@ -214,7 +219,7 @@ func parseSpec(r *reader, root *pxlib.Obj) *Spec {
 	} else if isUnderAssets(s.Target) {
 		r.bad("target", "assets/ を指している — 候補は atelier/ に書く（採用は swap）")
 	}
-	s.Light = Light{Dir: [3]float64{-1, -1, 0}}
+	s.Light = lightSpec{Dir: [3]float64{-1, -1, 0}}
 	if lv, ok := root.Get("light"); ok {
 		lo, isObj := lv.(*pxlib.Obj)
 		if !isObj {
@@ -232,8 +237,8 @@ func parseSpec(r *reader, root *pxlib.Obj) *Spec {
 					}
 				}
 			}
-			s.Light.Gloss = r.str(lo, "gloss", "light")
-			s.Light.Ground = r.str(lo, "ground", "light")
+			s.Light.Gloss = pxlib.Key(r.str(lo, "gloss", "light"))
+			s.Light.Ground = colorRef(r.str(lo, "ground", "light"))
 		}
 	}
 	if s.Light.Dir[2] == 0 {
@@ -249,15 +254,22 @@ func parseSpec(r *reader, root *pxlib.Obj) *Spec {
 			for i, k := range keys {
 				list := strs(pxlib.Plain(vals[i]))
 				if len(list) == 0 {
-					r.bad("ramps."+k, "色の名前の配列（暗 → 明）で書く")
+					r.bad("ramps."+k, "色キーの配列（暗 → 明）で書く")
 				}
-				s.Ramps[k] = list
+				for _, key := range list {
+					s.Ramps[k] = append(s.Ramps[k], pxlib.Key(key))
+				}
 			}
 		}
 	}
 	if sv, ok := root.Get("shapes"); ok {
 		if so, isObj := pxlib.Plain(sv).(map[string]any); isObj {
 			s.Shapes = so
+			for _, k := range keysOf(so) {
+				if _, err := shapeOf(so[k], so, "shapes."+k); err != nil {
+					r.probs = append(r.probs, problem{Msg: err.Error()})
+				}
+			}
 		} else {
 			r.bad("shapes", "名前 → 形のオブジェクトで書く")
 		}
@@ -269,7 +281,7 @@ func parseSpec(r *reader, root *pxlib.Obj) *Spec {
 		} else {
 			keys, vals := mo.Items()
 			for i, k := range keys {
-				s.Macros[k] = r.ops(vals[i], "macros."+k)
+				s.Macros[k] = r.ops(vals[i], "macros."+k, s.Shapes, false)
 			}
 		}
 	}
@@ -288,7 +300,7 @@ func parseSpec(r *reader, root *pxlib.Obj) *Spec {
 	return s
 }
 
-func parseSprite(r *reader, s *Spec, name string, v any) *SpriteSpec {
+func parseSprite(r *reader, s *specDoc, name string, v any) *spriteSpec {
 	where := "sprites." + name
 	o, ok := v.(*pxlib.Obj)
 	if !ok {
@@ -296,20 +308,20 @@ func parseSprite(r *reader, s *Spec, name string, v any) *SpriteSpec {
 		return nil
 	}
 	r.keys(o, where, spriteKeys)
-	sp := &SpriteSpec{Name: name, Note: r.str(o, "note", where), Ramp: r.str(o, "ramp", where)}
+	sp := &spriteSpec{Name: name, Note: r.str(o, "note", where), Ramp: r.str(o, "ramp", where)}
 	if sz, ok := o.Get("size"); ok {
 		if p := r.ints(sz, 2, where+".size"); p != nil {
 			if p[0] < 1 || p[1] < 1 || p[0] > 512 || p[1] > 512 {
 				r.bad(where+".size", "1〜512 の [w, h] で書く")
 			}
-			sp.Size = [2]int{p[0], p[1]}
+			sp.Size = pxlib.Size{W: p[0], H: p[1]}
 		}
 	} else {
 		r.bad(where+".size", "[w, h] が無い")
 	}
 	if av, ok := o.Get("anchor"); ok {
 		if p := r.ints(av, 2, where+".anchor"); p != nil {
-			sp.Anchor = &[2]int{p[0], p[1]}
+			sp.Anchor = &pxlib.Pt{X: p[0], Y: p[1]}
 		}
 	}
 	if sp.Ramp != "" && s.Ramps[sp.Ramp] == nil {
@@ -338,7 +350,7 @@ func parseSprite(r *reader, s *Spec, name string, v any) *SpriteSpec {
 		sp.RawParts = append(sp.RawParts, po)
 	}
 	if ov, ok := o.Get("post"); ok {
-		sp.Post = r.ops(ov, where+".post")
+		sp.Post = r.ops(ov, where+".post", s.Shapes, true)
 	}
 	fv, _ := o.Get("frames")
 	frames, ok := fv.(*pxlib.Obj)
@@ -359,7 +371,7 @@ func parseSprite(r *reader, s *Spec, name string, v any) *SpriteSpec {
 				r.bad(fw+"."+id, "parts に id %q が無い（コマは今ある部品を直すだけ）", id)
 			}
 		}
-		sp.Frames = append(sp.Frames, FrameSpec{fname, patch})
+		sp.Frames = append(sp.Frames, frameSpec{fname, patch})
 	}
 	// 各コマで部品が読めるかを先に確かめる（描く前に書き損じを全部出す）
 	for _, f := range sp.Frames {
@@ -369,8 +381,8 @@ func parseSprite(r *reader, s *Spec, name string, v any) *SpriteSpec {
 }
 
 // partsOf はコマの patch を当てた部品の列。
-func (sp *SpriteSpec) partsOf(r *reader, s *Spec, f FrameSpec) []*Part {
-	var out []*Part
+func (sp *spriteSpec) partsOf(r *reader, s *specDoc, f frameSpec) []*part {
+	var out []*part
 	seen := map[string]bool{}
 	for i, raw := range sp.RawParts {
 		id, _ := raw.GetOr("id", "").(string)
@@ -386,7 +398,7 @@ func (sp *SpriteSpec) partsOf(r *reader, s *Spec, f FrameSpec) []*Part {
 			where = fmt.Sprintf("sprites.%s.frames.%s.%s", sp.Name, f.Name, id)
 		}
 		r.keys(obj, where, partKeys)
-		p := &Part{ID: id, On: r.str(obj, "on", where), Ramp: r.str(obj, "ramp", where), Where: where}
+		p := &part{ID: id, On: r.str(obj, "on", where), Ramp: r.str(obj, "ramp", where), Where: where}
 		if cv, ok := obj.Get("clip"); ok {
 			b, isBool := cv.(bool)
 			if !isBool {
@@ -402,13 +414,13 @@ func (sp *SpriteSpec) partsOf(r *reader, s *Spec, f FrameSpec) []*Part {
 		}
 		if sh, ok := obj.Get("shape"); ok {
 			p.Shape = pxlib.Plain(sh)
-			if _, err := ShapeOf(p.Shape, s.Shapes); err != nil {
-				r.bad(where+".shape", "%v", err)
+			if _, err := shapeOf(p.Shape, s.Shapes, where+".shape"); err != nil {
+				r.probs = append(r.probs, problem{Msg: err.Error()})
 			}
 		}
 		if av, ok := obj.Get("at"); ok {
 			if a := r.ints(av, 2, where+".at"); a != nil {
-				p.At = [2]int{a[0], a[1]}
+				p.At = pxlib.Pt{X: a[0], Y: a[1]}
 			}
 		}
 		if p.Ramp == "" {
@@ -417,7 +429,7 @@ func (sp *SpriteSpec) partsOf(r *reader, s *Spec, f FrameSpec) []*Part {
 			r.bad(where+".ramp", "ramps に %q が無い", p.Ramp)
 		}
 		if ov, ok := obj.Get("ops"); ok {
-			p.Ops = r.ops(ov, fmt.Sprintf("%s.ops", id))
+			p.Ops = r.ops(ov, fmt.Sprintf("%s.ops", id), s.Shapes, false)
 		}
 		seen[id] = true
 		out = append(out, p)
@@ -461,9 +473,9 @@ func specName(specPath string) string {
 	return strings.TrimSuffix(filepath.Base(specPath), ".pxsrc.json")
 }
 
-func dedupe(l ProblemList) ProblemList {
-	seen := map[Problem]bool{}
-	var out ProblemList
+func dedupe(l problemList) problemList {
+	seen := map[problem]bool{}
+	var out problemList
 	for _, p := range l {
 		if !seen[p] {
 			seen[p] = true

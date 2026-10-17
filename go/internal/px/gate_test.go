@@ -15,6 +15,9 @@ import (
 // 期待値は Python の bin/pxkit/gate.py（ゲームの作業場）の判定。testdata/gate の写しは、
 // 5 冊の assets を門に効く所（legend・色票・スプライトの順と使う字）だけに縮めた物で、
 // 縮める前と後で gate.py の判定が同じことを確かめてから置いた。neg/ はわざと破った例。
+// feed（style が free）は決まりの外の例で、色を見ないことを確かめる。
+// 作り直す手順: 写しと期待値はゲームの作業場で bin/pxkit/gate.py を使って作った（台本は報告に添付）。
+// gate.py は段 2 で消えるので、以後は作り直さない。例を足すときは neg/ に冊を置き、期待値を手で書く。
 func TestGateMatchesPython(t *testing.T) {
 	root := "testdata/gate"
 	data, err := os.ReadFile(filepath.Join(root, "expected.json"))
@@ -31,7 +34,7 @@ func TestGateMatchesPython(t *testing.T) {
 	if len(expected) != 9 {
 		t.Fatalf("期待値は assets 5 冊 + 破った例 4 冊（今 %d）", len(expected))
 	}
-	gate, err := LoadColorGate(root, "art/internet_dungeon.colorgate.json")
+	gate, err := loadColorGate(root, "art/internet_dungeon.colorgate.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +47,7 @@ func TestGateMatchesPython(t *testing.T) {
 		bad, known := gate.CheckDoc(root, doc, slot)
 		got := [][3]string{}
 		for _, b := range bad {
-			got = append(got, [3]string{b.Sprite, b.Key, b.Kind})
+			got = append(got, [3]string{b.Sprite, b.Key, string(b.Kind)})
 		}
 		gotKnown := []string{}
 		for _, k := range known {
@@ -68,7 +71,7 @@ func TestGateMatchesPython(t *testing.T) {
 
 // check は門を通らない冊があれば OK を落とし、行に置き場の名前を付ける。
 func TestCheckFilesReportsGate(t *testing.T) {
-	rep, err := CheckFiles(engineRoot, "testdata/gate", "", []string{"assets/internet_dungeon.day.sprite.json", "neg/internet_dungeon.day.sprite.json"})
+	rep, err := checkFiles(engineRoot, "testdata/gate", "", []string{"assets/internet_dungeon.day.sprite.json", "neg/internet_dungeon.day.sprite.json"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +88,7 @@ func TestColorGateRejectsMissingWhy(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "g.json"), []byte(doc), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, err := LoadColorGate(dir, "g.json")
+	_, err := loadColorGate(dir, "g.json")
 	if err == nil {
 		t.Fatal("通ってしまった")
 	}
