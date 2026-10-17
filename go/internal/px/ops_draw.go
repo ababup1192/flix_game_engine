@@ -149,8 +149,9 @@ func init() {
 	})
 	register(&opDef{
 		Name: "outline", Example: `{"outline": {"color": "ink"}}`, Summary: "部品の塊の外側 1px を 1 色で縁取る（sel_out の前身）",
-		Technique: "輪郭（1 色の外側 1px）", Finish: "lint black-outline（段 3）",
+		Technique: "輪郭（1 色の外側 1px）", Finish: "lint black-outline（部品ごとの色にするなら sel_out）",
 		Params: []param{{Name: "color", Type: tColor, Default: "ink", Summary: "縁の色"}},
+		Checks: []checkRef{{Check: checkBlackOutline}},
 		Apply: func(c *ctx, a opArgs) error {
 			k, err := c.Color(a.color("color"))
 			if err != nil {

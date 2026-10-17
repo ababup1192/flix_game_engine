@@ -43,6 +43,7 @@ type specDoc struct {
 	Version                                  int
 	Title, Note, Target, Base, Palette, Gate string
 	Indent                                   string // 書き出す字下げ（"" は base の字面に合わせる）
+	Style                                    string // 機種の決まり（px.json の styles の名前か *.pxstyle.json）
 	Light                                    lightSpec
 	Ramps                                    map[string][]pxlib.Key
 	Shapes                                   map[string]any
@@ -60,6 +61,9 @@ type spriteSpec struct {
 	RawParts []*pxlib.Obj // コマの patch を当てる前の部品（鍵の順を保つ）
 	Post     []opCall
 	Frames   []frameSpec
+	Seeds    []int // variants.seeds（無ければ nil = 変種なし）
+	Anim     *bool // anim の検査を回すか（省くと動きの op・pose・rotate があれば回す）
+	animated bool  // 動きの op・pose・rotate を使っている
 }
 
 // frameSpec は 1 コマ: 部品 id → Merge Patch。
@@ -70,14 +74,16 @@ type frameSpec struct {
 
 // part は 1 部品（コマの patch を当てた後）。
 type part struct {
-	ID    string
-	On    string
-	Clip  bool
-	Shape any
-	Ramp  string
-	At    pxlib.Pt
-	Ops   []opCall
-	Where string
+	ID     string
+	On     string
+	Clip   bool
+	Shape  any
+	Ramp   string
+	At     pxlib.Pt
+	Ops    []opCall
+	Where  string
+	Rotate float64   // 部品を回す角度（度。正で時計回り。rotsprite の考え方で色を足さない）
+	Pivot  *pxlib.Pt // 回す中心（省くと塊の上の真ん中 = 肩・股の付け根）
 }
 
 // problem は指定の書き損じ 1 件。
@@ -102,10 +108,10 @@ func (l problemList) Error() string {
 }
 
 var (
-	specKeys   = []string{"version", "title", "note", "target", "base", "palette", "gate", "indent", "light", "ramps", "shapes", "macros", "sprites"}
+	specKeys   = []string{"version", "title", "note", "target", "base", "palette", "gate", "indent", "style", "light", "ramps", "shapes", "macros", "sprites"}
 	lightKeys  = []string{"dir", "gloss", "ground", "note"}
-	spriteKeys = []string{"note", "size", "anchor", "ramp", "parts", "post", "frames"}
-	partKeys   = []string{"id", "on", "clip", "shape", "ramp", "at", "ops", "note"}
+	spriteKeys = []string{"note", "size", "anchor", "ramp", "parts", "post", "frames", "variants", "roles", "anim"}
+	partKeys   = []string{"id", "on", "clip", "shape", "ramp", "at", "ops", "note", "material", "rotate", "pivot"}
 	idPattern  = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]*$`)
 )
 
@@ -218,6 +224,7 @@ func parseSpec(r *reader, root *pxlib.Obj) *specDoc {
 	if iv, ok := root.Get("indent"); ok {
 		s.Indent = indentOf(r, iv)
 	}
+	s.Style = r.str(root, "style", "")
 	if s.Target == "" {
 		r.bad("target", "書き出す sprite.json（atelier/ の下）が無い")
 	} else if isUnderAssets(s.Target) {
@@ -355,12 +362,61 @@ func parseSprite(r *reader, s *specDoc, name string, v any) *spriteSpec {
 	}
 	if ov, ok := o.Get("post"); ok {
 		sp.Post = r.ops(ov, where+".post", s.Shapes, true)
+		for _, call := range sp.Post {
+			if animOps[call.Name] {
+				sp.animated = true
+			}
+		}
 	}
 	fv, _ := o.Get("frames")
 	frames, ok := fv.(*pxlib.Obj)
 	if !ok || frames.Len() == 0 {
 		r.bad(where+".frames", "コマ名 → 部品の patch のオブジェクトで書く（変えないコマは {}）")
 		return sp
+	}
+	roles := map[string]string{}
+	if rv, ok := o.Get("roles"); ok {
+		ro, isObj := pxlib.Plain(rv).(map[string]any)
+		if !isObj {
+			r.bad(where+".roles", "役の名前（legF・legB・armF・armB・body・head）→ 部品 id のオブジェクトで書く")
+		}
+		for k, v := range ro {
+			id, _ := v.(string)
+			if _, known := poseRoles[k]; !known {
+				r.bad(where+".roles."+k, "知らない役（%s）", strings.Join(poseRoleNames(), " "))
+			} else if !ids[id] {
+				r.bad(where+".roles."+k, "parts に id %q が無い", id)
+			}
+			roles[k] = id
+		}
+	}
+	if vv, ok := o.Get("variants"); ok {
+		vo, isObj := vv.(*pxlib.Obj)
+		var seeds []int
+		if isObj {
+			sv, _ := vo.Get("seeds")
+			arr, _ := sv.([]any)
+			for _, e := range arr {
+				n, isNum := e.(json.Number)
+				iv, err := n.Int64()
+				if !isNum || err != nil || iv < 0 {
+					seeds = nil
+					break
+				}
+				seeds = append(seeds, int(iv))
+			}
+		}
+		if len(seeds) == 0 {
+			r.bad(where+".variants", "{\"seeds\": [1, 2, 3]} で書く（0 以上の整数。散らす op はこの seed だけで決まる）")
+		}
+		sp.Seeds = seeds
+	}
+	if av, ok := o.Get("anim"); ok {
+		b, isBool := av.(bool)
+		if !isBool {
+			r.bad(where+".anim", "true か false で書く")
+		}
+		sp.Anim = &b
 	}
 	fnames, fvals := frames.Items()
 	for i, fname := range fnames {
@@ -369,6 +425,13 @@ func parseSprite(r *reader, s *specDoc, name string, v any) *spriteSpec {
 		if !isObj {
 			r.bad(fw, "部品 id → patch のオブジェクトで書く（変えないなら {}）")
 			continue
+		}
+		if patch.Has("pose") {
+			patch = poseToPatch(r, fw, patch, roles, ids)
+			sp.animated = true
+			if patch == nil {
+				continue
+			}
 		}
 		for _, id := range patch.Keys() {
 			if !ids[id] {
@@ -427,13 +490,37 @@ func (sp *spriteSpec) partsOf(r *reader, s *specDoc, f frameSpec) []*part {
 				p.At = pxlib.Pt{X: a[0], Y: a[1]}
 			}
 		}
+		if rv, ok := obj.Get("rotate"); ok {
+			n, isNum := rv.(json.Number)
+			f, err := n.Float64()
+			if !isNum || err != nil {
+				r.bad(where+".rotate", "角度（度）の数で書く")
+			}
+			p.Rotate = f
+			if f != 0 {
+				sp.animated = true
+			}
+		}
+		if pv, ok := obj.Get("pivot"); ok {
+			if a := r.ints(pv, 2, where+".pivot"); a != nil {
+				p.Pivot = &pxlib.Pt{X: a[0], Y: a[1]}
+			}
+		}
 		if p.Ramp == "" {
 			p.Ramp = sp.Ramp
 		} else if s.Ramps[p.Ramp] == nil {
 			r.bad(where+".ramp", "ramps に %q が無い", p.Ramp)
 		}
+		if mv, ok := obj.Get("material"); ok {
+			p.Ops = append(p.Ops, r.material(pxlib.Plain(mv), fmt.Sprintf("%s.material", id), s.Shapes)...)
+		}
 		if ov, ok := obj.Get("ops"); ok {
-			p.Ops = r.ops(ov, fmt.Sprintf("%s.ops", id), s.Shapes, false)
+			p.Ops = append(p.Ops, r.ops(ov, fmt.Sprintf("%s.ops", id), s.Shapes, false)...)
+		}
+		for _, call := range p.Ops {
+			if animOps[call.Name] {
+				sp.animated = true
+			}
 		}
 		seen[id] = true
 		out = append(out, p)

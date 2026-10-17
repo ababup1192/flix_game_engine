@@ -18,9 +18,10 @@ import (
 type partState struct {
 	Part    *part
 	Ramp    []pxlib.Key
-	shape   pxlib.Mask // 形の塊（形が無ければ nil）
-	region  pxlib.Mask // 塊を作る op が描いた範囲
-	written pxlib.Mask // 書いた画素
+	shape   pxlib.Mask  // 形の塊（形が無ければ nil）
+	region  pxlib.Mask  // 塊を作る op が描いた範囲
+	written pxlib.Mask  // 書いた画素
+	before  *pxlib.Grid // この部品を描く前の格子（動かす op が下の画素を戻すのに使う）
 }
 
 // Region は部品の塊。
@@ -50,6 +51,14 @@ type ctx struct {
 	hasKey func(pxlib.Key) bool
 	keyOf  map[string]pxlib.Key // legend の文字 → 色キー（stamp を legend の文字で打つとき）
 	shade  *shadeSet
+
+	FrameIndex, FrameCount int                    // コマの番号と数（動きの op が使う）
+	Seed                   int                    // 変種の seed（variants。無ければ 0）
+	hexOf                  map[pxlib.Key]string   // 色キー → #rrggbb
+	style                  *pxStyle               // 機種の決まり（無ければ nil）
+	picked                 map[string][]pxlib.Key // ramp_pick が選んだランプ（部品 id → 段）
+	measures               []measure              // contrast が測った明度差
+	tile                   bool                   // tile_preview がある（3×3 の見本と継ぎ目の検査）
 }
 
 // drawFrame は部品の列と post を描いた格子を返す。after は部品を描き終えるたびに呼ばれる（部品の範囲の検査）。
@@ -69,6 +78,7 @@ func drawFrame(c *ctx, parts []*part, post []opCall, after func(*partState, []ch
 	}
 	for _, p := range parts {
 		c.Part = c.parts[p.ID]
+		c.Part.before = c.G.Clone()
 		c.ox, c.oy = p.At.X, p.At.Y
 		var checks []checkRef
 		for i, call := range p.Ops {
@@ -79,6 +89,11 @@ func drawFrame(c *ctx, parts []*part, post []opCall, after func(*partState, []ch
 			op, _ := lookupOp(call.Name)
 			checks = append(checks, op.Checks...)
 		}
+		if p.Rotate != 0 {
+			c.ref = pxlib.OpRef{Part: p.ID, Index: len(p.Ops), Op: "rotate"}
+			c.rotatePart(p.Rotate, p.Pivot)
+			checks = append(checks, checkRef{Check: checkSprite, Rule: "orphan"})
+		}
 		if after != nil {
 			if err := after(c.Part, checks); err != nil {
 				return err
@@ -87,12 +102,20 @@ func drawFrame(c *ctx, parts []*part, post []opCall, after func(*partState, []ch
 	}
 	c.Part = &partState{Part: &part{ID: "post"}, written: pxlib.NewMask(c.G.W, c.G.H)}
 	c.ox, c.oy = 0, 0
+	var postChecks []checkRef
 	for i, call := range post {
 		c.Part.region = c.G.Opaque()
+		c.Part.before = c.G.Clone()
 		c.ref = pxlib.OpRef{Part: "post", Index: i, Op: call.Name}
 		if err := c.apply(call); err != nil {
 			return err
 		}
+		op, _ := lookupOp(call.Name)
+		postChecks = append(postChecks, op.Checks...)
+	}
+	if after != nil && len(postChecks) > 0 {
+		c.Part.region = c.G.Opaque()
+		return after(c.Part, postChecks)
 	}
 	return nil
 }

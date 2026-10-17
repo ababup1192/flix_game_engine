@@ -26,7 +26,8 @@ type shadeSet struct {
 func init() {
 	register(&opDef{
 		Name: "shade_parts", Example: `{"shade_parts": {"thick": 4, "group": "body"}}`, Summary: "丸みのある部品を光の向きでランプの 4 段に塗る（前の部品の落とす影・外周の墨・別グループとの境目の線つき）",
-		Technique: "陰影（丸い体・キャラ。光源は 1 つ）", Finish: "lint pillow（段 3）",
+		Technique: "陰影（丸い体・キャラ。光源は 1 つ）", Finish: "lint pillow・light-dir",
+		Checks: []checkRef{{Check: checkPillow}, {Check: checkLightDir}},
 		Params: []param{
 			{Name: "thick", Type: tNumber, Default: 6.0, Summary: "丸みの厚さ（大きいほど縁から奥まで段が続く）"},
 			{Name: "group", Type: tString, Default: "", Summary: "同じグループの部品どうしは影と境目の線を付けない"},

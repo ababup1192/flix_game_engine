@@ -8,7 +8,7 @@ import (
 )
 
 func init() {
-	register("px", "ドット絵の指定 (*.pxsrc.json) を描いて検査する (build / check / ops / schema / help)", cmdPx)
+	register("px", "ドット絵の指定 (*.pxsrc.json) を描いて検査する (build / check / ops / schema / help / watch / snap / restore / diff)", cmdPx)
 }
 
 func cmdPx(out, errOut *strings.Builder, rest []string, asJSON bool) int {
