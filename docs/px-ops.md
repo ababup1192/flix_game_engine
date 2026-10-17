@@ -8,13 +8,17 @@
 |---|---|---|---|
 | 陰影（平らな面は 1 色・光源は左上の 1 つ） | `bevel_box` | 角丸の板: 斜めの帯で 光・地・影、縁の 1px につや（光の側）と墨（影の側）、外側に墨の輪郭（格子は正方形） | 既存の lint banding |
 | タイルの割れ目 | `crack` | 親（on）の塊の割れ目: 墨の 1px と、その右下に切り口のつや 1px | — |
+| 垂れた紐・鎖（粒を交互の明暗で） | `curve` | 2 次ベジェを 1px の連なった線で引く（alt で 1 画素ごとに色を交互に・avoid の形の中は飛ばす） | 既存の lint corner |
+| 小さなアイコン（輪郭 + 平らな面 + 光の側のつや 1 段） | `emblem` | 塊をアイコンの作りで塗る: 縁（4 近傍で外に接する画素）を edge、光の側の縁のすぐ内側 1 段を top、残りを face | 地との明度差（縁の色が地に沈まないか） |
 | 塊で形を作る | `fill` | 塊を 1 色で塗る | — |
 | 向きの違うコマを鏡で作る | `flip` | 格子全体を左右（x）か上下（y）に返す（右向きのコマから左向きを作る） | — |
 | 白抜きの記号（駒の印） | `glyph` | 白抜きの記号: 形をつやの色で塗り、右下へ墨の影を 1px | — |
+| 光の側を明るく・影の側を暗く（縁の線の明暗） | `light_bands` | 部品の塊の塗ってある画素を、中心から光の向き（light.dir）へどれだけ寄っているかで lit・base・dark の 3 段に塗り分ける | light-dir（段 3） |
 | 1px の線 | `line` | 折れ線を 1px で引く（clip の部品なら親の塊の中だけ） | 既存の lint corner（角が 2 重なら pixel_perfect） |
 | 輪郭（1 色の外側 1px） | `outline` | 部品の塊の外側 1px を 1 色で縁取る（sel_out の前身） | lint black-outline（段 3） |
 | pixel-perfect（Aseprite の Pencil の Pixel Perfect） | `pixel_perfect` | 1px の線の L 字の角（ダブル）を左上から順に抜く | 既存の lint corner |
 | 1px を手で打つ（目・つや・星） | `put` | 画素を直に置く | 既存の lint orphan |
+| 円の線（Aseprite の Ellipse の線） | `ring` | 1px の円を引く（ブレゼンハムの円。角の 2 重が出ず、どこでも 1 画素の太さ） | 既存の lint corner |
 | 陰影（丸い体・キャラ。光源は 1 つ） | `shade_parts` | 丸みのある部品を光の向きでランプの 4 段に塗る（前の部品の落とす影・外周の墨・別グループとの境目の線つき） | lint pillow（段 3） |
 | 1 段ずつ塗る（Aseprite の Shading ink） | `shade_step` | 塗ってある色を、部品のランプの隣の段へ by 段ずらす（端で止まる・ランプの外の色は触らない） | — |
 | 手で打った小さな型を置く | `stamp` | 文字の格子を押す（colors が無ければ legend の文字で打ち、'.' は透明へ抜く） | — |
@@ -43,6 +47,29 @@
 |---|---|---|
 | `points` | points | 折れ線の点 [[x, y], ...]（必須） |
 
+### `curve`
+
+例: `{"curve": {"points": [[2, 2], [4, 12], [12, 10]], "color": "ink", "alt": "light"}}`
+
+| 引数 | 型 | 説明 |
+|---|---|---|
+| `points` | vectors | 始点・制御点・終点 [[x, y], [x, y], [x, y]]（必須） |
+| `color` | color | 色（ink・shade・mid・light・ramp[i]・gloss・色キー。"" で透明へ抜く）（必須） |
+| `alt` | color | 1 画素おきに置く 2 つ目の色（省くと color だけ） |
+| `avoid` | shape | 画素の中心がこの形の中なら置かない（数にも入れない） |
+| `steps` | int | 曲線を刻む数（多いほど取りこぼしが無い）（省くと 400） |
+
+### `emblem`
+
+例: `{"emblem": {"shape": {"roundRect": [3, 3, 9, 9, 1]}}}`
+
+| 引数 | 型 | 説明 |
+|---|---|---|
+| `shape` | shape | 形（省くと部品の塊） |
+| `edge` | color | 縁の色（省くと "ink"） |
+| `face` | color | 面の色（省くと "mid"） |
+| `top` | color | 光の側（light.dir の上下）のつやの色（省くと "light"） |
+
 ### `fill`
 
 例: `{"fill": {"color": "shade"}}`
@@ -69,6 +96,18 @@
 | 引数 | 型 | 説明 |
 |---|---|---|
 | `shape` | shape | 形（省くと部品の塊） |
+
+### `light_bands`
+
+例: `{"light_bands": {"center": [7, 7], "cut": [1, -1]}}`
+
+| 引数 | 型 | 説明 |
+|---|---|---|
+| `center` | pair | 中心 [x, y]（画素の番号）（必須） |
+| `cut` | pair | [a, b]: 光への寄り（光の向きの符号で dx・dy を足した値）が a より大きければ lit、b より小さければ dark（省くと [0,0]） |
+| `lit` | color | 光の側の色（省くと "light"） |
+| `base` | color | あいだの色（省くと "mid"） |
+| `dark` | color | 影の側の色（省くと "shade"） |
 
 ### `line`
 
@@ -104,6 +143,16 @@
 | 引数 | 型 | 説明 |
 |---|---|---|
 | `cells` | points | 画素の座標 [[x, y], ...]（必須） |
+| `color` | color | 色（ink・shade・mid・light・ramp[i]・gloss・色キー。"" で透明へ抜く）（必須） |
+
+### `ring`
+
+例: `{"ring": {"center": [7, 7], "r": 3, "color": "ink"}}`
+
+| 引数 | 型 | 説明 |
+|---|---|---|
+| `center` | point | 中心の画素 [x, y]（必須） |
+| `r` | int | 半径（画素の数）（必須） |
 | `color` | color | 色（ink・shade・mid・light・ramp[i]・gloss・色キー。"" で透明へ抜く）（必須） |
 
 ### `shade_parts`
@@ -167,6 +216,7 @@
 | `rect` | [x, y, w, h] |  | 画素に揃った矩形（x..x+w-1・y..y+h-1 の画素） |
 | `ref` | shapes の名前 |  | shapes の名前つきの形を引く |
 | `rotate` | 回す量（周。正は時計回り） | `about` 回す中心 [x, y]（必須）・`of` 元の形（必須） | 形を回す（1 周 = 1.0） |
+| `roundRect` | [x0, y0, x1, y1, r] |  | 画素の範囲で書く角丸の矩形（x0..x1・y0..y1 の画素を含み、角は内側へ r の丸。塗りの判定専用。smoothUnion・rounded には使えない） |
 | `rounded` | 太らせる量 | `of` 元の形（必須） | 形を太らせて角を丸める |
 | `smoothUnion` | [形, 形] | `k` つなぎの幅（0 より大きい）（省くと 1） | なめらかにつないだ和 |
 | `star` | [cx, cy, rOut, rIn] | `n` 角の数（省くと 5）・`rot` 最初の角の向き（ラジアン。既定は真上）（省くと -1.5707963267948966） | 星（外と内の半径を交互に結ぶ多角形） |

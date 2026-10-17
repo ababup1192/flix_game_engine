@@ -3,7 +3,7 @@ package px
 // build: 指定（pxsrc）を描いて、target の sprite.json に書き、見本と report.json を作る。
 //
 // base の sprite.json を読み、指定にあるコマの rows だけを差し替える（ほかのスプライトは残す）。
-// 字下げは base の字面に合わせる。legend に無い色キーは、色票にあれば空いている字を当てて足す。
+// 字下げは spec の indent、無ければ base の字面に合わせる。legend に無い色キーは、色票にあれば空いている字を当てて足す。
 // 色の門（spec の gate）を通らなければ target を書かない。
 
 import (
@@ -112,6 +112,9 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 			return nil, fmt.Errorf("%s: 一番外はオブジェクトで書く", base)
 		}
 		indent = pxlib.DetectIndent(baseData)
+	}
+	if spec.Indent != "" {
+		indent = spec.Indent
 	}
 	legend, _ := doc.GetOr("legend", nil).(*pxlib.Obj)
 	sprites, _ := doc.GetOr("sprites", nil).(*pxlib.Obj)

@@ -272,6 +272,7 @@ func specSchema() string {
 			"base", obj("type", "string", "description", "差し替える元の sprite.json（省くと target）"),
 			"palette", obj("type", "string", "description", "色票の Doc（base が無いときの paletteFile）"),
 			"gate", obj("type", "string", "description", "色の門の Doc（*.colorgate.json）。外れたら書き出さない"),
+			"indent", obj("description", "書き出す字下げ（\"tab\" か空白の数。省くと base の字面に合わせる）", "oneOf", list(obj("const", "tab"), obj("type", "integer", "minimum", json.Number("1"), "maximum", json.Number("8")))),
 			"light", obj("type", "object", "additionalProperties", false, "description", "光（Doc に 1 か所だけ。op はここを読む）",
 				"properties", obj(
 					"dir", obj("type", "array", "items", obj("type", "number"), "minItems", json.Number("2"), "maxItems", json.Number("3"), "description", "光の来る向き [x, y] か [x, y, 高さ]（左上は [-1, -1]）", "default", list(json.Number("-1"), json.Number("-1"))),

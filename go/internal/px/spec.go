@@ -42,6 +42,7 @@ type specDoc struct {
 	Path                                     string
 	Version                                  int
 	Title, Note, Target, Base, Palette, Gate string
+	Indent                                   string // 書き出す字下げ（"" は base の字面に合わせる）
 	Light                                    lightSpec
 	Ramps                                    map[string][]pxlib.Key
 	Shapes                                   map[string]any
@@ -101,7 +102,7 @@ func (l problemList) Error() string {
 }
 
 var (
-	specKeys   = []string{"version", "title", "note", "target", "base", "palette", "gate", "light", "ramps", "shapes", "macros", "sprites"}
+	specKeys   = []string{"version", "title", "note", "target", "base", "palette", "gate", "indent", "light", "ramps", "shapes", "macros", "sprites"}
 	lightKeys  = []string{"dir", "gloss", "ground", "note"}
 	spriteKeys = []string{"note", "size", "anchor", "ramp", "parts", "post", "frames"}
 	partKeys   = []string{"id", "on", "clip", "shape", "ramp", "at", "ops", "note"}
@@ -214,6 +215,9 @@ func parseSpec(r *reader, root *pxlib.Obj) *specDoc {
 	s.Title, s.Note = r.str(root, "title", ""), r.str(root, "note", "")
 	s.Target, s.Base = r.str(root, "target", ""), r.str(root, "base", "")
 	s.Palette, s.Gate = r.str(root, "palette", ""), r.str(root, "gate", "")
+	if iv, ok := root.Get("indent"); ok {
+		s.Indent = indentOf(r, iv)
+	}
 	if s.Target == "" {
 		r.bad("target", "書き出す sprite.json（atelier/ の下）が無い")
 	} else if isUnderAssets(s.Target) {
@@ -460,6 +464,20 @@ func mergePatch(target, patch any) any {
 		out.Set(k, mergePatch(cur, vals[i]))
 	}
 	return out
+}
+
+// indentOf は "indent" を字下げの字面にする: "tab" はタブ、1〜8 の整数はその数の空白。
+func indentOf(r *reader, v any) string {
+	if v == "tab" {
+		return "\t"
+	}
+	if n, ok := v.(json.Number); ok {
+		if i, err := n.Int64(); err == nil && i >= 1 && i <= 8 {
+			return strings.Repeat(" ", int(i))
+		}
+	}
+	r.bad("indent", "\"tab\" か 1〜8 の整数（空白の数）で書く")
+	return ""
 }
 
 // isUnderAssets は path が（./ や ../ で回り道しても）ゲームの assets/ の下を指すか。

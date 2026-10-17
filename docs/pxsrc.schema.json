@@ -38,6 +38,19 @@
       "type": "string",
       "description": "色の門の Doc（*.colorgate.json）。外れたら書き出さない"
     },
+    "indent": {
+      "description": "書き出す字下げ（\"tab\" か空白の数。省くと base の字面に合わせる）",
+      "oneOf": [
+        {
+          "const": "tab"
+        },
+        {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8
+        }
+      ]
+    },
     "light": {
       "type": "object",
       "additionalProperties": false,
@@ -349,6 +362,25 @@
         },
         {
           "type": "object",
+          "description": "画素の範囲で書く角丸の矩形（x0..x1・y0..y1 の画素を含み、角は内側へ r の丸。塗りの判定専用。smoothUnion・rounded には使えない）",
+          "additionalProperties": false,
+          "required": [
+            "roundRect"
+          ],
+          "properties": {
+            "roundRect": {
+              "description": "[x0, y0, x1, y1, r]",
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 5,
+              "maxItems": 5
+            }
+          }
+        },
+        {
+          "type": "object",
           "description": "形を太らせて角を丸める",
           "additionalProperties": false,
           "required": [
@@ -541,6 +573,92 @@
         },
         {
           "type": "object",
+          "description": "2 次ベジェを 1px の連なった線で引く（alt で 1 画素ごとに色を交互に・avoid の形の中は飛ばす）",
+          "additionalProperties": false,
+          "required": [
+            "curve"
+          ],
+          "properties": {
+            "curve": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "points": {
+                  "description": "始点・制御点・終点 [[x, y], [x, y], [x, y]]",
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    },
+                    "minItems": 2,
+                    "maxItems": 2
+                  },
+                  "minItems": 3,
+                  "maxItems": 3
+                },
+                "color": {
+                  "description": "色（ink・shade・mid・light・ramp[i]・gloss・色キー。\"\" で透明へ抜く）",
+                  "$ref": "#/definitions/color"
+                },
+                "alt": {
+                  "description": "1 画素おきに置く 2 つ目の色（省くと color だけ）",
+                  "$ref": "#/definitions/color"
+                },
+                "avoid": {
+                  "description": "画素の中心がこの形の中なら置かない（数にも入れない）",
+                  "$ref": "#/definitions/shape"
+                },
+                "steps": {
+                  "description": "曲線を刻む数（多いほど取りこぼしが無い）",
+                  "type": "integer",
+                  "default": 400
+                }
+              },
+              "required": [
+                "points",
+                "color"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "塊をアイコンの作りで塗る: 縁（4 近傍で外に接する画素）を edge、光の側の縁のすぐ内側 1 段を top、残りを face",
+          "additionalProperties": false,
+          "required": [
+            "emblem"
+          ],
+          "properties": {
+            "emblem": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "shape": {
+                  "description": "形（省くと部品の塊）",
+                  "$ref": "#/definitions/shape"
+                },
+                "edge": {
+                  "description": "縁の色",
+                  "$ref": "#/definitions/color",
+                  "default": "ink"
+                },
+                "face": {
+                  "description": "面の色",
+                  "$ref": "#/definitions/color",
+                  "default": "mid"
+                },
+                "top": {
+                  "description": "光の側（light.dir の上下）のつやの色",
+                  "$ref": "#/definitions/color",
+                  "default": "light"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
           "description": "塊を 1 色で塗る",
           "additionalProperties": false,
           "required": [
@@ -607,6 +725,62 @@
                   "$ref": "#/definitions/shape"
                 }
               }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "部品の塊の塗ってある画素を、中心から光の向き（light.dir）へどれだけ寄っているかで lit・base・dark の 3 段に塗り分ける",
+          "additionalProperties": false,
+          "required": [
+            "light_bands"
+          ],
+          "properties": {
+            "light_bands": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "center": {
+                  "description": "中心 [x, y]（画素の番号）",
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2
+                },
+                "cut": {
+                  "description": "[a, b]: 光への寄り（光の向きの符号で dx・dy を足した値）が a より大きければ lit、b より小さければ dark",
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "default": [
+                    0,
+                    0
+                  ]
+                },
+                "lit": {
+                  "description": "光の側の色",
+                  "$ref": "#/definitions/color",
+                  "default": "light"
+                },
+                "base": {
+                  "description": "あいだの色",
+                  "$ref": "#/definitions/color",
+                  "default": "mid"
+                },
+                "dark": {
+                  "description": "影の側の色",
+                  "$ref": "#/definitions/color",
+                  "default": "shade"
+                }
+              },
+              "required": [
+                "center"
+              ]
             }
           }
         },
@@ -718,6 +892,44 @@
               },
               "required": [
                 "cells",
+                "color"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "1px の円を引く（ブレゼンハムの円。角の 2 重が出ず、どこでも 1 画素の太さ）",
+          "additionalProperties": false,
+          "required": [
+            "ring"
+          ],
+          "properties": {
+            "ring": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "center": {
+                  "description": "中心の画素 [x, y]",
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2
+                },
+                "r": {
+                  "description": "半径（画素の数）",
+                  "type": "integer"
+                },
+                "color": {
+                  "description": "色（ink・shade・mid・light・ramp[i]・gloss・色キー。\"\" で透明へ抜く）",
+                  "$ref": "#/definitions/color"
+                }
+              },
+              "required": [
+                "center",
+                "r",
                 "color"
               ]
             }

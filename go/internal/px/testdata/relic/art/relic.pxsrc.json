@@ -1,0 +1,73 @@
+{
+  "version": 2,
+  "title": "アーティファクトのアイコン",
+  "note": "夜かぎりのパッシブのアイコン 32×32 の指定。fge px build で atelier/ の sprite.json に描く。控えめの作り = emblem（縁は系統色の一番暗い段・平らな面・上のつや 1 段）。いじると変わる物: ramps = 系統色の暗 → 明 5 段 / 形の数字 = 32×32 の格子の画素の番号 / emblem の face・top = 面とつやの段（端子・鈴は 1 段暗く、通知の点は一番明るく）/ curve = 片眼鏡のチェーンの垂れ方（制御点を下げるほど深く垂れる）。",
+  "target": "atelier/internet_dungeon.relic.sprite.json",
+  "base": "assets/internet_dungeon.relic.sprite.json",
+  "palette": "assets/internet_dungeon.palette.json",
+  "indent": 2,
+  "light": {"dir": [-1, -1]},
+  "ramps": {
+    "teal": ["relicTeal0", "relicTeal1", "relicTeal2", "relicTeal3", "relicTeal4"],
+    "mag":  ["relicMag0", "relicMag1", "relicMag2", "relicMag3", "relicMag4"],
+    "gold": ["relicGold0", "relicGold1", "relicGold2", "relicGold3", "relicGold4"]
+  },
+  "sprites": {
+    "relicBattery": {"size": [32, 32], "ramp": "teal",
+      "note": "モバイルバッテリー: 残量が一番下の 1 段だけのバッテリーと稲妻",
+      "parts": [
+        {"id": "terminal", "shape": {"roundRect": [13, 2, 18, 5, 1]}, "ops": [{"emblem": {"face": "shade", "top": "mid"}}]},
+        {"id": "body", "shape": {"roundRect": [8, 4, 23, 28, 3]}, "ops": [{"emblem": {}}]},
+        {"id": "window", "shape": {"rect": [11, 8, 10, 17]}, "ops": [
+          {"fill": {"color": "stkInk"}},
+          {"fill": {"shape": {"rect": [12, 9, 8, 3]}, "color": "shade"}},
+          {"fill": {"shape": {"rect": [12, 13, 8, 3]}, "color": "shade"}},
+          {"fill": {"shape": {"rect": [12, 17, 8, 3]}, "color": "shade"}},
+          {"fill": {"shape": {"rect": [12, 21, 8, 3]}, "color": "light"}}
+        ]},
+        {"id": "bolt", "ops": [
+          {"put": {"cells": [[17, 7], [16, 8], [15, 9], [14, 10], [15, 10], [16, 10], [17, 10], [16, 11], [15, 12], [14, 13]], "color": "ramp[4]"}},
+          {"outline": {"color": "stkInk"}}
+        ]}
+      ],
+      "frames": {"idle": {}}},
+    "relicTypo": {"size": [32, 32], "ramp": "gold",
+      "note": "誤字ハンター: 片眼鏡（1px の金の縁・透けるレンズ・光の反射・垂れたチェーン）",
+      "parts": [
+        {"id": "lens", "ramp": "mag", "shape": {"disk": [12.5, 12.5, 9]}, "ops": [
+          {"fill": {"color": "ink"}},
+          {"put": {"cells": [[20, 11], [20, 12], [20, 13], [19, 14], [20, 14], [18, 15], [19, 15], [18, 16], [19, 16], [17, 17], [15, 18], [16, 18], [14, 19], [15, 19], [16, 19], [11, 20], [12, 20], [13, 20], [14, 20]], "color": "shade"}},
+          {"put": {"cells": [[18, 17], [17, 18], [18, 18]], "color": "mid"}},
+          {"put": {"cells": [[6, 10], [7, 9], [8, 8], [9, 7], [10, 6]], "color": "stkSpec"}},
+          {"put": {"cells": [[8, 11], [9, 10], [10, 9]], "color": "ramp[4]"}}
+        ]},
+        {"id": "rim", "ops": [
+          {"ring": {"center": [12, 12], "r": 9, "color": "mid"}},
+          {"light_bands": {"center": [12, 12], "cut": [4, -6]}}
+        ]},
+        {"id": "chain", "ops": [
+          {"curve": {"points": [[19.3, 19.3], [21, 31], [30.5, 22]], "color": "light", "alt": "shade", "avoid": {"disk": [12, 12, 10.3]}}}
+        ]}
+      ],
+      "frames": {"idle": {}}},
+    "relicNotify": {"size": [32, 32], "ramp": "gold",
+      "note": "通知オン: ベルと通知の点",
+      "parts": [
+        {"id": "clapper", "shape": {"disk": [15, 26, 2.6]}, "ops": [{"emblem": {"face": "shade", "top": "mid"}}]},
+        {"id": "knob", "shape": {"disk": [15, 4, 3]}, "ops": [{"emblem": {}}]},
+        {"id": "bell", "shape": {"union": [
+          {"disk": [15, 9, 6]},
+          {"rect": [10, 5, 10, 6]}, {"rect": [9, 11, 12, 5]}, {"rect": [8, 16, 14, 3]},
+          {"rect": [7, 19, 16, 2]}, {"rect": [4, 21, 22, 2]}, {"rect": [3, 23, 24, 1]}
+        ]}, "ops": [
+          {"emblem": {}},
+          {"fill": {"shape": {"rect": [7, 21, 16, 1]}, "color": "shade"}}
+        ]},
+        {"id": "badge", "shape": {"disk": [24.5, 6.5, 4]}, "ops": [
+          {"emblem": {"face": "ramp[4]", "top": "ramp[4]"}},
+          {"fill": {"shape": {"disk": [24.5, 6.5, 2.6]}, "color": "stkSpec"}}
+        ]}
+      ],
+      "frames": {"idle": {}}}
+  }
+}

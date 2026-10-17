@@ -36,15 +36,28 @@ func copyTree(t *testing.T, src string) string {
 	return dst
 }
 
-// 指定が描くコマを base から消してから描いても、ゲームの assets と 1 バイトも違わない。
-func TestPuzzleBytesMatch(t *testing.T) {
-	root := copyTree(t, "testdata/puzzle")
-	basePath := filepath.Join(root, "assets", "internet_dungeon.puzzle.sprite.json")
+// 指定が描くコマを base から消してから描いても、ゲームの assets と 1 バイトも違わない
+// （puzzle はタブ字下げを base から、relic は 2 字下げを spec の indent から取る）。
+func TestBytesMatchAssets(t *testing.T) {
+	for _, tc := range []struct {
+		dir, spec, sprite string
+		frames            int
+	}{
+		{"puzzle", "puzzle.pxsrc.json", "internet_dungeon.puzzle.sprite.json", 22},
+		{"relic", "relic.pxsrc.json", "internet_dungeon.relic.sprite.json", 3},
+	} {
+		t.Run(tc.dir, func(t *testing.T) { checkBytesMatch(t, tc.dir, tc.spec, tc.sprite, tc.frames) })
+	}
+}
+
+func checkBytesMatch(t *testing.T, dir, specFile, spriteFile string, wantFrames int) {
+	root := copyTree(t, filepath.Join("testdata", dir))
+	basePath := filepath.Join(root, "assets", spriteFile)
 	want, err := os.ReadFile(basePath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	spec, err := loadSpec(filepath.Join(root, "art", "puzzle.pxsrc.json"))
+	spec, err := loadSpec(filepath.Join(root, "art", specFile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,17 +75,18 @@ func TestPuzzleBytesMatch(t *testing.T) {
 			blanked++
 		}
 	}
+	// 消した base はタブで書く（relic は spec の indent で 2 字に戻ること）
 	if err := os.WriteFile(basePath, []byte(pxlib.DumpPy(doc, "\t")), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	res, err := build(root, "art/puzzle.pxsrc.json", buildOptions{RulesRoot: engineRoot})
+	res, err := build(root, filepath.Join("art", specFile), buildOptions{RulesRoot: engineRoot})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(res.Frames) != blanked || blanked != 22 {
-		t.Fatalf("描いたコマ %d・消したコマ %d（22 のはず）", len(res.Frames), blanked)
+	if len(res.Frames) != blanked || blanked != wantFrames {
+		t.Fatalf("描いたコマ %d・消したコマ %d（%d のはず）", len(res.Frames), blanked, wantFrames)
 	}
-	got, err := os.ReadFile(filepath.Join(root, "atelier", "internet_dungeon.puzzle.sprite.json"))
+	got, err := os.ReadFile(filepath.Join(root, "atelier", spriteFile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,9 +99,10 @@ func TestPuzzleBytesMatch(t *testing.T) {
 		}
 		t.Fatalf("行数が違う: got %d want %d", len(gl), len(wl))
 	}
-	for _, name := range []string{"sheet.png", "report.json", "pieceGuard.png"} {
-		if _, err := os.Stat(filepath.Join(root, "debug", "px", "puzzle", "last", name)); err != nil {
-			t.Errorf("%s が無い: %v", name, err)
+	name := strings.TrimSuffix(specFile, ".pxsrc.json")
+	for _, f := range []string{"sheet.png", "report.json", spec.Sprites[0].Name + ".png"} {
+		if _, err := os.Stat(filepath.Join(root, "debug", "px", name, "last", f)); err != nil {
+			t.Errorf("%s が無い: %v", f, err)
 		}
 	}
 }
