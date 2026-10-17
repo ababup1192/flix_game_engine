@@ -6,11 +6,10 @@ package px
 // 台本を op へ書き直したら（第 4 段の 4）px.rng と style="python" ごと消す。
 
 import (
-	"fmt"
+	"github.com/ababup1192/flix_game_engine/go/internal/starbox"
 	"math"
 	"math/big"
 	"strconv"
-	"strings"
 )
 
 // pyRandom は CPython の random.Random（MT19937）と同じ列を出す。
@@ -130,72 +129,5 @@ func pyRoundDigits(x float64, nd int) float64 {
 	return v
 }
 
-// pyFloatRepr は Python の repr(float)（最短の桁・整数なら .0・指数は 1e-05 の形）。
-func pyFloatRepr(f float64) (string, error) {
-	if math.IsInf(f, 0) || math.IsNaN(f) {
-		return "", fmt.Errorf("JSON に書けない数 %v", f)
-	}
-	sign := ""
-	if math.Signbit(f) {
-		sign = "-"
-		f = -f
-	}
-	if f == 0 {
-		return sign + "0.0", nil
-	}
-	e := strconv.FormatFloat(f, 'e', -1, 64) // d.ddde±XX
-	mant, expStr, _ := strings.Cut(e, "e")
-	exp, _ := strconv.Atoi(expStr)
-	digits := strings.Replace(mant, ".", "", 1)
-	decpt := exp + 1
-	if decpt <= -4 || decpt > 16 {
-		m := digits[:1]
-		if len(digits) > 1 {
-			m += "." + digits[1:]
-		}
-		es := "+"
-		if exp < 0 {
-			es = "-"
-			exp = -exp
-		}
-		return fmt.Sprintf("%s%se%s%02d", sign, m, es, exp), nil
-	}
-	switch {
-	case decpt <= 0:
-		return sign + "0." + strings.Repeat("0", -decpt) + digits, nil
-	case decpt >= len(digits):
-		return sign + digits + strings.Repeat("0", decpt-len(digits)) + ".0", nil
-	default:
-		return sign + digits[:decpt] + "." + digits[decpt:], nil
-	}
-}
-
-// pyJSONString は json.dumps(s, ensure_ascii=False) の文字列。
-func pyJSONString(b *strings.Builder, s string) {
-	b.WriteByte('"')
-	for _, r := range s {
-		switch r {
-		case '"':
-			b.WriteString(`\"`)
-		case '\\':
-			b.WriteString(`\\`)
-		case '\n':
-			b.WriteString(`\n`)
-		case '\r':
-			b.WriteString(`\r`)
-		case '\t':
-			b.WriteString(`\t`)
-		case '\b':
-			b.WriteString(`\b`)
-		case '\f':
-			b.WriteString(`\f`)
-		default:
-			if r < 0x20 {
-				fmt.Fprintf(b, `\u%04x`, r)
-			} else {
-				b.WriteRune(r)
-			}
-		}
-	}
-	b.WriteByte('"')
-}
+// pyFloatRepr は Python の repr(float)（starbox の物）。
+var pyFloatRepr = starbox.PyFloatRepr

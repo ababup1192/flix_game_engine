@@ -10,7 +10,6 @@ package px
 import (
 	"fmt"
 	"math"
-	"math/big"
 	"sort"
 
 	"github.com/ababup1192/flix_game_engine/go/internal/pxlib"
@@ -482,50 +481,6 @@ func segDist(ax, ay, bx, by float64) func(x, y float64) float64 {
 		t := math.Max(0, math.Min(1, dot(wx, wy, ex, ey)/ll))
 		return hypot(wx-float64(ex*t), wy-float64(ey*t))
 	}
-}
-
-// hypot は正しく丸めた √(a²+b²)。
-// WhyNot: math.Hypot は最後の 1 桁が Python の math.hypot（3.10 以降は正しく丸める）とずれ、
-// 縁にちょうど乗った画素の内外が入れ替わって、移した台本の出力がバイトで一致しなくなる。
-func hypot(a, b float64) float64 {
-	a, b = math.Abs(a), math.Abs(b)
-	if a == 0 {
-		return b
-	}
-	if b == 0 {
-		return a
-	}
-	// 速い道: a²+b² を誤差なしの 2 項（s + e）で持ち、h = √s からのずれ c を出す。
-	// 正しく丸めた答えは h かその隣。c が丸めの境目（ulp の半分）から十分遠い時だけここで決め、
-	// 境目にほぼ乗った時だけ遅い道（160 bit）で確かめる。
-	p, q := float64(a*a), float64(b*b)
-	s, e := twoSum(p, q)
-	e += math.FMA(a, a, -p) + math.FMA(b, b, -q)
-	h := math.Sqrt(s)
-	u := math.Nextafter(h, math.Inf(1)) - h
-	c := (math.FMA(-h, h, s) + e) / float64(2*h)
-	switch {
-	case math.Abs(c) < float64(0.4999*u):
-		return h
-	case c > float64(0.5001*u) && c < float64(1.4999*u):
-		return h + u
-	case c < float64(-0.5001*u) && c > float64(-1.4999*u) && math.Nextafter(h, 0) == h-u:
-		return h - u // 下の隣（h が 2 の累乗で下の ulp が半分の時は遅い道へ）
-	}
-	x := new(big.Float).SetPrec(160).SetFloat64(a)
-	y := new(big.Float).SetPrec(160).SetFloat64(b)
-	x.Mul(x, x)
-	y.Mul(y, y)
-	x.Add(x, y)
-	x.Sqrt(x)
-	f, _ := x.Float64()
-	return f
-}
-
-func twoSum(a, b float64) (float64, float64) {
-	s := float64(a + b)
-	bb := float64(s - a)
-	return s, float64(a-float64(s-bb)) + float64(b-bb)
 }
 
 func polySDF(pts [][2]float64) sdf {
