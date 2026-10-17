@@ -92,6 +92,121 @@ func init() {
 	})
 
 	register(&opDef{
+		Name: "bar", Example: `{"bar": {"rate": 0.8, "side": "right", "empty": "ink", "from": 1, "band": 0.5, "top": "light"}}`,
+		Summary: "体力のバー: 形（省くと部品の塊）の外接箱を、side の端から rate だけ残りの量で塗る（fill を省くとランプの段を太さの向きに Bayer で）。" +
+			"empty は減った所・top は残りの上の 1px のつや・lost は残りの隣の今減った量",
+		Technique: "UI（体力・気力・時間のゲージ）", Finish: "—",
+		Params: []param{
+			pShape,
+			{Name: "rate", Type: tNumber, Required: true, Summary: "残りの割合（0〜1。長さは 外接箱の長さ × rate を四捨五入）", Lo: bound(0), Hi: bound(1)},
+			{Name: "side", Type: tString, Default: "left", Summary: "残りを寄せる端: left・right（横のバー）・bottom・top（縦のバー）"},
+			{Name: "fill", Type: tColor, Summary: "残りの色（省くとランプの from〜to 段を太さの向きに塗る: 横のバーは上が明るい）"},
+			{Name: "from", Type: tInt, Default: 0.0, Summary: "fill を省いた時に使う一番暗い段", Lo: bound(0), Hi: bound(15)},
+			{Name: "to", Type: tInt, Default: -1.0, Summary: "fill を省いた時に使う一番明るい段（-1 で最明）", Lo: bound(-1), Hi: bound(15)},
+			{Name: "band", Type: tNumber, Default: 0.0, Summary: "段の境目をディザで混ぜる割合（gradient_fill と同じ。0 はベタの帯）", Lo: bound(0), Hi: bound(1)},
+			{Name: "empty", Type: tColor, Summary: "減った所の色（先に箱全体を塗る。省くと塗らない）"},
+			{Name: "top", Type: tColor, Summary: "残りの上の縁（縦のバーは光の側の縁）の 1px の色（省くと引かない）"},
+			{Name: "lost", Type: tNumber, Default: 0.0, Summary: "今減った量の割合（残りの隣・減った所の側に lost_color で）", Lo: bound(0), Hi: bound(1)},
+			{Name: "lost_color", Type: tColor, Default: "light", Summary: "今減った量の色"},
+		},
+		Apply: func(c *ctx, a opArgs) error {
+			m, err := c.ShapeOrRegion(a)
+			if err != nil {
+				return err
+			}
+			pts := m.Points()
+			if len(pts) == 0 {
+				return fmt.Errorf("バーの箱が無い（shape か部品の shape を書く）")
+			}
+			x0, y0, x1, y1 := pxlib.BBox(pts)
+			side := a.str("side")
+			vertical := side == "top" || side == "bottom"
+			if !vertical && side != "left" && side != "right" {
+				return fmt.Errorf("side は left・right・bottom・top")
+			}
+			length := x1 - x0 + 1
+			if vertical {
+				length = y1 - y0 + 1
+			}
+			cells := func(r float64) int { return int(math.Floor(float64(float64(length)*r) + 0.5)) }
+			n := cells(a.num("rate"))
+			lost := min(cells(a.num("lost")), length-n)
+			// span は端から k 番目〜k+cnt-1 番目の帯（side の端から数える）
+			span := func(k, cnt int) pxlib.Mask {
+				out := pxlib.NewMask(c.G.W, c.G.H)
+				for y := max(y0, 0); y <= min(y1, c.G.H-1); y++ {
+					for x := max(x0, 0); x <= min(x1, c.G.W-1); x++ {
+						var d int
+						switch side {
+						case "left":
+							d = x - x0
+						case "right":
+							d = x1 - x
+						case "top":
+							d = y - y0
+						case "bottom":
+							d = y1 - y
+						}
+						if d >= k && d < k+cnt {
+							out[y][x] = true
+						}
+					}
+				}
+				return out
+			}
+			paint := func(mask pxlib.Mask, ref colorRef) error {
+				k, err := c.Color(ref)
+				if err != nil {
+					return err
+				}
+				for _, p := range mask.Points() {
+					c.PutAbs(p.X, p.Y, k)
+				}
+				return nil
+			}
+			if a.has("empty") {
+				if err := paint(span(0, length), a.color("empty")); err != nil {
+					return err
+				}
+			}
+			full := span(0, n)
+			if n > 0 {
+				if a.has("fill") {
+					if err := paint(full, a.color("fill")); err != nil {
+						return err
+					}
+				} else {
+					field := "y"
+					if vertical {
+						field = "x"
+					}
+					if err := c.gradientOn(full, field, a.num("band"), a.int("from"), a.int("to"), false); err != nil {
+						return err
+					}
+				}
+				if a.has("top") {
+					edge := pxlib.NewMask(c.G.W, c.G.H)
+					for _, p := range full.Points() {
+						if !vertical && p.Y == max(y0, 0) || vertical && p.X == max(x0, 0) {
+							edge[p.Y][p.X] = true
+						}
+					}
+					if err := paint(edge, a.color("top")); err != nil {
+						return err
+					}
+				}
+			}
+			if lost > 0 {
+				if err := paint(span(n, lost), a.color("lost_color")); err != nil {
+					return err
+				}
+			}
+			c.AddRegion(span(0, length))
+			return nil
+		},
+	})
+
+	register(&opDef{
 		Name: "table", Example: `{"table": {"at": [1, 1], "cols": [0, 20], "align": "lr", "rows": [["HP", "12"], ["MP", ["3", "shade"]]], "color": "light"}}`,
 		Summary: "字の表: rows の升を列 cols（at からの横の位置）にそろえ、行を line ずつ下げて text と同じ字形で置く（升は文字列か [文字列, 色]。" +
 			"align の 1 字が列のそろえ: l は左端・r は右端（送りを含む）・c は真ん中を cols の位置に）",

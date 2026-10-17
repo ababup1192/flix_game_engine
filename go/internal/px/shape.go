@@ -166,6 +166,35 @@ func init() {
 			}
 			return polySDF(pts)
 		}})
+	registerShape(&shapeKind{Name: "flag", Summary: "竿から横へなびく旗（上と下の縁を竿から先へ大きくなる波にした多角形。t をコマで進める: px.cycle で 1 周 = 1.0）",
+		Main: param{Type: tNums, Len: 4, Summary: "[x, y, w, h]（竿の根元の上の角・旗の長さ・高さ。w が負なら左へなびく）"},
+		Extra: []param{
+			{Name: "t", Type: tNumber, Default: 0.0, Summary: "波の位相（周。コマ i で i / コマ数 + ずらし）"},
+			{Name: "amp", Type: tNumber, Default: 2.0, Summary: "先の縦の揺れ（px。竿の側は 0）"},
+			{Name: "sway", Type: tNumber, Default: 0.0, Summary: "先の横の揺れ（px。布が寄って縮む）"},
+			{Name: "waves", Type: tNumber, Default: 1.0, Summary: "竿から先までに乗る波の数"},
+			{Name: "rise", Type: tNumber, Default: 0.0, Summary: "下の縁を先で持ち上げる量（px。先細りの燕尾・吹き流し）"},
+			{Name: "points", Type: tInt, Default: 7.0, Summary: "縁の点の数（竿と先を含む）", Lo: bound(2), Hi: bound(64)},
+		},
+		Make: func(in shapeIn) sdf {
+			p, o := in.nums, in.opt
+			n := int(o["points"])
+			top := make([][2]float64, 0, n)
+			bot := make([][2]float64, 0, n)
+			for k := 0; k < n; k++ {
+				t := float64(k) / float64(n-1)
+				a := float64((o["t"]-float64(t*o["waves"]))*2) * math.Pi
+				dy := float64(float64(math.Sin(a)*o["amp"]) * t)
+				dx := float64(float64(-math.Cos(a)*o["sway"]) * t)
+				x := math.RoundToEven(p[0] + float64(p[2]*t) + dx)
+				top = append(top, [2]float64{x, math.RoundToEven(p[1] + dy)})
+				bot = append(bot, [2]float64{x, math.RoundToEven(p[1] + p[3] + dy - float64(t*o["rise"]))})
+			}
+			for k := n - 1; k >= 0; k-- {
+				top = append(top, bot[k])
+			}
+			return polySDF(top)
+		}})
 	registerShape(&shapeKind{Name: "mask", Summary: "rows で画素を直に指す（'.' と ' ' が外）",
 		Main:  param{Type: tRows, Min: 1, Summary: "文字の行"},
 		Extra: []param{{Name: "at", Type: tPoint, Default: []any{0.0, 0.0}, Summary: "左上の位置 [x, y]"}},

@@ -17,6 +17,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/ababup1192/flix_game_engine/go/internal/anim"
 	"github.com/ababup1192/flix_game_engine/go/internal/pxlib"
@@ -235,6 +236,18 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 		}
 	}
 
+	// pending はこの build がこれから書き直すコマ（その古い行の字は、字が尽きた時に空けてよい）
+	pending := map[[2]string]bool{}
+	for _, sp := range spec.Sprites {
+		for _, f := range sp.Frames {
+			if len(sp.Seeds) == 0 {
+				pending[[2]string{sp.Name, f.Name}] = true
+			}
+			for _, seed := range sp.Seeds {
+				pending[[2]string{sp.Name, fmt.Sprintf("%s_v%d", f.Name, seed)}] = true
+			}
+		}
+	}
 	res := &buildResult{Spec: specPath, Target: spec.Target}
 	addViolations := func(vs []violation, sp, frame string) {
 		exempt := map[string]bool{}
@@ -290,12 +303,11 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 					return nil, r.probs
 				}
 				cc.Emissive, cc.Poly = map[string]bool{}, map[string]bool{}
-				ats := map[string]partPose{}
 				for _, p := range parts {
 					cc.Emissive[p.ID] = p.Emissive
 					cc.Poly[p.ID] = p.isPoly(spec.Shapes)
-					ats[p.ID] = partPose{p.At, p.Rotate}
 				}
+				ats := partPoses(parts)
 				seqAts = append(seqAts, ats)
 				fname := f.Name
 				if len(sp.Seeds) > 0 {
@@ -342,7 +354,11 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 					}
 					ch := freeChar(legend)
 					if ch == "" {
-						return nil, fmt.Errorf("legend に当てる字が残っていない")
+						// 字が尽きたら、どのコマの行にも出てこない字（前の build の古い色キー）を空けて使い回す
+						ch = reclaimChar(legend, lg, sprites, pending, c.G.Keys())
+					}
+					if ch == "" {
+						return nil, fmt.Errorf("legend に当てる字が残っていない（1 枚の絵の色キーは %d 個まで）", len(legendPool))
 					}
 					legend.Set(ch, string(k))
 					lg.Set(ch, k)
@@ -359,6 +375,7 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 					fr.Same = pxlib.ToJSON(old, indent) == pxlib.ToJSON(rows, indent)
 				}
 				frames.Set(fname, rowsAny(rows))
+				delete(pending, [2]string{sp.Name, fname})
 				res.Frames = append(res.Frames, fr)
 				seqNames, seqRows, seqGrids = append(seqNames, fname), append(seqRows, rows), append(seqGrids, c.G)
 				if !opt.NoCheck {
@@ -484,6 +501,53 @@ func freeChar(legend *pxlib.Obj) string {
 		if !legend.Has(string(r)) {
 			return string(r)
 		}
+	}
+	return ""
+}
+
+// reclaimChar は legend の字が尽きた時、どのコマの行にも出てこない字を 1 つ legend から外して返す
+// （色を減らした後も前の build の色キーが legend に残り、字が空かなかった）。
+// pending のコマはこのあと書き直すので、その古い行の字は使っていないと見る。need は今のコマが使う色キー（その字は外さない）。
+// 外せる字が無ければ ""。
+func reclaimChar(legend *pxlib.Obj, lg *pxlib.Legend, sprites *pxlib.Obj, pending map[[2]string]bool, need []pxlib.Key) string {
+	used := map[rune]bool{}
+	names, entries := sprites.Items()
+	for i, name := range names {
+		entry, _ := entries[i].(*pxlib.Obj)
+		if entry == nil {
+			continue
+		}
+		frames, _ := entry.GetOr("frames", nil).(*pxlib.Obj)
+		if frames == nil {
+			continue
+		}
+		fnames, rows := frames.Items()
+		for j, fname := range fnames {
+			if pending[[2]string{name, fname}] {
+				continue
+			}
+			list, _ := rows[j].([]any)
+			for _, r := range list {
+				s, _ := r.(string)
+				for _, ch := range s {
+					used[ch] = true
+				}
+			}
+		}
+	}
+	keep := map[string]bool{}
+	for _, k := range need {
+		if ch, ok := lg.CharOf[k]; ok {
+			keep[ch] = true
+		}
+	}
+	for _, ch := range lg.Chars {
+		if keep[ch] || utf8.RuneCountInString(ch) != 1 || used[[]rune(ch)[0]] || !strings.ContainsRune(legendPool, []rune(ch)[0]) {
+			continue
+		}
+		legend.Delete(ch)
+		lg.Remove(ch)
+		return ch
 	}
 	return ""
 }

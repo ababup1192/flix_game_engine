@@ -85,6 +85,32 @@ func (c *ctx) fieldOf(kind string, m pxlib.Mask) (func(x, y int) float64, error)
 	return nil, fmt.Errorf("field は light・x・y・radial")
 }
 
+// gradientOn は塊 g を明るさの場 field でランプの from〜to 段に塗る（gradient_fill の中身。bar の残りの量も同じ塗り）。
+// to が負なら最明から数える。
+func (c *ctx) gradientOn(g pxlib.Mask, field string, band float64, from, to int, invert bool) error {
+	ramp := c.Ramp()
+	if to < 0 {
+		to += len(ramp)
+	}
+	if from < 0 || to >= len(ramp) || from > to {
+		return fmt.Errorf("from・to がランプ（%d 段）の外", len(ramp))
+	}
+	sub := ramp[from : to+1]
+	f, err := c.fieldOf(field, g)
+	if err != nil {
+		return err
+	}
+	for _, p := range g.Points() {
+		v := f(p.X, p.Y)
+		if invert {
+			v = 1 - v
+		}
+		dx, dy := c.ditherAt(p.X, p.Y)
+		c.PutAbs(p.X, p.Y, sub[rampIndex(v, dx, dy, len(sub), band)])
+	}
+	return nil
+}
+
 func init() {
 	register(&opDef{
 		Name: "gradient_fill", Example: `{"gradient_fill": {"field": "light", "band": 0.25}}`,
@@ -124,19 +150,9 @@ func init() {
 			default:
 				return fmt.Errorf("per は part か copy")
 			}
-			sub := ramp[from : to+1]
 			for _, g := range groups {
-				f, err := c.fieldOf(a.str("field"), g)
-				if err != nil {
+				if err := c.gradientOn(g, a.str("field"), a.num("band"), from, to, a.bool("invert")); err != nil {
 					return err
-				}
-				for _, p := range g.Points() {
-					v := f(p.X, p.Y)
-					if a.bool("invert") {
-						v = 1 - v
-					}
-					dx, dy := c.ditherAt(p.X, p.Y)
-					c.PutAbs(p.X, p.Y, sub[rampIndex(v, dx, dy, len(sub), a.num("band"))])
 				}
 			}
 			if a.has("shape") {

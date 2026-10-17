@@ -202,6 +202,7 @@ func (st *starState) pxModule() *starlarkstruct.Module {
 		"noise1":     starlark.NewBuiltin("px.noise1", st.starNoise1),
 		"round":      starlark.NewBuiltin("px.round", starRound),
 		"frames":     starlark.NewBuiltin("px.frames", starFrames),
+		"cycle":      starlark.NewBuiltin("px.cycle", starCycle),
 	}}
 }
 
@@ -483,13 +484,57 @@ func starOpCall(def *opDef) func(*starlark.Thread, *starlark.Builtin, starlark.T
 	}
 }
 
+// starCycle は px.cycle(values, phase=0, axis=None): コマの表。コマ i に values[(i + phase) % len] を返す関数を作る
+// （px.frames の鍵の値に置く。昇格ループ 4〜7 周目: 息・揺れの at・頭を下げる・点滅の色・足踏みの型・旗の手の差分）。
+// axis が "x" なら [v, 0]・"y" なら [0, v]（部品の at に置く上下・左右の揺れ）。
+func starCycle(_ *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	var seq starlark.Indexable
+	phase := 0
+	axis := ""
+	if err := starlark.UnpackArgs(b.Name(), args, kwargs, "values", &seq, "phase?", &phase, "axis?", &axis); err != nil {
+		return nil, err
+	}
+	if _, isStr := seq.(starlark.String); isStr || seq.Len() == 0 {
+		return nil, fmt.Errorf("%s: values は 1 つ以上の値の列（コマ i → values[(i + phase) %% len]）", b.Name())
+	}
+	if axis != "" && axis != "x" && axis != "y" {
+		return nil, fmt.Errorf("%s: axis は \"x\"・\"y\" か省く（got %q）", b.Name(), axis)
+	}
+	vals := make([]starlark.Value, seq.Len())
+	for i := range vals {
+		v := seq.Index(i)
+		if axis != "" {
+			if _, ok := v.(starlark.Int); !ok {
+				if _, ok := v.(starlark.Float); !ok {
+					return nil, fmt.Errorf("%s: axis を書く時の values は数の列（values[%d] は %s）", b.Name(), i, v.Type())
+				}
+			}
+			if axis == "x" {
+				v = starlark.NewList([]starlark.Value{v, starlark.MakeInt(0)})
+			} else {
+				v = starlark.NewList([]starlark.Value{starlark.MakeInt(0), v})
+			}
+		}
+		vals[i] = v
+	}
+	n := len(vals)
+	return starlark.NewBuiltin("px.cycle.at", func(_ *starlark.Thread, fb *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+		var i int
+		if err := starlark.UnpackPositionalArgs(fb.Name(), args, kwargs, 1, &i); err != nil {
+			return nil, err
+		}
+		return vals[((i+phase)%n+n)%n], nil
+	}), nil
+}
+
 // starFrames は px.frames(names, parts): 部品の鍵の値に関数（コマの番号 i → 値）を書くと、
 // 部品にはコマ 0 の値を入れ、コマごとの差し替え（frames）を作る。(部品の列, frames) を返す。
 // names はコマ名の列か数（数 n なら "f0"〜"f{n-1}"）。関数を書いていない部品はそのまま。
+// parts に関数（コマの番号 i → 部品の列）を渡すと、場面をコマごとに作り、コマ 0 と違う鍵だけを patch にする（starFramesOf）。
 func starFrames(th *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	var namesV starlark.Value
-	var parts *starlark.List
-	if err := starlark.UnpackArgs(b.Name(), args, kwargs, "names", &namesV, "parts", &parts); err != nil {
+	var partsV starlark.Value
+	if err := starlark.UnpackArgs(b.Name(), args, kwargs, "names", &namesV, "parts", &partsV); err != nil {
 		return nil, err
 	}
 	var names []string
@@ -514,6 +559,13 @@ func starFrames(th *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, k
 	}
 	if len(names) == 0 {
 		return nil, fmt.Errorf("%s: コマが 1 つも無い", b.Name())
+	}
+	if fn, ok := partsV.(starlark.Callable); ok {
+		return starFramesOf(th, b, names, fn)
+	}
+	parts, ok := partsV.(*starlark.List)
+	if !ok {
+		return nil, fmt.Errorf("%s: parts は部品の列か、コマの番号 i → 部品の列の関数（got %s）", b.Name(), partsV.Type())
 	}
 	frames := make([]*starlark.Dict, len(names))
 	for i := range frames {
@@ -571,6 +623,69 @@ func starFrames(th *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, k
 		_ = fd.SetKey(starlark.String(n), frames[i])
 	}
 	return starlark.Tuple{starlark.NewList(out), fd}, nil
+}
+
+// starFramesOf は px.frames(names, scene): scene(i) でコマ i の部品の列を作り、コマ 0 の列を部品に、
+// コマ 0 と値が違う鍵だけを id ごとの patch にする（落ち物パズルの盤・城下町の旗の綱のように、場面ごとコマで描き分ける時）。
+// どのコマも部品の数と id の並びはコマ 0 と同じにする（部品を外すなら patch を手で書く）。
+func starFramesOf(th *starlark.Thread, b *starlark.Builtin, names []string, scene starlark.Callable) (starlark.Value, error) {
+	per := make([]*starlark.List, len(names))
+	for i := range names {
+		v, err := starlark.Call(th, scene, starlark.Tuple{starlark.MakeInt(i)}, nil)
+		if err != nil {
+			return nil, err
+		}
+		l, ok := v.(*starlark.List)
+		if !ok {
+			return nil, fmt.Errorf("%s: scene(%d) は部品の列を返す（got %s）", b.Name(), i, v.Type())
+		}
+		per[i] = l
+	}
+	base := per[0]
+	fd := starlark.NewDict(len(names))
+	for i, name := range names {
+		if per[i].Len() != base.Len() {
+			return nil, fmt.Errorf("%s: コマ %s の部品が %d 個でコマ 0（%d 個）と違う（部品を外すなら patch を手で書く）", b.Name(), name, per[i].Len(), base.Len())
+		}
+		patch := starlark.NewDict(0)
+		for k := 0; k < base.Len(); k++ {
+			a, okA := base.Index(k).(*starlark.Dict)
+			p, okB := per[i].Index(k).(*starlark.Dict)
+			if !okA || !okB {
+				return nil, fmt.Errorf("%s: コマ %s の部品 [%d] は dict で書く", b.Name(), name, k)
+			}
+			idA, _, _ := a.Get(starlark.String("id"))
+			idB, _, _ := p.Get(starlark.String("id"))
+			if _, ok := idB.(starlark.String); !ok || idA != idB {
+				return nil, fmt.Errorf("%s: コマ %s の部品 [%d] の id %v がコマ 0 の %v と違う（並びをそろえる）", b.Name(), name, k, idB, idA)
+			}
+			d := starlark.NewDict(0)
+			for _, kv := range p.Items() {
+				old, found, _ := a.Get(kv[0])
+				same := false
+				if found {
+					eq, err := starlark.Equal(old, kv[1])
+					if err != nil {
+						return nil, err
+					}
+					same = eq
+				}
+				if !same {
+					_ = d.SetKey(kv[0], kv[1])
+				}
+			}
+			for _, kv := range a.Items() {
+				if _, found, _ := p.Get(kv[0]); !found {
+					return nil, fmt.Errorf("%s: コマ %s で部品 %v の鍵 %v が無い（コマ 0 にある鍵はどのコマにも書く）", b.Name(), name, idA, kv[0])
+				}
+			}
+			if d.Len() > 0 {
+				_ = patch.SetKey(idB, d)
+			}
+		}
+		_ = fd.SetKey(starlark.String(name), patch)
+	}
+	return starlark.Tuple{base, fd}, nil
 }
 
 func starInt(name string, v starlark.Value) (*big.Int, error) {
@@ -1008,6 +1123,8 @@ func starMarkdown() string {
 | ‵px.hash01(x, y, seed)‵・‵px.noise1(x, seed)‵・‵px.rng(seed)‵ | 種つきのゆらぎ・乱数（rng は CPython の random.Random と同じ列。写しの間だけ） |
 | ‵px.round(x, nd)‵ | Python の round（ちょうど半分は偶数へ） |
 | ‵px.frames(names, parts)‵ | 部品の鍵の値に関数（コマの番号 ‵i‵ → 値）を書くと、‵(部品の列, frames)‵ を返す。部品にはコマ 0 の値が入る（‵"ops": lambda i: smoke(i)‵）。‵names‵ はコマ名の列か数 |
+| ‵px.frames(names, scene)‵ | ‵scene(i)‵ がコマ i の部品の列を返す関数なら、コマ 0 の列を部品に、コマ 0 と違う鍵だけを patch にする（場面ごとコマで描き分ける時。部品の数と id の並びはどのコマも同じ） |
+| ‵px.cycle(values, phase=0, axis=None)‵ | コマの表: コマ i に ‵values[(i + phase) %% len]‵ を返す関数（px.frames の鍵の値に置く。‵"at": px.cycle([0, 1, 3, 1], axis="y")‵ で上下・‵"ops": px.cycle([[op.text(…, color=c)] for c in COLS])‵ で点滅）。axis は "x" で ‵[v, 0]‵・"y" で ‵[0, v]‵ |
 | ‵math.*‵ | sin・cos・tan・atan2・hypot・exp・log・pow・sqrt・floor・ceil・radians・pi。答えは正しく丸めた値で、OS・CPU で変わらない |
 
 最小の台本（version・target・palette・ramps・sprites・parts・frames）:
@@ -1028,7 +1145,7 @@ func starMarkdown() string {
 - Starlark に無い物: class（dict と関数で書く）・‵**‵（‵math.pow‵ か ‵x * x‵）・‵round‵（‵px.round‵）・set・連なった比較（‵a <= x < b‵）・bool の足し算・文字列の for（‵s.elems()‵）・‵%%‵ の幅と桁（‵"%%02x"‵ は ‵"%%x%%x" %% (v // 16, v %% 16)‵）。一番外の for は書けるが、ループの変数も 1 度しか代入できない（2 本目のループは別の名前か def の中）。
 - 決まり（どれも advice）: 台本 1 本 %d 行・pxsrc 1 本 %d KB・1 部品の put %d 画素・格子の半分を超える stamp・while・使われない関数・色票の色キーが ink などの名前と重なる。
 - ‵None‵ を渡した引数は省いたのと同じ（‵op.fill(shape = None, color = …)‵ は部品の塊を塗る）。
-- px.frames に渡す lambda は、ループの変数を作った時でなく呼ばれた時に引く（Python と同じ）。ループの中で作る lambda は値を引数で閉じ込める関数から返す（‵def down(speed): return lambda i: [0, i * speed]‵）。そのまま書くと全部の部品が最後の値になる。
+- px.frames に渡す lambda は、ループの変数を作った時でなく呼ばれた時に引く（Python と同じ）。ループの中で作る lambda は値を引数で閉じ込める関数から返す（‵def down(speed): return lambda i: [0, i * speed]‵）。そのまま書くと全部の部品が最後の値になる。コマの値を先に並べられるなら ‵px.cycle([f(i) for i in range(N)])‵ でも閉じ込められる。
 `, starExample, starDefaultMaxSteps, starAdviceLines, starAdviceSpecBytes/1024, starAdvicePuts)
 	return strings.ReplaceAll(t, "‵", "`")
 }
