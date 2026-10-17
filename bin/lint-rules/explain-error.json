@@ -10,8 +10,20 @@
       "tip": "レコードは Eq/Order を持てない。比較したい値は名前付き 1 フィールド enum で包む"
     },
     {
+      "key": "E2916",
+      "tip": "engine の型なら mod の頭に use flix_game_engine::{名前} が要る (Flix 0.78 の mount)。bin/fge engine-uses で足せる"
+    },
+    {
       "key": "E2136",
-      "tip": "1 case の enum で包んだ Doc をモジュールの外から作るなら PuzzleDoc.Doc.Doc({..}) と 2 段 (enum 名 + case 名) にする"
+      "tip": "engine の名前なら bin/fge engine-uses で mod ごとに use を足す。1 case の enum で包んだ Doc は PuzzleDoc.Doc.Doc({..}) と 2 段"
+    },
+    {
+      "key": "E6795",
+      "tip": "多相 effect (eff E[t]) を 1 つの関数の中で別の型引数で使っている。型ごとに関数を分けるか、effect を分ける"
+    },
+    {
+      "key": "E3442",
+      "tip": "effect の型変数に型を当てられない (ef[t] は不可)。宣言した effect の名前で書く"
     },
     {
       "key": "E6794",

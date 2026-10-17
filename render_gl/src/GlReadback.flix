@@ -2,7 +2,7 @@
 // GL は左下原点なので、行を逆順に詰めて左上原点にそろえる。読み出しの詰め替えを
 // ここ 1 か所に集めるのは、splashShot・注釈スクショ・突き合わせ harness で同じコードが
 // 3 つに増えると、上下反転やチャンネル順の直しがどれか 1 つだけ取り残されるため。
-mod GlReadback {
+pub mod GlReadback {
     import java.awt.image.BufferedImage
     import java.io.File
     import javax.imageio.ImageIO

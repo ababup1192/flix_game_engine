@@ -8,6 +8,8 @@
 // （繋ぎが Main に見えるのが教育的）。App.game の外側で足す設定（reloadOn・onRenderRequest・withDebug）は
 // 戻り値の App に従来どおり後ろから pipe で足す。
 
+use flix_game_engine::{ActiveDocs, App, GameEngine, LwjglLayer}
+
 def main(): Unit \ IO =
     if (GameEngine.ensureMainThread()) ()
     else {

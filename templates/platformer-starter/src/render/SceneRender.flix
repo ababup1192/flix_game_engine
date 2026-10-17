@@ -4,6 +4,11 @@
 // 時刻 t は固定値 — 空・コイン・旗・動く床がこの t だけで決まるので、
 // 何度描き出しても同じ PNG が出る(スナップショットのバイト比較が成り立つ)。
 mod SceneRender {
+    use flix_game_engine::{
+        App, CameraRig, Color, FontAtlas, GameEngine, HeadlessFont, HeadlessRender, PxSpriteAtlas,
+        PxSpriteDoc, Render, Vec2
+    }
+
     import java.io.File
     import java.lang.System
 

@@ -4,6 +4,10 @@
 // 同じ関数を読む — 絵柄の正を 2 箇所に写経しないため。
 mod TownMap {
 
+    use flix_game_engine::{
+        Grid, Hash01, PxSpriteAtlas, Rect2, TileData, TileLayer, TileLayerSpec, Tileset, Vec2
+    }
+
     /// タイルアトラスのテクスチャ名。Main の withSpriteAtlases（GPU へ上げる側）と
     /// Tileset（敷く側）が同じ名前を指す — 食い違うとタイルが真っ白になる。
     pub def textureName(): String = "town_tiles"

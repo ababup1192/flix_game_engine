@@ -4,6 +4,8 @@
 // Doc の保存即反映（watchFile）と F1 一括リロードの読み直しもここに置く。
 mod Controls {
 
+    use flix_game_engine::{App, DocTable, PxSpriteDoc, ShaderDoc, ShaderJson}
+
     /// このフレームのキーを World.Input へ。操作ごとのキーの列（keys Doc）の
     /// どれか 1 つでも押されていれば効き、逆向きが同時なら打ち消して 0。
     pub def inputOf(frame: App.Frame, keys: KeysDoc.Doc): World.Input =

@@ -3,6 +3,8 @@
 // 出力: N と、1 回の draw の確保バイト、item 1 個あたりのバイト。
 mod BenchAlloc {
 
+    use flix_game_engine::{AllocMeter, RawDraw, Render, Vec2}
+
     pub def main(): Unit \ IO =
         let n = 1000;
         let items = testItems(n);

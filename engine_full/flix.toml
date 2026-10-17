@@ -1,6 +1,6 @@
 [package]
 version     = "0.35.38"
-flix        = "0.76.2"
+flix        = "0.78.0"
 repository  = "github:ababup1192/flix_game_engine"
 
 # engine / render_gl / engine_world / engine_tools のソースを1つにまとめた全部入り。

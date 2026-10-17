@@ -16,6 +16,11 @@
 //   ダイアログ・本文・エラーバナーは withHudView 側（hud）— 部屋の z に関わらず必ず手前
 mod View {
 
+    use flix_game_engine::{
+        App, Color, DrawCmd, FontAtlas, Fx, Num, PxSprite, RawDraw, Render, Sway, TextDraw,
+        UiRender, Vec2
+    }
+
     // ── z 層（部屋 0..9 / 額縁 10 / 灯り 20 / 暗くするオーバーレイ 50 / 表紙 60。UI は ui.json 側で 100+） ──
 
     def zRoom(): Int32 = 0

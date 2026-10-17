@@ -4,6 +4,8 @@
 // 食い違う（しかも Studio は黙って仮色で描くので気付きにくい）。だからここで縛る。
 mod TestPalette {
 
+    use flix_game_engine::PxSpriteDoc
+
     @Test
     def testPaletteMirrorIsFresh(): Unit \ {Assert, IO} =
         // 食い違ったら `make palette`（`make render-all` でも作り直される）。

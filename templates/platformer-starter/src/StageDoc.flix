@@ -3,6 +3,7 @@
 // Stage モジュールの対応表が正。fail-open — 読めない・壊れているときは
 // defaults()(組み込みの小さな 1 面)へ落とし、ゲームは必ず起動する。
 mod StageDoc {
+    use flix_game_engine::{DocJson, JsonCodec}
     use Util.Json.Json
     use Util.Json.Json.{JObject, JArray, JString}
 

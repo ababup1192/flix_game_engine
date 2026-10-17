@@ -4,6 +4,11 @@
 // すべて決定的な場面（時計 t は場面ごとに固定値を入れる — 実時間も乱数も見ない）。
 // World を直接組み、実機と同じ描画経路（View.frame → Render.draw → HeadlessRender.renderPng）で生成する。
 mod SceneRender {
+    use flix_game_engine::{
+        App, Color, FontAtlas, Fx, GameEngine, HeadlessFont, HeadlessRender, PxSpriteAtlas, Render,
+        Vec2
+    }
+
     import java.io.File
     import java.lang.System
 

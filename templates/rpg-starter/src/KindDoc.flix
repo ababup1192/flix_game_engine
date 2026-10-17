@@ -2,6 +2,7 @@
 // Doc は「初期値の宣言」まで: 規則（歩き方・会話の進め方）はコード（World）側。
 // fail-open — 読めない・壊れているときは defaults() へ落とし、ゲームは必ず起動する。
 mod KindDoc {
+    use flix_game_engine::{DocJson, JsonCodec}
     use Util.Json.Json
 
     /// 手触りの数値。walk = 歩く速さ（1 秒あたりのマス数）、

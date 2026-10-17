@@ -4,6 +4,11 @@
 // 流し込み）の組み合わせで、クリックの意味は meta 文字列（novel/choice/N）で伝える。
 mod NovelKit {
 
+    use flix_game_engine::{
+        Color, DocJson, FontAtlas, Render, RichText, UiDialog, UiLayout, UiSlots, UiSpec, UiStore,
+        Vec2
+    }
+
     /// キットの状態。choices が Some のときは「文字送りが終わったら選択肢を出す」。
     pub type alias Kit = {
         dialog = UiDialog.Dialog,

@@ -6,6 +6,8 @@ artifact/
 # 手元で作り直す fpkg のハッシュを記録するだけなので、入れると sync のたびに食い違う。
 packages.lock
 build/
+# make sync-layers が張る層ごとの検査の作業場（symlink だけ）。
+/.layers/
 dist/
 dist-win/
 # make bundle-zip が吐く同梱用 zip (Release に添える生成物)。

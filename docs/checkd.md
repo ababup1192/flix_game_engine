@@ -105,7 +105,7 @@ JSON が source of truth で、読めなければ既定値へ倒さず止まる�
 - 既定 10 分（環境変数 `CHECKD_IDLE_SEC` で変えられる、単位は秒）誰も
   check / test しなければ自殺する
 - `flix.toml` や `lib/` の依存の実体 (symlink の先も見る) が変わったら、古い依存を
-  握り続けないよう repl を作り直す (`make sync-engine` 後の check も安全)
+  握り続けないよう repl を作り直す (`make sync-engine-full` 後の check も安全)
 - repl 1 本のメモリが上限（機械の物理メモリの 33% を常駐の数で割った値。16GB なら
   約 1.8GB）を超えるか、check / test 合計 200 回で使い捨てて立て直す
   （`CHECKD_RSS_MB` で変えられる）

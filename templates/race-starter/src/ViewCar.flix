@@ -5,6 +5,11 @@
 //   pxQuadScaled … アトラス 1 クアッドに実数 scale を掛ける（遠景のヤシ・ニトロ残像が使う）。
 mod ViewCar {
 
+    use flix_game_engine::{
+        Color, DrawCmd, Fx, Hash01, Lifetime, Num, PxSprite, PxSpriteAtlas, PxSpriteDoc, RawDraw,
+        Render, Sway, Vec2, ZStack
+    }
+
     /// 演出（煙・炎・閃光）の粒を立ち物の並び（Proj.orderOf の 20..76）へ交ぜるときの足し算。
     /// fx.json の zIndex は 9〜22 なので +60 で 69〜82 の順番になる — クラッシュ閃光が最前面、
     /// 炎の裾は車の少し下に来る（fx.json 側の並び順をそのまま活かす）。

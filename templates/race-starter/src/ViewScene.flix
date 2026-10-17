@@ -4,6 +4,10 @@
 // （どこにも状態を持たないので、巻き戻しても描き出しでも同じ絵になる）。
 mod ViewScene {
 
+    use flix_game_engine::{
+        Color, DrawCmd, Fx, Hash01, Num, RawDraw, Render, Scatter, Sway, Vec2, ZStack
+    }
+
     // 空・海・平野は地面の葉（View.frame）に入り、葉の中の前後は View の共有の段（View.zSky など）から引く。
     // ヤシと道の外の景色は立ち物の子（Proj.orderOf の順）、速度線はいちばん手前の葉。
 

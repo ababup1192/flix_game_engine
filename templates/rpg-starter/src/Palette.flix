@@ -11,6 +11,8 @@
 // テーマの色を変えたら作り直す — 忘れても TestPalette が食い違いを見つける。
 mod Palette {
 
+    use flix_game_engine::{Color, PxSpriteDoc, RenderUtil}
+
     pub def path(): String = "assets/rpg.palette.json"
 
     /// sprite Doc の legend に出てくる意味色キーを、テーマの実色へ解いた表（純粋）。

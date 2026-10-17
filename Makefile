@@ -9,16 +9,10 @@
 ##   templates/    ─ 新しいゲームの写し元。各テンプレは `cd templates/<name> && flix ...` で直接動く
 ##
 ## Makefile に集約するのは workspace 横断の配布作業だけ:
-##   `make sync` … engine / render_gl / engine_world / engine_tools を build-pkg し、それぞれを
-##                  依存しているディレクトリの lib/github/ababup1192/<pkg>/<version>/ に
-##                  相対 symlink を張る (cp ではなく ln -sf)。
-##                  symlink にすることで engine を rebuild すれば即座に反映され、
-##                  例題側で stale な fpkg を持ち回らなくて済む。
-##                  各ターゲットディレクトリの project root への相対パスは深さで決まる:
-##                    render_gl/lib/github/.../0.1.0/         → 6 階層上 (../ x6)
-##                    engine_world/lib/github/.../0.1.0/      → 6 階層上 (../ x6)
-##                    templates/<name>/lib/github/.../0.1.0/ → 7 階層上 (../ x7)
-##                  ループ内で $$dir のスラッシュ数 + 5 (ENGINE_SUBPATH 階層) として計算する。
+##   `make sync` … engine の上に載る 3 層の検査用の作業場 (.layers/) を張り、engine_full を
+##                  集約して build-pkg し、templates / bench の lib/github/ababup1192/flix_game_engine/<version>/
+##                  に相対 symlink を張る (cp ではなく ln -sf)。symlink にすることで engine_full を
+##                  作り直せば即座に反映され、例題側で stale な fpkg を持ち回らなくて済む。
 
 # Flix コンパイラは bin/flix ラッパー経由で呼ぶ。ラッパーが devbox (flix.nix) の
 # flix コマンドと手動配置 bin/flix.jar のどちらを使うかを解決し、JVM フラグ
@@ -31,35 +25,20 @@ FLIX_TEST := $(CURDIR)/bin/flix
 # asset 名に使う。make bump FROM=x TO=y で各 flix.toml と一緒に上げる。
 VERSION := 0.35.38
 
-RENDER_GL_DIR       := render_gl
-RENDER_GL_FPKG_SRC  := $(RENDER_GL_DIR)/artifact/package.fpkg
-RENDER_GL_TOML_SRC  := $(RENDER_GL_DIR)/flix.toml
-RENDER_GL_SUBPATH   := lib/github/ababup1192/flix_render_gl/$(VERSION)
-RENDER_GL_FPKG_NAME := flix_render_gl-$(VERSION).fpkg
-RENDER_GL_TOML_NAME := flix_render_gl-$(VERSION).toml
-
+# engine は契約層 (依存ゼロ)。render_gl / engine_world / engine_tools はその上に載る層。
 ENGINE_DIR       := engine
-ENGINE_FPKG_SRC  := $(ENGINE_DIR)/artifact/package.fpkg
-ENGINE_TOML_SRC  := $(ENGINE_DIR)/flix.toml
-ENGINE_SUBPATH   := lib/github/ababup1192/flix_engine_core/$(VERSION)
-ENGINE_FPKG_NAME := flix_engine_core-$(VERSION).fpkg
-ENGINE_TOML_NAME := flix_engine_core-$(VERSION).toml
+RENDER_GL_DIR    := render_gl
+ENGINE_WORLD_DIR := engine_world
+ENGINE_TOOLS_DIR := engine_tools
 
-# engine_world は engine に依存する再利用 ECS lib。ゲームが利用する。
-ENGINE_WORLD_DIR       := engine_world
-ENGINE_WORLD_FPKG_SRC  := $(ENGINE_WORLD_DIR)/artifact/package.fpkg
-ENGINE_WORLD_TOML_SRC  := $(ENGINE_WORLD_DIR)/flix.toml
-ENGINE_WORLD_SUBPATH   := lib/github/ababup1192/flix_engine_world/$(VERSION)
-ENGINE_WORLD_FPKG_NAME := flix_engine_world-$(VERSION).fpkg
-ENGINE_WORLD_TOML_NAME := flix_engine_world-$(VERSION).toml
-
-# engine_tools は engine に依存するヘッドレス描画/スナップショット工具箱 lib。ゲームが利用する。
-ENGINE_TOOLS_DIR       := engine_tools
-ENGINE_TOOLS_FPKG_SRC  := $(ENGINE_TOOLS_DIR)/artifact/package.fpkg
-ENGINE_TOOLS_TOML_SRC  := $(ENGINE_TOOLS_DIR)/flix.toml
-ENGINE_TOOLS_SUBPATH   := lib/github/ababup1192/flix_engine_tools/$(VERSION)
-ENGINE_TOOLS_FPKG_NAME := flix_engine_tools-$(VERSION).fpkg
-ENGINE_TOOLS_TOML_NAME := flix_engine_tools-$(VERSION).toml
+# engine の上に載る 3 層は、engine のソースと自分のソースを 1 本の木に束ねて組む
+# (make sync-layers が .layers/<層>/ にファイル単位の symlink を張る)。
+# WhyNot: engine の fpkg を lib/ に置いて依存させないのは、Flix 0.78 から依存パッケージの名前が
+# `use flix_engine_core::X` からしか届かなくなったため。同じソースをルートと engine_full でも
+# 1 本の木として組むので、ソースに mount 名を書くと片方が必ず落ちる。
+LAYER_PKGS := $(RENDER_GL_DIR) $(ENGINE_WORLD_DIR) $(ENGINE_TOOLS_DIR)
+LAYER_ROOT := .layers
+LAYER_DIRS := $(addprefix $(LAYER_ROOT)/,$(LAYER_PKGS))
 
 # engine_full は engine / render_gl / engine_world / engine_tools のソースを1つに集めた
 # 自己完結の全部入りパッケージ (依存ゼロ・LWJGL ネイティブ自前)。ゲームはこれ1つだけを
@@ -77,7 +56,7 @@ ENGINE_FULL_TOML_NAME := flix_game_engine-$(VERSION).toml
 # 全体の up 階層数を求め、symlink の相対パスを動的に組み立てる。
 SUBPATH_DEPTH := 5
 
-.PHONY: help status sync sync-engine sync-render-gl sync-engine-world sync-engine-tools sync-engine-full sync-root-src clean-locks clean-game-builds test test-par render render-all render-par render-changed diff gl-parity release release-guard studio-parity bump lint-palette lint-view lint-loop lint-audio rules check-docs-sync checkd-stop shader-cache-soak
+.PHONY: help status sync sync-layers sync-engine-full sync-root-src clean-locks clean-game-builds test test-par render render-all render-par render-changed diff gl-parity release release-guard studio-parity bump lint-palette lint-view lint-loop lint-audio rules check-docs-sync checkd-stop shader-cache-soak
 
 # セッション立ち上げの固定費を数百トークンに抑える口。SessionStart フックが毎回呼ぶので
 # 実行や変更は一切せず、残っている記録 (.test-logs/ スナップショット チケット git) を集めるだけ。
@@ -125,11 +104,8 @@ help:
 	@echo "  make diff DIR=<dir>       直す前(スナップショット)と後(gallery)を左右に並べて <dir>/debug/diff/ に描き出す"
 	@echo "  make gl-parity            GL と SoftRaster が同じ絵を出すかを隠しウィンドウで突き合わせ (不一致で exit 1)"
 	@echo "  make shader-cache-soak    シェーダープログラムのキャッシュが上限で頭打ちになるかを隠しウィンドウで確認 (増え続ければ exit 1)"
-	@echo "  make sync                 engine / render_gl / engine_world / engine_tools を build-pkg し、各依存先に配布"
-	@echo "  make sync-render-gl       render_gl だけ build-pkg & 配布 (依存する各パッケージへ)"
-	@echo "  make sync-engine          engine だけ build-pkg & 配布 (render_gl / engine_world / engine_tools へ)"
-	@echo "  make sync-engine-world      engine_world だけ build-pkg & 配布 (依存する各パッケージへ)"
-	@echo "  make sync-engine-tools    engine_tools だけ build-pkg & 配布 (依存する各パッケージへ)"
+	@echo "  make sync                 層の作業場を張り、engine_full を build-pkg して templates / bench に配布"
+	@echo "  make sync-layers          render_gl / engine_world / engine_tools の検査用の作業場 (.layers/) を張り直す"
 	@echo "  make sync-root-src        コミュニティビルド用にルート src/ の symlink 集を再生成"
 	@echo "  make clean-locks          flix check 中断で残った Maven cache の *.lock を削除"
 	@echo "  make checkd-stop          flix check 常駐 (bin/fge checkd) を全部止める (詳細は docs/checkd.md)"
@@ -146,7 +122,7 @@ help:
 # 走査先はパッケージ配下だけに絞り、build/ は枝ごと prune する (lock は lib/cache だけにある)。
 # 消すのは -delete でなく -exec rm にする: BSD find の -delete は暗黙に -depth を立て、
 # すると -prune が無効化されて GB 級の build/ を全部歩き数分固まる (元の 7 分ハングの正体)。
-LOCK_DIRS := $(ENGINE_DIR) $(RENDER_GL_DIR) $(ENGINE_WORLD_DIR) $(ENGINE_TOOLS_DIR) $(ENGINE_FULL_DIR) $(wildcard templates/*) $(wildcard bench/*)
+LOCK_DIRS := $(ENGINE_DIR) $(wildcard $(LAYER_DIRS)) $(ENGINE_FULL_DIR) $(wildcard templates/*) $(wildcard bench/*)
 clean-locks:
 	@find $(LOCK_DIRS) -type d -name build -prune -o \( -path "*/lib/cache/*" -name "*.lock" -print -exec rm -f {} + \) 2>/dev/null | awk 'END { print NR " lock(s) removed" }'
 
@@ -161,7 +137,7 @@ checkd-stop:
 # engine 自身のパッケージも消す。build/ は呼ぶたび足されるだけで減らないので、
 # 消さずにいると engine_world が 2.1GB / 49 万ファイルまで育つ (実測)。
 # テストの速さへの効きは 2 割ほどで、主な理由はディスクと IDE の glob。
-PKG_DIRS := $(ENGINE_DIR) $(RENDER_GL_DIR) $(ENGINE_WORLD_DIR) $(ENGINE_TOOLS_DIR)
+PKG_DIRS := $(ENGINE_DIR) $(LAYER_DIRS)
 clean-game-builds:
 	@removed=0; \
 	for d in templates/*/build bench/*/build $(addsuffix /build,$(PKG_DIRS)); do \
@@ -183,9 +159,10 @@ TEMPLATE_DIRS := $(filter-out templates/game-starter,$(wildcard templates/*))
 # テンプレート 5 本は test-all / test-par-all（リリースのゲート）だけで回す。
 # WhyNot: 毎回の test に入れない —— テンプレートのコンパイルがエンジンのテストの約半分を占め、
 #   エンジンを直すたびに払うには重い。退行はリリース前の全量と new-game の産声の確認で拾う。
-TEST_DIRS := $(ENGINE_DIR) $(RENDER_GL_DIR) $(ENGINE_WORLD_DIR) $(ENGINE_TOOLS_DIR)
+# engine の上の 3 層は .layers/ の作業場で回す (張り方は sync-layers)。
+TEST_DIRS := $(ENGINE_DIR) $(LAYER_DIRS)
 
-test:
+test: sync-layers
 	@for dir in $(TEST_DIRS); do \
 		if [ -f "$$dir/flix.toml" ]; then \
 			echo "===== $$dir ====="; \
@@ -208,11 +185,11 @@ test-par-all:
 # スクリプトに埋めると「command line cannot be assembled」で 1 本も走らない)。
 # 「1 本も走っていないのに green」の偽陽性は実行数ガードで落とす。
 TEST_PAR_JOBS ?= 6
-test-par:
+test-par: sync-layers
 	@mkdir -p .test-logs; rm -f .test-logs/*.log .test-logs/*.fail; \
 	printf '%s\n' $(TEST_DIRS) | xargs -P $(TEST_PAR_JOBS) -n 1 sh -c ' \
 		dir="$$0"; [ -f "$$dir/flix.toml" ] || exit 0; \
-		name=$$(printf "%s" "$$dir" | tr / _); \
+		name=$$(printf "%s" "$$dir" | tr / _ | tr -d .); \
 		if (cd "$$dir" && "$(FLIX_TEST)" test) > ".test-logs/$$name.log" 2>&1; then \
 			echo "[test-par] PASS $$dir"; \
 		else \
@@ -304,7 +281,7 @@ render-par:
 #
 # リファレンス画像の PNG は git 管理外（追跡するのは SHA256SUMS.txt だけ）なので、clone 直後は
 # 「前」が手元に無い。その時は一度 make render-all && make reference-update で今の絵を基準に置く。
-diff:
+diff: sync-layers
 	@test -n "$(DIR)" || { echo "使い方: make diff DIR=templates/rpg-starter"; exit 1; }
 	@ls "$(DIR)"/reference/*.png > /dev/null 2>&1 || { \
 		echo "[diff] $(DIR)/reference に比べる前の絵がありません。"; \
@@ -316,7 +293,7 @@ diff:
 		elif ! cmp -s "$$f" "reference/$$n"; then printf '%s,' "$$n"; fi; \
 	done); \
 	if [ -z "$$names" ]; then echo "[diff] 変わった絵はありません"; else \
-		cd $(ENGINE_TOOLS_DIR) && DIFF_DIR="$(abspath $(DIR))" DIFF_NAMES="$$names" \
+		cd $(LAYER_ROOT)/$(ENGINE_TOOLS_DIR) && DIFF_DIR="$(abspath $(DIR))" DIFF_NAMES="$$names" \
 			JAVA_TOOL_OPTIONS="-Djava.awt.headless=true" "$(FLIX)" run --entrypoint ReferenceDiff.pairs; \
 	fi
 
@@ -338,7 +315,7 @@ shader-cache-soak:
 test-%:
 	@mkdir -p .test-logs; \
 	if [ -d "templates/$*" ]; then dir="templates/$*"; else dir="$*"; fi; \
-	name=$$(printf "%s" "$$dir" | tr / _); \
+	name=$$(printf "%s" "$$dir" | tr / _ | tr -d .); \
 	rm -f ".test-logs/$$name.fail"; \
 	if (cd "$$dir" && "$(FLIX_TEST)" test) > ".test-logs/$$name.log" 2>&1; then \
 		tail -5 ".test-logs/$$name.log"; \
@@ -467,7 +444,7 @@ clean-font-cache:
 
 # WhyNot: 配り先の packages.lock は配るたびに消す。fpkg は手元の作り直しで毎回中身が変わるので、
 # 残すと Flix 0.77 以降は「packages.lock の記録と違う」で check ごと止まる。
-sync: clean-locks sync-engine sync-render-gl sync-engine-world sync-engine-tools sync-engine-full sync-root-src
+sync: clean-locks sync-layers sync-engine-full sync-root-src
 
 # engine_full は engine / render_gl / engine_world / engine_tools のソースを1つに集めた
 # 自己完結パッケージ (依存ゼロ)。ルート src/ と同じくファイル単位の symlink で4パッケージの
@@ -679,82 +656,30 @@ sync-root-src:
 	done; \
 	find src -type l | awk 'END { print "[sync-root-src] " NR " symlink(s)" }'
 
-# render_gl は engine（フロント契約）を実装する GL バックエンド。
-# engine に依存するので sync チェーンでは sync-engine の後に置く（lib に engine fpkg が要る）。
-sync-render-gl:
-	cd $(RENDER_GL_DIR) && "$(FLIX)" build-pkg
-	@for dir in templates/*/ bench/*/; do \
-		toml="$$dir/flix.toml"; \
-		if [ -f "$$toml" ] && grep -q 'ababup1192/flix_render_gl"' "$$toml"; then \
-			target="$${dir}$(RENDER_GL_SUBPATH)"; \
-			mkdir -p "$$target"; \
-			depth=$$(printf '%s' "$$dir" | tr -cd '/' | wc -c | tr -d ' '); \
-			upcnt=$$((depth + $(SUBPATH_DEPTH))); \
-			rel=$$(printf '../%.0s' $$(seq 1 $$upcnt)); \
-			ln -sfn "$${rel}$(RENDER_GL_FPKG_SRC)" "$$target/$(RENDER_GL_FPKG_NAME)"; \
-			ln -sfn "$${rel}$(RENDER_GL_TOML_SRC)" "$$target/$(RENDER_GL_TOML_NAME)"; \
-			rm -f "$${dir}packages.lock"; \
-			echo "[sync-render-gl] $$target"; \
-		fi \
-	done
-
-# engine は render_gl / engine_world / engine_tools が依存している。
-# 特に render_gl は engine を実装するバックエンドなので、engine fpkg を render_gl にも配る。
-# fpkg / toml は cp ではなく相対 symlink で配布する (engine 再ビルドが即反映される)
-sync-engine:
-	cd $(ENGINE_DIR) && "$(FLIX)" build-pkg
-	@for dir in $(RENDER_GL_DIR)/ $(ENGINE_WORLD_DIR)/ $(ENGINE_TOOLS_DIR)/ templates/*/ bench/*/; do \
-		toml="$$dir/flix.toml"; \
-		if [ -f "$$toml" ] && grep -q 'ababup1192/flix_engine_core"' "$$toml"; then \
-			target="$${dir}$(ENGINE_SUBPATH)"; \
-			mkdir -p "$$target"; \
-			depth=$$(printf '%s' "$$dir" | tr -cd '/' | wc -c | tr -d ' '); \
-			upcnt=$$((depth + $(SUBPATH_DEPTH))); \
-			rel=$$(printf '../%.0s' $$(seq 1 $$upcnt)); \
-			ln -sfn "$${rel}$(ENGINE_FPKG_SRC)" "$$target/$(ENGINE_FPKG_NAME)"; \
-			ln -sfn "$${rel}$(ENGINE_TOML_SRC)" "$$target/$(ENGINE_TOML_NAME)"; \
-			rm -f "$${dir}packages.lock"; \
-			echo "[sync-engine] $$target"; \
-		fi \
-	done
-
-# engine_world は engine を依存にする再利用 ECS lib。依存する各パッケージに配布する。
-# engine に依存するので sync チェーンでは sync-engine の後に置く（lib に engine fpkg が要る）。
-sync-engine-world:
-	cd $(ENGINE_WORLD_DIR) && "$(FLIX)" build-pkg
-	@for dir in templates/*/ bench/*/; do \
-		toml="$$dir/flix.toml"; \
-		if [ -f "$$toml" ] && grep -q 'ababup1192/flix_engine_world"' "$$toml"; then \
-			target="$${dir}$(ENGINE_WORLD_SUBPATH)"; \
-			mkdir -p "$$target"; \
-			depth=$$(printf '%s' "$$dir" | tr -cd '/' | wc -c | tr -d ' '); \
-			upcnt=$$((depth + $(SUBPATH_DEPTH))); \
-			rel=$$(printf '../%.0s' $$(seq 1 $$upcnt)); \
-			ln -sfn "$${rel}$(ENGINE_WORLD_FPKG_SRC)" "$$target/$(ENGINE_WORLD_FPKG_NAME)"; \
-			ln -sfn "$${rel}$(ENGINE_WORLD_TOML_SRC)" "$$target/$(ENGINE_WORLD_TOML_NAME)"; \
-			rm -f "$${dir}packages.lock"; \
-			echo "[sync-engine-world] $$target"; \
-		fi \
-	done
-
-# engine_tools は engine を依存にするヘッドレス描画/スナップショット工具箱 lib。依存する各パッケージに配布する。
-# engine に依存するので sync チェーンでは sync-engine の後に置く（lib に engine fpkg が要る）。
-sync-engine-tools:
-	cd $(ENGINE_TOOLS_DIR) && "$(FLIX)" build-pkg
-	@for dir in templates/*/ bench/*/; do \
-		toml="$$dir/flix.toml"; \
-		if [ -f "$$toml" ] && grep -q 'ababup1192/flix_engine_tools"' "$$toml"; then \
-			target="$${dir}$(ENGINE_TOOLS_SUBPATH)"; \
-			mkdir -p "$$target"; \
-			depth=$$(printf '%s' "$$dir" | tr -cd '/' | wc -c | tr -d ' '); \
-			upcnt=$$((depth + $(SUBPATH_DEPTH))); \
-			rel=$$(printf '../%.0s' $$(seq 1 $$upcnt)); \
-			ln -sfn "$${rel}$(ENGINE_TOOLS_FPKG_SRC)" "$$target/$(ENGINE_TOOLS_FPKG_NAME)"; \
-			ln -sfn "$${rel}$(ENGINE_TOOLS_TOML_SRC)" "$$target/$(ENGINE_TOOLS_TOML_NAME)"; \
-			rm -f "$${dir}packages.lock"; \
-			echo "[sync-engine-tools] $$target"; \
-		fi \
-	done
+# engine の上に載る 3 層 (render_gl / engine_world / engine_tools) の検査用の作業場を張る。
+# .layers/<層>/ に flix.toml (層のものへの symlink) と、src/engine/ (engine のソース)・
+# src/<層>/ (層のソース)・test/ (層のテストと読み込む資料) をファイル単位の symlink で並べる。
+# 層どうしは互いのソースを持たないので、render_gl が engine_world を呼ぶような層の破れは
+# ここでのコンパイルが止める。symlink なので、ソースを直したら張り直さずにそのまま組める
+# (.flix を足した・消した・改名したときだけ張り直す。make test は毎回張り直す)。
+# .layers/templates は engine_tools のテストが ../templates/ のフォントを読むための道。
+sync-layers:
+	@for pkg in $(LAYER_PKGS); do \
+		dir="$(LAYER_ROOT)/$$pkg"; \
+		rm -rf "$$dir/src" "$$dir/test"; \
+		mkdir -p "$$dir"; \
+		ln -sfn "$(CURDIR)/$$pkg/flix.toml" "$$dir/flix.toml"; \
+		for part in "$(ENGINE_DIR)/src:src/$(ENGINE_DIR)" "$$pkg/src:src/$$pkg" "$$pkg/test:test"; do \
+			from="$${part%%:*}"; to="$${part#*:}"; \
+			[ -d "$$from" ] || continue; \
+			(cd "$$from" && find . -type f) | sed 's|^\./||' | while read -r f; do \
+				mkdir -p "$$(dirname "$$dir/$$to/$$f")"; \
+				ln -sfn "$(CURDIR)/$$from/$$f" "$$dir/$$to/$$f"; \
+			done; \
+		done; \
+	done; \
+	ln -sfn ../templates "$(LAYER_ROOT)/templates"; \
+	find $(LAYER_ROOT) -type l | awk 'END { print "[sync-layers] " NR " symlink(s)" }'
 
 # agents-pack をゲームに配る。配布物一覧の source of truth は agents-pack/manifest.json で、
 # Makefile はその解釈器 bin/fge sync-agents を呼ぶだけ (Studio の配布も同じ manifest を

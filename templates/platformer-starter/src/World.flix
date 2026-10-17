@@ -10,6 +10,8 @@
 // 進行の持ち物(取ったコイン・点いたチェックポイント)は集合で覚える — rows は書き換えない。
 mod World {
 
+    use flix_game_engine::{CameraRig, Hit, PxSpriteAtlas, PxSpriteDoc, Rect2, Vec2}
+
     pub type alias World = {
         motion = MotionDoc.Doc,
         keys = KeysDoc.Doc,

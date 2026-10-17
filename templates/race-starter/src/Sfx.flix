@@ -7,6 +7,8 @@
 // hums が鳴り続ける音（エンジンの唸り・滑っている間の擦れ）。
 mod Sfx {
 
+    use flix_game_engine::{App, Num}
+
     /// このフレームで鳴らす音の名前（project.json の sounds に載る名前）。
     /// 同じ音は 1 フレームに 1 回へまとめる（滑り出しのフレームで擦れ音が二重に乗らない）。
     pub def events(worlds: { before = World.World, after = World.World }): List[String] =

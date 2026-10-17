@@ -10,6 +10,7 @@
 // 別の作業で、同時に読み直したい物でもない。行数はコースの行数（区間の len の合計）と
 // 揃える。足りない行はその行に何も無い、余った行は捨てる（fail-open）。
 mod PropsDoc {
+    use flix_game_engine::{DocJson, JsonCodec}
     use Util.Json.Json
 
     /// マスに立つ物の種類。

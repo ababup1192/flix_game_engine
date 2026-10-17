@@ -15,6 +15,8 @@
 // バスの音量やダッキング = withMixer + mixer.json（engine の docs/audio.md の「音の通り道」）。
 // 複数システムの明示的な列挙が要る高度なゲームは、make から始める従来のビルダー（addSystem / withView / …）へ降りる。
 
+use flix_game_engine::{ActiveDocs, App, GameEngine, LwjglLayer, PxSpriteDoc}
+
 def main(): Unit \ IO =
     if (GameEngine.ensureMainThread()) ()
     else {

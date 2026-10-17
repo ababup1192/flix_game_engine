@@ -9,6 +9,8 @@
 // 層の作り直しは面の切替と Doc 読み直しの時にしか起きない。
 mod TerrainLayers {
 
+    use flix_game_engine::{Color, PxSpriteAtlas, TileData, TileLayerSpec, Tileset, Vec2}
+
     /// 1 枚のクアッド(スプライト名 + コマ名)。
     pub type alias Quad = { sprite = String, frame = String }
 

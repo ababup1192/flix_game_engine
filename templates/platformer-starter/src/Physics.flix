@@ -13,6 +13,8 @@
 //   角の許し — 上昇中の頭の角が cornerNudgePx 以下のかすりなら、横へ滑らせて通す。
 mod Physics {
 
+    use flix_game_engine::Vec2
+
     /// 動く物 1 体の状態。pos は当たり箱の中心(ワールド px・y は下向き)。
     pub type alias Body = { pos = Vec2.Vec2, vel = Vec2.Vec2, onGround = Bool }
 

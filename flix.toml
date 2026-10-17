@@ -1,6 +1,6 @@
 [package]
 version     = "0.1.0"
-flix        = "0.76.2"
+flix        = "0.78.0"
 repository  = "github:ababup1192/flix_game_engine"
 
 # ルート src/ は各エンジンパッケージの src/ への symlink 集で、実体は一切持たない。

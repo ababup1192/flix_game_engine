@@ -4,6 +4,7 @@
 // 壊れるため。位置の解決は読み込んだ後に regionOf がやる。
 // fail-open — 読めない・壊れているときは defaults() へ落とし、絵は必ず出る。
 mod TownMapDoc {
+    use flix_game_engine::{DocJson, JsonCodec}
     use Util.Json.Json
 
     /// 街のタイル盤。legend = rows の 1 文字 → タイル名、rows = 敷き方の文字格子。

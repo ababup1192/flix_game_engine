@@ -2,6 +2,7 @@
 // Doc は「初期値の宣言」まで: 規則（動き方）はコード（World）側。
 // fail-open — 読めない・壊れているときは defaults() へ落とし、ゲームは必ず起動する。
 mod SampleDoc {
+    use flix_game_engine::{DocJson, JsonCodec}
     use Util.Json.Json
 
     // World が持つ record は enum で包む（型検査が record を展開しないため）。

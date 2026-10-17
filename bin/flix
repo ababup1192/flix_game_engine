@@ -49,8 +49,14 @@ esac
 # 描画スナップショットが崩れるため。jar だけ nix store から借り、JRE は固定する。
 # 見つけ方: PATH 上の flix コマンドのうち /nix/store 実体に解決されるものを取り、
 # その隣の share/java/flix/flix.jar を使う (nixpkgs の flix パッケージの配置)。
-FLIX_JAR=""
-while IFS= read -r candidate; do
+# 環境変数 FLIX_JAR が実在の jar を指していれば、それを最優先で使う（新しい版のコンパイラを
+# devbox を作り直す前に試すときの口）。
+if [ -n "${FLIX_JAR:-}" ] && [ ! -f "$FLIX_JAR" ]; then
+    echo "FLIX_JAR が指す jar がありません: $FLIX_JAR" >&2
+    exit 127
+fi
+FLIX_JAR="${FLIX_JAR:-}"
+while [ -z "$FLIX_JAR" ] && IFS= read -r candidate; do
     real="$(readlink -f "$candidate" 2>/dev/null)"
     case "$real" in
         /nix/store/*)
