@@ -415,7 +415,7 @@ func fileHits(root string, paths []string, rules []*Rule) []hit {
 		if kind == "" || skipPaths[p] {
 			continue
 		}
-		body, err := pxlib.ReadTextReplace(full)
+		body, err := pxlib.LoadTextReplace(full)
 		if err != nil {
 			continue
 		}

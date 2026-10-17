@@ -177,7 +177,7 @@ func run(root string, o opts) (int, error) {
 	// どちらでも同じ物が出るが、差し替えに失敗したときに材料だけ残るのを避ける。
 	plan, planErr := o.buildPlan(root, o.game)
 
-	before, err := pxlib.ReadTextReplace(gameToml)
+	before, err := pxlib.LoadTextReplace(gameToml)
 	if err != nil {
 		return exitBadUsage, err
 	}

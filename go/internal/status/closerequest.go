@@ -19,7 +19,7 @@ func sectionCloseRequest(c *ctx, out *[]string) {
 	r := c.rules.CloseRequest
 	launches := false
 	for _, path := range flixdecl.FlixFiles(c.root, r.SrcDir) {
-		text, err := pxlib.ReadTextReplace(path)
+		text, err := pxlib.LoadTextReplace(path)
 		if err != nil {
 			continue
 		}

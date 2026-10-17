@@ -82,7 +82,7 @@ func loadColorGate(root, path string) (*colorGate, error) {
 	if !filepath.IsAbs(full) {
 		full = filepath.Join(root, path)
 	}
-	o, err := pxlib.ReadOrdered(full)
+	o, err := pxlib.LoadOrdered(full)
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +125,7 @@ func loadColorGate(root, path string) (*colorGate, error) {
 					bad(where+".keys", "正規表現として読めない: %v", err)
 				}
 			}
-			src := pxlib.ReadJSON(filepath.Join(root, st.From))
+			src := pxlib.LoadJSON(filepath.Join(root, st.From))
 			if src == nil {
 				bad(where+".from", "%s が読めない", st.From)
 			}

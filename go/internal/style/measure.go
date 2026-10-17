@@ -377,7 +377,7 @@ func coverCount(counts map[uint32]int, total int) int {
 
 // Measure は 1 枚を測る。hasUnit が false なら unit を自動で探す。
 func (r *Rules) Measure(path string, unit int, hasUnit bool) (*Stats, error) {
-	im, err := pxlib.ReadPNG(path)
+	im, err := pxlib.LoadPNG(path)
 	if err != nil {
 		return nil, err
 	}

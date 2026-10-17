@@ -197,7 +197,7 @@ func buildFromMaterials(root, game, from, to string, cause error) (Plan, error) 
 func hitsForName(game string, files []string, name string) []Hit {
 	var hits []Hit
 	for _, path := range files {
-		text, err := pxlib.ReadTextReplace(path)
+		text, err := pxlib.LoadTextReplace(path)
 		if err != nil {
 			continue
 		}
@@ -260,7 +260,7 @@ func versionTag(to string) string {
 
 // gameEngineVersion はゲームの flix.toml が指す engine のバージョン。
 func gameEngineVersion(game string) (string, error) {
-	text, err := pxlib.ReadTextReplace(filepath.Join(game, "flix.toml"))
+	text, err := pxlib.LoadTextReplace(filepath.Join(game, "flix.toml"))
 	if err != nil {
 		return "", fmt.Errorf("%s/flix.toml を読めません", game)
 	}
@@ -328,7 +328,7 @@ const maxHitsPerItem = 12
 func hitsFor(game string, files []string, c apidiff.Change) []Hit {
 	var hits []Hit
 	for _, path := range files {
-		text, err := pxlib.ReadTextReplace(path)
+		text, err := pxlib.LoadTextReplace(path)
 		if err != nil {
 			continue
 		}
@@ -541,7 +541,7 @@ func FollowUpExamples(root, from, to string) (map[string]string, string) {
 		if !inRange(v, from, to) {
 			continue
 		}
-		text, readErr := pxlib.ReadTextReplace(filepath.Join(dir, name))
+		text, readErr := pxlib.LoadTextReplace(filepath.Join(dir, name))
 		if readErr != nil {
 			continue
 		}

@@ -684,7 +684,7 @@ func Run(out, errOut *strings.Builder, root string, args []string) (int, error) 
 	docCount, spriteCount := 0, 0
 
 	for _, t := range rules.gatherTargets(paths, root) {
-		doc, ok := pxlib.AsObject(pxlib.ReadJSON(t.path))
+		doc, ok := pxlib.AsObject(pxlib.LoadJSON(t.path))
 		if !ok {
 			problems = append(problems, fmt.Sprintf("%s: JSON として読めない", t.shown))
 			continue

@@ -16,8 +16,8 @@ import (
 	"github.com/ababup1192/flix_game_engine/go/internal/pxlib"
 )
 
-// Pt は 2 次元の位置。
-type Pt struct{ X, Y int }
+// Pt は 2 次元の位置（pxlib の型）。
+type Pt = pxlib.Pt
 
 // Vox は 3 次元の位置。
 type Vox struct{ X, Y, Z int }
@@ -25,14 +25,14 @@ type Vox struct{ X, Y, Z int }
 // Cells は位置 → 色。
 type Cells = pxlib.OMap[Pt, RGB]
 
-// Mask は背景とみなした升目。
-type Mask struct {
-	seen   [][]bool
+// Backdrop は背景とみなした升目（coarse 画素ごとに 1 升の粗い塊）。
+type Backdrop struct {
+	seen   pxlib.Mask
 	coarse int
 }
 
 // LooksLight は市松の背景に使われがちな、明るくて彩度の無い色か。
-func LooksLight(c RGBA, rules *Rules) bool {
+func LooksLight(c [4]int, rules *Rules) bool {
 	r, g, b, a := c[0], c[1], c[2], c[3]
 	if a <= rules.Alpha {
 		return true
@@ -48,7 +48,7 @@ func Quantize(c RGB, step int) RGB {
 }
 
 // BackdropMask は背景を縁からの塗りつぶしで決める。
-func BackdropMask(img *Image, rules *Rules) *Mask {
+func BackdropMask(img *Image, rules *Rules) *Backdrop {
 	coarse := rules.Backdrop.Coarse
 	votes := NewCounter[RGB]()
 	for x := 0; x < img.Width(); x += coarse {
@@ -64,8 +64,8 @@ func BackdropMask(img *Image, rules *Rules) *Mask {
 		}
 	}
 	edgeTone, _, _ := votes.MostCommon1()
-	edgeLight := LooksLight(RGBA{edgeTone[0], edgeTone[1], edgeTone[2], 255}, rules)
-	isBackdrop := func(c RGBA) bool {
+	edgeLight := LooksLight([4]int{edgeTone[0], edgeTone[1], edgeTone[2], 255}, rules)
+	isBackdrop := func(c [4]int) bool {
 		if LooksLight(c, rules) {
 			return true
 		}
@@ -91,22 +91,19 @@ func BackdropMask(img *Image, rules *Rules) *Mask {
 		}
 		light[gy] = row
 	}
-	seen := make([][]bool, tall)
-	for i := range seen {
-		seen[i] = make([]bool, wide)
-	}
+	seen := pxlib.NewMask(wide, tall)
 	var stack []Pt
 	for gx := 0; gx < wide; gx++ {
 		for _, gy := range []int{0, tall - 1} {
 			if light[gy][gx] {
-				stack = append(stack, Pt{gx, gy})
+				stack = append(stack, Pt{X: gx, Y: gy})
 			}
 		}
 	}
 	for gy := 0; gy < tall; gy++ {
 		for _, gx := range []int{0, wide - 1} {
 			if light[gy][gx] {
-				stack = append(stack, Pt{gx, gy})
+				stack = append(stack, Pt{X: gx, Y: gy})
 			}
 		}
 	}
@@ -117,17 +114,17 @@ func BackdropMask(img *Image, rules *Rules) *Mask {
 			continue
 		}
 		seen[p.Y][p.X] = true
-		for _, q := range []Pt{{p.X - 1, p.Y}, {p.X + 1, p.Y}, {p.X, p.Y - 1}, {p.X, p.Y + 1}} {
+		for _, q := range []Pt{{X: p.X - 1, Y: p.Y}, {X: p.X + 1, Y: p.Y}, {X: p.X, Y: p.Y - 1}, {X: p.X, Y: p.Y + 1}} {
 			if 0 <= q.X && q.X < wide && 0 <= q.Y && q.Y < tall && !seen[q.Y][q.X] && light[q.Y][q.X] {
 				stack = append(stack, q)
 			}
 		}
 	}
-	return &Mask{seen: seen, coarse: coarse}
+	return &Backdrop{seen: seen, coarse: coarse}
 }
 
 // SolidAt は絵の側の色。背景なら取れない。
-func SolidAt(img *Image, x, y int, mask *Mask, rules *Rules) (RGB, bool) {
+func SolidAt(img *Image, x, y int, mask *Backdrop, rules *Rules) (RGB, bool) {
 	c := img.At(x, y)
 	if c[3] <= rules.Alpha {
 		return RGB{}, false
@@ -147,7 +144,7 @@ func SolidAt(img *Image, x, y int, mask *Mask, rules *Rules) (RGB, bool) {
 }
 
 // SpansOf は絵のある縦の範囲を探す。3 面図をここで 1 体ずつに切り分ける。
-func SpansOf(img *Image, mask *Mask, rules *Rules) [][2]int {
+func SpansOf(img *Image, mask *Backdrop, rules *Rules) [][2]int {
 	step, least := rules.Spans.Step, rules.Spans.Least
 	var cols []int
 	for x := 0; x < img.Width(); x++ {
@@ -181,7 +178,7 @@ func SpansOf(img *Image, mask *Mask, rules *Rules) [][2]int {
 }
 
 // BoundsOf は 1 体の外接枠。
-func BoundsOf(img *Image, span [2]int, mask *Mask, rules *Rules) [4]int {
+func BoundsOf(img *Image, span [2]int, mask *Backdrop, rules *Rules) [4]int {
 	x0, x1 := span[0], span[1]
 	var ys []int
 	for y := 0; y < img.Height(); y++ {
@@ -218,7 +215,7 @@ type optRGB struct {
 }
 
 // Resample は外接枠を、決めた大きさの升へ面で落とす。各升は丸めた色の多数決。
-func Resample(img *Image, box [4]int, size [2]int, mask *Mask, rules *Rules) *Cells {
+func Resample(img *Image, box [4]int, size [2]int, mask *Backdrop, rules *Rules) *Cells {
 	x0, x1, y0, y1 := box[0], box[1], box[2], box[3]
 	width, height := size[0], size[1]
 	step := rules.QuantStep
@@ -249,18 +246,18 @@ func Resample(img *Image, box [4]int, size [2]int, mask *Mask, rules *Rules) *Ce
 			}
 			color, _, _ := seen.MostCommon1()
 			if color.ok {
-				out.Set(Pt{gx, gy}, color.c)
+				out.Set(Pt{X: gx, Y: gy}, color.c)
 			}
 		}
 	}
 	patch := pxlib.NewOMap[Pt, RGB]()
 	for gy := 0; gy < height; gy++ {
 		for gx := 0; gx < width; gx++ {
-			if out.Has(Pt{gx, gy}) {
+			if out.Has(Pt{X: gx, Y: gy}) {
 				continue
 			}
-			pinched := (out.Has(Pt{gx, gy - 1}) && out.Has(Pt{gx, gy + 1})) ||
-				(out.Has(Pt{gx - 1, gy}) && out.Has(Pt{gx + 1, gy}))
+			pinched := (out.Has(Pt{X: gx, Y: gy - 1}) && out.Has(Pt{X: gx, Y: gy + 1})) ||
+				(out.Has(Pt{X: gx - 1, Y: gy}) && out.Has(Pt{X: gx + 1, Y: gy}))
 			if !pinched {
 				continue
 			}
@@ -281,7 +278,7 @@ func Resample(img *Image, box [4]int, size [2]int, mask *Mask, rules *Rules) *Ce
 			}
 			if total != 0 && float64(darkTotal) >= float64(total)*rules.DarkPatch.Share {
 				c, _, _ := dark.MostCommon1()
-				patch.Set(Pt{gx, gy}, c)
+				patch.Set(Pt{X: gx, Y: gy}, c)
 			}
 		}
 	}
@@ -380,7 +377,7 @@ func Place(cells *Cells, size [2]int, rules *Rules) *Cells {
 	out := pxlib.NewOMap[Pt, RGB]()
 	for _, p := range cells.Keys() {
 		c, _ := cells.Get(p)
-		q := Pt{p.X + dx, p.Y + dy}
+		q := Pt{X: p.X + dx, Y: p.Y + dy}
 		if 0 <= q.X && q.X < width && 0 <= q.Y && q.Y < height {
 			out.Set(q, c)
 		}
@@ -437,7 +434,7 @@ func ShearLegs(cells *Cells, band []int, size [2]int, phase, swing, dip int, rul
 		for _, p := range cells.Keys() {
 			c, _ := cells.Get(p)
 			if p.Y+dip < size[1] {
-				out.Set(Pt{p.X, p.Y + dip}, c)
+				out.Set(Pt{X: p.X, Y: p.Y + dip}, c)
 			}
 		}
 		return out
@@ -461,9 +458,9 @@ func ShearLegs(cells *Cells, band []int, size [2]int, phase, swing, dip int, rul
 			if side*phase < 0 && deep > rules.Adopt.ShearLiftAt {
 				lift = 1
 			}
-			q = Pt{p.X + shift, p.Y + dip - lift}
+			q = Pt{X: p.X + shift, Y: p.Y + dip - lift}
 		} else {
-			q = Pt{p.X, p.Y + dip}
+			q = Pt{X: p.X, Y: p.Y + dip}
 		}
 		if 0 <= q.X && q.X < size[0] && 0 <= q.Y && q.Y < size[1] {
 			out.Set(q, c)
@@ -505,7 +502,7 @@ func ComponentsAdopt(cells *Cells) []int {
 			p := todo[len(todo)-1]
 			todo = todo[:len(todo)-1]
 			size++
-			for _, q := range []Pt{{p.X - 1, p.Y}, {p.X + 1, p.Y}, {p.X, p.Y - 1}, {p.X, p.Y + 1}} {
+			for _, q := range []Pt{{X: p.X - 1, Y: p.Y}, {X: p.X + 1, Y: p.Y}, {X: p.X, Y: p.Y - 1}, {X: p.X, Y: p.Y + 1}} {
 				if unseen.Contains(q) {
 					unseen.Remove(q)
 					todo = append(todo, q)
@@ -531,7 +528,7 @@ func Check(cells *Cells, size [2]int) ([]string, []int) {
 	holes := 0
 	for _, p := range cells.Keys() {
 		near := 0
-		for _, q := range []Pt{{p.X + 1, p.Y}, {p.X - 1, p.Y}, {p.X, p.Y + 1}, {p.X, p.Y - 1}} {
+		for _, q := range []Pt{{X: p.X + 1, Y: p.Y}, {X: p.X - 1, Y: p.Y}, {X: p.X, Y: p.Y + 1}, {X: p.X, Y: p.Y - 1}} {
 			if cells.Has(q) {
 				near++
 			}
@@ -556,8 +553,8 @@ func SavePNG(path string, cells *Cells, size [2]int, scale int, background *RGBA
 			if background != nil {
 				value = *background
 			}
-			if c, ok := cells.Get(Pt{x, y}); ok {
-				value = RGBA{c[0], c[1], c[2], 255}
+			if c, ok := cells.Get(Pt{X: x, Y: y}); ok {
+				value = opaque(c)
 			}
 			for i := 0; i < scale; i++ {
 				line = append(line, value)
@@ -567,7 +564,7 @@ func SavePNG(path string, cells *Cells, size [2]int, scale int, background *RGBA
 			rows = append(rows, line)
 		}
 	}
-	return os.WriteFile(path, PNGOf(width*scale, height*scale, rows), 0o644)
+	return pxlib.WritePNG(path, pxlib.ImageOfRows(rows))
 }
 
 func minOf(v []int) int {
@@ -664,7 +661,7 @@ func RunAdopt(out *strings.Builder, root string, args []string, rules *Rules) (i
 		mirror := pxlib.NewOMap[Pt, RGB]()
 		for _, p := range source.Keys() {
 			c, _ := source.Get(p)
-			mirror.Set(Pt{wide - p.X, p.Y}, c)
+			mirror.Set(Pt{X: wide - p.X, Y: p.Y}, c)
 		}
 		pieces.Set("left", mirror)
 		fmt.Fprintln(out, "左向きは右向きを反転して作った")
@@ -759,13 +756,12 @@ func RunAdopt(out *strings.Builder, root string, args []string, rules *Rules) (i
 				c, _ := cells.Get(p)
 				for dy := 0; dy < k; dy++ {
 					for dx := 0; dx < k; dx++ {
-						rowsOut[p.Y*k+dy][(index*size[0]+p.X)*k+dx] = RGBA{c[0], c[1], c[2], 255}
+						rowsOut[p.Y*k+dy][(index*size[0]+p.X)*k+dx] = opaque(c)
 					}
 				}
 			}
 		}
-		png := PNGOf(size[0]*len(viewOrder)*k, size[1]*k, rowsOut)
-		if err := os.WriteFile(filepath.Join(outDir, fmt.Sprintf("_4方向-%dx.png", k)), png, 0o644); err != nil {
+		if err := pxlib.WritePNG(filepath.Join(outDir, fmt.Sprintf("_4方向-%dx.png", k)), pxlib.ImageOfRows(rowsOut)); err != nil {
 			return 1, err
 		}
 	}
@@ -774,8 +770,7 @@ func RunAdopt(out *strings.Builder, root string, args []string, rules *Rules) (i
 	for index, pose := range []string{"idle", "walk_l", "idle", "walk_r"} {
 		pathPNG := filepath.Join(outDir, fmt.Sprintf("_strip-%d.png", index))
 		rowsOut := stripRows(frames, viewOrder, pose, size)
-		if err := os.WriteFile(pathPNG,
-			PNGOf(size[0]*len(viewOrder), size[1], rowsOut), 0o644); err != nil {
+		if err := pxlib.WritePNG(pathPNG, pxlib.ImageOfRows(rowsOut)); err != nil {
 			return 1, err
 		}
 		strips = append(strips, pathPNG)
@@ -811,8 +806,8 @@ func stripRows(frames *pxlib.OMap[frameKey, *Cells], viewOrder []string, pose st
 		for _, view := range viewOrder {
 			cells, _ := frames.Get(frameKey{view, pose})
 			for x := 0; x < size[0]; x++ {
-				if c, ok := cells.Get(Pt{x, y}); ok {
-					line = append(line, RGBA{c[0], c[1], c[2], 255})
+				if c, ok := cells.Get(Pt{X: x, Y: y}); ok {
+					line = append(line, opaque(c))
 				} else {
 					line = append(line, RGBA{0, 0, 0, 0})
 				}
@@ -829,7 +824,7 @@ func gridOf(cells *Cells, size [2]int, table map[RGB]string) []string {
 		var line strings.Builder
 		for x := 0; x < size[0]; x++ {
 			ch := "."
-			if c, ok := cells.Get(Pt{x, y}); ok {
+			if c, ok := cells.Get(Pt{X: x, Y: y}); ok {
 				if s, ok := table[c]; ok {
 					ch = s
 				}
@@ -839,4 +834,11 @@ func gridOf(cells *Cells, size [2]int, table map[RGB]string) []string {
 		rows = append(rows, line.String())
 	}
 	return rows
+}
+
+func absInt(v int) int {
+	if v < 0 {
+		return -v
+	}
+	return v
 }

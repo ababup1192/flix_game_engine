@@ -95,11 +95,11 @@ func TestCounterMostCommon1IsFirstMax(t *testing.T) {
 
 func sampleCells() *Cells {
 	cells := pxlib.NewOMap[Pt, RGB]()
-	cells.Set(Pt{0, 0}, RGB{1, 1, 1})
-	cells.Set(Pt{1, 0}, RGB{1, 1, 1})
-	cells.Set(Pt{5, 5}, RGB{2, 2, 2})
-	cells.Set(Pt{6, 6}, RGB{2, 2, 2})
-	cells.Set(Pt{9, 9}, RGB{3, 3, 3})
+	cells.Set(Pt{X: 0, Y: 0}, RGB{1, 1, 1})
+	cells.Set(Pt{X: 1, Y: 0}, RGB{1, 1, 1})
+	cells.Set(Pt{X: 5, Y: 5}, RGB{2, 2, 2})
+	cells.Set(Pt{X: 6, Y: 6}, RGB{2, 2, 2})
+	cells.Set(Pt{X: 9, Y: 9}, RGB{3, 3, 3})
 	return cells
 }
 
@@ -125,7 +125,7 @@ func TestComponentsAdoptIsFourConnected(t *testing.T) {
 
 func TestStanceCenterUsesFeet(t *testing.T) {
 	cells := pxlib.NewOMap[Pt, RGB]()
-	for _, p := range []Pt{{0, 0}, {4, 0}, {1, 9}, {3, 9}} {
+	for _, p := range []Pt{{X: 0, Y: 0}, {X: 4, Y: 0}, {X: 1, Y: 9}, {X: 3, Y: 9}} {
 		cells.Set(p, RGB{})
 	}
 	if got := StanceCenter(cells, 0.18); got != 2.0 {
@@ -139,10 +139,10 @@ func TestScreenOfMatchesPython(t *testing.T) {
 		want  Pt
 		depth int
 	}{
-		{"front", Pt{1, 2}, 3},
-		{"right", Pt{3, 2}, 8},
-		{"back", Pt{8, 2}, -3},
-		{"left", Pt{6, 2}, 1},
+		{"front", Pt{X: 1, Y: 2}, 3},
+		{"right", Pt{X: 3, Y: 2}, 8},
+		{"back", Pt{X: 8, Y: 2}, -3},
+		{"left", Pt{X: 6, Y: 2}, 1},
 	}
 	for _, c := range cases {
 		got, depth := screenOf(c.view, 1, 2, 3, 10)
@@ -155,34 +155,6 @@ func TestScreenOfMatchesPython(t *testing.T) {
 func TestImgXFlipsOnlyLeft(t *testing.T) {
 	if imgX("left", 2, 10) != 7 || imgX("right", 2, 10) != 2 {
 		t.Fatal("左向きだけ鏡映する")
-	}
-}
-
-func TestRGBAOfHex(t *testing.T) {
-	if RGBAOf("#ff8000") != (RGBA{255, 128, 0, 255}) {
-		t.Fatal("16 進の読みが Python と違う")
-	}
-}
-
-func TestHexOfNestedDict(t *testing.T) {
-	obj := pxlib.NewOMap[string, any]()
-	obj.Set("hex", "AABBCC")
-	if got := HexOf(obj); got != "#aabbcc" {
-		t.Fatalf("入れ子の色が #aabbcc ではなく %q", got)
-	}
-}
-
-func TestHexOfRejectsNonColor(t *testing.T) {
-	if got := HexOf("nope"); got != "" {
-		t.Fatalf("色でない文字列から %q が出た", got)
-	}
-}
-
-func TestJSONStringEscapesLikePython(t *testing.T) {
-	got := jsonString("a\"b\\cあ\n\t\x01")
-	want := `"a\"b\\cあ\n\t\u0001"`
-	if got != want {
-		t.Fatalf("%s ではなく %s", want, got)
 	}
 }
 
@@ -219,32 +191,6 @@ func TestBitsMatchesPython(t *testing.T) {
 	}
 }
 
-func TestPNGRoundTrip(t *testing.T) {
-	grid := [][]RGBA{
-		{{1, 2, 3, 255}, {0, 0, 0, 0}},
-		{{255, 254, 253, 128}, {9, 9, 9, 255}},
-	}
-	dir := t.TempDir()
-	path := filepath.Join(dir, "a.png")
-	if err := os.WriteFile(path, PNGOf(2, 2, grid), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	w, h, rows, err := ReadPNGSheet(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if w != 2 || h != 2 {
-		t.Fatalf("大きさが 2x2 ではなく %dx%d", w, h)
-	}
-	for y := range grid {
-		for x := range grid[y] {
-			if rows[y][x] != grid[y][x] {
-				t.Fatalf("(%d,%d) が %v ではなく %v", x, y, grid[y][x], rows[y][x])
-			}
-		}
-	}
-}
-
 func TestLoadRulesFailsWhenMissing(t *testing.T) {
 	if _, err := LoadRules(t.TempDir()); err == nil {
 		t.Fatal("規約が無ければ止まる")
@@ -262,28 +208,5 @@ func TestLoadRulesFailsOnPartialTable(t *testing.T) {
 	}
 	if _, err := LoadRules(dir); err == nil {
 		t.Fatal("欠けた規約は既定値で埋めずに止まる")
-	}
-}
-
-func TestOMapKeepsPlaceOnOverwrite(t *testing.T) {
-	m := pxlib.NewOMap[string, int]()
-	m.Set("a", 1)
-	m.Set("b", 2)
-	m.Set("a", 3)
-	keys := m.Keys()
-	if keys[0] != "a" || keys[1] != "b" || len(keys) != 2 {
-		t.Fatalf("上書きで並びが動いた: %v", keys)
-	}
-}
-
-func TestOMapReinsertGoesToEnd(t *testing.T) {
-	m := pxlib.NewOMap[string, int]()
-	m.Set("a", 1)
-	m.Set("b", 2)
-	m.Delete("a")
-	m.Set("a", 9)
-	keys := m.Keys()
-	if keys[0] != "b" || keys[1] != "a" {
-		t.Fatalf("消して入れ直した鍵が末尾に来ない: %v", keys)
 	}
 }

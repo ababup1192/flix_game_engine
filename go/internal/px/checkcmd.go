@@ -45,7 +45,7 @@ func checkFiles(engineRoot, workRoot, gatePath string, paths []string) (*checkRe
 			full = filepath.Join(workRoot, p)
 		}
 		shown := filepath.ToSlash(filepath.Dir(p))
-		doc, err := pxlib.ReadOrdered(full)
+		doc, err := pxlib.LoadOrdered(full)
 		if err != nil {
 			rep.Gate = append(rep.Gate, gateFinding{Slot: filepath.Base(p), Kind: gateUnreadable, Msg: fmt.Sprintf("%s: 読めない（%v）", p, err)})
 			continue

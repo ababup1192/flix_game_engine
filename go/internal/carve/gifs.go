@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/ababup1192/flix_game_engine/go/internal/pxlib"
 )
 
 // GifCycle は動きごとのコマの並び。
@@ -93,10 +95,11 @@ func FromPNGs(paths []string, shrink int, delay int) ([]byte, error) {
 	}
 	var read []sheetImage
 	for _, path := range paths {
-		w, h, rows, err := ReadPNGSheet(path)
+		img, err := pxlib.LoadPNG(path)
 		if err != nil {
 			return nil, err
 		}
+		w, h, rows := img.W, img.H, img.Rows()
 		if shrink > 1 {
 			var small [][]RGBA
 			for y := 0; y < h; y += shrink {
@@ -137,7 +140,7 @@ func FromPNGs(paths []string, shrink int, delay int) ([]byte, error) {
 					flat = append(flat, 0)
 					continue
 				}
-				key := RGB{px[0], px[1], px[2]}
+				key := RGB{int(px[0]), int(px[1]), int(px[2])}
 				if _, ok := index[key]; !ok {
 					index[key] = len(palette)
 					palette = append(palette, key)

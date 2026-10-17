@@ -15,7 +15,7 @@ import (
 func paletteNamesOf(gameDir string, doc map[string]any) map[string]bool {
 	names := map[string]bool{}
 	if ref, ok := doc["paletteFile"].(string); ok {
-		for n := range pxlib.ColorNamesOf(pxlib.ReadJSON(filepath.Join(gameDir, ref))) {
+		for n := range pxlib.ColorNamesOf(pxlib.LoadJSON(filepath.Join(gameDir, ref))) {
 			names[n] = true
 		}
 	}
@@ -84,13 +84,13 @@ func runPalette(out *strings.Builder, root string, asJSON bool) int {
 		themes := map[string]bool{}
 		for _, rel := range jsonPaths {
 			if strings.HasSuffix(rel, ".theme.json") {
-				for n := range pxlib.ColorNamesOf(pxlib.ReadJSON(filepath.Join(gameDir, rel))) {
+				for n := range pxlib.ColorNamesOf(pxlib.LoadJSON(filepath.Join(gameDir, rel))) {
 					themes[n] = true
 				}
 			}
 		}
 		for _, rel := range spritePaths {
-			doc, ok := pxlib.AsObject(pxlib.ReadJSON(filepath.Join(gameDir, rel)))
+			doc, ok := pxlib.AsObject(pxlib.LoadJSON(filepath.Join(gameDir, rel)))
 			if !ok {
 				problems = append(problems, fmt.Sprintf("%s/%s: JSON として読めない", game, rel))
 				continue

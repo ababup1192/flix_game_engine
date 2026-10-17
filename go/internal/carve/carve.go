@@ -85,7 +85,7 @@ func Align(views *pxlib.OMap[string, *Cells], size [2]int, rules *Rules) *pxlib.
 		moved := pxlib.NewOMap[Pt, RGB]()
 		for _, p := range cells.Keys() {
 			c, _ := cells.Get(p)
-			q := Pt{p.X + dx, p.Y + dy}
+			q := Pt{X: p.X + dx, Y: p.Y + dy}
 			if 0 <= q.X && q.X < width && 0 <= q.Y && q.Y < height {
 				moved.Set(q, c)
 			}
@@ -197,7 +197,7 @@ func Slim(parts *Parts, front, side *Cells, rules *Rules) (*Parts, string) {
 	toolTones := NewCounter[RGB]()
 	for _, y := range rowOrder {
 		for _, z := range toolCols[y].Items() {
-			c, _ := side.Get(Pt{z, y})
+			c, _ := side.Get(Pt{X: z, Y: y})
 			toolTones.Add(tone(c), 1)
 		}
 	}
@@ -210,7 +210,7 @@ func Slim(parts *Parts, front, side *Cells, rules *Rules) (*Parts, string) {
 				return 0
 			}
 			for _, v := range cells.Keys() {
-				if c, ok := front.Get(Pt{v.X, v.Y}); ok {
+				if c, ok := front.Get(Pt{X: v.X, Y: v.Y}); ok {
 					total += toolTones.Get(tone(c))
 				}
 			}
@@ -262,12 +262,12 @@ func Slim(parts *Parts, front, side *Cells, rules *Rules) (*Parts, string) {
 	for _, name := range kept.Keys() {
 		cells, _ := kept.Get(name)
 		for _, v := range cells.Keys() {
-			haveS[Pt{v.Z, v.Y}] = true
+			haveS[Pt{X: v.Z, Y: v.Y}] = true
 		}
 	}
 	for _, p := range side.Keys() {
 		z, y := p.X, p.Y
-		if haveS[Pt{z, y}] {
+		if haveS[Pt{X: z, Y: y}] {
 			continue
 		}
 		type donor struct {
@@ -313,23 +313,23 @@ func Slim(parts *Parts, front, side *Cells, rules *Rules) (*Parts, string) {
 		for _, v := range donors[bestAt].hit {
 			target.Set(v, struct{}{})
 		}
-		haveS[Pt{z, y}] = true
+		haveS[Pt{X: z, Y: y}] = true
 	}
 
 	haveF := map[Pt]bool{}
 	for _, name := range kept.Keys() {
 		cells, _ := kept.Get(name)
 		for _, v := range cells.Keys() {
-			haveF[Pt{v.X, v.Y}] = true
+			haveF[Pt{X: v.X, Y: v.Y}] = true
 		}
 	}
 	for _, name := range parts.Keys() {
 		cells, _ := parts.Get(name)
 		target, _ := kept.Get(name)
 		for _, v := range cells.Keys() {
-			if !haveF[Pt{v.X, v.Y}] {
+			if !haveF[Pt{X: v.X, Y: v.Y}] {
 				target.Set(v, struct{}{})
-				haveF[Pt{v.X, v.Y}] = true
+				haveF[Pt{X: v.X, Y: v.Y}] = true
 			}
 		}
 	}
@@ -477,13 +477,13 @@ func Swing(name string, cells *VoxMoved, marks Marks, phase, dip, reach int, ris
 func screenOf(view string, x, y, z, width int) (Pt, int) {
 	switch view {
 	case "front":
-		return Pt{x, y}, z
+		return Pt{X: x, Y: y}, z
 	case "right":
-		return Pt{z, y}, width - 1 - x
+		return Pt{X: z, Y: y}, width - 1 - x
 	case "back":
-		return Pt{width - 1 - x, y}, -z
+		return Pt{X: width - 1 - x, Y: y}, -z
 	}
-	return Pt{width - 1 - z, y}, x
+	return Pt{X: width - 1 - z, Y: y}, x
 }
 
 // imgX は画面 x を元図の x へ戻す。左向きだけ横図の鏡映を見ている。
@@ -550,13 +550,13 @@ func Dress(moved *pxlib.OMap[string, *VoxMoved], view string, owner map[string]*
 		var color RGB
 		found := false
 		if who, ok := owner[view].Get(okey); ok && who == hit.name {
-			color, found = img.Get(Pt{imgX(view, okey.X, width), okey.Y})
+			color, found = img.Get(Pt{X: imgX(view, okey.X, width), Y: okey.Y})
 		}
 		if !found {
 			color, found = kinColor(owner[view], img, view, hit.name, okey, width)
 		}
 		if !found {
-			color, found = imgs["front"].Get(Pt{hit.origin.X, hit.origin.Y})
+			color, found = imgs["front"].Get(Pt{X: hit.origin.X, Y: hit.origin.Y})
 		}
 		if !found {
 			color = RGB{0, 0, 0}
@@ -576,7 +576,7 @@ func kinColor(owned *pxlib.OMap[Pt, string], img *Cells, view, name string, okey
 			if key.Y != y0+dy || who != name {
 				continue
 			}
-			if _, ok := img.Get(Pt{imgX(view, key.X, width), key.Y}); ok {
+			if _, ok := img.Get(Pt{X: imgX(view, key.X, width), Y: key.Y}); ok {
 				row = append(row, key.X)
 			}
 		}
@@ -587,7 +587,7 @@ func kinColor(owned *pxlib.OMap[Pt, string], img *Cells, view, name string, okey
 					sx = v
 				}
 			}
-			return img.Get(Pt{imgX(view, sx, width), y0 + dy})
+			return img.Get(Pt{X: imgX(view, sx, width), Y: y0 + dy})
 		}
 	}
 	return RGB{}, false
@@ -607,7 +607,7 @@ func groupsOf(cells *Cells) [][]Pt {
 			grp = append(grp, p)
 			for dx := -1; dx <= 1; dx++ {
 				for dy := -1; dy <= 1; dy++ {
-					q := Pt{p.X + dx, p.Y + dy}
+					q := Pt{X: p.X + dx, Y: p.Y + dy}
 					if unseen.Contains(q) {
 						unseen.Remove(q)
 						todo = append(todo, q)
@@ -757,7 +757,7 @@ func RunCarve(out *strings.Builder, root string, args []string, rules *Rules) (i
 	mirror := pxlib.NewOMap[Pt, RGB]()
 	for _, p := range idleShot["right"].Keys() {
 		c, _ := idleShot["right"].Get(p)
-		mirror.Set(Pt{size[0] - 1 - p.X, p.Y}, c)
+		mirror.Set(Pt{X: size[0] - 1 - p.X, Y: p.Y}, c)
 	}
 	left := idleShot["left"]
 	off, tint := 0, 0
@@ -905,8 +905,7 @@ func RunCarve(out *strings.Builder, root string, args []string, rules *Rules) (i
 		for index, pose := range reel.order {
 			pngPath := filepath.Join(outDir, fmt.Sprintf("_strip-%s%d.png", reel.name, index))
 			rows := stripRows(frames, carveViews, pose, size)
-			if err := os.WriteFile(pngPath,
-				PNGOf(size[0]*len(carveViews), size[1], rows), 0o644); err != nil {
+			if err := pxlib.WritePNG(pngPath, pxlib.ImageOfRows(rows)); err != nil {
 				return 1, err
 			}
 			strips = append(strips, pngPath)

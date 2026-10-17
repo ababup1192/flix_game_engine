@@ -287,7 +287,7 @@ func specSchema() string {
 		),
 		"definitions", obj("shape", shape, "color", color, "op", obj("oneOf", ops), "part", part, "sprite", spriteS),
 	)
-	return pxlib.DumpPy(root, "  ")
+	return pxlib.ToJSON(root, "  ")
 }
 
 // gateSchema は docs/colorgate.schema.json の中身。
@@ -328,7 +328,7 @@ func gateSchema() string {
 			"files", obj("type", "object", "label", "sprite.json ごとの決まり", "description", "鍵は sprite.json のファイル名（assets/ と atelier/ の同じ名前に効く）。ここに無いファイルは門で止まる", "additionalProperties", file),
 		),
 	)
-	return pxlib.DumpPy(root, "  ")
+	return pxlib.ToJSON(root, "  ")
 }
 
 func refsText(refs []checkRef, sep string) string {

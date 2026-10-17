@@ -83,7 +83,7 @@ func TestPNGRoundTripKeepsPixels(t *testing.T) {
 	writeFramePNG(t, path, 3, 2, func(x, y int) pxlib.RGBA {
 		return pxlib.RGBA{byte(x * 40), byte(y * 90), 7, byte(200 + x)}
 	})
-	im, err := pxlib.ReadPNG(path)
+	im, err := pxlib.LoadPNG(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +101,7 @@ func TestReadPNGRejectsNonPNG(t *testing.T) {
 	if err := os.WriteFile(path, []byte("not a png"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, err := pxlib.ReadPNG(path)
+	_, err := pxlib.LoadPNG(path)
 	if err == nil || err.Error() != "PNG ではない" {
 		t.Errorf("PNG でない旨を返すはず: %v", err)
 	}

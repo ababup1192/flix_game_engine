@@ -61,7 +61,7 @@ func checkBytesMatch(t *testing.T, dir, specFile, spriteFile string, wantFrames 
 	if err != nil {
 		t.Fatal(err)
 	}
-	doc, err := pxlib.ReadOrdered(basePath)
+	doc, err := pxlib.LoadOrdered(basePath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +76,7 @@ func checkBytesMatch(t *testing.T, dir, specFile, spriteFile string, wantFrames 
 		}
 	}
 	// 消した base はタブで書く（relic は spec の indent で 2 字に戻ること）
-	if err := os.WriteFile(basePath, []byte(pxlib.DumpPy(doc, "\t")), 0o644); err != nil {
+	if err := os.WriteFile(basePath, []byte(pxlib.ToJSON(doc, "\t")), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	res, err := build(root, filepath.Join("art", specFile), buildOptions{RulesRoot: engineRoot})

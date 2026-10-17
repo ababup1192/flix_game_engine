@@ -443,7 +443,7 @@ func ScanText(text string) []ModDecls {
 
 // ScanFile は .flix 1 本を読んで走査する。
 func ScanFile(path string) ([]ModDecls, error) {
-	text, err := pxlib.ReadTextReplace(path)
+	text, err := pxlib.LoadTextReplace(path)
 	if err != nil {
 		return nil, err
 	}

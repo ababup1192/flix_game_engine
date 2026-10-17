@@ -145,7 +145,7 @@ func scanPackage(root, srcRel string, skip map[string]bool) map[string]map[strin
 		if hasSkippedParent(path, skip) {
 			continue
 		}
-		text, err := pxlib.ReadTextReplace(path)
+		text, err := pxlib.LoadTextReplace(path)
 		if err != nil {
 			continue
 		}

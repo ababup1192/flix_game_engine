@@ -33,11 +33,11 @@ func (im *Image) At(x, y int) [4]int {
 
 // OpenImage は PNG を読む。
 //
-// WhyNot: デコーダを書き起こさないのは pxlib.ReadPNG が同じ範囲
+// WhyNot: デコーダを書き起こさないのは pxlib.LoadPNG が同じ範囲
 // (8bit・インターレース無し) を同じ理由で弾き、色票・グレー・RGB を
 // 同じ RGBA に開くため。
 func OpenImage(path string) (*Image, error) {
-	im, err := pxlib.ReadPNG(path)
+	im, err := pxlib.LoadPNG(path)
 	if err != nil {
 		return nil, err
 	}

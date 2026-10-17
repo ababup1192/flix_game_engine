@@ -96,7 +96,7 @@ func isRenderFile(rel string) bool {
 
 func checkAudioGame(root, game string, problems, warnings *[]string) int {
 	gameDir := filepath.Join(root, game)
-	project, ok := pxlib.AsObject(pxlib.ReadJSON(filepath.Join(gameDir, "project.json")))
+	project, ok := pxlib.AsObject(pxlib.LoadJSON(filepath.Join(gameDir, "project.json")))
 	if !ok {
 		return 0
 	}

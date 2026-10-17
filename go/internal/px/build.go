@@ -125,7 +125,7 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 	plainDoc := pxlib.Plain(doc).(map[string]any)
 	pal := pxlib.DocPalette(root, plainDoc, nil, pxlib.AnyColor)
 	if spec.Palette != "" {
-		for k, h := range pxlib.ColorTable(pxlib.ReadJSON(filepath.Join(root, spec.Palette)), pxlib.AnyColor) {
+		for k, h := range pxlib.ColorTable(pxlib.LoadJSON(filepath.Join(root, spec.Palette)), pxlib.AnyColor) {
 			if _, ok := pal[k]; !ok {
 				pal[k] = h
 			}
@@ -243,7 +243,7 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 			old, had := frames.Get(f.Name)
 			fr := frameResult{Sprite: sp.Name, Name: f.Name, Rows: rows, HadBase: had, grid: c.G}
 			if had {
-				fr.Same = pxlib.DumpPy(old, indent) == pxlib.DumpPy(rows, indent)
+				fr.Same = pxlib.ToJSON(old, indent) == pxlib.ToJSON(rows, indent)
 			}
 			frames.Set(f.Name, rowsAny(rows))
 			res.Frames = append(res.Frames, fr)
@@ -279,7 +279,7 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 		if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
 			return nil, err
 		}
-		if err := os.WriteFile(out, []byte(pxlib.DumpPy(doc, indent)), 0o644); err != nil {
+		if err := os.WriteFile(out, []byte(pxlib.ToJSON(doc, indent)), 0o644); err != nil {
 			return nil, err
 		}
 		res.Wrote = true
@@ -288,7 +288,7 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 	if dir == "" {
 		dir = filepath.Join(root, "debug", "px", specName(specPath), "last")
 	}
-	prev := readPrev(filepath.Join(dir, "report.json"))
+	prev := loadPrev(filepath.Join(dir, "report.json"))
 	if prev != nil {
 		c := prev.Count()
 		res.Prev = &c
@@ -373,7 +373,7 @@ func groundColor(hex string) color.RGBA {
 	return color.RGBA{0x2a, 0x2a, 0x33, 0xff}
 }
 
-func readPrev(path string) *buildResult {
+func loadPrev(path string) *buildResult {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil

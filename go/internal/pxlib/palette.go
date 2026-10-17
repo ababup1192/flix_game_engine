@@ -131,11 +131,11 @@ func DocPalette(root string, doc map[string]any, themes []string, d ColorDialect
 	}
 	for _, rel := range themes {
 		if strings.HasSuffix(rel, ".theme.json") {
-			merge(ReadJSON(filepath.Join(root, rel)))
+			merge(LoadJSON(filepath.Join(root, rel)))
 		}
 	}
 	if ref, ok := doc["paletteFile"].(string); ok {
-		merge(ReadJSON(filepath.Join(root, ref)))
+		merge(LoadJSON(filepath.Join(root, ref)))
 	}
 	merge(doc["palette"])
 	return names

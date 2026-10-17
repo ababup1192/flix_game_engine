@@ -201,7 +201,7 @@ func readFile(root, path string) ([]string, bool) {
 	if !isFile(full) {
 		return nil, false
 	}
-	src, err := pxlib.ReadTextReplace(full)
+	src, err := pxlib.LoadTextReplace(full)
 	if err != nil {
 		return nil, false
 	}

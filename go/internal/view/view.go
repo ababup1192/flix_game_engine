@@ -122,7 +122,7 @@ func hudSmell(projectDir string) (string, bool) {
 	}
 	usesText, hasHud := false, false
 	for _, p := range pxlib.Rglob(srcDir, ".flix") {
-		src, err := pxlib.ReadTextReplace(p)
+		src, err := pxlib.LoadTextReplace(p)
 		if err != nil {
 			continue
 		}
@@ -159,7 +159,7 @@ func readTarget(path string) (string, bool) {
 	if !isCheckable(path) {
 		return "", false
 	}
-	src, err := pxlib.ReadTextReplace(path)
+	src, err := pxlib.LoadTextReplace(path)
 	if err != nil {
 		return "", false
 	}

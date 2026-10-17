@@ -30,7 +30,7 @@ var colorWrapKeys = []string{"hex", "color", "value"}
 
 var gameRoots = []string{"templates"}
 
-func ReadJSON(path string) any {
+func LoadJSON(path string) any {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil

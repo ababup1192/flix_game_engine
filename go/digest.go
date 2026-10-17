@@ -63,11 +63,11 @@ func hexColor(c uint32) string {
 
 // digestPair は不一致 2 枚の要約行と差分画素率を返す。
 func digestPair(oldPath, newPath string) ([]string, float64, error) {
-	oldIm, err := pxlib.ReadPNG(oldPath)
+	oldIm, err := pxlib.LoadPNG(oldPath)
 	if err != nil {
 		return nil, 0, err
 	}
-	newIm, err := pxlib.ReadPNG(newPath)
+	newIm, err := pxlib.LoadPNG(newPath)
 	if err != nil {
 		return nil, 0, err
 	}

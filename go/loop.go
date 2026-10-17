@@ -35,7 +35,7 @@ type loopFrame struct {
 }
 
 func loadFrame(path string) (*loopFrame, error) {
-	im, err := pxlib.ReadPNG(path)
+	im, err := pxlib.LoadPNG(path)
 	if err != nil {
 		return nil, err
 	}

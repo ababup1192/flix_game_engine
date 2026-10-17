@@ -125,7 +125,7 @@ func TestRunWaveformWritesNonBlankPNG(t *testing.T) {
 	if code := runWaveform(&out, &errOut, []string{dir}, outPath, false); code != 0 {
 		t.Fatalf("緑のはず: %d %s", code, errOut.String())
 	}
-	im, err := pxlib.ReadPNG(outPath)
+	im, err := pxlib.LoadPNG(outPath)
 	if err != nil {
 		t.Fatal(err)
 	}

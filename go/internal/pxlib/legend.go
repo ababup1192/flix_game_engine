@@ -15,13 +15,13 @@ func LegendColorsOf(gameDir string, doc map[string]any) (map[string]RGBA, []stri
 	names := map[string]RGBA{}
 	for _, rel := range WalkJSON(gameDir, SpriteExcludedDirs) {
 		if strings.HasSuffix(rel, ".theme.json") {
-			for k, v := range ColorMapOf(ReadJSON(filepath.Join(gameDir, rel))) {
+			for k, v := range ColorMapOf(LoadJSON(filepath.Join(gameDir, rel))) {
 				names[k] = v
 			}
 		}
 	}
 	if ref, ok := doc["paletteFile"].(string); ok {
-		for k, v := range ColorMapOf(ReadJSON(filepath.Join(gameDir, ref))) {
+		for k, v := range ColorMapOf(LoadJSON(filepath.Join(gameDir, ref))) {
 			names[k] = v
 		}
 	}

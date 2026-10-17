@@ -123,8 +123,8 @@ func DecodeOrdered(data []byte) (any, error) {
 	return v, nil
 }
 
-// ReadOrdered はファイルを読み、一番外がオブジェクトであることを確かめる。
-func ReadOrdered(path string) (*Obj, error) {
+// LoadOrdered はファイルを読み、一番外がオブジェクトであることを確かめる。
+func LoadOrdered(path string) (*Obj, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -215,9 +215,9 @@ func DetectIndent(data []byte) string {
 	return "\t"
 }
 
-// DumpPy は Python の json.dumps(v, ensure_ascii=False, indent=indent) の字面に改行 1 つを足した物。
+// ToJSON は Python の json.dumps(v, ensure_ascii=False, indent=indent) の字面に改行 1 つを足した物。
 // 受ける値: *Obj・[]any・[]string・string・json.Number・float64・int・bool・nil。
-func DumpPy(v any, indent string) string {
+func ToJSON(v any, indent string) string {
 	var b strings.Builder
 	writePy(&b, v, indent, 0)
 	b.WriteString("\n")
@@ -280,7 +280,7 @@ func writePy(b *strings.Builder, v any, indent string, depth int) {
 	case nil:
 		b.WriteString("null")
 	default:
-		panic(fmt.Sprintf("DumpPy: 書けない値の型 %T", v))
+		panic(fmt.Sprintf("ToJSON: 書けない値の型 %T", v))
 	}
 }
 

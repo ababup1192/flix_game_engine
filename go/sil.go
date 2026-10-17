@@ -210,7 +210,7 @@ func gatherTargets(argvPaths []string, root string) []silTarget {
 }
 
 func processSilDoc(root string, t silTarget, mode, outDir string) ([]string, error) {
-	doc, ok := pxlib.AsObject(pxlib.ReadJSON(t.path))
+	doc, ok := pxlib.AsObject(pxlib.LoadJSON(t.path))
 	if !ok {
 		return nil, fmt.Errorf("読めない: %s", t.shown)
 	}

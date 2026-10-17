@@ -59,8 +59,8 @@ func DecodeReplace(data []byte) string {
 	return b.String()
 }
 
-// ReadTextReplace はファイルを読んで DecodeReplace した文字列を返す。
-func ReadTextReplace(path string) (string, error) {
+// LoadTextReplace はファイルを読んで DecodeReplace した文字列を返す。
+func LoadTextReplace(path string) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return "", err

@@ -54,8 +54,8 @@ func checkPNGHeader(data []byte) error {
 	return errors.New("PNG ではない")
 }
 
-// ReadPNG は PNG を読んで RGBA にする。
-func ReadPNG(path string) (*Image, error) {
+// LoadPNG は PNG を読んで RGBA にする。
+func LoadPNG(path string) (*Image, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -119,4 +119,17 @@ func (im *Image) Row(y int) []byte { return im.Pix[y*im.W*4 : (y+1)*im.W*4] }
 func (im *Image) RGBAt(x, y int) uint32 {
 	o := (y*im.W + x) * 4
 	return uint32(im.Pix[o])<<16 | uint32(im.Pix[o+1])<<8 | uint32(im.Pix[o+2])
+}
+
+// Rows は絵を画素の行にする。
+func (im *Image) Rows() [][]RGBA {
+	rows := make([][]RGBA, im.H)
+	for y := range rows {
+		rows[y] = make([]RGBA, im.W)
+		for x := range rows[y] {
+			o := (y*im.W + x) * 4
+			copy(rows[y][x][:], im.Pix[o:o+4])
+		}
+	}
+	return rows
 }

@@ -187,7 +187,7 @@ func versionLabelOf(root, to string) string {
 
 // makefileVersion は Makefile の `VERSION := x.y.z` を読む。
 func makefileVersion(root string) (string, bool) {
-	text, err := pxlib.ReadTextReplace(filepath.Join(root, "Makefile"))
+	text, err := pxlib.LoadTextReplace(filepath.Join(root, "Makefile"))
 	if err != nil {
 		return "", false
 	}

@@ -334,7 +334,7 @@ func spriteFrames(doc map[string]any) [][]string {
 // WriteSpriteSheet は sprite.json の全コマを並べた見本を outPNG に書き、コマの数を返す。
 // 色名は gameRoot の下の *.theme.json・paletteFile・palette から解く（pxlib.LegendColorsOf）。
 func WriteSpriteSheet(gameRoot, spritePath, outPNG, bg string, warn io.Writer) (int, error) {
-	doc, ok := pxlib.AsObject(pxlib.ReadJSON(spritePath))
+	doc, ok := pxlib.AsObject(pxlib.LoadJSON(spritePath))
 	if !ok {
 		return 0, fmt.Errorf("読めない: %s", relTo(gameRoot, spritePath))
 	}

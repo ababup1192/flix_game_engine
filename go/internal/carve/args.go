@@ -117,8 +117,8 @@ func writeSpriteDoc(path, id, note string, palette, legend *pxlib.OMap[string, s
 	var b strings.Builder
 	b.WriteString("{\n")
 	b.WriteString("  \"version\": 1,\n")
-	fmt.Fprintf(&b, "  \"entityId\": %s,\n", jsonString(id))
-	fmt.Fprintf(&b, "  \"note\": %s,\n", jsonString(note))
+	fmt.Fprintf(&b, "  \"entityId\": %s,\n", pxlib.JSONString(id))
+	fmt.Fprintf(&b, "  \"note\": %s,\n", pxlib.JSONString(note))
 	writeStringMap(&b, "palette", palette, "  ")
 	b.WriteString(",\n")
 	writeStringMap(&b, "legend", legend, "  ")
@@ -130,7 +130,7 @@ func writeSpriteDoc(path, id, note string, palette, legend *pxlib.OMap[string, s
 		if i > 0 {
 			b.WriteString(",")
 		}
-		fmt.Fprintf(&b, "\n    %s: {\n", jsonString(name))
+		fmt.Fprintf(&b, "\n    %s: {\n", pxlib.JSONString(name))
 		b.WriteString("      \"anchor\": {\n")
 		fmt.Fprintf(&b, "        \"x\": %d,\n", entry.anchorX)
 		fmt.Fprintf(&b, "        \"y\": %d\n", entry.anchorY)
@@ -142,12 +142,12 @@ func writeSpriteDoc(path, id, note string, palette, legend *pxlib.OMap[string, s
 			if j > 0 {
 				b.WriteString(",")
 			}
-			fmt.Fprintf(&b, "\n        %s: [", jsonString(pose))
+			fmt.Fprintf(&b, "\n        %s: [", pxlib.JSONString(pose))
 			for k, row := range rows {
 				if k > 0 {
 					b.WriteString(",")
 				}
-				fmt.Fprintf(&b, "\n          %s", jsonString(row))
+				fmt.Fprintf(&b, "\n          %s", pxlib.JSONString(row))
 			}
 			if len(rows) == 0 {
 				b.WriteString("]")
@@ -172,14 +172,14 @@ func writeSpriteDoc(path, id, note string, palette, legend *pxlib.OMap[string, s
 }
 
 func writeStringMap(b *strings.Builder, name string, m *pxlib.OMap[string, string], indent string) {
-	fmt.Fprintf(b, "%s%s: {", indent, jsonString(name))
+	fmt.Fprintf(b, "%s%s: {", indent, pxlib.JSONString(name))
 	keys := m.Keys()
 	for i, k := range keys {
 		v, _ := m.Get(k)
 		if i > 0 {
 			b.WriteString(",")
 		}
-		fmt.Fprintf(b, "\n%s  %s: %s", indent, jsonString(k), jsonString(v))
+		fmt.Fprintf(b, "\n%s  %s: %s", indent, pxlib.JSONString(k), pxlib.JSONString(v))
 	}
 	if len(keys) == 0 {
 		b.WriteString("}")

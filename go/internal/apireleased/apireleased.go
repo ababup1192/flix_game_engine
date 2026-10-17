@@ -53,7 +53,7 @@ var (
 
 // version は Makefile の `VERSION := x.y.z` を読む。
 func version(root string) (string, bool, error) {
-	text, err := pxlib.ReadTextReplace(filepath.Join(root, "Makefile"))
+	text, err := pxlib.LoadTextReplace(filepath.Join(root, "Makefile"))
 	if err != nil {
 		return "", false, fmt.Errorf("Makefile を読めません: %v", err)
 	}
@@ -101,7 +101,7 @@ func declarationsInTree(root string, pkgs []string) map[string]map[string]bool {
 	found := map[string]map[string]bool{}
 	for _, pkg := range pkgs {
 		for _, path := range flixdecl.FlixFiles(root, pkg+"/src") {
-			text, err := pxlib.ReadTextReplace(path)
+			text, err := pxlib.LoadTextReplace(path)
 			if err != nil {
 				continue
 			}

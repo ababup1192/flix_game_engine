@@ -193,7 +193,7 @@ func Run(out, errOut *strings.Builder, root string, args []string) (int, error) 
 	if check {
 		ok := true
 		for _, t := range targets {
-			current, err := pxlib.ReadTextReplace(t.Path)
+			current, err := pxlib.LoadTextReplace(t.Path)
 			if err != nil || Dateless(current) != Dateless(t.Content) {
 				ok = false
 				fmt.Fprintf(errOut, "[gen-api-digest] NG: %s がソースとずれています。"+
@@ -211,7 +211,7 @@ func Run(out, errOut *strings.Builder, root string, args []string) (int, error) 
 		if err := os.MkdirAll(filepath.Dir(t.Path), 0o755); err != nil {
 			return 2, fmt.Errorf("書き出し先を作れません: %v", err)
 		}
-		current, err := pxlib.ReadTextReplace(t.Path)
+		current, err := pxlib.LoadTextReplace(t.Path)
 		if err == nil && Dateless(current) == Dateless(t.Content) {
 			continue // 内容が同じなら日付も進めない (git の空騒ぎを作らない)
 		}

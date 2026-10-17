@@ -39,7 +39,7 @@ func TestGateMatchesPython(t *testing.T) {
 		t.Fatal(err)
 	}
 	for path, want := range expected {
-		doc, err := pxlib.ReadOrdered(filepath.Join(root, path))
+		doc, err := pxlib.LoadOrdered(filepath.Join(root, path))
 		if err != nil {
 			t.Fatal(err)
 		}

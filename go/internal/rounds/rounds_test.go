@@ -103,7 +103,7 @@ func TestSnapDrawsSpriteSheet(t *testing.T) {
 		t.Fatal(err)
 	}
 	run(t, root, "snap", "hero", "hero.sprite.json", "art/hero.src.py")
-	img, err := pxlib.ReadPNG(filepath.Join(root, loadRules(t).HistoryDir, "hero", "r1.png"))
+	img, err := pxlib.LoadPNG(filepath.Join(root, loadRules(t).HistoryDir, "hero", "r1.png"))
 	if err != nil {
 		t.Fatal(err)
 	}

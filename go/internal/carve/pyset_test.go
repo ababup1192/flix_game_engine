@@ -87,12 +87,12 @@ func TestTupleSetOrderMatchesPython(t *testing.T) {
 	for i, c := range cases {
 		var keys []Pt
 		for _, k := range c.Keys {
-			keys = append(keys, Pt{k[0], k[1]})
+			keys = append(keys, Pt{X: k[0], Y: k[1]})
 		}
 		s := NewPySetFromKeys(keys, hashPt)
 		got := s.Items()
 		for j, want := range c.Order {
-			if got[j] != (Pt{want[0], want[1]}) {
+			if got[j] != (Pt{X: want[0], Y: want[1]}) {
 				t.Fatalf("%d 番目: %d 個目が %v ではなく %v", i, j, want, got[j])
 			}
 		}
@@ -102,7 +102,7 @@ func TestTupleSetOrderMatchesPython(t *testing.T) {
 		for s2.Len() > 0 {
 			p, _ := s2.Pop()
 			popped = append(popped, p)
-			for _, q := range []Pt{{p.X + 1, p.Y}, {p.X, p.Y + 1}} {
+			for _, q := range []Pt{{X: p.X + 1, Y: p.Y}, {X: p.X, Y: p.Y + 1}} {
 				if s2.Contains(q) {
 					s2.Remove(q)
 					popped = append(popped, q)
@@ -113,7 +113,7 @@ func TestTupleSetOrderMatchesPython(t *testing.T) {
 			t.Fatalf("%d 番目: 取り出した個数が %d ではなく %d", i, len(c.Popped), len(popped))
 		}
 		for j, want := range c.Popped {
-			if popped[j] != (Pt{want[0], want[1]}) {
+			if popped[j] != (Pt{X: want[0], Y: want[1]}) {
 				t.Fatalf("%d 番目: %d 個目の取り出しが %v ではなく %v", i, j, want, popped[j])
 			}
 		}
@@ -125,8 +125,8 @@ func TestTupleHashMatchesPython(t *testing.T) {
 		p    Pt
 		want uint64
 	}{
-		{Pt{0, 0}, 3713080549408328131},
-		{Pt{3, 7}, 3713083796998483481},
+		{Pt{X: 0, Y: 0}, 3713080549408328131},
+		{Pt{X: 3, Y: 7}, 3713083796998483481},
 	}
 	for _, c := range cases {
 		if got := hashPt(c.p); got != c.want {
