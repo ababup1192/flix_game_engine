@@ -21,6 +21,8 @@
 | 揺れ・呼吸・弾み（on の子も付いていく） | `sway` / `bob` / `squash` | lint orphan・anim（pop・loop）。欠けは pixel_perfect で整える / anim（bob・ground） / anim（area・ground） |
 | 水・滝・流れ（波頭を 1px ずつ流す） | `wave_shift` | anim（pop・loop）。輪が閉じるようにコマの数 × speed を塊の幅に合わせる |
 | 煉瓦・瓦・石積みの目地（段ごとに半分ずらす） | `courses` | lint banding・flat-run |
+| 葉の玉を重ねた木・茂み・鉢植え | `canopy` | lint pillow・orphan |
+| 字（町の名前のラベル・看板・HUD。5×7） | `text` | — |
 
 既定値はどれも仮置き（見本 10 題と作品 5 作の大きい見比べで決め直す）。強さは各 op の引数で選び、使わない技法は書かない。
 
@@ -32,6 +34,7 @@
 | 小物の陰影（縁で光と影を分ける） | `bevel` | 小物の陰の段: 光の側の縁を lit、影の側の縁（と影の向きへ 2 つ先が外の画素）を dark、中を face | 既存の lint banding |
 | 陰影（平らな面は 1 色・光源は左上の 1 つ） | `bevel_box` | 角丸の板: 斜めの帯で 光・地・影、縁の 1px につや（光の側）と墨（影の側）、外側に墨の輪郭（格子は正方形） | 既存の lint banding |
 | アニメ（溜め・弾み） | `bob` | 部品を上下に動かす（コマごとに -amp·sin。呼吸・浮遊・歩きの上下） | anim（bob・ground） |
+| 葉の塊（玉を重ねて塊ごとに陰を付ける。全体に 1 つの陰を掛けない） | `canopy` | 葉の玉を重ねた木・茂み: 玉を奥（上）から手前（下）へ重ね、玉ごとに光の向きの陰・葉の斑・光の側のつや。外側に rim の 1px（部品の塊は玉の和） | lint pillow・orphan |
 | 背景の奥行き（遠いほど明度差が小さい）・主役と背景を分ける | `contrast` | 今の部品と相手（部品 against か地の色）の明るさ（Oklab の L）の平均の差を測るだけ（描かない） | lint value-sep |
 | 敷き詰め（煉瓦・瓦は段ごとに半分ずらす。目地は面より暗い 1px） | `courses` | 煉瓦・瓦・石積みの目地を引く: 段の高さごとに横の目地、段ごとに半分（offset）ずらした幅ごとに縦の目地（部品の塊の中だけ。色は下の色を by 段暗く） | lint banding・flat-run |
 | タイルの割れ目 | `crack` | 親（on）の塊の割れ目: 墨の 1px と、その右下に切り口のつや 1px | — |
@@ -62,6 +65,7 @@
 | アニメ（つぶしと伸ばし） | `squash` | 部品を縦に縮めて横に伸ばす（縦 1 − amount·sin・横 1 + amount·sin。足元を止める）。着地・弾み・呼吸 | anim（area・ground） |
 | 手で打った小さな型を置く | `stamp` | 文字の格子を押す（colors が無ければ legend の文字で打ち、'.' は透明へ抜く） | — |
 | アニメ（揺れ。根元を止めて先端を遅らせる） | `sway` | 部品の画素を行ごとに横へずらす（根元 0・先端ほど大きく・コマごとに sin）。木・草・旗・髪の揺れ | lint orphan・anim（pop・loop）。欠けは pixel_perfect で整える |
+| 字（町の名前のラベル・看板・HUD） | `text` | 文字列を 5×7 の字で並べる（英大文字・数字・. , ! ? - + : ' / x * %。小文字は大文字で引く。shadow を書くと字ごとに右下 1px の影を先に置く） | — |
 | 草のタイル（Aseprite の Tiled Mode。並べて継ぎ目を見る） | `tile_preview` | このスプライトをタイルとして扱う: 3×3 に並べた見本（<名前>.tile.png）を書き、端の継ぎ目を検査する（描かない） | lint seam |
 | 同じ部品を何か所にも置く・コマで体を上下させる | `use` | macros の op の列を、今の部品の中で順に当てる（at でずらせる） | — |
 | アニメ（水の波頭を 1px ずつずらす。見比べで palette_cycle に勝った） | `wave_shift` | 塊の外形は動かさず、中の模様（波頭・流れ）を行ごとにコマごとに speed px 横へ回す。水・滝・流れる雲の既定 | anim（pop・loop）。輪が閉じるようにコマの数 × speed を塊の幅に合わせる |
@@ -111,6 +115,7 @@
 | `px.write_json(path, value)` | JSON を書く（`style="python", indent=…` は Python の json.dump と同じ並び。写しの間だけ） |
 | `px.hash01(x, y, seed)`・`px.noise1(x, seed)`・`px.rng(seed)` | 種つきのゆらぎ・乱数（rng は CPython の random.Random と同じ列。写しの間だけ） |
 | `px.round(x, nd)` | Python の round（ちょうど半分は偶数へ） |
+| `px.frames(names, parts)` | 部品の鍵の値に関数（コマの番号 `i` → 値）を書くと、`(部品の列, frames)` を返す。部品にはコマ 0 の値が入る（`"ops": lambda i: smoke(i)`）。`names` はコマ名の列か数 |
 | `math.*` | sin・cos・tan・atan2・hypot・exp・log・pow・sqrt・floor・ceil・radians・pi。答えは正しく丸めた値で、OS・CPU で変わらない |
 
 最小の台本（version・target・palette・ramps・sprites・parts・frames）:
@@ -150,8 +155,9 @@ px.write_spec("lamp.pxsrc.json", {
 - 置き場: 採用の候補の sprite.json（target）は `atelier/`（assets/ には書けない）。採用しない試し（`debug/px-scenes/` など）は target ごと `debug/` に置いてよい。見本・report・PNG は build が `debug/px/<名前>/` に書く。
 - 一番外（def の外）では同じ名前に 2 度代入できない（Starlark の決まり。一番外の for の変数を 2 つのループで使うのも当たる）。ループや組み立ては def の中に入れて呼ぶ。
 - 囲い: load は台本と同じフォルダと隣の `tools/` の `.star` だけ。ファイル・ネット・時刻には触れない。手数は 1 本 500000000 手まで。
-- Starlark に無い物: class（dict と関数で書く）・`**`（`math.pow` か `x * x`）・set・連なった比較（`a <= x < b`）・bool の足し算。
-- 決まり（今は advice）: 台本 1 本 600 行・pxsrc 1 本 500 KB・1 部品の put 200 画素・格子の半分を超える stamp・while。使われない関数は止める。
+- Starlark に無い物: class（dict と関数で書く）・`**`（`math.pow` か `x * x`）・`round`（`px.round`）・set・連なった比較（`a <= x < b`）・bool の足し算・文字列の for（`s.elems()`）・`%` の幅と桁（`"%02x"` は `"%x%x" % (v // 16, v % 16)`）。一番外の for は書けるが、ループの変数も 1 度しか代入できない（2 本目のループは別の名前か def の中）。
+- 決まり（どれも advice）: 台本 1 本 600 行・pxsrc 1 本 500 KB・1 部品の put 200 画素・格子の半分を超える stamp・while・使われない関数・色票の色キーが ink などの名前と重なる。
+- `None` を渡した引数は省いたのと同じ（`op.fill(shape = None, color = …)` は部品の塊を塗る）。
 
 ## 引数
 
@@ -198,6 +204,27 @@ px.write_spec("lamp.pxsrc.json", {
 |---|---|---|
 | `amp` | number | 上下の幅（px）（-16〜16）（省くと 1） |
 | `phase` | number | 位相のずれ（1 周 = 1.0。部品ごとに揺れを遅らせる）（-1〜1）（省くと 0） |
+
+### `canopy`
+
+例: `{"canopy": {"center": [8, 8], "r": 6}}`
+
+部品を描き終えたら、その範囲で検査 `pillow`・`sprite:orphan` を回す。
+
+| 引数 | 型 | 説明 |
+|---|---|---|
+| `center` | pair | 木の中心 [x, y]（必須） |
+| `r` | number | 木の半径（玉の位置と大きさはこの割合）（1〜256）（必須） |
+| `balls` | circles | 玉の並び [[x, y, 半径], ...]（どれも r に対する割合・奥から手前の順）（省くと [[0,-0.45,0.55],[-0.5,-0.1,0.5],[0.5,-0.1,0.5],[-0.25,0.3,0.55],[0.3,0.32,0.52]]） |
+| `rim` | color | 玉の和の外側 1px の色（"" で無し）（省くと "ink"） |
+| `band` | number | 玉の陰の段の境目のディザの幅（0〜8）（省くと 1） |
+| `from` | int | 玉の陰に使う一番暗い段（0〜15）（省くと 1） |
+| `to` | int | 玉の陰に使う一番明るい段（-1 で最明）（-1〜15）（省くと 3） |
+| `colors` | rows | 葉の斑の色（scatter_clusters の colors。[] で斑なし）（省くと ["ramp[1]","ramp[3]"]） |
+| `cell` | int | 斑の升目（1〜64）（省くと 3） |
+| `keep` | number | 斑を置く割合（0〜1）（省くと 0.5） |
+| `seed` | int | 斑の散らし方の番号（玉 k は seed + k）（0〜1.048576e+06）（省くと 0） |
+| `gloss` | color | 玉の光の側のつやの色（"" で無し）（省くと "ramp[-1]"） |
 
 ### `contrast`
 
@@ -535,6 +562,19 @@ px.write_spec("lamp.pxsrc.json", {
 | `phase` | number | 位相のずれ（1 周 = 1.0。部品ごとに揺れを遅らせる）（-1〜1）（省くと 0） |
 | `root` | string | 止める端: bottom（木・草）・top（髪・吊るした旗）（省くと "bottom"） |
 | `ripple` | number | 根元から先端へ遅れて伝わる波の数（0 で全体が同じ向き。旗は 0.5 ほど）（0〜8）（省くと 0） |
+
+### `text`
+
+例: `{"text": {"at": [2, 2], "text": "INN", "color": "light"}}`
+
+| 引数 | 型 | 説明 |
+|---|---|---|
+| `at` | point | 1 字目の左上 [x, y]（必須） |
+| `text` | string | 並べる文字列（\n で次の行）（必須） |
+| `color` | color | 字の色（省くと "ink"） |
+| `shadow` | color | 右下 1px の影の色（"" で影なし）（省くと ""） |
+| `advance` | int | 1 字ごとの送り（字の幅 5 ＋ 字の間）（1〜32）（省くと 6） |
+| `line` | int | 行の送り（\n の時）（1〜64）（省くと 9） |
 
 ### `tile_preview`
 

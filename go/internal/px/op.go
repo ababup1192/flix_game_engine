@@ -32,6 +32,7 @@ const (
 	tRows     paramType = "rows"     // 文字の行
 	tColorMap paramType = "colormap" // 文字 → 色の参照
 	tAxis     paramType = "axis"     // "x"（左右）か "y"（上下）
+	tCircles  paramType = "circles"  // 円の並び [[x, y, r], ...]（小数可）
 )
 
 // param は引数 1 つ。
@@ -207,6 +208,9 @@ func parseOpCall(v any, where string, refs map[string]any) (opCall, error) {
 	args := opArgs{op: op, v: map[string]any{}}
 	for _, p := range op.Params {
 		v, has := given[p.Name]
+		if has && v == nil {
+			has = false // null は省いたのと同じ（台本の None）
+		}
 		if !has {
 			if p.Required {
 				return opCall{}, fmt.Errorf("%s: 引数 %s が無い（%s）", where, p.Name, p.Summary)
@@ -318,6 +322,9 @@ func checkType(p param, v any) error {
 			ok = ok && isStr
 		}
 		want = "文字 → 色の参照のオブジェクト"
+	case tCircles:
+		ok = isList(v, -1, func(e any) bool { return isList(e, 3, isNum) }) && lenOK(v, p)
+		want = "円の配列 [[x, y, 半径], ...]"
 	case tAxis:
 		s, _ := v.(string)
 		ok, want = s == "x" || s == "y", "\"x\"（左右）か \"y\"（上下）"

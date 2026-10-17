@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"image/gif"
 	"os"
 	"path/filepath"
 	"sort"
@@ -648,16 +649,19 @@ func writeSheets(dir string, res *buildResult, prev *buildResult, hexOf map[pxli
 	return nil
 }
 
-// writePNGs は --png の書き出し: スプライトごとに 1 コマ目の実寸と 4 倍、全コマを横に並べた実寸と 4 倍。
+// writePNGs は --png の書き出し: スプライトごとに 1 コマ目の実寸と 4 倍、全コマを横に並べた実寸と 4 倍、
+// 2 コマ以上なら 2 倍でコマを回す GIF（1 コマ 200ms）。
 // 色はそのまま（減色しない）・透明は透明のまま・前の物は消してから書くので、同じ指定からは毎回同じバイトになる。
 func writePNGs(dir string, res *buildResult, hexOf map[pxlib.Key]string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	if old, err := filepath.Glob(filepath.Join(dir, "*.png")); err == nil {
-		for _, p := range old {
-			if err := os.Remove(p); err != nil {
-				return err
+	for _, pat := range []string{"*.png", "*.gif"} {
+		if old, err := filepath.Glob(filepath.Join(dir, pat)); err == nil {
+			for _, p := range old {
+				if err := os.Remove(p); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -682,8 +686,93 @@ func writePNGs(dir string, res *buildResult, hexOf map[pxlib.Key]string) error {
 				return err
 			}
 		}
+		if len(frames) >= 2 {
+			if err := writeGIF(base+".gif", frames, gifScale, gifDelay); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
+}
+
+const (
+	gifScale = 2  // GIF の拡大（なめらかにしない）
+	gifDelay = 20 // 1 コマの長さ（1/100 秒）
+)
+
+// writeGIF はコマを順に回す GIF を書く（くり返し）。色表は減色しない: コマを上から順に読んで初めて出た色の順に並べ、
+// 透明があれば 0 番を透明にする。同じコマからは毎回同じバイトになる。色が 256 を超える絵は書かずに誤り。
+func writeGIF(path string, frames [][][]color.RGBA, scale, delay int) error {
+	index := map[color.RGBA]uint8{}
+	var pal color.Palette
+	clear := color.RGBA{}
+	add := func(c color.RGBA) error {
+		if c.A == 0 {
+			c = clear
+		}
+		if _, ok := index[c]; ok {
+			return nil
+		}
+		if len(pal) >= 256 {
+			return fmt.Errorf("%s: 色が 256 を超えるので GIF にできない", filepath.Base(path))
+		}
+		index[c] = uint8(len(pal))
+		pal = append(pal, c)
+		return nil
+	}
+	hasClear := false
+	for _, f := range frames {
+		for _, row := range f {
+			for _, c := range row {
+				hasClear = hasClear || c.A == 0
+			}
+		}
+	}
+	if hasClear {
+		_ = add(clear)
+	}
+	for _, f := range frames {
+		for _, row := range f {
+			for _, c := range row {
+				if err := add(c); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	if len(pal) < 2 {
+		pal = append(pal, color.RGBA{A: 255}) // GIF の色表は 2 色から
+	}
+	g := &gif.GIF{LoopCount: 0}
+	for _, f := range frames {
+		h := len(f)
+		w := 0
+		if h > 0 {
+			w = len(f[0])
+		}
+		img := image.NewPaletted(image.Rect(0, 0, w*scale, h*scale), pal)
+		for y := 0; y < h*scale; y++ {
+			for x := 0; x < w*scale; x++ {
+				c := f[y/scale][x/scale]
+				if c.A == 0 {
+					c = clear
+				}
+				img.SetColorIndex(x, y, index[c])
+			}
+		}
+		g.Image = append(g.Image, img)
+		g.Delay = append(g.Delay, delay)
+		g.Disposal = append(g.Disposal, gif.DisposalBackground)
+	}
+	fh, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	if err := gif.EncodeAll(fh, g); err != nil {
+		fh.Close()
+		return err
+	}
+	return fh.Close()
 }
 
 // scaleUp は画素を k 倍の正方形に広げる（なめらかにしない）。

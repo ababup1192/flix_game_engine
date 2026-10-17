@@ -672,6 +672,143 @@
         },
         {
           "type": "object",
+          "description": "葉の玉を重ねた木・茂み: 玉を奥（上）から手前（下）へ重ね、玉ごとに光の向きの陰・葉の斑・光の側のつや。外側に rim の 1px（部品の塊は玉の和）",
+          "additionalProperties": false,
+          "required": [
+            "canopy"
+          ],
+          "properties": {
+            "canopy": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "center": {
+                  "description": "木の中心 [x, y]",
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2
+                },
+                "r": {
+                  "description": "木の半径（玉の位置と大きさはこの割合）",
+                  "type": "number",
+                  "minimum": 1,
+                  "maximum": 256
+                },
+                "balls": {
+                  "description": "玉の並び [[x, y, 半径], ...]（どれも r に対する割合・奥から手前の順）",
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    },
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  "default": [
+                    [
+                      0,
+                      -0.45,
+                      0.55
+                    ],
+                    [
+                      -0.5,
+                      -0.1,
+                      0.5
+                    ],
+                    [
+                      0.5,
+                      -0.1,
+                      0.5
+                    ],
+                    [
+                      -0.25,
+                      0.3,
+                      0.55
+                    ],
+                    [
+                      0.3,
+                      0.32,
+                      0.52
+                    ]
+                  ]
+                },
+                "rim": {
+                  "description": "玉の和の外側 1px の色（\"\" で無し）",
+                  "$ref": "#/definitions/color",
+                  "default": "ink"
+                },
+                "band": {
+                  "description": "玉の陰の段の境目のディザの幅",
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 8,
+                  "default": 1
+                },
+                "from": {
+                  "description": "玉の陰に使う一番暗い段",
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 15,
+                  "default": 1
+                },
+                "to": {
+                  "description": "玉の陰に使う一番明るい段（-1 で最明）",
+                  "type": "integer",
+                  "minimum": -1,
+                  "maximum": 15,
+                  "default": 3
+                },
+                "colors": {
+                  "description": "葉の斑の色（scatter_clusters の colors。[] で斑なし）",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "default": [
+                    "ramp[1]",
+                    "ramp[3]"
+                  ]
+                },
+                "cell": {
+                  "description": "斑の升目",
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 64,
+                  "default": 3
+                },
+                "keep": {
+                  "description": "斑を置く割合",
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1,
+                  "default": 0.5
+                },
+                "seed": {
+                  "description": "斑の散らし方の番号（玉 k は seed + k）",
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1.048576e+06,
+                  "default": 0
+                },
+                "gloss": {
+                  "description": "玉の光の側のつやの色（\"\" で無し）",
+                  "$ref": "#/definitions/color",
+                  "default": "ramp[-1]"
+                }
+              },
+              "required": [
+                "center",
+                "r"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
           "description": "今の部品と相手（部品 against か地の色）の明るさ（Oklab の L）の平均の差を測るだけ（描かない）",
           "additionalProperties": false,
           "required": [
@@ -2027,6 +2164,63 @@
                   "default": 0
                 }
               }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "文字列を 5×7 の字で並べる（英大文字・数字・. , ! ? - + : ' / x * %。小文字は大文字で引く。shadow を書くと字ごとに右下 1px の影を先に置く）",
+          "additionalProperties": false,
+          "required": [
+            "text"
+          ],
+          "properties": {
+            "text": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "at": {
+                  "description": "1 字目の左上 [x, y]",
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2
+                },
+                "text": {
+                  "description": "並べる文字列（\\n で次の行）",
+                  "type": "string"
+                },
+                "color": {
+                  "description": "字の色",
+                  "$ref": "#/definitions/color",
+                  "default": "ink"
+                },
+                "shadow": {
+                  "description": "右下 1px の影の色（\"\" で影なし）",
+                  "$ref": "#/definitions/color",
+                  "default": ""
+                },
+                "advance": {
+                  "description": "1 字ごとの送り（字の幅 5 ＋ 字の間）",
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 32,
+                  "default": 6
+                },
+                "line": {
+                  "description": "行の送り（\\n の時）",
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 64,
+                  "default": 9
+                }
+              },
+              "required": [
+                "at",
+                "text"
+              ]
             }
           }
         },
