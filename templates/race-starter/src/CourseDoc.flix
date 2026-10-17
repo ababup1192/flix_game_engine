@@ -14,6 +14,7 @@
 // 曲がる・はみ出す・周回するの規則はコード（World）側 — ここは「道の形」だけ。
 // fail-open — 読めない・壊れているときは defaults() へ落とし、ゲームは必ず起動する。
 mod CourseDoc {
+    use flix_game_engine::{DocJson, JsonCodec}
     use Util.Json.Json
 
     /// コースの区間 1 つ。

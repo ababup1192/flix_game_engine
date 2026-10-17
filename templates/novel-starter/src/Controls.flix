@@ -3,7 +3,10 @@
 // 操作は「選ぶだけ」: ↑↓（カーソル）と 決定（クリック / Z / Enter / Space）。
 // Doc の保存即反映（watchFile）と F1 一括リロードの読み直しもここに置く。
 mod Controls {
-    use GameEngine.Key
+    use flix_game_engine::{
+        App, DocTable, EntityId, InputMap, PxSpriteDoc, UiFocus, UiMenu, UiMeta, UiStore
+    }
+    use flix_game_engine::GameEngine.Key
 
     /// このゲームの操作の意図。キーとの対応は tapTable が持つ。
     enum Act with Eq {

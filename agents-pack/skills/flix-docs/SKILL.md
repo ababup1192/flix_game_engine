@@ -45,6 +45,21 @@ sync: 2026-10-17
   3. `with handler` の手書き — 振る舞いを変えたい時の最後の手
 - `run` を入れ子にしない。いくつも剥がすなら 1 つの `run { } with X with Y` に連ねる
 
+## 0.77〜0.78 の新しい書き方
+
+- engine の名前は mod ごとに `use flix_game_engine::{App, Color}` で取り込む
+  （0.78 の mount。ファイル直下の use は `mod X { }` の中へ届かない）
+- use を足すのは `bin/fge engine-uses`（足りないかだけ見るなら `--check`）
+- 多相 effect（実験）: `eff Sfx[s] { def play(x: s): Unit }`・`\ Sfx[Sound]`。
+  ハンドラの型は `a \ (ef - Sfx[s]) + Audio`
+- 1 つの関数の中で同じ effect は 1 つの型だけ（`Sfx[A] + Sfx[B]` は E6795）
+- 型変数を effect にはできない（`ef[t]` は E3442）
+- 型引数に trait の制約を付けたハンドラ（`with ToString[s]`）は 0.78.0 で
+  コンパイラが落ちる。名前へ写す関数を引数で渡す
+- 実験なので engine の pub 面には入れない（入れるかは依頼主が決める）
+- 外から作らせない値: pub mod の中の非 pub の enum + `pub type alias` で名前だけ出す
+  （外で case を書くと E0459。同名の enum は pub が要る E5848）
+
 ## Java より標準ライブラリ
 
 Java の API を呼ぶ前に、Flix の標準ライブラリに同じ物が無いか https://api.flix.dev/ で確かめる。

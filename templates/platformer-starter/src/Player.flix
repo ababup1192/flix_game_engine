@@ -8,6 +8,8 @@
 // 数値は全部 MotionDoc のノブ。角の許しと落下強化は Physics 側にある。
 mod Player {
 
+    use flix_game_engine::{Rect2, Vec2}
+
     /// 主役 1 体の状態。jumping = いま可変ジャンプの上昇中(離すと 1 回だけ削る)。
     pub type alias State = {
         body = Physics.Body,

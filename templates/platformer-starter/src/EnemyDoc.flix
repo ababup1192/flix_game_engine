@@ -2,6 +2,7 @@
 // 種類そのものは増えない(歩く・飛ぶ・撃つで固定)— 増減するのはステージ側の配置。
 // fail-open — 読めない・壊れているときは defaults() へ落とす。
 mod EnemyDoc {
+    use flix_game_engine::{DocJson, JsonCodec}
     use Util.Json.Json
 
     pub type alias Rec = {

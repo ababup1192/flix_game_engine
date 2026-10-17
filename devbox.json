@@ -3,7 +3,7 @@
   "packages": [
     "jdk@21",
     "gnumake@latest",
-    "github:Cj-bc/flix.nix#flix_0_77_0",
+    "path:./nix/flix#flix_0_78_0",
     "ffmpeg@latest"
   ],
   "shell": {

@@ -11,6 +11,8 @@
 // 生成物なので手で直さない(`make palette`)。テーマの色や legend を変えたら作り直す。
 mod Palette {
 
+    use flix_game_engine::{Color, PxSpriteDoc, RenderUtil}
+
     pub def path(): String = "assets/px.palette.json"
 
     /// sprite Doc の legend に出てくる意味色キーを、テーマの実色へ解いた表(純粋)。

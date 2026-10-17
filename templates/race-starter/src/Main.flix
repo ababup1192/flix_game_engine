@@ -13,6 +13,8 @@
 // 遊びの骨格はドリフトとニトロ: X で滑りながら曲がってゲージを貯め、満タンで Z の爆速。
 // 曲がる・滑る・抜く・壊れる・周回する の規則そのものは World.flix にある。
 // まず World 冒頭の「遊びの骨格（5 本柱）」と「場面の移り変わりの図」を読むとよい。
+use flix_game_engine::{ActiveDocs, App, GameEngine, LwjglLayer}
+
 def main(): Unit \ IO =
     if (GameEngine.ensureMainThread()) ()
     else {

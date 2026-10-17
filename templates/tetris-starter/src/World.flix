@@ -18,6 +18,8 @@
 // Doc が壊れていても止まらない（fail-open）: 読めない → 既定値で起動、一部が欠け → その欄だけ既定。
 mod World {
 
+    use flix_game_engine::ShaderDoc
+
     /// ミノの 7 種。色（ThemeDoc.colorOf）も形（Pieces.cellsOf）もこの種類から引く。
     pub enum Kind with Eq, ToString {
         case I

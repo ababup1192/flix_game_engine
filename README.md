@@ -103,11 +103,11 @@ make sync            # build-pkg all engine packages and distribute (via symlink
 Run `make sync` **once on first setup**. Each template resolves the engine through
 a relative symlink under `lib/github/ababup1192/.../0.1.0/`, so without it the
 dependency cannot be resolved. After editing an engine package, re-run `make sync`
-(or the per-package `sync-*` targets; note that `engine_world` / `engine_tools`
-build on `engine`, so re-sync them too after editing `engine`).
+(`render_gl` / `engine_world` / `engine_tools` are checked in `.layers/<pkg>/`, a
+symlinked tree of `engine` + that package, which `make sync-layers` lays out).
 
 ```bash
-make help            # list other targets (sync-engine, etc.)
+make help            # list other targets (sync-layers, etc.)
 ```
 
 ## Starter games (templates)
@@ -182,10 +182,7 @@ relative symlinks (symlink, not cp — so rebuilding the engine is reflected ins
 ## Development tips
 
 ```bash
-make sync-engine         # build-pkg & distribute engine only
-make sync-render-gl      # build-pkg & distribute render_gl only
-make sync-engine-world   # build-pkg & distribute engine_world only
-make sync-engine-tools   # build-pkg & distribute engine_tools only
+make sync-layers         # lay out .layers/ (engine + render_gl / engine_world / engine_tools)
 make sync-root-src       # regenerate the root src/ symlinks for the Flix community build
 make clean-locks         # remove stale *.lock left in the Maven cache by an interrupted flix check
 make clean-game-builds   # delete templates/*/build/ and bench/*/build/ (speeds up IDE scene loading)
@@ -340,11 +337,11 @@ make sync            # 全エンジンパッケージを build-pkg し、templat
 
 `make sync` は **初回に必ず一度実行する**。各テンプレはエンジンを
 `lib/github/ababup1192/.../0.1.0/` への相対 symlink 経由で解決するため、これが無いと依存を解決できない。
-エンジンパッケージを編集したら `make sync`（またはパッケージ別の `sync-*` ターゲット。
-`engine_world` / `engine_tools` は `engine` の上に載るので、`engine` 編集後はそれらも再 sync する）で反映する。
+エンジンパッケージを編集したら `make sync` で反映する（`render_gl` / `engine_world` / `engine_tools` は
+`engine` のソースと束ねた `.layers/<層>/` で組む。張り直しは `make sync-layers`）。
 
 ```bash
-make help            # 他ターゲット（sync-engine など）を一覧表示
+make help            # 他ターゲット（sync-layers など）を一覧表示
 ```
 
 ## スターターゲーム（templates）
@@ -416,10 +413,7 @@ src/           Flix コミュニティビルド用のルートプロジェクト
 ## 開発 Tips
 
 ```bash
-make sync-engine         # engine だけ build-pkg & 配布
-make sync-render-gl      # render_gl だけ build-pkg & 配布
-make sync-engine-world   # engine_world だけ build-pkg & 配布
-make sync-engine-tools   # engine_tools だけ build-pkg & 配布
+make sync-layers         # .layers/ を張り直す（engine + render_gl / engine_world / engine_tools）
 make sync-root-src       # コミュニティビルド用ルート src/ symlink 集を再生成
 make clean-locks         # flix check 中断で残った Maven cache の *.lock を削除
 make clean-game-builds   # templates/*/build/ と bench/*/build/ を削除（IDE のシーン読み込み高速化用）

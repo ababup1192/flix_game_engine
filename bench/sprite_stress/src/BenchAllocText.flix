@@ -3,6 +3,8 @@
 // 実行: ../../bin/flix run --entrypoint BenchAllocText.main
 mod BenchAllocText {
 
+    use flix_game_engine::{AllocMeter, FontAtlas, Render}
+
     pub def main(): Unit \ IO =
         let lines = 50;
         let content = "SCORE 12345 HI 99999 x3";

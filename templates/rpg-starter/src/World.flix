@@ -18,6 +18,11 @@
 // だからプレイヤーの前でクラッシュしない。編集ミスは既定へ落ちて遊びは続く。
 mod World {
 
+    use flix_game_engine::{
+        Clock, Dir4, FxDoc, Grid, Journey, PxSpriteAtlas, PxSpriteDoc, Rect2, RichText, ShaderDoc,
+        TileLayerSpec, UiDialog, Vec2
+    }
+
     /// いま画面が何をしているか。Title = 表紙（決定で歩き出す）、Play = 里を歩いている、
     /// Battle = 魔物と向き合っている、Clear = 薬草がそろった（決定で表紙へ戻る）。
     pub enum Phase with Eq, ToString {

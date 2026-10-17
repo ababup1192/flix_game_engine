@@ -5,7 +5,8 @@
 // 押した瞬間だけ効く操作（回転・叩きつけ・決定）は justPressed、押しっぱなしで効く操作
 // （左右の移動・そっと落とす）は isDown を使う。
 mod Controls {
-    use GameEngine.Key
+    use flix_game_engine::{App, DocTable, ShaderDoc, ShaderJson}
+    use flix_game_engine::GameEngine.Key
 
     /// 毎フレームのシステム: まず状態を dt 進め、そのあと押した瞬間の操作を反映する。
     /// softDrop（↓ 押しっぱなし）だけは step の落下加速に渡す。

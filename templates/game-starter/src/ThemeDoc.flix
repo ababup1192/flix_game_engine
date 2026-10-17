@@ -4,6 +4,7 @@
 // 派生色（ハイライト・影）は基準色から導く（導出できる値は Doc に置かない）。
 // fail-open: 読めない・壊れているときは defaults() へ落とす。
 mod ThemeDoc {
+    use flix_game_engine::{Color, DocJson, JsonCodec, PxShade, UiDoc}
     use Util.Json.Json
 
     // World が持つ record は enum で包む（型検査が record を展開しないため）。

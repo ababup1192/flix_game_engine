@@ -78,3 +78,28 @@ engine の pub 面（型・関数・eff の op）に Float32 は無い。
 
 **修正**: ゲーム側のコードで出たなら、`f32` を足す前に Float64 のまま渡せる口を探す。
 engine の中で境界の内側を書いているなら `1.0f32` のようにサフィックスを付ける。
+
+### 9. engine の名前が見つからない（Flix 0.78 の mount）
+
+**症状**: engine の名前で `Undefined name 'App.run'`（E2136）・
+`Undefined type 'Color'`（E2916）が大量に出る
+
+**修正**: `bin/fge engine-uses` で mod ごとに `use flix_game_engine::{...}` を足す。
+手で書くなら use は mod の中に置く（ファイル直下の use は mod へ届かない）。
+engine の非 pub の mod は届かない（`InaccessibleModule`）。
+
+### 10. 多相 effect の型引数（E6795・E3442）
+
+**症状**: `Mismatched type arguments for effect`・
+`Illegal polymorphic effect constructor`・`key not found: (ToString,…)` で落ちる
+
+**修正**: 1 つの関数の中で同じ effect は 1 つの型だけ。型ごとに関数を分ける。
+effect の型変数（`ef[t]`）には型を当てない。型引数に trait の制約を付けた
+ハンドラはコンパイラが落ちるので、写す関数を引数で渡す。
+
+### 11. 依存の manifest（パッケージ管理）
+
+**症状**: `Missing repository`・`Illegal package key` で依存の解決が止まる
+
+**修正**: flix.toml の `[package]` は version・flix・repository の 3 キーだけ。
+依存される側は repository が要る。

@@ -6,6 +6,7 @@
 // 数値は 7 つの関心に分かれる（スキーマの group と同じ並び）:
 //   走り / コーナーとドリフト / 障害物 / スリップストリーム / ニトロ / クラッシュ / アイテムと得点
 mod RulesDoc {
+    use flix_game_engine::{DocJson, JsonCodec}
     use Util.Json.Json
 
     /// 手触りと収支の数値。いじると何が変わるかは assets/rules.schema.json の label が source of truth。

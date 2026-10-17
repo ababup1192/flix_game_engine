@@ -5,6 +5,8 @@
 // 距離感は色でも語る（縮みだけに頼ると遠くがうるさいまま残る）。
 mod ViewRoad {
 
+    use flix_game_engine::{Color, DrawCmd, Num, RawDraw, Render, Sway, Vec2, ZStack}
+
     // 地面・路面・縁石・タイヤ痕は地面の葉（View.frame）に入り、葉の中の前後は View の共有の段
     // （View.zGround など。空・海と同じ葉なので段を分け合う）から引く。アイテム・障害物は立ち物の子。
 

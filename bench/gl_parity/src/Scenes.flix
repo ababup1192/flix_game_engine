@@ -9,6 +9,8 @@
 //   4. 時刻は固定値（アニメ無し — 2 回描き出して同じ絵になることが決定性検証の前提）
 mod Scenes {
 
+    use flix_game_engine::{Color, DrawCmd, Light, RawDraw, Render, RenderTarget, ShaderDoc, Vec2}
+
     // 寸法の権威は整数側 — Float 側を権威にすると Int へ戻す丸めが要る。
     pub def designWi(): Int32 = 320
     pub def designHi(): Int32 = 180

@@ -2,6 +2,8 @@
 // 前後の World は「1 つの値だけ変えた 2 つ」で作り、その差分が音の名前になることを見る。
 mod TestSfx {
 
+    use flix_game_engine::{FxDoc, PxSpriteDoc}
+
     /// 既定の Doc の束（World.initial が読むのと同じ形）。
     def docs(): World.Docs =
         { rules = RulesDoc.defaults(), rivalsCfg = RivalsDoc.defaults(), theme = ThemeDoc.defaults(),

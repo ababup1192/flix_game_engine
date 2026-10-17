@@ -22,7 +22,7 @@
     "render_gl/src/LwjglLayer.flix::withLwjgl": "正当 C: GLFW / OpenAL の初期化に失敗した先に描く物も鳴らす物も無い (起動要件)",
     "render_gl/src/Audio.flix::loadOggToALBuffer": "正当 C: 同梱の OGG が壊れているのはビルドの誤り。リリース前に確実に気づける方を選ぶ",
     "render_gl/src/Audio.flix::loadWavToALBuffer": "正当 C: 同梱の WAV が壊れているのはビルドの誤り。リリース前に確実に気づける方を選ぶ",
-    "render_gl/src/Texture.flix::loadTexture": "正当 C: 同梱の画像が読めないのはビルドの誤り。リリース前に確実に気づける方を選ぶ",
+    "render_gl/src/RenderTexture.flix::loadTexture": "正当 C: 同梱の画像が読めないのはビルドの誤り。リリース前に確実に気づける方を選ぶ",
     "engine/src/render/drawable/Sprite.flix::toDrawable": "正当 C: 未登録テクスチャは配線漏れ。黙って透明になるより止める方が気づける",
     "render_gl/src/LwjglLayer.flix::withProject": "正当 C: project.json は起動時の必須入力 (決まり 1 の loadOrBug 相当。名前が *OrBug でないのが宿題)"
   }

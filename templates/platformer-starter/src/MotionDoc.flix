@@ -6,6 +6,7 @@
 // 身体の数値と**同時に**触るもので、読み直したい時が同じだから。
 // fail-open — 読めない・壊れているときは defaults() へ落とし、ゲームは必ず起動する。
 mod MotionDoc {
+    use flix_game_engine::{DocJson, JsonCodec}
     use Util.Json.Json
 
     /// プレイヤーの動きのノブ一式。速さは px/秒、加速は px/秒²、高さはタイル数、間は秒。

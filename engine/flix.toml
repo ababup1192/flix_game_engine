@@ -1,6 +1,7 @@
 [package]
 version     = "0.36.0"
-flix        = "0.76.2"
+flix        = "0.78.0"
+repository  = "github:ababup1192/flix_engine_core"
 
 [dependencies]
 # engine は GL 非依存の「契約層」: Game/Audio effect 契約・共有描画型・土台型・シーングラフ描画語彙。

@@ -8,6 +8,12 @@
 //   - 立ち位置そのものは Doc の配置（住人・扉のマス）から導いて直接置く
 //     — 間取りを編集しても描き出しの脚本を書き直さずに済む。
 mod SceneRender {
+    use flix_game_engine::{
+        App, CameraRig, Color, Dir4, FontAtlas, Fx, Grid, HeadlessFont, HeadlessRender, Log,
+        Material, PxSprite, PxSpriteAtlas, PxSpriteDoc, Render, ShaderJson, Terrain, TerrainDoc,
+        TileScene, Vec2
+    }
+
     import java.io.File
     import java.lang.System
 

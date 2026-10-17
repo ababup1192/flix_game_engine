@@ -72,7 +72,7 @@
 | 放射グラデの組み込みテクスチャ（`__radial_light` / `__radial_dark`）の画素・名前・寸法を知りたい | RadialBuiltin（ゲーム側の入口は engine_world の `Render.lightAt` / `Render.darkAt`） |
 | Drawable 経路のカメラ・投影を知りたい（`view = None` のゲーム以外では使わない） | Camera / Projection |
 | 画面でなくレンダーターゲットに描いてテクスチャとして読み返したい（`eff Target`） | RenderTarget（GL 実装は render_gl の Target.flix / RenderTargetGl。ゲーム側の入口は engine_world の `Render.Pass` + `App.withPasses`、[逆引き](../module-index.md)を参照） |
-| いま bind 中のフレームバッファ（FBO でも既定でも）を画像 / PNG に吸い出したい | GlReadback（render_gl の Readback.flix。`readBoundImage`（RGBA・左上原点）/ `readBoundImageRgb`（RGB に落とす皮）/ `readBoundPng`。splashShot・注釈スクショ・GL 突き合わせ（bench/gl_parity）が共有する読み出しの核） |
+| いま bind 中のフレームバッファ（FBO でも既定でも）を画像 / PNG に吸い出したい | GlReadback（render_gl の GlReadback.flix。`readBoundImage`（RGBA・左上原点）/ `readBoundImageRgb`（RGB に落とす皮）/ `readBoundPng`。splashShot・注釈スクショ・GL 突き合わせ（bench/gl_parity）が共有する読み出しの核） |
 
 ## 土台
 

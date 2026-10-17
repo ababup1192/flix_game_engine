@@ -2,6 +2,7 @@
 // 実色に解決する resolver。派生色（ハイライト・薬草の葉）は基準色から導く（導出できる値は
 // Doc に置かない）。fail-open: 読めない・壊れているときは defaults() へ落とす。
 mod ThemeDoc {
+    use flix_game_engine::{Color, DocJson, JsonCodec, UiDoc}
     use Util.Json.Json
 
     /// 画面の色票と幕の暗さ。sky = 夕暮れの空（背景）、path = 道、field = 畑、wall = 石垣、

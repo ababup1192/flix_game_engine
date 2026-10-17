@@ -2,7 +2,7 @@
 //
 // LwjglLayer.flix の loadTexture / loadTextureRegistry を移植。
 
-mod RenderTexture {
+pub mod RenderTexture {
     import org.lwjgl.opengl.GL11
     import org.lwjgl.opengl.GL12
     import org.lwjgl.stb.STBImage

@@ -5,6 +5,7 @@
 // 追いかける・避ける・コーナーで減速するの規則そのものはコード（World）側。
 // fail-open — 読めない・壊れているときは defaults() へ落とし、ゲームは必ず起動する。
 mod RivalsDoc {
+    use flix_game_engine::{DocJson, JsonCodec}
     use Util.Json.Json
 
     /// ライバル 1 台の性格。

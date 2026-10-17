@@ -24,6 +24,8 @@
 // Doc が壊れていても止まらない（fail-open）: 読めない → 既定値で起動。
 mod World {
 
+    use flix_game_engine::{Fx, FxDoc, Num, PxSpriteAtlas, PxSpriteDoc, Vec2}
+
     /// いま画面が何をしているか。
     pub enum Phase with Eq, ToString {
         case Title      // 開始待ち

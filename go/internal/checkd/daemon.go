@@ -426,7 +426,7 @@ func (d *daemon) rssMB() int {
 	return kb / 1024
 }
 
-// --- 鮮度 (make sync-engine で lib/ の fpkg 実体が差し替わったら作り直す)
+// --- 鮮度 (make sync-engine-full で lib/ の fpkg 実体が差し替わったら作り直す)
 
 func (d *daemon) takeSnapshot() map[string]int64 {
 	items := map[string]int64{}

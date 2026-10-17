@@ -1,6 +1,6 @@
 [package]
 version     = "0.36.0"
-flix        = "0.76.2"
+flix        = "0.78.0"
 repository  = "github:ababup1192/flix_engine_world"
 
 # flix_game_engine（契約層）の上に載る「作家向けフレームワーク」。App ループが契約を
@@ -8,5 +8,5 @@ repository  = "github:ababup1192/flix_engine_world"
 # UI toolkit・frontend サービス（Doc 読み込み/Save/JSON/Logger）でゲームを組む道具を提供する。
 # 契約の純粋パーツ（GameEngine・シーングラフ・土台型）を再利用するため flix_game_engine に依存する。
 
-[dependencies]
-"github:ababup1192/flix_engine_core" = { version = "0.36.0", security = "unrestricted" }
+# engine のソースは依存ではなく .layers/<層>/ の作業場で同じ木に束ねて組む（make sync-layers）。
+# Flix 0.78 から依存パッケージの名前は mount 経由でしか届かず、ルートと engine_full の木と両立しないため。

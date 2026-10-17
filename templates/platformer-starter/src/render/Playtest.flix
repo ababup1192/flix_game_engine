@@ -16,6 +16,8 @@
 // 判定の閾値は goals() に 1 箇所だけ置く。
 mod Playtest {
 
+    use flix_game_engine::{Num, PxSpriteDoc, Vec2}
+
     /// 合格の目安。ここを触ると面の合否が変わる — 数字の意味は上の doc。
     def goals(): { dashRate = Float64, stuckMax = Float64, idleMax = Float64,
                    minJumps = Int32, minStomps = Int32, minSeconds = Float64 } =

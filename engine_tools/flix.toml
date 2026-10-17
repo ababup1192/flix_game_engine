@@ -1,6 +1,6 @@
 [package]
 version     = "0.36.0"
-flix        = "0.76.2"
+flix        = "0.78.0"
 repository  = "github:ababup1192/flix_engine_tools"
 
 # GL コンテキストの無い場所（リファレンス画像テスト・CI・IDE プレビュー）で成果物を生成・検査する
@@ -8,5 +8,5 @@ repository  = "github:ababup1192/flix_engine_tools"
 # リンタで検出し、操作リプレイを宣言データから再生し、効果音（SfxSynth）を合成する。ゲーム固有の型は
 # 一切知らず、engine の純粋パーツ（Drawable・Vec2・FontAtlas・TextLayout）だけに依存する（→ flix_game_engine）。
 
-[dependencies]
-"github:ababup1192/flix_engine_core" = { version = "0.36.0", security = "unrestricted" }
+# engine のソースは依存ではなく .layers/<層>/ の作業場で同じ木に束ねて組む（make sync-layers）。
+# Flix 0.78 から依存パッケージの名前は mount 経由でしか届かず、ルートと engine_full の木と両立しないため。

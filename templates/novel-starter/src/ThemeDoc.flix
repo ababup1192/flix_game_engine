@@ -4,6 +4,7 @@
 // 例外は accentLight — スプライト legend が名指しする色は Studio でも解けるよう
 // assets/ui/palette.json の宣言色を優先し、無ければ従来どおり accent から導く（fail-open）。
 mod ThemeDoc {
+    use flix_game_engine::{Color, DocJson, JsonCodec, UiDoc}
     use Util.Json.Json
 
     /// 場面の色票と雨の空気。bg = 部屋の闇（床・全体）、wall = 書斎の壁、

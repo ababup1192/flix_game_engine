@@ -96,7 +96,7 @@ func TestBugInsideOrBugPasses(t *testing.T) {
 
 func TestExemptKeyIsNotAViolation(t *testing.T) {
 	rules := rulesOf(t)
-	hits := []Hit{{Path: "render_gl/src/Texture.flix", Lineno: 1, Func: "loadTexture"}}
+	hits := []Hit{{Path: "render_gl/src/RenderTexture.flix", Lineno: 1, Func: "loadTexture"}}
 	if got := rules.Violations(hits); len(got) != 0 {
 		t.Errorf("EXEMPT の鍵が違反として残った: %v", got)
 	}

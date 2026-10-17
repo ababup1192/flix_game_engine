@@ -4,6 +4,8 @@
 // すべて決定的な場面（時計 t は場面ごとに固定値を入れる）。World を直接組み（RNG を回さず固定し）、
 // 実機と同じ描画経路（View.frame → Render.draw → HeadlessRender.renderPng）で生成する。
 mod SceneRender {
+    use flix_game_engine::{App, Color, FontAtlas, HeadlessFont, HeadlessRender, Render, Vec2}
+
     import java.io.File
     import java.lang.System
 

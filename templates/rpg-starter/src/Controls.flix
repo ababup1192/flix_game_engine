@@ -3,7 +3,8 @@
 // 「話す・進める」（Z / Enter / Space。押した瞬間だけ）の 2 つだけ。
 // Doc の保存即反映（watchFile）と F1 一括リロードの読み直しもここに置く。
 mod Controls {
-    use GameEngine.Key
+    use flix_game_engine::{App, Dir4, DocJson, DocTable, FxDoc, InputMap, ShaderDoc, ShaderJson}
+    use flix_game_engine::GameEngine.Key
 
     /// 歩く向きの表（押している間ずっと効く）。矢印と WASD は同じ意図。
     /// 同時押しは表の順で先勝ち — 斜めは無い（Dir4 の世界）。

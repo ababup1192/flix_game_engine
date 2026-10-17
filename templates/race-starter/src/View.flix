@@ -29,6 +29,10 @@
 // View は fail-open: コースが空でも Doc が既定でも必ず何か描く（プレイヤーの前で白画面にしない）。
 mod View {
 
+    use flix_game_engine::{
+        App, Color, DrawCmd, FontAtlas, Num, RawDraw, Render, SortingLayer, Sway, TextDraw, ZStack
+    }
+
     // ── 重なりの層 ──
     // world（frame）と画面固定（hud）は別の列で、エンジンが hud を必ず手前の範囲へ持ち上げる。
     // どちらの列の中にも層を分ける物（会話の窓・確認・切り替え）が無いので、層は 1 つで足りる —

@@ -1,12 +1,12 @@
 [package]
 version     = "0.36.0"
-flix        = "0.76.2"
+flix        = "0.78.0"
 repository  = "github:ababup1192/flix_render_gl"
 
 # render_gl は engine（フロントの Game/Audio 契約と共有の描画型）を実装するバックエンド。
 # engine を依存にすることで、契約・共有描画型・土台型（Vec2/Color/DrawCmd 等）がすべて揃う。
-[dependencies]
-"github:ababup1192/flix_engine_core" = { version = "0.36.0", security = "unrestricted" }
+# engine のソースは依存ではなく .layers/<層>/ の作業場で同じ木に束ねて組む（make sync-layers）。
+# Flix 0.78 から依存パッケージの名前は mount 経由でしか届かず、ルートと engine_full の木と両立しないため。
 
 # GL 描画 (opengl) / 画像・フォント (stb) / 音 (openal) / ウィンドウ (glfw) の LWJGL モジュール。
 [mvn-dependencies]

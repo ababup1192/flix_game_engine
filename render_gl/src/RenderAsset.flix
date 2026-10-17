@@ -3,7 +3,7 @@
 // shape は engine の GameEngine.TextureEntry / TextureInfo / ... と完全一致させる。
 // Flix の record 構造的型付けにより、engine 側の同型の値とそのまま相互変換可能。
 
-mod RenderAsset {
+pub mod RenderAsset {
 
     /// テクスチャマニフェスト 1 エントリ
     pub type alias TextureEntry = { name = String, path = String, hasAlpha = Bool }

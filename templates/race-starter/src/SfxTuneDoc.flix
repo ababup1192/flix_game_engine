@@ -6,6 +6,7 @@
 // つまみは WAV を生成するときに効く（make render-all → 起動し直す）。engine の高さの振れ幅
 // （enginePitchLow / enginePitchHigh）だけは鳴らしながら掛ける値なので保存で即反映される。
 mod SfxTuneDoc {
+    use flix_game_engine::{DocJson, JsonCodec, Num}
     use Util.Json.Json
 
     /// 音 1 つぶんのつまみ。volume = 音量（0..1）、pitch = 高さの倍率、
