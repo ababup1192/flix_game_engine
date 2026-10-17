@@ -1,6 +1,6 @@
 // Package px はドット絵を指定（<名前>.pxsrc.json）から描き、同じ型で検査する。
 //
-//	fge px build <spec> [--json] [--no-check] [--sheet] [--time] [--png]   描いて target に書き、report.json を作る
+//	fge px build <spec> [--json] [--no-check] [--sheet] [--time] [--png [--gif-delay ms] [--gif-scale k]]   描いて target に書き、report.json を作る
 //	fge px check [--gate <colorgate>] <sprite.json…>   手描きや assets にも色の門と形の検査をかける
 //	fge px ops [--md] [--check]                 op の早見表（--md は docs/px-ops.md を書く）
 //	fge px schema [--write] [--check]           docs/pxsrc.schema.json と docs/colorgate.schema.json（既定は表示だけ）
@@ -25,7 +25,7 @@ import (
 	"time"
 )
 
-const usage = `使い方: fge px build <名前>.pxsrc.json|<名前>.px.star [--json] [--no-check] [--sheet] [--time] [--png]
+const usage = `使い方: fge px build <名前>.pxsrc.json|<名前>.px.star [--json] [--no-check] [--sheet] [--time] [--png [--gif-delay ms] [--gif-scale k]]
         fge px gen <名前>.px.star
         fge px check [--gate <名前>.colorgate.json] <sprite.json…>
         fge px ops [--md] [--check]
@@ -38,13 +38,15 @@ const usage = `使い方: fge px build <名前>.pxsrc.json|<名前>.px.star [--j
 
 // cmdHelps は fge px help <コマンド> の説明（op でないコマンド）。
 var cmdHelps = map[string]string{
-	"build": `fge px build <名前>.pxsrc.json|<名前>.px.star [--json] [--no-check] [--sheet] [--time] [--png]
+	"build": `fge px build <名前>.pxsrc.json|<名前>.px.star [--json] [--no-check] [--sheet] [--time] [--png [--gif-delay ms] [--gif-scale k]]
   指定を描いて target の sprite.json に書き、debug/px/<名前>/last/report.json を作る（色の門を外れたら書かずに 1）。
   台本（.px.star）はメモリの中で走らせる（pxsrc・色票はファイルに書かない。書くなら gen）。
   --sheet  見比べのシート（sheet.png・前の周との差・玉ねぎの皮）も書く
   --png    debug/px/<名前>/png/ に、スプライトごとの 1 コマ目の実寸（<名>.png）と 4 倍（<名>@4x.png）、
            全コマを横に並べた実寸と 4 倍（<名>.strip.png・<名>.strip@4x.png）を書く（透明はそのまま）。
-           2 コマ以上なら 2 倍でコマを回す <名>.gif（1 コマ 200ms・減色しない・同じ絵から同じバイト）も書く
+           strip はコマの間に 1px の透明の隙間がある（幅 = コマの幅 × コマ数 + コマ数 − 1。k コマ目の左は k × (幅 + 1)）。
+           2 コマ以上ならコマを回す <名>.gif（既定は 2 倍・1 コマ 200ms・減色しない・同じ絵から同じバイト）も書く
+  --gif-delay N  GIF の 1 コマの長さ（ミリ秒。10 ms 刻みに丸める。スクロールは 80 前後）   --gif-scale N  GIF の拡大（1〜16）
   --no-check  lint と advice を回さない（色の門は回す）   --time  時間の内訳   --json  結果を JSON で
 `,
 	"gen": `fge px gen <名前>.px.star
@@ -92,6 +94,7 @@ func Run(out, errOut *strings.Builder, engineRoot, workRoot string, args []strin
 	var pos []string
 	gatePath := ""
 	maxRounds := 0
+	gifDelay, gifScale := 0, 0
 	for i := 0; i < len(rest); i++ {
 		switch a := rest[i]; {
 		case a == "--gate":
@@ -113,13 +116,29 @@ func Run(out, errOut *strings.Builder, engineRoot, workRoot string, args []strin
 			maxRounds = n
 			flags[a] = true
 			i++
+		case a == "--gif-delay" || a == "--gif-scale":
+			n := 0
+			if i+1 < len(rest) {
+				n, _ = strconv.Atoi(rest[i+1])
+			}
+			if n < 1 || a == "--gif-scale" && n > 16 || n > 10000 {
+				fmt.Fprintf(errOut, "px: %s の後に数を書く（--gif-delay はミリ秒 1〜10000・--gif-scale は 1〜16）\n%s", a, usage)
+				return 2
+			}
+			if a == "--gif-delay" {
+				gifDelay = n
+			} else {
+				gifScale = n
+			}
+			flags[a] = true
+			i++
 		case strings.HasPrefix(a, "--"):
 			flags[a] = true
 		default:
 			pos = append(pos, a)
 		}
 	}
-	allowed := map[string][]string{"build": {"--no-check", "--sheet", "--time", "--png"}, "check": nil, "ops": {"--md", "--check"}, "schema": {"--check", "--write"}, "help": nil,
+	allowed := map[string][]string{"build": {"--no-check", "--sheet", "--time", "--png", "--gif-delay", "--gif-scale"}, "check": nil, "ops": {"--md", "--check"}, "schema": {"--check", "--write"}, "help": nil,
 		"watch": {"--no-check"}, "snap": {"--new", "--max"}, "diff": nil, "gen": nil}
 	if names, known := allowed[verb]; known {
 		for f := range flags {
@@ -139,7 +158,11 @@ func Run(out, errOut *strings.Builder, engineRoot, workRoot string, args []strin
 			errOut.WriteString(usage)
 			return 2
 		}
-		opt := buildOptions{RulesRoot: engineRoot, NoCheck: flags["--no-check"], Sheet: flags["--sheet"], PNG: flags["--png"]}
+		if (gifDelay > 0 || gifScale > 0) && !flags["--png"] {
+			fmt.Fprintf(errOut, "px build: --gif-delay・--gif-scale は --png と一緒に書く\n%s", usage)
+			return 2
+		}
+		opt := buildOptions{RulesRoot: engineRoot, NoCheck: flags["--no-check"], Sheet: flags["--sheet"], PNG: flags["--png"], GIFDelay: gifDelay, GIFScale: gifScale}
 		if strings.HasSuffix(pos[0], ".star") {
 			return cmdBuildStar(out, errOut, engineRoot, workRoot, pos[0], opt, flags["--time"], asJSON)
 		}

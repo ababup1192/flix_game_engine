@@ -29,7 +29,16 @@ type pxStyle struct {
 	MaxTileColors int               `json:"maxTileColors"` // 升目ごとの色数（透明を除く）
 	ChannelLevels int               `json:"channelLevels"` // RGB の 1 チャンネルの段数（32 = 5 bit）
 	MaxSize       [2]int            `json:"maxSize"`       // 絵の最大の大きさ
+	Palettes      *paletteRule      `json:"palettes"`      // 色を何本のパレットに分けて持つか（無ければ見ない）
 	name          string
+}
+
+// paletteRule は機種のパレットの縛り: 1 コマの色を count 本 × size 色（透明を除く）に割り付けられるか。
+// 割り付ける単位は tile があれば升目ごとの色の集合（BG）、無ければ部品ごとの色の集合（スプライト。1 部品 = 1 本）。
+type paletteRule struct {
+	Count int    `json:"count"`
+	Size  int    `json:"size"`
+	Tile  [2]int `json:"tile"`
 }
 
 // loadStyle は spec の style を引く。名前なら px.json の styles、.json で終われば workRoot からの Doc。
@@ -179,7 +188,104 @@ func init() {
 					}
 				}
 			}
+			if pr := st.Palettes; pr != nil && pr.Count > 0 && pr.Size > 0 {
+				out = append(out, paletteViolations(g, st.Label, pr)...)
+			}
 			return out
 		},
 	})
+}
+
+// colorSet は割り付けの単位 1 つ（升目か部品）の色の集合。
+type colorSet struct {
+	where string
+	at    pxlib.Pt
+	keys  []pxlib.Key // 並べ替え済み
+}
+
+// paletteViolations は 1 コマの色を pr.Count 本 × pr.Size 色に割り付ける（色の多い単位から順に、入る一番前の本へ入れる。
+// first-fit decreasing で決定的）。入らなければ、下限（一番色の多い単位・色の総数 ÷ size）で入らないと言い切れる時は gate、
+// 言い切れない時（貪欲法の取りこぼしかもしれない）は advice。
+func paletteViolations(g *pxlib.Grid, label string, pr *paletteRule) []violation {
+	units := map[string]map[pxlib.Key]bool{}
+	firstAt := map[string]pxlib.Pt{}
+	for y := 0; y < g.H; y++ {
+		for x := 0; x < g.W; x++ {
+			k := g.At(x, y)
+			if k == pxlib.Clear {
+				continue
+			}
+			var u string
+			if pr.Tile[0] > 0 && pr.Tile[1] > 0 {
+				u = fmt.Sprintf("升目 (%d,%d)", x/pr.Tile[0]*pr.Tile[0], y/pr.Tile[1]*pr.Tile[1])
+			} else {
+				u = "部品 " + g.SrcAt(x, y).Part
+			}
+			if units[u] == nil {
+				units[u] = map[pxlib.Key]bool{}
+				firstAt[u] = pxlib.Pt{X: x, Y: y}
+			}
+			units[u][k] = true
+		}
+	}
+	var sets []colorSet
+	all := map[pxlib.Key]bool{}
+	for u, ks := range units {
+		cs := colorSet{where: u, at: firstAt[u]}
+		for k := range ks {
+			cs.keys = append(cs.keys, k)
+			all[k] = true
+		}
+		sort.Slice(cs.keys, func(i, j int) bool { return cs.keys[i] < cs.keys[j] })
+		sets = append(sets, cs)
+	}
+	sort.Slice(sets, func(i, j int) bool {
+		if len(sets[i].keys) != len(sets[j].keys) {
+			return len(sets[i].keys) > len(sets[j].keys)
+		}
+		return sets[i].where < sets[j].where
+	})
+	var pals []map[pxlib.Key]bool
+	var bad *colorSet
+	for i := range sets {
+		cs := &sets[i]
+		placed := false
+		for _, p := range pals {
+			n := len(p)
+			for _, k := range cs.keys {
+				if !p[k] {
+					n++
+				}
+			}
+			if n <= pr.Size {
+				for _, k := range cs.keys {
+					p[k] = true
+				}
+				placed = true
+				break
+			}
+		}
+		if !placed && len(pals) < pr.Count && len(cs.keys) <= pr.Size {
+			p := map[pxlib.Key]bool{}
+			for _, k := range cs.keys {
+				p[k] = true
+			}
+			pals = append(pals, p)
+			placed = true
+		}
+		if !placed && bad == nil {
+			bad = cs
+		}
+	}
+	if bad == nil {
+		return nil
+	}
+	biggest := len(sets[0].keys)
+	need := (len(all) + pr.Size - 1) / pr.Size
+	level, sure := levelAdvice, "割り付け方を変えれば入るかもしれない（下限は収まっている）"
+	if biggest > pr.Size || need > pr.Count {
+		level, sure = levelGate, fmt.Sprintf("一番色の多い単位 %d 色・色の総数 %d 色 → %d 本は要る", biggest, len(all), need)
+	}
+	return []violation{{Check: checkStyle, Level: level, X: bad.at.X, Y: bad.at.Y, HasAt: true,
+		Msg: fmt.Sprintf("%s: パレット %d 本 × %d 色に割り付けられない（%s の %d 色が入る本が無い。%s）", label, pr.Count, pr.Size, bad.where, len(bad.keys), sure)}}
 }

@@ -148,6 +148,7 @@ type checkCtx struct {
 	Wrap        bool                   // タイルとして端が回る（orphan は 3×3 に並べた絵で見る）
 	RampOwner   map[string]string      // ramp_pick が選んだランプの名前 → 選んだスプライト（ramp-order の違反の持ち主）
 	Emissive    map[string]bool        // 自分で光る部品の id（light-dir の対象外。部品の emissive）
+	Part        string                 // 部品ごとの検査の時の部品 id（pillow・light-dir はその部品が描いた画素だけを見る。コマ全体の検査では ""）
 	Poly        map[string]bool        // 形が poly の部品の id（輪郭の段は直線として flat-run だけで見る）
 }
 

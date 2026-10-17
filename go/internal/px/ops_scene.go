@@ -5,7 +5,6 @@ package px
 
 import (
 	"fmt"
-	"unicode"
 
 	"github.com/ababup1192/flix_game_engine/go/internal/pxlib"
 )
@@ -19,64 +18,39 @@ var canopyBalls = []any{
 func init() {
 	register(&opDef{
 		Name: "text", Example: `{"text": {"at": [2, 2], "text": "INN", "color": "light"}}`,
-		Summary:   "文字列を 5×7 の字で並べる（英大文字・数字・. , ! ? - + : ' / x * %。小文字は大文字で引く。shadow を書くと字ごとに右下 1px の影を先に置く）",
+		Summary:   "文字列を字形の組（font: 5x7・bold6x8）で並べて 1 色で置く（英大文字・数字・. , ! ? - + : ' / x * %。小文字は大文字で引く。shadow を書くと字ごとに右下 1px の影を先に置く）。階調や縁を付ける字は形 text を部品の shape にして gradient_fill・outline",
 		Technique: "字（町の名前のラベル・看板・HUD）", Finish: "—",
 		Params: []param{
 			{Name: "at", Type: tPoint, Required: true, Summary: "1 字目の左上 [x, y]"},
 			{Name: "text", Type: tString, Required: true, Summary: "並べる文字列（\\n で次の行）"},
 			{Name: "color", Type: tColor, Default: "ink", Summary: "字の色"},
 			{Name: "shadow", Type: tColor, Default: "", Summary: "右下 1px の影の色（\"\" で影なし）"},
-			{Name: "advance", Type: tInt, Default: 6.0, Summary: "1 字ごとの送り（字の幅 5 ＋ 字の間）", Lo: bound(1), Hi: bound(32)},
-			{Name: "line", Type: tInt, Default: 9.0, Summary: "行の送り（\\n の時）", Lo: bound(1), Hi: bound(64)},
+			{Name: "font", Type: tString, Default: "5x7", Summary: "字形の組: 5x7（線 1px）・bold6x8（線 2px の太い字）"},
+			{Name: "advance", Type: tInt, Default: 0.0, Summary: "1 字ごとの送り（0 は組の既定: 5x7 は 6・bold6x8 は 7）", Lo: bound(0), Hi: bound(32)},
+			{Name: "line", Type: tInt, Default: 0.0, Summary: "行の送り（\\n の時。0 は組の既定: 5x7 は 9・bold6x8 は 10）", Lo: bound(0), Hi: bound(64)},
 		},
 		Apply: func(c *ctx, a opArgs) error {
 			fill, err := c.Color(a.color("color"))
 			if err != nil {
 				return err
 			}
-			hasShadow := a.str("shadow") != ""
-			var shadow pxlib.Key
-			if hasShadow {
-				if shadow, err = c.Color(a.color("shadow")); err != nil {
+			pts, err := layoutText(a.str("font"), a.str("text"), a.point("at"), a.int("advance"), a.int("line"))
+			if err != nil {
+				return err
+			}
+			if a.str("shadow") != "" {
+				shadow, err := c.Color(a.color("shadow"))
+				if err != nil {
 					return err
 				}
+				// 影を字ごとに先に置く（後の字の影が前の字を潰さない）。字の画素を 1 字ずつ並べ直さずに済むよう、
+				// 影を全部置いてから字を全部置く（字どうしは重ならないので同じ絵）
+				for _, p := range pts {
+					c.Put(p.X+1, p.Y+1, shadow)
+				}
 			}
-			at := a.point("at")
-			x, y := at.X, at.Y
-			for _, ch := range a.str("text") {
-				if ch == '\n' {
-					x, y = at.X, y+a.int("line")
-					continue
-				}
-				g, ok := font5x7[ch]
-				if !ok {
-					g, ok = font5x7[unicode.ToUpper(ch)]
-				}
-				if !ok && ch != ' ' {
-					return fmt.Errorf("字 %q は字形に無い（英大文字・数字・. , ! ? - + : ' / x * %%。ほかは glyph_rows で置く）", string(ch))
-				}
-				if ok {
-					passes := []struct {
-						d int
-						k pxlib.Key
-					}{{0, fill}}
-					if hasShadow {
-						passes = append([]struct {
-							d int
-							k pxlib.Key
-						}{{1, shadow}}, passes...)
-					}
-					for _, pass := range passes {
-						for dy, row := range g {
-							for dx, r := range row {
-								if r == '#' {
-									c.Put(x+dx+pass.d, y+dy+pass.d, pass.k)
-								}
-							}
-						}
-					}
-				}
-				x += a.int("advance")
+			for _, p := range pts {
+				c.Put(p.X, p.Y, fill)
 			}
 			return nil
 		},
@@ -84,7 +58,7 @@ func init() {
 
 	register(&opDef{
 		Name: "canopy", Example: `{"canopy": {"center": [8, 8], "r": 6}}`,
-		Summary: "葉の玉を重ねた木・茂み: 玉を奥（上）から手前（下）へ重ね、玉ごとに光の向きの陰・葉の斑・光の側のつや。外側に rim の 1px（部品の塊は玉の和）",
+		Summary:   "葉の玉を重ねた木・茂み: 玉を奥（上）から手前（下）へ重ね、玉ごとに光の向きの陰・葉の斑・光の側のつや。外側に rim の 1px（部品の塊は玉の和）",
 		Technique: "葉の塊（玉を重ねて塊ごとに陰を付ける。全体に 1 つの陰を掛けない）", Finish: "lint pillow・orphan",
 		Params: []param{
 			{Name: "center", Type: tPair, Required: true, Summary: "木の中心 [x, y]"},
@@ -154,7 +128,8 @@ func init() {
 				}
 				f := directional(m, c.Spec.Light.Dir[0], c.Spec.Light.Dir[1])
 				for _, p := range m.Points() {
-					c.PutAbs(p.X, p.Y, ramp[from+rampIndex(f(p.X, p.Y), p.X, p.Y, to-from+1, a.num("band"))])
+					dx, dy := c.ditherAt(p.X, p.Y)
+					c.PutAbs(p.X, p.Y, ramp[from+rampIndex(f(p.X, p.Y), dx, dy, to-from+1, a.num("band"))])
 				}
 				if len(cols) > 0 {
 					px, _ := scatterClusters(c.G.W, c.G.H, m, cols, "blob", a.int("cell"), a.int("seed")+k+c.Seed*7919, a.num("keep"), false)

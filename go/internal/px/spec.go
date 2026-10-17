@@ -87,6 +87,13 @@ type part struct {
 	Rotate   float64     // 部品を回す角度（度。正で時計回り。rotsprite の考え方で色を足さない）
 	Pivot    *[2]float64 // 回す中心の画素（.5 で画素の境目。省くと塊の上の真ん中 = 肩・股の付け根）
 	Emissive bool        // 自分で光る（窓の灯り・炎）。光の向きの検査 light-dir の対象から外す
+	Scroll   *scrollSpec // 形を周期で写して並べ、コマごとに speed ずつずらす（無ければ nil）
+}
+
+// scrollSpec は部品の scroll: 形を period おきに写して格子を埋め、コマ i で at に speed·i を足す。
+// period の既定は speed × コマ数（コマを回すと模様がちょうど 1 周期ずれて、ループの継ぎ目が消える）。
+type scrollSpec struct {
+	Speed, Period pxlib.Pt
 }
 
 // isPoly は部品の形が poly か（shapes の名前で引いた物も）。
@@ -135,7 +142,7 @@ var (
 	specKeys   = []string{"version", "title", "note", "target", "base", "palette", "gate", "indent", "style", "light", "ramps", "shapes", "macros", "sprites"}
 	lightKeys  = []string{"dir", "gloss", "ground", "note"}
 	spriteKeys = []string{"note", "size", "anchor", "ramp", "parts", "post", "frames", "variants", "roles", "anim"}
-	partKeys   = []string{"id", "on", "clip", "shape", "ramp", "at", "ops", "note", "material", "rotate", "pivot", "emissive"}
+	partKeys   = []string{"id", "on", "clip", "shape", "ramp", "at", "ops", "note", "material", "rotate", "pivot", "emissive", "scroll"}
 	idPattern  = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]*$`)
 )
 
@@ -580,6 +587,17 @@ func (sp *spriteSpec) partsOf(r *reader, s *specDoc, f frameSpec) []*part {
 		} else if obj != raw {
 			p.BaseAt = pxlib.Pt{}
 		}
+		if sv, ok := obj.Get("scroll"); ok {
+			p.Scroll = r.scroll(sv, where+".scroll", sp)
+			if p.Scroll != nil {
+				fi := sp.frameIndex(f.Name)
+				p.At.X += p.Scroll.Speed.X * fi
+				p.At.Y += p.Scroll.Speed.Y * fi
+				if p.Scroll.Speed != (pxlib.Pt{}) {
+					sp.animated = true
+				}
+			}
+		}
 		// on の子は、親がコマで動いた量だけ一緒に動く（頭の上の目・口・髪が頭に付いていく）
 		if parent := byID[p.On]; parent != nil {
 			p.At.X += parent.At.X - parent.BaseAt.X
@@ -695,4 +713,45 @@ func dedupe(l problemList) problemList {
 		}
 	}
 	return out
+}
+
+// frameIndex はコマの並びの中の番号（無ければ 0）。
+func (sp *spriteSpec) frameIndex(name string) int {
+	for i, f := range sp.Frames {
+		if f.Name == name {
+			return i
+		}
+	}
+	return 0
+}
+
+// scroll は部品の scroll {"speed": [dx, dy], "period": [px, py]} を読む。period を省くと speed × コマ数。
+func (r *reader) scroll(v any, where string, sp *spriteSpec) *scrollSpec {
+	o, ok := v.(*pxlib.Obj)
+	if !ok {
+		r.bad(where, "{\"speed\": [dx, dy], \"period\": [px, py]} で書く（period は省ける）")
+		return nil
+	}
+	r.keys(o, where, []string{"speed", "period"})
+	sv, ok := o.Get("speed")
+	if !ok {
+		r.bad(where+".speed", "1 コマにずらす画素 [dx, dy] を書く")
+		return nil
+	}
+	a := r.ints(sv, 2, where+".speed")
+	if a == nil {
+		return nil
+	}
+	sc := &scrollSpec{Speed: pxlib.Pt{X: a[0], Y: a[1]}}
+	n := len(sp.Frames)
+	sc.Period = pxlib.Pt{X: abs(a[0]) * n, Y: abs(a[1]) * n}
+	if pv, ok := o.Get("period"); ok {
+		if b := r.ints(pv, 2, where+".period"); b != nil {
+			if b[0] < 0 || b[1] < 0 {
+				r.bad(where+".period", "0 以上で書く（0 はその向きに写さない）")
+			}
+			sc.Period = pxlib.Pt{X: b[0], Y: b[1]}
+		}
+	}
+	return sc
 }

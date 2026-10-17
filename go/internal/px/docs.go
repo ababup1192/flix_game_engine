@@ -130,6 +130,7 @@ func opsMarkdown() string {
 		}
 	}
 	b.WriteString("\n## 形\n\n部品の `shape` と op の `shape` に書く。鍵 1 つで種類を決め、ほかの鍵は種類ごとの引数。\n\n")
+	b.WriteString("座標の決まり: 形は画素 (x, y) の中心 (x+0.5, y+0.5) で中か外かを見る。`disk` の中心が整数なら画素の角（偶数の幅の丸）・+0.5 で画素の真ん中（奇数の幅）。`rect` [x, y, w, h] は x..x+w-1・y..y+h-1 の画素。部品の `pivot` は逆に整数が画素の中心・.5 が境目。\n\n")
 	b.WriteString("| 形 | 値 | ほかの鍵 | 何か |\n|---|---|---|---|\n")
 	for _, k := range allShapes() {
 		var extra []string
@@ -138,6 +139,7 @@ func opsMarkdown() string {
 		}
 		fmt.Fprintf(&b, "| `%s` | %s | %s | %s |\n", k.Name, mdCell(k.Main.Summary), mdCell(strings.Join(extra, "・")), mdCell(k.Summary))
 	}
+	b.WriteString(styleMarkdown())
 	b.WriteString("\n## 検査\n\n| 検査 | 重さ | 何を見るか |\n|---|---|---|\n")
 	for _, c := range allChecks() {
 		fmt.Fprintf(&b, "| `%s` | %s | %s |\n", c.Name, c.Level, mdCell(c.Summary))
@@ -169,15 +171,36 @@ var quickRows = []quickRow{
 	{"水・滝・流れ（波頭を 1px ずつ流す）", []string{"wave_shift"}, false},
 	{"煉瓦・瓦・石積みの目地（段ごとに半分ずらす）", []string{"courses"}, false},
 	{"葉の玉を重ねた木・茂み・鉢植え", []string{"canopy"}, false},
-	{"字（町の名前のラベル・看板・HUD。5×7）", []string{"text"}, false},
+	{"字（ラベル・看板・HUD。5x7・太字 bold6x8。階調と縁は形 text に塗る）", []string{"text", "shape:text"}, false},
+	{"縦横のスクロール（雲・雨・海の光。写しを並べてループ）", []string{"part:scroll", "gradient_fill"}, true},
+	{"同じ形を並べる（弾の輪・渦・編隊・鋲・窓）", []string{"shape:polar", "shape:array"}, false},
+	{"左右対称の機体・人・家（半分の点）・影の写し", []string{"shape:poly", "shape:translate"}, false},
+	{"機種のパレットの本数（16 色 × 4 本など）", []string{"style:palettes"}, false},
+}
+
+// quickNames は早見表の op でない名前（形・部品の鍵・機種の決まり）の読み方。
+var quickNames = map[string]string{
+	"part:scroll":    "部品の `scroll`",
+	"style:palettes": "style の `palettes`",
 }
 
 func quickOps(r quickRow) string {
-	sep := "` / `"
+	sep := " / "
 	if r.Chain {
-		sep = "` → `"
+		sep = " → "
 	}
-	return "`" + strings.Join(r.Ops, sep) + "`"
+	var names []string
+	for _, n := range r.Ops {
+		switch {
+		case quickNames[n] != "":
+			names = append(names, quickNames[n])
+		case strings.HasPrefix(n, "shape:"):
+			names = append(names, "形 `"+strings.TrimPrefix(n, "shape:")+"`")
+		default:
+			names = append(names, "`"+n+"`")
+		}
+	}
+	return strings.Join(names, sep)
 }
 
 // quickFinish は行の op の Finish を重ねずにつなぐ（— は飛ばす）。
@@ -188,6 +211,8 @@ func quickFinish(r quickRow) string {
 		f := "材質ごと（下の材質の表）"
 		if op, ok := lookupOp(name); ok {
 			f = op.Finish
+		} else if strings.Contains(name, ":") {
+			f = "—"
 		}
 		if f != "—" && !seen[f] {
 			seen[f] = true
@@ -371,7 +396,11 @@ func specSchema() string {
 			"material", obj("description", "材質のレシピ（"+materialNames()+"）。名前か {名前: {引数}}。ops の前に op の並びを差し込む",
 				"oneOf", list(obj("enum", materialEnum()), obj("type", "object", "minProperties", json.Number("1"), "maxProperties", json.Number("1")))),
 			"rotate", obj("type", "number", "description", "部品を回す角度（度。正で時計回り。rotsprite の考え方で色を足さない）"),
-			"emissive", obj("type", "boolean", "description", "true で自分で光る部品（窓の灯り・炎・画面）。光の向きの検査 light-dir の対象から外す"),
+			"emissive", obj("type", "boolean", "description", "true で自分で光る部品（窓の灯り・炎・画面）。光の向きの検査 light-dir・pillow の対象から外す"),
+			"scroll", obj("description", "縦横のスクロール: 形を period おきに写して格子を埋め、コマ i で at に speed·i を足す（period の既定は speed × コマ数でループが継ぎ目なく閉じる）。写しを 1 つずつ塗るなら gradient_fill の per: component",
+				"type", "object", "additionalProperties", false, "required", list("speed"), "properties", obj(
+					"speed", obj("description", "1 コマにずらす画素 [dx, dy]", "type", "array", "items", obj("type", "integer"), "minItems", json.Number("2"), "maxItems", json.Number("2")),
+					"period", obj("description", "写しの間隔 [px, py]（0 はその向きに写さない。省くと speed × コマ数）", "type", "array", "items", obj("type", "integer", "minimum", json.Number("0")), "minItems", json.Number("2"), "maxItems", json.Number("2")))),
 			"pivot", obj("description", "回す中心の画素 [x, y]（整数は画素の中心・.5 は画素の境目。省くと塊の上の真ん中）", "type", "array", "items", obj("type", "number", "multipleOf", json.Number("0.5")), "minItems", json.Number("2"), "maxItems", json.Number("2")),
 		))
 	spriteS := obj("type", "object", "additionalProperties", false, "required", list("size", "parts", "frames"),
@@ -472,4 +501,20 @@ func refsText(refs []checkRef, sep string) string {
 		parts[i] = r.String()
 	}
 	return strings.Join(parts, sep)
+}
+
+// styleMarkdown は docs/px-ops.md の「機種（style）」の節。
+func styleMarkdown() string {
+	return "\n## 機種（style）\n\n" +
+		"pxsrc の一番外に `\"style\": \"snes\"` と名前で書くと `bin/lint-rules/px.json` の styles から引き（`bin/fge px help` に一覧）、" +
+		"`\"style\": \"md.pxstyle.json\"` と書くと自前の Doc を読む（台本からは台本のフォルダが起点）。どの鍵も 0 と省略は見ない。\n\n" +
+		"| 鍵 | 何を縛るか |\n|---|---|\n" +
+		"| `label`・`note` | 名前と説明（違反の文に出る） |\n" +
+		"| `colors` | 使える色（色キー → `#rrggbb`。色票に足され、その色キーで描ける） |\n" +
+		"| `channelLevels` | RGB の 1 チャンネルの段数（8 = 3 bit の MD・32 = 5 bit の SFC・16 = PC-98） |\n" +
+		"| `maxColors` | 1 コマの色数（透明を除く） |\n" +
+		"| `tile`・`maxTileColors` | 升目の大きさ [w, h] と升目ごとの色数 |\n" +
+		"| `palettes` | `{\"count\": 4, \"size\": 15}`: 1 コマの色を count 本 × size 色に割り付けられるか（色の多い単位から順に入る本へ入れる。単位は `tile` [w, h] を書けば升目・無ければ部品）。入らないと言い切れる時は gate・貪欲法の取りこぼしかもしれない時は advice |\n" +
+		"| `maxSize` | 絵の最大の大きさ [w, h] |\n\n" +
+		"色の名前 `ink`・`shade`・`mid`・`light` は部品のランプの 0・1・2・3 段（暗 → 明。5 段以上のランプでも light は 3 段目で、一番明るい段は `ramp[-1]`）。ランプの無い部品では同じ名前の色キー。\n"
 }

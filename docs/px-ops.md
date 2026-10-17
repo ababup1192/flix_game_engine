@@ -22,7 +22,11 @@
 | 水・滝・流れ（波頭を 1px ずつ流す） | `wave_shift` | anim（pop・loop）。輪が閉じるようにコマの数 × speed を塊の幅に合わせる |
 | 煉瓦・瓦・石積みの目地（段ごとに半分ずらす） | `courses` | lint banding・flat-run |
 | 葉の玉を重ねた木・茂み・鉢植え | `canopy` | lint pillow・orphan |
-| 字（町の名前のラベル・看板・HUD。5×7） | `text` | — |
+| 字（ラベル・看板・HUD。5x7・太字 bold6x8。階調と縁は形 text に塗る） | `text` / 形 `text` | — |
+| 縦横のスクロール（雲・雨・海の光。写しを並べてループ） | 部品の `scroll` → `gradient_fill` | lint pillow・light-dir・banding |
+| 同じ形を並べる（弾の輪・渦・編隊・鋲・窓） | 形 `polar` / 形 `array` | — |
+| 左右対称の機体・人・家（半分の点）・影の写し | 形 `poly` / 形 `translate` | — |
+| 機種のパレットの本数（16 色 × 4 本など） | style の `palettes` | — |
 
 既定値はどれも仮置き（見本 10 題と作品 5 作の大きい見比べで決め直す）。強さは各 op の引数で選び、使わない技法は書かない。
 
@@ -65,7 +69,7 @@
 | アニメ（つぶしと伸ばし） | `squash` | 部品を縦に縮めて横に伸ばす（縦 1 − amount·sin・横 1 + amount·sin。足元を止める）。着地・弾み・呼吸 | anim（area・ground） |
 | 手で打った小さな型を置く | `stamp` | 文字の格子を押す（colors が無ければ legend の文字で打ち、'.' は透明へ抜く） | — |
 | アニメ（揺れ。根元を止めて先端を遅らせる） | `sway` | 部品の画素を行ごとに横へずらす（根元 0・先端ほど大きく・コマごとに sin）。木・草・旗・髪の揺れ | lint orphan・anim（pop・loop）。欠けは pixel_perfect で整える |
-| 字（町の名前のラベル・看板・HUD） | `text` | 文字列を 5×7 の字で並べる（英大文字・数字・. , ! ? - + : ' / x * %。小文字は大文字で引く。shadow を書くと字ごとに右下 1px の影を先に置く） | — |
+| 字（町の名前のラベル・看板・HUD） | `text` | 文字列を字形の組（font: 5x7・bold6x8）で並べて 1 色で置く（英大文字・数字・. , ! ? - + : ' / x * %。小文字は大文字で引く。shadow を書くと字ごとに右下 1px の影を先に置く）。階調や縁を付ける字は形 text を部品の shape にして gradient_fill・outline | — |
 | 草のタイル（Aseprite の Tiled Mode。並べて継ぎ目を見る） | `tile_preview` | このスプライトをタイルとして扱う: 3×3 に並べた見本（<名前>.tile.png）を書き、端の継ぎ目を検査する（描かない） | lint seam |
 | 同じ部品を何か所にも置く・コマで体を上下させる | `use` | macros の op の列を、今の部品の中で順に当てる（at でずらせる） | — |
 | アニメ（水の波頭を 1px ずつずらす。見比べで palette_cycle に勝った） | `wave_shift` | 塊の外形は動かさず、中の模様（波頭・流れ）を行ごとにコマごとに speed px 横へ回す。水・滝・流れる雲の既定 | anim（pop・loop）。輪が閉じるようにコマの数 × speed を塊の幅に合わせる |
@@ -158,6 +162,7 @@ px.write_spec("lamp.pxsrc.json", {
 - Starlark に無い物: class（dict と関数で書く）・`**`（`math.pow` か `x * x`）・`round`（`px.round`）・set・連なった比較（`a <= x < b`）・bool の足し算・文字列の for（`s.elems()`）・`%` の幅と桁（`"%02x"` は `"%x%x" % (v // 16, v % 16)`）。一番外の for は書けるが、ループの変数も 1 度しか代入できない（2 本目のループは別の名前か def の中）。
 - 決まり（どれも advice）: 台本 1 本 600 行・pxsrc 1 本 500 KB・1 部品の put 200 画素・格子の半分を超える stamp・while・使われない関数・色票の色キーが ink などの名前と重なる。
 - `None` を渡した引数は省いたのと同じ（`op.fill(shape = None, color = …)` は部品の塊を塗る）。
+- px.frames に渡す lambda は、ループの変数を作った時でなく呼ばれた時に引く（Python と同じ）。ループの中で作る lambda は値を引数で閉じ込める関数から返す（`def down(speed): return lambda i: [0, i * speed]`）。そのまま書くと全部の部品が最後の値になる。
 
 ## 引数
 
@@ -382,6 +387,7 @@ px.write_spec("lamp.pxsrc.json", {
 | `from` | int | 使う一番暗い段（0〜15）（省くと 0） |
 | `to` | int | 使う一番明るい段（-1 で最明）（-1〜15）（省くと -1） |
 | `invert` | bool | 明暗を返す（省くと false） |
+| `per` | string | 明るさの場を作る単位: part（塊全体で 1 つ）・copy（部品の scroll の写しごと。格子の外へはみ出した写しも写しの全体で 1 つの場）（省くと "part"） |
 
 ### `light_bands`
 
@@ -573,8 +579,9 @@ px.write_spec("lamp.pxsrc.json", {
 | `text` | string | 並べる文字列（\n で次の行）（必須） |
 | `color` | color | 字の色（省くと "ink"） |
 | `shadow` | color | 右下 1px の影の色（"" で影なし）（省くと ""） |
-| `advance` | int | 1 字ごとの送り（字の幅 5 ＋ 字の間）（1〜32）（省くと 6） |
-| `line` | int | 行の送り（\n の時）（1〜64）（省くと 9） |
+| `font` | string | 字形の組: 5x7（線 1px）・bold6x8（線 2px の太い字）（省くと "5x7"） |
+| `advance` | int | 1 字ごとの送り（0 は組の既定: 5x7 は 6・bold6x8 は 7）（0〜32）（省くと 0） |
+| `line` | int | 行の送り（\n の時。0 は組の既定: 5x7 は 9・bold6x8 は 10）（0〜64）（省くと 0） |
 
 ### `tile_preview`
 
@@ -609,16 +616,20 @@ px.write_spec("lamp.pxsrc.json", {
 
 部品の `shape` と op の `shape` に書く。鍵 1 つで種類を決め、ほかの鍵は種類ごとの引数。
 
+座標の決まり: 形は画素 (x, y) の中心 (x+0.5, y+0.5) で中か外かを見る。`disk` の中心が整数なら画素の角（偶数の幅の丸）・+0.5 で画素の真ん中（奇数の幅）。`rect` [x, y, w, h] は x..x+w-1・y..y+h-1 の画素。部品の `pivot` は逆に整数が画素の中心・.5 が境目。
+
 | 形 | 値 | ほかの鍵 | 何か |
 |---|---|---|---|
 | `annulus` | [cx, cy, r, w] |  | 輪（中心から r の円に沿った、幅 2w の帯） |
+| `array` | 置き場の点 [[x, y], ...] | `of` 元の形（必須） | 同じ形を点の列の位置に置いた和（of は [0, 0] を置き場とした形。弾・鋲・窓・編隊） |
 | `capsule` | [ax, ay, bx, by, r] |  | 両端の丸い棒 |
 | `disk` | [cx, cy, r] |  | 丸 |
 | `ellipse` | [cx, cy, rx, ry] |  | 楕円 |
 | `inter` | [形, 形, ...]（2 つ以上） |  | 積（全部の中） |
 | `mask` | 文字の行 | `at` 左上の位置 [x, y]（省くと [0,0]） | rows で画素を直に指す（'.' と ' ' が外） |
 | `path` | [[x, y], ...]（2 点以上） | `width` 太さ（0.1〜64）（省くと 1） | 折れ線に太さを付けた物（角と端は丸い） |
-| `poly` | [[x, y], ...]（3 点以上） |  | 多角形（点を順に結ぶ） |
+| `polar` | [cx, cy, r]（中心と 1 つ目の輪の半径） | `of` 元の形（必須）・`n` 1 つの輪に置く数（等しい角度おき）（1〜256）（省くと 6）・`rings` 輪の数（1〜64）（省くと 1）・`step` 輪ごとに足す半径（省くと 0）・`rot` 1 つ目の向き（ラジアン。0 は右・正は時計回り）（省くと 0）・`twist` 輪ごとに足す向き（ラジアン。渦巻き）（省くと 0）・`snap` 置き場を画素に丸める（floor(v + 0.5)。of の小数の座標はそのまま）（省くと false） | 同じ形を円・渦に並べた和（of は [0, 0] を置き場とした形。弾の輪・渦・花・時計の目盛り） |
+| `poly` | [[x, y], ...]（3 点以上。mirror の時は軸の上の点から始めて半分を 2 点以上） | `mirror` 左右対称の軸の x（省くと写さない）。点の列の後に、軸の上に無い点を逆の順に x → 2·mirror − x で足す | 多角形（点を順に結ぶ）。mirror を書くと、点を縦の軸 x = mirror で左右に写して閉じる（左右対称の機体・人・家を半分の点で） |
 | `rbox` | [cx, cy, hw, hh, r] |  | 角丸の矩形（中心と半分の幅） |
 | `rect` | [x, y, w, h] |  | 画素に揃った矩形（x..x+w-1・y..y+h-1 の画素） |
 | `ref` | shapes の名前 |  | shapes の名前つきの形を引く |
@@ -628,7 +639,25 @@ px.write_spec("lamp.pxsrc.json", {
 | `smoothUnion` | [形, 形] | `k` つなぎの幅（0 より大きい）（省くと 1） | なめらかにつないだ和 |
 | `star` | [cx, cy, rOut, rIn] | `n` 角の数（3〜64）（省くと 5）・`rot` 最初の角の向き（ラジアン。既定は真上）（省くと -1.5707963267948966） | 星（外と内の半径を交互に結ぶ多角形） |
 | `taper` | [ax, ay, bx, by, r0, r1] |  | 先細りの棒（塗りの判定専用。smoothUnion・rounded には使えない） |
+| `text` | 並べる文字列（\n で次の行） | `at` 1 字目の左上 [x, y]（省くと [0,0]）・`font` 字形の組: 5x7（線 1px）・bold6x8（線 2px の太い字）（省くと "5x7"）・`advance` 1 字ごとの送り（0 は組の既定: 5x7 は 6・bold6x8 は 7）（0〜32）（省くと 0）・`line` 行の送り（0 は組の既定: 5x7 は 9・bold6x8 は 10）（0〜64）（省くと 0） | 文字列を字形の組で並べた画素（部品の shape にして gradient_fill・outline で塗りと縁を付ける） |
+| `translate` | [dx, dy] | `of` 元の形（必須） | 形をずらす（影・写し。部品の at と違い、op の中の形や inter の片方だけを動かせる） |
 | `union` | [形, 形, ...]（2 つ以上） |  | 和（どれかの中） |
+
+## 機種（style）
+
+pxsrc の一番外に `"style": "snes"` と名前で書くと `bin/lint-rules/px.json` の styles から引き（`bin/fge px help` に一覧）、`"style": "md.pxstyle.json"` と書くと自前の Doc を読む（台本からは台本のフォルダが起点）。どの鍵も 0 と省略は見ない。
+
+| 鍵 | 何を縛るか |
+|---|---|
+| `label`・`note` | 名前と説明（違反の文に出る） |
+| `colors` | 使える色（色キー → `#rrggbb`。色票に足され、その色キーで描ける） |
+| `channelLevels` | RGB の 1 チャンネルの段数（8 = 3 bit の MD・32 = 5 bit の SFC・16 = PC-98） |
+| `maxColors` | 1 コマの色数（透明を除く） |
+| `tile`・`maxTileColors` | 升目の大きさ [w, h] と升目ごとの色数 |
+| `palettes` | `{"count": 4, "size": 15}`: 1 コマの色を count 本 × size 色に割り付けられるか（色の多い単位から順に入る本へ入れる。単位は `tile` [w, h] を書けば升目・無ければ部品）。入らないと言い切れる時は gate・貪欲法の取りこぼしかもしれない時は advice |
+| `maxSize` | 絵の最大の大きさ [w, h] |
+
+色の名前 `ink`・`shade`・`mid`・`light` は部品のランプの 0・1・2・3 段（暗 → 明。5 段以上のランプでも light は 3 段目で、一番明るい段は `ramp[-1]`）。ランプの無い部品では同じ名前の色キー。
 
 ## 検査
 
@@ -637,11 +666,11 @@ px.write_spec("lamp.pxsrc.json", {
 | `anim` | lint | anim: コマ列に bin/fge anim の pop・area・ground・bob・loop をかける（動きの op・pose・rotate を使うスプライト、か anim: true） |
 | `black-outline` | advice | black-outline: 小さい絵（blackOutlineMaxSize 未満）で、外の縁が 1 色・絵の中で一番暗い色のまま一周している |
 | `flat-run` | advice | 輪郭の段: 同じ長さの段が続く（直線に読まれる）・長すぎる直線（16px で 4px・32px で 6px を超える）。poly の部品の辺は直線として、段の長さが 3 種類以上に散る時だけ |
-| `flicker` | lint | flicker: コマの間で周り 8 画素が動かないのに色だけ変わる画素（ちらつき。palette_cycle と wave_shift の画素は除く） |
+| `flicker` | lint | flicker: コマの間で周り 8 画素が動かないのに色だけ変わる画素（ちらつき。palette_cycle と wave_shift の画素・コマで at か rotate が変わる部品の画素は除く） |
 | `ground-contrast` | lint | 外周の画素と地の色の明るさ（Oklab の L）の差が小さく、輪郭が地に溶ける |
 | `light-dir` | advice | light-dir: 塊の明るさで重みを付けた重心（明るい側 − 暗い側）が光の側（light.dir）に無い（emissive の部品は見ない） |
 | `margin` | advice | margin: 動く絵が格子の左・右・上の縁に触れている（動く余白が無い） |
-| `pillow` | advice | pillow: 塊の縁が光の側でも影の側でも同じように内側より暗い（縁からの距離で塗った陰） |
+| `pillow` | advice | pillow: 塊の縁が光の側でも影の側でも同じように内側より暗い（縁からの距離で塗った陰。emissive の部品は見ない） |
 | `ramp-order` | lint | ramp-order: ランプの明るさ（Oklab の L）が暗 → 明に単調でない・隣の段の差が rampMinGap に足りない |
 | `run-monotone` | lint | 曲線の段の長さが単調でない（3-2-1 は良い・1-2-1-2 と 3-2-1-4 は不可）。poly の部品の辺は見ない（flat-run が見る） |
 | `seam` | lint | seam: タイルの端（左と右・上と下）の画素の明るさの差が、内側の隣り合う列の差の seamRatio 倍を超える（並べると継ぎ目が見える） |

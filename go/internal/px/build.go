@@ -33,6 +33,8 @@ type buildOptions struct {
 	OutDir    string            // 見本と report.json の置き場（省くと <root>/debug/px/<名前>/last）
 	Sheet     bool              // 見比べのシート（PNG）も書く（--sheet・px snap。PNG の圧縮が描く時間より重いので既定は書かない）
 	PNG       bool              // 実寸・4 倍・コマの横並びの PNG を debug/px/<名前>/png/ に書く（--png。報告や場面の見本に貼る物）
+	GIFDelay  int               // --png の GIF の 1 コマの長さ（ミリ秒。0 は既定の 200）
+	GIFScale  int               // --png の GIF の拡大（0 は既定の 2）
 	Overlay   map[string][]byte // 台本がメモリの中で書いた物（絶対パス → 中身）。spec と palette はディスクより先にここを見る
 }
 
@@ -280,6 +282,7 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 			var seqNames []string
 			var seqRows [][]string
 			var seqGrids []*pxlib.Grid
+			var seqAts []map[string]partPose
 			for fi, f := range sp.Frames {
 				r := &reader{}
 				parts := sp.partsOf(r, spec, f)
@@ -287,10 +290,13 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 					return nil, r.probs
 				}
 				cc.Emissive, cc.Poly = map[string]bool{}, map[string]bool{}
+				ats := map[string]partPose{}
 				for _, p := range parts {
 					cc.Emissive[p.ID] = p.Emissive
 					cc.Poly[p.ID] = p.isPoly(spec.Shapes)
+					ats[p.ID] = partPose{p.At, p.Rotate}
 				}
+				seqAts = append(seqAts, ats)
 				fname := f.Name
 				if len(sp.Seeds) > 0 {
 					fname = fmt.Sprintf("%s_v%d", f.Name, seed)
@@ -309,6 +315,10 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 						}
 						sub := c.G.Only(ps.written.Union(ps.Region()))
 						cc.Measures, cc.Wrap = c.measures, c.wrap
+						if !ps.isPost {
+							cc.Part = ps.Part.ID
+						}
+						defer func() { cc.Part = "" }()
 						for _, n := range names {
 							vs, err := runCheck(n, sub, cc)
 							if err != nil {
@@ -367,7 +377,7 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 					addViolations([]violation{{Check: checkAnim, Level: levelLint, Msg: note, Fix: checks[checkAnim].Fix}}, sp.Name, "")
 				}
 				t := time.Now()
-				for _, v := range sequenceChecks(seqNames, seqGrids, spriteLoops(sp, spec)) {
+				for _, v := range sequenceChecks(seqNames, seqGrids, spriteLoops(sp, spec), seqAts) {
 					addViolations([]violation{v}, sp.Name, v.Frame)
 				}
 				checkDur += time.Since(t)
@@ -447,7 +457,7 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 	}
 	if opt.PNG {
 		pngDir := filepath.Join(root, "debug", "px", specName(specPath), "png")
-		if err := writePNGs(pngDir, res, hexOf); err != nil {
+		if err := writePNGs(pngDir, res, hexOf, opt.GIFScale, opt.GIFDelay); err != nil {
 			return nil, err
 		}
 		res.PNGDir = pngDir
@@ -650,9 +660,16 @@ func writeSheets(dir string, res *buildResult, prev *buildResult, hexOf map[pxli
 }
 
 // writePNGs は --png の書き出し: スプライトごとに 1 コマ目の実寸と 4 倍、全コマを横に並べた実寸と 4 倍、
-// 2 コマ以上なら 2 倍でコマを回す GIF（1 コマ 200ms）。
+// 2 コマ以上ならコマを回す GIF（既定は 2 倍・1 コマ 200ms。scale と delayMs が 0 でなければそれ）。
 // 色はそのまま（減色しない）・透明は透明のまま・前の物は消してから書くので、同じ指定からは毎回同じバイトになる。
-func writePNGs(dir string, res *buildResult, hexOf map[pxlib.Key]string) error {
+func writePNGs(dir string, res *buildResult, hexOf map[pxlib.Key]string, scale, delayMs int) error {
+	if scale <= 0 {
+		scale = gifScale
+	}
+	delay := gifDelay
+	if delayMs > 0 {
+		delay = max(1, (delayMs+5)/10) // GIF の長さは 1/100 秒の刻み
+	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
@@ -687,7 +704,7 @@ func writePNGs(dir string, res *buildResult, hexOf map[pxlib.Key]string) error {
 			}
 		}
 		if len(frames) >= 2 {
-			if err := writeGIF(base+".gif", frames, gifScale, gifDelay); err != nil {
+			if err := writeGIF(base+".gif", frames, scale, delay); err != nil {
 				return err
 			}
 		}

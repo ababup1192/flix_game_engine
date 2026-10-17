@@ -12,6 +12,8 @@ import (
 	"math"
 	"math/big"
 	"sort"
+
+	"github.com/ababup1192/flix_game_engine/go/internal/pxlib"
 )
 
 // sdf は点から形の縁までの符号付き距離。
@@ -27,6 +29,7 @@ type shapeIn struct {
 	pair map[string][2]float64
 	at   [2]int
 	ref  string
+	str  map[string]string
 }
 
 // shapeKind は形の種類 1 つ。
@@ -111,9 +114,21 @@ func init() {
 				return float64((x-qx)*(x-qx)) + float64((y-qy)*(y-qy)) - float64(r*r)
 			}
 		}})
-	registerShape(&shapeKind{Name: "poly", Summary: "多角形（点を順に結ぶ）",
-		Main: param{Type: tVecs, Min: 3, Summary: "[[x, y], ...]（3 点以上）"},
-		Make: func(in shapeIn) sdf { return polySDF(in.vecs) }})
+	registerShape(&shapeKind{Name: "poly", Summary: "多角形（点を順に結ぶ）。mirror を書くと、点を縦の軸 x = mirror で左右に写して閉じる（左右対称の機体・人・家を半分の点で）",
+		Main:  param{Type: tVecs, Min: 2, Summary: "[[x, y], ...]（3 点以上。mirror の時は軸の上の点から始めて半分を 2 点以上）"},
+		Extra: []param{{Name: "mirror", Type: tNumber, Summary: "左右対称の軸の x（省くと写さない）。点の列の後に、軸の上に無い点を逆の順に x → 2·mirror − x で足す"}},
+		Make: func(in shapeIn) sdf {
+			pts := in.vecs
+			if a, ok := in.opt["mirror"]; ok {
+				pts = append([][2]float64{}, in.vecs...)
+				for i := len(in.vecs) - 1; i >= 0; i-- {
+					if p := in.vecs[i]; p[0] != a {
+						pts = append(pts, [2]float64{float64(2*a) - p[0], p[1]})
+					}
+				}
+			}
+			return polySDF(pts)
+		}})
 	registerShape(&shapeKind{Name: "path", Summary: "折れ線に太さを付けた物（角と端は丸い）",
 		Main:  param{Type: tVecs, Min: 2, Summary: "[[x, y], ...]（2 点以上）"},
 		Extra: []param{{Name: "width", Type: tNumber, Default: 1.0, Summary: "太さ", Lo: bound(0.1), Hi: bound(64)}},
@@ -224,6 +239,53 @@ func init() {
 				return f(about[0]+float64(dx*ca)-float64(dy*sa), about[1]+float64(dx*sa)+float64(dy*ca))
 			}
 		}})
+	registerShape(&shapeKind{Name: "text", Summary: "文字列を字形の組で並べた画素（部品の shape にして gradient_fill・outline で塗りと縁を付ける）",
+		Main: param{Type: tString, Summary: "並べる文字列（\\n で次の行）"},
+		Extra: []param{
+			{Name: "at", Type: tPoint, Default: []any{0.0, 0.0}, Summary: "1 字目の左上 [x, y]"},
+			{Name: "font", Type: tString, Default: "5x7", Summary: "字形の組: 5x7（線 1px）・bold6x8（線 2px の太い字）"},
+			{Name: "advance", Type: tInt, Default: 0.0, Summary: "1 字ごとの送り（0 は組の既定: 5x7 は 6・bold6x8 は 7）", Lo: bound(0), Hi: bound(32)},
+			{Name: "line", Type: tInt, Default: 0.0, Summary: "行の送り（0 は組の既定: 5x7 は 9・bold6x8 は 10）", Lo: bound(0), Hi: bound(64)},
+		}})
+	registerShape(&shapeKind{Name: "translate", Summary: "形をずらす（影・写し。部品の at と違い、op の中の形や inter の片方だけを動かせる）",
+		Main:  param{Type: tNums, Len: 2, Summary: "[dx, dy]"},
+		Extra: []param{pOf},
+		Make: func(in shapeIn) sdf {
+			f, dx, dy := in.kids[0], in.nums[0], in.nums[1]
+			return func(x, y float64) float64 { return f(x-dx, y-dy) }
+		}})
+	registerShape(&shapeKind{Name: "array", Summary: "同じ形を点の列の位置に置いた和（of は [0, 0] を置き場とした形。弾・鋲・窓・編隊）",
+		Main:  param{Type: tVecs, Min: 1, Summary: "置き場の点 [[x, y], ...]"},
+		Extra: []param{pOf},
+		Make:  func(in shapeIn) sdf { return arraySDF(in.kids[0], in.vecs) }})
+	registerShape(&shapeKind{Name: "polar", Summary: "同じ形を円・渦に並べた和（of は [0, 0] を置き場とした形。弾の輪・渦・花・時計の目盛り）",
+		Main: param{Type: tNums, Len: 3, Summary: "[cx, cy, r]（中心と 1 つ目の輪の半径）"},
+		Extra: []param{
+			pOf,
+			{Name: "n", Type: tInt, Default: 6.0, Summary: "1 つの輪に置く数（等しい角度おき）", Lo: bound(1), Hi: bound(256)},
+			{Name: "rings", Type: tInt, Default: 1.0, Summary: "輪の数", Lo: bound(1), Hi: bound(64)},
+			{Name: "step", Type: tNumber, Default: 0.0, Summary: "輪ごとに足す半径"},
+			{Name: "rot", Type: tNumber, Default: 0.0, Summary: "1 つ目の向き（ラジアン。0 は右・正は時計回り）"},
+			{Name: "twist", Type: tNumber, Default: 0.0, Summary: "輪ごとに足す向き（ラジアン。渦巻き）"},
+			{Name: "snap", Type: tBool, Default: false, Summary: "置き場を画素に丸める（floor(v + 0.5)。of の小数の座標はそのまま）"},
+		},
+		Make: func(in shapeIn) sdf {
+			p := in.nums
+			var pts [][2]float64
+			n := int(in.opt["n"])
+			for k := 0; k < int(in.opt["rings"]); k++ {
+				r := p[2] + float64(float64(k)*in.opt["step"])
+				for j := 0; j < n; j++ {
+					a := float64(float64(2*math.Pi)*float64(j))/float64(n) + float64(in.opt["rot"]+float64(float64(k)*in.opt["twist"]))
+					x, y := p[0]+float64(r*math.Cos(a)), p[1]+float64(r*math.Sin(a))
+					if in.opt["snap"] != 0 {
+						x, y = math.Floor(x+0.5), math.Floor(y+0.5)
+					}
+					pts = append(pts, [2]float64{x, y})
+				}
+			}
+			return arraySDF(in.kids[0], pts)
+		}})
 	registerShape(&shapeKind{Name: "ref", Summary: "shapes の名前つきの形を引く",
 		Main: param{Type: tString, Summary: "shapes の名前"}})
 }
@@ -269,7 +331,7 @@ func compileShape(v any, refs map[string]any, where string, depth int) (sdf, err
 			return nil, fmt.Errorf("%s: 知らない鍵 %q（%s に書けるのは %s）", where, k, kind.Name, extraNames(kind))
 		}
 	}
-	in := shapeIn{opt: map[string]float64{}, pair: map[string][2]float64{}}
+	in := shapeIn{opt: map[string]float64{}, pair: map[string][2]float64{}, str: map[string]string{}}
 	if err := checkType(kind.Main, m[kind.Name]); err != nil {
 		return nil, fmt.Errorf("%s: %s で書く（%v）", where, kind.Main.Summary, err)
 	}
@@ -299,6 +361,9 @@ func compileShape(v any, refs map[string]any, where string, depth int) (sdf, err
 			if p.Required {
 				return nil, fmt.Errorf("%s: %s が無い（%s）", where, p.Name, p.Summary)
 			}
+			if p.Default == nil {
+				continue // 既定の無い鍵（poly の mirror）は省けば使わない
+			}
 			val = p.Default
 		} else if err := checkType(p, val); err != nil {
 			return nil, fmt.Errorf("%s.%s: %v", where, p.Name, err)
@@ -318,6 +383,16 @@ func compileShape(v any, refs map[string]any, where string, depth int) (sdf, err
 		case tPoint:
 			p2 := nums(val)
 			in.at = [2]int{int(p2[0]), int(p2[1])}
+		case tString:
+			in.str[p.Name], _ = val.(string)
+		case tBool:
+			if b, _ := val.(bool); b {
+				in.opt[p.Name] = 1
+			} else {
+				in.opt[p.Name] = 0
+			}
+		case tVecs:
+			in.vecs = vecs(val)
 		}
 	}
 	switch kind.Name {
@@ -339,6 +414,16 @@ func compileShape(v any, refs map[string]any, where string, depth int) (sdf, err
 		if in.opt["n"] < 2 {
 			return nil, fmt.Errorf("%s.n: 2 以上で書く", where)
 		}
+	case "poly":
+		if _, ok := in.opt["mirror"]; !ok && len(in.vecs) < 3 {
+			return nil, fmt.Errorf("%s: 3 点以上で書く（mirror を書けば半分の 2 点から）", where)
+		}
+	case "text":
+		pts, err := layoutText(in.str["font"], in.ref, pxlib.Pt{X: in.at[0], Y: in.at[1]}, int(in.opt["advance"]), int(in.opt["line"]))
+		if err != nil {
+			return nil, fmt.Errorf("%s: %v", where, err)
+		}
+		return pointsSDF(pts), nil
 	}
 	return kind.Make(in), nil
 }
@@ -480,4 +565,29 @@ func keysOf(m map[string]any) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// pointsSDF は画素の集まりを形にする（中なら -1・外なら 1。画素 (x, y) は x..x+1・y..y+1 の正方形）。
+func pointsSDF(pts []pxlib.Pt) sdf {
+	in := map[pxlib.Pt]bool{}
+	for _, p := range pts {
+		in[p] = true
+	}
+	return func(x, y float64) float64 {
+		if in[pxlib.Pt{X: int(math.Floor(x)), Y: int(math.Floor(y))}] {
+			return -1
+		}
+		return 1
+	}
+}
+
+// arraySDF は形 f を点の列の位置へずらして並べた和。
+func arraySDF(f sdf, pts [][2]float64) sdf {
+	return func(x, y float64) float64 {
+		d := math.Inf(1)
+		for _, p := range pts {
+			d = math.Min(d, f(x-p[0], y-p[1]))
+		}
+		return d
+	}
 }
