@@ -77,6 +77,30 @@ func (l *Legend) Set(ch string, k Key) {
 	}
 }
 
+// Remove は字を外す（build が使われない古い字を空ける時）。同じ色キーに別の字があれば CharOf はそちらへ移す。
+func (l *Legend) Remove(ch string) {
+	k, ok := l.KeyOf[ch]
+	if !ok {
+		return
+	}
+	delete(l.KeyOf, ch)
+	for i, c := range l.Chars {
+		if c == ch {
+			l.Chars = append(l.Chars[:i:i], l.Chars[i+1:]...)
+			break
+		}
+	}
+	if l.CharOf[k] == ch {
+		delete(l.CharOf, k)
+		for _, c := range l.Chars {
+			if l.KeyOf[c] == k {
+				l.CharOf[k] = c
+				break
+			}
+		}
+	}
+}
+
 // ColorDialect は色票の値のどの書き方を読むか。
 type ColorDialect int
 

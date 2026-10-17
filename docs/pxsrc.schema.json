@@ -232,6 +232,57 @@
         },
         {
           "type": "object",
+          "description": "竿から横へなびく旗（上と下の縁を竿から先へ大きくなる波にした多角形。t をコマで進める: px.cycle で 1 周 = 1.0）",
+          "additionalProperties": false,
+          "required": [
+            "flag"
+          ],
+          "properties": {
+            "flag": {
+              "description": "[x, y, w, h]（竿の根元の上の角・旗の長さ・高さ。w が負なら左へなびく）",
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 4,
+              "maxItems": 4
+            },
+            "t": {
+              "description": "波の位相（周。コマ i で i / コマ数 + ずらし）",
+              "type": "number",
+              "default": 0
+            },
+            "amp": {
+              "description": "先の縦の揺れ（px。竿の側は 0）",
+              "type": "number",
+              "default": 2
+            },
+            "sway": {
+              "description": "先の横の揺れ（px。布が寄って縮む）",
+              "type": "number",
+              "default": 0
+            },
+            "waves": {
+              "description": "竿から先までに乗る波の数",
+              "type": "number",
+              "default": 1
+            },
+            "rise": {
+              "description": "下の縁を先で持ち上げる量（px。先細りの燕尾・吹き流し）",
+              "type": "number",
+              "default": 0
+            },
+            "points": {
+              "description": "縁の点の数（竿と先を含む）",
+              "type": "integer",
+              "minimum": 2,
+              "maximum": 64,
+              "default": 7
+            }
+          }
+        },
+        {
+          "type": "object",
           "description": "積（全部の中）",
           "additionalProperties": false,
           "required": [
@@ -712,6 +763,85 @@
                   "default": "clear"
                 }
               }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "体力のバー: 形（省くと部品の塊）の外接箱を、side の端から rate だけ残りの量で塗る（fill を省くとランプの段を太さの向きに Bayer で）。empty は減った所・top は残りの上の 1px のつや・lost は残りの隣の今減った量",
+          "additionalProperties": false,
+          "required": [
+            "bar"
+          ],
+          "properties": {
+            "bar": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "shape": {
+                  "description": "形（省くと部品の塊）",
+                  "$ref": "#/definitions/shape"
+                },
+                "rate": {
+                  "description": "残りの割合（0〜1。長さは 外接箱の長さ × rate を四捨五入）",
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "side": {
+                  "description": "残りを寄せる端: left・right（横のバー）・bottom・top（縦のバー）",
+                  "type": "string",
+                  "default": "left"
+                },
+                "fill": {
+                  "description": "残りの色（省くとランプの from〜to 段を太さの向きに塗る: 横のバーは上が明るい）",
+                  "$ref": "#/definitions/color"
+                },
+                "from": {
+                  "description": "fill を省いた時に使う一番暗い段",
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 15,
+                  "default": 0
+                },
+                "to": {
+                  "description": "fill を省いた時に使う一番明るい段（-1 で最明）",
+                  "type": "integer",
+                  "minimum": -1,
+                  "maximum": 15,
+                  "default": -1
+                },
+                "band": {
+                  "description": "段の境目をディザで混ぜる割合（gradient_fill と同じ。0 はベタの帯）",
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1,
+                  "default": 0
+                },
+                "empty": {
+                  "description": "減った所の色（先に箱全体を塗る。省くと塗らない）",
+                  "$ref": "#/definitions/color"
+                },
+                "top": {
+                  "description": "残りの上の縁（縦のバーは光の側の縁）の 1px の色（省くと引かない）",
+                  "$ref": "#/definitions/color"
+                },
+                "lost": {
+                  "description": "今減った量の割合（残りの隣・減った所の側に lost_color で）",
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1,
+                  "default": 0
+                },
+                "lost_color": {
+                  "description": "今減った量の色",
+                  "$ref": "#/definitions/color",
+                  "default": "light"
+                }
+              },
+              "required": [
+                "rate"
+              ]
             }
           }
         },
@@ -2851,8 +2981,7 @@
       "additionalProperties": false,
       "required": [
         "size",
-        "parts",
-        "frames"
+        "parts"
       ],
       "properties": {
         "note": {
@@ -2900,7 +3029,7 @@
         "frames": {
           "type": "object",
           "minProperties": 1,
-          "description": "コマ名 → 部品 id を鍵にした JSON Merge Patch（変えないコマは {}・null で部品を外す・shape は丸ごと替わる）。on の子は親の at と動きに付いていく。{\"pose\": 姿勢, \"flip\": true, \"parts\": {id: patch}} で歩きの姿勢（contact・down・passing・up。flip は手前と奥の手足を入れ替えた逆の姿勢）から作る。並べる順は「始めの姿勢 → 順に起きること → 終わり方（待機へ戻る・ループ・倒れる）」",
+          "description": "コマ名 → 部品 id を鍵にした JSON Merge Patch（1 枚絵は省ける = {\"f0\": {}}・変えないコマは {}・null で部品を外す・shape は丸ごと替わる）。on の子は親の at と動きに付いていく。{\"pose\": 姿勢, \"flip\": true, \"parts\": {id: patch}} で歩きの姿勢（contact・down・passing・up。flip は手前と奥の手足を入れ替えた逆の姿勢）から作る。並べる順は「始めの姿勢 → 順に起きること → 終わり方（待機へ戻る・ループ・倒れる）」",
           "additionalProperties": {
             "type": "object",
             "additionalProperties": {

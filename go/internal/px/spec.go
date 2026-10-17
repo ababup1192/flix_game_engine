@@ -408,8 +408,13 @@ func parseSprite(r *reader, s *specDoc, name string, v any) *spriteSpec {
 			}
 		}
 	}
-	fv, _ := o.Get("frames")
+	fv, hasFrames := o.Get("frames")
 	frames, ok := fv.(*pxlib.Obj)
+	if !hasFrames {
+		// 1 枚絵は frames を省ける（{"f0": {}} と同じ）
+		frames, ok = pxlib.NewObj(), true
+		frames.Set("f0", pxlib.NewObj())
+	}
 	if !ok || frames.Len() == 0 {
 		r.bad(where+".frames", "コマ名 → 部品の patch のオブジェクトで書く（変えないコマは {}）")
 		return sp

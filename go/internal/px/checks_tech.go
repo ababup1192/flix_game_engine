@@ -351,7 +351,7 @@ func init() {
 		Run: func(*pxlib.Grid, *checkCtx) []violation { return nil }, // コマ列を見るので build が直に回す
 	})
 	registerCheck(&checkDef{
-		Name: checkFlicker, Summary: "flicker: コマの間で周り 8 画素が動かないのに色だけ変わる画素（ちらつき。palette_cycle と wave_shift の画素・コマで at か rotate が変わる部品の画素は除く）", Level: levelLint,
+		Name: checkFlicker, Summary: "flicker: コマの間で周り 8 画素が動かないのに色だけ変わる画素（ちらつき。palette_cycle と wave_shift の画素・コマで at か rotate が変わる部品と、sway・bob・squash を持つ部品（on の子も）の画素は除く）", Level: levelLint,
 		Fix: "その画素を描く op がコマごとに違う色を選んでいないか見る（seed・dither の位置をコマで揃える）。色を回したいなら palette_cycle か wave_shift で書く",
 		Run: func(*pxlib.Grid, *checkCtx) []violation { return nil }, // コマ列を見るので build が直に回す
 	})
@@ -366,6 +366,39 @@ func init() {
 type partPose struct {
 	At     pxlib.Pt
 	Rotate float64
+	Moves  bool // 部品か親（on）が画素を動かす op（sway・bob・squash）を持つ: その画素はコマごとに動くのでちらつきと数えない
+}
+
+// moveOps は画素を動かす op（flicker は、これを持つ部品と on の子の画素を動きと見る）。
+// 平らな色の行が 1px ずれると端の 2 画素だけが変わり、周りは変わらないので、ちらつきと見分けられない。
+var moveOps = map[string]bool{"sway": true, "bob": true, "squash": true}
+
+// partPoses はコマの部品の置き方（部品 id → at・rotate・動きの op の有無。on の子は親の動きを受け継ぐ）。
+func partPoses(parts []*part) map[string]partPose {
+	moves := map[string]bool{}
+	for _, p := range parts {
+		for _, call := range p.Ops {
+			if moveOps[call.Name] {
+				moves[p.ID] = true
+			}
+		}
+	}
+	out := map[string]partPose{}
+	for _, p := range parts {
+		m := moves[p.ID]
+		for q, depth := p.On, 0; q != "" && !m && depth < len(parts); depth++ {
+			m = moves[q]
+			next := ""
+			for _, pp := range parts {
+				if pp.ID == q {
+					next = pp.On
+				}
+			}
+			q = next
+		}
+		out[p.ID] = partPose{p.At, p.Rotate, m}
+	}
+	return out
 }
 
 // flickerExempt は色を回すのが仕事の op（その画素はちらつきと見ない）。
@@ -397,7 +430,7 @@ func sequenceChecks(names []string, grids []*pxlib.Grid, loop bool, ats []map[st
 			moved = func(part string) bool {
 				pa, okA := atA[part]
 				pb, okB := atB[part]
-				return okA && okB && pa != pb
+				return okA && okB && (pa != pb || pa.Moves)
 			}
 		}
 		var cells []pxlib.Pt

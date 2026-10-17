@@ -18,11 +18,11 @@
 | 色票に無い中間の色 | `dither_pair` | 既存の lint banding・flat-run |
 | 葉・石の斑・草のタイル | `scatter_clusters` → `tile_preview` | 既存の lint orphan・2×2 に並べて見る（tile_preview） / lint seam |
 | 遠景と近景・主役と背景 | `depth_fade` → `contrast` | lint value-sep（contrast で測る） / lint value-sep |
-| 揺れ・呼吸・弾み（on の子も付いていく） | `sway` / `bob` / `squash` | lint orphan・anim（pop・loop）。欠けは pixel_perfect で整える / anim（bob・ground） / anim（area・ground） |
+| 揺れ・呼吸・弾み（on の子も付いていく）・なびく旗（形 flag の t をコマで進める） | `sway` / `bob` / `squash` / 形 `flag` | lint orphan・anim（pop・loop）。欠けは pixel_perfect で整える / anim（bob・ground） / anim（area・ground） |
 | 水・滝・流れ（波頭を 1px ずつ流す） | `wave_shift` | anim（pop・loop）。輪が閉じるようにコマの数 × speed を塊の幅に合わせる |
 | 煉瓦・瓦・石積みの目地（段ごとに半分ずらす。一人称・遠近の壁は quad） | `courses` | lint banding・flat-run |
 | 葉の玉を重ねた木・茂み・鉢植え | `canopy` | lint pillow・orphan |
-| 字・表・窓の枠（ラベル・HUD・メニュー。5x7・太字 bold6x8。階調と縁は形 text に塗る） | `text` / `table` / `frame` / 形 `text` | — |
+| 字・表・窓の枠・体力のバー（ラベル・HUD・メニュー。5x7・太字 bold6x8。階調と縁は形 text に塗る） | `text` / `table` / `frame` / `bar` / 形 `text` | — |
 | 光のにじみ（窓・街灯・夕日・ネオン。加算の層は 0 段で fill してから） | `glow` | lint banding |
 | 縦横のスクロール（雲・雨・海の光。写しを並べてループ） | 部品の `scroll` → `gradient_fill` | lint pillow・light-dir・banding |
 | 同じ形を並べる・写す（弾の輪・編隊・鋲・左右対称の機体・影） | 形 `polar` / 形 `array` / 形 `poly` / 形 `translate` | — |
@@ -35,6 +35,7 @@
 | 技法 | op | 何をするか | 仕上げ・検査 |
 |---|---|---|---|
 | 手打ち AA（2px 以上の段の角にだけ中間色） | `aa_corners` | 2px 以上の段の角の凹みにだけ、内側と外の色の中間に一番近いランプの色を 1px 置く（45° と直線には置かない。中間の色が無ければ置かない） | lint jaggy・orphan |
+| UI（体力・気力・時間のゲージ） | `bar` | 体力のバー: 形（省くと部品の塊）の外接箱を、side の端から rate だけ残りの量で塗る（fill を省くとランプの段を太さの向きに Bayer で）。empty は減った所・top は残りの上の 1px のつや・lost は残りの隣の今減った量 | — |
 | 小物の陰影（縁で光と影を分ける） | `bevel` | 小物の陰の段: 光の側の縁を lit、影の側の縁（と影の向きへ 2 つ先が外の画素）を dark、中を face | 既存の lint banding |
 | 陰影（平らな面は 1 色・光源は左上の 1 つ） | `bevel_box` | 角丸の板: 斜めの帯で 光・地・影、縁の 1px につや（光の側）と墨（影の側）、外側に墨の輪郭（格子は正方形） | 既存の lint banding |
 | アニメ（溜め・弾み） | `bob` | 部品を上下に動かす（コマごとに -amp·sin。呼吸・浮遊・歩きの上下） | anim（bob・ground） |
@@ -123,6 +124,8 @@
 | `px.hash01(x, y, seed)`・`px.noise1(x, seed)`・`px.rng(seed)` | 種つきのゆらぎ・乱数（rng は CPython の random.Random と同じ列。写しの間だけ） |
 | `px.round(x, nd)` | Python の round（ちょうど半分は偶数へ） |
 | `px.frames(names, parts)` | 部品の鍵の値に関数（コマの番号 `i` → 値）を書くと、`(部品の列, frames)` を返す。部品にはコマ 0 の値が入る（`"ops": lambda i: smoke(i)`）。`names` はコマ名の列か数 |
+| `px.frames(names, scene)` | `scene(i)` がコマ i の部品の列を返す関数なら、コマ 0 の列を部品に、コマ 0 と違う鍵だけを patch にする（場面ごとコマで描き分ける時。部品の数と id の並びはどのコマも同じ） |
+| `px.cycle(values, phase=0, axis=None)` | コマの表: コマ i に `values[(i + phase) % len]` を返す関数（px.frames の鍵の値に置く。`"at": px.cycle([0, 1, 3, 1], axis="y")` で上下・`"ops": px.cycle([[op.text(…, color=c)] for c in COLS])` で点滅）。axis は "x" で `[v, 0]`・"y" で `[0, v]` |
 | `math.*` | sin・cos・tan・atan2・hypot・exp・log・pow・sqrt・floor・ceil・radians・pi。答えは正しく丸めた値で、OS・CPU で変わらない |
 
 最小の台本（version・target・palette・ramps・sprites・parts・frames）:
@@ -165,7 +168,7 @@ px.write_spec("lamp.pxsrc.json", {
 - Starlark に無い物: class（dict と関数で書く）・`**`（`math.pow` か `x * x`）・`round`（`px.round`）・set・連なった比較（`a <= x < b`）・bool の足し算・文字列の for（`s.elems()`）・`%` の幅と桁（`"%02x"` は `"%x%x" % (v // 16, v % 16)`）。一番外の for は書けるが、ループの変数も 1 度しか代入できない（2 本目のループは別の名前か def の中）。
 - 決まり（どれも advice）: 台本 1 本 600 行・pxsrc 1 本 500 KB・1 部品の put 200 画素・格子の半分を超える stamp・while・使われない関数・色票の色キーが ink などの名前と重なる。
 - `None` を渡した引数は省いたのと同じ（`op.fill(shape = None, color = …)` は部品の塊を塗る）。
-- px.frames に渡す lambda は、ループの変数を作った時でなく呼ばれた時に引く（Python と同じ）。ループの中で作る lambda は値を引数で閉じ込める関数から返す（`def down(speed): return lambda i: [0, i * speed]`）。そのまま書くと全部の部品が最後の値になる。
+- px.frames に渡す lambda は、ループの変数を作った時でなく呼ばれた時に引く（Python と同じ）。ループの中で作る lambda は値を引数で閉じ込める関数から返す（`def down(speed): return lambda i: [0, i * speed]`）。そのまま書くと全部の部品が最後の値になる。コマの値を先に並べられるなら `px.cycle([f(i) for i in range(N)])` でも閉じ込められる。
 
 ## 引数
 
@@ -179,6 +182,24 @@ px.write_spec("lamp.pxsrc.json", {
 |---|---|---|
 | `mix` | number | 外の色へ寄せる割合（0.5 = 真ん中）（0.1〜0.9）（省くと 0.5） |
 | `against` | string | どの縁に当てるか: clear（絵の外形 = 外が透明な所だけ）・any（ほかの部品との境目にも）（省くと "clear"） |
+
+### `bar`
+
+例: `{"bar": {"rate": 0.8, "side": "right", "empty": "ink", "from": 1, "band": 0.5, "top": "light"}}`
+
+| 引数 | 型 | 説明 |
+|---|---|---|
+| `shape` | shape | 形（省くと部品の塊） |
+| `rate` | number | 残りの割合（0〜1。長さは 外接箱の長さ × rate を四捨五入）（0〜1）（必須） |
+| `side` | string | 残りを寄せる端: left・right（横のバー）・bottom・top（縦のバー）（省くと "left"） |
+| `fill` | color | 残りの色（省くとランプの from〜to 段を太さの向きに塗る: 横のバーは上が明るい） |
+| `from` | int | fill を省いた時に使う一番暗い段（0〜15）（省くと 0） |
+| `to` | int | fill を省いた時に使う一番明るい段（-1 で最明）（-1〜15）（省くと -1） |
+| `band` | number | 段の境目をディザで混ぜる割合（gradient_fill と同じ。0 はベタの帯）（0〜1）（省くと 0） |
+| `empty` | color | 減った所の色（先に箱全体を塗る。省くと塗らない） |
+| `top` | color | 残りの上の縁（縦のバーは光の側の縁）の 1px の色（省くと引かない） |
+| `lost` | number | 今減った量の割合（残りの隣・減った所の側に lost_color で）（0〜1）（省くと 0） |
+| `lost_color` | color | 今減った量の色（省くと "light"） |
 
 ### `bevel`
 
@@ -674,6 +695,7 @@ px.write_spec("lamp.pxsrc.json", {
 | `capsule` | [ax, ay, bx, by, r] |  | 両端の丸い棒 |
 | `disk` | [cx, cy, r] |  | 丸 |
 | `ellipse` | [cx, cy, rx, ry] |  | 楕円 |
+| `flag` | [x, y, w, h]（竿の根元の上の角・旗の長さ・高さ。w が負なら左へなびく） | `t` 波の位相（周。コマ i で i / コマ数 + ずらし）（省くと 0）・`amp` 先の縦の揺れ（px。竿の側は 0）（省くと 2）・`sway` 先の横の揺れ（px。布が寄って縮む）（省くと 0）・`waves` 竿から先までに乗る波の数（省くと 1）・`rise` 下の縁を先で持ち上げる量（px。先細りの燕尾・吹き流し）（省くと 0）・`points` 縁の点の数（竿と先を含む）（2〜64）（省くと 7） | 竿から横へなびく旗（上と下の縁を竿から先へ大きくなる波にした多角形。t をコマで進める: px.cycle で 1 周 = 1.0） |
 | `inter` | [形, 形, ...]（2 つ以上） |  | 積（全部の中） |
 | `mask` | 文字の行 | `at` 左上の位置 [x, y]（省くと [0,0]） | rows で画素を直に指す（'.' と ' ' が外） |
 | `path` | [[x, y], ...]（2 点以上） | `width` 太さ（0.1〜64）（省くと 1） | 折れ線に太さを付けた物（角と端は丸い） |
@@ -716,7 +738,7 @@ pxsrc の一番外に `"style": "snes"` と名前で書くと `bin/lint-rules/px
 | `anim` | lint | anim: コマ列に bin/fge anim の pop・area・ground・bob・loop をかける（動きの op・pose・rotate を使うスプライト、か anim: true） |
 | `black-outline` | advice | black-outline: 小さい絵（blackOutlineMaxSize 未満）で、外の縁が 1 色・絵の中で一番暗い色のまま一周している |
 | `flat-run` | advice | 輪郭の段: 同じ長さの段が続く（直線に読まれる）・長すぎる直線（16px で 4px・32px で 6px を超える）。poly の部品の辺は直線として、段の長さが 3 種類以上に散る時だけ |
-| `flicker` | lint | flicker: コマの間で周り 8 画素が動かないのに色だけ変わる画素（ちらつき。palette_cycle と wave_shift の画素・コマで at か rotate が変わる部品の画素は除く） |
+| `flicker` | lint | flicker: コマの間で周り 8 画素が動かないのに色だけ変わる画素（ちらつき。palette_cycle と wave_shift の画素・コマで at か rotate が変わる部品と、sway・bob・squash を持つ部品（on の子も）の画素は除く） |
 | `ground-contrast` | lint | 外周の画素と地の色の明るさ（Oklab の L）の差が小さく、輪郭が地に溶ける |
 | `light-dir` | advice | light-dir: 塊の明るさで重みを付けた重心（明るい側 − 暗い側）が光の側（light.dir）に無い（emissive の部品は見ない） |
 | `margin` | advice | margin: 動く絵が格子の左・右・上の縁に触れている（動く余白が無い） |
