@@ -160,6 +160,9 @@ func (b *Box) resolveLoad(from, mod string) (string, error) {
 // Rel は WorkRoot からの相対（/ 区切り）。
 func (b *Box) Rel(p string) string { return filepath.ToSlash(rel(b.WorkRoot, p)) }
 
+// Rel は root からの相対（外なら p のまま）。
+func Rel(root, p string) string { return rel(root, p) }
+
 func rel(root, p string) string {
 	if r, err := filepath.Rel(root, p); err == nil && !strings.HasPrefix(r, "..") {
 		return r

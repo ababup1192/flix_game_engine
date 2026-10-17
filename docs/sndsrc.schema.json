@@ -1,0 +1,798 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "kind": {
+      "default": "sfx",
+      "enum": [
+        "ui",
+        "sfx",
+        "bgm"
+      ]
+    },
+    "loop_start_ms": {
+      "minimum": 0,
+      "type": "number"
+    },
+    "note": {
+      "type": "string"
+    },
+    "post": {
+      "items": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "description": "立ち上がり attack_ms・hold_ms 保ってから decay_ms の速さで指数に減衰（decay_ms 0 は減衰なし）",
+            "maxProperties": 1,
+            "minProperties": 1,
+            "properties": {
+              "env": {
+                "additionalProperties": false,
+                "properties": {
+                  "attack_ms": {
+                    "default": 0.5,
+                    "description": "立ち上がり（ミリ秒）",
+                    "maximum": 10000,
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "decay_ms": {
+                    "default": 0,
+                    "description": "1/e まで落ちる時間（ミリ秒）",
+                    "maximum": 60000,
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "hold_ms": {
+                    "default": 0,
+                    "description": "保つ時間（ミリ秒）",
+                    "maximum": 60000,
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "頭を 1 倍・終わりを 0 倍へ直線で先細らせる（times 回重ねると急になる）",
+            "maxProperties": 1,
+            "minProperties": 1,
+            "properties": {
+              "fade": {
+                "additionalProperties": false,
+                "properties": {
+                  "times": {
+                    "default": 1,
+                    "description": "重ねる回数",
+                    "maximum": 8,
+                    "minimum": 1,
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "仕上げ: 尾の無音を切り、25Hz の低域切り・8kHz の 2 段ローパス・頭 in_ms と尾 out_ms の直線の絞りを掛け、ピークを 1 にそろえる",
+            "maxProperties": 1,
+            "minProperties": 1,
+            "properties": {
+              "finish": {
+                "additionalProperties": false,
+                "properties": {
+                  "in_ms": {
+                    "default": 2,
+                    "description": "頭の絞り（ミリ秒）",
+                    "maximum": 1000,
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "out_ms": {
+                    "default": 12,
+                    "description": "尾の絞り（ミリ秒）",
+                    "maximum": 1000,
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "音量を by 倍にする",
+            "maxProperties": 1,
+            "minProperties": 1,
+            "properties": {
+              "gain": {
+                "additionalProperties": false,
+                "properties": {
+                  "by": {
+                    "description": "倍率",
+                    "maximum": 64,
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "by"
+                ],
+                "type": "object"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "1 極のローパスを stages 段（hz より上をなだらかに落とす）",
+            "maxProperties": 1,
+            "minProperties": 1,
+            "properties": {
+              "lowpass": {
+                "additionalProperties": false,
+                "properties": {
+                  "hz": {
+                    "description": "切る所（Hz）",
+                    "maximum": 20000,
+                    "minimum": 1,
+                    "type": "number"
+                  },
+                  "stages": {
+                    "default": 1,
+                    "description": "段の数",
+                    "maximum": 4,
+                    "minimum": 1,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "hz"
+                ],
+                "type": "object"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "隣のサンプルとの差 × 0.7（低い成分を落とした擦れ。times 回重ねる）",
+            "maxProperties": 1,
+            "minProperties": 1,
+            "properties": {
+              "rasp": {
+                "additionalProperties": false,
+                "properties": {
+                  "times": {
+                    "default": 1,
+                    "description": "重ねる回数",
+                    "maximum": 8,
+                    "minimum": 1,
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "ratio 倍の速さで読み直す（高さが ratio 倍・長さが 1/ratio。線形の補間）",
+            "maxProperties": 1,
+            "minProperties": 1,
+            "properties": {
+              "resample": {
+                "additionalProperties": false,
+                "properties": {
+                  "ratio": {
+                    "description": "速さの倍率",
+                    "maximum": 16,
+                    "minimum": 0.0625,
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "ratio"
+                ],
+                "type": "object"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "音量を level/15 から every_ms ごとに 1 段ずつ下げる（0 で止まる。16 段の音量包絡）",
+            "maxProperties": 1,
+            "minProperties": 1,
+            "properties": {
+              "steps": {
+                "additionalProperties": false,
+                "properties": {
+                  "every_ms": {
+                    "default": 15.625,
+                    "description": "1 段下げる間（ミリ秒。0 は下げない）",
+                    "maximum": 10000,
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "level": {
+                    "default": 15,
+                    "description": "初めの段（0〜15）",
+                    "maximum": 15,
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "description": "2 極のステートバリアブルフィルタ。中心を hz から to_hz へ指数で動かす（mode = band・low）",
+            "maxProperties": 1,
+            "minProperties": 1,
+            "properties": {
+              "svf": {
+                "additionalProperties": false,
+                "properties": {
+                  "gain": {
+                    "default": 1,
+                    "description": "出口の倍率",
+                    "maximum": 8,
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "hz": {
+                    "description": "頭の中心（Hz）",
+                    "maximum": 20000,
+                    "minimum": 1,
+                    "type": "number"
+                  },
+                  "mode": {
+                    "default": "band",
+                    "description": "出口（band = 中心のまわり・low = 中心より下）",
+                    "enum": [
+                      "band",
+                      "low"
+                    ]
+                  },
+                  "q": {
+                    "default": 0.6,
+                    "description": "減衰（小さいほど鋭く鳴る）",
+                    "maximum": 2,
+                    "minimum": 0.01,
+                    "type": "number"
+                  },
+                  "to_hz": {
+                    "description": "終わりの中心（Hz。省くと動かない）",
+                    "maximum": 20000,
+                    "minimum": 1,
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "hz"
+                ],
+                "type": "object"
+              }
+            },
+            "type": "object"
+          }
+        ]
+      },
+      "type": "array"
+    },
+    "rate": {
+      "default": 22050,
+      "maximum": 96000,
+      "minimum": 8000,
+      "type": "integer"
+    },
+    "style": {
+      "default": "free",
+      "description": "機種（bin/lint-rules/snd.json の styles の名前か .json の Doc）",
+      "type": "string"
+    },
+    "target": {
+      "description": "書き出す WAV（assets/ の外）",
+      "pattern": "\\.wav$",
+      "type": "string"
+    },
+    "tempo": {
+      "additionalProperties": false,
+      "properties": {
+        "beats_per_bar": {
+          "default": 4,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "bpm": {
+          "exclusiveMinimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "bpm"
+      ],
+      "type": "object"
+    },
+    "version": {
+      "type": "integer"
+    },
+    "voices": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "description": "置く所（ミリ秒）",
+            "minimum": 0,
+            "type": "number"
+          },
+          "id": {
+            "type": "string"
+          },
+          "ops": {
+            "items": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "description": "雑音を ms ミリ秒。kind = hash（番号のハッシュの白色雑音）・lfsr15 / lfsr7（ゲームボーイの雑音。hz 回/秒で回す）",
+                  "maxProperties": 1,
+                  "minProperties": 1,
+                  "properties": {
+                    "noise": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "amp": {
+                          "default": 0.5,
+                          "description": "振幅（0〜1）",
+                          "maximum": 4,
+                          "minimum": 0,
+                          "type": "number"
+                        },
+                        "hz": {
+                          "default": 8000,
+                          "description": "LFSR を回す速さ（回/秒。hash は読まない）",
+                          "maximum": 1048576,
+                          "minimum": 1,
+                          "type": "number"
+                        },
+                        "kind": {
+                          "default": "hash",
+                          "description": "雑音の作り方",
+                          "enum": [
+                            "hash",
+                            "lfsr15",
+                            "lfsr7"
+                          ]
+                        },
+                        "ms": {
+                          "description": "長さ（ミリ秒）",
+                          "maximum": 600000,
+                          "minimum": 0,
+                          "type": "number"
+                        },
+                        "to_hz": {
+                          "description": "回す速さの着く先（比が一定の速さで滑る。省くと滑らない）",
+                          "maximum": 1048576,
+                          "minimum": 1,
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "ms"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "矩形波を ms ミリ秒。to_hz を書くと hz から to_hz へ比が一定の速さで滑る",
+                  "maxProperties": 1,
+                  "minProperties": 1,
+                  "properties": {
+                    "pulse": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "accumulate": {
+                          "default": false,
+                          "description": "位相を 1 サンプルずつ足して進める（滑る時は常にこれ。省くとサンプルの番号から位相を出す）",
+                          "type": "boolean"
+                        },
+                        "amp": {
+                          "default": 0.5,
+                          "description": "振幅（0〜1）",
+                          "maximum": 4,
+                          "minimum": 0,
+                          "type": "number"
+                        },
+                        "duty": {
+                          "default": 0.5,
+                          "description": "山の割合（0.125・0.25・0.5・0.75 が機種の 4 種）",
+                          "maximum": 0.99,
+                          "minimum": 0.01,
+                          "type": "number"
+                        },
+                        "hz": {
+                          "description": "高さ（Hz）",
+                          "maximum": 20000,
+                          "minimum": 1,
+                          "type": "number"
+                        },
+                        "ms": {
+                          "description": "長さ（ミリ秒）",
+                          "maximum": 600000,
+                          "minimum": 0,
+                          "type": "number"
+                        },
+                        "to_hz": {
+                          "description": "滑って着く高さ（Hz。省くと滑らない）",
+                          "maximum": 20000,
+                          "minimum": 1,
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "hz",
+                        "ms"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "無音を ms ミリ秒（声の長さをそろえる・曲の休符）",
+                  "maxProperties": 1,
+                  "minProperties": 1,
+                  "properties": {
+                    "rest": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "ms": {
+                          "description": "長さ（ミリ秒）",
+                          "maximum": 600000,
+                          "minimum": 0,
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "ms"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "譜面（*.chip.json）を楽器（*.instrument.json）で鳴らす。ループ点があれば頭 + 輪の 1 本と smpl のループの頭を作る",
+                  "maxProperties": 1,
+                  "minProperties": 1,
+                  "properties": {
+                    "song": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "chip": {
+                          "description": "譜面のパス（作業場の根から）",
+                          "type": "string"
+                        },
+                        "instruments": {
+                          "description": "楽器のパス（作業場の根から）",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "chip",
+                        "instruments"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "立ち上がり attack_ms・hold_ms 保ってから decay_ms の速さで指数に減衰（decay_ms 0 は減衰なし）",
+                  "maxProperties": 1,
+                  "minProperties": 1,
+                  "properties": {
+                    "env": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "attack_ms": {
+                          "default": 0.5,
+                          "description": "立ち上がり（ミリ秒）",
+                          "maximum": 10000,
+                          "minimum": 0,
+                          "type": "number"
+                        },
+                        "decay_ms": {
+                          "default": 0,
+                          "description": "1/e まで落ちる時間（ミリ秒）",
+                          "maximum": 60000,
+                          "minimum": 0,
+                          "type": "number"
+                        },
+                        "hold_ms": {
+                          "default": 0,
+                          "description": "保つ時間（ミリ秒）",
+                          "maximum": 60000,
+                          "minimum": 0,
+                          "type": "number"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "頭を 1 倍・終わりを 0 倍へ直線で先細らせる（times 回重ねると急になる）",
+                  "maxProperties": 1,
+                  "minProperties": 1,
+                  "properties": {
+                    "fade": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "times": {
+                          "default": 1,
+                          "description": "重ねる回数",
+                          "maximum": 8,
+                          "minimum": 1,
+                          "type": "integer"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "仕上げ: 尾の無音を切り、25Hz の低域切り・8kHz の 2 段ローパス・頭 in_ms と尾 out_ms の直線の絞りを掛け、ピークを 1 にそろえる",
+                  "maxProperties": 1,
+                  "minProperties": 1,
+                  "properties": {
+                    "finish": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "in_ms": {
+                          "default": 2,
+                          "description": "頭の絞り（ミリ秒）",
+                          "maximum": 1000,
+                          "minimum": 0,
+                          "type": "number"
+                        },
+                        "out_ms": {
+                          "default": 12,
+                          "description": "尾の絞り（ミリ秒）",
+                          "maximum": 1000,
+                          "minimum": 0,
+                          "type": "number"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "音量を by 倍にする",
+                  "maxProperties": 1,
+                  "minProperties": 1,
+                  "properties": {
+                    "gain": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "by": {
+                          "description": "倍率",
+                          "maximum": 64,
+                          "minimum": 0,
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "by"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "1 極のローパスを stages 段（hz より上をなだらかに落とす）",
+                  "maxProperties": 1,
+                  "minProperties": 1,
+                  "properties": {
+                    "lowpass": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "hz": {
+                          "description": "切る所（Hz）",
+                          "maximum": 20000,
+                          "minimum": 1,
+                          "type": "number"
+                        },
+                        "stages": {
+                          "default": 1,
+                          "description": "段の数",
+                          "maximum": 4,
+                          "minimum": 1,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "hz"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "隣のサンプルとの差 × 0.7（低い成分を落とした擦れ。times 回重ねる）",
+                  "maxProperties": 1,
+                  "minProperties": 1,
+                  "properties": {
+                    "rasp": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "times": {
+                          "default": 1,
+                          "description": "重ねる回数",
+                          "maximum": 8,
+                          "minimum": 1,
+                          "type": "integer"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "ratio 倍の速さで読み直す（高さが ratio 倍・長さが 1/ratio。線形の補間）",
+                  "maxProperties": 1,
+                  "minProperties": 1,
+                  "properties": {
+                    "resample": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "ratio": {
+                          "description": "速さの倍率",
+                          "maximum": 16,
+                          "minimum": 0.0625,
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "ratio"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "音量を level/15 から every_ms ごとに 1 段ずつ下げる（0 で止まる。16 段の音量包絡）",
+                  "maxProperties": 1,
+                  "minProperties": 1,
+                  "properties": {
+                    "steps": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "every_ms": {
+                          "default": 15.625,
+                          "description": "1 段下げる間（ミリ秒。0 は下げない）",
+                          "maximum": 10000,
+                          "minimum": 0,
+                          "type": "number"
+                        },
+                        "level": {
+                          "default": 15,
+                          "description": "初めの段（0〜15）",
+                          "maximum": 15,
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "2 極のステートバリアブルフィルタ。中心を hz から to_hz へ指数で動かす（mode = band・low）",
+                  "maxProperties": 1,
+                  "minProperties": 1,
+                  "properties": {
+                    "svf": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "gain": {
+                          "default": 1,
+                          "description": "出口の倍率",
+                          "maximum": 8,
+                          "minimum": 0,
+                          "type": "number"
+                        },
+                        "hz": {
+                          "description": "頭の中心（Hz）",
+                          "maximum": 20000,
+                          "minimum": 1,
+                          "type": "number"
+                        },
+                        "mode": {
+                          "default": "band",
+                          "description": "出口（band = 中心のまわり・low = 中心より下）",
+                          "enum": [
+                            "band",
+                            "low"
+                          ]
+                        },
+                        "q": {
+                          "default": 0.6,
+                          "description": "減衰（小さいほど鋭く鳴る）",
+                          "maximum": 2,
+                          "minimum": 0.01,
+                          "type": "number"
+                        },
+                        "to_hz": {
+                          "description": "終わりの中心（Hz。省くと動かない）",
+                          "maximum": 20000,
+                          "minimum": 1,
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "hz"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                }
+              ]
+            },
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "ops"
+        ],
+        "type": "object"
+      },
+      "minItems": 1,
+      "type": "array"
+    }
+  },
+  "required": [
+    "target",
+    "voices"
+  ],
+  "title": "sndsrc（音 1 本の指定）",
+  "type": "object"
+}

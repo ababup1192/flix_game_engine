@@ -1,0 +1,10 @@
+{
+ "version": 1,
+ "instruments": {
+  "lead": {"speed": 2, "rows": [{"vol": 15, "pitch": 0, "wave": "50"}, {"vol": 12}, {"vol": 10, "cmd": "VIB 5 10"}]},
+  "hat": {"speed": 1, "rows": [{"vol": 9, "pitch": 0, "wave": "long"}, {"vol": 4}, {"cmd": "END"}]},
+  "snare": {"speed": 1, "rows": [{"vol": 15, "pitch": 0, "wave": "short"}, {"vol": 10, "wave": "long"}, {"vol": 5}, {"cmd": "END"}]},
+  "wb": {"speed": 2, "rows": [{"vol": 15, "pitch": 0, "wave": "saw"}, {"vol": 12}, {"cmd": "LOOP 1 2"}]}
+ },
+ "waves": {"saw": [0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13, 14, 14, 15, 15]}
+}

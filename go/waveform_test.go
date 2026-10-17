@@ -54,7 +54,7 @@ func TestDecodeWAVReadsMono16(t *testing.T) {
 	if rate != 22050 || len(samples) != 4 {
 		t.Fatalf("サンプルレートと長さが合わない: %d %d", rate, len(samples))
 	}
-	if got := (soundClip{SampleRate: rate, Samples: samples}).peak(); math.Abs(got-1.0) > 1e-9 {
+	if got := (soundClip{SampleRate: rate, Samples: samples}).Peak(); math.Abs(got-1.0) > 1e-9 {
 		t.Errorf("ピークは 1.0 のはず: %v", got)
 	}
 }
@@ -101,7 +101,7 @@ func TestDecodeWAVRejectsNonRIFF(t *testing.T) {
 
 func TestDurationMSUsesSampleRate(t *testing.T) {
 	clip := soundClip{SampleRate: 22050, Samples: make([]float64, 11025)}
-	if got := clip.durationMS(); got != 500 {
+	if got := clip.DurationMS(); got != 500 {
 		t.Errorf("11025 サンプル / 22050Hz は 500ms のはず: %d", got)
 	}
 }

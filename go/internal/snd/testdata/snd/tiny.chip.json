@@ -1,0 +1,13 @@
+{
+ "version": 1,
+ "note": "テスト用の小さな曲: 頭 1 小節 + 輪 2 小節（120 BPM）。",
+ "bpm": 120, "ticks": 6, "loop": 1, "rate": 22050, "gain": 0.8,
+ "phrases": {
+  "intro": ["C-5 lead", "", "", "", "E-5", "", "", "", "G-5", "", "", "", "OFF"],
+  "mel": ["C-5 lead v12", "", "D-5", "", "E-5 lead VIB 6 20", "", "", "", "G-4 lead SLD 3", "", "", "", "C-5 lead ARP 0 4 7"],
+  "beat": ["C-6 hat", "", "", "", "C-5 snare", "", "", "", "C-6 hat", "", "", "", "C-5 snare"],
+  "bass": ["C-3 wb", "", "", "", "G-2 wb", "", "", "", "C-3 wb", "", "", "", "G-2 wb"]
+ },
+ "chains": {"i": ["intro"], "m": ["mel", "mel +2"], "b": ["beat", "beat"], "w": ["bass", "bass"]},
+ "rows": [{"pulse1": "i"}, {"pulse1": "m", "noise": "b", "wave": "w"}]
+}
