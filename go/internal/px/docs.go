@@ -1,7 +1,7 @@
 package px
 
 // op の登録から作る文書: 端末の早見表・docs/px-ops.md・docs/pxsrc.schema.json・docs/colorgate.schema.json。
-// 手で書かない（ずれたら fge px ops --check・fge px schema --check で落ちる）。
+// 手で書かない（ずれたら fge px ops --check・fge px schema --check で落ちる。作り直すのは fge px ops --md・fge px schema --write）。
 
 import (
 	"encoding/json"
@@ -153,7 +153,7 @@ type quickRow struct {
 	Chain bool
 }
 
-// quickRows は早見表の上の段（15 行まで。技法カード 1 節と早見表の案 3 節から）。
+// quickRows は早見表の上の段（20 行まで。差が出ない・使われない行は外す。技法カード 1 節と早見表の案 3 節から）。
 var quickRows = []quickRow{
 	{"光と陰（小物の面）", []string{"directional"}, false},
 	{"丸い体・キャラ", []string{"shade_parts"}, false},
@@ -167,6 +167,7 @@ var quickRows = []quickRow{
 	{"遠景と近景・主役と背景", []string{"depth_fade", "contrast"}, true},
 	{"揺れ・呼吸・弾み（on の子も付いていく）", []string{"sway", "bob", "squash"}, false},
 	{"水・滝・流れ（波頭を 1px ずつ流す）", []string{"wave_shift"}, false},
+	{"煉瓦・瓦・石積みの目地（段ごとに半分ずらす）", []string{"courses"}, false},
 }
 
 func quickOps(r quickRow) string {
@@ -366,6 +367,7 @@ func specSchema() string {
 			"material", obj("description", "材質のレシピ（"+materialNames()+"）。名前か {名前: {引数}}。ops の前に op の並びを差し込む",
 				"oneOf", list(obj("enum", materialEnum()), obj("type", "object", "minProperties", json.Number("1"), "maxProperties", json.Number("1")))),
 			"rotate", obj("type", "number", "description", "部品を回す角度（度。正で時計回り。rotsprite の考え方で色を足さない）"),
+			"emissive", obj("type", "boolean", "description", "true で自分で光る部品（窓の灯り・炎・画面）。光の向きの検査 light-dir の対象から外す"),
 			"pivot", obj("description", "回す中心の画素 [x, y]（整数は画素の中心・.5 は画素の境目。省くと塊の上の真ん中）", "type", "array", "items", obj("type", "number", "multipleOf", json.Number("0.5")), "minItems", json.Number("2"), "maxItems", json.Number("2")),
 		))
 	spriteS := obj("type", "object", "additionalProperties", false, "required", list("size", "parts", "frames"),
@@ -442,7 +444,7 @@ func gateSchema() string {
 	root := obj(
 		"$schema", "http://json-schema.org/draft-07/schema#",
 		"title", "ドット絵の色の門 (*.colorgate.json)",
-		"description", "fge px check と fge px build が読む。sprite.json のファイル名ごとに画風と例外を書く。生成物（bin/fge px schema）。直すのは go/internal/px/docs.go",
+		"description", "fge px check と fge px build が読む。sprite.json のファイル名ごとに画風と例外を書く。生成物（bin/fge px schema --write）。直すのは go/internal/px/docs.go",
 		"type", "object",
 		"additionalProperties", false,
 		"required", list("version", "styles", "files"),

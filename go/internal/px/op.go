@@ -1,7 +1,7 @@
 package px
 
 // op の登録。op の説明（何をするか・どの技法か・仕上げに何を見るか・引数・例）は、この opDef の構造体だけに書く。
-// `fge px ops`・`fge px ops --md`（docs/px-ops.md）・`fge px schema`（docs/pxsrc.schema.json）は全部ここから作る。
+// `fge px ops`・`fge px ops --md`（docs/px-ops.md）・`fge px schema --write`（docs/pxsrc.schema.json）は全部ここから作る。
 
 import (
 	"fmt"

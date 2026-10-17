@@ -106,6 +106,11 @@ func (v violation) key() string {
 	return fmt.Sprintf("%s|%s|%s|%d|%d|%s", v.ref(), v.Sprite, v.Frame, v.X, v.Y, v.Msg)
 }
 
+// frameless はコマを除いた鍵（同じ違反がコマごとに重なって出ないようにまとめる）。
+func (v violation) frameless() string {
+	return fmt.Sprintf("%s|%s|%d|%d|%s", v.ref(), v.Sprite, v.X, v.Y, v.Msg)
+}
+
 // String は 1 行の字面（例 slime/idle body.ops[1] shade_step: run-monotone (14,9): …）。
 func (v violation) String() string {
 	var b strings.Builder
@@ -142,6 +147,17 @@ type checkCtx struct {
 	Style       *pxStyle               // 機種の決まり（spec の style。無ければ nil）
 	Wrap        bool                   // タイルとして端が回る（orphan は 3×3 に並べた絵で見る）
 	RampOwner   map[string]string      // ramp_pick が選んだランプの名前 → 選んだスプライト（ramp-order の違反の持ち主）
+	Emissive    map[string]bool        // 自分で光る部品の id（light-dir の対象外。部品の emissive）
+	Poly        map[string]bool        // 形が poly の部品の id（輪郭の段は直線として flat-run だけで見る）
+}
+
+// polyStair は階段が poly の部品の輪郭か（真ん中の段を書いた部品で決める）。
+func (c *checkCtx) polyStair(g *pxlib.Grid, runs []stairRun) bool {
+	if len(c.Poly) == 0 {
+		return false
+	}
+	at := runs[len(runs)/2].At
+	return c.Poly[g.SrcAt(at.X, at.Y).Part]
 }
 
 // checkDef は検査 1 つ。
@@ -320,12 +336,31 @@ func init() {
 		},
 	})
 	registerCheck(&checkDef{
-		Name: checkFlatRun, Summary: "輪郭の段: 同じ長さの段が続く（直線に読まれる）・長すぎる直線（16px で 4px・32px で 6px を超える）", Level: levelAdvice,
+		Name: checkFlatRun, Summary: "輪郭の段: 同じ長さの段が続く（直線に読まれる）・長すぎる直線（16px で 4px・32px で 6px を超える）。poly の部品の辺は直線として、段の長さが 3 種類以上に散る時だけ", Level: levelAdvice,
 		Fix: "形（shape）の半径か点を 1px ずらして段の長さを変える。直線にしたい所なら rect で引く",
 		Run: func(g *pxlib.Grid, c *checkCtx) []violation {
 			limit := c.Rules.FlatRunStraight + max(g.W, g.H)/c.Rules.FlatRunPer
 			var out []violation
 			eachStair(g.Opaque(), func(runs []stairRun) {
+				if c.polyStair(g, runs) {
+					// poly の辺は直線: 同じ長さの段が続くのも長い直線も狙いどおり。段の長さが 3 種類以上に散る時だけ言う
+					// （直線を格子に乗せると段は 1〜2 種類の長さになる。run-monotone はこの階段を見ない）
+					if len(runs) < 4 {
+						return
+					}
+					inner := runs[1 : len(runs)-1]
+					kinds := map[int]bool{}
+					for _, r := range inner {
+						kinds[r.N] = true
+					}
+					if len(kinds) >= 3 {
+						r := inner[0]
+						out = append(out, violation{Check: checkFlatRun, Level: levelAdvice, X: r.At.X, Y: r.At.Y, HasAt: true,
+							Fix: "poly の点を 1px ずらして、辺の段の長さを 1〜2 種類（4-4-4 か 4-5-4-5）に揃える（SDF には替えなくてよい）",
+							Msg: fmt.Sprintf("poly の辺の段が %s と散る（直線の段は 1〜2 種類の長さ）", runLengths(inner))})
+					}
+					return
+				}
 				same := 1
 				for i, r := range runs {
 					if i > 0 && r.N == runs[i-1].N {
@@ -349,13 +384,13 @@ func init() {
 		},
 	})
 	registerCheck(&checkDef{
-		Name: checkRunMonotone, Summary: "曲線の段の長さが単調でない（3-2-1 は良い・1-2-1-2 と 3-2-1-4 は不可）", Level: levelLint,
+		Name: checkRunMonotone, Summary: "曲線の段の長さが単調でない（3-2-1 は良い・1-2-1-2 と 3-2-1-4 は不可）。poly の部品の辺は見ない（flat-run が見る）", Level: levelLint,
 		Fix: "形を SDF（ellipse・capsule・smoothUnion）で引き直す。手で打った stamp・put の段なら長さを 3-2-1 に揃える",
 		Run: func(g *pxlib.Grid, c *checkCtx) []violation {
 			var out []violation
 			eachStair(g.Opaque(), func(runs []stairRun) {
-				// 両端の段は輪郭の直線へつながる所なので見ない
-				if len(runs) < 4 {
+				// 両端の段は輪郭の直線へつながる所なので見ない。poly の辺は曲線ではないので flat-run だけが見る
+				if len(runs) < 4 || c.polyStair(g, runs) {
 					return
 				}
 				inner := runs[1 : len(runs)-1]

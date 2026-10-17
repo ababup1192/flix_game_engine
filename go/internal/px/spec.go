@@ -75,17 +75,39 @@ type frameSpec struct {
 
 // part は 1 部品（コマの patch を当てた後）。
 type part struct {
-	ID     string
-	On     string
-	Clip   bool
-	Shape  any
-	Ramp   string
-	At     pxlib.Pt // 描く位置のずらし（コマの patch と親のずれを足した後）
-	BaseAt pxlib.Pt // コマの patch を当てる前の at（親が動いた量 = At − BaseAt を子へ渡す）
-	Ops    []opCall
-	Where  string
-	Rotate float64     // 部品を回す角度（度。正で時計回り。rotsprite の考え方で色を足さない）
-	Pivot  *[2]float64 // 回す中心の画素（.5 で画素の境目。省くと塊の上の真ん中 = 肩・股の付け根）
+	ID       string
+	On       string
+	Clip     bool
+	Shape    any
+	Ramp     string
+	At       pxlib.Pt // 描く位置のずらし（コマの patch と親のずれを足した後）
+	BaseAt   pxlib.Pt // コマの patch を当てる前の at（親が動いた量 = At − BaseAt を子へ渡す）
+	Ops      []opCall
+	Where    string
+	Rotate   float64     // 部品を回す角度（度。正で時計回り。rotsprite の考え方で色を足さない）
+	Pivot    *[2]float64 // 回す中心の画素（.5 で画素の境目。省くと塊の上の真ん中 = 肩・股の付け根）
+	Emissive bool        // 自分で光る（窓の灯り・炎）。光の向きの検査 light-dir の対象から外す
+}
+
+// isPoly は部品の形が poly か（shapes の名前で引いた物も）。
+func (p *part) isPoly(shapes map[string]any) bool {
+	sh := p.Shape
+	for i := 0; i < 8; i++ { // 名前の引き直しは数段まで（輪は shapeOf が先に止める）
+		switch v := sh.(type) {
+		case string:
+			sh = shapes[v]
+			continue
+		case map[string]any:
+			if name, ok := v["ref"].(string); ok && len(v) == 1 {
+				sh = shapes[name]
+				continue
+			}
+			_, ok := v["poly"]
+			return ok
+		}
+		return false
+	}
+	return false
 }
 
 // problem は指定の書き損じ 1 件。
@@ -113,7 +135,7 @@ var (
 	specKeys   = []string{"version", "title", "note", "target", "base", "palette", "gate", "indent", "style", "light", "ramps", "shapes", "macros", "sprites"}
 	lightKeys  = []string{"dir", "gloss", "ground", "note"}
 	spriteKeys = []string{"note", "size", "anchor", "ramp", "parts", "post", "frames", "variants", "roles", "anim"}
-	partKeys   = []string{"id", "on", "clip", "shape", "ramp", "at", "ops", "note", "material", "rotate", "pivot"}
+	partKeys   = []string{"id", "on", "clip", "shape", "ramp", "at", "ops", "note", "material", "rotate", "pivot", "emissive"}
 	idPattern  = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]*$`)
 )
 
@@ -526,6 +548,13 @@ func (sp *spriteSpec) partsOf(r *reader, s *specDoc, f frameSpec) []*part {
 			}
 			p.Clip = b
 		}
+		if ev, ok := obj.Get("emissive"); ok {
+			b, isBool := ev.(bool)
+			if !isBool {
+				r.bad(where+".emissive", "true か false で書く")
+			}
+			p.Emissive = b
+		}
 		if p.Clip && p.On == "" {
 			r.bad(where+".clip", "clip は on（親の部品 id）と組で書く")
 		}
@@ -651,9 +680,9 @@ func isUnderAssets(path string) bool {
 	return clean == "assets" || strings.HasPrefix(clean, "assets/") || strings.Contains(clean, "/assets/") || strings.HasPrefix(clean, "../")
 }
 
-// specName は spec のファイル名から種類の拡張子を外した物（見本の置き場の名前）。
+// specName は spec（か台本）のファイル名から種類の拡張子を外した物（見本の置き場と周の名前）。
 func specName(specPath string) string {
-	return strings.TrimSuffix(filepath.Base(specPath), ".pxsrc.json")
+	return strings.TrimSuffix(strings.TrimSuffix(filepath.Base(specPath), ".pxsrc.json"), ".px.star")
 }
 
 func dedupe(l problemList) problemList {

@@ -62,19 +62,48 @@ func cmdWatch(errOut *strings.Builder, engineRoot, workRoot, spec string, noChec
 }
 
 // cmdSnap は今の spec で見本つきで描き直し、見本と spec を fge rounds snap で積む。
-func cmdSnap(out, errOut *strings.Builder, engineRoot, workRoot, spec string, fresh bool) int {
+// 台本（.px.star）を渡すと gen してから、台本が書いた pxsrc（1 本）を撮り、周には台本を積む。
+// maxRounds は --max N（任された上限。0 は書いていない）。
+func cmdSnap(out, errOut *strings.Builder, engineRoot, workRoot, spec string, fresh bool, maxRounds int) int {
+	name, script := specName(spec), spec
+	r, err := rounds.LoadRules(engineRoot)
+	if err != nil {
+		fmt.Fprintf(errOut, "px: %v\n", err)
+		return 1
+	}
+	hist := filepath.Join(workRoot, filepath.FromSlash(r.HistoryDir), name)
 	// 上限を超える周は描く前に断る（描いてから rounds snap に断られると、last だけ進んで周が積まれない）
 	if !fresh {
-		r, err := rounds.LoadRules(engineRoot)
+		if err := rounds.CheckNext(r, hist, maxRounds); err != nil {
+			fmt.Fprintf(errOut, "rounds: %v\n", err)
+			return 1
+		}
+	}
+	if strings.HasSuffix(spec, ".px.star") {
+		res, err := runStar(workRoot, spec, starOptions{Stderr: errOut})
 		if err != nil {
-			fmt.Fprintf(errOut, "px: %v\n", err)
+			fmt.Fprintf(errOut, "px snap: %v\n", err)
 			return 1
 		}
-		hist := filepath.Join(workRoot, filepath.FromSlash(r.HistoryDir), specName(spec))
-		if rounds.NextRound(hist) > r.MaxRounds {
-			fmt.Fprintf(errOut, "rounds: %d 周を超える。依頼主に終わりを聞くか、--new で別の作業として始める\n", r.MaxRounds)
+		var specs []string
+		for _, f := range res.Files {
+			if f.Spec {
+				specs = append(specs, f.Path)
+			}
+		}
+		if len(specs) != 1 {
+			fmt.Fprintf(errOut, "px snap: 台本は pxsrc を 1 本だけ書く物にする（%s は %d 本。いくつもなら build --sheet で見る）\n", spec, len(specs))
 			return 1
 		}
+		changed, err := writeStarFiles(workRoot, res.Files)
+		if err != nil {
+			fmt.Fprintf(errOut, "px snap: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(out, "px gen: %d 本（変わった %d）← %s\n", len(res.Files), changed, spec)
+		spec = specs[0]
+	} else if w := staleStar(workRoot, spec); w != "" {
+		fmt.Fprintln(errOut, w)
 	}
 	res, err := build(workRoot, spec, buildOptions{RulesRoot: engineRoot, Sheet: true})
 	if err != nil {
@@ -82,9 +111,12 @@ func cmdSnap(out, errOut *strings.Builder, engineRoot, workRoot, spec string, fr
 		return 1
 	}
 	out.WriteString(summarize(workRoot, res))
-	args := []string{"snap", specName(spec), res.Sheet, specPath(workRoot, spec)}
+	args := []string{"snap", name, res.Sheet, specPath(workRoot, script)}
 	if fresh {
 		args = append(args, "--new")
+	}
+	if maxRounds > 0 {
+		args = append(args, "--max", fmt.Sprint(maxRounds))
 	}
 	code, err := rounds.Run(out, errOut, engineRoot, workRoot, args)
 	if err != nil {
@@ -93,11 +125,6 @@ func cmdSnap(out, errOut *strings.Builder, engineRoot, workRoot, spec string, fr
 	}
 	if code != 0 {
 		return code
-	}
-	hist, err := historyDir(engineRoot, workRoot, spec)
-	if err != nil {
-		fmt.Fprintf(errOut, "px: %v\n", err)
-		return 1
 	}
 	n := rounds.NextRound(hist) - 1
 	data, err := os.ReadFile(filepath.Join(filepath.Dir(res.Sheet), "report.json"))

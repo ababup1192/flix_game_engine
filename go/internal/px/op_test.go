@@ -36,7 +36,7 @@ func TestOpRegistryHasDocs(t *testing.T) {
 	}
 }
 
-// docs/ の生成物は op の登録とずれていない（ずれたら bin/fge px ops --md・bin/fge px schema で作り直す）。
+// docs/ の生成物は op の登録とずれていない（ずれたら bin/fge px ops --md・bin/fge px schema --write で作り直す）。
 func TestDocsUpToDate(t *testing.T) {
 	for path, want := range map[string]string{
 		"docs/px-ops.md":             opsMarkdown(),
@@ -45,7 +45,7 @@ func TestDocsUpToDate(t *testing.T) {
 	} {
 		got, err := os.ReadFile(filepath.Join(engineRoot, path))
 		if err != nil || string(got) != want {
-			t.Errorf("%s が生成物とずれている（bin/fge px ops --md・bin/fge px schema）", path)
+			t.Errorf("%s が生成物とずれている（bin/fge px ops --md・bin/fge px schema --write）", path)
 		}
 	}
 }

@@ -699,6 +699,75 @@
         },
         {
           "type": "object",
+          "description": "煉瓦・瓦・石積みの目地を引く: 段の高さごとに横の目地、段ごとに半分（offset）ずらした幅ごとに縦の目地（部品の塊の中だけ。色は下の色を by 段暗く）",
+          "additionalProperties": false,
+          "required": [
+            "courses"
+          ],
+          "properties": {
+            "courses": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "shape": {
+                  "description": "形（省くと部品の塊）",
+                  "$ref": "#/definitions/shape"
+                },
+                "size": {
+                  "description": "1 個の大きさ [幅, 段の高さ]（目地の 1px を含む。2 以上の整数）",
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "default": [
+                    8,
+                    4
+                  ]
+                },
+                "origin": {
+                  "description": "横の目地が通る行・1 段目の縦の目地が通る列 [x, y]（部品の at でずれる）",
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "default": [
+                    0,
+                    0
+                  ]
+                },
+                "offset": {
+                  "description": "1 段ごとの縦の目地のずらし（幅に対する割合。0 で揃う・0.5 で半分）",
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1,
+                  "default": 0.5
+                },
+                "vertical": {
+                  "description": "縦の目地も引く（false で横の目地だけ = 板張り・瓦の段）",
+                  "type": "boolean",
+                  "default": true
+                },
+                "color": {
+                  "description": "目地の色（省くと下の色を by 段ずらす）",
+                  "$ref": "#/definitions/color"
+                },
+                "by": {
+                  "description": "color を省いた時に下の色をランプでずらす段数（負で暗く）",
+                  "type": "integer",
+                  "minimum": -4,
+                  "maximum": 4,
+                  "default": -1
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
           "description": "親（on）の塊の割れ目: 墨の 1px と、その右下に切り口のつや 1px",
           "additionalProperties": false,
           "required": [
@@ -2112,6 +2181,10 @@
         "rotate": {
           "type": "number",
           "description": "部品を回す角度（度。正で時計回り。rotsprite の考え方で色を足さない）"
+        },
+        "emissive": {
+          "type": "boolean",
+          "description": "true で自分で光る部品（窓の灯り・炎・画面）。光の向きの検査 light-dir の対象から外す"
         },
         "pivot": {
           "description": "回す中心の画素 [x, y]（整数は画素の中心・.5 は画素の境目。省くと塊の上の真ん中）",

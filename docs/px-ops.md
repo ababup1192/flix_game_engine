@@ -20,6 +20,7 @@
 | 遠景と近景・主役と背景 | `depth_fade` → `contrast` | lint value-sep（contrast で測る） / lint value-sep |
 | 揺れ・呼吸・弾み（on の子も付いていく） | `sway` / `bob` / `squash` | lint orphan・anim（pop・loop）。欠けは pixel_perfect で整える / anim（bob・ground） / anim（area・ground） |
 | 水・滝・流れ（波頭を 1px ずつ流す） | `wave_shift` | anim（pop・loop）。輪が閉じるようにコマの数 × speed を塊の幅に合わせる |
+| 煉瓦・瓦・石積みの目地（段ごとに半分ずらす） | `courses` | lint banding・flat-run |
 
 既定値はどれも仮置き（見本 10 題と作品 5 作の大きい見比べで決め直す）。強さは各 op の引数で選び、使わない技法は書かない。
 
@@ -32,6 +33,7 @@
 | 陰影（平らな面は 1 色・光源は左上の 1 つ） | `bevel_box` | 角丸の板: 斜めの帯で 光・地・影、縁の 1px につや（光の側）と墨（影の側）、外側に墨の輪郭（格子は正方形） | 既存の lint banding |
 | アニメ（溜め・弾み） | `bob` | 部品を上下に動かす（コマごとに -amp·sin。呼吸・浮遊・歩きの上下） | anim（bob・ground） |
 | 背景の奥行き（遠いほど明度差が小さい）・主役と背景を分ける | `contrast` | 今の部品と相手（部品 against か地の色）の明るさ（Oklab の L）の平均の差を測るだけ（描かない） | lint value-sep |
+| 敷き詰め（煉瓦・瓦は段ごとに半分ずらす。目地は面より暗い 1px） | `courses` | 煉瓦・瓦・石積みの目地を引く: 段の高さごとに横の目地、段ごとに半分（offset）ずらした幅ごとに縦の目地（部品の塊の中だけ。色は下の色を by 段暗く） | lint banding・flat-run |
 | タイルの割れ目 | `crack` | 親（on）の塊の割れ目: 墨の 1px と、その右下に切り口のつや 1px | — |
 | 垂れた紐・鎖（粒を交互の明暗で） | `curve` | 2 次ベジェを 1px の連なった線で引く（alt で 1 画素ごとに色を交互に・avoid の形の中は飛ばす） | 既存の lint corner |
 | 背景の奥行き（遠いほど明度差が小さく、空の色・青へ寄る） | `depth_fade` | 遠い層ほど、塗った色を空の色 toward へ depth の割合で寄せ（明度差も縮む）、一番近い候補の色に置き換える（色は足さない。候補は spec の style があればその色の集合、無ければ spec のランプの色と toward） | lint value-sep（contrast で測る） |
@@ -96,16 +98,57 @@
 ## 台本（`<名前>.px.star`）
 
 単純な指定は JSON（pxsrc）、繰り返しや変化が要る所は Starlark（Python とほぼ同じ書き方）の台本で、道具を関数として呼ぶ。
-`bin/fge px gen <名前>.px.star` で台本が書く pxsrc・JSON を書き出し、`bin/fge px build <名前>.px.star` は書き出さずにメモリの中で build する。
+
+- `bin/fge px gen <名前>.px.star`: 台本が書く pxsrc・色票・JSON をファイルへ書く（中身が同じ物は触らない）。
+- `bin/fge px build <名前>.px.star`: pxsrc・JSON はメモリの中だけに書いて build する（target の sprite.json と debug/px/ の見本は書く）。
+- `bin/fge px snap <名前>.px.star`: gen してから撮り、周の history に台本を積む（pxsrc を撮ると、台本の変更が入っていない時に警告）。
 
 | 呼べる物 | 何をするか |
 |---|---|
 | `px.write_spec(path, value)` | pxsrc を書く（spec の検査を当ててから。assets/ の下と作業場の外には書けない） |
-| `px.write_json(path, value)` | 色票などの JSON を書く（`style="python", indent=…` は Python の json.dump と同じ並び。写しの間だけ） |
+| `px.palette(path, colors, note="")` | 色票（`<名前>.palette.json`）を書き、ランプ（名前 → 色キーの列）を返す。`colors` は 名前 → `"#rrggbb"` の列（暗 → 明。色キーは `<名前>0`…）か 1 色 |
+| `op.<名前>(引数=…)` | `{名前: {引数}}` の dict を作る（引数の型・範囲をその行で確かめる）。予約語と同じ名前の引数は末尾に `_`（`op.directional(from_=1)` → `"from": 1`） |
+| `px.write_json(path, value)` | JSON を書く（`style="python", indent=…` は Python の json.dump と同じ並び。写しの間だけ） |
 | `px.hash01(x, y, seed)`・`px.noise1(x, seed)`・`px.rng(seed)` | 種つきのゆらぎ・乱数（rng は CPython の random.Random と同じ列。写しの間だけ） |
 | `px.round(x, nd)` | Python の round（ちょうど半分は偶数へ） |
 | `math.*` | sin・cos・tan・atan2・hypot・exp・log・pow・sqrt・floor・ceil・radians・pi。答えは正しく丸めた値で、OS・CPU で変わらない |
 
+最小の台本（version・target・palette・ramps・sprites・parts・frames）:
+
+```python
+# debug/px-scenes/lamp/lamp.px.star（bin/fge px gen debug/px-scenes/lamp/lamp.px.star）
+ramps = px.palette("lamp.palette.json", {
+    "iron": ["#181820", "#383848", "#686878", "#a0a0b0"],  # 暗 → 明（色キーは iron0〜iron3）
+    "glow": ["#a05820", "#e09838", "#f8d070"],
+})
+
+px.write_spec("lamp.pxsrc.json", {
+    "version": 2,
+    "target": "//atelier/lamp.sprite.json",  # // は作業場の根から。採用の候補は atelier/
+    "palette": "lamp.palette.json",           # ほかのパスは台本のフォルダが起点
+    "ramps": ramps,
+    "sprites": {"lamp": {
+        "size": [16, 24],
+        "ramp": "iron",
+        "parts": [
+            {"id": "pole", "shape": {"rect": [7, 8, 2, 16]}, "ops": [op.directional(), op.sel_out()]},
+            {"id": "light", "shape": {"disk": [8, 5, 3]}, "ramp": "glow", "emissive": True,
+             "ops": [op.gradient_fill(field = "y", invert = True)]},
+        ],
+        "frames": {"on": {}, "off": {"light": {"ramp": "iron"}}},
+    }},
+})
+```
+
+色票の書式（px.palette が書く物。手で書いても同じ）: 名前 → `"#rrggbb"` の平らな JSON。`{"rgb": [0〜1, 0〜1, 0〜1]}` も読める。
+
+```json
+{"version": 1, "iron0": "#181820", "iron1": "#383848", "glow0": "#a05820"}
+```
+
+- パス: 台本の中のパス（write_spec・palette・write_json の path と、pxsrc の target・base・palette・gate・style の .json）は台本のフォルダが起点。`//` で始めると作業場の根から。書き出す pxsrc には根からのパスで入る。
+- 置き場: 採用の候補の sprite.json（target）は `atelier/`（assets/ には書けない）。採用しない試し（`debug/px-scenes/` など）は target ごと `debug/` に置いてよい。見本・report・PNG は build が `debug/px/<名前>/` に書く。
+- 一番外（def の外）では同じ名前に 2 度代入できない（Starlark の決まり。一番外の for の変数を 2 つのループで使うのも当たる）。ループや組み立ては def の中に入れて呼ぶ。
 - 囲い: load は台本と同じフォルダと隣の `tools/` の `.star` だけ。ファイル・ネット・時刻には触れない。手数は 1 本 500000000 手まで。
 - Starlark に無い物: class（dict と関数で書く）・`**`（`math.pow` か `x * x`）・set・連なった比較（`a <= x < b`）・bool の足し算。
 - 決まり（今は advice）: 台本 1 本 600 行・pxsrc 1 本 500 KB・1 部品の put 200 画素・格子の半分を超える stamp・while。使われない関数は止める。
@@ -166,6 +209,22 @@
 |---|---|---|
 | `against` | string | 相手の部品 id（省くと light.ground の地の色） |
 | `min` | number | 差の下限（0 で bin/lint-rules/px.json の valueSepMin）（0〜1）（省くと 0） |
+
+### `courses`
+
+例: `{"courses": {"size": [8, 5], "origin": [2, 3]}}`
+
+部品を描き終えたら、その範囲で検査 `sprite:banding` を回す。
+
+| 引数 | 型 | 説明 |
+|---|---|---|
+| `shape` | shape | 形（省くと部品の塊） |
+| `size` | pair | 1 個の大きさ [幅, 段の高さ]（目地の 1px を含む。2 以上の整数）（省くと [8,4]） |
+| `origin` | point | 横の目地が通る行・1 段目の縦の目地が通る列 [x, y]（部品の at でずれる）（省くと [0,0]） |
+| `offset` | number | 1 段ごとの縦の目地のずらし（幅に対する割合。0 で揃う・0.5 で半分）（0〜1）（省くと 0.5） |
+| `vertical` | bool | 縦の目地も引く（false で横の目地だけ = 板張り・瓦の段）（省くと true） |
+| `color` | color | 目地の色（省くと下の色を by 段ずらす） |
+| `by` | int | color を省いた時に下の色をランプでずらす段数（負で暗く）（-4〜4）（省くと -1） |
 
 ### `crack`
 
@@ -537,14 +596,14 @@
 |---|---|---|
 | `anim` | lint | anim: コマ列に bin/fge anim の pop・area・ground・bob・loop をかける（動きの op・pose・rotate を使うスプライト、か anim: true） |
 | `black-outline` | advice | black-outline: 小さい絵（blackOutlineMaxSize 未満）で、外の縁が 1 色・絵の中で一番暗い色のまま一周している |
-| `flat-run` | advice | 輪郭の段: 同じ長さの段が続く（直線に読まれる）・長すぎる直線（16px で 4px・32px で 6px を超える） |
+| `flat-run` | advice | 輪郭の段: 同じ長さの段が続く（直線に読まれる）・長すぎる直線（16px で 4px・32px で 6px を超える）。poly の部品の辺は直線として、段の長さが 3 種類以上に散る時だけ |
 | `flicker` | lint | flicker: コマの間で周り 8 画素が動かないのに色だけ変わる画素（ちらつき。palette_cycle と wave_shift の画素は除く） |
 | `ground-contrast` | lint | 外周の画素と地の色の明るさ（Oklab の L）の差が小さく、輪郭が地に溶ける |
-| `light-dir` | advice | light-dir: 塊の明るさで重みを付けた重心（明るい側 − 暗い側）が光の側（light.dir）に無い |
+| `light-dir` | advice | light-dir: 塊の明るさで重みを付けた重心（明るい側 − 暗い側）が光の側（light.dir）に無い（emissive の部品は見ない） |
 | `margin` | advice | margin: 動く絵が格子の左・右・上の縁に触れている（動く余白が無い） |
 | `pillow` | advice | pillow: 塊の縁が光の側でも影の側でも同じように内側より暗い（縁からの距離で塗った陰） |
 | `ramp-order` | lint | ramp-order: ランプの明るさ（Oklab の L）が暗 → 明に単調でない・隣の段の差が rampMinGap に足りない |
-| `run-monotone` | lint | 曲線の段の長さが単調でない（3-2-1 は良い・1-2-1-2 と 3-2-1-4 は不可） |
+| `run-monotone` | lint | 曲線の段の長さが単調でない（3-2-1 は良い・1-2-1-2 と 3-2-1-4 は不可）。poly の部品の辺は見ない（flat-run が見る） |
 | `seam` | lint | seam: タイルの端（左と右・上と下）の画素の明るさの差が、内側の隣り合う列の差の seamRatio 倍を超える（並べると継ぎ目が見える） |
 | `sprite` | lint | bin/fge sprite の形の規則（orphan・connect・jaggy・banding・corner・silhouette） |
 | `style` | gate | 機種の決まり（spec の style）: 使える色・1 コマの色数・升目ごとの色数・RGB の段数・大きさ |

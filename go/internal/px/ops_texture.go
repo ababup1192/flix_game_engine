@@ -259,3 +259,73 @@ func init() {
 		},
 	})
 }
+
+// courses は互い違いの格子の目地の画素: 段の高さ h ごとに横の目地、段ごとに offset×w ずらした幅 w ごとに縦の目地
+// （origin が目地の通る列と行。vertical が false なら横の目地だけ）。
+func courses(m pxlib.Mask, w, h int, origin pxlib.Pt, offset float64, vertical bool) []pxlib.Pt {
+	floorMod := func(a, n int) int { return ((a % n) + n) % n }
+	shift := int(math.Round(float64(w) * offset))
+	var out []pxlib.Pt
+	for _, p := range m.Points() {
+		dy := p.Y - origin.Y
+		row := (dy - floorMod(dy, h)) / h
+		joint := floorMod(dy, h) == 0
+		if !joint && vertical {
+			joint = floorMod(p.X-origin.X-floorMod(row, 2)*shift, w) == 0
+		}
+		if joint {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+func init() {
+	register(&opDef{
+		Name: "courses", Example: `{"courses": {"size": [8, 5], "origin": [2, 3]}}`,
+		Summary:   "煉瓦・瓦・石積みの目地を引く: 段の高さごとに横の目地、段ごとに半分（offset）ずらした幅ごとに縦の目地（部品の塊の中だけ。色は下の色を by 段暗く）",
+		Technique: "敷き詰め（煉瓦・瓦は段ごとに半分ずらす。目地は面より暗い 1px）", Finish: "lint banding・flat-run",
+		Params: []param{
+			pShape,
+			{Name: "size", Type: tPair, Default: []any{8.0, 4.0}, Summary: "1 個の大きさ [幅, 段の高さ]（目地の 1px を含む。2 以上の整数）"},
+			{Name: "origin", Type: tPoint, Default: []any{0.0, 0.0}, Summary: "横の目地が通る行・1 段目の縦の目地が通る列 [x, y]（部品の at でずれる）"},
+			{Name: "offset", Type: tNumber, Default: 0.5, Summary: "1 段ごとの縦の目地のずらし（幅に対する割合。0 で揃う・0.5 で半分）", Lo: bound(0), Hi: bound(1)},
+			{Name: "vertical", Type: tBool, Default: true, Summary: "縦の目地も引く（false で横の目地だけ = 板張り・瓦の段）"},
+			{Name: "color", Type: tColor, Summary: "目地の色（省くと下の色を by 段ずらす）"},
+			{Name: "by", Type: tInt, Default: -1.0, Summary: "color を省いた時に下の色をランプでずらす段数（負で暗く）", Lo: bound(-4), Hi: bound(4)},
+		},
+		Checks: []checkRef{{Check: checkSprite, Rule: "banding"}},
+		Apply: func(c *ctx, a opArgs) error {
+			m, err := c.ShapeOrRegion(a)
+			if err != nil {
+				return err
+			}
+			sz := a.pair("size")
+			w, h := int(sz[0]), int(sz[1])
+			if float64(w) != sz[0] || float64(h) != sz[1] || w < 2 || h < 2 {
+				return fmt.Errorf("size は 2 以上の整数 2 つ [幅, 段の高さ]（got %v）", sz)
+			}
+			var fixed pxlib.Key
+			hasColor := a.has("color")
+			if hasColor {
+				if fixed, err = c.Color(a.color("color")); err != nil {
+					return err
+				}
+			}
+			o := a.point("origin")
+			ramps := c.allRamps()
+			for _, p := range courses(m, w, h, pxlib.Pt{X: o.X + c.ox, Y: o.Y + c.oy}, a.num("offset"), a.bool("vertical")) {
+				k := fixed
+				if !hasColor {
+					cur := c.G.At(p.X, p.Y)
+					if cur == pxlib.Clear {
+						continue
+					}
+					k = shadeStep(rampOf(ramps, cur), cur, a.int("by"))
+				}
+				c.PutAbs(p.X, p.Y, k)
+			}
+			return nil
+		},
+	})
+}

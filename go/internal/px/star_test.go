@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // writeFiles は一時フォルダに files（相対パス → 中身）を書いて、そのフォルダを返す。
@@ -283,7 +284,7 @@ func TestAdvice(t *testing.T) {
 func TestGenWritesAndBuildReadsFromMemory(t *testing.T) {
 	dir := writeFiles(t, map[string]string{
 		"assets/t.palette.json": `{"version": 1, "c0": "#202020", "c1": "#606060", "c2": "#a0a0a0", "c3": "#e0e0e0"}`,
-		"art/t.px.star": `px.write_spec("art/t.pxsrc.json", {"version": 2, "target": "atelier/t.sprite.json", "palette": "assets/t.palette.json",
+		"art/t.px.star": `px.write_spec("t.pxsrc.json", {"version": 2, "target": "//atelier/t.sprite.json", "palette": "../assets/t.palette.json",
   "ramps": {"r": ["c0", "c1", "c2", "c3"]},
   "sprites": {"s": {"size": [4, 2], "ramp": "r", "parts": [{"id": "a", "shape": {"rect": [0, 0, %d, 1]}, "ops": [{"fill": {"color": "ink"}}]}],
   "frames": {"idle": {}}}}})
@@ -313,5 +314,160 @@ func TestGenWritesAndBuildReadsFromMemory(t *testing.T) {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("gen %d: %q が無い: %s", i, want, out.String())
 		}
+	}
+}
+
+// ---------------------------------------------------------------- 初めての担当の書きにくさ（0 周目）
+
+// 台本の中のパスは台本のフォルダが起点・// は作業場の根から。pxsrc の target などは根からのパスに直して書く。
+func TestPathsAreRelativeToScript(t *testing.T) {
+	src := `ramps = px.palette("t.palette.json", {"r": ["#202020", "#606060"]})
+px.write_spec("t.pxsrc.json", {"version": 2, "target": "//atelier/t.sprite.json", "palette": "t.palette.json", "style": "my.pxstyle.json",
+  "ramps": ramps, "sprites": {"s": {"size": [2, 2], "ramp": "r", "parts": [{"id": "a", "ops": []}], "frames": {"f": {}}}}})
+`
+	res, err := runScript(t, map[string]string{"debug/scene/t.px.star": src}, "debug/scene/t.px.star", starOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var paths []string
+	for _, f := range res.Files {
+		paths = append(paths, f.Path)
+	}
+	if strings.Join(paths, " ") != "debug/scene/t.palette.json debug/scene/t.pxsrc.json" {
+		t.Errorf("書いた先: %v", paths)
+	}
+	spec := string(res.Files[1].Data)
+	for _, want := range []string{`"target": "atelier/t.sprite.json"`, `"palette": "debug/scene/t.palette.json"`, `"style": "debug/scene/my.pxstyle.json"`} {
+		if !strings.Contains(spec, want) {
+			t.Errorf("pxsrc に %s が無い:\n%s", want, spec)
+		}
+	}
+}
+
+// px.palette は hex の列から色票を書き、ランプ（色キーの列）を返す。
+func TestPaletteWritesHexAndReturnsRamps(t *testing.T) {
+	src := `ramps = px.palette("p.palette.json", {"roof": ["#301018", "602028"], "ink": "#000000"})
+px.write_json("r.json", ramps)
+`
+	res, err := runScript(t, map[string]string{"a.px.star": src}, "a.px.star", starOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(res.Files[0].Data); got != "{\n \"version\": 1,\n \"roof0\": \"#301018\",\n \"roof1\": \"#602028\",\n \"ink\": \"#000000\"\n}\n" {
+		t.Errorf("色票: %s", got)
+	}
+	if got := string(res.Files[1].Data); !strings.Contains(got, `"roof": [`) || strings.Contains(got, "ink") {
+		t.Errorf("返り値はランプだけ: %s", got)
+	}
+	if _, err := runScript(t, map[string]string{"a.px.star": `px.palette("p.palette.json", {"x": "red"})` + "\n"}, "a.px.star", starOptions{}); err == nil {
+		t.Errorf("#rrggbb でない色が通った")
+	}
+}
+
+// op.<名前>(…) は {名前: {引数}} を作り、予約語の引数は末尾の _ を外す。型の誤りはその行で止まる。
+func TestOpModuleBuildsDictAndAliasesReserved(t *testing.T) {
+	res, err := runScript(t, map[string]string{"a.px.star": `px.write_json("o.json", [op.directional(from_ = 1, band = 0.25), op.sel_out()])` + "\n"}, "a.px.star", starOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(res.Files[0].Data); !strings.Contains(got, `"from": 1`) || !strings.Contains(got, `"sel_out": {}`) {
+		t.Errorf("op の dict: %s", got)
+	}
+	for _, src := range []string{`op.directional(band = "x")`, `op.directional(nope = 1)`, `op.directional(1)`} {
+		if _, err := runScript(t, map[string]string{"a.px.star": src + "\n"}, "a.px.star", starOptions{}); err == nil || !strings.Contains(err.Error(), "a.px.star:1") {
+			t.Errorf("%s: 行番号つきで止まらない: %v", src, err)
+		}
+	}
+}
+
+// 一番外の名前の再代入（Starlark の決まり）には def の中に入れる案内を付ける。
+func TestTopLevelReassignHint(t *testing.T) {
+	_, err := runScript(t, map[string]string{"a.px.star": "for i in range(2):\n    pass\nfor i in range(3):\n    pass\n"}, "a.px.star", starOptions{})
+	if err == nil || !strings.Contains(err.Error(), "def の中に入れて") {
+		t.Errorf("案内が無い: %v", err)
+	}
+}
+
+// docs/px-ops.md に載せた最小の台本は、そのまま gen と build を通る。
+func TestStarExampleRuns(t *testing.T) {
+	dir := writeFiles(t, map[string]string{"debug/px-scenes/lamp/lamp.px.star": starExample})
+	var out, errOut strings.Builder
+	if code := Run(&out, &errOut, engineRoot, dir, []string{"build", "debug/px-scenes/lamp/lamp.px.star"}, false); code != 0 {
+		t.Fatalf("build: %d\n%s%s", code, out.String(), errOut.String())
+	}
+	if _, err := os.Stat(filepath.Join(dir, "atelier", "lamp.sprite.json")); err != nil {
+		t.Errorf("target が atelier/ に書かれていない: %v", err)
+	}
+}
+
+// snap は台本を受けて gen してから撮り、周に台本を積む。古い pxsrc を撮る時は警告する。
+func TestSnapTakesScriptAndWarnsStalePxsrc(t *testing.T) {
+	dir := writeFiles(t, map[string]string{"debug/px-scenes/lamp/lamp.px.star": starExample})
+	var out, errOut strings.Builder
+	if code := Run(&out, &errOut, engineRoot, dir, []string{"snap", "debug/px-scenes/lamp/lamp.px.star"}, false); code != 0 {
+		t.Fatalf("snap: %d\n%s%s", code, out.String(), errOut.String())
+	}
+	if _, err := os.Stat(filepath.Join(dir, "debug", "history", "lamp", "r1.lamp.px.star")); err != nil {
+		t.Errorf("周に台本が積まれていない: %v", err)
+	}
+	// 台本だけ直して pxsrc を撮ると、台本の変更が入っていないと言う
+	star := filepath.Join(dir, "debug", "px-scenes", "lamp", "lamp.px.star")
+	if err := os.WriteFile(star, []byte(strings.Replace(starExample, "[16, 24]", "[16, 26]", 1)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	future := time.Now().Add(time.Hour)
+	if err := os.Chtimes(star, future, future); err != nil {
+		t.Fatal(err)
+	}
+	if w := staleStar(dir, "debug/px-scenes/lamp/lamp.pxsrc.json"); !strings.Contains(w, "台本の変更が入っていない") {
+		t.Errorf("古い pxsrc の警告が無い: %q", w)
+	}
+}
+
+// schema は引数なしでは docs/ を書かない（--write で書く）。
+func TestSchemaDefaultOnlyPrints(t *testing.T) {
+	dir := t.TempDir()
+	var out, errOut strings.Builder
+	if code := Run(&out, &errOut, dir, dir, []string{"schema"}, false); code != 0 || !strings.Contains(out.String(), "docs/pxsrc.schema.json") {
+		t.Fatalf("schema: %d %s", code, errOut.String())
+	}
+	if _, err := os.Stat(filepath.Join(dir, "docs")); err == nil {
+		t.Errorf("引数なしの schema が docs/ を書いた")
+	}
+}
+
+// help は引数なしでコマンドと style（色数の上限）、コマンドの名前でその使い方を出す。
+func TestHelpListsCommandsAndStyles(t *testing.T) {
+	var out, errOut strings.Builder
+	if code := Run(&out, &errOut, engineRoot, t.TempDir(), []string{"help"}, false); code != 0 || !strings.Contains(out.String(), "snes") || !strings.Contains(out.String(), "15 色") {
+		t.Errorf("help の一覧: %d %s%s", code, out.String(), errOut.String())
+	}
+	out.Reset()
+	if code := Run(&out, &errOut, engineRoot, t.TempDir(), []string{"help", "snap"}, false); code != 0 || !strings.Contains(out.String(), "--max") {
+		t.Errorf("help snap: %d %s", code, out.String())
+	}
+}
+
+// build --png は実寸・4 倍・横並びを書き、同じ指定からは同じバイトになる。
+func TestBuildPNGIsDeterministic(t *testing.T) {
+	dir := writeFiles(t, map[string]string{"debug/px-scenes/lamp/lamp.px.star": starExample})
+	var sums []string
+	for i := 0; i < 2; i++ {
+		var out, errOut strings.Builder
+		if code := Run(&out, &errOut, engineRoot, dir, []string{"build", "debug/px-scenes/lamp/lamp.px.star", "--png", "--no-check"}, false); code != 0 {
+			t.Fatalf("build: %s", errOut.String())
+		}
+		var all []byte
+		for _, n := range []string{"lamp.png", "lamp@4x.png", "lamp.strip.png", "lamp.strip@4x.png"} {
+			data, err := os.ReadFile(filepath.Join(dir, "debug", "px", "lamp", "png", n))
+			if err != nil {
+				t.Fatal(err)
+			}
+			all = append(all, data...)
+		}
+		sums = append(sums, string(all))
+	}
+	if sums[0] != sums[1] {
+		t.Errorf("同じ指定から違う PNG")
 	}
 }
