@@ -49,7 +49,7 @@ func init() {
 		Example: `{"rest": {"ms": 180}}`,
 		Params:  []opreg.Param{msP("長さ（ミリ秒）")},
 		Gen: func(c *rctx, a opreg.Args) (sourceOut, error) {
-			return sourceOut{s: make([]float64, c.frames(a.Num("ms"))), loopStart: -1}, nil
+			return sourceOut{ch: [][]float64{make([]float64, c.frames(a.Num("ms")))}, loopStart: -1}, nil
 		},
 	})
 }
@@ -75,7 +75,7 @@ func genPulse(c *rctx, a opreg.Args) (sourceOut, error) {
 				out[i] = -amp
 			}
 		}
-		return sourceOut{s: out, loopStart: -1, parts: []part{partPulse}}, nil
+		return sourceOut{ch: [][]float64{out}, loopStart: -1, parts: []part{partPulse}}, nil
 	}
 	to := hz
 	if a.Has("to_hz") {
@@ -99,7 +99,7 @@ func genPulse(c *rctx, a opreg.Args) (sourceOut, error) {
 		}
 		ph = ph + f/c.rate
 	}
-	return sourceOut{s: out, loopStart: -1, parts: []part{partPulse}}, nil
+	return sourceOut{ch: [][]float64{out}, loopStart: -1, parts: []part{partPulse}}, nil
 }
 
 // hashNoise は SfxSynth.noise と同じ: 番号を 32 bit で回るハッシュに通した -1〜1。
@@ -143,7 +143,7 @@ func genNoise(c *rctx, a opreg.Args) (sourceOut, error) {
 	default:
 		return sourceOut{}, fmt.Errorf("知らない kind %q", a.Str("kind"))
 	}
-	return sourceOut{s: out, loopStart: -1, parts: []part{partNoise}}, nil
+	return sourceOut{ch: [][]float64{out}, loopStart: -1, parts: []part{partNoise}}, nil
 }
 
 // lfsrStep は 15 bit の LFSR を 1 サンプルに clocks 回ぶん回す（短周期は 6 bit 目へ戻すので 93 段で一巡する。

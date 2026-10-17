@@ -6,7 +6,8 @@ package snd
 //	fge snd build <名前>.snd.star   sndsrc はメモリの中だけに書き、書いた sndsrc を全部 build する（target の WAV は書く）
 //
 // 箱の決まり（ファイル・ネット・時刻に触れない・load の範囲・手数の上限）は starbox。台本から呼べる物は
-// snd（write_spec・read_json）・op（op の registry から作る dict の組み立て）・math（crmath。正しく丸めた値）だけ。
+// snd（write_spec・write_chip・read_json）・op（op の registry から作る dict の組み立て）・mus（曲を書く部品。mus.go）・
+// math（crmath。正しく丸めた値）だけ。write_chip が書いた譜面は build ではメモリの中だけ（song の op が先に引く）・gen ではファイルへ。
 // read_json は作業場の .json を読むだけ（つまみ・譜面の正は assets/ の Doc。台本に数を写さない）。
 
 import (
@@ -51,9 +52,10 @@ func runStar(workRoot, script string, opt starbox.Options) (*starResult, error) 
 	st := &starState{Box: box, written: map[string]int{}}
 	sndMod := &starlarkstruct.Module{Name: "snd", Members: starlark.StringDict{
 		"write_spec": starlark.NewBuiltin("snd.write_spec", st.writeSpec),
+		"write_chip": starlark.NewBuiltin("snd.write_chip", st.writeChip),
 		"read_json":  starlark.NewBuiltin("snd.read_json", st.readJSON),
 	}}
-	if err := box.Run(full, starlark.StringDict{"snd": sndMod, "op": starOpModule(), "math": crmath.StarModule()}); err != nil {
+	if err := box.Run(full, starlark.StringDict{"snd": sndMod, "op": starOpModule(), "mus": musModule(), "math": crmath.StarModule()}); err != nil {
 		return nil, err
 	}
 	return &starResult{Files: st.files, Advice: box.Advice, Steps: box.Steps}, nil
@@ -118,13 +120,18 @@ func (st *starState) writeSpec(_ *starlark.Thread, b *starlark.Builtin, args sta
 	if _, err := parseSpec(clean, data); err != nil {
 		return nil, fmt.Errorf("%s(%q): %v", b.Name(), path, err)
 	}
+	st.put(clean, data)
+	return starlark.None, nil
+}
+
+// put は台本が書いた物を覚える（同じパスは後の物が勝つ）。
+func (st *starState) put(clean string, data []byte) {
 	if i, ok := st.written[clean]; ok {
 		st.files[i] = starFile{clean, data}
 	} else {
 		st.written[clean] = len(st.files)
 		st.files = append(st.files, starFile{clean, data})
 	}
-	return starlark.None, nil
 }
 
 func (st *starState) readJSON(_ *starlark.Thread, b *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {

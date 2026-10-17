@@ -1,7 +1,8 @@
 package snd
 
-// WAV の取り決め（鳴らす側と同じ）: 16bit モノラル PCM。ループのある音は smpl チャンクにループ 1 本
-// （頭のサンプル〜最後のサンプル）。書き方は engine_tools の SfxSynth.wavBytes・wavBytesLooped と同じバイト。
+// WAV の取り決め: 16bit PCM のモノラル（鳴らす側と同じ。書き方は engine_tools の SfxSynth.wavBytes・
+// wavBytesLooped と同じバイト）かステレオ（左右を交互に）。ループのある音は smpl チャンクにループ 1 本
+// （頭のフレーム〜最後のフレーム）。ステレオを鳴らす側が読めるかは採用の時の別仕事。
 
 import (
 	"encoding/binary"
@@ -23,11 +24,16 @@ func quantize16(x float64) int16 {
 	return int16(int64(v)) // Go の変換は 0 の向きへ切り捨て（Java の (int) と同じ）
 }
 
-// EncodeWAV は 16bit モノラルの WAV のバイト列。loopStart が 0 以上・長さ未満なら smpl を付ける。
-func EncodeWAV(rate int, samples []float64, loopStart int) []byte {
-	n := len(samples)
+// EncodeWAV は 16bit の WAV のバイト列（chans が 1 本ならモノラル・2 本ならステレオ）。
+// loopStart が 0 以上・長さ未満なら smpl を付ける。
+func EncodeWAV(rate int, chans [][]float64, loopStart int) []byte {
+	nc := max(1, len(chans))
+	n := 0
+	if len(chans) > 0 {
+		n = len(chans[0])
+	}
 	looped := loopStart >= 0 && loopStart < n
-	dataSize := n * 2
+	dataSize := n * 2 * nc
 	riff := 36 + dataSize
 	if looped {
 		riff += 68
@@ -40,15 +46,17 @@ func EncodeWAV(rate int, samples []float64, loopStart int) []byte {
 	b = append(b, "WAVEfmt "...)
 	le32(16)
 	le16(1)
-	le16(1)
+	le16(uint16(nc))
 	le32(uint32(rate))
-	le32(uint32(rate * 2))
-	le16(2)
+	le32(uint32(rate * 2 * nc))
+	le16(uint16(2 * nc))
 	le16(16)
 	b = append(b, "data"...)
 	le32(uint32(dataSize))
-	for _, s := range samples {
-		le16(uint16(quantize16(s)))
+	for i := 0; i < n; i++ {
+		for _, ch := range chans {
+			le16(uint16(quantize16(ch[i])))
+		}
 	}
 	if looped {
 		b = append(b, "smpl"...)
@@ -59,16 +67,24 @@ func EncodeWAV(rate int, samples []float64, loopStart int) []byte {
 	return b
 }
 
-// Clip は読んだ WAV 1 本（モノラルの -1〜1・ループの頭。無ければ -1）。
+// Clip は読んだ WAV 1 本（チャンネルごとの -1〜1・左右を交互に並べた 16bit の値・ループの頭。無ければ -1）。
 type Clip struct {
 	Rate      int
-	Samples   []float64
+	Chans     [][]float64
 	Ints      []int16
 	LoopStart int
 	LoopEnd   int
 }
 
-// DecodeWAV は 16bit モノラル PCM の WAV を読む（smpl のループ 1 本目も）。
+// Frames はフレームの数（1 チャンネルぶんのサンプル数）。
+func (c Clip) Frames() int {
+	if len(c.Chans) == 0 {
+		return 0
+	}
+	return len(c.Chans[0])
+}
+
+// DecodeWAV は 16bit PCM のモノラルかステレオの WAV を読む（smpl のループ 1 本目も）。
 func DecodeWAV(data []byte) (Clip, error) {
 	c := Clip{LoopStart: -1, LoopEnd: -1}
 	if len(data) < 12 || string(data[0:4]) != "RIFF" || string(data[8:12]) != "WAVE" {
@@ -89,14 +105,17 @@ func DecodeWAV(data []byte) (Clip, error) {
 				bits = int(binary.LittleEndian.Uint16(data[body+14:]))
 			}
 		case "data":
-			if bits != 16 || channels != 1 {
-				return c, fmt.Errorf("16bit モノラルだけ読む（%d bit・%d ch）", bits, channels)
+			if bits != 16 || channels < 1 || channels > 2 {
+				return c, fmt.Errorf("16bit のモノラルかステレオだけ読む（%d bit・%d ch）", bits, channels)
 			}
+			c.Chans = make([][]float64, channels)
 			for i := body; i+1 < end; i += 2 {
 				v := int16(binary.LittleEndian.Uint16(data[i:]))
+				k := len(c.Ints) % channels
 				c.Ints = append(c.Ints, v)
-				c.Samples = append(c.Samples, float64(v)/32768)
+				c.Chans[k] = append(c.Chans[k], float64(v)/32768)
 			}
+			c.Chans[channels-1] = append(c.Chans[channels-1], make([]float64, len(c.Chans[0])-len(c.Chans[channels-1]))...)
 		case "smpl":
 			if end-body >= 36+24 && binary.LittleEndian.Uint32(data[body+28:]) > 0 {
 				c.LoopStart = int(binary.LittleEndian.Uint32(data[body+36+8:]))

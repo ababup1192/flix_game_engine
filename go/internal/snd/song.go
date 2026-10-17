@@ -1,21 +1,25 @@
 package snd
 
-// song の op: トラッカーの譜面（*.chip.json。phrase 16 段 → chain → rows）を、共有の楽器（*.instrument.json。
-// 楽器 = table）で鳴らす。読み方と鳴らし方はゲームの ChipDoc・InstrumentDoc・ChipSynth と同じ（形を変えない）。
-//   1. 制御の段（controlFrames）: 1 tick ごとに音程・音量・波形・ビブラートを決める。
-//   2. 発振の段（renderChannel）: tick の値のまま 1 サンプルずつ波を作り、チャンネルの順に足す。
-// ループのある曲は「頭 + 本編 + 本編」を鳴らして 2 周目の本編を切り出す（1 周目の余韻が継ぎ目に入る）。
-// sin・pow は正しく丸めた値（crmath）。同じ引数は覚えて引く（音程は tick の間ずっと同じなので）。
+// song の op: トラッカーの譜面（*.chip.json。phrase 16 段 → chain → rows）を楽器で鳴らす。読む所はこのファイル、
+// 鳴らす所は song_play.go。今の形（ゲームの ChipDoc・InstrumentDoc と同じ 5 本のチャンネル）はそのまま読める。
+//
+// 足した欄（書かなければ今までどおり）:
+//   - channels: チャンネルを名前で持つ [{"name": "lead", "part": "pulse", "vol": 0.2, "pan": -0.3, "cents": 6,
+//     "sub": 0.3, "duck": true, "send": {"reverb": 0.3, "delay": 0.2}}]。rows の鍵はこの名前。数は style の voices で縛る。
+//   - groove: 段ごとの tick の並び（[7, 5] で跳ねる。平均が 1 段の tick・長さは 16 を割り切る数）。
+//   - fx: 機種の外の厚み {"reverb": {…}, "delay": {"steps": 3, …}, "sidechain": {"key": ["kick"], "depth_db": 4, "release_ms": 160}}。
+//   - instruments・waves: 楽器を譜面の中に書ける（instruments のファイルと同じ形。譜面の方が勝つ）。
+//   - 段のコマンド: DLY n（頭を n tick 遅らせる）・CUT n（n tick で離す）・RTG n（n tick ごとに打ち直す）・
+//     VSL n（1 tick に n/8 段ずつ音量を滑らせる）を 1 段に並べて書ける（SLD n は前の音から滑る）。
+//   - 楽器の表（macro）: "vol"・"arp"・"pitch"・"duty" を別の長さで書き、"|" の後がループ・"/" の後が離した後（release）。
 
 import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/ababup1192/flix_game_engine/go/internal/crmath"
 	"github.com/ababup1192/flix_game_engine/go/internal/opreg"
@@ -24,12 +28,12 @@ import (
 func init() {
 	register(&opDef{
 		Name:    "song",
-		Summary: "譜面（*.chip.json）を楽器（*.instrument.json）で鳴らす。ループ点があれば頭 + 輪の 1 本と smpl のループの頭を作る",
-		Machine: "譜面のチャンネル: pulse1・pulse2 = パルス・triangle = 三角・noise = 雑音・wave = 波形メモリ（使ったチャンネルを機種の縛りで数える）",
+		Summary: "譜面（*.chip.json）を楽器（譜面の中か *.instrument.json）で鳴らす。左右に振って混ぜ、ループ点があれば頭 + 輪の 1 本と smpl のループの頭を作る",
+		Machine: "譜面のチャンネル（今の形は pulse1・pulse2 = パルス・triangle = 三角・noise = 雑音・wave = 波形メモリ。channels を書けば名前と部品を選べる）。使った部品を機種の縛りで数え、reverb・delay・sidechain・sub・pan は style の breaks で見る",
 		Example: `{"song": {"chip": "testdata/snd/tiny.chip.json", "instruments": "testdata/snd/tiny.instrument.json"}}`,
 		Params: []opreg.Param{
-			{Name: "chip", Type: opreg.String, Required: true, Summary: "譜面のパス（作業場の根から）"},
-			{Name: "instruments", Type: opreg.String, Required: true, Summary: "楽器のパス（作業場の根から）"},
+			{Name: "chip", Type: opreg.String, Required: true, Summary: "譜面のパス（作業場の根から。台本の snd.write_chip が書いた物も読める）"},
+			{Name: "instruments", Type: opreg.String, Summary: "楽器のパス（作業場の根から。省くと譜面の中の instruments だけ）"},
 		},
 		Gen: genSong,
 	})
@@ -41,7 +45,7 @@ type pitchKind int
 
 const (
 	pitchHold pitchKind = iota // 何もしない
-	pitchOff                   // 音を止める
+	pitchOff                   // 音を離す（楽器に release があれば離した後の表へ・無ければ止める）
 	pitchNote                  // 新しい音
 )
 
@@ -55,13 +59,31 @@ const (
 	cmdJump
 	cmdLoop
 	cmdEnd
+	cmdDelay    // DLY n: 段の頭を n tick 遅らせる
+	cmdCut      // CUT n: n tick で離す
+	cmdRetrig   // RTG n: n tick ごとに打ち直す
+	cmdVolSlide // VSL n: 1 tick に n/8 段ずつ音量を滑らせる
 )
+
+// stepCmds は段のコマンドの説明（docs の譜面の節に出す）。
+var stepCmds = []struct{ Word, Summary string }{
+	{"ARP a b c", "1 tick ごとに半音 a・b・c… を回す（1 本で和音）"},
+	{"VIB hz cents", "ビブラート"},
+	{"SLD n", "前の音から n tick で滑って着く（次の音へ滑る）"},
+	{"DLY n", "段の頭を n tick 遅らせる（段の長さ未満。前の音はその間鳴り続ける）"},
+	{"CUT n", "鳴らしてから n tick で離す（段をまたいで数える。楽器に release があれば離した後の表へ）"},
+	{"RTG n", "n tick ごとに同じ音を打ち直す"},
+	{"VSL n", "1 tick に n/8 段ずつ音量を滑らせる（負は下げる。次の音で止まる）"},
+}
+
+var cmdWords = map[string]bool{"ARP": true, "VIB": true, "SLD": true, "JMP": true, "LOOP": true, "END": true,
+	"DLY": true, "CUT": true, "RTG": true, "VSL": true}
 
 type cmd struct {
 	kind      cmdKind
 	arp       []int
 	hz, cents float64
-	n, times  int // Slide の tick・Jump / Loop の行・Loop の回数
+	n, times  int // Slide・Delay・Cut・Retrig の tick・VolSlide の量・Jump / Loop の行・Loop の回数
 }
 
 type step struct {
@@ -69,7 +91,16 @@ type step struct {
 	note       int
 	instrument string // "" = 前の段の楽器
 	volume     int    // -1 = 書いていない
-	cmd        cmd
+	cmds       []cmd
+}
+
+func (st step) arg(k cmdKind) (int, bool) {
+	for _, c := range st.cmds {
+		if c.kind == k {
+			return c.n, true
+		}
+	}
+	return 0, false
 }
 
 type chainEntry struct {
@@ -77,30 +108,48 @@ type chainEntry struct {
 	transpose int
 }
 
-type channel int
+// chanDef はチャンネル 1 本（名前・部品・音量・左右・デチューン・サブ・沈める・送り）。
+type chanDef struct {
+	name                  string
+	part                  part
+	vol, pan, cents, sub  float64
+	duck                  bool
+	sendReverb, sendDelay float64
+}
 
-const (
-	chPulse1 channel = iota
-	chPulse2
-	chTriangle
-	chNoise
-	chWave
-)
+// 今の形の 5 本（channels を書かない譜面）。
+var legacyChannels = []chanDef{
+	{name: "pulse1", part: partPulse, vol: 0.2},
+	{name: "pulse2", part: partPulse, vol: 0.2},
+	{name: "triangle", part: partTriangle, vol: 0.3},
+	{name: "noise", part: partNoise, vol: 0.16},
+	{name: "wave", part: partWave, vol: 0.22},
+}
 
-var channelKeys = []string{"pulse1", "pulse2", "triangle", "noise", "wave"}
-var channelGain = []float64{0.2, 0.2, 0.3, 0.16, 0.22}
-var channelPart = []part{partPulse, partPulse, partTriangle, partNoise, partWave}
+var partVol = map[part]float64{partPulse: 0.2, partTriangle: 0.3, partNoise: 0.16, partWave: 0.22}
+
+type songFx struct {
+	reverb     *reverbParam
+	delay      *delayParam
+	delaySteps float64
+	duckKeys   []string
+	duckDepth  float64 // 沈める深さ（倍率で引く量 0〜1）
+	duckMs     float64
+}
 
 type song struct {
 	bpm    float64
 	ticks  int
+	groove []int
 	loop   int
 	rate   int
 	gain   float64
-	mix    map[channel]float64
+	chans  []chanDef
 	phrase map[string][]step
 	chains map[string][]chainEntry
-	rows   []map[channel]string
+	rows   []map[int]string // チャンネルの番号 → chain の名前
+	fx     songFx
+	inline map[string]any // 譜面の中の instruments・waves
 }
 
 const phraseSteps = 16
@@ -128,9 +177,50 @@ type tableRow struct {
 	cmd                  cmd
 }
 
+// macroSeq は楽器の表 1 本（値の並び・ループの頭・離した後の頭。無ければ -1）。
+type macroSeq struct {
+	vals          []int
+	waves         []waveSel // duty の表の時
+	loop, release int
+}
+
+func (m *macroSeq) size() int { return max(len(m.vals), len(m.waves)) }
+
+// next は表の次の位置。離す前はループ（無ければ release の手前か終わりで止まる）・離した後は終わりまで進んで止まる。
+func (m *macroSeq) next(pos int, released bool) int {
+	end := m.size()
+	if !released && m.release >= 0 {
+		end = m.release
+	}
+	switch {
+	case pos+1 < end:
+		return pos + 1
+	case m.loop >= 0 && m.loop < end && (!released || m.loop >= m.release):
+		return m.loop
+	}
+	return min(pos, m.size()-1)
+}
+
+type macros struct {
+	vol, arp, pitch, duty *macroSeq
+	arpFixed              bool
+	vibHz, vibCents       float64
+	vibDelay              int
+}
+
+func (m *macros) hasRelease() bool {
+	for _, s := range []*macroSeq{m.vol, m.arp, m.pitch, m.duty} {
+		if s != nil && s.release >= 0 {
+			return true
+		}
+	}
+	return false
+}
+
 type instrument struct {
 	speed int
 	rows  []tableRow
+	mac   *macros // 表の形（rows の代わり）
 }
 
 type instruments struct {
@@ -151,7 +241,7 @@ func (in instruments) of(name string) instrument {
 	return plainInstrument()
 }
 
-// ── 読む（形と既定は ChipDoc.fromRoot・InstrumentDoc.fromRoot と同じ） ──
+// ── 読む（今の形と既定は ChipDoc.fromRoot・InstrumentDoc.fromRoot と同じ） ──
 
 func intOr(m map[string]any, k string, def int) int {
 	if f, ok := m[k].(float64); ok && f == math.Trunc(f) {
@@ -203,8 +293,6 @@ func atof(s string) (float64, bool) {
 	return v, err == nil
 }
 
-var cmdWords = map[string]bool{"ARP": true, "VIB": true, "SLD": true, "JMP": true, "LOOP": true, "END": true}
-
 func isVolumeWord(w string) bool {
 	if !strings.HasPrefix(w, "v") {
 		return false
@@ -239,7 +327,23 @@ func parseStep(text string) step {
 			break
 		}
 	}
-	st.cmd = parseCmd(strings.Join(rest[k:], " "))
+	// コマンドは語の頭で区切る（"DLY 2 VSL -1" は 2 つ）
+	var cur []string
+	flush := func() {
+		if len(cur) > 0 {
+			if c := parseCmd(strings.Join(cur, " ")); c.kind != cmdNone {
+				st.cmds = append(st.cmds, c)
+			}
+		}
+		cur = nil
+	}
+	for _, w := range rest[k:] {
+		if cmdWords[w] {
+			flush()
+		}
+		cur = append(cur, w)
+	}
+	flush()
 	return st
 }
 
@@ -279,6 +383,12 @@ func parseCmd(text string) cmd {
 		return out
 	}
 	args := w[1:]
+	first := func(lo int) (cmd, bool) {
+		if is := ints(args); len(is) > 0 {
+			return cmd{n: max(lo, is[0])}, true
+		}
+		return cmd{}, false
+	}
 	switch w[0] {
 	case "ARP":
 		return cmd{kind: cmdArp, arp: ints(args)}
@@ -293,14 +403,6 @@ func parseCmd(text string) cmd {
 			return cmd{kind: cmdVib, hz: fs[0], cents: fs[1]}
 		}
 		return cmd{kind: cmdVib}
-	case "SLD":
-		if is := ints(args); len(is) > 0 {
-			return cmd{kind: cmdSlide, n: max(1, is[0])}
-		}
-	case "JMP":
-		if is := ints(args); len(is) > 0 {
-			return cmd{kind: cmdJump, n: max(0, is[0])}
-		}
 	case "LOOP":
 		switch is := ints(args); {
 		case len(is) >= 2:
@@ -310,6 +412,20 @@ func parseCmd(text string) cmd {
 		}
 	case "END":
 		return cmd{kind: cmdEnd}
+	case "VSL":
+		if is := ints(args); len(is) > 0 {
+			return cmd{kind: cmdVolSlide, n: is[0]}
+		}
+	}
+	kinds := map[string]struct {
+		k  cmdKind
+		lo int
+	}{"SLD": {cmdSlide, 1}, "JMP": {cmdJump, 0}, "DLY": {cmdDelay, 0}, "CUT": {cmdCut, 0}, "RTG": {cmdRetrig, 1}}
+	if k, ok := kinds[w[0]]; ok {
+		if c, ok := first(k.lo); ok {
+			c.kind = k.k
+			return c
+		}
 	}
 	return cmd{}
 }
@@ -326,8 +442,8 @@ func parseChainEntry(text string) (chainEntry, bool) {
 	return chainEntry{phrase: w[0], transpose: t}, true
 }
 
-func readJSONObject(path string) (map[string]any, error) {
-	data, err := os.ReadFile(path)
+func readJSONObject(c *rctx, path string) (map[string]any, error) {
+	data, err := c.readFile(path)
 	if err != nil {
 		return nil, err
 	}
@@ -343,8 +459,94 @@ func objectOf(m map[string]any, k string) map[string]any {
 	return o
 }
 
-func loadSong(path string) (*song, error) {
-	root, err := readJSONObject(path)
+var partNames = map[string]part{"pulse": partPulse, "triangle": partTriangle, "noise": partNoise, "wave": partWave}
+
+func parseChannels(root map[string]any) ([]chanDef, error) {
+	raw, ok := root["channels"].([]any)
+	if !ok {
+		if root["channels"] != nil {
+			return nil, fmt.Errorf("channels は [{\"name\": …, \"part\": …}, …] の並びで書く")
+		}
+		out := append([]chanDef{}, legacyChannels...)
+		for i := range out {
+			if f, ok := objectOf(root, "mix")[out[i].name].(float64); ok {
+				out[i].vol = float64(out[i].vol * math.Max(0, f))
+			}
+		}
+		return out, nil
+	}
+	var out []chanDef
+	seen := map[string]bool{}
+	for i, r := range raw {
+		m, ok := r.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("channels[%d] はオブジェクトで書く", i)
+		}
+		name, _ := m["name"].(string)
+		pn, _ := m["part"].(string)
+		p, okP := partNames[pn]
+		switch {
+		case name == "":
+			return nil, fmt.Errorf("channels[%d]: name が無い", i)
+		case seen[name]:
+			return nil, fmt.Errorf("channels[%d]: name %q が重なっている", i, name)
+		case !okP:
+			return nil, fmt.Errorf("channels[%d](%s): part は pulse・triangle・noise・wave のどれか（got %q）", i, name, pn)
+		}
+		seen[name] = true
+		for k := range m {
+			if !map[string]bool{"name": true, "part": true, "vol": true, "pan": true, "cents": true, "sub": true, "duck": true, "send": true, "note": true}[k] {
+				return nil, fmt.Errorf("channels[%d](%s): 知らない鍵 %q（name part vol pan cents sub duck send）", i, name, k)
+			}
+		}
+		d := chanDef{name: name, part: p, vol: floatOr(m, "vol", partVol[p]), pan: floatOr(m, "pan", 0),
+			cents: floatOr(m, "cents", 0), sub: floatOr(m, "sub", 0)}
+		d.duck, _ = m["duck"].(bool)
+		d.sendReverb = floatOr(objectOf(m, "send"), "reverb", 0)
+		d.sendDelay = floatOr(objectOf(m, "send"), "delay", 0)
+		if d.pan < -1 || d.pan > 1 || d.vol < 0 || d.sub < 0 {
+			return nil, fmt.Errorf("channels[%d](%s): pan は -1〜1・vol と sub は 0 以上", i, name)
+		}
+		out = append(out, d)
+	}
+	return out, nil
+}
+
+func parseSongFx(m map[string]any, s *song) error {
+	for k := range m {
+		if k != "reverb" && k != "delay" && k != "sidechain" {
+			return fmt.Errorf("fx の知らない鍵 %q（reverb delay sidechain）", k)
+		}
+	}
+	if r := objectOf(m, "reverb"); r != nil {
+		s.fx.reverb = &reverbParam{room: floatOr(r, "room", 0.5), damp: floatOr(r, "damp", 0.5), wet: floatOr(r, "wet", 1), predelay: floatOr(r, "predelay_ms", 0)}
+	}
+	if d := objectOf(m, "delay"); d != nil {
+		pp, ok := d["pingpong"].(bool)
+		if !ok {
+			pp = true
+		}
+		s.fx.delay = &delayParam{feedback: math.Min(0.95, floatOr(d, "feedback", 0.35)), wet: floatOr(d, "wet", 1), lp: floatOr(d, "lowpass", 6000), pingpong: pp}
+		s.fx.delaySteps = floatOr(d, "steps", 3)
+	}
+	if sc := objectOf(m, "sidechain"); sc != nil {
+		s.fx.duckKeys = stringsOf(sc["key"])
+		if len(s.fx.duckKeys) == 0 {
+			return fmt.Errorf("fx.sidechain.key（沈める合図の楽器の名前の並び）が無い")
+		}
+		depth := floatOr(sc, "depth_db", 4)
+		g, err := crmath.Pow(10, -depth/20)
+		if err != nil {
+			return err
+		}
+		s.fx.duckDepth = 1 - g
+		s.fx.duckMs = math.Max(1, floatOr(sc, "release_ms", 160))
+	}
+	return nil
+}
+
+func loadSong(c *rctx, path string) (*song, error) {
+	root, err := readJSONObject(c, path)
 	if err != nil {
 		return nil, err
 	}
@@ -354,14 +556,27 @@ func loadSong(path string) (*song, error) {
 		loop:   intOr(root, "loop", -1),
 		rate:   max(8000, intOr(root, "rate", 44100)),
 		gain:   math.Max(0, floatOr(root, "gain", 1)),
-		mix:    map[channel]float64{},
 		phrase: map[string][]step{},
 		chains: map[string][]chainEntry{},
+		inline: root,
 	}
-	for c, k := range channelKeys {
-		if f, ok := objectOf(root, "mix")[k].(float64); ok {
-			s.mix[channel(c)] = math.Max(0, f)
+	if s.chans, err = parseChannels(root); err != nil {
+		return nil, fmt.Errorf("%s: %v", path, err)
+	}
+	if g, ok := root["groove"].([]any); ok {
+		for _, v := range g {
+			f, ok := v.(float64)
+			if !ok || f < 1 || f != math.Trunc(f) {
+				return nil, fmt.Errorf("%s: groove は 1 以上の整数の並び", path)
+			}
+			s.groove = append(s.groove, int(f))
 		}
+		if len(s.groove) == 0 || phraseSteps%len(s.groove) != 0 {
+			return nil, fmt.Errorf("%s: groove の長さは 16 を割り切る数（1・2・4・8・16）", path)
+		}
+	}
+	if err := parseSongFx(objectOf(root, "fx"), s); err != nil {
+		return nil, fmt.Errorf("%s: %v", path, err)
 	}
 	for name, v := range objectOf(root, "phrases") {
 		texts := stringsOf(v)
@@ -383,16 +598,29 @@ func loadSong(path string) (*song, error) {
 		}
 		s.chains[name] = es
 	}
+	_, named := root["channels"]
 	rows, _ := root["rows"].([]any)
 	for _, r := range rows {
 		obj, ok := r.(map[string]any)
 		if !ok {
 			return nil, fmt.Errorf("%s: rows の行はオブジェクトで書く", path)
 		}
-		row := map[channel]string{}
-		for c, k := range channelKeys {
-			if name, ok := obj[k].(string); ok && strings.TrimSpace(name) != "" {
-				row[channel(c)] = strings.TrimSpace(name)
+		row := map[int]string{}
+		for k, v := range obj {
+			idx := -1
+			for i, cd := range s.chans {
+				if cd.name == k {
+					idx = i
+				}
+			}
+			if idx < 0 {
+				if named {
+					return nil, fmt.Errorf("%s: rows の %q は channels に無い", path, k)
+				}
+				continue
+			}
+			if name, ok := v.(string); ok && strings.TrimSpace(name) != "" {
+				row[idx] = strings.TrimSpace(name)
 			}
 		}
 		s.rows = append(s.rows, row)
@@ -418,42 +646,142 @@ func parseWave(text string) waveSel {
 	return waveSel{kind: waveTable, name: strings.TrimSpace(text)}
 }
 
-func loadInstruments(path string) (instruments, error) {
-	root, err := readJSONObject(path)
-	if err != nil {
-		return instruments{}, err
+// parseMacro は表 1 本: 並び（数か文字列）か、語の並びの文字列（"15 13 12 | 11 10 / 6 3 0"。| の後がループ・/ の後が離した後）。
+func parseMacro(v any, waves bool) (*macroSeq, error) {
+	m := &macroSeq{loop: -1, release: -1}
+	var words []string
+	switch x := v.(type) {
+	case string:
+		words = wordsOf(strings.NewReplacer("|", " | ", "/", " / ").Replace(x))
+	case []any:
+		for _, e := range x {
+			switch y := e.(type) {
+			case float64:
+				words = append(words, strconv.FormatFloat(y, 'f', -1, 64))
+			case string:
+				words = append(words, y)
+			default:
+				return nil, fmt.Errorf("表の値は数か文字列")
+			}
+		}
+	default:
+		return nil, fmt.Errorf("表は並びか文字列で書く")
 	}
-	in := instruments{byName: map[string]instrument{}, waves: map[string][]int{}}
+	for _, w := range words {
+		switch w {
+		case "|":
+			m.loop = m.size()
+			continue
+		case "/":
+			m.release = m.size()
+			continue
+		}
+		if waves {
+			m.waves = append(m.waves, parseWave(w))
+			continue
+		}
+		n, ok := atoi(w)
+		if !ok {
+			return nil, fmt.Errorf("表の値 %q は整数で書く", w)
+		}
+		m.vals = append(m.vals, n)
+	}
+	if m.size() == 0 {
+		return nil, fmt.Errorf("表が空")
+	}
+	if m.loop >= m.size() {
+		m.loop = -1
+	}
+	if m.release >= m.size() {
+		m.release = -1
+	}
+	return m, nil
+}
+
+func parseInstrument(name string, obj map[string]any) (instrument, error) {
+	ins := instrument{speed: max(1, intOr(obj, "speed", 1))}
+	_, hasRows := obj["rows"]
+	if !hasRows && (obj["vol"] != nil || obj["arp"] != nil || obj["pitch"] != nil || obj["duty"] != nil) {
+		mac := &macros{}
+		for _, k := range []string{"vol", "arp", "pitch", "duty"} {
+			if obj[k] == nil {
+				continue
+			}
+			seq, err := parseMacro(obj[k], k == "duty")
+			if err != nil {
+				return ins, fmt.Errorf("%s の %s: %v", name, k, err)
+			}
+			switch k {
+			case "vol":
+				for i, v := range seq.vals {
+					seq.vals[i] = max(0, min(15, v))
+				}
+				mac.vol = seq
+			case "arp":
+				mac.arp = seq
+			case "pitch":
+				mac.pitch = seq
+			case "duty":
+				mac.duty = seq
+			}
+		}
+		mac.arpFixed, _ = obj["arp_fixed"].(bool)
+		if v, ok := obj["vib"].(string); ok {
+			var fs []float64
+			for _, w := range wordsOf(v) {
+				if f, ok := atof(w); ok {
+					fs = append(fs, f)
+				}
+			}
+			if len(fs) < 2 {
+				return ins, fmt.Errorf("%s の vib は \"hz cents [遅れの tick]\"", name)
+			}
+			mac.vibHz, mac.vibCents = fs[0], fs[1]
+			if len(fs) > 2 {
+				mac.vibDelay = int(fs[2])
+			}
+		}
+		ins.mac = mac
+		return ins, nil
+	}
+	rows, _ := obj["rows"].([]any)
+	for _, r := range rows {
+		ro, ok := r.(map[string]any)
+		if !ok {
+			return ins, fmt.Errorf("%s の rows の行はオブジェクトで書く", name)
+		}
+		row := tableRow{}
+		if _, ok := ro["vol"].(float64); ok {
+			row.volume = ip(max(0, min(15, intOr(ro, "vol", 0))))
+		}
+		if _, ok := ro["pitch"].(float64); ok {
+			row.pitch = ip(intOr(ro, "pitch", 0))
+		}
+		if _, ok := ro["cents"].(float64); ok {
+			row.cents = ip(intOr(ro, "cents", 0))
+		}
+		if w, ok := ro["wave"].(string); ok {
+			ws := parseWave(w)
+			row.wave = &ws
+		}
+		if c, ok := ro["cmd"].(string); ok {
+			row.cmd = parseCmd(c)
+		}
+		ins.rows = append(ins.rows, row)
+	}
+	return ins, nil
+}
+
+// addInstruments は {"instruments": {…}, "waves": {…}} を in に足す（同じ名前は上書き）。
+func addInstruments(in *instruments, root map[string]any, where string) error {
 	for name, v := range objectOf(root, "instruments") {
 		obj, ok := v.(map[string]any)
 		if !ok {
 			continue
 		}
-		ins := instrument{speed: max(1, intOr(obj, "speed", 1))}
-		rows, _ := obj["rows"].([]any)
-		for _, r := range rows {
-			ro, ok := r.(map[string]any)
-			if !ok {
-				return in, fmt.Errorf("%s: %s の rows の行はオブジェクトで書く", path, name)
-			}
-			row := tableRow{}
-			if _, ok := ro["vol"].(float64); ok {
-				row.volume = ip(max(0, min(15, intOr(ro, "vol", 0))))
-			}
-			if _, ok := ro["pitch"].(float64); ok {
-				row.pitch = ip(intOr(ro, "pitch", 0))
-			}
-			if _, ok := ro["cents"].(float64); ok {
-				row.cents = ip(intOr(ro, "cents", 0))
-			}
-			if w, ok := ro["wave"].(string); ok {
-				ws := parseWave(w)
-				row.wave = &ws
-			}
-			if c, ok := ro["cmd"].(string); ok {
-				row.cmd = parseCmd(c)
-			}
-			ins.rows = append(ins.rows, row)
+		ins, err := parseInstrument(name, obj)
+		if err != nil {
+			return fmt.Errorf("%s: %v", where, err)
 		}
 		in.byName[name] = ins
 	}
@@ -473,454 +801,48 @@ func loadInstruments(path string) (instruments, error) {
 			in.waves[name] = levels
 		}
 	}
-	if len(in.byName) == 0 && objectOf(root, "instruments") == nil {
-		in.byName["plain"] = plainInstrument()
+	return nil
+}
+
+func loadInstruments(c *rctx, path string, chip map[string]any) (instruments, error) {
+	in := instruments{byName: map[string]instrument{}, waves: map[string][]int{}}
+	if path != "" {
+		root, err := readJSONObject(c, path)
+		if err != nil {
+			return in, err
+		}
+		if err := addInstruments(&in, root, path); err != nil {
+			return in, err
+		}
+		if len(in.byName) == 0 && objectOf(root, "instruments") == nil {
+			in.byName["plain"] = plainInstrument()
+		}
+	}
+	if err := addInstruments(&in, chip, "譜面の instruments"); err != nil {
+		return in, err
 	}
 	return in, nil
 }
 
-// ── 並べる ──
-
-func (s *song) chainLength(name string) int { return len(s.chains[name]) * phraseSteps }
-
-func (s *song) rowLength(row map[channel]string) int {
-	n := 0
-	for _, name := range row {
-		n = max(n, s.chainLength(name))
-	}
-	if n <= 0 {
-		return phraseSteps
-	}
-	return n
-}
-
-func (s *song) rowSteps(c channel, row map[channel]string) []step {
-	var out []step
-	if name, ok := row[c]; ok {
-		for _, e := range s.chains[name] {
-			ph, ok := s.phrase[e.phrase]
-			for i := 0; i < phraseSteps; i++ {
-				st := step{volume: -1}
-				if ok {
-					st = ph[i]
-				}
-				if st.pitch == pitchNote {
-					st.note += e.transpose
-				}
-				out = append(out, st)
-			}
-		}
-	}
-	for len(out) < s.rowLength(row) {
-		out = append(out, step{volume: -1})
-	}
-	return out
-}
-
-// loopRow はループの頭の行（範囲外は -1）。
-func (s *song) loopRow() int {
-	if s.loop >= 0 && s.loop < len(s.rows) {
-		return s.loop
-	}
-	return -1
-}
-
-// sampleAt は tick の頭のサンプルの位置（端数は切り捨て。どの継ぎ目も同じ式なのでループの長さがずれない）。
-func (s *song) sampleAt(tick int) int {
-	perTick := float64(float64(s.rate)*60) / float64(float64(s.bpm*4)*float64(s.ticks))
-	return int(math.Floor(float64(float64(tick)*perTick) + 0.000001))
-}
-
-// ── 制御の段 ──
-
-type frame struct {
-	pitch           float64
-	glide           bool
-	volume          float64
-	wave            waveSel
-	vibHz, vibCents float64
-	retrigger       bool
-}
-
-type voiceState struct {
-	sounding                         bool
-	note                             int
-	inst                             instrument
-	stepVolume                       int
-	row, rowAge                      int
-	loops                            map[int]int
-	tableVolume, tablePitch, tableCt int
-	wave                             waveSel
-	arp                              []int
-	arpAge                           int
-	vibHz, vibCents                  float64
-	slideOffset                      float64
-	slideTicks, slideAge             int
-	lastPitch                        float64
-}
-
-func defaultWave(c channel) waveSel {
-	switch c {
-	case chNoise:
-		return waveSel{kind: waveLong}
-	case chWave:
-		return waveSel{kind: waveTable, name: ""}
-	}
-	return waveSel{kind: waveDuty, duty: 0.5}
-}
-
-func silentVoice(c channel) voiceState {
-	return voiceState{note: 60, inst: plainInstrument(), stepVolume: 15, loops: map[int]int{}, tableVolume: 15,
-		wave: defaultWave(c), lastPitch: 60}
-}
-
-func (v voiceState) basePitch() float64 {
-	return float64(v.note+v.tablePitch) + float64(v.tableCt)/100
-}
-
-func (v voiceState) withLoops(row, n int) voiceState {
-	m := make(map[int]int, len(v.loops)+1)
-	for k, x := range v.loops {
-		m[k] = x
-	}
-	m[row] = n
-	v.loops = m
-	return v
-}
-
-func applyCmd(c cmd, v voiceState) voiceState {
-	switch c.kind {
-	case cmdArp:
-		v.arp, v.arpAge = c.arp, 0
-	case cmdVib:
-		v.vibHz, v.vibCents = c.hz, c.cents
-	case cmdSlide:
-		v.slideOffset, v.slideTicks, v.slideAge = v.lastPitch-v.basePitch(), c.n, 0
-	case cmdEnd:
-		v.sounding = false
-	}
-	return v
-}
-
-func enterRow(row, depth int, v voiceState) voiceState {
-	if row < 0 || row >= len(v.inst.rows) {
-		return v
-	}
-	tr := v.inst.rows[row]
-	v.row = row
-	if tr.volume != nil {
-		v.tableVolume = *tr.volume
-	}
-	if tr.pitch != nil {
-		v.tablePitch = *tr.pitch
-	}
-	if tr.cents != nil {
-		v.tableCt = *tr.cents
-	}
-	if tr.wave != nil {
-		v.wave = *tr.wave
-	}
-	switch {
-	case tr.cmd.kind == cmdJump && depth < 8:
-		return enterRow(tr.cmd.n, depth+1, v)
-	case tr.cmd.kind == cmdLoop && depth < 8:
-		count := v.loops[row]
-		if tr.cmd.times == 0 || count < tr.cmd.times {
-			return enterRow(tr.cmd.n, depth+1, v.withLoops(row, count+1))
-		}
-		return v.withLoops(row, 0)
-	}
-	return applyCmd(tr.cmd, v)
-}
-
-func advanceTable(v voiceState) voiceState {
-	switch {
-	case v.rowAge+1 < v.inst.speed:
-		v.rowAge++
-		return v
-	case v.row+1 >= len(v.inst.rows):
-		v.rowAge = 0
-		return v
-	}
-	v.rowAge = 0
-	return enterRow(v.row+1, 0, v)
-}
-
-func applyStep(in instruments, c channel, st step, v voiceState) (voiceState, bool) {
-	inst := v.inst
-	if st.instrument != "" {
-		inst = in.of(st.instrument)
-	}
-	switch st.pitch {
-	case pitchNote:
-		slideOff, slideTicks := 0.0, 0
-		if st.cmd.kind == cmdSlide && v.sounding {
-			slideOff, slideTicks = v.lastPitch-float64(st.note), st.cmd.n
-		}
-		vol := 15
-		if st.volume >= 0 {
-			vol = st.volume
-		}
-		fresh := voiceState{sounding: true, note: st.note, inst: inst, stepVolume: vol, loops: map[int]int{},
-			tableVolume: 15, wave: defaultWave(c), slideOffset: slideOff, slideTicks: slideTicks, lastPitch: v.lastPitch}
-		fresh = enterRow(0, 0, fresh)
-		if st.cmd.kind != cmdSlide {
-			fresh = applyCmd(st.cmd, fresh)
-		}
-		return fresh, true
-	case pitchOff:
-		v.sounding, v.inst = false, inst
-		return v, false
-	}
-	if st.volume >= 0 {
-		v.stepVolume = st.volume
-	}
-	v.inst = inst
-	return applyCmd(st.cmd, v), false
-}
-
-func frameOf(v voiceState, retrigger bool) frame {
-	arp := 0
-	if len(v.arp) > 0 {
-		arp = v.arp[((v.arpAge%len(v.arp))+len(v.arp))%len(v.arp)]
-	}
-	sliding := v.slideTicks > 0 && v.slideAge < v.slideTicks
-	slide := 0.0
-	if sliding {
-		slide = v.slideOffset * (1 - float64(v.slideAge)/float64(v.slideTicks))
-	}
-	vol := 0.0
-	if v.sounding {
-		vol = float64(v.tableVolume*v.stepVolume) / 225
-	}
-	return frame{pitch: v.basePitch() + float64(arp) + slide, glide: sliding && v.slideAge > 0, volume: vol,
-		wave: v.wave, vibHz: v.vibHz, vibCents: v.vibCents, retrigger: retrigger}
-}
-
-func controlFrames(ticksPerStep int, in instruments, c channel, steps []step) []frame {
-	total := len(steps) * ticksPerStep
-	out := make([]frame, 0, total)
-	v := silentVoice(c)
-	for tick := 0; tick < total; tick++ {
-		stepped, retrigger := v, false
-		if tick%ticksPerStep == 0 {
-			stepped, retrigger = applyStep(in, c, steps[tick/ticksPerStep], v)
-		}
-		adv := stepped
-		if !retrigger && stepped.sounding {
-			adv = advanceTable(stepped)
-		}
-		f := frameOf(adv, retrigger)
-		out = append(out, f)
-		adv.arpAge++
-		adv.slideAge++
-		adv.lastPitch = f.pitch
-		v = adv
-	}
-	return out
-}
-
-// ── 発振の段 ──
-
-var fallbackWave = []int{8, 9, 11, 12, 13, 14, 15, 15, 15, 15, 14, 13, 12, 11, 9, 8,
-	7, 6, 4, 3, 2, 1, 0, 0, 0, 0, 1, 2, 3, 4, 6, 7}
-
-// memoFn は 1 本のチャンネルの中で同じ引数の答えを覚える（答えは引数だけで決まる）。
-type memoFn struct {
-	m  map[uint64]float64
-	fn func(float64) (float64, error)
-}
-
-func (m *memoFn) at(x float64) float64 {
-	k := math.Float64bits(x)
-	if r, ok := m.m[k]; ok {
-		return r
-	}
-	r, err := m.fn(x)
-	if err != nil {
-		r = math.NaN()
-	}
-	if len(m.m) < 1<<20 {
-		m.m[k] = r
-	}
-	return r
-}
-
-func renderChannel(s *song, c channel, gain float64, waves map[string][]int, frames []frame, n int) []float64 {
-	out := make([]float64, n)
-	rate := float64(s.rate)
-	phase, amp, lfsr := 0.0, 0.0, 32767
-	e, _ := crmath.Exp(-1 / float64(0.001*rate))
-	follow := 1 - e
-	sin := &memoFn{m: map[uint64]float64{}, fn: func(x float64) (float64, error) { return crmath.Sin(x), nil }}
-	pow2 := &memoFn{m: map[uint64]float64{}, fn: func(x float64) (float64, error) { return crmath.Pow(2, x) }}
-	advance := func(step float64) float64 {
-		p := phase
-		next := p + step
-		phase = next - math.Floor(next)
-		return p
-	}
-	for tick, f := range frames {
-		start := s.sampleAt(tick)
-		stop := min(n, s.sampleAt(tick+1))
-		prevPitch := f.pitch
-		if tick > 0 {
-			prevPitch = frames[tick-1].pitch
-		}
-		if f.retrigger {
-			lfsr = 32767
-		}
-		table := fallbackWave
-		if f.wave.kind == waveTable {
-			if t, ok := waves[f.wave.name]; ok {
-				table = t
-			}
-		}
-		duty := 0.5
-		if f.wave.kind == waveDuty {
-			duty = f.wave.duty
-		}
-		short := f.wave.kind == waveShort
-		span := float64(max(1, stop-start))
-		for i := start; i < stop; i++ {
-			along := float64(i-start) / span
-			bent := f.pitch
-			if f.glide {
-				bent = prevPitch + float64((f.pitch-prevPitch)*along)
-			}
-			vib := 0.0
-			if f.vibCents != 0 {
-				vib = float64(f.vibCents/100) * sin.at(float64(float64(tau*f.vibHz)*float64(i))/rate)
-			}
-			freq := 440 * pow2.at((bent+vib-69)/12)
-			var value float64
-			switch c {
-			case chNoise:
-				value = lfsrStep(float64(freq*8)/rate, short, &phase, &lfsr)
-			case chTriangle:
-				p := advance(freq / rate)
-				idx := min(31, int(p*32))
-				level := idx - 16
-				if idx < 16 {
-					level = 15 - idx
-				}
-				value = float64(level)/7.5 - 1
-			case chWave:
-				p := advance(freq / rate)
-				idx := min(31, int(p*32))
-				value = float64(table[idx])/7.5 - 1
-			default:
-				if advance(freq/rate) < duty {
-					value = 1
-				} else {
-					value = -1
-				}
-			}
-			amp = amp + float64((f.volume-amp)*follow)
-			out[i] = float64(value*amp) * gain
-		}
-	}
-	return out
-}
-
-// renderSong は曲を鳴らし、頭 + 輪の 1 本・輪の頭・±1 に切った数を返す（ChipSynth.render と同じ）。
-func renderSong(s *song, in instruments) (samples []float64, loopStart, clamped int, used []channel) {
-	loop := s.loopRow()
-	rows := s.rows
-	sum := func(rs []map[channel]string) int {
-		n := 0
-		for _, r := range rs {
-			n += s.rowLength(r)
-		}
-		return n
-	}
-	introSteps, bodySteps := sum(rows), 0
-	if loop >= 0 {
-		introSteps, bodySteps = sum(rows[:loop]), sum(rows[loop:])
-		rows = append(append([]map[channel]string{}, rows...), rows[loop:]...)
-	}
-	tail := 0
-	if bodySteps == 0 {
-		stepSeconds := 60 / float64(s.bpm*4)
-		tail = int(math.Ceil(2.0 / stepSeconds))
-	}
-	totalSteps := introSteps + 2*bodySteps + tail
-	total := s.sampleAt(totalSteps * s.ticks)
-	chans := make([][]float64, len(channelKeys))
-	var wg sync.WaitGroup
-	for c := range channelKeys {
-		ch := channel(c)
-		var steps []step
-		sounds := false
-		for _, r := range rows {
-			if _, ok := r[ch]; ok {
-				sounds = true
-			}
-			steps = append(steps, s.rowSteps(ch, r)...)
-		}
-		for k := 0; k < tail; k++ {
-			steps = append(steps, step{volume: -1})
-		}
-		if sounds {
-			used = append(used, ch)
-		}
-		mix, ok := s.mix[ch]
-		if !ok {
-			mix = 1
-		}
-		gain := float64(channelGain[c]*mix) * s.gain
-		wg.Add(1)
-		go func() { // チャンネルは互いに独立。足すのは下でチャンネルの順に 1 本ずつ（足す順が同じなので結果も同じ）
-			defer wg.Done()
-			chans[c] = renderChannel(s, ch, gain, in.waves, controlFrames(s.ticks, in, ch, steps), total)
-		}()
-	}
-	wg.Wait()
-	out := make([]float64, total)
-	for _, ch := range chans {
-		for i, v := range ch {
-			out[i] = out[i] + v
-		}
-	}
-	// 仕上げ: 直流を落とし（20Hz ほどの低域切り）、±1 に収める
-	prevIn, prevOut := 0.0, 0.0
-	for i, x := range out {
-		y := x - prevIn + float64(0.997*prevOut)
-		if y > 1 || y < -1 {
-			clamped++
-		}
-		out[i] = math.Max(-1, math.Min(1, y))
-		prevIn, prevOut = x, y
-	}
-	if bodySteps > 0 {
-		introEnd := s.sampleAt(introSteps * s.ticks)
-		ls := s.sampleAt((introSteps + bodySteps) * s.ticks)
-		return append(out[:introEnd:introEnd], out[ls:]...), introEnd, clamped, used
-	}
-	last := 0
-	for i := len(out) - 1; i >= 0; i-- {
-		if math.Abs(out[i]) > 0.0005 {
-			last = i
-			break
-		}
-	}
-	return out[:min(len(out), last+1+64)], -1, clamped, used
-}
-
 func genSong(c *rctx, a opreg.Args) (sourceOut, error) {
-	sp, err := loadSong(filepath.Join(c.workRoot, a.Str("chip")))
+	sp, err := loadSong(c, filepath.Clean(a.Str("chip")))
 	if err != nil {
 		return sourceOut{}, err
 	}
-	in, err := loadInstruments(filepath.Join(c.workRoot, a.Str("instruments")))
+	instPath := ""
+	if a.Has("instruments") {
+		instPath = filepath.Clean(a.Str("instruments"))
+	}
+	in, err := loadInstruments(c, instPath, sp.inline)
 	if err != nil {
 		return sourceOut{}, err
 	}
 	sp.rate = int(c.rate) // 書き出しのレートにそろえる（WAV の頭に書く値と食い違うと速さが変わる）
-	samples, ls, clamped, used := renderSong(sp, in)
-	out := sourceOut{s: samples, loopStart: ls, clamped: clamped, tempo: &tempo{BPM: sp.bpm, BeatsPerBar: 4}}
-	for _, ch := range used {
-		out.parts = append(out.parts, channelPart[ch])
+	r := renderSong(sp, in)
+	out := sourceOut{ch: r.chans, loopStart: r.loopStart, clamped: r.clamped, tempo: &tempo{BPM: sp.bpm, BeatsPerBar: 4},
+		breaks: r.breaks, pans: r.pans}
+	for _, ch := range r.used {
+		out.parts = append(out.parts, sp.chans[ch].part)
 	}
 	return out, nil
 }

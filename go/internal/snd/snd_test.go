@@ -127,7 +127,7 @@ func TestGatePassesCleanSounds(t *testing.T) {
 
 // WAV の smpl のループの頭は読み直しても同じ（鳴らす側が読む値）。
 func TestWAVLoopRoundTrip(t *testing.T) {
-	c, err := DecodeWAV(EncodeWAV(22050, []float64{0, 0.5, -0.5, 1, -1}, 2))
+	c, err := DecodeWAV(EncodeWAV(22050, [][]float64{{0, 0.5, -0.5, 1, -1}}, 2))
 	if err != nil {
 		t.Fatal(err)
 	}
