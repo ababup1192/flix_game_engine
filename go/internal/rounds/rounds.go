@@ -3,12 +3,13 @@ package rounds
 // rounds — 絵の周回（描き直すたびの絵と台本）を debug/history/<名前>/ に積み、
 // 止まって依頼主に聞く所で案内を出す。
 //
-//	fge-go rounds snap <名前> <PNG か sprite.json> <台本> [--new] [--max N] [--bg "#2a2a33"]
+//	fge-go rounds snap <名前> <PNG か sprite.json か WAV> <台本> [--new] [--max N] [--bg "#2a2a33"]
 //	fge-go rounds restore <名前> rN <台本>
 //	fge-go rounds --help
 //
 // snap は rN.png（絵）と rN.<台本のファイル名>（台本の写し）を空いている次の番号で積む。
 // PNG はそのまま写し、*.sprite.json は全コマを並べた見本のシート（等倍と拡大を横に並べる）に描く。
+// WAV（音の周回）は rN.wav に写し、波形とスペクトログラムを rN.png に描く。
 // ゲームのルートはカレントディレクトリ。周の数の決まりは bin/lint-rules/rounds.json。
 //
 // WhyNot: 案内の文言をコードが持つのは、文書に書いた決まりは呼ぶ側の prompt（「5 周まで」等）に
@@ -31,6 +32,7 @@ import (
 	"time"
 
 	"github.com/ababup1192/flix_game_engine/go/internal/pxlib"
+	"github.com/ababup1192/flix_game_engine/go/internal/waveform"
 )
 
 // RulesPath は規約データの置き場（リポジトリのルートからの相対）。
@@ -78,8 +80,8 @@ func LoadRules(root string) (*Rules, error) {
 // Usage は --help の本文。
 const Usage = `使い方: bin/fge rounds <口> ...   絵の周回を debug/history/<名前>/ に積む（ゲームのルートで流す）
 
-  rounds snap <名前> <PNG か sprite.json> <台本> [--new] [--max N] [--bg "#2a2a33"]
-      rN.png と rN.<台本のファイル名> を空いている次の番号で積み、次にすることを出す。
+  rounds snap <名前> <PNG か sprite.json か WAV> <台本> [--new] [--max N] [--bg "#2a2a33"]
+      rN.png（WAV なら rN.wav と波形の rN.png）と rN.<台本のファイル名> を空いている次の番号で積み、次にすることを出す。
       sprite.json は全コマを並べた見本のシートに描く。
       --new  前の周回を debug/history/<名前>-old-<日時> へ退けて r1 から始める（別の作業のとき）
       --max  依頼主か親に「N 周まで任せる」と言われた時の上限（maxRounds まで）。一度書けば同じ周回の間は覚えていて、
@@ -233,7 +235,7 @@ func snap(out, errOut io.Writer, rules *Rules, gameRoot string, args []string) (
 		return 2, nil
 	}
 	if len(positional) != 3 {
-		fmt.Fprint(errOut, "rounds snap: <名前> <PNG か sprite.json> <台本> の 3 つが要る\n\n"+Usage)
+		fmt.Fprint(errOut, "rounds snap: <名前> <PNG か sprite.json か WAV> <台本> の 3 つが要る\n\n"+Usage)
 		return 2, nil
 	}
 	name, picture, script := positional[0], resolve(gameRoot, positional[1]), resolve(gameRoot, positional[2])
@@ -245,8 +247,9 @@ func snap(out, errOut io.Writer, rules *Rules, gameRoot string, args []string) (
 		bg = rules.DefaultBg
 	}
 	isSprite := strings.HasSuffix(picture, ".sprite.json")
-	if !isSprite && !strings.HasSuffix(strings.ToLower(picture), ".png") {
-		fmt.Fprintf(errOut, "rounds: 絵は PNG か *.sprite.json にする: %s\n", positional[1])
+	isWAV := strings.HasSuffix(strings.ToLower(picture), ".wav")
+	if !isSprite && !isWAV && !strings.HasSuffix(strings.ToLower(picture), ".png") {
+		fmt.Fprintf(errOut, "rounds: 絵は PNG か *.sprite.json、音は WAV にする: %s\n", positional[1])
 		return 2, nil
 	}
 	for _, p := range []string{picture, script} {
@@ -286,6 +289,16 @@ func snap(out, errOut io.Writer, rules *Rules, gameRoot string, args []string) (
 			return 1, nil
 		}
 		fmt.Fprintf(out, "見本: %d コマ\n", frames)
+	} else if isWAV {
+		// 音: rN.wav をそのまま積み、聞く前に目で見る波形とスペクトログラムを rN.png に描く
+		if err := copyFile(picture, filepath.Join(hist, fmt.Sprintf("r%d.wav", n))); err != nil {
+			return 2, err
+		}
+		if err := waveform.WriteSheet([]string{picture}, pngPath); err != nil {
+			fmt.Fprintf(errOut, "rounds: %v\n", err)
+			return 1, nil
+		}
+		fmt.Fprintf(out, "音: %s\n", relTo(gameRoot, filepath.Join(hist, fmt.Sprintf("r%d.wav", n))))
 	} else if err := copyFile(picture, pngPath); err != nil {
 		return 2, err
 	}

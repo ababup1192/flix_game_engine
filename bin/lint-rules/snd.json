@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "note": "fge snd の機種の決まりと検査の閾値。styles = 機種ごとの音源の縛り（sndsrc の \"style\" で名指す。voices は部品 → 同時に鳴らせる数・書いていない部品は 0。ops は書ける op。duties はパルスの山の割合。noiseKinds は雑音の作り方。ops も voices も無い style は縛りなし）。loudness = kind ごとの統合ラウドネスの目安（LUFS）と幅（lint）。peakDbfs = これを超えるピークは lint。headSilenceMs = 鳴り出しの遅れの上限（pacing.md の「音が先 15ms〜後 45ms」より狭く）。tailClick = ループしない音の終わりのサンプルの大きさの上限。dc = 平均の大きさの上限。seamStepRatio = 継ぎ目の段差 ÷ まわり 20ms の隣り合う差の最大（gate）。seamLevelDb = 継ぎ目の前後 20ms の音量の差（gate）。barTolerance = 輪の長さと整数小節の差の上限（サンプル。gate）。値は仮置き（試作 4 題とゲームの今の WAV から。本番の見比べで決め直す）。",
+  "styles": {
+    "gb": {
+      "label": "ゲームボーイ（DMG）",
+      "note": "パルス 2（ch1・ch2。デューティ 4 種）・波形メモリ 1（ch3。32 段 × 4 bit）・雑音 1（ch4。LFSR 15 bit / 7 bit）。音量は 16 段の包絡（steps）。フィルタ・読み直し・連続の包絡は機種の外。左右（NR51）は今のエンジンがモノラルなので見ない。",
+      "voices": {
+        "pulse": 2,
+        "wave": 1,
+        "noise": 1
+      },
+      "ops": [
+        "pulse",
+        "noise",
+        "rest",
+        "song",
+        "steps",
+        "gain"
+      ],
+      "duties": [
+        0.125,
+        0.25,
+        0.5,
+        0.75
+      ],
+      "noiseKinds": [
+        "lfsr15",
+        "lfsr7"
+      ]
+    },
+    "free": {
+      "label": "縛りなし",
+      "note": "割れ・継ぎ目・小節・音量だけを見る。"
+    }
+  },
+  "loudness": {
+    "ui": {
+      "target": -22,
+      "tolerance": 5
+    },
+    "sfx": {
+      "target": -20,
+      "tolerance": 6
+    },
+    "bgm": {
+      "target": -20,
+      "tolerance": 5
+    }
+  },
+  "peakDbfs": -0.3,
+  "headSilenceMs": 5,
+  "tailClick": 0.02,
+  "dc": 0.01,
+  "seamStepRatio": 1.5,
+  "seamLevelDb": 6,
+  "barTolerance": 2
+}

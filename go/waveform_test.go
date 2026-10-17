@@ -54,7 +54,7 @@ func TestDecodeWAVReadsMono16(t *testing.T) {
 	if rate != 22050 || len(samples) != 4 {
 		t.Fatalf("サンプルレートと長さが合わない: %d %d", rate, len(samples))
 	}
-	if got := (soundClip{SampleRate: rate, Samples: samples}).peak(); math.Abs(got-1.0) > 1e-9 {
+	if got := (soundClip{SampleRate: rate, Samples: samples}).Peak(); math.Abs(got-1.0) > 1e-9 {
 		t.Errorf("ピークは 1.0 のはず: %v", got)
 	}
 }
@@ -101,7 +101,7 @@ func TestDecodeWAVRejectsNonRIFF(t *testing.T) {
 
 func TestDurationMSUsesSampleRate(t *testing.T) {
 	clip := soundClip{SampleRate: 22050, Samples: make([]float64, 11025)}
-	if got := clip.durationMS(); got != 500 {
+	if got := clip.DurationMS(); got != 500 {
 		t.Errorf("11025 サンプル / 22050Hz は 500ms のはず: %d", got)
 	}
 }
@@ -205,10 +205,10 @@ func TestStereoClipThatCancelsIsNotSilent(t *testing.T) {
 func TestSideToMidIsZeroForSameLeftAndRight(t *testing.T) {
 	same := soundClip{Channels: [][]float64{{0.5, -0.25}, {0.5, -0.25}}}
 	wide := soundClip{Channels: [][]float64{{0.5, 0.5}, {0.25, 0.25}}}
-	if got := same.sideToMid(); got != 0 {
+	if got := same.SideToMid(); got != 0 {
 		t.Errorf("左右が同じなら 0: %v", got)
 	}
-	if got := wide.sideToMid(); math.Abs(got-1.0/3.0) > 1e-9 {
+	if got := wide.SideToMid(); math.Abs(got-1.0/3.0) > 1e-9 {
 		t.Errorf("(0.5-0.25)/2 ÷ (0.5+0.25)/2 = 1/3 のはず: %v", got)
 	}
 }
