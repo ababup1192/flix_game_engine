@@ -40,9 +40,15 @@ Flix コンパイラはエンジンリポの `bin/flix` ラッパ経由で呼ぶ
       `pick`（選択肢を選ぶ）を読む。
    3. `src/View.flix` … 状態を絵に写す（書斎・雨の窓・空の額縁・灯り・暗くするオーバーレイ・表紙を、何をどこに）。
    4. `src/NovelKit.flix` … ダイアログと選択肢のキット（UiDialog + UiTypewriter + UiSlots の束ね）。
-   5. `src/Controls.flix` … キーの割り当て（選ぶだけ）と Doc の読み直し。
+   5. `src/Controls.flix` … キーの割り当て（選ぶだけ）と Doc の読み直し。決定・カーソルで起きた出来事を
+      `Emit.collectInto` で World に溜め、`sounds` が返事の音へ写す。灯りが消える演出は `src/LampFx.flix` の時刻表を
+      音（`Timeline.soundsSince`）と絵（`flickerOf`）が同じ起点から読む。
    6. `src/render/SceneRender.flix` … 決定的な場面を PNG に描き出す（リファレンス画像とアトリエ）。
-3. 台本・手触り・色・絵は下の `assets/` の Doc を保存即反映でいじる。
+   7. `test/TestTrace.flix` … 性質テスト。でたらめなキーとクリックを画面なしで流し、「押さなければ返事は鳴らない」
+      「灯りは疑う選択でだけ 1 つ減る」が、どう読み進めても崩れないかを見る（`PropertyTest.forAll`）。
+3. 台本・手触り・色・絵は下の `assets/` の Doc を保存即反映でいじる。音の案は台本 `art/sfx.snd.star` を
+   `bin/fge snd build art/sfx.snd.star` で `atelier/sfx/` へ書き出す（採用して `assets/sfx/` と project.json の
+   `sounds` に載せるまでは無音。鳴らすと名前ごとに 1 回 warn）。
 
 **いちばん小さい変え方**（保存即反映を体験する）: `make debug` で起動したまま
 `assets/novel.story.json` の一節の `text` を書き換えて保存すると、その場で文章が変わる。

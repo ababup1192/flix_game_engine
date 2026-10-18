@@ -174,7 +174,7 @@ mod View {
         let lit = World.lampsLit(w);
         // いちばん新しく消えた灯り（右から消えるので添字 lit）は、LampFx の Flicker の間だけ細りながら残る。
         let dying = LampFx.flickerOf(w);
-        let isDying = i -> i == lit and Option.nonEmpty(w#lampOutAt) and dying < 1.0;
+        let isDying = i -> i == lit and LampFx.isFlickering(w);
         List.range(0, count) |> List.flatMap(i ->
             // 灯りごとに揺れの位相をずらす（そろって明滅すると機械に見える）。
             lamp({ x = lampX(count, i), litNow = i < lit or isDying(i),

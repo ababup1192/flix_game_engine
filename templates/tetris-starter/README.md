@@ -42,11 +42,16 @@ Flix コンパイラはエンジンリポの `bin/flix` ラッパ経由で呼ぶ
       「どの向きのときどの 4 マスか」の知識だけがここに集まる（World を規則に集中させるため）。
    4. `src/View.flix` … 状態を絵に写す（盤・固定セル・落下中ミノ・ゴースト・NEXT・スコア・
       ライン消しの閃光を、何をどこに描くか）。
-   5. `src/Controls.flix` … キーの割り当てと Doc の読み直し。
+   5. `src/Controls.flix` … キーの割り当てと Doc の読み直し。規則が出した出来事（固めた・行を消した）を
+      `Emit.collectInto` で World に溜め、`sounds` が前後の差（`Emit.since`）を音の名前へ写す。
    6. `src/render/SceneRender.flix` … 決定的な 5 場面を PNG に描き出す（リファレンス画像比較・目視批評）。
+   7. `test/TestTrace.flix` … 性質テスト。でたらめなキー操作を画面なしで流し、「升の数 = 前の升 + 固めたミノ × 4 −
+      消した行 × 10」「行を消したフレームだけ消した音が 1 回」が、どう遊んでも崩れないかを見る（`PropertyTest.forAll`）。
 3. 数値と色をいじる（保存すると走行中のゲームに即反映されます）:
    - `assets/tetris.rules.json` … 落下速度・接地の猶予・得点。
    - `assets/tetris.theme.json` … 盤・枠・ミノ・閃光の色。
+   - `art/sfx.snd.star` … 効果音の案の台本。`bin/fge snd build art/sfx.snd.star` で `atelier/sfx/` へ書き出す
+     （採用して `assets/sfx/` と project.json の `sounds` に載せるまでは無音。鳴らすと名前ごとに 1 回 warn）。
 
 黒箱（エンジンの部品）に出会ったら `make module Q=<やりたいこと>`（目次はエンジンリポの `docs/module-index.md`）で
 `Render`（描画）・`App`（ゲームループ）・`JsonCodec`（JSON 読み）・`HeadlessRender`（PNG の描き出し）を引きます。

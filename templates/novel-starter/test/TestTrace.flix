@@ -123,11 +123,14 @@ mod TestTrace {
         let steps = PropertyTest.traceOf(app(w0), setup(), List.append(toAsk, afterDoubt), w0);
         Assert.assertEq(expected = (1, 1, 1), (count("doubt", steps), count("lamp_flicker", steps), count("lamp_out", steps)))
 
-    /// 炎の細り具合は、消えた時刻から測った Flicker の進み（長さは時刻表から導く）。
+    /// 炎の細り具合は、消えた時刻から測った Flicker の進み。細りながら残るのは Flicker の間だけで、
+    /// 消えた時刻より前（描き出しが時計を置き直した）は残らない（長さは時刻表から導く）。
     @Test
     def testFlickerFollowsTimeline(): Unit \ {Assert, Fs.FileRead} =
         let tl = LampFx.timeline();
         let half = Timeline.clipOf(LampFx.Beat.Flicker, tl) |> Option.map(c -> c#dur / 2.0) |> Option.getWithDefault(0.0);
-        let w = { lampOutAt = Some(10.0), t = 10.0 + half | start() };
-        Assert.assertEq(expected = 0.5, LampFx.flickerOf(w))
+        let at = t -> { lampOutAt = Some(10.0), t = t | start() };
+        Assert.assertEq(expected = (0.5, true, false, false),
+            (LampFx.flickerOf(at(10.0 + half)), LampFx.isFlickering(at(10.0 + half)),
+             LampFx.isFlickering(at(10.0 + half * 2.0)), LampFx.isFlickering(at(8.4))))
 }

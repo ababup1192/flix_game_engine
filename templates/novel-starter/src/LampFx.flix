@@ -22,4 +22,10 @@ mod LampFx {
         w#lampOutAt
             |> Option.map(at -> Timeline.progressSince(at, w#t, Beat.Flicker, timeline()))
             |> Option.getWithDefault(0.0)
+
+    /// 消えた灯りがまだ細りながら残っているか（消えた時刻から Flicker の長さの間だけ）。
+    /// 描き出しは時計を置き直すので、消えた時刻より前の時刻は「もう消えた」と見る。
+    pub def isFlickering(w: World.World): Bool =
+        let length = Timeline.clipOf(Beat.Flicker, timeline()) |> Option.map(clip -> clip#dur) |> Option.getWithDefault(0.0);
+        Option.exists(at -> w#t >= at and w#t < at + length, w#lampOutAt)
 }
