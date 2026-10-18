@@ -452,6 +452,9 @@ func init() {
 				out = append(out, violation{Check: checkGroundContrast, Level: levelLint, X: worstAt.X, Y: worstAt.Y, HasAt: true, Fix: fix,
 					Msg: fmt.Sprintf("外周と地 %s の明るさの差が平均 %.3f（%.2f 以上にする）", c.Ground, sum/float64(n), c.Rules.GroundContrastMin)})
 			}
+			if c.Part != "" {
+				return out // 地の色そのものの決まりは絵の全体で見る（部品の範囲の一番明るい画素はハイライトではない）
+			}
 			return append(out, groundTone(g, c, gl)...)
 		},
 	})

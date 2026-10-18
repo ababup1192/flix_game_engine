@@ -177,3 +177,23 @@ func TestBrightGroundChroma(t *testing.T) {
 		t.Errorf("暗い地: %d 件", n)
 	}
 }
+
+// 部品ごとの範囲で回る ground-contrast（sel_out の後など）では、地の色の決まりを見ない（部品の一番明るい画素はハイライトではない）。
+func TestGroundToneOnlyOnWholeFrame(t *testing.T) {
+	dir := writeSpec(t, specHead+`
+  "light": {"ground": "#c0c0c0"},
+  "sprites": {"s": {"size": [12, 8], "ramp": "r",
+    "parts": [
+      {"id": "dark", "shape": {"rect": [1, 1, 4, 4]}, "ops": [{"fill": {"color": "c1"}}, {"sel_out": {}}]},
+      {"id": "lit", "shape": {"rect": [7, 1, 4, 4]}, "ops": [{"fill": {"color": "c3"}}]}],
+    "frames": {"idle": {}}}}}`)
+	res, err := build(dir, "t.pxsrc.json", buildOptions{RulesRoot: engineRoot})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range res.Violations {
+		if v.Check == checkGroundContrast && v.Rule == "highlight" {
+			t.Errorf("絵の全体のハイライト（c3）より暗い地で出た: %s", v)
+		}
+	}
+}
