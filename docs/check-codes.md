@@ -88,3 +88,7 @@ near の帯は bin/lint-rules/checkfmt.json の near（code ごと。無けれ�
 | `snd.style.voices` | gate | voices | count | <= | snd.json styles.voices | 部品ごとに同時に鳴らす声の数 |
 | `snd.tail` | lint | last_sample | amp | <= | snd.json tailClick | 終わりのサンプルの大きさ（0 へ戻らずプツと鳴る） |
 | `snd.truepeak` | lint | true_peak | dBTP | <= | snd.json truePeakDbtp | 4 倍に読み直したピーク |
+| `state-shape.bool-fields` | gate | bool_fields | count | <= | state-shape.json boolFieldMin・state-shape.local.json boolFieldLimits | 状態の record の Bool の欄の数（今の数までは歯止めの表で許し、増えたら止める） |
+| `state-shape.catch-all` | gate | catch_all_arms | count | <= | state-shape.local.json stateEnums | 名指しした状態の enum への match の `case _ =>`（case を足しても型検査が知らせない） |
+| `state-shape.option-bool` | gate | option_bool | count | <= | state-shape.local.json exempt | Option[Bool]（3 つの状態を名前の無い型で持つ） |
+| `state-shape.view-effect` | gate | concrete_effects | count | <= | state-shape.json viewFiles | View の def が決まった効果（IO など）を持つ |

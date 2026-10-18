@@ -1,0 +1,27 @@
+{
+  "note": "lint-state-shape（画面の操作や演出の状態を、ありえない組み合わせを作れる形で持っていないか）の規約データ。この JSON が source of truth で、bin/fge state-shape はこれとゲームの bin/lint-rules/state-shape.local.json を足して読む。止めるのは 4 つ: 型エイリアスの record に Bool の欄が boolFieldMin 個以上（今の数は boolFieldLimits の \"パス::型\": 数 まで許し、増えたら止める）・Option[Bool]・stateEnums で名指しした enum への match の `case _ =>`（変数で受ける腕も。見張りつきの腕と、右辺が predicateRhs の述語の形の腕は除く）・viewFiles の def が決まった効果（IO など大文字の効果。効果の変数は数えない）を持つ。record の読み方は record-wrap と同じ。local に書けるのは stateEnums（\"名前\" か \"パス::名前\"）・boolFieldLimits・exempt（\"パス::規則::名前\": 理由。規則は option-bool・catch-all・view-effect、名前は record の欄なら 型.欄・ほかは持ち主の def）だけ。--all で、もう鳴らない除外と今の数より緩い歯止めを止める。結果の形は checkres（--json）。ここの boolFieldLimits はテンプレの入力と当たりの印（同時に立つ物で、1 つの enum にまとめる状態ではない）。",
+  "scopeSuffixes": [".flix"],
+  "skipPrefixes": ["build/", "lib/", "testdata/", "docs/", "agents-pack/", "engine_full/", "engine/", "engine_world/", "engine_tools/", "render_gl/"],
+  "skipDirNames": ["build", "lib", "test", "node_modules"],
+  "boolFieldMin": 3,
+  "recordSkip": {
+    "skipSuffixes": ["Doc.flix", "View.flix"]
+  },
+  "viewFiles": {
+    "basenamePrefixes": ["View"],
+    "suffixes": ["View.flix"]
+  },
+  "predicateRhs": "true|false|None|Nil",
+  "boolFieldLimits": {
+    "templates/platformer-starter/src/Physics.flix::Slide": 3,
+    "templates/platformer-starter/src/Player.flix::Input": 4,
+    "templates/race-starter/src/World.flix::Inputs": 3
+  },
+  "hints": {
+    "state-shape.bool-fields": "同時に立たない Bool は 1 つの enum にまとめる（例 isOpen・isClosing・isDone → enum Stage { case Open, Closing, Done }）。ありえない組み合わせを型で作れなくすると、片方の直し忘れの連鎖が起きない",
+    "state-shape.option-bool": "3 つの状態に名前を付けた enum にする（例 Option[Bool] → enum Outcome { case Pending, Won, Lost }・enum FightDeck { case Closed, Open(Side) }）",
+    "state-shape.catch-all": "case を全部書く（case を足した時に、型検査が見直す所を全部知らせる）。1〜2 個だけ見る問いは述語の def（isX(s): Bool = match s { case X => true; case _ => false }）にまとめる",
+    "state-shape.view-effect": "View は World を読んで木を返すだけにする（効果は Update・入力・音の側。読み込みは Doc の loader か起動時に済ませて値で渡す）"
+  },
+  "exempt": {}
+}
