@@ -19,7 +19,8 @@ mod Controls {
         World.step(App.isDown(Key.Down, frame), frame#dt, w)
             |> (w1 -> applyTaps(frame, w1))
 
-    /// 一発の音の名前（project.json の sounds の論理名）。
+    /// 一発の音の名前（project.json の sounds の論理名）。音の案は art/sfx.snd.star を bin/fge snd build で
+    /// atelier/sfx へ書く（採用して project.json の sounds に載せるまでは、鳴らすと名前ごとに 1 回 warn が出るだけ）。
     pub enum Sound with Eq, ToString {
         case Lock
         case LineA
