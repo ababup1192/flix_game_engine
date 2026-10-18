@@ -18,7 +18,7 @@ lint・フック・make の口で止まる決まりはここに書かない（�
 | 隠れてはいけない表示（スコア・案内） | `App.withHudView` |
 | 押す物を見た目の手前から選ぶ（窓の奥を押させない） | 描く木に `ZStack.hit` / `modal` → `SortingLayer.pickFrom` |
 | 説明の窓をはみ出さず置く | `UiTooltip` + `ZStack.topLayer` |
-| 演出の時刻表を書く・描く・鳴らす | `Timeline.build` → `progressOf` / `soundsBetween`（時計なら `soundsOnClock`） |
+| 演出の時刻表を書く・描く・鳴らす | `Timeline.build`+`withSound` → `soundsBetween`（時計は `soundsOnClock`）→ `App.withAudio` |
 | ポーズ・ヒットストップで止める・遅くする（遊びと実時間を分ける） | `App.addClock` + `Clock.Pace`・`frame#realNow` |
 | 規則の奥の出来事で鳴らす（固定刻みでも 1 回） | `Emit.emit` → `Emit.collectInto` で World に溜め `Emit.since` |
 | どう遊んでも崩れない決まりを確かめる（性質テスト） | `PropertyTest.forAll`（画面なしで `App.trace` と同じ道） |
