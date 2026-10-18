@@ -865,10 +865,12 @@ pub mod App.RemoteDebug {
                         // 実ハンドラへ素通し = glfwPollEvents が回り、ウィンドウが固まらない・閉じられる
                         let closing = GameEngine.Game.shouldClose();
                         // /step の台本はキーのみ（マウスは台本に無いので常に「押されず・動かず・回さず」）。
-                        let frame = App.frameOf(prev = state#prev, current = frameKeys, stepParams#dtSeconds,
+                        // 実時間はコマ番号から置く（台本の 1 コマ = dt 秒。何度やっても同じ結果になるよう実時計は読まない）。
+                        let frame = { realNow = Clock.after(Int64.toFloat64(frameNo) * stepParams#dtSeconds, Clock.zero())
+                                      | App.frameOf(prev = state#prev, current = frameKeys, stepParams#dtSeconds,
                                             GameEngine.Game.getViewportRect()#size,
                                             { prevCursor = None, cursor = Vec2.zero() },
-                                            { prevDown = false, down = false, wheel = 0.0 });
+                                            { prevDown = false, down = false, wheel = 0.0 }) };
                         let wantsQuit = app#quit;
                         if (closing or wantsQuit(frame, state#world))
                             { stopped = "quit", quit = true | state }
@@ -877,7 +879,8 @@ pub mod App.RemoteDebug {
                             // /step は描画を捨てるので、リロード発火の合図（タイル層の世代）は
                             // ここでは使わない — 台本にリロードキーを混ぜる運用は想定しない。
                             let (reloaded, _reloadFired) = App.applyReload(app, frame, state#world);
-                            let advanced = App.applySystems(frame, app#updateSystems, reloaded);
+                            let advanced = App.applySystems(frame, app#updateSystems,
+                                                            App.tickClocks(app, stepParams#dtSeconds, reloaded));
                             // 音の 2 経路: システムが直接鳴らした分はプロキシが記録済み、
                             // withAudio 由来はここで導出して記録する。
                             let derive = app#audio;

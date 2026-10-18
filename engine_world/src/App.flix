@@ -26,7 +26,7 @@ pub mod App {
         wheel = Float64,                   // このフレームのホイール量（上が正・下が負。無ければ 0。
                                            // ランナーが毎フレーム consumeScrollDelta を読み切るので、
                                            // ゲーム側が直接 consume すると常に 0 が返る — 必ずここから読む）
-        realNow = Clock.Time[Clock.Real]   // 実時間の今（起動からの秒。ポーズの窓の点滅・背景の雨のように
+        realNow = Clock.Time[Clock.Real]   // 実時間の今（起動からの秒。ポーズメニューの点滅・背景の雨のように
                                            // 遊びの時計が止まっても動く物が読む。App が advanceFrame で置く —
                                            // ゲームは実時間の時計を持たないので、止める・2 度進めるができない）
     }

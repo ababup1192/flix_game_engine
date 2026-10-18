@@ -43,7 +43,7 @@
       "suffixes": [".flix"],
       "skip": ["engine/", "engine_world/", "engine_tools/", "engine_full/", "src/engine/", "src/engine_world/", "src/engine_tools/", "render_gl/", "src/render_gl/", "lib/", "build/"],
       "pattern": "\\bClock\\[\\s*(?:Clock\\.)?Real\\s*\\]",
-      "hint": "実時間の時計はゲームが持たない（止められると、ポーズの窓の点滅まで止まる）。実時間の今は frame#realNow（Clock.Time[Clock.Real]）を World の欄へ写して読む。寿命は Lifetime.fireOn(frame#realNow, 秒)（engine の docs/clock.md）"
+      "hint": "実時間の時計はゲームが持たない（止められると、ポーズメニューの点滅まで止まる）。実時間の今は frame#realNow（Clock.Time[Clock.Real]）を World の欄へ写して読む。寿命は Lifetime.fireOn(frame#realNow, 秒)（engine の docs/clock.md）"
     },
     {
       "id": "clock-seconds-leak",

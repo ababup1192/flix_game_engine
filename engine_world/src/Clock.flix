@@ -6,8 +6,8 @@
 //
 // ── 型で分けた時計（Clock[c] と Time[c]）──
 // ゲームには進み方の違う時計が何本かある: 遊びの時計（ポーズで止まり、ヒットストップで遅くなる）・
-// 実時間（ポーズの窓の点滅・雨のような背景）。どれも中身は秒の Float64 なので、取り違えてもコンパイルは
-// 通り、「ポーズ中も粒が進む」「戻ると音が鳴り直す」が遊んで初めて見つかる。
+// 実時間（ポーズメニューの点滅・雨のような背景）。どれも中身は秒の Float64 なので、取り違えてもコンパイルは
+// 通り、「ポーズ中もパーティクルが進む」「戻ると音が鳴り直す」が遊んで初めて見つかる。
 // Clock[c] / Time[c] の c は時計の名前の型。違う時計の時刻を引く・比べる・同じ寿命や時刻表に渡すと
 // コンパイルが止まる（E7491）。Bevy の Time<Real> / Time<Virtual> と同じ分け方。
 //
@@ -15,7 +15,7 @@
 //   遊び    Clock[Play]       名前はゲームが pub の空の enum で作る（enum Play）。World の欄に置き、
 //                             App.addClock で宣言すると App が毎フレーム 1 回だけ進める
 //
-//   pub enum Play                                          // 時計の名前（中身は要らない。pub が要る E8176）
+//   pub enum Play                                          // 時計の名前（中身は要らない。pub でないと E8176 の使っていない enum）
 //   play = Clock.start()                                   // World の欄 Clock.Clock[Play]
 //   app |> App.addClock({ clockOf = w -> w#play, withClock = (c, w) -> { play = c | w },
 //                         paceOf = World.paceOf })         // 止める理由と遅くする Plan は World から宣言
@@ -50,7 +50,7 @@ pub mod Clock {
     /// 実時間の時計の名前。App だけが進め、frame#realNow で配る。
     pub enum Real
 
-    /// 時計 c で測った秒。型引数は中身に出てこないので種を書く（`[_: Type]` が無いと E8518）。
+    /// 時計 c で測った秒。型引数は中身に出てこないので名前を `_` にして種を書く（名前を付けると E8518 の使っていない型引数）。
     enum Stamp[_: Type](Float64)
 
     /// 時計 c で測った時刻。中身は外から作れない（nowOf / prevOf と zero / never / after だけが作る）。

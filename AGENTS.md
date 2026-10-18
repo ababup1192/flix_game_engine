@@ -70,6 +70,7 @@
 - **API の型・引数はソースを grep する前に** [docs/api-digest.md](docs/api-digest.md)（全 pub 宣言の生成物）を引く
 - headless の描き出しを新しい場所で組むときの写経元: [docs/headless-render-recipe.md](docs/headless-render-recipe.md)
 - 音の付け方（効果音づくり・鳴らす配線・音の下限チェックリスト）: [docs/audio.md](docs/audio.md)
+- 時計（遊び・物語・実時間を型で分ける・ポーズ・ヒットストップ・止まる誤りと止まらない誤り）: [docs/clock.md](docs/clock.md)
 
 複雑で大規模な変更の場合は、いきなり実装をせず、レビュー役を立てて、壁打ちして80~90点以上を目指してください。
 実装はするだけで満足せず、レビュー役に仕様漏れ・リファクタリング余地が無いかを確認してもらいましょう。
