@@ -50,6 +50,7 @@
 | fail-open（欠け・書き損じは既定値へ）・データは Doc | 構造 + 文書 | `DocJson.loadOr`・fallback lint。何を Doc へ出すかは判断の向き | ― |
 | 言葉づかい（業界の語・造語と比喩を作らない） | 文書 + lint | jargon（既知の語だけ止まる） | 各試しで jargon がコメントの語を止めた |
 | `is*`/`has*`/`can*` は Bool・`get*` は IO などの効果を持たない | lint | verb-names（precommit。1 行の宣言だけ） | r3 名前を変えた・r4 precommit が止めた |
+| 画面の操作や演出の状態は 1 つの enum で持つ（ありえない組み合わせを作れない形） | 構造 + lint | 型（enum の payload）+ state-shape（precommit。record の Bool の欄の数は今の数までの歯止め・Option[Bool]・ゲームが名指しした enum への `case _ =>`・View の def の効果）。開いた時刻の Option[Float64] の数・enum の payload の Bool・isWaiting の or・soundsBetween の引き算は誤検知が多く見送り | 試しの担当がゲームの master に 7 案を当てて 4 つを採った |
 | 動詞の残り（load・build・with・to/as）の使い分け | 文書 | 型から見分けられない。AGENTS.md の判断の向きに 1 行 | ― |
 | AI の素材は atelier/ へ | script | hook-asset-guard（Write / Edit / apply_patch と、Bash のリダイレクト・`sed -i`・`cp` の行き先・書き込むスクリプトの中のパス） | r3 atelier へ書いた・r4 Bash の `sed -i` で抜けた（穴）→ Bash も見るようにして r5 フックが止めた |
 | .flix を丸読みしない | script | hook-read-guard（300 行超を offset も limit も無しに Read・パイプ無しの `cat`）。`head` や `less` は見ない | r3・r4 フックが止め、範囲を決めて読んだ |

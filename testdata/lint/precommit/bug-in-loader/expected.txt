@@ -13,6 +13,7 @@ OK: 矩形だけの View はありません（除外 0 件）
 [lint-quadratic] OK (除外 1 件)
 [lint-record-wrap] OK (展開した大きさ 16 以上の欄なし / 除外 0 件)
 [lint-verb-names] OK (1 ファイル / 除外 3 件)
+[lint-state-shape] OK (0 ファイル / 名指しの enum 0 / 歯止め 3 / 除外 0)
 [lint-jargon] OK (34 語で検査)
 [pre-commit] make check-docs-sync が無いので配線検査は飛ばします
 [pre-commit] 止めました。上の文を読んで直してから再コミット

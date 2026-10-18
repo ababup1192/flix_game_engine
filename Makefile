@@ -94,6 +94,7 @@ help:
 	@echo "  make lint-forbid          古い書き方を止める (bin/lint-rules/forbid.json。代わりの物を出す)"
 	@echo "  make lint-quadratic       fold の中で蓄積を作り直す二乗の形が無いか検査 (全量)"
 	@echo "  make lint-record-wrap     World が直接持つ大きな record を enum で包んでいるか検査"
+	@echo "  make lint-state-shape     状態の持ち方 (Bool の欄の数・Option[Bool]・名指しの enum への case _・View の効果) を検査"
 	@echo "  bin/fge digest A B   絵の差を数値で要約 (2 枚 or フォルダ。目視の前にまずこれ)"
 	@echo "  make go-build             go/ を bin/fge-go と、配る先ごとの 5 種にビルド"
 	@echo "  make go-test              go/ のテスト (CIEDE2000 の参照 34 組・外部依存ゼロの検査を含む)"
@@ -433,6 +434,13 @@ lint-quadratic:
 .PHONY: lint-record-wrap
 lint-record-wrap:
 	@bin/fge record-wrap --all
+
+# ── ゲート: 状態の持ち方 ───────────────────────────────────
+# record の Bool の欄の数・Option[Bool]・名指しした enum への case _・View の効果。
+# ゲームの設定は bin/lint-rules/state-shape.local.json。--all は緩い歯止めと古い除外も止める。
+.PHONY: lint-state-shape
+lint-state-shape:
+	@bin/fge state-shape --all
 
 # ── 起動画面の素材 ────────────────────────────────────────
 # 組み込みフォント (ASCII の 1bit ビットマップ) とロゴを engine/src/render/BootFontData.flix へ
