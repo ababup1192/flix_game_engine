@@ -41,13 +41,25 @@
         "pearVioletDeep": "#422445",
         "pearViolet": "#5a265e",
         "pearPlumDeep": "#5e315b"
-      }
+      },
+      "fidelity": 0.9,
+      "rampSteps": [
+        3,
+        4
+      ],
+      "dither": "none"
     },
     "night": {
       "label": "夜の 3 色の外（中間色）",
       "from": "assets/internet_dungeon.theme.json",
       "path": "night",
-      "keys": "^(base|main|accent)$"
+      "keys": "^(base|main|accent)$",
+      "fidelity": 0.2,
+      "rampSteps": [
+        3,
+        3
+      ],
+      "dither": "primary"
     }
   },
   "deny": [
