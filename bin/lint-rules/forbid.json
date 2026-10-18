@@ -35,7 +35,7 @@
       "suffixes": [".flix"],
       "skip": ["engine/", "engine_world/", "engine_tools/", "engine_full/", "src/engine/", "src/engine_world/", "src/engine_tools/", "render_gl/", "src/render_gl/", "lib/", "build/"],
       "skipDirs": ["test"],
-      "pattern": "\\bClock\\.advance\\b|\\bApp\\.tickClocks\\b",
+      "pattern": "\\bClock\\.advance\\b|\\bApp\\.tickClocks\\b|\\buse\\s+(?:fge::)?Clock\\.\\{[^}]*\\badvance\\b",
       "hint": "時計を進めるのは App（毎フレーム 1 回。同じフレームに 2 回進めると 1 回目の区間の音が消える）。World の欄の時計は App.addClock で宣言し、止める理由と遅くする Plan は paceOf（Clock.paceOf・Clock.withSlow）で World から導く。テストで系を直に呼ぶときだけ test/ で App.tickClocks（engine の docs/clock.md）"
     },
     {
@@ -49,7 +49,7 @@
       "id": "clock-seconds-leak",
       "suffixes": [".flix"],
       "skip": ["engine/", "engine_world/", "engine_tools/", "engine_full/", "src/engine/", "src/engine_world/", "src/engine_tools/", "render_gl/", "src/render_gl/", "lib/", "build/"],
-      "pattern": "secondsOf\\(.*[-+]\\s*(?:Clock\\.)?secondsOf\\(|secondsOf\\((?:[^()]|\\((?:[^()]|\\([^()]*\\))*\\))*\\)\\s*(?:<|>|==|!=)|(?:[^-|=]>|<|==|!=)=?\\s*(?:Clock\\.)?secondsOf\\(|\\bafter\\(.*\\bsecondsOf\\(",
+      "pattern": "secondsOf\\(.*[-+]\\s*(?:Clock\\.)?secondsOf\\(|secondsOf\\((?:[^()]|\\((?:[^()]|\\([^()]*\\))*\\))*\\)\\s*(?:<|>|==|!=)|(?:[^-|=]>|<|==|!=)=?\\s*(?:Clock\\.)?secondsOf\\(|\\|>\\s*(?:Clock\\.)?secondsOf\\s*\\)\\s*(?:[-+<>]|==|!=)|\\bClock\\.after\\(\\s*(?:Clock\\.)?secondsOf\\(",
       "hint": "secondsOf は周期の関数（Anim.frameAt・Sway.wave・Fx.derive）に渡す所だけ。時刻の差は Clock.since(起点, 今)・前後は Time のまま比べる（<・>・==）・ずらすのは Clock.after(秒, 時刻)。秒へ戻して引く・比べる・包み直すと、違う時計の時刻が混ざってもコンパイルが止まらない（engine の docs/clock.md）"
     },
     {
@@ -58,7 +58,15 @@
       "skip": ["engine/", "engine_world/", "engine_tools/", "engine_full/", "src/engine/", "src/engine_world/", "src/engine_tools/", "render_gl/", "src/render_gl/", "lib/", "build/"],
       "whenProject": "\\bApp\\.addClock\\b",
       "pattern": "\\bTimeline\\.(?:soundsBetween|soundsSince|progressSince)\\b",
-      "hint": "時計を使うゲーム（App.addClock がある）は Timeline.soundsOnClock(時計, 起点, 表) と Timeline.progressOn(時計, 起点, タグ, 表)。前と今の秒は時計が持つので、古い prev を渡せず、止めて戻しても・スロー中でも音は 1 回だけ鳴る（engine の docs/clock.md）"
+      "hint": "時計を使うゲーム（App.addClock がある）は Timeline.soundsOnClock(時計, 起点, 表) と Timeline.progressOn(時計, 起点, タグ, 表)。実時間（frame#realNow）で鳴らす表は Timeline.soundsBetweenTimes(起点, { before, after }, 表)。前と今の秒は時計が持つので、古い prev を渡せず、止めて戻しても・スロー中でも音は 1 回だけ鳴る（engine の docs/clock.md）"
+    },
+    {
+      "id": "clock-made-time",
+      "suffixes": [".flix"],
+      "skip": ["engine/", "engine_world/", "engine_tools/", "engine_full/", "src/engine/", "src/engine_world/", "src/engine_tools/", "render_gl/", "src/render_gl/", "lib/", "build/"],
+      "skipDirs": ["test", "render"],
+      "pattern": "\\bClock\\.after\\([^;]*\\bClock\\.zero\\(\\)|\\bClock\\.since\\(\\s*Clock\\.zero\\(\\)|\\bClock\\.startAt\\(",
+      "hint": "遊びの中で時刻や時計を数から作らない（Clock.after(秒, Clock.zero())・Clock.since(Clock.zero(), 時刻)・Clock.startAt は、別の時計の時刻へ付け替える・時計を手で進める抜け道になる）。今は Clock.nowOf(時計) か frame#realNow から読み、ずらすのは Clock.after(秒, 今)。決まった瞬間を撮る描き出し（render/）とテスト（test/）だけで使う（engine の docs/clock.md）"
     }
   ],
   "exempt": {}

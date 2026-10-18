@@ -53,7 +53,9 @@ pub mod Clock {
     /// 時計 c で測った秒。型引数は中身に出てこないので名前を `_` にして種を書く（名前を付けると E8518 の使っていない型引数）。
     enum Stamp[_: Type](Float64)
 
-    /// 時計 c で測った時刻。中身は外から作れない（nowOf / prevOf と zero / never / after だけが作る）。
+    /// 時計 c で測った時刻。Float64 から直には作れない（nowOf / prevOf と zero / never / after が作る）。
+    /// zero と after を組めばどの時計の時刻も作れるので、src では初期値（zero / never）と
+    /// 今からずらす after だけに使う（Clock.after(.., Clock.zero()) は lint-forbid の clock-made-time が止める）。
     pub type alias Time[c] = Stamp[c]
 
     instance Eq[Stamp[c]] {
@@ -101,7 +103,8 @@ pub mod Clock {
         case Paused(r)
     }
 
-    /// 時刻 at から掛かるスロー・ヒットストップ（TimeScale の Plan）。
+    /// 時刻 at から掛かるスロー・ヒットストップ（TimeScale の Plan）。Plan の秒は Scaled(k) を掛けた後の秒で
+    /// 数えるので、Scaled(0.25) と重なるとヒットストップは実時間で 4 倍に伸びる。
     pub type alias Slow[c] = { at = Time[c], plan = TimeScale.Plan }
 
     /// World から導く「このフレームの時計の進み方」の宣言。mode が止める・倍速を、slow がヒットストップを決める（run は Flix の予約語）。
@@ -145,11 +148,15 @@ pub mod Clock {
                 case Run.Scaled(k) => dt * Float64.max(0.0, k)
                 case Run.Paused(_) => 0.0
             };
-            let gameDt = match pace#slow {
-                case None    => realDt
-                case Some(s) => slowedDt(s, r#now, realDt)
-            };
-            Ticker.Ticker({ now = r#now + gameDt, prev = r#now })
+            // 止めたフレームは TimeScale を通さない —— realAt の近似で進みが 0 からわずかにずれ、負にもなる。
+            if (realDt <= 0.0) Ticker.Ticker({ now = r#now, prev = r#now })
+            else {
+                let gameDt = match pace#slow {
+                    case None    => realDt
+                    case Some(s) => slowedDt(s, r#now, realDt)
+                };
+                Ticker.Ticker({ now = r#now + gameDt, prev = r#now })
+            }
     }
 
     /// スローの中の進み。終わったスロー（never を含む）は TimeScale を通さない ——

@@ -316,8 +316,9 @@ func projectOf(root, rel string) string {
 	}
 }
 
-// projectMatches は dir の下の .flix（lib・build・.layers は見ない）のどれかの、文字列とコメントを
-// 除いた行に re が当たるか。
+// projectMatches は dir の下の .flix（lib・build・.layers と、flix.toml を持つ下のプロジェクトは見ない）の
+// どれかの、文字列とコメントを除いた行に re が当たるか。test/ も数える（テストだけが使う口でも、
+// そのプロジェクトは時計の流儀に入ったと見る）。
 func projectMatches(dir string, re *regexp.Regexp) bool {
 	found := false
 	_ = filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
@@ -328,6 +329,12 @@ func projectMatches(dir string, re *regexp.Regexp) bool {
 			switch d.Name() {
 			case "lib", "build", ".layers", "node_modules", ".git":
 				return filepath.SkipDir
+			}
+			// 入れ子のプロジェクト（エンジンのリポの templates/*）は別のプロジェクトとして数える。
+			if p != dir {
+				if _, err := os.Stat(filepath.Join(p, "flix.toml")); err == nil {
+					return filepath.SkipDir
+				}
 			}
 			return nil
 		}

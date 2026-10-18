@@ -428,9 +428,16 @@ pub mod Timeline {
     /// 起点 at（時計 c の時刻）から測る待ちの無い表で、時計 clock のこのフレーム (prev, now] に鳴らす効果音。
     /// 止めていたフレームは区間が空（戻っても鳴り直さない）・スロー中も区間が隙間なく続く（二重に鳴らない）。
     /// 起点は系の中で今（Clock.nowOf）に置く。App は系より先に時計を進めるので、置いたフレームの区間は
-    /// (−dt, 0] になり頭（0 秒）の音も 1 回鳴る。
+    /// (−dt, 0] になり頭（0 秒）の音も 1 回鳴る。止めている間に置いた起点は、そのフレームも戻った後も
+    /// 区間が 0 秒を含まないので頭の音は鳴らない（止めている間に始める演出は実時間の soundsBetweenTimes で鳴らす）。
     pub def soundsOnClock(clock: Clock.Clock[c], at: Clock.Time[c], tl: Timeline[a]): List[String] =
         soundsBetween(Clock.since(at, Clock.prevOf(clock)), Clock.since(at, Clock.nowOf(clock)), tl)
+
+    /// 時計を持たない時刻（App が配る実時間 frame#realNow）で鳴らす口。前後の今は withAudio の before / after の欄から渡す
+    /// （ポーズメニューを開く演出のように、遊びの時計が止まっている間に鳴る表）。
+    pub def soundsBetweenTimes(at: Clock.Time[c], frame: { before = Clock.Time[c], after = Clock.Time[c] },
+                               tl: Timeline[a]): List[String] =
+        soundsBetween(Clock.since(at, frame#before), Clock.since(at, frame#after), tl)
 
     /// 起点 at から測る表の、時計 clock の今でのタグのクリップの進み 0..1（progressSince と同じ境目）。
     pub def progressOn(clock: Clock.Clock[c], at: Clock.Time[c], tag: a, tl: Timeline[a]): Float64 with Order[a] =

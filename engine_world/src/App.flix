@@ -876,11 +876,13 @@ pub mod App {
         let currentKeys = InputEvent.currentKeys();
         let mouseDown = GameEngine.Game.isMouseButtonPressed(GameEngine.MouseButton.Left);
         let cursorNow = GameEngine.Game.getMousePosition();
-        let frame = frameOf(prev = st0#prevKeys, current = currentKeys, readDt(),
+        // realNow は前のフレームまでの実時間（quit・リロード・F8 の停止が読む）。系へ渡す前に advanceFrame が進めて置き直す。
+        let frame = { realNow = Clock.nowOf(st0#stepState#real)
+                      | frameOf(prev = st0#prevKeys, current = currentKeys, readDt(),
                             GameEngine.Game.getViewportRect()#size,
                             { prevCursor = st0#prevCursor, cursor = cursorNow },
                             { prevDown = st0#prevMouseDown, down = mouseDown,
-                              wheel = GameEngine.Game.consumeScrollDelta() });
+                              wheel = GameEngine.Game.consumeScrollDelta() }) };
         let wantsQuit = app#quit;
         // shouldClose は入力の取り込み（poll）も兼ねるので 1 フレームに 1 回だけ呼ぶ。
         let closing = GameEngine.Game.shouldClose();

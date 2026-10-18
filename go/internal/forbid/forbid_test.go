@@ -126,3 +126,24 @@ func TestWhenProjectGatesByNearestProject(t *testing.T) {
 		t.Fatalf("code=%d msg=%s", code, msg)
 	}
 }
+
+// 根のプロジェクトは、flix.toml を持つ下のプロジェクトの中身を数えない。flix.toml が無ければリポ全体が 1 つ。
+func TestWhenProjectSkipsNestedProjects(t *testing.T) {
+	rules := `{"rules":[{"id":"old","suffixes":[".flix"],"pattern":"\\bTimeline\\.soundsSince\\b","whenProject":"\\bApp\\.addClock\\b","hint":"Timeline.soundsOnClock"}]}`
+	root := writeRepo(t, rules, "", map[string]string{
+		"flix.toml":                 "",
+		"src/Sounds.flix":           "    Timeline.soundsSince(at, b, a, tl)\n",
+		"templates/a/flix.toml":     "",
+		"templates/a/src/Main.flix": "    app |> App.addClock(spec)\n",
+	})
+	if code, msg := run(t, root, "src/Sounds.flix"); code != 0 {
+		t.Fatalf("nested project must not count: %s", msg)
+	}
+	flat := writeRepo(t, rules, "", map[string]string{
+		"src/Sounds.flix": "    Timeline.soundsSince(at, b, a, tl)\n",
+		"other/Main.flix": "    app |> App.addClock(spec)\n",
+	})
+	if code, msg := run(t, flat, "src/Sounds.flix"); code != 1 {
+		t.Fatalf("without flix.toml the whole repo is one project: %s", msg)
+	}
+}

@@ -63,6 +63,12 @@ mod TestClock {
         let frames = idle(15) ::: press() ::: idle(60) ::: press() ::: idle(30);
         Assert.assertEq(expected = "hit" :: Nil, soundsOf(App.trace(app(), frames, start(Clock.never()))))
 
+    /// 0.3 秒の音を鳴らした後（20 フレーム目）で止め、1 秒置いて戻しても、音は鳴り直さない。
+    @Test
+    def testPauseAfterCueDoesNotRingAgain(): Unit \ Assert =
+        let frames = idle(20) ::: press() ::: idle(60) ::: press() ::: idle(30);
+        Assert.assertEq(expected = "hit" :: Nil, soundsOf(App.trace(app(), frames, start(Clock.never()))))
+
     /// 止めている 60 フレームの間、遊びの時計は進まず（dt 0）、実時間は 1 秒進む。
     @Test
     def testPauseHoldsPlayClockButNotRealTime(): Unit \ Assert =
@@ -102,6 +108,12 @@ mod TestClock {
         let last = lastOf(App.trace(app(), idle(60), start(Clock.never())));
         Assert.assertEq(expected = true, Float64.abs(Clock.since(Clock.zero(), Clock.nowOf(last#after#play)) - 1.0) < 0.000001)
 
+    /// スローの最中に止めたフレームの進みはちょうど 0（TimeScale の近似を通さない）。
+    @Test
+    def testPauseInsideSlowIsExactlyZero(): Unit \ Assert =
+        let last = lastOf(App.trace(app(), idle(3) ::: press() ::: idle(5), start(Clock.zero())));
+        Assert.assertEq(expected = 0.0, Clock.dtOf(last#after#play))
+
     /// 止めている間はスローも止まり、戻ると続きから流れる（スローの進みは遊びの時計で測る）。
     @Test
     def testPauseInsideSlowKeepsSlow(): Unit \ Assert =
@@ -124,6 +136,17 @@ mod TestClock {
         let traced = lastOf(App.trace(app(), idle(1), start(Clock.never())));
         let ticked = App.tickClocks(app(), 1.0 / 60.0, start(Clock.never()));
         Assert.assertEq(expected = Clock.nowOf(traced#after#play), Clock.nowOf(ticked#play))
+
+    // ========================================================================
+    // 実時間で鳴らす
+    // ========================================================================
+
+    /// 実時間の前後（0.25 → 0.35 秒）を渡すと、0.3 秒の音が鳴る。遊びの時計が止まっていても実時間は進む。
+    @Test
+    def testSoundsBetweenTimesOnRealTime(): Unit \ Assert =
+        let at: Clock.Time[Clock.Real] = Clock.zero();
+        Assert.assertEq(expected = "hit" :: Nil,
+            Timeline.soundsBetweenTimes(at, { before = Clock.after(0.25, at), after = Clock.after(0.35, at) }, cue()))
 
     // ========================================================================
     // 寿命

@@ -552,7 +552,7 @@
   `pub def countdown(remaining: Float64, dt: Float64): Float64`
 - 実時間の時計の名前。App だけが進め、frame#realNow で配る。
   `pub enum Real`
-- 時計 c で測った時刻。中身は外から作れない（nowOf / prevOf と zero / never / after だけが作る）。
+- 時計 c で測った時刻。Float64 から直には作れない（nowOf / prevOf と zero / never / after が作る）。
   `pub type alias Time[c] = Stamp[c]`
 - `pub def eq(a: Stamp[c], b: Stamp[c]): Bool`
 - `pub def compare(a: Stamp[c], b: Stamp[c]): Comparison`
@@ -571,7 +571,7 @@
   `pub type alias Clock[c] = Ticker[c]`
 - このフレームの時計の進み方。r は止める理由（ゲームの型）。
   `pub enum Run[r] { case Running case Scaled(Float64) case Paused(r) }`
-- 時刻 at から掛かるスロー・ヒットストップ（TimeScale の Plan）。
+- 時刻 at から掛かるスロー・ヒットストップ（TimeScale の Plan）。Plan の秒は Scaled(k) を掛けた後の秒で
   `pub type alias Slow[c] = { at = Time[c], plan = TimeScale.Plan }`
 - World から導く「このフレームの時計の進み方」の宣言。mode が止める・倍速を、slow がヒットストップを決める（run は Flix の予約語）。
   `pub type alias Pace[c, r] = { mode = Run[r], slow = Option[Slow[c]] }`
@@ -1983,6 +1983,8 @@
   `pub def progressSince(at: Float64, now: Float64, tag: a, tl: Timeline[a]): Float64 with Order[a]`
 - 起点 at（時計 c の時刻）から測る待ちの無い表で、時計 clock のこのフレーム (prev, now] に鳴らす効果音。
   `pub def soundsOnClock(clock: Clock.Clock[c], at: Clock.Time[c], tl: Timeline[a]): List[String]`
+- 時計を持たない時刻（App が配る実時間 frame#realNow）で鳴らす口。前後の今は withAudio の before / after の欄から渡す
+  `pub def soundsBetweenTimes(at: Clock.Time[c], frame: { before = Clock.Time[c], after = Clock.Time[c] }, tl: Timeline[a]): List[String]`
 - 起点 at から測る表の、時計 clock の今でのタグのクリップの進み 0..1（progressSince と同じ境目）。
   `pub def progressOn(clock: Clock.Clock[c], at: Clock.Time[c], tag: a, tl: Timeline[a]): Float64 with Order[a]`
 - 長さを合わせる音（withFittedSound）を書き出すときの長さ（秒）。
