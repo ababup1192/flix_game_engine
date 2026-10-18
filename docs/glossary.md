@@ -58,7 +58,7 @@ words だけが持つ(この表には置かない)。
 |---|---|---|---|
 | 描き出す | Render | シーンから PNG/GIF を作る操作。UI では「焼く」と書かない(bake はフォント・テクスチャのアトラスを前もって作ることだけを指す) | `make render-all` / `POST /render` | <!-- jargon-ok: 禁じている語そのものを引用して定義している行 -->
 | ラフ | Sketch | 人が手で描く下書き。生成された絵と見比べる相手 | `draft/sketch/<名前>/` |
-| アノテーションチケット | Annotation ticket | 絵の上で矩形を囲って一言書いた直しの依頼。済んだら archive/ へ下げる | `debug/annotations/` |
+| アノテーションチケット | Annotation ticket | 絵の上で矩形を囲って一言書いた直しの依頼。済んだら `bin/fge tickets close` で archive/ へ下げ、直したコミットと regressedBy（どの前の直しで生まれたか）を ledger（`reports/tickets/closed.jsonl`）に残す | `debug/annotations/` |
 | リファレンス画像 | Reference image | 前に「これで正しい」と決めた画面の絵。いまの絵と比べて、変わっていたら知らせる | `templates/*/reference/` |
 | 見た目が変わりました | Visuals changed | リファレンス画像との自動比較の知らせ。前と今を見比べられる(見なくてもよい) | /journey/changes |
 | 前 / 今 | Before / After | 見比べの 2 枚のラベル | `reference/archive/<scene>.vN.png` / `reference/<scene>` |

@@ -92,3 +92,6 @@ near の帯は bin/lint-rules/checkfmt.json の near（code ごと。無けれ�
 | `state-shape.catch-all` | gate | catch_all_arms | count | <= | state-shape.local.json stateEnums | 名指しした状態の enum への match の `case _ =>`（case を足しても型検査が知らせない） |
 | `state-shape.option-bool` | gate | option_bool | count | <= | state-shape.local.json exempt | Option[Bool]（3 つの状態を名前の無い型で持つ） |
 | `state-shape.view-effect` | gate | concrete_effects | count | <= | state-shape.json viewFiles | View の def が決まった効果（IO など）を持つ |
+| `tickets.cause` | advice | tickets_caused | count | <= | tickets.json causeMax | 1 つの直し（コミット・チケット）が生んだチケットの数 |
+| `tickets.filled` | advice | filled_ratio | ratio | >= | tickets.json filledMin | 閉じたチケットのうち regressedBy が unknown でない割合 |
+| `tickets.regressed` | advice | regressed_ratio | ratio | <= | tickets.json regressedMax | regressedBy の埋まったチケットのうち、前の直しが生んだ割合 |

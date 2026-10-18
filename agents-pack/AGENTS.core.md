@@ -29,7 +29,8 @@ lint・フック・make の口で止まる決まりはここに書かない（�
 | 直した後に絵を確かめる | `make render SHOT=<場面>` → 仕上げ `make reference-check` |
 | 描き出しの字の被り・z の外れを止める | `make render-lint`（許す物は `text-audit.local.json`） |
 | 直す前と後の絵・音・動画を比べる | `make compare BASE=<ref>` |
-| F8 のチケット | `debug/annotations/` の README → `annotation.json` → `world.json` |
+| F8 のチケット・閉じる | `debug/annotations/` の README → `world.json`・`bin/fge tickets close` |
+| 直しが別の不具合を生んだ率 | `bin/fge tickets stats`（前の直しの候補は `suspects`） |
 | ゲームの定義を引く | `make src Q=<名前>` |
 | 重い処理を順に流す | `bin/fge heavy <コマンド>`（`--help`・`--status`・`--history`） |
 | 作業場を別の版のエンジンへ一時的に向ける | `bin/fge use-engine <版かパス>`・戻すは `--restore` |

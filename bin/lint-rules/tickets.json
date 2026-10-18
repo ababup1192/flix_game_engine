@@ -1,0 +1,26 @@
+{
+  "note": "bin/fge tickets（F8 の注釈チケットを閉じる・前の直しの候補を出す・数える）の決まり。この JSON が source of truth。閉じた記録は ledger（git に入る 1 行 1 件の JSONL）へ足し、チケットのフォルダ（debug/ は git に入らない）は archive/ へ移して close.json を置く。regressedBy は「このチケットはどの前の直しで生まれたか」で、コミット・ticket:<id>・none・unknown のどれか。AI が推した値は by=ai と confidence（high・medium・low）を付ける。suspects は、直したコミットが触った関数（無ければファイル）を、チケットを切った時刻より前の windowDays 日に触ったコミットを並べる。skipPrefixes のファイル（生成物・記録・テスト）は見ない。期間内に hubCommits を超える候補が触った関数（場面の一覧など）は同じ関数に数えない。関数の見つけ方は funcPatterns（拡張子 → 1 つ目の括弧が名前の正規表現）。stats は作った日で期間に分け、want は filledMin（regressedBy が unknown でない割合）・regressedMax（前の直しが生んだ割合）・causeMax（1 つの直しが生んだ数）。",
+  "ticketsDir": "debug/annotations",
+  "archiveDir": "debug/annotations/archive",
+  "ledger": "reports/tickets/closed.jsonl",
+  "windowDays": 14,
+  "maxSuspects": 5,
+  "hubCommits": 3,
+  "ticketFixPattern": "F8|チケット|ticket",
+  "funcPatterns": {
+    ".flix": "^\\s*(?:pub\\s+)?def\\s+([A-Za-z_][A-Za-z0-9_]*)",
+    ".go": "^func\\s+(?:\\([^)]*\\)\\s*)?([A-Za-z_][A-Za-z0-9_]*)",
+    ".py": "^\\s*def\\s+([A-Za-z_][A-Za-z0-9_]*)",
+    ".json": "^\\s{2}\"([^\"]+)\"\\s*:"
+  },
+  "skipPrefixes": ["reference/", "test/", "docs/", "notes/", "NOTES.md", "debug/", "reports/", "bin/fge-go", "packages.lock"],
+  "sceneKeys": ["場面", "phase", "scene"],
+  "filledMin": 0.9,
+  "regressedMax": 0.1,
+  "causeMax": 1,
+  "hints": {
+    "tickets.filled": "unknown のチケットに regressedBy を付ける: bin/fge tickets suspects <id> --fix <直したコミット> で候補を見て、bin/fge tickets close <id> --amend --regressed-by <コミット|ticket:<id>|none>",
+    "tickets.regressed": "多く生んだ直し（tickets.cause）の触った所に、型・lint・性質テストで歯止めを足す。直す前に同じ関数を最近触ったコミットを bin/fge tickets suspects で見る",
+    "tickets.cause": "この直しが触った関数の決まりを、性質テストか lint で止める（同じ所の直しが次の不具合を生んでいる）"
+  }
+}
