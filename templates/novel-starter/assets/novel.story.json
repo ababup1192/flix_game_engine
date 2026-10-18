@@ -4,6 +4,8 @@
   "title": "消えた絵",
   "subtitle": "雨の夜、洋館の書斎から一枚の絵が消えた",
   "hint": "クリックではじめる",
+  "menuTitle": "― 一時停止 ―",
+  "menuHint": "Esc でつづきへ",
   "start": "arrival",
   "lamps": 3,
   "sections": [

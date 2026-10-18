@@ -16,7 +16,7 @@
 // 判定の閾値は goals() に 1 箇所だけ置く。
 mod Playtest {
 
-    use fge::{Num, PxSpriteDoc, Vec2}
+    use fge::{App, Num, PxSpriteDoc, Vec2}
 
     /// 合格の目安。ここを触ると面の合否が変わる — 数字の意味は上の doc。
     def goals(): { dashRate = Float64, stuckMax = Float64, idleMax = Float64,
@@ -104,7 +104,7 @@ mod Playtest {
                           lastDist = goalDist(w), lastX = w#player#body#pos#x,
                           xStall = 0.0, jumpHold = 0.0, dir = 1.0, turnCd = 0.0,
                           hurts = 0, hearts = w#hearts };
-        let (wEnd, tally) = loop(w, t0, 0);
+        let (wEnd, tally) = loop(w, App.freshStepState(), t0, 0);
         { name = Stage.rec(w#stage)#name,
           // clear = ゴール / dead = 残機切れ / stuck = 時間切れ(進めない)
           outcome = if (wEnd#phase == "clear") "clear"
@@ -118,12 +118,12 @@ mod Playtest {
           coins = Set.size(wEnd#got), coinsTotal = List.length(Stage.rec(w#stage)#coins),
           hurts = tally#hurts, stuckAt = tally#stuckAt }
 
-    def loop(w: World.World, tally: Tally, n: Int32): (World.World, Tally) =
+    def loop(w: World.World, state: App.StepState, tally: Tally, n: Int32): (World.World, Tally) =
         if (w#phase != "play" or Int32.toFloat64(n) * dt() > maxSeconds()) (w, tally)
         else {
             let (input, hold, turnCd) = decide(w, tally);
-            let w1 = World.step(input, dt(), w);
-            loop(w1, tick(w, w1, input, hold, turnCd, tally), n + 1)
+            let (w1, nextState) = Controls.stepHeadless(input, dt(), state, w);
+            loop(w1, nextState, tick(w, w1, input, hold, turnCd, tally), n + 1)
         }
 
     /// bot の判断。跳んだら 0.22 秒は押しっぱなし(可変ジャンプの長押し側 —

@@ -50,7 +50,7 @@ mod Probe {
         // 実戦の遷移: clear の間を置いてから次の面へ落ちるところ全部。
         let (_, us) = usOf(_ -> {
             let cleared = { phase = "clear", phaseT = 1.7 | w0 };
-            World.step(idle(), 1.0 / 60.0, cleared)
+            fst(Controls.stepHeadless(idle(), 1.0 / 60.0, App.freshStepState(), cleared))
         });
         println("clear->next transition: ${us} us")
 
@@ -64,7 +64,7 @@ mod Probe {
         let (w, loadUs) = usOf(_ -> World.loadStage(ix, w0));
         let (_, stepUs) = usOf(_ ->
             List.range(0, 60) |> List.foldLeft((acc, _) ->
-                World.step(idle(), 1.0 / 60.0, acc), w));
+                Controls.stepHeadless(idle(), 1.0 / 60.0, snd(acc), fst(acc)), (w, App.freshStepState())));
         let (tiles, tileUs) = usOf(_ ->
             List.length(TerrainLayers.layerTiles(w, View.zWall()))
                 + List.length(TerrainLayers.layerTiles(w, View.zFore())));

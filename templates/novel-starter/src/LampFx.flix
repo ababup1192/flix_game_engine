@@ -1,7 +1,8 @@
-// LampFx — 疑って灯りがひとつ消える演出の時刻表。起点は World の lampOutAt（消えた時刻）。
-// 鳴らす側（Controls.sounds）は Timeline.soundsSince、描く側は flickerOf（progressSince）で同じ表を読む。
+// LampFx — 疑って灯りがひとつ消える演出の時刻表。起点は World の lampOutAt（消えた物語の時刻）。
+// 鳴らす側（Controls.sounds）は Timeline.soundsOnClock、描く側は flickerOf（Timeline.progressOn）で
+// 同じ表を物語の時計で読む — メニューで物語の時計が止まると、音も炎の細りも一緒に止まる。
 mod LampFx {
-    use fge::Timeline
+    use fge::{Clock, Timeline}
     use fge::Timeline.Duration
 
     /// 演出の拍。Flicker = 炎が揺らいで細る・Dark = 消えて部屋が一段暗くなる。
@@ -20,12 +21,13 @@ mod LampFx {
     /// いまの炎の細り具合 0..1（灯りが消えていなければ 0）。
     pub def flickerOf(w: World.World): Float64 =
         w#lampOutAt
-            |> Option.map(at -> Timeline.progressSince(at, w#t, Beat.Flicker, timeline()))
+            |> Option.map(at -> Timeline.progressOn(w#storyClock, at, Beat.Flicker, timeline()))
             |> Option.getWithDefault(0.0)
 
     /// 消えた灯りがまだ細りながら残っているか（消えた時刻から Flicker の長さの間だけ）。
-    /// 描き出しは時計を置き直すので、消えた時刻より前の時刻は「もう消えた」と見る。
+    /// 描き出しは物語の時計を置き直すので、消えた時刻より前の時刻は「もう消えた」と見る。
     pub def isFlickering(w: World.World): Bool =
         let length = Timeline.clipOf(Beat.Flicker, timeline()) |> Option.map(clip -> clip#dur) |> Option.getWithDefault(0.0);
-        Option.exists(at -> w#t >= at and w#t < at + length, w#lampOutAt)
+        let now = Clock.nowOf(w#storyClock);
+        Option.exists(at -> now >= at and now < Clock.after(length, at), w#lampOutAt)
 }

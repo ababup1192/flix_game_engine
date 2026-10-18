@@ -311,6 +311,68 @@
       "widget": "key",
       "label": "B ダッシュ(押しっぱなしで最高速が上がる)",
       "order": 5
+    },
+    "pause": {
+      "kind": "field",
+      "type": {
+        "list": {
+          "enum": [
+            "A",
+            "B",
+            "C",
+            "D",
+            "E",
+            "F",
+            "G",
+            "H",
+            "I",
+            "J",
+            "K",
+            "L",
+            "M",
+            "N",
+            "O",
+            "P",
+            "Q",
+            "R",
+            "S",
+            "T",
+            "U",
+            "V",
+            "W",
+            "X",
+            "Y",
+            "Z",
+            "Digit0",
+            "Digit1",
+            "Digit2",
+            "Digit3",
+            "Digit4",
+            "Digit5",
+            "Digit6",
+            "Digit7",
+            "Digit8",
+            "Digit9",
+            "Up",
+            "Down",
+            "Left",
+            "Right",
+            "Space",
+            "Enter",
+            "Escape",
+            "Tab",
+            "LeftShift",
+            "RightShift",
+            "LeftCtrl",
+            "RightCtrl",
+            "LeftAlt",
+            "RightAlt"
+          ]
+        }
+      },
+      "widget": "key",
+      "label": "ポーズ(窓を開け閉めする。Escape は終了なので使わない)",
+      "order": 6
     }
   }
 }

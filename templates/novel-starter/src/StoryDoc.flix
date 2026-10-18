@@ -21,12 +21,15 @@ mod StoryDoc {
     pub type alias Section = { id = String, beats = List[Beat], ask = Option[Ask], next = String }
 
     /// 台本全体。title / subtitle / hint = 表紙の文言（事件の名前・一行・はじめ方のヒント）、
+    /// menuTitle / menuHint = メニュー（物語を止める窓）の見出しと戻り方のヒント、
     /// start = 最初に読む節の id、lamps = 館の灯りの数（疑うたびに 1 つ消える）。
     pub type alias Rec = {
         version = Int32,
         title = String,
         subtitle = String,
         hint = String,
+        menuTitle = String,
+        menuHint = String,
         start = String,
         lamps = Int32,
         sections = List[Section]
@@ -44,6 +47,7 @@ mod StoryDoc {
         Doc.Doc({ version = 1,
                   title = "消えた絵", subtitle = "雨の夜、洋館の書斎から一枚の絵が消えた",
                   hint = "クリックではじめる",
+                  menuTitle = "― 一時停止 ―", menuHint = "Esc でつづきへ",
                   start = "start", lamps = 3,
                   sections =
                       { id = "start",
@@ -64,6 +68,8 @@ mod StoryDoc {
                   title = JsonCodec.stringOr("title", d#title, root),
                   subtitle = JsonCodec.stringOr("subtitle", d#subtitle, root),
                   hint = JsonCodec.stringOr("hint", d#hint, root),
+                  menuTitle = JsonCodec.stringOr("menuTitle", d#menuTitle, root),
+                  menuHint = JsonCodec.stringOr("menuHint", d#menuHint, root),
                   start = JsonCodec.stringOr("start", d#start, root),
                   lamps = JsonCodec.intOr("lamps", d#lamps, root),
                   sections = Map.get("sections", root)

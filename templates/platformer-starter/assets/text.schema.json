@@ -3,6 +3,7 @@
   "version": 1,
   "sections": {
     "clear":    { "kind": "field", "type": "text", "label": "面をクリアしたときの一言", "group": "画面に出る文言", "order": 1, "default": "CLEAR!" },
-    "gameOver": { "kind": "field", "type": "text", "label": "力尽きたときの一言", "group": "画面に出る文言", "order": 2, "default": "GAME OVER" }
+    "gameOver": { "kind": "field", "type": "text", "label": "力尽きたときの一言", "group": "画面に出る文言", "order": 2, "default": "GAME OVER" },
+    "paused":   { "kind": "field", "type": "text", "label": "ポーズの窓に出る一言", "group": "画面に出る文言", "order": 3, "default": "PAUSE" }
   }
 }

@@ -15,7 +15,8 @@ mod KeysDoc {
         right = List[Key],  // 右へ歩く
         jump = List[Key],   // ジャンプ(押しっぱなしで高く)
         drop = List[Key],   // 一方通行の床から降りる
-        dash = List[Key]    // B ダッシュ
+        dash = List[Key],   // B ダッシュ
+        pause = List[Key]   // ポーズの窓を開け閉めする(Escape は終了なので使わない)
     }
 
     /// 型検査が record を展開しないため、World が持つ形は名前付きの enum にする。
@@ -32,7 +33,8 @@ mod KeysDoc {
           right = Key.Right :: Key.D :: Nil,
           jump  = Key.Space :: Key.Up :: Key.W :: Nil,
           drop  = Key.Down :: Key.S :: Nil,
-          dash  = Key.B :: Key.LeftShift :: Key.X :: Nil })
+          dash  = Key.B :: Key.LeftShift :: Key.X :: Nil,
+          pause = Key.P :: Key.Enter :: Nil })
 
     /// テキストから Doc へ(fail-open)。JSON でない・形が違う欄は既定へ落とす。
     pub def fromJson(text: String): Option[Doc] =
@@ -49,7 +51,8 @@ mod KeysDoc {
           right = keysOr("right", d#right, root),
           jump  = keysOr("jump",  d#jump,  root),
           drop  = keysOr("drop",  d#drop,  root),
-          dash  = keysOr("dash",  d#dash,  root) })
+          dash  = keysOr("dash",  d#dash,  root),
+          pause = keysOr("pause", d#pause, root) })
 
     /// 欄の文字列列 → キーの列。知らない名前はその 1 個だけ捨て(InputMap.keysOf)、
     /// 列ごと空になる形(欄が無い・型違い・全部知らない名前)だけ フォールバックする。

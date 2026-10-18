@@ -1,11 +1,11 @@
 // SceneRender — ゲーム画面を画面なしで PNG に描き出す(スナップショット比較用)。
-// 実行: make render-all → gallery/*.png(title / hill / cave / tower)
+// 実行: make render-all → gallery/*.png(title / hill / cave / tower / hitstop)
 //       make render SHOT=cave → debug/cave.png(1 枚だけ)
-// 時刻 t は固定値 — 空・コイン・旗・動く床がこの t だけで決まるので、
+// 遊びの時計は Clock.startAt(固定の秒) — 空・コイン・旗・動く床がこの時刻だけで決まるので、
 // 何度描き出しても同じ PNG が出る(スナップショットのバイト比較が成り立つ)。
 mod SceneRender {
     use fge::{
-        App, CameraRig, Color, FontAtlas, GameEngine, HeadlessFont, HeadlessRender, PxSpriteAtlas,
+        App, CameraRig, Clock, Color, FontAtlas, GameEngine, HeadlessFont, HeadlessRender, PxSpriteAtlas,
         PxSpriteDoc, Render, Vec2
     }
 
@@ -51,7 +51,27 @@ mod SceneRender {
     // 見本の絵でコインが棒に見える。floor(t*5) が偶数なら表。
     def renderTime(): Float64 = 3.2
 
-    def withT(w: World.World): World.World = { t = renderTime() | w }
+    def withT(w: World.World): World.World = { play = Clock.startAt(renderTime()) | w }
+
+    /// 踏んだ次のフレーム: ヒットストップで遊びの時計が止まり、光が実時間で薄れ始めた瞬間。
+    /// 1 体目の歩く敵の真上から落ちる主役を、実機と同じ時計の進め方(stepHeadless)で 2 フレーム進める。
+    /// 飛ぶ敵は時刻で上下するので、置いた位置から 1 フレームでずれて踏み外す。
+    def hitstopScene(w: World.World): World.World =
+        let walking = e -> match e#behavior {
+            case Enemies.Behavior.Walking(_) => true
+            case _                           => false
+        };
+        match List.find(walking, w#enemies) {
+            case None    => w
+            case Some(e) =>
+                let top = e#pos#y - Enemies.sizeOf(e#behavior)#y * 0.5;
+                let falling = { body = { pos = { x = e#pos#x, y = top - Physics.playerSize()#y * 0.5 - 2.0 },
+                                         vel = { x = 0.0, y = 200.0 }, onGround = false } | w#player };
+                let idle = { dir = 0.0, jumpHeld = false, jumpPressed = false, drop = false, dash = false };
+                let (stomped, state) = Controls.stepHeadless(idle, 1.0 / 60.0, App.freshStepState(),
+                                                              { player = falling, cam = e#pos | w });
+                fst(Controls.stepHeadless(idle, 1.0 / 60.0, state, stomped))
+        }
 
     pub def all(): Unit \ IO =
         discard allShots()
@@ -60,7 +80,7 @@ mod SceneRender {
     /// 場面の題と一言（Studio のギャラリーに出るラベル）は assets/*.scenes.json 側で、
     /// name をここの名前とそろえる。ラベルを足しても描き出す場面は増えない。
     pub def shotNames(): List[String] =
-        "title" :: "hill" :: "cave" :: "tower" :: Nil
+        "title" :: "hill" :: "cave" :: "tower" :: "hitstop" :: Nil
 
     /// 名前 → (その場面の World, HUD を重ねるか)。shotNames と対で保つ。
     /// 名前で引く形にしてあるので、SHOT で 1 枚だけ描くときに残りの面は組まない。
@@ -73,6 +93,8 @@ mod SceneRender {
             case "hill"  => Some((withT(w0), false))
             case "cave"  => Some((withT(World.loadStage(1, w0)), false))
             case "tower" => Some((withT(World.loadStage(2, w0)), false))
+            // 光は HUD に重ねるので HUD ごと描く。
+            case "hitstop" => Some((hitstopScene(withT(w0)), true))
             case _       => None
         }
 

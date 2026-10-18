@@ -15,7 +15,7 @@ Flix コンパイラはエンジンリポの `bin/flix` ラッパ経由で呼ぶ
 | `make debug`  | 保存即反映(watchFile)と F8 を有効にして起動 |
 | `make check`  | 型検査だけ走らせる（一番速い確認） |
 | `make test`   | テストを実行する |
-| `make render-all`   | ギャラリー PNG を全部描き出す（決定的: title / choice / ending） |
+| `make render-all`   | ギャラリー PNG を全部描き出す（決定的: title / choice / ending / menu） |
 | `make render SHOT=choice` | その場面だけ `debug/choice.png` へ描き出す（複数は `SHOT="title ending"`） |
 | `make reference-check`  | 描き出した絵をリファレンス画像とバイト比較する |
 | `make reference-update` | いまの gallery をリファレンス画像として更新する |
@@ -25,6 +25,8 @@ Flix コンパイラはエンジンリポの `bin/flix` ラッパ経由で呼ぶ
 
 クリック / Z / Enter で読み進める。選択肢は ↑↓（またはマウス）で選んで決定。
 疑う相手を選ぶたびに館の灯りがひとつ消え、部屋が暗くなる。結末は 2 つ。
+物語の途中の Esc でメニュー（物語が止まる・もう一度 Esc でつづき）、表紙の Esc で終了。
+キーの割り当ては `assets/novel.keys.json`。
 
 ## 読む順（全体像のつかみ方）
 
@@ -34,15 +36,18 @@ Flix コンパイラはエンジンリポの `bin/flix` ラッパ経由で呼ぶ
 2. コードは **エントリ→状態→描画→入力** の順で読む:
    1. `src/Main.flix` … 部品を App に繋いで起動する目次。冒頭 doc に**毎フレームの流れ
       （入力→状態更新→描画 がどの行か）**が書いてある（`update = …` の 3 行）。まずここ。
+      毎フレーム、App は系より先に物語の時計（`App.addClock`・メニューの間は `World.paceOf` が止める）を
+      1 回だけ進め、実時間の今を `frame#realNow` で配る。
    2. `src/World.flix` … 進行の規則そのもの（ビートの送り・分岐・「疑うと灯りが消える」。純粋）。
       冒頭 doc に**場面の移り変わりの図**（表紙→物語→結末→表紙）があり、遷移を起こす関数には
       doc に `[遷移: X→Y]` が付いている。まず `advance`（決定＝読み進める）と
-      `pick`（選択肢を選ぶ）を読む。
+      `pick`（選択肢を選ぶ）を読む。冒頭の「時計は 2 本」が、物語の時計（文字送り・灯りの演出）と
+      実時間（雨・炎・埃・メニューの点滅）の分け方。
    3. `src/View.flix` … 状態を絵に写す（書斎・雨の窓・空の額縁・灯り・暗くするオーバーレイ・表紙を、何をどこに）。
    4. `src/NovelKit.flix` … ダイアログと選択肢のキット（UiDialog + UiTypewriter + UiSlots の束ね）。
-   5. `src/Controls.flix` … キーの割り当て（選ぶだけ）と Doc の読み直し。決定・カーソルで起きた出来事を
+   5. `src/Controls.flix` … キーの割り当て（`KeysDoc` の表で操作の意図へ写す）と Doc の読み直し。決定・カーソルで起きた出来事を
       `Emit.collectInto` で World に溜め、`sounds` が返事の音へ写す。灯りが消える演出は `src/LampFx.flix` の時刻表を
-      音（`Timeline.soundsSince`）と絵（`flickerOf`）が同じ起点から読む。
+      音（`Timeline.soundsOnClock`）と絵（`flickerOf`）が同じ起点から物語の時計で読む。
    6. `src/render/SceneRender.flix` … 決定的な場面を PNG に描き出す（リファレンス画像とアトリエ）。
    7. `test/TestTrace.flix` … 性質テスト。でたらめなキーとクリックを画面なしで流し、「押さなければ返事は鳴らない」
       「灯りは疑う選択でだけ 1 つ減る」が、どう読み進めても崩れないかを見る（`PropertyTest.forAll`）。
@@ -58,6 +63,7 @@ Flix コンパイラはエンジンリポの `bin/flix` ラッパ経由で呼ぶ
 数値・色・絵・枠は `assets/` の Doc（保存即反映）:
 
 - `assets/novel.story.json` … 台本。`src/StoryDoc.flix` が読む（material）。
+- `assets/novel.keys.json` … キーの割り当て（決定・カーソル・メニュー・表紙での終了）。`src/KeysDoc.flix` が読む（tuning）。
 - `assets/novel.kind.json` … 手触りの数値（文字送りの速さ・暗くなる度合い）。`src/KindDoc.flix` が読む（tuning）。
 - `assets/novel.theme.json` … 場面の色票。`src/ThemeDoc.flix` が読む（material）。
 - `assets/novel.sprite.json` … ドット絵（空の額縁）。entityId は `novel.sprites`（material）。

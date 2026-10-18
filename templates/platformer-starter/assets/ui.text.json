@@ -3,5 +3,6 @@
   "title": "画面の文言",
   "note": "画面に出る文言。保存すると即反映される。面の名前は stages.stage.json の name。フォントは英数字だけ用意してあるので、日本語にするなら project.json の fonts を差し替える。",
   "clear": "CLEAR!",
-  "gameOver": "GAME OVER"
+  "gameOver": "GAME OVER",
+  "paused": "PAUSE"
 }

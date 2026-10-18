@@ -2,7 +2,8 @@
 // stage.json のバランス調整でこのテストは壊れない。期待値は Doc から導く。
 mod TestRules {
 
-    use fge::{PxSpriteDoc, Vec2}
+    use fge::{App, Clock, Lifetime, PxSpriteDoc, Vec2}
+    use fge::GameEngine.Key
 
     def m(): MotionDoc.Doc = MotionDoc.defaults()
 
@@ -39,14 +40,32 @@ mod TestRules {
     def ticksFor(sec: Float64): Int32 =
         Float64.floor(sec / dt()) |> Float64.tryToInt32 |> Option.getWithDefault(0)
 
+    /// Main と同じ遊びの時計だけを持つ App(系は呼ぶ側が直に回す)。
+    def playClock(w: World.World): App.App[World.World, {}] = Controls.addPlayClock(App.make(w))
+
+    /// 実機と同じ順(App が時計を進める → 系)の 1 tick。
+    def tick(inp: World.Input, w: World.World): World.World =
+        World.step(inp, App.tickClocks(playClock(w), dt(), w))
+
     def stepN(n: Int32, inp: World.Input, w: World.World): World.World =
-        List.range(0, n) |> List.foldLeft((acc, _) -> World.step(inp, dt(), acc), w)
+        List.range(0, n) |> List.foldLeft((acc, _) -> tick(inp, acc), w)
+
+    /// キーの入ったフレームを Main と同じ系(Controls.step)へ流す App。ポーズと実時間はこちらで見る。
+    def live(w: World.World): App.App[World.World, {}] = playClock(w) |> App.addSystem(Controls.step)
+
+    def frameOf(keys: Set[Key]): App.Frame =
+        App.frameOf(prev = Set#{}, current = keys, dt(), View.design(),
+                    { prevCursor = None, cursor = Vec2.zero() }, { prevDown = false, down = false, wheel = 0.0 })
+
+    def frames(n: Int32, keys: Set[Key]): List[App.Frame] = List.repeat(n, frameOf(keys))
+
+    def pauseKey(): Key = KeysDoc.rec(KeysDoc.defaults())#pause |> List.head |> Option.getWithDefault(Key.P)
 
     /// pred を満たす最初の状態(最大 n tick)。満たさなければ最後の状態。
     def stepUntil(n: Int32, pred: World.World -> Bool, inp: World.Input,
                   w: World.World): World.World =
         if (n <= 0 or pred(w)) w
-        else stepUntil(n - 1, pred, inp, World.step(inp, dt(), w))
+        else stepUntil(n - 1, pred, inp, tick(inp, w))
 
     @Test
     def testCoinCollectAddsScore(): Unit \ Assert =
@@ -58,7 +77,7 @@ mod TestRules {
             :: "..o....."
             :: "..P....."
             :: "########" :: Nil);
-        let w1 = World.step(idle(), dt(), w);
+        let w1 = tick(idle(), w);
         Assert.assertEq(expected = (rr()#coinScore, 1), (w1#score, Set.size(w1#got)))
 
     @Test
@@ -86,13 +105,13 @@ mod TestRules {
 
     @Test
     def testStompKillsAndBounces(): Unit \ Assert =
-        // 上から踏む: 敵は消え stompScore ぶん加点、hitstop = Doc、バウンドの初速 = stompBounceTiles から導出。
+        // 上から踏む: 敵は消え stompScore ぶん加点、ヒットストップが掛かり、バウンドの初速 = stompBounceTiles から導出。
         let w = world(flat("..P..a.."));
-        let w1 = World.step(idle(), dt(), { player = stompingFrom(w) | w });
+        let w1 = tick(idle(), { player = stompingFrom(w) | w });
         Assert.assertEq(
-            expected = (0, rr()#stompScore, mr()#hitstopSec,
+            expected = (0, rr()#stompScore, true,
                         Physics.launchVelocity(m(), mr()#stompBounceTiles)),
-            (List.length(w1#enemies), w1#score, w1#freeze, w1#player#body#vel#y))
+            (List.length(w1#enemies), w1#score, Clock.isSlowed(World.paceOf(w1), w1#play), w1#player#body#vel#y))
 
     /// 1 体目の敵の真上から踏みに降りている主役。
     def stompingFrom(w: World.World): Player.State =
@@ -128,7 +147,7 @@ mod TestRules {
     def testShooterFiresWhenInRange(): Unit \ Assert =
         // 射程内(Doc の shotRangeTiles)・同じ高さの範囲 → 弾が出て主役の側へ飛ぶ。
         let w = world(flat("..P..z.."));
-        let w1 = World.step(idle(), dt(), w);
+        let w1 = tick(idle(), w);
         let vx = List.head(w1#shots) |> Option.map(s -> s#vel#x) |> Option.getWithDefault(0.0);
         Assert.assertEq(expected = (1, true), (List.length(w1#shots), vx < 0.0))
 
@@ -215,15 +234,16 @@ mod TestRules {
             :: "########" :: Nil);
         let p = List.head(Stage.rec(w#stage)#platforms)
             |> Option.getWithDefault({ cell = { x = 2, y = 3 }, wTiles = 2 });
-        let t1 = w#t + dt();
-        let deck = World.platformPosAt(m(), p, t1);
+        let clocked = App.tickClocks(playClock(w), dt(), w);
+        let deck = World.platformPosAt(m(), p, World.playSeconds(clocked));
         let riding = { body = { pos = { x = deck#x + 16.0,
                                         y = deck#y - Physics.playerSize()#y * 0.5 },
                                 vel = Vec2.zero(), onGround = true }
                      | w#player };
         let x0 = riding#body#pos#x;
-        let w1 = World.step(idle(), dt(), { player = riding | w });
-        let delta = (World.platformPosAt(m(), p, t1)#x - World.platformPosAt(m(), p, w#t)#x);
+        let w1 = World.step(idle(), { player = riding | clocked });
+        let before = World.platformPosAt(m(), p, Clock.secondsOf(Clock.prevOf(clocked#play)));
+        let delta = deck#x - before#x;
         let moved = w1#player#body#pos#x - x0;
         Assert.assertEq(expected = true,
             Float64.abs(moved - delta) < 0.75 and w1#player#body#onGround)
@@ -238,12 +258,34 @@ mod TestRules {
              World.blinkOn(m(), mr()#blinkPeriod + 0.1, 0, 0)))
 
     @Test
-    def testHitstopFreezesWorld(): Unit \ Assert =
-        // freeze 中は世界の時刻ごと止まる(敵も粒も進まない)。
+    def testHitstopFreezesPlayClockButFlashFades(): Unit \ Assert =
+        // 踏んだ次のフレーム: 遊びの時計はほぼ止まり(1 フレームの 1% 未満)、
+        // 光は実時間で 1 フレームぶん(dt / hitstopSec)薄れる。
+        let w = world(flat("..P..a.."));
+        match App.trace(live(w), frames(2, Set#{}), { player = stompingFrom(w) | w }) {
+            case _ :: frozen :: Nil =>
+                Assert.assertEq(expected = (true, true),
+                    (Clock.dtOf(frozen#after#play) < dt() * 0.01,
+                     Float64.abs(Lifetime.progressOn(frozen#after#realNow, frozen#after#flash)
+                                 - dt() / mr()#hitstopSec) < 0.000001))
+            case _ => bug!("trace は 2 フレームを返す")
+        }
+
+    @Test
+    def testPauseHoldsPlayClockAndPlayer(): Unit \ Assert =
+        // ポーズの窓を開けて 30 フレーム右を押し続けても、遊びの時計も主役も止まったまま、
+        // 実時間だけ 30 フレームぶん進む。
         let w = world(flat("..P....."));
-        let frozen = { freeze = 0.5 | stepN(3, idle(), w) };
-        let w1 = World.step(idle(), dt(), frozen);
-        Assert.assertEq(expected = (frozen#t, true), (w1#t, w1#freeze < frozen#freeze))
+        let walk = Set#{Key.Right};
+        let steps = App.trace(live(w), frames(3, walk) ::: frameOf(Set#{pauseKey()}) :: frames(30, walk), w);
+        match (List.drop(3, steps) |> List.head, List.last(steps)) {
+            case (Some(opened), Some(last)) =>
+                Assert.assertEq(expected = (true, true, true),
+                    (Clock.nowOf(opened#after#play) == Clock.nowOf(last#after#play),
+                     opened#after#player#body#pos#x == last#after#player#body#pos#x,
+                     Float64.abs(Clock.since(opened#after#realNow, last#after#realNow) - 30.0 * dt()) < 0.000001))
+            case _ => bug!("trace は 34 フレームを返す")
+        }
 
     @Test
     def testCameraLeadComesFromDoc(): Unit \ Assert =

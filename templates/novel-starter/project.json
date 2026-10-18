@@ -59,6 +59,13 @@
         "role": "tuning"
       },
       {
+        "id": "keys",
+        "pattern": "assets/novel.keys.json",
+        "title": "操作（キーの割り当て）",
+        "schema": "assets/keys.schema.json",
+        "role": "tuning"
+      },
+      {
         "id": "scenes",
         "pattern": "assets/*.scenes.json",
         "title": "場面の説明（ギャラリーに出る題と一言）",

@@ -19,9 +19,29 @@
 //   一部が欠け → その欄だけ既定値（fromJson が欄ごとに拾う）
 //   型が違う   → その欄は既定値のまま（行き先の節が無ければ表紙へ落ちる 等）
 // だからプレイヤーの前でクラッシュしない。台本の編集ミスは既定へ落ちて読みは続く。
+//
+// 時計は 2 本（型で分けてあり、取り違えるとコンパイルが止まる）:
+//   物語の時計 storyClock（Clock[Story]）… 文字送りと灯りが消える演出。メニューの間は止まる。
+//                                          進めるのは App だけ（Main の App.addClock・進み方は paceOf）。
+//   実時間 realNow（Time[Clock.Real]）     … 雨・炎の揺らぎ・埃・メニューの字の点滅。止まらない。
+//                                          App が配る frame#realNow を Controls.step が毎フレーム写す。
 mod World {
 
-    use fge::{Emit, PxSpriteAtlas, PxSpriteDoc, UiDialog, UiMenu, UiSlots, UiSpec, UiStore}
+    use fge::{Clock, Emit, PxSpriteAtlas, PxSpriteDoc, UiDialog, UiMenu, UiSlots, UiSpec, UiStore}
+
+    /// 物語の時計の名前（中身は要らない）。
+    pub enum Story
+
+    /// 開いている窓。Open = メニュー（物語の時計を止める・物語の入力を受けない）。
+    pub enum Menu with Eq, ToString {
+        case Closed
+        case Open
+    }
+
+    /// 物語の時計を止める理由。
+    pub enum Halt with Eq {
+        case MenuOpen
+    }
 
     /// いま画面が何をしているか。Title = 表紙（決定で物語がはじまる）、Story = 台本を読んでいる。
     pub enum Phase with Eq, ToString {
@@ -50,30 +70,34 @@ mod World {
     pub type alias Docs = {
         story = StoryDoc.Doc,
         kind = KindDoc.Doc,
+        keys = KeysDoc.Doc,
         theme = ThemeDoc.Doc,
         sprites = PxSpriteDoc.Doc
     }
 
     /// ゲームの状態。section / idx = 台本上の現在地、kit = ダイアログと選択肢、
     /// cursor = 選択肢のカーソル位置、lightsOut = 消えた灯りの数（疑うたびに増える）、
-    /// t = 起動からの積み上げ秒（雨・炎の揺らぎ・埃が見る。読んでいる間も部屋を止めない）。
+    /// storyClock / realNow = 物語の時計と実時間の今（冒頭の「時計は 2 本」）、menu = 開いている窓。
     pub type alias World = {
         phase = Phase,
         story = StoryDoc.Doc,
         kind = KindDoc.Doc,
+        keys = KeysDoc.Doc,
         theme = ThemeDoc.Doc,
         sprites = PxSpriteDoc.Doc,
         // ドット絵を 1 枚にまとめたアトラスと、その画素から導いた鍵（下の bakedOf を参照）。
         atlas = PxSpriteAtlas.Baked,
         atlasKey = String,
-        t = Float64,
+        storyClock = Clock.Clock[Story],
+        realNow = Clock.Time[Clock.Real],
+        menu = Menu,
         section = String,
         idx = Int32,
         kit = NovelKit.Kit,
         cursor = Int32,
         lightsOut = Int32,
-        // 最後に灯りが消えた時刻（t の値。灯りが消える演出 LampFx の起点）。
-        lampOutAt = Option[Float64],
+        // 最後に灯りが消えた物語の時刻（灯りが消える演出 LampFx の起点）。
+        lampOutAt = Option[Clock.Time[Story]],
         events = Emit.Events[Event],
         ui = UiStore.UiWorld,
         docError = Option[String],
@@ -109,9 +133,10 @@ mod World {
     pub def initial(docs: Docs, ui: UiStore.UiWorld): World =
         let (baked, key) = bakedOf(docs#theme, docs#sprites);
         { phase = Phase.Title,
-          story = docs#story, kind = docs#kind, theme = docs#theme, sprites = docs#sprites,
+          story = docs#story, kind = docs#kind, keys = docs#keys, theme = docs#theme, sprites = docs#sprites,
           atlas = baked, atlasKey = key,
-          t = 0.0, section = StoryDoc.rec(docs#story)#start, idx = 0,
+          storyClock = Clock.start(), realNow = Clock.zero(), menu = Menu.Closed,
+          section = StoryDoc.rec(docs#story)#start, idx = 0,
           kit = NovelKit.closed(), cursor = 0, lightsOut = 0,
           lampOutAt = None, events = Emit.empty(),
           ui = ui, docError = None, activeDocsWritten = "" }
@@ -129,8 +154,10 @@ mod World {
 
     /// 表紙へ戻る（結末を読み終えた・台本が切れた）。部屋の暗さはそのまま残り、
     /// 次に begin したとき灯り直す。[遷移: Story→Title]
+    /// メニューも閉じる — 台本の読み直しで節が消えると、メニューを開いたまま表紙へ落ちうる
+    /// （表紙ではメニューを開け閉めできないので、閉じないと物語の時計が止まったまま詰む）。
     def toTitle(w: World): World =
-        { phase = Phase.Title, kit = NovelKit.closed() | w }
+        { phase = Phase.Title, kit = NovelKit.closed(), menu = Menu.Closed | w }
 
     /// 台本の (section, idx) のビートをキットに乗せる。ビートを読み終えた節は
     /// ask（分岐）→ next（次の節）→ どちらも無ければ結末 = 表紙へ、の順に出口を選ぶ。
@@ -209,7 +236,7 @@ mod World {
     /// 消せる灯りが残っていなければ何もしない（演出の起点 lampOutAt も動かさない）。
     def dimIf(suspect: Bool, w: World): World =
         if (suspect and lampsLit(w) > 0)
-            { lightsOut = w#lightsOut + 1, lampOutAt = Some(w#t) | w }
+            { lightsOut = w#lightsOut + 1, lampOutAt = Some(Clock.nowOf(w#storyClock)) | w }
         else w
 
     def currentOptions(w: World): List[StoryDoc.Choice] =
@@ -218,12 +245,30 @@ mod World {
             |> Option.map(ask -> ask#options)
             |> Option.getWithDefault(Nil)
 
-    /// 毎フレーム: 文字送りを進め、キットの状態を UI へ刻む（表紙ではダイアログは閉じている）。
-    /// 毎フレーム: 文字送りを進め、時計を進める。時計は場面を問わず進む —
-    /// 読んでいる間も表紙でも、雨は降り炎は揺れる（動かない絵は止まって見える）。
-    pub def step(dt: Float64, w: World): World =
-        let kit = NovelKit.step(cps = KindDoc.rec(w#kind)#cps, dt, w#kit);
-        { kit = kit, ui = NovelKit.apply(kit, w#ui), t = w#t + dt | w }
+    /// 毎フレーム: 文字送りを物語の時計がこのフレームに進んだ秒だけ進め、キットの状態を UI へ刻む
+    /// （表紙ではダイアログは閉じている）。メニューの間は物語の時計が止まるので文字送りも止まる。
+    pub def step(w: World): World =
+        let kit = NovelKit.step(cps = KindDoc.rec(w#kind)#cps, Clock.dtOf(w#storyClock), w#kit);
+        { kit = kit, ui = NovelKit.apply(kit, w#ui) | w }
+
+    /// いまの行を最後まで出した状態（描き出しが場面を歩くとき。時計を進めずに 1 ビート読み終える）。
+    pub def revealLine(w: World): World =
+        let kit = if (UiDialog.lineDone(w#kit#dialog)) w#kit else NovelKit.advance(w#kit);
+        { kit = kit, ui = NovelKit.apply(kit, w#ui) | w }
+
+    /// 物語の時計のこのフレームの進み方（Main の App.addClock が読む）。止める理由はメニューだけ。
+    pub def paceOf(w: World): Clock.Pace[Story, Halt] = match w#menu {
+        case Menu.Closed => Clock.paceOf(Clock.Run.Running)
+        case Menu.Open   => Clock.paceOf(Clock.Run.Paused(Halt.MenuOpen))
+    }
+
+    /// メニューを開く・閉じる。開けるのは物語の途中だけ（表紙には止める物語が無い）。
+    /// [遷移: メニュー Closed⇄Open（Story の中）]
+    pub def toggleMenu(w: World): World = match (w#phase, w#menu) {
+        case (Phase.Title, _)           => w
+        case (Phase.Story, Menu.Closed) => { menu = Menu.Open | w }
+        case (Phase.Story, Menu.Open)   => { menu = Menu.Closed | w }
+    }
 
     // ── Doc の差し替え（保存即反映） ──
 

@@ -3,6 +3,8 @@
 // accentLight だけは palette.json の宣言が導出に勝つ固有の規則なので、下で 2 本だけ確かめる。
 mod TestDocs {
 
+    use fge::GameEngine
+
     // ══════════════════════════════════════════════════════
     // StoryDoc（台本: rows）
     // ══════════════════════════════════════════════════════
@@ -54,6 +56,25 @@ mod TestDocs {
             |> Option.getWithDefault(KindDoc.defaults());
         Assert.assertEq(expected = (99.0, KindDoc.rec(KindDoc.defaults())#dim),
             (KindDoc.rec(doc)#cps, KindDoc.rec(doc)#dim))
+
+    // ══════════════════════════════════════════════════════
+    // KeysDoc（キー割り当て）
+    // ══════════════════════════════════════════════════════
+
+    @Test
+    def testKeysBrokenJsonFallsBackToDefaults(): Unit \ Assert =
+        // 壊れた JSON は既定の割り当てへ落ちる（操作不能にしない）。
+        let doc = KeysDoc.fromJson("{ broken") |> Option.getWithDefault(KeysDoc.defaults());
+        Assert.assertEq(expected = KeysDoc.rec(KeysDoc.defaults())#menu, KeysDoc.rec(doc)#menu)
+
+    @Test
+    def testKeysOverridesOneFieldAndDropsUnknownNames(): Unit \ Assert =
+        // 書いた欄だけ効き（知らない名前はその 1 個だけ捨てる）、全部知らない名前の欄と書かない欄は既定のまま。
+        let doc = KeysDoc.fromJson("{\"version\":1, \"menu\": [\"P\", \"Pause\"], \"quit\": [\"Bye\"]}")
+            |> Option.getWithDefault(KeysDoc.defaults());
+        let d = KeysDoc.rec(KeysDoc.defaults());
+        Assert.assertEq(expected = (GameEngine.Key.P :: Nil, d#quit, d#confirm),
+            (KeysDoc.rec(doc)#menu, KeysDoc.rec(doc)#quit, KeysDoc.rec(doc)#confirm))
 
     // ══════════════════════════════════════════════════════
     // ThemeDoc（accentLight だけ橋渡しを書く: palette.json の宣言が導出に勝つ規則。

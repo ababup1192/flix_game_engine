@@ -10,6 +10,8 @@
     "title": { "type": "string", "description": "表紙に出す事件の名前" },
     "subtitle": { "type": "string", "description": "表紙に出す一行(事件のあらまし)" },
     "hint": { "type": "string", "description": "表紙に出す操作のヒント(はじめ方)" },
+    "menuTitle": { "type": "string", "description": "メニュー(物語を止める窓)の見出し" },
+    "menuHint": { "type": "string", "description": "メニューに出す戻り方のヒント(キーは novel.keys.json の menu)" },
     "start": { "type": "string", "description": "最初に読む節の id" },
     "lamps": { "type": "integer", "minimum": 1, "maximum": 8, "default": 3, "description": "館の灯りの数。疑う選択のたびに 1 つ消える" },
     "sections": {

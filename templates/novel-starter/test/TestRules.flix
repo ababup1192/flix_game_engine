@@ -22,7 +22,8 @@ mod TestRules {
 
     def fixture(): StoryDoc.Doc =
         StoryDoc.Doc.Doc({
-          version = 1, title = "test", subtitle = "", hint = "", start = "hall", lamps = 2,
+          version = 1, title = "test", subtitle = "", hint = "", menuTitle = "", menuHint = "",
+          start = "hall", lamps = 2,
           sections =
               { id = "hall", beats = beat("", "雨の音。") :: beat("私", "壁の色が違う。") :: Nil,
                 ask = Some({ speaker = "私", text = "誰を疑う?",
@@ -37,12 +38,12 @@ mod TestRules {
     def fixtureRec(): StoryDoc.Rec = StoryDoc.rec(fixture())
 
     def w0(): World.World =
-        World.initial({ story = fixture(), kind = KindDoc.defaults(),
+        World.initial({ story = fixture(), kind = KindDoc.defaults(), keys = KeysDoc.defaults(),
                         theme = ThemeDoc.defaults(), sprites = PxSpriteDoc.empty() },
                       UiStore.empty())
 
     /// 文字送りを使い切って 1 ビート読み終えた状態にする（テストは速さを検査しない）。
-    def settle(w: World.World): World.World = World.step(1000.0, w)
+    def settle(w: World.World): World.World = TestKit.stepBy(1000.0, w)
 
     /// 表紙から最初の分岐（選択肢待ち）まで進めた状態。
     def atAsk(): World.World =
@@ -125,6 +126,22 @@ mod TestRules {
         Assert.assertEq(expected = (World.Phase.Story, 0), (w#phase, w#lightsOut))
 
     // ══════════════════════════════════════════════════════
+    // メニュー（物語の時計を止める窓）
+    // ══════════════════════════════════════════════════════
+
+    @Test
+    def testMenuStopsTypewriter(): Unit \ Assert =
+        // メニューを開いている間は物語の時計が止まり、どれだけ置いても文字送りは進まない。
+        let opened = World.toggleMenu(advance(w0()));
+        let w = settle(settle(opened));
+        Assert.assertEq(expected = (World.Menu.Open, false), (w#menu, UiDialog.lineDone(w#kit#dialog)))
+
+    @Test
+    def testMenuNeverOpensOnTitle(): Unit \ Assert =
+        // 表紙には止める物語が無いのでメニューは開かない（同じキーは終了に回る）。
+        Assert.assertEq(expected = World.Menu.Closed, World.toggleMenu(w0())#menu)
+
+    // ══════════════════════════════════════════════════════
     // 表示中の Doc の名乗り（Studio のバッジの材料。どの id を名乗るかはルール）
     // ══════════════════════════════════════════════════════
 
@@ -134,8 +151,8 @@ mod TestRules {
         // id は project.json の editor 宣言と対（Studio が突き合わせに使う）。
         // 並びは Controls.docTable() の行の順。
         Assert.assertEq(
-            expected = ("story" :: "theme" :: "sprite" :: Nil,
-                        "story" :: "kind" :: "theme" :: "sprite" :: "ui" :: Nil),
+            expected = ("story" :: "keys" :: "theme" :: "sprite" :: Nil,
+                        "story" :: "kind" :: "keys" :: "theme" :: "sprite" :: "ui" :: Nil),
             (Controls.activeDocs(w0()) |> List.map(fst),
              Controls.activeDocs(advance(w0())) |> List.map(fst)))
 

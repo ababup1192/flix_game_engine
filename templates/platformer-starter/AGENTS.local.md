@@ -15,3 +15,5 @@
   なくなるので、機能を足すときは行数を測ってから(`make loc` 相当: `wc -l src/*.flix test/*.flix`)。
 - 壁ジャンプ・空中ダッシュは本体に入れない。motion.json のフラグ 1 つで開放(オフが既定)。
 - 戦闘は踏みつけのみ。武器は持ち込まない。
+- 時計は 2 本: 遊び `World#play`(`Clock.Clock[World.Play]`・App が進める・ポーズとヒットストップは `World.paceOf`)と
+  実時間 `World#realNow`(光・ポーズの字の点滅)。系を直に回すテストは `App.tickClocks(Controls.addPlayClock(..), dt, w)` → 系。

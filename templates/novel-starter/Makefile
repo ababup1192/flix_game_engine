@@ -12,7 +12,7 @@
 ENGINE ?= ../..
 
 # 描き出せる場面の名前（source of truth は SceneRender.shotNames。ここは使い方に出す写し）。
-SHOTS := title choice ending
+SHOTS := title choice ending menu
 
 # ENGINE の場所が違うと include ごと落ち、make は「そんなファイルは無い」としか言わない。
 # 先に自前で見て、直し方の 1 行を出してから止める（この検査が無いと make status も塞がる）。

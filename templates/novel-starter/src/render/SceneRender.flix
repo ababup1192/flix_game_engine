@@ -6,7 +6,7 @@
 // 「選択肢待ちになるまで進める」「結末の最後のビートまで進める」で位置を決める。
 mod SceneRender {
     use fge::{
-        App, Color, Emit, FontAtlas, GameEngine, HeadlessFont, HeadlessRender, PxSprite, PxSpriteAtlas,
+        App, Clock, Color, Emit, FontAtlas, GameEngine, HeadlessFont, HeadlessRender, PxSprite, PxSpriteAtlas,
         PxSpriteDoc, Render, Vec2
     }
 
@@ -40,26 +40,33 @@ mod SceneRender {
     /// 場面の題と一言（Studio のギャラリーに出るラベル）は assets/*.scenes.json 側で、
     /// name をここの名前とそろえる。ラベルを足しても描き出す場面は増えない。
     pub def shotNames(): List[String] =
-        "title" :: "choice" :: "ending" :: Nil
+        "title" :: "choice" :: "ending" :: "menu" :: Nil
 
     /// 名前 → その場面の World。shotNames と対で保つ。名前で引く形にしてあるので、
     /// SHOT で 1 枚だけ描くときに残りの場面は台本を歩かない。
-    /// 場面ごとに時計 t を固定する（雨も炎も埃も t から導くので、
-    /// 据えれば毎回同じ絵になる = スナップショットがバイトで比べられる）。
+    /// 場面ごとに 2 本の時計を秒で据える（雨も炎も埃も実時間から、消えかけの灯りは物語の時計から
+    /// 導くので、据えれば毎回同じ絵になる = スナップショットがバイトで比べられる）。
+    /// 場面を歩く間は時計を進めない（文字送りは revealLine で使い切る）ので、灯りが消えた時刻は 0 秒。
     def sceneOf(name: String, w0: World.World): Option[World.World] =
         match name {
             // 表紙: 灯りが全部ついた書斎とタイトル。
-            case "title"  => Some({ t = 2.3 | w0 })
+            case "title"  => Some(at(2.3, w0))
             // 最初の分岐: 問いを読み終え、選択肢のチップが出た状態。
-            case "choice" => Some({ t = 5.1 | walkToAsk(40, advance(w0)) })
+            case "choice" => Some(at(5.1, walkToAsk(40, advance(w0))))
             // 結末: 疑いを重ねて灯りが消えた書斎で、最後の一文を読んでいる状態。
             // （分岐 2 つは選んで次の分岐まで歩き、最後の告発だけは結末の最後のビートで止める）
             case "ending" =>
                 let ended = walkToAsk(40, advance(w0))
                     |> pickAndWalk(0) |> pickAndWalk(0) |> pick(1) |> walkToLast(40);
-                Some({ t = 8.4 | ended })
+                Some(at(8.4, ended))
+            // メニュー: 最初の分岐でメニューを開いた状態（物語は止まり、戻り方のヒントが点いている瞬間）。
+            case "menu"   => Some(at(4.4, World.toggleMenu(walkToAsk(40, advance(w0)))))
             case _        => None
         }
+
+    /// 物語の時計と実時間の今を、どちらも seconds 秒に据える。
+    def at(seconds: Float64, w: World.World): World.World =
+        { storyClock = Clock.startAt(seconds), realNow = Clock.after(seconds, Clock.zero()) | w }
 
     /// SceneRender.all の中身。描き出した PNG のパス列を返す — 走行中のゲームへの POST /render
     /// （Main の App.onRenderRequest）もこれを呼ぶ。プレイ状態には触れず Docs から組み立てる。
@@ -128,7 +135,7 @@ mod SceneRender {
     def pick(i: Int32, w: World.World): World.World = fst(Emit.collect(() -> World.pick(i, w)))
 
     /// 文字送りを使い切って 1 ビート読み終えた状態にする（UI への投影も済む）。
-    def settle(w: World.World): World.World = World.step(60.0, w)
+    def settle(w: World.World): World.World = World.revealLine(w)
 
     /// 選択肢待ちになるまでビートを進める（fuel で必ず止まる）。
     def walkToAsk(fuel: Int32, w: World.World): World.World =

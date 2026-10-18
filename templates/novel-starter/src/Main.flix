@@ -7,6 +7,9 @@
 // update は「1 本の合成関数」: 複数のシステムを `w |> step |> interact |> …` と中で繋いで渡す
 // （繋ぎが Main に見えるのが教育的）。App.game の外側で足す設定（reloadOn・onRenderRequest・withDebug）は
 // 戻り値の App に従来どおり後ろから pipe で足す。
+//
+// 時計: 物語の時計（World の storyClock）は App.addClock で宣言し、App が系より先に毎フレーム 1 回だけ進める
+// （止めるかは World.paceOf — メニューの間は止まる）。実時間は App が frame#realNow で配り、Controls.step が World へ写す。
 
 use fge::{ActiveDocs, App, GameEngine, LwjglLayer}
 
@@ -31,6 +34,10 @@ def main(): Unit \ IO =
                 reloads = Controls.reloads()
             })
                 // 以下は App.game の外側の高度な口（戻り値の App に後ろから pipe で足す）。
+                |> App.addClock({ clockOf = w -> w#storyClock, withClock = (c, w) -> { storyClock = c | w },
+                                  paceOf = World.paceOf })
+                // 終われるのは表紙だけ（物語の途中の Esc はメニュー。キーは novel.keys.json）。
+                |> App.quitWhen((f, w) -> checked_ecast(Controls.isQuit(f, w)))
                 // 会話窓・本文・エラーバナーは withHudView — world 側の z に隠されない。
                 |> App.withHudView((ctx, w) -> checked_ecast(View.hud(ctx, w)))
                 // 音は返事（Controls.interact が events に溜めた出来事）と灯りの演出の時刻表から導く。

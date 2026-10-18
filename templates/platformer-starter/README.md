@@ -10,6 +10,7 @@
 ```bash
 make run     # ウィンドウが開く。←→(A/D)で歩き、Space/↑ でジャンプ、↓ で一方通行から降りる
              # B(Shift/X)を押しっぱなしで B ダッシュ — 最高速が上がり、離しても勢いが残る
+             # P(Enter)でポーズ。Escape で終了
 make debug   # 保存即反映(watchFile)+ F1 一括リロード + F8 付きで起動
 ```
 
@@ -20,6 +21,8 @@ make debug   # 保存即反映(watchFile)+ F1 一括リロード + F8 付きで�
 
 1. **`src/Main.flix`** — 配管の全体像。init / update / view と、GPU タイル層・視差レイヤ・HUD の繋ぎ。
 2. **`src/World.flix`** — 全状態と 1 tick の進行(冒頭 doc に 1 周の地図)。
+   毎フレーム、系より先に App が遊びの時計 `play` を進め(`Controls.addPlayClock`)、`World.step` は
+   `Clock.dtOf(w#play)` で進む。ポーズで止め・踏みつけで遅くするのは `World.paceOf`、光と点滅は実時間 `w#realNow`。
 3. **`src/Physics.flix` + `src/Player.flix`** — 気持ちよさの正体。軸分離の当たり・
    可変ジャンプの導出式・コヨーテ / 先行入力 / 角の許し。**このゲームの読みどころ**。
 4. **`src/Stage.flix` + `src/StageDoc.flix`** — rows(文字格子)→ 面。文字の対応表は Stage 冒頭。
@@ -39,7 +42,7 @@ make debug   # 保存即反映(watchFile)+ F1 一括リロード + F8 付きで�
 | `assets/enemies.enemy.json` | 敵のテンポ(速さ・索敵・発射間隔) |
 | `assets/platformer.theme.json` | 色(空・主役・地形。#RRGGBB で上書き) |
 | `assets/px.sprite.json` | ドット絵そのもの(文字格子) |
-| `assets/ui.text.json` | 画面に出る文言(CLEAR! / GAME OVER) |
+| `assets/ui.text.json` | 画面に出る文言(CLEAR! / GAME OVER / PAUSE) |
 | `project.json` | ゲームの題・ウィンドウの大きさ・フォント |
 
 壊れた JSON でも既定値で必ず起動する(fail-open)。
@@ -55,7 +58,7 @@ Studio(エディタ)のフォームからも編集できる。ドット絵の意
 ```bash
 make test     # ルール(手触り・収支・ギミック)と Doc 橋渡しのテスト
 make playtest # bot に通しで遊ばせて「走れるか・詰まらないか」を測る
-make render-all # 決定的な 4 場面を gallery/ に描き出す(title / hill / cave / tower)
+make render-all # 決定的な 5 場面を gallery/ に描き出す(title / hill / cave / tower / hitstop)
 make render SHOT=cave # その場面だけ debug/cave.png へ描き出す(複数は SHOT="hill cave")
 make reference-check    # 描き出した絵を reference/ とバイト比較(リグレッション検知)
 make reference-update   # いまの gallery を新しい基準として更新する

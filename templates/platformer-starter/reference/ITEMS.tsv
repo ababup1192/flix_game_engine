@@ -1,4 +1,5 @@
 cave	dynamic=1125	static=0
 hill	dynamic=394	static=0
+hitstop	dynamic=406	static=0
 title	dynamic=402	static=0
 tower	dynamic=403	static=0

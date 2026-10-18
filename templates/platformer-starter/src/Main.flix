@@ -4,7 +4,8 @@
 //
 // ── ゲームループの全体像 ──
 //   init    = 出発点の World(stage.json の 1 面目にプレイヤーを立たせる)。
-//   update  = 毎フレーム(Controls.step: 入力 → World.step)。
+//   update  = 毎フレーム(Controls.step: 入力 → World.step)。その前に App が遊びの時計を進める
+//             (Controls.addPlayClock。ポーズで止まり、踏みつけのヒットストップで遅くなる)。
 //   view    = World → 絵(View.frameLive。静的地形は withTileLayers の GPU 層)。
 //   reloads = 保存で読み直す Doc(一覧表は Controls.docTable に 1 枚)。
 // 空・遠山は addParallaxLayer の層(視差 0〜0.25)。withCamera がプレイヤーの
@@ -30,6 +31,7 @@ def main(): Unit \ IO =
                 view = (ctx, w) -> checked_ecast(View.frameLive(ctx, w)),
                 reloads = Controls.reloads()
             })
+                |> Controls.addPlayClock
                 |> App.addParallaxLayer(0.0,  (_ctx, w) -> checked_ecast(View.backdrop(w)))
                 |> App.addParallaxLayer(0.04, (ctx, w) -> checked_ecast(View.clouds(ctx, w)))
                 |> App.addParallaxLayer(0.10, (ctx, w) -> checked_ecast(View.mountains(ctx, w)))

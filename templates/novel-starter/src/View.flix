@@ -13,11 +13,14 @@
 // ── 画面の層（奥から手前へ）──
 //   壁（縦のグラデ）→ 床（縦のグラデ + 灯りの映り込み）→ 雨の窓（すじが落ちる）
 //   → 額縁の落ち影 → 額縁 → 灯り（炎が揺れる）→ 灯りの中を舞う埃 → 暗くするオーバーレイ → 表紙
-//   ダイアログ・本文・エラーバナーは withHudView 側（hud）— 部屋の z に関わらず必ず手前
+//   ダイアログ・本文・メニュー・エラーバナーは withHudView 側（hud）— 部屋の z に関わらず必ず手前
+//
+// ── 時計 ── 部屋の動き（雨・炎の揺らぎ・埃）とメニューの字の点滅は実時間（w#realNow）、
+// 灯りが消える演出は物語の時計（LampFx）。メニューを開いても雨は降り続け、消えかけの炎だけが止まる。
 mod View {
 
     use fge::{
-        App, Color, DrawCmd, FontAtlas, Fx, Num, PxSprite, RawDraw, Render, Sway, TextDraw,
+        Anim, App, Clock, Color, DrawCmd, FontAtlas, Fx, Num, PxSprite, RawDraw, Render, Sway, TextDraw,
         UiRender, Vec2
     }
 
@@ -33,6 +36,10 @@ mod View {
     def zDust(): Int32 = 25
     def zVeil(): Int32 = 50
     def zTitle(): Int32 = 60
+
+    // hud の中の z（ui.json の会話窓・選択肢は 100..112。メニューはその手前）。
+    def zMenuVeil(): Int32 = 150
+    def zMenuText(): Int32 = 151
 
     /// スプライトの格子は 1 セル = 4px で描く（16×12 の額縁 = 64×48px）。
     def px(): Int32 = 4
@@ -55,8 +62,36 @@ mod View {
             :: NovelKit.body(ctx#atlas, ThemeDoc.rec(w#theme)#ink,
                    { size = KindDoc.rec(w#kind)#bodySize, lineGap = KindDoc.rec(w#kind)#bodyGap },
                    w#ui, w#kit)
+            :: menu(ctx#atlas, w)
             :: TextDraw.errorBanner(ctx#atlas, w#docError)
             :: Nil)
+
+    /// 実時間の今（秒）。周期の式（Fx.derive・Sway.wave・Anim.frameAt）に渡す所だけで使う。
+    def realSeconds(w: World.World): Float64 = Clock.secondsOf(w#realNow)
+
+    // ── メニュー（物語の時計が止まっている間の窓。文言は台本 Doc の menuTitle / menuHint） ──
+
+    /// 会話窓ごと部屋を沈め、見出しと戻り方のヒントを出す。ヒントだけ実時間で点滅させる —
+    /// 物語は止まっていても画面は止まっていない（固まったのではない）ことを見せるため。
+    def menu(atlas: FontAtlas, w: World.World): List[Render.PlacedItem] =
+        match w#menu {
+            case World.Menu.Closed => Nil
+            case World.Menu.Open   =>
+                let theme = ThemeDoc.rec(w#theme);
+                let story = StoryDoc.rec(w#story);
+                let hintOn = Anim.frameAt({ row = 0, frames = 2, fps = 1.5, looping = true }, realSeconds(w)) == 0;
+                let veil = { at = { x = 0.0, y = 0.0 },
+                             item = RawDraw.box({ x = World.width(), y = World.height() },
+                                               { r = 0.02, g = 0.02, b = 0.05 }, zMenuVeil())
+                                 |> Render.fade(0.62) };
+                let heading = TextDraw.centered({ text = story#menuTitle, atlas = atlas, size = 14.0,
+                                                  color = ThemeDoc.lighten(theme#accent, 0.2), z = zMenuText(),
+                                                  centerX = World.width() / 2.0, y = 112.0 });
+                let hint = TextDraw.centered({ text = story#menuHint, atlas = atlas, size = 9.0,
+                                               color = theme#ink, z = zMenuText(),
+                                               centerX = World.width() / 2.0, y = 140.0 });
+                veil :: heading :: (if (hintOn) hint :: Nil else Nil)
+        }
 
     // ── 部屋（壁・床・雨の窓） ──
 
@@ -130,7 +165,7 @@ mod View {
     def rain(paneAt: Vec2.Vec2, paneSize: Vec2.Vec2, w: World.World): List[Render.PlacedItem] =
         let theme = ThemeDoc.rec(w#theme);
         let streakColor = ThemeDoc.lighten(theme#window, theme#rainGlow);
-        Fx.derive(theme#rainCount, w#t, (_i, rand, t) -> {
+        Fx.derive(theme#rainCount, realSeconds(w), (_i, rand, t) -> {
             let len = 12.0 + rand(2) * 20.0;
             let speed = 40.0 + rand(3) * 70.0;
             let travel = paneSize#y + len;
@@ -178,7 +213,7 @@ mod View {
         List.range(0, count) |> List.flatMap(i ->
             // 灯りごとに揺れの位相をずらす（そろって明滅すると機械に見える）。
             lamp({ x = lampX(count, i), litNow = i < lit or isDying(i),
-                   flicker = (0.82 + 0.18 * Sway.wave(w#t, Int32.toFloat64(i) * 0.37, 1.9))
+                   flicker = (0.82 + 0.18 * Sway.wave(realSeconds(w), Int32.toFloat64(i) * 0.37, 1.9))
                              * (if (isDying(i)) 1.0 - dying else 1.0) },
                  ThemeDoc.rec(w#theme)))
 
@@ -216,7 +251,7 @@ mod View {
             if (i >= lit) Nil
             else {
                 let cx = lampX(count, i);
-                Fx.derive(6, w#t + Int32.toFloat64(i) * 3.1, (_k, rand, t) -> {
+                Fx.derive(6, realSeconds(w) + Int32.toFloat64(i) * 3.1, (_k, rand, t) -> {
                     let rise = 46.0;
                     let y = 88.0 - Num.wrapTo(rise, rand(1) * rise + t * 7.0);
                     let x = cx - 16.0 + rand(0) * 32.0 + Sway.wave(t, rand(2), 0.4) * 4.0;
