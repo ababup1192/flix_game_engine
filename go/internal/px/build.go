@@ -26,7 +26,10 @@ import (
 )
 
 // techFrameChecks は段 3 でコマごとに足した全体の検査（value-sep は contrast を書いた時だけ・style は spec に style がある時だけ鳴る）。
-var techFrameChecks = []checkRef{{Check: checkValueSep}, {Check: checkStyle}}
+var techFrameChecks = []checkRef{{Check: checkValueSep}, {Check: checkStyle}, {Check: checkHighlightReserve}, {Check: checkValueBlobs}, {Check: checkOuterAA}}
+
+// specChecks は spec 全体で 1 度だけ回す検査（ランプの並び・色相・彩度）。
+var specChecks = []checkRef{{Check: checkRampOrder}, {Check: checkRampHue}, {Check: checkRampChroma}}
 
 // buildOptions は build の切り替え。
 type buildOptions struct {
@@ -305,6 +308,12 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 		if len(seeds) == 0 {
 			seeds = []int{0}
 		}
+		type variant struct {
+			name string
+			g    *pxlib.Grid
+		}
+		variants := map[string][]variant{} // コマ → 種ごとの格子（tile-variant-edge）
+		tileLike := false
 		for _, seed := range seeds {
 			var seqNames []string
 			var seqRows [][]string
@@ -392,6 +401,8 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 				delete(pending, [2]string{sp.Name, fname})
 				res.Frames = append(res.Frames, fr)
 				seqNames, seqRows, seqGrids = append(seqNames, fname), append(seqRows, rows), append(seqGrids, c.G)
+				variants[f.Name] = append(variants[f.Name], variant{fname, c.G})
+				tileLike = tileLike || c.tile || c.wrap
 				if !opt.NoCheck {
 					cc.Measures, cc.Wrap = c.measures, c.wrap
 					for _, n := range append(frameChecks, techFrameChecks...) {
@@ -426,19 +437,34 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 				checkDur += time.Since(t)
 			}
 		}
+		if !opt.NoCheck && len(sp.Seeds) > 1 && tileLike {
+			ap.check(sp.Name, string(checkTileVariantEdge))
+			for _, f := range sp.Frames {
+				var names []string
+				var grids []*pxlib.Grid
+				for _, v := range variants[f.Name] {
+					names, grids = append(names, v.name), append(grids, v.g)
+				}
+				for _, v := range tileVariantViolations(names, grids, rules.TileVariantEdge) {
+					addViolations([]violation{v}, sp.Name, v.Frame, checkres.ScopeSequence)
+				}
+			}
+		}
 	}
 	if !opt.NoCheck {
-		vs, err := runCheck(checkRef{Check: checkRampOrder}, pxlib.NewGrid(1, 1), cc)
-		if err != nil {
-			return nil, err
+		for _, ref := range specChecks {
+			vs, err := runCheck(ref, pxlib.NewGrid(1, 1), cc)
+			if err != nil {
+				return nil, err
+			}
+			for i := range vs {
+				vs[i].Scope = checkres.ScopeSpec
+			}
+			for _, sp := range spec.Sprites {
+				ap.check(sp.Name, ref.String())
+			}
+			res.Violations = append(res.Violations, vs...)
 		}
-		for i := range vs {
-			vs[i].Scope = checkres.ScopeSpec
-		}
-		for _, sp := range spec.Sprites {
-			ap.check(sp.Name, string(checkRampOrder))
-		}
-		res.Violations = append(res.Violations, vs...)
 	}
 	res.Violations = dedupeViolations(res.Violations)
 	for i := range res.Violations {

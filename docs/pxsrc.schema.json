@@ -2015,6 +2015,49 @@
         },
         {
           "type": "object",
+          "description": "台本の格子（px.canvas の to_op）を書き出す: 文字の行と、文字 → 色の名前（'.' と colors に無い字は置かない）",
+          "additionalProperties": false,
+          "required": [
+            "pixels"
+          ],
+          "properties": {
+            "pixels": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "rows": {
+                  "description": "文字の行（格子の大きさ）",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "colors": {
+                  "description": "文字 → 色の名前",
+                  "type": "object",
+                  "additionalProperties": {
+                    "$ref": "#/definitions/color"
+                  }
+                },
+                "at": {
+                  "description": "左上の位置 [x, y]（省くと [0, 0]）",
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2
+                }
+              },
+              "required": [
+                "rows",
+                "colors"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
           "description": "画素を直に置く",
           "additionalProperties": false,
           "required": [

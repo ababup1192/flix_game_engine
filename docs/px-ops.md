@@ -59,6 +59,7 @@
 | 輪郭（1 色の外側 1px） | `outline` | 部品の塊の外側 1px を 1 色で縁取る（sel_out の前身） | lint black-outline（部品ごとの色にするなら sel_out） |
 | アニメ（パレットの回転。光のきらめき） | `palette_cycle` | 塊の中で colors の段をコマごとに step ずつ回す（光のきらめきの補助。水の流れは wave_shift の方が見比べで勝った） | anim（pop） |
 | 寄せ木（かけらごとに別の系統の色） | `parquet` | 寄せ木: center から ramps の数に等分した扇ごとに、ランプ from の色をその扇のランプで塗り直す（from の墨は墨へ、ほかの段は斜めの帯で光・地・影へ。clip の部品なら親の塊の中だけ） | — |
+| 原理を台本で組んだ画素の格子をそのまま置く（stamp の大きさの目安を当てない） | `pixels` | 台本の格子（px.canvas の to_op）を書き出す: 文字の行と、文字 → 色の名前（'.' と colors に無い字は置かない） | — |
 | 1px を手で打つ（目・つや・星） | `put` | 画素を直に置く | 既存の lint orphan |
 | 円の線（Aseprite の Ellipse の線） | `ring` | 1px の円を引く（ブレゼンハムの円。角の 2 重が出ず、どこでも 1 画素の太さ） | 既存の lint corner |
 | 同じ記号を一回り小さく重ねる | `scaled` | macros の op の列を別の格子に描き、about を中心に scale 倍へ縮め（広げ）て、塗った画素だけ重ねる（近い画素を引く） | — |
@@ -122,6 +123,9 @@
 | `px.frames(names, parts)` | 部品の鍵の値に関数（コマの番号 `i` → 値）を書くと、`(部品の列, frames)` を返す。部品にはコマ 0 の値が入る（`"ops": lambda i: smoke(i)`）。`names` はコマ名の列か数 |
 | `px.frames(names, scene)` | `scene(i)` がコマ i の部品の列を返す関数なら、コマ 0 の列を部品に、コマ 0 と違う鍵だけを patch にする（場面ごとコマで描き分ける時。部品の数と id の並びはどのコマも同じ） |
 | `px.cycle(values, phase=0, axis=None)` | コマの表: コマ i に `values[(i + phase) % len]` を返す関数（px.frames の鍵の値に置く。`"at": px.cycle([0, 1, 3, 1], axis="y")` で上下・`"ops": px.cycle([[op.text(…, color=c)] for c in COLS])` で点滅）。axis は "x" で `[v, 0]`・"y" で `[0, v]` |
+| `px.canvas(w, h, ramps=RAMPS)` | 画素の格子（原理は入れない）: `.put(x, y, "iron", 2)` で段・`.put(x, y, "色キー")`・`.get(x, y)`・`.shift(x, y, by)`（同じランプの中で段をずらす・端で止める）・`.each()`・`.to_op(at=[0, 0])`（op `pixels` 1 つへ書き出す）。帯・段の役・照り返しを台本で組む時に、格子を自前で持たない |
+| `px.band(kind, …, width=4, count=3)` | 位置ごとの帯の番号（0〜count−1）を返す関数: `"linear"` は `origin=[x, y], dir=[dx, dy]` の向きへ width ごとに 1 つ上がる・`"radial"` は `center=[x, y]` から width ごとに 1 つ下がる。明るさの構造（帯を先に置き、役の段に帯の番号を足す）の材料 |
+| `px.shape_light(shapes, field, light=[-1, -1])` | 形（`[x, y, w, h]` の列）ごとに `{"band", "edge", "edge_band"}`: 中心での帯の番号・光の側の縁の画素・縁の 1 つ外での番号（「形 1 個ずつ上げ、境の縁だけ次の段」の材料） |
 | `math.*` | sin・cos・tan・atan2・hypot・exp・log・pow・sqrt・floor・ceil・radians・pi。答えは正しく丸めた値で、OS・CPU で変わらない |
 
 最小の台本（version・target・palette・ramps・sprites・parts・frames）:
@@ -491,6 +495,16 @@ px.write_spec("lamp.pxsrc.json", {
 | `center` | pair | 扇の中心 [x, y]（省くと格子の中央） |
 | `bands` | pair | 光・地・影の境目（0〜1。左上の角が 0）（省くと [0.3,0.72]） |
 
+### `pixels`
+
+例: `{"pixels": {"rows": ["ab", ".a"], "colors": {"a": "mid", "b": "light"}}}`
+
+| 引数 | 型 | 説明 |
+|---|---|---|
+| `rows` | rows | 文字の行（格子の大きさ）（必須） |
+| `colors` | colormap | 文字 → 色の名前（必須） |
+| `at` | point | 左上の位置 [x, y]（省くと [0, 0]） |
+
 ### `put`
 
 例: `{"put": {"cells": [[4, 4], [5, 4]], "color": "light"}}`
@@ -715,12 +729,18 @@ pxsrc の一番外に `"style": "snes"` と名前で書くと `bin/lint-rules/px
 | `flat-run` | advice | 輪郭の段: 同じ長さの段が続く（直線に読まれる）・長すぎる直線（16px で 4px・32px で 6px を超える）。poly の部品の辺は直線として、段の長さが 3 種類以上に散る時だけ |
 | `flicker` | lint | flicker: コマの間で周り 8 画素が動かないのに色だけ変わる画素（ちらつき。palette_cycle と wave_shift の画素・コマで at か rotate が変わる部品と、sway を持つ部品（on の子も）の画素は除く） |
 | `ground-contrast` | lint | 外周の画素と地の色の明るさ（Oklab の L）の差が小さく、輪郭が地に溶ける |
+| `highlight-reserve` | advice | highlight-reserve: 最明色（emissive の部品は除く）が描いた画素の highlightMaxShare を超える・面の中（四方が同じ色）に置いてある。最明色はハイライト専用 |
 | `light-dir` | advice | light-dir: 塊の明るさで重みを付けた重心（明るい側 − 暗い側）が光の側（light.dir）に無い（emissive の部品は見ない） |
 | `margin` | advice | margin: 動く絵が格子の左・右・上の縁に触れている（動く余白が無い） |
+| `outer-aa` | advice | outer-aa: 透明に接する外周の段の角に、外周にしか使わない中間色の 1px（外周の AA）がある。どの地に置いても縁が濁るので全域で避ける |
 | `pillow` | advice | pillow: 塊の縁が光の側でも影の側でも同じように内側より暗い（縁からの距離で塗った陰。emissive の部品は見ない） |
+| `ramp-chroma` | advice | ramp-chroma: ランプの彩度が山の形でない（一番高い段が真ん中から rampChromaPeakSlack 段より外）・明るい段（V ≥ rampBrightV）の S が rampBrightSMax を超える（高明度 × 高彩度） |
+| `ramp-hue` | advice | ramp-hue: ランプの色相が明るくなるたびに同じ向きへ回らない・1 段 rampHueMaxStep 度を超える・全体で rampHueMinTotal 度未満（平板）。灰色のランプは見ない |
 | `ramp-order` | lint | ramp-order: ランプの明るさ（Oklab の L）が暗 → 明に単調でない・隣の段の差が rampMinGap に足りない |
 | `run-monotone` | lint | 曲線の段の長さが単調でない（3-2-1 は良い・1-2-1-2 と 3-2-1-4 は不可）。poly の部品の辺は見ない（flat-run が見る） |
 | `seam` | lint | seam: タイルの端（左と右・上と下）の画素の明るさの差が、内側の隣り合う列の差の seamRatio 倍を超える（並べると継ぎ目が見える） |
 | `sprite` | lint | bin/fge sprite の形の規則（orphan・connect・jaggy・banding・corner・silhouette） |
 | `style` | gate | 機種の決まり（spec の style）: 使える色・1 コマの色数・升目ごとの色数・RGB の段数・大きさ |
+| `tile-variant-edge` | advice | tile-variant-edge: タイルの変種（seeds のコマ）の縁から tileVariantEdge px が、最初の種のコマと画素で違う（変種は中央だけ変える） |
+| `value-blobs` | advice | value-blobs: 明るさを 3 段に分けた大きな塊の数が valueBlobsMin〜valueBlobsMax の外・塊が覆う割合が valueBlobsCoverMin 未満（明暗の骨格が描き込みで崩れた） |
 | `value-sep` | lint | value-sep: contrast で測った部品と相手の明るさの差が下限（min か valueSepMin）を下回る |

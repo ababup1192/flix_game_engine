@@ -29,6 +29,7 @@ import (
 const usage = `使い方: fge px build <名前>.pxsrc.json|<名前>.px.star [--json] [--no-check] [--only <code>] [--explain] [--sheet] [--time] [--png [--gif-delay ms] [--gif-scale k]]
         fge px gen <名前>.px.star
         fge px check [--gate <名前>.colorgate.json] [--strict] <sprite.json…>
+        fge px measure <sprite.json…>
         fge px ops [--md] [--check]
         fge px schema [--write] [--check]
         fge px help [<op>|<コマンド>]
@@ -64,6 +65,10 @@ var cmdHelps = map[string]string{
   手描きや assets の sprite.json にも、色の門と形の検査をかける（--gate を省くと art/*.colorgate.json を 1 つ探す）。
   終了コード: 0 合格・1 色の門か gate の外れ。--strict を付けると lint の fail だけで 2（near と advice は 0）。
   --json は結果の全部（check に score・next・悪い順の上位。形は docs/check-results.md）。
+`,
+	"measure": `fge px measure <sprite.json…> [--json]
+  技法帳の検査の値を測り、code ごとの分布（数・今の閾値での外れ・p10/p50/p90・外れの悪い順 5 件）を出す。
+  採用済みの絵で閾値を決め直す時に使う（終了コードはいつも 0）。ランプは色キーの名前の末尾の数字から推す。
 `,
 	"ops": `fge px ops [--md] [--check]
   op の 1 行の一覧。--md は docs/px-ops.md を書き、--check はずれていれば 1（書かない）。
@@ -170,7 +175,7 @@ func Run(out, errOut *strings.Builder, engineRoot, workRoot string, args []strin
 			pos = append(pos, a)
 		}
 	}
-	allowed := map[string][]string{"build": {"--no-check", "--sheet", "--time", "--png", "--gif-delay", "--gif-scale", "--only", "--explain"}, "check": {"--strict"}, "ops": {"--md", "--check"}, "schema": {"--check", "--write"}, "help": nil,
+	allowed := map[string][]string{"build": {"--no-check", "--sheet", "--time", "--png", "--gif-delay", "--gif-scale", "--only", "--explain"}, "check": {"--strict"}, "measure": nil, "ops": {"--md", "--check"}, "schema": {"--check", "--write"}, "help": nil,
 		"watch": {"--no-check"}, "snap": {"--new", "--max", "--tokens"}, "diff": nil, "gen": nil}
 	if names, known := allowed[verb]; known {
 		for f := range flags {
@@ -215,6 +220,12 @@ func Run(out, errOut *strings.Builder, engineRoot, workRoot string, args []strin
 			return 2
 		}
 		return cmdCheck(out, errOut, engineRoot, workRoot, gatePath, pos, asJSON, flags["--strict"])
+	case "measure":
+		if len(pos) == 0 {
+			errOut.WriteString(usage)
+			return 2
+		}
+		return cmdMeasure(out, errOut, engineRoot, workRoot, pos, asJSON)
 	case "ops":
 		if flags["--md"] || flags["--check"] {
 			return writeOrCheck(out, errOut, engineRoot, map[string]string{"docs/px-ops.md": opsMarkdown()}, flags["--check"])

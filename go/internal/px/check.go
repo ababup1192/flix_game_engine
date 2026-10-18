@@ -304,20 +304,38 @@ func dropExempt(v violation, g *pxlib.Grid, c *checkCtx) (violation, bool) {
 
 // pxRules は検査の閾値（bin/lint-rules/px.json）。
 type pxRules struct {
-	FlatRunRepeat     int                 `json:"flatRunRepeat"`
-	FlatRunStraight   int                 `json:"flatRunStraight"`
-	FlatRunPer        int                 `json:"flatRunPer"`
-	GroundContrastMin float64             `json:"groundContrastMin"`
-	RampMinGap        float64             `json:"rampMinGap"`
-	PillowEdgeGap     float64             `json:"pillowEdgeGap"`
-	PillowSideGap     float64             `json:"pillowSideGap"`
-	PillowMinArea     int                 `json:"pillowMinArea"`
-	LightDirMinArea   int                 `json:"lightDirMinArea"`
-	BlackOutlineMax   int                 `json:"blackOutlineMaxSize"`
-	ValueSepMin       float64             `json:"valueSepMin"`
-	SeamRatio         float64             `json:"seamRatio"`
-	BandingRingMin    float64             `json:"bandingRingMin"`
-	Styles            map[string]*pxStyle `json:"styles"`
+	FlatRunRepeat     int     `json:"flatRunRepeat"`
+	FlatRunStraight   int     `json:"flatRunStraight"`
+	FlatRunPer        int     `json:"flatRunPer"`
+	GroundContrastMin float64 `json:"groundContrastMin"`
+	RampMinGap        float64 `json:"rampMinGap"`
+	PillowEdgeGap     float64 `json:"pillowEdgeGap"`
+	PillowSideGap     float64 `json:"pillowSideGap"`
+	PillowMinArea     int     `json:"pillowMinArea"`
+	LightDirMinArea   int     `json:"lightDirMinArea"`
+	BlackOutlineMax   int     `json:"blackOutlineMaxSize"`
+	ValueSepMin       float64 `json:"valueSepMin"`
+	SeamRatio         float64 `json:"seamRatio"`
+	BandingRingMin    float64 `json:"bandingRingMin"`
+	// 技法帳の検査（段 2）
+	HighlightMinColors    int                 `json:"highlightMinColors"`
+	HighlightMaxShare     float64             `json:"highlightMaxShare"`
+	HighlightInsideMax    float64             `json:"highlightInsideMax"`
+	GroundBrightL         float64             `json:"groundBrightL"`
+	GroundBrightChromaMax float64             `json:"groundBrightChromaMax"`
+	RampGrayChroma        float64             `json:"rampGrayChroma"`
+	RampHueMaxStep        float64             `json:"rampHueMaxStep"`
+	RampHueMinTotal       float64             `json:"rampHueMinTotal"`
+	RampChromaPeakSlack   float64             `json:"rampChromaPeakSlack"`
+	RampBrightV           float64             `json:"rampBrightV"`
+	RampBrightSMax        float64             `json:"rampBrightSMax"`
+	ValueBlobsMinShare    float64             `json:"valueBlobsMinShare"`
+	ValueBlobsMin         int                 `json:"valueBlobsMin"`
+	ValueBlobsMax         int                 `json:"valueBlobsMax"`
+	ValueBlobsCoverMin    float64             `json:"valueBlobsCoverMin"`
+	TileVariantEdge       int                 `json:"tileVariantEdge"`
+	OuterAAMax            int                 `json:"outerAAMax"`
+	Styles                map[string]*pxStyle `json:"styles"`
 }
 
 // loadRules は閾値を読む。読めなければ止める（既定値へ倒すと、消しただけで検査が黙って緩む）。
@@ -337,6 +355,11 @@ func loadRules(root string) (*pxRules, error) {
 	if r.RampMinGap <= 0 || r.PillowEdgeGap <= 0 || r.PillowSideGap <= 0 || r.PillowMinArea < 1 || r.LightDirMinArea < 1 ||
 		r.BlackOutlineMax < 1 || r.ValueSepMin <= 0 || r.SeamRatio <= 0 || r.BandingRingMin <= 0 {
 		return nil, fmt.Errorf("%s に rampMinGap・pillowEdgeGap・pillowSideGap・pillowMinArea・lightDirMinArea・blackOutlineMaxSize・valueSepMin・seamRatio・bandingRingMin を書く", path)
+	}
+	if r.HighlightMaxShare <= 0 || r.GroundBrightL <= 0 || r.GroundBrightChromaMax <= 0 || r.RampGrayChroma <= 0 || r.RampHueMaxStep <= 0 ||
+		r.RampHueMinTotal <= 0 || r.RampBrightV <= 0 || r.RampBrightSMax <= 0 || r.ValueBlobsMinShare <= 0 || r.ValueBlobsMin < 1 ||
+		r.ValueBlobsMax < r.ValueBlobsMin || r.ValueBlobsCoverMin <= 0 || r.TileVariantEdge < 1 {
+		return nil, fmt.Errorf("%s に技法帳の検査の閾値（highlightMaxShare・groundBrightL・groundBrightChromaMax・rampGrayChroma・rampHueMaxStep・rampHueMinTotal・rampBrightV・rampBrightSMax・valueBlobsMinShare・valueBlobsMin・valueBlobsMax・valueBlobsCoverMin・tileVariantEdge）を書く", path)
 	}
 	return &r, nil
 }
@@ -486,17 +509,18 @@ func init() {
 					worst, worstAt = diff, p
 				}
 			}
+			extra := groundExtraViolations(g, c)
 			if n == 0 || sum/float64(n) >= c.Rules.GroundContrastMin {
-				return nil
+				return extra
 			}
 			// 外周が地より明るいか暗いかで、離す向きを分ける（暗い地で縁をさらに暗くすると溶ける）
 			fix := "外周が地より暗い: 外周をランプのもっと暗い段にする（directional・gradient_fill の from を 0 に）か、地を明るい段にする"
 			if signed > 0 {
 				fix = "外周が地より明るい: 外周をランプのもっと明るい段にする（directional・gradient_fill の to を最明に）か、地を暗い段にする"
 			}
-			return []violation{newViolation(checkGroundContrast, levelLint, sum/float64(n), checkres.WantAtLeast(c.Rules.GroundContrastMin),
+			return append([]violation{newViolation(checkGroundContrast, levelLint, sum/float64(n), checkres.WantAtLeast(c.Rules.GroundContrastMin),
 				fmt.Sprintf("外周と地 %s の明るさの差が平均 %.3f（%.2f 以上にする）", c.Ground, sum/float64(n), c.Rules.GroundContrastMin)).
-				at(worstAt).fix(fix)}
+				at(worstAt).fix(fix)}, extra...)
 		},
 	})
 }

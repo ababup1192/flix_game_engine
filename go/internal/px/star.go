@@ -84,15 +84,18 @@ type starState struct {
 
 func (st *starState) pxModule() *starlarkstruct.Module {
 	return &starlarkstruct.Module{Name: "px", Members: starlark.StringDict{
-		"write_spec": starlark.NewBuiltin("px.write_spec", st.writeSpec),
-		"write_json": starlark.NewBuiltin("px.write_json", st.writeJSON),
-		"palette":    starlark.NewBuiltin("px.palette", st.writePalette),
-		"rng":        starlark.NewBuiltin("px.rng", starRng),
-		"hash01":     starlark.NewBuiltin("px.hash01", starHash01),
-		"noise1":     starlark.NewBuiltin("px.noise1", st.starNoise1),
-		"round":      starlark.NewBuiltin("px.round", starRound),
-		"frames":     starlark.NewBuiltin("px.frames", starFrames),
-		"cycle":      starlark.NewBuiltin("px.cycle", starCycle),
+		"write_spec":  starlark.NewBuiltin("px.write_spec", st.writeSpec),
+		"write_json":  starlark.NewBuiltin("px.write_json", st.writeJSON),
+		"palette":     starlark.NewBuiltin("px.palette", st.writePalette),
+		"rng":         starlark.NewBuiltin("px.rng", starRng),
+		"hash01":      starlark.NewBuiltin("px.hash01", starHash01),
+		"noise1":      starlark.NewBuiltin("px.noise1", st.starNoise1),
+		"round":       starlark.NewBuiltin("px.round", starRound),
+		"frames":      starlark.NewBuiltin("px.frames", starFrames),
+		"cycle":       starlark.NewBuiltin("px.cycle", starCycle),
+		"canvas":      starlark.NewBuiltin("px.canvas", starNewCanvas),
+		"band":        starlark.NewBuiltin("px.band", starBand),
+		"shape_light": starlark.NewBuiltin("px.shape_light", starShapeLight),
 	}}
 }
 
@@ -862,6 +865,9 @@ func starMarkdown() string {
 | ‵px.frames(names, parts)‵ | 部品の鍵の値に関数（コマの番号 ‵i‵ → 値）を書くと、‵(部品の列, frames)‵ を返す。部品にはコマ 0 の値が入る（‵"ops": lambda i: smoke(i)‵）。‵names‵ はコマ名の列か数 |
 | ‵px.frames(names, scene)‵ | ‵scene(i)‵ がコマ i の部品の列を返す関数なら、コマ 0 の列を部品に、コマ 0 と違う鍵だけを patch にする（場面ごとコマで描き分ける時。部品の数と id の並びはどのコマも同じ） |
 | ‵px.cycle(values, phase=0, axis=None)‵ | コマの表: コマ i に ‵values[(i + phase) %% len]‵ を返す関数（px.frames の鍵の値に置く。‵"at": px.cycle([0, 1, 3, 1], axis="y")‵ で上下・‵"ops": px.cycle([[op.text(…, color=c)] for c in COLS])‵ で点滅）。axis は "x" で ‵[v, 0]‵・"y" で ‵[0, v]‵ |
+| ‵px.canvas(w, h, ramps=RAMPS)‵ | 画素の格子（原理は入れない）: ‵.put(x, y, "iron", 2)‵ で段・‵.put(x, y, "色キー")‵・‵.get(x, y)‵・‵.shift(x, y, by)‵（同じランプの中で段をずらす・端で止める）・‵.each()‵・‵.to_op(at=[0, 0])‵（op ‵pixels‵ 1 つへ書き出す）。帯・段の役・照り返しを台本で組む時に、格子を自前で持たない |
+| ‵px.band(kind, …, width=4, count=3)‵ | 位置ごとの帯の番号（0〜count−1）を返す関数: ‵"linear"‵ は ‵origin=[x, y], dir=[dx, dy]‵ の向きへ width ごとに 1 つ上がる・‵"radial"‵ は ‵center=[x, y]‵ から width ごとに 1 つ下がる。明るさの構造（帯を先に置き、役の段に帯の番号を足す）の材料 |
+| ‵px.shape_light(shapes, field, light=[-1, -1])‵ | 形（‵[x, y, w, h]‵ の列）ごとに ‵{"band", "edge", "edge_band"}‵: 中心での帯の番号・光の側の縁の画素・縁の 1 つ外での番号（「形 1 個ずつ上げ、境の縁だけ次の段」の材料） |
 | ‵math.*‵ | sin・cos・tan・atan2・hypot・exp・log・pow・sqrt・floor・ceil・radians・pi。答えは正しく丸めた値で、OS・CPU で変わらない |
 
 最小の台本（version・target・palette・ramps・sprites・parts・frames）:

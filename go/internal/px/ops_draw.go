@@ -107,6 +107,32 @@ func init() {
 		},
 	})
 	register(&opDef{
+		Name: "pixels", Example: `{"pixels": {"rows": ["ab", ".a"], "colors": {"a": "mid", "b": "light"}}}`,
+		Summary:   "台本の格子（px.canvas の to_op）を書き出す: 文字の行と、文字 → 色の名前（'.' と colors に無い字は置かない）",
+		Technique: "原理を台本で組んだ画素の格子をそのまま置く（stamp の大きさの目安を当てない）", Finish: "—",
+		Params: []param{
+			{Name: "rows", Type: tRows, Required: true, Summary: "文字の行（格子の大きさ）"},
+			{Name: "colors", Type: tColorMap, Required: true, Summary: "文字 → 色の名前"},
+			{Name: "at", Type: tPoint, Summary: "左上の位置 [x, y]（省くと [0, 0]）"},
+		},
+		Apply: func(c *ctx, a opArgs) error {
+			at := a.point("at")
+			cols := a.colorMap("colors")
+			for dy, row := range a.rows("rows") {
+				for dx, ch := range []rune(row) {
+					if name, ok := cols[string(ch)]; ok {
+						k, err := c.Color(name)
+						if err != nil {
+							return err
+						}
+						c.Put(at.X+dx, at.Y+dy, k)
+					}
+				}
+			}
+			return nil
+		},
+	})
+	register(&opDef{
 		Name: "use", Example: `{"use": {"macro": "eye", "at": [1, 0]}}`, Summary: "macros の op の列を、今の部品の中で順に当てる（at でずらせる）",
 		Technique: "同じ部品を何か所にも置く・コマで体を上下させる", Finish: "—",
 		Params: []param{

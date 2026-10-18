@@ -23,9 +23,19 @@ near の帯は bin/lint-rules/checkfmt.json の near（code ごと。無けれ�
 | `px.gate.outside` | gate | bad_colors | count | <= | <名前>.colorgate.json | 色の門: 画風の色の外 |
 | `px.gate.unreadable` | gate | bad_colors | count | <= | <名前>.colorgate.json | 色の門: 読めない冊 |
 | `px.ground-contrast` | lint | edge_ground_dL | L | >= | px.json groundContrastMin | 外周と地の色の明るさ（Oklab の L）の差の平均 |
+| `px.ground-contrast.chroma` | advice | bright_ground_chroma | C | <= | px.json groundBrightL・groundBrightChromaMax | 明るい地（L ≥ groundBrightL）の彩度（Oklch の C） |
+| `px.ground-contrast.highlight` | advice | highlight_minus_ground_L | L | >= | value-structure §4 | 地が絵の最明色より暗い（絵の最明色の L − 地の L） |
+| `px.highlight-reserve.area` | advice | brightest_share | ratio | <= | px.json highlightMaxShare | 最明色が描いた画素に占める割合（ハイライト専用） |
+| `px.highlight-reserve.inside` | advice | brightest_inside_share | ratio | <= | px.json highlightInsideMax | 最明色の画素のうち面の中（四方が同じ色）にある割合 |
 | `px.light-dir` | advice | bright_toward_light | dot | >= |  | 明るい段の重心の向きと光の向きの内積（負なら光と反対） |
 | `px.margin` | advice | touching_sides | count | <= |  | 動く絵が格子の左・右・上の縁に触れる |
+| `px.outer-aa` | advice | outer_aa_px | px | <= | px.json outerAAMax | 透明に接する外周の段の角の中間色の 1px（全域で避ける） |
 | `px.pillow` | advice | lit_dark_edge_dL | L | >= | px.json pillowSideGap | 縁を一様に暗くした陰（光の側と影の側の縁の明るさの差） |
+| `px.ramp-chroma.bright` | advice | bright_s | S | <= | px.json rampBrightV・rampBrightSMax | 明るい段（HSV の V ≥ rampBrightV）の S の最大（高明度 × 高彩度） |
+| `px.ramp-chroma.peak` | advice | peak_offset | steps | <= | px.json rampChromaPeakSlack | 彩度の一番高い段の真ん中からのずれ（山の形） |
+| `px.ramp-hue.flat` | advice | hue_total | deg | >= | px.json rampHueMinTotal | ランプが暗 → 明で回る色相の合計（平板） |
+| `px.ramp-hue.step` | advice | max_hue_step | deg | <= | px.json rampHueMaxStep | ランプの隣の段の色相の差の最大 |
+| `px.ramp-hue.turn` | advice | hue_turns | count | <= |  | ランプの色相の回る向きが変わる回数 |
 | `px.ramp-order` | lint | step_dL | L | >= | px.json rampMinGap | ランプの隣の段の明るさの差（暗 → 明に単調） |
 | `px.run-monotone` | lint | turns | count | <= |  | 曲線の段の長さが増減する（3-2-1 は良い・1-2-1-2 は不可） |
 | `px.seam.x` | lint | edge_dL | L | <= | px.json seamRatio | タイルの左右の端の差（内側の差の seamRatio 倍か、内側の一番強い線まで） |
@@ -45,6 +55,9 @@ near の帯は bin/lint-rules/checkfmt.json の near（code ごと。無けれ�
 | `px.style.palette` | gate・advice | palettes_needed | count | <= | pxstyle palettes | パレット N 本 × M 色に割り付けられない（下限で言い切れない時は advice） |
 | `px.style.size` | gate | size_over | ratio | <= | px.json styles.maxSize | 機種の最大の大きさに対する長い辺の割合 |
 | `px.style.tile-colors` | gate | tile_colors | count | <= | px.json styles.maxTileColors | 升目ごとの色数 |
+| `px.tile-variant-edge` | advice | edge_diff_px | px | <= | px.json tileVariantEdge | タイルの変種の縁が元の種のコマと違う画素 |
+| `px.value-blobs.count` | advice | value_masses | count | range | px.json valueBlobsMin・valueBlobsMax・valueBlobsMinShare | 明るさ 3 段の大きな塊の数（明暗の骨格） |
+| `px.value-blobs.cover` | advice | mass_cover | ratio | >= | px.json valueBlobsCoverMin | 大きな塊が描いた画素を覆う割合 |
 | `px.value-sep` | lint | part_dL | L | >= | px.json valueSepMin か contrast の min | contrast で測った部品と相手の明るさの差 |
 | `snd.alias` | advice | third_harmonic_hz | Hz | <= |  | パルスの 3 倍音とナイキスト周波数 |
 | `snd.bars` | gate | bar_off | samples | <= | snd.json barTolerance | 輪の長さと tempo の整数小節の差 |
