@@ -59,7 +59,17 @@ func checkFiles(engineRoot, workRoot, gatePath string, paths []string) (*checkRe
 		for _, k := range known {
 			knownSet[filepath.Base(p)+"/"+k] = true
 		}
-		rep.Lint = append(rep.Lint, lintDoc(full, doc, spriteRules, wrapSprites(workRoot, filepath.Base(p)))...)
+		wrap := wrapSprites(workRoot, filepath.Base(p))
+		if sprites, _ := doc.GetOr("sprites", nil).(*pxlib.Obj); sprites != nil {
+			names, vals := sprites.Items()
+			for i, n := range names {
+				if so, _ := vals[i].(*pxlib.Obj); so != nil && so.GetOr("kind", "") == string(kindTile) {
+					wrap[n] = true // sprite.json の kind: tile は端を回して見る
+				}
+			}
+		}
+		rep.Lint = append(rep.Lint, lintDoc(full, doc, spriteRules, wrap)...)
+		rep.Lint = append(rep.Lint, docDecl(doc, filepath.Base(p), wrap)...)
 	}
 	for k := range knownSet {
 		rep.Known = append(rep.Known, k)
@@ -111,6 +121,9 @@ func wrapSprites(workRoot, slot string) map[string]bool {
 				if call.Name == "tile_preview" {
 					out[sp.Name] = true
 				}
+			}
+			if sp.Kind == kindTile {
+				out[sp.Name] = true
 			}
 			for _, f := range sp.Frames {
 				for _, p := range sp.partsOf(&reader{}, spec, f) {
@@ -223,4 +236,42 @@ func cmdCheck(out, errOut *strings.Builder, engineRoot, workRoot, gatePath strin
 	}
 	fmt.Fprintf(out, "検査: %s\n", rep.Check.Summary.Line())
 	return code
+}
+
+// docDecl は手描きの sprite.json の宣言の検査（kind の書き忘れ・lint-sprite の知らない規則名。checkset-design §3: px check は base と decl.*）。
+// sprite.json の "kind": "tile" は端を回して見る（wrap に入れる）。
+func docDecl(doc *pxlib.Obj, slot string, wrap map[string]bool) []violation {
+	plain, _ := pxlib.Plain(doc).(map[string]any)
+	known := map[string]bool{}
+	for _, r := range []string{"orphan", "connect", "jaggy", "banding", "corner", "silhouette", "palette", "structure"} {
+		known[r] = true
+	}
+	out := lintSpriteDecl(plain, known)
+	sprites, _ := doc.GetOr("sprites", nil).(*pxlib.Obj)
+	if sprites == nil {
+		return out
+	}
+	names, vals := sprites.Items()
+	for i, n := range names {
+		so, _ := vals[i].(*pxlib.Obj)
+		if so == nil || strings.HasPrefix(n, "//") {
+			continue
+		}
+		if kv, ok := so.Get("kind"); ok {
+			if ks, _ := kv.(string); ks == string(kindTile) {
+				wrap[n] = true
+			} else if _, ok := lookupKind(spriteKind(ks)); !ok {
+				v := declViolation("kind-unknown", 0, checkres.WantEqual(1), fmt.Sprintf("%s/%s: 知らない kind %q（%s）", slot, n, ks, kindNames()))
+				v.Sprite = n
+				out = append(out, v)
+			}
+			continue
+		}
+		k, why := suggestSpriteKind(n, so, wrap)
+		v := declViolation("kind-missing", 0, checkres.WantEqual(1), fmt.Sprintf("kind が無い（推した kind %s・根拠 %s）", k, why)).
+			fix("sprite に \"kind\" を書く（bin/fge px decl --suggest で案・定義は bin/fge px kinds）", checkres.Try{Op: "set kind", Arg: n, Try: string(k)})
+		v.Sprite = n
+		out = append(out, v)
+	}
+	return out
 }

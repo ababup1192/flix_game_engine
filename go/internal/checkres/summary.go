@@ -299,7 +299,11 @@ func AppliedOf(full checklevel.AppliedFull, prev string, explain bool) checkleve
 	sort.Strings(full.Checks)
 	sort.Strings(full.Materials)
 	h := sha256.New()
-	fmt.Fprintf(h, "%s|%s|%s", full.Style, strings.Join(full.Materials, ","), strings.Join(full.Checks, ","))
+	fid := ""
+	if full.Fidelity != nil {
+		fid = fmt.Sprint(*full.Fidelity)
+	}
+	fmt.Fprintf(h, "%s|%s|%s|%s|%s|%s|%s", full.Kind, full.KindBy, fid, full.Style, strings.Join(full.Materials, ","), strings.Join(full.Checks, ","), full.Look)
 	for _, s := range full.Skipped {
 		fmt.Fprintf(h, "|%s:%s:%s", s.Code, s.By, s.Why)
 	}

@@ -136,6 +136,9 @@ type Try struct {
 
 // String は人向けの字面（例 "body.ops[1] directional の from を 1 → 0"・今の値が無ければ「足す」）。
 func (t Try) String() string {
+	if strings.HasPrefix(t.Op, "set ") { // 宣言を直す疑似の op（set kind・set material）
+		return fmt.Sprintf("%s %s → %v", t.Op, t.Arg, t.Try)
+	}
 	if t.Now == nil {
 		return fmt.Sprintf("%s に %s = %v を足す", t.Op, t.Arg, t.Try)
 	}

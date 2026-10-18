@@ -3,13 +3,44 @@
   "note": "検査の返し方の決まり（go/internal/checkres。形は docs/check-results.md・code の表は docs/check-codes.md）。nearRatio = 外れの割合（ratio。1 で合格）がこれ以上なら near（許容の帯。lint の near は終了コード 0）。near = code ごとの帯（ratio は割合の下限・gap は |gap| の上限で単位は code の unit・why に決めた理由）。score = 100 から引く点（gate・lint・advice は fail 1 件の点・nearFactor は near の倍率・repeatDecay は同じ code の 2 件目からの倍率・gateCap は gate の外れがある時の上限）。top = まとめに出す悪い順の件数。maxCells = 1 件の where に入れる画素の上限。stop = rounds snap の止め時（noGainRounds 周続けて score が上がらない・sameNextRounds 周続けて next が同じ・使ったトークンが予算の budgetShare を超えた）。値は仮置き（効き目の測りの 1 回で見直す）。",
   "nearRatio": 0.8,
   "near": {
-    "snd.truepeak": {"gap": 0.5, "why": "true peak は 0.5 dB の外れまで聞いて分からない（normalize の既定 -1 dBTP の余裕の半分）"},
-    "snd.peak": {"gap": 0.5, "why": "truepeak と同じ帯"},
-    "snd.loudness": {"gap": 1.0, "why": "LUFS の 1 LU は聞き比べでほぼ分からない幅"},
-    "snd.head": {"gap": 5, "why": "pacing.md の「音が先 15ms〜後 45ms」の中に収まる幅"}
+    "snd.truepeak": {
+      "gap": 0.5,
+      "why": "true peak は 0.5 dB の外れまで聞いて分からない（normalize の既定 -1 dBTP の余裕の半分）"
+    },
+    "snd.peak": {
+      "gap": 0.5,
+      "why": "truepeak と同じ帯"
+    },
+    "snd.loudness": {
+      "gap": 1.0,
+      "why": "LUFS の 1 LU は聞き比べでほぼ分からない幅"
+    },
+    "snd.head": {
+      "gap": 5,
+      "why": "pacing.md の「音が先 15ms〜後 45ms」の中に収まる幅"
+    },
+    "px.decl.kind-mismatch": {
+      "gap": 1,
+      "why": "推した kind との違いは食い違いの知らせ（宣言が正しいことも多い）なので near（checkset-design §2）"
+    },
+    "px.decl.fidelity-unknown": {
+      "gap": 1,
+      "why": "0.42.0 は fidelity を省ける（不明は near・checkset-design §9.2）"
+    }
   },
-  "score": {"gate": 30, "lint": 8, "advice": 2, "nearFactor": 0.3, "repeatDecay": 0.5, "gateCap": 40},
+  "score": {
+    "gate": 30,
+    "lint": 8,
+    "advice": 2,
+    "nearFactor": 0.3,
+    "repeatDecay": 0.5,
+    "gateCap": 40
+  },
   "top": 5,
   "maxCells": 16,
-  "stop": {"noGainRounds": 2, "sameNextRounds": 3, "budgetShare": 0.9}
+  "stop": {
+    "noGainRounds": 2,
+    "sameNextRounds": 3,
+    "budgetShare": 0.9
+  }
 }

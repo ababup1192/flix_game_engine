@@ -30,6 +30,8 @@ const usage = `使い方: fge px build <名前>.pxsrc.json|<名前>.px.star [--j
         fge px gen <名前>.px.star
         fge px check [--gate <名前>.colorgate.json] [--strict] <sprite.json…>
         fge px measure <sprite.json…>
+        fge px kinds
+        fge px decl --suggest <pxsrc か sprite.json…>
         fge px ops [--md] [--check]
         fge px schema [--write] [--check]
         fge px help [<op>|<コマンド>]
@@ -65,6 +67,12 @@ var cmdHelps = map[string]string{
   手描きや assets の sprite.json にも、色の門と形の検査をかける（--gate を省くと art/*.colorgate.json を 1 つ探す）。
   終了コード: 0 合格・1 色の門か gate の外れ。--strict を付けると lint の fail だけで 2（near と advice は 0）。
   --json は結果の全部（check に score・next・悪い順の上位。形は docs/check-results.md）。
+`,
+	"kinds": `fge px kinds
+  kind（絵の種類）の表: 定義・例・足す検査と外す検査（理由つき）・どの kind でも当てる検査。
+`,
+	"decl": `fge px decl --suggest <pxsrc か sprite.json…>
+  宣言の無い sprite に、推した kind を書く案を 1 行ずつ出す（書くのは担当か人。道具は書き換えない）。
 `,
 	"measure": `fge px measure <sprite.json…> [--json]
   技法帳の検査の値を測り、code ごとの分布（数・今の閾値での外れ・p10/p50/p90・外れの悪い順 5 件）を出す。
@@ -175,7 +183,7 @@ func Run(out, errOut *strings.Builder, engineRoot, workRoot string, args []strin
 			pos = append(pos, a)
 		}
 	}
-	allowed := map[string][]string{"build": {"--no-check", "--sheet", "--time", "--png", "--gif-delay", "--gif-scale", "--only", "--explain"}, "check": {"--strict"}, "measure": nil, "ops": {"--md", "--check"}, "schema": {"--check", "--write"}, "help": nil,
+	allowed := map[string][]string{"build": {"--no-check", "--sheet", "--time", "--png", "--gif-delay", "--gif-scale", "--only", "--explain"}, "check": {"--strict"}, "measure": nil, "kinds": nil, "decl": {"--suggest"}, "ops": {"--md", "--check"}, "schema": {"--check", "--write"}, "help": nil,
 		"watch": {"--no-check"}, "snap": {"--new", "--max", "--tokens"}, "diff": nil, "gen": nil}
 	if names, known := allowed[verb]; known {
 		for f := range flags {
@@ -220,6 +228,15 @@ func Run(out, errOut *strings.Builder, engineRoot, workRoot string, args []strin
 			return 2
 		}
 		return cmdCheck(out, errOut, engineRoot, workRoot, gatePath, pos, asJSON, flags["--strict"])
+	case "kinds":
+		out.WriteString(kindsText())
+		return 0
+	case "decl":
+		if !flags["--suggest"] || len(pos) == 0 {
+			fmt.Fprintf(errOut, "px decl: --suggest と pxsrc か sprite.json を渡す\n%s", usage)
+			return 2
+		}
+		return cmdDeclSuggest(out, errOut, workRoot, pos)
 	case "measure":
 		if len(pos) == 0 {
 			errOut.WriteString(usage)

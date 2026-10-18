@@ -26,7 +26,8 @@ import (
 )
 
 // techFrameChecks は段 3 でコマごとに足した全体の検査（value-sep は contrast を書いた時だけ・style は spec に style がある時だけ鳴る）。
-var techFrameChecks = []checkRef{{Check: checkValueSep}, {Check: checkStyle}, {Check: checkHighlightReserve}, {Check: checkValueBlobs}, {Check: checkOuterAA}}
+// highlight-reserve・value-blobs は kind の束が足す（kinds.go）。outer-aa はどの kind でも当てる（checkset-design §9.4）。
+var techFrameChecks = []checkRef{{Check: checkValueSep}, {Check: checkStyle}, {Check: checkOuterAA}}
 
 // specChecks は spec 全体で 1 度だけ回す検査（ランプの並び・色相・彩度）。
 var specChecks = []checkRef{{Check: checkRampOrder}, {Check: checkRampHue}, {Check: checkRampChroma}}
@@ -257,8 +258,18 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 		}
 	}
 	res := &buildResult{Spec: specPath, Target: spec.Target}
+	// 塗りの細かさ（門の画風 → 機種 → 不明）。spec に gate が無ければ px check と同じく art/*.colorgate.json を探す
+	fidGate := gate
+	if fidGate == nil {
+		if gp, err := findGate(root); err == nil {
+			fidGate, _ = loadColorGate(root, gp)
+		}
+	}
+	fid := resolveFidelity(fidGate, filepath.Base(spec.Target), style)
 	firstParts := map[string][]*part{}           // スプライト → 1 コマ目の部品（直し方の数の候補を引く）
 	ap := newAppliedSet(spec.Style, opt.NoCheck) // 絵ごとの当てた検査の組と外した物（まとめの applied・exempt）
+	ap.look = fid.Look
+	baseRules := rules
 	addViolations := func(vs []violation, sp, frame, scope string) {
 		exempt := map[string]bool{}
 		if spriteRules != nil {
@@ -272,6 +283,13 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 			v.Sprite, v.Frame = sp, frame
 			if v.Scope == "" {
 				v.Scope = scope
+			}
+			// 軸で動く検査は、fidelity の範囲の外なら消さずに advice へ下げる（checkset-design §9.4）
+			if ck, ok := checks[v.Check]; ok && ck.Fidelity && fid.Known && baseRules != nil && v.Level != levelAdvice {
+				if rg := baseRules.fidelityRangeOf(v.Check); !rg.has(fid.Value) {
+					v.Level = levelAdvice
+					ap.skip(sp, v.code(), fmt.Sprintf("fidelity %.2f は範囲 [%.2f, %.2f) の外（advice へ下げた）", fid.Value, rg.Lo, rg.Hi), fmt.Sprintf("fidelity:%.2f", fid.Value))
+				}
 			}
 			if seenProbe != nil {
 				seenProbe(v)
@@ -292,6 +310,16 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 			entry.Set("anchor", anchor)
 			entry.Set("frames", pxlib.NewObj())
 			sprites.Set(sp.Name, entry)
+		}
+		rk := resolveKind(sp, spec)
+		kdef, _ := lookupKind(rk.Kind)
+		ap.kind(sp.Name, rk)
+		ap.fidelity[sp.Name] = fid
+		if baseRules != nil {
+			cc.Rules = baseRules.at(fid, max(sp.Size.W, sp.Size.H)) // 閾値の折れ線（fidelity・大きさ）をこの絵の値に
+		}
+		if sp.Kind != "" {
+			entry.Set("kind", string(sp.Kind)) // 正は sprite.json（手描きの絵にも書ける）
 		}
 		if sp.Anchor != nil {
 			anchor := pxlib.NewObj()
@@ -348,12 +376,16 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 							return nil
 						}
 						sub := c.G.Only(ps.written.Union(ps.Region()))
-						cc.Measures, cc.Wrap = c.measures, c.wrap
+						cc.Measures, cc.Wrap = c.measures, c.wrap || kdef.Wrap
 						if !ps.isPost {
 							cc.Part = ps.Part.ID
 						}
 						defer func() { cc.Part = "" }()
 						for _, n := range names {
+							if s, skip := rk.skips(n); skip {
+								ap.skip(sp.Name, n.String(), s.Why, "kind:"+string(rk.Kind)) // op の Checks から来た分も kind が消す
+								continue
+							}
 							vs, err := runCheck(n, sub, cc)
 							if err != nil {
 								return fmt.Errorf("%s: %w", ps.Part.Where, err)
@@ -404,8 +436,14 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 				variants[f.Name] = append(variants[f.Name], variant{fname, c.G})
 				tileLike = tileLike || c.tile || c.wrap
 				if !opt.NoCheck {
-					cc.Measures, cc.Wrap = c.measures, c.wrap
-					for _, n := range append(frameChecks, techFrameChecks...) {
+					cc.Measures, cc.Wrap = c.measures, c.wrap || kdef.Wrap
+					refs, kskips := rk.frameRefs(append(append([]checkRef{}, frameChecks...), techFrameChecks...))
+					for _, s := range kskips {
+						ap.skip(sp.Name, s.Ref.String(), s.Why, "kind:"+string(rk.Kind))
+					}
+					ap.check(sp.Name, string(checkGlow))
+					addViolations(glowViolations(c.G, cc), sp.Name, fname, checkres.ScopeFrame)
+					for _, n := range refs {
 						ap.check(sp.Name, n.String())
 						vs, err := runCheck(n, c.G, cc)
 						if err != nil {
@@ -415,7 +453,7 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 					}
 				}
 			}
-			moving := sp.Anim == nil && sp.animated || sp.Anim != nil && *sp.Anim
+			moving := sp.Anim == nil && (sp.animated || kdef.AnimAlws) || sp.Anim != nil && *sp.Anim
 			switch {
 			case opt.NoCheck:
 			case len(seqNames) < 2:
@@ -437,7 +475,16 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 				checkDur += time.Since(t)
 			}
 		}
-		if !opt.NoCheck && len(sp.Seeds) > 1 && tileLike {
+		if !opt.NoCheck {
+			ap.check(sp.Name, string(checkDecl))
+			res.Violations = append(res.Violations, kindDecl(sp, spec, rk)...)
+			var g0 *pxlib.Grid
+			if vs := variants[firstFrameName(sp)]; len(vs) > 0 {
+				g0 = vs[0].g
+			}
+			res.Violations = append(res.Violations, materialDecl(sp, rk, firstParts[sp.Name], g0, baseRules.MaterialMinPx)...)
+		}
+		if !opt.NoCheck && len(sp.Seeds) > 1 && (tileLike || rk.Kind == kindTile) {
 			ap.check(sp.Name, string(checkTileVariantEdge))
 			for _, f := range sp.Frames {
 				var names []string
@@ -452,6 +499,7 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 		}
 	}
 	if !opt.NoCheck {
+		cc.Rules = baseRules // spec 全体の検査は絵ごとの折れ線の外
 		for _, ref := range specChecks {
 			vs, err := runCheck(ref, pxlib.NewGrid(1, 1), cc)
 			if err != nil {
@@ -466,7 +514,21 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 			res.Violations = append(res.Violations, vs...)
 		}
 	}
+	if !opt.NoCheck {
+		res.Violations = append(res.Violations, fidelityDecl(fid, filepath.Base(spec.Target))...)
+		known := map[string]bool{}
+		for _, r := range []string{"orphan", "connect", "jaggy", "banding", "corner", "silhouette", "palette", "structure", "loop", "pop", "area", "ground", "bob"} {
+			known[r] = true
+		}
+		res.Violations = append(res.Violations, lintSpriteDecl(plainDoc, known)...)
+		res.Violations = append(res.Violations, exemptOveruse(cc.Exempted, len(res.Frames), baseRules.ExemptPerFrameMax)...)
+	}
 	res.Violations = dedupeViolations(res.Violations)
+	if seenProbe != nil {
+		for _, v := range res.Violations {
+			seenProbe(v)
+		}
+	}
 	for i := range res.Violations {
 		v := &res.Violations[i]
 		if call, _, ok := opAt(firstParts[v.Sprite], *v); ok {
@@ -1024,4 +1086,12 @@ func roundOf(vs []violation, rules *checkres.Rules, prevKeys map[string]bool) *c
 		results = append(results, v.result(rules))
 	}
 	return &checkres.Round{Summary: checkres.Summarize(results, rules, prevKeys), Results: results}
+}
+
+// firstFrameName は sprite の 1 コマ目の名前（無ければ ""）。
+func firstFrameName(sp *spriteSpec) string {
+	if len(sp.Frames) == 0 {
+		return ""
+	}
+	return sp.Frames[0].Name
 }

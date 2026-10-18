@@ -424,6 +424,8 @@ func specSchema() string {
 				"properties", obj("seeds", obj("type", "array", "items", obj("type", "integer", "minimum", json.Number("0")), "minItems", json.Number("1")))),
 			"roles", obj("type", "object", "description", "歩きの姿勢の役 → 部品 id（"+strings.Join(poseRoleNames(), "・")+"。省くと役と同じ id の部品）", "additionalProperties", obj("type", "string")),
 			"anim", obj("type", "boolean", "description", "コマ列の検査 anim を回すか（省くと動きの op・pose・rotate があれば回す）"),
+			"kind", obj("type", "string", "enum", kindEnum(), "description", "絵の種類（spec の kind を上書き）。当てる検査の束が決まる（bin/fge px kinds）。sprite.json の sprite に書き出す"),
+			"kind_why", obj("type", "string", "minLength", 8, "description", "推した kind と違う kind を宣言した理由（px.decl.kind-mismatch を黙らせる・まとめに出る）"),
 		))
 	root := obj(
 		"$schema", "http://json-schema.org/draft-07/schema#",
@@ -441,6 +443,7 @@ func specSchema() string {
 			"palette", obj("type", "string", "description", "色票の Doc（base が無いときの paletteFile）"),
 			"gate", obj("type", "string", "description", "色の門の Doc（*.colorgate.json）。外れたら書き出さない"),
 			"indent", obj("description", "書き出す字下げ（\"tab\" か空白の数。省くと base の字面に合わせる）", "oneOf", list(obj("const", "tab"), obj("type", "integer", "minimum", json.Number("1"), "maximum", json.Number("8")))),
+			"kind", obj("type", "string", "enum", kindEnum(), "description", "sprite の kind の既定（sprite の kind が上書き）。tile・character・prop・icon・ui・background・vfx（定義は bin/fge px kinds）"),
 			"style", obj("type", "string", "description", "機種の決まり（bin/lint-rules/px.json の styles: gb4・nes・snes・pc98・modern など。か *.pxstyle.json）。色の集合・色数・升目の色数・RGB の段数を検査 style で縛る。色の門（gate）の画風の上に乗る縛りで、門の画風は外さない"),
 			"light", obj("type", "object", "additionalProperties", false, "description", "光（Doc に 1 か所だけ。op はここを読む）",
 				"properties", obj(
@@ -468,6 +471,7 @@ func gateSchema() string {
 	file := obj("type", "object", "additionalProperties", false, "required", list("style"), "properties", obj(
 		"style", obj("type", "string", "label", "画風", "description", "styles の名前か free（この決まりの外。理由を why に）"),
 		"why", obj("type", "string", "label", "理由", "description", "free にした理由"),
+		"fidelity", obj("type", "number", "minimum", 0, "maximum", 1, "label", "塗りの細かさ", "description", "free の冊の 0（low-bit）〜 1（hi-bit）。free には書く（省くと px.decl.fidelity-unknown）"),
 		"allow", obj("type", "array", "label", "例外にする色の名前", "items", allow),
 		"known", obj("type", "object", "label", "既存の違反", "additionalProperties", false,
 			"description", "採用した絵で決まりを破っている色の名前を 1 つずつ列挙する（正規表現にしない）。門は通すが件数を毎回出す。直したら消す。新しい絵の色は足さない",
@@ -479,6 +483,9 @@ func gateSchema() string {
 		"from", obj("type", "string", "label", "色を引く Doc", "description", "ゲームのルートからの相対（例 assets/x.theme.json）"),
 		"path", obj("type", "string", "label", "Doc の中の場所", "description", "\".\" 区切り（例 night）。省くと一番外"),
 		"keys", obj("type", "string", "label", "引く色の名前", "description", "正規表現（例 ^pear）。省くと全部"),
+		"fidelity", obj("type", "number", "minimum", 0, "maximum", 1, "label", "塗りの細かさ", "description", "0 = low-bit（ファミコンの塗り）〜 1 = hi-bit（格子に乗った細かい塗り）。軸で動く検査の範囲と閾値の折れ線を決める（checkset-design §9）"),
+		"rampSteps", obj("type", "array", "items", obj("type", "integer", "minimum", 2), "minItems", 1, "maxItems", 2, "label", "1 素材の段の数", "description", "[最小, 最大]（例 [3, 4]）"),
+		"dither", obj("type", "string", "enum", list("none", "accent", "primary"), "label", "ディザ", "description", "none・accent（境目だけ）・primary（面の中の主な手）"),
 	))
 	root := obj(
 		"$schema", "http://json-schema.org/draft-07/schema#",

@@ -220,7 +220,7 @@ func init() {
 	})
 	registerCheck(&checkDef{
 		Name: checkBlackOutline, Summary: "black-outline: 小さい絵（blackOutlineMaxSize 未満）で、外の縁が 1 色・絵の中で一番暗い色のまま一周している", Level: levelAdvice,
-		Fix: "outline を sel_out に替える（輪郭を部品ごとの色に・光の側を明るく）",
+		Fix: "outline を sel_out に替える（輪郭を部品ごとの色に・光の側を明るく）", Fidelity: true,
 		Run: func(g *pxlib.Grid, c *checkCtx) []violation {
 			if max(g.W, g.H) >= c.Rules.BlackOutlineMax {
 				return nil

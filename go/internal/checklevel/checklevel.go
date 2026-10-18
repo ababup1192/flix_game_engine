@@ -68,9 +68,12 @@ type Applied struct {
 	Full    *AppliedFull `json:"full,omitempty"` // 最初の周・組が変わった周・--explain だけ
 }
 
-// AppliedFull は当てた検査の組の全文。kind・look の欄は宣言の仕組み（0.42.0）で足す。
-// Fidelity・FidelityBy は low-bit ↔ hi-bit の軸（checkset-design §9）の欄で、0.41.0 では空のまま。
+// AppliedFull は当てた検査の組の全文（checkset-design §7）。kind は宣言（declared）か推した物（inferred）。
+// Fidelity・FidelityBy は low-bit ↔ hi-bit の軸（§9）の値と出どころ（門・機種・不明）。
 type AppliedFull struct {
+	Kind       string   `json:"kind,omitempty"`
+	KindBy     string   `json:"kindBy,omitempty"`
+	Look       string   `json:"look,omitempty"` // 門の画風（報告だけ）
 	Fidelity   *float64 `json:"fidelity,omitempty"`
 	FidelityBy string   `json:"fidelityBy,omitempty"` // 出どころ（門・機種・不明）
 	Style      string   `json:"style,omitempty"`

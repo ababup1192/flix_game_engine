@@ -726,8 +726,11 @@ pxsrc の一番外に `"style": "snes"` と名前で書くと `bin/lint-rules/px
 |---|---|---|
 | `anim` | lint | anim: コマ列に bin/fge anim の pop・area・ground・bob・loop をかける（動きの op・pose・rotate を使うスプライト、か anim: true） |
 | `black-outline` | advice | black-outline: 小さい絵（blackOutlineMaxSize 未満）で、外の縁が 1 色・絵の中で一番暗い色のまま一周している |
+| `decl` | advice | decl: 宣言（kind・material・fidelity・lint-sprite の規則名）の書き忘れ・食い違い |
+| `exempt-overuse` | advice | exempt-overuse: op の Exempt で外した画素がコマあたり exemptPerFrameMax を超える |
 | `flat-run` | advice | 輪郭の段: 同じ長さの段が続く（直線に読まれる）・長すぎる直線（16px で 4px・32px で 6px を超える）。poly の部品の辺は直線として、段の長さが 3 種類以上に散る時だけ |
 | `flicker` | lint | flicker: コマの間で周り 8 画素が動かないのに色だけ変わる画素（ちらつき。palette_cycle と wave_shift の画素・コマで at か rotate が変わる部品と、sway を持つ部品（on の子も）の画素は除く） |
+| `glow` | advice | glow: emissive の部品の発光の作法（芯は最明色で小さく・まわりより明るい） |
 | `ground-contrast` | lint | 外周の画素と地の色の明るさ（Oklab の L）の差が小さく、輪郭が地に溶ける |
 | `highlight-reserve` | advice | highlight-reserve: 最明色（emissive の部品は除く）が描いた画素の highlightMaxShare を超える・面の中（四方が同じ色）に置いてある。最明色はハイライト専用 |
 | `light-dir` | advice | light-dir: 塊の明るさで重みを付けた重心（明るい側 − 暗い側）が光の側（light.dir）に無い（emissive の部品は見ない） |

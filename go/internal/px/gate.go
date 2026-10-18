@@ -38,6 +38,10 @@ type gateStyle struct {
 	Path   string            // From の中の場所（"." 区切り。省くと一番外）
 	Keys   string            // From から引く色の名前の正規表現（省くと全部）
 	hexes  map[string]bool
+	// 塗りの軸（checkset-design §9）: 細かさ 0 = low-bit 〜 1 = hi-bit・1 素材の段の数・ディザ。どれも省ける（不明は near）
+	Fidelity  *float64
+	RampSteps [2]int
+	Dither    string
 }
 
 // gateDeny はどの画風でも使わない色。
@@ -45,10 +49,11 @@ type gateDeny struct{ Color, Why string }
 
 // gateFile は 1 つの sprite.json（ファイル名）の決まり。
 type gateFile struct {
-	Style string
-	Why   string
-	Allow []gateAllow
-	Known []string
+	Style    string
+	Why      string
+	Allow    []gateAllow
+	Known    []string
+	Fidelity *float64 // free の冊の塗りの細かさ（free には必須。0.42.0 は省くと near）
 }
 
 // gateAllow は例外にする色の名前（正規表現）と理由。
@@ -104,7 +109,7 @@ func loadColorGate(root, path string) (*colorGate, error) {
 			bad(where, "free は決まりの外の名前（styles に書かない）")
 			continue
 		}
-		st := &gateStyle{Label: str(so["label"]), From: str(so["from"]), Path: str(so["path"]), Keys: str(so["keys"]),
+		st := &gateStyle{Label: str(so["label"]), From: str(so["from"]), Path: str(so["path"]), Keys: str(so["keys"]), Dither: str(so["dither"]),
 			Colors: map[string]string{}, hexes: map[string]bool{}}
 		if st.Label == "" {
 			bad(where+".label", "外れた色の言い方を書く（例 \"Pear36 の外\"）")
@@ -152,6 +157,29 @@ func loadColorGate(root, path string) (*colorGate, error) {
 		if len(st.hexes) == 0 {
 			bad(where, "色が 1 つも無い（colors に列挙するか from で引く）")
 		}
+		if v, ok := so["fidelity"]; ok {
+			f, isNum := v.(float64)
+			if !isNum || f < 0 || f > 1 {
+				bad(where+".fidelity", "0（low-bit）〜 1（hi-bit）の数で書く")
+			}
+			st.Fidelity = &f
+		}
+		if v, ok := so["rampSteps"].([]any); ok {
+			lo, _ := v[0].(float64)
+			hi := lo
+			if len(v) > 1 {
+				hi, _ = v[1].(float64)
+			}
+			if len(v) > 2 || lo < 2 || hi < lo {
+				bad(where+".rampSteps", "[最小, 最大]（2 以上）で書く")
+			}
+			st.RampSteps = [2]int{int(lo), int(hi)}
+		}
+		switch st.Dither {
+		case "", "none", "accent", "primary":
+		default:
+			bad(where+".dither", "none・accent・primary のどれか")
+		}
 		g.Styles[name] = st
 	}
 	if d, ok := doc["default"]; ok {
@@ -180,6 +208,13 @@ func loadColorGate(root, path string) (*colorGate, error) {
 		}
 		if f.Style == freeStyle && f.Why == "" {
 			bad(where+".why", "free にした理由を書く")
+		}
+		if v, ok := fo["fidelity"]; ok {
+			fv, isNum := v.(float64)
+			if !isNum || fv < 0 || fv > 1 {
+				bad(where+".fidelity", "0（low-bit）〜 1（hi-bit）の数で書く")
+			}
+			f.Fidelity = &fv
 		}
 		allow, _ := fo["allow"].([]any)
 		for i, e := range allow {

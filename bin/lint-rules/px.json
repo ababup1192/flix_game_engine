@@ -10,7 +10,12 @@
     "rampHueMaxStep": "技法帳の 20°。採用済みのランプ 11 本で外れ 1（stkRsh 23°）のまま",
     "outerAAMax": "採用済み 155 コマで外れ 0 のまま",
     "groundBrightL": "地の色は採用済みの sprite.json に無い（spec の light.ground だけ）ので value-structure §4 の文から仮置き",
-    "tileVariantEdge": "採用済みの assets に seeds の変種が無いので技法帳の 2〜3 の下の 2 で仮置き"
+    "tileVariantEdge": "採用済みの assets に seeds の変種が無いので技法帳の 2〜3 の下の 2 で仮置き",
+    "glowCoreMaxShare": "依頼主の決定（2026-10-18・ネオンの案 C）: 芯 1px は最明色・面積 5% 以下・輪 1 段は芯から 1〜2.5px に光の色の 25% の網・照り返しは床に横長 3〜4 行",
+    "emissiveMinGap": "emissive の部品はまわりより明るいこと（暗い物に emissive を付けて light-dir・pillow を外す道を塞ぐ）。仮置き",
+    "materialMinPx": "material の書き忘れを見る部品の大きさの下限。仮置き",
+    "exemptPerFrameMax": "Exempt の作法の形（bevel_box の角 4 など）を 2 倍まで。仮置き",
+    "fidelityRanges": "0.42.0 は仕組みだけで範囲は全部 [0, 1)（0.43.0 で採用済みの昼 0.9・夜 0.2 の 2 点で決め直す）"
   },
   "flatRunRepeat": 3,
   "flatRunStraight": 2,
@@ -42,6 +47,16 @@
   "valueBlobsCoverMin": 0.6,
   "tileVariantEdge": 2,
   "outerAAMax": 0,
+  "glowCoreMaxShare": 0.05,
+  "emissiveMinGap": 0.1,
+  "materialMinPx": 32,
+  "exemptPerFrameMax": 8,
+  "fidelityRanges": {
+    "black-outline": [
+      0,
+      1
+    ]
+  },
   "styles": {
     "gb4": {
       "label": "ゲームボーイ風（4 階調）",
@@ -57,7 +72,8 @@
         8,
         8
       ],
-      "maxTileColors": 3
+      "maxTileColors": 3,
+      "fidelity": 0.1
     },
     "nes": {
       "label": "ファミコン風",
@@ -124,19 +140,22 @@
         8,
         8
       ],
-      "maxTileColors": 3
+      "maxTileColors": 3,
+      "fidelity": 0.2
     },
     "snes": {
       "label": "スーパーファミコン風",
       "note": "RGB 各 5 bit（32 段）。1 体は 1 つのパレットの 15 色＋透明。",
       "channelLevels": 32,
-      "maxColors": 15
+      "maxColors": 15,
+      "fidelity": 0.5
     },
     "pc98": {
       "label": "PC-98 風",
       "note": "4096 色（RGB 各 16 段）から 16 色。タイルパターン（市松）で中間を作る。",
       "channelLevels": 16,
-      "maxColors": 16
+      "maxColors": 16,
+      "fidelity": 0.5
     },
     "modern": {
       "label": "今どきのドット絵",

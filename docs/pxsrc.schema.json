@@ -51,6 +51,19 @@
         }
       ]
     },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "tile",
+        "character",
+        "prop",
+        "icon",
+        "ui",
+        "background",
+        "vfx"
+      ],
+      "description": "sprite の kind の既定（sprite の kind が上書き）。tile・character・prop・icon・ui・background・vfx（定義は bin/fge px kinds）"
+    },
     "style": {
       "type": "string",
       "description": "機種の決まり（bin/lint-rules/px.json の styles: gb4・nes・snes・pc98・modern など。か *.pxstyle.json）。色の集合・色数・升目の色数・RGB の段数を検査 style で縛る。色の門（gate）の画風の上に乗る縛りで、門の画風は外さない"
@@ -2942,6 +2955,24 @@
         "anim": {
           "type": "boolean",
           "description": "コマ列の検査 anim を回すか（省くと動きの op・pose・rotate があれば回す）"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "tile",
+            "character",
+            "prop",
+            "icon",
+            "ui",
+            "background",
+            "vfx"
+          ],
+          "description": "絵の種類（spec の kind を上書き）。当てる検査の束が決まる（bin/fge px kinds）。sprite.json の sprite に書き出す"
+        },
+        "kind_why": {
+          "type": "string",
+          "minLength": 8,
+          "description": "推した kind と違う kind を宣言した理由（px.decl.kind-mismatch を黙らせる・まとめに出る）"
         }
       }
     }

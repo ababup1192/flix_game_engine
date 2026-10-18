@@ -33,6 +33,8 @@ type pxStyle struct {
 	MaxSize       [2]int            `json:"maxSize"`       // 絵の最大の大きさ
 	Palettes      *paletteRule      `json:"palettes"`      // 色を何本のパレットに分けて持つか（無ければ見ない）
 	Pixel         [2]int            `json:"pixel"`         // 画素の横:縦（PC-88 の 200 ライン = [1, 2]）。--png の PNG・GIF をこの比で引き伸ばす
+	Fidelity      *float64          `json:"fidelity"`      // 塗りの細かさ（0 low-bit 〜 1 hi-bit）。門の画風に無い時だけ使う（checkset-design §9.2）
+	Dither        string            `json:"dither"`        // ディザ（none・accent・primary）。門の画風に無い時だけ使う
 	name          string
 }
 

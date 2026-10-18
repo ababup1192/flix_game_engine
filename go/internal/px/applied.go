@@ -13,6 +13,9 @@ import (
 )
 
 type appliedSet struct {
+	kinds    map[string]resolvedKind
+	look     string
+	fidelity map[string]fidelityOf
 	style    string
 	noCheck  bool
 	checks   map[string]map[string]bool
@@ -26,7 +29,7 @@ type appliedSet struct {
 }
 
 func newAppliedSet(style string, noCheck bool) *appliedSet {
-	return &appliedSet{style: style, noCheck: noCheck, checks: map[string]map[string]bool{}, skipped: map[string][]checklevel.Skip{},
+	return &appliedSet{kinds: map[string]resolvedKind{}, fidelity: map[string]fidelityOf{}, style: style, noCheck: noCheck, checks: map[string]map[string]bool{}, skipped: map[string][]checklevel.Skip{},
 		mats: map[string]map[string]bool{}, emissive: map[string]bool{}, poly: map[string]bool{}, rules: map[string]bool{}}
 }
 
@@ -39,6 +42,8 @@ func (a *appliedSet) touch(sp string) {
 }
 
 func (a *appliedSet) check(sp, name string) { a.touch(sp); a.checks[sp][name] = true }
+
+func (a *appliedSet) kind(sp string, rk resolvedKind) { a.touch(sp); a.kinds[sp] = rk }
 
 func (a *appliedSet) skip(sp, code, why, by string) {
 	a.touch(sp)
@@ -78,7 +83,16 @@ func keysOfSet(m map[string]bool) []string {
 func (a *appliedSet) summary(counts map[[2]string]int, prev *checkres.Summary, explain bool) (map[string]checklevel.Applied, *checkres.Exempt) {
 	applied := map[string]checklevel.Applied{}
 	for _, sp := range a.order {
-		full := checklevel.AppliedFull{Style: a.style, Materials: keysOfSet(a.mats[sp]), Checks: keysOfSet(a.checks[sp]), Skipped: a.skipped[sp]}
+		full := checklevel.AppliedFull{Style: a.style, Look: a.look, Materials: keysOfSet(a.mats[sp]), Checks: keysOfSet(a.checks[sp]), Skipped: a.skipped[sp]}
+		if rk, ok := a.kinds[sp]; ok {
+			full.Kind, full.KindBy = string(rk.Kind), rk.By
+		}
+		if f, ok := a.fidelity[sp]; ok && f.Known {
+			v := f.Value
+			full.Fidelity, full.FidelityBy = &v, f.By
+		} else if ok {
+			full.FidelityBy = f.By
+		}
 		if a.noCheck {
 			full.Skipped = append(full.Skipped, checklevel.Skip{Code: "lint・advice の全部", Why: "--no-check（周の外の下見）", By: "--no-check"})
 		}

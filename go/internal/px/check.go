@@ -192,6 +192,8 @@ type checkDef struct {
 	Level   level
 	Fix     string // 違反の直し方の既定（違反の側で書いた物が先）
 	Run     func(g *pxlib.Grid, c *checkCtx) []violation
+	// Fidelity は塗りの軸で動く検査か（範囲は px.json の fidelityRanges。範囲の外では advice へ下げる）
+	Fidelity bool
 }
 
 var checks = map[checkName]*checkDef{}
@@ -318,24 +320,33 @@ type pxRules struct {
 	SeamRatio         float64 `json:"seamRatio"`
 	BandingRingMin    float64 `json:"bandingRingMin"`
 	// 技法帳の検査（段 2）
-	HighlightMinColors    int                 `json:"highlightMinColors"`
-	HighlightMaxShare     float64             `json:"highlightMaxShare"`
-	HighlightInsideMax    float64             `json:"highlightInsideMax"`
-	GroundBrightL         float64             `json:"groundBrightL"`
-	GroundBrightChromaMax float64             `json:"groundBrightChromaMax"`
-	RampGrayChroma        float64             `json:"rampGrayChroma"`
-	RampHueMaxStep        float64             `json:"rampHueMaxStep"`
-	RampHueMinTotal       float64             `json:"rampHueMinTotal"`
-	RampChromaPeakSlack   float64             `json:"rampChromaPeakSlack"`
-	RampBrightV           float64             `json:"rampBrightV"`
-	RampBrightSMax        float64             `json:"rampBrightSMax"`
-	ValueBlobsMinShare    float64             `json:"valueBlobsMinShare"`
-	ValueBlobsMin         int                 `json:"valueBlobsMin"`
-	ValueBlobsMax         int                 `json:"valueBlobsMax"`
-	ValueBlobsCoverMin    float64             `json:"valueBlobsCoverMin"`
-	TileVariantEdge       int                 `json:"tileVariantEdge"`
-	OuterAAMax            int                 `json:"outerAAMax"`
-	Styles                map[string]*pxStyle `json:"styles"`
+	HighlightMinColors    int     `json:"highlightMinColors"`
+	HighlightMaxShare     float64 `json:"highlightMaxShare"`
+	HighlightInsideMax    float64 `json:"highlightInsideMax"`
+	GroundBrightL         float64 `json:"groundBrightL"`
+	GroundBrightChromaMax float64 `json:"groundBrightChromaMax"`
+	RampGrayChroma        float64 `json:"rampGrayChroma"`
+	RampHueMaxStep        float64 `json:"rampHueMaxStep"`
+	RampHueMinTotal       float64 `json:"rampHueMinTotal"`
+	RampChromaPeakSlack   float64 `json:"rampChromaPeakSlack"`
+	RampBrightV           float64 `json:"rampBrightV"`
+	RampBrightSMax        float64 `json:"rampBrightSMax"`
+	ValueBlobsMinShare    float64 `json:"valueBlobsMinShare"`
+	ValueBlobsMin         int     `json:"valueBlobsMin"`
+	ValueBlobsMax         int     `json:"valueBlobsMax"`
+	ValueBlobsCoverMin    float64 `json:"valueBlobsCoverMin"`
+	TileVariantEdge       int     `json:"tileVariantEdge"`
+	OuterAAMax            int     `json:"outerAAMax"`
+	// 宣言の検査（decl.*）と発光の作法（checkset-design §4・§9.5。案 C の数）
+	GlowCoreMaxShare  float64             `json:"glowCoreMaxShare"`
+	EmissiveMinGap    float64             `json:"emissiveMinGap"`
+	MaterialMinPx     int                 `json:"materialMinPx"`
+	ExemptPerFrameMax int                 `json:"exemptPerFrameMax"`
+	Styles            map[string]*pxStyle `json:"styles"`
+	knobs             map[string]knob
+	raw               map[string]json.RawMessage
+	cache             map[string]*pxRules
+	ranges            map[string]fidelityRange
 }
 
 // loadRules は閾値を読む。読めなければ止める（既定値へ倒すと、消しただけで検査が黙って緩む）。
@@ -345,23 +356,69 @@ func loadRules(root string) (*pxRules, error) {
 	if err != nil {
 		return nil, fmt.Errorf("検査の閾値を読めない: %v", err)
 	}
-	var r pxRules
-	if err := json.Unmarshal(data, &r); err != nil {
-		return nil, fmt.Errorf("%s が JSON として壊れている: %v", path, err)
+	knobs, raw, err := readKnobs(data)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %v", path, err)
 	}
+	ranges, err := readRanges(raw)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %v", path, err)
+	}
+	r := &pxRules{knobs: knobs, raw: raw, cache: map[string]*pxRules{}, ranges: ranges}
+	// 折れ線の欄は、全部の点で下限を確かめる（点のどれか 1 つでも壊れていれば止める）
+	probe := []fidelityOf{{Value: 0.5, Known: true}}
+	sizes := []int{32}
+	for _, k := range knobs {
+		for _, p := range k.At {
+			if k.By == "fidelity" {
+				probe = append(probe, fidelityOf{Value: p[0], Known: true})
+			} else {
+				sizes = append(sizes, int(p[0]))
+			}
+		}
+	}
+	var base *pxRules
+	for _, f := range probe {
+		for _, sz := range sizes {
+			at := r.at(f, sz)
+			if len(knobs) == 0 {
+				at = &pxRules{}
+				if err := json.Unmarshal(data, at); err != nil {
+					return nil, fmt.Errorf("%s が JSON として壊れている: %v", path, err)
+				}
+			}
+			if err := validRules(at, path); err != nil {
+				return nil, err
+			}
+			if base == nil {
+				base = at
+			}
+		}
+	}
+	// 平たい値は fidelity 0.5・32px の物（折れ線が無ければ px.json の数そのまま）
+	out := *base
+	out.knobs, out.raw, out.cache, out.ranges = knobs, raw, map[string]*pxRules{}, ranges
+	return &out, nil
+}
+
+// validRules は閾値の下限を見る（消しただけで検査が黙って緩まないように、欄が無ければ止める）。
+func validRules(r *pxRules, path string) error {
 	if r.FlatRunRepeat < 2 || r.FlatRunStraight < 1 || r.FlatRunPer < 1 || r.GroundContrastMin <= 0 {
-		return nil, fmt.Errorf("%s に flatRunRepeat・flatRunStraight・flatRunPer・groundContrastMin を書く", path)
+		return fmt.Errorf("%s に flatRunRepeat・flatRunStraight・flatRunPer・groundContrastMin を書く", path)
 	}
 	if r.RampMinGap <= 0 || r.PillowEdgeGap <= 0 || r.PillowSideGap <= 0 || r.PillowMinArea < 1 || r.LightDirMinArea < 1 ||
 		r.BlackOutlineMax < 1 || r.ValueSepMin <= 0 || r.SeamRatio <= 0 || r.BandingRingMin <= 0 {
-		return nil, fmt.Errorf("%s に rampMinGap・pillowEdgeGap・pillowSideGap・pillowMinArea・lightDirMinArea・blackOutlineMaxSize・valueSepMin・seamRatio・bandingRingMin を書く", path)
+		return fmt.Errorf("%s に rampMinGap・pillowEdgeGap・pillowSideGap・pillowMinArea・lightDirMinArea・blackOutlineMaxSize・valueSepMin・seamRatio・bandingRingMin を書く", path)
 	}
 	if r.HighlightMaxShare <= 0 || r.GroundBrightL <= 0 || r.GroundBrightChromaMax <= 0 || r.RampGrayChroma <= 0 || r.RampHueMaxStep <= 0 ||
 		r.RampHueMinTotal <= 0 || r.RampBrightV <= 0 || r.RampBrightSMax <= 0 || r.ValueBlobsMinShare <= 0 || r.ValueBlobsMin < 1 ||
 		r.ValueBlobsMax < r.ValueBlobsMin || r.ValueBlobsCoverMin <= 0 || r.TileVariantEdge < 1 {
-		return nil, fmt.Errorf("%s に技法帳の検査の閾値（highlightMaxShare・groundBrightL・groundBrightChromaMax・rampGrayChroma・rampHueMaxStep・rampHueMinTotal・rampBrightV・rampBrightSMax・valueBlobsMinShare・valueBlobsMin・valueBlobsMax・valueBlobsCoverMin・tileVariantEdge）を書く", path)
+		return fmt.Errorf("%s に技法帳の検査の閾値（highlightMaxShare・groundBrightL・groundBrightChromaMax・rampGrayChroma・rampHueMaxStep・rampHueMinTotal・rampBrightV・rampBrightSMax・valueBlobsMinShare・valueBlobsMin・valueBlobsMax・valueBlobsCoverMin・tileVariantEdge）を書く", path)
 	}
-	return &r, nil
+	if r.GlowCoreMaxShare <= 0 || r.EmissiveMinGap <= 0 || r.MaterialMinPx < 1 || r.ExemptPerFrameMax < 1 {
+		return fmt.Errorf("%s に宣言の検査の閾値（glowCoreMaxShare・emissiveMinGap・materialMinPx・exemptPerFrameMax）を書く", path)
+	}
+	return nil
 }
 
 func init() {

@@ -62,6 +62,34 @@
             "type": "string",
             "label": "引く色の名前",
             "description": "正規表現（例 ^pear）。省くと全部"
+          },
+          "fidelity": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "label": "塗りの細かさ",
+            "description": "0 = low-bit（ファミコンの塗り）〜 1 = hi-bit（格子に乗った細かい塗り）。軸で動く検査の範囲と閾値の折れ線を決める（checkset-design §9）"
+          },
+          "rampSteps": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 2
+            },
+            "minItems": 1,
+            "maxItems": 2,
+            "label": "1 素材の段の数",
+            "description": "[最小, 最大]（例 [3, 4]）"
+          },
+          "dither": {
+            "type": "string",
+            "enum": [
+              "none",
+              "accent",
+              "primary"
+            ],
+            "label": "ディザ",
+            "description": "none・accent（境目だけ）・primary（面の中の主な手）"
           }
         }
       }
@@ -108,6 +136,13 @@
             "type": "string",
             "label": "理由",
             "description": "free にした理由"
+          },
+          "fidelity": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "label": "塗りの細かさ",
+            "description": "free の冊の 0（low-bit）〜 1（hi-bit）。free には書く（省くと px.decl.fidelity-unknown）"
           },
           "allow": {
             "type": "array",

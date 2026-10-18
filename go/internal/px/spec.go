@@ -44,8 +44,9 @@ type specDoc struct {
 	Path                                     string
 	Version                                  int
 	Title, Note, Target, Base, Palette, Gate string
-	Indent                                   string // 書き出す字下げ（"" は base の字面に合わせる）
-	Style                                    string // 機種の決まり（px.json の styles の名前か *.pxstyle.json）
+	Indent                                   string     // 書き出す字下げ（"" は base の字面に合わせる）
+	Style                                    string     // 機種の決まり（px.json の styles の名前か *.pxstyle.json）
+	Kind                                     spriteKind // sprite の kind の既定（sprite の "kind" が上書き）
 	Light                                    lightSpec
 	Ramps                                    map[string][]pxlib.Key
 	Shapes                                   map[string]any
@@ -63,9 +64,13 @@ type spriteSpec struct {
 	RawParts []*pxlib.Obj // コマの patch を当てる前の部品（鍵の順を保つ）
 	Post     []opCall
 	Frames   []frameSpec
-	Seeds    []int // variants.seeds（無ければ nil = 変種なし）
-	Anim     *bool // anim の検査を回すか（省くと動きの op・pose・rotate があれば回す）
-	animated bool  // 動きの op・pose・rotate を使っている
+	Seeds    []int      // variants.seeds（無ければ nil = 変種なし）
+	Anim     *bool      // anim の検査を回すか（省くと動きの op・pose・rotate があれば回す）
+	Kind     spriteKind // 絵の種類（spec の既定か sprite の "kind"。"" は宣言なし = 推す）
+	KindWhy  string     // 推した kind と違う kind を宣言した理由（"kind_why"・8 字以上）
+	Roles    map[string]string
+	posed    bool // pose のコマがある
+	animated bool // 動きの op・pose・rotate を使っている
 }
 
 // frameSpec は 1 コマ: 部品 id → Merge Patch。
@@ -141,9 +146,9 @@ func (l problemList) Error() string {
 }
 
 var (
-	specKeys   = []string{"version", "title", "note", "target", "base", "palette", "gate", "indent", "style", "light", "ramps", "shapes", "macros", "sprites"}
+	specKeys   = []string{"version", "title", "note", "target", "base", "palette", "gate", "indent", "style", "kind", "light", "ramps", "shapes", "macros", "sprites"}
 	lightKeys  = []string{"dir", "gloss", "ground", "note"}
-	spriteKeys = []string{"note", "size", "anchor", "ramp", "parts", "post", "frames", "variants", "roles", "anim"}
+	spriteKeys = []string{"note", "kind", "kind_why", "size", "anchor", "ramp", "parts", "post", "frames", "variants", "roles", "anim"}
 	partKeys   = []string{"id", "on", "clip", "shape", "ramp", "at", "ops", "note", "material", "rotate", "pivot", "emissive", "scroll"}
 	idPattern  = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]*$`)
 )
@@ -259,6 +264,12 @@ func parseSpec(r *reader, root *pxlib.Obj) *specDoc {
 	s.Title, s.Note = r.str(root, "title", ""), r.str(root, "note", "")
 	s.Target, s.Base = r.str(root, "target", ""), r.str(root, "base", "")
 	s.Palette, s.Gate = r.str(root, "palette", ""), r.str(root, "gate", "")
+	if k := r.str(root, "kind", ""); k != "" {
+		s.Kind = spriteKind(k)
+		if _, ok := lookupKind(s.Kind); !ok {
+			r.bad("kind", "知らない kind %q（%s。定義は bin/fge px kinds）", k, kindNames())
+		}
+	}
 	if iv, ok := root.Get("indent"); ok {
 		s.Indent = indentOf(r, iv)
 	}
@@ -361,7 +372,19 @@ func parseSprite(r *reader, s *specDoc, name string, v any) *spriteSpec {
 		return nil
 	}
 	r.keys(o, where, spriteKeys)
-	sp := &spriteSpec{Name: name, Note: r.str(o, "note", where), Ramp: r.str(o, "ramp", where)}
+	sp := &spriteSpec{Name: name, Note: r.str(o, "note", where), Ramp: r.str(o, "ramp", where), Kind: s.Kind}
+	if k := r.str(o, "kind", where); k != "" {
+		sp.Kind = spriteKind(k)
+		if _, ok := lookupKind(sp.Kind); !ok {
+			r.bad(where+".kind", "知らない kind %q（%s。定義は bin/fge px kinds）", k, kindNames())
+		}
+	}
+	if w := r.str(o, "kind_why", where); w != "" {
+		if len([]rune(w)) < 8 {
+			r.bad(where+".kind_why", "推した kind と違う kind を宣言した理由を 8 字以上で書く")
+		}
+		sp.KindWhy = w
+	}
 	if sz, ok := o.Get("size"); ok {
 		if p := r.ints(sz, 2, where+".size"); p != nil {
 			if p[0] < 1 || p[1] < 1 || p[0] > maxGrid || p[1] > maxGrid {
@@ -481,7 +504,7 @@ func parseSprite(r *reader, s *specDoc, name string, v any) *spriteSpec {
 		}
 		if patch.Has("pose") {
 			patch = poseToPatch(r, fw, patch, roles, ids, rawAt(sp.RawParts), rawOn(sp.RawParts))
-			sp.animated = true
+			sp.animated, sp.posed = true, true
 			if patch == nil {
 				continue
 			}
@@ -496,6 +519,9 @@ func parseSprite(r *reader, s *specDoc, name string, v any) *spriteSpec {
 	// 各コマで部品が読めるかを先に確かめる（描く前に書き損じを全部出す）
 	for _, f := range sp.Frames {
 		sp.partsOf(r, s, f)
+	}
+	if _, has := o.Get("roles"); has {
+		sp.Roles = roles
 	}
 	return sp
 }

@@ -12,6 +12,14 @@ near の帯は bin/lint-rules/checkfmt.json の near（code ごと。無けれ�
 | `px.anim.loop` | lint | swap_share | ratio | <= | anim.json maxPopShare | 最後 → 最初のコマで入れ替わる割合（輪が閉じない） |
 | `px.anim.pop` | lint | swap_share | ratio | <= | anim.json maxPopShare | 隣のコマでシルエットが入れ替わる割合 |
 | `px.black-outline` | advice | edge_colors | count | >= | px.json blackOutlineMaxSize | 小さい絵の外の縁が 1 色の最暗のまま一周 |
+| `px.decl.fidelity-over` | advice | machine_fidelity | fidelity | <= | checkset-design §9.2 | 機種の fidelity が門の画風より細かい（門の画風から外れる） |
+| `px.decl.fidelity-unknown` | advice | fidelity_known | bool | == | checkset-design §9.2 | 塗りの細かさ fidelity が門にも機種にも無い |
+| `px.decl.kind-mismatch` | advice | kind_agrees | bool | == | checkset-design §2 | 宣言した kind と推した kind が違う（kind_why で理由を書けば出ない） |
+| `px.decl.kind-missing` | advice | kind_declared | bool | == | checkset-design §2 | sprite に kind が無い（推した kind で回した・fix は set kind） |
+| `px.decl.kind-unknown` | advice | kind_inferred | bool | == | checkset-design §2 | kind を推せない（prop で回した） |
+| `px.decl.lint-sprite-unknown` | advice | rule_known | bool | == | checkset-design §4 | lint-sprite の対象外に知らない規則名（効いていない） |
+| `px.decl.material-missing` | advice | material_declared | bool | == | px.json materialMinPx | character・prop・background の大きな部品に material が無い（無い物は none） |
+| `px.exempt-overuse` | advice | exempt_px_per_frame | px | <= | px.json exemptPerFrameMax | op の Exempt で外した画素のコマあたりの数 |
 | `px.flat-run.poly` | advice | run_kinds | count | <= |  | poly の辺の段の長さが 3 種類以上に散る |
 | `px.flat-run.repeat` | advice | same_runs | count | <= | px.json flatRunRepeat | 同じ長さの段が続く（直線に読まれる） |
 | `px.flat-run.straight` | advice | run_px | px | <= | px.json flatRunStraight・flatRunPer | 曲線の中の長すぎる直線 |
@@ -22,6 +30,8 @@ near の帯は bin/lint-rules/checkfmt.json の near（code ごと。無けれ�
 | `px.gate.no-entry` | gate | bad_colors | count | <= | <名前>.colorgate.json | 色の門: files に無い冊 |
 | `px.gate.outside` | gate | bad_colors | count | <= | <名前>.colorgate.json | 色の門: 画風の色の外 |
 | `px.gate.unreadable` | gate | bad_colors | count | <= | <名前>.colorgate.json | 色の門: 読めない冊 |
+| `px.glow.core` | advice | core_share | ratio | <= | px.json glowCoreMaxShare（依頼主の決定 案 C） | emissive の部品の芯（最明色）がコマに占める割合 |
+| `px.glow.dim` | advice | emissive_minus_rest_L | L | >= | px.json emissiveMinGap | emissive の部品の平均の明るさ − まわりの平均（光らない物の emissive） |
 | `px.ground-contrast` | lint | edge_ground_dL | L | >= | px.json groundContrastMin | 外周と地の色の明るさ（Oklab の L）の差の平均 |
 | `px.ground-contrast.chroma` | advice | bright_ground_chroma | C | <= | px.json groundBrightL・groundBrightChromaMax | 明るい地（L ≥ groundBrightL）の彩度（Oklch の C） |
 | `px.ground-contrast.highlight` | advice | highlight_minus_ground_L | L | >= | value-structure §4 | 地が絵の最明色より暗い（絵の最明色の L − 地の L） |
