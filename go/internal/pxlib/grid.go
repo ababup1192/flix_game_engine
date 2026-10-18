@@ -161,6 +161,26 @@ func (g *Grid) Flip(vertical bool) {
 	}
 }
 
+// Wrap は格子全体を (dx, dy) だけ回してずらす（右・下が正。はみ出した所は反対の端から入る。タイルの 50% ずらし）。
+func (g *Grid) Wrap(dx, dy int) {
+	if g.W == 0 || g.H == 0 {
+		return
+	}
+	px := make([][]Key, g.H)
+	src := make([][]OpRef, g.H)
+	for y := 0; y < g.H; y++ {
+		px[y] = make([]Key, g.W)
+		src[y] = make([]OpRef, g.W)
+	}
+	for y := 0; y < g.H; y++ {
+		for x := 0; x < g.W; x++ {
+			nx, ny := ((x+dx)%g.W+g.W)%g.W, ((y+dy)%g.H+g.H)%g.H
+			px[ny][nx], src[ny][nx] = g.px[y][x], g.src[y][x]
+		}
+	}
+	g.px, g.src = px, src
+}
+
 // UnknownKeyError は legend に文字の無い色キー。
 type UnknownKeyError struct{ Key Key }
 

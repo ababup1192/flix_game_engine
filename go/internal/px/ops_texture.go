@@ -262,15 +262,36 @@ func init() {
 
 // courses は互い違いの格子の目地の画素: 段の高さ h ごとに横の目地、段ごとに offset×w ずらした幅 w ごとに縦の目地
 // （origin が目地の通る列と行。vertical が false なら横の目地だけ）。
-func courses(m pxlib.Mask, w, h int, origin pxlib.Pt, offset float64, vertical bool) []pxlib.Pt {
+func courses(m pxlib.Mask, w, h int, origin pxlib.Pt, offset float64, vertical bool, widths ...int) []pxlib.Pt {
 	floorMod := func(a, n int) int { return ((a % n) + n) % n }
 	shift := int(math.Round(float64(w) * offset))
+	// widths（大きさのばらつき）: 段ごとに並びを 1 つずつ回して、縦の目地の位置を持つ（1 周の長さ = widths の和）
+	var period int
+	jointAt := map[int]map[int]bool{}
+	for _, v := range widths {
+		period += v
+	}
+	rowJoints := func(row int) map[int]bool {
+		if j, ok := jointAt[row]; ok {
+			return j
+		}
+		j := map[int]bool{}
+		x, n := 0, len(widths)
+		for i := 0; i < n; i++ {
+			j[x] = true
+			x += widths[floorMod(i+row, n)]
+		}
+		jointAt[row] = j
+		return j
+	}
 	var out []pxlib.Pt
 	for _, p := range m.Points() {
 		dy := p.Y - origin.Y
 		row := (dy - floorMod(dy, h)) / h
 		joint := floorMod(dy, h) == 0
-		if !joint && vertical {
+		if !joint && vertical && period > 0 {
+			joint = rowJoints(row)[floorMod(p.X-origin.X, period)]
+		} else if !joint && vertical {
 			joint = floorMod(p.X-origin.X-floorMod(row, 2)*shift, w) == 0
 		}
 		if joint {
@@ -291,6 +312,7 @@ func init() {
 			{Name: "size", Type: tPair, Default: []any{8.0, 4.0}, Summary: "1 個の大きさ [幅, 段の高さ]（目地の 1px を含む。2 以上の整数）"},
 			{Name: "origin", Type: tPoint, Default: []any{0.0, 0.0}, Summary: "横の目地が通る行・1 段目の縦の目地が通る列 [x, y]（部品の at でずれる）"},
 			{Name: "offset", Type: tNumber, Default: 0.5, Summary: "1 段ごとの縦の目地のずらし（幅に対する割合。0 で揃う・0.5 で半分）", Lo: bound(0), Hi: bound(1)},
+			{Name: "widths", Type: tNums, Len: -1, Min: 2, Max: 16, Summary: "1 個の幅の並び（目地の 1px を含む。例 16px のタイルなら [16, 8, 4, 8] = 中身 15・7・3・7）。段ごとに 1 つずつ回してばらつかせる（書くと size の幅と offset を使わない）"},
 			{Name: "vertical", Type: tBool, Default: true, Summary: "縦の目地も引く（false で横の目地だけ = 板張り・瓦の段）"},
 			{Name: "color", Type: tColor, Summary: "目地の色（省くと下の色を by 段ずらす）"},
 			{Name: "by", Type: tInt, Default: -1.0, Summary: "color を省いた時に下の色をランプでずらす段数（負で暗く）", Lo: bound(-4), Hi: bound(4)},
@@ -321,7 +343,14 @@ func init() {
 			}
 			o := a.point("origin")
 			ramps := c.allRamps()
-			for _, p := range courses(m, w, h, pxlib.Pt{X: o.X + c.ox, Y: o.Y + c.oy}, a.num("offset"), a.bool("vertical")) {
+			var widths []int
+			for _, v := range nums(a.get("widths")) {
+				if v < 2 || v != math.Trunc(v) {
+					return fmt.Errorf("widths は 2 以上の整数の並び（got %v）", v)
+				}
+				widths = append(widths, int(v))
+			}
+			for _, p := range courses(m, w, h, pxlib.Pt{X: o.X + c.ox, Y: o.Y + c.oy}, a.num("offset"), a.bool("vertical"), widths...) {
 				k := fixed
 				if !hasColor {
 					cur := c.G.At(p.X, p.Y)

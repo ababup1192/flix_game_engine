@@ -96,6 +96,7 @@ func (st *starState) pxModule() *starlarkstruct.Module {
 		"canvas":      starlark.NewBuiltin("px.canvas", starNewCanvas),
 		"band":        starlark.NewBuiltin("px.band", starBand),
 		"shape_light": starlark.NewBuiltin("px.shape_light", starShapeLight),
+		"ramp":        starlark.NewBuiltin("px.ramp", starRamp),
 	}}
 }
 
@@ -868,6 +869,7 @@ func starMarkdown() string {
 | ‵px.canvas(w, h, ramps=RAMPS)‵ | 画素の格子（原理は入れない）: ‵.put(x, y, "iron", 2)‵ で段・‵.put(x, y, "色キー")‵・‵.get(x, y)‵・‵.shift(x, y, by)‵（同じランプの中で段をずらす・端で止める）・‵.each()‵・‵.to_op(at=[0, 0])‵（op ‵pixels‵ 1 つへ書き出す）。帯・段の役・照り返しを台本で組む時に、格子を自前で持たない |
 | ‵px.band(kind, …, width=4, count=3)‵ | 位置ごとの帯の番号（0〜count−1）を返す関数: ‵"linear"‵ は ‵origin=[x, y], dir=[dx, dy]‵ の向きへ width ごとに 1 つ上がる・‵"radial"‵ は ‵center=[x, y]‵ から width ごとに 1 つ下がる。明るさの構造（帯を先に置き、役の段に帯の番号を足す）の材料 |
 | ‵px.shape_light(shapes, field, light=[-1, -1])‵ | 形（‵[x, y, w, h]‵ の列）ごとに ‵{"band", "edge", "edge_band"}‵: 中心での帯の番号・光の側の縁の画素・縁の 1 つ外での番号（「形 1 個ずつ上げ、境の縁だけ次の段」の材料） |
+| ‵px.ramp(base, n=5, hue_step=12, dark=0.25, light=0.95)‵ | 基準の色から段の列（‵"#rrggbb"‵ の暗 → 明）を作る。明るい側を黄の向きへ同じ向きに回し・明るさ（Oklab の L）は上に凸・彩度は真ん中が高い山（既定は検査 ramp-order・ramp-hue・ramp-chroma を満たす）。‵px.palette‵ の色に渡す |
 | ‵math.*‵ | sin・cos・tan・atan2・hypot・exp・log・pow・sqrt・floor・ceil・radians・pi。答えは正しく丸めた値で、OS・CPU で変わらない |
 
 最小の台本（version・target・palette・ramps・sprites・parts・frames）:

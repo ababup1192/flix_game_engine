@@ -1156,6 +1156,15 @@
                   "maximum": 1,
                   "default": 0.5
                 },
+                "widths": {
+                  "description": "1 個の幅の並び（目地の 1px を含む。例 16px のタイルなら [16, 8, 4, 8] = 中身 15・7・3・7）。段ごとに 1 つずつ回してばらつかせる（書くと size の幅と offset を使わない）",
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 2,
+                  "maxItems": 16
+                },
                 "vertical": {
                   "description": "縦の目地も引く（false で横の目地だけ = 板張り・瓦の段）",
                   "type": "boolean",
@@ -1793,6 +1802,47 @@
         },
         {
           "type": "object",
+          "description": "部品の塊を 45° の縞（width px ごとに a と b）で塗る（危ない所の黄黒の縞）",
+          "additionalProperties": false,
+          "required": [
+            "hazard_stripes"
+          ],
+          "properties": {
+            "hazard_stripes": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "shape": {
+                  "description": "形（省くと部品の塊）",
+                  "$ref": "#/definitions/shape"
+                },
+                "a": {
+                  "description": "縞の 1 色目",
+                  "$ref": "#/definitions/color",
+                  "default": "light"
+                },
+                "b": {
+                  "description": "縞の 2 色目",
+                  "$ref": "#/definitions/color",
+                  "default": "ink"
+                },
+                "width": {
+                  "description": "縞の幅（px）",
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 8,
+                  "default": 2
+                },
+                "flip": {
+                  "description": "縞の向きを反対（／ と ＼）に",
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
           "description": "部品の塊の塗ってある画素を、中心から光の向き（light.dir）へどれだけ寄っているかで lit・base・dark の 3 段に塗り分ける",
           "additionalProperties": false,
           "required": [
@@ -1970,6 +2020,63 @@
         },
         {
           "type": "object",
+          "description": "部品の塊を step ごとの 1px の継ぎ目で区切り、区切った面の四隅の内側に screw のネジを打つ（線の色は下の色を by 段ずらす）",
+          "additionalProperties": false,
+          "required": [
+            "panel_seams"
+          ],
+          "properties": {
+            "panel_seams": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "shape": {
+                  "description": "形（省くと部品の塊）",
+                  "$ref": "#/definitions/shape"
+                },
+                "step": {
+                  "description": "継ぎ目の間隔 [横, 縦]（2 以上の整数）",
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "default": [
+                    8,
+                    8
+                  ]
+                },
+                "origin": {
+                  "description": "継ぎ目が通る列と行 [x, y]",
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "default": [
+                    0,
+                    0
+                  ]
+                },
+                "by": {
+                  "description": "継ぎ目の色: 下の色をランプでずらす段数",
+                  "type": "integer",
+                  "minimum": -4,
+                  "maximum": 4,
+                  "default": -1
+                },
+                "screw": {
+                  "description": "ネジの色（省くとネジを打たない）",
+                  "$ref": "#/definitions/color"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
           "description": "寄せ木: center から ramps の数に等分した扇ごとに、ランプ from の色をその扇のランプで塗り直す（from の墨は墨へ、ほかの段は斜めの帯で光・地・影へ。clip の部品なら親の塊の中だけ）",
           "additionalProperties": false,
           "required": [
@@ -2102,6 +2209,41 @@
                 "cells",
                 "color"
               ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "部品の外形（外が透明か、against:any でほかの部品）の光の側（light.dir）の 1px を color で塗る。縁の光の置き場だけを決める",
+          "additionalProperties": false,
+          "required": [
+            "rim_light"
+          ],
+          "properties": {
+            "rim_light": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "color": {
+                  "description": "縁の光の色",
+                  "$ref": "#/definitions/color",
+                  "default": "light"
+                },
+                "side": {
+                  "description": "光の来る向き [x, y]（省くと light.dir）",
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2
+                },
+                "against": {
+                  "description": "どの縁に当てるか: clear（絵の外形 = 外が透明な所だけ）・any（ほかの部品との境目にも）",
+                  "type": "string",
+                  "default": "clear"
+                }
+              }
             }
           }
         },
@@ -2676,6 +2818,31 @@
               "type": "object",
               "additionalProperties": false,
               "properties": {}
+            }
+          }
+        },
+        {
+          "type": "object",
+          "description": "格子全体をタイルとして回してずらす（既定は縦横 50%）。post の前にずらして継ぎ目を中央に出し、そこを描き直してから、もう一度ずらして戻す",
+          "additionalProperties": false,
+          "required": [
+            "tile_wrap_offset"
+          ],
+          "properties": {
+            "tile_wrap_offset": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "by": {
+                  "description": "ずらす量 [dx, dy]（省くと [幅/2, 高さ/2]）",
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2
+                }
+              }
             }
           }
         },

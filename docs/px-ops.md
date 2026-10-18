@@ -53,14 +53,17 @@
 | 白抜きの記号（駒の印） | `glyph` | 白抜きの記号: 形をつやの色で塗り、右下へ墨の影を 1px | — |
 | 白抜きの記号（小さなカード・効果のアイコン） | `glyph_rows` | 文字の格子の白抜きの記号: '.' と空白でない字の画素を color で、その右下 1px に shadow の影（影を先に置く） | — |
 | 陰影（光源は 1 つ・平らな面は 1 色）・ディザ（タイルパターン） | `gradient_fill` | 塊を明るさの場（光の向き・x・y・radial）でランプの段に塗る。段の境目は Bayer で混ぜ、band で混ぜる幅を選ぶ | lint pillow・light-dir・banding |
+| 危ない所は 45° の黄黒の縞 | `hazard_stripes` | 部品の塊を 45° の縞（width px ごとに a と b）で塗る（危ない所の黄黒の縞） | lint flat-run |
 | 光の側を明るく・影の側を暗く（縁の線の明暗） | `light_bands` | 部品の塊の塗ってある画素を、中心から光の向き（light.dir）へどれだけ寄っているかで lit・base・dark の 3 段に塗り分ける | light-dir（段 3） |
 | 1px の線 | `line` | 折れ線を 1px で引く（clip の部品なら親の塊の中だけ） | 既存の lint corner（角が 2 重の画素） |
 | 左右対称に描く（片側を描いて写す） | `mirror` | 今の部品が描いた画素のうち side の側を、軸で左右に写す（左右対称の顔・道具・建物） | — |
 | 輪郭（1 色の外側 1px） | `outline` | 部品の塊の外側 1px を 1 色で縁取る（sel_out の前身） | lint black-outline（部品ごとの色にするなら sel_out） |
 | アニメ（パレットの回転。光のきらめき） | `palette_cycle` | 塊の中で colors の段をコマごとに step ずつ回す（光のきらめきの補助。水の流れは wave_shift の方が見比べで勝った） | anim（pop） |
+| 点検の継ぎ目で面を区切り四隅にネジ（同じ模様を繰り返す） | `panel_seams` | 部品の塊を step ごとの 1px の継ぎ目で区切り、区切った面の四隅の内側に screw のネジを打つ（線の色は下の色を by 段ずらす） | lint banding |
 | 寄せ木（かけらごとに別の系統の色） | `parquet` | 寄せ木: center から ramps の数に等分した扇ごとに、ランプ from の色をその扇のランプで塗り直す（from の墨は墨へ、ほかの段は斜めの帯で光・地・影へ。clip の部品なら親の塊の中だけ） | — |
 | 原理を台本で組んだ画素の格子をそのまま置く（stamp の大きさの目安を当てない） | `pixels` | 台本の格子（px.canvas の to_op）を書き出す: 文字の行と、文字 → 色の名前（'.' と colors に無い字は置かない） | — |
 | 1px を手で打つ（目・つや・星） | `put` | 画素を直に置く | 既存の lint orphan |
+| 縁の光（リム）は光源の側の外周 1px だけ・明るい側の背景は暗く | `rim_light` | 部品の外形（外が透明か、against:any でほかの部品）の光の側（light.dir）の 1px を color で塗る。縁の光の置き場だけを決める | advice light-dir |
 | 円の線（Aseprite の Ellipse の線） | `ring` | 1px の円を引く（ブレゼンハムの円。角の 2 重が出ず、どこでも 1 画素の太さ） | 既存の lint corner |
 | 同じ記号を一回り小さく重ねる | `scaled` | macros の op の列を別の格子に描き、about を中心に scale 倍へ縮め（広げ）て、塗った画素だけ重ねる（近い画素を引く） | — |
 | 質感（岩・レンガ・草）・塊と孤立 1px・草のタイル（Aseprite の Tiled Mode） | `scatter_clusters` | 塊の中に 2〜3px の小さな塊を散らして打つ（辺で接しない・1px の単発は出ない。wrap でタイルの端を回す） | 既存の lint orphan・2×2 に並べて見る（tile_preview） |
@@ -72,6 +75,7 @@
 | 字（メニュー・ステータスの表・HUD の数） | `table` | 字の表: rows の升を列 cols（at からの横の位置）にそろえ、行を line ずつ下げて text と同じ字形で置く（升は文字列か [文字列, 色]。align の 1 字が列のそろえ: l は左端・r は右端（送りを含む）・c は真ん中を cols の位置に） | — |
 | 字（町の名前のラベル・看板・HUD） | `text` | 文字列を字形の組（font: 5x7・bold6x8）で並べて 1 色で置く（英大文字・数字・. , ! ? - + : ' / x * %。小文字は大文字で引く。shadow を書くと字ごとに右下 1px の影を先に置く）。階調や縁を付ける字は形 text を部品の shape にして gradient_fill・outline | — |
 | 草のタイル（Aseprite の Tiled Mode。並べて継ぎ目を見る） | `tile_preview` | このスプライトをタイルとして扱う: 3×3 に並べた見本（<名前>.tile.png）を書き、端の継ぎ目を検査する（描かない） | lint seam |
+| 四辺で繋がる元タイル（粗く描く → 50% ずらす → 中央の継ぎ目を直す → もう一度ずらして確かめる） | `tile_wrap_offset` | 格子全体をタイルとして回してずらす（既定は縦横 50%）。post の前にずらして継ぎ目を中央に出し、そこを描き直してから、もう一度ずらして戻す | lint seam |
 | 同じ部品を何か所にも置く・コマで体を上下させる | `use` | macros の op の列を、今の部品の中で順に当てる（at でずらせる） | — |
 | アニメ（水の波頭を 1px ずつずらす。見比べで palette_cycle に勝った） | `wave_shift` | 塊の外形は動かさず、中の模様（波頭・流れ）を行ごとにコマごとに speed px 横へ回す。水・滝・流れる雲の既定 | anim（pop・loop）。輪が閉じるようにコマの数 × speed を塊の幅に合わせる |
 
@@ -126,6 +130,7 @@
 | `px.canvas(w, h, ramps=RAMPS)` | 画素の格子（原理は入れない）: `.put(x, y, "iron", 2)` で段・`.put(x, y, "色キー")`・`.get(x, y)`・`.shift(x, y, by)`（同じランプの中で段をずらす・端で止める）・`.each()`・`.to_op(at=[0, 0])`（op `pixels` 1 つへ書き出す）。帯・段の役・照り返しを台本で組む時に、格子を自前で持たない |
 | `px.band(kind, …, width=4, count=3)` | 位置ごとの帯の番号（0〜count−1）を返す関数: `"linear"` は `origin=[x, y], dir=[dx, dy]` の向きへ width ごとに 1 つ上がる・`"radial"` は `center=[x, y]` から width ごとに 1 つ下がる。明るさの構造（帯を先に置き、役の段に帯の番号を足す）の材料 |
 | `px.shape_light(shapes, field, light=[-1, -1])` | 形（`[x, y, w, h]` の列）ごとに `{"band", "edge", "edge_band"}`: 中心での帯の番号・光の側の縁の画素・縁の 1 つ外での番号（「形 1 個ずつ上げ、境の縁だけ次の段」の材料） |
+| `px.ramp(base, n=5, hue_step=12, dark=0.25, light=0.95)` | 基準の色から段の列（`"#rrggbb"` の暗 → 明）を作る。明るい側を黄の向きへ同じ向きに回し・明るさ（Oklab の L）は上に凸・彩度は真ん中が高い山（既定は検査 ramp-order・ramp-hue・ramp-chroma を満たす）。`px.palette` の色に渡す |
 | `math.*` | sin・cos・tan・atan2・hypot・exp・log・pow・sqrt・floor・ceil・radians・pi。答えは正しく丸めた値で、OS・CPU で変わらない |
 
 最小の台本（version・target・palette・ramps・sprites・parts・frames）:
@@ -269,6 +274,7 @@ px.write_spec("lamp.pxsrc.json", {
 | `size` | pair | 1 個の大きさ [幅, 段の高さ]（目地の 1px を含む。2 以上の整数）（省くと [8,4]） |
 | `origin` | point | 横の目地が通る行・1 段目の縦の目地が通る列 [x, y]（部品の at でずれる）（省くと [0,0]） |
 | `offset` | number | 1 段ごとの縦の目地のずらし（幅に対する割合。0 で揃う・0.5 で半分）（0〜1）（省くと 0.5） |
+| `widths` | numbers | 1 個の幅の並び（目地の 1px を含む。例 16px のタイルなら [16, 8, 4, 8] = 中身 15・7・3・7）。段ごとに 1 つずつ回してばらつかせる（書くと size の幅と offset を使わない） |
 | `vertical` | bool | 縦の目地も引く（false で横の目地だけ = 板張り・瓦の段）（省くと true） |
 | `color` | color | 目地の色（省くと下の色を by 段ずらす） |
 | `by` | int | color を省いた時に下の色をランプでずらす段数（負で暗く）（-4〜4）（省くと -1） |
@@ -433,6 +439,18 @@ px.write_spec("lamp.pxsrc.json", {
 | `invert` | bool | 明暗を返す（省くと false） |
 | `per` | string | 明るさの場を作る単位: part（塊全体で 1 つ）・copy（部品の scroll の写しごと。格子の外へはみ出した写しも写しの全体で 1 つの場）（省くと "part"） |
 
+### `hazard_stripes`
+
+例: `{"hazard_stripes": {"a": "light", "b": "ink", "width": 2}}`
+
+| 引数 | 型 | 説明 |
+|---|---|---|
+| `shape` | shape | 形（省くと部品の塊） |
+| `a` | color | 縞の 1 色目（省くと "light"） |
+| `b` | color | 縞の 2 色目（省くと "ink"） |
+| `width` | int | 縞の幅（px）（1〜8）（省くと 2） |
+| `flip` | bool | 縞の向きを反対（／ と ＼）に |
+
 ### `light_bands`
 
 例: `{"light_bands": {"center": [7, 7], "cut": [1, -1]}}`
@@ -483,6 +501,20 @@ px.write_spec("lamp.pxsrc.json", {
 | `colors` | rows | 回す色の並び（2 色以上）（必須） |
 | `step` | int | 1 コマで進む段数（負で逆回り）（-16〜16）（省くと 1） |
 
+### `panel_seams`
+
+例: `{"panel_seams": {"step": [8, 8]}}`
+
+部品を描き終えたら、その範囲で検査 `sprite:banding` を回す。
+
+| 引数 | 型 | 説明 |
+|---|---|---|
+| `shape` | shape | 形（省くと部品の塊） |
+| `step` | pair | 継ぎ目の間隔 [横, 縦]（2 以上の整数）（省くと [8,8]） |
+| `origin` | point | 継ぎ目が通る列と行 [x, y]（省くと [0,0]） |
+| `by` | int | 継ぎ目の色: 下の色をランプでずらす段数（-4〜4）（省くと -1） |
+| `screw` | color | ネジの色（省くとネジを打たない） |
+
 ### `parquet`
 
 例: `{"parquet": {"from": "r", "ramps": ["r", "r"]}}`
@@ -513,6 +545,18 @@ px.write_spec("lamp.pxsrc.json", {
 |---|---|---|
 | `cells` | points | 画素の座標 [[x, y], ...]（必須） |
 | `color` | color | 色（ink・shade・mid・light・ramp[i]・gloss・色キー。"" で透明へ抜く）（必須） |
+
+### `rim_light`
+
+例: `{"rim_light": {"color": "light"}}`
+
+部品を描き終えたら、その範囲で検査 `light-dir` を回す。
+
+| 引数 | 型 | 説明 |
+|---|---|---|
+| `color` | color | 縁の光の色（省くと "light"） |
+| `side` | pair | 光の来る向き [x, y]（省くと light.dir） |
+| `against` | string | どの縁に当てるか: clear（絵の外形 = 外が透明な所だけ）・any（ほかの部品との境目にも）（省くと "clear"） |
 
 ### `ring`
 
@@ -651,6 +695,18 @@ px.write_spec("lamp.pxsrc.json", {
 部品を描き終えたら、その範囲で検査 `seam` を回す。
 
 引数は無い（`{}` と書く）。
+
+### `tile_wrap_offset`
+
+例: `{"tile_wrap_offset": {}}`
+
+格子全体に描く（部品の `at`・`use` の `at` でずらせない）。
+
+部品を描き終えたら、その範囲で検査 `seam` を回す。
+
+| 引数 | 型 | 説明 |
+|---|---|---|
+| `by` | pair | ずらす量 [dx, dy]（省くと [幅/2, 高さ/2]） |
 
 ### `use`
 
