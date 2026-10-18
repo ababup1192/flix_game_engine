@@ -44,6 +44,12 @@ type daemon struct {
 	// snapshot は依存の実体の新しさ。変わったら repl を作り直す。
 	snapshot map[string]int64
 
+	// seen は repl が知っているはずのソースの (mtime, 大きさ)、seenAt はそれを撮った時刻。
+	// repl は書き換えを監視の知らせでしか取り込まないので、ここと今のソースの差が
+	// 拾われるまで :check を送らない (sources.go)。
+	seen   map[string]srcStamp
+	seenAt time.Time
+
 	// 直前に失敗した check の (出力, その時点の最新ソース mtime)。
 	// 「ソースを編集したのに同一のエラーが返る」= repl の増分コンパイルの
 	// 持ち越しを見破る材料。
@@ -195,6 +201,9 @@ func (d *daemon) launchAndWarm(env []string, heapMB int) (bool, error) {
 		inW.Close()
 		return false, err
 	}
+	// repl が起動時に読むソースを、起動の前に控える。
+	startAt := time.Now()
+	startSrc := takeSources(d.pkg)
 	cmd := exec.Command(flixBin(d.root, d.pkg), "repl")
 	cmd.Dir = d.pkg
 	cmd.Env = env
@@ -259,6 +268,14 @@ func (d *daemon) launchAndWarm(env []string, heapMB int) (bool, error) {
 	// 鮮度の基準は温め完了後に撮る。起動中の依存解決が lib/ を触るので、
 	// 先に撮ると 1 回目の照合が必ず「変わった」になってしまう。
 	d.snapshot = d.takeSnapshot()
+	// repl は起動時の読み込みが済んでから監視を始めるので、温めている間の書き換えは
+	// 知らせが来ず、ずっと取り込まれない。変わっていたらこの repl は使わない。
+	if !sameSources(takeSources(d.pkg), startSrc) {
+		d.killRepl()
+		d.log("温めている間にソースが変わった — この repl は書き換えを取り込めないので捨てる")
+		return false, fmt.Errorf("温めている間にソースが変わった")
+	}
+	d.seen, d.seenAt = startSrc, startAt
 	// 作り立ての repl の結果は持ち越しを含まないので、疑いも白紙に戻す。
 	d.hasPrevFail = false
 	return false, nil
@@ -651,6 +668,12 @@ func (d *daemon) doCheck(verb string, retried bool) (int, string) {
 		}
 	}
 	srcNewest := d.settle()
+	// repl の監視が今のソースを拾うまで待つ。追いつけなければ、常駐の答えは
+	// 古いソースの物になりうるので返さない (素の CLI で確かめ直してもらう)。
+	if !d.catchUp() {
+		d.log(fmt.Sprintf("%s: ソースが書き換わり続けて repl が追いつけない → 素の CLI へ", verb))
+		return -1, ""
+	}
 	// 前のコマンドの残り (遅れて届いたプロンプト等) を捨てる。
 	// 混ざると check の出力に無関係な欠片が載ってしまう。
 	for drained := false; !drained; {
