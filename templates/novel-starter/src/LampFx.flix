@@ -1,5 +1,5 @@
 // LampFx — 疑って灯りがひとつ消える演出の時刻表。起点は World の lampOutAt（消えた時刻）。
-// 鳴らす側（Controls.sounds）は Timeline.soundsSince、描く側は flickerOf（progressSince）で同じ表を読む。
+// 鳴らす側（Controls.sounds）は Timeline.soundsOnClock、描く側は flickerOf（progressOn）で同じ表を物語の時計で読む。
 mod LampFx {
     use fge::Timeline
     use fge::Timeline.Duration
@@ -20,6 +20,6 @@ mod LampFx {
     /// いまの炎の細り具合 0..1（灯りが消えていなければ 0）。
     pub def flickerOf(w: World.World): Float64 =
         w#lampOutAt
-            |> Option.map(at -> Timeline.progressSince(at, w#t, Beat.Flicker, timeline()))
+            |> Option.map(at -> Timeline.progressOn(w#storyClock, at, Beat.Flicker, timeline()))
             |> Option.getWithDefault(0.0)
 }

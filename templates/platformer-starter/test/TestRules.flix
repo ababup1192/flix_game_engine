@@ -2,7 +2,7 @@
 // stage.json のバランス調整でこのテストは壊れない。期待値は Doc から導く。
 mod TestRules {
 
-    use fge::{PxSpriteDoc, Vec2}
+    use fge::{Clock, Lifetime, PxSpriteDoc, Vec2}
 
     def m(): MotionDoc.Doc = MotionDoc.defaults()
 
@@ -90,9 +90,9 @@ mod TestRules {
         let w = world(flat("..P..a.."));
         let w1 = World.step(idle(), dt(), { player = stompingFrom(w) | w });
         Assert.assertEq(
-            expected = (0, rr()#stompScore, mr()#hitstopSec,
+            expected = (0, rr()#stompScore, true,
                         Physics.launchVelocity(m(), mr()#stompBounceTiles)),
-            (List.length(w1#enemies), w1#score, w1#freeze, w1#player#body#vel#y))
+            (List.length(w1#enemies), w1#score, Clock.isSlowed(w1#play), w1#player#body#vel#y))
 
     /// 1 体目の敵の真上から踏みに降りている主役。
     def stompingFrom(w: World.World): Player.State =
@@ -215,7 +215,7 @@ mod TestRules {
             :: "########" :: Nil);
         let p = List.head(Stage.rec(w#stage)#platforms)
             |> Option.getWithDefault({ cell = { x = 2, y = 3 }, wTiles = 2 });
-        let t1 = w#t + dt();
+        let t1 = World.playSeconds(w) + dt();
         let deck = World.platformPosAt(m(), p, t1);
         let riding = { body = { pos = { x = deck#x + 16.0,
                                         y = deck#y - Physics.playerSize()#y * 0.5 },
@@ -223,7 +223,7 @@ mod TestRules {
                      | w#player };
         let x0 = riding#body#pos#x;
         let w1 = World.step(idle(), dt(), { player = riding | w });
-        let delta = (World.platformPosAt(m(), p, t1)#x - World.platformPosAt(m(), p, w#t)#x);
+        let delta = (World.platformPosAt(m(), p, t1)#x - World.platformPosAt(m(), p, World.playSeconds(w))#x);
         let moved = w1#player#body#pos#x - x0;
         Assert.assertEq(expected = true,
             Float64.abs(moved - delta) < 0.75 and w1#player#body#onGround)
@@ -239,11 +239,22 @@ mod TestRules {
 
     @Test
     def testHitstopFreezesWorld(): Unit \ Assert =
-        // freeze 中は世界の時刻ごと止まる(敵も粒も進まない)。
-        let w = world(flat("..P....."));
-        let frozen = { freeze = 0.5 | stepN(3, idle(), w) };
-        let w1 = World.step(idle(), dt(), frozen);
-        Assert.assertEq(expected = (frozen#t, true), (w1#t, w1#freeze < frozen#freeze))
+        // 踏みつけのヒットストップ中は遊びの時計がほぼ止まり(敵も粒も進まない)、光は実時間で薄れる。
+        let w = world(flat("..P..a.."));
+        let stomped = World.step(idle(), dt(), { player = stompingFrom(w) | w });
+        let w1 = World.step(idle(), dt(), stomped);
+        Assert.assertEq(expected = (true, true),
+            (Clock.dtOf(w1#play) < dt() * 0.01,
+             Lifetime.progressOn(w1#wall, w1#flash) > Lifetime.progressOn(stomped#wall, stomped#flash)))
+
+    @Test
+    def testPauseStopsPlayClockOnly(): Unit \ Assert =
+        // ポーズの窓の間は遊びの時計も主役も進まず、実時間だけ進む。
+        let w = stepN(3, walkR(), world(flat("..P.....")));
+        let w1 = stepN(30, walkR(), World.togglePause(w));
+        Assert.assertEq(expected = (World.playSeconds(w), w#player#body#pos#x, true),
+            (World.playSeconds(w1), w1#player#body#pos#x,
+             Clock.since(Clock.nowOf(w#wall), Clock.nowOf(w1#wall)) > 0.4))
 
     @Test
     def testCameraLeadComesFromDoc(): Unit \ Assert =

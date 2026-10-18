@@ -5,7 +5,7 @@
 // 何度描き出しても同じ PNG が出る(スナップショットのバイト比較が成り立つ)。
 mod SceneRender {
     use fge::{
-        App, CameraRig, Color, FontAtlas, GameEngine, HeadlessFont, HeadlessRender, PxSpriteAtlas,
+        App, CameraRig, Clock, Color, FontAtlas, GameEngine, HeadlessFont, HeadlessRender, PxSpriteAtlas,
         PxSpriteDoc, Render, Vec2
     }
 
@@ -51,7 +51,7 @@ mod SceneRender {
     // 見本の絵でコインが棒に見える。floor(t*5) が偶数なら表。
     def renderTime(): Float64 = 3.2
 
-    def withT(w: World.World): World.World = { t = renderTime() | w }
+    def withT(w: World.World): World.World = { play = Clock.startAt(renderTime()) | w }
 
     pub def all(): Unit \ IO =
         discard allShots()

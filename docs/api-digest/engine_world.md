@@ -544,6 +544,41 @@
   `pub def tick(acc: Float64, dt: Float64, interval: Float64): {fired = Bool, rest = Float64}`
 - カウントダウン: 残り時間を dt 減らし、0 で下げ止める。Timer(oneShot=true) 相当。
   `pub def countdown(remaining: Float64, dt: Float64): Float64`
+- 時計 c で測った時刻。
+  `pub type alias Time[c] = Stamp[c]`
+- `pub def eq(a: Stamp[c], b: Stamp[c]): Bool`
+- `pub def compare(a: Stamp[c], b: Stamp[c]): Comparison`
+- `pub def toString(a: Stamp[c]): String`
+- at から seconds 秒あとの時刻（負なら手前）。
+  `pub def after(seconds: Float64, at: Time[c]): Time[c]`
+- まだ起きていない出来事の時刻（どの今から見ても、演出が全部終わった過去）。
+  `pub def never(): Time[c]`
+- at から now までの秒（now が先なら負）。
+  `pub def since(at: Time[c], now: Time[c]): Float64`
+- 秒へ戻す。周期の関数（Fx.derive・Sway.wave・Anim.frameAt）に渡すときだけ使う —— 時計の名前は消える。
+  `pub def secondsOf(at: Time[c]): Float64`
+- 時計 c。
+  `pub type alias Clock[c] = Ticker[c]`
+- このフレームの時計の進み方。r は止める理由（ゲームの型）。
+  `pub enum Run[r] { case Running case Scaled(Float64) case Paused(r) }`
+- 0 秒から始まる時計。
+  `pub def start(): Clock[c]`
+- seconds 秒から始まる時計（描き出し・テストで決まった瞬間を撮るとき。遊びの中では start を使う）。
+  `pub def startAt(seconds: Float64): Clock[c]`
+- 今の時刻。
+  `pub def nowOf(clock: Clock[c]): Time[c]`
+- 前のフレームの時刻（止まっていたフレームは今と同じ）。
+  `pub def prevOf(clock: Clock[c]): Time[c]`
+- このフレームに進んだ秒（止まっていれば 0・スロー中は縮む）。遊びの更新はこの秒で進める。
+  `pub def dtOf(clock: Clock[c]): Float64`
+- 1 フレーム進める（毎フレーム 1 回だけ呼ぶ —— 2 回呼ぶと prev が上書きされ、1 回目の区間の音が消える）。
+  `pub def advance(rate: Run[r], dt: Float64, clock: Clock[c]): Clock[c]`
+- 今からスロー（ヒットストップ）を掛ける。掛かっている物は置き換える。
+  `pub def withSlow(plan: TimeScale.Plan, clock: Clock[c]): Clock[c]`
+- スローを掛けてからの実秒（掛かっていなければ None）。止めている間も光る・揺れる演出が読む。
+  `pub def slowRealAgeOf(clock: Clock[c]): Option[Float64]`
+- スローが掛かっているか。
+  `pub def isSlowed(clock: Clock[c]): Bool`
 
 ## Collision — `engine_world/src/Collision.flix`
 - 衝突の形（engine の CollisionShape2D を再利用）＋ layer/mask（engine と同じ意味論）。
@@ -1045,6 +1080,16 @@
   `pub def remaining(now: Float64, l: Lifetime): Float64`
 - まだ再生中か（0 ≤ 経過 < 寿命）。
   `pub def alive(now: Float64, l: Lifetime): Bool`
+- 時計 c で測る寿命（誕生時刻は Time[c]）。
+  `pub type alias Span[c] = { startedAt = Clock.Time[c], dur = Float64 }`
+- 時計 clock の今に、長さ dur で発火する。
+  `pub def fireOn(clock: Clock.Clock[c], dur: Float64): Span[c]`
+- 進行度 0..1（progressOf と同じ）を、寿命と同じ時計の今で読む。
+  `pub def progressOn(clock: Clock.Clock[c], l: Span[c]): Float64`
+- まだ再生中か（alive と同じ）を、寿命と同じ時計の今で読む。
+  `pub def aliveOn(clock: Clock.Clock[c], l: Span[c]): Bool`
+- 残り秒（remaining と同じ）を、寿命と同じ時計の今で読む。
+  `pub def remainingOn(clock: Clock.Clock[c], l: Span[c]): Float64`
 
 ## Light — `engine_world/src/Light.flix`
 - 簡易2D光源1個の値。at=位置、radius=光の届く目安半径、color=光の色、
@@ -1911,6 +1956,10 @@
   `pub def soundsSince(at: Float64, beforeNow: Float64, afterNow: Float64, tl: Timeline[a]): List[String]`
 - 起点 at から測った時刻 now での、タグのクリップの進み 0..1（progressOf と同じ境目）。
   `pub def progressSince(at: Float64, now: Float64, tag: a, tl: Timeline[a]): Float64 with Order[a]`
+- 起点 at（時計 c の時刻）から測る待ちの無い表で、時計 clock のこのフレーム (prev, now] に鳴らす効果音。
+  `pub def soundsOnClock(clock: Clock.Clock[c], at: Clock.Time[c], tl: Timeline[a]): List[String]`
+- 起点 at から測る表の、時計 clock の今でのタグのクリップの進み 0..1（progressSince と同じ境目）。
+  `pub def progressOn(clock: Clock.Clock[c], at: Clock.Time[c], tag: a, tl: Timeline[a]): Float64 with Order[a]`
 - 長さを合わせる音（withFittedSound）を書き出すときの長さ（秒）。
   `pub def soundLengthOf(name: String, tl: Timeline[a]): Option[Float64]`
 - 場面の時計 wall と、待ちが解けた時刻の列から、時刻表の上の時刻を出す。解けていない待ちでは

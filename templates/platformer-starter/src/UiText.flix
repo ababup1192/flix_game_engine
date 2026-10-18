@@ -6,7 +6,7 @@ mod UiText {
     use fge::{DocJson, JsonCodec}
     use Util.Json.Json
 
-    pub type alias Rec = { version = Int32, clear = String, gameOver = String }
+    pub type alias Rec = { version = Int32, clear = String, gameOver = String, paused = String }
 
     /// 型検査が record を展開しないため、World が持つ形は名前付きの enum にする。
     pub enum Doc(Rec)
@@ -16,7 +16,7 @@ mod UiText {
     pub def path(): String = "assets/ui.text.json"
 
     pub def defaults(): Doc =
-        Doc.Doc({ version = 1, clear = "CLEAR!", gameOver = "GAME OVER" })
+        Doc.Doc({ version = 1, clear = "CLEAR!", gameOver = "GAME OVER", paused = "PAUSE" })
 
     pub def fromJson(text: String): Option[Doc] =
         DocJson.decodeObject(fromRoot, text)
@@ -25,7 +25,8 @@ mod UiText {
         let d = rec(defaults());
         Doc.Doc({ version  = JsonCodec.intOr("version", d#version, root),
           clear    = JsonCodec.stringOr("clear", d#clear, root),
-          gameOver = JsonCodec.stringOr("gameOver", d#gameOver, root) })
+          gameOver = JsonCodec.stringOr("gameOver", d#gameOver, root),
+          paused   = JsonCodec.stringOr("paused", d#paused, root) })
 
     pub def load(p: String): Doc \ Fs.FileRead =
         DocJson.loadOr(fromJson, defaults(), p)

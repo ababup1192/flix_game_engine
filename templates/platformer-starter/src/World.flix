@@ -2,7 +2,7 @@
 //
 // ── 毎フレームの 1 周(Main の App.game から見た地図)──
 //   入力: Controls.inputOf が Frame を Input へ写す
-//   更新: World.step — hitstop → 動く床 → 主役(Player) → バネ/コイン/旗 → 敵と弾 → 収支 → カメラ
+//   更新: World.step — 時計(遊び・実時間)→ 動く床 → 主役(Player) → バネ/コイン/旗 → 敵と弾 → 収支 → カメラ
 //   描画: View.frame(全動的・描き出し)/ View.frameLive(GPU レイヤー + 動的補完)
 //
 // 場面(phase)は 3 つだけ: play → clear(旗) → 次の面 / play → over(残機 0) → 最初から。
@@ -10,7 +10,23 @@
 // 進行の持ち物(取ったコイン・点いたチェックポイント)は集合で覚える — rows は書き換えない。
 mod World {
 
-    use fge::{CameraRig, Hit, PxSpriteAtlas, PxSpriteDoc, Rect2, Vec2}
+    use fge::{CameraRig, Clock, Hit, Lifetime, PxSpriteAtlas, PxSpriteDoc, Rect2, TimeScale, Vec2}
+
+    /// 時計の名前（中身は要らない）。Play = 遊びの時計（ポーズで止まり、踏みつけのヒットストップで遅くなる）・
+    /// Wall = 実時間（ポーズの窓の点滅・ヒットストップの光は止まった遊びの時計では進まないのでこちら）。
+    pub enum Play
+    pub enum Wall
+
+    /// 開いている窓。Pause = ポーズの窓（遊びの時計を止める）。
+    pub enum Menu with Eq {
+        case Closed
+        case Pause
+    }
+
+    /// 遊びの時計を止める理由。
+    pub enum Halt with Eq {
+        case PauseMenu
+    }
 
     pub type alias World = {
         motion = MotionDoc.Doc,
@@ -38,10 +54,12 @@ mod World {
         stomps = Int32,                  // 踏んだ敵の総数(進行の記録 — 得点から逆算させない)
         hearts = Int32,
         invuln = Float64,                // 被弾後の無敵の残り秒
-        freeze = Float64,                // hitstop の残り秒(世界の時間ごと止まる)
+        menu = Menu,
         phase = String,                  // play / clear / over
         phaseT = Float64,
-        t = Float64,
+        play = Clock.Clock[Play],
+        wall = Clock.Clock[Wall],
+        flash = Lifetime.Span[Wall],     // 踏みつけの白い光(実時間で消える)
         cam = Vec2.Vec2
     }
 
@@ -49,7 +67,7 @@ mod World {
     pub type alias Input = Player.Input
 
     /// ぱっと出て消える演出の種(land = 砂煙 / stomp = 星 / coin = 光 / spring = 風)。
-    pub type alias Fx = { kind = String, pos = Vec2.Vec2, t0 = Float64 }
+    pub type alias Fx = { kind = String, pos = Vec2.Vec2, life = Lifetime.Span[Play] }
 
     /// 演出の寿命(秒)。回収(World)と薄まり(View)が同じ長さを見るための 1 本。
     pub def fxLifeSec(): Float64 = 0.5
@@ -70,8 +88,8 @@ mod World {
           enemies = enemiesOf(stage), shots = Nil,
           got = Set.empty(), cpOn = Set.empty(), springT = Map.empty(), fx = Nil,
           checkpoint = at0,
-          score = 0, stomps = 0, hearts = RulesDoc.rec(rules)#maxHearts, invuln = 0.0, freeze = 0.0,
-          phase = "play", phaseT = 0.0, t = 0.0,
+          score = 0, stomps = 0, hearts = RulesDoc.rec(rules)#maxHearts, invuln = 0.0, menu = Menu.Closed,
+          phase = "play", phaseT = 0.0, play = Clock.start(), wall = Clock.start(), flash = noFlash(),
           cam = at0 }
 
     def stageOf(doc: StageDoc.Doc, ix: Int32): Stage.Stage =
@@ -103,7 +121,7 @@ mod World {
           player = Player.initial(at0),
           enemies = enemiesOf(stage), shots = Nil,
           got = Set.empty(), cpOn = Set.empty(), springT = Map.empty(), fx = Nil,
-          checkpoint = at0, invuln = 0.0, freeze = 0.0,
+          checkpoint = at0, invuln = 0.0,
           phase = "play", phaseT = 0.0, cam = at0 | w }
 
     // ── 地形の照会(Physics へ渡す口)──
@@ -121,7 +139,7 @@ mod World {
 
     pub def terrainOf(w: World): Physics.Terrain =
         let st = w#stage;
-        let time = w#t;
+        let time = playSeconds(w);
         let m = w#motion;
         { solid = (x, y) -> Stage.solidAt(st, x, y)
               or (Stage.blinkAt(st, x, y) and blinkOn(m, time, x, y)),
@@ -142,23 +160,47 @@ mod World {
     // ── 1 tick ──
 
     pub def step(input: Input, dt: Float64, w: World): World =
-        if (w#freeze > 0.0)
-            { freeze = Float64.max(0.0, w#freeze - dt) | w }   // hitstop: 世界ごと止まる
-        else if (w#phase != "play")
-            stepPhase(dt, w)
+        let ticked = { wall = Clock.advance(Clock.Run.Running, dt, w#wall),
+                       play = Clock.advance(runOf(w), dt, w#play) | w };
+        let gdt = Clock.dtOf(ticked#play);   // ポーズ中は 0・ヒットストップ中はほぼ 0
+        if (gdt <= 0.0) ticked
+        else if (ticked#phase != "play")
+            stepPhase(gdt, ticked)
         else {
-            let w1 = { t = w#t + dt, invuln = Float64.max(0.0, w#invuln - dt),
-                       springT = Map.map(v -> v - dt, w#springT)
+            let w1 = { invuln = Float64.max(0.0, ticked#invuln - gdt),
+                       springT = Map.map(v -> v - gdt, ticked#springT)
                            |> Map.filter(v -> v > 0.0),
-                       fx = List.filter(f -> w#t + dt - f#t0 < fxLifeSec(), w#fx) | w };
-            let w2 = stepPlayer(input, dt, w1);
-            let w3 = ridePlatforms(dt, w2);
+                       fx = List.filter(f -> Lifetime.aliveOn(ticked#play, f#life), ticked#fx) | ticked };
+            let w2 = stepPlayer(input, gdt, w1);
+            let w3 = ridePlatforms(w2);
             let w4 = touchThings(w3);
-            let w5 = stepEnemies(dt, w4);
+            let w5 = stepEnemies(gdt, w4);
             let w6 = combat(input, w5);
             let w7 = fallOut(w6);
-            stepCamera(dt, w7)
+            stepCamera(gdt, w7)
         }
+
+    /// 遊びの時計のこのフレームの進み方（止める理由はポーズの窓だけ）。
+    pub def runOf(w: World): Clock.Run[Halt] = match w#menu {
+        case Menu.Closed => Clock.Run.Running
+        case Menu.Pause  => Clock.Run.Paused(Halt.PauseMenu)
+    }
+
+    /// ポーズの窓を開く・閉じる。
+    pub def togglePause(w: World): World = match w#menu {
+        case Menu.Closed => { menu = Menu.Pause | w }
+        case Menu.Pause  => { menu = Menu.Closed | w }
+    }
+
+    /// 遊びの時計の今（秒）。動く床・消える床・飛ぶ敵の周期の式に渡す。
+    pub def playSeconds(w: World): Float64 = Clock.secondsOf(Clock.nowOf(w#play))
+
+    /// 踏みつけのヒットストップ（hitstopSec だけ止めて等速へ）。
+    def hitstopPlan(m: MotionDoc.Rec): TimeScale.Plan =
+        TimeScale.freezeThenSlow({ freeze = m#hitstopSec, freezeScale = 0.0, slow = 0.0, slowScale = 1.0, ramp = 0.0 })
+
+    /// 光っていない（ずっと昔に消えた）光。
+    def noFlash(): Lifetime.Span[Wall] = { startedAt = Clock.never(), dur = 1.0 }
 
     /// clear / over の間(みじかい間を置いて次へ)。
     def stepPhase(dt: Float64, w: World): World =
@@ -168,7 +210,7 @@ mod World {
             loadStage(w#stageIx + 1, w)
         else if (w#phase == "over" and pt >= rules#overWaitSec)
             loadStage(0, { score = 0, stomps = 0, hearts = rules#maxHearts | w })
-        else { phaseT = pt, t = w#t + dt | w }
+        else { phaseT = pt | w }
 
     def stepPlayer(input: Input, dt: Float64, w: World): World =
         let wasAir = not w#player#body#onGround;
@@ -176,22 +218,26 @@ mod World {
         let p = Player.step(terrainOf(w), w#motion, dt, input, w#player);
         // 着地の砂煙(強い落下からの接地だけ)。
         let fx = if (wasAir and p#body#onGround and fallVy > 260.0)
-            ({ kind = "land", pos = feetOf(p), t0 = w#t }: Fx) :: w#fx else w#fx;
+            fxAt(w, "land", feetOf(p)) :: w#fx else w#fx;
         { player = p, fx = fx | w }
+
+    /// 今の遊びの時計で湧く演出。
+    def fxAt(w: World, kind: String, pos: Vec2.Vec2): Fx =
+        { kind = kind, pos = pos, life = Lifetime.fireOn(w#play, fxLifeSec()) }
 
     def feetOf(p: Player.State): Vec2.Vec2 =
         { x = p#body#pos#x, y = p#body#pos#y + Physics.playerSize()#y * 0.5 }
 
     /// 動く床に乗る: 上から踏んだら上面へ吸着し、床の移動量で運ばれる(carry)。
-    def ridePlatforms(dt: Float64, w: World): World =
+    def ridePlatforms(w: World): World =
         let p = w#player;
         let half = Vec2.mul(Physics.playerSize(), 0.5);
         let bottom = p#body#pos#y + half#y;
         let ts = Physics.tileSize();
         // 乗っている床の「この tick の移動量」と「上面 y」を 1 回の走査で取る。
         let ride = Stage.rec(w#stage)#platforms |> List.filterMap(pf -> {
-            let prev = platformPosAt(w#motion, pf, w#t - dt);
-            let now = platformPosAt(w#motion, pf, w#t);
+            let prev = platformPosAt(w#motion, pf, Clock.secondsOf(Clock.prevOf(w#play)));
+            let now = platformPosAt(w#motion, pf, playSeconds(w));
             let width = Int32.toFloat64(pf#wTiles) * ts;
             let overlap = p#body#pos#x + half#x > now#x
                       and p#body#pos#x - half#x < now#x + width;
@@ -226,7 +272,7 @@ mod World {
             let vy = Physics.launchVelocity(w#motion, MotionDoc.rec(w#motion)#springTiles);
             { player = Player.launch(vy, p),
               springT = Map.insert(fc, 0.3, w#springT),
-              fx = ({ kind = "spring", pos = feet, t0 = w#t }: Fx) :: w#fx | w }
+              fx = fxAt(w, "spring", feet) :: w#fx | w }
         } else w;
         // コイン(1 マス矩形と重なったら取得)。
         let ts = Physics.tileSize();
@@ -235,8 +281,7 @@ mod World {
             |> List.filter(c -> not Set.memberOf((c#x, c#y), w1#got) and hitCell(c));
         let w2 = if (List.isEmpty(newCoins)) w1 else {
             let got = List.foldLeft((acc, c) -> Set.insert((c#x, c#y), acc), w1#got, newCoins);
-            let fx = List.map(c -> ({ kind = "coin", pos = Stage.centerOf(c), t0 = w1#t }: Fx),
-                              newCoins) ::: w1#fx;
+            let fx = List.map(c -> fxAt(w1, "coin", Stage.centerOf(c)), newCoins) ::: w1#fx;
             { got = got, score = w1#score + RulesDoc.rec(w1#rules)#coinScore * List.length(newCoins),
               fx = fx | w1 }
         };
@@ -267,7 +312,7 @@ mod World {
     def stepEnemies(dt: Float64, w: World): World =
         let t = terrainOf(w);
         let stepped = w#enemies
-            |> List.map(e -> Enemies.step(t, w#enemyDoc, dt, w#t, w#player#body#pos, e));
+            |> List.map(e -> Enemies.step(t, w#enemyDoc, dt, playSeconds(w), w#player#body#pos, e));
         let enemies = List.map(fst, stepped);
         let born = List.flatMap(snd, stepped);
         let shots = (born ::: w#shots) |> List.filterMap(s -> Enemies.stepShot(t, dt, s));
@@ -296,9 +341,9 @@ mod World {
               enemies = alive,
               score = w#score + RulesDoc.rec(w#rules)#stompScore * List.length(stomped),
               stomps = w#stomps + List.length(stomped),
-              freeze = m#hitstopSec,
-              fx = List.map(e -> ({ kind = "stomp", pos = e#pos, t0 = w#t }: Fx), stomped)
-                  ::: w#fx | w }
+              play = Clock.withSlow(hitstopPlan(m), w#play),
+              flash = Lifetime.fireOn(w#wall, m#hitstopSec),
+              fx = List.map(e -> fxAt(w, "stomp", e#pos), stomped) ::: w#fx | w }
         };
         let shotHit = w1#shots
             |> List.exists(s -> touches(p, s#pos, { x = 6.0, y = 6.0 }));

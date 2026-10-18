@@ -6,7 +6,7 @@
 // 「選択肢待ちになるまで進める」「結末の最後のビートまで進める」で位置を決める。
 mod SceneRender {
     use fge::{
-        App, Color, Emit, FontAtlas, GameEngine, HeadlessFont, HeadlessRender, PxSprite, PxSpriteAtlas,
+        App, Clock, Color, Emit, FontAtlas, GameEngine, HeadlessFont, HeadlessRender, PxSprite, PxSpriteAtlas,
         PxSpriteDoc, Render, Vec2
     }
 
@@ -49,15 +49,15 @@ mod SceneRender {
     def sceneOf(name: String, w0: World.World): Option[World.World] =
         match name {
             // 表紙: 灯りが全部ついた書斎とタイトル。
-            case "title"  => Some({ t = 2.3 | w0 })
+            case "title"  => Some({ wall = Clock.startAt(2.3) | w0 })
             // 最初の分岐: 問いを読み終え、選択肢のチップが出た状態。
-            case "choice" => Some({ t = 5.1 | walkToAsk(40, advance(w0)) })
+            case "choice" => Some({ wall = Clock.startAt(5.1) | walkToAsk(40, advance(w0)) })
             // 結末: 疑いを重ねて灯りが消えた書斎で、最後の一文を読んでいる状態。
             // （分岐 2 つは選んで次の分岐まで歩き、最後の告発だけは結末の最後のビートで止める）
             case "ending" =>
                 let ended = walkToAsk(40, advance(w0))
                     |> pickAndWalk(0) |> pickAndWalk(0) |> pick(1) |> walkToLast(40);
-                Some({ t = 8.4 | ended })
+                Some({ wall = Clock.startAt(8.4) | ended })
             case _        => None
         }
 

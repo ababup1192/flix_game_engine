@@ -21,7 +21,23 @@
 // だからプレイヤーの前でクラッシュしない。台本の編集ミスは既定へ落ちて読みは続く。
 mod World {
 
-    use fge::{Emit, PxSpriteAtlas, PxSpriteDoc, UiDialog, UiMenu, UiSlots, UiSpec, UiStore}
+    use fge::{Clock, Emit, PxSpriteAtlas, PxSpriteDoc, UiDialog, UiMenu, UiSlots, UiSpec, UiStore}
+
+    /// 時計の名前（中身は要らない）。Story = 物語の時計（文字送り・灯りが消える演出。メニューで止まる）、
+    /// Wall = 実時間（雨・炎の揺らぎ・埃・メニューの字の点滅。メニューを開いても部屋は止めない）。
+    pub enum Story
+    pub enum Wall
+
+    /// 開いている窓。Open = メニュー（物語の時計を止める）。
+    pub enum Menu with Eq {
+        case Closed
+        case Open
+    }
+
+    /// 物語の時計を止める理由。
+    pub enum Halt with Eq {
+        case MenuOpen
+    }
 
     /// いま画面が何をしているか。Title = 表紙（決定で物語がはじまる）、Story = 台本を読んでいる。
     pub enum Phase with Eq, ToString {
@@ -56,7 +72,7 @@ mod World {
 
     /// ゲームの状態。section / idx = 台本上の現在地、kit = ダイアログと選択肢、
     /// cursor = 選択肢のカーソル位置、lightsOut = 消えた灯りの数（疑うたびに増える）、
-    /// t = 起動からの積み上げ秒（雨・炎の揺らぎ・埃が見る。読んでいる間も部屋を止めない）。
+    /// storyClock / wall = 物語の時計と実時間（上の Story / Wall）、menu = 開いている窓。
     pub type alias World = {
         phase = Phase,
         story = StoryDoc.Doc,
@@ -66,14 +82,16 @@ mod World {
         // ドット絵を 1 枚にまとめたアトラスと、その画素から導いた鍵（下の bakedOf を参照）。
         atlas = PxSpriteAtlas.Baked,
         atlasKey = String,
-        t = Float64,
+        storyClock = Clock.Clock[Story],
+        wall = Clock.Clock[Wall],
+        menu = Menu,
         section = String,
         idx = Int32,
         kit = NovelKit.Kit,
         cursor = Int32,
         lightsOut = Int32,
         // 最後に灯りが消えた時刻（t の値。灯りが消える演出 LampFx の起点）。
-        lampOutAt = Option[Float64],
+        lampOutAt = Option[Clock.Time[Story]],
         events = List[Event],
         ui = UiStore.UiWorld,
         docError = Option[String],
@@ -111,7 +129,7 @@ mod World {
         { phase = Phase.Title,
           story = docs#story, kind = docs#kind, theme = docs#theme, sprites = docs#sprites,
           atlas = baked, atlasKey = key,
-          t = 0.0, section = StoryDoc.rec(docs#story)#start, idx = 0,
+          storyClock = Clock.start(), wall = Clock.start(), menu = Menu.Closed, section = StoryDoc.rec(docs#story)#start, idx = 0,
           kit = NovelKit.closed(), cursor = 0, lightsOut = 0,
           lampOutAt = None, events = Nil,
           ui = ui, docError = None, activeDocsWritten = "" }
@@ -208,7 +226,7 @@ mod World {
     /// 疑ったときだけ灯りをひとつ消す（台本の lamps より多くは消えない）。
     def dimIf(suspect: Bool, w: World): World =
         if (suspect)
-            { lightsOut = Int32.min(StoryDoc.rec(w#story)#lamps, w#lightsOut + 1), lampOutAt = Some(w#t) | w }
+            { lightsOut = Int32.min(StoryDoc.rec(w#story)#lamps, w#lightsOut + 1), lampOutAt = Some(Clock.nowOf(w#storyClock)) | w }
         else w
 
     def currentOptions(w: World): List[StoryDoc.Choice] =
@@ -220,9 +238,28 @@ mod World {
     /// 毎フレーム: 文字送りを進め、キットの状態を UI へ刻む（表紙ではダイアログは閉じている）。
     /// 毎フレーム: 文字送りを進め、時計を進める。時計は場面を問わず進む —
     /// 読んでいる間も表紙でも、雨は降り炎は揺れる（動かない絵は止まって見える）。
+    /// メニューを開いている間は物語の時計が止まり、文字送りと灯りの演出も止まる（実時間の部屋は動く）。
     pub def step(dt: Float64, w: World): World =
-        let kit = NovelKit.step(cps = KindDoc.rec(w#kind)#cps, dt, w#kit);
-        { kit = kit, ui = NovelKit.apply(kit, w#ui), t = w#t + dt | w }
+        let storyClock = Clock.advance(runOf(w), dt, w#storyClock);
+        let kit = NovelKit.step(cps = KindDoc.rec(w#kind)#cps, Clock.dtOf(storyClock), w#kit);
+        { kit = kit, ui = NovelKit.apply(kit, w#ui), storyClock = storyClock,
+          wall = Clock.advance(Clock.Run.Running, dt, w#wall) | w }
+
+    /// 物語の時計のこのフレームの進み方（止める理由はメニューだけ）。
+    pub def runOf(w: World): Clock.Run[Halt] = match w#menu {
+        case Menu.Closed => Clock.Run.Running
+        case Menu.Open   => Clock.Run.Paused(Halt.MenuOpen)
+    }
+
+    /// メニューを開く・閉じる（表紙では開かない）。
+    pub def toggleMenu(w: World): World = match (w#phase, w#menu) {
+        case (Phase.Title, _)          => w
+        case (Phase.Story, Menu.Closed) => { menu = Menu.Open | w }
+        case (Phase.Story, Menu.Open)   => { menu = Menu.Closed | w }
+    }
+
+    /// 実時間の今（秒）。雨・炎・埃の周期の式に渡す。
+    pub def wallSeconds(w: World): Float64 = Clock.secondsOf(Clock.nowOf(w#wall))
 
     // ── Doc の差し替え（保存即反映） ──
 

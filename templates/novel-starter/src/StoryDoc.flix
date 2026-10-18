@@ -27,6 +27,7 @@ mod StoryDoc {
         title = String,
         subtitle = String,
         hint = String,
+        menuLabel = String,
         start = String,
         lamps = Int32,
         sections = List[Section]
@@ -44,6 +45,7 @@ mod StoryDoc {
         Doc.Doc({ version = 1,
                   title = "消えた絵", subtitle = "雨の夜、洋館の書斎から一枚の絵が消えた",
                   hint = "クリックではじめる",
+                  menuLabel = "― 一時停止（Esc でもどる）―",
                   start = "start", lamps = 3,
                   sections =
                       { id = "start",
@@ -64,6 +66,7 @@ mod StoryDoc {
                   title = JsonCodec.stringOr("title", d#title, root),
                   subtitle = JsonCodec.stringOr("subtitle", d#subtitle, root),
                   hint = JsonCodec.stringOr("hint", d#hint, root),
+                  menuLabel = JsonCodec.stringOr("menuLabel", d#menuLabel, root),
                   start = JsonCodec.stringOr("start", d#start, root),
                   lamps = JsonCodec.intOr("lamps", d#lamps, root),
                   sections = Map.get("sections", root)

@@ -418,6 +418,18 @@ pub mod Timeline {
     pub def progressSince(at: Float64, now: Float64, tag: a, tl: Timeline[a]): Float64 with Order[a] =
         progressOf(tag, playheadAt(now - at), tl)
 
+    // ── 時計の型つきで読む口（Clock[c]。起点 at と時計が違う時計だとコンパイルが止まる）──
+
+    /// 起点 at（時計 c の時刻）から測る待ちの無い表で、時計 clock のこのフレーム (prev, now] に鳴らす効果音。
+    /// 前と今の時刻は時計が持つので、止めていたフレームは区間が空（戻っても鳴り直さない）・スロー中も
+    /// 区間が隙間なく続く（二重に鳴らない）。起点を置いたフレームは prev < at なので頭の音も鳴る。
+    pub def soundsOnClock(clock: Clock.Clock[c], at: Clock.Time[c], tl: Timeline[a]): List[String] =
+        soundsBetween(Clock.since(at, Clock.prevOf(clock)), Clock.since(at, Clock.nowOf(clock)), tl)
+
+    /// 起点 at から測る表の、時計 clock の今でのタグのクリップの進み 0..1（progressSince と同じ境目）。
+    pub def progressOn(clock: Clock.Clock[c], at: Clock.Time[c], tag: a, tl: Timeline[a]): Float64 with Order[a] =
+        progressOf(tag, playheadAt(Clock.since(at, Clock.nowOf(clock))), tl)
+
     /// 長さを合わせる音（withFittedSound）を書き出すときの長さ（秒）。
     pub def soundLengthOf(name: String, tl: Timeline[a]): Option[Float64] = match tl {
         case Timeline.Timeline(r) => Map.get(name, r#fitted)

@@ -11,6 +11,7 @@ mod Controls {
         case Confirm   // 進める・選ぶ（クリック / Z / Enter / Space）
         case NavPrev   // 選択肢カーソルを前へ（← ↑ / A W）
         case NavNext   // 選択肢カーソルを後ろへ（→ ↓ / D S）
+        case Menu      // メニューを開く・閉じる（Esc）
     }
 
     /// 単発操作の表。同時押しは firstTap がこの順で先勝ちにする。
@@ -22,6 +23,7 @@ mod Controls {
         :: (Key.A,     Act.NavPrev) :: (Key.W,    Act.NavPrev)
         :: (Key.Right, Act.NavNext) :: (Key.Down, Act.NavNext)
         :: (Key.D,     Act.NavNext) :: (Key.S,    Act.NavNext)
+        :: (Key.Escape, Act.Menu)
         :: Nil
 
     /// 毎フレームのシステム: 文字送りと UI 投影を 1 歩進める。
@@ -73,14 +75,17 @@ mod Controls {
     pub def sounds(ws: { before = World.World, after = World.World }): List[String] =
         let replies = ws#after#events |> List.map(e -> soundName(soundOf(e)));
         let fx = ws#after#lampOutAt
-            |> Option.map(at -> Timeline.soundsSince(at, ws#before#t, ws#after#t, LampFx.timeline()))
+            |> Option.map(at -> Timeline.soundsOnClock(ws#after#storyClock, at, LampFx.timeline()))
             |> Option.getWithDefault(Nil);
         List.append(replies, fx)
 
     /// 入力の解釈。選択肢待ちだけ操作が変わる
     /// （カーソル移動 + チップのクリック。それ以外は決定 = 進める）。
     def interpret(frame: App.Frame, w: World.World): World.World \ Emit[World.Event] =
-        if (NovelKit.isAsking(w#kit))
+        let tap = InputMap.firstTap(tapTable(), frame);
+        if (tap == Some(Act.Menu)) World.toggleMenu(w)
+        else if (w#menu == World.Menu.Open) w      // メニューの間は物語を進めない
+        else if (NovelKit.isAsking(w#kit))
             askInteract(frame, UiFocus.hitTestUi(w#ui, frame#viewport, frame#cursor), w)
         else if (frame#mouseClicked or InputMap.firstTap(tapTable(), frame) == Some(Act.Confirm))
             World.advance(w)

@@ -17,7 +17,7 @@
 mod View {
 
     use fge::{
-        App, Color, DrawCmd, FontAtlas, Fx, Num, PxSprite, RawDraw, Render, Sway, TextDraw,
+        Anim, App, Color, DrawCmd, FontAtlas, Fx, Num, PxSprite, RawDraw, Render, Sway, TextDraw,
         UiRender, Vec2
     }
 
@@ -55,8 +55,25 @@ mod View {
             :: NovelKit.body(ctx#atlas, ThemeDoc.rec(w#theme)#ink,
                    { size = KindDoc.rec(w#kind)#bodySize, lineGap = KindDoc.rec(w#kind)#bodyGap },
                    w#ui, w#kit)
+            :: menu(ctx#atlas, w)
             :: TextDraw.errorBanner(ctx#atlas, w#docError)
             :: Nil)
+
+    /// メニューの窓（物語は止まっている）。字の点滅は実時間で振る。
+    def menu(atlas: FontAtlas, w: World.World): List[Render.PlacedItem] =
+        match w#menu {
+            case World.Menu.Closed => Nil
+            case World.Menu.Open   =>
+                let on = Anim.frameAt({ row = 0, frames = 2, fps = 1.5, looping = true }, World.wallSeconds(w)) == 0;
+                let veil = { at = { x = 0.0, y = 0.0 },
+                             item = RawDraw.box({ x = World.width(), y = World.height() },
+                                               { r = 0.02, g = 0.02, b = 0.05 }, 140)
+                                 |> Render.fade(0.6) };
+                let label = TextDraw.centered({ text = StoryDoc.rec(w#story)#menuLabel, atlas = atlas, size = 14.0,
+                                                color = ThemeDoc.rec(w#theme)#ink, z = 141,
+                                                centerX = World.width() / 2.0, y = 140.0 });
+                veil :: (if (on) label :: Nil else Nil)
+        }
 
     // ── 部屋（壁・床・雨の窓） ──
 
@@ -130,7 +147,7 @@ mod View {
     def rain(paneAt: Vec2.Vec2, paneSize: Vec2.Vec2, w: World.World): List[Render.PlacedItem] =
         let theme = ThemeDoc.rec(w#theme);
         let streakColor = ThemeDoc.lighten(theme#window, theme#rainGlow);
-        Fx.derive(theme#rainCount, w#t, (_i, rand, t) -> {
+        Fx.derive(theme#rainCount, World.wallSeconds(w), (_i, rand, t) -> {
             let len = 12.0 + rand(2) * 20.0;
             let speed = 40.0 + rand(3) * 70.0;
             let travel = paneSize#y + len;
@@ -175,7 +192,7 @@ mod View {
         List.range(0, count) |> List.flatMap(i ->
             // 灯りごとに揺れの位相をずらす（そろって明滅すると機械に見える）。
             lamp({ x = lampX(count, i), litNow = i < lit,
-                   flicker = 0.82 + 0.18 * Sway.wave(w#t, Int32.toFloat64(i) * 0.37, 1.9) },
+                   flicker = 0.82 + 0.18 * Sway.wave(World.wallSeconds(w), Int32.toFloat64(i) * 0.37, 1.9) },
                  ThemeDoc.rec(w#theme)))
 
     /// i 番目の灯りの x（壁の上に等間隔。1 つなら真ん中）。
@@ -212,7 +229,7 @@ mod View {
             if (i >= lit) Nil
             else {
                 let cx = lampX(count, i);
-                Fx.derive(6, w#t + Int32.toFloat64(i) * 3.1, (_k, rand, t) -> {
+                Fx.derive(6, World.wallSeconds(w) + Int32.toFloat64(i) * 3.1, (_k, rand, t) -> {
                     let rise = 46.0;
                     let y = 88.0 - Num.wrapTo(rise, rand(1) * rise + t * 7.0);
                     let x = cx - 16.0 + rand(0) * 32.0 + Sway.wave(t, rand(2), 0.4) * 4.0;

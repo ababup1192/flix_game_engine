@@ -19,7 +19,7 @@
 // GPU が無いので同じ記述(cellGroups)を全部動的に解釈する — 2 経路の絵は同じ。
 mod View {
 
-    use fge::{Anim, App, Color, DrawCmd, Grid, Hit, Num, PxSprite, RawDraw, Rect2, Render, Vec2}
+    use fge::{Anim, App, Clock, Color, DrawCmd, Grid, Hit, Lifetime, Num, PxSprite, RawDraw, Rect2, Render, Vec2}
 
     pub def zWall(): Int32 = 8
     pub def zFore(): Int32 = 10
@@ -38,7 +38,7 @@ mod View {
     /// 2 コマ替えのコマが「前」か(fps = 1 秒あたりのコマ数)。コイン・炎・旗・
     /// 無敵の点滅・走り・敵はどれもこの 1 本で振る — 位相の丸めを揃えるため。
     def two(w: World.World, fps: Float64): Bool =
-        Anim.frameAt({ row = 0, frames = 2, fps = fps, looping = true }, w#t) == 0
+        Anim.frameAt({ row = 0, frames = 2, fps = fps, looping = true }, World.playSeconds(w)) == 0
 
     // ── パララックス層(Main が addParallaxLayer で繋ぐ)──
 
@@ -62,7 +62,7 @@ mod View {
 
     /// 夕方の雲(視差 0.04)。時刻でゆっくり流れる。
     pub def clouds(ctx: App.ViewCtx, w: World.World): List[Render.PlacedItem] =
-        strip(ctx, w, "cloud", 96.0, 0.34, None, 2, w#t * 3.0)
+        strip(ctx, w, "cloud", 96.0, 0.34, None, 2, World.playSeconds(w) * 3.0)
 
     /// 遠い山なみ(視差 0.10)。夕日の稜線リムが入る。
     /// 埋め板の色は**そのストリップの下端 1 行と同じ色**にする — 別の色を敷くと
@@ -248,10 +248,10 @@ mod View {
     def platformItems(vis: Rect2.Rect2, w: World.World): List[Render.PlacedItem] =
         let ts = Physics.tileSize();
         Stage.rec(w#stage)#platforms
-            |> List.filter(p -> nearBox(vis, World.platformPosAt(w#motion, p, w#t),
+            |> List.filter(p -> nearBox(vis, World.platformPosAt(w#motion, p, World.playSeconds(w)),
                                         { x = Int32.toFloat64(p#wTiles) * ts, y = ts }))
             |> List.flatMap(p -> {
-            let pos = World.platformPosAt(w#motion, p, w#t);
+            let pos = World.platformPosAt(w#motion, p, World.playSeconds(w));
             List.range(0, p#wTiles) |> List.flatMap(i ->
                 spriteAt(w, "platform", "deck",
                     { x = pos#x + Int32.toFloat64(i) * Physics.tileSize(), y = pos#y },
@@ -262,7 +262,7 @@ mod View {
     def blinkItems(vis: Rect2.Rect2, w: World.World): List[Render.PlacedItem] =
         let ts = Physics.tileSize();
         forM (c <- cellsIn(vis, w);
-              if (Stage.blinkAt(w#stage, c#x, c#y) and World.blinkOn(w#motion, w#t, c#x, c#y));
+              if (Stage.blinkAt(w#stage, c#x, c#y) and World.blinkOn(w#motion, World.playSeconds(w), c#x, c#y));
               it <- spriteAt(w, "oneway", "plank",
                         { x = Int32.toFloat64(c#x) * ts, y = Int32.toFloat64(c#y) * ts },
                         false, zDeco()))
@@ -379,7 +379,7 @@ mod View {
         let dust = Theme.resolve(w#theme, "dust");
         let spark = Theme.resolve(w#theme, "coinLight");
         w#fx |> List.filter(f -> near(vis, f#pos)) |> List.flatMap(f -> {
-            let age = Float64.max(0.0, (w#t - f#t0) / World.fxLifeSec());
+            let age = Lifetime.progressOn(w#play, f#life);
             let fade = 1.0 - age;
             if (fade <= 0.0) Nil
             else if (f#kind == "land" or f#kind == "spring")
@@ -413,7 +413,28 @@ mod View {
                       item = Render.text("${w#score}", ctx#atlas, 14.0, 100) };
         let name = { at = { x = 10.0, y = 24.0 },
                      item = Render.text(Stage.rec(w#stage)#name, ctx#atlas, 10.0, 100) };
-        hearts ::: score :: name :: overlayItems(ctx, w)
+        hearts ::: score :: name :: flashItems(w) ::: pauseItems(ctx, w) ::: overlayItems(ctx, w)
+
+    /// 踏みつけの白い光。遊びの時計はヒットストップで止まっているので、実時間（wall）で薄める。
+    def flashItems(w: World.World): List[Render.PlacedItem] =
+        let u = Lifetime.progressOn(w#wall, w#flash);
+        if (u >= 1.0) Nil
+        else Render.fadeAll(0.35 * (1.0 - u),
+            { at = { x = 0.0, y = 0.0 }, item = RawDraw.box(design(), Theme.resolve(w#theme, "coinLight"), 97) } :: Nil)
+
+    /// ポーズの窓。字の点滅は実時間（遊びの時計は止まっている）。
+    def pauseItems(ctx: App.ViewCtx, w: World.World): List[Render.PlacedItem] =
+        match w#menu {
+            case World.Menu.Closed => Nil
+            case World.Menu.Pause  =>
+                let veil = { at = { x = 0.0, y = 0.0 },
+                             item = RawDraw.box(design(), Theme.resolve(w#theme, "ink"), 98) };
+                let on = Anim.frameAt({ row = 0, frames = 2, fps = 2.0, looping = true },
+                                      Clock.secondsOf(Clock.nowOf(w#wall))) == 0;
+                let label = { at = { x = 270.0, y = 160.0 },
+                              item = Render.text(UiText.rec(w#uiText)#paused, ctx#atlas, 28.0, 99) };
+                Render.fadeAll(0.55, veil :: Nil) ::: (if (on) label :: Nil else Nil)
+        }
 
     /// 場面の幕: clear / over の間だけ、薄い覆いと大きな字。
     def overlayItems(ctx: App.ViewCtx, w: World.World): List[Render.PlacedItem] =

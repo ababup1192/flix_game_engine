@@ -6,6 +6,7 @@
 mod Controls {
 
     use fge::{App, DocTable}
+    use fge::GameEngine.Key
 
     /// このフレームのキーを World.Input へ。操作ごとのキーの列(keys Doc)の
     /// どれか 1 つでも押されていれば効く。ジャンプは「押しっぱなし」(可変ジャンプの
@@ -22,7 +23,8 @@ mod Controls {
           dash = held(keys#dash) }
 
     pub def step(frame: App.Frame, w: World.World): World.World =
-        World.step(inputOf(frame, w#keys), frame#dt, w)
+        let toggled = if (App.justPressed(Key.Escape, frame) or App.justPressed(Key.P, frame)) World.togglePause(w) else w;
+        World.step(inputOf(frame, toggled#keys), frame#dt, toggled)
 
     /// Doc の一覧表(DocTable)。watchFile(保存即反映)と F1 の一括リロードは
     /// どちらもこの 1 枚から導出する — 足し忘れで「保存しても効かない」を作らないため。
