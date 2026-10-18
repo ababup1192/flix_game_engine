@@ -6,13 +6,14 @@ package px
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/ababup1192/flix_game_engine/go/internal/checklevel"
 	"math"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
+	"github.com/ababup1192/flix_game_engine/go/internal/checklevel"
+	"github.com/ababup1192/flix_game_engine/go/internal/checkres"
 	"github.com/ababup1192/flix_game_engine/go/internal/pxlib"
 	"github.com/ababup1192/flix_game_engine/go/internal/sprite"
 )
@@ -50,20 +51,60 @@ func (r checkRef) String() string {
 	return string(r.Check) + ":" + r.Rule
 }
 
-// violation は検査の違反 1 件。
+// violation は検査の違反 1 件。組み立ては newViolation の 1 か所（got と want を必ず持たせる）。
+// 外へ出す形は checkres.Result（result で写す。code は px.<check>[.<rule>][.<sub>]）。
 type violation struct {
-	Check  checkName   `json:"check"`
-	Rule   string      `json:"rule,omitempty"`
-	Level  level       `json:"level"`
-	Sprite string      `json:"sprite,omitempty"`
-	Frame  string      `json:"frame,omitempty"`
-	X      int         `json:"x"`
-	Y      int         `json:"y"`
-	HasAt  bool        `json:"hasAt"`
-	Cells  []pxlib.Pt  `json:"cells,omitempty"`
-	Op     pxlib.OpRef `json:"op"`
-	Msg    string      `json:"msg"`
-	Fix    string      `json:"fix,omitempty"` // 直し方: どの op の何の引数を変えるか
+	Check  checkName      `json:"check"`
+	Rule   string         `json:"rule,omitempty"`
+	Sub    string         `json:"sub,omitempty"` // 同じ検査の中の測り方の別（code の末尾。String には出さない）
+	Level  level          `json:"level"`
+	Sprite string         `json:"sprite,omitempty"`
+	Frame  string         `json:"frame,omitempty"`
+	X      int            `json:"x"`
+	Y      int            `json:"y"`
+	HasAt  bool           `json:"hasAt"`
+	Cells  []pxlib.Pt     `json:"cells,omitempty"`
+	Op     pxlib.OpRef    `json:"op"`
+	Msg    string         `json:"msg"`
+	Fix    string         `json:"fix,omitempty"` // 直し方: どの op の何の引数を変えるか
+	Got    float64        `json:"got"`
+	Want   checkres.Want  `json:"want"`
+	Tries  []checkres.Try `json:"try,omitempty"`    // 直し方の数の候補（op の arg を now から try に）
+	Script string         `json:"script,omitempty"` // 原因の op の spec の中の場所（台本なら台本の行）
+	Scope  string         `json:"scope,omitempty"`  // spec・sequence・frame・part・file（next の順）
+}
+
+// newViolation は違反 1 件を組み立てる唯一の口: 検査・重さ・測った値（got）・基準（want）・人向けの文。
+// 場所は at・測り方の別は sub・直し方は fix で足す。
+func newViolation(check checkName, lv level, got float64, want checkres.Want, msg string) violation {
+	return violation{Check: check, Level: lv, Got: got, Want: want, Msg: msg}
+}
+
+// at は場所（画素 1 つ）を入れる。
+func (v violation) at(p pxlib.Pt) violation { v.X, v.Y, v.HasAt = p.X, p.Y, true; return v }
+
+// sub は測り方の別を入れる（code の末尾）。
+func (v violation) sub(s string) violation { v.Sub = s; return v }
+
+// fix は直し方の文と数の候補を入れる（文が "" なら検査の既定のまま）。
+func (v violation) fix(hint string, tries ...checkres.Try) violation {
+	if hint != "" {
+		v.Fix = hint
+	}
+	v.Tries = append(v.Tries, tries...)
+	return v
+}
+
+// code は変わらない名前（例 px.ground-contrast・px.sprite.orphan・px.flat-run.repeat）。
+func (v violation) code() string {
+	c := "px." + string(v.Check)
+	if v.Rule != "" {
+		c += "." + v.Rule
+	}
+	if v.Sub != "" {
+		c += "." + v.Sub
+	}
+	return c
 }
 
 func (v violation) ref() checkRef { return checkRef{v.Check, v.Rule} }
@@ -116,6 +157,23 @@ type checkCtx struct {
 	Emissive    map[string]bool        // 自分で光る部品の id（light-dir の対象外。部品の emissive）
 	Part        string                 // 部品ごとの検査の時の部品 id（pillow・light-dir はその部品が描いた画素だけを見る。コマ全体の検査では ""）
 	Poly        map[string]bool        // 形が poly の部品の id（輪郭の段は直線として flat-run だけで見る）
+	Exempted    map[[2]string]int      // Exempt で外した画素の数（code・op → 数。nil なら数えない）
+}
+
+// noteDemoted は重さを下げた件（corner・banding を advice に）を数える。
+func (c *checkCtx) noteDemoted(v violation) {
+	if c == nil || c.Exempted == nil {
+		return
+	}
+	c.Exempted[[2]string{"demoted", v.code()}]++
+}
+
+// noteExempt は Exempt で外した画素 1 つを数える。
+func (c *checkCtx) noteExempt(v violation, op string) {
+	if c == nil || c.Exempted == nil {
+		return
+	}
+	c.Exempted[[2]string{v.code(), baseOp(op)}]++
 }
 
 // polyStair は階段が poly の部品の輪郭か（真ん中の段を書いた部品で決める）。
@@ -153,6 +211,9 @@ func allChecks() []*checkDef {
 // frameChecks はコマを描き終えた後に回す検査（全体）。
 var frameChecks = []checkRef{{Check: checkSprite}, {Check: checkFlatRun}, {Check: checkRunMonotone}, {Check: checkGroundContrast}}
 
+// seenProbe はテストが組み立てた違反を全部見る口（TestMain が code・got・want を確かめる。ふだんは nil）。
+var seenProbe func(violation)
+
 // runCheck は検査を回し、違反に書き手の op を付ける。
 // 書き手の op が Exempt にその検査を挙げている画素は除く（作法として置く形。例 bevel_box の角）。
 func runCheck(ref checkRef, g *pxlib.Grid, c *checkCtx) ([]violation, error) {
@@ -165,7 +226,7 @@ func runCheck(ref checkRef, g *pxlib.Grid, c *checkCtx) ([]violation, error) {
 		if ref.Rule != "" && v.Rule != ref.Rule {
 			continue
 		}
-		if v, keep := dropExempt(v, g); keep {
+		if v, keep := dropExempt(v, g, c); keep {
 			if v.Fix == "" {
 				v.Fix = ck.Fix
 				if v.Check == checkSprite {
@@ -173,6 +234,11 @@ func runCheck(ref checkRef, g *pxlib.Grid, c *checkCtx) ([]violation, error) {
 				}
 			}
 			out = append(out, v)
+		}
+	}
+	if seenProbe != nil {
+		for _, v := range out {
+			seenProbe(v)
 		}
 	}
 	return out, nil
@@ -196,7 +262,8 @@ func exempts(op pxlib.OpRef, ref checkRef) bool {
 	return false
 }
 
-func dropExempt(v violation, g *pxlib.Grid) (violation, bool) {
+// dropExempt は Exempt の op が描いた画素を除く。除いた数は c.exempted に数える（まとめの exempted に出す）。
+func dropExempt(v violation, g *pxlib.Grid, c *checkCtx) (violation, bool) {
 	if len(v.Cells) > 0 {
 		var kept []pxlib.Pt
 		dropped, by := 0, ""
@@ -204,6 +271,7 @@ func dropExempt(v violation, g *pxlib.Grid) (violation, bool) {
 			if op := g.SrcAt(p.X, p.Y); exempts(op, v.ref()) {
 				dropped++
 				by = op.Op
+				c.noteExempt(v, op.Op)
 				continue
 			}
 			kept = append(kept, p)
@@ -212,6 +280,9 @@ func dropExempt(v violation, g *pxlib.Grid) (violation, bool) {
 			return v, false
 		}
 		if dropped > 0 {
+			if v.Want.Op == checkres.AtMost && float64(len(kept)) > v.Want.Value {
+				v.Got = float64(len(kept)) // 画素を数える規則は残った画素の数（基準を下回るなら元の数のまま報告する）
+			}
 			v.Cells = kept
 			v.X, v.Y, v.HasAt = kept[0].X, kept[0].Y, true
 			if v.Check == checkSprite {
@@ -222,6 +293,7 @@ func dropExempt(v violation, g *pxlib.Grid) (violation, bool) {
 			v.Msg += fmt.Sprintf("（ほかに %d 箇所は %s の作法として除いた）", dropped, by)
 		}
 	} else if v.HasAt && exempts(g.SrcAt(v.X, v.Y), v.ref()) {
+		c.noteExempt(v, g.SrcAt(v.X, v.Y).Op)
 		return v, false
 	}
 	if v.HasAt {
@@ -286,12 +358,14 @@ func init() {
 					if len(v.Cells) == 0 {
 						continue
 					}
-					v.X, v.Y, v.Level = v.Cells[0].X, v.Cells[0].Y, levelAdvice
+					v.X, v.Y, v.Level, v.Got = v.Cells[0].X, v.Cells[0].Y, levelAdvice, float64(len(v.Cells))
+					c.noteDemoted(v)
 				case "banding":
 					// 内側 1px の縁取りが輪をほぼ一周する時だけ lint（枕のような陰に読まれる）。
 					// 一部の辺だけの縁取り（bevel の光の縁など）は絵が崩れないので advice
 					if !c.Rules.isBandingRing(g, f.Cells) {
 						v.Level = levelAdvice
+						c.noteDemoted(v)
 					}
 				}
 				out = append(out, v)
@@ -321,10 +395,10 @@ func init() {
 						kinds[r.N] = true
 					}
 					if len(kinds) >= 3 {
-						r := inner[0]
-						out = append(out, violation{Check: checkFlatRun, Level: levelAdvice, X: r.At.X, Y: r.At.Y, HasAt: true,
-							Fix: "poly の点を 1px ずらして、辺の段の長さを 1〜2 種類（4-4-4 か 4-5-4-5）に揃える（SDF には替えなくてよい）",
-							Msg: fmt.Sprintf("poly の辺の段が %s と散る（直線の段は 1〜2 種類の長さ）", runLengths(inner))})
+						out = append(out, newViolation(checkFlatRun, levelAdvice, float64(len(kinds)), checkres.WantAtMost(2),
+							fmt.Sprintf("poly の辺の段が %s と散る（直線の段は 1〜2 種類の長さ）", runLengths(inner))).
+							at(inner[0].At).sub("poly").
+							fix("poly の点を 1px ずらして、辺の段の長さを 1〜2 種類（4-4-4 か 4-5-4-5）に揃える（SDF には替えなくてよい）"))
 					}
 					return
 				}
@@ -337,13 +411,13 @@ func init() {
 					}
 					// 長さ 1 の段の連続は 45° の斜め（ドット絵の作法どおりの線）なので見ない
 					if same == c.Rules.FlatRunRepeat && r.N > 1 {
-						out = append(out, violation{Check: checkFlatRun, Level: levelAdvice, X: r.At.X, Y: r.At.Y, HasAt: true,
-							Msg: fmt.Sprintf("長さ %d の段が %d 回続く（直線に読まれる。段の長さを変える）", r.N, same)})
+						out = append(out, newViolation(checkFlatRun, levelAdvice, float64(same), checkres.WantAtMost(float64(c.Rules.FlatRunRepeat-1)),
+							fmt.Sprintf("長さ %d の段が %d 回続く（直線に読まれる。段の長さを変える）", r.N, same)).at(r.At).sub("repeat"))
 					}
 					inner := i > 0 && i < len(runs)-1
 					if inner && r.N > limit {
-						out = append(out, violation{Check: checkFlatRun, Level: levelAdvice, X: r.At.X, Y: r.At.Y, HasAt: true,
-							Msg: fmt.Sprintf("曲線の中に %dpx の直線（%dx%d の絵では %dpx まで）", r.N, g.W, g.H, limit)})
+						out = append(out, newViolation(checkFlatRun, levelAdvice, float64(r.N), checkres.WantAtMost(float64(limit)),
+							fmt.Sprintf("曲線の中に %dpx の直線（%dx%d の絵では %dpx まで）", r.N, g.W, g.H, limit)).at(r.At).sub("straight"))
 					}
 				}
 			})
@@ -361,19 +435,24 @@ func init() {
 					return
 				}
 				inner := runs[1 : len(runs)-1]
-				dir := 0
+				dir, turns := 0, 0
+				var first pxlib.Pt
 				for i := 1; i < len(inner); i++ {
 					d := sgn(inner[i].N - inner[i-1].N)
 					if d == 0 {
 						continue
 					}
 					if dir != 0 && d != dir {
-						r := inner[i]
-						out = append(out, violation{Check: checkRunMonotone, Level: levelLint, X: r.At.X, Y: r.At.Y, HasAt: true,
-							Msg: fmt.Sprintf("曲線の段の長さが %s と増減する（長さは一方向に変える）", runLengths(inner))})
-						return
+						if turns == 0 {
+							first = inner[i].At
+						}
+						turns++
 					}
 					dir = d
+				}
+				if turns > 0 {
+					out = append(out, newViolation(checkRunMonotone, levelLint, float64(turns), checkres.WantAtMost(0),
+						fmt.Sprintf("曲線の段の長さが %s と増減する（長さは一方向に変える）", runLengths(inner))).at(first))
 				}
 			})
 			return out
@@ -415,8 +494,9 @@ func init() {
 			if signed > 0 {
 				fix = "外周が地より明るい: 外周をランプのもっと明るい段にする（directional・gradient_fill の to を最明に）か、地を暗い段にする"
 			}
-			return []violation{{Check: checkGroundContrast, Level: levelLint, X: worstAt.X, Y: worstAt.Y, HasAt: true, Fix: fix,
-				Msg: fmt.Sprintf("外周と地 %s の明るさの差が平均 %.3f（%.2f 以上にする）", c.Ground, sum/float64(n), c.Rules.GroundContrastMin)}}
+			return []violation{newViolation(checkGroundContrast, levelLint, sum/float64(n), checkres.WantAtLeast(c.Rules.GroundContrastMin),
+				fmt.Sprintf("外周と地 %s の明るさの差が平均 %.3f（%.2f 以上にする）", c.Ground, sum/float64(n), c.Rules.GroundContrastMin)).
+				at(worstAt).fix(fix)}
 		},
 	})
 }
@@ -583,5 +663,14 @@ func fromFinding(f sprite.Finding) violation {
 	if f.Problem {
 		lv = levelGate
 	}
-	return violation{Check: checkSprite, Rule: f.Rule, Level: lv, X: f.At.X, Y: f.At.Y, HasAt: f.HasAt, Cells: f.Cells, Msg: f.Msg}
+	want := checkres.WantAtLeast(f.Limit)
+	if f.AtMost {
+		want = checkres.WantAtMost(f.Limit)
+	}
+	v := newViolation(checkSprite, lv, f.Got, want, f.Msg).sub(f.Sub)
+	v.Rule, v.Cells = f.Rule, f.Cells
+	if f.HasAt {
+		v = v.at(f.At)
+	}
+	return v
 }

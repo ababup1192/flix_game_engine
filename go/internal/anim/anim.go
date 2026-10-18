@@ -396,7 +396,25 @@ type frame struct {
 
 // checkFrames はコマ列の不変量。frames は並び順で。
 func (r *Rules) checkFrames(spriteName string, frames []frame, skip map[string]bool) []string {
-	var notes []string
+	var out []string
+	for _, n := range r.measureFrames(spriteName, frames, skip) {
+		out = append(out, n.Text)
+	}
+	return out
+}
+
+// Note は検査の注意 1 件と、測った値（Got）と基準（Limit。AtMost なら got ≤ limit）。
+type Note struct {
+	Rule   string // pop・loop・area・ground・bob・palette
+	Text   string
+	Got    float64
+	Limit  float64
+	AtMost bool
+}
+
+// measureFrames は checkFrames の中身（測った値つき）。
+func (r *Rules) measureFrames(spriteName string, frames []frame, skip map[string]bool) []Note {
+	var notes []Note
 	if len(frames) < 2 {
 		return notes
 	}
@@ -410,19 +428,19 @@ func (r *Rules) checkFrames(spriteName string, frames []frame, skip map[string]b
 		if !skip["pop"] {
 			share := r.changeShare(frames[i].rows, frames[i+1].rows)
 			if share > r.MaxPopShare {
-				notes = append(notes, fmt.Sprintf(
+				notes = append(notes, Note{"pop", fmt.Sprintf(
 					"%s: %s → %s でシルエットの %s が入れ替わる (上限 %s) — 別の絵に見えて画面がちらつく",
 					spriteName, frames[i].name, frames[i+1].name,
-					pyPercent(share), pyPercent(r.MaxPopShare)))
+					pyPercent(share), pyPercent(r.MaxPopShare)), share, r.MaxPopShare, true})
 			}
 		}
 	}
 	if !skip["loop"] && len(frames) > 2 {
 		share := r.changeShare(frames[len(frames)-1].rows, frames[0].rows)
 		if share > r.MaxPopShare {
-			notes = append(notes, fmt.Sprintf(
+			notes = append(notes, Note{"loop", fmt.Sprintf(
 				"%s: 輪が閉じていない (%s → %s で %s 入れ替わる) — 繰り返した瞬間に飛ぶ",
-				spriteName, frames[len(frames)-1].name, frames[0].name, pyPercent(share)))
+				spriteName, frames[len(frames)-1].name, frames[0].name, pyPercent(share)), share, r.MaxPopShare, true})
 		}
 	}
 	for i := 1; i < len(frames); i++ {
@@ -435,9 +453,9 @@ func (r *Rules) checkFrames(spriteName string, frames []frame, skip map[string]b
 			// 減った側も + と出るが、直すと字面が変わって golden が落ちる。
 			drift := float64(gap) / float64(baseArea)
 			if drift > r.MaxAreaDrift {
-				notes = append(notes, fmt.Sprintf(
+				notes = append(notes, Note{"area", fmt.Sprintf(
 					"%s: コマ %s の面積が %s ずれる (上限 ±%s) — 曲げても体の太さは変わらない",
-					spriteName, frames[i].name, pySignedPercent(drift), pyPercent(r.MaxAreaDrift)))
+					spriteName, frames[i].name, pySignedPercent(drift), pyPercent(r.MaxAreaDrift)), drift, r.MaxAreaDrift, true})
 			}
 		}
 	}
@@ -467,9 +485,9 @@ func (r *Rules) checkFrames(spriteName string, frames []frame, skip map[string]b
 			}
 			for _, nb := range bottoms {
 				if floor-nb.bottom > r.FootTolerance {
-					notes = append(notes, fmt.Sprintf(
+					notes = append(notes, Note{"ground", fmt.Sprintf(
 						"%s: コマ %s で足が %dpx 浮いている — 両足が同時に浮くのは跳躍だけ",
-						spriteName, nb.name, floor-nb.bottom))
+						spriteName, nb.name, floor-nb.bottom), float64(floor - nb.bottom), float64(r.FootTolerance), true})
 				}
 			}
 		}
@@ -484,9 +502,9 @@ func (r *Rules) checkFrames(spriteName string, frames []frame, skip map[string]b
 				}
 			}
 			if swing := hi - lo; swing > r.MaxBob {
-				notes = append(notes, fmt.Sprintf(
+				notes = append(notes, Note{"bob", fmt.Sprintf(
 					"%s: 頭の上下動が %dpx (上限 %dpx) — 跳ねて見える",
-					spriteName, swing, r.MaxBob))
+					spriteName, swing, r.MaxBob), float64(swing), float64(r.MaxBob), true})
 			}
 		}
 	}
@@ -504,9 +522,9 @@ func (r *Rules) checkFrames(spriteName string, frames []frame, skip map[string]b
 			}
 			if len(extra) > 0 {
 				sort.Strings(extra)
-				notes = append(notes, fmt.Sprintf(
+				notes = append(notes, Note{"palette", fmt.Sprintf(
 					"%s: コマ %s だけに色 %s が湧いている — コマごとに色を足さない",
-					spriteName, frames[i].name, pyStrList(extra)))
+					spriteName, frames[i].name, pyStrList(extra)), float64(len(extra)), 0, true})
 			}
 		}
 	}

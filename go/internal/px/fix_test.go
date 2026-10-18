@@ -162,14 +162,14 @@ func TestPivotHalfAndShapePatch(t *testing.T) {
 func TestFlickerAndMargin(t *testing.T) {
 	a := gridOf("....", ".cc.", ".cc.", "....")
 	b := gridOf("....", ".cc.", ".cd.", "....")
-	vs := sequenceChecks([]string{"a", "b"}, []*pxlib.Grid{a, b}, true, nil)
+	vs := sequenceChecks([]string{"a", "b"}, []*pxlib.Grid{a, b}, true, nil, nil)
 	if len(vs) == 0 || vs[0].Check != checkFlicker {
 		t.Fatalf("ちらつきを見逃した: %v", vs)
 	}
 	edge1 := gridOf("cc..", "cc..", "....", "....")
 	edge2 := gridOf(".cc.", ".cc.", "....", "....")
 	found := false
-	for _, v := range sequenceChecks([]string{"a", "b"}, []*pxlib.Grid{edge1, edge2}, true, nil) {
+	for _, v := range sequenceChecks([]string{"a", "b"}, []*pxlib.Grid{edge1, edge2}, true, nil, nil) {
 		found = found || v.Check == checkMargin
 	}
 	if !found {

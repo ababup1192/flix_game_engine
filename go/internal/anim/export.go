@@ -12,3 +12,12 @@ func (r *Rules) CheckSequence(spriteName string, names []string, rows [][]string
 	}
 	return r.checkFrames(spriteName, fs, skipSet("palette"))
 }
+
+// MeasureSequence は CheckSequence と同じ検査を、測った値つきで返す（fge px の結果の形に写す）。
+func (r *Rules) MeasureSequence(spriteName string, names []string, rows [][]string) []Note {
+	fs := make([]frame, len(names))
+	for i := range names {
+		fs[i] = frame{name: names[i], rows: rows[i]}
+	}
+	return r.measureFrames(spriteName, fs, skipSet("palette"))
+}

@@ -3,8 +3,8 @@ package px
 // check: 手描きや assets の sprite.json に、build と同じ色の門と形の検査をかける（art-gate と precommit の置き換え）。
 
 import (
-	"encoding/json"
 	"fmt"
+	"github.com/ababup1192/flix_game_engine/go/internal/checkres"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -15,10 +15,11 @@ import (
 
 // checkReport は check の結果。
 type checkReport struct {
-	Gate  []gateFinding `json:"gate"`
-	Known []string      `json:"known"`
-	Lint  []violation   `json:"lint"`
-	OK    bool          `json:"ok"`
+	Gate  []gateFinding   `json:"gate"`
+	Known []string        `json:"known"`
+	Lint  []violation     `json:"lint"`
+	OK    bool            `json:"ok"`
+	Check *checkres.Round `json:"check,omitempty"` // 新しい形の結果とまとめ（門の外れも入る）
 }
 
 // checkFiles は sprite.json の並びに色の門と形の検査をかける。paths は workRoot からの相対か絶対。
@@ -70,6 +71,28 @@ func checkFiles(engineRoot, workRoot, gatePath string, paths []string) (*checkRe
 			rep.OK = false
 		}
 	}
+	fmtRules, err := checkres.LoadRules(engineRoot)
+	if err != nil {
+		return nil, err
+	}
+	all := append([]violation{}, rep.Lint...)
+	for i := range all {
+		all[i].Scope = checkres.ScopeFrame
+		if all[i].Frame == "" {
+			all[i].Scope = checkres.ScopeFile // スプライト全体・Doc 全体の件
+		}
+	}
+	for _, g := range rep.Gate {
+		v := newViolation(checkGate, levelGate, 1, checkres.WantAtMost(0), g.Msg)
+		v.Rule, v.Sprite, v.Scope = string(g.Kind), g.Sprite, checkres.ScopeFile
+		all = append(all, v)
+	}
+	if seenProbe != nil {
+		for _, v := range all {
+			seenProbe(v)
+		}
+	}
+	rep.Check = roundOf(all, fmtRules, nil)
 	return rep, nil
 }
 
@@ -150,7 +173,9 @@ func lintDoc(full string, doc *pxlib.Obj, rules *sprite.Rules, wrap map[string]b
 	return out
 }
 
-func cmdCheck(out, errOut *strings.Builder, engineRoot, workRoot, gatePath string, paths []string, asJSON bool) int {
+// cmdCheck の終了コードは 0（合格）・1（色の門か gate の外れ）。strict なら lint の fail だけで 2
+// （make の口と pre-commit は lint で止めない今までの形のまま。周回で使う時は --strict）。
+func cmdCheck(out, errOut *strings.Builder, engineRoot, workRoot, gatePath string, paths []string, asJSON, strict bool) int {
 	rep, err := checkFiles(engineRoot, workRoot, gatePath, paths)
 	if err != nil {
 		fmt.Fprintf(errOut, "px: %v\n", err)
@@ -159,10 +184,11 @@ func cmdCheck(out, errOut *strings.Builder, engineRoot, workRoot, gatePath strin
 	code := 0
 	if !rep.OK {
 		code = 1
+	} else if strict {
+		code = rep.Check.Summary.Exit
 	}
 	if asJSON {
-		data, _ := json.MarshalIndent(rep, "", "  ")
-		out.Write(append(data, '\n'))
+		out.Write(checkres.JSON(rep))
 		return code
 	}
 	for _, g := range rep.Gate {
@@ -195,5 +221,6 @@ func cmdCheck(out, errOut *strings.Builder, engineRoot, workRoot, gatePath strin
 	if ng > 0 {
 		fmt.Fprintf(out, "形の検査: NG %d 件\n", ng)
 	}
+	fmt.Fprintf(out, "検査: %s\n", rep.Check.Summary.Line())
 	return code
 }

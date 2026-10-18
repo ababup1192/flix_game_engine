@@ -89,6 +89,7 @@ type part struct {
 	Pivot    *[2]float64 // 回す中心の画素（.5 で画素の境目。省くと塊の上の真ん中 = 肩・股の付け根）
 	Emissive bool        // 自分で光る（窓の灯り・炎）。光の向きの検査 light-dir の対象から外す
 	Scroll   *scrollSpec // 形を周期で写して並べ、コマごとに speed ずつずらす（無ければ nil）
+	Material string      // 材質の名前（material の欄。当てた検査の組 applied に出す）
 }
 
 // scrollSpec は部品の scroll: 形を period おきに写して格子を埋め、コマ i で at に speed·i を足す。
@@ -646,6 +647,14 @@ func (sp *spriteSpec) partsOf(r *reader, s *specDoc, f frameSpec) []*part {
 			r.bad(where+".ramp", "ramps に %q が無い", p.Ramp)
 		}
 		if mv, ok := obj.Get("material"); ok {
+			switch t := pxlib.Plain(mv).(type) {
+			case string:
+				p.Material = t
+			case map[string]any:
+				for k := range t {
+					p.Material = k
+				}
+			}
 			p.Ops = append(p.Ops, r.material(pxlib.Plain(mv), fmt.Sprintf("%s.material", id), s.Shapes)...)
 		}
 		if ov, ok := obj.Get("ops"); ok {

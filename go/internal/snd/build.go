@@ -13,26 +13,29 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/ababup1192/flix_game_engine/go/internal/checklevel"
+	"github.com/ababup1192/flix_game_engine/go/internal/checkres"
 	"github.com/ababup1192/flix_game_engine/go/internal/waveform"
 )
 
 // buildResult は spec 1 本の書き出しの結果。
 type buildResult struct {
-	Spec      string    `json:"spec"`
-	Target    string    `json:"target"`
-	Wrote     bool      `json:"wrote"`
-	Rate      int       `json:"rate"`
-	Samples   int       `json:"samples"`
-	LoopStart int       `json:"loopStart"`
-	Channels  int       `json:"channels"`
-	Seconds   float64   `json:"seconds"`
-	LUFS      float64   `json:"lufs"` // ループする音は輪の 1 周
-	PeakDBFS  float64   `json:"peakDbfs"`
-	TruePeak  float64   `json:"truePeakDbtp"`
-	Breaks    []string  `json:"breaks"` // 破った所（使った機種の外の手）
-	SHA256    string    `json:"sha256"`
-	Findings  []finding `json:"findings"`
-	Report    string    `json:"report"`
+	Check     *checkres.Round `json:"check,omitempty"` // 新しい形の結果とまとめ（docs/check-results.md。AI が先に読むので頭に）
+	Spec      string          `json:"spec"`
+	Target    string          `json:"target"`
+	Wrote     bool            `json:"wrote"`
+	Rate      int             `json:"rate"`
+	Samples   int             `json:"samples"`
+	LoopStart int             `json:"loopStart"`
+	Channels  int             `json:"channels"`
+	Seconds   float64         `json:"seconds"`
+	LUFS      float64         `json:"lufs"` // ループする音は輪の 1 周
+	PeakDBFS  float64         `json:"peakDbfs"`
+	TruePeak  float64         `json:"truePeakDbtp"`
+	Breaks    []string        `json:"breaks"` // 破った所（使った機種の外の手）
+	SHA256    string          `json:"sha256"`
+	Findings  []finding       `json:"findings"`
+	Report    string          `json:"report"`
 }
 
 type buildOptions struct {
@@ -75,6 +78,20 @@ func buildSpec(engineRoot, workRoot string, s *spec, opt buildOptions) (*buildRe
 		Seconds: float64(res.frames()) / float64(s.Rate), LUFS: finite(LUFS(s.Rate, loopBody(res.out, res.loopStart))),
 		PeakDBFS: finite(dBFS(peakOf(res.out...))), TruePeak: finite(dBFS(truePeakOf(res.out...))), Breaks: res.breaks,
 		SHA256: hex.EncodeToString(sum[:]), Findings: runChecks(r, res, st, rules)}
+	fmtRules, err := checkres.LoadRules(engineRoot)
+	if err != nil {
+		return nil, err
+	}
+	var prevKeys map[string]bool
+	reportPath := filepath.Join(workRoot, "debug", "snd", specName(s.Path), "report.json")
+	if prev := loadReport(reportPath); prev != nil && prev.Check != nil {
+		prevKeys = map[string]bool{}
+		for _, r := range prev.Check.Results {
+			prevKeys[r.Key()] = true
+		}
+	}
+	br.Check = roundOfFindings(br.Findings, fmtRules, prevKeys)
+	br.Check.Summary.Applied = map[string]checklevel.Applied{specName(s.Path): checkres.AppliedOf(appliedOf(s, res, st, rules), prevApplied(reportPath, specName(s.Path)), false)}
 	if opt.NoWrite {
 		return br, nil
 	}
@@ -102,8 +119,7 @@ func buildSpec(engineRoot, workRoot string, s *spec, opt buildOptions) (*buildRe
 		br.Wrote = true
 	}
 	br.Report = filepath.ToSlash(filepath.Join("debug", "snd", specName(s.Path), "report.json"))
-	data, _ := json.MarshalIndent(br, "", "  ")
-	if err := os.WriteFile(filepath.Join(workRoot, filepath.FromSlash(br.Report)), append(data, '\n'), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(workRoot, filepath.FromSlash(br.Report)), checkres.JSON(br), 0o644); err != nil {
 		return nil, err
 	}
 	return br, nil
@@ -131,5 +147,76 @@ func (b *buildResult) summary() string {
 	for _, f := range b.Findings {
 		sb.WriteString("  " + f.String() + "\n")
 	}
+	if b.Check != nil {
+		sb.WriteString("  検査: " + b.Check.Summary.Line() + "\n")
+	}
 	return sb.String()
+}
+
+// roundOfFindings は結果を新しい形の結果とまとめにする。
+func roundOfFindings(fs []finding, rules *checkres.Rules, prevKeys map[string]bool) *checkres.Round {
+	results := []checkres.Result{}
+	for _, f := range fs {
+		r := f.result(rules)
+		r.Scope = checkres.ScopeFile
+		results = append(results, r)
+	}
+	return &checkres.Round{Summary: checkres.Summarize(results, rules, prevKeys), Results: results}
+}
+
+// appliedOf は音 1 本に当てた検査の組（当てなかった物は理由つき）。
+func appliedOf(s *spec, res *rendered, st *sndStyle, rules *sndRules) checklevel.AppliedFull {
+	full := checklevel.AppliedFull{Style: s.Style, Checks: []string{"clip", "peak", "truepeak", "dc", "alias", "breaks"}}
+	skip := func(code, why, by string) {
+		full.Skipped = append(full.Skipped, checklevel.Skip{Code: code, Why: why, By: by})
+	}
+	if st.free() {
+		skip("style", "縛りの無い機種（ops も voices も無い）", "style")
+	} else {
+		full.Checks = append(full.Checks, "style")
+	}
+	if rules.DroneSeconds > 0 {
+		full.Checks = append(full.Checks, "drone")
+	}
+	if res.loopStart >= 0 {
+		full.Checks = append(full.Checks, "seam")
+		skip("head", "ループする音は頭の遅れを見ない", "loop")
+		skip("tail", "ループする音は終わりを見ない（継ぎ目は seam）", "loop")
+		if res.tempo != nil {
+			full.Checks = append(full.Checks, "bars")
+		} else {
+			skip("bars", "tempo が無い", "spec")
+		}
+	} else {
+		full.Checks = append(full.Checks, "head", "tail")
+		skip("seam", "ループしない音", "loop")
+		skip("bars", "ループしない音", "loop")
+	}
+	if _, ok := rules.Loudness[s.Kind]; ok {
+		full.Checks = append(full.Checks, "loudness")
+	} else {
+		skip("loudness", "kind "+s.Kind+" に音量の目安が無い", "kind")
+	}
+	return full
+}
+
+// prevApplied は前の build の report.json の当てた検査の組の id。
+func prevApplied(path, name string) string {
+	if prev := loadReport(path); prev != nil && prev.Check != nil {
+		return prev.Check.Summary.Applied[name].ID
+	}
+	return ""
+}
+
+// loadReport は前の build の report.json（無いか読めなければ nil）。
+func loadReport(path string) *buildResult {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var b buildResult
+	if json.Unmarshal(data, &b) != nil {
+		return nil
+	}
+	return &b
 }

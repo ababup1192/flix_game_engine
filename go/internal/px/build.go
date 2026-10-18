@@ -20,6 +20,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/ababup1192/flix_game_engine/go/internal/anim"
+	"github.com/ababup1192/flix_game_engine/go/internal/checkres"
 	"github.com/ababup1192/flix_game_engine/go/internal/pxlib"
 	"github.com/ababup1192/flix_game_engine/go/internal/sprite"
 )
@@ -30,7 +31,9 @@ var techFrameChecks = []checkRef{{Check: checkValueSep}, {Check: checkStyle}}
 // buildOptions は build の切り替え。
 type buildOptions struct {
 	RulesRoot string            // 検査の閾値を読むリポジトリのルート（bin/lint-rules/）
-	NoCheck   bool              // lint と advice を回さない（色の門は回す）
+	NoCheck   bool              // lint と advice を回さない（色の門は回す）。周の外（probe に書く）
+	Only      string            // この code（の頭）の結果だけ出す（調べ物。周の外で probe に書く）
+	Explain   bool              // まとめの applied・exempt を毎回全文で出す
 	OutDir    string            // 見本と report.json の置き場（省くと <root>/debug/px/<名前>/last）
 	Sheet     bool              // 見比べのシート（PNG）も書く（--sheet・px snap。PNG の圧縮が描く時間より重いので既定は書かない）
 	PNG       bool              // 実寸・4 倍・コマの横並びの PNG を debug/px/<名前>/png/ に書く（--png。報告や場面の見本に貼る物）
@@ -61,6 +64,7 @@ type frameResult struct {
 
 // buildResult は build 1 回の結果。
 type buildResult struct {
+	Check       *checkres.Round   `json:"check,omitempty"` // 新しい形の結果とまとめ（docs/check-results.md。AI が先に読むので頭に）
 	Spec        string            `json:"spec"`
 	Target      string            `json:"target"`
 	Wrote       bool              `json:"wrote"`
@@ -75,6 +79,7 @@ type buildResult struct {
 	Elapsed     time.Duration     `json:"elapsedNs"`
 	Timing      buildTiming       `json:"timing"`
 	Prev        *levelCounts      `json:"-"`
+	reportPath  string            // report.json の置き場
 	prevKeys    map[string]bool   // 前の周の違反（上位の件を「新しい物から」出すため）
 }
 
@@ -225,7 +230,7 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 		hexOf[pxlib.Key(k)] = h
 	}
 	cc := &checkCtx{Rules: rules, SpriteRules: spriteRules, HexOf: hexOf, Ground: groundHex(spec.Light.Ground, pal),
-		Light: spec.Light.Dir, Ramps: map[string][]pxlib.Key{}, Style: style}
+		Light: spec.Light.Dir, Ramps: map[string][]pxlib.Key{}, Style: style, Exempted: map[[2]string]int{}}
 	for k, r := range spec.Ramps {
 		cc.Ramps[k] = r
 	}
@@ -249,16 +254,25 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 		}
 	}
 	res := &buildResult{Spec: specPath, Target: spec.Target}
-	addViolations := func(vs []violation, sp, frame string) {
+	firstParts := map[string][]*part{}           // スプライト → 1 コマ目の部品（直し方の数の候補を引く）
+	ap := newAppliedSet(spec.Style, opt.NoCheck) // 絵ごとの当てた検査の組と外した物（まとめの applied・exempt）
+	addViolations := func(vs []violation, sp, frame, scope string) {
 		exempt := map[string]bool{}
 		if spriteRules != nil {
 			exempt = spriteRules.ExemptRules(plainDoc, sp)
 		}
 		for _, v := range vs {
 			if v.Check == checkSprite && exempt[v.Rule] {
+				ap.rule(sp, v.Rule)
 				continue // base の lint-sprite が対象外にした規則
 			}
 			v.Sprite, v.Frame = sp, frame
+			if v.Scope == "" {
+				v.Scope = scope
+			}
+			if seenProbe != nil {
+				seenProbe(v)
+			}
 			res.Violations = append(res.Violations, v)
 		}
 	}
@@ -302,6 +316,9 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 				if len(r.probs) > 0 {
 					return nil, r.probs
 				}
+				if fi == 0 && seed == seeds[0] {
+					firstParts[sp.Name] = parts
+				}
 				cc.Emissive, cc.Poly = map[string]bool{}, map[string]bool{}
 				for _, p := range parts {
 					cc.Emissive[p.ID] = p.Emissive
@@ -332,7 +349,8 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 							if err != nil {
 								return fmt.Errorf("%s: %w", ps.Part.Where, err)
 							}
-							addViolations(vs, sp.Name, fname)
+							ap.check(sp.Name, n.String())
+							addViolations(vs, sp.Name, fname, checkres.ScopePart)
 						}
 						return nil
 					}
@@ -377,21 +395,33 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 				if !opt.NoCheck {
 					cc.Measures, cc.Wrap = c.measures, c.wrap
 					for _, n := range append(frameChecks, techFrameChecks...) {
+						ap.check(sp.Name, n.String())
 						vs, err := runCheck(n, c.G, cc)
 						if err != nil {
 							return nil, err
 						}
-						addViolations(vs, sp.Name, fname)
+						addViolations(vs, sp.Name, fname, checkres.ScopeFrame)
 					}
 				}
 			}
-			if animRules != nil && len(seqNames) >= 2 && (sp.Anim == nil && sp.animated || sp.Anim != nil && *sp.Anim) {
-				for _, note := range animRules.CheckSequence(sp.Name, seqNames, seqRows) {
-					addViolations([]violation{{Check: checkAnim, Level: levelLint, Msg: note, Fix: checks[checkAnim].Fix}}, sp.Name, "")
+			moving := sp.Anim == nil && sp.animated || sp.Anim != nil && *sp.Anim
+			switch {
+			case opt.NoCheck:
+			case len(seqNames) < 2:
+				ap.skip(sp.Name, "anim", "コマが 1 枚", "frames")
+			case !moving:
+				ap.skip(sp.Name, "anim", "動きの op も pose も anim: true も無い", "spec")
+			}
+			if animRules != nil && len(seqNames) >= 2 && moving {
+				ap.check(sp.Name, "anim")
+				ap.check(sp.Name, "flicker")
+				ap.check(sp.Name, "margin")
+				for _, note := range animRules.MeasureSequence(sp.Name, seqNames, seqRows) {
+					addViolations([]violation{animViolation(note)}, sp.Name, "", checkres.ScopeSequence)
 				}
 				t := time.Now()
-				for _, v := range sequenceChecks(seqNames, seqGrids, spriteLoops(sp, spec), seqAts) {
-					addViolations([]violation{v}, sp.Name, v.Frame)
+				for _, v := range sequenceChecks(seqNames, seqGrids, spriteLoops(sp, spec), seqAts, cc) {
+					addViolations([]violation{v}, sp.Name, v.Frame, checkres.ScopeSequence)
 				}
 				checkDur += time.Since(t)
 			}
@@ -402,9 +432,22 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 		if err != nil {
 			return nil, err
 		}
+		for i := range vs {
+			vs[i].Scope = checkres.ScopeSpec
+		}
+		for _, sp := range spec.Sprites {
+			ap.check(sp.Name, string(checkRampOrder))
+		}
 		res.Violations = append(res.Violations, vs...)
 	}
 	res.Violations = dedupeViolations(res.Violations)
+	for i := range res.Violations {
+		v := &res.Violations[i]
+		if call, _, ok := opAt(firstParts[v.Sprite], *v); ok {
+			v.Script = call.Where
+		}
+		v.Tries = append(v.Tries, triesFor(*v, firstParts[v.Sprite])...)
+	}
 	res.Timing.Check = checkDur
 	res.Timing.Draw = time.Since(t0) - checkDur
 	tGate := time.Now()
@@ -435,8 +478,14 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 	}
 	res.Timing.Gate = time.Since(tGate)
 	dir := opt.OutDir
+	round := !opt.NoCheck && opt.Only == ""
 	if dir == "" {
-		dir = filepath.Join(root, "debug", "px", specName(specPath), "last")
+		// --only・--no-check は周の外: last（前の周との比べの元）を汚さず probe に書く（checkset-design §4）
+		sub := "last"
+		if !round {
+			sub = "probe"
+		}
+		dir = filepath.Join(root, "debug", "px", specName(specPath), sub)
 	}
 	prev := loadPrev(filepath.Join(dir, "report.json"))
 	if prev != nil {
@@ -447,6 +496,43 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 			res.prevKeys[v.key()] = true
 		}
 	}
+	fmtRules, err := checkres.LoadRules(opt.RulesRoot)
+	if err != nil {
+		return nil, err
+	}
+	var prevResults map[string]bool
+	if prev != nil && prev.Check != nil {
+		prevResults = map[string]bool{}
+		for _, r := range prev.Check.Results {
+			prevResults[r.Key()] = true
+		}
+	}
+	if opt.Only != "" {
+		var kept []violation
+		for _, v := range res.Violations {
+			if v.Level == levelGate || strings.HasPrefix(v.code(), opt.Only) {
+				kept = append(kept, v) // gate は書くかどうかを決めるので --only でも残す
+			}
+		}
+		res.Violations = kept
+	}
+	var prevSum *checkres.Summary
+	if prev != nil && prev.Check != nil {
+		prevSum = &prev.Check.Summary
+	}
+	res.Check = roundOf(res.Violations, fmtRules, prevResults)
+	res.Check.Summary.Round = round
+	for _, f := range res.Frames {
+		if f.grid != nil {
+			ap.drawn += f.grid.Opaque().Count()
+		}
+	}
+	for _, sp := range spec.Sprites {
+		for _, p := range firstParts[sp.Name] {
+			ap.part(sp.Name, p, cc)
+		}
+	}
+	res.Check.Summary.Applied, res.Check.Summary.Exempt = ap.summary(cc.Exempted, prevSum, opt.Explain)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
@@ -477,8 +563,8 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 		res.PNGDir = pngDir
 	}
 	res.Elapsed = time.Since(t0)
-	data, _ := json.MarshalIndent(res, "", "  ")
-	if err := os.WriteFile(filepath.Join(dir, "report.json"), append(data, '\n'), 0o644); err != nil {
+	res.reportPath = filepath.Join(dir, "report.json")
+	if err := os.WriteFile(res.reportPath, checkres.JSON(res), 0o644); err != nil {
 		return nil, err
 	}
 	return res, nil
@@ -584,7 +670,8 @@ func spriteLoops(sp *spriteSpec, spec *specDoc) bool {
 
 // gateViolation は門の違反に、その色を最初に使った画素と、そこを描いた op を付ける。
 func gateViolation(b gateFinding, frames []frameResult) violation {
-	v := violation{Check: checkGate, Rule: string(b.Kind), Level: levelGate, Sprite: b.Sprite, Msg: b.Msg}
+	v := newViolation(checkGate, levelGate, 1, checkres.WantAtMost(0), b.Msg)
+	v.Rule, v.Sprite = string(b.Kind), b.Sprite
 	for _, f := range frames {
 		if f.Sprite != b.Sprite || f.grid == nil {
 			continue
@@ -888,4 +975,27 @@ func safeName(s string) string {
 		}
 		return r
 	}, s)
+}
+
+// animViolation は bin/fge anim の注意 1 件を違反にする。
+func animViolation(note anim.Note) violation {
+	want := checkres.WantAtLeast(note.Limit)
+	if note.AtMost {
+		want = checkres.WantAtMost(note.Limit)
+	}
+	return newViolation(checkAnim, levelLint, note.Got, want, note.Text).sub(note.Rule).fix(checks[checkAnim].Fix)
+}
+
+// roundOf は違反の並びを新しい形の結果とまとめにする（コマだけが違う同じ違反は 1 件にまとめる）。
+func roundOf(vs []violation, rules *checkres.Rules, prevKeys map[string]bool) *checkres.Round {
+	results := []checkres.Result{}
+	seen := map[string]bool{}
+	for _, v := range vs {
+		if seen[v.frameless()] {
+			continue
+		}
+		seen[v.frameless()] = true
+		results = append(results, v.result(rules))
+	}
+	return &checkres.Round{Summary: checkres.Summarize(results, rules, prevKeys), Results: results}
 }

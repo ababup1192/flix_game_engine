@@ -18,6 +18,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/ababup1192/flix_game_engine/go/internal/checklevel"
+	"github.com/ababup1192/flix_game_engine/go/internal/checkres"
 	"github.com/ababup1192/flix_game_engine/go/internal/rounds"
 	"github.com/ababup1192/flix_game_engine/go/internal/starbox"
 )
@@ -26,10 +28,12 @@ const usage = `使い方: bin/fge snd <口> ...   音の指定（*.sndsrc.json�
 
   snd build <x.snd.star か x.sndsrc.json>... [--check]
       鳴らして検査し、gate を通れば target の WAV を書く（--check は検査だけ。既定はステレオ・"channels": "mono" で 1 本）。
-      検査の結果は debug/snd/<名前>/report.json・波形は debug/snd/<名前>/sheet.png。gate で止まれば終了コード 1。
+      検査の結果は debug/snd/<名前>/report.json（check に score・next・1 件ずつの code・got・want・gap・fix）・
+      波形は debug/snd/<名前>/sheet.png。終了コード: 0 合格・1 gate（WAV を書かない）・2 lint の fail だけ（near と advice は 0）。
   snd gen <x.snd.star>          台本が書いた sndsrc と譜面（write_chip）をファイルへ書く（中身が同じ物は触らない）
-  snd snap <x.snd.star か x.sndsrc.json> [--new] [--max N]
-      build して、書いた WAV（複数なら 0.25 秒の無音で 1 本につないだ物）を fge rounds の周に積む
+  snd snap <x.snd.star か x.sndsrc.json> [--new] [--max N] [--tokens 使った/予算]
+      build して、書いた WAV（複数なら 0.25 秒の無音で 1 本につないだ物）を fge rounds の周に積む。
+      周の検査は rN.check.json に積み、前の周との差・next・stop（止め時の判定）を出す（docs/check-results.md）
   snd compare <前.wav> <後.wav> [--match <フォルダ> --name <名前>]
       2 本の差: サンプル数・ループの頭・LUFS・差の音の RMS（dBFS）と一番大きい所。
       --match は 2 本を同じ LUFS にそろえて <フォルダ>/<名前>.old.wav・<名前>.new.wav に書く（聞き比べ用）
@@ -141,26 +145,22 @@ func cmdBuild(out, errOut *strings.Builder, engineRoot, workRoot string, args []
 		errOut.WriteString("snd build: 台本か sndsrc を 1 つ以上渡す\n")
 		return 2
 	}
-	specs, advice, ok := specsOf(errOut, workRoot, paths)
+	results, advice, code, ok := buildPaths(errOut, engineRoot, workRoot, paths, check)
 	if !ok {
 		return 1
 	}
-	code := 0
-	var results []*buildResult
-	for _, s := range specs {
-		br, err := buildSpec(engineRoot, workRoot, s, buildOptions{NoWrite: check})
-		if err != nil {
-			fmt.Fprintf(errOut, "snd: %v\n", err)
-			return 1
-		}
-		if gateFailed(br.Findings) {
-			code = 1
-		}
-		results = append(results, br)
-	}
 	if asJSON {
-		data, _ := json.MarshalIndent(map[string]any{"results": results, "advice": advice, "exit": code}, "", "  ")
-		out.Write(append(data, '\n'))
+		// 標準出力は詰めた形: 音ごとの要点と新しい形の check（古い findings は report.json に全部ある）
+		var brief []map[string]any
+		for _, br := range results {
+			chk := any(br.Check.Brief())
+			if br.Report == "" {
+				chk = br.Check // --check は report.json を書かないので、1 件ずつの全部もここに出す
+			}
+			brief = append(brief, map[string]any{"spec": br.Spec, "target": br.Target, "wrote": br.Wrote, "seconds": br.Seconds,
+				"lufs": br.LUFS, "peakDbfs": br.PeakDBFS, "truePeakDbtp": br.TruePeak, "report": br.Report, "check": chk})
+		}
+		out.Write(checkres.Compact(map[string]any{"results": brief, "advice": advice, "exit": code}))
 		return code
 	}
 	for _, br := range results {
@@ -170,6 +170,26 @@ func cmdBuild(out, errOut *strings.Builder, engineRoot, workRoot string, args []
 		out.WriteString("advice " + a + "\n")
 	}
 	return code
+}
+
+// buildPaths は台本か sndsrc を全部鳴らして検査する。code は 1 gate・2 lint の fail だけ・0（near と advice は 0）。
+func buildPaths(errOut *strings.Builder, engineRoot, workRoot string, paths []string, check bool) ([]*buildResult, []string, int, bool) {
+	specs, advice, ok := specsOf(errOut, workRoot, paths)
+	if !ok {
+		return nil, nil, 1, false
+	}
+	code := 0
+	var results []*buildResult
+	for _, s := range specs {
+		br, err := buildSpec(engineRoot, workRoot, s, buildOptions{NoWrite: check})
+		if err != nil {
+			fmt.Fprintf(errOut, "snd: %v\n", err)
+			return nil, nil, 1, false
+		}
+		code = checkres.WorseExit(code, br.Check.Summary.Exit)
+		results = append(results, br)
+	}
+	return results, advice, code, true
 }
 
 func cmdGen(out, errOut *strings.Builder, workRoot string, args []string) int {
@@ -207,8 +227,21 @@ func cmdGen(out, errOut *strings.Builder, workRoot string, args []string) int {
 
 func cmdSnap(out, errOut *strings.Builder, engineRoot, workRoot string, args []string) int {
 	var paths, flags []string
+	var tokens *checkres.Tokens
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
+		case "--tokens":
+			if i+1 >= len(args) {
+				errOut.WriteString("snd snap: --tokens の後に 使った/予算 を書く\n")
+				return 2
+			}
+			t, err := checkres.ParseTokens(args[i+1])
+			if err != nil {
+				fmt.Fprintf(errOut, "snd snap: %v\n", err)
+				return 2
+			}
+			tokens = t
+			i++
 		case "--new":
 			flags = append(flags, args[i])
 		case "--max":
@@ -224,12 +257,16 @@ func cmdSnap(out, errOut *strings.Builder, engineRoot, workRoot string, args []s
 		errOut.WriteString("snd snap: 台本か sndsrc を 1 つ渡す\n")
 		return 2
 	}
-	var b strings.Builder
-	if code := cmdBuild(&b, errOut, engineRoot, workRoot, paths, false); code != 0 {
-		out.WriteString(b.String())
-		return code
+	results, _, buildCode, ok := buildPaths(errOut, engineRoot, workRoot, paths, false)
+	if !ok {
+		return 1
 	}
-	out.WriteString(b.String())
+	for _, br := range results {
+		out.WriteString(br.summary())
+	}
+	if buildCode == 1 {
+		return 1 // gate で WAV を書かなかった（周に積む物が無い）
+	}
 	specs, _, _ := specsOf(errOut, workRoot, paths)
 	var clips [][][]float64
 	rate, nc := 0, 1
@@ -274,7 +311,39 @@ func cmdSnap(out, errOut *strings.Builder, engineRoot, workRoot string, args []s
 		fmt.Fprintf(errOut, "snd: %v\n", err)
 		return 1
 	}
-	return code
+	if code != 0 {
+		return code
+	}
+	// 周の検査（全部の spec の結果を 1 つの周に）: 前の周との差・next・stop
+	fmtRules, err := checkres.LoadRules(engineRoot)
+	if err != nil {
+		fmt.Fprintf(errOut, "snd: %v\n", err)
+		return 1
+	}
+	var all []checkres.Result
+	for _, br := range results {
+		all = append(all, br.Check.Results...)
+	}
+	rr, err := rounds.LoadRules(engineRoot)
+	if err != nil {
+		fmt.Fprintf(errOut, "snd: %v\n", err)
+		return 1
+	}
+	hist := filepath.Join(workRoot, filepath.FromSlash(rr.HistoryDir), name)
+	cur := checkres.Round{Summary: checkres.Summarize(all, fmtRules, nil), Results: all, Tokens: tokens}
+	cur.Summary.Applied = map[string]checklevel.Applied{}
+	for _, br := range results {
+		for k, v := range br.Check.Summary.Applied {
+			cur.Summary.Applied[k] = v
+		}
+	}
+	_, lines, err := checkres.Snap(hist, rounds.NextRound(hist)-1, cur, fmtRules)
+	if err != nil {
+		fmt.Fprintf(errOut, "snd: %v\n", err)
+		return 1
+	}
+	out.WriteString(lines)
+	return buildCode
 }
 
 // ── compare ──

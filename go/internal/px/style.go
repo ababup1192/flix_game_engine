@@ -11,11 +11,13 @@ package px
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
+	"github.com/ababup1192/flix_game_engine/go/internal/checkres"
 	"github.com/ababup1192/flix_game_engine/go/internal/pxlib"
 )
 
@@ -158,11 +160,18 @@ func init() {
 				return nil
 			}
 			var out []violation
-			bad := func(x, y int, has bool, f string, a ...any) {
-				out = append(out, violation{Check: checkStyle, Level: levelGate, X: x, Y: y, HasAt: has, Msg: st.Label + ": " + fmt.Sprintf(f, a...)})
+			bad := func(rule string, got float64, want checkres.Want, at *pxlib.Pt, f string, a ...any) {
+				v := newViolation(checkStyle, levelGate, got, want, st.Label+": "+fmt.Sprintf(f, a...))
+				v.Rule = rule
+				if at != nil {
+					v = v.at(*at)
+				}
+				out = append(out, v)
 			}
 			if st.MaxSize[0] > 0 && (g.W > st.MaxSize[0] || g.H > st.MaxSize[1]) {
-				bad(0, 0, false, "%d×%d は大きすぎる（%d×%d まで）", g.W, g.H, st.MaxSize[0], st.MaxSize[1])
+				// 長い方の辺の超え（上限に対する割合で比べる）
+				over := math.Max(float64(g.W)/float64(st.MaxSize[0]), float64(g.H)/float64(st.MaxSize[1]))
+				bad("size", over, checkres.WantAtMost(1), nil, "%d×%d は大きすぎる（%d×%d まで）", g.W, g.H, st.MaxSize[0], st.MaxSize[1])
 			}
 			seen := map[pxlib.Key]bool{}
 			for y := 0; y < g.H; y++ {
@@ -173,12 +182,12 @@ func init() {
 					}
 					seen[k] = true
 					if !st.allowsHex(c.HexOf[k]) {
-						bad(x, y, true, "色 %s（%s）はこの機種で出せない", k, c.HexOf[k])
+						bad("color", 1, checkres.WantAtMost(0), &pxlib.Pt{X: x, Y: y}, "色 %s（%s）はこの機種で出せない", k, c.HexOf[k])
 					}
 				}
 			}
 			if st.MaxColors > 0 && len(seen) > st.MaxColors {
-				bad(0, 0, false, "%d 色使っている（%d 色まで）", len(seen), st.MaxColors)
+				bad("colors", float64(len(seen)), checkres.WantAtMost(float64(st.MaxColors)), nil, "%d 色使っている（%d 色まで）", len(seen), st.MaxColors)
 			}
 			if tw, th := st.Tile[0], st.Tile[1]; tw > 0 && th > 0 && st.MaxTileColors > 0 {
 				for ty := 0; ty < g.H; ty += th {
@@ -192,7 +201,8 @@ func init() {
 							}
 						}
 						if len(cell) > st.MaxTileColors {
-							bad(tx, ty, true, "%d×%d の升目 (%d,%d) に %d 色（%d 色まで）", tw, th, tx, ty, len(cell), st.MaxTileColors)
+							bad("tile-colors", float64(len(cell)), checkres.WantAtMost(float64(st.MaxTileColors)), &pxlib.Pt{X: tx, Y: ty},
+								"%d×%d の升目 (%d,%d) に %d 色（%d 色まで）", tw, th, tx, ty, len(cell), st.MaxTileColors)
 						}
 					}
 				}
@@ -295,6 +305,9 @@ func paletteViolations(g *pxlib.Grid, label string, pr *paletteRule) []violation
 	if biggest > pr.Size || need > pr.Count {
 		level, sure = levelGate, fmt.Sprintf("一番色の多い単位 %d 色・色の総数 %d 色 → %d 本は要る", biggest, len(all), need)
 	}
-	return []violation{{Check: checkStyle, Level: level, X: bad.at.X, Y: bad.at.Y, HasAt: true,
-		Msg: fmt.Sprintf("%s: パレット %d 本 × %d 色に割り付けられない（%s の %d 色が入る本が無い。%s）", label, pr.Count, pr.Size, bad.where, len(bad.keys), sure)}}
+	// 要るパレットの本数（下限）と使える本数
+	v := newViolation(checkStyle, level, float64(max(need, pr.Count+1)), checkres.WantAtMost(float64(pr.Count)),
+		fmt.Sprintf("%s: パレット %d 本 × %d 色に割り付けられない（%s の %d 色が入る本が無い。%s）", label, pr.Count, pr.Size, bad.where, len(bad.keys), sure)).at(bad.at)
+	v.Rule = "palette"
+	return []violation{v}
 }

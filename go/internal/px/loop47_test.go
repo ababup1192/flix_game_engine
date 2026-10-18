@@ -79,7 +79,7 @@ func TestFlickerSkipsSwayParts(t *testing.T) {
 		still = append(still, map[string]partPose{"bg": {}, "tree": {}})
 	}
 	found := false
-	for _, v := range sequenceChecks(names, grids, true, still) {
+	for _, v := range sequenceChecks(names, grids, true, still, nil) {
 		found = found || v.Check == checkFlicker
 	}
 	if !found {

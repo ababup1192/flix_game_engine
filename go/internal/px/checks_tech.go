@@ -8,6 +8,7 @@ import (
 	"math"
 	"strings"
 
+	"github.com/ababup1192/flix_game_engine/go/internal/checkres"
 	"github.com/ababup1192/flix_game_engine/go/internal/pxlib"
 )
 
@@ -160,9 +161,9 @@ func init() {
 					continue
 				}
 				if li-ll >= c.Rules.PillowEdgeGap && math.Abs(ll-ld) < c.Rules.PillowSideGap {
-					p := lit[0]
-					out = append(out, violation{Check: checkPillow, Level: levelAdvice, X: p.X, Y: p.Y, HasAt: true,
-						Msg: fmt.Sprintf("縁の明るさが光の側 %.2f・影の側 %.2f で、内側 %.2f より一様に暗い（光源が無い陰）", ll, ld, li)})
+					// 光の側と影の側の差を pillowSideGap 以上に開けば pillow ではない
+					out = append(out, newViolation(checkPillow, levelAdvice, math.Abs(ll-ld), checkres.WantAtLeast(c.Rules.PillowSideGap),
+						fmt.Sprintf("縁の明るさが光の側 %.2f・影の側 %.2f で、内側 %.2f より一様に暗い（光源が無い陰）", ll, ld, li)).at(lit[0]))
 				}
 			}
 			return out
@@ -209,9 +210,9 @@ func init() {
 				}
 				vx, vy = vx/wsum*2, vy/wsum*2
 				if dot(vx, vy, c.Light[0], c.Light[1]) < 0 {
-					p := cells[0]
-					out = append(out, violation{Check: checkLightDir, Level: levelAdvice, X: p.X, Y: p.Y, HasAt: true,
-						Msg: fmt.Sprintf("明るい段が光と反対の側にある（明るい重心 − 暗い重心 = (%.1f, %.1f)・光 (%g, %g)）", vx, vy, c.Light[0], c.Light[1])})
+					// 明るい側へ向かう向きと光の向きの内積（正なら光の側が明るい）
+					out = append(out, newViolation(checkLightDir, levelAdvice, dot(vx, vy, c.Light[0], c.Light[1]), checkres.WantAtLeast(0),
+						fmt.Sprintf("明るい段が光と反対の側にある（明るい重心 − 暗い重心 = (%.1f, %.1f)・光 (%g, %g)）", vx, vy, c.Light[0], c.Light[1])).at(cells[0]))
 				}
 			}
 			return out
@@ -254,8 +255,10 @@ func init() {
 			if op.Count() == len(edgePts(op, d)) {
 				return nil // 縁しか無い細い絵（線・文字）
 			}
-			return []violation{{Check: checkBlackOutline, Level: levelAdvice, X: at.X, Y: at.Y, HasAt: true,
-				Msg: fmt.Sprintf("外の縁が 1 色（%s・一番暗い色）で一周している（黒い 1 本線は小さい絵を重くする）", edge)}}
+			// 縁の色の数（2 色以上にすれば 1 色の黒い輪郭ではない）
+			return []violation{newViolation(checkBlackOutline, levelAdvice, 1, checkres.WantAtLeast(2),
+				fmt.Sprintf("外の縁が 1 色（%s・一番暗い色）で一周している（黒い 1 本線は小さい絵を重くする）", edge)).at(at).
+				fix("", checkres.Try{Op: "outline", Arg: "op", Now: "outline", Try: "sel_out", Expect: checkres.Ptr(2)})}
 		},
 	})
 	registerCheck(&checkDef{
@@ -269,8 +272,8 @@ func init() {
 					lim = c.Rules.ValueSepMin
 				}
 				if m.D < lim {
-					out = append(out, violation{Check: checkValueSep, Level: levelLint, X: m.At.X, Y: m.At.Y, HasAt: true,
-						Msg: fmt.Sprintf("%s と %s の明るさの差 %.3f（%.2f 以上にする）", m.Part, m.Against, m.D, lim)})
+					out = append(out, newViolation(checkValueSep, levelLint, m.D, checkres.WantAtLeast(lim),
+						fmt.Sprintf("%s と %s の明るさの差 %.3f（%.2f 以上にする）", m.Part, m.Against, m.D, lim)).at(m.At))
 				}
 			}
 			return out
@@ -290,8 +293,8 @@ func init() {
 						continue
 					}
 					if b-a < c.Rules.RampMinGap {
-						out = append(out, violation{Check: checkRampOrder, Level: levelLint,
-							Msg: fmt.Sprintf("ランプ %s の %d → %d 段（%s → %s）の明るさの差 %+.3f（暗 → 明に %.2f 以上）", name, i-1, i, r[i-1], r[i], b-a, c.Rules.RampMinGap)})
+						out = append(out, newViolation(checkRampOrder, levelLint, b-a, checkres.WantAtLeast(c.Rules.RampMinGap),
+							fmt.Sprintf("ランプ %s の %d → %d 段（%s → %s）の明るさの差 %+.3f（暗 → 明に %.2f 以上）", name, i-1, i, r[i-1], r[i], b-a, c.Rules.RampMinGap)))
 					}
 				}
 			}
@@ -337,9 +340,9 @@ func init() {
 				edge /= float64(m)
 				inner /= float64(m * (n - 1))
 				// 内側にも同じ強さの線（レンガの目地など）があれば、端の差は模様の一部で継ぎ目ではない
-				if edge > inner*c.Rules.SeamRatio+0.02 && edge > strongest+0.02 {
-					out = append(out, violation{Check: checkSeam, Level: levelLint,
-						Msg: fmt.Sprintf("%s の端の差 %.3f が内側の差 %.3f の %.1f 倍を超える（並べると継ぎ目が見える）", map[string]string{"x": "左右", "y": "上下"}[axis], edge, inner, c.Rules.SeamRatio)})
+				if lim := math.Max(inner*c.Rules.SeamRatio, strongest) + 0.02; edge > lim {
+					out = append(out, newViolation(checkSeam, levelLint, edge, checkres.WantAtMost(lim),
+						fmt.Sprintf("%s の端の差 %.3f が内側の差 %.3f の %.1f 倍を超える（並べると継ぎ目が見える）", map[string]string{"x": "左右", "y": "上下"}[axis], edge, inner, c.Rules.SeamRatio)).sub(axis))
 				}
 			}
 			return out
@@ -409,7 +412,7 @@ var flickerExempt = map[string]bool{"palette_cycle": true, "wave_shift": true}
 // ats はコマごとの部品の at と rotate（部品 id → 置き方。nil なら見ない）: 2 つのコマで at か rotate が違う部品
 // （at でずらすスクロール・移動・回転）の画素は動きなのでちらつきと数えない（格子の縁から入ってくる写しは、
 // 格子の中の部分だけで陰が決まり塗りがコマで変わる）。
-func sequenceChecks(names []string, grids []*pxlib.Grid, loop bool, ats []map[string]partPose) []violation {
+func sequenceChecks(names []string, grids []*pxlib.Grid, loop bool, ats []map[string]partPose, c *checkCtx) []violation {
 	var out []violation
 	n := len(grids)
 	if n < 2 {
@@ -440,7 +443,13 @@ func sequenceChecks(names []string, grids []*pxlib.Grid, loop bool, ats []map[st
 				if ka == kb || ka == pxlib.Clear || kb == pxlib.Clear {
 					continue
 				}
-				if flickerExempt[baseOp(a.SrcAt(x, y).Op)] || flickerExempt[baseOp(b.SrcAt(x, y).Op)] {
+				if op := baseOp(a.SrcAt(x, y).Op); flickerExempt[op] || flickerExempt[baseOp(b.SrcAt(x, y).Op)] {
+					if c != nil && c.Exempted != nil {
+						if !flickerExempt[op] {
+							op = baseOp(b.SrcAt(x, y).Op)
+						}
+						c.Exempted[[2]string{"px.flicker", op}]++
+					}
 					continue
 				}
 				if moved(a.SrcAt(x, y).Part) || moved(b.SrcAt(x, y).Part) {
@@ -461,8 +470,10 @@ func sequenceChecks(names []string, grids []*pxlib.Grid, loop bool, ats []map[st
 			}
 		}
 		if len(cells) > 0 {
-			out = append(out, violation{Check: checkFlicker, Level: levelLint, Frame: names[(i+1)%n], X: cells[0].X, Y: cells[0].Y, HasAt: true, Cells: cells,
-				Msg: fmt.Sprintf("%s → %s で、周りが動かないのに色だけ変わる画素が %d 個（ちらつく）", names[i], names[(i+1)%n], len(cells)), Fix: checks[checkFlicker].Fix})
+			v := newViolation(checkFlicker, levelLint, float64(len(cells)), checkres.WantAtMost(0),
+				fmt.Sprintf("%s → %s で、周りが動かないのに色だけ変わる画素が %d 個（ちらつく）", names[i], names[(i+1)%n], len(cells))).at(cells[0]).fix(checks[checkFlicker].Fix)
+			v.Frame, v.Cells = names[(i+1)%n], cells
+			out = append(out, v)
 		}
 	}
 	// 動く絵の外接箱が左・右・上の縁に触れていれば、動く余白が無い（足元の下の縁は地面なので見ない）
@@ -515,8 +526,13 @@ func sequenceChecks(names []string, grids []*pxlib.Grid, loop bool, ats []map[st
 			sides = append(sides, "上")
 		}
 		if len(sides) > 0 {
-			out = append(out, violation{Check: checkMargin, Level: levelAdvice,
-				Msg: fmt.Sprintf("動く絵が%sの縁に触れている（動く余白が無いと動きが縮こまる）", strings.Join(sides, "・")), Fix: checks[checkMargin].Fix})
+			out = append(out, newViolation(checkMargin, levelAdvice, float64(len(sides)), checkres.WantAtMost(0),
+				fmt.Sprintf("動く絵が%sの縁に触れている（動く余白が無いと動きが縮こまる）", strings.Join(sides, "・"))).fix(checks[checkMargin].Fix))
+		}
+	}
+	if seenProbe != nil {
+		for _, v := range out {
+			seenProbe(v)
 		}
 	}
 	return out

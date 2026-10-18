@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/ababup1192/flix_game_engine/go/internal/checkres"
 	"math"
 	"math/big"
 	"os"
@@ -949,7 +950,7 @@ func cmdBuildStar(out, errOut *strings.Builder, engineRoot, workRoot, script str
 		if !asJSON {
 			fmt.Fprintf(out, "%s:\n", f.Path)
 		}
-		code = max(code, cmdBuild(out, errOut, engineRoot, workRoot, f.Path, opt, timing, asJSON))
+		code = checkres.WorseExit(code, cmdBuild(out, errOut, engineRoot, workRoot, f.Path, opt, timing, asJSON))
 	}
 	if n == 0 {
 		fmt.Fprintf(errOut, "px build: %s は px.write_spec を呼んでいない\n", script)

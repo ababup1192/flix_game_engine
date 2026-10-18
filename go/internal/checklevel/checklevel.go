@@ -53,3 +53,28 @@ func (l *Level) UnmarshalJSON(b []byte) error {
 	}
 	return fmt.Errorf("知らない level %q（gate・lint・advice）", s)
 }
+
+// Skip は当てなかった検査 1 つ（理由は必須。checkset-design §3。px と snd が共有する）。
+type Skip struct {
+	Code string `json:"code"`
+	Why  string `json:"why"`
+	By   string `json:"by"` // 出どころ（kind:icon・op 名・--no-check など）
+}
+
+// Applied は 1 つの絵（sprite）か音に当てた検査の組。宣言と検査の組が前の周と同じなら ID だけ出す（Full は nil）。
+type Applied struct {
+	ID      string       `json:"id"`
+	Changed bool         `json:"changed"`
+	Full    *AppliedFull `json:"full,omitempty"` // 最初の周・組が変わった周・--explain だけ
+}
+
+// AppliedFull は当てた検査の組の全文。kind・look の欄は宣言の仕組み（0.42.0）で足す。
+// Fidelity・FidelityBy は low-bit ↔ hi-bit の軸（checkset-design §9）の欄で、0.41.0 では空のまま。
+type AppliedFull struct {
+	Fidelity   *float64 `json:"fidelity,omitempty"`
+	FidelityBy string   `json:"fidelityBy,omitempty"` // 出どころ（門・機種・不明）
+	Style      string   `json:"style,omitempty"`
+	Materials  []string `json:"materials,omitempty"`
+	Checks     []string `json:"checks"`
+	Skipped    []Skip   `json:"skipped,omitempty"`
+}

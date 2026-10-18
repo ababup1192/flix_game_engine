@@ -6,10 +6,13 @@ package snd
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/ababup1192/flix_game_engine/go/internal/checkres"
 )
 
 // sndStyle は機種 1 つの決まり（省略は見ない）。
@@ -88,36 +91,59 @@ func (r *sndRules) style(workRoot, name string) (*sndStyle, error) {
 // free は縛りの無い機種か（ops も voices も書いていない）。
 func (s *sndStyle) free() bool { return len(s.Ops) == 0 && s.Voices == nil }
 
-// checkStyle は機種の外の op・引数・同時に鳴らす数を見る。返すのは（何が・原因の op）の組。
-func (s *sndStyle) checkStyle(sp *spec, res *rendered) [][2]string {
+// styleProblem は機種の決まりの外れ 1 つ（測り方の別・文・原因の op・数・上限・直し方の候補）。
+type styleProblem struct {
+	sub, msg, where string
+	got, limit      float64
+	tries           []checkres.Try
+}
+
+// checkStyle は機種の外の op・引数・同時に鳴らす数を見る。
+func (s *sndStyle) checkStyle(sp *spec, res *rendered) []styleProblem {
 	if s.free() {
 		return nil
 	}
-	var out [][2]string
-	add := func(where, f string, a ...any) { out = append(out, [2]string{fmt.Sprintf(f, a...), where}) }
+	var out []styleProblem
+	sub := "op"
+	add := func(where, f string, a ...any) {
+		out = append(out, styleProblem{sub: sub, msg: fmt.Sprintf(f, a...), where: where, got: 1})
+	}
 	for _, vo := range sp.Voices {
 		for _, c := range vo.Ops {
+			sub = "op"
 			if len(s.Ops) > 0 && !contains(s.Ops, c.Name) {
 				add(c.Where, "%s は %s の外の op（書ける op: %s）", c.Name, s.label(), strings.Join(s.Ops, "・"))
 				continue
 			}
 			switch c.Name {
 			case "pulse":
-				if len(s.Duties) > 0 && !containsF(s.Duties, c.Args.Num("duty")) {
-					add(c.Where, "duty %v は %s の外（%v のどれか）", c.Args.Num("duty"), s.label(), s.Duties)
+				if d := c.Args.Num("duty"); len(s.Duties) > 0 && !containsF(s.Duties, d) {
+					sub = "duty"
+					add(c.Where, "duty %v は %s の外（%v のどれか）", d, s.label(), s.Duties)
+					near := s.Duties[0]
+					for _, x := range s.Duties {
+						if math.Abs(x-d) < math.Abs(near-d) {
+							near = x
+						}
+					}
+					out[len(out)-1].tries = []checkres.Try{{Op: c.Where, Arg: "duty", Now: d, Try: near, Expect: checkres.Ptr(0)}}
 				}
 			case "noise":
 				if len(s.NoiseKinds) > 0 && !contains(s.NoiseKinds, c.Args.Str("kind")) {
+					sub = "noise-kind"
 					add(c.Where, "noise の kind %q は %s の外（%s）", c.Args.Str("kind"), s.label(), strings.Join(s.NoiseKinds, "・"))
+					out[len(out)-1].tries = []checkres.Try{{Op: c.Where, Arg: "kind", Now: c.Args.Str("kind"), Try: s.NoiseKinds[0], Expect: checkres.Ptr(0)}}
 				}
 			}
 		}
 	}
+	sub = "op"
 	for _, c := range sp.Post {
 		if len(s.Ops) > 0 && !contains(s.Ops, c.Name) {
 			add(c.Where, "%s は %s の外の op（書ける op: %s）", c.Name, s.label(), strings.Join(s.Ops, "・"))
 		}
 	}
+	sub = "break"
 	for _, b := range res.breaks {
 		if !contains(s.Breaks, b) {
 			add(breakCause(sp, b), "%s は %s の外の手（破ってよい所: %s）", b, s.label(), orNone(s.Breaks))
@@ -145,11 +171,13 @@ func (s *sndStyle) checkStyle(sp *spec, res *rendered) [][2]string {
 				}
 			}
 			if busy > limit {
+				sub = "voices"
 				if limit == 0 {
 					add(vo.Ops[0].Where, "%s は %s に無い部品", p, s.label())
 				} else {
 					add(vo.Ops[0].Where, "%s が同時に %d 本（%s は %d 本まで）", p, busy, s.label(), limit)
 				}
+				out[len(out)-1].got, out[len(out)-1].limit = float64(busy), float64(limit)
 			}
 		}
 	}

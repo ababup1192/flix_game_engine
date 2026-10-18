@@ -91,6 +91,11 @@ type Finding struct {
 	At      pxlib.Pt
 	Cells   []pxlib.Pt
 	Msg     string
+	// 測った値と基準（fge px の検査の結果の形に写す）。Sub は同じ規則の中の測り方の別（silhouette の sparse・thin）
+	Sub    string
+	Got    float64
+	Limit  float64
+	AtMost bool // true は got ≤ limit・false は got ≥ limit
 }
 
 // CheckFrame は 1 コマの形の規則（orphan・connect・jaggy・banding・corner・silhouette）を見る。
@@ -103,7 +108,7 @@ func (r *Rules) CheckFrame(g *pxlib.Grid) []Finding {
 	}
 	var out []Finding
 	for _, p := range r.orphanCells(opaque, count) {
-		out = append(out, Finding{Rule: "orphan", Problem: true, HasAt: true, At: p, Cells: []pxlib.Pt{p},
+		out = append(out, Finding{Rule: "orphan", Problem: true, HasAt: true, At: p, Cells: []pxlib.Pt{p}, Got: 1, AtMost: true,
 			Msg: fmt.Sprintf("(%d,%d) に浮いた 1 画素 (周り 8 方向すべて透明)", p.X, p.Y)})
 	}
 	if count >= r.MinConnectCells {
@@ -118,26 +123,24 @@ func (r *Rules) CheckFrame(g *pxlib.Grid) []Finding {
 			if len(blobs) > r.ConnectShown {
 				more = "・…"
 			}
-			out = append(out, Finding{Rule: "connect", HasAt: true, At: blobs[1].Start, Msg: fmt.Sprintf(
+			out = append(out, Finding{Rule: "connect", HasAt: true, At: blobs[1].Start, Got: float64(len(blobs)), Limit: 1, AtMost: true, Msg: fmt.Sprintf(
 				"絵が %d 個の塊に分かれている (%s%s) — 意図して離した絵 (火の粉・浮く飾り) なら対象外に書く",
 				len(blobs), strings.Join(parts, "・"), more)})
 		}
 	}
 	if spots := jaggySpots(opaque); len(spots) >= r.JaggyMinCount {
 		msg, _ := FindingMsg("jaggy", spots)
-		out = append(out, Finding{Rule: "jaggy", HasAt: true, At: spots[0], Cells: spots, Msg: msg})
+		out = append(out, Finding{Rule: "jaggy", HasAt: true, At: spots[0], Cells: spots, Got: float64(len(spots)), Limit: float64(r.JaggyMinCount - 1), AtMost: true, Msg: msg})
 	}
 	for _, b := range r.bandingKeys(g, opaque) {
-		out = append(out, Finding{Rule: "banding", HasAt: true, At: b.cells[0], Cells: b.cells, Msg: fmt.Sprintf(
+		out = append(out, Finding{Rule: "banding", HasAt: true, At: b.cells[0], Cells: b.cells, Got: float64(len(b.cells)), AtMost: true, Msg: fmt.Sprintf(
 			"色 \"%s\" が輪郭の内側 1px の縁取りとしてしか使われていない (banding の疑い)", b.key)})
 	}
 	if spots := cornerDoubleSpots(g); len(spots) > 0 {
 		msg, _ := FindingMsg("corner", spots)
-		out = append(out, Finding{Rule: "corner", HasAt: true, At: spots[0], Cells: spots, Msg: msg})
+		out = append(out, Finding{Rule: "corner", HasAt: true, At: spots[0], Cells: spots, Got: float64(len(spots)), AtMost: true, Msg: msg})
 	}
-	for _, note := range r.silhouetteNotes(opaque, count) {
-		out = append(out, Finding{Rule: "silhouette", Msg: note})
-	}
+	out = append(out, r.silhouetteNotes(opaque, count)...)
 	return out
 }
 
@@ -293,19 +296,21 @@ func cornerDoubleSpots(g *pxlib.Grid) []pxlib.Pt {
 	return out
 }
 
-func (r *Rules) silhouetteNotes(opaque pxlib.Mask, count int) []string {
+func (r *Rules) silhouetteNotes(opaque pxlib.Mask, count int) []Finding {
 	width, height := opaque.W(), opaque.H()
 	x0, y0, x1, y1 := pxlib.BBox(opaque.Points())
 	boxW, boxH := x1-x0+1, y1-y0+1
-	var notes []string
+	var notes []Finding
 	occupancy := float64(count) / float64(boxW*boxH)
 	if occupancy < r.SilhouetteMinOcc {
-		notes = append(notes, fmt.Sprintf("シルエットがスカスカ (枠 %dx%d の %.0f%%)", boxW, boxH, occupancy*100))
+		notes = append(notes, Finding{Rule: "silhouette", Sub: "sparse", Got: occupancy, Limit: r.SilhouetteMinOcc,
+			Msg: fmt.Sprintf("シルエットがスカスカ (枠 %dx%d の %.0f%%)", boxW, boxH, occupancy*100)})
 	}
 	// 格子の端から端まで届く物はタイルの縁や細長い物であって、細くて当たり前。
 	spans := boxW == width || boxH == height
 	if !spans && min(boxW, boxH) <= 2 && max(boxW, boxH) >= 8 {
-		notes = append(notes, fmt.Sprintf("シルエットが細長すぎる (%dx%d)", boxW, boxH))
+		notes = append(notes, Finding{Rule: "silhouette", Sub: "thin", Got: float64(min(boxW, boxH)), Limit: 3,
+			Msg: fmt.Sprintf("シルエットが細長すぎる (%dx%d)", boxW, boxH)})
 	}
 	return notes
 }
@@ -406,7 +411,7 @@ func (r *Rules) CheckDoc(doc map[string]any, legendHexes map[string]string, hasH
 				if de < r.DeltaEMin && !(hasDocExempt && docExempt.rules["palette"]) {
 					text := fmt.Sprintf("色 \"%s\" (%s) と \"%s\" (%s) が近すぎる (ΔE %.1f)",
 						nameA, legendHexes[nameA], nameB, legendHexes[nameB], de)
-					findings = append(findings, DocFinding{Finding: Finding{Rule: "palette", Msg: text}, Text: text})
+					findings = append(findings, DocFinding{Finding: Finding{Rule: "palette", Sub: "delta-e", Got: de, Limit: r.DeltaEMin, Msg: text}, Text: text})
 				}
 			}
 		}
@@ -423,7 +428,7 @@ func (r *Rules) CheckDoc(doc map[string]any, legendHexes map[string]string, hasH
 		sort.Strings(chars)
 		for _, ch := range chars {
 			text := fmt.Sprintf("legend の字 '%s' の色キーが空 (エンジンは不透明に塗るが、検査は透明として数える。透明にするなら legend から消して '.' で書く)", ch)
-			findings = append(findings, DocFinding{Finding: Finding{Rule: "structure", Problem: true, Msg: text}, Text: text})
+			findings = append(findings, DocFinding{Finding: Finding{Rule: "structure", Problem: true, Got: 1, AtMost: true, Msg: text}, Text: text})
 		}
 	}
 
@@ -444,7 +449,7 @@ func (r *Rules) CheckDoc(doc map[string]any, legendHexes map[string]string, hasH
 		}
 		if !isObject || frames == nil {
 			text := fmt.Sprintf("%s: frames が無い (スプライトは {frames, anchor} の形)", name)
-			findings = append(findings, DocFinding{Finding: Finding{Rule: "structure", Problem: true, Msg: text}, Sprite: name, Text: text})
+			findings = append(findings, DocFinding{Finding: Finding{Rule: "structure", Problem: true, Got: 1, AtMost: true, Msg: text}, Sprite: name, Text: text})
 			continue
 		}
 		spriteCount++
@@ -468,7 +473,7 @@ func (r *Rules) CheckDoc(doc map[string]any, legendHexes map[string]string, hasH
 			findings = append(findings, DocFinding{Finding: f, Sprite: name, Frame: frame, Text: text})
 		}
 		report := func(rule string, isProblem bool, text string) {
-			reportAt(Finding{Rule: rule, Problem: isProblem, Msg: text}, "", text)
+			reportAt(Finding{Rule: rule, Problem: isProblem, Msg: text, Got: 1, AtMost: true}, "", text)
 		}
 
 		frameNames := make([]string, 0, len(frames))
@@ -566,9 +571,10 @@ func (r *Rules) CheckDoc(doc map[string]any, legendHexes map[string]string, hasH
 			limit = r.MaxColorsBig
 		}
 		if len(usedKeys) > limit {
-			report("palette", false, fmt.Sprintf(
+			text := fmt.Sprintf(
 				"%s: 色数 %d が目安 %d を超えている (少数パレットの画風なら色を束ねる。色ランプ+ディザの画風なら気にしなくてよい)",
-				name, len(usedKeys), limit))
+				name, len(usedKeys), limit)
+			reportAt(Finding{Rule: "palette", Sub: "colors", Msg: text, Got: float64(len(usedKeys)), Limit: float64(limit), AtMost: true}, "", text)
 		}
 	}
 

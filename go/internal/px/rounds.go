@@ -11,10 +11,12 @@ package px
 
 import (
 	"fmt"
+	"github.com/ababup1192/flix_game_engine/go/internal/checkres"
 	"io"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -64,7 +66,7 @@ func cmdWatch(errOut *strings.Builder, engineRoot, workRoot, spec string, noChec
 // cmdSnap は今の spec で見本つきで描き直し、見本と spec を fge rounds snap で積む。
 // 台本（.px.star）を渡すと gen してから、台本が書いた pxsrc（1 本）を撮り、周には台本を積む。
 // maxRounds は --max N（任された上限。0 は書いていない）。
-func cmdSnap(out, errOut *strings.Builder, engineRoot, workRoot, spec string, fresh bool, maxRounds int) int {
+func cmdSnap(out, errOut *strings.Builder, engineRoot, workRoot, spec string, fresh bool, maxRounds int, tokens *checkres.Tokens) int {
 	name, script := specName(spec), spec
 	r, err := rounds.LoadRules(engineRoot)
 	if err != nil {
@@ -135,7 +137,22 @@ func cmdSnap(out, errOut *strings.Builder, engineRoot, workRoot, spec string, fr
 		fmt.Fprintln(errOut, err)
 		return 1
 	}
-	return 0
+	if res.Check != nil {
+		fmtRules, err := checkres.LoadRules(engineRoot)
+		if err != nil {
+			fmt.Fprintf(errOut, "px: %v\n", err)
+			return 1
+		}
+		cur := *res.Check
+		cur.Tokens = tokens
+		_, lines, err := checkres.Snap(hist, n, cur, fmtRules)
+		if err != nil {
+			fmt.Fprintln(errOut, err)
+			return 1
+		}
+		out.WriteString(lines)
+	}
+	return buildExit(res) // 周は積んだ上で、0 合格・1 gate・2 lint の fail だけ
 }
 
 // cmdDiff は 2 つの周の画素の差の PNG（左 rA・右 rB・差）と、違反の増減を出す。
@@ -211,6 +228,19 @@ func cmdDiff(out, errOut *strings.Builder, engineRoot, workRoot, spec, ra, rb st
 			break
 		}
 		fmt.Fprintf(out, "  - %s\n", l)
+	}
+	// code ごとの got の差（rN.check.json がある周どうし）
+	na, errA := strconv.Atoi(strings.TrimPrefix(ra, "r"))
+	nb, errB := strconv.Atoi(strings.TrimPrefix(rb, "r"))
+	if errA == nil && errB == nil {
+		ha, hb := checkres.LoadHistory(dir, na+1), checkres.LoadHistory(dir, nb+1)
+		if len(ha) > 0 && len(hb) > 0 {
+			ca, cb := ha[len(ha)-1], hb[len(hb)-1]
+			fmt.Fprintf(out, "検査 %s → %s: score %d → %d\n", ra, rb, ca.Summary.Score, cb.Summary.Score)
+			for _, l := range checkres.DeltaLines(checkres.Compare(ca.Results, cb.Results), 8) {
+				fmt.Fprintf(out, "  %s\n", l)
+			}
+		}
 	}
 	return 0
 }

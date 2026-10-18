@@ -16,6 +16,7 @@ package px
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/ababup1192/flix_game_engine/go/internal/checkres"
 	"os"
 	"path/filepath"
 	"slices"
@@ -25,21 +26,23 @@ import (
 	"time"
 )
 
-const usage = `使い方: fge px build <名前>.pxsrc.json|<名前>.px.star [--json] [--no-check] [--sheet] [--time] [--png [--gif-delay ms] [--gif-scale k]]
+const usage = `使い方: fge px build <名前>.pxsrc.json|<名前>.px.star [--json] [--no-check] [--only <code>] [--explain] [--sheet] [--time] [--png [--gif-delay ms] [--gif-scale k]]
         fge px gen <名前>.px.star
-        fge px check [--gate <名前>.colorgate.json] <sprite.json…>
+        fge px check [--gate <名前>.colorgate.json] [--strict] <sprite.json…>
         fge px ops [--md] [--check]
         fge px schema [--write] [--check]
         fge px help [<op>|<コマンド>]
         fge px watch <名前>.pxsrc.json [--no-check]
-        fge px snap <名前>.pxsrc.json|<名前>.px.star [--new] [--max N]   （戻すのは bin/fge rounds restore <名前> rN <spec>）
+        fge px snap <名前>.pxsrc.json|<名前>.px.star [--new] [--max N] [--tokens 使った/予算]   （戻すのは bin/fge rounds restore <名前> rN <spec>）
         fge px diff <名前>.pxsrc.json rA rB
 `
 
 // cmdHelps は fge px help <コマンド> の説明（op でないコマンド）。
 var cmdHelps = map[string]string{
-	"build": `fge px build <名前>.pxsrc.json|<名前>.px.star [--json] [--no-check] [--sheet] [--time] [--png [--gif-delay ms] [--gif-scale k]]
-  指定を描いて target の sprite.json に書き、debug/px/<名前>/last/report.json を作る（色の門を外れたら書かずに 1）。
+	"build": `fge px build <名前>.pxsrc.json|<名前>.px.star [--json] [--no-check] [--only <code>] [--explain] [--sheet] [--time] [--png [--gif-delay ms] [--gif-scale k]]
+  指定を描いて target の sprite.json に書き、debug/px/<名前>/last/report.json を作る。
+  終了コード: 0 合格・1 色の門か gate の外れ（書かない）・2 lint の fail だけ（near と advice は 0）。
+  report.json の check（--json でも）に score・next・悪い順の上位と、1 件ずつの code・got・want・gap・fix（docs/check-results.md）。
   台本（.px.star）はメモリの中で走らせる（pxsrc・色票はファイルに書かない。書くなら gen）。
   --sheet  見比べのシート（sheet.png・前の周との差・玉ねぎの皮）も書く
   --png    debug/px/<名前>/png/ に、スプライトごとの 1 コマ目の実寸（<名>.png）と 4 倍（<名>@4x.png）、
@@ -48,14 +51,19 @@ var cmdHelps = map[string]string{
            2 コマ以上ならコマを回す <名>.gif（既定は 2 倍・1 コマ 200ms・減色しない・同じ絵から同じバイト）も書く。
            style に pixel（画素の横:縦。PC-88 の [1, 2]）があれば PNG・GIF をどれもその比で引き伸ばす
   --gif-delay N  GIF の 1 コマの長さ（ミリ秒。10 ms 刻みに丸める。スクロールは 80 前後）   --gif-scale N  GIF の拡大（1〜16）
-  --no-check  lint と advice を回さない（色の門は回す）   --time  時間の内訳   --json  結果を JSON で
+  --no-check  lint と advice を回さない（色の門は回す。周の外: debug/px/<名前>/probe/ に書き、last は触らない）
+  --only <code>  その code（の頭。例 px.seam）の結果だけ出す調べ物（周の外: probe/ に書く。gate はいつも出す）
+  --explain  まとめの applied（当てた検査の組）と exempt（外した物の内訳）を毎回全文で
+  --time  時間の内訳   --json  結果を JSON で（頭の check が新しい形。docs/check-results.md）
 `,
 	"gen": `fge px gen <名前>.px.star
   台本を走らせ、台本が書く pxsrc・色票・JSON をファイルへ書く（中身が同じ物は触らない）。
   台本の中のパスは台本のフォルダが起点（// で始めると作業場の根から）。書ける物は docs/px-ops.md の「台本」。
 `,
-	"check": `fge px check [--gate <名前>.colorgate.json] <sprite.json…>
+	"check": `fge px check [--gate <名前>.colorgate.json] [--strict] <sprite.json…>
   手描きや assets の sprite.json にも、色の門と形の検査をかける（--gate を省くと art/*.colorgate.json を 1 つ探す）。
+  終了コード: 0 合格・1 色の門か gate の外れ。--strict を付けると lint の fail だけで 2（near と advice は 0）。
+  --json は結果の全部（check に score・next・悪い順の上位。形は docs/check-results.md）。
 `,
 	"ops": `fge px ops [--md] [--check]
   op の 1 行の一覧。--md は docs/px-ops.md を書き、--check はずれていれば 1（書かない）。
@@ -67,13 +75,17 @@ var cmdHelps = map[string]string{
 	"watch": `fge px watch <名前>.pxsrc.json [--no-check]
   保存のたびに build して、まとめの行を出す（Ctrl-C で止める）。
 `,
-	"snap": `fge px snap <名前>.pxsrc.json|<名前>.px.star [--new] [--max N]
+	"snap": `fge px snap <名前>.pxsrc.json|<名前>.px.star [--new] [--max N] [--tokens 使った/予算]
   見本つきで描き直し、bin/fge rounds snap で debug/history/<名前>/rN に積む（台本も同じ番号で残す）。
   台本（.px.star）を渡すと gen してから撮る（pxsrc を 1 本だけ書く台本）。pxsrc を渡した時に、
   同じフォルダの台本の方が新しく中身が違えば警告する。
   --new    前の周回を退けて r1 から始める（別の作業の時）
   --max N  依頼主か親から「N 周まで任せる」と言われた時の上限（rounds.json の maxRounds まで）。
            一度書けば同じ周回の間は覚えていて、N 周までは止まって聞かずに進み、N 周目で報告へ積む案内を出す。
+  --tokens U/B  この周までに使ったトークン U と予算 B（止め時の判定に使う。省くと予算では止めない）
+  周の検査は rN.check.json に積み、前の周との差（悪くなった・新しく出た・良くなった・消えた）・next・stop を出す。
+  stop は「検査を全部満たした・予算・score が続けて上がらない・next が同じ物を繰り返す」で止める判定
+  （決まりは bin/lint-rules/checkfmt.json の stop。上限の周数は rounds.json のまま）。
   戻すのは bin/fge rounds restore <名前> rN <spec>。
 `,
 	"diff": `fge px diff <名前>.pxsrc.json rA rB
@@ -95,6 +107,8 @@ func Run(out, errOut *strings.Builder, engineRoot, workRoot string, args []strin
 	var pos []string
 	gatePath := ""
 	maxRounds := 0
+	var tokens *checkres.Tokens
+	only := ""
 	gifDelay, gifScale := 0, 0
 	for i := 0; i < len(rest); i++ {
 		switch a := rest[i]; {
@@ -115,6 +129,23 @@ func Run(out, errOut *strings.Builder, engineRoot, workRoot string, args []strin
 				return 2
 			}
 			maxRounds = n
+			flags[a] = true
+			i++
+		case a == "--only":
+			if i+1 >= len(rest) || strings.HasPrefix(rest[i+1], "--") {
+				fmt.Fprintf(errOut, "px: --only の後に code（の頭。例 px.seam）を書く（bin/fge check codes px）\n%s", usage)
+				return 2
+			}
+			only = rest[i+1]
+			flags[a] = true
+			i++
+		case a == "--tokens":
+			t, err := checkres.ParseTokens(strings.Join(rest[min(i+1, len(rest)):min(i+2, len(rest))], ""))
+			if err != nil {
+				fmt.Fprintf(errOut, "px: %v\n%s", err, usage)
+				return 2
+			}
+			tokens = t
 			flags[a] = true
 			i++
 		case a == "--gif-delay" || a == "--gif-scale":
@@ -139,8 +170,8 @@ func Run(out, errOut *strings.Builder, engineRoot, workRoot string, args []strin
 			pos = append(pos, a)
 		}
 	}
-	allowed := map[string][]string{"build": {"--no-check", "--sheet", "--time", "--png", "--gif-delay", "--gif-scale"}, "check": nil, "ops": {"--md", "--check"}, "schema": {"--check", "--write"}, "help": nil,
-		"watch": {"--no-check"}, "snap": {"--new", "--max"}, "diff": nil, "gen": nil}
+	allowed := map[string][]string{"build": {"--no-check", "--sheet", "--time", "--png", "--gif-delay", "--gif-scale", "--only", "--explain"}, "check": {"--strict"}, "ops": {"--md", "--check"}, "schema": {"--check", "--write"}, "help": nil,
+		"watch": {"--no-check"}, "snap": {"--new", "--max", "--tokens"}, "diff": nil, "gen": nil}
 	if names, known := allowed[verb]; known {
 		for f := range flags {
 			if !slices.Contains(names, f) {
@@ -163,7 +194,8 @@ func Run(out, errOut *strings.Builder, engineRoot, workRoot string, args []strin
 			fmt.Fprintf(errOut, "px build: --gif-delay・--gif-scale は --png と一緒に書く\n%s", usage)
 			return 2
 		}
-		opt := buildOptions{RulesRoot: engineRoot, NoCheck: flags["--no-check"], Sheet: flags["--sheet"], PNG: flags["--png"], GIFDelay: gifDelay, GIFScale: gifScale}
+		opt := buildOptions{RulesRoot: engineRoot, NoCheck: flags["--no-check"], Sheet: flags["--sheet"], PNG: flags["--png"], GIFDelay: gifDelay, GIFScale: gifScale,
+			Only: only, Explain: flags["--explain"]}
 		if strings.HasSuffix(pos[0], ".star") {
 			return cmdBuildStar(out, errOut, engineRoot, workRoot, pos[0], opt, flags["--time"], asJSON)
 		}
@@ -182,7 +214,7 @@ func Run(out, errOut *strings.Builder, engineRoot, workRoot string, args []strin
 			errOut.WriteString(usage)
 			return 2
 		}
-		return cmdCheck(out, errOut, engineRoot, workRoot, gatePath, pos, asJSON)
+		return cmdCheck(out, errOut, engineRoot, workRoot, gatePath, pos, asJSON, flags["--strict"])
 	case "ops":
 		if flags["--md"] || flags["--check"] {
 			return writeOrCheck(out, errOut, engineRoot, map[string]string{"docs/px-ops.md": opsMarkdown()}, flags["--check"])
@@ -210,7 +242,7 @@ func Run(out, errOut *strings.Builder, engineRoot, workRoot string, args []strin
 			errOut.WriteString(usage)
 			return 2
 		}
-		return cmdSnap(out, errOut, engineRoot, workRoot, pos[0], flags["--new"], maxRounds)
+		return cmdSnap(out, errOut, engineRoot, workRoot, pos[0], flags["--new"], maxRounds, tokens)
 	case "diff":
 		if len(pos) != 3 {
 			errOut.WriteString(usage)
@@ -316,13 +348,11 @@ func cmdBuild(out, errOut *strings.Builder, engineRoot, workRoot, spec string, o
 		fmt.Fprintf(errOut, "px: %v\n", err)
 		return 1
 	}
-	code := 0
-	if !res.Wrote {
-		code = 1
-	}
+	code := buildExit(res)
 	if asJSON {
-		data, _ := json.MarshalIndent(res, "", "  ")
-		out.Write(append(data, '\n'))
+		// 標準出力は詰めた形: 新しい形の check と書き出しの要点だけ（コマの rows・古い violations は report.json に全部ある）
+		out.Write(checkres.Compact(map[string]any{"spec": res.Spec, "target": res.Target, "wrote": res.Wrote,
+			"report": rel(workRoot, res.reportPath), "exit": code, "check": res.Check.Brief()}))
 		return code
 	}
 	out.WriteString(summarize(workRoot, res))
@@ -378,6 +408,9 @@ func summarize(root string, res *buildResult) string {
 	fmt.Fprintf(&b, "%s・lint %d%s・advice %d%s%s\n", gate,
 		c.Lint, delta(c.Lint, func(p levelCounts) int { return p.Lint }),
 		c.Advice, delta(c.Advice, func(p levelCounts) int { return p.Advice }), sheet)
+	if res.Check != nil {
+		fmt.Fprintf(&b, "検査: %s\n", res.Check.Summary.Line())
+	}
 	// 上位の件は gate と lint だけ（advice は数だけ。中身は report.json と --json）。
 	// 前の周に無かった物を先に、同じなら重い物を先に出す
 	var top []violation
@@ -431,4 +464,16 @@ func rel(root, p string) string {
 		return r
 	}
 	return p
+}
+
+// buildExit は build の終了コード: 色の門で書かなかった・gate の外れは 1、lint の fail だけなら 2、ほかは 0
+// （near と advice は 0。決まりは docs/check-results.md）。
+func buildExit(res *buildResult) int {
+	if !res.Wrote {
+		return 1
+	}
+	if res.Check != nil {
+		return res.Check.Summary.Exit
+	}
+	return 0
 }

@@ -34,11 +34,11 @@ func TestFlickerSkipsMovedParts(t *testing.T) {
 	b := gridOf("....", ".cc.", ".cd.", "....")
 	b.Put(2, 2, "d", pxlib.OpRef{Part: "cloud"})
 	still := []map[string]partPose{{"cloud": {}}, {"cloud": {}}}
-	if vs := sequenceChecks([]string{"a", "b"}, []*pxlib.Grid{a, b}, true, still); len(vs) == 0 || vs[0].Check != checkFlicker {
+	if vs := sequenceChecks([]string{"a", "b"}, []*pxlib.Grid{a, b}, true, still, nil); len(vs) == 0 || vs[0].Check != checkFlicker {
 		t.Fatalf("動かない部品のちらつきを見逃した: %v", vs)
 	}
 	moved := []map[string]partPose{{"cloud": {}}, {"cloud": {At: pxlib.Pt{Y: 3}}}}
-	for _, v := range sequenceChecks([]string{"a", "b"}, []*pxlib.Grid{a, b}, true, moved) {
+	for _, v := range sequenceChecks([]string{"a", "b"}, []*pxlib.Grid{a, b}, true, moved, nil) {
 		if v.Check == checkFlicker {
 			t.Errorf("at が変わった部品の画素を flicker と数えた: %s", v.Msg)
 		}
