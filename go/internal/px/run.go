@@ -30,6 +30,7 @@ const usage = `使い方: fge px build <名前>.pxsrc.json|<名前>.px.star [--j
         fge px gen <名前>.px.star
         fge px check [--gate <名前>.colorgate.json] [--strict] <sprite.json…>
         fge px measure <sprite.json…>
+        fge px relegend [--write] <sprite.json…>
         fge px kinds
         fge px decl --suggest <pxsrc か sprite.json…>
         fge px ops [--md] [--check]
@@ -67,6 +68,11 @@ var cmdHelps = map[string]string{
   手描きや assets の sprite.json にも、色の門と形の検査をかける（--gate を省くと art/*.colorgate.json を 1 つ探す）。
   終了コード: 0 合格・1 色の門か gate の外れ。--strict を付けると lint の fail だけで 2（near と advice は 0）。
   --json は結果の全部（check に score・next・悪い順の上位。形は docs/check-results.md）。
+`,
+	"relegend": `fge px relegend [--write] <sprite.json…>
+  legend と rows の印を、画素はそのままに ASCII の表示できる字から振り直す（右から左へ書く字・幅が 1 でない字・
+  結合文字を外す。使える ASCII の字はそのまま）。書く前に全部のコマの色キーが同じかを確かめる（描いた PNG はバイトまで同じ）。
+  --write で書く（省くと振り直す字の一覧だけ）。
 `,
 	"kinds": `fge px kinds
   kind（絵の種類）の表: 定義・例・足す検査と外す検査（理由つき）・どの kind でも当てる検査。
@@ -183,7 +189,7 @@ func Run(out, errOut *strings.Builder, engineRoot, workRoot string, args []strin
 			pos = append(pos, a)
 		}
 	}
-	allowed := map[string][]string{"build": {"--no-check", "--sheet", "--time", "--png", "--gif-delay", "--gif-scale", "--only", "--explain"}, "check": {"--strict"}, "measure": nil, "kinds": nil, "decl": {"--suggest"}, "ops": {"--md", "--check"}, "schema": {"--check", "--write"}, "help": nil,
+	allowed := map[string][]string{"build": {"--no-check", "--sheet", "--time", "--png", "--gif-delay", "--gif-scale", "--only", "--explain"}, "check": {"--strict"}, "measure": nil, "kinds": nil, "decl": {"--suggest"}, "relegend": {"--write"}, "ops": {"--md", "--check"}, "schema": {"--check", "--write"}, "help": nil,
 		"watch": {"--no-check"}, "snap": {"--new", "--max", "--tokens"}, "diff": nil, "gen": nil}
 	if names, known := allowed[verb]; known {
 		for f := range flags {
@@ -228,6 +234,12 @@ func Run(out, errOut *strings.Builder, engineRoot, workRoot string, args []strin
 			return 2
 		}
 		return cmdCheck(out, errOut, engineRoot, workRoot, gatePath, pos, asJSON, flags["--strict"])
+	case "relegend":
+		if len(pos) == 0 {
+			errOut.WriteString(usage)
+			return 2
+		}
+		return cmdRelegend(out, errOut, workRoot, pos, flags["--write"])
 	case "kinds":
 		out.WriteString(kindsText())
 		return 0

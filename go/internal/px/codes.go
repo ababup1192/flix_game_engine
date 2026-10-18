@@ -17,6 +17,7 @@ var pxCodes = []checkres.Code{
 	{Name: "px.sprite.silhouette.thin", Level: levelLint, Metric: "short_side", Unit: "px", Op: checkres.AtLeast, Summary: "シルエットが細長すぎる（短い辺 2px 以下で長い辺 8px 以上）"},
 	{Name: "px.sprite.palette.delta-e", Level: levelLint, Metric: "delta_e", Unit: "ΔE", Op: checkres.AtLeast, Rule: "sprite.json deltaEMin", Summary: "legend の 2 色が近すぎる"},
 	{Name: "px.sprite.palette.colors", Level: levelLint, Metric: "colors", Unit: "count", Op: checkres.AtMost, Rule: "sprite.json maxColors・maxColorsBig", Summary: "1 スプライトの色数が目安を超える"},
+	{Name: "px.sprite.legend-char", Level: levelGate, Metric: "bad_legend_chars", Unit: "count", Op: checkres.AtMost, Rule: "pxlib.LegendCharProblem（依頼主の決定 2026-10-18）", Summary: "legend の印に右から左へ書く字・幅が 1 でない字・結合文字（bin/fge px relegend で振り直す）"},
 	{Name: "px.sprite.structure", Level: levelGate, Metric: "broken", Unit: "count", Op: checkres.AtMost, Summary: "sprite.json の形の誤り（rows・legend・anchor・空のコマ・同じコマ）"},
 	{Name: "px.flat-run.repeat", Level: levelAdvice, Metric: "same_runs", Unit: "count", Op: checkres.AtMost, Rule: "px.json flatRunRepeat", Summary: "同じ長さの段が続く（直線に読まれる）"},
 	{Name: "px.flat-run.straight", Level: levelAdvice, Metric: "run_px", Unit: "px", Op: checkres.AtMost, Rule: "px.json flatRunStraight・flatRunPer", Summary: "曲線の中の長すぎる直線"},

@@ -41,8 +41,8 @@ func TestLegendReclaimsStaleKeys(t *testing.T) {
 	}
 	got, _ := pxlib.LoadOrdered(filepath.Join(dir, "atelier", "t.sprite.json"))
 	lg := pxlib.LegendOf(got.GetOr("legend", nil))
-	if len(lg.Chars) != len(legendPool) {
-		t.Errorf("legend の字が %d 個（want %d）", len(lg.Chars), len(legendPool))
+	if len(lg.Chars) != len([]rune(legendPool)) {
+		t.Errorf("legend の字が %d 個（want %d）", len(lg.Chars), len([]rune(legendPool)))
 	}
 	if lg.CharOf["c2"] == "" || lg.CharOf["c0"] != "z" {
 		t.Errorf("c2 に字が無いか、使っている c0 の字 z が外れた: c2=%q c0=%q", lg.CharOf["c2"], lg.CharOf["c0"])

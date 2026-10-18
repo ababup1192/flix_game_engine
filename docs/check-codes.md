@@ -54,6 +54,7 @@ near の帯は bin/lint-rules/checkfmt.json の near（code ごと。無けれ�
 | `px.sprite.connect` | lint | blobs | count | <= | sprite.json minConnectCells | 絵が離れた塊に分かれている（塊の数） |
 | `px.sprite.corner` | advice | double_corner_px | px | <= |  | 1px の線の L 字の角に 2 重に乗った画素 |
 | `px.sprite.jaggy` | lint | jaggy_spots | px | <= | sprite.json jaggyMinCount | 輪郭のがたつき（段の長さが乱れた所の数） |
+| `px.sprite.legend-char` | gate | bad_legend_chars | count | <= | pxlib.LegendCharProblem（依頼主の決定 2026-10-18） | legend の印に右から左へ書く字・幅が 1 でない字・結合文字（bin/fge px relegend で振り直す） |
 | `px.sprite.orphan` | gate・lint | orphan_px | px | <= | sprite.json | 周り 8 方向が透明の 1 画素（タイルは 3×3 に並べて見る） |
 | `px.sprite.palette.colors` | lint | colors | count | <= | sprite.json maxColors・maxColorsBig | 1 スプライトの色数が目安を超える |
 | `px.sprite.palette.delta-e` | lint | delta_e | ΔE | >= | sprite.json deltaEMin | legend の 2 色が近すぎる |

@@ -417,6 +417,28 @@ func (r *Rules) CheckDoc(doc map[string]any, legendHexes map[string]string, hasH
 		}
 	}
 
+	// 印に使えない字（右から左へ書く字・幅が 1 でない字・結合文字）は止める（依頼主の決定 2026-10-18。対象外にできない）
+	{
+		chars := make([]string, 0, len(legend))
+		for ch := range legend {
+			chars = append(chars, ch)
+		}
+		sort.Strings(chars)
+		var bad []string
+		for _, ch := range chars {
+			for _, r := range ch {
+				if pxlib.LegendCharProblem(r) != "" {
+					bad = append(bad, fmt.Sprintf("%q（%s）", ch, pxlib.LegendCharProblem(r)))
+					break
+				}
+			}
+		}
+		if len(bad) > 0 {
+			text := fmt.Sprintf("legend の印 %d 字が使えない字: %s — bin/fge px relegend で ASCII へ振り直す（画素は同じ）", len(bad), strings.Join(bad, "・"))
+			findings = append(findings, DocFinding{Finding: Finding{Rule: "legend-char", Problem: true, Got: float64(len(bad)), AtMost: true, Msg: text}, Text: text})
+		}
+	}
+
 	// エンジンは legend の値が "" の字も不透明の画素として塗る（検査は透明として数えるので食い違う）
 	if !(hasDocExempt && docExempt.rules["structure"]) {
 		chars := make([]string, 0, len(legend))

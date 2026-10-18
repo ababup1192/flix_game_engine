@@ -14,8 +14,8 @@ import (
 )
 
 const (
-	checkDecl  checkName = "decl"  // 宣言の検査（規則は kind-missing など）
-	checkGlow  checkName = "glow"  // 発光の作法（emissive の部品）
+	checkDecl  checkName = "decl" // 宣言の検査（規則は kind-missing など）
+	checkGlow  checkName = "glow" // 発光の作法（emissive の部品）
 	checkExUse checkName = "exempt-overuse"
 )
 

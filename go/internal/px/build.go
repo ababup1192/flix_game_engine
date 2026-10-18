@@ -111,7 +111,8 @@ func (r *buildResult) Count() levelCounts {
 	return c
 }
 
-const legendPool = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789#@$%&*+=?!~^"
+// legendPool は新しい色に印を振る順（ASCII の表示できる字が先。pxlib.LegendPool）。
+var legendPool = string(pxlib.LegendPool)
 
 // build は spec を読んで描き、target に書き、見本と report.json を作る。
 func build(root, specPath string, opt buildOptions) (*buildResult, error) {
@@ -413,7 +414,7 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 						ch = reclaimChar(legend, lg, sprites, pending, c.G.Keys())
 					}
 					if ch == "" {
-						return nil, fmt.Errorf("legend に当てる字が残っていない（1 枚の絵の色キーは %d 個まで）", len(legendPool))
+						return nil, fmt.Errorf("legend に当てる字が残っていない（1 枚の絵の色キーは %d 個まで）", len([]rune(legendPool)))
 					}
 					legend.Set(ch, string(k))
 					lg.Set(ch, k)
@@ -545,6 +546,22 @@ func build(root, specPath string, opt buildOptions) (*buildResult, error) {
 		for _, b := range bad {
 			res.Violations = append(res.Violations, gateViolation(b, res.Frames))
 		}
+	}
+	// 印に使えない字（右から左へ書く字・幅が 1 でない字・結合文字）が base の legend に残っていれば書かない
+	var badChars []string
+	for _, ch := range lg.Chars {
+		for _, r := range ch {
+			if pxlib.LegendCharProblem(r) != "" {
+				badChars = append(badChars, ch)
+				break
+			}
+		}
+	}
+	if len(badChars) > 0 {
+		v := newViolation(checkSprite, levelGate, float64(len(badChars)), checkres.WantAtMost(0),
+			fmt.Sprintf("legend の印 %d 字（%s）は使えない字（右から左へ書く字・幅が 1 でない字・結合文字）。bin/fge px relegend %s で ASCII へ振り直す", len(badChars), strings.Join(badChars, " "), base))
+		v.Rule, v.Scope = "legend-char", checkres.ScopeFile
+		res.Violations = append(res.Violations, v)
 	}
 	res.Legend = map[string]string{}
 	res.Hex = map[string]string{}
