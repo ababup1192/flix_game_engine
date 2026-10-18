@@ -1,4 +1,0 @@
-[pre-commit] 画像 1 件:
-  assets/tiles.png — 追跡してよい置き場ではありません。生成した絵は git に入れない決まりです。人に見せる絵なら docs/gallery/ へ (上限あり)
-[pre-commit] 止めました。上の文を読んで直してから再コミット
-[exit=1]

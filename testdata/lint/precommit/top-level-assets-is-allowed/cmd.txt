@@ -5,8 +5,8 @@
 # cwd: このケースのフォルダ / 環境変数: ENGINE(本物のリポ) WORK(使い捨ての作業先)
 sh "$ENGINE/testdata/lint/precommit/_base/build.sh" "$WORK"
 [ -d overlay ] && cp -R overlay/. "$WORK"/
-# lint-images の ALLOWED_SUBSTRINGS は "/assets/"。リポ直下の assets/ は
-# 前にスラッシュが無いので当たらない（*/assets/* だけが通る）。
+# precommit.json の allowedPrefixes に "assets/" がある（素材のスロット）。リポ直下の
+# assets/ の絵は通る（前は "/assets/" だけで、直下は止まっていた）。
 : > "$WORK/assets/tiles.png"
 git -C "$WORK" add assets/tiles.png
 "$ENGINE/bin/fge" precommit --root "$WORK"
