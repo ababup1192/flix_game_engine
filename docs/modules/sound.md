@@ -8,6 +8,7 @@
 | やりたいこと | モジュール |
 |---|---|
 | 効果音を鳴らしたい | App.withAudio（前後 World の差分から鳴らす名前の List を返す。詳しくは [audio.md](../audio.md)。実例: `templates/game-starter/src/Main.flix`） |
+| 規則の奥の出来事（行を消した・頁を送った）で音を鳴らす・固定刻みでも 1 回ずつ鳴らす | Emit（規則は effect の op `emit` で出し・系は `Emit.collectInto` で World の Emit.Events に溜め・audio は `Emit.since(before, after)`。実例: `templates/tetris-starter/src/Controls.flix`） |
 | 鳴り続ける音を出したい（走行音・風・雨・炎・足音のループ） | App.withSustained（World から「鳴り続けていてほしい音」を宣言。音量と高さを毎フレーム与える。詳しくは [audio.md](../audio.md)。実例: `templates/race-starter/src/Sounds.flix`） |
 | 音の名前の綴り違い・一発の音と鳴り続ける音の取り違えを型で止めたい | Sfx（effect の op `play` で鳴らし、`Sfx.collect` で withAudio へ）/ Loop（op `hold` で宣言し、`Loop.collect` で withSustained へ）。一発と鳴り続ける音は別の enum。実例: `templates/race-starter/src/Sounds.flix` |
 | BGM を流す・止める・音量やループを変える | AudioStreamPlayer（play / stop / setVolume / setLooping。詳しくは [audio.md](../audio.md)） |
@@ -20,6 +21,7 @@
 
 ## モジュール 1 行紹介
 
+- **Emit** — 規則が出来事をゲームの型で出す多相 effect と、出来事に通し番号を振って World に溜める Events（audio は前後の差を since で読む。Bevy の Events と同じ考え）。
 - **AudioFade** — 進行度 t から音量をひとつ決める（フェードイン・アウト・クロスフェード）。
 - **Sfx** / **Loop** — 一発の音・鳴り続ける音をゲームの enum で鳴らす多相 effect（Flix 0.77 の実験機能）と、App の名前の列へ写す collect。
 - **AudioMixer** — 音の通り道。バス・振り分け・ダッキング・ローパス・クールダウン・スナップショットを State を持ち回す純関数で決める（App.withMixer と AudioMixdown が同じ step を呼ぶ）。

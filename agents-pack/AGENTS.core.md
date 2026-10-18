@@ -18,8 +18,9 @@ lint・フック・make の口で止まる決まりはここに書かない（�
 | 隠れてはいけない表示（スコア・案内） | `App.withHudView` |
 | 押す物を見た目の手前から選ぶ（窓の奥を押させない） | 描く木に `ZStack.hit` / `modal` → `SortingLayer.pickFrom` |
 | 説明の窓をはみ出さず置く | `UiTooltip` + `ZStack.topLayer` |
-| 演出の時刻表（動き・効果音・待ち） | `Timeline.build`（`insert`・`withSound`・`buildOrPanic`） |
-| 時刻表を描く・鳴らす | `progressOf`・`soundsOn` / `soundsBetween` → `App.withAudio` |
+| 演出の時刻表を書く・描く・鳴らす | `Timeline.build` → `progressOf` / `soundsBetween`（途中で始まるなら `…Since`） |
+| 規則の奥の出来事で鳴らす（固定刻みでも 1 回） | `Emit.emit` → `Emit.collectInto` で World に溜め `Emit.since` |
+| どう遊んでも崩れない決まりを確かめる（性質テスト） | `PropertyTest.forAll`（画面なしで `App.trace` と同じ道） |
 | 曲の拍・小節に乗せる | `Duration.Bars` / `ToNextBar` / `ToPickup` + `Timeline.tempo` |
 | 演出の長さ・待ち・溜めの目安 | engine の `docs/pacing.md` |
 | 音の名前を型で止める（一発と鳴り続ける音を取り違えない） | `Sfx[s]` / `Loop[s]` + `Sfx.collect` / `Loop.collect` |

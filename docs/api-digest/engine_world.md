@@ -220,6 +220,12 @@
   `pub def applySystems(frame: Frame, systems: List[(Frame, w) -> w \ ef], world: w): w \ ef`
 - 1 実フレームぶんの updateSystems 適用。fixedStep 未指定なら現行どおり frame を 1 回
   `pub def advanceFrame(app: App[w, ef], frame: Frame, state: StepState, world: w): (w, StepState) \ ef`
+- trace の 1 フレーム: そのフレームの入力・進める前後の World・鳴らす一発の音（同じ名前は 1 つ）・
+  `pub type alias TraceStep[w] = { frame = Frame, before = w, after = w, sounds = List[String], sustained = List[Sustain] }`
+- 画面を開かずに、frames を 1 つずつ実機と同じ経路（advanceFrame → audio → sustained）へ流し、
+  `pub def trace(app: App[w, ef], frames: List[Frame], w0: w): List[TraceStep[w]] \ ef`
+- trace の 1 フレーム分。次のフレームの入力を World から組む道具（PropertyTest）はこれを回す。
+  `pub def traceFrame(app: App[w, ef], frame: Frame, state: StepState, world: w): (TraceStep[w], StepState) \ ef`
 - view 由来の絵（world）に camera（center と zoom。等倍は 1.0）を掛け、hud の絵を
   `pub def composeScene(center: Option[Vec2.Vec2], zoom: Float64, design: Vec2.Vec2, items: { world = List[Render.PlacedItem], hud = List[Render.PlacedItem] }): List[Render.PlacedItem]`
 - camera 中心と zoom から、画面に見えている world の矩形を出す（大きさ design/zoom。
@@ -755,6 +761,17 @@
 - 整数を start から end へ 1 つずつ動かす tween の、進み u（0..1）の時点の値。
   `pub def steppedInt(start: Int32, end: Int32, easing: Easing, u: Float64): Int32`
 
+## Emit — `engine_world/src/Emit.flix`
+- f を走らせ、戻り値と、その間に出た出来事の列（出た順）を返す。
+  `pub def collect(f: Unit -> a \ ef): (a, List[e]) \ (ef - Emit[e])`
+- `pub type alias Events[e] = EventLog[e]`
+- 出来事がまだ 1 つも無い溜め（World の初期値）。
+  `pub def empty(): Events[e]`
+- f を走らせ、その間に出た出来事を溜めの末尾に足す（1 回の collectInto = 通し番号 1 つ）。
+  `pub def collectInto(f: Unit -> a \ ef, events: Events[e]): (a, Events[e]) \ (ef - Emit[e])`
+- before の後に after へ足された出来事（出た順）。audio に ws#before#events と ws#after#events を渡す。
+  `pub def since(before: Events[e], after: Events[e]): List[e]`
+
 ## Flex — `engine_world/src/Flex.flix`
 - レイアウトノード。Leaf = 実寸つき描画物、Box = 子を並べる容器、
   `pub enum Node { case Leaf({ size = Vec2.Vec2, draw = Rect2.Rect2 -> List[Render.PlacedItem] }) case Box({ style = UiLayout.Style, draw = Option[Rect2.Rect2 -> List[Render.PlacedItem]], children = List[Node] }) case Keyed({ key = String, inner = Node }) }`
@@ -893,6 +910,12 @@
 ## Hash01 — `engine_world/src/Hash01.flix`
 - 添字 `index`・チャンネル `channel` に対する [0, 1) の小数。同じ添字の二つの
   `pub def at(index: Int32, channel: Int32): Float64`
+- indexOf / pickBy の鍵。index = 何番目の物か（敵の番号・日付・タイルの通し番号）、
+  `pub type alias Key = { index = Int32, channel = Int32 }`
+- 鍵から 0..n-1 の添字を 1 つ選ぶ（n <= 0 なら 0）。同じ鍵と n なら毎回同じ。
+  `pub def indexOf(key: Key, n: Int32): Int32`
+- 鍵で列から 1 つ選ぶ（空なら None）。台詞の差分・敵の出す技・タイルの柄を、乱数の状態を
+  `pub def pickBy(key: Key, xs: List[a]): Option[a]`
 
 ## Hit — `engine_world/src/Hit.flix`
 - 当たりの形 1 個。dx/dy は持ち主の位置からのずれ（px）で、錨（中心か足元か）は絵に従う。
@@ -1223,6 +1246,32 @@
   `pub def bounce(contacts: List[Contact], restitutions: Map[EntityId, Float64], velocities: Map[EntityId, Vec2.Vec2]): Map[EntityId, Vec2.Vec2]`
 - 各接触のめり込みを解消するよう位置を押し出す。動かせる側（velocities に居る側）だけを動かし、
   `pub def separate(contacts: List[Contact], velocities: Map[EntityId, Vec2.Vec2], positions: Map[EntityId, Vec2.Vec2]): Map[EntityId, Vec2.Vec2]`
+
+## PropertyTest — `engine_world/src/PropertyTest.flix`
+- 1 回分の入力。r はゲームの役の enum。マウスは左ボタン 1 つ。
+  `pub enum Input[r] { case Idle(Float64) case Tap(r) case Hold(r) case Release(r) case Move(Vec2.Vec2) case Press(Vec2.Vec2) case Drag(Vec2.Vec2) case Up case Wheel(Float64) }`
+- 入力の列の作り方。どの候補も、空ならその種類の入力は出ない。
+  `pub type alias Spec[r] = { taps = List[r], holds = List[r], idle = Int32, dts = List[Float64], points = List[Vec2.Vec2], wheels = List[Float64] }`
+- 入力を Frame にする材料。keyOf = 役 → いまのキー・viewport = design 解像度・dt = 押すフレームの経過秒。
+  `pub type alias Setup[r, w] = { keyOf = (r, w) -> Key, viewport = Vec2.Vec2, dt = Float64 }`
+- forAll が試す範囲。種 1..seeds のそれぞれで length 個の入力を spec から作る。
+  `pub type alias Cases[r] = { seeds = Int32, length = Int32, spec = Spec[r] }`
+- 決まりが崩れた所。frame = 何フレーム目か（0 から。挟んだ離すフレームも数える）・
+  `pub type alias Broken[r] = { frame = Int32, why = String, inputs = List[Input[r]] }`
+- 何もしない Spec（何も触らないフレームだけ）。{ taps = … | emptySpec() } で必要な欄だけ書く。
+  `pub def emptySpec(): Spec[r]`
+- 種で決まる length 個の入力の列。
+  `pub def generate(seed: Int64, length: Int32, spec: Spec[r]): List[Input[r]]`
+- 列を流した全部のフレーム（先頭から）。
+  `pub def traceOf(app: App.App[w, ef], setup: Setup[r, w], inputs: List[Input[r]], start: w): List[App.TraceStep[w]] \ ef with Eq[r]`
+- 列を流した後の World。
+  `pub def finalOf(app: App.App[w, ef], setup: Setup[r, w], inputs: List[Input[r]], start: w): w \ ef with Eq[r]`
+- 決まり rule が崩れた最初のフレーム。崩れなければ None。
+  `pub def firstBroken(app: App.App[w, ef], setup: Setup[r, w], inputs: List[Input[r]], start: w, rule: App.TraceStep[w] -> Option[String]): Option[Broken[r]] \ ef with Eq[r]`
+- 種 1, 2, …, count のうち、check が最初に崩れを返した種とその中身。全部通れば None。
+  `pub def firstFailingSeed(count: Int32, check: Int64 -> Option[a] \ ef): Option[(Int64, a)] \ ef`
+- cases の全部の種で列を作って流し、rule が崩れた最初の所の説明（種・フレーム・入力の数・rule の説明）。
+  `pub def forAll(app: App.App[w, ef], setup: Setup[r, w], cases: Cases[r], start: w, rule: App.TraceStep[w] -> Option[String]): Option[String] \ ef with Eq[r]`
 
 ## PxShade — `engine_world/src/PxShade.flix`
 - 仕上げの重み。0 にしたものは掛からない。
@@ -1871,6 +1920,10 @@
   `pub def soundsOn(playback: Playback, prev: Playhead, now: Playhead, tl: Timeline[a]): List[String]`
 - 待ちの無い表で、前のフレームの秒 prev から今の now までに鳴らす効果音（soundsOn の Play と同じ (prev, now]）。
   `pub def soundsBetween(prev: Float64, now: Float64, tl: Timeline[a]): List[String]`
+- 起点 at（演出を始めた World の時刻）から測る時刻表で、1 フレームの前後の時刻
+  `pub def soundsSince(at: Float64, beforeNow: Float64, afterNow: Float64, tl: Timeline[a]): List[String]`
+- 起点 at から測った時刻 now での、タグのクリップの進み 0..1（progressOf と同じ境目）。
+  `pub def progressSince(at: Float64, now: Float64, tag: a, tl: Timeline[a]): Float64 with Order[a]`
 - 長さを合わせる音（withFittedSound）を書き出すときの長さ（秒）。
   `pub def soundLengthOf(name: String, tl: Timeline[a]): Option[Float64]`
 - 場面の時計 wall と、待ちが解けた時刻の列から、時刻表の上の時刻を出す。解けていない待ちでは

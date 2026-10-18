@@ -4,7 +4,7 @@
 // 実演する決定的な台本。SceneRender.flix の静止画とは別に、動きを見せたい GIF だけをここに分ける
 // （gallery/reference は静止画の比較専用なので、ここでは触らない）。
 mod GifRender {
-    use fge::{App, Color, FontAtlas, GameEngine, HeadlessFont, HeadlessRender, Render, Vec2}
+    use fge::{App, Color, Emit, FontAtlas, GameEngine, HeadlessFont, HeadlessRender, Render, Vec2}
 
     import java.io.File
 
@@ -44,7 +44,7 @@ mod GifRender {
     /// rot/col をどう据えても衝突しない = 本物の落下・接地・固定と同じ経路を通る）。
     /// 盤のセルを直接 Map.insert するのはやめ、実際に置ける並びだけを作る。
     def placePiece(kind: World.Kind, rot: Int32, col: Int32, w: World.World): World.World =
-        World.hardDrop({ current = { kind = kind, rot = rot, col = col, row = -1 } | w })
+        fst(Emit.collect(() -> World.hardDrop({ current = { kind = kind, rot = rot, col = col, row = -1 } | w })))
 
     /// 下 4 行・右端の 1 列（col 9）だけを空けて積む台本。
     /// 下 4 行（col 0-8 の 36 マス）は J/L/S/Z/T を主役に隙間なく敷き詰める
@@ -87,7 +87,7 @@ mod GifRender {
     def unfold(n: Int32, w0: World.World): List[World.World] =
         let (revWs, _last) = List.range(0, n) |> List.foldLeft((acc, _i) -> {
             let (ws, w) = acc;
-            let w1 = World.step(true, dt(), w);
+            let w1 = fst(Emit.collect(() -> World.step(true, dt(), w)));
             (w1 :: ws, w1)
         }, (w0 :: Nil, w0));
         List.reverse(revWs)

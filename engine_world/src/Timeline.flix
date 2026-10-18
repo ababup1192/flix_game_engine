@@ -17,6 +17,8 @@
 //   Timeline.progressOf(Intro.Hold, head, tl)                  // 描く側: 0..1
 //   Timeline.soundsOn(Playback.Play, before, after, tl)        // 鳴らす側: このフレームの音
 //   Timeline.soundsBetween(prevAge, age, tl)                  // 待ちの無い表なら秒 2 つで同じ物
+//   Timeline.soundsSince(w#outAt, ws#before#t, ws#after#t, tl) // 起点を World に持つ演出（途中で始まる）の音
+//   Timeline.progressSince(w#outAt, w#t, Fade.Out, tl)         // 同じ起点で描く側の進み
 //
 //   - 長さは Seconds / Beats / Bars と、曲に合わせて伸び縮みする ToNextBar（次の小節の頭まで）・
 //     ToBeat(n)（頭から n 拍目まで）・ToPickup(n)（次の小節の頭の n 拍前 = 弱起まで。余裕が n 拍未満なら
@@ -407,6 +409,16 @@ pub mod Timeline {
     /// prev を負にするか、soundsOn の Enter を使う。
     pub def soundsBetween(prev: Float64, now: Float64, tl: Timeline[a]): List[String] =
         soundsOn(Playback.Play, playheadAt(prev), playheadAt(now), tl)
+
+    /// 起点 at（演出を始めた World の時刻）から測る時刻表で、1 フレームの前後の時刻
+    /// beforeNow → afterNow の間に鳴らす効果音。起点を置いたフレームは beforeNow < at なので頭の音も鳴る。
+    /// 待ちの無い表に限る（soundsBetween と同じ）。
+    pub def soundsSince(at: Float64, beforeNow: Float64, afterNow: Float64, tl: Timeline[a]): List[String] =
+        soundsBetween(beforeNow - at, afterNow - at, tl)
+
+    /// 起点 at から測った時刻 now での、タグのクリップの進み 0..1（progressOf と同じ境目）。
+    pub def progressSince(at: Float64, now: Float64, tag: a, tl: Timeline[a]): Float64 with Order[a] =
+        progressOf(tag, playheadAt(now - at), tl)
 
     /// 長さを合わせる音（withFittedSound）を書き出すときの長さ（秒）。
     pub def soundLengthOf(name: String, tl: Timeline[a]): Option[Float64] = match tl {

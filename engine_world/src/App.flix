@@ -539,6 +539,8 @@ pub mod App {
     /// render・音・入力リロード・履歴・quit 判定はサブステップ単位でなく実フレーム単位のまま
     /// （音は reload 後 → 全サブステップ後の World から 1 回だけ導く）。
     /// リモートデバッグの /step は現時点でこの刻みを見ない（台本 1 行 = updateSystems 1 回のまま）。
+    /// 規則の出来事で音を鳴らすなら、World の欄は Emit.Events にして audio は Emit.since で読む
+    /// （出来事の欄を刻みごとに置き換えると、刻みが 0 回のフレームで前の音がもう一度鳴る）。
     /// 呼ばなければ現行の可変 dt のまま挙動は変わらない。
     pub def withFixedStep(dtSeconds: Float64, app: App[w, ef]): App[w, ef] =
         { fixedStep = Some(dtSeconds) | app }
@@ -650,6 +652,29 @@ pub mod App {
                     (advanced, { carry = nextCarry, pending = noPending() })
                 }
         }
+
+    /// trace の 1 フレーム: そのフレームの入力・進める前後の World・鳴らす一発の音（同じ名前は 1 つ）・
+    /// 鳴り続けていてほしい音の宣言。
+    pub type alias TraceStep[w] = { frame = Frame, before = w, after = w, sounds = List[String], sustained = List[Sustain] }
+
+    /// 画面を開かずに、frames を 1 つずつ実機と同じ経路（advanceFrame → audio → sustained）へ流し、
+    /// 各フレームの前後を先頭から返す。性質テスト（PropertyTest）と、音の決まりのテストの土台。
+    /// 固定刻み（withFixedStep）も実機と同じく効く。Doc の読み直し・F8・ミキサーは通さない。
+    pub def trace(app: App[w, ef], frames: List[Frame], w0: w): List[TraceStep[w]] \ ef =
+        let (_, _, newestFirst) = frames |> List.foldLeft((acc, frame) -> {
+            let (state, world, out) = acc;
+            let (step, nextState) = traceFrame(app, frame, state, world);
+            (nextState, step#after, step :: out)
+        }, (freshStepState(), w0, Nil));
+        List.reverse(newestFirst)
+
+    /// trace の 1 フレーム分。次のフレームの入力を World から組む道具（PropertyTest）はこれを回す。
+    pub def traceFrame(app: App[w, ef], frame: Frame, state: StepState, world: w): (TraceStep[w], StepState) \ ef =
+        let derive = app#audio;
+        let declare = app#sustained;
+        let (after, nextState) = advanceFrame(app, frame, state, world);
+        let sounds = List.distinct(derive({ before = world, after = after }));
+        ({ frame = frame, before = world, after = after, sounds = sounds, sustained = declare(after) }, nextState)
 
     /// view 由来の絵（world）に camera（center と zoom。等倍は 1.0）を掛け、hud の絵を
     /// 後ろに繋ぐ。hud には掛けない。center = None でも zoom ≠ 1.0 なら画面中央

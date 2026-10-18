@@ -20,10 +20,10 @@ make module Q=<語>    # 例: make module Q=スクロール / Q=ツールチッ�
 | [fx.md](modules/fx.md) | 粒（Fx / FxDoc の語彙）・無限の撒き方 Scatter・揺れ Sway |
 | [ui.md](modules/ui.md) | ui.json（UiDoc / UiSpec）・並べ方（UiLayout / Flex）・メニュー・スクロール・会話窓と文字送り・フォーカス巡り・ツールチップ・文字の折り返し |
 | [time.md](modules/time.md) | 演出の時刻表 Timeline（拍・小節）・Tween / Curve・ヒットストップ TimeScale・長押し HoldPress・Clock / Lifetime / Calendar・Journey / SceneSeq（進行 4 抽象の分業） |
-| [sound.md](modules/sound.md) | 効果音（App.withAudio）・鳴り続ける音（withSustained）・BGM・イントロのループ点・ミキサーとダッキング・書き出し・合成 |
+| [sound.md](modules/sound.md) | 効果音（App.withAudio・出来事で鳴らす Emit）・鳴り続ける音（withSustained）・BGM・イントロのループ点・ミキサーとダッキング・書き出し・合成 |
 | [map.md](modules/map.md) | マス目（Grid / GridSearch / Steering / GridRay）・タイル層（App.withTileLayers / TileScene）・DualGrid / Material / Terrain・PxTerrain・TileState |
 | [camera.md](modules/camera.md) | CameraRig（ズーム・追従・画面揺れ）・見下ろしの前後 Depth・ViewProjection（4 通りの写し方）・疑似 3D（Persp / WallFaces / Painter）・Viewport |
-| [input.md](modules/input.md) | 入力（InputEdge / InputMap / Replay）・当たり判定（Hit / HitDoc / Collision）・Physics2D |
+| [input.md](modules/input.md) | 入力（InputEdge / InputMap / Replay / PropertyTest）・当たり判定（Hit / HitDoc / Collision）・Physics2D |
 | [data.md](modules/data.md) | Doc を足す順（Schema → Doc → DocJson → DocTable）・fail-open の読み込みと知らせ（Log）・セーブ・Worldline |
 | [debug.md](modules/debug.md) | F8 のチケット Annotate・RemoteDebug・ActiveDocs・GameLogger・描き出し（HeadlessRender / SoftRaster / RenderManifest） |
 | [engine.md](modules/engine.md) | エンジンの奥（engine/src）: GameEngine の効果口・Vec2 / Rect2 / Color などの基礎の型・ShaderDoc / ShaderGen・Drawable 経路の描画物（ゲームから直に触ることは少ない） |

@@ -3,7 +3,12 @@
 // 台本は小さな fixture（分岐 1 つ・結末 2 つ）で、規則を両側（疑う / 疑わない）から確かめる。
 mod TestRules {
 
-    use fge::{PxSpriteDoc, RichText, UiDialog, UiStore}
+    use fge::{Emit, PxSpriteDoc, RichText, UiDialog, UiStore}
+
+    /// 規則が出す返事の出来事（Emit）を捨てて World だけを見る（ここのテストは進行と灯りを見る）。
+    def advance(w: World.World): World.World = fst(Emit.collect(() -> World.advance(w)))
+
+    def pick(i: Int32, w: World.World): World.World = fst(Emit.collect(() -> World.pick(i, w)))
 
     // ══════════════════════════════════════════════════════
     // fixture: hall で 1 分岐 → endA（疑う）/ endB（疑わない）
@@ -41,7 +46,7 @@ mod TestRules {
 
     /// 表紙から最初の分岐（選択肢待ち）まで進めた状態。
     def atAsk(): World.World =
-        w0() |> World.advance |> settle |> World.advance |> settle |> World.advance |> settle
+        w0() |> advance |> settle |> advance |> settle |> advance |> settle
 
     // ══════════════════════════════════════════════════════
     // 進行の規則
@@ -50,14 +55,14 @@ mod TestRules {
     @Test
     def testTitleConfirmBeginsStory(): Unit \ Assert =
         // 表紙で決定すると、台本の start の節から物語がはじまる。
-        let w = World.advance(w0());
+        let w = advance(w0());
         Assert.assertEq(expected = (World.Phase.Story, fixtureRec()#start, 0),
             (w#phase, w#section, w#idx))
 
     @Test
     def testAdvanceReadsBeatsInOrder(): Unit \ Assert =
         // 読み終えたビートを送ると、同じ節の次のビートがダイアログに乗る（本文は台本の rows から導く）。
-        let w = w0() |> World.advance |> settle |> World.advance;
+        let w = w0() |> advance |> settle |> advance;
         let shown = UiDialog.currentLine(w#kit#dialog)
             |> Option.map(line -> RichText.plainText(line#body))
             |> Option.getWithDefault("");
@@ -71,7 +76,7 @@ mod TestRules {
     def testAskBlocksAdvance(): Unit \ Assert =
         // 選択肢待ちでは決定で先へ進めない（pick だけが進める）。
         let asking = atAsk();
-        let w = asking |> World.advance |> settle;
+        let w = asking |> advance |> settle;
         Assert.assertEq(expected = (true, asking#section, asking#idx),
             (NovelKit.isAsking(w#kit), w#section, w#idx))
 
@@ -79,13 +84,13 @@ mod TestRules {
     def testPickFollowsGoto(): Unit \ Assert =
         // 選んだ選択肢の goto の節の先頭へ移る（行き先は台本の rows から導く）。
         let firstGoto = fixtureOption(0)#goto;
-        let w = World.pick(0, atAsk());
+        let w = pick(0, atAsk());
         Assert.assertEq(expected = (firstGoto, 0), (w#section, w#idx))
 
     @Test
     def testEndingReturnsToTitle(): Unit \ Assert =
         // 結末の節（ask も next も無い）の最後のビートを送ると表紙へ戻る。死なない・詰まない。
-        let w = World.pick(0, atAsk()) |> settle |> World.advance;
+        let w = pick(0, atAsk()) |> settle |> advance;
         Assert.assertEq(expected = World.Phase.Title, w#phase)
 
     // ══════════════════════════════════════════════════════
@@ -95,28 +100,28 @@ mod TestRules {
     @Test
     def testSuspectPickPutsOutOneLamp(): Unit \ Assert =
         // suspect の選択肢を選ぶと灯りがひとつ消える（選択肢が suspect なことも fixture から確かめる）。
-        let w = World.pick(0, atAsk());
+        let w = pick(0, atAsk());
         Assert.assertEq(expected = (true, 1, fixtureRec()#lamps - 1),
             (fixtureSuspect(0), w#lightsOut, World.lampsLit(w)))
 
     @Test
     def testCalmPickKeepsLamps(): Unit \ Assert =
         // suspect でない選択肢では灯りは消えない。
-        let w = World.pick(1, atAsk());
+        let w = pick(1, atAsk());
         Assert.assertEq(expected = (false, 0), (fixtureSuspect(1), w#lightsOut))
 
     @Test
     def testLightsNeverExceedLamps(): Unit \ Assert =
         // 灯りは台本の lamps より多くは消えない（残りが負にならない）。
         let dark = { lightsOut = fixtureRec()#lamps | atAsk() };
-        let w = World.pick(0, dark);
+        let w = pick(0, dark);
         Assert.assertEq(expected = (fixtureRec()#lamps, 0), (w#lightsOut, World.lampsLit(w)))
 
     @Test
     def testRestartRelightsLamps(): Unit \ Assert =
         // 結末から表紙へ戻り、もう一度はじめると灯りは全部つき直る（新しい夜）。
-        let ended = World.pick(0, atAsk()) |> settle |> World.advance;
-        let w = World.advance(ended);
+        let ended = pick(0, atAsk()) |> settle |> advance;
+        let w = advance(ended);
         Assert.assertEq(expected = (World.Phase.Story, 0), (w#phase, w#lightsOut))
 
     // ══════════════════════════════════════════════════════
@@ -132,14 +137,14 @@ mod TestRules {
             expected = ("story" :: "theme" :: "sprite" :: Nil,
                         "story" :: "kind" :: "theme" :: "sprite" :: "ui" :: Nil),
             (Controls.activeDocs(w0()) |> List.map(fst),
-             Controls.activeDocs(World.advance(w0())) |> List.map(fst)))
+             Controls.activeDocs(advance(w0())) |> List.map(fst)))
 
     /// ui は 1 つの id に 2 本のパスが束なる（ダイアログと選択肢）。
     @Test
     def testActiveDocsGroupsBothUiPaths(): Unit \ Assert =
         Assert.assertEq(
             expected = Some(NovelKit.uiPaths()),
-            Controls.activeDocs(World.advance(w0()))
+            Controls.activeDocs(advance(w0()))
                 |> List.filter(e -> fst(e) == "ui") |> List.map(snd) |> List.head)
 
     // ── fixture の分岐から期待値を引く小物 ──

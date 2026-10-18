@@ -14,6 +14,7 @@
 | 複数キーを 1 つの操作にまとめる（WASD と矢印の両対応） | InputMap（実例: `templates/game-starter/src/KeysDoc.flix`） |
 | 素の中心＋幅高の箱どうし・点×箱の重なりを聞く（接するのは外） | Hit.boxBox / pointBox |
 | テスト用の入力フレームを組む | App.frameOf |
+| でたらめなキー・マウス操作で「どう遊んでも崩れない決まり」を確かめる（性質テスト）・画面なしで実機と同じ経路を流す | PropertyTest（forAll / generate / firstBroken）+ App.trace（実例: `templates/tetris-starter/test/TestTrace.flix`） |
 
 ## モジュール 1 行紹介
 
@@ -24,3 +25,4 @@
 - **InputEdge** — キーが「今まさに押された瞬間」か「押しっぱなし」かを見分ける。
 - **InputMap** — 生のキーを「操作の意図」へ写す表。同じ意図に複数キーを並べられる（WASD と矢印の両対応など）。
 - **Replay** — 入力の列を順番に tick へ流し込む（再現・自動操作）。
+- **PropertyTest** — 種で決まるでたらめな入力の列（キー・マウス・ホイール）を App.traceFrame で流し、決まりが崩れた最初の種とフレームを探す（property-based testing）。

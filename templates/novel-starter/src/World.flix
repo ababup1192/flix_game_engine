@@ -21,12 +21,29 @@
 // だからプレイヤーの前でクラッシュしない。台本の編集ミスは既定へ落ちて読みは続く。
 mod World {
 
-    use fge::{PxSpriteAtlas, PxSpriteDoc, UiDialog, UiMenu, UiSlots, UiSpec, UiStore}
+    use fge::{Emit, PxSpriteAtlas, PxSpriteDoc, UiDialog, UiMenu, UiSlots, UiSpec, UiStore}
 
     /// いま画面が何をしているか。Title = 表紙（決定で物語がはじまる）、Story = 台本を読んでいる。
     pub enum Phase with Eq, ToString {
         case Title
         case Story
+    }
+
+    /// 決定・カーソルで起きた出来事（返事の音の材料）。規則の中で Emit.emit し、
+    /// Controls.interact が集めて events 欄（Emit.Events）に溜め、音は前後の差（Emit.since）で読む。
+    ///   Opened   … 表紙から物語をはじめた。
+    ///   Revealed … 文字送りの途中で全文を出した。
+    ///   Paged    … 次のビートへ送った。
+    ///   Ended    … 結末を読み終えて表紙へ戻った。
+    ///   Moved    … 選択肢のカーソルが動いた。
+    ///   Picked   … 選択肢を選んだ（true = 疑う選択）。
+    pub enum Event with Eq, ToString {
+        case Opened
+        case Revealed
+        case Paged
+        case Ended
+        case Moved
+        case Picked(Bool)
     }
 
     /// 起動時に読む Doc の束（Main と SceneRender が同じ形で組む）。
@@ -55,6 +72,9 @@ mod World {
         kit = NovelKit.Kit,
         cursor = Int32,
         lightsOut = Int32,
+        // 最後に灯りが消えた時刻（t の値。灯りが消える演出 LampFx の起点）。
+        lampOutAt = Option[Float64],
+        events = Emit.Events[Event],
         ui = UiStore.UiWorld,
         docError = Option[String],
         activeDocsWritten = String
@@ -93,6 +113,7 @@ mod World {
           atlas = baked, atlasKey = key,
           t = 0.0, section = StoryDoc.rec(docs#story)#start, idx = 0,
           kit = NovelKit.closed(), cursor = 0, lightsOut = 0,
+          lampOutAt = None, events = Emit.empty(),
           ui = ui, docError = None, activeDocsWritten = "" }
 
     /// いまついている灯りの数（消えた分を引いた残り。負にはならない）。
@@ -102,8 +123,9 @@ mod World {
     // ── 進行の規則 ──
 
     /// 表紙から物語をはじめる。灯りは全部つき直る（新しい夜）。[遷移: Title→Story]
-    def begin(w: World): World =
-        enter(StoryDoc.rec(w#story)#start, 0, { phase = Phase.Story, lightsOut = 0 | w })
+    def begin(w: World): World \ Emit[Event] =
+        Emit.emit(Event.Opened);
+        enter(StoryDoc.rec(w#story)#start, 0, { phase = Phase.Story, lightsOut = 0, lampOutAt = None | w })
 
     /// 表紙へ戻る（結末を読み終えた・台本が切れた）。部屋の暗さはそのまま残り、
     /// 次に begin したとき灯り直す。[遷移: Story→Title]
@@ -151,33 +173,43 @@ mod World {
     /// 決定 1 回分。表紙では物語をはじめ［遷移: Title→Story］、文字送り中なら全文へ、
     /// 読み終えていれば次のビートへ（Story のまま enter で進む）。
     /// 選択肢待ちは動かない（pick だけが進める）。
-    pub def advance(w: World): World =
+    pub def advance(w: World): World \ Emit[Event] =
         match w#phase {
             case Phase.Title => begin(w)
             case Phase.Story =>
                 if (NovelKit.isAsking(w#kit)) w
-                else if (not UiDialog.lineDone(w#kit#dialog))
+                else if (not UiDialog.lineDone(w#kit#dialog)) {
+                    Emit.emit(Event.Revealed);
                     { kit = NovelKit.advance(w#kit) | w }
-                else enter(w#section, w#idx + 1, w)
+                } else {
+                    let next = enter(w#section, w#idx + 1, w);
+                    Emit.emit(if (next#phase == Phase.Title) Event.Ended else Event.Paged);
+                    next
+                }
         }
 
     /// 選択肢カーソルを delta ぶん動かす（端で反対側へ回り込む）。
-    pub def moveCursor(delta: Int32, w: World): World =
+    pub def moveCursor(delta: Int32, w: World): World \ Emit[Event] =
         let count = UiMenu.count(NovelKit.choicesPath(), w#ui);
-        { cursor = UiMenu.moveCursor(delta, count, w#cursor) | w }
+        let cursor = UiMenu.moveCursor(delta, count, w#cursor);
+        if (cursor != w#cursor) Emit.emit(Event.Moved) else ();
+        { cursor = cursor | w }
 
     /// 選択肢 i を選ぶ: 「疑う」選択（suspect）なら館の灯りをひとつ消してから、
     /// 行き先の節の先頭へ。[遷移: 分岐→goto の節]
-    pub def pick(i: Int32, w: World): World =
+    pub def pick(i: Int32, w: World): World \ Emit[Event] =
         match currentOptions(w) |> List.nth(i) {
             case None => w
-            case Some(choice) => enter(choice#goto, 0, dimIf(choice#suspect, w))
+            case Some(choice) =>
+                Emit.emit(Event.Picked(choice#suspect));
+                enter(choice#goto, 0, dimIf(choice#suspect, w))
         }
 
     /// 疑ったときだけ灯りをひとつ消す（台本の lamps より多くは消えない）。
+    /// 消せる灯りが残っていなければ何もしない（演出の起点 lampOutAt も動かさない）。
     def dimIf(suspect: Bool, w: World): World =
-        if (suspect)
-            { lightsOut = Int32.min(StoryDoc.rec(w#story)#lamps, w#lightsOut + 1) | w }
+        if (suspect and lampsLit(w) > 0)
+            { lightsOut = w#lightsOut + 1, lampOutAt = Some(w#t) | w }
         else w
 
     def currentOptions(w: World): List[StoryDoc.Choice] =

@@ -172,10 +172,14 @@ mod View {
     def lamps(w: World.World): List[Render.PlacedItem] =
         let count = StoryDoc.rec(w#story)#lamps;
         let lit = World.lampsLit(w);
+        // いちばん新しく消えた灯り（右から消えるので添字 lit）は、LampFx の Flicker の間だけ細りながら残る。
+        let dying = LampFx.flickerOf(w);
+        let isDying = i -> i == lit and Option.nonEmpty(w#lampOutAt) and dying < 1.0;
         List.range(0, count) |> List.flatMap(i ->
             // 灯りごとに揺れの位相をずらす（そろって明滅すると機械に見える）。
-            lamp({ x = lampX(count, i), litNow = i < lit,
-                   flicker = 0.82 + 0.18 * Sway.wave(w#t, Int32.toFloat64(i) * 0.37, 1.9) },
+            lamp({ x = lampX(count, i), litNow = i < lit or isDying(i),
+                   flicker = (0.82 + 0.18 * Sway.wave(w#t, Int32.toFloat64(i) * 0.37, 1.9))
+                             * (if (isDying(i)) 1.0 - dying else 1.0) },
                  ThemeDoc.rec(w#theme)))
 
     /// i 番目の灯りの x（壁の上に等間隔。1 つなら真ん中）。

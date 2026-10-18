@@ -334,4 +334,23 @@ mod TestTimeline {
         Assert.assertEq(expected = (List#{"introSlam"}, Nil, List#{"warning"}),
                         (Timeline.soundsBetween(slam - 0.01, slam, tl), Timeline.soundsBetween(slam, slam + 0.01, tl),
                          Timeline.soundsBetween(-1.0, 0.0, tl)))
+
+    // ── 起点から測る（soundsSince / progressSince）──
+
+    /// 起点 at を置いたフレームから 1/60 秒ずつ刻むと、どの起点でも全部の音がちょうど 1 回ずつ鳴る。
+    @Test
+    def testSoundsSinceHearsEverySoundOnceFromAnyOrigin(): Unit \ Assert =
+        let tl = intro(175.0, 2.0, 0.32);
+        let heard = at -> List.range(0, Float64.ceil((Timeline.endOf(tl) + 0.1) * 60.0) |> Float64.tryToInt32 |> Option.getWithDefault(0))
+            |> List.flatMap(i -> Timeline.soundsSince(at, at + Int32.toFloat64(i - 1) / 60.0, at + Int32.toFloat64(i) / 60.0, tl));
+        Assert.assertEq(expected = List#{introOrder(), introOrder(), introOrder()},
+            List#{heard(0.0), heard(3.7), heard(100.25)})
+
+    /// 起点 at から測った進みは、0 から測った進み（progressOf）と同じ。
+    @Test
+    def testProgressSinceMatchesProgressFromZero(): Unit \ Assert =
+        let tl = intro(175.0, 2.0, 0.32);
+        let mid = startOf(Intro.Wipe, tl) + 0.15;
+        let fromZero = Timeline.progressOf(Intro.Wipe, Timeline.playheadAt(mid), tl);
+        Assert.assertTrue(Float64.abs(Timeline.progressSince(3.7, 3.7 + mid, Intro.Wipe, tl) - fromZero) < 0.001)
 }

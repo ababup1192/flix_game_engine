@@ -31,4 +31,31 @@ mod TestHash01 {
     def testRoughSpread(): Unit \ Assert =
         let below = List.count(index -> Hash01.at(index, 7) < 0.5, List.range(0, 500));
         Assert.assertEq(expected = true, below > 150 and below < 350)
+
+    // ══════════════════════════════════════════════════════
+    // indexOf / pickBy
+    // ══════════════════════════════════════════════════════
+
+    /// 1..7 個のどれでも、200 個の鍵の添字はすべて 0..n-1 に収まり、どの添字も 1 回は選ばれる。
+    @Test
+    def testIndexOfCoversEveryIndexInRange(): Unit \ Assert =
+        let picksOf = n -> List.range(0, 200) |> List.map(index -> Hash01.indexOf({ index = index, channel = 0 }, n));
+        Assert.assertEq(
+            expected = List.range(1, 8) |> List.map(n -> List.range(0, n)),
+            List.range(1, 8) |> List.map(n -> picksOf(n) |> List.toSet |> Set.toList))
+
+    /// 0 個以下は 0。
+    @Test
+    def testIndexOfNonPositiveIsZero(): Unit \ Assert =
+        Assert.assertEq(expected = (0, 0),
+            (Hash01.indexOf({ index = 5, channel = 1 }, 0), Hash01.indexOf({ index = 5, channel = 1 }, -3)))
+
+    /// pickBy は列の中の 1 つを返し（どの鍵でも）、空の列には None。
+    @Test
+    def testPickByReturnsMemberOrNone(): Unit \ Assert =
+        let xs = List#{"a", "b", "c"};
+        let picked = List.range(0, 100) |> List.map(index -> Hash01.pickBy({ index = index, channel = 2 }, xs));
+        Assert.assertEq(expected = (true, None),
+            (List.forAll(p -> Option.exists(x -> List.memberOf(x, xs), p), picked),
+             Hash01.pickBy({ index = 0, channel = 0 }, (Nil: List[String]))))
 }

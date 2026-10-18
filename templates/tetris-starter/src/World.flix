@@ -18,7 +18,7 @@
 // Doc が壊れていても止まらない（fail-open）: 読めない → 既定値で起動、一部が欠け → その欄だけ既定。
 mod World {
 
-    use fge::ShaderDoc
+    use fge::{Emit, ShaderDoc}
 
     /// ミノの 7 種。色（ThemeDoc.colorOf）も形（Pieces.cellsOf）もこの種類から引く。
     pub enum Kind with Eq, ToString {
@@ -39,6 +39,19 @@ mod World {
         case Playing
         case Clearing
         case GameOver
+    }
+
+    /// このフレームに盤で起きた出来事（音や演出の材料）。規則の奥で Emit.emit し、
+    /// Controls.step が集めて events 欄（Emit.Events）に溜め、音は前後の差（Emit.since）で読む。
+    ///   Locked     … ミノを盤に固定した。
+    ///   LinesFull  … n 行が揃って光り始めた（Clearing に入った）。
+    ///   Cleared    … 光り終えて n 行を実際に消した。
+    ///   ToppedOut  … 積み上がって次のミノが涌けなかった（GAME OVER）。
+    pub enum Event with Eq, ToString {
+        case Locked
+        case LinesFull(Int32)
+        case Cleared(Int32)
+        case ToppedOut
     }
 
     /// 盤のマス。(col, row)。row 0 が最上段で、下に行くほど row が増える（画面と同じ向き）。
@@ -71,6 +84,7 @@ mod World {
         clearTimer = Float64,
         score = Int32,
         lines = Int32,
+        events = Emit.Events[Event],
         activeDocsWritten = String
     }
 
@@ -97,7 +111,7 @@ mod World {
           current = spawnPiece(Kind.I), nextKind = Kind.I, bag = Nil,
           seed = 1i64, gravityTimer = 0.0, lockTimer = 0.0, grounded = false,
           lockResets = 0, phase = Phase.Playing, clearRows = Nil, clearTimer = 0.0,
-          score = 0, lines = 0, activeDocsWritten = "" }
+          score = 0, lines = 0, events = Emit.empty(), activeDocsWritten = "" }
 
     /// 涌き位置に置いた Piece（rot 0・上端中央）。row = -1 は「最上行の 1 行上（隠しバッファ）」。
     /// こうすると最上段（row 0）まで積める＝盤が上まで満杯になって初めて涌けず GAME OVER になる。
@@ -240,7 +254,7 @@ mod World {
     /// softDrop は下キーが押されているか（Controls が渡す）。
     /// 時計（t）だけは場面を問わず進める — 手が止まっている間も紙の繊維が流れ、
     /// 操作中のミノの縁が息をする（画面を完全に静止させないため）。
-    pub def step(softDrop: Bool, dt: Float64, w: World): World =
+    pub def step(softDrop: Bool, dt: Float64, w: World): World \ Emit[Event] =
         let ticked = { t = w#t + dt | w };
         match w#phase {
             case Phase.Playing  => tickPlaying(softDrop, dt, ticked)
@@ -249,7 +263,7 @@ mod World {
         }
 
     /// Playing の 1 フレーム: 重力を積んで 1 行落とし、落ちられなければ接地として固定を待つ。
-    def tickPlaying(softDrop: Bool, dt: Float64, w: World): World =
+    def tickPlaying(softDrop: Bool, dt: Float64, w: World): World \ Emit[Event] =
         let speed = if (softDrop) RulesDoc.rec(w#doc)#softDropFactor else 1.0;
         let timer = w#gravityTimer + dt * speed;
         // gravityInterval を超えた分だけ落下を試みる（1 フレームに 1 行で十分・素直に）。
@@ -275,14 +289,23 @@ mod World {
     /// いまのミノを盤に固定し、揃った行を判定する。
     /// 揃った行があれば演出へ（実消去はまだしない）。無ければ即、次のミノを涌かせる。
     /// [遷移: Playing→Clearing]（揃ったとき）
-    def lockPiece(w: World): World =
+    def lockPiece(w: World): World \ Emit[Event] =
         let placed = piecesCells(w#current)
             |> List.foldLeft((b, cell) -> Map.insert(cell, w#current#kind, b), w#board);
         let full = fullRows(placed);
+        Emit.emit(Event.Locked);
         if (List.isEmpty(full))
-            spawnNext({ board = placed | w })
-        else
+            spawnOrTopOut({ board = placed | w })
+        else {
+            Emit.emit(Event.LinesFull(List.length(full)));
             { board = placed, phase = Phase.Clearing, clearRows = full, clearTimer = 0.0 | w }
+        }
+
+    /// 次のミノを涌かせ、涌けなければ ToppedOut を出す（spawnNext 自身は出来事を出さない純粋な規則）。
+    def spawnOrTopOut(w: World): World \ Emit[Event] =
+        let next = spawnNext(w);
+        if (next#phase == Phase.GameOver) Emit.emit(Event.ToppedOut) else ();
+        next
 
     /// すべての列が埋まっている行の番号（上から下へ）。ライン消しの検出。
     pub def fullRows(board: Map[Cell, Kind]): List[Int32] =
@@ -291,12 +314,13 @@ mod World {
 
     /// Clearing の 1 フレーム: 演出の時間を進め、clearDuration を超えたら実消去して次のミノへ。
     /// [遷移: Clearing→Playing]
-    def tickClearing(dt: Float64, w: World): World =
+    def tickClearing(dt: Float64, w: World): World \ Emit[Event] =
         let t = w#clearTimer + dt;
         if (t >= RulesDoc.rec(w#doc)#clearDuration) {
             let cleared = clearLines(w#clearRows, w#board);
             let gained = RulesDoc.scoreFor(List.length(w#clearRows), w#doc);
-            spawnNext({ board = cleared, phase = Phase.Playing, clearRows = Nil, clearTimer = 0.0,
+            Emit.emit(Event.Cleared(List.length(w#clearRows)));
+            spawnOrTopOut({ board = cleared, phase = Phase.Playing, clearRows = Nil, clearTimer = 0.0,
                     score = w#score + gained, lines = w#lines + List.length(w#clearRows) | w })
         } else
             { clearTimer = t | w }
@@ -328,7 +352,7 @@ mod World {
 
     /// ハードドロップ（Space）: 落ちられる限り一気に落とし、その場で固定する。
     /// 猶予（lockDelay）を待たず即固定 = テトリスの「叩きつけ」。
-    pub def hardDrop(w: World): World =
+    pub def hardDrop(w: World): World \ Emit[Event] =
         if (isPlaying(w)) lockPiece(dropToBottom(w)) else w
 
     /// これ以上落ちられない所まで current を落とした World（ゴーストと hardDrop が使う）。

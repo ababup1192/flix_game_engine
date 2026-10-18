@@ -3,7 +3,7 @@
 // 操作は「選ぶだけ」: ↑↓（カーソル）と 決定（クリック / Z / Enter / Space）。
 // Doc の保存即反映（watchFile）と F1 一括リロードの読み直しもここに置く。
 mod Controls {
-    use fge::{App, DocTable, EntityId, InputMap, PxSpriteDoc, UiFocus, UiMenu, UiMeta, UiStore}
+    use fge::{App, DocTable, Emit, EntityId, InputMap, PxSpriteDoc, Timeline, UiFocus, UiMenu, UiMeta, UiStore}
     use fge::GameEngine.Key
 
     /// このゲームの操作の意図。キーとの対応は tapTable が持つ。
@@ -28,9 +28,58 @@ mod Controls {
     pub def step(frame: App.Frame, w: World.World): World.World =
         World.step(frame#dt, w)
 
-    /// 毎フレームのシステム: 入力の解釈。選択肢待ちだけ操作が変わる
-    /// （カーソル移動 + チップのクリック。それ以外は決定 = 進める）。
+    /// 毎フレームのシステム: 入力の解釈。規則が出した出来事は events 欄に溜める（音は sounds が前後の差で読む）。
     pub def interact(frame: App.Frame, w: World.World): World.World =
+        let (next, events) = Emit.collectInto(() -> interpret(frame, w), w#events);
+        { events = events | next }
+
+    /// 返事の音（決定・カーソルへの応え）と、灯りが消える演出の音の名前（project.json の sounds の論理名）。
+    pub enum Sound with Eq, ToString {
+        case Open
+        case Reveal
+        case Page
+        case End
+        case Move
+        case Pick
+        case Doubt
+    }
+
+    pub def soundName(sound: Sound): String = match sound {
+        case Sound.Open   => "open"
+        case Sound.Reveal => "reveal"
+        case Sound.Page   => "page"
+        case Sound.End    => "end"
+        case Sound.Move   => "move"
+        case Sound.Pick   => "pick"
+        case Sound.Doubt  => "doubt"
+    }
+
+    def soundOf(event: World.Event): Sound = match event {
+        case World.Event.Opened        => Sound.Open
+        case World.Event.Revealed      => Sound.Reveal
+        case World.Event.Paged         => Sound.Page
+        case World.Event.Ended         => Sound.End
+        case World.Event.Moved         => Sound.Move
+        case World.Event.Picked(true)  => Sound.Doubt
+        case World.Event.Picked(false) => Sound.Pick
+    }
+
+    /// 返事の音の名前の全部（性質テストが「返事の音」を数えるのに使う）。
+    pub def replyNames(): Set[String] =
+        (Sound.Open :: Sound.Reveal :: Sound.Page :: Sound.End :: Sound.Move :: Sound.Pick :: Sound.Doubt :: Nil)
+            |> List.map(soundName) |> List.toSet
+
+    /// 1 フレームの音: 返事の音（このフレームに溜まった出来事）と、灯りが消える演出の時刻表の音（lampOutAt から測る）。
+    pub def sounds(ws: { before = World.World, after = World.World }): List[String] =
+        let replies = Emit.since(ws#before#events, ws#after#events) |> List.map(e -> soundName(soundOf(e)));
+        let fx = ws#after#lampOutAt
+            |> Option.map(at -> Timeline.soundsSince(at, ws#before#t, ws#after#t, LampFx.timeline()))
+            |> Option.getWithDefault(Nil);
+        List.append(replies, fx)
+
+    /// 入力の解釈。選択肢待ちだけ操作が変わる
+    /// （カーソル移動 + チップのクリック。それ以外は決定 = 進める）。
+    def interpret(frame: App.Frame, w: World.World): World.World \ Emit[World.Event] =
         if (NovelKit.isAsking(w#kit))
             askInteract(frame, UiFocus.hitTestUi(w#ui, frame#viewport, frame#cursor), w)
         else if (frame#mouseClicked or InputMap.firstTap(tapTable(), frame) == Some(Act.Confirm))
@@ -40,7 +89,7 @@ mod Controls {
     /// 選択肢待ち: キーボードのカーソルを基準にし、マウスは動いたフレームだけ吸着
     /// （UiMenu.syncCursor）。ホバー強調はカーソル位置のチップへ。
     /// ↑↓ で移動、決定かチップのクリックで選ぶ。
-    def askInteract(frame: App.Frame, hit: Option[EntityId], w: World.World): World.World =
+    def askInteract(frame: App.Frame, hit: Option[EntityId], w: World.World): World.World \ Emit[World.Event] =
         let synced = UiMenu.syncCursor(NovelKit.choicesPath(),
                                        { mouseMoved = frame#mouseMoved, hit = hit },
                                        w#cursor, w#ui);
@@ -57,11 +106,12 @@ mod Controls {
             }
 
     /// クリックが選択肢チップ（novel/choice/N）なら、その番号を選ぶ。
-    def pickClicked(hit: Option[EntityId], w: World.World): World.World =
-        hit |> Option.flatMap(id -> Map.get(id, w#ui#metas))
-            |> Option.flatMap(meta -> UiMeta.indexOf(NovelKit.choicePrefix(), meta))
-            |> Option.map(i -> World.pick(i, w))
-            |> Option.getWithDefault(w)
+    def pickClicked(hit: Option[EntityId], w: World.World): World.World \ Emit[World.Event] =
+        match hit |> Option.flatMap(id -> Map.get(id, w#ui#metas))
+                  |> Option.flatMap(meta -> UiMeta.indexOf(NovelKit.choicePrefix(), meta)) {
+            case Some(i) => World.pick(i, w)
+            case None    => w
+        }
 
     // ── Doc の読み込み・読み直し（watchFile / F1） ──
 
