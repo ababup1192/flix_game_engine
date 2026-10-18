@@ -1,0 +1,8 @@
+# 違う時計の時刻を混ぜる見本 9 件（src/Mix*.flix）が、どれも型検査で止まる（E7491）。
+# 同じ時計どうしの見本（src/SameClock.flix）は通る。JVM を 1 回立てる（10 秒ほど）。
+mkdir -p "$WORK/src"
+for f in Clock TimeScale Lifetime Timeline; do ln -s "$ENGINE/engine_world/src/$f.flix" "$WORK/src/$f.flix"; done
+ln -s "$ENGINE/engine/src/core/Num.flix" "$WORK/src/Num.flix"
+cp src/*.flix "$WORK/src/"
+printf '[package]\nversion = "0.1.0"\nflix = "0.78.0"\n' > "$WORK/flix.toml"
+cd "$WORK" && "$ENGINE/bin/flix" check 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -E '^-- ' | sed -E 's/ -+ / /' | sort

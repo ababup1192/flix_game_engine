@@ -30,4 +30,26 @@ pub mod Lifetime {
     pub def alive(now: Float64, l: Lifetime): Bool =
         let e = now - l#startedAt;
         e >= 0.0 and e < l#dur
+
+    // ── 時計の型つき（Clock.Time[c] で測る寿命。違う時計の今で読むとコンパイルが止まる）──
+    // 時計ではなく時刻を受け取るのは、実時間には時計が無く App が配る frame#realNow（時刻）だけがあるため。
+
+    /// 時計 c で測る寿命（誕生時刻は Clock.Time[c]）。
+    pub type alias Span[c] = { startedAt = Clock.Time[c], dur = Float64 }
+
+    /// 時刻 now（Clock.nowOf(w#play) や frame#realNow）に、長さ dur で発火する。
+    pub def fireOn(now: Clock.Time[c], dur: Float64): Span[c] = { startedAt = now, dur = dur }
+
+    /// 進行度 0..1（progressOf と同じ）を、寿命と同じ時計の今で読む。
+    pub def progressOn(now: Clock.Time[c], l: Span[c]): Float64 =
+        Num.clamp01(Clock.since(l#startedAt, now) / l#dur)
+
+    /// まだ再生中か（alive と同じ）を、寿命と同じ時計の今で読む。
+    pub def aliveOn(now: Clock.Time[c], l: Span[c]): Bool =
+        let e = Clock.since(l#startedAt, now);
+        e >= 0.0 and e < l#dur
+
+    /// 残り秒（remaining と同じ）を、寿命と同じ時計の今で読む。
+    pub def remainingOn(now: Clock.Time[c], l: Span[c]): Float64 =
+        Float64.max(0.0, l#dur - Clock.since(l#startedAt, now))
 }

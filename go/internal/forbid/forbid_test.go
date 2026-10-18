@@ -96,3 +96,33 @@ func TestRawLineSeesStringContents(t *testing.T) {
 		t.Errorf("1 行目と 4 行目だけ当たるはず: %+v", hits)
 	}
 }
+
+// skipDirs はパスのどの段のフォルダでも外す（ゲームの test/ もテンプレの test/ も）。
+func TestSkipDirsMatchesAnySegment(t *testing.T) {
+	rule := Rule{ID: "x", Suffixes: []string{".flix"}, SkipDirs: []string{"test"}}
+	got := []bool{rule.Applies("test/A.flix"), rule.Applies("templates/p/test/A.flix"), rule.Applies("templates/p/src/A.flix"), rule.Applies("src/latest/A.flix")}
+	want := []bool{false, false, true, true}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("got %v want %v", got, want)
+		}
+	}
+}
+
+// whenProject の規則は、そのファイルのプロジェクト（いちばん近い flix.toml）が正規表現に当たるときだけ鳴る。
+// 同じリポの別のプロジェクトで当たっても、こちらは黙る。コメントの中の言及は数えない。
+func TestWhenProjectGatesByNearestProject(t *testing.T) {
+	rules := `{"rules":[{"id":"old","suffixes":[".flix"],"pattern":"\\bTimeline\\.soundsSince\\b","whenProject":"\\bApp\\.addClock\\b","hint":"Timeline.soundsOnClock"}]}`
+	root := writeRepo(t, rules, "", map[string]string{
+		"templates/a/flix.toml":       "",
+		"templates/a/src/Main.flix":   "    app |> App.addClock(spec)\n",
+		"templates/a/src/Sounds.flix": "    Timeline.soundsSince(at, b, a, tl)\n",
+		"templates/b/flix.toml":       "",
+		"templates/b/src/Main.flix":   "    // App.addClock はまだ使わない\n",
+		"templates/b/src/Sounds.flix": "    Timeline.soundsSince(at, b, a, tl)\n",
+	})
+	code, msg := run(t, root, "templates/a/src/Sounds.flix", "templates/b/src/Sounds.flix")
+	if code != 1 || !strings.Contains(msg, "templates/a/src/Sounds.flix:1 [old]") || strings.Contains(msg, "templates/b/") {
+		t.Fatalf("code=%d msg=%s", code, msg)
+	}
+}

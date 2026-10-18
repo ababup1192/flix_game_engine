@@ -109,7 +109,7 @@
 
 ## App — `engine_world/src/App.flix`
 - このフレームの入力と時計のスナップショット。キーの生読みはランナーが済ませてあるので、
-  `pub type alias Frame = { down = Set[GameEngine.Key], justPressed = Set[GameEngine.Key], dt = Float64, viewport = Vec2.Vec2, cursor = Vec2.Vec2, mouseDown = Bool, mouseClicked = Bool, mouseMoved = Bool, wheel = Float64 }`
+  `pub type alias Frame = { down = Set[GameEngine.Key], justPressed = Set[GameEngine.Key], dt = Float64, viewport = Vec2.Vec2, cursor = Vec2.Vec2, mouseDown = Bool, mouseClicked = Bool, mouseMoved = Bool, wheel = Float64, realNow = Clock.Time[Clock.Real] }`
 - key がいま押されているか（押しっぱなしも true）。移動などの連続入力に。
   `pub def isDown(key: GameEngine.Key, frame: Frame): Bool`
 - key がこのフレームで新しく押されたか（押しっぱなしは false）。決定・発射などの単発入力に。
@@ -129,7 +129,7 @@
 - 生成したドット絵アトラス 1 枚ぶんの受け渡し。
   `pub type alias AtlasUpload = { texture = String, key = String, baked = PxSpriteAtlas.Baked }`
 - ゲーム 1 本の宣言。make で空を作り、addStartup / addSystem / reloadOn / withView /
-  `pub type alias App[w: Type, ef: Eff] = { init = Vec2.Vec2 -> w \ ef, startupSystems = List[w -> w \ ef], updateSystems = List[(Frame, w) -> w \ ef], reload = Option[(GameEngine.Key, w -> w \ {Fs.FileRead})], watch = List[(String, w -> w \ {Fs.FileRead})], view = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], passes = w -> List[Render.Pass] \ ef, fonts = List[String], camera = Option[w -> Vec2.Vec2 \ ef], zoom = Option[w -> Float64 \ ef], cameraBounds = Option[w -> Rect2.Rect2 \ ef], parallaxLayers = List[(Float64, (ViewCtx, w) -> List[Render.PlacedItem] \ ef)], hudView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], audio = { before = w, after = w } -> List[String] \ ef, sustained = w -> List[Sustain] \ ef, mixer = Option[w -> AudioMixer.Mixer \ ef], quit = (Frame, w) -> Bool \ ef, closeRequest = Option[w -> w \ ef], debug = Bool, debugView = Option[(String, w -> (List[GameEngine.Drawable], List[GameEngine.TileMapRenderCmd], List[GameEngine.PolygonRenderCmd]) \ ef)], worldDump = Option[(Rect2.Rect2, w) -> String \ ef], annotationContext = Option[w -> Annotate.Table \ ef], staticLayer = Option[{ key = w -> GameEngine.StaticKey, build = w -> List[Render.PlacedItem] }], tileLayers = Option[w -> List[TileLayerSpec]], spriteAtlases = w -> List[AtlasUpload], pixelSnap = w -> Float64, statusLine = Option[w -> String \ ef], remoteRender = Option[Unit -> List[String] \ IO], remoteHandlers = List[(String, (Map[String, String], w) -> Result[String, w] \ {Fs.FileRead})], fixedStep = Option[Float64] }`
+  `pub type alias App[w: Type, ef: Eff] = { init = Vec2.Vec2 -> w \ ef, startupSystems = List[w -> w \ ef], updateSystems = List[(Frame, w) -> w \ ef], reload = Option[(GameEngine.Key, w -> w \ {Fs.FileRead})], watch = List[(String, w -> w \ {Fs.FileRead})], view = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], passes = w -> List[Render.Pass] \ ef, fonts = List[String], camera = Option[w -> Vec2.Vec2 \ ef], zoom = Option[w -> Float64 \ ef], cameraBounds = Option[w -> Rect2.Rect2 \ ef], parallaxLayers = List[(Float64, (ViewCtx, w) -> List[Render.PlacedItem] \ ef)], hudView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], audio = { before = w, after = w } -> List[String] \ ef, sustained = w -> List[Sustain] \ ef, mixer = Option[w -> AudioMixer.Mixer \ ef], quit = (Frame, w) -> Bool \ ef, closeRequest = Option[w -> w \ ef], debug = Bool, debugView = Option[(String, w -> (List[GameEngine.Drawable], List[GameEngine.TileMapRenderCmd], List[GameEngine.PolygonRenderCmd]) \ ef)], worldDump = Option[(Rect2.Rect2, w) -> String \ ef], annotationContext = Option[w -> Annotate.Table \ ef], staticLayer = Option[{ key = w -> GameEngine.StaticKey, build = w -> List[Render.PlacedItem] }], tileLayers = Option[w -> List[TileLayerSpec]], spriteAtlases = w -> List[AtlasUpload], pixelSnap = w -> Float64, statusLine = Option[w -> String \ ef], remoteRender = Option[Unit -> List[String] \ IO], remoteHandlers = List[(String, (Map[String, String], w) -> Result[String, w] \ {Fs.FileRead})], fixedStep = Option[Float64], clocks = List[(Float64, w) -> w] }`
 - 初期 World だけを持つ空の App。絵はまだ無い（withView で繋ぐまで何も描かない）。
   `pub def make(init: w): App[w, ef]`
 - 初期 World を design 解像度（project.json の designWidth/Height）から組む入口。
@@ -200,6 +200,10 @@
   `pub def onRequest(path: String, f: (Map[String, String], w) -> Result[String, w] \ {Fs.FileRead}, app: App[w, ef]): App[w, ef]`
 - 物理・当たり判定を固定刻み（dtSeconds 秒）で進める accumulator 方式を有効にする。
   `pub def withFixedStep(dtSeconds: Float64, app: App[w, ef]): App[w, ef]`
+- World の欄にある遊びの時計（Clock.Clock[c]）を、App が毎フレーム 1 回だけ進めるよう宣言する。
+  `pub def addClock(spec: { clockOf = w -> Clock.Clock[c], withClock = (Clock.Clock[c], w) -> w, paceOf = w -> Clock.Pace[c, r] }, app: App[w, ef]): App[w, ef]`
+- addClock で宣言した時計を、実時間 dt で 1 回ずつ進める（advanceFrame が系の前に呼ぶ）。
+  `pub def tickClocks(app: App[w, ef], dt: Float64, world: w): w`
 - 前フレームと今フレームのキー集合から Frame を組む。justPressed は差分
   `pub def frameOf(prev: {prev = Set[GameEngine.Key]}, current: {current = Set[GameEngine.Key]}, dt: Float64, viewport: Vec2.Vec2, cursor: {prevCursor = Option[Vec2.Vec2], cursor = Vec2.Vec2}, mouse: {prevDown = Bool, down = Bool, wheel = Float64}): Frame`
 - withFixedStep の accumulator。持ち越し carry と実フレームの経過秒 realDt を足し、
@@ -209,7 +213,7 @@
 - 0 サブステップのフレームで捨てられそうになったエッジのバッファ。エッジは prev との
   `pub type alias PendingEdges = { justPressed = Set[GameEngine.Key], mouseClicked = Bool, mouseMoved = Bool, wheel = Float64 }`
 - withFixedStep がフレームをまたいで持ち回す状態（持ち越し秒 + 未消費エッジ）。
-  `pub type alias StepState = { carry = Float64, pending = PendingEdges }`
+  `pub type alias StepState = { carry = Float64, pending = PendingEdges, real = Clock.Clock[Clock.Real] }`
 - 起動直後の StepState（貯金ゼロ・未消費エッジなし）。
   `pub def freshStepState(): StepState`
 - バッファしたエッジを今フレームの Frame へ合流させる: justPressed は和集合・
@@ -546,6 +550,49 @@
   `pub def tick(acc: Float64, dt: Float64, interval: Float64): {fired = Bool, rest = Float64}`
 - カウントダウン: 残り時間を dt 減らし、0 で下げ止める。Timer(oneShot=true) 相当。
   `pub def countdown(remaining: Float64, dt: Float64): Float64`
+- 実時間の時計の名前。App だけが進め、frame#realNow で配る。
+  `pub enum Real`
+- 時計 c で測った時刻。中身は外から作れない（nowOf / prevOf と zero / never / after だけが作る）。
+  `pub type alias Time[c] = Stamp[c]`
+- `pub def eq(a: Stamp[c], b: Stamp[c]): Bool`
+- `pub def compare(a: Stamp[c], b: Stamp[c]): Comparison`
+- `pub def toString(a: Stamp[c]): String`
+- 時計の頭の時刻（start した時計の nowOf と同じ）。World の初期値や、テストで組む Frame の realNow に。
+  `pub def zero(): Time[c]`
+- まだ起きていない出来事の時刻（どの今から見ても、演出が全部終わった過去）。
+  `pub def never(): Time[c]`
+- at から seconds 秒あとの時刻（負なら手前）。
+  `pub def after(seconds: Float64, at: Time[c]): Time[c]`
+- at から now までの秒（now が先なら負）。
+  `pub def since(at: Time[c], now: Time[c]): Float64`
+- 秒へ戻す。周期の関数（Anim.frameAt・Sway.wave・Fx.derive）に渡す所だけで使う —— 時計の名前は消える。
+  `pub def secondsOf(at: Time[c]): Float64`
+- 時計 c。
+  `pub type alias Clock[c] = Ticker[c]`
+- このフレームの時計の進み方。r は止める理由（ゲームの型）。
+  `pub enum Run[r] { case Running case Scaled(Float64) case Paused(r) }`
+- 時刻 at から掛かるスロー・ヒットストップ（TimeScale の Plan）。
+  `pub type alias Slow[c] = { at = Time[c], plan = TimeScale.Plan }`
+- World から導く「このフレームの時計の進み方」の宣言。mode が止める・倍速を、slow がヒットストップを決める（run は Flix の予約語）。
+  `pub type alias Pace[c, r] = { mode = Run[r], slow = Option[Slow[c]] }`
+- スローの掛かっていない進み方。
+  `pub def paceOf(mode: Run[r]): Pace[c, r]`
+- 時刻 at から plan のスローを掛ける（掛かっている物は置き換える）。
+  `pub def withSlow(at: Time[c], plan: TimeScale.Plan, pace: Pace[c, r]): Pace[c, r]`
+- 0 秒から始まる時計。
+  `pub def start(): Clock[c]`
+- seconds 秒から始まる時計（描き出し・テストで決まった瞬間を撮るとき。遊びの中では start を使う）。
+  `pub def startAt(seconds: Float64): Clock[c]`
+- 今の時刻。
+  `pub def nowOf(clock: Clock[c]): Time[c]`
+- 前のフレームの時刻（止まっていたフレームは今と同じ）。
+  `pub def prevOf(clock: Clock[c]): Time[c]`
+- このフレームに進んだ秒（止まっていれば 0・スロー中は縮む）。遊びの更新はこの秒で進める。
+  `pub def dtOf(clock: Clock[c]): Float64`
+- 1 フレーム進める。App が毎フレーム 1 回だけ呼ぶ（ゲームからは App.addClock で宣言する）。
+  `pub def advance(pace: Pace[c, r], dt: Float64, clock: Clock[c]): Clock[c]`
+- pace のスローがこの時計の今まだ掛かっているか（ヒットストップの光・揺れの出し入れに）。
+  `pub def isSlowed(pace: Pace[c, r], clock: Clock[c]): Bool`
 
 ## Collision — `engine_world/src/Collision.flix`
 - 衝突の形（engine の CollisionShape2D を再利用）＋ layer/mask（engine と同じ意味論）。
@@ -1054,6 +1101,16 @@
   `pub def remaining(now: Float64, l: Lifetime): Float64`
 - まだ再生中か（0 ≤ 経過 < 寿命）。
   `pub def alive(now: Float64, l: Lifetime): Bool`
+- 時計 c で測る寿命（誕生時刻は Clock.Time[c]）。
+  `pub type alias Span[c] = { startedAt = Clock.Time[c], dur = Float64 }`
+- 時刻 now（Clock.nowOf(w#play) や frame#realNow）に、長さ dur で発火する。
+  `pub def fireOn(now: Clock.Time[c], dur: Float64): Span[c]`
+- 進行度 0..1（progressOf と同じ）を、寿命と同じ時計の今で読む。
+  `pub def progressOn(now: Clock.Time[c], l: Span[c]): Float64`
+- まだ再生中か（alive と同じ）を、寿命と同じ時計の今で読む。
+  `pub def aliveOn(now: Clock.Time[c], l: Span[c]): Bool`
+- 残り秒（remaining と同じ）を、寿命と同じ時計の今で読む。
+  `pub def remainingOn(now: Clock.Time[c], l: Span[c]): Float64`
 
 ## Light — `engine_world/src/Light.flix`
 - 簡易2D光源1個の値。at=位置、radius=光の届く目安半径、color=光の色、
@@ -1924,6 +1981,10 @@
   `pub def soundsSince(at: Float64, beforeNow: Float64, afterNow: Float64, tl: Timeline[a]): List[String]`
 - 起点 at から測った時刻 now での、タグのクリップの進み 0..1（progressOf と同じ境目）。
   `pub def progressSince(at: Float64, now: Float64, tag: a, tl: Timeline[a]): Float64 with Order[a]`
+- 起点 at（時計 c の時刻）から測る待ちの無い表で、時計 clock のこのフレーム (prev, now] に鳴らす効果音。
+  `pub def soundsOnClock(clock: Clock.Clock[c], at: Clock.Time[c], tl: Timeline[a]): List[String]`
+- 起点 at から測る表の、時計 clock の今でのタグのクリップの進み 0..1（progressSince と同じ境目）。
+  `pub def progressOn(clock: Clock.Clock[c], at: Clock.Time[c], tag: a, tl: Timeline[a]): Float64 with Order[a]`
 - 長さを合わせる音（withFittedSound）を書き出すときの長さ（秒）。
   `pub def soundLengthOf(name: String, tl: Timeline[a]): Option[Float64]`
 - 場面の時計 wall と、待ちが解けた時刻の列から、時刻表の上の時刻を出す。解けていない待ちでは

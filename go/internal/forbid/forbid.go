@@ -6,7 +6,8 @@
 //
 // 規則はエンジンの bin/lint-rules/forbid.json (配られる・上書きされる) と、ゲームの
 // bin/lint-rules/forbid.local.json (ゲーム固有・残る) を足した物。1 件は
-// {id, suffixes / basenames / prefixes で見るファイル, pattern, unlessLine, rawLine, skip, hint}。
+// {id, suffixes / basenames / prefixes で見るファイル, pattern, unlessLine, rawLine, skip, skipDirs,
+// whenProject, hint}。
 // hint には「代わりに何を使うか」を必ず書く (止めるだけの規則は置かない)。
 //
 // WhyNot: 規則ごとに Go のサブコマンドを足さないのは、古い書き方の大半が 1 行の正規表現で
@@ -42,11 +43,17 @@ type Rule struct {
 	Pattern    string   `json:"pattern"`
 	UnlessLine string   `json:"unlessLine"`
 	// RawLine は .flix でも文字列の中身を消さずに照合する（文字列そのものを見る規則のため）。コメントは落とす。
-	RawLine bool   `json:"rawLine"`
-	Hint    string `json:"hint"`
-	re      *regexp.Regexp
-	unless  *regexp.Regexp
-	from    string
+	RawLine bool `json:"rawLine"`
+	// SkipDirs はパスのどの段にあっても見ないフォルダ名（"test" ならゲームの test/ もテンプレの test/ も）。
+	SkipDirs []string `json:"skipDirs"`
+	// WhenProject は、そのファイルのプロジェクト（いちばん近い flix.toml のフォルダ）のどこかの .flix に
+	// この正規表現が当たるときだけ規則を効かせる（時計を使い始めたゲームだけ古い口を止める、のように）。
+	WhenProject string `json:"whenProject"`
+	Hint        string `json:"hint"`
+	re          *regexp.Regexp
+	unless      *regexp.Regexp
+	when        *regexp.Regexp
+	from        string
 }
 
 type rulesFile struct {
@@ -88,6 +95,11 @@ func LoadRules(root string) (*Rules, error) {
 					return nil, fmt.Errorf("%s の %s: unlessLine が壊れています: %v", rel, rule.ID, err)
 				}
 			}
+			if rule.WhenProject != "" {
+				if rule.when, err = regexp.Compile(rule.WhenProject); err != nil {
+					return nil, fmt.Errorf("%s の %s: whenProject が壊れています: %v", rel, rule.ID, err)
+				}
+			}
 			rule.from = filepath.ToSlash(rel)
 			r.List = append(r.List, rule)
 		}
@@ -107,6 +119,13 @@ func (rule Rule) Applies(rel string) bool {
 	for _, s := range rule.Skip {
 		if strings.HasPrefix(rel, s) {
 			return false
+		}
+	}
+	for _, dir := range strings.Split(path.Dir(rel), "/") {
+		for _, name := range rule.SkipDirs {
+			if dir == name {
+				return false
+			}
 		}
 	}
 	if len(rule.Prefixes) > 0 && !hasAnyPrefix(rel, rule.Prefixes) {
@@ -257,7 +276,77 @@ func Run(out, errOut *strings.Builder, root string, args []string) (int, error) 
 		}
 		hits = append(hits, rules.TextHits(rel, string(data))...)
 	}
-	return report(out, errOut, rules, hits, all, len(files)), nil
+	return report(out, errOut, rules, projectGated(root, hits), all, len(files)), nil
+}
+
+// projectGated は whenProject の規則の当たりを、そのプロジェクトが正規表現に当たるものだけに絞る。
+// WhyNot: TextHits の中で絞らないのは、プロジェクトを読むのがファイル 1 つの本文の外の仕事で、
+// TextHits を本文だけで決まる純粋な関数のまま保つため。
+func projectGated(root string, hits []Hit) []Hit {
+	uses := map[string]bool{}
+	var kept []Hit
+	for _, h := range hits {
+		if h.Rule.when == nil {
+			kept = append(kept, h)
+			continue
+		}
+		project := projectOf(root, h.Path)
+		key := project + "\x00" + h.Rule.ID
+		used, seen := uses[key]
+		if !seen {
+			used = projectMatches(filepath.Join(root, project), h.Rule.when)
+			uses[key] = used
+		}
+		if used {
+			kept = append(kept, h)
+		}
+	}
+	return kept
+}
+
+// projectOf は rel にいちばん近い flix.toml のフォルダ（root からの相対。無ければ "."）。
+func projectOf(root, rel string) string {
+	for dir := path.Dir(rel); ; dir = path.Dir(dir) {
+		if _, err := os.Stat(filepath.Join(root, dir, "flix.toml")); err == nil {
+			return dir
+		}
+		if dir == "." || dir == "/" {
+			return "."
+		}
+	}
+}
+
+// projectMatches は dir の下の .flix（lib・build・.layers は見ない）のどれかの、文字列とコメントを
+// 除いた行に re が当たるか。
+func projectMatches(dir string, re *regexp.Regexp) bool {
+	found := false
+	_ = filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			switch d.Name() {
+			case "lib", "build", ".layers", "node_modules", ".git":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(p, ".flix") {
+			return nil
+		}
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return nil
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			if re.MatchString(stripFlixNoise(line)) {
+				found = true
+				return filepath.SkipAll
+			}
+		}
+		return nil
+	})
+	return found
 }
 
 func report(out, errOut *strings.Builder, rules *Rules, hits []Hit, all bool, fileCount int) int {

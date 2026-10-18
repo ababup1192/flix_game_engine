@@ -23,9 +23,12 @@ pub mod App {
         mouseDown = Bool,                  // 左ボタンがいま押されているか
         mouseClicked = Bool,               // 左ボタンがこのフレームで新しく押されたか（エッジ）
         mouseMoved = Bool,                 // このフレームでマウスが動いたか（前フレームとの座標比較）
-        wheel = Float64                    // このフレームのホイール量（上が正・下が負。無ければ 0。
+        wheel = Float64,                   // このフレームのホイール量（上が正・下が負。無ければ 0。
                                            // ランナーが毎フレーム consumeScrollDelta を読み切るので、
                                            // ゲーム側が直接 consume すると常に 0 が返る — 必ずここから読む）
+        realNow = Clock.Time[Clock.Real]   // 実時間の今（起動からの秒。ポーズの窓の点滅・背景の雨のように
+                                           // 遊びの時計が止まっても動く物が読む。App が advanceFrame で置く —
+                                           // ゲームは実時間の時計を持たないので、止める・2 度進めるができない）
     }
 
     /// key がいま押されているか（押しっぱなしも true）。移動などの連続入力に。
@@ -188,7 +191,9 @@ pub mod App {
         remoteHandlers = List[(String, (Map[String, String], w) -> Result[String, w] \ {Fs.FileRead})],
         // 物理・当たり判定を実時間でなく固定量子で進めたいゲームの刻み幅（秒）。None = 可変 dt
         // のまま（既定・全既存ゲームはこちら）。withFixedStep で有効化する（詳細は同関数を参照）。
-        fixedStep = Option[Float64]
+        fixedStep = Option[Float64],
+        // 遊びの時計（addClock で宣言）を 1 フレームぶん進める関数の列・追加順。引数は実時間の dt。
+        clocks = List[(Float64, w) -> w]
     }
 
     /// 初期 World だけを持つ空の App。絵はまだ無い（withView で繋ぐまで何も描かない）。
@@ -230,7 +235,8 @@ pub mod App {
           statusLine = None,
           remoteRender = None,
           remoteHandlers = Nil,
-          fixedStep = None }
+          fixedStep = None,
+          clocks = Nil }
 
     /// 起動時に 1 回だけ走るシステムを末尾へ繋ぐ（追加順に適用される）。
     pub def addStartup(sys: w -> w \ ef, app: App[w, ef]): App[w, ef] =
@@ -545,6 +551,27 @@ pub mod App {
     pub def withFixedStep(dtSeconds: Float64, app: App[w, ef]): App[w, ef] =
         { fixedStep = Some(dtSeconds) | app }
 
+    /// World の欄にある遊びの時計（Clock.Clock[c]）を、App が毎フレーム 1 回だけ進めるよう宣言する。
+    /// clockOf / withClock は欄の読み書き、paceOf はこのフレームの進み方（止める理由 Run と
+    /// ヒットストップの Slow）を World から導く —— withSustained と同じく、ゲームは宣言するだけで
+    /// 適用は App が受け持つ。進めるのは系（addSystem）より先なので、系の中の Clock.dtOf は
+    /// このフレームに進んだ秒、Clock.nowOf は進んだ後の今を返す。paceOf が読むのは系を回す前の
+    /// World なので、ポーズを開いたフレームはまだ進み、次のフレームから止まる。
+    /// withFixedStep と合わせても、時計は刻みごとではなく実フレームに 1 回、実時間の dt で進む
+    /// （刻みの中で遊びを進める秒は frame#dt のまま。止めるなら刻みの中で Clock.dtOf(..) == 0.0 を見る）。
+    /// 時計が何本あっても宣言の順に進める。テストで系を直に呼ぶなら、先に tickClocks で同じ進め方をする。
+    pub def addClock(spec: { clockOf = w -> Clock.Clock[c], withClock = (Clock.Clock[c], w) -> w,
+                             paceOf = w -> Clock.Pace[c, r] },
+                     app: App[w, ef]): App[w, ef] =
+        let tick = (dt, world) -> spec#withClock(Clock.advance(spec#paceOf(world), dt, spec#clockOf(world)), world);
+        { clocks = List.append(app#clocks, tick :: Nil) | app }
+
+    /// addClock で宣言した時計を、実時間 dt で 1 回ずつ進める（advanceFrame が系の前に呼ぶ）。
+    /// ゲームのコードからは呼ばない（2 回進めると 1 回目の区間の音が消える。lint-forbid の clock-advance）。
+    /// テストで系を直に呼ぶときだけ、実機と同じ順（tickClocks → 系）を組むのに使う。
+    pub def tickClocks(app: App[w, ef], dt: Float64, world: w): w =
+        List.foldLeft((acc, tick) -> tick(dt, acc), world, app#clocks)
+
     // ── 純粋な芯（テストはここを直接叩く）──
 
     /// 前フレームと今フレームのキー集合から Frame を組む。justPressed は差分
@@ -552,6 +579,7 @@ pub mod App {
     /// マウスも同じ考え方: mouseClicked は「今押されていて前は押されていない」エッジ、
     /// mouseMoved は前フレームとの座標比較（最初のフレームは prevCursor = None で false）。
     /// wheel はバックエンドが貯めた 1 フレームぶんの量を素通しする。
+    /// realNow は 0 秒で組み、advanceFrame が StepState の実時間の時計で置き直す。
     pub def frameOf(prev: {prev = Set[GameEngine.Key]},
                     current: {current = Set[GameEngine.Key]}, dt: Float64,
                     viewport: Vec2.Vec2,
@@ -565,7 +593,8 @@ pub mod App {
           mouseDown = mouse#down,
           mouseClicked = mouse#down and not mouse#prevDown,
           mouseMoved = Option.exists(p -> p#x != cursor#cursor#x or p#y != cursor#cursor#y, cursor#prevCursor),
-          wheel = mouse#wheel }
+          wheel = mouse#wheel,
+          realNow = Clock.zero() }
 
     /// withFixedStep の accumulator。持ち越し carry と実フレームの経過秒 realDt を足し、
     /// fixedDt の倍数だけサブステップ回数を出し、端数を次フレームへの持ち越しとして返す。
@@ -600,11 +629,12 @@ pub mod App {
 
     /// withFixedStep がフレームをまたいで持ち回す状態（持ち越し秒 + 未消費エッジ）。
     /// 可変 dt（fixedStep = None）のゲームでは常に初期値のまま動かない。
-    pub type alias StepState = { carry = Float64, pending = PendingEdges }
+    /// real は実時間の時計（advanceFrame が毎フレーム進め、Frame#realNow に置く）。
+    pub type alias StepState = { carry = Float64, pending = PendingEdges, real = Clock.Clock[Clock.Real] }
 
     /// 起動直後の StepState（貯金ゼロ・未消費エッジなし）。
     pub def freshStepState(): StepState =
-        { carry = 0.0, pending = noPending() }
+        { carry = 0.0, pending = noPending(), real = Clock.start() }
 
     /// 未消費エッジなし。
     def noPending(): PendingEdges =
@@ -634,22 +664,27 @@ pub mod App {
     /// （2 回目以降は suppressEdges でエッジを消す）。
     /// 0 回のフレームは World をそのまま返し、合流済みエッジを次フレームへ取り置く —
     /// そうしないと prev 差分ゆえ二度と立たないエッジがそのまま失われる。
+    /// 系より先に、実時間の時計（Frame#realNow に置く）と addClock の時計を実時間の dt で 1 回進める
+    /// （刻みが 0 回のフレームも進む —— 止めていないのに時計が止まると、次のフレームで区間が飛ぶ）。
     pub def advanceFrame(app: App[w, ef], frame: Frame, state: StepState, world: w): (w, StepState) \ ef =
+        let real = Clock.advance(Clock.paceOf(Clock.Run.Running), frame#dt, state#real);
+        let stamped = { realNow = Clock.nowOf(real) | frame };
+        let ticked = tickClocks(app, frame#dt, world);
         match app#fixedStep {
-            case None => (applySystems(frame, app#updateSystems, world), state)
+            case None => (applySystems(stamped, app#updateSystems, ticked), { real = real | state })
             case Some(fixedDt) =>
                 let (steps, nextCarry) = fixedSteps(state#carry, frame#dt, fixedDt);
-                let merged = mergeEdges(state#pending, frame);
+                let merged = mergeEdges(state#pending, stamped);
                 if (steps == 0)
-                    (world, { carry = nextCarry, pending = pendingOf(merged) })
+                    (ticked, { carry = nextCarry, pending = pendingOf(merged), real = real })
                 else {
                     let firstFrame = { dt = fixedDt | merged };
                     let laterFrame = suppressEdges(firstFrame);
                     let advanced = List.range(0, steps) |> List.foldLeft((acc, i) -> {
                         let subFrame = if (i == 0) firstFrame else laterFrame;
                         applySystems(subFrame, app#updateSystems, acc)
-                    }, world);
-                    (advanced, { carry = nextCarry, pending = noPending() })
+                    }, ticked);
+                    (advanced, { carry = nextCarry, pending = noPending(), real = real })
                 }
         }
 
@@ -674,7 +709,7 @@ pub mod App {
         let declare = app#sustained;
         let (after, nextState) = advanceFrame(app, frame, state, world);
         let sounds = List.distinct(derive({ before = world, after = after }));
-        ({ frame = frame, before = world, after = after, sounds = sounds, sustained = declare(after) }, nextState)
+        ({ frame = { realNow = Clock.nowOf(nextState#real) | frame }, before = world, after = after, sounds = sounds, sustained = declare(after) }, nextState)
 
     /// view 由来の絵（world）に camera（center と zoom。等倍は 1.0）を掛け、hud の絵を
     /// 後ろに繋ぐ。hud には掛けない。center = None でも zoom ≠ 1.0 なら画面中央

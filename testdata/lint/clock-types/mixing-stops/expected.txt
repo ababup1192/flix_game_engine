@@ -1,0 +1,11 @@
+-- Type Error [E7491] src/Mix1.flix
+-- Type Error [E7491] src/Mix2.flix
+-- Type Error [E7491] src/Mix3.flix
+-- Type Error [E7491] src/Mix4.flix
+-- Type Error [E7491] src/Mix5.flix
+-- Type Error [E7491] src/Mix6.flix
+-- Type Error [E7491] src/Mix7.flix
+-- Type Error [E7491] src/Mix7.flix
+-- Type Error [E7491] src/Mix8.flix
+-- Type Error [E7491] src/Mix9.flix
+[exit=0]

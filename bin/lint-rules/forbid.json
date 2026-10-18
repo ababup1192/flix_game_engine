@@ -1,5 +1,5 @@
 {
-  "note": "lint-forbid（古い書き方を 1 行の正規表現で止め、代わりに使う物を出す）の規約データ。この JSON が source of truth で、bin/fge forbid はこれとゲームの bin/lint-rules/forbid.local.json（ゲーム固有の規則と除外。配り直しでも残る）を足して読む。1 件 = {id, suffixes / basenames / prefixes（見るファイル）, skip, pattern, unlessLine（この行なら見逃す）, rawLine（true なら .flix でも文字列の中身を消さずに見る。コメントは落とす）, hint（代わりに何を使うか。必須）}。.flix は文字列とコメントを除いてから当てる。文脈の要る物（z の表 = z-table・let _ = = value-discard）は専用の lint が持つ。除外は exempt に \"パス::id\" と理由 1 行。コミット時に見るのは .flix と Makefile だけ（precommit.json の forbid の when）。ほかの種類のファイルに規則を足すなら、そちらも足す。",
+  "note": "lint-forbid（古い書き方を 1 行の正規表現で止め、代わりに使う物を出す）の規約データ。この JSON が source of truth で、bin/fge forbid はこれとゲームの bin/lint-rules/forbid.local.json（ゲーム固有の規則と除外。配り直しでも残る）を足して読む。1 件 = {id, suffixes / basenames / prefixes（見るファイル）, skip, skipDirs（パスのどの段にあっても見ないフォルダ名）, whenProject（そのファイルのプロジェクトの .flix に当たるときだけ効く）, pattern, unlessLine（この行なら見逃す）, rawLine（true なら .flix でも文字列の中身を消さずに見る。コメントは落とす）, hint（代わりに何を使うか。必須）}。.flix は文字列とコメントを除いてから当てる。文脈の要る物（z の表 = z-table・let _ = = value-discard）は専用の lint が持つ。除外は exempt に \"パス::id\" と理由 1 行。コミット時に見るのは .flix と Makefile だけ（precommit.json の forbid の when）。ほかの種類のファイルに規則を足すなら、そちらも足す。",
   "rules": [
     {
       "id": "zindex-big-literal",
@@ -29,6 +29,36 @@
       "skip": ["engine/", "engine_world/", "engine_tools/", "engine_full/", "src/engine/", "src/engine_world/", "src/engine_tools/", "render_gl/", "src/render_gl/", "lib/", "build/"],
       "pattern": "\\bTimeline\\.buildOrBug\\b",
       "hint": "旧名。Timeline.buildOrBug は Timeline.buildOrPanic へ改名した（引数は同じ・組めなければ名前と書き間違いの一覧を出して止める）。旧名は次のリリースで消える（engine の docs/migrations/0.35.38.md）"
+    },
+    {
+      "id": "clock-advance",
+      "suffixes": [".flix"],
+      "skip": ["engine/", "engine_world/", "engine_tools/", "engine_full/", "src/engine/", "src/engine_world/", "src/engine_tools/", "render_gl/", "src/render_gl/", "lib/", "build/"],
+      "skipDirs": ["test"],
+      "pattern": "\\bClock\\.advance\\b|\\bApp\\.tickClocks\\b",
+      "hint": "時計を進めるのは App（毎フレーム 1 回。同じフレームに 2 回進めると 1 回目の区間の音が消える）。World の欄の時計は App.addClock で宣言し、止める理由と遅くする Plan は paceOf（Clock.paceOf・Clock.withSlow）で World から導く。テストで系を直に呼ぶときだけ test/ で App.tickClocks（engine の docs/clock.md）"
+    },
+    {
+      "id": "clock-real-clock",
+      "suffixes": [".flix"],
+      "skip": ["engine/", "engine_world/", "engine_tools/", "engine_full/", "src/engine/", "src/engine_world/", "src/engine_tools/", "render_gl/", "src/render_gl/", "lib/", "build/"],
+      "pattern": "\\bClock\\[\\s*(?:Clock\\.)?Real\\s*\\]",
+      "hint": "実時間の時計はゲームが持たない（止められると、ポーズの窓の点滅まで止まる）。実時間の今は frame#realNow（Clock.Time[Clock.Real]）を World の欄へ写して読む。寿命は Lifetime.fireOn(frame#realNow, 秒)（engine の docs/clock.md）"
+    },
+    {
+      "id": "clock-seconds-leak",
+      "suffixes": [".flix"],
+      "skip": ["engine/", "engine_world/", "engine_tools/", "engine_full/", "src/engine/", "src/engine_world/", "src/engine_tools/", "render_gl/", "src/render_gl/", "lib/", "build/"],
+      "pattern": "secondsOf\\(.*[-+]\\s*(?:Clock\\.)?secondsOf\\(|secondsOf\\((?:[^()]|\\((?:[^()]|\\([^()]*\\))*\\))*\\)\\s*(?:<|>|==|!=)|(?:[^-|=]>|<|==|!=)=?\\s*(?:Clock\\.)?secondsOf\\(|\\bafter\\(.*\\bsecondsOf\\(",
+      "hint": "secondsOf は周期の関数（Anim.frameAt・Sway.wave・Fx.derive）に渡す所だけ。時刻の差は Clock.since(起点, 今)・前後は Time のまま比べる（<・>・==）・ずらすのは Clock.after(秒, 時刻)。秒へ戻して引く・比べる・包み直すと、違う時計の時刻が混ざってもコンパイルが止まらない（engine の docs/clock.md）"
+    },
+    {
+      "id": "clock-old-sounds",
+      "suffixes": [".flix"],
+      "skip": ["engine/", "engine_world/", "engine_tools/", "engine_full/", "src/engine/", "src/engine_world/", "src/engine_tools/", "render_gl/", "src/render_gl/", "lib/", "build/"],
+      "whenProject": "\\bApp\\.addClock\\b",
+      "pattern": "\\bTimeline\\.(?:soundsBetween|soundsSince|progressSince)\\b",
+      "hint": "時計を使うゲーム（App.addClock がある）は Timeline.soundsOnClock(時計, 起点, 表) と Timeline.progressOn(時計, 起点, タグ, 表)。前と今の秒は時計が持つので、古い prev を渡せず、止めて戻しても・スロー中でも音は 1 回だけ鳴る（engine の docs/clock.md）"
     }
   ],
   "exempt": {}
