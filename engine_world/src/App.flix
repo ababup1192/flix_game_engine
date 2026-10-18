@@ -651,6 +651,25 @@ pub mod App {
                 }
         }
 
+    /// trace の 1 フレーム: 進める前後の World と、そのフレームで鳴らす一発の音（同じ名前は 1 つ）と、
+    /// 鳴り続けていてほしい音の宣言。
+    pub type alias TraceStep[w] = { before = w, after = w, sounds = List[String], sustained = List[Sustain] }
+
+    /// 画面を開かずに、frames を 1 つずつ実機と同じ経路（advanceFrame → audio → sustained）へ流し、
+    /// 各フレームの前後を先頭から返す。性質テスト（同じ入力の列なら同じ結末・1 回押したら音は 1 回）の土台。
+    /// Doc の読み直し・F8・ミキサーは通さない（実機でもフレームの中身を変えない物）。
+    pub def trace(app: App[w, ef], frames: List[Frame], w0: w): List[TraceStep[w]] \ ef =
+        let derive = app#audio;
+        let declare = app#sustained;
+        let (_, _, newestFirst) = frames |> List.foldLeft((acc, frame) -> {
+            let (state, world, out) = acc;
+            let (after, nextState) = advanceFrame(app, frame, state, world);
+            let sounds = List.distinct(derive({ before = world, after = after }));
+            let step = { before = world, after = after, sounds = sounds, sustained = declare(after) };
+            (nextState, after, step :: out)
+        }, (freshStepState(), w0, Nil));
+        List.reverse(newestFirst)
+
     /// view 由来の絵（world）に camera（center と zoom。等倍は 1.0）を掛け、hud の絵を
     /// 後ろに繋ぐ。hud には掛けない。center = None でも zoom ≠ 1.0 なら画面中央
     /// （design/2 の world 点）を軸に寄り引きする（withZoom だけ繋いだゲームと同じ規則）。

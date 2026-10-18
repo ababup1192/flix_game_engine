@@ -1,4 +1,4 @@
-<!-- engine v0.43.0 / 生成: 2026-10-18 -->
+<!-- engine v0.43.0 / 生成: 2026-10-19 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine_world
@@ -220,6 +220,10 @@
   `pub def applySystems(frame: Frame, systems: List[(Frame, w) -> w \ ef], world: w): w \ ef`
 - 1 実フレームぶんの updateSystems 適用。fixedStep 未指定なら現行どおり frame を 1 回
   `pub def advanceFrame(app: App[w, ef], frame: Frame, state: StepState, world: w): (w, StepState) \ ef`
+- trace の 1 フレーム: 進める前後の World と、そのフレームで鳴らす一発の音（同じ名前は 1 つ）と、
+  `pub type alias TraceStep[w] = { before = w, after = w, sounds = List[String], sustained = List[Sustain] }`
+- 画面を開かずに、frames を 1 つずつ実機と同じ経路（advanceFrame → audio → sustained）へ流し、
+  `pub def trace(app: App[w, ef], frames: List[Frame], w0: w): List[TraceStep[w]] \ ef`
 - view 由来の絵（world）に camera（center と zoom。等倍は 1.0）を掛け、hud の絵を
   `pub def composeScene(center: Option[Vec2.Vec2], zoom: Float64, design: Vec2.Vec2, items: { world = List[Render.PlacedItem], hud = List[Render.PlacedItem] }): List[Render.PlacedItem]`
 - camera 中心と zoom から、画面に見えている world の矩形を出す（大きさ design/zoom。
@@ -755,6 +759,10 @@
 - 整数を start から end へ 1 つずつ動かす tween の、進み u（0..1）の時点の値。
   `pub def steppedInt(start: Int32, end: Int32, easing: Easing, u: Float64): Int32`
 
+## Emit — `engine_world/src/Emit.flix`
+- f を走らせ、戻り値と、その間に出た出来事の列（出た順）を返す。
+  `pub def collect(f: Unit -> a \ ef): (a, List[e]) \ (ef - Emit[e])`
+
 ## Flex — `engine_world/src/Flex.flix`
 - レイアウトノード。Leaf = 実寸つき描画物、Box = 子を並べる容器、
   `pub enum Node { case Leaf({ size = Vec2.Vec2, draw = Rect2.Rect2 -> List[Render.PlacedItem] }) case Box({ style = UiLayout.Style, draw = Option[Rect2.Rect2 -> List[Render.PlacedItem]], children = List[Node] }) case Keyed({ key = String, inner = Node }) }`
@@ -893,6 +901,12 @@
 ## Hash01 — `engine_world/src/Hash01.flix`
 - 添字 `index`・チャンネル `channel` に対する [0, 1) の小数。同じ添字の二つの
   `pub def at(index: Int32, channel: Int32): Float64`
+- indexOf / pickBy の鍵。index = 何番目の物か（敵の番号・日付・タイルの通し番号）、
+  `pub type alias Key = { index = Int32, channel = Int32 }`
+- 鍵から 0..n-1 の添字を 1 つ選ぶ（n <= 0 なら 0）。同じ鍵と n なら毎回同じ。
+  `pub def indexOf(key: Key, n: Int32): Int32`
+- 鍵で列から 1 つ選ぶ（空なら None）。台詞の差分・敵の出す技・タイルの柄を、乱数の状態を
+  `pub def pickBy(key: Key, xs: List[a]): Option[a]`
 
 ## Hit — `engine_world/src/Hit.flix`
 - 当たりの形 1 個。dx/dy は持ち主の位置からのずれ（px）で、錨（中心か足元か）は絵に従う。
@@ -1223,6 +1237,28 @@
   `pub def bounce(contacts: List[Contact], restitutions: Map[EntityId, Float64], velocities: Map[EntityId, Vec2.Vec2]): Map[EntityId, Vec2.Vec2]`
 - 各接触のめり込みを解消するよう位置を押し出す。動かせる側（velocities に居る側）だけを動かし、
   `pub def separate(contacts: List[Contact], velocities: Map[EntityId, Vec2.Vec2], positions: Map[EntityId, Vec2.Vec2]): Map[EntityId, Vec2.Vec2]`
+
+## PropTrace — `engine_world/src/PropTrace.flix`
+- 1 フレームの入力。r はゲームの役の enum。
+  `pub enum Act[r] with ToString { case Idle(Float64) case Tap(r) case Hold(r) case Release(r) }`
+- 列の作り方。idle = 何も触らないフレームの重み（Tap と Hold/Release は 1 ずつ）・
+  `pub type alias Spec[r] = { taps = List[r], holds = List[r], idle = Int32, dts = List[Float64] }`
+- 列を Frame にする材料。keyOf = 役 → 実際のキー・viewport = design 解像度・dt = 押すフレームの経過秒。
+  `pub type alias Setup[r] = { keyOf = r -> GameEngine.Key, viewport = Vec2.Vec2, dt = Float64 }`
+- 1 フレームの入力と、App.trace の前後（決まりはこれを見る）。
+  `pub type alias Step[w] = { frame = App.Frame, before = w, after = w, sounds = List[String], sustained = List[App.Sustain] }`
+- 種で決まる入力の列。
+  `pub def plan(seed: Int64, length: Int32, spec: Spec[r]): List[Act[r]]`
+- 入力の列を Frame の列にする。押しっぱなしのキーはフレームをまたいで持つ。
+  `pub def framesOf(setup: Setup[r], acts: List[Act[r]]): List[App.Frame]`
+- 列を流した全部のフレーム（先頭から）。
+  `pub def traceOf(app: App.App[w, ef], setup: Setup[r], acts: List[Act[r]], start: w): List[Step[w]] \ ef`
+- 列を流した後の World。
+  `pub def finalOf(app: App.App[w, ef], setup: Setup[r], acts: List[Act[r]], start: w): w \ ef`
+- 決まりが崩れた最初のフレーム（何フレーム目か・崩れの説明・そこまでの入力）。崩れなければ None。
+  `pub def firstBroken(app: App.App[w, ef], setup: Setup[r], acts: List[Act[r]], start: w, rule: Step[w] -> Option[String]): Option[(Int32, String, List[Act[r]])] \ ef`
+- 種 1, 2, …, count のうち、最初に崩れた種の番号とその説明。全部通れば None。
+  `pub def firstFailingSeed(count: Int32, check: Int64 -> Option[String] \ ef): Option[(Int32, String)] \ ef`
 
 ## PxShade — `engine_world/src/PxShade.flix`
 - 仕上げの重み。0 にしたものは掛からない。
@@ -1871,6 +1907,10 @@
   `pub def soundsOn(playback: Playback, prev: Playhead, now: Playhead, tl: Timeline[a]): List[String]`
 - 待ちの無い表で、前のフレームの秒 prev から今の now までに鳴らす効果音（soundsOn の Play と同じ (prev, now]）。
   `pub def soundsBetween(prev: Float64, now: Float64, tl: Timeline[a]): List[String]`
+- 起点 at（演出を始めた World の時刻）から測る時刻表で、1 フレームの前後の時刻
+  `pub def soundsSince(at: Float64, beforeNow: Float64, afterNow: Float64, tl: Timeline[a]): List[String]`
+- 起点 at から測った時刻 now での、タグのクリップの進み 0..1（progressOf と同じ境目）。
+  `pub def progressSince(at: Float64, now: Float64, tag: a, tl: Timeline[a]): Float64 with Order[a]`
 - 長さを合わせる音（withFittedSound）を書き出すときの長さ（秒）。
   `pub def soundLengthOf(name: String, tl: Timeline[a]): Option[Float64]`
 - 場面の時計 wall と、待ちが解けた時刻の列から、時刻表の上の時刻を出す。解けていない待ちでは

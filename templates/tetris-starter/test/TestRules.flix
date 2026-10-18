@@ -4,7 +4,7 @@
 // World を直接組んで規則関数を当てる。盤の座標は (col, row)、row 0 が最上段。
 mod TestRules {
 
-    use fge::ShaderDoc
+    use fge::{Emit, ShaderDoc}
     use World.Kind
     use World.Cell
 
@@ -12,6 +12,9 @@ mod TestRules {
     def base(): World.World =
         World.initial({ doc = RulesDoc.defaults(), theme = ThemeDoc.defaults(),
                         shader = ShaderDoc.demoSurface() })
+
+    /// 規則が出す出来事（Emit）を捨てて結果の World だけを見る（ここのテストは盤と収支を見る）。
+    def quiet(f: Unit -> World.World \ Emit[World.Event]): World.World = fst(Emit.collect(f))
 
     /// current を指定の Piece に据えた World（衝突・移動・回転のテスト用）。
     def withPiece(kind: Kind, rot: Int32, col: Int32, row: Int32, w: World.World): World.World =
@@ -121,7 +124,7 @@ mod TestRules {
         let d = RulesDoc.defaults();
         let r = RulesDoc.rec(d);
         // 1 フレームで lockDelay を超えるだけの dt を与える（重力で下がれず即固定へ）。
-        let after = World.step(false, r#lockDelay + 0.01, landed);
+        let after = quiet(() -> World.step(false, r#lockDelay + 0.01, landed));
         Assert.assertEq(expected = false, Map.isEmpty(after#board))
 
     @Test
@@ -140,7 +143,7 @@ mod TestRules {
         let landed = { grounded = true, lockTimer = 0.0, lockResets = r#maxLockResets |
             withPiece(Kind.O, 0, 4, World.rows() - 2, base()) };
         // ごく短い dt でも（lockDelay 未満でも）上限に達しているので固定される。
-        let after = World.step(false, 0.001, landed);
+        let after = quiet(() -> World.step(false, 0.001, landed));
         Assert.assertEq(expected = false, Map.isEmpty(after#board))
 
     // ══════════════════════════════════════════════════════
@@ -156,7 +159,7 @@ mod TestRules {
         // さらに現在のミノがすぐ固定されるよう、その真下も塞いでおく。
         let stacked = withBoard(List.append(blockTop, ((4, 2), Kind.T) :: Nil), base());
         // いまのミノを叩きつけて固定 → 次のミノが涌き位置（塞がれた上端）へ出て衝突する。
-        let after = World.hardDrop({ current = { kind = Kind.O, rot = 0, col = 6, row = 0 } | stacked });
+        let after = quiet(() -> World.hardDrop({ current = { kind = Kind.O, rot = 0, col = 6, row = 0 } | stacked }));
         Assert.assertEq(expected = World.Phase.GameOver, after#phase)
 
     // ══════════════════════════════════════════════════════
@@ -169,7 +172,7 @@ mod TestRules {
         let bottom = World.rows() - 1;
         let stacked = withBoard(fullRow(bottom, Kind.I), base());
         let w = withPiece(Kind.O, 0, 4, 0, stacked);
-        let after = World.hardDrop(w);
+        let after = quiet(() -> World.hardDrop(w));
         // O の実セルは相対 (1,0)(2,0)(1,1)(2,1) → col 4 では実列 5,6・下端 row 1。
         // 最下段（bottom）が塞がっているので下端が bottom-1 に載る = (5,bottom-1)(6,bottom-1) が埋まる。
         Assert.assertEq(
@@ -212,7 +215,7 @@ mod TestRules {
         let r = RulesDoc.rec(d);
         let clearing = { phase = World.Phase.Clearing, clearRows = bottom :: Nil, clearTimer = 0.0 |
             withBoard(fullRow(bottom, Kind.I), base()) };
-        let after = World.step(false, r#clearDuration + 0.01, clearing);
+        let after = quiet(() -> World.step(false, r#clearDuration + 0.01, clearing));
         Assert.assertEq(
             expected = (RulesDoc.scoreFor(1, d), 1),
             (after#score, after#lines))

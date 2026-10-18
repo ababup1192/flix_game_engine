@@ -5,18 +5,53 @@
 // 押した瞬間だけ効く操作（回転・叩きつけ・決定）は justPressed、押しっぱなしで効く操作
 // （左右の移動・そっと落とす）は isDown を使う。
 mod Controls {
-    use fge::{App, DocTable, ShaderDoc, ShaderJson}
+    use fge::{App, DocTable, Emit, Hash01, ShaderDoc, ShaderJson}
     use fge::GameEngine.Key
 
     /// 毎フレームのシステム: まず状態を dt 進め、そのあと押した瞬間の操作を反映する。
     /// softDrop（↓ 押しっぱなし）だけは step の落下加速に渡す。
+    /// 規則が出した出来事はこのフレームの分だけ events 欄に置く（前のフレームの分は残さない）。
     pub def step(frame: App.Frame, w: World.World): World.World =
+        let (next, events) = Emit.collect(() -> rules(frame, w));
+        { events = events | next }
+
+    def rules(frame: App.Frame, w: World.World): World.World \ Emit[World.Event] =
         World.step(App.isDown(Key.Down, frame), frame#dt, w)
             |> (w1 -> applyTaps(frame, w1))
 
+    /// 一発の音の名前（project.json の sounds の論理名）。
+    pub enum Sound with Eq, ToString {
+        case Lock
+        case LineA
+        case LineB
+        case Tetris
+        case Over
+    }
+
+    pub def soundName(sound: Sound): String = match sound {
+        case Sound.Lock   => "lock"
+        case Sound.LineA  => "line_a"
+        case Sound.LineB  => "line_b"
+        case Sound.Tetris => "tetris"
+        case Sound.Over   => "over"
+    }
+
+    /// 1 フレームの音: after#events を音へ写す（App.withAudio に渡す形）。
+    /// 1〜3 行消しの音は 2 つから選ぶ。選びは消した通算の行数で決まる（同じ遊び方なら同じ音）。
+    pub def sounds(ws: { before = World.World, after = World.World }): List[String] =
+        ws#after#events |> List.filterMap(e -> soundOf(ws#after, e)) |> List.map(soundName)
+
+    def soundOf(w: World.World, event: World.Event): Option[Sound] = match event {
+        case World.Event.Locked      => Some(Sound.Lock)
+        case World.Event.Cleared(4)  => Some(Sound.Tetris)
+        case World.Event.Cleared(_)  => Hash01.pickBy({ index = w#lines, channel = 0 }, Sound.LineA :: Sound.LineB :: Nil)
+        case World.Event.ToppedOut   => Some(Sound.Over)
+        case World.Event.LinesFull(_) => None
+    }
+
     /// 押した瞬間だけ効く操作（左右の 1 マス寄せ・回転・叩きつけ・決定）を反映する。
     /// 左右も justPressed にして「1 押し = 1 マス」にする（押しっぱなしで滑らない素直な操作）。
-    def applyTaps(frame: App.Frame, w: World.World): World.World =
+    def applyTaps(frame: App.Frame, w: World.World): World.World \ Emit[World.Event] =
         let tap = key -> App.justPressed(key, frame);
         w
             |> (w1 -> if (tap(Key.Left))  World.moveLeft(w1)  else w1)
@@ -29,7 +64,7 @@ mod Controls {
 
     /// Space / Enter の意味は場面で変わる: GAME OVER なら仕切り直し、遊び中なら叩きつけ。
     /// （Enter 中の叩きつけは Space と同じ扱い — どちらでも落とせる。）
-    def confirm(w: World.World): World.World =
+    def confirm(w: World.World): World.World \ Emit[World.Event] =
         match w#phase {
             case World.Phase.GameOver => World.restart(w)
             case _                    => World.hardDrop(w)

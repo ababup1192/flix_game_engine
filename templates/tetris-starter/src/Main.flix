@@ -34,6 +34,8 @@ def main(): Unit \ IO =
                 // 以下は App.game の外側の高度な口（戻り値の App に後ろから pipe で足す）。
                 // HUD（NEXT・スコア・幕）は withHudView — world 側の z に隠されない。
                 |> App.withHudView((ctx, w) -> checked_ecast(View.hud(ctx, w)))
+                // 音は規則が出した出来事（after#events）から導く。
+                |> App.withAudio(ws -> checked_ecast(Controls.sounds(ws)))
                 |> App.reloadOn(GameEngine.Key.F1, Controls.reloadAll)
                 // 走行中の POST /render（Studio の「生成して」）は SceneRender.all と同じ実体を呼ぶ。
                 |> App.onRenderRequest(SceneRender.allShots)

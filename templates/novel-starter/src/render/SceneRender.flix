@@ -6,7 +6,7 @@
 // 「選択肢待ちになるまで進める」「結末の最後のビートまで進める」で位置を決める。
 mod SceneRender {
     use fge::{
-        App, Color, FontAtlas, GameEngine, HeadlessFont, HeadlessRender, PxSprite, PxSpriteAtlas,
+        App, Color, Emit, FontAtlas, GameEngine, HeadlessFont, HeadlessRender, PxSprite, PxSpriteAtlas,
         PxSpriteDoc, Render, Vec2
     }
 
@@ -51,12 +51,12 @@ mod SceneRender {
             // 表紙: 灯りが全部ついた書斎とタイトル。
             case "title"  => Some({ t = 2.3 | w0 })
             // 最初の分岐: 問いを読み終え、選択肢のチップが出た状態。
-            case "choice" => Some({ t = 5.1 | walkToAsk(40, World.advance(w0)) })
+            case "choice" => Some({ t = 5.1 | walkToAsk(40, advance(w0)) })
             // 結末: 疑いを重ねて灯りが消えた書斎で、最後の一文を読んでいる状態。
             // （分岐 2 つは選んで次の分岐まで歩き、最後の告発だけは結末の最後のビートで止める）
             case "ending" =>
-                let ended = walkToAsk(40, World.advance(w0))
-                    |> pickAndWalk(0) |> pickAndWalk(0) |> World.pick(1) |> walkToLast(40);
+                let ended = walkToAsk(40, advance(w0))
+                    |> pickAndWalk(0) |> pickAndWalk(0) |> pick(1) |> walkToLast(40);
                 Some({ t = 8.4 | ended })
             case _        => None
         }
@@ -122,6 +122,11 @@ mod SceneRender {
         println("rendered: ${path}");
         path
 
+    /// 場面を歩くときは返事の出来事を捨てる（絵だけを作る）。
+    def advance(w: World.World): World.World = fst(Emit.collect(() -> World.advance(w)))
+
+    def pick(i: Int32, w: World.World): World.World = fst(Emit.collect(() -> World.pick(i, w)))
+
     /// 文字送りを使い切って 1 ビート読み終えた状態にする（UI への投影も済む）。
     def settle(w: World.World): World.World = World.step(60.0, w)
 
@@ -129,16 +134,16 @@ mod SceneRender {
     def walkToAsk(fuel: Int32, w: World.World): World.World =
         let settled = settle(w);
         if (fuel <= 0 or NovelKit.isAsking(settled#kit)) settled
-        else walkToAsk(fuel - 1, World.advance(settled))
+        else walkToAsk(fuel - 1, advance(settled))
 
     /// 選択肢 i を選んで、次の選択肢待ちまで進める（途中に分岐が無ければ最後まで歩く）。
     def pickAndWalk(i: Int32, w: World.World): World.World =
-        walkToAsk(40, World.pick(i, w))
+        walkToAsk(40, pick(i, w))
 
     /// これ以上進めると表紙へ戻る、その手前（結末の最後のビート）で止める。
     def walkToLast(fuel: Int32, w: World.World): World.World =
         let settled = settle(w);
-        let next = World.advance(settled);
+        let next = advance(settled);
         if (fuel <= 0 or next#phase == World.Phase.Title) settled
         else walkToLast(fuel - 1, next)
 

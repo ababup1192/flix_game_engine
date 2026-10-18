@@ -408,6 +408,16 @@ pub mod Timeline {
     pub def soundsBetween(prev: Float64, now: Float64, tl: Timeline[a]): List[String] =
         soundsOn(Playback.Play, playheadAt(prev), playheadAt(now), tl)
 
+    /// 起点 at（演出を始めた World の時刻）から測る時刻表で、1 フレームの前後の時刻
+    /// beforeNow → afterNow の間に鳴らす効果音。起点を置いたフレームは beforeNow < at なので頭の音も鳴る。
+    /// 待ちの無い表に限る（soundsBetween と同じ）。
+    pub def soundsSince(at: Float64, beforeNow: Float64, afterNow: Float64, tl: Timeline[a]): List[String] =
+        soundsBetween(beforeNow - at, afterNow - at, tl)
+
+    /// 起点 at から測った時刻 now での、タグのクリップの進み 0..1（progressOf と同じ境目）。
+    pub def progressSince(at: Float64, now: Float64, tag: a, tl: Timeline[a]): Float64 with Order[a] =
+        progressOf(tag, playheadAt(now - at), tl)
+
     /// 長さを合わせる音（withFittedSound）を書き出すときの長さ（秒）。
     pub def soundLengthOf(name: String, tl: Timeline[a]): Option[Float64] = match tl {
         case Timeline.Timeline(r) => Map.get(name, r#fitted)
