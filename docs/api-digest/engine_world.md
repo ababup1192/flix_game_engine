@@ -292,6 +292,8 @@
   `pub type alias StepParams = { view = View, rect = Option[Rect2.Rect2], stopWhen = Until, maxFrames = Int32, traceEvery = Option[Int32], dtSeconds = Float64 }`
 - クエリ Map を StepParams へ。不正な値は理由つきの Err（応答にそのまま載せる）。
   `pub def parseParams(queryMap: Map[String, String]): Result[String, StepParams]`
+- クエリを何も書かなかった時の StepParams（view=status・止めない・max 1200・dt 1/60 秒）。
+  `pub def defaultParams(): StepParams`
 - 1 リクエストで実行できる合成フレーム数の天井（60fps で 1 分ぶん）。
   `pub def frameCap(): Int32`
 - until 条件の 1 フレームぶんの判定。このフレームで鳴った音名と「無音が何フレーム
@@ -339,9 +341,15 @@
 - GET /help の本文。プロトコルの自己記述（セッション冒頭に 1 回読む想定）。
   `pub def helpText(): String`
 - リモートコマンド処理が次の実フレームへ持ち回す状態。
-  `pub type alias RemoteNext[w] = { world = w, anno = Annotate.State, history = List[w], hold = Bool }`
+  `pub type alias RemoteNext[w] = { world = w, anno = Annotate.State, history = List[w], hold = Bool, stepState = App.StepState }`
 - リクエスト 1 件を捌き、応答をブリッジへ書いてから次の状態を返す。
-  `pub def handleRemote(app: App.App[w, ef], bridge: Bridge, raw: String, ctx: RemoteNext[w]): RemoteNext[w] \ (ef + GameEngine.Game + GameEngine.Audio + Fs.FileRead + IO)`
+  `pub def handleRemote(app: App.App[w, ef], bridge: Bridge, raw: String, ctx: RemoteNext[w]): RemoteNext[w] \ (ef + GameEngine.Game + Fs.FileRead + IO)`
+- /step 1 回ぶんの実行結果。
+  `pub type alias StepOutcome[w] = { world = w, stepState = App.StepState, newHistory = List[w], framesRun = Int32, sounds = List[(Int64, String)], stoppedBy = String, quit = Bool, traceLines = List[String] }`
+- 台本のコマ（押しているキーの集合）を Frame の列にする。押した瞬間は前のコマに無かったキー
+  `pub def framesOf(script: Script, dt: Float64, viewport: Vec2.Vec2): List[App.Frame]`
+- /step の芯: frames を 1 つずつ App.traceFrame（実機の advanceFrame・App.trace と同じ 1 フレーム。
+  `pub def stepFrames(app: App.App[w, ef], frames: List[App.Frame], start: { world = w, state = App.StepState, frame = Int64 }, stepParams: StepParams): StepOutcome[w] \ ef`
 
 ## AudioFade — `engine_world/src/AudioFade.flix`
 - フェードの端点。start = 進行度 0 のときの音量、target = 進行度 1 のときの音量
@@ -1629,14 +1637,6 @@
   `pub def pathOf(outDir: String, name: String): String`
 - 目録を path へ書き出す。親ディレクトリは作らない（`Fs.WriteFile` の流儀）。
   `pub def write(path: String, text: String): Result[String, Unit] \ Fs.FileWrite`
-
-## Replay — `engine_world/src/Replay.flix`
-- Trace の一拍: この input を frames フレームのあいだ保持する。入力型 i は多相
-  `pub type alias Cue[i] = { input = i, frames = Int32 }`
-- Trace を最後まで駆動し、終端の World を返す。各 Cue について tick を frames 回、
-  `pub def play(tick: (i, Float64, w) -> w, dt: Float64, cues: List[Cue[i]], initial: w): w`
-- Trace の各フレームを順に並べた列 — GIF・解析・スクラブの原反。initial 自身は
-  `pub def timeline(tick: (i, Float64, w) -> w, dt: Float64, cues: List[Cue[i]], initial: w): List[w]`
 
 ## RichText — `engine_world/src/RichText.flix`
 - 1 スパン。tint = None は呼び側の基本色で描く。bold は同じ字を半ピクセルずらして

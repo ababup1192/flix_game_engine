@@ -82,6 +82,23 @@ mod TestTrace {
         };
         Assert.assertEq(expected = None, PropertyTest.forAll(app(), setup(), cases(), start(), rule))
 
+    /// /step の台本（コマ = 押しているキー）: 落ちるのを待って叩きつけ、左へ 1 マス寄せてもう一度叩きつける。
+    def stepScript(): List[Set[Key]] =
+        List.repeat(10, Set#{}) ::: Set#{Key.Space} :: List.repeat(10, Set#{}) :::
+        Set#{Key.Left} :: List.repeat(5, Set#{}) ::: Set#{Key.Space} :: List.repeat(30, Set#{})
+
+    /// 同じ Frame の列を App.trace と /step の芯（App.RemoteDebug.stepFrames）へ流すと、盤・点・音が同じ
+    /// （どちらも App.traceFrame の 1 本を通る。/step は前は固定刻みと時計を見ずに系を直に呼んでいた）。
+    @Test
+    def testStepCoreMatchesTrace(): Unit \ Assert =
+        let frames = App.RemoteDebug.framesOf(stepScript(), setup()#dt, setup()#viewport);
+        let traced = App.trace(app(), frames, start());
+        let stepped = App.RemoteDebug.stepFrames(app(), frames, { world = start(), state = App.freshStepState(), frame = 0i64 },
+                                                 App.RemoteDebug.defaultParams());
+        let last = traced |> List.last |> Option.map(step -> step#after) |> Option.getWithDefault(start());
+        Assert.assertEq(expected = (last#board, last#score, List.flatMap(step -> step#sounds, traced)),
+                        (stepped#world#board, stepped#world#score, List.map(snd, stepped#sounds)))
+
     /// 上の決まりが空振りでないこと: どれかの種の列で、固めたフレームも行を消したフレームもある。
     @Test
     def testSomeSeedLocksAndClears(): Unit \ Assert =

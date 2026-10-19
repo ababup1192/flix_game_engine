@@ -157,18 +157,6 @@
 - "a=1&b=2" → 表。値の中の + は空白へ戻す（フォーム形式の最小限だけ）。
   `pub def parseParams(raw: String): Map[String, String]`
 
-## ReplayScript — `engine_tools/src/ReplayScript.flix`
-- 意味入力。メニューの ↑↓←→ と決定 / 取消 / 印付け。
-  `pub enum Key with Eq, ToString { case Up case Down case Left case Right case Confirm case Cancel case Shift }`
-- スクリプトの 1 手。KeyPress は 1 入力＋間フレーム、Wait は入力なしで n フレーム進める。
-  `pub enum Step { case KeyPress(Key) case Wait(Int32) }`
-- `Step` を任意の入力型 `k` へ一般化した 1 手。engine_world の Replay.Cue[i] と同じく、
-  `pub enum PlayStep[k] { case Press(k) case Wait(Int32) }`
-- スクリプトを実行する（入力型は `Key` に固定）。
-  `pub def execute(betweenFrames: Int32, script: List[Step], applyKey: Key -> Unit \ ef1, tick: Unit -> Unit \ ef2): Unit \ ef1 + ef2`
-- `execute` の多相版。入力アルファベット `k` を呼び側が選べる（方向 record・列挙・
-  `pub def executeWith(betweenFrames: Int32, script: List[PlayStep[k]], applyKey: k -> Unit \ ef1, tick: Unit -> Unit \ ef2): Unit \ ef1 + ef2`
-
 ## SfxSynth — `engine_tools/src/SfxSynth.flix`
 - 合成の共通設定。`sampleRate` = 1 秒あたりのサンプル数。
   `pub type alias Config = { sampleRate = Int32 }`

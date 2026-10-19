@@ -416,6 +416,11 @@ pub mod App.RemoteDebug {
             }
         }
 
+    /// クエリを何も書かなかった時の StepParams（view=status・止めない・max 1200・dt 1/60 秒）。
+    pub def defaultParams(): StepParams =
+        { view = View.Status, rect = None, stopWhen = Until.Always, maxFrames = 1200,
+          traceEvery = None, dtSeconds = 1.0 / 60.0 }
+
     /// 1 リクエストで実行できる合成フレーム数の天井（60fps で 1 分ぶん）。
     pub def frameCap(): Int32 = 3600
 
@@ -655,13 +660,14 @@ pub mod App.RemoteDebug {
         world = w,               // 現在の World（/step で進み得る）
         anno = Annotate.State,   // 停止・スクラブ等の状態（/halt /step で paused になる）
         history = List[w],       // スクラブ用の履歴（/step の合成フレームも積む）
-        hold = Bool              // HTTP 側が停止の主導権を持っているか（真の間 F8 は無効）
+        hold = Bool,             // HTTP 側が停止の主導権を持っているか（真の間 F8 は無効）
+        stepState = App.StepState // 固定刻みの持ち越しと実時間の時計（/step が実機と同じに進める）
     }
 
     /// リクエスト 1 件を捌き、応答をブリッジへ書いてから次の状態を返す。
     /// どの経路でも必ず 1 回 respond する（しないと HTTP 側が 10 秒待って 503 になる）。
     pub def handleRemote(app: App.App[w, ef], bridge: Bridge, raw: String,
-                     ctx: RemoteNext[w]): RemoteNext[w] \ (ef + GameEngine.Game + GameEngine.Audio + Fs.FileRead + IO) =
+                     ctx: RemoteNext[w]): RemoteNext[w] \ (ef + GameEngine.Game + Fs.FileRead + IO) =
         let request = parseRequest(raw);
         match (request#method, request#path) {
             case ("GET", "/help")    => answer(helpText(), bridge, ctx)
@@ -720,7 +726,7 @@ pub mod App.RemoteDebug {
             exitHaltMarkers();
             let resumed = App.resumePoint(ctx#anno, ctx#history, ctx#world);
             answer("ok mode=running frame=${resumed#anno#frame}\n", bridge,
-                   { world = resumed#world, anno = resumed#anno, history = resumed#history, hold = false })
+                   { world = resumed#world, anno = resumed#anno, history = resumed#history, hold = false | ctx })
         }
 
     /// GET /state: 進めずに観測だけ返す。停止中はスクラブで表示中の瞬間を見る。
@@ -740,7 +746,7 @@ pub mod App.RemoteDebug {
     /// 実行中に来たら自動で停止してから進める。スクラブで過去を見ていたら
     /// 「表示中の瞬間から再開して進める」（F8 解除と同じ意味論。未来側の履歴は捨てる）。
     def remoteStepCommand(app: App.App[w, ef], bridge: Bridge, request: Request,
-                          ctx: RemoteNext[w]): RemoteNext[w] \ (ef + GameEngine.Game + GameEngine.Audio + Fs.FileRead + IO) =
+                          ctx: RemoteNext[w]): RemoteNext[w] \ (ef + GameEngine.Game + IO) =
         match (parseParams(request#params), parseScript(request#body)) {
             case (Err(message), _) => answer(message + "\n", bridge, ctx)
             case (_, Err(message)) => answer(message + "\n", bridge, ctx)
@@ -750,7 +756,9 @@ pub mod App.RemoteDebug {
                 else {
                     if (not ctx#anno#paused) enterHaltMarkers() else ();
                     let base = App.resumePoint(ctx#anno, ctx#history, ctx#world);
-                    let outcome = remoteStep(app, base#world, base#anno#frame, script, stepParams);
+                    let frames = framesOf(script, stepParams#dtSeconds, GameEngine.Game.getViewportRect()#size);
+                    let outcome = stepFrames(app, frames, { world = base#world, state = ctx#stepState, frame = base#anno#frame },
+                                             stepParams);
                     let annoAfter = { paused = true,
                                       frame = base#anno#frame + Int32.toInt64(outcome#framesRun) | base#anno };
                     let historyAfter = List.take(App.historyLimit(),
@@ -763,7 +771,8 @@ pub mod App.RemoteDebug {
                              + traceBlock(outcome#traceLines)
                              + viewBlock(app, stepParams, outcome#world);
                     answer(text, bridge,
-                           { world = outcome#world, anno = annoAfter, history = historyAfter, hold = true })
+                           { world = outcome#world, anno = annoAfter, history = historyAfter, hold = true,
+                             stepState = outcome#stepState })
                 }
         }
 
@@ -812,143 +821,82 @@ pub mod App.RemoteDebug {
     // ── リモートデバッグ（HTTP）: /step の実行器 ──
 
     /// /step 1 回ぶんの実行結果。
-    type alias StepOutcome[w] = {
+    pub type alias StepOutcome[w] = {
         world = w,                       // 実行後の World
+        stepState = App.StepState,       // 実行後の固定刻みの持ち越しと実時間の時計
         newHistory = List[w],            // 実行中に積んだ World（新しい順・上限つき）
         framesRun = Int32,               // 実際に進んだコマ数
         sounds = List[(Int64, String)],  // (絶対フレーム番号, 音名) の時系列
         stoppedBy = String,              // "script" / "until:sfx" / "until:quiet" / "quit" / "max"
-        quit = Bool,                     // 終了条件（ウィンドウ閉 / quitWhen）に触れて止まったか
+        quit = Bool,                     // 終了条件（quitWhen）に触れて止まったか
         traceLines = List[String]        // trace=status:K で集めた行（時系列）
     }
 
     /// /step の台本実行中に持ち回る畳み込みの状態。
     type alias StepFold[w] = {
         world = w,                        // いまの World
-        prev = Set[GameEngine.Key],       // 前のコマのキー集合（エッジ判定用）
+        state = App.StepState,            // 固定刻みの持ち越しと実時間の時計
         done = Int32,                     // 進んだコマ数
         quietRun = Int32,                 // 無音が続いているコマ数（until=quiet 用）
         acc = List[w],                    // 積んだ World（新しい順）
+        sounds = List[(Int64, String)],   // 鳴った音（新しい順）
         stopped = String,                 // 停止理由（"" = 続行）
         quit = Bool,                      // 終了条件に触れたか
         trace = List[String]              // trace の行（新しい順）
     }
 
-    /// 台本をコマ送りで実行する芯。TestWorldJourney の headless 駆動と同じ発想で、
-    /// Game / Audio をプロキシハンドラで包んで本番のシステム列をそのまま回す:
-    ///   - dt は実時計でなく固定値（既定 1/60 秒）→ 何度やっても同じ結果になる
-    ///   - キーは台本のコマから返す（Frame 経由でも直読みでも台本に従う）
-    ///   - 描画は捨てる（vsync 待ちが無くなるので数百コマが一瞬で回る）
-    ///   - 音は鳴らさず (フレーム番号, 音名) で記録して観測データにする
-    /// それ以外の操作（GLFW のイベント処理を含む shouldClose 等）は実ハンドラへ素通しする。
-    /// withFixedStep は見ない（台本 1 行 = updateSystems 1 回のまま）: 台本の 1 コマはすでに
-    /// フレーム精度の操作であり、そこへさらに accumulator のサブステップ化を重ねると
-    /// 「台本 N 行 = 何フレーム進んだか」が読めなくなる。fixedStep なゲームで /step を叩くと
-    /// 可変 dt 相当の 1 回更新になる。
-    def remoteStep(app: App.App[w, ef], world0: w, frame0: Int64, script: Script,
-                   stepParams: StepParams): StepOutcome[w] \ (ef + GameEngine.Game + GameEngine.Audio + Fs.FileRead) =
-        region rc {
-            let soundsRef: Ref[List[(Int64, String)], rc] = Ref.fresh(rc, Nil);
-            let frameNoRef: Ref[Int64, rc] = Ref.fresh(rc, frame0);
-            let keysRef: Ref[Set[GameEngine.Key], rc] = Ref.fresh(rc, Set.empty());
-            let effective = List.take(stepParams#maxFrames, script);
-            let truncated = List.length(script) > List.length(effective);
-            let start: StepFold[w] = { world = world0, prev = Set.empty(), done = 0, quietRun = 0,
-                                       acc = Nil, stopped = "", quit = false, trace = Nil };
-            let final = run {
-                List.foldLeft((state, frameKeys) -> {
-                    if (state#stopped != "") state
-                    else {
-                        Ref.put(frameKeys, keysRef);
-                        let frameNo = Ref.get(frameNoRef) + 1i64;
-                        Ref.put(frameNo, frameNoRef);
-                        // 実ハンドラへ素通し = glfwPollEvents が回り、ウィンドウが固まらない・閉じられる
-                        let closing = GameEngine.Game.shouldClose();
-                        // /step の台本はキーのみ（マウスは台本に無いので常に「押されず・動かず・回さず」）。
-                        // 実時間はコマ番号から置く（台本の 1 コマ = dt 秒。何度やっても同じ結果になるよう実時計は読まない）。
-                        let frame = { realNow = Clock.after(Int64.toFloat64(frameNo) * stepParams#dtSeconds, Clock.zero())
-                                      | App.frameOf(prev = state#prev, current = frameKeys, stepParams#dtSeconds,
-                                            GameEngine.Game.getViewportRect()#size,
-                                            { prevCursor = None, cursor = Vec2.zero() },
-                                            { prevDown = false, down = false, wheel = 0.0 }) };
-                        let wantsQuit = app#quit;
-                        if (closing or wantsQuit(frame, state#world))
-                            { stopped = "quit", quit = true | state }
-                        else {
-                            let capturedBefore = List.length(Ref.get(soundsRef));
-                            // /step は描画を捨てるので、リロード発火の合図（タイル層の世代）は
-                            // ここでは使わない — 台本にリロードキーを混ぜる運用は想定しない。
-                            let (reloaded, _reloadFired) = App.applyReload(app, frame, state#world);
-                            let advanced = App.applySystems(frame, app#updateSystems,
-                                                            App.tickClocks(app, stepParams#dtSeconds, reloaded));
-                            // 音の 2 経路: システムが直接鳴らした分はプロキシが記録済み、
-                            // withAudio 由来はここで導出して記録する。
-                            let derive = app#audio;
-                            derive({ before = reloaded, after = advanced })
-                                |> List.forEach(name ->
-                                       Ref.put((frameNo, name) :: Ref.get(soundsRef), soundsRef));
-                            let soundsNow = Ref.get(soundsRef)
-                                |> List.take(List.length(Ref.get(soundsRef)) - capturedBefore)
-                                |> List.map(snd);
-                            let (stoppedNow, quietNow) =
-                                stopCheck(stepParams#stopWhen, soundsNow, state#quietRun);
-                            let traceNow = match stepParams#traceEvery {
-                                case Some(every) =>
-                                    if (Int32.modulo(state#done + 1, every) == 0)
-                                        "f=${frameNo} ${statusText(app, advanced)}" :: state#trace
-                                    else state#trace
-                                case None => state#trace
-                            };
-                            { world = advanced, prev = frameKeys, done = state#done + 1,
-                              quietRun = quietNow, acc = advanced :: state#acc,
-                              stopped = stoppedNow, quit = false, trace = traceNow }
-                        }
-                    }
-                }, start, effective)
-            } with handler GameEngine.Game {
-                def getDeltaTime(k)             = k(Duration.seconds(stepParams#dtSeconds))
-                def isKeyPressed(key, k)        = k(Set.memberOf(key, Ref.get(keysRef)))
-                def renderCommands(_s, _t, _p, _st, k) = k(())
-                def shouldClose(k)              = k(GameEngine.Game.shouldClose())
-                def setShouldClose(c, k)        = k(GameEngine.Game.setShouldClose(c))
-                def initTileBuffer(instances, k) = k(GameEngine.Game.initTileBuffer(instances))
-                def updateTileBuffer(vaoId, instances, k) = k(GameEngine.Game.updateTileBuffer(vaoId, instances))
-                def getMousePosition(k)         = k(GameEngine.Game.getMousePosition())
-                def isMouseButtonPressed(b, k)  = k(GameEngine.Game.isMouseButtonPressed(b))
-                def consumeScrollDelta(k)       = k(GameEngine.Game.consumeScrollDelta())
-                def getFontAtlas(name, k)       = k(GameEngine.Game.getFontAtlas(name))
-                def ensureGlyphs(n, cps, k)     = k(GameEngine.Game.ensureGlyphs(n, cps))
-                def getViewportRect(k)          = k(GameEngine.Game.getViewportRect())
-                def getTextureInfo(name, k)     = k(GameEngine.Game.getTextureInfo(name))
-                def ensureTexture(n, key, w0, h0, px, k) =
-                    k(GameEngine.Game.ensureTexture(n, key, w0, h0, px))
-                def setCursor(cursor, k)        = k(GameEngine.Game.setCursor(cursor))
-                def setCursorVisible(v, k)      = k(GameEngine.Game.setCursorVisible(v))
-                def setFullscreen(on, k)        = k(GameEngine.Game.setFullscreen(on))
-                def isFullscreen(k)             = k(GameEngine.Game.isFullscreen())
-                def saveAnnotation(req, k)      = k(GameEngine.Game.saveAnnotation(req))
-                def setDebugBadge(enabled, k)   = k(GameEngine.Game.setDebugBadge(enabled))
-            } with handler GameEngine.Audio {
-                def playAudio(name, k)  = {
-                    Ref.put((Ref.get(frameNoRef), name) :: Ref.get(soundsRef), soundsRef);
-                    k()
+    /// 台本のコマ（押しているキーの集合）を Frame の列にする。押した瞬間は前のコマに無かったキー
+    /// （実機と同じ App.frameOf）。マウスは台本に無いので「押されず・動かず・回さず」。
+    pub def framesOf(script: Script, dt: Float64, viewport: Vec2.Vec2): List[App.Frame] =
+        let (_, newestFirst) = script |> List.foldLeft((acc, keys) -> {
+            let (prev, out) = acc;
+            let frame = App.frameOf(prev = prev, current = keys, dt, viewport,
+                                    { prevCursor = None, cursor = Vec2.zero() },
+                                    { prevDown = false, down = false, wheel = 0.0 });
+            (keys, frame :: out)
+        }, (Set.empty(), Nil));
+        List.reverse(newestFirst)
+
+    /// /step の芯: frames を 1 つずつ App.traceFrame（実機の advanceFrame・App.trace と同じ 1 フレーム。
+    /// 固定刻みも時計も実機と同じに効く）へ流し、until・quitWhen・maxFrames で止める。
+    /// 描画も実際の音も無い純粋な畳み込みなので、テストは App.trace と同じ列を流して比べられる。
+    pub def stepFrames(app: App.App[w, ef], frames: List[App.Frame],
+                       start: { world = w, state = App.StepState, frame = Int64 },
+                       stepParams: StepParams): StepOutcome[w] \ ef =
+        let effective = List.take(stepParams#maxFrames, frames);
+        let truncated = List.length(frames) > List.length(effective);
+        let first: StepFold[w] = { world = start#world, state = start#state, done = 0, quietRun = 0,
+                                   acc = Nil, sounds = Nil, stopped = "", quit = false, trace = Nil };
+        let final = effective |> List.foldLeft((fold, frame) -> {
+            if (fold#stopped != "") fold
+            else {
+                let wantsQuit = app#quit;
+                if (wantsQuit(frame, fold#world)) { stopped = "quit", quit = true | fold }
+                else {
+                    let frameNo = start#frame + Int32.toInt64(fold#done) + 1i64;
+                    let (step, nextState) = App.traceFrame(app, frame, fold#state, fold#world);
+                    let (stoppedNow, quietNow) = stopCheck(stepParams#stopWhen, step#sounds, fold#quietRun);
+                    let traceNow = match stepParams#traceEvery {
+                        case Some(every) =>
+                            if (Int32.modulo(fold#done + 1, every) == 0)
+                                "f=${frameNo} ${statusText(app, step#after)}" :: fold#trace
+                            else fold#trace
+                        case None => fold#trace
+                    };
+                    { world = step#after, state = nextState, done = fold#done + 1, quietRun = quietNow,
+                      acc = step#after :: fold#acc,
+                      sounds = List.append(List.reverse(step#sounds |> List.map(name -> (frameNo, name))), fold#sounds),
+                      stopped = stoppedNow, quit = false, trace = traceNow }
                 }
-                def stopAudio(name, k)          = k(GameEngine.Audio.stopAudio(name))
-                def setVolume(name, volume, k)  = k(GameEngine.Audio.setVolume(name, volume))
-                def setPitch(name, pitch, k)    = k(GameEngine.Audio.setPitch(name, pitch))
-                def setLooping(name, looping, k) = k(GameEngine.Audio.setLooping(name, looping))
-                def setMasterVolume(gain, k)    = k(GameEngine.Audio.setMasterVolume(gain))
-                def reloadAudio(name, path, k)  = k(GameEngine.Audio.reloadAudio(name, path))
-                def setLowpass(name, gainHF, k) = k(GameEngine.Audio.setLowpass(name, gainHF))
-                def audioSeconds(name, k)       = k(GameEngine.Audio.audioSeconds(name))
-            };
-            { world = final#world,
-              newHistory = List.take(App.historyLimit(), final#acc),
-              framesRun = final#done,
-              sounds = List.reverse(Ref.get(soundsRef)),
-              stoppedBy = if (final#stopped != "") final#stopped
-                          else if (truncated) "max" else "script",
-              quit = final#quit,
-              traceLines = List.reverse(final#trace) }
-        }
+            }
+        }, first);
+        { world = final#world,
+          stepState = final#state,
+          newHistory = List.take(App.historyLimit(), final#acc),
+          framesRun = final#done,
+          sounds = List.reverse(final#sounds),
+          stoppedBy = if (final#stopped != "") final#stopped
+                      else if (truncated) "max" else "script",
+          quit = final#quit,
+          traceLines = List.reverse(final#trace) }
 }

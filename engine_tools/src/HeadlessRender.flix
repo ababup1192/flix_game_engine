@@ -5,8 +5,8 @@
 // RasterReq 組み立て・SoftRaster 呼び出し・GIF エンコード・コマ別 PNG 書き出し・間引きは HeadlessRender に任せられる。
 // GL 不要なので画面の無い場所（テスト・CI）で走る。
 //
-// Replay はここに含めない（engine_world に住むため）。ゲーム側で Replay.timeline した frames: List[w] を
-// 渡す。投影も engine 型 (GameEngine.Drawable / PolygonRenderCmd) で受け取り、engine_world に依存しない。
+// World を進める物（App.trace・Flow の台本）はここに含めない（engine_world に住むため）。ゲーム側で進めた
+// frames: List[w] を渡す。投影も engine 型 (GameEngine.Drawable / PolygonRenderCmd) で受け取り、engine_world に依存しない。
 
 pub mod HeadlessRender {
     import java.awt.image.BufferedImage

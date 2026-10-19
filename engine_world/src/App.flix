@@ -851,7 +851,7 @@ pub mod App {
         { branch = branch, toggled = toggled }
 
     /// 毎フレーム: キーを読み Frame に埋め込む → 終了判定 → リモートコマンド → リロード →
-    /// 更新系システム（advanceFrame。World を進める）→ 音（進んだ World から）→
+    /// 1 フレームの中身（traceFrame。時計と系で World を進め、音の名前を導く。trace・台本・/step と同じ 1 本）→ 音を鳴らす →
     /// 描画（renderFrame。進んだ World を絵に写す）→ 末尾再帰。前フレームのキー集合・
     /// アノテーション状態・直近の World 履歴は引数で次のフレームへ渡し続ける。
     /// 「進める（advanceFrame）」と「描く（renderFrame）」がこの順で必ず分かれているのが芯 —
@@ -903,9 +903,10 @@ pub mod App {
                     // リモートコマンドを処理した実フレームは通常の進行を休む
                     // （停止中は元々進まないし、実行中でも 1 フレームの息継ぎに過ぎない）。
                     let next = RemoteDebug.handleRemote(app, b, raw,
-                        { world = st#world, anno = st#anno, history = st#history, hold = st#remoteHold });
+                        { world = st#world, anno = st#anno, history = st#history, hold = st#remoteHold,
+                          stepState = st#stepState });
                     loop(app, { world = next#world, anno = next#anno, history = next#history,
-                                remoteHold = next#hold | carried })
+                                remoteHold = next#hold, stepState = next#stepState | carried })
                 case _ => {
                     let decided = decideBranch({ f8Pressed = justPressed(GameEngine.Key.F8, frame),
                                                  canDebug = canDebug(app), remoteHold = st#remoteHold,
@@ -933,8 +934,10 @@ pub mod App {
                         case Branch.Running =>
                             let (watched, nextWatchState, watchFired) = applyWatch(app, frame#dt, st#watchState, st#world);
                             let (reloaded, reloadFired) = applyReload(app, frame, watched);
-                            let (advanced, nextStepState) = advanceFrame(app, frame, st#stepState, reloaded);
-                            let (nextSustaining, nextMix, nextUses) = applyAudio(app, frame#dt, reloaded, advanced,
+                            // 1 フレームの中身は trace・台本・/step と同じ traceFrame の 1 本（音の名前もここで導く）。
+                            let (traced, nextStepState) = traceFrame(app, frame, st#stepState, reloaded);
+                            let advanced = traced#after;
+                            let (nextSustaining, nextMix, nextUses) = applyAudio(app, frame#dt, traced,
                                                                        st#sustaining, st#mixState, st#soundUses, st#warnOnce);
                             // fps は debug 有効時だけ計測する（本番ビルドは履歴を積まず無負荷）。
                             let measuredAnno = if (app#debug) Annotate.recordDt(frame#dt, st#anno) else st#anno;
@@ -1187,13 +1190,12 @@ pub mod App {
     /// 1 フレームの音: ミキサーが無ければ今までどおり名前のまま鳴らし、あればバスを通して鳴らす。
     /// 返すのは次のフレームへ渡す「いま鳴り続けている名前」とミキサーの状態。
     /// uses は一発とループで鳴らした名前の覚え（noteSoundUses）。両方に出た名前は warn で 1 回だけ知らせる。
-    def applyAudio(app: App[w, ef], dt: Float64, before: w, after: w,
+    def applyAudio(app: App[w, ef], dt: Float64, traced: TraceStep[w],
                    prev: List[String], mixState: AudioMixer.State, uses: SoundUses, warn: String -> Unit):
             (List[String], AudioMixer.State, SoundUses) \ (ef + GameEngine.Audio) =
-        let derive = app#audio;
-        let declare = app#sustained;
-        let plays = derive({ before = before, after = after });
-        let declared = declare(after);
+        let plays = traced#sounds;
+        let declared = traced#sustained;
+        let after = traced#after;
         let (nextUses, clashes) = noteSoundUses(plays, declared |> List.map(s -> s#name), uses);
         let (living, nextMix) = match app#mixer {
             case None          => (playPlain(List.distinct(plays), declared, prev), mixState)

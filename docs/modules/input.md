@@ -24,5 +24,5 @@
 - **HitDoc** — 当たりの形の宣言（hitbox.json）を読む codec。欠け・間違いは位置付きで断る。
 - **InputEdge** — キーが「今まさに押された瞬間」か「押しっぱなし」かを見分ける。
 - **InputMap** — 生のキーを「操作の意図」へ写す表。同じ意図に複数キーを並べられる（WASD と矢印の両対応など）。
-- **Replay** — 入力の列を順番に tick へ流し込む（再現・自動操作）。
+- **Flow** — 1 行 1 手の台本（e2e/<名前>.flow）を実機と同じ 1 フレームの経路（App.traceFrame）で流す。e2e のテスト・動画の台本・遊んだ記録の再生（docs/flow.md）。
 - **PropertyTest** — 種で決まるでたらめな入力の列（キー・マウス・ホイール）を App.traceFrame で流し、決まりが崩れた最初の種とフレームを探す（property-based testing）。
