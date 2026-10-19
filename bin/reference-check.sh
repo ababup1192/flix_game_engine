@@ -43,7 +43,7 @@ echo "reference-check OK: $(wc -l < "$tmp/expected" | tr -d ' ') 枚すべてリ
 # 全体が exit 0 になり、この門は一度も閉まらない。
 fge="$(dirname "$0")/fge"
 if [ -x "$fge" ]; then
-	# render-all が塗った PNG を取り置いた分（RenderCache）を、上限を超えた古い物から消す。
+	# render-all が塗った PNG をキャッシュに入れた分（RenderCache）を、上限を超えた古い物から消す。
 	"$fge" render-cache prune --quiet || true
 	"$fge" check-render-budget .
 else

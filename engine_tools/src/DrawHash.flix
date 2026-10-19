@@ -1,7 +1,7 @@
 // DrawHash — 1 コマの「描く命令」と、命令に出ない描き出しの入力を、1 本の SHA-256 に畳む（純粋）。
 //
 // 鍵が同じなら SoftRaster が書く PNG は 1 バイトも違わない、を約束する物。RenderCache がこの鍵で
-// 塗った PNG を取り置き、同じ鍵のコマは塗らずに写す。鍵の中身の一覧は docs/render-cache.md。
+// 塗った PNG をキャッシュに入れ、同じ鍵のコマは塗らずに写す。鍵の中身の一覧は docs/render-cache.md。
 //
 // 命令（Drawable・PolygonRenderCmd・SurfaceCmd）が持つテクスチャやフォントは名前とパスだけなので、
 // 命令だけを畳むと「画像を描き直したのに同じ」と言う。命令の外の入力は `Inputs`（ファイルの中身・
@@ -21,7 +21,7 @@ pub mod DrawHash {
     /// 1 コマの鍵。比べるときは `toHex` の字で比べる。
     pub type alias Key = Digest
 
-    /// 鍵を 16 進の字へ（取り置きのファイル名・知らせに使う）。
+    /// 鍵を 16 進の字へ（キャッシュのファイル名・知らせに使う）。
     pub def toHex(key: Key): String = match key {
         case Digest.Digest(hex) => hex
     }

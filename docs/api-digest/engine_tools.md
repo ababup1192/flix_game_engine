@@ -1,4 +1,4 @@
-<!-- engine v0.49.0 / 生成: 2026-10-19 -->
+<!-- engine v0.50.0 / 生成: 2026-10-19 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine_tools
@@ -11,7 +11,7 @@
 ## DrawHash — `engine_tools/src/DrawHash.flix`
 - 1 コマの鍵。比べるときは `toHex` の字で比べる。
   `pub type alias Key = Digest`
-- 鍵を 16 進の字へ（取り置きのファイル名・知らせに使う）。
+- 鍵を 16 進の字へ（キャッシュのファイル名・知らせに使う）。
   `pub def toHex(key: Key): String`
 - PNG の書き方。同じ画素でも書き方でバイト列が違うので鍵に入れる。
   `pub enum PngEncoding with Eq, ToString { case Plain case Filmstrip }`
@@ -135,9 +135,9 @@
   `pub def generate(config: Config, items: List[Item]): Unit \ IO + Fs.FileWrite`
 
 ## RenderCache — `engine_tools/src/RenderCache.flix`
-- 取り置きの口。コマ列の前に 1 本作って持ち回る（TTF の指紋を 1 回だけ読む）。
+- キャッシュの口。コマ列の前に 1 本作って持ち回る（TTF の指紋を 1 回だけ読む）。
   `pub type alias Session = SessionData`
-- 取り置きの口を作る（置き場・エンジンの fpkg の指紋・JVM と OS を読む）。
+- キャッシュの口を作る（置き場・エンジンの fpkg の指紋・JVM と OS を読む）。
   `pub def freshSession(): Session \ IO`
 - 塗った・写した・鍵なしで塗った枚数を 1 行に（描き出しの終わりに出す）。
   `pub def statsLine(session: Session): String \ IO`
@@ -145,7 +145,7 @@
   `pub def writeFramePng(session: Session, req: SoftRaster.RasterReq, surfaces: List[SoftRaster.SurfaceCmd], extraFonts: Map[String, SoftRaster.FontEntry], extraImages: Map[String, BufferedImage], warnLog: SoftRaster.TexWarnLog, textures: SoftRaster.TextureCache): Unit \ IO`
 - SoftRaster.render* の書き方（フルカラー）で req#outPath へ書く。SoftRaster.render* の中身。
   `pub def writePlainPng(req: SoftRaster.RasterReq, surfaces: List[SoftRaster.SurfaceCmd], extraFonts: Map[String, SoftRaster.FontEntry], extraImages: Map[String, BufferedImage]): Unit \ IO`
-- 1 コマの鍵（writeFramePng が取り置きに使うのと同じ物）。鍵を作れなければ None。
+- 1 コマの鍵（writeFramePng がキャッシュに使うのと同じ物）。鍵を作れなければ None。
   `pub def keyOf(session: Session, encoding: DrawHash.PngEncoding, frame: DrawHash.Frame, extraImages: Map[String, BufferedImage], textures: SoftRaster.TextureCache): Option[DrawHash.Key] \ IO`
 
 ## RenderLint — `engine_tools/src/RenderLint.flix`

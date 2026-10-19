@@ -1,7 +1,7 @@
-// RenderCache — 塗った PNG を DrawHash の鍵で取り置き、同じ鍵のコマは塗らずに写す。
+// RenderCache — 塗った PNG を DrawHash の鍵でキャッシュに入れ、同じ鍵のコマは塗らずに写す。
 //
 // 置き場は FGE_RENDER_CACHE（既定 ~/.cache/flix-render-cache・"off" で使わない・"verify"（"verify:<置き場>"）で
-// 毎回塗って取り置きと突き合わせる）。鍵が同じなら塗った PNG も同じ、なので compare の基準と今・reference-check の
+// 毎回塗ってキャッシュと突き合わせる）。鍵が同じなら塗った PNG も同じ、なので compare の基準と今・reference-check の
 // 2 回目・同じ絵が続く動画のコマで塗りを省ける。塗る道（SoftRaster）はそのまま残り、鍵が作れない時は
 // 今まで通り塗る。鍵の中身と使い方は docs/render-cache.md。
 pub mod RenderCache {
@@ -23,11 +23,11 @@ pub mod RenderCache {
     import java.util.concurrent.atomic.AtomicLong
     import javax.imageio.ImageIO
 
-    /// 取り置きの使い方。
+    /// キャッシュの使い方。
     enum Mode {
-        /// 鍵が取り置きにあれば写す。
+        /// 鍵がキャッシュにあれば写す。
         case Reuse
-        /// 毎回塗り、取り置きにあればバイト列を突き合わせる（違えば知らせて塗った方で置き換える）。
+        /// 毎回塗り、キャッシュにあればバイト列を突き合わせる（違えば知らせて塗った方で置き換える）。
         case Verify
     }
 
@@ -45,11 +45,11 @@ pub mod RenderCache {
         mismatched = AtomicLong
     })
 
-    /// 取り置きの口。コマ列の前に 1 本作って持ち回る（TTF の指紋を 1 回だけ読む）。
+    /// キャッシュの口。コマ列の前に 1 本作って持ち回る（TTF の指紋を 1 回だけ読む）。
     /// 寿命は SoftRaster.TextureCache と同じく 1 回の描き出しの間だけにする。
     pub type alias Session = SessionData
 
-    /// 取り置きの口を作る（置き場・エンジンの fpkg の指紋・JVM と OS を読む）。
+    /// キャッシュの口を作る（置き場・エンジンの fpkg の指紋・JVM と OS を読む）。
     pub def freshSession(): Session \ IO =
         let (root, mode) = settings();
         SessionData.SessionData({
@@ -80,7 +80,7 @@ pub mod RenderCache {
             + "・鍵なしで塗った ${Int64.toString(s#uncached.get())}${verify}（置き場 ${place}）"
 
     /// 動画・GIF のコマを 1 枚 req#outPath へ書く（Filmstrip.renderFrame と同じバイト列）。
-    /// 引数は SoftRaster.renderToImageCached と同じ。鍵が取り置きにあれば塗らずに写す。
+    /// 引数は SoftRaster.renderToImageCached と同じ。鍵がキャッシュにあれば塗らずに写す。
     pub def writeFramePng(session: Session, req: SoftRaster.RasterReq, surfaces: List[SoftRaster.SurfaceCmd],
                           extraFonts: Map[String, SoftRaster.FontEntry],
                           extraImages: Map[String, BufferedImage],
@@ -98,7 +98,7 @@ pub mod RenderCache {
                  { req = req, surfaces = surfaces, extraFonts = extraFonts }, extraImages,
                  SoftRaster.freshTexWarnLog(), s#textures)
 
-    /// 1 コマの鍵（writeFramePng が取り置きに使うのと同じ物）。鍵を作れなければ None。
+    /// 1 コマの鍵（writeFramePng がキャッシュに使うのと同じ物）。鍵を作れなければ None。
     /// テクスチャの指紋は `textures` の中の画像（塗る時に使う物）から取る。
     pub def keyOf(session: Session, encoding: DrawHash.PngEncoding, frame: DrawHash.Frame,
                   extraImages: Map[String, BufferedImage], textures: SoftRaster.TextureCache): Option[DrawHash.Key] \ IO =
@@ -147,8 +147,8 @@ pub mod RenderCache {
                 } else {
                     let image = paint();
                     discard s#painted.incrementAndGet();
-                    // 取り置きへは塗った画像を符号化したバイト列を直接入れ、outPath はそこから写す
-                    // （outPath を読み直すと、書き損ねた前の中身を新しい鍵で取り置いてしまう）。
+                    // キャッシュへは塗った画像を符号化したバイト列を直接入れ、outPath はそこから写す
+                    // （outPath を読み直すと、書き損ねた前の中身を新しい鍵でキャッシュに入れてしまう）。
                     if (putIntoStore(s#mismatched, encoding, image, stored) and copyFile(stored, outPath)) ()
                     else encode(encoding, image, outPath)
                 }
@@ -191,7 +191,7 @@ pub mod RenderCache {
             AtomicFile.write(dst, tmp -> if (writeBytes(tmp, bytes)) discard ok.incrementAndGet() else ());
             ok.get() == 1i64 and new File(dst).length() == Int32.toInt64(Array.length(bytes))
         } catch {
-            case ex: IOException => warnOnce("read", "取り置きを読めない（${ex.getMessage()}）— 塗る"); false
+            case ex: IOException => warnOnce("read", "キャッシュを読めない（${ex.getMessage()}）— 塗る"); false
         }
 
     def writeBytes(file: File, bytes: Array[Int8, Static]): Bool \ IO =
@@ -200,9 +200,9 @@ pub mod RenderCache {
         sink.close();
         ok
 
-    /// 塗った画像を取り置きへ入れる。前の取り置き（Verify で塗り直した時）と違えば知らせる。
+    /// 塗った画像をキャッシュへ入れる。前のキャッシュ（Verify で塗り直した時）と違えば知らせる。
     /// 入れられなければ false（呼ぶ側が outPath へ直接書く）。
-    // WhyNot: 取り置きの名前へ AtomicFile.write で直接書かない — 書く前に同じ名前の一時ファイルを消すので、
+    // WhyNot: キャッシュの名前へ AtomicFile.write で直接書かない — 書く前に同じ名前の一時ファイルを消すので、
     // 同じ鍵のコマを 2 本の糸が同時に入れると、相手の書きかけを消し合う。糸ごとに別の名前で書いてから移す。
     def putIntoStore(mismatched: AtomicLong, encoding: DrawHash.PngEncoding, image: BufferedImage, stored: String): Bool \ IO =
         let target = new File(stored);
@@ -215,7 +215,7 @@ pub mod RenderCache {
             else {
                 if (target.isFile() and not Arrays.equals(Files.readAllBytes(target.toPath()), Files.readAllBytes(fresh.toPath()))) {
                     discard mismatched.incrementAndGet();
-                    Log.warn("[render-cache] 取り置きと塗った絵が違う: ${stored} — 塗った方で置き換える（鍵に入っていない入力がある）")
+                    Log.warn("[render-cache] キャッシュと塗った絵が違う: ${stored} — 塗った方で置き換える（鍵に入っていない入力がある）")
                 } else ();
                 if (fresh.renameTo(target)) true
                 else { discard fresh.delete(); target.isFile() }
@@ -223,7 +223,7 @@ pub mod RenderCache {
         } catch {
             case ex: IOException =>
                 discard new File(part).delete();
-                warnOnce("write", "取り置きへ書けない（${ex.getMessage()}）— 塗った絵を直接書く");
+                warnOnce("write", "キャッシュへ書けない（${ex.getMessage()}）— 塗った絵を直接書く");
                 false
         }
 
@@ -280,7 +280,7 @@ pub mod RenderCache {
     // WhyNot: エンジンの版の字（0.49.0）を使わない — use-engine でブランチの作業場へ向けると、
     // 版の字は同じまま SoftRaster が変わる。組んだ物そのものの指紋を使う。
     // WhyNot: 呼ぶたびに読み直さない — 起動したままの JVM（make run・窓なしの常駐）の裏で fpkg を
-    // 組み直すと、古いコードで塗った絵を新しい fpkg の鍵で取り置いてしまう。
+    // 組み直すと、古いコードで塗った絵を新しい fpkg の鍵でキャッシュに入れてしまう。
     def engineDigest(): String \ IO =
         let memoKey = "fge.renderCache.engine";
         let memo = System.getProperty(memoKey);

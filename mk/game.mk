@@ -259,8 +259,8 @@ flow-vocab:
 video-entries:
 	@fge=bin/fge; [ -x "$$fge" ] || fge="$(ENGINE)/bin/fge"; "$$fge" video-entries --root .
 
-# 基準を作り直す回は取り置きを写さず全部塗り、前の取り置きと突き合わせる（docs/render-cache.md）。
-# 写した絵を基準にすると、取り置きが汚れていた時にそれが正しい絵として固まる。
+# 基準を作り直す回はキャッシュを写さず全部塗り、前のキャッシュと突き合わせる（docs/render-cache.md）。
+# 写した絵を基準にすると、キャッシュが汚れていた時にそれが正しい絵として固まる。
 reference-update: export FGE_RENDER_CACHE := verify
 reference-update: render-all
 	"$(ENGINE)/bin/reference-update.sh"

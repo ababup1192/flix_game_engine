@@ -134,7 +134,7 @@ pub mod SoftRaster {
         "[render] 描き出せない指定: ${x#attr} ×${x#count} — ${x#hint}"
 
     /// 要求を 1 枚の PNG に描き出して書き出す。PNG を書く render* は RenderCache を通る
-    /// （同じ鍵の絵が取り置きにあれば塗らずに写す。バイト列は塗った時と同じ）。
+    /// （同じ鍵の絵がキャッシュにあれば塗らずに写す。バイト列は塗った時と同じ）。
     pub def render(req: RasterReq): Unit \ IO =
         RenderCache.writePlainPng(req, Nil, Map.empty(), Map.empty())
 

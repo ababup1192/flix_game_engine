@@ -10,7 +10,7 @@ import (
 
 func init() {
 	register("render-cache",
-		"塗った PNG の取り置き（RenderCache）の大きさを見る（status）・古い物から消す（prune [--max-mb N] [--quiet]）",
+		"塗った PNG のキャッシュ（RenderCache）の大きさを見る（status）・古い物から消す（prune [--max-mb N] [--quiet]）",
 		cmdRenderCache)
 }
 

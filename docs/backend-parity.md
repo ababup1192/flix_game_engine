@@ -52,7 +52,7 @@ SoftRaster が指定を黙って落とすと、**スナップショットは「�
    黙って落とすのは禁止 — 生成した絵が嘘をつく。
 3. **この表を更新する**。
 4. 軸や式が両者で揃っているかを、数値のテストか生成した絵の見比べで確かめる。
-5. **塗った PNG の取り置きの鍵（`DrawHash`）に入れる**。`Drawable` の引数や `RasterReq`・`SurfaceCmd` の欄を
+5. **塗った PNG のキャッシュの鍵（`DrawHash`）に入れる**。`Drawable` の引数や `RasterReq`・`SurfaceCmd` の欄を
    足すと `DrawHash.flix` がコンパイルで止まるので、そこで畳む。SoftRaster の入口に引数を足すなら
    `DrawHash.Frame` に入れて `RenderCache.writePng` から渡す（鍵と塗りを 1 か所の同じ値から作る）。
    入れ忘れると「絵が変わったのに同じ」と言う偽の緑になる（[render-cache.md](render-cache.md)）。

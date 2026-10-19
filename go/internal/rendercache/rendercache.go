@@ -1,11 +1,11 @@
 // Package rendercache は、エンジンの RenderCache（engine_tools/src/RenderCache.flix）が塗った PNG を
-// 取り置く場所の見張り役。取り置きの読み書きは Flix 側だけがする。ここは大きさを見て、古い物から消すだけ。
+// キャッシュに入れる場所の見張り役。キャッシュの読み書きは Flix 側だけがする。ここは大きさを見て、古い物から消すだけ。
 //
 //	fge render-cache status           置き場・枚数・大きさ
 //	fge render-cache prune [--max-mb N] [--quiet]   N MB（既定 4096）を超えた分を、使った時刻の古い順に消す
 //
 // 置き場は FGE_RENDER_CACHE（既定 ~/.cache/flix-render-cache・"off" / "0" で使わない）。Flix 側と同じ決め方。
-// 取り置きの 1 枚は <置き場>/<鍵の頭 2 字>/<鍵>.png。写すたびに時刻を今にするので、時刻は「最後に使った時」。
+// キャッシュの 1 枚は <置き場>/<鍵の頭 2 字>/<鍵>.png。写すたびに時刻を今にするので、時刻は「最後に使った時」。
 package rendercache
 
 import (
@@ -42,7 +42,7 @@ func Dir() string {
 	return env
 }
 
-// 取り置きの 1 枚（<鍵の頭 2 字>/<鍵>.png）と、書きかけの残り（<鍵>.png.<時刻>-<糸>.part とその一時ファイル）。
+// キャッシュの 1 枚（<鍵の頭 2 字>/<鍵>.png）と、書きかけの残り（<鍵>.png.<時刻>-<糸>.part とその一時ファイル）。
 var (
 	storedRe = regexp.MustCompile(`^[0-9a-f]{2}/[0-9a-f]{64}\.png$`)
 	partRe   = regexp.MustCompile(`^[0-9a-f]{2}/\.?[0-9a-f]{64}\.png\.[0-9-]+\.part`)

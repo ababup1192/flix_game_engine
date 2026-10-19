@@ -1,10 +1,10 @@
-# 塗った PNG の取り置き（DrawHash・RenderCache）
+# 塗った PNG のキャッシュ（DrawHash・RenderCache）
 
 reference-check・make compare・動画のコマで、**前に塗ったのと同じ絵は塗らずに写す**ための仕組み。
 1 枚の塗り（SoftRaster → PNG）は 200 ms 前後かかるが、描く命令を組んでハッシュを取るのは 10 ms 前後で済む。
 
 - `DrawHash.computeKey`（engine_tools・純粋）: 1 コマの描く命令と、命令に出ない描き出しの入力を 1 本の SHA-256 に畳む
-- `RenderCache`（engine_tools・IO）: その鍵で、塗った PNG を `~/.cache/flix-render-cache/` に取り置く。
+- `RenderCache`（engine_tools・IO）: その鍵で、塗った PNG を `~/.cache/flix-render-cache/` にキャッシュに入れる。
   同じ鍵が来たら塗らずに PNG を写す（バイト列は塗った時と同じ）
 - 塗る道（SoftRaster）は残る。鍵を作れない時（下の「鍵を作らない時」）は今まで通り塗る
 
@@ -43,7 +43,7 @@ println(RenderCache.statsLine(session))   // [render-cache] 塗った 12・写�
 | テクスチャ（そのコマの命令が引く名前だけ） | 名前 + 塗る時に使う `TextureCache` の中の画像の画素の SHA-256（パスは入れない — compare の基準は別の場所の worktree。画素は塗りと同じ物を見るので、読む間に保存されても鍵と絵がずれない） |
 | フォント（`fontTtf` の中身・`fontAtlas`・`extraFonts` の名前・TTF の中身・atlas） | TTF はファイルの中身の SHA-256（session で 1 回）、atlas は全欄 |
 | pass などの描き出し済み画像（`extraImages`。命令が引く名前だけ） | 画素の SHA-256（型・幅・高さつき）。Keep で前のコマを持ち越す絵もこれで拾う |
-| SoftRaster の版 | ゲームの `lib/` にあるエンジンの fpkg（flix.toml が指す版）の中身の SHA-256。JVM の中で 1 回だけ取り、fpkg が JVM の起動より新しければ鍵を作らない（起動したままのゲームの裏で組み直した時に、古いコードの絵を新しい鍵で取り置かない） |
+| SoftRaster の版 | ゲームの `lib/` にあるエンジンの fpkg（flix.toml が指す版）の中身の SHA-256。JVM の中で 1 回だけ取り、fpkg が JVM の起動より新しければ鍵を作らない（起動したままのゲームの裏で組み直した時に、古いコードの絵を新しい鍵でキャッシュに入れない） |
 | JVM と OS | `java.vendor`・`java.runtime.version`・`java.vm.version`・`os.name`・`os.version`・`os.arch`・`java.awt.headless`・`sun.java2d.uiScale`・JVM の起動旗（Java2D の文字と縁は JDK・OS・旗で変わりうる） |
 | PNG の書き方 | `Plain`（SoftRaster.render*）と `Filmstrip`（PNG-8 にしうる）は別の鍵 |
 
@@ -66,10 +66,10 @@ writeFramePng と同じ鍵が返る（指紋の取り方を写さない）。
 
 ### 突き合わせ（verify）
 
-`FGE_RENDER_CACHE=verify`（置き場を変えているなら `verify:<絶対パス>`）は取り置きを写さず毎回塗り、同じ鍵の取り置きがあればバイト列を突き合わせる。
-違えば `[render-cache] 取り置きと塗った絵が違う` を出して塗った方で置き換える（鍵に入っていない入力があるという印）。
+`FGE_RENDER_CACHE=verify`（置き場を変えているなら `verify:<絶対パス>`）はキャッシュを写さず毎回塗り、同じ鍵のキャッシュがあればバイト列を突き合わせる。
+違えば `[render-cache] キャッシュと塗った絵が違う` を出して塗った方で置き換える（鍵に入っていない入力があるという印）。
 **`make reference-update` はいつもこれで流れる**（写した絵を基準として固めない）。
-取り置きには塗った画像を符号化したバイト列を直接入れ、書き先はそこから写す（書き先を読み直して取り置かない）。
+キャッシュには塗った画像を符号化したバイト列を直接入れ、書き先はそこから写す（書き先を読み直してキャッシュに入れない）。
 
 ## 置き場
 
@@ -91,6 +91,6 @@ lib/external と lib/cache の名前と大きさと時刻・描き出しが使�
 - TTF は鍵（session の最初に読んだ中身）と塗り（`Font.createFont` が毎回読む）が別に読む。描き出しの最中に TTF を
   保存し直すとずれうる（テクスチャは塗りと同じ画像から指紋を取るのでずれない）
 - reference-check と compare が「同じか」を決めるのは今まで通り PNG のバイト列。ハッシュは塗りを省く所にだけ効く:
-  基準（reference の PNG・前の版の動画）の側にハッシュを書き残す代わりに、塗った時に鍵 → PNG を取り置き、
+  基準（reference の PNG・前の版の動画）の側にハッシュを書き残す代わりに、塗った時に鍵 → PNG をキャッシュ、
   次に同じ鍵が来たら写す。こうすると gallery/ と動画のコマは毎回そろい、比べる側（reference-check.sh・compare）は直さずに済む
 - 窓なしのゲームの常駐・GPU で塗る所はここでは扱わない
