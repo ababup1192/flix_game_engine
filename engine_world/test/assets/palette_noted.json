@@ -1,0 +1,2 @@
+{ "version": 1, "$schema": "palette", "note": "注記の鍵は色として読まない", "//": "これも注記", "//base": "base は地の色",
+  "accent": "#00ff00", "base": "#0000ff" }

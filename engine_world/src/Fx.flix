@@ -65,24 +65,57 @@ pub mod Fx {
     pub def drawAll(now: Float64, bursts: List[Burst]): List[Render.PlacedItem] =
         List.flatMap(b -> sampleAt(b#spec, b#seed, Lifetime.elapsedOf(now, b#life), b#at), bursts)
 
+    // ========================================================================
+    // 粒の姿（当たり判定・ゲームの規則に使う）
+    // ========================================================================
+
+    /// 時刻 t に見えている粒 1 つ。絵（sample）と同じ式から出るので、描いた所と当たる所はずれない。
+    /// emitter = emitter の名前、index = emitter の中の粒の番号、cycle = loop で生まれ直した回数（burst は 0。
+    /// 「同じ粒に 2 度当たらない」を数えるなら (emitter, index, cycle) を鍵にする）、center = 粒の中心
+    /// （原点 (0, 0) 生まれ）、size = 直径（box と streak は一辺。streak の尾の伸びは含めない）、alpha = 濃さ。
+    pub type alias Particle = { emitter = String, index = Int32, cycle = Int64, center = Vec2.Vec2, size = Float64, alpha = Float64 }
+
+    /// 時刻 t 秒に見えている粒の一覧（sample と同じ粒・同じ並び。見えない粒 = 大きさか濃さが 0 の粒は入らない）。
+    pub def particles(spec: FxDoc.Spec, seed: Int64, t: Float64): List[Particle] =
+        if (t < 0.0 or t > spec#duration) Nil
+        else spec#emitters |> List.flatMap(emitter -> posesOf(emitter, seed, t) |> List.map(pose ->
+            { emitter = emitter#name, index = pose#index, cycle = pose#cycle, center = pose#pos, size = pose#size, alpha = pose#alpha }))
+
+    /// particles の中心を at へ平行移動した物（sampleAt と同じ置き方）。
+    pub def particlesAt(spec: FxDoc.Spec, seed: Int64, t: Float64, at: Vec2.Vec2): List[Particle] =
+        particles(spec, seed, t) |> List.map(particle -> { center = Vec2.add(particle#center, at) | particle })
+
+    /// 進行中の burst 全部の、時刻 now の粒（drawAll と同じ時刻の取り方）。
+    pub def particlesOfAll(now: Float64, bursts: List[Burst]): List[Particle] =
+        List.flatMap(b -> particlesAt(b#spec, b#seed, Lifetime.elapsedOf(now, b#life), b#at), bursts)
+
+    /// 円（中心と半径）が粒（直径 size の円とみなす）に重なるか。
+    pub def touches(circle: { center = Vec2.Vec2, radius = Float64 }, particle: Particle): Bool =
+        Vec2.length(Vec2.sub(circle#center, particle#center)) <= circle#radius + particle#size / 2.0
+
     // ── sample の内部（emitter・粒の導出）──
 
+    /// 粒 1 つの姿の中身（描くのに要る物まで）。turn・speed・u は streak の尾の向きを出すのに使う。
+    type alias Pose = { index = Int32, cycle = Int64, pos = Vec2.Vec2, size = Float64, alpha = Float64, color = Color,
+                        spun = Float64, turn = Float64, speed = Float64, u = Float64, age = Float64 }
+
     def sampleEmitter(emitter: FxDoc.Emitter, seed: Int64, t: Float64): List[Render.PlacedItem] =
+        posesOf(emitter, seed, t) |> List.flatMap(drawPose(emitter))
+
+    def posesOf(emitter: FxDoc.Emitter, seed: Int64, t: Float64): List[Pose] =
         // emitter 名（と emitter#seed の上乗せ）を種に混ぜて、同じ seed でも emitter ごとに
         // 別の乱数系統を引く。seed = 0 の混ぜ込みは加算なので既存の絵を 1 ビットも変えない。
         let emitterSeed = mix64(Int64.bitwiseXor(seed, nameHash(emitter#name))
             + Int32.toInt64(emitter#seed));
-        List.range(0, emitter#count) |> List.flatMap(i -> sampleParticle(emitter, emitterSeed, i, t))
+        List.range(0, emitter#count) |> List.filterMap(i -> poseOfParticle(emitter, emitterSeed, i, t))
 
-    /// 粒 i の時刻 t の姿。寿命が尽きた粒は空リスト。burst は全粒 t=0 生まれ、loop は
+    /// 粒 i の時刻 t の姿。寿命が尽きた粒は None。burst は全粒 t=0 生まれ、loop は
     /// 各粒が寿命ごとに生まれ直す（位相 = 粒ごとの乱数で分散・生まれ直すたびに速度と方向を
     /// 引き直す — すべて t の純関数のまま）。
-    /// circle / box / streak は 1 粒 = 1 枚、glow だけは縁の減衰を同心円の重ねで作るため 1 粒 = 複数枚。
-    def sampleParticle(emitter: FxDoc.Emitter, emitterSeed: Int64, i: Int32,
-                       t: Float64): List[Render.PlacedItem] =
+    def poseOfParticle(emitter: FxDoc.Emitter, emitterSeed: Int64, i: Int32, t: Float64): Option[Pose] =
         let rand = k -> rand01(emitterSeed, i, k);
         let life = varied(emitter#life#base, emitter#life#vary, rand(0));
-        if (life <= 0.0) Nil
+        if (life <= 0.0) None
         else {
             // burst: 経過 = t そのもの・寿命切れは消える。loop: 位相をずらした t を寿命で
             // 折り返し（経過 = mod(t + 位相, 寿命)）、周回番号 cycle を乱数の種に混ぜて
@@ -95,83 +128,88 @@ pub mod Fx {
                     let c = Float64.floor(local / life);
                     (local - c * life, Float64.tryToInt64(c) |> Option.getWithDefault(0i64))
             };
-            if (age >= life or age < 0.0) Nil
-            else sampleParticleAt(emitter, emitterSeed, i, life, age, cycle)
+            if (age >= life or age < 0.0) None
+            else poseAt(emitter, emitterSeed, i, life, age, cycle)
         }
 
     /// 生まれてから age 秒経った粒 i（周回 cycle）の姿。個性（速度・方向・発生位置）は
-    /// (emitterSeed, cycle, i) から引く — 同じ入力からは常に同じ絵。
-    def sampleParticleAt(emitter: FxDoc.Emitter, emitterSeed: Int64, i: Int32,
-                         life: Float64, age: Float64, cycle: Int64): List[Render.PlacedItem] =
+    /// (emitterSeed, cycle, i) から引く — 同じ入力からは常に同じ姿。大きさか濃さが 0 なら None（描かない粒）。
+    def poseAt(emitter: FxDoc.Emitter, emitterSeed: Int64, i: Int32,
+               life: Float64, age: Float64, cycle: Int64): Option[Pose] =
         // 周回ごとに別の乱数系統（cycle = 0 は emitterSeed そのもの = burst と同一）。
         let cycleSeed = emitterSeed + cycle * -7046029254386353131i64;
         let rand = k -> rand01(cycleSeed, i, k);
-        {
-            let u = age / life;
-            // 位置 = 初速 × 速度カーブの積分（閉形式）+ 発生源のずれ + 重力/風（½at²）。
-            // dir は度（0 = 真上・時計回り）。spawn/accel が既定（0）なら加算は恒等 —
-            // 既存文書の絵はビット単位で不変。
-            let speed = varied(emitter#speed#base, emitter#speed#vary, rand(1));
-            // even は粒番号 i で扇を等分する（乱数と同じ ±spread/2 の幅に i/count を割り当てる）。
-            let fan = match emitter#dir#mode {
-                case FxDoc.DirMode.Random => rand(2) - 0.5
-                case FxDoc.DirMode.Even   =>
-                    Int32.toFloat64(i) / Int32.toFloat64(Int32.max(1, emitter#count)) - 0.5
-            };
-            let turn = (emitter#dir#base + emitter#dir#spread * fan) / 360.0;
-            let dist = speed * life * curveIntegral(emitter#speed#over, u);
-            let spawnOff = { x = (rand(4) - 0.5) * emitter#spawnArea#w,
-                             y = (rand(5) - 0.5) * emitter#spawnArea#h };
-            let accelOff = Vec2.mul(emitter#accel, 0.5 * age * age);
-            let straight = Vec2.add(Vec2.add(Vec2.mul(Vec2.onEllipse({ x = 1.0, y = 1.0 }, turn), dist),
-                spawnOff), accelOff);
-            // wobble 既定（amp 0）は足し算ごと飛ばす — 既存文書の絵はビット単位で不変。
-            let pos = if (emitter#wobble#amp#x == 0.0 and emitter#wobble#amp#y == 0.0) straight
-                      else Vec2.add(straight, wobbleOffset(emitter#wobble, rand, age));
-            let size = emitter#size * curveValue(emitter#sizeOver, i, u);
-            let alpha = Num.clamp01(curveValue(emitter#alphaOver, i, u));
-            if (size <= 0.0 or alpha <= 0.0) Nil
-            else {
-                let color = gradient(emitter#color, u);
-                let decorate = placed -> {
-                    let faded = placed#item |> Render.fade(alpha);
-                    { item = Render.blended(emitter#blend, faded) | placed }
-                };
-                // 傾き = 初期の向き + 回る速さ × 経過（閉形式のまま）。
-                let spun = emitter#turn#base + emitter#turn#spread * (rand(6) - 0.5)
-                    + (emitter#turn#spin + emitter#turn#spinSpread * (rand(7) - 0.5)) * age;
-                match emitter#shape {
-                    case FxDoc.Shape.Circle =>
-                        // 円とにじみは回しても同じ絵なので傾けない（粒ごとの回転を描画部へ
-                        // 送るだけ無駄になる）。
-                        decorate(RawDraw.circleAt(pos, size / 2.0, color, emitter#zIndex)) :: Nil
-                    case FxDoc.Shape.Box    =>
-                        decorate(RawDraw.boxAt(pos, { x = size, y = size }, color, emitter#zIndex)
-                            |> (p -> if (Float64.abs(spun) < 1.0e-12) p
-                                     else { item = Render.turned(spun, p#item) | p })) :: Nil
-                    case FxDoc.Shape.Streak =>
-                        // 尾の向きは速度から導く（turn は効かせない — 筋の向きと粒の傾きが
-                        // 別々に回ると、雨・火花が「流れ」に見えなくなる）。wobble の揺れも
-                        // 向きには混ぜない — 微分を持ち込むほどの絵の差が出ない。
-                        let vel = Vec2.add(
-                            Vec2.mul(Vec2.onEllipse({ x = 1.0, y = 1.0 }, turn),
-                                     speed * curveValue(emitter#speed#over, i, u)),
-                            Vec2.mul(emitter#accel, age));
-                        let velLen = Vec2.length(vel);
-                        // 止まった粒は射出方向を向く（尾は 0 = ただの size 角の箱）。
-                        let velTurn = if (velLen < 1.0e-9) turn
-                                      else Vec2.atan2(vel#y, vel#x) / Vec2.tau() + 0.25;
-                        decorate(RawDraw.boxAt(pos, { x = size, y = size + velLen * emitter#stretch },
-                                              color, emitter#zIndex)
-                            |> (p -> if (Float64.abs(velTurn) < 1.0e-12) p
-                                     else { item = Render.turned(velTurn, p#item) | p })) :: Nil
-                    case FxDoc.Shape.Glow   =>
-                        // 濃さとブレンドは glowAt が輪ごとに配るので decorate は通さない
-                        //（後から fade を掛けると輪ごとの配分が上書きされて減衰が消える）。
-                        Render.glowAt(pos, size / 2.0, color,
-                                      { alpha = alpha, blend = emitter#blend }, emitter#zIndex)
-                }
-            }
+        let u = age / life;
+        // 位置 = 初速 × 速度カーブの積分（閉形式）+ 発生源のずれ + 重力/風（½at²）。
+        // dir は度（0 = 真上・時計回り）。spawn/accel が既定（0）なら加算は恒等 —
+        // 既存文書の絵はビット単位で不変。
+        let speed = varied(emitter#speed#base, emitter#speed#vary, rand(1));
+        // even は粒番号 i で扇を等分する（乱数と同じ ±spread/2 の幅に i/count を割り当てる）。
+        let fan = match emitter#dir#mode {
+            case FxDoc.DirMode.Random => rand(2) - 0.5
+            case FxDoc.DirMode.Even   =>
+                Int32.toFloat64(i) / Int32.toFloat64(Int32.max(1, emitter#count)) - 0.5
+        };
+        let turn = (emitter#dir#base + emitter#dir#spread * fan) / 360.0;
+        let dist = speed * life * curveIntegral(emitter#speed#over, u);
+        let spawnOff = { x = (rand(4) - 0.5) * emitter#spawnArea#w,
+                         y = (rand(5) - 0.5) * emitter#spawnArea#h };
+        let accelOff = Vec2.mul(emitter#accel, 0.5 * age * age);
+        let straight = Vec2.add(Vec2.add(Vec2.mul(Vec2.onEllipse({ x = 1.0, y = 1.0 }, turn), dist),
+            spawnOff), accelOff);
+        // wobble 既定（amp 0）は足し算ごと飛ばす — 既存文書の絵はビット単位で不変。
+        let pos = if (emitter#wobble#amp#x == 0.0 and emitter#wobble#amp#y == 0.0) straight
+                  else Vec2.add(straight, wobbleOffset(emitter#wobble, rand, age));
+        let size = emitter#size * curveValue(emitter#sizeOver, i, u);
+        let alpha = Num.clamp01(curveValue(emitter#alphaOver, i, u));
+        if (size <= 0.0 or alpha <= 0.0) None
+        else {
+            // 傾き = 初期の向き + 回る速さ × 経過（閉形式のまま）。
+            let spun = emitter#turn#base + emitter#turn#spread * (rand(6) - 0.5)
+                + (emitter#turn#spin + emitter#turn#spinSpread * (rand(7) - 0.5)) * age;
+            Some({ index = i, cycle = cycle, pos = pos, size = size, alpha = alpha, color = gradient(emitter#color, u),
+                   spun = spun, turn = turn, speed = speed, u = u, age = age })
+        }
+
+    /// 姿を描き物にする。circle / box / streak は 1 粒 = 1 枚、glow だけは縁の減衰を同心円の重ねで作るため 1 粒 = 複数枚。
+    def drawPose(emitter: FxDoc.Emitter, pose: Pose): List[Render.PlacedItem] =
+        let pos = pose#pos;
+        let size = pose#size;
+        let color = pose#color;
+        let decorate = placed -> {
+            let faded = placed#item |> Render.fade(pose#alpha);
+            { item = Render.blended(emitter#blend, faded) | placed }
+        };
+        match emitter#shape {
+            case FxDoc.Shape.Circle =>
+                // 円とにじみは回しても同じ絵なので傾けない（粒ごとの回転を描画部へ
+                // 送るだけ無駄になる）。
+                decorate(RawDraw.circleAt(pos, size / 2.0, color, emitter#zIndex)) :: Nil
+            case FxDoc.Shape.Box    =>
+                decorate(RawDraw.boxAt(pos, { x = size, y = size }, color, emitter#zIndex)
+                    |> (p -> if (Float64.abs(pose#spun) < 1.0e-12) p
+                             else { item = Render.turned(pose#spun, p#item) | p })) :: Nil
+            case FxDoc.Shape.Streak =>
+                // 尾の向きは速度から導く（turn は効かせない — 筋の向きと粒の傾きが
+                // 別々に回ると、雨・火花が「流れ」に見えなくなる）。wobble の揺れも
+                // 向きには混ぜない — 微分を持ち込むほどの絵の差が出ない。
+                let vel = Vec2.add(
+                    Vec2.mul(Vec2.onEllipse({ x = 1.0, y = 1.0 }, pose#turn),
+                             pose#speed * curveValue(emitter#speed#over, pose#index, pose#u)),
+                    Vec2.mul(emitter#accel, pose#age));
+                let velLen = Vec2.length(vel);
+                // 止まった粒は射出方向を向く（尾は 0 = ただの size 角の箱）。
+                let velTurn = if (velLen < 1.0e-9) pose#turn
+                              else Vec2.atan2(vel#y, vel#x) / Vec2.tau() + 0.25;
+                decorate(RawDraw.boxAt(pos, { x = size, y = size + velLen * emitter#stretch },
+                                      color, emitter#zIndex)
+                    |> (p -> if (Float64.abs(velTurn) < 1.0e-12) p
+                             else { item = Render.turned(velTurn, p#item) | p })) :: Nil
+            case FxDoc.Shape.Glow   =>
+                // 濃さとブレンドは glowAt が輪ごとに配るので decorate は通さない
+                //（後から fade を掛けると輪ごとの配分が上書きされて減衰が消える）。
+                Render.glowAt(pos, size / 2.0, color,
+                              { alpha = pose#alpha, blend = emitter#blend }, emitter#zIndex)
         }
 
     // ── カーブ評価 ──

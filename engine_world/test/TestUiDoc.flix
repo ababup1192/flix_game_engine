@@ -579,6 +579,14 @@ mod TestUiDoc {
             expected = Some(((1.0, 0.0, 0.0), (0.0, 0.0, 1.0))),
             colors)
 
+    @Test
+    def testPaletteFileSkipsNoteKeys(): Unit \ {Assert, IO} =
+        // パレットの注記の鍵（$schema・note・"//" で始まる鍵）は色として読まず、残りの色は引ける（inline の "//" も同じ）。
+        let got = run { UiSpec.load("test/assets/palette_noted.ui.json") } with Fs.FileRead.runWithIO;
+        Assert.assertEq(
+            expected = Ok(Some(((1.0, 0.0, 0.0), (0.0, 0.0, 1.0)))),
+            got |> Result.map(firstTwoBoxColors) |> Result.mapErr(DocJson.describe))
+
     /// root 直下の子 2 つの box 色を取り出す(paletteFile テスト用)。
     def firstTwoBoxColors(spec: UiSpec.Spec): Option[((Float64, Float64, Float64), (Float64, Float64, Float64))] =
         match spec {
