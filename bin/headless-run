@@ -192,7 +192,7 @@ if is_stale; then
         else
             built_ok=0
             # 色の符号を落とした最後の 15 行（MethodTooLargeException などの理由が見える所）。
-            sed 's/\x1b\[[0-9;]*m//g' "$out/build.log" 2>/dev/null | grep -v '^[[:space:]]*$' | tail -15 > "$out/.failed"
+            { sed 's/\x1b\[[0-9;]*m//g' "$out/build.log" 2>/dev/null | grep -v '^[[:space:]]*$' || true; } | tail -15 > "$out/.failed"
             touch -r "$out/.started" "$out/.failed"
         fi
     fi
@@ -212,7 +212,9 @@ fi
 # jar を作り直した回は、語彙を書き出す入口（名前が .vocab で終わる物。flow の E2e.vocab など）を全部流す。
 # Go の検査（bin/fge flow check など）は JVM なしで語彙の JSON を読むので、src の表を直した後に古い語彙で止めないため。
 if [ "${built_ok:-0}" = 1 ]; then
-    printf '%s\n' "$entries" | grep -E '\.vocab$' | while IFS= read -r vocab; do
+    # WhyNot: grep をそのまま列に置かない — .vocab の入口が無いゲームでは grep が 1 を返し、
+    # pipefail と set -e で何も言わずに抜ける。
+    printf '%s\n' "$entries" | { grep -E '\.vocab$' || true; } | while IFS= read -r vocab; do
         [ "$vocab" = "$entry" ] && continue
         FGE_ENTRY="$vocab" "$java_cmd" -Xss32m -Djava.awt.headless=true -jar "$jar" >&2 || true
     done
