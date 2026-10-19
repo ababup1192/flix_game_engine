@@ -17,7 +17,7 @@
 | UI 要素を並べる・整列する | UiLayout / Flex（実例: `templates/novel-starter/src/NovelKit.flix`） |
 | UI の文字欄に実行時の値を差し込む | UiBinding |
 | 会話ウィンドウ・文字送りを出す | UiDialog / UiTypewriter（実例: `templates/novel-starter/src/World.flix`） |
-| 会話のシナリオを .yarn（Yarn Spinner の部分集合）で書く・台詞と選択肢を順に出す・話し手やタグを語彙で止める | Yarn（`bin/fge yarn build` が書いた木を loadOr・語彙は vocabJson）/ YarnRunner（start・step・trace）（実例: `templates/novel-starter/src/World.flix`・`templates/novel-starter/src/Talk.flix`） |
+| 会話のシナリオを .yarn（Yarn Spinner の部分集合）で書く・台詞と選択肢を順に出す・話し手やタグを語彙で止める | Yarn（`bin/fge yarn build` が書いた木を loadOr・語彙は vocabJson）/ YarnRunner（start・startAt（.yarn の行まで進める）・step・trace）（実例: `templates/novel-starter/src/World.flix`・`templates/novel-starter/src/Talk.flix`） |
 | マウスの下の UI 要素を知る | UiFocus（実例: `templates/novel-starter/src/Controls.flix`）。UiDoc の画面の各要素の画面矩形は layoutRects |
 | 絵の上に散らばった選べる物を矢印・Tab・ホバーで巡る（キーのフォーカスとホバーを 1 つにする・:focus-visible の枠） | UiFocusNav（Target の列を作るだけ。UiDoc の画面は targetsOfUi。並びの決まったメニューは UiMenu） |
 | 説明の窓（ツールチップ）を見ている物の脇の、画面からはみ出さず他の物に重ならない所へ置く | UiTooltip（computePlacement。脇に余地が無い画面は Side.Over で見ている物の上に重ねる。窓の字を折るのは RichText.wrapLinesBy） |
