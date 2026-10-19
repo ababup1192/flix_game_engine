@@ -45,4 +45,6 @@ mod Game {
             |> App.withStatusLine(w -> "phase=${w#phase} talk=${World.talkNodeOf(w)} line=${World.talkLineOf(w)} choice=${NovelKit.isAsking(w#kit)} lamps=${World.lampsLit(w)}")
             // 走行中の POST /render（Studio の「生成して」）は SceneRender.all と同じ実体を呼ぶ。
             |> App.onRenderRequest(SceneRender.allShots)
+            // 渡した World を 1 枚に描く（リモートの view=shot・窓なしのゲーム E2e.serveHeadless。Studio の会話のプレビュー）。
+            |> App.onShotRequest(SceneRender.shotOf)
 }

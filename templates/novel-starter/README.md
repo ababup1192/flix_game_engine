@@ -64,6 +64,11 @@ Flix コンパイラはエンジンリポの `bin/flix` ラッパ経由で呼ぶ
 ノードを足して `<<jump ノード名>>` で繋げば事件そのものを作り替えられる。知らない話し手・タグ・ノードや
 読まない書き方（変数・`<<if>>` など）は、build が行番号と直し方つきで止める。
 
+**書いた行を本物の画面で見る**: Studio の「会話」で `novel.yarn` を開くと、カーソルの行の画面（話し手・窓・選択肢・
+書斎）が右に出る（窓なしのゲーム `E2e.serveHeadless` が `start talk node=… line=…` から撮る）。ターミナルなら
+`bin/fge talk shot assets/talk/novel.yarn:40`、`make debug` で起動中のゲームをその行へ飛ばすなら
+`bin/fge talk goto assets/talk/novel.yarn:40`（始まりは `src/Starts.flix` の `talk`）。
+
 数値・色・絵・枠は `assets/` の Doc（保存即反映）:
 
 - `assets/talk/novel.yarn` … シナリオ（文章・分岐・結末）。`bin/fge yarn build assets/talk` が `dialogue.json` に書き出し、`src/Talk.flix` が読む。

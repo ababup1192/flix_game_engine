@@ -171,6 +171,14 @@ mod World {
                   kit = NovelKit.say("", "（シナリオが読めない。assets/talk/novel.yarn を直して bin/fge yarn build assets/talk を流すと、ここに物語が流れる）") | w }
         }
 
+    /// node の頭から、シナリオの line 行（.yarn の行番号）を出している所まで進めて読む（文字送りは使い切る）。
+    /// 始まり `talk node=… line=…`（Studio の会話のプレビュー・bin/fge talk goto）が使う。
+    pub def openTalkAt(node: String, line: Int32, w: World): World =
+        match Yarn.nodeOf(node, w#dialogue) {
+            case Some(_) => revealLine(show(fst(YarnRunner.startAt(w#dialogue, node, line, Clock.nowOf(w#storyClock))), w))
+            case None    => openTalk(node, w)
+        }
+
     /// 実行器が今出している物をキットに乗せる。[遷移: 台詞→次の台詞 / 選択肢 / 結末(Story→Title)]
     /// 選択肢の直前の台詞は、送るのを待たずに選択肢と同じウィンドウへ問いとして並べる。
     def show(talk: YarnRunner.Runner[Story], w: World): World =

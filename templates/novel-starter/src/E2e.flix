@@ -3,7 +3,7 @@
 // （bin/fge flow check が JVM なしで読み、書き間違いを行番号と近い名前の案つきで止める）。
 //   make flow FLOW=e2e/doubt_dealer.flow   画面なしで最後まで流す（描き出しの jar を使うので Flix を組み直さない）
 mod E2e {
-    use fge::{Emit, Flow, UiDialog}
+    use fge::{App, Emit, Flow, UiDialog}
 
     /// make flow（bin/fge flow run|check）が流す入口。
     pub def play(): Unit \ IO =
@@ -12,6 +12,11 @@ mod E2e {
     /// 語彙 e2e/vocab.json だけを書く入口（bin/headless-run が jar を作った時に流す・make flow-vocab）。
     pub def vocab(): Unit \ IO =
         run { Flow.Cli.writeVocabOf(Game.app(Controls.loadDocs(), NovelKit.spawnAssets())) } with Fs.FileRead.runWithIO with Fs.FileWrite.runWithIO
+
+    /// 窓なしのゲーム（Studio の会話のプレビューと bin/fge talk shot が bin/headless-run E2e.serveHeadless で起こす）。
+    /// 使い方は engine の engine_world/src/App/Headless.flix 冒頭。セーブも記録も書かない。
+    pub def serveHeadless(): Unit \ IO =
+        run { App.Headless.serve(Game.app(Controls.loadDocs(), NovelKit.spawnAssets())) } with Fs.FileRead.runWithIO
 
     /// 台詞を読み終えてから送るまでの秒（人が読んでいる間）。
     def readSeconds(): Float64 = 0.6

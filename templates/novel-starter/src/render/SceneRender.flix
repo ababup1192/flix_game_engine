@@ -12,6 +12,7 @@ mod SceneRender {
 
     import java.io.File
     import java.lang.System
+    import java.lang.ProcessHandle
 
     def design(): Vec2.Vec2 = { x = World.width(), y = World.height() }
 
@@ -72,6 +73,15 @@ mod SceneRender {
     /// （Main の App.onRenderRequest）もこれを呼ぶ。プレイ状態には触れず Docs から組み立てる。
     pub def allShots(): List[String] \ IO =
         shotsInto("gallery", _ -> true)
+
+    /// 渡した World を 1 枚描いて、そのパスを返す（App.onShotRequest。Studio の会話のプレビュー・bin/fge talk shot）。
+    /// 書き先は debug/shot/shot-<pid>.png（スナップショットの外。窓なしのゲームと実機が同じ名前を取り合わない）。
+    /// 時計は World のまま（灯りや雨は撮った瞬間の物）。
+    pub def shotOf(w: World.World): String \ IO =
+        discard (new File("debug/shot")).mkdirs();
+        let atlas = HeadlessFont.buildUiAtlas(ttf(), ttf());
+        let (cfg, texInfo) = withAtlasOf(cfgOf("debug/shot", atlas, ThemeDoc.rec(w#theme)#bg), w);
+        shoot(cfg, texInfo, App.viewCtxOf(atlas, design()), w, "shot-${ProcessHandle.current().pid()}")
 
     /// SHOT で指した場面だけを debug/ へ描き出す（スナップショットを汚さない）。
     /// 実行: make render SHOT=choice
