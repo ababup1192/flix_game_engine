@@ -27,6 +27,7 @@ pub mod Flow.Record {
     /// 記録に足す物（リモートの入口が App へ返す）: 書く行そのものか、流したフレームとその後の指紋の元。
     pub enum Item {
         case Line(String)
+        case Started(String)                 // start の行（再生は手の様子を初めからにするので、記録も合わせる）
         case Played(App.Frame, Option[String])
     }
 
@@ -91,8 +92,14 @@ pub mod Flow.Record {
         write(rec, text);
         try { rec#out.flush() } catch { case _: IOException => () }
 
+    /// start の行を書き、前のフレームの手の様子を初めに戻す（再生の start も手を初めからにする —— 戻さないと、
+    /// 動かしていないマウスの at= を書かず、再生だけカーソルが -100,-100 のままになる）。
+    pub def started(rec: Recorder, text: String): Unit \ IO =
+        line(rec, text);
+        Ref.put({ down = Set.empty(), button = false, cursor = None | Ref.get(rec#state) }, rec#state)
+
     /// 外から World が変わった（記録の行で説明の付かない変化）か: 指紋の元が前のフレームの後と違えば # ext を書く。
-    pub def noteEntering(rec: Recorder, fingerprint: Option[String]): Unit \ IO =
+    pub def checkExternalChange(rec: Recorder, fingerprint: Option[String]): Unit \ IO =
         let st = Ref.get(rec#state);
         match fingerprint {
             case Some(text) if st#count > 0 and text != st#lastFp => line(rec, "# ext ${Int32.toString(st#count)}（外から World が変わった）")
@@ -100,7 +107,7 @@ pub mod Flow.Record {
         }
 
     /// 記録の行で World を変えた（start・reload…）後の指紋の元を覚え直す（# ext を誤って書かない）。
-    pub def settle(rec: Recorder, fingerprint: Option[String]): Unit \ IO =
+    pub def resetFingerprint(rec: Recorder, fingerprint: Option[String]): Unit \ IO =
         match fingerprint {
             case Some(text) => Ref.put({ lastFp = text | Ref.get(rec#state) }, rec#state)
             case None       => ()
@@ -130,7 +137,7 @@ pub mod Flow.Record {
             else if (Set.isEmpty(released)) ("hold ${keysText(pressed)}", false)
             else if (Set.isEmpty(pressed)) ("release ${keysText(released)}", false)
             else (" keys=${keysText(frame#down)}", true);
-        let head = if (isWait) verb + opts else verb + opts;
+        let head = verb + opts;
         let ns = Float64.tryToInt64(Float64.round(frame#dt * 1000000000.0)) |> Option.getWithDefault(0i64);
         push(rec, { head = head, wait = isWait, ns = ns :: Nil });
         let after = Ref.get(rec#state);
@@ -152,7 +159,7 @@ pub mod Flow.Record {
                 Ref.put({ pending = Some({ ns = List.append(next#ns, p#ns) | p }) | st }, rec#state)
             case Some(p) if not p#wait and List.length(p#ns) == 1 and String.startsWith(prefix = "hold ", p#head)
                             and String.startsWith(prefix = "release ", next#head)
-                            and keyWord(p#head) == keyWord(next#head) and restOf(p#head) == restOf(next#head) =>
+                            and keyWord(p#head) == keyWord(next#head) and restOf(next#head) == "" =>
                 // 押して次のフレームで離した = tap（離したフレームは何も触らないフレーム）。
                 Ref.put({ pending = Some({ head = "tap " + String.dropLeft(5, p#head), wait = false, ns = p#ns }) | st }, rec#state);
                 flush(rec);
@@ -202,7 +209,7 @@ pub mod Flow.Record {
         }) |> String.intercalate("")
 
     /// f を流し、その間に Fs.FileRead で読んだファイルの中身（読めなかった物は Missing）を拾う。
-    pub def reading(f: Unit -> a \ ef): (a, Map[String, Flow.File]) \ ef + Fs.FileRead =
+    pub def captureReads(f: Unit -> a \ ef): (a, Map[String, Flow.File]) \ ef + Fs.FileRead =
         region rc {
             let seen: Ref[Map[String, Flow.File], rc] = Ref.fresh(rc, Map.empty());
             let note = (path, result) -> match result {

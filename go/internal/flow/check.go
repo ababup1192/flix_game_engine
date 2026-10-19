@@ -95,14 +95,14 @@ type checker struct {
 
 func (c *checker) lines(file, text string, depth int) {
 	for i, raw := range strings.Split(text, "\n") {
-		body := strings.TrimSpace(stripComment(strings.TrimRight(raw, "\r")))
+		body := trimASCII(stripComment(strings.TrimRight(raw, "\r")))
 		if body == "" {
 			continue
 		}
 		problem := func(why string) {
 			c.problems = append(c.problems, Problem{File: file, Number: i + 1, Text: body, Why: why})
 		}
-		words := strings.Fields(body)
+		words := asciiFields(body)
 		if words[0] == "run" {
 			if len(words) != 2 {
 				problem("run は 'run <名前>.flow'")
@@ -187,7 +187,7 @@ func (c *checker) line(depth int, w []string) (bool, string) {
 		if why := c.target(w[1]); why != "" {
 			return true, why
 		}
-		return true, opts(w[2:])
+		return true, opts(v, w[2:])
 	case verb == "hold" && n >= 2:
 		if why := c.target(w[1]); why != "" {
 			return true, why
@@ -196,12 +196,12 @@ func (c *checker) line(depth int, w []string) (bool, string) {
 		if len(rest) > 0 && isSpanWord(rest[0]) {
 			rest = rest[1:]
 		}
-		return true, opts(rest)
+		return true, opts(v, rest)
 	case verb == "wait" && n >= 2:
 		if why := span(w[1]); why != "" {
 			return true, why
 		}
-		return true, opts(w[2:])
+		return true, opts(v, w[2:])
 	case verb == "until" && n == 4 && w[2] == "max":
 		if why := c.expr(w[1]); why != "" {
 			return true, why
@@ -319,7 +319,7 @@ func keySet(v Vocab, text string) string {
 	return ""
 }
 
-func opts(words []string) string {
+func opts(v Vocab, words []string) string {
 	known := []string{"ns=", "dt=", "at=", "mouse", "wheel=", "pad", "keys=", "new=", "click", "moved"}
 	for _, word := range words {
 		switch {
@@ -339,6 +339,10 @@ func opts(words []string) string {
 				return why
 			}
 		case strings.HasPrefix(word, "keys="), strings.HasPrefix(word, "new="):
+			value := word[strings.Index(word, "=")+1:]
+			if why := keySet(v, value); why != "" {
+				return why
+			}
 		case strings.HasPrefix(word, "at="):
 			xy := strings.Split(strings.TrimPrefix(word, "at="), ",")
 			if len(xy) != 2 {
@@ -458,7 +462,13 @@ func argsAndFiles(words []string) string {
 
 func decoded(value string) string {
 	if strings.HasPrefix(value, "b64:") {
-		if _, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(value, "b64:")); err != nil {
+		body := strings.TrimPrefix(value, "b64:")
+		// Java の Base64 の読み手は末尾の = を省いてもよい（Flow.base64Decode と同じに受ける）。
+		_, err := base64.StdEncoding.DecodeString(body)
+		if err != nil {
+			_, err = base64.RawStdEncoding.DecodeString(strings.TrimRight(body, "="))
+		}
+		if err != nil {
 			return "b64: の中身を戻せない"
 		}
 	}
@@ -505,4 +515,14 @@ func containsFold(xs []string, x string) bool {
 		}
 	}
 	return false
+}
+
+// asciiFields は ASCII の空白（空白・タブ）だけで語に分ける（Flix の String.words と同じ。全角の空白では分けない）。
+func asciiFields(text string) []string {
+	return strings.FieldsFunc(text, func(r rune) bool { return r == ' ' || r == '\t' || r == '\f' || r == '\v' })
+}
+
+// trimASCII は前後の ASCII の空白と制御文字を落とす（Flix の String.trim = Java の trim と同じ）。
+func trimASCII(text string) string {
+	return strings.TrimFunc(text, func(r rune) bool { return r <= ' ' })
 }

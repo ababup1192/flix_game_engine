@@ -184,4 +184,33 @@ mod TestFlow {
             case Err(problems) => Err(Flow.Parse.problemsText(problems))
         };
         Assert.assertEq(expected = Ok((original#last#n, List.length(original#frames))), replayed)
+
+    /// Z を押す・離す・何もしない・F8 の後のように Left が押した瞬間にならないまま押されている、の 4 フレーム（0.02 秒ずつ）。
+    def recordedFrames(): List[App.Frame] =
+        let frame = (prev, current) -> App.frameOf(prev = prev, current = current, 0.02, Vec2.zero(),
+                                                   { prevCursor = None, cursor = Vec2.zero() }, { prevDown = false, down = false, wheel = 0.0 });
+        frame(Set#{}, Set#{Key.Z}) :: frame(Set#{Key.Z}, Set#{}) :: frame(Set#{}, Set#{}) ::
+        { justPressed = Set#{} | frame(Set#{}, Set#{Key.Left}) } :: Nil
+
+    // 記録の行のまとめ方: 押して次のフレームで離したのは tap・同じ wait は 1 行・差分から出ない押した瞬間は new=。
+    // 最初のフレームはマウスの位置（再生の初めの位置 -100,-100 と違う）を at= で書く。
+    @Test
+    def testRecordFoldsFramesIntoFlowLines(): Unit \ Assert + Fs.FileRead + IO =
+        let path = "build/flow-test/fold.flow";
+        let rec = match Flow.Record.open(path) {
+            case Some(opened) => opened
+            case None         => bug!("記録を開けない")
+        };
+        recordedFrames() |> List.forEach(frame -> Flow.Record.frame(rec, frame, None));
+        Flow.Record.close(rec);
+        Assert.assertEq(expected = "tap Z at=0.0,0.0 ns=20000000" :: "wait 2f ns=20000000,20000000" :: "hold Left new=- ns=20000000" :: Nil,
+                        Fs.FileRead.readLines(path) |> Result.getWithDefault(Nil) |> List.drop(2))
+
+    // 記録が書く形の行（ns・keys・new・+ファイル・request・rewind）を使った見本は、Flix の読み手でも読める（Go の check と同じ）。
+    @Test
+    def testRecordedFormsParseLikeTheGoCheck(): Unit \ Assert + Fs.FileRead =
+        let input = Fs.FileRead.read("../../testdata/lint/flow-check/clean-passes/input.flow") |> Result.getWithDefault("");
+        Assert.assertEq(expected = Ok(15),
+                        Flow.Parse.parseText(goVocab(), "clean-passes", input) |> Result.map(script -> List.length(script#lines))
+                            |> Result.mapErr(Flow.Parse.problemsText))
 }

@@ -225,11 +225,11 @@
 - 名前の始まりを、新しく作った初期の World から組む。args は既定の引数を上書きし、値が `@パス` の
   `pub def buildStart(app: App[w, ef], design: Vec2.Vec2, name: String, args: Map[String, String]): Result[String, w] \ ef + Fs.FileRead`
 - 引数の値が `@パス` ならファイルの中身に置き換える（読めないファイルの引数は外す —— 「無いセーブ」は正常）。
-  `pub def resolveArgs(args: Map[String, String]): Map[String, String] \ Fs.FileRead`
+  `pub def loadArgs(args: Map[String, String]): Map[String, String] \ Fs.FileRead`
 - `feedHome t=10` の形（flow の start の行・START・POST /start と同じ）を名前と引数に分ける。
   `pub def parseStartLine(text: String): Result[String, (String, Map[String, String])]`
 - root の project.json の design 解像度（読めなければ 0×0 —— init が画面の大きさを読まないゲームはそれで足りる）。
-  `pub def projectDesign(root: String): Vec2.Vec2 \ Fs.FileRead`
+  `pub def loadProjectDesign(root: String): Vec2.Vec2 \ Fs.FileRead`
 - テストで名前の始まりを組む（組めなければテストの前提が破れているので bug! で止める）。
   `pub def startOrBug(app: App[w, ef], name: String, args: Map[String, String]): w \ ef + Fs.FileRead`
 - flow の語彙の表を繋ぐ（使い方の全文は engine_world/src/Flow.flix 冒頭）。
@@ -952,7 +952,7 @@
 - 手順を流す。start = 最初の手が start でない時に使う World と持ち越し（/step は走っている World、
   `pub def play(app: App.App[w, ef], setup: Setup, script: Script, start: { world = w, state = App.StepState }): Result[Failure[w], Outcome[w]] \ ef + Fs.FileRead`
 - 経過秒をナノ秒の整数に丸める。実機の経過秒もナノ秒から来るので、flow で流したフレームを記録して
-  `pub def wholeNanos(secs: Float64): Float64`
+  `pub def roundToNanos(secs: Float64): Float64`
 - 問いの式が今の World で立っているか。表に無い名前・型の違う比べは立たない（読み手と check が先に止める）。
   `pub def holds(app: App.App[w, ef], expr: Expr, world: w): Bool`
 - 問いの今の値。
@@ -974,6 +974,8 @@
 - `pub def main(app: App.App[w, ef]): Unit \ ef + Fs.FileRead + Fs.FileWrite + IO`
 - 語彙だけを書く（ゲームの E2e.vocab が呼ぶ。bin/headless-run が jar を作った時・make flow-vocab）。
   `pub def writeVocabOf(app: App.App[w, ef]): Unit \ ef + Fs.FileRead + Fs.FileWrite + IO`
+- 先頭の手が start でない時に流し始める World: 登録簿の先頭の始まり（無ければ新しく作った初期の World）。
+  `pub def startWorld(app: App.App[w, ef], design: Vec2.Vec2, fresh: w, script: Flow.Script): w \ ef + Fs.FileRead`
 - 環境変数（無いか空なら fallback）。
   `pub def envOr(name: String, fallback: String): String \ IO`
 - ファイルを読む（読めなければ理由）。
@@ -995,7 +997,7 @@
 
 ## Flow.Record — `engine_world/src/Flow/Record.flix`
 - 記録に足す物（リモートの入口が App へ返す）: 書く行そのものか、流したフレームとその後の指紋の元。
-  `pub enum Item { case Line(String) case Played(App.Frame, Option[String]) }`
+  `pub enum Item { case Line(String) case Started(String) case Played(App.Frame, Option[String]) }`
 - 書いている途中の記録。同じ入力が続くフレームは pending に貯めて 1 行にまとめる。
   `pub type alias Recorder = { path = String, out = FileWriter, state = Ref[Writing, Static] }`
 - 記録を開く。前の回の記録は previous.flow へ残す（既定の置き場の時だけ）。開けなければ None（遊ぶのは止めない）。
@@ -1006,10 +1008,12 @@
   `pub def flush(rec: Recorder): Unit \ IO`
 - そのまま 1 行を書く（start・reload・request・close・rewind・# ext）。前にまとめていた行を先に書き出す。
   `pub def line(rec: Recorder, text: String): Unit \ IO`
+- start の行を書き、前のフレームの手の様子を初めに戻す（再生の start も手を初めからにする —— 戻さないと、
+  `pub def started(rec: Recorder, text: String): Unit \ IO`
 - 外から World が変わった（記録の行で説明の付かない変化）か: 指紋の元が前のフレームの後と違えば # ext を書く。
-  `pub def noteEntering(rec: Recorder, fingerprint: Option[String]): Unit \ IO`
+  `pub def checkExternalChange(rec: Recorder, fingerprint: Option[String]): Unit \ IO`
 - 記録の行で World を変えた（start・reload…）後の指紋の元を覚え直す（# ext を誤って書かない）。
-  `pub def settle(rec: Recorder, fingerprint: Option[String]): Unit \ IO`
+  `pub def resetFingerprint(rec: Recorder, fingerprint: Option[String]): Unit \ IO`
 - 実機のフレーム 1 つ（App.traceFrame に渡した Frame そのもの）と、そのフレームの後の指紋の元。
   `pub def frame(rec: Recorder, frame: App.Frame, fingerprint: Option[String]): Unit \ IO`
 - 始まりの行（引数の値が空白や # を含むか b64: で始まるなら b64: にする）と、読んだファイル。
@@ -1019,7 +1023,7 @@
 - onRequest のルートが World を変えた行（クエリは b64 にまとめる）。
   `pub def requestLine(path: String, params: Map[String, String], files: Map[String, Flow.File]): String`
 - f を流し、その間に Fs.FileRead で読んだファイルの中身（読めなかった物は Missing）を拾う。
-  `pub def reading(f: Unit -> a \ ef): (a, Map[String, Flow.File]) \ ef + Fs.FileRead`
+  `pub def captureReads(f: Unit -> a \ ef): (a, Map[String, Flow.File]) \ ef + Fs.FileRead`
 - F8 のチケットの写し: ここまでの記録に「表示中の瞬間まで戻る」（rewind back）と mark ticket を足して
   `pub def copyInto(rec: Recorder, dir: String, back: Int32): Bool \ IO`
 - 記録を閉じる（まとめている行を書き出す）。

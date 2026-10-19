@@ -260,14 +260,14 @@ pub mod Flow {
           prevDown = Set.empty(), prevButton = false, prevCursor = None }
 
     /// 流している途中の物。frames と history は新しい順。awaiting = 返事を待っている tap（行と押す前の番号）。
-    type alias Cursor[w] = {
+    type alias PlayState[w] = {
         world = w, state = App.StepState, hand = Hand, frames = List[Played[w]], count = Int32,
         marks = Map[String, Int32], starts = List[(Int32, String)], history = List[w],
         awaiting = Option[(Line, Int64)], served = Map[String, File]
     }
 
-    /// 止まる理由（行と、そこまでの Cursor）。
-    type alias Stop[w] = { cursor = Cursor[w], at = Line, why = String, seen = String }
+    /// 止まる理由（行と、そこまでの PlayState）。
+    type alias Stop[w] = { cursor = PlayState[w], at = Line, why = String, seen = String }
 
     /// 手順を流す。start = 最初の手が start でない時に使う World と持ち越し（/step は走っている World、
     /// ファイルの flow は先頭の始まり）。tap・hold は ready on なら入力を受けられるまで待ち、返事を確かめる。
@@ -275,12 +275,12 @@ pub mod Flow {
                  start: { world = w, state = App.StepState }): Result[Failure[w], Outcome[w]] \ ef + Fs.FileRead =
         // ready off だけが「書いたフレームでそのまま押し、確かめない」。待つのは ready を、確かめるのは replies を宣言したゲームだけ。
         let readyOn = script#ready |> Option.getWithDefault(true);
-        let dt = wholeNanos(if (script#fps > 0.0) 1.0 / script#fps else 1.0 / 60.0);
+        let dt = roundToNanos(if (script#fps > 0.0) 1.0 / script#fps else 1.0 / 60.0);
         let ctx = { app = app, setup = setup, dt = dt, readyOn = readyOn };
         let begin = { world = start#world, state = start#state, hand = freshHand(), frames = Nil, count = 0,
                       marks = Map.empty(), starts = Nil, history = start#world :: Nil, awaiting = None,
                       served = Map.empty() };
-        let finish = (c: Cursor[w]) -> { frames = List.reverse(c#frames), marks = c#marks,
+        let finish = (c: PlayState[w]) -> { frames = List.reverse(c#frames), marks = c#marks,
                                          starts = List.reverse(c#starts), last = c#world, state = c#state };
         let stepped = script#lines |> List.foldLeft((acc, line) -> match acc {
             case Err(stop) => Err(stop)
@@ -299,10 +299,10 @@ pub mod Flow {
 
     type alias Ctx[w: Type, ef: Eff] = { app = App.App[w, ef], setup = Setup, dt = Float64, readyOn = Bool }
 
-    def runLine(ctx: Ctx[w, ef], line: Line, c: Cursor[w]): Result[Stop[w], Cursor[w]] \ ef + Fs.FileRead =
+    def runLine(ctx: Ctx[w, ef], line: Line, c: PlayState[w]): Result[Stop[w], PlayState[w]] \ ef + Fs.FileRead =
         match line#step {
             case Step.Start(name, args, files) =>
-                match served(files, () -> App.buildStart(ctx#app, ctx#setup#design, name, args)) {
+                match withServedFiles(files, () -> App.buildStart(ctx#app, ctx#setup#design, name, args)) {
                     case Err(why)  => Err({ cursor = c, at = line, why = why, seen = "" })
                     case Ok(world) =>
                         Ok({ world = world, state = App.freshStepState(), hand = freshHand(), history = world :: Nil,
@@ -329,7 +329,7 @@ pub mod Flow {
             case Step.Mark(name) => Ok({ marks = Map.insert(name, c#count, c#marks) | c })
             case Step.Reload(target, files) =>
                 let app = ctx#app;
-                let reloaded = served(files, () -> match target {
+                let reloaded = withServedFiles(files, () -> match target {
                     case "key" => match app#reload {
                         case Some((_, reloadAll)) => reloadAll(c#world)
                         case None                 => c#world
@@ -339,19 +339,19 @@ pub mod Flow {
                         if (watched == path) f(acc) else acc
                     }, c#world)
                 });
-                Ok({ world = reloaded, history = reloaded :: List.drop(1, c#history) | c })
+                // 履歴（rewind が戻る先）には触らない —— 実機の履歴に積まれるのは、進めた後の World だけ。
+                Ok({ world = reloaded | c })
             case Step.Request(path, params, files) =>
                 match App.RemoteDebug.findRoute(path, ctx#app#remoteHandlers) {
                     case None => Err({ cursor = c, at = line, why = "onRequest のルート '${path}' が無い", seen = "" })
-                    case Some(apply) => match served(files, () -> apply(params, c#world)) {
-                        case Ok(changed) => Ok({ world = changed, history = changed :: List.drop(1, c#history) | c })
+                    case Some(apply) => match withServedFiles(files, () -> apply(params, c#world)) {
+                        case Ok(changed) => Ok({ world = changed | c })
                         case Err(why)    => Err({ cursor = c, at = line, why = "onRequest '${path}': ${why}", seen = "" })
                     }
                 }
             case Step.Close => match ctx#app#closeRequest {
                 case Some(f) => {
-                    let closed = f(c#world);
-                    Ok({ world = closed, history = closed :: List.drop(1, c#history) | c })
+                    Ok({ world = f(c#world) | c })
                 }
                 case None    => Ok(c)
             }
@@ -365,13 +365,12 @@ pub mod Flow {
     /// tap（span = None）と hold（span = Some(長さか release まで)）。ready on なら入力を受けられるまで待ち（10 秒まで）、
     /// 押したフレームの後に返事の番号が進んだかを見る（固定刻みで押した瞬間が取り置かれている間は、消化されるまで待つ）。
     def press(ctx: Ctx[w, ef], line: Line, target: Target, span: Option[Option[Span]], opt: Opt,
-              c0: Cursor[w]): Result[Stop[w], Cursor[w]] \ ef =
+              c0: PlayState[w]): Result[Stop[w], PlayState[w]] \ ef =
         let raw = not List.isEmpty(opt#ns);
         let checked = ctx#readyOn and not raw;
         let readied = if (checked) untilReady(ctx, line, c0) else Ok(c0);
         readied |> Result.flatMap(c -> {
             let replies = ctx#app#flow#replies;
-            let before = replies |> Option.map(f -> f(c#world));
             let keys = keysOf(ctx, target, c#world);
             let clicking = match target { case Target.Point(x, y) => Some({ x = x, y = y }) case _ => None };
             if (Option.isEmpty(clicking) and Set.isEmpty(keys))
@@ -389,6 +388,9 @@ pub mod Flow {
                                else frames(ctx, line, 1, Set.empty(), noOpt(),
                                            { hand = { held = Set.difference(c#hand#held, keys),
                                                       button = c#hand#button and Option.isEmpty(clicking) | c#hand } | c });
+                // 返事の番号は、押すフレームの直前の World で取る（離すフレームと前の tap の返事の後）。
+                // 押したフレームで番号が進まないゲーム（入力を次のフレームで処理する物）は、ready off で書く。
+                let before = released |> Result.toOption |> Option.flatMap(gap -> replies |> Option.map(f -> f(gap#world)));
                 let pressed = released |> Result.flatMap(gap -> frames(ctx, line, first, keys, pressOpt, gap));
                 let held = pressed |> Result.flatMap(after -> match span {
                     case None => Ok(after)
@@ -400,7 +402,8 @@ pub mod Flow {
                                         button = after#hand#button or Option.nonEmpty(clicking) | after#hand };
                         frames(ctx, line, countOf(ctx, length, noOpt()) - 1, Set.empty(), { at = None | noOpt() },
                                { hand = holding | after })
-                            |> Result.map(done -> { hand = { held = c#hand#held, button = c#hand#button | done#hand } | done })
+                            |> Result.map(done -> { hand = { held = Set.difference(c#hand#held, keys),
+                                                             button = c#hand#button and Option.isEmpty(clicking) | done#hand } | done })
                 });
                 held |> Result.flatMap(after -> match before {
                     case Some(seq) if checked =>
@@ -414,11 +417,11 @@ pub mod Flow {
         })
 
     /// 入力を受けられるまで（ready が Ready になるまで）何も触らずに待つ。今の World で問う（1 フレーム遅れてよい）。
-    def untilReady(ctx: Ctx[w, ef], line: Line, c0: Cursor[w]): Result[Stop[w], Cursor[w]] \ ef =
+    def untilReady(ctx: Ctx[w, ef], line: Line, c0: PlayState[w]): Result[Stop[w], PlayState[w]] \ ef =
         match ctx#app#flow#ready {
             case None => Ok(c0)
             case Some(readyOf) =>
-                def loop(left: Int32, c: Cursor[w]): Result[Stop[w], Cursor[w]] \ ef = match readyOf(c#world) {
+                def loop(left: Int32, c: PlayState[w]): Result[Stop[w], PlayState[w]] \ ef = match readyOf(c#world) {
                     case Ready.Ready => Ok(c)
                     case Ready.Busy(why) =>
                         if (left <= 0) Err({ cursor = c, at = line, why = "押せるようにならなかった（10 秒・${why}）", seen = "" })
@@ -429,8 +432,8 @@ pub mod Flow {
 
     /// 問いが立つまで回す（立っていれば 1 フレームも使わない）。drive があれば毎フレーム押すかを決めさせる。
     def waitFor(ctx: Ctx[w, ef], line: Line, drive: Option[DriveRow[w]], expr: Expr, max: Int32,
-                c0: Cursor[w]): Result[Stop[w], Cursor[w]] \ ef =
-        def loop(left: Int32, waited: Float64, c: Cursor[w]): Result[Stop[w], Cursor[w]] \ ef =
+                c0: PlayState[w]): Result[Stop[w], PlayState[w]] \ ef =
+        def loop(left: Int32, waited: Float64, c: PlayState[w]): Result[Stop[w], PlayState[w]] \ ef =
             if (holds(ctx#app, expr, c#world)) Ok(c)
             else if (left <= 0)
                 Err({ cursor = c, at = line, why = "待ちが max（${Int32.toString(max)} フレーム）に当たった: ${showExpr(expr)}",
@@ -442,8 +445,11 @@ pub mod Flow {
                 };
                 match act {
                     case DriveAct.Tap(role) =>
-                        frames(ctx, line, 1, keysOf(ctx, Target.Role(role), c#world), noOpt(), c)
-                            |> Result.flatMap(next -> loop(left - 1, 0.0, next))
+                        let keys = keysOf(ctx, Target.Role(role), c#world);
+                        // 前のフレームで押していたなら、まず離すフレーム（次の回でもう一度決めさせる）。
+                        if (not Set.isEmpty(Set.intersection(keys, c#hand#prevDown)))
+                            frames(ctx, line, 1, Set.empty(), noOpt(), c) |> Result.flatMap(next -> loop(left - 1, waited + ctx#dt, next))
+                        else frames(ctx, line, 1, keys, noOpt(), c) |> Result.flatMap(next -> loop(left - 1, 0.0, next))
                     case DriveAct.Restart =>
                         frames(ctx, line, 1, Set.empty(), noOpt(), c) |> Result.flatMap(next -> loop(left - 1, 0.0, next))
                     case DriveAct.Idle =>
@@ -453,18 +459,18 @@ pub mod Flow {
         loop(max, 0.0, c0)
 
     /// n フレーム進める。1 フレーム目だけ extra（押す物）を足し、opt の ns があればフレームごとの経過秒にする。
-    def frames(ctx: Ctx[w, ef], line: Line, n: Int32, extra: Set[Key], opt: Opt, c: Cursor[w]): Result[Stop[w], Cursor[w]] \ ef =
+    def frames(ctx: Ctx[w, ef], line: Line, n: Int32, extra: Set[Key], opt: Opt, c: PlayState[w]): Result[Stop[w], PlayState[w]] \ ef =
         List.range(0, n) |> List.foldLeft((acc, index) -> acc |> Result.flatMap(cur -> {
             let dt = match List.nth(index, opt#ns) {
                 case Some(nanos) => Int64.toFloat64(nanos) / 1000000000.0
-                case None        => opt#dt |> Option.map(wholeNanos) |> Option.getWithDefault(ctx#dt)
+                case None        => opt#dt |> Option.map(roundToNanos) |> Option.getWithDefault(ctx#dt)
             };
             let thisOpt = if (index == 0) opt else { pressed = None, click = None, moved = None | opt };
             advance(ctx, line, dt, if (index == 0) extra else Set.empty(), thisOpt, cur)
         }), Ok(c))
 
     /// 1 フレーム: 手の様子と opt から Frame を組み、App.traceFrame（実機と同じ 1 フレーム）で進める。
-    def advance(ctx: Ctx[w, ef], line: Line, dt: Float64, extra: Set[Key], opt: Opt, c: Cursor[w]): Result[Stop[w], Cursor[w]] \ ef =
+    def advance(ctx: Ctx[w, ef], line: Line, dt: Float64, extra: Set[Key], opt: Opt, c: PlayState[w]): Result[Stop[w], PlayState[w]] \ ef =
         if (c#count >= ctx#setup#limit)
             Err({ cursor = c, at = line, why = "フレームの上限（${Int32.toString(ctx#setup#limit)}）に当たった", seen = "" })
         else {
@@ -498,11 +504,11 @@ pub mod Flow {
 
     /// 経過秒をナノ秒の整数に丸める。実機の経過秒もナノ秒から来るので、flow で流したフレームを記録して
     /// 再生しても同じ秒になる（1/60 秒のまま流すと、記録のナノ秒と時計が少しずつずれて指紋が合わない）。
-    pub def wholeNanos(secs: Float64): Float64 =
+    pub def roundToNanos(secs: Float64): Float64 =
         Float64.round(secs * 1000000000.0) / 1000000000.0
 
     /// 返事を待っている tap の番号が進んだか。
-    def answered(ctx: Ctx[w, ef], c: Cursor[w]): Bool =
+    def answered(ctx: Ctx[w, ef], c: PlayState[w]): Bool =
         match (c#awaiting, ctx#app#flow#replies) {
             case (Some((_, seq)), Some(f)) => f(c#world) != seq
             case _                         => true
@@ -534,7 +540,7 @@ pub mod Flow {
         }
 
     /// files を読ませる Fs.FileRead で f を流す（記録の再生。載っていないパスは本物のファイルを読む）。
-    def served(files: Map[String, File], f: Unit -> a \ ef): a \ ef + Fs.FileRead =
+    def withServedFiles(files: Map[String, File], f: Unit -> a \ ef): a \ ef + Fs.FileRead =
         if (Map.isEmpty(files)) f()
         else run { f() } with handler Fs.FileRead {
             def read(path, k) = match Map.get(path, files) {

@@ -658,13 +658,13 @@ pub mod App {
         match app#starts |> List.find(start -> start#name == name) {
             case None => Err("始まり '${name}' は登録簿に無い${Suggest.hint(name, startNames(app))}")
             case Some(start) =>
-                let resolved = resolveArgs(Map.unionWith((given, _) -> given, args, start#args));
+                let resolved = loadArgs(Map.unionWith((given, _) -> given, args, start#args));
                 let build = start#build;
                 build(freshWorld(app, design), resolved) |> Result.mapErr(why -> "始まり '${name}': ${why}")
         }
 
     /// 引数の値が `@パス` ならファイルの中身に置き換える（読めないファイルの引数は外す —— 「無いセーブ」は正常）。
-    pub def resolveArgs(args: Map[String, String]): Map[String, String] \ Fs.FileRead =
+    pub def loadArgs(args: Map[String, String]): Map[String, String] \ Fs.FileRead =
         args |> Map.foldLeftWithKey((acc, key, value) ->
             if (String.startsWith(prefix = "@", value))
                 match Fs.FileRead.read(String.dropLeft(1, value)) {
@@ -690,7 +690,7 @@ pub mod App {
 
     /// root の project.json の design 解像度（読めなければ 0×0 —— init が画面の大きさを読まないゲームはそれで足りる）。
     /// 画面を開かない所（テスト・flow の headless の入口）が Frame#viewport と init に渡す。
-    pub def projectDesign(root: String): Vec2.Vec2 \ Fs.FileRead =
+    pub def loadProjectDesign(root: String): Vec2.Vec2 \ Fs.FileRead =
         match ProjectLoader.loadProject(root) {
             case Ok(loaded) => { x = Int32.toFloat64(loaded#config#designWidth), y = Int32.toFloat64(loaded#config#designHeight) }
             case Err(_)     => Vec2.zero()
@@ -699,7 +699,7 @@ pub mod App {
     /// テストで名前の始まりを組む（組めなければテストの前提が破れているので bug! で止める）。
     /// design 解像度はゲームの根の project.json から読む（読めなければ 0×0 —— init が画面の大きさを読まないゲームはそれで足りる）。
     pub def startOrBug(app: App[w, ef], name: String, args: Map[String, String]): w \ ef + Fs.FileRead =
-        match buildStart(app, projectDesign("."), name, args) {
+        match buildStart(app, loadProjectDesign("."), name, args) {
             case Ok(world) => world
             case Err(why)  => bug!("App.startOrBug: ${why}")
         }
@@ -743,7 +743,7 @@ pub mod App {
             case None => ()
             case Some(rec) =>
                 Option.forEach(t -> Flow.Record.line(rec, t), text);
-                Flow.Record.settle(rec, fingerprintText(app, world))
+                Flow.Record.resetFingerprint(rec, fingerprintText(app, world))
         }
 
     /// リモートの口が返した記録の材料（行と流したフレーム）を書き、その後の World の指紋を覚え直す。
@@ -753,9 +753,10 @@ pub mod App {
             case Some(rec) =>
                 items |> List.forEach(item -> match item {
                     case Flow.Record.Item.Line(text)          => Flow.Record.line(rec, text)
+                    case Flow.Record.Item.Started(text)       => Flow.Record.started(rec, text)
                     case Flow.Record.Item.Played(frame, text) => Flow.Record.frame(rec, frame, text)
                 });
-                Flow.Record.settle(rec, fingerprintText(app, world))
+                Flow.Record.resetFingerprint(rec, fingerprintText(app, world))
         }
 
     /// addClock で宣言した時計を、実時間 dt で 1 回ずつ進める（advanceFrame が系の前に呼ぶ）。
@@ -970,7 +971,7 @@ pub mod App {
         let design = GameEngine.Game.getViewportRect()#size;
         // 記録するなら、起動の World が読んだファイルの中身も拾って start の行に載せる（再生が同じ Doc で始まる）。
         let (booted, files) = match recorder {
-            case Some(_) => Flow.Record.reading(() -> bootWorld(app, design))
+            case Some(_) => Flow.Record.captureReads(() -> bootWorld(app, design))
             case None    => (bootWorld(app, design), Map.empty())
         };
         match booted {
@@ -979,10 +980,10 @@ pub mod App {
             case Ok((world0, started)) =>
                 Option.forEach(rec -> {
                     match started {
-                        case Some((name, args)) => Flow.Record.line(rec, Flow.Record.startLine(name, args, files))
+                        case Some((name, args)) => Flow.Record.started(rec, Flow.Record.startLine(name, args, files))
                         case None => Flow.Record.line(rec, "# App.withStarts が無いので、再生は flow の既定の World（init）から")
                     };
-                    Flow.Record.settle(rec, fingerprintText(app, world0))
+                    Flow.Record.resetFingerprint(rec, fingerprintText(app, world0))
                 }, recorder);
                 launchFrom(app, world0, recorder);
                 Option.forEach(Flow.Record.close, recorder)
@@ -1167,7 +1168,7 @@ pub mod App {
                                         budgetWarned = warned1, cursorShown = shown,
                                         outputKeys = keysAfterJump(app, resumed#world, st#outputKeys) | carried })
                         case Branch.Running =>
-                            Option.forEach(rec -> Flow.Record.noteEntering(rec, fingerprintText(app, st#world)), st#recorder);
+                            Option.forEach(rec -> Flow.Record.checkExternalChange(rec, fingerprintText(app, st#world)), st#recorder);
                             let (watched, nextWatchState, watchFired) = applyWatch(app, frame#dt, st#watchState, st#world, st#recorder);
                             let (reloaded, reloadFired) = applyReload(app, frame, watched, st#recorder);
                             // 1 フレームの中身は trace・台本・/step と同じ traceFrame の 1 本（音の名前もここで導く）。
@@ -1422,7 +1423,7 @@ pub mod App {
         match recorder {
             case None => f()
             case Some(rec) =>
-                let (reloaded, files) = Flow.Record.reading(f);
+                let (reloaded, files) = Flow.Record.captureReads(f);
                 Flow.Record.line(rec, Flow.Record.reloadLine(target, files));
                 reloaded
         }
