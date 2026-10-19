@@ -76,6 +76,26 @@ func EnvMap(environ []string) map[string]string {
 	return m
 }
 
+// JavaKey は常駐を起こした java を載せる環境変数（常駐は HEADLESS_ で始まる物を名乗り返す）。
+const JavaKey = "HEADLESS_JAVA"
+
+// WithJava は env に、常駐を起こす java（空なら java）を JavaKey として足した写し。
+//
+// WhyNot: java と旗（HEADLESS_JAVA_OPTS）は jar の指紋に入れないので、常駐が同じ java と旗で起きたかは
+// 起動時の環境変数の比べ合い（EnvMismatch）で見る。旗はもともと HEADLESS_ で比べている。java は環境変数に
+// 無いこともある（headless-run の --java）ので、ここで載せる。
+func WithJava(env map[string]string, java string) map[string]string {
+	if java == "" {
+		java = "java"
+	}
+	out := make(map[string]string, len(env)+1)
+	for k, v := range env {
+		out[k] = v
+	}
+	out[JavaKey] = java
+	return out
+}
+
 // ResolveRoot は根の絶対パス（symlink を辿った物）。
 func ResolveRoot(dir string) (string, error) {
 	abs, err := filepath.Abs(dir)
@@ -99,12 +119,13 @@ func Run(engineRoot string, o RunOptions) int {
 	if err != nil {
 		return Unusable
 	}
-	c := newClient(cfg, root, o.Env, o.Stderr)
+	env := WithJava(o.Env, o.Java)
+	c := newClient(cfg, root, env, o.Stderr)
 	if o.Entry == cfg.ResidentEntry(o.Env) {
 		c.debugf("%s は常駐の入口そのもの", o.Entry)
 		return Unusable
 	}
-	want := Want{Dir: root, Manifest: ReadManifest(root), Env: o.Env, Entry: o.Entry}
+	want := Want{Dir: root, Manifest: ReadManifest(root), Env: env, Entry: o.Entry}
 	if want.Manifest == "" {
 		c.debugf("%s が無い", ManifestFile)
 		return Unusable

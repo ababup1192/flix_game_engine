@@ -17,10 +17,12 @@ lint・フック・make の口で止まる決まりはここに書かない（�
 | 閉じるボタンで「終了しますか？」・ゲームから終了 | `App.withCloseRequest` + `App.quitWhen` |
 | 隠れてはいけない表示（スコア・案内） | `App.withHudView` |
 | 押す物を見た目の手前から選ぶ（窓の奥を押させない） | 描く木に `ZStack.hit` / `modal` → `SortingLayer.pickFrom` |
+| UI のクリックを描いた所で当てる（字の下に並ぶボタン・字だけの項目） | `UiFocus.hitTestUiWith(atlasOf, ..)`・`UiFocusNav.targetsOfUiWith`（atlasOf は描く時と同じ） |
 | 説明の窓をはみ出さず置く | `UiTooltip` + `ZStack.topLayer` |
 | 演出の時刻表を書く・描く・鳴らす | `Timeline.build`+`withSound` → `soundsBetween`（時計は `soundsOnClock`）→ `App.withAudio` |
 | ポーズ・ヒットストップで止める・遅くする（遊びと実時間を分ける） | `App.addClock` + `Clock.Pace`・`frame#realNow` |
 | 規則の奥の出来事で鳴らす（固定刻みでも 1 回） | `Emit.emit` → `Emit.collectInto` で World に溜め `Emit.since` |
+| 粒（花びら・火の粉）に触れたかを規則で取る | `Fx.particlesOfAll(now, bursts)`（絵と同じ式の番号と中心）+ `Fx.touches` |
 | どう遊んでも崩れない決まりを確かめる（性質テスト） | `PropertyTest.forAll`（画面なしで `App.trace` と同じ道） |
 | e2e・動画の手順を書いて画面なしで流す（失敗は行番号つき） | `e2e/<名前>.flow` + `App.withFlow`・`bin/fge flow check`・`make flow` |
 | 好きな場面から起動・テスト・遊んだ通りに再生 | `App.withStarts`（`START=`・`startOrBug`）・記録は `make flow` で再生 |
@@ -37,6 +39,8 @@ lint・フック・make の口で止まる決まりはここに書かない（�
 | 直す前と後の絵・音・動画を比べる | `make compare BASE=<ref>` |
 | 動画が最後まで撮れたか（途中で止まった動画を見つける） | `bin/fge videos status`（Studio のギャラリーの動画） |
 | 動画のコマ・自前のギャラリーで同じ絵を塗り直さない | `RenderCache.writeFramePng`（`SoftRaster.render*` は自動。docs/render-cache.md） |
+| 描き出しに ShaderDoc の面と追加フォントを一緒に渡す（字の縁は本ごとに） | `HeadlessRender.renderPngFull(cfg, scene, name)`（`Scene` の `fonts`・本ごとの字の縁は `fontAntialias`） |
+| 遊ぶ起動を速くする（src を変えていない 2 回目からコンパイルしない） | `make run` / `make debug`（engine の headless-run `--window main` が描き出しと同じ jar から流す）・裏で作るだけは `--build-only` |
 | 描き出しを続けて流すたびの JVM の立ち上げを省く（render・reference-check・会話の撮り） | `HEADLESS_RESIDENT=1`（窓なしのゲームを常駐・入口は `<名前>Job(req): Int32` と `jobs()`）・`bin/fge resident status` / `verify` |
 | F8 のチケット・閉じる | `debug/annotations/` の README → `world.json`・`bin/fge tickets close` |
 | 直しが別の不具合を生んだ率 | `bin/fge tickets stats`（前の直しの候補は `suspects`） |

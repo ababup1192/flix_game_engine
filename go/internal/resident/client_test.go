@@ -50,7 +50,7 @@ type fake struct {
 func (f *fake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/hello":
-		fmt.Fprintf(w, "ok hello\npid=0\ndir=%s\nmanifest=%s\nserved=1\nbusy=\nidle.left=100\nidle.window=180\nenv.LANG=C\njob=SceneRender.one still\n",
+		fmt.Fprintf(w, "ok hello\npid=0\ndir=%s\nmanifest=%s\nserved=1\nbusy=\nidle.left=100\nidle.window=180\nenv.LANG=C\nenv.HEADLESS_JAVA=java\njob=SceneRender.one still\n",
 			f.root, f.manifest)
 	case "/run":
 		f.entry.Store(r.URL.Query().Get("entry"))
@@ -228,5 +228,21 @@ func TestRunSpawnsResidentWithMarkerEnv(t *testing.T) {
 	raw, _ := os.ReadFile(dump)
 	if !strings.Contains(string(raw), "HEADLESS_RESIDENT=1") {
 		t.Fatalf("起こした env = %q", raw)
+	}
+}
+
+// java と java の旗は jar の指紋に入れないので、常駐が別の java・旗で起きていれば起動時の環境変数の違いとして落とす
+// （Studio のプレビューと端末の make render を交互に使っても jar は作り直さず、常駐だけを起こし直す）。
+func TestJavaAndJavaOptsTellResidentsApart(t *testing.T) {
+	studio := WithJava(map[string]string{"HEADLESS_JAVA_OPTS": "-Xmx1g"}, "/studio/java")
+	terminal := WithJava(map[string]string{}, "")
+	if k := EnvMismatch(studio, terminal); k != "HEADLESS_JAVA" {
+		t.Fatalf("java の違い: %q", k)
+	}
+	if k := EnvMismatch(studio, WithJava(map[string]string{}, "/studio/java")); k != "HEADLESS_JAVA_OPTS" {
+		t.Fatalf("旗の違い: %q", k)
+	}
+	if k := EnvMismatch(studio, WithJava(map[string]string{"HEADLESS_JAVA_OPTS": "-Xmx1g"}, "/studio/java")); k != "" {
+		t.Fatalf("同じ java と旗なのに違う: %q", k)
 	}
 }

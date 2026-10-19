@@ -18,6 +18,10 @@ import (
 // Unusable は「常駐を使えなかった。素の道で流す」の終了コード。
 const Unusable = 125
 
+// NeedsGL は「入口が GL を開こうとした。素の道を GL の旗（Darwin は -XstartOnFirstThread・headless にしない）で流す」の終了コード。
+// WhyNot: Unusable と分けるのは、headless の旗のまま流し直すと Darwin では GL の窓が開けずに落ちるため。
+const NeedsGL = 124
+
 // Heap は常駐の JVM に付ける -Xmx の決め方。
 type Heap struct {
 	MemoryShare *float64 `json:"memoryShare"`

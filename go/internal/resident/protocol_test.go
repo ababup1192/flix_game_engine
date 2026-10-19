@@ -364,3 +364,10 @@ func TestSpawnEnvPassesRenderCache(t *testing.T) {
 		t.Fatalf("got %v", env)
 	}
 }
+
+// GL を開こうとした入口は、headless の旗のまま流し直さないよう 125 と別の 124 で返す。
+func TestSettleNeedsGLReturnsItsOwnCode(t *testing.T) {
+	if code, notice, _ := Settle(Outcome{End: EndNeedsGL, Entry: "VideoKit.gl"}); code != NeedsGL || !strings.Contains(notice, "GL の旗") {
+		t.Fatalf("%d %q", code, notice)
+	}
+}

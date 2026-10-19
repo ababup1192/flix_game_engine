@@ -26,9 +26,9 @@ func gameDir(t *testing.T) string {
 	return d
 }
 
-func manifestOf(t *testing.T, d, java, opts string) string {
+func manifestOf(t *testing.T, d string) string {
 	t.Helper()
-	m, err := BuildManifest(d, java, opts)
+	m, err := BuildManifest(d)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,34 +36,27 @@ func manifestOf(t *testing.T, d, java, opts string) string {
 }
 
 func TestManifestIs64Hex(t *testing.T) {
-	if m := manifestOf(t, gameDir(t), "", ""); len(m) != 64 {
+	if m := manifestOf(t, gameDir(t)); len(m) != 64 {
 		t.Fatalf("長さ %d", len(m))
 	}
 }
 
 func TestManifestIgnoresMtime(t *testing.T) {
 	d := gameDir(t)
-	before := manifestOf(t, d, "", "")
+	before := manifestOf(t, d)
 	later := time.Now().Add(time.Hour)
 	_ = os.Chtimes(filepath.Join(d, "src", "Main.flix"), later, later)
-	if after := manifestOf(t, d, "", ""); after != before {
+	if after := manifestOf(t, d); after != before {
 		t.Fatal("時刻だけで指紋が変わった")
 	}
 }
 
 func TestManifestSeesContentChange(t *testing.T) {
 	d := gameDir(t)
-	before := manifestOf(t, d, "", "")
+	before := manifestOf(t, d)
 	writeFile(t, filepath.Join(d, "src", "a", "B.flix"), "mod B { }")
-	if after := manifestOf(t, d, "", ""); after == before {
+	if after := manifestOf(t, d); after == before {
 		t.Fatal("中身が変わったのに指紋が同じ")
-	}
-}
-
-func TestManifestSeesJavaOpts(t *testing.T) {
-	d := gameDir(t)
-	if manifestOf(t, d, "", "") == manifestOf(t, d, "", "-Xss64m") {
-		t.Fatal("旗が変わったのに指紋が同じ")
 	}
 }
 
@@ -74,18 +67,18 @@ func TestManifestFollowsLibSymlink(t *testing.T) {
 	if err := os.Symlink(real, filepath.Join(d, "lib")); err != nil {
 		t.Fatal(err)
 	}
-	before := manifestOf(t, d, "", "")
+	before := manifestOf(t, d)
 	writeFile(t, filepath.Join(real, "engine.fpkg"), "v2")
-	if after := manifestOf(t, d, "", ""); after == before {
+	if after := manifestOf(t, d); after == before {
 		t.Fatal("lib の symlink の先が変わったのに指紋が同じ")
 	}
 }
 
 func TestManifestSeesNewFile(t *testing.T) {
 	d := gameDir(t)
-	before := manifestOf(t, d, "", "")
+	before := manifestOf(t, d)
 	writeFile(t, filepath.Join(d, "src", "C.flix"), "")
-	if after := manifestOf(t, d, "", ""); after == before {
+	if after := manifestOf(t, d); after == before {
 		t.Fatal("ファイルが増えたのに指紋が同じ")
 	}
 }

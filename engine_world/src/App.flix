@@ -1838,6 +1838,14 @@ pub mod App {
     /// headless の検査（reference-check の予算判定）は代表フレーム 1 枚しか見ないので、
     /// Fx の最悪化・場面の切り替わり・GIF でしか作らない場面はここでしか捕まらない。
     /// WhyNot: 毎フレーム出さない — 遅い画面をさらに遅くし、ログも読めなくなる。
+    /// 面のある画面で、面の後ろに同じ z の描き物を並べた z を知らせてから shaderCmds を返す（面が無ければ見ない）。
+    def noteSurfaceZ(note: String -> Unit, items: List[Render.PlacedItem], shaderCmds: List[c]): List[c] =
+        if (List.isEmpty(shaderCmds)) shaderCmds
+        else match Render.surfaceZShared(items) |> List.forEach(z ->
+                note("[render] z=${Int32.toString(z)}: ShaderDoc の面の後ろに同じ z の描き物がある — 同じ z の中では面が一番手前に描かれ、並びの順は効かない。手前に出す物の z を大きくする（docs/z-bands.md）")) {
+            case () => shaderCmds
+        }
+
     def warnOverBudget(count: Int32, warned: Bool): Bool \ IO =
         if (warned or count < budgetCap()) warned
         else {
@@ -1881,7 +1889,9 @@ pub mod App {
                 // 溜めるだけで、重なり順は renderFrameMixed が (zIndex, 追加順) の安定ソートで
                 // sprites / polygons / タイル / 静的レンジと合流させて決める。通常の絵からは
                 // Shader 面を外して二重描きを避ける。
-                let shaderCmds = Render.drawShaders(spec -> ShaderEffect.Shader.buildProgram(spec), items);
+                // 面の後ろに同じ z の物を並べても、面が手前に描かれる（並びは効かない）。z ごとに 1 度だけ言う。
+                let shaderCmds = noteSurfaceZ(warnOnce, items,
+                    Render.drawShaders(spec -> ShaderEffect.Shader.buildProgram(spec), items));
                 List.forEach(cmd -> ShaderEffect.Shader.drawSurface(cmd), shaderCmds);
                 let (tileCmds, nextCache) = tileLayerCmds(app, world, tileCache);
                 // drawWith(getTextureInfo): regionRect 付き Sprite(PxSprite.drawQuad の

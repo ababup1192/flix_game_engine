@@ -77,14 +77,14 @@ func canopyBall(k int, cx, cy, r float64) (float64, float64, float64) {
 	return cx + float64(v[0]*r), cy + float64(v[1]*r), float64(v[2] * r)
 }
 
-// ランプの無い部品では、ink などは同じ名前の色キーを指す（ランプのある部品ではランプの段のまま）。
+// ランプの無い部品では、ink などは同じ名前の色キーを指す（同じ名前の色キーがある時、ランプのある部品でランプの段を指すなら ramp[0]）。
 func TestReservedNameFallsBackToKeyWithoutRamp(t *testing.T) {
 	dir := writeFiles(t, map[string]string{
 		"assets/t.palette.json": `{"version": 1, "ink": "#101010", "c0": "#202020", "c1": "#606060"}`,
 		"t.pxsrc.json": `{"version": 2, "target": "atelier/t.sprite.json", "palette": "assets/t.palette.json", "ramps": {"r": ["c0", "c1"]},
   "sprites": {"s": {"size": [4, 2], "parts": [
     {"id": "a", "shape": {"rect": [0, 0, 2, 1]}, "ops": [{"fill": {"color": "ink"}}]},
-    {"id": "b", "shape": {"rect": [0, 1, 2, 1]}, "ramp": "r", "ops": [{"fill": {"color": "ink"}}]}],
+    {"id": "b", "shape": {"rect": [0, 1, 2, 1]}, "ramp": "r", "ops": [{"fill": {"color": "ramp[0]"}}]}],
   "frames": {"f": {}}}}}`,
 	})
 	res, err := build(dir, "t.pxsrc.json", buildOptions{RulesRoot: engineRoot, NoCheck: true})

@@ -50,7 +50,8 @@ pub mod DrawHash {
     pub type alias Frame = {
         req = SoftRaster.RasterReq,
         surfaces = List[SoftRaster.SurfaceCmd],
-        extraFonts = Map[String, SoftRaster.FontEntry]
+        extraFonts = Map[String, SoftRaster.FontEntry],
+        fontAntialias = SoftRaster.FontAntialias
     }
 
     /// このコマの命令が名前で引く絵（Drawable のテクスチャ名・シェーダー面の tex 場）。
@@ -104,12 +105,19 @@ pub mod DrawHash {
     }
 
     def putFrame(out: DataOutputStream, inputs: Inputs, used: Set[String], frame: Frame): Unit \ IO = match frame {
-        case { req = req, surfaces = surfaces, extraFonts = extraFonts } =>
+        case { req = req, surfaces = surfaces, extraFonts = extraFonts, fontAntialias = fontAntialias } =>
             putReq(out, inputs, used, req);
             putSize(out, List.length(surfaces));
             surfaces |> List.forEach(putSurface(out));
             putSize(out, Map.size(extraFonts));
-            extraFonts |> Map.forEach((name, entry) -> { putStr(out, name); putFontEntry(out, inputs, entry) })
+            extraFonts |> Map.forEach((name, entry) -> { putStr(out, name); putFontEntry(out, inputs, entry) });
+            // 本ごとの縁の表は空でない時だけ鍵に入れる（表を使わない絵の鍵は表を足す前と同じ）。
+            if (Map.isEmpty(fontAntialias)) ()
+            else {
+                putStr(out, "fontAntialias");
+                putSize(out, Map.size(fontAntialias));
+                fontAntialias |> Map.forEach((name, smooth) -> { putStr(out, name); putBool(out, smooth) })
+            }
     }
 
     def putReq(out: DataOutputStream, inputs: Inputs, used: Set[String], req: SoftRaster.RasterReq): Unit \ IO = match req {

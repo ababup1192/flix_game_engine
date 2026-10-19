@@ -297,7 +297,7 @@ px.write_spec("lamp.pxsrc.json", {
 | 引数 | 型 | 説明 |
 |---|---|---|
 | `points` | vectors | 始点・制御点・終点 [[x, y], [x, y], [x, y]]（必須） |
-| `color` | color | 色（ink・shade・mid・light・ramp[i]・gloss・色キー。"" で透明へ抜く）（必須） |
+| `color` | color | 色（ink・shade・mid・light・ramp[i]・gloss・key:名前・色キー。"" で透明へ抜く）（必須） |
 | `alt` | color | 1 画素おきに置く 2 つ目の色（省くと color だけ） |
 | `avoid` | shape | 画素の中心がこの形の中なら置かない（数にも入れない） |
 | `steps` | int | 曲線を刻む数（多いほど取りこぼしが無い）（1〜10000）（省くと 400） |
@@ -357,7 +357,7 @@ px.write_spec("lamp.pxsrc.json", {
 | 引数 | 型 | 説明 |
 |---|---|---|
 | `shape` | shape | 形（省くと部品の塊） |
-| `color` | color | 色（ink・shade・mid・light・ramp[i]・gloss・色キー。"" で透明へ抜く）（必須） |
+| `color` | color | 色（ink・shade・mid・light・ramp[i]・gloss・key:名前・色キー。"" で透明へ抜く）（必須） |
 
 ### `flip`
 
@@ -470,7 +470,7 @@ px.write_spec("lamp.pxsrc.json", {
 | 引数 | 型 | 説明 |
 |---|---|---|
 | `points` | vectors | 折れ線の点 [[x, y], ...]（小数も可。画素には偶数丸めで落とす）（必須） |
-| `color` | color | 色（ink・shade・mid・light・ramp[i]・gloss・色キー。"" で透明へ抜く）（必須） |
+| `color` | color | 色（ink・shade・mid・light・ramp[i]・gloss・key:名前・色キー。"" で透明へ抜く）（必須） |
 
 ### `mirror`
 
@@ -544,7 +544,7 @@ px.write_spec("lamp.pxsrc.json", {
 | 引数 | 型 | 説明 |
 |---|---|---|
 | `cells` | points | 画素の座標 [[x, y], ...]（必須） |
-| `color` | color | 色（ink・shade・mid・light・ramp[i]・gloss・色キー。"" で透明へ抜く）（必須） |
+| `color` | color | 色（ink・shade・mid・light・ramp[i]・gloss・key:名前・色キー。"" で透明へ抜く）（必須） |
 
 ### `rim_light`
 
@@ -566,7 +566,7 @@ px.write_spec("lamp.pxsrc.json", {
 |---|---|---|
 | `center` | point | 中心の画素 [x, y]（必須） |
 | `r` | int | 半径（画素の数）（0〜256）（必須） |
-| `color` | color | 色（ink・shade・mid・light・ramp[i]・gloss・色キー。"" で透明へ抜く）（必須） |
+| `color` | color | 色（ink・shade・mid・light・ramp[i]・gloss・key:名前・色キー。"" で透明へ抜く）（必須） |
 
 ### `scaled`
 

@@ -45,6 +45,9 @@ ZStack.mapItems(Render.scaledAllAround(1.0 + bump, center), tree)
 
 - **1 部品 = 1 葉から始める。** 葉を割るのは「前の葉の最大 z < 次の葉の最小 z」を確かめてから。
   同じ z だった物を割ると、描画部の種類順（tiles → sprites → polygons → static → surfaces）が積んだ順に変わる。
+  **ShaderDoc の面（surfaces）は同じ z の中で必ず一番手前**になる（並べた順は効かない）。面の上にドット絵や字を
+  重ねるなら、その物の z を面より大きくする。面の後ろに同じ z の物を並べると、App が z ごとに 1 度
+  `[render] z=…: ShaderDoc の面の後ろに同じ z の描き物がある` と知らせる（判定は `Render.surfaceZShared`。描き出しのテストからも呼べる）。
 - **z の付け替えをしない。** 移す・縮めるは `mapItems`（z を付け替える公開の関数は無い）。
 - **必ず手前の物は `topLayer(層, …)`。** z を大きくして手前に出さない。world（`Layer`）と HUD（`HudLayer`）は
   型が違うので、またいで送れない。送り元より奥の層へは送れない（送り元の手前に置いて知らせる）。

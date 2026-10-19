@@ -396,17 +396,29 @@ func (c *ctx) Gloss() (pxlib.Key, error) {
 	return c.Spec.Light.Gloss, nil
 }
 
-// Color は色の参照を色キーにする: ink・shade・mid・light（ランプの 0〜3 段）・ramp[i]・gloss・""（透明）・色キー。
-// ink などはランプの段が先（ランプが無い部品でだけ同じ名前の色キーを指す。重なる色キーは台本の advice が知らせる）。
+// Color は色の参照を色キーにする: ink・shade・mid・light（ランプの 0〜3 段）・ramp[i]・gloss・""（透明）・
+// key:名前（色キーをそのまま指す）・色キー。ink などはランプの段が先（ランプが無い部品でだけ同じ名前の色キーを指す）。
+// ランプのある部品で、同じ名前の色キーも legend か色票にあれば、どちらとも読めるので止める（黙ってランプの色に化けない）。
 func (c *ctx) Color(ref colorRef) (pxlib.Key, error) {
 	name := string(ref)
+	if key, ok := strings.CutPrefix(name, "key:"); ok {
+		k := pxlib.Key(key)
+		if key == "" || (c.hasKey != nil && !c.hasKey(k)) {
+			return "", fmt.Errorf("色 %q の色キー %q が legend にも色票にも無い", name, key)
+		}
+		return k, nil
+	}
 	switch name {
 	case "":
 		return pxlib.Clear, nil
 	case "ink", "shade", "mid", "light":
 		i := map[string]int{"ink": 0, "shade": 1, "mid": 2, "light": 3}[name]
-		if i >= len(c.Ramp()) && c.hasKey != nil && c.hasKey(pxlib.Key(name)) {
+		keyToo := c.hasKey != nil && c.hasKey(pxlib.Key(name))
+		if i >= len(c.Ramp()) && keyToo {
 			return pxlib.Key(name), nil // ランプが無い（足りない）部品では、同じ名前の色キーを直に指す
+		}
+		if keyToo {
+			return "", fmt.Errorf("色 %q はランプの %d 段目とも色キー %q とも読める — ランプなら ramp[%d]、色キーなら key:%s と書く（色キーの名前を変えてもよい）", name, i, name, i, name)
 		}
 		return c.RampAt(i)
 	case "gloss":

@@ -293,7 +293,7 @@ func Settle(o Outcome) (code int, notice string, after Aftercare) {
 	case EndSilent:
 		return Unusable, "[resident] 返事が止まった — 常駐を落として素の道で流し直す", KillResident
 	case EndNeedsGL:
-		return Unusable, "[resident] " + o.Entry + " は Still と名乗ったのに GL を開こうとした（入口の束の kind の漏れ）— 素の道で流し直す", KeepResident
+		return NeedsGL, "[resident] " + o.Entry + " は Still と名乗ったのに GL を開こうとした（入口の束の kind の漏れ）— 素の道を GL の旗で流し直す", KeepResident
 	case EndStale:
 		return Unusable, emittedNotice(o, "常駐の jar が古かった"), QuitResident
 	case EndBusy:

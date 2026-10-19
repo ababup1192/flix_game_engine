@@ -747,7 +747,7 @@
     },
     "color": {
       "type": "string",
-      "description": "色: ink・shade・mid・light（部品のランプの 0〜3 段）・ramp[i]（ramp[-1] は一番明るい段）・gloss（light.gloss）・色キー・\"\"（透明）"
+      "description": "色: ink・shade・mid・light（部品のランプの 0〜3 段。同じ名前の色キーもあれば止める）・ramp[i]（ramp[-1] は一番明るい段）・gloss（light.gloss）・key:名前（色キーを直に指す）・色キー・\"\"（透明）"
     },
     "op": {
       "oneOf": [
@@ -1278,7 +1278,7 @@
                   "maxItems": 3
                 },
                 "color": {
-                  "description": "色（ink・shade・mid・light・ramp[i]・gloss・色キー。\"\" で透明へ抜く）",
+                  "description": "色（ink・shade・mid・light・ramp[i]・gloss・key:名前・色キー。\"\" で透明へ抜く）",
                   "$ref": "#/definitions/color"
                 },
                 "alt": {
@@ -1463,7 +1463,7 @@
                   "$ref": "#/definitions/shape"
                 },
                 "color": {
-                  "description": "色（ink・shade・mid・light・ramp[i]・gloss・色キー。\"\" で透明へ抜く）",
+                  "description": "色（ink・shade・mid・light・ramp[i]・gloss・key:名前・色キー。\"\" で透明へ抜く）",
                   "$ref": "#/definitions/color"
                 }
               },
@@ -1923,7 +1923,7 @@
                   "minItems": 2
                 },
                 "color": {
-                  "description": "色（ink・shade・mid・light・ramp[i]・gloss・色キー。\"\" で透明へ抜く）",
+                  "description": "色（ink・shade・mid・light・ramp[i]・gloss・key:名前・色キー。\"\" で透明へ抜く）",
                   "$ref": "#/definitions/color"
                 }
               },
@@ -2201,7 +2201,7 @@
                   }
                 },
                 "color": {
-                  "description": "色（ink・shade・mid・light・ramp[i]・gloss・色キー。\"\" で透明へ抜く）",
+                  "description": "色（ink・shade・mid・light・ramp[i]・gloss・key:名前・色キー。\"\" で透明へ抜く）",
                   "$ref": "#/definitions/color"
                 }
               },
@@ -2275,7 +2275,7 @@
                   "maximum": 256
                 },
                 "color": {
-                  "description": "色（ink・shade・mid・light・ramp[i]・gloss・色キー。\"\" で透明へ抜く）",
+                  "description": "色（ink・shade・mid・light・ramp[i]・gloss・key:名前・色キー。\"\" で透明へ抜く）",
                   "$ref": "#/definitions/color"
                 }
               },

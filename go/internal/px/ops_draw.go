@@ -10,7 +10,7 @@ import (
 
 var (
 	pShape    = param{Name: "shape", Type: tShape, Summary: "形（省くと部品の塊）"}
-	pColor    = param{Name: "color", Type: tColor, Required: true, Summary: "色（ink・shade・mid・light・ramp[i]・gloss・色キー。\"\" で透明へ抜く）"}
+	pColor    = param{Name: "color", Type: tColor, Required: true, Summary: "色（ink・shade・mid・light・ramp[i]・gloss・key:名前・色キー。\"\" で透明へ抜く）"}
 	pOptColor = param{Name: "color", Type: tColor, Summary: "この色の画素だけを相手にする（省くと部品の全部）"}
 )
 

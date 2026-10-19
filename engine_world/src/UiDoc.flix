@@ -118,11 +118,15 @@ pub mod UiDoc {
             case Err(e)      => Err(e)
             case Ok(None)    => Ok(Map.empty())
             case Ok(Some(m)) =>
-                m |> Map.toList |> Result.traverse(entry -> {
+                m |> Map.toList |> List.filter(match (name, _) -> not isPaletteMeta(name)) |> Result.traverse(entry -> {
                     let (name, json) = entry;
                     colorOf(Map.empty(), "palette '${name}'", json) |> Result.map(c -> (name, c))
                 }) |> Result.map(List.toMap)
         }
+
+    /// パレットの中の、色でない鍵（Doc 規約のメタキーと "//" の注記）。
+    def isPaletteMeta(key: String): Bool =
+        key == "version" or key == "$schema" or key == "note" or String.startsWith(prefix = "//", key)
 
     def parseDefaultFont(topMap: Map[String, Json]): Result[JsonError, String] =
         (DocJson.getAtKeyOpt(Root, "defaultFont", topMap): Result[JsonError, Option[String]])
@@ -1076,12 +1080,17 @@ pub mod UiDoc {
         }
 
     /// paletteFile を読んでパレットの Map にする。読めない・形が違うときは loud に Err（黙って無視しない）。
-    /// "version" は Doc 規約のメタキーで色定義ではないので、ここで取り除く。
+    /// Doc 規約のメタキー（version・$schema・note・"//" で始まる鍵）は色定義ではないので、ここで取り除く。
+    /// トップに "colors" の object があれば、その中を色の表として読む（PaletteExport の書き出しの形）。
     def readPaletteFile(baseDir: String, path: String): Result[JsonError, Map[String, Json]] \ Fs.FileRead =
         DocJson.readJson(joinPath(baseDir, path))
             |> Result.mapErr(e -> DocJson.jsonError(Root, Set#{"paletteFile: ${DocJson.describe(e)}"}))
             |> Result.flatMap(json -> match json {
-                case JObject(m) => Ok(Map.remove("version", m))
+                // PaletteExport.build が書く色票（{version, note, colors: {…}}）は colors の中を読む。
+                case JObject(m) => match Map.get("colors", m) {
+                    case Some(JObject(colors)) => Ok(Map.filterWithKey((key, _) -> not isPaletteMeta(key), colors))
+                    case _                     => Ok(Map.filterWithKey((key, _) -> not isPaletteMeta(key), m))
+                }
                 case _          => Err(DocJson.jsonError(Root, Set#{"paletteFile must be an object"}))
             })
 

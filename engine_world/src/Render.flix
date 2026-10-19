@@ -775,6 +775,22 @@ pub mod Render {
             }
         })
 
+    /// 面（Item.Shader）の後ろに同じ zIndex の他の描き物を並べた z（小さい順）。描き手は同じ z の中を
+    /// 種類の順（tiles → sprites → polygons → static → surfaces。docs/z-bands.md）で描くので、面は並びに関わらず
+    /// 一番手前になり、後ろに並べたドット絵や字を覆う。並びどおりに重ねたいなら、z を分ける（手前の物を大きい z へ）。
+    /// App は面のある画面でこれを見て、z ごとに 1 度だけ知らせる。描き出しのテストからも呼べる（純粋）。
+    pub def surfaceZShared(items: List[PlacedItem]): List[Int32] =
+        let (_, shared) = items |> List.foldLeft((acc, placed) -> {
+            let (surfaceZs, found) = acc;
+            let (leaf, _clip) = unwrapClip(placed#item, None);
+            let z = zOf(leaf);
+            match leaf {
+                case Item.Shader(_) => (Set.insert(z, surfaceZs), found)
+                case _              => if (Set.memberOf(z, surfaceZs)) (surfaceZs, Set.insert(z, found)) else acc
+            }
+        }, ((Set.empty(): Set[Int32]), (Set.empty(): Set[Int32])));
+        Set.toList(shared)
+
     /// Shader 面を除いた PlacedItem 列（GL 経路で draw に渡す前に外す — 本物のシェーダーは
     /// drawShaders + eff Shader が別チャンネルで描くので、draw の代表色ベタ塗りと二重にしない）。
     pub def withoutShaders(items: List[PlacedItem]): List[PlacedItem] =

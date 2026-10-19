@@ -66,7 +66,7 @@ func rangeText(p param) string {
 	return ""
 }
 
-// colorRef は色の参照: ink・shade・mid・light（部品のランプの 0〜3 段）・ramp[i]・gloss・色キー・""（透明）。
+// colorRef は色の参照: ink・shade・mid・light（部品のランプの 0〜3 段）・ramp[i]・gloss・key:名前・色キー・""（透明）。
 type colorRef string
 
 // opDef は描く手順 1 つ。

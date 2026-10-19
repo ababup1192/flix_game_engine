@@ -79,8 +79,15 @@ pub mod UiFocusNav {
     /// UiDoc / UiStore で組んだメニュー（listPath の項目列 = UiMenu.itemIds）を Target の列にする。
     /// key は項目の名前パス、rect は design 空間でレイアウトした枠（UiFocus.layoutRects）。
     /// 見えていない項目・大きさの無い項目は入れない。
+    /// 字の兄弟があるとずれる（枠は字を 0 の大きさで並べた UiFocus.layoutRects）。targetsOfUiWith を使う。
     pub def targetsOfUi(listPath: String, ui: UiStore.UiWorld, design: Vec2.Vec2): List[Target[String]] =
-        let rects = UiFocus.layoutRects(ui, design);
+        targetsIn(listPath, UiFocus.layoutRects(ui, design), ui)
+
+    /// 字の実寸を atlasOf で測った枠で組む targetsOfUi（字の兄弟の後ろの項目も、描いた所の枠になる）。
+    pub def targetsOfUiWith(atlasOf: String -> FontAtlas \ ef, listPath: String, ui: UiStore.UiWorld, design: Vec2.Vec2): List[Target[String]] \ ef =
+        targetsIn(listPath, UiFocus.layoutRectsWith(atlasOf, ui, design), ui)
+
+    def targetsIn(listPath: String, rects: Map[EntityId, Rect2.Rect2], ui: UiStore.UiWorld): List[Target[String]] =
         UiMenu.itemIds(listPath, ui) |> List.filterMap(id ->
             Option.flatMap(rect -> Option.map(path -> { key = path, rect = rect }, UiStore.pathOf(id, ui)),
                            Map.get(id, rects)))
