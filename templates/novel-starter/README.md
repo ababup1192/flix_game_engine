@@ -2,7 +2,7 @@
 
 flix_game_engine のノベル・推理テンプレート。雨の夜の洋館、停電した書斎から一枚の絵が
 消えた。文章を読み、疑う相手を選ぶと物語が分岐し、選ぶたびに館の照明がひとつ消える。
-台本（文章・分岐・結末）は全部 JSON の rows なので、書き換えれば別の事件になる。
+文章・分岐・結末は全部シナリオ（`assets/talk/novel.yarn`。Yarn Spinner の書き方）なので、書き換えれば別の事件になる。
 
 ## 始め方
 
@@ -38,7 +38,9 @@ Flix コンパイラはエンジンリポの `bin/flix` ラッパ経由で呼ぶ
       （入力→状態更新→描画 がどの行か）**が書いてある（`update = …` の 3 行）。まずここ。
       毎フレーム、App は系より先に物語の時計（`App.addClock`・メニューの間は `World.paceOf` が止める）を
       1 回だけ進め、実時間の今を `frame#realNow` で配る。
-   2. `src/World.flix` … 進行の規則そのもの（ビートの送り・分岐・「疑うと灯りが消える」。純粋）。
+   2. `src/World.flix` … 進行の規則そのもの（行の送り・分岐・「疑うと灯りが消える」。純粋）。シナリオの現在地は
+      `talk`（YarnRunner）で、今出している台詞か選択肢は `YarnRunner.shownOf` の 1 つ。`src/Talk.flix` が
+      シナリオとコードの繋ぎ（話し手・タグ・最初に開くノードの enum）。
       冒頭 doc に**場面の移り変わりの図**（表紙→物語→結末→表紙）があり、遷移を起こす関数には
       doc に `[遷移: X→Y]` が付いている。まず `advance`（決定＝読み進める）と
       `pick`（選択肢を選ぶ）を読む。冒頭の「時計は 2 本」が、物語の時計（文字送り・灯りの演出）と
@@ -51,18 +53,21 @@ Flix コンパイラはエンジンリポの `bin/flix` ラッパ経由で呼ぶ
    6. `src/render/SceneRender.flix` … 決定的な場面を PNG に描き出す（リファレンス画像とアトリエ）。
    7. `test/TestTrace.flix` … 性質テスト。でたらめなキーとクリックを画面なしで流し、「押さなければ返事は鳴らない」
       「灯りは疑う選択でだけ 1 つ減る」が、どう読み進めても崩れないかを見る（`PropertyTest.forAll`）。
-3. 台本・手触り・色・絵は下の `assets/` の Doc を保存即反映でいじる。音の案は台本 `art/sfx.snd.star` を
+3. シナリオは `assets/talk/novel.yarn`、手触り・色・絵は下の `assets/` の Doc を保存即反映でいじる。音の案は台本 `art/sfx.snd.star` を
    `bin/fge snd build art/sfx.snd.star` で `atelier/sfx/` へ書き出す（採用して `assets/sfx/` と project.json の
    `sounds` に載せるまでは無音。鳴らすと名前ごとに 1 回 warn）。
 
 **いちばん小さい変え方**（保存即反映を体験する）: `make debug` で起動したまま
-`assets/novel.story.json` の一節の `text` を書き換えて保存すると、その場で文章が変わる。
-選択肢の `label` を変えれば選べる言葉が変わり、`suspect` を `false` にすればその選択で
-灯りが消えなくなる。台本（rows）を足し引きすれば事件そのものを作り替えられる。
+`assets/talk/novel.yarn` の 1 行を書き換えて `bin/fge yarn build assets/talk` を流すと、書き出した
+`assets/talk/dialogue.json` をゲームが読み直し、開いているノードの頭から新しい文章が流れる。
+`->` の後ろを変えれば選べる言葉が変わり、`#suspect` を消せばその選択で灯りが消えなくなる。
+ノードを足して `<<jump ノード名>>` で繋げば事件そのものを作り替えられる。知らない話し手・タグ・ノードや
+読まない書き方（変数・`<<if>>` など）は、build が行番号と直し方つきで止める。
 
 数値・色・絵・枠は `assets/` の Doc（保存即反映）:
 
-- `assets/novel.story.json` … 台本。`src/StoryDoc.flix` が読む（material）。
+- `assets/talk/novel.yarn` … シナリオ（文章・分岐・結末）。`bin/fge yarn build assets/talk` が `dialogue.json` に書き出し、`src/Talk.flix` が読む。
+- `assets/novel.story.json` … 表紙とメニューの文言・灯りの数・話し手の呼び名。`src/StoryDoc.flix` が読む（material）。
 - `assets/novel.keys.json` … キーの割り当て（決定・カーソル・メニュー・表紙での終了）。`src/KeysDoc.flix` が読む（tuning）。
 - `assets/novel.kind.json` … 手触りの数値（文字送りの速さ・暗くなる度合い）。`src/KindDoc.flix` が読む（tuning）。
 - `assets/novel.theme.json` … 場面の色票。`src/ThemeDoc.flix` が読む（material）。

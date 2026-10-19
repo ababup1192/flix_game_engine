@@ -1,106 +1,16 @@
 {
   "version": 1,
-  "note": "台本。文章・分岐・結末は全部この rows にあり、書き換えれば別の事件になる。節(sections)の並び: beats を順に読み、読み終えたら ask(あれば)で分岐、無ければ next へ。ask も next も無い節が結末(読み終わりで表紙へ戻る)。suspect: true の選択肢を選ぶと館の灯りがひとつ消える。",
+  "note": "表紙とメニューの文言・灯りの数・話し手の呼び名。文章・分岐・結末はシナリオ assets/talk/novel.yarn（直したら bin/fge yarn build assets/talk）。speakers の id はシナリオの話し手（src/Talk.flix の Speaker）、name は会話ウィンドウに出す名前。lamps = 館の灯りの数（#suspect の選択肢を選ぶとひとつ消える）。",
   "title": "消えた絵",
   "subtitle": "雨の夜、洋館の書斎から一枚の絵が消えた",
   "hint": "クリックではじめる",
   "menuTitle": "― 一時停止 ―",
   "menuHint": "Esc でつづきへ",
-  "start": "arrival",
   "lamps": 3,
-  "sections": [
-    {
-      "id": "arrival",
-      "beats": [
-        { "speaker": "", "text": "雨が窓を叩いている。招かれた洋館の夜、書斎の明かりが一斉に落ちた。" },
-        { "speaker": "", "text": "蝋燭が灯ると、暖炉の上の絵が消えていた。壁には額縁だけが残っている。" },
-        { "speaker": "私", "text": "(壁の色が違う。絵は長くここに掛かっていた。外された跡が、まだ新しい)" },
-        { "speaker": "館の主", "text": "客人よ、あなたは時計を直す目をお持ちだ。どうか、この夜の狂いも直してほしい。" }
-      ],
-      "ask": {
-        "speaker": "私",
-        "text": "(さて、誰の話から疑ってかかるか──)",
-        "options": [
-          { "label": "執事の動きを疑う", "goto": "butler", "suspect": true },
-          { "label": "画商の言葉の食い違いをその場で問いただす", "goto": "dealer", "suspect": true }
-        ]
-      },
-      "next": ""
-    },
-    {
-      "id": "butler",
-      "beats": [
-        { "speaker": "執事", "text": "停電のあいだ、私は地下へ蝋燭を取りに下りておりました。" },
-        { "speaker": "私", "text": "(嘘ではないらしい。だが袖が乾いている。地下への渡り廊下は、雨ざらしのはずだ)" },
-        { "speaker": "", "text": "執事の懐中時計は、館の大時計と一分の狂いもなく合っていた。" }
-      ],
-      "next": "clock"
-    },
-    {
-      "id": "dealer",
-      "beats": [
-        { "speaker": "画商", "text": "私はずっと暖炉の前におりましたよ。ほら、この通り体が温まっている。" },
-        { "speaker": "私", "text": "(靴の縁で泥が乾きかけている。今夜、外に出た足だ)" },
-        { "speaker": "", "text": "画商の鞄は、ちょうど絵が一枚収まる大きさに見えた。" }
-      ],
-      "next": "clock"
-    },
-    {
-      "id": "clock",
-      "beats": [
-        { "speaker": "私", "text": "(書斎の置時計は九時十二分で止まっている。停電の八分前だ)" },
-        { "speaker": "私", "text": "(針を止めたのは停電ではない。誰かが、暗くなる前に時を止めた)" }
-      ],
-      "ask": {
-        "speaker": "私",
-        "text": "(告発の前に、もうひとりだけ疑うなら──)",
-        "options": [
-          { "label": "館の主を疑う", "goto": "master", "suspect": true },
-          { "label": "誰も疑わない", "goto": "accuse", "suspect": false }
-        ]
-      },
-      "next": ""
-    },
-    {
-      "id": "master",
-      "beats": [
-        { "speaker": "館の主", "text": "私を疑うのか。……いいだろう。その目こそ、あなたを招いた理由だ。" },
-        { "speaker": "私", "text": "(主の右手の甲に、額縁の金粉がひとすじ光っている)" }
-      ],
-      "next": "accuse"
-    },
-    {
-      "id": "accuse",
-      "beats": [
-        { "speaker": "", "text": "蝋燭は残りわずか。指す相手で、この夜の結末が決まる。" }
-      ],
-      "ask": {
-        "speaker": "私",
-        "text": "(絵を消したのは──)",
-        "options": [
-          { "label": "執事を告発する", "goto": "end_butler", "suspect": true },
-          { "label": "館の主を告発する", "goto": "end_master", "suspect": true }
-        ]
-      },
-      "next": ""
-    },
-    {
-      "id": "end_butler",
-      "beats": [
-        { "speaker": "執事", "text": "……私では、ございません。" },
-        { "speaker": "", "text": "翌朝、雨は上がったが、絵は戻らなかった。館の主だけが、静かに笑っていた。" },
-        { "speaker": "", "text": "── 疑いは外れ、真相は闇の中。時計職人は館を後にした。" }
-      ],
-      "next": ""
-    },
-    {
-      "id": "end_master",
-      "beats": [
-        { "speaker": "館の主", "text": "……見事だ。絵は私が売った。この館を、手放さないためにな。" },
-        { "speaker": "私", "text": "(止まった時計。乾いた袖。手の甲の金粉。歯車は最初から噛み合っていた)" },
-        { "speaker": "", "text": "── 絵は戻らない。だが書斎の時計は、九時十二分から動き出した。" }
-      ],
-      "next": ""
-    }
+  "speakers": [
+    { "id": "me", "name": "私" },
+    { "id": "master", "name": "館の主" },
+    { "id": "butler", "name": "執事" },
+    { "id": "dealer", "name": "画商" }
   ]
 }

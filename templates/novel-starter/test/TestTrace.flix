@@ -3,7 +3,7 @@
 // 灯りは疑う選択でだけ 1 つずつ減り、減ったフレームだけ消える演出の音が鳴る。
 // メニュー（物語の時計を止める）の決まりは決まった手順で確かめる: 止めて戻しても演出の音は 1 回ずつ・
 // 止めている間は炎の細りが進まない・止めている間も実時間は進む。
-// 台本は小さな fixture（分岐 1 つ・結末 2 つ）。App は実機と同じ繋ぎ（TestKit.app）。
+// シナリオは小さな fixture（test/talk/fixture.yarn・分岐 1 つ・結末 2 つ）。App は実機と同じ繋ぎ（TestKit.app）。
 mod TestTrace {
 
     use fge::{App, Clock, Emit, PropertyTest, PxSpriteDoc, Timeline}
@@ -36,26 +36,9 @@ mod TestTrace {
                    points = List#{{ x = 40.0, y = 40.0 }, { x = World.width() / 2.0, y = World.height() - 30.0 }}
                    | PropertyTest.emptySpec() } }
 
-    def beat(speaker: String, text: String): StoryDoc.Beat = { speaker = speaker, text = text }
-
-    def fixture(): StoryDoc.Doc =
-        StoryDoc.Doc.Doc({
-          version = 1, title = "test", subtitle = "", hint = "", menuTitle = "", menuHint = "",
-          start = "hall", lamps = 2,
-          sections =
-              { id = "hall", beats = beat("", "雨の音。") :: beat("私", "壁の色が違う。") :: Nil,
-                ask = Some({ speaker = "私", text = "誰を疑う?",
-                             options =
-                                 { label = "疑う", goto = "endA", suspect = true }
-                              :: { label = "疑わない", goto = "endB", suspect = false } :: Nil }),
-                next = "" }
-           :: { id = "endA", beats = beat("", "結末A。") :: Nil, ask = None, next = "" }
-           :: { id = "endB", beats = beat("", "結末B。") :: Nil, ask = None, next = "" }
-           :: Nil })
-
     /// 実機と同じ UI（会話窓と選択肢のチップ）を読んだ始まりの World。UI が空だと選択肢のカーソルが動かない。
     def start(): World.World \ Fs.FileRead =
-        World.initial({ story = fixture(), kind = KindDoc.defaults(), keys = KeysDoc.defaults(),
+        World.initial({ story = StoryDoc.defaults(), dialogue = TestKit.fixtureDialogue(), kind = KindDoc.defaults(), keys = KeysDoc.defaults(),
                         theme = ThemeDoc.defaults(), sprites = PxSpriteDoc.empty() },
                       NovelKit.spawnAssets())
 
@@ -96,7 +79,7 @@ mod TestTrace {
         let w0 = start();
         let rule = (step: App.TraceStep[World.World]) -> {
             let before = World.lampsLit(step#before);
-            let wanted = if (opened(step)) StoryDoc.rec(fixture())#lamps
+            let wanted = if (opened(step)) StoryDoc.rec(StoryDoc.defaults())#lamps
                          else Int32.max(0, before - heard("doubt", step));
             let got = World.lampsLit(step#after);
             let flickers = heard("lamp_flicker", step);

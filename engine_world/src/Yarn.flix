@@ -5,7 +5,7 @@
 //   ゲームの enum ──Yarn.vocabJson（ゲームの Talk.vocab・make talk-vocab）──▶ assets/talk/vocab.json ──build の check が読む
 //
 // シナリオに書く物: 台詞・話し手・タグ（表情・後ろの場面など。値はゲームの enum の名前）。
-// コードに書く物: どのノードを開くか・演出の拍の順番。文字送りの速さ・ウィンドウの出入り・立ち絵・呼び名は Doc。
+// コードに書く物: どのノードを開くか・演出の順番。文字送りの速さ・ウィンドウの出入り・立ち絵・呼び名は Doc。
 // 読める文法と断る文法は bin/fge yarn help、木の形は go/internal/yarn/tree.go。
 pub mod Yarn {
     use Util.Json.Json

@@ -26,8 +26,8 @@ mod E2e {
           },
           probes =
               { name = "phase", doc = "場面（Title・Story）", read = Flow.Probe.Text(w -> "${w#phase}") } ::
-              { name = "section", doc = "読んでいる節（novel.story.json の sections[].id）", read = Flow.Probe.Text(w -> w#section) } ::
-              { name = "line", doc = "節の何行目か（0 から）", read = Flow.Probe.Num(w -> Int32.toFloat64(w#idx)) } ::
+              { name = "talk", doc = "開いているシナリオのノード（assets/talk/novel.yarn の title:・閉じていれば空）", read = Flow.Probe.Text(World.talkNodeOf) } ::
+              { name = "talkLine", doc = "今出している台詞のシナリオの行（ファイル:行・閉じていれば空）", read = Flow.Probe.Text(World.talkLineOf) } ::
               { name = "lineDone", doc = "今の台詞を出し終えた", read = Flow.Probe.Flag(w -> UiDialog.lineDone(w#kit#dialog)) } ::
               { name = "choice", doc = "選択肢が開いて選べる", read = Flow.Probe.Flag(w -> NovelKit.isAsking(w#kit)) } ::
               { name = "cursor", doc = "選択肢のカーソル（0 から）", read = Flow.Probe.Num(w -> Int32.toFloat64(w#cursor)) } ::
@@ -39,12 +39,18 @@ mod E2e {
                     if (w#phase != World.Phase.Story or NovelKit.isAsking(w#kit)) Flow.DriveAct.Restart
                     else if (not UiDialog.lineDone(w#kit#dialog)) Flow.DriveAct.Restart
                     else if (waited >= readSeconds()) Flow.DriveAct.Tap("confirm")
-                    else Flow.DriveAct.Idle } :: Nil,
+                    else Flow.DriveAct.Idle } ::
+              { name = "skipTalk", doc = "会話を飛ばす: 台詞が出たらすぐ送る（選択肢と表紙では押さない）",
+                act = (_, w) ->
+                    if (w#phase != World.Phase.Story or NovelKit.isAsking(w#kit)) Flow.DriveAct.Restart
+                    else Flow.DriveAct.Tap("confirm") } :: Nil,
+          // 文字送りの間は押さずに待つ（押すと全文が出るだけで、送るつもりの押しが空振りする）。
+          ready = Some(w -> if (w#phase == World.Phase.Story and not UiDialog.lineDone(w#kit#dialog)) Flow.Ready.Busy("typing") else Flow.Ready.Ready),
           replies = Some(w -> Emit.countOf(w#events))
           | Flow.emptyTable() }
 
     /// 指紋の元（記録の再生が 60 フレームごとに比べる）: 進行に効く欄だけ。
     pub def fingerprint(w: World.World): String =
-        "${w#phase}|${w#section}:${w#idx}|done=${UiDialog.lineDone(w#kit#dialog)}|cursor=${w#cursor}" +
+        "${w#phase}|${World.talkNodeOf(w)}|${World.talkLineOf(w)}|done=${UiDialog.lineDone(w#kit#dialog)}|cursor=${w#cursor}" +
         "|lights=${w#lightsOut}|menu=${w#menu}|events=${Emit.countOf(w#events)}"
 }

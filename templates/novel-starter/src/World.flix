@@ -1,16 +1,15 @@
 // World — ゲームの状態そのものと、次の状態を作る規則（すべて純粋）。
-// 台本（文章・分岐・結末）は StoryDoc の rows、進め方と「疑うと灯りが消える」規則はここ。
-// 表紙（Title）→ 物語（Story）→ 結末の節を読み終えたら表紙へ戻る。プレイヤーは死なない。
+// 文章・分岐・結末はシナリオ assets/talk/novel.yarn（YarnRunner が辿る）、進め方と「疑うと灯りが消える」規則はここ。
+// 表紙（Title）→ 物語（Story）→ 結末のノードを読み終えたら表紙へ戻る。プレイヤーは死なない。
 //
-// 場面の移り変わり（Phase と、Story の中の台本の流れ）:
+// 場面の移り変わり（Phase と、Story の中のシナリオの流れ）:
 //
-//     Title ──決定(advance/begin)──▶ Story
-//                                      │  節の beats を順に読む(advance)
+//     Title ──決定(advance/begin)──▶ Story（Talk.Node.Arrival のノードを開く）
+//                                      │  台詞を順に読む(advance → YarnRunner の Advance)
 //                                      ▼
-//                                  ask あり ──選ぶ(pick)──▶ goto の節へ(enter)
-//                                  ask なし ──▶ next の節へ / next 空なら結末
+//                                  選択肢 ──選ぶ(pick → Choose)──▶ その中身（<<jump>> で次のノード）
 //                                                              │
-//     Title ◀──────結末を読み終えた・台本が切れた(toTitle)──────┘
+//     Title ◀────ノードを読み終えた・シナリオが切れた(toTitle)────┘
 //
 // 遷移を起こす関数の doc には [遷移: X→Y] を付けてある（探すときの目印）。
 //
@@ -18,7 +17,7 @@
 //   読めない → 既定値で起動（Controls.loadDocs / *Doc.defaults）
 //   一部が欠け → その欄だけ既定値（fromJson が欄ごとに拾う）
 //   型が違う   → その欄は既定値のまま（行き先の節が無ければ表紙へ落ちる 等）
-// だからプレイヤーの前でクラッシュしない。台本の編集ミスは既定へ落ちて読みは続く。
+// だからプレイヤーの前でクラッシュしない。Doc の編集ミスは既定へ落ちて読みは続く（シナリオの書き損じは build の check が止める）。
 //
 // 時計は 2 本（型で分けてあり、取り違えるとコンパイルが止まる）:
 //   物語の時計 storyClock（Clock[Story]）… 文字送りと灯りが消える演出。メニューの間は止まる。
@@ -27,7 +26,7 @@
 //                                          App が配る frame#realNow を Controls.step が毎フレーム写す。
 mod World {
 
-    use fge::{Clock, Emit, PxSpriteAtlas, PxSpriteDoc, UiDialog, UiMenu, UiSlots, UiSpec, UiStore}
+    use fge::{Clock, Emit, PxSpriteAtlas, PxSpriteDoc, UiDialog, UiMenu, UiSlots, UiSpec, UiStore, Yarn, YarnRunner}
 
     /// 物語の時計の名前（中身は要らない）。
     pub enum Story
@@ -43,7 +42,7 @@ mod World {
         case MenuOpen
     }
 
-    /// いま画面が何をしているか。Title = 表紙（決定で物語がはじまる）、Story = 台本を読んでいる。
+    /// いま画面が何をしているか。Title = 表紙（決定で物語がはじまる）、Story = シナリオを読んでいる。
     pub enum Phase with Eq, ToString {
         case Title
         case Story
@@ -53,7 +52,7 @@ mod World {
     /// Controls.interact が集めて events 欄（Emit.Events）に溜め、音は前後の差（Emit.since）で読む。
     ///   Opened   … 表紙から物語をはじめた。
     ///   Revealed … 文字送りの途中で全文を出した。
-    ///   Paged    … 次のビートへ送った。
+    ///   Paged    … 次の台詞へ送った。
     ///   Ended    … 結末を読み終えて表紙へ戻った。
     ///   Moved    … 選択肢のカーソルが動いた。
     ///   Picked   … 選択肢を選んだ（true = 疑う選択）。
@@ -69,18 +68,21 @@ mod World {
     /// 起動時に読む Doc の束（Main と SceneRender が同じ形で組む）。
     pub type alias Docs = {
         story = StoryDoc.Doc,
+        dialogue = Yarn.Program,
         kind = KindDoc.Doc,
         keys = KeysDoc.Doc,
         theme = ThemeDoc.Doc,
         sprites = PxSpriteDoc.Doc
     }
 
-    /// ゲームの状態。section / idx = 台本上の現在地、kit = ダイアログと選択肢、
+    /// ゲームの状態。dialogue = シナリオ、talk = シナリオの現在地（開いているノード・今出している台詞か選択肢）、
+    /// kit = ダイアログと選択肢（文字送り）、
     /// cursor = 選択肢のカーソル位置、lightsOut = 消えた灯りの数（疑うたびに増える）、
     /// storyClock / realNow = 物語の時計と実時間の今（冒頭の「時計は 2 本」）、menu = 開いている窓。
     pub type alias World = {
         phase = Phase,
         story = StoryDoc.Doc,
+        dialogue = Yarn.Program,
         kind = KindDoc.Doc,
         keys = KeysDoc.Doc,
         theme = ThemeDoc.Doc,
@@ -91,8 +93,7 @@ mod World {
         storyClock = Clock.Clock[Story],
         realNow = Clock.Time[Clock.Real],
         menu = Menu,
-        section = String,
-        idx = Int32,
+        talk = YarnRunner.Runner[Story],
         kit = NovelKit.Kit,
         cursor = Int32,
         lightsOut = Int32,
@@ -132,10 +133,10 @@ mod World {
     pub def initial(docs: Docs, ui: UiStore.UiWorld): World =
         let (baked, key) = bakedOf(docs#theme, docs#sprites);
         { phase = Phase.Title,
-          story = docs#story, kind = docs#kind, keys = docs#keys, theme = docs#theme, sprites = docs#sprites,
+          story = docs#story, dialogue = docs#dialogue, kind = docs#kind, keys = docs#keys, theme = docs#theme, sprites = docs#sprites,
           atlas = baked, atlasKey = key,
           storyClock = Clock.start(), realNow = Clock.zero(), menu = Menu.Closed,
-          section = StoryDoc.rec(docs#story)#start, idx = 0,
+          talk = YarnRunner.closed(),
           kit = NovelKit.closed(), cursor = 0, lightsOut = 0,
           lampOutAt = None, events = Emit.empty(),
           ui = ui, docError = None }
@@ -149,55 +150,58 @@ mod World {
     /// 表紙から物語をはじめる。灯りは全部つき直る（新しい夜）。[遷移: Title→Story]
     def begin(w: World): World \ Emit[Event] =
         Emit.emit(Event.Opened);
-        enter(StoryDoc.rec(w#story)#start, 0, { phase = Phase.Story, lightsOut = 0, lampOutAt = None | w })
+        openTalk(Talk.nodeName(Talk.Node.Arrival), reading(w))
 
-    /// 表紙へ戻る（結末を読み終えた・台本が切れた）。部屋の暗さはそのまま残り、
+    /// 表紙から物語へ入った World（灯りは全部点いている。読むノードは openTalk が載せる）。
+    pub def reading(w: World): World = { phase = Phase.Story, lightsOut = 0, lampOutAt = None | w }
+
+    /// 表紙へ戻る（結末を読み終えた・シナリオが切れた）。部屋の暗さはそのまま残り、
     /// 次に begin したとき灯り直す。[遷移: Story→Title]
-    /// メニューも閉じる — 台本の読み直しで節が消えると、メニューを開いたまま表紙へ落ちうる
+    /// メニューも閉じる — シナリオの読み直しでノードが消えると、メニューを開いたまま表紙へ落ちうる
     /// （表紙ではメニューを開け閉めできないので、閉じないと物語の時計が止まったまま詰む）。
     def toTitle(w: World): World =
-        { phase = Phase.Title, kit = NovelKit.closed(), menu = Menu.Closed | w }
+        { phase = Phase.Title, talk = YarnRunner.closed(), kit = NovelKit.closed(), menu = Menu.Closed | w }
 
-    /// 台本の (section, idx) のビートをキットに乗せる。ビートを読み終えた節は
-    /// ask（分岐）→ next（次の節）→ どちらも無ければ結末 = 表紙へ、の順に出口を選ぶ。
-    /// [遷移: 節→次のビート / 次の節 / 結末(Story→Title)]
-    /// fuel は空の節が連なる壊れた台本でも必ず止まるための上限。
-    pub def enter(sectionId: String, idx: Int32, w: World): World =
-        enterFuel(8, sectionId, idx, w)
-
-    def enterFuel(fuel: Int32, sectionId: String, idx: Int32, w: World): World =
-        if (fuel <= 0) toTitle(w)
-        else match StoryDoc.sectionOf(sectionId, w#story) {
-            case None => toTitle(w)
-            case Some(section) =>
-                match List.nth(idx, section#beats) {
-                    case Some(beat) =>
-                        { section = sectionId, idx = idx,
-                          kit = NovelKit.say(beat#speaker, beat#text) | w }
-                    case None => leave(fuel, sectionId, idx, section, w)
-                }
+    /// node の頭から読む。シナリオが読めずノードが無ければ、直し方を語る 1 行を出す（読み終えると表紙へ）。
+    pub def openTalk(node: String, w: World): World =
+        match Yarn.nodeOf(node, w#dialogue) {
+            case Some(_) => show(fst(YarnRunner.start(w#dialogue, node, Clock.nowOf(w#storyClock))), w)
+            case None    =>
+                { talk = YarnRunner.closed(),
+                  kit = NovelKit.say("", "（シナリオが読めない。assets/talk/novel.yarn を直して bin/fge yarn build assets/talk を流すと、ここに物語が流れる）") | w }
         }
 
-    /// ビートを読み終えた節の出口。
-    def leave(fuel: Int32, sectionId: String, idx: Int32, section: StoryDoc.Section, w: World): World =
-        match section#ask {
-            case Some(ask) =>
-                { section = sectionId, idx = idx, cursor = 0,
-                  kit = NovelKit.ask(ask#speaker, ask#text, entriesOf(ask#options)) | w }
-            case None =>
-                if (section#next == "") toTitle(w)
-                else enterFuel(fuel - 1, section#next, 0, w)
+    /// 実行器が今出している物をキットに乗せる。[遷移: 台詞→次の台詞 / 選択肢 / 結末(Story→Title)]
+    /// 選択肢の直前の台詞は、送るのを待たずに選択肢と同じウィンドウへ問いとして並べる。
+    def show(talk: YarnRunner.Runner[Story], w: World): World =
+        match YarnRunner.shownOf(talk) {
+            case YarnRunner.Shown.Line(line) =>
+                if (YarnRunner.choicesFollow(talk))
+                    askAfter(line, fst(YarnRunner.step(YarnRunner.Action.Advance, Clock.nowOf(w#storyClock), talk)), w)
+                else { talk = talk, kit = NovelKit.say(StoryDoc.nameOf(line#speaker, w#story), line#text) | w }
+            case YarnRunner.Shown.Choices(lines) =>
+                { talk = talk, cursor = 0, kit = NovelKit.ask("", "", entriesOf(lines)) | w }
+            case YarnRunner.Shown.Waiting => { talk = talk | w }
+            case YarnRunner.Shown.Closed  => toTitle({ talk = talk | w })
         }
 
-    /// 選択肢の rows を UI のスロット項目へ（クリックの意味は meta: novel/choice/N）。
-    def entriesOf(options: List[StoryDoc.Choice]): List[UiSlots.Entry] =
-        options |> List.zipWithIndex |> List.map(pair -> {
-            let (i, choice) = pair;
-            ({ text = choice#label, meta = Some("${NovelKit.choicePrefix()}${i}") }: UiSlots.Entry)
+    def askAfter(question: Yarn.Line, talk: YarnRunner.Runner[Story], w: World): World =
+        match YarnRunner.shownOf(talk) {
+            case YarnRunner.Shown.Choices(lines) =>
+                { talk = talk, cursor = 0,
+                  kit = NovelKit.ask(StoryDoc.nameOf(question#speaker, w#story), question#text, entriesOf(lines)) | w }
+            case _ => show(talk, w)
+        }
+
+    /// 選択肢の行を UI のスロット項目へ（クリックの意味は meta: novel/choice/N）。
+    def entriesOf(lines: List[Yarn.Line]): List[UiSlots.Entry] =
+        lines |> List.zipWithIndex |> List.map(pair -> {
+            let (i, line) = pair;
+            ({ text = line#text, meta = Some("${NovelKit.choicePrefix()}${i}") }: UiSlots.Entry)
         })
 
     /// 決定 1 回分。表紙では物語をはじめ［遷移: Title→Story］、文字送り中なら全文へ、
-    /// 読み終えていれば次のビートへ（Story のまま enter で進む）。
+    /// 読み終えていれば次の台詞へ（Story のまま実行器を送る）。
     /// 選択肢待ちは動かない（pick だけが進める）。
     pub def advance(w: World): World \ Emit[Event] =
         match w#phase {
@@ -208,7 +212,9 @@ mod World {
                     Emit.emit(Event.Revealed);
                     { kit = NovelKit.advance(w#kit) | w }
                 } else {
-                    let next = enter(w#section, w#idx + 1, w);
+                    let next = if (YarnRunner.isOpen(w#talk))
+                        show(fst(YarnRunner.step(YarnRunner.Action.Advance, Clock.nowOf(w#storyClock), w#talk)), w)
+                    else toTitle(w);
                     Emit.emit(if (next#phase == Phase.Title) Event.Ended else Event.Paged);
                     next
                 }
@@ -221,36 +227,66 @@ mod World {
         if (cursor != w#cursor) Emit.emit(Event.Moved) else ();
         { cursor = cursor | w }
 
-    /// 選択肢 i を選ぶ: 「疑う」選択（suspect）なら館の灯りをひとつ消してから、
-    /// 行き先の節の先頭へ。[遷移: 分岐→goto の節]
+    /// 選択肢 i を選ぶ: 「疑う」選択（#suspect）なら館の灯りをひとつ消してから、その中身へ。
+    /// [遷移: 選択肢→選んだ中身（<<jump>> の先のノード）]
     pub def pick(i: Int32, w: World): World \ Emit[Event] =
         match currentOptions(w) |> List.nth(i) {
             case None => w
-            case Some(choice) =>
-                Emit.emit(Event.Picked(choice#suspect));
-                enter(choice#goto, 0, dimIf(choice#suspect, w))
+            case Some(line) =>
+                let suspect = Talk.isSuspect(line);
+                Emit.emit(Event.Picked(suspect));
+                let dimmed = dimIf(suspect, w);
+                show(fst(YarnRunner.step(YarnRunner.Action.Choose(i), Clock.nowOf(w#storyClock), w#talk)), dimmed)
         }
 
-    /// 疑ったときだけ灯りをひとつ消す（台本の lamps より多くは消えない）。
+    /// 疑ったときだけ灯りをひとつ消す（novel.story.json の lamps より多くは消えない）。
     /// 消せる灯りが残っていなければ何もしない（演出の起点 lampOutAt も動かさない）。
     def dimIf(suspect: Bool, w: World): World =
         if (suspect and lampsLit(w) > 0)
             { lightsOut = w#lightsOut + 1, lampOutAt = Some(Clock.nowOf(w#storyClock)) | w }
         else w
 
-    def currentOptions(w: World): List[StoryDoc.Choice] =
-        StoryDoc.sectionOf(w#section, w#story)
-            |> Option.flatMap(section -> section#ask)
-            |> Option.map(ask -> ask#options)
-            |> Option.getWithDefault(Nil)
+    /// node を読み終えて選択肢が開き、問いの文を出し終えた World（選択肢の前に会話が終わるノードは None）。
+    /// 始まりの登録簿（Starts）が使う。fuel は台詞の無いノードが続く壊れたシナリオでも必ず止まるための上限。
+    pub def openAtChoices(node: String, w: World): Option[World] =
+        choicesFrom(200, fst(YarnRunner.start(w#dialogue, node, Clock.nowOf(w#storyClock))), w)
 
-    /// 毎フレーム: 文字送りを物語の時計がこのフレームに進んだ秒だけ進め、キットの状態を UI へ刻む
-    /// （表紙ではダイアログは閉じている）。メニューの間は物語の時計が止まるので文字送りも止まる。
+    def choicesFrom(fuel: Int32, talk: YarnRunner.Runner[Story], w: World): Option[World] =
+        match YarnRunner.shownOf(talk) {
+            case YarnRunner.Shown.Line(_) if YarnRunner.choicesFollow(talk) => Some(revealLine(show(talk, w)))
+            case YarnRunner.Shown.Choices(_) => Some(revealLine(show(talk, w)))
+            case YarnRunner.Shown.Line(_) if fuel > 0 =>
+                choicesFrom(fuel - 1, fst(YarnRunner.step(YarnRunner.Action.Advance, Clock.nowOf(w#storyClock), talk)), w)
+            case _ => None
+        }
+
+    /// 開いているノードの名前（閉じていれば空。flow の問い talk・指紋・1 行の要点）。
+    pub def talkNodeOf(w: World): String = YarnRunner.nodeOf(w#talk) |> Option.getWithDefault("")
+
+    /// 今出している台詞のシナリオの行（ファイル:行。選択肢の間は先頭の選択肢の行・閉じていれば空）。
+    pub def talkLineOf(w: World): String = match YarnRunner.shownOf(w#talk) {
+        case YarnRunner.Shown.Line(line)     => Yarn.sourceText(line#source)
+        case YarnRunner.Shown.Choices(lines) => lines |> List.head |> Option.map(line -> Yarn.sourceText(line#source)) |> Option.getWithDefault("")
+        case _                               => ""
+    }
+
+    def currentOptions(w: World): List[Yarn.Line] = match YarnRunner.shownOf(w#talk) {
+        case YarnRunner.Shown.Choices(lines) => lines
+        case _                               => Nil
+    }
+
+    /// 毎フレーム: シナリオの <<wait>> の時刻が来ていれば続きを出し、文字送りを物語の時計がこのフレームに
+    /// 進んだ秒だけ進め、キットの状態を UI へ刻む（表紙ではダイアログは閉じている）。
+    /// メニューの間は物語の時計が止まるので、待ちも文字送りも止まる。
     pub def step(w: World): World =
-        let kit = NovelKit.step(cps = KindDoc.rec(w#kind)#cps, Clock.dtOf(w#storyClock), w#kit);
-        { kit = kit, ui = NovelKit.apply(kit, w#ui) | w }
+        let waited = match YarnRunner.shownOf(w#talk) {
+            case YarnRunner.Shown.Waiting => show(fst(YarnRunner.step(YarnRunner.Action.Tick, Clock.nowOf(w#storyClock), w#talk)), w)
+            case _                        => w
+        };
+        let kit = NovelKit.step(cps = KindDoc.rec(waited#kind)#cps, Clock.dtOf(waited#storyClock), waited#kit);
+        { kit = kit, ui = NovelKit.apply(kit, waited#ui) | waited }
 
-    /// いまの行を最後まで出した状態（描き出しが場面を歩くとき。時計を進めずに 1 ビート読み終える）。
+    /// いまの行を最後まで出した状態（描き出しが場面を歩くとき。時計を進めずに 1 行読み終える）。
     pub def revealLine(w: World): World =
         let kit = if (UiDialog.lineDone(w#kit#dialog)) w#kit else NovelKit.advance(w#kit);
         { kit = kit, ui = NovelKit.apply(kit, w#ui) | w }
@@ -271,13 +307,17 @@ mod World {
 
     // ── Doc の差し替え（保存即反映） ──
 
-    /// 台本の差し替え。物語の途中なら現在地を読み直す（編集がその場で画面に出る）。
-    /// 現在地の節が消えていたら表紙へ落ちる（fail-open）。
-    pub def withStory(story: StoryDoc.Doc, w: World): World =
-        let w1 = { story = story | w };
-        match w1#phase {
-            case Phase.Title => w1
-            case Phase.Story => enter(w1#section, w1#idx, w1)
+    /// 表紙の文言・灯りの数・呼び名の差し替え（呼び名は次の台詞から出る）。
+    pub def withStory(story: StoryDoc.Doc, w: World): World = { story = story | w }
+
+    /// シナリオの差し替え。物語の途中なら、開いているノードを頭から読み直す（編集がその場で画面に出る）。
+    /// WhyNot: 読んでいた行から続けない —— 行の並びが変わると「同じ行」が決まらない。
+    /// 開いていたノードが消えていたら直し方の 1 行へ落ちる（fail-open）。
+    pub def withDialogue(dialogue: Yarn.Program, w: World): World =
+        let w1 = { dialogue = dialogue | w };
+        match (w1#phase, YarnRunner.nodeOf(w1#talk)) {
+            case (Phase.Story, Some(node)) => openTalk(node, w1)
+            case _                         => w1
         }
 
     pub def withKind(kind: KindDoc.Doc, w: World): World = { kind = kind | w }

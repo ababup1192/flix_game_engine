@@ -1,0 +1,339 @@
+{
+  "version": 1,
+  "note": "bin/fge yarn build が assets/talk/novel.yarn から書いた木。手で直さない（.yarn を直して build する）",
+  "vocab": "assets/talk/vocab.json",
+  "files": [
+    "assets/talk/novel.yarn"
+  ],
+  "nodes": [
+    {
+      "title": "arrival",
+      "file": "assets/talk/novel.yarn",
+      "line": 7,
+      "headers": [],
+      "body": [
+        {
+          "kind": "line",
+          "line": 9,
+          "text": "雨が窓を叩いている。招かれた洋館の夜、書斎の明かりが一斉に落ちた。"
+        },
+        {
+          "kind": "line",
+          "line": 10,
+          "text": "蝋燭が灯ると、暖炉の上の絵が消えていた。壁には額縁だけが残っている。"
+        },
+        {
+          "kind": "line",
+          "line": 11,
+          "speaker": "me",
+          "text": "(壁の色が違う。絵は長くここに掛かっていた。外された跡が、まだ新しい)"
+        },
+        {
+          "kind": "line",
+          "line": 12,
+          "speaker": "master",
+          "text": "客人よ、あなたは時計を直す目をお持ちだ。どうか、この夜の狂いも直してほしい。"
+        },
+        {
+          "kind": "line",
+          "line": 13,
+          "speaker": "me",
+          "text": "(さて、誰の話から疑ってかかるか──)"
+        },
+        {
+          "kind": "options",
+          "line": 14,
+          "options": [
+            {
+              "line": 14,
+              "text": "執事の動きを疑う",
+              "tags": [
+                {
+                  "key": "suspect",
+                  "value": ""
+                }
+              ],
+              "body": [
+                {
+                  "kind": "jump",
+                  "line": 15,
+                  "node": "butler"
+                }
+              ]
+            },
+            {
+              "line": 16,
+              "text": "画商の言葉の食い違いをその場で問いただす",
+              "tags": [
+                {
+                  "key": "suspect",
+                  "value": ""
+                }
+              ],
+              "body": [
+                {
+                  "kind": "jump",
+                  "line": 17,
+                  "node": "dealer"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "butler",
+      "file": "assets/talk/novel.yarn",
+      "line": 20,
+      "headers": [],
+      "body": [
+        {
+          "kind": "line",
+          "line": 22,
+          "speaker": "butler",
+          "text": "停電のあいだ、私は地下へ蝋燭を取りに下りておりました。"
+        },
+        {
+          "kind": "line",
+          "line": 23,
+          "speaker": "me",
+          "text": "(嘘ではないらしい。だが袖が乾いている。地下への渡り廊下は、雨ざらしのはずだ)"
+        },
+        {
+          "kind": "line",
+          "line": 24,
+          "text": "執事の懐中時計は、館の大時計と一分の狂いもなく合っていた。"
+        },
+        {
+          "kind": "jump",
+          "line": 25,
+          "node": "clock"
+        }
+      ]
+    },
+    {
+      "title": "dealer",
+      "file": "assets/talk/novel.yarn",
+      "line": 28,
+      "headers": [],
+      "body": [
+        {
+          "kind": "line",
+          "line": 30,
+          "speaker": "dealer",
+          "text": "私はずっと暖炉の前におりましたよ。ほら、この通り体が温まっている。"
+        },
+        {
+          "kind": "line",
+          "line": 31,
+          "speaker": "me",
+          "text": "(靴の縁で泥が乾きかけている。今夜、外に出た足だ)"
+        },
+        {
+          "kind": "line",
+          "line": 32,
+          "text": "画商の鞄は、ちょうど絵が一枚収まる大きさに見えた。"
+        },
+        {
+          "kind": "jump",
+          "line": 33,
+          "node": "clock"
+        }
+      ]
+    },
+    {
+      "title": "clock",
+      "file": "assets/talk/novel.yarn",
+      "line": 36,
+      "headers": [],
+      "body": [
+        {
+          "kind": "line",
+          "line": 38,
+          "speaker": "me",
+          "text": "(書斎の置時計は九時十二分で止まっている。停電の八分前だ)"
+        },
+        {
+          "kind": "line",
+          "line": 39,
+          "speaker": "me",
+          "text": "(針を止めたのは停電ではない。誰かが、暗くなる前に時を止めた)"
+        },
+        {
+          "kind": "line",
+          "line": 40,
+          "speaker": "me",
+          "text": "(告発の前に、もうひとりだけ疑うなら──)"
+        },
+        {
+          "kind": "options",
+          "line": 41,
+          "options": [
+            {
+              "line": 41,
+              "text": "館の主を疑う",
+              "tags": [
+                {
+                  "key": "suspect",
+                  "value": ""
+                }
+              ],
+              "body": [
+                {
+                  "kind": "jump",
+                  "line": 42,
+                  "node": "master"
+                }
+              ]
+            },
+            {
+              "line": 43,
+              "text": "誰も疑わない",
+              "body": [
+                {
+                  "kind": "jump",
+                  "line": 44,
+                  "node": "accuse"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "master",
+      "file": "assets/talk/novel.yarn",
+      "line": 47,
+      "headers": [],
+      "body": [
+        {
+          "kind": "line",
+          "line": 49,
+          "speaker": "master",
+          "text": "私を疑うのか。……いいだろう。その目こそ、あなたを招いた理由だ。"
+        },
+        {
+          "kind": "line",
+          "line": 50,
+          "speaker": "me",
+          "text": "(主の右手の甲に、額縁の金粉がひとすじ光っている)"
+        },
+        {
+          "kind": "jump",
+          "line": 51,
+          "node": "accuse"
+        }
+      ]
+    },
+    {
+      "title": "accuse",
+      "file": "assets/talk/novel.yarn",
+      "line": 54,
+      "headers": [],
+      "body": [
+        {
+          "kind": "line",
+          "line": 56,
+          "text": "蝋燭は残りわずか。指す相手で、この夜の結末が決まる。"
+        },
+        {
+          "kind": "line",
+          "line": 57,
+          "speaker": "me",
+          "text": "(絵を消したのは──)"
+        },
+        {
+          "kind": "options",
+          "line": 58,
+          "options": [
+            {
+              "line": 58,
+              "text": "執事を告発する",
+              "tags": [
+                {
+                  "key": "suspect",
+                  "value": ""
+                }
+              ],
+              "body": [
+                {
+                  "kind": "jump",
+                  "line": 59,
+                  "node": "end_butler"
+                }
+              ]
+            },
+            {
+              "line": 60,
+              "text": "館の主を告発する",
+              "tags": [
+                {
+                  "key": "suspect",
+                  "value": ""
+                }
+              ],
+              "body": [
+                {
+                  "kind": "jump",
+                  "line": 61,
+                  "node": "end_master"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "end_butler",
+      "file": "assets/talk/novel.yarn",
+      "line": 64,
+      "headers": [],
+      "body": [
+        {
+          "kind": "line",
+          "line": 66,
+          "speaker": "butler",
+          "text": "……私では、ございません。"
+        },
+        {
+          "kind": "line",
+          "line": 67,
+          "text": "翌朝、雨は上がったが、絵は戻らなかった。館の主だけが、静かに笑っていた。"
+        },
+        {
+          "kind": "line",
+          "line": 68,
+          "text": "── 疑いは外れ、真相は闇の中。時計職人は館を後にした。"
+        }
+      ]
+    },
+    {
+      "title": "end_master",
+      "file": "assets/talk/novel.yarn",
+      "line": 71,
+      "headers": [],
+      "body": [
+        {
+          "kind": "line",
+          "line": 73,
+          "speaker": "master",
+          "text": "……見事だ。絵は私が売った。この館を、手放さないためにな。"
+        },
+        {
+          "kind": "line",
+          "line": 74,
+          "speaker": "me",
+          "text": "(止まった時計。乾いた袖。手の甲の金粉。歯車は最初から噛み合っていた)"
+        },
+        {
+          "kind": "line",
+          "line": 75,
+          "text": "── 絵は戻らない。だが書斎の時計は、九時十二分から動き出した。"
+        }
+      ]
+    }
+  ]
+}

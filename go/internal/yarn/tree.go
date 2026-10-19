@@ -13,9 +13,13 @@ import (
 const Version = 1
 
 // Program は 1 つのフォルダの .yarn を全部読んだ物（ノード名はフォルダの中で 1 つ）。
+//
+// Vocab は組んだ時に読んだ語彙のパス（ゲームのルートから。--no-vocab なら空）。check と次の build は、
+// 指定が無ければこれと同じ語彙で組み直す（テストのシナリオのように、隣に vocab.json を置かないフォルダのため）。
 type Program struct {
 	Version int      `json:"version"`
 	Note    string   `json:"note"`
+	Vocab   string   `json:"vocab"`
 	Files   []string `json:"files"`
 	Nodes   []*Node  `json:"nodes"`
 }

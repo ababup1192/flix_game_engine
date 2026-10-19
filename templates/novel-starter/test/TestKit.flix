@@ -1,7 +1,7 @@
 // テストの共通部品: 実機（Main）と同じ繋ぎの App と、系を直に呼ぶテストの 1 歩。
 mod TestKit {
 
-    use fge::App
+    use fge::{App, Yarn}
 
     /// 実機（Main）と同じ物語の時計の宣言・更新（step → interact）・音だけを繋いだ App。
     pub def app(w0: World.World): App.App[World.World, {}] =
@@ -14,4 +14,7 @@ mod TestKit {
     /// 系を直に呼ぶ 1 歩: 実機と同じく、先に物語の時計を実時間 dt 秒ぶん進めてから World.step。
     pub def stepBy(dt: Float64, w: World.World): World.World =
         World.step(App.tickClocks(app(w), dt, w))
+
+    /// TestRules・TestTrace が読む小さなシナリオ（test/talk/fixture.yarn を bin/fge yarn build test/talk が書いた木）。
+    pub def fixtureDialogue(): Yarn.Program \ Fs.FileRead = Yarn.loadOr(Yarn.empty(), "test/talk/dialogue.json")
 }

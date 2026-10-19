@@ -72,6 +72,7 @@ help:
 	@echo "  make flow FLOW=e2e/<名前>.flow  flow を画面なしで最後まで流す（失敗は行番号つき。Flix は組み直さない）"
 	@echo "  make flow-vocab         flow の語彙 e2e/vocab.json を書き直す（bin/fge flow check が読む）"
 	$(if $(PALETTE),@echo "  make palette            Studio が読む色の写し ($(PALETTE)) を無条件に作り直す")
+	@echo "  make talk-vocab         会話のシナリオの語彙 assets/talk/vocab.json を書き直す（bin/fge yarn build が読む）"
 	@echo "  make api Q=<名前>        エンジン API の型・引数を 1 行で引く（ソースを読む前にまずこれ）"
 	@echo "  make module Q=<語>       やりたいこと → エンジンのモジュールを 1 行ずつ引く（自前で書く前にまずこれ）"
 	@echo "  make src Q=<名前>        ゲームの src/ の pub 定義を 1 行で引く（.flix を丸読みする前にまずこれ）"
@@ -362,6 +363,12 @@ $(PALETTE): $(PALETTE_DEPS)
 palette:
 	$(HEADLESS_RUN) Palette.write
 endif
+
+# 会話のシナリオ（assets/talk/*.yarn）の語彙（話し手・タグ・コードが開くノード）を、ゲームの Talk.vocab
+# （正はコードの enum）から assets/talk/vocab.json へ書き直す。bin/fge yarn build の check がこれを読む。
+.PHONY: talk-vocab
+talk-vocab:
+	$(HEADLESS_RUN) Talk.vocab
 
 # 何も指定せず make と打ったらゲームが起動する（テンプレの元の既定と同じ）。
 .DEFAULT_GOAL := run

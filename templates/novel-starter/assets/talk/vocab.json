@@ -1,0 +1,8 @@
+{
+  "speakers": ["me", "master", "butler", "dealer"],
+  "nodes": ["arrival"],
+  "tags": {
+    "suspect": []
+  },
+  "commands": []
+}

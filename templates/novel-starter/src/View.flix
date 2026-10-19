@@ -69,7 +69,7 @@ mod View {
     /// 実時間の今（秒）。周期の式（Fx.derive・Sway.wave・Anim.frameAt）に渡す所だけで使う。
     def realSeconds(w: World.World): Float64 = Clock.secondsOf(w#realNow)
 
-    // ── メニュー（物語の時計が止まっている間の窓。文言は台本 Doc の menuTitle / menuHint） ──
+    // ── メニュー（物語の時計が止まっている間の窓。文言は StoryDoc の menuTitle / menuHint） ──
 
     /// 会話窓ごと部屋を沈め、見出しと戻り方のヒントを出す。ヒントだけ実時間で点滅させる —
     /// 物語は止まっていても画面は止まっていない（固まったのではない）ことを見せるため。
@@ -273,7 +273,7 @@ mod View {
                                  { r = 0.02, g = 0.02, b = 0.05 }, zVeil())
                    |> Render.fade(alpha) } :: Nil
 
-    // ── 表紙（文言はすべて台本 Doc から: 事件の名前・一行・はじめ方のヒント） ──
+    // ── 表紙（文言はすべて StoryDoc から: 事件の名前・一行・はじめ方のヒント） ──
 
     def title(atlas: FontAtlas, w: World.World): List[Render.PlacedItem] =
         match w#phase {

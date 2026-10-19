@@ -3,43 +3,42 @@
 // accentLight だけは palette.json の宣言が導出に勝つ固有の規則なので、下で 2 本だけ確かめる。
 mod TestDocs {
 
-    use fge::GameEngine
+    use fge::{GameEngine, Yarn}
 
     // ══════════════════════════════════════════════════════
-    // StoryDoc（台本: rows）
+    // StoryDoc（表紙の文言・灯りの数・話し手の呼び名）
     // ══════════════════════════════════════════════════════
 
     @Test
     def testStoryBrokenJsonFallsBackToDefaults(): Unit \ Assert =
-        // 壊れた JSON は既定の台本へ落ちる（ゲームは必ず起動する）。
+        // 壊れた JSON は既定へ落ちる（ゲームは必ず起動する）。
         let doc = StoryDoc.fromJson("{ broken") |> Option.getWithDefault(StoryDoc.defaults());
-        Assert.assertEq(expected = StoryDoc.rec(StoryDoc.defaults())#start, StoryDoc.rec(doc)#start)
+        Assert.assertEq(expected = StoryDoc.rec(StoryDoc.defaults())#lamps, StoryDoc.rec(doc)#lamps)
 
     @Test
     def testStoryOverridesOneField(): Unit \ Assert =
         // 1 フィールドだけ書いた JSON はそこだけ効き、残りは既定のまま。
         let doc = StoryDoc.fromJson("{\"version\":1, \"hint\": \"Zではじめる\"}")
             |> Option.getWithDefault(StoryDoc.defaults());
-        Assert.assertEq(expected = ("Zではじめる", StoryDoc.rec(StoryDoc.defaults())#start),
-            (StoryDoc.rec(doc)#hint, StoryDoc.rec(doc)#start))
+        Assert.assertEq(expected = ("Zではじめる", StoryDoc.rec(StoryDoc.defaults())#lamps),
+            (StoryDoc.rec(doc)#hint, StoryDoc.rec(doc)#lamps))
 
     @Test
-    def testStoryRowsLengthFollowsJson(): Unit \ Assert =
-        // sections の rows を増やせば節が増える（節の中の beats / options の rows も追随する）。
-        let text = "{\"version\":1, \"start\":\"a\", \"sections\":["
-            + "{\"id\":\"a\", \"beats\":[{\"text\":\"x\"},{\"text\":\"y\"}],"
-            + " \"ask\":{\"text\":\"?\", \"options\":[{\"label\":\"l\",\"goto\":\"b\"}]}},"
-            + "{\"id\":\"b\", \"beats\":[]}]}";
+    def testStorySpeakerRowsGiveNames(): Unit \ Assert =
+        // speakers の rows の数だけ呼び名が引け、rows に無い話し手は id のまま出る。
+        let text = "{\"version\":1, \"speakers\":[{\"id\":\"me\",\"name\":\"私\"},{\"id\":\"master\",\"name\":\"主\"}]}";
         let doc = StoryDoc.fromJson(text) |> Option.getWithDefault(StoryDoc.defaults());
-        let beatsInA = StoryDoc.sectionOf("a", doc)
-            |> Option.map(section -> List.length(section#beats))
-            |> Option.getWithDefault(-1);
-        let optionsInA = StoryDoc.sectionOf("a", doc)
-            |> Option.flatMap(section -> section#ask)
-            |> Option.map(ask -> List.length(ask#options))
-            |> Option.getWithDefault(-1);
-        Assert.assertEq(expected = (2, 2, 1),
-            (List.length(StoryDoc.rec(doc)#sections), beatsInA, optionsInA))
+        Assert.assertEq(expected = (2, "私", "butler"),
+            (List.length(StoryDoc.rec(doc)#speakers), StoryDoc.nameOf("me", doc), StoryDoc.nameOf("butler", doc)))
+
+    // ══════════════════════════════════════════════════════
+    // Talk（シナリオの語彙。正はコードの enum）
+    // ══════════════════════════════════════════════════════
+
+    /// build の check が読む assets/talk/vocab.json は、コードの enum から作り直した物と同じ（ずれたら make talk-vocab）。
+    @Test
+    def testVocabFileMatchesTheCode(): Unit \ {Assert, Fs.FileRead} =
+        Assert.assertEq(expected = Ok(Yarn.vocabJson(Talk.vocabOf())), Fs.FileRead.read(Talk.vocabPath()) |> Result.mapErr(e -> "${e}"))
 
     // ══════════════════════════════════════════════════════
     // KindDoc（手触りの数値）

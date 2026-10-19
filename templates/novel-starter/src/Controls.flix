@@ -130,6 +130,7 @@ mod Controls {
     /// 起動時と描き出しが同じ形で読む Doc の束。
     pub def loadDocs(): World.Docs \ Fs.FileRead =
         { story = StoryDoc.load(StoryDoc.path()),
+          dialogue = Talk.load(),
           kind = KindDoc.load(KindDoc.path()),
           keys = KeysDoc.load(KeysDoc.path()),
           theme = ThemeDoc.load(ThemeDoc.path()),
@@ -137,6 +138,9 @@ mod Controls {
 
     pub def reloadStory(w: World.World): World.World \ Fs.FileRead =
         World.withStory(StoryDoc.load(StoryDoc.path()), w)
+
+    pub def reloadDialogue(w: World.World): World.World \ Fs.FileRead =
+        World.withDialogue(Talk.load(), w)
 
     pub def reloadKind(w: World.World): World.World \ Fs.FileRead =
         World.withKind(KindDoc.load(KindDoc.path()), w)
@@ -166,6 +170,8 @@ mod Controls {
     /// 全部を常時 active にしない（バッジの意味が死ぬ）。
     pub def docTable(): List[DocTable.Entry[World.World]] =
         DocTable.row("story", StoryDoc.path(), reloadStory)
+            // シナリオの木（bin/fge yarn build の書き出し）。Studio の Doc ではないので名乗らない。
+            :: DocTable.unnamedRow(Talk.dialoguePath(), reloadDialogue)
             :: (DocTable.row("kind", KindDoc.path(), reloadKind)
                 |> DocTable.withActiveWhen(inStory))
             :: DocTable.row("keys", KeysDoc.path(), reloadKeys)

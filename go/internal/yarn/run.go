@@ -7,6 +7,7 @@ package yarn
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,6 +22,7 @@ const usage = `使い方: bin/fge yarn <サブコマンド> ...   会話のシ�
   yarn build <フォルダか x.yarn>... [--out <パス>] [--vocab <パス> | --no-vocab]
       フォルダの *.yarn を全部読み（ノード名はフォルダの中で 1 つ）、検査を通れば木の JSON を書く。
       既定の書き先は <フォルダ>/dialogue.json、語彙は <フォルダ>/vocab.json（ゲームの Talk.vocab が書く。make talk-vocab）。
+      書き先が既にあれば、指定の無い時はそこに書いてある語彙（"vocab"）で組み直す（テストのシナリオは --vocab で一度組めばよい）。
       知らせは「ファイル:行: 文」。読まない構文は「読まない: … — 代わりに: …」。終わりの番号: 0 書いた・1 知らせあり（書かない）。
   yarn check <パス>...
       パス（.yarn・vocab.json・dialogue.json）のフォルダごとに build と同じ検査をし、書いてある dialogue.json が
@@ -36,7 +38,7 @@ const (
 	remake    = "make talk-vocab"
 )
 
-// Run は fge yarn の入口。workRoot はゲームのルート。
+// Run は fge yarn の入口。workRoot は流した場所（パスはそこから読み、木にはゲームのルートからのパスを書く）。
 func Run(out, errOut *strings.Builder, workRoot string, args []string) int {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" || args[0] == "help" {
 		out.WriteString(usage)
@@ -178,17 +180,42 @@ func build(out, errOut *strings.Builder, workRoot string, paths []string, opts o
 	return code
 }
 
-func buildGroup(out *strings.Builder, workRoot string, g group, opts options, checkOnly bool) int {
+func buildGroup(out *strings.Builder, cwd string, g group, opts options, checkOnly bool) int {
+	// 木に書くパスと語彙のパスは、どこから流してもゲームのルート（project.json のあるフォルダ）から数える
+	// （エンジンのルートから流すコミットの門と、ゲームのルートから流す build で中身が変わらないように）。
+	workRoot := gameRootOf(g.dir, cwd)
+	if opts.out != "" && !filepath.IsAbs(opts.out) {
+		opts.out = filepath.Join(cwd, opts.out)
+	}
+	if opts.vocab != "" && !filepath.IsAbs(opts.vocab) {
+		opts.vocab = filepath.Join(cwd, opts.vocab)
+	}
 	outPath := opts.out
 	if outPath == "" {
 		outPath = filepath.Join(g.dir, outName)
 	} else if !filepath.IsAbs(outPath) {
 		outPath = filepath.Join(workRoot, outPath)
 	}
+	old, readErr := os.ReadFile(outPath)
+	if checkOnly && readErr != nil && opts.out == "" {
+		if _, err := os.Stat(filepath.Join(g.dir, vocabName)); err != nil {
+			// WhyNot: 止めない —— 1 本ずつ書き先を決めて組む .yarn（エンジンの testdata など）のフォルダで、
+			// コミットの門が書き先の無い dialogue.json を探して落ちる。そこのずれは Go のテストが見る。
+			fmt.Fprintf(out, "[yarn] %s も %s も無いフォルダは見ない: %s\n", outName, vocabName, rel(workRoot, g.dir))
+			return 0
+		}
+	}
+	noVocab, vocabPath := opts.noVocab, opts.vocab
+	if !noVocab && vocabPath == "" {
+		var recorded struct {
+			Vocab *string `json:"vocab"`
+		}
+		if json.Unmarshal(old, &recorded) == nil && recorded.Vocab != nil {
+			noVocab, vocabPath = *recorded.Vocab == "", *recorded.Vocab
+		}
+	}
 	var vocab *Vocab
-	vocabPath := ""
-	if !opts.noVocab {
-		vocabPath = opts.vocab
+	if !noVocab {
 		if vocabPath == "" {
 			vocabPath = filepath.Join(g.dir, vocabName)
 		} else if !filepath.IsAbs(vocabPath) {
@@ -205,7 +232,7 @@ func buildGroup(out *strings.Builder, workRoot string, g group, opts options, ch
 			return 1
 		}
 		vocab = v
-		if line := suggest.Stale(workRoot, vocabPath, remake); line != "" {
+		if line := suggest.Stale(workRoot, rel(workRoot, vocabPath), remake); line != "" {
 			out.WriteString(line + "\n")
 		}
 	}
@@ -220,6 +247,7 @@ func buildGroup(out *strings.Builder, workRoot string, g group, opts options, ch
 		texts = append(texts, string(data))
 	}
 	prog, problems := BuildProgram(names, texts, vocab, rel(workRoot, vocabPath))
+	prog.Vocab = rel(workRoot, vocabPath)
 	for _, p := range problems {
 		out.WriteString(p.String() + "\n")
 	}
@@ -235,7 +263,6 @@ func buildGroup(out *strings.Builder, workRoot string, g group, opts options, ch
 		fmt.Fprintf(out, "%v\n", err)
 		return 1
 	}
-	old, _ := os.ReadFile(outPath)
 	if checkOnly {
 		if !bytes.Equal(old, data) {
 			fmt.Fprintf(out, "%s が .yarn とずれている — bin/fge yarn build %s で書き直す\n", rel(workRoot, outPath), rel(workRoot, g.dir))
@@ -286,4 +313,16 @@ func BuildProgram(names, texts []string, vocab *Vocab, vocabPath string) (*Progr
 		return problems[a].Line < problems[b].Line
 	})
 	return prog, problems
+}
+
+// gameRootOf は dir から上へ辿って最初に project.json のあるフォルダ（無ければ cwd）。
+func gameRootOf(dir, cwd string) string {
+	for d := dir; ; d = filepath.Dir(d) {
+		if _, err := os.Stat(filepath.Join(d, "project.json")); err == nil {
+			return d
+		}
+		if filepath.Dir(d) == d {
+			return cwd
+		}
+	}
 }

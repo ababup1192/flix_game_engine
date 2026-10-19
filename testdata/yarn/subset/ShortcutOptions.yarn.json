@@ -1,6 +1,7 @@
 {
   "version": 1,
   "note": "bin/fge yarn build が ShortcutOptions.yarn から書いた木。手で直さない（.yarn を直して build する）",
+  "vocab": "",
   "files": [
     "ShortcutOptions.yarn"
   ],

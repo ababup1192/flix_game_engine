@@ -20,7 +20,7 @@
       {
         "id": "story",
         "pattern": "assets/novel.story.json",
-        "title": "台本（文章・分岐・結末）",
+        "title": "表紙の文言・灯りの数・話し手の呼び名",
         "schema": "assets/story.schema.json",
         "role": "material"
       },
