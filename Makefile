@@ -93,6 +93,7 @@ help:
 	@echo "  make lint-value-discard   値を let _ = で捨てていないか検査 (純粋な式だと Flix が呼び出しごと消す)"
 	@echo "  make lint-forbid          古い書き方を止める (bin/lint-rules/forbid.json。代わりの物を出す)"
 	@echo "  make lint-quadratic       fold の中で蓄積を作り直す二乗の形が無いか検査 (全量)"
+	@echo "  make lint-hoist           ループの外に置いた式がループの中へ書き写される形が無いか検査 (全量)"
 	@echo "  make lint-record-wrap     World が直接持つ大きな record を enum で包んでいるか検査"
 	@echo "  make lint-state-shape     状態の持ち方 (Bool の欄の数・Option[Bool]・名指しの enum への case _・View の効果) を検査"
 	@echo "  bin/fge digest A B   絵の差を数値で要約 (2 枚 or フォルダ。目視の前にまずこれ)"
@@ -427,6 +428,14 @@ lint-value-discard:
 .PHONY: lint-quadratic
 lint-quadratic:
 	@bin/fge quadratic --all
+
+# ── ゲート: ループの外に置いた式がループへ戻る形 ─────────────────
+# Flix 0.78 は純粋な let がラムダの中で 1 回だけ使われると式をラムダへ書き写す (@DontInline でも止まらない)。
+# 関数を返す def (エンジンの塗りの道) と、shadeAll / Array.forEachWithIndex のラムダが使う let を見る
+# (docs/performance.md「ループの外に置いた式がループへ戻る」)。
+.PHONY: lint-hoist
+lint-hoist:
+	@bin/fge hoist --all
 
 # ── ゲート: World が持つ大きな record は enum で包む ─────────────
 # record の型エイリアスは使われるたびに中身のまま展開されるので、World の欄に置くと

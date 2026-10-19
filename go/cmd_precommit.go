@@ -9,6 +9,7 @@ import (
 	"github.com/ababup1192/flix_game_engine/go/internal/fallback"
 	"github.com/ababup1192/flix_game_engine/go/internal/flixreserved"
 	"github.com/ababup1192/flix_game_engine/go/internal/forbid"
+	"github.com/ababup1192/flix_game_engine/go/internal/hoist"
 	"github.com/ababup1192/flix_game_engine/go/internal/jargon"
 	"github.com/ababup1192/flix_game_engine/go/internal/makefiledup"
 	"github.com/ababup1192/flix_game_engine/go/internal/notesrotate"
@@ -62,6 +63,7 @@ func cmdPrecommit(out, errOut *strings.Builder, rest []string, _ bool) int {
 		"z-table":       lintOf(ztable.Run, abs),
 		"forbid":        lintOf(forbid.Run, abs),
 		"quadratic":     lintOf(quadratic.Run, abs),
+		"hoist":         lintOf(hoist.Run, abs),
 		"notes-rotate":  lintOf(notesrotate.Run, abs),
 		"record-wrap":   lintOf(recordwrap.Run, abs),
 		"doc-shape":     lintOf(docshape.Run, abs),

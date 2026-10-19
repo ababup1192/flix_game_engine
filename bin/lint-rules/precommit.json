@@ -165,6 +165,17 @@
       }
     },
     {
+      "id": "hoist",
+      "sub": "hoist",
+      "flags": [],
+      "pass": "matched",
+      "when": {
+        "suffixes": [
+          ".flix"
+        ]
+      }
+    },
+    {
       "id": "record-wrap",
       "sub": "record-wrap",
       "flags": [],

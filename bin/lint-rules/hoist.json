@@ -1,0 +1,44 @@
+{
+  "note": "lint-hoist（ループの外に置いたつもりの式が、Flix 0.78 の最適化でループの中へ書き写される形）の規約データ。この JSON が source of truth で、bin/fge hoist はこれを読んで動く。純粋な let がラムダの中で 1 回だけ使われると、0.78 は式をラムダの中へ書き写す（@DontInline でも止まらない）。fn-return は戻り値が関数の型の def（fnReturnScope の中だけ）、loop-let は loopCalls に渡すラムダが、ループの外の呼び出しの結果・record の欄の let を once（onceOutsideLoop）なしで使う所を見る（目安の検査）。notMoved は書き写されても軽い呼び出し、effectful は効果があって let ごと書き写されない呼び出し（どちらも名前 → 理由 1 行）。ゲームが自分の除外を足すときは bin/lint-rules/hoist.local.json（{\"exempt\": {...}}）に書く。docs/performance.md「ループの外に置いた式がループへ戻る」。",
+  "scopeSuffixes": [
+    ".flix"
+  ],
+  "skipPrefixes": [
+    "build/",
+    "lib/",
+    "testdata/",
+    "docs/",
+    "agents-pack/",
+    "engine_full/"
+  ],
+  "skipDirNames": [
+    "build",
+    "lib",
+    "test",
+    "node_modules"
+  ],
+  "fnReturnScope": [
+    "engine/src/",
+    "engine_tools/src/"
+  ],
+  "loopCalls": [
+    "shadeAll",
+    "Array.forEachWithIndex"
+  ],
+  "once": "onceOutsideLoop",
+  "notMoved": {
+    "Int32.max": "整数の比べ 1 回（書き写されても画素ごとの重さにならない）",
+    "Int32.min": "整数の比べ 1 回",
+    "Int32.toFloat64": "数の変換 1 回",
+    "size": "RadialBuiltin.size など、定数を返すだけの def"
+  },
+  "effectful": {
+    "Array.toVector": "region の効果がある（純粋な let ではないので書き写されない）",
+    "Array.empty": "region の効果がある",
+    "Ref.get": "region の効果がある（onceOutsideLoop と同じ形を手で書いた所）",
+    "Ref.fresh": "region の効果がある"
+  },
+  "exempt": {
+    "engine_tools/src/HeadlessRender.flix::imageTextureInfo": "Render.drawWith に関数で渡す API。表は Ref を通してラムダの外に留めてある（doc の WhyNot）"
+  }
+}

@@ -234,6 +234,33 @@ List.reverse(List.reverse(folded#current) :: folded#rows)
   ただし `List.zip` は短い方で打ち切るので、余った側の後始末が要るなら
   先に `List[Option[_]]` へ伸ばしてから 1 巡する（`UiSlots.fill`）
 
+### ループの外に置いた式がループへ戻る（Flix 0.78・2026-10-19）
+
+**純粋な `let x = 式` がラムダの中で 1 回だけ使われると、0.78 の最適化は式をラムダの中へ書き写す**
+（`@DontInline` でも止まらない）。画素やコマごとに呼ばれるラムダなら、1 回のはずの組み立てが毎回走る。
+値は変わらないので、テストも絵の比べも気づかない。0.50 の描き出しはこれで、シェーダー面が Spec を
+画素ごとに組み直し（`ShaderEval.compileSpec`）、頂点色の多角形が三角形の record を画素ごとに引いていた。
+直してから internet_dungeon の reference-check は 243 秒 → 69 秒。
+
+```flix
+// これは書かない: eval の組み立てが画素ごとに走る
+let eval = ShaderEval.compileSpec(s#spec);
+shadeAll(n, i -> eval(uvOf(i), time))
+
+// 手本（SoftRaster.drawSurface）: 組み立てはデータで返し、Ref を通してループの外に留める
+let compiled = onceOutsideLoop(rc, ShaderEval.compile(s#spec, texEnv));
+shadeAll(n, i -> ShaderEval.evalCompiled(compiled, u, v, time))
+```
+
+- 組み立てを **関数で返さない**（`def f(spec): (A) -> B`）。データ（enum の木など）で返す
+- ループの外の値は `onceOutsideLoop(rc, 式)`（`Ref.get(Ref.fresh(rc, 式))`）で受ける。Ref は純粋でないので動かされない
+- record の欄（`p#blend`）も同じ。名前つき引数の関数（`Float64.clampToFloat32(min = .., max = .., x)`）は
+  呼ぶたびに record を作るので、画素ごとの所では書き下す（`SoftRaster.f32`）
+
+`bin/fge hoist`（precommit）が 2 つの形を止める: エンジンの塗りの道で戻り値が関数の型の def と、
+`shadeAll` / `Array.forEachWithIndex` のラムダが、呼び出しの結果や record の欄の let を `onceOutsideLoop` なしで
+使う所（目安。軽い呼び出しは `bin/lint-rules/hoist.json` の notMoved、残すと決めた所は exempt）。
+
 ---
 
 ## 7. 残っている二乗の一覧

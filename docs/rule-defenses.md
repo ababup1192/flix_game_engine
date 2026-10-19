@@ -23,6 +23,7 @@
 | `let _ =` で値を捨てない（知らせも捨てない） | lint | value-discard（保存時と precommit） | r1 相談・r2 precommit が止めた |
 | fold の中の List.append・文字列の 1 文字ずつ足し | lint | quadratic（precommit） | r1 precommit が止め、直し方を相談 |
 | 二乗の残り 3 形（ループ内の exists・range+nth・sortBy の重いキー） | 文書 | flix.md の芯 | ― |
+| ループの外に置いた式がループへ戻る（Flix 0.78 の let の書き写し） | lint + 文書 | hoist（precommit）・performance.md と該当の def の WhyNot | ― |
 | World の大きな record を enum で包む | lint | record-wrap・E2136 / E6794 に explain-error | ― |
 | レコードは == で比べられない | 構造 | コンパイラ E5252 / E7027 + explain-error | r1 止まり、欄ごとの比較でコミット |
 | Float32 リテラル | 構造 + lint | 型エラー + explain-error・f32 | ― |
