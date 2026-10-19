@@ -187,6 +187,9 @@ pub mod App {
         // 中身を、温まった JVM で実行するだけ）。走行中のプレイ状態には一切触れないこと。
         // None のゲームへの /render は「未対応」の応答になる（Studio はそれでフォールバック）。
         remoteRender = Option[Unit -> List[String] \ IO],
+        // 渡した World を 1 枚の PNG に描き、そのパスを返す（onShotRequest で足す）。リモートデバッグの
+        // view=shot（/step・/start・/state）と窓なしのゲーム（App.Headless）が呼ぶ。None なら未対応の応答。
+        shot = Option[w -> String \ IO],
         // リモートデバッグ（HTTP）の任意パスに応える、ゲーム登録のハンドラ（onRequest で足す）。
         // (パス, (クエリ, World) -> Ok(次の World) / Err(理由)) の列。既定ルートに無いパスだけが
         // ここへ来て、パスの完全一致・登録順の先勝ちで 1 本選ばれる。
@@ -246,6 +249,7 @@ pub mod App {
           annotationContext = None,
           statusLine = None,
           remoteRender = None,
+          shot = None,
           remoteHandlers = Nil,
           fixedStep = None,
           clocks = Nil,
@@ -536,6 +540,14 @@ pub mod App {
     /// 繋がないゲームへの /render は「未対応」の応答になる。
     pub def onRenderRequest(f: Unit -> List[String] \ IO, app: App[w, ef]): App[w, ef] =
         { remoteRender = Some(f) | app }
+
+    /// 渡した World を 1 枚の PNG に描き、書いたパスを返す関数を繋ぐ（中身は SceneRender の 1 場面と同じ描き方）。
+    /// リモートデバッグの `view=shot`（`POST /step?view=shot` に `start talk node=… line=…` を送ると、
+    /// 場面を組んで撮るまでが 1 往復）と、窓なしのゲーム（App.Headless.serve）が呼ぶ。
+    /// f はゲームループの中で呼ばれる（撮っている間、窓は止まる）。World を変えない・GL に触れない関数に限る。
+    /// 書き先はゲームが決める（例 debug/shot/<名前>.png。gallery/ に書くと reference-check が「増えた絵」と言う）。
+    pub def onShotRequest(f: w -> String \ IO, app: App[w, ef]): App[w, ef] =
+        { shot = Some(f) | app }
 
     /// リモートデバッグ（HTTP）の任意パス（例: "/save"）に応えるハンドラを繋ぐ。
     /// f はクエリ（?slot=1 → Map。+ と %20 は空白に戻る）と今の World を受け取り、
@@ -992,7 +1004,7 @@ pub mod App {
     /// 起動の World が決まった後の launch（リモートデバッグ・監視・ループ）。
     def launchFrom(app: App[w, ef], world0: w, recorder: Option[Flow.Record.Recorder]): Unit \ (ef + GameEngine.Game + GameEngine.Audio + ShaderEffect.Shader + RenderTarget.Target + Fs.FileRead + Fs.FileWrite + IO) =
         let bridge = if (canDebug(app)) Option.map(port -> RemoteDebug.start(port, app#remoteRender),
-                                                   RemoteDebug.portFromEnv())
+                                                   RemoteDebug.portToOpen())
                      else None;
         // 起動時点の更新時刻を「発火なしで」用意しておく — 用意しないと最初のポーリングが
         // 全パスを新規出現と見なし、init 直後にもう一度リロードが走ってしまう。

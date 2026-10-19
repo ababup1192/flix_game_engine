@@ -227,4 +227,34 @@ mod TestRemoteDebug {
     @Test
     def testUntaggedRejectsMissingId(): Unit \ Assert =
         Assert.assertEq(expected = None, App.RemoteDebug.untagged("ok rendered=3\tx"))
+
+    // 書き置き（~/.flix_ge_studio/games.json）: 同じ dir の古い行は上書きし、閉じる時は自分の pid の行だけ消す。
+    @Test
+    def testGameRegistryReplacesSameDirAndRemovesOnlyOwnPid(): Unit \ Assert =
+        let before = App.GameRegistry.textOf(
+            { dir = "/g", pid = "1", port = "100" } :: { dir = "/h", pid = "2", port = "200" } :: Nil);
+        let added = App.GameRegistry.withEntry({ dir = "/g", pid = "3", port = "300" }, App.GameRegistry.entriesOf(before));
+        let removedOld = App.GameRegistry.withoutEntry("/g", "1", added);
+        Assert.assertEq(
+            expected = (List#{"/h:200", "/g:300"}, List#{"/h:200", "/g:300"}),
+            (added |> List.map(e -> "${e#dir}:${e#port}"), removedOld |> List.map(e -> "${e#dir}:${e#port}")))
+
+    // 壊れた書き置きは空として読む（ゲームは止めない）。
+    @Test
+    def testGameRegistryBrokenTextIsEmpty(): Unit \ Assert =
+        Assert.assertEq(expected = 0, List.length(App.GameRegistry.entriesOf("{ broken")))
+
+    // view=shot は App.onShotRequest を繋いでいなければ [shot] の下に error 行（Studio はそれを理由に出す）。
+    @Test
+    def testShotBlockWithoutWiringIsError(): Unit \ Assert + IO =
+        let app = App.game({ init = 0, update = (_, w) -> w, view = (_, _) -> Nil, reloads = Nil });
+        Assert.assertEq(expected = "[shot]\nerror: shot not supported (game does not wire App.onShotRequest)\n",
+                        App.RemoteDebug.shotBlock(app, 0))
+
+    // view=shot の答えは /render と同じ ok png=<パス>。
+    @Test
+    def testShotBlockAnswersThePath(): Unit \ Assert + IO =
+        let app = App.game({ init = 7, update = (_, w) -> w, view = (_, _) -> Nil, reloads = Nil })
+            |> App.onShotRequest(w -> checked_ecast("debug/shot/${Int32.toString(w)}.png"));
+        Assert.assertEq(expected = "[shot]\nok png=debug/shot/7.png\n", App.RemoteDebug.shotBlock(app, 7))
 }

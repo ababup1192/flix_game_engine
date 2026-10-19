@@ -4,6 +4,7 @@
 //   let (runner, events) = YarnRunner.step(Action.Advance, now, runner)   台詞を送る
 //   let (runner, events) = YarnRunner.step(Action.Choose(1), now, runner) 選択肢を選ぶ（0 始まり）
 //   let (runner, events) = YarnRunner.step(Action.Tick, now, runner)      毎フレーム。<<wait 秒>> の時刻が来たら続きを流す
+//   let (runner, events) = YarnRunner.startAt(program, "op_desk", 40, now) ノードの頭から .yarn の 40 行目を出している所まで（プレビュー・goto）
 //
 // 出来事（Event）は Line・Choices・Command・Done の 4 つで、返した列はその呼び出しの間に起きた物だけ。
 // 今出している物の正は shownOf の 1 つ（出来事の列は World に溜めない。文字送りは UiDialog の仕事）。
@@ -90,6 +91,68 @@ pub mod YarnRunner {
     pub def trace(program: Yarn.Program, node: String, picks: List[Int32]): List[Event] =
         let (runner, events) = start(program, node, Clock.zero());
         traceFrom(fuel(), runner, picks, events)
+
+    /// node の頭から流し、シナリオの line 行（.yarn の 1 始まりの行番号）を出している所まで進める
+    /// （Studio の会話のプレビュー・bin/fge talk goto・始まり `talk node=… line=…` が使う）。
+    /// 台詞は送り、選択肢はその行を中に持つ物を選び（どれも持たず、行が選択肢より後なら先頭を選んで抜ける）、
+    /// <<wait>> は明ける時刻まで飛ばす。止まるのは、出した台詞の行が line 以上になった所・line の選択肢を出した所
+    /// （その直前に台詞があれば、問いとして並べられるよう台詞の所で止まる。choicesFollow が真）・会話が終わった所。
+    /// line が node の頭より前なら start と同じ。
+    pub def startAt(program: Yarn.Program, node: String, line: Int32, now: Clock.Time[c]): (Runner[c], List[Event]) =
+        let (runner, events) = start(program, node, now);
+        seek(fuel(), line, now, runner, events)
+
+    def seek(budget: Int32, target: Int32, now: Clock.Time[c], runner: Runner[c], acc: List[Event]): (Runner[c], List[Event]) =
+        let Machine.Machine(m) = runner;
+        let next = (action, at) -> {
+            let (after, events) = step(action, at, runner);
+            seek(budget - 1, target, now, after, List.append(acc, events))
+        };
+        if (budget <= 0) (runner, acc)
+        else match m#shown {
+            // 次が target の行を持つ選択肢なら、問いの台詞で止める（choicesFollow で問いと選択肢を並べるゲームの形のまま）。
+            case Shown.Line(line) if line#source#line < target =>
+                if (choiceLinesNext(m#stack) |> List.memberOf(target)) (runner, acc) else next(Action.Advance, now)
+            case Shown.Choices(lines) =>
+                if (List.exists(line -> line#source#line == target, lines)) (runner, acc)
+                else match choiceToward(target, m#pending) {
+                    case Some(i) => next(Action.Choose(i), now)
+                    case None    => (runner, acc)
+                }
+            case Shown.Waiting => match m#waitUntil {
+                case Some(until) => next(Action.Tick, until)
+                case None        => (runner, acc)
+            }
+            case _ => (runner, acc)
+        }
+
+    /// 行 target へ向かうには何番目の選択肢を選ぶか。中に target を持つ選択肢・無ければ target が全部の選択肢より後なら先頭・
+    /// 前なら None（もう通り過ぎている）。
+    def choiceToward(target: Int32, choices: List[Yarn.Choice]): Option[Int32] =
+        let inside = choices |> List.zipWithIndex |> List.find(match (_, choice) ->
+            choice#line#source#line == target or List.exists(statement -> List.memberOf(target, linesOf(statement)), choice#body));
+        match inside {
+            case Some((i, _)) => Some(i)
+            case None =>
+                let lastLine = choices |> List.flatMap(choice -> choice#line#source#line :: List.flatMap(linesOf, choice#body))
+                                       |> List.maximum |> Option.getWithDefault(0);
+                if (target > lastLine and not List.isEmpty(choices)) Some(0) else None
+        }
+
+    /// 次に流れる文が選択肢なら、その選択肢の行（でなければ空）。
+    def choiceLinesNext(stack: List[List[Yarn.Statement]]): List[Int32] = match nextOf(stack) {
+        case Some(Yarn.Statement.Choose(choices)) => choices |> List.map(choice -> choice#line#source#line)
+        case _                                    => Nil
+    }
+
+    /// 文が持つ行（選択肢は中身も）。
+    def linesOf(statement: Yarn.Statement): List[Int32] = match statement {
+        case Yarn.Statement.Say(line)        => line#source#line :: Nil
+        case Yarn.Statement.Choose(choices)  => choices |> List.flatMap(choice -> choice#line#source#line :: List.flatMap(linesOf, choice#body))
+        case Yarn.Statement.Jump(_, source)  => source#line :: Nil
+        case Yarn.Statement.Stop(source)     => source#line :: Nil
+        case Yarn.Statement.Command(command) => command#source#line :: Nil
+    }
 
     def traceFrom(budget: Int32, runner: Runner[c], picks: List[Int32], acc: List[Event]): List[Event] =
         let Machine.Machine(m) = runner;

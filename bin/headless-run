@@ -121,6 +121,9 @@ build_jar() {
     mkdir -p "$proj"
     cp -R src "$proj/src"
     cp flix.toml "$proj/flix.toml"
+    # packages.lock もゲームの物にそろえる（無ければ消す）。前に作った時の lock が残ると、engine の fpkg を
+    # 手元で作り直した後（engine の開発・use-engine）に「packages.lock の記録と違う」で作れなくなる。
+    if [ -f packages.lock ]; then cp packages.lock "$proj/packages.lock"; else rm -f "$proj/packages.lock"; fi
     if [ -d lib ]; then ln -sfn "$PWD/lib" "$proj/lib"; fi
     build_dispatcher > "$proj/src/$main.flix"
     echo "[headless-run] jar を作る（src か lib が変わった）" >&2

@@ -63,6 +63,16 @@ pub mod Yarn {
         case Nodes.Nodes(nodes) => Map.keysOf(nodes) |> Set.toList
     }
 
+    /// file の line 行を中に持つノードの名前（そのファイルで title: の行が line 以下の、いちばん後のノード）。
+    /// エディタのカーソルの行からノードを引く（Studio の会話の画面・bin/fge talk goto と同じ決まり）。
+    pub def nodeAtLine(file: String, line: Int32, program: Program): Option[String] = match program {
+        case Nodes.Nodes(nodes) =>
+            Map.valuesOf(nodes)
+                |> List.filter(node -> node#source#file == file and node#source#line <= line)
+                |> List.maximumBy((a, b) -> a#source#line <=> b#source#line)
+                |> Option.map(node -> node#title)
+    }
+
     /// タグの値（そのキーのタグが無ければ None・値の無いタグは Some("")）。
     pub def tagOf(key: String, tags: List[Tag]): Option[String] =
         tags |> List.find(tag -> tag#key == key) |> Option.map(tag -> tag#value)

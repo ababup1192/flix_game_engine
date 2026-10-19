@@ -52,6 +52,20 @@ pub mod App.RemoteDebug {
         let value = System.getenv("DEBUG_HTTP_PORT");
         if (Object.isNull(value)) None else Int32.fromString(value)
 
+    /// 命令口を開くポート: DEBUG_HTTP_PORT があればそれ、無ければ 0（OS に空いたポートを選ばせる）。
+    /// 0 で開いた時は、開けたポートを ~/.flix_ge_studio/games.json に書き置く（App.GameRegistry・start が書く）。
+    /// DEBUG_HTTP_PORT=off なら開かない。
+    pub def portToOpen(): Option[Int32] \ IO =
+        let value = System.getenv("DEBUG_HTTP_PORT");
+        if (Object.isNull(value) or value == "") Some(0)
+        else if (value == "off") None
+        else Int32.fromString(value)
+
+    /// 実際に開けたポート（0 で開いた時に OS が選んだ番号を知る）。
+    pub def boundPort(bridge: Bridge): Int32 \ IO =
+        let server = bridge#server;
+        server.getAddress().getPort()
+
     /// 本文に依頼番号を付ける（キューに積む形）。
     pub def tagged(id: Int64, text: String): String = "${id}\t${text}"
 
@@ -70,6 +84,17 @@ pub mod App.RemoteDebug {
     // 答えとして渡ってしまう（以後ずっと 1 つずつずれる）。だから時間切れでは、まだ取られて
     // いない依頼を取り下げ、遅れて届いた他の番号の答えは捨てる。
     pub def start(port: Int32, render: Option[Unit -> List[String] \ IO]): Bridge \ IO =
+        open(port, render, true)
+
+    /// 窓なしのゲーム（App.Headless）の待ち受け: 同じ橋を、名乗らず（listening の行も書き置きも無し）に開く。
+    pub def startQuiet(port: Int32): Bridge \ IO = open(port, None, false)
+
+    /// startQuiet で開いた橋を閉じる（書き置きに触れない）。
+    pub def stopQuiet(bridge: Bridge): Unit \ IO =
+        let server = bridge#server;
+        server.stop(0)
+
+    def open(port: Int32, render: Option[Unit -> List[String] \ IO], announce: Bool): Bridge \ IO =
         let requests: JQueue[String] = new JQueue();
         let responses: JQueue[String] = new JQueue();
         let current = new AtomicLong(0i64);
@@ -107,7 +132,12 @@ pub mod App.RemoteDebug {
             }
         });
         server.start();
-        println("[remote-debug] listening on http://127.0.0.1:${port} (GET /help)");
+        let bound = server.getAddress().getPort();
+        if (announce) {
+            println("[remote-debug] listening on http://127.0.0.1:${bound} (GET /help)");
+            // Studio が渡したポートは Studio が書き置く。自分で選んだポートだけ自分で書く（bin/fge talk goto が読む）。
+            if (port == 0) App.GameRegistry.register(bound) else ()
+        } else ();
         { server = server, requests = requests, responses = responses, current = current }
 
     /// 番号 id の答えを deadlineNs（System.nanoTime の値）まで待つ。他の番号の答えは捨てる。
@@ -257,6 +287,7 @@ pub mod App.RemoteDebug {
 
     /// サーバを止める（ゲーム終了時）。待機中のリクエストは切断される。
     pub def shutdown(bridge: Bridge): Unit \ IO =
+        App.GameRegistry.unregister();
         let server = bridge#server;
         server.stop(0)
 
@@ -320,6 +351,7 @@ pub mod App.RemoteDebug {
         case Summary, // 数行サマリ（当面 Status と同じ。ゲームの statusLine が複数行なら差が出る）
         case Full,    // ゲーム定義の worldDump（App.withWorldDump）
         case Scene,   // 描画物の一覧（配線不要のフォールバック観測）
+        case Shot,    // 1 枚の PNG に描いてパスを返す（App.onShotRequest。[shot] の行は ok png=… か error: …）
         case Silent   // 本文なし（イベントとヘッダだけ欲しいとき）
     }
 
@@ -359,8 +391,9 @@ pub mod App.RemoteDebug {
             case "summary" => Ok(View.Summary)
             case "full"    => Ok(View.Full)
             case "scene"   => Ok(View.Scene)
+            case "shot"    => Ok(View.Shot)
             case "none"    => Ok(View.Silent)
-            case other     => Err("error: unknown view '${other}' (status|summary|full|scene|none)")
+            case other     => Err("error: unknown view '${other}' (status|summary|full|scene|shot|none)")
         }
 
     def parseRect(text: Option[String]): Result[String, Option[Rect2.Rect2]] =
@@ -560,7 +593,7 @@ pub mod App.RemoteDebug {
         + "GET  /render                  requested= done= running= job numbers, then [last] result.\n"
         + "     job N is finished once done >= N (requests during a render fold into one rerun)\n"
         + "GET  /starts                  the start registry (App.withStarts): name, default args, doc\n"
-        + "POST /start?name=N&k=v        rebuild a fresh world from start N and swap it in\n"
+        + "POST /start?name=N&k=v[&view=shot]  rebuild a fresh world from start N and swap it in (view=shot: also one PNG)\n"
         + "POST /step?view=&rect=&until=&max=&trace=&dt=\n"
         + "     body = flow (same grammar as e2e/<name>.flow); runs it frame by frame, then answers.\n"
         + "     steps before any start run on the current world. auto-halts first if the game is running.\n"
@@ -578,7 +611,7 @@ pub mod App.RemoteDebug {
         + "  expect PROBE   mark NAME   fps N   ready on|off\n"
         + "\n"
         + "query params:\n"
-        + "  view=status|summary|full|scene|none   response detail (default status)\n"
+        + "  view=status|summary|full|scene|shot|none   response detail (default status; shot = one PNG via App.onShotRequest)\n"
         + "  rect=x,y,w,h   design-space rect for full/scene (default whole screen)\n"
         + "  until=sfx:any | sfx:name1,name2 | quiet:N   stop early on sound events\n"
         + "  max=N          frame cap for this request (default 1200, max ${frameCap()})\n"
@@ -658,12 +691,14 @@ pub mod App.RemoteDebug {
         match Map.get("name", request#params) {
             case None => answer("error: POST /start needs name= (see GET /starts)\n", bridge, ctx)
             case Some(name) =>
-                let args = Map.remove("name", request#params);
+                let args = request#params |> Map.remove("name") |> Map.remove("view");
                 let (built, files) = Flow.Record.captureReads(() -> App.buildStart(app, GameEngine.Game.getViewportRect()#size, name, args));
                 match built {
                     case Err(why)  => answer("error: ${why}\n", bridge, ctx)
                     case Ok(world) =>
-                        answer("ok start=${name}\n[status]\n${statusText(app, world)}\n", bridge,
+                        let block = if (Map.get("view", request#params) == Some("shot")) shotBlock(app, world)
+                                    else "[status]\n${statusText(app, world)}\n";
+                        answer("ok start=${name}\n${block}", bridge,
                                { world = world, history = Nil, anno = { scrub = 0 | ctx#anno }, stepState = App.freshStepState(),
                                  record = Flow.Record.Item.Started(Flow.Record.startLine(name, args, files)) :: Nil | ctx })
                 }
@@ -756,9 +791,10 @@ pub mod App.RemoteDebug {
         }
 
     /// 応答に載せる観測本文（[status] / [full] / [scene] のブロック）。
-    def viewBlock(app: App.App[w, ef], stepParams: StepParams, world: w): String \ (ef + GameEngine.Game) =
+    def viewBlock(app: App.App[w, ef], stepParams: StepParams, world: w): String \ (ef + GameEngine.Game + IO) =
         match stepParams#view {
             case View.Silent  => ""
+            case View.Shot    => shotBlock(app, world)
             case View.Status  => "[status]\n" + statusText(app, world) + "\n"
             case View.Summary => "[status]\n" + statusText(app, world) + "\n"
             case View.Full    =>
@@ -770,6 +806,18 @@ pub mod App.RemoteDebug {
             case View.Scene   =>
                 let rect = Option.getWithDefault(GameEngine.Game.getViewportRect(), stepParams#rect);
                 sceneText(app, rect, world) + "\n"
+        }
+
+    /// view=shot の本文: [shot] と、撮れたら `ok png=<パス>`（/render と同じ形）・撮れなければ `error: 理由`。
+    /// 描き出しは Java2D なので、AWT が窓を起こさないよう先に headless を明示する（/render と同じ理由）。
+    pub def shotBlock(app: App.App[w, ef], world: w): String \ IO =
+        "[shot]\n" + match app#shot {
+            case None => "error: shot not supported (game does not wire App.onShotRequest)\n"
+            case Some(f) =>
+                discard System.setProperty("java.awt.headless", "true");
+                try { "ok png=${f(world)}\n" } catch {
+                    case e: Throwable => "error: ${e.toString()}\n"
+                }
         }
 
     /// view=status の本文。ゲームが withStatusLine を繋いでいなければその旨を返す。

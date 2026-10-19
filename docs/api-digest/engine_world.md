@@ -129,7 +129,7 @@
 - 生成したドット絵アトラス 1 枚ぶんの受け渡し。
   `pub type alias AtlasUpload = { texture = String, key = String, baked = PxSpriteAtlas.Baked }`
 - ゲーム 1 本の宣言。make で空を作り、addStartup / addSystem / reloadOn / withView /
-  `pub type alias App[w: Type, ef: Eff] = { init = Vec2.Vec2 -> w \ ef, startupSystems = List[w -> w \ ef], updateSystems = List[(Frame, w) -> w \ ef], reload = Option[(GameEngine.Key, w -> w \ {Fs.FileRead})], watch = List[(String, w -> w \ {Fs.FileRead})], view = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], passes = w -> List[Render.Pass] \ ef, fonts = List[String], camera = Option[w -> Vec2.Vec2 \ ef], zoom = Option[w -> Float64 \ ef], cameraBounds = Option[w -> Rect2.Rect2 \ ef], parallaxLayers = List[(Float64, (ViewCtx, w) -> List[Render.PlacedItem] \ ef)], hudView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], audio = { before = w, after = w } -> List[String] \ ef, sustained = w -> List[Sustain] \ ef, mixer = Option[w -> AudioMixer.Mixer \ ef], quit = (Frame, w) -> Bool \ ef, closeRequest = Option[w -> w \ ef], debug = Bool, debugView = Option[(String, w -> (List[GameEngine.Drawable], List[GameEngine.TileMapRenderCmd], List[GameEngine.PolygonRenderCmd]) \ ef)], worldDump = Option[(Rect2.Rect2, w) -> String \ ef], annotationContext = Option[w -> Annotate.Table \ ef], staticLayer = Option[{ key = w -> GameEngine.StaticKey, build = w -> List[Render.PlacedItem] }], tileLayers = Option[w -> List[TileLayerSpec]], spriteAtlases = w -> List[AtlasUpload], pixelSnap = w -> Float64, statusLine = Option[w -> String \ ef], remoteRender = Option[Unit -> List[String] \ IO], remoteHandlers = List[(String, (Map[String, String], w) -> Result[String, w] \ {Fs.FileRead})], fixedStep = Option[Float64], clocks = List[(Float64, w) -> w], cursor = Option[w -> CursorSpec], outputs = List[Output[w]], starts = List[Start[w]], flow = Flow.Table[w], fingerprint = Option[w -> String] }`
+  `pub type alias App[w: Type, ef: Eff] = { init = Vec2.Vec2 -> w \ ef, startupSystems = List[w -> w \ ef], updateSystems = List[(Frame, w) -> w \ ef], reload = Option[(GameEngine.Key, w -> w \ {Fs.FileRead})], watch = List[(String, w -> w \ {Fs.FileRead})], view = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], passes = w -> List[Render.Pass] \ ef, fonts = List[String], camera = Option[w -> Vec2.Vec2 \ ef], zoom = Option[w -> Float64 \ ef], cameraBounds = Option[w -> Rect2.Rect2 \ ef], parallaxLayers = List[(Float64, (ViewCtx, w) -> List[Render.PlacedItem] \ ef)], hudView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], audio = { before = w, after = w } -> List[String] \ ef, sustained = w -> List[Sustain] \ ef, mixer = Option[w -> AudioMixer.Mixer \ ef], quit = (Frame, w) -> Bool \ ef, closeRequest = Option[w -> w \ ef], debug = Bool, debugView = Option[(String, w -> (List[GameEngine.Drawable], List[GameEngine.TileMapRenderCmd], List[GameEngine.PolygonRenderCmd]) \ ef)], worldDump = Option[(Rect2.Rect2, w) -> String \ ef], annotationContext = Option[w -> Annotate.Table \ ef], staticLayer = Option[{ key = w -> GameEngine.StaticKey, build = w -> List[Render.PlacedItem] }], tileLayers = Option[w -> List[TileLayerSpec]], spriteAtlases = w -> List[AtlasUpload], pixelSnap = w -> Float64, statusLine = Option[w -> String \ ef], remoteRender = Option[Unit -> List[String] \ IO], shot = Option[w -> String \ IO], remoteHandlers = List[(String, (Map[String, String], w) -> Result[String, w] \ {Fs.FileRead})], fixedStep = Option[Float64], clocks = List[(Float64, w) -> w], cursor = Option[w -> CursorSpec], outputs = List[Output[w]], starts = List[Start[w]], flow = Flow.Table[w], fingerprint = Option[w -> String] }`
 - 初期 World だけを持つ空の App。絵はまだ無い（withView で繋ぐまで何も描かない）。
   `pub def make(init: w): App[w, ef]`
 - 初期 World を design 解像度（project.json の designWidth/Height）から組む入口。
@@ -196,6 +196,8 @@
   `pub def withStatusLine(f: w -> String \ ef, app: App[w, ef]): App[w, ef]`
 - リモートデバッグ（HTTP）の POST /render が実行する「描き出しの実体」を繋ぐ。
   `pub def onRenderRequest(f: Unit -> List[String] \ IO, app: App[w, ef]): App[w, ef]`
+- 渡した World を 1 枚の PNG に描き、書いたパスを返す関数を繋ぐ（中身は SceneRender の 1 場面と同じ描き方）。
+  `pub def onShotRequest(f: w -> String \ IO, app: App[w, ef]): App[w, ef]`
 - リモートデバッグ（HTTP）の任意パス（例: "/save"）に応えるハンドラを繋ぐ。
   `pub def onRequest(path: String, f: (Map[String, String], w) -> Result[String, w] \ {Fs.FileRead}, app: App[w, ef]): App[w, ef]`
 - 物理・当たり判定を固定刻み（dtSeconds 秒）で進める accumulator 方式を有効にする。
@@ -300,6 +302,31 @@
 - 生成した結果をスロットへ上書きで置く（一覧表は宣言中のレイヤーの数までしか育たない）。
   `pub def tileCacheStore(slot: String, key: String, vao: GpuHandle.TileVao, count: Int32, cache: TileCache): TileCache`
 
+## App.GameRegistry — `engine_world/src/App/GameRegistry.flix`
+- 書き置き 1 行。
+  `pub type alias Entry = { dir = String, pid = String, port = String }`
+- 書き置きの中身から行を読む（読めない行は捨てる・読めない中身は空）。
+  `pub def entriesOf(text: String): List[Entry]`
+- entry を足す（同じ dir の古い行は外す）。
+  `pub def withEntry(entry: Entry, entries: List[Entry]): List[Entry]`
+- dir の行のうち pid が自分の物だけを外す（後から同じ dir で起こしたゲームの行は残す）。
+  `pub def withoutEntry(dir: String, pid: String, entries: List[Entry]): List[Entry]`
+- 書き置きの中身。
+  `pub def textOf(entries: List[Entry]): String`
+- 書き置きの置き場。
+  `pub def path(): String \ IO`
+- 今いる所（ゲームの根）の実パス。
+  `pub def gameDir(): String \ IO`
+- `pub def pidText(): String \ IO`
+- `pub def register(port: Int32): Unit \ IO`
+- このゲームの行を消す（閉じる時）。
+  `pub def unregister(): Unit \ IO`
+
+## App.Headless — `engine_world/src/App/Headless.flix`
+- 入口の中身。FGE_SHOT があれば 1 枚撮って終わり、無ければ待ち受ける。
+  `pub def serve(app: App.App[w, ef]): Unit \ ef + Fs.FileRead + IO`
+- `pub def helpText(): String`
+
 ## App.RemoteDebug — `engine_world/src/App/RemoteDebug.flix`
 - HTTP サーバ本体と、リクエスト / レスポンスを受け渡す 2 本のキュー。
   `pub type alias Bridge = { server = HttpServer, requests = JQueue[String], responses = JQueue[String], current = AtomicLong }`
@@ -307,11 +334,19 @@
   `pub type alias RenderJobs = { requested = AtomicLong, done = AtomicLong, running = AtomicLong, last = AtomicReference[String], wake = JQueue[String] }`
 - 環境変数 DEBUG_HTTP_PORT からポート番号を読む。未設定・数値でなければ None。
   `pub def portFromEnv(): Option[Int32] \ IO`
+- 命令口を開くポート: DEBUG_HTTP_PORT があればそれ、無ければ 0（OS に空いたポートを選ばせる）。
+  `pub def portToOpen(): Option[Int32] \ IO`
+- 実際に開けたポート（0 で開いた時に OS が選んだ番号を知る）。
+  `pub def boundPort(bridge: Bridge): Int32 \ IO`
 - 本文に依頼番号を付ける（キューに積む形）。
   `pub def tagged(id: Int64, text: String): String`
 - tagged の逆。番号の無い・読めない形は None。
   `pub def untagged(raw: String): Option[(Int64, String)]`
 - `pub def start(port: Int32, render: Option[Unit -> List[String] \ IO]): Bridge \ IO`
+- 窓なしのゲーム（App.Headless）の待ち受け: 同じ橋を、名乗らず（listening の行も書き置きも無し）に開く。
+  `pub def startQuiet(port: Int32): Bridge \ IO`
+- startQuiet で開いた橋を閉じる（書き置きに触れない）。
+  `pub def stopQuiet(bridge: Bridge): Unit \ IO`
 - ゲームループが毎フレーム呼ぶ非ブロッキングの受信。届いていなければ None。
   `pub def pollRequest(bridge: Bridge): Option[String] \ IO`
 - 応答本文を HTTP スレッドへ返す（pollRequest で受けた 1 件に必ず 1 回対で呼ぶ）。
@@ -325,7 +360,7 @@
 - ゲーム登録の任意ルート（App.onRequest）から、パスに完全一致する最初の 1 本を選ぶ。
   `pub def findRoute(path: String, routes: List[(String, a)]): Option[a]`
 - 観測の詳細度。応答のトークン量を必要最小限に抑えるための選択肢。
-  `pub enum View with Eq, ToString { case Status, case Summary, case Full, case Scene, case Silent }`
+  `pub enum View with Eq, ToString { case Status, case Summary, case Full, case Scene, case Shot, case Silent }`
 - /step を台本の途中で止める条件。「意味のある瞬間」で止まることで往復を減らす。
   `pub enum Until with Eq, ToString { case Always, case SfxAny, case SfxNamed(Set[String]), case Quiet(Int32) }`
 - /step・/state のクエリを解釈した実行パラメータ。
@@ -378,6 +413,8 @@
   `pub def handleRemote(app: App.App[w, ef], bridge: Bridge, raw: String, ctx: RemoteNext[w]): RemoteNext[w] \ (ef + GameEngine.Game + Fs.FileRead + IO)`
 - GET /starts の本文: 始まりの登録簿（App.withStarts）の名前・既定の引数・説明を 1 行ずつ。
   `pub def startsText(app: App.App[w, ef]): String`
+- view=shot の本文: [shot] と、撮れたら `ok png=<パス>`（/render と同じ形）・撮れなければ `error: 理由`。
+  `pub def shotBlock(app: App.App[w, ef], world: w): String \ IO`
 - /step 1 回ぶんの実行結果。
   `pub type alias StepOutcome[w] = { world = w, stepState = App.StepState, newHistory = List[w], framesRun = Int32, sounds = List[(Int64, String)], stoppedBy = String, quit = Bool, failure = String, traceLines = List[String] }`
 - flow が流したフレームの列を、/step の止め方（until=sfx|quiet・quitWhen）で切り、応答の材料にする。
@@ -2750,6 +2787,8 @@
 - `pub def nodeOf(name: String, program: Program): Option[Node]`
 - ノード名の一覧（名前の順）。
   `pub def nodeNames(program: Program): List[String]`
+- file の line 行を中に持つノードの名前（そのファイルで title: の行が line 以下の、いちばん後のノード）。
+  `pub def nodeAtLine(file: String, line: Int32, program: Program): Option[String]`
 - タグの値（そのキーのタグが無ければ None・値の無いタグは Some("")）。
   `pub def tagOf(key: String, tags: List[Tag]): Option[String]`
 - 「ファイル:行」（F8 のチケットやログに出す形）。
@@ -2784,6 +2823,8 @@
   `pub def step(action: Action, now: Clock.Time[c], runner: Runner[c]): (Runner[c], List[Event])`
 - node の頭から、台詞はすぐ送り・選択肢は picks の順に選び（0 始まり）・<<wait>> は明ける時刻まで飛ばして、
   `pub def trace(program: Yarn.Program, node: String, picks: List[Int32]): List[Event]`
+- node の頭から流し、シナリオの line 行（.yarn の 1 始まりの行番号）を出している所まで進める
+  `pub def startAt(program: Yarn.Program, node: String, line: Int32, now: Clock.Time[c]): (Runner[c], List[Event])`
 - `pub def shownOf(runner: Runner[c]): Shown`
 - 開いているノードの名前（閉じていれば None）。
   `pub def nodeOf(runner: Runner[c]): Option[String]`

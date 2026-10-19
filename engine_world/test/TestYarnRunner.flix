@@ -80,6 +80,46 @@ mod TestYarnRunner {
         Assert.assertEq(expected = None, YarnRunner.nodeOf(finished))
 
     // ══════════════════════════════════════════════════════
+    // 行から始める（プレビュー・goto）
+    // ══════════════════════════════════════════════════════
+
+    def shownText(runner: YarnRunner.Runner[Clock.Real]): String = match YarnRunner.shownOf(runner) {
+        case YarnRunner.Shown.Line(line)     => "line ${Int32.toString(line#source#line)}"
+        case YarnRunner.Shown.Choices(lines) => "choices ${lines |> List.map(line -> Int32.toString(line#source#line)) |> String.intercalate(",")}"
+        case YarnRunner.Shown.Waiting        => "waiting"
+        case YarnRunner.Shown.Closed         => "closed"
+    }
+
+    /// 選択肢の中の行へは、その行を持つ選択肢を選んで進む。
+    @Test
+    def testStartAtALineInsideAChoice(): Unit \ Assert + Fs.FileRead =
+        Assert.assertEq(expected = "line 12", shownText(fst(YarnRunner.startAt(program(), "Ask", 12, at(0.0)))))
+
+    /// 選択肢の行そのものなら、問いの台詞（次が選択肢）で止まる — ゲームが問いと選択肢を同じ窓に並べられる。
+    @Test
+    def testStartAtAChoiceLineStopsAtTheQuestion(): Unit \ Assert + Fs.FileRead =
+        let runner = fst(YarnRunner.startAt(program(), "Ask", 13, at(0.0)));
+        Assert.assertEq(expected = ("line 10", true), (shownText(runner), YarnRunner.choicesFollow(runner)))
+
+    /// 選択肢より後ろの行へは、先頭の選択肢を選んで抜けて進む。
+    @Test
+    def testStartAtALineAfterTheChoices(): Unit \ Assert + Fs.FileRead =
+        Assert.assertEq(expected = "line 14", shownText(fst(YarnRunner.startAt(program(), "Ask", 14, at(0.0)))))
+
+    /// <<wait>> の後ろの行へは、明ける時刻まで飛ばして進む。
+    @Test
+    def testStartAtSkipsAWait(): Unit \ Assert + Fs.FileRead =
+        Assert.assertEq(expected = "line 6", shownText(fst(YarnRunner.startAt(program(), "Wait", 6, at(0.0)))))
+
+    /// 行からノードを引く: title: の行が line 以下のいちばん後のノード。
+    @Test
+    def testNodeAtLine(): Unit \ Assert + Fs.FileRead =
+        let file = "runner.yarn";
+        Assert.assertEq(expected = (Some("Ask"), Some("Ask"), Some("Wait"), None),
+            (Yarn.nodeAtLine(file, 8, program()), Yarn.nodeAtLine(file, 14, program()),
+             Yarn.nodeAtLine(file, 5, program()), Yarn.nodeAtLine(file, 2, program())))
+
+    // ══════════════════════════════════════════════════════
     // 木の JSON の橋渡し
     // ══════════════════════════════════════════════════════
 
