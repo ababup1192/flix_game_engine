@@ -2,7 +2,10 @@
 // 幅 = フレーム数 × frameW・PNG-8（インデックスカラー）で書けたことを固定する。
 mod TestFilmstrip {
     import java.awt.image.BufferedImage
+    import java.io.ByteArrayOutputStream
     import java.io.File
+    import java.nio.file.Files
+    import java.util.Arrays
     import javax.imageio.ImageIO
 
     /// 指定の RGB で一様に塗った w×h の BufferedImage（TYPE_INT_RGB）。
@@ -76,4 +79,48 @@ mod TestFilmstrip {
             case Some(r) => (r#indexed, r#frameCount, r#width)
         };
         Assert.assertEq(expected = (false, 1i32, 20i32), observed)
+
+    /// w×h の TYPE_INT_ARGB（塗りが返す型）。画素 (x, y) の ARGB は argbOf(x, y)。
+    def argbImage(w: Int32, h: Int32, argbOf: (Int32, Int32) -> Int32): BufferedImage \ IO =
+        let img = new BufferedImage(w, h, 2i32);
+        List.forEach(y -> List.forEach(x -> img.setRGB(x, y, argbOf(x, y)), List.range(0i32, w)), List.range(0i32, h));
+        img
+
+    /// img の全画素の RGB（下位 24bit）を行順に並べた物。
+    def rgbPixels(img: BufferedImage): List[Int32] \ IO =
+        List.range(0i32, img.getHeight()) |> List.flatMap(y ->
+            List.range(0i32, img.getWidth()) |> List.map(x -> Int32.bitwiseAnd(img.getRGB(x, y), 16777215i32)))
+
+    /// 256 色を超える TYPE_INT_ARGB のコマ（半透明の画素を含む）を renderFrame で書くと、
+    /// TYPE_INT_RGB へ写してから ImageIO で書いた PNG とバイト列が同じ。
+    @Test
+    def testRenderFrameFullColorBytesMatchRgbCopy(): Unit \ IO + Assert =
+        let img = argbImage(24i32, 20i32, (x, y) ->
+            if (x == 3i32 and y == 3i32) 1074860595i32      // 0x40112233（アルファ 0x40）
+            else -16777216i32 + (y * 24i32 + x) * 4099i32);  // 不透明・480 色
+        let out = "build/test/filmstrip_argb_full.png";
+        Filmstrip.renderFrame(img, out);
+        let copy = new BufferedImage(24i32, 20i32, 1i32);
+        List.forEach(y -> List.forEach(x -> copy.setRGB(x, y, img.getRGB(x, y)), List.range(0i32, 24i32)), List.range(0i32, 20i32));
+        let expected = new ByteArrayOutputStream();
+        discard ImageIO.write(copy, "png", expected);
+        Assert.assertEq(expected = true, Arrays.equals(expected.toByteArray(), Files.readAllBytes(new File(out).toPath())))
+
+    /// ちょうど 256 色のコマはインデックスカラー（TYPE_BYTE_INDEXED = 13）で書かれ、読み戻した画素は元と同じ。
+    @Test
+    def testRenderFrame256ColorsIsIndexedAndLossless(): Unit \ IO + Assert =
+        let img = argbImage(16i32, 16i32, (x, y) -> -16777216i32 + (y * 16i32 + x) * 65793i32 + x * 7i32);
+        let out = "build/test/filmstrip_256.png";
+        Filmstrip.renderFrame(img, out);
+        let back = ImageIO.read(new File(out));
+        Assert.assertEq(expected = (13i32, rgbPixels(img)), (back.getType(), rgbPixels(back)))
+
+    /// 257 色のコマはフルカラーへ切り替わり、読み戻した画素は元と同じ。
+    @Test
+    def testRenderFrame257ColorsIsFullColorAndLossless(): Unit \ IO + Assert =
+        let img = argbImage(257i32, 1i32, (x, _) -> -16777216i32 + x * 40961i32);
+        let out = "build/test/filmstrip_257.png";
+        Filmstrip.renderFrame(img, out);
+        let back = ImageIO.read(new File(out));
+        Assert.assertEq(expected = (false, rgbPixels(img)), (back.getType() == 13i32, rgbPixels(back)))
 }
