@@ -265,6 +265,7 @@ pub mod SoftRaster {
                     extraFonts: Map[String, FontEntry],
                     extraImages: Map[String, BufferedImage],
                     warnLog: TexWarnLog, cache: Option[TextureCache]): Unit \ IO = region rc {
+        let startNanos = System.nanoTime();
         let sf = Int32.toFloat64(req#scale);
         let g: Graphics2D = image.createGraphics();
         applyQualityHints(g, hintsOf(req));
@@ -315,6 +316,10 @@ pub mod SoftRaster {
         // blend=Normal は従来どおり Graphics2D（SrcOver）で直接描く。Add / Multiply は
         // Java2D の標準 Composite に無い重ね方なので、下書きへ描いてから自前の式で合成する。
         // シェーダー面は Graphics2D を使わず、ShaderEval の画素評価 + blendPixel で直接混ぜる。
+        let profile = System.getenv("FGE_RENDER_PROFILE");
+        let profileOn = not Object.isNull(profile) and profile == "1";
+        let surfaceNanos = Ref.fresh(rc, 0i64);
+        let surfacePixels = Ref.fresh(rc, 0i64);
         List.forEach(item -> match item {
             case RItem.RDraw(d)  =>
                 if (d#blend == DrawCmd.BlendMode.Normal)
@@ -330,16 +335,23 @@ pub mod SoftRaster {
                 else
                     blendedDraw(image, sf, hintsOf(req), p#blend, p#clip, polygonAabb(req#design, p),
                                 gs -> drawPolygon(rc, gs, sf, p))
-            case RItem.RSurf(s) => drawSurface(image, sf, texEnv, s)
+            case RItem.RSurf(s) =>
+                let t0 = System.nanoTime();
+                drawSurface(image, sf, texEnv, s);
+                Ref.put(Ref.get(surfaceNanos) + (System.nanoTime() - t0), surfaceNanos);
+                Ref.put(Ref.get(surfacePixels) + Int32.toInt64(ri(s#rect#size#x * sf) * ri(s#rect#size#y * sf)), surfacePixels)
         }, sorted);
-        g.dispose()
+        g.dispose();
+        if (profileOn)
+            System.err.println("[render-profile] surfaces=${List.length(surfaces)} surfaceMs=${Ref.get(surfaceNanos) / 1000000i64} totalMs=${(System.nanoTime() - startNanos) / 1000000i64} surfacePx=${Ref.get(surfacePixels)}")
+        else ()
     }
 
     /// シェーダー面を画素ごとに描き出す。rect を出力ピクセルへ量子化し、各画素の中心を
-    /// uv（rect 内 0..1）に写して ShaderEval.compileSpec で組み立てた関数（色と α を 1 回の shared
-    /// 先行評価で一緒に返す — 別々に呼ぶと bindings を画素ごとに 2 回払う）で評価、
-    /// blendPixel で本体へ混ぜる（Normal / Add / Multiply とも GL 側と同じ合成式）。
-    /// 描き出しの時間のほとんどはここ（実測 96%）なので、Spec は面ごとに 1 回だけ組み立て、
+    /// uv（rect 内 0..1）に写して ShaderEval.compile で組み直した面（色と α を 1 回の shared
+    /// 先行評価で一緒に返す）を evalCompiled で評価、blendPixel で本体へ混ぜる
+    /// （Normal / Add / Multiply とも GL 側と同じ合成式）。
+    /// 描き出しの時間のほとんどはここなので、Spec は面ごとに 1 回だけ組み直し、
     /// 画素は shadeAll でコアの数だけ並べて評価する。
     /// mask が非空なら「どれかの多角形の内側」の画素だけ塗る（GL のステンシル抜きと同じ意図）。
     def drawSurface(image: BufferedImage, sf: Float64, texEnv: Map[String, ShaderEval.TexData],
@@ -357,13 +369,12 @@ pub mod SoftRaster {
         else {
             let n = w * h;
             let buf: Array[Int32, rc] = Array.empty(rc, n);
-            let maskPolys = List.map(List.toVector, s#mask);
             discard image.getRGB(x0, y0, w, h, buf, 0i32, w);
-            // Spec は面ごとに 1 回だけ組み立てる（画素ごとに木をたどり直さない）。
-            let eval = ShaderEval.compileSpec(s#spec);
-            let (ox, oy, sw, sh) = (s#rect#position#x, s#rect#position#y, s#rect#size#x, s#rect#size#y);
-            let time = s#time;
-            let blend = s#blend;
+            let compiled = onceOutsideLoop(rc, ShaderEval.compile(s#spec, texEnv));
+            let maskPolys = onceOutsideLoop(rc, List.map(List.toVector, s#mask));
+            let (ox, oy, sw, sh, time) = onceOutsideLoop(rc,
+                (s#rect#position#x, s#rect#position#y, s#rect#size#x, s#rect#size#y, s#time));
+            let blend = onceOutsideLoop(rc, s#blend);
             // 下地の画素（読むだけ）。1 画素の答えは下地と面の式だけで決まる純関数なので、
             // どの順・どのスレッドで評価しても同じ画素になる。
             let dstPixels = Array.toVector(buf);
@@ -374,17 +385,27 @@ pub mod SoftRaster {
                 let dx = (Int32.toFloat64(px) + 0.5) / sf;
                 let dy = (Int32.toFloat64(py) + 0.5) / sf;
                 let dst = Vector.get(i, dstPixels);
-                if (not insideMask(maskPolys, { x = dx, y = dy })) dst
+                let inside = match maskPolys {
+                    case Nil => true
+                    case _   => insideMask(maskPolys, { x = dx, y = dy })
+                };
+                if (not inside) dst
                 else {
-                    let uv = { x = (dx - ox) / sw, y = (dy - oy) / sh };
-                    let (c, a0) = eval(uv, time, texEnv);
+                    let (r, g, b, a0) = ShaderEval.evalCompiled(compiled, (dx - ox) / sw, (dy - oy) / sh, time);
                     let a = Float64.max(0.0, Float64.min(1.0, a0));
-                    blendPixel(blend, argbOf(c, a), dst)
+                    blendPixel(blend, argbOfRgba(r, g, b, a), dst)
                 }
             };
             image.setRGB(x0, y0, w, h, shadeAll(n, pixelOf), 0i32, w)
         }
     }
+
+    /// 画素ループの外で 1 回だけ計算した値を、そのまま返す。
+    /// WhyNot: 面ごとの値を `let x = 式` で直に置かない。Flix 0.78 の最適化は、純粋な let の値が
+    /// ラムダの中で 1 回だけ使われると、その式をラムダの中へ書き写す（@DontInline でも止まらない）。
+    /// すると Spec の組み直しや record の読み出しが画素ごとに走る。Ref を通した値は純粋でないので
+    /// 動かされない。
+    def onceOutsideLoop(rc: Region[r], x: a): a \ r = Ref.get(Ref.fresh(rc, x))
 
     /// 画素 0..n−1 を pixelOf で塗った ARGB の列。Java の並列ストリームでコアの数だけ並べて
     /// 評価する（区間の割り方とスレッドは JDK の共有プールに任せる・どれかの画素が例外を投げれば
@@ -432,11 +453,14 @@ pub mod SoftRaster {
         }
 
     /// Color(0..1) + alpha(0..1) を ARGB int へ。
-    def argbOf(c: Color, a: Float64): Int32 =
+    def argbOf(c: Color, a: Float64): Int32 = argbOfRgba(c#r, c#g, c#b, a)
+
+    /// argbOf の成分ばらし版（シェーダー面の画素ごとに Color の record を作らない）。
+    def argbOfRgba(r: Float64, g: Float64, b: Float64, a: Float64): Int32 =
         Int32.leftShift(clampI(ri(a * 255.0), 0i32, 255i32), 24)
-            |> Int32.bitwiseOr(Int32.leftShift(byteOf(f32(c#r)), 16))
-            |> Int32.bitwiseOr(Int32.leftShift(byteOf(f32(c#g)), 8))
-            |> Int32.bitwiseOr(byteOf(f32(c#b)))
+            |> Int32.bitwiseOr(Int32.leftShift(byteOf(f32(r)), 16))
+            |> Int32.bitwiseOr(Int32.leftShift(byteOf(f32(g)), 8))
+            |> Int32.bitwiseOr(byteOf(f32(b)))
 
     /// 本体と下書き（blendedDraw）が同じ見た目で描くための描画品質ヒント一式。
     ///
