@@ -34,10 +34,12 @@ const usage = `使い方: bin/fge yarn <サブコマンド> ...   会話のシ�
   <<declare $切符 = 2>>               宣言（数・真偽・"文字列"。型は初めの値で決まる。フォルダの中で 1 つ・どのノードに書いてもよい）
   <<set $切符 to $切符 - 1>>           入れる（= と += -= *= /= %= も）。宣言の無い変数・型の違う式は build が行番号つきで止める
   <<if 式>> … <<elseif 式>> … <<else>> … <<endif>>   中に台詞・選択肢・jump・コマンドを置ける
-  -> 一緒に降りる <<if $切符 > 0>> #タグ   条件の偽の選択肢は出さない（まとまりの全部が偽なら飛ばす。公式は「選べない」印で渡す）
+  -> 一緒に降りる <<if $切符 > 0>> #タグ   条件が偽なら選べない印（DialogueOption の available = false）で並べる。
+                                       灰色にするか隠すかはゲームが決める。まとまりの全部が偽なら飛ばす
   girl: 切符は {$切符} 枚              行と選択肢の字に式の値を差し込む（数は 2・真偽は True / False）
   式: + - * / %・== != < <= > >=・and or not・( )・visited("ノード")・visited_count("ノード")（ノードを出た回数）
   値はゲームの YarnRunner.valueOf / withStorage で読み書きし、YarnStorage.toJson でセーブに乗せる。
+  プレビューに値を渡す: bin/fge talk shot / goto <file.yarn>:<行> '$切符=0'（始まりの引数を YarnStorage.withArgs → YarnRunner.startAtWith）。
 読まない: 宣言の無い変数（公式の暗黙の宣言）・別の綴り（is eq && || ! など）・and と or の括弧なしの混ぜ書き・関数の自作と他の組み込み関数・
   <<declare>> の計算した値と as 型・台詞の行末の <<if>>・コマンドの中の {式}・<<local>>・<<detour>>・<<once>>・=> の行のグループ・
   when:・tracking:・[マークアップ]・ゲームを待つコマンド。

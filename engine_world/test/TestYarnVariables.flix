@@ -1,6 +1,6 @@
 // YarnRunner の変数・<<if>>・{式}・visited のテスト。シナリオは testdata/yarn/runner/vars.yarn（Go の build が書いた vars.yarn.json を読む）。
-// どう選んでも変数が式どおりになること・条件が偽の選択肢は出ないこと・会話をまたいで値と訪れた数を持ち越せること・
-// セーブの JSON を行き来しても同じ値に戻ることを見る。
+// どう選んでも変数が式どおりになること・条件が偽の選択肢は選べない印で並び、選んでも何も変わらないこと・
+// 会話をまたいで値と訪れた数を持ち越せること・プレビューに値を渡せること・セーブの JSON を行き来しても同じ値に戻ることを見る。
 
 mod TestYarnVariables {
 
@@ -10,17 +10,26 @@ mod TestYarnVariables {
 
     def at(seconds: Float64): Clock.Time[Clock.Real] = Clock.after(seconds, Clock.zero())
 
-    /// picks の順に選びきった実行器（台詞は送る）。
-    def runToEnd(storage: YarnStorage.Storage, node: String, picks: List[Int32]): YarnRunner.Runner[Clock.Real] \ Fs.FileRead =
-        let (runner, _) = YarnRunner.startWith(storage, program(), node, at(0.0));
-        drive(100, runner, picks)
+    /// picks の順に選びきった実行器と、その間の出来事（台詞は送る・選べない番号なら最初の選べる選択肢を選ぶ）。
+    def runWith(storage: YarnStorage.Storage, node: String, picks: List[Int32]): (YarnRunner.Runner[Clock.Real], List[YarnRunner.Event]) \ Fs.FileRead =
+        let (runner, events) = YarnRunner.startWith(storage, program(), node, at(0.0));
+        drive(100, runner, picks, events)
 
-    def drive(budget: Int32, runner: YarnRunner.Runner[Clock.Real], picks: List[Int32]): YarnRunner.Runner[Clock.Real] =
-        if (budget <= 0) runner
+    def runToEnd(storage: YarnStorage.Storage, node: String, picks: List[Int32]): YarnRunner.Runner[Clock.Real] \ Fs.FileRead =
+        fst(runWith(storage, node, picks))
+
+    def drive(budget: Int32, runner: YarnRunner.Runner[Clock.Real], picks: List[Int32], acc: List[YarnRunner.Event]): (YarnRunner.Runner[Clock.Real], List[YarnRunner.Event]) =
+        let next = (action, rest) -> {
+            let (after, events) = YarnRunner.step(action, at(0.0), runner);
+            drive(budget - 1, after, rest, List.append(acc, events))
+        };
+        if (budget <= 0) (runner, acc)
         else match (YarnRunner.shownOf(runner), picks) {
-            case (YarnRunner.Shown.Line(_), _)              => drive(budget - 1, fst(YarnRunner.step(YarnRunner.Action.Advance, at(0.0), runner)), picks)
-            case (YarnRunner.Shown.Choices(_), pick :: rest) => drive(budget - 1, fst(YarnRunner.step(YarnRunner.Action.Choose(pick), at(0.0), runner)), rest)
-            case _                                          => runner
+            case (YarnRunner.Shown.Line(_), _)                    => next(YarnRunner.Action.Advance, picks)
+            case (YarnRunner.Shown.Choices(options), pick :: rest) =>
+                let open = options |> List.zipWithIndex |> List.filter(match (_, option) -> option#available) |> List.map(fst);
+                next(YarnRunner.Action.Choose(if (List.memberOf(pick, open)) pick else List.head(open) |> Option.getWithDefault(pick)), rest)
+            case _ => (runner, acc)
         }
 
     /// 0 と 1 の 3 つの並び 8 通り。
@@ -28,13 +37,12 @@ mod TestYarnVariables {
         List#{0, 1} |> List.flatMap(a -> List#{0, 1} |> List.flatMap(b -> List#{0, 1} |> List.map(c -> List#{a, b, c})))
 
     /// 規則をそのまま数えた期待値: 切符が残っていて 0 番（一緒に降りる）を選んだ駅だけ、切符が減り連れが増える。
-    /// 切符が無い駅は「一緒に」が出ないので、0 番は「ひとりで」になる。返すのは（切符・連れ・各駅で出た選択肢の数）。
-    def expectedTrip(picks: List[Int32]): (Int32, Int32, List[Int32]) =
+    /// 切符が無い駅は「一緒に」が選べないので、0 番は「ひとりで」になる。返すのは（切符・連れ・各駅で「一緒に」が選べたか）。
+    def expectedTrip(picks: List[Int32]): (Int32, Int32, List[Bool]) =
         let step = (acc, pick) -> {
             let (tickets, companions, shown) = acc;
-            let offered = if (tickets > 0) 2 else 1;
-            if (tickets > 0 and pick == 0) (tickets - 1, companions + 1, offered :: shown)
-            else (tickets, companions, offered :: shown)
+            if (tickets > 0 and pick == 0) (tickets - 1, companions + 1, true :: shown)
+            else (tickets, companions, (tickets > 0) :: shown)
         };
         let (tickets, companions, shown) = List.foldLeft(step, (2, 0, Nil), picks);
         (tickets, companions, List.reverse(shown))
@@ -55,21 +63,33 @@ mod TestYarnVariables {
         let expected = allPicks() |> List.map(picks -> { let (t, c, _) = expectedTrip(picks); (number(t), number(c)) });
         Assert.assertEq(expected = expected, actual)
 
-    /// どの選び方でも、切符の無い駅では条件の偽の「一緒に降りる」が出ない（出た選択肢の数が規則どおり）。
+    /// どの選び方でも、選択肢は 2 つとも並び、「一緒に降りる」が選べるのは切符の残っている駅だけ（規則どおり）。
     @Test
-    def testFalseOptionsAreNeverShown(): Unit \ Assert + Fs.FileRead =
-        let shownCounts = picks -> YarnRunner.trace(program(), "Trip", picks) |> List.filterMap(event -> match event {
-            case YarnRunner.Event.Choices(lines) => Some(List.length(lines))
-            case _                               => None
+    def testFalseOptionsAreMarkedUnavailable(): Unit \ Assert + Fs.FileRead =
+        let firstAvailable = picks -> snd(runWith(YarnStorage.empty(), "Trip", picks)) |> List.filterMap(event -> match event {
+            case YarnRunner.Event.Choices(options) => List.head(options) |> Option.map(option -> (List.length(options), option#available))
+            case _                                 => None
         });
-        let expected = allPicks() |> List.map(picks -> { let (_, _, shown) = expectedTrip(picks); shown });
-        Assert.assertEq(expected = expected, allPicks() |> List.map(shownCounts))
+        let expected = allPicks() |> List.map(picks -> { let (_, _, shown) = expectedTrip(picks); shown |> List.map(open -> (2, open)) });
+        Assert.assertEq(expected = expected, allPicks() |> List.map(firstAvailable))
+
+    /// 選べない選択肢を選んでも、出来事は出ず選択肢を出したまま。
+    @Test
+    def testChoosingAnUnavailableOptionChangesNothing(): Unit \ Assert + Fs.FileRead =
+        let storage = YarnStorage.empty() |> YarnStorage.set("$tickets", Yarn.Value.Number(0.0));
+        let (asking, _) = YarnRunner.startWith(storage, program(), "Trip", at(0.0));
+        let (after, events) = YarnRunner.step(YarnRunner.Action.Choose(0), at(0.0), asking);
+        let stillAsking = match YarnRunner.shownOf(after) {
+            case YarnRunner.Shown.Choices(_) => true
+            case _                           => false
+        };
+        Assert.assertEq(expected = (0, true), (List.length(events), stillAsking))
 
     /// {式} は値を字にして台詞へ差し込む（ノードの中にいる間は、そのノードを出た回数はまだ足されていない）。
     @Test
     def testInlineExpressionsShowTheValues(): Unit \ Assert + Fs.FileRead =
         Assert.assertEq(expected = List#{"line: `girl: 切符は残り 0 枚・連れは 2 人・2 回目の後`", "stop"},
-            YarnRunner.trace(program(), "Trip", List#{0, 0, 0}) |> linesOf |> List.filter(line -> not String.startsWith(prefix = "option", line)))
+            snd(runWith(YarnStorage.empty(), "Trip", List#{0, 0, 0})) |> linesOf |> List.filter(line -> not String.startsWith(prefix = "option", line)))
 
     // ══════════════════════════════════════════════════════
     // 条件
@@ -88,7 +108,7 @@ mod TestYarnVariables {
         Assert.assertEq(expected = List#{"option: `ミナ と話す`", "option: `黙る`"},
             YarnRunner.trace(program(), "Meet", Nil) |> linesOf)
 
-    /// 条件が全部偽の選択肢のまとまりは、出さずに後ろへ進む。
+    /// 条件が全部偽の選択肢のまとまりは、出さずに後ろへ進む（選べる物が無いまま待たない）。
     @Test
     def testAllFalseOptionsAreSkipped(): Unit \ Assert + Fs.FileRead =
         Assert.assertEq(expected = List#{"line: `girl: 飛ばした`", "stop"}, YarnRunner.trace(program(), "Hidden", Nil) |> linesOf)
@@ -137,4 +157,35 @@ mod TestYarnVariables {
         let storage = YarnRunner.storageOf(runToEnd(YarnStorage.empty(), "Meet", List#{0}));
         Assert.assertEq(expected = (List#{("$met", Yarn.Value.Bool(true))}, 1),
             (YarnStorage.valuesOf(storage), YarnStorage.visitCountOf("Meet", storage)))
+
+    // ══════════════════════════════════════════════════════
+    // プレビューへ値を渡す
+    // ══════════════════════════════════════════════════════
+
+    def gateLine(): Int32 = 59
+
+    def shownText(runner: YarnRunner.Runner[Clock.Real]): String = match YarnRunner.shownOf(runner) {
+        case YarnRunner.Shown.Line(line) => line#text
+        case _                           => "(台詞でない)"
+    }
+
+    /// 値を渡さない startAt は、初めの値（切符 2 枚）で偽の枝の行に届かず、真の枝の行で止まる。
+    @Test
+    def testStartAtWithoutValuesStopsOnTheTrueBranch(): Unit \ Assert + Fs.FileRead =
+        Assert.assertEq(expected = "通っていい", shownText(fst(YarnRunner.startAt(program(), "Gate", gateLine(), at(0.0)))))
+
+    /// 始まりの引数 $tickets=0 を startAtWith へ渡すと、その枝の行を出す（他の引数は見ない）。
+    @Test
+    def testStartAtWithArgsReachesTheBranch(): Unit \ Assert + Fs.FileRead =
+        let args = Map#{"node" => "Gate", "line" => "59", "$tickets" => "0"};
+        let shown = YarnStorage.withArgs(args, program(), YarnStorage.empty())
+            |> Result.map(storage -> shownText(fst(YarnRunner.startAtWith(storage, program(), "Gate", gateLine(), at(0.0)))));
+        Assert.assertEq(expected = Ok("切符が無い"), shown)
+
+    /// 宣言の無い変数と、型に読めない値は、名前つきで断る。
+    @Test
+    def testWithArgsRefusesUnknownNamesAndBadValues(): Unit \ Assert + Fs.FileRead =
+        let refused = args -> YarnStorage.withArgs(args, program(), YarnStorage.empty()) |> Result.isErr;
+        Assert.assertEq(expected = (true, true, false),
+            (refused(Map#{"$ticket" => "0"}), refused(Map#{"$tickets" => "many"}), refused(Map#{"$met" => "true", "$name" => "ソラ"})))
 }

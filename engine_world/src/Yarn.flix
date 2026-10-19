@@ -83,7 +83,7 @@ pub mod Yarn {
         case If(List[Branch], Source)
     }
 
-    /// 選択肢 1 つ。line = 出す字と話し手・タグ、condition = 行末の <<if>>（偽なら出さない）、body = 選んだ時に流す中身。
+    /// 選択肢 1 つ。line = 出す字と話し手・タグ、condition = 行末の <<if>>（偽なら選べない印で並ぶ）、body = 選んだ時に流す中身。
     pub type alias Choice = { line = Line, condition = Option[Expr], body = List[Statement] }
 
     /// <<if>> の枝 1 つ。

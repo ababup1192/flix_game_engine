@@ -16,10 +16,11 @@ mod TestYarnOfficial {
         let program = Yarn.loadOr(Yarn.empty(), dir() + name + ".yarn.json");
         (expected, YarnRunner.trace(program, "Start", picks) |> List.flatMap(planLinesOf))
 
-    /// 出来事を testplan の行の形にする（話し手のある行は「話し手: 字」・タグは後ろに #key か #key:value）。TestYarnRunner も使う。
+    /// 出来事を testplan の行の形にする（話し手のある行は「話し手: 字」・タグは後ろに #key か #key:value・選べない選択肢は [disabled]）。TestYarnRunner も使う。
     pub def planLinesOf(event: YarnRunner.Event): List[String] = match event {
         case YarnRunner.Event.Line(line)    => "line: `${textOf(line)}`${tagsOf(line#tags)}" :: Nil
-        case YarnRunner.Event.Choices(lines) => lines |> List.map(line -> "option: `${textOf(line)}`${tagsOf(line#tags)}")
+        case YarnRunner.Event.Choices(options) => options |> List.map(option ->
+            "option: `${textOf(option#line)}`${tagsOf(option#line#tags)}${if (option#available) "" else " [disabled]"}")
         case YarnRunner.Event.Command(command) => "command: `${String.intercalate(" ", command#name :: command#args)}`" :: Nil
         case YarnRunner.Event.Done          => "stop" :: Nil
     }

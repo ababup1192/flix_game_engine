@@ -18,15 +18,20 @@ pub mod YarnRunner {
 
     /// 呼び出しの間に起きた出来事。
     ///   Line     … 台詞を出した（Advance を待つ）
-    ///   Choices  … 選択肢を出した（Choose を待つ。並びはシナリオの順で、条件が偽の物は抜いてある）
+    ///   Choices  … 選択肢を出した（Choose を待つ。並びはシナリオの順。条件が偽の物も available = false で並ぶ）
     ///   Command  … コマンドを通った（wait なら Tick で時刻が来るまで待つ・それ以外は待たずに続ける）
     ///   Done     … 会話が終わった（<<stop>>・ノードの終わり・行き先の無い jump）
     pub enum Event {
         case Line(Yarn.Line)
-        case Choices(List[Yarn.Line])
+        case Choices(List[DialogueOption])
         case Command(Yarn.Command)
         case Done
     }
+
+    /// 出した選択肢 1 つ（公式の DialogueOption）。available = 行末の <<if>> が真か。偽の物も並びに残し、
+    /// 灰色で見せるか隠すかはゲームが決める（Choose の番号はこの並びで数え、選べない物を選んでも何も変わらない）。
+    /// まとまりの全部が偽なら、選択肢は出さずに後ろへ進む。
+    pub type alias DialogueOption = { line = Yarn.Line, available = Bool }
 
     /// 実行器への入力。Choose の番号は 0 始まり。
     pub enum Action with Eq, ToString {
@@ -39,7 +44,7 @@ pub mod YarnRunner {
     pub enum Shown {
         case Closed
         case Line(Yarn.Line)
-        case Choices(List[Yarn.Line])
+        case Choices(List[DialogueOption])
         case Waiting
     }
 
@@ -85,11 +90,11 @@ pub mod YarnRunner {
         let Machine.Machine(m) = runner;
         match (action, m#shown) {
             case (Action.Advance, Shown.Line(_))     => flow(fuel(), now, runner, Nil)
-            case (Action.Choose(i), Shown.Choices(_)) => match List.nth(i, m#pending) {
-                case Some(choice) =>
+            case (Action.Choose(i), Shown.Choices(options)) => match List.nth(i, m#pending) {
+                case Some(choice) if isAvailable(i, options) =>
                     let resumed = Machine.Machine({ pending = Nil, stack = choice#body :: m#stack | m });
                     flow(fuel(), now, resumed, Nil)
-                case None => (runner, Nil)
+                case _ => (runner, Nil)
             }
             case (Action.Tick, Shown.Waiting) => match m#waitUntil {
                 case Some(until) if now >= until => flow(fuel(), now, Machine.Machine({ waitUntil = None | m }), Nil)
@@ -100,6 +105,7 @@ pub mod YarnRunner {
 
     /// node の頭から、台詞はすぐ送り・選択肢は picks の順に選び（0 始まり）・<<wait>> は明ける時刻まで飛ばして、
     /// 終わるか picks が尽きた選択肢までの出来事を返す（画面なしのテスト・シナリオの通し読み）。
+    /// 選べない選択肢の番号はその pick を使い切るだけで、同じ選択肢に次の pick を当てる。
     pub def trace(program: Yarn.Program, node: String, picks: List[Int32]): List[Event] =
         let (runner, events) = start(program, node, Clock.zero());
         traceFrom(fuel(), runner, picks, events)
@@ -110,8 +116,13 @@ pub mod YarnRunner {
     /// <<wait>> は明ける時刻まで飛ばす。止まるのは、出した台詞の行が line 以上になった所・line の選択肢を出した所
     /// （その直前に台詞があれば、問いとして並べられるよう台詞の所で止まる。choicesFollow が真）・会話が終わった所。
     /// line が node の頭より前なら start と同じ。
+    /// 変数は全部初めの値から流す（<<if>> の偽の枝の中の行へは届かず、その後ろで止まる。値を渡すなら startAtWith）。
     pub def startAt(program: Yarn.Program, node: String, line: Int32, now: Clock.Time[c]): (Runner[c], List[Event]) =
-        let (runner, events) = start(program, node, now);
+        startAtWith(YarnStorage.empty(), program, node, line, now)
+
+    /// startAt と同じだが、変数と訪れた数を storage から始める（プレビューで $切符=0 の場面を出す。YarnStorage.withArgs）。
+    pub def startAtWith(storage: YarnStorage.Storage, program: Yarn.Program, node: String, line: Int32, now: Clock.Time[c]): (Runner[c], List[Event]) =
+        let (runner, events) = startWith(storage, program, node, now);
         seek(fuel(), line, now, runner, events)
 
     def seek(budget: Int32, target: Int32, now: Clock.Time[c], runner: Runner[c], acc: List[Event]): (Runner[c], List[Event]) =
@@ -125,9 +136,9 @@ pub mod YarnRunner {
             // 次が target の行を持つ選択肢なら、問いの台詞で止める（choicesFollow で問いと選択肢を並べるゲームの形のまま）。
             case Shown.Line(line) if line#source#line < target =>
                 if (upcomingChoices(runner) |> List.exists(choice -> choice#source#line == target)) (runner, acc) else next(Action.Advance, now)
-            case Shown.Choices(lines) =>
-                if (List.exists(line -> line#source#line == target, lines)) (runner, acc)
-                else match choiceToward(target, m#pending) {
+            case Shown.Choices(options) =>
+                if (List.exists(option -> option#line#source#line == target, options)) (runner, acc)
+                else match choiceToward(target, List.zip(m#pending, options |> List.map(option -> option#available))) {
                     case Some(i) => next(Action.Choose(i), now)
                     case None    => (runner, acc)
                 }
@@ -138,18 +149,23 @@ pub mod YarnRunner {
             case _ => (runner, acc)
         }
 
-    /// 行 target へ向かうには何番目の選択肢を選ぶか。中に target を持つ選択肢・無ければ target が全部の選択肢より後なら先頭・
-    /// 前なら None（もう通り過ぎている）。
-    def choiceToward(target: Int32, choices: List[Yarn.Choice]): Option[Int32] =
-        let inside = choices |> List.zipWithIndex |> List.find(match (_, choice) ->
+    /// 行 target へ向かうには何番目の選択肢を選ぶか（選べる物だけから）。中に target を持つ選択肢・
+    /// 無ければ target が全部の選択肢より後なら最初の選べる物・前なら None（もう通り過ぎている）。
+    def choiceToward(target: Int32, choices: List[(Yarn.Choice, Bool)]): Option[Int32] =
+        let open = choices |> List.zipWithIndex |> List.filter(match (_, (_, available)) -> available);
+        let inside = open |> List.find(match (_, (choice, _)) ->
             choice#line#source#line == target or List.exists(statement -> List.memberOf(target, linesOf(statement)), choice#body));
         match inside {
             case Some((i, _)) => Some(i)
             case None =>
-                let lastLine = choices |> List.flatMap(choice -> choice#line#source#line :: List.flatMap(linesOf, choice#body))
+                let lastLine = choices |> List.flatMap(match (choice, _) -> choice#line#source#line :: List.flatMap(linesOf, choice#body))
                                        |> List.maximum |> Option.getWithDefault(0);
-                if (target > lastLine and not List.isEmpty(choices)) Some(0) else None
+                if (target > lastLine) open |> List.head |> Option.map(fst) else None
         }
+
+    /// 並びの i 番目が選べる選択肢か。
+    def isAvailable(i: Int32, options: List[DialogueOption]): Bool =
+        List.nth(i, options) |> Option.exists(option -> option#available)
 
     /// 今の台詞を送った時、台詞もコマンドも挟まずに選択肢が出るなら、その選択肢（でなければ空）。
     /// <<if>> と <<set>> と条件の偽の選択肢を越えて決まるので、送った先を流して確かめる（流した結果は捨てる）。
@@ -157,7 +173,7 @@ pub mod YarnRunner {
         let Machine.Machine(m) = runner;
         match m#shown {
             case Shown.Line(_) => match flow(fuel(), Clock.zero(), runner, Nil) {
-                case (_, Event.Choices(lines) :: Nil) => lines
+                case (_, Event.Choices(options) :: Nil) => options |> List.map(option -> option#line)
                 case _                                => Nil
             }
             case _ => Nil
@@ -313,14 +329,13 @@ pub mod YarnRunner {
                         let shown = substitute(m, line);
                         (show(Shown.Line(shown), next), List.reverse(Event.Line(shown) :: acc))
                     case Yarn.Statement.Choose(choices) =>
-                        let open = choices
-                            |> List.filter(choice -> Option.forAll(condition -> isTrue(evaluate(m, condition)), choice#condition))
-                            |> List.map(choice -> { line = substitute(m, choice#line) | choice });
-                        if (List.isEmpty(open)) flow(budget - 1, now, next, acc)
+                        let options = choices |> List.map(choice ->
+                            { line = substitute(m, choice#line),
+                              available = Option.forAll(condition -> isTrue(evaluate(m, condition)), choice#condition) });
+                        if (not List.exists(option -> option#available, options)) flow(budget - 1, now, next, acc)
                         else {
-                            let lines = open |> List.map(choice -> choice#line);
-                            let Machine.Machine(n) = show(Shown.Choices(lines), next);
-                            (Machine.Machine({ pending = open | n }), List.reverse(Event.Choices(lines) :: acc))
+                            let Machine.Machine(n) = show(Shown.Choices(options), next);
+                            (Machine.Machine({ pending = choices | n }), List.reverse(Event.Choices(options) :: acc))
                         }
                     case Yarn.Statement.Jump(target, _) => match Yarn.nodeOf(target, m#program) {
                         case Some(found) =>

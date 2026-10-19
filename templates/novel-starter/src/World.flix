@@ -26,7 +26,7 @@
 //                                          App が配る frame#realNow を Controls.step が毎フレーム写す。
 mod World {
 
-    use fge::{Clock, Emit, PxSpriteAtlas, PxSpriteDoc, UiDialog, UiMenu, UiSlots, UiSpec, UiStore, Yarn, YarnRunner}
+    use fge::{Clock, Emit, PxSpriteAtlas, PxSpriteDoc, UiDialog, UiMenu, UiSlots, UiSpec, UiStore, Yarn, YarnRunner, YarnStorage}
 
     /// 物語の時計の名前（中身は要らない）。
     pub enum Story
@@ -172,10 +172,11 @@ mod World {
         }
 
     /// node の頭から、シナリオの line 行（.yarn の行番号）を出している所まで進めて読む（文字送りは使い切る）。
-    /// 始まり `talk node=… line=…`（Studio の会話のプレビュー・bin/fge talk goto）が使う。
-    pub def openTalkAt(node: String, line: Int32, w: World): World =
+    /// 変数は storage の値から流す（<<if>> の枝の中の行を出す時）。
+    /// 始まり `talk node=… line=… $名前=値`（Studio の会話のプレビュー・bin/fge talk goto）が使う。
+    pub def openTalkAt(storage: YarnStorage.Storage, node: String, line: Int32, w: World): World =
         match Yarn.nodeOf(node, w#dialogue) {
-            case Some(_) => revealLine(show(fst(YarnRunner.startAt(w#dialogue, node, line, Clock.nowOf(w#storyClock))), w))
+            case Some(_) => revealLine(show(fst(YarnRunner.startAtWith(storage, w#dialogue, node, line, Clock.nowOf(w#storyClock))), w))
             case None    => openTalk(node, w)
         }
 
@@ -187,25 +188,26 @@ mod World {
                 if (YarnRunner.choicesFollow(talk))
                     askAfter(line, fst(YarnRunner.step(YarnRunner.Action.Advance, Clock.nowOf(w#storyClock), talk)), w)
                 else { talk = talk, kit = NovelKit.say(StoryDoc.nameOf(line#speaker, w#story), line#text) | w }
-            case YarnRunner.Shown.Choices(lines) =>
-                { talk = talk, cursor = 0, kit = NovelKit.ask("", "", entriesOf(lines)) | w }
+            case YarnRunner.Shown.Choices(options) =>
+                { talk = talk, cursor = 0, kit = NovelKit.ask("", "", entriesOf(options)) | w }
             case YarnRunner.Shown.Waiting => { talk = talk | w }
             case YarnRunner.Shown.Closed  => toTitle({ talk = talk | w })
         }
 
     def askAfter(question: Yarn.Line, talk: YarnRunner.Runner[Story], w: World): World =
         match YarnRunner.shownOf(talk) {
-            case YarnRunner.Shown.Choices(lines) =>
+            case YarnRunner.Shown.Choices(options) =>
                 { talk = talk, cursor = 0,
-                  kit = NovelKit.ask(StoryDoc.nameOf(question#speaker, w#story), question#text, entriesOf(lines)) | w }
+                  kit = NovelKit.ask(StoryDoc.nameOf(question#speaker, w#story), question#text, entriesOf(options)) | w }
             case _ => show(talk, w)
         }
 
     /// 選択肢の行を UI のスロット項目へ（クリックの意味は meta: novel/choice/N）。
-    def entriesOf(lines: List[Yarn.Line]): List[UiSlots.Entry] =
-        lines |> List.zipWithIndex |> List.map(pair -> {
-            let (i, line) = pair;
-            ({ text = line#text, meta = Some("${NovelKit.choicePrefix()}${i}") }: UiSlots.Entry)
+    /// 選べない選択肢（行末の <<if>> が偽）は meta を付けない — カーソルとクリックの列から外れ、キットが灰色で描く。
+    def entriesOf(options: List[YarnRunner.DialogueOption]): List[UiSlots.Entry] =
+        options |> List.zipWithIndex |> List.map(pair -> {
+            let (i, option) = pair;
+            ({ text = option#line#text, meta = if (option#available) Some("${NovelKit.choicePrefix()}${i}") else None }: UiSlots.Entry)
         })
 
     /// 決定 1 回分。表紙では物語をはじめ［遷移: Title→Story］、文字送り中なら全文へ、
@@ -237,14 +239,23 @@ mod World {
 
     /// 選択肢 i を選ぶ: 「疑う」選択（#suspect）なら館の灯りをひとつ消してから、その中身へ。
     /// [遷移: 選択肢→選んだ中身（<<jump>> の先のノード）]
+    /// 選べない選択肢の番号なら何もしない（灯りも消さない）。
     pub def pick(i: Int32, w: World): World \ Emit[Event] =
         match currentOptions(w) |> List.nth(i) {
-            case None => w
-            case Some(line) =>
-                let suspect = Talk.isSuspect(line);
+            case Some(option) if option#available =>
+                let suspect = Talk.isSuspect(option#line);
                 Emit.emit(Event.Picked(suspect));
                 let dimmed = dimIf(suspect, w);
                 show(fst(YarnRunner.step(YarnRunner.Action.Choose(i), Clock.nowOf(w#storyClock), w#talk)), dimmed)
+            case _ => w
+        }
+
+    /// キーボードのカーソル（選べる選択肢だけを数えた位置）の選択肢を選ぶ。
+    pub def pickAtCursor(cursor: Int32, w: World): World \ Emit[Event] =
+        let open = currentOptions(w) |> List.zipWithIndex |> List.filter(match (_, option) -> option#available) |> List.map(fst);
+        match List.nth(cursor, open) {
+            case Some(i) => pick(i, w)
+            case None    => w
         }
 
     /// 疑ったときだけ灯りをひとつ消す（novel.story.json の lamps より多くは消えない）。
@@ -274,12 +285,12 @@ mod World {
     /// 今出している台詞のシナリオの行（ファイル:行。選択肢の間は先頭の選択肢の行・閉じていれば空）。
     pub def talkLineOf(w: World): String = match YarnRunner.shownOf(w#talk) {
         case YarnRunner.Shown.Line(line)     => Yarn.sourceText(line#source)
-        case YarnRunner.Shown.Choices(lines) => lines |> List.head |> Option.map(line -> Yarn.sourceText(line#source)) |> Option.getWithDefault("")
+        case YarnRunner.Shown.Choices(options) => options |> List.head |> Option.map(option -> Yarn.sourceText(option#line#source)) |> Option.getWithDefault("")
         case _                               => ""
     }
 
-    def currentOptions(w: World): List[Yarn.Line] = match YarnRunner.shownOf(w#talk) {
-        case YarnRunner.Shown.Choices(lines) => lines
+    def currentOptions(w: World): List[YarnRunner.DialogueOption] = match YarnRunner.shownOf(w#talk) {
+        case YarnRunner.Shown.Choices(options) => options
         case _                               => Nil
     }
 

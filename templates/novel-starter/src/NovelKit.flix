@@ -74,8 +74,20 @@ mod NovelKit {
             case Some(entries) =>
                 ui1 |> UiStore.setVisible("novel_choices", true)
                     |> UiSlots.fill(choiceSlots(), entries)
+                    |> dimUnavailable(entries)
             case None => UiStore.setVisible("novel_choices", false, ui1)
         }
+
+    /// 選べない項目（meta の無い選択肢）は、字を label から labelOff（assets/ui/choices.ui.json の @hint の色）へ移して灰色で見せる。
+    def dimUnavailable(entries: List[UiSlots.Entry], ui: UiStore.UiWorld): UiStore.UiWorld =
+        List.take(maxChoices(), entries) |> List.zipWithIndex |> List.foldLeft((acc, pair) -> {
+            let (i, entry) = pair;
+            let slot = choiceSlots()#slotPath(i);
+            let off = Option.isEmpty(entry#meta);
+            acc |> UiStore.setText("${slot}/labelOff", if (off) entry#text else "")
+                |> UiStore.setVisible("${slot}/labelOff", off)
+                |> UiStore.setVisible("${slot}/label", not off)
+        }, ui)
 
     /// 本文（文字送りの途中まで）。ダイアログパネルの内側に折り返して描く。
     /// 置き場所と幅は spawn 済みの dialog.ui.json のパネルから毎回導く（座標の一覧表は

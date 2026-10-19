@@ -39,6 +39,39 @@ pub mod YarnStorage {
     pub def valuesOf(storage: Storage): List[(String, Yarn.Value)] =
         let Variables.Variables(s) = storage; Map.toList(s#values)
 
+    /// 始まりの引数（`talk node=… line=… $切符=0`）の $ から始まる物を、宣言の型で読んで書く（他の引数は見ない）。
+    /// 宣言の無い名前・型に読めない値は、近い名前の案つきで Err（プレビューが違う場面を黙って出さないため）。
+    pub def withArgs(args: Map[String, String], program: Yarn.Program, storage: Storage): Result[String, Storage] =
+        let names = Yarn.variablesOf(program) |> List.map(fst);
+        args |> Map.toList |> List.filter(match (key, _) -> String.startsWith(prefix = "$", key))
+             |> List.foldLeft((acc, pair) -> forM (
+                    soFar <- acc;
+                    value <- {
+                        let (name, text) = pair;
+                        match Yarn.declarationOf(name, program) {
+                            case None           => Err("変数 ${name} はシナリオで宣言していない${Suggest.hint(name, names)}")
+                            case Some(declared) => valueAs(declared#value, text) |> Option.toOk("変数 ${name} の値 '${text}' は ${typeName(declared#value)} に読めない")
+                        }
+                    }
+                ) yield set(fst(pair), value, soFar), Ok(storage))
+
+    /// text を like と同じ型の値に（数は 1.5 の形・真偽は true / false・文字列はそのまま）。
+    def valueAs(like: Yarn.Value, text: String): Option[Yarn.Value] = match like {
+        case Yarn.Value.Number(_) => Float64.fromString(text) |> Option.map(Yarn.Value.Number)
+        case Yarn.Value.Bool(_)   => match text {
+            case "true"  => Some(Yarn.Value.Bool(true))
+            case "false" => Some(Yarn.Value.Bool(false))
+            case _       => None
+        }
+        case Yarn.Value.Text(_)   => Some(Yarn.Value.Text(text))
+    }
+
+    def typeName(value: Yarn.Value): String = match value {
+        case Yarn.Value.Number(_) => "Number"
+        case Yarn.Value.Bool(_)   => "Bool"
+        case Yarn.Value.Text(_)   => "String"
+    }
+
     // ── セーブ ──
 
     /// {"variables": {名前: 数・真偽・文字列}, "visits": {ノード: 回数}}。

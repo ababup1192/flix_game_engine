@@ -82,7 +82,7 @@ type Stmt struct {
 }
 
 // Option は -> の 1 つ。Body は字下げした続き（選んだ時に流れ、終わると選択肢の後ろへ戻る）。
-// Condition は行末の <<if 式>>（偽なら出さない。まとまりの全部が偽なら、まとまりごと飛ばす）。
+// Condition は行末の <<if 式>>（偽なら選べない印を付けて並べる。まとまりの全部が偽なら、まとまりごと飛ばす）。
 type Option struct {
 	Line      int     `json:"line"`
 	Speaker   string  `json:"speaker,omitempty"`

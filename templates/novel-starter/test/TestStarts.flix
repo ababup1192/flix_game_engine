@@ -23,4 +23,11 @@ mod TestStarts {
     def testUnknownNodeSuggestsANearName(): Unit \ Assert + Fs.FileRead =
         Assert.assertEq(expected = Err("始まり 'talk': ノード 'clok' はシナリオに無い（もしかして: clock）"),
             App.buildStart(app(), Vec2.zero(), "talk", Map#{"node" => "clok"}) |> Result.map(World.talkNodeOf))
+
+    /// talk の $名前=値 は宣言の無い変数なら、組まずに名前つきで断る（プレビューが違う場面を黙って出さない）。
+    @Test
+    def testTalkRefusesAnUndeclaredVariable(): Unit \ Assert + Fs.FileRead =
+        Assert.assertEq(expected = true,
+            App.buildStart(app(), Vec2.zero(), "talk", Map#{"node" => "clock", "line" => "1", "$tickets" => "0"})
+                |> Result.isErr)
 }

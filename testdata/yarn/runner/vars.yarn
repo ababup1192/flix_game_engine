@@ -53,3 +53,11 @@ title: Again
     girl: 初めて
 <<endif>>
 ===
+title: Gate
+---
+<<if $tickets == 0>>
+    girl: 切符が無い
+<<else>>
+    girl: 通っていい
+<<endif>>
+===

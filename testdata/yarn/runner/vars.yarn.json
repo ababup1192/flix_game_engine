@@ -443,6 +443,55 @@
           ]
         }
       ]
+    },
+    {
+      "title": "Gate",
+      "file": "vars.yarn",
+      "line": 56,
+      "headers": [],
+      "body": [
+        {
+          "kind": "if",
+          "line": 58,
+          "clauses": [
+            {
+              "line": 58,
+              "condition": {
+                "kind": "==",
+                "args": [
+                  {
+                    "kind": "variable",
+                    "name": "$tickets"
+                  },
+                  {
+                    "kind": "value",
+                    "value": 0
+                  }
+                ]
+              },
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 59,
+                  "speaker": "girl",
+                  "text": "切符が無い"
+                }
+              ]
+            },
+            {
+              "line": 60,
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 61,
+                  "speaker": "girl",
+                  "text": "通っていい"
+                }
+              ]
+            }
+          ]
+        }
+      ]
     }
   ]
 }
