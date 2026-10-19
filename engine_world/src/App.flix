@@ -26,9 +26,11 @@ pub mod App {
         wheel = Float64,                   // このフレームのホイール量（上が正・下が負。無ければ 0。
                                            // ランナーが毎フレーム consumeScrollDelta を読み切るので、
                                            // ゲーム側が直接 consume すると常に 0 が返る — 必ずここから読む）
-        realNow = Clock.Time[Clock.Real]   // 実時間の今（起動からの秒。ポーズメニューの点滅・背景の雨のように
+        realNow = Clock.Time[Clock.Real],  // 実時間の今（起動からの秒。ポーズメニューの点滅・背景の雨のように
                                            // 遊びの時計が止まっても動く物が読む。App が advanceFrame で置く —
                                            // ゲームは実時間の時計を持たないので、止める・2 度進めるができない）
+        padTouched = Bool                  // ゲームパッドのどこかにいま触っているか（案内のキーの絵をパッドの物へ替える判断に。
+                                           // パッドの入力そのものはキーへ読み替えて down / justPressed に入っている）
     }
 
     /// key がいま押されているか（押しっぱなしも true）。移動などの連続入力に。
@@ -193,7 +195,11 @@ pub mod App {
         // のまま（既定・全既存ゲームはこちら）。withFixedStep で有効化する（詳細は同関数を参照）。
         fixedStep = Option[Float64],
         // 遊びの時計（addClock で宣言）を 1 フレームぶん進める関数の列・追加順。引数は実時間の dt。
-        clocks = List[(Float64, w) -> w]
+        clocks = List[(Float64, w) -> w],
+        // 毎フレームの「マウスの矢印をどう見せたいか」の宣言（withCursor）。None = App は触らない（F8 の十字だけ）。
+        cursor = Option[w -> CursorSpec],
+        // 鍵が変わった拍に 1 回書く外への出力（addOutput・withDocTable）の列・追加順。
+        outputs = List[Output[w]]
     }
 
     /// 初期 World だけを持つ空の App。絵はまだ無い（withView で繋ぐまで何も描かない）。
@@ -236,7 +242,9 @@ pub mod App {
           remoteRender = None,
           remoteHandlers = Nil,
           fixedStep = None,
-          clocks = Nil }
+          clocks = Nil,
+          cursor = None,
+          outputs = Nil }
 
     /// 起動時に 1 回だけ走るシステムを末尾へ繋ぐ（追加順に適用される）。
     pub def addStartup(sys: w -> w \ ef, app: App[w, ef]): App[w, ef] =
@@ -566,6 +574,46 @@ pub mod App {
         let tick = (dt, world) -> spec#withClock(Clock.advance(spec#paceOf(world), dt, spec#clockOf(world)), world);
         { clocks = List.append(app#clocks, tick :: Nil) | app }
 
+    // ── 外への出力（系は IO を持たず、App が実機のフレームの後でだけ触る）──
+
+    /// マウスの矢印の見せ方（withCursor の宣言）。icon = 形・visible = 見せるか。
+    pub type alias CursorSpec = { icon = GameEngine.Cursor, visible = Bool }
+
+    /// 毎フレーム「マウスの矢印をどう見せたいか」を World から宣言する。App は宣言が変わったフレームだけ当て、
+    /// F8 で止めている間は十字に上書きする（再開した拍に宣言を当て直す）。系の中で setCursor を呼ばない ——
+    /// 呼ぶと /step・台本・F8 の再開で矢印の形が World とずれる。
+    pub def withCursor(f: w -> CursorSpec, app: App[w, ef]): App[w, ef] =
+        { cursor = Some(f) | app }
+
+    /// 跳んだ拍（起動・START・/start・/step・/flow?apply・F8 の巻き戻しからの再開）に、出力をどう扱うか。
+    pub enum OnJump with Eq, ToString {
+        /// 跳んだ先の鍵を「書いた」ことにする。遊んで変わった時だけ書く（セーブ —— 作り物の場面で上書きしない）
+        case Skip
+        /// 跳んだ先も次の実機のフレームで書く（表示中の Doc の名乗り —— いま映っている物を言い続ける）
+        case Write
+    }
+
+    /// 外への出力 1 本: keyOf = 書く中身を決める鍵（"" = 書く物が無い）・write = 書く・onJump = 跳んだ拍の扱い。
+    pub type alias Output[w] = { keyOf = w -> String, write = w -> Unit \ Fs.FileWrite, onJump = OnJump }
+
+    /// 鍵が最後に書いた鍵と違う実機のフレームの後で、1 回だけ write を呼ぶ出力を足す（セーブ・名乗り）。
+    /// 鍵は読み直しと系の後の World から取る。/step・trace・台本・F8 で止めている間は書かない ——
+    /// 系の中で書くと、台本を流すだけ・/step を叩くだけでセーブが書かれる。
+    /// 書けなかった時の扱いは write が持つ（docs/error-handling.md の決まり 3: 1 行言って続ける）。
+    pub def addOutput(output: Output[w], app: App[w, ef]): App[w, ef] =
+        { outputs = List.append(app#outputs, output :: Nil) | app }
+
+    /// Doc の一覧表（DocTable）から、保存即反映の監視（watchFile）・F1 の一括読み直し（reloadOn）・
+    /// Studio へ「表示中」を名乗る出力（debug/active-docs.json。跳んだ先も名乗る）を 1 度に配線する。
+    /// App.game の reloads と一緒に使わない（同じ Doc を 2 度読み直す）。
+    pub def withDocTable(rows: List[DocTable.Entry[w]], app: App[w, ef]): App[w, ef] =
+        DocTable.reloads(rows)
+            |> List.foldLeft((acc, entry) -> { let (path, f) = entry; watchFile(path, f, acc) }, app)
+            |> reloadOn(GameEngine.Key.F1, world -> DocTable.reloadAll(rows, world))
+            |> addOutput({ keyOf = world -> ActiveDocs.fingerprint(DocTable.activeDocs(rows, world)),
+                           write = world -> ActiveDocs.write(DocTable.activeDocs(rows, world)),
+                           onJump = OnJump.Write })
+
     /// addClock で宣言した時計を、実時間 dt で 1 回ずつ進める（advanceFrame が系の前に呼ぶ）。
     /// ゲームのコードからは呼ばない（2 回進めると 1 回目の区間の音が消える。lint-forbid の clock-advance）。
     /// テストで系を直に呼ぶときだけ、実機と同じ順（tickClocks → 系）を組むのに使う。
@@ -594,7 +642,8 @@ pub mod App {
           mouseClicked = mouse#down and not mouse#prevDown,
           mouseMoved = Option.exists(p -> p#x != cursor#cursor#x or p#y != cursor#cursor#y, cursor#prevCursor),
           wheel = mouse#wheel,
-          realNow = Clock.zero() }
+          realNow = Clock.zero(),
+          padTouched = false }
 
     /// withFixedStep の accumulator。持ち越し carry と実フレームの経過秒 realDt を足し、
     /// fixedDt の倍数だけサブステップ回数を出し、端数を次フレームへの持ち越しとして返す。
@@ -770,7 +819,7 @@ pub mod App {
     /// 自分の effect ハンドラ束を張った内側で呼ぶ。
     /// デバッグ有効（withDebug）かつ環境変数 DEBUG_HTTP_PORT があれば、リモートデバッグの
     /// HTTP エンドポイントも一緒に立ち上がる（例: `DEBUG=1 DEBUG_HTTP_PORT=7777 flix run`）。
-    pub def launch(app: App[w, ef]): Unit \ (ef + GameEngine.Game + GameEngine.Audio + ShaderEffect.Shader + RenderTarget.Target + Fs.FileRead + IO) =
+    pub def launch(app: App[w, ef]): Unit \ (ef + GameEngine.Game + GameEngine.Audio + ShaderEffect.Shader + RenderTarget.Target + Fs.FileRead + Fs.FileWrite + IO) =
         let init = app#init;
         // 下ごしらえの間、画面には読み込み中の起動画面が出たまま残る（描き直さないので止まって見えるが、
         // 出し直す口をここに作ると、間引きも中止スイッチも持たない 2 つ目の経路が生まれる）。
@@ -795,7 +844,8 @@ pub mod App {
                     soundUses = { oneShot = Set.empty(), looped = Set.empty() },
                     tileCache = freshTileCache(),
                     glyphSeen = None, budgetWarned = false,
-                    warnOnce = warnOnceWith(Ref.fresh(Static, Set.empty())) });
+                    warnOnce = warnOnceWith(Ref.fresh(Static, Set.empty())),
+                    cursorShown = None, outputKeys = keysAfterJump(app, world0, Nil) });
         Option.forEach(RemoteDebug.shutdown, bridge)
 
     /// 時間スクラブ用に持ち回す直近の World の数（60fps で約 30 秒）。
@@ -818,7 +868,11 @@ pub mod App {
         // 遅い画面がさらに遅くなり、ログも読めなくなる。
         budgetWarned = Bool,
         // View の組み立てが既定値で続けたことを 1 回だけ知らせる口（ViewCtx#warnOnce。見た文面はゲームの間ずっと覚える）。
-        warnOnce = String -> Unit
+        warnOnce = String -> Unit,
+        // 最後に当てた withCursor の宣言（None = まだ当てていない・F8 やリモートの停止が上書きした後）。
+        cursorShown = Option[CursorSpec],
+        // 出力（addOutput）ごとの最後に書いた鍵（outputs と同じ順）。
+        outputKeys = List[String]
     }
 
     /// リモートコマンドを捌いた後に残る 3 つの進み方。
@@ -872,12 +926,12 @@ pub mod App {
     /// stepState も動かさず素通しする（巻き戻すのは World の見た目であって、貯まっていた
     /// 実時間の端数や取り置いたエッジではない）。watchState（watchFile の保存検知）も同じ扱い —
     /// World に触れない分岐では監視も動かさず素通しする。
-    def loop(app: App[w, ef], st0: LoopState[w]): Unit \ (ef + GameEngine.Game + GameEngine.Audio + ShaderEffect.Shader + RenderTarget.Target + Fs.FileRead + IO) =
+    def loop(app: App[w, ef], st0: LoopState[w]): Unit \ (ef + GameEngine.Game + GameEngine.Audio + ShaderEffect.Shader + RenderTarget.Target + Fs.FileRead + Fs.FileWrite + IO) =
         let currentKeys = InputEvent.currentKeys();
         let mouseDown = GameEngine.Game.isMouseButtonPressed(GameEngine.MouseButton.Left);
         let cursorNow = GameEngine.Game.getMousePosition();
         // realNow は前のフレームまでの実時間（quit・リロード・F8 の停止が読む）。系へ渡す前に advanceFrame が進めて置き直す。
-        let frame = { realNow = Clock.nowOf(st0#stepState#real)
+        let frame = { realNow = Clock.nowOf(st0#stepState#real), padTouched = GameEngine.Game.isGamepadTouched()
                       | frameOf(prev = st0#prevKeys, current = currentKeys, readDt(),
                             GameEngine.Game.getViewportRect()#size,
                             { prevCursor = st0#prevCursor, cursor = cursorNow },
@@ -905,8 +959,11 @@ pub mod App {
                     let next = RemoteDebug.handleRemote(app, b, raw,
                         { world = st#world, anno = st#anno, history = st#history, hold = st#remoteHold,
                           stepState = st#stepState });
+                    // リモートの口が World を差し替えた拍は跳んだ拍（セーブを作り物で上書きしない）。
+                    // /halt・/resume が矢印を上書きするので、宣言は次に動く拍で当て直す。
                     loop(app, { world = next#world, anno = next#anno, history = next#history,
-                                remoteHold = next#hold, stepState = next#stepState | carried })
+                                remoteHold = next#hold, stepState = next#stepState,
+                                cursorShown = None, outputKeys = keysAfterJump(app, next#world, st#outputKeys) | carried })
                 case _ => {
                     let decided = decideBranch({ f8Pressed = justPressed(GameEngine.Key.F8, frame),
                                                  canDebug = canDebug(app), remoteHold = st#remoteHold,
@@ -922,15 +979,17 @@ pub mod App {
                     match decided#branch {
                         case Branch.Paused =>
                             let nextAnno = pausedStep(app, st#warnOnce, st#world, st#history, frame, { paused = true | st#anno });
-                            loop(app, { anno = nextAnno | carried })
+                            loop(app, { anno = nextAnno, cursorShown = None | carried })
                         case Branch.Resuming =>
                             // スクラブ位置の World から再開する。巻き戻したぶんの履歴と
                             // フレーム番号も、そこを現在として数え直す。
                             let resumed = resumePoint(st#anno, st#history, st#world);
                             let (cache1, seen1, warned1) = renderFrame(app, st#warnOnce, resumed#world, fpsOverlayOf(app, resumed#anno), st#tileCache, st#glyphSeen, st#budgetWarned);
+                            let shown = applyCursor(app, resumed#world, None);
                             loop(app, { world = resumed#world, anno = resumed#anno, history = resumed#history,
                                         tileCache = cache1, glyphSeen = seen1,
-                                        budgetWarned = warned1 | carried })
+                                        budgetWarned = warned1, cursorShown = shown,
+                                        outputKeys = keysAfterJump(app, resumed#world, st#outputKeys) | carried })
                         case Branch.Running =>
                             let (watched, nextWatchState, watchFired) = applyWatch(app, frame#dt, st#watchState, st#world);
                             let (reloaded, reloadFired) = applyReload(app, frame, watched);
@@ -949,7 +1008,11 @@ pub mod App {
                             let nextHistory = if (canDebug(app))
                                                   List.take(historyLimit(), advanced :: st#history)
                                               else Nil;
+                            // 外への出力とマウスの矢印は、実機のフレームの後の World からだけ当てる。
+                            let written = writeOutputs(app, advanced, st#outputKeys);
+                            let shown = applyCursor(app, advanced, st#cursorShown);
                             loop(app, { world = advanced, history = nextHistory,
+                                        outputKeys = written, cursorShown = shown,
                                         anno = { frame = measuredAnno#frame + 1i64 | measuredAnno },
                                         stepState = nextStepState, watchState = nextWatchState,
                                         sustaining = nextSustaining, mixState = nextMix, soundUses = nextUses, tileCache = cache1,
@@ -957,6 +1020,50 @@ pub mod App {
                     }
                 }
             }
+        }
+
+    /// 跳んだ拍の後の出力の鍵: Skip は跳んだ先の鍵を「書いた」ことにし、Write は前に書いた鍵のまま
+    /// （次の実機のフレームで鍵が違えば書く）。written が短い所（起動の拍）は "" = まだ何も書いていない。
+    /// ゲームからは呼ばない（launch が起動・リモート・F8 の再開の拍に呼ぶ。テストのために公開）。
+    pub def keysAfterJump(app: App[w, ef], world: w, written: List[String]): List[String] =
+        app#outputs |> List.zipWithIndex |> List.map(entry -> {
+            let (index, output) = entry;
+            match output#onJump {
+                case OnJump.Skip  => (output#keyOf)(world)
+                case OnJump.Write => List.nth(index, written) |> Option.getWithDefault("")
+            }
+        })
+
+    /// 実機のフレームの後の World で書くべき出力の番号（outputs の順）: 鍵が最後に書いた鍵と違う物。
+    /// ゲームからは呼ばない（launch が呼ぶ。テストのために公開）。
+    pub def dueOutputs(app: App[w, ef], world: w, written: List[String]): List[Int32] =
+        app#outputs |> List.zipWithIndex |> List.filterMap(entry -> {
+            let (index, output) = entry;
+            if (Some((output#keyOf)(world)) == List.nth(index, written)) None else Some(index)
+        })
+
+    /// 実機のフレームの後: dueOutputs の出力だけ write を呼び、新しい鍵の列を返す。
+    def writeOutputs(app: App[w, ef], world: w, written: List[String]): List[String] \ Fs.FileWrite =
+        let due = dueOutputs(app, world, written);
+        app#outputs |> List.zipWithIndex |> List.map(entry -> {
+            let (index, output) = entry;
+            if (List.memberOf(index, due)) (output#write)(world) else ();
+            (output#keyOf)(world)
+        })
+
+    /// withCursor の宣言を当てる（前に当てた物と同じなら何もしない）。返すのは当てた宣言。
+    def applyCursor(app: App[w, ef], world: w, shown: Option[CursorSpec]): Option[CursorSpec] \ GameEngine.Game =
+        match app#cursor {
+            case None    => shown
+            case Some(f) =>
+                let want = f(world);
+                let same = shown |> Option.exists(was -> was#icon == want#icon and was#visible == want#visible);
+                if (same) shown
+                else {
+                    GameEngine.Game.setCursor(want#icon);
+                    GameEngine.Game.setCursorVisible(want#visible);
+                    Some(want)
+                }
         }
 
     /// 一時停止を抜ける地点: スクラブで表示していた瞬間の World を現在とし、

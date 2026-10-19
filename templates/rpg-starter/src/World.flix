@@ -111,8 +111,7 @@ mod World {
         heroHp = Int32,
         battle = Battle,
         dialog = UiDialog.Dialog,
-        talkingTo = Option[Grid.Cell],
-        activeDocsWritten = String
+        talkingTo = Option[Grid.Cell]
     }
 
     // ── 画面と盤の寸法（design 320×240 は project.json と同じ値。盤は design より広く、
@@ -229,7 +228,7 @@ mod World {
           hero = MapDoc.rec(docs#map)#start, facing = Dir4.Down, stepGauge = 0.0, steps = 0,
           herbs = MapDoc.rec(docs#map)#herbs, picked = 0, doorOpen = false,
           heroHp = BattleDoc.rec(docs#battle)#heroMaxHp, battle = noBattle(),
-          dialog = UiDialog.closed(), talkingTo = None, activeDocsWritten = "" }
+          dialog = UiDialog.closed(), talkingTo = None }
 
     /// 戦っていないときの空の戦い（場が無い間の置き物）。
     def noBattle(): Battle =

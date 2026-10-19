@@ -27,7 +27,7 @@ pub mod ActiveDocs {
             case many       => JArray(List.map(JString, many) |> List.toVector)
         }
 
-    /// entries の指紋(id とパスを区切り文字で 1 本に綴じた文字列)。step はまずこれで
+    /// entries の指紋(id とパスを区切り文字で 1 本に綴じた文字列)。App の出力の鍵にして
     /// 前回と見比べ、変わったフレームだけ JSON を組み直す — JSON の組み立て
     /// (Map・Json の木・整形)を毎フレームやると、名乗りが変わらないフレームでも
     /// 確保だけが積み上がるため。区切りはパスに現れないタブと改行。
@@ -47,20 +47,11 @@ pub mod ActiveDocs {
             StringBuilder.toString(sb)
         }
 
-    /// 毎フレームのシステムから呼ぶ。一覧の指紋が前回書いた物(World の activeDocsWritten)と
-    /// 同じなら何もしない — JSON の組み立ても実 IO も、場面が変わった瞬間だけ走る。
-    /// 書き込みの失敗は握り潰す(エディタ向けの補助情報で、書けない環境でも
-    /// ゲーム本体を止める理由にならない)。
-    /// World には `activeDocsWritten = String` の欄を足し、出発点は "" にする
-    /// (中身は指紋 — 書いた JSON そのものではない)。
-    pub def step(entries: List[(String, List[String])],
-                 w: { activeDocsWritten = String | r }): { activeDocsWritten = String | r } \ Fs.FileWrite =
-        let current = fingerprint(entries);
-        if (current == w#activeDocsWritten) w
-        else {
-            run {
-                discard Fs.WriteFile.write({str = json(entries)}, path())
-            } with Fs.WriteFile.runWithFileWrite;
-            { activeDocsWritten = current | w }
-        }
+    /// 一覧を debug/active-docs.json に書く（App.withDocTable が、一覧が変わった実機のフレームの後でだけ呼ぶ）。
+    /// 書き込みの失敗は握り潰す（エディタ向けの補助情報で、書けない環境でも
+    /// ゲーム本体を止める理由にならない）。
+    pub def write(entries: List[(String, List[String])]): Unit \ Fs.FileWrite =
+        run {
+            discard Fs.WriteFile.write({str = json(entries)}, path())
+        } with Fs.WriteFile.runWithFileWrite
 }

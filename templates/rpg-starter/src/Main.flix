@@ -8,7 +8,7 @@
 // （繋ぎが Main に見えるのが教育的）。App.game の外側で足す設定（reloadOn・onRenderRequest・withDebug）は
 // 戻り値の App に従来どおり後ろから pipe で足す。
 
-use fge::{ActiveDocs, App, GameEngine, LwjglLayer}
+use fge::{App, GameEngine, LwjglLayer}
 
 def main(): Unit \ IO =
     if (GameEngine.ensureMainThread()) ()
@@ -17,19 +17,15 @@ def main(): Unit \ IO =
             let docs = Controls.loadDocs();
             App.game({
                 init = World.initial(docs),
-                // 毎フレーム: 入力で状態を進め → 相互作用を解決し → 表示中の Doc を名乗る。
-                // ActiveDocs.step だけ Fs.FileWrite を使うので、純粋な部品は checked_ecast で
-                // 同じ効果行へそろえる（部品側の ef は {} のまま保つ）。ActiveDocs は debug/active-docs.json に
-                // 「表示中」を書くだけ（Studio のバッジ用・一覧が変わった瞬間だけ書くので無駄な IO は走らない）。
-                update = (f, w) ->
-                    checked_ecast(Controls.step(f, w))
-                        |> (w1 -> checked_ecast(Controls.interact(f, w1)))
-                        |> (w2 -> ActiveDocs.step(Controls.activeDocs(w2), w2)),
+                // 毎フレーム: 入力で状態を進め → 相互作用を解決する（系は純粋）。
+                update = (f, w) -> checked_ecast(Controls.interact(f, Controls.step(f, w))),
                 view = (ctx, w) -> checked_ecast(View.frame(ctx, w)),
-                // 保存即反映で読み直す Doc たち（各 1 本の watchFile に展開される）。
-                reloads = Controls.reloads()
+                // 保存即反映・F1 の一括読み直し・Studio への「表示中」の名乗りは、下の App.withDocTable が
+                // Doc の一覧表 1 枚から配線する（ここでは足さない）。
+                reloads = Nil
             })
                 // 以下は App.game の外側の高度な口（戻り値の App に後ろから pipe で足す）。
+                |> App.withDocTable(Controls.docTable())
                 // 街タイル: World が作ったアトラスを GPU へ上げ（同じ key の間は何も起きない）、
                 // タイル層として敷く。タイル層の zIndex は動的な絵と同じ z 空間で解釈される
                 // （z=0 の床は DualGrid 地形の下に隠れる — 見比べのため既存の絵は残してある）。
@@ -48,7 +44,6 @@ def main(): Unit \ IO =
                 |> App.withCameraBounds(w -> checked_ecast(World.boardRect(w)))
                 |> App.withPixelSnap(_ -> 1.0)
                 |> App.withHudView((ctx, w) -> checked_ecast(View.hud(ctx, w)))
-                |> App.reloadOn(GameEngine.Key.F1, Controls.reloadAll)
                 // 走行中の POST /render（Studio の「生成して」）は SceneRender.all と同じ実体を呼ぶ。
                 |> App.onRenderRequest(SceneRender.allShots)
                 |> App.withDebug(App.debugFromEnv())

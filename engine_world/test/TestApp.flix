@@ -614,4 +614,35 @@ mod TestApp {
     def testDecideBranchRemoteHoldKeepsPaused(): Unit \ Assert =
         Assert.assertEq(expected = App.Branch.Paused,
             App.decideBranch({ f8Pressed = true, remoteHold = true, wasPaused = true | running() })#branch)
+
+    // ========================================================================
+    // 外への出力（addOutput）: 書くのは実機のフレームの後だけ・跳んだ拍の扱いは onJump
+    // ========================================================================
+
+    /// 出力 2 本の App: 0 番 = セーブ（Skip・鍵は数そのもの）・1 番 = 名乗り（Write・鍵は数が 0 なら ""）。
+    def outputApp(): App.App[Int32, {}] =
+        App.make(0)
+            |> App.addOutput({ keyOf = n -> "${n}", write = _ -> checked_ecast(()), onJump = App.OnJump.Skip })
+            |> App.addOutput({ keyOf = n -> if (n == 0) "" else "名乗り${n}", write = _ -> checked_ecast(()), onJump = App.OnJump.Write })
+
+    // 起動の拍（まだ何も書いていない）: セーブは起動した World の鍵を書いた扱い、名乗りは "" のまま。
+    @Test
+    def testKeysAfterJumpAtLaunchSeedsOnlySkip(): Unit \ Assert =
+        Assert.assertEq(expected = "5" :: "" :: Nil, App.keysAfterJump(outputApp(), 5, Nil))
+
+    // 起動した World のまま進んだフレーム: セーブは書かない（鍵が同じ）・名乗りは書く（"" から変わった）。
+    @Test
+    def testFirstFrameWritesOnlyTheNaming(): Unit \ Assert =
+        Assert.assertEq(expected = 1 :: Nil, App.dueOutputs(outputApp(), 5, App.keysAfterJump(outputApp(), 5, Nil)))
+
+    // 遊んで数が 5 → 6 になったフレーム: 両方書く。
+    @Test
+    def testPlayChangeWritesBoth(): Unit \ Assert =
+        Assert.assertEq(expected = 0 :: 1 :: Nil, App.dueOutputs(outputApp(), 6, "5" :: "名乗り5" :: Nil))
+
+    // 5 を書いた後に /start などで 9 へ跳び、そのまま進んだフレーム: セーブは書かない（作り物で上書きしない）・名乗りは書く。
+    @Test
+    def testJumpWritesOnlyTheNaming(): Unit \ Assert =
+        let afterJump = App.keysAfterJump(outputApp(), 9, "5" :: "名乗り5" :: Nil);
+        Assert.assertEq(expected = 1 :: Nil, App.dueOutputs(outputApp(), 9, afterJump))
 }

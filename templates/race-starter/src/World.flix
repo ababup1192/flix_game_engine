@@ -112,8 +112,7 @@ mod World {
         bursts = List[Fx.Burst],
         fxSeq = Int32,
         smokeClock = Float64,
-        railClock = Float64,
-        activeDocsWritten = String
+        railClock = Float64
     }
 
     // ── 画面の寸法とレイアウト（project.json の design 240×360 と対。View も同じ値を使う） ──
@@ -285,8 +284,7 @@ mod World {
           nitro = 0.0, nitroLeft = 0.0, boostLeft = 0.0, spinLeft = 0.0, bumpLeft = 0.0,
           drifting = false, steerDir = 0.0,
           rivals = initialRivals(docs), taken = Set.empty(),
-          skids = Nil, bursts = Nil, fxSeq = 0, smokeClock = 0.0, railClock = 0.0,
-          activeDocsWritten = "" }
+          skids = Nil, bursts = Nil, fxSeq = 0, smokeClock = 0.0, railClock = 0.0 }
 
     /// ライバルの初期配置。性格は RivalsDoc の 1 行ずつ。少し前方に階段状に置き、
     /// 好みのレーン（laneBias）に応じて左右へ振る。
@@ -315,7 +313,7 @@ mod World {
     /// [遷移: Title→Racing]
     pub def startGame(w: World): World =
         { phase = Phase.Racing, speed = RulesDoc.rec(w#rules)#forwardSpeed,
-          t = w#t, fxSeq = w#fxSeq, activeDocsWritten = w#activeDocsWritten,
+          t = w#t, fxSeq = w#fxSeq,
           atlas = w#atlas, atlasGen = w#atlasGen
         | initial(docsOf(w)) }
 

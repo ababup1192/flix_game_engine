@@ -327,6 +327,10 @@ pub mod GameEngine {
         def isKeyPressed(key: Key): Bool
         def getMousePosition(): Vec2.Vec2
         def isMouseButtonPressed(button: MouseButton): Bool
+        /// 1 台目のゲームパッドのボタン・十字キー・スティックのどれかがいま押されて（倒されて）いるか。
+        /// パッドの入力はキーへ読み替えて isKeyPressed にも出るので、読み替えた後のキーからは
+        /// キーボードと見分けられない —— 案内の絵をパッドのボタンへ替える判断はここを読む（App が Frame#padTouched に置く）。
+        def isGamepadTouched(): Bool
         /// 前回呼び出し以降に蓄積されたマウスホイールの y 方向 delta を返し、
         /// 内部アキュムレータを 0 にリセットする。1 ティックぶんの値が +1.0 / -1.0 程度
         /// （プラットフォーム依存）。スクロールアップで正、ダウンで負。

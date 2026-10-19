@@ -10,10 +10,10 @@
   `pub def path(): String`
 - entries(editor 宣言 id → 表示中パスの列)をエディタが読む形の JSON にする。
   `pub def json(entries: List[(String, List[String])]): String`
-- entries の指紋(id とパスを区切り文字で 1 本に綴じた文字列)。step はまずこれで
+- entries の指紋(id とパスを区切り文字で 1 本に綴じた文字列)。App の出力の鍵にして
   `pub def fingerprint(entries: List[(String, List[String])]): String`
-- 毎フレームのシステムから呼ぶ。一覧の指紋が前回書いた物(World の activeDocsWritten)と
-  `pub def step(entries: List[(String, List[String])], w: { activeDocsWritten = String | r }): { activeDocsWritten = String | r } \ Fs.FileWrite`
+- 一覧を debug/active-docs.json に書く（App.withDocTable が、一覧が変わった実機のフレームの後でだけ呼ぶ）。
+  `pub def write(entries: List[(String, List[String])]): Unit \ Fs.FileWrite`
 
 ## Anim — `engine_world/src/Anim.flix`
 - クリップ: シート上の 1 行ぶんの連続コマと再生のしかた（純データ）。
@@ -109,7 +109,7 @@
 
 ## App — `engine_world/src/App.flix`
 - このフレームの入力と時計のスナップショット。キーの生読みはランナーが済ませてあるので、
-  `pub type alias Frame = { down = Set[GameEngine.Key], justPressed = Set[GameEngine.Key], dt = Float64, viewport = Vec2.Vec2, cursor = Vec2.Vec2, mouseDown = Bool, mouseClicked = Bool, mouseMoved = Bool, wheel = Float64, realNow = Clock.Time[Clock.Real] }`
+  `pub type alias Frame = { down = Set[GameEngine.Key], justPressed = Set[GameEngine.Key], dt = Float64, viewport = Vec2.Vec2, cursor = Vec2.Vec2, mouseDown = Bool, mouseClicked = Bool, mouseMoved = Bool, wheel = Float64, realNow = Clock.Time[Clock.Real], padTouched = Bool }`
 - key がいま押されているか（押しっぱなしも true）。移動などの連続入力に。
   `pub def isDown(key: GameEngine.Key, frame: Frame): Bool`
 - key がこのフレームで新しく押されたか（押しっぱなしは false）。決定・発射などの単発入力に。
@@ -129,7 +129,7 @@
 - 生成したドット絵アトラス 1 枚ぶんの受け渡し。
   `pub type alias AtlasUpload = { texture = String, key = String, baked = PxSpriteAtlas.Baked }`
 - ゲーム 1 本の宣言。make で空を作り、addStartup / addSystem / reloadOn / withView /
-  `pub type alias App[w: Type, ef: Eff] = { init = Vec2.Vec2 -> w \ ef, startupSystems = List[w -> w \ ef], updateSystems = List[(Frame, w) -> w \ ef], reload = Option[(GameEngine.Key, w -> w \ {Fs.FileRead})], watch = List[(String, w -> w \ {Fs.FileRead})], view = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], passes = w -> List[Render.Pass] \ ef, fonts = List[String], camera = Option[w -> Vec2.Vec2 \ ef], zoom = Option[w -> Float64 \ ef], cameraBounds = Option[w -> Rect2.Rect2 \ ef], parallaxLayers = List[(Float64, (ViewCtx, w) -> List[Render.PlacedItem] \ ef)], hudView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], audio = { before = w, after = w } -> List[String] \ ef, sustained = w -> List[Sustain] \ ef, mixer = Option[w -> AudioMixer.Mixer \ ef], quit = (Frame, w) -> Bool \ ef, closeRequest = Option[w -> w \ ef], debug = Bool, debugView = Option[(String, w -> (List[GameEngine.Drawable], List[GameEngine.TileMapRenderCmd], List[GameEngine.PolygonRenderCmd]) \ ef)], worldDump = Option[(Rect2.Rect2, w) -> String \ ef], annotationContext = Option[w -> Annotate.Table \ ef], staticLayer = Option[{ key = w -> GameEngine.StaticKey, build = w -> List[Render.PlacedItem] }], tileLayers = Option[w -> List[TileLayerSpec]], spriteAtlases = w -> List[AtlasUpload], pixelSnap = w -> Float64, statusLine = Option[w -> String \ ef], remoteRender = Option[Unit -> List[String] \ IO], remoteHandlers = List[(String, (Map[String, String], w) -> Result[String, w] \ {Fs.FileRead})], fixedStep = Option[Float64], clocks = List[(Float64, w) -> w] }`
+  `pub type alias App[w: Type, ef: Eff] = { init = Vec2.Vec2 -> w \ ef, startupSystems = List[w -> w \ ef], updateSystems = List[(Frame, w) -> w \ ef], reload = Option[(GameEngine.Key, w -> w \ {Fs.FileRead})], watch = List[(String, w -> w \ {Fs.FileRead})], view = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], passes = w -> List[Render.Pass] \ ef, fonts = List[String], camera = Option[w -> Vec2.Vec2 \ ef], zoom = Option[w -> Float64 \ ef], cameraBounds = Option[w -> Rect2.Rect2 \ ef], parallaxLayers = List[(Float64, (ViewCtx, w) -> List[Render.PlacedItem] \ ef)], hudView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], audio = { before = w, after = w } -> List[String] \ ef, sustained = w -> List[Sustain] \ ef, mixer = Option[w -> AudioMixer.Mixer \ ef], quit = (Frame, w) -> Bool \ ef, closeRequest = Option[w -> w \ ef], debug = Bool, debugView = Option[(String, w -> (List[GameEngine.Drawable], List[GameEngine.TileMapRenderCmd], List[GameEngine.PolygonRenderCmd]) \ ef)], worldDump = Option[(Rect2.Rect2, w) -> String \ ef], annotationContext = Option[w -> Annotate.Table \ ef], staticLayer = Option[{ key = w -> GameEngine.StaticKey, build = w -> List[Render.PlacedItem] }], tileLayers = Option[w -> List[TileLayerSpec]], spriteAtlases = w -> List[AtlasUpload], pixelSnap = w -> Float64, statusLine = Option[w -> String \ ef], remoteRender = Option[Unit -> List[String] \ IO], remoteHandlers = List[(String, (Map[String, String], w) -> Result[String, w] \ {Fs.FileRead})], fixedStep = Option[Float64], clocks = List[(Float64, w) -> w], cursor = Option[w -> CursorSpec], outputs = List[Output[w]] }`
 - 初期 World だけを持つ空の App。絵はまだ無い（withView で繋ぐまで何も描かない）。
   `pub def make(init: w): App[w, ef]`
 - 初期 World を design 解像度（project.json の designWidth/Height）から組む入口。
@@ -202,6 +202,18 @@
   `pub def withFixedStep(dtSeconds: Float64, app: App[w, ef]): App[w, ef]`
 - World の欄にある遊びの時計（Clock.Clock[c]）を、App が毎フレーム 1 回だけ進めるよう宣言する。
   `pub def addClock(spec: { clockOf = w -> Clock.Clock[c], withClock = (Clock.Clock[c], w) -> w, paceOf = w -> Clock.Pace[c, r] }, app: App[w, ef]): App[w, ef]`
+- マウスの矢印の見せ方（withCursor の宣言）。icon = 形・visible = 見せるか。
+  `pub type alias CursorSpec = { icon = GameEngine.Cursor, visible = Bool }`
+- 毎フレーム「マウスの矢印をどう見せたいか」を World から宣言する。App は宣言が変わったフレームだけ当て、
+  `pub def withCursor(f: w -> CursorSpec, app: App[w, ef]): App[w, ef]`
+- 跳んだ拍（起動・START・/start・/step・/flow?apply・F8 の巻き戻しからの再開）に、出力をどう扱うか。
+  `pub enum OnJump with Eq, ToString { case Skip case Write }`
+- 外への出力 1 本: keyOf = 書く中身を決める鍵（"" = 書く物が無い）・write = 書く・onJump = 跳んだ拍の扱い。
+  `pub type alias Output[w] = { keyOf = w -> String, write = w -> Unit \ Fs.FileWrite, onJump = OnJump }`
+- 鍵が最後に書いた鍵と違う実機のフレームの後で、1 回だけ write を呼ぶ出力を足す（セーブ・名乗り）。
+  `pub def addOutput(output: Output[w], app: App[w, ef]): App[w, ef]`
+- Doc の一覧表（DocTable）から、保存即反映の監視（watchFile）・F1 の一括読み直し（reloadOn）・
+  `pub def withDocTable(rows: List[DocTable.Entry[w]], app: App[w, ef]): App[w, ef]`
 - addClock で宣言した時計を、実時間 dt で 1 回ずつ進める（advanceFrame が系の前に呼ぶ）。
   `pub def tickClocks(app: App[w, ef], dt: Float64, world: w): w`
 - 前フレームと今フレームのキー集合から Frame を組む。justPressed は差分
@@ -237,11 +249,15 @@
 - 監視中パスのうち「World を作り直すべき物」を watch の登録順で返す: current で見えて
   `pub def changedPaths(watch: List[String], prev: Map[String, Int64], current: Map[String, Int64]): List[String]`
 - App を走らせる単一の効果多相ランナー。startup を 1 回だけ畳み込み、いま押されているキーを prev の
-  `pub def launch(app: App[w, ef]): Unit \ (ef + GameEngine.Game + GameEngine.Audio + ShaderEffect.Shader + RenderTarget.Target + Fs.FileRead + IO)`
+  `pub def launch(app: App[w, ef]): Unit \ (ef + GameEngine.Game + GameEngine.Audio + ShaderEffect.Shader + RenderTarget.Target + Fs.FileRead + Fs.FileWrite + IO)`
 - リモートコマンドを捌いた後に残る 3 つの進み方。
   `pub enum Branch with Eq, ToString { case Paused case Resuming case Running }`
 - F8 と停止状態から、このフレームの進み方と「F8 が今トグルされたか」を決める。
   `pub def decideBranch(input: { f8Pressed = Bool, canDebug = Bool, remoteHold = Bool, wasPaused = Bool }): { branch = Branch, toggled = Bool }`
+- 跳んだ拍の後の出力の鍵: Skip は跳んだ先の鍵を「書いた」ことにし、Write は前に書いた鍵のまま
+  `pub def keysAfterJump(app: App[w, ef], world: w, written: List[String]): List[String]`
+- 実機のフレームの後の World で書くべき出力の番号（outputs の順）: 鍵が最後に書いた鍵と違う物。
+  `pub def dueOutputs(app: App[w, ef], world: w, written: List[String]): List[Int32]`
 - 一発で鳴らした名前とループで鳴らした名前の覚え（ゲームの間ずっと持つ）。
   `pub type alias SoundUses = { oneShot = Set[String], looped = Set[String] }`
 - このフレームの一発の音 plays とループの音 looped を覚えに足し、初めて両方に出た名前を返す。
@@ -726,7 +742,7 @@
   `pub def reloads(rows: List[Entry[w]]): List[(String, w -> w \ {Fs.FileRead})]`
 - テーブルの並び順に Doc を読み直す(App.reloadOn の一括リロードへ渡す形)。
   `pub def reloadAll(rows: List[Entry[w]], world: w): w \ Fs.FileRead`
-- ActiveDocs.step へ渡す形(id → パスの列)。いま world で activeWhen を満たす行のうち
+- App.withDocTable が名乗る形(id → パスの列)。いま world で activeWhen を満たす行のうち
   `pub def activeDocs(rows: List[Entry[w]], world: w): List[(String, List[String])]`
 
 ## DualGrid — `engine_world/src/DualGrid.flix`

@@ -100,8 +100,7 @@ mod World {
         lampOutAt = Option[Clock.Time[Story]],
         events = Emit.Events[Event],
         ui = UiStore.UiWorld,
-        docError = Option[String],
-        activeDocsWritten = String
+        docError = Option[String]
     }
 
     // ── 盤の寸法（design 480×300 の中の定数。project.json と同じ値） ──
@@ -139,7 +138,7 @@ mod World {
           section = StoryDoc.rec(docs#story)#start, idx = 0,
           kit = NovelKit.closed(), cursor = 0, lightsOut = 0,
           lampOutAt = None, events = Emit.empty(),
-          ui = ui, docError = None, activeDocsWritten = "" }
+          ui = ui, docError = None }
 
     /// いまついている灯りの数（消えた分を引いた残り。負にはならない）。
     pub def lampsLit(w: World): Int32 =

@@ -35,8 +35,7 @@ mod World {
         x = Float64,
         y = Float64,
         t = Float64,
-        quit = Quit,
-        activeDocsWritten = String
+        quit = Quit
     }
 
     // ── 盤の寸法（design __W__×__H__ の中の定数。project.json と同じ値） ──
@@ -101,7 +100,7 @@ mod World {
         let (baked, key) = bakedOf(theme, shadedSprites);
         { doc = doc, keys = keys, theme = theme, sprites = shadedSprites,
           atlas = baked, atlasKey = key, shader = shader,
-          x = width() / 2.0, y = height() / 2.0, t = 0.0, quit = Quit.Playing, activeDocsWritten = "" }
+          x = width() / 2.0, y = height() / 2.0, t = 0.0, quit = Quit.Playing }
 
     /// 大きさ box の物が画面から出ない位置へ丸める（端で止まるのはルール）。
     pub def clampInside(box: Vec2.Vec2, p: Vec2.Vec2): Vec2.Vec2 =

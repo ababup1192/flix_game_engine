@@ -1211,6 +1211,14 @@ pub mod LwjglLayer {
                 let designY = cursorY / windowH * screenH;
                 k({x = designX, y = designY})
             }
+            def isGamepadTouched(k) =
+                if (not Array.get(0, gamepadConnectedHolder)) k(false)
+                else {
+                    let pressed = List.range(0, GLFW.GLFW_GAMEPAD_BUTTON_LAST + 1) |> List.exists(padBtn);
+                    // 左右のスティック（軸 0..3）だけ。トリガー（軸 4・5）は離した位置が -1 なので入れない。
+                    let tilted = List.range(0, 4) |> List.exists(axis -> Float32.abs(padAxis(axis)) > 0.5f32);
+                    k(pressed or tilted)
+                }
             def isMouseButtonPressed(button, k) = {
                 let code = mouseButtonToGlfw(button);
                 // 物理状態 OR 当フレーム内に callback が観測した PRESS。

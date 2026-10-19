@@ -401,6 +401,8 @@
 - `pub eff Game { def isKeyPressed(key: Key): Bool }`
 - `pub eff Game { def getMousePosition(): Vec2.Vec2 }`
 - `pub eff Game { def isMouseButtonPressed(button: MouseButton): Bool }`
+- 1 台目のゲームパッドのボタン・十字キー・スティックのどれかがいま押されて（倒されて）いるか。
+  `pub eff Game { def isGamepadTouched(): Bool }`
 - 前回呼び出し以降に蓄積されたマウスホイールの y 方向 delta を返し、
   `pub eff Game { def consumeScrollDelta(): Float64 }`
 - `pub eff Game { def getFontAtlas(name: String): FontAtlas }`

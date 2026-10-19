@@ -21,7 +21,7 @@ mod TestActiveDocs {
              DocJson.parse(ActiveDocs.json(many)),
              DocJson.parse(ActiveDocs.json(Nil))))
 
-    /// 同じ一覧なら指紋も同じ(変わらないフレームで step が書き込みをスキップする根拠)。
+    /// 同じ一覧なら指紋も同じ(App.withDocTable の出力の鍵 = 変わらないフレームで書き込みをスキップする根拠)。
     @Test
     def testFingerprintStableForSameEntries(): Unit \ Assert =
         let entries = ("theme", "assets/x.theme.json" :: Nil)

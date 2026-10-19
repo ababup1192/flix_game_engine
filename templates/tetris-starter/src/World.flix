@@ -6,7 +6,7 @@
 //
 // ── 毎フレームの流れ ──
 //   入力（Controls.step）→ 状態更新（World.step: 重力・接地/固定・ライン消去・涌き）→ 描画（View.frame）
-//   Main の App.game の update 行がこの順（Controls.step |> ActiveDocs.step）。
+//   Main の App.game の update 行は Controls.step だけ（表示中の Doc の名乗りは App.withDocTable が受け持つ）。
 //
 // ── 場面の移り変わり（Phase）──
 //
@@ -84,8 +84,7 @@ mod World {
         clearTimer = Float64,
         score = Int32,
         lines = Int32,
-        events = Emit.Events[Event],
-        activeDocsWritten = String
+        events = Emit.Events[Event]
     }
 
     // ── 盤の寸法（project.json のレイアウトと対。View も同じ値を使う） ──
@@ -111,7 +110,7 @@ mod World {
           current = spawnPiece(Kind.I), nextKind = Kind.I, bag = Nil,
           seed = 1i64, gravityTimer = 0.0, lockTimer = 0.0, grounded = false,
           lockResets = 0, phase = Phase.Playing, clearRows = Nil, clearTimer = 0.0,
-          score = 0, lines = 0, events = Emit.empty(), activeDocsWritten = "" }
+          score = 0, lines = 0, events = Emit.empty() }
 
     /// 涌き位置に置いた Piece（rot 0・上端中央）。row = -1 は「最上行の 1 行上（隠しバッファ）」。
     /// こうすると最上段（row 0）まで積める＝盤が上まで満杯になって初めて涌けず GAME OVER になる。

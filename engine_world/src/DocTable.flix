@@ -57,7 +57,7 @@ pub mod DocTable {
         rows |> List.filter(r -> r#reloadOn != ReloadOn.Watch)
              |> List.foldLeft((acc, r) -> { let f = r#reload; f(acc) }, world)
 
-    /// ActiveDocs.step へ渡す形(id → パスの列)。いま world で activeWhen を満たす行のうち
+    /// App.withDocTable が名乗る形(id → パスの列)。いま world で activeWhen を満たす行のうち
     /// docId を持つ物だけが出る。同じ id の行は、行が離れていても最初に現れた位置へ
     /// テーブルの並びのまま束ねる。
     /// 毎フレーム呼ばれる経路なので 1 巡で組む(id ごとの総当たりにしない)。

@@ -11,7 +11,7 @@
 // 時計: 物語の時計（World の storyClock）は App.addClock で宣言し、App が系より先に毎フレーム 1 回だけ進める
 // （止めるかは World.paceOf — メニューの間は止まる）。実時間は App が frame#realNow で配り、Controls.step が World へ写す。
 
-use fge::{ActiveDocs, App, GameEngine, LwjglLayer}
+use fge::{App, GameEngine, LwjglLayer}
 
 def main(): Unit \ IO =
     if (GameEngine.ensureMainThread()) ()
@@ -21,19 +21,15 @@ def main(): Unit \ IO =
             let docs = Controls.loadDocs();
             App.game({
                 init = World.initial(docs, ui),
-                // 毎フレーム: 入力で状態を進め → 相互作用を解決し → 表示中の Doc を名乗る。
-                // ActiveDocs.step だけ Fs.FileWrite を使うので、純粋な部品は checked_ecast で
-                // 同じ効果行へそろえる（部品側の ef は {} のまま保つ）。ActiveDocs は debug/active-docs.json に
-                // 「表示中」を書くだけ（Studio のバッジ用・一覧が変わった瞬間だけ書くので無駄な IO は走らない）。
-                update = (f, w) ->
-                    checked_ecast(Controls.step(f, w))
-                        |> (w1 -> checked_ecast(Controls.interact(f, w1)))
-                        |> (w2 -> ActiveDocs.step(Controls.activeDocs(w2), w2)),
+                // 毎フレーム: 入力で状態を進め → 相互作用を解決する（系は純粋）。
+                update = (f, w) -> checked_ecast(Controls.interact(f, Controls.step(f, w))),
                 view = (ctx, w) -> checked_ecast(View.frame(ctx, w)),
-                // 保存即反映で読み直す Doc たち（各 1 本の watchFile に展開される）。
-                reloads = Controls.reloads()
+                // 保存即反映・F1 の一括読み直し・Studio への「表示中」の名乗りは、下の App.withDocTable が
+                // Doc の一覧表 1 枚から配線する（ここでは足さない）。
+                reloads = Nil
             })
                 // 以下は App.game の外側の高度な口（戻り値の App に後ろから pipe で足す）。
+                |> App.withDocTable(Controls.docTable())
                 |> App.addClock({ clockOf = w -> w#storyClock, withClock = (c, w) -> { storyClock = c | w },
                                   paceOf = World.paceOf })
                 // 終われるのは表紙だけ（物語の途中の Esc はメニュー。キーは novel.keys.json）。
@@ -46,7 +42,6 @@ def main(): Unit \ IO =
                 // 鍵が同じ間は上げ直さないので、毎フレームの費用はゼロ。
                 |> App.withSpriteAtlases(w ->
                     { texture = World.atlasName(), key = w#atlasKey, baked = w#atlas } :: Nil)
-                |> App.reloadOn(GameEngine.Key.F1, Controls.reloadAll)
                 // 走行中の POST /render（Studio の「生成して」）は SceneRender.all と同じ実体を呼ぶ。
                 |> App.onRenderRequest(SceneRender.allShots)
                 |> App.withDebug(App.debugFromEnv())
