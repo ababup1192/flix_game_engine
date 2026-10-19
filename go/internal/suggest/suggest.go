@@ -1,9 +1,12 @@
-package flow
+package suggest
 
-// 知らない名前に「もしかして」の候補を付ける。engine_world/src/Suggest.flix と同じ決まり
+// 知らない名前に「もしかして」の候補を付ける（flow check・yarn など語彙を読む検査が共有する）。engine_world/src/Suggest.flix と同じ決まり
 // （片方だけ直すと、check と実行器で案が食い違う）。
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -85,4 +88,28 @@ func Hint(name string, known []string) string {
 		more = " …"
 	}
 	return "（使える名前: " + strings.Join(shown, " ") + more + "）"
+}
+
+// Stale は語彙の JSON（vocabPath）が root/src の .flix より古ければ、そう言う 1 行（新しければ ""）。
+// remake は書き直す口（make flow-vocab など）。
+func Stale(root, vocabPath, remake string) string {
+	info, err := os.Stat(vocabPath)
+	if err != nil {
+		return ""
+	}
+	newest := ""
+	_ = filepath.WalkDir(filepath.Join(root, "src"), func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".flix") {
+			return nil
+		}
+		if fi, err := d.Info(); err == nil && fi.ModTime().After(info.ModTime()) && newest == "" {
+			newest = path
+		}
+		return nil
+	})
+	if newest == "" {
+		return ""
+	}
+	rel, _ := filepath.Rel(root, newest)
+	return fmt.Sprintf("注意: %s は %s より古い（語彙を書き直すなら %s）", vocabPath, rel, remake)
 }

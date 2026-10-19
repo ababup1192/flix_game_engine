@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/ababup1192/flix_game_engine/go/internal/suggest"
 )
 
 const usage = `使い方:
@@ -54,7 +56,7 @@ func check(out, errOut *strings.Builder, root string, args []string) (int, error
 	if err != nil {
 		return 2, fmt.Errorf("語彙 %s が無い・読めない（make flow-vocab で書き出す）: %w", vocabPath, err)
 	}
-	if note := StaleVocab(root, vocabPath); note != "" && !given {
+	if note := suggest.Stale(root, vocabPath, "make flow-vocab"); note != "" && !given {
 		errOut.WriteString(note + "\n")
 	}
 	if len(files) == 0 {

@@ -8,9 +8,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/ababup1192/flix_game_engine/go/internal/suggest"
 )
 
 // Vocab は e2e/vocab.json（Flow.vocabJson が書く）。
@@ -253,20 +254,20 @@ func (c *checker) line(depth int, w []string) (bool, string) {
 		if len(allowed) == 0 || contains(allowed, w[1]) {
 			return false, ""
 		}
-		return false, fmt.Sprintf("設定 %s の値 '%s' は無い%s", verb, w[1], Hint(w[1], allowed))
+		return false, fmt.Sprintf("設定 %s の値 '%s' は無い%s", verb, w[1], suggest.Hint(w[1], allowed))
 	}
 	known := append(append(append([]string{}, v.Verbs...), v.Settings...), v.optionNames()...)
 	if contains(known, verb) {
 		return true, fmt.Sprintf("'%s' の書き方が違う", verb)
 	}
-	return true, fmt.Sprintf("手 '%s' は無い%s", verb, Hint(verb, known))
+	return true, fmt.Sprintf("手 '%s' は無い%s", verb, suggest.Hint(verb, known))
 }
 
 func nameIn(kind, name string, known []string) string {
 	if contains(known, name) {
 		return ""
 	}
-	return fmt.Sprintf("%s '%s' は無い%s", kind, name, Hint(name, known))
+	return fmt.Sprintf("%s '%s' は無い%s", kind, name, suggest.Hint(name, known))
 }
 
 func isSpanWord(word string) bool {
@@ -303,7 +304,7 @@ func (c *checker) target(text string) string {
 	if keySet(v, text) == "" {
 		return ""
 	}
-	return fmt.Sprintf("役かキー '%s' は無い%s", text, Hint(text, append(append([]string{}, v.Roles...), v.Keys...)))
+	return fmt.Sprintf("役かキー '%s' は無い%s", text, suggest.Hint(text, append(append([]string{}, v.Roles...), v.Keys...)))
 }
 
 func keySet(v Vocab, text string) string {
@@ -349,7 +350,7 @@ func opts(words []string) string {
 				}
 			}
 		default:
-			return fmt.Sprintf("付け足し '%s' は無い%s", word, Hint(word, known))
+			return fmt.Sprintf("付け足し '%s' は無い%s", word, suggest.Hint(word, known))
 		}
 	}
 	return ""
@@ -410,7 +411,7 @@ func (c *checker) kind(name string) (string, string) {
 	if v.Fingerprint {
 		known = append(known, "fp")
 	}
-	return "", fmt.Sprintf("問い '%s' は無い%s", name, Hint(name, known))
+	return "", fmt.Sprintf("問い '%s' は無い%s", name, suggest.Hint(name, known))
 }
 
 // splitCompare は "lines>=4" を (名前, 記号, 値) に分ける。一番前の記号（同じ位置なら長い方）。
@@ -505,27 +506,3 @@ func containsFold(xs []string, x string) bool {
 	}
 	return false
 }
-
-// StaleVocab は vocab.json が src/ の .flix より古ければ、そう言う 1 行（新しければ ""）。
-func StaleVocab(root, vocabPath string) string {
-	info, err := os.Stat(vocabPath)
-	if err != nil {
-		return ""
-	}
-	newest := ""
-	_ = filepath.WalkDir(filepath.Join(root, "src"), func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".flix") {
-			return nil
-		}
-		if fi, err := d.Info(); err == nil && fi.ModTime().After(info.ModTime()) && newest == "" {
-			newest = path
-		}
-		return nil
-	})
-	if newest == "" {
-		return ""
-	}
-	rel, _ := filepath.Rel(root, newest)
-	return fmt.Sprintf("注意: %s は %s より古い（語彙を書き直すなら make flow-vocab）", vocabPath, rel)
-}
-

@@ -9,6 +9,10 @@ mod E2e {
     pub def play(): Unit \ IO =
         run { Flow.Cli.main(Game.app(Controls.loadDocs(), NovelKit.spawnAssets())) } with Fs.FileRead.runWithIO with Fs.FileWrite.runWithIO
 
+    /// 語彙 e2e/vocab.json だけを書く入口（bin/headless-run が jar を作った時に流す・make flow-vocab）。
+    pub def vocab(): Unit \ IO =
+        run { Flow.Cli.writeVocabOf(Game.app(Controls.loadDocs(), NovelKit.spawnAssets())) } with Fs.FileRead.runWithIO with Fs.FileWrite.runWithIO
+
     /// 台詞を読み終えてから送るまでの秒（人が読んでいる間）。
     def readSeconds(): Float64 = 0.6
 

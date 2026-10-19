@@ -147,4 +147,41 @@ mod TestFlow {
             case Ok(_)         => "（読めた）"
         };
         Assert.assertEq(expected = String.trim(expected), got)
+
+    // ========================================================================
+    // 記録（Flow.Record）: 流したフレームを書き、読んで流し直すと同じ World・指紋が合う
+    // ========================================================================
+
+    /// 指紋つきの App（記録が 60 フレームごとに expect fp= を書く）。
+    def recordedApp(): App.App[Counter, {}] =
+        app() |> App.withFingerprint(w -> "n=${w#n}|t=${w#t}")
+
+    // 手書きの flow（決定を 2 回・待ち・決定を押し続ける）を流したフレームを全部記録し、記録を流し直すと
+    // （fps 50 = 1 フレーム 0.02 秒。ナノ秒で書いて読み戻しても同じ秒になる —— 実機の経過もナノ秒から来る）
+    // 押した数とフレーム数が同じで、途中の expect fp= も全部立つ（指紋が 1 つでも違えば失敗する）。
+    @Test
+    def testRecordReplaysToTheSameWorld(): Unit \ Assert + Fs.FileRead + IO =
+        let path = "build/flow-test/record.flow";
+        let original = match Flow.Parse.parseText(vocab(), "body", "fps 50\ntap confirm\nwait 1.5\ntap confirm\nhold confirm 0.5\nwait 1") {
+            case Ok(script) => match Flow.play(recordedApp(), { design = Vec2.zero(), limit = 1000 }, script,
+                                               { world = start(), state = App.freshStepState() }) {
+                case Ok(outcome) => outcome
+                case Err(failure) => bug!(failure#why)
+            }
+            case Err(problems) => bug!(Flow.Parse.problemsText(problems))
+        };
+        let rec = match Flow.Record.open(path) {
+            case Some(opened) => opened
+            case None         => bug!("記録を開けない")
+        };
+        original#frames |> List.forEach(played -> Flow.Record.frame(rec, played#step#frame, Some("n=${played#step#after#n}|t=${played#step#after#t}")));
+        Flow.Record.close(rec);
+        let replayed = match Flow.Parse.parseFile(Flow.vocabOf(recordedApp(), start()), path, Flow.Cli.readText) {
+            case Ok(script) => Flow.play(recordedApp(), { design = Vec2.zero(), limit = 1000 }, script,
+                                         { world = start(), state = App.freshStepState() })
+                                   |> Result.map(outcome -> (outcome#last#n, List.length(outcome#frames)))
+                                   |> Result.mapErr(failure -> failure#why)
+            case Err(problems) => Err(Flow.Parse.problemsText(problems))
+        };
+        Assert.assertEq(expected = Ok((original#last#n, List.length(original#frames))), replayed)
 }

@@ -601,7 +601,8 @@ pub mod App.RemoteDebug {
         anno = Annotate.State,   // 停止・スクラブ等の状態（/halt /step で paused になる）
         history = List[w],       // スクラブ用の履歴（/step の合成フレームも積む）
         hold = Bool,             // HTTP 側が停止の主導権を持っているか（真の間 F8 は無効）
-        stepState = App.StepState // 固定刻みの持ち越しと実時間の時計（/step が実機と同じに進める）
+        stepState = App.StepState, // 固定刻みの持ち越しと実時間の時計（/step が実機と同じに進める）
+        record = List[Flow.Record.Item] // 遊んだ記録に足す物（このリクエストが World を変えた分。App が書く）
     }
 
     /// リクエスト 1 件を捌き、応答をブリッジへ書いてから次の状態を返す。
@@ -631,8 +632,11 @@ pub mod App.RemoteDebug {
     def remoteCustom(apply: (Map[String, String], w) -> Result[String, w] \ {Fs.FileRead},
                      bridge: Bridge, request: Request,
                      ctx: RemoteNext[w]): RemoteNext[w] \ (Fs.FileRead + IO) =
-        match apply(request#params, ctx#world) {
-            case Ok(changed)  => answer("ok\n", bridge, { world = changed | ctx })
+        let (result, files) = Flow.Record.reading(() -> apply(request#params, ctx#world));
+        match result {
+            case Ok(changed)  =>
+                answer("ok\n", bridge, { world = changed,
+                                         record = Flow.Record.Item.Line(Flow.Record.requestLine(request#path, request#params, files)) :: Nil | ctx })
             case Err(message) => answer("error: ${message}\n", bridge, ctx)
         }
 
@@ -653,11 +657,13 @@ pub mod App.RemoteDebug {
             case None => answer("error: POST /start needs name= (see GET /starts)\n", bridge, ctx)
             case Some(name) =>
                 let args = Map.remove("name", request#params);
-                match App.buildStart(app, GameEngine.Game.getViewportRect()#size, name, args) {
+                let (built, files) = Flow.Record.reading(() -> App.buildStart(app, GameEngine.Game.getViewportRect()#size, name, args));
+                match built {
                     case Err(why)  => answer("error: ${why}\n", bridge, ctx)
                     case Ok(world) =>
                         answer("ok start=${name}\n[status]\n${statusText(app, world)}\n", bridge,
-                               { world = world, history = Nil, anno = { scrub = 0 | ctx#anno } | ctx })
+                               { world = world, history = Nil, anno = { scrub = 0 | ctx#anno },
+                                 record = Flow.Record.Item.Line(Flow.Record.startLine(name, args, files)) :: Nil | ctx })
                 }
         }
 
@@ -694,7 +700,8 @@ pub mod App.RemoteDebug {
             exitHaltMarkers();
             let resumed = App.resumePoint(ctx#anno, ctx#history, ctx#world);
             answer("ok mode=running frame=${resumed#anno#frame}\n", bridge,
-                   { world = resumed#world, anno = resumed#anno, history = resumed#history, hold = false | ctx })
+                   { world = resumed#world, anno = resumed#anno, history = resumed#history, hold = false,
+                     record = rewound(ctx#anno) | ctx })
         }
 
     /// GET /state: 進めずに観測だけ返す。停止中はスクラブで表示中の瞬間を見る。
@@ -723,8 +730,9 @@ pub mod App.RemoteDebug {
                     case Err(message) => answer(message + "\n", bridge, ctx)
                     case Ok(script) =>
                         if (not ctx#anno#paused) enterHaltMarkers() else ();
-                        let result = Flow.play(app, { design = GameEngine.Game.getViewportRect()#size, limit = stepParams#maxFrames },
-                                               script, { world = base#world, state = ctx#stepState });
+                        let (result, files) = Flow.Record.reading(() ->
+                            Flow.play(app, { design = GameEngine.Game.getViewportRect()#size, limit = stepParams#maxFrames },
+                                      script, { world = base#world, state = ctx#stepState }));
                         let (played, flowEnd) = playedOf(result);
                         let outcome = stepOutcomeOf(app, played, { world = base#world, state = ctx#stepState, frame = base#anno#frame },
                                                     stepParams, flowEnd);
@@ -737,9 +745,11 @@ pub mod App.RemoteDebug {
                                  + eventsBlock(outcome#sounds)
                                  + traceBlock(outcome#traceLines)
                                  + viewBlock(app, stepParams, outcome#world);
+                        let ran = List.take(outcome#framesRun, played);
                         answer(text, bridge,
                                { world = outcome#world, anno = annoAfter, history = historyAfter, hold = true,
-                                 stepState = outcome#stepState })
+                                 stepState = outcome#stepState,
+                                 record = List.append(rewound(ctx#anno), itemsOf(app, script, ran, startsOf(result), files)) })
                 }
         }
 
@@ -882,21 +892,54 @@ pub mod App.RemoteDebug {
                 let repeat = Map.get("repeat", request#params) |> Option.flatMap(Int32.fromString) |> Option.getWithDefault(1);
                 let began = GameEngine.Game.getViewportRect();
                 let results = List.range(0, Int32.max(1, repeat)) |> List.map(_ ->
-                    Flow.play(app, { design = began#size, limit = flowFrameCap() }, script,
-                              { world = start, state = App.freshStepState() }));
+                    Flow.Record.reading(() -> Flow.play(app, { design = began#size, limit = flowFrameCap() }, script,
+                                                        { world = start, state = App.freshStepState() })));
                 match List.last(results) {
                     case None => answer("error: nothing ran\n", bridge, ctx)
-                    case Some(Err(failure)) => answer("FAIL ${failureLine(failure)}\n    ${failure#at#text}\n", bridge, ctx)
-                    case Some(Ok(outcome)) =>
+                    case Some((Err(failure), _)) => answer("FAIL ${failureLine(failure)}\n    ${failure#at#text}\n", bridge, ctx)
+                    case Some((Ok(outcome), files)) =>
                         let text = "ok frames=${Int32.toString(List.length(outcome#frames))} repeat=${Int32.toString(repeat)}\n"
                                  + "[places]\n" + placesText(outcome) + "\n"
                                  + "[status]\n" + statusText(app, outcome#last) + "\n";
+                        // 記録には、先頭の始まり（書いていなければ登録簿の先頭）から流したフレームを足す。
+                        let leading = match (List.head(script#lines) |> Option.map(line -> line#step), List.head(app#starts)) {
+                            case (Some(Flow.Step.Start(_, _, _)), _) => Nil
+                            case (_, Some(first)) => Flow.Record.Item.Line(Flow.Record.startLine(first#name, Map.empty(), files)) :: Nil
+                            case _ => Flow.Record.Item.Line("# /flow?apply（始まりの登録簿が無いので、再生はここから食い違う）") :: Nil
+                        };
                         if (Map.get("apply", request#params) == Some("1"))
                             answer(text, bridge, { world = outcome#last, stepState = outcome#state, history = Nil,
-                                                   anno = { scrub = 0 | ctx#anno } | ctx })
+                                                   anno = { scrub = 0 | ctx#anno },
+                                                   record = List.append(leading, itemsOf(app, script, outcome#frames, outcome#starts, files)) | ctx })
                         else answer(text, bridge, ctx)
                 }
         }
+
+    /// 停止中にスクラブで過去を見ていたら、そこから進める前に記録へ rewind を足す。
+    def rewound(anno: Annotate.State): List[Flow.Record.Item] =
+        if (anno#paused and anno#scrub > 0) Flow.Record.Item.Line("rewind ${Int32.toString(anno#scrub)}") :: Nil else Nil
+
+    /// flow の結果の始まりの場所（流し終えた・止まった）。
+    def startsOf(result: Result[Flow.Failure[w], Flow.Outcome[w]]): List[(Int32, String)] =
+        match result {
+            case Ok(outcome)  => outcome#starts
+            case Err(failure) => failure#upTo#starts
+        }
+
+    /// 流したフレームを記録の材料にする: 始まりの場所に start の行（引数は flow に書いた物・読んだファイルの中身つき）、
+    /// 各フレームはそのまま（後の World の指紋の元つき）。
+    def itemsOf(app: App.App[w, ef], script: Flow.Script, played: List[Flow.Played[w]], starts: List[(Int32, String)],
+                files: Map[String, Flow.File]): List[Flow.Record.Item] =
+        let startLines = script#lines |> List.filterMap(line -> match line#step {
+            case Flow.Step.Start(name, args, _) => Some(Flow.Record.startLine(name, args, files))
+            case _                              => None
+        });
+        let at = List.zip(starts, startLines) |> List.map(match ((count, _), text) -> (count, text));
+        let linesAt = i -> at |> List.filter(entry -> fst(entry) == i) |> List.map(entry -> Flow.Record.Item.Line(snd(entry)));
+        let fp = world -> app#fingerprint |> Option.map(f -> f(world));
+        let body = played |> List.zipWithIndex |> List.flatMap(match (i, entry) ->
+            List.append(linesAt(i), Flow.Record.Item.Played(entry#step#frame, fp(entry#step#after)) :: Nil));
+        List.append(body, linesAt(List.length(played)))
 
     /// 始まりと mark の場所（何フレーム目か）を 1 行ずつ。
     def placesText(outcome: Flow.Outcome[w]): String =

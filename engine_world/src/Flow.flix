@@ -275,7 +275,7 @@ pub mod Flow {
                  start: { world = w, state = App.StepState }): Result[Failure[w], Outcome[w]] \ ef + Fs.FileRead =
         // ready off だけが「書いたフレームでそのまま押し、確かめない」。待つのは ready を、確かめるのは replies を宣言したゲームだけ。
         let readyOn = script#ready |> Option.getWithDefault(true);
-        let dt = if (script#fps > 0.0) 1.0 / script#fps else 1.0 / 60.0;
+        let dt = wholeNanos(if (script#fps > 0.0) 1.0 / script#fps else 1.0 / 60.0);
         let ctx = { app = app, setup = setup, dt = dt, readyOn = readyOn };
         let begin = { world = start#world, state = start#state, hand = freshHand(), frames = Nil, count = 0,
                       marks = Map.empty(), starts = Nil, history = start#world :: Nil, awaiting = None,
@@ -457,7 +457,7 @@ pub mod Flow {
         List.range(0, n) |> List.foldLeft((acc, index) -> acc |> Result.flatMap(cur -> {
             let dt = match List.nth(index, opt#ns) {
                 case Some(nanos) => Int64.toFloat64(nanos) / 1000000000.0
-                case None        => opt#dt |> Option.getWithDefault(ctx#dt)
+                case None        => opt#dt |> Option.map(wholeNanos) |> Option.getWithDefault(ctx#dt)
             };
             let thisOpt = if (index == 0) opt else { pressed = None, click = None, moved = None | opt };
             advance(ctx, line, dt, if (index == 0) extra else Set.empty(), thisOpt, cur)
@@ -495,6 +495,11 @@ pub mod Flow {
                 case None => Ok(next)
             }
         }
+
+    /// 経過秒をナノ秒の整数に丸める。実機の経過秒もナノ秒から来るので、flow で流したフレームを記録して
+    /// 再生しても同じ秒になる（1/60 秒のまま流すと、記録のナノ秒と時計が少しずつずれて指紋が合わない）。
+    pub def wholeNanos(secs: Float64): Float64 =
+        Float64.round(secs * 1000000000.0) / 1000000000.0
 
     /// 返事を待っている tap の番号が進んだか。
     def answered(ctx: Ctx[w, ef], c: Cursor[w]): Bool =

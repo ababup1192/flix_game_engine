@@ -30,6 +30,12 @@ pub mod Flow.Cli {
                                                  { world = startWorld(app, design, fresh, script), state = App.freshStepState() }), script#fps)
         }
 
+    /// 語彙だけを書く（ゲームの E2e.vocab が呼ぶ。bin/headless-run が jar を作った時・make flow-vocab）。
+    pub def writeVocabOf(app: App.App[w, ef]): Unit \ ef + Fs.FileRead + Fs.FileWrite + IO =
+        let vocab = Flow.vocabOf(app, App.freshWorld(app, App.projectDesign(".")));
+        let path = envOr("FLOW_VOCAB", "e2e/vocab.json");
+        println(if (writeText(path, Flow.vocabJson(vocab))) "[flow] 語彙を書いた: ${path}" else "[flow] 語彙を書けない: ${path}（フォルダが無い?）")
+
     /// 先頭の手が start でない時に流し始める World: 登録簿の先頭の始まり（無ければ新しく作った初期の World）。
     def startWorld(app: App.App[w, ef], design: Vec2.Vec2, fresh: w, script: Flow.Script): w \ ef + Fs.FileRead =
         let startsFirst = match List.head(script#lines) {

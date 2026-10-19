@@ -252,7 +252,7 @@ flow-check:
 	FLOW="$(FLOW)" FLOW_MODE=check $(HEADLESS_RUN) E2e.play
 
 flow-vocab:
-	FLOW= FLOW_MODE=vocab $(HEADLESS_RUN) E2e.play
+	$(HEADLESS_RUN) E2e.vocab
 
 # 動画の見回りが流す入口の一覧（bin/lint-rules/video-entries.json の out）を Makefile の動画の口から書き直す。
 video-entries:

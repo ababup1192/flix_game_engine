@@ -717,18 +717,45 @@ pub mod App {
         { fingerprint = Some(f) | app }
 
     /// 起動の World: 登録簿が無ければ init + 起動時の系（今までどおり）、あれば START（無ければ先頭の始まり）。
-    def bootWorld(app: App[w, ef], design: Vec2.Vec2): Result[String, w] \ ef + Fs.FileRead + IO =
+    /// 返すのは起動の World と、通った始まり（名前と書いた引数。登録簿が無ければ None）。
+    def bootWorld(app: App[w, ef], design: Vec2.Vec2): Result[String, (w, Option[(String, Map[String, String])])] \ ef + Fs.FileRead + IO =
         match List.head(app#starts) {
             case None =>
                 let init = app#init;
-                Ok(List.foldLeft((acc, sys) -> sys(acc), init(design), app#startupSystems))
+                Ok((List.foldLeft((acc, sys) -> sys(acc), init(design), app#startupSystems), None))
             case Some(first) =>
                 let line = System.getenv("START");
-                if (Object.isNull(line) or String.isEmpty(String.trim(line))) buildStart(app, design, first#name, Map.empty())
-                else forM (
-                    parsed <- parseStartLine(line) |> Result.mapErr(why -> "START: ${why}");
-                    world <- { let (name, args) = parsed; buildStart(app, design, name, args) |> Result.mapErr(why -> "START: ${why}") }
-                ) yield world
+                let wanted = if (Object.isNull(line) or String.isEmpty(String.trim(line))) Ok((first#name, Map.empty()))
+                             else parseStartLine(line) |> Result.mapErr(why -> "START: ${why}");
+                forM (
+                    chosen <- wanted;
+                    world <- { let (name, args) = chosen; buildStart(app, design, name, args) |> Result.mapErr(why -> "START: ${why}") }
+                ) yield (world, Some(chosen))
+        }
+
+    /// 指紋の元の文字（withFingerprint を繋いだゲームだけ）。
+    def fingerprintText(app: App[w, ef], world: w): Option[String] =
+        app#fingerprint |> Option.map(f -> f(world))
+
+    /// 記録に跳んだ拍の行（rewind・close）を書き、その後の World の指紋を覚え直す。
+    def recordJump(app: App[w, ef], recorder: Option[Flow.Record.Recorder], text: Option[String], world: w): Unit \ IO =
+        match recorder {
+            case None => ()
+            case Some(rec) =>
+                Option.forEach(t -> Flow.Record.line(rec, t), text);
+                Flow.Record.settle(rec, fingerprintText(app, world))
+        }
+
+    /// リモートの口が返した記録の材料（行と流したフレーム）を書き、その後の World の指紋を覚え直す。
+    def recordItems(app: App[w, ef], recorder: Option[Flow.Record.Recorder], items: List[Flow.Record.Item], world: w): Unit \ IO =
+        match recorder {
+            case None => ()
+            case Some(rec) =>
+                items |> List.forEach(item -> match item {
+                    case Flow.Record.Item.Line(text)          => Flow.Record.line(rec, text)
+                    case Flow.Record.Item.Played(frame, text) => Flow.Record.frame(rec, frame, text)
+                });
+                Flow.Record.settle(rec, fingerprintText(app, world))
         }
 
     /// addClock で宣言した時計を、実時間 dt で 1 回ずつ進める（advanceFrame が系の前に呼ぶ）。
@@ -939,14 +966,30 @@ pub mod App {
     pub def launch(app: App[w, ef]): Unit \ (ef + GameEngine.Game + GameEngine.Audio + ShaderEffect.Shader + RenderTarget.Target + Fs.FileRead + Fs.FileWrite + IO) =
         // 下ごしらえの間、画面には読み込み中の起動画面が出たまま残る（描き直さないので止まって見えるが、
         // 出し直す入口をここに作ると、間引きも中止スイッチも持たない 2 つ目の経路が生まれる）。
-        match bootWorld(app, GameEngine.Game.getViewportRect()#size) {
+        let recorder = if (app#debug) Flow.Record.pathFromEnv() |> Option.flatMap(Flow.Record.open) else None;
+        let design = GameEngine.Game.getViewportRect()#size;
+        // 記録するなら、起動の World が読んだファイルの中身も拾って start の行に載せる（再生が同じ Doc で始まる）。
+        let (booted, files) = match recorder {
+            case Some(_) => Flow.Record.reading(() -> bootWorld(app, design))
+            case None    => (bootWorld(app, design), Map.empty())
+        };
+        match booted {
             // 知らない始まりの名前で黙って先頭の場面から始めると、別の場面を見て直していることに気づけない。
-            case Err(why)  => System.err.println("[App] ${why}")
-            case Ok(world0) => launchFrom(app, world0)
+            case Err(why)  => System.err.println("[App] ${why}"); Option.forEach(Flow.Record.close, recorder)
+            case Ok((world0, started)) =>
+                Option.forEach(rec -> {
+                    match started {
+                        case Some((name, args)) => Flow.Record.line(rec, Flow.Record.startLine(name, args, files))
+                        case None => Flow.Record.line(rec, "# App.withStarts が無いので、再生は flow の既定の World（init）から")
+                    };
+                    Flow.Record.settle(rec, fingerprintText(app, world0))
+                }, recorder);
+                launchFrom(app, world0, recorder);
+                Option.forEach(Flow.Record.close, recorder)
         }
 
     /// 起動の World が決まった後の launch（リモートデバッグ・監視・ループ）。
-    def launchFrom(app: App[w, ef], world0: w): Unit \ (ef + GameEngine.Game + GameEngine.Audio + ShaderEffect.Shader + RenderTarget.Target + Fs.FileRead + Fs.FileWrite + IO) =
+    def launchFrom(app: App[w, ef], world0: w, recorder: Option[Flow.Record.Recorder]): Unit \ (ef + GameEngine.Game + GameEngine.Audio + ShaderEffect.Shader + RenderTarget.Target + Fs.FileRead + Fs.FileWrite + IO) =
         let bridge = if (canDebug(app)) Option.map(port -> RemoteDebug.start(port, app#remoteRender),
                                                    RemoteDebug.portFromEnv())
                      else None;
@@ -967,7 +1010,7 @@ pub mod App {
                     tileCache = freshTileCache(),
                     glyphSeen = None, budgetWarned = false,
                     warnOnce = warnOnceWith(Ref.fresh(Static, Set.empty())),
-                    cursorShown = None, outputKeys = keysAfterJump(app, world0, Nil) });
+                    cursorShown = None, outputKeys = keysAfterJump(app, world0, Nil), recorder = recorder });
         Option.forEach(RemoteDebug.shutdown, bridge)
 
     /// 時間スクラブ用に持ち回す直近の World の数（60fps で約 30 秒）。
@@ -995,7 +1038,9 @@ pub mod App {
         // 最後に当てた withCursor の宣言（None = まだ当てていない・F8 やリモートの停止が上書きした後）。
         cursorShown = Option[CursorSpec],
         // 出力（addOutput）ごとの最後に書いた鍵（outputs と同じ順）。
-        outputKeys = List[String]
+        outputKeys = List[String],
+        // 遊んだ記録（DEBUG の起動・FLOW_RECORD=0 で止まる）。None = 書かない。
+        recorder = Option[Flow.Record.Recorder]
     }
 
     /// リモートコマンドを捌いた後に残る 3 つの進み方。
@@ -1081,9 +1126,10 @@ pub mod App {
                     // （停止中は元々進まないし、実行中でも 1 フレームの息継ぎに過ぎない）。
                     let next = RemoteDebug.handleRemote(app, b, raw,
                         { world = st#world, anno = st#anno, history = st#history, hold = st#remoteHold,
-                          stepState = st#stepState });
+                          stepState = st#stepState, record = Nil });
                     // リモートの口が World を差し替えた拍は跳んだ拍（セーブを作り物で上書きしない）。
                     // /halt・/resume が矢印を上書きするので、宣言は次に動く拍で当て直す。
+                    recordItems(app, st#recorder, next#record, next#world);
                     loop(app, { world = next#world, anno = next#anno, history = next#history,
                                 remoteHold = next#hold, stepState = next#stepState,
                                 cursorShown = None, outputKeys = keysAfterJump(app, next#world, st#outputKeys) | carried })
@@ -1101,12 +1147,19 @@ pub mod App {
                     } else ();
                     match decided#branch {
                         case Branch.Paused =>
-                            let nextAnno = pausedStep(app, st#warnOnce, st#world, st#history, frame, { paused = true | st#anno });
+                            let (nextAnno, ticket) = pausedStep(app, st#warnOnce, st#world, st#history, frame, { paused = true | st#anno });
+                            // チケットに、ここまでの遊んだ記録の写し（再生すると表示中の瞬間で止まる）を入れる。
+                            match (ticket, st#recorder) {
+                                case (Some(dir), Some(rec)) => discard Flow.Record.copyInto(rec, dir, nextAnno#scrub)
+                                case _                      => ()
+                            };
                             loop(app, { anno = nextAnno, cursorShown = None | carried })
                         case Branch.Resuming =>
                             // スクラブ位置の World から再開する。巻き戻したぶんの履歴と
                             // フレーム番号も、そこを現在として数え直す。
                             let resumed = resumePoint(st#anno, st#history, st#world);
+                            recordJump(app, st#recorder, if (st#anno#scrub > 0) Some("rewind ${Int32.toString(st#anno#scrub)}") else None,
+                                       resumed#world);
                             let (cache1, seen1, warned1) = renderFrame(app, st#warnOnce, resumed#world, fpsOverlayOf(app, resumed#anno), st#tileCache, st#glyphSeen, st#budgetWarned);
                             let shown = applyCursor(app, resumed#world, None);
                             loop(app, { world = resumed#world, anno = resumed#anno, history = resumed#history,
@@ -1114,11 +1167,13 @@ pub mod App {
                                         budgetWarned = warned1, cursorShown = shown,
                                         outputKeys = keysAfterJump(app, resumed#world, st#outputKeys) | carried })
                         case Branch.Running =>
-                            let (watched, nextWatchState, watchFired) = applyWatch(app, frame#dt, st#watchState, st#world);
-                            let (reloaded, reloadFired) = applyReload(app, frame, watched);
+                            Option.forEach(rec -> Flow.Record.noteEntering(rec, fingerprintText(app, st#world)), st#recorder);
+                            let (watched, nextWatchState, watchFired) = applyWatch(app, frame#dt, st#watchState, st#world, st#recorder);
+                            let (reloaded, reloadFired) = applyReload(app, frame, watched, st#recorder);
                             // 1 フレームの中身は trace・台本・/step と同じ traceFrame の 1 本（音の名前もここで導く）。
                             let (traced, nextStepState) = traceFrame(app, frame, st#stepState, reloaded);
                             let advanced = traced#after;
+                            Option.forEach(rec -> Flow.Record.frame(rec, frame, fingerprintText(app, advanced)), st#recorder);
                             let (nextSustaining, nextMix, nextUses) = applyAudio(app, frame#dt, traced,
                                                                        st#sustaining, st#mixState, st#soundUses, st#warnOnce);
                             // fps は debug 有効時だけ計測する（本番ビルドは履歴を積まず無負荷）。
@@ -1217,7 +1272,7 @@ pub mod App {
     /// World には一切触れない（凍結中の絵は選んだ World から毎フレーム投影し直す）。
     /// 絵の出どころは view（PlacedItem 投影）か debugView（生チャンネル投影）のどちらか。
     def pausedStep(app: App[w, ef], warnOnce: String -> Unit, world: w, history: List[w], frame: Frame,
-                   anno: Annotate.State): Annotate.State \ (ef + GameEngine.Game) =
+                   anno: Annotate.State): (Annotate.State, Option[String]) \ (ef + GameEngine.Game) =
         let design = GameEngine.Game.getViewportRect()#size;
         let historyLen = Int32.max(1, List.length(history));
         let scrubbed = Annotate.scrubStep(
@@ -1282,25 +1337,28 @@ pub mod App {
                                    historyLen = historyLen, shownFrame = shownFrame },
                                  next, emitted, dump,
                                  { drawables = drawables, tileMaps = tileMaps, polygons = polygons }, hitList)
-                case None => next
+                case None => (next, None)
             }
         }
 
     /// 一時停止フレームの締め: 矩形が確定していれば注釈を書き出してトーストを出し、凍結画面を描く。
+    /// 返すのは次の停止の状態と、書き出したチケットのフォルダ（遊んだ記録の写しを入れる所）。
     def finishPaused(ctx: { design = Vec2.Vec2, cursor = Vec2.Vec2, atlas = FontAtlas,
                             historyLen = Int32, shownFrame = Int64 },
                      anno: Annotate.State, emitted: Option[Rect2.Rect2],
                      dump: { text = String, context = Annotate.Table },
-                     channels: DebugChannels, hitList: List[Annotate.Hit]): Annotate.State \ GameEngine.Game =
-        let shown = match emitted {
-            case Some(rect) => match writeAnnotation(ctx#design, rect, ctx#shownFrame, dump, channels, hitList) {
-                case Some(path) => Annotate.showToast("Saved debug file\n${path}", anno)
-                case None       => anno
-            }
-            case None => Annotate.tickToast(anno)
+                     channels: DebugChannels, hitList: List[Annotate.Hit]): (Annotate.State, Option[String]) \ GameEngine.Game =
+        let saved = match emitted {
+            case Some(rect) => writeAnnotation(ctx#design, rect, ctx#shownFrame, dump, channels, hitList)
+            case None       => None
+        };
+        let shown = match (emitted, saved) {
+            case (Some(_), Some(path)) => Annotate.showToast("Saved debug file\n${path}", anno)
+            case (Some(_), None)       => anno
+            case (None, _)             => Annotate.tickToast(anno)
         };
         renderPaused(ctx, shown, channels);
-        shown
+        (shown, saved)
 
     /// 確定した矩形の注釈一式（JSON・README の要約・等倍の描画命令）を組んでエンジンへ渡す。
     /// ファイルへの書き出しとスクリーンショット撮影・シャッター音はエンジンの saveAnnotation が
@@ -1353,10 +1411,20 @@ pub mod App {
 
     /// reloadOn で繋いだキーが押された瞬間だけ、リロード関数で World を作り直す。
     /// 第 2 要素は「このフレームで読み直しが起きたか」（タイル層の世代を進める合図）。
-    def applyReload(app: App[w, ef], frame: Frame, world: w): (w, Bool) \ {Fs.FileRead} =
+    def applyReload(app: App[w, ef], frame: Frame, world: w, recorder: Option[Flow.Record.Recorder]): (w, Bool) \ {Fs.FileRead, IO} =
         match app#reload {
-            case Some((key, f)) => if (justPressed(key, frame)) (f(world), true) else (world, false)
+            case Some((key, f)) => if (justPressed(key, frame)) (recordedReload(recorder, "key", () -> f(world)), true) else (world, false)
             case None           => (world, false)
+        }
+
+    /// 読み直し 1 回を流し、記録しているならその読んだファイルの中身つきで reload の行を書く。
+    def recordedReload(recorder: Option[Flow.Record.Recorder], target: String, f: Unit -> w \ Fs.FileRead): w \ {Fs.FileRead, IO} =
+        match recorder {
+            case None => f()
+            case Some(rec) =>
+                let (reloaded, files) = Flow.Record.reading(f);
+                Flow.Record.line(rec, Flow.Record.reloadLine(target, files));
+                reloaded
         }
 
     /// watchFile がフレームをまたいで持ち回す状態（前回ポーリングからの経過秒と、
@@ -1387,7 +1455,8 @@ pub mod App {
     /// 登録順に適用して World を作り直す（発火は標準エラーへ 1 行知らせる）。
     /// debug 無効・watch 空・間隔未達なら stat を一切しない（フレーム予算ゼロ）。
     /// 第 3 要素は「このフレームでどれかの Doc が読み直されたか」（タイル層の世代を進める合図）。
-    def applyWatch(app: App[w, ef], dt: Float64, state: WatchState, world: w): (w, WatchState, Bool) \ {Fs.FileRead, IO} =
+    def applyWatch(app: App[w, ef], dt: Float64, state: WatchState, world: w,
+                   recorder: Option[Flow.Record.Recorder]): (w, WatchState, Bool) \ {Fs.FileRead, IO} =
         if (not app#debug or List.isEmpty(app#watch))
             (world, state, false)
         else {
@@ -1401,7 +1470,7 @@ pub mod App {
                     let (path, f) = entry;
                     if (List.memberOf(path, changed)) {
                         System.err.println("watch reload: ${path}");
-                        f(acc)
+                        recordedReload(recorder, path, () -> f(acc))
                     } else acc
                 }, world);
                 (next, { sincePoll = 0.0, mtimes = current }, not List.isEmpty(changed))
@@ -1409,12 +1478,14 @@ pub mod App {
         }
 
     /// 閉じる要求を World へ渡し、窓の閉じる印を下ろす（withCloseRequest が無ければそのまま）。
-    def noticeCloseRequest(app: App[w, ef], st: LoopState[w]): LoopState[w] \ (ef + GameEngine.Game) =
+    def noticeCloseRequest(app: App[w, ef], st: LoopState[w]): LoopState[w] \ (ef + GameEngine.Game + IO) =
         match app#closeRequest {
             case None    => st
             case Some(f) =>
                 GameEngine.Game.setShouldClose(false);
-                { world = f(st#world) | st }
+                let closed = f(st#world);
+                recordJump(app, st#recorder, Some("close"), closed);
+                { world = closed | st }
         }
 
     /// 1 フレームの音: ミキサーが無ければ今までどおり名前のまま鳴らし、あればバスを通して鳴らす。

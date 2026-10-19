@@ -10,6 +10,10 @@ mod E2e {
     pub def play(): Unit \ IO =
         run { Flow.Cli.main(Game.app(Controls.loadDocs())) } with Fs.FileRead.runWithIO with Fs.FileWrite.runWithIO
 
+    /// 語彙 e2e/vocab.json だけを書く入口（bin/headless-run が jar を作った時に流す・make flow-vocab）。
+    pub def vocab(): Unit \ IO =
+        run { Flow.Cli.writeVocabOf(Game.app(Controls.loadDocs())) } with Fs.FileRead.runWithIO with Fs.FileWrite.runWithIO
+
     /// 役の名前 → キー（表の先頭のキーを押す。drop は ↑、confirm は Enter —— Space は遊び中なら叩きつけになる）。
     def roles(): InputMap.Table[String] =
         (Key.Left, "left") :: (Key.Right, "right") :: (Key.Z, "ccw") :: (Key.X, "cw") ::
