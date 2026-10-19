@@ -304,13 +304,13 @@ func (b *bodyParser) statements(inBlock, inIf bool) []*Stmt {
 			}
 			switch c := b.p.controlOf(t.line); c.name {
 			case "if":
-				b.pos++
+				b.take(t.line, c)
 				out = append(out, b.ifBlock(t.line, c))
 			case "elseif", "else", "endif":
 				if inIf {
 					return out
 				}
-				b.pos++
+				b.take(t.line, c)
 				b.p.fail(t.line.no, "対の <<if>> が無い <<%s>>", c.name)
 			default:
 				b.pos++
@@ -326,6 +326,24 @@ func (b *bodyParser) statements(inBlock, inIf bool) []*Stmt {
 type control struct {
 	name string
 	rest string // 名前の後ろ（<<if>> と <<elseif>> の式）
+	tail string // >> の後ろのコメントでない字（あれば読んだ所で知らせる）
+}
+
+// commandName はコマンドの中身を名前と残りに分ける（区切りは最初の空白。タブも区切る）。
+func commandName(inner string) (name, rest string) {
+	k := strings.IndexFunc(inner, unicode.IsSpace)
+	if k < 0 {
+		return inner, ""
+	}
+	return inner[:k], strings.TrimSpace(inner[k:])
+}
+
+// take は control の行を読んだ印に、>> の後ろの字を知らせる（同じ行を先読みで 2 度見ても 1 度だけ言う）。
+func (b *bodyParser) take(l bodyLine, c control) {
+	b.pos++
+	if c.tail != "" {
+		b.p.fail(l.no, "<<%s>> の後ろに字やタグは書かない（読めない: %s）", c.name, c.tail)
+	}
 }
 
 func (p *parser) controlOf(l bodyLine) control {
@@ -337,17 +355,13 @@ func (p *parser) controlOf(l bodyLine) control {
 	if end < 0 {
 		return control{}
 	}
-	inner := strings.TrimSpace(content[2:end])
-	name, rest, _ := strings.Cut(inner, " ")
+	name, rest := commandName(strings.TrimSpace(content[2:end]))
 	switch name {
 	case "if", "elseif", "else", "endif":
 	default:
 		return control{}
 	}
-	if tail := strings.TrimSpace(stripComment(content[end+2:])); tail != "" {
-		p.fail(l.no, "<<%s>> の後ろに字やタグは書かない（読めない: %s）", name, tail)
-	}
-	return control{name: name, rest: strings.TrimSpace(rest)}
+	return control{name: name, rest: rest, tail: strings.TrimSpace(stripComment(content[end+2:]))}
 }
 
 // ifBlock は <<if>> から対の <<endif>> までを読む（<<if>> の行は読んである）。
@@ -365,13 +379,13 @@ func (b *bodyParser) ifBlock(start bodyLine, first control) *Stmt {
 		}
 		switch c.name {
 		case "elseif":
-			b.pos++
+			b.take(t.line, c)
 			if sawElse {
 				b.p.fail(t.line.no, "<<else>> の後ろに <<elseif>> は書けない")
 			}
 			clause = &Clause{Line: t.line.no, Condition: b.p.condition(t.line.no, "elseif", c.rest)}
 		case "else":
-			b.pos++
+			b.take(t.line, c)
 			switch {
 			case sawElse:
 				b.p.fail(t.line.no, "<<else>> が 2 つある")
@@ -383,7 +397,7 @@ func (b *bodyParser) ifBlock(start bodyLine, first control) *Stmt {
 			sawElse = true
 			clause = &Clause{Line: t.line.no}
 		case "endif":
-			b.pos++
+			b.take(t.line, c)
 			if c.rest != "" {
 				b.p.fail(t.line.no, "<<endif>> は何も受け取らない")
 			}
@@ -496,7 +510,7 @@ func (p *parser) command(no int, content string) *Stmt {
 		p.fail(no, "中身の無い <<>>")
 		return nil
 	}
-	name, rest, _ := strings.Cut(inner, " ")
+	name, rest := commandName(inner)
 	switch name {
 	case "set", "declare":
 		if len(tags) > 0 {
@@ -588,9 +602,13 @@ func (p *parser) declare(no int, rest string) {
 		p.fail(no, "<<declare>> は <<declare $名前 = 初めの値>> と書く（%v）", err)
 		return
 	}
-	if before, _, found := strings.Cut(src, " as "); found {
-		p.refuse(no, "<<declare>> の as 型", "型は初めの値から決まる（"+strings.TrimSpace(before)+" だけを書く）")
-		return
+	if toks, err := lexExpr(src); err == nil {
+		for _, t := range toks {
+			if t.kind == xName && t.text == "as" {
+				p.refuse(no, "<<declare>> の as 型", "型は初めの値から決まる（as から後ろを消す）")
+				return
+			}
+		}
 	}
 	x, err := ParseExpr(src)
 	if err != nil {
@@ -716,7 +734,7 @@ func (p *parser) lineContent(no int, content string, allowCondition bool) (*Stmt
 				return nil, nil
 			}
 			inner := strings.TrimSpace(rest[2:end])
-			name, src, _ := strings.Cut(inner, " ")
+			name, src := commandName(inner)
 			if name != "if" {
 				p.refuse(no, "選択肢の後ろの <<"+name+">>", "選択肢の後ろに書けるのは <<if 式>> だけ")
 				return nil, nil

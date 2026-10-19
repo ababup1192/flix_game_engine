@@ -354,3 +354,23 @@ func TestRefusedExpressionsNameTheAlternative(t *testing.T) {
 		}
 	}
 }
+
+// コマンド名の後ろがタブでも <<set>> と読む・文字列の中の " as " は型の指定と取らない・文字列の \n は止める。
+func TestCommandNamesSplitOnAnyWhitespace(t *testing.T) {
+	body := onlyBody(t, "title: A\n---\n<<declare\t$msg = \"come as you are\">>\n<<set\t$msg to \"x\">>\n===\n")
+	if len(body) != 1 || body[0].Kind != "set" {
+		t.Errorf("got %+v", body)
+	}
+	_, ps := buildText(t, "title: A\n---\n<<declare $m = \"a\\nb\">>\n===\n", nil)
+	if len(ps) != 1 || ps[0].Line != 3 {
+		t.Errorf("3 行目だけのはず: %v", ps)
+	}
+}
+
+// <<else>> の後ろの字は 1 度だけ知らせる。
+func TestTrailingTextAfterElseIsReportedOnce(t *testing.T) {
+	_, ps := buildText(t, "title: A\n---\n<<if true>>\n<<else>> #tag\n<<endif>>\n===\n", nil)
+	if len(ps) != 1 || ps[0].Line != 4 {
+		t.Errorf("4 行目の 1 件のはず: %v", ps)
+	}
+}

@@ -58,7 +58,7 @@ type Expr struct {
 	Value *Value  `json:"value,omitempty"`
 	Name  string  `json:"name,omitempty"`
 	Args  []*Expr `json:"args,omitempty"`
-	group bool    // 括弧で囲んで書いた（and と or を混ぜたかの判定だけに使う）
+	group bool    // 括弧で囲んで書いた（-(1) を数の -1 に畳まないため）
 }
 
 // refusal は公式にはあるが読まない書き方の誤り（知らせを「読まない」にする）。
@@ -122,7 +122,10 @@ func lexExpr(src string) ([]exprTok, error) {
 			j := i + 1
 			closed := false
 			for j < len(rs) {
-				if rs[j] == '\\' && j+1 < len(rs) {
+				if rs[j] == '\\' {
+					if j+1 >= len(rs) || (rs[j+1] != '"' && rs[j+1] != '\\') {
+						return nil, fmt.Errorf("文字列の中で \\ の後ろに書けるのは \" と \\ だけ")
+					}
 					b.WriteRune(rs[j+1])
 					j += 2
 					continue
@@ -492,15 +495,4 @@ func constantOf(x *Expr) (Value, bool) {
 		return *x.Value, true
 	}
 	return Value{}, false
-}
-
-// walkExpr は式の中の式を順に辿る。
-func walkExpr(x *Expr, f func(*Expr)) {
-	if x == nil {
-		return
-	}
-	f(x)
-	for _, a := range x.Args {
-		walkExpr(a, f)
-	}
 }
