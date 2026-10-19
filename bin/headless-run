@@ -1,7 +1,17 @@
 #!/usr/bin/env bash
 # headless-run — 描き出しの入口（`flix run --entrypoint X` の X と同じ字）を、先に作った jar から流す。
 #
-# 使い方（ゲームの根で）: headless-run <モジュール.関数>      例: headless-run SceneRender.all
+# 使い方（ゲームの根で）:
+#   headless-run <モジュール.関数>          例: headless-run SceneRender.all   窓なしで流す（描き出し・動画・長い計算）
+#   headless-run --window <入口>           窓ありで流す（GL を開く入口。main はファイル直下の def main() = 遊ぶ入口で、
+#                                          make run・Studio のプレイが使う。DEBUG=true などの環境変数はそのまま通る）
+#   headless-run --build-only              jar を新しくするだけで流さない（Studio が開いた時・保存の後に裏で呼ぶ）
+#   headless-run --status                  jar が新しいかを 1 語で答えるだけ（作らない・鍵も取らない）:
+#                                          fresh（新しい）・stale（作り直しが要る）・failed（前に作れず、src は変わっていない）・
+#                                          building（他の人が作っている）。終わりの番号は 0（形の誤りだけ 2）
+#
+# --window の旗: Darwin は -XstartOnFirstThread（GLFW がメインスレッドを要る）を付け、-Djava.awt.headless=true は付けない
+# （bin/flix の run と同じ分け方）。常駐が「GL が要る」と答えた入口（終了コード 124・x needs-gl）も、この旗で流し直す。
 #
 # flix run は呼ぶたびにパッケージ全体をコンパイルし直す（1 回 30 秒〜数分）。ここでは
 # src・flix.toml・lib のどれかが変わった時だけ jar を 1 本作り直し、あとは java -jar で流す。
@@ -36,11 +46,25 @@
 #           jar から流す時だけ効く（flix run へ回った時は bin/flix の旗のまま）。
 set -euo pipefail
 
-if [ $# -ne 1 ]; then
-    echo "使い方: headless-run <モジュール.関数>   (ゲームの根で。例: headless-run SceneRender.all)" >&2
+usage() {
+    echo "使い方: headless-run [--window] <モジュール.関数 | main> | --build-only | --status   (ゲームの根で。例: headless-run SceneRender.all・headless-run --window main)" >&2
     exit 2
-fi
-entry=$1
+}
+mode=run
+gl=0
+entry=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --window)     gl=1 ;;
+        --build-only) mode=build ;;
+        --status)     mode=status ;;
+        -*)           usage ;;
+        *)            [ -z "$entry" ] || usage; entry=$1 ;;
+    esac
+    shift
+done
+if [ "$mode" = run ] && [ -z "$entry" ]; then usage; fi
+if [ "$mode" != run ] && { [ -n "$entry" ] || [ "$gl" = 1 ]; }; then usage; fi
 engine="$(cd "$(dirname "$0")/.." && pwd)"
 flix="${FLIX_CMD:-$engine/bin/flix}"
 case "$flix" in
@@ -60,9 +84,14 @@ fi
 
 # src から入口を拾う。mod の行より後の pub def をそのモジュールの物とする。mod が 2 つ以上ある
 # ファイル（入れ子を含む）はどの mod の物か行だけでは決められないので、丸ごと拾わない。
+# mod の無いファイルの `def main(): Unit \ IO =`（窓ありで遊ぶ入口）は main として拾う。
 list_entries() {
     find src -name '*.flix' | LC_ALL=C sort | while IFS= read -r f; do
         mods=$(grep -cE '^[[:space:]]*(pub[[:space:]]+)?mod[[:space:]]' "$f" || true)
+        if [ "$mods" = 0 ]; then
+            if grep -qE '^def[[:space:]]+main\(\):[[:space:]]*Unit[[:space:]]*\\[[:space:]]*IO[[:space:]]*=' "$f"; then echo main; fi
+            continue
+        fi
         [ "$mods" = 1 ] || continue
         sed -nE \
             -e 's/^[[:space:]]*(pub[[:space:]]+)?mod[[:space:]]+([A-Za-z0-9_.]+).*/M \2/p' \
@@ -98,6 +127,7 @@ run_with_flix() {
     if [ -n "${HEADLESS_JAVA_OPTS:-}" ]; then
         echo "[headless-run] flix run で流すので HEADLESS_JAVA_OPTS（${HEADLESS_JAVA_OPTS}）は効かない（深い再帰はスタックが足りずに落ちうる）" >&2
     fi
+    if [ "$entry" = main ]; then exec "$flix" run; fi
     exec "$flix" run --entrypoint "$entry"
 }
 
@@ -123,18 +153,18 @@ else
         mv "$entries_cache.tmp.$$" "$entries_cache"
     fi
 fi
-if ! printf '%s\n' "$entries" | grep -qxF "$entry"; then
+if [ "$mode" = run ] && ! printf '%s\n' "$entries" | grep -qxF "$entry"; then
     # 拾えない形の入口は今までどおりコンパイルして流す。
     run_with_flix
 fi
 
 build_dispatcher() {
     echo "// 自動生成（エンジンの bin/headless-run）。手で直さない。"
-    echo "// 環境変数 FGE_ENTRY の名前の入口を 1 つ流す。"
+    echo "// 環境変数 FGE_ENTRY の名前の入口を 1 つ流す（main はファイル直下の def main()。だから関数の名前は main にしない）。"
     echo "mod $main {"
     echo "    import java.lang.System"
     echo ""
-    echo "    pub def main(): Unit \\ IO ="
+    echo "    pub def dispatch(): Unit \\ IO ="
     echo "        let name = System.getenv(\"FGE_ENTRY\");"
     echo "        match name {"
     printf '%s\n' "$entries" | while IFS= read -r e; do
@@ -199,7 +229,7 @@ build_jar() {
     echo "[headless-run] jar を作る（src か lib が変わった）" >&2
     # 作った時の出力は build.log にも残す（作れなかった理由を、次からの回の知らせでも見せるため）。
     # pipefail（頭の set）なので、作るのに失敗すれば tee が成功しても列全体が失敗になる。
-    if ! (cd "$proj" && "$flix" build-fatjar --entrypoint "$main.main") 2>&1 | tee "$out/build.log" >&2; then
+    if ! (cd "$proj" && "$flix" build-fatjar --entrypoint "$main.dispatch") 2>&1 | tee "$out/build.log" >&2; then
         return 1
     fi
     built=$(ls "$proj"/artifact/*.jar 2>/dev/null | head -1)
@@ -215,6 +245,21 @@ build_jar() {
         rm -f "$out/jar.manifest"
     fi
 }
+
+# 鍵を生きている誰かが持っているか。
+lock_held() {
+    owner=$(cat "$out/.lock/pid" 2>/dev/null || true)
+    [ -n "$owner" ] && kill -0 "$owner" 2>/dev/null
+}
+
+if [ "$mode" = status ]; then
+    if lock_held; then echo building
+    elif ! is_stale; then echo fresh
+    elif failed_before; then echo failed
+    else echo stale
+    fi
+    exit 0
+fi
 
 if is_stale; then
     mkdir -p "$out"
@@ -254,6 +299,10 @@ if is_stale; then
     rm -f "$lock/pid"; rmdir "$lock" 2>/dev/null || true
     trap - EXIT
     if [ "$built_ok" = 0 ]; then
+        if [ "$mode" = build ]; then
+            { echo "[headless-run] jar を作れなかった（$out/build.log）"; sed 's/^/    /' "$out/.failed" 2>/dev/null || true; } >&2
+            exit 3
+        fi
         loud_fallback "jar を作れなかった（JVM のメソッドが大きすぎる MethodTooLargeException もここに来る）"
     fi
 fi
@@ -274,16 +323,31 @@ if [ "${built_ok:-0}" = 1 ]; then
         FGE_ENTRY="$vocab" "$java_cmd" -Xss32m -Djava.awt.headless=true -jar "$jar" >&2 || true
     done
 fi
-# 常駐に頼む（HEADLESS_RESIDENT=1 の時だけ。既定は今の java -jar）。125 は「常駐を使えなかった」で、
-# 下の java -jar へ進む。それ以外は入口の終了コードなのでそのまま返す。
+if [ "$mode" = build ]; then
+    exit 0
+fi
+# 常駐に頼む（HEADLESS_RESIDENT=1 の時だけ。既定は今の java -jar。常駐は GL を持たないので --window は頼まない）。
+# 125 は「常駐を使えなかった」で下の java -jar へ、124 は「GL が要る」で GL の旗の java -jar へ進む。
+# それ以外は入口の終了コードなのでそのまま返す。
 resident_entry="${HEADLESS_RESIDENT_ENTRY:-E2e.serveHeadless}"
-if [ "${HEADLESS_RESIDENT:-}" = 1 ] && [ "$entry" != "$resident_entry" ] && [ -x "$fge_go" ]; then
+if [ "$gl" = 0 ] && [ "${HEADLESS_RESIDENT:-}" = 1 ] && [ "$entry" != "$resident_entry" ] && [ -x "$fge_go" ]; then
     rc=0
     HEADLESS_ENTRIES="$(printf '%s\n' "$entries" | paste -sd' ' -)" \
         "$fge_go" resident run --entry "$entry" --dir . --java "$java_cmd" || rc=$?
-    [ "$rc" = 125 ] || exit "$rc"
+    case "$rc" in
+        125) ;;
+        124) gl=1 ;;
+        *)   exit "$rc" ;;
+    esac
+fi
+# 窓なしは headless に固定（-XstartOnFirstThread の下で AWT が AppKit を待って固まらないため）。
+# GL を開く入口は bin/flix の run と同じく、Darwin だけ -XstartOnFirstThread を付けて headless にしない。
+if [ "$gl" = 1 ]; then
+    java_flags="-Xss32m -XX:MaxRAMPercentage=50"
+    if [ "$(uname)" = Darwin ]; then java_flags="$java_flags -XstartOnFirstThread"; fi
+else
+    java_flags="-Xss32m -XX:MaxRAMPercentage=50 -Djava.awt.headless=true"
 fi
 # HEADLESS_JAVA_OPTS は空白で分けて既定の後ろに足す（同じ旗は後ろが勝つ）。
 # shellcheck disable=SC2086
-FGE_ENTRY="$entry" exec "$java_cmd" -Xss32m -XX:MaxRAMPercentage=50 -Djava.awt.headless=true \
-    ${HEADLESS_JAVA_OPTS:-} -jar "$jar"
+FGE_ENTRY="$entry" exec "$java_cmd" $java_flags ${HEADLESS_JAVA_OPTS:-} -jar "$jar"

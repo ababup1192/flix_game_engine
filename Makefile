@@ -46,6 +46,13 @@ LAYER_DIRS := $(addprefix $(LAYER_ROOT)/,$(LAYER_PKGS))
 # (推移先の別リポを見に行かない)。配布名は flix_game_engine でリポ名と一致させる。
 ENGINE_FULL_DIR       := engine_full
 ENGINE_FULL_FPKG_SRC  := $(ENGINE_FULL_DIR)/artifact/package.fpkg
+# 配った版（Release の zip・Studio の同梱）は、組み立て（bin/lint-rules/stage-engine.json）で fpkg を
+# engine_full.fpkg へ付け替え、Go のソース go/ を運ばない（組んだ bin/fge-go を 1 本だけ運ぶ）。
+# new-game と sync-fge-go はこの 2 つで、リポの作業コピーか配った版かを見分けて同じ口で動く。
+ENGINE_FULL_FPKG_BUNDLED := $(ENGINE_FULL_DIR)/artifact/engine_full.fpkg
+IS_BUNDLE := $(shell test -d go || echo 1)
+# new-game が種付けに使う fpkg（作業コピーは組んだ package.fpkg・配った版は付け替えた engine_full.fpkg）。
+ENGINE_FULL_FPKG_SEED := $(if $(IS_BUNDLE),$(ENGINE_FULL_FPKG_BUNDLED),$(ENGINE_FULL_FPKG_SRC))
 ENGINE_FULL_TOML_SRC  := $(ENGINE_FULL_DIR)/flix.toml
 ENGINE_FULL_SUBPATH   := lib/github/ababup1192/flix_game_engine/$(VERSION)
 ENGINE_FULL_FPKG_NAME := flix_game_engine-$(VERSION).fpkg
@@ -739,9 +746,20 @@ prune-stale-tools:
 # 次の実行を即 SIGKILL するため。中身も署名も正しいのに配った先だけが死に、
 # pre-commit がこれを呼ぶ git まで道連れになる (index.lock だけが残る)。
 # mv なら inode が新しくなるので踏まない。
-sync-fge-go: go-build-host
+#
+# WhyNot: 配った版（go/ が無い）は組めないので、同梱の bin/fge-go（配った先の OS/CPU 向けの 1 本）をそのまま配る。
+sync-fge-go:
 	@if [ -z "$(GAME)" ]; then echo "error: GAME を指定してください"; exit 1; fi
-	@os=$$(uname -s | tr 'A-Z' 'a-z'); arch=$$(uname -m); ext=""; \
+	@if [ -n "$(IS_BUNDLE)" ]; then \
+	  ext=""; case "$$(uname -s)" in MINGW*|MSYS*|CYGWIN*) ext=".exe" ;; esac; \
+	  src=bin/fge-go$$ext; \
+	  if [ ! -f "$$src" ]; then echo "[sync-fge-go] $$src がありません（配った engine が欠けています）"; exit 1; fi; \
+	  tmp="$(GAME)/bin/.fge-go$$ext.new"; cp "$$src" "$$tmp"; chmod +x "$$tmp"; mv -f "$$tmp" "$(GAME)/bin/fge-go$$ext"; \
+	  echo "[sync-fge-go] $$src → $(GAME)/bin/fge-go$$ext"; exit 0; \
+	fi; \
+	$(MAKE) --no-print-directory go-build-host
+	@[ -z "$(IS_BUNDLE)" ] || exit 0; \
+	os=$$(uname -s | tr 'A-Z' 'a-z'); arch=$$(uname -m); ext=""; \
 	case "$$os" in darwin) ;; linux) ;; mingw*|msys*|cygwin*) os=windows; ext=".exe" ;; \
 	  *) echo "[sync-fge-go] 知らない OS ($$os)。bin/dist/ から手で選んで $(GAME)/bin/ へ置いてください"; exit 0 ;; esac; \
 	case "$$arch" in arm64|aarch64) arch=arm64 ;; x86_64|amd64) arch=amd64 ;; \
@@ -960,11 +978,14 @@ export NG_TITLE
 # 判定は mtime なので、git checkout 直後は中身が同じでも古く見えることがある。空振りは
 # sync-engine-full を 1 回回せば済む側の失敗なので、見逃すよりそちらを選ぶ。
 .PHONY: engine-full-fresh
+# 配った版はリリースが組んだ fpkg をそのまま使う（ソースの時刻は zip を開いた時刻なので、比べると空振りで止まる）。
 engine-full-fresh:
-	@if [ ! -f "$(ENGINE_FULL_FPKG_SRC)" ]; then \
-	  echo "error: $(ENGINE_FULL_FPKG_SRC) がありません。先に make sync-engine-full を実行してください"; exit 1; \
+	@if [ ! -f "$(ENGINE_FULL_FPKG_SEED)" ]; then \
+	  if [ -n "$(IS_BUNDLE)" ]; then echo "error: $(ENGINE_FULL_FPKG_SEED) がありません（配った engine が欠けています。入れ直してください）"; \
+	  else echo "error: $(ENGINE_FULL_FPKG_SRC) がありません。先に make sync-engine-full を実行してください"; fi; exit 1; \
 	fi
-	@newer=$$(find $(ROOT_SRC_PKGS:%=%/src) -name '*.flix' -newer "$(ENGINE_FULL_FPKG_SRC)" 2>/dev/null | head -5); \
+	@[ -z "$(IS_BUNDLE)" ] || exit 0; \
+	 newer=$$(find $(ROOT_SRC_PKGS:%=%/src) -name '*.flix' -newer "$(ENGINE_FULL_FPKG_SRC)" 2>/dev/null | head -5); \
 	 if [ -n "$$newer" ]; then \
 	   echo "error: $(ENGINE_FULL_FPKG_SRC) がソースより古いです。make sync-engine-full で作り直してください"; \
 	   echo "$$newer" | sed 's/^/  新しい: /'; exit 1; \
@@ -1003,7 +1024,7 @@ new-game: engine-full-fresh
 	fi; \
 	printf '%s\n' '# このマシンの実行環境 (git には入れない — .gitignore 済み)。make new-game が生成。' '# ?= なのは Studio が環境変数 ENGINE で渡してくる同梱 engine を勝たせるため。' 'ENGINE ?= $(CURDIR)' > "$(GAME)/local.mk"; \
 	mkdir -p "$(GAME)/$(ENGINE_FULL_SUBPATH)"; \
-	cp "$(ENGINE_FULL_FPKG_SRC)" "$(GAME)/$(ENGINE_FULL_SUBPATH)/$(ENGINE_FULL_FPKG_NAME)"; \
+	cp "$(ENGINE_FULL_FPKG_SEED)" "$(GAME)/$(ENGINE_FULL_SUBPATH)/$(ENGINE_FULL_FPKG_NAME)"; \
 	cp "$(ENGINE_FULL_TOML_SRC)" "$(GAME)/$(ENGINE_FULL_SUBPATH)/$(ENGINE_FULL_TOML_NAME)"; \
 	for d in cache external; do \
 	  if [ -d "lib/$$d" ]; then mkdir -p "$(GAME)/lib"; cp -R "lib/$$d" "$(GAME)/lib/$$d"; fi; \

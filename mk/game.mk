@@ -99,11 +99,20 @@ help:
 	@echo ""
 	@echo "このゲーム固有の口は Makefile の頭のコメントを見る。"
 
+# 遊ぶ口。macOS/Linux は描き出しと同じ jar（bin/headless-run）から窓ありで流すので、src を変えていない 2 回目からは
+# コンパイルしない（internet_dungeon で窓が開くまで flix run 36 秒 → 0.5 秒）。jar を作れない時は flix run で続ける
+# （遊ぶのを止めない。描き出しの口は止める）。Windows はラッパ（bash）が無いので今までどおり flix run。
+ifeq ($(OS),Windows_NT)
+PLAY_RUN ?= $(FLIX) run
+else
+PLAY_RUN ?= FGE_HEADLESS_FALLBACK=1 FLIX_CMD=$(FLIX) "$(ENGINE)/bin/headless-run" --window main
+endif
+
 run:
-	$(FLIX) run
+	$(PLAY_RUN)
 
 debug:
-	DEBUG=true $(FLIX) run
+	DEBUG=true $(PLAY_RUN)
 
 # 出力は .test-logs/test.log に落とし、緑なら末尾 5 行だけ見せる。
 # make status が「最後にいつ・緑か赤か」をこの記録から読む。
