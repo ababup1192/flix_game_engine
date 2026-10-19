@@ -50,9 +50,11 @@ pub mod RenderService {
         { status = 200, contentType = contentType, body = body }
 
     /// 環境変数 RENDER_PORT から待ち受けるポートを読む。未設定・数値でなければ None。
-    pub def portFromEnv(): Option[Int32] \ IO =
-        let value = System.getenv("RENDER_PORT");
-        if (Object.isNull(value)) None else Int32.fromString(value)
+    pub def portFromEnv(): Option[Int32] \ IO = portOf(ProcessEnv.snapshot())
+
+    /// portFromEnv の中身。env は入口の頭で読んだ環境変数の表。
+    pub def portOf(env: Map[String, String]): Option[Int32] =
+        Map.get("RENDER_PORT", env) |> Option.flatMap(Int32.fromString)
 
     /// 放置されたら自分から終わるまでの秒数。編集していない間にメモリを抱えたままに
     /// しないための決まり（次に頼まれたときはエディタが立ち上げ直す）。

@@ -46,6 +46,11 @@ else
 HEADLESS_RUN ?= JAVA_TOOL_OPTIONS="-Djava.awt.headless=true" FLIX_CMD=$(FLIX) "$(ENGINE)/bin/headless-run"
 endif
 
+# 窓なしのゲームの常駐（HEADLESS_RESIDENT=1 の時に headless-run が起こす）を落とす。居なければ何もしない。
+# WhyNot: render-all・reference-check・compare の最後に成否にかかわらず流すのは、まとめて描く口の後に
+# JVM を 1 本抱えたまま寿命が切れるまで待たせないため（1 枚ずつの render は続けて呼ぶので残す）。
+RESIDENT_STOP = if [ -x "$(ENGINE)/bin/fge-go" ]; then "$(ENGINE)/bin/fge-go" resident stop --dir . || true; fi
+
 .PHONY: help status run debug test build check flow flow-check flow-vocab render render-all gallery-sounds reference-check reference-update render-budget render-lint video-entries loc api module src src-index hooks check-docs-sync compare agent-eval agent-eval-compare agent-eval-release
 
 # 共通の口の一覧。engine を上げるとここも一緒に新しくなる
@@ -186,7 +191,7 @@ src:
 
 # 色票を持つゲームでは、入力が変わっていれば先に作り直してから描く。
 render-all: $(PALETTE)
-	$(HEADLESS_RUN) SceneRender.all
+	$(HEADLESS_RUN) SceneRender.all; rc=$$?; $(RESIDENT_STOP); exit $$rc
 
 # 1 枚だけ debug/<場面>.png へ描き出す（gallery/ は render-all だけが書く）。
 render:
@@ -224,8 +229,7 @@ gallery-sounds:
 
 # 仕上げの確認: 基準の絵との差（reference-check.sh）と、絵の値段（render-budget）。
 reference-check: render-all
-	"$(ENGINE)/bin/reference-check.sh"
-	@$(MAKE) --no-print-directory render-budget
+	@"$(ENGINE)/bin/reference-check.sh" && $(MAKE) --no-print-directory render-budget; rc=$$?; $(RESIDENT_STOP); exit $$rc
 
 # 絵の値段（1 場面が組んだ描き物の数）を、render-all が gallery/ に残した記録で裁く。描き直さないので軽い。
 # 上限は engine の bin/lint-rules/check-render-budget.json・場面ごとの上限は reference/ITEMS.caps.tsv。
@@ -317,7 +321,8 @@ compare:
 	"$$fge" compare --base "$(BASE)" \
 	  $(if $(filter command line,$(origin SHOTS)),--shots "$(SHOTS)") \
 	  $(if $(VIDEOS),--videos "$(VIDEOS)") \
-	  $(if $(BASE_ENGINE),--base-engine "$(BASE_ENGINE)")
+	  $(if $(BASE_ENGINE),--base-engine "$(BASE_ENGINE)"); \
+	rc=$$?; $(RESIDENT_STOP); exit $$rc
 
 # 文書・スキル・早見表で、何も教えていないエージェントが正しい道具を選べるかを測る。
 # お題は agent-eval/*.json（engine.json は engine から配られる共通・それ以外はゲーム固有）。

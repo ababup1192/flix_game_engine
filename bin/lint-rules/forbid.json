@@ -67,6 +67,24 @@
       "skipDirs": ["test", "render"],
       "pattern": "\\bClock\\.after\\([^;]*\\bClock\\.zero\\(\\)|\\bClock\\.since\\(\\s*Clock\\.zero\\(\\)|\\bClock\\.startAt\\(",
       "hint": "遊びの中で時刻や時計を数から作らない（Clock.after(秒, Clock.zero())・Clock.since(Clock.zero(), 時刻)・Clock.startAt は、別の時計の時刻へ付け替える・時計を手で進める抜け道になる）。今は Clock.nowOf(時計) か frame#realNow から読み、ずらすのは Clock.after(秒, 今)。決まった瞬間を撮る描き出し（render/）とテスト（test/）だけで使う（engine の docs/clock.md）"
+    },
+    {
+      "id": "process-env-entry",
+      "suffixes": [".flix"],
+      "prefixes": ["engine/src/", "engine_world/src/", "engine_tools/src/", "templates/"],
+      "skip": ["engine/src/ProcessEnv.flix", "engine_tools/src/SoftRaster.flix"],
+      "skipDirs": ["test", "build", "lib"],
+      "pattern": "\\bSystem\\.getenv\\b|\\bSys\\.Env\\.|\\bFlow\\.Cli\\.envOr\\b",
+      "hint": "環境変数は入口の頭で 1 回だけ読み、要る値を引数で奥へ渡す。入口の頭で App.Headless.envOf(req)（常駐の /run からも呼ぶ <名前>Job(req)）か ProcessEnv.snapshot() を読み、奥は Map[String, String] を引数で受ける（Flow.Cli.getEnvOr(env, 名前, 既定値)・Flow.Cli.mainOf(app, env) の形）。常駐では奥で読むと、要求の env ではなく常駐を起こした時の env が見える。例外は skip に並べたファイルだけ（ProcessEnv が読む 1 か所と、出力に効かない調子の旗 FGE_SOFT_SERIAL。理由はその行の WhyNot）（engine の docs/design/render-speed.md 2.5 節）"
+    },
+    {
+      "id": "process-exit-entry",
+      "suffixes": [".flix"],
+      "prefixes": ["engine/src/", "engine_world/src/", "engine_tools/src/", "templates/"],
+      "skip": ["engine/src/ProcessEnv.flix", "engine/src/GameEngine.flix"],
+      "skipDirs": ["test", "build", "lib"],
+      "pattern": "\\bSystem\\.exit\\b",
+      "hint": "奥でプロセスを終えない（常駐の /run から呼ばれると常駐ごと落ちる）。奥は終了コード（Int32）を返し、入口の頭の 1 行で App.Headless.exitWith(xJob(App.Headless.requestFromProcess())) か ProcessEnv.exitWith(コード) に渡す。例外は skip に並べたファイルだけ（ProcessEnv が終える 1 か所と、子の終了コードで必ず終わる macOS の起動し直し GameEngine.ensureMainThread。理由はその行の WhyNot）（engine の docs/design/render-speed.md 2.5 節）"
     }
   ],
   "exempt": {}

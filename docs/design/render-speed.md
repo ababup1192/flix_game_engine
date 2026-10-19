@@ -79,7 +79,8 @@ pub def outOf(req: Request): java.io.PrintStream
 pub def errOf(req: Request): java.io.PrintStream
 
 /// 常駐が受ける入口 1 つ。name は bin/headless-run に渡す名前（"SceneRender.one"）。
-pub type alias Job = { name = String, kind = JobKind, run = Request -> Int32 \ IO }
+// 欄の名前は launch（run は Flix の予約語で欄に置けない）。
+pub type alias Job = { name = String, kind = JobKind, launch = Request -> Int32 \ IO }
 /// 静止画（常駐で流す）か、動画（GPU で塗るなら常駐に送らない）か。
 pub enum JobKind with Eq { case Still, case Video }
 /// 名前は "<モジュール>.<関数>" に組む。
@@ -229,6 +230,7 @@ checkd が偽の緑を返したのは、常駐が見ている物とディスク�
   JVM には `-Xmx` で蓋をする（checkd で、蓋が無いと太り続けた経緯）。
 - **寿命は短く、使い方で延ばす（依頼主の希望 2026-10-19: メモリを持ったまま待つ時間を短く）。**
   - 既定の待ちの寿命は **180 秒**（`HEADLESS_IDLE_SECS` で変えられる）。`/run` が来るたびに、そこから 180 秒に置き直す。
+    ただし今の残りより短くはしない（会話で 600 秒に延びた途中の `/run` で 180 秒へ戻すと、Studio の会話が切れる）。
   - **1 枚撮りが続く時だけ延ばす。** 会話の列の要求（Studio の会話・`bin/fge talk shot` の `/start`・`/step`・`view=shot`）が来たら、
     寿命をそこから **600 秒**に延ばす（`HEADLESS_TALK_IDLE_SECS`）。人が台本を書きながら撮り続ける間だけ温かいまま残る。
   - **束の口は終わったら常駐を自分で畳む。** `reference-check`・`render-all`・`compare` の今側（mk/game.mk の口）は、成否にかかわらず

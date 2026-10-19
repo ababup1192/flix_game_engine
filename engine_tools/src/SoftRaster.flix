@@ -391,6 +391,8 @@ pub mod SoftRaster {
     /// そのまま呼び元へ伝わる）。画素は互いに読まないので、並べても 1 本で回しても同じ列になる。
     /// 環境変数 FGE_SOFT_SERIAL=1 なら 1 本で評価する（速さを比べるとき・コアを空けたいとき）。
     def shadeAll(n: Int32, pixelOf: Int32 -> Int32): Array[Int32, Static] \ IO =
+        // WhyNot: 引数で受けない — 並べても 1 本でも同じ列になる（出力に効かない調子の旗）ので、常駐で起こした時の
+        // 値が見えても答えは変わらない。引数に通すと描き出しの pub の口の型がいくつも変わる。
         let serial = System.getenv("FGE_SOFT_SERIAL");
         let range = IntStream.range(0i32, n);
         let stream = if (not Object.isNull(serial) and serial == "1") range else range.parallel();

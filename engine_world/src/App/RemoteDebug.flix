@@ -25,6 +25,8 @@ pub mod App.RemoteDebug {
     import java.lang.Runnable
     import java.lang.Thread
     import java.lang.Throwable
+    import java.io.OutputStream
+    import java.util.concurrent.locks.ReentrantLock
 
     // ── HTTP スレッドとゲームループを繋ぐ橋 ──
 
@@ -47,19 +49,33 @@ pub mod App.RemoteDebug {
         wake = JQueue[String]              // 描き出しのスレッドを起こす印（中身は使わない）
     }
 
+    /// 橋の外で、HTTP の糸の中で答える口（App.Headless の /hello・/run）。path が合う依頼はキューへ積まず、
+    /// 200・chunked のヘッダを送ってから serve を呼び、serve が戻ったら本文を閉じる。
+    /// serve は終わるまで HTTP の糸を持つ（何十秒でもよい）。
+    pub type alias DirectRoute = {
+        path = String,                                  // "/run" など（クエリを外したパス）
+        serve = (Request, OutputStream) -> Unit \ IO    // 本文を書く（flush は serve が決める）
+    }
+
     /// 環境変数 DEBUG_HTTP_PORT からポート番号を読む。未設定・数値でなければ None。
-    pub def portFromEnv(): Option[Int32] \ IO =
-        let value = System.getenv("DEBUG_HTTP_PORT");
-        if (Object.isNull(value)) None else Int32.fromString(value)
+    pub def portFromEnv(): Option[Int32] \ IO = portOf(ProcessEnv.snapshot())
+
+    /// portFromEnv の中身。env は入口の頭で読んだ環境変数の表。
+    pub def portOf(env: Map[String, String]): Option[Int32] =
+        Map.get("DEBUG_HTTP_PORT", env) |> Option.flatMap(Int32.fromString)
 
     /// 命令口を開くポート: DEBUG_HTTP_PORT があればそれ、無ければ 0（OS に空いたポートを選ばせる）。
     /// 0 で開いた時は、開けたポートを ~/.flix_ge_studio/games.json に書き置く（App.GameRegistry・start が書く）。
     /// DEBUG_HTTP_PORT=off なら開かない。
-    pub def portToOpen(): Option[Int32] \ IO =
-        let value = System.getenv("DEBUG_HTTP_PORT");
-        if (Object.isNull(value) or value == "") Some(0)
-        else if (value == "off") None
-        else Int32.fromString(value)
+    pub def portToOpen(): Option[Int32] \ IO = portToOpenOf(ProcessEnv.snapshot())
+
+    /// portToOpen の中身。env は入口の頭で読んだ環境変数の表。
+    pub def portToOpenOf(env: Map[String, String]): Option[Int32] =
+        match Map.getWithDefault("DEBUG_HTTP_PORT", "", env) {
+            case ""    => Some(0)
+            case "off" => None
+            case value => Int32.fromString(value)
+        }
 
     /// 実際に開けたポート（0 で開いた時に OS が選んだ番号を知る）。
     pub def boundPort(bridge: Bridge): Int32 \ IO =
@@ -84,22 +100,31 @@ pub mod App.RemoteDebug {
     // 答えとして渡ってしまう（以後ずっと 1 つずつずれる）。だから時間切れでは、まだ取られて
     // いない依頼を取り下げ、遅れて届いた他の番号の答えは捨てる。
     pub def start(port: Int32, render: Option[Unit -> List[String] \ IO]): Bridge \ IO =
-        open(port, render, true)
+        open(port, render, true, Nil)
 
     /// 窓なしのゲーム（App.Headless）の待ち受け: 同じ橋を、名乗らず（listening の行も書き置きも無し）に開く。
-    pub def startQuiet(port: Int32): Bridge \ IO = open(port, None, false)
+    pub def startQuiet(port: Int32): Bridge \ IO = open(port, None, false, Nil)
+
+    /// startQuiet に、橋の外で答える口（DirectRoute）を足して開く。
+    // WhyNot: direct の依頼を橋と同じ 1 本の HTTP の糸で受けない — 長い /run の間、/hello も会話の列の
+    // /step も待たされ、2 件目の /run に busy と答えることもできない。糸を増やす代わりに、橋へ渡す依頼は
+    // 1 件ずつ錠で並べる（awaitAnswer は他の番号の答えを捨てるので、橋を 2 本の糸が同時に待つと答えが消える）。
+    pub def startQuietWith(port: Int32, direct: List[DirectRoute]): Bridge \ IO = open(port, None, false, direct)
 
     /// startQuiet で開いた橋を閉じる（書き置きに触れない）。
     pub def stopQuiet(bridge: Bridge): Unit \ IO =
         let server = bridge#server;
         server.stop(0)
 
-    def open(port: Int32, render: Option[Unit -> List[String] \ IO], announce: Bool): Bridge \ IO =
+    def open(port: Int32, render: Option[Unit -> List[String] \ IO], announce: Bool,
+             direct: List[DirectRoute]): Bridge \ IO =
         let requests: JQueue[String] = new JQueue();
         let responses: JQueue[String] = new JQueue();
         let current = new AtomicLong(0i64);
         let issued = new AtomicLong(0i64);
+        let bridgeLock = new ReentrantLock(true);
         let renderJobs = Option.map(startRenderWorker, render);
+        let directRoutes = direct |> List.map(route -> (route#path, route#serve));
         let server = HttpServer.create(new InetSocketAddress("127.0.0.1", port), 0);
         discard server.createContext("/", new HttpHandler {
             def handle(_this: HttpHandler, exchange: HttpExchange): Unit \ IO = {
@@ -111,26 +136,45 @@ pub mod App.RemoteDebug {
                 let methodName = exchange.getRequestMethod();
                 let path = uri.getPath();
                 let raw = "${methodName} ${path}${queryPart}\n${bodyText}";
-                let (status, text) =
-                    if (path == "/render") serveRender(renderJobs, parseRequest(raw))
-                    else {
-                        let id = issued.incrementAndGet();
-                        let request = tagged(id, raw);
-                        discard requests.offer(request);
-                        let answer = awaitAnswer(responses, id, System.nanoTime() + 10_000_000_000i64);
-                        if (Option.isEmpty(answer)) discard requests.remove(request) else ();
-                        (if (Option.isEmpty(answer)) 503 else 200,
-                         Option.getWithDefault(busyText(), answer))
-                    };
                 let headers = exchange.getResponseHeaders();
                 headers.set("Content-Type", "text/plain; charset=utf-8");
-                let bytes = text.getBytes("UTF-8");
-                exchange.sendResponseHeaders(status, Int32.toInt64(Array.length(bytes)));
-                let out = exchange.getResponseBody();
-                out.write(bytes);
-                out.close()
+                match findRoute(path, directRoutes) {
+                    case Some(serve) =>
+                        exchange.sendResponseHeaders(200, 0i64);
+                        let out = exchange.getResponseBody();
+                        try { serve(parseRequest(raw), out) } catch {
+                            case e: Throwable => Log.warn("[remote-debug] ${path} の途中で止まりました — ${e.toString()}")
+                        };
+                        try { out.close() } catch { case _: Throwable => () }
+                    case None =>
+                        let (status, text) =
+                            if (path == "/render") serveRender(renderJobs, parseRequest(raw))
+                            else {
+                                bridgeLock.lock();
+                                let id = issued.incrementAndGet();
+                                let request = tagged(id, raw);
+                                discard requests.offer(request);
+                                let answer = awaitAnswer(responses, id, System.nanoTime() + 10_000_000_000i64);
+                                if (Option.isEmpty(answer)) discard requests.remove(request) else ();
+                                bridgeLock.unlock();
+                                (if (Option.isEmpty(answer)) 503 else 200,
+                                 Option.getWithDefault(busyText(), answer))
+                            };
+                        let bytes = text.getBytes("UTF-8");
+                        exchange.sendResponseHeaders(status, Int32.toInt64(Array.length(bytes)));
+                        let out = exchange.getResponseBody();
+                        out.write(bytes);
+                        out.close()
+                }
             }
         });
+        if (List.isEmpty(direct)) () else server.setExecutor(Executors.newCachedThreadPool(new ThreadFactory {
+            def newThread(_this: ThreadFactory, task: Runnable): Thread \ IO = {
+                let thread = new Thread(task, "remote-debug-http");
+                thread.setDaemon(true);
+                thread
+            }
+        }));
         server.start();
         let bound = server.getAddress().getPort();
         if (announce) {

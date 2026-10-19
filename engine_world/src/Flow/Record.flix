@@ -63,8 +63,11 @@ pub mod Flow.Record {
         }
 
     /// 記録の置き場（環境変数 FLOW_RECORD: 無し = debug/flow-record/latest.flow・"0" = 書かない・それ以外 = そのパス）。
-    pub def pathFromEnv(): Option[String] \ IO =
-        let value = Flow.Cli.envOr("FLOW_RECORD", "");
+    pub def pathFromEnv(): Option[String] \ IO = pathOf(ProcessEnv.snapshot())
+
+    /// pathFromEnv の中身。env は入口の頭で読んだ環境変数の表。
+    pub def pathOf(env: Map[String, String]): Option[String] =
+        let value = Flow.Cli.getEnvOr(env, "FLOW_RECORD", "");
         if (value == "0") None
         else if (value == "" or value == "1") Some("debug/flow-record/latest.flow")
         else Some(value)

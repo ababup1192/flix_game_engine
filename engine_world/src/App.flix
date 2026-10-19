@@ -497,9 +497,11 @@ pub mod App {
 
     /// 環境変数 DEBUG が空でない値で設定されていれば true（例: `DEBUG=true flix run`）。
     /// Main から `App.withDebug(App.debugFromEnv())` の形で使う。
-    pub def debugFromEnv(): Bool \ IO =
-        let value = System.getenv("DEBUG");
-        not Object.isNull(value) and value != ""
+    pub def debugFromEnv(): Bool \ IO = debugOf(ProcessEnv.snapshot())
+
+    /// debugFromEnv の中身。env は入口の頭で読んだ環境変数の表。
+    pub def debugOf(env: Map[String, String]): Bool =
+        Map.getWithDefault("DEBUG", "", env) != ""
 
     /// 自前描画（view = None）のゲームがデバッグ機能（F8）を使えるようにする生投影を繋ぐ。
     /// f は World を描画チャンネル（drawable / tileMap / polygon）へ投影する（描画はしない）。
@@ -730,14 +732,14 @@ pub mod App {
 
     /// 起動の World: 登録簿が無ければ init + 起動時の系（今までどおり）、あれば START（無ければ先頭の始まり）。
     /// 返すのは起動の World と、通った始まり（名前と書いた引数。登録簿が無ければ None）。
-    def bootWorld(app: App[w, ef], design: Vec2.Vec2): Result[String, (w, Option[(String, Map[String, String])])] \ ef + Fs.FileRead + IO =
+    def bootWorld(app: App[w, ef], design: Vec2.Vec2, env: Map[String, String]): Result[String, (w, Option[(String, Map[String, String])])] \ ef + Fs.FileRead =
         match List.head(app#starts) {
             case None =>
                 let init = app#init;
                 Ok((List.foldLeft((acc, sys) -> sys(acc), init(design), app#startupSystems), None))
             case Some(first) =>
-                let line = System.getenv("START");
-                let wanted = if (Object.isNull(line) or String.isEmpty(String.trim(line))) Ok((first#name, Map.empty()))
+                let line = Map.getWithDefault("START", "", env);
+                let wanted = if (String.isEmpty(String.trim(line))) Ok((first#name, Map.empty()))
                              else parseStartLine(line) |> Result.mapErr(why -> "START: ${why}");
                 forM (
                     chosen <- wanted;
@@ -979,12 +981,13 @@ pub mod App {
     pub def launch(app: App[w, ef]): Unit \ (ef + GameEngine.Game + GameEngine.Audio + ShaderEffect.Shader + RenderTarget.Target + Fs.FileRead + Fs.FileWrite + IO) =
         // 下ごしらえの間、画面には読み込み中の起動画面が出たまま残る（描き直さないので止まって見えるが、
         // 出し直す入口をここに作ると、間引きも中止スイッチも持たない 2 つ目の経路が生まれる）。
-        let recorder = if (app#debug) Flow.Record.pathFromEnv() |> Option.flatMap(Flow.Record.open) else None;
+        let env = ProcessEnv.snapshot();
+        let recorder = if (app#debug) Flow.Record.pathOf(env) |> Option.flatMap(Flow.Record.open) else None;
         let design = GameEngine.Game.getViewportRect()#size;
         // 記録するなら、起動の World が読んだファイルの中身も拾って start の行に載せる（再生が同じ Doc で始まる）。
         let (booted, files) = match recorder {
-            case Some(_) => Flow.Record.captureReads(() -> bootWorld(app, design))
-            case None    => (bootWorld(app, design), Map.empty())
+            case Some(_) => Flow.Record.captureReads(() -> bootWorld(app, design, env))
+            case None    => (bootWorld(app, design, env), Map.empty())
         };
         match booted {
             // 知らない始まりの名前で黙って先頭の場面から始めると、別の場面を見て直していることに気づけない。
@@ -997,14 +1000,14 @@ pub mod App {
                     };
                     Flow.Record.resetFingerprint(rec, fingerprintText(app, world0))
                 }, recorder);
-                launchFrom(app, world0, recorder);
+                launchFrom(app, world0, recorder, env);
                 Option.forEach(Flow.Record.close, recorder)
         }
 
     /// 起動の World が決まった後の launch（リモートデバッグ・監視・ループ）。
-    def launchFrom(app: App[w, ef], world0: w, recorder: Option[Flow.Record.Recorder]): Unit \ (ef + GameEngine.Game + GameEngine.Audio + ShaderEffect.Shader + RenderTarget.Target + Fs.FileRead + Fs.FileWrite + IO) =
+    def launchFrom(app: App[w, ef], world0: w, recorder: Option[Flow.Record.Recorder], env: Map[String, String]): Unit \ (ef + GameEngine.Game + GameEngine.Audio + ShaderEffect.Shader + RenderTarget.Target + Fs.FileRead + Fs.FileWrite + IO) =
         let bridge = if (canDebug(app)) Option.map(port -> RemoteDebug.start(port, app#remoteRender),
-                                                   RemoteDebug.portToOpen())
+                                                   RemoteDebug.portToOpenOf(env))
                      else None;
         // 起動時点の更新時刻を「発火なしで」用意しておく — 用意しないと最初のポーリングが
         // 全パスを新規出現と見なし、init 直後にもう一度リロードが走ってしまう。

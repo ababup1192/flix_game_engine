@@ -8,7 +8,6 @@
 pub mod ReferenceDiff {
     import java.awt.image.BufferedImage
     import java.io.File
-    import java.lang.System
     import javax.imageio.ImageIO
 
     /// 左右のあいだの仕切りの幅（px）。
@@ -20,9 +19,12 @@ pub mod ReferenceDiff {
     /// 環境変数で受け取って描き出す。DIFF_DIR = ゲームのディレクトリ、
     /// DIFF_NAMES = 並べたい PNG の名前をカンマで繋いだ物（例 "title.png,talk.png"）。
     /// 名前を呼び側（make）から貰うのは、どれが変わったかを決めるのが cmp の仕事だから。
-    pub def pairs(): Unit \ IO =
-        let dir = envOr("DIFF_DIR", ".");
-        let names = envOr("DIFF_NAMES", "")
+    pub def pairs(): Unit \ IO = pairsOf(ProcessEnv.snapshot())
+
+    /// pairs の中身。env は入口の頭で読んだ環境変数の表。
+    pub def pairsOf(env: Map[String, String]): Unit \ IO =
+        let dir = Map.getWithDefault("DIFF_DIR", ".", env);
+        let names = Map.getWithDefault("DIFF_NAMES", "", env)
             |> String.splitOn(substr = ",")
             |> List.map(String.trim)
             |> List.filter(n -> not String.isEmpty(n));
@@ -30,10 +32,6 @@ pub mod ReferenceDiff {
             println("[diff] 並べる絵がありません（DIFF_NAMES が空）")
         else
             List.forEach(name -> pairOne(dir, name), names)
-
-    def envOr(key: String, fallback: String): String \ IO =
-        let value = System.getenv(key);
-        if (Object.isNull(value)) fallback else value
 
     /// 1 枚ぶん: reference/<name> と gallery/<name> を読んで debug/diff/<name> へ並べて書く。
     /// 寸法が違うときは描き出さない — 縮尺の違う 2 枚を並べても比べたことにならない。

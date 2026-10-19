@@ -8,6 +8,15 @@
 ## AtomicFile — `engine_tools/src/AtomicFile.flix`
 - `pub def write(path: String, fill: File -> Unit \ IO): Unit \ IO`
 
+## ContentCache — `engine_tools/src/ContentCache.flix`
+- 取り置きの置き場。外からは fresh で作り、loadOrBuild に渡すだけ。
+  `pub type alias Cache[a] = CacheData[a]`
+- 空の置き場を作る。
+  `pub def fresh(): Cache[a] \ IO`
+- `pub def loadOrBuild(cache: Cache[a], params: String, extraFiles: List[String], build: Unit -> a \ ef): a \ (ef - Fs.FileRead) + Fs.FileRead + IO`
+- loadOrBuild に加えて、build の中の Fs.FileTest（exists 系）と Fs.DirList（一覧）も記録する。
+  `pub def loadOrBuildWithDirs(cache: Cache[a], params: String, extraFiles: List[String], build: Unit -> a \ ef): a \ (ef - Fs.FileRead - Fs.FileTest - Fs.DirList) + Fs.FileRead + Fs.FileTest + Fs.DirList + IO`
+
 ## Filmstrip — `engine_tools/src/Filmstrip.flix`
 - 描き出しの結果（呼び側が HTML ビューアのメタデータに使う）。
   `pub type alias RenderResult = { frameCount = Int32, frameW = Int32, frameH = Int32, width = Int32, height = Int32, indexed = Bool, colors = Int32 }`
@@ -101,6 +110,8 @@
 ## ReferenceDiff — `engine_tools/src/ReferenceDiff.flix`
 - 環境変数で受け取って描き出す。DIFF_DIR = ゲームのディレクトリ、
   `pub def pairs(): Unit \ IO`
+- pairs の中身。env は入口の頭で読んだ環境変数の表。
+  `pub def pairsOf(env: Map[String, String]): Unit \ IO`
 
 ## ReferenceSite — `engine_tools/src/ReferenceSite.flix`
 - サイト全体の設定。1 サイト 1 レコードで名前渡しする。
@@ -150,6 +161,8 @@
   `pub def bytesReply(contentType: String, body: Array[Int8, Static]): Reply`
 - 環境変数 RENDER_PORT から待ち受けるポートを読む。未設定・数値でなければ None。
   `pub def portFromEnv(): Option[Int32] \ IO`
+- portFromEnv の中身。env は入口の頭で読んだ環境変数の表。
+  `pub def portOf(env: Map[String, String]): Option[Int32]`
 - 放置されたら自分から終わるまでの秒数。編集していない間にメモリを抱えたままに
   `pub def idleSecondsFromEnv(): Int64`
 - port で待ち受けて、頼まれるたびに handle を呼ぶ。

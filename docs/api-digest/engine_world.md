@@ -186,6 +186,8 @@
   `pub def withDebug(enabled: Bool, app: App[w, ef]): App[w, ef]`
 - 環境変数 DEBUG が空でない値で設定されていれば true（例: `DEBUG=true flix run`）。
   `pub def debugFromEnv(): Bool \ IO`
+- debugFromEnv の中身。env は入口の頭で読んだ環境変数の表。
+  `pub def debugOf(env: Map[String, String]): Bool`
 - 自前描画（view = None）のゲームがデバッグ機能（F8）を使えるようにする生投影を繋ぐ。
   `pub def withDebugView(font: {font = String}, f: w -> (List[GameEngine.Drawable], List[GameEngine.TileMapRenderCmd], List[GameEngine.PolygonRenderCmd]) \ ef, app: App[w, ef]): App[w, ef]`
 - 注釈（F8 の矩形）を書き出すとき「囲った瞬間の World」をテキストにしてチケットへ
@@ -323,8 +325,74 @@
   `pub def unregister(): Unit \ IO`
 
 ## App.Headless — `engine_world/src/App/Headless.flix`
-- 入口の中身。FGE_SHOT があれば 1 枚撮って終わり、無ければ待ち受ける。
+- `pub type alias Request = RequestData`
+- 要求の env（呼ぶ側のプロセスの環境変数を丸ごと）。
+  `pub def envOf(req: Request): Map[String, String]`
+- 要求の標準出力（子プロセスの出力をここへ写す時に使う）。
+  `pub def outOf(req: Request): PrintStream`
+- 要求の標準エラー。
+  `pub def errOf(req: Request): PrintStream`
+- 今のプロセスの env と標準出力・標準エラーで作る要求（素の道の入口が使う）。
+  `pub def requestFromProcess(): Request \ IO`
+- 静止画（常駐で流す）か、動画（GPU で塗るなら常駐に送らない）か。
+  `pub enum JobKind with Eq, ToString { case Still, case Video }`
+- `pub type alias Job = { name = String, kind = JobKind, launch = Request -> Int32 \ IO }`
+- 素の道の入口の終わり方: 0 ならそのまま戻り、それ以外はその終了コードでプロセスを終える。
+  `pub def exitWith(code: Int32): Unit \ IO`
+- 静止画の入口。名前は "<モジュール>.<関数>" に組む。
+  `pub def job(module: String, fn: String, launch: Request -> Int32 \ IO): Job`
+- 動画の入口。
+  `pub def videoJob(module: String, fn: String, launch: Request -> Int32 \ IO): Job`
+- /run の終わりの印。
+  `pub enum RunEnd with Eq, ToString { case Exited(Int32), case Oom, case Stale, case Busy, case UnknownEntry, case NeedsGl }`
+- 入口の標準出力の 1 行。
+  `pub def outLine(text: String): String`
+- 入口の標準エラーの 1 行。
+  `pub def errLine(text: String): String`
+- 流れの最後の 1 行。
+  `pub def endLine(end: RunEnd): String`
+- /run の本文（`KEY=VALUE` の行）を env の表へ。`=` の無い行と鍵の空の行は捨てる。値の中の `=` は残す。
+  `pub def parseEnvLines(body: String): Map[String, String]`
+- /hello に返す env の行: LANG・LC_*・HEADLESS_* の順（同じ組の中は鍵の字の順）。
+  `pub def passedEnv(env: Map[String, String]): List[(String, String)]`
+- /hello の本文の材料。
+  `pub type alias Hello = { pid = String, dir = String, manifest = String, served = Int64, busy = String, idleLeft = Int64, idleWindow = Int64, env = Map[String, String], jobs = List[(String, JobKind)] }`
+- /hello の本文。
+  `pub def helloText(hello: Hello): String`
+- JobKind の字（/hello の job= の行）。
+  `pub def kindText(kind: JobKind): String`
+- HEADLESS_ENTRIES（空白区切り）に無い束の名前。HEADLESS_ENTRIES が空なら照合しない（空を返す）。
+  `pub def missingEntries(declared: String, names: List[String]): List[String]`
+- 寿命の幅（秒）: /run の後と、会話の列の要求の後。
+  `pub type alias IdleWindows = { work = Int64, talk = Int64 }`
+- env から寿命の幅を読む。常駐は /run が 180 秒・会話が 600 秒、常駐でなければどちらも HEADLESS_IDLE_SECS（既定 600 秒）。
+  `pub def idleWindowsOf(resident: Bool, env: Map[String, String]): IdleWindows`
+- 会話の列の要求（World を組む・進める・見る）か。
+  `pub def isTalkPath(path: String): Bool`
+- 会話の列の要求 1 件が寿命をどれだけ延ばすか。常駐では /start・/step・/state だけ、常駐でなければ全部。
+  `pub def talkWindowOf(resident: Bool, windows: IdleWindows, path: String): Option[Int64]`
+- 寿命: 切れる時刻（System.nanoTime の値）と、それを決めた幅の秒。
+  `pub type alias Lease = { deadline = Int64, window = Int64 }`
+- nowNs から windowSecs の寿命を取る。今の寿命の方が長く残っていれば今のまま（短い幅で縮めない）。
+  `pub def extendLease(nowNs: Int64, windowSecs: Int64, lease: Lease): Lease`
+- 寿命の残りの秒（切れていれば 0）。
+  `pub def idleLeftSecs(nowNs: Int64, lease: Lease): Int64`
+- resident.json の 1 件（値は全部文字列。games.json と同じ流儀）。
+  `pub type alias ResidentEntry = { pid = String, port = String, dir = String, manifest = String, started = String }`
+- resident.json の中身。
+  `pub def residentText(entry: ResidentEntry): String`
+- resident.json の pid（読めなければ None）。
+  `pub def residentPidOf(text: String): Option[String]`
+- [shot] の答えの `ok png=<パス>` の行のパス（無ければ None）。
+  `pub def pngPathOf(block: String): Option[String]`
+- [shot] の答えが書いたファイル: PNG と、隣の描き物の表（<名前>.items.tsv）。撮れていなければ空。
+  `pub def shotFilesOf(block: String): List[String]`
+- 入口の中身。FGE_SHOT があれば 1 枚撮って終わり、無ければ待ち受ける（/run は無し）。
   `pub def serve(app: App.App[w, ef]): Unit \ ef + Fs.FileRead + IO`
+- 窓なしのゲーム（/start・/step・view=shot）+ 入口の束（/run）で待ち受ける。FGE_SHOT があれば 1 枚撮って終わる。
+  `pub def serveJobs(app: App.App[w, ef], jobs: List[Job]): Unit \ ef + Fs.FileRead + IO`
+- App を持たないゲームの常駐。/start・/step・/state には「未対応」と答える。立てない時は 1 でプロセスを終える。
+  `pub def serveJobsOnly(jobs: List[Job]): Unit \ IO`
 - `pub def helpText(): String`
 
 ## App.RemoteDebug — `engine_world/src/App/RemoteDebug.flix`
@@ -332,10 +400,16 @@
   `pub type alias Bridge = { server = HttpServer, requests = JQueue[String], responses = JQueue[String], current = AtomicLong }`
 - /render の帳簿。HTTP のスレッドと描き出しのスレッドが共有する（どれもスレッド安全な Java の部品）。
   `pub type alias RenderJobs = { requested = AtomicLong, done = AtomicLong, running = AtomicLong, last = AtomicReference[String], wake = JQueue[String] }`
+- 橋の外で、HTTP の糸の中で答える口（App.Headless の /hello・/run）。path が合う依頼はキューへ積まず、
+  `pub type alias DirectRoute = { path = String, serve = (Request, OutputStream) -> Unit \ IO }`
 - 環境変数 DEBUG_HTTP_PORT からポート番号を読む。未設定・数値でなければ None。
   `pub def portFromEnv(): Option[Int32] \ IO`
+- portFromEnv の中身。env は入口の頭で読んだ環境変数の表。
+  `pub def portOf(env: Map[String, String]): Option[Int32]`
 - 命令口を開くポート: DEBUG_HTTP_PORT があればそれ、無ければ 0（OS に空いたポートを選ばせる）。
   `pub def portToOpen(): Option[Int32] \ IO`
+- portToOpen の中身。env は入口の頭で読んだ環境変数の表。
+  `pub def portToOpenOf(env: Map[String, String]): Option[Int32]`
 - 実際に開けたポート（0 で開いた時に OS が選んだ番号を知る）。
   `pub def boundPort(bridge: Bridge): Int32 \ IO`
 - 本文に依頼番号を付ける（キューに積む形）。
@@ -345,6 +419,7 @@
 - `pub def start(port: Int32, render: Option[Unit -> List[String] \ IO]): Bridge \ IO`
 - 窓なしのゲーム（App.Headless）の待ち受け: 同じ橋を、名乗らず（listening の行も書き置きも無し）に開く。
   `pub def startQuiet(port: Int32): Bridge \ IO`
+- `pub def startQuietWith(port: Int32, direct: List[DirectRoute]): Bridge \ IO`
 - startQuiet で開いた橋を閉じる（書き置きに触れない）。
   `pub def stopQuiet(bridge: Bridge): Unit \ IO`
 - ゲームループが毎フレーム呼ぶ非ブロッキングの受信。届いていなければ None。
@@ -1008,13 +1083,20 @@
 - `pub def cmpSymbol(cmp: Cmp): String`
 
 ## Flow.Cli — `engine_world/src/Flow/Cli.flix`
-- `pub def main(app: App.App[w, ef]): Unit \ ef + Fs.FileRead + Fs.FileWrite + IO`
+- プロセスの環境変数で mainOf を流し、失敗ならその終了コードでプロセスを終える。
+  `pub def main(app: App.App[w, ef]): Unit \ ef + Fs.FileRead + Fs.FileWrite + IO`
+- main の中身。env は入口の頭で読んだ環境変数の表（常駐なら App.Headless.envOf(req)）。戻り値は終了コード。
+  `pub def mainOf(app: App.App[w, ef], env: Map[String, String]): Int32 \ ef + Fs.FileRead + Fs.FileWrite + IO`
 - 語彙だけを書く（ゲームの E2e.vocab が呼ぶ。bin/headless-run が jar を作った時・make flow-vocab）。
   `pub def writeVocabOf(app: App.App[w, ef]): Unit \ ef + Fs.FileRead + Fs.FileWrite + IO`
+- writeVocabOf の中身。env は入口の頭で読んだ環境変数の表。書けなくても 0 を返す（理由は 1 行出す）。
+  `pub def vocabMainOf(app: App.App[w, ef], env: Map[String, String]): Int32 \ ef + Fs.FileRead + Fs.FileWrite + IO`
 - 先頭の手が start でない時に流し始める World: 登録簿の先頭の始まり（無ければ新しく作った初期の World）。
   `pub def startWorld(app: App.App[w, ef], design: Vec2.Vec2, fresh: w, script: Flow.Script): w \ ef + Fs.FileRead`
-- 環境変数（無いか空なら fallback）。
+- プロセスの環境変数（無いか空なら fallback）。入口の頭だけで使う。奥では getEnvOr で引数の表を引く。
   `pub def envOr(name: String, fallback: String): String \ IO`
+- env の表の値（無いか空なら fallback）。
+  `pub def getEnvOr(env: Map[String, String], name: String, fallback: String): String`
 - ファイルを読む（読めなければ理由）。
   `pub def readText(path: String): Result[String, String] \ Fs.FileRead`
 - ファイルに書く（書けたか）。
@@ -1041,6 +1123,8 @@
   `pub def open(path: String): Option[Recorder] \ IO`
 - 記録の置き場（環境変数 FLOW_RECORD: 無し = debug/flow-record/latest.flow・"0" = 書かない・それ以外 = そのパス）。
   `pub def pathFromEnv(): Option[String] \ IO`
+- pathFromEnv の中身。env は入口の頭で読んだ環境変数の表。
+  `pub def pathOf(env: Map[String, String]): Option[String]`
 - まとめている行を書き出す。
   `pub def flush(rec: Recorder): Unit \ IO`
 - そのまま 1 行を書く（start・reload・request・close・rewind・# ext）。前にまとめていた行を先に書き出す。

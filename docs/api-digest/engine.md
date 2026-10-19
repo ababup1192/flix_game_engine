@@ -535,6 +535,11 @@
 - スクリーン px の塗り潰しコマンドに変換する。`screenPos` は描画原点
   `pub def toRenderCmd(screenPos: Vec2.Vec2, scaleVec: Vec2.Vec2, poly: Polygon): GameEngine.PolygonRenderCmd`
 
+## ProcessEnv — `engine/src/ProcessEnv.flix`
+- `pub def snapshot(): Map[String, String] \ IO`
+- 0 ならそのまま戻り、それ以外はその終了コードでプロセスを終える。
+  `pub def exitWith(code: Int32): Unit \ IO`
+
 ## ProjectLoader — `engine/src/core/ProjectLoader.flix`
 - project.json から組み立てた、engine 起動に渡すための設定。
   `pub type alias ProjectConfig = { rootDir = String, glyphs = String, designWidth = Int32, designHeight = Int32, windowWidth = Int32, windowHeight = Int32, title = String, textureManifest = List[{name = String, path = String, hasAlpha = Bool}], fontManifest = List[{name = String, path = String, fontSize = Float64}], soundManifest = List[{name = String, path = String, looping = Bool}], clearColor = Color, maxDeltaTime = Float64 }`

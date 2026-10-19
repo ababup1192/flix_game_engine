@@ -276,6 +276,9 @@ func renderBoth(o Options, wt string) (*side, *side, error) {
 					return 130
 				}
 				fmt.Fprintf(o.Err, "[compare] %s: %s\n", sd.label, strings.Join(step, " "))
+				if sd.s == base {
+					step = baseStep(step)
+				}
 				if c := run(sd.s.dir, step...); c != 0 {
 					sd.s.failed = append(sd.s.failed, strings.Join(step[1:], " "))
 					if c == 130 {
@@ -297,6 +300,14 @@ func renderBoth(o Options, wt string) (*side, *side, error) {
 	collectSide(o, base, baseStart)
 	collectSide(o, cur, curStart)
 	return base, cur, nil
+}
+
+// baseStep は基準側の 1 段に、常駐を使わせない印を足す（make の引数なので描き出しの env まで届く）。
+//
+// WhyNot: 基準側で常駐を起こさないのは、基準は描き終えたら消す一時の worktree で、二度と使わない
+// JVM が寿命まで残るため（設計 docs/design/render-speed.md 2.4）。
+func baseStep(step []string) []string {
+	return append(append([]string{}, step...), "HEADLESS_RESIDENT=0")
 }
 
 func renderSteps(o Options) [][]string {

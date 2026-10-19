@@ -13,12 +13,18 @@
 # 拾えない形の入口（引数あり・別の効果つき・複数行・mod が 2 つ以上あるファイル）と、jar を
 # 作れなかった時は、今までどおり flix run に回す（速くならないだけで、描き出しは止めない）。
 #
+# jar が古いかは中身の指紋（bin/fge resident manifest: src・flix.toml・lib の中身と java の旗の SHA-256）を
+# build/headless/jar.manifest と比べて決める。bin/fge-go が無い時だけ更新時刻で決める。
+#
+# HEADLESS_RESIDENT=1 なら、jar を確かめた後にまずゲームの根の常駐（窓なしのゲーム・既定の入口 E2e.serveHeadless）
+# へ頼む（bin/fge resident run）。常駐を使えない時（終了コード 125）だけ下の java -jar で流す。
+#
 # jar の置き場: build/headless/（git に入れない）。作る場所は build/headless/proj で、
 # ゲームの src を写した上に FgeHeadlessMain.flix を足す（ゲームの src には何も書かない）。
 # 2 本の make が同時に来ても作るのは 1 本だけ（build/headless/.lock で順番に。鍵に作り手の pid を
 # 書き、作り手が落ちていたら次の人が外す。15 分待っても空かなければ flix run で流す）。
 # 作り直しは別名で書いてから mv するので、走っている JVM の jar は消えない。
-# 作れなかった時は build/headless/.failed に印を残し、src などがそれより新しくなるまで作り直さない
+# 作れなかった時は build/headless/.failed に印を残し、中身の指紋が変わるまで作り直さない
 # （作れない状態のまま毎回コンパイルを 2 回払わないため）。jar を作り直させたい時は rm -rf build/headless。
 #
 # 環境変数: FLIX_CMD = jar を作る flix（既定はこのエンジンの bin/flix）。1 語のパスで渡す
@@ -43,6 +49,7 @@ out=build/headless
 jar=$out/headless.jar
 proj=$out/proj
 main=FgeHeadlessMain
+fge_go="$engine/bin/fge-go"
 
 if [ ! -d src ] || [ ! -f flix.toml ]; then
     echo "headless-run: ゲームの根（src/ と flix.toml のある所）で呼んでください" >&2
@@ -70,7 +77,28 @@ run_with_flix() {
     exec "$flix" run --entrypoint "$entry"
 }
 
-entries="$(list_entries)"
+# 中身の指紋はこの起動で 1 回だけ作る（src と lib を全部読むので、呼ぶたびに作ると 1 枚撮りの頭で
+# 何度も払う）。bin/fge-go が無い・作れない時は空。
+manifest_start=""
+if [ -x "$fge_go" ]; then
+    manifest_start=$("$fge_go" resident manifest . 2>/dev/null || true)
+fi
+
+# 入口の一覧は、指紋が前回と同じなら前回の物を使う。
+# WhyNot: 毎回 list_entries しない — src の .flix ごとに grep・sed・awk を起こすので、
+# internet_dungeon では 1 枚撮り 1.28 秒のうち 0.74 秒をこれが占めた（2026-10-19 実測）。
+# 指紋は src の中身から作るので、入口が増えた・消えた時は必ず指紋が変わり、作り直しになる。
+entries_cache=$out/entries.cache
+if [ -n "$manifest_start" ] && [ "$(head -1 "$entries_cache" 2>/dev/null)" = "$manifest_start" ]; then
+    entries="$(tail -n +2 "$entries_cache")"
+else
+    entries="$(list_entries)"
+    if [ -n "$manifest_start" ]; then
+        mkdir -p "$out"
+        { printf '%s\n' "$manifest_start"; printf '%s\n' "$entries"; } > "$entries_cache.tmp.$$"
+        mv "$entries_cache.tmp.$$" "$entries_cache"
+    fi
+fi
 if ! printf '%s\n' "$entries" | grep -qxF "$entry"; then
     # 拾えない形の入口は今までどおりコンパイルして流す。
     run_with_flix
@@ -93,12 +121,22 @@ build_dispatcher() {
     echo "}"
 }
 
-# jar が古いか: 無い・入口の一覧が変わった・src / flix.toml / lib のどれかが jar より新しい。
+# 中身の指紋（64 字）。bin/fge-go が無い・指紋を作れない時は空。
+manifest_now() {
+    printf '%s' "$manifest_start"
+}
+
+# jar が古いか: 無い・入口の一覧が変わった・中身の指紋が jar を作った時と違う
+# （指紋を作れない時は src / flix.toml / lib のどれかが jar より新しい）。
 is_stale() {
     [ -f "$jar" ] || return 0
     [ -f "$proj/src/$main.flix" ] || return 0
     [ "$(build_dispatcher)" = "$(cat "$proj/src/$main.flix")" ] || return 0
-    # lib/ と末尾に / を付ける — lib が symlink でも中まで見る。
+    now=$(manifest_now)
+    if [ -n "$now" ]; then
+        [ "$now" = "$(cat "$out/jar.manifest" 2>/dev/null)" ] || return 0
+        return 1
+    fi
     [ -z "$(newer_than "$jar")" ] || return 0
     return 1
 }
@@ -108,15 +146,34 @@ newer_than() {
     find -L src flix.toml lib -newer "$1" -print 2>/dev/null | head -1
 }
 
-# 前に作れなかった時から、入力が何も変わっていないか。
+# 前に作れなかった時から、入力が何も変わっていないか（.failed には作れなかった時の指紋が入っている）。
 failed_before() {
-    [ -f "$out/.failed" ] && [ -z "$(newer_than "$out/.failed")" ]
+    [ -f "$out/.failed" ] || return 1
+    now=$(manifest_now)
+    if [ -n "$now" ]; then
+        [ "$now" = "$(cat "$out/.failed")" ]
+        return
+    fi
+    [ -z "$(newer_than "$out/.failed")" ]
 }
 
-# 作れたら 0。jar の時刻は「src を写し始めた時刻」にそろえる — 作っている最中に保存された src を
-# 次の回に「jar より新しい」と気づけるように（flix が書き終えた時刻のままだと取りこぼす）。
+# ビルドの出力（build/headless/build.log）の最初のエラーの 1 行。色の字は落とす。
+first_build_error() {
+    log="$out/build.log"
+    [ -f "$log" ] || { echo "（ビルドの出力が残っていない）"; return; }
+    plain=$(sed -e $'s/\x1b\[[0-9;]*[A-Za-z]//g' "$log")
+    line=$(printf '%s\n' "$plain" | grep -m1 -E '^>> ' || true)
+    [ -n "$line" ] || line=$(printf '%s\n' "$plain" | grep -m1 -iE 'error|exception' || true)
+    [ -n "$line" ] || line=$(printf '%s\n' "$plain" | grep -v '^[[:space:]]*$' | tail -1)
+    printf '%s\n' "${line:-（エラーの行が見つからない）}"
+}
+
+# 作れたら 0。jar.manifest には「src を写す前に作った指紋」を書き、jar の時刻は「src を写し始めた時刻」に
+# そろえる — 作っている最中に保存された src を次の回に「jar と違う」と気づけるように
+# （作り終えた後の指紋や時刻だと、作っている間の保存を取りこぼす）。
 build_jar() {
     touch "$out/.started"
+    started_manifest=$(manifest_now)
     rm -rf "$proj/src" "$proj/artifact"
     mkdir -p "$proj"
     cp -R src "$proj/src"
@@ -127,12 +184,19 @@ build_jar() {
     if [ -d lib ]; then ln -sfn "$PWD/lib" "$proj/lib"; fi
     build_dispatcher > "$proj/src/$main.flix"
     echo "[headless-run] jar を作る（src か lib が変わった）" >&2
-    (cd "$proj" && "$flix" build-fatjar --entrypoint "$main.main" >&2) || return 1
+    (cd "$proj" && "$flix" build-fatjar --entrypoint "$main.main") 2>&1 | tee "$out/build.log" >&2 || return 1
     built=$(ls "$proj"/artifact/*.jar 2>/dev/null | head -1)
     [ -n "$built" ] || return 1
     mv "$built" "$jar.tmp.$$"
     touch -r "$out/.started" "$jar.tmp.$$"
     mv "$jar.tmp.$$" "$jar"
+    # 指紋を作れなかった回は古い jar.manifest を残さない — 常駐が古い指紋のまま「同じ jar」と答えるため。
+    if [ -n "$started_manifest" ]; then
+        printf '%s\n' "$started_manifest" > "$out/jar.manifest.tmp.$$"
+        mv "$out/jar.manifest.tmp.$$" "$out/jar.manifest"
+    else
+        rm -f "$out/jar.manifest"
+    fi
 }
 
 if is_stale; then
@@ -163,12 +227,16 @@ if is_stale; then
     if failed_before; then built_ok=0
     elif is_stale; then
         if build_jar; then rm -f "$out/.failed"
-        else built_ok=0; touch -r "$out/.started" "$out/.failed"; fi
+        else
+            built_ok=0
+            printf '%s\n' "${started_manifest:-}" > "$out/.failed"
+            touch -r "$out/.started" "$out/.failed"
+        fi
     fi
     rm -f "$lock/pid"; rmdir "$lock" 2>/dev/null || true
     trap - EXIT
     if [ "$built_ok" = 0 ]; then
-        echo "[headless-run] jar を作れなかったので flix run で流す（前に作った時のエラーを見る。直したら src が新しくなり、次から作り直す）" >&2
+        echo "[headless] jar が作れない — flix run で流す（毎回 60 秒以上かかる）: $(first_build_error)" >&2
         run_with_flix
     fi
 fi
@@ -182,10 +250,20 @@ fi
 # jar を作り直した回は、語彙を書き出す入口（名前が .vocab で終わる物。flow の E2e.vocab など）を全部流す。
 # Go の検査（bin/fge flow check など）は JVM なしで語彙の JSON を読むので、src の表を直した後に古い語彙で止めないため。
 if [ "${built_ok:-0}" = 1 ]; then
-    printf '%s\n' "$entries" | grep -E '\.vocab$' | while IFS= read -r vocab; do
+    # grep が 1 件も拾わない時の 1 で pipefail に止められないよう、|| true で包む。
+    printf '%s\n' "$entries" | { grep -E '\.vocab$' || true; } | while IFS= read -r vocab; do
         [ "$vocab" = "$entry" ] && continue
         FGE_ENTRY="$vocab" "$java_cmd" -Xss32m -Djava.awt.headless=true -jar "$jar" >&2 || true
     done
+fi
+# 常駐に頼む（HEADLESS_RESIDENT=1 の時だけ。既定は今の java -jar）。125 は「常駐を使えなかった」で、
+# 下の java -jar へ進む。それ以外は入口の終了コードなのでそのまま返す。
+resident_entry="${HEADLESS_RESIDENT_ENTRY:-E2e.serveHeadless}"
+if [ "${HEADLESS_RESIDENT:-}" = 1 ] && [ "$entry" != "$resident_entry" ] && [ -x "$fge_go" ]; then
+    rc=0
+    HEADLESS_ENTRIES="$(printf '%s\n' "$entries" | paste -sd' ' -)" \
+        "$fge_go" resident run --entry "$entry" --dir . --java "$java_cmd" || rc=$?
+    [ "$rc" = 125 ] || exit "$rc"
 fi
 # HEADLESS_JAVA_OPTS は空白で分けて既定の後ろに足す（同じ旗は後ろが勝つ）。
 # shellcheck disable=SC2086
