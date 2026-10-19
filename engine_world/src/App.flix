@@ -198,8 +198,10 @@ pub mod App {
         clocks = List[(Float64, w) -> w],
         // 毎フレームの「マウスの矢印をどう見せたいか」の宣言（withCursor）。None = App は触らない（F8 の十字だけ）。
         cursor = Option[w -> CursorSpec],
-        // 鍵が変わった拍に 1 回書く外への出力（addOutput・withDocTable）の列・追加順。
-        outputs = List[Output[w]]
+        // 鍵が変わったフレームに 1 回書く外への出力（addOutput・withDocTable）の列・追加順。
+        outputs = List[Output[w]],
+        // 始まりの登録簿（withStarts）。START・/start・flow の start・テストが名前で場面を組む。
+        starts = List[Start[w]]
     }
 
     /// 初期 World だけを持つ空の App。絵はまだ無い（withView で繋ぐまで何も描かない）。
@@ -244,7 +246,8 @@ pub mod App {
           fixedStep = None,
           clocks = Nil,
           cursor = None,
-          outputs = Nil }
+          outputs = Nil,
+          starts = Nil }
 
     /// 起動時に 1 回だけ走るシステムを末尾へ繋ぐ（追加順に適用される）。
     pub def addStartup(sys: w -> w \ ef, app: App[w, ef]): App[w, ef] =
@@ -614,6 +617,98 @@ pub mod App {
                            write = world -> ActiveDocs.write(DocTable.activeDocs(rows, world)),
                            onJump = OnJump.Write })
 
+    // ── 始まりの登録簿（好きな場面から起動・テスト・flow の start）──
+
+    /// 始まり 1 つ: name = 名前（START・flow の start で書く字）・doc = 何の場面か（GET /starts と語彙に載る）・
+    /// args = 既定の引数（書いた引数が上書きする）・build = 新しく作った初期の World と引数から場面を組む。
+    /// build は純粋に書く: 走っている World は渡らないし、ファイルも読まない（読む物は引数を `@パス` にすると
+    /// App が読んで中身を渡す。記録はその中身を残すので、再生で同じ場面になる）。
+    pub type alias Start[w] = { name = String, doc = String, args = Map[String, String],
+                                build = (w, Map[String, String]) -> Result[String, w] }
+
+    /// 始まりの登録簿を繋ぐ。繋いだゲームは起動もここを通る（環境変数 START が無ければ先頭の始まり）。
+    /// 場面を組む手順を動画・テスト・flow ごとに手で書くと、同じ場面のはずの物が少しずつずれる。
+    pub def withStarts(starts: List[Start[w]], app: App[w, ef]): App[w, ef] =
+        { starts = starts | app }
+
+    /// 新しく作った初期の World: init（design 解像度から）+ 起動時の系 + Doc を全部読み直した物
+    /// （F1 の reloadOn の関数 = DocTable.reloadAll、無ければ監視の関数を登録順に）。
+    /// 読み直すのは、main が起動の時に読んだ Doc ではなく今のファイルで場面を組むため（/start・記録の再生）。
+    pub def freshWorld(app: App[w, ef], design: Vec2.Vec2): w \ ef + Fs.FileRead =
+        let init = app#init;
+        let started = List.foldLeft((acc, sys) -> sys(acc), init(design), app#startupSystems);
+        match app#reload {
+            case Some((_, reloadAll)) => reloadAll(started)
+            case None => List.foldLeft((acc, entry) -> { let (_, f) = entry; f(acc) }, started, app#watch)
+        }
+
+    /// 登録簿の名前の列（登録順）。
+    pub def startNames(app: App[w, ef]): List[String] =
+        app#starts |> List.map(start -> start#name)
+
+    /// 名前の始まりを、新しく作った初期の World から組む。args は既定の引数を上書きし、値が `@パス` の
+    /// 引数はそのファイルの中身にする（無いファイルの引数は外す）。知らない名前・組めない引数は理由つきの Err。
+    pub def buildStart(app: App[w, ef], design: Vec2.Vec2, name: String, args: Map[String, String]): Result[String, w] \ ef + Fs.FileRead =
+        match app#starts |> List.find(start -> start#name == name) {
+            case None => Err("始まり '${name}' は登録簿に無い${Suggest.hint(name, startNames(app))}")
+            case Some(start) =>
+                let resolved = resolveArgs(Map.unionWith((given, _) -> given, args, start#args));
+                let build = start#build;
+                build(freshWorld(app, design), resolved) |> Result.mapErr(why -> "始まり '${name}': ${why}")
+        }
+
+    /// 引数の値が `@パス` ならファイルの中身に置き換える（読めないファイルの引数は外す —— 「無いセーブ」は正常）。
+    pub def resolveArgs(args: Map[String, String]): Map[String, String] \ Fs.FileRead =
+        args |> Map.foldLeftWithKey((acc, key, value) ->
+            if (String.startsWith(prefix = "@", value))
+                match Fs.FileRead.read(String.dropLeft(1, value)) {
+                    case Ok(text) => Map.insert(key, text, acc)
+                    case Err(_)   => acc
+                }
+            else Map.insert(key, value, acc), Map.empty())
+
+    /// `feedHome t=10` の形（flow の start の行・START・POST /start と同じ）を名前と引数に分ける。
+    pub def parseStartLine(text: String): Result[String, (String, Map[String, String])] =
+        match String.words(text) {
+            case Nil => Err("始まりの名前が無い（START=\"名前 key=value…\"）")
+            case name :: rest =>
+                rest |> List.foldLeft((acc, word) -> forM (
+                    args <- acc;
+                    pair <- match String.indexOfLeft({substr = "="}, word) {
+                        case Some(i) if i > 0 => Ok((String.takeLeft(i, word), String.dropLeft(i + 1, word)))
+                        case _ => Err("始まりの引数 '${word}' は key=value で書く")
+                    }
+                ) yield { let (key, value) = pair; Map.insert(key, value, args) }, Ok(Map.empty()))
+                |> Result.map(args -> (name, args))
+        }
+
+    /// テストで名前の始まりを組む（組めなければテストの前提が破れているので bug! で止める）。
+    /// design 解像度はゲームの根の project.json から読む（読めなければ 0×0 —— init が画面の大きさを読まないゲームはそれで足りる）。
+    pub def startOrBug(app: App[w, ef], name: String, args: Map[String, String]): w \ ef + Fs.FileRead =
+        let design = match ProjectLoader.loadProject(".") {
+            case Ok(loaded) => { x = Int32.toFloat64(loaded#config#designWidth), y = Int32.toFloat64(loaded#config#designHeight) }
+            case Err(_)      => Vec2.zero()
+        };
+        match buildStart(app, design, name, args) {
+            case Ok(world) => world
+            case Err(why)  => bug!("App.startOrBug: ${why}")
+        }
+
+    /// 起動の World: 登録簿が無ければ init + 起動時の系（今までどおり）、あれば START（無ければ先頭の始まり）。
+    def bootWorld(app: App[w, ef], design: Vec2.Vec2): Result[String, w] \ ef + Fs.FileRead + IO =
+        match List.head(app#starts) {
+            case None =>
+                let init = app#init;
+                Ok(List.foldLeft((acc, sys) -> sys(acc), init(design), app#startupSystems))
+            case Some(first) =>
+                let line = System.getenv("START");
+                if (Object.isNull(line) or String.isEmpty(String.trim(line))) buildStart(app, design, first#name, Map.empty())
+                else forM (
+                    parsed <- parseStartLine(line) |> Result.mapErr(why -> "START: ${why}");
+                    world <- { let (name, args) = parsed; buildStart(app, design, name, args) |> Result.mapErr(why -> "START: ${why}") }
+                ) yield world
+        }
+
     /// addClock で宣言した時計を、実時間 dt で 1 回ずつ進める（advanceFrame が系の前に呼ぶ）。
     /// ゲームのコードからは呼ばない（2 回進めると 1 回目の区間の音が消える。lint-forbid の clock-advance）。
     /// テストで系を直に呼ぶときだけ、実機と同じ順（tickClocks → 系）を組むのに使う。
@@ -820,11 +915,16 @@ pub mod App {
     /// デバッグ有効（withDebug）かつ環境変数 DEBUG_HTTP_PORT があれば、リモートデバッグの
     /// HTTP エンドポイントも一緒に立ち上がる（例: `DEBUG=1 DEBUG_HTTP_PORT=7777 flix run`）。
     pub def launch(app: App[w, ef]): Unit \ (ef + GameEngine.Game + GameEngine.Audio + ShaderEffect.Shader + RenderTarget.Target + Fs.FileRead + Fs.FileWrite + IO) =
-        let init = app#init;
         // 下ごしらえの間、画面には読み込み中の起動画面が出たまま残る（描き直さないので止まって見えるが、
-        // 出し直す口をここに作ると、間引きも中止スイッチも持たない 2 つ目の経路が生まれる）。
-        let world0 = List.foldLeft((acc, sys) -> sys(acc),
-                                   init(GameEngine.Game.getViewportRect()#size), app#startupSystems);
+        // 出し直す入口をここに作ると、間引きも中止スイッチも持たない 2 つ目の経路が生まれる）。
+        match bootWorld(app, GameEngine.Game.getViewportRect()#size) {
+            // 知らない始まりの名前で黙って先頭の場面から始めると、別の場面を見て直していることに気づけない。
+            case Err(why)  => System.err.println("[App] ${why}")
+            case Ok(world0) => launchFrom(app, world0)
+        }
+
+    /// 起動の World が決まった後の launch（リモートデバッグ・監視・ループ）。
+    def launchFrom(app: App[w, ef], world0: w): Unit \ (ef + GameEngine.Game + GameEngine.Audio + ShaderEffect.Shader + RenderTarget.Target + Fs.FileRead + Fs.FileWrite + IO) =
         let bridge = if (canDebug(app)) Option.map(port -> RemoteDebug.start(port, app#remoteRender),
                                                    RemoteDebug.portFromEnv())
                      else None;

@@ -129,7 +129,7 @@
 - 生成したドット絵アトラス 1 枚ぶんの受け渡し。
   `pub type alias AtlasUpload = { texture = String, key = String, baked = PxSpriteAtlas.Baked }`
 - ゲーム 1 本の宣言。make で空を作り、addStartup / addSystem / reloadOn / withView /
-  `pub type alias App[w: Type, ef: Eff] = { init = Vec2.Vec2 -> w \ ef, startupSystems = List[w -> w \ ef], updateSystems = List[(Frame, w) -> w \ ef], reload = Option[(GameEngine.Key, w -> w \ {Fs.FileRead})], watch = List[(String, w -> w \ {Fs.FileRead})], view = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], passes = w -> List[Render.Pass] \ ef, fonts = List[String], camera = Option[w -> Vec2.Vec2 \ ef], zoom = Option[w -> Float64 \ ef], cameraBounds = Option[w -> Rect2.Rect2 \ ef], parallaxLayers = List[(Float64, (ViewCtx, w) -> List[Render.PlacedItem] \ ef)], hudView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], audio = { before = w, after = w } -> List[String] \ ef, sustained = w -> List[Sustain] \ ef, mixer = Option[w -> AudioMixer.Mixer \ ef], quit = (Frame, w) -> Bool \ ef, closeRequest = Option[w -> w \ ef], debug = Bool, debugView = Option[(String, w -> (List[GameEngine.Drawable], List[GameEngine.TileMapRenderCmd], List[GameEngine.PolygonRenderCmd]) \ ef)], worldDump = Option[(Rect2.Rect2, w) -> String \ ef], annotationContext = Option[w -> Annotate.Table \ ef], staticLayer = Option[{ key = w -> GameEngine.StaticKey, build = w -> List[Render.PlacedItem] }], tileLayers = Option[w -> List[TileLayerSpec]], spriteAtlases = w -> List[AtlasUpload], pixelSnap = w -> Float64, statusLine = Option[w -> String \ ef], remoteRender = Option[Unit -> List[String] \ IO], remoteHandlers = List[(String, (Map[String, String], w) -> Result[String, w] \ {Fs.FileRead})], fixedStep = Option[Float64], clocks = List[(Float64, w) -> w], cursor = Option[w -> CursorSpec], outputs = List[Output[w]] }`
+  `pub type alias App[w: Type, ef: Eff] = { init = Vec2.Vec2 -> w \ ef, startupSystems = List[w -> w \ ef], updateSystems = List[(Frame, w) -> w \ ef], reload = Option[(GameEngine.Key, w -> w \ {Fs.FileRead})], watch = List[(String, w -> w \ {Fs.FileRead})], view = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], passes = w -> List[Render.Pass] \ ef, fonts = List[String], camera = Option[w -> Vec2.Vec2 \ ef], zoom = Option[w -> Float64 \ ef], cameraBounds = Option[w -> Rect2.Rect2 \ ef], parallaxLayers = List[(Float64, (ViewCtx, w) -> List[Render.PlacedItem] \ ef)], hudView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], audio = { before = w, after = w } -> List[String] \ ef, sustained = w -> List[Sustain] \ ef, mixer = Option[w -> AudioMixer.Mixer \ ef], quit = (Frame, w) -> Bool \ ef, closeRequest = Option[w -> w \ ef], debug = Bool, debugView = Option[(String, w -> (List[GameEngine.Drawable], List[GameEngine.TileMapRenderCmd], List[GameEngine.PolygonRenderCmd]) \ ef)], worldDump = Option[(Rect2.Rect2, w) -> String \ ef], annotationContext = Option[w -> Annotate.Table \ ef], staticLayer = Option[{ key = w -> GameEngine.StaticKey, build = w -> List[Render.PlacedItem] }], tileLayers = Option[w -> List[TileLayerSpec]], spriteAtlases = w -> List[AtlasUpload], pixelSnap = w -> Float64, statusLine = Option[w -> String \ ef], remoteRender = Option[Unit -> List[String] \ IO], remoteHandlers = List[(String, (Map[String, String], w) -> Result[String, w] \ {Fs.FileRead})], fixedStep = Option[Float64], clocks = List[(Float64, w) -> w], cursor = Option[w -> CursorSpec], outputs = List[Output[w]], starts = List[Start[w]] }`
 - 初期 World だけを持つ空の App。絵はまだ無い（withView で繋ぐまで何も描かない）。
   `pub def make(init: w): App[w, ef]`
 - 初期 World を design 解像度（project.json の designWidth/Height）から組む入口。
@@ -214,6 +214,22 @@
   `pub def addOutput(output: Output[w], app: App[w, ef]): App[w, ef]`
 - Doc の一覧表（DocTable）から、保存即反映の監視（watchFile）・F1 の一括読み直し（reloadOn）・
   `pub def withDocTable(rows: List[DocTable.Entry[w]], app: App[w, ef]): App[w, ef]`
+- 始まり 1 つ: name = 名前（START・flow の start で書く字）・doc = 何の場面か（GET /starts と語彙に載る）・
+  `pub type alias Start[w] = { name = String, doc = String, args = Map[String, String], build = (w, Map[String, String]) -> Result[String, w] }`
+- 始まりの登録簿を繋ぐ。繋いだゲームは起動もここを通る（環境変数 START が無ければ先頭の始まり）。
+  `pub def withStarts(starts: List[Start[w]], app: App[w, ef]): App[w, ef]`
+- 新しく作った初期の World: init（design 解像度から）+ 起動時の系 + Doc を全部読み直した物
+  `pub def freshWorld(app: App[w, ef], design: Vec2.Vec2): w \ ef + Fs.FileRead`
+- 登録簿の名前の列（登録順）。
+  `pub def startNames(app: App[w, ef]): List[String]`
+- 名前の始まりを、新しく作った初期の World から組む。args は既定の引数を上書きし、値が `@パス` の
+  `pub def buildStart(app: App[w, ef], design: Vec2.Vec2, name: String, args: Map[String, String]): Result[String, w] \ ef + Fs.FileRead`
+- 引数の値が `@パス` ならファイルの中身に置き換える（読めないファイルの引数は外す —— 「無いセーブ」は正常）。
+  `pub def resolveArgs(args: Map[String, String]): Map[String, String] \ Fs.FileRead`
+- `feedHome t=10` の形（flow の start の行・START・POST /start と同じ）を名前と引数に分ける。
+  `pub def parseStartLine(text: String): Result[String, (String, Map[String, String])]`
+- テストで名前の始まりを組む（組めなければテストの前提が破れているので bug! で止める）。
+  `pub def startOrBug(app: App[w, ef], name: String, args: Map[String, String]): w \ ef + Fs.FileRead`
 - addClock で宣言した時計を、実時間 dt で 1 回ずつ進める（advanceFrame が系の前に呼ぶ）。
   `pub def tickClocks(app: App[w, ef], dt: Float64, world: w): w`
 - 前フレームと今フレームのキー集合から Frame を組む。justPressed は差分
@@ -360,6 +376,8 @@
   `pub type alias RemoteNext[w] = { world = w, anno = Annotate.State, history = List[w], hold = Bool, stepState = App.StepState }`
 - リクエスト 1 件を捌き、応答をブリッジへ書いてから次の状態を返す。
   `pub def handleRemote(app: App.App[w, ef], bridge: Bridge, raw: String, ctx: RemoteNext[w]): RemoteNext[w] \ (ef + GameEngine.Game + Fs.FileRead + IO)`
+- GET /starts の本文: 始まりの登録簿（App.withStarts）の名前・既定の引数・説明を 1 行ずつ。
+  `pub def startsText(app: App.App[w, ef]): String`
 - /step 1 回ぶんの実行結果。
   `pub type alias StepOutcome[w] = { world = w, stepState = App.StepState, newHistory = List[w], framesRun = Int32, sounds = List[(Int64, String)], stoppedBy = String, quit = Bool, traceLines = List[String] }`
 - 台本のコマ（押しているキーの集合）を Frame の列にする。押した瞬間は前のコマに無かったキー
@@ -1797,6 +1815,14 @@
   `pub def flee(canEnter: ((Int32, Int32)) -> Bool, self: (Int32, Int32), threat: (Int32, Int32), limit: Int32): Option[(Int32, Int32)]`
 - 気の向くままの 1 歩。何歩目か（beat）と塩（salt）のハッシュで向きを引くので、
   `pub def wander(canEnter: ((Int32, Int32)) -> Bool, self: (Int32, Int32), beat: Int32, salt: Int32): Option[(Int32, Int32)]`
+
+## Suggest — `engine_world/src/Suggest.flix`
+- a と b の編集距離（大文字小文字は区別しない）。
+  `pub def distance(a: String, b: String): Int32`
+- known のうち name に近い名前（距離 2 以内か、2 字以上の頭が同じ物）を近い順に 3 つまで。
+  `pub def near(name: String, known: List[String]): List[String]`
+- 知らせの後ろに付ける 1 句: 近い名前があれば「（もしかして: a / b）」、無ければ使える名前を 12 個まで。
+  `pub def hint(name: String, known: List[String]): String`
 
 ## Sway — `engine_world/src/Sway.flix`
 - 基本の揺れ。sin(time*freq + phase*2π)、範囲 -1..1。phase(0..1)で個体ごとに位相をずらす。

@@ -645,4 +645,34 @@ mod TestApp {
     def testJumpWritesOnlyTheNaming(): Unit \ Assert =
         let afterJump = App.keysAfterJump(outputApp(), 9, "5" :: "名乗り5" :: Nil);
         Assert.assertEq(expected = 1 :: Nil, App.dueOutputs(outputApp(), 9, afterJump))
+
+    // ========================================================================
+    // 始まりの登録簿（withStarts）: 行の読み・名前の誤り・既定の引数
+    // ========================================================================
+
+    /// 始まり 1 つの App: 引数 n（既定 1）を起点の数に足す。
+    def startApp(): App.App[Int32, {}] =
+        App.make(10) |> App.withStarts(
+            { name = "count", doc = "n を足す", args = Map#{"n" => "1"},
+              build = (w, args) -> Map.get("n", args) |> Option.flatMap(Int32.fromString)
+                                      |> Option.map(n -> w + n) |> Option.toOk("n が数でない") } :: Nil)
+
+    // START・flow の start と同じ形: 名前の後ろに key=value が並ぶ。
+    @Test
+    def testParseStartLineSplitsNameAndArgs(): Unit \ Assert =
+        Assert.assertEq(expected = Ok(("feedHome", Map#{"t" => "10", "deck" => "a,b"})),
+            App.parseStartLine("feedHome t=10 deck=a,b"))
+
+    // 書いた引数が既定を上書きする（n=5 → 10 + 5）。書かなければ既定（n=1 → 11）。
+    @Test
+    def testBuildStartLetsGivenArgsOverrideDefaults(): Unit \ Assert + Fs.FileRead =
+        Assert.assertEq(expected = (Ok(15), Ok(11)),
+            (App.buildStart(startApp(), Vec2.zero(), "count", Map#{"n" => "5"}),
+             App.buildStart(startApp(), Vec2.zero(), "count", Map.empty())))
+
+    // 知らない名前は組まずに、近い名前の案つきで断る。
+    @Test
+    def testBuildStartSuggestsANearName(): Unit \ Assert + Fs.FileRead =
+        Assert.assertEq(expected = Err("始まり 'cuont' は登録簿に無い（もしかして: count）"),
+            App.buildStart(startApp(), Vec2.zero(), "cuont", Map.empty()))
 }

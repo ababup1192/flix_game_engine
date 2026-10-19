@@ -625,6 +625,8 @@ pub mod App.RemoteDebug {
         + "POST /render?async=1          accept and answer \"ok accepted job=N\" at once\n"
         + "GET  /render                  requested= done= running= job numbers, then [last] result.\n"
         + "     job N is finished once done >= N (requests during a render fold into one rerun)\n"
+        + "GET  /starts                  the start registry (App.withStarts): name, default args, doc\n"
+        + "POST /start?name=N&k=v        rebuild a fresh world from start N and swap it in\n"
         + "POST /step?view=&rect=&until=&max=&trace=&dt=\n"
         + "     body = input script; runs it frame by frame, then answers.\n"
         + "     auto-halts first if the game is running.\n"
@@ -675,6 +677,8 @@ pub mod App.RemoteDebug {
             case ("POST", "/resume") => remoteResume(bridge, ctx)
             case ("GET", "/state")   => remoteState(app, bridge, request, ctx)
             case ("POST", "/step")   => remoteStepCommand(app, bridge, request, ctx)
+            case ("GET", "/starts")  => answer(startsText(app), bridge, ctx)
+            case ("POST", "/start")  => remoteStart(app, bridge, request, ctx)
             case (m, p)              =>
                 match findRoute(p, app#remoteHandlers) {
                     case Some(chosen) => remoteCustom(chosen, bridge, request, ctx)
@@ -691,6 +695,31 @@ pub mod App.RemoteDebug {
         match apply(request#params, ctx#world) {
             case Ok(changed)  => answer("ok\n", bridge, { world = changed | ctx })
             case Err(message) => answer("error: ${message}\n", bridge, ctx)
+        }
+
+    /// GET /starts の本文: 始まりの登録簿（App.withStarts）の名前・既定の引数・説明を 1 行ずつ。
+    pub def startsText(app: App.App[w, ef]): String =
+        if (List.isEmpty(app#starts)) "(no starts wired; use App.withStarts)\n"
+        else app#starts |> List.map(start -> {
+            let args = start#args |> Map.toList |> List.map(entry -> { let (k, v) = entry; " ${k}=${v}" }) |> String.intercalate("");
+            "${start#name}${args}\t${start#doc}\n"
+        }) |> String.intercalate("")
+
+    /// POST /start?name=<名前>&k=v: 新しく作った初期の World から始まりを組み、走っている World と差し替える。
+    /// 止めている間ならそこで止まったまま（/resume でその場面から遊べる）。巻き戻しの履歴は捨てる
+    /// （差し替える前の World へ巻き戻せると、跳んだ先と前の場面が混ざる）。
+    def remoteStart(app: App.App[w, ef], bridge: Bridge, request: Request,
+                    ctx: RemoteNext[w]): RemoteNext[w] \ (ef + GameEngine.Game + Fs.FileRead + IO) =
+        match Map.get("name", request#params) {
+            case None => answer("error: POST /start needs name= (see GET /starts)\n", bridge, ctx)
+            case Some(name) =>
+                let args = Map.remove("name", request#params);
+                match App.buildStart(app, GameEngine.Game.getViewportRect()#size, name, args) {
+                    case Err(why)  => answer("error: ${why}\n", bridge, ctx)
+                    case Ok(world) =>
+                        answer("ok start=${name}\n[status]\n${statusText(app, world)}\n", bridge,
+                               { world = world, history = Nil, anno = { scrub = 0 | ctx#anno } | ctx })
+                }
         }
 
     /// 応答を書いてから next を返すだけの小さな合流点。
