@@ -1,0 +1,227 @@
+{
+  "version": 2,
+  "note": "bin/fge yarn build が InlineExpressions.yarn から書いた木。手で直さない（.yarn を直して build する）",
+  "vocab": "",
+  "files": [
+    "InlineExpressions.yarn"
+  ],
+  "variables": [
+    {
+      "name": "$var",
+      "value": "",
+      "file": "InlineExpressions.yarn",
+      "line": 4
+    }
+  ],
+  "nodes": [
+    {
+      "title": "Start",
+      "file": "InlineExpressions.yarn",
+      "line": 1,
+      "headers": [],
+      "body": [
+        {
+          "kind": "set",
+          "line": 6,
+          "name": "$var",
+          "expr": {
+            "kind": "value",
+            "value": "variable"
+          }
+        },
+        {
+          "kind": "line",
+          "line": 11,
+          "speaker": "Number",
+          "text": "{1}",
+          "parts": [
+            {
+              "expr": {
+                "kind": "value",
+                "value": 1
+              }
+            }
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 12,
+          "speaker": "Expression",
+          "text": "{1+1}",
+          "parts": [
+            {
+              "expr": {
+                "kind": "+",
+                "args": [
+                  {
+                    "kind": "value",
+                    "value": 1
+                  },
+                  {
+                    "kind": "value",
+                    "value": 1
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 13,
+          "speaker": "String",
+          "text": "{\"string\"}",
+          "parts": [
+            {
+              "expr": {
+                "kind": "value",
+                "value": "string"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 14,
+          "speaker": "Bool",
+          "text": "{true}",
+          "parts": [
+            {
+              "expr": {
+                "kind": "value",
+                "value": true
+              }
+            }
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 15,
+          "speaker": "Variable",
+          "text": "{$var}",
+          "parts": [
+            {
+              "expr": {
+                "kind": "variable",
+                "name": "$var"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 18,
+          "text": "{$var} is great!",
+          "parts": [
+            {
+              "expr": {
+                "kind": "variable",
+                "name": "$var"
+              }
+            },
+            {
+              "text": " is great!"
+            }
+          ]
+        },
+        {
+          "kind": "options",
+          "line": 21,
+          "options": [
+            {
+              "line": 21,
+              "speaker": "Option Number",
+              "text": "{1}",
+              "parts": [
+                {
+                  "expr": {
+                    "kind": "value",
+                    "value": 1
+                  }
+                }
+              ],
+              "body": []
+            },
+            {
+              "line": 22,
+              "speaker": "Option Expression",
+              "text": "{1+1}",
+              "parts": [
+                {
+                  "expr": {
+                    "kind": "+",
+                    "args": [
+                      {
+                        "kind": "value",
+                        "value": 1
+                      },
+                      {
+                        "kind": "value",
+                        "value": 1
+                      }
+                    ]
+                  }
+                }
+              ],
+              "body": []
+            },
+            {
+              "line": 23,
+              "speaker": "Option String",
+              "text": "{\"string\"}",
+              "parts": [
+                {
+                  "expr": {
+                    "kind": "value",
+                    "value": "string"
+                  }
+                }
+              ],
+              "body": []
+            },
+            {
+              "line": 24,
+              "speaker": "Option Bool",
+              "text": "{true}",
+              "parts": [
+                {
+                  "expr": {
+                    "kind": "value",
+                    "value": true
+                  }
+                }
+              ],
+              "body": []
+            },
+            {
+              "line": 25,
+              "speaker": "Option Variable",
+              "text": "{$var}",
+              "parts": [
+                {
+                  "expr": {
+                    "kind": "variable",
+                    "name": "$var"
+                  }
+                }
+              ],
+              "body": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Destination",
+      "file": "InlineExpressions.yarn",
+      "line": 28,
+      "headers": [],
+      "body": [
+        {
+          "kind": "stop",
+          "line": 32
+        }
+      ]
+    }
+  ]
+}

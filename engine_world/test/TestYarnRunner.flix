@@ -45,7 +45,7 @@ mod TestYarnRunner {
         let (asked, _) = YarnRunner.start(program(), "Ask", at(0.0)) |> fst |> YarnRunner.step(YarnRunner.Action.Advance, at(0.0));
         let (after, events) = YarnRunner.step(YarnRunner.Action.Choose(2), at(0.0), asked);
         let shownChoices = match YarnRunner.shownOf(after) {
-            case YarnRunner.Shown.Choices(lines) => List.length(lines)
+            case YarnRunner.Shown.Choices(options) => List.length(options)
             case _                               => bug!("選択肢を出したままのはず")
         };
         Assert.assertEq(expected = (0, 2), (List.length(events), shownChoices))
@@ -85,7 +85,7 @@ mod TestYarnRunner {
 
     def shownText(runner: YarnRunner.Runner[Clock.Real]): String = match YarnRunner.shownOf(runner) {
         case YarnRunner.Shown.Line(line)     => "line ${Int32.toString(line#source#line)}"
-        case YarnRunner.Shown.Choices(lines) => "choices ${lines |> List.map(line -> Int32.toString(line#source#line)) |> String.intercalate(",")}"
+        case YarnRunner.Shown.Choices(options) => "choices ${options |> List.map(option -> Int32.toString(option#line#source#line)) |> String.intercalate(",")}"
         case YarnRunner.Shown.Waiting        => "waiting"
         case YarnRunner.Shown.Closed         => "closed"
     }
@@ -127,7 +127,7 @@ mod TestYarnRunner {
     @Test
     def testBrokenOrOtherVersionJsonIsNotRead(): Unit \ Assert =
         Assert.assertEq(expected = (true, true),
-            (Option.isEmpty(Yarn.fromJson("{ broken")), Option.isEmpty(Yarn.fromJson("{\"version\": 2, \"nodes\": []}"))))
+            (Option.isEmpty(Yarn.fromJson("{ broken")), Option.isEmpty(Yarn.fromJson("{\"version\": 3, \"nodes\": []}"))))
 
     /// ノードの一覧は木の JSON のノードの数に追随する。
     @Test

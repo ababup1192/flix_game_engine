@@ -1,0 +1,150 @@
+{
+  "version": 2,
+  "note": "bin/fge yarn build が Types.yarn から書いた木。手で直さない（.yarn を直して build する）",
+  "vocab": "",
+  "files": [
+    "Types.yarn"
+  ],
+  "nodes": [
+    {
+      "title": "Start",
+      "file": "Types.yarn",
+      "line": 1,
+      "headers": [],
+      "body": [
+        {
+          "kind": "line",
+          "line": 6,
+          "text": "{\"test\" == \"test\"}",
+          "parts": [
+            {
+              "expr": {
+                "kind": "==",
+                "args": [
+                  {
+                    "kind": "value",
+                    "value": "test"
+                  },
+                  {
+                    "kind": "value",
+                    "value": "test"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 9,
+          "text": "{\"hi\" != \"HI\"}",
+          "parts": [
+            {
+              "expr": {
+                "kind": "!=",
+                "args": [
+                  {
+                    "kind": "value",
+                    "value": "hi"
+                  },
+                  {
+                    "kind": "value",
+                    "value": "HI"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 12,
+          "text": "{3 > 2}",
+          "parts": [
+            {
+              "expr": {
+                "kind": ">",
+                "args": [
+                  {
+                    "kind": "value",
+                    "value": 3
+                  },
+                  {
+                    "kind": "value",
+                    "value": 2
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 15,
+          "text": "{1 < 2}",
+          "parts": [
+            {
+              "expr": {
+                "kind": "<",
+                "args": [
+                  {
+                    "kind": "value",
+                    "value": 1
+                  },
+                  {
+                    "kind": "value",
+                    "value": 2
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 18,
+          "text": "{2 <= 2}",
+          "parts": [
+            {
+              "expr": {
+                "kind": "<=",
+                "args": [
+                  {
+                    "kind": "value",
+                    "value": 2
+                  },
+                  {
+                    "kind": "value",
+                    "value": 2
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 21,
+          "text": "{2 >= 2}",
+          "parts": [
+            {
+              "expr": {
+                "kind": ">=",
+                "args": [
+                  {
+                    "kind": "value",
+                    "value": 2
+                  },
+                  {
+                    "kind": "value",
+                    "value": 2
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

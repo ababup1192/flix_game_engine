@@ -1,7 +1,7 @@
 {
   "$schema": "ui.schema.json",
   "version": 1,
-  "//": "選択肢パネル。チップは固定幅で、幅に収まらないチップは wrap(真偽値=flex)で次の行へ。ラベルの長い文言は wrap: 130(px)の文字折り返しで 2 行に折れる(流し込みは UiSlots.fill が slot0..slot5 へ。ラベル = slotN/label、クリックの意味 = slotN の meta)。",
+  "//": "選択肢パネル。チップは固定幅で、幅に収まらないチップは wrap(真偽値=flex)で次の行へ。ラベルの長い文言は wrap: 130(px)の文字折り返しで 2 行に折れる(流し込みは UiSlots.fill が slot0..slot5 へ。ラベル = slotN/label、クリックの意味 = slotN の meta。選べない選択肢(<<if>> が偽)は字を slotN/labelOff の @hint の色で出す)。",
   "defaultFont": "default",
   "paletteFile": "assets/ui/palette.json",
 
@@ -13,7 +13,9 @@
               "dir": "column", "mainAlign": "center", "crossAlign": "center",
               "children": [
                 { "name": "label", "widget": "text", "text": "", "fontSize": 8,
-                  "wrap": 130, "tint": "@label", "zIndex": 112 } ] }
+                  "wrap": 130, "tint": "@label", "zIndex": 112 },
+                { "name": "labelOff", "widget": "text", "text": "", "fontSize": 8, "visible": false,
+                  "wrap": 130, "tint": "@hint", "zIndex": 112 } ] }
   },
 
   "root": {

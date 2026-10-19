@@ -19,7 +19,7 @@
   ],
   "starts": [
     {"name": "title", "doc": "表紙（起動の既定。決定で物語がはじまる）", "args": {}},
-    {"name": "talk", "doc": "シナリオのノード（node = ノードの名前。既定は最初に開く arrival）の 1 行目を読んでいる所。line = .yarn の行番号を渡すとその行まで進めて出し終えた所（Studio の会話のプレビュー・bin/fge talk goto）", "args": {}},
+    {"name": "talk", "doc": "シナリオのノード（node = ノードの名前。既定は最初に開く arrival）の 1 行目を読んでいる所。line = .yarn の行番号を渡すとその行まで進めて出し終えた所（Studio の会話のプレビュー・bin/fge talk goto）。$名前=値 でシナリオの変数をその値にして流す", "args": {}},
     {"name": "choice", "doc": "ノード（node。既定は arrival）を読み終えて選択肢が開き、問いの文を出し終えた所", "args": {}}
   ],
   "keys": ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", "Digit0", "Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6", "Digit7", "Digit8", "Digit9", "Up", "Down", "Left", "Right", "Enter", "Space", "Escape", "Tab", "Backspace", "Insert", "Delete", "PageUp", "PageDown", "Home", "End", "CapsLock", "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12", "Apostrophe", "Comma", "Minus", "Period", "Slash", "Semicolon", "Equal", "LeftBracket", "Backslash", "RightBracket", "GraveAccent", "LeftShift", "LeftCtrl", "LeftAlt", "LeftSuper", "RightShift", "RightCtrl", "RightAlt", "RightSuper", "Menu", "Numpad0", "Numpad1", "Numpad2", "Numpad3", "Numpad4", "Numpad5", "Numpad6", "Numpad7", "Numpad8", "Numpad9", "NumpadDecimal", "NumpadDivide", "NumpadMultiply", "NumpadSubtract", "NumpadAdd", "NumpadEnter", "NumpadEqual"],

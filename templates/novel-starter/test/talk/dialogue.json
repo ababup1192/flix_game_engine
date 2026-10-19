@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "note": "bin/fge yarn build が test/talk/fixture.yarn から書いた木。手で直さない（.yarn を直して build する）",
   "vocab": "assets/talk/vocab.json",
   "files": [
@@ -60,6 +60,21 @@
                   "node": "endB"
                 }
               ]
+            },
+            {
+              "line": 15,
+              "text": "逃げる",
+              "condition": {
+                "kind": "value",
+                "value": false
+              },
+              "body": [
+                {
+                  "kind": "jump",
+                  "line": 16,
+                  "node": "endB"
+                }
+              ]
             }
           ]
         }
@@ -68,12 +83,12 @@
     {
       "title": "endA",
       "file": "test/talk/fixture.yarn",
-      "line": 17,
+      "line": 19,
       "headers": [],
       "body": [
         {
           "kind": "line",
-          "line": 19,
+          "line": 21,
           "text": "結末A。"
         }
       ]
@@ -81,12 +96,12 @@
     {
       "title": "endB",
       "file": "test/talk/fixture.yarn",
-      "line": 22,
+      "line": 24,
       "headers": [],
       "body": [
         {
           "kind": "line",
-          "line": 24,
+          "line": 26,
           "text": "結末B。"
         }
       ]

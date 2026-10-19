@@ -1,0 +1,142 @@
+{
+  "version": 2,
+  "note": "bin/fge yarn build が VisitCount.yarn から書いた木。手で直さない（.yarn を直して build する）",
+  "vocab": "",
+  "files": [
+    "VisitCount.yarn"
+  ],
+  "nodes": [
+    {
+      "title": "Start",
+      "file": "VisitCount.yarn",
+      "line": 1,
+      "headers": [],
+      "body": [
+        {
+          "kind": "line",
+          "line": 3,
+          "text": "entered start"
+        },
+        {
+          "kind": "line",
+          "line": 4,
+          "text": "seconds visited count is {visited_count(\"second\")}",
+          "parts": [
+            {
+              "text": "seconds visited count is "
+            },
+            {
+              "expr": {
+                "kind": "visited_count",
+                "name": "second"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "jump",
+          "line": 5,
+          "node": "second"
+        }
+      ]
+    },
+    {
+      "title": "second",
+      "file": "VisitCount.yarn",
+      "line": 8,
+      "headers": [],
+      "body": [
+        {
+          "kind": "if",
+          "line": 10,
+          "clauses": [
+            {
+              "line": 10,
+              "condition": {
+                "kind": "<",
+                "args": [
+                  {
+                    "kind": "visited_count",
+                    "name": "second"
+                  },
+                  {
+                    "kind": "value",
+                    "value": 3
+                  }
+                ]
+              },
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 11,
+                  "text": "second visited {visited_count(\"second\")} times",
+                  "parts": [
+                    {
+                      "text": "second visited "
+                    },
+                    {
+                      "expr": {
+                        "kind": "visited_count",
+                        "name": "second"
+                      }
+                    },
+                    {
+                      "text": " times"
+                    }
+                  ]
+                },
+                {
+                  "kind": "jump",
+                  "line": 12,
+                  "node": "second"
+                }
+              ]
+            },
+            {
+              "line": 13,
+              "body": [
+                {
+                  "kind": "jump",
+                  "line": 14,
+                  "node": "third"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "third",
+      "file": "VisitCount.yarn",
+      "line": 18,
+      "headers": [],
+      "body": [
+        {
+          "kind": "line",
+          "line": 20,
+          "text": "entered third"
+        },
+        {
+          "kind": "line",
+          "line": 21,
+          "text": "seconds was visited a total of {visited_count(\"second\")} times",
+          "parts": [
+            {
+              "text": "seconds was visited a total of "
+            },
+            {
+              "expr": {
+                "kind": "visited_count",
+                "name": "second"
+              }
+            },
+            {
+              "text": " times"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

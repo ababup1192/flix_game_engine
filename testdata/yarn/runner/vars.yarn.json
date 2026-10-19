@@ -1,0 +1,497 @@
+{
+  "version": 2,
+  "note": "bin/fge yarn build が vars.yarn から書いた木。手で直さない（.yarn を直して build する）",
+  "vocab": "",
+  "files": [
+    "vars.yarn"
+  ],
+  "variables": [
+    {
+      "name": "$tickets",
+      "value": 2,
+      "file": "vars.yarn",
+      "line": 5
+    },
+    {
+      "name": "$companions",
+      "value": 0,
+      "file": "vars.yarn",
+      "line": 6
+    },
+    {
+      "name": "$stops",
+      "value": 0,
+      "file": "vars.yarn",
+      "line": 7
+    },
+    {
+      "name": "$met",
+      "value": false,
+      "file": "vars.yarn",
+      "line": 20
+    },
+    {
+      "name": "$name",
+      "value": "ミナ",
+      "file": "vars.yarn",
+      "line": 21
+    }
+  ],
+  "nodes": [
+    {
+      "title": "Trip",
+      "file": "vars.yarn",
+      "line": 3,
+      "headers": [],
+      "body": [
+        {
+          "kind": "set",
+          "line": 8,
+          "name": "$stops",
+          "expr": {
+            "kind": "+",
+            "args": [
+              {
+                "kind": "variable",
+                "name": "$stops"
+              },
+              {
+                "kind": "value",
+                "value": 1
+              }
+            ]
+          }
+        },
+        {
+          "kind": "options",
+          "line": 9,
+          "options": [
+            {
+              "line": 9,
+              "text": "一緒に降りる",
+              "condition": {
+                "kind": ">",
+                "args": [
+                  {
+                    "kind": "variable",
+                    "name": "$tickets"
+                  },
+                  {
+                    "kind": "value",
+                    "value": 0
+                  }
+                ]
+              },
+              "body": [
+                {
+                  "kind": "set",
+                  "line": 10,
+                  "name": "$tickets",
+                  "expr": {
+                    "kind": "-",
+                    "args": [
+                      {
+                        "kind": "variable",
+                        "name": "$tickets"
+                      },
+                      {
+                        "kind": "value",
+                        "value": 1
+                      }
+                    ]
+                  }
+                },
+                {
+                  "kind": "set",
+                  "line": 11,
+                  "name": "$companions",
+                  "expr": {
+                    "kind": "+",
+                    "args": [
+                      {
+                        "kind": "variable",
+                        "name": "$companions"
+                      },
+                      {
+                        "kind": "value",
+                        "value": 1
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "line": 12,
+              "text": "ひとりで降りる",
+              "body": []
+            }
+          ]
+        },
+        {
+          "kind": "if",
+          "line": 13,
+          "clauses": [
+            {
+              "line": 13,
+              "condition": {
+                "kind": "<",
+                "args": [
+                  {
+                    "kind": "variable",
+                    "name": "$stops"
+                  },
+                  {
+                    "kind": "value",
+                    "value": 3
+                  }
+                ]
+              },
+              "body": [
+                {
+                  "kind": "jump",
+                  "line": 14,
+                  "node": "Trip"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 16,
+          "speaker": "girl",
+          "text": "切符は残り {$tickets} 枚・連れは {$companions} 人・{visited_count(\"Trip\")} 回目の後",
+          "parts": [
+            {
+              "text": "切符は残り "
+            },
+            {
+              "expr": {
+                "kind": "variable",
+                "name": "$tickets"
+              }
+            },
+            {
+              "text": " 枚・連れは "
+            },
+            {
+              "expr": {
+                "kind": "variable",
+                "name": "$companions"
+              }
+            },
+            {
+              "text": " 人・"
+            },
+            {
+              "expr": {
+                "kind": "visited_count",
+                "name": "Trip"
+              }
+            },
+            {
+              "text": " 回目の後"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Meet",
+      "file": "vars.yarn",
+      "line": 18,
+      "headers": [],
+      "body": [
+        {
+          "kind": "options",
+          "line": 22,
+          "options": [
+            {
+              "line": 22,
+              "text": "{$name} と話す",
+              "parts": [
+                {
+                  "expr": {
+                    "kind": "variable",
+                    "name": "$name"
+                  }
+                },
+                {
+                  "text": " と話す"
+                }
+              ],
+              "body": [
+                {
+                  "kind": "set",
+                  "line": 23,
+                  "name": "$met",
+                  "expr": {
+                    "kind": "value",
+                    "value": true
+                  }
+                }
+              ]
+            },
+            {
+              "line": 24,
+              "text": "黙る",
+              "body": []
+            }
+          ]
+        },
+        {
+          "kind": "if",
+          "line": 25,
+          "clauses": [
+            {
+              "line": 25,
+              "condition": {
+                "kind": "variable",
+                "name": "$met"
+              },
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 26,
+                  "speaker": "girl",
+                  "text": "また会えたね"
+                }
+              ]
+            },
+            {
+              "line": 27,
+              "condition": {
+                "kind": "==",
+                "args": [
+                  {
+                    "kind": "variable",
+                    "name": "$tickets"
+                  },
+                  {
+                    "kind": "value",
+                    "value": 2
+                  }
+                ]
+              },
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 28,
+                  "speaker": "girl",
+                  "text": "切符はそのまま"
+                }
+              ]
+            },
+            {
+              "line": 29,
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 30,
+                  "speaker": "girl",
+                  "text": "ひとりだね"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Hidden",
+      "file": "vars.yarn",
+      "line": 33,
+      "headers": [],
+      "body": [
+        {
+          "kind": "options",
+          "line": 35,
+          "options": [
+            {
+              "line": 35,
+              "text": "a",
+              "condition": {
+                "kind": "value",
+                "value": false
+              },
+              "body": []
+            },
+            {
+              "line": 36,
+              "text": "b",
+              "condition": {
+                "kind": "not",
+                "args": [
+                  {
+                    "kind": "value",
+                    "value": true
+                  }
+                ]
+              },
+              "body": []
+            }
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 37,
+          "speaker": "girl",
+          "text": "飛ばした"
+        }
+      ]
+    },
+    {
+      "title": "Question",
+      "file": "vars.yarn",
+      "line": 39,
+      "headers": [],
+      "body": [
+        {
+          "kind": "line",
+          "line": 41,
+          "speaker": "girl",
+          "text": "どうする？"
+        },
+        {
+          "kind": "set",
+          "line": 42,
+          "name": "$companions",
+          "expr": {
+            "kind": "value",
+            "value": 5
+          }
+        },
+        {
+          "kind": "if",
+          "line": 43,
+          "clauses": [
+            {
+              "line": 43,
+              "condition": {
+                "kind": "==",
+                "args": [
+                  {
+                    "kind": "variable",
+                    "name": "$companions"
+                  },
+                  {
+                    "kind": "value",
+                    "value": 5
+                  }
+                ]
+              },
+              "body": [
+                {
+                  "kind": "options",
+                  "line": 44,
+                  "options": [
+                    {
+                      "line": 44,
+                      "text": "はい",
+                      "body": []
+                    },
+                    {
+                      "line": 45,
+                      "text": "いいえ",
+                      "body": []
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Again",
+      "file": "vars.yarn",
+      "line": 48,
+      "headers": [],
+      "body": [
+        {
+          "kind": "if",
+          "line": 50,
+          "clauses": [
+            {
+              "line": 50,
+              "condition": {
+                "kind": "visited",
+                "name": "Again"
+              },
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 51,
+                  "speaker": "girl",
+                  "text": "二度目"
+                }
+              ]
+            },
+            {
+              "line": 52,
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 53,
+                  "speaker": "girl",
+                  "text": "初めて"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Gate",
+      "file": "vars.yarn",
+      "line": 56,
+      "headers": [],
+      "body": [
+        {
+          "kind": "if",
+          "line": 58,
+          "clauses": [
+            {
+              "line": 58,
+              "condition": {
+                "kind": "==",
+                "args": [
+                  {
+                    "kind": "variable",
+                    "name": "$tickets"
+                  },
+                  {
+                    "kind": "value",
+                    "value": 0
+                  }
+                ]
+              },
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 59,
+                  "speaker": "girl",
+                  "text": "切符が無い"
+                }
+              ]
+            },
+            {
+              "line": 60,
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 61,
+                  "speaker": "girl",
+                  "text": "通っていい"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

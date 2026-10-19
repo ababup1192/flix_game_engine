@@ -1,8 +1,12 @@
 package talk
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -39,5 +43,30 @@ func TestPortFromRegistryMatchesThisGameAndLivePid(t *testing.T) {
 func TestPngOfReadsTheShotLine(t *testing.T) {
 	if got := PngOf("rendered: x\nok png=debug/shot/a.png\n"); got != "debug/shot/a.png" {
 		t.Fatalf("got %q", got)
+	}
+}
+
+// $名前=値 の引数は始まりの行の後ろに並び、命令口へは同じ名前の問いとして送る。形の違う物は止める。
+func TestVariablesGoToTheStartLineAndTheQuery(t *testing.T) {
+	vars, err := varsOf([]string{"--port", "9", "$tickets=0", "$met=true"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := Target{Node: "gate", Line: 5, Vars: vars}
+	if got := target.StartLine(); got != "talk node=gate line=5 $tickets=0 $met=true" {
+		t.Errorf("got %q", got)
+	}
+	var query string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		query = r.URL.Query().Get("$tickets")
+		w.Write([]byte("ok"))
+	}))
+	defer server.Close()
+	port, _ := strconv.Atoi(server.URL[strings.LastIndex(server.URL, ":")+1:])
+	if _, err := Goto(port, target); err != nil || query != "0" {
+		t.Errorf("問いの $tickets = %q（%v）", query, err)
+	}
+	if _, err := varsOf([]string{"$tickets"}); err == nil {
+		t.Error("= の無い $tickets は止めるはず")
 	}
 }

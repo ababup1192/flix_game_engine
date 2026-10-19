@@ -113,7 +113,7 @@ mod Controls {
             match InputMap.firstTap(tapTable(w#keys), frame) {
                 case Some(Act.NavPrev) => World.moveCursor(-1, hovered)
                 case Some(Act.NavNext) => World.moveCursor(1, hovered)
-                case Some(Act.Confirm) => World.pick(hovered#cursor, hovered)
+                case Some(Act.Confirm) => World.pickAtCursor(hovered#cursor, hovered)
                 case _                 => hovered
             }
 

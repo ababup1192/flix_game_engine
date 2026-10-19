@@ -4,8 +4,9 @@
 //   assets/talk/*.yarn ──bin/fge yarn build──▶ assets/talk/dialogue.json ──Yarn.loadOr──▶ Yarn.Program
 //   ゲームの enum ──Yarn.vocabJson（ゲームの Talk.vocab・make talk-vocab）──▶ assets/talk/vocab.json ──build の check が読む
 //
-// シナリオに書く物: 台詞・話し手・タグ（表情・後ろの場面など。値はゲームの enum の名前）。
+// シナリオに書く物: 台詞・話し手・タグ（表情・後ろの場面など。値はゲームの enum の名前）・変数と <<if>>（会話の中で数えて分ける物）。
 // コードに書く物: どのノードを開くか・演出の順番。文字送りの速さ・ウィンドウの出入り・立ち絵・呼び名は Doc。
+// 変数の値は YarnRunner が持つ YarnStorage にあり、ゲームは YarnRunner.valueOf・withStorage で読み書きする。
 // 読める文法と断る文法は bin/fge yarn help、木の形は go/internal/yarn/tree.go。
 pub mod Yarn {
     use Util.Json.Json
@@ -16,8 +17,50 @@ pub mod Yarn {
     /// #key:value のタグ（値の無い #key は value が空）。
     pub type alias Tag = { key = String, value = String }
 
-    /// 台詞 1 行。speaker = 話し手の id（地の文は空）、text = 出す字（エスケープは解いてある）。
-    pub type alias Line = { speaker = String, text = String, tags = List[Tag], source = Source }
+    /// 台詞 1 行。speaker = 話し手の id（地の文は空）、text = 出す字（エスケープは解いてある）、
+    /// parts = 字と {式} の並び（YarnRunner が式を値にして text へ入れる。出来事の Line では text 1 切れ）。
+    pub type alias Line = { speaker = String, text = String, parts = List[Part], tags = List[Tag], source = Source }
+
+    /// 行の 1 切れ。Literal = 書いたとおりの字、Insert = {式}（値を字にして差し込む）。
+    pub enum Part {
+        case Literal(String)
+        case Insert(Expr)
+    }
+
+    /// 変数と式の値（公式と同じ 3 つの型。型は build の check が合わせてある）。
+    pub enum Value with Eq, ToString {
+        case Number(Float64)
+        case Bool(Bool)
+        case Text(String)
+    }
+
+    /// 式。Visited / VisitCount はノードを出た回数を見る（公式の visited("…")・visited_count("…")）。
+    pub enum Expr {
+        case Constant(Value)
+        case Variable(String)
+        case Visited(String)
+        case VisitCount(String)
+        case Not(Expr)
+        case Negate(Expr)
+        case And(Expr, Expr)
+        case Or(Expr, Expr)
+        case Binary(Operator, Expr, Expr)
+    }
+
+    /// and / or の他の、2 つの値をとる演算（and / or は右を見るのが左で決まらない時だけなので Expr の case に分けてある）。
+    pub enum Operator with Eq {
+        case Add
+        case Subtract
+        case Multiply
+        case Divide
+        case Remainder
+        case Equal
+        case NotEqual
+        case Less
+        case LessEqual
+        case Greater
+        case GreaterEqual
+    }
 
     /// <<名前 引数…>>。エンジンが自分で扱うのは wait（YarnRunner が待つ）だけ。
     pub type alias Command = { name = String, args = List[String], tags = List[Tag], source = Source }
@@ -28,50 +71,74 @@ pub mod Yarn {
     ///   Jump    … 別のノードの頭へ移る
     ///   Stop    … 会話を終える
     ///   Command … コマンド
+    ///   Set     … 変数（$ から書く名前）に式の値を入れる
+    ///   If      … 上の枝から順に条件を見て、最初に真になった枝の中身を流す（<<else>> は条件が真の定数の枝）
     pub enum Statement {
         case Say(Line)
         case Choose(List[Choice])
         case Jump(String, Source)
         case Stop(Source)
         case Command(Command)
+        case Set(String, Expr, Source)
+        case If(List[Branch], Source)
     }
 
-    /// 選択肢 1 つ。line = 出す字と話し手・タグ、body = 選んだ時に流す中身。
-    pub type alias Choice = { line = Line, body = List[Statement] }
+    /// 選択肢 1 つ。line = 出す字と話し手・タグ、condition = 行末の <<if>>（偽なら選べない印で並ぶ）、body = 選んだ時に流す中身。
+    pub type alias Choice = { line = Line, condition = Option[Expr], body = List[Statement] }
+
+    /// <<if>> の枝 1 つ。
+    pub type alias Branch = { condition = Expr, body = List[Statement] }
+
+    /// <<declare>> 1 つ。value = 初めの値（型もこれで決まる）。
+    pub type alias Declaration = { value = Value, source = Source }
 
     /// ノード（title: 〜 === の 1 つ）。headers は title 以外のヘッダ（読むだけ）。
     pub type alias Node = { title = String, headers = List[(String, String)], body = List[Statement], source = Source }
 
-    /// ノード名 → ノード。外では作らない（木の JSON を読むか empty）。
-    enum Nodes(Map[String, Node])
+    /// ノード名 → ノードと、変数名 → 宣言。外では作らない（木の JSON を読むか empty）。
+    enum Nodes({ nodes = Map[String, Node], variables = Map[String, Declaration] })
 
     /// シナリオ 1 つ分（フォルダの .yarn 全部）。
     pub type alias Program = Nodes
 
-    /// 木の JSON の形の版（go/internal/yarn/tree.go の Version と同じ）。
-    pub def version(): Int32 = 1
+    /// 木の JSON の形の版（go/internal/yarn/tree.go の Version と同じ）。これ以下の版を読む。
+    pub def version(): Int32 = 2
 
     /// ノードの無いシナリオ（どのノードを開いても、すぐ終わる）。
-    pub def empty(): Program = Nodes.Nodes(Map.empty())
+    pub def empty(): Program = Nodes.Nodes({ nodes = Map.empty(), variables = Map.empty() })
 
-    pub def nodeOf(name: String, program: Program): Option[Node] = match program {
-        case Nodes.Nodes(nodes) => Map.get(name, nodes)
-    }
+    pub def nodeOf(name: String, program: Program): Option[Node] =
+        let Nodes.Nodes(p) = program; Map.get(name, p#nodes)
 
     /// ノード名の一覧（名前の順）。
-    pub def nodeNames(program: Program): List[String] = match program {
-        case Nodes.Nodes(nodes) => Map.keysOf(nodes) |> Set.toList
+    pub def nodeNames(program: Program): List[String] =
+        let Nodes.Nodes(p) = program; Map.keysOf(p#nodes) |> Set.toList
+
+    /// 変数の宣言（<<declare>> が無ければ None）。
+    pub def declarationOf(name: String, program: Program): Option[Declaration] =
+        let Nodes.Nodes(p) = program; Map.get(name, p#variables)
+
+    /// 宣言した変数の名前と初めの値（名前の順）。
+    pub def variablesOf(program: Program): List[(String, Value)] =
+        let Nodes.Nodes(p) = program; p#variables |> Map.map(declaration -> declaration#value) |> Map.toList
+
+    /// 値を台詞に差し込む字にする（公式と同じ: 数は整数なら小数点を付けない・真偽は True / False）。
+    pub def toText(value: Value): String = match value {
+        case Value.Number(n) =>
+            if (Float64.floor(n) == n and Float64.abs(n) < 1.0e15) Float64.tryToInt64(n) |> Option.map(Int64.toString) |> Option.getWithDefault(Float64.toString(n))
+            else Float64.toString(n)
+        case Value.Bool(b)   => if (b) "True" else "False"
+        case Value.Text(t)   => t
     }
 
     /// file の line 行を中に持つノードの名前（そのファイルで title: の行が line 以下の、いちばん後のノード）。
     /// エディタのカーソルの行からノードを引く（Studio の会話の画面・bin/fge talk goto と同じ決まり）。
-    pub def nodeAtLine(file: String, line: Int32, program: Program): Option[String] = match program {
-        case Nodes.Nodes(nodes) =>
-            Map.valuesOf(nodes)
-                |> List.filter(node -> node#source#file == file and node#source#line <= line)
-                |> List.maximumBy((a, b) -> a#source#line <=> b#source#line)
-                |> Option.map(node -> node#title)
-    }
+    pub def nodeAtLine(file: String, line: Int32, program: Program): Option[String] =
+        let Nodes.Nodes(p) = program;
+        Map.valuesOf(p#nodes)
+            |> List.filter(node -> node#source#file == file and node#source#line <= line)
+            |> List.maximumBy((a, b) -> a#source#line <=> b#source#line)
+            |> Option.map(node -> node#title)
 
     /// タグの値（そのキーのタグが無ければ None・値の無いタグは Some("")）。
     pub def tagOf(key: String, tags: List[Tag]): Option[String] =
@@ -91,10 +158,74 @@ pub mod Yarn {
         DocJson.loadOr(fromJson, fallback, path)
 
     def programFrom(root: Map[String, Json]): Option[Program] =
-        if (JsonCodec.intOr("version", 0, root) != version()) None
-        else Map.get("nodes", root)
-            |> Option.flatMap(JsonCodec.decodeList(nodeFrom))
-            |> Option.map(nodes -> Nodes.Nodes(nodes |> List.map(node -> (node#title, node)) |> List.toMap))
+        let shape = JsonCodec.intOr("version", 0, root);
+        if (shape < 1 or shape > version()) None
+        else forM (
+            nodes <- Map.get("nodes", root) |> Option.flatMap(JsonCodec.decodeList(nodeFrom));
+            variables <- listOr("variables", root, variableFrom)
+        ) yield Nodes.Nodes({ nodes = nodes |> List.map(node -> (node#title, node)) |> List.toMap, variables = List.toMap(variables) })
+
+    def variableFrom(json: Json): Option[(String, Declaration)] = forM (
+        obj <- JsonCodec.expectObject(json);
+        value <- Map.get("value", obj) |> Option.flatMap(valueFromJson)
+    ) yield (JsonCodec.stringOr("name", "", obj),
+             { value = value, source = { file = JsonCodec.stringOr("file", "", obj), line = JsonCodec.intOr("line", 0, obj) } })
+
+    /// JSON の数・真偽・文字列を値に（YarnStorage のセーブも同じ形）。
+    pub def valueFromJson(json: Json): Option[Value] = match json {
+        case Json.JNumber(_) => JsonCodec.expectFloat(json) |> Option.map(Value.Number)
+        case Json.JBool(b)   => Some(Value.Bool(b))
+        case Json.JString(t) => Some(Value.Text(t))
+        case _               => None
+    }
+
+    /// 値を JSON の数・真偽・文字列に。
+    pub def valueToJson(value: Value): Json = match value {
+        case Value.Number(n) => Json.JNumber(JsonCodec.floatToBd(n))
+        case Value.Bool(b)   => Json.JBool(b)
+        case Value.Text(t)   => Json.JString(t)
+    }
+
+    def exprFrom(json: Json): Option[Expr] = forM (
+        obj <- JsonCodec.expectObject(json);
+        args <- listOr("args", obj, exprFrom);
+        expr <- {
+            let name = JsonCodec.stringOr("name", "", obj);
+            match (JsonCodec.stringOr("kind", "", obj), args) {
+                case ("value", _)              => Map.get("value", obj) |> Option.flatMap(valueFromJson) |> Option.map(Expr.Constant)
+                case ("variable", _)           => Some(Expr.Variable(name))
+                case ("visited", _)            => Some(Expr.Visited(name))
+                case ("visited_count", _)      => Some(Expr.VisitCount(name))
+                case ("not", operand :: Nil)   => Some(Expr.Not(operand))
+                case ("neg", operand :: Nil)   => Some(Expr.Negate(operand))
+                case ("and", left :: right :: Nil) => Some(Expr.And(left, right))
+                case ("or", left :: right :: Nil)  => Some(Expr.Or(left, right))
+                case (kind, left :: right :: Nil) => operatorOf(kind) |> Option.map(op -> Expr.Binary(op, left, right))
+                case _                         => None
+            }
+        }
+    ) yield expr
+
+    def operatorOf(kind: String): Option[Operator] = match kind {
+        case "+"   => Some(Operator.Add)
+        case "-"   => Some(Operator.Subtract)
+        case "*"   => Some(Operator.Multiply)
+        case "/"   => Some(Operator.Divide)
+        case "%"   => Some(Operator.Remainder)
+        case "=="  => Some(Operator.Equal)
+        case "!="  => Some(Operator.NotEqual)
+        case "<"   => Some(Operator.Less)
+        case "<="  => Some(Operator.LessEqual)
+        case ">"   => Some(Operator.Greater)
+        case ">="  => Some(Operator.GreaterEqual)
+        case _     => None
+    }
+
+    /// key の式（無ければ Some(None)・読めなければ None）。
+    def exprOr(key: String, obj: Map[String, Json]): Option[Option[Expr]] = match Map.get(key, obj) {
+        case None       => Some(None)
+        case Some(json) => exprFrom(json) |> Option.map(Some)
+    }
 
     def nodeFrom(json: Json): Option[Node] = forM (
         obj <- JsonCodec.expectObject(json);
@@ -126,6 +257,8 @@ pub mod Yarn {
                         tags <- tagsFrom(obj);
                         args <- listOr("args", obj, JsonCodec.expectString)
                     ) yield Statement.Command({ name = JsonCodec.stringOr("name", "", obj), args = args, tags = tags, source = source })
+                case "set"     => Map.get("expr", obj) |> Option.flatMap(exprFrom) |> Option.map(expr -> Statement.Set(JsonCodec.stringOr("name", "", obj), expr, source))
+                case "if"      => Map.get("clauses", obj) |> Option.flatMap(JsonCodec.decodeList(branchFrom(file))) |> Option.map(branches -> Statement.If(branches, source))
                 case _         => None
             }
         }
@@ -134,13 +267,34 @@ pub mod Yarn {
     def choiceFrom(file: String, json: Json): Option[Choice] = forM (
         obj <- JsonCodec.expectObject(json);
         line <- lineFrom(file, obj);
+        condition <- exprOr("condition", obj);
         body <- listOr("body", obj, statementFrom(file))
-    ) yield { line = line, body = body }
+    ) yield { line = line, condition = condition, body = body }
 
-    def lineFrom(file: String, obj: Map[String, Json]): Option[Line] =
-        tagsFrom(obj) |> Option.map(tags ->
-            { speaker = JsonCodec.stringOr("speaker", "", obj), text = JsonCodec.stringOr("text", "", obj), tags = tags,
-              source = { file = file, line = JsonCodec.intOr("line", 0, obj) } })
+    /// <<else>> の枝（条件の無い枝）は、真の定数を条件にする。
+    def branchFrom(file: String, json: Json): Option[Branch] = forM (
+        obj <- JsonCodec.expectObject(json);
+        condition <- exprOr("condition", obj);
+        body <- listOr("body", obj, statementFrom(file))
+    ) yield { condition = Option.getWithDefault(Expr.Constant(Value.Bool(true)), condition), body = body }
+
+    def lineFrom(file: String, obj: Map[String, Json]): Option[Line] = forM (
+        tags <- tagsFrom(obj);
+        parts <- listOr("parts", obj, partFrom)
+    ) yield {
+        let text = JsonCodec.stringOr("text", "", obj);
+        { speaker = JsonCodec.stringOr("speaker", "", obj), text = text,
+          parts = if (List.isEmpty(parts)) Part.Literal(text) :: Nil else parts, tags = tags,
+          source = { file = file, line = JsonCodec.intOr("line", 0, obj) } }
+    }
+
+    def partFrom(json: Json): Option[Part] = forM (
+        obj <- JsonCodec.expectObject(json);
+        part <- match Map.get("expr", obj) {
+            case Some(expr) => exprFrom(expr) |> Option.map(Part.Insert)
+            case None       => Some(Part.Literal(JsonCodec.stringOr("text", "", obj)))
+        }
+    ) yield part
 
     def tagsFrom(obj: Map[String, Json]): Option[List[Tag]] =
         listOr("tags", obj, json ->

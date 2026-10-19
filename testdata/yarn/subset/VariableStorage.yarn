@@ -1,0 +1,109 @@
+title: Start
+---
+// Variable testing
+
+<<declare $num1 = 0>>
+<<declare $num2 = 0>>
+<<declare $num3 = 0>>
+<<declare $str1 = "">>
+<<declare $str2 = "">>
+<<declare $str3 = "">>
+
+// Testing variable storage
+<<set $num1 to 1>>
+
+// Test numeric storage
+{$num1}
+
+<<set $num1 to -1>>
+
+// Test numeric storage (negative)
+{$num1}
+
+// Test string storage
+<<set $str1 to "foo">>
+{$str1}
+
+// Test immediate value arithmetic
+<<set $num1 = 45>>
+
+<<set $num2 = $num1 + 1>>
+
+// Test immediate addition
+{$num2}
+
+<<set $num2 = $num1 - 1>>
+
+// Test immediate subtraction
+{$num2}
+
+<<set $num1 = 46>>
+<<set $num2 = $num1 * 2>>
+
+// Test immediate multiplication
+{$num2}
+
+<<set $num2 = $num1 / 2>>
+
+// Test immediate division
+{$num2}
+
+<<set $num1 = 45>>
+<<set $num1 += 1>>
+
+// Test immediate assignment addition
+{$num1}
+
+<<set $num1 *= 2>>
+
+// Test immediate assignment multiplication
+{$num1}
+
+<<set $num1 /= 2>>
+
+// Test immediate assignment division
+{$num1}
+
+<<set $num1 -= 1>>
+
+// Test immediate assignment subtraction
+{$num1}
+
+// Testing variable arithmetic
+<<set $num1 = 46>>
+<<set $num2 = 1>>
+<<set $num3 = $num1 + $num2>>
+
+// Test variable addition
+{$num3}
+
+<<set $num3 = $num1 - $num2>>
+
+// Test variable subtraction
+{$num3}
+
+<<set $num2 = 2>>
+<<set $num3 = $num1 * $num2>>
+
+// Test variable multiplication
+{$num3}
+
+<<set $num3 = $num1 / $num2>>
+
+// Test variable division
+{$num3}
+
+// Testing string addition
+<<set $str1 = "foo">>
+<<set $str2 = "bar">>
+<<set $str3 = $str1 + "bar">>
+
+// "Test immediate string addition
+{$str3}
+
+<<set $str3 = $str1 + $str2>>
+
+// "Test string addition
+{$str3}
+
+===

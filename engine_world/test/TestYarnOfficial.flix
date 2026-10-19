@@ -12,14 +12,15 @@ mod TestYarnOfficial {
         let picks = plan |> List.filterMap(line ->
             if (String.startsWith(prefix = "select:", line)) Int32.fromString(String.trim(String.dropLeft(7, line))) |> Option.map(n -> n - 1)
             else None);
-        let expected = plan |> List.filter(line -> line != "" and not String.startsWith(prefix = "select:", line));
+        let expected = plan |> List.filter(line -> line != "" and not String.startsWith(prefix = "select:", line) and not String.startsWith(prefix = "//", line));
         let program = Yarn.loadOr(Yarn.empty(), dir() + name + ".yarn.json");
         (expected, YarnRunner.trace(program, "Start", picks) |> List.flatMap(planLinesOf))
 
-    /// 出来事を testplan の行の形にする（話し手のある行は「話し手: 字」・タグは後ろに #key か #key:value）。TestYarnRunner も使う。
+    /// 出来事を testplan の行の形にする（話し手のある行は「話し手: 字」・タグは後ろに #key か #key:value・選べない選択肢は [disabled]）。TestYarnRunner も使う。
     pub def planLinesOf(event: YarnRunner.Event): List[String] = match event {
         case YarnRunner.Event.Line(line)    => "line: `${textOf(line)}`${tagsOf(line#tags)}" :: Nil
-        case YarnRunner.Event.Choices(lines) => lines |> List.map(line -> "option: `${textOf(line)}`${tagsOf(line#tags)}")
+        case YarnRunner.Event.Choices(options) => options |> List.map(option ->
+            "option: `${textOf(option#line)}`${tagsOf(option#line#tags)}${if (option#available) "" else " [disabled]"}")
         case YarnRunner.Event.Command(command) => "command: `${String.intercalate(" ", command#name :: command#args)}`" :: Nil
         case YarnRunner.Event.Done          => "stop" :: Nil
     }
@@ -61,6 +62,42 @@ mod TestYarnOfficial {
     @Test
     def testEscapingMatchesTheOfficialPlan(): Unit \ Assert + Fs.FileRead =
         let (expected, actual) = caseOf("Escaping");
+        Assert.assertEq(expected = expected, actual)
+
+    /// <<if>> 〜 <<else>> 〜 <<endif>> の真の枝だけが流れる（IfStatements.yarn から #line: を除いた物）。
+    @Test
+    def testIfStatementsMatchTheOfficialPlan(): Unit \ Assert + Fs.FileRead =
+        let (expected, actual) = caseOf("IfStatements");
+        Assert.assertEq(expected = expected, actual)
+
+    /// 行と選択肢の {式}（数・計算・文字列・真偽・変数）が値の字になる（InlineExpressions.yarn からコマンドの {式} を除いた物）。
+    @Test
+    def testInlineExpressionsMatchTheOfficialPlan(): Unit \ Assert + Fs.FileRead =
+        let (expected, actual) = caseOf("InlineExpressions");
+        Assert.assertEq(expected = expected, actual)
+
+    /// 文字列と数の比べ（Types.yarn から eq・gt などの別の綴りを除いた物）。
+    @Test
+    def testTypesMatchTheOfficialPlan(): Unit \ Assert + Fs.FileRead =
+        let (expected, actual) = caseOf("Types");
+        Assert.assertEq(expected = expected, actual)
+
+    /// 変数の四則と += など・文字列の足し算（VariableStorage.yarn そのまま）。
+    @Test
+    def testVariableStorageMatchesTheOfficialPlan(): Unit \ Assert + Fs.FileRead =
+        let (expected, actual) = caseOf("VariableStorage");
+        Assert.assertEq(expected = expected, actual)
+
+    /// visited_count はノードを出るたびに 1 つ増える（VisitCount.yarn そのまま）。
+    @Test
+    def testVisitCountMatchesTheOfficialPlan(): Unit \ Assert + Fs.FileRead =
+        let (expected, actual) = caseOf("VisitCount");
+        Assert.assertEq(expected = expected, actual)
+
+    /// 記号だらけの台詞と、条件つきの選択肢（Smileys.yarn そのまま）。
+    @Test
+    def testSmileysMatchTheOfficialPlan(): Unit \ Assert + Fs.FileRead =
+        let (expected, actual) = caseOf("Smileys");
         Assert.assertEq(expected = expected, actual)
 
     /// 選択肢の外の字下げは意味を持たず、空行で選択肢のまとまりが分かれる（Indentation.yarn の選択肢の所）。

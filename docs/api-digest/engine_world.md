@@ -1,4 +1,4 @@
-<!-- engine v0.50.0 / 生成: 2026-10-19 -->
+<!-- engine v0.50.0 / 生成: 2026-10-20 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine_world
@@ -2852,25 +2852,43 @@
   `pub type alias Source = { file = String, line = Int32 }`
 - #key:value のタグ（値の無い #key は value が空）。
   `pub type alias Tag = { key = String, value = String }`
-- 台詞 1 行。speaker = 話し手の id（地の文は空）、text = 出す字（エスケープは解いてある）。
-  `pub type alias Line = { speaker = String, text = String, tags = List[Tag], source = Source }`
+- 台詞 1 行。speaker = 話し手の id（地の文は空）、text = 出す字（エスケープは解いてある）、
+  `pub type alias Line = { speaker = String, text = String, parts = List[Part], tags = List[Tag], source = Source }`
+- 行の 1 切れ。Literal = 書いたとおりの字、Insert = {式}（値を字にして差し込む）。
+  `pub enum Part { case Literal(String) case Insert(Expr) }`
+- 変数と式の値（公式と同じ 3 つの型。型は build の check が合わせてある）。
+  `pub enum Value with Eq, ToString { case Number(Float64) case Bool(Bool) case Text(String) }`
+- 式。Visited / VisitCount はノードを出た回数を見る（公式の visited("…")・visited_count("…")）。
+  `pub enum Expr { case Constant(Value) case Variable(String) case Visited(String) case VisitCount(String) case Not(Expr) case Negate(Expr) case And(Expr, Expr) case Or(Expr, Expr) case Binary(Operator, Expr, Expr) }`
+- and / or の他の、2 つの値をとる演算（and / or は右を見るのが左で決まらない時だけなので Expr の case に分けてある）。
+  `pub enum Operator with Eq { case Add case Subtract case Multiply case Divide case Remainder case Equal case NotEqual case Less case LessEqual case Greater case GreaterEqual }`
 - <<名前 引数…>>。エンジンが自分で扱うのは wait（YarnRunner が待つ）だけ。
   `pub type alias Command = { name = String, args = List[String], tags = List[Tag], source = Source }`
 - 本文の 1 文。
-  `pub enum Statement { case Say(Line) case Choose(List[Choice]) case Jump(String, Source) case Stop(Source) case Command(Command) }`
-- 選択肢 1 つ。line = 出す字と話し手・タグ、body = 選んだ時に流す中身。
-  `pub type alias Choice = { line = Line, body = List[Statement] }`
+  `pub enum Statement { case Say(Line) case Choose(List[Choice]) case Jump(String, Source) case Stop(Source) case Command(Command) case Set(String, Expr, Source) case If(List[Branch], Source) }`
+- 選択肢 1 つ。line = 出す字と話し手・タグ、condition = 行末の <<if>>（偽なら選べない印で並ぶ）、body = 選んだ時に流す中身。
+  `pub type alias Choice = { line = Line, condition = Option[Expr], body = List[Statement] }`
+- <<if>> の枝 1 つ。
+  `pub type alias Branch = { condition = Expr, body = List[Statement] }`
+- <<declare>> 1 つ。value = 初めの値（型もこれで決まる）。
+  `pub type alias Declaration = { value = Value, source = Source }`
 - ノード（title: 〜 === の 1 つ）。headers は title 以外のヘッダ（読むだけ）。
   `pub type alias Node = { title = String, headers = List[(String, String)], body = List[Statement], source = Source }`
 - シナリオ 1 つ分（フォルダの .yarn 全部）。
   `pub type alias Program = Nodes`
-- 木の JSON の形の版（go/internal/yarn/tree.go の Version と同じ）。
+- 木の JSON の形の版（go/internal/yarn/tree.go の Version と同じ）。これ以下の版を読む。
   `pub def version(): Int32`
 - ノードの無いシナリオ（どのノードを開いても、すぐ終わる）。
   `pub def empty(): Program`
 - `pub def nodeOf(name: String, program: Program): Option[Node]`
 - ノード名の一覧（名前の順）。
   `pub def nodeNames(program: Program): List[String]`
+- 変数の宣言（<<declare>> が無ければ None）。
+  `pub def declarationOf(name: String, program: Program): Option[Declaration]`
+- 宣言した変数の名前と初めの値（名前の順）。
+  `pub def variablesOf(program: Program): List[(String, Value)]`
+- 値を台詞に差し込む字にする（公式と同じ: 数は整数なら小数点を付けない・真偽は True / False）。
+  `pub def toText(value: Value): String`
 - file の line 行を中に持つノードの名前（そのファイルで title: の行が line 以下の、いちばん後のノード）。
   `pub def nodeAtLine(file: String, line: Int32, program: Program): Option[String]`
 - タグの値（そのキーのタグが無ければ None・値の無いタグは Some("")）。
@@ -2881,6 +2899,10 @@
   `pub def fromJson(text: String): Option[Program]`
 - path の木を読む。読めない・壊れている時は fallback（fail-open）。
   `pub def loadOr(fallback: Program, path: String): Program \ Fs.FileRead`
+- JSON の数・真偽・文字列を値に（YarnStorage のセーブも同じ形）。
+  `pub def valueFromJson(json: Json): Option[Value]`
+- 値を JSON の数・真偽・文字列に。
+  `pub def valueToJson(value: Value): Json`
 - speakers = 話し手の id、nodes = コードが開くノード、tags = タグのキーと取れる値（空なら値を書かない #key）、
   `pub type alias Vocab = { speakers = List[String], nodes = List[String], tags = List[(String, List[String])], commands = List[String] }`
 - enum の全部の値を名前の一覧にする（語彙の欄を作る所で使う）。
@@ -2892,23 +2914,29 @@
 
 ## YarnRunner — `engine_world/src/YarnRunner.flix`
 - 呼び出しの間に起きた出来事。
-  `pub enum Event { case Line(Yarn.Line) case Choices(List[Yarn.Line]) case Command(Yarn.Command) case Done }`
+  `pub enum Event { case Line(Yarn.Line) case Choices(List[DialogueOption]) case Command(Yarn.Command) case Done }`
+- 出した選択肢 1 つ（公式の DialogueOption）。available = 行末の <<if>> が真か。偽の物も並びに残し、
+  `pub type alias DialogueOption = { line = Yarn.Line, available = Bool }`
 - 実行器への入力。Choose の番号は 0 始まり。
   `pub enum Action with Eq, ToString { case Advance case Choose(Int32) case Tick }`
 - 今出している物。Closed = 開いていない・終わった、Waiting = <<wait>> の途中。
-  `pub enum Shown { case Closed case Line(Yarn.Line) case Choices(List[Yarn.Line]) case Waiting }`
+  `pub enum Shown { case Closed case Line(Yarn.Line) case Choices(List[DialogueOption]) case Waiting }`
 - 実行器。c は <<wait>> を測る時計の名前（ゲームの物語の時計など）。外では start と closed だけが作る。
   `pub type alias Runner[c] = Machine[c]`
 - 開いていない実行器（World の初期値）。
   `pub def closed(): Runner[c]`
 - node の頭から、最初に待つ所（台詞・選択肢・wait）か終わりまで流す。node が無ければすぐ Done。
   `pub def start(program: Yarn.Program, node: String, now: Clock.Time[c]): (Runner[c], List[Event])`
+- start と同じだが、変数と訪れた数を storage から始める（前の会話の storageOf・セーブから読んだ物）。
+  `pub def startWith(storage: YarnStorage.Storage, program: Yarn.Program, node: String, now: Clock.Time[c]): (Runner[c], List[Event])`
 - 入力 1 つ。今の状態で意味の無い入力（台詞の無い時の Advance・範囲の外の Choose・時刻の前の Tick）は何も変えない。
   `pub def step(action: Action, now: Clock.Time[c], runner: Runner[c]): (Runner[c], List[Event])`
 - node の頭から、台詞はすぐ送り・選択肢は picks の順に選び（0 始まり）・<<wait>> は明ける時刻まで飛ばして、
   `pub def trace(program: Yarn.Program, node: String, picks: List[Int32]): List[Event]`
 - node の頭から流し、シナリオの line 行（.yarn の 1 始まりの行番号）を出している所まで進める
   `pub def startAt(program: Yarn.Program, node: String, line: Int32, now: Clock.Time[c]): (Runner[c], List[Event])`
+- startAt と同じだが、変数と訪れた数を storage から始める（プレビューで $切符=0 の場面を出す。YarnStorage.withArgs）。
+  `pub def startAtWith(storage: YarnStorage.Storage, program: Yarn.Program, node: String, line: Int32, now: Clock.Time[c]): (Runner[c], List[Event])`
 - `pub def shownOf(runner: Runner[c]): Shown`
 - 開いているノードの名前（閉じていれば None）。
   `pub def nodeOf(runner: Runner[c]): Option[String]`
@@ -2917,6 +2945,34 @@
   `pub def choicesFollow(runner: Runner[c]): Bool`
 - <<wait>> が明ける時刻（待っていなければ None）。
   `pub def waitUntilOf(runner: Runner[c]): Option[Clock.Time[c]]`
+- 変数と訪れた数（セーブや次の会話の startWith へ渡す）。
+  `pub def storageOf(runner: Runner[c]): YarnStorage.Storage`
+- 変数と訪れた数を差し替える（ゲームの World の値をシナリオへ渡す・セーブから戻す）。
+  `pub def withStorage(storage: YarnStorage.Storage, runner: Runner[c]): Runner[c]`
+- 変数の今の値（書いていなければ <<declare>> の初めの値。宣言も値も無ければ None）。
+  `pub def valueOf(name: String, runner: Runner[c]): Option[Yarn.Value]`
+
+## YarnStorage — `engine_world/src/YarnStorage.flix`
+- 変数と訪れた数の置き場。
+  `pub type alias Storage = Variables`
+- 何も書いていない置き場（変数は全部 <<declare>> の初めの値・どのノードも 0 回）。
+  `pub def empty(): Storage`
+- 書いてある値（書いていなければ None。<<declare>> の初めの値は見ない）。
+  `pub def get(name: String, storage: Storage): Option[Yarn.Value]`
+- 値を書く（型はシナリオの宣言と合わせる。合わない値は読む時に初めの値へ戻る）。
+  `pub def set(name: String, value: Yarn.Value, storage: Storage): Storage`
+- node を出た回数。
+  `pub def visitCountOf(node: String, storage: Storage): Int32`
+- node を出た回数を 1 つ足す。
+  `pub def addVisit(node: String, storage: Storage): Storage`
+- 書いてある変数の名前と値（名前の順）。
+  `pub def valuesOf(storage: Storage): List[(String, Yarn.Value)]`
+- 始まりの引数（`talk node=… line=… $切符=0`）の $ から始まる物を、宣言の型で読んで書く（他の引数は見ない）。
+  `pub def withArgs(args: Map[String, String], program: Yarn.Program, storage: Storage): Result[String, Storage]`
+- {"variables": {名前: 数・真偽・文字列}, "visits": {ノード: 回数}}。
+  `pub def toJson(storage: Storage): Json`
+- toJson の形から。欄が無ければ空・形が違えば None。
+  `pub def fromJson(json: Json): Option[Storage]`
 
 ## ZStack — `engine_world/src/ZStack.flix`
 - 積み木の木。p は topLayer の行き先（ゲームの SortingLayer の層の enum）、a は押せる物の名前

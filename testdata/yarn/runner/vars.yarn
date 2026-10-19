@@ -1,0 +1,63 @@
+// YarnRunner の変数・条件のテストが読むシナリオ（engine_world/test/TestYarnVariables.flix）。
+// 書き直したら bin/fge yarn build vars.yarn --no-vocab --out vars.yarn.json
+title: Trip
+---
+<<declare $tickets = 2>>
+<<declare $companions = 0>>
+<<declare $stops = 0>>
+<<set $stops += 1>>
+-> 一緒に降りる <<if $tickets > 0>>
+    <<set $tickets -= 1>>
+    <<set $companions += 1>>
+-> ひとりで降りる
+<<if $stops < 3>>
+    <<jump Trip>>
+<<endif>>
+girl: 切符は残り {$tickets} 枚・連れは {$companions} 人・{visited_count("Trip")} 回目の後
+===
+title: Meet
+---
+<<declare $met = false>>
+<<declare $name = "ミナ">>
+-> {$name} と話す
+    <<set $met to true>>
+-> 黙る
+<<if $met>>
+    girl: また会えたね
+<<elseif $tickets == 2>>
+    girl: 切符はそのまま
+<<else>>
+    girl: ひとりだね
+<<endif>>
+===
+title: Hidden
+---
+-> a <<if false>>
+-> b <<if not true>>
+girl: 飛ばした
+===
+title: Question
+---
+girl: どうする？
+<<set $companions to 5>>
+<<if $companions == 5>>
+    -> はい
+    -> いいえ
+<<endif>>
+===
+title: Again
+---
+<<if visited("Again")>>
+    girl: 二度目
+<<else>>
+    girl: 初めて
+<<endif>>
+===
+title: Gate
+---
+<<if $tickets == 0>>
+    girl: 切符が無い
+<<else>>
+    girl: 通っていい
+<<endif>>
+===

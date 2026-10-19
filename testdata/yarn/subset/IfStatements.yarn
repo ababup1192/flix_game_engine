@@ -1,0 +1,12 @@
+title: Start
+---
+<<if true>>
+    Player: Hey, Sally.
+    Sally: Oh! Hi.
+    Sally: You snuck up on me.
+    Sally: Don't do that.
+<<else>>
+    Player: Hey.
+    Sally: Hi.
+<<endif>>
+===

@@ -62,6 +62,19 @@ mod TestRules {
             (NovelKit.isAsking(w#kit), YarnRunner.nodeOf(w#talk)))
 
     @Test
+    def testUnavailableOptionHasNoMeta(): Unit \ {Assert, Fs.FileRead} =
+        // 行末の <<if>> が偽の選択肢も並ぶが、meta が無い（カーソルとクリックの列から外れ、灰色で描かれる）。
+        let metas = atAsk()#kit#choices |> Option.getWithDefault(Nil) |> List.map(entry -> Option.nonEmpty(entry#meta));
+        Assert.assertEq(expected = List#{true, true, false}, metas)
+
+    @Test
+    def testPickingAnUnavailableOptionChangesNothing(): Unit \ {Assert, Fs.FileRead} =
+        // 選べない選択肢を選んでも、選択肢待ちのまま・灯りも消えない。
+        let asking = atAsk();
+        let w = pick(2, asking);
+        Assert.assertEq(expected = (true, asking#lightsOut), (NovelKit.isAsking(w#kit), w#lightsOut))
+
+    @Test
     def testPickFollowsJump(): Unit \ {Assert, Fs.FileRead} =
         // 選んだ選択肢の中身の <<jump>> の先のノードへ移る（行き先はシナリオから導く）。
         let w = pick(0, atAsk());

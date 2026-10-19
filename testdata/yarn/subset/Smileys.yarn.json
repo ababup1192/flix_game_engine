@@ -1,0 +1,519 @@
+{
+  "version": 2,
+  "note": "bin/fge yarn build が Smileys.yarn から書いた木。手で直さない（.yarn を直して build する）",
+  "vocab": "",
+  "files": [
+    "Smileys.yarn"
+  ],
+  "nodes": [
+    {
+      "title": "Start",
+      "file": "Smileys.yarn",
+      "line": 1,
+      "headers": [],
+      "body": [
+        {
+          "kind": "line",
+          "line": 6,
+          "speaker": "Mae",
+          "text": "¯\\_(ツ)_/¯"
+        },
+        {
+          "kind": "line",
+          "line": 7,
+          "speaker": "Mae",
+          "text": "<o>"
+        },
+        {
+          "kind": "line",
+          "line": 8,
+          "speaker": "Mae",
+          "text": ":|"
+        },
+        {
+          "kind": "line",
+          "line": 9,
+          "speaker": "Mae",
+          "text": ":)"
+        },
+        {
+          "kind": "line",
+          "line": 10,
+          "speaker": "Mae",
+          "text": ":("
+        },
+        {
+          "kind": "line",
+          "line": 11,
+          "speaker": "Mae",
+          "text": ":o"
+        },
+        {
+          "kind": "line",
+          "line": 12,
+          "speaker": "Mae",
+          "text": ":\\"
+        },
+        {
+          "kind": "line",
+          "line": 13,
+          "speaker": "Mae",
+          "text": ":<"
+        },
+        {
+          "kind": "line",
+          "line": 14,
+          "speaker": "Mae",
+          "text": "D:"
+        },
+        {
+          "kind": "line",
+          "line": 15,
+          "speaker": "Mae",
+          "text": "-_-"
+        },
+        {
+          "kind": "line",
+          "line": 16,
+          "speaker": "Mae",
+          "text": "=_="
+        },
+        {
+          "kind": "line",
+          "line": 17,
+          "speaker": "Mae",
+          "text": "U_U"
+        },
+        {
+          "kind": "line",
+          "line": 18,
+          "speaker": "Mae",
+          "text": "O_O"
+        },
+        {
+          "kind": "line",
+          "line": 19,
+          "speaker": "Mae",
+          "text": "o_o"
+        },
+        {
+          "kind": "line",
+          "line": 20,
+          "speaker": "Mae",
+          "text": "\\o/"
+        },
+        {
+          "kind": "line",
+          "line": 21,
+          "speaker": "Mae",
+          "text": "/o\\"
+        },
+        {
+          "kind": "line",
+          "line": 22,
+          "speaker": "Mae",
+          "text": "o/"
+        },
+        {
+          "kind": "line",
+          "line": 23,
+          "speaker": "Mae",
+          "text": "_o_"
+        },
+        {
+          "kind": "line",
+          "line": 24,
+          "speaker": "Mae",
+          "text": "o>"
+        },
+        {
+          "kind": "line",
+          "line": 25,
+          "speaker": "Mae",
+          "text": "/ \\"
+        },
+        {
+          "kind": "line",
+          "line": 26,
+          "speaker": "Mae",
+          "text": "\\ /"
+        },
+        {
+          "kind": "line",
+          "line": 27,
+          "speaker": "Mae",
+          "text": "~~"
+        },
+        {
+          "kind": "options",
+          "line": 33,
+          "options": [
+            {
+              "line": 33,
+              "speaker": "Mae",
+              "text": "¯\\_(ツ)_/¯",
+              "body": []
+            },
+            {
+              "line": 34,
+              "speaker": "Mae",
+              "text": "<o>",
+              "body": []
+            },
+            {
+              "line": 35,
+              "speaker": "Mae",
+              "text": ":|",
+              "body": []
+            },
+            {
+              "line": 36,
+              "speaker": "Mae",
+              "text": ":)",
+              "body": []
+            },
+            {
+              "line": 37,
+              "speaker": "Mae",
+              "text": ":(",
+              "body": []
+            },
+            {
+              "line": 38,
+              "speaker": "Mae",
+              "text": ":o",
+              "body": []
+            },
+            {
+              "line": 39,
+              "speaker": "Mae",
+              "text": ":\\",
+              "body": []
+            },
+            {
+              "line": 40,
+              "speaker": "Mae",
+              "text": ":<",
+              "body": []
+            },
+            {
+              "line": 41,
+              "speaker": "Mae",
+              "text": "D:",
+              "body": []
+            },
+            {
+              "line": 42,
+              "speaker": "Mae",
+              "text": "-_-",
+              "body": []
+            },
+            {
+              "line": 43,
+              "speaker": "Mae",
+              "text": "=_=",
+              "body": []
+            },
+            {
+              "line": 44,
+              "speaker": "Mae",
+              "text": "U_U",
+              "body": []
+            },
+            {
+              "line": 45,
+              "speaker": "Mae",
+              "text": "O_O",
+              "body": []
+            },
+            {
+              "line": 46,
+              "speaker": "Mae",
+              "text": "o_o",
+              "body": []
+            },
+            {
+              "line": 47,
+              "speaker": "Mae",
+              "text": "\\o/",
+              "body": []
+            },
+            {
+              "line": 48,
+              "speaker": "Mae",
+              "text": "/o\\",
+              "body": []
+            },
+            {
+              "line": 49,
+              "speaker": "Mae",
+              "text": "o/",
+              "body": []
+            },
+            {
+              "line": 50,
+              "speaker": "Mae",
+              "text": "_o_",
+              "body": []
+            },
+            {
+              "line": 51,
+              "speaker": "Mae",
+              "text": "o>",
+              "body": []
+            },
+            {
+              "line": 52,
+              "speaker": "Mae",
+              "text": "/ \\",
+              "body": []
+            },
+            {
+              "line": 53,
+              "speaker": "Mae",
+              "text": "\\ /",
+              "body": []
+            },
+            {
+              "line": 54,
+              "speaker": "Mae",
+              "text": "~~",
+              "body": []
+            }
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 56,
+          "text": "Separating the option groups here."
+        },
+        {
+          "kind": "options",
+          "line": 61,
+          "options": [
+            {
+              "line": 61,
+              "speaker": "Mae",
+              "text": "¯\\_(ツ)_/¯",
+              "condition": {
+                "kind": "value",
+                "value": true
+              },
+              "body": []
+            },
+            {
+              "line": 62,
+              "speaker": "Mae",
+              "text": "<o>",
+              "condition": {
+                "kind": "value",
+                "value": true
+              },
+              "body": []
+            },
+            {
+              "line": 63,
+              "speaker": "Mae",
+              "text": ":|",
+              "condition": {
+                "kind": "value",
+                "value": true
+              },
+              "body": []
+            },
+            {
+              "line": 64,
+              "speaker": "Mae",
+              "text": ":)",
+              "condition": {
+                "kind": "value",
+                "value": true
+              },
+              "body": []
+            },
+            {
+              "line": 65,
+              "speaker": "Mae",
+              "text": ":(",
+              "condition": {
+                "kind": "value",
+                "value": true
+              },
+              "body": []
+            },
+            {
+              "line": 66,
+              "speaker": "Mae",
+              "text": ":o",
+              "condition": {
+                "kind": "value",
+                "value": true
+              },
+              "body": []
+            },
+            {
+              "line": 67,
+              "speaker": "Mae",
+              "text": ":\\",
+              "condition": {
+                "kind": "value",
+                "value": true
+              },
+              "body": []
+            },
+            {
+              "line": 68,
+              "speaker": "Mae",
+              "text": ":<",
+              "condition": {
+                "kind": "value",
+                "value": true
+              },
+              "body": []
+            },
+            {
+              "line": 69,
+              "speaker": "Mae",
+              "text": "D:",
+              "condition": {
+                "kind": "value",
+                "value": true
+              },
+              "body": []
+            },
+            {
+              "line": 70,
+              "speaker": "Mae",
+              "text": "-_-",
+              "condition": {
+                "kind": "value",
+                "value": true
+              },
+              "body": []
+            },
+            {
+              "line": 71,
+              "speaker": "Mae",
+              "text": "=_=",
+              "condition": {
+                "kind": "value",
+                "value": true
+              },
+              "body": []
+            },
+            {
+              "line": 72,
+              "speaker": "Mae",
+              "text": "U_U",
+              "condition": {
+                "kind": "value",
+                "value": true
+              },
+              "body": []
+            },
+            {
+              "line": 73,
+              "speaker": "Mae",
+              "text": "O_O",
+              "condition": {
+                "kind": "value",
+                "value": true
+              },
+              "body": []
+            },
+            {
+              "line": 74,
+              "speaker": "Mae",
+              "text": "o_o",
+              "condition": {
+                "kind": "value",
+                "value": true
+              },
+              "body": []
+            },
+            {
+              "line": 75,
+              "speaker": "Mae",
+              "text": "\\o/",
+              "condition": {
+                "kind": "value",
+                "value": true
+              },
+              "body": []
+            },
+            {
+              "line": 76,
+              "speaker": "Mae",
+              "text": "/o\\",
+              "condition": {
+                "kind": "value",
+                "value": true
+              },
+              "body": []
+            },
+            {
+              "line": 77,
+              "speaker": "Mae",
+              "text": "o/",
+              "condition": {
+                "kind": "value",
+                "value": true
+              },
+              "body": []
+            },
+            {
+              "line": 78,
+              "speaker": "Mae",
+              "text": "_o_",
+              "condition": {
+                "kind": "value",
+                "value": true
+              },
+              "body": []
+            },
+            {
+              "line": 79,
+              "speaker": "Mae",
+              "text": "o>",
+              "condition": {
+                "kind": "value",
+                "value": true
+              },
+              "body": []
+            },
+            {
+              "line": 80,
+              "speaker": "Mae",
+              "text": "/ \\",
+              "condition": {
+                "kind": "value",
+                "value": true
+              },
+              "body": []
+            },
+            {
+              "line": 81,
+              "speaker": "Mae",
+              "text": "\\ /",
+              "condition": {
+                "kind": "value",
+                "value": true
+              },
+              "body": []
+            },
+            {
+              "line": 82,
+              "speaker": "Mae",
+              "text": "~~",
+              "condition": {
+                "kind": "value",
+                "value": true
+              },
+              "body": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
