@@ -27,9 +27,8 @@ pub mod UiFocus {
             None)
 
     /// UiWorld 全体を design 空間でレイアウトして最前面ヒットを引く（マウスの hover / click の入口）。
-    /// 当たるのは面積のある rect だけ — text は実寸を測らず 0 サイズになるので当たらない。
-    /// 字の兄弟が並ぶ列（字の後ろのボタンなど）では、字の高さぶん描いた所より上に枠が来る。
-    /// 描いた所で当てるなら、描く時と同じフォントの引き当てを渡す hitTestUiWith を使う。
+    /// 字の兄弟があるとずれる（字を 0 の大きさで並べるので、字の後ろの枠が字の高さぶん上に来る・字だけの要素には当たらない）。
+    /// hitTestUiWith を使う（描く時と同じフォントの引き当てを渡すと、描いた所で当たる）。
     /// コンテナも rect を持つので当たる（root は画面全面）— 呼び手は meta の有無で選別する。
     pub def hitTestUi(ui: UiStore.UiWorld, design: Vec2.Vec2, point: Vec2.Vec2): Option[EntityId] =
         hitTestOn(layoutRects(ui, design), ui, point)
@@ -49,7 +48,7 @@ pub mod UiFocus {
 
     /// UiWorld 全体を design 空間でレイアウトした、面積のある entity の画面矩形
     /// （hitTestUi と UiFocusNav.targetsOfUi が同じ枠を見る）。見えていない entity は入らない。
-    /// 字は 0 の大きさで並べる（字の兄弟の後ろの枠は字の高さぶん上にずれる）— 描いた所の枠は layoutRectsWith。
+    /// 字の兄弟があるとずれる（字を 0 の大きさで並べる・字だけの要素には枠が無い）。layoutRectsWith を使う。
     pub def layoutRects(ui: UiStore.UiWorld, design: Vec2.Vec2): Map[EntityId, Rect2.Rect2] =
         layoutRectsMeasured(Map.empty(), ui, design)
 

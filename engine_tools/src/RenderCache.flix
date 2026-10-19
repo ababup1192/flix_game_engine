@@ -86,16 +86,22 @@ pub mod RenderCache {
                           extraImages: Map[String, BufferedImage],
                           warnLog: SoftRaster.TexWarnLog, textures: SoftRaster.TextureCache): Unit \ IO =
         writePng(session, DrawHash.PngEncoding.Filmstrip,
-                 { req = req, surfaces = surfaces, extraFonts = extraFonts }, extraImages, warnLog, textures)
+                 { req = req, surfaces = surfaces, extraFonts = extraFonts, fontAntialias = Map.empty() }, extraImages, warnLog, textures)
 
     /// SoftRaster.render* の書き方（フルカラー）で req#outPath へ書く。SoftRaster.render* の中身。
     pub def writePlainPng(req: SoftRaster.RasterReq, surfaces: List[SoftRaster.SurfaceCmd],
                           extraFonts: Map[String, SoftRaster.FontEntry],
                           extraImages: Map[String, BufferedImage]): Unit \ IO =
+        writePlainPngAntialias(req, surfaces, extraFonts, Map.empty(), extraImages)
+
+    /// writePlainPng の、字の縁を本ごとに決める表（SoftRaster.FontAntialias）つき版。
+    pub def writePlainPngAntialias(req: SoftRaster.RasterReq, surfaces: List[SoftRaster.SurfaceCmd],
+                                   extraFonts: Map[String, SoftRaster.FontEntry], fontAntialias: SoftRaster.FontAntialias,
+                                   extraImages: Map[String, BufferedImage]): Unit \ IO =
         let session = freshSession();
         let SessionData.SessionData(s) = session;
         writePng(session, DrawHash.PngEncoding.Plain,
-                 { req = req, surfaces = surfaces, extraFonts = extraFonts }, extraImages,
+                 { req = req, surfaces = surfaces, extraFonts = extraFonts, fontAntialias = fontAntialias }, extraImages,
                  SoftRaster.freshTexWarnLog(), s#textures)
 
     /// 1 コマの鍵（writeFramePng がキャッシュに使うのと同じ物）。鍵を作れなければ None。
@@ -129,7 +135,8 @@ pub mod RenderCache {
                  warnLog: SoftRaster.TexWarnLog, textures: SoftRaster.TextureCache): Unit \ IO =
         let SessionData.SessionData(s) = session;
         let outPath = frame#req#outPath;
-        let paint = () -> SoftRaster.renderToImageCached(frame#req, frame#surfaces, frame#extraFonts, extraImages, warnLog, textures);
+        let paint = () -> SoftRaster.renderToImageCachedAntialias(frame#req, frame#surfaces, frame#extraFonts, frame#fontAntialias,
+                                                                  extraImages, warnLog, textures);
         let key = match s#root {
             case None    => None
             case Some(_) => keyOf(session, encoding, frame, extraImages, textures)

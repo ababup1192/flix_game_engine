@@ -79,6 +79,7 @@ pub mod UiFocusNav {
     /// UiDoc / UiStore で組んだメニュー（listPath の項目列 = UiMenu.itemIds）を Target の列にする。
     /// key は項目の名前パス、rect は design 空間でレイアウトした枠（UiFocus.layoutRects）。
     /// 見えていない項目・大きさの無い項目は入れない。
+    /// 字の兄弟があるとずれる（枠は字を 0 の大きさで並べた UiFocus.layoutRects）。targetsOfUiWith を使う。
     pub def targetsOfUi(listPath: String, ui: UiStore.UiWorld, design: Vec2.Vec2): List[Target[String]] =
         targetsIn(listPath, UiFocus.layoutRects(ui, design), ui)
 

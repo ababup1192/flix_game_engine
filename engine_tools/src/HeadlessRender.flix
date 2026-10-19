@@ -298,27 +298,32 @@ pub mod HeadlessRender {
     /// 名前 → 画像（GL が宣言順に描くのと同じで、後の pass は前の pass を貼れる）。
     pub def renderPassImageWith(cfg: RenderConfig, images: Map[String, BufferedImage],
                               p: PassSpec, prev: Option[BufferedImage]): BufferedImage \ IO =
-        renderPassImageFonts(cfg, Map.empty(), images, p, prev)
+        renderPassImageFonts(cfg, Map.empty(), Map.empty(), images, p, prev)
 
     /// 追加フォントも使える renderPassImageWith。
-    def renderPassImageFonts(cfg: RenderConfig, fonts: Map[String, SoftRaster.FontEntry], images: Map[String, BufferedImage],
+    def renderPassImageFonts(cfg: RenderConfig, fonts: Map[String, SoftRaster.FontEntry], fontAntialias: SoftRaster.FontAntialias,
+                             images: Map[String, BufferedImage],
                              p: PassSpec, prev: Option[BufferedImage]): BufferedImage \ IO =
         let req = { scale = 1 | reqOf(cfg, p#drawables, p#polygons, "") };
         match p#clear {
-            case RenderTarget.LoadOp.Clear(c)         => SoftRaster.renderToImageFull({ background = c | req }, Nil, fonts, images)
-            case RenderTarget.LoadOp.Keep             => SoftRaster.renderPassImageFonts(req, prev, fonts, images)
-            case RenderTarget.LoadOp.ClearTransparent => SoftRaster.renderPassImageFonts(req, None, fonts, images)
+            case RenderTarget.LoadOp.Clear(c)         =>
+                SoftRaster.renderToImageCachedAntialias({ background = c | req }, Nil, fonts, fontAntialias, images,
+                                                        SoftRaster.freshTexWarnLog(), SoftRaster.freshTextureCache())
+            case RenderTarget.LoadOp.Keep             => SoftRaster.renderPassImageFonts(req, prev, fonts, fontAntialias, images)
+            case RenderTarget.LoadOp.ClearTransparent => SoftRaster.renderPassImageFonts(req, None, fonts, fontAntialias, images)
         }
 
     /// 1 枚の絵に要る物の全部。passes = 本編より先に描く pass（後の pass と本編は前の pass の名前を貼れる）、
-    /// surfaces = ShaderDoc の面（Render.shaderSurfaces の出力と同形）、fonts = 追加フォント（renderPngFonts と同じ名前の決まり）。
+    /// surfaces = ShaderDoc の面（Render.shaderSurfaces の出力と同形）、fonts = 追加フォント（renderPngFonts と同じ名前の決まり）、
+    /// fontAntialias = 字の縁を本ごとに決める表（テクスチャ名 → ならすか。表に無い本は cfg#textAntialias）。
     /// 何も足さない欄は Nil / Map.empty()。items は Render.withoutShaders → Render.draw で下ろす（renderPngWithPasses と同じ決まり）。
     pub type alias Scene = {
         passes = List[PassSpec],
         drawables = List[GameEngine.Drawable],
         polygons = List[GameEngine.PolygonRenderCmd],
         surfaces = List[SoftRaster.SurfaceCmd],
-        fonts = Map[String, SoftRaster.FontEntry]
+        fonts = Map[String, SoftRaster.FontEntry],
+        fontAntialias = SoftRaster.FontAntialias
     }
 
     /// pass・ShaderDoc の面・追加フォントを一緒に使って 1 枚の PNG に生成する（他の renderPng* はどれもこれの一部）。
@@ -332,15 +337,16 @@ pub mod HeadlessRender {
             acc + List.length(p#drawables) + List.length(p#polygons), 0);
         writeItemStats(cfg, name, List.length(scene#drawables) + List.length(scene#polygons) + passItems,
                        passItems, List.length(scene#surfaces));
-        let images = passImagesOf(cfg, scene#fonts, scene#passes);
+        let images = passImagesOf(cfg, scene#fonts, scene#fontAntialias, scene#passes);
         warnDropped(scene#drawables, name);
-        SoftRaster.renderFull(reqOf(cfg, scene#drawables, scene#polygons, pngPath(cfg, name)),
-            scene#surfaces, scene#fonts, images)
+        RenderCache.writePlainPngAntialias(reqOf(cfg, scene#drawables, scene#polygons, pngPath(cfg, name)),
+            scene#surfaces, scene#fonts, scene#fontAntialias, images)
 
     /// passes を宣言順に生成した画像（毎回透明から。後の pass は前の pass の名前を貼れる）。
-    def passImagesOf(cfg: RenderConfig, fonts: Map[String, SoftRaster.FontEntry], passes: List[PassSpec]): Map[String, BufferedImage] \ IO =
+    def passImagesOf(cfg: RenderConfig, fonts: Map[String, SoftRaster.FontEntry], fontAntialias: SoftRaster.FontAntialias,
+                     passes: List[PassSpec]): Map[String, BufferedImage] \ IO =
         passes |> List.foldLeft((acc, p) -> {
-            Map.insert(p#name, renderPassImageFonts(cfg, fonts, acc, p, None), acc)
+            Map.insert(p#name, renderPassImageFonts(cfg, fonts, fontAntialias, acc, p, None), acc)
         }, (Map.empty(): Map[String, BufferedImage]))
 
     /// 追加の生成済み画像（pass のレンダーターゲットなど）を textures に混ぜて本編を PNG に生成する。
@@ -371,7 +377,7 @@ pub mod HeadlessRender {
                                 drawables: List[GameEngine.Drawable],
                                 polygons: List[GameEngine.PolygonRenderCmd],
                                 surfaces: List[SoftRaster.SurfaceCmd], name: String): Unit \ IO =
-        renderPngFull(cfg, { passes = passes, drawables = drawables, polygons = polygons, surfaces = surfaces, fonts = Map.empty() }, name)
+        renderPngFull(cfg, { passes = passes, drawables = drawables, polygons = polygons, surfaces = surfaces, fonts = Map.empty(), fontAntialias = Map.empty() }, name)
 
     /// frames を stride 枚ごとに間引き、各コマを toCmds で描いて GIF ＋ コマ別 PNG に生成する。
     /// 返り値は ReferenceSite 用のフィルムストリップ情報（駒送りビューア）。
@@ -456,7 +462,7 @@ pub mod HeadlessRender {
                               name: String): ReferenceSite.Filmstrip \ IO =
         renderGifFull(cfg, frames, stride, w -> {
             let (passes, drawables, polygons, surfaces) = toCmds(w);
-            { passes = passes, drawables = drawables, polygons = polygons, surfaces = surfaces, fonts = Map.empty() }
+            { passes = passes, drawables = drawables, polygons = polygons, surfaces = surfaces, fonts = Map.empty(), fontAntialias = Map.empty() }
         }, name)
 
     /// renderGifWithPasses の、コマごとの絵を Scene で渡す形（追加フォントも使える）。
@@ -476,9 +482,9 @@ pub mod HeadlessRender {
         let images = List.zipWithIndex(sampled) |> List.map(pair -> {
             let (i, w) = pair;
             let scene = toScene(w);
-            let passImages = passImagesOf(cfg, scene#fonts, scene#passes);
-            let img = SoftRaster.renderToImageCached(reqOf(cfg, scene#drawables, scene#polygons, gifPath(cfg, name)),
-                                                     scene#surfaces, scene#fonts, passImages, warnLog, cache);
+            let passImages = passImagesOf(cfg, scene#fonts, scene#fontAntialias, scene#passes);
+            let img = SoftRaster.renderToImageCachedAntialias(reqOf(cfg, scene#drawables, scene#polygons, gifPath(cfg, name)),
+                                                              scene#surfaces, scene#fonts, scene#fontAntialias, passImages, warnLog, cache);
             Filmstrip.renderFrame(img, "${cfg#outDir}/frames/${name}/${i}.png");
             img
         });
