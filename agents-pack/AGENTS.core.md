@@ -29,6 +29,7 @@ lint・フック・make の口で止まる決まりはここに書かない（�
 | 音の名前を型で止める（一発と鳴り続ける音を取り違えない） | `Sfx[s]` / `Loop[s]` + `Sfx.collect` / `Loop.collect` |
 | 曲の頭を 1 回だけ鳴らし本編をループ | `SfxSynth.renderLooped` + `App.withSustained` |
 | 効果音・曲を作る・直す（音割れも検査） | 台本 `*.snd.star` か `*.sndsrc.json` を `bin/fge snd build` |
+| 会話を人が書く・台詞と選択肢を順に出す | `*.yarn` を `bin/fge yarn build` → `Yarn.loadOr` + `YarnRunner.start` / `step` |
 | Doc が壊れたら既定値で続けて知らせる | `DocJson.loadOr` + `Log.fellBackThen` / `warnThen` |
 | 直した後に絵を確かめる | `make render SHOT=<場面>` → 仕上げ `make reference-check` |
 | 描き出しの字の被り・z の外れを止める | `make render-lint`（許す物は `text-audit.local.json`） |
