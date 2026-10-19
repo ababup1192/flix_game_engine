@@ -17,11 +17,14 @@ var ManifestFile = filepath.Join("build", "headless", "jar.manifest")
 // maxLinkDepth は lib の中で symlink を辿る深さの上限（輪になった symlink で止まらないため）。
 const maxLinkDepth = 32
 
-// BuildManifest は jar の中身を決める物（src・flix.toml・lib・java の旗）の指紋を 64 字で返す。
+// BuildManifest は jar の中身を決める物（src・flix.toml・lib）の指紋を 64 字で返す。
 //
 // WhyNot: 更新時刻を使わないのは、checkd が macOS の見回りの遅れで書き換え前のソースを
 // 検査して緑を返したのと同じく、時刻は中身が変わった証にならないため。
-func BuildManifest(root, java, opts string) (string, error) {
+// WhyNot: java と java の旗（JAVA・HEADLESS_JAVA_OPTS）を混ぜないのは、それで jar の中身は変わらず、
+// 混ぜると Studio のプレビュー（Studio の java・-Xmx1g）と端末の make render（PATH の java・旗なし）を
+// 交互に使うたびに jar を作り直すため。常駐が同じ java と旗で起きたかは EnvMismatch が見る。
+func BuildManifest(root string) (string, error) {
 	h := sha256.New()
 	for _, part := range []string{"src", "flix.toml", "lib"} {
 		files, err := listFiles(root, part)
@@ -36,7 +39,6 @@ func BuildManifest(root, java, opts string) (string, error) {
 			fmt.Fprintf(h, "%s\x00%s\n", rel, sum)
 		}
 	}
-	fmt.Fprintf(h, "java=%s\nopts=%s\n", java, opts)
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 

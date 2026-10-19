@@ -38,7 +38,7 @@ func init() {
 				if len(positional) > 0 {
 					dir = positional[0]
 				}
-				sum, err := resident.BuildManifest(dir, os.Getenv("JAVA"), os.Getenv("HEADLESS_JAVA_OPTS"))
+				sum, err := resident.BuildManifest(dir)
 				if err != nil {
 					fmt.Fprintf(errOut, "fge resident manifest: %v\n", err)
 					return 2
