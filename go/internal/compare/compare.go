@@ -173,13 +173,20 @@ func run(o Options) error {
 		os.RemoveAll(tmp)
 		exec.Command("git", "-C", o.Game, "worktree", "prune").Run()
 	}()
-	fmt.Fprintf(o.Err, "[compare] 基準 %s (%s) を %s に出しています\n", o.Base, sha[:min(10, len(sha))], wt)
-	if out, err := exec.Command("git", "-C", o.Game, "worktree", "add", "--detach", wt, sha).CombinedOutput(); err != nil {
-		return fmt.Errorf("基準の worktree を作れません: %s", strings.TrimSpace(string(out)))
-	}
-	baseEngine, err := prepareBase(o, wt)
-	if err != nil {
-		return err
+	cacheDir := baseCacheDir(o, sha)
+	cached, hit := loadBaseCache(o, cacheDir)
+	var baseEngine string
+	if hit {
+		baseEngine = shortPath(o.BaseEngine + currentEngineIfEmpty(o))
+		fmt.Fprintf(o.Err, "[compare] 基準 %s (%s) は前に描いた写しを使います: %s\n", o.Base, sha[:min(10, len(sha))], cacheDir)
+	} else {
+		fmt.Fprintf(o.Err, "[compare] 基準 %s (%s) を %s に出しています\n", o.Base, sha[:min(10, len(sha))], wt)
+		if out, err := exec.Command("git", "-C", o.Game, "worktree", "add", "--detach", wt, sha).CombinedOutput(); err != nil {
+			return fmt.Errorf("基準の worktree を作れません: %s", strings.TrimSpace(string(out)))
+		}
+		if baseEngine, err = prepareBase(o, wt); err != nil {
+			return err
+		}
 	}
 	if interrupted.Load() {
 		return fmt.Errorf("止められました")
@@ -196,9 +203,14 @@ func run(o Options) error {
 	if err := os.MkdirAll(o.OutDir, 0o755); err != nil {
 		return err
 	}
-	base, cur, err := renderBoth(o, wt)
+	base, cur, err := renderBoth(o, wt, cached)
 	if err != nil {
 		return err
+	}
+	if !hit {
+		if err := saveBaseCache(o, cacheDir, base); err != nil {
+			fmt.Fprintf(o.Err, "[compare] 基準の写しを置けませんでした（比べは続けます）: %v\n", err)
+		}
 	}
 	items := compareSides(o, base, cur)
 	curEngine := shortPath(currentEngine(o.Game))
@@ -243,6 +255,14 @@ func prepareBase(o Options, wt string) (string, error) {
 	return shortPath(dir), nil
 }
 
+// currentEngineIfEmpty は --base-engine が無い時だけ今の作業場のエンジン（写しの知らせの表示用）。
+func currentEngineIfEmpty(o Options) string {
+	if o.BaseEngine != "" {
+		return ""
+	}
+	return currentEngine(o.Game)
+}
+
 func currentEngine(game string) string {
 	data, err := os.ReadFile(filepath.Join(game, "local.mk"))
 	if err != nil {
@@ -258,18 +278,23 @@ func currentEngine(game string) string {
 // WhyNot: 側ごとに鍵を取り直さないのは、基準側を描き終えたところで列の後ろへ並び直し、
 // 今側を描くまでにもう一度 10 分前後待っていたため（2026-10-16 の記録で 9 分・12 分）。
 // 1 回にすると次の長い物の待ちはそのぶん延びるが、長い物どうしの順番は並んだ順のまま。
-func renderBoth(o Options, wt string) (*side, *side, error) {
+func renderBoth(o Options, wt string, cached *side) (*side, *side, error) {
 	base := &side{dir: wt, images: map[string]string{}, sounds: map[string]string{}, videos: map[string]string{}}
 	cur := &side{dir: o.Game, images: map[string]string{}, sounds: map[string]string{}, videos: map[string]string{}}
 	steps := renderSteps(o)
 	desc := fmt.Sprintf("compare: 基準と今の描き出し (%s)", strings.Join(steps[0][1:], " "))
 	var baseStart, curStart time.Time
+	type job struct {
+		s     *side
+		label string
+		start *time.Time
+	}
+	jobs := []job{{base, "基準", &baseStart}, {cur, "今", &curStart}}
+	if cached != nil {
+		jobs = jobs[1:]
+	}
 	code := heavy.Hold(desc, o.Game, o.HeavyOpts, func(run heavy.Runner) int {
-		for _, sd := range []struct {
-			s     *side
-			label string
-			start *time.Time
-		}{{base, "基準", &baseStart}, {cur, "今", &curStart}} {
+		for _, sd := range jobs {
 			*sd.start = time.Now().Add(-2 * time.Second)
 			for _, step := range steps {
 				if interrupted.Load() {
@@ -294,7 +319,11 @@ func renderBoth(o Options, wt string) (*side, *side, error) {
 	if code != 0 {
 		return nil, nil, fmt.Errorf("描き出しで鍵を取れませんでした (終了コード %d)", code)
 	}
-	collectSide(o, base, baseStart)
+	if cached != nil {
+		base = cached
+	} else {
+		collectSide(o, base, baseStart)
+	}
 	collectSide(o, cur, curStart)
 	return base, cur, nil
 }
