@@ -215,14 +215,18 @@ pub mod SoftRaster {
     /// 読めなかったファイルは控えない（次のコマでまた探す・今と同じ振る舞い）。
     /// 2 つ目の表は RenderCache が使う、読んだ画像の画素の指紋（パス → SHA-256）。鍵と塗りが同じ画像を
     /// 見るよう、指紋は必ずこの表の画像から取る。
-    pub enum TextureCache(ConcurrentHashMap[String, BufferedImage], ConcurrentHashMap[String, String])
+    /// 3 つ目の表はフォント（TTF のパス → 読んだ Font とアトラスごとのグリフの逆引き表）。1 枚描くたびに
+    /// TTF を読み直して表を組み直すと、ギャラリー 1 周で数秒になる。寿命は画像と同じ。
+    pub enum TextureCache(ConcurrentHashMap[String, BufferedImage], ConcurrentHashMap[String, String],
+                          ConcurrentHashMap[String, List[FontCtx]])
 
     /// 空のキャッシュを作る（コマ列の描き出しの前に 1 本）。
-    pub def freshTextureCache(): TextureCache \ IO = TextureCache.TextureCache(new ConcurrentHashMap(), new ConcurrentHashMap())
+    pub def freshTextureCache(): TextureCache \ IO =
+        TextureCache.TextureCache(new ConcurrentHashMap(), new ConcurrentHashMap(), new ConcurrentHashMap())
 
     /// キャッシュからパスの画像を引く（無ければ読んで入れる。読み方は塗る時と同じ）。無い・読めないなら None。
     pub def cachedTexture(cache: TextureCache, path: String): Option[BufferedImage] \ IO =
-        let TextureCache.TextureCache(table, _) = cache;
+        let TextureCache.TextureCache(table, _, _) = cache;
         let hit: BufferedImage = table.get(path);
         if (not Object.isNull(hit)) Some(hit)
         else match loadTexture(path) {
@@ -292,7 +296,7 @@ pub mod SoftRaster {
                     case Some(c) => loadTexturesCached(c, req#texturePath)
                     case None    => loadTextures(req#texturePath)
                 }), extraImages);
-        let fctx = buildFontTable(req, extraFonts);
+        let fctx = buildFontTable(cache, req, extraFonts);
         // tex 場（Field.Tex）が読む画素表。surfaces が実際に使う名前だけ 1 回で Vector 化する —
         // 画素ループの中で BufferedImage を触らない（getRGB を毎画素呼ぶと桁で遅い）。
         // 無い名前は warnLog に控えて一度だけ知らせる（eval は純関数のまま黒 0.0 を返す）。
@@ -547,21 +551,36 @@ pub mod SoftRaster {
     ///   Normal   : out = (src×a + dst×(255−a)) / 255           （SrcOver）
     ///   Add      : out = min(255, dst + src×a/255)             （明るく足す・クランプ）
     ///   Multiply : out = dst×(255 − a×(255−src)/255) / 255     （白は素通し・黒は黒・a=0 で恒等）
+    /// WhyNot: 3 つの式を閉包で渡して 1 つの関数に通さない — 画素ごとに閉包を作って呼ぶ分が、
+    /// 合成の計算そのものより重い（JFR で描き出しの約 1 割）。合成の種類ごとに式を書き下す。
     pub def blendPixel(blend: DrawCmd.BlendMode, srcArgb: Int32, dstArgb: Int32): Int32 =
         let a = channelOf(24, srcArgb);
-        let mix = f ->
-            withChannels((s, d) -> clampI(f(s, d), 0i32, 255i32), srcArgb, dstArgb);
+        let sr = channelOf(16, srcArgb);
+        let sg = channelOf(8, srcArgb);
+        let sb = channelOf(0, srcArgb);
+        let dr = channelOf(16, dstArgb);
+        let dg = channelOf(8, dstArgb);
+        let db = channelOf(0, dstArgb);
         match blend {
-            case DrawCmd.BlendMode.Normal   => mix((s, d) -> (s * a + d * (255 - a)) / 255)
-            case DrawCmd.BlendMode.Add      => mix((s, d) -> d + s * a / 255)
-            case DrawCmd.BlendMode.Multiply => mix((s, d) -> d * (255 - a * (255 - s) / 255) / 255)
+            case DrawCmd.BlendMode.Normal   =>
+                packOver(dstArgb, normalChannel(a, sr, dr), normalChannel(a, sg, dg), normalChannel(a, sb, db))
+            case DrawCmd.BlendMode.Add      =>
+                packOver(dstArgb, addChannel(a, sr, dr), addChannel(a, sg, dg), addChannel(a, sb, db))
+            case DrawCmd.BlendMode.Multiply =>
+                packOver(dstArgb, multiplyChannel(a, sr, dr), multiplyChannel(a, sg, dg), multiplyChannel(a, sb, db))
         }
 
-    /// RGB 3 チャンネルへ同じ式 f を適用し、alpha は dst のまま ARGB に組み直す。
-    def withChannels(f: (Int32, Int32) -> Int32, srcArgb: Int32, dstArgb: Int32): Int32 =
-        let r = f(channelOf(16, srcArgb), channelOf(16, dstArgb));
-        let g = f(channelOf(8, srcArgb), channelOf(8, dstArgb));
-        let b = f(channelOf(0, srcArgb), channelOf(0, dstArgb));
+    /// Normal の 1 チャンネル（src の成分 s・dst の成分 d・src の α a。0..255 に収める）。
+    def normalChannel(a: Int32, s: Int32, d: Int32): Int32 = clampI((s * a + d * (255 - a)) / 255, 0i32, 255i32)
+
+    /// Add の 1 チャンネル。
+    def addChannel(a: Int32, s: Int32, d: Int32): Int32 = clampI(d + s * a / 255, 0i32, 255i32)
+
+    /// Multiply の 1 チャンネル。
+    def multiplyChannel(a: Int32, s: Int32, d: Int32): Int32 = clampI(d * (255 - a * (255 - s) / 255) / 255, 0i32, 255i32)
+
+    /// 合成した r, g, b に dst の alpha を付けて ARGB に組み直す。
+    def packOver(dstArgb: Int32, r: Int32, g: Int32, b: Int32): Int32 =
         Int32.leftShift(channelOf(24, dstArgb), 24)
             |> Int32.bitwiseOr(Int32.leftShift(r, 16))
             |> Int32.bitwiseOr(Int32.leftShift(g, 8))
@@ -806,18 +825,62 @@ pub mod SoftRaster {
     /// 既定フォントと追加フォントを読み、テクスチャ名で引ける一式にする。
     /// 既定フォントも自分のテクスチャ名（fontAtlas#textureName）で引けるように入れておく —
     /// そうしないと既定と同じ名前の追加を渡されたときに二重に持つことになる。
-    def buildFontTable(req: RasterReq, extraFonts: Map[String, FontEntry]): FontTable \ IO =
-        let primary = buildFontCtx(req#fontTtf, req#fontAtlas);
+    /// cache があれば、同じ TTF とアトラスの一式を 2 枚目からは組み直さない。
+    def buildFontTable(cache: Option[TextureCache], req: RasterReq, extraFonts: Map[String, FontEntry]): FontTable \ IO =
+        let primary = fontCtxOf(cache, req#fontTtf, req#fontAtlas);
         let table = Map.foldLeftWithKey((acc, texName, e) ->
-            Map.insert(texName, buildFontCtx(e#ttf, e#atlas), acc),
+            Map.insert(texName, fontCtxOf(cache, e#ttf, e#atlas), acc),
             Map#{ req#fontAtlas#textureName => primary }, extraFonts);
         { primary = primary, byTexture = table }
 
-    /// TTF を読み、アトラスの各グリフの s0/t0 からセル左上 px を逆算した codepoint 表を組む。
-    def buildFontCtx(ttfPath: String, atlas: FontAtlas): FontCtx \ IO =
+    /// TTF とアトラスの一式。cache に同じ TTF・同じアトラス（中身で比べる）の物があればそれを使い、
+    /// 同じ TTF で別のアトラスなら読んだ Font だけ使い回す。比べるのは表を組むより安い
+    /// （名前・大きさ・グリフの数が違えば中身を見ずに外れ）。
+    def fontCtxOf(cache: Option[TextureCache], ttfPath: String, atlas: FontAtlas): FontCtx \ IO =
+        match cache {
+            case None => buildFontCtx(loadFont(ttfPath), atlas)
+            case Some(TextureCache.TextureCache(_, _, fonts)) =>
+                let known: List[FontCtx] = fonts.get(ttfPath);
+                let ctxs = if (Object.isNull(known)) Nil else known;
+                match List.find(c -> sameAtlas(c#atlas, atlas), ctxs) {
+                    case Some(hit) => hit
+                    case None =>
+                        let base = match ctxs {
+                            case c :: _ => c#baseFont
+                            case Nil    => loadFont(ttfPath)
+                        };
+                        let made = buildFontCtx(base, atlas);
+                        // 別のスレッドと同時に足しても、外れるのは組み直す回数だけ（どれも同じ中身）。
+                        discard fonts.put(ttfPath, made :: ctxs);
+                        made
+                }
+        }
+
+    /// 2 つのアトラスが同じ中身か。安い欄から比べ、最後にグリフの表を 1 字ずつ比べる
+    /// （record には == が無いので欄ごとに比べる）。
+    def sameAtlas(a: FontAtlas, b: FontAtlas): Bool =
+        a#textureName == b#textureName and a#textureSize == b#textureSize and a#fontSize == b#fontSize
+            and a#ascent == b#ascent and a#descent == b#descent and a#lineGap == b#lineGap
+            and Map.size(a#glyphs) == Map.size(b#glyphs)
+            and Map.forAll((cp, g) -> match Map.get(cp, b#glyphs) {
+                case Some(h) => sameGlyph(g, h)
+                case None    => false
+            }, a#glyphs)
+
+    /// 2 つのグリフのメトリクスが同じか。
+    def sameGlyph(g: TextLayout.GlyphMetrics, h: TextLayout.GlyphMetrics): Bool =
+        g#xOff == h#xOff and g#yOff == h#yOff and g#glyphW == h#glyphW and g#glyphH == h#glyphH
+            and g#advance == h#advance and g#s0 == h#s0 and g#t0 == h#t0 and g#s1 == h#s1 and g#t1 == h#t1
+
+    /// TTF を Font として読む（サイズは描く時に deriveFont で決める）。
+    def loadFont(ttfPath: String): Font \ IO =
         let fis = new FileInputStream(ttfPath);
         let base = Font.createFont(0i32, fis);
         fis.close();
+        base
+
+    /// アトラスの各グリフの s0/t0 からセル左上 px を逆算した codepoint 表を組む。
+    def buildFontCtx(base: Font, atlas: FontAtlas): FontCtx =
         let ts = atlas#textureSize;
         let table = Map.foldLeftWithKey((acc, cp, gm) ->
             Map.insert((ri(gm#s0 * ts), ri(gm#t0 * ts)), cp, acc),
@@ -1037,18 +1100,21 @@ pub mod SoftRaster {
             // 三角形は多角形ごとに 1 回だけ位置で持つ形へ組み直す（onceOutsideLoop の WhyNot）。
             let compiled = onceOutsideLoop(rc, compileGradTris(tris));
             let blend = onceOutsideLoop(rc, p#blend);
-            Array.forEachWithIndex((i, dst) -> {
+            // 下地の画素（読むだけ）。1 画素の答えは下地と三角形だけで決まるので、drawSurface と
+            // 同じく shadeAll でコアの数だけ並べても 1 本で回しても同じ列になる。
+            let dstPixels = Array.toVector(buf);
+            let pixelOf = i -> {
                 let px = Int32.remainder(i, w) + x0;
                 let py = i / w + y0;
                 let x = (Int32.toFloat64(px) + 0.5) / sf;
                 let y = (Int32.toFloat64(py) + 0.5) / sf;
+                let dst = Vector.get(i, dstPixels);
                 match firstGradHit(compiled, x, y) {
-                    case None               => ()
-                    case Some((r, g, b, a)) =>
-                        Array.put(blendPixel(blend, argbOfRgba(r, g, b, a), dst), i, buf)
+                    case None               => dst
+                    case Some((r, g, b, a)) => blendPixel(blend, argbOfRgba(r, g, b, a), dst)
                 }
-            }, buf);
-            image.setRGB(x0, y0, w, h, buf, 0i32, w)
+            };
+            image.setRGB(x0, y0, w, h, shadeAll(n, pixelOf), 0i32, w)
         }
     }
 

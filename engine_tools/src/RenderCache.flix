@@ -233,7 +233,7 @@ pub mod RenderCache {
     // WhyNot: ファイルのバイト列を別に読まない — 鍵と塗りが別の時点で読むと、その間に保存された絵が
     // 古い中身の鍵の下に入る。塗りが見る画像そのものから取る。
     def textureDigest(cache: SoftRaster.TextureCache, path: String): String \ IO =
-        let SoftRaster.TextureCache.TextureCache(_, memo) = cache;
+        let SoftRaster.TextureCache.TextureCache(_, memo, _) = cache;
         let hit: String = memo.get(path);
         if (not Object.isNull(hit)) hit
         else {

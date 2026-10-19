@@ -83,13 +83,17 @@ pub mod HeadlessRender {
 
     /// 同じ絵の一覧から「名前 → テクスチャの寸法」を引く関数を作る（Render.drawWith に渡す）。
     /// UV を解くのに辺長が要るので、PNG のパスだけでは足りない。
+    /// WhyNot: 表を `let sides = ..fold..` で直に置かない。Flix 0.78 の最適化は、純粋な let の値が
+    /// ラムダの中で 1 回だけ使われると式をラムダの中へ書き写すので、絵 1 枚を引くたびに表を組み直す
+    /// （SoftRaster.onceOutsideLoop と同じ罠）。Ref を通した値は純粋でないので動かされない。
     pub def imageTextureInfo(images: List[{ name = String, side = Int32 | r }]):
-            String -> Option[{ id = GpuHandle.TextureId, width = Float64, height = Float64 }] =
-        let sides = images |> List.foldLeft((acc, img) ->
-            Map.insert(img#name, img#side, acc), Map.empty());
+            String -> Option[{ id = GpuHandle.TextureId, width = Float64, height = Float64 }] = region rc {
+        let sides = Ref.get(Ref.fresh(rc, images |> List.foldLeft((acc, img) ->
+            Map.insert(img#name, img#side, acc), Map.empty())));
         name -> Map.get(name, sides) |> Option.map(side ->
             { id = GpuHandle.wrapTextureId(0), width = Int32.toFloat64(side),
               height = Int32.toFloat64(side) })
+    }
 
     def reqOf(cfg: RenderConfig, drawables: List[GameEngine.Drawable],
               polygons: List[GameEngine.PolygonRenderCmd], outPath: String): SoftRaster.RasterReq =

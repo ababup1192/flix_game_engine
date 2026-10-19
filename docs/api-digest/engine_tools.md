@@ -259,7 +259,7 @@
 - renderToImageFull の欠け名控えつき版。控えは知らせの回数にだけ効き、
   `pub def renderToImageLogged(req: RasterReq, surfaces: List[SurfaceCmd], extraFonts: Map[String, FontEntry], extraImages: Map[String, BufferedImage], warnLog: TexWarnLog): BufferedImage \ IO`
 - texturePath の画像を 1 回だけ読むためのキャッシュ（ファイルのパス → ARGB にそろえた画像）。
-  `pub enum TextureCache(ConcurrentHashMap[String, BufferedImage], ConcurrentHashMap[String, String])`
+  `pub enum TextureCache(ConcurrentHashMap[String, BufferedImage], ConcurrentHashMap[String, String], ConcurrentHashMap[String, List[FontCtx]])`
 - 空のキャッシュを作る（コマ列の描き出しの前に 1 本）。
   `pub def freshTextureCache(): TextureCache \ IO`
 - キャッシュからパスの画像を引く（無ければ読んで入れる。読み方は塗る時と同じ）。無い・読めないなら None。
