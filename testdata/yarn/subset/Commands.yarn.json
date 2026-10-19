@@ -1,0 +1,114 @@
+{
+  "version": 1,
+  "note": "bin/fge yarn build が Commands.yarn から書いた木。手で直さない（.yarn を直して build する）",
+  "files": [
+    "Commands.yarn"
+  ],
+  "nodes": [
+    {
+      "title": "Start",
+      "file": "Commands.yarn",
+      "line": 1,
+      "headers": [],
+      "body": [
+        {
+          "kind": "command",
+          "line": 5,
+          "name": "flip",
+          "args": [
+            "Harley3",
+            "+1"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 8,
+          "name": "toggle"
+        },
+        {
+          "kind": "command",
+          "line": 10,
+          "name": "settings"
+        },
+        {
+          "kind": "command",
+          "line": 12,
+          "name": "iffy"
+        },
+        {
+          "kind": "command",
+          "line": 14,
+          "name": "nulled"
+        },
+        {
+          "kind": "command",
+          "line": 16,
+          "name": "orion"
+        },
+        {
+          "kind": "command",
+          "line": 18,
+          "name": "andorian"
+        },
+        {
+          "kind": "command",
+          "line": 20,
+          "name": "note"
+        },
+        {
+          "kind": "command",
+          "line": 22,
+          "name": "isActive"
+        },
+        {
+          "kind": "command",
+          "line": 24,
+          "name": "returnToMainMenu"
+        },
+        {
+          "kind": "command",
+          "line": 26,
+          "name": "oncee"
+        },
+        {
+          "kind": "command",
+          "line": 28,
+          "name": "enumerated"
+        },
+        {
+          "kind": "command",
+          "line": 30,
+          "name": "endenumerated"
+        },
+        {
+          "kind": "command",
+          "line": 32,
+          "name": "cased"
+        },
+        {
+          "kind": "command",
+          "line": 34,
+          "name": "locality"
+        },
+        {
+          "kind": "command",
+          "line": 36,
+          "name": "detouring"
+        },
+        {
+          "kind": "command",
+          "line": 39,
+          "name": "p"
+        },
+        {
+          "kind": "command",
+          "line": 45,
+          "name": "hide",
+          "args": [
+            "Collision:GermOnPorch"
+          ]
+        }
+      ]
+    }
+  ]
+}

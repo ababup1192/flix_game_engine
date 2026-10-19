@@ -1,0 +1,128 @@
+{
+  "version": 1,
+  "note": "bin/fge yarn build が runner.yarn から書いた木。手で直さない（.yarn を直して build する）",
+  "files": [
+    "runner.yarn"
+  ],
+  "nodes": [
+    {
+      "title": "Wait",
+      "file": "runner.yarn",
+      "line": 3,
+      "headers": [],
+      "body": [
+        {
+          "kind": "command",
+          "line": 5,
+          "name": "wait",
+          "args": [
+            "0.5"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 6,
+          "speaker": "girl",
+          "text": "待った"
+        }
+      ]
+    },
+    {
+      "title": "Ask",
+      "file": "runner.yarn",
+      "line": 8,
+      "headers": [],
+      "body": [
+        {
+          "kind": "line",
+          "line": 10,
+          "speaker": "girl",
+          "text": "どうする？"
+        },
+        {
+          "kind": "options",
+          "line": 11,
+          "options": [
+            {
+              "line": 11,
+              "text": "行く",
+              "tags": [
+                {
+                  "key": "suspect",
+                  "value": ""
+                }
+              ],
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 12,
+                  "speaker": "girl",
+                  "text": "行こう"
+                }
+              ]
+            },
+            {
+              "line": 13,
+              "text": "戻る",
+              "body": []
+            }
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 14,
+          "speaker": "girl",
+          "text": "おわり"
+        }
+      ]
+    },
+    {
+      "title": "Loop",
+      "file": "runner.yarn",
+      "line": 16,
+      "headers": [],
+      "body": [
+        {
+          "kind": "jump",
+          "line": 18,
+          "node": "Loop2"
+        }
+      ]
+    },
+    {
+      "title": "Loop2",
+      "file": "runner.yarn",
+      "line": 20,
+      "headers": [],
+      "body": [
+        {
+          "kind": "jump",
+          "line": 22,
+          "node": "Loop"
+        }
+      ]
+    },
+    {
+      "title": "Stopper",
+      "file": "runner.yarn",
+      "line": 24,
+      "headers": [],
+      "body": [
+        {
+          "kind": "line",
+          "line": 26,
+          "text": "one"
+        },
+        {
+          "kind": "stop",
+          "line": 27
+        },
+        {
+          "kind": "line",
+          "line": 28,
+          "text": "two"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,133 @@
+{
+  "version": 1,
+  "note": "bin/fge yarn build が ShortcutOptions.yarn から書いた木。手で直さない（.yarn を直して build する）",
+  "files": [
+    "ShortcutOptions.yarn"
+  ],
+  "nodes": [
+    {
+      "title": "Start",
+      "file": "ShortcutOptions.yarn",
+      "line": 1,
+      "headers": [],
+      "body": [
+        {
+          "kind": "line",
+          "line": 7,
+          "speaker": "Bea",
+          "text": "line text"
+        },
+        {
+          "kind": "options",
+          "line": 8,
+          "options": [
+            {
+              "line": 8,
+              "text": "option1",
+              "body": []
+            },
+            {
+              "line": 9,
+              "text": "option2",
+              "body": []
+            }
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 10,
+          "speaker": "Bea",
+          "text": "line text2"
+        },
+        {
+          "kind": "line",
+          "line": 13,
+          "speaker": "Bea",
+          "text": "indented line text"
+        },
+        {
+          "kind": "options",
+          "line": 14,
+          "options": [
+            {
+              "line": 14,
+              "text": "indented option1",
+              "body": []
+            },
+            {
+              "line": 15,
+              "text": "indented option2",
+              "body": []
+            }
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 16,
+          "speaker": "Bea",
+          "text": "indented line text2"
+        },
+        {
+          "kind": "line",
+          "line": 19,
+          "speaker": "Bea",
+          "text": "line text"
+        },
+        {
+          "kind": "options",
+          "line": 20,
+          "options": [
+            {
+              "line": 20,
+              "text": "indented option1 following unindented line",
+              "body": []
+            },
+            {
+              "line": 21,
+              "text": "indented option2 following unindented line",
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 22,
+                  "text": "option2.1"
+                },
+                {
+                  "kind": "line",
+                  "line": 23,
+                  "text": "option2.2"
+                },
+                {
+                  "kind": "line",
+                  "line": 24,
+                  "text": "option2.3"
+                },
+                {
+                  "kind": "line",
+                  "line": 25,
+                  "text": "option2.4"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "options",
+          "line": 28,
+          "options": [
+            {
+              "line": 28,
+              "text": "A",
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 29,
+                  "text": "B"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

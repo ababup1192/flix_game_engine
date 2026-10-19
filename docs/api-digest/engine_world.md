@@ -2726,6 +2726,73 @@
 - 世界線上の絶対位置 n（0 = 最古、pastLength = 現在地、length-1 = 最新）へ移動する。
   `pub def scrubTo(n: Int32, wl: Worldline[a]): Worldline[a]`
 
+## Yarn — `engine_world/src/Yarn.flix`
+- 行がどこにあるか。file = ゲームのルートからの .yarn のパス、line = 1 始まりの行番号。
+  `pub type alias Source = { file = String, line = Int32 }`
+- #key:value のタグ（値の無い #key は value が空）。
+  `pub type alias Tag = { key = String, value = String }`
+- 台詞 1 行。speaker = 話し手の id（地の文は空）、text = 出す字（エスケープは解いてある）。
+  `pub type alias Line = { speaker = String, text = String, tags = List[Tag], source = Source }`
+- <<名前 引数…>>。エンジンが自分で扱うのは wait（YarnRunner が待つ）だけ。
+  `pub type alias Command = { name = String, args = List[String], tags = List[Tag], source = Source }`
+- 本文の 1 文。
+  `pub enum Statement { case Say(Line) case Choose(List[Choice]) case Jump(String, Source) case Stop(Source) case Command(Command) }`
+- 選択肢 1 つ。line = 出す字と話し手・タグ、body = 選んだ時に流す中身。
+  `pub type alias Choice = { line = Line, body = List[Statement] }`
+- ノード（title: 〜 === の 1 つ）。headers は title 以外のヘッダ（読むだけ）。
+  `pub type alias Node = { title = String, headers = List[(String, String)], body = List[Statement], source = Source }`
+- シナリオ 1 つ分（フォルダの .yarn 全部）。
+  `pub type alias Program = Nodes`
+- 木の JSON の形の版（go/internal/yarn/tree.go の Version と同じ）。
+  `pub def version(): Int32`
+- ノードの無いシナリオ（どのノードを開いても、すぐ終わる）。
+  `pub def empty(): Program`
+- `pub def nodeOf(name: String, program: Program): Option[Node]`
+- ノード名の一覧（名前の順）。
+  `pub def nodeNames(program: Program): List[String]`
+- タグの値（そのキーのタグが無ければ None・値の無いタグは Some("")）。
+  `pub def tagOf(key: String, tags: List[Tag]): Option[String]`
+- 「ファイル:行」（F8 のチケットやログに出す形）。
+  `pub def sourceText(source: Source): String`
+- 木の JSON の文字からシナリオへ。形が違う・版が違う時は None（文を 1 つ落として続けると、台詞が知らせずに欠ける）。
+  `pub def fromJson(text: String): Option[Program]`
+- path の木を読む。読めない・壊れている時は fallback（fail-open）。
+  `pub def loadOr(fallback: Program, path: String): Program \ Fs.FileRead`
+- speakers = 話し手の id、nodes = コードが開くノード、tags = タグのキーと取れる値（空なら値を書かない #key）、
+  `pub type alias Vocab = { speakers = List[String], nodes = List[String], tags = List[(String, List[String])], commands = List[String] }`
+- enum の全部の値を名前の一覧にする（語彙の欄を作る所で使う）。
+  `pub def namesOf(name: a -> String, values: List[a]): List[String]`
+- 語彙を vocab.json の形にする（キーの順は固定。flow の e2e/vocab.json と同じ書き方）。
+  `pub def vocabJson(vocab: Vocab): String`
+- 語彙を path に書く（書けたか）。ゲームの Talk.vocab が呼ぶ（bin/headless-run が jar を作った時・make talk-vocab）。
+  `pub def writeVocab(path: String, vocab: Vocab): Bool \ Fs.FileWrite`
+
+## YarnRunner — `engine_world/src/YarnRunner.flix`
+- 呼び出しの間に起きた出来事。
+  `pub enum Event { case Line(Yarn.Line) case Choices(List[Yarn.Line]) case Command(Yarn.Command) case Done }`
+- 実行器への入力。Choose の番号は 0 始まり。
+  `pub enum Action with Eq, ToString { case Advance case Choose(Int32) case Tick }`
+- 今出している物。Closed = 開いていない・終わった、Waiting = <<wait>> の途中。
+  `pub enum Shown { case Closed case Line(Yarn.Line) case Choices(List[Yarn.Line]) case Waiting }`
+- 実行器。c は <<wait>> を測る時計の名前（ゲームの物語の時計など）。外では start と closed だけが作る。
+  `pub type alias Runner[c] = Machine[c]`
+- 開いていない実行器（World の初期値）。
+  `pub def closed(): Runner[c]`
+- node の頭から、最初に待つ所（台詞・選択肢・wait）か終わりまで流す。node が無ければすぐ Done。
+  `pub def start(program: Yarn.Program, node: String, now: Clock.Time[c]): (Runner[c], List[Event])`
+- 入力 1 つ。今の状態で意味の無い入力（台詞の無い時の Advance・範囲の外の Choose・時刻の前の Tick）は何も変えない。
+  `pub def step(action: Action, now: Clock.Time[c], runner: Runner[c]): (Runner[c], List[Event])`
+- node の頭から、台詞はすぐ送り・選択肢は picks の順に選び（0 始まり）・<<wait>> は明ける時刻まで飛ばして、
+  `pub def trace(program: Yarn.Program, node: String, picks: List[Int32]): List[Event]`
+- `pub def shownOf(runner: Runner[c]): Shown`
+- 開いているノードの名前（閉じていれば None）。
+  `pub def nodeOf(runner: Runner[c]): Option[String]`
+- `pub def isOpen(runner: Runner[c]): Bool`
+- 今の台詞を送ると、次に出るのが選択肢か（選択肢の問いを台詞と同じウィンドウに並べるゲームが、送る前に選択肢を出すため）。
+  `pub def choicesFollow(runner: Runner[c]): Bool`
+- <<wait>> が明ける時刻（待っていなければ None）。
+  `pub def waitUntilOf(runner: Runner[c]): Option[Clock.Time[c]]`
+
 ## ZStack — `engine_world/src/ZStack.flix`
 - 積み木の木。p は topLayer の行き先（ゲームの SortingLayer の層の enum）、a は押せる物の名前
   `pub enum Tree[p, a] { case Leaf(List[Render.PlacedItem]) case Stacked(List[Tree[p, a]]) case ZIndexed(Int32, Tree[p, a]) case TopLayer(p, Tree[p, a]) case Mapped(List[Render.PlacedItem] -> List[Render.PlacedItem], Tree[p, a]) case Hit(a, Rect2.Rect2) case Block(Option[a]) }`

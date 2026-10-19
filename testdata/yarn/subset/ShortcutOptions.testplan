@@ -1,0 +1,22 @@
+line: `Bea: line text`
+option: `option1`
+option: `option2`
+select: 1
+line: `Bea: line text2`
+
+line: `Bea: indented line text`
+option: `indented option1`
+option: `indented option2`
+select: 1
+line: `Bea: indented line text2`
+
+line: `Bea: line text`
+option: `indented option1 following unindented line`
+option: `indented option2 following unindented line`
+select: 1
+
+option: `A`
+select: 1
+line: `B`
+
+stop

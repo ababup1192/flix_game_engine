@@ -1,0 +1,12 @@
+title: Start
+---
+// works fine
+zero indent line
+  one indent line
+
+-> option with subline
+  subline
+
+-> option below blank line
+
+===

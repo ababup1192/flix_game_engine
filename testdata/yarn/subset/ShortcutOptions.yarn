@@ -1,0 +1,30 @@
+title: Start
+---
+// Testing options
+
+// Test two shortcut options with no text
+
+Bea: line text
+-> option1
+-> option2
+Bea: line text2
+
+
+	Bea: indented line text
+	-> indented option1
+	-> indented option2
+	Bea: indented line text2
+
+
+Bea: line text
+	->indented option1 following unindented line
+	->indented option2 following unindented line
+		option2.1
+		option2.2
+		option2.3
+		option2.4
+
+// Single-character shortcut options
+-> A
+	B
+===

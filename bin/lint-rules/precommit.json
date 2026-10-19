@@ -224,6 +224,27 @@
       }
     },
     {
+      "id": "yarn",
+      "sub": "yarn",
+      "flags": ["check"],
+      "pass": "matched",
+      "when": {
+        "anyOf": [
+          {
+            "suffixes": [
+              ".yarn"
+            ]
+          },
+          {
+            "basenames": [
+              "dialogue.json",
+              "vocab.json"
+            ]
+          }
+        ]
+      }
+    },
+    {
       "id": "makefile-dup",
       "sub": "makefile-dup",
       "flags": [],

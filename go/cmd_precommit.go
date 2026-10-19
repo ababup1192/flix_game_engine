@@ -20,6 +20,7 @@ import (
 	"github.com/ababup1192/flix_game_engine/go/internal/valuediscard"
 	"github.com/ababup1192/flix_game_engine/go/internal/verbnames"
 	"github.com/ababup1192/flix_game_engine/go/internal/view"
+	"github.com/ababup1192/flix_game_engine/go/internal/yarn"
 	"github.com/ababup1192/flix_game_engine/go/internal/ztable"
 )
 
@@ -73,6 +74,9 @@ func cmdPrecommit(out, errOut *strings.Builder, rest []string, _ bool) int {
 		},
 		"palette": func(o, _ *strings.Builder, _ []string) int {
 			return runPalette(o, abs, false)
+		},
+		"yarn": func(o, e *strings.Builder, args []string) int {
+			return yarn.Run(o, e, abs, args)
 		},
 	}
 

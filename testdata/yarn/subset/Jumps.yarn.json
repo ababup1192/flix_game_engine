@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "note": "bin/fge yarn build が Jumps.yarn から書いた木。手で直さない（.yarn を直して build する）",
+  "files": [
+    "Jumps.yarn"
+  ],
+  "nodes": [
+    {
+      "title": "Start",
+      "file": "Jumps.yarn",
+      "line": 1,
+      "headers": [],
+      "body": [
+        {
+          "kind": "line",
+          "line": 3,
+          "text": "Start"
+        },
+        {
+          "kind": "jump",
+          "line": 5,
+          "node": "NodeNameDestination"
+        },
+        {
+          "kind": "line",
+          "line": 6,
+          "text": "Error! This line should not be seen."
+        }
+      ]
+    },
+    {
+      "title": "NodeNameDestination",
+      "file": "Jumps.yarn",
+      "line": 8,
+      "headers": [],
+      "body": [
+        {
+          "kind": "line",
+          "line": 10,
+          "text": "NodeNameDestination"
+        }
+      ]
+    }
+  ]
+}

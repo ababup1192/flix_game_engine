@@ -1,0 +1,28 @@
+title: Start
+---
+// Testing types
+
+// string equality
+{"test" == "test"}
+{"test" eq "test"}
+
+// string case sensitivity
+{"hi" != "HI"}
+{"hi" neq "HI"}
+
+// gt test
+{3 > 2}
+{3 gt 2}
+
+// lt test
+{1 < 2}
+{1 lt 2}
+
+// lte test
+{2 <= 2}
+{2 lte 2}
+
+// gte test
+{2 >= 2}
+{2 gte 2}
+===

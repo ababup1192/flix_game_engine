@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "note": "bin/fge yarn build が Indentation.yarn から書いた木。手で直さない（.yarn を直して build する）",
+  "files": [
+    "Indentation.yarn"
+  ],
+  "nodes": [
+    {
+      "title": "Start",
+      "file": "Indentation.yarn",
+      "line": 1,
+      "headers": [],
+      "body": [
+        {
+          "kind": "line",
+          "line": 4,
+          "text": "zero indent line"
+        },
+        {
+          "kind": "line",
+          "line": 5,
+          "text": "one indent line"
+        },
+        {
+          "kind": "options",
+          "line": 7,
+          "options": [
+            {
+              "line": 7,
+              "text": "option with subline",
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 8,
+                  "text": "subline"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "options",
+          "line": 10,
+          "options": [
+            {
+              "line": 10,
+              "text": "option below blank line",
+              "body": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

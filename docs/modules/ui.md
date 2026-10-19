@@ -1,4 +1,4 @@
-# UI（ui.json・メニュー・スクロール・会話窓・フォーカス・ツールチップ）
+# UI（ui.json・メニュー・スクロール・会話ウィンドウ・フォーカス・ツールチップ）
 
 > [docs/module-index.md](../module-index.md) の分野の 1 つ。1 行 = 1 件で、`make module Q=<語>` が行ごとに引く。
 > 型と引数は `make api Q=<名前>`、使い方は `engine_world/src/<名前>.flix` 冒頭の doc。
@@ -16,7 +16,8 @@
 | UI の箱にドット絵の皮を着せる（九分割スキン。box の skin） | UiExtract（boxPlacedItems）/ UiDoc |
 | UI 要素を並べる・整列する | UiLayout / Flex（実例: `templates/novel-starter/src/NovelKit.flix`） |
 | UI の文字欄に実行時の値を差し込む | UiBinding |
-| 会話窓・文字送りを出す | UiDialog / UiTypewriter（実例: `templates/novel-starter/src/World.flix`） |
+| 会話ウィンドウ・文字送りを出す | UiDialog / UiTypewriter（実例: `templates/novel-starter/src/World.flix`） |
+| 会話のシナリオを .yarn（Yarn Spinner の部分集合）で書く・台詞と選択肢を順に出す・話し手やタグを語彙で止める | Yarn（`bin/fge yarn build` が書いた木を loadOr・語彙は vocabJson）/ YarnRunner（start・step・trace） |
 | マウスの下の UI 要素を知る | UiFocus（実例: `templates/novel-starter/src/Controls.flix`）。UiDoc の画面の各要素の画面矩形は layoutRects |
 | 絵の上に散らばった選べる物を矢印・Tab・ホバーで巡る（キーのフォーカスとホバーを 1 つにする・:focus-visible の枠） | UiFocusNav（Target の列を作るだけ。UiDoc の画面は targetsOfUi。並びの決まったメニューは UiMenu） |
 | 説明の窓（ツールチップ）を見ている物の脇の、画面からはみ出さず他の物に重ならない所へ置く | UiTooltip（computePlacement。脇に余地が無い画面は Side.Over で見ている物の上に重ねる。窓の字を折るのは RichText.wrapLinesBy） |
@@ -42,5 +43,7 @@
 - **UiMenu** — 選択メニュー共通の「項目の並べ方」「選択中の見せ方」「カーソルの動かし方」。
 - **UiScroll** — 表示範囲より長い内容を位置ひとつで覗く共通の勘定（末尾基準 offset・両端 clamp・▲▼判定）。
 - **UiMeta** — UI の目印（meta 文字列）の共通の読み方（接頭辞 + 番号）。
-- **UiDialog** — 会話窓の中身（誰が・何を・どこまで見せたか）と、その進め方。
+- **UiDialog** — 会話ウィンドウの中身（誰が・何を・どこまで見せたか）と、その進め方。
 - **UiTypewriter** — 文章を 1 文字ずつ現す「文字送り」の進み具合を持つ小さな値。
+- **Yarn** — 会話のシナリオ（.yarn を Go の `bin/fge yarn build` が書いた木の JSON）を読む codec と、check が読む語彙の書き出し。
+- **YarnRunner** — シナリオの木を直に辿り、台詞・選択肢・コマンド・終わりの出来事を返す純粋な実行器（`<<wait>>` は型で分けた時計の時刻で待つ）。

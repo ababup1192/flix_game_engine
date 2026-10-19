@@ -1,0 +1,11 @@
+title: Start
+---
+Start
+// Jump to a node name
+<<jump NodeNameDestination>>
+Error! This line should not be seen.
+===
+title: NodeNameDestination
+---
+NodeNameDestination
+===

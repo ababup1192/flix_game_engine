@@ -1,0 +1,155 @@
+{
+  "version": 1,
+  "note": "bin/fge yarn build が Escaping.yarn から書いた木。手で直さない（.yarn を直して build する）",
+  "files": [
+    "Escaping.yarn"
+  ],
+  "nodes": [
+    {
+      "title": "Start",
+      "file": "Escaping.yarn",
+      "line": 1,
+      "headers": [],
+      "body": [
+        {
+          "kind": "line",
+          "line": 3,
+          "text": "Here's a line with a hashtag",
+          "tags": [
+            {
+              "key": "hashtag",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 4,
+          "text": "Here's a line with an escaped hashtag #hashtag"
+        },
+        {
+          "kind": "line",
+          "line": 6,
+          "text": "Here's a line with an escaped expression {0}"
+        },
+        {
+          "kind": "line",
+          "line": 11,
+          "text": "Here's a line with an escaped command <<foo>>"
+        },
+        {
+          "kind": "line",
+          "line": 13,
+          "text": "Here's a line with a comment"
+        },
+        {
+          "kind": "line",
+          "line": 14,
+          "text": "Here's a line with an escaped comment // wow"
+        },
+        {
+          "kind": "line",
+          "line": 16,
+          "text": "Here's a line with an escaped backslash \\"
+        },
+        {
+          "kind": "line",
+          "line": 18,
+          "speaker": "Here's some TMP-style styling with a color code",
+          "text": "<color=#fff>wow</color>"
+        },
+        {
+          "kind": "line",
+          "line": 20,
+          "speaker": "Here's a url",
+          "text": "http://github.com/YarnSpinnerTool"
+        },
+        {
+          "kind": "options",
+          "line": 22,
+          "options": [
+            {
+              "line": 22,
+              "text": "Here's an option with a hashtag",
+              "tags": [
+                {
+                  "key": "hashtag",
+                  "value": ""
+                }
+              ],
+              "body": []
+            },
+            {
+              "line": 23,
+              "text": "Here's an option with an escaped hashtag #hashtag",
+              "body": []
+            },
+            {
+              "line": 24,
+              "text": "Here's an option with an escaped expression {0}",
+              "body": []
+            },
+            {
+              "line": 25,
+              "text": "Here's an option with an escaped condition <<if true>>",
+              "body": []
+            },
+            {
+              "line": 26,
+              "text": "Here's an option with a comment",
+              "body": []
+            },
+            {
+              "line": 27,
+              "text": "Here's an option with an escaped comment // wow",
+              "body": []
+            },
+            {
+              "line": 28,
+              "text": "Here's an option with an escaped backslash \\",
+              "body": []
+            },
+            {
+              "line": 29,
+              "speaker": "Here's some TMP-style styling with a color code",
+              "text": "<color=#fff>wow</color>",
+              "body": []
+            },
+            {
+              "line": 30,
+              "speaker": "Here's a url",
+              "text": "http://github.com/YarnSpinnerTool",
+              "body": []
+            }
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 33,
+          "text": "<<escaped command>>"
+        },
+        {
+          "kind": "line",
+          "line": 34,
+          "text": "{0} escaped line with interpolation"
+        },
+        {
+          "kind": "line",
+          "line": 35,
+          "text": "// escaped comment"
+        },
+        {
+          "kind": "line",
+          "line": 37,
+          "speaker": "Character",
+          "text": "Here is a line with a character"
+        },
+        {
+          "kind": "line",
+          "line": 38,
+          "text": "Character: Here is a line without a character"
+        }
+      ]
+    }
+  ]
+}

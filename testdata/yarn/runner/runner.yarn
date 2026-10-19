@@ -1,0 +1,29 @@
+// YarnRunner のテストが読むシナリオ（engine_world/test/TestYarnRunner.flix）。
+// 書き直したら bin/fge yarn build runner.yarn --no-vocab --out runner.yarn.json
+title: Wait
+---
+<<wait 0.5>>
+girl: 待った
+===
+title: Ask
+---
+girl: どうする？
+-> 行く #suspect
+    girl: 行こう
+-> 戻る
+girl: おわり
+===
+title: Loop
+---
+<<jump Loop2>>
+===
+title: Loop2
+---
+<<jump Loop>>
+===
+title: Stopper
+---
+one
+<<stop>>
+two
+===

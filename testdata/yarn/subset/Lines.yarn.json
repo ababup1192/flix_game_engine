@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "note": "bin/fge yarn build が Lines.yarn から書いた木。手で直さない（.yarn を直して build する）",
+  "files": [
+    "Lines.yarn"
+  ],
+  "nodes": [
+    {
+      "title": "Start",
+      "file": "Lines.yarn",
+      "line": 1,
+      "headers": [],
+      "body": [
+        {
+          "kind": "line",
+          "line": 5,
+          "text": "This is a line of dialogue."
+        },
+        {
+          "kind": "line",
+          "line": 7,
+          "speaker": "Mae",
+          "text": "<shake=.01>HA HA HA HA HA NO I'M FINE.</shake>"
+        },
+        {
+          "kind": "line",
+          "line": 10,
+          "speaker": "Mae",
+          "text": "Testing comments after lines"
+        },
+        {
+          "kind": "line",
+          "line": 11,
+          "speaker": "Mae",
+          "text": "Testing comments after hashtags",
+          "tags": [
+            {
+              "key": "hashtag",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 12,
+          "speaker": "Mae",
+          "text": "Testing comments after hashtags with no whitespace",
+          "tags": [
+            {
+              "key": "hashtag//comment",
+              "value": ""
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
