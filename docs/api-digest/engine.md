@@ -691,12 +691,16 @@
   `pub def evalPixelTex(spec: ShaderDoc.Spec, uv: Vec2.Vec2, t: Float64, texEnv: Map[String, TexData]): Color`
 - evalAlpha のテクスチャつき版。
   `pub def evalAlphaTex(spec: ShaderDoc.Spec, uv: Vec2.Vec2, t: Float64, texEnv: Map[String, TexData]): Float64`
-- 色とアルファを一度に返す版。bindings の先行評価（画素ごとに 1 回）を色と α で共有する —
+- 色とアルファを一度に返す版（bindings の先行評価を色と α で共有する）。
   `pub def evalPixelAlphaTex(spec: ShaderDoc.Spec, uv: Vec2.Vec2, t: Float64, texEnv: Map[String, TexData]): (Color, Float64)`
-- Spec を「uv・時刻・テクスチャ → (色, α)」の関数へ 1 回だけ組み立てる。木をたどる match と
-  `pub def compileSpec(spec: ShaderDoc.Spec): (Vec2.Vec2, Float64, Map[String, TexData]) -> (Color, Float64)`
-- 場を Float64 へ。uv は「今読むべき座標」（Scaled/Warp が差し替える）。
+- 場を Float64 へ（shared も tex も無い所で 1 点だけ）。
   `pub def evalField(field: ShaderDoc.Field, uv: Vec2.Vec2, t: Float64): Float64`
+- 組み直した面。compile で作り、evalCompiled に画素ごとに渡す。
+  `pub type alias CompiledSpec = Compiled`
+- Spec を面 1 枚ぶん組み直す。texEnv の名前もここで引いておく（画素ごとに Map を引かない）。
+  `pub def compile(spec: ShaderDoc.Spec, texEnv: Map[String, TexData]): CompiledSpec`
+- 画素 1 つ（uv = (u, v)・時刻 t）の (r, g, b, α)。値は evalPixelAlphaTex と同じ。
+  `pub def evalCompiled(compiled: CompiledSpec, u: Float64, v: Float64, t: Float64): (Float64, Float64, Float64, Float64)`
 
 ## ShaderGen — `engine/src/ShaderGen.flix`
 - vertex シェーダー（面 quad 1 枚・uv を渡すだけ）。Spec に依存しない固定ソース。

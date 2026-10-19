@@ -349,10 +349,10 @@ pub mod SoftRaster {
     }
 
     /// シェーダー面を画素ごとに描き出す。rect を出力ピクセルへ量子化し、各画素の中心を
-    /// uv（rect 内 0..1）に写して ShaderEval.compileSpec で組み立てた関数（色と α を 1 回の shared
-    /// 先行評価で一緒に返す — 別々に呼ぶと bindings を画素ごとに 2 回払う）で評価、
-    /// blendPixel で本体へ混ぜる（Normal / Add / Multiply とも GL 側と同じ合成式）。
-    /// 描き出しの時間のほとんどはここ（実測 96%）なので、Spec は面ごとに 1 回だけ組み立て、
+    /// uv（rect 内 0..1）に写して ShaderEval.compile で組み直した面（色と α を 1 回の shared
+    /// 先行評価で一緒に返す）を evalCompiled で評価、blendPixel で本体へ混ぜる
+    /// （Normal / Add / Multiply とも GL 側と同じ合成式）。
+    /// 描き出しの時間のほとんどはここなので、Spec は面ごとに 1 回だけ組み直し、
     /// 画素は shadeAll でコアの数だけ並べて評価する。
     /// mask が非空なら「どれかの多角形の内側」の画素だけ塗る（GL のステンシル抜きと同じ意図）。
     def drawSurface(image: BufferedImage, sf: Float64, texEnv: Map[String, ShaderEval.TexData],
@@ -370,13 +370,12 @@ pub mod SoftRaster {
         else {
             let n = w * h;
             let buf: Array[Int32, rc] = Array.empty(rc, n);
-            let maskPolys = List.map(List.toVector, s#mask);
             discard image.getRGB(x0, y0, w, h, buf, 0i32, w);
-            // Spec は面ごとに 1 回だけ組み立てる（画素ごとに木をたどり直さない）。
-            let eval = ShaderEval.compileSpec(s#spec);
-            let (ox, oy, sw, sh) = (s#rect#position#x, s#rect#position#y, s#rect#size#x, s#rect#size#y);
-            let time = s#time;
-            let blend = s#blend;
+            let compiled = onceOutsideLoop(rc, ShaderEval.compile(s#spec, texEnv));
+            let maskPolys = onceOutsideLoop(rc, List.map(List.toVector, s#mask));
+            let (ox, oy, sw, sh, time) = onceOutsideLoop(rc,
+                (s#rect#position#x, s#rect#position#y, s#rect#size#x, s#rect#size#y, s#time));
+            let blend = onceOutsideLoop(rc, s#blend);
             // 下地の画素（読むだけ）。1 画素の答えは下地と面の式だけで決まる純関数なので、
             // どの順・どのスレッドで評価しても同じ画素になる。
             let dstPixels = Array.toVector(buf);
@@ -387,17 +386,27 @@ pub mod SoftRaster {
                 let dx = (Int32.toFloat64(px) + 0.5) / sf;
                 let dy = (Int32.toFloat64(py) + 0.5) / sf;
                 let dst = Vector.get(i, dstPixels);
-                if (not insideMask(maskPolys, { x = dx, y = dy })) dst
+                let inside = match maskPolys {
+                    case Nil => true
+                    case _   => insideMask(maskPolys, { x = dx, y = dy })
+                };
+                if (not inside) dst
                 else {
-                    let uv = { x = (dx - ox) / sw, y = (dy - oy) / sh };
-                    let (c, a0) = eval(uv, time, texEnv);
+                    let (r, g, b, a0) = ShaderEval.evalCompiled(compiled, (dx - ox) / sw, (dy - oy) / sh, time);
                     let a = Float64.max(0.0, Float64.min(1.0, a0));
-                    blendPixel(blend, argbOf(c, a), dst)
+                    blendPixel(blend, argbOfRgba(r, g, b, a), dst)
                 }
             };
             image.setRGB(x0, y0, w, h, shadeAll(n, pixelOf), 0i32, w)
         }
     }
+
+    /// 画素ループの外で 1 回だけ計算した値を、そのまま返す。
+    /// WhyNot: 面ごとの値を `let x = 式` で直に置かない。Flix 0.78 の最適化は、純粋な let の値が
+    /// ラムダの中で 1 回だけ使われると、その式をラムダの中へ書き写す（@DontInline でも止まらない）。
+    /// すると Spec の組み直しや record の読み出しが画素ごとに走る。Ref を通した値は純粋でないので
+    /// 動かされない。
+    def onceOutsideLoop(rc: Region[r], x: a): a \ r = Ref.get(Ref.fresh(rc, x))
 
     /// 画素 0..n−1 を pixelOf で塗った ARGB の列。Java の並列ストリームでコアの数だけ並べて
     /// 評価する（区間の割り方とスレッドは JDK の共有プールに任せる・どれかの画素が例外を投げれば
@@ -444,12 +453,13 @@ pub mod SoftRaster {
             countCrossings(vs, n, p, i + 1, if (crosses) hits + 1 else hits)
         }
 
-    /// Color(0..1) + alpha(0..1) を ARGB int へ。
-    def argbOf(c: Color, a: Float64): Int32 =
+    /// 色の成分 r, g, b（0..1）と alpha（0..1）を ARGB int へ。画素ごとに呼ぶ所（シェーダー面・
+    /// 頂点色の多角形）で使うので、Color の record ではなく成分で受ける。
+    def argbOfRgba(r: Float64, g: Float64, b: Float64, a: Float64): Int32 =
         Int32.leftShift(clampI(ri(a * 255.0), 0i32, 255i32), 24)
-            |> Int32.bitwiseOr(Int32.leftShift(byteOf(f32(c#r)), 16))
-            |> Int32.bitwiseOr(Int32.leftShift(byteOf(f32(c#g)), 8))
-            |> Int32.bitwiseOr(byteOf(f32(c#b)))
+            |> Int32.bitwiseOr(Int32.leftShift(byteOf(f32(r)), 16))
+            |> Int32.bitwiseOr(Int32.leftShift(byteOf(f32(g)), 8))
+            |> Int32.bitwiseOr(byteOf(f32(b)))
 
     /// 本体と下書き（blendedDraw）が同じ見た目で描くための描画品質ヒント一式。
     ///
@@ -1024,16 +1034,18 @@ pub mod SoftRaster {
             let n = w * h;
             let buf: Array[Int32, rc] = Array.empty(rc, n);
             discard image.getRGB(x0, y0, w, h, buf, 0i32, w);
+            // 三角形は多角形ごとに 1 回だけ位置で持つ形へ組み直す（onceOutsideLoop の WhyNot）。
+            let compiled = onceOutsideLoop(rc, compileGradTris(tris));
+            let blend = onceOutsideLoop(rc, p#blend);
             Array.forEachWithIndex((i, dst) -> {
                 let px = Int32.remainder(i, w) + x0;
                 let py = i / w + y0;
-                let at = { x = (Int32.toFloat64(px) + 0.5) / sf,
-                           y = (Int32.toFloat64(py) + 0.5) / sf };
-                match gradSample(tris, at) {
-                    case None     => ()
-                    case Some(gv) =>
-                        let srcArgb = argbOf(gv#color, gv#alpha);
-                        Array.put(blendPixel(p#blend, srcArgb, dst), i, buf)
+                let x = (Int32.toFloat64(px) + 0.5) / sf;
+                let y = (Int32.toFloat64(py) + 0.5) / sf;
+                match firstGradHit(compiled, x, y) {
+                    case None               => ()
+                    case Some((r, g, b, a)) =>
+                        Array.put(blendPixel(blend, argbOfRgba(r, g, b, a), dst), i, buf)
                 }
             }, buf);
             image.setRGB(x0, y0, w, h, buf, 0i32, w)
@@ -1043,36 +1055,65 @@ pub mod SoftRaster {
     /// 扇割り三角形列から、点 at を含む三角形の補間色を引く（どの三角形にも入らなければ None）。
     /// 式は面積比の重み（バリセントリック）— GL が頂点色を画素へ補間するのと同じ線形補間。
     /// 隣り合う三角形の共有辺の上では両者の補間が一致するので、どちらが拾っても同じ色になる。
+    /// 1 点だけ引く入口で、呼ぶたびに組み直す（画素ループは compileGradTris + firstGradHit）。
     pub def gradSample(tris: List[(DrawCmd.GradVertex, DrawCmd.GradVertex, DrawCmd.GradVertex)],
                        at: Vec2.Vec2): Option[DrawCmd.VertexTint] =
-        tris |> List.findMap(tri -> triSample(tri, at))
+        firstGradHit(compileGradTris(tris), at#x, at#y)
+            |> Option.map(rgba -> { let (r, g, b, a) = rgba; { color = { r = r, g = g, b = b }, alpha = a } })
 
     /// つぶれた三角形（面積 ≈ 0）とみなす行列式の下限。0 割りを避けるためだけの値で、
     /// design px の座標では 1e-9 より小さい面積の三角形は 1 画素にも満たない。
     def degenerateEps(): Float64 = 0.000000001
 
-    /// 1 三角形の中なら重み付き平均の色、外なら None。つぶれた三角形（面積 0）は None。
-    def triSample(tri: (DrawCmd.GradVertex, DrawCmd.GradVertex, DrawCmd.GradVertex),
-                  at: Vec2.Vec2): Option[DrawCmd.VertexTint] =
-        let (a, b, c) = tri;
-        let det = (b#pos#y - c#pos#y) * (a#pos#x - c#pos#x)
-                + (c#pos#x - b#pos#x) * (a#pos#y - c#pos#y);
-        if (Float64.abs(det) < degenerateEps()) None
-        else {
-            let w0 = ((b#pos#y - c#pos#y) * (at#x - c#pos#x)
-                    + (c#pos#x - b#pos#x) * (at#y - c#pos#y)) / det;
-            let w1 = ((c#pos#y - a#pos#y) * (at#x - c#pos#x)
-                    + (a#pos#x - c#pos#x) * (at#y - c#pos#y)) / det;
-            let w2 = 1.0 - w0 - w1;
-            if (w0 < 0.0 or w1 < 0.0 or w2 < 0.0) None
-            else {
-                let lerp3 = f -> f32(w0 * f(a) + w1 * f(b) + w2 * f(c));
-                let ch = g -> Float32.toFloat64(lerp3(v -> Float32.toFloat64(f32(g(v)))));
-                Some({ color = { r = ch(v -> v#color#r),
-                                 g = ch(v -> v#color#g),
-                                 b = ch(v -> v#color#b) },
-                       alpha = Float32.toFloat64(lerp3(v -> v#alpha)) })
+    /// 扇の三角形 1 つを、画素ごとの計算に要る数だけ位置で持つ形。GradVertex の record の欄は
+    /// 組み直しで 1 回だけ読み、画素ごとには読まない（record の欄は名前で引くので画素ごとには重い）。
+    enum GradTri {
+        // c の x, y・重みの係数 (b.y−c.y), (c.x−b.x), (c.y−a.y), (a.x−c.x)・行列式・
+        // 頂点 a, b, c の色と濃さ（r, g, b, α を a, b, c の順に 12 個。色は Float32 に落として戻した値）
+        case GradTri(Float64, Float64, Float64, Float64, Float64, Float64, Float64, Vector[Float64])
+    }
+
+    /// 三角形列を GradTri の列へ組み直す（多角形ごとに 1 回）。つぶれた三角形（面積 0）はどの点も
+    /// 含まないので、ここで落とす。
+    def compileGradTris(tris: List[(DrawCmd.GradVertex, DrawCmd.GradVertex, DrawCmd.GradVertex)]): List[GradTri] =
+        tris |> List.filterMap(tri -> {
+            let (a, b, c) = tri;
+            let byCy = b#pos#y - c#pos#y;
+            let cxBx = c#pos#x - b#pos#x;
+            let cyAy = c#pos#y - a#pos#y;
+            let axCx = a#pos#x - c#pos#x;
+            let det = byCy * axCx + cxBx * (a#pos#y - c#pos#y);
+            let rounded = x -> Float32.toFloat64(f32(x));
+            let tints = Vector#{rounded(a#color#r), rounded(a#color#g), rounded(a#color#b), a#alpha,
+                                rounded(b#color#r), rounded(b#color#g), rounded(b#color#b), b#alpha,
+                                rounded(c#color#r), rounded(c#color#g), rounded(c#color#b), c#alpha};
+            if (Float64.abs(det) < degenerateEps()) None
+            else Some(GradTri.GradTri(c#pos#x, c#pos#y, byCy, cxBx, cyAy, axCx, det, tints))
+        })
+
+    /// 点 (x, y) を含む最初の三角形の補間 (r, g, b, α)。どれにも入らなければ None。
+    def firstGradHit(tris: List[GradTri], x: Float64, y: Float64): Option[(Float64, Float64, Float64, Float64)] =
+        match tris {
+            case Nil          => None
+            case tri :: rest  => match gradTriSample(tri, x, y) {
+                case Some(rgba) => Some(rgba)
+                case None       => firstGradHit(rest, x, y)
             }
+        }
+
+    /// 1 三角形の中なら重み付き平均の (r, g, b, α)、外なら None。各成分は Float32 に落として返す
+    /// （GL が頂点色を Float32 で補間するのと同じ丸め）。
+    def gradTriSample(tri: GradTri, x: Float64, y: Float64): Option[(Float64, Float64, Float64, Float64)] =
+        let GradTri.GradTri(cx, cy, byCy, cxBx, cyAy, axCx, det, tints) = tri;
+        let w0 = (byCy * (x - cx) + cxBx * (y - cy)) / det;
+        let w1 = (cyAy * (x - cx) + axCx * (y - cy)) / det;
+        let w2 = 1.0 - w0 - w1;
+        if (w0 < 0.0 or w1 < 0.0 or w2 < 0.0) None
+        else {
+            let lerp = k -> Float32.toFloat64(f32(w0 * Vector.get(k, tints)
+                                                 + w1 * Vector.get(k + 4, tints)
+                                                 + w2 * Vector.get(k + 8, tints)));
+            Some((lerp(0), lerp(1), lerp(2), lerp(3)))
         }
 
     /// 多角形塗り。頂点は design px。
@@ -1087,9 +1128,14 @@ pub mod SoftRaster {
     def awtColor(c: Color, alpha: Float32): AwtColor \ IO =
         new AwtColor(byteOf(f32(c#r)), byteOf(f32(c#g)), byteOf(f32(c#b)), byteOf(alpha))
 
-    /// Float64 → Float32（BasicStroke 用）。
+    /// Float64 → Float32（±1e18 で頭打ち・NaN は NaN）。
+    /// WhyNot: `Float64.clampToFloat32(min = .., max = .., x)` を使わない。名前つき引数は呼ぶたびに
+    /// record を作って欄を名前で引くので、画素ごとに呼ぶ所（argbOfRgba・頂点色の補間）で重い。
+    /// 値は標準ライブラリの clampToFloat32 と同じ（端は Float32 に落とした ±1e18）。
     def f32(x: Float64): Float32 =
-        Float64.clampToFloat32(min = -1.0e18f32, max = 1.0e18f32, x)
+        let limit = Float32.toFloat64(1.0e18f32);
+        if (x != x) Float32.nan()
+        else RenderUtil.f32(if (x < -1.0 * limit) -1.0 * limit else if (x > limit) limit else x)
 
     /// 0..1 の成分を 0..255 の Int32 へ丸めてクランプ。
     def byteOf(x: Float32): Int32 =
