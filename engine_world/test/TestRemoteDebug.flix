@@ -257,4 +257,24 @@ mod TestRemoteDebug {
         let app = App.game({ init = 7, update = (_, w) -> w, view = (_, _) -> Nil, reloads = Nil })
             |> App.onShotRequest(w -> checked_ecast("debug/shot/${Int32.toString(w)}.png"));
         Assert.assertEq(expected = "[shot]\nok png=debug/shot/7.png\n", App.RemoteDebug.shotBlock(app, 7))
+
+    /// 1 枚撮り（view=shot）の要求は、橋が主の糸の答えを 60 秒待つ。
+    @Test
+    def testAnswerWaitIsLongForShot(): Unit \ Assert =
+        Assert.assertEq(expected = 60i64, App.RemoteDebug.answerWaitSecs(Map#{ "view" => "shot" }))
+
+    /// それ以外の要求は 10 秒のまま（主の糸が固まったら 10 秒で気づく）。
+    @Test
+    def testAnswerWaitStaysShortForStatus(): Unit \ Assert =
+        Assert.assertEq(expected = 10i64, App.RemoteDebug.answerWaitSecs(Map#{ "view" => "status" }))
+
+    /// wait=<秒> があれば、それを使う。
+    @Test
+    def testAnswerWaitTakesWaitParam(): Unit \ Assert =
+        Assert.assertEq(expected = 120i64, App.RemoteDebug.answerWaitSecs(Map#{ "view" => "shot", "wait" => "120" }))
+
+    /// 範囲の外（1〜600 の外）の wait= は使わない。
+    @Test
+    def testAnswerWaitIgnoresOutOfRangeWait(): Unit \ Assert =
+        Assert.assertEq(expected = 10i64, App.RemoteDebug.answerWaitSecs(Map#{ "wait" => "0" }))
 }

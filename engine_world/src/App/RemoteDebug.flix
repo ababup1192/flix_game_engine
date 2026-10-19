@@ -154,7 +154,8 @@ pub mod App.RemoteDebug {
                                 let id = issued.incrementAndGet();
                                 let request = tagged(id, raw);
                                 discard requests.offer(request);
-                                let answer = awaitAnswer(responses, id, System.nanoTime() + 10_000_000_000i64);
+                                let waitNs = answerWaitSecs(parseRequest(raw)#params) * 1_000_000_000i64;
+                                let answer = awaitAnswer(responses, id, System.nanoTime() + waitNs);
                                 if (Option.isEmpty(answer)) discard requests.remove(request) else ();
                                 bridgeLock.unlock();
                                 (if (Option.isEmpty(answer)) 503 else 200,
@@ -613,8 +614,18 @@ pub mod App.RemoteDebug {
     /// （その回は id の依頼より後に Docs を読み直しているので、id の時点の変更を含む）。
     pub def isRenderSettled(id: Int64, done: Int64): Bool = done >= id
 
+    /// 橋が主の糸の答えを待つ秒数。`wait=<秒>`（1〜600）があればそれ、無ければ view=shot は 60 秒、ほかは 10 秒。
+    // WhyNot: view=shot も 10 秒にそろえない — 1 枚撮りは場面を組んで塗るまでを主の糸で行うので、重いゲームでは
+    // 10 秒を超える（internet_dungeon の会話のプレビューが Studio で「did not answer within 10s」になった）。
+    // ほかの要求まで長くしないのは、主の糸が固まった時に 10 秒で気づけるようにするため。
+    pub def answerWaitSecs(params: Map[String, String]): Int64 =
+        match Map.get("wait", params) |> Option.flatMap(Int64.fromString) {
+            case Some(secs) if secs >= 1i64 and secs <= 600i64 => secs
+            case _ => if (Map.get("view", params) == Some("shot")) 60i64 else 10i64
+        }
+
     /// 時間内に答えられなかったときの応答。古い Studio はこの 1 行目を「描いている途中」と読む
-    /// （make での描き出しに切り替えない）ので、文面は変えない。
+    /// （make での描き出しに切り替えない）ので、待つ秒数を変えても文面は変えない（answerWaitSecs）。
     pub def busyText(): String = "error: game loop did not answer within 10s\n"
 
     /// 描き出しの実体（App.onRenderRequest）を登録していないゲームへの応答。
