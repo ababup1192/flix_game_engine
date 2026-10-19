@@ -1,4 +1,4 @@
-// ContentCache.loadOrBuild の取り置きと作り直しの条件を、メモリの上のファイル表で確かめる。
+// ContentCache.loadOrBuild のキャッシュと作り直しの条件を、メモリの上のファイル表で確かめる。
 mod TestContentCache {
 
     /// テストのディスク: (パス, 中身) の並び。並びの順がそのまま一覧の順になる。

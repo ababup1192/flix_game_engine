@@ -1,4 +1,4 @@
-<!-- engine v0.50.0 / 生成: 2026-10-20 -->
+<!-- engine v0.51.0 / 生成: 2026-10-20 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine_world
@@ -476,6 +476,7 @@
   `pub def nextRenderTarget(requested: Int64, done: Int64): Option[Int64]`
 - 番号 id の依頼が済んだか。後の番号の回でまとめて描き終えていても済んだ扱い
   `pub def isRenderSettled(id: Int64, done: Int64): Bool`
+- `pub def answerWaitSecs(params: Map[String, String]): Int64`
 - 時間内に答えられなかったときの応答。古い Studio はこの 1 行目を「描いている途中」と読む
   `pub def busyText(): String`
 - 描き出しの実体（App.onRenderRequest）を登録していないゲームへの応答。

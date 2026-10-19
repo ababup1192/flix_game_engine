@@ -56,7 +56,7 @@ pub mod ContentCache {
         })
     }
 
-    /// 取り置きの置き場。外からは fresh で作り、loadOrBuild に渡すだけ。
+    /// キャッシュの置き場。外からは fresh で作り、loadOrBuild に渡すだけ。
     pub type alias Cache[a] = CacheData[a]
 
     /// 空の置き場を作る。
@@ -71,7 +71,7 @@ pub mod ContentCache {
     /// build の中の Fs.FileRead は記録するハンドラで受け、外の Fs.FileRead へ投げ直しながら記録する。
     /// Java から直に読む物（TTF・ImageIO）は extraFiles で明示する（外の Fs.FileRead.readBytes で中身を見る）。
     // WhyNot: Fs.FileTest と Fs.DirList をここで受けない — どちらも Fs.FileRead とは別の effect で、
-    // build がそれを使うと ef を通って記録されずに素通りする。使う build は loadOrBuildWithDirs を呼ぶ。
+    // build がそれを使うと ef を通って記録されないまま外へ抜ける。使う build は loadOrBuildWithDirs を呼ぶ。
     pub def loadOrBuild(cache: Cache[a], params: String, extraFiles: List[String],
                         build: Unit -> a \ ef): a \ (ef - Fs.FileRead) + Fs.FileRead + IO =
         let extra = answerExtraFiles(extraFiles);

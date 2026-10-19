@@ -1,4 +1,4 @@
-<!-- engine v0.50.0 / 生成: 2026-10-20 -->
+<!-- engine v0.51.0 / 生成: 2026-10-20 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine_tools
@@ -9,7 +9,7 @@
 - `pub def write(path: String, fill: File -> Unit \ IO): Unit \ IO`
 
 ## ContentCache — `engine_tools/src/ContentCache.flix`
-- 取り置きの置き場。外からは fresh で作り、loadOrBuild に渡すだけ。
+- キャッシュの置き場。外からは fresh で作り、loadOrBuild に渡すだけ。
   `pub type alias Cache[a] = CacheData[a]`
 - 空の置き場を作る。
   `pub def fresh(): Cache[a] \ IO`

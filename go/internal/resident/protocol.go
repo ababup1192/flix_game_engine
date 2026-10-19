@@ -101,11 +101,11 @@ func isSpawnKey(k string) bool {
 	return strings.HasPrefix(k, "LC_") || strings.HasPrefix(k, "HEADLESS_")
 }
 
-// renderCacheKey は塗りの取り置き（RenderCache）の置き場と使い方を決める環境変数。
+// renderCacheKey は塗りのキャッシュ（RenderCache）の置き場と使い方を決める環境変数。
 //
 // WhyNot: 要求の env で渡さず起動時に通す — RenderCache は SoftRaster.render* の奥で毎回読むので、
 // 引数で渡すと描き出しの pub の口の型が全部変わる。起動時の値を比べて違えば常駐を立て直せば、
-// FGE_RENDER_CACHE=off を付けた要求が取り置きを使ってしまう（偽の緑）ことはない。
+// FGE_RENDER_CACHE=off を付けた要求がキャッシュを使ってしまう（偽の緑）ことはない。
 const renderCacheKey = "FGE_RENDER_CACHE"
 
 // isComparedKey は /hello の env. と自分の env を突き合わせるキーか（常駐が名乗る LANG・LC_*・HEADLESS_*・FGE_RENDER_CACHE）。

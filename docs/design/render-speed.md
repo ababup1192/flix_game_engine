@@ -9,7 +9,7 @@
 - 柱 3: 人が見る絵だけ GPU で塗る
 
 柱 2 については、口を読み合わせるだけにする。読んだのは `engine_tools/src/DrawHash.flix` と `RenderCache.flix`（2026-10-19 時点で未コミット）。
-比べの基準の写しの取り置き（`spike/compare-cache` の `go/internal/compare/basecache.go`）は、柱 2 と同じ段で入れる。
+比べの基準の写しのキャッシュ（`spike/compare-cache` の `go/internal/compare/basecache.go`）は、柱 2 と同じ段で入れる。
 
 ## 0. どこに時間が消えているか（実測）
 
@@ -53,11 +53,11 @@ flowchart LR
 
 - **make の口とゲームの Makefile は変えない。** 常駐を使うかどうかは `bin/headless-run` の中で決める。
   使えなければ今の `java -jar` に戻る。checkd と同じく、少しでも怪しければ素の道へ回す。
-- **SoftRaster を正本のままにする。** 比べ（compare・reference-check・柱 2 の鍵）は SoftRaster の絵だけで決める。
+- **SoftRaster をsource of truthのままにする。** 比べ（compare・reference-check・柱 2 の鍵）は SoftRaster の絵だけで決める。
   GPU の絵を使うのは、人が見る mp4 だけ。**GPU の mp4 は柱 2 の鍵の約束の外**にある（3.5 節）。
 - **遊ぶ時の道（窓ありの実機）には何も足さない。** drawhash の鍵も常駐も、描き出しと比べの道（headless・compare・reference-check）でしか動かない。遊ぶ時の道に触るのは段 4a の切り出しだけで、その重さは段 4a の完了条件で測って確かめる。
 - **純粋な関数に IO を足さない。** 状態更新・View・drawWith・`DrawHash` の鍵の組み立ては今のまま残す。
-  常駐・取り置き・GPU は全部、入口のすぐ下の IO の層に置く（iopure が寄せた形）。
+  常駐・キャッシュ・GPU は全部、入口のすぐ下の IO の層に置く（iopure が寄せた形）。
 
 ## 2. 柱 1: 窓なしのゲームを常駐させる
 
@@ -165,7 +165,7 @@ HTTP の口（今の `/help /starts /state /start /step /quit` に足す）:
 `Shared` 型には `PerRequest` の欄を持たせない。アトラスの `BufferedImage` は、lanes の糸が読むだけで書かない。
 この約束は WhyNot に残す。
 
-engine_tools に置く取り置きの口:
+engine_tools に置くキャッシュの口:
 
 ```flix
 pub mod ContentCache {
@@ -194,7 +194,7 @@ pub mod ContentCache {
 - **鍵にするファイルの列は、手で書かせない。** `Controls.loadDocs()` が読むファイルや sprite.json を 1 つ書き漏らすと、古い値が返る。
   だから `Fs.FileRead` を記録するハンドラで取る。`Fs.FileRead` を通らず Java から読む物の書き漏らしは、2.5 節の verify で見つける
   （Doc を書き換えた後の 1 回を必ず含める）。
-- 取り置きは、作るのに時間がかかり、入力のファイルが決まっている物だけにする。World は取っておかない。始まりを組むたびに作り直す（0.49 の約束のまま）。
+- キャッシュは、作るのに時間がかかり、入力のファイルが決まっている物だけにする。World は取っておかない。始まりを組むたびに作り直す（0.49 の約束のまま）。
 
 ### 2.3 古い jar のまま答える危険の止め方
 
@@ -282,7 +282,7 @@ agent-eval のお題 1 本と、リリース前の 1 回に入れる。毎回は
 |---|---|---|
 | 動画の mp4（`*-video`・flow の動画） | **GPU**。使えなければ SoftRaster | 人が見る物で、塗りが 93% を占める |
 | 動画の比べ（compare の動画の行） | 柱 2 の鍵の列で比べる。違うコマだけ SoftRaster で塗って並べる（3.5 節） | GPU と SoftRaster は、文字と多角形の縁が近似の関係（`docs/backend-parity.md`） |
-| 静止画（render・render-all・reference-check） | SoftRaster のまま | 基準とバイトで比べるので。速くするのは柱 2 の取り置き |
+| 静止画（render・render-all・reference-check） | SoftRaster のまま | 基準とバイトで比べるので。速くするのは柱 2 のキャッシュ |
 | 1 枚撮り（`view=shot`・talk shot） | SoftRaster のまま | 塗りは 1 s 前後で、柱 1 の方が効く |
 
 **GPU の道は、View から実機と同じ形で組み直す。** 理由は 3 つ。
@@ -422,7 +422,7 @@ pub mod VideoOut {
   mp4 では比べず（GL と Soft は画素が合わない）、両側を Soft で塗り直してから比べる。
 - **基準の写し（basecache）の鍵**に、エンジンの fpkg の SHA と painter を足す。今の鍵の `engine` は local.mk の名前だけで中身を見ていないので、
   `use-engine` で作業場へ向けると古い写しを使ってしまう。写しには drawhash.txt と frames.json も入れる。
-- reference-check と `RenderCache` は、SoftRaster の `BufferedImage` からしか書かない。GL の画素が SHA256SUMS や取り置きに入る道は、型の上で無い。
+- reference-check と `RenderCache` は、SoftRaster の `BufferedImage` からしか書かない。GL の画素が SHA256SUMS やキャッシュに入る道は、型の上で無い。
 
 ## 4. 柱 2 との口合わせ（drawhash のブランチを読んで）
 
@@ -430,7 +430,7 @@ pub mod VideoOut {
   鍵と Soft の塗りの両方に同じ値を渡す（`RenderCache.writePng` の WhyNot と同じ約束）。GL の塗りは 3.1 節のとおり、別に組み直す。
 - 鍵は**座標を丸めない**。drawhash の WhyNot のとおり、丸めた幅の中で画素が動いても同じ鍵になり、偽の緑になるから。
   依頼文にあった「格子に丸める案」は採らない。1 本の中で 910 種になる件は、柱 3 で塗りを安くして受け止める。
-- 常駐の中では `RenderCache.freshSession()` を要求ごとに作る（2.2 節の `PerRequest`）。ファイルの指紋の取り置き（`digests`）を要求をまたいで持ちたければ、
+- 常駐の中では `RenderCache.freshSession()` を要求ごとに作る（2.2 節の `PerRequest`）。ファイルの指紋のキャッシュ（`digests`）を要求をまたいで持ちたければ、
   `ContentCache` を通す。柱 2 の側には、`RenderCache.rootDir` と `engineDigest` が env と作業ディレクトリを直に読んでいる所を、引数で受ける形にしてもらう
   （2.5 節の env の行）。
 - 静止画の `SoftRaster.render*` は、もう `RenderCache.writePlainPng` を通る。柱 1 の常駐は、それに乗るだけでよい。
@@ -499,7 +499,7 @@ iopure（`ababup1192/id-x-iopure`）の形の上に積む。
 | 指摘 | 直した所 |
 |---|---|
 | `System.setOut` は JVM に 1 本なので、会話の列と仕事の列の出力が混ざる | 起動時に 1 回だけ「糸ごとに行き先を引く PrintStream」に差し替える。行き先の無い糸は常駐の記録へ（2.1 節） |
-| 糸に env を置く形は、共有のプール・使い回す糸・取り置きの build で前の要求の値が漏れる | 糸に env を置くのをやめた。env は入口の頭で 1 回読んで引数で渡す（iopure の形を engine にも）。build に要る値は params に入れる（2.5 節） |
+| 糸に env を置く形は、共有のプール・使い回す糸・キャッシュの build で前の要求の値が漏れる | 糸に env を置くのをやめた。env は入口の頭で 1 回読んで引数で渡す（iopure の形を engine にも）。build に要る値は params に入れる（2.5 節） |
 | 鍵だけの流し（`painter=none`）が、人が見る動画の記録を `ok` にして古い mp4 を撮れた物に見せる | video-status が `keys-only` と記録し、`make status` と Studio は撮れていないと数える（3.5 節） |
 | 空の env で起動すると locale と常駐の設定が消える | 通すキーを決めて書き、`/hello` で返してクライアントが照合する（2.5 節） |
 | `audio` が mix の条件を見ていない | mix が引数とスクリプトの SHA を `<名前>.mix.json` に書き、compare が比べる（3.5 節） |

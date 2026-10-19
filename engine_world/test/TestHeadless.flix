@@ -78,7 +78,7 @@ mod TestHeadless {
             App.Headless.passedEnv(Map#{ "HEADLESS_RESIDENT" => "1", "PATH" => "/bin", "LANG" => "ja_JP.UTF-8",
                                          "LC_ALL" => "C", "HEADLESS_PORT" => "0", "HOME" => "/home" }))
 
-    /// 塗りの取り置きの置き場（FGE_RENDER_CACHE）も名乗る（クライアントが要求の値と比べて、違えば立て直す）。
+    /// 塗りのキャッシュの置き場（FGE_RENDER_CACHE）も名乗る（クライアントが要求の値と比べて、違えば立て直す）。
     @Test
     def testPassedEnvNamesRenderCache(): Unit \ Assert =
         Assert.assertEq(
