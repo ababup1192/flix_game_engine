@@ -360,6 +360,12 @@ func BuildProgram(names, texts []string, vocab *Vocab, vocabPath string) (*Progr
 		nodes, ps := ParseFile(name, texts[i])
 		prog.Nodes = append(prog.Nodes, nodes...)
 		problems = append(problems, ps...)
+		for _, n := range nodes {
+			prog.Variables = append(prog.Variables, n.declared...)
+		}
+	}
+	if !usesVersionTwo(prog) {
+		prog.Version = versionOne
 	}
 	prog.Note = fmt.Sprintf("bin/fge yarn build が %s から書いた木。手で直さない（.yarn を直して build する）", strings.Join(names, " "))
 	problems = append(problems, CheckProgram(prog, vocab, vocabPath)...)

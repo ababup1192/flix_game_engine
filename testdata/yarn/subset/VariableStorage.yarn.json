@@ -1,0 +1,628 @@
+{
+  "version": 2,
+  "note": "bin/fge yarn build が VariableStorage.yarn から書いた木。手で直さない（.yarn を直して build する）",
+  "vocab": "",
+  "files": [
+    "VariableStorage.yarn"
+  ],
+  "variables": [
+    {
+      "name": "$num1",
+      "value": 0,
+      "file": "VariableStorage.yarn",
+      "line": 5
+    },
+    {
+      "name": "$num2",
+      "value": 0,
+      "file": "VariableStorage.yarn",
+      "line": 6
+    },
+    {
+      "name": "$num3",
+      "value": 0,
+      "file": "VariableStorage.yarn",
+      "line": 7
+    },
+    {
+      "name": "$str1",
+      "value": "",
+      "file": "VariableStorage.yarn",
+      "line": 8
+    },
+    {
+      "name": "$str2",
+      "value": "",
+      "file": "VariableStorage.yarn",
+      "line": 9
+    },
+    {
+      "name": "$str3",
+      "value": "",
+      "file": "VariableStorage.yarn",
+      "line": 10
+    }
+  ],
+  "nodes": [
+    {
+      "title": "Start",
+      "file": "VariableStorage.yarn",
+      "line": 1,
+      "headers": [],
+      "body": [
+        {
+          "kind": "set",
+          "line": 13,
+          "name": "$num1",
+          "expr": {
+            "kind": "value",
+            "value": 1
+          }
+        },
+        {
+          "kind": "line",
+          "line": 16,
+          "text": "{$num1}",
+          "parts": [
+            {
+              "expr": {
+                "kind": "variable",
+                "name": "$num1"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "set",
+          "line": 18,
+          "name": "$num1",
+          "expr": {
+            "kind": "value",
+            "value": -1
+          }
+        },
+        {
+          "kind": "line",
+          "line": 21,
+          "text": "{$num1}",
+          "parts": [
+            {
+              "expr": {
+                "kind": "variable",
+                "name": "$num1"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "set",
+          "line": 24,
+          "name": "$str1",
+          "expr": {
+            "kind": "value",
+            "value": "foo"
+          }
+        },
+        {
+          "kind": "line",
+          "line": 25,
+          "text": "{$str1}",
+          "parts": [
+            {
+              "expr": {
+                "kind": "variable",
+                "name": "$str1"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "set",
+          "line": 28,
+          "name": "$num1",
+          "expr": {
+            "kind": "value",
+            "value": 45
+          }
+        },
+        {
+          "kind": "set",
+          "line": 30,
+          "name": "$num2",
+          "expr": {
+            "kind": "+",
+            "args": [
+              {
+                "kind": "variable",
+                "name": "$num1"
+              },
+              {
+                "kind": "value",
+                "value": 1
+              }
+            ]
+          }
+        },
+        {
+          "kind": "line",
+          "line": 33,
+          "text": "{$num2}",
+          "parts": [
+            {
+              "expr": {
+                "kind": "variable",
+                "name": "$num2"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "set",
+          "line": 35,
+          "name": "$num2",
+          "expr": {
+            "kind": "-",
+            "args": [
+              {
+                "kind": "variable",
+                "name": "$num1"
+              },
+              {
+                "kind": "value",
+                "value": 1
+              }
+            ]
+          }
+        },
+        {
+          "kind": "line",
+          "line": 38,
+          "text": "{$num2}",
+          "parts": [
+            {
+              "expr": {
+                "kind": "variable",
+                "name": "$num2"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "set",
+          "line": 40,
+          "name": "$num1",
+          "expr": {
+            "kind": "value",
+            "value": 46
+          }
+        },
+        {
+          "kind": "set",
+          "line": 41,
+          "name": "$num2",
+          "expr": {
+            "kind": "*",
+            "args": [
+              {
+                "kind": "variable",
+                "name": "$num1"
+              },
+              {
+                "kind": "value",
+                "value": 2
+              }
+            ]
+          }
+        },
+        {
+          "kind": "line",
+          "line": 44,
+          "text": "{$num2}",
+          "parts": [
+            {
+              "expr": {
+                "kind": "variable",
+                "name": "$num2"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "set",
+          "line": 46,
+          "name": "$num2",
+          "expr": {
+            "kind": "/",
+            "args": [
+              {
+                "kind": "variable",
+                "name": "$num1"
+              },
+              {
+                "kind": "value",
+                "value": 2
+              }
+            ]
+          }
+        },
+        {
+          "kind": "line",
+          "line": 49,
+          "text": "{$num2}",
+          "parts": [
+            {
+              "expr": {
+                "kind": "variable",
+                "name": "$num2"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "set",
+          "line": 51,
+          "name": "$num1",
+          "expr": {
+            "kind": "value",
+            "value": 45
+          }
+        },
+        {
+          "kind": "set",
+          "line": 52,
+          "name": "$num1",
+          "expr": {
+            "kind": "+",
+            "args": [
+              {
+                "kind": "variable",
+                "name": "$num1"
+              },
+              {
+                "kind": "value",
+                "value": 1
+              }
+            ]
+          }
+        },
+        {
+          "kind": "line",
+          "line": 55,
+          "text": "{$num1}",
+          "parts": [
+            {
+              "expr": {
+                "kind": "variable",
+                "name": "$num1"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "set",
+          "line": 57,
+          "name": "$num1",
+          "expr": {
+            "kind": "*",
+            "args": [
+              {
+                "kind": "variable",
+                "name": "$num1"
+              },
+              {
+                "kind": "value",
+                "value": 2
+              }
+            ]
+          }
+        },
+        {
+          "kind": "line",
+          "line": 60,
+          "text": "{$num1}",
+          "parts": [
+            {
+              "expr": {
+                "kind": "variable",
+                "name": "$num1"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "set",
+          "line": 62,
+          "name": "$num1",
+          "expr": {
+            "kind": "/",
+            "args": [
+              {
+                "kind": "variable",
+                "name": "$num1"
+              },
+              {
+                "kind": "value",
+                "value": 2
+              }
+            ]
+          }
+        },
+        {
+          "kind": "line",
+          "line": 65,
+          "text": "{$num1}",
+          "parts": [
+            {
+              "expr": {
+                "kind": "variable",
+                "name": "$num1"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "set",
+          "line": 67,
+          "name": "$num1",
+          "expr": {
+            "kind": "-",
+            "args": [
+              {
+                "kind": "variable",
+                "name": "$num1"
+              },
+              {
+                "kind": "value",
+                "value": 1
+              }
+            ]
+          }
+        },
+        {
+          "kind": "line",
+          "line": 70,
+          "text": "{$num1}",
+          "parts": [
+            {
+              "expr": {
+                "kind": "variable",
+                "name": "$num1"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "set",
+          "line": 73,
+          "name": "$num1",
+          "expr": {
+            "kind": "value",
+            "value": 46
+          }
+        },
+        {
+          "kind": "set",
+          "line": 74,
+          "name": "$num2",
+          "expr": {
+            "kind": "value",
+            "value": 1
+          }
+        },
+        {
+          "kind": "set",
+          "line": 75,
+          "name": "$num3",
+          "expr": {
+            "kind": "+",
+            "args": [
+              {
+                "kind": "variable",
+                "name": "$num1"
+              },
+              {
+                "kind": "variable",
+                "name": "$num2"
+              }
+            ]
+          }
+        },
+        {
+          "kind": "line",
+          "line": 78,
+          "text": "{$num3}",
+          "parts": [
+            {
+              "expr": {
+                "kind": "variable",
+                "name": "$num3"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "set",
+          "line": 80,
+          "name": "$num3",
+          "expr": {
+            "kind": "-",
+            "args": [
+              {
+                "kind": "variable",
+                "name": "$num1"
+              },
+              {
+                "kind": "variable",
+                "name": "$num2"
+              }
+            ]
+          }
+        },
+        {
+          "kind": "line",
+          "line": 83,
+          "text": "{$num3}",
+          "parts": [
+            {
+              "expr": {
+                "kind": "variable",
+                "name": "$num3"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "set",
+          "line": 85,
+          "name": "$num2",
+          "expr": {
+            "kind": "value",
+            "value": 2
+          }
+        },
+        {
+          "kind": "set",
+          "line": 86,
+          "name": "$num3",
+          "expr": {
+            "kind": "*",
+            "args": [
+              {
+                "kind": "variable",
+                "name": "$num1"
+              },
+              {
+                "kind": "variable",
+                "name": "$num2"
+              }
+            ]
+          }
+        },
+        {
+          "kind": "line",
+          "line": 89,
+          "text": "{$num3}",
+          "parts": [
+            {
+              "expr": {
+                "kind": "variable",
+                "name": "$num3"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "set",
+          "line": 91,
+          "name": "$num3",
+          "expr": {
+            "kind": "/",
+            "args": [
+              {
+                "kind": "variable",
+                "name": "$num1"
+              },
+              {
+                "kind": "variable",
+                "name": "$num2"
+              }
+            ]
+          }
+        },
+        {
+          "kind": "line",
+          "line": 94,
+          "text": "{$num3}",
+          "parts": [
+            {
+              "expr": {
+                "kind": "variable",
+                "name": "$num3"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "set",
+          "line": 97,
+          "name": "$str1",
+          "expr": {
+            "kind": "value",
+            "value": "foo"
+          }
+        },
+        {
+          "kind": "set",
+          "line": 98,
+          "name": "$str2",
+          "expr": {
+            "kind": "value",
+            "value": "bar"
+          }
+        },
+        {
+          "kind": "set",
+          "line": 99,
+          "name": "$str3",
+          "expr": {
+            "kind": "+",
+            "args": [
+              {
+                "kind": "variable",
+                "name": "$str1"
+              },
+              {
+                "kind": "value",
+                "value": "bar"
+              }
+            ]
+          }
+        },
+        {
+          "kind": "line",
+          "line": 102,
+          "text": "{$str3}",
+          "parts": [
+            {
+              "expr": {
+                "kind": "variable",
+                "name": "$str3"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "set",
+          "line": 104,
+          "name": "$str3",
+          "expr": {
+            "kind": "+",
+            "args": [
+              {
+                "kind": "variable",
+                "name": "$str1"
+              },
+              {
+                "kind": "variable",
+                "name": "$str2"
+              }
+            ]
+          }
+        },
+        {
+          "kind": "line",
+          "line": 107,
+          "text": "{$str3}",
+          "parts": [
+            {
+              "expr": {
+                "kind": "variable",
+                "name": "$str3"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

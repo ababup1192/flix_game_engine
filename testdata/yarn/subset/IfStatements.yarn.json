@@ -1,0 +1,74 @@
+{
+  "version": 2,
+  "note": "bin/fge yarn build が IfStatements.yarn から書いた木。手で直さない（.yarn を直して build する）",
+  "vocab": "",
+  "files": [
+    "IfStatements.yarn"
+  ],
+  "nodes": [
+    {
+      "title": "Start",
+      "file": "IfStatements.yarn",
+      "line": 1,
+      "headers": [],
+      "body": [
+        {
+          "kind": "if",
+          "line": 3,
+          "clauses": [
+            {
+              "line": 3,
+              "condition": {
+                "kind": "value",
+                "value": true
+              },
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 4,
+                  "speaker": "Player",
+                  "text": "Hey, Sally."
+                },
+                {
+                  "kind": "line",
+                  "line": 5,
+                  "speaker": "Sally",
+                  "text": "Oh! Hi."
+                },
+                {
+                  "kind": "line",
+                  "line": 6,
+                  "speaker": "Sally",
+                  "text": "You snuck up on me."
+                },
+                {
+                  "kind": "line",
+                  "line": 7,
+                  "speaker": "Sally",
+                  "text": "Don't do that."
+                }
+              ]
+            },
+            {
+              "line": 8,
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 9,
+                  "speaker": "Player",
+                  "text": "Hey."
+                },
+                {
+                  "kind": "line",
+                  "line": 10,
+                  "speaker": "Sally",
+                  "text": "Hi."
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

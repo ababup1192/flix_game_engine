@@ -1,6 +1,6 @@
 package yarn
 
-// フォルダ 1 つ分の検査: ノード名の重なり・jump の行き先と、語彙（vocab.json。正はゲームのコードの enum）との突き合わせ。
+// フォルダ 1 つ分の検査: ノード名の重なり・jump の行き先・変数の宣言と式の型と、語彙（vocab.json。正はゲームのコードの enum）との突き合わせ。
 // 語彙はゲームの Talk.vocab（中身は Yarn.vocabJson）が書く。形は flow の e2e/vocab.json と同じ決め方（キーの順は固定・配列）。
 
 import (
@@ -75,6 +75,7 @@ func CheckProgram(prog *Program, vocab *Vocab, vocabPath string) []Problem {
 			}
 		})
 	}
+	out = append(out, checkTypes(prog, byTitle, titles)...)
 	for _, n := range prog.Nodes {
 		file := n.File
 		walk(n.Body, func(s *Stmt) {
@@ -186,14 +187,75 @@ func Unreached(prog *Program, vocab *Vocab) []Problem {
 	return out
 }
 
-// walk は文を選択肢の中身まで順に辿る。
+// walk は文を選択肢と <<if>> の中身まで順に辿る。
 func walk(stmts []*Stmt, f func(*Stmt)) {
 	for _, s := range stmts {
 		f(s)
 		for _, o := range s.Options {
 			walk(o.Body, f)
 		}
+		for _, c := range s.Clauses {
+			walk(c.Body, f)
+		}
 	}
+}
+
+// checkTypes は <<declare>> の重なりと、式の変数・型・visited のノードを見る。
+func checkTypes(prog *Program, byTitle map[string]*Node, titles []string) []Problem {
+	var out []Problem
+	env := &typeEnv{vars: map[string]*Variable{}, nodes: map[string]bool{}, titles: titles}
+	for title := range byTitle {
+		env.nodes[title] = true
+	}
+	for _, v := range prog.Variables {
+		if first, dup := env.vars[v.Name]; dup {
+			out = append(out, Problem{File: v.File, Line: v.Line,
+				Msg: fmt.Sprintf("変数 %s の <<declare>> が 2 つある（先の物は %s:%d）", v.Name, first.File, first.Line)})
+			continue
+		}
+		env.vars[v.Name] = v
+		env.names = append(env.names, v.Name)
+	}
+	for _, n := range prog.Nodes {
+		file := n.File
+		expect := func(line int, x *Expr, want ValueType, what string) {
+			if x == nil {
+				return
+			}
+			got, err := env.typeOf(x)
+			switch {
+			case err != nil:
+				out = append(out, Problem{File: file, Line: line, Msg: fmt.Sprintf("%s: %v", what, err)})
+			case want != "" && got != want:
+				out = append(out, Problem{File: file, Line: line, Msg: fmt.Sprintf("%s は %s の式を書く（%s になっている）", what, want, got)})
+			}
+		}
+		parts := func(line int, ps []*Part) {
+			for _, part := range ps {
+				expect(line, part.Expr, "", "{} の式")
+			}
+		}
+		walk(n.Body, func(s *Stmt) {
+			parts(s.Line, s.Parts)
+			for _, o := range s.Options {
+				parts(o.Line, o.Parts)
+				expect(o.Line, o.Condition, TypeBool, "選択肢の <<if>>")
+			}
+			for i, c := range s.Clauses {
+				expect(c.Line, c.Condition, TypeBool, map[bool]string{true: "<<if>>", false: "<<elseif>>"}[i == 0])
+			}
+			if s.Kind == "set" {
+				v, ok := env.vars[s.Name]
+				if !ok {
+					out = append(out, Problem{File: file, Line: s.Line,
+						Msg: fmt.Sprintf("宣言していない変数 %s%s（<<declare %s = 初めの値>> を書く）", s.Name, nearHint(s.Name, env.names), s.Name)})
+					return
+				}
+				expect(s.Line, s.Expr, v.Value.Type, fmt.Sprintf("<<set %s>>（%s の変数）", s.Name, v.Value.Type))
+			}
+		})
+	}
+	return out
 }
 
 func setOf(xs []string) map[string]bool {

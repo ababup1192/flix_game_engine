@@ -1,0 +1,18 @@
+// lines
+line: `Number: 1`
+line: `Expression: 2`
+line: `String: string`
+line: `Bool: True`
+line: `Variable: variable`
+
+line: `variable is great!`
+
+// options
+option: `Option Number: 1`
+option: `Option Expression: 2`
+option: `Option String: string`
+option: `Option Bool: True`
+option: `Option Variable: variable`
+select: 1
+
+stop
