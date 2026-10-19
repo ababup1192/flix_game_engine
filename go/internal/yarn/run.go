@@ -4,6 +4,7 @@ package yarn
 //
 //	fge yarn build <フォルダか x.yarn>... [--out <パス>] [--vocab <パス> | --no-vocab]   読んで検査し、木の JSON を書く
 //	fge yarn check <パス>...                                                           書かずに、書いてある JSON とずれていないかも見る
+//	どちらも --json で Report（知らせ・ノードの一覧・書いたファイル）を 1 行の JSON にする（Studio の会話の画面が読む）
 
 import (
 	"bytes"
@@ -38,8 +39,54 @@ const (
 	remake    = "make talk-vocab"
 )
 
+// Report は --json の時に出す 1 回分の結果（Studio の会話の画面が誤りをその行に出し、ノードの一覧を作る）。
+// Problems は止めた知らせ（あれば dialogue.json は書かない）、Notes は止めない注意（届かないノードなど）。
+type Report struct {
+	Ok       bool         `json:"ok"`
+	Problems []ReportLine `json:"problems"`
+	Notes    []ReportLine `json:"notes"`
+	Nodes    []ReportNode `json:"nodes"`
+	Wrote    []string     `json:"wrote"`
+}
+
+// ReportLine は知らせ 1 つ（ファイルはゲームのルートから・行は 1 始まり・行の無い知らせは 0）。
+type ReportLine struct {
+	File        string `json:"file"`
+	Line        int    `json:"line"`
+	Msg         string `json:"msg"`
+	Unsupported bool   `json:"unsupported,omitempty"`
+}
+
+// ReportNode はノード 1 つ（title: の行）。
+type ReportNode struct {
+	Title string `json:"title"`
+	File  string `json:"file"`
+	Line  int    `json:"line"`
+}
+
+func lineOf(p Problem) ReportLine {
+	return ReportLine{File: p.File, Line: p.Line, Msg: p.Msg, Unsupported: p.Unsupported}
+}
+
+// RunJSON は Run と同じことをし、結果を Report で返す（人向けの文は捨てる）。
+func RunJSON(workRoot string, args []string) (Report, int) {
+	rep := Report{Problems: []ReportLine{}, Notes: []ReportLine{}, Nodes: []ReportNode{}, Wrote: []string{}}
+	var out, errOut strings.Builder
+	code := run(&out, &errOut, workRoot, args, &rep)
+	if code != 0 && len(rep.Problems) == 0 {
+		msg := strings.TrimSpace(errOut.String() + out.String())
+		rep.Problems = append(rep.Problems, ReportLine{Msg: msg})
+	}
+	rep.Ok = code == 0
+	return rep, code
+}
+
 // Run は fge yarn の入口。workRoot は流した場所（パスはそこから読み、木にはゲームのルートからのパスを書く）。
 func Run(out, errOut *strings.Builder, workRoot string, args []string) int {
+	return run(out, errOut, workRoot, args, &Report{})
+}
+
+func run(out, errOut *strings.Builder, workRoot string, args []string, rep *Report) int {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" || args[0] == "help" {
 		out.WriteString(usage)
 		if len(args) == 0 {
@@ -54,9 +101,9 @@ func Run(out, errOut *strings.Builder, workRoot string, args []string) int {
 	}
 	switch args[0] {
 	case "build":
-		return build(out, errOut, workRoot, paths, opts, false)
+		return build(out, errOut, workRoot, paths, opts, false, rep)
 	case "check":
-		return build(out, errOut, workRoot, paths, opts, true)
+		return build(out, errOut, workRoot, paths, opts, true, rep)
 	}
 	errOut.WriteString(fmt.Sprintf("知らないサブコマンド: %s%s\n", args[0], suggest.Hint(args[0], []string{"build", "check", "help"})))
 	return 2
@@ -157,7 +204,7 @@ func groupsOf(workRoot string, paths []string) ([]group, error) {
 	return out, nil
 }
 
-func build(out, errOut *strings.Builder, workRoot string, paths []string, opts options, checkOnly bool) int {
+func build(out, errOut *strings.Builder, workRoot string, paths []string, opts options, checkOnly bool, rep *Report) int {
 	groups, err := groupsOf(workRoot, paths)
 	if err != nil {
 		errOut.WriteString(err.Error() + "\n")
@@ -173,14 +220,14 @@ func build(out, errOut *strings.Builder, workRoot string, paths []string, opts o
 	}
 	code := 0
 	for _, g := range groups {
-		if c := buildGroup(out, workRoot, g, opts, checkOnly); c > code {
+		if c := buildGroup(out, workRoot, g, opts, checkOnly, rep); c > code {
 			code = c
 		}
 	}
 	return code
 }
 
-func buildGroup(out *strings.Builder, cwd string, g group, opts options, checkOnly bool) int {
+func buildGroup(out *strings.Builder, cwd string, g group, opts options, checkOnly bool, rep *Report) int {
 	// 木に書くパスと語彙のパスは、どこから流してもゲームのルート（project.json のあるフォルダ）から数える
 	// （エンジンのルートから流すコミットの門と、ゲームのルートから流す build で中身が変わらないように）。
 	workRoot := gameRootOf(g.dir, cwd)
@@ -223,12 +270,15 @@ func buildGroup(out *strings.Builder, cwd string, g group, opts options, checkOn
 		}
 		data, err := os.ReadFile(vocabPath)
 		if err != nil {
-			fmt.Fprintf(out, "%s: 語彙が無い — %s で書き出す（語彙を見ずに組むなら --no-vocab）\n", rel(workRoot, vocabPath), remake)
+			msg := fmt.Sprintf("語彙が無い — %s で書き出す（語彙を見ずに組むなら --no-vocab）", remake)
+			fmt.Fprintf(out, "%s: %s\n", rel(workRoot, vocabPath), msg)
+			rep.Problems = append(rep.Problems, ReportLine{File: rel(workRoot, vocabPath), Msg: msg})
 			return 1
 		}
 		v, err := ParseVocab(data)
 		if err != nil {
 			fmt.Fprintf(out, "%s: %v\n", rel(workRoot, vocabPath), err)
+			rep.Problems = append(rep.Problems, ReportLine{File: rel(workRoot, vocabPath), Msg: err.Error()})
 			return 1
 		}
 		vocab = v
@@ -248,8 +298,12 @@ func buildGroup(out *strings.Builder, cwd string, g group, opts options, checkOn
 	}
 	prog, problems := BuildProgram(names, texts, vocab, rel(workRoot, vocabPath))
 	prog.Vocab = rel(workRoot, vocabPath)
+	for _, n := range prog.Nodes {
+		rep.Nodes = append(rep.Nodes, ReportNode{Title: n.Title, File: n.File, Line: n.Line})
+	}
 	for _, p := range problems {
 		out.WriteString(p.String() + "\n")
+		rep.Problems = append(rep.Problems, lineOf(p))
 	}
 	if len(problems) > 0 {
 		fmt.Fprintf(out, "[yarn] %d 件の知らせ（%s は書かない）\n", len(problems), rel(workRoot, outPath))
@@ -257,6 +311,7 @@ func buildGroup(out *strings.Builder, cwd string, g group, opts options, checkOn
 	}
 	for _, p := range Unreached(prog, vocab) {
 		out.WriteString("注意: " + p.String() + "\n")
+		rep.Notes = append(rep.Notes, lineOf(p))
 	}
 	data, err := Encode(prog)
 	if err != nil {
@@ -266,6 +321,7 @@ func buildGroup(out *strings.Builder, cwd string, g group, opts options, checkOn
 	if checkOnly {
 		if !bytes.Equal(old, data) {
 			fmt.Fprintf(out, "%s が .yarn とずれている — bin/fge yarn build %s で書き直す\n", rel(workRoot, outPath), rel(workRoot, g.dir))
+			rep.Problems = append(rep.Problems, ReportLine{File: rel(workRoot, outPath), Msg: "書いてある木が .yarn とずれている"})
 			return 1
 		}
 		fmt.Fprintf(out, "[yarn] ok %s（%d ノード）\n", rel(workRoot, outPath), len(prog.Nodes))
@@ -280,6 +336,7 @@ func buildGroup(out *strings.Builder, cwd string, g group, opts options, checkOn
 		return 1
 	}
 	fmt.Fprintf(out, "[yarn] 書いた %s（%d ノード）\n", rel(workRoot, outPath), len(prog.Nodes))
+	rep.Wrote = append(rep.Wrote, rel(workRoot, outPath))
 	return 0
 }
 

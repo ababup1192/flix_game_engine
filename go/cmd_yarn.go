@@ -17,5 +17,10 @@ func cmdYarn(out, errOut *strings.Builder, rest []string, asJSON bool) int {
 		errOut.WriteString(err.Error() + "\n")
 		return 1
 	}
+	if asJSON {
+		rep, code := yarn.RunJSON(cwd, dropJSONFlag(rest))
+		emitJSON(out, rep)
+		return code
+	}
 	return yarn.Run(out, errOut, cwd, dropJSONFlag(rest))
 }

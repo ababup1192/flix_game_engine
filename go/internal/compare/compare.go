@@ -4,7 +4,8 @@
 //	            [--base-engine <版 | パス>]   基準側のエンジン（既定は今の作業場と同じ）
 //
 // BASE を一時の worktree に出し（終わったら消す）、両方で描き出す（重い所は heavy の鍵の内側）。
-// 比べるのは PNG・効果音と曲の WAV・音の表（gallery-sounds の sounds.png / music.png）・動画のコマ。
+// 比べるのは PNG・効果音と曲の WAV・音の表（gallery-sounds の sounds.png / music.png）・動画のコマと音
+// （音は mp4 の音声の md5 を先に比べ、違えば連番の sfx.txt を名前つきで比べる: 「-hit@12 +hit@13」）。
 // 出す物は --out の下に:
 //
 //	report.tsv           1 ファイル 1 行（same / diff / only-base / only-current）
@@ -38,6 +39,7 @@ import (
 	"github.com/ababup1192/flix_game_engine/go/internal/heavy"
 	"github.com/ababup1192/flix_game_engine/go/internal/proposal"
 	"github.com/ababup1192/flix_game_engine/go/internal/useengine"
+	"github.com/ababup1192/flix_game_engine/go/internal/videos"
 	"github.com/ababup1192/flix_game_engine/go/internal/wavfile"
 )
 
@@ -591,9 +593,15 @@ func diffVideo(o Options, name, basePath, curPath string) (string, string, strin
 	}
 	detail := fmt.Sprintf("%d / %d コマ", len(diffs), max(len(fa), len(fb)))
 	if len(diffs) == 0 {
-		detail = "コマは同じ（入れ物か音の差）"
+		detail = "コマは同じ"
 	} else {
 		detail += "・" + frameRanges(diffs)
+	}
+	switch sound := diffAudio(ff, basePath, curPath); {
+	case sound != "":
+		detail += "・" + sound
+	case len(diffs) == 0:
+		detail += "・音も同じ（入れ物だけの差）"
 	}
 	video := filepath.Join("videos", safeName(name)+".mp4")
 	if err := sideBySide(ff, basePath, curPath, filepath.Join(o.OutDir, video)); err != nil {
@@ -619,6 +627,38 @@ func diffVideo(o Options, name, basePath, curPath string) (string, string, strin
 		}
 	}
 	return detail, pair, video
+}
+
+// diffAudio は音の差の 1 行（同じなら空）。先に mp4 の音声の md5 を比べ、違えば連番の sfx.txt を名前つきで比べる
+// （どの音が何コマ目で増えた・消えたか）。sfx.txt が無い動画は「音声が違う」とだけ言う。
+func diffAudio(ff, basePath, curPath string) string {
+	ha, ea := audioHash(ff, basePath)
+	hb, eb := audioHash(ff, curPath)
+	if ea == nil && eb == nil && ha == hb {
+		return ""
+	}
+	sa, sb := videos.SfxBesideMp4(basePath), videos.SfxBesideMp4(curPath)
+	if sa == "" || sb == "" {
+		return "音声が違う（sfx.txt が無いので名前では比べていません）"
+	}
+	a, errA := videos.ReadSfx(sa)
+	b, errB := videos.ReadSfx(sb)
+	if errA != nil || errB != nil {
+		return "音声が違う（sfx.txt を読めません）"
+	}
+	if named := videos.DiffSfx(a, b); named != "" {
+		return named
+	}
+	return "音声が違う（鳴らした音の表は同じ — 音の中身か曲の差）"
+}
+
+// audioHash は mp4 の最初の音声の md5（音声が無ければ空の文字）。
+func audioHash(ff, path string) (string, error) {
+	out, err := exec.Command(ff, "-v", "error", "-i", path, "-map", "0:a:0?", "-f", "md5", "-").Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 func frameHashes(ff, path string) ([]string, error) {
