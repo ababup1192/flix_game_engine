@@ -133,25 +133,26 @@ pub mod SoftRaster {
     pub def droppedLine(x: Dropped): String =
         "[render] 描き出せない指定: ${x#attr} ×${x#count} — ${x#hint}"
 
-    /// 要求を 1 枚の PNG に描き出して書き出す。
+    /// 要求を 1 枚の PNG に描き出して書き出す。PNG を書く render* は RenderCache を通る
+    /// （同じ鍵の絵が取り置きにあれば塗らずに写す。バイト列は塗った時と同じ）。
     pub def render(req: RasterReq): Unit \ IO =
-        writePng(renderToImage(req), req#outPath)
+        RenderCache.writePlainPng(req, Nil, Map.empty(), Map.empty())
 
     /// 追加フォントつきの render。`extraFonts` はテクスチャ名（"font_girl" など。実機の
     /// project.json の fonts[].name に "font_" を付けた物）→ その本。既定フォント
     /// （req#fontTtf / req#fontAtlas）はそのまま効くので、混ぜたい本だけ渡せばよい。
     pub def renderFonts(req: RasterReq, extraFonts: Map[String, FontEntry]): Unit \ IO =
-        writePng(renderToImageFonts(req, Nil, extraFonts), req#outPath)
+        RenderCache.writePlainPng(req, Nil, extraFonts, Map.empty())
 
     /// シェーダー面つきの render（面は ShaderEval で画素評価して z 順に合流する）。
     pub def renderWithSurfaces(req: RasterReq, surfaces: List[SurfaceCmd]): Unit \ IO =
-        writePng(renderToImageWith(req, surfaces), req#outPath)
+        RenderCache.writePlainPng(req, surfaces, Map.empty(), Map.empty())
 
     /// 追加の描き出し済み画像（pass のレンダーターゲットなど）も混ぜて描き、PNG に書き出す render。
     pub def renderFull(req: RasterReq, surfaces: List[SurfaceCmd],
                        extraFonts: Map[String, FontEntry],
                        extraImages: Map[String, BufferedImage]): Unit \ IO =
-        writePng(renderToImageFull(req, surfaces, extraFonts, extraImages), req#outPath)
+        RenderCache.writePlainPng(req, surfaces, extraFonts, extraImages)
 
     /// 要求を 1 枚の BufferedImage に描き出して返す（PNG 書き出しはしない）。
     /// PNG スナップショット（render）と GIF アニメ（GifEncoder が 1 フレームずつ集める）の
@@ -212,10 +213,22 @@ pub mod SoftRaster {
     /// ファイルを読まない。スレッドをまたいで共有してよい（読むだけ・同じ物を 2 回入れても同じ絵）。
     /// 寿命は 1 回の描き出しの間だけにする — 長く持つと、保存し直した絵に気づかない。
     /// 読めなかったファイルは控えない（次のコマでまた探す・今と同じ振る舞い）。
-    pub enum TextureCache(ConcurrentHashMap[String, BufferedImage])
+    /// 2 つ目の表は RenderCache が使う、読んだ画像の画素の指紋（パス → SHA-256）。鍵と塗りが同じ画像を
+    /// 見るよう、指紋は必ずこの表の画像から取る。
+    pub enum TextureCache(ConcurrentHashMap[String, BufferedImage], ConcurrentHashMap[String, String])
 
     /// 空のキャッシュを作る（コマ列の描き出しの前に 1 本）。
-    pub def freshTextureCache(): TextureCache \ IO = TextureCache.TextureCache(new ConcurrentHashMap())
+    pub def freshTextureCache(): TextureCache \ IO = TextureCache.TextureCache(new ConcurrentHashMap(), new ConcurrentHashMap())
+
+    /// キャッシュからパスの画像を引く（無ければ読んで入れる。読み方は塗る時と同じ）。無い・読めないなら None。
+    pub def cachedTexture(cache: TextureCache, path: String): Option[BufferedImage] \ IO =
+        let TextureCache.TextureCache(table, _) = cache;
+        let hit: BufferedImage = table.get(path);
+        if (not Object.isNull(hit)) Some(hit)
+        else match loadTexture(path) {
+            case Some(img) => { discard table.putIfAbsent(path, img); Some(table.get(path)) }
+            case None      => None
+        }
 
     /// renderToImageLogged のテクスチャキャッシュつき版。画素は renderToImageLogged と 1 バイトも
     /// 変わらない（読む画像が同じで、読む回数だけが減る）。
@@ -669,14 +682,9 @@ pub mod SoftRaster {
 
     /// loadTextures のキャッシュ版。同じパスは 1 回だけ読む（読み方は loadTextures と同じ）。
     def loadTexturesCached(cache: TextureCache, paths: Map[String, String]): Map[String, BufferedImage] \ IO =
-        let TextureCache.TextureCache(table) = cache;
-        Map.foldLeftWithKey((acc, name, path) -> {
-            let hit: BufferedImage = table.get(path);
-            if (not Object.isNull(hit)) Map.insert(name, hit, acc)
-            else match loadTexture(path) {
-                case Some(img) => { discard table.put(path, img); Map.insert(name, img, acc) }
-                case None      => acc
-            }
+        Map.foldLeftWithKey((acc, name, path) -> match cachedTexture(cache, path) {
+            case Some(img) => Map.insert(name, img, acc)
+            case None      => acc
         }, (Map.empty(): Map[String, BufferedImage]), paths)
 
     /// BufferedImage を TYPE_INT_ARGB(2) にコピーする（indexed / grayscale を RescaleOp 可能にする）。

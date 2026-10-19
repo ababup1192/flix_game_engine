@@ -38,6 +38,7 @@ import (
 
 	"github.com/ababup1192/flix_game_engine/go/internal/heavy"
 	"github.com/ababup1192/flix_game_engine/go/internal/proposal"
+	"github.com/ababup1192/flix_game_engine/go/internal/rendercache"
 	"github.com/ababup1192/flix_game_engine/go/internal/useengine"
 	"github.com/ababup1192/flix_game_engine/go/internal/videos"
 	"github.com/ababup1192/flix_game_engine/go/internal/wavfile"
@@ -173,13 +174,23 @@ func run(o Options) error {
 		os.RemoveAll(tmp)
 		exec.Command("git", "-C", o.Game, "worktree", "prune").Run()
 	}()
-	fmt.Fprintf(o.Err, "[compare] 基準 %s (%s) を %s に出しています\n", o.Base, sha[:min(10, len(sha))], wt)
-	if out, err := exec.Command("git", "-C", o.Game, "worktree", "add", "--detach", wt, sha).CombinedOutput(); err != nil {
-		return fmt.Errorf("基準の worktree を作れません: %s", strings.TrimSpace(string(out)))
-	}
-	baseEngine, err := prepareBase(o, wt)
+	engineDir, err := resolveBaseEngine(o)
 	if err != nil {
 		return err
+	}
+	baseEngine := shortPath(engineDir)
+	cacheDir := baseCacheDir(o, sha, engineDir)
+	cached, hit := loadBaseCache(o, cacheDir)
+	if hit {
+		fmt.Fprintf(o.Err, "[compare] 基準 %s (%s) は前に描いた写しを使います: %s\n", o.Base, sha[:min(10, len(sha))], cacheDir)
+	} else {
+		fmt.Fprintf(o.Err, "[compare] 基準 %s (%s) を %s に出しています\n", o.Base, sha[:min(10, len(sha))], wt)
+		if out, err := exec.Command("git", "-C", o.Game, "worktree", "add", "--detach", wt, sha).CombinedOutput(); err != nil {
+			return fmt.Errorf("基準の worktree を作れません: %s", strings.TrimSpace(string(out)))
+		}
+		if err := prepareBase(o, wt, engineDir); err != nil {
+			return err
+		}
 	}
 	if interrupted.Load() {
 		return fmt.Errorf("止められました")
@@ -196,9 +207,14 @@ func run(o Options) error {
 	if err := os.MkdirAll(o.OutDir, 0o755); err != nil {
 		return err
 	}
-	base, cur, err := renderBoth(o, wt)
+	base, cur, err := renderBoth(o, wt, cached)
 	if err != nil {
 		return err
+	}
+	if !hit {
+		if err := saveBaseCache(o, cacheDir, base); err != nil {
+			fmt.Fprintf(o.Err, "[compare] 基準の写しを置けませんでした（比べは続けます）: %v\n", err)
+		}
 	}
 	items := compareSides(o, base, cur)
 	curEngine := shortPath(currentEngine(o.Game))
@@ -211,24 +227,20 @@ func run(o Options) error {
 		return err
 	}
 	printSummary(o, items, base.failed, cur.failed)
+	if removed, _ := rendercache.Prune(rendercache.Dir(), rendercache.DefaultMaxMB<<20); removed > 0 {
+		fmt.Fprintf(o.Err, "[compare] 塗った PNG の取り置きから古い %d 枚を消しました（上限 %d MB）\n", removed, rendercache.DefaultMaxMB)
+	}
 	return nil
 }
 
-// prepareBase は基準の worktree に local.mk と lib を置く。返すのはエンジンの短い名前。
+// resolveBaseEngine は基準側で使うエンジンの dir。
 //
 // 既定は今の作業場と同じエンジンで、比べるのはゲームの変更だけになる。
 // エンジンの直しを比べたいときは --base-engine（make compare BASE_ENGINE=）で基準側を変える。
-func prepareBase(o Options, wt string) (string, error) {
-	for _, sub := range []string{"external", "cache"} {
-		if src := filepath.Join(o.Game, "lib", sub); isDir(src) {
-			if err := copyTree(src, filepath.Join(wt, "lib", sub)); err != nil {
-				return "", err
-			}
-		}
-	}
-	uo := useengine.Options{Game: wt, Out: io.Discard, Err: o.Err, Make: o.Make, HeavyOpts: o.HeavyOpts}
+func resolveBaseEngine(o Options) (string, error) {
 	dir := currentEngine(o.Game)
 	if o.BaseEngine != "" {
+		uo := useengine.Options{Game: o.Game, Out: io.Discard, Err: o.Err, Make: o.Make, HeavyOpts: o.HeavyOpts}
 		var err error
 		if dir, err = useengine.Resolve(o.BaseEngine, uo); err != nil {
 			return "", err
@@ -237,10 +249,20 @@ func prepareBase(o Options, wt string) (string, error) {
 	if dir == "" {
 		return "", fmt.Errorf("今の作業場の local.mk に ENGINE がありません（先に fge use-engine <版>）")
 	}
-	if err := useengine.Use(dir, uo); err != nil {
-		return "", err
+	return dir, nil
+}
+
+// prepareBase は基準の worktree に local.mk と lib を置く。
+func prepareBase(o Options, wt, engineDir string) error {
+	for _, sub := range []string{"external", "cache"} {
+		if src := filepath.Join(o.Game, "lib", sub); isDir(src) {
+			if err := copyTree(src, filepath.Join(wt, "lib", sub)); err != nil {
+				return err
+			}
+		}
 	}
-	return shortPath(dir), nil
+	uo := useengine.Options{Game: wt, Out: io.Discard, Err: o.Err, Make: o.Make, HeavyOpts: o.HeavyOpts}
+	return useengine.Use(engineDir, uo)
 }
 
 func currentEngine(game string) string {
@@ -258,18 +280,23 @@ func currentEngine(game string) string {
 // WhyNot: 側ごとに鍵を取り直さないのは、基準側を描き終えたところで列の後ろへ並び直し、
 // 今側を描くまでにもう一度 10 分前後待っていたため（2026-10-16 の記録で 9 分・12 分）。
 // 1 回にすると次の長い物の待ちはそのぶん延びるが、長い物どうしの順番は並んだ順のまま。
-func renderBoth(o Options, wt string) (*side, *side, error) {
+func renderBoth(o Options, wt string, cached *side) (*side, *side, error) {
 	base := &side{dir: wt, images: map[string]string{}, sounds: map[string]string{}, videos: map[string]string{}}
 	cur := &side{dir: o.Game, images: map[string]string{}, sounds: map[string]string{}, videos: map[string]string{}}
 	steps := renderSteps(o)
 	desc := fmt.Sprintf("compare: 基準と今の描き出し (%s)", strings.Join(steps[0][1:], " "))
 	var baseStart, curStart time.Time
+	type job struct {
+		s     *side
+		label string
+		start *time.Time
+	}
+	jobs := []job{{base, "基準", &baseStart}, {cur, "今", &curStart}}
+	if cached != nil {
+		jobs = jobs[1:]
+	}
 	code := heavy.Hold(desc, o.Game, o.HeavyOpts, func(run heavy.Runner) int {
-		for _, sd := range []struct {
-			s     *side
-			label string
-			start *time.Time
-		}{{base, "基準", &baseStart}, {cur, "今", &curStart}} {
+		for _, sd := range jobs {
 			*sd.start = time.Now().Add(-2 * time.Second)
 			for _, step := range steps {
 				if interrupted.Load() {
@@ -294,7 +321,11 @@ func renderBoth(o Options, wt string) (*side, *side, error) {
 	if code != 0 {
 		return nil, nil, fmt.Errorf("描き出しで鍵を取れませんでした (終了コード %d)", code)
 	}
-	collectSide(o, base, baseStart)
+	if cached != nil {
+		base = cached
+	} else {
+		collectSide(o, base, baseStart)
+	}
 	collectSide(o, cur, curStart)
 	return base, cur, nil
 }

@@ -8,6 +8,22 @@
 ## AtomicFile — `engine_tools/src/AtomicFile.flix`
 - `pub def write(path: String, fill: File -> Unit \ IO): Unit \ IO`
 
+## DrawHash — `engine_tools/src/DrawHash.flix`
+- 1 コマの鍵。比べるときは `toHex` の字で比べる。
+  `pub type alias Key = Digest`
+- 鍵を 16 進の字へ（取り置きのファイル名・知らせに使う）。
+  `pub def toHex(key: Key): String`
+- PNG の書き方。同じ画素でも書き方でバイト列が違うので鍵に入れる。
+  `pub enum PngEncoding with Eq, ToString { case Plain case Filmstrip }`
+- 命令に出ない入力の指紋。RenderCache が IO で読んで渡す（ここでは読まない）。
+  `pub type alias Inputs = { engine = String, runtime = String, files = Map[String, String], images = Map[String, String] }`
+- 1 コマの描き出しに入る、ファイル以外の全部（SoftRaster.renderToImageCached の引数と同じ物）。
+  `pub type alias Frame = { req = SoftRaster.RasterReq, surfaces = List[SoftRaster.SurfaceCmd], extraFonts = Map[String, SoftRaster.FontEntry] }`
+- `pub def usedTextures(frame: Frame): Set[String]`
+- 鍵を作るのに中身の指紋が要るファイル（引く絵・既定の TTF・追加の TTF）。
+  `pub def filesOf(frame: Frame): List[String]`
+- `pub def computeKey(inputs: Inputs, encoding: PngEncoding, frame: Frame): Option[Key]`
+
 ## Filmstrip — `engine_tools/src/Filmstrip.flix`
 - 描き出しの結果（呼び側が HTML ビューアのメタデータに使う）。
   `pub type alias RenderResult = { frameCount = Int32, frameW = Int32, frameH = Int32, width = Int32, height = Int32, indexed = Bool, colors = Int32 }`
@@ -118,6 +134,20 @@
 - index.html（ハブ）・各 page_<scenario>.html・各 tag_<tag>.html を outDir に書き出す。
   `pub def generate(config: Config, items: List[Item]): Unit \ IO + Fs.FileWrite`
 
+## RenderCache — `engine_tools/src/RenderCache.flix`
+- 取り置きの口。コマ列の前に 1 本作って持ち回る（TTF の指紋を 1 回だけ読む）。
+  `pub type alias Session = SessionData`
+- 取り置きの口を作る（置き場・エンジンの fpkg の指紋・JVM と OS を読む）。
+  `pub def freshSession(): Session \ IO`
+- 塗った・写した・鍵なしで塗った枚数を 1 行に（描き出しの終わりに出す）。
+  `pub def statsLine(session: Session): String \ IO`
+- 動画・GIF のコマを 1 枚 req#outPath へ書く（Filmstrip.renderFrame と同じバイト列）。
+  `pub def writeFramePng(session: Session, req: SoftRaster.RasterReq, surfaces: List[SoftRaster.SurfaceCmd], extraFonts: Map[String, SoftRaster.FontEntry], extraImages: Map[String, BufferedImage], warnLog: SoftRaster.TexWarnLog, textures: SoftRaster.TextureCache): Unit \ IO`
+- SoftRaster.render* の書き方（フルカラー）で req#outPath へ書く。SoftRaster.render* の中身。
+  `pub def writePlainPng(req: SoftRaster.RasterReq, surfaces: List[SoftRaster.SurfaceCmd], extraFonts: Map[String, SoftRaster.FontEntry], extraImages: Map[String, BufferedImage]): Unit \ IO`
+- 1 コマの鍵（writeFramePng が取り置きに使うのと同じ物）。鍵を作れなければ None。
+  `pub def keyOf(session: Session, encoding: DrawHash.PngEncoding, frame: DrawHash.Frame, extraImages: Map[String, BufferedImage], textures: SoftRaster.TextureCache): Option[DrawHash.Key] \ IO`
+
 ## RenderLint — `engine_tools/src/RenderLint.flix`
 - 要素の描画種別（リンタ内の分類。ゲームの widget 名とは独立）。
   `pub enum Kind with Eq { case Text case Box case Sprite case Poly }`
@@ -206,7 +236,7 @@
   `pub def dropped(ds: List[GameEngine.Drawable]): List[Dropped]`
 - 報告を 1 行の文へ（呼び出し側がそのまま出せる形）。
   `pub def droppedLine(x: Dropped): String`
-- 要求を 1 枚の PNG に描き出して書き出す。
+- 要求を 1 枚の PNG に描き出して書き出す。PNG を書く render* は RenderCache を通る
   `pub def render(req: RasterReq): Unit \ IO`
 - 追加フォントつきの render。`extraFonts` はテクスチャ名（"font_girl" など。実機の
   `pub def renderFonts(req: RasterReq, extraFonts: Map[String, FontEntry]): Unit \ IO`
@@ -229,9 +259,11 @@
 - renderToImageFull の欠け名控えつき版。控えは知らせの回数にだけ効き、
   `pub def renderToImageLogged(req: RasterReq, surfaces: List[SurfaceCmd], extraFonts: Map[String, FontEntry], extraImages: Map[String, BufferedImage], warnLog: TexWarnLog): BufferedImage \ IO`
 - texturePath の画像を 1 回だけ読むためのキャッシュ（ファイルのパス → ARGB にそろえた画像）。
-  `pub enum TextureCache(ConcurrentHashMap[String, BufferedImage])`
+  `pub enum TextureCache(ConcurrentHashMap[String, BufferedImage], ConcurrentHashMap[String, String])`
 - 空のキャッシュを作る（コマ列の描き出しの前に 1 本）。
   `pub def freshTextureCache(): TextureCache \ IO`
+- キャッシュからパスの画像を引く（無ければ読んで入れる。読み方は塗る時と同じ）。無い・読めないなら None。
+  `pub def cachedTexture(cache: TextureCache, path: String): Option[BufferedImage] \ IO`
 - renderToImageLogged のテクスチャキャッシュつき版。画素は renderToImageLogged と 1 バイトも
   `pub def renderToImageCached(req: RasterReq, surfaces: List[SurfaceCmd], extraFonts: Map[String, FontEntry], extraImages: Map[String, BufferedImage], warnLog: TexWarnLog, cache: TextureCache): BufferedImage \ IO`
 - pass（レンダーターゲット）描き出し用の入口。req#background は使わない — 塗るかどうか

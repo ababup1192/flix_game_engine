@@ -10,6 +10,8 @@
 package useengine
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -53,6 +55,9 @@ type State struct {
 	SetToml       string `json:"setTomlVersion,omitempty"`
 	FpkgSize      int64  `json:"fpkgSize"`
 	FpkgModTime   string `json:"fpkgModTime"`
+	// packages.lock のエンジンの行を書き換えた時の、最初の姿と書き換えた後の姿（--restore で戻す）。
+	OrigLock string `json:"origLock,omitempty"`
+	SetLock  string `json:"setLock,omitempty"`
 }
 
 // Options は差し替えられる所。
@@ -198,6 +203,9 @@ func isEngineReady(dir string) bool {
 	_, err := findFpkg(dir)
 	return err == nil && isFile(filepath.Join(dir, "mk", "game.mk"))
 }
+
+// FindFpkg はエンジン dir の組んだ fpkg（use-engine がゲームの lib/ へ写す物）。
+func FindFpkg(engine string) (string, error) { return findFpkg(engine) }
 
 func findFpkg(engine string) (string, error) {
 	for _, name := range []string{"package.fpkg", "engine_full.fpkg"} {
@@ -354,6 +362,9 @@ func Use(dir string, o Options) error {
 		filepath.Join(dest, "flix_game_engine-"+version+".toml")); err != nil {
 		return err
 	}
+	if err := syncLock(o, &st, version, fpkg, filepath.Join(dir, "engine_full", "flix.toml")); err != nil {
+		return err
+	}
 	if err := writeLocalMk(o.Game, dir, st); err != nil {
 		return err
 	}
@@ -365,6 +376,78 @@ func Use(dir string, o Options) error {
 	}
 	fmt.Fprintf(o.Out, "[use-engine] %s → エンジン %s (v%s)\n", filepath.Base(o.Game), shortPath(dir), version)
 	return nil
+}
+
+// syncLock は packages.lock に今の版のエンジンの行があれば、指紋を写した fpkg と toml にそろえる。
+//
+// WhyNot: lock をそのままにしない — 同じ版の字のまま手元で組んだエンジン（ブランチの作業場）へ向けると、
+// lock が配布版の指紋を持ったままなので、flix が「packages.lock の記録と違う」で組めない
+// （compare の BASE_ENGINE=<パス> の基準側も同じ所で止まる）。
+func syncLock(o Options, st *State, version, fpkg, toml string) error {
+	lockPath := filepath.Join(o.Game, "packages.lock")
+	data, err := os.ReadFile(lockPath)
+	if err != nil {
+		return nil
+	}
+	fpkgSum, err := sha256File(fpkg)
+	if err != nil {
+		return err
+	}
+	tomlSum, err := sha256File(toml)
+	if err != nil {
+		return err
+	}
+	updated, found := withEngineLock(string(data), version, tomlSum, fpkgSum)
+	if !found || updated == string(data) {
+		return nil
+	}
+	if st.SetLock == "" {
+		st.OrigLock = string(data)
+	}
+	st.SetLock = updated
+	if err := os.WriteFile(lockPath, []byte(updated), 0o644); err != nil {
+		return err
+	}
+	fmt.Fprintf(o.Err, "[use-engine] packages.lock のエンジン v%s の指紋を向けた先の fpkg にそろえました（--restore で戻る。commit しない）\n", version)
+	return nil
+}
+
+var lockKeyRe = regexp.MustCompile(`^(\s*(toml|fpkg)\s*=\s*)"sha256:[0-9a-f]*"`)
+
+// withEngineLock は lock の [packages."github:ababup1192/flix_game_engine"."<版>"] の toml・fpkg の行を差し替える。
+// 節が無ければ found=false。
+func withEngineLock(lock, version, tomlSum, fpkgSum string) (string, bool) {
+	header := `[packages."github:ababup1192/flix_game_engine"."` + version + `"]`
+	lines := strings.Split(lock, "\n")
+	in, found := false, false
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "[") {
+			in = trimmed == header
+			found = found || in
+			continue
+		}
+		if !in {
+			continue
+		}
+		if m := lockKeyRe.FindStringSubmatch(line); m != nil {
+			sum := fpkgSum
+			if m[2] == "toml" {
+				sum = tomlSum
+			}
+			lines[i] = lockKeyRe.ReplaceAllString(line, `${1}"sha256:`+sum+`"`)
+		}
+	}
+	return strings.Join(lines, "\n"), found
+}
+
+func sha256File(p string) (string, error) {
+	data, err := os.ReadFile(p)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:]), nil
 }
 
 // refuseSharedLib は lib（かその中のエンジンのフォルダ）が symlink なら断る。
@@ -441,6 +524,16 @@ func Restore(o Options) error {
 			}
 		} else {
 			fmt.Fprintf(o.Err, "[use-engine] flix.toml の版が %s から変わっているので触りません\n", st.SetToml)
+		}
+	}
+	if st.SetLock != "" {
+		lockPath := filepath.Join(o.Game, "packages.lock")
+		if data, err := os.ReadFile(lockPath); err == nil && string(data) == st.SetLock {
+			if err := os.WriteFile(lockPath, []byte(st.OrigLock), 0o644); err != nil {
+				return err
+			}
+		} else {
+			fmt.Fprintln(o.Err, "[use-engine] packages.lock が use-engine の後に変わっているので触りません")
 		}
 	}
 	localMk := filepath.Join(o.Game, "local.mk")

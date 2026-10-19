@@ -157,3 +157,46 @@ func TestMissingVersionWithoutCloneStopsAndSaysWhatToDo(t *testing.T) {
 		t.Fatalf("clone が分からない時に止まって手を知らせない: %v", err)
 	}
 }
+
+func lockFor(version, toml, fpkg string) string {
+	return "[lock]\nversion = 1\n\n[packages.\"github:ababup1192/flix_game_engine\".\"" + version + "\"]\n" +
+		"toml    = \"sha256:" + toml + "\"\nfpkg    = \"sha256:" + fpkg + "\"\n"
+}
+
+func TestUseAlignsLockWhenSameVersion(t *testing.T) {
+	eng := fakeEngine(t, "0.35.16", "new-fpkg")
+	game := fakeGame(t, true)
+	write(t, filepath.Join(game, "packages.lock"), lockFor("0.35.16", "aa", "bb"))
+	if err := Use(eng, opts(game)); err != nil {
+		t.Fatal(err)
+	}
+	want, _ := sha256File(filepath.Join(eng, "engine_full", "artifact", "package.fpkg"))
+	data, _ := os.ReadFile(filepath.Join(game, "packages.lock"))
+	if !strings.Contains(string(data), `fpkg    = "sha256:`+want+`"`) {
+		t.Fatalf("lock=%s", data)
+	}
+}
+
+func TestRestorePutsLockBack(t *testing.T) {
+	eng := fakeEngine(t, "0.35.16", "new-fpkg")
+	game := fakeGame(t, true)
+	orig := lockFor("0.35.16", "aa", "bb")
+	write(t, filepath.Join(game, "packages.lock"), orig)
+	if err := Use(eng, opts(game)); err != nil {
+		t.Fatal(err)
+	}
+	if err := Restore(opts(game)); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(filepath.Join(game, "packages.lock"))
+	if string(data) != orig {
+		t.Fatalf("lock=%s", data)
+	}
+}
+
+func TestLockOfOtherVersionIsUntouched(t *testing.T) {
+	got, found := withEngineLock(lockFor("0.35.15", "aa", "bb"), "0.35.16", "cc", "dd")
+	if found || !strings.Contains(got, "sha256:bb") {
+		t.Fatalf("found=%v got=%s", found, got)
+	}
+}

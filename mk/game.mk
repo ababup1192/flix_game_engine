@@ -259,6 +259,9 @@ flow-vocab:
 video-entries:
 	@fge=bin/fge; [ -x "$$fge" ] || fge="$(ENGINE)/bin/fge"; "$$fge" video-entries --root .
 
+# 基準を作り直す回は取り置きを写さず全部塗り、前の取り置きと突き合わせる（docs/render-cache.md）。
+# 写した絵を基準にすると、取り置きが汚れていた時にそれが正しい絵として固まる。
+reference-update: export FGE_RENDER_CACHE := verify
 reference-update: render-all
 	"$(ENGINE)/bin/reference-update.sh"
 
@@ -355,10 +358,13 @@ agent-eval-compare:
 # 色票（Studio の編集画面が読む写し）。PALETTE を決めたゲームにだけ口が生える。
 # render のたびに無条件で走らせると、絵を描くのと同じだけのコンパイル時間を二重に払う。
 # 入力の洗い出しに漏れがあったときは `make palette` で無条件に作り直す。
+# Palette.write は中身が同じなら書き直さない（unchanged）ので、時刻は make が touch で新しくする
+# （そうしないと写しが入力より古いまま残り、make のたびに Palette.write が走る）。
 ifdef PALETTE
 .PHONY: palette
 $(PALETTE): $(PALETTE_DEPS)
 	$(HEADLESS_RUN) Palette.write
+	@touch $@
 
 palette:
 	$(HEADLESS_RUN) Palette.write

@@ -10,18 +10,19 @@
 # 入口の拾い方: src の `pub def 名前(): Unit \ IO =`（引数なし・効果は IO だけ・1 行）を全部拾い、
 # 環境変数 FGE_ENTRY で選ぶ小さな main（FgeHeadlessMain）を足してから jar にする。
 # Flix は main から届かない関数を jar に入れないので、入口を main に並べておく必要がある。
-# 拾えない形の入口（引数あり・別の効果つき・複数行・mod が 2 つ以上あるファイル）と、jar を
-# 作れなかった時は、今までどおり flix run に回す（速くならないだけで、描き出しは止めない）。
+# 拾えない形の入口（引数あり・別の効果つき・複数行・mod が 2 つ以上あるファイル）は flix run に回す。
+# jar を作れなかった時は、エラーの最後を見せて止める（FGE_HEADLESS_FALLBACK=1 の時だけ flix run で続ける）。
 #
 # jar の置き場: build/headless/（git に入れない）。作る場所は build/headless/proj で、
 # ゲームの src を写した上に FgeHeadlessMain.flix を足す（ゲームの src には何も書かない）。
 # 2 本の make が同時に来ても作るのは 1 本だけ（build/headless/.lock で順番に。鍵に作り手の pid を
 # 書き、作り手が落ちていたら次の人が外す。15 分待っても空かなければ flix run で流す）。
 # 作り直しは別名で書いてから mv するので、走っている JVM の jar は消えない。
-# 作れなかった時は build/headless/.failed に印を残し、src などがそれより新しくなるまで作り直さない
+# 作れなかった時は build/headless/.failed に印（エラーの最後の 15 行）を残し、src などがそれより新しくなるまで作り直さない
 # （作れない状態のまま毎回コンパイルを 2 回払わないため）。jar を作り直させたい時は rm -rf build/headless。
 #
-# 環境変数: FLIX_CMD = jar を作る flix（既定はこのエンジンの bin/flix）。1 語のパスで渡す
+# 環境変数: FGE_HEADLESS_FALLBACK=1 = jar を作れない時も flix run で続ける（既定は止める）。
+#           FLIX_CMD = jar を作る flix（既定はこのエンジンの bin/flix）。1 語のパスで渡す
 # （相対パスはここで絶対パスにする — jar は build/headless/proj へ移って作るため）。
 #           JAVA = jar を流す java（既定は PATH の java、無ければエンジンの devbox の java）。
 #           HEADLESS_JAVA_OPTS = java へ足す旗（既定の旗の後ろに付くので上書きできる。例: -Xss64m）。
@@ -63,6 +64,28 @@ list_entries() {
 }
 
 # jar を使わずに flix run で流す。HEADLESS_JAVA_OPTS はここでは効かない（旗は bin/flix の物）ので知らせる。
+# 拾えない形の入口以外（jar を作れなかった・鍵が空かない）は止める。flix run に落とすと毎回の全量
+# コンパイルで数分遅くなり、測った時間も狂ったまま気づけない。続けたい時だけ FGE_HEADLESS_FALLBACK=1。
+loud_fallback() {
+    {
+        echo "================================================================"
+        echo "[headless-run] jar を使えません — $1"
+        if [ -s "$out/.failed" ]; then
+            echo "  作った時のエラーの最後（$out/build.log）:"
+            sed 's/^/    /' "$out/.failed"
+        fi
+        echo "  理由を直すと src が新しくなり次から作り直す。rm -rf build/headless でも作り直す。"
+        if [ "${FGE_HEADLESS_FALLBACK:-}" = 1 ]; then
+            echo "  FGE_HEADLESS_FALLBACK=1 なので flix run（全量コンパイル）で流す — この回は数分遅く、測った時間は jar の時と比べられない。"
+        else
+            echo "  止めます（flix run で続けたい時だけ FGE_HEADLESS_FALLBACK=1）。"
+        fi
+        echo "================================================================"
+    } >&2
+    if [ "${FGE_HEADLESS_FALLBACK:-}" = 1 ]; then run_with_flix; fi
+    exit 3
+}
+
 run_with_flix() {
     if [ -n "${HEADLESS_JAVA_OPTS:-}" ]; then
         echo "[headless-run] flix run で流すので HEADLESS_JAVA_OPTS（${HEADLESS_JAVA_OPTS}）は効かない（深い再帰はスタックが足りずに落ちうる）" >&2
@@ -127,7 +150,11 @@ build_jar() {
     if [ -d lib ]; then ln -sfn "$PWD/lib" "$proj/lib"; fi
     build_dispatcher > "$proj/src/$main.flix"
     echo "[headless-run] jar を作る（src か lib が変わった）" >&2
-    (cd "$proj" && "$flix" build-fatjar --entrypoint "$main.main" >&2) || return 1
+    # 作った時の出力は build.log にも残す（作れなかった理由を、次からの回の知らせでも見せるため）。
+    # pipefail（頭の set）なので、作るのに失敗すれば tee が成功しても列全体が失敗になる。
+    if ! (cd "$proj" && "$flix" build-fatjar --entrypoint "$main.main") 2>&1 | tee "$out/build.log" >&2; then
+        return 1
+    fi
     built=$(ls "$proj"/artifact/*.jar 2>/dev/null | head -1)
     [ -n "$built" ] || return 1
     mv "$built" "$jar.tmp.$$"
@@ -151,8 +178,7 @@ if is_stale; then
         [ "$waited" = 0 ] && echo "[headless-run] pid ${owner:-?} が jar を作っているので待つ" >&2
         waited=$((waited + 2))
         if [ "$waited" -ge 900 ]; then
-            echo "[headless-run] 15 分待っても鍵が空かないので flix run で流す（鍵: $lock）" >&2
-            run_with_flix
+            loud_fallback "15 分待っても jar を作る鍵が空かない（鍵: $lock）"
         fi
         sleep 2
     done
@@ -163,13 +189,17 @@ if is_stale; then
     if failed_before; then built_ok=0
     elif is_stale; then
         if build_jar; then rm -f "$out/.failed"
-        else built_ok=0; touch -r "$out/.started" "$out/.failed"; fi
+        else
+            built_ok=0
+            # 色の符号を落とした最後の 15 行（MethodTooLargeException などの理由が見える所）。
+            sed 's/\x1b\[[0-9;]*m//g' "$out/build.log" 2>/dev/null | grep -v '^[[:space:]]*$' | tail -15 > "$out/.failed"
+            touch -r "$out/.started" "$out/.failed"
+        fi
     fi
     rm -f "$lock/pid"; rmdir "$lock" 2>/dev/null || true
     trap - EXIT
     if [ "$built_ok" = 0 ]; then
-        echo "[headless-run] jar を作れなかったので flix run で流す（前に作った時のエラーを見る。直したら src が新しくなり、次から作り直す）" >&2
-        run_with_flix
+        loud_fallback "jar を作れなかった（JVM のメソッドが大きすぎる MethodTooLargeException もここに来る）"
     fi
 fi
 
