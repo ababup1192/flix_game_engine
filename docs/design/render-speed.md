@@ -179,7 +179,10 @@ pub mod ContentCache {
 }
 ```
 
-- **記録するのは Fs.FileRead の全部の操作**: 読んだ中身（ハンドラが受け取ったバイト列そのものから SHA を取る。後から読み直さないので、
+- 実装（2026-10-19）: Flix 0.78 の `Fs.FileRead` の操作は read・readLines・readBytes だけで、exists は `Fs.FileTest`、一覧は `Fs.DirList` にある。
+  `loadOrBuild` は Fs.FileRead を、`loadOrBuildWithDirs` は 3 つ全部を記録する。build の型は `Unit -> a \ ef`（結果は `ef - Fs.FileRead` + Fs.FileRead + IO。標準の runWithIO と同じ形）。
+  無いファイルを読んだ答え（NotFound）も記録するので、`loadOrBuild` でもファイルが足されれば作り直す。
+- **記録するのは全部の操作**: 読んだ中身（ハンドラが受け取ったバイト列そのものから SHA を取る。後から読み直さないので、
   作っている最中の保存を取りこぼさない）・`exists` の答え（無かった物は `missing`）・一覧の並び（sprite が増えた・Doc が足されたが見える）。
   次の要求では、記録した操作を同じ順にもう一度だけ行い、答えが全部同じなら前の値を使う。
 - **params ごとに 4 つまで持つ**（Day と Night を交互に撮るたびに作り直さない）。古い順に捨てる。
@@ -224,7 +227,18 @@ checkd が偽の緑を返したのは、常駐が見ている物とディスク�
   入口は長い仕事でも 1 コマ・1 場面ごとに進みの行を出す（今も `[render]` の行がある）。
 - **数の上限は checkd と同じ所から引く。** `bin/lint-rules/hooks.json` に `resident.maxDaemons` と 1 本のメモリ予算を足す。上限を超える根では常駐を立てず、素の道で流す。
   JVM には `-Xmx` で蓋をする（checkd で、蓋が無いと太り続けた経緯）。
-- **寿命**: 誰も要求しなければ自分で終わる（`HEADLESS_IDLE_SECS`・既定 600 のまま）。要求 200 回かメモリの上限で、使い捨てて立て直す。
+- **寿命は短く、使い方で延ばす（依頼主の希望 2026-10-19: メモリを持ったまま待つ時間を短く）。**
+  - 既定の待ちの寿命は **180 秒**（`HEADLESS_IDLE_SECS` で変えられる）。`/run` が来るたびに、そこから 180 秒に置き直す。
+  - **1 枚撮りが続く時だけ延ばす。** 会話の列の要求（Studio の会話・`bin/fge talk shot` の `/start`・`/step`・`view=shot`）が来たら、
+    寿命をそこから **600 秒**に延ばす（`HEADLESS_TALK_IDLE_SECS`）。人が台本を書きながら撮り続ける間だけ温かいまま残る。
+  - **束の口は終わったら常駐を自分で畳む。** `reference-check`・`render-all`・`compare` の今側（mk/game.mk の口）は、成否にかかわらず
+    最後に `bin/fge resident stop` を流す（次の束まで残さない）。束の途中で起こした常駐も、束の外から起こした常駐も、同じく畳む。
+    畳んだ後の 1 枚撮りは、次に要った人がまた起こす。
+  - 要求 200 回かメモリの上限で、使い捨てて立て直す。
+- **同時に 2 つ以上立たない。** ゲームの根ごとに `build/headless/resident.lock` の鍵を取った人だけが起こし、`resident.json` の pid が生きていれば
+  起こさない。Studio の会話の画面も同じ鍵と `resident.json` を通る。
+- **`bin/fge resident status` で見える物**: 立っているか・pid・使っているメモリ（RSS）・残りの寿命（秒）と今の寿命の幅（180 か 600）・
+  流した数・走っている要求。機械の全部の根の常駐を並べる `status --all` も持つ。
 - **compare の基準側では常駐を使わない。** 基準は一時の worktree で描き、終わったら消す（`compare.go:170-178`）。二度と使わない JVM を残さないよう、`HEADLESS_RESIDENT=0` で流す。
 
 ### 2.5 常駐でも結果が同じであること（決定性）
@@ -454,7 +468,7 @@ iopure（`ababup1192/id-x-iopure`）の形の上に積む。
 |---|---|---|
 | 0 | 今の数を測る | transition 動画・reference-check 194 枚・1 枚撮り（novel・internet_dungeon）の今の数と、その内訳（JVM・組む・命令・塗る・PNG・mix）を `docs/performance.md` に残す |
 | 1 | 柱 2（別の担当）+ basecache（鍵に fpkg の SHA と painter） | 194 枚が全部同じときの reference-check が、今の **10% 以下**（実測は 12.4 / 223.7 = 5.5%）。同じ入力 2 回で、鍵が全部一致する |
-| 2 | 柱 1a: `Request`・`Job`・`serveJobs`・`/run`・`fge resident`・中身の指紋・env の照合・jar が作れない時の大きな知らせ・Studio との共有 | `make render SHOT=title` の 2 回目が、コールドの **60% 以下**。`fge resident verify` の 5 つが `SceneRender.all` と `FlowVideo`（transition）で差 0。src を 1 行変えた次の要求が新しい jar で答える（agent-eval のお題）。SHOT・FLOW を変えた続けての要求が、どれも常駐で正しく答える。engine とゲームの src で、入口の頭の外の `System.getenv` / `Sys.Env.` が 0 件（lint） |
+| 2 | 柱 1a: `Request`・`Job`・`serveJobs`・`/run`・`fge resident`・中身の指紋・env の照合・jar が作れない時の大きな知らせ・Studio との共有 | `make render SHOT=title` の 2 回目が、コールドの **60% 以下**。`fge resident verify` の 5 つが `SceneRender.all` と `FlowVideo`（transition）で差 0。src を 1 行変えた次の要求が新しい jar で答える（agent-eval のお題）。SHOT・FLOW を変えた続けての要求が、どれも常駐で正しく答える。`make reference-check` の後に常駐が残っていない（`resident status` が「立っていない」）。何もしなければ 180 秒で消え、`talk shot` を続けた時は 600 秒残る。同じ根に 2 つ目を起こそうとしても 1 つのまま。`resident status` にメモリと残りの寿命が出る。engine とゲームの src で、入口の頭の外の `System.getenv` / `Sys.Env.` が 0 件（lint） |
 | 3 | 柱 1b: `ContentCache`・`RenderKit.Shared / PerRequest` | 常駐の 1 枚撮りで、**塗りを除いた時間が 0.4 s 以下**（今は約 2.5 s）。Doc を保存した直後の 1 枚に、その保存が効いている（10 回中 10 回）。PNG を描き直した直後の 1 枚に、新しい絵が出る（10 回中 10 回） |
 | 4a | render_gl の塗りのコアを切り出す（相談してから） | `make gl-parity` が前後で差 0。**実機の道（窓ありで遊ぶ時）の 1 コマの時間を、変更の前と後で同じ場面・同じ機械で測り、悪くなっていない（差が測り誤差の内）。** あわせて R3 の予算の中（`docs/performance.md`） |
 | 4b | 柱 3: `GlOffscreen`・`VideoOut`・frames.json・mix の受け口 | transition 910 コマの「入口の始まりからフレームの書き終わりまで」が、今の **25% 以下**（今は約 210 s → 50 s 前後）。mix は別に測る。`FGE_GPU=off` と画面の無い所（ssh の中）で、コマ数・sfx.txt・drawhash.txt が同じ。frames.json に painter が入る |
