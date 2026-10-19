@@ -1,0 +1,10 @@
+# 表紙から物語を始め、最初の選択肢で 2 つ目（画商を問いただす）を選ぶと、灯りが 1 つ消えて画商の節へ進む。
+start title
+tap confirm                          # 表紙 → 物語
+drive reader until choice max 60     # 台詞を読み終えて送る（選択肢が開くまで）
+tap next                             # 2 つ目へ
+expect cursor=1
+tap confirm                          # 選ぶ
+expect section=dealer&lamps=2
+mark dealer
+drive reader until section=clock max 60

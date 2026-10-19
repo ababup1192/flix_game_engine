@@ -129,7 +129,7 @@
 - 生成したドット絵アトラス 1 枚ぶんの受け渡し。
   `pub type alias AtlasUpload = { texture = String, key = String, baked = PxSpriteAtlas.Baked }`
 - ゲーム 1 本の宣言。make で空を作り、addStartup / addSystem / reloadOn / withView /
-  `pub type alias App[w: Type, ef: Eff] = { init = Vec2.Vec2 -> w \ ef, startupSystems = List[w -> w \ ef], updateSystems = List[(Frame, w) -> w \ ef], reload = Option[(GameEngine.Key, w -> w \ {Fs.FileRead})], watch = List[(String, w -> w \ {Fs.FileRead})], view = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], passes = w -> List[Render.Pass] \ ef, fonts = List[String], camera = Option[w -> Vec2.Vec2 \ ef], zoom = Option[w -> Float64 \ ef], cameraBounds = Option[w -> Rect2.Rect2 \ ef], parallaxLayers = List[(Float64, (ViewCtx, w) -> List[Render.PlacedItem] \ ef)], hudView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], audio = { before = w, after = w } -> List[String] \ ef, sustained = w -> List[Sustain] \ ef, mixer = Option[w -> AudioMixer.Mixer \ ef], quit = (Frame, w) -> Bool \ ef, closeRequest = Option[w -> w \ ef], debug = Bool, debugView = Option[(String, w -> (List[GameEngine.Drawable], List[GameEngine.TileMapRenderCmd], List[GameEngine.PolygonRenderCmd]) \ ef)], worldDump = Option[(Rect2.Rect2, w) -> String \ ef], annotationContext = Option[w -> Annotate.Table \ ef], staticLayer = Option[{ key = w -> GameEngine.StaticKey, build = w -> List[Render.PlacedItem] }], tileLayers = Option[w -> List[TileLayerSpec]], spriteAtlases = w -> List[AtlasUpload], pixelSnap = w -> Float64, statusLine = Option[w -> String \ ef], remoteRender = Option[Unit -> List[String] \ IO], remoteHandlers = List[(String, (Map[String, String], w) -> Result[String, w] \ {Fs.FileRead})], fixedStep = Option[Float64], clocks = List[(Float64, w) -> w], cursor = Option[w -> CursorSpec], outputs = List[Output[w]], starts = List[Start[w]] }`
+  `pub type alias App[w: Type, ef: Eff] = { init = Vec2.Vec2 -> w \ ef, startupSystems = List[w -> w \ ef], updateSystems = List[(Frame, w) -> w \ ef], reload = Option[(GameEngine.Key, w -> w \ {Fs.FileRead})], watch = List[(String, w -> w \ {Fs.FileRead})], view = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], passes = w -> List[Render.Pass] \ ef, fonts = List[String], camera = Option[w -> Vec2.Vec2 \ ef], zoom = Option[w -> Float64 \ ef], cameraBounds = Option[w -> Rect2.Rect2 \ ef], parallaxLayers = List[(Float64, (ViewCtx, w) -> List[Render.PlacedItem] \ ef)], hudView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], audio = { before = w, after = w } -> List[String] \ ef, sustained = w -> List[Sustain] \ ef, mixer = Option[w -> AudioMixer.Mixer \ ef], quit = (Frame, w) -> Bool \ ef, closeRequest = Option[w -> w \ ef], debug = Bool, debugView = Option[(String, w -> (List[GameEngine.Drawable], List[GameEngine.TileMapRenderCmd], List[GameEngine.PolygonRenderCmd]) \ ef)], worldDump = Option[(Rect2.Rect2, w) -> String \ ef], annotationContext = Option[w -> Annotate.Table \ ef], staticLayer = Option[{ key = w -> GameEngine.StaticKey, build = w -> List[Render.PlacedItem] }], tileLayers = Option[w -> List[TileLayerSpec]], spriteAtlases = w -> List[AtlasUpload], pixelSnap = w -> Float64, statusLine = Option[w -> String \ ef], remoteRender = Option[Unit -> List[String] \ IO], remoteHandlers = List[(String, (Map[String, String], w) -> Result[String, w] \ {Fs.FileRead})], fixedStep = Option[Float64], clocks = List[(Float64, w) -> w], cursor = Option[w -> CursorSpec], outputs = List[Output[w]], starts = List[Start[w]], flow = Flow.Table[w], fingerprint = Option[w -> String] }`
 - 初期 World だけを持つ空の App。絵はまだ無い（withView で繋ぐまで何も描かない）。
   `pub def make(init: w): App[w, ef]`
 - 初期 World を design 解像度（project.json の designWidth/Height）から組む入口。
@@ -228,8 +228,14 @@
   `pub def resolveArgs(args: Map[String, String]): Map[String, String] \ Fs.FileRead`
 - `feedHome t=10` の形（flow の start の行・START・POST /start と同じ）を名前と引数に分ける。
   `pub def parseStartLine(text: String): Result[String, (String, Map[String, String])]`
+- root の project.json の design 解像度（読めなければ 0×0 —— init が画面の大きさを読まないゲームはそれで足りる）。
+  `pub def projectDesign(root: String): Vec2.Vec2 \ Fs.FileRead`
 - テストで名前の始まりを組む（組めなければテストの前提が破れているので bug! で止める）。
   `pub def startOrBug(app: App[w, ef], name: String, args: Map[String, String]): w \ ef + Fs.FileRead`
+- flow の語彙の表を繋ぐ（使い方の全文は engine_world/src/Flow.flix 冒頭）。
+  `pub def withFlow(table: Flow.Table[w], app: App[w, ef]): App[w, ef]`
+- World の指紋の元の文字を選ぶ関数を繋ぐ。遊んだ記録が 60 フレームごとに `expect fp=…` を書き、
+  `pub def withFingerprint(f: w -> String, app: App[w, ef]): App[w, ef]`
 - addClock で宣言した時計を、実時間 dt で 1 回ずつ進める（advanceFrame が系の前に呼ぶ）。
   `pub def tickClocks(app: App[w, ef], dt: Float64, world: w): w`
 - 前フレームと今フレームのキー集合から Frame を組む。justPressed は差分
@@ -266,6 +272,8 @@
   `pub def changedPaths(watch: List[String], prev: Map[String, Int64], current: Map[String, Int64]): List[String]`
 - App を走らせる単一の効果多相ランナー。startup を 1 回だけ畳み込み、いま押されているキーを prev の
   `pub def launch(app: App[w, ef]): Unit \ (ef + GameEngine.Game + GameEngine.Audio + ShaderEffect.Shader + RenderTarget.Target + Fs.FileRead + Fs.FileWrite + IO)`
+- 時間スクラブ用に持ち回す直近の World の数（60fps で約 30 秒）。
+  `pub def historyLimit(): Int32`
 - リモートコマンドを捌いた後に残る 3 つの進み方。
   `pub enum Branch with Eq, ToString { case Paused case Resuming case Running }`
 - F8 と停止状態から、このフレームの進み方と「F8 が今トグルされたか」を決める。
@@ -330,16 +338,8 @@
   `pub def frameCap(): Int32`
 - until 条件の 1 フレームぶんの判定。このフレームで鳴った音名と「無音が何フレーム
   `pub def stopCheck(stopWhen: Until, soundsThisFrame: List[String], quietRun: Int32): (String, Int32)`
-- 台本 1 コマ = そのフレームで押しているキーの集合。リストの並びがフレームの並び。
-  `pub type alias Script = List[Set[GameEngine.Key]]`
-- 台本 DSL を 1 フレーム 1 コマのキー集合列へ展開する。# 以降はコメント。
-  `pub def parseScript(body: String): Result[String, Script]`
-- "z" や "Enter" のようなキー名を Key へ。解決は InputMap と同じ 1 本 —
-  `pub def keyOf(name: String): Option[GameEngine.Key]`
-- 台本で使える全キー名（help と unknown key エラーに載せる）。
-  `pub def keyNames(): String`
 - /step 応答の 1 行目。何フレーム進んで何故止まったかを 1 行で伝える。
-  `pub def stepHeader(info: { stepped = Int32, total = Int32, frame = Int64, stoppedBy = String, quit = Bool }): String`
+  `pub def stepHeader(info: { stepped = Int32, frame = Int64, stoppedBy = String, quit = Bool }): String`
 - 実行中に鳴った音のブロック。「f=フレーム番号 sfx=音名」の行を時系列で並べる。
   `pub def eventsBlock(sounds: List[(Int64, String)]): String`
 - trace=status:K で集めた status 行のブロック。
@@ -379,11 +379,15 @@
 - GET /starts の本文: 始まりの登録簿（App.withStarts）の名前・既定の引数・説明を 1 行ずつ。
   `pub def startsText(app: App.App[w, ef]): String`
 - /step 1 回ぶんの実行結果。
-  `pub type alias StepOutcome[w] = { world = w, stepState = App.StepState, newHistory = List[w], framesRun = Int32, sounds = List[(Int64, String)], stoppedBy = String, quit = Bool, traceLines = List[String] }`
-- 台本のコマ（押しているキーの集合）を Frame の列にする。押した瞬間は前のコマに無かったキー
-  `pub def framesOf(script: Script, dt: Float64, viewport: Vec2.Vec2): List[App.Frame]`
-- /step の芯: frames を 1 つずつ App.traceFrame（実機の advanceFrame・App.trace と同じ 1 フレーム。
-  `pub def stepFrames(app: App.App[w, ef], frames: List[App.Frame], start: { world = w, state = App.StepState, frame = Int64 }, stepParams: StepParams): StepOutcome[w] \ ef`
+  `pub type alias StepOutcome[w] = { world = w, stepState = App.StepState, newHistory = List[w], framesRun = Int32, sounds = List[(Int64, String)], stoppedBy = String, quit = Bool, failure = String, traceLines = List[String] }`
+- flow が流したフレームの列を、/step の止め方（until=sfx|quiet・quitWhen）で切り、応答の材料にする。
+  `pub def stepOutcomeOf(app: App.App[w, ef], played: List[Flow.Played[w]], start: { world = w, state = App.StepState, frame = Int64 }, stepParams: StepParams, flowEnd: String): StepOutcome[w] \ ef`
+- flow の結果（流し終えた・止まった）からフレームの列と止まった所の 1 行を取り出す。
+  `pub def playedOf(result: Result[Flow.Failure[w], Flow.Outcome[w]]): (List[Flow.Played[w]], String)`
+- 止まった所の 1 行（行番号・理由・何フレーム目・使った問いの値）。
+  `pub def failureLine(failure: Flow.Failure[w]): String`
+- POST /flow 1 回で流せるフレームの上限（60fps で 10 分ぶん）。ゲームのループの中で流すので、その間は窓が止まる。
+  `pub def flowFrameCap(): Int32`
 
 ## AudioFade — `engine_world/src/AudioFade.flix`
 - フェードの端点。start = 進行度 0 のときの音量、target = 進行度 1 のときの音量
@@ -856,6 +860,8 @@
 - `pub type alias Events[e] = EventLog[e]`
 - 出来事がまだ 1 つも無い溜め（World の初期値）。
   `pub def empty(): Events[e]`
+- これまでに溜めへ出た出来事の総数（捨てた古い出来事も数える。増えるだけ）。
+  `pub def countOf(events: Events[e]): Int64`
 - f を走らせ、その間に出た出来事を溜めの末尾に足す（1 回の collectInto = 通し番号 1 つ）。
   `pub def collectInto(f: Unit -> a \ ef, events: Events[e]): (a, Events[e]) \ (ef - Emit[e])`
 - before の後に after へ足された出来事（出た順）。audio に ws#before#events と ws#after#events を渡す。
@@ -886,6 +892,102 @@
   `pub def rectsOf(root: Node, rootRect: Rect2.Rect2): Map[String, Rect2.Rect2]`
 - 各 Leaf に割り当てられた rect を DFS 順で返す（レイアウトだけ検分したいとき・テスト用）。
   `pub def leafRects(root: Node, rootRect: Rect2.Rect2): List[Rect2.Rect2]`
+
+## Flow — `engine_world/src/Flow.flix`
+- 問い 1 つの読み方。Num は < <= = >= > != で比べ、Text は = と != で比べ、Flag はそのまま（!名前 で否定）。
+  `pub enum Probe[w] { case Num(w -> Float64) case Text(w -> String) case Flag(w -> Bool) }`
+- 入力を受けられるか。Busy の理由は、待ちが 10 秒に当たった時の知らせに載る。
+  `pub enum Ready with Eq, ToString { case Ready case Busy(String) }`
+- 名前付きの操作の 1 フレームの決め事。Tap = その役を 1 フレーム押す（待った秒は 0 に戻る）・
+  `pub enum DriveAct with Eq, ToString { case Tap(String) case Idle case Restart }`
+- `pub type alias ProbeRow[w] = { name = String, doc = String, read = Probe[w] }`
+- act の引数は (drive の始まりか最後の Tap・Restart から待った秒, いまの World)。
+  `pub type alias DriveRow[w] = { name = String, doc = String, act = (Float64, w) -> DriveAct }`
+- ゲームが出す表。ready と replies を宣言しないゲームは、自動の待ちと返事の確かめをしない。
+  `pub type alias Table[w] = { roles = w -> InputMap.Table[String], probes = List[ProbeRow[w]], drives = List[DriveRow[w]], ready = Option[w -> Ready], replies = Option[w -> Int64], options = List[(String, List[String])] }`
+- 何も宣言しない表（{ probes = … | Flow.emptyTable() } で要る欄だけ書く）。
+  `pub def emptyTable(): Table[w]`
+- ゲームの役の enum の表（InputMap.Table[a]）を、名前の表にする。
+  `pub def rolesOf(name: a -> String, table: InputMap.Table[a]): InputMap.Table[String]`
+- `pub enum Kind with Eq, ToString { case Num case Text case Flag }`
+- 名前の一覧。roles は World から読むので、語彙は World を 1 つ決めて作る（ふつうは新しく作った初期の World）。
+  `pub type alias Vocab = { roles = List[String], probes = List[(String, Kind, String)], drives = List[(String, String)], starts = List[(String, String, Map[String, String])], options = List[(String, List[String])], keys = List[String], ready = Bool, replies = Bool, fingerprint = Bool }`
+- 手の語（閉じた一覧）。記録が書く語（reload・request・close・rewind）も同じ文法で読める。
+  `pub def verbs(): List[String]`
+- エンジンが持つ設定の語（ゲームの設定は Table#options）。
+  `pub def settings(): List[String]`
+- 指紋の問いの名前（App.withFingerprint を繋いだゲームだけ）。
+  `pub def fingerprintProbe(): String`
+- `pub def vocabOf(app: App.App[w, ef], world: w): Vocab`
+- 語彙を e2e/vocab.json の形にする（bin/fge flow check が読む。キーの順は固定）。
+  `pub def vocabJson(vocab: Vocab): String`
+- 押す物: 役の名前・キーの集合・画面の点（design 座標。クリック）。
+  `pub enum Target with Eq, ToString { case Role(String) case Keys(Set[Key]) case Point(Float64, Float64) }`
+- 長さ: 秒（fps でフレーム数に丸める）かフレーム数。
+  `pub enum Span with Eq, ToString { case Secs(Float64) case Frames(Int32) }`
+- フレームの手の付け足し（ほとんどは記録が書く）。ns = フレームごとの経過ナノ秒（数がフレーム数）・dt = 経過秒・
+  `pub type alias Opt = { ns = List[Int64], dt = Option[Float64], at = Option[Vec2.Vec2], mouse = Bool, wheel = Float64, pad = Bool, keys = Option[Set[Key]], pressed = Option[Set[Key]], click = Option[Bool], moved = Option[Bool] }`
+- `pub def noOpt(): Opt`
+- `pub enum Cmp with Eq, ToString { case Lt case Le case Same case Ge case Gt case Differ }`
+- 問いの式。Name は真偽の問い・Compare は (名前, 比べ方, 書いた値の文字)。
+  `pub enum Expr with Eq, ToString { case Name(String) case Not(Expr) case Both(Expr, Expr) case Compare(String, Cmp, String) }`
+- 記録が書いたファイルの中身（再生はこの中身を読ませる）。Missing = 読めなかった（無いセーブ）。
+  `pub enum File with Eq, ToString { case Text(String) case Missing }`
+- 手 1 つ。tap・hold・release・wait はフレームを使い、expect・mark は使わない。
+  `pub enum Step { case Start(String, Map[String, String], Map[String, File]) case Tap(Target, Opt) case Hold(Target, Option[Span], Opt) case Release(Target, Opt) case Wait(Span, Opt) case Until(Expr, Float64) case Drive(String, Expr, Float64) case Expect(Expr) case Mark(String) case Reload(String, Map[String, File]) case Request(String, Map[String, String], Map[String, File]) case Close case Rewind(Int32) }`
+- 手 1 つと、その書いてある所（失敗の知らせに載せる）。
+  `pub type alias Line = { file = String, number = Int32, text = String, step = Step }`
+- 読んだ手順。ready = None は on と同じ（ready off だけが待ちと返事の確かめを止める）。
+  `pub type alias Script = { fps = Float64, ready = Option[Bool], options = Map[String, String], lines = List[Line] }`
+- 1 フレームとその後の固定刻みの持ち越し（/step が途中で止める時に要る）。
+  `pub type alias Played[w] = { step = App.TraceStep[w], state = App.StepState }`
+- 流し終えた結果。frames は先頭から。marks = 名前 → その時までのフレーム数・starts = (その時までのフレーム数, 始まりの名前)。
+  `pub type alias Outcome[w] = { frames = List[Played[w]], marks = Map[String, Int32], starts = List[(Int32, String)], last = w, state = App.StepState }`
+- 止まった所。frame = それまでのフレーム数・why = 理由・seen = 使った問いの今の値と statusLine・upTo = そこまで。
+  `pub type alias Failure[w] = { at = Line, frame = Int32, why = String, seen = String, upTo = Outcome[w] }`
+- play の設定: design = 解像度（Frame#viewport）・limit = フレーム数の上限（超えたら失敗）。
+  `pub type alias Setup = { design = Vec2.Vec2, limit = Int32 }`
+- フレームの列（World の列。動画が描く物）。
+  `pub def worldsOf(outcome: Outcome[w]): List[w]`
+- 手順を流す。start = 最初の手が start でない時に使う World と持ち越し（/step は走っている World、
+  `pub def play(app: App.App[w, ef], setup: Setup, script: Script, start: { world = w, state = App.StepState }): Result[Failure[w], Outcome[w]] \ ef + Fs.FileRead`
+- 問いの式が今の World で立っているか。表に無い名前・型の違う比べは立たない（読み手と check が先に止める）。
+  `pub def holds(app: App.App[w, ef], expr: Expr, world: w): Bool`
+- 問いの今の値。
+  `pub enum Value with Eq, ToString { case Num(Float64) case Text(String) case Flag(Bool) }`
+- `pub def valueOf(app: App.App[w, ef], name: String, world: w): Option[Value]`
+- 指紋の元の文字を 8 字の 16 進の指紋にする（記録の expect fp= と同じ物）。
+  `pub def fingerprintOf(text: String): String`
+- 記録の行に載せるファイルの中身（UTF-8 の Base64。改行や空白を 1 語に収める）。
+  `pub def base64Encode(text: String): String`
+- base64Encode の逆（戻せなければ None）。
+  `pub def base64Decode(text: String): Option[String]`
+- "lines>=4" を (名前, 比べ方, 値) に分ける。比べの記号が無ければ None。
+  `pub def splitCompare(text: String): Option[(String, Cmp, String)]`
+- 式を書いた形に戻す（知らせ用）。
+  `pub def showExpr(expr: Expr): String`
+- `pub def cmpSymbol(cmp: Cmp): String`
+
+## Flow.Cli — `engine_world/src/Flow/Cli.flix`
+- `pub def main(app: App.App[w, ef]): Unit \ ef + Fs.FileRead + Fs.FileWrite + IO`
+- 環境変数（無いか空なら fallback）。
+  `pub def envOr(name: String, fallback: String): String \ IO`
+- ファイルを読む（読めなければ理由）。
+  `pub def readText(path: String): Result[String, String] \ Fs.FileRead`
+- ファイルに書く（書けたか）。
+  `pub def writeText(path: String, text: String): Bool \ Fs.FileWrite`
+
+## Flow.Parse — `engine_world/src/Flow/Parse.flix`
+- 読めない行（file の number 行目。行番号は 1 から。0 = ファイルそのもの）。
+  `pub type alias Problem = { file = String, number = Int32, text = String, why = String }`
+- 本文だけを読む（run は使えない —— 起動中のゲームへ送った本文に、読みに行くフォルダは無い）。
+  `pub def parseText(vocab: Vocab, name: String, text: String): Result[List[Problem], Script]`
+- ファイルを読む。run の先は read で同じフォルダから引く（8 段まで）。
+  `pub def parseFile(vocab: Vocab, path: String, read: String -> Result[String, String] \ ef): Result[List[Problem], Script] \ ef`
+- 知らせの形: 「ファイル:行: 理由」と、次の行に書いてあった手。
+  `pub def problemsText(problems: List[Problem]): String`
+- b64: で始まる値は Base64 を戻した中身（UTF-8）。それ以外はそのまま。
+  `pub def decoded(value: String): Result[String, String]`
 
 ## Fx — `engine_world/src/Fx.flix`
 - `count` 個の粒を作り、各粒 `i` に個性の蛇口 `rand`（`rand(k)` = 番号 i・チャンネル k の
@@ -1817,9 +1919,9 @@
   `pub def wander(canEnter: ((Int32, Int32)) -> Bool, self: (Int32, Int32), beat: Int32, salt: Int32): Option[(Int32, Int32)]`
 
 ## Suggest — `engine_world/src/Suggest.flix`
-- a と b の編集距離（大文字小文字は区別しない）。
+- a と b の編集距離（大文字小文字は区別しない）。隣り合う 2 字の入れ替え（tpa → tap）も 1 と数える。
   `pub def distance(a: String, b: String): Int32`
-- known のうち name に近い名前（距離 2 以内か、2 字以上の頭が同じ物）を近い順に 3 つまで。
+- known のうち name に近い名前（距離 2 以内（3 字以下の名前は 1 以内）か、2 字以上の頭が同じ物）を近い順に 3 つまで。
   `pub def near(name: String, known: List[String]): List[String]`
 - 知らせの後ろに付ける 1 句: 近い名前があれば「（もしかして: a / b）」、無ければ使える名前を 12 個まで。
   `pub def hint(name: String, known: List[String]): String`

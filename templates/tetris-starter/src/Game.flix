@@ -25,6 +25,11 @@ mod Game {
             |> App.withAudio(ws -> Controls.sounds(ws))
             // 好きな場面から起動する・テストと flow が場面を名前で組む（START="stack gap=0" など）。
             |> App.withStarts(Starts.all())
+            // e2e/<名前>.flow の語彙（役・問い・名前付きの操作）と、記録の再生が比べる指紋。
+            |> App.withFlow(E2e.table())
+            |> App.withFingerprint(E2e.fingerprint)
+            // 1 行の要点（flow の失敗・リモートの /step が最後の World として見せる）。
+            |> App.withStatusLine(w -> "phase=${w#phase} lines=${w#lines} score=${w#score} cells=${Map.size(w#board)} piece=${w#current#kind}")
             // 走行中の POST /render（Studio の「生成して」）は SceneRender.all と同じ実体を呼ぶ。
             |> App.onRenderRequest(SceneRender.allShots)
 }

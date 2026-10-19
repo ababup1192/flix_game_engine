@@ -1,0 +1,3 @@
+# 書き間違いが行番号と近い名前の案つきで全部出る（Flow.Parse と同じ文面）。
+# cwd: このリポの根 / 環境変数: CASE(このケース)
+bin/fge flow check --vocab testdata/lint/flow-check/vocab.json testdata/lint/flow-check/typos-fire/input.flow

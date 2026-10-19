@@ -1,0 +1,28 @@
+{
+  "verbs": ["start", "tap", "hold", "release", "wait", "until", "drive", "expect", "mark", "run", "reload", "request", "close", "rewind"],
+  "settings": ["fps", "ready"],
+  "options": {},
+  "roles": ["confirm", "prev", "next", "menu", "quit"],
+  "probes": [
+    {"name": "phase", "kind": "text", "doc": "場面（Title・Story）"},
+    {"name": "section", "kind": "text", "doc": "読んでいる節（novel.story.json の sections[].id）"},
+    {"name": "line", "kind": "num", "doc": "節の何行目か（0 から）"},
+    {"name": "lineDone", "kind": "flag", "doc": "今の台詞を出し終えた"},
+    {"name": "choice", "kind": "flag", "doc": "選択肢が開いて選べる"},
+    {"name": "cursor", "kind": "num", "doc": "選択肢のカーソル（0 から）"},
+    {"name": "lamps", "kind": "num", "doc": "点いている灯りの数"},
+    {"name": "menu", "kind": "flag", "doc": "メニューが開いている"}
+  ],
+  "drives": [
+    {"name": "reader", "doc": "台詞を出し終えたら少し読んでから送る（選択肢と表紙では押さない）"}
+  ],
+  "starts": [
+    {"name": "title", "doc": "表紙（起動の既定。決定で物語がはじまる）", "args": {}},
+    {"name": "section", "doc": "台本の節（id = 節の名前。既定は台本の start）の 1 行目を読んでいる所", "args": {}},
+    {"name": "choice", "doc": "節（id。既定は台本の start）を読み終えて選択肢が開き、問いの文を出し終えた所", "args": {}}
+  ],
+  "keys": ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", "Digit0", "Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6", "Digit7", "Digit8", "Digit9", "Up", "Down", "Left", "Right", "Enter", "Space", "Escape", "Tab", "Backspace", "Insert", "Delete", "PageUp", "PageDown", "Home", "End", "CapsLock", "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12", "Apostrophe", "Comma", "Minus", "Period", "Slash", "Semicolon", "Equal", "LeftBracket", "Backslash", "RightBracket", "GraveAccent", "LeftShift", "LeftCtrl", "LeftAlt", "LeftSuper", "RightShift", "RightCtrl", "RightAlt", "RightSuper", "Menu", "Numpad0", "Numpad1", "Numpad2", "Numpad3", "Numpad4", "Numpad5", "Numpad6", "Numpad7", "Numpad8", "Numpad9", "NumpadDecimal", "NumpadDivide", "NumpadMultiply", "NumpadSubtract", "NumpadAdd", "NumpadEnter", "NumpadEqual"],
+  "ready": false,
+  "replies": true,
+  "fingerprint": true
+}

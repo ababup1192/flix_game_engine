@@ -8,7 +8,7 @@ mod Starts {
     pub def all(): List[App.Start[World.World]] =
         { name = "play", doc = "空の盤に最初のミノが涌いた所（起動の既定）", args = Map.empty(),
           build = (w, _) -> Ok(w) } ::
-        { name = "stack", doc = "下 4 行が 1 列（gap = 0..9）だけ空いた盤。縦の I を落とすと 4 行消える", args = Map#{"gap" => "4"},
+        { name = "stack", doc = "下 4 行が 1 列（gap = 0..9）だけ空いた盤で、I を操作している所。縦にして落とすと 4 行消える", args = Map#{"gap" => "4"},
           build = stack } ::
         { name = "over", doc = "天井まで積んで GAME OVER になった所（決定で仕切り直し）", args = Map.empty(),
           build = (w, _) -> Ok({ phase = World.Phase.GameOver, board = bottomRows(World.rows(), -1) | w }) } :: Nil
@@ -17,7 +17,9 @@ mod Starts {
     def stack(w: World.World, args: Map[String, String]): Result[String, World.World] =
         let text = Map.getWithDefault("gap", "4", args);
         match Int32.fromString(text) {
-            case Some(gap) if gap >= 0 and gap < World.cols() => Ok({ board = bottomRows(4, gap) | w })
+            case Some(gap) if gap >= 0 and gap < World.cols() =>
+                // 最初のミノは袋から引かれるので、I に据え直す（涌く位置と向きは涌いた物のまま）。
+                Ok({ board = bottomRows(4, gap), current = { kind = World.Kind.I | w#current } | w })
             case _ => Err("gap は 0..${World.cols() - 1} の列（'${text}'）")
         }
 

@@ -4,7 +4,7 @@
 // 盤は下 4 行を 1 列だけ空けて始める（でたらめに落としても行が消える場面が早く来る）。
 mod TestTrace {
 
-    use fge::{App, Emit, PropertyTest, ShaderDoc}
+    use fge::{App, Emit, Flow, PropertyTest, ShaderDoc}
     use fge::GameEngine.Key
 
     /// 押す操作の役。
@@ -82,22 +82,28 @@ mod TestTrace {
         };
         Assert.assertEq(expected = None, PropertyTest.forAll(app(), setup(), cases(), start(), rule))
 
-    /// /step の台本（コマ = 押しているキー）: 落ちるのを待って叩きつけ、左へ 1 マス寄せてもう一度叩きつける。
-    def stepScript(): List[Set[Key]] =
-        List.repeat(10, Set#{}) ::: Set#{Key.Space} :: List.repeat(10, Set#{}) :::
-        Set#{Key.Left} :: List.repeat(5, Set#{}) ::: Set#{Key.Space} :: List.repeat(30, Set#{})
+    /// /step と同じ flow: 落ちるのを待って叩きつけ、左へ 1 マス寄せてもう一度叩きつける。
+    def stepFlow(): String =
+        "ready off\nwait 10f\ntap Space\nwait 10f\ntap Left\nwait 5f\ntap Space\nwait 30f"
 
-    /// 同じ Frame の列を App.trace と /step の芯（App.RemoteDebug.stepFrames）へ流すと、盤・点・音が同じ
+    /// 同じ Frame の列を App.trace と /step の中身（Flow.play）へ流すと、盤・点・音が同じ
     /// （どちらも App.traceFrame の 1 本を通る。/step は前は固定刻みと時計を見ずに系を直に呼んでいた）。
+    /// trace に渡す Frame は、Flow.play が流した Frame をそのまま使う。
     @Test
-    def testStepCoreMatchesTrace(): Unit \ Assert =
-        let frames = App.RemoteDebug.framesOf(stepScript(), setup()#dt, setup()#viewport);
-        let traced = App.trace(app(), frames, start());
-        let stepped = App.RemoteDebug.stepFrames(app(), frames, { world = start(), state = App.freshStepState(), frame = 0i64 },
-                                                 App.RemoteDebug.defaultParams());
+    def testStepCoreMatchesTrace(): Unit \ Assert + Fs.FileRead =
+        let script = match Flow.Parse.parseText(Flow.vocabOf(app(), start()), "body", stepFlow()) {
+            case Ok(parsed) => parsed
+            case Err(problems) => bug!(Flow.Parse.problemsText(problems))
+        };
+        let played = match Flow.play(app(), { design = setup()#viewport, limit = 1000 }, script,
+                                     { world = start(), state = App.freshStepState() }) {
+            case Ok(outcome)  => outcome
+            case Err(failure) => bug!(failure#why)
+        };
+        let traced = App.trace(app(), played#frames |> List.map(entry -> entry#step#frame), start());
         let last = traced |> List.last |> Option.map(step -> step#after) |> Option.getWithDefault(start());
         Assert.assertEq(expected = (last#board, last#score, List.flatMap(step -> step#sounds, traced)),
-                        (stepped#world#board, stepped#world#score, List.map(snd, stepped#sounds)))
+                        (played#last#board, played#last#score, List.flatMap(entry -> entry#step#sounds, played#frames)))
 
     /// 上の決まりが空振りでないこと: どれかの種の列で、固めたフレームも行を消したフレームもある。
     @Test

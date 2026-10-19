@@ -1,0 +1,28 @@
+{
+  "verbs": ["start", "tap", "hold", "release", "wait", "until", "drive", "expect", "mark", "run", "reload", "request", "close", "rewind"],
+  "settings": ["fps", "ready"],
+  "options": {},
+  "roles": ["left", "right", "ccw", "cw", "drop", "soft", "confirm"],
+  "probes": [
+    {"name": "phase", "kind": "text", "doc": "場面（Playing・Clearing・GameOver）"},
+    {"name": "lines", "kind": "num", "doc": "消した行の通算"},
+    {"name": "score", "kind": "num", "doc": "点"},
+    {"name": "cells", "kind": "num", "doc": "盤に固定した升の数"},
+    {"name": "piece", "kind": "text", "doc": "操作中のミノの種類（I・O・T・S・Z・J・L）"},
+    {"name": "col", "kind": "num", "doc": "操作中のミノの原点の列"},
+    {"name": "rot", "kind": "num", "doc": "操作中のミノの向き（0..3）"},
+    {"name": "over", "kind": "flag", "doc": "GAME OVER の画面"}
+  ],
+  "drives": [
+    {"name": "dropper", "doc": "遊び中なら 0.5 秒ごとに叩きつける（GAME OVER まで積む）"}
+  ],
+  "starts": [
+    {"name": "play", "doc": "空の盤に最初のミノが涌いた所（起動の既定）", "args": {}},
+    {"name": "stack", "doc": "下 4 行が 1 列（gap = 0..9）だけ空いた盤で、I を操作している所。縦にして落とすと 4 行消える", "args": {"gap": "4"}},
+    {"name": "over", "doc": "天井まで積んで GAME OVER になった所（決定で仕切り直し）", "args": {}}
+  ],
+  "keys": ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", "Digit0", "Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6", "Digit7", "Digit8", "Digit9", "Up", "Down", "Left", "Right", "Enter", "Space", "Escape", "Tab", "Backspace", "Insert", "Delete", "PageUp", "PageDown", "Home", "End", "CapsLock", "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12", "Apostrophe", "Comma", "Minus", "Period", "Slash", "Semicolon", "Equal", "LeftBracket", "Backslash", "RightBracket", "GraveAccent", "LeftShift", "LeftCtrl", "LeftAlt", "LeftSuper", "RightShift", "RightCtrl", "RightAlt", "RightSuper", "Menu", "Numpad0", "Numpad1", "Numpad2", "Numpad3", "Numpad4", "Numpad5", "Numpad6", "Numpad7", "Numpad8", "Numpad9", "NumpadDecimal", "NumpadDivide", "NumpadMultiply", "NumpadSubtract", "NumpadAdd", "NumpadEnter", "NumpadEqual"],
+  "ready": true,
+  "replies": false,
+  "fingerprint": true
+}

@@ -1,0 +1,23 @@
+{
+  "verbs": ["start", "tap", "hold", "release", "wait", "until", "drive", "expect", "mark", "run", "reload", "request", "close", "rewind"],
+  "settings": ["fps", "ready"],
+  "options": {
+    "look": ["day", "night"]
+  },
+  "roles": ["confirm", "cancel"],
+  "probes": [
+    {"name": "n", "kind": "num", "doc": "押した数"},
+    {"name": "busy", "kind": "flag", "doc": "受け付けない間"},
+    {"name": "phase", "kind": "text", "doc": "場面"}
+  ],
+  "drives": [
+    {"name": "masher", "doc": "1 秒待つごとに決定"}
+  ],
+  "starts": [
+    {"name": "count", "doc": "n を足す", "args": {"n": "1"}}
+  ],
+  "keys": ["A", "B", "X", "Z", "Up", "Down", "Left", "Right", "Enter", "Space", "Escape"],
+  "ready": true,
+  "replies": true,
+  "fingerprint": true
+}

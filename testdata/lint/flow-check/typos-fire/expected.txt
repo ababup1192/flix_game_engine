@@ -1,0 +1,28 @@
+FAIL testdata/lint/flow-check/typos-fire/input.flow: 13 行を読めない
+testdata/lint/flow-check/typos-fire/input.flow:3: 設定 look の値 'nigth' は無い（もしかして: night）
+    look nigth
+testdata/lint/flow-check/typos-fire/input.flow:4: 始まり 'cuont' は無い（もしかして: count）
+    start cuont n=5
+testdata/lint/flow-check/typos-fire/input.flow:5: 手 'tpa' は無い（もしかして: tap）
+    tpa confirm
+testdata/lint/flow-check/typos-fire/input.flow:6: 役かキー 'confrm' は無い（もしかして: confirm）
+    tap confrm
+testdata/lint/flow-check/typos-fire/input.flow:7: until は 'until <問い> max <秒>'（max は必須）
+    until n>=1
+testdata/lint/flow-check/typos-fire/input.flow:8: 問い n は真偽でない。比べて書く（n=… / n>=…）
+    until n max 1
+testdata/lint/flow-check/typos-fire/input.flow:9: 真偽の問い busy は比べずに書く（busy か !busy）
+    until busy=1 max 1
+testdata/lint/flow-check/typos-fire/input.flow:10: 文字の問い phase は = か != で比べる
+    until phase>Title max 1
+testdata/lint/flow-check/typos-fire/input.flow:11: 操作 'mahser' は無い（もしかして: masher）
+    drive mahser until n>=2 max 5
+testdata/lint/flow-check/typos-fire/input.flow:12: idle は無い。'wait 30f' と書く（N フレーム何も触らない）
+    idle 30
+testdata/lint/flow-check/typos-fire/input.flow:13: press は無い。'tap Z' と書く
+    press Z
+testdata/lint/flow-check/typos-fire/input.flow:14: 問い 'fq' は無い（もしかして: fp）
+    expect fq=1a2b3c4d
+testdata/lint/flow-check/typos-fire/input.flow:15: 'x' は数でない
+    hold confirm 0.5 dt=x
+[exit=1]

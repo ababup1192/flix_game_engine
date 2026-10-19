@@ -109,60 +109,15 @@ mod TestRemoteDebug {
             App.RemoteDebug.parseParams(Map#{"max" => "9999"}) |> Result.isErr)
 
     // ========================================================================
-    // parseScript: 台本 DSL の展開
-    // ========================================================================
-
-    // press は「押す 1 コマ + 離す 1 コマ」= 1 押下 1 発火（エッジ検出と噛み合う形）。
-    @Test
-    def testParseScriptPressMakesEdge(): Unit \ Assert =
-        Assert.assertEq(
-            expected = Ok(Set#{GameEngine.Key.Z} :: Set#{} :: Nil),
-            App.RemoteDebug.parseScript("press Z"))
-
-    // hold は同じキー集合を N コマ。カンマ区切りで同時押しになる。
-    @Test
-    def testParseScriptHoldTogether(): Unit \ Assert =
-        Assert.assertEq(
-            expected = Ok(List.repeat(3, Set#{GameEngine.Key.Left, GameEngine.Key.Z})),
-            App.RemoteDebug.parseScript("hold Left,Z 3"))
-
-    // 複数行は上から順に連結され、# 以降のコメントと空行は無視される。
-    //   press Enter   → [Enter], []
-    //   idle 2        → [], []
-    //   hold Right 2  → [Right], [Right]
-    @Test
-    def testParseScriptMultiLine(): Unit \ Assert =
-        let script = "press Enter  # タイトルを抜ける\n\nidle 2\nhold Right 2";
-        Assert.assertEq(
-            expected = Ok(Set#{GameEngine.Key.Enter} :: Set#{} :: Set#{} :: Set#{}
-                          :: Set#{GameEngine.Key.Right} :: Set#{GameEngine.Key.Right} :: Nil),
-            App.RemoteDebug.parseScript(script))
-
-    // キー名は大文字小文字を区別しない（"z" でも "Z" でも同じキー）。
-    @Test
-    def testKeyOfIsCaseInsensitive(): Unit \ Assert =
-        Assert.assertEq(
-            expected = (Some(GameEngine.Key.Z), Some(GameEngine.Key.LeftShift)),
-            (App.RemoteDebug.keyOf("z"), App.RemoteDebug.keyOf("leftshift")))
-
-    // 知らないキー名は行の文言ごと Err になる（応答でそのまま教えられる）。
-    @Test
-    def testParseScriptRejectsUnknownKey(): Unit \ Assert =
-        Assert.assertEq(
-            expected = true,
-            App.RemoteDebug.parseScript("press NoSuchKey") |> Result.isErr)
-
-    // ========================================================================
     // 応答の整形
     // ========================================================================
 
-    // ヘッダ 1 行に「何コマ進み・現在フレーム・なぜ止まったか・消化率」が全部載る。
+    // ヘッダ 1 行に「何コマ進み・現在フレーム・なぜ止まったか」が全部載る。
     @Test
     def testStepHeaderFormat(): Unit \ Assert =
         Assert.assertEq(
-            expected = "ok stepped=40 frame=1307 mode=halted stopped=until:sfx consumed=40/160\n",
-            App.RemoteDebug.stepHeader({ stepped = 40, total = 160, frame = 1307i64,
-                                     stoppedBy = "until:sfx", quit = false }))
+            expected = "ok stepped=40 frame=1307 mode=halted stopped=until:sfx\n",
+            App.RemoteDebug.stepHeader({ stepped = 40, frame = 1307i64, stoppedBy = "until:sfx", quit = false }))
 
     // 音イベントは「f=フレーム番号 sfx=音名」で時系列に並ぶ。無ければブロックごと消える。
     @Test

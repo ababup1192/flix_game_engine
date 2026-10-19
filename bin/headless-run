@@ -175,6 +175,13 @@ java_cmd="${JAVA:-java}"
 if ! "$java_cmd" -version >/dev/null 2>&1; then
     java_cmd="$engine/.devbox/nix/profile/default/bin/java"
 fi
+
+# jar を作り直した回は、flow の語彙 e2e/vocab.json も書き直す（入口 E2e.play があるゲームだけ）。
+# bin/fge flow check は JVM なしでこれを読むので、src の表を直した後に古い語彙で止めないため。
+if [ "${built_ok:-0}" = 1 ] && [ "$entry" != "E2e.play" ] && [ -d e2e ] \
+   && printf '%s\n' "$entries" | grep -qxF "E2e.play"; then
+    FGE_ENTRY="E2e.play" FLOW= FLOW_MODE=vocab "$java_cmd" -Xss32m -Djava.awt.headless=true -jar "$jar" >&2 || true
+fi
 # HEADLESS_JAVA_OPTS は空白で分けて既定の後ろに足す（同じ旗は後ろが勝つ）。
 # shellcheck disable=SC2086
 FGE_ENTRY="$entry" exec "$java_cmd" -Xss32m -XX:MaxRAMPercentage=50 -Djava.awt.headless=true \

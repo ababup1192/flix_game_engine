@@ -46,7 +46,7 @@ else
 HEADLESS_RUN ?= JAVA_TOOL_OPTIONS="-Djava.awt.headless=true" FLIX_CMD=$(FLIX) "$(ENGINE)/bin/headless-run"
 endif
 
-.PHONY: help status run debug test build check render render-all gallery-sounds reference-check reference-update render-budget render-lint video-entries loc api module src src-index hooks check-docs-sync compare agent-eval agent-eval-compare agent-eval-release
+.PHONY: help status run debug test build check flow flow-check flow-vocab render render-all gallery-sounds reference-check reference-update render-budget render-lint video-entries loc api module src src-index hooks check-docs-sync compare agent-eval agent-eval-compare agent-eval-release
 
 # 共通の口の一覧。engine を上げるとここも一緒に新しくなる
 # （ゲーム側の Makefile へ写さないので、口が増えても書き足しに回らなくて済む）。
@@ -69,6 +69,8 @@ help:
 	@echo "  make reference-update   いまの gallery をリファレンス画像として更新する"
 	@echo "  make render-lint        描き出しが残した表を読み直す: 字の被り・はみ出し（text-audit）・z の外れ（z-audit）・動画の入口の写し（video-entries --check）"
 	@echo "  make video-entries      動画の見回りが流す入口の一覧を Makefile の \$$(call video,…) から書き直す"
+	@echo "  make flow FLOW=e2e/<名前>.flow  flow を画面なしで最後まで流す（失敗は行番号つき。Flix は組み直さない）"
+	@echo "  make flow-vocab         flow の語彙 e2e/vocab.json を書き直す（bin/fge flow check が読む）"
 	$(if $(PALETTE),@echo "  make palette            Studio が読む色の写し ($(PALETTE)) を無条件に作り直す")
 	@echo "  make api Q=<名前>        エンジン API の型・引数を 1 行で引く（ソースを読む前にまずこれ）"
 	@echo "  make module Q=<語>       やりたいこと → エンジンのモジュールを 1 行ずつ引く（自前で書く前にまずこれ）"
@@ -237,6 +239,20 @@ render-lint:
 	@fge=bin/fge; [ -x "$$fge" ] || fge="$(ENGINE)/bin/fge"; \
 	code=0; "$$fge" text-audit --root . || code=1; "$$fge" z-audit --root . || code=1; \
 	"$$fge" video-entries --check --root . || code=1; exit $$code
+
+# flow（e2e/<名前>.flow）を画面なしで流す。入口はゲームの E2e.play（中身は Flow.Cli.main）。
+# 描き出しの jar を使うので、flow を直して流し直すのに Flix を組み直さない（jar は src が変わった時だけ作り直す）。
+# 語彙 e2e/vocab.json は毎回書き直す（bin/fge flow check が JVM なしで読む）。
+flow:
+	@[ -n "$(FLOW)" ] || { echo "使い方: make flow FLOW=e2e/<名前>.flow（読むだけなら bin/fge flow check）"; exit 2; }
+	FLOW="$(FLOW)" FLOW_MODE=run $(HEADLESS_RUN) E2e.play
+
+flow-check:
+	@[ -n "$(FLOW)" ] || { echo "使い方: make flow-check FLOW=e2e/<名前>.flow"; exit 2; }
+	FLOW="$(FLOW)" FLOW_MODE=check $(HEADLESS_RUN) E2e.play
+
+flow-vocab:
+	FLOW= FLOW_MODE=vocab $(HEADLESS_RUN) E2e.play
 
 # 動画の見回りが流す入口の一覧（bin/lint-rules/video-entries.json の out）を Makefile の動画の口から書き直す。
 video-entries:

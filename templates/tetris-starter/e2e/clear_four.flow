@@ -1,0 +1,13 @@
+# 下 4 行が 1 列（4 列目）だけ空いた盤に縦の I を落とし、4 行まとめて消す。
+start stack gap=4
+expect piece=I
+tap cw                       # I を縦に（升は原点の 2 列右 = 5 列目に立つ）
+tap left                     # 4 列目の上へ
+expect rot=1&col=2
+tap drop                     # 叩きつける（行を消している間は、次の手を自動で待つ）
+until lines=4 max 3
+expect cells=0&phase=Playing
+mark cleared
+drive dropper until over max 120   # 積み上げて GAME OVER まで
+tap confirm                  # 仕切り直し
+expect lines=0&phase=Playing

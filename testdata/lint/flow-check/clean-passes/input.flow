@@ -1,0 +1,18 @@
+# 読める flow（鳴らない側）。
+fps 4
+look night
+start count n=5
+tap confirm
+hold Z,X 0.5
+release Z,X
+tap 120,80
+wait 30f
+until !busy&n>=6 max 2
+drive masher until n>=8 max 10
+expect phase=Title&fp!=00000000
+mark done
+wait 1f keys=Left,Z new=Z ns=16666667 at=10,20 mouse pad
+reload assets/rules.json +assets/rules.json=b64:e30=
+request /cheat q=a=1&b=2
+close
+rewind 3

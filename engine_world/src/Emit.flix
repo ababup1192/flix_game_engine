@@ -44,32 +44,39 @@ pub mod Emit {
 
     /// World に持たせる出来事の溜め。collectInto だけが足す —— 中の通し番号を外で書き換えると
     /// since が読み落とす・読み直すので、中身の enum は外へ出さない。
-    /// 持つのは (何回目の collectInto か, その回の出来事の出た順の列)。
+    /// 持つのは (何回目の collectInto か, これまでに出た出来事の総数, その回の出来事の出た順の列)。
     enum EventLog[e] with Eq, ToString {
-        case EventLog(Int64, List[(Int64, e)])
+        case EventLog(Int64, Int64, List[(Int64, e)])
     }
 
     pub type alias Events[e] = EventLog[e]
 
     /// 出来事がまだ 1 つも無い溜め（World の初期値）。
-    pub def empty(): Events[e] = EventLog.EventLog(0i64, Nil)
+    pub def empty(): Events[e] = EventLog.EventLog(0i64, 0i64, Nil)
+
+    /// これまでに溜めへ出た出来事の総数（捨てた古い出来事も数える。増えるだけ）。
+    /// flow の返事の通し番号（Flow.Table#replies）に使える: 押した後に増えなければ、その入力に応えていない。
+    pub def countOf(events: Events[e]): Int64 = match events {
+        case EventLog.EventLog(_, total, _) => total
+    }
 
     /// f を走らせ、その間に出た出来事を溜めの末尾に足す（1 回の collectInto = 通し番号 1 つ）。
     /// 古い出来事は keptCalls 回分だけ残して捨てる。
     pub def collectInto(f: Unit -> a \ ef, events: Events[e]): (a, Events[e]) \ (ef - Emit[e]) =
         let (value, fresh) = collect(f);
         match events {
-            case EventLog.EventLog(count, entries) =>
+            case EventLog.EventLog(count, total, entries) =>
                 let next = count + 1i64;
                 let kept = entries |> List.filter(entry -> fst(entry) > next - keptCalls());
-                (value, EventLog.EventLog(next, List.append(kept, fresh |> List.map(event -> (next, event)))))
+                (value, EventLog.EventLog(next, total + Int32.toInt64(List.length(fresh)),
+                                          List.append(kept, fresh |> List.map(event -> (next, event)))))
         }
 
     /// before の後に after へ足された出来事（出た順）。audio に ws#before#events と ws#after#events を渡す。
     /// after が before より古い番号なら（World を empty から作り直した）、after に残る出来事を全部返す。
     pub def since(before: Events[e], after: Events[e]): List[e] =
         match (before, after) {
-            case (EventLog.EventLog(seen, _), EventLog.EventLog(count, entries)) =>
+            case (EventLog.EventLog(seen, _, _), EventLog.EventLog(count, _, entries)) =>
                 let readUpTo = if (count < seen) 0i64 else seen;
                 entries |> List.filter(entry -> fst(entry) > readUpTo) |> List.map(snd)
         }

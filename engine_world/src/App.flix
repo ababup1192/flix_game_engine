@@ -201,7 +201,11 @@ pub mod App {
         // 鍵が変わったフレームに 1 回書く外への出力（addOutput・withDocTable）の列・追加順。
         outputs = List[Output[w]],
         // 始まりの登録簿（withStarts）。START・/start・flow の start・テストが名前で場面を組む。
-        starts = List[Start[w]]
+        starts = List[Start[w]],
+        // flow（e2e/<名前>.flow）の語彙の表: 役・問い・名前付きの操作・入力を受けられるか・返事の通し番号（withFlow）。
+        flow = Flow.Table[w],
+        // World の指紋の元の文字（withFingerprint）。記録の 60 フレームごとの expect fp= と、再生の食い違いの指し示し。
+        fingerprint = Option[w -> String]
     }
 
     /// 初期 World だけを持つ空の App。絵はまだ無い（withView で繋ぐまで何も描かない）。
@@ -247,7 +251,9 @@ pub mod App {
           clocks = Nil,
           cursor = None,
           outputs = Nil,
-          starts = Nil }
+          starts = Nil,
+          flow = Flow.emptyTable(),
+          fingerprint = None }
 
     /// 起動時に 1 回だけ走るシステムを末尾へ繋ぐ（追加順に適用される）。
     pub def addStartup(sys: w -> w \ ef, app: App[w, ef]): App[w, ef] =
@@ -682,17 +688,33 @@ pub mod App {
                 |> Result.map(args -> (name, args))
         }
 
+    /// root の project.json の design 解像度（読めなければ 0×0 —— init が画面の大きさを読まないゲームはそれで足りる）。
+    /// 画面を開かない所（テスト・flow の headless の入口）が Frame#viewport と init に渡す。
+    pub def projectDesign(root: String): Vec2.Vec2 \ Fs.FileRead =
+        match ProjectLoader.loadProject(root) {
+            case Ok(loaded) => { x = Int32.toFloat64(loaded#config#designWidth), y = Int32.toFloat64(loaded#config#designHeight) }
+            case Err(_)     => Vec2.zero()
+        }
+
     /// テストで名前の始まりを組む（組めなければテストの前提が破れているので bug! で止める）。
     /// design 解像度はゲームの根の project.json から読む（読めなければ 0×0 —— init が画面の大きさを読まないゲームはそれで足りる）。
     pub def startOrBug(app: App[w, ef], name: String, args: Map[String, String]): w \ ef + Fs.FileRead =
-        let design = match ProjectLoader.loadProject(".") {
-            case Ok(loaded) => { x = Int32.toFloat64(loaded#config#designWidth), y = Int32.toFloat64(loaded#config#designHeight) }
-            case Err(_)      => Vec2.zero()
-        };
-        match buildStart(app, design, name, args) {
+        match buildStart(app, projectDesign("."), name, args) {
             case Ok(world) => world
             case Err(why)  => bug!("App.startOrBug: ${why}")
         }
+
+    // ── flow（e2e の手順・動画の手順・遊んだ記録の再生）──
+
+    /// flow の語彙の表を繋ぐ（使い方の全文は engine_world/src/Flow.flix 冒頭）。
+    pub def withFlow(table: Flow.Table[w], app: App[w, ef]): App[w, ef] =
+        { flow = table | app }
+
+    /// World の指紋の元の文字を選ぶ関数を繋ぐ。遊んだ記録が 60 フレームごとに `expect fp=…` を書き、
+    /// 再生が最初に食い違ったフレームを指す。入れる欄はゲームが選ぶ —— 進行に効く欄（場面・時計・
+    /// 盤・カーソル・種）だけを短く並べ、Doc の中身や絵のアトラスは入れない（長い文字を毎フレーム作ると遅い）。
+    pub def withFingerprint(f: w -> String, app: App[w, ef]): App[w, ef] =
+        { fingerprint = Some(f) | app }
 
     /// 起動の World: 登録簿が無ければ init + 起動時の系（今までどおり）、あれば START（無ければ先頭の始まり）。
     def bootWorld(app: App[w, ef], design: Vec2.Vec2): Result[String, w] \ ef + Fs.FileRead + IO =
@@ -950,7 +972,8 @@ pub mod App {
 
     /// 時間スクラブ用に持ち回す直近の World の数（60fps で約 30 秒）。
     /// World は不変値なので、保持しているのは共有構造への参照だけで軽い。
-    def historyLimit(): Int32 = 1800
+    /// flow の実行器も同じ数だけ持つ（rewind が F8 と同じ所まで戻れるように）。
+    pub def historyLimit(): Int32 = 1800
 
     /// loop が次のフレームへ渡し続ける物。app（不変）は入れない — 状態に混ぜると
     /// 「フレームごとに変わりうる物」に見える。

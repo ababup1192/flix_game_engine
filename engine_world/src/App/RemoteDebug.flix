@@ -438,77 +438,11 @@ pub mod App.RemoteDebug {
                 (if (quietNow >= need) "until:quiet" else "", quietNow)
         }
 
-    // ── 台本 DSL のパース ──
-
-    /// 台本 1 コマ = そのフレームで押しているキーの集合。リストの並びがフレームの並び。
-    pub type alias Script = List[Set[GameEngine.Key]]
-
-    /// 台本 DSL を 1 フレーム 1 コマのキー集合列へ展開する。# 以降はコメント。
-    ///   idle N          … 何も押さないフレームを N 個
-    ///   press K         … K を 1 フレーム押して 1 フレーム離す（1 押下 = 1 発火）
-    ///   hold K N        … K を N フレーム押しっぱなし
-    ///   hold K1,K2 N    … 同時押しで N フレーム
-    pub def parseScript(body: String): Result[String, Script] =
-        String.lines(body)
-        |> List.map(line -> stripComment(line) |> String.trim)
-        |> List.filter(line -> line != "")
-        |> parseScriptLines
-
-    def parseScriptLines(lines: List[String]): Result[String, Script] =
-        match lines {
-            case Nil => Ok(Nil)
-            case line :: rest =>
-                forM (frames <- parseScriptLine(line); tail <- parseScriptLines(rest))
-                    yield List.append(frames, tail)
-        }
-
-    def parseScriptLine(line: String): Result[String, Script] =
-        match String.words(line) {
-            case "idle" :: count :: Nil =>
-                forM (n <- parseCount(count)) yield List.repeat(n, Set.empty())
-            case "press" :: keys :: Nil =>
-                forM (keySet <- parseKeys(keys)) yield keySet :: Set.empty() :: Nil
-            case "hold" :: keys :: count :: Nil =>
-                forM (keySet <- parseKeys(keys); n <- parseCount(count))
-                    yield List.repeat(n, keySet)
-            case _ => Err("error: cannot parse script line '${line}' (idle N / press K / hold K N)")
-        }
-
-    def parseCount(text: String): Result[String, Int32] =
-        match Int32.fromString(text) {
-            case Some(n) if n >= 1 and n <= frameCap() => Ok(n)
-            case _ => Err("error: frame count must be 1..${frameCap()} (got '${text}')")
-        }
-
-    def parseKeys(text: String): Result[String, Set[GameEngine.Key]] =
-        String.splitOn({substr = ","}, text)
-        |> List.foldLeft((acc, name) -> forM (
-               keySet <- acc;
-               key <- keyOf(name) |> Option.toOk("error: unknown key '${name}' (${keyNames()})")
-           ) yield Set.insert(key, keySet), Ok(Set.empty()))
-
-    /// "z" や "Enter" のようなキー名を Key へ。解決は InputMap と同じ 1 本 —
-    /// 台本とキー設定 Doc で通る名前がずれない。
-    pub def keyOf(name: String): Option[GameEngine.Key] =
-        InputMap.keyOf(name)
-
-    /// 台本で使える全キー名（help と unknown key エラーに載せる）。
-    pub def keyNames(): String =
-        GameEngine.allKeys() |> List.map(key -> "${key}") |> String.intercalate(",")
-
-    def stripComment(line: String): String =
-        match String.indexOfLeft({substr = "#"}, line) {
-            case Some(i) => String.takeLeft(i, line)
-            case None    => line
-        }
-
     // ── 応答の整形 ──
 
     /// /step 応答の 1 行目。何フレーム進んで何故止まったかを 1 行で伝える。
-    pub def stepHeader(info: { stepped = Int32, total = Int32, frame = Int64,
-                               stoppedBy = String, quit = Bool }): String =
-        "ok stepped=${info#stepped} frame=${info#frame} mode=halted"
-        + " stopped=${info#stoppedBy} consumed=${info#stepped}/${info#total}"
+    pub def stepHeader(info: { stepped = Int32, frame = Int64, stoppedBy = String, quit = Bool }): String =
+        "ok stepped=${info#stepped} frame=${info#frame} mode=halted stopped=${info#stoppedBy}"
         + (if (info#quit) " quit=true" else "")
         + "\n"
 
@@ -628,16 +562,20 @@ pub mod App.RemoteDebug {
         + "GET  /starts                  the start registry (App.withStarts): name, default args, doc\n"
         + "POST /start?name=N&k=v        rebuild a fresh world from start N and swap it in\n"
         + "POST /step?view=&rect=&until=&max=&trace=&dt=\n"
-        + "     body = input script; runs it frame by frame, then answers.\n"
-        + "     auto-halts first if the game is running.\n"
+        + "     body = flow (same grammar as e2e/<name>.flow); runs it frame by frame, then answers.\n"
+        + "     steps before any start run on the current world. auto-halts first if the game is running.\n"
+        + "POST /flow?path=&apply=1&repeat=N\n"
+        + "     run a flow (body or ?path=) from a fresh world; apply=1 swaps the result in. no rebuild needed.\n"
         + "ANY  /<path>?k=v              game-registered handler (App.onRequest), if wired\n"
         + "\n"
-        + "script DSL (one command per line, # comments):\n"
-        + "  idle N        wait N frames\n"
-        + "  press K       tap key K (1 frame down + 1 frame up)\n"
-        + "  hold K N      hold key K for N frames\n"
-        + "  hold K1,K2 N  hold keys together for N frames\n"
-        + "keys: " + keyNames() + "\n"
+        + "flow (one step per line, # comments; vocabulary in e2e/vocab.json):\n"
+        + "  start NAME k=v      rebuild the world from a start (GET /starts)\n"
+        + "  tap ROLE|KEY,KEY|X,Y   one frame down (X,Y = click)\n"
+        + "  hold ROLE [0.5|30f]  hold (until release if no length)   release ROLE\n"
+        + "  wait 0.5|30f        touch nothing\n"
+        + "  until PROBE max SECS   wait until the probe holds (PROBE: name, !name, a&b, name>=3, name=Text)\n"
+        + "  drive NAME until PROBE max SECS   let a named pilot press\n"
+        + "  expect PROBE   mark NAME   fps N   ready on|off\n"
         + "\n"
         + "query params:\n"
         + "  view=status|summary|full|scene|none   response detail (default status)\n"
@@ -679,6 +617,7 @@ pub mod App.RemoteDebug {
             case ("POST", "/step")   => remoteStepCommand(app, bridge, request, ctx)
             case ("GET", "/starts")  => answer(startsText(app), bridge, ctx)
             case ("POST", "/start")  => remoteStart(app, bridge, request, ctx)
+            case ("POST", "/flow")   => remoteFlow(app, bridge, request, ctx)
             case (m, p)              =>
                 match findRoute(p, app#remoteHandlers) {
                     case Some(chosen) => remoteCustom(chosen, bridge, request, ctx)
@@ -771,37 +710,36 @@ pub mod App.RemoteDebug {
                        bridge, ctx)
         }
 
-    /// POST /step: 台本を 1 コマ = 1 フレームで実行し、結果を 1 応答に束ねて返す。
+    /// POST /step: 本文の flow（1 行 1 手。start の無い手はいまの World から）を流し、結果を 1 応答に束ねて返す。
     /// 実行中に来たら自動で停止してから進める。スクラブで過去を見ていたら
     /// 「表示中の瞬間から再開して進める」（F8 解除と同じ意味論。未来側の履歴は捨てる）。
     def remoteStepCommand(app: App.App[w, ef], bridge: Bridge, request: Request,
-                          ctx: RemoteNext[w]): RemoteNext[w] \ (ef + GameEngine.Game + IO) =
-        match (parseParams(request#params), parseScript(request#body)) {
-            case (Err(message), _) => answer(message + "\n", bridge, ctx)
-            case (_, Err(message)) => answer(message + "\n", bridge, ctx)
-            case (Ok(stepParams), Ok(script)) =>
-                if (List.isEmpty(script))
-                    answer("error: empty script (body needs idle/press/hold lines; see GET /help)\n", bridge, ctx)
-                else {
-                    if (not ctx#anno#paused) enterHaltMarkers() else ();
-                    let base = App.resumePoint(ctx#anno, ctx#history, ctx#world);
-                    let frames = framesOf(script, stepParams#dtSeconds, GameEngine.Game.getViewportRect()#size);
-                    let outcome = stepFrames(app, frames, { world = base#world, state = ctx#stepState, frame = base#anno#frame },
-                                             stepParams);
-                    let annoAfter = { paused = true,
-                                      frame = base#anno#frame + Int32.toInt64(outcome#framesRun) | base#anno };
-                    let historyAfter = List.take(App.historyLimit(),
-                                                 List.append(outcome#newHistory, base#history));
-                    let total = Int32.min(List.length(script), stepParams#maxFrames);
-                    let text = stepHeader({ stepped = outcome#framesRun, total = total,
-                                                        frame = annoAfter#frame,
-                                                        stoppedBy = outcome#stoppedBy, quit = outcome#quit })
-                             + eventsBlock(outcome#sounds)
-                             + traceBlock(outcome#traceLines)
-                             + viewBlock(app, stepParams, outcome#world);
-                    answer(text, bridge,
-                           { world = outcome#world, anno = annoAfter, history = historyAfter, hold = true,
-                             stepState = outcome#stepState })
+                          ctx: RemoteNext[w]): RemoteNext[w] \ (ef + GameEngine.Game + Fs.FileRead + IO) =
+        match parseParams(request#params) {
+            case Err(message) => answer(message + "\n", bridge, ctx)
+            case Ok(stepParams) =>
+                let base = App.resumePoint(ctx#anno, ctx#history, ctx#world);
+                match stepScriptOf(app, base#world, request, stepParams) {
+                    case Err(message) => answer(message + "\n", bridge, ctx)
+                    case Ok(script) =>
+                        if (not ctx#anno#paused) enterHaltMarkers() else ();
+                        let result = Flow.play(app, { design = GameEngine.Game.getViewportRect()#size, limit = stepParams#maxFrames },
+                                               script, { world = base#world, state = ctx#stepState });
+                        let (played, flowEnd) = playedOf(result);
+                        let outcome = stepOutcomeOf(app, played, { world = base#world, state = ctx#stepState, frame = base#anno#frame },
+                                                    stepParams, flowEnd);
+                        let annoAfter = { paused = true,
+                                          frame = base#anno#frame + Int32.toInt64(outcome#framesRun) | base#anno };
+                        let historyAfter = List.take(App.historyLimit(), List.append(outcome#newHistory, base#history));
+                        let text = stepHeader({ stepped = outcome#framesRun, frame = annoAfter#frame,
+                                                stoppedBy = outcome#stoppedBy, quit = outcome#quit })
+                                 + (if (outcome#failure == "") "" else "[fail]\n${outcome#failure}\n")
+                                 + eventsBlock(outcome#sounds)
+                                 + traceBlock(outcome#traceLines)
+                                 + viewBlock(app, stepParams, outcome#world);
+                        answer(text, bridge,
+                               { world = outcome#world, anno = annoAfter, history = historyAfter, hold = true,
+                                 stepState = outcome#stepState })
                 }
         }
 
@@ -847,7 +785,7 @@ pub mod App.RemoteDebug {
             case (None, None) => "[scene]\n(no view/debugView wired)"
         }
 
-    // ── リモートデバッグ（HTTP）: /step の実行器 ──
+    // ── リモートデバッグ（HTTP）: /step・/flow の実行器（中身は Flow.play = 実機と同じ 1 フレーム）──
 
     /// /step 1 回ぶんの実行結果。
     pub type alias StepOutcome[w] = {
@@ -856,76 +794,116 @@ pub mod App.RemoteDebug {
         newHistory = List[w],            // 実行中に積んだ World（新しい順・上限つき）
         framesRun = Int32,               // 実際に進んだコマ数
         sounds = List[(Int64, String)],  // (絶対フレーム番号, 音名) の時系列
-        stoppedBy = String,              // "script" / "until:sfx" / "until:quiet" / "quit" / "max"
+        stoppedBy = String,              // "script" / "until:sfx" / "until:quiet" / "quit" / "max" / "fail"
         quit = Bool,                     // 終了条件（quitWhen）に触れて止まったか
+        failure = String,                // flow が止まった所（"" = 最後まで流れた）
         traceLines = List[String]        // trace=status:K で集めた行（時系列）
     }
 
-    /// /step の台本実行中に持ち回る畳み込みの状態。
-    type alias StepFold[w] = {
-        world = w,                        // いまの World
-        state = App.StepState,            // 固定刻みの持ち越しと実時間の時計
-        done = Int32,                     // 進んだコマ数
-        quietRun = Int32,                 // 無音が続いているコマ数（until=quiet 用）
-        acc = List[w],                    // 積んだ World（新しい順）
-        sounds = List[(Int64, String)],   // 鳴った音（新しい順）
-        stopped = String,                 // 停止理由（"" = 続行）
-        quit = Bool,                      // 終了条件に触れたか
-        trace = List[String]              // trace の行（新しい順）
-    }
-
-    /// 台本のコマ（押しているキーの集合）を Frame の列にする。押した瞬間は前のコマに無かったキー
-    /// （実機と同じ App.frameOf）。マウスは台本に無いので「押されず・動かず・回さず」。
-    pub def framesOf(script: Script, dt: Float64, viewport: Vec2.Vec2): List[App.Frame] =
-        let (_, newestFirst) = script |> List.foldLeft((acc, keys) -> {
-            let (prev, out) = acc;
-            let frame = App.frameOf(prev = prev, current = keys, dt, viewport,
-                                    { prevCursor = None, cursor = Vec2.zero() },
-                                    { prevDown = false, down = false, wheel = 0.0 });
-            (keys, frame :: out)
-        }, (Set.empty(), Nil));
-        List.reverse(newestFirst)
-
-    /// /step の芯: frames を 1 つずつ App.traceFrame（実機の advanceFrame・App.trace と同じ 1 フレーム。
-    /// 固定刻みも時計も実機と同じに効く）へ流し、until・quitWhen・maxFrames で止める。
-    /// 描画も実際の音も無い純粋な畳み込みなので、テストは App.trace と同じ列を流して比べられる。
-    pub def stepFrames(app: App.App[w, ef], frames: List[App.Frame],
-                       start: { world = w, state = App.StepState, frame = Int64 },
-                       stepParams: StepParams): StepOutcome[w] \ ef =
-        let effective = List.take(stepParams#maxFrames, frames);
-        let truncated = List.length(frames) > List.length(effective);
-        let first: StepFold[w] = { world = start#world, state = start#state, done = 0, quietRun = 0,
-                                   acc = Nil, sounds = Nil, stopped = "", quit = false, trace = Nil };
-        let final = effective |> List.foldLeft((fold, frame) -> {
+    /// flow が流したフレームの列を、/step の止め方（until=sfx|quiet・quitWhen）で切り、応答の材料にする。
+    /// quitWhen に触れたフレームはまだ流していない扱い（実機ではそのフレームで閉じる）。
+    pub def stepOutcomeOf(app: App.App[w, ef], played: List[Flow.Played[w]],
+                          start: { world = w, state = App.StepState, frame = Int64 },
+                          stepParams: StepParams, flowEnd: String): StepOutcome[w] \ ef =
+        let first = { world = start#world, state = start#state, done = 0, quietRun = 0, acc = Nil, sounds = Nil,
+                      stopped = "", quit = false, trace = Nil };
+        let final = played |> List.foldLeft((fold, entry) -> {
             if (fold#stopped != "") fold
             else {
                 let wantsQuit = app#quit;
-                if (wantsQuit(frame, fold#world)) { stopped = "quit", quit = true | fold }
+                if (wantsQuit(entry#step#frame, fold#world)) { stopped = "quit", quit = true | fold }
                 else {
                     let frameNo = start#frame + Int32.toInt64(fold#done) + 1i64;
-                    let (step, nextState) = App.traceFrame(app, frame, fold#state, fold#world);
-                    let (stoppedNow, quietNow) = stopCheck(stepParams#stopWhen, step#sounds, fold#quietRun);
+                    let (stoppedNow, quietNow) = stopCheck(stepParams#stopWhen, entry#step#sounds, fold#quietRun);
                     let traceNow = match stepParams#traceEvery {
                         case Some(every) =>
                             if (Int32.modulo(fold#done + 1, every) == 0)
-                                "f=${frameNo} ${statusText(app, step#after)}" :: fold#trace
+                                "f=${frameNo} ${statusText(app, entry#step#after)}" :: fold#trace
                             else fold#trace
                         case None => fold#trace
                     };
-                    { world = step#after, state = nextState, done = fold#done + 1, quietRun = quietNow,
-                      acc = step#after :: fold#acc,
-                      sounds = List.append(List.reverse(step#sounds |> List.map(name -> (frameNo, name))), fold#sounds),
-                      stopped = stoppedNow, quit = false, trace = traceNow }
+                    { world = entry#step#after, state = entry#state, done = fold#done + 1, quietRun = quietNow,
+                      acc = entry#step#after :: fold#acc,
+                      sounds = List.append(List.reverse(entry#step#sounds |> List.map(name -> (frameNo, name))), fold#sounds),
+                      stopped = stoppedNow, trace = traceNow | fold }
                 }
             }
         }, first);
-        { world = final#world,
-          stepState = final#state,
+        { world = final#world, stepState = final#state,
           newHistory = List.take(App.historyLimit(), final#acc),
           framesRun = final#done,
           sounds = List.reverse(final#sounds),
           stoppedBy = if (final#stopped != "") final#stopped
-                      else if (truncated) "max" else "script",
+                      else if (flowEnd == "") "script"
+                      else if (String.contains(substr = "フレームの上限", flowEnd)) "max"
+                      else "fail",
           quit = final#quit,
+          failure = if (final#stopped != "") "" else flowEnd,
           traceLines = List.reverse(final#trace) }
+
+    /// flow の結果（流し終えた・止まった）からフレームの列と止まった所の 1 行を取り出す。
+    pub def playedOf(result: Result[Flow.Failure[w], Flow.Outcome[w]]): (List[Flow.Played[w]], String) =
+        match result {
+            case Ok(outcome)  => (outcome#frames, "")
+            case Err(failure) => (failure#upTo#frames, failureLine(failure))
+        }
+
+    /// 止まった所の 1 行（行番号・理由・何フレーム目・使った問いの値）。
+    pub def failureLine(failure: Flow.Failure[w]): String =
+        "${failure#at#file}:${Int32.toString(failure#at#number)}: ${failure#why} / ${Int32.toString(failure#frame)} フレーム目"
+            + (if (failure#seen == "") "" else " / ${failure#seen}")
+
+    /// /step の本文を flow として読む（語彙はいまの World から）。dt= のクエリは fps より先に効く（診断用）。
+    def stepScriptOf(app: App.App[w, ef], world: w, request: Request, stepParams: StepParams): Result[String, Flow.Script] =
+        Flow.Parse.parseText(Flow.vocabOf(app, world), "body", request#body)
+            |> Result.mapErr(problems -> "error: " + Flow.Parse.problemsText(problems))
+            |> Result.map(script -> if (Map.memberOf("dt", request#params)) { fps = 1.0 / stepParams#dtSeconds | script } else script)
+
+    /// POST /flow: flow（本文か ?path=）を新しく作った World（先頭の始まり）から流し、結果の表を返す。
+    /// ?apply=1 なら流し終えた World へ差し替える（その場面から遊べる・止めている間は止まったまま）。
+    /// ?repeat=N は同じ flow を N 回流す（速さを測る。結果の表は最後の 1 回）。ゲームのループの中で流すので上限は flowFrameCap。
+    def remoteFlow(app: App.App[w, ef], bridge: Bridge, request: Request,
+                   ctx: RemoteNext[w]): RemoteNext[w] \ (ef + GameEngine.Game + Fs.FileRead + IO) =
+        let design = GameEngine.Game.getViewportRect()#size;
+        let fresh = App.freshWorld(app, design);
+        let vocab = Flow.vocabOf(app, fresh);
+        let parsed = match Map.get("path", request#params) {
+            case Some(path) => Flow.Parse.parseFile(vocab, path, Flow.Cli.readText)
+            case None       => Flow.Parse.parseText(vocab, "body", request#body)
+        };
+        match parsed {
+            case Err(problems) => answer("error: " + Flow.Parse.problemsText(problems) + "\n", bridge, ctx)
+            case Ok(script) =>
+                let start = match (List.head(script#lines) |> Option.map(line -> line#step), List.head(app#starts)) {
+                    case (Some(Flow.Step.Start(_, _, _)), _) => fresh
+                    case (_, Some(first)) => App.buildStart(app, design, first#name, Map.empty()) |> Result.getWithDefault(fresh)
+                    case _ => fresh
+                };
+                let repeat = Map.get("repeat", request#params) |> Option.flatMap(Int32.fromString) |> Option.getWithDefault(1);
+                let began = GameEngine.Game.getViewportRect();
+                let results = List.range(0, Int32.max(1, repeat)) |> List.map(_ ->
+                    Flow.play(app, { design = began#size, limit = flowFrameCap() }, script,
+                              { world = start, state = App.freshStepState() }));
+                match List.last(results) {
+                    case None => answer("error: nothing ran\n", bridge, ctx)
+                    case Some(Err(failure)) => answer("FAIL ${failureLine(failure)}\n    ${failure#at#text}\n", bridge, ctx)
+                    case Some(Ok(outcome)) =>
+                        let text = "ok frames=${Int32.toString(List.length(outcome#frames))} repeat=${Int32.toString(repeat)}\n"
+                                 + "[places]\n" + placesText(outcome) + "\n"
+                                 + "[status]\n" + statusText(app, outcome#last) + "\n";
+                        if (Map.get("apply", request#params) == Some("1"))
+                            answer(text, bridge, { world = outcome#last, stepState = outcome#state, history = Nil,
+                                                   anno = { scrub = 0 | ctx#anno } | ctx })
+                        else answer(text, bridge, ctx)
+                }
+        }
+
+    /// 始まりと mark の場所（何フレーム目か）を 1 行ずつ。
+    def placesText(outcome: Flow.Outcome[w]): String =
+        let starts = outcome#starts |> List.map(match (at, name) -> "start ${name} @${Int32.toString(at)}");
+        let marks = outcome#marks |> Map.toList |> List.map(match (name, at) -> "mark ${name} @${Int32.toString(at)}");
+        String.intercalate("\n", List.append(starts, marks))
+
+    /// POST /flow 1 回で流せるフレームの上限（60fps で 10 分ぶん）。ゲームのループの中で流すので、その間は窓が止まる。
+    pub def flowFrameCap(): Int32 = 36000
 }

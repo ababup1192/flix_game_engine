@@ -1,0 +1,3 @@
+# 手の語・付け足し・問いの式・記録が書く語を全部使った flow が読める（鳴らない側）。
+# cwd: このリポの根 / 環境変数: CASE(このケース)
+bin/fge flow check --vocab testdata/lint/flow-check/vocab.json testdata/lint/flow-check/clean-passes/input.flow

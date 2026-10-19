@@ -1,0 +1,15 @@
+# 書き間違いの見本（全部の行を読み、読めない行を行番号つきで全部言う）。
+fps 4
+look nigth
+start cuont n=5
+tpa confirm
+tap confrm
+until n>=1
+until n max 1
+until busy=1 max 1
+until phase>Title max 1
+drive mahser until n>=2 max 5
+idle 30
+press Z
+expect fq=1a2b3c4d
+hold confirm 0.5 dt=x

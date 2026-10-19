@@ -38,6 +38,11 @@ mod Game {
                 { texture = World.atlasName(), key = w#atlasKey, baked = w#atlas } :: Nil)
             // 好きな場面から起動する・テストと flow が場面を名前で組む（START="choice id=clock" など）。
             |> App.withStarts(Starts.all())
+            // e2e/<名前>.flow の語彙（役・問い・名前付きの操作）と、記録の再生が比べる指紋。
+            |> App.withFlow(E2e.table())
+            |> App.withFingerprint(E2e.fingerprint)
+            // 1 行の要点（flow の失敗・リモートの /step が最後の World として見せる）。
+            |> App.withStatusLine(w -> "phase=${w#phase} section=${w#section}:${w#idx} choice=${NovelKit.isAsking(w#kit)} lamps=${World.lampsLit(w)}")
             // 走行中の POST /render（Studio の「生成して」）は SceneRender.all と同じ実体を呼ぶ。
             |> App.onRenderRequest(SceneRender.allShots)
 }
