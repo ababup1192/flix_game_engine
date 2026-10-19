@@ -13,12 +13,19 @@
 # 拾えない形の入口（引数あり・別の効果つき・複数行・mod が 2 つ以上あるファイル）は flix run に回す。
 # jar を作れなかった時は、エラーの最後を見せて止める（FGE_HEADLESS_FALLBACK=1 の時だけ flix run で続ける）。
 #
+# jar が古いかは中身の指紋（bin/fge resident manifest: src・flix.toml・lib の中身と java の旗の SHA-256）を
+# build/headless/jar.manifest と比べて決める。bin/fge-go が無い時だけ更新時刻で決める。
+#
+# HEADLESS_RESIDENT=1 なら、jar を確かめた後にまずゲームの根の常駐（窓なしのゲーム・既定の入口 E2e.serveHeadless）
+# へ頼む（bin/fge resident run）。常駐を使えない時（終了コード 125）だけ下の java -jar で流す。
+#
 # jar の置き場: build/headless/（git に入れない）。作る場所は build/headless/proj で、
 # ゲームの src を写した上に FgeHeadlessMain.flix を足す（ゲームの src には何も書かない）。
 # 2 本の make が同時に来ても作るのは 1 本だけ（build/headless/.lock で順番に。鍵に作り手の pid を
 # 書き、作り手が落ちていたら次の人が外す。15 分待っても空かなければ flix run で流す）。
 # 作り直しは別名で書いてから mv するので、走っている JVM の jar は消えない。
-# 作れなかった時は build/headless/.failed に印（エラーの最後の 15 行）を残し、src などがそれより新しくなるまで作り直さない
+# 作れなかった時は build/headless/.failed に印（エラーの最後の 15 行）を、.failed.manifest に作れなかった時の中身の指紋を残し、
+# 指紋が変わるまで作り直さない
 # （作れない状態のまま毎回コンパイルを 2 回払わないため）。jar を作り直させたい時は rm -rf build/headless。
 #
 # 環境変数: FGE_HEADLESS_FALLBACK=1 = jar を作れない時も flix run で続ける（既定は止める）。
@@ -44,6 +51,7 @@ out=build/headless
 jar=$out/headless.jar
 proj=$out/proj
 main=FgeHeadlessMain
+fge_go="$engine/bin/fge-go"
 
 if [ ! -d src ] || [ ! -f flix.toml ]; then
     echo "headless-run: ゲームの根（src/ と flix.toml のある所）で呼んでください" >&2
@@ -93,7 +101,28 @@ run_with_flix() {
     exec "$flix" run --entrypoint "$entry"
 }
 
-entries="$(list_entries)"
+# 中身の指紋はこの起動で 1 回だけ作る（src と lib を全部読むので、呼ぶたびに作ると 1 枚撮りの頭で
+# 何度も払う）。bin/fge-go が無い・作れない時は空。
+manifest_start=""
+if [ -x "$fge_go" ]; then
+    manifest_start=$("$fge_go" resident manifest . 2>/dev/null || true)
+fi
+
+# 入口の一覧は、指紋が前回と同じなら前回の物を使う。
+# WhyNot: 毎回 list_entries しない — src の .flix ごとに grep・sed・awk を起こすので、
+# internet_dungeon では 1 枚撮り 1.28 秒のうち 0.74 秒をこれが占めた（2026-10-19 実測）。
+# 指紋は src の中身から作るので、入口が増えた・消えた時は必ず指紋が変わり、作り直しになる。
+entries_cache=$out/entries.cache
+if [ -n "$manifest_start" ] && [ "$(head -1 "$entries_cache" 2>/dev/null)" = "$manifest_start" ]; then
+    entries="$(tail -n +2 "$entries_cache")"
+else
+    entries="$(list_entries)"
+    if [ -n "$manifest_start" ]; then
+        mkdir -p "$out"
+        { printf '%s\n' "$manifest_start"; printf '%s\n' "$entries"; } > "$entries_cache.tmp.$$"
+        mv "$entries_cache.tmp.$$" "$entries_cache"
+    fi
+fi
 if ! printf '%s\n' "$entries" | grep -qxF "$entry"; then
     # 拾えない形の入口は今までどおりコンパイルして流す。
     run_with_flix
@@ -116,12 +145,22 @@ build_dispatcher() {
     echo "}"
 }
 
-# jar が古いか: 無い・入口の一覧が変わった・src / flix.toml / lib のどれかが jar より新しい。
+# 中身の指紋（64 字）。bin/fge-go が無い・指紋を作れない時は空。
+manifest_now() {
+    printf '%s' "$manifest_start"
+}
+
+# jar が古いか: 無い・入口の一覧が変わった・中身の指紋が jar を作った時と違う
+# （指紋を作れない時は src / flix.toml / lib のどれかが jar より新しい）。
 is_stale() {
     [ -f "$jar" ] || return 0
     [ -f "$proj/src/$main.flix" ] || return 0
     [ "$(build_dispatcher)" = "$(cat "$proj/src/$main.flix")" ] || return 0
-    # lib/ と末尾に / を付ける — lib が symlink でも中まで見る。
+    now=$(manifest_now)
+    if [ -n "$now" ]; then
+        [ "$now" = "$(cat "$out/jar.manifest" 2>/dev/null)" ] || return 0
+        return 1
+    fi
     [ -z "$(newer_than "$jar")" ] || return 0
     return 1
 }
@@ -131,15 +170,23 @@ newer_than() {
     find -L src flix.toml lib -newer "$1" -print 2>/dev/null | head -1
 }
 
-# 前に作れなかった時から、入力が何も変わっていないか。
+# 前に作れなかった時から、入力が何も変わっていないか（.failed.manifest には作れなかった時の指紋が入っている）。
 failed_before() {
-    [ -f "$out/.failed" ] && [ -z "$(newer_than "$out/.failed")" ]
+    [ -f "$out/.failed" ] || return 1
+    now=$(manifest_now)
+    if [ -n "$now" ]; then
+        [ "$now" = "$(cat "$out/.failed.manifest" 2>/dev/null)" ]
+        return
+    fi
+    [ -z "$(newer_than "$out/.failed")" ]
 }
 
-# 作れたら 0。jar の時刻は「src を写し始めた時刻」にそろえる — 作っている最中に保存された src を
-# 次の回に「jar より新しい」と気づけるように（flix が書き終えた時刻のままだと取りこぼす）。
+# 作れたら 0。jar.manifest には「src を写す前に作った指紋」を書き、jar の時刻は「src を写し始めた時刻」に
+# そろえる — 作っている最中に保存された src を次の回に「jar と違う」と気づけるように
+# （作り終えた後の指紋や時刻だと、作っている間の保存を取りこぼす）。
 build_jar() {
     touch "$out/.started"
+    started_manifest=$(manifest_now)
     rm -rf "$proj/src" "$proj/artifact"
     mkdir -p "$proj"
     cp -R src "$proj/src"
@@ -160,6 +207,13 @@ build_jar() {
     mv "$built" "$jar.tmp.$$"
     touch -r "$out/.started" "$jar.tmp.$$"
     mv "$jar.tmp.$$" "$jar"
+    # 指紋を作れなかった回は古い jar.manifest を残さない — 常駐が古い指紋のまま「同じ jar」と答えるため。
+    if [ -n "$started_manifest" ]; then
+        printf '%s\n' "$started_manifest" > "$out/jar.manifest.tmp.$$"
+        mv "$out/jar.manifest.tmp.$$" "$out/jar.manifest"
+    else
+        rm -f "$out/jar.manifest"
+    fi
 }
 
 if is_stale; then
@@ -188,11 +242,12 @@ if is_stale; then
     built_ok=1
     if failed_before; then built_ok=0
     elif is_stale; then
-        if build_jar; then rm -f "$out/.failed"
+        if build_jar; then rm -f "$out/.failed" "$out/.failed.manifest"
         else
             built_ok=0
             # 色の符号を落とした最後の 15 行（MethodTooLargeException などの理由が見える所）。
             { sed 's/\x1b\[[0-9;]*m//g' "$out/build.log" 2>/dev/null | grep -v '^[[:space:]]*$' || true; } | tail -15 > "$out/.failed"
+            printf '%s\n' "${started_manifest:-}" > "$out/.failed.manifest"
             touch -r "$out/.started" "$out/.failed"
         fi
     fi
@@ -218,6 +273,15 @@ if [ "${built_ok:-0}" = 1 ]; then
         [ "$vocab" = "$entry" ] && continue
         FGE_ENTRY="$vocab" "$java_cmd" -Xss32m -Djava.awt.headless=true -jar "$jar" >&2 || true
     done
+fi
+# 常駐に頼む（HEADLESS_RESIDENT=1 の時だけ。既定は今の java -jar）。125 は「常駐を使えなかった」で、
+# 下の java -jar へ進む。それ以外は入口の終了コードなのでそのまま返す。
+resident_entry="${HEADLESS_RESIDENT_ENTRY:-E2e.serveHeadless}"
+if [ "${HEADLESS_RESIDENT:-}" = 1 ] && [ "$entry" != "$resident_entry" ] && [ -x "$fge_go" ]; then
+    rc=0
+    HEADLESS_ENTRIES="$(printf '%s\n' "$entries" | paste -sd' ' -)" \
+        "$fge_go" resident run --entry "$entry" --dir . --java "$java_cmd" || rc=$?
+    [ "$rc" = 125 ] || exit "$rc"
 fi
 # HEADLESS_JAVA_OPTS は空白で分けて既定の後ろに足す（同じ旗は後ろが勝つ）。
 # shellcheck disable=SC2086

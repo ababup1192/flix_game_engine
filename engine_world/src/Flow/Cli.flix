@@ -8,33 +8,45 @@
 //   FLOW_VOCAB = 語彙の書き先（既定 e2e/vocab.json）
 // 失敗（読めない行・待ちの打ち切り・expect）は行番号つきで 1 行目に FAIL と書き、終わりの番号 1 で抜ける。
 pub mod Flow.Cli {
-    import java.lang.System
 
+    /// プロセスの環境変数で mainOf を流し、失敗ならその終了コードでプロセスを終える。
     pub def main(app: App.App[w, ef]): Unit \ ef + Fs.FileRead + Fs.FileWrite + IO =
+        ProcessEnv.exitWith(mainOf(app, ProcessEnv.snapshot()))
+
+    /// main の中身。env は入口の頭で読んだ環境変数の表（常駐なら App.Headless.envOf(req)）。戻り値は終了コード。
+    pub def mainOf(app: App.App[w, ef], env: Map[String, String]): Int32 \ ef + Fs.FileRead + Fs.FileWrite + IO =
         let design = App.loadProjectDesign(".");
         let fresh = App.freshWorld(app, design);
         let vocab = Flow.vocabOf(app, fresh);
-        let vocabPath = envOr("FLOW_VOCAB", "e2e/vocab.json");
+        let vocabPath = getEnvOr(env, "FLOW_VOCAB", "e2e/vocab.json");
         let wrote = writeText(vocabPath, Flow.vocabJson(vocab));
-        let path = envOr("FLOW", "");
-        let mode = envOr("FLOW_MODE", "run");
-        if (path == "" or mode == "vocab")
-            println(if (wrote) "[flow] 語彙を書いた: ${vocabPath}" else "[flow] 語彙を書けない: ${vocabPath}（フォルダが無い?）")
-        else match Flow.Parse.parseFile(vocab, path, readText) {
+        let path = getEnvOr(env, "FLOW", "");
+        let mode = getEnvOr(env, "FLOW_MODE", "run");
+        if (path == "" or mode == "vocab") {
+            println(if (wrote) "[flow] 語彙を書いた: ${vocabPath}" else "[flow] 語彙を書けない: ${vocabPath}（フォルダが無い?）");
+            0
+        } else match Flow.Parse.parseFile(vocab, path, readText) {
             case Err(problems) =>
                 println("FAIL ${Int32.toString(List.length(problems))} 行を読めない\n" + Flow.Parse.problemsText(problems));
-                System.exit(1)
+                1
             case Ok(script) =>
-                if (mode == "check") println("ok ${path}: ${Int32.toString(List.length(script#lines))} 手を読めた")
-                else report(app, path, Flow.play(app, { design = design, limit = 100000000 }, script,
-                                                 { world = startWorld(app, design, fresh, script), state = App.freshStepState() }), script#fps)
+                if (mode == "check") {
+                    println("ok ${path}: ${Int32.toString(List.length(script#lines))} 手を読めた");
+                    0
+                } else report(app, path, Flow.play(app, { design = design, limit = 100000000 }, script,
+                                                   { world = startWorld(app, design, fresh, script), state = App.freshStepState() }), script#fps)
         }
 
     /// 語彙だけを書く（ゲームの E2e.vocab が呼ぶ。bin/headless-run が jar を作った時・make flow-vocab）。
     pub def writeVocabOf(app: App.App[w, ef]): Unit \ ef + Fs.FileRead + Fs.FileWrite + IO =
+        discard vocabMainOf(app, ProcessEnv.snapshot())
+
+    /// writeVocabOf の中身。env は入口の頭で読んだ環境変数の表。書けなくても 0 を返す（理由は 1 行出す）。
+    pub def vocabMainOf(app: App.App[w, ef], env: Map[String, String]): Int32 \ ef + Fs.FileRead + Fs.FileWrite + IO =
         let vocab = Flow.vocabOf(app, App.freshWorld(app, App.loadProjectDesign(".")));
-        let path = envOr("FLOW_VOCAB", "e2e/vocab.json");
-        println(if (writeText(path, Flow.vocabJson(vocab))) "[flow] 語彙を書いた: ${path}" else "[flow] 語彙を書けない: ${path}（フォルダが無い?）")
+        let path = getEnvOr(env, "FLOW_VOCAB", "e2e/vocab.json");
+        println(if (writeText(path, Flow.vocabJson(vocab))) "[flow] 語彙を書いた: ${path}" else "[flow] 語彙を書けない: ${path}（フォルダが無い?）");
+        0
 
     /// 先頭の手が start でない時に流し始める World: 登録簿の先頭の始まり（無ければ新しく作った初期の World）。
     pub def startWorld(app: App.App[w, ef], design: Vec2.Vec2, fresh: w, script: Flow.Script): w \ ef + Fs.FileRead =
@@ -50,20 +62,21 @@ pub mod Flow.Cli {
             case _                    => fresh
         }
 
-    def report(app: App.App[w, ef], path: String, result: Result[Flow.Failure[w], Flow.Outcome[w]], fps: Float64): Unit \ ef + IO =
+    def report(app: App.App[w, ef], path: String, result: Result[Flow.Failure[w], Flow.Outcome[w]], fps: Float64): Int32 \ ef + IO =
         let seconds = frames -> Float64.toString(Float64.round(Int32.toFloat64(frames) / fps * 100.0) / 100.0);
         match result {
             case Ok(outcome) =>
                 let count = List.length(outcome#frames);
                 println("ok ${path}: ${Int32.toString(count)} フレーム（${seconds(count)} 秒）${fingerprintPart(app, outcome#last)}");
                 println(placesText(outcome));
-                println(statusPart(app, outcome#last))
+                println(statusPart(app, outcome#last));
+                0
             case Err(failure) =>
                 println("FAIL ${failure#at#file}:${Int32.toString(failure#at#number)}: ${failure#why}");
                 println("    ${failure#at#text}");
                 println("    ${Int32.toString(failure#frame)} フレーム目（${seconds(failure#frame)} 秒）" +
                         (if (failure#seen == "") "" else " / ${failure#seen}"));
-                System.exit(1)
+                1
         }
 
     /// 始まりと mark の場所（何フレーム目か）を 1 行に。
@@ -85,10 +98,16 @@ pub mod Flow.Cli {
             case None       => "  [status] (App.withStatusLine を繋ぐと最後の World の要点が出る)"
         }
 
-    /// 環境変数（無いか空なら fallback）。
+    /// プロセスの環境変数（無いか空なら fallback）。入口の頭だけで使う。奥では getEnvOr で引数の表を引く。
     pub def envOr(name: String, fallback: String): String \ IO =
-        let value = System.getenv(name);
-        if (Object.isNull(value) or String.isEmpty(value)) fallback else value
+        getEnvOr(ProcessEnv.snapshot(), name, fallback)
+
+    /// env の表の値（無いか空なら fallback）。
+    pub def getEnvOr(env: Map[String, String], name: String, fallback: String): String =
+        match Map.get(name, env) {
+            case Some(value) if not String.isEmpty(value) => value
+            case _                                        => fallback
+        }
 
     /// ファイルを読む（読めなければ理由）。
     pub def readText(path: String): Result[String, String] \ Fs.FileRead =

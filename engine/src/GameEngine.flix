@@ -447,6 +447,8 @@ pub mod GameEngine {
             discard pb.inheritIO();
             let proc = pb.start();
             let code = proc.waitFor();
+            // WhyNot: ProcessEnv.exitWith に委ねない — 子が 0 で終わっても親はここで必ず終わる（戻ると呼び元が
+            // 窓を開きにいく）。終了コードを返す形にすると pub の ensureMainThread の型が変わる。
             System.exit(code);
             true
         }
@@ -459,6 +461,5 @@ pub mod GameEngine {
     /// 通常起動など）でも二重に再起動せずに済む。
     def isStartedOnFirstThread(): Bool \ IO =
         let pid = ProcessHandle.current().pid();
-        let value = System.getenv("JAVA_STARTED_ON_FIRST_THREAD_${pid}");
-        not Object.isNull(value) and value == "1"
+        Map.get("JAVA_STARTED_ON_FIRST_THREAD_${pid}", ProcessEnv.snapshot()) == Some("1")
 }

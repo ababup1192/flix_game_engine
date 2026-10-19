@@ -201,8 +201,11 @@ func liveDaemons(r *Rules) int {
 
 // MaxDaemonCount は常駐の数の上限。機械の物理メモリから決まる（環境変数で上書きできる）。
 // 起動予約の歯止めと常駐側のメモリ予算は、どちらもこの 1 本を読む。
-func MaxDaemonCount(r *Rules) int {
-	m := r.Checkd.MaxDaemons
+func MaxDaemonCount(r *Rules) int { return CountDaemons(r.Checkd.MaxDaemons) }
+
+// CountDaemons は MaxDaemons の決め方から上限の数を出す。checkd 以外の常駐
+// （bin/fge resident）も同じ式で数を決める。
+func CountDaemons(m MaxDaemons) int {
 	n := *m.Fallback
 	if mb, ok := MachineMemoryMB(); ok && *m.GBPerDaemon > 0 {
 		n = int(float64(mb) / 1024 / *m.GBPerDaemon)

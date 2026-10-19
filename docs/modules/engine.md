@@ -27,6 +27,7 @@
 | やりたいこと | モジュール |
 |---|---|
 | ゲームとエンジンの境界の共有型・効果（描画・入力・音・時間）を知りたい | GameEngine |
+| プロセスの環境変数を読む・終了コードで終える（入口の頭の 1 か所。奥へは引数で渡す） | ProcessEnv（snapshot・exitWith。常駐の入口は App.Headless.envOf(req)） |
 | 効果音・BGM の再生／停止・音量・高さ（pitch）の低レベル効果口を知りたい（`GameEngine.Audio`） | GameEngine（Audio 効果）/ AudioStreamPlayer（呼び口。鳴り続ける音は engine_world の App.withSustained。詳しくは [audio.md](../audio.md)） |
 | WAV ファイルの中身（形式・波形データの位置・ループ点）を読み解きたい | AudioUtil（ループ点は loopPointsOf。smpl チャンク） |
 | engine の fpkg 読み込みを consumer 側で trigger したい | EngineSentinel |

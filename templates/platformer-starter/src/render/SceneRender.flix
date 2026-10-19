@@ -10,7 +10,6 @@ mod SceneRender {
     }
 
     import java.io.File
-    import java.lang.System
 
     def design(): Vec2.Vec2 = View.design()
 
@@ -43,10 +42,6 @@ mod SceneRender {
         { name = World.atlasName(), side = w#atlas#side,
           pixelAt = (x, y) -> PxSpriteAtlas.pixelAt(w#atlas, x, y) } :: Nil
 
-    def envOr(key: String, fallback: String): String \ IO =
-        let value = System.getenv(key);
-        if (Object.isNull(value)) fallback else value
-
     // コイン(spin_0 / spin_1)が表を向く時刻を選ぶ — 横向きのコマだと
     // 見本の絵でコインが棒に見える。floor(t*5) が偶数なら表。
     def renderTime(): Float64 = 3.2
@@ -73,8 +68,17 @@ mod SceneRender {
                 fst(Controls.stepHeadless(idle, 1.0 / 60.0, state, stomped))
         }
 
-    pub def all(): Unit \ IO =
-        discard allShots()
+    pub def all(): Unit \ IO = App.Headless.exitWith(allJob(App.Headless.requestFromProcess()))
+
+    /// SceneRender.all の中身（常駐の /run からも呼ぶ）。戻り値は終了コード。
+    pub def allJob(_req: App.Headless.Request): Int32 \ IO =
+        discard allShots();
+        0
+
+    /// 常駐（App.Headless.serveJobs）が /run で流す入口の束。
+    pub def jobs(): List[App.Headless.Job] =
+        App.Headless.job("SceneRender", "one", req -> oneJob(req)) ::
+        App.Headless.job("SceneRender", "all", req -> allJob(req)) :: Nil
 
     /// 描き出せる場面の名前。make render の使い方も SHOT の当たり判定も、この並びが source of truth。
     /// 場面の題と一言（Studio のギャラリーに出るラベル）は assets/*.scenes.json 側で、
@@ -101,18 +105,22 @@ mod SceneRender {
     /// SHOT で指した場面だけを debug/ へ描き出す(スナップショットを汚さない)。
     /// 実行: make render SHOT=cave — 洞窟のように 1 枚が重い面を見ながら直すとき、
     /// 4 枚まとめて描き出し直すのを待たずに済む。
-    pub def one(): Unit \ IO =
-        let wanted = envOr("SHOT", "") |> String.splitOn(substr = " ")
+    pub def one(): Unit \ IO = App.Headless.exitWith(oneJob(App.Headless.requestFromProcess()))
+
+    /// SceneRender.one の中身（常駐の /run からも呼ぶ）。env は要求の表（App.Headless.envOf）だけを読む。
+    pub def oneJob(req: App.Headless.Request): Int32 \ IO =
+        let wanted = Map.getWithDefault("SHOT", "", App.Headless.envOf(req)) |> String.splitOn(substr = " ")
             |> List.map(String.trim) |> List.filter(n -> not String.isEmpty(n));
         let known = List.toSet(shotNames());
         let unknown = wanted |> List.filter(n -> not Set.memberOf(n, known));
         if (List.isEmpty(wanted) or not List.isEmpty(unknown)) {
             println("[render] 描けない名前です: ${List.join(" ", unknown)}");
             println("[render] SHOT=<場面> に使えるのは: ${List.join(" ", shotNames())}");
-            System.exit(1)
+            1
         } else {
             let picked = List.toSet(wanted);
-            discard shotsInto("debug", n -> Set.memberOf(n, picked))
+            discard shotsInto("debug", n -> Set.memberOf(n, picked));
+            0
         }
 
     /// SceneRender.all の中身。走行中の POST /render(App.onRenderRequest)もこれを呼べる。
