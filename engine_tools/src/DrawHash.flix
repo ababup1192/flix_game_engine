@@ -196,7 +196,10 @@ pub mod DrawHash {
     }
 
     def putFontEntry(out: DataOutputStream, inputs: Inputs, entry: SoftRaster.FontEntry): Unit \ IO = match entry {
-        case { ttf = ttf, atlas = atlas } => putFile(out, inputs, ttf); putAtlas(out, atlas)
+        // 本ごとの縁の設定は Some の時だけ鍵に入れる（None の本の鍵は設定を足す前と同じ）。
+        case { ttf = ttf, atlas = atlas, textAntialias = smooth } =>
+            putFile(out, inputs, ttf); putAtlas(out, atlas);
+            smooth |> Option.forEach(b -> putStr(out, if (b) "textAntialias=on" else "textAntialias=off"))
     }
 
     def putAtlas(out: DataOutputStream, atlas: FontAtlas): Unit \ IO = match atlas {

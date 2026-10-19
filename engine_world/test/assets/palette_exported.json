@@ -1,0 +1,5 @@
+{
+  "version": 1,
+  "note": "PaletteExport.build が書く形",
+  "colors": { "accent": "#00ff00", "base": "#0000ff" }
+}

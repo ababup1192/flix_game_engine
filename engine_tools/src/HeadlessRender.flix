@@ -298,12 +298,50 @@ pub mod HeadlessRender {
     /// 名前 → 画像（GL が宣言順に描くのと同じで、後の pass は前の pass を貼れる）。
     pub def renderPassImageWith(cfg: RenderConfig, images: Map[String, BufferedImage],
                               p: PassSpec, prev: Option[BufferedImage]): BufferedImage \ IO =
+        renderPassImageFonts(cfg, Map.empty(), images, p, prev)
+
+    /// 追加フォントも使える renderPassImageWith。
+    def renderPassImageFonts(cfg: RenderConfig, fonts: Map[String, SoftRaster.FontEntry], images: Map[String, BufferedImage],
+                             p: PassSpec, prev: Option[BufferedImage]): BufferedImage \ IO =
         let req = { scale = 1 | reqOf(cfg, p#drawables, p#polygons, "") };
         match p#clear {
-            case RenderTarget.LoadOp.Clear(c)         => SoftRaster.renderToImageFull({ background = c | req }, Nil, Map.empty(), images)
-            case RenderTarget.LoadOp.Keep             => SoftRaster.renderPassImage(req, prev, images)
-            case RenderTarget.LoadOp.ClearTransparent => SoftRaster.renderPassImage(req, None, images)
+            case RenderTarget.LoadOp.Clear(c)         => SoftRaster.renderToImageFull({ background = c | req }, Nil, fonts, images)
+            case RenderTarget.LoadOp.Keep             => SoftRaster.renderPassImageFonts(req, prev, fonts, images)
+            case RenderTarget.LoadOp.ClearTransparent => SoftRaster.renderPassImageFonts(req, None, fonts, images)
         }
+
+    /// 1 枚の絵に要る物の全部。passes = 本編より先に描く pass（後の pass と本編は前の pass の名前を貼れる）、
+    /// surfaces = ShaderDoc の面（Render.shaderSurfaces の出力と同形）、fonts = 追加フォント（renderPngFonts と同じ名前の決まり）。
+    /// 何も足さない欄は Nil / Map.empty()。items は Render.withoutShaders → Render.draw で下ろす（renderPngWithPasses と同じ決まり）。
+    pub type alias Scene = {
+        passes = List[PassSpec],
+        drawables = List[GameEngine.Drawable],
+        polygons = List[GameEngine.PolygonRenderCmd],
+        surfaces = List[SoftRaster.SurfaceCmd],
+        fonts = Map[String, SoftRaster.FontEntry]
+    }
+
+    /// pass・ShaderDoc の面・追加フォントを一緒に使って 1 枚の PNG に生成する（他の renderPng* はどれもこれの一部）。
+    /// 生成できない指定の知らせと、絵の値段の記録（pass の中身も数える）も他の口と同じに残す。
+    pub def renderPngFull(cfg: RenderConfig, scene: Scene, name: String): Unit \ IO =
+        // pass の中の生成できない指定も本編と同じに知らせる。
+        scene#passes |> List.forEach(p -> warnDropped(p#drawables, "${name}:pass ${p#name}"));
+        // pass の中身も実機では描く物なので予算に入れる（本編から pass へ移すだけで
+        // すり抜けられると、検査は避けられる物になる）。
+        let passItems = scene#passes |> List.foldLeft((acc, p) ->
+            acc + List.length(p#drawables) + List.length(p#polygons), 0);
+        writeItemStats(cfg, name, List.length(scene#drawables) + List.length(scene#polygons) + passItems,
+                       passItems, List.length(scene#surfaces));
+        let images = passImagesOf(cfg, scene#fonts, scene#passes);
+        warnDropped(scene#drawables, name);
+        SoftRaster.renderFull(reqOf(cfg, scene#drawables, scene#polygons, pngPath(cfg, name)),
+            scene#surfaces, scene#fonts, images)
+
+    /// passes を宣言順に生成した画像（毎回透明から。後の pass は前の pass の名前を貼れる）。
+    def passImagesOf(cfg: RenderConfig, fonts: Map[String, SoftRaster.FontEntry], passes: List[PassSpec]): Map[String, BufferedImage] \ IO =
+        passes |> List.foldLeft((acc, p) -> {
+            Map.insert(p#name, renderPassImageFonts(cfg, fonts, acc, p, None), acc)
+        }, (Map.empty(): Map[String, BufferedImage]))
 
     /// 追加の生成済み画像（pass のレンダーターゲットなど）を textures に混ぜて本編を PNG に生成する。
     pub def renderPngWithImages(cfg: RenderConfig, images: Map[String, BufferedImage],
@@ -333,18 +371,7 @@ pub mod HeadlessRender {
                                 drawables: List[GameEngine.Drawable],
                                 polygons: List[GameEngine.PolygonRenderCmd],
                                 surfaces: List[SoftRaster.SurfaceCmd], name: String): Unit \ IO =
-        // pass の中の生成できない指定も本編と同じに知らせる（本編ぶんは renderPngWithImages が出す）。
-        passes |> List.forEach(p -> warnDropped(p#drawables, "${name}:pass ${p#name}"));
-        // pass の中身も実機では描く物なので予算に入れる（本編から pass へ移すだけで
-        // すり抜けられると、検査は避けられる物になる）。
-        let passItems = passes |> List.foldLeft((acc, p) ->
-            acc + List.length(p#drawables) + List.length(p#polygons), 0);
-        writeItemStats(cfg, name, List.length(drawables) + List.length(polygons) + passItems,
-                       passItems, List.length(surfaces));
-        let images = passes |> List.foldLeft((acc, p) -> {
-            Map.insert(p#name, renderPassImageWith(cfg, acc, p, None), acc)
-        }, (Map.empty(): Map[String, BufferedImage]));
-        renderPngWithImagesCore(cfg, images, drawables, polygons, surfaces, name)
+        renderPngFull(cfg, { passes = passes, drawables = drawables, polygons = polygons, surfaces = surfaces, fonts = Map.empty() }, name)
 
     /// frames を stride 枚ごとに間引き、各コマを toCmds で描いて GIF ＋ コマ別 PNG に生成する。
     /// 返り値は ReferenceSite 用のフィルムストリップ情報（駒送りビューア）。
@@ -427,12 +454,20 @@ pub mod HeadlessRender {
                                             List[GameEngine.PolygonRenderCmd],
                                             List[SoftRaster.SurfaceCmd]),
                               name: String): ReferenceSite.Filmstrip \ IO =
+        renderGifFull(cfg, frames, stride, w -> {
+            let (passes, drawables, polygons, surfaces) = toCmds(w);
+            { passes = passes, drawables = drawables, polygons = polygons, surfaces = surfaces, fonts = Map.empty() }
+        }, name)
+
+    /// renderGifWithPasses の、コマごとの絵を Scene で渡す形（追加フォントも使える）。
+    pub def renderGifFull(cfg: RenderConfig, frames: List[w], stride: Int32, toScene: w -> Scene,
+                          name: String): ReferenceSite.Filmstrip \ IO =
         let sampled = every(stride, frames);
         // コマ列は同じ作りの絵が続くので、報告は先頭コマぶんだけ出す（renderGifWith と同じ）。
         List.head(sampled) |> Option.forEach(w -> {
-            let (passes, drawables, _, _) = toCmds(w);
-            passes |> List.forEach(p -> warnDropped(p#drawables, "${name}:pass ${p#name}"));
-            warnDropped(drawables, name)
+            let scene = toScene(w);
+            scene#passes |> List.forEach(p -> warnDropped(p#drawables, "${name}:pass ${p#name}"));
+            warnDropped(scene#drawables, name)
         });
         // 欠け名の知らせとテクスチャの読み込みはコマ列で 1 本を共有する
         //（同じ警告がコマ数ぶん並ばない・同じファイルをコマ数ぶん読まない）。
@@ -440,12 +475,10 @@ pub mod HeadlessRender {
         let cache = SoftRaster.freshTextureCache();
         let images = List.zipWithIndex(sampled) |> List.map(pair -> {
             let (i, w) = pair;
-            let (passes, drawables, polygons, surfaces) = toCmds(w);
-            let passImages = passes |> List.foldLeft((acc, p) -> {
-                Map.insert(p#name, renderPassImageWith(cfg, acc, p, None), acc)
-            }, (Map.empty(): Map[String, BufferedImage]));
-            let img = SoftRaster.renderToImageCached(reqOf(cfg, drawables, polygons, gifPath(cfg, name)),
-                                                     surfaces, Map.empty(), passImages, warnLog, cache);
+            let scene = toScene(w);
+            let passImages = passImagesOf(cfg, scene#fonts, scene#passes);
+            let img = SoftRaster.renderToImageCached(reqOf(cfg, scene#drawables, scene#polygons, gifPath(cfg, name)),
+                                                     scene#surfaces, scene#fonts, passImages, warnLog, cache);
             Filmstrip.renderFrame(img, "${cfg#outDir}/frames/${name}/${i}.png");
             img
         });

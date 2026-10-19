@@ -587,6 +587,14 @@ mod TestUiDoc {
             expected = Ok(Some(((1.0, 0.0, 0.0), (0.0, 0.0, 1.0)))),
             got |> Result.map(firstTwoBoxColors) |> Result.mapErr(DocJson.describe))
 
+    @Test
+    def testPaletteFileReadsTheExportedColors(): Unit \ {Assert, IO} =
+        // PaletteExport.build が書く色票（{version, note, colors}）を paletteFile にしても、colors の中の色が引ける。
+        let got = run { UiSpec.load("test/assets/palette_exported.ui.json") } with Fs.FileRead.runWithIO;
+        Assert.assertEq(
+            expected = Ok(Some(((1.0, 0.0, 0.0), (0.0, 0.0, 1.0)))),
+            got |> Result.map(firstTwoBoxColors) |> Result.mapErr(DocJson.describe))
+
     /// root 直下の子 2 つの box 色を取り出す(paletteFile テスト用)。
     def firstTwoBoxColors(spec: UiSpec.Spec): Option[((Float64, Float64, Float64), (Float64, Float64, Float64))] =
         match spec {

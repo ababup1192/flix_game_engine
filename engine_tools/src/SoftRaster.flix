@@ -60,8 +60,12 @@ pub mod SoftRaster {
         { shapes = req#shapeAntialias, text = req#textAntialias }
 
     /// 追加フォント 1 本（既定フォント以外も混ぜて描き出すとき）。ttf = 実サイズ描き出し用の TTF、
-    /// atlas = その TTF から HeadlessFont.buildAtlas で組んだメトリクス。
-    pub type alias FontEntry = { ttf = String, atlas = FontAtlas }
+    /// atlas = その TTF から HeadlessFont.buildAtlas で組んだメトリクス、
+    /// textAntialias = この本の字の縁をならすか（None なら絵全体の RasterReq#textAntialias。ドット絵の本だけ切る時に Some(false)）。
+    pub type alias FontEntry = { ttf = String, atlas = FontAtlas, textAntialias = Option[Bool] }
+
+    /// 絵全体の縁の設定に従う追加フォント（textAntialias = None）。
+    pub def fontEntry(ttf: String, atlas: FontAtlas): FontEntry = { ttf = ttf, atlas = atlas, textAntialias = None }
 
     /// フォントグリフを直接 drawString するための描画コンテキスト。
     /// `baseFont` は素の TTF Font（サイズは deriveFont でグリフ毎に決める）。
@@ -79,7 +83,8 @@ pub mod SoftRaster {
     /// フォントごとに違う（別のフォントでも同じセルから詰まるので混ぜられない）ので、
     /// グリフを描く直前に Drawable#texture でこの表から 1 本選ぶ。
     /// 知らないテクスチャ名は primary を使う（fail-open — 字が消えるより既定で出るほうがよい）。
-    type alias FontTable = { primary = FontCtx, byTexture = Map[String, FontCtx] }
+    /// `antialiasByTexture` は字の縁を本ごとに決めた物だけ（FontEntry#textAntialias が Some の本）。
+    type alias FontTable = { primary = FontCtx, byTexture = Map[String, FontCtx], antialiasByTexture = Map[String, Bool] }
 
     def fontFor(fonts: FontTable, d: DrawCmd.DrawableSpec): FontCtx =
         Map.get(d#texture, fonts#byTexture) |> Option.getWithDefault(fonts#primary)
@@ -263,12 +268,17 @@ pub mod SoftRaster {
     /// 前フレームの中身は残像の証拠としてそのまま残したい）、None なら全画素透明から始める。
     pub def renderPassImage(req: RasterReq, base: Option[BufferedImage],
                             extraImages: Map[String, BufferedImage]): BufferedImage \ IO =
+        renderPassImageFonts(req, base, Map.empty(), extraImages)
+
+    /// 追加フォントも使える renderPassImage（pass の中の字を、本編と同じ本で描く）。
+    pub def renderPassImageFonts(req: RasterReq, base: Option[BufferedImage], extraFonts: Map[String, FontEntry],
+                                 extraImages: Map[String, BufferedImage]): BufferedImage \ IO =
         HeadlessFont.ensureHeadless();
         let image = match base {
             case Some(b) => toArgb(b)
             case None    => { let (w, h) = outSize(req); new BufferedImage(w, h, 2i32) }
         };
-        drawAllInto(image, req, Nil, Map.empty(), extraImages, freshTexWarnLog(), None);
+        drawAllInto(image, req, Nil, extraFonts, extraImages, freshTexWarnLog(), None);
         image
 
     /// 出力ピクセル寸法（design × scale、最低 1px）。
@@ -738,7 +748,10 @@ pub mod SoftRaster {
                 withMask(g, sf, d#position, d#scale, d#mask, () -> drawBox(g, sf, d))
             else if (String.startsWith({prefix = "font_"}, d#texture))
                 // グリフは mask の対象外（文字の可読性が第一 — docs/backend-parity.md）。
-                drawGlyph(g, sf, fontFor(fctx, d), d)
+                match Map.get(d#texture, fctx#antialiasByTexture) {
+                    case None         => drawGlyph(g, sf, fontFor(fctx, d), d)
+                    case Some(smooth) => withTextHints(g, smooth, () -> drawGlyph(g, sf, fontFor(fctx, d), d))
+                }
             else
                 match Map.get(d#texture, textures) {
                     case None      => warnMissingTexture(warnLog, d#texture)
@@ -833,7 +846,8 @@ pub mod SoftRaster {
         let table = Map.foldLeftWithKey((acc, texName, e) ->
             Map.insert(texName, fontCtxOf(cache, e#ttf, e#atlas), acc),
             Map#{ req#fontAtlas#textureName => primary }, extraFonts);
-        { primary = primary, byTexture = table }
+        { primary = primary, byTexture = table,
+          antialiasByTexture = extraFonts |> Map.filterMap(e -> e#textAntialias) }
 
     /// TTF とアトラスの一式。cache に同じ TTF・同じアトラス（中身で比べる）の物があればそれを使い、
     /// 同じ TTF で別のアトラスなら読んだ Font だけ使い回す。比べるのは表を組むより安い
@@ -913,6 +927,18 @@ pub mod SoftRaster {
                 g.setColor(awtColor(d#color, f32(d#alpha)));
                 g.drawString(str, f32(baselineX), f32(baselineY))
         }
+
+    /// 字の縁と送り幅を smooth にして draw し、元の設定へ戻す（本ごとに決めた字だけ絵全体の設定と違えるため）。
+    def withTextHints(g: Graphics2D, smooth: Bool, draw: Unit -> Unit \ IO): Unit \ IO =
+        let antialias = g.getRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING);
+        let metrics = g.getRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS);
+        g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
+            if (smooth) RenderingHints.VALUE_TEXT_ANTIALIAS_ON else RenderingHints.VALUE_TEXT_ANTIALIAS_OFF);
+        g.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS,
+            if (smooth) RenderingHints.VALUE_FRACTIONALMETRICS_ON else RenderingHints.VALUE_FRACTIONALMETRICS_OFF);
+        draw();
+        g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, antialias);
+        g.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS, metrics)
 
     /// 単色矩形（角丸＋枠）。scale が design px サイズ、position が左上。
     /// 重ねる順は GL シェーダと同じ 塗り → 縞 → 市松 → 枠。

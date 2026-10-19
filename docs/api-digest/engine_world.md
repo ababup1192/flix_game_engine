@@ -1,4 +1,4 @@
-<!-- engine v0.50.0 / 生成: 2026-10-19 -->
+<!-- engine v0.50.0 / 生成: 2026-10-20 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine_world
@@ -1167,6 +1167,16 @@
   `pub def expire(now: Float64, bursts: List[Burst]): List[Burst]`
 - 進行中の burst 全部の、時刻 now の絵。各 burst の生まれた時刻からの経過で sampleAt を
   `pub def drawAll(now: Float64, bursts: List[Burst]): List[Render.PlacedItem]`
+- 時刻 t に見えている粒 1 つ。絵（sample）と同じ式から出るので、描いた所と当たる所はずれない。
+  `pub type alias Particle = { emitter = String, index = Int32, cycle = Int64, center = Vec2.Vec2, size = Float64, alpha = Float64 }`
+- 時刻 t 秒に見えている粒の一覧（sample と同じ粒・同じ並び。見えない粒 = 大きさか濃さが 0 の粒は入らない）。
+  `pub def particles(spec: FxDoc.Spec, seed: Int64, t: Float64): List[Particle]`
+- particles の中心を at へ平行移動した物（sampleAt と同じ置き方）。
+  `pub def particlesAt(spec: FxDoc.Spec, seed: Int64, t: Float64, at: Vec2.Vec2): List[Particle]`
+- 進行中の burst 全部の、時刻 now の粒（drawAll と同じ時刻の取り方）。
+  `pub def particlesOfAll(now: Float64, bursts: List[Burst]): List[Particle]`
+- 円（中心と半径）が粒（直径 size の円とみなす）に重なるか。
+  `pub def touches(circle: { center = Vec2.Vec2, radius = Float64 }, particle: Particle): Bool`
 
 ## FxDoc — `engine_world/src/FxDoc.flix`
 - 正規化寿命 u（0 = 生まれた瞬間, 1 = 消える瞬間）→ 倍率、のカーブ。
@@ -1908,6 +1918,8 @@
   `pub type alias ShaderSurface = { rect = Rect2.Rect2, spec = ShaderDoc.Spec, time = Float64, mask = List[List[Vec2.Vec2]], zIndex = Int32, blend = DrawCmd.BlendMode }`
 - Shader 面を純データ（ShaderSurface）で取り出す（描き出し / SoftRaster 用）。
   `pub def shaderSurfaces(items: List[PlacedItem]): List[ShaderSurface]`
+- 面（Item.Shader）の後ろに同じ zIndex の他の描き物を並べた z（小さい順）。描き手は同じ z の中を
+  `pub def surfaceZShared(items: List[PlacedItem]): List[Int32]`
 - Shader 面を除いた PlacedItem 列（GL 経路で draw に渡す前に外す — 本物のシェーダーは
   `pub def withoutShaders(items: List[PlacedItem]): List[PlacedItem]`
 - World 由来 Drawable 群に camera のズーム倍率を適用する（位置は `Projection.applyToWorldPos` で
@@ -2419,8 +2431,12 @@
   `pub def hitTest(scene: HitTestScene, point: Vec2.Vec2): Option[EntityId]`
 - UiWorld 全体を design 空間でレイアウトして最前面ヒットを引く（マウスの hover / click の入口）。
   `pub def hitTestUi(ui: UiStore.UiWorld, design: Vec2.Vec2, point: Vec2.Vec2): Option[EntityId]`
+- 字の実寸を atlasOf で測ってレイアウトする hitTestUi（UiRender.itemsWith と同じ枠なので、描いた所で当たる。
+  `pub def hitTestUiWith(atlasOf: String -> FontAtlas \ ef, ui: UiStore.UiWorld, design: Vec2.Vec2, point: Vec2.Vec2): Option[EntityId] \ ef`
 - UiWorld 全体を design 空間でレイアウトした、面積のある entity の画面矩形
   `pub def layoutRects(ui: UiStore.UiWorld, design: Vec2.Vec2): Map[EntityId, Rect2.Rect2]`
+- 字の実寸を atlasOf で測ってレイアウトした画面矩形（UiRender.itemsWith が描く枠と同じ。字だけの要素も入る）。
+  `pub def layoutRectsWith(atlasOf: String -> FontAtlas \ ef, ui: UiStore.UiWorld, design: Vec2.Vec2): Map[EntityId, Rect2.Rect2] \ ef`
 
 ## UiFocusNav — `engine_world/src/UiFocusNav.flix`
 - 選べる物 1 つ。key = 名前（ゲームが決める。"card:2" のような文字列でも enum でもよい）、
@@ -2447,6 +2463,8 @@
   `pub def isFocusVisible(focus: Focus[k]): Bool`
 - UiDoc / UiStore で組んだメニュー（listPath の項目列 = UiMenu.itemIds）を Target の列にする。
   `pub def targetsOfUi(listPath: String, ui: UiStore.UiWorld, design: Vec2.Vec2): List[Target[String]]`
+- 字の実寸を atlasOf で測った枠で組む targetsOfUi（字の兄弟の後ろの項目も、描いた所の枠になる）。
+  `pub def targetsOfUiWith(atlasOf: String -> FontAtlas \ ef, listPath: String, ui: UiStore.UiWorld, design: Vec2.Vec2): List[Target[String]] \ ef`
 
 ## UiHierarchy — `engine_world/src/UiHierarchy.flix`
 - parent を親に持つ entity を order 昇順で返す。

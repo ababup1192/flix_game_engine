@@ -37,7 +37,7 @@ mod TestDrawHash {
                   fontAtlas = atlas(8.0), outPath = "gallery/a.png",
                   shapeAntialias = false, textAntialias = true },
           surfaces = surface(0.5) :: Nil,
-          extraFonts = Map#{ "font_girl" => { ttf = "assets/girl.ttf", atlas = atlas(9.0) } } }
+          extraFonts = Map#{ "font_girl" => { ttf = "assets/girl.ttf", atlas = atlas(9.0), textAntialias = None } } }
 
     def inputs(): DrawHash.Inputs =
         { engine = "e1", runtime = "jvm1",
@@ -130,7 +130,7 @@ mod TestDrawHash {
     @Test
     def testExtraFontAtlasChangesKey(): Unit \ Assert =
         let f = frame();
-        Assert.assertTrue(differs(inputs(), { extraFonts = Map#{ "font_girl" => { ttf = "assets/girl.ttf", atlas = atlas(9.5) } } | f }))
+        Assert.assertTrue(differs(inputs(), { extraFonts = Map#{ "font_girl" => { ttf = "assets/girl.ttf", atlas = atlas(9.5), textAntialias = None } } | f }))
 
     @Test
     def testPassImageChangesKey(): Unit \ Assert =

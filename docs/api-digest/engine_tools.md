@@ -92,6 +92,10 @@
   `pub def renderPassImage(cfg: RenderConfig, p: PassSpec, prev: Option[BufferedImage]): BufferedImage \ IO`
 - renderPassImage の「先に生成したターゲットも参照できる」版。`images` は既に生成した pass の
   `pub def renderPassImageWith(cfg: RenderConfig, images: Map[String, BufferedImage], p: PassSpec, prev: Option[BufferedImage]): BufferedImage \ IO`
+- 1 枚の絵に要る物の全部。passes = 本編より先に描く pass（後の pass と本編は前の pass の名前を貼れる）、
+  `pub type alias Scene = { passes = List[PassSpec], drawables = List[GameEngine.Drawable], polygons = List[GameEngine.PolygonRenderCmd], surfaces = List[SoftRaster.SurfaceCmd], fonts = Map[String, SoftRaster.FontEntry] }`
+- pass・ShaderDoc の面・追加フォントを一緒に使って 1 枚の PNG に生成する（他の renderPng* はどれもこれの一部）。
+  `pub def renderPngFull(cfg: RenderConfig, scene: Scene, name: String): Unit \ IO`
 - 追加の生成済み画像（pass のレンダーターゲットなど）を textures に混ぜて本編を PNG に生成する。
   `pub def renderPngWithImages(cfg: RenderConfig, images: Map[String, BufferedImage], drawables: List[GameEngine.Drawable], polygons: List[GameEngine.PolygonRenderCmd], surfaces: List[SoftRaster.SurfaceCmd], name: String): Unit \ IO`
 - passes を宣言順に生成してから本編を PNG に生成する（GL の renderFrame と同じ順序 —
@@ -104,6 +108,8 @@
   `pub def renderGifWith(cfg: RenderConfig, frames: List[w], stride: Int32, toCmds: w -> (List[GameEngine.Drawable], List[GameEngine.PolygonRenderCmd], List[SoftRaster.SurfaceCmd]), name: String): ReferenceSite.Filmstrip \ IO`
 - pass つきの renderGif（renderPngWithPasses の GIF 版）。toCmds が各コマの
   `pub def renderGifWithPasses(cfg: RenderConfig, frames: List[w], stride: Int32, toCmds: w -> (List[PassSpec], List[GameEngine.Drawable], List[GameEngine.PolygonRenderCmd], List[SoftRaster.SurfaceCmd]), name: String): ReferenceSite.Filmstrip \ IO`
+- renderGifWithPasses の、コマごとの絵を Scene で渡す形（追加フォントも使える）。
+  `pub def renderGifFull(cfg: RenderConfig, frames: List[w], stride: Int32, toScene: w -> Scene, name: String): ReferenceSite.Filmstrip \ IO`
 - stride 枚ごとに 1 枚を残す（0 番から）。
   `pub def every(stride: Int32, xs: List[a]): List[a]`
 
@@ -240,7 +246,9 @@
 - ラスタライズ要求。design 解像度の Drawable 群を `scale` 倍に拡大して `outPath` に PNG 出力。
   `pub type alias RasterReq = { drawables = List[GameEngine.Drawable], polygons = List[GameEngine.PolygonRenderCmd], design = Vec2.Vec2, scale = Int32, background = Color, texturePath = Map[String, String], fontTtf = String, fontAtlas = FontAtlas, outPath = String, shapeAntialias = Bool, textAntialias = Bool }`
 - 追加フォント 1 本（既定フォント以外も混ぜて描き出すとき）。ttf = 実サイズ描き出し用の TTF、
-  `pub type alias FontEntry = { ttf = String, atlas = FontAtlas }`
+  `pub type alias FontEntry = { ttf = String, atlas = FontAtlas, textAntialias = Option[Bool] }`
+- 絵全体の縁の設定に従う追加フォント（textAntialias = None）。
+  `pub def fontEntry(ttf: String, atlas: FontAtlas): FontEntry`
 - 宣言シェーダー面 1 枚の headless ラスタライズ要求（Render.ShaderSurface と同形の
   `pub type alias SurfaceCmd = { rect = Rect2.Rect2, spec = ShaderDoc.Spec, time = Float64, mask = List[List[Vec2.Vec2]], zIndex = Int32, blend = DrawCmd.BlendMode }`
 - 「絵に出ない指定」1 種類ぶんの報告。attr は指定の名前、count は件数、hint は逃げ道。
@@ -281,6 +289,8 @@
   `pub def renderToImageCached(req: RasterReq, surfaces: List[SurfaceCmd], extraFonts: Map[String, FontEntry], extraImages: Map[String, BufferedImage], warnLog: TexWarnLog, cache: TextureCache): BufferedImage \ IO`
 - pass（レンダーターゲット）描き出し用の入口。req#background は使わない — 塗るかどうか
   `pub def renderPassImage(req: RasterReq, base: Option[BufferedImage], extraImages: Map[String, BufferedImage]): BufferedImage \ IO`
+- 追加フォントも使える renderPassImage（pass の中の字を、本編と同じ本で描く）。
+  `pub def renderPassImageFonts(req: RasterReq, base: Option[BufferedImage], extraFonts: Map[String, FontEntry], extraImages: Map[String, BufferedImage]): BufferedImage \ IO`
 - ARGB 1 画素の合成（src を dst に重ねた結果。out の alpha は dst のまま —
   `pub def blendPixel(blend: DrawCmd.BlendMode, srcArgb: Int32, dstArgb: Int32): Int32`
 - 扇割り三角形列から、点 at を含む三角形の補間色を引く（どの三角形にも入らなければ None）。

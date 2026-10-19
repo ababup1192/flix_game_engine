@@ -1,0 +1,8 @@
+{
+  "paletteFile": "test/assets/palette_exported.json",
+  "palette": { "//": "inline の注記", "accent": "#ff0000" },
+  "root": { "name": "g", "dir": "row", "children": [
+    { "name": "a", "widget": "box", "color": "@accent", "width": 10, "height": 10 },
+    { "name": "b", "widget": "box", "color": "@base", "width": 10, "height": 10 }
+  ]}
+}

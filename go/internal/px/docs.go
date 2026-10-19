@@ -388,7 +388,7 @@ func specSchema() string {
 	shapes = append(shapes, obj("type", "string", "description", "shapes の名前（{\"ref\": 名前} の短い書き方）"))
 	shape := obj("description", "形（符号付き距離。画素の中心が内側なら塗る）。shapes の名前の文字列でも書ける", "oneOf", shapes)
 	color := obj("type", "string", "description",
-		"色: ink・shade・mid・light（部品のランプの 0〜3 段）・ramp[i]（ramp[-1] は一番明るい段）・gloss（light.gloss）・色キー・\"\"（透明）")
+		"色: ink・shade・mid・light（部品のランプの 0〜3 段。同じ名前の色キーもあれば止める）・ramp[i]（ramp[-1] は一番明るい段）・gloss（light.gloss）・key:名前（色キーを直に指す）・色キー・\"\"（透明）")
 	part := obj("type", "object", "additionalProperties", false, "required", list("id"),
 		"properties", obj(
 			"id", obj("type", "string", "pattern", "^[A-Za-z][A-Za-z0-9_]*$", "description", "部品の名前（コマの patch と違反の場所で使う）"),

@@ -28,24 +28,41 @@ pub mod UiFocus {
 
     /// UiWorld 全体を design 空間でレイアウトして最前面ヒットを引く（マウスの hover / click の入口）。
     /// 当たるのは面積のある rect だけ — text は実寸を測らず 0 サイズになるので当たらない。
-    /// 当たり判定の対象には width/height を Px で持つノード（ボタンのコンテナや図形）を使うこと。
+    /// 字の兄弟が並ぶ列（字の後ろのボタンなど）では、字の高さぶん描いた所より上に枠が来る。
+    /// 描いた所で当てるなら、描く時と同じフォントの引き当てを渡す hitTestUiWith を使う。
     /// コンテナも rect を持つので当たる（root は画面全面）— 呼び手は meta の有無で選別する。
     pub def hitTestUi(ui: UiStore.UiWorld, design: Vec2.Vec2, point: Vec2.Vec2): Option[EntityId] =
+        hitTestOn(layoutRects(ui, design), ui, point)
+
+    /// 字の実寸を atlasOf で測ってレイアウトする hitTestUi（UiRender.itemsWith と同じ枠なので、描いた所で当たる。
+    /// 字だけの要素にも当たる）。atlasOf は描く時に渡す物と同じにする。
+    pub def hitTestUiWith(atlasOf: String -> FontAtlas \ ef, ui: UiStore.UiWorld, design: Vec2.Vec2, point: Vec2.Vec2): Option[EntityId] \ ef =
+        hitTestOn(layoutRectsWith(atlasOf, ui, design), ui, point)
+
+    def hitTestOn(rects: Map[EntityId, Rect2.Rect2], ui: UiStore.UiWorld, point: Vec2.Vec2): Option[EntityId] =
         let roots = UiStore.rootsOf(ui);
         let vis = roots |> List.foldLeft((acc, root) -> Map.union(
             UiHierarchy.resolveInherited(ui#visible, ui#parents, root, ui#order), acc), Map.empty());
-        hitTest({rects = layoutRects(ui, design), vis = vis,
+        hitTest({rects = rects, vis = vis,
                  zOf = id -> zIndexOf(id, ui),
                  depthOf = id -> UiHierarchy.depthOf(id, ui#parents)}, point)
 
     /// UiWorld 全体を design 空間でレイアウトした、面積のある entity の画面矩形
     /// （hitTestUi と UiFocusNav.targetsOfUi が同じ枠を見る）。見えていない entity は入らない。
+    /// 字は 0 の大きさで並べる（字の兄弟の後ろの枠は字の高さぶん上にずれる）— 描いた所の枠は layoutRectsWith。
     pub def layoutRects(ui: UiStore.UiWorld, design: Vec2.Vec2): Map[EntityId, Rect2.Rect2] =
+        layoutRectsMeasured(Map.empty(), ui, design)
+
+    /// 字の実寸を atlasOf で測ってレイアウトした画面矩形（UiRender.itemsWith が描く枠と同じ。字だけの要素も入る）。
+    pub def layoutRectsWith(atlasOf: String -> FontAtlas \ ef, ui: UiStore.UiWorld, design: Vec2.Vec2): Map[EntityId, Rect2.Rect2] \ ef =
+        layoutRectsMeasured(UiExtract.measureTexts(ui#texts, atlasOf), ui, design)
+
+    def layoutRectsMeasured(measures: Map[EntityId, Vec2.Vec2], ui: UiStore.UiWorld, design: Vec2.Vec2): Map[EntityId, Rect2.Rect2] =
         let rootRect: Rect2.Rect2 = {position = {x = 0.0, y = 0.0}, size = design};
         UiStore.rootsOf(ui) |> List.foldLeft((acc, root) -> Map.union(
             UiLayout.computeLayout(
                 {styles = ui#styles, parents = ui#parents, order = ui#order,
-                 measures = Map.empty(), visible = ui#visible},
+                 measures = measures, visible = ui#visible},
                 root, rootRect), acc), Map.empty())
             |> Map.filter(r -> r#size#x > 0.0 and r#size#y > 0.0)
 
