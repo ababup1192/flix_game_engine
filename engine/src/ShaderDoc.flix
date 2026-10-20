@@ -349,10 +349,8 @@ pub mod ShaderDoc {
             case Field.Shift(sh)       => foldField(f, foldField(f, foldField(f, acc1, sh#dx), sh#dy), sh#of)
         }
 
-    /// Spec が読むテクスチャ名を「bindings（前から）→ 色 → alpha」の初出順・重複なしで列挙する。
-    /// この並びが正典 — GLSL の uniform 番号・GL の sampler unit 番号・描画依頼の texNames が
-    /// 全部この関数の並びを使うので、3 者がずれない。
-    pub def texNames(spec: Spec): List[String] =
+    /// Spec の場を「bindings（前から）→ 色 → alpha」の順に並べる。texNames と、場を全部見る走査はこの並びを使う。
+    pub def fieldsOf(spec: Spec): List[Field] =
         let shadeFields = match spec#out {
             case Out.Fill(f) => match f#shade {
                 case Shade.Solid(_)    => f#alpha :: Nil
@@ -362,11 +360,54 @@ pub mod ShaderDoc {
                 case Shade.Rgb(c)      => c#r :: c#g :: c#b :: f#alpha :: Nil
             }
         };
-        let fields = List.append(List.map(snd, spec#bindings), shadeFields);
+        List.append(List.map(snd, spec#bindings), shadeFields)
+
+    /// Spec が読むテクスチャ名を「bindings（前から）→ 色 → alpha」の初出順・重複なしで列挙する。
+    /// この並びが正典 — GLSL の uniform 番号・GL の sampler unit 番号・描画依頼の texNames が
+    /// 全部この関数の並びを使うので、3 者がずれない。
+    pub def texNames(spec: Spec): List[String] =
         List.foldLeft((acc, field) -> foldField((names, f) -> match f {
             case Field.Tex(tx) => if (List.memberOf(tx#name, names)) names else tx#name :: names
             case _             => names
-        }, acc, field), Nil, fields) |> List.reverse
+        }, acc, field), Nil, fieldsOf(spec)) |> List.reverse
+
+    /// この節が、子の場を自分の uv と違う uv で読むなら、その子（shift の dx・dy は今の uv で読むので入らない）。
+    /// 場を足したらここへも 1 case 足す（wildcard を置かないのは、uv を曲げる場を足した時に黙らせないため）。
+    pub def remappedChild(field: Field): Option[Field] =
+        match field {
+            case Field.Scaled(s)       => Some(s#of)
+            case Field.Warp(wp)        => Some(wp#of)
+            case Field.Tiling(tl)      => Some(tl#of)
+            case Field.Snap(sn)        => Some(sn#of)
+            case Field.Swirl(sw)       => Some(sw#of)
+            case Field.Rotate(rt)      => Some(rt#of)
+            case Field.Shift(sh)       => Some(sh#of)
+            case Field.Const(_)        => None
+            case Field.Uv(_)           => None
+            case Field.Worley(_)       => None
+            case Field.Fbm(_)          => None
+            case Field.FbmTile(_)      => None
+            case Field.Smoothstep(_)   => None
+            case Field.Mix(_)          => None
+            case Field.Blend(_)        => None
+            case Field.Disk(_)         => None
+            case Field.Radial(_)       => None
+            case Field.RadialAspect(_) => None
+            case Field.Quantize(_)     => None
+            case Field.Scales(_)       => None
+            case Field.Glints(_)       => None
+            case Field.Ripples(_)      => None
+            case Field.Sparkle(_)      => None
+            case Field.Bin(_)          => None
+            case Field.Hash1(_)        => None
+            case Field.Hash2(_)        => None
+            case Field.Un(_)           => None
+            case Field.Pow(_)          => None
+            case Field.Time(_)         => None
+            case Field.Angle(_)        => None
+            case Field.Ref(_)          => None
+            case Field.Tex(_)          => None
+        }
 
     def smoothstepF(lo: Float64, hi: Float64, x: Float64): Float64 =
         if (hi - lo == 0.0) (if (x < lo) 0.0 else 1.0)

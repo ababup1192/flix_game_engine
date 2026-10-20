@@ -37,7 +37,7 @@ pub mod DrawCmd {
     ///   let DrawCmd.BoxStyle.BoxStyle(rad, bw, br, bg, bb, ba,
     ///                                 sr, sg, sb, sa, sw, sp, sd,
     ///                                 kr, kg, kb, ka, kc) = st;
-    pub enum BoxStyle {
+    pub enum BoxStyle with Eq, ToString {
         case BoxStyle(
             Float64,                    // cornerRadius
             Float64,                    // borderWidth
@@ -247,6 +247,29 @@ pub mod DrawCmd {
             List[List[Vec2.Vec2]]  // mask
         )
     }
+
+    // 中の Vec2・Rect2 は record で Eq・ToString を持たないので derive できない。数の組へ開いて比べる。
+    instance Eq[Drawable] {
+        pub def eq(a: Drawable, b: Drawable): Bool = drawableKey(a) == drawableKey(b)
+    }
+
+    instance ToString[Drawable] {
+        pub def toString(d: Drawable): String =
+            let (tex, (px, py, sx, sy, rot), (cr, cg, cb, a, cen), (uox, uoy, usx, usy, z), (style, clip, blend, mask)) = drawableKey(d);
+            "Drawable(${tex}, at=(${px}, ${py}), scale=(${sx}, ${sy}), rotation=${rot}, color=(${cr}, ${cg}, ${cb}), alpha=${a}, " +
+            "centered=${cen}, uv=(${uox}, ${uoy}) size (${usx}, ${usy}), z=${z}, style=${style}, clip=${clip}, blend=${blend}, mask=${mask})"
+    }
+
+    def drawableKey(d: Drawable): (String, (Float64, Float64, Float64, Float64, Float64), (Float64, Float64, Float64, Float64, Bool),
+                                   (Float64, Float64, Float64, Float64, Int32),
+                                   (Option[BoxStyle], Option[(Float64, Float64, Float64, Float64)], BlendMode, List[List[(Float64, Float64)]])) =
+        let Drawable.Drawable(tex, px, py, sx, sy, rot,
+                              cr, cg, cb, a, cen,
+                              uox, uoy, usx, usy, z,
+                              style, clip, blend, mask) = d;
+        (tex, (px, py, sx, sy, rot), (cr, cg, cb, a, cen), (uox, uoy, usx, usy, z),
+         (style, Option.map(r -> (r#position#x, r#position#y, r#size#x, r#size#y), clip), blend,
+          List.map(List.map(v -> (v#x, v#y)), mask)))
 
     /// Drawable の全フィールドを名前で持つレコード（`make` の入力・`toSpec` の出力）。
     pub type alias DrawableSpec = {

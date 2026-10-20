@@ -944,29 +944,24 @@ pub mod Render {
             case other => toDrawables(other, pos)
         }
 
-    /// 面の式がテクスチャ 1 枚だけを読み、読む位置が shift（場で決まる平行移動）だけで決まるなら、
-    /// そのテクスチャの名前と読む範囲（uv 0〜1 の矩形）。範囲は面の左上と右下の uv で shift を評価して出す。
-    /// 読む位置を scaled・warp・tiling・snap・swirl・rotate が曲げる式、shift を重ねた式、
-    /// ずらし量に tex か ref を使う式、読む所ごとに範囲が食い違う式は None（矩形 1 枚に写せない）。
+    /// 面の式がテクスチャ 1 枚だけを読み、読む位置が shift（uv と定数の足し算・掛け算で決まる平行移動）だけで
+    /// 決まるなら、そのテクスチャの名前と読む範囲（uv 0〜1 の矩形）。範囲は面の左上・右下で shift を評価して出す。
+    /// None（矩形 1 枚に写せない）: uv を変えて読む節（ShaderDoc.remappedChild）の下に tex か ref がある
+    /// （ref は bindings の値で、どの uv で読んだ物かをここでは辿らない）・shift のずらし量に uv と定数の計算でない
+    /// 場がある・面の真ん中が範囲の真ん中に写らない（ずらし量が uv で曲がる）・読む所ごとに範囲が食い違う。
     def textureReadOf(spec: ShaderDoc.Spec, t: Float64): Option[(String, Rect2.Rect2)] =
         match ShaderDoc.texNames(spec) {
             case name :: Nil =>
-                let nodes = List.append(List.map(snd, spec#bindings), shadeFieldsOf(spec))
+                let nodes = ShaderDoc.fieldsOf(spec)
                     |> List.flatMap(field -> ShaderDoc.foldField((acc, node) -> node :: acc, Nil, field));
-                let shifts = nodes |> List.filterMap(node -> match node {
-                    case ShaderDoc.Field.Shift(sh) => match sh#of {
-                        case ShaderDoc.Field.Tex(_) => Some(sh)
-                        case _                      => None
-                    }
-                    case _ => None
+                let shifts = List.filterMap(plainShiftRead, nodes);
+                let bends = nodes |> List.exists(node -> match (ShaderDoc.remappedChild(node), plainShiftRead(node)) {
+                    case (Some(child), None) => countNodes(isTexOrRef, child :: Nil) > 0
+                    case _                   => false
                 });
-                let texCount = nodes |> List.count(node -> match node {
-                    case ShaderDoc.Field.Tex(_) => true
-                    case _                      => false
-                });
-                let bare = if (texCount > List.length(shifts)) Some(wholeArea()) :: Nil else Nil;
+                let bare = if (List.count(isTex, nodes) > List.length(shifts)) Some(wholeArea()) :: Nil else Nil;
                 let areas = List.append(bare, shifts |> List.map(sh -> shiftedArea(sh#dx, sh#dy, t)));
-                if (List.exists(bendsTextureRead, nodes)) None
+                if (bends) None
                 else match areas {
                     case Some(first) :: rest if List.forAll(a -> Option.exists(sameArea(first), a), rest) => Some((name, first))
                     case _ => None
@@ -974,64 +969,64 @@ pub mod Render {
             case _ => None
         }
 
-    /// 面の色と alpha が読む場（bindings を除く）。
-    def shadeFieldsOf(spec: ShaderDoc.Spec): List[ShaderDoc.Field] =
-        match spec#out {
-            case ShaderDoc.Out.Fill(f) => match f#shade {
-                case ShaderDoc.Shade.Solid(_)    => f#alpha :: Nil
-                case ShaderDoc.Shade.Ramp(r)     => r#field :: f#alpha :: Nil
-                case ShaderDoc.Shade.Gradient(g) => g#field :: f#alpha :: Nil
-                case ShaderDoc.Shade.Cosine(cs)  => cs#field :: f#alpha :: Nil
-                case ShaderDoc.Shade.Rgb(c)      => c#r :: c#g :: c#b :: f#alpha :: Nil
-            }
-        }
-
-    /// この節が、下にある tex の読む位置を shift 1 段より複雑に変えるか。
-    def bendsTextureRead(node: ShaderDoc.Field): Bool =
+    /// tex をそのまま shift で読む節で、ずらし量が uv と定数の計算（Uv・Const・Bin・Time）だけなら、そのずらし量。
+    def plainShiftRead(node: ShaderDoc.Field): Option[{ dx = ShaderDoc.Field, dy = ShaderDoc.Field }] =
         match node {
             case ShaderDoc.Field.Shift(sh) => match sh#of {
-                case ShaderDoc.Field.Tex(_) => readsTextureOrRef(sh#dx) or readsTextureOrRef(sh#dy)
-                case other                  => readsTexture(other)
+                case ShaderDoc.Field.Tex(_) if isPlainOffset(sh#dx) and isPlainOffset(sh#dy) => Some({ dx = sh#dx, dy = sh#dy })
+                case _ => None
             }
-            case ShaderDoc.Field.Scaled(s) => readsTexture(s#of)
-            case ShaderDoc.Field.Warp(s)   => readsTexture(s#of)
-            case ShaderDoc.Field.Tiling(s) => readsTexture(s#of)
-            case ShaderDoc.Field.Snap(s)   => readsTexture(s#of)
-            case ShaderDoc.Field.Swirl(s)  => readsTexture(s#of)
-            case ShaderDoc.Field.Rotate(s) => readsTexture(s#of)
-            case _ => false
+            case _ => None
         }
 
-    def readsTexture(field: ShaderDoc.Field): Bool =
-        ShaderDoc.foldField((acc, node) -> acc or (match node {
-            case ShaderDoc.Field.Tex(_) => true
-            case _                      => false
-        }), false, field)
+    // 許す場を並べる側にするのは、場を足した時に「曲がらない」と黙って扱わないため。
+    def isPlainOffset(field: ShaderDoc.Field): Bool =
+        countNodes(node -> match node {
+            case ShaderDoc.Field.Uv(_)    => false
+            case ShaderDoc.Field.Const(_) => false
+            case ShaderDoc.Field.Bin(_)   => false
+            case ShaderDoc.Field.Time(_)  => false
+            case _                        => true
+        }, field :: Nil) == 0
 
-    // ref は bindings の値で、ShaderEval.evalField 単体では引けない。
-    def readsTextureOrRef(field: ShaderDoc.Field): Bool =
-        ShaderDoc.foldField((acc, node) -> acc or (match node {
-            case ShaderDoc.Field.Tex(_) => true
-            case ShaderDoc.Field.Ref(_) => true
-            case _                      => false
-        }), false, field)
+    def isTex(node: ShaderDoc.Field): Bool = match node {
+        case ShaderDoc.Field.Tex(_) => true
+        case _                      => false
+    }
 
-    // 読む所ごとに式が違っても、同じ範囲なら 1 枚に写せる。浮動小数の評価のずれは 1/4096 まで同じと見る。
+    def isTexOrRef(node: ShaderDoc.Field): Bool = match node {
+        case ShaderDoc.Field.Tex(_) => true
+        case ShaderDoc.Field.Ref(_) => true
+        case _                      => false
+    }
+
+    /// fields の木の節のうち p を満たす物の数。
+    def countNodes(p: ShaderDoc.Field -> Bool, fields: List[ShaderDoc.Field]): Int32 =
+        fields |> List.foldLeft((acc, field) -> ShaderDoc.foldField((n, node) -> if (p(node)) n + 1 else n, acc, field), 0)
+
+    // 読む所ごとに式が違っても、同じ範囲なら 1 枚に写せる。
     def sameArea(a: Rect2.Rect2, b: Rect2.Rect2): Bool =
-        let near = (x, y) -> Float64.abs(x - y) < 1.0 / 4096.0;
+        let near = (x, y) -> Float64.abs(x - y) < areaTolerance();
         near(a#position#x, b#position#x) and near(a#position#y, b#position#y) and
         near(a#size#x, b#size#x) and near(a#size#y, b#size#y)
 
+    /// 2 つの uv を同じと見る差（浮動小数の評価のずれを吸う。4096 px のテクスチャの 1 px より小さい）。
+    def areaTolerance(): Float64 = 1.0 / 4096.0
+
     def wholeArea(): Rect2.Rect2 = { position = { x = 0.0, y = 0.0 }, size = { x = 1.0, y = 1.0 } }
 
-    /// shift が面の左上 (0, 0) と右下 (1, 1) を写す先から作る読む範囲。大きさが 0 以下（裏返し・潰れ）は None。
+    /// shift が面の左上 (0, 0) と右下 (1, 1) を写す先から作る読む範囲。大きさが 0 以下（裏返し・潰れ）と、
+    /// 面の真ん中が範囲の真ん中に写らない（ずらし量が uv で曲がる）時は None。
     def shiftedArea(dx: ShaderDoc.Field, dy: ShaderDoc.Field, t: Float64): Option[Rect2.Rect2] =
         let at = (u, v) -> { x = u + ShaderEval.evalField(dx, { x = u, y = v }, t),
                              y = v + ShaderEval.evalField(dy, { x = u, y = v }, t) };
         let lo = at(0.0, 0.0);
         let hi = at(1.0, 1.0);
+        let mid = at(0.5, 0.5);
         let size = { x = hi#x - lo#x, y = hi#y - lo#y };
-        if (size#x > 0.0 and size#y > 0.0) Some({ position = lo, size = size }) else None
+        let straight = Float64.abs(mid#x - (lo#x + hi#x) / 2.0) < areaTolerance() and
+                       Float64.abs(mid#y - (lo#y + hi#y) / 2.0) < areaTolerance();
+        if (size#x > 0.0 and size#y > 0.0 and straight) Some({ position = lo, size = size }) else None
 
     // flip は base scale に符号を“乗算”（engine spriteToDrawable と同じ）。centered は素通し。
     // region=Some は textureSize(\Game) が要るので今回未対応＝loud に落とす（部分関数を残さない）。

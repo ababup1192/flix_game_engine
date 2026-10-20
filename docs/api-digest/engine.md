@@ -240,7 +240,7 @@
 - ピクセルの重ね方（ブレンドモード）。
   `pub enum BlendMode with Eq, Order, ToString { case Normal case Add case Multiply }`
 - 角丸＋枠線スタイル。`Drawable.style = Some(..)` かつ texture="" のとき、
-  `pub enum BoxStyle { case BoxStyle( Float64, Float64, Float64, Float64, Float64, Float64, Float64, Float64, Float64, Float64, Float64, Float64, Int32, Float64, Float64, Float64, Float64, Float64 ) }`
+  `pub enum BoxStyle with Eq, ToString { case BoxStyle( Float64, Float64, Float64, Float64, Float64, Float64, Float64, Float64, Float64, Float64, Float64, Float64, Int32, Float64, Float64, Float64, Float64, Float64 ) }`
 - BoxStyle の全フィールドを名前で持つレコード（`makeStyle` の入力・`styleToSpec` の出力）。
   `pub type alias BoxStyleSpec = { cornerRadius = Float64, borderWidth = Float64, borderColor = Color, borderAlpha = Float64, stripeColor = Color, stripeAlpha = Float64, stripeWidth = Float64, stripePeriod = Float64, stripeDir = Int32, checkerColor = Color, checkerAlpha = Float64, checkerCell = Float64 }`
 - 名前付きで安全に組む入口（テスト・部分上書き・めったに呼ばれない構築用）。
@@ -267,6 +267,8 @@
   `pub def clipPixels(scale: {scaleX = Float64, scaleY = Float64}, clip: Rect2.Rect2): (Int32, Int32, Int32, Int32)`
 - スプライト 1 つ分の描画命令（zIndex 順にソートして描画される）。
   `pub enum Drawable { case Drawable( String, Float64, Float64, Float64, Float64, Float64, Float64, Float64, Float64, Float64, Bool, Float64, Float64, Float64, Float64, Int32, Option[BoxStyle], Option[Rect2.Rect2], BlendMode, List[List[Vec2.Vec2]] ) }`
+- `pub def eq(a: Drawable, b: Drawable): Bool`
+- `pub def toString(d: Drawable): String`
 - Drawable の全フィールドを名前で持つレコード（`make` の入力・`toSpec` の出力）。
   `pub type alias DrawableSpec = { texture = String, position = Vec2.Vec2, scale = Vec2.Vec2, rotation = Float64, color = Color, alpha = Float64, centered = Bool, uvOffset = Vec2.Vec2, uvScale = Vec2.Vec2, zIndex = Int32, style = Option[BoxStyle], clip = Option[Rect2.Rect2], blend = BlendMode, mask = List[List[Vec2.Vec2]] }`
 - 名前付きで安全に組む入口（テスト・部分上書き・めったに呼ばれない構築用）。
@@ -679,8 +681,12 @@
   `pub def representativeColor(spec: Spec): Color`
 - 場の木を前置順（親 → 子）で 1 本ずつ f に渡して畳み込む汎用の走査。
   `pub def foldField(f: (a, Field) -> a, acc: a, field: Field): a`
+- Spec の場を「bindings（前から）→ 色 → alpha」の順に並べる。texNames と、場を全部見る走査はこの並びを使う。
+  `pub def fieldsOf(spec: Spec): List[Field]`
 - Spec が読むテクスチャ名を「bindings（前から）→ 色 → alpha」の初出順・重複なしで列挙する。
   `pub def texNames(spec: Spec): List[String]`
+- この節が、子の場を自分の uv と違う uv で読むなら、その子（shift の dx・dy は今の uv で読むので入らない）。
+  `pub def remappedChild(field: Field): Option[Field]`
 
 ## ShaderEffect — `engine/src/ShaderEffect.flix`
 - シェーダー面 1 枚ぶんの描画依頼。

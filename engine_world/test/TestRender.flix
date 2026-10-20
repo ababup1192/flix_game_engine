@@ -395,40 +395,72 @@ mod TestRender {
     // drawWith: テクスチャ 1 枚を読むだけの面（F8 の止めた画面・注釈のスクショ）
     // ========================================================================
 
-    // 面がテクスチャの一部を灰色にして読む式なら、その一部を貼るスプライトになる（色の掛け算は落ちる）。
+    // 面がテクスチャの一部を灰色にして読む式なら、その一部を貼るスプライトになる（色の計算は落ちる）。
     @Test
     def testTextureReadSurfaceDrawsItsRegion(): Unit \ Assert =
         let area = { position = { x = 0.25, y = 0.5 }, size = { x = 0.5, y = 0.25 } };
         let surface = Render.shaderFill(grayReadSpec("pieces", area),
                           { position = { x = 10.0, y = 20.0 }, size = { x = 32.0, y = 16.0 } }, 0.0, 6);
-        let (ds, _) = Render.drawWith(_ -> Some(texture64()), surface :: Nil);
-        Assert.assertEq(expected = Some(("pieces", (0.25, 0.5, 0.5, 0.25), (1.0, 1.0))),
-            ds |> List.head |> Option.map(d -> {
-                let spec = DrawCmd.toSpec(d);
-                (spec#texture,
-                 (round4(spec#uvOffset#x), round4(spec#uvOffset#y), round4(spec#uvScale#x), round4(spec#uvScale#y)),
-                 (round4(spec#scale#x), round4(spec#scale#y)))
-            }))
+        Assert.assertEq(
+            expected = DrawCmd.fromParts("pieces", { x = 10.0, y = 20.0 }, { x = 1.0, y = 1.0 }, 0.0,
+                           { r = 1.0, g = 1.0, b = 1.0 }, 1.0, false, area#position, area#size, 6,
+                           None, None, DrawCmd.BlendMode.Normal, Nil) :: Nil,
+            drawnWith(_ -> Some(texture64()), surface))
 
-    // 読む位置を scaled が曲げる式は矩形 1 枚に写せないので、テクスチャを貼らずに代表色で塗る。
+    // 読む位置を scaled が曲げる式は矩形 1 枚に写せないので、代表色で塗る。
     @Test
-    def testBentTextureReadSurfaceKeepsRepresentativeColor(): Unit \ Assert =
+    def testScaledTextureReadKeepsRepresentativeColor(): Unit \ Assert =
         let read = ShaderDoc.Field.Scaled({ factor = 2.0, scroll = { x = 0.0, y = 0.0 },
                        of = ShaderDoc.Field.Tex({ name = "pieces", chan = ShaderDoc.TexChan.R }) });
-        let spec = { name = "bent", cycleRate = 0.0, bindings = Nil,
-                     out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Rgb({ r = read, g = read, b = read }),
-                                                alpha = ShaderDoc.Field.Const(1.0) }) };
-        let surface = Render.shaderFill(spec, { position = { x = 0.0, y = 0.0 }, size = { x = 8.0, y = 8.0 } }, 0.0, 6);
-        let (ds, _) = Render.drawWith(_ -> Some(texture64()), surface :: Nil);
-        Assert.assertEq(expected = Some(false), ds |> List.head |> Option.map(d -> DrawCmd.textureOf(d) == "pieces"))
+        let surface = Render.shaderFill(rgbSpec(Nil, read), square8(), 0.0, 6);
+        Assert.assertEq(expected = Render.toDrawables(surface#item, surface#at), drawnWith(_ -> Some(texture64()), surface))
+
+    // bindings の tex を scaled の下で ref で読む式も、どの uv で読むかをここでは辿らないので代表色で塗る。
+    @Test
+    def testScaledRefToTextureKeepsRepresentativeColor(): Unit \ Assert =
+        let read = ShaderDoc.Field.Scaled({ factor = 2.0, scroll = { x = 0.0, y = 0.0 }, of = ShaderDoc.Field.Ref("img") });
+        let img = ShaderDoc.Field.Tex({ name = "pieces", chan = ShaderDoc.TexChan.R });
+        let surface = Render.shaderFill(rgbSpec(("img", img) :: Nil, read), square8(), 0.0, 6);
+        Assert.assertEq(expected = Render.toDrawables(surface#item, surface#at), drawnWith(_ -> Some(texture64()), surface))
+
+    // shift のずらし量が uv で波打つ（ripples）式は、2 隅が合っても矩形に写せないので代表色で塗る。
+    @Test
+    def testRippledShiftKeepsRepresentativeColor(): Unit \ Assert =
+        let read = ShaderDoc.Field.Shift({
+            dx = ShaderDoc.Field.Ripples({ freq = 3.0, amp = 0.1, speed = 0.0, seed = 1 }),
+            dy = ShaderDoc.Field.Const(0.0),
+            of = ShaderDoc.Field.Tex({ name = "pieces", chan = ShaderDoc.TexChan.R }) });
+        let surface = Render.shaderFill(rgbSpec(Nil, read), square8(), 0.0, 6);
+        Assert.assertEq(expected = Render.toDrawables(surface#item, surface#at), drawnWith(_ -> Some(texture64()), surface))
+
+    // ずらし量が uv × uv（許す場だけで組めるが曲がる）の式は、真ん中がずれるので代表色で塗る。
+    @Test
+    def testCurvedShiftKeepsRepresentativeColor(): Unit \ Assert =
+        let u = ShaderDoc.Field.Uv({ axis = ShaderDoc.Axis.U });
+        let read = ShaderDoc.Field.Shift({
+            dx = ShaderDoc.Field.Bin({ op = ShaderDoc.BinOp.Mul, a = u, b = u }),
+            dy = ShaderDoc.Field.Const(0.0),
+            of = ShaderDoc.Field.Tex({ name = "pieces", chan = ShaderDoc.TexChan.R }) });
+        let surface = Render.shaderFill(rgbSpec(Nil, read), square8(), 0.0, 6);
+        Assert.assertEq(expected = Render.toDrawables(surface#item, surface#at), drawnWith(_ -> Some(texture64()), surface))
 
     // テクスチャの大きさが引けない（まだ読み込んでいない）ときは、代表色で塗る。
     @Test
     def testTextureReadSurfaceWithoutTextureInfoKeepsRepresentativeColor(): Unit \ Assert =
         let surface = Render.shaderFill(grayReadSpec("pieces", { position = { x = 0.0, y = 0.0 }, size = { x = 1.0, y = 1.0 } }),
-                          { position = { x = 0.0, y = 0.0 }, size = { x = 8.0, y = 8.0 } }, 0.0, 6);
-        let (ds, _) = Render.drawWith(_ -> None, surface :: Nil);
-        Assert.assertEq(expected = Some(false), ds |> List.head |> Option.map(d -> DrawCmd.textureOf(d) == "pieces"))
+                          square8(), 0.0, 6);
+        Assert.assertEq(expected = Render.toDrawables(surface#item, surface#at), drawnWith(_ -> None, surface))
+
+    def drawnWith(textureInfoOf: String -> Option[GameEngine.TextureInfo], surface: Render.PlacedItem): List[GameEngine.Drawable] =
+        fst(Render.drawWith(textureInfoOf, surface :: Nil))
+
+    def square8(): Rect2.Rect2 = { position = { x = 0.0, y = 0.0 }, size = { x = 8.0, y = 8.0 } }
+
+    /// read を r・g・b にそのまま使う面（alpha は 1）。
+    def rgbSpec(bindings: List[(String, ShaderDoc.Field)], read: ShaderDoc.Field): ShaderDoc.Spec =
+        { name = "read", cycleRate = 0.0, bindings = bindings,
+          out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Rgb({ r = read, g = read, b = read }),
+                                     alpha = ShaderDoc.Field.Const(1.0) }) }
 
     def texture64(): GameEngine.TextureInfo = { id = GpuHandle.wrapTextureId(0), width = 64.0, height = 64.0 }
 
