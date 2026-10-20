@@ -616,36 +616,6 @@ pub mod App {
     /// マウスの矢印の見せ方（withCursor の宣言）。icon = 形・visible = 見せるか。
     pub type alias CursorSpec = { icon = GameEngine.Cursor, visible = Bool }
 
-    /// withCursor の宣言を最後にどう当てたか。Stale = まだ当てていない・止めた画面の見た目が上書きした
-    /// （どちらも次に動く拍で当て直す）。
-    pub enum CursorState {
-        case Applied(CursorSpec)
-        case Stale
-    }
-
-    /// 矢印を見せるか。LeaveToApp = 触らない（今の見せ方のまま）。
-    pub enum Visibility with Eq, ToString {
-        case Show
-        case Hide
-        case LeaveToApp
-    }
-
-    /// ウィンドウへ当てる矢印の見た目（形・見せるか）。
-    pub enum CursorLook with Eq, ToString {
-        case CursorLook(GameEngine.Cursor, Visibility)
-    }
-
-    /// ウィンドウタイトルの「止めている」のバッジ。
-    pub enum Badge with Eq, ToString {
-        case Shown
-        case Hidden
-    }
-
-    /// 止めた画面の出入りの見た目（タイトルのバッジ・矢印）。
-    pub enum HaltLook with Eq, ToString {
-        case HaltLook(Badge, CursorLook)
-    }
-
     /// 毎フレーム「マウスの矢印をどう見せたいか」を World から宣言する。App は宣言が変わったフレームだけ当て、
     /// F8 で止めている間は十字に上書きする（再開した拍に宣言を当て直す）。系の中で setCursor を呼ばない ——
     /// 呼ぶと /step・台本・F8 の再開で矢印の形が World とずれる。
@@ -1087,7 +1057,7 @@ pub mod App {
                     tileCache = freshTileCache(),
                     glyphSeen = None, budgetWarned = false,
                     warnOnce = warnOnceWith(Ref.fresh(Static, Set.empty())),
-                    cursorShown = CursorState.Stale, outputKeys = keysAfterJump(app, world0, Nil), recorder = recorder });
+                    cursorShown = CursorLook.State.Stale, outputKeys = keysAfterJump(app, world0, Nil), recorder = recorder });
         Option.forEach(RemoteDebug.shutdown, bridge)
 
     /// 時間スクラブ用に持ち回す直近の World の数（60fps で約 30 秒）。
@@ -1113,7 +1083,7 @@ pub mod App {
         // View の組み立てが既定値で続けたことを 1 回だけ知らせる口（ViewCtx#warnOnce。見た文面はゲームの間ずっと覚える）。
         warnOnce = String -> Unit,
         // withCursor の宣言を最後にどう当てたか（止めている拍は Stale にして、動き出した拍に当て直させる）。
-        cursorShown = CursorState,
+        cursorShown = CursorLook.State,
         // 出力（addOutput）ごとの最後に書いた鍵（outputs と同じ順）。
         outputKeys = List[String],
         // 遊んだ記録（DEBUG の起動・FLOW_RECORD=0 で止まる）。None = 書かない。
@@ -1210,7 +1180,7 @@ pub mod App {
                     recordItems(app, st#recorder, next#record, next#world);
                     loop(app, { world = next#world, anno = next#anno, history = next#history,
                                 remoteHold = next#hold, stepState = next#stepState,
-                                cursorShown = CursorState.Stale, outputKeys = keysAfterJump(app, next#world, st#outputKeys) | carried })
+                                cursorShown = CursorLook.State.Stale, outputKeys = keysAfterJump(app, next#world, st#outputKeys) | carried })
                 case _ => {
                     let decided = decideBranch({ f8Pressed = justPressed(GameEngine.Key.F8, frame),
                                                  canDebug = canDebug(r), remoteHold = st#remoteHold,
@@ -1218,8 +1188,8 @@ pub mod App {
                     // デバッグモードの出入りをウィンドウタイトルとカーソル形状で示す
                     // （停止中は正確に囲うための十字カーソル）
                     if (decided#toggled) match decided#branch {
-                        case Branch.Paused   => applyHaltLook(haltEnterLook())
-                        case Branch.Resuming => applyHaltLook(haltLeaveLook())
+                        case Branch.Paused   => applyHaltLook(CursorLook.haltEnterLook())
+                        case Branch.Resuming => applyHaltLook(CursorLook.haltLeaveLook())
                         case Branch.Running  => ()
                     } else ();
                     match decided#branch {
@@ -1230,7 +1200,7 @@ pub mod App {
                                 case (Some(dir), Some(recorder)) => discard Flow.Record.copyInto(recorder, dir, nextAnno#scrub)
                                 case _                      => ()
                             };
-                            loop(app, { anno = nextAnno, cursorShown = CursorState.Stale | carried })
+                            loop(app, { anno = nextAnno, cursorShown = CursorLook.State.Stale | carried })
                         case Branch.Resuming =>
                             // スクラブ位置の World から再開する。巻き戻したぶんの履歴と
                             // フレーム番号も、そこを現在として数え直す。
@@ -1307,49 +1277,28 @@ pub mod App {
         })
 
     /// withCursor の宣言を当てる（前に当てた物と同じなら何もしない）。返すのは当てた後の状態。
-    def applyCursor(r: Rec[w, ef], world: w, state: CursorState): CursorState \ GameEngine.Game =
+    def applyCursor(r: Rec[w, ef], world: w, state: CursorLook.State): CursorLook.State \ GameEngine.Game =
         match r#cursor {
             case None    => state
             case Some(f) =>
                 let want = f(world);
-                Option.forEach(applyLook, cursorChange(want, state));
-                CursorState.Applied(want)
+                Option.forEach(applyLook, CursorLook.cursorChange(want, state));
+                CursorLook.State.Applied(want)
         }
-
-    /// withCursor の宣言 want を当てるなら、その見た目（前に当てた物と同じなら None）。
-    /// Stale（まだ当てていない・止めた画面の見た目が上書きした）なら必ず当てる — 止めた画面を抜けた拍に
-    /// ゲームの「隠す」が戻るのはここ。ゲームからは呼ばない（テストのために公開）。
-    pub def cursorChange(want: CursorSpec, state: CursorState): Option[CursorLook] =
-        let look = CursorLook.CursorLook(want#icon, if (want#visible) Visibility.Show else Visibility.Hide);
-        match state {
-            case CursorState.Applied(was) if was#icon == want#icon and was#visible == want#visible => None
-            case _ => Some(look)
-        }
-
-    /// 止めた画面に入る時の見た目: バッジを出し、十字を見せる — withCursor で矢印を隠しているゲームでも、
-    /// 矩形を囲うのに要る。ゲームからは呼ばない（F8 と /halt・/step が使う。テストのために公開）。
-    pub def haltEnterLook(): HaltLook =
-        HaltLook.HaltLook(Badge.Shown, CursorLook.CursorLook(GameEngine.Cursor.Crosshair, Visibility.Show))
-
-    /// 止めた画面を抜ける時の見た目: バッジを外し、形だけ戻す。見せるか隠すかは触らない（動き出した拍に
-    /// cursorChange が withCursor の宣言を当て直す。宣言の無いゲームは見せたままが元の姿）。
-    /// ゲームからは呼ばない（F8 と /resume が使う。テストのために公開）。
-    pub def haltLeaveLook(): HaltLook =
-        HaltLook.HaltLook(Badge.Hidden, CursorLook.CursorLook(GameEngine.Cursor.Default, Visibility.LeaveToApp))
 
     /// 止めた画面の出入りの見た目をウィンドウへ当てる。ゲームからは呼ばない（RemoteDebug が呼ぶので公開）。
-    pub def applyHaltLook(look: HaltLook): Unit \ GameEngine.Game =
-        let HaltLook.HaltLook(badge, cursor) = look;
-        GameEngine.Game.setDebugBadge(badge == Badge.Shown);
+    pub def applyHaltLook(look: CursorLook.HaltLook): Unit \ GameEngine.Game =
+        let CursorLook.HaltLook.HaltLook(badge, cursor) = look;
+        GameEngine.Game.setDebugBadge(badge == CursorLook.Badge.Shown);
         applyLook(cursor)
 
-    def applyLook(look: CursorLook): Unit \ GameEngine.Game =
-        let CursorLook.CursorLook(icon, visibility) = look;
+    def applyLook(look: CursorLook.Look): Unit \ GameEngine.Game =
+        let CursorLook.Look.Look(icon, visibility) = look;
         GameEngine.Game.setCursor(icon);
         match visibility {
-            case Visibility.Show       => GameEngine.Game.setCursorVisible(true)
-            case Visibility.Hide       => GameEngine.Game.setCursorVisible(false)
-            case Visibility.LeaveToApp => ()
+            case CursorLook.Visibility.Show       => GameEngine.Game.setCursorVisible(true)
+            case CursorLook.Visibility.Hide       => GameEngine.Game.setCursorVisible(false)
+            case CursorLook.Visibility.LeaveToApp => ()
         }
 
     /// 一時停止を抜ける地点: スクラブで表示していた瞬間の World を現在とし、

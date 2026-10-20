@@ -768,7 +768,7 @@ pub mod App.RemoteDebug {
     /// POST /halt: 時間を止めて lockstep モードへ入る。既に停止中でも安全（冪等）。
     def remoteHalt(app: App.App[w, ef], bridge: Bridge,
                    ctx: RemoteNext[w]): RemoteNext[w] \ (ef + GameEngine.Game + IO) =
-        if (not ctx#anno#paused) App.applyHaltLook(App.haltEnterLook()) else ();
+        if (not ctx#anno#paused) App.applyHaltLook(App.CursorLook.haltEnterLook()) else ();
         let shownFrame = ctx#anno#frame - Int32.toInt64(ctx#anno#scrub);
         let displayed = App.worldAt(ctx#history, ctx#anno#scrub, ctx#world);
         answer("ok mode=halted frame=${shownFrame}\n[status]\n${statusText(app, displayed)}\n",
@@ -780,7 +780,7 @@ pub mod App.RemoteDebug {
         if (not ctx#anno#paused)
             answer("ok mode=running frame=${ctx#anno#frame}\n", bridge, { hold = false | ctx })
         else {
-            App.applyHaltLook(App.haltLeaveLook());
+            App.applyHaltLook(App.CursorLook.haltLeaveLook());
             let resumed = App.resumePoint(ctx#anno, ctx#history, ctx#world);
             answer("ok mode=running frame=${resumed#anno#frame}\n", bridge,
                    { world = resumed#world, anno = resumed#anno, history = resumed#history, hold = false,
@@ -812,7 +812,7 @@ pub mod App.RemoteDebug {
                 match stepScriptOf(app, base#world, request, stepParams) {
                     case Err(message) => answer(message + "\n", bridge, ctx)
                     case Ok(script) =>
-                        if (not ctx#anno#paused) App.applyHaltLook(App.haltEnterLook()) else ();
+                        if (not ctx#anno#paused) App.applyHaltLook(App.CursorLook.haltEnterLook()) else ();
                         let (result, files) = Flow.Record.captureReads(() ->
                             Flow.play(app, { design = GameEngine.Game.getViewportRect()#size, limit = stepParams#maxFrames },
                                       script, { world = base#world, state = ctx#stepState }));
