@@ -108,7 +108,7 @@
   `pub def applyInspectTiles(view: View, ts: List[GameEngine.TileMapRenderCmd]): List[GameEngine.TileMapRenderCmd]`
 
 ## App — `engine_world/src/App.flix`
-- ゲーム 1 本の宣言（中身は Rec）。record のままにしないのは、37 欄の record の型が App を受ける
+- ゲーム 1 本の宣言。make で作り、addSystem / withView などのビルダーで部品を繋いで launch へ渡す。
   `pub enum App[w: Type, ef: Eff](Rec[w, ef])`
 - App の中身。ゲームからは読まない（ビルダーで組む）。エンジンの中の口（Flow・RemoteDebug など）が読む。
   `pub def rec(app: App[w, ef]): Rec[w, ef]`
@@ -132,7 +132,7 @@
   `pub def warnOnceWith(seen: Ref[Set[String], Static]): String -> Unit`
 - 生成したドット絵アトラス 1 枚ぶんの受け渡し。
   `pub type alias AtlasUpload = { texture = String, key = String, baked = PxSpriteAtlas.Baked }`
-- ゲーム 1 本の宣言。make で空を作り、addStartup / addSystem / reloadOn / withView /
+- App の中身（欄の意味は右の // コメント）。ゲームからは読まず、ビルダー（addSystem / withView など）で組む。
   `pub type alias Rec[w: Type, ef: Eff] = { init = Vec2.Vec2 -> w \ ef, startupSystems = List[w -> w \ ef], updateSystems = List[(Frame, w) -> w \ ef], reload = Option[(GameEngine.Key, w -> w \ {Fs.FileRead})], watch = List[(String, w -> w \ {Fs.FileRead})], view = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], passes = w -> List[Render.Pass] \ ef, fonts = List[String], camera = Option[w -> Vec2.Vec2 \ ef], zoom = Option[w -> Float64 \ ef], cameraBounds = Option[w -> Rect2.Rect2 \ ef], parallaxLayers = List[(Float64, (ViewCtx, w) -> List[Render.PlacedItem] \ ef)], hudView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], audio = { before = w, after = w } -> List[String] \ ef, sustained = w -> List[Sustain] \ ef, mixer = Option[w -> AudioMixer.Mixer \ ef], quit = (Frame, w) -> Bool \ ef, closeRequest = Option[w -> w \ ef], debug = Bool, debugView = Option[(String, w -> (List[GameEngine.Drawable], List[GameEngine.TileMapRenderCmd], List[GameEngine.PolygonRenderCmd]) \ ef)], worldDump = Option[(Rect2.Rect2, w) -> String \ ef], annotationContext = Option[w -> Annotate.Table \ ef], staticLayer = Option[{ key = w -> GameEngine.StaticKey, build = w -> List[Render.PlacedItem] }], tileLayers = Option[w -> List[TileLayerSpec]], spriteAtlases = w -> List[AtlasUpload], pixelSnap = w -> Float64, statusLine = Option[w -> String \ ef], remoteRender = Option[Unit -> List[String] \ IO], shot = Option[w -> String \ IO], remoteHandlers = List[(String, (Map[String, String], w) -> Result[String, w] \ {Fs.FileRead})], fixedStep = Option[Float64], clocks = List[(Float64, w) -> w], cursor = Option[w -> CursorSpec], outputs = List[Output[w]], starts = List[Start[w]], flow = Flow.Table[w], fingerprint = Option[w -> String] }`
 - 初期 World だけを持つ空の App。絵はまだ無い（withView で繋ぐまで何も描かない）。
   `pub def make(init: w): App[w, ef]`

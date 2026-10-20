@@ -9,8 +9,9 @@
 pub mod App {
     import java.lang.System
 
-    /// ゲーム 1 本の宣言（中身は Rec）。record のままにしないのは、37 欄の record の型が App を受ける
-    /// 全部の def とゲームのビルダーの列で展開され、型検査が重くなるため（docs/flix-conventions.md）。
+    /// ゲーム 1 本の宣言。make で作り、addSystem / withView などのビルダーで部品を繋いで launch へ渡す。
+    /// 中身は Rec。record のままにしないのは、37 欄の record の型が App を受ける全部の def とゲームのビルダーの列で
+    /// 展開され、型検査が重くなるため（docs/flix-conventions.md）。
     pub enum App[w: Type, ef: Eff](Rec[w, ef])
 
     /// App の中身。ゲームからは読まない（ビルダーで組む）。エンジンの中の口（Flow・RemoteDebug など）が読む。
@@ -112,10 +113,9 @@ pub mod App {
     /// （同じ key の間は GPU へ上げ直さない）、baked = PxSpriteAtlas.bake の生成結果。
     pub type alias AtlasUpload = { texture = String, key = String, baked = PxSpriteAtlas.Baked }
 
-    /// ゲーム 1 本の宣言。make で空を作り、addStartup / addSystem / reloadOn / withView /
-    /// withAudio / quitWhen で部品を繋ぎ、launch へ渡す。w はゲームが持ち込む World の型、
-    /// ef はシステム・絵・音・終了判定が帯びる効果（外の世界に触れる処理）の行
-    /// （純粋なゲームは ef = {}）。各フィールドの意味は右の // コメントを参照。
+    /// App の中身（欄の意味は右の // コメント）。ゲームからは読まず、ビルダー（addSystem / withView など）で組む。
+    /// w はゲームが持ち込む World の型、ef はシステム・絵・音・終了判定が帯びる効果（外の世界に触れる処理）の行
+    /// （純粋なゲームは ef = {}）。
     pub type alias Rec[w: Type, ef: Eff] = {
         init = Vec2.Vec2 -> w \ ef,                                // design 解像度 → 出発点の World（launch が画面サイズを渡して呼ぶ）
         startupSystems = List[w -> w \ ef],                        // 起動時に 1 回だけ・追加順
