@@ -90,3 +90,42 @@ func TestReadManifestTakesFirstLine(t *testing.T) {
 		t.Fatalf("%q", got)
 	}
 }
+
+// lib/github の中で flix.toml にも packages.lock にも無い版（版を上げた後に残る古い版）は、足しても消しても指紋が変わらない。
+func TestManifestIgnoresUnusedLibVersions(t *testing.T) {
+	d := gameDir(t)
+	writeFile(t, filepath.Join(d, "flix.toml"), `[dependencies]
+"github:ababup1192/flix_game_engine" = { version = "0.52.0", mount = "fge" }`)
+	writeFile(t, filepath.Join(d, "lib", "github", "ababup1192", "flix_game_engine", "0.52.0", "e.fpkg"), "new")
+	before := manifestOf(t, d)
+	writeFile(t, filepath.Join(d, "lib", "github", "ababup1192", "flix_game_engine", "0.35.0", "e.fpkg"), "old")
+	writeFile(t, filepath.Join(d, "lib", "github", "ababup1192", "flix_game_engine", "stray.fpkg"), "stray")
+	if after := manifestOf(t, d); after != before {
+		t.Fatal("使わない古い版・版のフォルダの外の物を足しただけで指紋が変わった")
+	}
+	writeFile(t, filepath.Join(d, "lib", "github", "ababup1192", "flix_game_engine", "0.52.0", "e.fpkg"), "changed")
+	if after := manifestOf(t, d); after == before {
+		t.Fatal("使う版の中身が変わったのに指紋が同じ")
+	}
+}
+
+// packages.lock にだけある版（推移の依存）も指紋に入る。
+func TestManifestSeesLockedVersions(t *testing.T) {
+	d := gameDir(t)
+	writeFile(t, filepath.Join(d, "packages.lock"), "[packages.\"github:someone/dep\".\"1.2.3\"]\nfpkg = \"x\"\n")
+	before := manifestOf(t, d)
+	writeFile(t, filepath.Join(d, "lib", "github", "someone", "dep", "1.2.3", "d.fpkg"), "dep")
+	if after := manifestOf(t, d); after == before {
+		t.Fatal("lock にある版を足したのに指紋が同じ")
+	}
+}
+
+// jar を作る写しにだけある入口の束（src/FgeHeadlessMain.flix）は指紋に入らない（写しとゲームの根の指紋がそろう）。
+func TestManifestSkipsTheDispatcher(t *testing.T) {
+	d := gameDir(t)
+	before := manifestOf(t, d)
+	writeFile(t, filepath.Join(d, filepath.FromSlash(DispatcherFile)), "mod FgeHeadlessMain {}")
+	if after := manifestOf(t, d); after != before {
+		t.Fatal("入口の束を足しただけで指紋が変わった")
+	}
+}

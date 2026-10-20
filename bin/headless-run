@@ -23,8 +23,8 @@
 # 拾えない形の入口（引数あり・別の効果つき・複数行・mod が 2 つ以上あるファイル）は flix run に回す。
 # jar を作れなかった時は、エラーの最後を見せて止める（FGE_HEADLESS_FALLBACK=1 の時だけ flix run で続ける）。
 #
-# jar が古いかは中身の指紋（bin/fge resident manifest: src・flix.toml・lib の中身と java の旗の SHA-256）を
-# build/headless/jar.manifest と比べて決める。bin/fge-go が無い時だけ更新時刻で決める。
+# jar が古いかは中身の指紋（bin/fge resident manifest: src・flix.toml・lib の中身の SHA-256。lib/github は flix.toml と
+# packages.lock に名前のある版だけ）を build/headless/jar.manifest と比べて決める。bin/fge-go が無い時だけ更新時刻で決める。
 #
 # HEADLESS_RESIDENT=1 なら、jar を確かめた後にまずゲームの根の常駐（窓なしのゲーム・既定の入口 E2e.serveHeadless）
 # へ頼む（bin/fge resident run）。常駐を使えない時（終了コード 125）だけ下の java -jar で流す。
@@ -37,6 +37,8 @@
 # 作れなかった時は build/headless/.failed に印（エラーの最後の 15 行）を、.failed.manifest に作れなかった時の中身の指紋を残し、
 # 指紋が変わるまで作り直さない
 # （作れない状態のまま毎回コンパイルを 2 回払わないため）。jar を作り直させたい時は rm -rf build/headless。
+#
+# 作り終えたら「[headless-run] jar を作った（N 秒）」を出し、N を build/headless/last-build-seconds に残す。
 #
 # 環境変数: FGE_HEADLESS_FALLBACK=1 = jar を作れない時も flix run で続ける（既定は止める）。
 #           FLIX_CMD = jar を作る flix（既定はこのエンジンの bin/flix）。1 語のパスで渡す
@@ -211,11 +213,14 @@ failed_before() {
     [ -z "$(newer_than "$out/.failed")" ]
 }
 
-# 作れたら 0。jar.manifest には「src を写す前に作った指紋」を書き、jar の時刻は「src を写し始めた時刻」に
-# そろえる — 作っている最中に保存された src を次の回に「jar と違う」と気づけるように
-# （作り終えた後の指紋や時刻だと、作っている間の保存を取りこぼす）。
+# 作れたら 0。jar.manifest には、作り終えた後に jar を作った写し（$proj: 写した src・flix.toml・lib）から取った指紋を書く
+# — 作っている間に flix が lib へ依存を落とす（版を上げた直後の 1 回目）ので、作り始めの指紋だと次の回にまた作り直す。
+# 写しの src は作り始めに写した物なので、作っている最中にゲームの src を保存すれば次の回に「jar と違う」と気づける。
+# jar の時刻は「src を写し始めた時刻」にそろえる（指紋を作れない時の更新時刻の比べのため）。
+# 作った秒数は build/headless/last-build-seconds に残す（Studio が「jar を作っています」の見込みに出す）。
 build_jar() {
     touch "$out/.started"
+    build_began=$(date +%s)
     started_manifest=$(manifest_now)
     rm -rf "$proj/src" "$proj/artifact"
     mkdir -p "$proj"
@@ -224,7 +229,10 @@ build_jar() {
     # packages.lock もゲームの物にそろえる（無ければ消す）。前に作った時の lock が残ると、engine の fpkg を
     # 手元で作り直した後（engine の開発・use-engine）に「packages.lock の記録と違う」で作れなくなる。
     if [ -f packages.lock ]; then cp packages.lock "$proj/packages.lock"; else rm -f "$proj/packages.lock"; fi
-    if [ -d lib ]; then ln -sfn "$PWD/lib" "$proj/lib"; fi
+    # lib はゲームの根の物を繋ぐ（無ければ作る）— flix が作っている間に落とす依存をゲームの lib に置き、
+    # 写しから取る指紋とゲームの根から取る指紋をそろえるため。
+    mkdir -p lib
+    ln -sfn "$PWD/lib" "$proj/lib"
     build_dispatcher > "$proj/src/$main.flix"
     echo "[headless-run] jar を作る（src か lib が変わった）" >&2
     # 作った時の出力は build.log にも残す（作れなかった理由を、次からの回の知らせでも見せるため）。
@@ -237,9 +245,17 @@ build_jar() {
     mv "$built" "$jar.tmp.$$"
     touch -r "$out/.started" "$jar.tmp.$$"
     mv "$jar.tmp.$$" "$jar"
+    built_seconds=$(( $(date +%s) - build_began ))
+    printf '%s\n' "$built_seconds" > "$out/last-build-seconds.tmp.$$"
+    mv "$out/last-build-seconds.tmp.$$" "$out/last-build-seconds"
+    echo "[headless-run] jar を作った（${built_seconds} 秒）" >&2
+    built_manifest=""
+    if [ -n "$started_manifest" ] && [ -x "$fge_go" ]; then
+        built_manifest=$("$fge_go" resident manifest "$proj" 2>/dev/null || true)
+    fi
     # 指紋を作れなかった回は古い jar.manifest を残さない — 常駐が古い指紋のまま「同じ jar」と答えるため。
-    if [ -n "$started_manifest" ]; then
-        printf '%s\n' "$started_manifest" > "$out/jar.manifest.tmp.$$"
+    if [ -n "$built_manifest" ]; then
+        printf '%s\n' "$built_manifest" > "$out/jar.manifest.tmp.$$"
         mv "$out/jar.manifest.tmp.$$" "$out/jar.manifest"
     else
         rm -f "$out/jar.manifest"
