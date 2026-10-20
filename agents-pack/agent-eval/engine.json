@@ -44,7 +44,7 @@
       "id": "pause-layer",
       "prompt": "ポーズ画面を足したい。ゲームの絵と会話の窓のどちらよりも上に重ねたい",
       "expect": [
-        {"re": "SortingLayer|Layer\\s*(\u306e\\s*)?enum|enum\\s+Layer", "why": "SortingLayer の表"},
+        {"re": "SortingLayer|\\bLayer\\b|Layer\\s*(の\\s*)?enum|enum\\s+Layer", "why": "SortingLayer の表（ゲームの Layer の enum。ZOrder.Layer のようにモジュールの中に置いた物も数える）"},
         {"re": "SortingLayer\\.compose|ZStack\\.topLayer", "why": "SortingLayer.compose / topLayer"}
       ],
       "avoid": [
@@ -95,8 +95,8 @@
       "prompt": "演出の 0.4 秒目と 1.2 秒目に効果音を鳴らしたい。秒は Doc から調整できるようにしたい",
       "expect": [
         {"re": "Timeline\\.build", "why": "Timeline の時刻表"},
-        {"re": "Timeline\\.(withSound|soundsOn)", "why": "音をクリップに付ける（withSound / soundsOn）"},
-        {"re": "App\\.withAudio", "why": "App.withAudio"}
+        {"re": "Timeline\\.(withSound|soundsOn)|\\bwithShot(At)?\\b", "why": "音をクリップに付ける（withSound / soundsOn。音の名前を型で鳴らすゲームが包んだ withShot も同じ）"},
+        {"re": "App\\.withAudio|Timeline\\.(soundsBetween|soundsOnClock)", "why": "鳴らす（App.withAudio。配線済みのゲームでは soundsBetween / soundsOnClock で時刻の音を取り出す所）"}
       ]
     },
     {
