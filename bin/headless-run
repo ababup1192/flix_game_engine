@@ -290,7 +290,16 @@ fi
 # WhyNot: 別の flix でも分け合わない — その flix がどの jar で組むかを決められず、違うコンパイラの jar を使いうる。
 shared_flix_jar() {
     [ "$flix" = "$engine/bin/flix" ] || return 1
-    found=$(FLIX_PRINT_JAR=1 "$flix" 2>/dev/null) || return 1
+    # 標準入力は閉じて渡す — bin/flix が FLIX_PRINT_JAR を知らないラッパ（Studio 同梱の engine の物など）に置き換わっていると、
+    # 素の java -jar flix.jar = REPL になり、開いた標準入力を待って jar 作りごと止まる（依頼主の Mac で 8 分止まった）。
+    found=$(FLIX_PRINT_JAR=1 "$flix" </dev/null 2>/dev/null) || return 1
+    # 返った字が 1 行で .jar で終わる実在のファイルの時だけ分け合う（REPL の出力などを jar のパスと取り違えない）。
+    case "$found" in
+        *"
+"*) return 1 ;;
+        *.jar) ;;
+        *) return 1 ;;
+    esac
     [ -f "$found" ] || return 1
     printf '%s' "$found"
 }

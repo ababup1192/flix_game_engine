@@ -213,3 +213,14 @@ func TestRenderPlist(t *testing.T) {
 		}
 	}
 }
+
+// install の旗（--work・--engines）は、builder run の引数として plist に並ぶ。
+func TestRenderPlistCarriesExtraArgs(t *testing.T) {
+	text, err := RenderPlist(PlistConfig{Label: "l", Fge: "/f", Repo: "/r", Log: "/l", Path: "/bin", Args: []string{"--work=/w", "--engines=/e"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "<string>--work=/w</string>\n        <string>--engines=/e</string>") {
+		t.Fatalf("旗が並ばない:\n%s", text)
+	}
+}

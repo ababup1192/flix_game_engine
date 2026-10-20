@@ -67,6 +67,19 @@ func TestPruneLeavesFilesThatAreNotStoredKeys(t *testing.T) {
 	}
 }
 
+func TestPruneCountsWrittenFilesAndMixedSound(t *testing.T) {
+	dir := t.TempDir()
+	stamp := filepath.Join(dir, "files", "aa", key('a')+".txt")
+	mixed := filepath.Join(dir, "mix", "bb", key('b')+".wav")
+	for _, p := range []string{stamp, mixed} {
+		os.MkdirAll(filepath.Dir(p), 0o755)
+		os.WriteFile(p, make([]byte, 100), 0o644)
+	}
+	if removed, _ := Prune(dir, 0); removed != 2 {
+		t.Fatalf("removed=%d（files/ と mix/ を数えていない）", removed)
+	}
+}
+
 func TestDirRelativeIsEmpty(t *testing.T) {
 	t.Setenv("FGE_RENDER_CACHE", "cache")
 	if d := Dir(); d != "" {

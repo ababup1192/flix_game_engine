@@ -154,6 +154,15 @@ Studio は今も `bin/headless-run E2e.serveHeadless` で窓なしのゲーム�
 - **作るのに使うエンジン**: ゲームの flix.toml の版の、配った置き場（`~/.flix_ge_studio/engines/<版>`）。
   鍵にコンパイラと作り方の版が入るので、作り手と使う側が同じ版のエンジンを使えば鍵がそろう。
   その版に段 2 の口（`fge jar`）が無ければ、何もせずに終わる。
+- **エンジンの置き場を作り手が用意する**（2026-10-20・依頼主の決定）: `--engine-repo=<エンジンの repo の作り手専用の clone>` を渡すと、
+  ゲームの版の置き場（`<engines>/<版>`）が無い時に作り手が用意する（`go/internal/jarshare/provision.go`）。
+  - エンジンの repo の clone が無ければ作り、タグを fetch する。タグ `v<版>` がまだ無ければ、記録に 1 行書いて待つ。
+  - タグの作業場を一時の名前で作ってから `git worktree move` で置き場へ移し、`fge-go` を手元の OS の分だけ組む。
+  - コンパイラの jar（`bin/flix.jar`）は、ほかの版の置き場に同じ flix の版（`devbox.json`）の物があれば写し、無ければ flix の Release から gh で落とす。
+    どちらも `java -jar flix.jar --version` が `devbox.json` の版と同じかを確かめてから置く（リリースの `check-bundle-flix` と同じ確かめ方）。
+  - Studio の置き場（`~/.flix_ge_studio/engines`）では用意しない（`--engine-repo` を渡した時だけ）。
+  - 2026-10-20 の確かめ: 空の置き場から 0.53.0 を用意し、jar を段 1 から取って作り手の 1 巡が終わるまで 18 秒。
+    落としたコンパイラの jar は、Studio の同梱・nix の物と同じ SHA-256。
 - **重い物の鍵**: 作るのは `bin/fge heavy --short`（65 秒）で包む。この機械のエージェントの測りや reference-check と取り合わないように。
 - **作り場**: 作り手専用の作業場（`~/.flix_ge_studio/prebuilt/<repo>`）を 1 つ持ち、`git fetch && git checkout --detach <sha>` して作る。エージェントの作業場には触らない。
 - **1 日の費用**: 鍵が変わる push が 1 日 30〜40 回、1 回 65 秒（重なりを取り消せば実際はもっと少ない）で、Mac mini の CPU を 1 日 30〜45 分使う。

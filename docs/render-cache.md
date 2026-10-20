@@ -45,7 +45,7 @@ println(RenderCache.statsLine(session))   // [render-cache] 塗った 12・写�
 | テクスチャ（そのコマの命令が引く名前だけ） | 名前 + 塗る時に使う `TextureCache` の中の画像の画素の SHA-256（パスは入れない — compare の基準は別の場所の worktree。画素は塗りと同じ物を見るので、読む間に保存されても鍵と絵がずれない） |
 | フォント（`fontTtf` の中身・`fontAtlas`・`extraFonts` の名前・TTF の中身・atlas） | TTF はファイルの中身の SHA-256（session で 1 回）、atlas は全欄 |
 | pass などの描き出し済み画像（`extraImages`。命令が引く名前だけ） | 画素の SHA-256（型・幅・高さつき）。Keep で前のコマを持ち越す絵もこれで拾う |
-| SoftRaster の版 | ゲームの `lib/` にあるエンジンの fpkg（flix.toml が指す版）の中身の SHA-256。JVM の中で 1 回だけ取り、fpkg が JVM の起動より新しければ鍵を作らない（起動したままのゲームの裏で組み直した時に、古いコードの絵を新しい鍵でキャッシュに入れない） |
+| SoftRaster の版 | エンジンの fpkg（flix.toml が指す版）の中身の SHA-256。`packages.lock` の記録（`fpkg = "sha256:…"`）があればそれを、無ければゲームの `lib/` にある fpkg の中身から取る。jar を取ってきて `lib/` の無い作業場（`bin/fge jar`）でも、lib のある作業場と同じ鍵になる。JVM の中で 1 回だけ取り、lock か fpkg が JVM の起動より新しければ鍵を作らない（起動したままのゲームの裏で組み直した時に、古いコードの絵を新しい鍵でキャッシュに入れない） |
 | JVM と OS | `java.vendor`・`java.runtime.version`・`java.vm.version`・`os.name`・`os.version`・`os.arch`・`java.awt.headless`・`sun.java2d.uiScale`・JVM の起動旗（Java2D の文字と縁は JDK・OS・旗で変わりうる） |
 | PNG の書き方 | `Plain`（SoftRaster.render*）と `Filmstrip`（PNG-8 にしうる）は別の鍵 |
 
@@ -60,7 +60,7 @@ writeFramePng と同じ鍵が返る（指紋の取り方を写さない）。
 - `FGE_RENDER_CACHE=off`（または `0`）
 - エンジンの fpkg が見つからない（エンジンのリポの中で足元のソースから組んで流す時。flix.toml に依存の行が無い）
 - TTF のファイルが読めない（無いファイルは「無い」として鍵に入る。読めない時だけ鍵を作らない）
-- エンジンの fpkg が JVM の起動より新しい
+- エンジンの fpkg（か、記録を取った packages.lock）が JVM の起動より新しい
 - 鍵づくりで例外が出た（シェーダーの Spec に NaN がある等）
 - `FGE_RENDER_CACHE` が相対パス
 
@@ -72,6 +72,21 @@ writeFramePng と同じ鍵が返る（指紋の取り方を写さない）。
 違えば `[render-cache] キャッシュと塗った絵が違う` を出して塗った方で置き換える（鍵に入っていない入力があるという印）。
 **`make reference-update` はいつもこれで流れる**（写した絵を基準として固めない）。
 キャッシュには塗った画像を符号化したバイト列を直接入れ、書き先はそこから写す（書き先を読み直してキャッシュに入れない）。
+
+## 絵でない書き出し（効果音の一式・動画の音）
+
+効果音のように、出来上がりを決める入力が描く命令に出ない書き出しは、**入力の字と動いているプログラムの指紋**を鍵にする。
+
+- `SfxSynth.renderSetOnce(cfg, dir, inputs, () -> 音の一式)`: `renderSet` と同じ WAV を書くが、同じ `inputs`・同じプログラムで
+  前に書いた一式が `dir` にそのままのバイト列で残っていれば、合成の関数を呼ばずに返す。`inputs` には音を決める値を全部入れる
+  （ゲームなら読んだ Doc のバイト列。読み直しで鍵と中身がずれないよう、合成には鍵を作ったのと同じ 1 回の読みを渡す）
+- 中身は `RenderCache.writtenFilesKept(inputs)` / `noteWrittenFiles(inputs, files)`。鍵 = inputs・動いている jar（Main.class を持つ物）の
+  SHA-256・JVM と OS。控えは `<置き場>/files/<頭 2 字>/<鍵>.txt` に「書いたファイルの SHA-256 とパス」を 1 行ずつ。
+  当たりは控えの全部のファイルが今もその SHA-256 の時だけ（消した・git で戻した・手で直した WAV があれば作り直す）
+- jar から動いていない時（`flix run`・`flix test`）・`FGE_RENDER_CACHE=off` の時はいつも作る。`verify` は毎回作り、前の控えと違えば
+  `[render-cache] 前に同じ鍵で書いた一式と違う` を出す
+- ゲームの `bin/mix-video-sfx.py`（internet_dungeon）が動画のために重ねた音も、同じ置き場の `mix/<頭 2 字>/<鍵>.wav` に入れる
+  （鍵は sfx.txt・bgm.txt・使う WAV のバイト列・コマ数・fps・旗・台本の中身）。`render-cache prune` は files/ と mix/ も PNG と同じ順に消す
 
 ## 置き場
 

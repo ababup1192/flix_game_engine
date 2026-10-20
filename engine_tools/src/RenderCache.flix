@@ -9,10 +9,13 @@ pub mod RenderCache {
     import java.io.File
     import java.io.FileOutputStream
     import java.io.IOException
+    import java.lang.ClassLoader
+    import java.lang.Exception
     import java.lang.RuntimeException
     import java.lang.System
     import java.lang.Thread
     import java.lang.management.ManagementFactory
+    import java.net.URI
     import java.nio.ByteBuffer
     import java.nio.file.Files
     import java.nio.file.Paths
@@ -171,6 +174,108 @@ pub mod RenderCache {
         case DrawHash.PngEncoding.Filmstrip => Filmstrip.renderFrame(image, path)
     }
 
+    // ── 絵でない書き出しの一式（効果音の WAV など） ─────────
+
+    /// 前に inputs から書いた一式（noteWrittenFiles で控えた物）が、そのままのバイト列で残っているか。
+    /// 残っていれば true（作り直さなくてよい）。鍵には inputs と、動いているプログラム（jar）の指紋・JVM と OS が入る。
+    /// 置き場が無い・鍵を作れない（jar から動いていない）・verify の時は false（いつも作る）。
+    pub def writtenFilesKept(inputs: String): Bool \ IO =
+        let (root, mode) = settings();
+        match (mode, filesStampPath(root, inputs)) {
+            case (Mode.Reuse, Some(stamp)) =>
+                try {
+                    let file = new File(stamp);
+                    if (not file.isFile()) false
+                    else {
+                        let lines = String.lines(Files.readString(file.toPath()));
+                        let kept = not List.isEmpty(lines) and List.forAll(fileMatchesLine, lines);
+                        if (kept) discard file.setLastModified(System.currentTimeMillis()) else ();
+                        kept
+                    }
+                } catch {
+                    case ex: IOException => warnOnce("files-read", "一式の控えを読めない（${ex.getMessage()}）— 作り直す"); false
+                }
+            case _ => false
+        }
+
+    /// files（パスの列）を inputs から書いたと控える（次の writtenFilesKept が当たるように）。
+    /// verify の時は前の控えと突き合わせ、違えば知らせる（鍵に入っていない入力がある）。
+    pub def noteWrittenFiles(inputs: String, files: List[String]): Unit \ IO =
+        let (root, mode) = settings();
+        match filesStampPath(root, inputs) {
+            case None        => ()
+            case Some(stamp) =>
+                try {
+                    let lines = files |> List.map(p -> "${sha256(Files.readAllBytes(Paths.get(p)))} ${p}");
+                    let text = String.intercalate("\n", lines);
+                    let target = new File(stamp);
+                    discard target.getParentFile().mkdirs();
+                    let verifying = match mode {
+                        case Mode.Verify => target.isFile()
+                        case Mode.Reuse  => false
+                    };
+                    if (verifying and Files.readString(target.toPath()) != text)
+                        Log.warn("[render-cache] 前に同じ鍵で書いた一式と違う: ${stamp} — 今の方で置き換える（鍵に入っていない入力がある）")
+                    else ();
+                    let bytes = text.getBytes("UTF-8");
+                    AtomicFile.write(stamp, tmp -> discard writeBytes(tmp, bytes))
+                } catch {
+                    case ex: IOException => warnOnce("files-write", "一式の控えを書けない（${ex.getMessage()}）— 次も作り直す")
+                }
+        }
+
+    /// 控えの 1 行（"<SHA-256> <パス>"）のファイルが、今もその中身か。
+    def fileMatchesLine(line: String): Bool \ IO =
+        match String.splitOn(substr = " ", line) {
+            case digest :: rest =>
+                let path = String.intercalate(" ", rest);
+                let file = new File(path);
+                not String.isEmpty(path) and file.isFile() and sha256(Files.readAllBytes(file.toPath())) == digest
+            case Nil => false
+        }
+
+    /// inputs の一式の控えの置き場。置き場が無い・プログラムの指紋が無い時は None。
+    def filesStampPath(root: Option[String], inputs: String): Option[String] \ IO =
+        match root {
+            case None      => None
+            case Some(dir) =>
+                let program = programDigest();
+                if (String.isEmpty(program)) {
+                    warnOnce("files-program", "jar から動いていない（flix run・テスト）— 書き出しの一式はいつも作る");
+                    None
+                } else {
+                    let key = sha256("files;${program};${runtimeId()};${inputs}".getBytes("UTF-8"));
+                    Some("${dir}/files/${String.takeLeft(2, key)}/${key}.txt")
+                }
+        }
+
+    /// 動いているプログラム（Main.class を持つ jar）の SHA-256。JVM の中で 1 回だけ取る。
+    /// jar から動いていない（flix run は組んだクラスをメモリに持つ）・JVM が起きた後に jar が差し替わった時は空。
+    // WhyNot: エンジンの fpkg の指紋（engineDigest）で済ませない — 書き出す中身はゲームのコードでも決まる。
+    def programDigest(): String \ IO =
+        let memoKey = "fge.renderCache.program";
+        let memo = System.getProperty(memoKey);
+        if (not Object.isNull(memo)) memo
+        else {
+            let digest = loadProgramDigest();
+            discard System.setProperty(memoKey, digest);
+            digest
+        }
+
+    def loadProgramDigest(): String \ IO =
+        let url = ClassLoader.getSystemResource("Main.class");
+        if (Object.isNull(url) or url.getProtocol() != "jar") ""
+        else try {
+            let spec = url.getPath();
+            let cut = String.indexOf(substr = "!/", spec) |> Option.getWithDefault(String.length(spec));
+            let jar = Paths.get(new URI(String.takeLeft(cut, spec))).toFile();
+            let started = ManagementFactory.getRuntimeMXBean().getStartTime();
+            if (not jar.isFile() or jar.lastModified() > started) ""
+            else sha256(Files.readAllBytes(jar.toPath()))
+        } catch {
+            case ex: Exception => warnOnce("program", "動いている jar を読めない（${ex.getMessage()}）— 書き出しの一式はいつも作る"); ""
+        }
+
     // ── 置き場 ───────────────────────────────────────────
 
     /// 置き場と使い方。相対パスは使わない（JVM とゲームの根・fge の居場所で指す所が変わる）。
@@ -286,8 +391,11 @@ pub mod RenderCache {
         HexFormat.of().formatHex(md.digest())
     }
 
-    /// ゲームの lib/ にあるエンジンの fpkg（flix.toml が指す版）の SHA-256。JVM の中で 1 回だけ取る。
-    /// 見つからない・JVM が起きた後に差し替わった時は空（鍵を作らない = いつも塗る）。
+    /// エンジンの fpkg（flix.toml が指す版）の SHA-256。JVM の中で 1 回だけ取る。packages.lock の記録があればそれを、
+    /// 無ければゲームの lib/ にある fpkg の中身から取る。見つからない・JVM が起きた後に差し替わった時は空（鍵を作らない = いつも塗る）。
+    // WhyNot: lib/ の fpkg を先に見ない — 作り手や同じ機械の作業場から jar を取ってきた新しい作業場（bin/fge jar）には lib/ が無く、
+    // fpkg を読めずに鍵を作らないまま塗っていた。lock の fpkg の記録は fpkg の中身の SHA-256 と同じ字で、flix は組む時に
+    // lock と lib の fpkg が同じことを確かめるので、lib のある作業場と同じ鍵になる。
     // WhyNot: エンジンの版の字（0.49.0）を使わない — use-engine でブランチの作業場へ向けると、
     // 版の字は同じまま SoftRaster が変わる。組んだ物そのものの指紋を使う。
     // WhyNot: 呼ぶたびに読み直さない — 起動したままの JVM（make run・窓なしの常駐）の裏で fpkg を
@@ -308,20 +416,60 @@ pub mod RenderCache {
         else try {
             match engineVersionOf(Files.readString(toml.toPath())) {
                 case None          => ""
-                case Some(version) =>
-                    let fpkg = new File("lib/github/ababup1192/flix_game_engine/${version}/flix_game_engine-${version}.fpkg");
-                    let started = ManagementFactory.getRuntimeMXBean().getStartTime();
-                    if (not fpkg.isFile()) {
-                        warnOnce("fpkg", "${fpkg.getPath()} が無い — 鍵を作らず塗る");
-                        ""
-                    } else if (fpkg.lastModified() > started) {
-                        warnOnce("fpkg", "${fpkg.getPath()} が JVM の起動より新しい（動いているコードと違う）— 鍵を作らず塗る");
-                        ""
-                    } else sha256(Files.readAllBytes(fpkg.toPath()))
+                case Some(version) => match lockedDigest(version) {
+                    case Some(digest) => digest
+                    case None         => fpkgDigest(version)
+                }
             }
         } catch {
             case ex: IOException => warnOnce("fpkg", "エンジンの fpkg を読めない（${ex.getMessage()}）— 鍵を作らず塗る"); ""
         }
+
+    /// packages.lock に記録されたエンジンの fpkg の SHA-256。lock が無い・記録が無い・読めない時は None（lib/ の fpkg から取る）。
+    /// lock が JVM の起動より後に書き換わっていたら Some("")（鍵を作らない。lib/ の fpkg へも回らない）。
+    def lockedDigest(version: String): Option[String] \ IO =
+        let lock = new File("packages.lock");
+        let started = ManagementFactory.getRuntimeMXBean().getStartTime();
+        if (not lock.isFile()) None
+        else if (lock.lastModified() > started) {
+            warnOnce("lock", "packages.lock が JVM の起動より新しい（動いているコードと違う）— 鍵を作らず塗る");
+            Some("")
+        }
+        else try { lockedEngineDigestOf(version, Files.readString(lock.toPath())) } catch {
+            case _: IOException => None
+        }
+
+    /// lib/ にあるエンジンの fpkg の中身の SHA-256（packages.lock の無いゲーム・engine の雛形）。
+    def fpkgDigest(version: String): String \ IO =
+        try {
+            let fpkg = new File("lib/github/ababup1192/flix_game_engine/${version}/flix_game_engine-${version}.fpkg");
+            let started = ManagementFactory.getRuntimeMXBean().getStartTime();
+            if (not fpkg.isFile()) {
+                warnOnce("fpkg", "${fpkg.getPath()} が無い — 鍵を作らず塗る");
+                ""
+            } else if (fpkg.lastModified() > started) {
+                warnOnce("fpkg", "${fpkg.getPath()} が JVM の起動より新しい（動いているコードと違う）— 鍵を作らず塗る");
+                ""
+            } else sha256(Files.readAllBytes(fpkg.toPath()))
+        } catch {
+            case ex: IOException => warnOnce("fpkg", "エンジンの fpkg を読めない（${ex.getMessage()}）— 鍵を作らず塗る"); ""
+        }
+
+    /// packages.lock の字から、エンジンの版の fpkg の SHA-256（`fpkg = "sha256:…"`）を取り出す（純粋）。無ければ None。
+    pub def lockedEngineDigestOf(version: String, lock: String): Option[String] =
+        let header = "[packages.\"github:ababup1192/flix_game_engine\".\"${version}\"]";
+        String.lines(lock)
+            |> List.dropWhile(line -> String.trim(line) != header)
+            |> List.drop(1)
+            |> List.takeWhile(line -> not String.startsWith(prefix = "[", String.trim(line)))
+            |> List.findMap(line -> {
+                let t = String.trim(line);
+                if (String.startsWith(prefix = "fpkg", t))
+                    String.splitOn(substr = "\"", t) |> List.drop(1) |> List.head
+                        |> Option.flatMap(v -> String.stripPrefix(substr = "sha256:", v))
+                        |> Option.filter(v -> not String.isEmpty(v))
+                else None
+            })
 
     /// flix.toml の依存の行 `"github:ababup1192/flix_game_engine" = { version = "x.y.z", … }` の版。
     def engineVersionOf(toml: String): Option[String] =

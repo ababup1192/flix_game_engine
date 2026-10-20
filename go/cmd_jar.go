@@ -22,8 +22,10 @@ const jarUsage = `使い方（bin/headless-run が呼ぶ。docs/design/prebuilt-
   jar publish --dispatcher=F --flix-jar=J --revision=N [--remote] [--commit=C] [--source-dir=.] [--dir .]
                                                                                build/headless の jar を段 1 へ置く（--remote で段 2 へも上げ、段 2 の古い物を消す）
   jar prune                                                                    段 1 の古い物を消す（最後に使ってから 14 日・全部で 2 GB）
-  jar builder run --repo=<ゲームの clone> [--work=W]                              作り手の 1 巡（master が進んでいれば作って段 1・段 2 へ）
-  jar builder install|uninstall --repo=<ゲームの clone> [--dry-run]              作り手を launchd に入れる・外す（5 分ごと）
+  jar builder run --repo=<ゲームの clone> [--work=W] [--engines=E] [--engine-repo=R]
+                                                                               作り手の 1 巡（master が進んでいれば作って段 1・段 2 へ。--engine-repo でエンジンの置き場も用意する）
+  jar builder install|uninstall --repo=<ゲームの clone> [--work=W] [--engines=E] [--engine-repo=R] [--program=P] [--dry-run]
+                                                                               作り手を launchd に入れる・外す（5 分ごと）
 段 1 の置き場は ~/.cache/flix-headless-jar（FGE_JAR_CACHE で変える・off で使わない）。段 2 は FGE_PREBUILT_JAR=off で使わない。`
 
 func init() {
@@ -164,7 +166,9 @@ func jarBuilder(out, errOut *strings.Builder, args []string) int {
 	home, _ := os.UserHomeDir()
 	switch verb {
 	case "run":
-		cfg := jarshare.BuilderConfig{Repo: repo, Work: flags["--work"]}.WithDefaults(home)
+		// --engines は配ったエンジンの置き場を差し替える（段 2 の口のある版がまだ配られていない時の通しの確かめに使う）。
+		// --engine-repo を渡すと、ゲームの版のエンジンの置き場が無い時に作り手が用意する（--engines と一緒に使う）。
+		cfg := jarshare.BuilderConfig{Repo: repo, Work: flags["--work"], Engines: flags["--engines"], EngineRepo: flags["--engine-repo"]}.WithDefaults(home)
 		// WhyNot: 行を out に貯めない — launchd は標準出力を記録のファイルへ書くので、作っている間の行をそのまま出す。
 		if err := jarshare.RunBuilder(cfg, os.Stdout); err != nil {
 			fmt.Fprintf(errOut, "[jar-builder] %v\n", err)
@@ -172,17 +176,32 @@ func jarBuilder(out, errOut *strings.Builder, args []string) int {
 		}
 		return 0
 	case "install", "uninstall":
-		return jarBuilderLaunchd(out, errOut, verb, repo, home, hasFlag(args, "--dry-run"))
+		return jarBuilderLaunchd(out, errOut, verb, repo, home, hasFlag(args, "--dry-run"), flags)
 	}
 	fmt.Fprintln(errOut, jarUsage)
 	return 2
 }
 
 // jarBuilderLaunchd は作り手を launchd に入れる・外す。--dry-run なら plist の字と、流すはずの launchctl を出すだけ。
-func jarBuilderLaunchd(out, errOut *strings.Builder, verb, repo, home string, dryRun bool) int {
+//
+// --work= と --engines= は builder run へそのまま渡し、記録（builder.log）は --work の中に置く。
+// --program= は plist が起こす fge（既定はこのエンジンの bin/fge）。
+func jarBuilderLaunchd(out, errOut *strings.Builder, verb, repo, home string, dryRun bool, flags map[string]string) int {
 	label := jarshare.LabelOf(repo)
 	plistPath := filepath.Join(home, "Library", "LaunchAgents", label+".plist")
-	logPath := filepath.Join(home, ".flix_ge_studio", "prebuilt", filepath.Base(repo), "builder.log")
+	work := jarshare.BuilderConfig{Repo: repo, Work: flags["--work"]}.WithDefaults(home).Work
+	logPath := filepath.Join(work, "builder.log")
+	program := flags["--program"]
+	if program == "" {
+		program = filepath.Join(repoRoot(), "bin", "fge")
+	}
+	var extra []string
+	for _, name := range []string{"--work", "--engines", "--engine-repo"} {
+		if v := flags[name]; v != "" {
+			abs, _ := filepath.Abs(v)
+			extra = append(extra, name+"="+abs)
+		}
+	}
 	domain := fmt.Sprintf("gui/%d", os.Getuid())
 	if verb == "uninstall" {
 		if dryRun {
@@ -199,10 +218,11 @@ func jarBuilderLaunchd(out, errOut *strings.Builder, verb, repo, home string, dr
 	}
 	text, err := jarshare.RenderPlist(jarshare.PlistConfig{
 		Label: label,
-		Fge:   filepath.Join(repoRoot(), "bin", "fge"),
+		Fge:   program,
 		Repo:  repo,
 		Log:   logPath,
 		Path:  launchdPath(),
+		Args:  extra,
 	})
 	if err != nil {
 		fmt.Fprintf(errOut, "fge jar builder install: %v\n", err)
@@ -271,7 +291,8 @@ func launchdPath() string {
 			dirs = append(dirs, d)
 		}
 	}
-	for _, tool := range []string{"git", "gh", "java"} {
+	// go と make は、作り手がエンジンの置き場を用意する時（--engine-repo）に fge-go を組むのに使う。
+	for _, tool := range []string{"git", "gh", "java", "go", "make"} {
 		if p, err := exec.LookPath(tool); err == nil {
 			// symlink は先を辿る（作業場の .devbox の profile は、作業場を消すと無くなる。先の nix store は残る）。
 			if real, err := filepath.EvalSymlinks(p); err == nil {

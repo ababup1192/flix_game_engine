@@ -6,6 +6,8 @@
 //
 // 置き場は FGE_RENDER_CACHE（既定 ~/.cache/flix-render-cache・"off" / "0" で使わない）。Flix 側と同じ決め方。
 // キャッシュの 1 枚は <置き場>/<鍵の頭 2 字>/<鍵>.png。写すたびに時刻を今にするので、時刻は「最後に使った時」。
+// 絵でない書き出しも同じ置き場の下に区分のフォルダで置く: files/（RenderCache.noteWrittenFiles の控え）・
+// mix/（ゲームの mix-video-sfx.py が重ねた音）。消す順は PNG と同じに数える。
 package rendercache
 
 import (
@@ -42,10 +44,11 @@ func Dir() string {
 	return env
 }
 
-// キャッシュの 1 枚（<鍵の頭 2 字>/<鍵>.png）と、書きかけの残り（<鍵>.png.<時刻>-<糸>.part とその一時ファイル）。
+// キャッシュの 1 枚（<鍵の頭 2 字>/<鍵>.png・files/…/<鍵>.txt・mix/…/<鍵>.wav）と、
+// 書きかけの残り（<鍵>.png.<時刻>-<糸>.part・<鍵>.wav.<pid>.part とその一時ファイル）。
 var (
-	storedRe = regexp.MustCompile(`^[0-9a-f]{2}/[0-9a-f]{64}\.png$`)
-	partRe   = regexp.MustCompile(`^[0-9a-f]{2}/\.?[0-9a-f]{64}\.png\.[0-9-]+\.part`)
+	storedRe = regexp.MustCompile(`^(?:[0-9a-f]{2}/[0-9a-f]{64}\.png|files/[0-9a-f]{2}/[0-9a-f]{64}\.txt|mix/[0-9a-f]{2}/[0-9a-f]{64}\.wav)$`)
+	partRe   = regexp.MustCompile(`^(?:mix/)?[0-9a-f]{2}/\.?[0-9a-f]{64}\.(?:png|wav)\.[0-9-]+\.part`)
 )
 
 // partMaxAge より古い書きかけは、描き出しが途中で止まった残り。

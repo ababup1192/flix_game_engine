@@ -18,6 +18,7 @@ pub mod GlOffscreen {
     import org.lwjgl.glfw.GLFW
     import org.lwjgl.opengl.CGL
     import org.lwjgl.opengl.GL
+    import org.lwjgl.opengl.GLCapabilities
     import org.lwjgl.opengl.GL11
     import org.lwjgl.opengl.GL12
     import org.lwjgl.opengl.GL30
@@ -27,6 +28,10 @@ pub mod GlOffscreen {
     import java.io.File
     import java.lang.System
     import java.lang.Throwable
+    import java.util.concurrent.Callable
+    import java.util.concurrent.FutureTask
+    import java.lang.Thread
+    import java.util.concurrent.CountDownLatch
     import java.nio.ByteBuffer
     import java.nio.ByteOrder
 
@@ -62,46 +67,141 @@ pub mod GlOffscreen {
         let SessionData.SessionData(s) = session;
         (s#width, s#height)
 
+    /// 文脈・塗りのコア・テクスチャ・字まで用意した物（FBO と地の色はまだ）。作れるのは prepare だけ。
+    /// caps = その文脈の GL の関数表（LWJGL は糸ごとに持つので、塗る糸で付け直す）。
+    enum PreparedData {
+        case PreparedData({
+            context = Context,
+            caps = GLCapabilities,
+            paint = RenderPaint.Paint,
+            fonts = RenderPaint.Fonts,
+            config = GameEngine.EngineConfig,
+            stamps = Map[String, (String, Int64, Int64)]
+        })
+    }
+
+    pub type alias Prepared = PreparedData
+
     /// GL の文脈と design × scale の FBO を作り、テクスチャとフォントを読む。作れなければ Err(理由)。
     /// 呼んだ糸が close まで GL を持つ。
     pub def open(cfg: { config = GameEngine.EngineConfig, scale = Int32 }): Result[String, Session] \ IO =
+        prepare(cfg#config) |> Result.flatMap(prepared -> finish(prepared, { scale = cfg#scale, background = cfg#config#clearColor }))
+
+    /// 文脈を作り、テクスチャと字を読む（重い所。FBO は作らない）。どの糸からでも呼べ、文脈はその糸に付いたまま返る。
+    pub def prepare(config: GameEngine.EngineConfig): Result[String, Prepared] \ IO =
         discard System.setProperty("java.awt.headless", "true");
-        let config = cfg#config;
-        let width = config#designWidth * cfg#scale;
-        let height = config#designHeight * cfg#scale;
         match openContext() {
             case Err(why) => Err(why)
             case Ok(context) =>
                 try {
-                    discard GL.createCapabilities();
-                    let (fbo, colorTex, depthStencil) = makeFramebuffer(width, height);
-                    let status = GL30.glCheckFramebufferStatus(GL30.GL_FRAMEBUFFER);
-                    if (status != GL30.GL_FRAMEBUFFER_COMPLETE) {
-                        closeContext(context);
-                        Err("FBO が完成しない status=${status}")
-                    } else {
-                        GL11.glEnable(GL11.GL_BLEND);
-                        GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-                        let paint = RenderPaint.create({ designWidth = config#designWidth, designHeight = config#designHeight,
-                                                         clearColor = config#clearColor, screenFramebuffer = fbo });
-                        // 組み込みのフォント（受け皿）とロゴを先に載せる（窓の起動画面と同じ並び）。
-                        RenderPaint.addTextures(RenderSplash.install(), paint);
-                        let fonts = RenderPaint.loadAssets(paint, config, (_, _, _) -> checked_ecast(()));
-                        let stamps = config#textureManifest
-                            |> List.foldLeft((acc, entry) -> Map.insert(entry#name, stampOf(entry#path), acc), Map.empty());
-                        Ok(SessionData.SessionData({
-                            context = context, fbo = fbo, colorTex = colorTex, depthStencil = depthStencil,
-                            width = width, height = height, paint = paint, fonts = fonts,
-                            design = { x = Int32.toFloat64(config#designWidth), y = Int32.toFloat64(config#designHeight) },
-                            stamps = Ref.fresh(Static, stamps)
-                        }))
-                    }
+                    let caps = GL.createCapabilities();
+                    GL11.glEnable(GL11.GL_BLEND);
+                    GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+                    let paint = RenderPaint.create({ designWidth = config#designWidth, designHeight = config#designHeight,
+                                                     clearColor = config#clearColor, screenFramebuffer = 0 });
+                    // 組み込みのフォント（受け皿）とロゴを先に載せる（窓の起動画面と同じ並び）。
+                    RenderPaint.addTextures(RenderSplash.install(), paint);
+                    let fonts = RenderPaint.loadAssets(paint, config, (_, _, _) -> checked_ecast(()));
+                    let stamps = config#textureManifest
+                        |> List.foldLeft((acc, entry) -> Map.insert(entry#name, stampOf(entry#path), acc), Map.empty());
+                    Ok(PreparedData.PreparedData({ context = context, caps = caps, paint = paint, fonts = fonts,
+                                                   config = config, stamps = stamps }))
                 } catch {
                     case e: Throwable =>
                         closeContext(context);
                         Err("GL の用意に失敗: ${e.toString()}")
                 }
         }
+
+    /// 用意した文脈を今の糸に付け、design × scale の FBO を作って塗れる形にする。background = design の中の地の色。
+    pub def finish(prepared: Prepared, cfg: { scale = Int32, background = Color }): Result[String, Session] \ IO =
+        let PreparedData.PreparedData(p) = prepared;
+        let config = p#config;
+        let width = config#designWidth * cfg#scale;
+        let height = config#designHeight * cfg#scale;
+        try {
+            makeCurrent(p#context);
+            GL.setCapabilities(p#caps);
+            let (fbo, colorTex, depthStencil) = makeFramebuffer(width, height);
+            let status = GL30.glCheckFramebufferStatus(GL30.GL_FRAMEBUFFER);
+            if (status != GL30.GL_FRAMEBUFFER_COMPLETE) {
+                closeContext(p#context);
+                Err("FBO が完成しない status=${status}")
+            } else {
+                let paint0 = p#paint;
+                let paint = { screenFramebuffer = fbo,
+                              frameArgsBase = { clearColor = cfg#background | paint0#frameArgsBase } | paint0 };
+                Ok(SessionData.SessionData({
+                    context = p#context, fbo = fbo, colorTex = colorTex, depthStencil = depthStencil,
+                    width = width, height = height, paint = paint, fonts = p#fonts,
+                    design = { x = Int32.toFloat64(config#designWidth), y = Int32.toFloat64(config#designHeight) },
+                    stamps = Ref.fresh(Static, p#stamps)
+                }))
+            }
+        } catch {
+            case e: Throwable =>
+                closeContext(p#context);
+                Err("GL の用意に失敗: ${e.toString()}")
+        }
+
+    /// 別の糸で用意している途中の物（prepareInBackground が作る）。
+    enum PendingData {
+        case PendingData(Ref[Option[Result[String, Prepared]], Static], CountDownLatch, Ref[Bool, Static])
+    }
+
+    pub type alias Pending = PendingData
+
+    /// prepare を別の糸で始める（シミュレーションなど GL と無関係な仕事と重ねる）。用意し終えたら文脈をその糸から離す。
+    /// 受け取るのは await（受け取った糸で finish する）。
+    pub def prepareInBackground(config: GameEngine.EngineConfig): Pending \ IO =
+        let cell: Ref[Option[Result[String, Prepared]], Static] = Ref.fresh(Static, None);
+        let done = new CountDownLatch(1);
+        // WhyNot: Runnable を匿名クラスで書かない — 手続き名の run が Flix の予約語。FutureTask は Callable から
+        // Runnable を作る（App.Headless の糸と同じ回り道）。
+        let job = new FutureTask(new Callable[String] {
+            def call(_this: Callable[String]): String \ IO = {
+                let result = try { prepare(config) } catch { case e: Throwable => Err("GL の用意に失敗: ${e.toString()}") };
+                Result.forEach(prepared -> { let PreparedData.PreparedData(p) = prepared; releaseCurrent(p#context) }, result);
+                Ref.put(Some(result), cell);
+                done.countDown();
+                ""
+            }
+        });
+        let thread = new Thread(job, "gl-prepare");
+        thread.setDaemon(true);
+        thread.start();
+        PendingData.PendingData(cell, done, Ref.fresh(Static, false))
+
+    /// 別の糸の用意を待ち、今の糸で FBO を作って塗れる形にする。受け取れるのは 1 回だけ（2 回目からは None —— 文脈は
+    /// 1 本の動画の終わりに閉じるので、次の動画は open で作り直す）。
+    pub def await(pending: Pending, cfg: { scale = Int32, background = Color }): Option[Result[String, Session]] \ IO =
+        let PendingData.PendingData(cell, done, taken) = pending;
+        if (Ref.get(taken)) None
+        else {
+            Ref.put(true, taken);
+            Some(awaitOnce(cell, done, cfg))
+        }
+
+    def awaitOnce(cell: Ref[Option[Result[String, Prepared]], Static], done: CountDownLatch,
+                  cfg: { scale = Int32, background = Color }): Result[String, Session] \ IO =
+        done.await();
+        match Ref.get(cell) {
+            case Some(Ok(prepared)) => finish(prepared, cfg)
+            case Some(Err(why))     => Err(why)
+            case None               => Err("GL の用意の糸が何も返さなかった")
+        }
+
+    /// 文脈を今の糸に付ける。
+    def makeCurrent(context: Context): Unit \ IO = match context {
+        case Context.Cgl(ctx)     => discard CGL.CGLSetCurrentContext(ctx)
+        case Context.Glfw(window) => GLFW.glfwMakeContextCurrent(window)
+    }
+
+    /// 文脈を今の糸から離す（別の糸で付け直せるように）。
+    def releaseCurrent(context: Context): Unit \ IO = match context {
+        case Context.Cgl(_)  => discard CGL.CGLSetCurrentContext(0i64)
+        case Context.Glfw(_) => GLFW.glfwMakeContextCurrent(MemoryUtil.NULL)
+    }
 
     /// 窓サーバへの繋がりを先に取る（macOS だけ。ほかの OS では何もしない）。**AWT を使う前に 1 回呼ぶ。**
     /// AWT（HeadlessFont・BufferedImage の字）を先に使うと、その後の CGL は 10017（kCGLBadConnection）で

@@ -6,6 +6,7 @@ package jarshare
 
 import (
 	"bytes"
+	"context"
 	_ "embed"
 	"errors"
 	"fmt"
@@ -25,6 +26,9 @@ type BuilderConfig struct {
 	Work    string // 作り手の置き場（既定 ~/.flix_ge_studio/prebuilt/<repo の名前>）
 	Engines string // 配ったエンジンの置き場（既定 ~/.flix_ge_studio/engines）
 	Branch  string // 見る枝（既定 master）
+	// EngineRepo はエンジンの repo の作り手専用の clone。空でなければ、ゲームの版の置き場が無い時に作り手が用意する（provision.go）。
+	// WhyNot: 既定で用意しない — 既定の置き場は Studio の物（~/.flix_ge_studio/engines）で、作り手が書き込むと Studio の入れ替えと取り合う。
+	EngineRepo string
 }
 
 // WithDefaults は空の欄を既定で埋めた BuilderConfig を返す。
@@ -90,6 +94,17 @@ func RunBuilder(cfg BuilderConfig, log io.Writer) error {
 		return errors.New("flix.toml にエンジンの版が無い")
 	}
 	engine := filepath.Join(cfg.Engines, version)
+	if cfg.EngineRepo != "" && !Ready(engine) {
+		gh, _ := FindGH()
+		prov := Provisioner{Engines: cfg.Engines, EngineRepo: cfg.EngineRepo, GH: gh, JarVersion: JavaFlixJarVersion, Log: log}
+		if err := prov.Provision(context.Background(), version); err != nil {
+			if errors.Is(err, ErrNoTag) {
+				fmt.Fprintf(log, "[jar-builder] %s: エンジン %s のタグ v%s がまだ無いので待つ\n", head[:8], version, version)
+				return nil
+			}
+			return fmt.Errorf("%s: エンジン %s を用意できない: %v", head[:8], version, err)
+		}
+	}
 	if !engineSharesJars(engine) {
 		// WhyNot: 止まらない（error にしない）— ゲームが段 2 の口の無い版のエンジンを使っている間は、作っても置けない。
 		// 版を上げた push が来た次の巡で作れるので、last-built も書かずに待つ。
@@ -151,11 +166,12 @@ var plistTemplate string
 
 // PlistConfig は launchd の plist の中身。
 type PlistConfig struct {
-	Label string // com.flixge.jar-builder.<repo の名前>
-	Fge   string // 作り手を起こす fge（このエンジンの bin/fge）
-	Repo  string // ゲームの clone
-	Log   string // 1 巡の行を書くファイル
-	Path  string // launchd の PATH（git・gh・java を引けるように）
+	Label string   // com.flixge.jar-builder.<repo の名前>
+	Fge   string   // 作り手を起こす fge（このエンジンの bin/fge）
+	Repo  string   // ゲームの clone
+	Log   string   // 1 巡の行を書くファイル
+	Path  string   // launchd の PATH（git・gh・java を引けるように）
+	Args  []string // builder run に足す旗（--work=・--engines=）
 }
 
 // LabelOf は repo の clone の場所から launchd の Label を作る。
