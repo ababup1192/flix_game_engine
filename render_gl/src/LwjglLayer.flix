@@ -17,7 +17,6 @@ pub mod LwjglLayer {
     import org.lwjgl.glfw.GLFWVidMode
     import org.lwjgl.opengl.GL
     import org.lwjgl.opengl.GL11
-    import org.lwjgl.opengl.GL20
     import org.lwjgl.openal.AL
     import org.lwjgl.openal.AL10
     import org.lwjgl.openal.EXTEfx
@@ -360,6 +359,8 @@ pub mod LwjglLayer {
         // フレームバッファ = design 寸に固定しないと letterbox 補間が乗り、
         // 画素の突き合わせが成立しないため。
         let hidden = not Object.isNull(System.getenv("FLIX_GE_HIDDEN"));
+        // 1 コマの時間を測るか（FLIX_GE_FRAME_STATS。RenderFrameStats の doc）。
+        let frameStats = if (RenderFrameStats.enabled()) Some(RenderFrameStats.fresh()) else None;
         if (hidden) {
             GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE, GL11.GL_FALSE);
             GLFW.glfwWindowHint(GLFW.GLFW_COCOA_RETINA_FRAMEBUFFER, GL11.GL_FALSE)
@@ -443,282 +444,10 @@ pub mod LwjglLayer {
         let screenW = Int32.toFloat64(config#designWidth);
         let screenH = Int32.toFloat64(config#designHeight);
 
-        // GL リソース構築は各描画 mod（RenderShader 等）に委譲
-        let spriteShader = RenderShader.createShaderProgram(
-            RenderShader.vertexShaderSource(),
-            RenderShader.fragmentShaderSource());
-        RenderShader.setProjectionMatrix(spriteShader, screenW, screenH);
-
-        let tileShader = RenderShader.createShaderProgram(
-            RenderShader.tileVertexShaderSource(),
-            RenderShader.tileFragmentShaderSource());
-        RenderShader.setProjectionMatrix(tileShader, screenW, screenH);
-
-        // 連続する同テクスチャのスプライトを 1 draw call にまとめる instanced 描画用。
-        let instShader = RenderShader.createShaderProgram(
-            RenderShader.spriteInstancedVertexShaderSource(),
-            RenderShader.spriteInstancedFragmentShaderSource());
-        RenderShader.setProjectionMatrix(instShader, screenW, screenH);
-
-        // 連続する同 blend / 切り抜き clip 矩形の多角形を 1 draw call にまとめるバッチ描画用（頂点色）。
-        let polyBatchShader = RenderShader.createShaderProgram(
-            RenderShader.polyBatchVertexShaderSource(),
-            RenderShader.polyBatchFragmentShaderSource());
-        RenderShader.setProjectionMatrix(polyBatchShader, screenW, screenH);
-
-        // location はリンク後に不変なので起動時に 1 回だけ引く（RenderShader.spriteUniformsOf 参照）。
-        let spriteUniforms = RenderShader.spriteUniformsOf(spriteShader);
-        let tileUniforms = RenderShader.tileUniformsOf(tileShader);
-        let instMultiplyBlend = GL20.glGetUniformLocation(instShader, "multiplyBlend");
-        let polyBatchUniforms = RenderShader.polyBatchUniformsOf(polyBatchShader);
-
-        let (vao, quadVBO) = RenderSprite.initSpriteRenderer();
-        let (polyBatchVao, polyBatchVbo) = RenderSprite.initPolygonBatchRenderer();
-        let (instVao, instVbo) = RenderSprite.initSpriteInstancedRenderer(quadVBO);
-        // 1 フレームぶんの instance / 頂点を書き溜める入れ物（毎フレーム作り直さず貸し出す）。
-        // 初めの大きさは「よくある画面」の見当で、足りなければ描画側が広げる。
-        let instBuf = RenderBuf.make(4096 * 38);
-        let polyBuf = RenderBuf.make(16384 * 6);
-        // タイル VAO → インスタンス VBO のレジストリ。updateTileBuffer（既存 VAO への
-        // 入れ直し）が再アップロード先の VBO をここから引く。
-        let tileVboRegistry: Ref[Map[Int32, Int32], Static] = Ref.fresh(Static, Map.empty());
-
-        // 宣言シェーダー面（eff Shader）用: codegen が吐いた GLSL のコンパイル失敗時に
-        // 差し替える単色フォールバックプログラム（起動時に 1 回だけ作る）。
-        let fallbackShader = RenderShader.createShaderProgram(
-            ShaderGen.vertexSource(), RenderShader.fallbackFragmentSource());
-        RenderShader.setProjectionMatrix(fallbackShader, screenW, screenH);
-        // Spec の name → (組んだときの Spec, コンパイル済みプログラム + uniform location)。
-        // buildProgram は毎フレーム呼ばれ得るので、同じ Spec の再コンパイルをここで防ぐ。
-        // 鍵を GLSL ソースにしない — 鍵を組むだけで毎フレーム GLSL 全文の組み立てを払う。
-        // name だけで返さず、当たりでも eqSpec で中身を確かめる — 同名で中身が変わる
-        // ホットリロード（shader.json の保存し直し）が絵に反映されなくなる。
-        let shaderProgramCache: Ref[Map[String, (ShaderDoc.Spec, RenderShaderCache.ProgramEntry)], Static] = Ref.fresh(Static, Map.empty());
-        // 描いたフレームの通し番号。ShaderGen.compile は Doc の数値を GLSL に書き込むので、
-        // shader.json を保存し直すたびに別の鍵になる — LRU で古い方を追い出すために、
-        // 「どの program をいつ使ったか」を数えるものさしが要る。
-        let frameGenHolder = Array#{0i64} @ Static;
-        // program 番号 → 最後に使った世代。鍵ではなく program 番号で持つのは、
-        // コンパイルに失敗した Spec が全部同じ fallbackShader を値にして入るため。
-        let programUsedAtRef: Ref[Map[Int32, Int64], Static] = Ref.fresh(Static, Map.empty());
-        // このフレームに溜まったシェーダー面の描画依頼（drawSurface が積み、renderFrame が描いて空にする）。
-        let pendingShaderHolder = Array#{(Nil: List[ShaderEffect.ShaderRenderCmd])} @ Static;
-        // program ハンドル → (uRectPos, uRectSize, uTime, texLocs) の逆引き（drawSurface が
-        // uniform 設定に使う）。texLocs = tex 場の (uTexN, uTexFlipN) の location 列（正典順）。
-        let shaderUniformCache: Ref[Map[Int32, (Int32, Int32, Int32, List[(Int32, Int32)])], Static] = Ref.fresh(Static, Map.empty());
-        // tex 場の標本規約（NEAREST + CLAMP）を bind 中の unit へ強制する sampler（起動時に 1 個）。
-        let surfaceSampler = RenderSprite.createSurfaceSampler();
-        // 見つからないと知らせた tex 場のテクスチャ名（missingFontRef と同じ「一度だけ鳴らす」控え）。
-        let missingSurfaceTexRef: Ref[Set[String], Static] = Ref.fresh(Static, Set.empty());
-
-        // レンダーターゲット（eff RenderTarget.Target の FBO）のレジストリ: 名前 → GL 実体。
-        // ターゲットは初回の beginTarget で作られ、寸法が変わらない限り使い回す。
-        let targetsRef: Ref[Map[String, RenderTargetGl.Entry], Static] = Ref.fresh(Static, Map.empty());
-        // いま開いているターゲット (幅, 高さ, clear 指定)。renderCommands がこれを見て
-        // 「画面へのフレーム」と「ターゲットへのフレーム」を切り替える。
-        let activeTargetHolder = Array#{(None: Option[(Int32, Int32, RenderTarget.LoadOp)])} @ Static;
-
-        // テクスチャ表は実行時に増える（ensureTexture が生成したアトラスを足す）ので可変で持つ。
-        // 起動画面が読み込みの最中に絵を出すため、ゲームのテクスチャより先に作って
-        // 組み込みフォントとロゴだけを入れておく。
-        // 併せて「名前 → 最後に上げた key」を持ち、同じ key の再アップロードを弾く。
-        let registryRef: Ref[RenderAsset.TextureRegistry, Static] = Ref.fresh(Static, Map.empty());
-        let textureKeyRef: Ref[Map[String, String], Static] = Ref.fresh(Static, Map.empty());
-        // 見つからないと知らせたフォント名。同じ名前で毎フレーム鳴らさないための控え。
-        let missingFontRef: Ref[Set[String], Static] = Ref.fresh(Static, Set.empty());
-        // 見つからないと知らせたテクスチャ名（renderFrameMixed へ毎フレーム貸す）。
-        // フレームごとに作り直すと、同じ知らせが 60 回/秒 出てしまう。
-        let missingTextureRef: Ref[Set[String], Static] = Ref.fresh(Static, Set.empty());
-
-        // 静的多角形バッファのキャッシュ（キー → 生成した VBO とレンジ目次）。テクスチャ registry と
-        // 同じくエンジン内部に隠し、ゲームは GameEngine.StaticLayerCmd のキーと中身を宣言するだけ。
-        // キー一致で使い回し・不一致で古い VBO を free して作り直す（RenderStatic.resolve）。
-        let staticCacheCell = Array#{(None: Option[RenderStatic.Entry])} @ Static;
-
-        // リサイズ中の再描画用に最後のフレームの描画コマンドを保持する
-        // (sprites + tileMaps + polygons + 静的レイヤー依頼 + シェーダー面)
-        let renderStateHolder = Array#{((Nil: List[GameEngine.Drawable]),
-                                         (Nil: List[GameEngine.TileMapRenderCmd]),
-                                         (Nil: List[GameEngine.PolygonRenderCmd]),
-                                         (None: Option[GameEngine.StaticLayerCmd]),
-                                         (Nil: List[ShaderEffect.ShaderRenderCmd]))} @ Static;
-
-        // シェーダー面 1 枚を GL へ描くクロージャ。program の uniform location を逆引きして差す。
-        // z の合流（sprites/polygons/静的レンジとの重なり順）は renderFrameMixed が受け持つので、
-        // ここは 1 枚の描画だけに徹する。
-        // cmd#texNames と texLocs の長さ不一致は List.zip が短い方に合わせて黙って吸収する —
-        // コンパイル失敗した複数 Spec が同じ fallback program を鍵に uniform cache を上書きし合い、
-        // fallback では texLocs が空（または全 -1）になるため、names 2 本 × locs 0 本は正常系
-        //（glUniform の location -1 も無視される）。
-        let drawSurface = (cmd: ShaderEffect.ShaderRenderCmd) -> {
-            let program = GpuHandle.shaderProgramInt(cmd#program);
-            // buildProgram だけで使用を刻むと足りない — ShaderEffect の doc は
-            // 「起動時/リロード時に 1 回 compile」と約束していて、その通りに 1 回だけ
-            // compile してハンドルを持ち回るゲームの program が「未使用」に見えて
-            // 追い出される。追い出された program は下の uniform 逆引きが
-            // (-1,-1,-1,Nil) で握り潰すので、エラーも例外も出ず絵だけ違う形で壊れる。
-            Ref.put(Map.insert(program, Array.get(0, frameGenHolder), Ref.get(programUsedAtRef)),
-                    programUsedAtRef);
-            let (uRectPos, uRectSize, uTime, texLocs) =
-                Map.get(program, Ref.get(shaderUniformCache))
-                |> Option.getWithDefault((-1, -1, -1, (Nil: List[(Int32, Int32)])));
-            // 名前 → GL テクスチャ id。無い名前は 0（黒）を bind して一度だけ知らせる —
-            // pass をこのフレームで宣言せず名前だけ読むと、ずっと 0 bind（黒）のままになる。
-            // registry / targets はこの 1 枚の描画中は変わらないので、名前ごとに読み直さない。
-            let registry = Ref.get(registryRef);
-            let targets = Ref.get(targetsRef);
-            let texBinds = List.zip(cmd#texNames, texLocs) |> List.zipWithIndex
-                |> List.map(itb -> {
-                    let (i, nameLocs) = itb;
-                    let (name, locs) = nameLocs;
-                    let (_samplerLoc, flipLoc) = locs;
-                    let texId = match Map.get(name, registry) {
-                        case Some(info) => GpuHandle.textureIdInt(info#id)
-                        case None =>
-                            let warned = Ref.get(missingSurfaceTexRef);
-                            if (Set.memberOf(name, warned)) ()
-                            else {
-                                System.err.println("shader tex '${name}' が見つからない — 黒(0)を貼る"
-                                    + "（pass ならこのフレームで宣言されているか確認）");
-                                Ref.put(Set.insert(name, warned), missingSurfaceTexRef)
-                            };
-                            0
-                    };
-                    // pass ターゲットは上下逆格納なので flip=1（貼る側で吸収する既存規約と同型）。
-                    let flip = if (Map.memberOf(name, targets)) 1.0 else 0.0;
-                    ({ texUnit = i, texId = texId, flipLoc = flipLoc, flip = flip }: RenderSprite.SurfaceTexBind)
-                });
-            // mask が空なら矩形そのまま、非空なら多角形の内側だけにステンシルで抜く
-            // （多角形描画は poly バッチ経路を借りる）。
-            if (List.isEmpty(cmd#mask))
-                RenderSprite.drawShaderSurface(program, vao, uRectPos, uRectSize, uTime,
-                                               texBinds, surfaceSampler,
-                                               cmd#rect, cmd#time, cmd#blend)
-            else
-                RenderSprite.drawShaderSurfaceMasked(program, vao, uRectPos, uRectSize, uTime,
-                                               texBinds, surfaceSampler,
-                                               cmd#rect, cmd#time, cmd#blend,
-                                               polyBatchShader, polyBatchVao, polyBatchVbo,
-                                               polyBatchUniforms, cmd#mask)
-        };
-        // 使わなくなったシェーダープログラムを LRU で追い出す。
-        let evictShaderPrograms = () -> {
-            let gen = Array.get(0, frameGenHolder);
-            let usedAt = Ref.get(programUsedAtRef);
-            let cache0 = Ref.get(shaderProgramCache);
-            // 現世代が刻まれている program は必ず守る。Render.drawShaders は 1 フレームの
-            // 全ての面の buildProgram を先に全部呼ぶので、pin しないと面の数が上限を
-            // 超えたときに、いまから描く面の program を自分で捨ててしまう。
-            let liveNow = Map.toList(usedAt)
-                |> List.filterMap(pa -> { let (prog, at) = pa; if (at == gen) Some(prog) else None })
-                |> List.toSet;
-            // 上限は「生きている面の数」から決める。固定の数にすると、面を多く出すゲームで
-            // 毎フレーム作っては捨てるだけになる（面の数はゲームが決めるのでエンジンは知らない）。
-            let cap = Int32.max(16, Set.size(liveNow) * 2);
-            let (_, _, _, _, lastSurfaces) = Array.get(0, renderStateHolder);
-            let pinned = lastSurfaces
-                |> List.foldLeft((acc, cmd: ShaderEffect.ShaderRenderCmd) ->
-                    Set.insert(GpuHandle.shaderProgramInt(cmd#program), acc), liveNow)
-                |> Set.insert(fallbackShader);
-            let entries = Map.toList(cache0) |> List.map(ke -> {
-                let (key, se) = ke;
-                let (_, e) = se;
-                (key, e#program, Map.get(e#program, usedAt) |> Option.getWithDefault(0i64))
-            });
-            let victims = RenderShaderCache.computeEvictions(
-                { entries = entries, pinned = pinned, cap = cap });
-            if (List.isEmpty(victims)) ()
-            else {
-                // 鍵ごとの「その番号を指す鍵がまだ何本あるか」。コンパイルに失敗した Spec は
-                // 全部同じ fallback program を値にして入るので、鍵を抜いても番号が
-                // 生きていることがある。数えずに毎回探し直すと鍵の数の二乗になる。
-                let counts0 = Map.valuesOf(cache0) |> List.foldLeft((acc, se) -> {
-                    let (_, e) = se;
-                    Map.insert(e#program, 1 + Option.getWithDefault(0, Map.get(e#program, acc)), acc)
-                }, Map.empty());
-                let (_, deleted) = List.foldLeft((acc, key) -> {
-                    let (counts, n) = acc;
-                    match Map.get(key, cache0) {
-                        case None     => (counts, n)
-                        case Some(se) =>
-                            let (_, e) = se;
-                            let prog = e#program;
-                            Ref.put(Map.remove(key, Ref.get(shaderProgramCache)), shaderProgramCache);
-                            let left = Option.getWithDefault(0, Map.get(prog, counts)) - 1;
-                            let counts1 = Map.insert(prog, left, counts);
-                            // uniform を先に消してはいけない。番号がまだ別の鍵で生きていると、
-                            // その面が drawSurface で (-1,-1,-1,Nil) に落ちて、エラーも出ないまま
-                            // uniform の差さらない絵になる。
-                            if (left > 0) (counts1, n)
-                            else {
-                                RenderShader.deleteProgram(prog);
-                                Ref.put(Map.remove(prog, Ref.get(shaderUniformCache)), shaderUniformCache);
-                                Ref.put(Map.remove(prog, Ref.get(programUsedAtRef)), programUsedAtRef);
-                                (counts1, n + 1)
-                            }
-                    }
-                }, (counts0, 0), victims);
-                // 捨てた番号が bind されたままだと次の描画が未定義になる。毎フレームの経路では
-                // ないので、実際に捨てたときだけ 1 回外す。
-                if (deleted > 0) GL20.glUseProgram(0) else ();
-                Log.warn("shader: プログラムキャッシュから ${List.length(victims)} 個追い出した"
-                    + "（GPU から捨てた program ${deleted} 個・残り ${Map.size(Ref.get(shaderProgramCache))} 個 / 上限 ${cap}）")
-            }
-        };
-        // renderFrameMixed への FrameArgs は固定値（シェーダ・VAO・buf・uniforms 等）が
-        // 大半なので、共通ベースを 1 つ組み、呼び出し側は変わる所だけ上書きする。
-        // registry / targetNames は毎フレーム育つ Ref から読むため、ベースの値は仮
-        // （空）に置き、呼び出し時に必ず上書きする。
-        let frameArgsBase: RenderFrame.FrameArgs = {
-            spriteShader = spriteShader, tileShader = tileShader, vao = vao,
-            registry = Map.empty(), clearColor = config#clearColor,
-            designW = screenW, designH = screenH, fbW = 0, fbH = 0,
-            sprites = Nil, tileMaps = Nil, polygons = Nil,
-            staticRanges = Nil,
-            polyBatchShader = polyBatchShader, polyBatchVao = polyBatchVao,
-            polyBatchVbo = polyBatchVbo, polyBatchUniforms = polyBatchUniforms,
-            instShader = instShader, instVao = instVao, instVbo = instVbo,
-            instBuf = instBuf, polyBuf = polyBuf,
-            spriteUniforms = spriteUniforms, tileUniforms = tileUniforms,
-            instMultiplyBlend = instMultiplyBlend,
-            surfaces = Nil, drawSurface = drawSurface,
-            targetClear = None, targetNames = Set.empty(),
-            texWarnLog = missingTextureRef
-        };
-        // 画面への 1 フレーム。静的レイヤーはここで resolve（キャッシュ照合・必要なら
-        // 作り直し）し、レンジ列を FrameArgs に載せる。None なら Nil（従来と同じ経路）。
-        let renderFrame = (fbW: Int32, fbH: Int32,
-                            sprites: List[GameEngine.Drawable],
-                            tileMaps: List[GameEngine.TileMapRenderCmd],
-                            polygons: List[GameEngine.PolygonRenderCmd],
-                            staticLayer: Option[GameEngine.StaticLayerCmd],
-                            surfaces: List[ShaderEffect.ShaderRenderCmd]) -> {
-            let staticRanges = match staticLayer {
-                case None    => Nil
-                case Some(l) => RenderStatic.resolve(staticCacheCell, l)
-            };
-            RenderFrame.renderFrameMixed({
-                registry = Ref.get(registryRef),
-                fbW = fbW, fbH = fbH,
-                sprites = sprites, tileMaps = tileMaps, polygons = polygons,
-                staticRanges = staticRanges,
-                surfaces = surfaces,
-                targetNames = Map.keysOf(Ref.get(targetsRef)) | frameArgsBase })
-        };
-        // レンダーターゲットへの 1 フレーム。画面用の renderFrame と違い、黒帯 clear を
-        // せず（targetClear）、タイル層・静的レンジ・シェーダー面は乗らない（Pass の doc の
-        // 決まり）。ターゲットは design と同寸なので投影行列はそのままでよい。
-        let renderTargetFrame = (tw: Int32, th: Int32, op: RenderTarget.LoadOp,
-                                  sprites: List[GameEngine.Drawable],
-                                  polygons: List[GameEngine.PolygonRenderCmd]) -> {
-            RenderFrame.renderFrameMixed({
-                registry = Ref.get(registryRef),
-                designW = Int32.toFloat64(tw), designH = Int32.toFloat64(th),
-                fbW = tw, fbH = th,
-                sprites = sprites, polygons = polygons,
-                targetClear = Some(op),
-                targetNames = Map.keysOf(Ref.get(targetsRef)) | frameArgsBase })
-        };
+        // 塗りのコア（シェーダー・VAO・テクスチャ・シェーダー面・レンダーターゲット・静的レイヤーの登録簿）。
+        // 窓なしで動画を塗る GlOffscreen も同じ RenderPaint で塗る（窓・入力・音・swap はここが持つ）。
+        let paint = RenderPaint.create({ designWidth = config#designWidth, designHeight = config#designHeight,
+                                         clearColor = config#clearColor, screenFramebuffer = 0 });
 
         // macOS ではリサイズ中に glfwPollEvents がブロックされるため、
         // フレームバッファサイズ変更コールバックで再描画を行う。
@@ -731,8 +460,7 @@ pub mod LwjglLayer {
                 if (hidden) ()
                 else {
                     Array.put((width, height), 0, framebufferSizeHolder);
-                    let (sprites, tileMaps, polygons, staticLayer, surfaces) = Array.get(0, renderStateHolder);
-                    renderFrame(width, height, sprites, tileMaps, polygons, staticLayer, surfaces);
+                    RenderPaint.paintFrame(paint, width, height, RenderPaint.lastFrame(paint));
                     GLFW.glfwSwapBuffers(cbWindow)
                 }
             }
@@ -741,19 +469,20 @@ pub mod LwjglLayer {
         // ===== 起動画面 =====
         // ここから下は読み込みで数秒〜十数秒止まる。ウィンドウは既に出ているので、何も描かないと
         // 固まったように見える。組み込みの絵だけで進み具合を出し続ける。
-        Ref.put(RenderSplash.install(), registryRef);
+        RenderPaint.addTextures(RenderSplash.install(), paint);
         let splashState = RenderSplash.newState();
         let splashShotTaken = Array#{0} @ Static;
         let splashShotAt = Array#{0i64} @ Static;
         let frameShotTaken = Array#{0} @ Static;
         let splashDesign = { x = screenW, y = screenH };
-        // 起動画面も renderStateHolder へ入れる。読み込み中にウィンドウの大きさを変えると
-        // リサイズ callback が holder の中身で描き直すので、空だと真っ黒に落ちる。
+        // 起動画面も塗りのコアの控えへ入れる。読み込み中にウィンドウの大きさを変えると
+        // リサイズ callback が控えの中身で描き直すので、空だと真っ黒に落ちる。
         // macOS では画面を出すたびにイベントを汲まないとウィンドウが「応答なし」になる。
         let drawSplash = (ds: List[GameEngine.Drawable]) -> {
-            Array.put((ds, Nil, Nil, None, Nil), 0, renderStateHolder);
+            let splashFrame = { sprites = ds | RenderPaint.emptyFrame() };
+            RenderPaint.rememberFrame(paint, splashFrame);
             let (splashW, splashH) = Array.get(0, framebufferSizeHolder);
-            renderFrame(splashW, splashH, ds, Nil, Nil, None, Nil);
+            RenderPaint.paintFrame(paint, splashW, splashH, splashFrame);
             splashShot(splashW, splashH, splashShotTaken, splashShotAt);
             GLFW.glfwSwapBuffers(window);
             GLFW.glfwPollEvents()
@@ -764,64 +493,8 @@ pub mod LwjglLayer {
         GLFW.glfwSwapInterval(0);
         RenderSplash.show(splashState, drawSplash, splashDesign, "starting up...", 0, 0);
 
-        println("Loading textures...");
-        let registry0 = RenderTexture.loadTextureRegistry(config#textureManifest,
-            (done, total) -> splash("loading images...", done, total));
-
-        // このゲームが出しうる字を先に集める（数十ミリ秒）。フォントが持つ字を全部用意すると
-        // 日本語 1 本で数千〜2万字になり、起動が数十秒止まる。
-        let wantedGlyphs = RenderFont.startupGlyphs(config#rootDir, config#glyphs);
-        Option.forEach(cps -> println("[RenderFont] このゲームが出しうる字: ${Set.size(cps)} 字"),
-                       wantedGlyphs);
-
-        println("Baking font atlases...");
-        // 文言はフォントごとに 1 回だけ組み立てる（進捗は字ごとに数千回来る）。
-        let fontPhases: Ref[Map[String, String], Static] = Ref.fresh(Static, Map.empty());
-        let fontPhaseOf = (name: String) -> match Map.get(name, Ref.get(fontPhases)) {
-            case Some(text) => text
-            case None =>
-                let text = "loading font ${name}...";
-                Ref.put(Map.insert(name, text, Ref.get(fontPhases)), fontPhases);
-                text
-        };
-        let (gameAtlases, registry) = RenderFont.bakeFontAtlases(config#fontManifest, registry0,
-            wantedGlyphs, (name, done, total) -> splash(fontPhaseOf(name), done, total));
-        // 組み込みフォントも名前で引けるようにする（fps 表示・フォント名が合わないときの受け皿）。
-        // アトラスは実行中に育つ（起動時に用意しなかった字を後から足す）ので可変で持つ。
-        let fontAtlasesRef = Ref.fresh(Static,
-            Map.insert(BootFont.name(), BootFont.atlas(), gameAtlases));
-        let growTable = RenderGlyphGrow.newTable();
-        List.forEach(entry -> {
-            match Map.get(entry#name, gameAtlases) {
-                case None =>
-                    Log.warn("font: フォント '${entry#name}' のアトラスが用意できていない"
-                        + " — 起動時に用意しなかった字は後から足せない（project.json の fonts の path を確認）")
-                case Some(atlas) =>
-                    match Map.get(atlas#textureName, registry) {
-                        case None =>
-                            Log.warn("font: フォント '${entry#name}' のアトラス画像"
-                                + " '${atlas#textureName}' が registry に無い"
-                                + " — 起動時に用意しなかった字は後から足せない")
-                        case Some(texInfo) =>
-                            RenderGlyphGrow.register(growTable, atlas,
-                                { path = entry#path, texId = GpuHandle.textureIdInt(texInfo#id) })
-                    }
-            }
-        }, config#fontManifest);
-        // 起動画面の分（組み込みフォント・ロゴ）を残したままゲームのテクスチャを足す。
-        Ref.put(Map.union(registry, Ref.get(registryRef)), registryRef);
-
-        // 組み込みの放射テクスチャ（Render.lightAt / darkAt が引く）。ゲームの manifest には
-        // 載らない名前なので、ここで足さないと「アセット配線をしたゲームだけ光が出る」に
-        // なってしまう — どのゲームでも配線ゼロで使えるよう起動時に必ず上げる。
-        let radialSide = RadialBuiltin.size();
-        let radialLight = RenderTexture.loadTextureFromPixels(radialSide, radialSide,
-            RadialBuiltin.lightPixels());
-        let radialDark = RenderTexture.loadTextureFromPixels(radialSide, radialSide,
-            RadialBuiltin.darkPixels());
-        Ref.put(Ref.get(registryRef)
-            |> Map.insert(RadialBuiltin.lightName(), radialLight)
-            |> Map.insert(RadialBuiltin.darkName(), radialDark), registryRef);
+        // テクスチャ・フォント・組み込みの放射テクスチャを読み、塗りのコアの登録簿へ載せる（起動画面に進み具合を出しながら）。
+        let fonts = RenderPaint.loadAssets(paint, config, splash);
 
         // ===== OpenAL audio init =====
         println("Initializing audio...");
@@ -1109,53 +782,19 @@ pub mod LwjglLayer {
             }
         } with handler GameEngine.Game {
             def renderCommands(sprites, tileMaps, polygons, staticLayer, k) = {
-                match Array.get(0, activeTargetHolder) {
-                    case Some((tw, th, op)) =>
-                        // ターゲットが開いている間の描画は画面でなくそこに着く。swap も
-                        // renderStateHolder（リサイズ再描画の控え）も触らない —
-                        // 画面のフレームは同じ絵のフレームの末尾に必ず別で来る。
-                        renderTargetFrame(tw, th, op, sprites, polygons);
-                        k(())
-                    case None =>
-                        // drawSurface が積んだこのフレームのシェーダー面を取り出して holder を空にする。
-                        // 順序は積んだ順（drawShaders の列順）に戻す。z の合流は renderFrameMixed が行う。
-                        let surfaces = List.reverse(Array.get(0, pendingShaderHolder));
-                        Array.put(Nil, 0, pendingShaderHolder);
-                        Array.put((sprites, tileMaps, polygons, staticLayer, surfaces), 0, renderStateHolder);
-                        // 進めるのはここ 1 箇所だけ。上のレンダーターゲットへの分岐でも進めると、
-                        // Pass を N 枚描くゲームでは絵 1 枚あたり N+1 回進み、「現世代 = いま描いて
-                        // いる面」という数え方が壊れる。
-                        Array.put(Array.get(0, frameGenHolder) + 1i64, 0, frameGenHolder);
-                        let (fbW, fbH) = Array.get(0, framebufferSizeHolder);
-                        renderFrame(fbW, fbH, sprites, tileMaps, polygons, staticLayer, surfaces);
-                        frameShot(fbW, fbH, frameShotTaken);
-                        GLFW.glfwSwapBuffers(window);
-                        if (finishAfterSwap) GL11.glFinish() else ();
-                        k(())
-                }
+                // レンダーターゲットが開いている間は submitFrame がそこへ塗って false を返す。swap は画面のコマだけ。
+                let (fbW, fbH) = Array.get(0, framebufferSizeHolder);
+                let paintFrom = if (Option.isEmpty(frameStats)) 0i64 else System.nanoTime();
+                if (RenderPaint.submitFrame(paint, fbW, fbH, sprites, tileMaps, polygons, staticLayer)) {
+                    Option.forEach(stats -> RenderFrameStats.record(stats, paintFrom, System.nanoTime()), frameStats);
+                    frameShot(fbW, fbH, frameShotTaken);
+                    GLFW.glfwSwapBuffers(window);
+                    if (finishAfterSwap) GL11.glFinish() else ()
+                } else ();
+                k(())
             }
-            def initTileBuffer(instances, k) = {
-                let instanceVBO = RenderSprite.buildTileInstanceVBO(instances);
-                let tileVao = RenderSprite.buildTileMapVAO(quadVBO, instanceVBO);
-                Ref.put(Map.insert(tileVao, instanceVBO, Ref.get(tileVboRegistry)), tileVboRegistry);
-                k((GpuHandle.wrapTileVao(tileVao), List.length(instances)))
-            }
-            def updateTileBuffer(vaoId, instances, k) = {
-                let tileVao = GpuHandle.tileVaoInt(vaoId);
-                match Map.get(tileVao, Ref.get(tileVboRegistry)) {
-                    case Some(vbo) => {
-                        RenderSprite.uploadTileInstances(vbo, instances);
-                        k((vaoId, List.length(instances)))
-                    }
-                    case None => {
-                        // レジストリに無い VAO（理論上来ない）: 新規に作って返す。
-                        let instanceVBO = RenderSprite.buildTileInstanceVBO(instances);
-                        let fresh = RenderSprite.buildTileMapVAO(quadVBO, instanceVBO);
-                        Ref.put(Map.insert(fresh, instanceVBO, Ref.get(tileVboRegistry)), tileVboRegistry);
-                        k((GpuHandle.wrapTileVao(fresh), List.length(instances)))
-                    }
-                }
-            }
+            def initTileBuffer(instances, k) = k(RenderPaint.initTileBuffer(paint, instances))
+            def updateTileBuffer(vaoId, instances, k) = k(RenderPaint.updateTileBuffer(paint, vaoId, instances))
             def shouldClose(k) = {
                 // glfwPollEvents の **直前** に PRESS フラグをリセット。
                 // poll 中に発火した callback が立てたフラグが、その後の
@@ -1232,74 +871,19 @@ pub mod LwjglLayer {
                 k(v)
             }
             def ensureGlyphs(textureName, codepoints, k) = {
-                // 起動時に用意しなかった字を出そうとした。いま作って足す（無ければ何も起きない）。
-                let atlases = Ref.get(fontAtlasesRef);
-                let hit = atlases |> Map.findLeft((_n, a) -> a#textureName == textureName);
-                match hit {
-                    case None         => k(())
-                    case Some((n, a)) =>
-                        let grown = RenderGlyphGrow.ensure(growTable, a, codepoints);
-                        Ref.put(Map.insert(n, grown, atlases), fontAtlasesRef);
-                        k(())
-                }
+                RenderPaint.ensureGlyphs(fonts, textureName, codepoints);
+                k(())
             }
-            def getFontAtlas(name, k) = {
-                match Map.get(name, Ref.get(fontAtlasesRef)) {
-                    case Some(atlas) => k(atlas)
-                    // 名前が合わないだけでゲームが落ちるより、組み込みフォントで出す方がまし。
-                    // ただし黙って既定へ落ちると打ち間違いに気付けないので、名前ごとに 1 度だけ知らせる。
-                    case None =>
-                        let warned = Ref.get(missingFontRef);
-                        if (not Set.memberOf(name, warned)) {
-                            println("[engine] フォント '${name}' は project.json にありません"
-                                + "（組み込みフォントで代用します）");
-                            Ref.put(Set.insert(name, warned), missingFontRef)
-                        } else ();
-                        k(BootFont.atlas())
-                }
-            }
+            def getFontAtlas(name, k) = k(RenderPaint.fontAtlas(fonts, name))
             def getViewportRect(k) = {
                 k({position = Vec2.zero(), size = {x = screenW, y = screenH}})
             }
             def getTextureInfo(name, k) = {
-                k(Map.get(name, Ref.get(registryRef)))
+                k(RenderPaint.textureInfo(paint, name))
             }
             def ensureTexture(name, key, width, height, argb, k) = {
-                // key が前と同じなら何もしない（毎フレーム呼ばれる前提の関数）。
-                if (Map.get(name, Ref.get(textureKeyRef)) == Some(key)) k(())
-                else {
-                    let prev = Map.get(name, Ref.get(registryRef));
-                    let sameSize = Option.exists(info ->
-                        info#width == Int32.toFloat64(width)
-                            and info#height == Int32.toFloat64(height), prev);
-                    // 辺長が同じなら画素だけ差し替える（GL ハンドルを作り直さない）。
-                    // 名前の取り違え避け: マニフェストで読んだ絵と同じ名前だと、辺長が同じ
-                    // ときに元の絵の中身を上書きしてしまう。key を持たない名前 = 生成した
-                    // アトラスではないので、そこへは書かない。
-                    let taken = not Option.isEmpty(prev)
-                        and Option.isEmpty(Map.get(name, Ref.get(textureKeyRef)));
-                    if (taken) {
-                        println("[ensureTexture] 名前 '${name}' はすでに別の絵が使っています（上書きしません）");
-                        k(())
-                    } else {
-                    let info = match prev {
-                        case Some(old) =>
-                            if (sameSize) {
-                                RenderTexture.updateTexturePixels(old, width, height, argb);
-                                old
-                            } else {
-                                // 辺長が変わったので作り直す。古い方は捨てる（漏らすと作り直す
-                                // たびに GPU のメモリが増え続ける）。
-                                RenderTexture.deleteTexture(old);
-                                RenderTexture.loadTextureFromPixels(width, height, argb)
-                            }
-                        case None => RenderTexture.loadTextureFromPixels(width, height, argb)
-                    };
-                    Ref.put(Map.insert(name, info, Ref.get(registryRef)), registryRef);
-                    Ref.put(Map.insert(name, key, Ref.get(textureKeyRef)), textureKeyRef);
-                    k(())
-                    }
-                }
+                RenderPaint.ensureTexture(paint, name, key, width, height, argb);
+                k(())
             }
             def setCursor(cursor, k) = {
                 let prev = Array.get(0, lastCursorHolder);
@@ -1379,8 +963,9 @@ pub mod LwjglLayer {
                     // （キャッシュ済みなので作り直しは起きない）。シェーダー面は本物を使わず、
                     // req#sprites に含まれる代表色ベタ塗り（App が Render.draw で出す・スクラブ中の
                     // 表示中の瞬間に一致）を使う。live の面を混ぜると巻き戻し位置とズレるため空で渡す。
-                    let (_, _, _, lastStatic, _) = Array.get(0, renderStateHolder);
-                    renderFrame(fbW, fbH, req#sprites, req#tileMaps, req#polygons, lastStatic, Nil);
+                    RenderPaint.paintFrame(paint, fbW, fbH,
+                        { sprites = req#sprites, tileMaps = req#tileMaps, polygons = req#polygons,
+                          staticLayer = RenderPaint.lastFrame(paint)#staticLayer, surfaces = Nil });
                     let image = framebufferImage(fbW, fbH);
                     writePngFile(image, "${dirPath}/screenshot.png");
                     burnHighlight(image, designRectToImage(req#rect, fbW, fbH, screenW, screenH));
@@ -1409,93 +994,18 @@ pub mod LwjglLayer {
                 k(())
             }
         } with handler ShaderEffect.Shader {
-            def buildProgram(spec, k) = {
-                // name で引き、当たりは eqSpec（Spec の構造比較）で確かめてから返す —
-                // 当たったフレームでは ShaderGen.compile（GLSL 全文の組み立て）を呼ばない。
-                // eqSpec が偽（同名で中身が違う = ホットリロード）なら作り直して差し替える。
-                // コンパイル/リンク失敗時は単色フォールバックプログラムに落ちる（黒画面でなく色は出る）。
-                let cache0 = Ref.get(shaderProgramCache);
-                let gen = Array.get(0, frameGenHolder);
-                let hit = match Map.get(spec#name, cache0) {
-                    case Some((stored, found)) =>
-                        if (ShaderGen.eqSpec(stored, spec)) Some(found) else None
-                    case None => None
-                };
-                let entry = match hit {
-                    case Some(found) => found
-                    case None =>
-                        let source = ShaderGen.compile(spec);
-                        let prog = match RenderShader.tryCreateProgram(
-                                ShaderGen.vertexSource(), source, "surface:${spec#name}") {
-                            case Some(p) => RenderShader.setProjectionMatrix(p, screenW, screenH); p
-                            case None    => fallbackShader
-                        };
-                        let up = GL20.glGetUniformLocation(prog, "uRectPos");
-                        let us = GL20.glGetUniformLocation(prog, "uRectSize");
-                        let ut = GL20.glGetUniformLocation(prog, "uTime");
-                        // tex 場の sampler / flip の location（正典順）。sampler 番号 = unit 番号を
-                        // リンク直後に 1 回だけ差す（毎フレーム差し直さない）。fallback に落ちた
-                        // program では全て -1 になり、glUniform が無視するのでそのまま通す。
-                        let texLocs = ShaderDoc.texNames(spec) |> List.zipWithIndex
-                            |> List.map(iname -> {
-                                let (i, _) = iname;
-                                (GL20.glGetUniformLocation(prog, "uTex${i}"),
-                                 GL20.glGetUniformLocation(prog, "uTexFlip${i}"))
-                            });
-                        if (List.isEmpty(texLocs)) ()
-                        else {
-                            GL20.glUseProgram(prog);
-                            List.forEachWithIndex((i, locs) -> {
-                                let (samplerLoc, _) = locs;
-                                GL20.glUniform1i(samplerLoc, i)
-                            }, texLocs)
-                        };
-                        let fresh: RenderShaderCache.ProgramEntry =
-                            { program = prog, uRectPos = up, uRectSize = us, uTime = ut };
-                        Ref.put(Map.insert(spec#name, (spec, fresh), cache0), shaderProgramCache);
-                        Ref.put(Map.insert(prog, (up, us, ut, texLocs), Ref.get(shaderUniformCache)), shaderUniformCache);
-                        fresh
-                };
-                Ref.put(Map.insert(entry#program, gen, Ref.get(programUsedAtRef)), programUsedAtRef);
-                // 追い出しは新しく作ったときだけ。キャッシュに当たったフレームでは鍵が増えて
-                // いないので、走らせても捨てる物が出ない。
-                if (Option.isEmpty(hit)) evictShaderPrograms() else ();
-                k(GpuHandle.wrapShaderProgram(entry#program))
-            }
+            def buildProgram(spec, k) = k(RenderPaint.buildProgram(paint, spec))
             def drawSurface(cmd, k) = {
-                // 実描画はこのフレームの clear 直後（renderFrameMixed 内）で行う。ここでは溜めるだけ。
-                Array.put(cmd :: Array.get(0, pendingShaderHolder), 0, pendingShaderHolder);
+                RenderPaint.queueSurface(paint, cmd);
                 k(())
             }
         } with handler RenderTarget.Target {
             def beginTarget(name, w, h, clearOp, k) = {
-                // レジストリから引く。無い・寸法が変わったら作り直す（古い方は必ず捨てる）。
-                let freshEntry = () -> {
-                    let fresh = RenderTargetGl.create(w, h);
-                    Ref.put(Map.insert(name, fresh, Ref.get(targetsRef)), targetsRef);
-                    fresh
-                };
-                let entry = match Map.get(name, Ref.get(targetsRef)) {
-                    case Some(e) =>
-                        if (e#width == w and e#height == h) e
-                        else { RenderTargetGl.destroy(e); freshEntry() }
-                    case None => freshEntry()
-                };
-                // ターゲットのテクスチャを registry へ登録する（同じ Entry なら同じ値の
-                // 上書きで無害）。以降 Render.sprite(name, z) が普通のスプライトとして引ける。
-                Ref.put(Map.insert(name,
-                            ({ id = GpuHandle.wrapTextureId(entry#tex),
-                               width = Int32.toFloat64(w), height = Int32.toFloat64(h) }: RenderAsset.TextureInfo),
-                            Ref.get(registryRef)), registryRef);
-                RenderTargetGl.bind(entry);
-                // clear は renderCommands（renderFrameMixed の targetClear）が行う — GL の
-                // clear 手順を 1 箇所に保つため、ここでは開いた印を残すだけ。
-                Array.put(Some((w, h, clearOp)), 0, activeTargetHolder);
+                RenderPaint.beginTarget(paint, name, w, h, clearOp);
                 k(())
             }
             def endTarget(k) = {
-                RenderTargetGl.unbind();
-                Array.put(None, 0, activeTargetHolder);
+                RenderPaint.endTarget(paint);
                 k(())
             }
         };
