@@ -22,7 +22,7 @@ const jarUsage = `使い方（bin/headless-run が呼ぶ。docs/design/prebuilt-
   jar publish --dispatcher=F --flix-jar=J --revision=N [--remote] [--commit=C] [--source-dir=.] [--dir .]
                                                                                build/headless の jar を段 1 へ置く（--remote で段 2 へも上げ、段 2 の古い物を消す）
   jar prune                                                                    段 1 の古い物を消す（最後に使ってから 14 日・全部で 2 GB）
-  jar builder run --repo=<ゲームの clone> [--work=W]                              作り手の 1 巡（master が進んでいれば作って段 1・段 2 へ）
+  jar builder run --repo=<ゲームの clone> [--work=W] [--engines=E]  作り手の 1 巡（master が進んでいれば作って段 1・段 2 へ）
   jar builder install|uninstall --repo=<ゲームの clone> [--dry-run]              作り手を launchd に入れる・外す（5 分ごと）
 段 1 の置き場は ~/.cache/flix-headless-jar（FGE_JAR_CACHE で変える・off で使わない）。段 2 は FGE_PREBUILT_JAR=off で使わない。`
 
@@ -164,7 +164,8 @@ func jarBuilder(out, errOut *strings.Builder, args []string) int {
 	home, _ := os.UserHomeDir()
 	switch verb {
 	case "run":
-		cfg := jarshare.BuilderConfig{Repo: repo, Work: flags["--work"]}.WithDefaults(home)
+		// --engines は配ったエンジンの置き場を差し替える（段 2 の口のある版がまだ配られていない時の通しの確かめに使う）。
+		cfg := jarshare.BuilderConfig{Repo: repo, Work: flags["--work"], Engines: flags["--engines"]}.WithDefaults(home)
 		// WhyNot: 行を out に貯めない — launchd は標準出力を記録のファイルへ書くので、作っている間の行をそのまま出す。
 		if err := jarshare.RunBuilder(cfg, os.Stdout); err != nil {
 			fmt.Fprintf(errOut, "[jar-builder] %v\n", err)
