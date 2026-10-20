@@ -444,6 +444,27 @@ mod TestRender {
         let surface = Render.shaderFill(rgbSpec(Nil, read), square8(), 0.0, 6);
         Assert.assertEq(expected = Render.toDrawables(surface#item, surface#at), drawnWith(_ -> Some(texture64()), surface))
 
+    // dx に v が入る（斜めの歪み）式は、2 隅が合っても矩形に写せないので代表色で塗る。
+    @Test
+    def testShiftSkewedByOtherAxisKeepsRepresentativeColor(): Unit \ Assert =
+        let read = ShaderDoc.Field.Shift({
+            dx = ShaderDoc.Field.Uv({ axis = ShaderDoc.Axis.V }),
+            dy = ShaderDoc.Field.Const(0.0),
+            of = ShaderDoc.Field.Tex({ name = "pieces", chan = ShaderDoc.TexChan.R }) });
+        let surface = Render.shaderFill(rgbSpec(Nil, read), square8(), 0.0, 6);
+        Assert.assertEq(expected = graySquare8() :: Nil, drawnWith(_ -> Some(texture64()), surface))
+
+    // dx が min(u, 0.5)（折れ線）の式は、2 隅が合っても矩形に写せないので代表色で塗る。
+    @Test
+    def testShiftFoldedByMinKeepsRepresentativeColor(): Unit \ Assert =
+        let read = ShaderDoc.Field.Shift({
+            dx = ShaderDoc.Field.Bin({ op = ShaderDoc.BinOp.Min, a = ShaderDoc.Field.Uv({ axis = ShaderDoc.Axis.U }),
+                                       b = ShaderDoc.Field.Const(0.5) }),
+            dy = ShaderDoc.Field.Const(0.0),
+            of = ShaderDoc.Field.Tex({ name = "pieces", chan = ShaderDoc.TexChan.R }) });
+        let surface = Render.shaderFill(rgbSpec(Nil, read), square8(), 0.0, 6);
+        Assert.assertEq(expected = graySquare8() :: Nil, drawnWith(_ -> Some(texture64()), surface))
+
     // テクスチャの大きさが引けない（まだ読み込んでいない）ときは、代表色で塗る。
     @Test
     def testTextureReadSurfaceWithoutTextureInfoKeepsRepresentativeColor(): Unit \ Assert =
@@ -453,6 +474,11 @@ mod TestRender {
 
     def drawnWith(textureInfoOf: String -> Option[GameEngine.TextureInfo], surface: Render.PlacedItem): List[GameEngine.Drawable] =
         fst(Render.drawWith(textureInfoOf, surface :: Nil))
+
+    /// square8 に置いた rgb の面の代表色（中間の灰）の箱 1 枚。
+    def graySquare8(): GameEngine.Drawable =
+        DrawCmd.fromParts("", { x = 0.0, y = 0.0 }, { x = 8.0, y = 8.0 }, 0.0, { r = 0.5, g = 0.5, b = 0.5 }, 1.0, false,
+                          { x = 0.0, y = 0.0 }, { x = 1.0, y = 1.0 }, 6, None, None, DrawCmd.BlendMode.Normal, Nil)
 
     def square8(): Rect2.Rect2 = { position = { x = 0.0, y = 0.0 }, size = { x = 8.0, y = 8.0 } }
 

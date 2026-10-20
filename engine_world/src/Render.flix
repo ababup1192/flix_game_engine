@@ -944,11 +944,11 @@ pub mod Render {
             case other => toDrawables(other, pos)
         }
 
-    /// 面の式がテクスチャ 1 枚だけを読み、読む位置が shift（uv と定数の足し算・掛け算で決まる平行移動）だけで
+    /// 面の式がテクスチャ 1 枚だけを読み、読む位置が shift（u・v それぞれの 1 次式で決まる平行移動と伸び縮み）だけで
     /// 決まるなら、そのテクスチャの名前と読む範囲（uv 0〜1 の矩形）。範囲は面の左上・右下で shift を評価して出す。
     /// None（矩形 1 枚に写せない）: uv を変えて読む節（ShaderDoc.remappedChild）の下に tex か ref がある
-    /// （ref は bindings の値で、どの uv で読んだ物かをここでは辿らない）・shift のずらし量に uv と定数の計算でない
-    /// 場がある・面の真ん中が範囲の真ん中に写らない（ずらし量が uv で曲がる）・読む所ごとに範囲が食い違う。
+    /// （ref は bindings の値で、どの uv で読んだ物かをここでは辿らない）・shift のずらし量が 1 次式でない
+    /// （isAffineIn）・読む所ごとに範囲が食い違う。
     def textureReadOf(spec: ShaderDoc.Spec, t: Float64): Option[(String, Rect2.Rect2)] =
         match ShaderDoc.texNames(spec) {
             case name :: Nil =>
@@ -969,25 +969,43 @@ pub mod Render {
             case _ => None
         }
 
-    /// tex をそのまま shift で読む節で、ずらし量が uv と定数の計算（Uv・Const・Bin・Time）だけなら、そのずらし量。
+    /// tex をそのまま shift で読む節で、dx が u だけの 1 次式・dy が v だけの 1 次式なら、そのずらし量。
     def plainShiftRead(node: ShaderDoc.Field): Option[{ dx = ShaderDoc.Field, dy = ShaderDoc.Field }] =
         match node {
             case ShaderDoc.Field.Shift(sh) => match sh#of {
-                case ShaderDoc.Field.Tex(_) if isPlainOffset(sh#dx) and isPlainOffset(sh#dy) => Some({ dx = sh#dx, dy = sh#dy })
+                case ShaderDoc.Field.Tex(_) if isAffineIn(ShaderDoc.Axis.U, sh#dx) and isAffineIn(ShaderDoc.Axis.V, sh#dy) => Some({ dx = sh#dx, dy = sh#dy })
                 case _ => None
             }
             case _ => None
         }
 
+    /// field が uv の axis の側だけの 1 次式（a × uv + b。a・b は uv を含まない）か。1 次式なら左上・右下の 2 点で
+    /// 写す先の矩形が決まる。もう片方の軸の uv（斜めの歪み）・掛け算の両側の uv（曲線）・min / max / step の uv（折れ線）は偽。
     // 許す場を並べる側にするのは、場を足した時に「曲がらない」と黙って扱わないため。
-    def isPlainOffset(field: ShaderDoc.Field): Bool =
-        countNodes(node -> match node {
-            case ShaderDoc.Field.Uv(_)    => false
-            case ShaderDoc.Field.Const(_) => false
-            case ShaderDoc.Field.Bin(_)   => false
-            case ShaderDoc.Field.Time(_)  => false
-            case _                        => true
-        }, field :: Nil) == 0
+    def isAffineIn(axis: ShaderDoc.Axis, field: ShaderDoc.Field): Bool =
+        match field {
+            case ShaderDoc.Field.Uv(uv)  => uv#axis == axis
+            case ShaderDoc.Field.Bin(bn) => match bn#op {
+                case ShaderDoc.BinOp.Add  => isAffineIn(axis, bn#a) and isAffineIn(axis, bn#b)
+                case ShaderDoc.BinOp.Sub  => isAffineIn(axis, bn#a) and isAffineIn(axis, bn#b)
+                case ShaderDoc.BinOp.Mul  => (isUvFree(bn#a) and isAffineIn(axis, bn#b)) or (isAffineIn(axis, bn#a) and isUvFree(bn#b))
+                case ShaderDoc.BinOp.Min  => isUvFree(field)
+                case ShaderDoc.BinOp.Max  => isUvFree(field)
+                case ShaderDoc.BinOp.Step => isUvFree(field)
+            }
+            case _ => isUvFree(field)
+        }
+
+    /// field が uv に依らない（面のどこでも同じ値）か。定数・時間と、その計算だけ。
+    def isUvFree(field: ShaderDoc.Field): Bool =
+        match field {
+            case ShaderDoc.Field.Const(_) => true
+            case ShaderDoc.Field.Time(tm) => isUvFree(tm#offset)
+            case ShaderDoc.Field.Bin(bn)  => isUvFree(bn#a) and isUvFree(bn#b)
+            case ShaderDoc.Field.Un(un)   => isUvFree(un#of)
+            case ShaderDoc.Field.Pow(pw)  => isUvFree(pw#of)
+            case _                        => false
+        }
 
     def isTex(node: ShaderDoc.Field): Bool = match node {
         case ShaderDoc.Field.Tex(_) => true
@@ -1015,18 +1033,15 @@ pub mod Render {
 
     def wholeArea(): Rect2.Rect2 = { position = { x = 0.0, y = 0.0 }, size = { x = 1.0, y = 1.0 } }
 
-    /// shift が面の左上 (0, 0) と右下 (1, 1) を写す先から作る読む範囲。大きさが 0 以下（裏返し・潰れ）と、
-    /// 面の真ん中が範囲の真ん中に写らない（ずらし量が uv で曲がる）時は None。
+    /// shift が面の左上 (0, 0) と右下 (1, 1) を写す先から作る読む範囲（ずらし量は isAffineIn の 1 次式なので 2 点で決まる）。
+    /// 大きさが 0 以下（裏返し・潰れ）は None。
     def shiftedArea(dx: ShaderDoc.Field, dy: ShaderDoc.Field, t: Float64): Option[Rect2.Rect2] =
         let at = (u, v) -> { x = u + ShaderEval.evalField(dx, { x = u, y = v }, t),
                              y = v + ShaderEval.evalField(dy, { x = u, y = v }, t) };
         let lo = at(0.0, 0.0);
         let hi = at(1.0, 1.0);
-        let mid = at(0.5, 0.5);
         let size = { x = hi#x - lo#x, y = hi#y - lo#y };
-        let straight = Float64.abs(mid#x - (lo#x + hi#x) / 2.0) < areaTolerance() and
-                       Float64.abs(mid#y - (lo#y + hi#y) / 2.0) < areaTolerance();
-        if (size#x > 0.0 and size#y > 0.0 and straight) Some({ position = lo, size = size }) else None
+        if (size#x > 0.0 and size#y > 0.0) Some({ position = lo, size = size }) else None
 
     // flip は base scale に符号を“乗算”（engine spriteToDrawable と同じ）。centered は素通し。
     // region=Some は textureSize(\Game) が要るので今回未対応＝loud に落とす（部分関数を残さない）。
