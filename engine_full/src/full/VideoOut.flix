@@ -142,7 +142,9 @@ pub mod VideoOut {
                 let shrink = 1.0 / Int32.toFloat64(cfg#scale);
                 let pasted = found |> List.map(sc -> {
                     let item = match Render.sprite(surfaceName(sc), sc#zIndex) {
-                        case Render.Item.Sprite(sp) => Render.Item.Sprite({ scale = { x = shrink, y = shrink } | sp })
+                        // 面の rect は左上で置くので、貼り絵も左上で置く（Render.sprite の既定は真ん中で置く —— そのままだと
+                        // 面の半分の大きさだけ左上へずれて、机や紙の面が欠ける）。
+                        case Render.Item.Sprite(sp) => Render.Item.Sprite({ scale = { x = shrink, y = shrink }, centered = false | sp })
                         case other                  => other
                     };
                     { at = sc#rect#position, item = item } });
