@@ -100,8 +100,14 @@ pub mod VideoOut {
         images = List[Image],
         scene = (String -> FontAtlas) -> w -> List[Render.PlacedItem],
         wanted = Int32 -> Bool,
-        bakeSurfaces = Bool
+        bakeSurfaces = Bool,
+        encoders = List[Encoder]
     }
+
+    /// GPU で塗る時に、コマの生の画素を直に流して最後の mp4 を書く ffmpeg 1 本。rate = コマの速さ（ffmpeg の -r に渡す字。
+    /// 0.5 倍速の mp4 は半分の速さ）、inputs = コマの後ろに足す入力（音の wav の `-i …`）、outputs = 出力の旗（x264・音・出力のパス）。
+    /// 空の列なら frames.mkv（ffv1 の可逆）を書き、mp4 は後で mix が束ねる（今までの道）。SoftRaster では使わない。
+    pub type alias Encoder = { rate = String, inputs = List[String], outputs = List[String] }
 
     /// 書き出した面: 名前（surface_<幅>_<高さ>_<z>）→ (PNG のパス, 書き出した範囲に合わせた面)。
     type alias Baked = Map[String, (String, Render.ShaderSurface)]
@@ -302,10 +308,10 @@ pub mod VideoOut {
             let argb = Vector.range(0, side * side) |> Vector.map(k -> pixelAt(Int32.modulo(k, side), k / side));
             GlOffscreen.uploadImage(session, img#name, "video:${img#name}", side, side, argb)
         });
-        match startFfmpeg(settings#ffmpeg, video, width, height) {
+        match startEncoders(settings#ffmpeg, video, width, height) {
             case Err(why) => Err(why)
-            case Ok(proc) =>
-                let out = proc.getOutputStream();
+            case Ok(procs) =>
+                let outs = procs |> List.map(proc -> proc.getOutputStream());
                 let buf = GlOffscreen.freshBuffer(session);
                 let keySession = RenderCache.freshSession();
                 let keyTextures = SoftRaster.freshTextureCache();
@@ -326,11 +332,11 @@ pub mod VideoOut {
                         GlOffscreen.readRgba(session, buf);
                         discard buf.rewind();
                         discard buf.get(bytes);
-                        out.write(bytes)
+                        outs |> List.forEach(out -> out.write(bytes))
                     });
-                    out.close()
+                    outs |> List.forEach(out -> out.close())
                 };
-                let code = proc.waitFor();
+                let code = procs |> List.foldLeft((worst, proc) -> Int32.max(worst, proc.waitFor()), 0);
                 // 最後のコマ（GL に残っている）を last.png に。
                 discard ImageIO.write(GlOffscreen.readImage(session), "png", new File("${video#outDir}/last.png"));
                 let table = jobs |> List.foldLeft((acc, p) -> {
@@ -363,16 +369,23 @@ pub mod VideoOut {
             GameEngine.Game.renderCommands(sprites, Nil, polygons, None)
         })
 
-    /// ffmpeg を立てる（標準入力に RGBA の生の画素・下の行から。ffv1 の可逆で frames.mkv へ）。
+    /// ffmpeg を立てる（標準入力に RGBA の生の画素・下の行から）。video#encoders が空なら ffv1 の可逆で frames.mkv へ 1 本、
+    /// あればその数だけ（最後の mp4 を直に書く。frames.mkv は書かない）。
     /// 4 バイト目は rgb0 で捨てる —— FBO の α は重ねた半透明の分だけ 1 より下がっていて、α として運ぶと
     /// 見る側が白の上に重ねて絵が薄く見える（窓では α を見ないので、実機と同じ絵にするには捨てる）。
-    def startFfmpeg(ffmpeg: String, video: Video[w], width: Int32, height: Int32): Result[String, Process] \ IO =
+    def startEncoders(ffmpeg: String, video: Video[w], width: Int32, height: Int32): Result[String, List[Process]] \ IO =
         let target = "${video#outDir}/frames.mkv";
         discard (new File(target)).delete();
+        let lossless = { rate = Int32.toString(video#fps), inputs = Nil,
+                         outputs = "-c:v" :: "ffv1" :: "-level" :: "3" :: "-threads" :: "4" :: "-slices" :: "4" :: target :: Nil };
+        let encoders = if (List.isEmpty(video#encoders)) lossless :: Nil else video#encoders;
+        encoders |> List.foldLeft((acc, encoder) -> Result.flatMap(started ->
+            startOne(ffmpeg, width, height, encoder) |> Result.map(proc -> List.append(started, proc :: Nil)), acc), Ok(Nil))
+
+    def startOne(ffmpeg: String, width: Int32, height: Int32, encoder: Encoder): Result[String, Process] \ IO =
         let args = ffmpeg :: "-y" :: "-loglevel" :: "error"
             :: "-f" :: "rawvideo" :: "-pix_fmt" :: "rgb0" :: "-s" :: "${Int32.toString(width)}x${Int32.toString(height)}"
-            :: "-r" :: Int32.toString(video#fps) :: "-i" :: "-" :: "-vf" :: "vflip"
-            :: "-c:v" :: "ffv1" :: "-level" :: "3" :: "-threads" :: "4" :: "-slices" :: "4" :: target :: Nil;
+            :: "-r" :: encoder#rate :: "-i" :: "-" :: List.append(encoder#inputs, "-vf" :: "vflip" :: encoder#outputs);
         try {
             region rc {
                 let builder = new ProcessBuilder(List.toArray(rc, args));
@@ -386,7 +399,8 @@ pub mod VideoOut {
 
     // ── frames.json ──
 
-    /// コマの表。painter・frames（書いたコマ数）・painted（塗った範囲）・fps・keys（鍵のあるコマ数）・last（最後の画面）。
+    /// コマの表。painter・frames（書いたコマ数）・painted（塗った範囲）・fps・keys（鍵のあるコマ数）・last（最後の画面）・
+    /// encoded（GPU の道で最後の mp4 まで書いた。mix はもう束ねない）。
     /// 音（sfx.txt・bgm.txt）はこの後に入口が書くので、ここでは持たない（mix が読む）。
     def writeFramesJson(video: Video[w], paint: PaintRange, painter: Painter, jobs: List[(Int32, w)],
                         keys: Map[Int32, String]): Unit \ IO =
@@ -411,7 +425,7 @@ pub mod VideoOut {
         let keyCount = keys |> Map.filter(k -> k != "-") |> Map.size;
         let text = "{\n  \"painter\": \"${painterName}\",\n  \"frames\": ${Int32.toString(frames)},\n"
             + "  \"painted\": ${painted},\n  \"fps\": ${Int32.toString(video#fps)},\n  \"keys\": ${Int32.toString(keyCount)},\n"
-            + "  \"last\": ${last}\n}\n";
+            + "  \"last\": ${last},\n  \"encoded\": ${if (painter == Painter.Gl and not List.isEmpty(video#encoders)) "true" else "false"}\n}\n";
         let out = new FileWriter("${video#outDir}/frames.json");
         out.write(text);
         out.close()
