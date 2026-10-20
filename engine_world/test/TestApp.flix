@@ -683,14 +683,14 @@ mod TestApp {
     // 止めると、バッジを出し十字を見せる（withCursor で矢印を隠しているゲームでも見える）。
     @Test
     def testHaltLookShowsCrosshair(): Unit \ Assert =
-        Assert.assertEq(expected = App.HaltLook.HaltLook(true, App.CursorLook.CursorLook(GameEngine.Cursor.Crosshair, App.Visibility.Show)),
-                        App.haltLook(true))
+        Assert.assertEq(expected = App.HaltLook.HaltLook(App.Badge.Shown, App.CursorLook.CursorLook(GameEngine.Cursor.Crosshair, App.Visibility.Show)),
+                        App.haltEnterLook())
 
     // 抜けるときは形だけ戻し、見せるか隠すかは触らない。
     @Test
     def testLeaveHaltLookLeavesVisibilityToApp(): Unit \ Assert =
-        Assert.assertEq(expected = App.HaltLook.HaltLook(false, App.CursorLook.CursorLook(GameEngine.Cursor.Default, App.Visibility.LeaveToApp)),
-                        App.haltLook(false))
+        Assert.assertEq(expected = App.HaltLook.HaltLook(App.Badge.Hidden, App.CursorLook.CursorLook(GameEngine.Cursor.Default, App.Visibility.LeaveToApp)),
+                        App.haltLeaveLook())
 
     // 止めた画面を抜けた拍（Stale）には、withCursor の「隠す」をもう一度当てる。
     @Test

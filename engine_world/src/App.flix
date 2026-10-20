@@ -635,9 +635,15 @@ pub mod App {
         case CursorLook(GameEngine.Cursor, Visibility)
     }
 
-    /// 止めた画面の出入りの見た目（ウィンドウタイトルのバッジを出すか・矢印）。
+    /// ウィンドウタイトルの「止めている」のバッジ。
+    pub enum Badge with Eq, ToString {
+        case Shown
+        case Hidden
+    }
+
+    /// 止めた画面の出入りの見た目（タイトルのバッジ・矢印）。
     pub enum HaltLook with Eq, ToString {
-        case HaltLook(Bool, CursorLook)
+        case HaltLook(Badge, CursorLook)
     }
 
     /// 毎フレーム「マウスの矢印をどう見せたいか」を World から宣言する。App は宣言が変わったフレームだけ当て、
@@ -1211,8 +1217,10 @@ pub mod App {
                                                  wasPaused = st#anno#paused });
                     // デバッグモードの出入りをウィンドウタイトルとカーソル形状で示す
                     // （停止中は正確に囲うための十字カーソル）
-                    if (decided#toggled) {
-                        applyHaltLook(haltLook(decided#branch == Branch.Paused))
+                    if (decided#toggled) match decided#branch {
+                        case Branch.Paused   => applyHaltLook(haltEnterLook())
+                        case Branch.Resuming => applyHaltLook(haltLeaveLook())
+                        case Branch.Running  => ()
                     } else ();
                     match decided#branch {
                         case Branch.Paused =>
@@ -1318,18 +1326,21 @@ pub mod App {
             case _ => Some(look)
         }
 
-    /// 止める（halted = true）・抜ける時の見た目。止めた画面は十字を見せる — withCursor で矢印を隠している
-    /// ゲームでも、矩形を囲うのに要る。抜ける時は形だけ戻し、見せるか隠すかは触らない（動き出した拍に
-    /// cursorChange が withCursor の宣言を当て直す。宣言の無いゲームは見せたままが元の姿）。
-    /// ゲームからは呼ばない（F8 と /halt・/resume・/step が使う。テストのために公開）。
-    pub def haltLook(halted: Bool): HaltLook =
-        if (halted) HaltLook.HaltLook(true, CursorLook.CursorLook(GameEngine.Cursor.Crosshair, Visibility.Show))
-        else HaltLook.HaltLook(false, CursorLook.CursorLook(GameEngine.Cursor.Default, Visibility.LeaveToApp))
+    /// 止めた画面に入る時の見た目: バッジを出し、十字を見せる — withCursor で矢印を隠しているゲームでも、
+    /// 矩形を囲うのに要る。ゲームからは呼ばない（F8 と /halt・/step が使う。テストのために公開）。
+    pub def haltEnterLook(): HaltLook =
+        HaltLook.HaltLook(Badge.Shown, CursorLook.CursorLook(GameEngine.Cursor.Crosshair, Visibility.Show))
 
-    /// haltLook の見た目をウィンドウへ当てる。ゲームからは呼ばない（RemoteDebug が呼ぶので公開）。
+    /// 止めた画面を抜ける時の見た目: バッジを外し、形だけ戻す。見せるか隠すかは触らない（動き出した拍に
+    /// cursorChange が withCursor の宣言を当て直す。宣言の無いゲームは見せたままが元の姿）。
+    /// ゲームからは呼ばない（F8 と /resume が使う。テストのために公開）。
+    pub def haltLeaveLook(): HaltLook =
+        HaltLook.HaltLook(Badge.Hidden, CursorLook.CursorLook(GameEngine.Cursor.Default, Visibility.LeaveToApp))
+
+    /// 止めた画面の出入りの見た目をウィンドウへ当てる。ゲームからは呼ばない（RemoteDebug が呼ぶので公開）。
     pub def applyHaltLook(look: HaltLook): Unit \ GameEngine.Game =
         let HaltLook.HaltLook(badge, cursor) = look;
-        GameEngine.Game.setDebugBadge(badge);
+        GameEngine.Game.setDebugBadge(badge == Badge.Shown);
         applyLook(cursor)
 
     def applyLook(look: CursorLook): Unit \ GameEngine.Game =

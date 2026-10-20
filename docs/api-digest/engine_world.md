@@ -218,8 +218,10 @@
   `pub enum Visibility with Eq, ToString { case Show case Hide case LeaveToApp }`
 - ウィンドウへ当てる矢印の見た目（形・見せるか）。
   `pub enum CursorLook with Eq, ToString { case CursorLook(GameEngine.Cursor, Visibility) }`
-- 止めた画面の出入りの見た目（ウィンドウタイトルのバッジを出すか・矢印）。
-  `pub enum HaltLook with Eq, ToString { case HaltLook(Bool, CursorLook) }`
+- ウィンドウタイトルの「止めている」のバッジ。
+  `pub enum Badge with Eq, ToString { case Shown case Hidden }`
+- 止めた画面の出入りの見た目（タイトルのバッジ・矢印）。
+  `pub enum HaltLook with Eq, ToString { case HaltLook(Badge, CursorLook) }`
 - 毎フレーム「マウスの矢印をどう見せたいか」を World から宣言する。App は宣言が変わったフレームだけ当て、
   `pub def withCursor(f: w -> CursorSpec, app: App[w, ef]): App[w, ef]`
 - 跳んだ拍（起動・START・/start・/step・/flow?apply・F8 の巻き戻しからの再開）に、出力をどう扱うか。
@@ -302,9 +304,11 @@
   `pub def dueOutputs(app: App[w, ef], world: w, written: List[String]): List[Int32]`
 - withCursor の宣言 want を当てるなら、その見た目（前に当てた物と同じなら None）。
   `pub def cursorChange(want: CursorSpec, state: CursorState): Option[CursorLook]`
-- 止める（halted = true）・抜ける時の見た目。止めた画面は十字を見せる — withCursor で矢印を隠している
-  `pub def haltLook(halted: Bool): HaltLook`
-- haltLook の見た目をウィンドウへ当てる。ゲームからは呼ばない（RemoteDebug が呼ぶので公開）。
+- 止めた画面に入る時の見た目: バッジを出し、十字を見せる — withCursor で矢印を隠しているゲームでも、
+  `pub def haltEnterLook(): HaltLook`
+- 止めた画面を抜ける時の見た目: バッジを外し、形だけ戻す。見せるか隠すかは触らない（動き出した拍に
+  `pub def haltLeaveLook(): HaltLook`
+- 止めた画面の出入りの見た目をウィンドウへ当てる。ゲームからは呼ばない（RemoteDebug が呼ぶので公開）。
   `pub def applyHaltLook(look: HaltLook): Unit \ GameEngine.Game`
 - 一発で鳴らした名前とループで鳴らした名前の覚え（ゲームの間ずっと持つ）。
   `pub type alias SoundUses = { oneShot = Set[String], looped = Set[String] }`
