@@ -73,6 +73,21 @@ writeFramePng と同じ鍵が返る（指紋の取り方を写さない）。
 **`make reference-update` はいつもこれで流れる**（写した絵を基準として固めない）。
 キャッシュには塗った画像を符号化したバイト列を直接入れ、書き先はそこから写す（書き先を読み直してキャッシュに入れない）。
 
+## 絵でない書き出し（効果音の一式・動画の音）
+
+効果音のように、出来上がりを決める入力が描く命令に出ない書き出しは、**入力の字と動いているプログラムの指紋**を鍵にする。
+
+- `SfxSynth.renderSetOnce(cfg, dir, inputs, () -> 音の一式)`: `renderSet` と同じ WAV を書くが、同じ `inputs`・同じプログラムで
+  前に書いた一式が `dir` にそのままのバイト列で残っていれば、合成の関数を呼ばずに返す。`inputs` には音を決める値を全部入れる
+  （ゲームなら読んだ Doc のバイト列。読み直しで鍵と中身がずれないよう、合成には鍵を作ったのと同じ 1 回の読みを渡す）
+- 中身は `RenderCache.writtenFilesKept(inputs)` / `noteWrittenFiles(inputs, files)`。鍵 = inputs・動いている jar（Main.class を持つ物）の
+  SHA-256・JVM と OS。控えは `<置き場>/files/<頭 2 字>/<鍵>.txt` に「書いたファイルの SHA-256 とパス」を 1 行ずつ。
+  当たりは控えの全部のファイルが今もその SHA-256 の時だけ（消した・git で戻した・手で直した WAV があれば作り直す）
+- jar から動いていない時（`flix run`・`flix test`）・`FGE_RENDER_CACHE=off` の時はいつも作る。`verify` は毎回作り、前の控えと違えば
+  `[render-cache] 前に同じ鍵で書いた一式と違う` を出す
+- ゲームの `bin/mix-video-sfx.py`（internet_dungeon）が動画のために重ねた音も、同じ置き場の `mix/<頭 2 字>/<鍵>.wav` に入れる
+  （鍵は sfx.txt・bgm.txt・使う WAV のバイト列・コマ数・fps・旗・台本の中身）。`render-cache prune` は files/ と mix/ も PNG と同じ順に消す
+
 ## 置き場
 
 - `FGE_RENDER_CACHE`（既定 `~/.cache/flix-render-cache`・絶対パスだけ）。1 枚は `<置き場>/<鍵の頭 2 字>/<鍵>.png`

@@ -163,6 +163,10 @@
   `pub def writePlainPngAntialias(req: SoftRaster.RasterReq, surfaces: List[SoftRaster.SurfaceCmd], extraFonts: Map[String, SoftRaster.FontEntry], fontAntialias: SoftRaster.FontAntialias, extraImages: Map[String, BufferedImage]): Unit \ IO`
 - 1 コマの鍵（writeFramePng がキャッシュに使うのと同じ物）。鍵を作れなければ None。
   `pub def keyOf(session: Session, encoding: DrawHash.PngEncoding, frame: DrawHash.Frame, extraImages: Map[String, BufferedImage], textures: SoftRaster.TextureCache): Option[DrawHash.Key] \ IO`
+- 前に inputs から書いた一式（noteWrittenFiles で控えた物）が、そのままのバイト列で残っているか。
+  `pub def writtenFilesKept(inputs: String): Bool \ IO`
+- files（パスの列）を inputs から書いたと控える（次の writtenFilesKept が当たるように）。
+  `pub def noteWrittenFiles(inputs: String, files: List[String]): Unit \ IO`
 
 ## RenderLint — `engine_tools/src/RenderLint.flix`
 - 要素の描画種別（リンタ内の分類。ゲームの widget 名とは独立）。
@@ -236,6 +240,8 @@
   `pub def wavBytesStereoLooped(cfg: Config, left: List[Float64], right: List[Float64], loopStart: Int32): Bytes`
 - 音のセットをまとめて `dir` へ描き出す。`(名前, サンプル列)` ごとに `dir/名前.wav` を書き出す
   `pub def renderSet(cfg: Config, dir: String, sounds: List[(String, List[Float64])]): Unit \ IO`
+- renderSet と同じ一式を書くが、同じ `inputs`・同じプログラムで前に書いた一式が `dir` にそのままの
+  `pub def renderSetOnce(cfg: Config, dir: String, inputs: String, build: Unit -> List[(String, List[Float64])]): Unit \ IO`
 - ループ点つきの曲を `dir/名前.wav` へ書き出す（wavBytesLooped。ディレクトリは無ければ作る）。
   `pub def renderLooped(cfg: Config, dir: String, name: String, samples: List[Float64], loopStart: Int32): Unit \ IO`
 - ループ点つきのステレオの曲を `dir/名前.wav` へ書き出す（wavBytesStereoLooped。ディレクトリは無ければ作る）。

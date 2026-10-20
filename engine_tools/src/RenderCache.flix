@@ -9,10 +9,13 @@ pub mod RenderCache {
     import java.io.File
     import java.io.FileOutputStream
     import java.io.IOException
+    import java.lang.ClassLoader
+    import java.lang.Exception
     import java.lang.RuntimeException
     import java.lang.System
     import java.lang.Thread
     import java.lang.management.ManagementFactory
+    import java.net.URI
     import java.nio.ByteBuffer
     import java.nio.file.Files
     import java.nio.file.Paths
@@ -170,6 +173,108 @@ pub mod RenderCache {
         case DrawHash.PngEncoding.Plain     => AtomicFile.write(path, file -> discard ImageIO.write(image, "png", file))
         case DrawHash.PngEncoding.Filmstrip => Filmstrip.renderFrame(image, path)
     }
+
+    // ── 絵でない書き出しの一式（効果音の WAV など） ─────────
+
+    /// 前に inputs から書いた一式（noteWrittenFiles で控えた物）が、そのままのバイト列で残っているか。
+    /// 残っていれば true（作り直さなくてよい）。鍵には inputs と、動いているプログラム（jar）の指紋・JVM と OS が入る。
+    /// 置き場が無い・鍵を作れない（jar から動いていない）・verify の時は false（いつも作る）。
+    pub def writtenFilesKept(inputs: String): Bool \ IO =
+        let (root, mode) = settings();
+        match (mode, filesStampPath(root, inputs)) {
+            case (Mode.Reuse, Some(stamp)) =>
+                try {
+                    let file = new File(stamp);
+                    if (not file.isFile()) false
+                    else {
+                        let lines = String.lines(Files.readString(file.toPath()));
+                        let kept = not List.isEmpty(lines) and List.forAll(fileMatchesLine, lines);
+                        if (kept) discard file.setLastModified(System.currentTimeMillis()) else ();
+                        kept
+                    }
+                } catch {
+                    case ex: IOException => warnOnce("files-read", "一式の控えを読めない（${ex.getMessage()}）— 作り直す"); false
+                }
+            case _ => false
+        }
+
+    /// files（パスの列）を inputs から書いたと控える（次の writtenFilesKept が当たるように）。
+    /// verify の時は前の控えと突き合わせ、違えば知らせる（鍵に入っていない入力がある）。
+    pub def noteWrittenFiles(inputs: String, files: List[String]): Unit \ IO =
+        let (root, mode) = settings();
+        match filesStampPath(root, inputs) {
+            case None        => ()
+            case Some(stamp) =>
+                try {
+                    let lines = files |> List.map(p -> "${sha256(Files.readAllBytes(Paths.get(p)))} ${p}");
+                    let text = String.intercalate("\n", lines);
+                    let target = new File(stamp);
+                    discard target.getParentFile().mkdirs();
+                    let verifying = match mode {
+                        case Mode.Verify => target.isFile()
+                        case Mode.Reuse  => false
+                    };
+                    if (verifying and Files.readString(target.toPath()) != text)
+                        Log.warn("[render-cache] 前に同じ鍵で書いた一式と違う: ${stamp} — 今の方で置き換える（鍵に入っていない入力がある）")
+                    else ();
+                    let bytes = text.getBytes("UTF-8");
+                    AtomicFile.write(stamp, tmp -> discard writeBytes(tmp, bytes))
+                } catch {
+                    case ex: IOException => warnOnce("files-write", "一式の控えを書けない（${ex.getMessage()}）— 次も作り直す")
+                }
+        }
+
+    /// 控えの 1 行（"<SHA-256> <パス>"）のファイルが、今もその中身か。
+    def fileMatchesLine(line: String): Bool \ IO =
+        match String.splitOn(substr = " ", line) {
+            case digest :: rest =>
+                let path = String.intercalate(" ", rest);
+                let file = new File(path);
+                not String.isEmpty(path) and file.isFile() and sha256(Files.readAllBytes(file.toPath())) == digest
+            case Nil => false
+        }
+
+    /// inputs の一式の控えの置き場。置き場が無い・プログラムの指紋が無い時は None。
+    def filesStampPath(root: Option[String], inputs: String): Option[String] \ IO =
+        match root {
+            case None      => None
+            case Some(dir) =>
+                let program = programDigest();
+                if (String.isEmpty(program)) {
+                    warnOnce("files-program", "jar から動いていない（flix run・テスト）— 書き出しの一式はいつも作る");
+                    None
+                } else {
+                    let key = sha256("files;${program};${runtimeId()};${inputs}".getBytes("UTF-8"));
+                    Some("${dir}/files/${String.takeLeft(2, key)}/${key}.txt")
+                }
+        }
+
+    /// 動いているプログラム（Main.class を持つ jar）の SHA-256。JVM の中で 1 回だけ取る。
+    /// jar から動いていない（flix run は組んだクラスをメモリに持つ）・JVM が起きた後に jar が差し替わった時は空。
+    // WhyNot: エンジンの fpkg の指紋（engineDigest）で済ませない — 書き出す中身はゲームのコードでも決まる。
+    def programDigest(): String \ IO =
+        let memoKey = "fge.renderCache.program";
+        let memo = System.getProperty(memoKey);
+        if (not Object.isNull(memo)) memo
+        else {
+            let digest = loadProgramDigest();
+            discard System.setProperty(memoKey, digest);
+            digest
+        }
+
+    def loadProgramDigest(): String \ IO =
+        let url = ClassLoader.getSystemResource("Main.class");
+        if (Object.isNull(url) or url.getProtocol() != "jar") ""
+        else try {
+            let spec = url.getPath();
+            let cut = String.indexOf(substr = "!/", spec) |> Option.getWithDefault(String.length(spec));
+            let jar = Paths.get(new URI(String.takeLeft(cut, spec))).toFile();
+            let started = ManagementFactory.getRuntimeMXBean().getStartTime();
+            if (not jar.isFile() or jar.lastModified() > started) ""
+            else sha256(Files.readAllBytes(jar.toPath()))
+        } catch {
+            case ex: Exception => warnOnce("program", "動いている jar を読めない（${ex.getMessage()}）— 書き出しの一式はいつも作る"); ""
+        }
 
     // ── 置き場 ───────────────────────────────────────────
 

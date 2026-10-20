@@ -161,6 +161,22 @@ pub mod SfxSynth {
             writeBytes("${dir}/${name}.wav", wavBytes(cfg, samples))
         }, sounds)
 
+    /// renderSet と同じ一式を書くが、同じ `inputs`・同じプログラムで前に書いた一式が `dir` にそのままの
+    /// バイト列で残っていれば、`build` を呼ばずに（合成せずに）返す（RenderCache.writtenFilesKept）。
+    /// `inputs` には音の中身を決める値を全部入れる（ゲームなら読んだ Doc のバイト列）。コードの違いは
+    /// RenderCache が動いている jar の指紋で見るので入れなくてよい。合成したか・しなかったかを 1 行出す。
+    pub def renderSetOnce(cfg: Config, dir: String, inputs: String,
+                          build: Unit -> List[(String, List[Float64])]): Unit \ IO =
+        let key = "sfx-set;rate=${Int32.toString(cfg#sampleRate)};dir=${dir};${inputs}";
+        if (RenderCache.writtenFilesKept(key))
+            println("[sfx] ${dir} は前に同じ入力で書いた一式のまま — 合成しない")
+        else {
+            let sounds = build();
+            renderSet(cfg, dir, sounds);
+            RenderCache.noteWrittenFiles(key, sounds |> List.map(sound -> "${dir}/${fst(sound)}.wav"));
+            println("[sfx] ${dir} へ ${Int32.toString(List.length(sounds))} 本を合成して書いた")
+        }
+
     /// ループ点つきの曲を `dir/名前.wav` へ書き出す（wavBytesLooped。ディレクトリは無ければ作る）。
     pub def renderLooped(cfg: Config, dir: String, name: String, samples: List[Float64], loopStart: Int32): Unit \ IO =
         discard (new File(dir)).mkdirs();
