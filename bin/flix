@@ -91,6 +91,13 @@ if [ -z "$FLIX_JAR" ]; then
     exit 127
 fi
 
+# FLIX_PRINT_JAR=1 なら、使うコンパイラの jar のパスを出して終わる（bin/headless-run が jar の鍵に混ぜる）。
+# WhyNot: flix --version を呼ばない — JVM を 1 本起こすので 1 秒近くかかり、jar が古い時の頭で毎回払う。
+if [ "${FLIX_PRINT_JAR:-}" = 1 ]; then
+    printf '%s\n' "$FLIX_JAR"
+    exit 0
+fi
+
 # java も同じ理由で devbox の外に備える: PATH の java が使えなければ engine の devbox の jdk を使う。
 # 居るかどうか (command -v) では見ないのは、macOS には必ず /usr/bin/java という
 # 「Java を入れてください」と言うだけのスタブが居て、本物と見分けが付かないため。

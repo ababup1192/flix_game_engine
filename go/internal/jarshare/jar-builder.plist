@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- 作り手（docs/design/prebuilt-jar.md の 4 節）。bin/fge jar builder install が字を埋めて ~/Library/LaunchAgents に置く。手で直さない。 -->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>{{.Label}}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{{.Fge}}</string>
+        <string>jar</string>
+        <string>builder</string>
+        <string>run</string>
+        <string>--repo={{.Repo}}</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>{{.Path}}</string>
+    </dict>
+    <key>StartInterval</key>
+    <integer>300</integer>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>LowPriorityIO</key>
+    <true/>
+    <key>Nice</key>
+    <integer>10</integer>
+    <key>StandardOutPath</key>
+    <string>{{.Log}}</string>
+    <key>StandardErrorPath</key>
+    <string>{{.Log}}</string>
+</dict>
+</plist>

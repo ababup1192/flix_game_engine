@@ -40,6 +40,12 @@
 #
 # 作り終えたら「[headless-run] jar を作った（N 秒）」を出し、N を build/headless/last-build-seconds に残す。
 #
+# jar を分け合う（docs/design/prebuilt-jar.md）: 作る前に、段 1（この機械の ~/.cache/flix-headless-jar/<鍵>/）、段 2（ゲームの repo の
+# Release headless-jar-cache・gh で取る・30 秒で諦める）の順に見て、鍵と中身の SHA-256 が合えば写して使い
+# （「[headless-run] 先に作った jar を使う（段 1 か 2・N 秒）」）、作ったら段 1 へ置く。段 2 へ上げるのは作り手だけ（FGE_JAR_PUBLISH_REMOTE=1）。
+# 鍵は元の指紋（src・flix.toml・packages.lock。lib は lock が決める）・入口の束・コンパイラの jar・作り方の版（headless_revision）から作る。
+# packages.lock が無いゲームは分け合わない。FGE_JAR_CACHE=off で段 1 も段 2 も使わない・FGE_PREBUILT_JAR=off で段 2 を使わない。
+#
 # 環境変数: FGE_HEADLESS_FALLBACK=1 = jar を作れない時も flix run で続ける（既定は止める）。
 #           FLIX_CMD = jar を作る flix（既定はこのエンジンの bin/flix）。1 語のパスで渡す
 # （相対パスはここで絶対パスにする — jar は build/headless/proj へ移って作るため）。
@@ -78,6 +84,9 @@ jar=$out/headless.jar
 proj=$out/proj
 main=FgeHeadlessMain
 fge_go="$engine/bin/fge-go"
+# 作り方の版。入口の拾い方（list_entries）か入口の束の書き方（build_dispatcher）を変えたら 1 上げる
+# （段 1 の鍵に混ぜるので、前の作り方の jar を分け合わない）。
+headless_revision=1
 
 if [ ! -d src ] || [ ! -f flix.toml ]; then
     echo "headless-run: ゲームの根（src/ と flix.toml のある所）で呼んでください" >&2
@@ -277,6 +286,46 @@ if [ "$mode" = status ]; then
     exit 0
 fi
 
+# 段 1 の鍵に混ぜるコンパイラの jar（engine の bin/flix が使う物）。FLIX_CMD で別の flix を渡された時は空（分け合わない）。
+# WhyNot: 別の flix でも分け合わない — その flix がどの jar で組むかを決められず、違うコンパイラの jar を使いうる。
+shared_flix_jar() {
+    [ "$flix" = "$engine/bin/flix" ] || return 1
+    found=$(FLIX_PRINT_JAR=1 "$flix" 2>/dev/null) || return 1
+    [ -f "$found" ] || return 1
+    printf '%s' "$found"
+}
+
+# 段 1 から鍵の jar を取って build/headless へ写す。写せたら 0（作らなくてよい）。
+try_shared_jar() {
+    [ -x "$fge_go" ] && [ -n "$manifest_start" ] || return 1
+    flix_jar=$(shared_flix_jar) || return 1
+    dispatcher_file="$out/dispatcher.tmp.$$"
+    build_dispatcher > "$dispatcher_file"
+    shared_began=$(date +%s)
+    if stage=$("$fge_go" jar fetch --dir=. --dispatcher="$dispatcher_file" --flix-jar="$flix_jar" --revision="$headless_revision" --manifest="$manifest_start" 2>/dev/null); then
+        rm -f "$dispatcher_file"
+        echo "[headless-run] 先に作った jar を使う（段 ${stage}・$(( $(date +%s) - shared_began )) 秒）" >&2
+        return 0
+    fi
+    rm -f "$dispatcher_file"
+    return 1
+}
+
+# 作った jar を段 1 へ置き、古い物を消す。作り手（jar builder run が FGE_JAR_PUBLISH_REMOTE=1 で起こす）は段 2 へも上げる。
+# 置けなくても描き出しは止めない。
+# 引数 1 に元の指紋を取る所（ゲームの根からの相対）を渡せる（段 1 から取った時は . — 作った写しには src が無い）。
+publish_shared_jar() {
+    [ -x "$fge_go" ] || return 0
+    flix_jar=$(shared_flix_jar) || return 0
+    remote=""
+    if [ "${FGE_JAR_PUBLISH_REMOTE:-}" = 1 ]; then remote="--remote"; fi
+    source_dir=""
+    if [ -n "${1:-}" ]; then source_dir="--source-dir=$1"; fi
+    "$fge_go" jar publish --dir=. --dispatcher="$proj/src/$main.flix" --flix-jar="$flix_jar" --revision="$headless_revision" \
+        $remote $source_dir --commit="${FGE_JAR_COMMIT:-}" >&2 || true
+    "$fge_go" jar prune >/dev/null 2>&1 || true
+}
+
 if is_stale; then
     mkdir -p "$out"
     lock="$out/.lock"
@@ -303,7 +352,11 @@ if is_stale; then
     built_ok=1
     if failed_before; then built_ok=0
     elif is_stale; then
-        if build_jar; then rm -f "$out/.failed" "$out/.failed.manifest"
+        # WhyNot: 段 1 から取った時も作り手は段 2 へ上げる — この機械の別の作業場が先に作っていても、段 2 にはまだ無いことがある。
+        if try_shared_jar; then
+            rm -f "$out/.failed" "$out/.failed.manifest"
+            if [ "${FGE_JAR_PUBLISH_REMOTE:-}" = 1 ]; then publish_shared_jar .; fi
+        elif build_jar; then rm -f "$out/.failed" "$out/.failed.manifest"; publish_shared_jar
         else
             built_ok=0
             # 色の符号を落とした最後の 15 行（MethodTooLargeException などの理由が見える所）。

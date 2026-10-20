@@ -129,3 +129,32 @@ func TestManifestSkipsTheDispatcher(t *testing.T) {
 		t.Fatal("入口の束を足しただけで指紋が変わった")
 	}
 }
+
+// 元の指紋は lib を見ない（新しい作業場で flix が lib を落としても変わらない）。
+func TestSourceManifestIgnoresLib(t *testing.T) {
+	d := gameDir(t)
+	writeFile(t, filepath.Join(d, "packages.lock"), "[lock]\nversion = 1\n")
+	before, _ := BuildSourceManifest(d)
+	writeFile(t, filepath.Join(d, "lib", "github", "ababup1192", "flix_game_engine", "0.52.0", "e.fpkg"), "fpkg")
+	if after, _ := BuildSourceManifest(d); after != before {
+		t.Fatal("lib を足しただけで元の指紋が変わった")
+	}
+}
+
+// packages.lock が変われば元の指紋も変わる（lib の中身は lock が決める）。
+func TestSourceManifestSeesTheLock(t *testing.T) {
+	d := gameDir(t)
+	writeFile(t, filepath.Join(d, "packages.lock"), "a")
+	before, _ := BuildSourceManifest(d)
+	writeFile(t, filepath.Join(d, "packages.lock"), "b")
+	if after, _ := BuildSourceManifest(d); after == before {
+		t.Fatal("packages.lock を変えても元の指紋が同じ")
+	}
+}
+
+// packages.lock が無ければ元の指紋を作らない（依存の中身を決められない）。
+func TestSourceManifestNeedsTheLock(t *testing.T) {
+	if _, err := BuildSourceManifest(gameDir(t)); err == nil {
+		t.Fatal("packages.lock が無いのに元の指紋を作った")
+	}
+}
