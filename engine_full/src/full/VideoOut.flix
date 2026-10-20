@@ -42,17 +42,24 @@ pub mod VideoOut {
         case Frames(List[(Int32, Int32)])
     }
 
-    /// 入口の頭で環境変数から作る設定。
-    pub type alias Settings = { gpu = GpuShot.Mode, paint = PaintRange, ffmpeg = String }
+    /// 入口の頭で環境変数から作る設定。gl = GPU で塗る回に、入口の頭から別の糸で始めた GL の用意（文脈・テクスチャ・字。
+    /// シミュレーションと重ねる。最初の動画 1 本が受け取り、2 本目からは作り直す）。
+    pub type alias Settings = { gpu = GpuShot.Mode, paint = PaintRange, ffmpeg = String, gl = Option[GlOffscreen.Pending] }
 
     /// 環境変数の表から。**入口の頭（AWT を使う前）で呼ぶ** —— GPU で塗る回は、ここで窓サーバへの繋がりを先に取る
     /// （GlOffscreen.connect。AWT の後では GL の文脈が作れない）。
     pub def settingsOf(env: Map[String, String]): Settings \ IO =
-        let settings = { gpu = GpuShot.modeOf(env),
-                         paint = paintRangeOf(Map.getWithDefault("FGE_VIDEO_PAINT", "all", env)),
-                         ffmpeg = Map.getWithDefault("FFMPEG", "ffmpeg", env) };
-        if (settings#gpu != GpuShot.Mode.Off and settings#paint == PaintRange.All) GlOffscreen.connect() else ();
-        settings
+        let gpu = GpuShot.modeOf(env);
+        let paint = paintRangeOf(Map.getWithDefault("FGE_VIDEO_PAINT", "all", env));
+        let gl = if (gpu != GpuShot.Mode.Off and paint == PaintRange.All) {
+            GlOffscreen.connect();
+            // GL の用意（約 1 秒）を、この後の字・Doc の用意とシミュレーションに重ねる。
+            match run { ProjectLoader.loadProject(".") } with Fs.FileRead.runWithIO {
+                case Ok(loaded) => Some(GlOffscreen.prepareInBackground(loaded#config))
+                case Err(_)     => None
+            }
+        } else None;
+        { gpu = gpu, paint = paint, ffmpeg = Map.getWithDefault("FFMPEG", "ffmpeg", env), gl = gl }
 
     /// `all`・`none`・`frames:227-640,700-710`。読めない字は all。
     pub def paintRangeOf(text: String): PaintRange =
@@ -267,7 +274,13 @@ pub mod VideoOut {
             case Err(why) => Err("project.json を読めない: ${why}")
             case Ok(loaded) =>
                 let cfg = video#soft;
-                match GlOffscreen.open({ config = { clearColor = cfg#background | loaded#config }, scale = cfg#scale }) {
+                let started = settings#gl |> Option.flatMap(pending ->
+                    GlOffscreen.await(pending, { scale = cfg#scale, background = cfg#background }));
+                let opened = match started {
+                    case Some(result) => result
+                    case None         => GlOffscreen.open({ config = { clearColor = cfg#background | loaded#config }, scale = cfg#scale })
+                };
+                match opened {
                     case Err(why) => Err(why)
                     case Ok(session) =>
                         let result = try {
