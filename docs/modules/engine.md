@@ -32,6 +32,7 @@
 | WAV ファイルの中身（形式・波形データの位置・ループ点）を読み解きたい | AudioUtil（ループ点は loopPointsOf。smpl チャンク） |
 | engine の fpkg 読み込みを consumer 側で trigger したい | EngineSentinel |
 | project.json を読み込んでエンジン設定と scene 一覧を得たい | ProjectLoader |
+| ファイルから作る重い値を、読んだファイルの中身が同じ間だけ取っておく（窓なしのゲームの初めの World・kit） | ContentCache（loadOrBuild。更新時刻は見ない） |
 | 既定値で続けたことを人へ 1 行知らせたい | Log（文面と出し先の決まりは [error-handling.md](../error-handling.md) の決まり 3） |
 | ある処理が N の二乗で割り当てていないかをテストで確かめたい | AllocMeter（絶対バイトは見ず、N を増やしたときの比だけを見る。呼ぶのはテストから） |
 | 面をシェーダーで塗る「宣言データ」の型そのものを知りたい | ShaderDoc |

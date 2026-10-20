@@ -8,15 +8,6 @@
 ## AtomicFile — `engine_tools/src/AtomicFile.flix`
 - `pub def write(path: String, fill: File -> Unit \ IO): Unit \ IO`
 
-## ContentCache — `engine_tools/src/ContentCache.flix`
-- キャッシュの置き場。外からは fresh で作り、loadOrBuild に渡すだけ。
-  `pub type alias Cache[a] = CacheData[a]`
-- 空の置き場を作る。
-  `pub def fresh(): Cache[a] \ IO`
-- `pub def loadOrBuild(cache: Cache[a], params: String, extraFiles: List[String], build: Unit -> a \ ef): a \ (ef - Fs.FileRead) + Fs.FileRead + IO`
-- loadOrBuild に加えて、build の中の Fs.FileTest（exists 系）と Fs.DirList（一覧）も記録する。
-  `pub def loadOrBuildWithDirs(cache: Cache[a], params: String, extraFiles: List[String], build: Unit -> a \ ef): a \ (ef - Fs.FileRead - Fs.FileTest - Fs.DirList) + Fs.FileRead + Fs.FileTest + Fs.DirList + IO`
-
 ## DrawHash — `engine_tools/src/DrawHash.flix`
 - 1 コマの鍵。比べるときは `toHex` の字で比べる。
   `pub type alias Key = Digest`

@@ -228,6 +228,8 @@
   `pub def startNames(app: App[w, ef]): List[String]`
 - 名前の始まりを、新しく作った初期の World から組む。args は既定の引数を上書きし、値が `@パス` の
   `pub def buildStart(app: App[w, ef], design: Vec2.Vec2, name: String, args: Map[String, String]): Result[String, w] \ ef + Fs.FileRead`
+- buildStart の、初期の World を渡す形（窓なしのゲームが Doc の読み直しを取り置いた World から組む）。
+  `pub def buildStartOn(app: App[w, ef], fresh: w, name: String, args: Map[String, String]): Result[String, w] \ Fs.FileRead`
 - 引数の値が `@パス` ならファイルの中身に置き換える（読めないファイルの引数は外す —— 「無いセーブ」は正常）。
   `pub def loadArgs(args: Map[String, String]): Map[String, String] \ Fs.FileRead`
 - `feedHome t=10` の形（flow の start の行・START・POST /start と同じ）を名前と引数に分ける。
@@ -303,6 +305,8 @@
   `pub def tileCacheVaoAt(slot: String, cache: TileCache): Option[GpuHandle.TileVao]`
 - 生成した結果をスロットへ上書きで置く（一覧表は宣言中のレイヤーの数までしか育たない）。
   `pub def tileCacheStore(slot: String, key: String, vao: GpuHandle.TileVao, count: Int32, cache: TileCache): TileCache`
+- 1 コマだけ描く（窓なしで GPU に塗る 1 枚撮り・動画。render_gl の GlOffscreen.handle の下で呼ぶ）。
+  `pub def paintOnce(app: App[w, ef], world: w, tileCache: TileCache): TileCache \ (ef + GameEngine.Game + ShaderEffect.Shader + RenderTarget.Target + IO)`
 
 ## App.GameRegistry — `engine_world/src/App/GameRegistry.flix`
 - 書き置き 1 行。

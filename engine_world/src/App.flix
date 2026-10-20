@@ -671,11 +671,21 @@ pub mod App {
     pub def buildStart(app: App[w, ef], design: Vec2.Vec2, name: String, args: Map[String, String]): Result[String, w] \ ef + Fs.FileRead =
         match app#starts |> List.find(start -> start#name == name) {
             case None => Err("始まり '${name}' は登録簿に無い${Suggest.hint(name, startNames(app))}")
-            case Some(start) =>
-                let resolved = loadArgs(Map.unionWith((given, _) -> given, args, start#args));
-                let build = start#build;
-                build(freshWorld(app, design), resolved) |> Result.mapErr(why -> "始まり '${name}': ${why}")
+            case Some(start) => buildStartFrom(start, freshWorld(app, design), name, args)
         }
+
+    /// buildStart の、初期の World を渡す形（窓なしのゲームが Doc の読み直しを取り置いた World から組む）。
+    /// fresh は freshWorld(app, design) と同じ物であること。
+    pub def buildStartOn(app: App[w, ef], fresh: w, name: String, args: Map[String, String]): Result[String, w] \ Fs.FileRead =
+        match app#starts |> List.find(start -> start#name == name) {
+            case None        => Err("始まり '${name}' は登録簿に無い${Suggest.hint(name, startNames(app))}")
+            case Some(start) => buildStartFrom(start, fresh, name, args)
+        }
+
+    def buildStartFrom(start: Start[w], fresh: w, name: String, args: Map[String, String]): Result[String, w] \ Fs.FileRead =
+        let resolved = loadArgs(Map.unionWith((given, _) -> given, args, start#args));
+        let build = start#build;
+        build(fresh, resolved) |> Result.mapErr(why -> "始まり '${name}': ${why}")
 
     /// 引数の値が `@パス` ならファイルの中身に置き換える（読めないファイルの引数は外す —— 「無いセーブ」は正常）。
     pub def loadArgs(args: Map[String, String]): Map[String, String] \ Fs.FileRead =
@@ -1913,6 +1923,18 @@ pub mod App {
                  if (budgetWarned) true
                  else warnOverBudget(List.length(itemsForGlyphs), budgetWarned))
         }
+
+    /// 1 コマだけ描く（窓なしで GPU に塗る 1 枚撮り・動画。render_gl の GlOffscreen.handle の下で呼ぶ）。
+    /// 実機の 1 フレームの描く所（renderFrame）と同じ道で、fps の重ねと予算の知らせは無し。
+    /// 初めて出る字はこのコマでは欠ける（アトラスを育てるのはこのコマの後）ので、欠けが出たら描き直す（最大 3 回）。
+    /// tileCache は同じ GL の文脈の間で持ち回す（最初は freshTileCache()）。
+    pub def paintOnce(app: App[w, ef], world: w, tileCache: TileCache):
+            TileCache \ (ef + GameEngine.Game + ShaderEffect.Shader + RenderTarget.Target + IO) =
+        def go(cache, left) = {
+            let (next, seen, _) = renderFrame(app, _ -> (), world, Nil, cache, None, true);
+            if (Option.isEmpty(seen) and left > 1) go(next, left - 1) else next
+        };
+        go(tileCache, 3)
 
     /// レンダーターゲットの列を本編より先に描く（宣言順）。ターゲットの中は design 座標
     /// そのまま・Shader 面は乗らない（Pass の doc を参照）。design はターゲットの寸法に使う。

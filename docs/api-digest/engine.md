@@ -227,6 +227,15 @@
 - HSV から色を作る。h は色相（1 周 = 1.0・0 = 赤・範囲外は折り返し）、s は鮮やかさ、
   `pub def hsv(spec: {h = Float64, s = Float64, v = Float64}): Color`
 
+## ContentCache — `engine/src/ContentCache.flix`
+- キャッシュの置き場。外からは fresh で作り、loadOrBuild に渡すだけ。
+  `pub type alias Cache[a] = CacheData[a]`
+- 空の置き場を作る。
+  `pub def fresh(): Cache[a] \ IO`
+- `pub def loadOrBuild(cache: Cache[a], params: String, extraFiles: List[String], build: Unit -> a \ ef): a \ (ef - Fs.FileRead) + Fs.FileRead + IO`
+- loadOrBuild に加えて、build の中の Fs.FileTest（exists 系）と Fs.DirList（一覧）も記録する。
+  `pub def loadOrBuildWithDirs(cache: Cache[a], params: String, extraFiles: List[String], build: Unit -> a \ ef): a \ (ef - Fs.FileRead - Fs.FileTest - Fs.DirList) + Fs.FileRead + Fs.FileTest + Fs.DirList + IO`
+
 ## DrawCmd — `engine/src/core/DrawCmd.flix`
 - ピクセルの重ね方（ブレンドモード）。
   `pub enum BlendMode with Eq, Order, ToString { case Normal case Add case Multiply }`
