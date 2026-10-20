@@ -73,12 +73,15 @@ func LogicalLines(text string) []string {
 	return strings.Split(strings.ReplaceAll(text, "\\\n", " "), "\n")
 }
 
-// RecipeCalls はレシピの行 (タブで始まり、# で止めていない) のうち $(call <macro> を含む行。
+// RecipeCalls はレシピの行 (タブで始まり、# で止めていない) のうち $(call <macro>,…) を含む行。
+// WhyNot: 名前の前だけで探さないのは、$(call video-mix-env,…) のように名前が macro で始まる
+// 別のマクロ (define video の中で呼ぶ物) まで拾い、入口を読めない行と言って止めるため。
 func (r *Rules) RecipeCalls(text string) []string {
+	head := regexp.MustCompile(`\$\(call\s+` + regexp.QuoteMeta(r.Macro) + `\s*[,)]`)
 	var out []string
 	for _, line := range LogicalLines(text) {
 		if strings.HasPrefix(line, "\t") && !strings.HasPrefix(strings.TrimLeft(line, " \t"), "#") &&
-			strings.Contains(line, "$(call "+r.Macro) {
+			head.MatchString(line) {
 			out = append(out, line)
 		}
 	}

@@ -77,6 +77,20 @@ func TestCheckStopsOnUnreadableCall(t *testing.T) {
 	}
 }
 
+func TestCallOfMacroWithSameHeadIsNotAnEntry(t *testing.T) {
+	mk := "mix-env = MIX=\"$(1)\"\n" +
+		"define video\n" +
+		"\tVIDEO_MAKE=$@ $(call video-mix-env,$(2),$(3)) run $(1)\n" +
+		"endef\n" +
+		"a:\n\t$(call video,A.frames,a,60,)\n"
+	root := repo(t, mk, rules().Render([]string{"A.frames"}))
+	var out strings.Builder
+	code, _ := Run(&out, root, true)
+	if code != 0 {
+		t.Fatalf("code=%d out=%s", code, out.String())
+	}
+}
+
 func TestGameWithoutVideosPasses(t *testing.T) {
 	root := repo(t, "a:\n\techo hi\n", "")
 	var out strings.Builder
