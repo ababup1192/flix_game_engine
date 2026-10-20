@@ -14,10 +14,16 @@
 // 入れるので減色による劣化は起きない。色数が 256 を超えたら安全側でフルカラー
 // （TYPE_INT_RGB）にフォールバックし、結果（indexed=false）で呼び側に知らせる。
 pub mod Filmstrip {
+    import java.awt.Point
     import java.awt.image.BufferedImage
+    import java.awt.image.ColorModel
+    import java.awt.image.DataBufferInt
+    import java.awt.image.DirectColorModel
     import java.awt.image.IndexColorModel
+    import java.awt.image.Raster
     import java.awt.image.WritableRaster
     import java.lang.{Object => JObject}
+    import java.util.Hashtable
     import javax.imageio.ImageIO
 
     /// 描き出しの結果（呼び側が HTML ビューアのメタデータに使う）。
@@ -61,8 +67,37 @@ pub mod Filmstrip {
             case Some(colors) =>
                 writePng(drawIndexed(img :: Nil, fw, fw, fh, colors), outPath)
             case None =>
-                writePng(drawFullColor(img :: Nil, fw, fw, fh), outPath)
+                let image = match asRgb(img) {
+                    case Some(view) => view
+                    case None       => drawFullColor(img :: Nil, fw, fw, fh)
+                };
+                writePng(image, outPath)
         }
+
+    /// TYPE_INT_ARGB の画素バッファを、写さずに RGB（アルファなし）として見る画像。
+    /// PNG には drawFullColor（TYPE_INT_RGB へ写した物）と同じバイト列が出る。
+    /// 部分画像など、画素が先頭から幅ぴったりに並んでいない物は None（写す道へ）。
+    def asRgb(img: BufferedImage): Option[BufferedImage] \ IO =
+        let buffer = img.getRaster().getDataBuffer();
+        let w = img.getWidth();
+        let h = img.getHeight();
+        if (not isPackedArgb(img)) None
+        else region rc {
+            let masks: Array[Int32, rc] = Array.empty(rc, 3i32);
+            Array.put(16711680i32, 0i32, masks);
+            Array.put(65280i32, 1i32, masks);
+            Array.put(255i32, 2i32, masks);
+            let view = Raster.createPackedRaster(buffer, w, h, w, masks, unchecked_cast(null as Point));
+            let model: ColorModel = checked_cast(new DirectColorModel(24i32, 16711680i32, 65280i32, 255i32));
+            Some(new BufferedImage(model, view, false, unchecked_cast(null as Hashtable[JObject, JObject])))
+        }
+
+    /// TYPE_INT_ARGB で、画素が int の配列の先頭から幅ぴったりに並んでいるか（部分画像でないか）。
+    def isPackedArgb(img: BufferedImage): Bool \ IO =
+        let raster = img.getRaster();
+        img.getType() == 2i32 and raster.getSampleModelTranslateX() == 0i32
+            and raster.getSampleModelTranslateY() == 0i32
+            and raster.getDataBuffer().getSize() == img.getWidth() * img.getHeight()
 
     /// PNG を書き終えてから outPath へ置き換える（途中で止まっても書きかけを残さない）。
     def writePng(image: BufferedImage, outPath: String): Unit \ IO =
@@ -125,21 +160,50 @@ pub mod Filmstrip {
             sheet
         }
 
-    /// 色（下位 24bit）→ パレット添字の索引表（MutMap）。全画素がパレット内なので既定値は使われない。
-    def buildLut(rc: Region[r], colors: List[Int32]): MutMap[Int32, Int32, r] \ r =
-        let m = MutMap.empty(rc);
-        List.forEachWithIndex((i, c) -> MutMap.put(c, i, m), colors);
-        m
+    /// 色（下位 24bit）→ パレット添字の索引表。全画素がパレット内なので引けない色は来ない。
+    def buildLut(rc: Region[r], colors: List[Int32]): ColorTable[r] \ r =
+        let table = freshColorTable(rc);
+        List.forEachWithIndex((i, c) -> putColor(table, c, i), colors);
+        table
 
     /// intbuf の各画素の色を lut で添字に写し bytebuf に詰める（tail-recursive）。
     def fillIndices(intbuf: Array[Int32, r], bytebuf: Array[Int8, r], j: Int32, len: Int32,
-                    lut: MutMap[Int32, Int32, r]): Unit \ r =
+                    lut: ColorTable[r]): Unit \ r =
         if (j >= len) ()
         else {
             let rgb = Int32.bitwiseAnd(Array.get(j, intbuf), 16777215i32);
-            Array.put(toByte(MutMap.getWithDefault(rgb, 0i32, lut)), j, bytebuf);
+            let ColorTable.ColorTable(keys, vals) = lut;
+            Array.put(toByte(Array.get(slotOf(keys, rgb), vals)), j, bytebuf);
             fillIndices(intbuf, bytebuf, j + 1i32, len, lut)
         }
+
+    // ── 色の表（色 → パレット添字）──
+
+    /// 開番地法の表（keys は色の下位 24bit・空きは -1、vals は添字）。色は 257 個までしか入れないので、
+    /// 1024 枠なら空きが必ず残り、探す列も短い。
+    // WhyNot: MutSet / MutMap を使わない — 1 画素ごとに木をたどって Int32 を箱に詰めるので、
+    // 960×600 のコマ 1 枚で十数 ms かかる（deflate の 2〜3 割に当たる）。
+    enum ColorTable[r: Region](Array[Int32, r], Array[Int32, r])
+
+    def tableSize(): Int32 = 1024
+
+    def freshColorTable(rc: Region[r]): ColorTable[r] \ r =
+        ColorTable.ColorTable(Array.repeat(rc, tableSize(), -1i32), Array.repeat(rc, tableSize(), 0i32))
+
+    /// rgb の入っている枠か、入るべき空き枠。
+    def slotOf(keys: Array[Int32, r], rgb: Int32): Int32 \ r =
+        probe(keys, rgb, Int32.logicalRightShift(dist = 22, rgb * -1640531535i32))
+
+    def probe(keys: Array[Int32, r], rgb: Int32, slot: Int32): Int32 \ r =
+        let k = Array.get(slot, keys);
+        if (k == rgb or k == -1i32) slot
+        else probe(keys, rgb, Int32.bitwiseAnd(slot + 1i32, tableSize() - 1i32))
+
+    def putColor(table: ColorTable[r], rgb: Int32, index: Int32): Unit \ r =
+        let ColorTable.ColorTable(keys, vals) = table;
+        let slot = slotOf(keys, rgb);
+        Array.put(rgb, slot, keys);
+        Array.put(index, slot, vals)
 
     /// 出現順の色（下位 24bit の RGB）から IndexColorModel（8bit・アルファなし）を組む。
     /// IndexColorModel は byte 配列を自前にコピーするので region 内の配列を渡して差し支えない。
@@ -162,18 +226,26 @@ pub mod Filmstrip {
 
     /// Pass 1: フレーム群を走査し、相異なる色（下位 24bit）を出現順に集める。
     /// 色数が 256 を超えたら None（フルカラーへフォールバックすべき合図）。
-    /// `seen`（MutSet）で既出を弾き、`palette`（逆順の Ref）に初出色を積む。フレームごとに getRGB で
-    /// 画素をまとめて読み、tail-recursive に走査する。内部リージョンに閉じ、List[Int32] だけ返す。
+    /// フレームごとに画素をまとめて読み（TYPE_INT_ARGB は画素の配列をそのまま、他は getRGB で）、tail-recursive に
+    /// 走査する。内部リージョンに閉じ、List[Int32] だけ返す。
     def collectPalette(frames: List[BufferedImage], fw: Int32, fh: Int32): Option[List[Int32]] \ IO = region rc {
-        let seen = MutSet.empty(rc);
-        let pixbuf = Array.empty(rc, fw * fh);      // フレーム 1 枚ぶんの画素バッファ（使い回す）
+        let seen = freshColorTable(rc);
+        let direct = img -> isPackedArgb(img) and img.getWidth() == fw and img.getHeight() == fh;
+        // フレーム 1 枚ぶんの画素バッファ（使い回す）。全部のフレームを直接読めるなら要らない。
+        let pixbuf = Array.empty(rc, if (List.forAll(direct, frames)) 0i32 else fw * fh);
         let paletteRef = Ref.fresh(rc, (Nil: List[Int32]));
         let countRef = Ref.fresh(rc, 0i32);
+        // WhyNot: TYPE_INT_ARGB を getRGB で写さない — 960×600 のコマで 2.3MB の配列を毎回埋めるだけで、
+        // 色の下位 24bit は画素の int そのものと同じ。
         List.forEach(img ->
-            if (Ref.get(countRef) <= maxColors()) {
+            if (Ref.get(countRef) > maxColors()) ()
+            else if (direct(img)) {
+                let pixels: Array[Int32, Static] = unchecked_cast(img.getRaster().getDataBuffer() as DataBufferInt).getData();
+                scanPixels(pixels, 0i32, fw * fh, seen, paletteRef, countRef)
+            } else {
                 discard img.getRGB(0i32, 0i32, fw, fh, pixbuf, 0i32, fw);
                 scanPixels(pixbuf, 0i32, fw * fh, seen, paletteRef, countRef)
-            } else (),
+            },
             frames);
         if (Ref.get(countRef) > maxColors()) None
         else Some(List.reverse(Ref.get(paletteRef)))
@@ -181,16 +253,18 @@ pub mod Filmstrip {
 
     /// 画素バッファ [i, len) を走査し、未出現の色を seen に記録して palette に前置する。
     /// count が上限を超えたら（この画素以降は無駄なので）打ち切る。
-    def scanPixels(pixbuf: Array[Int32, r], i: Int32, len: Int32, seen: MutSet[Int32, r],
-                   paletteRef: Ref[List[Int32], r], countRef: Ref[Int32, r]): Unit \ r =
+    def scanPixels(pixbuf: Array[Int32, p], i: Int32, len: Int32, seen: ColorTable[r],
+                   paletteRef: Ref[List[Int32], r], countRef: Ref[Int32, r]): Unit \ p + r =
         if (i >= len or Ref.get(countRef) > maxColors())
             ()
         else {
             let rgb = Int32.bitwiseAnd(Array.get(i, pixbuf), 16777215i32);
-            if (not MutSet.memberOf(rgb, seen)) {
-                MutSet.add(rgb, seen);
+            let ColorTable.ColorTable(keys, _) = seen;
+            if (Array.get(slotOf(keys, rgb), keys) != rgb) {
+                let count = Ref.get(countRef);
+                if (count < maxColors()) putColor(seen, rgb, count) else ();
                 Ref.put(rgb :: Ref.get(paletteRef), paletteRef);
-                Ref.put(Ref.get(countRef) + 1i32, countRef)
+                Ref.put(count + 1i32, countRef)
             } else ();
             scanPixels(pixbuf, i + 1i32, len, seen, paletteRef, countRef)
         }

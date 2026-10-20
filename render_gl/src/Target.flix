@@ -41,9 +41,9 @@ mod RenderTargetGl {
     pub def bind(e: Entry): Unit \ IO =
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, e#fbo)
 
-    /// 描画先を画面（既定フレームバッファ）へ戻す。
-    pub def unbind(): Unit \ IO =
-        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, 0)
+    /// 描画先を画面へ戻す。screen = 画面のフレームバッファ（窓なら既定の 0、GlOffscreen なら動画のコマの FBO）。
+    pub def unbind(screen: Int32): Unit \ IO =
+        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, screen)
 
     /// ターゲットを捨てる（寸法が変わって作り直すとき用。捨て忘れると GPU メモリが増え続ける）。
     pub def destroy(e: Entry): Unit \ IO =

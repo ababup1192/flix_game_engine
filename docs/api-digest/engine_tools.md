@@ -8,15 +8,6 @@
 ## AtomicFile — `engine_tools/src/AtomicFile.flix`
 - `pub def write(path: String, fill: File -> Unit \ IO): Unit \ IO`
 
-## ContentCache — `engine_tools/src/ContentCache.flix`
-- キャッシュの置き場。外からは fresh で作り、loadOrBuild に渡すだけ。
-  `pub type alias Cache[a] = CacheData[a]`
-- 空の置き場を作る。
-  `pub def fresh(): Cache[a] \ IO`
-- `pub def loadOrBuild(cache: Cache[a], params: String, extraFiles: List[String], build: Unit -> a \ ef): a \ (ef - Fs.FileRead) + Fs.FileRead + IO`
-- loadOrBuild に加えて、build の中の Fs.FileTest（exists 系）と Fs.DirList（一覧）も記録する。
-  `pub def loadOrBuildWithDirs(cache: Cache[a], params: String, extraFiles: List[String], build: Unit -> a \ ef): a \ (ef - Fs.FileRead - Fs.FileTest - Fs.DirList) + Fs.FileRead + Fs.FileTest + Fs.DirList + IO`
-
 ## DrawHash — `engine_tools/src/DrawHash.flix`
 - 1 コマの鍵。比べるときは `toHex` の字で比べる。
   `pub type alias Key = Digest`
@@ -31,7 +22,13 @@
 - `pub def usedTextures(frame: Frame): Set[String]`
 - 鍵を作るのに中身の指紋が要るファイル（引く絵・既定の TTF・追加の TTF）。
   `pub def filesOf(frame: Frame): List[String]`
+- 字のアトラスを畳んだバイト列の覚え。RenderCache の Session が 1 つ持つ。
+  `pub type alias AtlasCache = AtlasMemo`
+- 空の覚え（糸をまたいで使ってよい）。
+  `pub def freshAtlasCache(): AtlasCache \ IO`
 - `pub def computeKey(inputs: Inputs, encoding: PngEncoding, frame: Frame): Option[Key]`
+- computeKey と同じ鍵（ビット単位で同じ）を、アトラスを畳んだバイト列を `cache` から引いて作る。
+  `pub def computeKeyCached(cache: AtlasCache, inputs: Inputs, encoding: PngEncoding, frame: Frame): Option[Key] \ IO`
 
 ## Filmstrip — `engine_tools/src/Filmstrip.flix`
 - 描き出しの結果（呼び側が HTML ビューアのメタデータに使う）。

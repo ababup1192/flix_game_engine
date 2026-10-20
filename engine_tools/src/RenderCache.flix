@@ -39,6 +39,7 @@ pub mod RenderCache {
         runtime = String,
         fileDigests = ConcurrentHashMap[String, String],
         textures = SoftRaster.TextureCache,
+        atlases = DrawHash.AtlasCache,
         painted = AtomicLong,
         reused = AtomicLong,
         uncached = AtomicLong,
@@ -59,6 +60,7 @@ pub mod RenderCache {
             runtime = runtimeId(),
             fileDigests = new ConcurrentHashMap(),
             textures = SoftRaster.freshTextureCache(),
+            atlases = DrawHash.freshAtlasCache(),
             painted = new AtomicLong(0i64),
             reused = new AtomicLong(0i64),
             uncached = new AtomicLong(0i64),
@@ -121,7 +123,7 @@ pub mod RenderCache {
             let images = extraImages
                 |> Map.filterWithKey((name, _) -> Set.memberOf(name, used))
                 |> Map.map(imageDigest);
-            DrawHash.computeKey({ engine = s#engine, runtime = s#runtime, files = files, images = images }, encoding, frame)
+            DrawHash.computeKeyCached(s#atlases, { engine = s#engine, runtime = s#runtime, files = files, images = images }, encoding, frame)
         } catch {
             case ex: RuntimeException =>
                 warnOnce("key", "鍵を作れない（${ex.getMessage()}）— その絵は塗る");

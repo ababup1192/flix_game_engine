@@ -630,8 +630,10 @@ pub mod App.Headless {
         // WhyNot: 温めの絵を残さない — 常駐を起こした回だけ debug/shot/ のファイルが増え、verify の 1 と 2 が違って見える。
         List.forEach(deleteQuietly, shotFilesOf(App.RemoteDebug.shotBlock(app, world0)));
         let bridge = openBridge(station);
+        // 初期の World のキャッシュ（Doc を全部読み直して作る所。1 枚撮りの 9 割を占めた）。
+        let worlds = ContentCache.fresh();
         loop(station, bridge, { world = world0, state = App.freshStepState() },
-             (request, served) -> handle(app, design, request, served));
+             (request, served) -> handle(app, design, worlds, request, served));
         closeBridge(station, bridge)
 
     /// 橋を開いて ready の行を出し、常駐なら resident.json を書く。
@@ -685,7 +687,7 @@ pub mod App.Headless {
     type alias Served[w] = { world = w, state = App.StepState }
 
     /// 頼み 1 件への答え・次に持つ物・終わるか。
-    def handle(app: App.App[w, ef], design: Vec2.Vec2, request: App.RemoteDebug.Request,
+    def handle(app: App.App[w, ef], design: Vec2.Vec2, worlds: ContentCache.Cache[w], request: App.RemoteDebug.Request,
                served: Served[w]): (String, Served[w], Bool) \ ef + Fs.FileRead + IO =
         let view = Map.getWithDefault("view", "status", request#params);
         let block = world -> if (view == "shot") App.RemoteDebug.shotBlock(app, world)
@@ -699,7 +701,7 @@ pub mod App.Headless {
                 case None => ("error: POST /start needs name= (see GET /starts)\n", served, false)
                 case Some(name) =>
                     let args = request#params |> Map.remove("name") |> Map.remove("view");
-                    match App.buildStart(app, design, name, args) {
+                    match buildCached(app, design, worlds, name, args) {
                         case Err(why)  => ("error: ${why}\n", served, false)
                         case Ok(world) => ("ok start=${name}\n" + block(world),
                                            { world = world, state = App.freshStepState() }, false)
@@ -708,19 +710,48 @@ pub mod App.Headless {
             case ("POST", "/step") =>
                 match Flow.Parse.parseText(Flow.vocabOf(app, served#world), "body", request#body) {
                     case Err(problems) => ("error: " + Flow.Parse.problemsText(problems) + "\n", served, false)
-                    case Ok(script) =>
+                    case Ok(script0) =>
                         let limit = Map.get("max", request#params) |> Option.flatMap(Int32.fromString)
                                         |> Option.getWithDefault(App.RemoteDebug.flowFrameCap());
-                        match Flow.play(app, { design = design, limit = limit }, script, { world = served#world, state = served#state }) {
+                        match startFirst(app, design, worlds, script0, served) {
+                          case Err(why) => ("FAIL ${why}\n", served, false)
+                          case Ok((script, begin)) =>
+                            match Flow.play(app, { design = design, limit = limit }, script, begin) {
                             case Ok(outcome) =>
                                 ("ok stepped=${Int32.toString(List.length(outcome#frames))}\n" + block(outcome#last),
                                  { world = outcome#last, state = outcome#state }, false)
                             case Err(failure) =>
                                 ("FAIL ${App.RemoteDebug.failureLine(failure)}\n    ${failure#at#text}\n" + block(failure#upTo#last),
                                  { world = failure#upTo#last, state = failure#upTo#state }, false)
+                            }
                         }
                 }
             case (m, p) => ("error: no route for ${m} ${p} (see GET /help)\n", served, false)
+        }
+
+    /// 始まりを組む。初期の World（freshWorld = Doc を全部読み直して作る）は、作った時に読んだファイルの中身が
+    /// 今も同じなら前の物を使う（ContentCache。Doc を保存した直後の 1 枚には、その保存が効く）。
+    def buildCached(app: App.App[w, ef], design: Vec2.Vec2, worlds: ContentCache.Cache[w],
+                    name: String, args: Map[String, String]): Result[String, w] \ ef + Fs.FileRead + IO =
+        let fresh = ContentCache.loadOrBuild(worlds, "${Float64.toString(design#x)}x${Float64.toString(design#y)}", Nil,
+                                             () -> App.freshWorld(app, design));
+        App.buildStartOn(app, fresh, name, args)
+
+    /// 本文の 1 行目が `start 名前 …`（記録の中身を運ばない形）なら、ここでキャッシュした初期の World から組み、
+    /// 残りの行を流す。それ以外は今の World から全部の行を流す。
+    // WhyNot: Flow.play の中の start には任せない —— Flow は IO を持たない純粋な道なので、キャッシュを渡せない。
+    def startFirst(app: App.App[w, ef], design: Vec2.Vec2, worlds: ContentCache.Cache[w], script: Flow.Script,
+                   served: Served[w]): Result[String, (Flow.Script, { world = w, state = App.StepState })] \ ef + Fs.FileRead + IO =
+        let current = { world = served#world, state = served#state };
+        match script#lines {
+            case first :: rest => match first#step {
+                case Flow.Step.Start(name, args, files) if Map.isEmpty(files) =>
+                    buildCached(app, design, worlds, name, args)
+                        |> Result.map(world -> ({ lines = rest | script }, { world = world, state = App.freshStepState() }))
+                        |> Result.mapErr(why -> "${first#file}:${Int32.toString(first#number)}: ${why}\n    ${first#text}")
+                case _ => Ok((script, current))
+            }
+            case Nil => Ok((script, current))
         }
 
     def statusOf(app: App.App[w, ef], world: w): String \ ef =
