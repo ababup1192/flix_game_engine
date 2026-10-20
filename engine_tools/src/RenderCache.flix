@@ -286,8 +286,11 @@ pub mod RenderCache {
         HexFormat.of().formatHex(md.digest())
     }
 
-    /// ゲームの lib/ にあるエンジンの fpkg（flix.toml が指す版）の SHA-256。JVM の中で 1 回だけ取る。
-    /// 見つからない・JVM が起きた後に差し替わった時は空（鍵を作らない = いつも塗る）。
+    /// エンジンの fpkg（flix.toml が指す版）の SHA-256。JVM の中で 1 回だけ取る。packages.lock の記録があればそれを、
+    /// 無ければゲームの lib/ にある fpkg の中身から取る。見つからない・JVM が起きた後に差し替わった時は空（鍵を作らない = いつも塗る）。
+    // WhyNot: lib/ の fpkg を先に見ない — 作り手や同じ機械の作業場から jar を取ってきた新しい作業場（bin/fge jar）には lib/ が無く、
+    // fpkg を読めずに鍵を作らないまま塗っていた。lock の fpkg の記録は fpkg の中身の SHA-256 と同じ字で、flix は組む時に
+    // lock と lib の fpkg が同じことを確かめるので、lib のある作業場と同じ鍵になる。
     // WhyNot: エンジンの版の字（0.49.0）を使わない — use-engine でブランチの作業場へ向けると、
     // 版の字は同じまま SoftRaster が変わる。組んだ物そのものの指紋を使う。
     // WhyNot: 呼ぶたびに読み直さない — 起動したままの JVM（make run・窓なしの常駐）の裏で fpkg を
@@ -308,20 +311,60 @@ pub mod RenderCache {
         else try {
             match engineVersionOf(Files.readString(toml.toPath())) {
                 case None          => ""
-                case Some(version) =>
-                    let fpkg = new File("lib/github/ababup1192/flix_game_engine/${version}/flix_game_engine-${version}.fpkg");
-                    let started = ManagementFactory.getRuntimeMXBean().getStartTime();
-                    if (not fpkg.isFile()) {
-                        warnOnce("fpkg", "${fpkg.getPath()} が無い — 鍵を作らず塗る");
-                        ""
-                    } else if (fpkg.lastModified() > started) {
-                        warnOnce("fpkg", "${fpkg.getPath()} が JVM の起動より新しい（動いているコードと違う）— 鍵を作らず塗る");
-                        ""
-                    } else sha256(Files.readAllBytes(fpkg.toPath()))
+                case Some(version) => match lockedDigest(version) {
+                    case Some(digest) => digest
+                    case None         => fpkgDigest(version)
+                }
             }
         } catch {
             case ex: IOException => warnOnce("fpkg", "エンジンの fpkg を読めない（${ex.getMessage()}）— 鍵を作らず塗る"); ""
         }
+
+    /// packages.lock に記録されたエンジンの fpkg の SHA-256。lock が無い・記録が無い・読めない時は None（lib/ の fpkg から取る）。
+    /// lock が JVM の起動より後に書き換わっていたら Some("")（鍵を作らない。lib/ の fpkg へも回らない）。
+    def lockedDigest(version: String): Option[String] \ IO =
+        let lock = new File("packages.lock");
+        let started = ManagementFactory.getRuntimeMXBean().getStartTime();
+        if (not lock.isFile()) None
+        else if (lock.lastModified() > started) {
+            warnOnce("lock", "packages.lock が JVM の起動より新しい（動いているコードと違う）— 鍵を作らず塗る");
+            Some("")
+        }
+        else try { lockedEngineDigestOf(version, Files.readString(lock.toPath())) } catch {
+            case _: IOException => None
+        }
+
+    /// lib/ にあるエンジンの fpkg の中身の SHA-256（packages.lock の無いゲーム・engine の雛形）。
+    def fpkgDigest(version: String): String \ IO =
+        try {
+            let fpkg = new File("lib/github/ababup1192/flix_game_engine/${version}/flix_game_engine-${version}.fpkg");
+            let started = ManagementFactory.getRuntimeMXBean().getStartTime();
+            if (not fpkg.isFile()) {
+                warnOnce("fpkg", "${fpkg.getPath()} が無い — 鍵を作らず塗る");
+                ""
+            } else if (fpkg.lastModified() > started) {
+                warnOnce("fpkg", "${fpkg.getPath()} が JVM の起動より新しい（動いているコードと違う）— 鍵を作らず塗る");
+                ""
+            } else sha256(Files.readAllBytes(fpkg.toPath()))
+        } catch {
+            case ex: IOException => warnOnce("fpkg", "エンジンの fpkg を読めない（${ex.getMessage()}）— 鍵を作らず塗る"); ""
+        }
+
+    /// packages.lock の字から、エンジンの版の fpkg の SHA-256（`fpkg = "sha256:…"`）を取り出す（純粋）。無ければ None。
+    pub def lockedEngineDigestOf(version: String, lock: String): Option[String] =
+        let header = "[packages.\"github:ababup1192/flix_game_engine\".\"${version}\"]";
+        String.lines(lock)
+            |> List.dropWhile(line -> String.trim(line) != header)
+            |> List.drop(1)
+            |> List.takeWhile(line -> not String.startsWith(prefix = "[", String.trim(line)))
+            |> List.findMap(line -> {
+                let t = String.trim(line);
+                if (String.startsWith(prefix = "fpkg", t))
+                    String.splitOn(substr = "\"", t) |> List.drop(1) |> List.head
+                        |> Option.flatMap(v -> String.stripPrefix(substr = "sha256:", v))
+                        |> Option.filter(v -> not String.isEmpty(v))
+                else None
+            })
 
     /// flix.toml の依存の行 `"github:ababup1192/flix_game_engine" = { version = "x.y.z", … }` の版。
     def engineVersionOf(toml: String): Option[String] =

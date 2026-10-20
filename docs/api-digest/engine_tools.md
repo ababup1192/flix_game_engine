@@ -163,6 +163,8 @@
   `pub def writePlainPngAntialias(req: SoftRaster.RasterReq, surfaces: List[SoftRaster.SurfaceCmd], extraFonts: Map[String, SoftRaster.FontEntry], fontAntialias: SoftRaster.FontAntialias, extraImages: Map[String, BufferedImage]): Unit \ IO`
 - 1 コマの鍵（writeFramePng がキャッシュに使うのと同じ物）。鍵を作れなければ None。
   `pub def keyOf(session: Session, encoding: DrawHash.PngEncoding, frame: DrawHash.Frame, extraImages: Map[String, BufferedImage], textures: SoftRaster.TextureCache): Option[DrawHash.Key] \ IO`
+- packages.lock の字から、エンジンの版の fpkg の SHA-256（`fpkg = "sha256:…"`）を取り出す（純粋）。無ければ None。
+  `pub def lockedEngineDigestOf(version: String, lock: String): Option[String]`
 
 ## RenderLint — `engine_tools/src/RenderLint.flix`
 - 要素の描画種別（リンタ内の分類。ゲームの widget 名とは独立）。
