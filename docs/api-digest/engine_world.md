@@ -493,6 +493,10 @@
   `pub def handleRemote(app: App.App[w, ef], bridge: Bridge, raw: String, ctx: RemoteNext[w]): RemoteNext[w] \ (ef + GameEngine.Game + Fs.FileRead + IO)`
 - GET /starts の本文: 始まりの登録簿（App.withStarts）の名前・既定の引数・説明を 1 行ずつ。
   `pub def startsText(app: App.App[w, ef]): String`
+- 停止に入る見た目（ウィンドウタイトルのバッジと十字カーソル）。F8 と /halt の両方がここを通る。
+  `pub def enterHaltMarkers(): Unit \ GameEngine.Game`
+- 停止を抜ける見た目（バッジを外して通常カーソルへ）。見せるか隠すかはここで戻さない —
+  `pub def exitHaltMarkers(): Unit \ GameEngine.Game`
 - view=shot の本文: [shot] と、撮れたら `ok png=<パス>`（/render と同じ形）・撮れなければ `error: 理由`。
   `pub def shotBlock(app: App.App[w, ef], world: w): String \ IO`
 - /step 1 回ぶんの実行結果。

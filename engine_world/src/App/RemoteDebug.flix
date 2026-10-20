@@ -764,13 +764,18 @@ pub mod App.RemoteDebug {
         respond(text, bridge);
         next
 
-    /// 停止に入る見た目（ウィンドウタイトルのバッジと十字カーソル）。F8 と同じ絵柄。
-    def enterHaltMarkers(): Unit \ GameEngine.Game =
+    /// 停止に入る見た目（ウィンドウタイトルのバッジと十字カーソル）。F8 と /halt の両方がここを通る。
+    /// 十字は見せる — withCursor で矢印を隠しているゲームでも、止めた画面では矩形を囲うのに要る。
+    /// ゲームからは呼ばない（App の F8 と /halt が呼ぶ。テストのために公開）。
+    pub def enterHaltMarkers(): Unit \ GameEngine.Game =
         GameEngine.Game.setDebugBadge(true);
-        GameEngine.Game.setCursor(GameEngine.Cursor.Crosshair)
+        GameEngine.Game.setCursor(GameEngine.Cursor.Crosshair);
+        GameEngine.Game.setCursorVisible(true)
 
-    /// 停止を抜ける見た目（バッジを外して通常カーソルへ）。
-    def exitHaltMarkers(): Unit \ GameEngine.Game =
+    /// 停止を抜ける見た目（バッジを外して通常カーソルへ）。見せるか隠すかはここで戻さない —
+    /// 動き出した拍に App が withCursor の宣言を当て直す（宣言の無いゲームは見せたままが元の姿）。
+    /// ゲームからは呼ばない（App の F8 と /resume が呼ぶ。テストのために公開）。
+    pub def exitHaltMarkers(): Unit \ GameEngine.Game =
         GameEngine.Game.setDebugBadge(false);
         GameEngine.Game.setCursor(GameEngine.Cursor.Default)
 

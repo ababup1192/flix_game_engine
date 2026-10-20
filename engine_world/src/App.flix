@@ -1166,10 +1166,8 @@ pub mod App {
                     // デバッグモードの出入りをウィンドウタイトルとカーソル形状で示す
                     // （停止中は正確に囲うための十字カーソル）
                     if (decided#toggled) {
-                        let pausedNow = decided#branch == Branch.Paused;
-                        GameEngine.Game.setDebugBadge(pausedNow);
-                        GameEngine.Game.setCursor(
-                            if (pausedNow) GameEngine.Cursor.Crosshair else GameEngine.Cursor.Default)
+                        if (decided#branch == Branch.Paused) RemoteDebug.enterHaltMarkers()
+                        else RemoteDebug.exitHaltMarkers()
                     } else ();
                     match decided#branch {
                         case Branch.Paused =>
