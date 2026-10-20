@@ -86,7 +86,8 @@ How と What をコメントに書かない。実装の由来・旧実装・移�
   record は 3 秒）。`Option[ReplayTrack.Track]` のように一覧や Option の中にある物も
   重さは同じで、欄の数だけ見ていると見落とす。`bin/fge record-wrap` が展開した大きさ 16 以上の
   欄をコミット時に止める（閾値は `bin/lint-rules/record-wrap.json`）
-- **形**: 中身は `Rec`、公開の型は 1 case の enum、読むのは `rec`
+- **形**: 中身は `Rec`、公開の型は 1 case の enum、読むのは `rec`（エンジンの `App.App` も同じ形 — 37 欄の宣言を
+  `App.Rec` に入れて包み、ゲームの main の flix check の user 時間が約 1 割縮んだ。欄はビルダーで組み、ゲームからは読まない）
 
   ```flix
   mod PuzzleDoc {

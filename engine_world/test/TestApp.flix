@@ -299,13 +299,13 @@ mod TestApp {
     @Test
     def testMakeWithBuildsInitFromViewport(): Unit \ Assert =
         let app = App.makeWith(design -> design#x / 2.0);
-        let init = app#init;
+        let init = App.rec(app)#init;
         Assert.assertEq(expected = 160.0, init(testViewport()))
 
     // make(値) は design サイズに依らず同じ初期 World を返す（既存ゲームの入口は不変）。
     @Test
     def testMakeIgnoresViewport(): Unit \ Assert =
-        let init = App.make(42)#init;
+        let init = App.rec(App.make(42))#init;
         Assert.assertEq(expected = 42, init(testViewport()))
 
     // ========================================================================
@@ -316,7 +316,7 @@ mod TestApp {
     @Test
     def testQuitDefaultFiresOnEscapeEdge(): Unit \ Assert =
         let frame = App.frameOf(prev = Set#{}, current = Set#{GameEngine.Key.Escape}, 0.016, testViewport(), noCursor(), noMouse());
-        let wantsQuit = App.make(0)#quit;
+        let wantsQuit = App.rec(App.make(0))#quit;
         Assert.assertEq(expected = true, wantsQuit(frame, 0))
 
     // 押しっぱなしの Escape では終了しない（起動時に押されていたキーの誤発火を防ぐ）。
@@ -324,14 +324,14 @@ mod TestApp {
     def testQuitDefaultIgnoresHeldEscape(): Unit \ Assert =
         let frame = App.frameOf(
             prev = Set#{GameEngine.Key.Escape}, current = Set#{GameEngine.Key.Escape}, 0.016, testViewport(), noCursor(), noMouse());
-        let wantsQuit = App.make(0)#quit;
+        let wantsQuit = App.rec(App.make(0))#quit;
         Assert.assertEq(expected = false, wantsQuit(frame, 0))
 
     // quitWhen は判定を丸ごと差し替える（World も見られる）。
     @Test
     def testQuitWhenReplacesJudge(): Unit \ Assert =
         let app = App.make(9) |> App.quitWhen((_frame, n) -> n == 9);
-        let wantsQuit = app#quit;
+        let wantsQuit = App.rec(app)#quit;
         Assert.assertEq(expected = true, wantsQuit(emptyFrame(), 9))
 
     // ========================================================================

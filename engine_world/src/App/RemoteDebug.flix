@@ -708,7 +708,7 @@ pub mod App.RemoteDebug {
             case ("POST", "/start")  => remoteStart(app, bridge, request, ctx)
             case ("POST", "/flow")   => remoteFlow(app, bridge, request, ctx)
             case (m, p)              =>
-                match findRoute(p, app#remoteHandlers) {
+                match findRoute(p, App.rec(app)#remoteHandlers) {
                     case Some(chosen) => remoteCustom(chosen, bridge, request, ctx)
                     case None => answer("error: no route for ${m} ${p} (see GET /help)\n", bridge, ctx)
                 }
@@ -732,8 +732,8 @@ pub mod App.RemoteDebug {
 
     /// GET /starts の本文: 始まりの登録簿（App.withStarts）の名前・既定の引数・説明を 1 行ずつ。
     pub def startsText(app: App.App[w, ef]): String =
-        if (List.isEmpty(app#starts)) "(no starts wired; use App.withStarts)\n"
-        else app#starts |> List.map(start -> {
+        if (List.isEmpty(App.rec(app)#starts)) "(no starts wired; use App.withStarts)\n"
+        else App.rec(app)#starts |> List.map(start -> {
             let args = start#args |> Map.toList |> List.map(entry -> { let (k, v) = entry; " ${k}=${v}" }) |> String.intercalate("");
             "${start#name}${args}\t${start#doc}\n"
         }) |> String.intercalate("")
@@ -844,7 +844,7 @@ pub mod App.RemoteDebug {
             case View.Summary => "[status]\n" + statusText(app, world) + "\n"
             case View.Full    =>
                 let rect = Option.getWithDefault(GameEngine.Game.getViewportRect(), stepParams#rect);
-                match app#worldDump {
+                match App.rec(app)#worldDump {
                     case Some(dump) => "[full]\n" + capBody(dump(rect, world)) + "\n"
                     case None       => "[full]\n(no worldDump wired; try view=scene)\n"
                 }
@@ -856,7 +856,7 @@ pub mod App.RemoteDebug {
     /// view=shot の本文: [shot] と、撮れたら `ok png=<パス>`（/render と同じ形）・撮れなければ `error: 理由`。
     /// 描き出しは Java2D なので、AWT が窓を起こさないよう先に headless を明示する（/render と同じ理由）。
     pub def shotBlock(app: App.App[w, ef], world: w): String \ IO =
-        "[shot]\n" + match app#shot {
+        "[shot]\n" + match App.rec(app)#shot {
             case None => "error: shot not supported (game does not wire App.onShotRequest)\n"
             case Some(f) =>
                 discard System.setProperty("java.awt.headless", "true");
@@ -867,7 +867,7 @@ pub mod App.RemoteDebug {
 
     /// view=status の本文。ゲームが withStatusLine を繋いでいなければその旨を返す。
     def statusText(app: App.App[w, ef], world: w): String \ ef =
-        match app#statusLine {
+        match App.rec(app)#statusLine {
             case Some(toLine) => toLine(world)
             case None         => "(no statusLine wired; use view=scene or wire App.withStatusLine)"
         }
@@ -875,7 +875,7 @@ pub mod App.RemoteDebug {
     /// view=scene の本文。view（PlacedItem 投影）か debugView（生チャンネル投影）から、
     /// 矩形に重なる描画物を列挙する。どちらも無いゲームは観測手段が無い旨を返す。
     def sceneText(app: App.App[w, ef], rect: Rect2.Rect2, world: w): String \ (ef + GameEngine.Game) =
-        match (app#view, app#debugView) {
+        match (App.rec(app)#view, App.rec(app)#debugView) {
             case (Some(toItems), _) =>
                 let atlas = GameEngine.Game.getFontAtlas("default");
                 // 画面座標の矩形と突き合わせるので、カメラ適用後（=画面に出ている）items を使う
@@ -915,7 +915,7 @@ pub mod App.RemoteDebug {
         let final = played |> List.foldLeft((fold, entry) -> {
             if (fold#stopped != "") fold
             else {
-                let wantsQuit = app#quit;
+                let wantsQuit = App.rec(app)#quit;
                 if (wantsQuit(entry#step#frame, fold#world)) { stopped = "quit", quit = true | fold }
                 else {
                     let frameNo = start#frame + Int32.toInt64(fold#done) + 1i64;
@@ -993,7 +993,7 @@ pub mod App.RemoteDebug {
                                  + "[places]\n" + placesText(outcome) + "\n"
                                  + "[status]\n" + statusText(app, outcome#last) + "\n";
                         // 記録には、先頭の始まり（書いていなければ登録簿の先頭）から流したフレームを足す。
-                        let leading = match (List.head(script#lines) |> Option.map(line -> line#step), List.head(app#starts)) {
+                        let leading = match (List.head(script#lines) |> Option.map(line -> line#step), List.head(App.rec(app)#starts)) {
                             case (Some(Flow.Step.Start(_, _, _)), _) => Nil
                             case (_, Some(first)) => Flow.Record.Item.Started(Flow.Record.startLine(first#name, Map.empty(), startFiles)) :: Nil
                             case _ => Flow.Record.Item.Line("# /flow?apply（始まりの登録簿が無いので、再生はここから食い違う）") :: Nil
@@ -1027,7 +1027,7 @@ pub mod App.RemoteDebug {
         });
         let at = List.zip(starts, startLines) |> List.map(match ((count, _), text) -> (count, text));
         let linesAt = i -> at |> List.filter(entry -> fst(entry) == i) |> List.map(entry -> Flow.Record.Item.Started(snd(entry)));
-        let fp = world -> app#fingerprint |> Option.map(f -> f(world));
+        let fp = world -> App.rec(app)#fingerprint |> Option.map(f -> f(world));
         let body = played |> List.zipWithIndex |> List.flatMap(match (i, entry) ->
             List.append(linesAt(i), Flow.Record.Item.Played(entry#step#frame, fp(entry#step#after)) :: Nil));
         List.append(body, linesAt(List.length(played)))

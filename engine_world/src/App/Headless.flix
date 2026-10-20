@@ -622,7 +622,7 @@ pub mod App.Headless {
     def listenOn(app: App.App[w, ef], design: Vec2.Vec2, station: Station): Unit \ ef + Fs.FileRead + IO =
         // 待ち受け始めの World は登録簿の先頭の始まり（無ければ新しく作った初期の World）。
         let fresh = App.freshWorld(app, design);
-        let world0 = match List.head(app#starts) {
+        let world0 = match List.head(App.rec(app)#starts) {
             case Some(first) => App.buildStart(app, design, first#name, Map.empty()) |> Result.getWithDefault(fresh)
             case None        => fresh
         };
@@ -755,7 +755,7 @@ pub mod App.Headless {
         }
 
     def statusOf(app: App.App[w, ef], world: w): String \ ef =
-        match app#statusLine {
+        match App.rec(app)#statusLine {
             case Some(line) => line(world)
             case None       => "(no statusLine wired)"
         }

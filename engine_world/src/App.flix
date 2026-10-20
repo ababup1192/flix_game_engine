@@ -9,6 +9,13 @@
 pub mod App {
     import java.lang.System
 
+    /// ゲーム 1 本の宣言（中身は Rec）。record のままにしないのは、37 欄の record の型が App を受ける
+    /// 全部の def とゲームのビルダーの列で展開され、型検査が重くなるため（docs/flix-conventions.md）。
+    pub enum App[w: Type, ef: Eff](Rec[w, ef])
+
+    /// App の中身。ゲームからは読まない（ビルダーで組む）。エンジンの中の口（Flow・RemoteDebug など）が読む。
+    pub def rec(app: App[w, ef]): Rec[w, ef] = match app { case App.App(r) => r }
+
     // ── システムが受け取る 1 フレームぶんの外界 ──
 
     /// このフレームの入力と時計のスナップショット。キーの生読みはランナーが済ませてあるので、
@@ -109,7 +116,7 @@ pub mod App {
     /// withAudio / quitWhen で部品を繋ぎ、launch へ渡す。w はゲームが持ち込む World の型、
     /// ef はシステム・絵・音・終了判定が帯びる効果（外の世界に触れる処理）の行
     /// （純粋なゲームは ef = {}）。各フィールドの意味は右の // コメントを参照。
-    pub type alias App[w: Type, ef: Eff] = {
+    pub type alias Rec[w: Type, ef: Eff] = {
         init = Vec2.Vec2 -> w \ ef,                                // design 解像度 → 出発点の World（launch が画面サイズを渡して呼ぶ）
         startupSystems = List[w -> w \ ef],                        // 起動時に 1 回だけ・追加順
         updateSystems = List[(Frame, w) -> w \ ef],                // 毎フレーム・追加順
@@ -221,7 +228,7 @@ pub mod App {
     pub def makeWith(f: Vec2.Vec2 -> w \ ef): App[w, ef] =
         // 既定の hook は純粋だが、フィールド型は効果多相 ef。Pure は任意の ef に安全に広げられるので
         // 本体を checked_ecast で ef へ widen して型を合わせる（呼び出し側が ef を絞る）。
-        { init = f,
+        App.App({ init = f,
           startupSystems = Nil,
           updateSystems = Nil,
           reload = None,
@@ -257,20 +264,20 @@ pub mod App {
           outputs = Nil,
           starts = Nil,
           flow = Flow.emptyTable(),
-          fingerprint = None }
+          fingerprint = None })
 
     /// 起動時に 1 回だけ走るシステムを末尾へ繋ぐ（追加順に適用される）。
     pub def addStartup(sys: w -> w \ ef, app: App[w, ef]): App[w, ef] =
-        { startupSystems = List.append(app#startupSystems, sys :: Nil) | app }
+        App.App({ startupSystems = List.append(rec(app)#startupSystems, sys :: Nil) | rec(app) })
 
     /// 毎フレーム走るシステムを末尾へ繋ぐ（追加順に適用される）。
     pub def addSystem(sys: (Frame, w) -> w \ ef, app: App[w, ef]): App[w, ef] =
-        { updateSystems = List.append(app#updateSystems, sys :: Nil) | app }
+        App.App({ updateSystems = List.append(rec(app)#updateSystems, sys :: Nil) | rec(app) })
 
     /// key が押された瞬間に World を作り直すホットリロードを繋ぐ（ファイル読みの副作用つき）。
     /// 遊びながら設定ファイルを編集し、キー一発で効きを変える用途に。
     pub def reloadOn(key: GameEngine.Key, f: w -> w \ {Fs.FileRead}, app: App[w, ef]): App[w, ef] =
-        { reload = Some((key, f)) | app }
+        App.App({ reload = Some((key, f)) | rec(app) })
 
     /// path の保存（更新時刻の変化）を検知して World を作り直すホットリロードを繋ぐ。
     /// reloadOn と同型の関数を渡せるので、F1 と保存検知に同じ関数を繋げる。
@@ -278,13 +285,13 @@ pub mod App {
     /// （今の World をそのまま返す fail-open を推奨）。
     /// 同じパスを複数回登録すると、保存のたびに登録順で全部発火する。
     pub def watchFile(path: String, f: w -> w \ {Fs.FileRead}, app: App[w, ef]): App[w, ef] =
-        { watch = List.append(app#watch, (path, f) :: Nil) | app }
+        App.App({ watch = List.append(rec(app)#watch, (path, f) :: Nil) | rec(app) })
 
     /// World を絵（(置き場所, 見せたい物) の列）へ投影する関数を繋ぐ。
     /// 第 1 引数の ViewCtx から既定フォント（atlas）と見えている world 矩形（visible）が取れる。
     pub def withView(v: (ViewCtx, w) -> List[Render.PlacedItem] \ ef,
                      app: App[w, ef]): App[w, ef] =
-        { view = Some(v) | app }
+        App.App({ view = Some(v) | rec(app) })
 
     /// 本編より先にレンダーターゲット（描いた結果を読み返せる描き込み先）へ描く列を
     /// World から導く関数を繋ぐ。1 枚は Render.Pass（名前・クリア指定・絵の列）で、
@@ -293,14 +300,14 @@ pub mod App {
     /// 複数光源の光マップ・画面を素材にする演出・残像（clear = RenderTarget.LoadOp.Keep で
     /// 前フレームを残す）に使う。
     pub def withPasses(f: w -> List[Render.Pass] \ ef, app: App[w, ef]): App[w, ef] =
-        { passes = f | app }
+        App.App({ passes = f | rec(app) })
 
     /// 既定フォント以外に使うフォントの名前を宣言する（project.json の fonts[].name と同じ字）。
     /// ここで宣言した名前だけが view の ViewCtx#fontOf で引ける（宣言していない名前は既定
     /// フォントが返る）。話し手ごとに字を変えるようなゲームで使う。
     /// project.json に無い名前を宣言すると起動時に落ちる — 綴りは fonts[] と揃えること。
     pub def withFonts(names: List[String], app: App[w, ef]): App[w, ef] =
-        { fonts = List.append(app#fonts, names) | app }
+        App.App({ fonts = List.append(rec(app)#fonts, names) | rec(app) })
 
     /// ゲーム 1 本の標準形を 1 つのレコードで宣言する入口（初学者向け）。
     /// update は「1 本の合成関数」で渡す決まり: 複数の手続きをゲーム側で
@@ -333,7 +340,7 @@ pub mod App {
     /// 起動時に 1 度だけ決めると、Doc を保存したときに絵だけ吸着が変わってカメラが取り残され、
     /// かえって絵がずれる。
     pub def withPixelSnap(f: w -> Float64, app: App[w, ef]): App[w, ef] =
-        { pixelSnap = f | app }
+        App.App({ pixelSnap = f | rec(app) })
 
     /// ドット絵のアトラス（PxSpriteAtlas.bake の生成結果）を、名前付きテクスチャとして
     /// 使えるようにする。これを繋いだうえで PxSprite.drawQuad を使うと、1 体が画素ごとの
@@ -342,7 +349,7 @@ pub mod App {
     /// 同じ key の間は何も起きないので、毎フレーム呼ばれる前提でよい。
     /// 生成する仕事（bake）は World 側で 1 度だけ済ませ、ここには生成結果を渡すこと。
     pub def withSpriteAtlases(f: w -> List[AtlasUpload], app: App[w, ef]): App[w, ef] =
-        { spriteAtlases = f | app }
+        App.App({ spriteAtlases = f | rec(app) })
 
     /// 生成したアトラスを描画部へ渡しておく（同じ key の間は何も起きない）。
     /// 同じ名前が 2 つ来たら後の方だけを使う — 両方渡すと毎フレーム key が入れ替わり、
@@ -367,7 +374,7 @@ pub mod App {
     pub def withStaticLayer(key: w -> GameEngine.StaticKey,
                             build: w -> List[Render.PlacedItem],
                             app: App[w, ef]): App[w, ef] =
-        { staticLayer = Some({ key = key, build = build }) | app }
+        App.App({ staticLayer = Some({ key = key, build = build }) | rec(app) })
 
     /// タイルの層（床・壁 1 行目など、格子に敷く静的な絵）を宣言する。エンジンが Spec ごとに
     /// 1 度だけ GPU に生成し、以後は毎フレーム 1 draw call で敷く（数百〜千マスでも軽い）。
@@ -386,13 +393,13 @@ pub mod App {
     /// 載せるので、GPU と CPU で重なりの解釈は一致する。タイルのコマ替えアニメは持てない —
     /// 水面・旗のように動く絵は動的側かシェーダー面で描く。view = None のゲームでは効かない。
     pub def withTileLayers(f: w -> List[TileLayerSpec], app: App[w, ef]): App[w, ef] =
-        { tileLayers = Some(f) | app }
+        App.App({ tileLayers = Some(f) | rec(app) })
 
     /// World から「画面中央に映したい world 座標」を導く関数を繋ぐ。view は world 座標のまま
     /// 書けばよく、画面へのずらしは App が引き受ける（F8 の凍結画面やリモートの注釈にも同じ
     /// カメラが効く）。追従やシェイクはゲーム側システムで World に持たせ、ここでは読むだけにする。
     pub def withCamera(f: w -> Vec2.Vec2 \ ef, app: App[w, ef]): App[w, ef] =
-        { camera = Some(f) | app }
+        App.App({ camera = Some(f) | rec(app) })
 
     /// World から寄り引き倍率（大きいほど寄る）を導く関数を繋ぐ。絵のずらしと大きさの
     /// 伸縮は App が引き受ける。ズームの補間（なめらかな寄り引き）はゲーム側システムで
@@ -401,14 +408,14 @@ pub mod App {
     /// 範囲外の倍率（0 以下・NaN・Infinity）は CameraRig.safeZoom が minZoom〜maxZoom へ
     /// 丸めるので画面は壊れない。
     pub def withZoom(f: w -> Float64 \ ef, app: App[w, ef]): App[w, ef] =
-        { zoom = Some(f) | app }
+        App.App({ zoom = Some(f) | rec(app) })
 
     /// camera が映してよい world の矩形（レベルの端）を導く関数を繋ぐ。見えている範囲
     /// （design/zoom）がこの矩形の外に出ないよう center を収める — 端の外の虚空が映らない。
     /// zoom と併用しても正しく効く（引くほど収まる位置が内側になる）。矩形が視界より
     /// 狭い軸は矩形の中央に固定する。withCamera（または withZoom）と併用して効く。
     pub def withCameraBounds(f: w -> Rect2.Rect2 \ ef, app: App[w, ef]): App[w, ef] =
-        { cameraBounds = Some(f) | app }
+        App.App({ cameraBounds = Some(f) | rec(app) })
 
     /// 視差レイヤを末尾へ繋ぐ（addSystem と同じ「列に足す」様式）。view と同じ
     /// (ViewCtx, w) -> 絵 の関数だが、camera の動きに factor を掛けた速さで流れる:
@@ -416,7 +423,7 @@ pub mod App {
     /// そのレイヤの見かけの camera で計算されるので、culling もそのまま書ける。
     pub def addParallaxLayer(factor: Float64, v: (ViewCtx, w) -> List[Render.PlacedItem] \ ef,
                              app: App[w, ef]): App[w, ef] =
-        { parallaxLayers = List.append(app#parallaxLayers, (factor, v) :: Nil) | app }
+        App.App({ parallaxLayers = List.append(rec(app)#parallaxLayers, (factor, v) :: Nil) | rec(app) })
 
     /// カメラを掛けない絵（スコア等の HUD）を繋ぐ。ここに繋いだ絵は常に view の絵より
     /// 手前（HUD の範囲 = ZBand.hudBase 以上へ持ち上がる）。zIndex が決めるのは HUD の中の
@@ -424,12 +431,12 @@ pub mod App {
     /// ViewCtx の visible は常に画面全体（position = 原点, size = design）。
     pub def withHudView(v: (ViewCtx, w) -> List[Render.PlacedItem] \ ef,
                         app: App[w, ef]): App[w, ef] =
-        { hudView = Some(v) | app }
+        App.App({ hudView = Some(v) | rec(app) })
 
     /// 1 フレームの前後の World（{before, after}）から鳴らす音名を導く関数を繋ぐ
     /// （再生は App が引き受ける）。同じ名前が同じフレームに 2 回入っても 1 回だけ鳴る。
     pub def withAudio(sfx: { before = w, after = w } -> List[String] \ ef, app: App[w, ef]): App[w, ef] =
-        { audio = sfx | app }
+        App.App({ audio = sfx | rec(app) })
 
     /// 鳴り続けてほしい音 1 本の宣言。name は project.json の sounds の論理名、
     /// volume は音量 0.0〜1.0、pitch は高さ（1.0 = 元のまま・2.0 で 1 オクターブ上）。
@@ -441,7 +448,7 @@ pub mod App {
     /// 走っている間だけ続く足音のように「止め時をゲームが知っている音」をこれ 1 本で書ける。
     /// 単発の効果音（当たった・取った）は withAudio の方を使う。
     pub def withSustained(f: w -> List[Sustain] \ ef, app: App[w, ef]): App[w, ef] =
-        { sustained = f | app }
+        App.App({ sustained = f | rec(app) })
 
     /// 音の通り道（AudioMixer.Mixer）を World から導く関数を繋ぐ。繋ぐと、withAudio の音と
     /// withSustained の音が名前ごとのバスを通る —— バスの音量・ローパス・ダッキング・連打の間引きが
@@ -450,7 +457,7 @@ pub mod App {
     /// 繋いだゲームでは一発の音の音量もミキサーが毎回決める（AudioStreamPlayer.setVolume で
     /// 一発の音の音量を変える書き方とは混ぜない）。
     pub def withMixer(f: w -> AudioMixer.Mixer \ ef, app: App[w, ef]): App[w, ef] =
-        { mixer = Some(f) | app }
+        App.App({ mixer = Some(f) | rec(app) })
 
     /// 前のフレームの宣言（名前の列）と今のフレームの宣言から、鳴らし始める音・
     /// 鳴らし続ける音・止める音を仕分ける。同じ名前が 2 回宣言されたら先勝ちで 1 本にまとめる
@@ -474,7 +481,7 @@ pub mod App {
     /// 終了判定を差し替える。既定は「Escape のエッジで終了」だが、モーダル表示中は
     /// Escape をパネル閉じに使いたい、といったゲームはここで自分の条件を宣言する。
     pub def quitWhen(f: (Frame, w) -> Bool \ ef, app: App[w, ef]): App[w, ef] =
-        { quit = f | app }
+        App.App({ quit = f | rec(app) })
 
     /// 窓の閉じるボタン（OS の閉じる要求・GLFW の window close）をすぐの終了にせず、World へ知らせる。
     /// 閉じる要求が来たフレームで f(world) を呼び、窓は開いたまま（要求は取り消す）。ゲームはそこで
@@ -487,13 +494,13 @@ pub mod App {
     /// quitWhen を差し替えると既定の「Escape で終了」は外れる（Esc も確認へ回すならゲームの入力で拾う）。
     /// 確認の窓が開いている間にもう一度閉じるボタンを押すと、f がもう一度呼ばれる。
     pub def withCloseRequest(f: w -> w \ ef, app: App[w, ef]): App[w, ef] =
-        { closeRequest = Some(f) | app }
+        App.App({ closeRequest = Some(f) | rec(app) })
 
     /// デバッグ機能（F8 の時間停止・矩形注釈・時間スクラブ）の有効 / 無効を宣言する。
     /// 既定は無効。プレイヤーに配るビルドで時間巻き戻しや内部情報の書き出しが
     /// 使えてしまわないよう、開発時だけ true を渡す（debugFromEnv と組み合わせる）。
     pub def withDebug(enabled: Bool, app: App[w, ef]): App[w, ef] =
-        { debug = enabled | app }
+        App.App({ debug = enabled | rec(app) })
 
     /// 環境変数 DEBUG が空でない値で設定されていれば true（例: `DEBUG=true flix run`）。
     /// Main から `App.withDebug(App.debugFromEnv())` の形で使う。
@@ -509,7 +516,7 @@ pub mod App {
     pub def withDebugView(font: {font = String},
                           f: w -> (List[GameEngine.Drawable], List[GameEngine.TileMapRenderCmd], List[GameEngine.PolygonRenderCmd]) \ ef,
                           app: App[w, ef]): App[w, ef] =
-        { debugView = Some((font#font, f)) | app }
+        App.App({ debugView = Some((font#font, f)) | rec(app) })
 
     /// 注釈（F8 の矩形）を書き出すとき「囲った瞬間の World」をテキストにしてチケットへ
     /// world.json として同梱する関数を繋ぐ。絵の情報（annotation.json）とシムの中身を
@@ -517,7 +524,7 @@ pub mod App {
     /// f が受け取る矩形はデザイン座標。何をどこまで書くかはゲームが決める
     /// （全フィールドでなく、調査に効く要約でよい）。
     pub def withWorldDump(f: (Rect2.Rect2, w) -> String \ ef, app: App[w, ef]): App[w, ef] =
-        { worldDump = Some(f) | app }
+        App.App({ worldDump = Some(f) | rec(app) })
 
     /// 注釈（F8 の矩形）を書き出すとき、README の冒頭と annotation.json の "context" に載せる
     /// 「その瞬間の文脈」を繋ぐ。f は表示中の瞬間の World から、場面・台本の id と行・話す人と表情・
@@ -525,13 +532,13 @@ pub mod App {
     /// チケットのコメントから「どの Doc のどこを直すか」をスクショと突き合わせずに引けるようにする。
     pub def withAnnotationContext(f: w -> Annotate.Context[t, h] \ ef, app: App[w, ef]): App[w, ef]
         with SortingLayer[t], ToString[t], SortingLayer[h], ToString[h] =
-        { annotationContext = Some(w -> Annotate.toTable(f(w))) | app }
+        App.App({ annotationContext = Some(w -> Annotate.toTable(f(w))) | rec(app) })
 
     /// World の 1 行サマリ（例: "phase=Playing ball=(163.2,207.9) lives=3"）を繋ぐ。
     /// リモートデバッグ（HTTP）の view=status の本文と、/step の trace の行になる。
     /// 調査に効く値だけを短く。長い一覧は withWorldDump（view=full）側に任せる。
     pub def withStatusLine(f: w -> String \ ef, app: App[w, ef]): App[w, ef] =
-        { statusLine = Some(f) | app }
+        App.App({ statusLine = Some(f) | rec(app) })
 
     /// リモートデバッグ（HTTP）の POST /render が実行する「描き出しの実体」を繋ぐ。
     /// f は Docs から決定的な場面を組み立てて PNG に描き出し、そのファイルパスの列を返す
@@ -541,7 +548,7 @@ pub mod App {
     /// だから f の中で GL・音・ゲームと共有する可変の値に触れてはいけない。
     /// 繋がないゲームへの /render は「未対応」の応答になる。
     pub def onRenderRequest(f: Unit -> List[String] \ IO, app: App[w, ef]): App[w, ef] =
-        { remoteRender = Some(f) | app }
+        App.App({ remoteRender = Some(f) | rec(app) })
 
     /// 渡した World を 1 枚の PNG に描き、書いたパスを返す関数を繋ぐ（中身は SceneRender の 1 場面と同じ描き方）。
     /// リモートデバッグの `view=shot`（`POST /step?view=shot` に `start talk node=… line=…` を送ると、
@@ -549,7 +556,7 @@ pub mod App {
     /// f はゲームループの中で呼ばれる（撮っている間、窓は止まる）。World を変えない・GL に触れない関数に限る。
     /// 書き先はゲームが決める（例 debug/shot/<名前>.png。gallery/ に書くと reference-check が「増えた絵」と言う）。
     pub def onShotRequest(f: w -> String \ IO, app: App[w, ef]): App[w, ef] =
-        { shot = Some(f) | app }
+        App.App({ shot = Some(f) | rec(app) })
 
     /// リモートデバッグ（HTTP）の任意パス（例: "/save"）に応えるハンドラを繋ぐ。
     /// f はクエリ（?slot=1 → Map。+ と %20 は空白に戻る）と今の World を受け取り、
@@ -562,7 +569,7 @@ pub mod App {
     /// /help など既定ルートと同じパスは登録しても選ばれない（既定ルートが先に照合される）。
     pub def onRequest(path: String, f: (Map[String, String], w) -> Result[String, w] \ {Fs.FileRead},
                       app: App[w, ef]): App[w, ef] =
-        { remoteHandlers = List.append(app#remoteHandlers, (path, f) :: Nil) | app }
+        App.App({ remoteHandlers = List.append(rec(app)#remoteHandlers, (path, f) :: Nil) | rec(app) })
 
     /// 物理・当たり判定を固定刻み（dtSeconds 秒）で進める accumulator 方式を有効にする。
     /// 実フレームの経過秒を貯め、刻みの倍数だけ updateSystems を 0〜5 回サブステップで回し、
@@ -580,7 +587,7 @@ pub mod App {
     /// （出来事の欄を刻みごとに置き換えると、刻みが 0 回のフレームで前の音がもう一度鳴る）。
     /// 呼ばなければ現行の可変 dt のまま挙動は変わらない。
     pub def withFixedStep(dtSeconds: Float64, app: App[w, ef]): App[w, ef] =
-        { fixedStep = Some(dtSeconds) | app }
+        App.App({ fixedStep = Some(dtSeconds) | rec(app) })
 
     /// World の欄にある遊びの時計（Clock.Clock[c]）を、App が毎フレーム 1 回だけ進めるよう宣言する。
     /// clockOf / withClock は欄の読み書き、paceOf はこのフレームの進み方（止める理由 Run と
@@ -595,7 +602,7 @@ pub mod App {
                              paceOf = w -> Clock.Pace[c, r] },
                      app: App[w, ef]): App[w, ef] =
         let tick = (dt, world) -> spec#withClock(Clock.advance(spec#paceOf(world), dt, spec#clockOf(world)), world);
-        { clocks = List.append(app#clocks, tick :: Nil) | app }
+        App.App({ clocks = List.append(rec(app)#clocks, tick :: Nil) | rec(app) })
 
     // ── 外への出力（系は IO を持たず、App が実機のフレームの後でだけ触る）──
 
@@ -630,7 +637,7 @@ pub mod App {
     /// F8 で止めている間は十字に上書きする（再開した拍に宣言を当て直す）。系の中で setCursor を呼ばない ——
     /// 呼ぶと /step・台本・F8 の再開で矢印の形が World とずれる。
     pub def withCursor(f: w -> CursorSpec, app: App[w, ef]): App[w, ef] =
-        { cursor = Some(f) | app }
+        App.App({ cursor = Some(f) | rec(app) })
 
     /// 跳んだ拍（起動・START・/start・/step・/flow?apply・F8 の巻き戻しからの再開）に、出力をどう扱うか。
     pub enum OnJump with Eq, ToString {
@@ -648,7 +655,7 @@ pub mod App {
     /// 系の中で書くと、台本を流すだけ・/step を叩くだけでセーブが書かれる。
     /// 書けなかった時の扱いは write が持つ（docs/error-handling.md の決まり 3: 1 行言って続ける）。
     pub def addOutput(output: Output[w], app: App[w, ef]): App[w, ef] =
-        { outputs = List.append(app#outputs, output :: Nil) | app }
+        App.App({ outputs = List.append(rec(app)#outputs, output :: Nil) | rec(app) })
 
     /// Doc の一覧表（DocTable）から、保存即反映の監視（watchFile）・F1 の一括読み直し（reloadOn）・
     /// Studio へ「表示中」を名乗る出力（debug/active-docs.json。跳んだ先も名乗る）を 1 度に配線する。
@@ -673,27 +680,27 @@ pub mod App {
     /// 始まりの登録簿を繋ぐ。繋いだゲームは起動もここを通る（環境変数 START が無ければ先頭の始まり）。
     /// 場面を組む手順を動画・テスト・flow ごとに手で書くと、同じ場面のはずの物が少しずつずれる。
     pub def withStarts(starts: List[Start[w]], app: App[w, ef]): App[w, ef] =
-        { starts = starts | app }
+        App.App({ starts = starts | rec(app) })
 
     /// 新しく作った初期の World: init（design 解像度から）+ 起動時の系 + Doc を全部読み直した物
     /// （F1 の reloadOn の関数 = DocTable.reloadAll、無ければ監視の関数を登録順に）。
     /// 読み直すのは、main が起動の時に読んだ Doc ではなく今のファイルで場面を組むため（/start・記録の再生）。
     pub def freshWorld(app: App[w, ef], design: Vec2.Vec2): w \ ef + Fs.FileRead =
-        let init = app#init;
-        let started = List.foldLeft((acc, sys) -> sys(acc), init(design), app#startupSystems);
-        match app#reload {
+        let init = rec(app)#init;
+        let started = List.foldLeft((acc, sys) -> sys(acc), init(design), rec(app)#startupSystems);
+        match rec(app)#reload {
             case Some((_, reloadAll)) => reloadAll(started)
-            case None => List.foldLeft((acc, entry) -> { let (_, f) = entry; f(acc) }, started, app#watch)
+            case None => List.foldLeft((acc, entry) -> { let (_, f) = entry; f(acc) }, started, rec(app)#watch)
         }
 
     /// 登録簿の名前の列（登録順）。
     pub def startNames(app: App[w, ef]): List[String] =
-        app#starts |> List.map(start -> start#name)
+        rec(app)#starts |> List.map(start -> start#name)
 
     /// 名前の始まりを、新しく作った初期の World から組む。args は既定の引数を上書きし、値が `@パス` の
     /// 引数はそのファイルの中身にする（無いファイルの引数は外す）。知らない名前・組めない引数は理由つきの Err。
     pub def buildStart(app: App[w, ef], design: Vec2.Vec2, name: String, args: Map[String, String]): Result[String, w] \ ef + Fs.FileRead =
-        match app#starts |> List.find(start -> start#name == name) {
+        match rec(app)#starts |> List.find(start -> start#name == name) {
             case None => Err("始まり '${name}' は登録簿に無い${Suggest.hint(name, startNames(app))}")
             case Some(start) => buildStartFrom(start, freshWorld(app, design), name, args)
         }
@@ -701,7 +708,7 @@ pub mod App {
     /// buildStart の、初期の World を渡す形（窓なしのゲームが Doc の読み直しを取り置いた World から組む）。
     /// fresh は freshWorld(app, design) と同じ物であること。
     pub def buildStartOn(app: App[w, ef], fresh: w, name: String, args: Map[String, String]): Result[String, w] \ Fs.FileRead =
-        match app#starts |> List.find(start -> start#name == name) {
+        match rec(app)#starts |> List.find(start -> start#name == name) {
             case None        => Err("始まり '${name}' は登録簿に無い${Suggest.hint(name, startNames(app))}")
             case Some(start) => buildStartFrom(start, fresh, name, args)
         }
@@ -756,21 +763,21 @@ pub mod App {
 
     /// flow の語彙の表を繋ぐ（使い方の全文は engine_world/src/Flow.flix 冒頭）。
     pub def withFlow(table: Flow.Table[w], app: App[w, ef]): App[w, ef] =
-        { flow = table | app }
+        App.App({ flow = table | rec(app) })
 
     /// World の指紋の元の文字を選ぶ関数を繋ぐ。遊んだ記録が 60 フレームごとに `expect fp=…` を書き、
     /// 再生が最初に食い違ったフレームを指す。入れる欄はゲームが選ぶ —— 進行に効く欄（場面・時計・
     /// 盤・カーソル・種）だけを短く並べ、Doc の中身や絵のアトラスは入れない（長い文字を毎フレーム作ると遅い）。
     pub def withFingerprint(f: w -> String, app: App[w, ef]): App[w, ef] =
-        { fingerprint = Some(f) | app }
+        App.App({ fingerprint = Some(f) | rec(app) })
 
     /// 起動の World: 登録簿が無ければ init + 起動時の系（今までどおり）、あれば START（無ければ先頭の始まり）。
     /// 返すのは起動の World と、通った始まり（名前と書いた引数。登録簿が無ければ None）。
     def bootWorld(app: App[w, ef], design: Vec2.Vec2, env: Map[String, String]): Result[String, (w, Option[(String, Map[String, String])])] \ ef + Fs.FileRead =
-        match List.head(app#starts) {
+        match List.head(rec(app)#starts) {
             case None =>
-                let init = app#init;
-                Ok((List.foldLeft((acc, sys) -> sys(acc), init(design), app#startupSystems), None))
+                let init = rec(app)#init;
+                Ok((List.foldLeft((acc, sys) -> sys(acc), init(design), rec(app)#startupSystems), None))
             case Some(first) =>
                 let line = Map.getWithDefault("START", "", env);
                 let wanted = if (String.isEmpty(String.trim(line))) Ok((first#name, Map.empty()))
@@ -783,7 +790,7 @@ pub mod App {
 
     /// 指紋の元の文字（withFingerprint を繋いだゲームだけ）。
     def fingerprintText(app: App[w, ef], world: w): Option[String] =
-        app#fingerprint |> Option.map(f -> f(world))
+        rec(app)#fingerprint |> Option.map(f -> f(world))
 
     /// 記録に跳んだ拍の行（rewind・close）を書き、その後の World の指紋を覚え直す。
     def recordJump(app: App[w, ef], recorder: Option[Flow.Record.Recorder], text: Option[String], world: w): Unit \ IO =
@@ -811,7 +818,7 @@ pub mod App {
     /// ゲームのコードからは呼ばない（2 回進めると 1 回目の区間の音が消える。lint-forbid の clock-advance）。
     /// テストで系を直に呼ぶときだけ、実機と同じ順（tickClocks → 系）を組むのに使う。
     pub def tickClocks(app: App[w, ef], dt: Float64, world: w): w =
-        List.foldLeft((acc, tick) -> tick(dt, acc), world, app#clocks)
+        List.foldLeft((acc, tick) -> tick(dt, acc), world, rec(app)#clocks)
 
     // ── 純粋な芯（テストはここを直接叩く）──
 
@@ -912,8 +919,8 @@ pub mod App {
         let real = Clock.advance(Clock.paceOf(Clock.Run.Running), frame#dt, state#real);
         let stamped = { realNow = Clock.nowOf(real) | frame };
         let ticked = tickClocks(app, frame#dt, world);
-        match app#fixedStep {
-            case None => (applySystems(stamped, app#updateSystems, ticked), { real = real | state })
+        match rec(app)#fixedStep {
+            case None => (applySystems(stamped, rec(app)#updateSystems, ticked), { real = real | state })
             case Some(fixedDt) =>
                 let (steps, nextCarry) = fixedSteps(state#carry, frame#dt, fixedDt);
                 let merged = mergeEdges(state#pending, stamped);
@@ -924,7 +931,7 @@ pub mod App {
                     let laterFrame = suppressEdges(firstFrame);
                     let advanced = List.range(0, steps) |> List.foldLeft((acc, i) -> {
                         let subFrame = if (i == 0) firstFrame else laterFrame;
-                        applySystems(subFrame, app#updateSystems, acc)
+                        applySystems(subFrame, rec(app)#updateSystems, acc)
                     }, ticked);
                     (advanced, { carry = nextCarry, pending = noPending(), real = real })
                 }
@@ -947,8 +954,8 @@ pub mod App {
 
     /// trace の 1 フレーム分。次のフレームの入力を World から組む道具（PropertyTest）はこれを回す。
     pub def traceFrame(app: App[w, ef], frame: Frame, state: StepState, world: w): (TraceStep[w], StepState) \ ef =
-        let derive = app#audio;
-        let declare = app#sustained;
+        let derive = rec(app)#audio;
+        let declare = rec(app)#sustained;
         let (after, nextState) = advanceFrame(app, frame, state, world);
         let sounds = List.distinct(derive({ before = world, after = after }));
         ({ frame = { realNow = Clock.nowOf(nextState#real) | frame }, before = world, after = after, sounds = sounds, sustained = declare(after) }, nextState)
@@ -1016,7 +1023,7 @@ pub mod App {
         // 下ごしらえの間、画面には読み込み中の起動画面が出たまま残る（描き直さないので止まって見えるが、
         // 出し直す入口をここに作ると、間引きも中止スイッチも持たない 2 つ目の経路が生まれる）。
         let env = ProcessEnv.snapshot();
-        let recorder = if (app#debug) Flow.Record.pathOf(env) |> Option.flatMap(Flow.Record.open) else None;
+        let recorder = if (rec(app)#debug) Flow.Record.pathOf(env) |> Option.flatMap(Flow.Record.open) else None;
         let design = GameEngine.Game.getViewportRect()#size;
         // 記録するなら、起動の World が読んだファイルの中身も拾って start の行に載せる（再生が同じ Doc で始まる）。
         let (booted, files) = match recorder {
@@ -1040,13 +1047,13 @@ pub mod App {
 
     /// 起動の World が決まった後の launch（リモートデバッグ・監視・ループ）。
     def launchFrom(app: App[w, ef], world0: w, recorder: Option[Flow.Record.Recorder], env: Map[String, String]): Unit \ (ef + GameEngine.Game + GameEngine.Audio + ShaderEffect.Shader + RenderTarget.Target + Fs.FileRead + Fs.FileWrite + IO) =
-        let bridge = if (canDebug(app)) Option.map(port -> RemoteDebug.start(port, app#remoteRender),
+        let bridge = if (canDebug(app)) Option.map(port -> RemoteDebug.start(port, rec(app)#remoteRender),
                                                    RemoteDebug.portToOpenOf(env))
                      else None;
         // 起動時点の更新時刻を「発火なしで」用意しておく — 用意しないと最初のポーリングが
         // 全パスを新規出現と見なし、init 直後にもう一度リロードが走ってしまう。
-        let watch0 = if (app#debug and not List.isEmpty(app#watch))
-                         { sincePoll = 0.0, mtimes = statMtimes(List.map(fst, app#watch)) }
+        let watch0 = if (rec(app)#debug and not List.isEmpty(rec(app)#watch))
+                         { sincePoll = 0.0, mtimes = statMtimes(List.map(fst, rec(app)#watch)) }
                      else freshWatchState();
         // キーと同じく、起動時にすでに押されているボタンは一度離すまでエッジにならない。
         // カーソルの「前の位置」はまだ無い（None）ので、最初のフレームの mouseMoved は false。
@@ -1155,13 +1162,13 @@ pub mod App {
                             { prevCursor = st0#prevCursor, cursor = cursorNow },
                             { prevDown = st0#prevMouseDown, down = mouseDown,
                               wheel = GameEngine.Game.consumeScrollDelta() }) };
-        let wantsQuit = app#quit;
+        let wantsQuit = rec(app)#quit;
         // shouldClose は入力の取り込み（poll）も兼ねるので 1 フレームに 1 回だけ呼ぶ。
         let closing = GameEngine.Game.shouldClose();
         // F8 で止めている間は印を下ろさずに持ち越す（止めている間の World は再開で履歴から
         // 取り直されるので、ここで渡すと知らせが消える）。動き出した最初のフレームで渡す。
         let st = if (closing and not st0#anno#paused) noticeCloseRequest(app, st0) else st0;
-        if ((closing and Option.isEmpty(app#closeRequest)) or wantsQuit(frame, st#world)) ()
+        if ((closing and Option.isEmpty(rec(app)#closeRequest)) or wantsQuit(frame, st#world)) ()
         else {
             // 入力の持ち越しはどの分岐でも同じなので、ここで 1 度だけ差し替える。
             let carried = { prevKeys = currentKeys, prevMouseDown = mouseDown,
@@ -1224,7 +1231,7 @@ pub mod App {
                             let (nextSustaining, nextMix, nextUses) = applyAudio(app, frame#dt, traced,
                                                                        st#sustaining, st#mixState, st#soundUses, st#warnOnce);
                             // fps は debug 有効時だけ計測する（本番ビルドは履歴を積まず無負荷）。
-                            let measuredAnno = if (app#debug) Annotate.recordDt(frame#dt, st#anno) else st#anno;
+                            let measuredAnno = if (rec(app)#debug) Annotate.recordDt(frame#dt, st#anno) else st#anno;
                             // Doc の読み直しが起きたフレームはタイル層の世代を進め、同じ key でも作り直す。
                             let (cache1, seen1, warned1) = renderFrame(app, st#warnOnce, advanced, fpsOverlayOf(app, measuredAnno),
                                                               bumpTileGen(watchFired or reloadFired, st#tileCache),
@@ -1251,7 +1258,7 @@ pub mod App {
     /// （次の実機のフレームで鍵が違えば書く）。written が短い所（起動の拍）は "" = まだ何も書いていない。
     /// ゲームからは呼ばない（launch が起動・リモート・F8 の再開の拍に呼ぶ。テストのために公開）。
     pub def keysAfterJump(app: App[w, ef], world: w, written: List[String]): List[String] =
-        app#outputs |> List.zipWithIndex |> List.map(entry -> {
+        rec(app)#outputs |> List.zipWithIndex |> List.map(entry -> {
             let (index, output) = entry;
             match output#onJump {
                 case OnJump.Skip  => (output#keyOf)(world)
@@ -1262,7 +1269,7 @@ pub mod App {
     /// 実機のフレームの後の World で書くべき出力の番号（outputs の順）: 鍵が最後に書いた鍵と違う物。
     /// ゲームからは呼ばない（launch が呼ぶ。テストのために公開）。
     pub def dueOutputs(app: App[w, ef], world: w, written: List[String]): List[Int32] =
-        app#outputs |> List.zipWithIndex |> List.filterMap(entry -> {
+        rec(app)#outputs |> List.zipWithIndex |> List.filterMap(entry -> {
             let (index, output) = entry;
             if (Some((output#keyOf)(world)) == List.nth(index, written)) None else Some(index)
         })
@@ -1270,7 +1277,7 @@ pub mod App {
     /// 実機のフレームの後: dueOutputs の出力だけ write を呼び、新しい鍵の列を返す。
     def writeOutputs(app: App[w, ef], world: w, written: List[String]): List[String] \ Fs.FileWrite =
         let due = dueOutputs(app, world, written);
-        app#outputs |> List.zipWithIndex |> List.map(entry -> {
+        rec(app)#outputs |> List.zipWithIndex |> List.map(entry -> {
             let (index, output) = entry;
             if (List.memberOf(index, due)) (output#write)(world) else ();
             (output#keyOf)(world)
@@ -1278,7 +1285,7 @@ pub mod App {
 
     /// withCursor の宣言を当てる（前に当てた物と同じなら何もしない）。返すのは当てた後の状態。
     def applyCursor(app: App[w, ef], world: w, state: CursorState): CursorState \ GameEngine.Game =
-        match app#cursor {
+        match rec(app)#cursor {
             case None    => state
             case Some(f) =>
                 let want = f(world);
@@ -1332,7 +1339,7 @@ pub mod App {
 
     /// デバッグ機能が使える構成か（debug 有効 かつ 凍結画面を描く手段 = view か debugView がある）。
     def canDebug(app: App[w, ef]): Bool =
-        app#debug and (Option.nonEmpty(app#view) or Option.nonEmpty(app#debugView))
+        rec(app)#debug and (Option.nonEmpty(rec(app)#view) or Option.nonEmpty(rec(app)#debugView))
 
     /// 一時停止中に扱う 1 フレームぶんの描画チャンネル（エンジンへそのまま渡せる形）。
     type alias DebugChannels = {
@@ -1369,18 +1376,18 @@ pub mod App {
         let shownFrame = next#frame - Int32.toInt64(next#scrub);
         // 矩形が確定した瞬間だけ、表示中の World をゲームのダンプ関数でテキスト化する
         // （world.json としてチケットに同梱。繋がれていなければ空 = 同梱しない）
-        let dumpText = match (emitted, app#worldDump) {
+        let dumpText = match (emitted, rec(app)#worldDump) {
             case (Some(rect), Some(f)) => f(rect, displayed)
             case _                     => ""
         };
-        let context = match (emitted, app#annotationContext) {
+        let context = match (emitted, rec(app)#annotationContext) {
             case (Some(_), Some(f)) => f(displayed)
             case _                  => Annotate.noContext()
         };
         let dump = { text = dumpText, context = context };
-        match app#view {
+        match rec(app)#view {
             case Some(toItems) =>
-                uploadAtlases((app#spriteAtlases)(world));
+                uploadAtlases((rec(app)#spriteAtlases)(world));
                 let atlas = GameEngine.Game.getFontAtlas("default");
                 // displayed（スクラブで表示中の瞬間）から絵もカメラも導く — 注釈の hits も同じ items を使う。
                 // F8 停止中は静的レイヤーも通常の動的アイテムにまとめて描く（F8 のズーム/パンは
@@ -1399,7 +1406,7 @@ pub mod App {
                                historyLen = historyLen, shownFrame = shownFrame },
                              next, emitted, dump,
                              { drawables = sprites, tileMaps = Nil, polygons = polygons }, hitList)
-            case None => match app#debugView {
+            case None => match rec(app)#debugView {
                 case Some((fontName, toChannels)) =>
                     let atlas = GameEngine.Game.getFontAtlas(fontName);
                     let (drawables, tileMaps, polygons) = toChannels(displayed);
@@ -1487,7 +1494,7 @@ pub mod App {
     /// reloadOn で繋いだキーが押された瞬間だけ、リロード関数で World を作り直す。
     /// 第 2 要素は「このフレームで読み直しが起きたか」（タイル層の世代を進める合図）。
     def applyReload(app: App[w, ef], frame: Frame, world: w, recorder: Option[Flow.Record.Recorder]): (w, Bool) \ {Fs.FileRead, IO} =
-        match app#reload {
+        match rec(app)#reload {
             case Some((key, f)) => if (justPressed(key, frame)) (recordedReload(recorder, "key", () -> f(world)), true) else (world, false)
             case None           => (world, false)
         }
@@ -1532,16 +1539,16 @@ pub mod App {
     /// 第 3 要素は「このフレームでどれかの Doc が読み直されたか」（タイル層の世代を進める合図）。
     def applyWatch(app: App[w, ef], dt: Float64, state: WatchState, world: w,
                    recorder: Option[Flow.Record.Recorder]): (w, WatchState, Bool) \ {Fs.FileRead, IO} =
-        if (not app#debug or List.isEmpty(app#watch))
+        if (not rec(app)#debug or List.isEmpty(rec(app)#watch))
             (world, state, false)
         else {
             let waited = state#sincePoll + dt;
             if (waited < watchPollInterval())
                 (world, { sincePoll = waited | state }, false)
             else {
-                let current = statMtimes(List.map(fst, app#watch));
-                let changed = changedPaths(List.map(fst, app#watch), state#mtimes, current);
-                let next = app#watch |> List.foldLeft((acc, entry) -> {
+                let current = statMtimes(List.map(fst, rec(app)#watch));
+                let changed = changedPaths(List.map(fst, rec(app)#watch), state#mtimes, current);
+                let next = rec(app)#watch |> List.foldLeft((acc, entry) -> {
                     let (path, f) = entry;
                     if (List.memberOf(path, changed)) {
                         System.err.println("watch reload: ${path}");
@@ -1554,7 +1561,7 @@ pub mod App {
 
     /// 閉じる要求を World へ渡し、窓の閉じる印を下ろす（withCloseRequest が無ければそのまま）。
     def noticeCloseRequest(app: App[w, ef], st: LoopState[w]): LoopState[w] \ (ef + GameEngine.Game + IO) =
-        match app#closeRequest {
+        match rec(app)#closeRequest {
             case None    => st
             case Some(f) =>
                 GameEngine.Game.setShouldClose(false);
@@ -1573,7 +1580,7 @@ pub mod App {
         let declared = traced#sustained;
         let after = traced#after;
         let (nextUses, clashes) = noteSoundUses(plays, declared |> List.map(s -> s#name), uses);
-        let (living, nextMix) = match app#mixer {
+        let (living, nextMix) = match rec(app)#mixer {
             case None          => (playPlain(List.distinct(plays), declared, prev), mixState)
             case Some(mixerOf) => applyMixed(mixerOf(after), dt, plays, declared, prev, mixState)
         };
@@ -1681,22 +1688,22 @@ pub mod App {
     /// （zoomedCenter）→ cameraBounds クランプ。主 view と静的レイヤーがこの同じ値から
     /// 派生するので、動的な絵と静的な絵の視点が必ず一致する（1px もずれない）。
     def resolvedCamera(app: App[w, ef], world: w, design: Vec2.Vec2): (Option[Vec2.Vec2], Float64) \ ef =
-        let z = match app#zoom {
+        let z = match rec(app)#zoom {
             case None    => 1.0
             case Some(f) => f(world)
         };
-        let center0 = match app#camera {
+        let center0 = match rec(app)#camera {
             case Some(f) => Some(f(world))
             case None    => None
         };
-        let center = match (zoomedCenter(center0, z, design), app#cameraBounds) {
+        let center = match (zoomedCenter(center0, z, design), rec(app)#cameraBounds) {
             case (Some(c), Some(fb)) =>
                 let seen = Vec2.div(design, CameraRig.safeZoom(z));
                 Some(CameraRig.clampCenter(bounds = fb(world), seen = seen, c))
             case (c, _) => c
         };
         // 画素の升目に吸着させる（静的な絵と動く絵が同じ値を見るので、両者はずれない）。
-        let snap = (app#pixelSnap)(world);
+        let snap = (rec(app)#pixelSnap)(world);
         // 画面の画素に載せたいので、zoom を掛けた後の値で丸める（world 座標で丸めるだけでは
         // zoom が整数でないときに半画素ずれが残る）。
         let unit = snap * CameraRig.safeZoom(z);
@@ -1709,7 +1716,7 @@ pub mod App {
     /// view は純粋（ef）なので、その場で getFontAtlas を呼べない — ここで先に解いておく。
     /// 宣言していない名前は既定フォントへ落とす（字が消えるより既定で出るほうがよい）。
     def fontResolver(app: App[w, ef], dflt: FontAtlas): (String -> FontAtlas) \ GameEngine.Game =
-        let table = app#fonts |> List.foldLeft((acc, n) ->
+        let table = rec(app)#fonts |> List.foldLeft((acc, n) ->
             Map.insert(n, GameEngine.Game.getFontAtlas(n), acc),
             (Map.empty(): Map[String, FontAtlas]));
         name -> Map.get(name, table) |> Option.getWithDefault(dflt)
@@ -1720,13 +1727,13 @@ pub mod App {
         let design = GameEngine.Game.getViewportRect()#size;
         let fontOf = fontResolver(app, atlas);
         let (center, z) = resolvedCamera(app, world, design);
-        let hud = match app#hudView {
+        let hud = match rec(app)#hudView {
             case None    => Nil
             // HUD は画面固定なので、見えている矩形は常に design 全体（原点起点）で zoom も掛けない。
             case Some(h) => h({ atlas = atlas, fontOf = fontOf, visible = visibleOf(None, 1.0, design), warnOnce = warnOnce }, world)
         };
         // 視差レイヤ: 見かけの center（parallaxCenter）で culling も合成も行う。hud は混ぜない。
-        let layers = app#parallaxLayers |> List.flatMap(fl -> {
+        let layers = rec(app)#parallaxLayers |> List.flatMap(fl -> {
             let (factor, lview) = fl;
             let lcenter = Option.map(c -> CameraRig.parallaxCenter(factor, c, design = design), center);
             let lctx = { atlas = atlas, fontOf = fontOf, visible = visibleOf(lcenter, z, design), warnOnce = warnOnce };
@@ -1741,7 +1748,7 @@ pub mod App {
     /// 字はゲームのフォントではなく組み込みフォントで出す — ゲームごとにフォント名が違い、
     /// 特定の名前を当てにすると名前が違うゲームで fps 表示が出せなくなる。
     def fpsOverlayOf(app: App[w, ef], anno: Annotate.State): List[Render.PlacedItem] \ GameEngine.Game =
-        if (not app#debug or Option.isEmpty(app#view)) Nil
+        if (not rec(app)#debug or Option.isEmpty(rec(app)#view)) Nil
         else {
             let atlas = GameEngine.Game.getFontAtlas(BootFont.name());
             let design = GameEngine.Game.getViewportRect()#size;
@@ -1753,7 +1760,7 @@ pub mod App {
     /// build（ワールド座標）に主 view と同じ camera（resolvedCamera → composeScene）を掛けて、
     /// 動的な絵と重なり順・位置を揃える。静的レイヤーが無ければ空。
     def staticPausedItems(app: App[w, ef], design: Vec2.Vec2, world: w): List[Render.PlacedItem] \ ef =
-        match app#staticLayer {
+        match rec(app)#staticLayer {
             case None    => Nil
             case Some(sl) =>
                 let (center, z) = resolvedCamera(app, world, design);
@@ -1766,7 +1773,7 @@ pub mod App {
     /// 静的な絵と動的な絵の視点は 1px もずれない。カメラ無しなら恒等（world 座標そのまま）。
     /// polys は build（純粋）だけを包むので、キャッシュヒット時に呼ばれても副作用は無い。
     def staticLayerCmd(app: App[w, ef], world: w): Option[GameEngine.StaticLayerCmd] \ (ef + GameEngine.Game) =
-        match app#staticLayer {
+        match rec(app)#staticLayer {
             case None    => None
             case Some(sl) =>
                 let design = GameEngine.Game.getViewportRect()#size;
@@ -1831,7 +1838,7 @@ pub mod App {
     /// 位置と倍率は動的な絵と同じ camera 値（resolvedCamera）から出すので視点はずれない。
     def tileLayerCmds(app: App[w, ef], world: w, cache: TileCache):
             (List[GameEngine.TileMapRenderCmd], TileCache) \ (ef + GameEngine.Game) =
-        match app#tileLayers {
+        match rec(app)#tileLayers {
             case None    => (Nil, cache)
             case Some(f) =>
                 let design = GameEngine.Game.getViewportRect()#size;
@@ -1875,7 +1882,7 @@ pub mod App {
     /// staticPausedItems と同じ理屈 — F8 のズーム/パンは channels に効く別変換なので、
     /// GPU タイル経路の camera では追随できない。CPU 投影（TileScene.toItems）で普通のアイテムに変換する。
     def tilePausedItems(app: App[w, ef], design: Vec2.Vec2, world: w): List[Render.PlacedItem] \ ef =
-        match app#tileLayers {
+        match rec(app)#tileLayers {
             case None    => Nil
             case Some(f) =>
                 let (center, z) = resolvedCamera(app, world, design);
@@ -1917,13 +1924,13 @@ pub mod App {
     def renderFrame(app: App[w, ef], warnOnce: String -> Unit, world: w, fpsOverlay: List[Render.PlacedItem],
                     tileCache: TileCache, glyphSeen: Option[Int64], budgetWarned: Bool):
             (TileCache, Option[Int64], Bool) \ (ef + GameEngine.Game + ShaderEffect.Shader + RenderTarget.Target + IO) =
-        match app#view {
+        match rec(app)#view {
             case None          => (tileCache, glyphSeen, budgetWarned)
             case Some(toItems) =>
-                uploadAtlases((app#spriteAtlases)(world));
+                uploadAtlases((rec(app)#spriteAtlases)(world));
                 let atlas = GameEngine.Game.getFontAtlas("default");
                 let design = GameEngine.Game.getViewportRect()#size;
-                let passList = (app#passes)(world);
+                let passList = (rec(app)#passes)(world);
                 renderPasses(design, passList);
                 // fpsOverlay は本番ビルドで Nil — 空の append で本編全件を cons し直さない。
                 let scene = sceneItems(app, atlas, warnOnce, world, toItems);

@@ -109,17 +109,17 @@ pub mod Flow {
     pub def fingerprintProbe(): String = "fp"
 
     pub def vocabOf(app: App.App[w, ef], world: w): Vocab =
-        let table = app#flow;
+        let table = App.rec(app)#flow;
         let roles = table#roles;
         { roles = roles(world) |> List.map(snd) |> List.distinct,
           probes = table#probes |> List.map(row -> (row#name, kindOf(row#read), row#doc)),
           drives = table#drives |> List.map(row -> (row#name, row#doc)),
-          starts = app#starts |> List.map(start -> (start#name, start#doc, start#args)),
+          starts = App.rec(app)#starts |> List.map(start -> (start#name, start#doc, start#args)),
           options = table#options,
           keys = GameEngine.allKeys() |> List.map(key -> "${key}"),
           ready = Option.nonEmpty(table#ready),
           replies = Option.nonEmpty(table#replies),
-          fingerprint = Option.nonEmpty(app#fingerprint) }
+          fingerprint = Option.nonEmpty(App.rec(app)#fingerprint) }
 
     def kindOf(probe: Probe[w]): Kind = match probe {
         case Probe.Num(_)  => Kind.Num
@@ -319,7 +319,7 @@ pub mod Flow {
             case Step.Wait(span, opt)   => frames(ctx, line, countOf(ctx, span, opt), Set.empty(), opt, c)
             case Step.Until(expr, max)  => waitFor(ctx, line, None, expr, framesIn(ctx, max), c)
             case Step.Drive(name, expr, max) =>
-                match ctx#app#flow#drives |> List.find(row -> row#name == name) {
+                match App.rec(ctx#app)#flow#drives |> List.find(row -> row#name == name) {
                     case None      => Err({ cursor = c, at = line, why = "操作 '${name}' は表に無い", seen = "" })
                     case Some(row) => waitFor(ctx, line, Some(row), expr, framesIn(ctx, max), c)
                 }
@@ -330,11 +330,11 @@ pub mod Flow {
             case Step.Reload(target, files) =>
                 let app = ctx#app;
                 let reloaded = withServedFiles(files, () -> match target {
-                    case "key" => match app#reload {
+                    case "key" => match App.rec(app)#reload {
                         case Some((_, reloadAll)) => reloadAll(c#world)
                         case None                 => c#world
                     }
-                    case path => app#watch |> List.foldLeft((acc, entry) -> {
+                    case path => App.rec(app)#watch |> List.foldLeft((acc, entry) -> {
                         let (watched, f) = entry;
                         if (watched == path) f(acc) else acc
                     }, c#world)
@@ -342,14 +342,14 @@ pub mod Flow {
                 // 履歴（rewind が戻る先）には触らない —— 実機の履歴に積まれるのは、進めた後の World だけ。
                 Ok({ world = reloaded | c })
             case Step.Request(path, params, files) =>
-                match App.RemoteDebug.findRoute(path, ctx#app#remoteHandlers) {
+                match App.RemoteDebug.findRoute(path, App.rec(ctx#app)#remoteHandlers) {
                     case None => Err({ cursor = c, at = line, why = "onRequest のルート '${path}' が無い", seen = "" })
                     case Some(apply) => match withServedFiles(files, () -> apply(params, c#world)) {
                         case Ok(changed) => Ok({ world = changed | c })
                         case Err(why)    => Err({ cursor = c, at = line, why = "onRequest '${path}': ${why}", seen = "" })
                     }
                 }
-            case Step.Close => match ctx#app#closeRequest {
+            case Step.Close => match App.rec(ctx#app)#closeRequest {
                 case Some(f) => {
                     Ok({ world = f(c#world) | c })
                 }
@@ -370,7 +370,7 @@ pub mod Flow {
         let checked = ctx#readyOn and not raw;
         let readied = if (checked) untilReady(ctx, line, c0) else Ok(c0);
         readied |> Result.flatMap(c -> {
-            let replies = ctx#app#flow#replies;
+            let replies = App.rec(ctx#app)#flow#replies;
             let keys = keysOf(ctx, target, c#world);
             let clicking = match target { case Target.Point(x, y) => Some({ x = x, y = y }) case _ => None };
             if (Option.isEmpty(clicking) and Set.isEmpty(keys))
@@ -418,7 +418,7 @@ pub mod Flow {
 
     /// 入力を受けられるまで（ready が Ready になるまで）何も触らずに待つ。今の World で問う（1 フレーム遅れてよい）。
     def untilReady(ctx: Ctx[w, ef], line: Line, c0: PlayState[w]): Result[Stop[w], PlayState[w]] \ ef =
-        match ctx#app#flow#ready {
+        match App.rec(ctx#app)#flow#ready {
             case None => Ok(c0)
             case Some(readyOf) =>
                 def loop(left: Int32, c: PlayState[w]): Result[Stop[w], PlayState[w]] \ ef = match readyOf(c#world) {
@@ -509,7 +509,7 @@ pub mod Flow {
 
     /// 返事を待っている tap の番号が進んだか。
     def answered(ctx: Ctx[w, ef], c: PlayState[w]): Bool =
-        match (c#awaiting, ctx#app#flow#replies) {
+        match (c#awaiting, App.rec(ctx#app)#flow#replies) {
             case (Some((_, seq)), Some(f)) => f(c#world) != seq
             case _                         => true
         }
@@ -532,7 +532,7 @@ pub mod Flow {
     def keysOf(ctx: Ctx[w, ef], target: Target, world: w): Set[Key] =
         match target {
             case Target.Role(name) =>
-                let roles = ctx#app#flow#roles;
+                let roles = App.rec(ctx#app)#flow#roles;
                 roles(world) |> List.find(entry -> snd(entry) == name) |> Option.map(entry -> Set#{fst(entry)})
                     |> Option.getWithDefault(Set.empty())
             case Target.Keys(keys)  => keys
@@ -607,8 +607,8 @@ pub mod Flow {
     }
 
     pub def valueOf(app: App.App[w, ef], name: String, world: w): Option[Value] =
-        if (name == fingerprintProbe()) app#fingerprint |> Option.map(f -> Value.Text(fingerprintOf(f(world))))
-        else app#flow#probes |> List.find(row -> row#name == name) |> Option.map(row -> match row#read {
+        if (name == fingerprintProbe()) App.rec(app)#fingerprint |> Option.map(f -> Value.Text(fingerprintOf(f(world))))
+        else App.rec(app)#flow#probes |> List.find(row -> row#name == name) |> Option.map(row -> match row#read {
             case Probe.Num(f)  => Value.Num(f(world))
             case Probe.Text(f) => Value.Text(f(world))
             case Probe.Flag(f) => Value.Flag(f(world))
@@ -645,7 +645,7 @@ pub mod Flow {
             case Some(Value.Flag(on)) => "${name}=${on}"
             case None                 => "${name}=?"
         }) |> String.intercalate(" ");
-        let status = match ctx#app#statusLine {
+        let status = match App.rec(ctx#app)#statusLine {
             case Some(line) => line(world)
             case None       => ""
         };

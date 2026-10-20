@@ -57,7 +57,7 @@ pub mod Flow.Cli {
             }
             case None => false
         };
-        match (startsFirst, List.head(app#starts)) {
+        match (startsFirst, List.head(App.rec(app)#starts)) {
             case (false, Some(first)) => App.buildStart(app, design, first#name, Map.empty()) |> Result.getWithDefault(fresh)
             case _                    => fresh
         }
@@ -87,13 +87,13 @@ pub mod Flow.Cli {
         if (List.isEmpty(all)) "  （start・mark なし）" else "  " + String.intercalate(" / ", all)
 
     def fingerprintPart(app: App.App[w, ef], world: w): String =
-        match app#fingerprint {
+        match App.rec(app)#fingerprint {
             case Some(f) => "・指紋 ${Flow.fingerprintOf(f(world))}"
             case None    => ""
         }
 
     def statusPart(app: App.App[w, ef], world: w): String \ ef =
-        match app#statusLine {
+        match App.rec(app)#statusLine {
             case Some(line) => "  [status] ${line(world)}"
             case None       => "  [status] (App.withStatusLine を繋ぐと最後の World の要点が出る)"
         }
