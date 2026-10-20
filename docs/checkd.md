@@ -29,7 +29,10 @@ make check ──> bin/fge checkd (クライアント)
                flix repl (温まった JVM)
 ```
 
-- ソースは repl が毎回ディスクから読み直すので、保存 → check だけでよい
+- 保存 → check だけでよい。ただし repl（flix 0.78）は書き換えをファイルの監視の知らせでしか取り込まず
+  （`:reload` は無い）、macOS の JDK では監視が 10 秒おきの見回りになる。待たずに `:check` を送ると古い中身で
+  緑が出るので、checkd は保存から約 11 秒待ってから送る（`go/internal/checkd/sources.go` の `watchLag`）。
+  保存直後の check がその分遅いのはこのため
 - 結果の正しさが常に最優先。少しでも怪しければ黙って素の check に落ちる
 
 ## test も同じ常駐で速くなる
@@ -132,3 +135,9 @@ check の結果がどうしても疑わしい時は `CHECKD=0 make check`(また
 - engine / engine_world 等パッケージ本体の test (まず examples で様子を見る)
 - LSP (`flix lsp`) 経由の診断: 0.75.1 では CLI check と結果が食い違う偽エラーを
   出すことがあり不採用
+- repl をやめ、Flix の内部 API（`Bootstrap.bootstrap` → `mkFlix`・`Flix.addSource`・`Flix.check`）を直接呼ぶ窓口に
+  替えて約 11 秒の待ちを消す案: 試作で、待たずに検査でき偽の緑も出ないことは確かめた（2026-10 / flix 0.78）。
+  見送ったのは得が小さいため — internet_dungeon（169 ファイル）では 1 文字変えても Typer がほぼ全部やり直しになり、
+  2 回目の check は repl でも窓口でも 40〜60 秒で、縮むのは待ちの 11 秒だけ（テンプレ程度の大きさなら 0.5〜1.6 秒で返る）。
+  代わりに Scala の内部 API に縛られ、flix の版を上げるたびに壊れうる。ゲームの check を速くするなら、Typer を重くしている
+  大きな record の型を enum で包む方が効く（[flix-conventions.md](flix-conventions.md)）
