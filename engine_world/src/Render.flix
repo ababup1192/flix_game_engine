@@ -729,7 +729,8 @@ pub mod Render {
     /// Shader 面だけを取り出して eff Shader が食える描画依頼へ変換する（GL 経路専用）。
     /// programOf は Spec → コンパイル済みプログラムのハンドル（バックエンドが用意）。
     /// Clipped に包まれた Shader も剥がして拾う。GL の無い経路（F8/SoftRaster）は
-    /// これを呼ばず draw の代表色ベタ塗りに任せる。
+    /// これを呼ばず draw / drawWith に任せる（drawWith はテクスチャ 1 枚を読むだけの面をスプライトにし、
+    /// ほかは代表色ベタ塗り。docs/shader-doc.md の「F8 の止めた画面」）。
     pub def drawShaders(programOf: ShaderDoc.Spec -> GpuHandle.ShaderProgram \ ef,
                         items: List[PlacedItem]): List[ShaderEffect.ShaderRenderCmd] \ ef =
         items |> List.filterMap(placed -> {
@@ -924,8 +925,113 @@ pub mod Render {
                    radiansOf(s#rotation), s#tint, s#alpha, s#centered,
                    uvOff, uvScl, s#zIndex, None,
                    None, s#blend, s#maskPolys) :: Nil
+            // テクスチャ 1 枚を読むだけの面は、代表色の中間の灰より元の絵の方が近い（F8 の止めた画面・注釈のスクショ）。
+            // 色の計算（灰色化・明るさ）は落とす — 場を画素ごとに評価するのは GL か ShaderEval の仕事。
+            case Item.Shader(s) => match textureReadOf(s#spec, s#t) {
+                case Some((name, area)) => match textureInfoOf(name) {
+                    case Some(ti) if ti#width > 0.0 and ti#height > 0.0 =>
+                        DrawCmd.fromParts(
+                           name, pos,
+                           { x = s#rect#size#x / (ti#width * area#size#x),
+                             y = s#rect#size#y / (ti#height * area#size#y) },
+                           0.0, white(), 1.0, false,
+                           area#position, area#size, s#zIndex, None,
+                           None, s#blend, s#mask) :: Nil
+                    case _ => toDrawables(item, pos)
+                }
+                case None => toDrawables(item, pos)
+            }
             case other => toDrawables(other, pos)
         }
+
+    /// 面の式がテクスチャ 1 枚だけを読み、読む位置が shift（場で決まる平行移動）だけで決まるなら、
+    /// そのテクスチャの名前と読む範囲（uv 0〜1 の矩形）。範囲は面の左上と右下の uv で shift を評価して出す。
+    /// 読む位置を scaled・warp・tiling・snap・swirl・rotate が曲げる式、shift を重ねた式、
+    /// ずらし量に tex か ref を使う式、読む所ごとに範囲が食い違う式は None（矩形 1 枚に写せない）。
+    def textureReadOf(spec: ShaderDoc.Spec, t: Float64): Option[(String, Rect2.Rect2)] =
+        match ShaderDoc.texNames(spec) {
+            case name :: Nil =>
+                let nodes = List.append(List.map(snd, spec#bindings), shadeFieldsOf(spec))
+                    |> List.flatMap(field -> ShaderDoc.foldField((acc, node) -> node :: acc, Nil, field));
+                let shifts = nodes |> List.filterMap(node -> match node {
+                    case ShaderDoc.Field.Shift(sh) => match sh#of {
+                        case ShaderDoc.Field.Tex(_) => Some(sh)
+                        case _                      => None
+                    }
+                    case _ => None
+                });
+                let texCount = nodes |> List.count(node -> match node {
+                    case ShaderDoc.Field.Tex(_) => true
+                    case _                      => false
+                });
+                let bare = if (texCount > List.length(shifts)) Some(wholeArea()) :: Nil else Nil;
+                let areas = List.append(bare, shifts |> List.map(sh -> shiftedArea(sh#dx, sh#dy, t)));
+                if (List.exists(bendsTextureRead, nodes)) None
+                else match areas {
+                    case Some(first) :: rest if List.forAll(a -> Option.exists(sameArea(first), a), rest) => Some((name, first))
+                    case _ => None
+                }
+            case _ => None
+        }
+
+    /// 面の色と alpha が読む場（bindings を除く）。
+    def shadeFieldsOf(spec: ShaderDoc.Spec): List[ShaderDoc.Field] =
+        match spec#out {
+            case ShaderDoc.Out.Fill(f) => match f#shade {
+                case ShaderDoc.Shade.Solid(_)    => f#alpha :: Nil
+                case ShaderDoc.Shade.Ramp(r)     => r#field :: f#alpha :: Nil
+                case ShaderDoc.Shade.Gradient(g) => g#field :: f#alpha :: Nil
+                case ShaderDoc.Shade.Cosine(cs)  => cs#field :: f#alpha :: Nil
+                case ShaderDoc.Shade.Rgb(c)      => c#r :: c#g :: c#b :: f#alpha :: Nil
+            }
+        }
+
+    /// この節が、下にある tex の読む位置を shift 1 段より複雑に変えるか。
+    def bendsTextureRead(node: ShaderDoc.Field): Bool =
+        match node {
+            case ShaderDoc.Field.Shift(sh) => match sh#of {
+                case ShaderDoc.Field.Tex(_) => readsTextureOrRef(sh#dx) or readsTextureOrRef(sh#dy)
+                case other                  => readsTexture(other)
+            }
+            case ShaderDoc.Field.Scaled(s) => readsTexture(s#of)
+            case ShaderDoc.Field.Warp(s)   => readsTexture(s#of)
+            case ShaderDoc.Field.Tiling(s) => readsTexture(s#of)
+            case ShaderDoc.Field.Snap(s)   => readsTexture(s#of)
+            case ShaderDoc.Field.Swirl(s)  => readsTexture(s#of)
+            case ShaderDoc.Field.Rotate(s) => readsTexture(s#of)
+            case _ => false
+        }
+
+    def readsTexture(field: ShaderDoc.Field): Bool =
+        ShaderDoc.foldField((acc, node) -> acc or (match node {
+            case ShaderDoc.Field.Tex(_) => true
+            case _                      => false
+        }), false, field)
+
+    // ref は bindings の値で、ShaderEval.evalField 単体では引けない。
+    def readsTextureOrRef(field: ShaderDoc.Field): Bool =
+        ShaderDoc.foldField((acc, node) -> acc or (match node {
+            case ShaderDoc.Field.Tex(_) => true
+            case ShaderDoc.Field.Ref(_) => true
+            case _                      => false
+        }), false, field)
+
+    // 読む所ごとに式が違っても、同じ範囲なら 1 枚に写せる。浮動小数の評価のずれは 1/4096 まで同じと見る。
+    def sameArea(a: Rect2.Rect2, b: Rect2.Rect2): Bool =
+        let near = (x, y) -> Float64.abs(x - y) < 1.0 / 4096.0;
+        near(a#position#x, b#position#x) and near(a#position#y, b#position#y) and
+        near(a#size#x, b#size#x) and near(a#size#y, b#size#y)
+
+    def wholeArea(): Rect2.Rect2 = { position = { x = 0.0, y = 0.0 }, size = { x = 1.0, y = 1.0 } }
+
+    /// shift が面の左上 (0, 0) と右下 (1, 1) を写す先から作る読む範囲。大きさが 0 以下（裏返し・潰れ）は None。
+    def shiftedArea(dx: ShaderDoc.Field, dy: ShaderDoc.Field, t: Float64): Option[Rect2.Rect2] =
+        let at = (u, v) -> { x = u + ShaderEval.evalField(dx, { x = u, y = v }, t),
+                             y = v + ShaderEval.evalField(dy, { x = u, y = v }, t) };
+        let lo = at(0.0, 0.0);
+        let hi = at(1.0, 1.0);
+        let size = { x = hi#x - lo#x, y = hi#y - lo#y };
+        if (size#x > 0.0 and size#y > 0.0) Some({ position = lo, size = size }) else None
 
     // flip は base scale に符号を“乗算”（engine spriteToDrawable と同じ）。centered は素通し。
     // region=Some は textureSize(\Game) が要るので今回未対応＝loud に落とす（部分関数を残さない）。

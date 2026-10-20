@@ -391,4 +391,63 @@ mod TestRender {
         let items = { at = { x = 0.0, y = 0.0 }, item = RawDraw.box({ x = 1.0, y = 1.0 }, red(), 0) } :: Nil;
         Assert.assertEq(expected = -3750763034362895579i64, Render.glyphFingerprint(items))
 
+    // ========================================================================
+    // drawWith: テクスチャ 1 枚を読むだけの面（F8 の止めた画面・注釈のスクショ）
+    // ========================================================================
+
+    // 面がテクスチャの一部を灰色にして読む式なら、その一部を貼るスプライトになる（色の掛け算は落ちる）。
+    @Test
+    def testTextureReadSurfaceDrawsItsRegion(): Unit \ Assert =
+        let area = { position = { x = 0.25, y = 0.5 }, size = { x = 0.5, y = 0.25 } };
+        let surface = Render.shaderFill(grayReadSpec("pieces", area),
+                          { position = { x = 10.0, y = 20.0 }, size = { x = 32.0, y = 16.0 } }, 0.0, 6);
+        let (ds, _) = Render.drawWith(_ -> Some(texture64()), surface :: Nil);
+        Assert.assertEq(expected = Some(("pieces", (0.25, 0.5, 0.5, 0.25), (1.0, 1.0))),
+            ds |> List.head |> Option.map(d -> {
+                let spec = DrawCmd.toSpec(d);
+                (spec#texture,
+                 (round4(spec#uvOffset#x), round4(spec#uvOffset#y), round4(spec#uvScale#x), round4(spec#uvScale#y)),
+                 (round4(spec#scale#x), round4(spec#scale#y)))
+            }))
+
+    // 読む位置を scaled が曲げる式は矩形 1 枚に写せないので、テクスチャを貼らずに代表色で塗る。
+    @Test
+    def testBentTextureReadSurfaceKeepsRepresentativeColor(): Unit \ Assert =
+        let read = ShaderDoc.Field.Scaled({ factor = 2.0, scroll = { x = 0.0, y = 0.0 },
+                       of = ShaderDoc.Field.Tex({ name = "pieces", chan = ShaderDoc.TexChan.R }) });
+        let spec = { name = "bent", cycleRate = 0.0, bindings = Nil,
+                     out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Rgb({ r = read, g = read, b = read }),
+                                                alpha = ShaderDoc.Field.Const(1.0) }) };
+        let surface = Render.shaderFill(spec, { position = { x = 0.0, y = 0.0 }, size = { x = 8.0, y = 8.0 } }, 0.0, 6);
+        let (ds, _) = Render.drawWith(_ -> Some(texture64()), surface :: Nil);
+        Assert.assertEq(expected = Some(false), ds |> List.head |> Option.map(d -> DrawCmd.textureOf(d) == "pieces"))
+
+    // テクスチャの大きさが引けない（まだ読み込んでいない）ときは、代表色で塗る。
+    @Test
+    def testTextureReadSurfaceWithoutTextureInfoKeepsRepresentativeColor(): Unit \ Assert =
+        let surface = Render.shaderFill(grayReadSpec("pieces", { position = { x = 0.0, y = 0.0 }, size = { x = 1.0, y = 1.0 } }),
+                          { position = { x = 0.0, y = 0.0 }, size = { x = 8.0, y = 8.0 } }, 0.0, 6);
+        let (ds, _) = Render.drawWith(_ -> None, surface :: Nil);
+        Assert.assertEq(expected = Some(false), ds |> List.head |> Option.map(d -> DrawCmd.textureOf(d) == "pieces"))
+
+    def texture64(): GameEngine.TextureInfo = { id = GpuHandle.wrapTextureId(0), width = 64.0, height = 64.0 }
+
+    /// テクスチャの area（uv 0〜1）を shift で読み、r・g・b を混ぜて灰色にする面（alpha もテクスチャから）。
+    def grayReadSpec(texture: String, area: Rect2.Rect2): ShaderDoc.Spec =
+        let mapped = (axis, start, span) -> ShaderDoc.Field.Bin({ op = ShaderDoc.BinOp.Add,
+            a = ShaderDoc.Field.Bin({ op = ShaderDoc.BinOp.Mul, a = ShaderDoc.Field.Uv({ axis = axis }),
+                                      b = ShaderDoc.Field.Const(span - 1.0) }),
+            b = ShaderDoc.Field.Const(start) });
+        let read = chan -> ShaderDoc.Field.Shift({
+            dx = mapped(ShaderDoc.Axis.U, area#position#x, area#size#x),
+            dy = mapped(ShaderDoc.Axis.V, area#position#y, area#size#y),
+            of = ShaderDoc.Field.Tex({ name = texture, chan = chan }) });
+        let gray = ShaderDoc.Field.Bin({ op = ShaderDoc.BinOp.Add,
+            a = ShaderDoc.Field.Bin({ op = ShaderDoc.BinOp.Mul, a = ShaderDoc.Field.Const(0.5), b = read(ShaderDoc.TexChan.R) }),
+            b = ShaderDoc.Field.Bin({ op = ShaderDoc.BinOp.Mul, a = ShaderDoc.Field.Const(0.5), b = read(ShaderDoc.TexChan.G) }) });
+        { name = "grayRead", cycleRate = 0.0, bindings = ("gray", gray) :: Nil,
+          out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Rgb({ r = ShaderDoc.Field.Ref("gray"),
+                                                                     g = ShaderDoc.Field.Ref("gray"),
+                                                                     b = ShaderDoc.Field.Ref("gray") }),
+                                     alpha = read(ShaderDoc.TexChan.A) }) }
 }
