@@ -12,6 +12,9 @@
         <string>builder</string>
         <string>run</string>
         <string>--repo={{.Repo}}</string>
+{{- range .Args}}
+        <string>{{.}}</string>
+{{- end}}
     </array>
     <key>EnvironmentVariables</key>
     <dict>

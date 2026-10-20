@@ -151,11 +151,12 @@ var plistTemplate string
 
 // PlistConfig は launchd の plist の中身。
 type PlistConfig struct {
-	Label string // com.flixge.jar-builder.<repo の名前>
-	Fge   string // 作り手を起こす fge（このエンジンの bin/fge）
-	Repo  string // ゲームの clone
-	Log   string // 1 巡の行を書くファイル
-	Path  string // launchd の PATH（git・gh・java を引けるように）
+	Label string   // com.flixge.jar-builder.<repo の名前>
+	Fge   string   // 作り手を起こす fge（このエンジンの bin/fge）
+	Repo  string   // ゲームの clone
+	Log   string   // 1 巡の行を書くファイル
+	Path  string   // launchd の PATH（git・gh・java を引けるように）
+	Args  []string // builder run に足す旗（--work=・--engines=）
 }
 
 // LabelOf は repo の clone の場所から launchd の Label を作る。
