@@ -186,4 +186,29 @@ mod TestDrawHash {
     @Test
     def testEmptyEngineGivesNoKey(): Unit \ Assert =
         Assert.assertEq(expected = "none", keyOf({ engine = "" | inputs() }, frame()))
+
+    // ── アトラスの覚え（computeKeyCached）は computeKey と同じ鍵 ──
+
+    def cachedKeyOf(cache: DrawHash.AtlasCache, f: DrawHash.Frame): String \ IO =
+        DrawHash.computeKeyCached(cache, inputs(), DrawHash.PngEncoding.Plain, f)
+            |> Option.map(DrawHash.toHex) |> Option.getWithDefault("none")
+
+    @Test
+    def testCachedKeyEqualsKey(): Unit \ IO + Assert =
+        Assert.assertEq(expected = base(), cachedKeyOf(DrawHash.freshAtlasCache(), frame()))
+
+    @Test
+    def testCachedKeyFromRememberedAtlasEqualsKey(): Unit \ IO + Assert =
+        let cache = DrawHash.freshAtlasCache();
+        let f = frame();
+        discard cachedKeyOf(cache, f);
+        Assert.assertEq(expected = base(), cachedKeyOf(cache, f))
+
+    @Test
+    def testCachedKeyFollowsChangedAtlas(): Unit \ IO + Assert =
+        let cache = DrawHash.freshAtlasCache();
+        discard cachedKeyOf(cache, frame());
+        let f = frame();
+        let changed = { req = { fontAtlas = atlas(9.5) | f#req } | f };
+        Assert.assertEq(expected = keyOf(inputs(), changed), cachedKeyOf(cache, changed))
 }

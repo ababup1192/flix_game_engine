@@ -8,12 +8,17 @@
 // pass の画像の画素・エンジンの fpkg・JVM と OS の指紋）として RenderCache が読んで渡す。
 pub mod DrawHash {
     import java.io.BufferedOutputStream
+    import java.io.ByteArrayOutputStream
     import java.io.DataOutputStream
     import java.io.OutputStream
     import java.lang.{Double => JDouble}
+    import java.lang.{Object => JObject}
     import java.security.DigestOutputStream
     import java.security.MessageDigest
+    import java.util.Collections
     import java.util.HexFormat
+    import java.util.IdentityHashMap
+    import java.util.{Map => JMap}
 
     /// 鍵の中身（SHA-256 の 16 進 64 字）。外から作らせない — 作れるのは computeKey だけ。
     enum Digest(String)
@@ -70,20 +75,43 @@ pub mod DrawHash {
         let fonts = frame#extraFonts |> Map.valuesOf |> List.map(e -> e#ttf);
         (frame#req#fontTtf :: textures ::: fonts) |> List.distinct
 
+    /// 字のアトラスを畳んだバイト列の覚え（同じアトラスの値 → そのバイト列）。1 回の描き出しの間だけ持ち、
+    /// コマごとに同じアトラスを畳み直さない。中身は外から作らせない（freshAtlasCache だけ）。
+    // WhyNot: アトラスの中身（グリフの表）で引かない — 引くための比較が畳むのと同じだけかかる。値は変わらない
+    // （Flix の record と Map）ので、同じ参照なら同じバイト列になる。参照が違えば畳み直すだけで鍵は変わらない。
+    enum AtlasMemo(JMap[JObject, Array[Int8, Static]])
+
+    /// 字のアトラスを畳んだバイト列の覚え。RenderCache の Session が 1 つ持つ。
+    pub type alias AtlasCache = AtlasMemo
+
+    /// 空の覚え（糸をまたいで使ってよい）。
+    pub def freshAtlasCache(): AtlasCache \ IO =
+        AtlasMemo.AtlasMemo(Collections.synchronizedMap(new IdentityHashMap()))
+
+    /// 覚えておくアトラスの数の上限。超えたら空にしてから入れる（コマごとにアトラスを作り直す呼び側で膨らませない）。
+    def atlasCacheLimit(): Int32 = 64
+
     /// 1 コマの鍵。`inputs` に要るファイルの指紋が欠けている・エンジンの指紋が空なら None（塗るしかない）。
     // WhyNot: パスそのものは畳まない — compare の基準は別の場所の worktree で描くので、パスを
     // 入れると同じ絵でも鍵が揃わない。絵に効くのは中身なので、中身の指紋だけを入れる。
     // WhyNot: 座標を丸めない — 丸めた幅の中で画素が動いても同じ鍵になり、偽の緑になる。
     pub def computeKey(inputs: Inputs, encoding: PngEncoding, frame: Frame): Option[Key] =
+        unsafe IO { keyWith(None, inputs, encoding, frame) }
+
+    /// computeKey と同じ鍵（ビット単位で同じ）を、アトラスを畳んだバイト列を `cache` から引いて作る。
+    pub def computeKeyCached(cache: AtlasCache, inputs: Inputs, encoding: PngEncoding, frame: Frame): Option[Key] \ IO =
+        keyWith(Some(cache), inputs, encoding, frame)
+
+    def keyWith(cache: Option[AtlasCache], inputs: Inputs, encoding: PngEncoding, frame: Frame): Option[Key] \ IO =
         let missing = filesOf(frame) |> List.exists(p -> not Map.memberOf(p, inputs#files));
         if (String.isEmpty(inputs#engine) or missing) None
-        else Some(Digest.Digest(unsafe IO { digestOf(inputs, encoding, frame) }))
+        else Some(Digest.Digest(digestOf(cache, inputs, encoding, frame)))
 
     // ── 畳む ─────────────────────────────────────────────
     // 型ごとに全部の欄を名前つきで受ける（閉じた record の match・enum の全引数）。描き出しの入力に
     // 欄が増えるとここがコンパイルで止まり、鍵に入れ忘れたまま偽の緑になるのを防ぐ。
 
-    def digestOf(inputs: Inputs, encoding: PngEncoding, frame: Frame): String \ IO =
+    def digestOf(cache: Option[AtlasCache], inputs: Inputs, encoding: PngEncoding, frame: Frame): String \ IO =
         let md = MessageDigest.getInstance("SHA-256");
         let buffered = new BufferedOutputStream(new DigestOutputStream(OutputStream.nullOutputStream(), md), 65536i32);
         let out = new DataOutputStream(buffered);
@@ -92,7 +120,7 @@ pub mod DrawHash {
         putStr(out, inputs#engine);
         putStr(out, inputs#runtime);
         let used = usedTextures(frame);
-        putFrame(out, inputs, used, frame);
+        putFrame(out, cache, inputs, used, frame);
         let images = inputs#images |> Map.filterWithKey((name, _) -> Set.memberOf(name, used));
         putSize(out, Map.size(images));
         images |> Map.forEach((name, sha) -> { putStr(out, name); putStr(out, sha) });
@@ -104,13 +132,13 @@ pub mod DrawHash {
         case PngEncoding.Filmstrip => "filmstrip"
     }
 
-    def putFrame(out: DataOutputStream, inputs: Inputs, used: Set[String], frame: Frame): Unit \ IO = match frame {
+    def putFrame(out: DataOutputStream, cache: Option[AtlasCache], inputs: Inputs, used: Set[String], frame: Frame): Unit \ IO = match frame {
         case { req = req, surfaces = surfaces, extraFonts = extraFonts, fontAntialias = fontAntialias } =>
-            putReq(out, inputs, used, req);
+            putReq(out, cache, inputs, used, req);
             putSize(out, List.length(surfaces));
             surfaces |> List.forEach(putSurface(out));
             putSize(out, Map.size(extraFonts));
-            extraFonts |> Map.forEach((name, entry) -> { putStr(out, name); putFontEntry(out, inputs, entry) });
+            extraFonts |> Map.forEach((name, entry) -> { putStr(out, name); putFontEntry(out, cache, inputs, entry) });
             // 本ごとの縁の表は空でない時だけ鍵に入れる（表を使わない絵の鍵は表を足す前と同じ）。
             if (Map.isEmpty(fontAntialias)) ()
             else {
@@ -120,7 +148,7 @@ pub mod DrawHash {
             }
     }
 
-    def putReq(out: DataOutputStream, inputs: Inputs, used: Set[String], req: SoftRaster.RasterReq): Unit \ IO = match req {
+    def putReq(out: DataOutputStream, cache: Option[AtlasCache], inputs: Inputs, used: Set[String], req: SoftRaster.RasterReq): Unit \ IO = match req {
         case { drawables = drawables, polygons = polygons, design = design, scale = scale,
                background = background, texturePath = texturePath, fontTtf = fontTtf,
                fontAtlas = fontAtlas, outPath = _outPath, shapeAntialias = shapeAntialias,
@@ -132,7 +160,7 @@ pub mod DrawHash {
             putSize(out, Map.size(textures));
             textures |> Map.forEach((name, path) -> { putStr(out, name); putFile(out, inputs, path) });
             putFile(out, inputs, fontTtf);
-            putAtlas(out, fontAtlas);
+            putAtlasCached(out, cache, fontAtlas);
             putBool(out, shapeAntialias);
             putBool(out, textAntialias);
             putSize(out, List.length(drawables));
@@ -203,8 +231,27 @@ pub mod DrawHash {
             putBlend(out, blend)
     }
 
-    def putFontEntry(out: DataOutputStream, inputs: Inputs, entry: SoftRaster.FontEntry): Unit \ IO = match entry {
-        case { ttf = ttf, atlas = atlas } => putFile(out, inputs, ttf); putAtlas(out, atlas)
+    def putFontEntry(out: DataOutputStream, cache: Option[AtlasCache], inputs: Inputs, entry: SoftRaster.FontEntry): Unit \ IO = match entry {
+        case { ttf = ttf, atlas = atlas } => putFile(out, inputs, ttf); putAtlasCached(out, cache, atlas)
+    }
+
+    /// putAtlas と同じバイト列を書く。覚えにあればそのバイト列を、無ければ畳んでから覚えて書く。
+    def putAtlasCached(out: DataOutputStream, cache: Option[AtlasCache], atlas: FontAtlas): Unit \ IO = match cache {
+        case None                         => putAtlas(out, atlas)
+        case Some(AtlasMemo.AtlasMemo(m)) =>
+            let ref: JObject = unchecked_cast(atlas as JObject);
+            let hit: Array[Int8, Static] = m.get(ref);
+            let bytes = if (not Object.isNull(hit)) hit else {
+                let buf = new ByteArrayOutputStream();
+                let tmp = new DataOutputStream(buf);
+                putAtlas(tmp, atlas);
+                tmp.flush();
+                let fresh = buf.toByteArray();
+                if (m.size() >= atlasCacheLimit()) m.clear() else ();
+                discard m.put(ref, fresh);
+                fresh
+            };
+            out.write(bytes, 0, Array.length(bytes))
     }
 
     def putAtlas(out: DataOutputStream, atlas: FontAtlas): Unit \ IO = match atlas {

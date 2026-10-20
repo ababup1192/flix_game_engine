@@ -3,7 +3,9 @@
 reference-check・make compare・動画のコマで、**前に塗ったのと同じ絵は塗らずに写す**ための仕組み。
 1 枚の塗り（SoftRaster → PNG）は 200 ms 前後かかるが、描く命令を組んでハッシュを取るのは 10 ms 前後で済む。
 
-- `DrawHash.computeKey`（engine_tools・純粋）: 1 コマの描く命令と、命令に出ない描き出しの入力を 1 本の SHA-256 に畳む
+- `DrawHash.computeKey`（engine_tools・純粋）: 1 コマの描く命令と、命令に出ない描き出しの入力を 1 本の SHA-256 に畳む。
+  `computeKeyCached` は同じ鍵を、字のアトラスを畳んだバイト列を覚え（`AtlasCache`・RenderCache の Session が持つ）から
+  引いて作る（数千字のアトラスをコマごとに畳むと、それだけで鍵の時間の大半を占める）
 - `RenderCache`（engine_tools・IO）: その鍵で、塗った PNG を `~/.cache/flix-render-cache/` にキャッシュに入れる。
   同じ鍵が来たら塗らずに PNG を写す（バイト列は塗った時と同じ）
 - 塗る道（SoftRaster）は残る。鍵を作れない時（下の「鍵を作らない時」）は今まで通り塗る
