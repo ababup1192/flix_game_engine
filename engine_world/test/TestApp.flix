@@ -675,4 +675,33 @@ mod TestApp {
     def testBuildStartSuggestsANearName(): Unit \ Assert + Fs.FileRead =
         Assert.assertEq(expected = Err("始まり 'cuont' は登録簿に無い（もしかして: count）"),
             App.buildStart(startApp(), Vec2.zero(), "cuont", Map.empty()))
+
+    // ========================================================================
+    // 止めた画面の出入りの見た目と、動き出した拍に当て直す矢印
+    // ========================================================================
+
+    // 止めると、バッジを出し十字を見せる（withCursor で矢印を隠しているゲームでも見える）。
+    @Test
+    def testHaltLookShowsCrosshair(): Unit \ Assert =
+        Assert.assertEq(expected = App.HaltLook.HaltLook(true, App.CursorLook.CursorLook(GameEngine.Cursor.Crosshair, App.Visibility.Show)),
+                        App.haltLook(true))
+
+    // 抜けるときは形だけ戻し、見せるか隠すかは触らない。
+    @Test
+    def testLeaveHaltLookLeavesVisibilityToApp(): Unit \ Assert =
+        Assert.assertEq(expected = App.HaltLook.HaltLook(false, App.CursorLook.CursorLook(GameEngine.Cursor.Default, App.Visibility.LeaveToApp)),
+                        App.haltLook(false))
+
+    // 止めた画面を抜けた拍（Stale）には、withCursor の「隠す」をもう一度当てる。
+    @Test
+    def testCursorChangeAfterHaltHidesAgain(): Unit \ Assert =
+        Assert.assertEq(expected = Some(App.CursorLook.CursorLook(GameEngine.Cursor.Default, App.Visibility.Hide)),
+                        App.cursorChange(hiddenArrow(), App.CursorState.Stale))
+
+    // 前に当てた宣言と同じなら、当て直さない。
+    @Test
+    def testCursorChangeSkipsSameSpec(): Unit \ Assert =
+        Assert.assertEq(expected = None, App.cursorChange(hiddenArrow(), App.CursorState.Applied(hiddenArrow())))
+
+    def hiddenArrow(): App.CursorSpec = { icon = GameEngine.Cursor.Default, visible = false }
 }

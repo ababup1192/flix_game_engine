@@ -764,25 +764,10 @@ pub mod App.RemoteDebug {
         respond(text, bridge);
         next
 
-    /// 停止に入る見た目（ウィンドウタイトルのバッジと十字カーソル）。F8 と /halt の両方がここを通る。
-    /// 十字は見せる — withCursor で矢印を隠しているゲームでも、止めた画面では矩形を囲うのに要る。
-    /// ゲームからは呼ばない（App の F8 と /halt が呼ぶ。テストのために公開）。
-    pub def enterHaltMarkers(): Unit \ GameEngine.Game =
-        GameEngine.Game.setDebugBadge(true);
-        GameEngine.Game.setCursor(GameEngine.Cursor.Crosshair);
-        GameEngine.Game.setCursorVisible(true)
-
-    /// 停止を抜ける見た目（バッジを外して通常カーソルへ）。見せるか隠すかはここで戻さない —
-    /// 動き出した拍に App が withCursor の宣言を当て直す（宣言の無いゲームは見せたままが元の姿）。
-    /// ゲームからは呼ばない（App の F8 と /resume が呼ぶ。テストのために公開）。
-    pub def exitHaltMarkers(): Unit \ GameEngine.Game =
-        GameEngine.Game.setDebugBadge(false);
-        GameEngine.Game.setCursor(GameEngine.Cursor.Default)
-
     /// POST /halt: 時間を止めて lockstep モードへ入る。既に停止中でも安全（冪等）。
     def remoteHalt(app: App.App[w, ef], bridge: Bridge,
                    ctx: RemoteNext[w]): RemoteNext[w] \ (ef + GameEngine.Game + IO) =
-        if (not ctx#anno#paused) enterHaltMarkers() else ();
+        if (not ctx#anno#paused) App.applyHaltLook(App.haltLook(true)) else ();
         let shownFrame = ctx#anno#frame - Int32.toInt64(ctx#anno#scrub);
         let displayed = App.worldAt(ctx#history, ctx#anno#scrub, ctx#world);
         answer("ok mode=halted frame=${shownFrame}\n[status]\n${statusText(app, displayed)}\n",
@@ -794,7 +779,7 @@ pub mod App.RemoteDebug {
         if (not ctx#anno#paused)
             answer("ok mode=running frame=${ctx#anno#frame}\n", bridge, { hold = false | ctx })
         else {
-            exitHaltMarkers();
+            App.applyHaltLook(App.haltLook(false));
             let resumed = App.resumePoint(ctx#anno, ctx#history, ctx#world);
             answer("ok mode=running frame=${resumed#anno#frame}\n", bridge,
                    { world = resumed#world, anno = resumed#anno, history = resumed#history, hold = false,
@@ -826,7 +811,7 @@ pub mod App.RemoteDebug {
                 match stepScriptOf(app, base#world, request, stepParams) {
                     case Err(message) => answer(message + "\n", bridge, ctx)
                     case Ok(script) =>
-                        if (not ctx#anno#paused) enterHaltMarkers() else ();
+                        if (not ctx#anno#paused) App.applyHaltLook(App.haltLook(true)) else ();
                         let (result, files) = Flow.Record.captureReads(() ->
                             Flow.play(app, { design = GameEngine.Game.getViewportRect()#size, limit = stepParams#maxFrames },
                                       script, { world = base#world, state = ctx#stepState }));

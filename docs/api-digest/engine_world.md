@@ -208,6 +208,14 @@
   `pub def addClock(spec: { clockOf = w -> Clock.Clock[c], withClock = (Clock.Clock[c], w) -> w, paceOf = w -> Clock.Pace[c, r] }, app: App[w, ef]): App[w, ef]`
 - マウスの矢印の見せ方（withCursor の宣言）。icon = 形・visible = 見せるか。
   `pub type alias CursorSpec = { icon = GameEngine.Cursor, visible = Bool }`
+- withCursor の宣言を最後にどう当てたか。Stale = まだ当てていない・止めた画面の見た目が上書きした
+  `pub enum CursorState { case Applied(CursorSpec) case Stale }`
+- 矢印を見せるか。LeaveToApp = 触らない（今の見せ方のまま）。
+  `pub enum Visibility with Eq, ToString { case Show case Hide case LeaveToApp }`
+- ウィンドウへ当てる矢印の見た目（形・見せるか）。
+  `pub enum CursorLook with Eq, ToString { case CursorLook(GameEngine.Cursor, Visibility) }`
+- 止めた画面の出入りの見た目（ウィンドウタイトルのバッジを出すか・矢印）。
+  `pub enum HaltLook with Eq, ToString { case HaltLook(Bool, CursorLook) }`
 - 毎フレーム「マウスの矢印をどう見せたいか」を World から宣言する。App は宣言が変わったフレームだけ当て、
   `pub def withCursor(f: w -> CursorSpec, app: App[w, ef]): App[w, ef]`
 - 跳んだ拍（起動・START・/start・/step・/flow?apply・F8 の巻き戻しからの再開）に、出力をどう扱うか。
@@ -288,6 +296,12 @@
   `pub def keysAfterJump(app: App[w, ef], world: w, written: List[String]): List[String]`
 - 実機のフレームの後の World で書くべき出力の番号（outputs の順）: 鍵が最後に書いた鍵と違う物。
   `pub def dueOutputs(app: App[w, ef], world: w, written: List[String]): List[Int32]`
+- withCursor の宣言 want を当てるなら、その見た目（前に当てた物と同じなら None）。
+  `pub def cursorChange(want: CursorSpec, state: CursorState): Option[CursorLook]`
+- 止める（halted = true）・抜ける時の見た目。止めた画面は十字を見せる — withCursor で矢印を隠している
+  `pub def haltLook(halted: Bool): HaltLook`
+- haltLook の見た目をウィンドウへ当てる。ゲームからは呼ばない（RemoteDebug が呼ぶので公開）。
+  `pub def applyHaltLook(look: HaltLook): Unit \ GameEngine.Game`
 - 一発で鳴らした名前とループで鳴らした名前の覚え（ゲームの間ずっと持つ）。
   `pub type alias SoundUses = { oneShot = Set[String], looped = Set[String] }`
 - このフレームの一発の音 plays とループの音 looped を覚えに足し、初めて両方に出た名前を返す。
@@ -493,10 +507,6 @@
   `pub def handleRemote(app: App.App[w, ef], bridge: Bridge, raw: String, ctx: RemoteNext[w]): RemoteNext[w] \ (ef + GameEngine.Game + Fs.FileRead + IO)`
 - GET /starts の本文: 始まりの登録簿（App.withStarts）の名前・既定の引数・説明を 1 行ずつ。
   `pub def startsText(app: App.App[w, ef]): String`
-- 停止に入る見た目（ウィンドウタイトルのバッジと十字カーソル）。F8 と /halt の両方がここを通る。
-  `pub def enterHaltMarkers(): Unit \ GameEngine.Game`
-- 停止を抜ける見た目（バッジを外して通常カーソルへ）。見せるか隠すかはここで戻さない —
-  `pub def exitHaltMarkers(): Unit \ GameEngine.Game`
 - view=shot の本文: [shot] と、撮れたら `ok png=<パス>`（/render と同じ形）・撮れなければ `error: 理由`。
   `pub def shotBlock(app: App.App[w, ef], world: w): String \ IO`
 - /step 1 回ぶんの実行結果。

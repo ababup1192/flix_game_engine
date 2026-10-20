@@ -277,47 +277,4 @@ mod TestRemoteDebug {
     @Test
     def testAnswerWaitIgnoresOutOfRangeWait(): Unit \ Assert =
         Assert.assertEq(expected = 10i64, App.RemoteDebug.answerWaitSecs(Map#{ "wait" => "0" }))
-
-    // ========================================================================
-    // 停止の出入りの見た目: カーソルの形と見せるか
-    // ========================================================================
-
-    // 止めると、十字のカーソルを見せる（withCursor で隠しているゲームでも見える）。
-    @Test
-    def testEnterHaltMarkersShowsCrosshair(): Unit \ Assert =
-        Assert.assertEq(expected = "badge=true cursor=Crosshair visible=true ",
-                        cursorCalls(() -> App.RemoteDebug.enterHaltMarkers()))
-
-    // 抜けるときは形だけ戻し、見せるか隠すかは触らない（動き出した拍に withCursor の宣言が当たる）。
-    @Test
-    def testExitHaltMarkersLeavesVisibilityToApp(): Unit \ Assert =
-        Assert.assertEq(expected = "badge=false cursor=Default ",
-                        cursorCalls(() -> App.RemoteDebug.exitHaltMarkers()))
-
-    /// f が頼んだバッジとカーソルの操作を、頼んだ順に 1 行へ並べる（ほかの操作は来ない前提）。
-    def cursorCalls(f: Unit -> Unit \ GameEngine.Game): String =
-        run { f(); "" } with handler GameEngine.Game {
-            def setDebugBadge(enabled, k)  = "badge=${enabled} " + k(())
-            def setCursor(cursor, k)       = "cursor=${cursor} " + k(())
-            def setCursorVisible(shown, k) = "visible=${shown} " + k(())
-            def renderCommands(_, _, _, _, _) = bug!("renderCommands")
-            def initTileBuffer(_, _)       = bug!("initTileBuffer")
-            def updateTileBuffer(_, _, _)  = bug!("updateTileBuffer")
-            def shouldClose(_)             = bug!("shouldClose")
-            def setShouldClose(_, _)       = bug!("setShouldClose")
-            def getDeltaTime(_)            = bug!("getDeltaTime")
-            def isKeyPressed(_, _)         = bug!("isKeyPressed")
-            def getMousePosition(_)        = bug!("getMousePosition")
-            def isMouseButtonPressed(_, _) = bug!("isMouseButtonPressed")
-            def isGamepadTouched(_)        = bug!("isGamepadTouched")
-            def consumeScrollDelta(_)      = bug!("consumeScrollDelta")
-            def getFontAtlas(_, _)         = bug!("getFontAtlas")
-            def ensureGlyphs(_, _, _)      = bug!("ensureGlyphs")
-            def getViewportRect(_)         = bug!("getViewportRect")
-            def getTextureInfo(_, _)       = bug!("getTextureInfo")
-            def ensureTexture(_, _, _, _, _, _) = bug!("ensureTexture")
-            def setFullscreen(_, _)        = bug!("setFullscreen")
-            def isFullscreen(_)            = bug!("isFullscreen")
-            def saveAnnotation(_, _)       = bug!("saveAnnotation")
-        }
 }
