@@ -106,7 +106,7 @@ pub mod GlOffscreen {
     /// 窓サーバへの繋がりを先に取る（macOS だけ。ほかの OS では何もしない）。**AWT を使う前に 1 回呼ぶ。**
     /// AWT（HeadlessFont・BufferedImage の字）を先に使うと、その後の CGL は 10017（kCGLBadConnection）で
     /// 必ず失敗する（2026-10-20 にこの Mac で確かめた）。繋がりはプロセスの間残るので、選んだ画素形式はすぐ捨てる。
-    /// 入口の頭で作る所（GpuShot.shotOf）が呼ぶ。失敗しても何もしない（open が理由を返す）。
+    /// 入口の頭で設定を読む所（VideoOut.settingsOf・GpuShot.shotOf）が呼ぶ。失敗しても何もしない（open が理由を返す）。
     pub def connect(): Unit \ IO =
         let os = System.getProperty("os.name");
         if (Object.isNull(os) or not String.startsWith(prefix = "Mac", os)) ()

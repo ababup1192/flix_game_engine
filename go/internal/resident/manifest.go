@@ -88,6 +88,38 @@ func libFileUsed(rel string, used map[string]bool) bool {
 	return len(parts) >= 6 && used[parts[2]+"/"+parts[3]+"/"+parts[4]]
 }
 
+// BuildSourceManifest は、jar の中身を決める元（src・flix.toml・packages.lock）の指紋（64 字）。lib の中身は見ない。
+// packages.lock が無ければ error（依存の中身を決められない）。
+//
+// WhyNot: BuildManifest（lib の中身まで見る）を使わない — 新しい作業場では lib を jar を作る途中で flix が落とすので、
+// 作る前と作った後で指紋が変わり、同じ機械の作業場どうしで jar を分け合う鍵（jarshare）がそろわない。
+// lib/github の中身は packages.lock が toml と fpkg の SHA-256 で決め、lib/external（Maven の jar）は lock された toml の
+// 版で決まる（同じ版の中身は変わらない）ので、lock の中身で足りる。
+func BuildSourceManifest(root string) (string, error) {
+	lock := filepath.Join(root, "packages.lock")
+	if _, err := os.Stat(lock); err != nil {
+		return "", fmt.Errorf("packages.lock が無い: %w", err)
+	}
+	h := sha256.New()
+	for _, part := range []string{"src", "flix.toml", "packages.lock"} {
+		files, err := listFiles(root, part)
+		if err != nil {
+			return "", err
+		}
+		for _, rel := range files {
+			if rel == DispatcherFile {
+				continue
+			}
+			sum, err := fileSHA(filepath.Join(root, filepath.FromSlash(rel)))
+			if err != nil {
+				return "", err
+			}
+			fmt.Fprintf(h, "%s\x00%s\n", rel, sum)
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
 // listFiles は root/part の下の全ファイルを、根からの相対パス（/ 区切り）の字の順で返す。
 // part が無ければ空。symlink は先を辿る。
 func listFiles(root, part string) ([]string, error) {

@@ -36,7 +36,7 @@ mod Scenes {
     }
 
     pub def all(): List[Scene] =
-        boxes() :: spriteNearest() :: passPaste() :: texField() :: lightMap() :: radial() :: Nil
+        boxes() :: spriteNearest() :: passPaste() :: texField() :: lightMap() :: radial() :: veil() :: Nil
 
     /// 8bit の値そのままの色（k/255）。A 段階の規約 2 をこの入口で守る。
     def c8(r: Int32, g: Int32, b: Int32): Color =
@@ -226,5 +226,18 @@ mod Scenes {
                              color = c8(255, 255, 255), strength = 1.0, z = 4 }) ::
             Render.lightAt({ at = { x = 174.0, y = 158.0 }, radius = 128.0,
                              color = c8(255, 255, 255), strength = 1.0, z = 5 }) ::
+            Nil }
+
+    // ── scene 7: 窓の後ろを薄める半透明の幕（Render.fade・α 0.5）──
+    // 画面いっぱいの幕を、色の箱と sprite の上に重ねる（ゲームの「確認の窓の後ろを暗くする」と同じ形）。
+    // 規約 2 の例外: α は 0.5 だけ使い、色は偶数の k/255 にして、重ねた答えが 8bit で割り切れるようにする
+    // （0.5·src + 0.5·dst が整数になる組 —— 丸めの差を出さずに、重ね方そのものの違いだけを見る）。
+    def veil(): Scene =
+        { name = "veil", via = ShotVia.ViaTarget, passes = Nil, items =
+            at(20.0, 20.0, RawDraw.box({ x = 120.0, y = 80.0 }, c8(200, 120, 60), 1)) ::
+            at(160.0, 40.0, RawDraw.box({ x = 100.0, y = 100.0 }, c8(40, 160, 220), 1)) ::
+            at(60.0, 110.0, atlasSprite({ srcPos = { x = 0.0, y = 0.0 }, srcSize = { x = 16.0, y = 16.0 },
+                                          sx = 4.0, sy = 4.0, fH = false, fV = false, z = 2 })) ::
+            at(0.0, 0.0, RawDraw.box({ x = designW(), y = designH() }, c8(40, 20, 60), 10) |> Render.fade(0.5)) ::
             Nil }
 }
