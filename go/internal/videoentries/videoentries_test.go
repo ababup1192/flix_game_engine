@@ -12,7 +12,7 @@ import (
 )
 
 func rules() *Rules {
-	return &Rules{Makefile: "Makefile", Out: "src/E.flix", Module: "E", Macro: "video", ExtraVar: "EXTRA", SkipVar: "SKIP"}
+	return (&Rules{Makefile: "Makefile", Out: "src/E.flix", Module: "E", Macro: "video", ExtraVar: "EXTRA", SkipVar: "SKIP"}).compilePatterns()
 }
 
 const makefile = "" +
@@ -74,6 +74,17 @@ func TestCheckStopsOnUnreadableCall(t *testing.T) {
 	code, _ := Run(&out, root, true)
 	if code != 1 || !strings.Contains(out.String(), "入口を読めない") {
 		t.Fatalf("code=%d out=%s", code, out.String())
+	}
+}
+
+func TestRecipeCallsSkipsMacroWithSameHead(t *testing.T) {
+	mk := "define video\n" +
+		"\tVIDEO_MAKE=$@ $(call video-mix-env,$(2),$(3)) run $(1)\n" +
+		"endef\n" +
+		"a:\n\t$(call video,A.frames,a,60,)\n"
+	got := strings.Join(rules().RecipeCalls(mk), "|")
+	if got != "\t$(call video,A.frames,a,60,)" {
+		t.Fatalf("got %q", got)
 	}
 }
 

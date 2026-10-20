@@ -37,6 +37,17 @@ type Rules struct {
 	Macro    string `json:"macro"`
 	ExtraVar string `json:"extraVar"`
 	SkipVar  string `json:"skipVar"`
+
+	head *regexp.Regexp // $(call <macro>,…) を含む行か
+	call *regexp.Regexp // $(call <macro>,入口,…) の入口
+}
+
+// compilePatterns は macro から正規表現を組む。LoadRules が local.json を重ねた後に 1 回だけ呼ぶ。
+func (r *Rules) compilePatterns() *Rules {
+	macro := regexp.QuoteMeta(r.Macro)
+	r.head = regexp.MustCompile(`\$\(call\s+` + macro + `\s*[,)]`)
+	r.call = regexp.MustCompile(`\$\(call\s+` + macro + `\s*,\s*([A-Za-z0-9_]+\.[A-Za-z0-9_]+)\s*,`)
+	return r
 }
 
 // LoadRules は規約を読み、ゲームの上書き (local.json の書いた鍵だけ) を重ねる。
@@ -65,7 +76,7 @@ func LoadRules(root string) (*Rules, error) {
 	if r.Makefile == "" || r.Out == "" || r.Module == "" || r.Macro == "" || r.ExtraVar == "" || r.SkipVar == "" {
 		return nil, fmt.Errorf("%s には makefile・out・module・macro・extraVar・skipVar が要ります", filepath.ToSlash(rulesRel))
 	}
-	return &r, nil
+	return r.compilePatterns(), nil
 }
 
 // LogicalLines は行末の \ で続けた行を 1 行につなぐ。
@@ -77,19 +88,14 @@ func LogicalLines(text string) []string {
 // WhyNot: 名前の前だけで探さないのは、$(call video-mix-env,…) のように名前が macro で始まる
 // 別のマクロ (define video の中で呼ぶ物) まで拾い、入口を読めない行と言って止めるため。
 func (r *Rules) RecipeCalls(text string) []string {
-	head := regexp.MustCompile(`\$\(call\s+` + regexp.QuoteMeta(r.Macro) + `\s*[,)]`)
 	var out []string
 	for _, line := range LogicalLines(text) {
 		if strings.HasPrefix(line, "\t") && !strings.HasPrefix(strings.TrimLeft(line, " \t"), "#") &&
-			head.MatchString(line) {
+			r.head.MatchString(line) {
 			out = append(out, line)
 		}
 	}
 	return out
-}
-
-func (r *Rules) callRe() *regexp.Regexp {
-	return regexp.MustCompile(`\$\(call\s+` + regexp.QuoteMeta(r.Macro) + `\s*,\s*([A-Za-z0-9_]+\.[A-Za-z0-9_]+)\s*,`)
 }
 
 // Variable は name の値 (:= / = / ?= で置いた値に += で足した物を順に)。
@@ -124,9 +130,8 @@ func (r *Rules) Entries(text string) []string {
 		}
 		seen = append(seen, e)
 	}
-	call := r.callRe()
 	for _, line := range r.RecipeCalls(text) {
-		if m := call.FindStringSubmatch(line); m != nil {
+		if m := r.call.FindStringSubmatch(line); m != nil {
 			add(m[1])
 		}
 	}
@@ -184,10 +189,9 @@ func Run(out io.Writer, root string, check bool) (int, error) {
 	if b, err := os.ReadFile(outPath); err == nil {
 		have = string(b)
 	}
-	call := r.callRe()
 	unread := 0
 	for _, line := range r.RecipeCalls(text) {
-		if !call.MatchString(line) {
+		if !r.call.MatchString(line) {
 			fmt.Fprintf(out, "%s 入口を読めない $(call %s …) の行: %s\n", tag, r.Macro, strings.TrimSpace(line))
 			unread++
 		}
