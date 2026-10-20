@@ -81,6 +81,9 @@ pub mod VideoOut {
     /// 1 本の動画。soft = SoftRaster の設定（design・scale・地の色・字・絵のパス）、softFonts = SoftRaster の字のアトラス
     /// （名前 → HeadlessFont のアトラス）、scene = 字のアトラスの引き口 → World → 絵（GPU では GL のアトラスで呼ぶ）、
     /// wanted = 書くコマ（一部だけ描き直す口。全部でない時は SoftRaster で塗る）。
+    /// bakeSurfaces = SoftRaster ではシェーダー面を最初に出たコマで 1 回だけ塗って PNG に書き出し、以降は貼るだけにする
+    /// （面の画素の評価が 1 コマ数秒かかる動画用。時刻で変わらない面だけに使う —— 絵は 1 枚目のまま止まる）。
+    /// GPU では面をいつも通りコマごとに塗る（速いので書き出さない）。鍵はどちらも書き出した面を貼る SoftRaster の命令から作る。
     pub type alias Video[w] = {
         outDir = String,
         fps = Int32,
@@ -89,30 +92,36 @@ pub mod VideoOut {
         extraFonts = Map[String, SoftRaster.FontEntry],
         images = List[Image],
         scene = (String -> FontAtlas) -> w -> List[Render.PlacedItem],
-        wanted = Int32 -> Bool
+        wanted = Int32 -> Bool,
+        bakeSurfaces = Bool
     }
+
+    /// 書き出した面: 名前（surface_<幅>_<高さ>_<z>）→ (PNG のパス, 書き出した範囲に合わせた面)。
+    type alias Baked = Map[String, (String, Render.ShaderSurface)]
 
     /// コマを書き、frames.json と drawhash.txt を添える。何で塗ったかを返す。
     pub def writeFrames(settings: Settings, video: Video[w], worlds: List[w]): Painter \ IO =
         discard (new File(video#outDir)).mkdirs();
         let jobs = worlds |> List.zipWithIndex |> List.filter(p -> video#wanted(fst(p)));
         let all = List.length(jobs) == List.length(worlds);
+        // 面を書き出す回は、塗る前に順に書き出しておく（どの糸からも読むだけにする）。
+        let baked = if (video#bakeSurfaces and settings#paint != PaintRange.Nothing) bakeAll(video, jobs) else Map.empty();
         let chosen =
             if (settings#paint == PaintRange.Nothing) Painter.KeysOnly
             else if (settings#gpu == GpuShot.Mode.Off or settings#paint != PaintRange.All or not all) Painter.Soft
             else Painter.Gl;
         let (painter, keys) = match chosen {
-            case Painter.Gl => match writeGl(settings, video, jobs) {
+            case Painter.Gl => match writeGl(settings, video, baked, jobs) {
                 case Ok(keys) => (Painter.Gl, keys)
                 case Err(why) =>
                     if (settings#gpu == GpuShot.Mode.On) bug!("[video] FGE_GPU=on だが GPU で塗れない: ${why}")
                     else {
                         println("[video] GPU が使えない: ${why} — SoftRaster で塗る");
-                        (Painter.Soft, writeSoft(settings#paint, video, jobs))
+                        (Painter.Soft, writeSoft(settings#paint, video, baked, jobs))
                     }
             }
-            case Painter.Soft     => (Painter.Soft, writeSoft(settings#paint, video, jobs))
-            case Painter.KeysOnly => (Painter.KeysOnly, writeSoft(PaintRange.Nothing, video, jobs))
+            case Painter.Soft     => (Painter.Soft, writeSoft(settings#paint, video, baked, jobs))
+            case Painter.KeysOnly => (Painter.KeysOnly, writeSoft(PaintRange.Nothing, video, baked, jobs))
         };
         writeKeys(video#outDir, keys);
         writeFramesJson(video, settings#paint, painter, jobs, keys);
@@ -121,19 +130,82 @@ pub mod VideoOut {
     // ── 鍵（どの塗り方でも SoftRaster の命令から）──
 
     /// SoftRaster の 1 コマ（鍵と SoftRaster の塗りに同じ値を渡す）。
-    def softFrame(video: Video[w], index: Int32, world: w): DrawHash.Frame =
+    /// 面を書き出す回（video#bakeSurfaces）は、面を書き出した PNG の貼り絵に替え、その PNG を texturePath に足す。
+    def softFrame(video: Video[w], baked: Baked, index: Int32, world: w): DrawHash.Frame =
         let cfg = video#soft;
         let scene = video#scene;
-        let items = scene(video#softFonts)(world);
-        let surfaces = Render.shaderSurfaces(items);
-        let (drawables, polygons) = Render.drawWith(HeadlessRender.imageTextureInfo(video#images), Render.withoutShaders(items));
+        let items0 = scene(video#softFonts)(world);
+        let (items, surfaces, info, paths) =
+            if (video#bakeSurfaces) {
+                let found = Render.shaderSurfaces(items0);
+                // 書き出した PNG は出力の画素（design の scale 倍）なので、貼るときは 1 / scale に縮める。
+                let shrink = 1.0 / Int32.toFloat64(cfg#scale);
+                let pasted = found |> List.map(sc -> {
+                    let item = match Render.sprite(surfaceName(sc), sc#zIndex) {
+                        case Render.Item.Sprite(sp) => Render.Item.Sprite({ scale = { x = shrink, y = shrink } | sp })
+                        case other                  => other
+                    };
+                    { at = sc#rect#position, item = item } });
+                let infoOf = (name: String) -> match Map.get(name, baked) {
+                    case Some((_, sc)) => Some({ id = GpuHandle.wrapTextureId(0),
+                                                 width = sc#rect#size#x * Int32.toFloat64(cfg#scale),
+                                                 height = sc#rect#size#y * Int32.toFloat64(cfg#scale) })
+                    case None          => HeadlessRender.imageTextureInfo(video#images)(name)
+                };
+                let withBaked = Map.foldLeftWithKey((acc, name, entry) -> Map.insert(name, fst(entry), acc), cfg#texturePath, baked);
+                (List.append(pasted, Render.withoutShaders(items0)), Nil, infoOf, withBaked)
+            } else (Render.withoutShaders(items0), Render.shaderSurfaces(items0), HeadlessRender.imageTextureInfo(video#images), cfg#texturePath);
+        let (drawables, polygons) = Render.drawWith(info, items);
         let req = { drawables = drawables, polygons = polygons,
                     design = cfg#design, scale = cfg#scale, background = cfg#background,
-                    texturePath = cfg#texturePath, fontTtf = cfg#fontTtf,
+                    texturePath = paths, fontTtf = cfg#fontTtf,
                     fontAtlas = cfg#fontAtlas, outPath = framePath(video#outDir, index),
                     shapeAntialias = cfg#shapeAntialias, textAntialias = cfg#textAntialias };
         // 字の縁の表は RenderCache.writeFramePng と同じ空（鍵と SoftRaster の塗りを同じ値から出す）。
         { req = req, surfaces = surfaces, extraFonts = video#extraFonts, fontAntialias = Map.empty() }
+
+    /// 面の名前（同じ大きさ・z の面は同じ PNG。揺れて位置だけ変わった面は貼り直すだけでよい —— 面の絵は rect の中の uv で決まる）。
+    def surfaceName(sc: Render.ShaderSurface): String =
+        let r = sc#rect;
+        "surface_${Int32.toString(roundInt(r#size#x))}_${Int32.toString(roundInt(r#size#y))}_${Int32.toString(sc#zIndex)}"
+
+    def roundInt(v: Float64): Int32 = Float64.tryToInt32(Float64.round(v)) |> Option.getWithDefault(0)
+
+    /// コマの順に面を見て、初めて出た名前の面だけを書き出す（SoftRaster で面 1 枚だけを塗り、面の範囲を切り抜いて outDir に PNG で）。
+    def bakeAll(video: Video[w], jobs: List[(Int32, w)]): Baked \ IO =
+        let scene = video#scene;
+        let warnLog = SoftRaster.freshTexWarnLog();
+        let textures = SoftRaster.freshTextureCache();
+        jobs |> List.foldLeft((acc, p) -> {
+            let (_, w) = p;
+            Render.shaderSurfaces(scene(video#softFonts)(w)) |> List.foldLeft((done, sc) -> {
+                let name = surfaceName(sc);
+                if (Map.memberOf(name, done)) done
+                else Map.insert(name, bakeOne(video, warnLog, textures, name, sc), done)
+            }, acc)
+        }, Map.empty())
+
+    def bakeOne(video: Video[w], warnLog: SoftRaster.TexWarnLog, textures: SoftRaster.TextureCache,
+                name: String, sc: Render.ShaderSurface): (String, Render.ShaderSurface) \ IO =
+        let cfg = video#soft;
+        let r = sc#rect;
+        let req = { drawables = Nil, polygons = Nil,
+                    design = cfg#design, scale = cfg#scale, background = cfg#background,
+                    texturePath = cfg#texturePath, fontTtf = cfg#fontTtf,
+                    fontAtlas = cfg#fontAtlas, outPath = "",
+                    shapeAntialias = cfg#shapeAntialias, textAntialias = cfg#textAntialias };
+        let full = SoftRaster.renderToImageCached(req, sc :: Nil, video#extraFonts, Map.empty(), warnLog, textures);
+        // 面の位置と大きさは design px。書き出した絵は出力の画素なので scale 倍で切り抜く。
+        let px = v -> roundInt(v * Int32.toFloat64(cfg#scale));
+        let x = Int32.max(0, px(r#position#x));
+        let y = Int32.max(0, px(r#position#y));
+        let width = Int32.max(1, Int32.min(full.getWidth() - x, px(r#size#x)));
+        let height = Int32.max(1, Int32.min(full.getHeight() - y, px(r#size#y)));
+        // 面の PNG は動画のフォルダごとに置く（同じパスを動画ごとに書き直すと、テクスチャのキャッシュが前の面を貼る）。
+        let path = "${video#outDir}/${name}.png";
+        discard ImageIO.write(full.getSubimage(x, y, width, height), "png", new File(path));
+        let design = v -> Int32.toFloat64(v) / Int32.toFloat64(cfg#scale);
+        (path, { rect = { position = { x = design(x), y = design(y) }, size = { x = design(width), y = design(height) } } | sc })
 
     /// 進みの行を何コマごとに出すか。
     // WhyNot: 書き終わるまで黙らない —— 常駐（bin/fge resident）は出力の行が HEADLESS_SILENT_SECS（既定 120 秒）来ないと
@@ -158,7 +230,7 @@ pub mod VideoOut {
     def lanes(): Int32 = 4
 
     /// SoftRaster で塗る（paint が真のコマだけ）。全部のコマの鍵を返す。
-    def writeSoft(paint: PaintRange, video: Video[w], jobs: List[(Int32, w)]): Map[Int32, String] \ IO =
+    def writeSoft(paint: PaintRange, video: Video[w], baked: Baked, jobs: List[(Int32, w)]): Map[Int32, String] \ IO =
         let session = RenderCache.freshSession();
         let warnLog = SoftRaster.freshTexWarnLog();
         let textures = SoftRaster.freshTextureCache();
@@ -168,7 +240,7 @@ pub mod VideoOut {
                 spawn (jobs |> List.filter(p -> Int32.modulo(fst(p), lanes()) == lane) |> List.forEach(p -> {
                     let (i, w) = p;
                     noteProgress(video#outDir, i);
-                    let frame = softFrame(video, i, w);
+                    let frame = softFrame(video, baked, i, w);
                     let key = RenderCache.keyOf(session, DrawHash.PngEncoding.Filmstrip, frame, Map.empty(), textures)
                         |> Option.map(DrawHash.toHex) |> Option.getWithDefault("-");
                     discard keys.put(i, key);
@@ -187,7 +259,7 @@ pub mod VideoOut {
 
     /// GPU で塗って ffmpeg へ生の画素を流す。鍵は SoftRaster の命令から（GL とは別の糸で並べて作る）。
     /// GL の文脈は呼んだ糸が持つ。GL が作れない・ffmpeg が立たない時は何も書かずに Err。
-    def writeGl(settings: Settings, video: Video[w], jobs: List[(Int32, w)]): Result[String, Map[Int32, String]] \ IO =
+    def writeGl(settings: Settings, video: Video[w], baked: Baked, jobs: List[(Int32, w)]): Result[String, Map[Int32, String]] \ IO =
         let config = run { ProjectLoader.loadProject(".") } with Fs.FileRead.runWithIO;
         match config {
             case Err(why) => Err("project.json を読めない: ${why}")
@@ -197,7 +269,7 @@ pub mod VideoOut {
                     case Err(why) => Err(why)
                     case Ok(session) =>
                         let result = try {
-                            paintGl(settings, video, session, jobs)
+                            paintGl(settings, video, baked, session, jobs)
                         } catch {
                             case e: Throwable => Err("GPU で塗る途中で止まった: ${e.toString()}")
                         };
@@ -206,7 +278,7 @@ pub mod VideoOut {
                 }
         }
 
-    def paintGl(settings: Settings, video: Video[w], session: GlOffscreen.Session, jobs: List[(Int32, w)]): Result[String, Map[Int32, String]] \ IO =
+    def paintGl(settings: Settings, video: Video[w], baked: Baked, session: GlOffscreen.Session, jobs: List[(Int32, w)]): Result[String, Map[Int32, String]] \ IO =
         let (width, height) = GlOffscreen.sizeOf(session);
         // ファイルの無い絵を画素で載せる。
         video#images |> List.forEach(img -> {
@@ -227,7 +299,7 @@ pub mod VideoOut {
                     // 鍵は別の糸で（SoftRaster の命令を組むのは GL と無関係なので、塗りと重ねる）。region の終わりで待つ。
                     spawn (jobs |> List.forEach(p -> {
                         let (i, w) = p;
-                        let key = RenderCache.keyOf(keySession, DrawHash.PngEncoding.Filmstrip, softFrame(video, i, w), Map.empty(), keyTextures)
+                        let key = RenderCache.keyOf(keySession, DrawHash.PngEncoding.Filmstrip, softFrame(video, baked, i, w), Map.empty(), keyTextures)
                             |> Option.map(DrawHash.toHex) |> Option.getWithDefault("-");
                         discard keys.put(i, key)
                     })) @ rc;
