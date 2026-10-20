@@ -109,17 +109,18 @@ pub mod Flow {
     pub def fingerprintProbe(): String = "fp"
 
     pub def vocabOf(app: App.App[w, ef], world: w): Vocab =
-        let table = App.rec(app)#flow;
+        let r = App.rec(app);
+        let table = r#flow;
         let roles = table#roles;
         { roles = roles(world) |> List.map(snd) |> List.distinct,
           probes = table#probes |> List.map(row -> (row#name, kindOf(row#read), row#doc)),
           drives = table#drives |> List.map(row -> (row#name, row#doc)),
-          starts = App.rec(app)#starts |> List.map(start -> (start#name, start#doc, start#args)),
+          starts = r#starts |> List.map(start -> (start#name, start#doc, start#args)),
           options = table#options,
           keys = GameEngine.allKeys() |> List.map(key -> "${key}"),
           ready = Option.nonEmpty(table#ready),
           replies = Option.nonEmpty(table#replies),
-          fingerprint = Option.nonEmpty(App.rec(app)#fingerprint) }
+          fingerprint = Option.nonEmpty(r#fingerprint) }
 
     def kindOf(probe: Probe[w]): Kind = match probe {
         case Probe.Num(_)  => Kind.Num
@@ -300,6 +301,7 @@ pub mod Flow {
     type alias Ctx[w: Type, ef: Eff] = { app = App.App[w, ef], setup = Setup, dt = Float64, readyOn = Bool }
 
     def runLine(ctx: Ctx[w, ef], line: Line, c: PlayState[w]): Result[Stop[w], PlayState[w]] \ ef + Fs.FileRead =
+        let r = App.rec(ctx#app);
         match line#step {
             case Step.Start(name, args, files) =>
                 match withServedFiles(files, () -> App.buildStart(ctx#app, ctx#setup#design, name, args)) {
@@ -319,7 +321,7 @@ pub mod Flow {
             case Step.Wait(span, opt)   => frames(ctx, line, countOf(ctx, span, opt), Set.empty(), opt, c)
             case Step.Until(expr, max)  => waitFor(ctx, line, None, expr, framesIn(ctx, max), c)
             case Step.Drive(name, expr, max) =>
-                match App.rec(ctx#app)#flow#drives |> List.find(row -> row#name == name) {
+                match r#flow#drives |> List.find(row -> row#name == name) {
                     case None      => Err({ cursor = c, at = line, why = "操作 '${name}' は表に無い", seen = "" })
                     case Some(row) => waitFor(ctx, line, Some(row), expr, framesIn(ctx, max), c)
                 }
@@ -328,13 +330,12 @@ pub mod Flow {
                 else Err({ cursor = c, at = line, why = "expect が立たない: ${showExpr(expr)}", seen = showExpr(expr) })
             case Step.Mark(name) => Ok({ marks = Map.insert(name, c#count, c#marks) | c })
             case Step.Reload(target, files) =>
-                let app = ctx#app;
                 let reloaded = withServedFiles(files, () -> match target {
-                    case "key" => match App.rec(app)#reload {
+                    case "key" => match r#reload {
                         case Some((_, reloadAll)) => reloadAll(c#world)
                         case None                 => c#world
                     }
-                    case path => App.rec(app)#watch |> List.foldLeft((acc, entry) -> {
+                    case path => r#watch |> List.foldLeft((acc, entry) -> {
                         let (watched, f) = entry;
                         if (watched == path) f(acc) else acc
                     }, c#world)
@@ -342,14 +343,14 @@ pub mod Flow {
                 // 履歴（rewind が戻る先）には触らない —— 実機の履歴に積まれるのは、進めた後の World だけ。
                 Ok({ world = reloaded | c })
             case Step.Request(path, params, files) =>
-                match App.RemoteDebug.findRoute(path, App.rec(ctx#app)#remoteHandlers) {
+                match App.RemoteDebug.findRoute(path, r#remoteHandlers) {
                     case None => Err({ cursor = c, at = line, why = "onRequest のルート '${path}' が無い", seen = "" })
                     case Some(apply) => match withServedFiles(files, () -> apply(params, c#world)) {
                         case Ok(changed) => Ok({ world = changed | c })
                         case Err(why)    => Err({ cursor = c, at = line, why = "onRequest '${path}': ${why}", seen = "" })
                     }
                 }
-            case Step.Close => match App.rec(ctx#app)#closeRequest {
+            case Step.Close => match r#closeRequest {
                 case Some(f) => {
                     Ok({ world = f(c#world) | c })
                 }
@@ -607,8 +608,9 @@ pub mod Flow {
     }
 
     pub def valueOf(app: App.App[w, ef], name: String, world: w): Option[Value] =
-        if (name == fingerprintProbe()) App.rec(app)#fingerprint |> Option.map(f -> Value.Text(fingerprintOf(f(world))))
-        else App.rec(app)#flow#probes |> List.find(row -> row#name == name) |> Option.map(row -> match row#read {
+        let r = App.rec(app);
+        if (name == fingerprintProbe()) r#fingerprint |> Option.map(f -> Value.Text(fingerprintOf(f(world))))
+        else r#flow#probes |> List.find(row -> row#name == name) |> Option.map(row -> match row#read {
             case Probe.Num(f)  => Value.Num(f(world))
             case Probe.Text(f) => Value.Text(f(world))
             case Probe.Flag(f) => Value.Flag(f(world))

@@ -732,8 +732,9 @@ pub mod App.RemoteDebug {
 
     /// GET /starts の本文: 始まりの登録簿（App.withStarts）の名前・既定の引数・説明を 1 行ずつ。
     pub def startsText(app: App.App[w, ef]): String =
-        if (List.isEmpty(App.rec(app)#starts)) "(no starts wired; use App.withStarts)\n"
-        else App.rec(app)#starts |> List.map(start -> {
+        let r = App.rec(app);
+        if (List.isEmpty(r#starts)) "(no starts wired; use App.withStarts)\n"
+        else r#starts |> List.map(start -> {
             let args = start#args |> Map.toList |> List.map(entry -> { let (k, v) = entry; " ${k}=${v}" }) |> String.intercalate("");
             "${start#name}${args}\t${start#doc}\n"
         }) |> String.intercalate("")
@@ -875,7 +876,8 @@ pub mod App.RemoteDebug {
     /// view=scene の本文。view（PlacedItem 投影）か debugView（生チャンネル投影）から、
     /// 矩形に重なる描画物を列挙する。どちらも無いゲームは観測手段が無い旨を返す。
     def sceneText(app: App.App[w, ef], rect: Rect2.Rect2, world: w): String \ (ef + GameEngine.Game) =
-        match (App.rec(app)#view, App.rec(app)#debugView) {
+        let r = App.rec(app);
+        match (r#view, r#debugView) {
             case (Some(toItems), _) =>
                 let atlas = GameEngine.Game.getFontAtlas("default");
                 // 画面座標の矩形と突き合わせるので、カメラ適用後（=画面に出ている）items を使う
