@@ -413,7 +413,7 @@ mod TestRender {
         let read = ShaderDoc.Field.Scaled({ factor = 2.0, scroll = { x = 0.0, y = 0.0 },
                        of = ShaderDoc.Field.Tex({ name = "pieces", chan = ShaderDoc.TexChan.R }) });
         let surface = Render.shaderFill(rgbSpec(Nil, read), square8(), 0.0, 6);
-        Assert.assertEq(expected = Render.toDrawables(surface#item, surface#at), drawnWith(_ -> Some(texture64()), surface))
+        Assert.assertEq(expected = graySquare8() :: Nil, drawnWith(_ -> Some(texture64()), surface))
 
     // bindings の tex を scaled の下で ref で読む式も、どの uv で読むかをここでは辿らないので代表色で塗る。
     @Test
@@ -421,7 +421,7 @@ mod TestRender {
         let read = ShaderDoc.Field.Scaled({ factor = 2.0, scroll = { x = 0.0, y = 0.0 }, of = ShaderDoc.Field.Ref("img") });
         let img = ShaderDoc.Field.Tex({ name = "pieces", chan = ShaderDoc.TexChan.R });
         let surface = Render.shaderFill(rgbSpec(("img", img) :: Nil, read), square8(), 0.0, 6);
-        Assert.assertEq(expected = Render.toDrawables(surface#item, surface#at), drawnWith(_ -> Some(texture64()), surface))
+        Assert.assertEq(expected = graySquare8() :: Nil, drawnWith(_ -> Some(texture64()), surface))
 
     // shift のずらし量が uv で波打つ（ripples）式は、2 隅が合っても矩形に写せないので代表色で塗る。
     @Test
@@ -431,7 +431,7 @@ mod TestRender {
             dy = ShaderDoc.Field.Const(0.0),
             of = ShaderDoc.Field.Tex({ name = "pieces", chan = ShaderDoc.TexChan.R }) });
         let surface = Render.shaderFill(rgbSpec(Nil, read), square8(), 0.0, 6);
-        Assert.assertEq(expected = Render.toDrawables(surface#item, surface#at), drawnWith(_ -> Some(texture64()), surface))
+        Assert.assertEq(expected = graySquare8() :: Nil, drawnWith(_ -> Some(texture64()), surface))
 
     // ずらし量が uv × uv（許す場だけで組めるが曲がる）の式は、真ん中がずれるので代表色で塗る。
     @Test
@@ -442,7 +442,7 @@ mod TestRender {
             dy = ShaderDoc.Field.Const(0.0),
             of = ShaderDoc.Field.Tex({ name = "pieces", chan = ShaderDoc.TexChan.R }) });
         let surface = Render.shaderFill(rgbSpec(Nil, read), square8(), 0.0, 6);
-        Assert.assertEq(expected = Render.toDrawables(surface#item, surface#at), drawnWith(_ -> Some(texture64()), surface))
+        Assert.assertEq(expected = graySquare8() :: Nil, drawnWith(_ -> Some(texture64()), surface))
 
     // dx に v が入る（斜めの歪み）式は、2 隅が合っても矩形に写せないので代表色で塗る。
     @Test
@@ -470,7 +470,7 @@ mod TestRender {
     def testTextureReadSurfaceWithoutTextureInfoKeepsRepresentativeColor(): Unit \ Assert =
         let surface = Render.shaderFill(grayReadSpec("pieces", { position = { x = 0.0, y = 0.0 }, size = { x = 1.0, y = 1.0 } }),
                           square8(), 0.0, 6);
-        Assert.assertEq(expected = Render.toDrawables(surface#item, surface#at), drawnWith(_ -> None, surface))
+        Assert.assertEq(expected = graySquare8() :: Nil, drawnWith(_ -> None, surface))
 
     def drawnWith(textureInfoOf: String -> Option[GameEngine.TextureInfo], surface: Render.PlacedItem): List[GameEngine.Drawable] =
         fst(Render.drawWith(textureInfoOf, surface :: Nil))
