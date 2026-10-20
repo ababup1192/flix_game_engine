@@ -8,15 +8,21 @@
 //   1. ゲームの役の enum r（Confirm・Left など）と、役 → キーの keyOf を Setup に書く
 //      （keyOf は World も受け取る。割り当てを Doc で変えるゲームは World の Doc から引く）
 //   2. 押す役・マウスの位置の候補を Spec に書く（{ taps = … | PropertyTest.emptySpec() }）
-//   3. 決まり rule を「1 フレームの前後（App.TraceStep）→ 崩れていれば説明」で書く
-//   4. forAll(app, setup, { seeds, length, spec }, 始まりの World, rule) が None なら全部の種で通った
+//   3. 決まりを「1 フレームの前後（App.TraceStep）→ 名前・期待・実際の組（expect）の列」で書く
+//   4. forAllExpect(app, setup, { seeds, length, spec }, 始まりの World, checks) が None なら全部の種で通った。
+//      崩れたら「種・フレーム・入力の数・名前・期待・実際」が返る（テストは assertEq(expected = None, …)）
 //   崩れた列を見たいときは generate で列を作り firstBroken で崩れた所を、traceOf で全フレームを引く。
+//   自分で列を流す決まり（2 本の列を比べる等）は firstFailingSeedExpect(種の数, 種 → expect の列)。
 //
-// 利用例（tetris-starter の test/TestTrace.flix に全文）:
-//   let rule = (step: App.TraceStep[World]) ->
-//       if (cellsOf(step#after) == cellsOf(step#before) + 4 * locked(step) - 10 * cleared(step)) None
-//       else Some("升の数が合わない");
-//   Assert.assertEq(expected = None, PropertyTest.forAll(app, setup, cases, start, rule))
+// 利用例:
+//   let checks = (step: App.TraceStep[World]) ->
+//       PropertyTest.expect("升の数", expected = cellsOf(step#before) + 4 * locked(step) - 10 * cleared(step),
+//                           actual = cellsOf(step#after))
+//       :: PropertyTest.expect("押した後の場面", expected = World.Phase.Playing, actual = step#after#phase) :: Nil;
+//   Assert.assertEq(expected = None, PropertyTest.forAllExpect(app, setup, cases, start, checks))
+// 「この拍だけ見る」条件は、Option.filter などで actual の側へ畳まない（条件の分岐が組み合わせ関数の中へ移るだけ）。
+// ゲームの側に「その拍の状態」（出ている窓・場面）を enum で返す関数を置き、その値を actual に出す。
+// 決まりが説明の文字を自分で組む forAll（rule: TraceStep → Option[String]）も使える。
 //
 // フレームの作り方は実機と同じ App.frameOf（押した瞬間 = 前のフレームに無かったキー）。
 // 前のフレームで押していたキーをもう一度 Tap する・押したまま Press するときは、間に離すフレームを
@@ -230,5 +236,41 @@ pub mod PropertyTest {
             |> Option.map(found -> {
                 let (seed, broken) = found;
                 "seed ${seed}・${broken#frame} フレーム目（入力 ${List.length(broken#inputs)} 個目）: ${broken#why}"
+            })
+
+    /// 決まりの 1 件（名前・期待と実際が合ったか・期待と実際を字にした物）。expect で作る。
+    enum Expectation {
+        case Expectation(String, Bool, String, String)
+    }
+
+    /// 決まりの 1 件。外からは expect でだけ作る。
+    pub type alias Check = Expectation
+
+    /// 決まりの 1 件: name の値は expected のはず、実際は actual。合わなければ名前と両方の値が説明に出る。
+    /// 呼ぶ側は expect("名前", expected = …, actual = …) と書く（名前つきの引数は 1 欄の record で受ける。Assert.assertEq と同じ）。
+    pub def expect(name: String, expected: { expected = a }, actual: { actual = a }): Check with Eq[a], ToString[a] =
+        Expectation.Expectation(name, expected#expected == actual#actual,
+                                ToString.toString(expected#expected), ToString.toString(actual#actual))
+
+    /// checks のうち、合わなかった最初の 1 件の説明（「名前 期待 … / 実際 …」）。全部合えば None。
+    pub def mismatchOf(checks: List[Check]): Option[String] =
+        checks |> List.findMap(check -> {
+            let Expectation.Expectation(name, held, expected, actual) = check;
+            if (held) None else Some("${name} 期待 ${expected} / 実際 ${actual}")
+        })
+
+    /// forAll の expect 版: cases の全部の種で列を作って流し、checks が合わなかった最初の所の説明
+    /// （種・フレーム・入力の数・名前・期待・実際）。全部通れば None。
+    pub def forAllExpect(app: App.App[w, ef], setup: Setup[r, w], cases: Cases[r], start: w,
+                         checks: App.TraceStep[w] -> List[Check]): Option[String] \ ef with Eq[r] =
+        forAll(app, setup, cases, start, step -> mismatchOf(checks(step)))
+
+    /// firstFailingSeed の expect 版: 種 1, 2, …, count のうち、check の expect が最初に合わなかった種とその説明
+    /// （「seed N: 名前 期待 … / 実際 …」）。全部通れば None。自分で列を流して比べる決まり（2 本の列の比べ等）向け。
+    pub def firstFailingSeedExpect(count: Int32, check: Int64 -> List[Check] \ ef): Option[String] \ ef =
+        firstFailingSeed(count, seed -> mismatchOf(check(seed)))
+            |> Option.map(found -> {
+                let (seed, why) = found;
+                "seed ${seed}: ${why}"
             })
 }

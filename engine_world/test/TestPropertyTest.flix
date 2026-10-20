@@ -137,4 +137,38 @@ mod TestPropertyTest {
         Assert.assertEq(expected = (None, Some("seed 1・0 フレーム目（入力 1 個目）: 崩れた")),
             (PropertyTest.forAll(seenApp(), setup(), cases, seen(), never),
              PropertyTest.forAll(seenApp(), setup(), cases, seen(), always)))
+
+    // ══════════════════════════════════════════════════════
+    // expect（名前・期待・実際の組で決まりを書く）
+    // ══════════════════════════════════════════════════════
+
+    /// mismatchOf は合わなかった最初の 1 件を「名前 期待 … / 実際 …」で返す。
+    @Test
+    def testMismatchOfNamesTheFirstFailedCheck(): Unit \ Assert =
+        Assert.assertEq(expected = Some("押した数 期待 2 / 実際 3"),
+            PropertyTest.mismatchOf(PropertyTest.expect("場面", expected = "Play", actual = "Play")
+                                    :: PropertyTest.expect("押した数", expected = 2, actual = 3)
+                                    :: PropertyTest.expect("音", expected = 1, actual = 0) :: Nil))
+
+    /// 全部合えば None。
+    @Test
+    def testMismatchOfIsNoneWhenAllHold(): Unit \ Assert =
+        Assert.assertEq(expected = None,
+            PropertyTest.mismatchOf(PropertyTest.expect("押した数", expected = 2, actual = 2) :: Nil))
+
+    /// forAllExpect は合わなかった最初の種・フレーム・入力の数と、名前・期待・実際を返す。
+    @Test
+    def testForAllExpectReportsSeedFrameAndValues(): Unit \ Assert =
+        let cases = { seeds = 3, length = 20, spec = { taps = List#{Role.Run}, idle = 0 | PropertyTest.emptySpec() } };
+        let checks = (step: App.TraceStep[Seen]) ->
+            PropertyTest.expect("押したキーの数", expected = 0, actual = List.length(step#after#presses)) :: Nil;
+        Assert.assertEq(expected = Some("seed 1・0 フレーム目（入力 1 個目）: 押したキーの数 期待 0 / 実際 1"),
+            PropertyTest.forAllExpect(seenApp(), setup(), cases, seen(), checks))
+
+    /// firstFailingSeedExpect は最初に合わなかった種と、名前・期待・実際を返す。
+    @Test
+    def testFirstFailingSeedExpectReportsSeedAndValues(): Unit \ Assert =
+        Assert.assertEq(expected = Some("seed 3: 種が 3 より小さい 期待 true / 実際 false"),
+            PropertyTest.firstFailingSeedExpect(5, seed ->
+                PropertyTest.expect("種が 3 より小さい", expected = true, actual = seed < 3i64) :: Nil))
 }

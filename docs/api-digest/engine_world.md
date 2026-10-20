@@ -1,4 +1,4 @@
-<!-- engine v0.54.0 / 生成: 2026-10-20 -->
+<!-- engine v0.54.0 / 生成: 2026-10-21 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine_world
@@ -1673,6 +1673,16 @@
   `pub def firstFailingSeed(count: Int32, check: Int64 -> Option[a] \ ef): Option[(Int64, a)] \ ef`
 - cases の全部の種で列を作って流し、rule が崩れた最初の所の説明（種・フレーム・入力の数・rule の説明）。
   `pub def forAll(app: App.App[w, ef], setup: Setup[r, w], cases: Cases[r], start: w, rule: App.TraceStep[w] -> Option[String]): Option[String] \ ef with Eq[r]`
+- 決まりの 1 件。外からは expect でだけ作る。
+  `pub type alias Check = Expectation`
+- 決まりの 1 件: name の値は expected のはず、実際は actual。合わなければ名前と両方の値が説明に出る。
+  `pub def expect(name: String, expected: { expected = a }, actual: { actual = a }): Check with Eq[a], ToString[a]`
+- checks のうち、合わなかった最初の 1 件の説明（「名前 期待 … / 実際 …」）。全部合えば None。
+  `pub def mismatchOf(checks: List[Check]): Option[String]`
+- forAll の expect 版: cases の全部の種で列を作って流し、checks が合わなかった最初の所の説明
+  `pub def forAllExpect(app: App.App[w, ef], setup: Setup[r, w], cases: Cases[r], start: w, checks: App.TraceStep[w] -> List[Check]): Option[String] \ ef with Eq[r]`
+- firstFailingSeed の expect 版: 種 1, 2, …, count のうち、check の expect が最初に合わなかった種とその説明
+  `pub def firstFailingSeedExpect(count: Int32, check: Int64 -> List[Check] \ ef): Option[String] \ ef`
 
 ## PxShade — `engine_world/src/PxShade.flix`
 - 仕上げの重み。0 にしたものは掛からない。
