@@ -17,16 +17,72 @@ import (
 //
 // ここの関数は純粋（ファイルの中身は呼ぶ側が読んで渡す）。
 
-// AccessorQuery は field-to-accessor の問い。Reader・Mapper・Setter は書く時の字（`World.replayClockOf`）、
-// *Sym は索引の名前（その def の中の直の読み書き＝口そのものは替えない）。
+// AccessorName は口の名前を「置く mod」と「def の名前」に分けて持つ（`World.pointerShownOf` → World と pointerShownOf）。
+// 書き換える所ごとに、その所の mod と use から書く形を決める（spellAt）。--getter 等に修飾つき・なしの
+// どちらが来ても、ここへ来る前に 1 つの形に揃える（ops.go の accessorNameOf）。
+type AccessorName struct {
+	Mod  string // 口の def を置く mod（一番上なら ""）
+	Name string // def の名前（修飾なし）
+}
+
+// Sym は索引の名前（`World.pointerShownOf`）。
+func (n AccessorName) Sym() string {
+	if n.Mod == "" {
+		return n.Name
+	}
+	return n.Mod + "." + n.Name
+}
+
+// IsZero は口を渡していないか。
+func (n AccessorName) IsZero() bool { return n.Name == "" }
+
+// splitSym は索引の名前を AccessorName にする。
+func splitSym(sym string) AccessorName { return AccessorName{Mod: modOf(sym), Name: shortName(sym)} }
+
+// imports は use で取り込んだ名前（use を書いた mod か def と、取り込んだ物の名前 → その所で書く名前）。
+// typed の段の索引に use の行が無ければ空で、外の所はいつも修飾つきになる（それでも通る）。
+type imports map[[2]string]string
+
+func importsOf(rows []Row) imports {
+	im := imports{}
+	for _, r := range rows {
+		if r.Kind != KindUse {
+			continue
+		}
+		as := r.Attr("alias")
+		if as == "" {
+			as = shortName(r.Sym)
+		}
+		im[[2]string{r.Owner, r.Sym}] = as
+	}
+	return im
+}
+
+// spellAt は def owner の中で口 n を呼ぶ時の字: 同じ mod なら素の名前、use で取り込んでいればその名前、
+// ほかは mod の修飾つき（Flix は親の mod の名前も子の mod へは見せないので、mod は同じ時だけ素にする）。
+func (im imports) spellAt(n AccessorName, owner string) string {
+	if modOf(owner) == n.Mod {
+		return n.Name
+	}
+	for _, scope := range []string{owner, modOf(owner)} {
+		if as, ok := im[[2]string{scope, n.Sym()}]; ok {
+			return as
+		}
+	}
+	return n.Sym()
+}
+
+// AccessorQuery は field-to-accessor の問い。Reader・Mapper・Setter は口の名前（書く字は所ごとに spellAt で決める）、
+// OwnerSyms は索引の名前（その def の中の直の読み書き＝口そのものは替えない）。
 type AccessorQuery struct {
 	Label     string
 	Receiver  string
-	Reader    string
-	Mapper    string
-	Setter    string
+	Reader    AccessorName
+	Mapper    AccessorName
+	Setter    AccessorName
 	OwnerSyms []string // 口の def（中の物は替えず数えない）
 	Outside   string   // 空でなければ、この mod の中の物を替えない（数えない）
+	Home      string   // 口の外を数える mod（Left の基準。空なら数えない）
 	Skip      map[string]bool
 	TypeWhy   string // 空でなければ口と欄の型が合わない訳（読みを全部 fix へ）
 }
@@ -40,6 +96,8 @@ type AccessorPlan struct {
 	Writes   int // 書きの口へ替える書き
 	Folded   int // 書きの lambda の引数に畳んだ読み（Reads に入る）
 	Inside   int // 口の中・--outside の mod の中の物（替えない）
+	Left     int // 当てた後も Home の外に残る直の読み書き（替えられず fix へ回した物）
+	Unsure   int // 受け手の型が決まらない物（数えず fix へ。Left には入れない）
 	Rewrites []Fixed
 }
 
@@ -367,8 +425,17 @@ func PlanAccessor(srcs map[string]string, rows []Row, q AccessorQuery) (Accessor
 	}
 	ans := FieldSites(rows, FieldQuery{Label: q.Label, Receiver: q.Receiver, Outside: q.Outside})
 	p.Inside = ans.Inside
+	p.Unsure = len(ans.Unsure)
 	for _, s := range ans.Unsure {
 		p.Fix = append(p.Fix, Fixed{s.Row, fmt.Sprintf("受け手の型が決まらない（recv=%s via=%s）", s.Recv, s.Via)})
+	}
+	im := importsOf(rows)
+	// leave は替えられずに残す所（Home の外なら Left に数える）。
+	leave := func(r Row, why string) {
+		p.Fix = append(p.Fix, Fixed{r, why})
+		if q.Home == "" || !inMod(r.Owner, q.Home) {
+			p.Left++
+		}
 	}
 	var reads []readSite
 	var updates []updateSite
@@ -383,7 +450,7 @@ func PlanAccessor(srcs map[string]string, rows []Row, q AccessorQuery) (Accessor
 			return p, fmt.Errorf("%s の中身が渡されていない", s.File)
 		}
 		if q.Skip[s.File+":"+fmt.Sprint(s.Line)] {
-			p.Fix = append(p.Fix, Fixed{s.Row, "--skip で外した"})
+			leave(s.Row, "--skip で外した")
 			continue
 		}
 		ls, le, err := ByteRange(src, s.Row)
@@ -392,38 +459,38 @@ func PlanAccessor(srcs map[string]string, rows []Row, q AccessorQuery) (Accessor
 		}
 		if !s.Write {
 			if ls == 0 || src[ls-1] != '#' {
-				p.Fix = append(p.Fix, Fixed{s.Row, "欄の前が # でない（読めない書き方）"})
+				leave(s.Row, "欄の前が # でない（読めない書き方）")
 				continue
 			}
 			if q.TypeWhy != "" {
-				p.Fix = append(p.Fix, Fixed{s.Row, q.TypeWhy})
+				leave(s.Row, q.TypeWhy)
 				continue
 			}
 			st, ok := ReceiverStart(src, ls-1)
 			if !ok {
-				p.Fix = append(p.Fix, Fixed{s.Row, "受け手の式が読めない（文字列を挟む括弧・名前でない式）"})
+				leave(s.Row, "受け手の式が読めない（文字列を挟む括弧・名前でない式）")
 				continue
 			}
 			reads = append(reads, readSite{row: s.Row, start: st, end: le, recv: src[st : ls-1]})
 			continue
 		}
-		if q.Mapper == "" && q.Setter == "" {
-			p.Fix = append(p.Fix, Fixed{s.Row, "書きの口が無い（--setter か --mapper を渡す）"})
+		if q.Mapper.IsZero() && q.Setter.IsZero() {
+			leave(s.Row, "書きの口が無い（--setter か --mapper を渡す）")
 			continue
 		}
 		b, ok := enclosingOpen(src, ls)
 		if !ok {
-			p.Fix = append(p.Fix, Fixed{s.Row, "更新の `{` が読めない（前の欄の値に文字列がある・括弧が合わない）"})
+			leave(s.Row, "更新の `{` が読めない（前の欄の値に文字列がある・括弧が合わない）")
 			continue
 		}
 		u, err := ParseUpdate(src[b:])
 		if err != nil {
-			p.Fix = append(p.Fix, Fixed{s.Row, err.Error()})
+			leave(s.Row, err.Error())
 			continue
 		}
 		k := u.Find(q.Label)
 		if k < 0 || b+u.Fields[k].Start != ls {
-			p.Fix = append(p.Fix, Fixed{s.Row, "更新の欄の位置が索引と合わない"})
+			leave(s.Row, "更新の欄の位置が索引と合わない")
 			continue
 		}
 		updates = append(updates, updateSite{row: s.Row, brace: b, end: b + u.End, field: u.Fields[k], multi: len(u.Fields) > 1,
@@ -433,7 +500,7 @@ func PlanAccessor(srcs map[string]string, rows []Row, q AccessorQuery) (Accessor
 	folded := map[int]bool{}
 	for k := range updates {
 		up := &updates[k]
-		if q.Mapper == "" || !isIdent(up.recv) {
+		if q.Mapper.IsZero() || !isIdent(up.recv) {
 			continue
 		}
 		src := srcs[up.row.File]
@@ -463,7 +530,7 @@ func PlanAccessor(srcs map[string]string, rows []Row, q AccessorQuery) (Accessor
 	}
 	for i, r := range reads {
 		r := r
-		label, reader := q.Label, q.Reader
+		label, reader := q.Label, im.spellAt(q.Reader, r.row.Owner)
 		into := reader + "(…)"
 		if folded[i] {
 			into = label + "（書きの lambda の引数）"
@@ -489,21 +556,28 @@ func PlanAccessor(srcs map[string]string, rows []Row, q AccessorQuery) (Accessor
 	for _, up := range updates {
 		up := up
 		label := q.Label
+		setter, mapper := "", ""
+		if !q.Setter.IsZero() {
+			setter = im.spellAt(q.Setter, up.row.Owner)
+		}
+		if !q.Mapper.IsZero() {
+			mapper = im.spellAt(q.Mapper, up.row.Owner)
+		}
 		var form string
 		switch {
 		case len(up.folded) > 0:
-			form = q.Mapper + "(" + label + " -> …, e)"
-		case q.Setter != "":
-			form = q.Setter + "(v, e)"
+			form = mapper + "(" + label + " -> …, e)"
+		case setter != "":
+			form = setter + "(v, e)"
 		default:
-			form = q.Mapper + "(_ -> v, e)"
+			form = mapper + "(_ -> v, e)"
 		}
 		if up.multi {
 			form = "{ ほかの欄 | " + form + " }"
 		}
 		p.Writes++
 		p.Rewrites = append(p.Rewrites, Fixed{up.row, "書き → " + form})
-		fold, setter, mapper := len(up.folded) > 0, q.Setter, q.Mapper
+		fold := len(up.folded) > 0
 		p.Edits = append(p.Edits, Edit{
 			File: up.row.File, Start: up.brace, End: up.end, Site: up.row,
 			Check: []Want{{Span: up.row, Text: label}},

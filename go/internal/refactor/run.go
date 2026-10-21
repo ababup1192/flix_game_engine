@@ -31,9 +31,12 @@ const Usage = `使い方: fge refactor <操作> [引数] [--json] [-v|--verbose]
   expand-wildcard --enum E [--apply] [--skip file:line]  E への match の ` + "`case _ =>`" + `（使わない変数の腕も）を残りの case に書き出す
   remove-dead [--with-tests] [--only test-only|unreferenced] [--def Mod.name] [--apply] [--skip file:line]
                                                        テストからだけ・どこからも参照されない pub の def を ///・注記ごと消す
-  field-to-accessor --label x --receiver T [--getter R] [--mapper M | --setter S] [--outside Mod] [--apply] [--skip file:line]
+  field-to-accessor --label x[,y,…] --receiver T [--labels-file F] [--getter R] [--mapper M | --setter S] [--outside Mod] [--apply] [--skip file:line]
                                                        口の既定は T の mod の xOf（読み）と withX（書き）。索引に無ければ
                                                        T を宣言したファイルの既存の …Of の並びの後ろに作る（--reader は --getter と同じ）。
+                                                       R・M・S は Mod.f でも f でもよい（呼ぶ所の mod が口の mod なら素の名前・外なら修飾つきで書く）。
+                                                       欄を 2 つ以上渡すと、口は既定の名前で全部作り、1 つの patch・確かめ 1 回（落ちれば全部戻す）。
+                                                       --apply で通れば最後の行に done: N sites → 残り left outside Mod。
                                                        受け手が T の欄 x の直の読み e#x を R(e) へ、書き { x = v | e } を
                                                        S(v, e)・M(x -> f(x), e)（v が e#x を読む時）・M(_ -> v, e) へ（typed の段）。
                                                        { x = v, y = u | e } は { y = u | S(v, e) } に。
@@ -80,6 +83,7 @@ type Options struct {
 
 type args struct {
 	op, target, label, receiver, outside, flixlint, stage string
+	labelsFile                                            string // field-to-accessor の --labels-file
 	callers, catchAll, rebuild, asJSON                    bool
 	apply, withTests, unused, verbose                     bool
 	depth                                                 int // usages --depth（0 は指定なし）
@@ -150,6 +154,8 @@ func parseArgs(rest []string) (args, error) {
 			a.rebuild = true
 		case "--label":
 			a.label, err = value(&i, x)
+		case "--labels-file":
+			a.labelsFile, err = value(&i, x)
 		case "--receiver":
 			a.receiver, err = value(&i, x)
 		case "--outside":
@@ -261,8 +267,8 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 			return 2
 		}
 	case "field-to-accessor":
-		if a.label == "" || a.receiver == "" {
-			fmt.Fprintln(errOut, "refactor field-to-accessor: --label <欄>・--receiver <型 alias> が要ります（例 --label replayClock --receiver World。口は既定で World.replayClockOf・World.withReplayClock を使い、無ければ作る）")
+		if (a.label == "" && a.labelsFile == "") || a.receiver == "" {
+			fmt.Fprintln(errOut, "refactor field-to-accessor: --label <欄>（a,b,c か --labels-file で複数）・--receiver <型 alias> が要ります（例 --label replayClock --receiver World。口は既定で World.replayClockOf・World.withReplayClock を使い、無ければ作る）")
 			return 2
 		}
 		if a.mapper != "" && a.setter != "" {
@@ -282,6 +288,10 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 	case "index", "remove-dead":
 	default:
 		fmt.Fprintf(errOut, "refactor: 知らない操作 %s（usages・refs・match-sites・field-sites・index・expand-wildcard・remove-dead・field-to-accessor・remove-field・fix-construction）\n", a.op)
+		return 2
+	}
+	if a.op != "field-to-accessor" && (strings.Contains(a.label, ",") || a.labelsFile != "") {
+		fmt.Fprintf(errOut, "refactor %s: 欄は 1 つだけ（複数の欄を 1 回で渡せるのは field-to-accessor）\n", a.op)
 		return 2
 	}
 	stage, err := a.stageOf()
@@ -368,6 +378,7 @@ type report struct {
 	Index   indexInfo         `json:"index"`
 	Next    string            `json:"next,omitempty"`
 	NextWhy string            `json:"nextWhy,omitempty"` // next の訳（next は写してそのまま流せる命令だけ）
+	Done    string            `json:"done,omitempty"`    // 当てた後の言い切りの 1 行（最後の行に出す。例 done: 36 sites → 0 left outside World · check ok）
 	Outcome *Outcome          `json:"outcome,omitempty"` // 書き換える操作の結末（dry-run・applied・reverted・refused）
 	Fix     []Fixed           `json:"fix,omitempty"`     // 書き換えずに人へ回した所と理由
 
@@ -485,6 +496,9 @@ func (r report) text(out *strings.Builder, a args) {
 		dumpFile(out, "diff", r.Outcome.Diff)
 		dumpFile(out, "確かめの出力", r.Outcome.VerifyLog)
 	}
+	if r.Done != "" {
+		fmt.Fprintln(out, r.Done)
+	}
 }
 
 // sites は場所の行の全部（人へ回した所が先）を --limit で切る一覧。
@@ -519,7 +533,7 @@ func (r report) brief(a args) checkres.Brief {
 			head += "（" + r.Sym + "）"
 		}
 	}
-	b := checkres.Brief{Head: head, Count: r.gotText, Notes: r.extra, Sites: r.sites(a), Next: r.Next, NextWhy: r.NextWhy, Shown: rel}
+	b := checkres.Brief{Head: head, Count: r.gotText, Notes: r.extra, Sites: r.sites(a), Next: r.Next, NextWhy: r.NextWhy, Done: r.Done, Shown: rel}
 	switch {
 	case r.Outcome != nil:
 		b.State = strings.ReplaceAll(r.Outcome.status(), "\n          ", "\n  ")

@@ -14,10 +14,10 @@ import (
 	"unicode/utf8"
 )
 
-// DefaultGetter・DefaultSetter は口の既定の名前（alias の mod の中の <欄>Of・with<欄>）。
-func DefaultGetter(mod, label string) string { return mod + "." + label + "Of" }
+// DefaultGetter・DefaultSetter は口の既定の def の名前（<欄>Of・with<欄>。置く mod は alias の mod）。
+func DefaultGetter(label string) string { return label + "Of" }
 
-func DefaultSetter(mod, label string) string { return mod + ".with" + upperFirst(label) }
+func DefaultSetter(label string) string { return "with" + upperFirst(label) }
 
 func upperFirst(s string) string {
 	r, n := utf8.DecodeRuneInString(s)

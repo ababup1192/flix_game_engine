@@ -132,7 +132,7 @@ func TestRewriteUpdateTakesOneFieldOut(t *testing.T) {
 }
 
 func TestPlanAccessorCounts(t *testing.T) {
-	p, err := PlanAccessor(accSrcs(t), accRows(t), AccessorQuery{Label: "clock", Receiver: "World", Reader: "Rec.clockOf", Mapper: "Rec.mapClock",
+	p, err := PlanAccessor(accSrcs(t), accRows(t), AccessorQuery{Label: "clock", Receiver: "World", Reader: AccessorName{"Rec", "clockOf"}, Mapper: AccessorName{"Rec", "mapClock"},
 		OwnerSyms: []string{"Rec.clockOf", "Rec.mapClock", "Rec.withClock"}})
 	must(t, err)
 	// 読み: tick・sum 2・made・piped・total 2・spread・note = 9。書き: tick・reset・both・late・piped・total = 6。
@@ -148,15 +148,15 @@ func TestFieldToAccessorRewritesWithTheMapper(t *testing.T) {
 	code, text := runAcc(t, root, verifyWith(0, "", &cmds), append(accArgs, "--mapper", "Rec.mapClock", "--apply")...)
 	src := read(t, root, "src/Rec.flix")
 	for _, want := range []string{
-		"pub def tick(dt: Float64, w: World): World = Rec.mapClock(clock -> clock + dt, w)",
-		"pub def reset(w: World): World = Rec.mapClock(_ -> 0.0, w)",
-		"pub def sum(a: World, b: World): Float64 = Rec.clockOf(a) + Rec.clockOf(b)",
-		"pub def made(): Float64 = Rec.clockOf(make())",
-		"pub def piped(w: World): World = Rec.mapClock(clock -> clock |> half, w)",
-		"        Rec.mapClock(_ -> List.foldLeft((acc, v) -> acc + Rec.clockOf(v), 0.0, ws) + Rec.clockOf(w), w)",
-		`"clock: ${Rec.clockOf(w)}"`,
-		"pub def both(w: World): World = { speed = 2 | Rec.mapClock(_ -> 1.0, w) }",
-		"pub def late(w: World): World = { speed = 3 | Rec.mapClock(_ -> 2.0, w) }",
+		"pub def tick(dt: Float64, w: World): World = mapClock(clock -> clock + dt, w)",
+		"pub def reset(w: World): World = mapClock(_ -> 0.0, w)",
+		"pub def sum(a: World, b: World): Float64 = clockOf(a) + clockOf(b)",
+		"pub def made(): Float64 = clockOf(make())",
+		"pub def piped(w: World): World = mapClock(clock -> clock |> half, w)",
+		"        mapClock(_ -> List.foldLeft((acc, v) -> acc + clockOf(v), 0.0, ws) + clockOf(w), w)",
+		`"clock: ${clockOf(w)}"`,
+		"pub def both(w: World): World = { speed = 2 | mapClock(_ -> 1.0, w) }",
+		"pub def late(w: World): World = { speed = 3 | mapClock(_ -> 2.0, w) }",
 		// 替えない物: 口そのもの・同じ名前の別の record の欄・開いた row。
 		"pub def clockOf(w: World): Float64 = w#clock",
 		"pub def otherClock(): Float64 = other()#clock",
@@ -177,8 +177,8 @@ func TestFieldToAccessorWritesWithTheSetter(t *testing.T) {
 	runAcc(t, root, verifyWith(0, "", &cmds), append(accArgs, "--setter", "Rec.withClock", "--apply")...)
 	src := read(t, root, "src/Rec.flix")
 	for _, want := range []string{
-		"pub def tick(dt: Float64, w: World): World = Rec.withClock(Rec.clockOf(w) + dt, w)",
-		"pub def reset(w: World): World = Rec.withClock(0.0, w)",
+		"pub def tick(dt: Float64, w: World): World = withClock(clockOf(w) + dt, w)",
+		"pub def reset(w: World): World = withClock(0.0, w)",
 	} {
 		if !strings.Contains(src, want) {
 			t.Errorf("%q が無い\n%s", want, src)
@@ -187,7 +187,7 @@ func TestFieldToAccessorWritesWithTheSetter(t *testing.T) {
 }
 
 func TestFieldToAccessorWithoutAWriterLeavesTheWritesToFix(t *testing.T) {
-	p, err := PlanAccessor(accSrcs(t), accRows(t), AccessorQuery{Label: "clock", Receiver: "World", Reader: "Rec.clockOf", OwnerSyms: []string{"Rec.clockOf"}})
+	p, err := PlanAccessor(accSrcs(t), accRows(t), AccessorQuery{Label: "clock", Receiver: "World", Reader: AccessorName{"Rec", "clockOf"}, OwnerSyms: []string{"Rec.clockOf"}})
 	must(t, err)
 	// 書きの口の def（mapClock・withClock）も口として渡していないので、その中の書きも fix に並ぶ: 書き 8＋開いた row 1。
 	if p.Writes != 0 || len(p.Fix) != 9 {
@@ -200,7 +200,7 @@ func TestFieldToAccessorDryRunWritesOnlyTheDiff(t *testing.T) {
 	before := read(t, root, "src/Rec.flix")
 	code, text := runAcc(t, root, nil, append(accArgs, "--mapper", "Rec.mapClock")...)
 	diff := read(t, root, "build/refactor/last.diff")
-	if code != 0 || read(t, root, "src/Rec.flix") != before || !strings.Contains(diff, "+    pub def made(): Float64 = Rec.clockOf(make())") || !strings.Contains(text, "--apply") {
+	if code != 0 || read(t, root, "src/Rec.flix") != before || !strings.Contains(diff, "+    pub def made(): Float64 = clockOf(make())") || !strings.Contains(text, "--apply") {
 		t.Errorf("exit %d\n%s\n%s", code, text, diff)
 	}
 }
@@ -241,7 +241,7 @@ func TestTypesOfTheReaderAndTheField(t *testing.T) {
 
 // 口の戻りの型が欄の型と違えば、読みは替えずに fix（読む側の組み替えは人）。
 func TestFieldToAccessorLeavesReadsWhenTheTypesDiffer(t *testing.T) {
-	p, err := PlanAccessor(accSrcs(t), accRows(t), AccessorQuery{Label: "clock", Receiver: "World", Reader: "Rec.clockOf", OwnerSyms: []string{"Rec.clockOf"},
+	p, err := PlanAccessor(accSrcs(t), accRows(t), AccessorQuery{Label: "clock", Receiver: "World", Reader: AccessorName{"Rec", "clockOf"}, OwnerSyms: []string{"Rec.clockOf"},
 		TypeWhy: "口 Rec.clockOf の戻り Option[Float64] と欄の型 Float64 が違う"})
 	must(t, err)
 	if p.Reads != 0 || len(p.Edits) != 0 {

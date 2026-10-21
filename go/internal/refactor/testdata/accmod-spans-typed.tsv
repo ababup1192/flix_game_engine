@@ -1,0 +1,24 @@
+# flixlint-spans 2 stage=typed columns=kind,file,sl,sc,el,ec,sym,owner,extra
+def-decl	src/Box.flix	9	13	9	19	Box.flagOf	Box.flagOf	pub ext=9:5:9:42
+label-select	src/Box.flix	9	38	9	42	flag	Box.flagOf	recv=Box.Box via=decl
+def-decl	src/Box.flix	11	13	11	17	Box.make	Box.make	pub ext=11:5:11:53
+def-decl	src/Box.flix	13	13	13	17	Box.grow	Box.grow	pub ext=13:5:13:58
+label-update	src/Box.flix	13	35	13	39	size	Box.grow	recv=Box.Box via=decl
+label-select	src/Box.flix	13	44	13	48	size	Box.grow	recv=Box.Box via=decl
+def-decl	src/Box.flix	15	13	15	18	Box.raise	Box.raise	pub ext=15:5:15:53
+label-update	src/Box.flix	15	36	15	40	flag	Box.raise	recv=Box.Box via=decl
+def-decl	src/Box.flix	17	13	17	18	Box.shown	Box.shown	pub ext=17:5:17:41
+label-select	src/Box.flix	17	37	17	41	flag	Box.shown	recv=Box.Box via=decl
+def-decl	src/Box.flix	19	13	19	18	Box.reset	Box.reset	pub ext=19:5:19:64
+label-update	src/Box.flix	19	36	19	40	flag	Box.reset	recv=Box.Box via=row
+label-update	src/Box.flix	19	50	19	54	size	Box.reset	recv=Box.Box via=decl
+def-decl	src/Imp.flix	6	13	6	17	Imp.both	Imp.both	pub ext=6:5:6:54
+def-use	src/Imp.flix	6	34	6	40	Box.flagOf	Imp.both	
+label-select	src/Imp.flix	6	50	6	54	flag	Imp.both	recv=Box.Box via=decl
+def-decl	src/Out.flix	5	13	5	19	Out.sizeOf	Out.sizeOf	pub ext=5:5:5:40
+def-decl	src/Out.flix	7	13	7	22	Out.sizeTwice	Out.sizeTwice	pub ext=7:5:7:50
+label-select	src/Out.flix	7	42	7	46	size	Out.sizeTwice	recv=Box.Box via=decl
+def-decl	src/Out.flix	9	13	9	18	Out.lower	Out.lower	pub ext=9:5:9:54
+label-update	src/Out.flix	9	36	9	40	flag	Out.lower	recv=Box.Box via=decl
+def-decl	src/Out.flix	11	13	11	20	Out.visible	Out.visible	pub ext=11:5:11:43
+label-select	src/Out.flix	11	39	11	43	flag	Out.visible	recv=Box.Box via=decl
