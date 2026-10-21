@@ -460,7 +460,7 @@ lint-state-shape:
 	@bin/fge state-shape --all
 
 # 文書（docs/**/*.md・agents-pack）の ` ` と表と、.flix のコメントが指す Mod.name・パス・path:行 が実在するか。
-# 規約は bin/lint-rules/doc-refs.json・.flix の物の上限は lint/limits/doc-refs-flix.json。コミットでは触った .md と .flix を precommit が見る。
+# 規約は bin/lint-rules/doc-refs.json・.flix の物の上限は lint/doc-refs/flix.json・呼び手は lint/doc-refs/callers.json。コミットでは触った .md と .flix を precommit が見る。
 .PHONY: lint-doc-refs
 lint-doc-refs:
 	@bin/fge doc-refs

@@ -272,9 +272,11 @@ flix_ge_dungeon の assets/ がこの規約の実例になっている:
 - 古い記録の文書（`notes/<年-月>.md` など）は文書ごと `<ゲーム>/bin/lint-rules/doc-refs.local.json` の skip へ。
 - `.flix` のコメント（`///` と `//`）も同じ記法で読む。拾うのは ` ` の中と、地の文の語のうち `Mod.name`・`/` を含むパス・
   `path:行` の形の物だけ（ほかの地の文は見ない）。`.flix` の物は上限で数える: `make lint-doc-refs` はリポごとの
-  `lint/limits/doc-refs-flix.json`（`{"limit": N}`。無ければ 0）と比べ、増えたら止め、減ったら上限を下げるまで止める。
+  `lint/doc-refs/flix.json`（`{"limit": N}`。無ければ 0）と比べ、増えたら止め、減ったら上限を下げるまで止める。
+  `lint/limits/` には置かない（flixlint の上限の置き場で、知らない id の上限を flixlint が止める。古い置き場に残っていれば
+  doc-refs が移すよう言って止まる）。
   コミットでは触った `.flix` の、HEAD の中身より増えた物だけを止める（古い件で関係の無いコミットを止めない）。
 - `.flix` のコメントに呼び手を書かない（関数を移すと古くなり、名前は今も在るので上の確かめでは止まらない）。「名前
   （`Mod.name`・素の名前・` ` の中）＋ が呼ぶ・から呼ぶ・が読む・が使う・が組む・が受け取る・で受け取る」の形を数え、リポごとの
-  `lint/limits/` の `doc-refs-callers.json`（無ければ 0）の上限より増やさない（数え方は上と同じ）。呼び手は
+  `lint/doc-refs/callers.json`（無ければ 0）の上限より増やさない（数え方は上と同じ）。呼び手は
   `bin/fge refactor usages --callers <def>` で引き、doc には何をするか・なぜかを書く。

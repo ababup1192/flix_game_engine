@@ -28,7 +28,7 @@ func TestScanFlixCommentsReadsOnlyNameAndPathShapes(t *testing.T) {
 	}
 }
 
-// 全部を見る時、.flix のコメントの物は上限のファイル（lint/limits/doc-refs-flix.json）と比べる: 超えれば並べて止め、
+// 全部を見る時、.flix のコメントの物は上限のファイル（lint/doc-refs/flix.json）と比べる: 超えれば並べて止め、
 // 同じなら並べず、減っていれば上限を下げるよう言って止める（md の物はいつも並べる）。
 func TestFlixCommentHitsAreRatchetedByTheLimitFile(t *testing.T) {
 	root := gameRepo(t)
@@ -44,14 +44,14 @@ func TestFlixCommentHitsAreRatchetedByTheLimitFile(t *testing.T) {
 	if got := hitsOf(t, root); !has(got) {
 		t.Errorf("上限 0 で .flix の物を並べていない: %v", got)
 	}
-	write(t, root, "lint/limits/doc-refs-flix.json", "{\"limit\": 1}\n")
+	write(t, root, "lint/doc-refs/flix.json", "{\"limit\": 1}\n")
 	if got := hitsOf(t, root); has(got) || len(got) != 8 {
 		t.Errorf("上限と同じなら md の 8 件だけ: %v", got)
 	}
-	write(t, root, "lint/limits/doc-refs-flix.json", "{\"limit\": 3}\n")
+	write(t, root, "lint/doc-refs/flix.json", "{\"limit\": 3}\n")
 	var out, errOut strings.Builder
 	code, err := Run(&out, &errOut, root, nil)
-	if err != nil || code != 1 || !strings.Contains(errOut.String(), "lint/limits/doc-refs-flix.json の limit を 1 に下げる") {
+	if err != nil || code != 1 || !strings.Contains(errOut.String(), "lint/doc-refs/flix.json の limit を 1 に下げる") {
 		t.Errorf("減った時に下げるよう言っていない: code %d err %v\n%s", code, err, errOut.String())
 	}
 }
@@ -73,5 +73,17 @@ func TestNamedFlixStopsOnlyOnHitsAddedSinceHead(t *testing.T) {
 	write(t, root, "src/Extra.flix", "/// 消えた `World.ghost` を指す。\n/// 新しく `World.phantom` も。\ndef extra(): Int32 = 1\n")
 	if got := hitsOf(t, root, "src/Extra.flix"); strings.Join(got, "\n") != "src/Extra.flix:2 World.phantom doc-refs.name" {
 		t.Errorf("増えた 1 件だけ: %v", got)
+	}
+}
+
+// 上限のファイルが古い置き場（lint/limits/。flixlint の上限の置き場）に残っていれば、新しい置き場へ移すよう言って止める
+// （黙って両方を読まない）。
+func TestLimitFileLeftInTheOldPlaceStops(t *testing.T) {
+	root := gameRepo(t)
+	write(t, root, "lint/limits/doc-refs-callers.json", "{\"limit\": 1}\n")
+	var out, errOut strings.Builder
+	code, err := Run(&out, &errOut, root, nil)
+	if code != 2 || err == nil || !strings.Contains(err.Error(), "git mv lint/limits/doc-refs-callers.json lint/doc-refs/callers.json") {
+		t.Errorf("古い置き場で止めていない: code %d err %v", code, err)
 	}
 }

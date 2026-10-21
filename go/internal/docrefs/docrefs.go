@@ -65,11 +65,16 @@ type Rules struct {
 	// FlixLimitFile は .flix のコメントの見つからない件数の上限を書くリポごとのファイル（{"limit": N}。全部を見る時だけ。
 	// 増えたら止め、減ったら上限を下げるまで止める。無ければ 0）。
 	// WhyNot: doc-refs.local.json に置かないのは、エンジンの bin/lint-rules は sync-agents がまるごと配るので、エンジン自身の
-	// 上限をそこに書くとゲームの物を上書きするため（lint/limits/ は配らない・flixlint の上限と同じ置き場）。
+	// 上限をそこに書くとゲームの物を上書きするため（lint/doc-refs/ は配らない）。
+	// WhyNot: lint/limits/ に置かないのは、そこは flixlint の上限のフォルダ（ファイル名＝規則の id）で、知らない id の
+	// 上限を flixlint が「no rule has this id」で止めるため（0.55.0 はそこに置いて、ゲームの make lint-flixlint が落ちた）。
 	FlixLimitFile string `json:"flixLimitFile"`
 	// CallersLimitFile は .flix のコメントに書いた呼び手（callers.go）の上限を書くリポごとのファイル（{"limit": N}。置き場と数え方は
 	// flixLimitFile と同じ）。空ならこの段を見ない（flixComments も要る）。
 	CallersLimitFile string `json:"callersLimitFile"`
+	// MovedLimitFiles は古い置き場 → 新しい置き場（上限のファイル）。古い置き場にファイルが残っていれば移すよう言って止める
+	// （黙って両方を読むと、flixlint が止める古いファイルが残り続ける）。
+	MovedLimitFiles map[string]string `json:"movedLimitFiles"`
 
 	flixLimit    int
 	callersLimit int
@@ -147,6 +152,27 @@ func readLimit(root, rel string) (int, error) {
 		return 0, fmt.Errorf("JSON として壊れています (%s): %v", rel, err)
 	}
 	return l.Limit, nil
+}
+
+// movedLimits は古い置き場に残った上限のファイルを、新しい置き場へ移す指示の 1 行ずつにして返す（無ければ nil）。
+func (r *Rules) movedLimits(root string) error {
+	var olds []string
+	for old := range r.MovedLimitFiles {
+		olds = append(olds, old)
+	}
+	sort.Strings(olds)
+	var lines []string
+	for _, old := range olds {
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(old))); err == nil {
+			to := r.MovedLimitFiles[old]
+			lines = append(lines, fmt.Sprintf("doc-refs: %s は新しい置き場へ移す: mkdir -p %s && git mv %s %s（lint/limits/ は flixlint の上限の置き場）",
+				old, path.Dir(to), old, to))
+		}
+	}
+	if len(lines) == 0 {
+		return nil
+	}
+	return errors.New(strings.Join(lines, "\n"))
 }
 
 // callersOn は doc の呼び手を照らすか（.flix のコメントを見て、上限のファイルの場所を規約が持つ時）。
@@ -610,6 +636,9 @@ func Run(out, errOut *strings.Builder, root string, args []string) (int, error) 
 	if err != nil {
 		return 2, err
 	}
+	if err := rules.movedLimits(root); err != nil {
+		return 2, err
+	}
 	docs := append(rules.Docs(root), rules.FlixDocs(root)...)
 	if len(named) > 0 {
 		docs = nil
@@ -837,9 +866,9 @@ func existing(root string, dirs []string) []string {
 const usage = `使い方: bin/fge doc-refs [文書.md・src/X.flix ...] [-v|--all] [--json] [--root DIR]
   文書（docs/**/*.md・NOTES.md・AGENTS.local.md。規約は bin/lint-rules/doc-refs.json）の ` + "` `" + ` の中と表の行と、
   sources の .flix のコメント（/// と //）が指す Mod.name・パス・path:行 が今のリポに在るかを見る。引数なしは全部、名指しすればそれだけ。
-  .flix の物は上限で数える: 全部の時は lint/limits/doc-refs-flix.json（{"limit": N}）と比べ、名指しの .flix は HEAD より増えた物だけ止める。
+  .flix の物は上限で数える: 全部の時は lint/doc-refs/flix.json（{"limit": N}）と比べ、名指しの .flix は HEAD より増えた物だけ止める。
   .flix のコメントの「名前 が呼ぶ・から呼ぶ・が読む・が使う・が組む・が受け取る・で受け取る」（doc に書いた呼び手）を
-  lint/limits/doc-refs-callers.json の上限で数える（数え方は上と同じ）。呼び手は bin/fge refactor usages --callers <def> で引く。
+  lint/doc-refs/callers.json の上限で数える（数え方は上と同じ）。呼び手は bin/fge refactor usages --callers <def> で引く。
   -v・--all は場所を全部画面に（既定は上位だけ・全部は build/doc-refs/last.txt）。
   これから作る名前は ` + "`名前`（予定）" + `、消した物は ~~ ~~、ゲームの側のパスは <ゲーム>/… と書く（docs/doc-conventions.md）。
   頭に「手で直さない」と書いた生成物の文書は見ない。古い記録の文書は bin/lint-rules/doc-refs.local.json の

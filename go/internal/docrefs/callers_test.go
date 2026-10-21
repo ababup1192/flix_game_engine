@@ -60,7 +60,7 @@ func callerHitsOf(got []string) []string {
 	return out
 }
 
-// 全部を見る時は上限のファイル（lint/limits/doc-refs-callers.json）と比べる: 超えれば並べて止め、同じなら並べず、
+// 全部を見る時は上限のファイル（lint/doc-refs/callers.json）と比べる: 超えれば並べて止め、同じなら並べず、
 // 減っていれば上限を下げるよう言って止める。hint は呼び手を書かず道具で引くこと。
 func TestCallerClaimsAreRatchetedByTheLimitFile(t *testing.T) {
 	root := gameRepo(t)
@@ -72,17 +72,17 @@ func TestCallerClaimsAreRatchetedByTheLimitFile(t *testing.T) {
 	if got := callerHitsOf(hitsOf(t, root)); strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("got\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
-	write(t, root, "lint/limits/doc-refs-callers.json", "{\"limit\": 2}\n")
+	write(t, root, "lint/doc-refs/callers.json", "{\"limit\": 2}\n")
 	if got := callerHitsOf(hitsOf(t, root)); len(got) != 0 {
 		t.Errorf("上限と同じなら並べない: %v", got)
 	}
-	write(t, root, "lint/limits/doc-refs-callers.json", "{\"limit\": 3}\n")
+	write(t, root, "lint/doc-refs/callers.json", "{\"limit\": 3}\n")
 	var out, errOut strings.Builder
 	code, err := Run(&out, &errOut, root, nil)
-	if err != nil || code != 1 || !strings.Contains(errOut.String(), "lint/limits/doc-refs-callers.json の limit を 2 に下げる") {
+	if err != nil || code != 1 || !strings.Contains(errOut.String(), "lint/doc-refs/callers.json の limit を 2 に下げる") {
 		t.Errorf("減った時に下げるよう言っていない: code %d err %v\n%s", code, err, errOut.String())
 	}
-	write(t, root, "lint/limits/doc-refs-callers.json", "{\"limit\": 1}\n")
+	write(t, root, "lint/doc-refs/callers.json", "{\"limit\": 1}\n")
 	out.Reset()
 	errOut.Reset()
 	if _, err := Run(&out, &errOut, root, nil); err != nil || !strings.Contains(errOut.String(), "bin/fge refactor usages --callers <def>") {
