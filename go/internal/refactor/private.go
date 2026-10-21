@@ -14,14 +14,15 @@ import (
 // `use Mod.{f}`（呼ばなくても use だけで外すと名前が解けない）。テストのフォルダの中の物も外に数える。
 //
 // 人へ回す所（fix）: 外の使い手がいる・どこからも参照されない（非 pub にすると Flix が使わない def の誤りにする。
-// 消すのは remove-dead）・名前が .flix の外のファイルに字で出る（Makefile の入口などから名前で呼ばれるかもしれない）・
+// 消すのは remove-dead）・名前が入口のファイル（Makefile・json・flow など文章でない物）に字で出る（名前で呼ばれるかもしれない。
+// 文書が名指すだけなら pub を外しても名前は残るので見ない: mentions.go）・
 // ライブラリ（fpkg で配る。使い手は索引の外）・instance の def と @Test。--def を省くと「同じ mod の中だけ」の def を全部。
 
 // PrivateQuery は make-private の問い。
 type PrivateQuery struct {
 	Defs     []string // 索引の def の名前（解決済み）。空なら同じ mod の中だけの def を全部
 	TestDirs []string
-	Outside  map[string]string // .flix の外のファイルに字で出る名前 → そのファイル（mentionedOutsideFlix）
+	Outside  map[string]string // 入口のファイルに字で出る名前 → そのファイル（Mentions.Entry）
 	Library  bool
 }
 
@@ -98,7 +99,7 @@ func PlanPrivate(root string, rows []Row, q PrivateQuery) (PrivatePlan, error) {
 			fix("ライブラリ（fpkg で配る）: pub の def の使い手は索引の外にもいる")
 			continue
 		case q.Outside[s] != "":
-			fix("名前が .flix の外に字で出る（" + q.Outside[s] + "。入口なら pub のまま）")
+			fix("名前が入口のファイルに字で出る（" + q.Outside[s] + "。名前で呼ぶなら pub のまま）")
 			continue
 		}
 		e, err := privateEdit(root, d)
@@ -155,11 +156,7 @@ func privateReport(root string, idx *Index, a args, cfg Config, o Options) (repo
 			q.Defs = append(q.Defs, sym)
 		}
 	}
-	mentioned, err := mentionedOutsideFlix(root, engineDir(root))
-	if err != nil {
-		return report{}, err
-	}
-	q.Outside = mentioned
+	q.Outside = loadMentions(root, engineDir(root)).Entry
 	plan, err := PlanPrivate(root, idx.Rows, q)
 	if err != nil {
 		return report{}, err
@@ -176,7 +173,7 @@ func privateReport(root string, idx *Index, a args, cfg Config, o Options) (repo
 	}
 	r.Sites = plan.Targets
 	r.gotText = fmt.Sprintf("pub を外す def %d・人へ回す %d", len(plan.Targets), len(plan.Fix))
-	r.wantText = "外の mod から使われない pub の def から pub を外す（外の使い手がいる・どこからも参照されない・名前が .flix の外に出る物は fix）"
+	r.wantText = "外の mod から使われない pub の def から pub を外す（外の使い手がいる・どこからも参照されない・名前が入口のファイルに出る物は fix）"
 	for _, t := range plan.Targets {
 		r.lines = append(r.lines, fmt.Sprintf("%s\tpub を外す\t%s（%s）", t.Where(), t.Sym, t.Why))
 	}

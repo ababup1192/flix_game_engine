@@ -23,6 +23,7 @@ const (
 	CodeMove            = "refactor.move"
 	CodePrivate         = "refactor.make-private"
 	CodeRemoveParam     = "refactor.remove-param"
+	CodeRemoveUse       = "refactor.remove-use"
 )
 
 var codes = []checkres.Code{
@@ -53,9 +54,11 @@ var codes = []checkres.Code{
 	{Name: CodeMove, Level: checklevel.Lint, Metric: "move_sites_left", Unit: "count", Op: checkres.AtMost,
 		Rule: "0（元の mod の非 pub の物を使う・移す非 pub の物を外が使う・読めない use は fix。fix があれば書かない）", Summary: "def・型 alias を別の mod へ移した後に、新しい mod を指せない所として人へ回した数"},
 	{Name: CodePrivate, Level: checklevel.Lint, Metric: "private_left", Unit: "count", Op: checkres.AtMost,
-		Rule: "0（外の使い手がいる・どこからも参照されない・名前が .flix の外に出る・ライブラリの def は fix）", Summary: "外の mod から使われない pub の def から pub を外した後に、人へ回した数"},
+		Rule: "0（外の使い手がいる・どこからも参照されない・名前が入口のファイル（Makefile・json など）に出る・ライブラリの def は fix）", Summary: "外の mod から使われない pub の def から pub を外した後に、人へ回した数"},
 	{Name: CodeRemoveParam, Level: checklevel.Lint, Metric: "call_sites_left", Unit: "count", Op: checkres.AtMost,
 		Rule: "0（本体が使う引数・関数として渡す所は fix。fix があれば書かない）", Summary: "def の使っていない引数を宣言と呼ぶ所から消した後に、人へ回した数"},
+	{Name: CodeRemoveUse, Level: checklevel.Lint, Metric: "unused_use_left", Unit: "count", Op: checkres.AtMost,
+		Rule: "0（同じ行に別の物がある・名前が見つからない use は fix）", Summary: "使っていない use・import（flixlint の unused-use と同じ判定）を消した後に、人へ回した数"},
 }
 
 func init() {

@@ -230,6 +230,18 @@ func (r *Rules) Generated(body string) bool {
 	return false
 }
 
+// Refs は文書 rel（中身 body）から確かめる物を拾う（この検査と同じ決まり。生成物の文書は無し・.flix はコメントだけ）。
+// 予定の印の物も返す（Planned で分かる）。bin/fge refactor が、消す名前を文書が名指すかを見るのに使う。
+func (r *Rules) Refs(rel, body string) []Ref {
+	if r.Generated(body) {
+		return nil
+	}
+	if strings.HasSuffix(rel, ".flix") {
+		return ScanFlixComments(body, r.fileExt, r.PlannedMarks)
+	}
+	return ScanMarkdown(body, r.fileExt, r.PlannedMarks)
+}
+
 // Hit は見つからない 1 件。
 type Hit struct {
 	Code string
@@ -403,7 +415,7 @@ func (c *checker) body(doc, text string) {
 			rep.Planned++
 			continue
 		}
-		if ref.Kind == RefName && idx.Owns(ref.Text) && !idx.Has(ref.Text) && idx.std[ref.Text] {
+		if ref.Kind == RefName && idx.Owns(ref.Key()) && !idx.Has(ref.Key()) && idx.std[ref.Key()] {
 			rep.Std++
 			continue
 		}
@@ -452,14 +464,14 @@ func (r *Rules) checkRef(root, doc string, ref Ref, idx *Index, fs *fileSet) (*H
 	}
 	switch ref.Kind {
 	case RefName:
-		if !idx.Owns(ref.Text) {
+		if !idx.Owns(ref.Key()) {
 			return nil, false
 		}
-		if idx.Has(ref.Text) {
+		if idx.Has(ref.Key()) {
 			return nil, true
 		}
 		return &Hit{Code: CodeName, Doc: doc, Line: ref.Line, Text: ref.Text, Msg: "名前が無い",
-			Near: idx.Near(ref.Text, suggest.Near)}, true
+			Near: idx.Near(ref.Key(), suggest.Near)}, true
 	case RefFile:
 		rel, owned := r.resolvePath(doc, ref.Path, fs)
 		if !owned {

@@ -23,16 +23,19 @@ const Usage = `使い方: fge refactor <操作> [引数] [--json] [-v|--verbose]
   usages <Alias>#<欄> | --label x [--receiver T]       record の欄の読み・書き・組み立て（typed の段）。同じ名前の欄が
                                                        別の型にもあれば候補を並べて止まる
   usages --unused                                      外から使われない pub の def（参照 0・テストからだけ・同じ mod の中だけ）と
-                                                       使っていない use（読むだけ。消すのは remove-dead か手）
+                                                       使っていない use（flixlint の unused-use と同じ判定。読むだけ。消すのは
+                                                       remove-dead・make-private・remove-use）
   refs <Mod.name> [--callers]                          def・enum・case の宣言と参照（--callers は参照する def ごと）
   match-sites <Enum|Enum.Case> [--catch-all]           match の位置・腕の数・` + "`_`" + `／変数の腕（--catch-all はそれを持つ物だけ）
   field-sites --label x [--receiver T] [--outside Mod] record の欄 x の直の読み（e#x）と書き（{ x = v | e }）
   index [--stage resolved|typed]                       索引を作る（か使い回す）だけ。種類ごとの行の数と秒
   expand-wildcard --enum E [--apply] [--skip file:line]  E への match の ` + "`case _ =>`" + `（使わない変数の腕も）を残りの case に書き出す
-  remove-dead [--with-tests] [--only test-only|unreferenced] [--def Mod.name] [--apply] [--skip file:line]
+  remove-dead [--with-tests] [--only test-only|unreferenced] [--def Mod.name[,Mod.g]] [--apply] [--skip file:line]
                                                        テストからだけ・どこからも参照されない pub の def を ///・注記ごと消す。
                                                        消す def が別の def を呼ぶだけの包みなら、その /// を転送先へ移す（転送先に
-                                                       doc が無いか、転送先の doc が包みの名前を指す時）
+                                                       doc が無いか、転送先の doc が包みの名前を指す時。同じ転送先の包みが 2 つ
+                                                       以上なら doc を並べる）。文書（doc-refs が見る .md）が ` + "`Mod.name`" + ` で名指しする
+                                                       def も消し、next に doc-refs を出す（地の文に素の名前が出るだけなら数えない）
   field-to-accessor --label x[,y,…] --receiver T [--labels-file F] [--getter R] [--mapper M | --setter S] [--outside Mod] [--apply] [--skip file:line]
                                                        口の既定は T の mod の xOf（読み）と withX（書き）。索引に無ければ
                                                        T を宣言したファイルの既存の …Of の並びの後ろに作る（--reader は --getter と同じ）。
@@ -78,6 +81,10 @@ const Usage = `使い方: fge refactor <操作> [引数] [--json] [-v|--verbose]
   make-private [--def Mod.f[,Mod.g]] [--apply]          外の mod から使われない pub の def から pub を外す（--def を省くと usages --unused の
                                                        「同じ mod の中だけ」を全部）。外の mod の呼び出し・use・テストが使う・どこからも
                                                        参照されない（消すのは remove-dead）・名前が .flix の外に出る・ライブラリは fix
+  remove-use (<file>:<行> | <file> --all | --all) [--apply]
+                                                       使っていない use・import を消す（判定は flixlint の unused-use と同じ:
+                                                       Flixlint.Flix.namesUsed・isUnused を resolved の段で流す。flixlint ` + MinFlixlintUnusedUse + ` 以上）。
+                                                       波括弧の中なら名前を 1 つ消し、空になった use は行ごと消す
   move --def Mod.f[,Mod.T] --to Mod2 [--with Mod.h] [--apply]
                                                        def と型 alias を ///・注記ごと Mod2 の終わりへ移し（Mod2 が無ければ
                                                        src/<Mod2>.flix を作る・同じ名前があれば止める）、呼ぶ所の Mod.f を Mod2.f に、
@@ -120,12 +127,15 @@ type Options struct {
 	Run    Runner
 	Verify VerifyRunner
 	Log    io.Writer
+	// Version は flixlint の版を読む口（nil なら flixlint --version。テストが差し替える）。
+	Version func(flixlint string) string
 }
 
 type args struct {
 	op, target, label, receiver, outside, flixlint, stage string
 	labelsFile                                            string // field-to-accessor の --labels-file
 	callers, catchAll, rebuild, asJSON                    bool
+	all                                                   bool // --all（場所を全部画面に。remove-use ではファイルか全体の全部を消す）
 	apply, withTests, unused, verbose                     bool
 	requireClean                                          bool // --require-clean: 書き換えるファイルが git で clean な時だけ --apply
 	depth                                                 int  // usages --depth（0 は指定なし）
@@ -164,6 +174,7 @@ func parseArgs(rest []string) (args, error) {
 			a.verbose = true
 		case "--all":
 			a.limit = 0
+			a.all = true
 		case "--depth":
 			var v string
 			if v, err = value(&i, x); err == nil {
@@ -419,6 +430,11 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 			return 2
 		}
 	case "make-private":
+	case "remove-use":
+		if a.target == "" && !a.all || a.target != "" && !a.all && !strings.Contains(a.target, ":") {
+			fmt.Fprintln(errOut, "refactor remove-use: 消す use を <file>:<行> で（その行の使っていない名前）、ファイルの全部は <file> --all、全部のファイルは --all（例 refactor remove-use src/World.flix:4）")
+			return 2
+		}
 	case "usages":
 		if !a.unused && a.target == "" && a.label == "" {
 			fmt.Fprintln(errOut, "refactor usages: 名前を渡してください（例 refactor usages World.moveTo・refactor usages World#scene・refactor usages --unused）")
@@ -426,7 +442,7 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 		}
 	case "index", "remove-dead":
 	default:
-		fmt.Fprintf(errOut, "refactor: 知らない操作 %s（usages・refs・match-sites・field-sites・index・expand-wildcard・remove-dead・field-to-accessor・remove-field・fix-construction・change-case-shape・change-signature・remove-param・make-private・move）\n", a.op)
+		fmt.Fprintf(errOut, "refactor: 知らない操作 %s（usages・refs・match-sites・field-sites・index・expand-wildcard・remove-dead・field-to-accessor・remove-field・fix-construction・change-case-shape・change-signature・remove-param・make-private・move・remove-use）\n", a.op)
 		return 2
 	}
 	if a.op != "field-to-accessor" && (strings.Contains(a.label, ",") || a.labelsFile != "") {
@@ -448,7 +464,7 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 		fmt.Fprintf(errOut, "refactor: %v\n", err)
 		return 2
 	}
-	b := Builder{Root: root, Config: cfg, Flixlint: fl, FlixJar: FindFlixJar(root, fl, cfg), Run: o.Run, Log: o.Log, Rebuild: a.rebuild, Verbose: a.verbose}
+	b := Builder{Root: root, Config: cfg, Flixlint: fl, FlixJar: FindFlixJar(root, fl, cfg), Run: o.Run, Log: o.Log, Rebuild: a.rebuild, Verbose: a.verbose, Version: o.Version}
 	if b.Log == nil {
 		b.Log = os.Stderr
 	}
@@ -478,7 +494,7 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 	var rep report
 	switch a.op {
 	case "usages":
-		rep, err = usagesReport(root, idx, a, cfg)
+		rep, err = usagesReport(root, idx, a, cfg, b)
 	case "refs":
 		rep, err = refsReport(idx, a)
 	case "match-sites":
@@ -507,6 +523,8 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 		rep, err = removeParamReport(root, idx, a, cfg, o)
 	case "make-private":
 		rep, err = privateReport(root, idx, a, cfg, o)
+	case "remove-use":
+		rep, err = removeUseReport(root, a, cfg, o, b)
 	}
 	if err != nil {
 		fmt.Fprintf(errOut, "refactor %s: %v\n", a.op, err)

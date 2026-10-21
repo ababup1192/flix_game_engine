@@ -17,4 +17,7 @@ mod Wrap {
 
     /// 時計の値に 2 を足す。
     pub def kept(n: Int32): Int32 = n + 2
+
+    /// 立ち絵 1 体（時計を 0 で描く）。
+    pub def standZero(w: Lib.World): Int32 = standIn(w#theme, 0)
 }

@@ -156,3 +156,15 @@ func TestRemoveDeadMovesTheWrappersDocToItsTarget(t *testing.T) {
 		}
 	}
 }
+
+// 同じ転送先へ移す包みが 2 つなら、書き換えを 1 つにまとめて両方の doc を並べる（重なった書き換えで断らない）。
+func TestRemoveDeadMergesTwoWrappersDocsIntoOneTarget(t *testing.T) {
+	root := sigprepRoot(t)
+	code, out, _ := runSigprep(t, root, "remove-dead", "--def", "Wrap.stand,Wrap.standZero", "--apply")
+	if code != 0 {
+		t.Fatalf("終了コード %d:\n%s", code, out)
+	}
+	mustContain(t, read(t, root, "src/Wrap.flix"),
+		"    /// 立ち絵 1 体（表情の絵を 1 枚貼る）。\n    /// 立ち絵 1 体（時計を 0 で描く）。\n    pub def standIn(")
+	mustContain(t, out, "転送するだけの包みの doc を転送先へ: Wrap.standIn（doc を Wrap.stand・Wrap.standZero から移す）")
+}

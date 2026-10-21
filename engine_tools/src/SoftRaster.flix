@@ -30,7 +30,7 @@ pub mod SoftRaster {
     import javax.imageio.ImageIO
 
     /// ラスタライズ要求。design 解像度の Drawable 群を `scale` 倍に拡大して `outPath` に PNG 出力。
-    /// `texturePath` は Drawable#texture 名 → PNG ファイルパス。フォント（`font_` テクスチャ）は
+    /// `texturePath` は DrawCmd.DrawableSpec#texture 名 → PNG ファイルパス。フォント（`font_` テクスチャ）は
     /// アトラス PNG をサンプルせず、`fontTtf` の TTF を出力解像度サイズへ deriveFont して直接
     /// drawString する。グリフ Drawable から元文字を引くため `fontAtlas`（uvOffset↔codepoint の対応）を使う。
     /// `shapeAntialias` は面の縁（fillRoundRect / fillPolygon）のなめらかさ。
@@ -84,7 +84,7 @@ pub mod SoftRaster {
     /// 使えるフォント一式。`primary` は既定（req#fontTtf / req#fontAtlas）、`byTexture` は
     /// テクスチャ名（"font_ui" / "font_girl" …）→ その本。セル座標 → codepoint の逆引き表は
     /// フォントごとに違う（別のフォントでも同じセルから詰まるので混ぜられない）ので、
-    /// グリフを描く直前に Drawable#texture でこの表から 1 本選ぶ。
+    /// グリフを描く直前に DrawCmd.DrawableSpec#texture でこの表から 1 本選ぶ。
     /// 知らないテクスチャ名は primary を使う（fail-open — 字が消えるより既定で出るほうがよい）。
     /// `antialiasByTexture` は字の縁を本ごとに決めた物だけ（FontAntialias の表）。
     type alias FontTable = { primary = FontCtx, byTexture = Map[String, FontCtx], antialiasByTexture = Map[String, Bool] }

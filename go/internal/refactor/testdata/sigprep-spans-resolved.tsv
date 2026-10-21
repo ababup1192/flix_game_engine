@@ -97,6 +97,11 @@ type-use	src/Wrap.flix	16	21	16	30	Lib.World	Wrap.keep	what=alias
 def-use	src/Wrap.flix	16	41	16	45	Wrap.kept	Wrap.keep	
 arg	src/Wrap.flix	16	46	16	53	Wrap.kept	Wrap.keep	of=def-use at=16:41 i=0 n=1
 def-decl	src/Wrap.flix	19	13	19	17	Wrap.kept	Wrap.kept	pub ext=18:5:19:42
+def-decl	src/Wrap.flix	22	13	22	22	Wrap.standZero	Wrap.standZero	pub ext=21:5:22:65
+type-use	src/Wrap.flix	22	26	22	35	Lib.World	Wrap.standZero	what=alias
+def-use	src/Wrap.flix	22	46	22	53	Wrap.standIn	Wrap.standZero	
+arg	src/Wrap.flix	22	54	22	61	Wrap.standIn	Wrap.standZero	of=def-use at=22:46 i=0 n=2
+arg	src/Wrap.flix	22	63	22	64	Wrap.standIn	Wrap.standZero	of=def-use at=22:46 i=1 n=2
 def-decl	test/TestSigprep.flix	2	13	2	17	TestSigprep.uses	TestSigprep.uses	pub ext=2:5:5:64
 def-use	test/TestSigprep.flix	4	9	4	19	Talk.boxes	TestSigprep.uses	
 arg	test/TestSigprep.flix	4	22	4	33	Talk.boxes	TestSigprep.uses	of=def-use at=4:9 i=0 n=2

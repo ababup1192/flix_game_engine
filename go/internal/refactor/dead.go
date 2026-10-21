@@ -18,7 +18,7 @@ type DeadQuery struct {
 	Skip      map[string]bool
 	// Engine は engine の根（ゲームの Makefile が include する mk/*.mk も入口の名前を持つ）。空なら見ない。
 	Engine string
-	// Def は候補をこの def だけに絞る（Mod.name。終わりで当てる）。
+	// Def は候補をこの def だけに絞る（Mod.name。終わりで当てる。a,b で複数）。
 	Def string
 	// Library は fpkg で配るライブラリか（pub の def は使う側がこの索引の外にいるので、消さずに fix へ回す）。
 	Library bool
@@ -26,13 +26,15 @@ type DeadQuery struct {
 
 // DeadPlan は remove-dead の計画。
 type DeadPlan struct {
-	Targets  []Fixed // 消す def（why は test-only・unreferenced・道連れ）
-	Tests    []Fixed // 一緒に消すテスト
-	Fix      []Fixed // 消さずに人へ回す物
-	Edits    []Edit
-	Docs     []Fixed // doc を移す転送先（消す包みの doc を受ける def）
-	Sites    int     // 候補の数（--skip・fix を含む）
-	TestOnly int     // test-only の数（flixlint の test-only-api と同じ決め方。同じ mod の中で使う物も含む）
+	Targets []Fixed // 消す def（why は test-only・unreferenced・道連れ）
+	Tests   []Fixed // 一緒に消すテスト
+	Fix     []Fixed // 消さずに人へ回す物
+	Edits   []Edit
+	Docs    []Fixed // doc を移す転送先（消す包みの doc を受ける def）
+	// DocRefs は消す def を文書が名指す所（file:line と名前。doc-refs の決まりで拾った物。消した後に doc-refs が止める）。
+	DocRefs  []Fixed
+	Sites    int // 候補の数（--skip・fix を含む）
+	TestOnly int // test-only の数（flixlint の test-only-api と同じ決め方。同じ mod の中で使う物も含む）
 }
 
 type defInfo struct {
@@ -64,7 +66,8 @@ func inDirs(file string, dirs []string) bool {
 //   - テストから参照される候補は --with-tests の時だけ消す。参照する def が全部 @Test で、その @Test が src の def を
 //     候補（と道連れ）のほかに使わない時だけ、テストごと消す。それ以外は fix。
 //   - 消す def だけが使っていた pub でない def（private の助け）は道連れで消す（残すとコンパイラが使われない def で止まる）。
-//   - 名前が .flix の外（Makefile・json・flow など git の知るファイル）に字で出る候補は fix（入口かもしれない）。
+//   - 名前が入口（Makefile・json・flow など、文章でない git の知るファイル）に字で出る候補は fix（名前で呼ばれるかもしれない）。
+//     文書（doc-refs が見る .md と .flix のコメント）が名指す候補は消し、その所を DocRefs に並べる（mentions.go）。
 func PlanDead(root string, rows []Row, q DeadQuery) (DeadPlan, error) {
 	var plan DeadPlan
 	defs, order := defTable(rows)
@@ -87,7 +90,7 @@ func PlanDead(root string, rows []Row, q DeadQuery) (DeadPlan, error) {
 	var cands []cand
 	for _, s := range order {
 		d := defs[s]
-		if !d.Pub || d.Inst || d.Test || inDirs(d.File, q.TestDirs) || strings.HasSuffix(s, ".main") || s == "main" || (q.Def != "" && !nameMatches(s, q.Def)) {
+		if !d.Pub || d.Inst || d.Test || inDirs(d.File, q.TestDirs) || strings.HasSuffix(s, ".main") || s == "main" || !defWanted(s, q.Def) {
 			continue
 		}
 		rs := refs[s]
@@ -117,10 +120,7 @@ func PlanDead(root string, rows []Row, q DeadQuery) (DeadPlan, error) {
 		}
 	}
 	plan.Sites = len(cands) + len(plan.Fix)
-	mentioned, err := mentionedOutsideFlix(root, q.Engine)
-	if err != nil {
-		return plan, err
-	}
+	mentions := loadMentions(root, q.Engine)
 	removed := map[string]bool{}
 	var targets []cand
 	for _, c := range cands {
@@ -129,8 +129,8 @@ func PlanDead(root string, rows []Row, q DeadQuery) (DeadPlan, error) {
 			plan.Fix = append(plan.Fix, Fixed{c.d.Row, "--skip で外した"})
 		case q.Library:
 			plan.Fix = append(plan.Fix, Fixed{c.d.Row, c.why + "・ライブラリ（fpkg で配る）の pub は使う側が索引の外にいる（使う側を確かめて手で消す）"})
-		case mentioned[c.d.Sym] != "":
-			plan.Fix = append(plan.Fix, Fixed{c.d.Row, c.why + "・名前が .flix の外の " + mentioned[c.d.Sym] + " に字で出る（入口か文書かもしれない。確かめて手で消す）"})
+		case mentions.Entry[c.d.Sym] != "":
+			plan.Fix = append(plan.Fix, Fixed{c.d.Row, c.why + "・名前が入口のファイル " + mentions.Entry[c.d.Sym] + " に字で出る（名前で呼ばれるかもしれない。確かめて手で消す）"})
 		default:
 			targets = append(targets, c)
 			removed[c.d.Sym] = true
@@ -224,19 +224,89 @@ func PlanDead(root string, rows []Row, q DeadQuery) (DeadPlan, error) {
 		}
 	}
 	// 転送するだけの包み（本体が別の def を呼ぶだけ）を消す時は、その doc を転送先へ移す（転送先に doc が無いか、
-	// 転送先の doc が消える包みの名前を指す時。指さない doc は人が書いた物なので残す）。
+	// 転送先の doc が消える包みの名前を指す時。指さない doc は人が書いた物なので残す）。同じ転送先へ移す包みが
+	// 2 つ以上なら、書き換えを 1 つにまとめて doc を並べる（転送先の doc の同じ所を 2 回書き換えない）。
+	byTarget := map[string][]wrapDoc{}
+	var targetOrder []string
 	for _, f := range plan.Targets {
-		e, ok, err := moveDocEdit(root, defs, usesOf[f.Sym], defs[f.Sym], removed)
+		t, doc, ok, err := forwardTarget(root, defs, usesOf[f.Sym], defs[f.Sym], removed)
+		if err != nil {
+			return plan, err
+		}
+		if !ok {
+			continue
+		}
+		if _, seen := byTarget[t]; !seen {
+			targetOrder = append(targetOrder, t)
+		}
+		byTarget[t] = append(byTarget[t], wrapDoc{f.Sym, doc})
+	}
+	for _, t := range targetOrder {
+		e, ok, err := moveDocEdit(root, defs[t], byTarget[t])
 		if err != nil {
 			return plan, err
 		}
 		if ok {
+			var from []string
+			for _, w := range byTarget[t] {
+				from = append(from, w.sym)
+			}
 			plan.Edits = append(plan.Edits, e)
-			plan.Docs = append(plan.Docs, Fixed{e.Site, "doc を " + f.Sym + " から移す"})
+			plan.Docs = append(plan.Docs, Fixed{e.Site, "doc を " + strings.Join(from, "・") + " から移す"})
+		}
+	}
+	// 文書の名指し: 一緒に消える宣言（doc と注記の行も）の中のコメントは数えない。
+	gone := map[string][][2]int{}
+	for _, group := range [][]Fixed{plan.Targets, plan.Tests} {
+		for _, f := range group {
+			top, end := declLineRange(root, defs[f.Sym])
+			gone[defs[f.Sym].File] = append(gone[defs[f.Sym].File], [2]int{top, end})
+		}
+	}
+	inGone := func(file string, line int) bool {
+		for _, r := range gone[file] {
+			if line >= r[0] && line <= r[1] {
+				return true
+			}
+		}
+		return false
+	}
+	for _, group := range [][]Fixed{plan.Targets, plan.Tests} {
+		for _, f := range group {
+			for _, at := range mentions.DocsNaming(f.Sym, inGone) {
+				plan.DocRefs = append(plan.DocRefs, Fixed{f.Row, at})
+			}
 		}
 	}
 	sort.Slice(plan.Fix, func(i, j int) bool { return less(plan.Fix[i].Row, plan.Fix[j].Row) })
 	return plan, nil
+}
+
+// declLineRange は宣言の行の範囲（上の `///` と注記の行から ext の終わりまで・1 から）。読めなければ ext の範囲。
+func declLineRange(root string, d defInfo) (int, int) {
+	top, end := d.Ext.Line, d.Ext.EndLine
+	data, err := os.ReadFile(filepath.Join(root, d.File))
+	if err != nil {
+		return top, end
+	}
+	lines := strings.SplitAfter(string(data), "\n")
+	for top > 1 && top-2 < len(lines) && docOrAnn.MatchString(lines[top-2]) {
+		top--
+	}
+	return top, end
+}
+
+// defWanted は def s が --def（Mod.f。a,b で複数・空なら全部）に当たるか。
+func defWanted(s, want string) bool {
+	if want == "" {
+		return true
+	}
+	for _, w := range strings.Split(want, ",") {
+		if w = strings.TrimSpace(w); w != "" && nameMatches(s, w) {
+			return true
+		}
+	}
+	return false
 }
 
 // defTable は索引の def-decl を名前ごとに（order は出てきた順）。ext の読めない def は Ext が空のまま。
@@ -350,22 +420,27 @@ func declLines(src string, ext, row Row) (cut, text [2]int, err error) {
 	return cut, text, nil
 }
 
-// moveDocEdit は消す def w が転送するだけの包み（本体がプロジェクトの別の def T の呼び出し 1 つ: `T(…)`。引数の中の
-// 呼び出しは問わない）で、w に doc がある時、その doc を T の前へ書く書き換え。T に doc が無ければ足し、T の doc が
-// w の名前を指していれば置き換える。それ以外（T も消す・T の doc が w を指さない・包みでない）は ok=false。
-func moveDocEdit(root string, defs map[string]defInfo, uses []Row, w defInfo, removed map[string]bool) (Edit, bool, error) {
+// wrapDoc は転送するだけの包み 1 つ（名前と、その上の `///` の行）。
+type wrapDoc struct {
+	sym string
+	doc []string
+}
+
+// forwardTarget は消す def w が転送するだけの包み（本体がプロジェクトの別の def T の呼び出し 1 つ: `T(…)`。引数の中の
+// 呼び出しは問わない）で、w に doc がある時、T の名前と w の doc の行。T も消す・包みでない・doc が無い時は ok=false。
+func forwardTarget(root string, defs map[string]defInfo, uses []Row, w defInfo, removed map[string]bool) (string, []string, bool, error) {
 	data, err := os.ReadFile(filepath.Join(root, w.File))
 	if err != nil {
-		return Edit{}, false, err
+		return "", nil, false, err
 	}
 	src := string(data)
 	wDoc := docLines(src, w.Line)
 	if len(wDoc) == 0 {
-		return Edit{}, false, nil
+		return "", nil, false, nil
 	}
 	_, nameEnd, err := ByteRange(src, w.Row)
 	if err != nil {
-		return Edit{}, false, nil
+		return "", nil, false, nil
 	}
 	open := nameEnd
 	if open < len(src) && src[open] == '[' {
@@ -375,15 +450,15 @@ func moveDocEdit(root string, defs map[string]defInfo, uses []Row, w defInfo, re
 	}
 	list, has, err := argsAfter(src, open)
 	if err != nil || !has {
-		return Edit{}, false, nil
+		return "", nil, false, nil
 	}
 	_, extEnd, err := ByteRange(src, w.Ext)
 	if err != nil {
-		return Edit{}, false, nil
+		return "", nil, false, nil
 	}
 	body, ok := DefBodyStart(src, list.Close+1)
 	if !ok || body > extEnd {
-		return Edit{}, false, nil
+		return "", nil, false, nil
 	}
 	var call *Row
 	for i := range uses {
@@ -392,17 +467,23 @@ func moveDocEdit(root string, defs map[string]defInfo, uses []Row, w defInfo, re
 			continue
 		}
 		if l, h, err := argsAfter(src, ce); err != nil || !h || strings.TrimSpace(src[l.Close+1:extEnd]) != "" {
-			return Edit{}, false, nil
+			return "", nil, false, nil
 		}
 		call = &uses[i]
 	}
 	if call == nil || call.Sym == w.Sym || removed[call.Sym] {
-		return Edit{}, false, nil
+		return "", nil, false, nil
 	}
-	t, project := defs[call.Sym]
-	if !project {
-		return Edit{}, false, nil
+	if _, project := defs[call.Sym]; !project {
+		return "", nil, false, nil
 	}
+	return call.Sym, wDoc, true, nil
+}
+
+// moveDocEdit は包み ws の doc を転送先 t の前へ書く書き換え（包みが 2 つ以上なら doc を並べ、中身の同じ doc は
+// 1 度だけ）。t に doc が無ければ足し、t の doc が包みのどれかの名前を指していれば置き換える。t の doc がどの包みも
+// 指さない（人が書いた doc）なら ok=false。
+func moveDocEdit(root string, t defInfo, ws []wrapDoc) (Edit, bool, error) {
 	tdata, err := os.ReadFile(filepath.Join(root, t.File))
 	if err != nil {
 		return Edit{}, false, err
@@ -425,8 +506,13 @@ func moveDocEdit(root string, defs map[string]defInfo, uses []Row, w defInfo, re
 		}
 	}
 	if to > from {
-		mention := regexp.MustCompile(`(^|[^A-Za-z0-9_])` + regexp.QuoteMeta(shortName(w.Sym)) + `([^A-Za-z0-9_]|$)`)
-		if !mention.MatchString(strings.Join(lines[from:to], "")) {
+		tDoc := strings.Join(lines[from:to], "")
+		named := false
+		for _, w := range ws {
+			mention := regexp.MustCompile(`(^|[^A-Za-z0-9_])` + regexp.QuoteMeta(shortName(w.sym)) + `([^A-Za-z0-9_]|$)`)
+			named = named || mention.MatchString(tDoc)
+		}
+		if !named {
 			return Edit{}, false, nil
 		}
 	}
@@ -434,8 +520,16 @@ func moveDocEdit(root string, defs map[string]defInfo, uses []Row, w defInfo, re
 	first := lines[t.Line-1]
 	indent := first[:len(first)-len(strings.TrimLeft(first, " \t"))]
 	var text strings.Builder
-	for _, l := range wDoc {
-		text.WriteString(indent + strings.TrimLeft(l, " \t"))
+	written := map[string]bool{}
+	for _, w := range ws {
+		var doc strings.Builder
+		for _, l := range w.doc {
+			doc.WriteString(indent + strings.TrimLeft(l, " \t"))
+		}
+		if !written[doc.String()] {
+			written[doc.String()] = true
+			text.WriteString(doc.String())
+		}
 	}
 	start := 0
 	for i := 0; i < from; i++ {
@@ -475,16 +569,10 @@ func lineAfter(line string, col int) string { return line[byteCol(line, col):] }
 
 var identPath = regexp.MustCompile(`[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+`)
 
-// mentionedOutsideFlix は git の知るファイルのうち .flix でない物（1 MB まで）に字で出る `Mod.name` → 最初に出たファイル。
-func mentionedOutsideFlix(root, engine string) (map[string]string, error) {
-	out := map[string]string{}
-	scan(out, root, func(string) bool { return true })
-	if engine != "" && engine != root {
-		// engine の側は、ゲームの make が読む物だけ（Makefile・mk/）。
-		scan(out, engine, func(f string) bool { return f == "Makefile" || strings.HasPrefix(f, "mk/") })
-	}
-	return out, nil
-}
+// jsonName は JSON の字のうち、まるごと Mod.name の物（"entry": "E2e.play"）。
+// WhyNot: JSON の中の文（note・reason・お題の文）に出る名前は数えない。名前で呼ぶ設定は値そのものが名前で、文の中の
+// 名前は人への説明（ゲームの lint/limits/*.json の note が def の名前を挙げていて、消せる def が人へ回っていた）。
+var jsonName = regexp.MustCompile(`"([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+)"`)
 
 // scan は dir の git の知るファイル（.flix でない・1 MB まで・字の物）に出る `Mod.name` を out に足す。
 func scan(out map[string]string, root string, want func(string) bool) {
@@ -506,7 +594,14 @@ func scan(out map[string]string, root string, want func(string) bool) {
 		if err != nil || strings.IndexByte(string(data[:min(len(data), 8000)]), 0) >= 0 {
 			continue
 		}
-		for _, m := range identPath.FindAllString(string(data), -1) {
+		found := identPath.FindAllString(string(data), -1)
+		if strings.HasSuffix(f, ".json") {
+			found = nil
+			for _, m := range jsonName.FindAllStringSubmatch(string(data), -1) {
+				found = append(found, m[1])
+			}
+		}
+		for _, m := range found {
 			if _, seen := out[m]; !seen {
 				out[m] = filepath.Join(filepath.Base(root), f)
 			}

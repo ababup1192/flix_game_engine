@@ -7,7 +7,7 @@ mod World {
         case Fight(Int32)
     }
 
-    pub type alias Rec = { phase: Phase, turn: Int32, clock: Float64 }
+    pub type alias Rec = { phase = Phase, turn = Int32, clock = Float64 }
 
     pub def initial(): Rec = { phase = Phase.Title, turn = 0, clock = 0.0 }
 

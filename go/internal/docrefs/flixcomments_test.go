@@ -45,8 +45,8 @@ func TestFlixCommentHitsAreRatchetedByTheLimitFile(t *testing.T) {
 		t.Errorf("上限 0 で .flix の物を並べていない: %v", got)
 	}
 	write(t, root, "lint/limits/doc-refs-flix.json", "{\"limit\": 1}\n")
-	if got := hitsOf(t, root); has(got) || len(got) != 7 {
-		t.Errorf("上限と同じなら md の 7 件だけ: %v", got)
+	if got := hitsOf(t, root); has(got) || len(got) != 8 {
+		t.Errorf("上限と同じなら md の 8 件だけ: %v", got)
 	}
 	write(t, root, "lint/limits/doc-refs-flix.json", "{\"limit\": 3}\n")
 	var out, errOut strings.Builder

@@ -79,13 +79,14 @@ near の帯は bin/lint-rules/checkfmt.json の near（code ごと。無けれ�
 | `refactor.field-sites` | lint | field_sites | count | <= | --max（欄の歯止めは --outside <口の mod> --max 0） | record の欄の直の読み書きの数（受け手の型 alias で絞る） |
 | `refactor.field-to-accessor` | lint | field_sites_left | count | <= | 0（受け手の型が決まらない・読めない式・型の違う口は fix） | record の欄の直の読み書きを口（読み・書き）へ替えた後に、人へ回した数 |
 | `refactor.fix-construction` | lint | construction_left | count | <= | 0（欄の組が同じ別の型の組み立ては fix） | record を組み立てる式の欄を型に合わせた（足した・消した）後に、人へ回した数 |
-| `refactor.make-private` | lint | private_left | count | <= | 0（外の使い手がいる・どこからも参照されない・名前が .flix の外に出る・ライブラリの def は fix） | 外の mod から使われない pub の def から pub を外した後に、人へ回した数 |
+| `refactor.make-private` | lint | private_left | count | <= | 0（外の使い手がいる・どこからも参照されない・名前が入口のファイル（Makefile・json など）に出る・ライブラリの def は fix） | 外の mod から使われない pub の def から pub を外した後に、人へ回した数 |
 | `refactor.match-sites` | lint | match_sites | count | <= | --max（無ければ一覧だけ） | enum（か case）への match の数。--catch-all なら `_`・変数の腕を持つ物だけ |
 | `refactor.move` | lint | move_sites_left | count | <= | 0（元の mod の非 pub の物を使う・移す非 pub の物を外が使う・読めない use は fix。fix があれば書かない） | def・型 alias を別の mod へ移した後に、新しい mod を指せない所として人へ回した数 |
 | `refactor.refs` | lint | refs | count | <= | --max（無ければ一覧だけ） | def・enum・case の参照の数（宣言は数えない） |
 | `refactor.remove-dead` | lint | dead_left | count | <= | 0（決められない def は fix） | テストからだけ・どこからも参照されない pub の def を消した後に、人へ回した数 |
 | `refactor.remove-field` | lint | construction_left | count | <= | 0（直の読み書きが残れば止める・欄の組が同じ別の型の組み立ては fix） | record の型から欄を消し、組み立てからも消した後に、人へ回した数（止めた時は残っている直の読み書きの数） |
 | `refactor.remove-param` | lint | call_sites_left | count | <= | 0（本体が使う引数・関数として渡す所は fix。fix があれば書かない） | def の使っていない引数を宣言と呼ぶ所から消した後に、人へ回した数 |
+| `refactor.remove-use` | lint | unused_use_left | count | <= | 0（同じ行に別の物がある・名前が見つからない use は fix） | 使っていない use・import（flixlint の unused-use と同じ判定）を消した後に、人へ回した数 |
 | `refactor.unused` | lint | unused | count | <= | --max（無ければ一覧だけ） | 外から使われない pub の def（参照 0・テストからだけ・同じ mod の中だけ）と、使っていない use の数 |
 | `refactor.usages` | lint | usages | count | <= | --max（無ければ一覧だけ） | def・enum・case・型 alias・record の欄の使われ所の数（呼び出し・参照・読み・書き・組み立て・パターン・型の注記・use） |
 | `snd.alias` | advice | third_harmonic_hz | Hz | <= |  | パルスの 3 倍音とナイキスト周波数 |

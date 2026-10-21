@@ -158,3 +158,60 @@ func TestSignatureTakesTheCallSitesLocalName(t *testing.T) {
 		t.Errorf("let で束ねた呼ぶ所の式が wrap(n, n) でない:\n%s", diff)
 	}
 }
+
+// commitFiles は fixture の根に files（パス → 中身）を書いてコミットする（git の知るファイルだけが入口として数わる）。
+func commitFiles(t *testing.T, root string, files map[string]string) {
+	t.Helper()
+	for f, body := range files {
+		must(t, os.MkdirAll(filepath.Dir(filepath.Join(root, f)), 0o755))
+		must(t, os.WriteFile(filepath.Join(root, f), []byte(body), 0o644))
+	}
+	git(t, root, "add", ".")
+	git(t, root, "-c", "user.email=t@example.test", "-c", "user.name=t", "commit", "-q", "-m", "files")
+}
+
+// docRefsRules は doc-refs の規約の小さな物（NOTES.md と src・test の .flix のコメントを見る）。
+const docRefsRules = `{"docDirs": ["docs"], "docFiles": ["NOTES.md"], "sources": ["src", "test"], "fileExts": ["flix", "md"],
+ "limit": 10, "fullOut": "build/doc-refs/last.txt", "plannedMarks": ["（予定）"], "flixComments": true}`
+
+// 文章（NOTES.md・計画の diff）に名前が出るだけでは断らない。doc-refs の決まりで文書が名指す所（` ` の中・.flix の
+// コメント）は消した後に next で doc-refs を示す。消える宣言の中のコメントは数えない。
+func TestRemoveDeadRemovesADefTheDocsNameAndPointsToDocRefs(t *testing.T) {
+	root := fixtureRoot(t, "refmore")
+	a := strings.Replace(read(t, root, "src/A.flix"), "/// どこからも呼ばれない。", "/// `A.lonely` はどこからも呼ばれない。", 1)
+	commitFiles(t, root, map[string]string{
+		"bin/lint-rules/doc-refs.json": docRefsRules,
+		"NOTES.md":                     "# 記録\n\n`A.lonely` は呼ばれない。lonely と A.lonely は地の文。\n`A.lonely`（予定）\n",
+		"plans/old.diff":               "+    pub def x(): Int32 = A.lonely()\n",
+		"src/A.flix":                   a,
+		"src/B.flix":                   read(t, root, "src/B.flix") + "// `A.lonely` を呼ぶ所は無い\n",
+	})
+	var cmds []string
+	code, out := runRefmore(t, root, verifyWith(0, "", &cmds), "remove-dead", "--def", "A.lonely", "--apply")
+	if code != 0 {
+		t.Fatalf("終了コード %d:\n%s", code, out)
+	}
+	if strings.Contains(read(t, root, "src/A.flix"), "def lonely") {
+		t.Errorf("消していない:\n%s", out)
+	}
+	mustContain(t, out, "文書が名指す def 2 か所（消すと doc-refs が止める）: NOTES.md:3 A.lonely・src/B.flix:7 A.lonely",
+		"next: bin/fge doc-refs NOTES.md src/B.flix")
+}
+
+// make-private は文書の名指しを見ない（名前は残る）・JSON の文（note）の中の名前も入口と数えない。入口のファイル（Makefile）に
+// 字で出る def は fix。
+func TestMakePrivateIgnoresDocsButKeepsEntryNames(t *testing.T) {
+	root := fixtureRoot(t, "refmore")
+	commitFiles(t, root, map[string]string{
+		"bin/lint-rules/doc-refs.json": docRefsRules,
+		"NOTES.md":                     "`A.helper` は同じ mod の中だけ。\n",
+		"Makefile":                     "run:\n\techo A.wrap\n",
+		"lint/limits/x.json":           "{\"note\": \"A.helper は同じ mod の中だけ\", \"limit\": 1}\n",
+	})
+	var cmds []string
+	code, out := runRefmore(t, root, verifyWith(0, "", &cmds), "make-private")
+	if code != 0 {
+		t.Fatalf("終了コード %d:\n%s", code, out)
+	}
+	mustContain(t, out, "pub を外す def 1", "A.helper（同じ mod の中だけ 1 か所）", "名前が入口のファイルに字で出る（"+filepath.Base(root)+"/Makefile")
+}

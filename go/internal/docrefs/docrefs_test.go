@@ -94,6 +94,7 @@ func TestGameDocsFindOnlyMissingRefs(t *testing.T) {
 		"docs/map.md:10 src/Gone.flix doc-refs.file",
 		"docs/map.md:10 src/World.flix:999 doc-refs.line",
 		"docs/map.md:11 docs/nowhere.md doc-refs.file",
+		"docs/map.md:17 World.Rec#gone doc-refs.name",
 		"docs/map.md:8 World.moveTo doc-refs.name",
 	}
 	if got := hitsOf(t, root); strings.Join(got, "\n") != strings.Join(want, "\n") {
@@ -139,7 +140,7 @@ func TestBriefOutputIsShortWithNext(t *testing.T) {
 		t.Fatalf("code %d err %v", code, err)
 	}
 	text := errOut.String()
-	for _, want := range []string{"見つからない 7 件（名前 4・ファイル 2・行 1）", "docs/map.md:8", "World.moveTo", "→ 候補 World.step", "next: bin/fge doc-refs docs/map.md"} {
+	for _, want := range []string{"見つからない 8 件（名前 5・ファイル 2・行 1）", "docs/map.md:8", "World.moveTo", "→ 候補 World.step", "next: bin/fge doc-refs docs/map.md"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("出力に %q が無い:\n%s", want, text)
 		}

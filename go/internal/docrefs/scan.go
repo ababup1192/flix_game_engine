@@ -7,6 +7,7 @@ package docrefs
 //   - ~~`消した名前`~~ は消した物の記録で確かめない（unstruck）
 //   - `これから作る名前`（予定） は予定の名前で確かめない（plannedMarks。印は規約の JSON）
 //   - ` ` の中の '…' は誤りの文などの引用で確かめない（unquoted: Undefined name 'App.run'）
+//   - `World#scene`・`Mod.Alias#欄` は record の欄の名指しで、索引の Mod.Alias.欄 で引く（fieldRe・Ref.Key）
 
 import (
 	"regexp"
@@ -42,7 +43,12 @@ var (
 	nameRe = regexp.MustCompile(`^[A-Z][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+$`)
 	lineRe = regexp.MustCompile(`^([A-Za-z0-9_./-]*[A-Za-z0-9_-]\.[A-Za-z0-9]+):([0-9]+)(?:-([0-9]+))?(?::[0-9]+)?$`)
 	pathRe = regexp.MustCompile(`^[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+$`)
+	// fieldRe は record の欄の名指し（World#scene・Mod.Alias#欄）。欄は 2 字以上（e#x のような仮の字は見ない）。
+	fieldRe = regexp.MustCompile(`^[A-Z][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*#[a-z][A-Za-z0-9_]+$`)
 )
+
+// Key は名前を索引で引く形（欄の Mod.Alias#欄 は Mod.Alias.欄。ほかは書かれた字のまま）。
+func (r Ref) Key() string { return strings.Replace(r.Text, "#", ".", 1) }
 
 // wordByte は 1 語に含める字（ASCII の英数字と、パス・名前・目印に使う記号）。ほかの字（空白・` ・|・括弧・
 // カンマ・日本語）で語を切る。
@@ -181,6 +187,10 @@ func codeSpans(line string) []span {
 func classify(w string, line int, fileExt map[string]bool) (Ref, bool) {
 	w = strings.TrimRight(w, ".:-")
 	w = strings.TrimLeft(w, ".:-")
+	// record の欄（World#scene・Mod.Alias#欄）: 型の名前と欄の名前。索引では Mod.Alias.欄 で引く（Key）。
+	if fieldRe.MatchString(w) {
+		return Ref{Kind: RefName, Line: line, Text: w}, true
+	}
 	if w == "" || placeholder(w) {
 		return Ref{}, false
 	}

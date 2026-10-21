@@ -940,16 +940,19 @@ func moveReport(root string, idx *Index, a args, cfg Config, o Options) (report,
 	if len(plan.UsesDropped) > 0 {
 		r.extra = append(r.extra, "元の mod で使わなくなった use を消す: "+strings.Join(plan.UsesDropped, "・"))
 	}
-	if mentions, err := mentionedOutsideFlix(root, engineDir(root)); err == nil {
-		var outside []string
-		for _, s := range plan.Olds {
-			if f, ok := mentions[s]; ok {
-				outside = append(outside, s+"（"+f+"）")
-			}
+	mentions := loadMentions(root, engineDir(root))
+	var outside []string
+	for _, s := range plan.Olds {
+		at := mentions.DocsNaming(s, nil)
+		if f, ok := mentions.Entry[s]; ok {
+			at = append([]string{f}, at...)
 		}
-		if len(outside) > 0 {
-			r.extra = append(r.extra, ".flix の外に字で出る（書き換えない・手で）: "+strings.Join(outside, "・"))
+		if len(at) > 0 {
+			outside = append(outside, s+"（"+strings.Join(at, "・")+"）")
 		}
+	}
+	if len(outside) > 0 {
+		r.extra = append(r.extra, "入口のファイル・文書（doc-refs の決まり）が古い名前を指す（書き換えない・手で）: "+strings.Join(outside, "・"))
 	}
 	r.wantText = "移した名前を指す所が全部新しい mod を指す（決められない所は fix。fix があれば書かない）"
 	for _, f := range plan.Fix {

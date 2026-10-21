@@ -157,7 +157,38 @@ func deadReport(root string, idx *Index, a args, cfg Config, o Options) (report,
 	if out.State == StateDryRun && !a.withTests && len(plan.Targets) == 0 && len(plan.Fix) > 0 {
 		r.Next, r.NextWhy = base+" --with-tests", "テストが参照する def はテストごと消す"
 	}
+	if len(plan.DocRefs) > 0 {
+		docNext(&r, plan.DocRefs, &out)
+	}
 	return r, nil
+}
+
+// docNext は消す def を文書が名指す時の注と next（消した後は bin/fge doc-refs がその文書で止める。文書を直す道）。
+func docNext(r *report, refs []Fixed, out *Outcome) {
+	var shown, files []string
+	seen := map[string]bool{}
+	for _, d := range refs {
+		if len(shown) < 3 {
+			shown = append(shown, d.Why+" "+d.Sym)
+		}
+		file := d.Why[:strings.LastIndex(d.Why, ":")]
+		if !seen[file] {
+			seen[file] = true
+			files = append(files, file)
+		}
+	}
+	more := ""
+	if len(refs) > len(shown) {
+		more = fmt.Sprintf("…ほか %d", len(refs)-len(shown))
+	}
+	r.extra = append(r.extra, fmt.Sprintf("文書が名指す def %d か所（消すと doc-refs が止める）: %s%s", len(refs), strings.Join(shown, "・"), more))
+	cmd := "bin/fge doc-refs " + strings.Join(files, " ")
+	switch out.State {
+	case StateApplied:
+		r.Next, r.NextWhy = cmd, "消した名前を指す文書を直す（名指しを消すか、消した記録なら ~~ ~~ で消し線）"
+	case StateDryRun:
+		r.NextWhy += "。書いた後は " + cmd + " が止める所を直す"
+	}
 }
 
 // aliasFieldTypeIn は sources の .flix から `type alias <alias の最後>` を探し、欄 label の型の字を返す。

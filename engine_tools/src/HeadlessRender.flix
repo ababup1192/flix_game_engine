@@ -13,7 +13,7 @@ pub mod HeadlessRender {
     import java.io.File
 
     /// ゲームごとに 1 回宣言する生成設定。design を `scale` 倍に拡大して出力する。
-    /// texturePath は Drawable#texture 名 → PNG パス。fontAtlas はメトリクス、fontTtf は実サイズ生成用 TTF。
+    /// texturePath は DrawCmd.DrawableSpec#texture 名 → PNG パス。fontAtlas はメトリクス、fontTtf は実サイズ生成用 TTF。
     ///
     /// `shapeAntialias` は面の縁のなめらかさ。**画素の格子に乗せる絵（ドット絵）は false にする** —
     /// true のままだと、宣言したパレットに無い中間色が面の縁に湧く。

@@ -223,7 +223,7 @@ func skipBalanced(s string, i int) int {
 	return len(s)
 }
 
-// labelsOf は record・struct の本体（{ } の中身）の欄の名前（深さ 0 の「名前:」）。
+// labelsOf は record・struct の本体（{ } の中身）の欄の名前（深さ 0 の「名前:」・record の型の「名前 = 型」）。
 func labelsOf(body string) []string {
 	var out []string
 	depth := 0
@@ -235,7 +235,7 @@ func labelsOf(body string) []string {
 		if name == "" || name[0] < 'a' || name[0] > 'z' {
 			return
 		}
-		if j = skipSpaces(part, j); j < len(part) && part[j] == ':' {
+		if j = skipSpaces(part, j); j < len(part) && (part[j] == ':' || part[j] == '=' && (j+1 == len(part) || part[j+1] != '>')) {
 			out = append(out, name)
 		}
 	}

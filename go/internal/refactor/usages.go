@@ -387,9 +387,9 @@ func (a args) fieldTarget() (label, receiver string, ok bool) {
 	return label, receiver, label != ""
 }
 
-func usagesReport(root string, idx *Index, a args, cfg Config) (report, error) {
+func usagesReport(root string, idx *Index, a args, cfg Config, b Builder) (report, error) {
 	if a.unused {
-		return unusedReport(root, idx, a, cfg)
+		return unusedReport(root, idx, a, cfg, b)
 	}
 	src := &srcCache{root: root}
 	r := report{Op: "usages", Target: a.target, code: CodeUsages}
@@ -543,7 +543,7 @@ type Unused struct {
 	What    string `json:"what"`              // def・use
 	Why     string `json:"why"`               // unreferenced・test-only・own-mod・unused-use
 	Refs    int    `json:"refs"`              // 自分の外からの参照の数
-	Outside string `json:"outside,omitempty"` // 名前が字で出る .flix の外のファイル（入口・文書かもしれない）
+	Outside string `json:"outside,omitempty"` // 名前が字で出る入口のファイル（Makefile・json など文章でない物。名前で呼ばれるかもしれない）
 }
 
 func (u Unused) Where() string { return fmt.Sprintf("%s:%d:%d", u.File, u.Line, u.Col) }
@@ -638,13 +638,29 @@ func UnusedUses(rows []Row, src *srcCache) (out []Unused, unjudged int) {
 	return out, unjudged
 }
 
-func unusedReport(root string, idx *Index, a args, cfg Config) (report, error) {
+// usesFromFindings は flixlint の unused-use の違反を Unused にする（列は索引の同じ行の use の行から。無ければ 1）。
+func usesFromFindings(found []UseFinding, rows []Row) []Unused {
+	col := map[string]int{}
+	for _, r := range rows {
+		if r.Kind == KindUse {
+			col[fmt.Sprintf("%s:%d:%s", r.File, r.Line, r.Sym)] = r.Col
+		}
+	}
+	out := make([]Unused, 0, len(found))
+	for _, f := range found {
+		c := col[fmt.Sprintf("%s:%d:%s", f.File, f.Line, f.Name)]
+		if c == 0 {
+			c = 1
+		}
+		out = append(out, Unused{File: f.File, Line: f.Line, Col: c, Sym: f.Name, What: "use", Why: "unused-use"})
+	}
+	return out
+}
+
+func unusedReport(root string, idx *Index, a args, cfg Config, b Builder) (report, error) {
 	src := &srcCache{root: root}
 	defs := UnusedDefs(idx.Rows, cfg.TestDirs)
-	mentioned, err := mentionedOutsideFlix(root, engineDir(root))
-	if err != nil {
-		return report{}, err
-	}
+	mentioned := loadMentions(root, engineDir(root)).Entry
 	n := map[string]int{}
 	for i := range defs {
 		defs[i].Outside = mentioned[defs[i].Sym]
@@ -652,7 +668,11 @@ func unusedReport(root string, idx *Index, a args, cfg Config) (report, error) {
 	}
 	var uses []Unused
 	unjudged := 0
-	if idx.hasAdds(KindUse) {
+	found, lintErr := b.UnusedUses()
+	switch {
+	case lintErr == nil:
+		uses = usesFromFindings(found, idx.Rows)
+	case idx.hasAdds(KindUse):
 		uses, unjudged = UnusedUses(idx.Rows, src)
 	}
 	all := append(append([]Unused{}, defs...), uses...)
@@ -672,17 +692,19 @@ func unusedReport(root string, idx *Index, a args, cfg Config) (report, error) {
 	r.gotText = fmt.Sprintf("pub の def %d（参照 0: %d・テストからだけ: %d・同じ mod の中だけ: %d）・使っていない use %d",
 		len(defs), n["unreferenced"], n["test-only"], n["own-mod"], len(uses))
 	if outside > 0 {
-		r.extra = append(r.extra, fmt.Sprintf("うち名前が .flix の外に字で出る def %d（入口・文書かもしれない。行の末尾に出る所）", outside))
+		r.extra = append(r.extra, fmt.Sprintf("うち名前が入口のファイル（Makefile・json など）に字で出る def %d（名前で呼ばれるかもしれない。行の末尾に出る所）", outside))
 	}
 	if IsLibrary(root, cfg) {
 		r.extra = append(r.extra, "ライブラリ（fpkg で配る）: pub の def の使い手は索引の外にもいる")
 	}
-	if !idx.hasAdds(KindUse) {
-		r.extra = append(r.extra, "use は見ていない（索引に use の行が無い。flixlint "+MinFlixlintUsages+" 以上で出る）")
-	} else if unjudged > 0 {
-		r.extra = append(r.extra, fmt.Sprintf("effect・trait・mod などを入れる use %d は決められないので数えていない", unjudged))
+	switch {
+	case lintErr == nil:
+	case !idx.hasAdds(KindUse):
+		r.extra = append(r.extra, "use は見ていない（flixlint の unused-use を流せない: "+lintErr.Error()+"。索引にも use の行が無い）")
+	case unjudged > 0:
+		r.extra = append(r.extra, fmt.Sprintf("use は索引で判じた（flixlint の unused-use を流せない: %s）。effect・trait・mod などを入れる use %d は数えていない", lintErr, unjudged))
 	}
-	r.extra = append(r.extra, "消すのは bin/fge refactor remove-dead（参照 0・テストからだけ）か手で。use の行は手で消す")
+	r.extra = append(r.extra, "消すのは bin/fge refactor remove-dead（参照 0・テストからだけ）・remove-use（使っていない use。--all で全部）")
 	if n["own-mod"] > 0 {
 		r.extra = append(r.extra, "同じ mod の中だけの物は bin/fge refactor make-private で pub を外す（--def を省くと全部）")
 	}
