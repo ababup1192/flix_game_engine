@@ -1,0 +1,5 @@
+# The socket's name for a root and an identity (README "Resident server"): the first 16 hex digits of the SHA-256 of
+# the root, a newline (0a) and the identity, with no newline after it. Columns: root, identity, name (tab separated).
+# bin/flixlint --socket-name and every client in another language give these names.
+/p/game	flix=0123 shim=4567	795502099f0b1493
+/Users/someone/Desktop/日本語/game	flix=aa shim=bb	27262a63f33b96b9

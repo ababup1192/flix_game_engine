@@ -1,0 +1,8 @@
+# The frames of a reply of protocol 2 (README "Resident server"): a tag byte, then the frame's fields.
+# shim/Resident.scala (Wire.FixtureReply) and every client in another language read and write exactly these bytes.
+51 00 00 00 01 00 05 63 68 65 63 6b 00 00 00 0c     # Q: 1 run ahead, "check" running for 12 s
+51 00 00 00 00 00 04 6c 69 6e 74 00 00 00 00        # Q: 0 ahead (this run starts now), kind "lint"
+4f 00 00 00 03 6f 6b 0a                             # O: 3 bytes of stdout "ok\n"
+45 00 00 00 02 65 0a                                # E: 2 bytes of stderr "e\n"
+56 00 03 61 62 63                                   # V: the version of the sources checked, "abc"
+58 00 00 00 01                                      # X: exit code 1 (always the last frame)

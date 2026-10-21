@@ -84,6 +84,9 @@ func debugLog(errOut *strings.Builder, msg string) {
 
 // clientRun は常駐に verb を頼み、駄目なら素の CLI に落ちる。
 func clientRun(r *hooks.Rules, out, errOut *strings.Builder, root, pkg, verb string) int {
+	if verb == "check" && useServer(r) {
+		return serverCheck(r, out, errOut, root, pkg)
+	}
 	if hasSymlinkedSources(pkg) {
 		debugLog(errOut, pkg+" は src が symlink → 常駐を使わず素の "+verb+" へ")
 		return runFallback(root, pkg, verb)

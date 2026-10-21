@@ -35,6 +35,27 @@ make check ──> bin/fge checkd (クライアント)
   保存直後の check がその分遅いのはこのため
 - 結果の正しさが常に最優先。少しでも怪しければ黙って素の check に落ちる
 
+## flixlint の常駐で check する（試しの道・`CHECKD_BACKEND=server`）
+
+`CHECKD_BACKEND=server make check`（heavy の中では `CHECKD=1` も）で、repl の代わりに flixlint の常駐（lint・refactor の索引と
+同じ JVM・同じコンパイラ）に check を頼む。設計は flixlint の `docs/design/checkd-freshness.md`（C-2）。既定は repl のまま。
+
+```
+make check ──> bin/fge checkd ──> Unix ソケット (~/Library/Caches/flixlint/<根と identity の 16 字>.sock)
+                                      ▼
+                                  flixlint の常駐: Bootstrap → 書き換わったソースだけ addSource → Bootstrap.check
+                                      │ 答え = 出力 + 終了コード + 検査したソースの版
+                                      ▼
+               クライアントがディスクから版を取り直し、同じ時だけ答えを使う（違えば頼み直し、3 回の後は素の flix check）
+```
+
+- 待ちが無い: ファイルの監視に頼らず、頼まれた時にソースを読んで渡すので、保存直後の 11 秒の待ちが要らない。
+- 古い答えが出ない: 答えの版（ソース・flix.toml・packages.lock の中身の SHA-256 から作る 1 つの値）をディスクと比べる。
+  式は flixlint の README "Resident server" が正で、`go/internal/checkd/testdata/resident` は flixlint のリリースの fixture の写し。
+- 置き場と予算は `bin/lint-rules/hooks.json` の `checkd.server`（flixlint の版と shim の jar の sha256・ヒープ 3072 MB・寿命 30 分）。
+  shim の jar は初回にリリースから取り、sha256 が合う時だけ `~/.cache/flix-checkd/flixlint/<版>/` に置く。
+- 1 回ごとに `~/.cache/flix-checkd/<ハッシュ>/daemon.log` に `check via=server|fallback exit= version= retry= 秒` の 1 行。
+
 ## test も同じ常駐で速くなる
 
 check と test は 1 本の repl が両方受ける。温まった repl の `:test` は、素の
