@@ -35,7 +35,9 @@ const Usage = `使い方: fge refactor <操作> [引数] [--json] [-v|--verbose]
                                                        消す def が別の def を呼ぶだけの包みなら、その /// を転送先へ移す（転送先に
                                                        doc が無いか、転送先の doc が包みの名前を指す時。同じ転送先の包みが 2 つ
                                                        以上なら doc を並べる）。文書（doc-refs が見る .md）が ` + "`Mod.name`" + ` で名指しする
-                                                       def も消し、next に doc-refs を出す（地の文に素の名前が出るだけなら数えない）
+                                                       def も消し、next に doc-refs を出す（地の文に素の名前が出るだけなら数えない）。
+                                                       消す def だけが呼んでいた def（pub も）は道連れで消す。--def で名指せば、名指しと
+                                                       その道連れだけを消し、ほかの呼び手 0 の def は数を 1 行で知らせるだけ
   field-to-accessor --label x[,y,…] --receiver T [--labels-file F] [--getter R] [--mapper M | --setter S] [--outside Mod] [--apply] [--skip file:line]
                                                        口の既定は T の mod の xOf（読み）と withX（書き）。索引に無ければ
                                                        T を宣言したファイルの既存の …Of の並びの後ろに作る（--reader は --getter と同じ）。
@@ -85,7 +87,8 @@ const Usage = `使い方: fge refactor <操作> [引数] [--json] [-v|--verbose]
                                                        種類・番号）が書く前に収まる（新しい誤り 0）時に通す。本体が使う引数は fix
   make-private [--def Mod.f[,Mod.g]] [--apply]          外の mod から使われない pub の def から pub を外す（--def を省くと usages --unused の
                                                        「同じ mod の中だけ」を全部）。外の mod の呼び出し・use・テストが使う・どこからも
-                                                       参照されない（消すのは remove-dead）・名前が .flix の外に出る・ライブラリは fix
+                                                       参照されない（消すのは remove-dead）・名前が .flix の外に出る・ライブラリは fix。
+                                                       --def の時はほかの当たる def の数を 1 行で知らせるだけ
   remove-use (<file>:<行> | <file> --all | --all) [--apply]
                                                        使っていない use・import を消す（判定は flixlint の unused-use と同じ:
                                                        Flixlint.Flix.namesUsed・isUnused を resolved の段で流す。flixlint ` + MinFlixlintUnusedUse + ` 以上）。
@@ -503,7 +506,12 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 			fmt.Fprintln(errOut, "refactor extract-type-alias: --name <Mod.Name> と、--from '<record の型の字>' か <file>:<行> のどちらか 1 つが要ります（例 --name Geometry.Corner --from '{ right = Float64, bottom = Float64 }'）")
 			return 2
 		}
-	case "make-private":
+	case "make-private", "remove-dead":
+		// 名前かファイルを旗なしで書いた時に、黙って名指し無し（全部の候補）で流さない。
+		if a.target != "" {
+			fmt.Fprintf(errOut, "refactor %s: 名前は --def <Mod.name>（a,b で複数）で渡してください（旗なしの %s は読みません。名指し無しは全部の候補に当てます）\n", a.op, a.target)
+			return 2
+		}
 	case "remove-use":
 		if a.target == "" && !a.all || a.target != "" && !a.all && !strings.Contains(a.target, ":") {
 			fmt.Fprintln(errOut, "refactor remove-use: 消す use を <file>:<行> で（その行の使っていない名前）、ファイルの全部は <file> --all、全部のファイルは --all（例 refactor remove-use src/World.flix:4）")
@@ -514,7 +522,7 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 			fmt.Fprintln(errOut, "refactor usages: 名前を渡してください（例 refactor usages World.moveTo・refactor usages World#scene・refactor usages --unused）")
 			return 2
 		}
-	case "index", "remove-dead":
+	case "index":
 	default:
 		fmt.Fprintf(errOut, "refactor: 知らない操作 %s（usages・refs・match-sites・field-sites・index・expand-wildcard・remove-dead・field-to-accessor・remove-field・fix-construction・add-field・change-case-shape・change-signature・remove-param・make-private・move・remove-use・rewrite・extract-function・extract-type-alias）\n", a.op)
 		return 2

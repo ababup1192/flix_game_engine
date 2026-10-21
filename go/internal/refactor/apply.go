@@ -74,6 +74,10 @@ func Change(root string, edits []Edit, how Apply) Outcome {
 		return Outcome{State: StateRefused, Reason: err.Error()}
 	}
 	if len(edits) == 0 {
+		// 前の回の差分を残さない（名指しの回が 0 件の時に、名指し無しの前の回の last.diff を読み違えないように）。
+		if err := os.Remove(filepath.Join(dir, "last.diff")); err != nil && !os.IsNotExist(err) {
+			return Outcome{State: StateRefused, Reason: err.Error()}
+		}
 		return Outcome{State: StateNothing}
 	}
 	plan, err := Plan(root, edits)

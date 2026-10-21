@@ -127,6 +127,12 @@ func deadReport(root string, idx *Index, a args, cfg Config, o Options) (report,
 	r.Sites = sites
 	r.gotText = fmt.Sprintf("候補 %d（test-only %d・参照 0 %d）・消す def %d・一緒に消すテスト %d・人へ回す %d", plan.Sites, plan.TestOnly, plan.Sites-plan.TestOnly, len(plan.Targets), len(plan.Tests), len(plan.Fix))
 	r.wantText = "テストからだけ・どこからも参照されない pub の def 0（決められない所は fix）"
+	if a.def != "" {
+		r.Target = a.def
+		if plan.Others+plan.OthersTestOnly > 0 {
+			r.extra = append(r.extra, fmt.Sprintf("ほかにも呼び手 0 の def が %d・テストからだけの def が %d（名指していないので触らない。見るのは bin/fge refactor usages --unused）", plan.Others, plan.OthersTestOnly))
+		}
+	}
 	if len(plan.Docs) > 0 {
 		var moved []string
 		for _, d := range plan.Docs {
