@@ -14,10 +14,13 @@ import (
 // 期待の字は「本体の式が --args の式（とその def の record の欄）と同じなら引数から読む・並びは元の形・
 // 引けない型の名前には use」の規則から手で書いた物。
 
-func sigprepRoot(t *testing.T) string {
+func sigprepRoot(t *testing.T) string { return fixtureRoot(t, "sigprep") }
+
+// fixtureRoot は testdata/<name> を git の作業場として写した根（flixlint の代わりの印のファイルつき）。
+func fixtureRoot(t *testing.T, name string) string {
 	t.Helper()
 	root := t.TempDir()
-	base := filepath.Join("testdata", "sigprep")
+	base := filepath.Join("testdata", name)
 	must(t, filepath.WalkDir(base, func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return err
@@ -40,16 +43,21 @@ func sigprepRoot(t *testing.T) string {
 	return root
 }
 
-func sigprepRunner(stage Stage, _, _ string, cmd []string, _ string) int {
-	for i := 0; i+1 < len(cmd); i++ {
-		if cmd[i] == "--spans" {
-			data, err := os.ReadFile(filepath.Join("testdata", "sigprep-spans-"+string(stage)+".tsv"))
-			if err != nil || os.WriteFile(cmd[i+1], data, 0o644) != nil {
-				return 4
+var sigprepRunner = spansRunner("sigprep")
+
+// spansRunner は索引を作る代わりに testdata/<name>-spans-<段>.tsv を置く Runner。
+func spansRunner(name string) Runner {
+	return func(stage Stage, _, _ string, cmd []string, _ string) int {
+		for i := 0; i+1 < len(cmd); i++ {
+			if cmd[i] == "--spans" {
+				data, err := os.ReadFile(filepath.Join("testdata", name+"-spans-"+string(stage)+".tsv"))
+				if err != nil || os.WriteFile(cmd[i+1], data, 0o644) != nil {
+					return 4
+				}
 			}
 		}
+		return 0
 	}
-	return 0
 }
 
 func runSigprep(t *testing.T, root string, args ...string) (int, string, []string) {

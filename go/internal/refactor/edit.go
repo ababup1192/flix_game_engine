@@ -17,6 +17,7 @@ type Edit struct {
 	Make       func(cur string) (string, error)
 	Site       Row    // 元の場所（報告と --skip 用）
 	Check      []Want // 当てる前に確かめる字（索引の範囲 → 字）
+	Create     bool   // ファイルが無ければ空の中身から作る（move の移し先の新しい mod）。あれば普通の書き換え
 }
 
 // Want は「この範囲はこの字のはず」（索引が古くないかの確かめ）。
@@ -123,6 +124,7 @@ func spanOf(file, s string) (Row, error) {
 type Planned struct {
 	Files map[string]string // 根からの相対 → 新しい中身
 	Orig  map[string]string
+	New   map[string]bool // 書く前に無かったファイル（戻す時は消す）
 	Edits int
 }
 
@@ -132,7 +134,7 @@ func Plan(root string, edits []Edit) (*Planned, error) {
 	for _, e := range edits {
 		by[e.File] = append(by[e.File], e)
 	}
-	p := &Planned{Files: map[string]string{}, Orig: map[string]string{}}
+	p := &Planned{Files: map[string]string{}, Orig: map[string]string{}, New: map[string]bool{}}
 	files := make([]string, 0, len(by))
 	for f := range by {
 		files = append(files, f)
@@ -140,11 +142,18 @@ func Plan(root string, edits []Edit) (*Planned, error) {
 	sort.Strings(files)
 	for _, f := range files {
 		data, err := os.ReadFile(filepath.Join(root, f))
+		created := false
 		if err != nil {
-			return nil, err
+			if !os.IsNotExist(err) || !allCreate(by[f]) {
+				return nil, err
+			}
+			data, created = nil, true
 		}
 		src := string(data)
 		real := realRel(root, f)
+		if created {
+			p.New[real] = true
+		}
 		for _, e := range by[f] {
 			for _, w := range e.Check {
 				got, err := SpanText(src, w.Span)
@@ -164,6 +173,16 @@ func Plan(root string, edits []Edit) (*Planned, error) {
 		p.Edits += len(by[f])
 	}
 	return p, nil
+}
+
+// allCreate は edits が全部「無ければ作る」書き換えか。
+func allCreate(edits []Edit) bool {
+	for _, e := range edits {
+		if !e.Create {
+			return false
+		}
+	}
+	return len(edits) > 0
 }
 
 // Diff は計画の unified diff（git apply・git apply -R にそのまま渡せる -p1 の形）。

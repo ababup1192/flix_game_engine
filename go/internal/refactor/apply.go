@@ -99,7 +99,7 @@ func Change(root string, edits []Edit, how Apply) Outcome {
 		}
 	}
 	// 計画を作った後に外から変わったファイルは書かない（計画は読んだ時の中身に当てた物）。
-	if moved := changedSince(root, files, plan.Orig); len(moved) > 0 {
+	if moved := changedSince(root, files, plan.Orig, plan.New); len(moved) > 0 {
 		out.State, out.Reason = StateRefused, "計画を作った後に外から変わった（書いていない）: "+strings.Join(moved, "・")
 		return out
 	}
@@ -110,7 +110,13 @@ func Change(root string, edits []Edit, how Apply) Outcome {
 			relTo(root, run), strings.Join(left, "・"), relTo(root, run), relTo(root, filepath.Join(run, revertFailedMark)))
 		return out
 	}
-	backup, err := saveBackup(backups, files, plan.Orig, time.Now())
+	var existed []string // 書く前に在ったファイル（新しく作るファイルは控えない。戻す時は消す）
+	for _, f := range files {
+		if !plan.New[f] {
+			existed = append(existed, f)
+		}
+	}
+	backup, err := saveBackup(backups, existed, plan.Orig, time.Now())
 	if err != nil {
 		out.State, out.Reason = StateRefused, "書く前の中身を控えられない: "+err.Error()
 		return out
@@ -124,6 +130,13 @@ func Change(root string, edits []Edit, how Apply) Outcome {
 	}
 	out.Patch = patch
 	for _, f := range files {
+		if plan.New[f] {
+			if err := os.MkdirAll(filepath.Dir(filepath.Join(root, f)), 0o755); err != nil {
+				out.Reason = err.Error()
+				finishRevert(&out, root, plan, before)
+				return out
+			}
+		}
 		if err := os.WriteFile(filepath.Join(root, f), []byte(plan.Files[f]), 0o644); err != nil {
 			out.Reason = err.Error()
 			finishRevert(&out, root, plan, before)
@@ -212,11 +225,17 @@ func porcelainPaths(out string) []string {
 
 func hashOf(s string) [32]byte { return sha256.Sum256([]byte(s)) }
 
-// changedSince は files のうち、今の中身が want と違う物（読めない物も）。
-func changedSince(root string, files []string, want map[string]string) []string {
+// changedSince は files のうち、今の中身が want と違う物（読めない物も）。absent の物は、まだ無い事を確かめる。
+func changedSince(root string, files []string, want map[string]string, absent map[string]bool) []string {
 	var moved []string
 	for _, f := range files {
 		cur, err := os.ReadFile(filepath.Join(root, f))
+		if absent[f] {
+			if !os.IsNotExist(err) {
+				moved = append(moved, f)
+			}
+			continue
+		}
 		if err != nil || hashOf(string(cur)) != hashOf(want[f]) {
 			moved = append(moved, f)
 		}
@@ -331,6 +350,14 @@ func revert(root string, plan *Planned, backup string) ([]string, error) {
 		path := filepath.Join(root, f)
 		cur, rerr := os.ReadFile(path)
 		switch {
+		case plan.New[f] && os.IsNotExist(rerr):
+			// 作る前に落ちた・もう消えている
+		case plan.New[f] && rerr == nil && hashOf(string(cur)) == hashOf(body):
+			if os.Remove(path) != nil {
+				left = append(left, f)
+			}
+		case plan.New[f] && rerr == nil:
+			moved = append(moved, f)
 		case rerr != nil:
 			left = append(left, f)
 		case hashOf(string(cur)) == hashOf(plan.Orig[f]):
