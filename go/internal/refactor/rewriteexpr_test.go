@@ -465,3 +465,35 @@ func TestRunRewriteNeedsTemplate(t *testing.T) {
 		t.Fatalf("--to の無い rewrite を止めていない: %d %s", code, errOut.String())
 	}
 }
+
+// --to が呼ぶ def の本体の中の当たりを書くと、その def が自分を呼ぶ（型は合うので check は通り、動かして止まる）。
+// ゲームで `List.length(WorldPuzzle.offerCards($w))` → `WorldPuzzle.offerCount($w)` が offerCount の本体まで書き替えた形。
+func TestRewriteLeavesHitsInsideTheCalledDefToAPerson(t *testing.T) {
+	for _, to := range []string{"A.k($x)", "k($x)"} {
+		plan, got := rwPlan(t, RewriteRule{From: "$x != None", To: to})
+		if len(plan.Sites) != 1 || !strings.Contains(got, to[:len(to)-3]+"x) and None == r#o") {
+			t.Fatalf("%s: A.f の当たりは書く: sites %d\n%s", to, len(plan.Sites), got)
+		}
+		if len(plan.Fix) != 1 || plan.Fix[0].Line != 17 || !strings.Contains(plan.Fix[0].Why, "自分を呼ぶ") || !strings.Contains(got, "= f(x, x) != None") {
+			t.Fatalf("%s: A.k の本体の当たりは書かずに人へ回す: %+v\n%s", to, plan.Fix, got)
+		}
+	}
+}
+
+func TestSelfCallInMatchesOnlyTheOwnerName(t *testing.T) {
+	for _, c := range []struct {
+		to, owner, want string
+	}{
+		{"WorldPuzzle.offerCount($w)", "WorldPuzzle.offerCount", "WorldPuzzle.offerCount"},
+		{"offerCount($w)", "WorldPuzzle.offerCount", "offerCount"},
+		{"List.map(offerCount, $ws)", "WorldPuzzle.offerCount", "offerCount"},
+		{"WorldPuzzle.offerCounts($w)", "WorldPuzzle.offerCount", ""},
+		{"Other.offerCount($w)", "WorldPuzzle.offerCount", ""},
+		{"$offerCount#offerCount", "WorldPuzzle.offerCount", ""},
+		{`Str.concat("offerCount", $s)`, "WorldPuzzle.offerCount", ""},
+	} {
+		if got := selfCallIn(c.to, c.owner); got != c.want {
+			t.Errorf("selfCallIn(%q, %q) = %q, want %q", c.to, c.owner, got, c.want)
+		}
+	}
+}
