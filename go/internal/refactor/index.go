@@ -197,7 +197,9 @@ type Builder struct {
 	Run      Runner
 	Log      io.Writer
 	Rebuild  bool // 鍵が同じでも作り直す
-	Verbose  bool // flixlint の出力を画面へ（既定は build/refactor/index-<段>.log へ書き、1 行だけ言う）
+	// Version は flixlint の版を読む口（nil なら flixlint --version。テストが差し替える）。
+	Version func(flixlint string) string
+	Verbose bool // flixlint の出力を画面へ（既定は build/refactor/index-<段>.log へ書き、1 行だけ言う）
 }
 
 // IndexError は索引を作れなかった訳と、写してそのまま流せる次の手（無ければ ""。その時は NextWhy を next の 1 行に）。
@@ -219,10 +221,11 @@ func (b Builder) failPath(s Stage) string  { return filepath.Join(b.Dir(), "span
 
 // Load は段 s の索引を返す。無いか鍵が違えば作る。
 func (b Builder) Load(s Stage) (*Index, error) {
-	key, err := b.Key(s)
+	src, err := b.sourceKey(s)
 	if err != nil {
 		return nil, err
 	}
+	key := joinKey(src, b.envKey())
 	path := b.indexPath(s)
 	if !b.Rebuild {
 		if old, secs, ok := readKey(b.keyPath(s)); ok && old == key {
@@ -245,7 +248,13 @@ func (b Builder) Load(s Stage) (*Index, error) {
 	// 2 回目からは変わったファイルだけ組み直し、server が lint を流している間は並ぶ（flixlint が「前に N 本」を 1 行言う）。
 	// WhyNot: 1 回きりの JVM にしない。typed の索引は JVM に 4〜5 GB を取り、lint の server と並べると 2 本になる。
 	// build ディレクトリは走行ごとの引数なので、lint と分けたままでよい（同じ server を使う）。
-	cmd := []string{b.Flixlint, "--resident", "--spans", tmp, "--stage", string(s), "--build-dir", filepath.Join(b.Dir(), "flixlint")}
+	// WhyNot: MinFlixlintResident より古い flixlint には付けない。その版の常駐は build ディレクトリごとに別の JVM で、
+	// lint の server と分け合えず、JVM が 2 本になる（1 回きりの JVM の方が軽い）。
+	cmd := []string{b.Flixlint}
+	if versionAtLeast(b.version(), MinFlixlintResident) {
+		cmd = append(cmd, "--resident")
+	}
+	cmd = append(cmd, "--spans", tmp, "--stage", string(s), "--build-dir", filepath.Join(b.Dir(), "flixlint"))
 	if b.FlixJar != "" {
 		cmd = append(cmd, "--flix-jar", b.FlixJar)
 	}
@@ -280,10 +289,9 @@ func (b Builder) Load(s Stage) (*Index, error) {
 	if err := os.Rename(tmp, path); err != nil {
 		return nil, err
 	}
-	// 鍵は作った後に取り直す。初めての flixlint は依存を lib/ へ広げるので、前の鍵のままだと次の 1 回が作り直しになる。
-	if after, err := b.Key(s); err == nil {
-		key = after
-	}
+	// 鍵のうち依存（lib/）の分だけ作った後に取り直す。初めての flixlint は依存を lib/ へ広げるので、前の値のままだと
+	// 次の 1 回が作り直しになる。ソースの分は作る前の値のまま: 作っている間にソースが変わったら、次の回に作り直させる。
+	key = joinKey(src, b.envKey())
 	if err := os.WriteFile(b.keyPath(s), []byte(fmt.Sprintf("%s %.1f\n", key, secs)), 0o644); err != nil {
 		return nil, err
 	}
@@ -463,12 +471,22 @@ func (b Builder) sources() []string {
 	return out
 }
 
-// Key は索引の鍵: 段・形の版・sources の .flix（パスと中身）・flix.toml・flix.jar（パス・大きさ・時刻）・
-// flixlint の shim と前面（中身）のハッシュ。
-//
-// WhyNot: flix.jar は中身を読まない。100 MB 近くを毎回読むと、索引を引くだけで秒が掛かる
-// （flixlint が engine.jar の鍵に使うのと同じ見分け方）。
+// Key は索引の鍵: ソースの分（sourceKey）と道具・依存の分（envKey）を合わせたハッシュ。
 func (b Builder) Key(s Stage) (string, error) {
+	src, err := b.sourceKey(s)
+	if err != nil {
+		return "", err
+	}
+	return joinKey(src, b.envKey()), nil
+}
+
+func joinKey(src, env string) string {
+	h := sha256.Sum256([]byte(src + " " + env))
+	return hex.EncodeToString(h[:])[:24]
+}
+
+// sourceKey は鍵のうち人が書く物: 段・形の版・sources の .flix（パスと中身）・flix.toml。
+func (b Builder) sourceKey(s Stage) (string, error) {
 	h := sha256.New()
 	fmt.Fprintf(h, "refactor-index %d %s\n", FormatVersion, s)
 	files, err := flixFiles(b.Root, b.sources())
@@ -486,13 +504,23 @@ func (b Builder) Key(s Stage) (string, error) {
 		fmt.Fprintf(h, "file %s %d\n", filepath.ToSlash(rel), len(data))
 		h.Write(data)
 	}
-	// 依存の fpkg・jar（lib/ の下）。中身は読まず、パス・大きさ・時刻で見分ける（engine の版を上げると替わる）。
-	for _, dep := range libFiles(b.Root) {
-		fmt.Fprintf(h, "lib %s\n", dep)
-	}
 	if data, err := os.ReadFile(filepath.Join(b.Root, "flix.toml")); err == nil {
 		fmt.Fprintf(h, "flix.toml %d\n", len(data))
 		h.Write(data)
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// envKey は鍵のうち道具と依存の物: lib/ の依存（パス・大きさ・時刻）・flix.jar（パス・大きさ・時刻）・
+// flixlint の shim と前面（中身）。flixlint が索引を作る途中で lib/ を広げるので、作った後にも取り直す。
+//
+// WhyNot: flix.jar は中身を読まない。100 MB 近くを毎回読むと、索引を引くだけで秒が掛かる
+// （flixlint が engine.jar の鍵に使うのと同じ見分け方）。
+func (b Builder) envKey() string {
+	h := sha256.New()
+	// 依存の fpkg・jar（lib/ の下）。中身は読まず、パス・大きさ・時刻で見分ける（engine の版を上げると替わる）。
+	for _, dep := range libFiles(b.Root) {
+		fmt.Fprintf(h, "lib %s\n", dep)
 	}
 	if b.FlixJar != "" {
 		if info, err := os.Stat(b.FlixJar); err == nil {
@@ -507,7 +535,7 @@ func (b Builder) Key(s Stage) (string, error) {
 		fmt.Fprintf(h, "shim %s %d\n", filepath.Base(p), len(data))
 		h.Write(data)
 	}
-	return hex.EncodeToString(h.Sum(nil))[:24], nil
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // shimFiles は flixlint の版を表すファイル: 前面の bin/flixlint と shim/*.scala と flix.toml（version）。
@@ -580,13 +608,64 @@ func LookPath(name string) string {
 	return p
 }
 
-// MinFlixlint は読める索引（--spans・形の版 FormatVersion）を書き、--resident を知る一番古い flixlint の版。
-// 0.6.5 の常駐は build ディレクトリごとに別の JVM。lint と 1 つの JVM を共有するのは 0.7.1 から（protocol 2・鍵は根 × identity）。
+// MinFlixlint は読める索引（--spans・形の版 FormatVersion）を書く一番古い flixlint の版。
 const MinFlixlint = "0.6.5"
+
+// MinFlixlintResident は索引を lint と同じ常駐の server で作れる（--resident・protocol 2・鍵は根 × identity）一番古い
+// flixlint の版。それより古い版の常駐は build ディレクトリごとに別の JVM なので、--resident を付けない。
+const MinFlixlintResident = "0.7.1"
 
 // MinFlixlintUsages は usages の型の注記と use（resolved の段の adds=use,type-use,alias-decl）を書く一番古い flixlint の版。
 // それより古い索引でも usages は動き、その 2 つを数えない。
 const MinFlixlintUsages = "0.6.6"
+
+// version は使う flixlint の版（Builder.Version があればそれ。テストが差し替える）。
+func (b Builder) version() string {
+	if b.Version != nil {
+		return b.Version(b.Flixlint)
+	}
+	return flixlintVersion(b.Flixlint)
+}
+
+// versionAtLeast は版の答え（「flixlint 0.7.1」・「0.7.1-rc1」）が min 以上か。版が読めなければ false。
+func versionAtLeast(got, min string) bool {
+	f := strings.Fields(got)
+	if len(f) == 0 {
+		return false
+	}
+	g, ok := versionNums(f[len(f)-1])
+	m, ok2 := versionNums(min)
+	if !ok || !ok2 {
+		return false
+	}
+	for i := range m {
+		if g[i] != m[i] {
+			return g[i] > m[i]
+		}
+	}
+	return true
+}
+
+// versionNums は「0.7.1」（後ろの -… と +… は見ない）を 3 つの数にする。
+func versionNums(v string) ([3]int, bool) {
+	var out [3]int
+	v = strings.TrimPrefix(v, "v")
+	if i := strings.IndexAny(v, "-+"); i >= 0 {
+		v = v[:i]
+	}
+	parts := strings.Split(v, ".")
+	if len(parts) != 3 {
+		return out, false
+	}
+	for i, p := range parts {
+		n, err := strconv.Atoi(p)
+		if err != nil {
+			return out, false
+		}
+		out[i] = n
+	}
+	return out, true
+}
 
 // flixlintVersion は `flixlint --version` の答え（読めなければ「版は読めない」）。
 func flixlintVersion(flixlint string) string {

@@ -40,7 +40,7 @@ type Outcome struct {
 	Reason     string   `json:"reason,omitempty"`     // refused・revert-failed の理由
 	Unrestored []string `json:"unrestored,omitempty"` // revert-failed: 戻せなかったファイル
 	LeftDirty  []string `json:"leftDirty,omitempty"`  // 確かめが書き換えて残したファイル（書く前に無かった git の変更。生成物など）
-	Backup     string   `json:"backup,omitempty"`     // --apply: 書く前の中身の控え（build/refactor/before/<パス>）
+	Backup     string   `json:"backup,omitempty"`     // --apply: 書く前の中身の控え（build/refactor/before/<回>/<パス>）
 }
 
 // Apply は --apply の時の当て方。
@@ -54,8 +54,9 @@ type Apply struct {
 // Change は書き換えを当てる流れ（dry-run → --apply → 確かめ → 落ちたら戻す）。
 //
 // 戻しは git に頼らない。書く直前の各ファイルの中身（コミットしていない変更を含む今の中身）を控え
-// （build/refactor/before/ にも写す）、確かめが落ちたらその中身へ正確に戻す。書いた後に別の手が同じファイルを
-// 変えていれば（ハッシュが書いた物と違えば）、その手の変更を消さないよう戻さずに revert-failed で知らせる。
+// （build/refactor/before/<回>/ にも写す）、確かめが落ちたらその中身へ正確に戻す。書いた後に別の手が同じファイルを
+// 変えていれば（ハッシュが書いた物と違えば）、その手の変更を消さないよう戻さずに revert-failed で知らせ、
+// その回の控えに印（REVERT-FAILED.txt）を置く。印が残る間は次の --apply を断る（唯一の控えを上書きしない）。
 //
 // WhyNot: git の clean を要求しないのは、作業ツリーを手で直している途中でも道具を流せるようにするため
 // （git apply -R で戻すと、手の変更と道具の patch が同じ行で重なった時に戻せない）。
@@ -102,8 +103,15 @@ func Change(root string, edits []Edit, how Apply) Outcome {
 		out.State, out.Reason = StateRefused, "計画を作った後に外から変わった（書いていない）: "+strings.Join(moved, "・")
 		return out
 	}
-	backup := filepath.Join(dir, "before")
-	if err := saveBackup(backup, files, plan.Orig); err != nil {
+	backups := filepath.Join(dir, "before")
+	if run, left := pendingRevertFailed(root, backups); run != "" {
+		out.State, out.Reason = StateRefused, fmt.Sprintf("前の回が revert-failed のまま（%s）: 戻していない %s。"+
+			"控え %s/<パス> と見比べて直したら %s を消す（控えと同じ中身に戻せば印は自然に外れる）",
+			relTo(root, run), strings.Join(left, "・"), relTo(root, run), relTo(root, filepath.Join(run, revertFailedMark)))
+		return out
+	}
+	backup, err := saveBackup(backups, files, plan.Orig, time.Now())
+	if err != nil {
 		out.State, out.Reason = StateRefused, "書く前の中身を控えられない: "+err.Error()
 		return out
 	}
@@ -136,15 +144,24 @@ func Change(root string, edits []Edit, how Apply) Outcome {
 	return out
 }
 
+// relTo は p を root からの相対で（出せなければ p のまま）。
+func relTo(root, p string) string {
+	if r, err := filepath.Rel(root, p); err == nil {
+		return filepath.ToSlash(r)
+	}
+	return p
+}
+
 // finishRevert は書いたファイルを書く前の中身へ戻し、戻せたかで reverted か revert-failed にし、確かめが残した変更を並べる。
 func finishRevert(out *Outcome, root string, plan *Planned, before map[string]bool) {
-	left, err := revert(root, plan)
+	left, err := revert(root, plan, relTo(root, out.Backup))
 	out.State = StateReverted
 	if err != nil {
 		out.Reason = err.Error()
 	}
 	if len(left) > 0 {
 		out.State, out.Unrestored = StateRevertFailed, left
+		markRevertFailed(out.Backup, left, out.Reason)
 	}
 	mine := map[string]bool{}
 	for f := range plan.Files {
@@ -207,26 +224,108 @@ func changedSince(root string, files []string, want map[string]string) []string 
 	return moved
 }
 
-// saveBackup は書く前の中身を dir/<パス> に写す（前の回の物は消す）。戻しは手元の中身で行い、これは人が見る控え。
-func saveBackup(dir string, files []string, orig map[string]string) error {
-	if err := os.RemoveAll(dir); err != nil {
-		return err
+// KeepBackups は build/refactor/before/ に残す回の数。超えた分を古い回から消す（revert-failed の印のある回は消さない）。
+const KeepBackups = 10
+
+// revertFailedMark は revert-failed の回の控えに置く印（戻していないファイルと訳）。
+const revertFailedMark = "REVERT-FAILED.txt"
+
+// backupRun は控えの回のフォルダの名前（書いた時刻。名前の順が時の順）。
+var backupRun = regexp.MustCompile(`^[0-9]{8}-[0-9]{6}\.[0-9]{3}(-[0-9]+)?$`)
+
+// saveBackup は書く前の中身を dir/<回>/<パス> に写し、その回のフォルダを返す。戻しは手元の中身で行い、これは人が見る控え。
+// 回は書いた時刻で分け、前の回の控えは消さない（KeepBackups を超えた古い回だけ消す）。
+func saveBackup(dir string, files []string, orig map[string]string, now time.Time) (string, error) {
+	name := now.Format("20060102-150405.000")
+	run := filepath.Join(dir, name)
+	for i := 2; ; i++ {
+		if _, err := os.Stat(run); os.IsNotExist(err) {
+			break
+		}
+		run = filepath.Join(dir, fmt.Sprintf("%s-%d", name, i))
 	}
 	for _, f := range files {
-		p := filepath.Join(dir, filepath.FromSlash(f))
+		p := filepath.Join(run, filepath.FromSlash(f))
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-			return err
+			return "", err
 		}
 		if err := os.WriteFile(p, []byte(orig[f]), 0o644); err != nil {
-			return err
+			return "", err
 		}
 	}
-	return nil
+	pruneBackups(dir, KeepBackups)
+	return run, nil
+}
+
+// backupRuns は dir の下の控えの回（古い順）。
+func backupRuns(dir string) []string {
+	entries, _ := os.ReadDir(dir)
+	var runs []string
+	for _, e := range entries {
+		if e.IsDir() && backupRun.MatchString(e.Name()) {
+			runs = append(runs, e.Name())
+		}
+	}
+	sort.Strings(runs)
+	return runs
+}
+
+// pruneBackups は控えの回を新しい keep 回だけ残す。revert-failed の印のある回は数えず消さない。
+func pruneBackups(dir string, keep int) {
+	var plain []string
+	for _, r := range backupRuns(dir) {
+		if _, err := os.Stat(filepath.Join(dir, r, revertFailedMark)); err != nil {
+			plain = append(plain, r)
+		}
+	}
+	for len(plain) > keep {
+		os.RemoveAll(filepath.Join(dir, plain[0]))
+		plain = plain[1:]
+	}
+}
+
+// markRevertFailed は回の控えに revert-failed の印を置く（1 行目から戻していないファイル・最後に訳）。
+func markRevertFailed(run string, left []string, reason string) {
+	if run == "" {
+		return
+	}
+	body := strings.Join(left, "\n") + "\n\n" + reason + "\n"
+	os.WriteFile(filepath.Join(run, revertFailedMark), []byte(body), 0o644)
+}
+
+// pendingRevertFailed は revert-failed の印が残る回（一番古い物）と、まだ控えの中身に戻っていないファイル。
+// 印のファイルが全部控えと同じ中身に戻っていれば、片付いたと見て印を外す。無ければ "" と nil。
+func pendingRevertFailed(root, dir string) (string, []string) {
+	for _, r := range backupRuns(dir) {
+		run := filepath.Join(dir, r)
+		data, err := os.ReadFile(filepath.Join(run, revertFailedMark))
+		if err != nil {
+			continue
+		}
+		head, _, _ := strings.Cut(string(data), "\n\n")
+		var left []string
+		for _, f := range strings.Split(head, "\n") {
+			if f = strings.TrimSpace(f); f == "" {
+				continue
+			}
+			want, werr := os.ReadFile(filepath.Join(run, filepath.FromSlash(f)))
+			cur, cerr := os.ReadFile(filepath.Join(root, filepath.FromSlash(f)))
+			if werr != nil || cerr != nil || string(want) != string(cur) {
+				left = append(left, f)
+			}
+		}
+		if len(left) == 0 {
+			os.Remove(filepath.Join(run, revertFailedMark))
+			continue
+		}
+		return run, left
+	}
+	return "", nil
 }
 
 // revert は書いたファイルを書く前の中身（plan.Orig）へ戻す。今の中身のハッシュが書いた物と同じ時だけ書き戻し、
 // もう書く前の中身なら何もしない。それ以外（書いた後に別の手が変えた・読めない・書けない）は戻さずに返す。
-func revert(root string, plan *Planned) ([]string, error) {
+func revert(root string, plan *Planned, backup string) ([]string, error) {
 	var left, moved []string
 	for f, body := range plan.Files {
 		path := filepath.Join(root, f)
@@ -260,7 +359,7 @@ func revert(root string, plan *Planned) ([]string, error) {
 	}
 	all := append(append([]string{}, moved...), left...)
 	sort.Strings(all)
-	return all, fmt.Errorf("%s。書く前の中身は build/refactor/before/<パス>", strings.Join(why, "・"))
+	return all, fmt.Errorf("%s。書く前の中身は %s/<パス>", strings.Join(why, "・"), backup)
 }
 
 // dirtyFiles は files のうち git がコミットしていない変更を持つ物（--require-clean の時だけ）。git の作業場でなければ誤り。

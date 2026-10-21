@@ -345,3 +345,66 @@ func TestKeyChangesWithTheDependencies(t *testing.T) {
 		t.Errorf("lib に fpkg を足しても鍵が同じ: %s %v", after, err)
 	}
 }
+
+// --resident は lint と常駐を分け合える flixlint（MinFlixlintResident 以上）にだけ付ける。版が読めなければ付けない。
+func TestResidentOnlyForSharedServerVersions(t *testing.T) {
+	for ver, want := range map[string]bool{"flixlint 0.7.1": true, "flixlint 0.8.0-rc1": true, "flixlint 0.7.0": false, "flixlint 0.6.5": false, "版は読めない": false} {
+		root := project(t)
+		var got bool
+		b := builder(root, new(int))
+		inner := b.Run
+		b.Run = func(s Stage, desc, dir string, cmd []string, log string) int {
+			got = strings.Contains(strings.Join(cmd, " "), "--resident")
+			return inner(s, desc, dir, cmd, log)
+		}
+		b.Version = func(string) string { return ver }
+		if _, err := b.Load(Resolved); err != nil {
+			t.Fatal(err)
+		}
+		if got != want {
+			t.Errorf("%s: --resident %v（%v のはず）", ver, got, want)
+		}
+	}
+}
+
+// 索引を作っている間にソースが変わったら、次の回は使い回さず作り直す（鍵のソースの分は作る前の値）。
+func TestSourceChangedWhileBuildingRebuildsNextTime(t *testing.T) {
+	root := project(t)
+	calls := 0
+	b := builder(root, &calls)
+	inner := b.Run
+	b.Run = func(s Stage, desc, dir string, cmd []string, log string) int {
+		code := inner(s, desc, dir, cmd, log)
+		if calls == 1 {
+			must(t, os.WriteFile(filepath.Join(root, "src", "Late.flix"), []byte("mod Late {}\n"), 0o644))
+		}
+		return code
+	}
+	if _, err := b.Load(Resolved); err != nil {
+		t.Fatal(err)
+	}
+	idx, err := b.Load(Resolved)
+	if err != nil || idx.Cached || calls != 2 {
+		t.Errorf("2 回目: cached %v・作った回数 %d（false・2 のはず）%v", idx != nil && idx.Cached, calls, err)
+	}
+}
+
+// 依存（lib/）を作る途中で広げても、次の回は使い回す（鍵の依存の分は作った後の値）。
+func TestLibAddedWhileBuildingIsReused(t *testing.T) {
+	root := project(t)
+	calls := 0
+	b := builder(root, &calls)
+	inner := b.Run
+	b.Run = func(s Stage, desc, dir string, cmd []string, log string) int {
+		must(t, os.MkdirAll(filepath.Join(root, "lib"), 0o755))
+		must(t, os.WriteFile(filepath.Join(root, "lib", "dep.fpkg"), []byte("x"), 0o644))
+		return inner(s, desc, dir, cmd, log)
+	}
+	if _, err := b.Load(Resolved); err != nil {
+		t.Fatal(err)
+	}
+	idx, err := b.Load(Resolved)
+	if err != nil || !idx.Cached || calls != 1 {
+		t.Errorf("2 回目: cached %v・作った回数 %d（true・1 のはず）%v", idx != nil && idx.Cached, calls, err)
+	}
+}

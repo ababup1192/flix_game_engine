@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // testdata/proj は書き換えの操作のお手本（src/Zoo.flix・src/Main.flix・test/TestZoo.flix）。
@@ -192,8 +193,58 @@ func TestRevertRestoresTheUncommittedContentExactly(t *testing.T) {
 	must(t, os.WriteFile(filepath.Join(root, "src/Zoo.flix"), []byte(mine), 0o644))
 	var cmds []string
 	code, text := runZoo(t, root, verifyWith(1, "error\n", &cmds), "expand-wildcard", "--enum", "Animal", "--apply")
-	if code != 1 || read(t, root, "src/Zoo.flix") != mine || read(t, root, "build/refactor/before/src/Zoo.flix") != mine {
-		t.Errorf("exit %d\n%s", code, text)
+	runs := backupRuns(filepath.Join(root, "build", "refactor", "before"))
+	if code != 1 || read(t, root, "src/Zoo.flix") != mine || len(runs) != 1 || read(t, root, "build/refactor/before/"+runs[0]+"/src/Zoo.flix") != mine {
+		t.Errorf("exit %d・控えの回 %v\n%s", code, runs, text)
+	}
+}
+
+// revert-failed の後のもう 1 回の --apply は、唯一の控えを残すため断り、控えの場所を言う。控えの中身へ戻せば通る。
+func TestApplyAfterRevertFailedRefusesUntilRestored(t *testing.T) {
+	root := zoo(t)
+	orig := read(t, root, "src/Zoo.flix")
+	spoil := func(cmd, dir, log string) int {
+		os.WriteFile(filepath.Join(dir, "src", "Zoo.flix"), []byte("changed by the verify step\n"), 0o644)
+		os.WriteFile(log, []byte("error\n"), 0o644)
+		return 1
+	}
+	if code, text := runZoo(t, root, spoil, "expand-wildcard", "--enum", "Animal", "--apply"); code != 3 {
+		t.Fatalf("1 回目 exit %d\n%s", code, text)
+	}
+	runs := backupRuns(filepath.Join(root, "build", "refactor", "before"))
+	if len(runs) != 1 {
+		t.Fatalf("控えの回 %v", runs)
+	}
+	must(t, os.WriteFile(filepath.Join(root, "src", "Zoo.flix"), []byte(orig), 0o644))
+	must(t, os.WriteFile(filepath.Join(root, "src", "Zoo.flix"), []byte(orig+"// other hand\n"), 0o644))
+	var cmds []string
+	code, text := runZoo(t, root, verifyWith(0, "", &cmds), "expand-wildcard", "--enum", "Animal", "--apply")
+	if code != 2 || len(cmds) != 0 || !strings.Contains(text, "build/refactor/before/"+runs[0]) || !strings.Contains(text, revertFailedMark) {
+		t.Errorf("2 回目は断る: exit %d・確かめ %v\n%s", code, cmds, text)
+	}
+	must(t, os.WriteFile(filepath.Join(root, "src", "Zoo.flix"), []byte(orig), 0o644))
+	code, text = runZoo(t, root, verifyWith(0, "", &cmds), "expand-wildcard", "--enum", "Animal", "--apply")
+	if code != 0 || len(backupRuns(filepath.Join(root, "build", "refactor", "before"))) != 2 {
+		t.Errorf("控えの中身へ戻した後は通り、前の回の控えも残る: exit %d\n%s", code, text)
+	}
+}
+
+// 控えは新しい KeepBackups 回だけ残し、revert-failed の印のある回は数えず残す。
+func TestBackupsKeepTheNewestRunsAndRevertFailed(t *testing.T) {
+	dir := t.TempDir()
+	start := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
+	var first string
+	for i := 0; i < KeepBackups+3; i++ {
+		run, err := saveBackup(dir, []string{"src/A.flix"}, map[string]string{"src/A.flix": "a"}, start.Add(time.Duration(i)*time.Second))
+		must(t, err)
+		if i == 0 {
+			first = run
+			markRevertFailed(run, []string{"src/A.flix"}, "test")
+		}
+	}
+	runs := backupRuns(dir)
+	if len(runs) != KeepBackups+1 || runs[0] != filepath.Base(first) {
+		t.Errorf("残った回 %d（%d のはず）・一番古い %s（印の回 %s のはず）", len(runs), KeepBackups+1, runs[0], filepath.Base(first))
 	}
 }
 

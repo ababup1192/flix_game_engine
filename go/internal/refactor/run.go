@@ -74,8 +74,9 @@ const Usage = `使い方: fge refactor <操作> [引数] [--json] [-v|--verbose]
 
   書き換える操作は既定で dry-run（build/refactor/last.diff を書くだけ）。--apply で書き、確かめの口（refactor.json の
   verify・remove-dead は verifyTests）を流し、落ちたら書く前の中身へ戻す。書く前の中身はコミットしていない変更も
-  含む今の中身で、道具が控える（build/refactor/before/<パス>。git の clean は要らない・--require-clean で求められる）。
-  書いた後に別の手が同じファイルを変えていれば、その変更を消さないよう戻さずに revert-failed で知らせる。
+  含む今の中身で、道具が回ごとに控える（build/refactor/before/<時刻>/<パス>。新しい 10 回分を残す。git の clean は
+  要らない・--require-clean で求められる）。書いた後に別の手が同じファイルを変えていれば、その変更を消さないよう
+  戻さずに revert-failed で知らせ、その回の控えに REVERT-FAILED.txt を置く。印が残る間は次の --apply を断る。
   決められない所は書き換えず fix に並べる。
   ほかの操作は読むだけ（ファイルは書き換えない）。索引は build/refactor/spans-<段>.tsv（無いか古ければ bin/fge heavy の枠で作る）。
   refs・match-sites は resolved の段（速い）、field-sites は typed の段（型検査まで。遅い）。
@@ -84,7 +85,9 @@ const Usage = `使い方: fge refactor <操作> [引数] [--json] [-v|--verbose]
   名前は終わりで当てる（Phase.Clear は World.Phase.Clear に当たる。2 つ以上に当たれば候補を出して止まる）。
   設定は bin/lint-rules/refactor.json（engine が配る）と refactor.local.json（flixlint・sources・verify・verifyTests・testDirs・library）。
   library（既定 auto: flix.toml に repository がある package）では remove-dead が pub の def を消さない（使う側が索引の外）。
-  flixlint は 0.6.0 以上。確かめは sh -c で流す（Windows は make と同じく Git Bash か MSYS の sh が要る）。
+  flixlint は ` + MinFlixlint + ` 以上（usages の型の注記・use は ` + MinFlixlintUsages + ` から、change-case-shape・change-signature は
+  ` + MinFlixlintArgs + ` から、lint と 1 つの常駐を分け合う索引作り（--resident）は ` + MinFlixlintResident + ` から。古い版では索引を作るたびに JVM を立てる）。
+  確かめは sh -c で流す（Windows は make と同じく Git Bash か MSYS の sh が要る）。
   終了コード: 0 問題なし・1 --max を超えた／確かめが落ちて戻した（reverted）・2 呼び方か索引の誤り／断った（refused）・
   3 戻せないファイルが残った（revert-failed）。
   道具のテスト: cd go && go test ./internal/refactor。本物の flixlint と flix で書き換えて確かめる e2e は
