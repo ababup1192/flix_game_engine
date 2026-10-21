@@ -31,8 +31,9 @@
 #
 # jar の置き場: build/headless/（git に入れない）。作る場所は build/headless/proj で、
 # ゲームの src を写した上に FgeHeadlessMain.flix を足す（ゲームの src には何も書かない）。
-# 2 本の make が同時に来ても作るのは 1 本だけ（build/headless/.lock で順番に。鍵に作り手の pid を
-# 書き、作り手が落ちていたら次の人が外す。15 分待っても空かなければ flix run で流す）。
+# 2 本の make が同時に来ても作るのは 1 本だけ（build/headless/.lock で順番に。鍵はフォルダ + 作り手の pid のファイルで、
+# pid を書いた一時フォルダを鍵の名前へ rename して 1 回で取る。作り手が落ちていた・pid の無いまま 60 秒を過ぎた鍵は
+# 次の人が外す。待つ間は 30 秒ごとに鍵の pid と年齢を出し、15 分待っても空かなければ止める）。
 # 作り直しは別名で書いてから mv するので、走っている JVM の jar は消えない。
 # 作れなかった時は build/headless/.failed に印（エラーの最後の 15 行）を、.failed.manifest に作れなかった時の中身の指紋を残し、
 # 指紋が変わるまで作り直さない
@@ -52,6 +53,10 @@
 #           JAVA = jar を流す java（既定は PATH の java、無ければエンジンの devbox の java）。
 #           HEADLESS_JAVA_OPTS = java へ足す旗（既定の旗の後ろに付くので上書きできる。例: -Xss64m）。
 #           jar から流す時だけ効く（flix run へ回った時は bin/flix の旗のまま）。
+#           HEADLESS_LOCK_WAIT_SECONDS = jar を作る鍵を待つ上限の秒（既定 900。テストが短くする）。
+#
+# 字の決まり: 変数の直後に全角の字（括弧・読点など）が続く所は必ず ${var} と書く。$var（ と書くと bash は
+# 全角の字のバイトを変数名の続きと読み、set -u で「unbound variable」で落ちる（go/internal/headlessrun のテストが見る）。
 set -euo pipefail
 
 usage() {
@@ -271,10 +276,119 @@ build_jar() {
     fi
 }
 
-# 鍵を生きている誰かが持っているか。
+# ---- jar を作る鍵 ----
+# 鍵は $lock のフォルダと、その中の作り手の pid のファイル。取る時は pid を書いた一時フォルダを rename(2) で
+# 鍵の名前へ移す（1 回のシステムコールなので、pid の無い鍵は取る途中で止められても残らない）。rename は
+# 中身のある鍵があれば失敗し、空のフォルダ（古い版が残した pid の無い鍵）なら置き換えて取る。
+# rename(2) を呼ぶのは perl（macOS と Linux に入っている）。perl が無い時だけ mkdir してから pid を書く（古い作り方）。
+# WhyNot: mv で鍵の名前へ移さない — 鍵が既にあると mv はその中へ入れてしまい（GNU の -T は macOS に無い）、失敗にならない。
+lock="$out/.lock"
+# pid の無い鍵を古いと見なすまでの秒（mkdir から pid を書くまでの間には十分長い）。
+lock_empty_grace=60
+lock_wait_limit="${HEADLESS_LOCK_WAIT_SECONDS:-900}"
+
+# $1 の更新時刻（エポック秒）。無ければ空。GNU の stat を先に試す（BSD の stat -f は GNU では別の意味になる）。
+mtime_of() {
+    stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null || true
+}
+
+# フォルダ $1 を $2 の名前へ 1 回の rename(2) で移す。$2 に中身があれば失敗する。
+rename_dir() {
+    if command -v perl >/dev/null 2>&1; then
+        perl -e 'rename($ARGV[0], $ARGV[1]) or exit 1' "$1" "$2" 2>/dev/null
+    else
+        # perl が無い時: 無い名前への mv だけ（ある時は中へ入れてしまうので失敗として扱う）。
+        [ ! -e "$2" ] && mv "$1" "$2" 2>/dev/null
+    fi
+}
+
+# 鍵を 1 回だけ取りに行く。取れたら 0。
+take_lock() {
+    if command -v perl >/dev/null 2>&1; then
+        staging="$out/.lock.new.$$"
+        rm -rf "$staging"
+        mkdir "$staging"
+        echo $$ > "$staging/pid"
+        if rename_dir "$staging" "$lock"; then return 0; fi
+        rm -rf "$staging"
+        return 1
+    fi
+    mkdir "$lock" 2>/dev/null || return 1
+    echo $$ > "$lock/pid"
+}
+
+# 自分の鍵を外す。別名への mv 1 回で外すので、pid だけ消えた空の鍵は残らない。
+release_lock() {
+    [ "$(cat "$lock/pid" 2>/dev/null || true)" = "$$" ] || return 0
+    rm -rf "$lock.done.$$"
+    if mv "$lock" "$lock.done.$$" 2>/dev/null; then rm -rf "$lock.done.$$"; fi
+}
+
+# pid の作り手が生きているか（kill -0 は他のユーザーの作り手だと失敗するので ps でも見る）。
+pid_alive() {
+    kill -0 "$1" 2>/dev/null || ps -p "$1" >/dev/null 2>&1
+}
+
+# 鍵の様子を lock_state に 1 語で: none（無い）・live（作り手が生きている）・dead（作り手が居ない）・
+# young（pid が無く、作られて lock_empty_grace 秒より若い）・old（pid が無いまま lock_empty_grace 秒を過ぎた）。
+# lock_owner に鍵の pid（無ければ空）、lock_age に鍵の年齢（秒）を残す。
+inspect_lock() {
+    lock_owner=""
+    lock_age=0
+    lock_mtime=$(mtime_of "$lock")
+    if [ -z "$lock_mtime" ]; then lock_state=none; return; fi
+    lock_age=$(( $(date +%s) - lock_mtime ))
+    lock_owner=$(cat "$lock/pid" 2>/dev/null || true)
+    case "$lock_owner" in
+        '' | *[!0-9]*)
+            lock_owner=""
+            if [ "$lock_age" -ge "$lock_empty_grace" ]; then lock_state=old; else lock_state=young; fi ;;
+        *)
+            if pid_alive "$lock_owner"; then lock_state=live; else lock_state=dead; fi ;;
+    esac
+}
+
+# dead / old と見た鍵を外す。外すのは別名への mv 1 回だけ — 2 人が同時に古い鍵を見ても、外せるのは 1 人。
+# 見てから外すまでの間に他の人が取り直していた（移した鍵の pid が見た物と違う）時は、元の名前へ戻す。
+remove_stale_lock() {
+    seen="$lock_owner"
+    stale="$lock.stale.$$"
+    rm -rf "$stale"
+    mv "$lock" "$stale" 2>/dev/null || return 0
+    moved=$(cat "$stale/pid" 2>/dev/null || true)
+    if [ "$moved" != "$seen" ] && [ -n "$moved" ]; then
+        rename_dir "$stale" "$lock" || echo "[headless-run] 取り直されたばかりの鍵（pid ${moved}）を戻せなかった" >&2
+        rm -rf "$stale"
+        return 0
+    fi
+    echo "[headless-run] 古い鍵を外した（pid ${seen:-なし}・年齢 ${lock_age} 秒・鍵: ${lock}）" >&2
+    rm -rf "$stale"
+}
+
+# 鍵を取るまで待つ。lock_wait_limit 秒待っても取れなければ止める（loud_fallback）。
+acquire_lock() {
+    waited=0
+    until take_lock; do
+        inspect_lock
+        case "$lock_state" in
+            none) continue ;;
+            dead | old) remove_stale_lock; continue ;;
+        esac
+        if [ $(( waited % 30 )) = 0 ]; then
+            echo "[headless-run] jar を作る鍵を待つ（pid ${lock_owner:-なし}・鍵の年齢 ${lock_age} 秒・待って ${waited} 秒・鍵: ${lock}）" >&2
+        fi
+        waited=$(( waited + 2 ))
+        if [ "$waited" -ge "$lock_wait_limit" ]; then
+            loud_fallback "${waited} 秒待っても jar を作る鍵が空かない（鍵: ${lock}・pid ${lock_owner:-なし}・鍵の年齢 ${lock_age} 秒）。作り手が居ないなら rm -rf ${lock}"
+        fi
+        sleep 2
+    done
+}
+
+# 鍵を生きている誰か（か、取っている途中の誰か）が持っているか。
 lock_held() {
-    owner=$(cat "$out/.lock/pid" 2>/dev/null || true)
-    [ -n "$owner" ] && kill -0 "$owner" 2>/dev/null
+    inspect_lock
+    [ "$lock_state" = live ] || [ "$lock_state" = young ]
 }
 
 if [ "$mode" = status ]; then
@@ -337,26 +451,8 @@ publish_shared_jar() {
 
 if is_stale; then
     mkdir -p "$out"
-    lock="$out/.lock"
-    # 鍵はフォルダ + 作り手の pid。作り手がもう居なければ（落ちた・止められた）外して取り直す。
-    # 外すのは別名への mv 1 回だけ — 2 人が同時に古い鍵を見ても、外せるのは 1 人で、
-    # その後に取り直された新しい鍵を消してしまうことはない。
-    waited=0
-    until mkdir "$lock" 2>/dev/null; do
-        owner=$(cat "$lock/pid" 2>/dev/null || true)
-        if [ -n "$owner" ] && ! kill -0 "$owner" 2>/dev/null; then
-            if mv "$lock" "$lock.stale.$$" 2>/dev/null; then rm -rf "$lock.stale.$$"; fi
-            continue
-        fi
-        [ "$waited" = 0 ] && echo "[headless-run] pid ${owner:-?} が jar を作っているので待つ" >&2
-        waited=$((waited + 2))
-        if [ "$waited" -ge 900 ]; then
-            loud_fallback "15 分待っても jar を作る鍵が空かない（鍵: $lock）"
-        fi
-        sleep 2
-    done
-    echo $$ > "$lock/pid"
-    trap 'rm -f "$lock/pid"; rmdir "$lock" 2>/dev/null || true' EXIT
+    acquire_lock
+    trap release_lock EXIT
     # 待っている間に他の make が作り終えていれば、もう一度作らない。
     built_ok=1
     if failed_before; then built_ok=0
@@ -374,7 +470,7 @@ if is_stale; then
             touch -r "$out/.started" "$out/.failed"
         fi
     fi
-    rm -f "$lock/pid"; rmdir "$lock" 2>/dev/null || true
+    release_lock
     trap - EXIT
     if [ "$built_ok" = 0 ]; then
         if [ "$mode" = build ]; then
