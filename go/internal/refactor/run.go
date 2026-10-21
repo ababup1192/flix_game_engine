@@ -49,6 +49,20 @@ const Usage = `使い方: fge refactor <操作> [引数] [--json] [-v|--verbose]
                                                        組み立て（record の式）の欄を型に合わせる: 型に x があれば無い式へ
                                                        x = EXPR を足し、型に x が無ければある式から消す。式は欄の組で当てる
                                                        （型の別名を通した物も拾う・欄の組が同じ別の型があれば fix）
+  change-case-shape --case E.C[,E.D] (--add T [--at N] --value V | --remove N | --label x --type T --value V) [--apply]
+                                                       enum の case の欄（位置は 0 から）を足す・消し、宣言と作る所（E.C(a)）と
+                                                       当てる所（case E.C(x)）を全部直す。足した欄は作る所が V・当てる所が _。
+                                                       中身の無い case にも足せる（Fight → Fight(T)）・最後の欄を消すと中身の無い case。
+                                                       --label は payload の record（case C({ … })）に欄を足す。case を関数として
+                                                       渡す所・消す欄を本体が使う所は fix（fix があれば書かない）
+  change-signature --def Mod.f[,Mod.g] --params '<新しい引数の並び>' --args '<呼ぶ所の式の並び>' [--apply]
+                                                       引数を足す・消す・並べ替える・型を替える。--params の型の無い名前は元の
+                                                       引数をそのまま残す（'env: ViewEnv.Env, card, at'）。--args の式は元の引数の名前が
+                                                       使え、呼ぶ所ではその所の引数の式になる（例 --params 'env: ViewEnv.Env,
+                                                       input: XScene.In' --args 'ViewEnv.of(ctx, w), XScene.inputOf(w)'）。本体の中の
+                                                       同じ式は引数の名前に替え、let env = ViewEnv.of(ctx, w); は消す（移す前に
+                                                       本体を「引数にする式を let で先に書く」形に）。関数として渡す所・2 回使う
+                                                       引数に式が渡る所・本体が消える引数をまだ使う def は fix（fix があれば書かない）
 
   出力は全部の操作で同じ形の数行: 当てた物 1 行・数 1 行・注 0〜3 行・結末（dry-run・applied・歯止め）1 行・
   場所の上位 10 行（書き換える操作は人へ回す所を先に）・ファイルごとの数・全部の置き場・終わりに next（写して流せる
@@ -94,12 +108,14 @@ type args struct {
 	def                                                   string
 	reader, mapper, setter                                string
 	caseName, value                                       string
+	add, typ, params, argsText                            string // change-case-shape の --add・--type、change-signature の --params・--args
+	at, remove                                            int    // change-case-shape の --at・--remove（-1 は無し）
 	skip                                                  map[string]bool
 	max, limit                                            int // max < 0 は無し・limit 0 は全部
 }
 
 func parseArgs(rest []string) (args, error) {
-	a := args{max: -1, limit: 10}
+	a := args{max: -1, limit: 10, at: -1, remove: -1}
 	var pos []string
 	value := func(i *int, name string) (string, error) {
 		if *i+1 >= len(rest) {
@@ -175,6 +191,27 @@ func parseArgs(rest []string) (args, error) {
 			a.caseName, err = value(&i, x)
 		case "--value":
 			a.value, err = value(&i, x)
+		case "--add":
+			a.add, err = value(&i, x)
+		case "--type":
+			a.typ, err = value(&i, x)
+		case "--params":
+			a.params, err = value(&i, x)
+		case "--args":
+			a.argsText, err = value(&i, x)
+		case "--at", "--remove":
+			var v string
+			if v, err = value(&i, x); err == nil {
+				n, convErr := strconv.Atoi(v)
+				if convErr != nil || n < 0 {
+					return a, fmt.Errorf("%s には 0 以上の数を渡してください（欄の位置は 0 から）: %s", x, v)
+				}
+				if x == "--at" {
+					a.at = n
+				} else {
+					a.remove = n
+				}
+			}
 		case "--flixlint":
 			a.flixlint, err = value(&i, x)
 		case "--stage":
@@ -315,6 +352,29 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 			fmt.Fprintf(errOut, "refactor %s: --label <欄> と、--receiver <record の alias> か --case <Enum.Case> のどちらか 1 つが要ります（例 --label replayClock --receiver World）\n", a.op)
 			return 2
 		}
+	case "change-case-shape":
+		modes := 0
+		for _, on := range []bool{a.add != "", a.remove >= 0, a.label != ""} {
+			if on {
+				modes++
+			}
+		}
+		switch {
+		case a.caseName == "" || modes != 1:
+			fmt.Fprintln(errOut, "refactor change-case-shape: --case <Enum.Case>（a,b で複数）と、--add <型> --value <式>・--remove <位置>・--label <欄> --type <型> --value <式> のどれか 1 つが要ります（例 --case World.Scene.Fight --add FightUi --value 'FightUi.closed()'）")
+			return 2
+		case a.add != "" && a.value == "", a.label != "" && (a.typ == "" || a.value == ""):
+			fmt.Fprintln(errOut, "refactor change-case-shape: 欄を足す時は作る所に入れる式 --value <式> が要ります（--label は --type も）")
+			return 2
+		case a.at >= 0 && a.add == "":
+			fmt.Fprintln(errOut, "refactor change-case-shape: --at は --add の時だけ（消す位置は --remove N）")
+			return 2
+		}
+	case "change-signature":
+		if a.def == "" || a.params == "" || a.argsText == "" {
+			fmt.Fprintln(errOut, "refactor change-signature: --def <Mod.f>（a,b で複数）・--params '<新しい引数の並び>'・--args '<呼ぶ所の式（元の引数の名前が使える）>' が要ります（例 --def TitleView.titleTree --params 'env: ViewEnv.Env, input: TitleScene.In' --args 'ViewEnv.of(ctx, w), TitleScene.inputOf(w)'）")
+			return 2
+		}
 	case "usages":
 		if !a.unused && a.target == "" && a.label == "" {
 			fmt.Fprintln(errOut, "refactor usages: 名前を渡してください（例 refactor usages World.moveTo・refactor usages World#scene・refactor usages --unused）")
@@ -322,7 +382,7 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 		}
 	case "index", "remove-dead":
 	default:
-		fmt.Fprintf(errOut, "refactor: 知らない操作 %s（usages・refs・match-sites・field-sites・index・expand-wildcard・remove-dead・field-to-accessor・remove-field・fix-construction）\n", a.op)
+		fmt.Fprintf(errOut, "refactor: 知らない操作 %s（usages・refs・match-sites・field-sites・index・expand-wildcard・remove-dead・field-to-accessor・remove-field・fix-construction・change-case-shape・change-signature）\n", a.op)
 		return 2
 	}
 	if a.op != "field-to-accessor" && (strings.Contains(a.label, ",") || a.labelsFile != "") {
@@ -393,6 +453,10 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 		rep, err = removeFieldReport(root, idx, a, cfg, o)
 	case "fix-construction":
 		rep, err = fixConstructionReport(root, idx, a, cfg, o)
+	case "change-case-shape":
+		rep, err = caseShapeReport(root, idx, a, cfg, o)
+	case "change-signature":
+		rep, err = signatureReport(root, idx, a, cfg, o)
 	}
 	if err != nil {
 		fmt.Fprintf(errOut, "refactor %s: %v\n", a.op, err)
