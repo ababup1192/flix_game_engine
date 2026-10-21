@@ -90,13 +90,13 @@ func expandReport(root string, idx *Index, a args, cfg Config, o Options) (repor
 	sites := make([]Row, len(plan.Edits))
 	for i, e := range plan.Edits {
 		sites[i] = e.Site
-		r.lines = append(r.lines, fmt.Sprintf("%-44s 書き出す  %s", e.Site.Where(), e.Site.Owner))
+		r.lines = append(r.lines, fmt.Sprintf("%s\t書き出す\t%s", e.Site.Where(), e.Site.Owner))
 	}
 	r.Sites = sites
 	r.gotText = fmt.Sprintf("`_`・変数の腕を持つ match %d・書き出す %d・人へ回す %d", plan.Sites, len(plan.Edits), len(plan.Fix))
 	r.wantText = fmt.Sprintf("%s への match に `case _` 0（書き出せない所は fix）", sym)
 	for _, f := range plan.Fix {
-		r.fixLines = append(r.fixLines, fmt.Sprintf("%-44s fix  %s（%s）", f.Where(), f.Why, f.Owner))
+		r.fixLines = append(r.fixLines, fmt.Sprintf("%s\tfix\t%s（%s）", f.Where(), f.Why, f.Owner))
 	}
 	nextOf(&r, "bin/fge refactor expand-wildcard --enum "+a.target, a, &out)
 	return r, nil
@@ -119,13 +119,13 @@ func deadReport(root string, idx *Index, a args, cfg Config, o Options) (report,
 	r.gotText = fmt.Sprintf("候補 %d（test-only %d・参照 0 %d）・消す def %d・一緒に消すテスト %d・人へ回す %d", plan.Sites, plan.TestOnly, plan.Sites-plan.TestOnly, len(plan.Targets), len(plan.Tests), len(plan.Fix))
 	r.wantText = "テストからだけ・どこからも参照されない pub の def 0（決められない所は fix）"
 	for _, t := range plan.Targets {
-		r.lines = append(r.lines, fmt.Sprintf("%-44s 消す  %s（%s）", t.Where(), t.Sym, t.Why))
+		r.lines = append(r.lines, fmt.Sprintf("%s\t消す\t%s（%s）", t.Where(), t.Sym, t.Why))
 	}
 	for _, t := range plan.Tests {
-		r.lines = append(r.lines, fmt.Sprintf("%-44s 消す  %s（%s）", t.Where(), t.Sym, t.Why))
+		r.lines = append(r.lines, fmt.Sprintf("%s\t消す\t%s（%s）", t.Where(), t.Sym, t.Why))
 	}
 	for _, f := range plan.Fix {
-		r.fixLines = append(r.fixLines, fmt.Sprintf("%-44s fix   %s（%s）", f.Where(), f.Sym, f.Why))
+		r.fixLines = append(r.fixLines, fmt.Sprintf("%s\tfix\t%s（%s）", f.Where(), f.Sym, f.Why))
 	}
 	base := "bin/fge refactor remove-dead"
 	if a.withTests {
@@ -289,10 +289,10 @@ func accessorReport(root string, idx *Index, a args, cfg Config, o Options) (rep
 	}
 	r.wantText = fmt.Sprintf("%s の欄 %s の直の読み書き 0（口の中を除く。決められない所は fix）", a.receiver, a.label)
 	for _, w := range plan.Rewrites {
-		r.lines = append(r.lines, fmt.Sprintf("%-44s %s（%s）", w.Where(), w.Why, w.Owner))
+		r.lines = append(r.lines, fmt.Sprintf("%s\t%s（%s）", w.Where(), w.Why, w.Owner))
 	}
 	for _, f := range plan.Fix {
-		r.fixLines = append(r.fixLines, fmt.Sprintf("%-44s fix  %s（%s）", f.Where(), f.Why, f.Owner))
+		r.fixLines = append(r.fixLines, fmt.Sprintf("%s\tfix\t%s（%s）", f.Where(), f.Why, f.Owner))
 	}
 	base := fmt.Sprintf("bin/fge refactor field-to-accessor --label %s --receiver %s --reader %s", a.label, a.receiver, a.reader)
 	if a.mapper != "" {
@@ -426,10 +426,10 @@ func constructionPlan(idx *Index, a args, shape Shape, before []string, add bool
 
 func constructionLines(r *report, plan ConstructionPlan) {
 	for _, s := range plan.Sites {
-		r.lines = append(r.lines, fmt.Sprintf("%-44s %s（%s）", s.Where(), s.Why, s.Owner))
+		r.lines = append(r.lines, fmt.Sprintf("%s\t%s（%s）", s.Where(), s.Why, s.Owner))
 	}
 	for _, f := range plan.Fix {
-		r.fixLines = append(r.fixLines, fmt.Sprintf("%-44s fix  %s（%s）", f.Where(), f.Why, f.Owner))
+		r.fixLines = append(r.fixLines, fmt.Sprintf("%s\tfix\t%s（%s）", f.Where(), f.Why, f.Owner))
 	}
 }
 
@@ -532,7 +532,7 @@ func removeFieldReport(root string, idx *Index, a args, cfg Config, o Options) (
 			if s.Write {
 				rw = "書き"
 			}
-			r.lines = append(r.lines, fmt.Sprintf("%-44s %s  %-20s %s", s.Where(), rw, s.Recv, s.Owner))
+			r.lines = append(r.lines, fmt.Sprintf("%s\t%s\t%s\t%s", s.Where(), rw, s.Recv, s.Owner))
 		}
 		r.fixHint = "読み書きを口へ替える（field-to-accessor）か消してから。使われなくなった口の def は remove-dead --def で消す"
 		if a.caseName == "" {
@@ -558,7 +558,7 @@ func removeFieldReport(root string, idx *Index, a args, cfg Config, o Options) (
 	r.gotText = fmt.Sprintf("直の読み書き 0・型から消す 1（%s）・組み立てから消す %d・人へ回す %d", typeRow.Where(), len(plan.Sites), len(plan.Fix))
 	r.extra = append(r.extra, shapeNote(shape))
 	r.wantText = fmt.Sprintf("%s に欄 %s が無く、組み立ても型と同じ欄の組（決められない所は fix）", shape.Name, label)
-	r.lines = append(r.lines, fmt.Sprintf("%-44s 型から欄 %s を消す", typeRow.Where(), label))
+	r.lines = append(r.lines, fmt.Sprintf("%s\t型から欄 %s を消す", typeRow.Where(), label))
 	constructionLines(&r, plan)
 	nextOf(&r, fmt.Sprintf("bin/fge refactor remove-field --label %s %s", label, shapeFlag(a)), a, &out)
 	return r, nil

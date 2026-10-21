@@ -196,9 +196,16 @@ type Builder struct {
 	Log      io.Writer
 	Rebuild  bool // 鍵が同じでも作り直す
 	Verbose  bool // flixlint の出力を画面へ（既定は build/refactor/index-<段>.log へ書き、1 行だけ言う）
-	// Prepare は lib/ が無い時に依存を用意する口（refactor.json の prepare。既定 make check）。nil なら用意しない。
-	Prepare VerifyRunner
 }
+
+// IndexError は索引を作れなかった訳と、写してそのまま流せる次の手（無ければ ""）。
+type IndexError struct {
+	Msg     string
+	Next    string
+	NextWhy string
+}
+
+func (e *IndexError) Error() string { return e.Msg }
 
 // Dir は索引の置き場（build/refactor）。
 func (b Builder) Dir() string { return filepath.Join(b.Root, "build", "refactor") }
@@ -233,9 +240,6 @@ func (b Builder) Load(s Stage) (*Index, error) {
 		cmd = append(cmd, "--java-opts", b.Config.JavaOpts)
 	}
 	cmd = append(cmd, b.sources()...)
-	if err := b.prepareLib(); err != nil {
-		return nil, err
-	}
 	log := filepath.Join(b.Dir(), "index-"+string(s)+".log")
 	if b.Verbose {
 		fmt.Fprintf(b.Log, "[refactor] 索引（%s）を作ります: %s\n", s, strings.Join(cmd, " "))
@@ -251,17 +255,7 @@ func (b Builder) Load(s Stage) (*Index, error) {
 		if log != "" {
 			fmt.Fprint(b.Log, tailOf(log, 12))
 		}
-		switch code {
-		case 4:
-			return nil, fmt.Errorf("索引を作れません: flixlint の終了コード 4（呼び方か環境の誤り）。使っている flixlint（%s・%s）が --spans を知らない時もこれになります。"+
-				"この道具には flixlint %s 以上が要ります（--spans と索引の形 2）。submodule なら git -C flixlint fetch して %s 以上へ上げ、"+
-				"別の場所の物は --flixlint か refactor.local.json の flixlint で名指ししてください。上の flixlint の出力も見てください",
-				b.Flixlint, flixlintVersion(b.Flixlint), MinFlixlint, MinFlixlint)
-		case 3:
-			return nil, fmt.Errorf("索引を作れません: ソースがコンパイルできない（flixlint の終了コード 3。上の出力か make check）")
-		default:
-			return nil, fmt.Errorf("索引を作れません: flixlint の終了コード %d", code)
-		}
+		return nil, b.indexError(code, log)
 	}
 	rows, adds, err := readIndex(tmp, s)
 	if err != nil {
@@ -293,28 +287,38 @@ func tailOf(path string, n int) string {
 	return "[refactor] " + rel(path) + " の終わり:\n" + strings.Join(lines, "\n") + "\n"
 }
 
-// prepareLib は flix.toml に依存があり lib/ が無い時、依存を用意する口（既定 make check）を流す。
-// 索引の flixlint は lib/ の fpkg を読むが、lib/ は flix がコンパイルの初めに作る物で、clone や worktree の直後には無い。
-func (b Builder) prepareLib() error {
-	if b.Prepare == nil || b.Config.Prepare == "" {
-		return nil
+// indexError は flixlint の終了コードとログから、止めた訳と次の手を作る。
+//
+// 依存（lib/）が無い・欠けている時、flixlint は終了コード 4 で「flix check を 1 度」と言って止まる。その時は
+// make check を next に出すだけで、道具が裏で make を流さない（依存を入れるのは flix の 1 つの源。
+// 設計 refactor-tool-design §8.1・段 C で flixlint が自分で入れるようになるまで）。
+func (b Builder) indexError(code int, log string) error {
+	switch code {
+	case 4:
+		if strings.Contains(logText(log), "flix check") {
+			return &IndexError{
+				Msg:     "索引を作れません: flixlint が依存（lib/）を読めない（終了コード 4。上の出力）",
+				Next:    "make check",
+				NextWhy: "flix check が lib/ に依存を入れる。通ったら同じコマンドをもう一度",
+			}
+		}
+		return &IndexError{Msg: fmt.Sprintf("索引を作れません: flixlint の終了コード 4（呼び方か環境の誤り）。使っている flixlint（%s・%s）が --spans を知らない時もこれになります。"+
+			"この道具には flixlint %s 以上が要ります（--spans と索引の形 2）。submodule なら git -C flixlint fetch して %s 以上へ上げ、"+
+			"別の場所の物は --flixlint か refactor.local.json の flixlint で名指ししてください。上の flixlint の出力に flix check とあれば依存（lib/）が無いので make check を 1 度",
+			b.Flixlint, flixlintVersion(b.Flixlint), MinFlixlint, MinFlixlint)}
+	case 3:
+		return &IndexError{Msg: "索引を作れません: ソースがコンパイルできない（flixlint の終了コード 3。上の出力）", Next: "make check", NextWhy: "最初の誤りの場所"}
 	}
-	if info, err := os.Stat(filepath.Join(b.Root, "lib")); err == nil && info.IsDir() {
-		return nil
+	return &IndexError{Msg: fmt.Sprintf("索引を作れません: flixlint の終了コード %d", code)}
+}
+
+// logText はログの中身（-v で画面へ流した時は "" で、読めない）。
+func logText(log string) string {
+	if log == "" {
+		return ""
 	}
-	toml, err := os.ReadFile(filepath.Join(b.Root, "flix.toml"))
-	if err != nil || !strings.Contains(string(toml), "[dependencies]") {
-		return nil
-	}
-	if err := os.MkdirAll(b.Dir(), 0o755); err != nil {
-		return err
-	}
-	log := filepath.Join(b.Dir(), "prepare.log")
-	fmt.Fprintf(b.Log, "[refactor] lib/ が無いので依存を用意します: %s（ログ %s）\n", b.Config.Prepare, rel(log))
-	if code := b.Prepare(b.Config.Prepare, b.Root, log); code != 0 {
-		return fmt.Errorf("依存を用意できません（%s が終了コード %d。%s）", b.Config.Prepare, code, rel(log))
-	}
-	return nil
+	data, _ := os.ReadFile(log)
+	return string(data)
 }
 
 func readKey(path string) (string, float64, bool) {

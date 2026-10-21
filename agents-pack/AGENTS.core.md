@@ -46,10 +46,10 @@ lint・フック・make の口で止まる決まりはここに書かない（�
 | F8 のチケット・閉じる | `debug/annotations/` の README → `world.json`・`bin/fge tickets close` |
 | 直しが別の不具合を生んだ率 | `bin/fge tickets stats`（前の直しの候補は `suspects`） |
 | ゲームの定義を引く | `make src Q=<名前>` |
-| 直す前に参照・match・欄の読み書きを数える | `bin/fge refactor`（refs・match-sites・field-sites） |
-| `case _` を書き出す・不要な pub を消す | `bin/fge refactor`（expand-wildcard・remove-dead） |
-| record の欄の直の読み書きを口の関数へ替える | `bin/fge refactor field-to-accessor` |
-| record の型から欄を消す・足す（組み立ての式も一緒に直す） | `bin/fge refactor`（remove-field・fix-construction） |
+| 名前の使われ所・呼び手を探す（grep より先に・読むのは道具が出した行だけ） | `bin/fge refactor usages <名前>` |
+| 使われない pub・use を探して消す（テストだけが呼ぶ物も） | `bin/fge refactor usages --unused` → `remove-dead` |
+| record の欄の直の読み書きを口の関数へ替える（口が無ければ作る） | `bin/fge refactor field-to-accessor` |
+| `case _` を書き出す・record の型の欄を消す・足す（組み立ても） | `bin/fge refactor`（expand-wildcard・remove-field・fix-construction） |
 | 重い処理を順に流す | `bin/fge heavy <コマンド>`（`--help`・`--status`・`--history`） |
 | 作業場を別の版のエンジンへ一時的に向ける | `bin/fge use-engine <版かパス>`・戻すは `--restore` |
 | 案を並べて依頼主に選んでもらう | `reports/<名前>/proposal.json` → `bin/fge proposal` |

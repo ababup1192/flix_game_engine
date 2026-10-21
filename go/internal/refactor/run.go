@@ -1,6 +1,7 @@
 package refactor
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -8,7 +9,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/ababup1192/flix_game_engine/go/internal/checkres"
 )
@@ -47,12 +47,13 @@ const Usage = `使い方: fge refactor <操作> [引数] [--json] [-v|--verbose]
                                                        x = EXPR を足し、型に x が無ければある式から消す。式は欄の組で当てる
                                                        （型の別名を通した物も拾う・欄の組が同じ別の型があれば fix）
 
-  出力は既定で短い数行: 数・ファイルごとの数・場所の上位 10 行（書き換える操作は人へ回す所を先に）。場所の全部は
-  build/refactor/last-<操作>.txt に書き、その場所を 1 行で言う。--all（か --limit 0）で場所を全部、--json で全部を JSON。
-  -v・--verbose は今までの出力: 場所を全部・索引を作る flixlint の出力・dry-run の diff の全文・確かめの口の出力を画面にも出す
-  （既定ではそれぞれ build/refactor/index-<段>.log・last.diff・verify.log に書き、場所だけ言う）。
+  出力は全部の操作で同じ形の数行: 当てた物 1 行・数 1 行・注 0〜3 行・結末（dry-run・applied・歯止め）1 行・
+  場所の上位 10 行（書き換える操作は人へ回す所を先に）・ファイルごとの数・全部の置き場・終わりに next（写して流せる
+  コマンド）。場所の全部は build/refactor/last-<操作>.txt。--all（か --limit N・0 は全部）で場所を画面に、--json で全部を JSON。
+  -v・--verbose は今までの全文: got・want・status と索引の秒・場所の全部・索引を作る flixlint の出力・dry-run の diff・
+  確かめの口の出力（既定ではそれぞれ build/refactor/index-<段>.log・last.diff・verify.log に書き、場所だけ言う）。
   根は --root（無ければ FGE_ROOT、無ければ今の所から上へ flix.toml を探す）。flixlint は根の flixlint/（submodule）から探す。
-  lib/ が無ければ索引の前に refactor.json の prepare（既定 make check）で依存を用意する。
+  依存（lib/）が無くて flixlint が止めた時は、道具は make を流さず next: make check を出す（依存を入れるのは flix）。
 
   書き換える操作は既定で dry-run（build/refactor/last.diff を書くだけ）。--apply で書き、確かめの口（refactor.json の
   verify・remove-dead は verifyTests）を流し、落ちたら書いた patch（build/refactor/last.patch）だけを戻す。
@@ -298,13 +299,17 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 		fmt.Fprintf(errOut, "refactor: %v\n", err)
 		return 2
 	}
-	b := Builder{Root: root, Config: cfg, Flixlint: fl, FlixJar: FindFlixJar(root, fl, cfg), Run: o.Run, Log: o.Log, Rebuild: a.rebuild, Verbose: a.verbose, Prepare: o.Verify}
+	b := Builder{Root: root, Config: cfg, Flixlint: fl, FlixJar: FindFlixJar(root, fl, cfg), Run: o.Run, Log: o.Log, Rebuild: a.rebuild, Verbose: a.verbose}
 	if b.Log == nil {
 		b.Log = os.Stderr
 	}
 	idx, err := b.Load(stage)
 	if err != nil {
 		fmt.Fprintf(errOut, "refactor: %v\n", err)
+		var ie *IndexError
+		if errors.As(err, &ie) && ie.Next != "" {
+			fmt.Fprintf(errOut, "next: %s\n  （%s）\n", ie.Next, ie.NextWhy)
+		}
 		return 2
 	}
 	var rep report
@@ -336,14 +341,14 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 	}
 	rep.Index = indexInfo{Stage: string(idx.Stage), Path: idx.Path, Cached: idx.Cached, Seconds: idx.Seconds, Rows: len(idx.Rows)}
 	rep.finish(a)
-	rep.writeList(b.Dir(), a)
+	rep.saveList(b.Dir(), a)
 	switch {
 	case a.asJSON:
 		out.Write(checkres.Compact(rep))
-	case rep.compact:
-		rep.compactText(out, a)
-	default:
+	case a.verbose:
 		rep.text(out, a)
+	default:
+		out.WriteString(rep.brief(a).Text())
 	}
 	return rep.Exit
 }
@@ -370,7 +375,6 @@ type report struct {
 	fixHint  string // 直し方の 1 行（書き換える操作）
 	Exit     int    `json:"exit"`
 
-	compact  bool // usages: 頭の 1 行・数の 1 行・場所の行だけ（読む量を減らす）
 	code     string
 	got      int
 	gotText  string
@@ -425,6 +429,7 @@ func (r *report) finish(a args) {
 	r.Results = append(r.Results, res)
 }
 
+// text は -v（--verbose）の全文: got・want・status（索引の秒）・fix・next・場所の全部・diff と確かめの出力。
 func (r report) text(out *strings.Builder, a args) {
 	head := "refactor " + r.Op
 	if r.Target != "" {
@@ -465,6 +470,7 @@ func (r report) text(out *strings.Builder, a args) {
 	} else {
 		fmt.Fprintf(out, "  status: %s\n", idx)
 	}
+	r.sites(a).Write(out, "    ", rel)
 	if r.Next != "" {
 		fmt.Fprintf(out, "  next:   %s\n", r.Next)
 	}
@@ -475,79 +481,57 @@ func (r report) text(out *strings.Builder, a args) {
 			fmt.Fprintf(out, "          （%s）\n", r.NextWhy)
 		}
 	}
-	r.writeSites(out, a, "    ")
-	if a.verbose && r.Outcome != nil {
+	if r.Outcome != nil {
 		dumpFile(out, "diff", r.Outcome.Diff)
 		dumpFile(out, "確かめの出力", r.Outcome.VerifyLog)
 	}
 }
 
-// allLines は場所の行の全部（人へ回した所が先）。
-func (r report) allLines() []string { return append(append([]string{}, r.fixLines...), r.lines...) }
-
-// writeList は場所の行の全部を build/refactor/last-<操作>.txt に書く（切って見せた時に読みに行く所）。
-func (r *report) writeList(dir string, a args) {
-	all := r.allLines()
-	if a.asJSON || a.limit == 0 || len(all) <= a.limit {
-		return
-	}
-	path := filepath.Join(dir, "last-"+r.Op+".txt")
-	if os.MkdirAll(dir, 0o755) == nil && os.WriteFile(path, []byte(strings.Join(alignTabs(all), "\n")+"\n"), 0o644) == nil {
-		r.listPath = path
-	}
+// sites は場所の行の全部（人へ回した所が先）を --limit で切る一覧。
+func (r report) sites(a args) checkres.Sites {
+	return checkres.Sites{Lines: append(append([]string{}, r.fixLines...), r.lines...), Limit: a.limit, Path: r.listPath}
 }
 
-// writeSites は場所の行を --limit まで出す。切ったらファイルごとの数（多い順に 6 つ）と、全部を書いたファイルを 1 行ずつ。
-func (r report) writeSites(out *strings.Builder, a args, indent string) {
-	all := r.allLines()
-	shown := all
-	if a.limit > 0 && len(shown) > a.limit {
-		shown = shown[:a.limit]
-	}
-	for _, l := range alignTabs(shown) {
-		fmt.Fprintf(out, "%s%s\n", indent, l)
-	}
-	if len(shown) == len(all) {
+// saveList は切って見せる時に、場所の行の全部を build/refactor/last-<操作>.txt に書く。
+func (r *report) saveList(dir string, a args) {
+	if a.asJSON {
 		return
 	}
-	if files := perFile(all); files != "" {
-		fmt.Fprintf(out, "%sファイルごと: %s\n", indent, files)
-	}
-	where := "--all で全部・--json"
-	if r.listPath != "" {
-		where = "全部は " + rel(r.listPath) + "・--all で画面に"
-	}
-	fmt.Fprintf(out, "%s…ほか %d 件（%s）\n", indent, len(all)-len(shown), where)
+	s := r.sites(a)
+	s.Save(filepath.Join(dir, "last-"+r.Op+".txt"))
+	r.listPath = s.Path
 }
 
-// perFile は「src/World.flix 12・src/Main.flix 5・…ほか 3 ファイル」（行の頭の file:line:col から数える）。
-func perFile(lines []string) string {
-	n := map[string]int{}
-	for _, l := range lines {
-		f, _, ok := strings.Cut(strings.TrimSpace(l), ":")
-		if ok && strings.HasSuffix(f, ".flix") {
-			n[f]++
+// brief は既定の短い答え（出力の約束: 当てた物 1 行・数 1 行・注 0〜3 行・結末 1 行・場所の上位・終わりに next）。
+func (r report) brief(a args) checkres.Brief {
+	head := r.Op
+	if r.Usage != nil {
+		head += " " + r.Usage.Sym + "（" + r.Usage.Kind
+		if r.Usage.Decl != "" {
+			head += "・" + r.Usage.Decl
+		}
+		head += "）"
+	} else {
+		if r.Target != "" {
+			head += " " + r.Target
+		}
+		if r.Sym != "" && r.Sym != r.Target {
+			head += "（" + r.Sym + "）"
 		}
 	}
-	files := make([]string, 0, len(n))
-	for f := range n {
-		files = append(files, f)
+	b := checkres.Brief{Head: head, Count: r.gotText, Notes: r.extra, Sites: r.sites(a), Next: r.Next, NextWhy: r.NextWhy, Shown: rel}
+	switch {
+	case r.Outcome != nil:
+		b.State = strings.ReplaceAll(r.Outcome.status(), "\n          ", "\n  ")
+	case a.max >= 0 && r.Exit == 1:
+		b.State = fmt.Sprintf("fail: %d 件（--max %d を超えた）", r.got, a.max)
+	case a.max >= 0:
+		b.State = fmt.Sprintf("pass: %d 件（--max %d まで）", r.got, a.max)
 	}
-	sort.Slice(files, func(i, j int) bool {
-		if n[files[i]] != n[files[j]] {
-			return n[files[i]] > n[files[j]]
-		}
-		return files[i] < files[j]
-	})
-	var parts []string
-	for i, f := range files {
-		if i == 6 {
-			parts = append(parts, fmt.Sprintf("…ほか %d ファイル", len(files)-6))
-			break
-		}
-		parts = append(parts, fmt.Sprintf("%s %d", f, n[f]))
+	if len(r.Results) > 0 && r.Results[0].Status != checkres.Pass {
+		b.Fix = r.Results[0].Fix.Hint
 	}
-	return strings.Join(parts, "・")
+	return b
 }
 
 // dumpFile は --verbose の時に、ファイルに書いた物（diff・確かめの出力）を画面にも出す。
@@ -563,56 +547,6 @@ func dumpFile(out *strings.Builder, what, path string) {
 	if data[len(data)-1] != '\n' {
 		out.WriteString("\n")
 	}
-}
-
-// compactText は usages の短い形: 「何に当てたか」1 行・数 1 行・注 0〜数行・場所の行。
-// 歯止め（--max）を超えた時だけ 1 行足す（索引を作った事は作る前に stderr へ 1 行。秒は --json の index）。
-func (r report) compactText(out *strings.Builder, a args) {
-	head := "usages " + r.Target
-	if r.Usage != nil {
-		head = "usages " + r.Usage.Sym + "（" + r.Usage.Kind
-		if r.Usage.Decl != "" {
-			head += "・" + r.Usage.Decl
-		}
-		head += "）"
-	}
-	fmt.Fprintln(out, head)
-	fmt.Fprintf(out, "  %s\n", r.gotText)
-	for _, e := range r.extra {
-		fmt.Fprintf(out, "  %s\n", e)
-	}
-	if r.Exit == 1 && len(r.Results) > 0 {
-		fmt.Fprintf(out, "  fail: %d 件（--max %d を超えた）\n", r.got, a.max)
-	}
-	r.writeSites(out, a, "  ")
-}
-
-// alignTabs はタブで区切った列を、出す行の中で一番長い字に揃える（最後の列は揃えない）。幅は見た目の字数
-// （日本語も 1）で数える。固定の幅にしないのは、短い名前ばかりの時に空白で読む量を増やさないため。
-func alignTabs(lines []string) []string {
-	var width []int
-	cells := make([][]string, len(lines))
-	for i, l := range lines {
-		cells[i] = strings.Split(l, "\t")
-		for j, c := range cells[i][:len(cells[i])-1] {
-			if j >= len(width) {
-				width = append(width, 0)
-			}
-			width[j] = max(width[j], utf8.RuneCountInString(c))
-		}
-	}
-	out := make([]string, len(lines))
-	for i, cs := range cells {
-		var b strings.Builder
-		for j, c := range cs {
-			b.WriteString(c)
-			if j < len(cs)-1 {
-				b.WriteString(strings.Repeat(" ", width[j]-utf8.RuneCountInString(c)+2))
-			}
-		}
-		out[i] = strings.TrimRight(b.String(), " ")
-	}
-	return out
 }
 
 // split は場所を src・test・ほかに数える。
@@ -667,12 +601,12 @@ func refsReport(idx *Index, a args) (report, error) {
 		r.Callers = res.Callers
 		r.extra = append(r.extra, fmt.Sprintf("参照する def %d", len(res.Callers)))
 		for _, c := range res.Callers {
-			r.lines = append(r.lines, fmt.Sprintf("%-48s %3d  %s", c.Owner, c.Count, c.First))
+			r.lines = append(r.lines, fmt.Sprintf("%s\t%d\t%s", c.Owner, c.Count, c.First))
 		}
 		r.Next, r.NextWhy = fmt.Sprintf("bin/fge refactor refs %s", a.target), "場所ごと"
 	} else {
 		for _, x := range all {
-			r.lines = append(r.lines, fmt.Sprintf("%-44s %-15s %s", x.Where(), x.Kind, x.Owner))
+			r.lines = append(r.lines, fmt.Sprintf("%s\t%s\t%s", x.Where(), x.Kind, x.Owner))
 		}
 		r.Next, r.NextWhy = fmt.Sprintf("bin/fge refactor refs %s --callers", a.target), "参照する def ごと"
 	}
@@ -781,7 +715,7 @@ func matchReport(idx *Index, a args) (report, error) {
 		if s.Guard > 0 {
 			mark += fmt.Sprintf("  if %d", s.Guard)
 		}
-		r.lines = append(r.lines, fmt.Sprintf("%-44s 腕 %2d%s  %s", s.Where(), s.Arms, mark, s.Owner))
+		r.lines = append(r.lines, fmt.Sprintf("%s\t腕 %d%s\t%s", s.Where(), s.Arms, mark, s.Owner))
 	}
 	switch {
 	case !a.catchAll && catchAll > 0:
@@ -839,10 +773,10 @@ func fieldReport(idx *Index, a args) report {
 		if s.Write {
 			rw = "書き"
 		}
-		r.lines = append(r.lines, fmt.Sprintf("%-44s %s  %-20s %s", s.Where(), rw, s.Recv, s.Owner))
+		r.lines = append(r.lines, fmt.Sprintf("%s\t%s\t%s\t%s", s.Where(), rw, s.Recv, s.Owner))
 	}
 	for _, s := range ans.Unsure {
-		r.lines = append(r.lines, fmt.Sprintf("%-44s ?     %-20s %s（%s）", s.Where(), s.Recv, s.Owner, s.Via))
+		r.lines = append(r.lines, fmt.Sprintf("%s\t?\t%s\t%s（%s）", s.Where(), s.Recv, s.Owner, s.Via))
 	}
 	if len(ans.Sites) > 0 && a.max < 0 && a.outside == "" && a.receiver != "" {
 		mod := a.receiver

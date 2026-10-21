@@ -392,7 +392,7 @@ func usagesReport(root string, idx *Index, a args, cfg Config) (report, error) {
 		return unusedReport(root, idx, a, cfg)
 	}
 	src := &srcCache{root: root}
-	r := report{Op: "usages", Target: a.target, code: CodeUsages, compact: true}
+	r := report{Op: "usages", Target: a.target, code: CodeUsages}
 	var us, unsure []UsageSite
 	var t Target
 	if label, receiver, ok := a.fieldTarget(); ok {
@@ -662,7 +662,7 @@ func unusedReport(root string, idx *Index, a args, cfg Config) (report, error) {
 		}
 		return all[i].Line < all[j].Line
 	})
-	r := report{Op: "usages", Target: "--unused", code: CodeUnused, compact: true, got: len(all), Sites: all}
+	r := report{Op: "usages", Target: "--unused", code: CodeUnused, got: len(all), Sites: all}
 	outside := 0
 	for _, d := range defs {
 		if d.Outside != "" {

@@ -36,13 +36,13 @@ type Config struct {
 	Library LibraryMode `json:"library,omitempty"`
 	// JavaOpts は flixlint の JVM に渡す物（空なら flixlint の既定）。
 	JavaOpts string `json:"javaOpts,omitempty"`
-	// Prepare は lib/ が無い時に依存を用意する口（索引の前に 1 度。既定 make check）。
-	Prepare string `json:"prepare,omitempty"`
+	// WhyNot: 依存（lib/）を用意する口は持たない。依存を入れるのは flix の 1 つの源（flix check・段 C から flixlint の
+	// Bootstrap）で、無い時は索引が止めて next に make check を出す（refactor-tool-design §8.1）。
 }
 
 // defaults は設定ファイルが 1 つも無い時の値（配る refactor.json と同じ）。
 func defaults() Config {
-	return Config{Sources: []string{"src", "test"}, Verify: "make check", VerifyTests: "make test", TestDirs: []string{"test"}, Prepare: "make check"}
+	return Config{Sources: []string{"src", "test"}, Verify: "make check", VerifyTests: "make test", TestDirs: []string{"test"}}
 }
 
 // LoadConfig は root の bin/lint-rules/refactor.json と refactor.local.json を重ねて読む。
@@ -92,9 +92,6 @@ func (c Config) with(over Config) Config {
 	}
 	if over.JavaOpts != "" {
 		c.JavaOpts = over.JavaOpts
-	}
-	if over.Prepare != "" {
-		c.Prepare = over.Prepare
 	}
 	return c
 }

@@ -252,7 +252,7 @@ func run(t *testing.T, root string, args ...string) (int, string) {
 
 func TestRunMaxTurnsTheCountIntoACheck(t *testing.T) {
 	code, text := run(t, project(t), "field-sites", "--label", "count", "--receiver", "World", "--max", "0")
-	if code != 1 || !strings.Contains(text, "status: fail") {
+	if code != 1 || !strings.Contains(text, "fail: 4 件（--max 0 を超えた）") {
 		t.Errorf("exit %d\n%s", code, text)
 	}
 }
@@ -305,7 +305,7 @@ func TestFieldSitesDoesNotCountAnAmbiguousReceiver(t *testing.T) {
 
 func TestRunMaxIgnoresAnAmbiguousReceiver(t *testing.T) {
 	code, text := run(t, project(t), "field-sites", "--label", "x", "--receiver", "Point", "--max", "0")
-	if code != 0 || !strings.Contains(text, "status: pass") {
+	if code != 0 || !strings.Contains(text, "pass: 0 件（--max 0 まで）") {
 		t.Errorf("exit %d\n%s", code, text)
 	}
 }
