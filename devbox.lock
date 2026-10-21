@@ -226,6 +226,44 @@
         }
       }
     },
+    "go@1.26": {
+      "last_modified": "2026-10-20T14:23:57Z",
+      "resolved": "github:NixOS/nixpkgs/5adc50831c259f87faeb09ddf930d43597197473#go",
+      "source": "devbox-search",
+      "version": "1.26.9",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/r974sx9m1635ajfp7yx5vyxg4bczd218-go-1.26.9",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/r974sx9m1635ajfp7yx5vyxg4bczd218-go-1.26.9"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/821rq90cnzv3fvcb485wisy7qw67sw0x-go-1.26.9",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/821rq90cnzv3fvcb485wisy7qw67sw0x-go-1.26.9"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/bbqjsl8fzayd8c2i63skp7hybysvwr03-go-1.26.9",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/bbqjsl8fzayd8c2i63skp7hybysvwr03-go-1.26.9"
+        }
+      }
+    },
     "jdk@21": {
       "last_modified": "2025-10-22T20:59:19Z",
       "resolved": "github:NixOS/nixpkgs/01b6809f7f9d1183a2b3e081f0a1e6f8f415cb09#jdk",

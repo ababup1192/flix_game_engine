@@ -4,7 +4,8 @@
     "jdk@21",
     "gnumake@latest",
     "path:./nix/flix#flix_0_78_0",
-    "ffmpeg@latest"
+    "ffmpeg@latest",
+    "go@1.26"
   ],
   "shell": {
     "init_hook": [
