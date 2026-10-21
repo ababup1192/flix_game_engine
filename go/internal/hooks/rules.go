@@ -50,6 +50,22 @@ type CheckdDaemon struct {
 	DepSuffixes       []string `json:"depSuffixes"`
 }
 
+// CheckdServer は flixlint の常駐の check を使う時の決め (checkd-freshness §4・C-2)。
+// WhyNot: 節が丸ごと無い hooks.json (新しいバイナリだけ配った clone) を止めない。節が無ければ常駐の check を使わず
+// repl のままにする。節が在る時は全部の欄が要る。
+type CheckdServer struct {
+	BackendEnvVar   *string  `json:"backendEnvVar"`
+	FlixlintVersion *string  `json:"flixlintVersion"`
+	ShimJar         *string  `json:"shimJar"`
+	ShimSHA256      *string  `json:"shimSha256"`
+	ShimURL         *string  `json:"shimUrl"`
+	HeapMB          *int     `json:"heapMB"`
+	JavaOpts        []string `json:"javaOpts"`
+	IdleMinutes     *int     `json:"idleMinutes"`
+	RunLimitSec     *int     `json:"runLimitSec"`
+	Retries         *int     `json:"retries"`
+}
+
 // Checkd は常駐との話し方と、起動予約の歯止め。
 type Checkd struct {
 	CacheDir             *string      `json:"cacheDir"`
@@ -63,6 +79,7 @@ type Checkd struct {
 	ErrorBlockMaxLines   *int         `json:"errorBlockMaxLines"`
 	TailLinesWhenNoBlock *int         `json:"tailLinesWhenNoBlock"`
 	MaxDaemons           MaxDaemons   `json:"maxDaemons"`
+	Server               CheckdServer `json:"server"`
 	Daemon               CheckdDaemon `json:"daemon"`
 	PatchFilePrefixes    []string     `json:"patchFilePrefixes"`
 	CommentOnlyPrefixes  []string     `json:"commentOnlyPrefixes"`
@@ -207,6 +224,22 @@ func LoadRules(root string) (*Rules, error) {
 		missing = "checkd.daemon.rssLimit.floorMB"
 	case cd.Daemon.RSSLimit.EnvVar == nil:
 		missing = "checkd.daemon.rssLimit.envVar"
+	case cd.Server.BackendEnvVar != nil && cd.Server.FlixlintVersion == nil:
+		missing = "checkd.server.flixlintVersion"
+	case cd.Server.BackendEnvVar != nil && cd.Server.ShimJar == nil:
+		missing = "checkd.server.shimJar"
+	case cd.Server.BackendEnvVar != nil && cd.Server.ShimSHA256 == nil:
+		missing = "checkd.server.shimSha256"
+	case cd.Server.BackendEnvVar != nil && cd.Server.ShimURL == nil:
+		missing = "checkd.server.shimUrl"
+	case cd.Server.BackendEnvVar != nil && cd.Server.HeapMB == nil:
+		missing = "checkd.server.heapMB"
+	case cd.Server.BackendEnvVar != nil && cd.Server.IdleMinutes == nil:
+		missing = "checkd.server.idleMinutes"
+	case cd.Server.BackendEnvVar != nil && cd.Server.RunLimitSec == nil:
+		missing = "checkd.server.runLimitSec"
+	case cd.Server.BackendEnvVar != nil && cd.Server.Retries == nil:
+		missing = "checkd.server.retries"
 	case len(cd.Daemon.SkipDirs) == 0:
 		missing = "checkd.daemon.skipDirs"
 	case len(cd.Daemon.DepSuffixes) == 0:

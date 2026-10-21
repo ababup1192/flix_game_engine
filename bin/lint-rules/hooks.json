@@ -26,6 +26,19 @@
       "fallback": 3,
       "envVar": "CHECKD_MAX_DAEMONS"
     },
+    "server": {
+      "note": "flixlint の常駐の check (checkd-freshness §4・C-2)。backendEnvVar が server の時だけ使う (既定は repl)。shim の jar は flixlint のリリースから取り、sha256 が合う時だけ置く (エンジンの版ごとに flixlint の版を 1 つ決める)。heapMB は C-1 の実測 (ゲームの check と resolved の lint・typed の索引でヒープ 3072 MB の最大 RSS 3.45〜3.65 GB) から。retries は答えの版がディスクと違った時に頼み直す回数で、その後は素の flix check。",
+      "backendEnvVar": "CHECKD_BACKEND",
+      "flixlintVersion": "0.8.3",
+      "shimJar": "flixlint-shim-0.78.0.jar",
+      "shimSha256": "cd4fefa3d282bfe0122170864d64a363292bdad5d5b7e61cf799e1ef4e33455a",
+      "shimUrl": "https://github.com/ababup1192/flixlint/releases/download/v{version}/{jar}",
+      "heapMB": 3072,
+      "javaOpts": ["-Xss32m"],
+      "idleMinutes": 30,
+      "runLimitSec": 900,
+      "retries": 3
+    },
     "daemon": {
       "note": "常駐そのものの寿命と使い捨ての条件。rssLimit は「常駐が全部太りきっても物理メモリの memoryShare まで」の 1 つの約束から、maxDaemons と一緒に決まる (台数が 1 でも 2 で割るのは、1 台しか立てない小さい機械でその 1 本に予算を丸ごと渡さないため)。",
       "heapHeadroomMB": 500,

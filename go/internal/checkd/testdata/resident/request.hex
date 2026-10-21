@@ -1,0 +1,14 @@
+# A request of protocol 2 (README "Resident server"), as Java's DataOutputStream writes it: writeInt is 4 bytes big
+# endian, writeUTF a 2-byte length and modified UTF-8 (a character outside the BMP is its two surrogates, 3 bytes each).
+# shim/Resident.scala (Wire.FixtureRequest) and every client in another language read and write exactly these bytes.
+00 00 00 02                                         # protocol 2
+00 04 6c 69 6e 74                                   # kind "lint"
+00 07 2f 70 2f 67 61 6d 65                          # root "/p/game"
+00 04 69 64 2d 31                                   # identity "id-1"
+00 00 00 01                                         # 1 setting
+00 19 46 4c 49 58 4c 49 4e 54 5f 54 4f 44 41 59     #   "FLIXLINT_TODAY=2026-10-21"
+      3d 32 30 32 36 2d 31 30 2d 32 31
+00 00 00 02                                         # 2 arguments
+00 07 2d 2d 73 74 61 67 65                          #   "--stage"
+00 12 73 72 63 2f e6 97 a5 ed a0 bc ed be ae        #   "src/日🎮.flix": 日 is e6 97 a5, 🎮 (U+1F3AE) is d83c dfae
+      2e 66 6c 69 78                                #   as two 3-byte surrogates (not the 4 bytes of UTF-8)
