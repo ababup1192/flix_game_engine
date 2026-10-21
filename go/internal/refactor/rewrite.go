@@ -516,6 +516,11 @@ func PlanRewrite(a *Ast, srcs *reshapeSources, q RewriteQuery) (*RewritePlan, er
 		if q.Skip[fmt.Sprintf("%s:%d", h.row.File, h.row.Line)] {
 			continue
 		}
+		// --to が呼ぶ def の本体の中の当たりを書くと、その def が自分を呼ぶ（型は合うので check は通り、動かして止まる）。
+		if callee := selfCallIn(cs[h.rule].to, displaySym(h.row.Owner)); callee != "" {
+			plan.Fix = append(plan.Fix, Fixed{h.row, fmt.Sprintf("--to が呼ぶ %s の本体の中（書くと自分を呼ぶ形になる。手で）", callee)})
+			continue
+		}
 		site, edit, why := m.plan(h, cs[h.rule].to)
 		if why != "" {
 			plan.Fix = append(plan.Fix, Fixed{h.row, why})
@@ -530,6 +535,36 @@ func PlanRewrite(a *Ast, srcs *reshapeSources, q RewriteQuery) (*RewritePlan, er
 }
 
 var callForm = regexp.MustCompile(`^[A-Za-z_][\w.]*\s*\(`)
+
+// selfCallIn は --to の式 to に、当たりを囲む def owner（修飾つき）を指す名前があればその名前を返す（無ければ ""）。
+// 名前は修飾つきか終わりの名前で当てる（同じ mod の中の素の名前も自分を指す）。穴（$x）・欄の名前（r#x）・字の値の中は見ない。
+func selfCallIn(to, owner string) string {
+	if owner == "" {
+		return ""
+	}
+	rs := []rune(to)
+	inStr := false
+	for i := 0; i < len(rs); i++ {
+		c := rs[i]
+		if c == '"' && (i == 0 || rs[i-1] != '\\') {
+			inStr = !inStr
+			continue
+		}
+		if inStr || !(c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) || (i > 0 && (isIdentRune(rs[i-1]) || rs[i-1] == '$' || rs[i-1] == '#' || rs[i-1] == '.')) {
+			continue
+		}
+		j := i
+		for j < len(rs) && (isIdentRune(rs[j]) || rs[j] == '.') {
+			j++
+		}
+		name := strings.TrimRight(string(rs[i:j]), ".")
+		if owner == name || strings.HasSuffix(owner, "."+name) {
+			return name
+		}
+		i = j - 1
+	}
+	return ""
+}
 
 // plan は当たり 1 つの書き替え（書けなければ理由）。
 func (m *rewriteMatcher) plan(h rewriteHit, to string) (RewriteSite, Edit, string) {

@@ -300,3 +300,107 @@ func TestTypeTextMatchesBySuffix(t *testing.T) {
 		}
 	}
 }
+
+// ---- extract-type-alias の位置の指定と置き場 ----
+
+// taSrc2 は doc つきの def の引数が次の行にある形と、見出しのコメント・型の宣言の並び。
+const taSrc2 = `mod M {
+    // ---- 型 ----
+
+    /// 色。
+    type alias C = Int32
+
+    // ---- 描く ----
+
+    /// 点を描く。
+    def f(
+        a: { x = Int32, y = Int32 }
+    ): Int32 = a#x
+}
+`
+
+// taSrc3 は型の宣言の無い mod（見出しの下に名前を使わない def、使う def には説明のコメント）。
+const taSrc3 = `mod M {
+    // ---- 読む ----
+
+    def z(): Int32 = 1
+
+    // 点を読む。
+    def f(a: { x = Int32, y = Int32 }): Int32 = a#x
+
+    def g(b: { y = Int32, x = Int32 }): Int32 = b#y
+}
+`
+
+func taPlanOn(t *testing.T, src string, decls []rwNode, q TypeAliasQuery) (*TypeAliasPlan, string, error) {
+	t.Helper()
+	types, ids := taTypes()
+	a, srcs, _ := genRoot(t, genAst{src: src, file: "src/A.flix", decls: decls, types: types, typeID: ids, stage: "resolved",
+		kinds: []string{"Def", "FormalParam", "Expr.RecordSelect", "TypeAlias"}, slots: []string{"fparams", "exp"}, attrs: []string{"sym", "tpe"}})
+	plan, err := PlanTypeAlias(a, srcs, q)
+	if err != nil {
+		return nil, "", err
+	}
+	got, err := ApplyEdits(src, plan.Edits)
+	must(t, err)
+	return plan, got, nil
+}
+
+func taDecls2() []rwNode {
+	c := rwNode{kind: "TypeAlias", text: "/// 色。\n    type alias C = Int32", attrs: [][2]string{{"sym", "M.C"}, {"tpe", "@Int32"}}}
+	f := rwNode{kind: "Def", text: "/// 点を描く。\n    def f(\n        a: { x = Int32, y = Int32 }\n    ): Int32 = a#x", attrs: [][2]string{{"sym", "M.f"}}, kids: []rwNode{
+		{kind: "FormalParam", slot: "fparams", text: "a: { x = Int32, y = Int32 }", attrs: [][2]string{{"sym", "a#1"}, {"tpe", "@{x,y}"}}},
+		{kind: "Expr.RecordSelect", slot: "exp", text: "a#x", typ: "Int32"}}}
+	return []rwNode{c, f}
+}
+
+func taDecls3() []rwNode {
+	param := func(text, sym, typ string) rwNode {
+		return rwNode{kind: "FormalParam", slot: "fparams", text: text, attrs: [][2]string{{"sym", sym}, {"tpe", "@" + typ}}}
+	}
+	z := rwNode{kind: "Def", text: "def z(): Int32 = 1", attrs: [][2]string{{"sym", "M.z"}}}
+	f := rwNode{kind: "Def", text: "def f(a: { x = Int32, y = Int32 }): Int32 = a#x", attrs: [][2]string{{"sym", "M.f"}}, kids: []rwNode{
+		param("a: { x = Int32, y = Int32 }", "a#1", "{x,y}"), {kind: "Expr.RecordSelect", slot: "exp", text: "a#x", typ: "Int32"}}}
+	g := rwNode{kind: "Def", text: "def g(b: { y = Int32, x = Int32 }): Int32 = b#y", attrs: [][2]string{{"sym", "M.g"}}, kids: []rwNode{
+		param("b: { y = Int32, x = Int32 }", "b#2", "{y,x}"), {kind: "Expr.RecordSelect", slot: "exp", text: "b#y", typ: "Int32"}}}
+	return []rwNode{z, f, g}
+}
+
+// lint の行（def の行）を渡すと、汎用の AST の宣言の始まり（/// の行）と 1 行ずれて当たらなかった。
+func TestExtractTypeAliasAtTheDefLineOfADocumentedDecl(t *testing.T) {
+	for _, q := range []TypeAliasQuery{
+		{Name: "M.Point", At: "src/A.flix:10"},   // def の行（record は次の行）
+		{Name: "M.Point", At: "src/A.flix:9"},    // /// の行
+		{Name: "M.Point", At: "src/A.flix:11"},   // record の行
+		{Name: "M.Point", From: "src/A.flix:10"}, // --from にも <file>:<行>
+	} {
+		plan, got, err := taPlanOn(t, taSrc2, taDecls2(), q)
+		if err != nil {
+			t.Fatalf("%+v: %v", q, err)
+		}
+		if len(plan.Sites) != 1 || !strings.Contains(got, "        a: Point\n") {
+			t.Fatalf("%+v: sites %d\n%s", q, len(plan.Sites), got)
+		}
+	}
+	if _, _, err := taPlanOn(t, taSrc2, taDecls2(), TypeAliasQuery{Name: "M.Point", At: "src/A.flix:5"}); err == nil {
+		t.Fatalf("record の無い宣言の行は止める")
+	}
+}
+
+func TestExtractTypeAliasPlacesAfterTheTypeDeclsWithDoc(t *testing.T) {
+	_, got, err := taPlanOn(t, taSrc2, taDecls2(), TypeAliasQuery{Name: "M.Point", At: "src/A.flix:11", Doc: "点の座標。"})
+	must(t, err)
+	want := "    type alias C = Int32\n\n    /// 点の座標。\n    type alias Point = { x = Int32, y = Int32 }\n\n    // ---- 描く ----\n"
+	if !strings.Contains(got, want) || !strings.HasPrefix(got, "mod M {\n    // ---- 型 ----\n\n    /// 色。\n") {
+		t.Fatalf("型の宣言の並びの末尾に doc つきで置く:\n%s", got)
+	}
+}
+
+func TestExtractTypeAliasPlacesBeforeTheFirstUserAndItsComment(t *testing.T) {
+	plan, got, err := taPlanOn(t, taSrc3, taDecls3(), TypeAliasQuery{Name: "M.Point", From: "{ x = Int32, y = Int32 }"})
+	must(t, err)
+	want := "    def z(): Int32 = 1\n\n    type alias Point = { x = Int32, y = Int32 }\n\n    // 点を読む。\n    def f(a: Point)"
+	if !strings.Contains(got, want) || strings.Contains(got, "///") || plan.DeclRow.Line != 6 {
+		t.Fatalf("使う一番前の def の直前（付いたコメントごと前）に、--doc が無ければ doc なしで置く: decl row %d\n%s", plan.DeclRow.Line, got)
+	}
+}

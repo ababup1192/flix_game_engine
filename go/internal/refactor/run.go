@@ -108,7 +108,8 @@ const Usage = `使い方: fge refactor <操作> [引数] [--json] [-v|--verbose]
                                                        --to の $x には穴の式の字を元のまま写す（演算子の間に置く式は括弧で包む）。--where は穴の
                                                        型の頭か型 alias で絞る（推論で alias が開かれた閉じた record は欄の組で当てる）。
                                                        --rule は設定の rewrites の型紙の組（名前は lint の規則の名前。a,b で並べて 1 回）。
-                                                       穴の式が書かれた所に無い・型紙の外の字にコメントがある所は fix（ほかは書く）
+                                                       穴の式が書かれた所に無い・型紙の外の字にコメントがある・--to が呼ぶ def の本体の中
+                                                       （書くと自分を呼ぶ形になる）所は fix（ほかは書く）
   extract-function (<file>:<行>:<桁>-<行>:<桁> | --expr '<型紙>') --name Mod.name [--to <file>] [--all] [--doc '<1 行>'] [--apply]
                                                        式を新しい def に出し、元の所を呼び出しに替える（typed の段）。位置は索引と同じ形
                                                        （桁は 1 から・終わりは最後の字の次）で範囲がちょうど同じ式。--expr は rewrite の型紙で探す。
@@ -116,11 +117,14 @@ const Usage = `使い方: fge refactor <操作> [引数] [--json] [-v|--verbose]
                                                        置き場は既定で囲む def の直前・--name の mod が違えばその mod の終わり（--to で置くファイル）。
                                                        --all は汎用の AST で同じ形の式（局所の名前の付け替えは同じ・自由変数の所は別の式でもよい）を
                                                        全部呼び出しへ。型の変数・局所の def・書けない型・効果のある式を引数に渡す所は fix
-  extract-type-alias --name Mod.Name (--from '<型の字>' | <file>:<行>) [--doc '<1 行>'] [--apply]
-                                                       閉じた record の型に名前を付けて type alias を mod の最初の宣言の前に置き、同じ欄の組
+  extract-type-alias --name Mod.Name (--from '<型の字>' | [--from] <file>:<行>) [--doc '<1 行>'] [--apply]
+                                                       閉じた record の型に名前を付けて type alias を置き、同じ欄の組
                                                        （欄の順は問わない・型は索引の名前）を型に書いた所（引数・戻り・enum の case・type alias）を
-                                                       全部その名前へ（resolved の段）。もう同じ組の alias なら置かずに使う。本体がちょうど
-                                                       その組の別の alias は fix（--name にその名前）
+                                                       全部その名前へ（resolved の段）。<file>:<行> はその行の record か、その行を型の所
+                                                       （/// の行から本体の前まで。lint の行）に含む宣言の record。置き場は mod の最初の
+                                                       type alias / enum の並びの末尾、無ければ名前を使う一番前の宣言の直前（付いたコメントごと前）。
+                                                       --doc の 1 行を /// で付ける（無ければ付けない）。もう同じ組の alias なら置かずに使う。
+                                                       本体がちょうどその組の別の alias は fix（--name にその名前）
 
   呼ぶ所・作る所に式を書く操作（change-signature の --args・change-case-shape・fix-construction・add-field の --value）は、
   書く所を囲む def に同じ値の局所の名前があればそれを書く: 前の ` + "`let x = 同じ式;`" + `（括弧と match の腕を越えない）か、
@@ -503,7 +507,7 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 		}
 	case "extract-type-alias":
 		if a.name == "" || (a.target == "") == (a.from == "") {
-			fmt.Fprintln(errOut, "refactor extract-type-alias: --name <Mod.Name> と、--from '<record の型の字>' か <file>:<行> のどちらか 1 つが要ります（例 --name Geometry.Corner --from '{ right = Float64, bottom = Float64 }'）")
+			fmt.Fprintln(errOut, "refactor extract-type-alias: --name <Mod.Name> と、--from '<record の型の字>' か <file>:<行>（--from にも書ける）のどちらか 1 つが要ります（例 --name Geometry.Corner --from '{ right = Float64, bottom = Float64 }'）")
 			return 2
 		}
 	case "make-private", "remove-dead":

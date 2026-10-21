@@ -15,6 +15,7 @@ import (
 // 当たりは汎用の AST（resolved で足りる）の、型を書く欄（引数・戻り・enum の case・type alias。lint の record-type-twice と
 // 同じ所）の型の中の閉じた record を「欄 = 型」の組（欄の順は問わない・型は修飾つきの名前）で比べて決める。書き替える字は、
 // その宣言の型の所（def の本体とコメントの外）の `{ … }` を欄の組で探して当てる（AST の型は位置を持たないため）。
+// 置き場は aliasSpotOf（型の宣言の並びの末尾か、使う一番前の宣言の直前）。
 // ゲーム・ファイルの名前は持たない。
 
 // TypeAliasQuery は extract-type-alias の問い。
@@ -297,7 +298,7 @@ func PlanTypeAlias(a *Ast, srcs *reshapeSources, q TypeAliasQuery) (*TypeAliasPl
 		return nil, fmt.Errorf("--name は Mod.Name の形（名前は大文字で始める）: %q", q.Name)
 	}
 	written := writtenRecords(a, srcs)
-	key, err := targetKey(a, written, q)
+	key, err := targetKey(a, srcs, written, q)
 	if err != nil {
 		return nil, err
 	}
@@ -324,6 +325,7 @@ func PlanTypeAlias(a *Ast, srcs *reshapeSources, q TypeAliasQuery) (*TypeAliasPl
 		}
 	}
 	var first *writtenRecord
+	var users []int32 // 名前に替える所を囲む宣言（置き場を決める）
 	for i := range written {
 		w := &written[i]
 		if w.key != key {
@@ -361,6 +363,7 @@ func PlanTypeAlias(a *Ast, srcs *reshapeSources, q TypeAliasQuery) (*TypeAliasPl
 		plan.Edits = append(plan.Edits, Edit{File: w.row.File, Start: w.start, End: w.end, Site: w.row,
 			Make: func(string) (string, error) { return r, nil }})
 		plan.Sites = append(plan.Sites, Fixed{w.row, clip(normSpace(before), 50) + " → " + ref})
+		users = append(users, w.root)
 	}
 	for _, w := range written {
 		if w.key != key && sameLabelsKey(w.labels, key) {
@@ -370,35 +373,115 @@ func PlanTypeAlias(a *Ast, srcs *reshapeSources, q TypeAliasQuery) (*TypeAliasPl
 	if plan.Reused || first == nil {
 		return plan, nil
 	}
-	// 置く所: mod の最初の宣言の前（/// ごと。宣言の範囲は /// から始まる）。
-	file, pos, err := firstDeclOf(a, srcs, mod)
+	spot, err := aliasSpotOf(a, srcs, mod, users)
 	if err != nil {
 		return nil, err
 	}
-	src, _ := srcs.get(file)
-	indent := lineIndent(src, pos)
-	ls := lineStart(src, pos)
+	src, _ := srcs.get(spot.file)
 	var fields []string
 	for _, l := range first.labels {
 		fields = append(fields, l+" = "+shortenIn(first.fields[l], mod))
 	}
 	var b strings.Builder
 	if q.Doc != "" {
-		b.WriteString(indent + "/// " + q.Doc + "\n")
+		b.WriteString(spot.indent + "/// " + q.Doc + "\n")
 	}
 	if plan.Pub {
-		b.WriteString(indent + "pub ")
+		b.WriteString(spot.indent + "pub ")
 	} else {
-		b.WriteString(indent)
+		b.WriteString(spot.indent)
 	}
-	b.WriteString("type alias " + short + " = { " + strings.Join(fields, ", ") + " }\n\n")
-	decl := b.String()
-	plan.Decl = strings.TrimSpace(decl)
-	plan.DeclRow = rowAt(file, src, ls, q.Name)
+	b.WriteString("type alias " + short + " = { " + strings.Join(fields, ", ") + " }")
+	plan.Decl = strings.TrimSpace(b.String())
+	decl := b.String() + "\n\n"
+	plan.DeclRow = rowAt(spot.file, src, spot.at, q.Name)
+	if spot.after {
+		// 並びの末尾の行の終わりに「空行・宣言」を足す（宣言は 2 行先から）。
+		decl = "\n\n" + b.String()
+		plan.DeclRow.Line += 2
+		plan.DeclRow.EndLine = plan.DeclRow.Line
+		plan.DeclRow.Col, plan.DeclRow.EndCol = 1, 2
+	}
 	plan.DeclRow.Kind = "alias-decl"
-	plan.Edits = append(plan.Edits, Edit{File: file, Start: ls, End: ls, Site: plan.DeclRow,
+	plan.Edits = append(plan.Edits, Edit{File: spot.file, Start: spot.at, End: spot.at, Site: plan.DeclRow,
 		Make: func(string) (string, error) { return decl, nil }})
 	return plan, nil
+}
+
+// aliasSpot は新しい type alias を置く所（file のバイトの位置 at。after なら宣言の並びの末尾の行の終わり、でなければ行の頭）。
+type aliasSpot struct {
+	file   string
+	at     int
+	after  bool
+	indent string
+}
+
+// aliasSpotOf は mod に新しい type alias を置く所を決める（`mod Mod {` を書いたファイルの中）。
+//  1. mod の最初の type alias / enum の並びの末尾（型の宣言の固まりに加える）
+//  2. 無ければ、名前を使う宣言（users）のうち一番前の物の直前
+//  3. 無ければ mod の最初の宣言の直前
+//
+// 2・3 は宣言にすぐ付いた `//` のコメントの行（空行を挟まない物）ごと前に置く（見出しや宣言の説明と宣言の間に割り込まない）。
+func aliasSpotOf(a *Ast, srcs *reshapeSources, mod string, users []int32) (aliasSpot, error) {
+	file, firstPos, err := firstDeclOf(a, srcs, mod)
+	if err != nil {
+		return aliasSpot{}, err
+	}
+	src, _ := srcs.get(file)
+	var decls []int32
+	for i := range a.Kind {
+		n := int32(i)
+		if a.Parent[n] < 0 && a.File(n) == file && modOf(displaySym(a.RootName(n))) == mod {
+			decls = append(decls, n)
+		}
+	}
+	sortNodes(a, decls)
+	isType := func(n int32) bool {
+		k := a.KindOf(n)
+		return k == "TypeAlias" || k == "Enum" || k == "RestrictableEnum"
+	}
+	last := -1
+	for i, n := range decls {
+		if isType(n) {
+			last = i
+		} else if last >= 0 {
+			break
+		}
+	}
+	if last >= 0 {
+		ds, de, err := ByteRange(src, a.SpanOf(decls[last]))
+		if err == nil && de > ds {
+			at := strings.IndexByte(src[de-1:], '\n')
+			if at < 0 {
+				at = len(src)
+			} else {
+				at += de - 1
+			}
+			return aliasSpot{file: file, at: at, after: true, indent: lineIndent(src, ds)}, nil
+		}
+	}
+	pos := firstPos
+	var userDecls []int32
+	for _, u := range users {
+		if a.File(u) == file && modOf(displaySym(a.RootName(u))) == mod {
+			userDecls = append(userDecls, u)
+		}
+	}
+	if len(userDecls) > 0 {
+		sortNodes(a, userDecls)
+		if ds, _, err := ByteRange(src, a.SpanOf(userDecls[0])); err == nil {
+			pos = ds
+		}
+	}
+	ls := lineStart(src, pos)
+	for ls > 0 {
+		prev := lineStart(src, ls-1)
+		if !strings.HasPrefix(strings.TrimSpace(src[prev:ls]), "//") {
+			break
+		}
+		ls = prev
+	}
+	return aliasSpot{file: file, at: ls, indent: lineIndent(src, pos)}, nil
 }
 
 // isPubDecl は宣言 root が pub か（def は Spec の、enum・type alias は自分の Modifiers）。
@@ -450,9 +533,27 @@ func shortenIn(text, mod string) string {
 	})
 }
 
-// targetKey は --from（型の字）か file:line（その行の閉じた record）から、目当ての欄の組を 1 つに決める。
-func targetKey(a *Ast, written []writtenRecord, q TypeAliasQuery) (string, error) {
+var fileLineRe = regexp.MustCompile(`^([^\s{}:]+):(\d+)$`)
+
+// fileLine は `<file>:<行>` を読む。
+func fileLine(s string) (string, int, bool) {
+	m := fileLineRe.FindStringSubmatch(strings.TrimSpace(s))
+	if m == nil {
+		return "", 0, false
+	}
+	n, err := strconv.Atoi(m[2])
+	return m[1], n, err == nil && n >= 1
+}
+
+// lineOf は src のバイトの位置 p の行（1 から）。
+func lineOf(src string, p int) int { return strings.Count(src[:p], "\n") + 1 }
+
+// targetKey は --from（型の字か <file>:<行>）か file:line（その行の閉じた record）から、目当ての欄の組を 1 つに決める。
+func targetKey(a *Ast, srcs *reshapeSources, written []writtenRecord, q TypeAliasQuery) (string, error) {
 	keys := map[string]bool{}
+	if _, _, ok := fileLine(q.From); ok && q.At == "" {
+		q.At, q.From = q.From, "" // --from にも <file>:<行> を渡せる
+	}
 	switch {
 	case q.From != "":
 		labels, types, ok := parseRecordType(q.From)
@@ -470,9 +571,8 @@ func targetKey(a *Ast, written []writtenRecord, q TypeAliasQuery) (string, error
 			return "", fmt.Errorf("--from の組 %s を型に書いた所が無い（引数・戻り・enum の case・type alias の型を見る）", normSpace(q.From))
 		}
 	case q.At != "":
-		file, lineText, ok := strings.Cut(q.At, ":")
-		line, err := strconv.Atoi(lineText)
-		if !ok || err != nil {
+		file, line, ok := fileLine(q.At)
+		if !ok {
 			return "", fmt.Errorf("位置は <file>:<行>: %q", q.At)
 		}
 		for _, w := range written {
@@ -480,10 +580,19 @@ func targetKey(a *Ast, written []writtenRecord, q TypeAliasQuery) (string, error
 				keys[w.key] = true
 			}
 		}
-		// 宣言の始まりの行（/// の行。lint の行）なら、その宣言の型の record。
+		// その行に record が無ければ、その行を型の所（/// の行から本体の前まで）に含む宣言の型の record。
+		// lint の行は def の行で、汎用の AST の宣言は /// の行から始まる（行を宣言の始まりとだけ比べると、doc のある宣言で 1 行ずれる）。
 		if len(keys) == 0 {
 			for _, w := range written {
-				if w.row.File == file && int(a.Line[w.root]) == line {
+				if w.row.File != file {
+					continue
+				}
+				src, err := srcs.get(file)
+				if err != nil {
+					continue
+				}
+				s, e, ok := declTypeRegion(a, src, w.root)
+				if ok && lineOf(src, s) <= line && line <= lineOf(src, e) {
 					keys[w.key] = true
 				}
 			}
