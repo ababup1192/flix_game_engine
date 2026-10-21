@@ -67,6 +67,13 @@ const Usage = `使い方: fge refactor <操作> [引数] [--json] [-v|--verbose]
                                                        env#res#theme）。並びは元の改行の形を写し、新しい型の名前が引けないファイルには
                                                        use を足す。関数として渡す所・2 回使う引数に式が渡る所・効果のある def を呼ぶ式・
                                                        本体が消える引数をまだ使う def は fix（fix があれば書かない）
+  move --def Mod.f[,Mod.T] --to Mod2 [--with Mod.h] [--apply]
+                                                       def と型 alias を ///・注記ごと Mod2 の終わりへ移し（Mod2 が無ければ
+                                                       src/<Mod2>.flix を作る・同じ名前があれば止める）、呼ぶ所の Mod.f を Mod2.f に、
+                                                       元の mod の中の素の f を Mod2.f に、use Mod.{f, g} は f を外して use Mod2.{f} を
+                                                       足す（別名 f => h もそのまま）。本体の中の元の mod の名前は修飾つきに、元の mod の
+                                                       use で入れた名前は use ごと写す。元の mod の非 pub の物を使えば fix（--with で一緒に
+                                                       移すか pub に）・--def の非 pub の物を元の mod の中だけで使うなら fix（移す意味が無い）
 
   出力は全部の操作で同じ形の数行: 当てた物 1 行・数 1 行・注 0〜3 行・結末（dry-run・applied・歯止め）1 行・
   場所の上位 10 行（書き換える操作は人へ回す所を先に）・ファイルごとの数・全部の置き場・終わりに next（写して流せる
@@ -116,6 +123,7 @@ type args struct {
 	reader, mapper, setter                                string
 	caseName, value                                       string
 	add, typ, params, argsText                            string // change-case-shape の --add・--type、change-signature の --params・--args
+	to, with                                              string // move の --to・--with
 	at, remove                                            int    // change-case-shape の --at・--remove（-1 は無し）
 	skip                                                  map[string]bool
 	max, limit                                            int // max < 0 は無し・limit 0 は全部
@@ -204,6 +212,10 @@ func parseArgs(rest []string) (args, error) {
 			a.typ, err = value(&i, x)
 		case "--params":
 			a.params, err = value(&i, x)
+		case "--to":
+			a.to, err = value(&i, x)
+		case "--with":
+			a.with, err = value(&i, x)
 		case "--args":
 			a.argsText, err = value(&i, x)
 		case "--at", "--remove":
@@ -382,6 +394,11 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 			fmt.Fprintln(errOut, "refactor change-signature: --def <Mod.f>（a,b で複数）・--params '<新しい引数の並び>'・--args '<呼ぶ所の式（元の引数の名前が使える）>' が要ります（例 --def TitleView.titleTree --params 'env: ViewEnv.Env, input: TitleScene.In' --args 'ViewEnv.of(ctx, w), TitleScene.inputOf(w)'）")
 			return 2
 		}
+	case "move":
+		if a.def == "" || a.to == "" {
+			fmt.Fprintln(errOut, "refactor move: --def <Mod.f>（a,b で複数・型 alias も）と --to <移し先の mod> が要ります（例 --def FightView.hpBarRect --to Geometry。元の mod の非 pub の物も移すなら --with Mod.h）")
+			return 2
+		}
 	case "usages":
 		if !a.unused && a.target == "" && a.label == "" {
 			fmt.Fprintln(errOut, "refactor usages: 名前を渡してください（例 refactor usages World.moveTo・refactor usages World#scene・refactor usages --unused）")
@@ -389,7 +406,7 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 		}
 	case "index", "remove-dead":
 	default:
-		fmt.Fprintf(errOut, "refactor: 知らない操作 %s（usages・refs・match-sites・field-sites・index・expand-wildcard・remove-dead・field-to-accessor・remove-field・fix-construction・change-case-shape・change-signature）\n", a.op)
+		fmt.Fprintf(errOut, "refactor: 知らない操作 %s（usages・refs・match-sites・field-sites・index・expand-wildcard・remove-dead・field-to-accessor・remove-field・fix-construction・change-case-shape・change-signature・move）\n", a.op)
 		return 2
 	}
 	if a.op != "field-to-accessor" && (strings.Contains(a.label, ",") || a.labelsFile != "") {
@@ -464,6 +481,8 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 		rep, err = caseShapeReport(root, idx, a, cfg, o)
 	case "change-signature":
 		rep, err = signatureReport(root, idx, a, cfg, o)
+	case "move":
+		rep, err = moveReport(root, idx, a, cfg, o)
 	}
 	if err != nil {
 		fmt.Fprintf(errOut, "refactor %s: %v\n", a.op, err)

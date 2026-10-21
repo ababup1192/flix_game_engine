@@ -287,21 +287,58 @@ func deleteEdit(root string, d defInfo) (Edit, error) {
 	if err != nil {
 		return Edit{}, err
 	}
-	src := string(data)
+	cut, _, err := declLines(string(data), d.Ext, d.Row)
+	if err != nil {
+		return Edit{}, err
+	}
+	name := d.Sym[strings.LastIndex(d.Sym, ".")+1:]
+	return Edit{File: d.File, Start: cut[0], End: cut[1], Site: d.Row,
+		Check: []Want{{Span: d.Row, Text: name}},
+		Make:  func(string) (string, error) { return "", nil }}, nil
+}
+
+// isCommentOrBlank は行が空か、行のコメントだけ（`//`・`///`）か。
+func isCommentOrBlank(line string) bool {
+	t := strings.TrimSpace(line)
+	return t == "" || strings.HasPrefix(t, "//")
+}
+
+// declLines は宣言（範囲 ext・名前の行 row）を、前の `///` と注記（@Test など）の行ごと行単位で切り出す所。
+// text は宣言そのものの行（doc・注記・本体）、cut はそれに空行の始末を足した消す所（前後が空行なら片方の空行も・
+// 閉じ括弧の前に空行を残さない）。どちらもバイトの [始まり, 終わり)。
+func declLines(src string, ext, row Row) (cut, text [2]int, err error) {
 	lines := strings.SplitAfter(src, "\n")
-	first, last := d.Ext.Line, d.Ext.EndLine // 1 から
+	first, last := ext.Line, ext.EndLine // 1 から
+	if first < 1 || last > len(lines) || first > last {
+		return cut, text, fmt.Errorf("%s: 宣言の範囲が中身の外（索引が古い。bin/fge refactor index --rebuild）", row.Where())
+	}
 	for first > 1 && docOrAnn.MatchString(lines[first-2]) {
 		first--
 	}
-	if strings.TrimSpace(lineAfter(lines[last-1], d.Ext.EndCol)) != "" {
-		return Edit{}, fmt.Errorf("%s: def の後ろの同じ行に別の物がある（行ごと消せない）", d.Where())
+	// コンパイラの範囲は、宣言の後ろに続く行のコメント（次の節の見出し `// ── … ──` など）と空行まで含む事がある
+	// （ゲームの Broadcast.scaled の ext が次の節の見出しの行で終わっていた）。宣言の物でないので外す。
+	trimmed := false
+	for last > row.Line && isCommentOrBlank(lines[last-1]) {
+		last--
+		trimmed = true
 	}
-	// 定義の始まりの行で、始まりより前に字がある（`mod X { pub def …` のような 1 行）なら行ごとは消せない。
+	if !trimmed && strings.TrimSpace(lineAfter(lines[last-1], ext.EndCol)) != "" {
+		return cut, text, fmt.Errorf("%s: 宣言の後ろの同じ行に別の物がある（行ごと切り出せない）", row.Where())
+	}
+	// 定義の始まりの行で、始まりより前に字がある（`mod X { pub def …` のような 1 行）なら行ごとは切り出せない。
 	// 見るのは ext の始まりの行だけ（上の `///` や注記の行の字下げは関係ない）。
-	startLine := lines[d.Ext.Line-1]
-	if prefix := startLine[:byteCol(startLine, d.Ext.Col)]; strings.TrimSpace(prefix) != "" {
-		return Edit{}, fmt.Errorf("%s: def の前の同じ行に別の物がある（行ごと消せない）", d.Where())
+	startLine := lines[ext.Line-1]
+	if prefix := startLine[:byteCol(startLine, ext.Col)]; strings.TrimSpace(prefix) != "" {
+		return cut, text, fmt.Errorf("%s: 宣言の前の同じ行に別の物がある（行ごと切り出せない）", row.Where())
 	}
+	offsetOf := func(line int) int { // line（1 から）の行の頭
+		n := 0
+		for i := 0; i < line-1 && i < len(lines); i++ {
+			n += len(lines[i])
+		}
+		return n
+	}
+	text = [2]int{offsetOf(first), offsetOf(last + 1)}
 	blank := func(i int) bool { return i >= 1 && i <= len(lines) && strings.TrimSpace(lines[i-1]) == "" }
 	switch {
 	case blank(first-1) && blank(last+1):
@@ -309,18 +346,8 @@ func deleteEdit(root string, d defInfo) (Edit, error) {
 	case blank(first-1) && last+1 <= len(lines) && strings.HasPrefix(strings.TrimSpace(lines[last]), "}"):
 		first-- // 閉じ括弧の前に空行を残さない
 	}
-	start := 0
-	for i := 0; i < first-1; i++ {
-		start += len(lines[i])
-	}
-	end := start
-	for i := first - 1; i < last && i < len(lines); i++ {
-		end += len(lines[i])
-	}
-	name := d.Sym[strings.LastIndex(d.Sym, ".")+1:]
-	return Edit{File: d.File, Start: start, End: end, Site: d.Row,
-		Check: []Want{{Span: d.Row, Text: name}},
-		Make:  func(string) (string, error) { return "", nil }}, nil
+	cut = [2]int{offsetOf(first), offsetOf(last + 1)}
+	return cut, text, nil
 }
 
 // moveDocEdit は消す def w が転送するだけの包み（本体がプロジェクトの別の def T の呼び出し 1 つ: `T(…)`。引数の中の

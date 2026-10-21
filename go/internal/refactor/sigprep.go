@@ -719,6 +719,7 @@ func moduleUses(src, mod string, before int) ([]useStmt, int, string, bool) {
 				path := strings.TrimSpace(src[body:end])
 				if k := strings.LastIndexAny(path, ".:"); k >= 0 {
 					st.parent = path[:k+1]
+					st.itemsText = []string{path[k+1:]} // 波括弧の無い 1 つだけの use も、同じ物を重ねて足さないために名前を持つ
 				}
 			}
 			st.end = end
@@ -763,19 +764,27 @@ func splitKeep(s string) [][2]int {
 // 同じ親の波括弧の並びがあればそこへ（並びが字の順なら順の位置・でなければ終わり）、無ければ use の並びの決まった位置
 // （パッケージの use（::）は先・プロジェクトの use は後）へ 1 行足す。use が 1 つも無い mod は mod の行の次に足す。
 func (ix *sigIndex) useEdits(srcs *reshapeSources, file, mod string, before int, names []string, site Row) ([]Edit, []string) {
-	src, err := srcs.get(file)
-	if err != nil {
-		return nil, nil
-	}
-	type want struct{ name, parent string }
-	var wants []want
+	var wants []useWant
 	for _, x := range names {
 		if p := ix.useSource(srcs, x, file, mod); p != "" {
-			// 索引の後に書いた use（同じ回の別の書き換え）は索引に無いので、字でも見る。
-			wants = append(wants, want{x, p})
+			wants = append(wants, useWant{x, p})
 		}
 	}
+	return insertUses(srcs, file, mod, before, wants, site, nil)
+}
+
+// useWant は足す use の 1 つ: 波括弧の中に書く字（`Clock`・`area => size`）と親の書き方（`fge::`・`Lib.`）。
+type useWant struct{ name, parent string }
+
+// insertUses は file の mod の中へ wants の use を足す書き換えと、足した物の説明（`Clock（fge::）`）。並べ方は useEdits の doc。
+// 既に同じ物を use していれば足さない（字で見る。索引の後に同じ回の別の書き換えが足す物も、ここで重ねない）。
+// gone は同じ回に消す use の文の頭（その文の波括弧へは足さない。消す文に足すと一緒に消える）。
+func insertUses(srcs *reshapeSources, file, mod string, before int, wants []useWant, site Row, gone map[int]bool) ([]Edit, []string) {
 	if len(wants) == 0 {
+		return nil, nil
+	}
+	src, err := srcs.get(file)
+	if err != nil {
 		return nil, nil
 	}
 	stmts, modLineEnd, indent, ok := moduleUses(src, mod, before)
@@ -806,7 +815,7 @@ func (ix *sigIndex) useEdits(srcs *reshapeSources, file, mod string, before int,
 		notes = append(notes, w.name+"（"+w.parent+"）")
 		var target *useStmt
 		for i := range stmts {
-			if stmts[i].braces && stmts[i].parent == w.parent {
+			if stmts[i].braces && stmts[i].parent == w.parent && !gone[stmts[i].start] {
 				target = &stmts[i]
 				break
 			}

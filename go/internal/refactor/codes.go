@@ -20,6 +20,7 @@ const (
 	CodeFixConstruction = "refactor.fix-construction"
 	CodeCaseShape       = "refactor.change-case-shape"
 	CodeSignature       = "refactor.change-signature"
+	CodeMove            = "refactor.move"
 )
 
 var codes = []checkres.Code{
@@ -47,6 +48,8 @@ var codes = []checkres.Code{
 		Rule: "0（case を関数として渡す所・消す欄を使う本体は fix。fix があれば書かない）", Summary: "enum の case の欄を足した・消した後に、宣言と形の合わない作る所・当てる所として人へ回した数"},
 	{Name: CodeSignature, Level: checklevel.Lint, Metric: "call_sites_left", Unit: "count", Op: checkres.AtMost,
 		Rule: "0（関数として渡す所・2 回使う引数に式が渡る所・消える引数を使う本体は fix。fix があれば書かない）", Summary: "def の引数の並びを替えた後に、新しい並びで呼べない所として人へ回した数"},
+	{Name: CodeMove, Level: checklevel.Lint, Metric: "move_sites_left", Unit: "count", Op: checkres.AtMost,
+		Rule: "0（元の mod の非 pub の物を使う・移す非 pub の物を外が使う・読めない use は fix。fix があれば書かない）", Summary: "def・型 alias を別の mod へ移した後に、新しい mod を指せない所として人へ回した数"},
 }
 
 func init() {
