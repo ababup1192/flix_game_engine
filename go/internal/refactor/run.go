@@ -54,6 +54,11 @@ const Usage = `使い方: fge refactor <操作> [引数] [--json] [-v|--verbose]
                                                        組み立て（record の式）の欄を型に合わせる: 型に x があれば無い式へ
                                                        x = EXPR を足し、型に x が無ければある式から消す。式は欄の組で当てる
                                                        （型の別名を通した物も拾う・欄の組が同じ別の型があれば fix）
+  add-field --receiver T --label x --type U --value EXPR [--after y] [--apply]
+                                                       record の型 alias T に欄 x = U を足し（--after y は欄 y の次・無ければ最後）、
+                                                       T を組み立てる式（fix-construction と同じ当て方）すべてに x = EXPR を同じ位置へ。
+                                                       型と組み立てを 1 つの patch で書き、確かめ 1 回（落ちれば全部戻す）。欄がもうある・
+                                                       開いた record は止める。欄の組が同じ別の型の組み立ては fix
   change-case-shape --case E.C[,E.D] (--add T [--at N] --value V | --remove N | --label x --type T --value V) [--apply]
                                                        enum の case の欄（位置は 0 から）を足す・消し、宣言と作る所（E.C(a)）と
                                                        当てる所（case E.C(x)）を全部直す。足した欄は作る所が V・当てる所が _。
@@ -92,6 +97,12 @@ const Usage = `使い方: fge refactor <操作> [引数] [--json] [-v|--verbose]
                                                        足す（別名 f => h もそのまま）。本体の中の元の mod の名前は修飾つきに、元の mod の
                                                        use で入れた名前は use ごと写す。元の mod の非 pub の物を使えば fix（--with で一緒に
                                                        移すか pub に）・--def の非 pub の物を元の mod の中だけで使うなら fix（移す意味が無い）
+
+  呼ぶ所・作る所に式を書く操作（change-signature の --args・change-case-shape・fix-construction・add-field の --value）は、
+  書く所を囲む def に同じ値の局所の名前があればそれを書く: 前の ` + "`let x = 同じ式;`" + `（括弧と match の腕を越えない）か、
+  その def を呼ぶ所が全部同じ式を渡している引数。式が効果のある def・索引に無い def を呼べば見ない。決められず型が同じ
+  局所の名前（引数・型を注記した let）があれば式のまま書き「局所の候補あり N か所（--prefer-local で使う）」と言う。
+  --prefer-local は候補が 1 つの所だけそれを書く（同じ値かは確かめていない。確かめの口が型を見る）。
 
   出力は全部の操作で同じ形の数行: 当てた物 1 行・数 1 行・注 0〜3 行・結末（dry-run・applied・歯止め）1 行・
   場所の上位 10 行（書き換える操作は人へ回す所を先に）・ファイルごとの数・全部の置き場・終わりに next（写して流せる
@@ -146,6 +157,8 @@ type args struct {
 	add, typ, params, argsText                            string // change-case-shape の --add・--type、change-signature の --params・--args
 	to, with                                              string // move の --to・--with
 	param                                                 string // remove-param の --param（a,b で複数。無ければ本体が使わない引数を全部）
+	after                                                 string // add-field の --after（この欄の次に足す）
+	preferLocal                                           bool   // --prefer-local: 書く式の代わりに、型が同じ局所の名前が 1 つならそれを書く
 	at, remove                                            int    // change-case-shape の --at・--remove（-1 は無し）
 	skip                                                  map[string]bool
 	max, limit                                            int // max < 0 は無し・limit 0 は全部
@@ -243,6 +256,10 @@ func parseArgs(rest []string) (args, error) {
 			a.argsText, err = value(&i, x)
 		case "--param":
 			a.param, err = value(&i, x)
+		case "--after":
+			a.after, err = value(&i, x)
+		case "--prefer-local":
+			a.preferLocal = true
 		case "--at", "--remove":
 			var v string
 			if v, err = value(&i, x); err == nil {
@@ -419,6 +436,11 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 			fmt.Fprintln(errOut, "refactor change-signature: --def <Mod.f>（a,b で複数）・--params '<新しい引数の並び>'・--args '<呼ぶ所の式（元の引数の名前が使える）>' が要ります（例 --def TitleView.titleTree --params 'env: ViewEnv.Env, input: TitleScene.In' --args 'ViewEnv.of(ctx, w), TitleScene.inputOf(w)'）")
 			return 2
 		}
+	case "add-field":
+		if a.label == "" || a.receiver == "" || a.typ == "" || a.value == "" {
+			fmt.Fprintln(errOut, "refactor add-field: --receiver <record の alias>・--label <欄>・--type <型>・--value <作る所に入れる式> が要ります（例 --receiver World --label pointerShown --type Bool --value false --after phase）")
+			return 2
+		}
 	case "move":
 		if a.def == "" || a.to == "" {
 			fmt.Fprintln(errOut, "refactor move: --def <Mod.f>（a,b で複数・型 alias も）と --to <移し先の mod> が要ります（例 --def FightView.hpBarRect --to Geometry。元の mod の非 pub の物も移すなら --with Mod.h）")
@@ -442,7 +464,7 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 		}
 	case "index", "remove-dead":
 	default:
-		fmt.Fprintf(errOut, "refactor: 知らない操作 %s（usages・refs・match-sites・field-sites・index・expand-wildcard・remove-dead・field-to-accessor・remove-field・fix-construction・change-case-shape・change-signature・remove-param・make-private・move・remove-use）\n", a.op)
+		fmt.Fprintf(errOut, "refactor: 知らない操作 %s（usages・refs・match-sites・field-sites・index・expand-wildcard・remove-dead・field-to-accessor・remove-field・fix-construction・add-field・change-case-shape・change-signature・remove-param・make-private・move・remove-use）\n", a.op)
 		return 2
 	}
 	if a.op != "field-to-accessor" && (strings.Contains(a.label, ",") || a.labelsFile != "") {
@@ -513,6 +535,8 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 		rep, err = removeFieldReport(root, idx, a, cfg, o)
 	case "fix-construction":
 		rep, err = fixConstructionReport(root, idx, a, cfg, o)
+	case "add-field":
+		rep, err = addFieldReport(root, idx, a, cfg, o)
 	case "change-case-shape":
 		rep, err = caseShapeReport(root, idx, a, cfg, o)
 	case "change-signature":

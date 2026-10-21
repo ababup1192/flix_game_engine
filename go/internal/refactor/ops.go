@@ -283,7 +283,7 @@ func shapeFlag(a args) string {
 }
 
 // constructionPlan は型 shape の組み立てを、欄の組 before から 1 欄変える計画（ほかに同じ欄の組の型があれば fix）。
-func constructionPlan(idx *Index, a args, shape Shape, before []string, add bool, srcs map[string]string) (ConstructionPlan, error) {
+func constructionPlan(idx *Index, a args, shape Shape, before []string, add bool, srcs map[string]string, pick func(Row, int) string) (ConstructionPlan, error) {
 	key := fieldKey(before)
 	var others []string
 	for _, at := range AllShapeKeys(srcs)[key] {
@@ -297,7 +297,7 @@ func constructionPlan(idx *Index, a args, shape Shape, before []string, add bool
 			defs = append(defs, r)
 		}
 	}
-	return PlanConstruction(ConstructionQuery{Shape: shape, Label: a.label, Add: add, Value: a.value, Before: key, Others: others, Skip: a.skip, Defs: defs, Srcs: srcs})
+	return PlanConstruction(ConstructionQuery{Shape: shape, Label: a.label, Add: add, Value: a.value, After: a.after, Pick: pick, Before: key, Others: others, Skip: a.skip, Defs: defs, Srcs: srcs})
 }
 
 func constructionLines(r *report, plan ConstructionPlan) {
@@ -336,7 +336,12 @@ func fixConstructionReport(root string, idx *Index, a args, cfg Config, o Option
 	default:
 		before = append(append(before, shape.Fields...), a.label)
 	}
-	plan, err := constructionPlan(idx, a, shape, before, add, srcs)
+	var lp *localPicker
+	var pick func(Row, int) string
+	if add {
+		lp, pick = constructionPicker(root, idx.Rows, srcs, shape, a, fieldTypeOf(srcs, shape, a.label))
+	}
+	plan, err := constructionPlan(idx, a, shape, before, add, srcs, pick)
 	if err != nil {
 		return report{}, err
 	}
@@ -357,9 +362,10 @@ func fixConstructionReport(root string, idx *Index, a args, cfg Config, o Option
 	constructionLines(&r, plan)
 	base := fmt.Sprintf("bin/fge refactor fix-construction --label %s %s", a.label, shapeFlag(a))
 	if add {
-		base += " --value '" + a.value + "'"
+		base += " --value " + shellQuote(a.value) + preferFlag(a)
 	}
 	nextOf(&r, base, a, &out)
+	localNotes(&r, lp)
 	return r, nil
 }
 
@@ -416,7 +422,7 @@ func removeFieldReport(root string, idx *Index, a args, cfg Config, o Options) (
 		}
 		return r, nil
 	}
-	plan, err := constructionPlan(idx, a, shape, shape.Fields, false, srcs)
+	plan, err := constructionPlan(idx, a, shape, shape.Fields, false, srcs, nil)
 	if err != nil {
 		return report{}, err
 	}
@@ -448,4 +454,44 @@ func shapeNote(s Shape) string {
 		shown, more = shown[:8], fmt.Sprintf("…ほか %d", len(s.Fields)-8)
 	}
 	return fmt.Sprintf("型: %s（%s）の欄 %d: %s%s", s.Name, s.File, len(s.Fields), strings.Join(shown, "・"), more)
+}
+
+// fieldTypeOf は型 shape の宣言の欄 label の型の字（無ければ ""）。
+func fieldTypeOf(srcs map[string]string, shape Shape, label string) string {
+	src := srcs[shape.File]
+	if shape.End > len(src) {
+		return ""
+	}
+	u, _, err := ParseRecord(src[shape.Brace:shape.End])
+	if err != nil {
+		return ""
+	}
+	if k := u.Find(label); k >= 0 {
+		f := u.Fields[k]
+		return strings.TrimSpace(src[shape.Brace+f.VStart : shape.Brace+codeEnd(src[shape.Brace:shape.End], f)])
+	}
+	return ""
+}
+
+// modAt は file の pos を囲む mod（pos より前で一番近い def・型 alias・enum の宣言の mod）。
+func modAt(rows []Row, file, src string, pos int) string {
+	best, mod := -1, ""
+	for _, r := range rows {
+		if r.File != file || (r.Kind != KindDefDecl && r.Kind != KindAliasDecl && r.Kind != KindEnumDecl) {
+			continue
+		}
+		if b, _, err := ByteRange(src, r); err == nil && b <= pos && b > best {
+			best, mod = b, modOf(r.Sym)
+		}
+	}
+	return mod
+}
+
+// constructionPicker は組み立てに --value を書く所で、同じ値の局所の名前を選ぶ部品（設計 §9）。typ は欄の型の字。
+func constructionPicker(root string, rows []Row, srcs map[string]string, shape Shape, a args, typ string) (*localPicker, func(Row, int) string) {
+	rs := &reshapeSources{root: root, m: srcs}
+	lp := newLocalPicker(rows, rs, a.preferLocal, nil)
+	want := localWant{typ: typ, file: shape.File, mod: modAt(rows, shape.File, srcs[shape.File], shape.Brace)}
+	value := a.value
+	return lp, func(d Row, at int) string { return lp.pick(d.Sym, d.File, at, value, want) }
 }

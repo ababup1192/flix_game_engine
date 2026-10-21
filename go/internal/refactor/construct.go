@@ -347,12 +347,57 @@ func AddRecordField(text, label, value string) (string, error) {
 	return text[:ce] + ", " + label + " = " + value + text[ce:], nil
 }
 
+// InsertRecordField は閉じた record の式（か型）text の欄 after の次に `label = value` を足した字を返す。after が ""
+// か最後の欄なら AddRecordField と同じ。欄が 1 つずつ自分の行にあれば、次の欄の行（前に付いたコメントの行も）の前に
+// 同じ字下げの行を足し、そうでなければ同じ行に `, label = value` を足す。
+func InsertRecordField(text, label, value, after string) (string, error) {
+	u, closed, err := ParseRecord(text)
+	if err != nil {
+		return "", err
+	}
+	if !closed {
+		return "", fmt.Errorf("閉じた record の式でない")
+	}
+	if u.Find(label) >= 0 {
+		return "", fmt.Errorf("欄 %s はもうある", label)
+	}
+	if after == "" {
+		return AddRecordField(text, label, value)
+	}
+	k := u.Find(after)
+	if k < 0 {
+		return "", fmt.Errorf("--after の欄 %s が無い", after)
+	}
+	if k == len(u.Fields)-1 {
+		return AddRecordField(text, label, value)
+	}
+	next := u.Fields[k+1]
+	ls := lineStart(text, next.Start)
+	if indent := text[ls:next.Start]; ls > 0 && strings.TrimSpace(indent) == "" {
+		start := ls
+		for start > 0 {
+			ps := lineStart(text, start-1)
+			if t := strings.TrimSpace(text[ps : start-1]); strings.HasPrefix(t, "//") {
+				start = ps
+				continue
+			}
+			break
+		}
+		return text[:start] + indent + label + " = " + value + ",\n" + text[start:], nil
+	}
+	ce := codeEnd(text, u.Fields[k])
+	return text[:ce] + ", " + label + " = " + value + text[ce:], nil
+}
+
 // ConstructionQuery は組み立てを直す問い。Add が空でなければ欄を足す（値は Value）、空なら Remove を消す。
 type ConstructionQuery struct {
-	Shape  Shape
-	Label  string
-	Add    bool
-	Value  string
+	Shape Shape
+	Label string
+	Add   bool
+	Value string
+	After string // 足す時: この欄の次に（"" は最後）
+	// Pick は足す時、組み立ての所（def と record の式の `{` の位置）で Value の代わりに書く局所の名前（"" は Value のまま）。
+	Pick   func(owner Row, at int) string
 	Before string            // 直す前の組み立ての欄の組の鍵
 	Others []string          // 欄の組が Before と同じ別の型の場所（あれば決めずに fix）
 	Skip   map[string]bool   // file:line
@@ -401,13 +446,19 @@ func PlanConstruction(q ConstructionQuery) (ConstructionPlan, error) {
 			p.Fix = append(p.Fix, Fixed{row, "欄の組が同じ別の型がある（" + strings.Join(q.Others, "・") + "）。どちらを組み立てているか決められない"})
 			return
 		}
+		value := q.Value
+		if q.Add && q.Pick != nil {
+			if n := q.Pick(d, l.Brace); n != "" {
+				value = n
+			}
+		}
 		why := "組み立てから欄 " + q.Label + " を消す"
 		if q.Add {
-			why = "組み立てに欄 " + q.Label + " = " + q.Value + " を足す"
+			why = "組み立てに欄 " + q.Label + " = " + value + " を足す"
 		}
 		p.Sites = append(p.Sites, Fixed{row, why})
 		name := d.Sym[strings.LastIndex(d.Sym, ".")+1:]
-		label, add, value, before := q.Label, q.Add, q.Value, q.Before
+		label, add, before, after := q.Label, q.Add, q.Before, q.After
 		p.Edits = append(p.Edits, Edit{
 			File: d.File, Start: l.Brace, End: l.End, Site: row,
 			Check: []Want{{Span: d, Text: name}},
@@ -424,7 +475,7 @@ func PlanConstruction(q ConstructionQuery) (ConstructionPlan, error) {
 					return "", fmt.Errorf("組み立ての欄の組が変わった（索引が古い）")
 				}
 				if add {
-					return AddRecordField(cur, label, value)
+					return InsertRecordField(cur, label, value, after)
 				}
 				return RemoveRecordField(cur, label)
 			},

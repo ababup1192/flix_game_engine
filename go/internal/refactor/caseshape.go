@@ -30,6 +30,7 @@ type CaseShapeQuery struct {
 	Label  string   // label: 足す欄の名前
 	Arity  map[string]int
 	Shapes map[string]string // case → 今の欄の並び（報告用）
+	Prefer bool              // --prefer-local（設計 §9）
 }
 
 // CaseShapePlan は change-case-shape の計画。
@@ -38,13 +39,15 @@ type CaseShapePlan struct {
 	Sites                      []Fixed
 	Fix                        []Fixed
 	Decls, Constructs, Matches int
-	Kept                       int // label: 替えずに済む当てる所（record を丸ごと束ねる）
-	Dropped                    int // remove: 捨てた作る所の式のうち、名前・字の値でない物
+	Kept                       int          // label: 替えずに済む当てる所（record を丸ごと束ねる）
+	Dropped                    int          // remove: 捨てた作る所の式のうち、名前・字の値でない物
+	Local                      *localPicker // 作る所に書いた局所の名前の数（設計 §9）
 }
 
 // PlanCaseShape は q.Cases の欄の形を変える計画。
 func PlanCaseShape(rows []Row, srcs *reshapeSources, q CaseShapeQuery) (CaseShapePlan, error) {
 	var p CaseShapePlan
+	p.Local = newLocalPicker(rows, srcs, q.Prefer, nil)
 	args := argRowsAt(rows)
 	var arms []Row
 	for _, r := range rows {
@@ -183,9 +186,17 @@ func PlanCaseShape(rows []Row, srcs *reshapeSources, q CaseShapeQuery) (CaseShap
 			}
 			if r.Kind == KindCaseConstruct {
 				p.Constructs++
+				value := q.Value
+				if q.Mode != "remove" {
+					ns, _, _ := ByteRange(s, r)
+					want := localWant{typ: q.Type, file: decl.File, mod: modOf(modOf(sym))}
+					if n := p.Local.pick(r.Owner, r.File, ns, q.Value, want); n != "" {
+						value = n
+					}
+				}
 				switch q.Mode {
 				case "add":
-					add(r, s, l, h, q.Value, "作る所に "+q.Value)
+					add(r, s, l, h, value, "作る所に "+value)
 				case "remove":
 					if !isSimple(s[l.Args[at][0]:l.Args[at][1]]) {
 						p.Dropped++
@@ -197,7 +208,7 @@ func PlanCaseShape(rows []Row, srcs *reshapeSources, q CaseShapeQuery) (CaseShap
 						p.Fix = append(p.Fix, Fixed{r, "payload が閉じた record の式でない（`{ " + q.Label + " = … | e }` で足すかは人）"})
 						continue
 					}
-					label, value := q.Label, q.Value
+					label := q.Label
 					p.Edits = append(p.Edits, Edit{File: r.File, Start: a[0], End: a[1], Site: r, Check: check(r, s),
 						Make: func(cur string) (string, error) { return AddRecordField(cur, label, value) }})
 					p.Sites = append(p.Sites, Fixed{r, "作る所に " + label + " = " + value})
@@ -291,7 +302,7 @@ func caseShapeReport(root string, idx *Index, a args, cfg Config, o Options) (re
 	if !idx.hasAdds(KindArg) {
 		return report{}, fmt.Errorf("索引に arg の行が無い（flixlint %s 以上が要る。--flixlint か FGE_FLIXLINT で名指しして bin/fge refactor index --rebuild）", MinFlixlintArgs)
 	}
-	q := CaseShapeQuery{At: a.at, Type: a.typ, Value: a.value, Label: a.label, Arity: map[string]int{}, Shapes: map[string]string{}}
+	q := CaseShapeQuery{At: a.at, Type: a.typ, Value: a.value, Label: a.label, Arity: map[string]int{}, Shapes: map[string]string{}, Prefer: a.preferLocal}
 	switch {
 	case a.add != "":
 		q.Mode, q.Type = "add", a.add
@@ -361,6 +372,9 @@ func caseShapeReport(root string, idx *Index, a args, cfg Config, o Options) (re
 	case "label":
 		base += " --label " + q.Label + " --type " + shellQuote(q.Type) + " --value " + shellQuote(q.Value)
 	}
+	if q.Mode != "remove" {
+		base += preferFlag(a)
+	}
 	nextOf(&r, base, a, &out)
 	switch {
 	case len(plan.Fix) > 0:
@@ -375,6 +389,7 @@ func caseShapeReport(root string, idx *Index, a args, cfg Config, o Options) (re
 		r.Next, r.NextWhy = "bin/fge refactor usages "+strings.Split(a.caseName, ",")[0], "替えた後の作る所・当てる所（索引は作り直しになる）"
 		r.lines = nil
 	}
+	localNotes(&r, plan.Local)
 	return r, nil
 }
 

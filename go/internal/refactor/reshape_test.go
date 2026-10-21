@@ -223,7 +223,7 @@ func TestRewriteCallArgsWrapsAtTheOriginalColumn(t *testing.T) {
 	must(t, err)
 	old := []string{"ctx", "w", "card", "at", "full", "someLongArgumentName", "anotherLongArgumentName", "z"}
 	got, err := rewriteCallArgs(src[l.Args[0][0]:l.Args[len(l.Args)-1][1]], old,
-		append([]string{"ViewEnv.of(ctx, w)"}, old[2:]...), readLayout(src, l))
+		append([]string{"ViewEnv.of(ctx, w)"}, old[2:]...), nil, readLayout(src, l))
 	must(t, err)
 	if want := "ViewEnv.of(ctx, w), card, at, full, someLongArgumentName,\n                    anotherLongArgumentName, z"; got != want {
 		t.Fatalf("got %q（want %q）", got, want)

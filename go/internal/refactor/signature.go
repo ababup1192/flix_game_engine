@@ -30,6 +30,7 @@ type SignatureQuery struct {
 	Defs      []string // 索引の def の名前（解決済み）
 	Params    string   // 新しい引数の並び（宣言の字）
 	Templates []string // 新しい引数ごとの式
+	Prefer    bool     // --prefer-local: 同じ値と決められない時も、型が同じ局所の名前が 1 つならそれを書く
 }
 
 // SignaturePlan は change-signature の計画。
@@ -42,8 +43,9 @@ type SignaturePlan struct {
 	Lifted    int // 本体から引数へ移した式の数
 	Dropped   int // 捨てた引数の式のうち、名前・字の値でない物
 	CallFiles map[string]int
-	UsesAdded []string // 足す use（`Clock（fge::） → src/X.flix`）
-	Unused    []string // 本体が使わない新しい引数
+	UsesAdded []string     // 足す use（`Clock（fge::） → src/X.flix`）
+	Unused    []string     // 本体が使わない新しい引数
+	Local     *localPicker // 呼ぶ所に書いた局所の名前の数（設計 §9）
 }
 
 // paramNames は `a: T, b: U` の名前の列。
@@ -223,6 +225,11 @@ func PlanSignature(rows []Row, srcs *reshapeSources, q SignatureQuery) (Signatur
 	uses := countUses(callTemplates, p.Old)
 	args := argRowsAt(rows)
 	owners := ownerStarts(rows, srcs)
+	skip := map[string]bool{}
+	for _, d := range q.Defs {
+		skip[d] = true
+	}
+	p.Local = newLocalPicker(rows, srcs, q.Prefer, skip)
 	var calls []Edit
 	for _, r := range rows {
 		if r.Kind != KindDefUse || strings.Contains(r.Extra, "sugar") {
@@ -273,16 +280,42 @@ func PlanSignature(rows []Row, srcs *reshapeSources, q SignatureQuery) (Signatur
 		old, tmpl, lay := p.Old, callTemplates, readLayout(s, l)
 		if dm := modOf(r.Sym); modOf(r.Owner) != dm {
 			tmpl = qualifyTemplates(callTemplates, dm, rows, append(append([]string{}, p.Old...), locals...))
+		}
+		// 同じ値の局所の名前（設計 §9）。元の引数そのもの・@名前 の式は見ない。
+		vals := make([]string, len(l.Args))
+		for i, a := range l.Args {
+			vals[i] = s[a[0]:a[1]]
+		}
+		picked := make([]string, len(tmpl))
+		var pickedNames []string
+		d := defs[r.Sym]
+		for i, t := range tmpl {
+			if isIdent(strings.TrimSpace(callTemplates[i])) || localMark.MatchString(q.Templates[i]) {
+				continue
+			}
+			want := localWant{typ: d.types[p.New[i]], file: d.row.File, mod: modOf(r.Sym)}
+			if n := p.Local.pick(r.Owner, r.File, ns, Substitute(strings.TrimSpace(t), old, vals), want); n != "" {
+				picked[i] = n
+				pickedNames = append(pickedNames, n)
+			}
+		}
+		if modOf(r.Owner) != modOf(r.Sym) {
 			var roots []string
-			for _, t := range tmpl {
-				roots = append(roots, exprRoots(t)...)
+			for i, t := range tmpl {
+				if picked[i] == "" {
+					roots = append(roots, exprRoots(t)...)
+				}
 			}
 			addNeed(needs, &needOrder, r.File, modOf(r.Owner), ns, r, roots)
 		}
 		calls = append(calls, Edit{File: r.File, Start: l.Args[0][0], End: l.Args[len(l.Args)-1][1], Site: r,
 			Check: []Want{{Span: r, Text: s[ns:ne]}},
-			Make:  func(cur string) (string, error) { return rewriteCallArgs(cur, old, tmpl, lay) }})
-		p.Sites = append(p.Sites, Fixed{r, "呼ぶ所"})
+			Make:  func(cur string) (string, error) { return rewriteCallArgs(cur, old, tmpl, picked, lay) }})
+		why := "呼ぶ所"
+		if len(pickedNames) > 0 {
+			why += "（局所の " + strings.Join(pickedNames, "・") + " を書く）"
+		}
+		p.Sites = append(p.Sites, Fixed{r, why})
 		p.Calls++
 		p.CallFiles[r.File]++
 	}
@@ -400,14 +433,18 @@ func unboundLocals(src string, from, to int, names []string) []string {
 	text := src[from:to]
 	var missing []string
 	for _, n := range names {
-		q := regexp.QuoteMeta(n)
-		bound := regexp.MustCompile(`\blet\s+[^=;]*\b` + q + `\b[^=;]*=|\bcase\b[^=\n]*\b` + q + `\b[^=\n]*=>|(?:^|[^\w.#])` + q +
-			`\s*->|\([^()]*\b` + q + `\b[^()]*\)\s*->|\b` + q + `\s*:\s*[A-Za-z{(]|\b` + q + `\s*<-`)
-		if !bound.MatchString(text) {
+		if !bindingRe(n).MatchString(text) {
 			missing = append(missing, n)
 		}
 	}
 	return missing
+}
+
+// bindingRe は name を束ねる形（unboundLocals の訳の形）に当たる正規表現。
+func bindingRe(name string) *regexp.Regexp {
+	q := regexp.QuoteMeta(name)
+	return regexp.MustCompile(`\blet\s+[^=;]*\b` + q + `\b[^=;]*=|\bcase\b[^=\n]*\b` + q + `\b[^=\n]*=>|(?:^|[^\w.#])` + q +
+		`\s*->|\([^()]*\b` + q + `\b[^()]*\)\s*->|\b` + q + `\s*:\s*[A-Za-z{(]|\b` + q + `\s*<-`)
 }
 
 // qualifyTemplates は、テンプレートの中の素の名前の呼び出し（`envOf(…)`）のうち mod の def を指す物を `mod.envOf` にした写し
@@ -470,8 +507,9 @@ func firstLineAround(body, name string, removed []string) string {
 }
 
 // rewriteCallArgs は呼ぶ所の引数の並びの字（最初の引数の頭〜最後の引数の終わり。内側の書き換えを当てた後）を、
-// テンプレートで作り直す。並びの改行の形（1 行・1 つずつ改行・決まった桁で折る）は元の並びの物（lay）を写す。
-func rewriteCallArgs(cur string, old, templates []string, lay argLayout) (string, error) {
+// テンプレートで作り直す。picked[i] が空でなければ i 番目はその局所の名前（設計 §9）。
+// 並びの改行の形（1 行・1 つずつ改行・決まった桁で折る）は元の並びの物（lay）を写す。
+func rewriteCallArgs(cur string, old, templates, picked []string, lay argLayout) (string, error) {
 	l, _, err := argsAfter("("+cur+")", 0)
 	if err != nil {
 		return "", err
@@ -487,6 +525,9 @@ func rewriteCallArgs(cur string, old, templates []string, lay argLayout) (string
 	items := make([]string, len(templates))
 	for i, t := range templates {
 		items[i] = Substitute(strings.TrimSpace(t), old, vals)
+		if i < len(picked) && picked[i] != "" {
+			items[i] = picked[i]
+		}
 	}
 	return joinLayout(items, lay), nil
 }
@@ -519,7 +560,7 @@ func signatureReport(root string, idx *Index, a args, cfg Config, o Options) (re
 	if err != nil {
 		return report{}, fmt.Errorf("--args: %v", err)
 	}
-	q := SignatureQuery{Params: strings.TrimSpace(a.params), Templates: templates}
+	q := SignatureQuery{Params: strings.TrimSpace(a.params), Templates: templates, Prefer: a.preferLocal}
 	for _, d := range strings.Split(a.def, ",") {
 		sym, err := Resolve(idx.Rows, strings.TrimSpace(d), map[string]bool{KindDefDecl: true})
 		if err != nil {
@@ -567,7 +608,7 @@ func signatureReport(root string, idx *Index, a args, cfg Config, o Options) (re
 	for _, s := range plan.Sites {
 		r.lines = append(r.lines, fmt.Sprintf("%s\t%s（%s）", s.Where(), s.Why, s.Owner))
 	}
-	base := fmt.Sprintf("bin/fge refactor change-signature --def %s --params %s --args %s", a.def, shellQuote(q.Params), shellQuote(a.argsText))
+	base := fmt.Sprintf("bin/fge refactor change-signature --def %s --params %s --args %s", a.def, shellQuote(q.Params), shellQuote(a.argsText)) + preferFlag(a)
 	nextOf(&r, base, a, &out)
 	switch {
 	case len(plan.Fix) > 0:
@@ -578,5 +619,6 @@ func signatureReport(root string, idx *Index, a args, cfg Config, o Options) (re
 		r.Next, r.NextWhy = "bin/fge refactor usages "+strings.Split(a.def, ",")[0]+" --callers", "替えた後の呼び手（索引は作り直しになる）"
 		r.lines = nil
 	}
+	localNotes(&r, plan.Local)
 	return r, nil
 }

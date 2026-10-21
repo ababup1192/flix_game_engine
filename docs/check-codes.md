@@ -73,6 +73,7 @@ near の帯は bin/lint-rules/checkfmt.json の near（code ごと。無けれ�
 | `px.value-blobs.count` | advice | value_masses | count | range | px.json valueBlobsMin・valueBlobsMax・valueBlobsMinShare | 明るさ 3 段の大きな塊の数（明暗の骨格） |
 | `px.value-blobs.cover` | advice | mass_cover | ratio | >= | px.json valueBlobsCoverMin | 大きな塊が描いた画素を覆う割合 |
 | `px.value-sep` | lint | part_dL | L | >= | px.json valueSepMin か contrast の min | contrast で測った部品と相手の明るさの差 |
+| `refactor.add-field` | lint | construction_left | count | <= | 0（欄の組が同じ別の型の組み立ては fix） | record の型 alias に欄を足し、組み立てる式にも値を足した後に、人へ回した数 |
 | `refactor.change-case-shape` | lint | case_sites_left | count | <= | 0（case を関数として渡す所・消す欄を使う本体は fix。fix があれば書かない） | enum の case の欄を足した・消した後に、宣言と形の合わない作る所・当てる所として人へ回した数 |
 | `refactor.change-signature` | lint | call_sites_left | count | <= | 0（関数として渡す所・2 回使う引数に式が渡る所・消える引数を使う本体は fix。fix があれば書かない） | def の引数の並びを替えた後に、新しい並びで呼べない所として人へ回した数 |
 | `refactor.expand-wildcard` | lint | catch_all_left | count | <= | 0（書き出せない腕は fix） | enum への match の `case _` を残りの case に書き出した後に、人へ回した腕の数 |

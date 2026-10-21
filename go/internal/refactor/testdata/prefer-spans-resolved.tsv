@@ -1,0 +1,64 @@
+# flixlint-spans 2 stage=resolved columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=use,type-use,alias-decl,arg
+use	src/Hand.flix	2	9	2	19	View.World	Hand	alias=World what=alias
+def-decl	src/Hand.flix	4	13	4	17	Hand.hand	Hand.hand	pub ext=4:5:4:62
+type-use	src/Hand.flix	4	33	4	38	View.World	Hand.hand	what=alias
+use	src/Rec.flix	2	15	2	18	View.Env	Rec	alias=Env what=alias
+use	src/Rec.flix	2	20	2	25	View.World	Rec	alias=World what=alias
+alias-decl	src/Rec.flix	4	20	4	25	Rec.Panel	Rec.Panel	
+def-decl	src/Rec.flix	6	13	6	19	Rec.closed	Rec.closed	pub ext=6:5:6:71
+type-use	src/Rec.flix	6	23	6	28	View.World	Rec.closed	what=alias
+type-use	src/Rec.flix	6	31	6	36	Rec.Panel	Rec.closed	what=alias
+def-decl	src/Rec.flix	8	13	8	17	Rec.wide	Rec.wide	pub ext=8:5:12:6
+type-use	src/Rec.flix	8	21	8	26	View.World	Rec.wide	what=alias
+def-decl	src/Rec.flix	14	13	14	19	Rec.framed	Rec.framed	pub ext=14:5:16:42
+type-use	src/Rec.flix	14	23	14	28	View.World	Rec.framed	what=alias
+def-use	src/Rec.flix	15	19	15	30	View.bareOf	Rec.framed	
+arg	src/Rec.flix	15	31	15	32	View.bareOf	Rec.framed	of=def-use at=15:19 i=0 n=1
+def-decl	src/Rec.flix	18	13	18	18	Rec.given	Rec.given	pub ext=18:5:18:91
+type-use	src/Rec.flix	18	24	18	27	View.Env	Rec.given	what=alias
+type-use	src/Rec.flix	18	32	18	37	View.World	Rec.given	what=alias
+use	src/Screen.flix	2	15	2	18	View.Env	Screen	alias=Env what=alias
+use	src/Screen.flix	2	20	2	25	View.World	Screen	alias=World what=alias
+def-decl	src/Screen.flix	4	13	4	20	Screen.withLet	Screen.withLet	pub ext=4:5:6:38
+type-use	src/Screen.flix	4	36	4	41	View.World	Screen.withLet	what=alias
+def-use	src/Screen.flix	5	19	5	30	View.bareOf	Screen.withLet	
+arg	src/Screen.flix	5	31	5	32	View.bareOf	Screen.withLet	of=def-use at=5:19 i=0 n=1
+def-use	src/Screen.flix	6	9	6	18	Hand.hand	Screen.withLet	
+arg	src/Screen.flix	6	19	6	22	Hand.hand	Screen.withLet	of=def-use at=6:9 i=0 n=2
+arg	src/Screen.flix	6	24	6	25	Hand.hand	Screen.withLet	of=def-use at=6:9 i=1 n=2
+def-decl	src/Screen.flix	8	13	8	18	Screen.entry	Screen.entry	pub ext=8:5:9:38
+type-use	src/Screen.flix	8	36	8	39	View.Env	Screen.entry	what=alias
+type-use	src/Screen.flix	8	44	8	49	View.World	Screen.entry	what=alias
+def-use	src/Screen.flix	9	9	9	18	Hand.hand	Screen.entry	
+arg	src/Screen.flix	9	19	9	22	Hand.hand	Screen.entry	of=def-use at=9:9 i=0 n=2
+arg	src/Screen.flix	9	24	9	25	Hand.hand	Screen.entry	of=def-use at=9:9 i=1 n=2
+def-decl	src/Screen.flix	11	13	11	18	Screen.other	Screen.other	pub ext=11:5:12:38
+type-use	src/Screen.flix	11	36	11	39	View.Env	Screen.other	what=alias
+type-use	src/Screen.flix	11	44	11	49	View.World	Screen.other	what=alias
+def-use	src/Screen.flix	12	9	12	18	Hand.hand	Screen.other	
+arg	src/Screen.flix	12	19	12	22	Hand.hand	Screen.other	of=def-use at=12:9 i=0 n=2
+arg	src/Screen.flix	12	24	12	25	Hand.hand	Screen.other	of=def-use at=12:9 i=1 n=2
+def-decl	src/Screen.flix	14	13	14	17	Screen.arms	Screen.arms	pub ext=14:5:17:6
+type-use	src/Screen.flix	14	33	14	38	View.World	Screen.arms	what=alias
+def-use	src/Screen.flix	15	32	15	43	View.bareOf	Screen.arms	
+arg	src/Screen.flix	15	44	15	45	View.bareOf	Screen.arms	of=def-use at=15:32 i=0 n=1
+def-use	src/Screen.flix	16	23	16	32	Hand.hand	Screen.arms	
+arg	src/Screen.flix	16	33	16	36	Hand.hand	Screen.arms	of=def-use at=16:23 i=0 n=2
+arg	src/Screen.flix	16	38	16	39	Hand.hand	Screen.arms	of=def-use at=16:23 i=1 n=2
+def-decl	src/Screen.flix	19	13	19	17	Screen.main	Screen.main	pub ext=19:5:20:65
+type-use	src/Screen.flix	19	21	19	26	View.World	Screen.main	what=alias
+def-use	src/Screen.flix	20	9	20	14	Screen.entry	Screen.main	
+arg	src/Screen.flix	20	15	20	16	Screen.entry	Screen.main	of=def-use at=20:9 i=0 n=3
+arg	src/Screen.flix	20	18	20	32	Screen.entry	Screen.main	of=def-use at=20:9 i=1 n=3
+def-use	src/Screen.flix	20	18	20	29	View.bareOf	Screen.main	
+arg	src/Screen.flix	20	30	20	31	View.bareOf	Screen.main	of=def-use at=20:18 i=0 n=1
+arg	src/Screen.flix	20	34	20	35	Screen.entry	Screen.main	of=def-use at=20:9 i=2 n=3
+def-use	src/Screen.flix	20	39	20	44	Screen.other	Screen.main	
+arg	src/Screen.flix	20	45	20	46	Screen.other	Screen.main	of=def-use at=20:39 i=0 n=3
+arg	src/Screen.flix	20	48	20	61	Screen.other	Screen.main	of=def-use at=20:39 i=1 n=3
+arg	src/Screen.flix	20	63	20	64	Screen.other	Screen.main	of=def-use at=20:39 i=2 n=3
+alias-decl	src/View.flix	2	20	2	25	View.World	View.World	
+alias-decl	src/View.flix	4	20	4	23	View.Env	View.Env	
+def-decl	src/View.flix	6	13	6	19	View.bareOf	View.bareOf	pub ext=6:5:6:56
+type-use	src/View.flix	6	23	6	28	View.World	View.bareOf	what=alias
+type-use	src/View.flix	6	31	6	34	View.Env	View.bareOf	what=alias
