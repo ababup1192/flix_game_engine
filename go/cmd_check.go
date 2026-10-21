@@ -10,8 +10,8 @@ import (
 	"github.com/ababup1192/flix_game_engine/go/internal/checkres"
 )
 
-const checkUsage = `使い方: bin/fge check codes [--md] [--check] [px|snd]
-  検査の code の表（px・snd・state-shape の全部の code の level・metric・unit・want の向き）。
+const checkUsage = `使い方: bin/fge check codes [--md] [--check] [px|snd|state-shape|doc-refs]
+  検査の code の表（px・snd・state-shape・doc-refs の全部の code の level・metric・unit・want の向き）。
   --md は docs/check-codes.md を書き、--check はずれていれば 1（書かない）。
   1 件の形・score・next・stop・終了コードの決まりは docs/check-results.md。
 `
@@ -40,7 +40,7 @@ func cmdCheck(out, errOut *strings.Builder, rest []string, asJSON bool) int {
 			md = true
 		case "--check":
 			check = true
-		case "px", "snd", "state-shape":
+		case "px", "snd", "state-shape", "doc-refs":
 			prefix = a + "."
 		default:
 			fmt.Fprintf(errOut, "check codes: 知らない指定 %s\n%s", a, checkUsage)

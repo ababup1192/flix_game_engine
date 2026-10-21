@@ -6,6 +6,9 @@ near の帯は bin/lint-rules/checkfmt.json の near（code ごと。無けれ�
 
 | code | level | metric | unit | want | 基準の出どころ | 説明 |
 |---|---|---|---|---|---|---|
+| `doc-refs.file` | gate | missing_files | count | <= | doc-refs.json pathSkipPrefixes | 文書が指すパス（src/…flix・docs/…md など / を含む物）が無い |
+| `doc-refs.line` | gate | missing_lines | count | <= | doc-refs.json | 文書の path:行 の行がそのファイルの行数を超える |
+| `doc-refs.name` | gate | missing_names | count | <= | doc-refs.json sources・spansIndex | 文書の ` ` と表が指す Mod.name が src・test の宣言に無い（頭のモジュールがこのリポの物だけ） |
 | `px.anim.area` | lint | area_drift | ratio | <= | anim.json maxAreaDrift | 1 コマ目に対する面積のずれ |
 | `px.anim.bob` | lint | bob_px | px | <= | anim.json maxBob | 頭の上下動 |
 | `px.anim.ground` | lint | float_px | px | <= | anim.json footTolerance | 足が地面から浮く |

@@ -103,6 +103,7 @@ help:
 	@echo "  make lint-hoist           ループの外に置いた式がループの中へ書き写される形が無いか検査 (全量)"
 	@echo "  make lint-record-wrap     World が直接持つ大きな record を enum で包んでいるか検査"
 	@echo "  make lint-state-shape     状態の持ち方 (Bool の欄の数・Option[Bool]・名指しの enum への case _・View の効果) を検査"
+	@echo "  make lint-doc-refs        docs/・agents-pack の文書が指す Mod.name・パス・path:行 が実在するか検査"
 	@echo "  bin/fge digest A B   絵の差を数値で要約 (2 枚 or フォルダ。目視の前にまずこれ)"
 	@echo "  make go-build             go/ を bin/fge-go と、配る先ごとの 5 種にビルド"
 	@echo "  make go-test              go/ のテスト (CIEDE2000 の参照 34 組・外部依存ゼロの検査を含む)"
@@ -457,6 +458,12 @@ lint-record-wrap:
 .PHONY: lint-state-shape
 lint-state-shape:
 	@bin/fge state-shape --all
+
+# 文書（docs/**/*.md・agents-pack）の ` ` と表が指す Mod.name・パス・path:行 が実在するか。
+# 規約は bin/lint-rules/doc-refs.json。コミットでは触った .md だけを precommit が見る。
+.PHONY: lint-doc-refs
+lint-doc-refs:
+	@bin/fge doc-refs
 
 # ── 起動画面の素材 ────────────────────────────────────────
 # 組み込みフォント (ASCII の 1bit ビットマップ) とロゴを engine/src/render/BootFontData.flix へ

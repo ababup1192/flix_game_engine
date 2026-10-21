@@ -1,0 +1,12 @@
+{
+  "note": "doc-refs（文書が指す Flix の名前・ファイル・行が実在するか）の規約データ。engine が配る既定で、ゲームは bin/lint-rules/doc-refs.local.json に skip（見ない文書のパスの並び。/ で終わればその下の全部）だけを書ける。docDirs の下の .md と docFiles を見る（在る物だけ）。拾うのは ` ` の中と表の行の Mod.name・src/…flix・test/…flix・path:行・/ を含むパス。名前は sources の .flix の宣言（mod・def・enum・case・type alias・eff・trait・struct・record の欄）を字で引き、spansIndex（flixlint の索引。bin/fge refactor が作る）が sources より新しければそれも足す。頭のモジュールがこのリポに無い名前（エンジン・Java の物）とパス（先頭のフォルダがこのリポに無い物）は数えない。pathSkipPrefixes は作る物の置き場（無くて当たり前）。fileExts は Mod.name でなくファイル名と読む末尾。",
+  "docDirs": ["docs", "agents-pack"],
+  "docFiles": ["NOTES.md", "AGENTS.local.md"],
+  "skip": ["docs/gallery/", "docs/api-digest/", "docs/migrations/"],
+  "sources": ["src", "test", "engine/src", "engine/test", "engine_world/src", "engine_world/test", "engine_tools/src", "engine_tools/test", "render_gl/src", "render_gl/test"],
+  "spansIndex": "build/refactor/spans-resolved.tsv",
+  "pathSkipPrefixes": ["build/", "debug/", "lib/", "out/", ".git/", "node_modules/"],
+  "fileExts": ["flix", "md", "json", "yarn", "png", "jpg", "jpeg", "gif", "webp", "mp4", "wav", "ogg", "mp3", "toml", "txt", "tsv", "csv", "html", "py", "go", "sh", "star", "mk", "jar", "fpkg", "svg", "scala", "java", "js", "ts", "css", "lock", "log", "zip", "gz", "yaml", "yml", "cmd", "ps1", "elm", "glsl", "frag", "vert", "ttf", "otf", "pdf"],
+  "limit": 10,
+  "fullOut": "build/doc-refs/last.txt"
+}

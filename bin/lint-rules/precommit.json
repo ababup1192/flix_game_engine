@@ -276,6 +276,17 @@
       }
     },
     {
+      "id": "doc-refs",
+      "sub": "doc-refs",
+      "flags": [],
+      "pass": "matched",
+      "when": {
+        "suffixes": [
+          ".md"
+        ]
+      }
+    },
+    {
       "id": "jargon",
       "sub": "jargon",
       "flags": [],

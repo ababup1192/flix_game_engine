@@ -4,6 +4,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/ababup1192/flix_game_engine/go/internal/docrefs"
 	"github.com/ababup1192/flix_game_engine/go/internal/docshape"
 	"github.com/ababup1192/flix_game_engine/go/internal/f32"
 	"github.com/ababup1192/flix_game_engine/go/internal/fallback"
@@ -67,6 +68,7 @@ func cmdPrecommit(out, errOut *strings.Builder, rest []string, _ bool) int {
 		"notes-rotate":  lintOf(notesrotate.Run, abs),
 		"record-wrap":   lintOf(recordwrap.Run, abs),
 		"doc-shape":     lintOf(docshape.Run, abs),
+		"doc-refs":      lintOf(docrefs.Run, abs),
 		"makefile-dup":  lintOf(makefiledup.Run, abs),
 		"verb-names":    lintOf(verbnames.Run, abs),
 		"state-shape":   lintOf(stateshape.Run, abs),
