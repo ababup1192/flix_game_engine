@@ -70,6 +70,9 @@ near の帯は bin/lint-rules/checkfmt.json の near（code ごと。無けれ�
 | `px.value-blobs.count` | advice | value_masses | count | range | px.json valueBlobsMin・valueBlobsMax・valueBlobsMinShare | 明るさ 3 段の大きな塊の数（明暗の骨格） |
 | `px.value-blobs.cover` | advice | mass_cover | ratio | >= | px.json valueBlobsCoverMin | 大きな塊が描いた画素を覆う割合 |
 | `px.value-sep` | lint | part_dL | L | >= | px.json valueSepMin か contrast の min | contrast で測った部品と相手の明るさの差 |
+| `refactor.field-sites` | lint | field_sites | count | <= | --max（欄の歯止めは --outside <口の mod> --max 0） | record の欄の直の読み書きの数（受け手の型 alias で絞る） |
+| `refactor.match-sites` | lint | match_sites | count | <= | --max（無ければ一覧だけ） | enum（か case）への match の数。--catch-all なら `_`・変数の腕を持つ物だけ |
+| `refactor.refs` | lint | refs | count | <= | --max（無ければ一覧だけ） | def・enum・case の参照の数（宣言は数えない） |
 | `snd.alias` | advice | third_harmonic_hz | Hz | <= |  | パルスの 3 倍音とナイキスト周波数 |
 | `snd.bars` | gate | bar_off | samples | <= | snd.json barTolerance | 輪の長さと tempo の整数小節の差 |
 | `snd.breaks` | advice | breaks | count | <= |  | 使った機種の外の手（style が許す物。破った所として残す） |

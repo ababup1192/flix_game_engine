@@ -1,0 +1,5 @@
+{
+  "note": "bin/fge refactor（Flix の名前の位置の索引で refs・match-sites・field-sites を数える）の設定。engine が配る既定で、ゲームは bin/lint-rules/refactor.local.json に変えたい欄だけを書く（flixlint の場所・sources・verify・javaOpts）。flixlint は空なら --flixlint → FGE_FLIXLINT → flixlint/bin/flixlint（submodule）→ PATH の順に探す。flixJar は空なら FLIX_JAR → ENGINE の bin/flix.jar。verify は書き換えた後に流す確かめの口（段 1 の --apply から使う。engine とゲームで違う）。",
+  "sources": ["src", "test"],
+  "verify": "make check"
+}
