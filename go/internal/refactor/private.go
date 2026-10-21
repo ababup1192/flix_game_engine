@@ -31,6 +31,8 @@ type PrivatePlan struct {
 	Edits   []Edit
 	Targets []Fixed // pub を外す def（Why は「同じ mod の中だけ N か所」）
 	Fix     []Fixed
+	// Others は --def の時、名指していないが pub を外せる def の数（触らず、数えて知らせるだけ）。
+	Others int
 }
 
 // pubToken は宣言の行の `pub`（その後ろの空白まで。消すのはここ）。
@@ -47,31 +49,16 @@ func PlanPrivate(root string, rows []Row, q PrivateQuery) (PrivatePlan, error) {
 			usedBy[r.Sym] = append(usedBy[r.Sym], r)
 		}
 	}
-	want := q.Defs
-	auto := len(want) == 0
-	if auto {
-		want = order
-	}
-	for _, s := range want {
-		d, ok := defs[s]
-		if !ok {
-			return p, fmt.Errorf("def %s の宣言が索引に無い", s)
-		}
-		fix := func(why string) { p.Fix = append(p.Fix, Fixed{d.Row, why}) }
+	// judge は def s の pub を外せるか（own は同じ mod の中の使い手の数）。why が空でなければ外さない理由で、
+	// quiet はその理由が名指し無しの時に並べない物（もともと当たらない def）か。
+	judge := func(s string, d defInfo) (own int, why string, quiet bool) {
 		if !d.Pub {
-			if !auto {
-				fix("もう pub でない")
-			}
-			continue
+			return 0, "もう pub でない", true
 		}
 		if d.Inst || d.Test || inDirs(d.File, q.TestDirs) || strings.HasSuffix(s, ".main") || s == "main" {
-			if !auto {
-				fix("instance の def・@Test・main・テストのフォルダの def は扱わない")
-			}
-			continue
+			return 0, "instance の def・@Test・main・テストのフォルダの def は扱わない", true
 		}
 		var outside []string
-		own := 0
 		for _, r := range refs[s] {
 			if modOf(r.Owner) == modOf(s) && !inDirs(r.File, q.TestDirs) {
 				own++
@@ -86,22 +73,45 @@ func PlanPrivate(root string, rows []Row, q PrivateQuery) (PrivatePlan, error) {
 		}
 		switch {
 		case len(outside) > 0:
-			if !auto {
-				fix(fmt.Sprintf("外の使い手 %d（最初: %s）", len(outside), outside[0]))
-			}
-			continue
+			return own, fmt.Sprintf("外の使い手 %d（最初: %s）", len(outside), outside[0]), true
 		case own == 0:
-			if !auto {
-				fix("どこからも参照されない（非 pub にすると使わない def の誤りになる。消すのは bin/fge refactor remove-dead --def " + s + "）")
-			}
-			continue
+			return own, "どこからも参照されない（非 pub にすると使わない def の誤りになる。消すのは bin/fge refactor remove-dead --def " + s + "）", true
 		case q.Library:
-			fix("ライブラリ（fpkg で配る）: pub の def の使い手は索引の外にもいる")
-			continue
+			return own, "ライブラリ（fpkg で配る）: pub の def の使い手は索引の外にもいる", false
 		case q.Outside[s] != "":
-			fix("名前が入口のファイルに字で出る（" + q.Outside[s] + "。名前で呼ぶなら pub のまま）")
+			return own, "名前が入口のファイルに字で出る（" + q.Outside[s] + "。名前で呼ぶなら pub のまま）", false
+		}
+		return own, "", false
+	}
+	want := q.Defs
+	auto := len(want) == 0
+	if auto {
+		want = order
+	} else {
+		// 名指しがある時は名指しの def だけ。ほかに当たる def は数えて知らせるだけ（make-private と remove-dead で同じ決まり）。
+		named := map[string]bool{}
+		for _, s := range want {
+			named[s] = true
+		}
+		for _, s := range order {
+			if _, why, _ := judge(s, defs[s]); !named[s] && why == "" {
+				p.Others++
+			}
+		}
+	}
+	for _, s := range want {
+		d, ok := defs[s]
+		if !ok {
+			return p, fmt.Errorf("def %s の宣言が索引に無い", s)
+		}
+		own, why, quiet := judge(s, d)
+		if why != "" {
+			if !auto || !quiet {
+				p.Fix = append(p.Fix, Fixed{d.Row, why})
+			}
 			continue
 		}
+		fix := func(why string) { p.Fix = append(p.Fix, Fixed{d.Row, why}) }
 		e, err := privateEdit(root, d)
 		if err != nil {
 			fix(err.Error())
@@ -174,6 +184,9 @@ func privateReport(root string, idx *Index, a args, cfg Config, o Options) (repo
 	r.Sites = plan.Targets
 	r.gotText = fmt.Sprintf("pub を外す def %d・人へ回す %d", len(plan.Targets), len(plan.Fix))
 	r.wantText = "外の mod から使われない pub の def から pub を外す（外の使い手がいる・どこからも参照されない・名前が入口のファイルに出る物は fix）"
+	if a.def != "" && plan.Others > 0 {
+		r.extra = append(r.extra, fmt.Sprintf("ほかにも同じ mod の中だけの pub の def が %d（名指していないので触らない。見るのは bin/fge refactor usages --unused）", plan.Others))
+	}
 	for _, t := range plan.Targets {
 		r.lines = append(r.lines, fmt.Sprintf("%s\tpub を外す\t%s（%s）", t.Where(), t.Sym, t.Why))
 	}

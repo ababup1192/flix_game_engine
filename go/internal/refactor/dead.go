@@ -37,6 +37,8 @@ type DeadPlan struct {
 	DocRefs  []Fixed
 	Sites    int // 候補の数（--skip・fix を含む）
 	TestOnly int // test-only の数（flixlint の test-only-api と同じ決め方。同じ mod の中で使う物も含む）
+	// Others・OthersTestOnly は --def の時、名指していない呼び手 0・テストからだけの pub の def の数（触らず、数えて知らせるだけ）。
+	Others, OthersTestOnly int
 }
 
 type defInfo struct {
@@ -64,10 +66,12 @@ func inDirs(file string, dirs []string) bool {
 }
 
 // PlanDead は消してよい def の計画。候補は src の pub な def のうち、参照がテストからだけの物（test-only）と
-// 参照が 0 の物（unreferenced）。自分の中の参照（再帰）は数えない。
+// 参照が 0 の物（unreferenced）。自分の中の参照（再帰）は数えない。--def で名指せば候補は名指しの def だけ
+// （消すのは名指しと、その道連れだけ。ほかの呼び手 0 の def は Others に数える）。
 //   - テストから参照される候補は --with-tests の時だけ消す。参照する def が全部 @Test で、その @Test が src の def を
 //     候補（と道連れ）のほかに使わない時だけ、テストごと消す。それ以外は fix。
-//   - 消す def だけが使っていた pub でない def（private の助け）は道連れで消す（残すとコンパイラが使われない def で止まる）。
+//   - 消す def だけが使っていた def は道連れで消す（pub でない助けは残すとコンパイラが使われない def で止まる。pub の
+//     下請けも、use・入口の名前・ライブラリでなければ一緒に消す）。
 //   - 名前が入口（Makefile・json・flow など、文章でない git の知るファイル）に字で出る候補は fix（名前で呼ばれるかもしれない）。
 //     文書（doc-refs が見る .md と .flix のコメント）が名指す候補は消し、その所を DocRefs に並べる（mentions.go）。
 func PlanDead(root string, rows []Row, q DeadQuery) (DeadPlan, error) {
@@ -89,10 +93,30 @@ func PlanDead(root string, rows []Row, q DeadQuery) (DeadPlan, error) {
 		d   defInfo
 		why string
 	}
+	// 名指し（--def）は索引の名前に 1 つずつ決める（当たらない・2 つ以上に当たる名前は止める）。名指しがある時は、
+	// 名指しの def と、それを消して初めて呼び手が 0 になる物（道連れ）だけを消す。ほかの呼び手 0 の def は数えるだけ。
+	named, err := resolveDefs(rows, q.Def)
+	if err != nil {
+		return plan, err
+	}
 	var cands []cand
+	var notCand []Fixed // 名指したが候補にならない def と理由（候補の数には入れない）
 	for _, s := range order {
 		d := defs[s]
-		if !d.Pub || d.Inst || d.Test || inDirs(d.File, q.TestDirs) || strings.HasSuffix(s, ".main") || s == "main" || !defWanted(s, q.Def) {
+		if d.Inst || d.Test || inDirs(d.File, q.TestDirs) || strings.HasSuffix(s, ".main") || s == "main" {
+			if named[s] {
+				notCand = append(notCand, Fixed{d.Row, "instance の def・@Test・main・テストのフォルダの def は消さない"})
+			}
+			continue
+		}
+		if !d.Pub {
+			switch {
+			case !named[s]:
+			case len(refs[s]) == 0 && q.Only != "test-only":
+				cands = append(cands, cand{d, "unreferenced"})
+			default:
+				notCand = append(notCand, Fixed{d.Row, fmt.Sprintf("pub でない・呼び手 %d（呼び手を消せば道連れで消える。呼び手を --def に）", len(refs[s]))})
+			}
 			continue
 		}
 		rs := refs[s]
@@ -107,12 +131,35 @@ func PlanDead(root string, rows []Row, q DeadQuery) (DeadPlan, error) {
 				fromOtherSrc++
 			}
 		}
-		// test-only は flixlint の規則 test-only-api と同じ決め方（テストから呼ばれ、ほかの mod の src からは呼ばれない）。
-		// 同じ mod の中で使われる物は消せない（pub を外すかは人が決める）ので fix。
+		if len(named) > 0 && !named[s] {
+			switch {
+			case len(rs) == 0:
+				plan.Others++
+			case fromTest > 0 && fromOtherSrc == 0:
+				plan.OthersTestOnly++
+			}
+			continue
+		}
+		// 名指しの def が候補にならない時は、黙って 0 件にせず理由を fix に並べる（名指しを外して流し直させない）。
+		because := func(why string) {
+			if named[s] {
+				notCand = append(notCand, Fixed{d.Row, why})
+			}
+		}
 		switch {
 		case len(rs) == 0 && q.Only != "test-only":
 			cands = append(cands, cand{d, "unreferenced"})
-		case fromTest > 0 && fromOtherSrc == 0 && q.Only != "unreferenced":
+		case len(rs) == 0:
+			because("参照 0（--only test-only に当たらない）")
+		case fromOtherSrc > 0:
+			because(fmt.Sprintf("ほかの mod の src から %d か所呼ばれる（消せない）", fromOtherSrc))
+		case fromTest == 0:
+			because(fmt.Sprintf("同じ mod の中で %d か所使う（消せない。pub を外すのは make-private）", fromOwnMod))
+		case q.Only == "unreferenced":
+			because("テストからだけ（--only unreferenced に当たらない）")
+		default:
+			// test-only は flixlint の規則 test-only-api と同じ決め方（テストから呼ばれ、ほかの mod の src からは呼ばれない）。
+			// 同じ mod の中で使われる物は消せない（pub を外すかは人が決める）ので fix。
 			plan.TestOnly++
 			if fromOwnMod > 0 {
 				plan.Fix = append(plan.Fix, Fixed{d.Row, fmt.Sprintf("test-only・同じ mod の中で %d か所使う（消せない。pub を外すかテストを直すのは人）", fromOwnMod)})
@@ -122,6 +169,7 @@ func PlanDead(root string, rows []Row, q DeadQuery) (DeadPlan, error) {
 		}
 	}
 	plan.Sites = len(cands) + len(plan.Fix)
+	plan.Fix = append(plan.Fix, notCand...)
 	mentions := loadMentions(root, q.Engine).withEntryDefs(rows, q.EntryTables)
 	removed := map[string]bool{}
 	var targets []cand
@@ -183,13 +231,26 @@ func PlanDead(root string, rows []Row, q DeadQuery) (DeadPlan, error) {
 	for t := range tests {
 		removed[t] = true
 	}
-	// 道連れ: 消す def だけが使っていた pub でない def（何度か回して、道連れの道連れも）。
+	// 道連れ: 消す def だけが使っていた def（何度か回して、道連れの道連れも）。呼び手が 1 つ以上あって全部消える物だけ
+	// なので、もとから呼び手 0 の def は入らない。pub の物は、use で名前を入れる所・入口のファイルの名前・ライブラリ・
+	// --skip の物を残す（候補と同じ決まり）。
+	// WhyNot: pub を道連れにしないと、名指しで消した後に残る下請けを消すために名指し無しで流し直し、名指していない
+	// 呼び手 0 の pub（依頼主の判断待ちで残している物）まで消す差分になる。
+	imported := map[string]bool{}
+	for _, r := range rows {
+		if r.Kind == KindUse && r.Attr("what") == "def" {
+			imported[r.Sym] = true
+		}
+	}
 	var along []string
 	for changed := true; changed; {
 		changed = false
 		for _, s := range order {
 			d := defs[s]
-			if removed[s] || d.Pub || d.Inst || d.Test || len(refs[s]) == 0 {
+			if removed[s] || d.Inst || d.Test || len(refs[s]) == 0 || inDirs(d.File, q.TestDirs) || strings.HasSuffix(s, ".main") {
+				continue
+			}
+			if d.Pub && (imported[s] || q.Library || mentions.Entry[s] != "" || q.Skip[d.File+":"+fmt.Sprint(d.Line)]) {
 				continue
 			}
 			all := true
@@ -210,7 +271,11 @@ func PlanDead(root string, rows []Row, q DeadQuery) (DeadPlan, error) {
 		plan.Targets = append(plan.Targets, Fixed{c.d.Row, c.why})
 	}
 	for _, s := range along {
-		plan.Targets = append(plan.Targets, Fixed{defs[s].Row, "道連れ（消す def だけが使っていた）"})
+		why := "道連れ（消す def だけが使っていた）"
+		if defs[s].Pub {
+			why = "道連れ（消す def だけが呼んでいた pub）"
+		}
+		plan.Targets = append(plan.Targets, Fixed{defs[s].Row, why})
 	}
 	for t := range tests {
 		plan.Tests = append(plan.Tests, Fixed{defs[t].Row, "消す def だけを試すテスト"})
@@ -225,6 +290,7 @@ func PlanDead(root string, rows []Row, q DeadQuery) (DeadPlan, error) {
 			plan.Edits = append(plan.Edits, e)
 		}
 	}
+	plan.Edits = mergeDeletes(plan.Edits)
 	// 転送するだけの包み（本体が別の def を呼ぶだけ）を消す時は、その doc を転送先へ移す（転送先に doc が無いか、
 	// 転送先の doc が消える包みの名前を指す時。指さない doc は人が書いた物なので残す）。同じ転送先へ移す包みが
 	// 2 つ以上なら、書き換えを 1 つにまとめて doc を並べる（転送先の doc の同じ所を 2 回書き換えない）。
@@ -298,17 +364,24 @@ func declLineRange(root string, d defInfo) (int, int) {
 	return top, end
 }
 
-// defWanted は def s が --def（Mod.f。a,b で複数・空なら全部）に当たるか。
-func defWanted(s, want string) bool {
-	if want == "" {
-		return true
-	}
+// resolveDefs は --def（Mod.f。a,b で複数）を索引の def の名前の組に決める。空なら空の組（名指し無し）。
+// 当たらない・2 つ以上に当たる名前は誤り（終わりで当てて黙って広がらないように）。
+func resolveDefs(rows []Row, want string) (map[string]bool, error) {
+	named := map[string]bool{}
 	for _, w := range strings.Split(want, ",") {
-		if w = strings.TrimSpace(w); w != "" && nameMatches(s, w) {
-			return true
+		if w = strings.TrimSpace(w); w == "" {
+			continue
 		}
+		s, err := Resolve(rows, w, map[string]bool{KindDefDecl: true})
+		if err != nil {
+			return nil, err
+		}
+		named[s] = true
 	}
-	return false
+	if len(named) == 0 && strings.TrimSpace(want) != "" {
+		return nil, fmt.Errorf("--def %q に名前がありません（Mod.name を a,b で）", want)
+	}
+	return named, nil
 }
 
 // defTable は索引の def-decl を名前ごとに（order は出てきた順）。ext の読めない def は Ext が空のまま。
@@ -367,6 +440,29 @@ func deleteEdit(root string, d defInfo) (Edit, error) {
 	return Edit{File: d.File, Start: cut[0], End: cut[1], Site: d.Row,
 		Check: []Want{{Span: d.Row, Text: name}},
 		Make:  func(string) (string, error) { return "", nil }}, nil
+}
+
+// mergeDeletes は同じファイルの中で交わる消す書き換えを 1 つにまとめる（並んだ 2 つの def を消す時、間の空行を
+// 両方が自分の空行の始末に取ると、片方がもう片方を含まない重なりになって Plan が断る）。交わらない物はそのまま。
+func mergeDeletes(edits []Edit) []Edit {
+	sorted := append([]Edit(nil), edits...)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		if sorted[i].File != sorted[j].File {
+			return sorted[i].File < sorted[j].File
+		}
+		return sorted[i].Start < sorted[j].Start
+	})
+	var out []Edit
+	for _, e := range sorted {
+		if n := len(out); n > 0 && out[n-1].File == e.File && e.Start < out[n-1].End {
+			last := &out[n-1]
+			last.End = max(last.End, e.End)
+			last.Check = append(append([]Want(nil), last.Check...), e.Check...)
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
 }
 
 // isCommentOrBlank は行が空か、行のコメントだけ（`//`・`///`）か。
