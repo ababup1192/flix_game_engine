@@ -200,6 +200,8 @@ type Builder struct {
 	// Version は flixlint の版を読む口（nil なら flixlint --version。テストが差し替える）。
 	Version func(flixlint string) string
 	Verbose bool // flixlint の出力を画面へ（既定は build/refactor/index-<段>.log へ書き、1 行だけ言う）
+	// Shared が在れば、索引を make check（checkd の server の道）と同じ常駐で作る（同じ shim の jar・ヒープ・寿命）。
+	Shared Shared
 }
 
 // IndexError は索引を作れなかった訳と、写してそのまま流せる次の手（無ければ ""。その時は NextWhy を next の 1 行に）。
@@ -257,6 +259,9 @@ func (b Builder) Load(s Stage) (*Index, error) {
 	cmd = append(cmd, "--spans", tmp, "--stage", string(s), "--build-dir", filepath.Join(b.Dir(), "flixlint"))
 	if b.FlixJar != "" {
 		cmd = append(cmd, "--flix-jar", b.FlixJar)
+	}
+	if sh := b.Shared; sh.ShimJar != "" {
+		cmd = append(cmd, "--shim", sh.ShimJar, "--heap-mb", strconv.Itoa(sh.HeapMB), "--idle-minutes", strconv.Itoa(sh.IdleMinutes))
 	}
 	if extra := strings.Fields(b.Config.JavaOpts); len(extra) > 0 {
 		cmd = append(cmd, "--java-opts", b.Config.JavaOpts)

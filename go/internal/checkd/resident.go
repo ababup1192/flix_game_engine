@@ -525,3 +525,27 @@ func logCheck(r *hooks.Rules, pkg, how string, code int, version string, retries
 	fmt.Fprintf(f, "%s check via=%s exit=%d version=%s retry=%d %.2fs\n",
 		time.Now().Format(time.RFC3339), how, code, version, retries, took.Seconds())
 }
+
+// Shared は lint・refactor の索引がこの check と同じ常駐を使うための値（同じ flix.jar・shim の jar なら identity が同じで、
+// socket も同じ 1 本になる。ヒープと寿命は先に起こした方の物になるので、どちらも同じ値を渡す）。
+type Shared struct {
+	FlixJar, ShimJar    string
+	HeapMB, IdleMinutes int
+}
+
+// SharedServer は hooks.json の checkd.server から Shared を作る。節が無いか jar を用意できなければ err。
+func SharedServer(r *hooks.Rules, engineRoot, pkg string) (Shared, error) {
+	if r.Checkd.Server.BackendEnvVar == nil {
+		return Shared{}, errors.New("hooks.json に checkd.server が無い")
+	}
+	out, err := exec.Command("env", "FLIX_PRINT_JAR=1", flixBin(engineRoot, pkg)).Output()
+	if err != nil {
+		return Shared{}, fmt.Errorf("flix.jar の場所が分からない: %v", err)
+	}
+	shim, err := shimJar(r)
+	if err != nil {
+		return Shared{}, err
+	}
+	sv := r.Checkd.Server
+	return Shared{FlixJar: strings.TrimSpace(string(out)), ShimJar: shim, HeapMB: *sv.HeapMB, IdleMinutes: *sv.IdleMinutes}, nil
+}

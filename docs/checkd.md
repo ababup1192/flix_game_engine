@@ -38,7 +38,7 @@ make check ──> bin/fge checkd (クライアント)
 ## flixlint の常駐で check する（試しの道・`CHECKD_BACKEND=server`）
 
 `CHECKD_BACKEND=server make check`（heavy の中では `CHECKD=1` も）で、repl の代わりに flixlint の常駐（lint・refactor の索引と
-同じ JVM・同じコンパイラ）に check を頼む。設計は flixlint の `docs/design/checkd-freshness.md`（C-2）。既定は repl のまま。
+同じ JVM・同じコンパイラ）に check を頼む。設計は `flixlint/docs/design/checkd-freshness.md`（flixlint のリポ）（C-2）。既定は repl のまま。
 
 ```
 make check ──> bin/fge checkd ──> Unix ソケット (~/Library/Caches/flixlint/<根と identity の 16 字>.sock)
@@ -55,6 +55,9 @@ make check ──> bin/fge checkd ──> Unix ソケット (~/Library/Caches/fl
 - 置き場と予算は `bin/lint-rules/hooks.json` の `checkd.server`（flixlint の版と shim の jar の sha256・ヒープ 3072 MB・寿命 30 分）。
   shim の jar は初回にリリースから取り、sha256 が合う時だけ `~/.cache/flix-checkd/flixlint/<版>/` に置く。
 - 1 回ごとに `~/.cache/flix-checkd/<ハッシュ>/daemon.log` に `check via=server|fallback exit= version= retry= 秒` の 1 行。
+- `bin/fge refactor` の索引（flixlint --spans）も、hooks.json に `checkd.server` があればこの常駐で作る（同じ shim の jar・ヒープ・寿命を渡すので
+  socket は 1 本）。常駐で作る索引は heavy の枠を取らず、書き換えの後の確かめの `make check` は `CHECKD=1 CHECKD_BACKEND=server` で
+  heavy の外で流す（heavy は既定で `CHECKD=0` を入れるため、枠の中では素の flix check になっていた）。
 
 ## test も同じ常駐で速くなる
 

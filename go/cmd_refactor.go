@@ -3,10 +3,13 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
+	"github.com/ababup1192/flix_game_engine/go/internal/checkd"
 	"github.com/ababup1192/flix_game_engine/go/internal/heavy"
+	"github.com/ababup1192/flix_game_engine/go/internal/hooks"
 	"github.com/ababup1192/flix_game_engine/go/internal/refactor"
 )
 
@@ -25,7 +28,21 @@ func cmdRefactor(out, errOut *strings.Builder, rest []string, asJSON bool) int {
 	if asJSON {
 		rest = append(dropJSONFlag(rest), "--json")
 	}
-	return refactor.Run(out, errOut, root, rest, refactor.Options{Run: heavyRunner, Verify: heavyVerify, Log: os.Stderr})
+	return refactor.Run(out, errOut, root, rest, refactor.Options{Run: heavyRunner, Verify: heavyVerify, Log: os.Stderr, Shared: sharedServer(root)})
+}
+
+// sharedServer は make check（checkd の server の道）の常駐と同じ jar・ヒープ・寿命。ゲームの hooks.json に checkd.server が
+// 無いか jar を用意できなければ空（flixlint の既定の jar で、索引だけの常駐になる）。
+func sharedServer(root string) refactor.Shared {
+	r, err := hooks.LoadRules(root)
+	if err != nil {
+		return refactor.Shared{}
+	}
+	s, err := checkd.SharedServer(r, repoRoot(), root)
+	if err != nil {
+		return refactor.Shared{}
+	}
+	return refactor.Shared{FlixJar: s.FlixJar, ShimJar: s.ShimJar, HeapMB: s.HeapMB, IdleMinutes: s.IdleMinutes}
 }
 
 // refactorRoot は --root が無い時の根: FGE_ROOT → 今の所から上へ flix.toml のある所 → repoRoot（bin/fge-go の親の親）。
@@ -51,7 +68,12 @@ func refactorRoot() string {
 // heavyRunner は索引を作る flixlint を heavy の枠の中で流す。resolved（2 GB・数秒）は短い物、typed（4〜5 GB・20〜60 秒）は長い物。
 // log が空でなければ出力をそのファイルへ書く（--verbose でない時。画面には refactor の 1 行だけ）。
 // WhyNot: typed を短い物にしないのは、短い物の枠は make test と同時に走り、5 GB の JVM が 2 本並ぶとマシンが詰まるため。
+// 常駐で作る索引（--resident）は heavy の枠を取らない: 仕事は常駐の JVM 1 本が並べて流し、ここで立つのは話すだけの JVM。
+// WhyNot: 枠を取ると、make test などの長い物が枠を持っている間、索引が常駐は空いているのに待つ。
 func heavyRunner(stage refactor.Stage, desc, dir string, cmd []string, log string) int {
+	if containsArg(cmd, "--resident") {
+		return runDirect(dir, cmd, log, nil)
+	}
 	return heavy.Hold(desc, dir, heavy.Options{Long: stage == refactor.Typed, Short: stage != refactor.Typed}, func(run heavy.Runner) int {
 		if log == "" {
 			return run(dir, cmd...)
@@ -68,7 +90,46 @@ func heavyRunner(stage refactor.Stage, desc, dir string, cmd []string, log strin
 // （最初の誤りを拾うため。枠の長短は heavy が名前で決める）。
 func heavyVerify(cmd, dir, log string) int {
 	fmt.Fprintf(os.Stderr, "[refactor] 確かめ: %s（出力は %s）\n", cmd, log)
+	if strings.TrimSpace(cmd) == "make check" {
+		// make check は checkd の server の道で、索引と同じ常駐に頼む（heavy の枠を取らず、heavy が入れる CHECKD=0 も避ける）。
+		return runDirect(dir, []string{"sh", "-c", cmd}, log, []string{"CHECKD=1", "CHECKD_BACKEND=server"})
+	}
 	return heavy.Hold(cmd, dir, heavy.Options{}, func(run heavy.Runner) int {
 		return run(dir, "sh", "-c", cmd+" > \""+log+"\" 2>&1")
 	})
+}
+
+func containsArg(cmd []string, a string) bool {
+	for _, c := range cmd {
+		if c == a {
+			return true
+		}
+	}
+	return false
+}
+
+// runDirect は cmd を dir で流す（heavy の枠の外）。log が空でなければ出力をそのファイルへ、env は足す環境変数。
+func runDirect(dir string, cmd []string, log string, env []string) int {
+	c := exec.Command(cmd[0], cmd[1:]...)
+	c.Dir = dir
+	c.Env = append(os.Environ(), env...)
+	if log == "" {
+		c.Stdout, c.Stderr = os.Stdout, os.Stderr
+	} else {
+		f, err := os.Create(log)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[refactor] %s を書けない: %v\n", log, err)
+			return 2
+		}
+		defer f.Close()
+		c.Stdout, c.Stderr = f, f
+	}
+	if err := c.Run(); err != nil {
+		if ee, ok := err.(*exec.ExitError); ok {
+			return ee.ExitCode()
+		}
+		fmt.Fprintf(os.Stderr, "[refactor] %s を起動できない: %v\n", cmd[0], err)
+		return 2
+	}
+	return 0
 }

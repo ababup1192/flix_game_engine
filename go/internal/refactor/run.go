@@ -168,6 +168,14 @@ type Options struct {
 	Log    io.Writer
 	// Version は flixlint の版を読む口（nil なら flixlint --version。テストが差し替える）。
 	Version func(flixlint string) string
+	// Shared は make check（checkd の server の道）と同じ常駐で索引を作るための値（空なら flixlint の既定の jar とヒープ）。
+	Shared Shared
+}
+
+// Shared は checkd の常駐と同じ flix.jar・shim の jar・ヒープ・寿命（同じ jar なら identity が同じで常駐は 1 本）。
+type Shared struct {
+	FlixJar, ShimJar    string
+	HeapMB, IdleMinutes int
 }
 
 type args struct {
@@ -550,7 +558,10 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 		fmt.Fprintf(errOut, "refactor: %v\n", err)
 		return 2
 	}
-	b := Builder{Root: root, Config: cfg, Flixlint: fl, FlixJar: FindFlixJar(root, fl, cfg), Run: o.Run, Log: o.Log, Rebuild: a.rebuild, Verbose: a.verbose, Version: o.Version}
+	b := Builder{Root: root, Config: cfg, Flixlint: fl, FlixJar: FindFlixJar(root, fl, cfg), Run: o.Run, Log: o.Log, Rebuild: a.rebuild, Verbose: a.verbose, Version: o.Version, Shared: o.Shared}
+	if o.Shared.FlixJar != "" {
+		b.FlixJar = o.Shared.FlixJar
+	}
 	if b.Log == nil {
 		b.Log = os.Stderr
 	}
