@@ -383,10 +383,68 @@ func PlanConstruction(q ConstructionQuery) (ConstructionPlan, error) {
 		}
 	}
 	afterKey := fieldKey(afterFields)
-	defs := append([]Row{}, q.Defs...)
+	err := eachLiteral(q.Defs, q.Srcs, func(d Row, src string, l Literal) {
+		key := fieldKey(l.Fields)
+		if key == afterKey {
+			p.Already++
+			return
+		}
+		if key != q.Before {
+			return
+		}
+		row := rowAt(d.File, src, l.Brace, d.Sym)
+		if q.Skip[fmt.Sprintf("%s:%d", d.File, row.Line)] {
+			p.Fix = append(p.Fix, Fixed{row, "--skip で外した"})
+			return
+		}
+		if len(q.Others) > 0 {
+			p.Fix = append(p.Fix, Fixed{row, "欄の組が同じ別の型がある（" + strings.Join(q.Others, "・") + "）。どちらを組み立てているか決められない"})
+			return
+		}
+		why := "組み立てから欄 " + q.Label + " を消す"
+		if q.Add {
+			why = "組み立てに欄 " + q.Label + " = " + q.Value + " を足す"
+		}
+		p.Sites = append(p.Sites, Fixed{row, why})
+		name := d.Sym[strings.LastIndex(d.Sym, ".")+1:]
+		label, add, value, before := q.Label, q.Add, q.Value, q.Before
+		p.Edits = append(p.Edits, Edit{
+			File: d.File, Start: l.Brace, End: l.End, Site: row,
+			Check: []Want{{Span: d, Text: name}},
+			Make: func(cur string) (string, error) {
+				u, closed, err := ParseRecord(cur)
+				if err != nil || !closed {
+					return "", fmt.Errorf("組み立ての式が読めない: %v", err)
+				}
+				var names []string
+				for _, f := range u.Fields {
+					names = append(names, f.Name)
+				}
+				if fieldKey(names) != before {
+					return "", fmt.Errorf("組み立ての欄の組が変わった（索引が古い）")
+				}
+				if add {
+					return AddRecordField(cur, label, value)
+				}
+				return RemoveRecordField(cur, label)
+			},
+		})
+	})
+	return p, err
+}
+
+// eachLiteral は rows の def-decl（ext つき）の本体の中の、閉じた record の式を def の位置の順に fn へ渡す。
+// def の範囲が中身の外なら索引が古いので誤り。
+func eachLiteral(rows []Row, srcs map[string]string, fn func(d Row, src string, l Literal)) error {
+	var defs []Row
+	for _, r := range rows {
+		if r.Kind == KindDefDecl {
+			defs = append(defs, r)
+		}
+	}
 	sort.Slice(defs, func(i, j int) bool { return less(defs[i], defs[j]) })
 	for _, d := range defs {
-		src, ok := q.Srcs[d.File]
+		src, ok := srcs[d.File]
 		if !ok {
 			continue
 		}
@@ -396,69 +454,25 @@ func PlanConstruction(q ConstructionQuery) (ConstructionPlan, error) {
 		}
 		span, err := spanOf(d.File, ext)
 		if err != nil {
-			return p, err
+			return err
 		}
 		_, extEnd, err := ByteRange(src, span)
 		if err != nil {
-			return p, fmt.Errorf("索引が古い: %s の def の範囲が中身の外（bin/fge refactor index --rebuild）", d.Where())
+			return fmt.Errorf("索引が古い: %s の def の範囲が中身の外（bin/fge refactor index --rebuild）", d.Where())
 		}
 		_, nameEnd, err := ByteRange(src, d)
 		if err != nil {
-			return p, fmt.Errorf("索引が古い: %s（bin/fge refactor index --rebuild）", d.Where())
+			return fmt.Errorf("索引が古い: %s（bin/fge refactor index --rebuild）", d.Where())
 		}
 		body, ok := DefBodyStart(src, nameEnd)
 		if !ok || body > extEnd {
 			continue
 		}
-		name := d.Sym[strings.LastIndex(d.Sym, ".")+1:]
 		for _, l := range ScanLiterals(src, body, extEnd) {
-			key := fieldKey(l.Fields)
-			if key == afterKey {
-				p.Already++
-				continue
-			}
-			if key != q.Before {
-				continue
-			}
-			row := rowAt(d.File, src, l.Brace, d.Sym)
-			if q.Skip[fmt.Sprintf("%s:%d", d.File, row.Line)] {
-				p.Fix = append(p.Fix, Fixed{row, "--skip で外した"})
-				continue
-			}
-			if len(q.Others) > 0 {
-				p.Fix = append(p.Fix, Fixed{row, "欄の組が同じ別の型がある（" + strings.Join(q.Others, "・") + "）。どちらを組み立てているか決められない"})
-				continue
-			}
-			why := "組み立てから欄 " + q.Label + " を消す"
-			if q.Add {
-				why = "組み立てに欄 " + q.Label + " = " + q.Value + " を足す"
-			}
-			p.Sites = append(p.Sites, Fixed{row, why})
-			label, add, value, before := q.Label, q.Add, q.Value, q.Before
-			p.Edits = append(p.Edits, Edit{
-				File: d.File, Start: l.Brace, End: l.End, Site: row,
-				Check: []Want{{Span: d, Text: name}},
-				Make: func(cur string) (string, error) {
-					u, closed, err := ParseRecord(cur)
-					if err != nil || !closed {
-						return "", fmt.Errorf("組み立ての式が読めない: %v", err)
-					}
-					var names []string
-					for _, f := range u.Fields {
-						names = append(names, f.Name)
-					}
-					if fieldKey(names) != before {
-						return "", fmt.Errorf("組み立ての欄の組が変わった（索引が古い）")
-					}
-					if add {
-						return AddRecordField(cur, label, value)
-					}
-					return RemoveRecordField(cur, label)
-				},
-			})
+			fn(d, src, l)
 		}
 	}
-	return p, nil
+	return nil
 }
 
 // rowAt は src の pos を報告の行（1 から・列は UTF-16）にする。

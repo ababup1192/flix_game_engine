@@ -63,13 +63,6 @@ type RefsResult struct {
 	Callers []Caller // --callers の時だけ
 }
 
-// Caller は参照する def 1 つと参照の数。
-type Caller struct {
-	Owner string `json:"owner"`
-	Count int    `json:"count"`
-	First string `json:"first"` // 最初の参照の file:line:col
-}
-
 // Refs は sym の宣言と参照（def なら呼び出し・case なら作る所と当てる所）。
 func Refs(rows []Row, sym string, callers bool) RefsResult {
 	res := RefsResult{Sym: sym}

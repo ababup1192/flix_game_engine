@@ -141,16 +141,18 @@ func TestSpanTextRefusesAStaleSpan(t *testing.T) {
 	}
 }
 
-// project は src/Shapes.flix と、索引を書く代わりの flixlint（中身は使わない）を持つ根を作る。
+// project は testdata/src の .flix（索引の元）と、索引を書く代わりの flixlint（中身は使わない）を持つ根を作る。
 func project(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
-	src, err := os.ReadFile(filepath.Join("testdata", "src", "Shapes.flix"))
-	if err != nil {
-		t.Fatal(err)
-	}
 	must(t, os.MkdirAll(filepath.Join(root, "src"), 0o755))
-	must(t, os.WriteFile(filepath.Join(root, "src", "Shapes.flix"), src, 0o644))
+	for _, name := range []string{"Shapes.flix", "Uses.flix"} {
+		src, err := os.ReadFile(filepath.Join("testdata", "src", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		must(t, os.WriteFile(filepath.Join(root, "src", name), src, 0o644))
+	}
 	must(t, os.WriteFile(filepath.Join(root, "flixlint"), []byte("stand-in\n"), 0o644))
 	return root
 }
@@ -164,7 +166,7 @@ func must(t *testing.T, err error) {
 
 // fakeRunner は flixlint の代わりに testdata の索引を --spans の先へ写し、呼ばれた数を数える。
 func fakeRunner(calls *int) Runner {
-	return func(_ Stage, desc, dir string, cmd []string) int {
+	return func(_ Stage, desc, dir string, cmd []string, _ string) int {
 		*calls++
 		var out, stage string
 		for i := 0; i+1 < len(cmd); i++ {
@@ -217,7 +219,7 @@ func TestLoadRebuildsWhenASourceChanges(t *testing.T) {
 func TestLoadKeepsNoIndexWhenFlixlintFails(t *testing.T) {
 	root := project(t)
 	b := builder(root, new(int))
-	b.Run = func(Stage, string, string, []string) int { return 3 }
+	b.Run = func(Stage, string, string, []string, string) int { return 3 }
 	if _, err := b.Load(Resolved); err == nil || !strings.Contains(err.Error(), "コンパイル") {
 		t.Errorf("コンパイルできない時の誤り: %v", err)
 	}
@@ -235,8 +237,8 @@ func TestKeyFollowsSymlinkedSources(t *testing.T) {
 		t.Skip("symlink を作れない:", err)
 	}
 	files, err := flixFiles(root, []string{"src"})
-	if err != nil || len(files) != 2 {
-		t.Errorf("got %v %v（Linked と Shapes の 2 つのはず）", files, err)
+	if err != nil || len(files) != 3 {
+		t.Errorf("got %v %v（Linked・Shapes・Uses の 3 つのはず）", files, err)
 	}
 }
 
@@ -313,7 +315,10 @@ func TestLoadRunsTheTypedStageAsTyped(t *testing.T) {
 	var got Stage
 	b := builder(root, new(int))
 	inner := b.Run
-	b.Run = func(s Stage, desc, dir string, cmd []string) int { got = s; return inner(s, desc, dir, cmd) }
+	b.Run = func(s Stage, desc, dir string, cmd []string, log string) int {
+		got = s
+		return inner(s, desc, dir, cmd, log)
+	}
 	if _, err := b.Load(Typed); err != nil || got != Typed {
 		t.Errorf("流した段 %q（typed のはず。heavy の長い物の枠を選ぶ元）%v", got, err)
 	}
@@ -321,7 +326,7 @@ func TestLoadRunsTheTypedStageAsTyped(t *testing.T) {
 
 func TestLoadNamesSpansWhenFlixlintRefusesTheCall(t *testing.T) {
 	b := builder(project(t), new(int))
-	b.Run = func(Stage, string, string, []string) int { return 4 }
+	b.Run = func(Stage, string, string, []string, string) int { return 4 }
 	if _, err := b.Load(Resolved); err == nil || !strings.Contains(err.Error(), "flixlint "+MinFlixlint+" 以上") {
 		t.Errorf("終了コード 4 の誤り: %v", err)
 	}

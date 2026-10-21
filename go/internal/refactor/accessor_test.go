@@ -43,7 +43,7 @@ func acc(t *testing.T) string {
 	return root
 }
 
-func accRunner(_ Stage, _, _ string, cmd []string) int {
+func accRunner(_ Stage, _, _ string, cmd []string, _ string) int {
 	for i := 0; i+1 < len(cmd); i++ {
 		if cmd[i] == "--spans" {
 			data, err := os.ReadFile(filepath.Join("testdata", "acc-spans-typed.tsv"))
@@ -119,9 +119,9 @@ func TestParseUpdateRefusesARecordWithoutReceiver(t *testing.T) {
 func TestRewriteUpdateTakesOneFieldOut(t *testing.T) {
 	wrap := func(v, e string) string { return "S(" + v + ", " + e + ")" }
 	for text, want := range map[string]string{
-		"{ x = 1 | w }":                   "S(1, w)",
-		"{ x = 1, y = 2 | w }":            "{ y = 2 | S(1, w) }",
-		"{ y = 2, x = f(a, b) | g(w) }":   "{ y = 2 | S(f(a, b), g(w)) }",
+		"{ x = 1 | w }":                  "S(1, w)",
+		"{ x = 1, y = 2 | w }":           "{ y = 2 | S(1, w) }",
+		"{ y = 2, x = f(a, b) | g(w) }":  "{ y = 2 | S(f(a, b), g(w)) }",
 		"{ y = 2, x = 1,\n  z = 3 | w }": "{ y = 2,\n  z = 3 | S(1, w) }",
 	} {
 		got, err := RewriteUpdate(text, "x", wrap)
@@ -205,10 +205,13 @@ func TestFieldToAccessorDryRunWritesOnlyTheDiff(t *testing.T) {
 	}
 }
 
-func TestFieldToAccessorNeedsTheReaderInTheIndex(t *testing.T) {
-	code, text := runAcc(t, acc(t), nil, "field-to-accessor", "--label", "clock", "--receiver", "World", "--reader", "Rec.nope")
-	if code != 2 || !strings.Contains(text, "Rec.nope") {
-		t.Errorf("exit %d\n%s", code, text)
+// 名指しした口が索引に無ければ、World を宣言したファイルの既存の …Of の後ろに作り、読みをそれへ替える。
+func TestFieldToAccessorMakesAMissingAccessor(t *testing.T) {
+	root := acc(t)
+	code, text := runAcc(t, root, nil, "field-to-accessor", "--label", "clock", "--receiver", "World", "--getter", "Rec.nope", "--mapper", "Rec.mapClock")
+	diff := read(t, root, "build/refactor/last.diff")
+	if code != 0 || !strings.Contains(diff, "+    pub def nope(w: World): Float64 = w#clock") || !strings.Contains(text, "口を作る: Rec.nope") {
+		t.Errorf("exit %d\n%s\n%s", code, text, diff)
 	}
 }
 
@@ -257,7 +260,7 @@ func TestEndToEndFieldToAccessor(t *testing.T) {
 	must(t, os.WriteFile(filepath.Join(root, "bin", "lint-rules", "refactor.local.json"), []byte(`{"verify": "java -jar `+jar+` check"}`), 0o644))
 	git(t, root, "add", ".")
 	git(t, root, "-c", "user.email=t@example.test", "-c", "user.name=t", "commit", "-qm", "conf")
-	direct := func(_ Stage, _, dir string, cmd []string) int {
+	direct := func(_ Stage, _, dir string, cmd []string, _ string) int {
 		c := exec.Command(cmd[0], cmd[1:]...)
 		c.Dir, c.Stderr = dir, os.Stderr
 		if c.Run() != nil {

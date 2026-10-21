@@ -66,40 +66,18 @@ func inDirs(file string, dirs []string) bool {
 //   - 名前が .flix の外（Makefile・json・flow など git の知るファイル）に字で出る候補は fix（入口かもしれない）。
 func PlanDead(root string, rows []Row, q DeadQuery) (DeadPlan, error) {
 	var plan DeadPlan
-	defs := map[string]defInfo{}
-	var order []string
-	for _, r := range rows {
-		if r.Kind != KindDefDecl {
-			continue
+	defs, order := defTable(rows)
+	for _, s := range order {
+		if d := defs[s]; d.Ext.File == "" {
+			return plan, fmt.Errorf("%s: def の範囲が無い（索引の形が古い。flixlint を上げる）", d.Where())
 		}
-		ext, err := spanOf(r.File, r.Attr("ext"))
-		if err != nil {
-			return plan, fmt.Errorf("%s: def の範囲が無い（索引の形が古い。flixlint を上げる）", r.Where())
-		}
-		f := strings.Fields(r.Extra)
-		has := func(w string) bool {
-			for _, x := range f {
-				if x == w {
-					return true
-				}
-			}
-			return false
-		}
-		ann := "," + r.Attr("ann") + ","
-		d := defInfo{Row: r, Pub: has("pub"), Inst: has("inst"), Test: strings.Contains(ann, ",test,"), Ext: ext}
-		if _, dup := defs[r.Sym]; !dup {
-			order = append(order, r.Sym)
-		}
-		defs[r.Sym] = d
 	}
-	refs := map[string][]Row{}   // sym → 参照（自分の中の物は除く）
+	refs := refsBySym(rows)      // sym → 参照（自分の中の物は除く）
 	usesOf := map[string][]Row{} // owner → その def の中の参照
 	for _, r := range rows {
-		if r.Kind != KindDefUse || r.Owner == r.Sym {
-			continue
+		if r.Kind == KindDefUse && r.Owner != r.Sym {
+			usesOf[r.Owner] = append(usesOf[r.Owner], r)
 		}
-		refs[r.Sym] = append(refs[r.Sym], r)
-		usesOf[r.Owner] = append(usesOf[r.Owner], r)
 	}
 	type cand struct {
 		d   defInfo
@@ -246,6 +224,45 @@ func PlanDead(root string, rows []Row, q DeadQuery) (DeadPlan, error) {
 	}
 	sort.Slice(plan.Fix, func(i, j int) bool { return less(plan.Fix[i].Row, plan.Fix[j].Row) })
 	return plan, nil
+}
+
+// defTable は索引の def-decl を名前ごとに（order は出てきた順）。ext の読めない def は Ext が空のまま。
+func defTable(rows []Row) (map[string]defInfo, []string) {
+	defs := map[string]defInfo{}
+	var order []string
+	for _, r := range rows {
+		if r.Kind != KindDefDecl {
+			continue
+		}
+		ext, _ := spanOf(r.File, r.Attr("ext"))
+		f := strings.Fields(r.Extra)
+		has := func(w string) bool {
+			for _, x := range f {
+				if x == w {
+					return true
+				}
+			}
+			return false
+		}
+		ann := "," + r.Attr("ann") + ","
+		d := defInfo{Row: r, Pub: has("pub"), Inst: has("inst"), Test: strings.Contains(ann, ",test,"), Ext: ext}
+		if _, dup := defs[r.Sym]; !dup {
+			order = append(order, r.Sym)
+		}
+		defs[r.Sym] = d
+	}
+	return defs, order
+}
+
+// refsBySym は def の参照を参照される def ごとに（自分の中の参照＝再帰は除く）。
+func refsBySym(rows []Row) map[string][]Row {
+	refs := map[string][]Row{}
+	for _, r := range rows {
+		if r.Kind == KindDefUse && r.Owner != r.Sym {
+			refs[r.Sym] = append(refs[r.Sym], r)
+		}
+	}
+	return refs
 }
 
 var docOrAnn = regexp.MustCompile(`^\s*(///|@[A-Z])`)

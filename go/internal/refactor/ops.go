@@ -96,7 +96,7 @@ func expandReport(root string, idx *Index, a args, cfg Config, o Options) (repor
 	r.gotText = fmt.Sprintf("`_`・変数の腕を持つ match %d・書き出す %d・人へ回す %d", plan.Sites, len(plan.Edits), len(plan.Fix))
 	r.wantText = fmt.Sprintf("%s への match に `case _` 0（書き出せない所は fix）", sym)
 	for _, f := range plan.Fix {
-		r.lines = append(r.lines, fmt.Sprintf("%-44s fix  %s（%s）", f.Where(), f.Why, f.Owner))
+		r.fixLines = append(r.fixLines, fmt.Sprintf("%-44s fix  %s（%s）", f.Where(), f.Why, f.Owner))
 	}
 	nextOf(&r, "bin/fge refactor expand-wildcard --enum "+a.target, a, &out)
 	return r, nil
@@ -125,7 +125,7 @@ func deadReport(root string, idx *Index, a args, cfg Config, o Options) (report,
 		r.lines = append(r.lines, fmt.Sprintf("%-44s 消す  %s（%s）", t.Where(), t.Sym, t.Why))
 	}
 	for _, f := range plan.Fix {
-		r.lines = append(r.lines, fmt.Sprintf("%-44s fix   %s（%s）", f.Where(), f.Sym, f.Why))
+		r.fixLines = append(r.fixLines, fmt.Sprintf("%-44s fix   %s（%s）", f.Where(), f.Sym, f.Why))
 	}
 	base := "bin/fge refactor remove-dead"
 	if a.withTests {
@@ -147,6 +147,23 @@ func deadReport(root string, idx *Index, a args, cfg Config, o Options) (report,
 // accessorReport は field-to-accessor の入口（ファイルを読み、型の字を比べ、計画を Change へ渡す）。
 func accessorReport(root string, idx *Index, a args, cfg Config, o Options) (report, error) {
 	defs := map[string]bool{KindDefDecl: true}
+	alias := ""
+	for _, r := range idx.Rows {
+		if v := r.Attr("recv"); (r.Kind == KindLabelSelect || r.Kind == KindLabelUpdate) && r.Sym == a.label && nameMatches(v, a.receiver) {
+			alias = v
+			break
+		}
+	}
+	// 口の名前を決め、索引に無い口は作る（名前の既定は alias の mod の <欄>Of・with<欄>）。
+	var missing []string
+	if alias != "" {
+		if a.reader == "" {
+			a.reader = DefaultGetter(modOf(alias), a.label)
+		}
+		if a.mapper == "" && a.setter == "" {
+			a.setter = DefaultSetter(modOf(alias), a.label)
+		}
+	}
 	q := AccessorQuery{Label: a.label, Receiver: a.receiver, Reader: a.reader, Mapper: a.mapper, Setter: a.setter, Outside: a.outside, Skip: a.skip}
 	var readerRow Row
 	for _, name := range []string{a.reader, a.mapper, a.setter} {
@@ -154,8 +171,12 @@ func accessorReport(root string, idx *Index, a args, cfg Config, o Options) (rep
 			continue
 		}
 		sym, err := Resolve(idx.Rows, name, defs)
+		if err != nil && strings.Contains(err.Error(), "索引にありません") && name != a.mapper && alias != "" {
+			missing = append(missing, name)
+			continue
+		}
 		if err != nil {
-			return report{}, fmt.Errorf("口 %s が索引に無い（先に口の def を書き、make check が通ってから）: %v", name, err)
+			return report{}, fmt.Errorf("口 %s: %v", name, err)
 		}
 		q.OwnerSyms = append(q.OwnerSyms, sym)
 		for _, r := range idx.Rows {
@@ -176,14 +197,10 @@ func accessorReport(root string, idx *Index, a args, cfg Config, o Options) (rep
 		srcs[f] = string(b)
 		return nil
 	}
-	alias := ""
 	for _, r := range idx.Rows {
 		if (r.Kind == KindLabelSelect || r.Kind == KindLabelUpdate) && r.Sym == a.label {
 			if err := load(r.File); err != nil {
 				return report{}, err
-			}
-			if v := r.Attr("recv"); alias == "" && nameMatches(v, a.receiver) {
-				alias = v
 			}
 		}
 	}
@@ -200,6 +217,42 @@ func accessorReport(root string, idx *Index, a args, cfg Config, o Options) (rep
 		}
 	}
 	fieldType, fok := aliasFieldTypeIn(root, cfg, alias, a.label)
+	var stub *Edit
+	stubNote := ""
+	if len(missing) > 0 {
+		if !fok {
+			return report{}, fmt.Errorf("口 %s が無く、欄 %s の型が %s の宣言から読めないので作れない（口を手で書いて --getter・--setter で名指し）", strings.Join(missing, "・"), a.label, alias)
+		}
+		all, err := loadSources(root, cfg)
+		if err != nil {
+			return report{}, err
+		}
+		shape, err := FindAliasShape(all, alias)
+		if err != nil {
+			return report{}, err
+		}
+		place, err := FindStubPlace(idx.Rows, all, modOf(alias), shape)
+		if err != nil {
+			return report{}, err
+		}
+		getter, setter := "", ""
+		for _, m := range missing {
+			if m == a.reader {
+				getter = m
+			} else {
+				setter = m
+			}
+		}
+		if err := load(place.File); err != nil {
+			return report{}, err
+		}
+		e := stubEdit(place, AccessorStubs(place.Indent, shortName(alias), a.label, fieldType, getter, setter))
+		stub = &e
+		stubNote = fmt.Sprintf("口を作る: %s（%s の後）", strings.Join(missing, "・"), place.At.Where())
+		if getter != "" {
+			readerType, rok = fieldType, true
+		}
+	}
 	switch {
 	case rok && fok && SameType(readerType, fieldType):
 		typeNote = fmt.Sprintf("型: %s の戻り %s = 欄 %s の %s", a.reader, readerType, a.label, fieldType)
@@ -212,6 +265,11 @@ func accessorReport(root string, idx *Index, a args, cfg Config, o Options) (rep
 	plan, err := PlanAccessor(srcs, idx.Rows, q)
 	if err != nil {
 		return report{}, err
+	}
+	if stub != nil && plan.Reads+plan.Writes > 0 {
+		plan.Edits = append(plan.Edits, *stub)
+	} else if stub != nil {
+		stubNote = "口は作らない（替える読み書きが 0）"
 	}
 	out := Change(root, plan.Edits, a.apply, cfg.Verify, o.Verify)
 	r := report{Op: "field-to-accessor", Target: a.receiver + "#" + a.label, Sym: alias, code: CodeAccessor, Outcome: &out, Fix: plan.Fix}
@@ -226,12 +284,15 @@ func accessorReport(root string, idx *Index, a args, cfg Config, o Options) (rep
 		r.extra = append(r.extra, fmt.Sprintf("口の def の中・--outside の mod の中の物 %d は替えない", plan.Inside))
 	}
 	r.extra = append(r.extra, typeNote)
+	if stubNote != "" {
+		r.extra = append(r.extra, stubNote)
+	}
 	r.wantText = fmt.Sprintf("%s の欄 %s の直の読み書き 0（口の中を除く。決められない所は fix）", a.receiver, a.label)
 	for _, w := range plan.Rewrites {
 		r.lines = append(r.lines, fmt.Sprintf("%-44s %s（%s）", w.Where(), w.Why, w.Owner))
 	}
 	for _, f := range plan.Fix {
-		r.lines = append(r.lines, fmt.Sprintf("%-44s fix  %s（%s）", f.Where(), f.Why, f.Owner))
+		r.fixLines = append(r.fixLines, fmt.Sprintf("%-44s fix  %s（%s）", f.Where(), f.Why, f.Owner))
 	}
 	base := fmt.Sprintf("bin/fge refactor field-to-accessor --label %s --receiver %s --reader %s", a.label, a.receiver, a.reader)
 	if a.mapper != "" {
@@ -368,7 +429,7 @@ func constructionLines(r *report, plan ConstructionPlan) {
 		r.lines = append(r.lines, fmt.Sprintf("%-44s %s（%s）", s.Where(), s.Why, s.Owner))
 	}
 	for _, f := range plan.Fix {
-		r.lines = append(r.lines, fmt.Sprintf("%-44s fix  %s（%s）", f.Where(), f.Why, f.Owner))
+		r.fixLines = append(r.fixLines, fmt.Sprintf("%-44s fix  %s（%s）", f.Where(), f.Why, f.Owner))
 	}
 }
 

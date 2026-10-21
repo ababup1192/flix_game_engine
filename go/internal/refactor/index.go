@@ -90,25 +90,42 @@ func (r Row) contains(o Row) bool {
 
 // ReadIndex は索引のファイルを読む。頭の行の版と段が違えば誤り（古い shim の索引を使わない）。
 func ReadIndex(path string, want Stage) ([]Row, error) {
+	rows, _, err := readIndex(path, want)
+	return rows, err
+}
+
+// readIndex は ReadIndex に、頭の行の adds=（後から足した種類。flixlint 0.6.6 の use・type-use・alias-decl）を添える。
+func readIndex(path string, want Stage) ([]Row, string, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	defer f.Close()
-	return parseIndex(f, want)
+	return parseIndexAdds(f, want)
 }
 
 func parseIndex(r io.Reader, want Stage) ([]Row, error) {
+	rows, _, err := parseIndexAdds(r, want)
+	return rows, err
+}
+
+func parseIndexAdds(r io.Reader, want Stage) ([]Row, string, error) {
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 1<<20), 1<<20)
 	var rows []Row
+	adds := ""
 	n := 0
 	for sc.Scan() {
 		n++
 		line := sc.Text()
 		if n == 1 {
 			if err := checkHeader(line, want); err != nil {
-				return nil, err
+				return nil, "", err
+			}
+			for _, f := range strings.Fields(line) {
+				if v, ok := strings.CutPrefix(f, "adds="); ok {
+					adds = v
+				}
 			}
 			continue
 		}
@@ -117,25 +134,25 @@ func parseIndex(r io.Reader, want Stage) ([]Row, error) {
 		}
 		c := strings.Split(line, "\t")
 		if len(c) != 9 {
-			return nil, fmt.Errorf("索引の %d 行目の欄が %d 個（9 個のはず）", n, len(c))
+			return nil, "", fmt.Errorf("索引の %d 行目の欄が %d 個（9 個のはず）", n, len(c))
 		}
 		var nums [4]int
 		for i := range nums {
 			v, err := strconv.Atoi(c[2+i])
 			if err != nil {
-				return nil, fmt.Errorf("索引の %d 行目の位置が数でない: %q", n, c[2+i])
+				return nil, "", fmt.Errorf("索引の %d 行目の位置が数でない: %q", n, c[2+i])
 			}
 			nums[i] = v
 		}
 		rows = append(rows, Row{Kind: c[0], File: c[1], Line: nums[0], Col: nums[1], EndLine: nums[2], EndCol: nums[3], Sym: c[6], Owner: c[7], Extra: c[8]})
 	}
 	if err := sc.Err(); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if n == 0 {
-		return nil, errors.New("索引が空（頭の行も無い）")
+		return nil, "", errors.New("索引が空（頭の行も無い）")
 	}
-	return rows, nil
+	return rows, adds, nil
 }
 
 // checkHeader は `# flixlint-spans <版> stage=<段> ...` を確かめる。
@@ -158,14 +175,16 @@ type Index struct {
 	Stage   Stage
 	Path    string
 	Rows    []Row
+	Adds    string  // 頭の行の adds=（後から足した種類を , で）。無ければ ""
 	Cached  bool    // 前に作った物をそのまま使った
 	Seconds float64 // 作るのに掛かった秒（使い回した時は前に作った時の秒）
 	Key     string
 }
 
 // Runner は索引を作るコマンドを流す口（既定は heavy の枠の中。テストは直に流す）。stage は枠の長短を決める
-// （typed は JVM に 4〜5 GB を取るので長い物の枠で、make test と並ばないようにする）。
-type Runner func(stage Stage, desc, dir string, cmd []string) int
+// （typed は JVM に 4〜5 GB を取るので長い物の枠で、make test と並ばないようにする）。log が空でなければ
+// コマンドの出力（標準出力とエラー）をそのファイルへ書き、画面には出さない（--verbose の時は "" で画面へ）。
+type Runner func(stage Stage, desc, dir string, cmd []string, log string) int
 
 // Builder は索引を手に入れる所の設定。
 type Builder struct {
@@ -176,6 +195,9 @@ type Builder struct {
 	Run      Runner
 	Log      io.Writer
 	Rebuild  bool // 鍵が同じでも作り直す
+	Verbose  bool // flixlint の出力を画面へ（既定は build/refactor/index-<段>.log へ書き、1 行だけ言う）
+	// Prepare は lib/ が無い時に依存を用意する口（refactor.json の prepare。既定 make check）。nil なら用意しない。
+	Prepare VerifyRunner
 }
 
 // Dir は索引の置き場（build/refactor）。
@@ -193,8 +215,8 @@ func (b Builder) Load(s Stage) (*Index, error) {
 	path := b.indexPath(s)
 	if !b.Rebuild {
 		if old, secs, ok := readKey(b.keyPath(s)); ok && old == key {
-			if rows, err := ReadIndex(path, s); err == nil {
-				return &Index{Stage: s, Path: path, Rows: rows, Cached: true, Seconds: secs, Key: key}, nil
+			if rows, adds, err := readIndex(path, s); err == nil {
+				return &Index{Stage: s, Path: path, Rows: rows, Adds: adds, Cached: true, Seconds: secs, Key: key}, nil
 			}
 		}
 	}
@@ -211,12 +233,24 @@ func (b Builder) Load(s Stage) (*Index, error) {
 		cmd = append(cmd, "--java-opts", b.Config.JavaOpts)
 	}
 	cmd = append(cmd, b.sources()...)
-	fmt.Fprintf(b.Log, "[refactor] 索引（%s）を作ります: %s\n", s, strings.Join(cmd, " "))
+	if err := b.prepareLib(); err != nil {
+		return nil, err
+	}
+	log := filepath.Join(b.Dir(), "index-"+string(s)+".log")
+	if b.Verbose {
+		fmt.Fprintf(b.Log, "[refactor] 索引（%s）を作ります: %s\n", s, strings.Join(cmd, " "))
+		log = ""
+	} else {
+		fmt.Fprintf(b.Log, "[refactor] 索引（%s）を作ります（ログ %s）\n", s, rel(log))
+	}
 	start := time.Now()
-	code := b.Run(s, "flixlint --spans --stage "+string(s), b.Root, cmd)
+	code := b.Run(s, "flixlint --spans --stage "+string(s), b.Root, cmd, log)
 	secs := time.Since(start).Seconds()
 	if code != 0 {
 		os.Remove(tmp)
+		if log != "" {
+			fmt.Fprint(b.Log, tailOf(log, 12))
+		}
 		switch code {
 		case 4:
 			return nil, fmt.Errorf("索引を作れません: flixlint の終了コード 4（呼び方か環境の誤り）。使っている flixlint（%s・%s）が --spans を知らない時もこれになります。"+
@@ -229,7 +263,7 @@ func (b Builder) Load(s Stage) (*Index, error) {
 			return nil, fmt.Errorf("索引を作れません: flixlint の終了コード %d", code)
 		}
 	}
-	rows, err := ReadIndex(tmp, s)
+	rows, adds, err := readIndex(tmp, s)
 	if err != nil {
 		return nil, err
 	}
@@ -243,7 +277,44 @@ func (b Builder) Load(s Stage) (*Index, error) {
 	if err := os.WriteFile(b.keyPath(s), []byte(fmt.Sprintf("%s %.1f\n", key, secs)), 0o644); err != nil {
 		return nil, err
 	}
-	return &Index{Stage: s, Path: path, Rows: rows, Seconds: secs, Key: key}, nil
+	return &Index{Stage: s, Path: path, Rows: rows, Adds: adds, Seconds: secs, Key: key}, nil
+}
+
+// tailOf はログの終わりの n 行（索引を作れなかった時に、誤りの所だけ見せる）。
+func tailOf(path string, n int) string {
+	data, err := os.ReadFile(path)
+	if err != nil || len(data) == 0 {
+		return ""
+	}
+	lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return "[refactor] " + rel(path) + " の終わり:\n" + strings.Join(lines, "\n") + "\n"
+}
+
+// prepareLib は flix.toml に依存があり lib/ が無い時、依存を用意する口（既定 make check）を流す。
+// 索引の flixlint は lib/ の fpkg を読むが、lib/ は flix がコンパイルの初めに作る物で、clone や worktree の直後には無い。
+func (b Builder) prepareLib() error {
+	if b.Prepare == nil || b.Config.Prepare == "" {
+		return nil
+	}
+	if info, err := os.Stat(filepath.Join(b.Root, "lib")); err == nil && info.IsDir() {
+		return nil
+	}
+	toml, err := os.ReadFile(filepath.Join(b.Root, "flix.toml"))
+	if err != nil || !strings.Contains(string(toml), "[dependencies]") {
+		return nil
+	}
+	if err := os.MkdirAll(b.Dir(), 0o755); err != nil {
+		return err
+	}
+	log := filepath.Join(b.Dir(), "prepare.log")
+	fmt.Fprintf(b.Log, "[refactor] lib/ が無いので依存を用意します: %s（ログ %s）\n", b.Config.Prepare, rel(log))
+	if code := b.Prepare(b.Config.Prepare, b.Root, log); code != 0 {
+		return fmt.Errorf("依存を用意できません（%s が終了コード %d。%s）", b.Config.Prepare, code, rel(log))
+	}
+	return nil
 }
 
 func readKey(path string) (string, float64, bool) {
@@ -392,6 +463,10 @@ func LookPath(name string) string {
 
 // MinFlixlint は読める索引（--spans・形の版 FormatVersion）を書く一番古い flixlint の版。
 const MinFlixlint = "0.6.0"
+
+// MinFlixlintUsages は usages の型の注記と use（resolved の段の adds=use,type-use,alias-decl）を書く一番古い flixlint の版。
+// それより古い索引でも usages は動き、その 2 つを数えない。
+const MinFlixlintUsages = "0.6.6"
 
 // flixlintVersion は `flixlint --version` の答え（読めなければ「版は読めない」）。
 func flixlintVersion(flixlint string) string {

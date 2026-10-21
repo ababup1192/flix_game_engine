@@ -56,7 +56,7 @@ func read(t *testing.T, root, f string) string {
 	return string(data)
 }
 
-func zooRunner(_ Stage, _, _ string, cmd []string) int {
+func zooRunner(_ Stage, _, _ string, cmd []string, _ string) int {
 	for i := 0; i+1 < len(cmd); i++ {
 		if cmd[i] == "--spans" {
 			data, err := os.ReadFile(filepath.Join("testdata", "proj-spans-resolved.tsv"))
@@ -284,7 +284,7 @@ func TestEndToEndOnTheFixture(t *testing.T) {
 	must(t, os.WriteFile(filepath.Join(root, "bin", "lint-rules", "refactor.local.json"), []byte(conf), 0o644))
 	git(t, root, "add", ".")
 	git(t, root, "-c", "user.email=t@example.test", "-c", "user.name=t", "commit", "-qm", "conf")
-	direct := func(_ Stage, _, dir string, cmd []string) int {
+	direct := func(_ Stage, _, dir string, cmd []string, _ string) int {
 		c := exec.Command(cmd[0], cmd[1:]...)
 		c.Dir, c.Stderr = dir, os.Stderr
 		if c.Run() != nil {

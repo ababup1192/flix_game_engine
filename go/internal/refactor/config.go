@@ -36,11 +36,13 @@ type Config struct {
 	Library LibraryMode `json:"library,omitempty"`
 	// JavaOpts は flixlint の JVM に渡す物（空なら flixlint の既定）。
 	JavaOpts string `json:"javaOpts,omitempty"`
+	// Prepare は lib/ が無い時に依存を用意する口（索引の前に 1 度。既定 make check）。
+	Prepare string `json:"prepare,omitempty"`
 }
 
 // defaults は設定ファイルが 1 つも無い時の値（配る refactor.json と同じ）。
 func defaults() Config {
-	return Config{Sources: []string{"src", "test"}, Verify: "make check", VerifyTests: "make test", TestDirs: []string{"test"}}
+	return Config{Sources: []string{"src", "test"}, Verify: "make check", VerifyTests: "make test", TestDirs: []string{"test"}, Prepare: "make check"}
 }
 
 // LoadConfig は root の bin/lint-rules/refactor.json と refactor.local.json を重ねて読む。
@@ -91,6 +93,9 @@ func (c Config) with(over Config) Config {
 	if over.JavaOpts != "" {
 		c.JavaOpts = over.JavaOpts
 	}
+	if over.Prepare != "" {
+		c.Prepare = over.Prepare
+	}
 	return c
 }
 
@@ -117,6 +122,9 @@ func FindFlixlint(root, flag string, c Config) (string, error) {
 	}
 	if p := LookPath("flixlint"); p != "" {
 		return p, nil
+	}
+	if entries, err := os.ReadDir(filepath.Join(root, "flixlint")); err == nil && len(entries) == 0 {
+		return "", fmt.Errorf("flixlint/ が空です（submodule を取っていない）。git -C %s submodule update --init flixlint で取ってください", root)
 	}
 	return "", fmt.Errorf("flixlint が見つかりません（見た所: %s・PATH）。--flixlint <bin/flixlint> か "+
 		"bin/lint-rules/refactor.local.json の \"flixlint\" で名指ししてください（https://github.com/ababup1192/flixlint）",

@@ -38,7 +38,7 @@ func shape(t *testing.T, edit map[string][2]string) string {
 	return root
 }
 
-func shapeRunner(stage Stage, _, _ string, cmd []string) int {
+func shapeRunner(stage Stage, _, _ string, cmd []string, _ string) int {
 	for i := 0; i+1 < len(cmd); i++ {
 		if cmd[i] == "--spans" {
 			data, err := os.ReadFile(filepath.Join("testdata", "shape-spans-"+string(stage)+".tsv"))

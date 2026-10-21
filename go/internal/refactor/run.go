@@ -4,16 +4,26 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/ababup1192/flix_game_engine/go/internal/checkres"
 )
 
 // Usage は使い方の全文。
-const Usage = `使い方: fge refactor <操作> [引数] [--json] [--max N] [--limit N] [--stage resolved|typed] [--rebuild] [--flixlint PATH] [--root DIR]
+const Usage = `使い方: fge refactor <操作> [引数] [--json] [-v|--verbose] [--all] [--max N] [--limit N] [--stage resolved|typed] [--rebuild] [--flixlint PATH] [--root DIR]
 
+  usages <Mod.f|Enum|Enum.Case|Alias> [--callers [--depth N]]
+                                                       使われ所（Find Usages）: file:line:col・使う def・種類（呼び出し・参照・
+                                                       組み立て・パターン・型の注記・use）。--callers は使う def に畳み、
+                                                       --depth N で呼び手の呼び手まで（Call Hierarchy）
+  usages <Alias>#<欄> | --label x [--receiver T]       record の欄の読み・書き・組み立て（typed の段）。同じ名前の欄が
+                                                       別の型にもあれば候補を並べて止まる
+  usages --unused                                      外から使われない pub の def（参照 0・テストからだけ・同じ mod の中だけ）と
+                                                       使っていない use（読むだけ。消すのは remove-dead か手）
   refs <Mod.name> [--callers]                          def・enum・case の宣言と参照（--callers は参照する def ごと）
   match-sites <Enum|Enum.Case> [--catch-all]           match の位置・腕の数・` + "`_`" + `／変数の腕（--catch-all はそれを持つ物だけ）
   field-sites --label x [--receiver T] [--outside Mod] record の欄 x の直の読み（e#x）と書き（{ x = v | e }）
@@ -21,7 +31,9 @@ const Usage = `使い方: fge refactor <操作> [引数] [--json] [--max N] [--l
   expand-wildcard --enum E [--apply] [--skip file:line]  E への match の ` + "`case _ =>`" + `（使わない変数の腕も）を残りの case に書き出す
   remove-dead [--with-tests] [--only test-only|unreferenced] [--def Mod.name] [--apply] [--skip file:line]
                                                        テストからだけ・どこからも参照されない pub の def を ///・注記ごと消す
-  field-to-accessor --label x --receiver T --reader R [--mapper M | --setter S] [--outside Mod] [--apply] [--skip file:line]
+  field-to-accessor --label x --receiver T [--getter R] [--mapper M | --setter S] [--outside Mod] [--apply] [--skip file:line]
+                                                       口の既定は T の mod の xOf（読み）と withX（書き）。索引に無ければ
+                                                       T を宣言したファイルの既存の …Of の並びの後ろに作る（--reader は --getter と同じ）。
                                                        受け手が T の欄 x の直の読み e#x を R(e) へ、書き { x = v | e } を
                                                        S(v, e)・M(x -> f(x), e)（v が e#x を読む時）・M(_ -> v, e) へ（typed の段）。
                                                        { x = v, y = u | e } は { y = u | S(v, e) } に。
@@ -34,6 +46,13 @@ const Usage = `使い方: fge refactor <操作> [引数] [--json] [--max N] [--l
                                                        組み立て（record の式）の欄を型に合わせる: 型に x があれば無い式へ
                                                        x = EXPR を足し、型に x が無ければある式から消す。式は欄の組で当てる
                                                        （型の別名を通した物も拾う・欄の組が同じ別の型があれば fix）
+
+  出力は既定で短い数行: 数・ファイルごとの数・場所の上位 10 行（書き換える操作は人へ回す所を先に）。場所の全部は
+  build/refactor/last-<操作>.txt に書き、その場所を 1 行で言う。--all（か --limit 0）で場所を全部、--json で全部を JSON。
+  -v・--verbose は今までの出力: 場所を全部・索引を作る flixlint の出力・dry-run の diff の全文・確かめの口の出力を画面にも出す
+  （既定ではそれぞれ build/refactor/index-<段>.log・last.diff・verify.log に書き、場所だけ言う）。
+  根は --root（無ければ FGE_ROOT、無ければ今の所から上へ flix.toml を探す）。flixlint は根の flixlint/（submodule）から探す。
+  lib/ が無ければ索引の前に refactor.json の prepare（既定 make check）で依存を用意する。
 
   書き換える操作は既定で dry-run（build/refactor/last.diff を書くだけ）。--apply で書き、確かめの口（refactor.json の
   verify・remove-dead は verifyTests）を流し、落ちたら書いた patch（build/refactor/last.patch）だけを戻す。
@@ -61,7 +80,8 @@ type Options struct {
 type args struct {
 	op, target, label, receiver, outside, flixlint, stage string
 	callers, catchAll, rebuild, asJSON                    bool
-	apply, withTests                                      bool
+	apply, withTests, unused, verbose                     bool
+	depth                                                 int // usages --depth（0 は指定なし）
 	only                                                  string
 	def                                                   string
 	reader, mapper, setter                                string
@@ -71,7 +91,7 @@ type args struct {
 }
 
 func parseArgs(rest []string) (args, error) {
-	a := args{max: -1, limit: 40}
+	a := args{max: -1, limit: 10}
 	var pos []string
 	value := func(i *int, name string) (string, error) {
 		if *i+1 >= len(rest) {
@@ -87,6 +107,21 @@ func parseArgs(rest []string) (args, error) {
 			a.asJSON = true
 		case "--callers":
 			a.callers = true
+		case "--unused":
+			a.unused = true
+		case "--verbose", "-v":
+			a.verbose = true
+		case "--all":
+			a.limit = 0
+		case "--depth":
+			var v string
+			if v, err = value(&i, x); err == nil {
+				n, convErr := strconv.Atoi(v)
+				if convErr != nil || n < 1 {
+					return a, fmt.Errorf("--depth には 1 以上の数を渡してください: %s", v)
+				}
+				a.depth = n
+			}
 		case "--catch-all":
 			a.catchAll = true
 		case "--apply":
@@ -118,7 +153,7 @@ func parseArgs(rest []string) (args, error) {
 			a.receiver, err = value(&i, x)
 		case "--outside":
 			a.outside, err = value(&i, x)
-		case "--reader":
+		case "--reader", "--getter":
 			a.reader, err = value(&i, x)
 		case "--mapper":
 			a.mapper, err = value(&i, x)
@@ -155,6 +190,9 @@ func parseArgs(rest []string) (args, error) {
 			return a, err
 		}
 	}
+	if a.verbose {
+		a.limit = 0
+	}
 	if len(pos) == 0 {
 		return a, fmt.Errorf("操作がありません")
 	}
@@ -172,6 +210,9 @@ func parseArgs(rest []string) (args, error) {
 func (a args) stageOf() (Stage, error) {
 	need := Resolved
 	if a.op == "field-sites" || a.op == "field-to-accessor" || a.op == "remove-field" {
+		need = Typed
+	}
+	if _, _, field := a.fieldTarget(); a.op == "usages" && field && !a.unused {
 		need = Typed
 	}
 	switch Stage(a.stage) {
@@ -219,8 +260,8 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 			return 2
 		}
 	case "field-to-accessor":
-		if a.label == "" || a.receiver == "" || a.reader == "" {
-			fmt.Fprintln(errOut, "refactor field-to-accessor: --label <欄>・--receiver <型 alias>・--reader <読みの口> が要ります（例 --label replayClock --receiver World --reader World.replayClockOf --mapper World.mapReplayClock）")
+		if a.label == "" || a.receiver == "" {
+			fmt.Fprintln(errOut, "refactor field-to-accessor: --label <欄>・--receiver <型 alias> が要ります（例 --label replayClock --receiver World。口は既定で World.replayClockOf・World.withReplayClock を使い、無ければ作る）")
 			return 2
 		}
 		if a.mapper != "" && a.setter != "" {
@@ -232,9 +273,14 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 			fmt.Fprintf(errOut, "refactor %s: --label <欄> と、--receiver <record の alias> か --case <Enum.Case> のどちらか 1 つが要ります（例 --label replayClock --receiver World）\n", a.op)
 			return 2
 		}
+	case "usages":
+		if !a.unused && a.target == "" && a.label == "" {
+			fmt.Fprintln(errOut, "refactor usages: 名前を渡してください（例 refactor usages World.moveTo・refactor usages World#scene・refactor usages --unused）")
+			return 2
+		}
 	case "index", "remove-dead":
 	default:
-		fmt.Fprintf(errOut, "refactor: 知らない操作 %s（refs・match-sites・field-sites・index・expand-wildcard・remove-dead・field-to-accessor・remove-field・fix-construction）\n", a.op)
+		fmt.Fprintf(errOut, "refactor: 知らない操作 %s（usages・refs・match-sites・field-sites・index・expand-wildcard・remove-dead・field-to-accessor・remove-field・fix-construction）\n", a.op)
 		return 2
 	}
 	stage, err := a.stageOf()
@@ -252,7 +298,7 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 		fmt.Fprintf(errOut, "refactor: %v\n", err)
 		return 2
 	}
-	b := Builder{Root: root, Config: cfg, Flixlint: fl, FlixJar: FindFlixJar(root, fl, cfg), Run: o.Run, Log: o.Log, Rebuild: a.rebuild}
+	b := Builder{Root: root, Config: cfg, Flixlint: fl, FlixJar: FindFlixJar(root, fl, cfg), Run: o.Run, Log: o.Log, Rebuild: a.rebuild, Verbose: a.verbose, Prepare: o.Verify}
 	if b.Log == nil {
 		b.Log = os.Stderr
 	}
@@ -263,6 +309,8 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 	}
 	var rep report
 	switch a.op {
+	case "usages":
+		rep, err = usagesReport(root, idx, a, cfg)
 	case "refs":
 		rep, err = refsReport(idx, a)
 	case "match-sites":
@@ -288,9 +336,13 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 	}
 	rep.Index = indexInfo{Stage: string(idx.Stage), Path: idx.Path, Cached: idx.Cached, Seconds: idx.Seconds, Rows: len(idx.Rows)}
 	rep.finish(a)
-	if a.asJSON {
+	rep.writeList(b.Dir(), a)
+	switch {
+	case a.asJSON:
 		out.Write(checkres.Compact(rep))
-	} else {
+	case rep.compact:
+		rep.compactText(out, a)
+	default:
 		rep.text(out, a)
 	}
 	return rep.Exit
@@ -304,7 +356,9 @@ type report struct {
 	Results []checkres.Result `json:"results"`
 	Sites   any               `json:"sites"`
 	Callers []Caller          `json:"callers,omitempty"`
+	Usage   *Target           `json:"usage,omitempty"` // usages が当てた物（種類と宣言の場所）
 	Unsure  []FieldSite       `json:"unsure,omitempty"`
+	Maybe   []UsageSite       `json:"maybe,omitempty"` // usages: 受け手の型が決まらない欄の読み書き（数えていない）
 	Kinds   map[string]int    `json:"kinds,omitempty"`
 	Index   indexInfo         `json:"index"`
 	Next    string            `json:"next,omitempty"`
@@ -316,11 +370,14 @@ type report struct {
 	fixHint  string // 直し方の 1 行（書き換える操作）
 	Exit     int    `json:"exit"`
 
-	code    string
-	got     int
-	gotText string
-	lines   []string // 人向けの場所の行（--limit で切る）
-	extra   []string // got の下に足す行
+	compact  bool // usages: 頭の 1 行・数の 1 行・場所の行だけ（読む量を減らす）
+	code     string
+	got      int
+	gotText  string
+	lines    []string // 人向けの場所の行（--limit で切る。列はタブで区切ってよい）
+	fixLines []string // 書き換えずに人へ回した所の行（lines より先に出す）
+	listPath string   // 場所の行の全部を書いたファイル（切った時に言う）
+	extra    []string // got の下に足す行
 }
 
 type indexInfo struct {
@@ -418,16 +475,144 @@ func (r report) text(out *strings.Builder, a args) {
 			fmt.Fprintf(out, "          （%s）\n", r.NextWhy)
 		}
 	}
-	shown := r.lines
+	r.writeSites(out, a, "    ")
+	if a.verbose && r.Outcome != nil {
+		dumpFile(out, "diff", r.Outcome.Diff)
+		dumpFile(out, "確かめの出力", r.Outcome.VerifyLog)
+	}
+}
+
+// allLines は場所の行の全部（人へ回した所が先）。
+func (r report) allLines() []string { return append(append([]string{}, r.fixLines...), r.lines...) }
+
+// writeList は場所の行の全部を build/refactor/last-<操作>.txt に書く（切って見せた時に読みに行く所）。
+func (r *report) writeList(dir string, a args) {
+	all := r.allLines()
+	if a.asJSON || a.limit == 0 || len(all) <= a.limit {
+		return
+	}
+	path := filepath.Join(dir, "last-"+r.Op+".txt")
+	if os.MkdirAll(dir, 0o755) == nil && os.WriteFile(path, []byte(strings.Join(alignTabs(all), "\n")+"\n"), 0o644) == nil {
+		r.listPath = path
+	}
+}
+
+// writeSites は場所の行を --limit まで出す。切ったらファイルごとの数（多い順に 6 つ）と、全部を書いたファイルを 1 行ずつ。
+func (r report) writeSites(out *strings.Builder, a args, indent string) {
+	all := r.allLines()
+	shown := all
 	if a.limit > 0 && len(shown) > a.limit {
 		shown = shown[:a.limit]
 	}
-	for _, l := range shown {
-		fmt.Fprintf(out, "    %s\n", l)
+	for _, l := range alignTabs(shown) {
+		fmt.Fprintf(out, "%s%s\n", indent, l)
 	}
-	if len(shown) < len(r.lines) {
-		fmt.Fprintf(out, "    …ほか %d 件（--limit 0 で全部・--json）\n", len(r.lines)-len(shown))
+	if len(shown) == len(all) {
+		return
 	}
+	if files := perFile(all); files != "" {
+		fmt.Fprintf(out, "%sファイルごと: %s\n", indent, files)
+	}
+	where := "--all で全部・--json"
+	if r.listPath != "" {
+		where = "全部は " + rel(r.listPath) + "・--all で画面に"
+	}
+	fmt.Fprintf(out, "%s…ほか %d 件（%s）\n", indent, len(all)-len(shown), where)
+}
+
+// perFile は「src/World.flix 12・src/Main.flix 5・…ほか 3 ファイル」（行の頭の file:line:col から数える）。
+func perFile(lines []string) string {
+	n := map[string]int{}
+	for _, l := range lines {
+		f, _, ok := strings.Cut(strings.TrimSpace(l), ":")
+		if ok && strings.HasSuffix(f, ".flix") {
+			n[f]++
+		}
+	}
+	files := make([]string, 0, len(n))
+	for f := range n {
+		files = append(files, f)
+	}
+	sort.Slice(files, func(i, j int) bool {
+		if n[files[i]] != n[files[j]] {
+			return n[files[i]] > n[files[j]]
+		}
+		return files[i] < files[j]
+	})
+	var parts []string
+	for i, f := range files {
+		if i == 6 {
+			parts = append(parts, fmt.Sprintf("…ほか %d ファイル", len(files)-6))
+			break
+		}
+		parts = append(parts, fmt.Sprintf("%s %d", f, n[f]))
+	}
+	return strings.Join(parts, "・")
+}
+
+// dumpFile は --verbose の時に、ファイルに書いた物（diff・確かめの出力）を画面にも出す。
+func dumpFile(out *strings.Builder, what, path string) {
+	if path == "" {
+		return
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || len(data) == 0 {
+		return
+	}
+	fmt.Fprintf(out, "---- %s（%s）\n%s", what, rel(path), data)
+	if data[len(data)-1] != '\n' {
+		out.WriteString("\n")
+	}
+}
+
+// compactText は usages の短い形: 「何に当てたか」1 行・数 1 行・注 0〜数行・場所の行。
+// 歯止め（--max）を超えた時だけ 1 行足す（索引を作った事は作る前に stderr へ 1 行。秒は --json の index）。
+func (r report) compactText(out *strings.Builder, a args) {
+	head := "usages " + r.Target
+	if r.Usage != nil {
+		head = "usages " + r.Usage.Sym + "（" + r.Usage.Kind
+		if r.Usage.Decl != "" {
+			head += "・" + r.Usage.Decl
+		}
+		head += "）"
+	}
+	fmt.Fprintln(out, head)
+	fmt.Fprintf(out, "  %s\n", r.gotText)
+	for _, e := range r.extra {
+		fmt.Fprintf(out, "  %s\n", e)
+	}
+	if r.Exit == 1 && len(r.Results) > 0 {
+		fmt.Fprintf(out, "  fail: %d 件（--max %d を超えた）\n", r.got, a.max)
+	}
+	r.writeSites(out, a, "  ")
+}
+
+// alignTabs はタブで区切った列を、出す行の中で一番長い字に揃える（最後の列は揃えない）。幅は見た目の字数
+// （日本語も 1）で数える。固定の幅にしないのは、短い名前ばかりの時に空白で読む量を増やさないため。
+func alignTabs(lines []string) []string {
+	var width []int
+	cells := make([][]string, len(lines))
+	for i, l := range lines {
+		cells[i] = strings.Split(l, "\t")
+		for j, c := range cells[i][:len(cells[i])-1] {
+			if j >= len(width) {
+				width = append(width, 0)
+			}
+			width[j] = max(width[j], utf8.RuneCountInString(c))
+		}
+	}
+	out := make([]string, len(lines))
+	for i, cs := range cells {
+		var b strings.Builder
+		for j, c := range cs {
+			b.WriteString(c)
+			if j < len(cs)-1 {
+				b.WriteString(strings.Repeat(" ", width[j]-utf8.RuneCountInString(c)+2))
+			}
+		}
+		out[i] = strings.TrimRight(b.String(), " ")
+	}
+	return out
 }
 
 // split は場所を src・test・ほかに数える。

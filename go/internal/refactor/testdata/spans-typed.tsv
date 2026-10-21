@@ -57,3 +57,6 @@ def-use	src/Shapes.flix	51	40	51	48	List.map	Shapes.spread
 label-select	src/Shapes.flix	51	56	51	57	x	Shapes.spread	recv=Shapes.Point|Shapes.Size via=ambiguous
 case-construct	src/Shapes.flix	51	60	51	83	List.Cons	Shapes.spread	sugar
 case-construct	src/Shapes.flix	51	80	51	83	List.Nil	Shapes.spread	
+def-decl	src/Uses.flix	8	13	8	16	Uses.dot	Uses.dot	pub ext=8:5:8:37
+case-construct	src/Uses.flix	8	28	8	37	Shapes.Shape.Dot	Uses.dot	
+def-decl	src/Uses.flix	10	13	10	17	Uses.same	Uses.same	pub ext=10:5:10:52

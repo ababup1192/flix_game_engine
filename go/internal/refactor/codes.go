@@ -8,6 +8,8 @@ import (
 )
 
 const (
+	CodeUsages          = "refactor.usages"
+	CodeUnused          = "refactor.unused"
 	CodeRefs            = "refactor.refs"
 	CodeMatchSites      = "refactor.match-sites"
 	CodeFieldSites      = "refactor.field-sites"
@@ -19,6 +21,10 @@ const (
 )
 
 var codes = []checkres.Code{
+	{Name: CodeUsages, Level: checklevel.Lint, Metric: "usages", Unit: "count", Op: checkres.AtMost,
+		Rule: "--max（無ければ一覧だけ）", Summary: "def・enum・case・型 alias・record の欄の使われ所の数（呼び出し・参照・読み・書き・組み立て・パターン・型の注記・use）"},
+	{Name: CodeUnused, Level: checklevel.Lint, Metric: "unused", Unit: "count", Op: checkres.AtMost,
+		Rule: "--max（無ければ一覧だけ）", Summary: "外から使われない pub の def（参照 0・テストからだけ・同じ mod の中だけ）と、使っていない use の数"},
 	{Name: CodeRefs, Level: checklevel.Lint, Metric: "refs", Unit: "count", Op: checkres.AtMost,
 		Rule: "--max（無ければ一覧だけ）", Summary: "def・enum・case の参照の数（宣言は数えない）"},
 	{Name: CodeMatchSites, Level: checklevel.Lint, Metric: "match_sites", Unit: "count", Op: checkres.AtMost,
