@@ -248,7 +248,7 @@ flix_ge_dungeon の assets/ がこの規約の実例になっている:
 冒頭 doc コメントと `engine_world/test/TestTerrainDoc.flix` を見る。仕組みは
 [dual-grid.md](dual-grid.md)。
 
-## 文書（.md）の中で名前・パスを書く記法（doc-refs が読む）
+## 文書（.md）と .flix のコメントの中で名前・パスを書く記法（doc-refs が読む）
 
 ここまでは JSON の Doc の規約。この節だけは文書（`docs/**/*.md`・`NOTES.md`・`AGENTS.local.md`・agents-pack）の書き方で、
 `bin/fge doc-refs`（`make lint-doc-refs`・コミットでは触った .md を precommit が見る）がこの記法を読む。
@@ -270,3 +270,7 @@ flix_ge_dungeon の assets/ がこの規約の実例になっている:
 - 頭の 5 行に「手で直さない」（か「手で編集しない」・`DO NOT EDIT`）と書いた文書は生成物として見ない。
   直すのは作る元（`bin/fge check codes --md` なら go/internal/checkres の表）。
 - 古い記録の文書（`notes/<年-月>.md` など）は文書ごと `<ゲーム>/bin/lint-rules/doc-refs.local.json` の skip へ。
+- `.flix` のコメント（`///` と `//`）も同じ記法で読む。拾うのは ` ` の中と、地の文の語のうち `Mod.name`・`/` を含むパス・
+  `path:行` の形の物だけ（ほかの地の文は見ない）。`.flix` の物は上限で数える: `make lint-doc-refs` はリポごとの
+  `lint/limits/doc-refs-flix.json`（`{"limit": N}`。無ければ 0）と比べ、増えたら止め、減ったら上限を下げるまで止める。
+  コミットでは触った `.flix` の、HEAD の中身より増えた物だけを止める（古い件で関係の無いコミットを止めない）。

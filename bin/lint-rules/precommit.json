@@ -282,7 +282,8 @@
       "pass": "matched",
       "when": {
         "suffixes": [
-          ".md"
+          ".md",
+          ".flix"
         ]
       }
     },

@@ -292,3 +292,65 @@ func ScanMarkdown(text string, fileExt map[string]bool, planned []string) []Ref 
 	}
 	return out
 }
+
+// commentStart は Flix の 1 行の中の `//`（`///` も）の位置。字（"…"）と文字（'…'）の中の物は飛ばす。無ければ -1。
+// WhyNot: 複数行の字（"""…"""）と /* */ は見ない（ゲームとエンジンのコメントは // と /// で書く決まり）。
+func commentStart(line string) int {
+	inStr := false
+	for i := 0; i < len(line); i++ {
+		c := line[i]
+		switch {
+		case inStr && c == '\\':
+			i++
+		case c == '"':
+			inStr = !inStr
+		case !inStr && c == '\'':
+			// 文字 'x'・'\n'（閉じが 4 字以内）は飛ばす。型の変数の 'a などは閉じないのでそのまま。
+			if j := strings.IndexByte(line[i+1:], '\''); j >= 0 && j <= 3 {
+				i += j + 1
+			}
+		case !inStr && c == '/' && i+1 < len(line) && line[i+1] == '/':
+			return i
+		}
+	}
+	return -1
+}
+
+// ScanFlixComments は .flix のコメント（/// と //）から確かめる物を拾う（同じ行の同じ字は 1 つ）。
+// コメントの中の ` ` の中身と、地の文の語のうち Mod.name・/ を含むパス・path:行 の形の物だけを見る（ほかの地の文は見ない）。
+// 予定の印・~~消し線~~・` ` の中の '…'（引用）・仮の字の決まりは md と同じ。
+func ScanFlixComments(text string, fileExt map[string]bool, planned []string) []Ref {
+	var out []Ref
+	for i, line := range strings.Split(text, "\n") {
+		at := commentStart(line)
+		if at < 0 {
+			continue
+		}
+		body := strings.TrimLeft(line[at:], "/")
+		body = unstruck(body)
+		seen := map[string]bool{}
+		parts := codeSpans(body)
+		for k, p := range parts {
+			if !utf8.ValidString(p.text) {
+				continue
+			}
+			text := p.text
+			spanPlanned := false
+			if p.code {
+				text = unquoted(text)
+				spanPlanned = k+1 < len(parts) && plannedAfter(parts[k+1].text, planned)
+			}
+			for _, w := range words(text) {
+				r, ok := classify(w.text, i+1, fileExt)
+				if !ok || seen[r.Text] {
+					continue
+				}
+				seen[r.Text] = true
+				r.Engine = p.engine
+				r.Planned = spanPlanned || !p.code && plannedAfter(text[w.end:], planned)
+				out = append(out, r)
+			}
+		}
+	}
+	return out
+}

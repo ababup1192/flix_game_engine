@@ -9,7 +9,7 @@ import (
 func init() {
 	// WhyNot: engineOnly にしないのは、消えた関数・無いファイルを指す文書がゲームの docs と NOTES.md で起きるため。
 	register("doc-refs",
-		"文書 (docs/**/*.md・NOTES.md・AGENTS.local.md) が指す Mod.name・パス・path:行 が実在するか",
+		"文書 (docs/**/*.md・NOTES.md・AGENTS.local.md) と .flix のコメントが指す Mod.name・パス・path:行 が実在するか",
 		cmdDocRefs)
 }
 

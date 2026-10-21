@@ -1,5 +1,5 @@
 {
-  "note": "doc-refs（文書が指す Flix の名前・ファイル・行が実在するか）の規約データ。engine が配る既定で、ゲームは bin/lint-rules/doc-refs.local.json に skip（見ない文書のパスの並び。/ で終わればその下の全部）だけを書ける。docDirs の下の .md と docFiles を見る（在る物だけ）。拾うのは ` ` の中と表の行の Mod.name・src/…flix・test/…flix・path:行・/ を含むパス。名前は sources の .flix の宣言（mod・def・enum・case・type alias・eff・trait・struct・record の欄）を字で引き、spansIndex（flixlint の索引。bin/fge refactor が作る）が sources より新しければそれも足す。頭のモジュールがこのリポに無い名前（エンジン・Java の物）とパス（先頭のフォルダがこのリポに無い物）は数えない。pathSkipPrefixes は作る物の置き場（無くて当たり前）。fileExts は Mod.name でなくファイル名と読む末尾。頭の generatedHead 行に generatedMarks のどれかがある文書は生成物で見ない（作る元を直す）。` ` か表の語の直後に plannedMarks のどれかがあれば予定の名前で数えない（`名前`（予定））。Flix の標準ライブラリの名前は flixJar（このリポ → エンジン → git の主の作業場の順に探す）の src/library から引く。書き方は docs/doc-conventions.md の「文書の中で名前・パスを書く記法」。",
+  "note": "doc-refs（文書が指す Flix の名前・ファイル・行が実在するか）の規約データ。engine が配る既定で、ゲームは bin/lint-rules/doc-refs.local.json に skip（見ない文書のパスの並び。/ で終わればその下の全部）だけを書ける。docDirs の下の .md と docFiles を見る（在る物だけ）。拾うのは ` ` の中と表の行の Mod.name・src/…flix・test/…flix・path:行・/ を含むパス。名前は sources の .flix の宣言（mod・def・enum・case・type alias・eff・trait・struct・record の欄）を字で引き、spansIndex（flixlint の索引。bin/fge refactor が作る）が sources より新しければそれも足す。頭のモジュールがこのリポに無い名前（エンジン・Java の物）とパス（先頭のフォルダがこのリポに無い物）は数えない。pathSkipPrefixes は作る物の置き場（無くて当たり前）。fileExts は Mod.name でなくファイル名と読む末尾。頭の generatedHead 行に generatedMarks のどれかがある文書は生成物で見ない（作る元を直す）。` ` か表の語の直後に plannedMarks のどれかがあれば予定の名前で数えない（`名前`（予定））。Flix の標準ライブラリの名前は flixJar（このリポ → エンジン → git の主の作業場の順に探す）の src/library から引く。書き方は docs/doc-conventions.md の「文書の中で名前・パスを書く記法」。flixComments が true なら sources の .flix のコメント（/// と //）も見る: ` ` の中と、地の文の Mod.name・/ を含むパス・path:行 の形の語だけ（ほかの地の文は見ない）。.flix の物は上限で数える（全部を見る時はリポごとの flixLimitFile（{\"limit\": N}。sync で配らない）と比べ、増えたら止め・減ったら下げるまで止める。コミットの時の触った .flix は HEAD の中身より増えた物だけ止める）。",
   "docDirs": ["docs", "agents-pack"],
   "docFiles": ["NOTES.md", "AGENTS.local.md"],
   "skip": ["docs/gallery/", "docs/migrations/"],
@@ -12,5 +12,7 @@
   "generatedMarks": ["手で直さない", "手で編集しない", "DO NOT EDIT"],
   "generatedHead": 5,
   "plannedMarks": ["（予定）", "(予定)"],
-  "flixJar": "bin/flix.jar"
+  "flixJar": "bin/flix.jar",
+  "flixComments": true,
+  "flixLimitFile": "lint/limits/doc-refs-flix.json"
 }
