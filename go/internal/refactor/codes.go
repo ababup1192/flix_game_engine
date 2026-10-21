@@ -8,24 +8,26 @@ import (
 )
 
 const (
-	CodeUsages          = "refactor.usages"
-	CodeUnused          = "refactor.unused"
-	CodeRefs            = "refactor.refs"
-	CodeMatchSites      = "refactor.match-sites"
-	CodeFieldSites      = "refactor.field-sites"
-	CodeExpand          = "refactor.expand-wildcard"
-	CodeRemoveDead      = "refactor.remove-dead"
-	CodeAccessor        = "refactor.field-to-accessor"
-	CodeRemoveField     = "refactor.remove-field"
-	CodeFixConstruction = "refactor.fix-construction"
-	CodeAddField        = "refactor.add-field"
-	CodeCaseShape       = "refactor.change-case-shape"
-	CodeSignature       = "refactor.change-signature"
-	CodeMove            = "refactor.move"
-	CodePrivate         = "refactor.make-private"
-	CodeRemoveParam     = "refactor.remove-param"
-	CodeRemoveUse       = "refactor.remove-use"
-	CodeRewrite         = "refactor.rewrite"
+	CodeUsages           = "refactor.usages"
+	CodeUnused           = "refactor.unused"
+	CodeRefs             = "refactor.refs"
+	CodeMatchSites       = "refactor.match-sites"
+	CodeFieldSites       = "refactor.field-sites"
+	CodeExpand           = "refactor.expand-wildcard"
+	CodeRemoveDead       = "refactor.remove-dead"
+	CodeAccessor         = "refactor.field-to-accessor"
+	CodeRemoveField      = "refactor.remove-field"
+	CodeFixConstruction  = "refactor.fix-construction"
+	CodeAddField         = "refactor.add-field"
+	CodeCaseShape        = "refactor.change-case-shape"
+	CodeSignature        = "refactor.change-signature"
+	CodeMove             = "refactor.move"
+	CodePrivate          = "refactor.make-private"
+	CodeRemoveParam      = "refactor.remove-param"
+	CodeRemoveUse        = "refactor.remove-use"
+	CodeRewrite          = "refactor.rewrite"
+	CodeExtractFunction  = "refactor.extract-function"
+	CodeExtractTypeAlias = "refactor.extract-type-alias"
 )
 
 var codes = []checkres.Code{
@@ -65,6 +67,10 @@ var codes = []checkres.Code{
 		Rule: "0（同じ行に別の物がある・名前が見つからない use は fix）", Summary: "使っていない use・import（flixlint の unused-use と同じ判定）を消した後に、人へ回した数"},
 	{Name: CodeRewrite, Level: checklevel.Lint, Metric: "rewrite_left", Unit: "count", Op: checkres.AtMost,
 		Rule: "0（穴の式が書かれた所に無い・型紙の外にコメントがある所は fix）", Summary: "型紙（Flix の式の形と穴）に当たる式を別の式へ書き替えた後に、人へ回した数"},
+	{Name: CodeExtractFunction, Level: checklevel.Lint, Metric: "extract_left", Unit: "count", Op: checkres.AtMost,
+		Rule: "0（型の変数・局所の def・書けない型・効果のある式を引数に渡す所は fix）", Summary: "選んだ式（と --all で同じ形の式）を新しい def に出して呼び出しへ替えた後に、人へ回した数"},
+	{Name: CodeExtractTypeAlias, Level: checklevel.Lint, Metric: "record_type_left", Unit: "count", Op: checkres.AtMost,
+		Rule: "0（本体がちょうどその組の別の alias は fix）", Summary: "閉じた record の型に名前を付けて type alias を置き、同じ欄の組を型に書いた所を名前へ替えた後に、人へ回した数"},
 }
 
 func init() {

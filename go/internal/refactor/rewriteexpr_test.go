@@ -45,6 +45,9 @@ type rwNode struct {
 	attrs            [][2]string
 	typ              string
 	kids             []rwNode
+	eff              string // 効果の型（rwTypes の名前。無ければ -1）
+	index            int    // 欄の中の位置
+	synth            bool   // 構文が作った節
 }
 
 // rwTypes は型の表（名前 → 行）。Option[Int32]・M.Rec（{ o, p } の alias）・欄の並びの違う同じ record。
@@ -140,6 +143,24 @@ func rwDecls() []rwNode {
 func writeRwAst(t *testing.T, dir, home string) {
 	t.Helper()
 	types, typeID := rwTypeTable()
+	writeGenAst(t, dir, home, genAst{src: rwSrc, file: "src/A.flix", decls: rwDecls(), types: types, typeID: typeID, stage: "typed",
+		kinds: rwKinds, slots: rwSlots, attrs: rwAttrs})
+}
+
+// genAst は手で組む汎用の AST 1 つ（ソース 1 ファイル）。
+type genAst struct {
+	src, file, stage    string
+	decls               []rwNode
+	types               []rwTypeRow
+	typeID              map[string]int
+	kinds, slots, attrs []string
+}
+
+// writeGenAst は g の汎用の AST を dir に書き、flixlint の前面の代わりを home に置く。節の葉は "@型" で型の葉（attr.type）、
+// rwNode の eff は効果の型（node.effect）。
+func writeGenAst(t *testing.T, dir, home string, g genAst) {
+	t.Helper()
+	rwSrc, rwKinds, rwSlots, rwAttrs, types, typeID := g.src, g.kinds, g.slots, g.attrs, g.types, g.typeID
 	no := func(xs []string) map[string]int {
 		m := map[string]int{}
 		for i, x := range xs {
@@ -193,15 +214,28 @@ func writeRwAst(t *testing.T, dir, home string) {
 		if n.typ != "" {
 			typ = typeID[n.typ]
 		}
-		for name, v := range map[string]int{"node.kind": kindNo[n.kind], "node.parent": parent, "node.slot": slot, "node.index": 0, "node.root": root,
-			"node.line": l, "node.col": c, "node.endLine": el, "node.endCol": ec, "node.synthetic": 0, "node.type": typ, "node.effect": -1} {
+		eff := -1
+		if n.eff != "" {
+			eff = typeID[n.eff]
+		}
+		syn := 0
+		if n.synth {
+			syn = 1
+		}
+		for name, v := range map[string]int{"node.kind": kindNo[n.kind], "node.parent": parent, "node.slot": slot, "node.index": n.index, "node.root": root,
+			"node.line": l, "node.col": c, "node.endLine": el, "node.endCol": ec, "node.synthetic": syn, "node.type": typ, "node.effect": eff} {
 			add(name, v)
 		}
 		for _, kv := range n.attrs {
 			add("attr.node", id)
 			add("attr.name", attrNo[kv[0]])
-			add("attr.value", sid(kv[1]))
-			add("attr.type", -1)
+			if strings.HasPrefix(kv[1], "@") {
+				add("attr.value", -1)
+				add("attr.type", typeID[kv[1][1:]])
+			} else {
+				add("attr.value", sid(kv[1]))
+				add("attr.type", -1)
+			}
 			add("attr.line", -1)
 		}
 		for _, k := range n.kids {
@@ -210,7 +244,7 @@ func writeRwAst(t *testing.T, dir, home string) {
 		return id
 	}
 	var decls []int
-	for _, d := range rwDecls() {
+	for _, d := range g.decls {
 		decls = append(decls, walk(d, -1, -1, 0, len(rwSrc)))
 	}
 	for _, d := range decls {
@@ -246,9 +280,9 @@ func writeRwAst(t *testing.T, dir, home string) {
 	}
 	lines := func(xs []string) []byte { return []byte(strings.Join(xs, "\n") + "\n") }
 	must(t, os.WriteFile(filepath.Join(dir, "strings.txt"), lines(strs), 0o644))
-	must(t, os.WriteFile(filepath.Join(dir, "files.txt"), lines([]string{"src/A.flix"}), 0o644))
+	must(t, os.WriteFile(filepath.Join(dir, "files.txt"), lines([]string{g.file}), 0o644))
 	must(t, os.WriteFile(filepath.Join(dir, "kinds.txt"), lines(rwKinds), 0o644))
-	must(t, os.WriteFile(filepath.Join(dir, "meta.txt"), lines([]string{"format=1", "stage=typed", "flixVersion=0.78.0", "schemaHash=00aa"}), 0o644))
+	must(t, os.WriteFile(filepath.Join(dir, "meta.txt"), lines([]string{"format=1", "stage=" + g.stage, "flixVersion=0.78.0", "schemaHash=00aa"}), 0o644))
 	quote := func(xs []string) string { return `"` + strings.Join(xs, `", "`) + `"` }
 	scala := fmt.Sprintf("object AstNames {\n  val schemaHash: String = \"00aa\"\n  val kinds: Vector[String] = Vector(\n    %s)\n  val slots: Vector[String] = Vector(\n    %s)\n  val attrs: Vector[String] = Vector(\n    %s)\n}\n",
 		quote(rwKinds), quote(rwSlots), quote(rwAttrs))

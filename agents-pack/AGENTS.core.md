@@ -53,6 +53,8 @@ lint・フック・make の口で止まる決まりはここに書かない（�
 | 関数・型 alias を別の mod へ移す（呼ぶ所の修飾名と use も） | `bin/fge refactor move --def Mod.f --to Mod2` |
 | record の型に欄を足し、組み立てる所すべてに値を入れる | `bin/fge refactor add-field` |
 | 同じ形の式をまとめて書き替える（lint の規則の直しなど） | `bin/fge refactor rewrite --from --to`・`--rule <規則>` |
+| 式を関数に出す・同じ形の写しも呼び出しへ | `bin/fge refactor extract-function <範囲> --name Mod.f --all` |
+| record の型に名前を付け、同じ欄の組の所を全部その名前へ | `bin/fge refactor extract-type-alias --name Mod.T` |
 | `case _` を書き出す・record や case の欄・引数を足す・消す・替える | `bin/fge refactor --help` |
 | 重い処理を順に流す | `bin/fge heavy <コマンド>`（`--help`・`--status`・`--history`） |
 | 作業場を別の版のエンジンへ一時的に向ける | `bin/fge use-engine <版かパス>`・戻すは `--restore` |

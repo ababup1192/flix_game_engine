@@ -106,6 +106,18 @@ const Usage = `使い方: fge refactor <操作> [引数] [--json] [-v|--verbose]
                                                        型の頭か型 alias で絞る（推論で alias が開かれた閉じた record は欄の組で当てる）。
                                                        --rule は設定の rewrites の型紙の組（名前は lint の規則の名前。a,b で並べて 1 回）。
                                                        穴の式が書かれた所に無い・型紙の外の字にコメントがある所は fix（ほかは書く）
+  extract-function (<file>:<行>:<桁>-<行>:<桁> | --expr '<型紙>') --name Mod.name [--to <file>] [--all] [--doc '<1 行>'] [--apply]
+                                                       式を新しい def に出し、元の所を呼び出しに替える（typed の段）。位置は索引と同じ形
+                                                       （桁は 1 から・終わりは最後の字の次）で範囲がちょうど同じ式。--expr は rewrite の型紙で探す。
+                                                       式の外で束ねた局所の名前を引数に（型は束ねた所の書いた型か推論の型）、戻りと効果は推論の型。
+                                                       置き場は既定で囲む def の直前・--name の mod が違えばその mod の終わり（--to で置くファイル）。
+                                                       --all は汎用の AST で同じ形の式（局所の名前の付け替えは同じ・自由変数の所は別の式でもよい）を
+                                                       全部呼び出しへ。型の変数・局所の def・書けない型・効果のある式を引数に渡す所は fix
+  extract-type-alias --name Mod.Name (--from '<型の字>' | <file>:<行>) [--doc '<1 行>'] [--apply]
+                                                       閉じた record の型に名前を付けて type alias を mod の最初の宣言の前に置き、同じ欄の組
+                                                       （欄の順は問わない・型は索引の名前）を型に書いた所（引数・戻り・enum の case・type alias）を
+                                                       全部その名前へ（resolved の段）。もう同じ組の alias なら置かずに使う。本体がちょうど
+                                                       その組の別の alias は fix（--name にその名前）
 
   呼ぶ所・作る所に式を書く操作（change-signature の --args・change-case-shape・fix-construction・add-field の --value）は、
   書く所を囲む def に同じ値の局所の名前があればそれを書く: 前の ` + "`let x = 同じ式;`" + `（括弧と match の腕を越えない）か、
@@ -168,6 +180,7 @@ type args struct {
 	param                                                 string // remove-param の --param（a,b で複数。無ければ本体が使わない引数を全部）
 	after                                                 string // add-field の --after（この欄の次に足す）
 	from, where, in, rule                                 string // rewrite の --from・--where・--in・--rule（--to は move と同じ欄）
+	name, expr, doc                                       string // extract-function・extract-type-alias の --name・--expr・--doc
 	preferLocal                                           bool   // --prefer-local: 書く式の代わりに、型が同じ局所の名前が 1 つならそれを書く
 	at, remove                                            int    // change-case-shape の --at・--remove（-1 は無し）
 	skip                                                  map[string]bool
@@ -278,6 +291,12 @@ func parseArgs(rest []string) (args, error) {
 			a.rule, err = value(&i, x)
 		case "--prefer-local":
 			a.preferLocal = true
+		case "--name":
+			a.name, err = value(&i, x)
+		case "--expr":
+			a.expr, err = value(&i, x)
+		case "--doc":
+			a.doc, err = value(&i, x)
 		case "--at", "--remove":
 			var v string
 			if v, err = value(&i, x); err == nil {
@@ -341,7 +360,7 @@ func (a args) applyWith(verify string, o Options) Apply {
 
 // needs は操作に要る一番低い段（欄の読み書きと受け手の型を見る物だけ typed）。
 func (a args) needs() Stage {
-	if a.op == "field-sites" || a.op == "field-to-accessor" || a.op == "remove-field" || a.op == "rewrite" {
+	if a.op == "field-sites" || a.op == "field-to-accessor" || a.op == "remove-field" || a.op == "rewrite" || a.op == "extract-function" {
 		return Typed
 	}
 	if _, _, field := a.fieldTarget(); a.op == "usages" && field && !a.unused {
@@ -474,6 +493,16 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 			fmt.Fprintln(errOut, "refactor rewrite: --from '<型紙>' と --to '<式>'（か設定の型紙の組 --rule <名前>）が要ります（例 --from '$x != None' --to 'Option.nonEmpty($x)'）")
 			return 2
 		}
+	case "extract-function":
+		if a.name == "" || (a.target == "") == (a.expr == "") {
+			fmt.Fprintln(errOut, "refactor extract-function: --name <Mod.name> と、出す式の位置 <file>:<行>:<桁>-<行>:<桁> か --expr '<型紙>' のどちらか 1 つが要ります（例 refactor extract-function src/A.flix:12:9-12:40 --name A.halfWidth）")
+			return 2
+		}
+	case "extract-type-alias":
+		if a.name == "" || (a.target == "") == (a.from == "") {
+			fmt.Fprintln(errOut, "refactor extract-type-alias: --name <Mod.Name> と、--from '<record の型の字>' か <file>:<行> のどちらか 1 つが要ります（例 --name Geometry.Corner --from '{ right = Float64, bottom = Float64 }'）")
+			return 2
+		}
 	case "make-private":
 	case "remove-use":
 		if a.target == "" && !a.all || a.target != "" && !a.all && !strings.Contains(a.target, ":") {
@@ -487,7 +516,7 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 		}
 	case "index", "remove-dead":
 	default:
-		fmt.Fprintf(errOut, "refactor: 知らない操作 %s（usages・refs・match-sites・field-sites・index・expand-wildcard・remove-dead・field-to-accessor・remove-field・fix-construction・add-field・change-case-shape・change-signature・remove-param・make-private・move・remove-use・rewrite）\n", a.op)
+		fmt.Fprintf(errOut, "refactor: 知らない操作 %s（usages・refs・match-sites・field-sites・index・expand-wildcard・remove-dead・field-to-accessor・remove-field・fix-construction・add-field・change-case-shape・change-signature・remove-param・make-private・move・remove-use・rewrite・extract-function・extract-type-alias）\n", a.op)
 		return 2
 	}
 	if a.op != "field-to-accessor" && (strings.Contains(a.label, ",") || a.labelsFile != "") {
@@ -574,6 +603,10 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 		rep, err = removeUseReport(root, a, cfg, o, b)
 	case "rewrite":
 		rep, idx, err = rewriteReport(root, idx, a, cfg, o, b)
+	case "extract-function":
+		rep, idx, err = extractFunctionReport(root, idx, a, cfg, o, b)
+	case "extract-type-alias":
+		rep, idx, err = extractTypeAliasReport(root, idx, a, cfg, o, b)
 	}
 	if err != nil {
 		fmt.Fprintf(errOut, "refactor %s: %v\n", a.op, err)

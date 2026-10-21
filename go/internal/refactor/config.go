@@ -39,13 +39,16 @@ type Config struct {
 	// Rewrites は rewrite --rule <名前> の型紙の組（名前は lint の規則の名前にすると、規則の hint から --rule でそのまま呼べる）。
 	// engine の物にゲームの refactor.local.json の物を名前ごとに重ねる（同じ名前はゲームの物）。
 	Rewrites map[string][]RewriteRule `json:"rewrites,omitempty"`
+	// EntryTables は入口の表の def の名前（短い名前。既定 jobs＝常駐の窓なしのゲームの jobs()）。この def の中から使う def と、
+	// 入口のファイルに Mod.x が出る時の Mod.xJob は、名前で呼ばれる入口として remove-dead・make-private が外さない。
+	EntryTables []string `json:"entryTables,omitempty"`
 	// WhyNot: 依存（lib/）を用意する口は持たない。依存を入れるのは flix の 1 つの源（flix check・段 C から flixlint の
 	// Bootstrap）で、無い時は索引が止めて next に make check を出す（refactor-tool-design §8.1）。
 }
 
 // defaults は設定ファイルが 1 つも無い時の値（配る refactor.json と同じ）。
 func defaults() Config {
-	return Config{Sources: []string{"src", "test"}, Verify: "make check", VerifyTests: "make test", TestDirs: []string{"test"}}
+	return Config{Sources: []string{"src", "test"}, Verify: "make check", VerifyTests: "make test", TestDirs: []string{"test"}, EntryTables: []string{"jobs"}}
 }
 
 // LoadConfig は root の bin/lint-rules/refactor.json と refactor.local.json を重ねて読む。
@@ -95,6 +98,9 @@ func (c Config) with(over Config) Config {
 	}
 	if over.JavaOpts != "" {
 		c.JavaOpts = over.JavaOpts
+	}
+	if len(over.EntryTables) > 0 {
+		c.EntryTables = over.EntryTables
 	}
 	if len(over.Rewrites) > 0 {
 		merged := map[string][]RewriteRule{}

@@ -112,7 +112,7 @@ func expandReport(root string, idx *Index, a args, cfg Config, o Options) (repor
 }
 
 func deadReport(root string, idx *Index, a args, cfg Config, o Options) (report, error) {
-	plan, err := PlanDead(root, idx.Rows, DeadQuery{WithTests: a.withTests, Only: a.only, TestDirs: cfg.TestDirs, Skip: a.skip, Engine: engineDir(root), Def: a.def, Library: IsLibrary(root, cfg)})
+	plan, err := PlanDead(root, idx.Rows, DeadQuery{WithTests: a.withTests, Only: a.only, TestDirs: cfg.TestDirs, Skip: a.skip, Engine: engineDir(root), Def: a.def, Library: IsLibrary(root, cfg), EntryTables: cfg.EntryTables})
 	if err != nil {
 		return report{}, err
 	}

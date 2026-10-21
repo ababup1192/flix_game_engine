@@ -22,6 +22,8 @@ type DeadQuery struct {
 	Def string
 	// Library は fpkg で配るライブラリか（pub の def は使う側がこの索引の外にいるので、消さずに fix へ回す）。
 	Library bool
+	// EntryTables は入口の表の def の短い名前（設定の entryTables。Mentions.withEntryDefs）。
+	EntryTables []string
 }
 
 // DeadPlan は remove-dead の計画。
@@ -120,7 +122,7 @@ func PlanDead(root string, rows []Row, q DeadQuery) (DeadPlan, error) {
 		}
 	}
 	plan.Sites = len(cands) + len(plan.Fix)
-	mentions := loadMentions(root, q.Engine)
+	mentions := loadMentions(root, q.Engine).withEntryDefs(rows, q.EntryTables)
 	removed := map[string]bool{}
 	var targets []cand
 	for _, c := range cands {
