@@ -21,6 +21,8 @@ const (
 	CodeCaseShape       = "refactor.change-case-shape"
 	CodeSignature       = "refactor.change-signature"
 	CodeMove            = "refactor.move"
+	CodePrivate         = "refactor.make-private"
+	CodeRemoveParam     = "refactor.remove-param"
 )
 
 var codes = []checkres.Code{
@@ -50,6 +52,10 @@ var codes = []checkres.Code{
 		Rule: "0（関数として渡す所・2 回使う引数に式が渡る所・消える引数を使う本体は fix。fix があれば書かない）", Summary: "def の引数の並びを替えた後に、新しい並びで呼べない所として人へ回した数"},
 	{Name: CodeMove, Level: checklevel.Lint, Metric: "move_sites_left", Unit: "count", Op: checkres.AtMost,
 		Rule: "0（元の mod の非 pub の物を使う・移す非 pub の物を外が使う・読めない use は fix。fix があれば書かない）", Summary: "def・型 alias を別の mod へ移した後に、新しい mod を指せない所として人へ回した数"},
+	{Name: CodePrivate, Level: checklevel.Lint, Metric: "private_left", Unit: "count", Op: checkres.AtMost,
+		Rule: "0（外の使い手がいる・どこからも参照されない・名前が .flix の外に出る・ライブラリの def は fix）", Summary: "外の mod から使われない pub の def から pub を外した後に、人へ回した数"},
+	{Name: CodeRemoveParam, Level: checklevel.Lint, Metric: "call_sites_left", Unit: "count", Op: checkres.AtMost,
+		Rule: "0（本体が使う引数・関数として渡す所は fix。fix があれば書かない）", Summary: "def の使っていない引数を宣言と呼ぶ所から消した後に、人へ回した数"},
 }
 
 func init() {

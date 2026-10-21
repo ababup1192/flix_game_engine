@@ -15,6 +15,12 @@ func (o *Outcome) status() string {
 	case StateDryRun:
 		return fmt.Sprintf("dry-run（diff: %s・%d 行・%d ファイル）", rel(o.Diff), o.DiffLines, o.Files)
 	case StateApplied:
+		switch {
+		case o.FixedAfter:
+			return fmt.Sprintf("applied（%s は書く前は落ちていた（誤り %d）が、書いた後は %.0f s で通った・patch: %s）", o.Verify, o.ErrorsBefore, o.VerifySecs, rel(o.Patch)) + o.dirtyNote()
+		case o.BrokenBefore:
+			return fmt.Sprintf("applied（%s は書く前から落ちている。誤り 前 %d → 後 %d・新しい誤り 0・patch: %s）", o.Verify, o.ErrorsBefore, o.ErrorsAfter, rel(o.Patch)) + o.dirtyNote()
+		}
 		return fmt.Sprintf("applied（%s が %.0f s で通った・patch: %s）", o.Verify, o.VerifySecs, rel(o.Patch)) + o.dirtyNote()
 	case StateReverted:
 		s := fmt.Sprintf("reverted（%s が %.0f s で落ちたので書く前の中身へ戻した・出力: %s）", o.Verify, o.VerifySecs, rel(o.VerifyLog))

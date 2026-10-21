@@ -66,7 +66,18 @@ const Usage = `使い方: fge refactor <操作> [引数] [--json] [-v|--verbose]
                                                        record の式なら欄の式も替える（ctx#atlas → env#ctx#atlas・w#theme →
                                                        env#res#theme）。並びは元の改行の形を写し、新しい型の名前が引けないファイルには
                                                        use を足す。関数として渡す所・2 回使う引数に式が渡る所・効果のある def を呼ぶ式・
-                                                       本体が消える引数をまだ使う def は fix（fix があれば書かない）
+                                                       本体が消える引数をまだ使う def は fix（fix があれば書かない）。
+                                                       --args の @名前 は呼ぶ所の局所の名前（let・case のパターン・lambda・引数で
+                                                       束ねた物。例 --args 'env, @card'）: そのまま書き、呼ぶ所を囲む def で束ねて
+                                                       いなければ fix
+  remove-param --def Mod.f[,Mod.g] [--param x[,y]] [--apply]
+                                                       使っていない引数を宣言と呼ぶ所から消す（--param を省くと本体が使わない引数を
+                                                       全部。_ で始まる物は残す）。resolved の索引で足り、型検査が通らない途中でも使える:
+                                                       --apply の確かめは書く前にも流し、前から落ちていれば、書いた後の誤り（ファイル・
+                                                       種類・番号）が書く前に収まる（新しい誤り 0）時に通す。本体が使う引数は fix
+  make-private [--def Mod.f[,Mod.g]] [--apply]          外の mod から使われない pub の def から pub を外す（--def を省くと usages --unused の
+                                                       「同じ mod の中だけ」を全部）。外の mod の呼び出し・use・テストが使う・どこからも
+                                                       参照されない（消すのは remove-dead）・名前が .flix の外に出る・ライブラリは fix
   move --def Mod.f[,Mod.T] --to Mod2 [--with Mod.h] [--apply]
                                                        def と型 alias を ///・注記ごと Mod2 の終わりへ移し（Mod2 が無ければ
                                                        src/<Mod2>.flix を作る・同じ名前があれば止める）、呼ぶ所の Mod.f を Mod2.f に、
@@ -124,6 +135,7 @@ type args struct {
 	caseName, value                                       string
 	add, typ, params, argsText                            string // change-case-shape の --add・--type、change-signature の --params・--args
 	to, with                                              string // move の --to・--with
+	param                                                 string // remove-param の --param（a,b で複数。無ければ本体が使わない引数を全部）
 	at, remove                                            int    // change-case-shape の --at・--remove（-1 は無し）
 	skip                                                  map[string]bool
 	max, limit                                            int // max < 0 は無し・limit 0 は全部
@@ -218,6 +230,8 @@ func parseArgs(rest []string) (args, error) {
 			a.with, err = value(&i, x)
 		case "--args":
 			a.argsText, err = value(&i, x)
+		case "--param":
+			a.param, err = value(&i, x)
 		case "--at", "--remove":
 			var v string
 			if v, err = value(&i, x); err == nil {
@@ -399,6 +413,12 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 			fmt.Fprintln(errOut, "refactor move: --def <Mod.f>（a,b で複数・型 alias も）と --to <移し先の mod> が要ります（例 --def FightView.hpBarRect --to Geometry。元の mod の非 pub の物も移すなら --with Mod.h）")
 			return 2
 		}
+	case "remove-param":
+		if a.def == "" {
+			fmt.Fprintln(errOut, "refactor remove-param: --def <Mod.f>（a,b で複数）が要ります。消す引数は --param <名前>（a,b で複数）・省くと本体が使わない引数を全部（例 --def DeckView.deckDetailHint --param r）")
+			return 2
+		}
+	case "make-private":
 	case "usages":
 		if !a.unused && a.target == "" && a.label == "" {
 			fmt.Fprintln(errOut, "refactor usages: 名前を渡してください（例 refactor usages World.moveTo・refactor usages World#scene・refactor usages --unused）")
@@ -406,7 +426,7 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 		}
 	case "index", "remove-dead":
 	default:
-		fmt.Fprintf(errOut, "refactor: 知らない操作 %s（usages・refs・match-sites・field-sites・index・expand-wildcard・remove-dead・field-to-accessor・remove-field・fix-construction・change-case-shape・change-signature・move）\n", a.op)
+		fmt.Fprintf(errOut, "refactor: 知らない操作 %s（usages・refs・match-sites・field-sites・index・expand-wildcard・remove-dead・field-to-accessor・remove-field・fix-construction・change-case-shape・change-signature・remove-param・make-private・move）\n", a.op)
 		return 2
 	}
 	if a.op != "field-to-accessor" && (strings.Contains(a.label, ",") || a.labelsFile != "") {
@@ -483,6 +503,10 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 		rep, err = signatureReport(root, idx, a, cfg, o)
 	case "move":
 		rep, err = moveReport(root, idx, a, cfg, o)
+	case "remove-param":
+		rep, err = removeParamReport(root, idx, a, cfg, o)
+	case "make-private":
+		rep, err = privateReport(root, idx, a, cfg, o)
 	}
 	if err != nil {
 		fmt.Fprintf(errOut, "refactor %s: %v\n", a.op, err)

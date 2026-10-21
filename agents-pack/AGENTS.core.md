@@ -48,7 +48,7 @@ lint・フック・make の口で止まる決まりはここに書かない（�
 | ゲームの定義を引く | `make src Q=<名前>` |
 | 文書が消えた名前・無いファイルを指していないか | `make lint-doc-refs`（古い記録は `doc-refs.local.json` の skip） |
 | 名前の使われ所・呼び手を探す（grep より先に・読むのは道具が出した行だけ） | `bin/fge refactor usages <名前>` |
-| 使われない pub・use を探して消す（テストだけが呼ぶ物も） | `bin/fge refactor usages --unused` → `remove-dead` |
+| 使われない pub・use を探して消す・pub を外す | `bin/fge refactor usages --unused` → `remove-dead`・`make-private` |
 | record の欄の直の読み書きを口の関数へ替える（口が無ければ作る） | `bin/fge refactor field-to-accessor` |
 | 関数・型 alias を別の mod へ移す（呼ぶ所の修飾名と use も） | `bin/fge refactor move --def Mod.f --to Mod2` |
 | `case _` を書き出す・record や case の欄・引数を足す・消す・替える | `bin/fge refactor --help` |
