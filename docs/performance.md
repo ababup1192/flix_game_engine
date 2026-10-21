@@ -239,7 +239,7 @@ List.reverse(List.reverse(folded#current) :: folded#rows)
 **純粋な `let x = 式` がラムダの中で 1 回だけ使われると、0.78 の最適化は式をラムダの中へ書き写す**
 （`@DontInline` でも止まらない）。画素やコマごとに呼ばれるラムダなら、1 回のはずの組み立てが毎回走る。
 値は変わらないので、テストも絵の比べも気づかない。0.50 の描き出しはこれで、シェーダー面が Spec を
-画素ごとに組み直し（`ShaderEval.compileSpec`）、頂点色の多角形が三角形の record を画素ごとに引いていた。
+画素ごとに組み直し（今の `ShaderEval.compile`）、頂点色の多角形が三角形の record を画素ごとに引いていた。
 直してから internet_dungeon の reference-check は 243 秒 → 69 秒。
 
 ```flix
@@ -399,7 +399,7 @@ N が定数なので実害は無いと判断している。**N を決めるの�
   描画の実行より前に確定させる必要がある
 - `emitMerged` — 描画の実行そのもの。順序に依存する
 - `App.resolvedCamera` の `safeZoom` — 1 フレームに 1 回しか走らない。N に依存しない
-- `ShaderEval.envOf` の画素ごとの `Map` — 測って打ち切り済み（`docs/backlog.md`）
+- ~~`ShaderEval.envOf`~~ の画素ごとの `Map` — 測って打ち切り済み（`docs/backlog.md`）
 
 ---
 

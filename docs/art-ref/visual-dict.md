@@ -85,7 +85,7 @@ AGENTS.local.md に人の注文（/style-interview の聞き取り）があれ�
 `[新]` 付きの部品は **0.13.0 から**。`PxSprite.sizeOf` / `Render.fadeAll` / `Color.hex` /
 `Num.*` / `Grid.dimsOfRows` は **0.14.0 から**。
 **0.19.0 から**: `Pass`(レンダーターゲット=別の紙)・`HeadlessRender.renderGifWithPasses`・Fx の 3 語彙。
-**0.20.0 から**: 図形プリミティブは `RawDraw.*`(旧 `Render.box` 系の名前は存在しない)。
+**0.20.0 から**: 図形プリミティブは `RawDraw.*`(旧 ~~`Render.box`~~ 系の名前は存在しない)。
 自分のゲームが引いているバージョンは `flix.toml` の `github:ababup1192/flix_game_engine` を見る。
 
 **シェーダーは知らない `kind` が 1 つあるだけで Doc 全体が既定値へ落ちる**

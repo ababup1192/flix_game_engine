@@ -9,8 +9,8 @@ PxSprite の Doc と Journey(村の `Prologue.routeAt` の一般化)の2つだ�
 | やりたいこと | 乗り先(既存) | 新設 |
 |---|---|---|
 | ドット絵のデータ化 | Doc 作法(JsonCodec/fail-open/watchFile/studio フォーム) | PxSpriteDoc(新) |
-| 1体1クアッド描画 | `Render.Item.Sprite`(region/tint/flipH/V)+ `render_gl/Sprite.flix`(instanced・実測 N=5000@60fps) | 無し |
-| 実行時アトラス生成 | `render_gl/Font.flix` の bakeFontAtlas と同型 | RGBA 版アップロード関数1本(~30行) |
+| 1体1クアッド描画 | `Render.Item.Sprite`(region/tint/flipH/V)+ `render_gl/src/Sprite.flix`(instanced・実測 N=5000@60fps) | 無し |
+| 実行時アトラス生成 | `render_gl/src/Font.flix` の bakeFontAtlas と同型 | RGBA 版アップロード関数1本(~30行) |
 | 区間アニメ | 村 `Prologue.routeAt` が原型 | Timeline/Journey(engine_world へ一般化) |
 | 煙・雪・葉・木くず | `Fx`/`FxDoc`(fx.json) | emitter 種の追加のみ(新モジュール禁止) |
 | 風揺れ | `Sway` | 無し |
@@ -27,7 +27,7 @@ PxSprite の Doc と Journey(村の `Prologue.routeAt` の一般化)の2つだ�
 - コマは既存 Doc の rows 慣行に合わせる(studio のフォーム自動化に乗る)。
 - flipX 時の anchor 鏡映は draw 側の規約。スケールは整数のみ(NEAREST 前提)。
 - **tint の両立**: テーマ切替は低頻度 → テーマ別に生成し分け(watchFile で再生成、
-  fontAtlas と同じライフサイクル)。寒色 mix・夜などの連続変化は `Sprite.tint`(乗算)
+  fontAtlas と同じライフサイクル)。寒色 mix・夜などの連続変化は `Render.Item.Sprite` の tint(乗算)
   とポスト面で。パレット LUT シェーダは作らない。
 - 一点物の背景(家・山)はコード矩形のまま。全部をスプライト化しない
   (生成のバイト一致の機械的検証を守るため)。

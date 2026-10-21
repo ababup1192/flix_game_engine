@@ -8,7 +8,7 @@
 前提: jar の指紋（`jar.manifest`）は jarfix（0.52.1 の見込み）の決まりに従う。
 
 - 指紋は src・flix.toml・lib の中身から作る。lib は、flix.toml か packages.lock に名前のある版だけを入れる。
-- jar を作る写しにだけある入口の束（`src/FgeHeadlessMain.flix`）は入れない。
+- jar を作る写しにだけある入口の束（写しの src/FgeHeadlessMain.flix）は入れない。
 - 作り終えた後に、作った写し（`build/headless/proj`）から取り直す。
 - java と java の旗は混ぜない（0.52）。
 

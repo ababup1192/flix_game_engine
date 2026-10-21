@@ -53,8 +53,8 @@
 ### dungeon の静的の持ち方・camera
 
 - 静的は `World.Prebuilt = { tiles: List[StaticTile], occluders }`(`World.flix:26-27`)、`StaticTile = { anchor, item: PlacedItem }`(`World.flix:21`) に生成済み。生成し直すのは `Controls.loadFloors`(起動時)・`Controls.reloadAll`(F1/保存時) だけ(`Controls.flix:54-62, 75-82`)。
-- 毎フレーム `View.frame`(`View.flix:69-80`) は `visibleStatic`(`View.flix:85-89`) で anchor カリングし `tile#item` をそのまま返す（頂点は作り直さない）。作り直しは全部下流（centerOn→draw→GL）。
-- **dungeon は `withCamera(World.cameraCenter)` のみで zoom 未使用**(`Main.flix:22`、ゲーム側で `withZoom` 0 件)。camera は毎フレーム平行移動だけ。静的頂点は zoom で変形されない。
+- 毎フレーム dungeon の View.frame（View.flix:69-80）は `visibleStatic`(`View.flix:85-89`) で anchor カリングし `tile#item` をそのまま返す（頂点は作り直さない）。作り直しは全部下流（centerOn→draw→GL）。
+- **dungeon は `withCamera(World.cameraCenter)` のみで zoom 未使用**（dungeon の Main.flix:22、ゲーム側で `withZoom` 0 件）。camera は毎フレーム平行移動だけ。静的頂点は zoom で変形されない。
 - 静的:動的 ≈ 10:1〜100:1（`View.flix:65-68`「B2 は静止部品が数千個」）。
 
 ### 毎フレームのコスト（プロファイル 48%+26%）
@@ -68,7 +68,7 @@
 
 ### スナップショット / 生成の独立性（R1）
 
-- ゲーム側のテストはスナップショット比較で、 `SoftRaster.rasterize`(`SoftRaster.flix`) の CPU 描画 PNG のバイト比較で、`org.lwjgl.*` を import せず render_gl 非依存。描き出しも `HeadlessRender.renderPng`→`SoftRaster`。→ **GL 経路を変えてもスナップショットは動かない = retained の退行を検知できない（R1 の核心）。**
+- ゲーム側のテストはスナップショット比較で、 `SoftRaster.render`(`SoftRaster.flix`) の CPU 描画 PNG のバイト比較で、`org.lwjgl.*` を import せず render_gl 非依存。描き出しも `HeadlessRender.renderPng`→`SoftRaster`。→ **GL 経路を変えてもスナップショットは動かない = retained の退行を検知できない（R1 の核心）。**
 
 ### 切り分けトグルの前例
 
@@ -182,8 +182,8 @@ App.make(World.initial(...))
     ...
 ```
 
-- `View.staticWorldItems` は現状 `View.buildStatic` の書き込み内容を、camera 無し・ワールド座標で返す。
-- `View.frameDynamic` は現状 `View.frame` から動的行（`surfaceItems`/`Torches`/`columnItems`/`playerItems`/`lightingItems`）だけを残す。
+- 案の View.staticWorldItems（dungeon）は現状 View.buildStatic の書き込み内容を、camera 無し・ワールド座標で返す。
+- 案の View.frameDynamic（dungeon）は現状 View.frame から動的行（`surfaceItems`/`Torches`/`columnItems`/`playerItems`/`lightingItems`）だけを残す。
 - **注意**: z=2 の壁は静的、z=2 の粒は動的。両方 z=2 で同じソート列に入る。§2.3/§2.5 の入力順規則で「粒 → 壁」を保つ。
 
 ---
@@ -277,7 +277,7 @@ SoftRaster は `DrawCmd` を CPU で描くだけで GPU を知らない。retain
 - ゲート: 1165/0（fe_rogue 非回帰）＋ dungeon glReadPixels diff ゼロ ＋ dungeon PNG スナップショット（§4.3）不変。
 
 ### 段階 3：床・飾りも静的レイヤーへ、View を静的/動的に分割
-- `View.staticWorldItems`（壁+床+飾り・camera 無し）と `View.frameDynamic`（松明/プレイヤー/影/水面の粒）に分割。z=2 粒・z=5 松明が動的、壁・床飾りが静的で同 z 同居 → §2.5 の入力順規則で前後保存。
+- 案の View.staticWorldItems（壁+床+飾り・camera 無し）と View.frameDynamic（松明/プレイヤー/影/水面の粒）に分割。z=2 粒・z=5 松明が動的、壁・床飾りが静的で同 z 同居 → §2.5 の入力順規則で前後保存。
 - 静的レイヤー build は `Prebuilt#tiles` の item をワールド座標で全量返す（カリングは §6 の判断）。
 - ゲート: 1165/0 ＋ dungeon glReadPixels diff ゼロ ＋ PNG スナップショット不変。B2 の fps を段階0 の計測で確認（120fps に届くか）。
 

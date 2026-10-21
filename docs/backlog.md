@@ -76,7 +76,7 @@
   見合わない。設計は `plans/performance.md:418-432`。
   - 最終確認日: 2026-08-13
 
-- **`ShaderEval.envOf` の画素ごとの `Map` 作り直しをやめる（適用 F）** — **打ち切り**
+- **~~`ShaderEval.envOf`~~ の画素ごとの `Map` 作り直しをやめる（適用 F）** — **打ち切り**
   （2026-08-13 に測って判断）。トリガー: **`shared`（bindings）を実際に使う shader Doc が
   出てきて、その面がルートの `make render-all`（全テンプレ）の中で目に見える時間を占めたとき**。
   `envOf`（`engine/src/ShaderEval.flix:46-51`）は 1 画素ごとに `Map.empty()` から
@@ -151,7 +151,7 @@ shooter / race / raise の 3 スターターを教科書として作る中で「
   現在 2 本（race のループ道・shooter の星空）を View に手書き。Terrain/TerrainDoc は静的
   マップ + dual-grid 用でスクロール/ループを想定せず素の背景には過剰。3 本目が来たら
   「rows を縦/横に流す背景」ヘルパを engine_world に持ち上げる。
-- **ゲージ/バーの宣言ヘルパ（`Render.gauge(rect, ratio, fg, bg)` 相当）** — トリガー:
+- **ゲージ/バーの宣言ヘルパ（Render.gauge(rect, ratio, fg, bg) のような案の口）** — トリガー:
   **2 本目**（RPG の HP 等）。現在 raise が「値/上限に比例する棒（土台+中身+ラベル+数）」を
   View で手組み。育成・RPG 系で頻用。
 - **軽量な List×List 当たり判定ヘルパ（重なるペアを返す純粋関数）** — トリガー: **2 本目**
@@ -167,7 +167,7 @@ shooter / race / raise の 3 スターターを教科書として作る中で「
 ## style_lab（画風の見本を作る実験台）で見えた穴（2026-08-14）
 
 丘の場面を coarse / fine / smooth の 3 本の描き手で描き出す中で「エンジンに無くて自前で
-書く羽目になった」物。多くはその場で塞いだ（`Scatter.fieldExcept` / `Depth.Bands` /
+書く羽目になった」物。多くはその場で塞いだ（`Scatter.fieldExcept` / ~~`Depth.Bands`~~（後に消した） /
 `Daylight.sideShadow` / `ShaderJson.parseWith` / `PaletteExport` /
 `HeadlessRender.silhouettePngWith` / `Num.clampInt` / `Color.toHex`）。
 残りは設計判断が要るのでここに置く。

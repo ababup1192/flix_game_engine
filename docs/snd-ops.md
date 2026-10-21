@@ -71,7 +71,7 @@
 
 譜面（*.chip.json）を楽器（譜面の中か *.instrument.json）で鳴らす。左右に振って混ぜ、ループ点があれば頭 + 輪の 1 本と smpl のループの頭を作る
 
-例: `{"song": {"chip": "testdata/snd/tiny.chip.json", "instruments": "testdata/snd/tiny.instrument.json"}}`
+例: `{"song": {"chip": "go/internal/snd/testdata/snd/tiny.chip.json", "instruments": "go/internal/snd/testdata/snd/tiny.instrument.json"}}`
 
 | 引数 | 型 | 既定 | 説明 |
 |---|---|---|---|

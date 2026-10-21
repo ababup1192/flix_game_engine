@@ -42,7 +42,7 @@ Doc の読み直しは `traceFrame` の手前で同じ関数（watchFile・reloa
   `Skip` = 跳んだ先の鍵を「書いた」ことにする（セーブを作り物の場面で上書きしない）・`Write` = 次の実機のフレームで書く（跳んだ先の Doc も名乗る）。
 - `write` が書けなかった時の扱いは `write` が持つ（`ActiveDocs.write` は黙って続ける。セーブは決まり 3 の 1 行を言う）。
 - 表示中の Doc は `DocTable.activeDocs(表, w)` から導く（ゲームは World に `activeDocsWritten` の欄を持たなくてよい）。
-  `ActiveDocs.step` は消した（`ActiveDocs.write` が残る）。
+  ~~`ActiveDocs.step`~~ は消した（`ActiveDocs.write` が残る）。
 - `padTouched` は押しっぱなしと同じ「今の様子」なので、固定刻みの持ち越し（押した瞬間だけを次のフレームへ渡す）には入れない。
 - `launch` の効果に `Fs.FileWrite` が入った（`main` は既定のハンドラで足りる）。
 

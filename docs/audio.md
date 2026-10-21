@@ -238,7 +238,7 @@ App.make(initialWorld)
 | `rasp(samples)` | 隣り合うサンプルの差分を取り、擦れた質感にする（noise にかけると太い「ドッ」が「シャッ」に変わる） |
 | `sequence(voices)` | 複数の声を順につなげる。上昇音・下降音・ファンファーレのような音階の並びを作る |
 
-ゲーム側は `src/render/SfxRender.flix` に「音のデザイン」だけを書き、`SceneRender.all` から
+ゲーム側は `<ゲーム>/src/render/SfxRender.flix` に「音のデザイン」だけを書き、`SceneRender.all` から
 `renderAll` を呼んで `assets/sfx/` へ WAV を書き出す（`make render-all`）。合成と WAV エンコードは
 engine_tools 側の `SfxSynth.wavBytes` / `writeBytes` / `renderSet`（ループ点つきの曲は `renderLooped`・
 ステレオは `wavBytesStereo` / `renderLoopedStereo`）が持つので、

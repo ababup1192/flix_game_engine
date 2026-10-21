@@ -11,7 +11,7 @@
 - **PlacedItem 経路**（`engine_world` の `Render.Item` + `App.withView`）。**新しく作るゲームは
   必ずこちら**を使う。位置つきの絵を値として返すだけの宣言的な組み方で、CameraRig・
   DualGrid・Fx など engine_world の道具はすべてこの経路の上に乗る。
-- **Drawable 経路**（`engine/src/render/Camera.flix` と `Projection.flix`、および
+- **Drawable 経路**（`engine/src/render/drawable/Camera.flix` と `Projection.flix`、および
   `view = None` で `GameEngine.Drawable` を自分で組むゲーム）。**一部のゲームだけが
   使う古い経路**で、新規のゲームでは使わない。Sprite / Rect / Polygon / Arc / Text /
   TileLayer / Tileset / Transform / Visual といった `render/` 配下の描画物の型も、

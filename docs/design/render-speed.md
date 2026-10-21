@@ -249,7 +249,7 @@ checkd が偽の緑を返したのは、常駐が見ている物とディスク�
 
 | 残りうる物 | 止め方 |
 |---|---|
-| **env**: エンジンとゲームのあちこちが `System.getenv` を直に読む（`Flow.Cli.envOr` の FLOW・FLOW_VOCAB・FLOW_MODE・FLOW_RECORD、App の DEBUG・START、`SoftRaster` の FGE_SOFT_SERIAL、`RenderCache.rootDir` の FGE_RENDER_CACHE、`ReferenceDiff`、雛形の `SceneRender.envOr` の SHOT）。常駐では、要求の env ではなく、常駐を起こした時の env が見える | **env を読む所を、入口の頭の 1 か所に寄せる。** env は `App.Headless.envOf(req)` の表として入口の頭で 1 回だけ読み、要る値を設定の record（`VideoKit.Settings` の形）にして引数で奥へ渡す。iopure の `RenderEnv.snapshot` を入口の頭の行だけに許す決まり（`render-env-entry`）と同じ形を、engine にも入れる。engine の奥で直に読んでいる所（`Flow.Cli.envOr`・App の DEBUG/START・`SoftRaster` の FGE_SOFT_SERIAL・`RenderCache.rootDir`・`ReferenceDiff`）は、値を引数で受ける形に替える（`Flow.Cli.mainOf(app, env): Int32` など）。engine の `forbid.json` で、入口の頭の外の `System.getenv` と `Sys.Env.` を止める。**糸に env を置く仕組みは持たない。** 共有のプール（`SoftRaster.flix:394-398` の `parallel()`）や使い回す糸では、前の要求の値が残るので。奥の値は全部引数なので、`ContentCache` の `build` が env を黙って読む道も無い（`build` に要る値は params に入れる）。さらに常駐は、起動するときに env を決まったキーだけにして立てる（下の表）。書き漏らした `System.getenv` が残っても、常駐では「無い」と読むだけで、起動した人の値は見えない。それで答えが変われば verify の 1 と 2 が違いを出す |
+| **env**: エンジンとゲームのあちこちが `System.getenv` を直に読む（`Flow.Cli.envOr` の FLOW・FLOW_VOCAB・FLOW_MODE・FLOW_RECORD、App の DEBUG・START、`SoftRaster` の FGE_SOFT_SERIAL、`RenderCache.settings` の FGE_RENDER_CACHE、`ReferenceDiff`、雛形の `SceneRender.envOr` の SHOT）。常駐では、要求の env ではなく、常駐を起こした時の env が見える | **env を読む所を、入口の頭の 1 か所に寄せる。** env は `App.Headless.envOf(req)` の表として入口の頭で 1 回だけ読み、要る値を設定の record（`VideoKit.Settings` の形）にして引数で奥へ渡す。iopure の `RenderEnv.snapshot` を入口の頭の行だけに許す決まり（`render-env-entry`）と同じ形を、engine にも入れる。engine の奥で直に読んでいる所（`Flow.Cli.envOr`・App の DEBUG/START・`SoftRaster` の FGE_SOFT_SERIAL・`RenderCache.settings`・`ReferenceDiff`）は、値を引数で受ける形に替える（`Flow.Cli.mainOf(app, env): Int32` など）。engine の `forbid.json` で、入口の頭の外の `System.getenv` と `Sys.Env.` を止める。**糸に env を置く仕組みは持たない。** 共有のプール（`SoftRaster.flix:394-398` の `parallel()`）や使い回す糸では、前の要求の値が残るので。奥の値は全部引数なので、`ContentCache` の `build` が env を黙って読む道も無い（`build` に要る値は params に入れる）。さらに常駐は、起動するときに env を決まったキーだけにして立てる（下の表）。書き漏らした `System.getenv` が残っても、常駐では「無い」と読むだけで、起動した人の値は見えない。それで答えが変われば verify の 1 と 2 が違いを出す |
 
 常駐を起動するときに通す env（これ以外は渡さない）: `HOME`・`PATH`・`JAVA_HOME`・`TMPDIR`・`LANG`・`LC_*`（`sun.jnu.encoding` と日本語のパスのため）・
 `JAVA_TOOL_OPTIONS`・`HEADLESS_*`（常駐そのものの設定）。`/hello` はこれらの値を返し、クライアントは自分の値と比べる。違えば常駐を落として立て直す。
@@ -288,7 +288,7 @@ agent-eval のお題 1 本と、リリース前の 1 回に入れる。毎回は
 **GPU の道は、View から実機と同じ形で組み直す。** 理由は 3 つ。
 
 - 文字の `Render.Item.Text` は、View がフォントのアトラスを持って組む（`Render.flix:28`）。SoftRaster の道は HeadlessFont のアトラス（`VideoKit.flix:75-85`）を、
-  GL の道は SDF のアトラス（`LwjglLayer.flix:1234-1260`）を使う。
+  GL の道は SDF のアトラス（`RenderPaint.fontAtlas`）を使う。
 - SoftRaster 用の `DrawHash.Frame`（`SoftRaster.RasterReq`）は engine_tools の型で、render_gl からは見えない（render_gl は engine にしか依存しない）。
 - Pass は、SoftRaster では先に描いた画素（`extraImages`）として渡し、GL では自分で描く。
 
@@ -364,10 +364,10 @@ pub mod VideoOut {
 - 鍵（drawhash.txt）を作るには、GL の道でも Soft の Frame の描く命令を組む（7〜9.5 ms/コマ）。GL の塗りと並べても安い。
   鍵を作らない形は用意しない。比べに使う列が抜けるので。
 - **置き場**: engine_tools（SoftRaster・DrawHash）と render_gl の両方に依存する。今その形のパッケージは engine_full だけなので、どこに置くかは依頼主に決めてもらう（7 節）。
-- **engine は `video.json` に書かない。** `video.json` はゲームの `bin/video-status.py` が出力名ごとに書いている物なので、書く人を 2 人にしない。
+- **engine は `video.json` に書かない。** `video.json` はゲームの `internet_dungeon/bin/video-status.py` が出力名ごとに書いている物なので、書く人を 2 人にしない。
   engine はフォルダの中に `frames.json`（`painter`（`gl`・`soft`・`none`）・`frames`・`painted`（塗ったコマの範囲）・`fps`・`keys`（鍵のあるコマ数）・
   `audio`（sfx.txt・bgm.txt と、そこから鳴らす wav の中身の SHA-256 を畳んだ 1 本）・`last`）を書く。`none` は鍵だけを流して塗らなかった印（3.5 節）。
-  `go/internal/videos/videos.go:172,193`（最後の画面とコマ数）と `bin/video-status.py:58`（`f*.png` を数える）は、frames.json があればそれを読むように替える。
+  `go/internal/videos/videos.go:172,193`（最後の画面とコマ数）と `internet_dungeon/bin/video-status.py:58`（`f*.png` を数える）は、frames.json があればそれを読むように替える。
   GL の道では連番の PNG が出ないので。
 
 ### 3.3 GL は 1 本の糸で
@@ -387,7 +387,7 @@ pub mod VideoOut {
   段の間には長さの決まった列（4 コマ分）を置く。今の SoftRaster の 4 本の糸（`lanes()`）は Soft のときだけ使う。
 - 読み戻しは、最初は `glReadPixels` を同期で行う。960×600 の RGBA は 1 コマ 2.3 MB。足りなければ PBO 2 枚で、読み戻しと次の塗りを重ねる（測ってから決める）。
 - ffmpeg への渡し方: `-f rawvideo -pix_fmt rgba -s 960x600 -r <fps> -i - -vf vflip`。**中間物は可逆にする**（ffv1 の `frames.mkv`）。
-  `bin/mix-video-sfx.py` は今と同じく `--slow`・`--crf` と音を掛けて mp4 を 1 回だけ圧縮する。2 回圧縮して絵を落とさない。
+  `internet_dungeon/bin/mix-video-sfx.py` は今と同じく `--slow`・`--crf` と音を掛けて mp4 を 1 回だけ圧縮する。2 回圧縮して絵を落とさない。
   fps は入口が知っている（flow のヘッダ・VideoKit の設定・TUT_FPS などの env）ので frames.json に書く。mix は frames.json があれば
   その fps を正にし、Makefile が渡す値は使わない（食い違いで止めない）。frames.json が `painter=none` なら、mix は何もせずに 0 で終わる。
 
@@ -410,7 +410,7 @@ pub mod VideoOut {
      いくつものフォルダを書くので、フォルダごとに範囲を持つ）。並べる絵は SoftRaster で塗る（`FGE_GPU=off`）。
      状態更新はコマの頭から流し直す（コマを飛ばして World を作る口は持たない）。塗らないコマは 1 コマ 15 ms 前後なので、910 コマでも 15 s 前後。
 - **鍵だけの流しを、人が見る動画の記録と取り違えない。** 今側の 1 は作業中のツリーの `debug/video/<名前>` を書き直すので、連番は消え、古い mp4 だけが残る。
-  `bin/video-status.py`（とエンジンの `videos status`）は frames.json の `painter=none` を見て、記録を `ok` ではなく `keys-only` にする。
+  `internet_dungeon/bin/video-status.py`（とエンジンの `videos status`）は frames.json の `painter=none` を見て、記録を `ok` ではなく `keys-only` にする。
   `make status` と Studio は `keys-only` を「撮れていない（compare の鍵だけ）」と数え、古い mp4 を撮れた物として見せない。
 - **mix の条件も「同じ」の中に入れる。** mix の引数（`--bgm`・`--sub`・`--drop`・`--slow`・`--crf`）と `mix-video-sfx.py` の中身の SHA を、mix が
   `<名前>.mix.json` に書く。compare は frames.json の `audio` と合わせてこれも比べる。違えば「mix が違う」と言い、今と同じく mp4 の音声の md5 で比べる。
@@ -431,7 +431,7 @@ pub mod VideoOut {
 - 鍵は**座標を丸めない**。drawhash の WhyNot のとおり、丸めた幅の中で画素が動いても同じ鍵になり、偽の緑になるから。
   依頼文にあった「格子に丸める案」は採らない。1 本の中で 910 種になる件は、柱 3 で塗りを安くして受け止める。
 - 常駐の中では `RenderCache.freshSession()` を要求ごとに作る（2.2 節の `PerRequest`）。ファイルの指紋のキャッシュ（`digests`）を要求をまたいで持ちたければ、
-  `ContentCache` を通す。柱 2 の側には、`RenderCache.rootDir` と `engineDigest` が env と作業ディレクトリを直に読んでいる所を、引数で受ける形にしてもらう
+  `ContentCache` を通す。柱 2 の側には、`RenderCache.settings` と `engineDigest` が env と作業ディレクトリを直に読んでいる所を、引数で受ける形にしてもらう
   （2.5 節の env の行）。
 - 静止画の `SoftRaster.render*` は、もう `RenderCache.writePlainPng` を通る。柱 1 の常駐は、それに乗るだけでよい。
 
@@ -446,8 +446,8 @@ iopure（`ababup1192/id-x-iopure`）の形の上に積む。
 | ほかの `*-video` の入口（`RenderEnv.video` の handler が `System.exit(1)` を呼ぶ） | handler が終了コードを返す形にする | 常駐ごと落ちない |
 | `VideoKit.kitScaled` と `SceneRender.kitOf` で、フォントとアトラスを二重に組んでいる | `RenderKit.buildShared(atlasSource, look, camera, scale)` を 1 つにして `ContentCache.loadOrBuild` で包む。`PerRequest` は要求ごと | 撮るたびの kit（約 1 s）と Doc（約 1 s）が消える |
 | `VideoKit.writeFramesWhere` / `writeFramesBaked` / `writeFrame`（drawWith → `renderToImageCached` → `Filmstrip.renderFrame`）と、`SceneRender.burnItems` の同じ並び | 動画はエンジンの `VideoOut`、静止画は `RenderCache.writePlainPng` | 塗る物の選択・鍵・連番がエンジンへ移る。ゲームに残るのは「World → 層 → items」と「コマの入力」と「見回りの中身」 |
-| `bin/mix-video-sfx.py` が `f%04d.png` を読む | frames.json を見て、`frames.mkv`（Gl）か連番（Soft）を読む | PNG を通さない |
-| `bin/video-status.py` が `f*.png` を数える | frames.json があれば、その `frames` と `last` を使う | |
+| `internet_dungeon/bin/mix-video-sfx.py` が `f%04d.png` を読む | frames.json を見て、`frames.mkv`（Gl）か連番（Soft）を読む | PNG を通さない |
+| `internet_dungeon/bin/video-status.py` が `f*.png` を数える | frames.json があれば、その `frames` と `last` を使う | |
 | `SceneRender.one` がメソッドの大きさの上限ぎりぎり | 場面の表を `shotNames` ごとの小さな関数へ分ける | jar が作れなくなる穴を先に除く |
 
 残る `unsafe`（`VideoKit.layersNoted`）は、エンジンの `ViewCtx#warnOnce` が知らせを値で返す口を持てば消せる。これはこのメモの範囲外（別の相談）。

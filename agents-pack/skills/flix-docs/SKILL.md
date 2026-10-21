@@ -41,7 +41,7 @@ sync: 2026-10-17
   何の副作用かが型から読めなくなる（`Int64 \ IO` ではなく `Int64 \ Clock`）
 - ハンドラは次の順で選ぶ:
   1. 何も書かない — `main` と `@Test` ではコンパイラが `@DefaultHandler` を入れる。シグネチャにエフェクトを書くだけ
-  2. ライブラリのハンドラを `with` で（`run f() with Clock.runWithIO`）
+  2. ライブラリのハンドラを `with` で（例: run f() with Clock.runWithIO —— Flix の標準ライブラリの Clock のハンドラ）
   3. `with handler` の手書き — 振る舞いを変えたい時の最後の手
 - `run` を入れ子にしない。いくつも剥がすなら 1 つの `run { } with X with Y` に連ねる
 
