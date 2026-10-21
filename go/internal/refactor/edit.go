@@ -72,6 +72,11 @@ func ApplyEdits(src string, edits []Edit) (string, error) {
 		for j := k + 1; j < len(spans); j++ {
 			o := &spans[j]
 			switch {
+			// 字を足すだけの書き換え（空の範囲）が別の範囲の端にある時は、その範囲の外（頭なら前・終わりなら後ろ）。
+			case cur.s == cur.e && o.s < o.e && cur.s == o.s:
+				o.s += delta
+				o.e += delta
+			case cur.s == cur.e && o.s < o.e && cur.s == o.e:
 			case o.s <= cur.s && cur.e <= o.e: // 含む
 				o.e += delta
 			case o.s >= cur.e: // 後ろ

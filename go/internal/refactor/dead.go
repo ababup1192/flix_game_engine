@@ -30,8 +30,9 @@ type DeadPlan struct {
 	Tests    []Fixed // 一緒に消すテスト
 	Fix      []Fixed // 消さずに人へ回す物
 	Edits    []Edit
-	Sites    int // 候補の数（--skip・fix を含む）
-	TestOnly int // test-only の数（flixlint の test-only-api と同じ決め方。同じ mod の中で使う物も含む）
+	Docs     []Fixed // doc を移す転送先（消す包みの doc を受ける def）
+	Sites    int     // 候補の数（--skip・fix を含む）
+	TestOnly int     // test-only の数（flixlint の test-only-api と同じ決め方。同じ mod の中で使う物も含む）
 }
 
 type defInfo struct {
@@ -222,6 +223,18 @@ func PlanDead(root string, rows []Row, q DeadQuery) (DeadPlan, error) {
 			plan.Edits = append(plan.Edits, e)
 		}
 	}
+	// 転送するだけの包み（本体が別の def を呼ぶだけ）を消す時は、その doc を転送先へ移す（転送先に doc が無いか、
+	// 転送先の doc が消える包みの名前を指す時。指さない doc は人が書いた物なので残す）。
+	for _, f := range plan.Targets {
+		e, ok, err := moveDocEdit(root, defs, usesOf[f.Sym], defs[f.Sym], removed)
+		if err != nil {
+			return plan, err
+		}
+		if ok {
+			plan.Edits = append(plan.Edits, e)
+			plan.Docs = append(plan.Docs, Fixed{e.Site, "doc を " + f.Sym + " から移す"})
+		}
+	}
 	sort.Slice(plan.Fix, func(i, j int) bool { return less(plan.Fix[i].Row, plan.Fix[j].Row) })
 	return plan, nil
 }
@@ -308,6 +321,118 @@ func deleteEdit(root string, d defInfo) (Edit, error) {
 	return Edit{File: d.File, Start: start, End: end, Site: d.Row,
 		Check: []Want{{Span: d.Row, Text: name}},
 		Make:  func(string) (string, error) { return "", nil }}, nil
+}
+
+// moveDocEdit は消す def w が転送するだけの包み（本体がプロジェクトの別の def T の呼び出し 1 つ: `T(…)`。引数の中の
+// 呼び出しは問わない）で、w に doc がある時、その doc を T の前へ書く書き換え。T に doc が無ければ足し、T の doc が
+// w の名前を指していれば置き換える。それ以外（T も消す・T の doc が w を指さない・包みでない）は ok=false。
+func moveDocEdit(root string, defs map[string]defInfo, uses []Row, w defInfo, removed map[string]bool) (Edit, bool, error) {
+	data, err := os.ReadFile(filepath.Join(root, w.File))
+	if err != nil {
+		return Edit{}, false, err
+	}
+	src := string(data)
+	wDoc := docLines(src, w.Line)
+	if len(wDoc) == 0 {
+		return Edit{}, false, nil
+	}
+	_, nameEnd, err := ByteRange(src, w.Row)
+	if err != nil {
+		return Edit{}, false, nil
+	}
+	open := nameEnd
+	if open < len(src) && src[open] == '[' {
+		if _, at, err := scanTop(src, open+1, "]"); err == nil {
+			open = at + 1
+		}
+	}
+	list, has, err := argsAfter(src, open)
+	if err != nil || !has {
+		return Edit{}, false, nil
+	}
+	_, extEnd, err := ByteRange(src, w.Ext)
+	if err != nil {
+		return Edit{}, false, nil
+	}
+	body, ok := DefBodyStart(src, list.Close+1)
+	if !ok || body > extEnd {
+		return Edit{}, false, nil
+	}
+	var call *Row
+	for i := range uses {
+		cs, ce, err := ByteRange(src, uses[i])
+		if err != nil || cs != skipBlank(src, body) {
+			continue
+		}
+		if l, h, err := argsAfter(src, ce); err != nil || !h || strings.TrimSpace(src[l.Close+1:extEnd]) != "" {
+			return Edit{}, false, nil
+		}
+		call = &uses[i]
+	}
+	if call == nil || call.Sym == w.Sym || removed[call.Sym] {
+		return Edit{}, false, nil
+	}
+	t, project := defs[call.Sym]
+	if !project {
+		return Edit{}, false, nil
+	}
+	tdata, err := os.ReadFile(filepath.Join(root, t.File))
+	if err != nil {
+		return Edit{}, false, err
+	}
+	lines := strings.SplitAfter(string(tdata), "\n")
+	// T の doc の塊（宣言の上の注記と doc の行のうち、`///` の続く所）。無ければ塊の頭に足す。
+	top := t.Line
+	for top > 1 && docOrAnn.MatchString(lines[top-2]) {
+		top--
+	}
+	from, to := top-1, top-1 // 行の番号（0 から）[from, to)
+	for i := top - 1; i < t.Line-1; i++ {
+		if strings.HasPrefix(strings.TrimSpace(lines[i]), "///") {
+			if to == from {
+				from = i
+			}
+			to = i + 1
+		} else if to > from {
+			break
+		}
+	}
+	if to > from {
+		mention := regexp.MustCompile(`(^|[^A-Za-z0-9_])` + regexp.QuoteMeta(shortName(w.Sym)) + `([^A-Za-z0-9_]|$)`)
+		if !mention.MatchString(strings.Join(lines[from:to], "")) {
+			return Edit{}, false, nil
+		}
+	}
+	// T の宣言の行の字下げで書き直す。
+	first := lines[t.Line-1]
+	indent := first[:len(first)-len(strings.TrimLeft(first, " \t"))]
+	var text strings.Builder
+	for _, l := range wDoc {
+		text.WriteString(indent + strings.TrimLeft(l, " \t"))
+	}
+	start := 0
+	for i := 0; i < from; i++ {
+		start += len(lines[i])
+	}
+	end := start
+	for i := from; i < to; i++ {
+		end += len(lines[i])
+	}
+	repl := text.String()
+	return Edit{File: t.File, Start: start, End: end, Site: t.Row,
+		Make: func(string) (string, error) { return repl, nil }}, true, nil
+}
+
+// docLines は line（1 から）の行の上の `///` の行（注記の行は飛ばす。改行を含む）。
+func docLines(src string, line int) []string {
+	lines := strings.SplitAfter(src, "\n")
+	var out []string
+	for i := line - 2; i >= 0 && docOrAnn.MatchString(lines[i]); i-- {
+		if strings.HasPrefix(strings.TrimSpace(lines[i]), "///") {
+			out = append([]string{lines[i]}, out...)
+		}
+	}
+	return out
 }
 
 // byteCol は行の中の列（1 から・UTF-16）のバイトの位置。
