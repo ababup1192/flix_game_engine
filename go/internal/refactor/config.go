@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/ababup1192/flix_game_engine/go/internal/status"
@@ -24,15 +25,22 @@ type Config struct {
 	FlixJar string `json:"flixJar,omitempty"`
 	// Sources は索引に入れるフォルダ（在る物だけ使う）。
 	Sources []string `json:"sources,omitempty"`
-	// Verify は書き換えの後に流す確かめの口（段 1 の --apply から使う）。
+	// Verify は書き換えの後に流す確かめの口（--apply の後。expand-wildcard など）。
 	Verify string `json:"verify,omitempty"`
+	// VerifyTests は def を消した後の確かめ（remove-dead。テストも消すのでテストまで流す）。
+	VerifyTests string `json:"verifyTests,omitempty"`
+	// TestDirs はテストのフォルダ（remove-dead が「テストからだけ参照される」を決める）。
+	TestDirs []string `json:"testDirs,omitempty"`
+	// Library は fpkg で配るライブラリか（true・false・"auto"）。auto（既定）は flix.toml の [package] に repository が
+	// ある時（パッケージとして出す物）にライブラリと見る。ライブラリでは remove-dead が pub の def を消さない。
+	Library LibraryMode `json:"library,omitempty"`
 	// JavaOpts は flixlint の JVM に渡す物（空なら flixlint の既定）。
 	JavaOpts string `json:"javaOpts,omitempty"`
 }
 
 // defaults は設定ファイルが 1 つも無い時の値（配る refactor.json と同じ）。
 func defaults() Config {
-	return Config{Sources: []string{"src", "test"}, Verify: "make check"}
+	return Config{Sources: []string{"src", "test"}, Verify: "make check", VerifyTests: "make test", TestDirs: []string{"test"}}
 }
 
 // LoadConfig は root の bin/lint-rules/refactor.json と refactor.local.json を重ねて読む。
@@ -70,6 +78,15 @@ func (c Config) with(over Config) Config {
 	}
 	if over.Verify != "" {
 		c.Verify = over.Verify
+	}
+	if over.VerifyTests != "" {
+		c.VerifyTests = over.VerifyTests
+	}
+	if len(over.TestDirs) > 0 {
+		c.TestDirs = over.TestDirs
+	}
+	if over.Library != "" {
+		c.Library = over.Library
 	}
 	if over.JavaOpts != "" {
 		c.JavaOpts = over.JavaOpts
@@ -129,4 +146,36 @@ func FindFlixJar(root, flixlint string, c Config) string {
 		}
 	}
 	return ""
+}
+
+// LibraryMode は library の値（"true"・"false"・"auto"。空は auto）。JSON では true・false・"auto" と書く。
+type LibraryMode string
+
+func (m *LibraryMode) UnmarshalJSON(b []byte) error {
+	switch s := strings.TrimSpace(string(b)); s {
+	case "true", "false":
+		*m = LibraryMode(s)
+	case `"auto"`:
+		*m = "auto"
+	default:
+		return fmt.Errorf("library は true・false・\"auto\" のどれか: %s", s)
+	}
+	return nil
+}
+
+var repositoryLine = regexp.MustCompile(`(?m)^\s*repository\s*=`)
+
+// IsLibrary は root が fpkg で配るライブラリか（設定の library。auto なら flix.toml に repository があるか）。
+//
+// WhyNot: engine の refactor.json に true と書かないのは、bin/lint-rules はゲームへ配られ、ゲームまで
+// ライブラリ扱いになるため。パッケージとして出す物だけが flix.toml に repository を持つので、そこで見分ける。
+func IsLibrary(root string, c Config) bool {
+	switch c.Library {
+	case "true":
+		return true
+	case "false":
+		return false
+	}
+	data, err := os.ReadFile(filepath.Join(root, "flix.toml"))
+	return err == nil && repositoryLine.Match(data)
 }

@@ -47,6 +47,7 @@ lint・フック・make の口で止まる決まりはここに書かない（�
 | 直しが別の不具合を生んだ率 | `bin/fge tickets stats`（前の直しの候補は `suspects`） |
 | ゲームの定義を引く | `make src Q=<名前>` |
 | 直す前に参照・match・欄の読み書きを数える | `bin/fge refactor`（refs・match-sites・field-sites） |
+| `case _` を書き出す・不要な pub を消す | `bin/fge refactor`（expand-wildcard・remove-dead） |
 | 重い処理を順に流す | `bin/fge heavy <コマンド>`（`--help`・`--status`・`--history`） |
 | 作業場を別の版のエンジンへ一時的に向ける | `bin/fge use-engine <版かパス>`・戻すは `--restore` |
 | 案を並べて依頼主に選んでもらう | `reports/<名前>/proposal.json` → `bin/fge proposal` |

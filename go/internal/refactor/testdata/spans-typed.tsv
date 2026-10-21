@@ -1,51 +1,57 @@
-# flixlint-spans 1 stage=typed columns=kind,file,sl,sc,el,ec,sym,owner,extra
+# flixlint-spans 2 stage=typed columns=kind,file,sl,sc,el,ec,sym,owner,extra
 enum-decl	src/Shapes.flix	5	14	5	19	Shapes.Shape	Shapes.Shape	
-case-decl	src/Shapes.flix	6	14	6	20	Shapes.Shape.Circle	Shapes.Shape	
-case-decl	src/Shapes.flix	7	14	7	20	Shapes.Shape.Square	Shapes.Shape	
-case-decl	src/Shapes.flix	8	14	8	17	Shapes.Shape.Dot	Shapes.Shape	
-def-decl	src/Shapes.flix	15	13	15	17	Shapes.area	Shapes.area	pub
+case-decl	src/Shapes.flix	6	14	6	20	Shapes.Shape.Circle	Shapes.Shape	arity=1
+case-decl	src/Shapes.flix	7	14	7	20	Shapes.Shape.Square	Shapes.Shape	arity=1
+case-decl	src/Shapes.flix	8	14	8	17	Shapes.Shape.Dot	Shapes.Shape	arity=0
+def-decl	src/Shapes.flix	15	13	15	17	Shapes.area	Shapes.area	pub ext=15:5:19:6
 match-site	src/Shapes.flix	15	37	19	6		Shapes.area	arms=3 wild=1 var=0 guard=0 enum=Shapes.Shape scrut=Shapes.Shape
+match-arm	src/Shapes.flix	16	9	16	42	Shapes.Shape.Circle	Shapes.area	match=15:37 pat=tag at=16:14:16:29 guard=0 full=1
 case-pattern	src/Shapes.flix	16	14	16	26	Shapes.Shape.Circle	Shapes.area	
+match-arm	src/Shapes.flix	17	9	17	38	Shapes.Shape.Square	Shapes.area	match=15:37 pat=tag at=17:14:17:29 guard=0 full=1
 case-pattern	src/Shapes.flix	17	14	17	26	Shapes.Shape.Square	Shapes.area	
-def-decl	src/Shapes.flix	21	13	21	20	Shapes.isRound	Shapes.isRound	pub
+match-arm	src/Shapes.flix	18	9	18	20		Shapes.area	match=15:37 pat=wild at=18:14:18:15 guard=0
+def-decl	src/Shapes.flix	21	13	21	20	Shapes.isRound	Shapes.isRound	pub ext=21:5:25:6
 match-site	src/Shapes.flix	21	39	25	6		Shapes.isRound	arms=3 wild=0 var=2 guard=1 enum=Shapes.Shape scrut=Shapes.Shape
+match-arm	src/Shapes.flix	22	9	22	37	Shapes.Shape.Circle	Shapes.isRound	match=21:39 pat=tag at=22:14:22:29 guard=0 full=1
 case-pattern	src/Shapes.flix	22	14	22	26	Shapes.Shape.Circle	Shapes.isRound	
+match-arm	src/Shapes.flix	23	9	23	48		Shapes.isRound	match=21:39 pat=var at=23:14:23:19 guard=1 name=other uses=1
 def-use	src/Shapes.flix	23	23	23	27	Shapes.area	Shapes.isRound	
+match-arm	src/Shapes.flix	24	9	24	39		Shapes.isRound	match=21:39 pat=var at=24:14:24:19 guard=0 name=other uses=1
 def-use	src/Shapes.flix	24	23	24	27	Shapes.area	Shapes.isRound	
-def-decl	src/Shapes.flix	27	9	27	13	Shapes.make	Shapes.make	
+def-decl	src/Shapes.flix	27	9	27	13	Shapes.make	Shapes.make	ext=27:5:27:57
 case-construct	src/Shapes.flix	27	35	27	44	Shapes.Shape.Dot	Shapes.make	
-def-decl	src/Shapes.flix	29	13	29	22	Shapes.fromParam	Shapes.fromParam	pub
+def-decl	src/Shapes.flix	29	13	29	22	Shapes.fromParam	Shapes.fromParam	pub ext=29:5:29:65
 label-select	src/Shapes.flix	29	44	29	49	count	Shapes.fromParam	recv=Shapes.World via=decl
 def-use	src/Shapes.flix	29	52	29	56	Shapes.area	Shapes.fromParam	
 label-select	src/Shapes.flix	29	59	29	64	shape	Shapes.fromParam	recv=Shapes.World via=decl
-def-decl	src/Shapes.flix	31	13	31	20	Shapes.fromLet	Shapes.fromLet	pub
+def-decl	src/Shapes.flix	31	13	31	20	Shapes.fromLet	Shapes.fromLet	pub ext=31:5:33:16
 def-use	src/Shapes.flix	32	24	32	28	Shapes.make	Shapes.fromLet	
 label-select	src/Shapes.flix	33	11	33	16	count	Shapes.fromLet	recv=Shapes.World via=decl
-def-decl	src/Shapes.flix	35	13	35	21	Shapes.fromCall	Shapes.fromCall	pub
+def-decl	src/Shapes.flix	35	13	35	21	Shapes.fromCall	Shapes.fromCall	pub ext=35:5:35:45
 def-use	src/Shapes.flix	35	33	35	37	Shapes.make	Shapes.fromCall	
 label-select	src/Shapes.flix	35	40	35	45	shape	Shapes.fromCall	recv=Shapes.World via=decl
-def-decl	src/Shapes.flix	37	13	37	20	Shapes.fromRow	Shapes.fromRow	pub
+def-decl	src/Shapes.flix	37	13	37	20	Shapes.fromRow	Shapes.fromRow	pub ext=37:5:37:107
 def-use	src/Shapes.flix	37	32	37	40	List.sum	Shapes.fromRow	
 def-use	src/Shapes.flix	37	41	37	49	List.map	Shapes.fromRow	
 label-select	src/Shapes.flix	37	57	37	61	left	Shapes.fromRow	recv=Shapes.Pair via=row
 label-select	src/Shapes.flix	37	66	37	71	right	Shapes.fromRow	recv=Shapes.Pair via=row
 case-construct	src/Shapes.flix	37	74	37	104	List.Cons	Shapes.fromRow	sugar
 case-construct	src/Shapes.flix	37	101	37	104	List.Nil	Shapes.fromRow	
-def-decl	src/Shapes.flix	39	13	39	17	Shapes.open	Shapes.open	pub
+def-decl	src/Shapes.flix	39	13	39	17	Shapes.open	Shapes.open	pub ext=39:5:39:60
 label-select	src/Shapes.flix	39	55	39	60	count	Shapes.open	recv=? via=open
-def-decl	src/Shapes.flix	41	13	41	17	Shapes.bump	Shapes.bump	pub
+def-decl	src/Shapes.flix	41	13	41	17	Shapes.bump	Shapes.bump	pub ext=41:5:41:64
 label-update	src/Shapes.flix	41	39	41	44	count	Shapes.bump	recv=Shapes.World via=decl
 label-select	src/Shapes.flix	41	49	41	54	count	Shapes.bump	recv=Shapes.World via=decl
-def-decl	src/Shapes.flix	43	13	43	18	Shapes.piped	Shapes.piped	pub
+def-decl	src/Shapes.flix	43	13	43	18	Shapes.piped	Shapes.piped	pub ext=43:5:43:84
 def-use	src/Shapes.flix	43	48	43	50	|>	Shapes.piped	
 def-use	src/Shapes.flix	43	51	43	59	List.map	Shapes.piped	
 def-use	src/Shapes.flix	43	60	43	71	Shapes.area	Shapes.piped	
 def-use	src/Shapes.flix	43	73	43	75	|>	Shapes.piped	
 def-use	src/Shapes.flix	43	76	43	84	List.sum	Shapes.piped	
-def-decl	src/Shapes.flix	45	13	45	17	Shapes.wide	Shapes.wide	pub
+def-decl	src/Shapes.flix	45	13	45	17	Shapes.wide	Shapes.wide	pub ext=45:5:45:79
 def-use	src/Shapes.flix	45	57	45	61	Shapes.area	Shapes.wide	
 case-construct	src/Shapes.flix	45	62	45	74	Shapes.Shape.Circle	Shapes.wide	
-def-decl	src/Shapes.flix	51	13	51	19	Shapes.spread	Shapes.spread	pub
+def-decl	src/Shapes.flix	51	13	51	19	Shapes.spread	Shapes.spread	pub ext=51:5:51:86
 def-use	src/Shapes.flix	51	31	51	39	List.sum	Shapes.spread	
 def-use	src/Shapes.flix	51	40	51	48	List.map	Shapes.spread	
 label-select	src/Shapes.flix	51	56	51	57	x	Shapes.spread	recv=Shapes.Point|Shapes.Size via=ambiguous

@@ -18,23 +18,40 @@ const Usage = `使い方: fge refactor <操作> [引数] [--json] [--max N] [--l
   match-sites <Enum|Enum.Case> [--catch-all]           match の位置・腕の数・` + "`_`" + `／変数の腕（--catch-all はそれを持つ物だけ）
   field-sites --label x [--receiver T] [--outside Mod] record の欄 x の直の読み（e#x）と書き（{ x = v | e }）
   index [--stage resolved|typed]                       索引を作る（か使い回す）だけ。種類ごとの行の数と秒
+  expand-wildcard --enum E [--apply] [--skip file:line]  E への match の ` + "`case _ =>`" + `（使わない変数の腕も）を残りの case に書き出す
+  remove-dead [--with-tests] [--only test-only|unreferenced] [--def Mod.name] [--apply] [--skip file:line]
+                                                       テストからだけ・どこからも参照されない pub の def を ///・注記ごと消す
 
-  読むだけ（ファイルは書き換えない）。索引は build/refactor/spans-<段>.tsv（無いか古ければ bin/fge heavy の枠で作る）。
+  書き換える操作は既定で dry-run（build/refactor/last.diff を書くだけ）。--apply で書き、確かめの口（refactor.json の
+  verify・remove-dead は verifyTests）を流し、落ちたら書いた patch（build/refactor/last.patch）だけを戻す。
+  書き換えるファイルにコミットしていない変更があれば --apply を断る。決められない所は書き換えず fix に並べる。
+  ほかの操作は読むだけ（ファイルは書き換えない）。索引は build/refactor/spans-<段>.tsv（無いか古ければ bin/fge heavy の枠で作る）。
   refs・match-sites は resolved の段（速い）、field-sites は typed の段（型検査まで。遅い）。
   --max N を付けると数の歯止めになる（got が N を超えれば終了コード 1）。例: 欄の直の読み書きを口の mod の外で 0 に
     fge refactor field-sites --label scene --receiver World --outside World --max 0
   名前は終わりで当てる（Phase.Clear は World.Phase.Clear に当たる。2 つ以上に当たれば候補を出して止まる）。
-  設定は bin/lint-rules/refactor.json（engine が配る）と refactor.local.json（flixlint の場所・sources・verify）。`
+  設定は bin/lint-rules/refactor.json（engine が配る）と refactor.local.json（flixlint・sources・verify・verifyTests・testDirs・library）。
+  library（既定 auto: flix.toml に repository がある package）では remove-dead が pub の def を消さない（使う側が索引の外）。
+  flixlint は 0.6.0 以上。確かめは sh -c で流す（Windows は make と同じく Git Bash か MSYS の sh が要る）。
+  終了コード: 0 問題なし・1 --max を超えた／確かめが落ちて戻した（reverted）・2 呼び方か索引の誤り／断った（refused）・
+  3 戻せないファイルが残った（revert-failed）。
+  道具のテスト: cd go && go test ./internal/refactor。本物の flixlint と flix で書き換えて確かめる e2e は
+  FGE_REFACTOR_E2E=1 FGE_FLIXLINT=<bin/flixlint> FLIX_JAR=<flix.jar> go test ./internal/refactor -run EndToEnd`
 
 // Options は差し替えられる所（テストが索引の作り方と出力先を替える）。
 type Options struct {
-	Run Runner
-	Log io.Writer
+	Run    Runner
+	Verify VerifyRunner
+	Log    io.Writer
 }
 
 type args struct {
 	op, target, label, receiver, outside, flixlint, stage string
 	callers, catchAll, rebuild, asJSON                    bool
+	apply, withTests                                      bool
+	only                                                  string
+	def                                                   string
+	skip                                                  map[string]bool
 	max, limit                                            int // max < 0 は無し・limit 0 は全部
 }
 
@@ -57,6 +74,27 @@ func parseArgs(rest []string) (args, error) {
 			a.callers = true
 		case "--catch-all":
 			a.catchAll = true
+		case "--apply":
+			a.apply = true
+		case "--with-tests":
+			a.withTests = true
+		case "--def":
+			a.def, err = value(&i, x)
+		case "--enum":
+			a.target, err = value(&i, x)
+		case "--only":
+			a.only, err = value(&i, x)
+			if err == nil && a.only != "test-only" && a.only != "unreferenced" {
+				return a, fmt.Errorf("--only は test-only か unreferenced: %s", a.only)
+			}
+		case "--skip":
+			var v string
+			if v, err = value(&i, x); err == nil {
+				if a.skip == nil {
+					a.skip = map[string]bool{}
+				}
+				a.skip[v] = true
+			}
 		case "--rebuild":
 			a.rebuild = true
 		case "--label":
@@ -150,7 +188,12 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 			fmt.Fprintln(errOut, "refactor field-sites: --label <欄の名前> が要ります")
 			return 2
 		}
-	case "index":
+	case "expand-wildcard":
+		if a.target == "" {
+			fmt.Fprintln(errOut, "refactor expand-wildcard: --enum <Enum> が要ります（例 --enum World.Scene）")
+			return 2
+		}
+	case "index", "remove-dead":
 	default:
 		fmt.Fprintf(errOut, "refactor: 知らない操作 %s（refs・match-sites・field-sites・index。段 1 で expand-wildcard・remove-dead）\n", a.op)
 		return 2
@@ -189,6 +232,10 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 		rep = fieldReport(idx, a)
 	case "index":
 		rep = indexReport(idx)
+	case "expand-wildcard":
+		rep, err = expandReport(root, idx, a, cfg, o)
+	case "remove-dead":
+		rep, err = deadReport(root, idx, a, cfg, o)
 	}
 	if err != nil {
 		fmt.Fprintf(errOut, "refactor %s: %v\n", a.op, err)
@@ -217,7 +264,12 @@ type report struct {
 	Index   indexInfo         `json:"index"`
 	Next    string            `json:"next,omitempty"`
 	NextWhy string            `json:"nextWhy,omitempty"` // next の訳（next は写してそのまま流せる命令だけ）
-	Exit    int               `json:"exit"`
+	Outcome *Outcome          `json:"outcome,omitempty"` // 書き換える操作の結末（dry-run・applied・reverted・refused）
+	Fix     []Fixed           `json:"fix,omitempty"`     // 書き換えずに人へ回した所と理由
+
+	wantText string // want の行（書き換える操作）
+	fixHint  string // 直し方の 1 行（書き換える操作）
+	Exit     int    `json:"exit"`
 
 	code    string
 	got     int
@@ -242,14 +294,29 @@ func (r *report) finish(a args) {
 	}
 	want := float64(r.got)
 	msg := "一覧だけ（--max N で歯止めにする）"
-	if a.max >= 0 {
+	if r.Outcome != nil {
+		want, msg = 0, fmt.Sprintf("人へ回した所 %d（%s）", r.got, r.Outcome.State)
+	} else if a.max >= 0 {
 		want = float64(a.max)
 		msg = fmt.Sprintf("%d 件（%d 件まで）", r.got, a.max)
 	}
 	res := checkres.New(r.code, 0, checkres.Measure{Got: float64(r.got), Want: checkres.WantAtMost(want)}, nil, msg)
 	res.Scope = checkres.ScopeSpec
 	res.Cause = checkres.Cause{Op: strings.TrimSpace(r.Op + " " + r.Target)}
-	if res.Status == checkres.Fail {
+	switch {
+	case r.Outcome != nil:
+		if r.fixHint != "" {
+			res.Fix = checkres.Fix{Hint: r.fixHint}
+		}
+		switch r.Outcome.State {
+		case StateReverted:
+			r.Exit = 1
+		case StateRevertFailed:
+			r.Exit = 3
+		case StateRefused:
+			r.Exit = 2
+		}
+	case res.Status == checkres.Fail:
 		res.Fix = checkres.Fix{Hint: "sites の場所を直して数を減らすか、増えてよい理由があれば --max を上げる"}
 		r.Exit = 1
 	}
@@ -277,12 +344,19 @@ func (r report) text(out *strings.Builder, a args) {
 	}
 	if len(r.Results) > 0 {
 		res := r.Results[0]
-		if a.max >= 0 {
+		switch {
+		case r.wantText != "":
+			fmt.Fprintf(out, "  want:   %s\n", r.wantText)
+		case a.max >= 0:
 			fmt.Fprintf(out, "  want:   <= %d\n", a.max)
-		} else {
+		default:
 			fmt.Fprintln(out, "  want:   一覧だけ（--max N で歯止めにする）")
 		}
-		fmt.Fprintf(out, "  status: %s · %s\n", res.Status, idx)
+		if r.Outcome != nil {
+			fmt.Fprintf(out, "  status: %s · %s\n", r.Outcome.status(), idx)
+		} else {
+			fmt.Fprintf(out, "  status: %s · %s\n", res.Status, idx)
+		}
 		if res.Fix.Hint != "" {
 			fmt.Fprintf(out, "  fix:    %s\n", res.Fix.Hint)
 		}

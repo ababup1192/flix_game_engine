@@ -1,5 +1,8 @@
 {
-  "note": "bin/fge refactor（Flix の名前の位置の索引で refs・match-sites・field-sites を数える）の設定。engine が配る既定で、ゲームは bin/lint-rules/refactor.local.json に変えたい欄だけを書く（flixlint の場所・sources・verify・javaOpts）。flixlint は空なら --flixlint → FGE_FLIXLINT → flixlint/bin/flixlint（submodule）→ PATH の順に探す。flixJar は空なら FLIX_JAR → ENGINE の bin/flix.jar。verify は書き換えた後に流す確かめの口（段 1 の --apply から使う。engine とゲームで違う）。",
+  "note": "bin/fge refactor（Flix の名前の位置の索引で数える・書き換える）の設定。engine が配る既定で、ゲームは bin/lint-rules/refactor.local.json に変えたい欄だけを書く（flixlint の場所・sources・verify・verifyTests・testDirs・javaOpts）。flixlint は空なら --flixlint → FGE_FLIXLINT → flixlint/bin/flixlint（submodule）→ PATH の順に探す。flixJar は空なら FLIX_JAR → ENGINE の bin/flix.jar → flixlint の bin/flix-jar。library は remove-dead が pub の def を消さないライブラリか（true・false・auto の文字列。auto は flix.toml に repository がある package＝fpkg で配る物。engine はこれでライブラリになる）。verify は --apply で書いた後に流す確かめの口（expand-wildcard）、verifyTests は def とテストを消した後の口（remove-dead。依頼主の決めでテストまで流す）。落ちたら書いた patch だけを戻す。testDirs は「テストからだけ参照される」を決めるフォルダ。確かめは sh -c で流す（Windows は make と同じく Git Bash か MSYS の sh が要る）。",
   "sources": ["src", "test"],
-  "verify": "make check"
+  "verify": "make check",
+  "verifyTests": "make test",
+  "testDirs": ["test"],
+  "library": "auto"
 }

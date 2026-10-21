@@ -322,7 +322,7 @@ func TestLoadRunsTheTypedStageAsTyped(t *testing.T) {
 func TestLoadNamesSpansWhenFlixlintRefusesTheCall(t *testing.T) {
 	b := builder(project(t), new(int))
 	b.Run = func(Stage, string, string, []string) int { return 4 }
-	if _, err := b.Load(Resolved); err == nil || !strings.Contains(err.Error(), "--spans は "+LastWithoutSpans+" より新しい") {
+	if _, err := b.Load(Resolved); err == nil || !strings.Contains(err.Error(), "flixlint "+MinFlixlint+" 以上") {
 		t.Errorf("終了コード 4 の誤り: %v", err)
 	}
 }

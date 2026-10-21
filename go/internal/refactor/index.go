@@ -34,7 +34,7 @@ import (
 )
 
 // FormatVersion は読める索引の形の版（flixlint の shim/Spans.scala の FormatVersion と同じ数）。
-const FormatVersion = 1
+const FormatVersion = 2
 
 // Stage は索引の段。
 type Stage string
@@ -143,7 +143,7 @@ func checkHeader(line string, want Stage) error {
 		return fmt.Errorf("索引の頭の行が flixlint-spans の形でない: %q", line)
 	}
 	if f[2] != strconv.Itoa(FormatVersion) {
-		return fmt.Errorf("索引の形の版が %s（この道具が読めるのは %d）。flixlint を合わせてください", f[2], FormatVersion)
+		return fmt.Errorf("索引の形の版が %s（この道具が読めるのは %d）。flixlint %s 以上へ上げてください（bin/fge refactor index --rebuild で作り直す）", f[2], FormatVersion, MinFlixlint)
 	}
 	if f[3] != "stage="+string(want) {
 		return fmt.Errorf("索引の段が %s（%s が要る）", strings.TrimPrefix(f[3], "stage="), want)
@@ -218,9 +218,9 @@ func (b Builder) Load(s Stage) (*Index, error) {
 		switch code {
 		case 4:
 			return nil, fmt.Errorf("索引を作れません: flixlint の終了コード 4（呼び方か環境の誤り）。使っている flixlint（%s・%s）が --spans を知らない時もこれになります。"+
-				"--spans は %s より新しい flixlint に在ります（README の Spans）。submodule なら git -C flixlint fetch して --spans を持つ版へ上げ、"+
+				"この道具には flixlint %s 以上が要ります（--spans と索引の形 2）。submodule なら git -C flixlint fetch して %s 以上へ上げ、"+
 				"別の場所の物は --flixlint か refactor.local.json の flixlint で名指ししてください。上の flixlint の出力も見てください",
-				b.Flixlint, flixlintVersion(b.Flixlint), LastWithoutSpans)
+				b.Flixlint, flixlintVersion(b.Flixlint), MinFlixlint, MinFlixlint)
 		case 3:
 			return nil, fmt.Errorf("索引を作れません: ソースがコンパイルできない（flixlint の終了コード 3。上の出力か make check）")
 		default:
@@ -384,8 +384,8 @@ func LookPath(name string) string {
 	return p
 }
 
-// LastWithoutSpans は --spans を持たない最後の flixlint の版（それより新しい版に在る）。
-const LastWithoutSpans = "0.5.1"
+// MinFlixlint は読める索引（--spans・形の版 FormatVersion）を書く一番古い flixlint の版。
+const MinFlixlint = "0.6.0"
 
 // flixlintVersion は `flixlint --version` の答え（読めなければ「版は読めない」）。
 func flixlintVersion(flixlint string) string {
