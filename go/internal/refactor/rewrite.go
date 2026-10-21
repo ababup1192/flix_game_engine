@@ -783,19 +783,24 @@ func rewriteRules(a args, cfg Config) ([]RewriteRule, error) {
 
 // loadRewriteAst は索引と同じ走行の汎用の AST を読む（写しが無いか索引と鍵が違えば、typed の索引を作り直す）。
 func loadRewriteAst(b Builder, idx *Index) (*Ast, *Index, error) {
-	if b.genericKey(Typed) != idx.Key {
-		fmt.Fprintf(b.Log, "[refactor] 汎用の AST（式の木）が索引と揃っていないので、typed の索引を作り直します\n")
+	return loadGenericAst(b, idx, Typed)
+}
+
+// loadGenericAst は索引（段 s）と同じ走行の汎用の AST を読む（写しが無いか索引と鍵が違えば、その段の索引を作り直す）。
+func loadGenericAst(b Builder, idx *Index, s Stage) (*Ast, *Index, error) {
+	if b.genericKey(s) != idx.Key {
+		fmt.Fprintf(b.Log, "[refactor] 汎用の AST（式の木）が索引と揃っていないので、%s の索引を作り直します\n", s)
 		b.Rebuild = true
-		fresh, err := b.Load(Typed)
+		fresh, err := b.Load(s)
 		if err != nil {
 			return nil, nil, err
 		}
 		idx = fresh
-		if b.genericKey(Typed) != idx.Key {
+		if b.genericKey(s) != idx.Key {
 			return nil, nil, fmt.Errorf("flixlint が汎用の AST（%s）を書かなかった（flixlint 0.8.0 以上が要る）", rel(b.factsGenericDir()))
 		}
 	}
-	ast, err := LoadAst(b.GenericDir(Typed), b.Flixlint)
+	ast, err := LoadAst(b.GenericDir(s), b.Flixlint)
 	return ast, idx, err
 }
 

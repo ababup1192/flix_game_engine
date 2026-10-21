@@ -91,6 +91,7 @@ type Ast struct {
 	attrNo              map[string]int32
 
 	Kind, Parent, Slot, Index, Root, Line, Col, EndLine, EndCol, Synth, Type []int32
+	Effect                                                                   []int32 // 式の効果の型の行（-1 は無し。列の無い古い写しでは nil）
 
 	aName, aValue, aType []int32
 	aStart               []int32 // 節 i の葉は aStart[i]..aStart[i+1]
@@ -99,7 +100,10 @@ type Ast struct {
 	strs                                     []string
 
 	declFile map[int32]int32 // 宣言の節 → files の番号
-	children [][]int32
+
+	fxRaw, fxPretty map[int32]fxMemo           // FlixType の控え
+	aliasByKey      map[string]map[string]bool // 閉じた record の欄の組 → 型 alias の名前
+	children        [][]int32
 }
 
 // LoadAst は dir（facts/generic の写し）を読む。flixlint は flixlint の前面（shim/AstNames.scala を探す）。
@@ -139,6 +143,9 @@ func LoadAst(dir, flixlint string) (*Ast, error) {
 	}
 	a.Kind, a.Parent, a.Slot, a.Index, a.Root = col("node.kind"), col("node.parent"), col("node.slot"), col("node.index"), col("node.root")
 	a.Line, a.Col, a.EndLine, a.EndCol, a.Synth, a.Type = col("node.line"), col("node.col"), col("node.endLine"), col("node.endCol"), col("node.synthetic"), col("node.type")
+	if xs, e := readI32(filepath.Join(dir, "node.effect.i32")); e == nil && len(xs) == len(a.Kind) {
+		a.Effect = xs
+	}
 	aNode := col("attr.node")
 	a.aName, a.aValue, a.aType = col("attr.name"), col("attr.value"), col("attr.type")
 	a.tForm, a.tName, a.tArgStart, a.tArgs, a.tExpands = col("type.form"), col("type.name"), col("type.argStart"), col("type.args"), col("type.expands")
@@ -339,6 +346,29 @@ func (a *Ast) Attr(n int32, name string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// AttrTypes は節の葉 name の型（型の表の行。無ければ nil）。
+func (a *Ast) AttrTypes(n int32, name string) []int32 {
+	no, ok := a.attrNo[name]
+	if !ok {
+		return nil
+	}
+	var out []int32
+	for i := a.aStart[n]; i < a.aStart[n+1]; i++ {
+		if a.aName[i] == no && a.aType[i] >= 0 {
+			out = append(out, a.aType[i])
+		}
+	}
+	return out
+}
+
+// EffectOf は式の効果の型の行（無ければ -1）。
+func (a *Ast) EffectOf(n int32) int32 {
+	if a.Effect == nil || n < 0 || int(n) >= len(a.Effect) {
+		return -1
+	}
+	return a.Effect[n]
 }
 
 // File は節のファイル（宣言の files の行）。

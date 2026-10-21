@@ -1,10 +1,11 @@
 {
-  "note": "bin/fge refactor（Flix の名前の位置の索引で数える・書き換える）の設定。engine が配る既定で、ゲームは bin/lint-rules/refactor.local.json に変えたい欄だけを書く（flixlint の場所・sources・verify・verifyTests・testDirs・javaOpts）。flixlint は空なら --flixlint → FGE_FLIXLINT → flixlint/bin/flixlint（submodule）→ PATH の順に探す。flixJar は空なら FLIX_JAR → ENGINE の bin/flix.jar → flixlint の bin/flix-jar。library は remove-dead が pub の def を消さないライブラリか（true・false・auto の文字列。auto は flix.toml に repository がある package＝fpkg で配る物。engine はこれでライブラリになる）。verify は --apply で書いた後に流す確かめの口（expand-wildcard）、verifyTests は def とテストを消した後の口（remove-dead。依頼主の決めでテストまで流す）。落ちたら書いた patch だけを戻す。依存（lib/）を用意する口は持たない（無ければ索引が止まり next: make check を出す。依存を入れるのは flix）。testDirs は「テストからだけ参照される」を決めるフォルダ。rewrites は rewrite --rule <名前> の型紙の組（from・to・where。名前は lint の規則の名前にして、規則の hint から bin/fge refactor rewrite --rule <規則> で呼ぶ。ゲームは refactor.local.json の rewrites に名前ごとに足す・同じ名前は上書き）。確かめは sh -c で流す（Windows は make と同じく Git Bash か MSYS の sh が要る）。",
+  "note": "bin/fge refactor（Flix の名前の位置の索引で数える・書き換える）の設定。engine が配る既定で、ゲームは bin/lint-rules/refactor.local.json に変えたい欄だけを書く（flixlint の場所・sources・verify・verifyTests・testDirs・javaOpts）。flixlint は空なら --flixlint → FGE_FLIXLINT → flixlint/bin/flixlint（submodule）→ PATH の順に探す。flixJar は空なら FLIX_JAR → ENGINE の bin/flix.jar → flixlint の bin/flix-jar。library は remove-dead が pub の def を消さないライブラリか（true・false・auto の文字列。auto は flix.toml に repository がある package＝fpkg で配る物。engine はこれでライブラリになる）。verify は --apply で書いた後に流す確かめの口（expand-wildcard）、verifyTests は def とテストを消した後の口（remove-dead。依頼主の決めでテストまで流す）。落ちたら書いた patch だけを戻す。依存（lib/）を用意する口は持たない（無ければ索引が止まり next: make check を出す。依存を入れるのは flix）。testDirs は「テストからだけ参照される」を決めるフォルダ。rewrites は rewrite --rule <名前> の型紙の組（from・to・where。名前は lint の規則の名前にして、規則の hint から bin/fge refactor rewrite --rule <規則> で呼ぶ。ゲームは refactor.local.json の rewrites に名前ごとに足す・同じ名前は上書き）。entryTables は入口の表の def の短い名前（常駐の窓なしのゲームの jobs()）: その中から使う def と、入口のファイルに Mod.x が出る時の Mod.xJob は、名前で呼ばれる入口として remove-dead・make-private が外さない。確かめは sh -c で流す（Windows は make と同じく Git Bash か MSYS の sh が要る）。",
   "sources": ["src", "test"],
   "verify": "make check",
   "verifyTests": "make test",
   "testDirs": ["test"],
   "library": "auto",
+  "entryTables": ["jobs"],
   "rewrites": {
     "option-none-compare": [
       {"from": "$x != None", "to": "Option.nonEmpty($x)", "note": "None と比べない。何を聞いているかの名前の述語があれば --from '$r#x != None' --to 'Mod.isX($r)' --where '$r: T' のように名指しで先に流す（残りをこの組で）"},

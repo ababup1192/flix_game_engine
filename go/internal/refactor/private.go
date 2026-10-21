@@ -156,7 +156,7 @@ func privateReport(root string, idx *Index, a args, cfg Config, o Options) (repo
 			q.Defs = append(q.Defs, sym)
 		}
 	}
-	q.Outside = loadMentions(root, engineDir(root)).Entry
+	q.Outside = loadMentions(root, engineDir(root)).withEntryDefs(idx.Rows, cfg.EntryTables).Entry
 	plan, err := PlanPrivate(root, idx.Rows, q)
 	if err != nil {
 		return report{}, err

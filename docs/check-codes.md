@@ -78,6 +78,8 @@ near の帯は bin/lint-rules/checkfmt.json の near（code ごと。無けれ�
 | `refactor.change-case-shape` | lint | case_sites_left | count | <= | 0（case を関数として渡す所・消す欄を使う本体は fix。fix があれば書かない） | enum の case の欄を足した・消した後に、宣言と形の合わない作る所・当てる所として人へ回した数 |
 | `refactor.change-signature` | lint | call_sites_left | count | <= | 0（関数として渡す所・2 回使う引数に式が渡る所・消える引数を使う本体は fix。fix があれば書かない） | def の引数の並びを替えた後に、新しい並びで呼べない所として人へ回した数 |
 | `refactor.expand-wildcard` | lint | catch_all_left | count | <= | 0（書き出せない腕は fix） | enum への match の `case _` を残りの case に書き出した後に、人へ回した腕の数 |
+| `refactor.extract-function` | lint | extract_left | count | <= | 0（型の変数・局所の def・書けない型・効果のある式を引数に渡す所は fix） | 選んだ式（と --all で同じ形の式）を新しい def に出して呼び出しへ替えた後に、人へ回した数 |
+| `refactor.extract-type-alias` | lint | record_type_left | count | <= | 0（本体がちょうどその組の別の alias は fix） | 閉じた record の型に名前を付けて type alias を置き、同じ欄の組を型に書いた所を名前へ替えた後に、人へ回した数 |
 | `refactor.field-sites` | lint | field_sites | count | <= | --max（欄の歯止めは --outside <口の mod> --max 0） | record の欄の直の読み書きの数（受け手の型 alias で絞る） |
 | `refactor.field-to-accessor` | lint | field_sites_left | count | <= | 0（受け手の型が決まらない・読めない式・型の違う口は fix） | record の欄の直の読み書きを口（読み・書き）へ替えた後に、人へ回した数 |
 | `refactor.fix-construction` | lint | construction_left | count | <= | 0（欄の組が同じ別の型の組み立ては fix） | record を組み立てる式の欄を型に合わせた（足した・消した）後に、人へ回した数 |

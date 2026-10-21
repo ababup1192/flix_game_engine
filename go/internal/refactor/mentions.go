@@ -91,3 +91,33 @@ func (m Mentions) DocsNaming(sym string, skip func(file string, line int) bool) 
 	}
 	return out
 }
+
+// withEntryDefs は入口の表（EntryTables の名前の def。常駐の jobs() など）の中から使う def と、入口のファイルに Mod.x が
+// 字で出る時の Mod.xJob（常駐の入口の決まり: 入口の名前 Mod.x の中身は xJob）を、入口として Entry に足す。
+// WhyNot: 字（Makefile・json）だけを見ると、常駐の表は .flix の中で同じ mod から呼ぶので外の使い手が 0 に見え、
+// make-private が pub を外し、remove-dead が消せる物に数える（入口は名前で呼ばれる）。
+func (m Mentions) withEntryDefs(rows []Row, tables []string) Mentions {
+	isTable := map[string]bool{}
+	for _, t := range tables {
+		isTable[t] = true
+	}
+	for _, r := range rows {
+		if r.Kind != KindDefUse || !isTable[shortName(r.Owner)] || r.Sym == r.Owner {
+			continue
+		}
+		if _, ok := m.Entry[r.Sym]; !ok {
+			m.Entry[r.Sym] = "入口の表 " + r.Owner + "()"
+		}
+	}
+	for _, r := range rows {
+		if r.Kind != KindDefDecl || !strings.HasSuffix(r.Sym, "Job") || len(shortName(r.Sym)) <= 3 {
+			continue
+		}
+		if f, ok := m.Entry[strings.TrimSuffix(r.Sym, "Job")]; ok {
+			if _, has := m.Entry[r.Sym]; !has {
+				m.Entry[r.Sym] = f + "（入口 " + strings.TrimSuffix(r.Sym, "Job") + " の中身）"
+			}
+		}
+	}
+	return m
+}

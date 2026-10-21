@@ -189,3 +189,41 @@ func TestDeclLinesLeavesTheNextSectionsComment(t *testing.T) {
 		t.Errorf("切り出し %q（want %q）", got, want)
 	}
 }
+
+// 索引に行の無い名前（型の所に書いた効果 `\ Emit[…]` など。ここでは戻りの型の Meter で写す）を移す字が使えば、
+// 元の mod の use も移し先へ写す（VideoKit.readIfWaiting を WorldSetup へ移した時に use fge::Emit が足りず戻った物）。
+func TestMoveCopiesTheUseOfANameTheIndexDoesNotRow(t *testing.T) {
+	root := fixtureRoot(t, "move")
+	shapes := read(t, root, "src/Shapes.flix")
+	shapes = strings.Replace(shapes, "    use Units.{px}", "    use Units.{px, Meter}", 1)
+	shapes = strings.Replace(shapes, "pub def area(r: Rect): Int32 = px(r#w * r#h)", "pub def area(r: Rect): Meter = px(r#w * r#h)", 1)
+	must(t, os.WriteFile(filepath.Join(root, "src/Shapes.flix"), []byte(shapes), 0o644))
+	git(t, root, "-c", "user.email=t@example.test", "-c", "user.name=t", "commit", "-q", "-am", "Meter")
+	tsv, err := os.ReadFile(filepath.Join("testdata", "move-spans-resolved.tsv"))
+	must(t, err)
+	// Meter の use の行はあるが、戻りの型の Meter を指す行は無い（効果の名前を索引が持たないのと同じ形）。
+	rows := string(tsv) + "use\tsrc/Shapes.flix\t5\t20\t5\t25\tUnits.Meter\tShapes\talias=Meter what=type\n"
+	run := func(_ Stage, _, _ string, cmd []string, _ string) int {
+		for i := 0; i+1 < len(cmd); i++ {
+			if cmd[i] == "--spans" && os.WriteFile(cmd[i+1], []byte(rows), 0o644) != nil {
+				return 4
+			}
+		}
+		return 0
+	}
+	var out, errOut strings.Builder
+	var cmds []string
+	code := Run(&out, &errOut, root, []string{"move", "--def", "Shapes.area", "--to", "Geometry", "--apply", "--flixlint", filepath.Join(root, "flixlint")},
+		Options{Run: run, Verify: verifyWith(0, "", &cmds), Log: io.Discard})
+	if code != 0 {
+		t.Fatalf("終了コード %d:\n%s%s", code, out.String(), errOut.String())
+	}
+	geo := read(t, root, "src/Geometry.flix")
+	if !strings.Contains(geo, "Meter") || !strings.Contains(geo, "pub def area(r: Shapes.Rect): Meter") {
+		t.Fatalf("移し先に Meter の use を足していない:\n%s", geo)
+	}
+	use := geo[strings.Index(geo, "use Units"):]
+	if !strings.Contains(use[:strings.Index(use, "\n")], "Meter") {
+		t.Fatalf("Meter を use の文で入れていない:\n%s", geo)
+	}
+}

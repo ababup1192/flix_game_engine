@@ -480,6 +480,22 @@ func PlanMove(rows []Row, srcs *reshapeSources, q MoveQuery) (MovePlan, error) {
 		p.Moved = append(p.Moved, Fixed{it.row, it.kind})
 	}
 	edits = append(edits, mergeCuts(cuts)...)
+	// 索引に行の無い名前（型の所に書いた効果 `\ Emit[…]` など）: 元の mod の use が入れた大文字の名前（mod・型・効果）を、
+	// 移す字が名前として使っていれば、その use も移し先へ写す（足りないと移し先で名前が解けず確かめで戻る）。
+	// WhyNot: 小文字の名前（def）は索引の def-use の行が受け持つので見ない（局所の名前と同じ字で、要らない use を足さない）。
+	for i, it := range items {
+		for _, u := range ix.uses[it.row.File] {
+			if u.Owner != it.from || usedByMoved[u.Where()] || !unicodeUpper(u.alias) || u.Sym == q.To || modOf(u.Sym) == q.To {
+				continue
+			}
+			if len(identUses(bodies[i], map[string]bool{u.alias: true})) == 0 {
+				continue
+			}
+			if err := wantUse(srcs, u, targetUses, &targetUseOrder, usedByMoved); err != nil {
+				p.Fix = append(p.Fix, Fixed{it.row, err.Error()})
+			}
+		}
+	}
 	file := target
 	p.Target, p.Created = file, created
 	var wants []useWant
