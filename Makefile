@@ -897,7 +897,7 @@ check-docs-sync:
 	    a=$$(grep '^sync:' "$$d/SKILL.md" | head -1); \
 	    b=$$(grep '^sync:' ".claude/skills/$$s/SKILL.md" | head -1); \
 	    if [ -z "$$a" ] || [ "$$a" != "$$b" ]; then \
-	      echo "[check-docs-sync] NG: skill $$s の sync 印が不一致（agents-pack=$$a / .claude=$$b）。片方を直したらもう片方へ内容を移植し、両方の sync: を同じ日付に上げる"; ok=0; \
+	      echo "[check-docs-sync] NG: skill $$s の sync 印が不一致（agents-pack=$$a / .claude=$${b}）。片方を直したらもう片方へ内容を移植し、両方の sync: を同じ日付に上げる"; ok=0; \
 	    fi; \
 	  fi; \
 	done; \
