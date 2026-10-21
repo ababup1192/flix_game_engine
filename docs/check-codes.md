@@ -6,6 +6,7 @@ near の帯は bin/lint-rules/checkfmt.json の near（code ごと。無けれ�
 
 | code | level | metric | unit | want | 基準の出どころ | 説明 |
 |---|---|---|---|---|---|---|
+| `doc-refs.caller` | gate | stale_callers | count | <= | doc-refs.json callersLimitFile | .flix のコメント（/// と //）の「名前 が呼ぶ・から呼ぶ・が読む・が使う・が組む・が受け取る・で受け取る」（doc に書いた呼び手。関数を移すと古くなる）。上限で数える |
 | `doc-refs.file` | gate | missing_files | count | <= | doc-refs.json pathSkipPrefixes | 文書が指すパス（src/…flix・docs/…md など / を含む物）が無い |
 | `doc-refs.line` | gate | missing_lines | count | <= | doc-refs.json | 文書の path:行 の行がそのファイルの行数を超える |
 | `doc-refs.name` | gate | missing_names | count | <= | doc-refs.json sources・spansIndex | 文書の ` ` と表が指す Mod.name が src・test の宣言に無い（頭のモジュールがこのリポの物だけ） |

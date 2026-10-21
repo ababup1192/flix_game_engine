@@ -16,6 +16,8 @@
 // 文書の名を skip に並べない。予定の名前（`名前`（予定））は数えず、Flix の標準ライブラリの名前
 // （flixJar の src/library の宣言）は在ると数える。書き方は docs/doc-conventions.md。
 //
+// .flix のコメントに書いた呼び手（「名前 が呼ぶ」）を数えるのは callers.go（上限は callersLimitFile）。
+//
 // 規約は bin/lint-rules/doc-refs.json。ゲームの doc-refs.local.json には skip（見ない文書のパスの並び。
 // / で終わればその下の全部）だけを書ける。古い記録（notes/<年-月>.md・docs/gallery の README）を外すための物で、
 // 1 か所ずつ外す道は持たない（指す先を直すか、消した物を記録に残すなら ~~消し線~~ で囲むか、文書ごと skip へ）。
@@ -65,9 +67,13 @@ type Rules struct {
 	// WhyNot: doc-refs.local.json に置かないのは、エンジンの bin/lint-rules は sync-agents がまるごと配るので、エンジン自身の
 	// 上限をそこに書くとゲームの物を上書きするため（lint/limits/ は配らない・flixlint の上限と同じ置き場）。
 	FlixLimitFile string `json:"flixLimitFile"`
+	// CallersLimitFile は .flix のコメントに書いた呼び手（callers.go）の上限を書くリポごとのファイル（{"limit": N}。置き場と数え方は
+	// flixLimitFile と同じ）。空ならこの段を見ない（flixComments も要る）。
+	CallersLimitFile string `json:"callersLimitFile"`
 
-	flixLimit int
-	fileExt   map[string]bool
+	flixLimit    int
+	callersLimit int
+	fileExt      map[string]bool
 }
 
 // LoadRules は規約とゲームの skip を読む。
@@ -107,20 +113,12 @@ func LoadRules(root string) (*Rules, error) {
 		}
 		r.Skip = append(r.Skip, l.Skip...)
 	}
-	if r.FlixComments && r.FlixLimitFile != "" {
-		body, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(r.FlixLimitFile)))
-		switch {
-		case errors.Is(err, os.ErrNotExist):
-		case err != nil:
-			return nil, fmt.Errorf("読めません (%s): %v", r.FlixLimitFile, err)
-		default:
-			var l struct {
-				Limit int `json:"limit"`
-			}
-			if err := json.Unmarshal(body, &l); err != nil {
-				return nil, fmt.Errorf("JSON として壊れています (%s): %v", r.FlixLimitFile, err)
-			}
-			r.flixLimit = l.Limit
+	if r.FlixComments {
+		if r.flixLimit, err = readLimit(root, r.FlixLimitFile); err != nil {
+			return nil, err
+		}
+		if r.callersLimit, err = readLimit(root, r.CallersLimitFile); err != nil {
+			return nil, err
 		}
 	}
 	r.fileExt = map[string]bool{}
@@ -129,6 +127,30 @@ func LoadRules(root string) (*Rules, error) {
 	}
 	return &r, nil
 }
+
+// readLimit はリポごとの上限のファイル（{"limit": N}）を読む（rel が "" か、ファイルが無ければ 0）。
+func readLimit(root, rel string) (int, error) {
+	if rel == "" {
+		return 0, nil
+	}
+	body, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		return 0, nil
+	case err != nil:
+		return 0, fmt.Errorf("読めません (%s): %v", rel, err)
+	}
+	var l struct {
+		Limit int `json:"limit"`
+	}
+	if err := json.Unmarshal(body, &l); err != nil {
+		return 0, fmt.Errorf("JSON として壊れています (%s): %v", rel, err)
+	}
+	return l.Limit, nil
+}
+
+// callersOn は doc の呼び手を照らすか（.flix のコメントを見て、上限のファイルの場所を規約が持つ時）。
+func (r *Rules) callersOn() bool { return r.FlixComments && r.CallersLimitFile != "" }
 
 // skipped は文書 rel を見ないか（skip のパスと同じか、/ で終わる物の下）。
 func (r *Rules) skipped(rel string) bool {
@@ -250,8 +272,10 @@ type Hit struct {
 	Text string // 書かれた字
 	// Comment は .flix のコメントの中の物（上限で数える。md の物は 1 件でも止める）。
 	Comment bool
-	Msg     string   // 何が無いか（行が無い・ファイルが無い・名前が無い）
-	Near    []string // 近い候補
+	// Caller は .flix のコメントに書いた呼び手（callers.go。Comment と別の上限で数える）。
+	Caller bool
+	Msg    string   // 何が無いか（行が無い・ファイルが無い・名前が無い）
+	Near   []string // 近い候補
 }
 
 // Report は 1 回の結果。
@@ -407,6 +431,9 @@ func (c *checker) body(doc, text string) {
 	if flix {
 		refs = ScanFlixComments(text, r.fileExt, r.PlannedMarks)
 		rep.FlixFiles++
+		if r.callersOn() {
+			rep.Hits = append(rep.Hits, callerHits(doc, text, r.fileExt, r.PlannedMarks)...)
+		}
 	} else {
 		rep.Docs++
 	}
@@ -525,7 +552,10 @@ func (h Hit) Result() checkres.Result {
 	res := checkres.New(h.Code, 0, checkres.Measure{Got: 1, Want: checkres.WantAtMost(0)}, nil, h.Text+" — "+h.Msg)
 	res.Scope = checkres.ScopeFile
 	res.Cause = checkres.Cause{Op: h.Text, Script: fmt.Sprintf("%s:%d", h.Doc, h.Line)}
-	if len(h.Near) > 0 {
+	switch {
+	case h.Caller:
+		res.Fix = checkres.Fix{Hint: callerHint}
+	case len(h.Near) > 0:
 		res.Fix = checkres.Fix{Hint: "候補: " + strings.Join(h.Near, "・")}
 	}
 	return res
@@ -539,6 +569,9 @@ func (h Hit) site() string {
 	}
 	return s
 }
+
+// callerHint は doc に書いた呼び手の直し方。
+const callerHint = "doc に呼び手を書かない（古くなる）。呼び手は bin/fge refactor usages --callers <def> で引く。何をするか・なぜかを書く"
 
 type jsonReport struct {
 	Results []checkres.Result `json:"results"`
@@ -598,36 +631,34 @@ func Run(out, errOut *strings.Builder, root string, args []string) (int, error) 
 	rep := c.rep
 	// md の物は 1 件でも止める。.flix のコメントの物は、全部を見る時は上限（flixLimitFile）と比べ、名指しの時
 	// （コミットの時の触った .flix）は HEAD の中身の件数より増えた物だけを止める（古い件で関係の無いコミットを止めない）。
-	var shown []Hit
-	flixHits, verdict := 0, ""
+	// doc の呼び手（Caller）も同じ数え方で、上限は別のファイル（callersLimitFile）。
+	var shown, flixGroup, callerGroup []Hit
 	for _, h := range rep.Hits {
-		if !h.Comment {
+		switch {
+		case h.Caller:
+			callerGroup = append(callerGroup, h)
+		case h.Comment:
+			flixGroup = append(flixGroup, h)
+		default:
 			shown = append(shown, h)
-		} else {
-			flixHits++
 		}
 	}
-	switch {
-	case flixHits == 0:
-	case len(named) > 0:
-		added := c.addedSinceHead(rep.Hits)
-		shown = append(shown, added...)
-		if len(added) > 0 {
-			verdict = fmt.Sprintf("触った .flix のコメントで見つからない物が HEAD より %d 件増えた", len(added))
+	flixHits := len(flixGroup)
+	var verdicts, lower []string
+	for _, g := range []ratchetGroup{
+		{what: ".flix のコメントで見つからない物", hits: flixGroup, limit: rules.flixLimit, file: rules.FlixLimitFile, caller: false},
+		{what: "doc に書いた呼び手", hits: callerGroup, limit: rules.callersLimit, file: rules.CallersLimitFile, caller: true},
+	} {
+		s, v, low := c.ratchet(g, len(named) > 0)
+		shown = append(shown, s...)
+		if v != "" {
+			verdicts = append(verdicts, v)
 		}
-	case flixHits > rules.flixLimit:
-		for _, h := range rep.Hits {
-			if h.Comment {
-				shown = append(shown, h)
-			}
+		if low {
+			lower = append(lower, g.file)
 		}
-		verdict = fmt.Sprintf(".flix のコメントで見つからない物 %d 件が上限 %d を超えた（増えた所を直す）", flixHits, rules.flixLimit)
-	case flixHits < rules.flixLimit:
-		verdict = fmt.Sprintf(".flix のコメントで見つからない物が %d 件に減った。%s の limit を %d に下げる", flixHits, rules.FlixLimitFile, flixHits)
 	}
-	if flixHits == 0 && rules.flixLimit > 0 && len(named) == 0 {
-		verdict = ".flix のコメントで見つからない物が 0 件になった。" + rules.FlixLimitFile + " を消す"
-	}
+	verdict := strings.Join(verdicts, "／")
 	code := 0
 	if len(shown) > 0 || verdict != "" {
 		code = 1
@@ -651,6 +682,9 @@ func Run(out, errOut *strings.Builder, root string, args []string) (int, error) 
 		if flixHits > 0 && len(named) == 0 {
 			head += fmt.Sprintf("・.flix のコメントの見つからない物 %d 件（上限 %d）", flixHits, rules.flixLimit)
 		}
+	}
+	if rules.callersOn() && len(callerGroup) > 0 && len(named) == 0 {
+		head += fmt.Sprintf("・doc に書いた呼び手 %d 件（上限 %d）", len(callerGroup), rules.callersLimit)
 	}
 	var skipped []string
 	for _, c := range []struct {
@@ -678,7 +712,10 @@ func Run(out, errOut *strings.Builder, root string, args []string) (int, error) 
 		counts[h.Code]++
 		worst[h.Doc]++
 	}
-	b.Count = fmt.Sprintf("見つからない %d 件（名前 %d・ファイル %d・行 %d）", len(shown), counts[CodeName], counts[CodeFile], counts[CodeLine])
+	b.Count = fmt.Sprintf("見つからない %d 件（名前 %d・ファイル %d・行 %d）", len(shown)-counts[CodeCaller], counts[CodeName], counts[CodeFile], counts[CodeLine])
+	if counts[CodeCaller] > 0 {
+		b.Count += fmt.Sprintf("・doc に書いた呼び手 %d 件", counts[CodeCaller])
+	}
 	if verdict != "" {
 		b.State = "fail: " + verdict
 	}
@@ -686,6 +723,9 @@ func Run(out, errOut *strings.Builder, root string, args []string) (int, error) 
 		b.Notes = append(b.Notes, fmt.Sprintf("頭のモジュールか先頭のフォルダがこのリポに無い %d か所（エンジン・外の物）は数えていない", rep.Foreign))
 	}
 	b.Fix = "今の名前・パスへ直す（行の番号でなく名前で指すと古びない）。これから作る名前なら `名前`（予定）、消した物の記録なら ~~ ~~ で消し線、ゲームの側のパスなら <ゲーム>/…、文書ごと古い記録なら bin/lint-rules/doc-refs.local.json の skip へ（書き方は engine の docs/doc-conventions.md）"
+	if counts[CodeCaller] > 0 {
+		b.Fix += "。" + callerHint
+	}
 	for _, h := range shown {
 		b.Sites.Lines = append(b.Sites.Lines, h.site())
 	}
@@ -696,7 +736,7 @@ func Run(out, errOut *strings.Builder, root string, args []string) (int, error) 
 	}
 	if len(shown) == 0 {
 		// 減った（上限を下げる）だけ: 直す所は無い。
-		b.Next, b.NextWhy = "bin/fge doc-refs", rules.FlixLimitFile+" の limit を下げてから同じコマンドで確かめる"
+		b.Next, b.NextWhy = "bin/fge doc-refs", strings.Join(lower, "・")+" の limit を下げてから同じコマンドで確かめる"
 		errOut.WriteString(b.Text())
 		return 1, nil
 	}
@@ -716,15 +756,46 @@ func Run(out, errOut *strings.Builder, root string, args []string) (int, error) 
 	return 1, nil
 }
 
-// addedSinceHead は hits のうち .flix のコメントの物で、同じファイルの HEAD の中身のコメントに無い（数が増えた）物
-// （ファイルごとに書かれた字で数える。HEAD に無いファイルは全部が増えた物）。
+// ratchetGroup は上限で数える組 1 つ（.flix のコメントの見つからない物・doc の古い呼び手）。
+type ratchetGroup struct {
+	what   string
+	hits   []Hit
+	limit  int
+	file   string
+	caller bool
+}
+
+// ratchet は組 g を、全部を見る時は上限のファイルと比べ、名指しの時（コミットの時の触った .flix）は HEAD の中身の件数より
+// 増えた物だけを出す（古い件で関係の無いコミットを止めない）。low は上限を下げる（減った・0 件になった）だけの時。
+func (c *checker) ratchet(g ratchetGroup, named bool) (shown []Hit, verdict string, low bool) {
+	n := len(g.hits)
+	switch {
+	case n == 0:
+	case named:
+		shown = c.addedSinceHead(g.hits)
+		if len(shown) > 0 {
+			verdict = fmt.Sprintf("触った .flix の%sが HEAD より %d 件増えた", g.what, len(shown))
+		}
+	case n > g.limit:
+		shown = g.hits
+		verdict = fmt.Sprintf("%s %d 件が上限 %d を超えた（増えた所を直す）", g.what, n, g.limit)
+	case n < g.limit:
+		verdict = fmt.Sprintf("%sが %d 件に減った。%s の limit を %d に下げる", g.what, n, g.file, n)
+		low = true
+	}
+	if n == 0 && g.limit > 0 && !named {
+		verdict = g.what + "が 0 件になった。" + g.file + " を消す"
+		low = true
+	}
+	return shown, verdict, low
+}
+
+// addedSinceHead は hits（同じ組の物）のうち、同じファイルの HEAD の中身で出る物より増えた物
+// （ファイルごとに code と書かれた字で数える。HEAD に無いファイルは全部が増えた物）。
 func (c *checker) addedSinceHead(hits []Hit) []Hit {
 	byDoc := map[string][]Hit{}
 	var order []string
 	for _, h := range hits {
-		if !h.Comment {
-			continue
-		}
 		if _, ok := byDoc[h.Doc]; !ok {
 			order = append(order, h.Doc)
 		}
@@ -738,13 +809,13 @@ func (c *checker) addedSinceHead(hits []Hit) []Hit {
 			c.rep = &Report{}
 			c.body(doc, string(old))
 			for _, h := range c.rep.Hits {
-				base[h.Text]++
+				base[h.Code+"\t"+h.Text]++
 			}
 			c.rep = saved
 		}
 		for _, h := range byDoc[doc] {
-			if base[h.Text] > 0 {
-				base[h.Text]--
+			if k := h.Code + "\t" + h.Text; base[k] > 0 {
+				base[k]--
 				continue
 			}
 			out = append(out, h)
@@ -767,6 +838,8 @@ const usage = `使い方: bin/fge doc-refs [文書.md・src/X.flix ...] [-v|--al
   文書（docs/**/*.md・NOTES.md・AGENTS.local.md。規約は bin/lint-rules/doc-refs.json）の ` + "` `" + ` の中と表の行と、
   sources の .flix のコメント（/// と //）が指す Mod.name・パス・path:行 が今のリポに在るかを見る。引数なしは全部、名指しすればそれだけ。
   .flix の物は上限で数える: 全部の時は lint/limits/doc-refs-flix.json（{"limit": N}）と比べ、名指しの .flix は HEAD より増えた物だけ止める。
+  .flix のコメントの「名前 が呼ぶ・から呼ぶ・が読む・が使う・が組む・が受け取る・で受け取る」（doc に書いた呼び手）を
+  lint/limits/doc-refs-callers.json の上限で数える（数え方は上と同じ）。呼び手は bin/fge refactor usages --callers <def> で引く。
   -v・--all は場所を全部画面に（既定は上位だけ・全部は build/doc-refs/last.txt）。
   これから作る名前は ` + "`名前`（予定）" + `、消した物は ~~ ~~、ゲームの側のパスは <ゲーム>/… と書く（docs/doc-conventions.md）。
   頭に「手で直さない」と書いた生成物の文書は見ない。古い記録の文書は bin/lint-rules/doc-refs.local.json の
