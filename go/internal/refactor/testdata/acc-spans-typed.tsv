@@ -1,0 +1,50 @@
+# flixlint-spans 2 stage=typed columns=kind,file,sl,sc,el,ec,sym,owner,extra
+def-decl	src/Rec.flix	12	13	12	20	Rec.clockOf	Rec.clockOf	pub ext=12:5:12:49
+label-select	src/Rec.flix	12	44	12	49	clock	Rec.clockOf	recv=Rec.World via=decl
+def-decl	src/Rec.flix	14	13	14	21	Rec.mapClock	Rec.mapClock	pub ext=14:5:14:90
+label-update	src/Rec.flix	14	66	14	71	clock	Rec.mapClock	recv=Rec.World via=decl
+label-select	src/Rec.flix	14	78	14	83	clock	Rec.mapClock	recv=Rec.World via=decl
+def-decl	src/Rec.flix	16	13	16	22	Rec.withClock	Rec.withClock	pub ext=16:5:16:71
+label-update	src/Rec.flix	16	56	16	61	clock	Rec.withClock	recv=Rec.World via=decl
+def-decl	src/Rec.flix	18	13	18	17	Rec.make	Rec.make	pub ext=18:5:18:55
+def-decl	src/Rec.flix	20	9	20	14	Rec.other	Rec.other	ext=20:5:20:53
+def-decl	src/Rec.flix	22	9	22	13	Rec.half	Rec.half	ext=22:5:22:44
+def-decl	src/Rec.flix	24	13	24	17	Rec.tick	Rec.tick	pub ext=24:5:24:78
+label-update	src/Rec.flix	24	52	24	57	clock	Rec.tick	recv=Rec.World via=decl
+label-select	src/Rec.flix	24	62	24	67	clock	Rec.tick	recv=Rec.World via=decl
+def-decl	src/Rec.flix	26	13	26	18	Rec.reset	Rec.reset	pub ext=26:5:26:57
+label-update	src/Rec.flix	26	40	26	45	clock	Rec.reset	recv=Rec.World via=decl
+def-decl	src/Rec.flix	28	13	28	17	Rec.both	Rec.both	pub ext=28:5:28:67
+label-update	src/Rec.flix	28	39	28	44	clock	Rec.both	recv=Rec.World via=row
+label-update	src/Rec.flix	28	52	28	57	speed	Rec.both	recv=Rec.World via=decl
+def-decl	src/Rec.flix	30	13	30	17	Rec.late	Rec.late	pub ext=30:5:30:67
+label-update	src/Rec.flix	30	39	30	44	speed	Rec.late	recv=Rec.World via=row
+label-update	src/Rec.flix	30	50	30	55	clock	Rec.late	recv=Rec.World via=decl
+def-decl	src/Rec.flix	32	13	32	16	Rec.sum	Rec.sum	pub ext=32:5:32:65
+label-select	src/Rec.flix	32	50	32	55	clock	Rec.sum	recv=Rec.World via=decl
+label-select	src/Rec.flix	32	60	32	65	clock	Rec.sum	recv=Rec.World via=decl
+def-decl	src/Rec.flix	34	13	34	23	Rec.otherClock	Rec.otherClock	pub ext=34:5:34:50
+def-use	src/Rec.flix	34	37	34	42	Rec.other	Rec.otherClock	
+label-select	src/Rec.flix	34	45	34	50	clock	Rec.otherClock	recv=Rec.Other via=decl
+def-decl	src/Rec.flix	36	13	36	17	Rec.made	Rec.made	pub ext=36:5:36:43
+def-use	src/Rec.flix	36	31	36	35	Rec.make	Rec.made	
+label-select	src/Rec.flix	36	38	36	43	clock	Rec.made	recv=Rec.World via=decl
+def-decl	src/Rec.flix	38	13	38	18	Rec.piped	Rec.piped	pub ext=38:5:38:69
+label-update	src/Rec.flix	38	40	38	45	clock	Rec.piped	recv=Rec.World via=decl
+label-select	src/Rec.flix	38	50	38	55	clock	Rec.piped	recv=Rec.World via=decl
+def-use	src/Rec.flix	38	56	38	58	|>	Rec.piped	
+def-use	src/Rec.flix	38	59	38	63	Rec.half	Rec.piped	
+def-decl	src/Rec.flix	40	13	40	18	Rec.total	Rec.total	pub ext=40:5:41:84
+label-update	src/Rec.flix	41	11	41	16	clock	Rec.total	recv=Rec.World via=decl
+def-use	src/Rec.flix	41	19	41	32	List.foldLeft	Rec.total	
+label-select	src/Rec.flix	41	53	41	58	clock	Rec.total	recv=Rec.World via=row
+label-select	src/Rec.flix	41	73	41	78	clock	Rec.total	recv=Rec.World via=decl
+def-decl	src/Rec.flix	43	13	43	19	Rec.spread	Rec.spread	pub ext=43:5:43:113
+def-use	src/Rec.flix	43	33	43	46	List.foldLeft	Rec.spread	
+label-select	src/Rec.flix	43	67	43	72	clock	Rec.spread	recv=Rec.World via=row
+case-construct	src/Rec.flix	43	79	43	112	List.Cons	Rec.spread	sugar
+case-construct	src/Rec.flix	43	109	43	112	List.Nil	Rec.spread	
+def-decl	src/Rec.flix	45	13	45	17	Rec.open	Rec.open	pub ext=45:5:45:64
+label-select	src/Rec.flix	45	59	45	64	clock	Rec.open	recv=? via=open
+def-decl	src/Rec.flix	47	13	47	17	Rec.note	Rec.note	pub ext=47:5:47:57
+label-select	src/Rec.flix	47	50	47	55	clock	Rec.note	recv=Rec.World via=decl

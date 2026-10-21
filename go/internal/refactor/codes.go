@@ -13,6 +13,7 @@ const (
 	CodeFieldSites = "refactor.field-sites"
 	CodeExpand     = "refactor.expand-wildcard"
 	CodeRemoveDead = "refactor.remove-dead"
+	CodeAccessor   = "refactor.field-to-accessor"
 )
 
 var codes = []checkres.Code{
@@ -26,6 +27,8 @@ var codes = []checkres.Code{
 		Rule: "0（書き出せない腕は fix）", Summary: "enum への match の `case _` を残りの case に書き出した後に、人へ回した腕の数"},
 	{Name: CodeRemoveDead, Level: checklevel.Lint, Metric: "dead_left", Unit: "count", Op: checkres.AtMost,
 		Rule: "0（決められない def は fix）", Summary: "テストからだけ・どこからも参照されない pub の def を消した後に、人へ回した数"},
+	{Name: CodeAccessor, Level: checklevel.Lint, Metric: "field_sites_left", Unit: "count", Op: checkres.AtMost,
+		Rule: "0（受け手の型が決まらない・読めない式・型の違う口は fix）", Summary: "record の欄の直の読み書きを口（読み・書き）へ替えた後に、人へ回した数"},
 }
 
 func init() {

@@ -2,6 +2,7 @@ package refactor
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -141,6 +142,141 @@ func deadReport(root string, idx *Index, a args, cfg Config, o Options) (report,
 		r.Next, r.NextWhy = base+" --with-tests", "テストが参照する def はテストごと消す"
 	}
 	return r, nil
+}
+
+// accessorReport は field-to-accessor の入口（ファイルを読み、型の字を比べ、計画を Change へ渡す）。
+func accessorReport(root string, idx *Index, a args, cfg Config, o Options) (report, error) {
+	defs := map[string]bool{KindDefDecl: true}
+	q := AccessorQuery{Label: a.label, Receiver: a.receiver, Reader: a.reader, Mapper: a.mapper, Setter: a.setter, Outside: a.outside, Skip: a.skip}
+	var readerRow Row
+	for _, name := range []string{a.reader, a.mapper, a.setter} {
+		if name == "" {
+			continue
+		}
+		sym, err := Resolve(idx.Rows, name, defs)
+		if err != nil {
+			return report{}, fmt.Errorf("口 %s が索引に無い（先に口の def を書き、make check が通ってから）: %v", name, err)
+		}
+		q.OwnerSyms = append(q.OwnerSyms, sym)
+		for _, r := range idx.Rows {
+			if r.Kind == KindDefDecl && r.Sym == sym && name == a.reader {
+				readerRow = r
+			}
+		}
+	}
+	srcs := map[string]string{}
+	load := func(f string) error {
+		if _, ok := srcs[f]; ok || f == "" {
+			return nil
+		}
+		b, err := os.ReadFile(filepath.Join(root, f))
+		if err != nil {
+			return err
+		}
+		srcs[f] = string(b)
+		return nil
+	}
+	alias := ""
+	for _, r := range idx.Rows {
+		if (r.Kind == KindLabelSelect || r.Kind == KindLabelUpdate) && r.Sym == a.label {
+			if err := load(r.File); err != nil {
+				return report{}, err
+			}
+			if v := r.Attr("recv"); alias == "" && nameMatches(v, a.receiver) {
+				alias = v
+			}
+		}
+	}
+	if err := load(readerRow.File); err != nil {
+		return report{}, err
+	}
+	typeNote := "型: 確かめられない（make check に任せる）"
+	readerType, rok := "", false
+	if ext := readerRow.Attr("ext"); ext != "" {
+		if span, err := spanOf(readerRow.File, ext); err == nil {
+			if text, err := SpanText(srcs[readerRow.File], span); err == nil {
+				readerType, rok = DefReturnType(text)
+			}
+		}
+	}
+	fieldType, fok := aliasFieldTypeIn(root, cfg, alias, a.label)
+	switch {
+	case rok && fok && SameType(readerType, fieldType):
+		typeNote = fmt.Sprintf("型: %s の戻り %s = 欄 %s の %s", a.reader, readerType, a.label, fieldType)
+	case rok && fok:
+		q.TypeWhy = fmt.Sprintf("口 %s の戻り %s と欄の型 %s が違う（読む側の組み替えは人）", a.reader, readerType, fieldType)
+		typeNote = "型: " + q.TypeWhy
+	case rok:
+		typeNote = fmt.Sprintf("型: %s の戻り %s・欄の型は %s の宣言が見つからず確かめられない（make check に任せる）", a.reader, readerType, alias)
+	}
+	plan, err := PlanAccessor(srcs, idx.Rows, q)
+	if err != nil {
+		return report{}, err
+	}
+	out := Change(root, plan.Edits, a.apply, cfg.Verify, o.Verify)
+	r := report{Op: "field-to-accessor", Target: a.receiver + "#" + a.label, Sym: alias, code: CodeAccessor, Outcome: &out, Fix: plan.Fix}
+	r.got = len(plan.Fix)
+	if out.State == StateReverted || out.State == StateRefused {
+		r.got = plan.Sites
+	}
+	r.Sites = plan.Rewrites
+	r.gotText = fmt.Sprintf("直の読み書き %d・口へ替える %d（読み %d・書き %d。うち書きの lambda に畳む読み %d）・人へ回す %d",
+		plan.Sites, plan.Reads+plan.Writes, plan.Reads, plan.Writes, plan.Folded, len(plan.Fix))
+	if plan.Inside > 0 {
+		r.extra = append(r.extra, fmt.Sprintf("口の def の中・--outside の mod の中の物 %d は替えない", plan.Inside))
+	}
+	r.extra = append(r.extra, typeNote)
+	r.wantText = fmt.Sprintf("%s の欄 %s の直の読み書き 0（口の中を除く。決められない所は fix）", a.receiver, a.label)
+	for _, w := range plan.Rewrites {
+		r.lines = append(r.lines, fmt.Sprintf("%-44s %s（%s）", w.Where(), w.Why, w.Owner))
+	}
+	for _, f := range plan.Fix {
+		r.lines = append(r.lines, fmt.Sprintf("%-44s fix  %s（%s）", f.Where(), f.Why, f.Owner))
+	}
+	base := fmt.Sprintf("bin/fge refactor field-to-accessor --label %s --receiver %s --reader %s", a.label, a.receiver, a.reader)
+	if a.mapper != "" {
+		base += " --mapper " + a.mapper
+	}
+	if a.setter != "" {
+		base += " --setter " + a.setter
+	}
+	if a.outside != "" {
+		base += " --outside " + a.outside
+	}
+	nextOf(&r, base, a, &out)
+	if out.State == StateApplied {
+		mod := a.outside
+		if mod == "" {
+			mod = a.receiver
+		}
+		r.Next, r.NextWhy = fmt.Sprintf("bin/fge refactor field-sites --label %s --receiver %s --outside %s --max 0", a.label, a.receiver, mod), "口の外が 0 になったか（索引は作り直しになる）"
+	}
+	return r, nil
+}
+
+// aliasFieldTypeIn は sources の .flix から `type alias <alias の最後>` を探し、欄 label の型の字を返す。
+// 同じ名前の alias が 2 つ以上のファイルにあれば決めない（false）。
+func aliasFieldTypeIn(root string, cfg Config, alias, label string) (string, bool) {
+	if alias == "" || strings.Contains(alias, "|") {
+		return "", false
+	}
+	short := alias[strings.LastIndex(alias, ".")+1:]
+	files, err := flixFiles(root, (Builder{Root: root, Config: cfg}).sources())
+	if err != nil {
+		return "", false
+	}
+	found, n := "", 0
+	for _, f := range files {
+		b, err := os.ReadFile(filepath.Join(root, f))
+		if err != nil || !strings.Contains(string(b), "type alias "+short) {
+			continue
+		}
+		if t, ok := AliasFieldType(string(b), short, label); ok {
+			found = t
+			n++
+		}
+	}
+	return found, n == 1
 }
 
 // engineDir は engine の根（mk/game.mk を持つ所）。見つからなければ ""。

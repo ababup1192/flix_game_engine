@@ -234,6 +234,10 @@ func (b Builder) Load(s Stage) (*Index, error) {
 	if err := os.Rename(tmp, path); err != nil {
 		return nil, err
 	}
+	// 鍵は作った後に取り直す。初めての flixlint は依存を lib/ へ広げるので、前の鍵のままだと次の 1 回が作り直しになる。
+	if after, err := b.Key(s); err == nil {
+		key = after
+	}
 	if err := os.WriteFile(b.keyPath(s), []byte(fmt.Sprintf("%s %.1f\n", key, secs)), 0o644); err != nil {
 		return nil, err
 	}
