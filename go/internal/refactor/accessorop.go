@@ -348,7 +348,7 @@ func accessorReport(root string, idx *Index, a args, cfg Config, o Options) (rep
 		}
 		jobs = append(jobs, j)
 	}
-	out := Change(root, mergeAccessorEdits(jobs), a.apply, cfg.Verify, o.Verify)
+	out := Change(root, mergeAccessorEdits(jobs), a.applyWith(cfg.Verify, o))
 	alias := jobs[0].alias
 	home := a.outside
 	if home == "" {

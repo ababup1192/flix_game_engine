@@ -14,7 +14,7 @@ import (
 )
 
 // Usage は使い方の全文。
-const Usage = `使い方: fge refactor <操作> [引数] [--json] [-v|--verbose] [--all] [--max N] [--limit N] [--stage resolved|typed] [--rebuild] [--flixlint PATH] [--root DIR]
+const Usage = `使い方: fge refactor <操作> [引数] [--json] [-v|--verbose] [--all] [--max N] [--limit N] [--stage resolved|typed] [--rebuild] [--require-clean] [--flixlint PATH] [--root DIR]
 
   usages <Mod.f|Enum|Enum.Case|Alias> [--callers [--depth N]]
                                                        使われ所（Find Usages）: file:line:col・使う def・種類（呼び出し・参照・
@@ -59,8 +59,10 @@ const Usage = `使い方: fge refactor <操作> [引数] [--json] [-v|--verbose]
   依存（lib/）が無くて flixlint が止めた時は、道具は make を流さず next: make check を出す（依存を入れるのは flix）。
 
   書き換える操作は既定で dry-run（build/refactor/last.diff を書くだけ）。--apply で書き、確かめの口（refactor.json の
-  verify・remove-dead は verifyTests）を流し、落ちたら書いた patch（build/refactor/last.patch）だけを戻す。
-  書き換えるファイルにコミットしていない変更があれば --apply を断る。決められない所は書き換えず fix に並べる。
+  verify・remove-dead は verifyTests）を流し、落ちたら書く前の中身へ戻す。書く前の中身はコミットしていない変更も
+  含む今の中身で、道具が控える（build/refactor/before/<パス>。git の clean は要らない・--require-clean で求められる）。
+  書いた後に別の手が同じファイルを変えていれば、その変更を消さないよう戻さずに revert-failed で知らせる。
+  決められない所は書き換えず fix に並べる。
   ほかの操作は読むだけ（ファイルは書き換えない）。索引は build/refactor/spans-<段>.tsv（無いか古ければ bin/fge heavy の枠で作る）。
   refs・match-sites は resolved の段（速い）、field-sites は typed の段（型検査まで。遅い）。
   --max N を付けると数の歯止めになる（got が N を超えれば終了コード 1）。例: 欄の直の読み書きを口の mod の外で 0 に
@@ -86,7 +88,8 @@ type args struct {
 	labelsFile                                            string // field-to-accessor の --labels-file
 	callers, catchAll, rebuild, asJSON                    bool
 	apply, withTests, unused, verbose                     bool
-	depth                                                 int // usages --depth（0 は指定なし）
+	requireClean                                          bool // --require-clean: 書き換えるファイルが git で clean な時だけ --apply
+	depth                                                 int  // usages --depth（0 は指定なし）
 	only                                                  string
 	def                                                   string
 	reader, mapper, setter                                string
@@ -131,6 +134,8 @@ func parseArgs(rest []string) (args, error) {
 			a.catchAll = true
 		case "--apply":
 			a.apply = true
+		case "--require-clean":
+			a.requireClean = true
 		case "--with-tests":
 			a.withTests = true
 		case "--def":
@@ -213,15 +218,45 @@ func parseArgs(rest []string) (args, error) {
 	return a, nil
 }
 
-// stageOf は操作が要る段（--stage で上げられる）。
-func (a args) stageOf() (Stage, error) {
-	need := Resolved
+// applyWith は書き換える操作の当て方（確かめの口 verify）。
+func (a args) applyWith(verify string, o Options) Apply {
+	return Apply{On: a.apply, RequireClean: a.requireClean, Verify: verify, Run: o.Verify}
+}
+
+// needs は操作に要る一番低い段（欄の読み書きと受け手の型を見る物だけ typed）。
+func (a args) needs() Stage {
 	if a.op == "field-sites" || a.op == "field-to-accessor" || a.op == "remove-field" {
-		need = Typed
+		return Typed
 	}
 	if _, _, field := a.fieldTarget(); a.op == "usages" && field && !a.unused {
-		need = Typed
+		return Typed
 	}
+	return Resolved
+}
+
+// preflight は索引を作る前に分かる止め所（索引を作らずに答える）。止めなければ msg は ""。
+// remove-field で型から欄がもう無い（手で先に消した）時は、組み立てを合わせる fix-construction（resolved で足りる）へ回す。
+// WhyNot: ここで止めないと、欄の読み書きが残ったまま型検査の通らないソースへ typed の索引を作りに行って落ちる。
+func preflight(root string, a args, cfg Config) (msg, next, why string) {
+	if a.op != "remove-field" || a.receiver == "" {
+		return "", "", ""
+	}
+	srcs, err := loadSources(root, cfg)
+	if err != nil {
+		return "", "", ""
+	}
+	shape, err := FindAliasShape(srcs, a.receiver)
+	if err != nil || shape.Has(a.label) {
+		return "", "", ""
+	}
+	return fmt.Sprintf("型 %s（%s）に欄 %s がもう無い（先に手で消した）", shape.Name, shape.File, a.label),
+		fmt.Sprintf("bin/fge refactor fix-construction --label %s --receiver %s", a.label, a.receiver),
+		"組み立てから欄を消す。resolved の索引で足り、型検査が通らなくても作れる。残った欄の読み書きは make check の誤りの所を手で"
+}
+
+// stageOf は操作が要る段（--stage で上げられる）。
+func (a args) stageOf() (Stage, error) {
+	need := a.needs()
 	switch Stage(a.stage) {
 	case "":
 		return need, nil
@@ -313,12 +348,26 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 	if b.Log == nil {
 		b.Log = os.Stderr
 	}
+	if msg, next, why := preflight(root, a, cfg); msg != "" {
+		fmt.Fprintf(errOut, "refactor %s: %s\nnext: %s\n  （%s）\n", a.op, msg, next, why)
+		return 2
+	}
 	idx, err := b.Load(stage)
+	var ie *IndexError
+	if err != nil && errors.As(err, &ie) && ie.Compile && stage == Typed && a.needs() == Resolved {
+		// 型の要らない操作が --stage typed で呼ばれ、型検査が通らない: resolved の索引で続ける。
+		fmt.Fprintf(b.Log, "[refactor] typed の索引は型検査が通らないので作れない。%s は resolved で足りるので resolved で続けます\n", a.op)
+		idx, err = b.Load(Resolved)
+	}
 	if err != nil {
 		fmt.Fprintf(errOut, "refactor: %v\n", err)
-		var ie *IndexError
-		if errors.As(err, &ie) && ie.Next != "" {
-			fmt.Fprintf(errOut, "next: %s\n  （%s）\n", ie.Next, ie.NextWhy)
+		if errors.As(err, &ie) {
+			switch {
+			case ie.Next != "":
+				fmt.Fprintf(errOut, "next: %s\n  （%s）\n", ie.Next, ie.NextWhy)
+			case ie.NextWhy != "":
+				fmt.Fprintf(errOut, "next: %s\n", ie.NextWhy)
+			}
 		}
 		return 2
 	}

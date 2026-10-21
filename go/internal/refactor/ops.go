@@ -17,7 +17,7 @@ func (o *Outcome) status() string {
 	case StateApplied:
 		return fmt.Sprintf("applied（%s が %.0f s で通った・patch: %s）", o.Verify, o.VerifySecs, rel(o.Patch)) + o.dirtyNote()
 	case StateReverted:
-		s := fmt.Sprintf("reverted（%s が %.0f s で落ちたので patch を戻した・出力: %s）", o.Verify, o.VerifySecs, rel(o.VerifyLog))
+		s := fmt.Sprintf("reverted（%s が %.0f s で落ちたので書く前の中身へ戻した・出力: %s）", o.Verify, o.VerifySecs, rel(o.VerifyLog))
 		if o.FirstError != "" {
 			s += "\n          最初の誤り: " + o.FirstError
 		}
@@ -26,7 +26,7 @@ func (o *Outcome) status() string {
 		}
 		return s + o.dirtyNote()
 	case StateRevertFailed:
-		s := fmt.Sprintf("revert-failed（%s が落ちたが、戻せないファイルが残った: %s）", o.Verify, strings.Join(o.Unrestored, "・"))
+		s := fmt.Sprintf("revert-failed（%s が落ちたが、戻さなかったファイルが残った: %s）", o.Verify, strings.Join(o.Unrestored, "・"))
 		if o.FirstError != "" {
 			s += "\n          最初の誤り: " + o.FirstError
 		}
@@ -57,16 +57,19 @@ func nextOf(r *report, base string, a args, o *Outcome) {
 	case StateDryRun:
 		r.Next, r.NextWhy = cmd+" --apply", "diff を読んでから"
 	case StateRevertFailed:
-		r.fixHint = "戻せなかったファイルを git diff で見て、" + rel(o.Patch) + " の分を手で戻す（git checkout -- <file> は書いた後の変更も消す）"
+		r.fixHint = "戻さなかったファイルを " + rel(o.Backup) + "/<パス>（書く前の中身）と見比べて手で直す（git checkout -- <file> は手の変更も消す）"
 	case StateReverted:
 		r.fixHint = "最初の誤りの所を --skip <file:line> で外すか、手で直してから --apply をやり直す"
 		r.Next = cmd
 		r.NextWhy = "--skip を足して dry-run から"
 	case StateRefused:
-		if strings.Contains(o.Reason, "索引が古い") {
+		switch {
+		case strings.Contains(o.Reason, "索引が古い"):
 			r.Next, r.NextWhy = "bin/fge refactor index --rebuild", "索引を作り直してからもう一度"
-		} else {
-			r.fixHint = "書き換える所の変更をコミットか stash してから --apply"
+		case strings.Contains(o.Reason, "外から変わった"):
+			r.Next, r.NextWhy = cmd, "別の手の書き込みが止んでから dry-run から"
+		case strings.Contains(o.Reason, "--require-clean"):
+			r.fixHint = "書き換える所の変更をコミットしてから --apply（--require-clean を外せば、手の変更ごと控えて戻す）"
 		}
 	}
 }
@@ -81,7 +84,7 @@ func expandReport(root string, idx *Index, a args, cfg Config, o Options) (repor
 	if err != nil {
 		return report{}, err
 	}
-	out := Change(root, plan.Edits, a.apply, cfg.Verify, o.Verify)
+	out := Change(root, plan.Edits, a.applyWith(cfg.Verify, o))
 	r := report{Op: "expand-wildcard", Target: a.target, Sym: sym, code: CodeExpand, Outcome: &out, Fix: plan.Fix}
 	r.got = len(plan.Fix)
 	if out.State == StateReverted || out.State == StateRefused {
@@ -107,7 +110,7 @@ func deadReport(root string, idx *Index, a args, cfg Config, o Options) (report,
 	if err != nil {
 		return report{}, err
 	}
-	out := Change(root, plan.Edits, a.apply, cfg.VerifyTests, o.Verify)
+	out := Change(root, plan.Edits, a.applyWith(cfg.VerifyTests, o))
 	r := report{Op: "remove-dead", code: CodeRemoveDead, Outcome: &out, Fix: plan.Fix}
 	r.got = len(plan.Fix)
 	if out.State == StateReverted || out.State == StateRefused {
@@ -293,7 +296,7 @@ func fixConstructionReport(root string, idx *Index, a args, cfg Config, o Option
 	if err != nil {
 		return report{}, err
 	}
-	out := Change(root, plan.Edits, a.apply, cfg.Verify, o.Verify)
+	out := Change(root, plan.Edits, a.applyWith(cfg.Verify, o))
 	r := report{Op: "fix-construction", Target: shape.Name + "#" + a.label, code: CodeFixConstruction, Outcome: &out, Fix: plan.Fix}
 	r.got = len(plan.Fix)
 	if out.State == StateReverted || out.State == StateRefused {
@@ -377,7 +380,7 @@ func removeFieldReport(root string, idx *Index, a args, cfg Config, o Options) (
 	typeRow := rowAt(shape.File, srcs[shape.File], shape.Brace, shape.Name)
 	edits := append(append([]Edit{}, plan.Edits...), Edit{File: shape.File, Start: shape.Brace, End: shape.End, Site: typeRow,
 		Make: func(cur string) (string, error) { return RemoveRecordField(cur, label) }})
-	out := Change(root, edits, a.apply, cfg.Verify, o.Verify)
+	out := Change(root, edits, a.applyWith(cfg.Verify, o))
 	r.Outcome, r.Fix = &out, plan.Fix
 	r.got = len(plan.Fix)
 	if out.State == StateReverted || out.State == StateRefused {

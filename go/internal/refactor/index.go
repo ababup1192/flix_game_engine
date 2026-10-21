@@ -22,6 +22,7 @@ import (
 	"bufio"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -29,6 +30,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -198,11 +200,12 @@ type Builder struct {
 	Verbose  bool // flixlint の出力を画面へ（既定は build/refactor/index-<段>.log へ書き、1 行だけ言う）
 }
 
-// IndexError は索引を作れなかった訳と、写してそのまま流せる次の手（無ければ ""）。
+// IndexError は索引を作れなかった訳と、写してそのまま流せる次の手（無ければ ""。その時は NextWhy を next の 1 行に）。
 type IndexError struct {
-	Msg     string
-	Next    string
-	NextWhy string
+	Msg     string `json:"msg"`
+	Next    string `json:"next,omitempty"`
+	NextWhy string `json:"nextWhy,omitempty"`
+	Compile bool   `json:"compile,omitempty"` // ソースが型検査（resolved は名前解決）を通らない
 }
 
 func (e *IndexError) Error() string { return e.Msg }
@@ -212,6 +215,7 @@ func (b Builder) Dir() string { return filepath.Join(b.Root, "build", "refactor"
 
 func (b Builder) indexPath(s Stage) string { return filepath.Join(b.Dir(), "spans-"+string(s)+".tsv") }
 func (b Builder) keyPath(s Stage) string   { return filepath.Join(b.Dir(), "spans-"+string(s)+".key") }
+func (b Builder) failPath(s Stage) string  { return filepath.Join(b.Dir(), "spans-"+string(s)+".fail") }
 
 // Load は段 s の索引を返す。無いか鍵が違えば作る。
 func (b Builder) Load(s Stage) (*Index, error) {
@@ -226,7 +230,12 @@ func (b Builder) Load(s Stage) (*Index, error) {
 				return &Index{Stage: s, Path: path, Rows: rows, Adds: adds, Cached: true, Seconds: secs, Key: key}, nil
 			}
 		}
+		// 同じソースで前に型検査（名前解決）が落ちていれば、JVM を立てずに同じ答えを返す。
+		if ie := readFail(b.failPath(s), key); ie != nil {
+			return nil, ie
+		}
 	}
+	os.Remove(b.failPath(s))
 	if err := os.MkdirAll(b.Dir(), 0o755); err != nil {
 		return nil, err
 	}
@@ -252,10 +261,13 @@ func (b Builder) Load(s Stage) (*Index, error) {
 	secs := time.Since(start).Seconds()
 	if code != 0 {
 		os.Remove(tmp)
-		if log != "" {
+		ie := b.indexError(s, code, log)
+		if ie.Compile {
+			writeFail(b.failPath(s), key, ie)
+		} else if log != "" {
 			fmt.Fprint(b.Log, tailOf(log, 12))
 		}
-		return nil, b.indexError(code, log)
+		return nil, ie
 	}
 	rows, adds, err := readIndex(tmp, s)
 	if err != nil {
@@ -292,10 +304,26 @@ func tailOf(path string, n int) string {
 // 依存（lib/）が無い・欠けている時、flixlint は終了コード 4 で「flix check を 1 度」と言って止まる。その時は
 // make check を next に出すだけで、道具が裏で make を流さない（依存を入れるのは flix の 1 つの源。
 // 設計 refactor-tool-design §8.1・段 C で flixlint が自分で入れるようになるまで）。
-func (b Builder) indexError(code int, log string) error {
+//
+// ソースがコンパイルできない時（終了コード 3。typed の段では型の誤りのある AST を歩いて例外の 4 になることもある）は、
+// コンパイラの誤りの見出しで見分け、最初の誤りの 1 行と「先に道具、手の直しは後」の next だけを返す
+// （例外の中身は出さない。全文はログ）。
+func (b Builder) indexError(s Stage, code int, log string) *IndexError {
+	text := logText(log)
+	if code == 3 || (code == 4 && compileFailed(text)) {
+		first := firstCompileError(text)
+		if first == "" {
+			first = "誤りの全文は make check"
+		}
+		ie := &IndexError{Compile: true,
+			Msg:     fmt.Sprintf("索引（%s）を作れません: ソースがコンパイルできない・%s（最初の誤り: %s）", s, passWord(s, "を通らない"), first),
+			NextWhy: fmt.Sprintf("%s の索引は%s状態で作る。先に道具、手の直しは後（手の直しを戻してから道具を流す。誤りの全文は make check）", s, passWord(s, "が通る")),
+		}
+		return ie
+	}
 	switch code {
 	case 4:
-		if strings.Contains(logText(log), "flix check") {
+		if strings.Contains(text, "flix check") {
 			return &IndexError{
 				Msg:     "索引を作れません: flixlint が依存（lib/）を読めない（終了コード 4。上の出力）",
 				Next:    "make check",
@@ -306,10 +334,93 @@ func (b Builder) indexError(code int, log string) error {
 			"この道具には flixlint %s 以上が要ります（--spans と索引の形 2）。submodule なら git -C flixlint fetch して %s 以上へ上げ、"+
 			"別の場所の物は --flixlint か refactor.local.json の flixlint で名指ししてください。上の flixlint の出力に flix check とあれば依存（lib/）が無いので make check を 1 度",
 			b.Flixlint, flixlintVersion(b.Flixlint), MinFlixlint, MinFlixlint)}
-	case 3:
-		return &IndexError{Msg: "索引を作れません: ソースがコンパイルできない（flixlint の終了コード 3。上の出力）", Next: "make check", NextWhy: "最初の誤りの場所"}
 	}
 	return &IndexError{Msg: fmt.Sprintf("索引を作れません: flixlint の終了コード %d", code)}
+}
+
+// passWord は段ごとの「通る」物の言い方（typed は型検査・resolved は名前解決）。
+func passWord(s Stage, verb string) string {
+	if s == Typed {
+		return "型検査" + verb
+	}
+	return "名前解決" + verb
+}
+
+var (
+	ansiEscape   = regexp.MustCompile("\x1b\\[[0-9;]*[A-Za-z]")
+	flixErrHead  = regexp.MustCompile(`^-- (.*?(?:Error|error))(?: \[\w+\])? -{2,} (\S+)\s*$`)
+	flixErrLine  = regexp.MustCompile(`^\s*(\d+) \|`)
+	noTypedAST   = "no typed AST"
+	walkerFailed = "the fact walker failed"
+)
+
+// compileFailed はログにコンパイラの誤りの見出し（-- Type Error --- src/A.flix）か、型つきの AST が無いという行があるか。
+func compileFailed(text string) bool {
+	if strings.Contains(text, noTypedAST) {
+		return true
+	}
+	return firstCompileError(text) != ""
+}
+
+// firstCompileError は最初のコンパイラの誤りを「file:line 種類: 要約」の 1 行にする（見出しが無ければ ""）。
+func firstCompileError(text string) string {
+	lines := strings.Split(ansiEscape.ReplaceAllString(text, ""), "\n")
+	for i, l := range lines {
+		m := flixErrHead.FindStringSubmatch(strings.TrimRight(l, "\r"))
+		if m == nil {
+			continue
+		}
+		where, summary := m[2], ""
+		for _, n := range lines[i+1:] {
+			n = strings.TrimSpace(n)
+			if strings.HasPrefix(n, "-- ") || strings.Contains(n, walkerFailed) {
+				break
+			}
+			if summary == "" && strings.HasPrefix(n, ">> ") {
+				summary = strings.TrimPrefix(n, ">> ")
+			}
+			if ln := flixErrLine.FindStringSubmatch(n); ln != nil {
+				where += ":" + ln[1]
+				break
+			}
+		}
+		s := where + " " + m[1]
+		if summary != "" {
+			s += ": " + summary
+		}
+		if r := []rune(s); len(r) > 200 {
+			s = string(r[:200]) + "…"
+		}
+		return s
+	}
+	return ""
+}
+
+// writeFail は型検査（名前解決）が落ちた時の答えを鍵と一緒に控える（同じソースで呼ばれたら JVM を立てない）。
+func writeFail(path, key string, ie *IndexError) {
+	data, err := json.Marshal(ie)
+	if err != nil {
+		return
+	}
+	os.WriteFile(path, []byte(key+"\n"+string(data)+"\n"), 0o644)
+}
+
+// readFail は鍵が同じ時だけ、控えた答えを返す。
+func readFail(path, key string) *IndexError {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	head, body, ok := strings.Cut(string(data), "\n")
+	if !ok || head != key {
+		return nil
+	}
+	var ie IndexError
+	if json.Unmarshal([]byte(body), &ie) != nil || !ie.Compile {
+		return nil
+	}
+	ie.Msg += "（前の回と同じソースなので作り直していない）"
+	return &ie
 }
 
 // logText はログの中身（-v で画面へ流した時は "" で、読めない）。

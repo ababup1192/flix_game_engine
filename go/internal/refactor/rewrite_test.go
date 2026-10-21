@@ -173,13 +173,59 @@ func TestApplyRevertsOnlyItsPatchWhenVerifyFails(t *testing.T) {
 	}
 }
 
-func TestApplyRefusesAFileWithUncommittedChanges(t *testing.T) {
+// 書き換えるファイルにコミットしていない変更があっても --apply は通り、確かめが通れば手の変更も残る。
+func TestApplyKeepsTheUncommittedChangesOfTheFile(t *testing.T) {
+	root := zoo(t)
+	mine := read(t, root, "src/Zoo.flix") + "// hand edit in progress\n"
+	must(t, os.WriteFile(filepath.Join(root, "src/Zoo.flix"), []byte(mine), 0o644))
+	var cmds []string
+	code, text := runZoo(t, root, verifyWith(0, "", &cmds), "expand-wildcard", "--enum", "Animal", "--apply")
+	if code != 0 || len(cmds) != 1 || !strings.Contains(read(t, root, "src/Zoo.flix"), "// hand edit in progress") {
+		t.Errorf("exit %d・確かめ %v\n%s", code, cmds, text)
+	}
+}
+
+// 確かめが落ちたら、書く前の中身（コミットしていない手の変更を含む）へバイト単位で戻す。
+func TestRevertRestoresTheUncommittedContentExactly(t *testing.T) {
+	root := zoo(t)
+	mine := read(t, root, "src/Zoo.flix") + "// hand edit in progress\n"
+	must(t, os.WriteFile(filepath.Join(root, "src/Zoo.flix"), []byte(mine), 0o644))
+	var cmds []string
+	code, text := runZoo(t, root, verifyWith(1, "error\n", &cmds), "expand-wildcard", "--enum", "Animal", "--apply")
+	if code != 1 || read(t, root, "src/Zoo.flix") != mine || read(t, root, "build/refactor/before/src/Zoo.flix") != mine {
+		t.Errorf("exit %d\n%s", code, text)
+	}
+}
+
+// git の作業場の外でも --apply して戻せる（戻しは git に頼らない）。
+func TestApplyRevertsOutsideGit(t *testing.T) {
+	root := zoo(t)
+	must(t, os.RemoveAll(filepath.Join(root, ".git")))
+	before := read(t, root, "src/Zoo.flix")
+	var cmds []string
+	code, text := runZoo(t, root, verifyWith(1, "error\n", &cmds), "expand-wildcard", "--enum", "Animal", "--apply")
+	if code != 1 || read(t, root, "src/Zoo.flix") != before {
+		t.Errorf("exit %d\n%s", code, text)
+	}
+}
+
+// --require-clean は今までの歯止め: コミットしていない変更があれば断り、パスを頭の字まで正しく言う。
+func TestRequireCleanRefusesAndNamesTheWholePath(t *testing.T) {
 	root := zoo(t)
 	must(t, os.WriteFile(filepath.Join(root, "src/Zoo.flix"), []byte(read(t, root, "src/Zoo.flix")+"\n"), 0o644))
 	var cmds []string
-	code, text := runZoo(t, root, verifyWith(0, "", &cmds), "expand-wildcard", "--enum", "Animal", "--apply")
-	if code != 2 || len(cmds) != 0 || !strings.Contains(text, "コミットしていない変更") {
+	code, text := runZoo(t, root, verifyWith(0, "", &cmds), "expand-wildcard", "--enum", "Animal", "--apply", "--require-clean")
+	if code != 2 || len(cmds) != 0 || !strings.Contains(text, "コミットしていない変更がある: src/Zoo.flix") {
 		t.Errorf("exit %d・確かめ %v\n%s", code, cmds, text)
+	}
+}
+
+// git status --porcelain の最初の行が " M"（作業ツリーだけの変更）でも、パスの頭の字を食わない。
+func TestPorcelainPathsKeepTheFirstLetter(t *testing.T) {
+	got := porcelainPaths(" M src/scene/PuzzleScene.flix\nM  src/A.flix\nR  old.flix -> src/New.flix\n?? test/T.flix\n")
+	want := []string{"src/scene/PuzzleScene.flix", "src/A.flix", "src/New.flix", "test/T.flix"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("got %v", got)
 	}
 }
 
@@ -348,7 +394,7 @@ func TestRemoveDeadOnALibraryRemovesNothing(t *testing.T) {
 	}
 }
 
-// 確かめが書き換えたファイルを変えてしまうと git apply -R も元への書き戻しもできない: revert-failed と戻せないファイル・終了コード 3。
+// 書いた後に別の手（ここでは確かめ）が同じファイルを変えたら、その変更を消さないよう戻さない: revert-failed・終了コード 3。
 func TestRevertFailedNamesTheFilesLeft(t *testing.T) {
 	root := zoo(t)
 	spoil := func(cmd, dir, log string) int {
@@ -357,7 +403,7 @@ func TestRevertFailedNamesTheFilesLeft(t *testing.T) {
 		return 1
 	}
 	code, text := runZoo(t, root, spoil, "expand-wildcard", "--enum", "Animal", "--apply")
-	if code != 3 || !strings.Contains(text, "revert-failed") || !strings.Contains(text, "src/Zoo.flix") {
+	if code != 3 || !strings.Contains(text, "revert-failed") || !strings.Contains(text, "src/Zoo.flix") || read(t, root, "src/Zoo.flix") != "changed by the verify step\n" {
 		t.Errorf("exit %d\n%s", code, text)
 	}
 }

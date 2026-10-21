@@ -2,6 +2,7 @@ package refactor
 
 import (
 	"bufio"
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"os/exec"
@@ -19,9 +20,9 @@ type VerifyRunner func(cmd, dir, log string) int
 const (
 	StateDryRun       = "dry-run"       // 計画と diff だけ（ファイルは触らない）
 	StateApplied      = "applied"       // 書いて、確かめが通った
-	StateReverted     = "reverted"      // 書いたが確かめが落ちたので、その patch だけを戻した
-	StateRefused      = "refused"       // 書く前に断った（作業場が汚れている・索引が古い・重なり）
-	StateRevertFailed = "revert-failed" // 確かめが落ち、戻そうとしたが戻せないファイルが残った（Unrestored を手で戻す）
+	StateReverted     = "reverted"      // 書いたが確かめが落ちたので、書く前の中身（手の変更を含む）へ戻した
+	StateRefused      = "refused"       // 書く前に断った（索引が古い・重なり・計画の後に外から変わった・--require-clean）
+	StateRevertFailed = "revert-failed" // 確かめが落ちたが戻さなかったファイルが残った（書いた後に別の手が変えた・書けない。Unrestored）
 	StateNothing      = "nothing"       // 当てる所が無い
 )
 
@@ -39,10 +40,26 @@ type Outcome struct {
 	Reason     string   `json:"reason,omitempty"`     // refused・revert-failed の理由
 	Unrestored []string `json:"unrestored,omitempty"` // revert-failed: 戻せなかったファイル
 	LeftDirty  []string `json:"leftDirty,omitempty"`  // 確かめが書き換えて残したファイル（書く前に無かった git の変更。生成物など）
+	Backup     string   `json:"backup,omitempty"`     // --apply: 書く前の中身の控え（build/refactor/before/<パス>）
+}
+
+// Apply は --apply の時の当て方。
+type Apply struct {
+	On           bool         // false は dry-run（diff を書くだけ）
+	RequireClean bool         // --require-clean: 書き換えるファイルに git のコミットしていない変更があれば断る（既定は断らない）
+	Verify       string       // 書いた後の確かめの口
+	Run          VerifyRunner // 確かめを流す所
 }
 
 // Change は書き換えを当てる流れ（dry-run → --apply → 確かめ → 落ちたら戻す）。
-func Change(root string, edits []Edit, apply bool, verify string, run VerifyRunner) Outcome {
+//
+// 戻しは git に頼らない。書く直前の各ファイルの中身（コミットしていない変更を含む今の中身）を控え
+// （build/refactor/before/ にも写す）、確かめが落ちたらその中身へ正確に戻す。書いた後に別の手が同じファイルを
+// 変えていれば（ハッシュが書いた物と違えば）、その手の変更を消さないよう戻さずに revert-failed で知らせる。
+//
+// WhyNot: git の clean を要求しないのは、作業ツリーを手で直している途中でも道具を流せるようにするため
+// （git apply -R で戻すと、手の変更と道具の patch が同じ行で重なった時に戻せない）。
+func Change(root string, edits []Edit, how Apply) Outcome {
 	dir := filepath.Join(root, "build", "refactor")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return Outcome{State: StateRefused, Reason: err.Error()}
@@ -63,7 +80,7 @@ func Change(root string, edits []Edit, apply bool, verify string, run VerifyRunn
 		return Outcome{State: StateRefused, Reason: err.Error()}
 	}
 	out := Outcome{State: StateDryRun, Diff: diffPath, DiffLines: strings.Count(diff, "\n"), Files: len(plan.Files)}
-	if !apply {
+	if !how.On {
 		return out
 	}
 	files := make([]string, 0, len(plan.Files))
@@ -71,13 +88,26 @@ func Change(root string, edits []Edit, apply bool, verify string, run VerifyRunn
 		files = append(files, f)
 	}
 	sort.Strings(files)
-	if dirty, err := dirtyFiles(root, files); err != nil {
-		out.State, out.Reason = StateRefused, err.Error()
-		return out
-	} else if len(dirty) > 0 {
-		out.State, out.Reason = StateRefused, "書き換える所にコミットしていない変更がある（戻す時に混ざるため断る）: "+strings.Join(dirty, "・")
+	if how.RequireClean {
+		if dirty, err := dirtyFiles(root, files); err != nil {
+			out.State, out.Reason = StateRefused, err.Error()
+			return out
+		} else if len(dirty) > 0 {
+			out.State, out.Reason = StateRefused, "--require-clean: 書き換える所にコミットしていない変更がある: "+strings.Join(dirty, "・")
+			return out
+		}
+	}
+	// 計画を作った後に外から変わったファイルは書かない（計画は読んだ時の中身に当てた物）。
+	if moved := changedSince(root, files, plan.Orig); len(moved) > 0 {
+		out.State, out.Reason = StateRefused, "計画を作った後に外から変わった（書いていない）: "+strings.Join(moved, "・")
 		return out
 	}
+	backup := filepath.Join(dir, "before")
+	if err := saveBackup(backup, files, plan.Orig); err != nil {
+		out.State, out.Reason = StateRefused, "書く前の中身を控えられない: "+err.Error()
+		return out
+	}
+	out.Backup = backup
 	before := gitStatus(root)
 	patch := filepath.Join(dir, "last.patch")
 	if err := os.WriteFile(patch, []byte(diff), 0o644); err != nil {
@@ -88,27 +118,27 @@ func Change(root string, edits []Edit, apply bool, verify string, run VerifyRunn
 	for _, f := range files {
 		if err := os.WriteFile(filepath.Join(root, f), []byte(plan.Files[f]), 0o644); err != nil {
 			out.Reason = err.Error()
-			finishRevert(&out, root, patch, plan, before)
+			finishRevert(&out, root, plan, before)
 			return out
 		}
 	}
-	out.Verify = verify
+	out.Verify = how.Verify
 	out.VerifyLog = filepath.Join(dir, "verify.log")
 	start := time.Now()
-	code := run(verify, root, out.VerifyLog)
+	code := how.Run(how.Verify, root, out.VerifyLog)
 	out.VerifySecs = time.Since(start).Seconds()
 	if code == 0 {
 		out.State = StateApplied
 		return out
 	}
 	out.FirstError = firstError(out.VerifyLog)
-	finishRevert(&out, root, patch, plan, before)
+	finishRevert(&out, root, plan, before)
 	return out
 }
 
-// finishRevert は patch を戻し、戻せたかで reverted か revert-failed にし、確かめが残した変更を並べる。
-func finishRevert(out *Outcome, root, patch string, plan *Planned, before map[string]bool) {
-	left, err := revert(root, patch, plan)
+// finishRevert は書いたファイルを書く前の中身へ戻し、戻せたかで reverted か revert-failed にし、確かめが残した変更を並べる。
+func finishRevert(out *Outcome, root string, plan *Planned, before map[string]bool) {
+	left, err := revert(root, plan)
 	out.State = StateReverted
 	if err != nil {
 		out.Reason = err.Error()
@@ -137,60 +167,111 @@ func gitStatus(root string) map[string]bool {
 	if err != nil {
 		return set
 	}
-	for _, l := range strings.Split(string(out), "\n") {
-		if len(l) > 3 {
-			set[strings.TrimSpace(l[3:])] = true
-		}
+	for _, f := range porcelainPaths(string(out)) {
+		set[f] = true
 	}
 	return set
 }
 
-// revert は last.patch だけを逆に当てる（git apply -R）。git が断れば、触ったファイルが書いたままの時だけ元の中身へ戻す。
-// 戻せなかったファイル（書いた後に別の物が変えた・書けない）を返す。
-func revert(root, patch string, plan *Planned) ([]string, error) {
-	cmd := exec.Command("git", "apply", "-R", patch)
-	cmd.Dir = root
-	out, err := cmd.CombinedOutput()
-	if err == nil {
-		return nil, nil
+// porcelainPaths は git status --porcelain の各行（XY<空白>パス）のパス。改名は新しい名前。
+//
+// WhyNot: 出力の全体を TrimSpace しない。最初の行の X が空白（作業ツリーだけの変更 " M a"）の時に頭の空白まで
+// 削ると、[3:] がパスの頭の 1 字を食う（rc/scene/… と出た不具合）。
+func porcelainPaths(out string) []string {
+	var paths []string
+	for _, l := range strings.Split(out, "\n") {
+		l = strings.TrimRight(l, "\r")
+		if len(l) < 4 {
+			continue
+		}
+		p := l[3:]
+		if _, to, ok := strings.Cut(p, " -> "); ok {
+			p = to
+		}
+		paths = append(paths, strings.Trim(p, `"`))
 	}
-	var left []string
+	return paths
+}
+
+func hashOf(s string) [32]byte { return sha256.Sum256([]byte(s)) }
+
+// changedSince は files のうち、今の中身が want と違う物（読めない物も）。
+func changedSince(root string, files []string, want map[string]string) []string {
+	var moved []string
+	for _, f := range files {
+		cur, err := os.ReadFile(filepath.Join(root, f))
+		if err != nil || hashOf(string(cur)) != hashOf(want[f]) {
+			moved = append(moved, f)
+		}
+	}
+	return moved
+}
+
+// saveBackup は書く前の中身を dir/<パス> に写す（前の回の物は消す）。戻しは手元の中身で行い、これは人が見る控え。
+func saveBackup(dir string, files []string, orig map[string]string) error {
+	if err := os.RemoveAll(dir); err != nil {
+		return err
+	}
+	for _, f := range files {
+		p := filepath.Join(dir, filepath.FromSlash(f))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(p, []byte(orig[f]), 0o644); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// revert は書いたファイルを書く前の中身（plan.Orig）へ戻す。今の中身のハッシュが書いた物と同じ時だけ書き戻し、
+// もう書く前の中身なら何もしない。それ以外（書いた後に別の手が変えた・読めない・書けない）は戻さずに返す。
+func revert(root string, plan *Planned) ([]string, error) {
+	var left, moved []string
 	for f, body := range plan.Files {
-		cur, rerr := os.ReadFile(filepath.Join(root, f))
+		path := filepath.Join(root, f)
+		cur, rerr := os.ReadFile(path)
 		switch {
-		case rerr == nil && string(cur) == plan.Orig[f]:
-			// 書けずに終わった物・もう元の中身の物
-		case rerr != nil || string(cur) != body:
+		case rerr != nil:
 			left = append(left, f)
+		case hashOf(string(cur)) == hashOf(plan.Orig[f]):
+			// 書けずに終わった物・もう元の中身の物
+		case hashOf(string(cur)) != hashOf(body):
+			moved = append(moved, f)
 		default:
-			if os.WriteFile(filepath.Join(root, f), []byte(plan.Orig[f]), 0o644) != nil {
+			if os.WriteFile(path, []byte(plan.Orig[f]), 0o644) != nil {
+				left = append(left, f)
+			} else if back, err := os.ReadFile(path); err != nil || string(back) != plan.Orig[f] {
 				left = append(left, f)
 			}
 		}
 	}
 	sort.Strings(left)
-	reason := fmt.Errorf("git apply -R が断った（%s）ので、書いたままのファイルを元の中身へ戻した", strings.TrimSpace(string(out)))
-	if len(left) > 0 {
-		reason = fmt.Errorf("git apply -R が断った（%s）。書いた後に変わったか書けないファイルは戻していない: %s", strings.TrimSpace(string(out)), strings.Join(left, "・"))
+	sort.Strings(moved)
+	if len(moved) == 0 && len(left) == 0 {
+		return nil, nil
 	}
-	return left, reason
+	var why []string
+	if len(moved) > 0 {
+		why = append(why, "書いた後に別の手が変えたので戻していない（その変更を消さないため）: "+strings.Join(moved, "・"))
+	}
+	if len(left) > 0 {
+		why = append(why, "読めないか書けない: "+strings.Join(left, "・"))
+	}
+	all := append(append([]string{}, moved...), left...)
+	sort.Strings(all)
+	return all, fmt.Errorf("%s。書く前の中身は build/refactor/before/<パス>", strings.Join(why, "・"))
 }
 
-// dirtyFiles は files のうち git がコミットしていない変更を持つ物。git の作業場でなければ誤り。
+// dirtyFiles は files のうち git がコミットしていない変更を持つ物（--require-clean の時だけ）。git の作業場でなければ誤り。
 func dirtyFiles(root string, files []string) ([]string, error) {
 	cmd := exec.Command("git", append([]string{"status", "--porcelain", "--"}, files...)...)
 	cmd.Dir = root
 	out, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("--apply は git の作業場でだけ（戻すのに git apply -R を使う）: %v", err)
+		return nil, fmt.Errorf("--require-clean は git の作業場でだけ: %v", err)
 	}
-	var dirty []string
-	for _, l := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		if len(l) > 3 {
-			dirty = append(dirty, strings.TrimSpace(l[3:]))
-		}
-	}
-	return dirty, nil
+	return porcelainPaths(string(out)), nil
 }
 
 var errorLine = regexp.MustCompile(`(?i)(\berror\b|\bfail(ed|ure)?\b|\.flix:\d+|✗|✘|>> )`)
