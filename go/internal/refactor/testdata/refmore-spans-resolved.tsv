@@ -1,0 +1,38 @@
+# flixlint-spans 2 stage=resolved columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=use,type-use,alias-decl,arg
+def-decl	src/A.flix	4	13	4	17	A.keep	A.keep	pub ext=3:5:4:49
+def-use	src/A.flix	4	37	4	43	A.helper	A.keep	
+arg	src/A.flix	4	44	4	45	A.helper	A.keep	of=def-use at=4:37 i=0 n=2
+arg	src/A.flix	4	47	4	48	A.helper	A.keep	of=def-use at=4:37 i=1 n=2
+def-decl	src/A.flix	7	13	7	19	A.helper	A.helper	pub ext=6:5:7:59
+def-decl	src/A.flix	10	13	10	19	A.caller	A.caller	pub ext=9:5:13:6
+type-use	src/A.flix	10	23	10	29	Option	A.caller	what=enum
+match-site	src/A.flix	10	47	13	6		A.caller	arms=2 wild=0 var=0 guard=0 enum=Option
+match-arm	src/A.flix	11	9	11	32	Option.Some	A.caller	match=10:47 pat=tag at=11:14:11:21 guard=0 full=1
+case-pattern	src/A.flix	11	14	11	18	Option.Some	A.caller	
+arg	src/A.flix	11	19	11	20	Option.Some	A.caller	of=case-pattern at=11:14 i=0 n=1
+def-use	src/A.flix	11	25	11	29	A.wrap	A.caller	
+arg	src/A.flix	11	30	11	31	A.wrap	A.caller	of=def-use at=11:25 i=0 n=1
+match-arm	src/A.flix	12	9	12	32	Option.None	A.caller	match=10:47 pat=tag at=12:14:12:18 guard=0 full=1
+case-pattern	src/A.flix	12	14	12	18	Option.None	A.caller	
+def-use	src/A.flix	12	25	12	29	A.wrap	A.caller	
+arg	src/A.flix	12	30	12	31	A.wrap	A.caller	of=def-use at=12:25 i=0 n=1
+def-decl	src/A.flix	16	13	16	22	A.letCaller	A.letCaller	pub ext=15:5:18:16
+def-use	src/A.flix	18	9	18	13	A.wrap	A.letCaller	
+arg	src/A.flix	18	14	18	15	A.wrap	A.letCaller	of=def-use at=18:9 i=0 n=1
+def-decl	src/A.flix	20	13	20	17	A.wrap	A.wrap	pub ext=20:5:20:42
+def-decl	src/A.flix	23	13	23	21	A.onlyUsed	A.onlyUsed	pub ext=22:5:23:34
+def-decl	src/A.flix	25	13	25	20	A.selfUse	A.selfUse	pub ext=25:5:25:42
+def-use	src/A.flix	25	32	25	40	A.onlyUsed	A.selfUse	
+arg	src/A.flix	25	40	25	42	A.onlyUsed	A.selfUse	of=def-use at=25:32 i=0 n=1
+def-decl	src/A.flix	28	13	28	19	A.lonely	A.lonely	pub ext=27:5:28:32
+use	src/B.flix	2	12	2	16	A.keep	B	alias=keep what=def
+use	src/B.flix	2	18	2	26	A.onlyUsed	B	alias=onlyUsed what=def
+def-decl	src/B.flix	4	13	4	14	B.b	B.b	pub ext=4:5:4:33
+def-use	src/B.flix	4	26	4	30	A.keep	B.b	
+arg	src/B.flix	4	31	4	32	A.keep	B.b	of=def-use at=4:26 i=0 n=1
+def-decl	test/TestA.flix	4	9	4	17	TestA.testKeep	TestA.testKeep	ann=test ext=3:5:4:77
+def-use	test/TestA.flix	4	37	4	52	Assert.assertEq	TestA.testKeep	
+arg	test/TestA.flix	4	53	4	65	Assert.assertEq	TestA.testKeep	of=def-use at=4:37 i=0 n=2
+def-use	test/TestA.flix	4	67	4	73	A.keep	TestA.testKeep	
+arg	test/TestA.flix	4	67	4	76	Assert.assertEq	TestA.testKeep	of=def-use at=4:37 i=1 n=2
+arg	test/TestA.flix	4	74	4	75	A.keep	TestA.testKeep	of=def-use at=4:67 i=0 n=1

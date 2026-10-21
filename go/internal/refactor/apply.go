@@ -41,6 +41,11 @@ type Outcome struct {
 	Unrestored []string `json:"unrestored,omitempty"` // revert-failed: 戻せなかったファイル
 	LeftDirty  []string `json:"leftDirty,omitempty"`  // 確かめが書き換えて残したファイル（書く前に無かった git の変更。生成物など）
 	Backup     string   `json:"backup,omitempty"`     // --apply: 書く前の中身の控え（build/refactor/before/<回>/<パス>）
+	// Baseline の時: 書く前の確かめも落ちていた（前から通らない）。誤りの数は書く前・書いた後（ErrorsBefore・ErrorsAfter）。
+	BrokenBefore bool `json:"brokenBefore,omitempty"`
+	FixedAfter   bool `json:"fixedAfter,omitempty"` // 書く前は落ちていたが、書いた後は通った
+	ErrorsBefore int  `json:"errorsBefore,omitempty"`
+	ErrorsAfter  int  `json:"errorsAfter,omitempty"`
 }
 
 // Apply は --apply の時の当て方。
@@ -49,6 +54,9 @@ type Apply struct {
 	RequireClean bool         // --require-clean: 書き換えるファイルに git のコミットしていない変更があれば断る（既定は断らない）
 	Verify       string       // 書いた後の確かめの口
 	Run          VerifyRunner // 確かめを流す所
+	// Baseline は書く前にも確かめを流す。前から落ちている（型検査の通らない途中のソース）なら、書いた後の誤りが
+	// 書く前の誤りに収まる（新しい誤りが 0）時に通す。誤りは（ファイル・種類・番号）で数える（行は書き換えでずれるので見ない）。
+	Baseline bool
 }
 
 // Change は書き換えを当てる流れ（dry-run → --apply → 確かめ → 落ちたら戻す）。
@@ -122,6 +130,15 @@ func Change(root string, edits []Edit, how Apply) Outcome {
 		return out
 	}
 	out.Backup = backup
+	var baseErrs map[string]int
+	if how.Baseline {
+		baseLog := filepath.Join(dir, "verify-before.log")
+		if how.Run(how.Verify, root, baseLog) != 0 {
+			out.BrokenBefore = true
+			baseErrs = errorSigs(baseLog)
+			out.ErrorsBefore = countSigs(baseErrs)
+		}
+	}
 	before := gitStatus(root)
 	patch := filepath.Join(dir, "last.patch")
 	if err := os.WriteFile(patch, []byte(diff), 0o644); err != nil {
@@ -150,9 +167,22 @@ func Change(root string, edits []Edit, how Apply) Outcome {
 	out.VerifySecs = time.Since(start).Seconds()
 	if code == 0 {
 		out.State = StateApplied
+		out.FixedAfter = out.BrokenBefore
 		return out
 	}
-	out.FirstError = firstError(out.VerifyLog)
+	if out.BrokenBefore {
+		after := errorSigs(out.VerifyLog)
+		out.ErrorsAfter = countSigs(after)
+		if added := newSigs(baseErrs, after); len(added) == 0 && out.ErrorsAfter > 0 {
+			out.State = StateApplied
+			return out
+		} else if len(added) > 0 {
+			out.FirstError = "新しい誤り: " + strings.Join(added, "・")
+		}
+	}
+	if out.FirstError == "" {
+		out.FirstError = firstError(out.VerifyLog)
+	}
 	finishRevert(&out, root, plan, before)
 	return out
 }
@@ -398,6 +428,51 @@ func dirtyFiles(root string, files []string) ([]string, error) {
 		return nil, fmt.Errorf("--require-clean は git の作業場でだけ: %v", err)
 	}
 	return porcelainPaths(string(out)), nil
+}
+
+// errHead は Flix の誤りの見出しの行（`-- Type Error [E8752] ---- src/X.flix`）、errBrief は make check の要約の行
+// （`  src/X.flix:247 — Resolution Error [E2136]`。bin/fge explain-error が残りの誤りを並べる形）。
+var (
+	errHead  = regexp.MustCompile(`^-- (.+?) \[(E\d+)\] -+ (\S+\.flix)\s*$`)
+	errBrief = regexp.MustCompile(`^\s*(\S+\.flix):\d+ — (.+?) \[(E\d+)\]`)
+)
+
+// errorSigs は確かめの出力の誤りを（ファイル 種類 [番号]）ごとに数える（行は数えない。書き換えでずれるため）。
+func errorSigs(log string) map[string]int {
+	data, err := os.ReadFile(log)
+	if err != nil {
+		return nil
+	}
+	out := map[string]int{}
+	for _, l := range strings.Split(string(data), "\n") {
+		l = strings.TrimRight(l, "\r")
+		if m := errHead.FindStringSubmatch(l); m != nil {
+			out[m[3]+" "+m[1]+" ["+m[2]+"]"]++
+		} else if m := errBrief.FindStringSubmatch(l); m != nil {
+			out[m[1]+" "+m[2]+" ["+m[3]+"]"]++
+		}
+	}
+	return out
+}
+
+func countSigs(m map[string]int) int {
+	n := 0
+	for _, v := range m {
+		n += v
+	}
+	return n
+}
+
+// newSigs は after にあって before に無い（数が増えた）誤り。
+func newSigs(before, after map[string]int) []string {
+	var out []string
+	for k, v := range after {
+		if v > before[k] {
+			out = append(out, fmt.Sprintf("%s ×%d", k, v-before[k]))
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 var errorLine = regexp.MustCompile(`(?i)(\berror\b|\bfail(ed|ure)?\b|\.flix:\d+|✗|✘|>> )`)

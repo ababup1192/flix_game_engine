@@ -683,6 +683,9 @@ func unusedReport(root string, idx *Index, a args, cfg Config) (report, error) {
 		r.extra = append(r.extra, fmt.Sprintf("effect・trait・mod などを入れる use %d は決められないので数えていない", unjudged))
 	}
 	r.extra = append(r.extra, "消すのは bin/fge refactor remove-dead（参照 0・テストからだけ）か手で。use の行は手で消す")
+	if n["own-mod"] > 0 {
+		r.extra = append(r.extra, "同じ mod の中だけの物は bin/fge refactor make-private で pub を外す（--def を省くと全部）")
+	}
 	for _, u := range all {
 		name := u.Sym
 		if u.What == "use" {

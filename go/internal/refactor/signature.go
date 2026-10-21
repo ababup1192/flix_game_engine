@@ -2,6 +2,7 @@ package refactor
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -127,6 +128,16 @@ func PlanSignature(rows []Row, srcs *reshapeSources, q SignatureQuery) (Signatur
 		}
 		return out, nil
 	}
+	// `@名前` は呼ぶ所の局所の名前（let・case のパターン・lambda・def の引数で束ねた物）。呼ぶ所ではそのまま書き、
+	// 呼ぶ所を囲む def の中で束ねていなければ fix。本体の中に同じ式は無いので、本体から引数へ移す式にはしない。
+	locals, callTemplates, bodyTemplates := localNames(q.Templates), make([]string, len(q.Templates)), make([]string, len(q.Templates))
+	for i, t := range q.Templates {
+		callTemplates[i] = localMark.ReplaceAllString(t, "$1")
+		bodyTemplates[i] = t
+		if localMark.MatchString(t) {
+			bodyTemplates[i] = p.New[i]
+		}
+	}
 	ix := newSigIndex(rows)
 	needs := map[string]*useNeed{}
 	var needOrder []string
@@ -204,8 +215,14 @@ func PlanSignature(rows []Row, srcs *reshapeSources, q SignatureQuery) (Signatur
 		addNeed(needs, &needOrder, decl.File, modOf(sym), nameEnd, *decl, roots)
 		defs[sym] = sigDef{row: *decl, list: list, bodyStart: body, extEnd: extEnd, params: joinLayout(items, readLayout(src, list)), types: types}
 	}
-	uses := countUses(q.Templates, p.Old)
+	for _, n := range locals {
+		if indexOf(p.Old, n) >= 0 {
+			return p, fmt.Errorf("--args の @%s は元の引数の名前と同じ（元の引数なら @ を外す）", n)
+		}
+	}
+	uses := countUses(callTemplates, p.Old)
 	args := argRowsAt(rows)
+	owners := ownerStarts(rows, srcs)
 	var calls []Edit
 	for _, r := range rows {
 		if r.Kind != KindDefUse || strings.Contains(r.Extra, "sugar") {
@@ -249,9 +266,13 @@ func PlanSignature(rows []Row, srcs *reshapeSources, q SignatureQuery) (Signatur
 			p.Fix = append(p.Fix, Fixed{r, fmt.Sprintf("--args が 2 回使う引数に式が渡っている: %s（2 回評価される。先に let で名前を付ける）", strings.Join(bad, "・"))})
 			continue
 		}
-		old, tmpl, lay := p.Old, q.Templates, readLayout(s, l)
+		if missing := unboundLocals(s, owners[r.Owner], ns, locals); len(missing) > 0 {
+			p.Fix = append(p.Fix, Fixed{r, fmt.Sprintf("呼ぶ所に局所の名前 %s が無い（呼ぶ所を囲む def の中で let・case のパターン・lambda・引数で束ねていない）", "@"+strings.Join(missing, "・@"))})
+			continue
+		}
+		old, tmpl, lay := p.Old, callTemplates, readLayout(s, l)
 		if dm := modOf(r.Sym); modOf(r.Owner) != dm {
-			tmpl = qualifyTemplates(q.Templates, dm, rows, p.Old)
+			tmpl = qualifyTemplates(callTemplates, dm, rows, append(append([]string{}, p.Old...), locals...))
 			var roots []string
 			for _, t := range tmpl {
 				roots = append(roots, exprRoots(t)...)
@@ -287,7 +308,7 @@ func PlanSignature(rows []Row, srcs *reshapeSources, q SignatureQuery) (Signatur
 		if err != nil {
 			return p, err
 		}
-		rules, why := ix.bodyRules(srcs, sigTarget{file: d.row.File, mod: modOf(sym), types: d.types}, p.New, q.Templates, removed)
+		rules, why := ix.bodyRules(srcs, sigTarget{file: d.row.File, mod: modOf(sym), types: d.types}, p.New, bodyTemplates, removed)
 		if why != "" {
 			p.Fix = append(p.Fix, Fixed{d.row, why})
 			continue
@@ -327,6 +348,66 @@ func PlanSignature(rows []Row, srcs *reshapeSources, q SignatureQuery) (Signatur
 	p.Edits = edits
 	p.Fix = sortedFixed(p.Fix)
 	return p, nil
+}
+
+// localMark は --args の中の呼ぶ所の局所の名前（`@名前`）。
+var localMark = regexp.MustCompile(`@([A-Za-z_][A-Za-z0-9_]*)`)
+
+// localNames は templates に出る `@名前` の名前（出た順・重ねない）。
+func localNames(templates []string) []string {
+	var out []string
+	for _, t := range templates {
+		for _, m := range localMark.FindAllStringSubmatch(t, -1) {
+			if indexOf(out, m[1]) < 0 {
+				out = append(out, m[1])
+			}
+		}
+	}
+	return out
+}
+
+// ownerStarts は def の名前 → その def の書き出し（/// と注記の後ろの宣言の頭）のバイトの位置（呼ぶ所の束ねを探す頭）。
+func ownerStarts(rows []Row, srcs *reshapeSources) map[string]int {
+	out := map[string]int{}
+	for _, r := range rows {
+		if r.Kind != KindDefDecl {
+			continue
+		}
+		src, err := srcs.get(r.File)
+		if err != nil {
+			continue
+		}
+		span, err := spanOf(r.File, r.Attr("ext"))
+		if err != nil {
+			continue
+		}
+		if start, _, err := ByteRange(src, span); err == nil {
+			if _, ok := out[r.Sym]; !ok {
+				out[r.Sym] = start
+			}
+		}
+	}
+	return out
+}
+
+// unboundLocals は names のうち、src の from〜to（呼ぶ所を囲む def の頭から呼ぶ所まで）で束ねていない物。
+// 束ねの形: `let … name … =`・`case … name … =>`・`name ->`・`(…, name, …) ->`・`name: 型`（def の引数・注記）・`name <-`。
+// WhyNot: 索引は局所の名前を持たないので字で探す。束ねていない所に名前を書けば確かめ（make check）が落ちて戻す。
+func unboundLocals(src string, from, to int, names []string) []string {
+	if from < 0 || from > to || to > len(src) {
+		from = 0
+	}
+	text := src[from:to]
+	var missing []string
+	for _, n := range names {
+		q := regexp.QuoteMeta(n)
+		bound := regexp.MustCompile(`\blet\s+[^=;]*\b` + q + `\b[^=;]*=|\bcase\b[^=\n]*\b` + q + `\b[^=\n]*=>|(?:^|[^\w.#])` + q +
+			`\s*->|\([^()]*\b` + q + `\b[^()]*\)\s*->|\b` + q + `\s*:\s*[A-Za-z{(]|\b` + q + `\s*<-`)
+		if !bound.MatchString(text) {
+			missing = append(missing, n)
+		}
+	}
+	return missing
 }
 
 // qualifyTemplates は、テンプレートの中の素の名前の呼び出し（`envOf(…)`）のうち mod の def を指す物を `mod.envOf` にした写し
@@ -465,7 +546,11 @@ func signatureReport(root string, idx *Index, a args, cfg Config, o Options) (re
 	}
 	r.Sites = plan.Sites
 	r.gotText = fmt.Sprintf("宣言 %d・呼ぶ所 %d（%d ファイル）・本体から引数へ移す式 %d・人へ回す %d", len(q.Defs), plan.Calls, len(plan.CallFiles), plan.Lifted, len(plan.Fix))
-	r.extra = append(r.extra, "呼ぶ所の引数: "+strings.Join(templates, ", ")+"（"+strings.Join(plan.Old, "・")+" はその所の式）")
+	note := "（" + strings.Join(plan.Old, "・") + " はその所の式"
+	if ls := localNames(templates); len(ls) > 0 {
+		note += "・@" + strings.Join(ls, "・@") + " は呼ぶ所の局所の名前"
+	}
+	r.extra = append(r.extra, "呼ぶ所の引数: "+strings.Join(templates, ", ")+note+"）")
 	if plan.Dropped > 0 {
 		r.extra = append(r.extra, fmt.Sprintf("捨てる引数の式のうち名前・字の値でない物 %d（副作用があれば手で）", plan.Dropped))
 	}
