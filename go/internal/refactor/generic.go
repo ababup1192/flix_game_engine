@@ -104,6 +104,7 @@ type Ast struct {
 	fxRaw, fxPretty map[int32]fxMemo           // FlixType の控え
 	aliasByKey      map[string]map[string]bool // 閉じた record の欄の組 → 型 alias の名前
 	children        [][]int32
+	aligned         bool // record の式の範囲を字の上の { 〜 } に揃えたか（spanfix.go）
 }
 
 // LoadAst は dir（facts/generic の写し）を読む。flixlint は flixlint の前面（shim/AstNames.scala を探す）。

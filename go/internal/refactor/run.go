@@ -109,14 +109,16 @@ const Usage = `使い方: fge refactor <操作> [引数] [--json] [-v|--verbose]
                                                        型の頭か型 alias で絞る（推論で alias が開かれた閉じた record は欄の組で当てる）。
                                                        --rule は設定の rewrites の型紙の組（名前は lint の規則の名前。a,b で並べて 1 回）。
                                                        穴の式が書かれた所に無い・型紙の外の字にコメントがある・--to が呼ぶ def の本体の中
-                                                       （書くと自分を呼ぶ形になる）所は fix（ほかは書く）
+                                                       （書くと自分を呼ぶ形になる）所は fix（ほかは書く）。書き替えで呼び手が 0 になる pub でない def は
+                                                       同じ patch で消す（remove-dead --def と同じ道連れ・doc の移し）。pub の def は数を知らせるだけ
   extract-function (<file>:<行>:<桁>-<行>:<桁> | --expr '<型紙>') --name Mod.name [--to <file>] [--all] [--doc '<1 行>'] [--apply]
                                                        式を新しい def に出し、元の所を呼び出しに替える（typed の段）。位置は索引と同じ形
                                                        （桁は 1 から・終わりは最後の字の次）で範囲がちょうど同じ式。--expr は rewrite の型紙で探す。
                                                        式の外で束ねた局所の名前を引数に（型は束ねた所の書いた型か推論の型）、戻りと効果は推論の型。
                                                        置き場は既定で囲む def の直前・--name の mod が違えばその mod の終わり（--to で置くファイル）。
                                                        --all は汎用の AST で同じ形の式（局所の名前の付け替えは同じ・自由変数の所は別の式でもよい）を
-                                                       全部呼び出しへ。型の変数・局所の def・書けない型・効果のある式を引数に渡す所は fix
+                                                       全部呼び出しへ。型の変数・局所の def・書けない型・効果のある式を引数に渡す所は fix。
+                                                       呼び手が 0 になる pub でない def は rewrite と同じく一緒に消す
   extract-type-alias --name Mod.Name (--from '<型の字>' | [--from] <file>:<行>) [--doc '<1 行>'] [--apply]
                                                        閉じた record の型に名前を付けて type alias を置き、同じ欄の組
                                                        （欄の順は問わない・型は索引の名前）を型に書いた所（引数・戻り・enum の case・type alias）を

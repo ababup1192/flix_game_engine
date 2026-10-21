@@ -227,3 +227,22 @@ func TestMoveCopiesTheUseOfANameTheIndexDoesNotRow(t *testing.T) {
 		t.Fatalf("Meter を use の文で入れていない:\n%s", geo)
 	}
 }
+
+// コメントの中の古い名前（` ` の中も地の文も）は同じ patch で新しい名前へ。移す宣言の doc（写し）も書き替える。
+// 名前の続きが違う物（Shapes.areaOf）・素の名前（area）は書き替えない。
+// 手本の位置を動かさないよう、doc は同じ行の中で、呼ぶ所のコメントは行の末尾に足す。
+func TestMoveRewritesOldNamesInComments(t *testing.T) {
+	root := fixtureRoot(t, "move")
+	shapes := read(t, root, "src/Shapes.flix")
+	must(t, os.WriteFile(filepath.Join(root, "src", "Shapes.flix"), []byte(strings.Replace(shapes, "/// 面積（px）。", "/// 面積（`Shapes.area`）。", 1)), 0o644))
+	draw := read(t, root, "src/Draw.flix")
+	draw = strings.Replace(draw, "Shapes.total(r)\n", "Shapes.total(r) // `Shapes.area` と Shapes.area・Shapes.areaOf・area\n", 1)
+	must(t, os.WriteFile(filepath.Join(root, "src", "Draw.flix"), []byte(draw), 0o644))
+	code, out, _ := runMove(t, root, 0, "--def", "Shapes.area", "--to", "Geometry", "--apply")
+	if code != 0 {
+		t.Fatalf("終了コード %d:\n%s", code, out)
+	}
+	mustContain(t, read(t, root, "src/Draw.flix"), "// `Geometry.area` と Geometry.area・Shapes.areaOf・area\n")
+	mustContain(t, read(t, root, "src/Geometry.flix"), "    /// 面積（`Geometry.area`）。\n    pub def area(")
+	mustContain(t, out, "コメントの中の古い名前 3 か所（移す本体の外 1 ファイル）も新しい名前へ書き替える")
+}
