@@ -55,6 +55,8 @@ type MovePlan struct {
 	Deps        []string // 移す物が使う元の mod の非 pub の物（--with の候補）
 	PubNeeded   []string // 移すと外から使えなくなる非 pub の物（pub にするかは人）
 	Olds        []string // 元の名前（Mod.f）
+	// Comments は書き替える .flix のコメントの中の古い名前（`Mod.f` の形）の数、CommentFiles はそのファイルの数（移す本体の写しの中は数だけ）。
+	Comments, CommentFiles int
 }
 
 type moveItem struct {
@@ -468,13 +470,18 @@ func PlanMove(rows []Row, srcs *reshapeSources, q MoveQuery) (MovePlan, error) {
 	// ── 宣言を切って移し先へ ──
 	var cuts []Edit
 	var bodies []string
+	ren := commentRename{}
+	for _, it := range items {
+		ren[displaySym(it.sym)] = q.To + "." + shortName(it.sym)
+	}
 	for _, it := range items {
 		src, _ := srcs.get(it.row.File)
 		body, err := ApplyEdits(src[it.text[0]:it.text[1]], shiftEdits(inner[it.sym], it.row.File, it.text[0], it.text[1]))
 		if err != nil {
 			return p, err
 		}
-		bodies = append(bodies, body)
+		bodies = append(bodies, ren.rewrite(body))
+		p.Comments += len(ren.hits(body))
 		cuts = append(cuts, Edit{File: it.row.File, Start: it.cut[0], End: it.cut[1], Site: it.row,
 			Check: []Want{{Span: it.row, Text: shortName(it.sym)}}, Make: func(string) (string, error) { return "", nil }})
 		p.Moved = append(p.Moved, Fixed{it.row, it.kind})
@@ -547,6 +554,11 @@ func PlanMove(rows []Row, srcs *reshapeSources, q MoveQuery) (MovePlan, error) {
 			edits = append(edits, Edit{File: file, Start: blk.openEnd, End: blk.openEnd, Site: Row{File: file, Line: 1, Col: 1}, Make: func(string) (string, error) { return imp, nil }})
 		}
 	}
+	// コメントの中の古い名前（移す宣言の外。中は上で写しの方を書き替えた）。
+	ce, perFile := ren.commentEdits(q.All, edits)
+	edits = append(edits, ce...)
+	p.Comments += len(ce)
+	p.CommentFiles = len(perFile)
 	p.Edits = edits
 	p.Fix = sortedFixed(p.Fix)
 	return p, nil
@@ -958,17 +970,31 @@ func moveReport(root string, idx *Index, a args, cfg Config, o Options) (report,
 	}
 	mentions := loadMentions(root, engineDir(root))
 	var outside []string
+	docRefs, docFiles := 0, []string{}
 	for _, s := range plan.Olds {
-		at := mentions.DocsNaming(s, nil)
 		if f, ok := mentions.Entry[s]; ok {
-			at = append([]string{f}, at...)
+			outside = append(outside, s+"（"+f+"）")
 		}
-		if len(at) > 0 {
-			outside = append(outside, s+"（"+strings.Join(at, "・")+"）")
+		// .flix のコメントは同じ patch で書き替える。文書（.md など）は数えて doc-refs へ回す。
+		for _, at := range mentions.DocsNaming(s, nil) {
+			file := at[:strings.LastIndex(at, ":")]
+			if strings.HasSuffix(file, ".flix") {
+				continue
+			}
+			docRefs++
+			if indexOf(docFiles, file) < 0 {
+				docFiles = append(docFiles, file)
+			}
 		}
 	}
 	if len(outside) > 0 {
-		r.extra = append(r.extra, "入口のファイル・文書（doc-refs の決まり）が古い名前を指す（書き換えない・手で）: "+strings.Join(outside, "・"))
+		r.extra = append(r.extra, "入口のファイルが古い名前を指す（書き換えない・手で）: "+strings.Join(outside, "・"))
+	}
+	if plan.Comments > 0 {
+		r.extra = append(r.extra, fmt.Sprintf("コメントの中の古い名前 %d か所（移す本体の外 %d ファイル）も新しい名前へ書き替える", plan.Comments, plan.CommentFiles))
+	}
+	if docRefs > 0 {
+		r.extra = append(r.extra, fmt.Sprintf("文書が古い名前を指す所 %d（%s。書き換えない）", docRefs, strings.Join(docFiles, "・")))
 	}
 	r.wantText = "移した名前を指す所が全部新しい mod を指す（決められない所は fix。fix があれば書かない）"
 	for _, f := range plan.Fix {
@@ -1005,10 +1031,19 @@ func moveReport(root string, idx *Index, a args, cfg Config, o Options) (report,
 		left := leftMentions(root, cfg, plan.Olds)
 		r.Done = fmt.Sprintf("done: %d sites（移した宣言 %d・呼ぶ所 %d・use %d）→ 0 left · check ok", total, len(plan.Moved), plan.Calls, plan.Uses)
 		if len(left) > 0 {
-			r.extra = append(r.extra, fmt.Sprintf("元の名前が字で残る所 %d（コメント・文字列。書き換えていない）: %s", len(left), strings.Join(left[:min(len(left), 3)], "・")))
+			r.extra = append(r.extra, fmt.Sprintf("元の名前が字で残る所 %d（字の値・素の名前の形でないコメントなど。書き換えていない）: %s", len(left), strings.Join(left[:min(len(left), 3)], "・")))
 		}
 		r.Next, r.NextWhy = "bin/fge refactor usages "+q.To+"."+shortName(plan.Olds[0])+" --callers", "移した後の呼び手（索引は作り直しになる）"
 		r.lines = nil
+	}
+	if docRefs > 0 {
+		cmd := "bin/fge doc-refs " + strings.Join(docFiles, " ")
+		switch out.State {
+		case StateApplied:
+			r.Next, r.NextWhy = cmd, "移した名前を指す文書を新しい名前へ直す"
+		case StateDryRun:
+			r.NextWhy += "。書いた後は " + cmd + " で文書の古い名前を直す"
+		}
 	}
 	return r, nil
 }

@@ -64,7 +64,10 @@ func nodeText(a *Ast, srcs *reshapeSources, n int32) string {
 	return src[s:e]
 }
 
-func isExprKind(a *Ast, n int32) bool { return strings.HasPrefix(a.KindOf(n), "Expr.") }
+// isExprKind は n が字の上の式か（record の式の欄ごとの内側の節は式でない）。
+func isExprKind(a *Ast, n int32) bool {
+	return strings.HasPrefix(a.KindOf(n), "Expr.") && !a.recordTail(n)
+}
 
 // sameSpan は 2 つの節が同じ範囲か。
 func sameSpan(a *Ast, x, y int32) bool {
@@ -342,6 +345,7 @@ func PlanExtract(a *Ast, srcs *reshapeSources, q ExtractQuery) (*ExtractPlan, er
 			}
 		}
 	}
+	a.alignSpans(srcs)
 	plan := &ExtractPlan{}
 	var rep int32 = -1
 	var tmplHits []int32
@@ -427,7 +431,7 @@ func PlanExtract(a *Ast, srcs *reshapeSources, q ExtractQuery) (*ExtractPlan, er
 	}
 	if q.All {
 		for _, n := range a.OfKind(a.KindOf(rep)) {
-			if n == rep || a.Synth[n] != 0 || a.File(n) == "" {
+			if n == rep || a.Synth[n] != 0 || a.File(n) == "" || a.recordTail(n) {
 				continue
 			}
 			e := &shapeEq{a: a, srcs: srcs, free: free, bound: map[string]string{}, back: map[string]string{}, args: map[string]int32{}, ignore: ignore}
@@ -493,6 +497,10 @@ func PlanExtract(a *Ast, srcs *reshapeSources, q ExtractQuery) (*ExtractPlan, er
 			return nil, fmt.Errorf("索引が古い（%s の範囲が中身の外。bin/fge refactor index --stage typed --rebuild）", r.Where())
 		}
 		before := src[bs:be]
+		if !balancedExpr(before) || !balancedArgs(s.args) {
+			plan.Fix = append(plan.Fix, Fixed{r, "式か引数の字のかっこ・字の値が閉じていない（字の補間の切れ端など。手で）"})
+			continue
+		}
 		c := call
 		plan.Edits = append(plan.Edits, Edit{File: r.File, Start: bs, End: be, Site: r,
 			Make: func(string) (string, error) { return c, nil }, Check: []Want{{Span: r, Text: before}}})
@@ -509,6 +517,9 @@ func PlanExtract(a *Ast, srcs *reshapeSources, q ExtractQuery) (*ExtractPlan, er
 	}
 	rs, re, _ := ByteRange(src, repRow)
 	body := src[rs:re]
+	if !balancedExpr(body) {
+		return nil, fmt.Errorf("%s: 選んだ式の字のかっこ・字の値が閉じていない（字の補間の切れ端など。手で）", repRow.Where())
+	}
 	ownerMod := modOf(displaySym(a.RootName(rep)))
 	var file string
 	var pos int
@@ -572,6 +583,15 @@ func PlanExtract(a *Ast, srcs *reshapeSources, q ExtractQuery) (*ExtractPlan, er
 	return plan, nil
 }
 
+func balancedArgs(args []string) bool {
+	for _, x := range args {
+		if !balancedExpr(x) {
+			return false
+		}
+	}
+	return true
+}
+
 // eqRoot は根の節の欄と位置を問わずに比べる。
 func (e *shapeEq) eqRoot(x, y int32) bool {
 	a := e.a
@@ -599,7 +619,15 @@ func extractFunctionReport(root string, idx *Index, a args, cfg Config, o Option
 	if err != nil {
 		return report{}, idx, err
 	}
-	out := Change(root, plan.Edits, a.applyWith(cfg.Verify, o))
+	texts := []string{plan.Decl}
+	for _, s := range plan.Sites {
+		texts = append(texts, s.Call)
+	}
+	orph, err := planOrphans(root, idx.Rows, srcs, plan.Edits, texts, orphanQuery(root, cfg))
+	if err != nil {
+		return report{}, idx, err
+	}
+	out := Change(root, withOrphans(plan.Edits, orph.Edits), a.applyWith(cfg.Verify, o))
 	r := report{Op: "extract-function", Target: a.name, code: CodeExtractFunction, Outcome: &out, Fix: sortedFixed(plan.Fix)}
 	r.got = len(plan.Fix)
 	if out.State == StateReverted || out.State == StateRefused {
@@ -636,7 +664,25 @@ func extractFunctionReport(root string, idx *Index, a args, cfg Config, o Option
 		r.Next, r.NextWhy = "bin/fge refactor usages "+a.name, "出した def の呼ぶ所（索引は作り直しになる）"
 		r.lines = nil
 	}
+	orphanLines(&r, orph, &out)
 	return r, idx, nil
+}
+
+// withOrphans は書き替えに、呼び手が 0 になる def を消す書き替えを足す。置く def（空の範囲の書き足し）が消す def の
+// 範囲の中（doc と def の間など）に落ちれば、消す範囲の頭へ移す（消す範囲と一緒に消えないように）。
+func withOrphans(edits, dels []Edit) []Edit {
+	out := append([]Edit(nil), edits...)
+	for i, e := range out {
+		if e.Start != e.End {
+			continue
+		}
+		for _, d := range dels {
+			if d.File == e.File && d.Start < e.Start && e.Start < d.End {
+				out[i].Start, out[i].End = d.Start, d.Start
+			}
+		}
+	}
+	return append(out, dels...)
 }
 
 func extractFunctionCommand(a args) string {

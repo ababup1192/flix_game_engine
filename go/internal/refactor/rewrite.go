@@ -164,7 +164,9 @@ func (b bindings) clone() bindings {
 	return c
 }
 
-func (m *rewriteMatcher) isExpr(n int32) bool { return strings.HasPrefix(m.ast.KindOf(n), "Expr.") }
+func (m *rewriteMatcher) isExpr(n int32) bool {
+	return strings.HasPrefix(m.ast.KindOf(n), "Expr.") && !m.ast.recordTail(n)
+}
 
 // match は型紙 t が節 n に当たるか（当たれば b に穴を束ねる。外れた時の b は使わない）。
 func (m *rewriteMatcher) match(t *Tmpl, n int32, b bindings) bool {
@@ -457,6 +459,7 @@ func PlanRewrite(a *Ast, srcs *reshapeSources, q RewriteQuery) (*RewritePlan, er
 		}
 		cs = append(cs, compiled{t, r.To, ws})
 	}
+	a.alignSpans(srcs)
 	m := newRewriteMatcher(a, srcs)
 	plan := &RewritePlan{PerRule: make([]int, len(cs))}
 	var hits []rewriteHit
@@ -578,6 +581,9 @@ func (m *rewriteMatcher) plan(h rewriteHit, to string) (RewriteSite, Edit, strin
 		return RewriteSite{}, Edit{}, "索引が古い（範囲が中身の外。bin/fge refactor index --stage typed --rebuild）"
 	}
 	before := src[s:e]
+	if !balancedExpr(before) {
+		return RewriteSite{}, Edit{}, "当たった式の範囲の字のかっこ・字の値が閉じていない（字の補間の切れ端など。手で）"
+	}
 	type hole struct {
 		name       string
 		start, end int
@@ -591,6 +597,9 @@ func (m *rewriteMatcher) plan(h rewriteHit, to string) (RewriteSite, Edit, strin
 			return RewriteSite{}, Edit{}, fmt.Sprintf("穴 $%s の式が書かれた所に無い（構文が作った式。手で）", name)
 		}
 		text := src[hs:he]
+		if !balancedExpr(text) {
+			return RewriteSite{}, Edit{}, fmt.Sprintf("穴 $%s の式の字のかっこ・字の値が閉じていない（字の補間の切れ端など。手で）", name)
+		}
 		// match の腕の本体が { … } で囲まれていれば、その括弧ごと写す（let を並べた本体）。
 		if a.SlotOf(n) == "exp" && a.Parent[n] >= 0 && a.KindOf(a.Parent[n]) == "MatchRule" {
 			if bs, be, ok := bracedAround(src, hs, he); ok && bs >= s && be <= e {
@@ -858,7 +867,15 @@ func rewriteReport(root string, idx *Index, a args, cfg Config, o Options, b Bui
 	if err != nil {
 		return report{}, idx, err
 	}
-	out := Change(root, plan.Edits, a.applyWith(cfg.Verify, o))
+	texts := make([]string, len(plan.Sites))
+	for i, s := range plan.Sites {
+		texts[i] = s.After
+	}
+	orph, err := planOrphans(root, idx.Rows, srcs, plan.Edits, texts, orphanQuery(root, cfg))
+	if err != nil {
+		return report{}, idx, err
+	}
+	out := Change(root, append(append([]Edit(nil), plan.Edits...), orph.Edits...), a.applyWith(cfg.Verify, o))
 	target := a.rule
 	if target == "" {
 		target = a.from + " → " + a.to
@@ -911,6 +928,7 @@ func rewriteReport(root string, idx *Index, a args, cfg Config, o Options, b Bui
 		r.Next, r.NextWhy = rewriteCommand(a), "書いた後の残り（索引は作り直しになる。0 なら lint の上限を下げる）"
 		r.lines = nil
 	}
+	orphanLines(&r, orph, &out)
 	return r, idx, nil
 }
 

@@ -229,3 +229,18 @@ func TestRewriteCallArgsWrapsAtTheOriginalColumn(t *testing.T) {
 		t.Fatalf("got %q（want %q）", got, want)
 	}
 }
+
+// 本体の同じ式を引数の名前に替える時、数の字（0.0・10・1.0e-0）・字の値・コメントの途中には当てない。
+// 字の値はまるごと同じ時だけ、字の補間の ${ } の中はコードとして当てる。
+func TestLiftRulesDoNotSplitNumbersStringsOrComments(t *testing.T) {
+	body := `List.foldLeft((a, x) -> a + x, 0.0, xs) + 0 + 10 + 1.0e-0 + f("0", "a 0 b", "${0}") // 0 を足す`
+	got, n := applyRules(body, []liftRule{{pats: []string{"0"}, name: "probe"}}, nil)
+	want := `List.foldLeft((a, x) -> a + x, 0.0, xs) + probe + 10 + 1.0e-0 + f("0", "a 0 b", "${probe}") // 0 を足す`
+	if got != want || n != 2 {
+		t.Fatalf("替えた数 %d\ngot:  %s\nwant: %s", n, got, want)
+	}
+	got, n = applyRules(`g("0", "00")`, []liftRule{{pats: []string{`"0"`}, name: "zero"}}, nil)
+	if got != `g(zero, "00")` || n != 1 {
+		t.Fatalf("字の値はまるごと同じ時だけ: %d %s", n, got)
+	}
+}

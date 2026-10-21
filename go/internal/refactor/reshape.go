@@ -293,7 +293,11 @@ func replaceExpr(text, e, name string) (string, int) {
 	n := 0
 	var b strings.Builder
 	last := 0
+	atoms := atomicSpans(text)
 	for _, m := range re.FindAllStringSubmatchIndex(text, -1) {
+		if splitsAtom(atoms, m[2], m[3]) {
+			continue
+		}
 		b.WriteString(text[last:m[2]])
 		b.WriteString(name)
 		last = m[3]
@@ -377,4 +381,88 @@ func (s *reshapeSources) get(f string) (string, error) {
 	}
 	s.m[f] = string(b)
 	return s.m[f], nil
+}
+
+// atomicSpans は字の中の、途中で切って当ててはいけない字句の範囲（数の字・字の値の字の部分・文字の値・コメント）。
+// 字の補間（"a${x}b"）の ${ } の中はコードなので範囲に入れない（その前後の "a${ と }b" が 1 つずつ）。
+//
+// WhyNot: 正規表現の境（`(?:\W|$)`）だけでは、`0` が `0.0` の頭に、名前が字の値・コメントの中に当たる
+// （change-signature の --args '…, 0' で本体の List.foldLeft(…, 0.0) が `_probe.0` の形になった）。
+func atomicSpans(text string) [][2]int {
+	var out [][2]int
+	digit := func(c byte) bool { return c >= '0' && c <= '9' }
+	var scan func(from, to int)
+	scan = func(from, to int) {
+		for i := from; i < to; i++ {
+			c := text[i]
+			switch {
+			case c == '"':
+				start := i
+				j := i + 1
+				for j < to && text[j] != '"' {
+					switch {
+					case text[j] == '\\':
+						j++
+					case text[j] == '$' && j+1 < to && text[j+1] == '{':
+						if _, at, err := scanTop(text[:to], j+2, "}"); err == nil {
+							out = append(out, [2]int{start, j + 2})
+							scan(j+2, at)
+							start, j = at, at
+						}
+					}
+					j++
+				}
+				out = append(out, [2]int{start, min(j+1, to)})
+				i = j
+			case c == '\'' && i+2 < to && text[i+2] == '\'':
+				out = append(out, [2]int{i, i + 3})
+				i += 2
+			case c == '\'' && i+3 < to && text[i+1] == '\\' && text[i+3] == '\'':
+				out = append(out, [2]int{i, i + 4})
+				i += 3
+			case c == '/' && i+1 < to && text[i+1] == '/':
+				j := i
+				for j < to && text[j] != '\n' {
+					j++
+				}
+				out = append(out, [2]int{i, j})
+				i = j
+			case c == '/' && i+1 < to && text[i+1] == '*':
+				k := strings.Index(text[i+2:to], "*/")
+				if k < 0 {
+					out = append(out, [2]int{i, to})
+					return
+				}
+				out = append(out, [2]int{i, i + k + 4})
+				i += k + 3
+			case digit(c) && (i == 0 || !identByte(text[i-1])):
+				j := i
+				for j < to && (identByte(text[j]) || (text[j] == '.' && j+1 < to && digit(text[j+1]))) {
+					// 指数の符号（1.0e-3）
+					if (text[j] == 'e' || text[j] == 'E') && j+2 < to && (text[j+1] == '-' || text[j+1] == '+') && digit(text[j+2]) {
+						j += 2
+					}
+					j++
+				}
+				out = append(out, [2]int{i, j})
+				i = j - 1
+			case identByte(c):
+				for i+1 < to && identByte(text[i+1]) {
+					i++
+				}
+			}
+		}
+	}
+	scan(0, len(text))
+	return out
+}
+
+// splitsAtom は当たり [s, e) が字句（atomicSpans）を途中で切るか、その中にだけあるか（字句を丸ごと含む・触れない時は false）。
+func splitsAtom(atoms [][2]int, s, e int) bool {
+	for _, a := range atoms {
+		if a[0] < e && s < a[1] && !(s <= a[0] && a[1] <= e) {
+			return true
+		}
+	}
+	return false
 }
