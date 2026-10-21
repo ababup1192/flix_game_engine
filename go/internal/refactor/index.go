@@ -295,6 +295,8 @@ func (b Builder) Load(s Stage) (*Index, error) {
 	if err := os.WriteFile(b.keyPath(s), []byte(fmt.Sprintf("%s %.1f\n", key, secs)), 0o644); err != nil {
 		return nil, err
 	}
+	// 同じ走行が書いた汎用の AST（式の木と型。rewrite が使う）を、この索引の鍵と一緒に段ごとの置き場へ残す。
+	b.keepGeneric(s, key)
 	return &Index{Stage: s, Path: path, Rows: rows, Adds: adds, Seconds: secs, Key: key}, nil
 }
 

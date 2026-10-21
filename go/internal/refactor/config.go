@@ -36,6 +36,9 @@ type Config struct {
 	Library LibraryMode `json:"library,omitempty"`
 	// JavaOpts は flixlint の JVM に渡す物（空なら flixlint の既定）。
 	JavaOpts string `json:"javaOpts,omitempty"`
+	// Rewrites は rewrite --rule <名前> の型紙の組（名前は lint の規則の名前にすると、規則の hint から --rule でそのまま呼べる）。
+	// engine の物にゲームの refactor.local.json の物を名前ごとに重ねる（同じ名前はゲームの物）。
+	Rewrites map[string][]RewriteRule `json:"rewrites,omitempty"`
 	// WhyNot: 依存（lib/）を用意する口は持たない。依存を入れるのは flix の 1 つの源（flix check・段 C から flixlint の
 	// Bootstrap）で、無い時は索引が止めて next に make check を出す（refactor-tool-design §8.1）。
 }
@@ -92,6 +95,16 @@ func (c Config) with(over Config) Config {
 	}
 	if over.JavaOpts != "" {
 		c.JavaOpts = over.JavaOpts
+	}
+	if len(over.Rewrites) > 0 {
+		merged := map[string][]RewriteRule{}
+		for k, v := range c.Rewrites {
+			merged[k] = v
+		}
+		for k, v := range over.Rewrites {
+			merged[k] = v
+		}
+		c.Rewrites = merged
 	}
 	return c
 }

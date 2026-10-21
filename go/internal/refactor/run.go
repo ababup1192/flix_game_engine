@@ -97,6 +97,15 @@ const Usage = `使い方: fge refactor <操作> [引数] [--json] [-v|--verbose]
                                                        足す（別名 f => h もそのまま）。本体の中の元の mod の名前は修飾つきに、元の mod の
                                                        use で入れた名前は use ごと写す。元の mod の非 pub の物を使えば fix（--with で一緒に
                                                        移すか pub に）・--def の非 pub の物を元の mod の中だけで使うなら fix（移す意味が無い）
+  rewrite --from '<型紙>' --to '<式>' [--where '$x: 型'] [--in file|dir[,…]] [--apply] | rewrite --rule <名前>[,<名前>] [--apply]
+                                                       式の書き替え（typed の段）。型紙は Flix の式の形で、穴 $x は式 1 つ・_ は何でも
+                                                       （例 '$x != None'・'$b#outcome == None'・'match $x { case Some(_) => $a case None => $b }'）。
+                                                       当たりは字でなく汎用の AST（式の木・名前・型）で決める: != は Eq.neq の呼び出し（左右は
+                                                       問わない）・match の腕の順は問わない（_ の腕があれば同じ順）・ガードのある match は当てない。
+                                                       --to の $x には穴の式の字を元のまま写す（演算子の間に置く式は括弧で包む）。--where は穴の
+                                                       型の頭か型 alias で絞る（推論で alias が開かれた閉じた record は欄の組で当てる）。
+                                                       --rule は設定の rewrites の型紙の組（名前は lint の規則の名前。a,b で並べて 1 回）。
+                                                       穴の式が書かれた所に無い・型紙の外の字にコメントがある所は fix（ほかは書く）
 
   呼ぶ所・作る所に式を書く操作（change-signature の --args・change-case-shape・fix-construction・add-field の --value）は、
   書く所を囲む def に同じ値の局所の名前があればそれを書く: 前の ` + "`let x = 同じ式;`" + `（括弧と match の腕を越えない）か、
@@ -123,7 +132,7 @@ const Usage = `使い方: fge refactor <操作> [引数] [--json] [-v|--verbose]
   --max N を付けると数の歯止めになる（got が N を超えれば終了コード 1）。例: 欄の直の読み書きを口の mod の外で 0 に
     fge refactor field-sites --label scene --receiver World --outside World --max 0
   名前は終わりで当てる（Phase.Clear は World.Phase.Clear に当たる。2 つ以上に当たれば候補を出して止まる）。
-  設定は bin/lint-rules/refactor.json（engine が配る）と refactor.local.json（flixlint・sources・verify・verifyTests・testDirs・library）。
+  設定は bin/lint-rules/refactor.json（engine が配る）と refactor.local.json（flixlint・sources・verify・verifyTests・testDirs・library・rewrites）。
   library（既定 auto: flix.toml に repository がある package）では remove-dead が pub の def を消さない（使う側が索引の外）。
   flixlint は ` + MinFlixlint + ` 以上（usages の型の注記・use は ` + MinFlixlintUsages + ` から、change-case-shape・change-signature は
   ` + MinFlixlintArgs + ` から、lint と 1 つの常駐を分け合う索引作り（--resident）は ` + MinFlixlintResident + ` から。古い版では索引を作るたびに JVM を立てる）。
@@ -158,6 +167,7 @@ type args struct {
 	to, with                                              string // move の --to・--with
 	param                                                 string // remove-param の --param（a,b で複数。無ければ本体が使わない引数を全部）
 	after                                                 string // add-field の --after（この欄の次に足す）
+	from, where, in, rule                                 string // rewrite の --from・--where・--in・--rule（--to は move と同じ欄）
 	preferLocal                                           bool   // --prefer-local: 書く式の代わりに、型が同じ局所の名前が 1 つならそれを書く
 	at, remove                                            int    // change-case-shape の --at・--remove（-1 は無し）
 	skip                                                  map[string]bool
@@ -258,6 +268,14 @@ func parseArgs(rest []string) (args, error) {
 			a.param, err = value(&i, x)
 		case "--after":
 			a.after, err = value(&i, x)
+		case "--from":
+			a.from, err = value(&i, x)
+		case "--where":
+			a.where, err = value(&i, x)
+		case "--in":
+			a.in, err = value(&i, x)
+		case "--rule":
+			a.rule, err = value(&i, x)
 		case "--prefer-local":
 			a.preferLocal = true
 		case "--at", "--remove":
@@ -323,7 +341,7 @@ func (a args) applyWith(verify string, o Options) Apply {
 
 // needs は操作に要る一番低い段（欄の読み書きと受け手の型を見る物だけ typed）。
 func (a args) needs() Stage {
-	if a.op == "field-sites" || a.op == "field-to-accessor" || a.op == "remove-field" {
+	if a.op == "field-sites" || a.op == "field-to-accessor" || a.op == "remove-field" || a.op == "rewrite" {
 		return Typed
 	}
 	if _, _, field := a.fieldTarget(); a.op == "usages" && field && !a.unused {
@@ -451,6 +469,11 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 			fmt.Fprintln(errOut, "refactor remove-param: --def <Mod.f>（a,b で複数）が要ります。消す引数は --param <名前>（a,b で複数）・省くと本体が使わない引数を全部（例 --def DeckView.deckDetailHint --param r）")
 			return 2
 		}
+	case "rewrite":
+		if a.rule == "" && (a.from == "" || a.to == "") {
+			fmt.Fprintln(errOut, "refactor rewrite: --from '<型紙>' と --to '<式>'（か設定の型紙の組 --rule <名前>）が要ります（例 --from '$x != None' --to 'Option.nonEmpty($x)'）")
+			return 2
+		}
 	case "make-private":
 	case "remove-use":
 		if a.target == "" && !a.all || a.target != "" && !a.all && !strings.Contains(a.target, ":") {
@@ -464,7 +487,7 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 		}
 	case "index", "remove-dead":
 	default:
-		fmt.Fprintf(errOut, "refactor: 知らない操作 %s（usages・refs・match-sites・field-sites・index・expand-wildcard・remove-dead・field-to-accessor・remove-field・fix-construction・add-field・change-case-shape・change-signature・remove-param・make-private・move・remove-use）\n", a.op)
+		fmt.Fprintf(errOut, "refactor: 知らない操作 %s（usages・refs・match-sites・field-sites・index・expand-wildcard・remove-dead・field-to-accessor・remove-field・fix-construction・add-field・change-case-shape・change-signature・remove-param・make-private・move・remove-use・rewrite）\n", a.op)
 		return 2
 	}
 	if a.op != "field-to-accessor" && (strings.Contains(a.label, ",") || a.labelsFile != "") {
@@ -549,6 +572,8 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 		rep, err = privateReport(root, idx, a, cfg, o)
 	case "remove-use":
 		rep, err = removeUseReport(root, a, cfg, o, b)
+	case "rewrite":
+		rep, idx, err = rewriteReport(root, idx, a, cfg, o, b)
 	}
 	if err != nil {
 		fmt.Fprintf(errOut, "refactor %s: %v\n", a.op, err)

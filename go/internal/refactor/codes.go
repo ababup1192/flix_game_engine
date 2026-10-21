@@ -25,6 +25,7 @@ const (
 	CodePrivate         = "refactor.make-private"
 	CodeRemoveParam     = "refactor.remove-param"
 	CodeRemoveUse       = "refactor.remove-use"
+	CodeRewrite         = "refactor.rewrite"
 )
 
 var codes = []checkres.Code{
@@ -62,6 +63,8 @@ var codes = []checkres.Code{
 		Rule: "0（本体が使う引数・関数として渡す所は fix。fix があれば書かない）", Summary: "def の使っていない引数を宣言と呼ぶ所から消した後に、人へ回した数"},
 	{Name: CodeRemoveUse, Level: checklevel.Lint, Metric: "unused_use_left", Unit: "count", Op: checkres.AtMost,
 		Rule: "0（同じ行に別の物がある・名前が見つからない use は fix）", Summary: "使っていない use・import（flixlint の unused-use と同じ判定）を消した後に、人へ回した数"},
+	{Name: CodeRewrite, Level: checklevel.Lint, Metric: "rewrite_left", Unit: "count", Op: checkres.AtMost,
+		Rule: "0（穴の式が書かれた所に無い・型紙の外にコメントがある所は fix）", Summary: "型紙（Flix の式の形と穴）に当たる式を別の式へ書き替えた後に、人へ回した数"},
 }
 
 func init() {

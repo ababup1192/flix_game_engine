@@ -13,7 +13,7 @@ import (
 func init() {
 	// WhyNot: engineOnly にしないのは、直したい Flix のコードが配った先のゲームにあるため（engine の src にも効く）。
 	register("refactor",
-		"Flix の名前の位置の索引（flixlint --spans）で探す（usages: 使われ所・呼び手の階層・--unused）・数える（refs・match-sites・field-sites）・書き換える（expand-wildcard・remove-dead・field-to-accessor・remove-field・fix-construction。既定は dry-run）。refactor --help",
+		"Flix の名前の位置の索引（flixlint --spans）で探す（usages: 使われ所・呼び手の階層・--unused）・数える（refs・match-sites・field-sites）・書き換える（expand-wildcard・remove-dead・field-to-accessor・remove-field・fix-construction・rewrite（式を型紙で書き替える）。既定は dry-run）。refactor --help",
 		cmdRefactor)
 }
 

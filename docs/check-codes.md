@@ -88,6 +88,7 @@ near の帯は bin/lint-rules/checkfmt.json の near（code ごと。無けれ�
 | `refactor.remove-field` | lint | construction_left | count | <= | 0（直の読み書きが残れば止める・欄の組が同じ別の型の組み立ては fix） | record の型から欄を消し、組み立てからも消した後に、人へ回した数（止めた時は残っている直の読み書きの数） |
 | `refactor.remove-param` | lint | call_sites_left | count | <= | 0（本体が使う引数・関数として渡す所は fix。fix があれば書かない） | def の使っていない引数を宣言と呼ぶ所から消した後に、人へ回した数 |
 | `refactor.remove-use` | lint | unused_use_left | count | <= | 0（同じ行に別の物がある・名前が見つからない use は fix） | 使っていない use・import（flixlint の unused-use と同じ判定）を消した後に、人へ回した数 |
+| `refactor.rewrite` | lint | rewrite_left | count | <= | 0（穴の式が書かれた所に無い・型紙の外にコメントがある所は fix） | 型紙（Flix の式の形と穴）に当たる式を別の式へ書き替えた後に、人へ回した数 |
 | `refactor.unused` | lint | unused | count | <= | --max（無ければ一覧だけ） | 外から使われない pub の def（参照 0・テストからだけ・同じ mod の中だけ）と、使っていない use の数 |
 | `refactor.usages` | lint | usages | count | <= | --max（無ければ一覧だけ） | def・enum・case・型 alias・record の欄の使われ所の数（呼び出し・参照・読み・書き・組み立て・パターン・型の注記・use） |
 | `snd.alias` | advice | third_harmonic_hz | Hz | <= |  | パルスの 3 倍音とナイキスト周波数 |
