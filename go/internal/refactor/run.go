@@ -105,6 +105,9 @@ const Usage = `使い方: fge refactor <操作> [引数] [--json] [-v|--verbose]
                                                        （例 '$x != None'・'$b#outcome == None'・'match $x { case Some(_) => $a case None => $b }'）。
                                                        当たりは字でなく汎用の AST（式の木・名前・型）で決める: != は Eq.neq の呼び出し（左右は
                                                        問わない）・match の腕の順は問わない（_ の腕があれば同じ順）・ガードのある match は当てない。
+                                                       演算子と中置の形もコンパイラの木で読む（強さもコンパイラと同じ）: '$x :: $xs'・'$a ::: $b'・
+                                                       '$xs |> List.map($f)'・'$s ++ $t'・算術・比べ・'$p -> $p + 1'・'{ a = $v | $r }'・'List#{$a}'。
+                                                       読めない形は「N 字目の 〜 が読めない」と 1 行で止める。
                                                        --to の $x には穴の式の字を元のまま写す（演算子の間に置く式は括弧で包む）。--where は穴の
                                                        型の頭か型 alias で絞る（推論で alias が開かれた閉じた record は欄の組で当てる）。
                                                        --rule は設定の rewrites の型紙の組（名前は lint の規則の名前。a,b で並べて 1 回）。

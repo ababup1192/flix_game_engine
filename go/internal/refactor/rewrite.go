@@ -183,10 +183,55 @@ func (m *rewriteMatcher) match(t *Tmpl, n int32, b bindings) bool {
 			return false
 		}
 		if old, ok := b[t.Name]; ok {
+			if m.isBinder(old) {
+				return m.refersTo(n, old) // ラムダの引数の穴 $p を本体で使った所
+			}
 			return normSpace(m.text(old)) == normSpace(m.text(n))
 		}
 		b[t.Name] = n
 		return true
+	case tLocal:
+		bnd, ok := b[localKey(t.Name)]
+		return ok && m.refersTo(n, bnd)
+	case tLambda:
+		if kind != "Expr.Lambda" {
+			return false
+		}
+		bnd := m.binderOf(n)
+		if bnd < 0 {
+			return false
+		}
+		switch p := t.Params[0]; {
+		case p.Hole != "":
+			if _, taken := b[p.Hole]; taken {
+				return false
+			}
+			b[p.Hole] = bnd
+		case p.Name != "":
+			b[localKey(p.Name)] = bnd
+		}
+		return m.match(t.Args[0], a.Child(n, "exp"), b)
+	case tRecExtend:
+		if kind != "Expr.RecordExtend" {
+			return false
+		}
+		if l, _ := a.Attr(n, "label"); l != t.Name {
+			return false
+		}
+		return m.matchArgs(t.Args, []int32{a.Child(n, "exp1"), a.Child(n, "exp2")}, b, false)
+	case tRecRestrict:
+		if kind != "Expr.RecordRestrict" {
+			return false
+		}
+		if l, _ := a.Attr(n, "label"); l != t.Name {
+			return false
+		}
+		return m.match(t.Args[0], a.Child(n, "exp"), b)
+	case tVector:
+		if kind != "Expr.VectorLit" {
+			return false
+		}
+		return m.matchArgs(t.Args, a.ChildrenIn(n, "exps"), b, false)
 	case tLit:
 		if kind != "Expr.Cst" {
 			return false
@@ -201,6 +246,9 @@ func (m *rewriteMatcher) match(t *Tmpl, n int32, b bindings) bool {
 		}
 		return lit == t.Lit && cst != "Str"
 	case tCall:
+		if kind == "Expr.Lambda" {
+			return m.matchPartial(t, n, b)
+		}
 		if kind != "Expr.ApplyDef" && kind != "Expr.ApplySig" {
 			return false
 		}
@@ -324,6 +372,83 @@ func (m *rewriteMatcher) matchArgs(ts []*Tmpl, ns []int32, b bindings, comm bool
 	return comm && len(ns) == 2 && try([]int{1, 0})
 }
 
+// binderOf はラムダ n の引数の名前を束ねた節（FormalParam の下の Binder。無ければ FormalParam が名前を持つ時はそれ。-1 は無し）。
+func (m *rewriteMatcher) binderOf(n int32) int32 {
+	fp := m.ast.Child(n, "fparam")
+	if fp < 0 {
+		return -1
+	}
+	if bnd := m.ast.Child(fp, "bnd"); bnd >= 0 {
+		if _, ok := m.ast.Attr(bnd, "sym"); ok {
+			return bnd
+		}
+	}
+	if _, ok := m.ast.Attr(fp, "sym"); ok {
+		return fp
+	}
+	return -1
+}
+
+// isBinder は節 n が名前を束ねる節（Binder・FormalParam）か。
+func (m *rewriteMatcher) isBinder(n int32) bool {
+	k := m.ast.KindOf(n)
+	return k == "Binder" || k == "FormalParam"
+}
+
+// refersTo は式 n が束ねる節 bnd の名前を読む Expr.Var か。
+func (m *rewriteMatcher) refersTo(n, bnd int32) bool {
+	if n < 0 || m.ast.KindOf(n) != "Expr.Var" {
+		return false
+	}
+	s, ok := m.ast.Attr(n, "sym")
+	want, ok2 := m.ast.Attr(bnd, "sym")
+	return ok && ok2 && s == want
+}
+
+// matchPartial は引数の足りない呼び出し（`List.map($f)`）を、コンパイラが作ったラムダ
+// （x -> List.map(f, x)。2 つ足りなければ x -> (y -> …) の間に純粋の注釈 Expr.Ascribe が入る）に当てる。
+// 足した引数はラムダの引数をその順に読むだけの物に限る。
+func (m *rewriteMatcher) matchPartial(t *Tmpl, n int32, b bindings) bool {
+	a := m.ast
+	var params []int32
+	for n >= 0 {
+		switch a.KindOf(n) {
+		case "Expr.Lambda":
+			bnd := m.binderOf(n)
+			if bnd < 0 {
+				return false
+			}
+			params = append(params, bnd)
+			n = a.Child(n, "exp")
+			continue
+		case "Expr.Ascribe":
+			if len(params) > 0 {
+				n = a.Child(n, "exp")
+				continue
+			}
+		}
+		break
+	}
+	if n < 0 || (a.KindOf(n) != "Expr.ApplyDef" && a.KindOf(n) != "Expr.ApplySig") {
+		return false
+	}
+	sym, _ := a.Attr(n, "symUse")
+	if !m.resolve("call", t.Name)[sym] {
+		return false
+	}
+	exps := a.ChildrenIn(n, "exps")
+	given := len(exps) - len(params)
+	if given < 0 || given != len(t.Args) {
+		return false
+	}
+	for i, p := range params {
+		if !m.refersTo(exps[given+i], p) {
+			return false
+		}
+	}
+	return m.matchArgs(t.Args, exps[:given], b, t.Comm)
+}
+
 func (m *rewriteMatcher) matchPat(p *TmplPat, n int32) bool {
 	a := m.ast
 	if n < 0 {
@@ -360,7 +485,15 @@ func (m *rewriteMatcher) matchPat(p *TmplPat, n int32) bool {
 func rootKinds(t *Tmpl) []string {
 	switch t.Kind {
 	case tCall:
-		return []string{"Expr.ApplyDef", "Expr.ApplySig"}
+		return []string{"Expr.ApplyDef", "Expr.ApplySig", "Expr.Lambda"} // Lambda は引数の足りない呼び出し（matchPartial）
+	case tLambda:
+		return []string{"Expr.Lambda"}
+	case tRecExtend:
+		return []string{"Expr.RecordExtend"}
+	case tRecRestrict:
+		return []string{"Expr.RecordRestrict"}
+	case tVector:
+		return []string{"Expr.VectorLit"}
 	case tTag:
 		return []string{"Expr.Tag"}
 	case tSelect:
@@ -467,7 +600,8 @@ func PlanRewrite(a *Ast, srcs *reshapeSources, q RewriteQuery) (*RewritePlan, er
 	for i, c := range cs {
 		for _, k := range rootKinds(c.from) {
 			for _, n := range a.OfKind(k) {
-				if taken[n] {
+				// record の式の頭でない欄の操作（{ a = 1, b = 2 | r } の b から先）は、式の途中なので根にしない。
+				if taken[n] || a.recordTail(n) {
 					continue
 				}
 				row := a.SpanOf(n)
@@ -591,6 +725,9 @@ func (m *rewriteMatcher) plan(h rewriteHit, to string) (RewriteSite, Edit, strin
 	}
 	var holes []hole
 	for name, n := range h.b {
+		if strings.HasPrefix(name, localKey("")) {
+			continue // 名前で書いたラムダの引数（--to には写さない）
+		}
 		r := a.SpanOf(n)
 		hs, he, err := ByteRange(src, r)
 		if err != nil || hs < s || he > e || hs >= he {
@@ -625,7 +762,7 @@ func (m *rewriteMatcher) plan(h rewriteHit, to string) (RewriteSite, Edit, strin
 		texts[x.name] = x.text
 	}
 	after := substituteHoles(to, texts)
-	if p := a.Parent[h.root]; p >= 0 && !isAtomicText(after) && needsParensIn(a, p, m.text(p)) {
+	if p := a.Parent[h.root]; p >= 0 && !isAtomicText(after) && needsParensIn(a, p, h.root, m.text(p)) {
 		after = "(" + after + ")"
 	}
 	site := RewriteSite{Row: h.row, Before: before, After: after}
@@ -635,17 +772,26 @@ func (m *rewriteMatcher) plan(h rewriteHit, to string) (RewriteSite, Edit, strin
 	return site, edit, ""
 }
 
-// needsParensIn は親の節 p（字は text）の中で、原子でない式を括弧で包むか（演算子・欄の読みの受け手）。
-func needsParensIn(a *Ast, p int32, text string) bool {
+// needsParensIn は親の節 p（字は text）の子 child の所で、原子でない式を括弧で包むか（演算子・欄の読みの受け手・呼ぶ式）。
+// 演算子の強さは比べず、演算子の間ならいつも包む（`a :: b` の左に `x + 1` を置いても包む。字が増えるだけで意味は変わらない）。
+func needsParensIn(a *Ast, p, child int32, text string) bool {
 	switch a.KindOf(p) {
 	case "Expr.Binary", "Expr.Unary", "Expr.RecordSelect":
 		return true
-	case "Expr.ApplySig", "Expr.ApplyDef":
-		// 演算子の形（a + b・x != y）なら包む。f(…) の形の引数なら包まない。
-		return !callForm.MatchString(strings.TrimSpace(text))
+	case "Expr.ApplySig", "Expr.ApplyDef", "Expr.Tag":
+		// 演算子の形（a + b・x != y・a :: b・xs |> f・a `f` b）なら包む。f(…)・Some(…) の形の引数と、
+		// 集まりの字の値（List#{…}・Set#{…} の中は , で区切る）なら包まない。
+		t := strings.TrimSpace(text)
+		return !callForm.MatchString(t) && !collectionForm.MatchString(t)
+	case "Expr.ApplyClo":
+		// 呼ぶ式の側（(f |> g)(x) の f |> g）だけ包む。引数は ( , ) の間。
+		s := a.SlotOf(child)
+		return s == "exp1" || s == "exp"
 	}
 	return false
 }
+
+var collectionForm = regexp.MustCompile(`^[A-Z][\w.]*#\{`)
 
 // substituteHoles は --to の $x を穴の字にする。演算子の間に置く原子でない式は括弧で包む。
 func substituteHoles(to string, texts map[string]string) string {
@@ -691,7 +837,7 @@ func delimited(rs []rune, i, j int) bool {
 	prev := strings.TrimRight(string(rs[:i]), " \t\n")
 	next := strings.TrimLeft(string(rs[j:]), " \t\n")
 	okPrev := prev == "" || strings.HasSuffix(prev, "(") || strings.HasSuffix(prev, ",") || strings.HasSuffix(prev, "{") ||
-		strings.HasSuffix(prev, "=>") || strings.HasSuffix(prev, " else") || prev == "else" || strings.HasSuffix(prev, ")") && isIfHead(prev)
+		strings.HasSuffix(prev, "=>") || strings.HasSuffix(prev, "->") || strings.HasSuffix(prev, " else") || prev == "else" || strings.HasSuffix(prev, ")") && isIfHead(prev)
 	okNext := next == "" || strings.HasPrefix(next, ")") || strings.HasPrefix(next, ",") || strings.HasPrefix(next, "}") ||
 		strings.HasPrefix(next, "else") || strings.HasPrefix(next, "case ")
 	return okPrev && okNext

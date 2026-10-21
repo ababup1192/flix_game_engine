@@ -374,7 +374,7 @@ func TestRewriteTemplateErrors(t *testing.T) {
 		{"match $x { case Some(v) => $a }", "パターンは _ か case"},
 		{"match $x { case Some(_) if $c => $a }", "ガード"},
 		{"$x != None)", "残る"},
-		{"$x + 1", "書けない字"},
+		{"$a <+> $b", "4 字目の <+> が読めない"},
 	} {
 		if _, err := ParseTmpl(c.from); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: 誤りに %q が無い: %v", c.from, c.want, err)
