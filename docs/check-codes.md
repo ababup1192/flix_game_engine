@@ -73,6 +73,18 @@ near の帯は bin/lint-rules/checkfmt.json の near（code ごと。無けれ�
 | `px.value-blobs.count` | advice | value_masses | count | range | px.json valueBlobsMin・valueBlobsMax・valueBlobsMinShare | 明るさ 3 段の大きな塊の数（明暗の骨格） |
 | `px.value-blobs.cover` | advice | mass_cover | ratio | >= | px.json valueBlobsCoverMin | 大きな塊が描いた画素を覆う割合 |
 | `px.value-sep` | lint | part_dL | L | >= | px.json valueSepMin か contrast の min | contrast で測った部品と相手の明るさの差 |
+| `refactor.change-case-shape` | lint | case_sites_left | count | <= | 0（case を関数として渡す所・消す欄を使う本体は fix。fix があれば書かない） | enum の case の欄を足した・消した後に、宣言と形の合わない作る所・当てる所として人へ回した数 |
+| `refactor.change-signature` | lint | call_sites_left | count | <= | 0（関数として渡す所・2 回使う引数に式が渡る所・消える引数を使う本体は fix。fix があれば書かない） | def の引数の並びを替えた後に、新しい並びで呼べない所として人へ回した数 |
+| `refactor.expand-wildcard` | lint | catch_all_left | count | <= | 0（書き出せない腕は fix） | enum への match の `case _` を残りの case に書き出した後に、人へ回した腕の数 |
+| `refactor.field-sites` | lint | field_sites | count | <= | --max（欄の歯止めは --outside <口の mod> --max 0） | record の欄の直の読み書きの数（受け手の型 alias で絞る） |
+| `refactor.field-to-accessor` | lint | field_sites_left | count | <= | 0（受け手の型が決まらない・読めない式・型の違う口は fix） | record の欄の直の読み書きを口（読み・書き）へ替えた後に、人へ回した数 |
+| `refactor.fix-construction` | lint | construction_left | count | <= | 0（欄の組が同じ別の型の組み立ては fix） | record を組み立てる式の欄を型に合わせた（足した・消した）後に、人へ回した数 |
+| `refactor.match-sites` | lint | match_sites | count | <= | --max（無ければ一覧だけ） | enum（か case）への match の数。--catch-all なら `_`・変数の腕を持つ物だけ |
+| `refactor.refs` | lint | refs | count | <= | --max（無ければ一覧だけ） | def・enum・case の参照の数（宣言は数えない） |
+| `refactor.remove-dead` | lint | dead_left | count | <= | 0（決められない def は fix） | テストからだけ・どこからも参照されない pub の def を消した後に、人へ回した数 |
+| `refactor.remove-field` | lint | construction_left | count | <= | 0（直の読み書きが残れば止める・欄の組が同じ別の型の組み立ては fix） | record の型から欄を消し、組み立てからも消した後に、人へ回した数（止めた時は残っている直の読み書きの数） |
+| `refactor.unused` | lint | unused | count | <= | --max（無ければ一覧だけ） | 外から使われない pub の def（参照 0・テストからだけ・同じ mod の中だけ）と、使っていない use の数 |
+| `refactor.usages` | lint | usages | count | <= | --max（無ければ一覧だけ） | def・enum・case・型 alias・record の欄の使われ所の数（呼び出し・参照・読み・書き・組み立て・パターン・型の注記・use） |
 | `snd.alias` | advice | third_harmonic_hz | Hz | <= |  | パルスの 3 倍音とナイキスト周波数 |
 | `snd.bars` | gate | bar_off | samples | <= | snd.json barTolerance | 輪の長さと tempo の整数小節の差 |
 | `snd.breaks` | advice | breaks | count | <= |  | 使った機種の外の手（style が許す物。破った所として残す） |

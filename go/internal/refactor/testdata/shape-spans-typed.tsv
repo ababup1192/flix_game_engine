@@ -1,0 +1,31 @@
+# flixlint-spans 2 stage=typed columns=kind,file,sl,sc,el,ec,sym,owner,extra
+enum-decl	src/Shape.flix	18	14	18	19	Shape.Panel	Shape.Panel	
+case-decl	src/Shape.flix	19	14	19	20	Shape.Panel.Closed	Shape.Panel	arity=0
+case-decl	src/Shape.flix	20	14	20	18	Shape.Panel.Open	Shape.Panel	arity=1
+def-decl	src/Shape.flix	23	13	23	20	Shape.initial	Shape.initial	pub ext=23:5:27:45
+def-decl	src/Shape.flix	29	13	29	18	Shape.fresh	Shape.fresh	pub ext=29:5:29:100
+def-decl	src/Shape.flix	31	13	31	17	Shape.pair	Shape.pair	pub ext=31:5:31:54
+def-decl	src/Shape.flix	33	13	33	20	Shape.speedOf	Shape.speedOf	pub ext=33:5:33:47
+label-select	src/Shape.flix	33	42	33	47	speed	Shape.speedOf	recv=Shape.World via=decl
+def-decl	src/Shape.flix	35	13	35	17	Shape.tick	Shape.tick	pub ext=35:5:35:66
+label-update	src/Shape.flix	35	39	35	44	clock	Shape.tick	recv=Shape.World via=decl
+label-select	src/Shape.flix	35	49	35	54	clock	Shape.tick	recv=Shape.World via=decl
+def-decl	src/Shape.flix	37	13	37	17	Shape.open	Shape.open	pub ext=37:5:37:82
+case-construct	src/Shape.flix	37	38	37	48	Shape.Panel.Open	Shape.open	
+def-decl	src/Shape.flix	39	13	39	21	Shape.cursorOf	Shape.cursorOf	pub ext=39:5:42:6
+match-site	src/Shape.flix	39	41	42	6		Shape.cursorOf	arms=2 wild=0 var=0 guard=0 enum=Shape.Panel scrut=Shape.Panel
+match-arm	src/Shape.flix	40	9	40	39	Shape.Panel.Open	Shape.cursorOf	match=39:41 pat=tag at=40:14:40:27 guard=0 full=1
+case-pattern	src/Shape.flix	40	14	40	24	Shape.Panel.Open	Shape.cursorOf	
+label-select	src/Shape.flix	40	33	40	39	cursor	Shape.cursorOf	recv=? via=none
+match-arm	src/Shape.flix	41	9	41	31	Shape.Panel.Closed	Shape.cursorOf	match=39:41 pat=tag at=41:14:41:26 guard=0 full=1
+case-pattern	src/Shape.flix	41	14	41	26	Shape.Panel.Closed	Shape.cursorOf	
+def-decl	src/Shape.flix	44	13	44	17	Shape.note	Shape.note	pub ext=44:5:44:84
+def-decl	test/TestShape.flix	2	9	2	14	TestShape.world	TestShape.world	ext=2:5:8:6
+def-decl	test/TestShape.flix	11	9	11	29	TestShape.speedOfReadsTheSpeed	TestShape.speedOfReadsTheSpeed	ann=test ext=10:5:11:102
+def-use	test/TestShape.flix	11	49	11	64	Assert.assertEq	TestShape.speedOfReadsTheSpeed	
+def-use	test/TestShape.flix	11	79	11	92	Shape.speedOf	TestShape.speedOfReadsTheSpeed	
+def-use	test/TestShape.flix	11	93	11	98	TestShape.world	TestShape.speedOfReadsTheSpeed	
+def-decl	test/TestShape.flix	14	9	14	28	TestShape.cursorOfAnOpenPanel	TestShape.cursorOfAnOpenPanel	ann=test ext=13:5:14:108
+def-use	test/TestShape.flix	14	48	14	63	Assert.assertEq	TestShape.cursorOfAnOpenPanel	
+def-use	test/TestShape.flix	14	78	14	92	Shape.cursorOf	TestShape.cursorOfAnOpenPanel	
+def-use	test/TestShape.flix	14	93	14	103	Shape.open	TestShape.cursorOfAnOpenPanel	

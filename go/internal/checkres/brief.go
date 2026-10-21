@@ -80,6 +80,7 @@ type Brief struct {
 	Next    string              // 写してそのまま流せるコマンドだけ
 	NextWhy string              // next の訳（next が無ければこれが next の行になる）
 	Shown   func(string) string // ファイルの場所を画面に出す字面（nil はそのまま）
+	Done    string              // 言い切りの 1 行（いつも最後の行。例 done: 36 sites → 0 left outside World · check ok）
 }
 
 // Text は Brief を人向けの字にする。
@@ -111,6 +112,9 @@ func (r Brief) Text() string {
 		}
 	case r.NextWhy != "":
 		fmt.Fprintf(&b, "next: %s\n", r.NextWhy)
+	}
+	if r.Done != "" {
+		b.WriteString(r.Done + "\n")
 	}
 	return b.String()
 }
