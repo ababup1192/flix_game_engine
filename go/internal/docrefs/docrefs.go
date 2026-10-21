@@ -9,6 +9,10 @@
 // 見る文書は docDirs の下の .md と docFiles（在る物だけ）から skip を除いた物。拾うのは ` ` の中と
 // 表の行の Mod.name・/ を含むパス・path:行（code は codes.go）。名前の索引は flixindex.go。
 //
+// 生成物の文書（頭の generatedHead 行に generatedMarks の印「手で直さない」など）は見ない。直すのは作る元の側で、
+// 文書の名を skip に並べない。予定の名前（`名前`（予定））は数えず、Flix の標準ライブラリの名前
+// （flixJar の src/library の宣言）は在ると数える。書き方は docs/doc-conventions.md。
+//
 // 規約は bin/lint-rules/doc-refs.json。ゲームの doc-refs.local.json には skip（見ない文書のパスの並び。
 // / で終わればその下の全部）だけを書ける。古い記録（notes/<年-月>.md・docs/gallery の README）を外すための物で、
 // 1 か所ずつ外す道は持たない（指す先を直すか、消した物を記録に残すなら ~~消し線~~ で囲むか、文書ごと skip へ）。
@@ -47,6 +51,10 @@ type Rules struct {
 	FileExts         []string `json:"fileExts"`
 	Limit            int      `json:"limit"`
 	FullOut          string   `json:"fullOut"`
+	GeneratedMarks   []string `json:"generatedMarks"`
+	GeneratedHead    int      `json:"generatedHead"`
+	PlannedMarks     []string `json:"plannedMarks"`
+	FlixJar          string   `json:"flixJar"`
 
 	fileExt map[string]bool
 }
@@ -151,6 +159,21 @@ func (r *Rules) Docs(root string) []string {
 	return out
 }
 
+// Generated は本文 body が生成物の文書か（頭の GeneratedHead 行に GeneratedMarks のどれかがある）。
+func (r *Rules) Generated(body string) bool {
+	head := strings.SplitN(body, "\n", r.GeneratedHead+1)
+	if len(head) > r.GeneratedHead {
+		head = head[:r.GeneratedHead]
+	}
+	text := strings.Join(head, "\n")
+	for _, m := range r.GeneratedMarks {
+		if m != "" && strings.Contains(text, m) {
+			return true
+		}
+	}
+	return false
+}
+
 // Hit は見つからない 1 件。
 type Hit struct {
 	Code string
@@ -167,9 +190,15 @@ type Report struct {
 	Names   int // 確かめた名前の数
 	Files   int // 確かめたパスの数（行つきも）
 	Foreign int // 頭のモジュールか先頭のフォルダがこのリポに無く、数えなかった物
-	Source  string
-	Decls   int
-	Hits    []Hit
+	Planned int // 予定の印のついた名前・パス（数えない）
+	Std     int // Flix の標準ライブラリの名前（在ると数える）
+	// Generated は生成物で見なかった文書の数。
+	Generated int
+	// StdJar は標準ライブラリの名前を読んだ flix.jar（見つからなければ ""）。
+	StdJar string
+	Source string
+	Decls  int
+	Hits   []Hit
 }
 
 // fileSet はリポのファイルの見分け（在るか・行数・同じ名前の物）。
@@ -266,13 +295,29 @@ func (r *Rules) Check(root string, docs []string) *Report {
 	idx, _ := BuildIndex(root, r.Sources, r.SpansIndex)
 	fs := newFileSet(root, r.Sources)
 	rep := &Report{Source: idx.Source, Decls: idx.Decls}
+	if r.FlixJar != "" {
+		rep.StdJar = findFlixJar(root, fs.engine, r.FlixJar)
+		idx.std = loadStd(rep.StdJar)
+	}
 	for _, doc := range docs {
 		body, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(doc)))
 		if err != nil {
 			continue
 		}
+		if r.Generated(string(body)) {
+			rep.Generated++
+			continue
+		}
 		rep.Docs++
-		for _, ref := range ScanMarkdown(string(body), r.fileExt) {
+		for _, ref := range ScanMarkdown(string(body), r.fileExt, r.PlannedMarks) {
+			if ref.Planned {
+				rep.Planned++
+				continue
+			}
+			if ref.Kind == RefName && idx.Owns(ref.Text) && !idx.Has(ref.Text) && idx.std[ref.Text] {
+				rep.Std++
+				continue
+			}
 			if h, counted := r.checkRef(root, doc, ref, idx, fs); counted {
 				switch ref.Kind {
 				case RefName:
@@ -401,8 +446,12 @@ type jsonReport struct {
 	Names   int               `json:"names"`
 	Files   int               `json:"files"`
 	Foreign int               `json:"foreign"`
-	Index   string            `json:"index"`
-	Exit    int               `json:"exit"`
+	Planned int               `json:"planned"`
+	Std     int               `json:"std"`
+	// Generated は生成物で見なかった文書の数。
+	Generated int    `json:"generated"`
+	Index     string `json:"index"`
+	Exit      int    `json:"exit"`
 }
 
 // Run は fge doc-refs の本体。
@@ -447,7 +496,7 @@ func Run(out, errOut *strings.Builder, root string, args []string) (int, error) 
 	}
 	if asJSON {
 		jr := jsonReport{Results: []checkres.Result{}, Docs: rep.Docs, Names: rep.Names, Files: rep.Files,
-			Foreign: rep.Foreign, Index: rep.Source, Exit: code}
+			Foreign: rep.Foreign, Planned: rep.Planned, Std: rep.Std, Generated: rep.Generated, Index: rep.Source, Exit: code}
 		for _, h := range rep.Hits {
 			jr.Results = append(jr.Results, h.Result())
 		}
@@ -459,11 +508,26 @@ func Run(out, errOut *strings.Builder, root string, args []string) (int, error) 
 		index = "flixlint の索引（" + rules.SpansIndex + "）＋字の索引"
 	}
 	head := fmt.Sprintf("[doc-refs] 文書 %d 本・名前 %d・パス %d を確かめた（宣言 %d・%s）", rep.Docs, rep.Names, rep.Files, rep.Decls, index)
+	var skipped []string
+	for _, c := range []struct {
+		n    int
+		what string
+	}{{rep.Generated, "生成物の文書 %d 本"}, {rep.Planned, "予定の印 %d か所"}, {rep.Std, "Flix の標準ライブラリの名前 %d"}} {
+		if c.n > 0 {
+			skipped = append(skipped, fmt.Sprintf(c.what, c.n))
+		}
+	}
+	if len(skipped) > 0 {
+		head += "・数えない物: " + strings.Join(skipped, "・")
+	}
 	if code == 0 {
 		fmt.Fprintf(out, "%s OK\n", head)
 		return 0, nil
 	}
 	b := checkres.Brief{Head: head}
+	if rules.FlixJar != "" && rep.StdJar == "" {
+		b.Notes = append(b.Notes, rules.FlixJar+" が見つからず、Flix の標準ライブラリの名前（Clock.runWithIO など）も「無い」に出る。make status で jar を置いてから流し直す")
+	}
 	counts := map[string]int{}
 	worst := map[string]int{}
 	for _, h := range rep.Hits {
@@ -474,7 +538,7 @@ func Run(out, errOut *strings.Builder, root string, args []string) (int, error) 
 	if rep.Foreign > 0 {
 		b.Notes = append(b.Notes, fmt.Sprintf("頭のモジュールか先頭のフォルダがこのリポに無い %d か所（エンジン・外の物）は数えていない", rep.Foreign))
 	}
-	b.Fix = "今の名前・パスへ直す（行の番号でなく名前で指すと古びない）。消した物の記録なら ~~ ~~ で消し線、文書ごと古い記録なら bin/lint-rules/doc-refs.local.json の skip へ"
+	b.Fix = "今の名前・パスへ直す（行の番号でなく名前で指すと古びない）。これから作る名前なら `名前`（予定）、消した物の記録なら ~~ ~~ で消し線、ゲームの側のパスなら <ゲーム>/…、文書ごと古い記録なら bin/lint-rules/doc-refs.local.json の skip へ（書き方は engine の docs/doc-conventions.md）"
 	for _, h := range rep.Hits {
 		b.Sites.Lines = append(b.Sites.Lines, h.site())
 	}
@@ -513,5 +577,7 @@ const usage = `使い方: bin/fge doc-refs [文書.md ...] [-v|--all] [--json] [
   文書（docs/**/*.md・NOTES.md・AGENTS.local.md。規約は bin/lint-rules/doc-refs.json）の ` + "` `" + ` の中と表の行が指す
   Mod.name・パス・path:行 が今のリポに在るかを見る。引数なしは全部、文書を名指しすればそれだけ。
   -v・--all は場所を全部画面に（既定は上位だけ・全部は build/doc-refs/last.txt）。
-  古い記録の文書は bin/lint-rules/doc-refs.local.json の {"skip": ["notes/", "docs/old.md"]} で外す。
+  これから作る名前は ` + "`名前`（予定）" + `、消した物は ~~ ~~、ゲームの側のパスは <ゲーム>/… と書く（docs/doc-conventions.md）。
+  頭に「手で直さない」と書いた生成物の文書は見ない。古い記録の文書は bin/lint-rules/doc-refs.local.json の
+  {"skip": ["notes/", "docs/old.md"]} で外す。
 `

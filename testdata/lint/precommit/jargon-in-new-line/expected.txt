@@ -1,4 +1,5 @@
 [notes-rotate] OK（NOTES.md の項 0 個・上限 6 個 / 40 行）
+[doc-refs] 文書 1 本・名前 0・パス 0 を確かめた（宣言 4・字の索引（src・engine/src の宣言）） OK
   NOTES.md:3: 「関所」→ ゲート (gate)
       コミット時の関所で止める。
 [lint-jargon] 独自語 1 件。上の言い換えへ直すか、本当に必要なら行末に jargon-ok: 理由 を書いてください

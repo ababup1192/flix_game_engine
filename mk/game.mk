@@ -51,7 +51,7 @@ endif
 # JVM を 1 本抱えたまま寿命が切れるまで待たせないため（1 枚ずつの render は続けて呼ぶので残す）。
 RESIDENT_STOP = if [ -x "$(ENGINE)/bin/fge-go" ]; then "$(ENGINE)/bin/fge-go" resident stop --dir . || true; fi
 
-.PHONY: help status run debug test build check flow flow-check flow-vocab render render-all gallery-sounds reference-check reference-update render-budget render-lint lint-doc-refs video-entries loc api module src src-index hooks check-docs-sync compare agent-eval agent-eval-compare agent-eval-release
+.PHONY: help status run debug test build check flow flow-check flow-vocab render render-all gallery-sounds reference-check reference-update render-budget render-lint lint lint-doc-refs video-entries loc api module src src-index hooks check-docs-sync compare agent-eval agent-eval-compare agent-eval-release
 
 # 共通の口の一覧。engine を上げるとここも一緒に新しくなる
 # （ゲーム側の Makefile へ写さないので、口が増えても書き足しに回らなくて済む）。
@@ -73,7 +73,8 @@ help:
 	@echo "  make render-budget      gallery/ の記録で 1 場面の描き物の数を予算と比べる（描き直さない・render-all の後）"
 	@echo "  make reference-update   いまの gallery をリファレンス画像として更新する"
 	@echo "  make render-lint        描き出しが残した表を読み直す: 字の被り・はみ出し（text-audit）・z の外れ（z-audit）・動画の入口の写し（video-entries --check）"
-	@echo "  make lint-doc-refs      docs/**/*.md・NOTES.md・AGENTS.local.md が指す Mod.name・パス・path:行 が実在するか（make lint に束ねる）"
+	@echo "  make lint-doc-refs      docs/**/*.md・NOTES.md・AGENTS.local.md が指す Mod.name・パス・path:行 が実在するか"
+	@echo "  make lint               エンジンの軽い検査（render-lint・lint-doc-refs）＋ゲームの Makefile が「lint: 口」で足した検査"
 	@echo "  make video-entries      動画の見回りが流す入口の一覧を Makefile の \$$(call video,…) から書き直す"
 	@echo "  make flow FLOW=e2e/<名前>.flow  flow を画面なしで最後まで流す（失敗は行番号つき。Flix は組み直さない）"
 	@echo "  make flow-vocab         flow の語彙 e2e/vocab.json を書き直す（bin/fge flow check が読む）"
@@ -246,7 +247,7 @@ reference-check: render-all
 render-budget:
 	@fge=bin/fge; [ -x "$$fge" ] || fge="$(ENGINE)/bin/fge"; "$$fge" check-render-budget .
 
-# 描き出し（render / render-all）が場面ごとに書いた表を後から読み直して止める（描き直さないので軽い・make lint に束ねる）。
+# 描き出し（render / render-all）が場面ごとに書いた表を後から読み直して止める（描き直さないので軽い・下の lint が束ねる）。
 # 字の被り・はみ出しの許す物は bin/lint-rules/text-audit.local.json の allow に理由つき、表の置き場と直し方の 1 行は
 # bin/lint-rules/{text-audit,z-audit}.json（ゲームは .local.json で上書き）。表が無ければ見ずに通す。
 # 動画の見回りの入口の写し（video-entries）は動画の口が無いゲームでは見ずに通す。
@@ -255,10 +256,15 @@ render-lint:
 	code=0; "$$fge" text-audit --root . || code=1; "$$fge" z-audit --root . || code=1; \
 	"$$fge" video-entries --check --root . || code=1; exit $$code
 
-# 文書（docs/**/*.md・NOTES.md・AGENTS.local.md）が指す Mod.name・パス・path:行 が今のリポに在るか（make lint に束ねる）。
+# 文書（docs/**/*.md・NOTES.md・AGENTS.local.md）が指す Mod.name・パス・path:行 が今のリポに在るか（下の lint が束ねる）。
 # 古い記録の文書は bin/lint-rules/doc-refs.local.json の skip へ。コミットでは触った .md だけを precommit が見る。
 lint-doc-refs:
 	@fge=bin/fge; [ -x "$$fge" ] || fge="$(ENGINE)/bin/fge"; "$$fge" doc-refs --root .
+
+# 検査の束。エンジンの軽い検査はここに前提として並べ、エンジンを上げると増えた検査もそのまま届く。
+# ゲームの検査はゲームの Makefile に「lint: lint-view lint-palette」のような前提だけの 1 行で足す
+# （make は前提だけの規則を 1 つにまとめる。レシピを書くと makefile-dup が止める）。
+lint: render-lint lint-doc-refs
 
 # flow（e2e/<名前>.flow）を画面なしで流す。入口はゲームの E2e.play（中身は Flow.Cli.main）。
 # 描き出しの jar を使うので、flow を直して流し直すのに Flix を組み直さない（jar は src が変わった時だけ作り直す）。

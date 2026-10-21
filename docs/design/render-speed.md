@@ -364,10 +364,10 @@ pub mod VideoOut {
 - 鍵（drawhash.txt）を作るには、GL の道でも Soft の Frame の描く命令を組む（7〜9.5 ms/コマ）。GL の塗りと並べても安い。
   鍵を作らない形は用意しない。比べに使う列が抜けるので。
 - **置き場**: engine_tools（SoftRaster・DrawHash）と render_gl の両方に依存する。今その形のパッケージは engine_full だけなので、どこに置くかは依頼主に決めてもらう（7 節）。
-- **engine は `video.json` に書かない。** `video.json` はゲームの `internet_dungeon/bin/video-status.py` が出力名ごとに書いている物なので、書く人を 2 人にしない。
+- **engine は `video.json` に書かない。** `video.json` はゲームの `<ゲーム>/bin/video-status.py` が出力名ごとに書いている物なので、書く人を 2 人にしない。
   engine はフォルダの中に `frames.json`（`painter`（`gl`・`soft`・`none`）・`frames`・`painted`（塗ったコマの範囲）・`fps`・`keys`（鍵のあるコマ数）・
   `audio`（sfx.txt・bgm.txt と、そこから鳴らす wav の中身の SHA-256 を畳んだ 1 本）・`last`）を書く。`none` は鍵だけを流して塗らなかった印（3.5 節）。
-  `go/internal/videos/videos.go:172,193`（最後の画面とコマ数）と `internet_dungeon/bin/video-status.py:58`（`f*.png` を数える）は、frames.json があればそれを読むように替える。
+  `go/internal/videos/videos.go:172,193`（最後の画面とコマ数）と `<ゲーム>/bin/video-status.py:58`（`f*.png` を数える）は、frames.json があればそれを読むように替える。
   GL の道では連番の PNG が出ないので。
 
 ### 3.3 GL は 1 本の糸で
@@ -387,7 +387,7 @@ pub mod VideoOut {
   段の間には長さの決まった列（4 コマ分）を置く。今の SoftRaster の 4 本の糸（`lanes()`）は Soft のときだけ使う。
 - 読み戻しは、最初は `glReadPixels` を同期で行う。960×600 の RGBA は 1 コマ 2.3 MB。足りなければ PBO 2 枚で、読み戻しと次の塗りを重ねる（測ってから決める）。
 - ffmpeg への渡し方: `-f rawvideo -pix_fmt rgba -s 960x600 -r <fps> -i - -vf vflip`。**中間物は可逆にする**（ffv1 の `frames.mkv`）。
-  `internet_dungeon/bin/mix-video-sfx.py` は今と同じく `--slow`・`--crf` と音を掛けて mp4 を 1 回だけ圧縮する。2 回圧縮して絵を落とさない。
+  `<ゲーム>/bin/mix-video-sfx.py` は今と同じく `--slow`・`--crf` と音を掛けて mp4 を 1 回だけ圧縮する。2 回圧縮して絵を落とさない。
   fps は入口が知っている（flow のヘッダ・VideoKit の設定・TUT_FPS などの env）ので frames.json に書く。mix は frames.json があれば
   その fps を正にし、Makefile が渡す値は使わない（食い違いで止めない）。frames.json が `painter=none` なら、mix は何もせずに 0 で終わる。
 
@@ -410,7 +410,7 @@ pub mod VideoOut {
      いくつものフォルダを書くので、フォルダごとに範囲を持つ）。並べる絵は SoftRaster で塗る（`FGE_GPU=off`）。
      状態更新はコマの頭から流し直す（コマを飛ばして World を作る口は持たない）。塗らないコマは 1 コマ 15 ms 前後なので、910 コマでも 15 s 前後。
 - **鍵だけの流しを、人が見る動画の記録と取り違えない。** 今側の 1 は作業中のツリーの `debug/video/<名前>` を書き直すので、連番は消え、古い mp4 だけが残る。
-  `internet_dungeon/bin/video-status.py`（とエンジンの `videos status`）は frames.json の `painter=none` を見て、記録を `ok` ではなく `keys-only` にする。
+  `<ゲーム>/bin/video-status.py`（とエンジンの `videos status`）は frames.json の `painter=none` を見て、記録を `ok` ではなく `keys-only` にする。
   `make status` と Studio は `keys-only` を「撮れていない（compare の鍵だけ）」と数え、古い mp4 を撮れた物として見せない。
 - **mix の条件も「同じ」の中に入れる。** mix の引数（`--bgm`・`--sub`・`--drop`・`--slow`・`--crf`）と `mix-video-sfx.py` の中身の SHA を、mix が
   `<名前>.mix.json` に書く。compare は frames.json の `audio` と合わせてこれも比べる。違えば「mix が違う」と言い、今と同じく mp4 の音声の md5 で比べる。
@@ -446,8 +446,8 @@ iopure（`ababup1192/id-x-iopure`）の形の上に積む。
 | ほかの `*-video` の入口（`RenderEnv.video` の handler が `System.exit(1)` を呼ぶ） | handler が終了コードを返す形にする | 常駐ごと落ちない |
 | `VideoKit.kitScaled` と `SceneRender.kitOf` で、フォントとアトラスを二重に組んでいる | `RenderKit.buildShared(atlasSource, look, camera, scale)` を 1 つにして `ContentCache.loadOrBuild` で包む。`PerRequest` は要求ごと | 撮るたびの kit（約 1 s）と Doc（約 1 s）が消える |
 | `VideoKit.writeFramesWhere` / `writeFramesBaked` / `writeFrame`（drawWith → `renderToImageCached` → `Filmstrip.renderFrame`）と、`SceneRender.burnItems` の同じ並び | 動画はエンジンの `VideoOut`、静止画は `RenderCache.writePlainPng` | 塗る物の選択・鍵・連番がエンジンへ移る。ゲームに残るのは「World → 層 → items」と「コマの入力」と「見回りの中身」 |
-| `internet_dungeon/bin/mix-video-sfx.py` が `f%04d.png` を読む | frames.json を見て、`frames.mkv`（Gl）か連番（Soft）を読む | PNG を通さない |
-| `internet_dungeon/bin/video-status.py` が `f*.png` を数える | frames.json があれば、その `frames` と `last` を使う | |
+| `<ゲーム>/bin/mix-video-sfx.py` が `f%04d.png` を読む | frames.json を見て、`frames.mkv`（Gl）か連番（Soft）を読む | PNG を通さない |
+| `<ゲーム>/bin/video-status.py` が `f*.png` を数える | frames.json があれば、その `frames` と `last` を使う | |
 | `SceneRender.one` がメソッドの大きさの上限ぎりぎり | 場面の表を `shotNames` ごとの小さな関数へ分ける | jar が作れなくなる穴を先に除く |
 
 残る `unsafe`（`VideoKit.layersNoted`）は、エンジンの `ViewCtx#warnOnce` が知らせを値で返す口を持てば消せる。これはこのメモの範囲外（別の相談）。

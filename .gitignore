@@ -58,6 +58,8 @@ scratch/
 NOTES.md
 # precommit の負の見本は NOTES.md そのものが入力（jargon が新しい行を裁くか）。
 !testdata/lint/precommit/*/overlay/NOTES.md
+# doc-refs の見本のゲームも NOTES.md を見る文書として持つ（docFiles の 1 本）。
+!go/internal/docrefs/testdata/**/NOTES.md
 # Go 版の検査 (go/) のビルド成果物。ソースだけを運び、バイナリは各 OS で作る。
 bin/fge-go
 bin/fge-go.exe

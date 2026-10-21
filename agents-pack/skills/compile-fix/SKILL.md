@@ -81,8 +81,8 @@ engine の中で境界の内側を書いているなら `1.0f32` のようにサ
 
 ### 9. engine の名前が見つからない（Flix 0.78 の mount）
 
-**症状**: engine の名前で Undefined name 'App.run'（E2136）・
-Undefined type 'Color'（E2916）のような誤りが大量に出る
+**症状**: engine の名前で `Undefined name 'App.run'`（E2136）・
+`Undefined type 'Color'`（E2916）が大量に出る
 
 **修正**: `bin/fge engine-uses` で mod ごとに `use fge::{...}` を足す（mount は toml）。
 手で書くなら use は mod の中に置く（ファイル直下の use は mod へ届かない）。

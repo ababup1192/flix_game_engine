@@ -10,12 +10,22 @@ package docrefs
 // 作り直しの途中で止まった）があり、その時に今在る名前を「無い」と止めないため。字の索引が拾い損ねた宣言を
 // 索引が埋める向きにだけ効かせる。
 //
+// Flix の標準ライブラリ（Clock.runWithIO・List.map）は flix.jar の src/library/*.flix を同じ字の索引で読み、
+// 頭のモジュールがこのリポの物と同じ名前（engine の Clock と標準の Clock）でも、標準に在る名前は「在る」と数える。
+// jar は このリポ → ゲームのエンジン → git の主の作業場（git worktree の元）の順に flixJar の場所を探す。
+//
+// WhyNot: 標準ライブラリの名前の一覧をリポに写して持たないのは、Flix の版を上げるたびに写しが古びるため。
+// jar は devbox.json の版の物が bin/flix.jar に置かれる（make status が置く）ので、それを毎回読む。
+//
 // WhyNot: lib の fpkg（エンジン）を読まないのは、ゲームの文書がエンジンの名前を指すのは普通で、
 // それはエンジン側の検査（api-index・check-refs）の受け持ちだから。頭のモジュールがこのリポに無い名前は数えない。
 
 import (
+	"archive/zip"
 	"bufio"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -34,6 +44,7 @@ type Index struct {
 	children map[string][]string // 入れ物の完全な名前 → 中の名前の最後の節
 	bySuffix map[string][]string // 入れ物の切れ端 → 完全な名前
 	byLast   map[string][]string // 最後の節 → 完全な名前
+	std      map[string]bool     // Flix の標準ライブラリの宣言の名前の 2 節以上の切れ端（Time.Clock.runWithIO → Clock.runWithIO も）
 }
 
 func newIndex() *Index {
@@ -524,4 +535,58 @@ func BuildIndex(root string, sources []string, spans string) (*Index, []string) 
 		x.add(d.Name, d.Kind.container())
 	}
 	return x, files
+}
+
+// findFlixJar は rel（bin/flix.jar）を このリポ → engine（ゲームから見たエンジン）→ git の主の作業場 の順に探す。
+// 無ければ ""。
+func findFlixJar(root, engine, rel string) string {
+	dirs := []string{root}
+	if engine != "" {
+		dirs = append(dirs, engine)
+	}
+	if out, err := exec.Command("git", "-C", root, "rev-parse", "--path-format=absolute", "--git-common-dir").Output(); err == nil {
+		dirs = append(dirs, filepath.Dir(strings.TrimSpace(string(out))))
+	}
+	for _, d := range dirs {
+		p := filepath.Join(d, filepath.FromSlash(rel))
+		if info, err := os.Stat(p); err == nil && info.Mode().IsRegular() {
+			return p
+		}
+	}
+	return ""
+}
+
+// loadStd は jar の src/library の .flix から宣言の名前を拾う（jar が "" か読めなければ空）。
+// 文書は use した後の短い名前（Time.Clock.runWithIO を Clock.runWithIO）で書くので、後ろからの 2 節以上の切れ端も持つ。
+func loadStd(jar string) map[string]bool {
+	std := map[string]bool{}
+	if jar == "" {
+		return std
+	}
+	zr, err := zip.OpenReader(jar)
+	if err != nil {
+		return std
+	}
+	defer zr.Close()
+	for _, f := range zr.File {
+		if !strings.HasPrefix(f.Name, "src/library/") || !strings.HasSuffix(f.Name, ".flix") {
+			continue
+		}
+		rc, err := f.Open()
+		if err != nil {
+			continue
+		}
+		body, err := io.ReadAll(rc)
+		rc.Close()
+		if err != nil {
+			continue
+		}
+		for _, d := range ScanFlix(string(body)) {
+			segs := strings.Split(d.Name, ".")
+			for i := 0; i+2 <= len(segs); i++ {
+				std[strings.Join(segs[i:], ".")] = true
+			}
+		}
+	}
+	return std
 }

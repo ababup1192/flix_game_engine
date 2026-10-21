@@ -1,6 +1,12 @@
 package docrefs
 
 // 文書（.md）から確かめる物を拾う所。` ` の中と表の行（| で始まる行）だけを見て、``` の中は見ない。
+//
+// 書き手の記法（docs/doc-conventions.md の「文書の中で名前・パスを書く記法」）:
+//   - <ゲーム>/src/X.flix のような <…>・* は仮の字で確かめない（placeholder）
+//   - ~~`消した名前`~~ は消した物の記録で確かめない（unstruck）
+//   - `これから作る名前`（予定） は予定の名前で確かめない（plannedMarks。印は規約の JSON）
+//   - ` ` の中の '…' は誤りの文などの引用で確かめない（unquoted: Undefined name 'App.run'）
 
 import (
 	"regexp"
@@ -28,6 +34,8 @@ type Ref struct {
 	To   int    // RefLine の行（まで。1 行なら From と同じ）
 	// Engine は「engine の `docs/…`」のようにエンジンの物と書いてある所（ゲームのリポでは引かない）。
 	Engine bool
+	// Planned は直後に予定の印（`名前`（予定））がある所（これから作る名前で、確かめない）。
+	Planned bool
 }
 
 var (
@@ -55,9 +63,15 @@ func placeholder(w string) bool {
 // enginePrefixes は直前に置くと「エンジンの物」と読む字（AGENTS.md の「engine の `docs/…`」の書き方）。
 var enginePrefixes = []string{"engine の", "engine の ", "エンジンの", "engine's", "engine "}
 
+// word は 1 語と、その語の直後の位置（s の中のバイト位置）。
+type word struct {
+	text string
+	end  int
+}
+
 // words は字列を語に切る。
-func words(s string) []string {
-	var out []string
+func words(s string) []word {
+	var out []word
 	start := -1
 	for i, r := range s {
 		if wordRune(r) {
@@ -67,14 +81,43 @@ func words(s string) []string {
 			continue
 		}
 		if start >= 0 {
-			out = append(out, s[start:i])
+			out = append(out, word{s[start:i], i})
 			start = -1
 		}
 	}
 	if start >= 0 {
-		out = append(out, s[start:])
+		out = append(out, word{s[start:], len(s)})
 	}
 	return out
+}
+
+// plannedAfter は rest（語か ` ` の直後の字）が予定の印で始まるか（間の空白は許す）。
+func plannedAfter(rest string, marks []string) bool {
+	rest = strings.TrimLeft(rest, " \t")
+	for _, m := range marks {
+		if m != "" && strings.HasPrefix(rest, m) {
+			return true
+		}
+	}
+	return false
+}
+
+// unquoted は ` ` の中の '…'（誤りの文が引く名前・Flix の文字）を空白にする。閉じない ' は字のまま。
+func unquoted(s string) string {
+	for from := 0; ; {
+		i := strings.IndexByte(s[from:], '\'')
+		if i < 0 {
+			return s
+		}
+		i += from
+		j := strings.IndexByte(s[i+1:], '\'')
+		if j < 0 {
+			return s
+		}
+		end := i + 1 + j + 1
+		s = s[:i] + strings.Repeat(" ", end-i) + s[end:]
+		from = end
+	}
 }
 
 // span は 1 行の中の切れ目 1 つ（` ` の中身か、その外の字）。
@@ -190,8 +233,8 @@ func unstruck(line string) string {
 	}
 }
 
-// ScanMarkdown は文書の本文から確かめる物を拾う（同じ行の同じ字は 1 つ）。
-func ScanMarkdown(text string, fileExt map[string]bool) []Ref {
+// ScanMarkdown は文書の本文から確かめる物を拾う（同じ行の同じ字は 1 つ）。planned は予定の印（「（予定）」など）。
+func ScanMarkdown(text string, fileExt map[string]bool, planned []string) []Ref {
 	var out []Ref
 	inFence := false
 	fenceMark := ""
@@ -223,17 +266,26 @@ func ScanMarkdown(text string, fileExt map[string]bool) []Ref {
 		line = unstruck(line)
 		table := strings.HasPrefix(t, "|")
 		seen := map[string]bool{}
-		for _, p := range codeSpans(line) {
+		parts := codeSpans(line)
+		for k, p := range parts {
 			if !p.code && !table || !utf8.ValidString(p.text) {
 				continue
 			}
-			for _, w := range words(p.text) {
-				r, ok := classify(w, n, fileExt)
+			text := p.text
+			// ` ` の中身は 1 まとまり: 閉じた ` の直後の予定の印は中の名前の全部に効く。
+			spanPlanned := false
+			if p.code {
+				text = unquoted(text)
+				spanPlanned = k+1 < len(parts) && plannedAfter(parts[k+1].text, planned)
+			}
+			for _, w := range words(text) {
+				r, ok := classify(w.text, n, fileExt)
 				if !ok || seen[r.Text] {
 					continue
 				}
 				seen[r.Text] = true
 				r.Engine = p.engine
+				r.Planned = spanPlanned || !p.code && plannedAfter(text[w.end:], planned)
 				out = append(out, r)
 			}
 		}

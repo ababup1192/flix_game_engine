@@ -1,6 +1,7 @@
 package docrefs
 
 import (
+	"archive/zip"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -192,7 +193,7 @@ func TestScanFlixDecls(t *testing.T) {
 
 func TestScanMarkdownSpansAndEnginePrefix(t *testing.T) {
 	ext := map[string]bool{"md": true, "flix": true}
-	refs := ScanMarkdown("engine の `docs/pacing.md` と `src/A.flix:3-5`\n|`Xx.yy` Bb.cc|\nプレーン Aa.bb\n", ext)
+	refs := ScanMarkdown("engine の `docs/pacing.md` と `src/A.flix:3-5`\n|`Xx.yy` Bb.cc|\nプレーン Aa.bb\n", ext, nil)
 	var got []string
 	for _, r := range refs {
 		s := r.Text
@@ -216,5 +217,61 @@ func TestIgnoredPathIsBuildProduct(t *testing.T) {
 	lintconf.GitInit(t, root)
 	if got := hitsOf(t, root, "docs/made.md"); len(got) != 0 {
 		t.Errorf("無視するパスは数えない: %v", got)
+	}
+}
+
+// 頭に「手で直さない」と書いた生成物の文書は、名指ししても全部を流しても見ない（作る元を直す）。
+func TestGeneratedDocIsNotChecked(t *testing.T) {
+	root := gameRepo(t)
+	write(t, root, "docs/ops.md", "# op の表（fge ops --md が作る。手で直さない）\n\n`World.nowhere` と `src/Gone.flix`\n")
+	write(t, root, "docs/late.md", "# 手で書いた文書\n\n\n\n\n\n手で直さない（6 行目は頭でない） `World.nowhere`\n")
+	if got := hitsOf(t, root, "docs/ops.md", "docs/late.md"); strings.Join(got, "\n") != "docs/late.md:7 World.nowhere doc-refs.name" {
+		t.Errorf("生成物だけ見ない: %v", got)
+	}
+}
+
+// `名前`（予定） と 表の 名前（予定） は数えない。印の無い同じ行の名前は数える。
+func TestPlannedNamesAreNotCounted(t *testing.T) {
+	root := gameRepo(t)
+	write(t, root, "docs/plan.md", "`World.enter`（予定）と `World.arenaOf(f) / src/Arena.flix` (予定)、`World.later`\n| World.FightCtx（予定） | World.nope |\n")
+	want := "docs/plan.md:1 World.later doc-refs.name\ndocs/plan.md:2 World.nope doc-refs.name"
+	if got := hitsOf(t, root, "docs/plan.md"); strings.Join(got, "\n") != want {
+		t.Errorf("got\n%s\nwant\n%s", strings.Join(got, "\n"), want)
+	}
+}
+
+// 誤りの文が引く名前（` ` の中の '…'）は確かめない。引用の外の名前は確かめる。
+func TestQuotedNamesInCodeSpanAreNotChecked(t *testing.T) {
+	root := gameRepo(t)
+	write(t, root, "docs/err.md", "`Undefined name 'World.gone'`（E2136）と `World.gone2 'x'`\n")
+	if got := hitsOf(t, root, "docs/err.md"); strings.Join(got, "\n") != "docs/err.md:1 World.gone2 doc-refs.name" {
+		t.Errorf("引用の中は見ない: %v", got)
+	}
+}
+
+// 頭がこのリポのモジュールと同じ名前でも、flix.jar の標準ライブラリに在る名前は在ると数える。jar が無ければ知らせる。
+func TestFlixStdlibNamesFromJar(t *testing.T) {
+	root := gameRepo(t)
+	write(t, root, "src/Clock.flix", "mod Clock { pub def tick(): Int32 = 1 }\n")
+	write(t, root, "docs/std.md", "`run f() with Clock.runWithIO` と `Clock.tick` と `Clock.nope`\n")
+	if got := hitsOf(t, root, "docs/std.md"); len(got) != 2 {
+		t.Errorf("jar が無ければ標準の名前も無いに出る: %v", got)
+	}
+	jar, err := os.Create(filepath.Join(root, "bin", "flix.jar"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	zw := zip.NewWriter(jar)
+	w, err := zw.Create("src/library/Time/Clock.flix")
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.Write([]byte("pub mod Time.Clock {\n    pub def runWithIO(f: Unit -> a \\ ef): a \\ ef = f()\n}\n"))
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	jar.Close()
+	if got := hitsOf(t, root, "docs/std.md"); strings.Join(got, "\n") != "docs/std.md:1 Clock.nope doc-refs.name" {
+		t.Errorf("標準ライブラリの名前は在る: %v", got)
 	}
 }

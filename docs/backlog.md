@@ -268,3 +268,16 @@ shooter / race / raise の 3 スターターを教科書として作る中で「
 寿命はプロセスと同じ**。色や位置は GLSL にリテラルとして埋め込まれるので、Studio で
 スライダーを動かすと値ごとに別のプログラムが増えて解放されない可能性がある。
 Studio が実際にその経路を毎フレーム通るかは未確認。
+
+## Flix の宣言を字で読む実装が 3 本ある（2026-10-21 の doc-refs で 3 本目）
+
+- **今の 3 本**: `go/internal/flixdecl`（pub の宣言と本文。api-digest・f32 が使う）・`go/internal/engineuses`
+  （fpkg の木の一番外の pub の名前。`use fge::{…}` を足す）・`go/internal/docrefs/flixindex.go`（mod・def・enum・case・
+  eff・trait・struct・record の欄の完全な名前。文書が指す名前を引く。flix.jar の標準ライブラリも同じ口で読む）。
+  コメントと文字列を空白にする所（`stateshape.Blank`）だけは共有しているが、括弧の深さ・入れ物の積み方・
+  `instance` の外し方はそれぞれが持つ。
+- **まとめる形の候補**: flixdecl に「入れ物の木（mod > enum/eff/trait/struct > case/def/欄）と各宣言の pub・位置」を
+  返す 1 つの口を置き、3 本はその木から要る物だけを取る。flixlint の索引（`bin/fge refactor` が作る
+  build/refactor/spans-resolved.tsv）がある所では木の代わりにそれを読む。
+- **トリガー**: 3 本のどれかで Flix の構文の読み違い（新しい宣言の形・入れ子の数え違い）を直す時。
+  その時に直す所が 3 か所に分かれていれば、直すのと一緒にまとめる。

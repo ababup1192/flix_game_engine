@@ -247,3 +247,26 @@ flix_ge_dungeon の assets/ がこの規約の実例になっている:
 **このリポジトリ内に見本が無い**。書き方は `engine_world/src/TerrainDoc.flix` の
 冒頭 doc コメントと `engine_world/test/TestTerrainDoc.flix` を見る。仕組みは
 [dual-grid.md](dual-grid.md)。
+
+## 文書（.md）の中で名前・パスを書く記法（doc-refs が読む）
+
+ここまでは JSON の Doc の規約。この節だけは文書（`docs/**/*.md`・`NOTES.md`・`AGENTS.local.md`・agents-pack）の書き方で、
+`bin/fge doc-refs`（`make lint-doc-refs`・コミットでは触った .md を precommit が見る）がこの記法を読む。
+文書ごと・1 か所ごとに外す道は無いので、今は無い物を書くときは下のどれかで書く。印は `bin/lint-rules/doc-refs.json` が持つ。
+
+| 書きたい物 | 書き方 | 例 |
+|---|---|---|
+| 今ある名前・ファイル | そのまま ` ` の中か表に | `SortingLayer.compose`・`docs/flow.md` |
+| これから作る名前（計画の文書） | 名前の ` ` の直後に `（予定）`（表は語の直後） | `World.arenaOf`（予定）・`src/Arena.flix`（予定） |
+| 消した名前（記録として残す） | `~~ ~~` の消し線で囲む | ~~`ActiveDocs.step`~~ は消した |
+| エンジンの文書からゲームの側の物 | 頭を `<ゲーム>/` にする（ゲームの名前を書かない） | `<ゲーム>/bin/video-status.py` |
+| ゲームの文書からエンジンの文書 | 直前に「engine の」 | engine の `docs/pacing.md` |
+| 誤りの文（コンパイラの出力）の引用 | ` ` の中の名前を `'…'` で囲んだまま写す | `Undefined name 'App.run'` |
+| 仮の字 | `<名前>`・`*`・`…` | `e2e/<名前>.flow` |
+
+- 計画が済んで名前ができたら `（予定）` を外す（残しても止まらないが、読む人には古い印になる）。
+- Flix の標準ライブラリの名前（`Clock.runWithIO`・`List.map`）はそのまま書く。doc-refs は `bin/flix.jar` の
+  `src/library` から引く（engine の `Clock` と同じ頭でも標準に在れば通る）。
+- 頭の 5 行に「手で直さない」（か「手で編集しない」・`DO NOT EDIT`）と書いた文書は生成物として見ない。
+  直すのは作る元（`bin/fge check codes --md` なら go/internal/checkres の表）。
+- 古い記録の文書（`notes/<年-月>.md` など）は文書ごと `<ゲーム>/bin/lint-rules/doc-refs.local.json` の skip へ。

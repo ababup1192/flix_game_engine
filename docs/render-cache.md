@@ -85,7 +85,7 @@ writeFramePng と同じ鍵が返る（指紋の取り方を写さない）。
   当たりは控えの全部のファイルが今もその SHA-256 の時だけ（消した・git で戻した・手で直した WAV があれば作り直す）
 - jar から動いていない時（`flix run`・`flix test`）・`FGE_RENDER_CACHE=off` の時はいつも作る。`verify` は毎回作り、前の控えと違えば
   `[render-cache] 前に同じ鍵で書いた一式と違う` を出す
-- ゲームの `internet_dungeon/bin/mix-video-sfx.py` が動画のために重ねた音も、同じ置き場の `mix/<頭 2 字>/<鍵>.wav` に入れる
+- `<ゲーム>/bin/mix-video-sfx.py` が動画のために重ねた音も、同じ置き場の `mix/<頭 2 字>/<鍵>.wav` に入れる
   （鍵は sfx.txt・bgm.txt・使う WAV のバイト列・コマ数・fps・旗・台本の中身）。`render-cache prune` は files/ と mix/ も PNG と同じ順に消す
 
 ## 置き場
