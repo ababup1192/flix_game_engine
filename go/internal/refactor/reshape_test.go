@@ -157,10 +157,13 @@ func TestSignatureStopsAtValuesDoubleEvaluationAndBodiesThatStillUseTheOldName(t
 	if code != 2 || len(cmds) != 0 {
 		t.Fatalf("書かずに断るはず（終了コード %d）:\n%s", code, out)
 	}
-	mustContain(t, out, "refused（人へ回す所 3",
-		"src/Sig.flix:31:13  fix  替えた後も本体が消える引数 ctx・w を使う",
+	// tick の本体（ctx#scale + w#speed）は envOf の欄 scale と speedOf の本体なので、下ごしらえ無しで替えられる（fix にしない）。
+	mustContain(t, out, "refused（人へ回す所 2",
 		"src/Sig.flix:34:9   fix  --args が 2 回使う引数に式が渡っている: w に `{ speed = 1 | w }`",
 		"src/Sig.flix:34:50  fix  関数として渡している")
+	if strings.Contains(out, "src/Sig.flix:31:13  fix") {
+		t.Errorf("tick の本体は替えられるはず:\n%s", out)
+	}
 }
 
 func TestSignatureReordersAndAddsWithIdentityTemplates(t *testing.T) {
@@ -197,11 +200,32 @@ func TestIdentUsesSkipsStringsButReadsInterpolation(t *testing.T) {
 	}
 }
 
-func TestRewriteCallArgsKeepsTheLineBreakBeforeAKeptArgument(t *testing.T) {
-	got, err := rewriteCallArgs("ctx, w, card, at,\n    full, z", []string{"ctx", "w", "card", "at", "full", "z"},
-		[]string{"ViewEnv.of(ctx, w)", "card", "at", "full", "z"})
+// 並びの改行の形（1 行・1 つずつ改行・決まった桁で折る）は、元の並びから読んで新しい並びへ写す。
+func TestJoinLayoutCopiesTheShapeOfTheOriginalList(t *testing.T) {
+	for _, c := range []struct{ src, want string }{
+		{"    f(a, b)", "env: ViewEnv.Env, dialog: Int32, lines: Int32"},
+		{"    f(a,\n      b)", "env: ViewEnv.Env,\n      dialog: Int32,\n      lines: Int32"},
+		// 1 行目は 56 桁まで（lines が入らずに折った）: 新しい並びも 56 桁で折る。
+		{"    pub def box(ctx: Lib.Ctx, w: Lib.World,\n                lines: Int32)", "env: ViewEnv.Env, dialog: Int32,\n                lines: Int32"},
+	} {
+		l, _, err := argsAfter(c.src, strings.IndexByte(c.src, '('))
+		must(t, err)
+		if got := joinLayout([]string{"env: ViewEnv.Env", "dialog: Int32", "lines: Int32"}, readLayout(c.src, l)); got != c.want {
+			t.Errorf("%q:\n got %q\nwant %q", c.src, got, c.want)
+		}
+	}
+}
+
+func TestRewriteCallArgsWrapsAtTheOriginalColumn(t *testing.T) {
+	// 1 行目は 92 桁まで（z が入らずに折った）。ViewEnv.of(ctx, w) で伸びた分、最後の引数が次の行へ移る。
+	src := "        View.cardAt(ctx, w, card, at, full, someLongArgumentName, anotherLongArgumentName,\n                    z)"
+	l, _, err := argsAfter(src, strings.IndexByte(src, '('))
 	must(t, err)
-	if want := "ViewEnv.of(ctx, w), card, at,\n    full, z"; got != want {
+	old := []string{"ctx", "w", "card", "at", "full", "someLongArgumentName", "anotherLongArgumentName", "z"}
+	got, err := rewriteCallArgs(src[l.Args[0][0]:l.Args[len(l.Args)-1][1]], old,
+		append([]string{"ViewEnv.of(ctx, w)"}, old[2:]...), readLayout(src, l))
+	must(t, err)
+	if want := "ViewEnv.of(ctx, w), card, at, full, someLongArgumentName,\n                    anotherLongArgumentName, z"; got != want {
 		t.Fatalf("got %q（want %q）", got, want)
 	}
 }

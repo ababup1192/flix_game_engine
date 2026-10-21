@@ -121,6 +121,13 @@ func deadReport(root string, idx *Index, a args, cfg Config, o Options) (report,
 	r.Sites = sites
 	r.gotText = fmt.Sprintf("候補 %d（test-only %d・参照 0 %d）・消す def %d・一緒に消すテスト %d・人へ回す %d", plan.Sites, plan.TestOnly, plan.Sites-plan.TestOnly, len(plan.Targets), len(plan.Tests), len(plan.Fix))
 	r.wantText = "テストからだけ・どこからも参照されない pub の def 0（決められない所は fix）"
+	if len(plan.Docs) > 0 {
+		var moved []string
+		for _, d := range plan.Docs {
+			moved = append(moved, d.Sym+"（"+d.Why+"）")
+		}
+		r.extra = append(r.extra, "転送するだけの包みの doc を転送先へ: "+strings.Join(moved, "・"))
+	}
 	for _, t := range plan.Targets {
 		r.lines = append(r.lines, fmt.Sprintf("%s\t消す\t%s（%s）", t.Where(), t.Sym, t.Why))
 	}

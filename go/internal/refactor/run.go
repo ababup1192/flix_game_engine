@@ -30,7 +30,9 @@ const Usage = `使い方: fge refactor <操作> [引数] [--json] [-v|--verbose]
   index [--stage resolved|typed]                       索引を作る（か使い回す）だけ。種類ごとの行の数と秒
   expand-wildcard --enum E [--apply] [--skip file:line]  E への match の ` + "`case _ =>`" + `（使わない変数の腕も）を残りの case に書き出す
   remove-dead [--with-tests] [--only test-only|unreferenced] [--def Mod.name] [--apply] [--skip file:line]
-                                                       テストからだけ・どこからも参照されない pub の def を ///・注記ごと消す
+                                                       テストからだけ・どこからも参照されない pub の def を ///・注記ごと消す。
+                                                       消す def が別の def を呼ぶだけの包みなら、その /// を転送先へ移す（転送先に
+                                                       doc が無いか、転送先の doc が包みの名前を指す時）
   field-to-accessor --label x[,y,…] --receiver T [--labels-file F] [--getter R] [--mapper M | --setter S] [--outside Mod] [--apply] [--skip file:line]
                                                        口の既定は T の mod の xOf（読み）と withX（書き）。索引に無ければ
                                                        T を宣言したファイルの既存の …Of の並びの後ろに作る（--reader は --getter と同じ）。
@@ -60,9 +62,11 @@ const Usage = `使い方: fge refactor <操作> [引数] [--json] [-v|--verbose]
                                                        引数をそのまま残す（'env: ViewEnv.Env, card, at'）。--args の式は元の引数の名前が
                                                        使え、呼ぶ所ではその所の引数の式になる（例 --params 'env: ViewEnv.Env,
                                                        input: XScene.In' --args 'ViewEnv.of(ctx, w), XScene.inputOf(w)'）。本体の中の
-                                                       同じ式は引数の名前に替え、let env = ViewEnv.of(ctx, w); は消す（移す前に
-                                                       本体を「引数にする式を let で先に書く」形に）。関数として渡す所・2 回使う
-                                                       引数に式が渡る所・本体が消える引数をまだ使う def は fix（fix があれば書かない）
+                                                       同じ式（let に置いた物もあちこちの物も）は引数の名前に替え、式の def の本体が
+                                                       record の式なら欄の式も替える（ctx#atlas → env#ctx#atlas・w#theme →
+                                                       env#res#theme）。並びは元の改行の形を写し、新しい型の名前が引けないファイルには
+                                                       use を足す。関数として渡す所・2 回使う引数に式が渡る所・効果のある def を呼ぶ式・
+                                                       本体が消える引数をまだ使う def は fix（fix があれば書かない）
 
   出力は全部の操作で同じ形の数行: 当てた物 1 行・数 1 行・注 0〜3 行・結末（dry-run・applied・歯止め）1 行・
   場所の上位 10 行（書き換える操作は人へ回す所を先に）・ファイルごとの数・全部の置き場・終わりに next（写して流せる

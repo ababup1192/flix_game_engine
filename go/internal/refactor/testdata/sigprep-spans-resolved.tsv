@@ -1,0 +1,119 @@
+# flixlint-spans 2 stage=resolved columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=use,type-use,alias-decl,arg
+alias-decl	src/Lib.flix	3	20	3	23	Lib.Ctx	Lib.Ctx	
+alias-decl	src/Lib.flix	4	20	4	25	Lib.World	Lib.World	
+def-decl	src/Lib.flix	6	13	6	17	Lib.tick	Lib.tick	pub ext=6:5:6:49
+type-use	src/Lib.flix	6	21	6	26	Lib.World	Lib.tick	what=alias
+alias-decl	src/Lib/Clock.flix	3	20	3	24	Lib.Clock.Time	Lib.Clock.Time	
+def-decl	src/Lib/Clock.flix	5	13	5	18	Lib.Clock.nowOf	Lib.Clock.nowOf	pub ext=5:5:5:48
+type-use	src/Lib/Clock.flix	5	22	5	31	Lib.World	Lib.Clock.nowOf	what=alias
+type-use	src/Lib/Clock.flix	5	34	5	38	Lib.Clock.Time	Lib.Clock.nowOf	what=alias
+def-decl	src/Plain.flix	2	13	2	18	Plain.stand	Plain.stand	pub ext=2:5:2:74
+type-use	src/Plain.flix	2	22	2	31	Lib.World	Plain.stand	what=alias
+def-use	src/Plain.flix	2	52	2	67	Lib.Clock.nowOf	Plain.stand	
+arg	src/Plain.flix	2	68	2	69	Lib.Clock.nowOf	Plain.stand	of=def-use at=2:52 i=0 n=1
+use	src/Stand.flix	4	14	4	17	Lib.Ctx	Stand	alias=Ctx what=alias
+def-decl	src/Stand.flix	6	13	6	20	Stand.atlasOf	Stand.atlasOf	pub ext=6:5:6:45
+type-use	src/Stand.flix	6	24	6	27	Lib.Ctx	Stand.atlasOf	what=alias
+def-decl	src/Stand.flix	8	13	8	18	Stand.stand	Stand.stand	pub ext=8:5:8:74
+type-use	src/Stand.flix	8	22	8	31	Lib.World	Stand.stand	what=alias
+def-use	src/Stand.flix	8	52	8	67	Lib.Clock.nowOf	Stand.stand	
+arg	src/Stand.flix	8	68	8	69	Lib.Clock.nowOf	Stand.stand	of=def-use at=8:52 i=0 n=1
+use	src/Talk.flix	4	9	4	18	Lib.Clock	Talk	alias=Clock what=module
+def-decl	src/Talk.flix	6	13	6	16	Talk.box	Talk.box	pub ext=6:5:8:64
+type-use	src/Talk.flix	6	22	6	29	Lib.Ctx	Talk.box	what=alias
+type-use	src/Talk.flix	6	34	6	43	Lib.World	Talk.box	what=alias
+def-use	src/Talk.flix	8	39	8	50	Lib.Clock.nowOf	Talk.box	
+arg	src/Talk.flix	8	51	8	52	Lib.Clock.nowOf	Talk.box	of=def-use at=8:39 i=0 n=1
+def-decl	src/Talk.flix	10	13	10	18	Talk.boxes	Talk.boxes	pub ext=10:5:10:87
+type-use	src/Talk.flix	10	24	10	31	Lib.Ctx	Talk.boxes	what=alias
+type-use	src/Talk.flix	10	36	10	45	Lib.World	Talk.boxes	what=alias
+def-use	src/Talk.flix	10	56	10	59	Talk.box	Talk.boxes	
+arg	src/Talk.flix	10	60	10	63	Talk.box	Talk.boxes	of=def-use at=10:56 i=0 n=3
+arg	src/Talk.flix	10	65	10	66	Talk.box	Talk.boxes	of=def-use at=10:56 i=1 n=3
+arg	src/Talk.flix	10	68	10	69	Talk.box	Talk.boxes	of=def-use at=10:56 i=2 n=3
+def-use	src/Talk.flix	10	73	10	76	Talk.box	Talk.boxes	
+arg	src/Talk.flix	10	77	10	80	Talk.box	Talk.boxes	of=def-use at=10:73 i=0 n=3
+arg	src/Talk.flix	10	82	10	83	Talk.box	Talk.boxes	of=def-use at=10:73 i=1 n=3
+arg	src/Talk.flix	10	85	10	86	Talk.box	Talk.boxes	of=def-use at=10:73 i=2 n=3
+def-decl	src/Talk.flix	13	13	13	16	Talk.tag	Talk.tag	pub ext=12:5:17:46
+type-use	src/Talk.flix	13	22	13	29	Lib.Ctx	Talk.tag	what=alias
+type-use	src/Talk.flix	14	20	14	29	Lib.World	Talk.tag	what=alias
+def-use	src/Talk.flix	16	17	16	27	ViewEnv.of	Talk.tag	
+arg	src/Talk.flix	16	28	16	31	ViewEnv.of	Talk.tag	of=def-use at=16:17 i=0 n=2
+arg	src/Talk.flix	16	33	16	34	ViewEnv.of	Talk.tag	of=def-use at=16:17 i=1 n=2
+def-use	src/Talk.flix	17	28	17	43	Lib.Clock.nowOf	Talk.tag	
+arg	src/Talk.flix	17	44	17	45	Lib.Clock.nowOf	Talk.tag	of=def-use at=17:28 i=0 n=1
+def-decl	src/Talk.flix	19	13	19	17	Talk.tags	Talk.tags	pub ext=19:5:19:69
+type-use	src/Talk.flix	19	23	19	30	Lib.Ctx	Talk.tags	what=alias
+type-use	src/Talk.flix	19	35	19	44	Lib.World	Talk.tags	what=alias
+def-use	src/Talk.flix	19	55	19	58	Talk.tag	Talk.tags	
+arg	src/Talk.flix	19	59	19	62	Talk.tag	Talk.tags	of=def-use at=19:55 i=0 n=3
+arg	src/Talk.flix	19	64	19	65	Talk.tag	Talk.tags	of=def-use at=19:55 i=1 n=3
+arg	src/Talk.flix	19	67	19	68	Talk.tag	Talk.tags	of=def-use at=19:55 i=2 n=3
+def-decl	src/Talk.flix	22	13	22	16	Talk.odd	Talk.odd	pub ext=21:5:23:73
+type-use	src/Talk.flix	22	22	22	29	Lib.Ctx	Talk.odd	what=alias
+type-use	src/Talk.flix	22	34	22	43	Lib.World	Talk.odd	what=alias
+def-use	src/Talk.flix	23	21	23	34	ViewEnv.resOf	Talk.odd	
+arg	src/Talk.flix	23	37	23	50	ViewEnv.resOf	Talk.odd	of=def-use at=23:21 i=0 n=1
+def-use	src/Talk.flix	23	62	23	70	Lib.tick	Talk.odd	
+arg	src/Talk.flix	23	71	23	72	Lib.tick	Talk.odd	of=def-use at=23:62 i=0 n=1
+def-decl	src/Talk.flix	25	13	25	17	Talk.odds	Talk.odds	pub ext=25:5:25:71
+type-use	src/Talk.flix	25	23	25	30	Lib.Ctx	Talk.odds	what=alias
+type-use	src/Talk.flix	25	35	25	44	Lib.World	Talk.odds	what=alias
+def-use	src/Talk.flix	25	60	25	63	Talk.odd	Talk.odds	
+arg	src/Talk.flix	25	64	25	67	Talk.odd	Talk.odds	of=def-use at=25:60 i=0 n=2
+arg	src/Talk.flix	25	69	25	70	Talk.odd	Talk.odds	of=def-use at=25:60 i=1 n=2
+alias-decl	src/ViewEnv.flix	3	20	3	23	ViewEnv.Res	ViewEnv.Res	
+alias-decl	src/ViewEnv.flix	4	20	4	23	ViewEnv.Env	ViewEnv.Env	
+type-use	src/ViewEnv.flix	4	34	4	41	Lib.Ctx	ViewEnv.Env	what=alias
+type-use	src/ViewEnv.flix	4	49	4	52	ViewEnv.Res	ViewEnv.Env	what=alias
+type-use	src/ViewEnv.flix	4	60	4	74	Lib.Clock.Time	ViewEnv.Env	what=alias
+def-decl	src/ViewEnv.flix	6	13	6	15	ViewEnv.of	ViewEnv.of	pub ext=6:5:7:64
+type-use	src/ViewEnv.flix	6	21	6	28	Lib.Ctx	ViewEnv.of	what=alias
+type-use	src/ViewEnv.flix	6	33	6	42	Lib.World	ViewEnv.of	what=alias
+type-use	src/ViewEnv.flix	6	45	6	48	ViewEnv.Env	ViewEnv.of	what=alias
+def-use	src/ViewEnv.flix	7	28	7	33	ViewEnv.resOf	ViewEnv.of	
+arg	src/ViewEnv.flix	7	34	7	35	ViewEnv.resOf	ViewEnv.of	of=def-use at=7:28 i=0 n=1
+def-use	src/ViewEnv.flix	7	44	7	59	Lib.Clock.nowOf	ViewEnv.of	
+arg	src/ViewEnv.flix	7	60	7	61	Lib.Clock.nowOf	ViewEnv.of	of=def-use at=7:44 i=0 n=1
+def-decl	src/ViewEnv.flix	9	13	9	18	ViewEnv.resOf	ViewEnv.resOf	pub ext=9:5:9:78
+type-use	src/ViewEnv.flix	9	22	9	31	Lib.World	ViewEnv.resOf	what=alias
+type-use	src/ViewEnv.flix	9	34	9	37	ViewEnv.Res	ViewEnv.resOf	what=alias
+def-decl	src/Wrap.flix	5	13	5	18	Wrap.stand	Wrap.stand	pub ext=4:5:5:78
+type-use	src/Wrap.flix	5	22	5	31	Lib.World	Wrap.stand	what=alias
+def-use	src/Wrap.flix	5	42	5	49	Wrap.standIn	Wrap.stand	
+arg	src/Wrap.flix	5	50	5	57	Wrap.standIn	Wrap.stand	of=def-use at=5:42 i=0 n=2
+def-use	src/Wrap.flix	5	59	5	74	Lib.Clock.nowOf	Wrap.stand	
+arg	src/Wrap.flix	5	59	5	77	Wrap.standIn	Wrap.stand	of=def-use at=5:42 i=1 n=2
+arg	src/Wrap.flix	5	75	5	76	Lib.Clock.nowOf	Wrap.stand	of=def-use at=5:59 i=0 n=1
+def-decl	src/Wrap.flix	8	13	8	20	Wrap.standIn	Wrap.standIn	pub ext=7:5:8:63
+def-decl	src/Wrap.flix	11	13	11	18	Wrap.plain	Wrap.plain	pub ext=10:5:11:57
+type-use	src/Wrap.flix	11	22	11	31	Lib.World	Wrap.plain	what=alias
+def-use	src/Wrap.flix	11	42	11	47	Wrap.blank	Wrap.plain	
+arg	src/Wrap.flix	11	48	11	56	Wrap.blank	Wrap.plain	of=def-use at=11:42 i=0 n=1
+def-decl	src/Wrap.flix	13	13	13	18	Wrap.blank	Wrap.blank	pub ext=13:5:13:43
+def-decl	src/Wrap.flix	16	13	16	17	Wrap.keep	Wrap.keep	pub ext=15:5:16:54
+type-use	src/Wrap.flix	16	21	16	30	Lib.World	Wrap.keep	what=alias
+def-use	src/Wrap.flix	16	41	16	45	Wrap.kept	Wrap.keep	
+arg	src/Wrap.flix	16	46	16	53	Wrap.kept	Wrap.keep	of=def-use at=16:41 i=0 n=1
+def-decl	src/Wrap.flix	19	13	19	17	Wrap.kept	Wrap.kept	pub ext=18:5:19:42
+def-decl	test/TestSigprep.flix	2	13	2	17	TestSigprep.uses	TestSigprep.uses	pub ext=2:5:5:64
+def-use	test/TestSigprep.flix	4	9	4	19	Talk.boxes	TestSigprep.uses	
+arg	test/TestSigprep.flix	4	22	4	33	Talk.boxes	TestSigprep.uses	of=def-use at=4:9 i=0 n=2
+arg	test/TestSigprep.flix	4	35	4	36	Talk.boxes	TestSigprep.uses	of=def-use at=4:9 i=1 n=2
+def-use	test/TestSigprep.flix	4	40	4	49	Talk.tags	TestSigprep.uses	
+arg	test/TestSigprep.flix	4	52	4	63	Talk.tags	TestSigprep.uses	of=def-use at=4:40 i=0 n=2
+arg	test/TestSigprep.flix	4	65	4	66	Talk.tags	TestSigprep.uses	of=def-use at=4:40 i=1 n=2
+def-use	test/TestSigprep.flix	4	70	4	81	Stand.stand	TestSigprep.uses	
+arg	test/TestSigprep.flix	4	82	4	83	Stand.stand	TestSigprep.uses	of=def-use at=4:70 i=0 n=2
+arg	test/TestSigprep.flix	4	85	4	86	Stand.stand	TestSigprep.uses	of=def-use at=4:70 i=1 n=2
+def-use	test/TestSigprep.flix	4	90	4	101	Plain.stand	TestSigprep.uses	
+arg	test/TestSigprep.flix	4	102	4	103	Plain.stand	TestSigprep.uses	of=def-use at=4:90 i=0 n=2
+arg	test/TestSigprep.flix	4	105	4	106	Plain.stand	TestSigprep.uses	of=def-use at=4:90 i=1 n=2
+def-use	test/TestSigprep.flix	5	15	5	27	Wrap.standIn	TestSigprep.uses	
+arg	test/TestSigprep.flix	5	28	5	29	Wrap.standIn	TestSigprep.uses	of=def-use at=5:15 i=0 n=2
+arg	test/TestSigprep.flix	5	31	5	32	Wrap.standIn	TestSigprep.uses	of=def-use at=5:15 i=1 n=2
+def-use	test/TestSigprep.flix	5	36	5	46	Wrap.blank	TestSigprep.uses	
+arg	test/TestSigprep.flix	5	47	5	48	Wrap.blank	TestSigprep.uses	of=def-use at=5:36 i=0 n=1
+def-use	test/TestSigprep.flix	5	52	5	61	Wrap.kept	TestSigprep.uses	
+arg	test/TestSigprep.flix	5	62	5	63	Wrap.kept	TestSigprep.uses	of=def-use at=5:52 i=0 n=1
