@@ -49,6 +49,7 @@ lint・フック・make の口で止まる決まりはここに書かない（�
 | 直す前に参照・match・欄の読み書きを数える | `bin/fge refactor`（refs・match-sites・field-sites） |
 | `case _` を書き出す・不要な pub を消す | `bin/fge refactor`（expand-wildcard・remove-dead） |
 | record の欄の直の読み書きを口の関数へ替える | `bin/fge refactor field-to-accessor` |
+| record の型から欄を消す・足す（組み立ての式も一緒に直す） | `bin/fge refactor`（remove-field・fix-construction） |
 | 重い処理を順に流す | `bin/fge heavy <コマンド>`（`--help`・`--status`・`--history`） |
 | 作業場を別の版のエンジンへ一時的に向ける | `bin/fge use-engine <版かパス>`・戻すは `--restore` |
 | 案を並べて依頼主に選んでもらう | `reports/<名前>/proposal.json` → `bin/fge proposal` |

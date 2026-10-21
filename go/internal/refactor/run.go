@@ -26,6 +26,14 @@ const Usage = `使い方: fge refactor <操作> [引数] [--json] [--max N] [--l
                                                        S(v, e)・M(x -> f(x), e)（v が e#x を読む時）・M(_ -> v, e) へ（typed の段）。
                                                        { x = v, y = u | e } は { y = u | S(v, e) } に。
                                                        R の戻りの型と欄の型が字で違えば読みは替えない。口の def の中は替えない
+  remove-field --label x (--receiver T | --case E.C) [--apply] [--skip file:line]
+                                                       record の型（alias T か enum の case E.C の record）から欄 x を消し、
+                                                       組み立て（record の式）からも消す（typed の段）。欄の直の読み書きが
+                                                       残っていれば場所を並べて止める（case の record は受け手が ? の物も数える）
+  fix-construction --label x (--receiver T | --case E.C) [--value EXPR] [--apply] [--skip file:line]
+                                                       組み立て（record の式）の欄を型に合わせる: 型に x があれば無い式へ
+                                                       x = EXPR を足し、型に x が無ければある式から消す。式は欄の組で当てる
+                                                       （型の別名を通した物も拾う・欄の組が同じ別の型があれば fix）
 
   書き換える操作は既定で dry-run（build/refactor/last.diff を書くだけ）。--apply で書き、確かめの口（refactor.json の
   verify・remove-dead は verifyTests）を流し、落ちたら書いた patch（build/refactor/last.patch）だけを戻す。
@@ -57,6 +65,7 @@ type args struct {
 	only                                                  string
 	def                                                   string
 	reader, mapper, setter                                string
+	caseName, value                                       string
 	skip                                                  map[string]bool
 	max, limit                                            int // max < 0 は無し・limit 0 は全部
 }
@@ -115,6 +124,10 @@ func parseArgs(rest []string) (args, error) {
 			a.mapper, err = value(&i, x)
 		case "--setter":
 			a.setter, err = value(&i, x)
+		case "--case":
+			a.caseName, err = value(&i, x)
+		case "--value":
+			a.value, err = value(&i, x)
 		case "--flixlint":
 			a.flixlint, err = value(&i, x)
 		case "--stage":
@@ -158,7 +171,7 @@ func parseArgs(rest []string) (args, error) {
 // stageOf は操作が要る段（--stage で上げられる）。
 func (a args) stageOf() (Stage, error) {
 	need := Resolved
-	if a.op == "field-sites" || a.op == "field-to-accessor" {
+	if a.op == "field-sites" || a.op == "field-to-accessor" || a.op == "remove-field" {
 		need = Typed
 	}
 	switch Stage(a.stage) {
@@ -214,9 +227,14 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 			fmt.Fprintln(errOut, "refactor field-to-accessor: 書きの口は --mapper か --setter のどちらか 1 つ")
 			return 2
 		}
+	case "remove-field", "fix-construction":
+		if a.label == "" || (a.receiver == "") == (a.caseName == "") {
+			fmt.Fprintf(errOut, "refactor %s: --label <欄> と、--receiver <record の alias> か --case <Enum.Case> のどちらか 1 つが要ります（例 --label replayClock --receiver World）\n", a.op)
+			return 2
+		}
 	case "index", "remove-dead":
 	default:
-		fmt.Fprintf(errOut, "refactor: 知らない操作 %s（refs・match-sites・field-sites・index・expand-wildcard・remove-dead・field-to-accessor）\n", a.op)
+		fmt.Fprintf(errOut, "refactor: 知らない操作 %s（refs・match-sites・field-sites・index・expand-wildcard・remove-dead・field-to-accessor・remove-field・fix-construction）\n", a.op)
 		return 2
 	}
 	stage, err := a.stageOf()
@@ -259,6 +277,10 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 		rep, err = deadReport(root, idx, a, cfg, o)
 	case "field-to-accessor":
 		rep, err = accessorReport(root, idx, a, cfg, o)
+	case "remove-field":
+		rep, err = removeFieldReport(root, idx, a, cfg, o)
+	case "fix-construction":
+		rep, err = fixConstructionReport(root, idx, a, cfg, o)
 	}
 	if err != nil {
 		fmt.Fprintf(errOut, "refactor %s: %v\n", a.op, err)

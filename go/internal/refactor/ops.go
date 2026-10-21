@@ -299,3 +299,216 @@ func rel(p string) string {
 	}
 	return p
 }
+
+// loadSources は索引に入れるフォルダの .flix を全部読む（根からの相対 → 中身）。
+func loadSources(root string, cfg Config) (map[string]string, error) {
+	files, err := flixFiles(root, (Builder{Root: root, Config: cfg}).sources())
+	if err != nil {
+		return nil, err
+	}
+	srcs := map[string]string{}
+	for _, f := range files {
+		b, err := os.ReadFile(filepath.Join(root, f))
+		if err != nil {
+			return nil, err
+		}
+		srcs[filepath.ToSlash(f)] = string(b)
+	}
+	return srcs, nil
+}
+
+// shapeOf は --receiver（record の alias）か --case（enum の case の record）が指す型。
+func shapeOf(idx *Index, a args, srcs map[string]string) (Shape, error) {
+	if a.caseName == "" {
+		return FindAliasShape(srcs, a.receiver)
+	}
+	sym, err := Resolve(idx.Rows, a.caseName, map[string]bool{KindCaseDecl: true})
+	if err != nil {
+		return Shape{}, err
+	}
+	for _, r := range idx.Rows {
+		if r.Kind == KindCaseDecl && r.Sym == sym {
+			src, ok := srcs[r.File]
+			if !ok {
+				return Shape{}, fmt.Errorf("case %s の宣言のファイル %s が sources に無い", sym, r.File)
+			}
+			return FindCaseShape(src, r)
+		}
+	}
+	return Shape{}, fmt.Errorf("case %s の宣言が索引に無い（パッケージの case は直せない）", sym)
+}
+
+func shapeFlag(a args) string {
+	if a.caseName != "" {
+		return "--case " + a.caseName
+	}
+	return "--receiver " + a.receiver
+}
+
+// constructionPlan は型 shape の組み立てを、欄の組 before から 1 欄変える計画（ほかに同じ欄の組の型があれば fix）。
+func constructionPlan(idx *Index, a args, shape Shape, before []string, add bool, srcs map[string]string) (ConstructionPlan, error) {
+	key := fieldKey(before)
+	var others []string
+	for _, at := range AllShapeKeys(srcs)[key] {
+		if at != fmt.Sprintf("%s:%d", shape.File, shape.Brace) {
+			others = append(others, at[:strings.LastIndex(at, ":")])
+		}
+	}
+	var defs []Row
+	for _, r := range idx.Rows {
+		if r.Kind == KindDefDecl {
+			defs = append(defs, r)
+		}
+	}
+	return PlanConstruction(ConstructionQuery{Shape: shape, Label: a.label, Add: add, Value: a.value, Before: key, Others: others, Skip: a.skip, Defs: defs, Srcs: srcs})
+}
+
+func constructionLines(r *report, plan ConstructionPlan) {
+	for _, s := range plan.Sites {
+		r.lines = append(r.lines, fmt.Sprintf("%-44s %s（%s）", s.Where(), s.Why, s.Owner))
+	}
+	for _, f := range plan.Fix {
+		r.lines = append(r.lines, fmt.Sprintf("%-44s fix  %s（%s）", f.Where(), f.Why, f.Owner))
+	}
+}
+
+// fixConstructionReport は fix-construction の入口: 組み立て（record の式）の欄を型に合わせる。
+// 型に欄があれば、無い組み立てへ --value の式で足す。型に欄が無ければ、ある組み立てから消す。
+func fixConstructionReport(root string, idx *Index, a args, cfg Config, o Options) (report, error) {
+	srcs, err := loadSources(root, cfg)
+	if err != nil {
+		return report{}, err
+	}
+	shape, err := shapeOf(idx, a, srcs)
+	if err != nil {
+		return report{}, err
+	}
+	add := shape.Has(a.label)
+	var before []string
+	switch {
+	case add && a.value == "":
+		return report{}, fmt.Errorf("型 %s に欄 %s がある: 組み立てへ足す値を --value <式> で渡す（型から消すなら remove-field）", shape.Name, a.label)
+	case !add && a.value != "":
+		return report{}, fmt.Errorf("型 %s に欄 %s が無い: 先に型へ欄を足す（1 行）。--value は足す時だけ", shape.Name, a.label)
+	case add:
+		for _, f := range shape.Fields {
+			if f != a.label {
+				before = append(before, f)
+			}
+		}
+	default:
+		before = append(append(before, shape.Fields...), a.label)
+	}
+	plan, err := constructionPlan(idx, a, shape, before, add, srcs)
+	if err != nil {
+		return report{}, err
+	}
+	out := Change(root, plan.Edits, a.apply, cfg.Verify, o.Verify)
+	r := report{Op: "fix-construction", Target: shape.Name + "#" + a.label, code: CodeFixConstruction, Outcome: &out, Fix: plan.Fix}
+	r.got = len(plan.Fix)
+	if out.State == StateReverted || out.State == StateRefused {
+		r.got = len(plan.Sites) + len(plan.Fix)
+	}
+	r.Sites = plan.Sites
+	verb := "消す"
+	if add {
+		verb = "足す"
+	}
+	r.gotText = fmt.Sprintf("%s を組み立てる式のうち欄 %s を%s所 %d・人へ回す %d・もう型に合っている %d", shape.Name, a.label, verb, len(plan.Sites), len(plan.Fix), plan.Already)
+	r.extra = append(r.extra, shapeNote(shape))
+	r.wantText = fmt.Sprintf("%s の組み立ての欄の組が型と同じ（決められない所は fix）", shape.Name)
+	constructionLines(&r, plan)
+	base := fmt.Sprintf("bin/fge refactor fix-construction --label %s %s", a.label, shapeFlag(a))
+	if add {
+		base += " --value '" + a.value + "'"
+	}
+	nextOf(&r, base, a, &out)
+	return r, nil
+}
+
+// removeFieldReport は remove-field の入口: 欄の直の読み書きが 0 件なら、型から欄を消し、組み立てからも消す。
+func removeFieldReport(root string, idx *Index, a args, cfg Config, o Options) (report, error) {
+	srcs, err := loadSources(root, cfg)
+	if err != nil {
+		return report{}, err
+	}
+	shape, err := shapeOf(idx, a, srcs)
+	if err != nil {
+		return report{}, err
+	}
+	if !shape.Has(a.label) {
+		return report{}, fmt.Errorf("型 %s に欄 %s が無い（型から消した後の組み立ては fix-construction --label %s %s）", shape.Name, a.label, a.label, shapeFlag(a))
+	}
+	r := report{Op: "remove-field", Target: shape.Name + "#" + a.label, code: CodeRemoveField}
+	// 欄の直の読み書き。case の record は受け手に alias が無い（recv=?）ので、受け手の型が決まらない物を全部数える。
+	var left []FieldSite
+	if a.caseName == "" {
+		ans := FieldSites(idx.Rows, FieldQuery{Label: a.label, Receiver: a.receiver})
+		left = append(ans.Sites, ans.Unsure...)
+	} else {
+		for _, s := range FieldSites(idx.Rows, FieldQuery{Label: a.label}).Sites {
+			if s.Recv == "?" {
+				left = append(left, s)
+			}
+		}
+	}
+	if len(left) > 0 {
+		out := Outcome{State: StateRefused, Reason: fmt.Sprintf("欄 %s の直の読み書きが %d 件残っている（0 件の時だけ消す）", a.label, len(left))}
+		r.Outcome, r.got, r.Sites = &out, len(left), left
+		r.gotText = fmt.Sprintf("欄 %s の直の読み書き %d（%s）", a.label, len(left), split(func() []Row {
+			rows := make([]Row, len(left))
+			for i, s := range left {
+				rows[i] = s.Row
+			}
+			return rows
+		}()))
+		if a.caseName != "" {
+			r.extra = append(r.extra, "case の record は受け手の型が索引で決まらないので、同じ名前の欄で受け手の型が ? の物を全部数えた")
+		}
+		r.wantText = fmt.Sprintf("欄 %s の直の読み書き 0", a.label)
+		for _, s := range left {
+			rw := "読み"
+			if s.Write {
+				rw = "書き"
+			}
+			r.lines = append(r.lines, fmt.Sprintf("%-44s %s  %-20s %s", s.Where(), rw, s.Recv, s.Owner))
+		}
+		r.fixHint = "読み書きを口へ替える（field-to-accessor）か消してから。使われなくなった口の def は remove-dead --def で消す"
+		if a.caseName == "" {
+			r.Next, r.NextWhy = fmt.Sprintf("bin/fge refactor field-sites --label %s --receiver %s", a.label, a.receiver), "残っている所の一覧"
+		}
+		return r, nil
+	}
+	plan, err := constructionPlan(idx, a, shape, shape.Fields, false, srcs)
+	if err != nil {
+		return report{}, err
+	}
+	label := a.label
+	typeRow := rowAt(shape.File, srcs[shape.File], shape.Brace, shape.Name)
+	edits := append(append([]Edit{}, plan.Edits...), Edit{File: shape.File, Start: shape.Brace, End: shape.End, Site: typeRow,
+		Make: func(cur string) (string, error) { return RemoveRecordField(cur, label) }})
+	out := Change(root, edits, a.apply, cfg.Verify, o.Verify)
+	r.Outcome, r.Fix = &out, plan.Fix
+	r.got = len(plan.Fix)
+	if out.State == StateReverted || out.State == StateRefused {
+		r.got = len(plan.Sites) + len(plan.Fix) + 1
+	}
+	r.Sites = append([]Fixed{{typeRow, "型から欄 " + label + " を消す"}}, plan.Sites...)
+	r.gotText = fmt.Sprintf("直の読み書き 0・型から消す 1（%s）・組み立てから消す %d・人へ回す %d", typeRow.Where(), len(plan.Sites), len(plan.Fix))
+	r.extra = append(r.extra, shapeNote(shape))
+	r.wantText = fmt.Sprintf("%s に欄 %s が無く、組み立ても型と同じ欄の組（決められない所は fix）", shape.Name, label)
+	r.lines = append(r.lines, fmt.Sprintf("%-44s 型から欄 %s を消す", typeRow.Where(), label))
+	constructionLines(&r, plan)
+	nextOf(&r, fmt.Sprintf("bin/fge refactor remove-field --label %s %s", label, shapeFlag(a)), a, &out)
+	return r, nil
+}
+
+// shapeNote は型の 1 行（欄が多ければ数と頭の数個だけ。全部は --json の外で読む）。
+func shapeNote(s Shape) string {
+	shown := s.Fields
+	more := ""
+	if len(shown) > 8 {
+		shown, more = shown[:8], fmt.Sprintf("…ほか %d", len(s.Fields)-8)
+	}
+	return fmt.Sprintf("型: %s（%s）の欄 %d: %s%s", s.Name, s.File, len(s.Fields), strings.Join(shown, "・"), more)
+}

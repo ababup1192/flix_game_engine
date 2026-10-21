@@ -5,6 +5,8 @@
 //	refactor match-sites <Enum|Enum.Case> [--catch-all]      match の位置・腕の数・`_` の腕
 //	refactor field-sites --label x [--receiver T] [--outside Mod]   record の欄の直の読み書き
 //
+// 書き換える操作（expand-wildcard・remove-dead・field-to-accessor・remove-field・fix-construction）は Usage を見る。
+//
 // 索引は flixlint の shim が書く（コンパイラの AST から。名前解決も型もコンパイラの物）。
 // 段は 2 つ: resolved（def・case・enum・match。速い）と typed（欄の読み書きと受け手の型。遅い）。
 // 操作は要る段だけを作る。置き場は build/refactor/spans-<段>.tsv、鍵は src・test の .flix の中身・

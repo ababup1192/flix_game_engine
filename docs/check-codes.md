@@ -73,9 +73,11 @@ near の帯は bin/lint-rules/checkfmt.json の near（code ごと。無けれ�
 | `refactor.expand-wildcard` | lint | catch_all_left | count | <= | 0（書き出せない腕は fix） | enum への match の `case _` を残りの case に書き出した後に、人へ回した腕の数 |
 | `refactor.field-sites` | lint | field_sites | count | <= | --max（欄の歯止めは --outside <口の mod> --max 0） | record の欄の直の読み書きの数（受け手の型 alias で絞る） |
 | `refactor.field-to-accessor` | lint | field_sites_left | count | <= | 0（受け手の型が決まらない・読めない式・型の違う口は fix） | record の欄の直の読み書きを口（読み・書き）へ替えた後に、人へ回した数 |
+| `refactor.fix-construction` | lint | construction_left | count | <= | 0（欄の組が同じ別の型の組み立ては fix） | record を組み立てる式の欄を型に合わせた（足した・消した）後に、人へ回した数 |
 | `refactor.match-sites` | lint | match_sites | count | <= | --max（無ければ一覧だけ） | enum（か case）への match の数。--catch-all なら `_`・変数の腕を持つ物だけ |
 | `refactor.refs` | lint | refs | count | <= | --max（無ければ一覧だけ） | def・enum・case の参照の数（宣言は数えない） |
 | `refactor.remove-dead` | lint | dead_left | count | <= | 0（決められない def は fix） | テストからだけ・どこからも参照されない pub の def を消した後に、人へ回した数 |
+| `refactor.remove-field` | lint | construction_left | count | <= | 0（直の読み書きが残れば止める・欄の組が同じ別の型の組み立ては fix） | record の型から欄を消し、組み立てからも消した後に、人へ回した数（止めた時は残っている直の読み書きの数） |
 | `snd.alias` | advice | third_harmonic_hz | Hz | <= |  | パルスの 3 倍音とナイキスト周波数 |
 | `snd.bars` | gate | bar_off | samples | <= | snd.json barTolerance | 輪の長さと tempo の整数小節の差 |
 | `snd.breaks` | advice | breaks | count | <= |  | 使った機種の外の手（style が許す物。破った所として残す） |

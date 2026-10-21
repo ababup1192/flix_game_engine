@@ -8,12 +8,14 @@ import (
 )
 
 const (
-	CodeRefs       = "refactor.refs"
-	CodeMatchSites = "refactor.match-sites"
-	CodeFieldSites = "refactor.field-sites"
-	CodeExpand     = "refactor.expand-wildcard"
-	CodeRemoveDead = "refactor.remove-dead"
-	CodeAccessor   = "refactor.field-to-accessor"
+	CodeRefs            = "refactor.refs"
+	CodeMatchSites      = "refactor.match-sites"
+	CodeFieldSites      = "refactor.field-sites"
+	CodeExpand          = "refactor.expand-wildcard"
+	CodeRemoveDead      = "refactor.remove-dead"
+	CodeAccessor        = "refactor.field-to-accessor"
+	CodeRemoveField     = "refactor.remove-field"
+	CodeFixConstruction = "refactor.fix-construction"
 )
 
 var codes = []checkres.Code{
@@ -29,6 +31,10 @@ var codes = []checkres.Code{
 		Rule: "0（決められない def は fix）", Summary: "テストからだけ・どこからも参照されない pub の def を消した後に、人へ回した数"},
 	{Name: CodeAccessor, Level: checklevel.Lint, Metric: "field_sites_left", Unit: "count", Op: checkres.AtMost,
 		Rule: "0（受け手の型が決まらない・読めない式・型の違う口は fix）", Summary: "record の欄の直の読み書きを口（読み・書き）へ替えた後に、人へ回した数"},
+	{Name: CodeRemoveField, Level: checklevel.Lint, Metric: "construction_left", Unit: "count", Op: checkres.AtMost,
+		Rule: "0（直の読み書きが残れば止める・欄の組が同じ別の型の組み立ては fix）", Summary: "record の型から欄を消し、組み立てからも消した後に、人へ回した数（止めた時は残っている直の読み書きの数）"},
+	{Name: CodeFixConstruction, Level: checklevel.Lint, Metric: "construction_left", Unit: "count", Op: checkres.AtMost,
+		Rule: "0（欄の組が同じ別の型の組み立ては fix）", Summary: "record を組み立てる式の欄を型に合わせた（足した・消した）後に、人へ回した数"},
 }
 
 func init() {

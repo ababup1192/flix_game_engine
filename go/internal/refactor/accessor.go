@@ -157,46 +157,79 @@ func (u Update) Find(label string) int {
 // ParseUpdate は text（`{` で始まる）を `{ a = v, b = u | e }` として読む。受け手の無い record の式・`+a`（欄を足す）・
 // 読めない字は誤り（訳つき）。値と e の中の括弧・文字列・字の字・行のコメントは飛ばす。`|>`・`||` は区切りに取らない。
 func ParseUpdate(text string) (Update, error) {
+	u, closed, err := ParseRecord(text)
+	if err == nil && closed {
+		return u, fmt.Errorf("受け手の無い record の式")
+	}
+	return u, err
+}
+
+// ParseRecord は text（`{` で始まる）を欄の並び `{ a = v, b = u }`（closed）か `{ a = v | e }` として読む。
+// record の式・record の型（`{ a = Int32 }`）のどちらも同じ形で読める。欄の前のコメントは飛ばす。
+// closed の時の EStart・EEnd は -1。
+func ParseRecord(text string) (Update, bool, error) {
 	var u Update
 	if !strings.HasPrefix(text, "{") {
-		return u, fmt.Errorf("`{` で始まらない")
+		return u, false, fmt.Errorf("`{` で始まらない")
 	}
-	i := skipSpace(text, 1)
+	i := skipBlank(text, 1)
 	for {
 		j := i
 		for j < len(text) && identByte(text[j]) {
 			j++
 		}
 		if j == i {
-			return u, fmt.Errorf("欄の名前が読めない（`+a`・`-a` の更新か record の式でない）")
+			return u, false, fmt.Errorf("欄の名前が読めない（`+a`・`-a` の更新か record の式でない）")
 		}
 		f := Field{Name: text[i:j], Start: i}
 		i = skipSpace(text, j)
-		if i >= len(text) || text[i] != '=' || (i+1 < len(text) && text[i+1] == '=') {
-			return u, fmt.Errorf("欄 %s の後に = が無い", f.Name)
+		if i >= len(text) || text[i] != '=' || (i+1 < len(text) && (text[i+1] == '=' || text[i+1] == '>')) {
+			return u, false, fmt.Errorf("欄 %s の後に = が無い", f.Name)
 		}
 		f.VStart = i + 1
 		stop, at, err := scanTop(text, f.VStart, ",|}")
 		if err != nil {
-			return u, err
+			return u, false, err
 		}
 		f.VEnd = at
 		u.Fields = append(u.Fields, f)
 		if stop == '}' {
-			return u, fmt.Errorf("受け手の無い record の式")
+			u.EStart, u.EEnd, u.End = -1, -1, at+1
+			return u, true, nil
 		}
 		if stop == '|' {
 			u.EStart = at + 1
 			break
 		}
-		i = skipSpace(text, at+1)
+		i = skipBlank(text, at+1)
 	}
 	_, at, err := scanTop(text, u.EStart, "}")
 	if err != nil {
-		return u, err
+		return u, false, err
 	}
 	u.EEnd, u.End = at, at+1
-	return u, nil
+	return u, false, nil
+}
+
+// skipBlank は空白と行のコメント（`// …`）・塊のコメント（`/* … */`）を飛ばす。
+func skipBlank(s string, i int) int {
+	for {
+		i = skipSpace(s, i)
+		switch {
+		case strings.HasPrefix(s[i:], "//"):
+			for i < len(s) && s[i] != '\n' {
+				i++
+			}
+		case strings.HasPrefix(s[i:], "/*"):
+			k := strings.Index(s[i+2:], "*/")
+			if k < 0 {
+				return len(s)
+			}
+			i += k + 4
+		default:
+			return i
+		}
+	}
 }
 
 // RewriteUpdate は cur（`{ … | e }`）から欄 label を外し、受け手 e を wrap(v, e) で包んだ字を返す（v は外した欄の値）。
@@ -311,8 +344,8 @@ func usesName(text, name string) bool {
 }
 
 type readSite struct {
-	row         Row
-	start, end  int // 受け手の始まり〜欄の名前の終わり
+	row        Row
+	start, end int // 受け手の始まり〜欄の名前の終わり
 	recv       string
 }
 
