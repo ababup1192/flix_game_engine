@@ -241,7 +241,11 @@ func (b Builder) Load(s Stage) (*Index, error) {
 	}
 	tmp := path + ".tmp"
 	os.Remove(tmp)
-	cmd := []string{b.Flixlint, "--spans", tmp, "--stage", string(s), "--build-dir", filepath.Join(b.Dir(), "flixlint")}
+	// --resident: 索引も lint（make lint）と同じ常駐の server（プロジェクトの根と flix.jar・shim の jar ごとに 1 つ）で作る。
+	// 2 回目からは変わったファイルだけ組み直し、server が lint を流している間は並ぶ（flixlint が「前に N 本」を 1 行言う）。
+	// WhyNot: 1 回きりの JVM にしない。typed の索引は JVM に 4〜5 GB を取り、lint の server と並べると 2 本になる。
+	// build ディレクトリは走行ごとの引数なので、lint と分けたままでよい（同じ server を使う）。
+	cmd := []string{b.Flixlint, "--resident", "--spans", tmp, "--stage", string(s), "--build-dir", filepath.Join(b.Dir(), "flixlint")}
 	if b.FlixJar != "" {
 		cmd = append(cmd, "--flix-jar", b.FlixJar)
 	}
@@ -576,8 +580,9 @@ func LookPath(name string) string {
 	return p
 }
 
-// MinFlixlint は読める索引（--spans・形の版 FormatVersion）を書く一番古い flixlint の版。
-const MinFlixlint = "0.6.0"
+// MinFlixlint は読める索引（--spans・形の版 FormatVersion）を書き、--resident を知る一番古い flixlint の版。
+// 0.6.5 の常駐は build ディレクトリごとに別の JVM。lint と 1 つの JVM を共有するのは 0.6.6 から（protocol 2・鍵は根 × identity）。
+const MinFlixlint = "0.6.5"
 
 // MinFlixlintUsages は usages の型の注記と use（resolved の段の adds=use,type-use,alias-decl）を書く一番古い flixlint の版。
 // それより古い索引でも usages は動き、その 2 つを数えない。
