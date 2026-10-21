@@ -581,7 +581,7 @@ func LookPath(name string) string {
 }
 
 // MinFlixlint は読める索引（--spans・形の版 FormatVersion）を書き、--resident を知る一番古い flixlint の版。
-// 0.6.5 の常駐は build ディレクトリごとに別の JVM。lint と 1 つの JVM を共有するのは 0.6.6 から（protocol 2・鍵は根 × identity）。
+// 0.6.5 の常駐は build ディレクトリごとに別の JVM。lint と 1 つの JVM を共有するのは 0.7.1 から（protocol 2・鍵は根 × identity）。
 const MinFlixlint = "0.6.5"
 
 // MinFlixlintUsages は usages の型の注記と use（resolved の段の adds=use,type-use,alias-decl）を書く一番古い flixlint の版。

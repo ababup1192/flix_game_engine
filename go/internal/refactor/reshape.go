@@ -13,7 +13,7 @@ import (
 // 式の中で名前として使われている所を探す・小さな式（テンプレート）の名前を呼ぶ所の引数の式で置き換える。
 //
 // どこを替えるか（作る所・当てる所・呼ぶ所と、その引数の数・関数として渡しているか）は索引（def-use・case-construct・
-// case-pattern と flixlint 0.6.6 の arg の行）で決め、引数 1 つずつの範囲はソースの字で読む。
+// case-pattern と flixlint 0.7.1 の arg の行）で決め、引数 1 つずつの範囲はソースの字で読む。
 // WhyNot: arg の行の範囲をそのまま使わないのは、コンパイラの record の式の範囲が `{` でなく最初の欄から始まるため
 // （`f({ a = 1 })` の引数が `a = 1 }` になる）。並びは名前の直後の `(` から括弧の深さで切り、数を索引の n と比べる。
 //
@@ -23,7 +23,7 @@ import (
 const KindArg = "arg"
 
 // MinFlixlintArgs は arg の行（頭の行の adds= に arg）を書く一番古い flixlint の版。
-const MinFlixlintArgs = "0.6.6"
+const MinFlixlintArgs = "0.7.1"
 
 // ArgList は名前の直後の `( … )` の引数の並び（位置は中身のバイト）。
 type ArgList struct {
