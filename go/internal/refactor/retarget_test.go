@@ -246,3 +246,63 @@ func TestIndexWithoutTheAddsTheOpNeedsIsRefused(t *testing.T) {
 	}
 	mustContain(t, errOut.String(), "adds=", "param")
 }
+
+// 中-1: 1 つのファイルに 2 つの mod。TwoA の use ViewEnv.Res は TwoB の中では効かないので、TwoB の葉の --params の Res は
+// TwoB.Res。TwoB.top の r（TwoB.Res）は同じ型なので、広げずに r を書く（別の mod の use で引くと top にも res を足してしまう）。
+func TestPropagateResolvesTheTypeOnlyWithUsesOfTheSameMod(t *testing.T) {
+	root := fixtureRoot(t, "propagate-view")
+	code, out, _ := runFixture(t, "propagate-view", root, "change-signature", "--def", "TwoB.leaf",
+		"--params", "res: Res, w", "--args", "@res=TwoB.defaults(), w", "--propagate", "--apply")
+	if code != 0 {
+		t.Fatalf("終了コード %d:\n%s", code, out)
+	}
+	mustContain(t, read(t, root, "src/Two.flix"), "pub def top(r: Res, w: Int32): Int32 = leaf(r, w) + r#scale")
+}
+
+// 中-3: 呼ぶ所を囲む def が同じ名前・別の型の引数（res: ViewEnv.Res）を持つ。res を書くと型が合わず、res を足すと名前が
+// 重なるので、その def へは広げずに止める（@res=式 があるので呼ぶ所には式を書く）。
+func TestPropagateStopsAtADefWithAParameterOfTheSameNameAndAnotherType(t *testing.T) {
+	root := fixtureRoot(t, "propagate-view")
+	code, out, _ := runFixture(t, "propagate-view", root, "change-signature", "--def", "Clash.leaf",
+		"--params", "res: Res, w", "--args", "@res=Res.defaults(), w", "--propagate", "--apply")
+	if code != 0 {
+		t.Fatalf("終了コード %d:\n%s", code, out)
+	}
+	mustContain(t, read(t, root, "src/Clash.flix"), "pub def other(res: ViewEnv.Res, w: Int32): Int32 = leaf(Res.defaults(), w) + res#atlas")
+	mustContain(t, out, "同じ名前・別の型の引数 res を持つ")
+}
+
+// 中-2: @res=式 の式が --from（w）を読むと、読み替えが先に式の中の w#… を替え、本体の式を res に替えられずに意味が変わる。
+// --retarget を fix で断る。
+func TestPropagateRetargetRefusesAFallbackThatReadsTheFromParameter(t *testing.T) {
+	root := fixtureRoot(t, "retarget")
+	before := read(t, root, "src/Tutorial.flix")
+	code, out, cmds := runFixture(t, "retarget", root, "change-signature", "--def", "Tutorial.penOf",
+		"--params", "res: Res", "--args", "@res={ tutorialDoc = w#tutorialDoc, theme = 0 }", "--propagate", "--retarget", "tutorialDoc", "--from", "w", "--apply", "--all")
+	if code != 2 || len(cmds) != 0 || read(t, root, "src/Tutorial.flix") != before {
+		t.Fatalf("書かずに断るはず（終了コード %d・確かめ %d 回）:\n%s", code, len(cmds), out)
+	}
+	mustContain(t, out, "@res=式 の式が --from の w を読む")
+}
+
+// 軽-5: --def で名指しした def に --from の引数が無ければ、黙って 0 件にせず fix にする。
+func TestRetargetFieldReportsANamedDefWithoutTheFromParameter(t *testing.T) {
+	root := fixtureRoot(t, "retarget")
+	code, out, cmds := runFixture(t, "retarget", root, "retarget-field", "--label", "tutorialDoc", "--from", "prev", "--to", "res",
+		"--def", "Tutorial.penOf", "--apply", "--all")
+	if code != 2 || len(cmds) != 0 {
+		t.Fatalf("断るはず（終了コード %d・確かめ %d 回）:\n%s", code, len(cmds), out)
+	}
+	mustContain(t, out, "引数 prev が無い")
+}
+
+// --retarget は --propagate と組む旗（使い方の行）。付けなければ索引を作る前に止める。
+func TestRetargetWithoutPropagateIsRefused(t *testing.T) {
+	root := fixtureRoot(t, "retarget")
+	code, out, cmds := runFixture(t, "retarget", root, "change-signature", "--def", "Tutorial.penOf",
+		"--params", "res: Res", "--args", "@res", "--retarget", "tutorialDoc", "--from", "w")
+	if code != 2 || len(cmds) != 0 {
+		t.Fatalf("止まるはず（終了コード %d）:\n%s", code, out)
+	}
+	mustContain(t, out, "--retarget は --propagate と組む")
+}

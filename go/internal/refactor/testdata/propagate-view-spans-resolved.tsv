@@ -1,9 +1,37 @@
 # flixlint-spans 3 stage=resolved columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=use,type-use,alias-decl,arg,param,aparam,alias-fields
+use	src/Clash.flix	2	9	2	16	Res.Res	Clash	alias=Res what=alias
+def-decl	src/Clash.flix	4	13	4	17	Clash.leaf	Clash.leaf	pub ext=4:5:4:61
+param	src/Clash.flix	4	18	4	19	Clash.leaf	Clash.leaf	i=0 n=1 name=w type=Int32 tspan=4:21:4:26 reads=1 hidden=0 poly=0
+def-use	src/Clash.flix	4	41	4	53	Res.defaults	Clash.leaf	
+arg	src/Clash.flix	4	53	4	55	Res.defaults	Clash.leaf	of=def-use at=4:41 i=0 n=1
+def-decl	src/Clash.flix	7	13	7	18	Clash.other	Clash.other	pub ext=6:5:7:75
+param	src/Clash.flix	7	19	7	22	Clash.other	Clash.other	i=0 n=2 name=res type=ViewEnv.Res tspan=7:24:7:35 reads=1 hidden=0 poly=0 fields=atlas:Int32
+type-use	src/Clash.flix	7	24	7	35	ViewEnv.Res	Clash.other	what=alias
+param	src/Clash.flix	7	37	7	38	Clash.other	Clash.other	i=1 n=2 name=w type=Int32 tspan=7:40:7:45 reads=1 hidden=0 poly=0
+def-use	src/Clash.flix	7	56	7	60	Clash.leaf	Clash.other	
+arg	src/Clash.flix	7	61	7	62	Clash.leaf	Clash.other	of=def-use at=7:56 i=0 n=1 aparam=1
 alias-decl	src/Res.flix	2	20	2	23	Res.Res	Res.Res	fields=scale:Int32
 alias-decl	src/Res.flix	4	20	4	25	Res.Model	Res.Model	syn=Res.Res fields=scale:Int32
 type-use	src/Res.flix	4	28	4	31	Res.Res	Res.Model	what=alias
 def-decl	src/Res.flix	6	13	6	21	Res.defaults	Res.defaults	pub ext=6:5:6:44
 type-use	src/Res.flix	6	25	6	28	Res.Res	Res.defaults	what=alias
+use	src/Two.flix	3	9	3	20	ViewEnv.Res	TwoA	alias=Res what=alias
+def-decl	src/Two.flix	5	13	5	20	TwoA.atlasOf	TwoA.atlasOf	pub ext=5:5:5:45
+param	src/Two.flix	5	21	5	22	TwoA.atlasOf	TwoA.atlasOf	i=0 n=1 name=r type=ViewEnv.Res tspan=5:24:5:27 reads=1 hidden=0 poly=0 fields=atlas:Int32
+type-use	src/Two.flix	5	24	5	27	ViewEnv.Res	TwoA.atlasOf	what=alias
+alias-decl	src/Two.flix	9	20	9	23	TwoB.Res	TwoB.Res	fields=scale:Int32
+def-decl	src/Two.flix	11	13	11	21	TwoB.defaults	TwoB.defaults	pub ext=11:5:11:44
+type-use	src/Two.flix	11	25	11	28	TwoB.Res	TwoB.defaults	what=alias
+def-decl	src/Two.flix	13	13	13	17	TwoB.leaf	TwoB.leaf	pub ext=13:5:13:62
+param	src/Two.flix	13	18	13	19	TwoB.leaf	TwoB.leaf	i=0 n=1 name=w type=Int32 tspan=13:21:13:26 reads=1 hidden=0 poly=0
+def-use	src/Two.flix	13	41	13	54	TwoB.defaults	TwoB.leaf	
+arg	src/Two.flix	13	54	13	56	TwoB.defaults	TwoB.leaf	of=def-use at=13:41 i=0 n=1
+def-decl	src/Two.flix	16	13	16	16	TwoB.top	TwoB.top	pub ext=15:5:16:61
+param	src/Two.flix	16	17	16	18	TwoB.top	TwoB.top	i=0 n=2 name=r type=TwoB.Res tspan=16:20:16:23 reads=1 hidden=0 poly=0 fields=scale:Int32
+type-use	src/Two.flix	16	20	16	23	TwoB.Res	TwoB.top	what=alias
+param	src/Two.flix	16	25	16	26	TwoB.top	TwoB.top	i=1 n=2 name=w type=Int32 tspan=16:28:16:33 reads=1 hidden=0 poly=0
+def-use	src/Two.flix	16	44	16	48	TwoB.leaf	TwoB.top	
+arg	src/Two.flix	16	49	16	50	TwoB.leaf	TwoB.top	of=def-use at=16:44 i=0 n=1 aparam=1
 use	src/View.flix	2	9	2	16	Res.Res	View	alias=Res what=alias
 def-decl	src/View.flix	4	13	4	17	View.leaf	View.leaf	pub ext=4:5:4:61
 param	src/View.flix	4	18	4	19	View.leaf	View.leaf	i=0 n=1 name=w type=Int32 tspan=4:21:4:26 reads=1 hidden=0 poly=0

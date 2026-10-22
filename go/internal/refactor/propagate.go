@@ -13,7 +13,8 @@ import (
 //
 // 足す位置: 葉の --params で @res の引数が先頭なら広げる def でも先頭、でなければ末尾。呼ぶ所には res をそのまま渡す。
 // 止める所（広げずに、その中の呼ぶ所を fix へ）: --stop-at で名指しした def・main と @Test の def・引数の無い def・
-// 同じ型の別の名前の引数を持つ def（その名前で --args を書き直す）・--depth（既定 8）を超える段・宣言が索引に無い物。
+// 同じ型の別の名前の引数を持つ def（その名前で --args を書き直す）・同じ名前・別の型の引数を持つ def（`res: ViewEnv.Res`。
+// 字では束ねて見えるので、呼ぶ所でも束ねていない扱い）・--depth（既定 8）を超える段・宣言が索引に無い物。
 // 同じ型の引数が使っていない印の `_res` なら、引数を足さずに名前を res に替えて使う（provideFor）。
 // 関数として渡す所（App の口に渡す def など）は広げても型が合わないので、今までどおり fix。
 
@@ -36,11 +37,13 @@ type propagation struct {
 	Provided map[string]map[string]string
 	// Provided のうち、値を `_` の引数（使っていない印の `_res`）に持つ def → 元の名前 → 局所の名前（宣言の名前を替える）。
 	Renamed map[string]map[string]string
+	// 局所の名前と同じ名前・別の型の引数を持つ def → その名前（呼ぶ所では束ねていない扱い。広げずに止める）。
+	Shadowed map[string][]string
 }
 
 // planPropagation は葉の問い leaf（--args に @名前 を持つ）から、上へ引数を足す def を幅優先で集める。
 func planPropagation(rows []Row, srcs *reshapeSources, leaf SignatureQuery, stopAt map[string]bool, maxDepth int) (propagation, error) {
-	pr := propagation{Stops: map[string]string{}, Provided: map[string]map[string]string{}, Renamed: map[string]map[string]string{}}
+	pr := propagation{Stops: map[string]string{}, Provided: map[string]map[string]string{}, Renamed: map[string]map[string]string{}, Shadowed: map[string][]string{}}
 	part, err := prepSignature(rows, srcs, leaf, map[string]*useNeed{}, new([]string))
 	if err != nil {
 		return pr, err
@@ -142,6 +145,16 @@ func planPropagation(rows []Row, srcs *reshapeSources, leaf SignatureQuery, stop
 			}
 			o := r.Owner
 			missing := withoutAll(unboundLocals(s, owners[o], ns, names), given[o])
+			// 同じ名前・別の型の引数（res: ViewEnv.Res）は字では束ねて見えるが、足す値ではない。束ねていない扱いにし、広げずに止める。
+			clash := withoutAll(shadowedParams(pix, tix, o, names, want), given[o])
+			for _, n := range clash {
+				if indexOf(missing, n) < 0 {
+					missing = append(missing, n)
+				}
+				if indexOf(pr.Shadowed[o], n) < 0 {
+					pr.Shadowed[o] = append(pr.Shadowed[o], n)
+				}
+			}
 			if len(missing) > 0 && holeLambda(s, owners[o], ns) != "" {
 				continue // 囲む lambda の _ に値が来るかもしれない所は広げない（計画の方で fix）
 			}
@@ -166,6 +179,16 @@ func planPropagation(rows []Row, srcs *reshapeSources, leaf SignatureQuery, stop
 					continue
 				}
 			}
+			if left := intersect(clash, missing); len(left) > 0 {
+				var ts []string
+				for _, n := range left {
+					p, _ := pix.named(o, n)
+					ts = append(ts, fmt.Sprintf("%s は %s・足す %s は %s", n, orUnknown(p.Type), n, want[n]))
+				}
+				pr.Stops[o] = fmt.Sprintf("同じ名前・別の型の引数 %s を持つ（%s。書くと型が合わず、足すと名前が重なる。その引数の名前を替えるか、--args の @名前 を別の名前にする）",
+					strings.Join(left, "・"), strings.Join(ts, "・"))
+				continue
+			}
 			if why := stopReason(rows, srcs, o, missing, types, stopAt, cur.depth+1, maxDepth); why != "" {
 				pr.Stops[o] = why
 				continue
@@ -186,7 +209,7 @@ func planPropagation(rows []Row, srcs *reshapeSources, leaf SignatureQuery, stop
 		}
 		return pr.Lifted[i].Sym < pr.Lifted[j].Sym
 	})
-	leaf.Given, leaf.Stops, leaf.Provided, leaf.Renamed = given, pr.Stops, pr.Provided, pr.Renamed
+	leaf.Given, leaf.Stops, leaf.Provided, leaf.Renamed, leaf.Shadowed = given, pr.Stops, pr.Provided, pr.Renamed, pr.Shadowed
 	pr.Queries = append(pr.Queries, leaf)
 	for _, l := range pr.Lifted {
 		_, _, _, params, err := readDefParams(rows, srcs, l.Sym)
@@ -221,7 +244,7 @@ func planPropagation(rows []Row, srcs *reshapeSources, leaf SignatureQuery, stop
 		}
 		ps := append(append(head, olds...), tail...)
 		ts := append(append(headT, olds...), tailT...)
-		pr.Queries = append(pr.Queries, SignatureQuery{Defs: []string{l.Sym}, Params: strings.Join(ps, ", "), Templates: ts, Prefer: leaf.Prefer, Given: given, Stops: pr.Stops, Provided: pr.Provided})
+		pr.Queries = append(pr.Queries, SignatureQuery{Defs: []string{l.Sym}, Params: strings.Join(ps, ", "), Templates: ts, Prefer: leaf.Prefer, Given: given, Stops: pr.Stops, Provided: pr.Provided, Shadowed: pr.Shadowed})
 	}
 	return pr, nil
 }
@@ -412,6 +435,29 @@ func returnType(rows []Row, srcs *reshapeSources, sym string) string {
 		return src[list.Close+1 : body]
 	}
 	return ""
+}
+
+// shadowedParams は names のうち、def o が同じ名前・別の型（want: 葉のファイルで引いた正規の名前。引けない型は比べない）の
+// 引数で持つ物。
+func shadowedParams(pix paramIndex, tix *typeIndex, o string, names []string, want map[string]string) []string {
+	var out []string
+	for _, n := range names {
+		if p, ok := pix.named(o, n); ok && want[n] != "" && !tix.same(p.Type, want[n]) {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// intersect は xs のうち ys にもある物（xs の順）。
+func intersect(xs, ys []string) []string {
+	var out []string
+	for _, x := range xs {
+		if indexOf(ys, x) >= 0 {
+			out = append(out, x)
+		}
+	}
+	return out
 }
 
 // withoutKeys は xs から m の鍵を除いた列。

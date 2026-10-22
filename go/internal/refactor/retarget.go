@@ -41,8 +41,9 @@ type retargetTarget struct {
 
 // planRetarget は defs の def の本体で、受け手が引数 from そのものの labels の読みを target(def) へ読み替える計画（typed の行）。
 // noName は、本体に読み替え先の名前が字で出る def を人へ回すか（--propagate --retarget: 足す引数はまだ無いので、出れば局所の名前）。
+// named は defs が --def で名指しした def か（名指しした def に引数 from が無ければ、黙って飛ばさずに fix。--in・全部は飛ばす）。
 func planRetarget(typed []Row, srcs *reshapeSources, defs []string, labels []string, from string, pix paramIndex, tix *typeIndex,
-	target func(def string) retargetTarget, noName bool) (retargetPlan, error) {
+	target func(def string) retargetTarget, noName, named bool) (retargetPlan, error) {
 	rp := retargetPlan{Freed: map[paramRef]int{}, Count: map[string]int{}}
 	want := map[string]bool{}
 	for _, l := range labels {
@@ -65,6 +66,9 @@ func planRetarget(typed []Row, srcs *reshapeSources, defs []string, labels []str
 	for _, def := range defs {
 		fp, ok := pix.named(def, from)
 		if !ok {
+			if named {
+				rp.Fix = append(rp.Fix, Fixed{decls[def], fmt.Sprintf("--def で名指しした %s に引数 %s が無い（--from の名前を確かめる）", def, from)})
+			}
 			continue
 		}
 		rows := byDef[def]
@@ -229,7 +233,7 @@ func retargetReport(root string, idx *Index, a args, cfg Config, o Options) (rep
 		}
 		return retargetTarget{name: a.to, fields: f}
 	}
-	rp, err := planRetarget(idx.Rows, srcs, defs, labels, a.from, pix, tix, target, false)
+	rp, err := planRetarget(idx.Rows, srcs, defs, labels, a.from, pix, tix, target, false, a.def != "")
 	if err != nil {
 		return report{}, err
 	}
@@ -361,6 +365,14 @@ func retargetEdits(resolved, typed []Row, srcs *reshapeSources, leaf SignatureQu
 	}
 	to := part.locals[0]
 	first := part.defs[leaf.Defs[0]]
+	// `@名前=式` の式が --from を読むと、読み替え（内側の書き換え）が先に本体の式の中の from#… を替え、本体の式を名前へ
+	// 替える規則に当たらずに意味が変わる（`Res.make(w#doc)` → `Res.make(res#doc)`。レビュー 2a の中-2）。読み替えずに断る。
+	for i, e := range part.fallback {
+		if len(identUses(e, map[string]bool{from: true})) > 0 {
+			return retargetPlan{Fix: []Fixed{{first.row, fmt.Sprintf("--args の @%s=式 の式が --from の %s を読む（`%s`。--retarget の読み替えが先に本体の式の中の %s#… を替え、本体の式を %s に替えられずに意味が変わる）。--retarget を外して流すか、式を %s を読まない形にする",
+				strings.TrimPrefix(part.q.Templates[i], "@"), from, oneLine(e), from, to, from)}}}, nil
+		}
+	}
 	tixR := newTypeIndex(resolved)
 	typ := ""
 	for i, n := range part.news {
@@ -377,5 +389,5 @@ func retargetEdits(resolved, typed []Row, srcs *reshapeSources, leaf SignatureQu
 		return retargetPlan{}, fmt.Errorf("--retarget: %s の型 %s が record の alias でない（欄が引けない）", to, sym)
 	}
 	target := func(string) retargetTarget { return retargetTarget{name: to, fields: fields} }
-	return planRetarget(typed, srcs, leaf.Defs, labels, from, newParamIndex(typed), newTypeIndex(typed), target, true)
+	return planRetarget(typed, srcs, leaf.Defs, labels, from, newParamIndex(typed), newTypeIndex(typed), target, true, true)
 }

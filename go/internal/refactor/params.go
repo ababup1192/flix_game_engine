@@ -138,9 +138,11 @@ func (t *typeIndex) same(a, b string) bool {
 }
 
 // resolveIn は人が書いた型の名前 name（`Res`・`Kit.Res`）を、file の mod の中で引いた正規の名前にする（設計 M2）。
-// 引き方: そのファイルの use の別名（同じ mod の物を先に）→ 同じ mod の宣言 → 修飾名そのもの・use した mod の下。
-// 標準の型（Int32 など）は宣言が無いので名前のまま。どこにも宣言が無ければ名前のまま、在るのに引けなければ候補を並べて止める。
-// 答えは別名を鎖の終わりへ写した名前。
+// 引き方は Flix と同じ順: その mod の use の別名（索引の use の owner が mod の物だけ。ファイルの根の def は owner "" の use だけ）
+// → 同じ mod の宣言 → 修飾名そのもの・根の宣言。標準の型（Int32 など）は宣言が無いので名前のまま。どこにも宣言が無ければ
+// 名前のまま、在るのに引けなければ候補を並べて止める。答えは別名を鎖の終わりへ写した名前。
+// WhyNot: 同じファイルの別の mod の use は見ない（`mod A { use X.Res }` は隣の `mod B` の Res を変えない。レビュー 2a の中-1）。
+// 親の mod の宣言もたどらない（`mod A.B` の中の素の Res は A.Res を引かない。flixlint で E2916 を確かめた）。
 func (t *typeIndex) resolveIn(name, file, mod string) (string, error) {
 	name = strings.TrimSpace(name)
 	if !singleName(name) {
@@ -148,30 +150,23 @@ func (t *typeIndex) resolveIn(name, file, mod string) (string, error) {
 	}
 	head, rest, qualified := strings.Cut(name, ".")
 	var hit string
-	pick := func(ownerFirst bool) {
-		for _, u := range t.uses {
-			if hit != "" || u.File != file || (ownerFirst && u.Owner != mod) {
-				continue
+	for _, u := range t.uses {
+		if hit != "" || u.File != file || u.Owner != mod {
+			continue
+		}
+		if u.Attr("alias") == name {
+			if _, ok := t.decls[u.Sym]; ok {
+				hit = u.Sym
 			}
-			if u.Attr("alias") == name {
-				if _, ok := t.decls[u.Sym]; ok {
-					hit = u.Sym
-				}
-			} else if qualified && u.Attr("alias") == head && u.Attr("what") == "module" {
-				if _, ok := t.decls[u.Sym+"."+rest]; ok {
-					hit = u.Sym + "." + rest
-				}
+		} else if qualified && u.Attr("alias") == head && u.Attr("what") == "module" {
+			if _, ok := t.decls[u.Sym+"."+rest]; ok {
+				hit = u.Sym + "." + rest
 			}
 		}
 	}
-	pick(true)
-	pick(false)
-	if hit == "" {
-		for m := mod; m != ""; m = modOf(m) {
-			if _, ok := t.decls[m+"."+name]; ok {
-				hit = m + "." + name
-				break
-			}
+	if hit == "" && mod != "" {
+		if _, ok := t.decls[mod+"."+name]; ok {
+			hit = mod + "." + name
 		}
 	}
 	if hit == "" {

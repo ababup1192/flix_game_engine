@@ -36,6 +36,8 @@ type SignatureQuery struct {
 	Stops    map[string]string            // --propagate で広げなかった def → 訳（その中の呼ぶ所の fix に書く）
 	Provided map[string]map[string]string // --propagate: 型の値をもう持つ def → @名前 → 代わりに書く式（`env#res`）
 	Renamed  map[string]map[string]string // --propagate: Provided のうち値が `_` の引数の def → 元の名前（`_res`）→ 替える名前
+	// --propagate: @名前 と同じ名前・別の型の引数を持つ def → その名前（字では束ねて見えるが、足す値ではない。束ねていない扱い）。
+	Shadowed map[string][]string
 }
 
 // SignaturePlan は change-signature の計画。
@@ -490,7 +492,7 @@ func planCalls(rows []Row, srcs *reshapeSources, part *sigPart, p *SignaturePlan
 			continue
 		}
 		callTemplates, filled := part.callTemplates, ""
-		missing := withoutAll(unboundLocals(s, owners[r.Owner], ns, part.locals), part.q.Given[r.Owner])
+		missing := part.missingAt(s, r.Owner, owners[r.Owner], ns)
 		if hl := holeLambda(s, owners[r.Owner], ns); len(missing) > 0 && hl != "" {
 			p.Fix = append(p.Fix, Fixed{r, holeWhy(missing, hl)})
 			continue
@@ -593,6 +595,18 @@ func planCalls(rows []Row, srcs *reshapeSources, part *sigPart, p *SignaturePlan
 		p.CallFiles[r.File]++
 	}
 	return calls, nil
+}
+
+// missingAt は def owner の中の呼ぶ所（ns。owner の頭は from）で束ねていない @名前（同じ回に足す名前は除く）。
+// owner が同じ名前・別の型の引数で持つ名前（Shadowed）も束ねていない扱い（その名前を書くと型が合わない。中-3）。
+func (part *sigPart) missingAt(s, owner string, from, ns int) []string {
+	missing := withoutAll(unboundLocals(s, from, ns, part.locals), part.q.Given[owner])
+	for _, n := range part.q.Shadowed[owner] {
+		if indexOf(part.locals, n) >= 0 && indexOf(missing, n) < 0 {
+			missing = append(missing, n)
+		}
+	}
+	return missing
 }
 
 // withoutAll は xs から drop の物を除いた列。
@@ -995,7 +1009,7 @@ func signatureReport(root string, idx *Index, a args, cfg Config, o Options, ext
 // curriedEdit は、パイプ（書いていない引数がある）・部分適用（引数が宣言より少ない）・関数として渡す所（括弧が無い）の呼ぶ所に、
 // 先頭の新しい引数（局所の名前・型の値を持つ def の式・元の引数を使わない `@名前=式` の式）を書く書き換え。書けなければ ok=false。
 func (part *sigPart) curriedEdit(rows []Row, s string, r Row, ns, ne int, l ArgList, h bool, owners map[string]int, locals map[string]bool) (Edit, string, bool) {
-	missing := withoutAll(unboundLocals(s, owners[r.Owner], ns, part.locals), part.q.Given[r.Owner])
+	missing := part.missingAt(s, r.Owner, owners[r.Owner], ns)
 	oldSet := map[string]bool{}
 	if len(missing) > 0 && holeLambda(s, owners[r.Owner], ns) != "" {
 		return Edit{}, "", false

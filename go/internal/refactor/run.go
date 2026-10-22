@@ -555,6 +555,10 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 			fmt.Fprintln(errOut, "refactor change-signature: --retarget <欄>（a,b で複数）には読み替える元の引数 --from <名前> が要ります（例 --retarget tutorialDoc --from w）")
 			return 2
 		}
+		if a.retarget != "" && !a.propagate {
+			fmt.Fprintln(errOut, "refactor change-signature: --retarget は --propagate と組む旗です（--propagate を足す。葉の def だけを読み替えるなら retarget-field --def）")
+			return 2
+		}
 	case "retarget-field":
 		if a.label == "" || a.from == "" || a.to == "" {
 			fmt.Fprintln(errOut, "refactor retarget-field: --label <欄>（a,b で複数）・--from <元の引数>・--to <読み替え先の引数> が要ります（例 --label tutorialDoc --from w --to res --in Tutorial）")
