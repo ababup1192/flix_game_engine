@@ -389,14 +389,16 @@ func removeFieldReport(root string, idx *Index, a args, cfg Config, o Options) (
 		return report{}, fmt.Errorf("型 %s に欄 %s が無い（型から消した後の組み立ては fix-construction --label %s %s）", shape.Name, a.label, a.label, shapeFlag(a))
 	}
 	r := report{Op: "remove-field", Target: shape.Name + "#" + a.label, code: CodeRemoveField}
-	// 欄の直の読み書き。case の record は受け手に alias が無い（recv=?）ので、受け手の型が決まらない物を全部数える。
+	// 欄の直の読み書き。case の record は受け手に alias が無い。flixlint の typed の索引が case-recv を足していれば
+	// （adds=case-recv）、payload を束ねた変数の受け手は recv=<Enum.Case>[#i] via=case なのでその case の物を数え、
+	// 型の決まらない物（recv=?）も数える（取りこぼすと消した後の check で落ちる）。古い索引では ? を全部数える。
 	var left []FieldSite
 	if a.caseName == "" {
 		ans := FieldSites(idx.Rows, FieldQuery{Label: a.label, Receiver: a.receiver})
 		left = append(ans.Sites, ans.Unsure...)
 	} else {
 		for _, s := range FieldSites(idx.Rows, FieldQuery{Label: a.label}).Sites {
-			if s.Recv == "?" {
+			if s.Recv == "?" || (s.Via == "case" && caseRecvMatches(s.Recv, a.caseName)) {
 				left = append(left, s)
 			}
 		}
@@ -412,7 +414,11 @@ func removeFieldReport(root string, idx *Index, a args, cfg Config, o Options) (
 			return rows
 		}()))
 		if a.caseName != "" {
-			r.extra = append(r.extra, "case の record は受け手の型が索引で決まらないので、同じ名前の欄で受け手の型が ? の物を全部数えた")
+			r.extra = append(r.extra, "case の record の受け手は、索引の via=case でその case の物と、型の決まらない ? の物を数えた")
+		}
+		// 読み書きを 0 にした後の手の大きさの見込み（組み立ては止まっても数えられる）。
+		if plan, err := constructionPlan(idx, a, shape, shape.Fields, false, srcs, nil); err == nil {
+			r.extra = append([]string{fmt.Sprintf("組み立て: 欄 %s を消す所 %d・人へ回す %d（読み書きが 0 になった後の remove-field で一緒に消す）", a.label, len(plan.Sites), len(plan.Fix))}, r.extra...)
 		}
 		r.wantText = fmt.Sprintf("欄 %s の直の読み書き 0", a.label)
 		for _, s := range left {
@@ -500,4 +506,10 @@ func constructionPicker(root string, rows []Row, srcs map[string]string, shape S
 	want := localWant{typ: typ, file: shape.File, mod: modAt(rows, shape.File, srcs[shape.File], shape.Brace)}
 	value := a.value
 	return lp, func(d Row, at int) string { return lp.pick(d.Sym, d.File, at, value, want) }
+}
+
+// caseRecvMatches は索引の受け手 recv（`Panel.Open`・`Panel.Open#1`）が case の名前 c（--case の書き方）に当たるか。
+func caseRecvMatches(recv, c string) bool {
+	recv, _, _ = strings.Cut(recv, "#")
+	return nameMatches(recv, c) || nameMatches(c, recv)
 }

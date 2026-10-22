@@ -13,7 +13,6 @@
     "cacheDir": "~/.cache/flix-checkd",
     "stateHashLen": 16,
     "pkgSearchDepth": 8,
-    "pingTimeoutSec": 0.5,
     "checkTimeoutSec": 30,
     "gitTimeoutSec": 15,
     "reserveIntervalSec": 90,
@@ -27,7 +26,7 @@
       "envVar": "CHECKD_MAX_DAEMONS"
     },
     "server": {
-      "note": "flixlint の常駐の check (checkd-freshness §4・C-2)。backendEnvVar が server の時だけ使う (既定は repl)。shim の jar は flixlint のリリースから取り、sha256 が合う時だけ置く (エンジンの版ごとに flixlint の版を 1 つ決める)。heapMB は C-1 の実測 (ゲームの check と resolved の lint・typed の索引でヒープ 3072 MB の最大 RSS 3.45〜3.65 GB) から。retries は答えの版がディスクと違った時に頼み直す回数で、その後は素の flix check。",
+      "note": "check を頼む flixlint の常駐 (checkd-freshness §4・C-2・C-3)。lint・refactor の索引と同じ常駐。backendEnvVar が cli の時は素の flix check。shim の jar は flixlint のリリースから取り、sha256 が合う時だけ置く (エンジンの版ごとに flixlint の版を 1 つ決める)。heapMB は C-1 の実測 (ゲームの check と resolved の lint・typed の索引でヒープ 3072 MB の最大 RSS 3.45〜3.65 GB) から。retries は答えの版がディスクと違った時に頼み直す回数で、その後は素の flix check。",
       "backendEnvVar": "CHECKD_BACKEND",
       "flixlintVersion": "0.8.3",
       "shimJar": "flixlint-shim-0.78.0.jar",
@@ -40,28 +39,15 @@
       "retries": 3
     },
     "daemon": {
-      "note": "常駐そのものの寿命と使い捨ての条件。rssLimit は「常駐が全部太りきっても物理メモリの memoryShare まで」の 1 つの約束から、maxDaemons と一緒に決まる (台数が 1 でも 2 で割るのは、1 台しか立てない小さい機械でその 1 本に予算を丸ごと渡さないため)。",
+      "note": "常駐 (flixlint) と話す時の待ちと、起動予約の歯止め。rssLimit.memoryShare は「常駐 1 本 (server.heapMB + heapHeadroomMB) が物理メモリのこの割合に収まらない機械では起動予約をしない」の線。workTimeoutSec は 1 回の check の上限、spawnWaitSec は常駐を起こした後に口が開くのを待つ上限。",
       "heapHeadroomMB": 500,
-      "heapMinMB": 3072,
-      "idleSec": 600,
-      "idleEnvVar": "CHECKD_IDLE_SEC",
-      "maxChecks": 200,
-      "settleSec": 1.0,
       "workTimeoutSec": 900,
-      "warmTimeoutSec": 240,
       "spawnWaitSec": 30,
       "connectTimeoutSec": 5,
-      "convTimeoutSec": 30,
       "rssLimit": {
         "memoryShare": 0.33,
-        "minMB": 3584,
-        "maxMB": 4096,
-        "fallbackMB": 2048,
-        "floorMB": 512,
         "envVar": "CHECKD_RSS_MB"
-      },
-      "skipDirs": ["lib", "build", ".git", "gallery", "snapshot", "assets", "node_modules"],
-      "depSuffixes": [".fpkg", ".toml", ".jar"]
+      }
     },
     "patchFilePrefixes": [
       "*** Add File: ",

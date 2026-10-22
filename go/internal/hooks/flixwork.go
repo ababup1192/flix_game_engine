@@ -2,8 +2,8 @@ package hooks
 
 // hook-flix-work — 作業の区切り（Stop / SubagentStop）で Flix を型検査する。
 //
-// このセッションが触った .flix を持つパッケージだけを集めて常駐 (bin/checkd) へ
-// CHECK を投げ、NG が出れば exit 2 で Claude に差し戻す。「緑と自己申告したが
+// このセッションが触った .flix を持つパッケージだけを集めて check の常駐（flixlint。bin/fge checkd）で
+// 検査し、NG が出れば exit 2 で Claude に差し戻す。「緑と自己申告したが
 // 実は赤」を防ぐのが検査を残す理由。
 //
 // WhyNot: 保存のたび（PostToolUse）に走らせないのは、サブエージェントを並列に
@@ -98,17 +98,34 @@ func RunFlixWork(errOut io.Writer, root string, in io.Reader) int {
 	return 2
 }
 
-// checkPkg は常駐と話して (終了コード, 出力) を返す。話せなければ ok=false。
+// checkPkg は check の常駐（flixlint）が居る時だけ `fge checkd <pkg>` を流して (終了コード, 出力) を返す。居なければ
+// 起動予約をして ok=false（温まっていない常駐を作業の区切りで待たない）。時間切れも ok=false。
 func checkPkg(r *Rules, root, pkg string) (int, string, bool) {
-	if _, _, err := Ask(r, pkg, "PING", seconds(*r.Checkd.PingTimeoutSec)); err != nil {
+	if !DaemonAlive(r, pkg) {
 		ReserveDaemon(r, root, pkg)
 		return 0, "", false
 	}
-	code, out, err := Ask(r, pkg, "CHECK", seconds(*r.Checkd.CheckTimeoutSec))
+	self, err := os.Executable()
 	if err != nil {
 		return 0, "", false
 	}
-	return code, out, true
+	cmd := exec.Command(self, "checkd", pkg)
+	cmd.Dir = pkg
+	var out strings.Builder
+	cmd.Stdout, cmd.Stderr = &out, &out
+	if err := cmd.Start(); err != nil {
+		return 0, "", false
+	}
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	select {
+	case <-done:
+		return cmd.ProcessState.ExitCode(), out.String(), true
+	case <-time.After(seconds(*r.Checkd.CheckTimeoutSec)):
+		_ = cmd.Process.Kill()
+		<-done
+		return 0, "", false
+	}
 }
 
 // git は git を走らせて標準出力を返す。失敗は ok=false（例外にしない）。

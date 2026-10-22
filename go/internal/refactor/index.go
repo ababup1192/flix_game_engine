@@ -194,6 +194,7 @@ type Builder struct {
 	Config   Config
 	Flixlint string // 解決済みの bin/flixlint
 	FlixJar  string // 解決済みの flix.jar（空なら flixlint に任せる）
+	FlixHint string // flix.jar の版が flix.toml と違う時の直し方（索引が落ちた時に出す）
 	Run      Runner
 	Log      io.Writer
 	Rebuild  bool // 鍵が同じでも作り直す
@@ -329,6 +330,14 @@ func tailOf(path string, n int) string {
 // （例外の中身は出さない。全文はログ）。
 func (b Builder) indexError(s Stage, code int, log string) *IndexError {
 	text := logText(log)
+	// flix の版の違い（flix.toml より古い jar）。flixlint の終了コードは 4 か 3 で、flixlint が古いと読める訳より先に出す。
+	if m := upgradeFlix.FindStringSubmatch(text); m != nil || (b.FlixHint != "" && code != 0 && !compileFailed(text)) {
+		msg := "索引を作れません: flix の版が flix.toml と合わない。" + b.FlixHint
+		if b.FlixHint == "" {
+			msg = fmt.Sprintf("索引を作れません: 使っている flix が古い（ログ: Please upgrade to Flix %s）。FLIX_JAR=<flix %s の flix.jar> を前に置いて流し直す（nix なら /nix/store/<hash>-flix-%s/share/java/flix/flix.jar）", m[1], m[1], m[1])
+		}
+		return &IndexError{Msg: msg}
+	}
 	if code == 3 || (code == 4 && compileFailed(text)) {
 		first := firstCompileError(text)
 		if first == "" {
@@ -702,3 +711,6 @@ func libFiles(root string) []string {
 	sort.Strings(out)
 	return out
 }
+
+// upgradeFlix は flix.toml より古い flix が出す 1 行。
+var upgradeFlix = regexp.MustCompile(`Please upgrade to Flix (\S+?)\.? or newer`)

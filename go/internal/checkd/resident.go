@@ -2,7 +2,7 @@ package checkd
 
 // flixlint の常駐の check を使うクライアント (checkd-freshness §3・§4.4・C-2)。
 //
-// CHECKD_BACKEND=server の時だけ通る (既定は repl のまま)。常駐は flixlint の Resident で、lint・refactor の
+// check はいつもこの道 (hooks.json に checkd.server が無いか CHECKD_BACKEND=cli なら素の flix check)。常駐は flixlint の Resident で、lint・refactor の
 // 索引と 1 つの JVM・1 つのコンパイラを共有する。答えには「どのソースを検査したか」の版が付き、答えを受けた後に
 // ディスクから版を取り直して同じ時だけ使う。違えば頼み直し (retries 回)、それでも合わなければ素の flix check。
 //
@@ -41,9 +41,9 @@ const (
 	residentLost     = 12
 )
 
-// useServer はこの走行で flixlint の常駐を使うか。
+// useServer は check を flixlint の常駐に頼むか: hooks.json に checkd.server があり、CHECKD_BACKEND=cli でない時。
 func useServer(r *hooks.Rules) bool {
-	return r.Checkd.Server.BackendEnvVar != nil && os.Getenv(*r.Checkd.Server.BackendEnvVar) == "server"
+	return r.Checkd.Server.BackendEnvVar != nil && os.Getenv(*r.Checkd.Server.BackendEnvVar) != "cli"
 }
 
 // ---- 口 (Java の DataOutputStream の形) ----
@@ -499,6 +499,7 @@ func serverCheck(r *hooks.Rules, out, errOut *strings.Builder, root, pkg string)
 		}
 		now, verr := sourcesVersion(pkg)
 		if verr == nil && a.version != "" && a.version == now {
+			writeServerMark(r, pkg, s)
 			os.Stderr.Write(a.stderr)
 			out.Write(a.stdout)
 			debugLog(errOut, fmt.Sprintf("version=%s retry=%d", a.version, retries))
@@ -548,4 +549,52 @@ func SharedServer(r *hooks.Rules, engineRoot, pkg string) (Shared, error) {
 	}
 	sv := r.Checkd.Server
 	return Shared{FlixJar: strings.TrimSpace(string(out)), ShimJar: shim, HeapMB: *sv.HeapMB, IdleMinutes: *sv.IdleMinutes}, nil
+}
+
+// serverMark は、そのパッケージの check を流した常駐の記録（状態の置き場の server。stop・stop-all と、編集フックの
+// 「常駐が居るか」が読む）。
+type serverMark struct{ socket, pkg, identity string }
+
+func writeServerMark(r *hooks.Rules, pkg string, s residentSetup) {
+	_ = os.WriteFile(filepath.Join(stateDir(r, pkg), "server"), []byte(s.socket+"\n"+pkg+"\n"+s.identity+"\n"), 0o644)
+}
+
+func readServerMark(dir string) (serverMark, bool) {
+	b, err := os.ReadFile(filepath.Join(dir, "server"))
+	if err != nil {
+		return serverMark{}, false
+	}
+	f := strings.SplitN(strings.TrimRight(string(b), "\n"), "\n", 3)
+	if len(f) != 3 {
+		return serverMark{}, false
+	}
+	return serverMark{socket: f[0], pkg: f[1], identity: f[2]}, true
+}
+
+// stopServer はそのパッケージの記録の常駐に stop を頼む（居なかった時は false）。記録はどちらでも消す。
+func stopServer(r *hooks.Rules, pkg string) bool {
+	dir := hooks.StateDir(r, pkg)
+	m, ok := readServerMark(dir)
+	if !ok {
+		return false
+	}
+	defer os.Remove(filepath.Join(dir, "server"))
+	conn, err := net.DialTimeout("unix", m.socket, seconds(*r.Checkd.Daemon.ConnectTimeoutSec))
+	if err != nil {
+		return false
+	}
+	defer conn.Close()
+	if _, err := conn.Write(encodeRequest(residentRequest{Kind: "stop", Root: m.pkg, Identity: m.identity})); err != nil {
+		return false
+	}
+	_ = conn.SetReadDeadline(time.Now().Add(seconds(*r.Checkd.Daemon.ConnectTimeoutSec)))
+	for {
+		f, err := readFrame(conn)
+		if err != nil {
+			return false
+		}
+		if f.Tag == 'X' {
+			return f.ExitCode == 0
+		}
+	}
 }

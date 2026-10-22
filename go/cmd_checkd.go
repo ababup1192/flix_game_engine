@@ -7,7 +7,7 @@ import (
 )
 
 func init() {
-	register("checkd", "flix check / flix test を常駐 repl で速くする (詳細は docs/checkd.md)",
+	register("checkd", "make check の速い道: check を flixlint の常駐で・答えの版をディスクと比べて使う (test は素の flix test。詳細は docs/checkd.md)",
 		func(out, errOut *strings.Builder, rest []string, _ bool) int {
 			code, err := checkd.Run(out, errOut, repoRoot(), rest)
 			return orAbort(errOut, code, err)

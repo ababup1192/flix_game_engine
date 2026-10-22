@@ -185,11 +185,12 @@ func (lp *localPicker) pick(owner, file string, at int, expr string, want localW
 	before := sc.src[sc.body:at]
 	free := freeNames(expr)
 	if lp.pure(expr, file, sc.mod) {
-		if name := lp.sameLet(sc, at, expr, free); name != "" {
+		// _ で始まる名前は選ばない（Flix は _ の名前を使うと誤りにする: Hidden variable symbol）。
+		if name := lp.sameLet(sc, at, expr, free); name != "" && !strings.HasPrefix(name, "_") {
 			lp.Same++
 			return name
 		}
-		if name := lp.sameParam(owner, sc, before, expr, free); name != "" {
+		if name := lp.sameParam(owner, sc, before, expr, free); name != "" && !strings.HasPrefix(name, "_") {
 			lp.Same++
 			return name
 		}
@@ -200,12 +201,12 @@ func (lp *localPicker) pick(owner, file string, at int, expr string, want localW
 	wt := lp.resolveType(want.file, want.mod, want.typ)
 	var cands []string
 	for _, p := range sc.params {
-		if p.typ == wt && !rebinds(before, p.name) {
+		if p.typ == wt && !strings.HasPrefix(p.name, "_") && !rebinds(before, p.name) {
 			cands = append(cands, p.name)
 		}
 	}
 	for _, l := range lets(sc, at) {
-		if l.typ == wt && indexOf(cands, l.name) < 0 && inScope(sc.src, l.end, at) && !bindsAny(sc.src[l.end:at], []string{l.name}) {
+		if l.typ == wt && !strings.HasPrefix(l.name, "_") && indexOf(cands, l.name) < 0 && inScope(sc.src, l.end, at) && !bindsAny(sc.src[l.end:at], []string{l.name}) {
 			cands = append(cands, l.name)
 		}
 	}

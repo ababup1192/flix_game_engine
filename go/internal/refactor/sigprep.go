@@ -293,7 +293,7 @@ func (ix *sigIndex) bodyRules(srcs *reshapeSources, t sigTarget, news, templates
 			for _, v := range ix.respell(d.body, d.file, d.mod, t.file, t.mod) {
 				pats = append(pats, Substitute(v, d.params, vals))
 			}
-			if len(pats) > 0 && !gone[pats[0]] && strings.ContainsAny(pats[0], "#(") {
+			if len(pats) > 0 && !gone[pats[0]] && strings.ContainsAny(pats[0], "#(") && hasName(pats[0]) {
 				derived = append(derived, liftRule{pats: pats, name: name})
 			}
 			return
@@ -312,7 +312,7 @@ func (ix *sigIndex) bodyRules(srcs *reshapeSources, t sigTarget, news, templates
 			for _, v := range ix.respell(f[1], d.file, d.mod, t.file, t.mod) {
 				pats = append(pats, Substitute(v, d.params, vals))
 			}
-			if len(pats) == 0 || !strings.ContainsAny(pats[0], "#(") {
+			if len(pats) == 0 || !strings.ContainsAny(pats[0], "#(") || !hasName(pats[0]) {
 				continue
 			}
 			derived = append(derived, liftRule{pats: pats, name: to})
@@ -325,7 +325,7 @@ func (ix *sigIndex) bodyRules(srcs *reshapeSources, t sigTarget, news, templates
 	}
 	for i, tm := range templates {
 		tm = strings.TrimSpace(tm)
-		if tm == news[i] {
+		if tm == news[i] || !hasName(tm) {
 			continue
 		}
 		pats := ix.respell(tm, t.file, t.mod, t.file, t.mod)
@@ -869,4 +869,85 @@ func insertUses(srcs *reshapeSources, file, mod string, before int, wants []useW
 		edits = append(edits, Edit{File: file, Start: at, End: at, Site: site, Make: func(string) (string, error) { return text, nil }})
 	}
 	return edits, notes
+}
+
+// flixTypes は Flix の標準の型の名前（use 無しで引ける物）。
+var flixTypes = map[string]bool{
+	"Unit": true, "Bool": true, "Char": true, "Float32": true, "Float64": true, "BigDecimal": true, "Int8": true, "Int16": true,
+	"Int32": true, "Int64": true, "BigInt": true, "String": true, "Regex": true, "Array": true, "Vector": true, "List": true,
+	"Option": true, "Result": true, "Map": true, "Set": true, "Chain": true, "Nec": true, "Nel": true, "MutList": true,
+	"MutMap": true, "MutSet": true, "MutDeque": true, "Lazy": true, "Region": true, "Ref": true, "IO": true, "Sender": true,
+	"Receiver": true, "Void": true, "Pure": true, "Univ": true, "Validation": true, "Identity": true,
+}
+
+// typePath は型の字の中の名前の並び（`ViewEnv.Res`・`List`）。
+var typePath = regexp.MustCompile(`[A-Z][A-Za-z0-9_]*(?:\.[A-Z][A-Za-z0-9_]*)*`)
+
+// unknownTypes は型の字 typ の名前のうち、file の mod で引けない物（標準の型・同じ mod の宣言・use・同じ回に足す use・
+// プロジェクトの型の宣言のどれでもない物）。パッケージ（fge:: など）の use から始まる名前は索引に宣言が無いので見ない。
+func (ix *sigIndex) unknownTypes(srcs *reshapeSources, typ, file, mod string) []string {
+	var out []string
+	for _, m := range typePath.FindAllStringIndex(typ, -1) {
+		if m[0] > 0 && (typ[m[0]-1] == '.' || typ[m[0]-1] == '#' || identByte(typ[m[0]-1])) {
+			continue
+		}
+		path := typ[m[0]:m[1]]
+		segs := strings.Split(path, ".")
+		head, last := segs[0], segs[len(segs)-1]
+		if len(segs) == 1 {
+			if flixTypes[head] || ix.useSource(srcs, head, file, mod) != "" || ix.hasUse(file, head) {
+				continue
+			}
+			found := false
+			for _, s := range ix.decls[head] {
+				if m := modOf(s); m == mod || m == "" {
+					found = true
+				}
+			}
+			if !found {
+				out = append(out, path)
+			}
+			continue
+		}
+		if u, ok := ix.useOf(file, head); ok && !ix.roots[strings.Split(u, ".")[0]] {
+			continue // パッケージの use（索引に宣言が無い）
+		}
+		rest := strings.Join(segs[1:], ".")
+		found := false
+		for _, s := range ix.decls[last] {
+			if s == path || strings.HasSuffix(s, "."+path) || (ix.hasUse(file, head) && strings.HasSuffix(s, "."+rest)) {
+				found = true
+			}
+		}
+		if !found {
+			out = append(out, path)
+		}
+	}
+	return out
+}
+
+// hasUse は file に名前 x を入れる use があるか。
+func (ix *sigIndex) hasUse(file, x string) bool {
+	_, ok := ix.useOf(file, x)
+	return ok
+}
+
+// useOf は file で名前 x を入れる use の出どころの sym。
+func (ix *sigIndex) useOf(file, x string) (string, bool) {
+	for _, u := range ix.uses[file] {
+		if u.alias == x {
+			return u.Sym, true
+		}
+	}
+	return "", false
+}
+
+// namePart は式の中の名前（字・数の値だけの式には無い）。
+var namePart = regexp.MustCompile(`[A-Za-z_]`)
+
+// hasName は式 e が名前を含むか。`()`（Unit の値）・`0` のような値だけの式は、本体のほかの所の同じ字が同じ値とは限らず、
+// 引数の名前へ替える対象にしない（型の別名が Unit の時、`()` を返す def を --args に書くと本体の `()` が全部替わった）。
+func hasName(e string) bool {
+	e = strings.TrimSpace(e)
+	return namePart.MatchString(e) && e != "true" && e != "false"
 }
