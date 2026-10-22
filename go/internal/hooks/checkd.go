@@ -71,74 +71,6 @@ func mustAbs(path string) string {
 	return abs
 }
 
-// Ask は常駐へ 1 コマンド送り (終了コード, 出力) を返す。話せなければエラー。
-func Ask(r *Rules, pkg, command string, timeout time.Duration) (int, string, error) {
-	return AskWithDial(r, pkg, command, timeout, timeout)
-}
-
-// AskWithDial は接続の待ち時間と返事の待ち時間を別々に決める Ask。
-// WhyNot: 1 つの締め切りにまとめないのは、check の返事は数分待ってよい一方で、
-// 死んだ常駐への接続はすぐ諦めて素の CLI へ落ちたいため。
-func AskWithDial(r *Rules, pkg, command string, dial, timeout time.Duration) (int, string, error) {
-	raw, err := os.ReadFile(filepath.Join(StateDir(r, pkg), "port"))
-	if err != nil {
-		return 0, "", err
-	}
-	port, err := strconv.Atoi(strings.TrimSpace(string(raw)))
-	if err != nil {
-		return 0, "", err
-	}
-	conn, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), dial)
-	if err != nil {
-		return 0, "", err
-	}
-	defer conn.Close()
-	if err := conn.SetDeadline(time.Now().Add(timeout)); err != nil {
-		return 0, "", err
-	}
-	if _, err := conn.Write([]byte(command + "\n")); err != nil {
-		return 0, "", err
-	}
-	var buf []byte
-	chunk := make([]byte, 65536)
-	for !strings.Contains(string(buf), "\n") {
-		n, err := conn.Read(chunk)
-		if n > 0 {
-			buf = append(buf, chunk[:n]...)
-		}
-		if err != nil {
-			return 0, "", errors.New("常駐の返事が途中で切れました")
-		}
-	}
-	head, body, _ := strings.Cut(string(buf), "\n")
-	fields := strings.Fields(head)
-	if len(fields) < 3 {
-		return 0, "", fmt.Errorf("常駐の返事の見出しが読めません: %q", head)
-	}
-	code, err1 := strconv.Atoi(fields[1])
-	length, err2 := strconv.Atoi(fields[2])
-	if err1 != nil || err2 != nil {
-		return 0, "", fmt.Errorf("常駐の返事の見出しが読めません: %q", head)
-	}
-	for len(body) < length {
-		n, err := conn.Read(chunk)
-		if n > 0 {
-			body += string(chunk[:n])
-		}
-		if err != nil {
-			return 0, "", errors.New("常駐の返事が途中で切れました")
-		}
-	}
-	return code, body, nil
-}
-
-// DropPort はつながらなくなった常駐の port ファイルを片付ける。
-// WhyNot: 残したままにしないのは、死んだ常駐の残骸を次のクライアントが読んで
-// 毎回つながらない相手へ接続を試みるため。
-func DropPort(r *Rules, pkg string) {
-	_ = os.Remove(filepath.Join(StateDir(r, pkg), "port"))
-}
-
 // Detach は起こす子を親のセッション（Windows ではコンソール）から切り離す。
 func Detach(cmd *exec.Cmd) { detach(cmd) }
 
@@ -165,24 +97,33 @@ func PidAlive(pid int) bool {
 	return true // 権限エラー等は「居る」扱い
 }
 
-func readPid(stateDir string) int {
-	raw, err := os.ReadFile(filepath.Join(stateDir, "pid"))
+// serverSocket は check を流した flixlint の常駐の socket（checkd が状態の置き場の server に書く 1 行目。無ければ ""）。
+func serverSocket(stateDir string) string {
+	b, err := os.ReadFile(filepath.Join(stateDir, "server"))
 	if err != nil {
-		return 0
+		return ""
 	}
-	pid, err := strconv.Atoi(strings.TrimSpace(string(raw)))
-	if err != nil {
-		return 0
-	}
-	return pid
+	line, _, _ := strings.Cut(string(b), "\n")
+	return line
 }
 
-// DaemonAlive はそのパッケージの常駐が生きているか。
-// WhyNot: pid ファイルの有無で決めないのは、落ちた常駐もファイルを残すため。
-func DaemonAlive(r *Rules, pkg string) bool {
-	pid := readPid(StateDir(r, pkg))
-	return pid != 0 && PidAlive(pid)
+// serverAlive は記録の socket に今つながるか。
+// WhyNot: socket のファイルの有無で決めないのは、落ちた常駐もファイルを残しうるため。
+func serverAlive(stateDir string) bool {
+	sock := serverSocket(stateDir)
+	if sock == "" {
+		return false
+	}
+	conn, err := net.DialTimeout("unix", sock, 500*time.Millisecond)
+	if err != nil {
+		return false
+	}
+	conn.Close()
+	return true
 }
+
+// DaemonAlive はそのパッケージの check の常駐（flixlint）が生きているか。
+func DaemonAlive(r *Rules, pkg string) bool { return serverAlive(StateDir(r, pkg)) }
 
 func liveDaemons(r *Rules) int {
 	names, err := os.ReadDir(expandHome(*r.Checkd.CacheDir))
@@ -191,8 +132,7 @@ func liveDaemons(r *Rules) int {
 	}
 	live := 0
 	for _, e := range names {
-		pid := readPid(filepath.Join(expandHome(*r.Checkd.CacheDir), e.Name()))
-		if pid != 0 && PidAlive(pid) {
+		if serverAlive(filepath.Join(expandHome(*r.Checkd.CacheDir), e.Name())) {
 			live++
 		}
 	}
@@ -227,12 +167,11 @@ func CountDaemons(m MaxDaemons) int {
 	return n
 }
 
-// DaemonViable は常駐を立ててよい機械かを見る。repl 1 本 (heapMinMB + headroom)
-// すら memoryShare の予算に収まらない機械では常駐せず、毎回素の CLI で検査する
-// (3.6GB 級の JVM で小さい機械を圧迫するより、check が 1〜2 分かかる方がまし)。
-// 物理メモリが分からない機械と、環境変数で rssLimit を明示した人は常駐してよい側に倒す。
+// DaemonViable は常駐を立ててよい機械かを見る。常駐 1 本（checkd.server.heapMB + headroom）すら memoryShare の予算に
+// 収まらない機械では起動予約をせず、check は素の CLI の速さになる（小さい機械を圧迫するより遅い方がまし）。
+// 物理メモリが分からない機械と、環境変数で予算を明示した人は立ててよい側に倒す。
 func DaemonViable(r *Rules) bool {
-	if os.Getenv(*r.Checkd.Daemon.RSSLimit.EnvVar) != "" {
+	if os.Getenv(*r.Checkd.Daemon.RSSLimit.EnvVar) != "" || r.Checkd.Server.HeapMB == nil {
 		return true
 	}
 	total, ok := MachineMemoryMB()
@@ -240,7 +179,7 @@ func DaemonViable(r *Rules) bool {
 		return true
 	}
 	budget := float64(total) * *r.Checkd.Daemon.RSSLimit.MemoryShare
-	need := float64(*r.Checkd.Daemon.HeapMinMB + *r.Checkd.Daemon.HeapHeadroomMB)
+	need := float64(*r.Checkd.Server.HeapMB + *r.Checkd.Daemon.HeapHeadroomMB)
 	return budget >= need
 }
 

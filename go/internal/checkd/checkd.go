@@ -1,22 +1,18 @@
-// Package checkd は flix check / flix test の常駐高速化。
+// Package checkd は make check の速い道。
 //
-// flix repl をパッケージごとに裏で 1 つだけ立てて温めておき、`:check` や `:test` を
-// 使い回すことで、毎回 JVM とコンパイラを立ち上げ直す時間 (数秒) を省く。
-// 見た目と終了コードは素の `bin/flix check` / `bin/flix test` と同じに揃える。
+// check は flixlint の常駐（lint・refactor の索引と同じ JVM・同じコンパイラ。hooks.json の checkd.server）に頼む。常駐は
+// 頼まれた時にソースを読み、変わった物だけコンパイラに渡し、答えに「検査したソースの版」を付ける。クライアントは答えを
+// 受けた後にディスクから版を取り直し、同じ時だけ答えを使う（違えば頼み直し、それでも合わなければ素の flix check）。
+// ファイルの監視と待ちに正しさを預けないので、古い緑が出ない（flixlint の docs/design/checkd-freshness.md）。
+// test は素の flix test（テストはゲームのコードを動かすので常駐に入れない）。
 //
-// 常駐が無い/壊れている/応答しない時は、黙って素の CLI に落ちる。
-// 速さより結果の正しさを常に優先する。
-//
-// WhyNot: OS 固有の仕組み (Unix ドメインソケット・シグナル) で組まないのは、
-// Windows で同じ物が無く、そこだけ別の作りになるため。repl とは素のパイプで話し、
-// 常駐とは 127.0.0.1 の TCP で話す。
+// 常駐が無い・壊れている・答えない時は、黙って素の CLI に落ちる。速さより結果の正しさを常に優先する。
 package checkd
 
 import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 
@@ -24,14 +20,11 @@ import (
 )
 
 // Usage は引数を読めなかったときに出す使い方。
-const Usage = `使い方: fge checkd [パッケージdir]   # check する (省略時はカレント)
-        fge checkd --test [dir]      # test する (check と同じ常駐 repl を使う)
+const Usage = `使い方: fge checkd [パッケージdir]   # check する (省略時はカレント。flixlint の常駐で)
+        fge checkd --test [dir]      # test する (素の flix test)
         fge checkd --stop [dir]      # そのパッケージの常駐を止める
         fge checkd --stop-all        # 常駐を全部止める
 `
-
-// ansi は端末の飾り。repl の出力から落として、CLI と同じ字面に揃える。
-var ansi = regexp.MustCompile("\x1b\\[[0-9;?]*[a-zA-Z]|\x1b\\][^\x07]*\x07|\x1b[=>]")
 
 // Run は fge checkd の入口。out が check の出力、errOut が経過の記録。
 func Run(out, errOut *strings.Builder, root string, args []string) (int, error) {
@@ -40,12 +33,6 @@ func Run(out, errOut *strings.Builder, root string, args []string) (int, error) 
 		return 2, err
 	}
 	switch {
-	case len(args) > 0 && args[0] == "--daemon":
-		if len(args) < 2 {
-			fmt.Fprint(errOut, Usage)
-			return 2, nil
-		}
-		return serve(r, root, pkgDirOf(args[1])), nil
 	case len(args) > 0 && args[0] == "--stop-all":
 		return stopAll(r, out), nil
 	case len(args) > 0 && args[0] == "--stop":

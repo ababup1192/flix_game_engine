@@ -25,8 +25,8 @@ $(warning ENGINE が見当たりません ($(ENGINE)) — local.mk に「ENGINE 
 endif
 ifeq ($(OS),Windows_NT)
 JAVA   ?= java
-# 常駐 checkd は bash ラッパー (bin/flix) しか起動を知らず、Windows の
-# JAVA+flix.jar 経路では落ちる。checkd が教わるまで Windows では素の check を使う。
+# checkd は flix.jar の場所を bash ラッパー (bin/flix) から引くので、Windows の JAVA+flix.jar 経路では
+# 引けない。checkd が教わるまで Windows では素の check を使う。
 CHECKD := 0
 # -Xss64m: View の式が深く入れ子になると、既定のスタックでは型検査が StackOverflow で落ちる。
 FLIX   := "$(JAVA)" -Xss64m -jar "$(ENGINE)/bin/flix.jar"
@@ -119,19 +119,12 @@ debug:
 # 出力は .test-logs/test.log に落とし、緑なら末尾 5 行だけ見せる。
 # make status が「最後にいつ・緑か赤か」をこの記録から読む。
 #
-# WhyNot: check と同じ常駐に相乗りさせない。常駐の repl は「常駐が全部太りきっても
-# 物理メモリの 33% まで」の約束からヒープに蓋がしてあり (checkd/budget.go)、型検査は
-# その中に収まるが、テストはコード生成と実行まで同じ repl に乗るので収まらない。
-# 16GB・13,000 行での実測: 常駐 8:39 (CPU 49% = GC 待ち) / 素の test 2:20 (CPU 163%)。
-# 常駐に乗せたいときだけ CHECKD=1 make test。
+# WhyNot: check の常駐（flixlint）に相乗りさせない。テストはゲームのコードを動かすので、固まり・System.exit・窓の
+# 初期化が check と lint の常駐を巻き込む。常駐で組んで別の JVM で流す形も測ったが縮まず、コード生成でヒープが
+# 常駐の線を超えた（flixlint の docs/design/checkd-freshness.md の C-T の記録）。
 test:
 	@mkdir -p .test-logs; rm -f .test-logs/test.fail
-	@fge=bin/fge; [ -x "$$fge" ] || fge="$(ENGINE)/bin/fge"; \
-	if [ "$(CHECKD)" = "1" ] && [ -x "$$fge" ]; then \
-		"$$fge" checkd --test . > .test-logs/test.log 2>&1; \
-	else \
-		JAVA_TOOL_OPTIONS="-Djava.awt.headless=true" $(FLIX) test > .test-logs/test.log 2>&1; \
-	fi; \
+	@JAVA_TOOL_OPTIONS="-Djava.awt.headless=true" $(FLIX) test > .test-logs/test.log 2>&1; \
 	if [ $$? = 0 ]; then \
 		tail -5 .test-logs/test.log; \
 	else \
@@ -144,7 +137,8 @@ build:
 # check の全文は .test-logs/check.log に落とし、画面には要約だけ出す:
 # 成功 = 1 行、失敗 = 最初のエラー全文 + 残りの file:line 一覧 + 処方箋 1 行
 # (bin/fge explain-error が整形。全文が欲しいときは QUIET=0 make check かログを開く)。
-# 常駐 (bin/fge checkd) が居れば 2 回目からサブ秒。CHECKD=0 make check で素の check。
+# check は bin/fge checkd が flixlint の常駐（lint・refactor の索引と同じ）に頼み、答えの版をディスクと比べて使う。
+# CHECKD=0 make check で素の check。
 check:
 	@mkdir -p .test-logs
 	@fge=bin/fge; [ -x "$$fge" ] || fge="$(ENGINE)/bin/fge"; \

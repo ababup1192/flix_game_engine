@@ -22,37 +22,24 @@ type MaxDaemons struct {
 	EnvVar      *string  `json:"envVar"`
 }
 
-// RSSLimit は repl 1 本を使い捨てるメモリの線の決め方。
+// RSSLimit は起動予約をしてよい機械かの線（常駐 1 本が物理メモリの memoryShare に収まるか）。
 type RSSLimit struct {
 	MemoryShare *float64 `json:"memoryShare"`
-	MinMB       *int     `json:"minMB"`
-	MaxMB       *int     `json:"maxMB"`
-	FallbackMB  *int     `json:"fallbackMB"`
-	FloorMB     *int     `json:"floorMB"`
 	EnvVar      *string  `json:"envVar"`
 }
 
-// CheckdDaemon は常駐そのものの寿命と使い捨ての条件。
+// CheckdDaemon は check の常駐（flixlint）と話す時の待ちと、起動予約の歯止め。
 type CheckdDaemon struct {
 	HeapHeadroomMB    *int     `json:"heapHeadroomMB"`
-	HeapMinMB         *int     `json:"heapMinMB"`
-	IdleSec           *float64 `json:"idleSec"`
-	IdleEnvVar        *string  `json:"idleEnvVar"`
-	MaxChecks         *int     `json:"maxChecks"`
-	SettleSec         *float64 `json:"settleSec"`
 	WorkTimeoutSec    *float64 `json:"workTimeoutSec"`
-	WarmTimeoutSec    *float64 `json:"warmTimeoutSec"`
 	SpawnWaitSec      *float64 `json:"spawnWaitSec"`
 	ConnectTimeoutSec *float64 `json:"connectTimeoutSec"`
-	ConvTimeoutSec    *float64 `json:"convTimeoutSec"`
 	RSSLimit          RSSLimit `json:"rssLimit"`
-	SkipDirs          []string `json:"skipDirs"`
-	DepSuffixes       []string `json:"depSuffixes"`
 }
 
 // CheckdServer は flixlint の常駐の check を使う時の決め (checkd-freshness §4・C-2)。
-// WhyNot: 節が丸ごと無い hooks.json (新しいバイナリだけ配った clone) を止めない。節が無ければ常駐の check を使わず
-// repl のままにする。節が在る時は全部の欄が要る。
+// WhyNot: 節が丸ごと無い hooks.json (新しいバイナリだけ配った clone) を止めない。節が無ければ常駐を使わず素の
+// flix check にする。節が在る時は全部の欄が要る。
 type CheckdServer struct {
 	BackendEnvVar   *string  `json:"backendEnvVar"`
 	FlixlintVersion *string  `json:"flixlintVersion"`
@@ -71,7 +58,6 @@ type Checkd struct {
 	CacheDir             *string      `json:"cacheDir"`
 	StateHashLen         *int         `json:"stateHashLen"`
 	PkgSearchDepth       *int         `json:"pkgSearchDepth"`
-	PingTimeoutSec       *float64     `json:"pingTimeoutSec"`
 	CheckTimeoutSec      *float64     `json:"checkTimeoutSec"`
 	GitTimeoutSec        *float64     `json:"gitTimeoutSec"`
 	ReserveIntervalSec   *float64     `json:"reserveIntervalSec"`
@@ -154,14 +140,6 @@ func LoadRules(root string) (*Rules, error) {
 	}
 	cd := r.Checkd
 	// warmTimeoutSec は 2026-08-30 に足した新キー。欠けキーで止める方針の例外として
-	// 1 リリースの間だけ既定値へフォールバックする — 古い hooks.json + 新バイナリの
-	// 組み合わせ (バイナリだけ部分更新した clone) との後方互換のため。次のリリースで
-	// 必須キーへ昇格させ、この既定値を消す。
-	if cd.Daemon.WarmTimeoutSec == nil {
-		v := 240.0
-		cd.Daemon.WarmTimeoutSec = &v
-		r.Checkd = cd
-	}
 	missing := ""
 	switch {
 	case cd.CacheDir == nil:
@@ -170,8 +148,6 @@ func LoadRules(root string) (*Rules, error) {
 		missing = "checkd.stateHashLen"
 	case cd.PkgSearchDepth == nil:
 		missing = "checkd.pkgSearchDepth"
-	case cd.PingTimeoutSec == nil:
-		missing = "checkd.pingTimeoutSec"
 	case cd.CheckTimeoutSec == nil:
 		missing = "checkd.checkTimeoutSec"
 	case cd.GitTimeoutSec == nil:
@@ -194,34 +170,14 @@ func LoadRules(root string) (*Rules, error) {
 		missing = "checkd.maxDaemons.envVar"
 	case cd.Daemon.HeapHeadroomMB == nil:
 		missing = "checkd.daemon.heapHeadroomMB"
-	case cd.Daemon.HeapMinMB == nil:
-		missing = "checkd.daemon.heapMinMB"
-	case cd.Daemon.IdleSec == nil:
-		missing = "checkd.daemon.idleSec"
-	case cd.Daemon.IdleEnvVar == nil:
-		missing = "checkd.daemon.idleEnvVar"
-	case cd.Daemon.MaxChecks == nil:
-		missing = "checkd.daemon.maxChecks"
-	case cd.Daemon.SettleSec == nil:
-		missing = "checkd.daemon.settleSec"
 	case cd.Daemon.WorkTimeoutSec == nil:
 		missing = "checkd.daemon.workTimeoutSec"
 	case cd.Daemon.SpawnWaitSec == nil:
 		missing = "checkd.daemon.spawnWaitSec"
 	case cd.Daemon.ConnectTimeoutSec == nil:
 		missing = "checkd.daemon.connectTimeoutSec"
-	case cd.Daemon.ConvTimeoutSec == nil:
-		missing = "checkd.daemon.convTimeoutSec"
 	case cd.Daemon.RSSLimit.MemoryShare == nil:
 		missing = "checkd.daemon.rssLimit.memoryShare"
-	case cd.Daemon.RSSLimit.MinMB == nil:
-		missing = "checkd.daemon.rssLimit.minMB"
-	case cd.Daemon.RSSLimit.MaxMB == nil:
-		missing = "checkd.daemon.rssLimit.maxMB"
-	case cd.Daemon.RSSLimit.FallbackMB == nil:
-		missing = "checkd.daemon.rssLimit.fallbackMB"
-	case cd.Daemon.RSSLimit.FloorMB == nil:
-		missing = "checkd.daemon.rssLimit.floorMB"
 	case cd.Daemon.RSSLimit.EnvVar == nil:
 		missing = "checkd.daemon.rssLimit.envVar"
 	case cd.Server.BackendEnvVar != nil && cd.Server.FlixlintVersion == nil:
@@ -240,10 +196,6 @@ func LoadRules(root string) (*Rules, error) {
 		missing = "checkd.server.runLimitSec"
 	case cd.Server.BackendEnvVar != nil && cd.Server.Retries == nil:
 		missing = "checkd.server.retries"
-	case len(cd.Daemon.SkipDirs) == 0:
-		missing = "checkd.daemon.skipDirs"
-	case len(cd.Daemon.DepSuffixes) == 0:
-		missing = "checkd.daemon.depSuffixes"
 	case len(cd.PatchFilePrefixes) == 0:
 		missing = "checkd.patchFilePrefixes"
 	case len(cd.CommentOnlyPrefixes) == 0:
