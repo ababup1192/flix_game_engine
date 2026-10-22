@@ -73,6 +73,19 @@ func TestRemoveRecordFieldKeepsTheLayout(t *testing.T) {
 			t.Errorf("%q: got %q %v（%q のはず）", c.text, got, err, c.want)
 		}
 	}
+	// 消すのは欄の行と、その欄だけの説明のコメント。record 全体の説明（最初の欄の前）と、空行の後の見出し（下に続く
+	// 欄の組にかかる物）は残す。見出しの下の欄が 1 つだけ（後ろが空行か閉じる `}`）なら、その欄の説明として一緒に消す。
+	for _, c := range []struct{ text, label, want string }{
+		{"{\n    // World 全体の説明\n    x = 1,\n    a = 2\n}", "x", "{\n    // World 全体の説明\n    a = 2\n}"},
+		{"{\n    a = 1,\n\n    // 夜の欄\n    x = 2,\n    b = 3\n}", "x", "{\n    a = 1,\n\n    // 夜の欄\n    b = 3\n}"},
+		{"{\n    a = 1,\n\n    // x の説明\n    x = 2,\n\n    b = 3\n}", "x", "{\n    a = 1,\n\n    b = 3\n}"},
+		{"{\n    a = 1,\n\n    // x の説明\n    x = 2\n}", "x", "{\n    a = 1\n}"},
+	} {
+		got, err := RemoveRecordField(c.text, c.label)
+		if err != nil || got != c.want {
+			t.Errorf("%q: got %q %v（%q のはず）", c.text, got, err, c.want)
+		}
+	}
 	if _, err := RemoveRecordField("{ x = 1 }", "x"); err == nil {
 		t.Error("欄が 1 つの record から消して空にした")
 	}

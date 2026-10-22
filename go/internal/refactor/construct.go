@@ -294,15 +294,7 @@ func RemoveRecordField(text, label string) (string, error) {
 	last := k == len(u.Fields)-1
 	ls := lineStart(text, f.Start)
 	if strings.TrimSpace(text[ls:f.Start]) == "" && ls > 0 {
-		start := ls
-		for start > 0 {
-			ps := lineStart(text, start-1)
-			if t := strings.TrimSpace(text[ps : start-1]); strings.HasPrefix(t, "//") {
-				start = ps
-				continue
-			}
-			break
-		}
+		start := ownLinesStart(text, u.Fields, k, ls)
 		if !last {
 			e := f.VEnd + 1
 			if nl := strings.IndexByte(text[e:], '\n'); nl >= 0 && strings.TrimSpace(text[e:e+nl]) == "" {
@@ -322,6 +314,44 @@ func RemoveRecordField(text, label string) (string, error) {
 		return text[:f.Start] + text[u.Fields[1].Start:], nil
 	}
 	return text[:codeEnd(text, u.Fields[k-1])] + text[codeEnd(text, f):], nil
+}
+
+// ownLinesStart は自分の行にある欄 k（行の頭 ls）を消す時に、一緒に消す行の頭。前に付いた `//` のコメントの行のうち、
+// その欄だけの説明は含め、record 全体の説明（最初の欄の前）と、空行の後の見出し（下に続く欄の組にかかる物）は残す。
+// 見出しの下の欄が k だけ（後ろが空行か閉じる `}`）なら k の説明と見て消し、前の空行も消す（空行が続かないように）。
+// WhyNot: コメントの行を無条件に上へたどると、最初の欄を消した時に record の説明を、節の頭の欄を消した時に節の見出しを消していた。
+func ownLinesStart(text string, fields []Field, k, ls int) int {
+	start := ls
+	for start > 0 {
+		ps := lineStart(text, start-1)
+		if t := strings.TrimSpace(text[ps : start-1]); strings.HasPrefix(t, "//") {
+			start = ps
+			continue
+		}
+		break
+	}
+	if start == ls {
+		return ls
+	}
+	if k == 0 {
+		return ls
+	}
+	above := lineStart(text, start-1)
+	if strings.TrimSpace(text[above:start-1]) != "" {
+		return start // 前の欄のすぐ下のコメントは k だけの説明
+	}
+	// 空行の後のコメント: k の後ろが空行か閉じる `}` なら節に k だけ。
+	rest := text[codeEnd(text, fields[k]):]
+	if nl := strings.IndexByte(rest, '\n'); nl >= 0 {
+		next := rest[nl+1:]
+		if e := strings.IndexByte(next, '\n'); e >= 0 {
+			next = next[:e]
+		}
+		if t := strings.TrimSpace(next); t == "" || strings.HasPrefix(t, "}") || strings.HasPrefix(t, "|") {
+			return above
+		}
+	}
+	return ls
 }
 
 // AddRecordField は閉じた record の式 text の最後の欄の後に `label = value` を足した字を返す。
