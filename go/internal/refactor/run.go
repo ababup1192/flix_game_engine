@@ -570,12 +570,19 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 		fmt.Fprintf(errOut, "refactor: %v\n", err)
 		return 2
 	}
-	b := Builder{Root: root, Config: cfg, Flixlint: fl, FlixJar: FindFlixJar(root, fl, cfg), Run: o.Run, Log: o.Log, Rebuild: a.rebuild, Verbose: a.verbose, Version: o.Version, Shared: o.Shared}
-	if o.Shared.FlixJar != "" {
-		b.FlixJar = o.Shared.FlixJar
+	jar := ChooseFlixJar(root, fl, cfg, o.Shared.FlixJar)
+	shared := o.Shared
+	if jar.Picked {
+		// 常駐も選び直した jar で立てる（版の違う jar の常駐とは identity が違うので混ざらない）。make check にも渡す。
+		shared.FlixJar = jar.Jar
+		os.Setenv("FLIX_JAR", jar.Jar)
 	}
+	b := Builder{Root: root, Config: cfg, Flixlint: fl, FlixJar: jar.Jar, FlixHint: jar.Mismatch, Run: o.Run, Log: o.Log, Rebuild: a.rebuild, Verbose: a.verbose, Version: o.Version, Shared: shared}
 	if b.Log == nil {
 		b.Log = os.Stderr
+	}
+	if jar.Note != "" {
+		fmt.Fprintln(b.Log, jar.Note)
 	}
 	if msg, next, why := preflight(root, a, cfg); msg != "" {
 		fmt.Fprintf(errOut, "refactor %s: %s\nnext: %s\n  （%s）\n", a.op, msg, next, why)
