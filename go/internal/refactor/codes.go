@@ -23,6 +23,8 @@ const (
 	CodeSignature        = "refactor.change-signature"
 	CodeMove             = "refactor.move"
 	CodePrivate          = "refactor.make-private"
+	CodeRename           = "refactor.rename"
+	CodeSafeDelete       = "refactor.safe-delete"
 	CodeRemoveParam      = "refactor.remove-param"
 	CodeRemoveUse        = "refactor.remove-use"
 	CodeRewrite          = "refactor.rewrite"
@@ -61,6 +63,10 @@ var codes = []checkres.Code{
 		Rule: "0（元の mod の非 pub の物を使う・移す非 pub の物を外が使う・読めない use は fix。fix があれば書かない）", Summary: "def・型 alias を別の mod へ移した後に、新しい mod を指せない所として人へ回した数"},
 	{Name: CodePrivate, Level: checklevel.Lint, Metric: "private_left", Unit: "count", Op: checkres.AtMost,
 		Rule: "0（外の使い手がいる・どこからも参照されない・名前が入口のファイル（Makefile・json など）に出る・ライブラリの def は fix）", Summary: "外の mod から使われない pub の def から pub を外した後に、人へ回した数"},
+	{Name: CodeRename, Level: checklevel.Lint, Metric: "rename_left", Unit: "count", Op: checkres.AtMost,
+		Rule: "0（名前が入口のファイルに出る・ライブラリ・読めない書き方は fix。fix があれば書かない）", Summary: "def の名前を替えた後に、人へ回した数"},
+	{Name: CodeSafeDelete, Level: checklevel.Lint, Metric: "safe_delete_left", Unit: "count", Op: checkres.AtMost,
+		Rule: "0（同じ mod の中から・外から使う def は消さずに使い手を並べる）", Summary: "名指した def を消してよい時だけ消した後に、消さずに残した数（使い手を含む）"},
 	{Name: CodeRemoveParam, Level: checklevel.Lint, Metric: "call_sites_left", Unit: "count", Op: checkres.AtMost,
 		Rule: "0（本体が使う引数・関数として渡す所は fix。fix があれば書かない）", Summary: "def の使っていない引数を宣言と呼ぶ所から消した後に、人へ回した数"},
 	{Name: CodeRemoveUse, Level: checklevel.Lint, Metric: "unused_use_left", Unit: "count", Op: checkres.AtMost,

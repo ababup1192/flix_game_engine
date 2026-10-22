@@ -89,6 +89,12 @@ const Usage = `使い方: fge refactor <操作> [引数] [--json] [-v|--verbose]
                                                        「同じ mod の中だけ」を全部）。外の mod の呼び出し・use・テストが使う・どこからも
                                                        参照されない（消すのは remove-dead）・名前が .flix の外に出る・ライブラリは fix。
                                                        --def の時はほかの当たる def の数を 1 行で知らせるだけ
+  safe-delete --def Mod.f [--apply]                   名指した def を消してよい時だけ消す（usages --unused と同じ決め）: 参照 0 は remove-dead、
+                                                       テストからだけ使う物は使うテストごと（remove-dead --with-tests）。同じ mod の中から・
+                                                       外から使う物は消さずに使い手を並べる（同じ mod の中だけなら next に make-private）
+  rename --def Mod.f --to g [--apply]                  def の名前を替える: 宣言・使う所（Mod.f も f も）・use の中の名前の、書いた名前の最後の区切り
+                                                       だけ。use の別名（f => h）と、それを書いた所は替えない。同じ mod に g が在れば止める。
+                                                       名前が入口のファイル（Makefile・json など）に出る・ライブラリ・読めない書き方は fix
   remove-use (<file>:<行> | <file> --all | --all) [--apply]
                                                        使っていない use・import を消す（判定は flixlint の unused-use と同じ:
                                                        Flixlint.Flix.namesUsed・isUnused を resolved の段で流す。flixlint ` + MinFlixlintUnusedUse + ` 以上）。
@@ -520,6 +526,16 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 			fmt.Fprintln(errOut, "refactor extract-type-alias: --name <Mod.Name> と、--from '<record の型の字>' か <file>:<行>（--from にも書ける）のどちらか 1 つが要ります（例 --name Geometry.Corner --from '{ right = Float64, bottom = Float64 }'）")
 			return 2
 		}
+	case "safe-delete":
+		if a.def == "" {
+			fmt.Fprintln(errOut, "refactor safe-delete: --def <Mod.f> が要ります（1 つ。例 --def World.oldHelper）")
+			return 2
+		}
+	case "rename":
+		if a.def == "" || a.to == "" {
+			fmt.Fprintln(errOut, "refactor rename: --def <Mod.f> と --to <新しい名前> が要ります（例 --def World.moveTo --to goTo）")
+			return 2
+		}
 	case "make-private", "remove-dead":
 		// 名前かファイルを旗なしで書いた時に、黙って名指し無し（全部の候補）で流さない。
 		if a.target != "" {
@@ -538,7 +554,7 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 		}
 	case "index":
 	default:
-		fmt.Fprintf(errOut, "refactor: 知らない操作 %s（usages・refs・match-sites・field-sites・index・expand-wildcard・remove-dead・field-to-accessor・remove-field・fix-construction・add-field・change-case-shape・change-signature・remove-param・make-private・move・remove-use・rewrite・extract-function・extract-type-alias）\n", a.op)
+		fmt.Fprintf(errOut, "refactor: 知らない操作 %s（usages・refs・match-sites・field-sites・index・expand-wildcard・remove-dead・field-to-accessor・remove-field・fix-construction・add-field・change-case-shape・change-signature・remove-param・make-private・rename・safe-delete・move・remove-use・rewrite・extract-function・extract-type-alias）\n", a.op)
 		return 2
 	}
 	if a.op != "field-to-accessor" && (strings.Contains(a.label, ",") || a.labelsFile != "") {
@@ -624,6 +640,10 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 		rep, err = removeParamReport(root, idx, a, cfg, o)
 	case "make-private":
 		rep, err = privateReport(root, idx, a, cfg, o)
+	case "rename":
+		rep, err = renameReport(root, idx, a, cfg, o)
+	case "safe-delete":
+		rep, err = safeDeleteReport(root, idx, a, cfg, o)
 	case "remove-use":
 		rep, err = removeUseReport(root, a, cfg, o, b)
 	case "rewrite":
