@@ -61,6 +61,12 @@ const Usage = `使い方: fge refactor <操作> [引数] [--json] [-v|--verbose]
                                                        T を組み立てる式（fix-construction と同じ当て方）すべてに x = EXPR を同じ位置へ。
                                                        型と組み立てを 1 つの patch で書き、確かめ 1 回（落ちれば全部戻す）。欄がもうある・
                                                        開いた record は止める。欄の組が同じ別の型の組み立ては fix
+  move-fields --labels a,b --receiver World --into-case E.C [--value-of a=EXPR] [--finish] [--apply]
+                                                       World の欄を場面の payload（case C(CUi) の alias か case C({ … })）へ 2 段で移す。
+                                                       既定は写す: payload の型に欄を足し（型の字は World の宣言から）、payload の
+                                                       組み立てに値（--value-of か、World の組み立ての同じ欄の式が 1 通りならそれ）を
+                                                       足す。World は触らない。口の中身を payload を読む形に人が直した後、--finish で
+                                                       直の読み書きが 0 なら World の型と組み立てからまとめて消す。確かめは段ごとに 1 回
   change-case-shape --case E.C[,E.D] (--add T [--at N] --value V | --remove N | --label x --type T --value V) [--apply]
                                                        enum の case の欄（位置は 0 から）を足す・消し、宣言と作る所（E.C(a)）と
                                                        当てる所（case E.C(x)）を全部直す。足した欄は作る所が V・当てる所が _。
@@ -196,16 +202,19 @@ type args struct {
 	def                                                   string
 	reader, mapper, setter                                string
 	caseName, value                                       string
-	add, typ, params, argsText                            string // change-case-shape の --add・--type、change-signature の --params・--args
-	to, with                                              string // move の --to・--with
-	param                                                 string // remove-param の --param（a,b で複数。無ければ本体が使わない引数を全部）
-	after                                                 string // add-field の --after（この欄の次に足す）
-	from, where, in, rule                                 string // rewrite の --from・--where・--in・--rule（--to は move と同じ欄）
-	name, expr, doc                                       string // extract-function・extract-type-alias の --name・--expr・--doc
-	preferLocal                                           bool   // --prefer-local: 書く式の代わりに、型が同じ局所の名前が 1 つならそれを書く
-	propagate                                             bool   // change-signature --propagate: 呼ぶ所に @名前 が無ければ、囲む def にも同じ引数を足して上へ
-	stopAt                                                string // change-signature --stop-at（a,b）: --propagate で広げない def
-	at, remove                                            int    // change-case-shape の --at・--remove（-1 は無し）
+	add, typ, params, argsText                            string   // change-case-shape の --add・--type、change-signature の --params・--args
+	to, with                                              string   // move の --to・--with
+	param                                                 string   // remove-param の --param（a,b で複数。無ければ本体が使わない引数を全部）
+	after                                                 string   // add-field の --after（この欄の次に足す）
+	from, where, in, rule                                 string   // rewrite の --from・--where・--in・--rule（--to は move と同じ欄）
+	name, expr, doc                                       string   // extract-function・extract-type-alias の --name・--expr・--doc
+	preferLocal                                           bool     // --prefer-local: 書く式の代わりに、型が同じ局所の名前が 1 つならそれを書く
+	propagate                                             bool     // change-signature --propagate: 呼ぶ所に @名前 が無ければ、囲む def にも同じ引数を足して上へ
+	stopAt                                                string   // change-signature --stop-at（a,b）: --propagate で広げない def
+	labels, intoCase                                      string   // move-fields の --labels（a,b）・--into-case
+	valueOf                                               []string // move-fields の --value-of 欄=式（何度でも）
+	finish                                                bool     // move-fields --finish（World から消す段）
+	at, remove                                            int      // change-case-shape の --at・--remove（-1 は無し）
 	skip                                                  map[string]bool
 	max, limit                                            int // max < 0 は無し・limit 0 は全部
 }
@@ -314,6 +323,17 @@ func parseArgs(rest []string) (args, error) {
 			a.rule, err = value(&i, x)
 		case "--prefer-local":
 			a.preferLocal = true
+		case "--labels":
+			a.labels, err = value(&i, x)
+		case "--into-case":
+			a.intoCase, err = value(&i, x)
+		case "--value-of":
+			var v string
+			if v, err = value(&i, x); err == nil {
+				a.valueOf = append(a.valueOf, v)
+			}
+		case "--finish":
+			a.finish = true
 		case "--propagate":
 			a.propagate = true
 		case "--stop-at":
@@ -387,7 +407,7 @@ func (a args) applyWith(verify string, o Options) Apply {
 
 // needs は操作に要る一番低い段（欄の読み書きと受け手の型を見る物だけ typed）。
 func (a args) needs() Stage {
-	if a.op == "field-sites" || a.op == "field-to-accessor" || a.op == "remove-field" || a.op == "rewrite" || a.op == "extract-function" {
+	if a.op == "field-sites" || a.op == "field-to-accessor" || a.op == "remove-field" || (a.op == "move-fields" && a.finish) || a.op == "rewrite" || a.op == "extract-function" {
 		return Typed
 	}
 	if _, _, field := a.fieldTarget(); a.op == "usages" && field && !a.unused {
@@ -500,6 +520,11 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 			fmt.Fprintln(errOut, "refactor change-signature: --def <Mod.f>（a,b で複数）・--params '<新しい引数の並び>'・--args '<呼ぶ所の式（元の引数の名前が使える）>' が要ります（例 --def TitleView.titleTree --params 'env: ViewEnv.Env, input: TitleScene.In' --args 'ViewEnv.of(ctx, w), TitleScene.inputOf(w)'）")
 			return 2
 		}
+	case "move-fields":
+		if a.labels == "" || a.receiver == "" || a.intoCase == "" {
+			fmt.Fprintln(errOut, "refactor move-fields: --labels <欄>（a,b で複数）・--receiver <record の alias>・--into-case <Enum.Case> が要ります（例 --labels deckCursor,deckScroll --receiver World --into-case Scene.Deck。値は --value-of 欄=<式>・World から消す段は --finish）")
+			return 2
+		}
 	case "add-field":
 		if a.label == "" || a.receiver == "" || a.typ == "" || a.value == "" {
 			fmt.Fprintln(errOut, "refactor add-field: --receiver <record の alias>・--label <欄>・--type <型>・--value <作る所に入れる式> が要ります（例 --receiver World --label pointerShown --type Bool --value false --after phase）")
@@ -548,7 +573,7 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 		}
 	case "index":
 	default:
-		fmt.Fprintf(errOut, "refactor: 知らない操作 %s（usages・refs・match-sites・field-sites・index・expand-wildcard・remove-dead・field-to-accessor・remove-field・fix-construction・add-field・change-case-shape・change-signature・remove-param・make-private・move・remove-use・rewrite・extract-function・extract-type-alias）\n", a.op)
+		fmt.Fprintf(errOut, "refactor: 知らない操作 %s（usages・refs・match-sites・field-sites・index・expand-wildcard・remove-dead・field-to-accessor・remove-field・fix-construction・add-field・move-fields・change-case-shape・change-signature・remove-param・make-private・move・remove-use・rewrite・extract-function・extract-type-alias）\n", a.op)
 		return 2
 	}
 	if a.op != "field-to-accessor" && (strings.Contains(a.label, ",") || a.labelsFile != "") {
@@ -631,6 +656,8 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 		rep, err = fixConstructionReport(root, idx, a, cfg, o)
 	case "add-field":
 		rep, err = addFieldReport(root, idx, a, cfg, o)
+	case "move-fields":
+		rep, err = moveFieldsReport(root, idx, a, cfg, o)
 	case "change-case-shape":
 		rep, err = caseShapeReport(root, idx, a, cfg, o)
 	case "change-signature":

@@ -1,0 +1,40 @@
+# flixlint-spans 2 stage=resolved columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=use,type-use,alias-decl,arg
+def-decl	src/Menu.flix	2	13	2	22	Menu.deckScene	Menu.deckScene	pub ext=2:5:2:72
+type-use	src/Menu.flix	2	26	2	37	World.Scene	Menu.deckScene	what=enum
+case-construct	src/Menu.flix	2	40	2	56	World.Scene.Deck	Menu.deckScene	
+arg	src/Menu.flix	2	59	2	71	World.Scene.Deck	Menu.deckScene	of=case-construct at=2:40 i=0 n=1
+alias-decl	src/World.flix	2	20	2	26	World.DeckUi	World.DeckUi	
+enum-decl	src/World.flix	4	14	4	19	World.Scene	World.Scene	
+case-decl	src/World.flix	5	14	5	18	World.Scene.Deck	World.Scene	arity=1
+type-use	src/World.flix	5	19	5	25	World.DeckUi	World.Scene	what=alias
+case-decl	src/World.flix	6	14	6	19	World.Scene.Board	World.Scene	arity=1
+case-decl	src/World.flix	7	14	7	19	World.Scene.Title	World.Scene	arity=0
+enum-decl	src/World.flix	10	14	10	18	World.Mode	World.Mode	
+case-decl	src/World.flix	11	14	11	17	World.Mode.Off	World.Mode	arity=0
+case-decl	src/World.flix	12	14	12	16	World.Mode.On	World.Mode	arity=0
+alias-decl	src/World.flix	15	20	15	25	World.World	World.World	
+type-use	src/World.flix	15	38	15	43	World.Scene	World.World	what=enum
+type-use	src/World.flix	15	101	15	105	World.Mode	World.World	what=enum
+def-decl	src/World.flix	17	13	17	20	World.initial	World.initial	pub ext=17:5:17:115
+type-use	src/World.flix	17	24	17	29	World.World	World.initial	what=alias
+case-construct	src/World.flix	17	42	17	53	World.Scene.Title	World.initial	
+case-construct	src/World.flix	17	105	17	113	World.Mode.Off	World.initial	
+def-decl	src/World.flix	19	13	19	21	World.openDeck	World.openDeck	pub ext=19:5:19:83
+type-use	src/World.flix	19	25	19	30	World.World	World.openDeck	what=alias
+type-use	src/World.flix	19	33	19	38	World.World	World.openDeck	what=alias
+case-construct	src/World.flix	19	51	19	61	World.Scene.Deck	World.openDeck	
+arg	src/World.flix	19	64	19	76	World.Scene.Deck	World.openDeck	of=case-construct at=19:51 i=0 n=1
+def-decl	src/World.flix	21	13	21	21	World.scrollOf	World.scrollOf	pub ext=21:5:21:53
+type-use	src/World.flix	21	25	21	30	World.World	World.scrollOf	what=alias
+def-decl	src/World.flix	23	13	23	20	World.toBoard	World.toBoard	pub ext=23:5:23:81
+type-use	src/World.flix	23	24	23	29	World.World	World.toBoard	what=alias
+type-use	src/World.flix	23	32	23	37	World.World	World.toBoard	what=alias
+case-construct	src/World.flix	23	50	23	61	World.Scene.Board	World.toBoard	
+arg	src/World.flix	23	64	23	74	World.Scene.Board	World.toBoard	of=case-construct at=23:50 i=0 n=1
+def-decl	src/World.flix	25	13	25	21	World.cursorOf	World.cursorOf	pub ext=25:5:28:6
+type-use	src/World.flix	25	25	25	30	World.World	World.cursorOf	what=alias
+match-site	src/World.flix	25	41	28	6		World.cursorOf	arms=2 wild=1 var=0 guard=0 enum=World.Scene
+match-arm	src/World.flix	26	9	26	41	World.Scene.Deck	World.cursorOf	match=25:41 pat=tag at=26:14:26:28 guard=0 full=1
+case-pattern	src/World.flix	26	14	26	24	World.Scene.Deck	World.cursorOf	
+arg	src/World.flix	26	25	26	27	World.Scene.Deck	World.cursorOf	of=case-pattern at=26:14 i=0 n=1
+match-arm	src/World.flix	27	9	27	33		World.cursorOf	match=25:41 pat=wild at=27:14:27:15 guard=0

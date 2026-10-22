@@ -19,6 +19,7 @@ const (
 	CodeRemoveField      = "refactor.remove-field"
 	CodeFixConstruction  = "refactor.fix-construction"
 	CodeAddField         = "refactor.add-field"
+	CodeMoveFields       = "refactor.move-fields"
 	CodeCaseShape        = "refactor.change-case-shape"
 	CodeSignature        = "refactor.change-signature"
 	CodeMove             = "refactor.move"
@@ -53,6 +54,8 @@ var codes = []checkres.Code{
 		Rule: "0（欄の組が同じ別の型の組み立ては fix）", Summary: "record を組み立てる式の欄を型に合わせた（足した・消した）後に、人へ回した数"},
 	{Name: CodeAddField, Level: checklevel.Lint, Metric: "construction_left", Unit: "count", Op: checkres.AtMost,
 		Rule: "0（欄の組が同じ別の型の組み立ては fix）", Summary: "record の型 alias に欄を足し、組み立てる式にも値を足した後に、人へ回した数"},
+	{Name: CodeMoveFields, Level: checklevel.Lint, Metric: "construction_left", Unit: "count", Op: checkres.AtMost,
+		Rule: "0（--finish は直の読み書きが残れば止める・欄の組が同じ別の型の組み立ては fix）", Summary: "World の欄を場面の payload へ写した（--finish は World から消した）後に、人へ回した組み立ての数（止めた時は残っている直の読み書きの数）"},
 	{Name: CodeCaseShape, Level: checklevel.Lint, Metric: "case_sites_left", Unit: "count", Op: checkres.AtMost,
 		Rule: "0（case を関数として渡す所・消す欄を使う本体は fix。fix があれば書かない）", Summary: "enum の case の欄を足した・消した後に、宣言と形の合わない作る所・当てる所として人へ回した数"},
 	{Name: CodeSignature, Level: checklevel.Lint, Metric: "call_sites_left", Unit: "count", Op: checkres.AtMost,

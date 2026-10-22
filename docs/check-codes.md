@@ -86,6 +86,7 @@ near の帯は bin/lint-rules/checkfmt.json の near（code ごと。無けれ�
 | `refactor.make-private` | lint | private_left | count | <= | 0（外の使い手がいる・どこからも参照されない・名前が入口のファイル（Makefile・json など）に出る・ライブラリの def は fix） | 外の mod から使われない pub の def から pub を外した後に、人へ回した数 |
 | `refactor.match-sites` | lint | match_sites | count | <= | --max（無ければ一覧だけ） | enum（か case）への match の数。--catch-all なら `_`・変数の腕を持つ物だけ |
 | `refactor.move` | lint | move_sites_left | count | <= | 0（元の mod の非 pub の物を使う・移す非 pub の物を外が使う・読めない use は fix。fix があれば書かない） | def・型 alias を別の mod へ移した後に、新しい mod を指せない所として人へ回した数 |
+| `refactor.move-fields` | lint | construction_left | count | <= | 0（--finish は直の読み書きが残れば止める・欄の組が同じ別の型の組み立ては fix） | World の欄を場面の payload へ写した（--finish は World から消した）後に、人へ回した組み立ての数（止めた時は残っている直の読み書きの数） |
 | `refactor.refs` | lint | refs | count | <= | --max（無ければ一覧だけ） | def・enum・case の参照の数（宣言は数えない） |
 | `refactor.remove-dead` | lint | dead_left | count | <= | 0（決められない def は fix） | テストからだけ・どこからも参照されない pub の def を消した後に、人へ回した数 |
 | `refactor.remove-field` | lint | construction_left | count | <= | 0（直の読み書きが残れば止める・欄の組が同じ別の型の組み立ては fix） | record の型から欄を消し、組み立てからも消した後に、人へ回した数（止めた時は残っている直の読み書きの数） |
