@@ -185,68 +185,184 @@ func less(a, b Row) bool {
 	return a.Col < b.Col
 }
 
-// FieldSite は欄の直の読み書き 1 つ。
+// FieldSite は欄の直の読み書き 1 つ。受け手が何の値かは索引（flixlint の typed の段）の事実をそのまま持つ。
 type FieldSite struct {
 	Row
-	Write bool   `json:"write"` // `{ x = v | e }`（false は `e#x`）
-	Recv  string `json:"recv"`  // 受け手の型 alias（分からなければ ?・候補が複数なら A|B）
-	Via   string `json:"via"`   // decl・row・ambiguous・open・none
+	Write  bool     `json:"write"`            // `{ x = v | e }`（false は `e#x`）
+	Recv   string   `json:"owner"`            // alias:A・case:E.C[#i]・other・ambiguous・maybe・none
+	Chain  []string `json:"chain,omitempty"`  // 書いた別名から鎖の終わりまで（報告だけに使う）
+	Cands  []string `json:"cands,omitempty"`  // ambiguous・maybe の候補（*N は候補が多すぎて並べていない）
+	Why    string   `json:"why"`              // decl・case・row・open・none（報告の内訳だけに使う）
+	RSpan  string   `json:"rspan,omitempty"`  // 受け手の式の範囲 sl:sc:el:ec
+	RParam int      `json:"rparam,omitempty"` // 受け手が最上位の def の引数そのものなら番号 + 1（0 は違う）
 }
 
-// OtherRecord は受け手がどの型 alias でもないと決まっている物（recv=? via=none: 閉じた record の欄の組がどの alias とも違う）。
-// WhyNot: unsure に入れない。alias の record なら flixlint は欄の組で via=row（か ambiguous）を出すので、none は
-// --receiver の alias では無い（ArchStudy.stepText の `r: { keys = Int32, … }` の r#keys を World の keys に数えて止まった）。
-// 開いた row（via=open）は alias の値が渡ってくるかもしれないので unsure のまま。case の record は alias が無いので
-// none でも case の物でありうる（remove-field --case はこれを使わない）。
-func (s FieldSite) OtherRecord() bool { return s.Recv == "?" && s.Via == "none" }
+func fieldSiteOf(r Row) FieldSite {
+	s := FieldSite{Row: r, Write: r.Kind == KindLabelUpdate, Recv: r.Attr("owner"), Why: r.Attr("why"), RSpan: r.Attr("rspan")}
+	if c := r.Attr("chain"); c != "" {
+		s.Chain = strings.Split(c, ",")
+	}
+	if c := r.Attr("cands"); c != "" {
+		s.Cands = strings.Split(c, "|")
+	}
+	if p := r.Attr("rparam"); p != "" {
+		s.RParam = r.AttrInt("rparam") + 1
+	}
+	return s
+}
+
+// OwnerText は報告に出す受け手の字（alias・case はその名前、ほかは owner の語と候補）。
+func (s FieldSite) OwnerText() string {
+	if len(s.Cands) > 0 {
+		return s.Recv + "（" + strings.Join(s.Cands, "|") + "）"
+	}
+	return s.Recv
+}
+
+// FieldClass は問いの受け手に対する読み書き 1 つの分類。
+type FieldClass string
+
+const (
+	ClassHit   FieldClass = "hit"   // 受け手が問いの alias・case と証明できた
+	ClassMaybe FieldClass = "maybe" // 証明できないが、候補に問いの alias・case がある
+	ClassMiss  FieldClass = "miss"  // 別の物と分かっている
+)
+
+// FieldAct は分類ごとに操作がすること。
+type FieldAct string
+
+const (
+	ActCount   FieldAct = "count"   // 残っている読み書きに数える（残れば止める）
+	ActList    FieldAct = "list"    // 場所を並べる
+	ActUnsure  FieldAct = "unsure"  // 「たぶん」の欄に場所つきで並べる
+	ActRewrite FieldAct = "rewrite" // 書き換える
+	ActFix     FieldAct = "fix"     // 書き換えずに人へ回す
+	ActSkip    FieldAct = "skip"    // 数えない・並べない
+)
+
+// FieldActs は操作ごとの扱いの表（設計 semantic-index-design §2.2）。索引は事実だけを言い、数えるか・止めるかはここで決める。
+// WhyNot: 消す操作は maybe も数える。取りこぼすと消した後の確かめで落ちる（人は --skip で外す）。書く操作は証明できた所だけ書く。
+var FieldActs = map[string]map[FieldClass]FieldAct{
+	"remove-field":         {ClassHit: ActCount, ClassMaybe: ActCount, ClassMiss: ActSkip},
+	"move-fields --finish": {ClassHit: ActCount, ClassMaybe: ActCount, ClassMiss: ActSkip},
+	"field-sites":          {ClassHit: ActList, ClassMaybe: ActUnsure, ClassMiss: ActSkip},
+	"usages":               {ClassHit: ActList, ClassMaybe: ActUnsure, ClassMiss: ActSkip},
+	"field-to-accessor":    {ClassHit: ActRewrite, ClassMaybe: ActFix, ClassMiss: ActSkip},
+}
+
+// OwnerTarget は問いの受け手: alias（別名を鎖の終わりへ写した名前）か case（`#i` は書いた時だけ）。
+type OwnerTarget struct {
+	Alias string // alias:… の …
+	Case  string // case:… の …（`#i` を含めてよい）
+}
+
+// AliasTarget は --receiver の字を alias の sym に決め、別名なら鎖の終わりへ写す（`Model = World` の Model は World）。
+// 索引に alias-decl の行が無い・1 つに決まらない時は書いた字のまま（名前の終わりで当てる）。
+func AliasTarget(rows []Row, q string) OwnerTarget {
+	found := map[string]string{}
+	for _, r := range rows {
+		if r.Kind == KindAliasDecl && nameMatches(r.Sym, q) {
+			end := r.Attr("syn")
+			if end == "" {
+				end = r.Sym
+			}
+			found[r.Sym] = end
+		}
+	}
+	if end, ok := found[q]; ok {
+		return OwnerTarget{Alias: end}
+	}
+	if len(found) == 1 {
+		for _, end := range found {
+			return OwnerTarget{Alias: end}
+		}
+	}
+	return OwnerTarget{Alias: q}
+}
+
+func (t OwnerTarget) matches(owner string) bool {
+	switch {
+	case t.Alias != "":
+		a, ok := strings.CutPrefix(owner, "alias:")
+		return ok && nameMatches(a, t.Alias)
+	case t.Case != "":
+		c, ok := strings.CutPrefix(owner, "case:")
+		if !ok {
+			return false
+		}
+		if !strings.Contains(t.Case, "#") {
+			c, _, _ = strings.Cut(c, "#")
+		}
+		return nameMatches(c, t.Case)
+	}
+	return false
+}
+
+// Class は読み書き s を問い t で分ける。t が空なら全部 hit（受け手を問わない）。
+func (s FieldSite) Class(t OwnerTarget) FieldClass {
+	if t == (OwnerTarget{}) || t.matches(s.Recv) {
+		return ClassHit
+	}
+	if s.Recv == "maybe" || s.Recv == "ambiguous" {
+		for _, c := range s.Cands {
+			if strings.HasPrefix(c, "*") || t.matches(c) {
+				return ClassMaybe
+			}
+		}
+	}
+	return ClassMiss
+}
 
 // FieldQuery は field-sites の問い。
 type FieldQuery struct {
 	Label    string
-	Receiver string // 空なら受け手を問わない
+	Receiver string // 空なら受け手を問わない（Case も空の時）
+	Case     string // case の payload の欄を問う時の case の名前（--case）
 	Outside  string // 空でなければ、この mod の def の中の物を数えない（口の中の読み書き）
+	Op       string // 扱いの表（FieldActs）の行。空なら field-sites
 }
 
-// FieldAnswer は field-sites の答え。Sites は受け手が当たった物、Unsure は受け手の型が分からない物
-// （--receiver を付けた時だけ。型が分からない物と、候補が複数で決まらない ambiguous。当たっているかもしれないので並べる）、Inside は --outside の mod の中の物。
+// FieldAnswer は field-sites の答え。Sites は表が list・count・rewrite と言う物、Unsure は unsure・fix と言う物
+// （受け手が証明できないが当たっているかもしれない物）、Inside は --outside の mod の中の物。
 type FieldAnswer struct {
 	Sites  []FieldSite
 	Unsure []FieldSite
 	Inside int
 }
 
-// FieldSites は欄 label の直の読み書き。
+// FieldSites は欄 label の直の読み書きを、索引の受け手の事実と扱いの表で分ける。
 func FieldSites(rows []Row, q FieldQuery) FieldAnswer {
+	var t OwnerTarget
+	switch {
+	case q.Case != "":
+		t = OwnerTarget{Case: q.Case}
+	case q.Receiver != "":
+		t = AliasTarget(rows, q.Receiver)
+	}
+	op := q.Op
+	if op == "" {
+		op = "field-sites"
+	}
+	acts := FieldActs[op]
 	var a FieldAnswer
 	for _, r := range rows {
 		if (r.Kind != KindLabelSelect && r.Kind != KindLabelUpdate) || r.Sym != q.Label {
 			continue
 		}
-		s := FieldSite{Row: r, Write: r.Kind == KindLabelUpdate, Recv: r.Attr("recv"), Via: r.Attr("via")}
-		matched := q.Receiver == ""
-		unsure := false
-		if !matched {
-			candidate := false
-			for _, cand := range strings.Split(s.Recv, "|") {
-				if nameMatches(cand, q.Receiver) {
-					candidate = true
-				}
-			}
-			// 決まらない物（候補が複数の ambiguous・開いた row の ?）は数えず unsure へ（設計 §5-1）。
-			matched = candidate && s.Via != "ambiguous"
-			unsure = (s.Recv == "?" && !s.OtherRecord()) || (candidate && s.Via == "ambiguous")
-		}
-		if !matched && !unsure {
+		s := fieldSiteOf(r)
+		act := acts[s.Class(t)]
+		if act == ActSkip || act == "" {
 			continue
 		}
 		if q.Outside != "" && inMod(r.Owner, q.Outside) {
 			a.Inside++
 			continue
 		}
-		if matched {
-			a.Sites = append(a.Sites, s)
-		} else {
+		switch act {
+		case ActUnsure, ActFix:
 			a.Unsure = append(a.Unsure, s)
+		default:
+			a.Sites = append(a.Sites, s)
 		}
 	}
 	return a

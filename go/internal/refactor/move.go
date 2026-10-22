@@ -906,8 +906,8 @@ func declIsPub(src string, r Row) bool {
 
 // moveReport は move の入口。
 func moveReport(root string, idx *Index, a args, cfg Config, o Options) (report, error) {
-	if !idx.hasAdds(KindUse) {
-		return report{}, fmt.Errorf("索引に use の行が無い（flixlint %s 以上が要る。--flixlint か FGE_FLIXLINT で名指しして bin/fge refactor index --rebuild）", MinFlixlintUsages)
+	if idx.Stage != Resolved {
+		return report{}, fmt.Errorf("move は resolved の索引が要る（use の行は resolved の段だけにある。--stage を外す）")
 	}
 	all, err := loadSources(root, cfg)
 	if err != nil {

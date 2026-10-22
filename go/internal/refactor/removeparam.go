@@ -69,9 +69,6 @@ func paramsOf(rows []Row, srcs *reshapeSources, sym string) (names []string, bod
 
 // removeParamReport は remove-param の入口。
 func removeParamReport(root string, idx *Index, a args, cfg Config, o Options) (report, error) {
-	if !idx.hasAdds(KindArg) {
-		return report{}, fmt.Errorf("索引に arg の行が無い（flixlint %s 以上が要る。--flixlint か FGE_FLIXLINT で名指しして bin/fge refactor index --rebuild）", MinFlixlintArgs)
-	}
 	var named []string
 	if a.param != "" {
 		for _, n := range strings.Split(a.param, ",") {

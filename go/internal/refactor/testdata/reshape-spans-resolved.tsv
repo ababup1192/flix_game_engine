@@ -1,4 +1,4 @@
-# flixlint-spans 2 stage=resolved columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=use,type-use,alias-decl,arg
+# flixlint-spans 3 stage=resolved columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=use,type-use,alias-decl,arg
 enum-decl	src/Mode.flix	4	14	4	19	Mode.Scene	Mode.Scene	
 case-decl	src/Mode.flix	5	14	5	19	Mode.Scene.Title	Mode.Scene	arity=0
 case-decl	src/Mode.flix	6	14	6	19	Mode.Scene.Fight	Mode.Scene	arity=0

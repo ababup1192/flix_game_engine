@@ -1,4 +1,4 @@
-# flixlint-spans 2 stage=resolved columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=use,type-use,alias-decl,arg
+# flixlint-spans 3 stage=resolved columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=use,type-use,alias-decl,arg
 use	src/Badge.flix	2	17	2	29	Shapes.area	Badge	alias=size what=def
 def-decl	src/Badge.flix	4	13	4	18	Badge.badge	Badge.badge	pub ext=4:5:4:51
 type-use	src/Badge.flix	4	22	4	33	Shapes.Rect	Badge.badge	what=alias

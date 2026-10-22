@@ -135,9 +135,11 @@ func (s *accessorSources) everything() (map[string]string, error) {
 // planAccessorLabel は 1 欄の計画（口の名前を決め、無い口を作る所と字、型の確かめ、書き換え）。
 func planAccessorLabel(idx *Index, a args, label string, src *accessorSources) (accessorLabel, error) {
 	j := accessorLabel{label: label}
+	// 口を置く alias: --receiver を alias の sym（別名は鎖の終わり）に決め、その欄の読み書きが 1 つでも証明できていれば使う。
+	t := AliasTarget(idx.Rows, a.receiver)
 	for _, r := range idx.Rows {
-		if v := r.Attr("recv"); (r.Kind == KindLabelSelect || r.Kind == KindLabelUpdate) && r.Sym == label && nameMatches(v, a.receiver) {
-			j.alias = v
+		if (r.Kind == KindLabelSelect || r.Kind == KindLabelUpdate) && r.Sym == label && fieldSiteOf(r).Class(t) == ClassHit {
+			j.alias = strings.TrimPrefix(fieldSiteOf(r).Recv, "alias:")
 			break
 		}
 	}

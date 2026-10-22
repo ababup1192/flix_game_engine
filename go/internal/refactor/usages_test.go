@@ -10,7 +10,7 @@ import (
 
 // 索引は testdata/spans-*.tsv（flixlint の test/expected-spans-*.txt の写し）、元は testdata/src/Shapes.flix と Uses.flix。
 
-func fixtureSrc() *srcCache { return &srcCache{root: "testdata"} }
+func fixtureSrc() *srcCache { return &srcCache{root: filepath.Join("testdata", "spans")} }
 
 func whats(us []UsageSite) map[UsageWhat]int {
 	n := map[UsageWhat]int{}
@@ -129,22 +129,11 @@ func TestUnusedDefsSortsByWhy(t *testing.T) {
 	}
 }
 
-// 古い索引（頭の行に adds= が無い）では、型の注記・use を数えていないと書く（0 件と言わない）。
+// typed の索引（use・type-use の行は resolved の段だけ）では、型の注記・use を数えていないと書く（0 件と言わない）。
 func TestUsagesSaysWhenTheIndexHasNoTypeRows(t *testing.T) {
 	root := project(t)
-	old := Runner(func(_ Stage, _, _ string, cmd []string, _ string) int {
-		data, _ := os.ReadFile(filepath.Join("testdata", "spans-resolved.tsv"))
-		lines := strings.SplitN(string(data), "\n", 2)
-		head := strings.Replace(lines[0], " adds=use,type-use,alias-decl", "", 1)
-		for i := range cmd {
-			if cmd[i] == "--spans" {
-				return map[bool]int{true: 0, false: 4}[os.WriteFile(cmd[i+1], []byte(head+"\n"+lines[1]), 0o644) == nil]
-			}
-		}
-		return 4
-	})
 	var out, errOut strings.Builder
-	code := Run(&out, &errOut, root, []string{"usages", "Shapes.area", "--flixlint", filepath.Join(root, "flixlint")}, Options{Run: old, Log: os.Stderr})
+	code := Run(&out, &errOut, root, []string{"usages", "Shapes.area", "--stage", "typed", "--flixlint", filepath.Join(root, "flixlint")}, Options{Run: fakeRunner(new(int)), Log: os.Stderr})
 	if code != 0 || !strings.Contains(out.String(), "型の注記・use は数えていない") {
 		t.Errorf("exit %d\n%s%s", code, out.String(), errOut.String())
 	}

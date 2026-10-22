@@ -108,84 +108,24 @@ func identByte(c byte) bool {
 	return c == '_' || c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
 }
 
-// openBack は src[close] の閉じ括弧に対応する開き括弧の位置。間に文字列・字の字（" '）があれば読まない。
-func openBack(src string, close int) (int, bool) {
-	pairs := map[byte]byte{')': '(', ']': '[', '}': '{'}
-	var stack []byte
-	for i := close; i >= 0; i-- {
-		c := src[i]
-		switch c {
-		case ')', ']', '}':
-			stack = append(stack, pairs[c])
-		case '(', '[', '{':
-			if len(stack) == 0 || stack[len(stack)-1] != c {
-				return 0, false
-			}
-			stack = stack[:len(stack)-1]
-			if len(stack) == 0 {
-				return i, true
-			}
-		case '"', '\'':
-			return 0, false
-		}
+// receiverStart は読み s（`e#x`）の受け手の式 e の始まりのバイト。範囲は索引の rspan（コンパイラの位置）で、括弧で
+// 包んだ式（`(f(x))#y`）の位置は括弧を含まないので、終わりが `#`（位置 hash）に届くまで外側の括弧を広げる。
+func receiverStart(src string, s FieldSite, hash int) (int, bool) {
+	if s.RSpan == "" {
+		return 0, false
 	}
-	return 0, false
-}
-
-// identBack は src[:i] の終わりの名前（`Mod.name` の . つなぎも）の始まり。名前が無ければ i のまま。
-func identBack(src string, i int) int {
-	for {
-		j := i
-		for j > 0 && identByte(src[j-1]) {
-			j--
-		}
-		if j == i {
-			return i
-		}
-		i = j
-		if i >= 2 && src[i-1] == '.' && identByte(src[i-2]) {
-			i--
-			continue
-		}
-		return i
+	sp, err := spanOf(s.File, s.RSpan)
+	if err != nil {
+		return 0, false
 	}
-}
-
-// ReceiverStart は `e#x` の `#`（位置 hash）の前の受け手の式 e の始まり。e は名前・呼び出し（`f(a)`・`Mod.f(a)`）・
-// 括弧の式・record の式と、それらの `#` つなぎ（`a#b`）。読めなければ false。
-func ReceiverStart(src string, hash int) (int, bool) {
-	i := hash
-	for {
-		if i == 0 {
-			return 0, false
-		}
-		switch c := src[i-1]; {
-		case c == ')' || c == '}':
-			j, ok := openBack(src, i-1)
-			if !ok {
-				return 0, false
-			}
-			i = j
-			if c == ')' {
-				if k := identBack(src, i); k < i && !keywords[src[k:i]] {
-					i = k
-				}
-			}
-		case identByte(c):
-			k := identBack(src, i)
-			if keywords[src[k:i]] || src[k] >= '0' && src[k] <= '9' {
-				return 0, false
-			}
-			i = k
-		default:
-			return 0, false
-		}
-		if i > 0 && src[i-1] == '#' {
-			i--
-			continue
-		}
-		return i, true
+	st, en, err := ByteRange(src, sp)
+	if err != nil {
+		return 0, false
 	}
+	for en < hash && st > 0 && src[st-1] == '(' && src[en] == ')' {
+		st, en = st-1, en+1
+	}
+	return st, en == hash
 }
 
 // Field は更新の 1 欄（位置は渡した字の中のバイト）。
@@ -423,11 +363,11 @@ func PlanAccessor(srcs map[string]string, rows []Row, q AccessorQuery) (Accessor
 	for _, o := range q.OwnerSyms {
 		owners[o] = true
 	}
-	ans := FieldSites(rows, FieldQuery{Label: q.Label, Receiver: q.Receiver, Outside: q.Outside})
+	ans := FieldSites(rows, FieldQuery{Label: q.Label, Receiver: q.Receiver, Outside: q.Outside, Op: "field-to-accessor"})
 	p.Inside = ans.Inside
 	p.Unsure = len(ans.Unsure)
 	for _, s := range ans.Unsure {
-		p.Fix = append(p.Fix, Fixed{s.Row, fmt.Sprintf("受け手の型が決まらない（recv=%s via=%s）", s.Recv, s.Via)})
+		p.Fix = append(p.Fix, Fixed{s.Row, fmt.Sprintf("受け手が証明できない（owner=%s why=%s）", s.OwnerText(), s.Why)})
 	}
 	im := importsOf(rows)
 	// leave は替えられずに残す所（Home の外なら Left に数える）。
@@ -466,9 +406,9 @@ func PlanAccessor(srcs map[string]string, rows []Row, q AccessorQuery) (Accessor
 				leave(s.Row, q.TypeWhy)
 				continue
 			}
-			st, ok := ReceiverStart(src, ls-1)
+			st, ok := receiverStart(src, s, ls-1)
 			if !ok {
-				leave(s.Row, "受け手の式が読めない（文字列を挟む括弧・名前でない式）")
+				leave(s.Row, "受け手の式の範囲が # の前と合わない（索引の rspan）")
 				continue
 			}
 			reads = append(reads, readSite{row: s.Row, start: st, end: le, recv: src[st : ls-1]})

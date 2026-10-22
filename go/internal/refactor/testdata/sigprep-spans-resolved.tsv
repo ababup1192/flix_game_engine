@@ -1,4 +1,4 @@
-# flixlint-spans 2 stage=resolved columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=use,type-use,alias-decl,arg
+# flixlint-spans 3 stage=resolved columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=use,type-use,alias-decl,arg
 alias-decl	src/Lib.flix	3	20	3	23	Lib.Ctx	Lib.Ctx	
 alias-decl	src/Lib.flix	4	20	4	25	Lib.World	Lib.World	
 def-decl	src/Lib.flix	6	13	6	17	Lib.tick	Lib.tick	pub ext=6:5:6:49

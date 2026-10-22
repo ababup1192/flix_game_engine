@@ -3,7 +3,7 @@ package refactor
 // usages の正しさをゲームの索引で固定する（設計 refactor-tool-design §8.0 の表・§8.6 の段 A）。
 //
 // testdata/game-0877ab5d-resolved.tsv.gz は internet_dungeon の 0877ab5d の resolved の索引（flixlint の spans-uses の
-// 7923ecb が書いた物）を、この試験が見る行だけに絞った物:
+// 7923ecb が書いた物。形の版 3 は flixlint 0.8.6 で作り直した）を、この試験が見る行だけに絞った物:
 //   - 問いの 4 つ（moveTo・defaults・Clear・Phase）と名前の終わりが同じ行と、World.Phase.* の行は全部
 //   - src の pub な def の宣言は全部
 //   - その def への参照は「テストから・同じ mod から・ほかの src から・自分の中」の組ごとに 1 行（--unused の分け方は
@@ -77,7 +77,7 @@ func writeGameFixture(t *testing.T, from string) {
 	rows, adds, err := parseIndexAdds(f, Resolved)
 	must(t, err)
 	var b strings.Builder
-	b.WriteString("# flixlint-spans 2 stage=resolved columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=" + adds + "\n")
+	b.WriteString("# flixlint-spans " + strconv.Itoa(FormatVersion) + " stage=resolved columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=" + adds + "\n")
 	for _, r := range reduceGameIndex(rows) {
 		b.WriteString(strings.Join([]string{r.Kind, r.File, strconv.Itoa(r.Line), strconv.Itoa(r.Col), strconv.Itoa(r.EndLine), strconv.Itoa(r.EndCol), r.Sym, r.Owner, r.Extra}, "\t") + "\n")
 	}

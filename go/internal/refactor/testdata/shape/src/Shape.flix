@@ -43,9 +43,9 @@ mod Shape {
 
     pub def note(): String = "{ speed = 1, old = false, clock = 0.0, pointer = 0 }"
 
-    /// World と欄の組が違う record の old（受け手は recv=? via=none。World の old には数えない）。
+    /// World と欄の組が違う record の old（受け手は owner=other。World の old には数えない）。
     pub def flagOf(r: { old = Bool, id = Int32 }): Bool = r#old
 
-    /// 開いた row の speed（受け手は recv=? via=open。World かもしれないので数える。違うと決めたら --skip で外す）。
+    /// 開いた row の speed（受け手は owner=maybe。World かもしれないので数える。違うと決めたら --skip で外す）。
     pub def speedOfAny(r: { speed = Int32 | rest }): Int32 = r#speed
 }

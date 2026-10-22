@@ -1,29 +1,52 @@
-# flixlint-spans 2 stage=resolved columns=kind,file,sl,sc,el,ec,sym,owner,extra
+# flixlint-spans 3 stage=resolved columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=use,type-use,alias-decl,arg
+alias-decl	src/Shape.flix	5	20	5	25	Shape.World	Shape.World	
+alias-decl	src/Shape.flix	14	20	14	25	Shape.Model	Shape.Model	syn=Shape.World
+type-use	src/Shape.flix	14	28	14	33	Shape.World	Shape.Model	what=alias
+alias-decl	src/Shape.flix	16	20	16	24	Shape.Pair	Shape.Pair	
 enum-decl	src/Shape.flix	18	14	18	19	Shape.Panel	Shape.Panel	
 case-decl	src/Shape.flix	19	14	19	20	Shape.Panel.Closed	Shape.Panel	arity=0
 case-decl	src/Shape.flix	20	14	20	18	Shape.Panel.Open	Shape.Panel	arity=1
 def-decl	src/Shape.flix	23	13	23	20	Shape.initial	Shape.initial	pub ext=23:5:27:45
+type-use	src/Shape.flix	23	24	23	29	Shape.World	Shape.initial	what=alias
 def-decl	src/Shape.flix	29	13	29	18	Shape.fresh	Shape.fresh	pub ext=29:5:29:100
+type-use	src/Shape.flix	29	22	29	27	Shape.Model	Shape.fresh	what=alias
 def-decl	src/Shape.flix	31	13	31	17	Shape.pair	Shape.pair	pub ext=31:5:31:54
+type-use	src/Shape.flix	31	21	31	25	Shape.Pair	Shape.pair	what=alias
 def-decl	src/Shape.flix	33	13	33	20	Shape.speedOf	Shape.speedOf	pub ext=33:5:33:47
+type-use	src/Shape.flix	33	24	33	29	Shape.World	Shape.speedOf	what=alias
 def-decl	src/Shape.flix	35	13	35	17	Shape.tick	Shape.tick	pub ext=35:5:35:66
+type-use	src/Shape.flix	35	21	35	26	Shape.World	Shape.tick	what=alias
+type-use	src/Shape.flix	35	29	35	34	Shape.World	Shape.tick	what=alias
 def-decl	src/Shape.flix	37	13	37	17	Shape.open	Shape.open	pub ext=37:5:37:82
+type-use	src/Shape.flix	37	30	37	35	Shape.Panel	Shape.open	what=enum
 case-construct	src/Shape.flix	37	38	37	48	Shape.Panel.Open	Shape.open	
+arg	src/Shape.flix	37	51	37	81	Shape.Panel.Open	Shape.open	of=case-construct at=37:38 i=0 n=1
 def-decl	src/Shape.flix	39	13	39	21	Shape.cursorOf	Shape.cursorOf	pub ext=39:5:42:6
+type-use	src/Shape.flix	39	25	39	30	Shape.Panel	Shape.cursorOf	what=enum
 match-site	src/Shape.flix	39	41	42	6		Shape.cursorOf	arms=2 wild=0 var=0 guard=0 enum=Shape.Panel
 match-arm	src/Shape.flix	40	9	40	39	Shape.Panel.Open	Shape.cursorOf	match=39:41 pat=tag at=40:14:40:27 guard=0 full=1
 case-pattern	src/Shape.flix	40	14	40	24	Shape.Panel.Open	Shape.cursorOf	
+arg	src/Shape.flix	40	25	40	26	Shape.Panel.Open	Shape.cursorOf	of=case-pattern at=40:14 i=0 n=1
 match-arm	src/Shape.flix	41	9	41	31	Shape.Panel.Closed	Shape.cursorOf	match=39:41 pat=tag at=41:14:41:26 guard=0 full=1
 case-pattern	src/Shape.flix	41	14	41	26	Shape.Panel.Closed	Shape.cursorOf	
 def-decl	src/Shape.flix	44	13	44	17	Shape.note	Shape.note	pub ext=44:5:44:84
-def-decl	src/Shape.flix	47	13	47	19	Shape.flagOf	Shape.flagOf	pub ext=47:5:47:64
-def-decl	src/Shape.flix	50	13	50	23	Shape.speedOfAny	Shape.speedOfAny	pub ext=50:5:50:69
+def-decl	src/Shape.flix	47	13	47	19	Shape.flagOf	Shape.flagOf	pub ext=46:5:47:64
+def-decl	src/Shape.flix	50	13	50	23	Shape.speedOfAny	Shape.speedOfAny	pub ext=49:5:50:69
 def-decl	test/TestShape.flix	2	9	2	14	TestShape.world	TestShape.world	ext=2:5:8:6
+type-use	test/TestShape.flix	2	18	2	29	Shape.World	TestShape.world	what=alias
 def-decl	test/TestShape.flix	11	9	11	29	TestShape.speedOfReadsTheSpeed	TestShape.speedOfReadsTheSpeed	ann=test ext=10:5:11:102
 def-use	test/TestShape.flix	11	49	11	64	Assert.assertEq	TestShape.speedOfReadsTheSpeed	
+arg	test/TestShape.flix	11	65	11	77	Assert.assertEq	TestShape.speedOfReadsTheSpeed	of=def-use at=11:49 i=0 n=2
 def-use	test/TestShape.flix	11	79	11	92	Shape.speedOf	TestShape.speedOfReadsTheSpeed	
+arg	test/TestShape.flix	11	79	11	101	Assert.assertEq	TestShape.speedOfReadsTheSpeed	of=def-use at=11:49 i=1 n=2
 def-use	test/TestShape.flix	11	93	11	98	TestShape.world	TestShape.speedOfReadsTheSpeed	
+arg	test/TestShape.flix	11	93	11	100	Shape.speedOf	TestShape.speedOfReadsTheSpeed	of=def-use at=11:79 i=0 n=1
+arg	test/TestShape.flix	11	98	11	100	TestShape.world	TestShape.speedOfReadsTheSpeed	of=def-use at=11:93 i=0 n=1
 def-decl	test/TestShape.flix	14	9	14	28	TestShape.cursorOfAnOpenPanel	TestShape.cursorOfAnOpenPanel	ann=test ext=13:5:14:108
 def-use	test/TestShape.flix	14	48	14	63	Assert.assertEq	TestShape.cursorOfAnOpenPanel	
+arg	test/TestShape.flix	14	64	14	76	Assert.assertEq	TestShape.cursorOfAnOpenPanel	of=def-use at=14:48 i=0 n=2
 def-use	test/TestShape.flix	14	78	14	92	Shape.cursorOf	TestShape.cursorOfAnOpenPanel	
+arg	test/TestShape.flix	14	78	14	107	Assert.assertEq	TestShape.cursorOfAnOpenPanel	of=def-use at=14:48 i=1 n=2
 def-use	test/TestShape.flix	14	93	14	103	Shape.open	TestShape.cursorOfAnOpenPanel	
+arg	test/TestShape.flix	14	93	14	106	Shape.cursorOf	TestShape.cursorOfAnOpenPanel	of=def-use at=14:78 i=0 n=1
+arg	test/TestShape.flix	14	104	14	105	Shape.open	TestShape.cursorOfAnOpenPanel	of=def-use at=14:93 i=0 n=1

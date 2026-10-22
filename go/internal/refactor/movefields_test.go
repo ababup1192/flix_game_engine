@@ -83,9 +83,12 @@ func TestMoveFieldsQualifiesTheCopiedValueInOtherMods(t *testing.T) {
 	mustContain(t, read(t, root, "src/Menu.flix"), "World.Scene.Deck({ cursor = 1, mode = World.Mode.Off })")
 }
 
-// remove-field --case は、flixlint の typed の索引が出す case の受け手（recv=Panel.Open#1 via=case）もその case の物として数える。
+// remove-field --case は、flixlint の typed の索引が出す case の受け手（owner=case:Panel.Open#1）もその case の物として数える
+// （--case に #i を書かなければ、その case のどの場所にも当たる）。扱いの表の分類で引く。
 func TestCaseReceiverMatchesTheCaseWithOrWithoutThePosition(t *testing.T) {
-	if !caseRecvMatches("Panel.Open#1", "Panel.Open") || !caseRecvMatches("Shape.Panel.Open", "Panel.Open") || caseRecvMatches("Panel.Closed", "Panel.Open") {
+	open := OwnerTarget{Case: "Panel.Open"}
+	if (FieldSite{Recv: "case:Panel.Open#1"}).Class(open) != ClassHit || (FieldSite{Recv: "case:Shape.Panel.Open"}).Class(open) != ClassHit ||
+		(FieldSite{Recv: "case:Panel.Closed"}).Class(open) != ClassMiss {
 		t.Fatal("case の受け手の当て方が違う")
 	}
 }

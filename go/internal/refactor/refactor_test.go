@@ -2,6 +2,7 @@ package refactor
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -9,7 +10,7 @@ import (
 	"testing"
 )
 
-// testdata/spans-*.tsv は flixlint の test/expected-spans-*.txt の写し（索引の元は testdata/src/Shapes.flix）。
+// testdata/spans-*.tsv は testdata/spans（src/Shapes.flix・src/Uses.flix）に flixlint --spans を掛けた物（作り直しは regen_test.go）。
 
 func loadFixture(t *testing.T, s Stage) []Row {
 	t.Helper()
@@ -113,14 +114,14 @@ func TestFieldSitesOutsideSkipsTheAccessorModule(t *testing.T) {
 
 func TestFieldSitesKnowsReceiverByRow(t *testing.T) {
 	ans := FieldSites(loadFixture(t, Typed), FieldQuery{Label: "left", Receiver: "Pair"})
-	if len(ans.Sites) != 1 || ans.Sites[0].Via != "row" {
+	if len(ans.Sites) != 1 || ans.Sites[0].Why != "row" {
 		t.Errorf("got %+v", ans.Sites)
 	}
 }
 
 // 索引の列は UTF-16 の数え方（日本語の後ろの名前も、BMP の外の字の後ろの名前も当たる）。
 func TestSpanTextCountsUTF16(t *testing.T) {
-	src, err := os.ReadFile(filepath.Join("testdata", "src", "Shapes.flix"))
+	src, err := os.ReadFile(filepath.Join("testdata", "spans", "src", "Shapes.flix"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,13 +142,13 @@ func TestSpanTextRefusesAStaleSpan(t *testing.T) {
 	}
 }
 
-// project は testdata/src の .flix（索引の元）と、索引を書く代わりの flixlint（中身は使わない）を持つ根を作る。
+// project は testdata/spans/src の .flix（索引の元）と、索引を書く代わりの flixlint（中身は使わない）を持つ根を作る。
 func project(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
 	must(t, os.MkdirAll(filepath.Join(root, "src"), 0o755))
 	for _, name := range []string{"Shapes.flix", "Uses.flix"} {
-		src, err := os.ReadFile(filepath.Join("testdata", "src", name))
+		src, err := os.ReadFile(filepath.Join("testdata", "spans", "src", name))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -298,7 +299,7 @@ func TestConfigLocalOverridesOnlyWhatItNames(t *testing.T) {
 // Point と Size は欄の組が同じ（{x, y}）。p#x の受け手はどちらとも決まらないので数えず unsure に並べる（設計 §5-1）。
 func TestFieldSitesDoesNotCountAnAmbiguousReceiver(t *testing.T) {
 	ans := FieldSites(loadFixture(t, Typed), FieldQuery{Label: "x", Receiver: "Point"})
-	if len(ans.Sites) != 0 || len(ans.Unsure) != 1 || ans.Unsure[0].Via != "ambiguous" {
+	if len(ans.Sites) != 0 || len(ans.Unsure) != 1 || ans.Unsure[0].Recv != "ambiguous" {
 		t.Errorf("sites %d・unsure %+v（0・ambiguous の 1 件のはず）", len(ans.Sites), ans.Unsure)
 	}
 }
@@ -346,9 +347,9 @@ func TestKeyChangesWithTheDependencies(t *testing.T) {
 	}
 }
 
-// --resident は lint と常駐を分け合える flixlint（MinFlixlintResident 以上）にだけ付ける。版が読めなければ付けない。
+// --resident は索引の形 3 を書く flixlint（MinFlixlint 以上）に付ける。版が読めなければ付けない（作ってから頭の行で見る）。
 func TestResidentOnlyForSharedServerVersions(t *testing.T) {
-	for ver, want := range map[string]bool{"flixlint 0.7.1": true, "flixlint 0.8.0-rc1": true, "flixlint 0.7.0": false, "flixlint 0.6.5": false, "版は読めない": false} {
+	for ver, want := range map[string]bool{"flixlint " + MinFlixlint: true, "flixlint 0.9.0-rc1": true, "版は読めない": false} {
 		root := project(t)
 		var got bool
 		b := builder(root, new(int))
@@ -363,6 +364,20 @@ func TestResidentOnlyForSharedServerVersions(t *testing.T) {
 		}
 		if got != want {
 			t.Errorf("%s: --resident %v（%v のはず）", ver, got, want)
+		}
+	}
+}
+
+// 版が読めて MinFlixlint より古ければ、索引を作る前（JVM を立てる前）に止め、上げ方を next に出す。
+func TestLoadStopsBeforeBuildingWhenFlixlintIsTooOld(t *testing.T) {
+	for _, ver := range []string{"flixlint 0.8.5", "flixlint 0.7.1"} {
+		calls := 0
+		b := builder(project(t), &calls)
+		b.Version = func(string) string { return ver }
+		_, err := b.Load(Typed)
+		var ie *IndexError
+		if err == nil || !errors.As(err, &ie) || calls != 0 || !strings.Contains(ie.Msg, MinFlixlint) || !strings.Contains(ie.NextWhy, "submodule") {
+			t.Errorf("%s: 呼んだ数 %d・%v", ver, calls, err)
 		}
 	}
 }

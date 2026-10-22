@@ -299,9 +299,6 @@ func oneLine(s string) string {
 
 // caseShapeReport は change-case-shape の入口。
 func caseShapeReport(root string, idx *Index, a args, cfg Config, o Options) (report, error) {
-	if !idx.hasAdds(KindArg) {
-		return report{}, fmt.Errorf("索引に arg の行が無い（flixlint %s 以上が要る。--flixlint か FGE_FLIXLINT で名指しして bin/fge refactor index --rebuild）", MinFlixlintArgs)
-	}
 	q := CaseShapeQuery{At: a.at, Type: a.typ, Value: a.value, Label: a.label, Arity: map[string]int{}, Shapes: map[string]string{}, Prefer: a.preferLocal}
 	switch {
 	case a.add != "":

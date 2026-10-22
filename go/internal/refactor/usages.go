@@ -231,7 +231,7 @@ func caseWhat(r Row) UsageWhat {
 
 // FieldUsages は欄の読み書き（受け手の型が決まらない物は unsure）。
 func FieldUsages(rows []Row, label, receiver string) (sure, unsure []UsageSite) {
-	ans := FieldSites(rows, FieldQuery{Label: label, Receiver: receiver})
+	ans := FieldSites(rows, FieldQuery{Label: label, Receiver: receiver, Op: "usages"})
 	for _, s := range ans.Sites {
 		w := WhatRead
 		if s.Write {
@@ -244,19 +244,27 @@ func FieldUsages(rows []Row, label, receiver string) (sure, unsure []UsageSite) 
 		if s.Write {
 			w = WhatWrite
 		}
-		unsure = append(unsure, usageOf(s.Row, w, "受け手 "+s.Recv+"（"+s.Via+"）"))
+		unsure = append(unsure, usageOf(s.Row, w, "受け手 "+s.OwnerText()+"（"+s.Why+"）"))
 	}
 	return sure, unsure
 }
 
-// receiversOf は欄 label の受け手の型の数（? は数えない）。--receiver が無い時に、別の型の同じ名前の欄を見分ける。
+// receiversOf は欄 label の受け手の数（証明できた alias・case ごと。決まらない物は数えない）。--receiver が無い時に、
+// 別の型の同じ名前の欄を見分ける。
 func receiversOf(rows []Row, label string) map[string]int {
 	n := map[string]int{}
 	for _, r := range rows {
 		if (r.Kind == KindLabelSelect || r.Kind == KindLabelUpdate) && r.Sym == label {
-			for _, a := range strings.Split(r.Attr("recv"), "|") {
-				if a != "?" && a != "" {
+			o := r.Attr("owner")
+			names := []string{o}
+			if o == "ambiguous" {
+				names = strings.Split(r.Attr("cands"), "|")
+			}
+			for _, x := range names {
+				if a, ok := strings.CutPrefix(x, "alias:"); ok {
 					n[a]++
+				} else if c, ok := strings.CutPrefix(x, "case:"); ok {
+					n[c]++
 				}
 			}
 		}
@@ -431,8 +439,8 @@ func usagesReport(root string, idx *Index, a args, cfg Config, b Builder) (repor
 			return report{}, err
 		}
 		us = SymbolUsages(idx.Rows, t, src)
-		if !idx.hasAdds(KindTypeUse) {
-			r.extra = append(r.extra, "型の注記・use は数えていない（索引にその行が無い。flixlint "+MinFlixlintUsages+" 以上で出る）")
+		if idx.Stage != Resolved {
+			r.extra = append(r.extra, "型の注記・use は数えていない（typed の索引にその行は無い。--stage を外すと resolved で数える）")
 		}
 	}
 	sortUsages(us)
@@ -672,7 +680,7 @@ func unusedReport(root string, idx *Index, a args, cfg Config, b Builder) (repor
 	switch {
 	case lintErr == nil:
 		uses = usesFromFindings(found, idx.Rows)
-	case idx.hasAdds(KindUse):
+	default:
 		uses, unjudged = UnusedUses(idx.Rows, src)
 	}
 	all := append(append([]Unused{}, defs...), uses...)
@@ -699,8 +707,6 @@ func unusedReport(root string, idx *Index, a args, cfg Config, b Builder) (repor
 	}
 	switch {
 	case lintErr == nil:
-	case !idx.hasAdds(KindUse):
-		r.extra = append(r.extra, "use は見ていない（flixlint の unused-use を流せない: "+lintErr.Error()+"。索引にも use の行が無い）")
 	case unjudged > 0:
 		r.extra = append(r.extra, fmt.Sprintf("use は索引で判じた（flixlint の unused-use を流せない: %s）。effect・trait・mod などを入れる use %d は数えていない", lintErr, unjudged))
 	}

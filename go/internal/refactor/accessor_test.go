@@ -64,31 +64,6 @@ func runAcc(t *testing.T, root string, v VerifyRunner, args ...string) (int, str
 
 var accArgs = []string{"field-to-accessor", "--label", "clock", "--receiver", "World", "--reader", "Rec.clockOf"}
 
-func TestReceiverStartReadsThePostfixExpression(t *testing.T) {
-	for src, want := range map[string]string{
-		"x + w#c":            "w",
-		"= make()#c":         "make()",
-		"(Mod.f(a, g(b))#c)": "Mod.f(a, g(b))",
-		" a#b#c":             "a#b",
-		"not (w)#c":          "(w)",
-		"${w#c}":             "w",
-		"if(ok)#c":           "(ok)",
-	} {
-		hash := strings.LastIndex(src, "#c")
-		start, ok := ReceiverStart(src, hash)
-		if !ok || src[start:hash] != want {
-			t.Errorf("%q: got %q %v（%q のはず）", src, src[start:hash], ok, want)
-		}
-	}
-}
-
-func TestReceiverStartRefusesAStringInsideTheParens(t *testing.T) {
-	src := `f(")")#c`
-	if _, ok := ReceiverStart(src, strings.Index(src, "#c")); ok {
-		t.Error("文字列を挟む括弧を受け手として読んだ")
-	}
-}
-
 func TestParseUpdateSplitsValueAndReceiver(t *testing.T) {
 	for text, want := range map[string][2]string{
 		"{ x = a |> f | w }":           {"a |> f", "w"},

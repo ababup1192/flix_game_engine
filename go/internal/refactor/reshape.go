@@ -22,9 +22,6 @@ import (
 // KindArg は索引の arg の行（呼び出し・作る case・当てる case の引数 1 つ）。
 const KindArg = "arg"
 
-// MinFlixlintArgs は arg の行（頭の行の adds= に arg）を書く一番古い flixlint の版。
-const MinFlixlintArgs = "0.7.1"
-
 // ArgList は名前の直後の `( … )` の引数の並び（位置は中身のバイト）。
 type ArgList struct {
 	Open, Close int      // `(` と `)` の位置

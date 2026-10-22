@@ -757,9 +757,6 @@ func indexOf(xs []string, x string) int {
 
 // signatureReport は change-signature の入口。
 func signatureReport(root string, idx *Index, a args, cfg Config, o Options) (report, error) {
-	if !idx.hasAdds(KindArg) {
-		return report{}, fmt.Errorf("索引に arg の行が無い（flixlint %s 以上が要る。--flixlint か FGE_FLIXLINT で名指しして bin/fge refactor index --rebuild）", MinFlixlintArgs)
-	}
 	templates, err := splitTop(a.argsText)
 	if err != nil {
 		return report{}, fmt.Errorf("--args: %v", err)

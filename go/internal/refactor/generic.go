@@ -494,7 +494,7 @@ func (a *Ast) AliasOf(t int32, name string) bool {
 		if a.tExpands[i] == t {
 			return true
 		}
-		// 閉じた record は欄の並びと中の alias の開き方で行が別になるので、欄の名前の組で比べる（spans の via=row と同じ見方）。
+		// 閉じた record は欄の並びと中の alias の開き方で行が別になるので、欄の名前の組で比べる（spans の owner の why=row と同じ見方）。
 		if labels != "" && a.recordLabels(a.tExpands[i]) == labels {
 			return true
 		}

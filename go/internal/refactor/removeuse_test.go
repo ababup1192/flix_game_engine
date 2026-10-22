@@ -80,7 +80,7 @@ func runRemoveUse(t *testing.T, root, lint string, args ...string) (int, string)
 	var cmds []string
 	code := Run(&out, &errOut, root, append(args, "--flixlint", filepath.Join(root, "flixlint")),
 		Options{Run: unusedLintRunner("refmore", lint), Verify: verifyWith(0, "", &cmds), Log: io.Discard,
-			Version: func(string) string { return "flixlint 0.8.0" }})
+			Version: func(string) string { return "flixlint " + MinFlixlint }})
 	return code, out.String() + errOut.String()
 }
 

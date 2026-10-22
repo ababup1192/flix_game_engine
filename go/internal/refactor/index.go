@@ -38,7 +38,7 @@ import (
 )
 
 // FormatVersion は読める索引の形の版（flixlint の shim/Spans.scala の FormatVersion と同じ数）。
-const FormatVersion = 2
+const FormatVersion = 3
 
 // Stage は索引の段。
 type Stage string
@@ -241,6 +241,14 @@ func (b Builder) Load(s Stage) (*Index, error) {
 			return nil, ie
 		}
 	}
+	// 版が読めて足りなければ、JVM を立てる前に止める（冷えた typed は 1 分ほど掛かってから頭の行で分かる）。
+	v := b.version()
+	if _, known := versionNums(lastField(v)); known && !versionAtLeast(v, MinFlixlint) {
+		return nil, &IndexError{
+			Msg:     fmt.Sprintf("索引を作れません: 使っている flixlint は %s（%s）。この道具は flixlint %s 以上（索引の形 %d）が要る", lastField(v), b.Flixlint, MinFlixlint, FormatVersion),
+			NextWhy: fmt.Sprintf("submodule の flixlint を %s 以上へ上げる（エンジンの追随と同じコミットで）か、--flixlint・FGE_FLIXLINT で名指しする", MinFlixlint),
+		}
+	}
 	os.Remove(b.failPath(s))
 	if err := os.MkdirAll(b.Dir(), 0o755); err != nil {
 		return nil, err
@@ -251,10 +259,9 @@ func (b Builder) Load(s Stage) (*Index, error) {
 	// 2 回目からは変わったファイルだけ組み直し、server が lint を流している間は並ぶ（flixlint が「前に N 本」を 1 行言う）。
 	// WhyNot: 1 回きりの JVM にしない。typed の索引は JVM に 4〜5 GB を取り、lint の server と並べると 2 本になる。
 	// build ディレクトリは走行ごとの引数なので、lint と分けたままでよい（同じ server を使う）。
-	// WhyNot: MinFlixlintResident より古い flixlint には付けない。その版の常駐は build ディレクトリごとに別の JVM で、
-	// lint の server と分け合えず、JVM が 2 本になる（1 回きりの JVM の方が軽い）。
+	// WhyNot: 版が読めない時は付けない（flixlint でない物・古い版の常駐は build ディレクトリごとに別の JVM になる）。
 	cmd := []string{b.Flixlint}
-	if versionAtLeast(b.version(), MinFlixlintResident) {
+	if versionAtLeast(v, MinFlixlint) {
 		cmd = append(cmd, "--resident")
 	}
 	cmd = append(cmd, "--spans", tmp, "--stage", string(s), "--build-dir", filepath.Join(b.Dir(), "flixlint"))
@@ -624,16 +631,10 @@ func LookPath(name string) string {
 	return p
 }
 
-// MinFlixlint は読める索引（--spans・形の版 FormatVersion）を書く一番古い flixlint の版。
-const MinFlixlint = "0.6.5"
-
-// MinFlixlintResident は索引を lint と同じ常駐の server で作れる（--resident・protocol 2・鍵は根 × identity）一番古い
-// flixlint の版。それより古い版の常駐は build ディレクトリごとに別の JVM なので、--resident を付けない。
-const MinFlixlintResident = "0.7.1"
-
-// MinFlixlintUsages は usages の型の注記と use（resolved の段の adds=use,type-use,alias-decl）を書く一番古い flixlint の版。
-// それより古い索引でも usages は動き、その 2 つを数えない。
-const MinFlixlintUsages = "0.6.6"
+// MinFlixlint は読める索引（--spans・形の版 FormatVersion）を書く一番古い flixlint の版。この版から常駐（--resident）も
+// lint・checkd と 1 つを分け合い、resolved の段は use・type-use・alias-decl・arg、typed の段は受け手の owner・alias-decl を書く。
+// WhyNot: 古い版の索引を読む道は持たない。判定が 2 通りになると、片方だけ直って食い違う。
+const MinFlixlint = "0.8.6"
 
 // version は使う flixlint の版（Builder.Version があればそれ。テストが差し替える）。
 func (b Builder) version() string {
@@ -660,6 +661,15 @@ func versionAtLeast(got, min string) bool {
 		}
 	}
 	return true
+}
+
+// lastField は版の答え（「flixlint 0.7.1」）の最後の語。
+func lastField(v string) string {
+	f := strings.Fields(v)
+	if len(f) == 0 {
+		return ""
+	}
+	return f[len(f)-1]
 }
 
 // versionNums は「0.7.1」（後ろの -… と +… は見ない）を 3 つの数にする。

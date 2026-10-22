@@ -1,6 +1,7 @@
 package refactor
 
 import (
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
@@ -88,6 +89,23 @@ func TestRemoveRecordFieldKeepsTheLayout(t *testing.T) {
 	}
 	if _, err := RemoveRecordField("{ x = 1 }", "x"); err == nil {
 		t.Error("欄が 1 つの record から消して空にした")
+	}
+}
+
+// 最初の欄を消して次の欄の説明のコメントが `{` の直後に来る時は、その欄の行の後ろへ移す（Flix 0.78 は record の型で
+// `{` の直後のコメントを読めず「Expected ',' before '='」で止まる。cycle で remove-field の後に出た形）。元から先頭に
+// あるコメントは動かさない。
+func TestRemoveRecordFieldLeavesNoCommentRightAfterTheBrace(t *testing.T) {
+	for _, c := range []struct{ text, label, want string }{
+		{"{\n    x = Int32,\n    // a の説明\n    a = Int32\n}", "x", "{\n    a = Int32 // a の説明\n}"},
+		{"{\n    x = Int32,\n    // a の説明\n    // 続き\n    a = Int32,\n    b = Int32\n}", "x", "{\n    a = Int32, // a の説明 // 続き\n    b = Int32\n}"},
+		{"{\n    x = Int32, // x の説明\n    // a の説明\n    a = Int32\n}", "x", "{\n    a = Int32 // a の説明\n}"},
+		{"{\n    // World 全体の説明\n    x = 1,\n    a = 2\n}", "x", "{\n    // World 全体の説明\n    a = 2\n}"},
+	} {
+		got, err := RemoveRecordField(c.text, c.label)
+		if err != nil || got != c.want {
+			t.Errorf("%q: got %q %v（%q のはず）", c.text, got, err, c.want)
+		}
 	}
 }
 
@@ -244,6 +262,66 @@ func TestFixConstructionLeavesAmbiguousShapesToFix(t *testing.T) {
 	before := read(t, root, "test/TestShape.flix")
 	code, text := runShape(t, root, verifyWith(0, "", new([]string)), "remove-field", "--label", "old", "--receiver", "World", "--apply")
 	if read(t, root, "test/TestShape.flix") != before || !strings.Contains(text, "欄の組が同じ別の型") || !strings.Contains(text, "人へ回す 3") {
+		t.Errorf("exit %d\n%s", code, text)
+	}
+}
+
+// 扱いの表: 索引の受け手の事実（owner）を問いで hit・maybe・miss に分け、操作ごとに数える・並べる・書くを決める。
+// shape の索引で、World の speed（証明できた）・開いた row の speed（maybe・候補に World）・別の record の old（other）。
+func TestFieldActsDecideByTheOwnerClass(t *testing.T) {
+	rows, err := ReadIndex(filepath.Join("testdata", "shape-spans-typed.tsv"), Typed)
+	must(t, err)
+	world := AliasTarget(rows, "World")
+	got := map[string]FieldClass{}
+	for _, r := range rows {
+		if r.Kind == KindLabelSelect {
+			got[r.Owner+"#"+r.Sym] = fieldSiteOf(r).Class(world)
+		}
+	}
+	if got["Shape.speedOf#speed"] != ClassHit || got["Shape.speedOfAny#speed"] != ClassMaybe || got["Shape.flagOf#old"] != ClassMiss {
+		t.Fatalf("分類 %v", got)
+	}
+	for op, want := range map[string][2]FieldAct{
+		"remove-field":         {ActCount, ActCount},
+		"move-fields --finish": {ActCount, ActCount},
+		"field-sites":          {ActList, ActUnsure},
+		"usages":               {ActList, ActUnsure},
+		"field-to-accessor":    {ActRewrite, ActFix},
+	} {
+		if a := FieldActs[op]; a[ClassHit] != want[0] || a[ClassMaybe] != want[1] || a[ClassMiss] != ActSkip {
+			t.Errorf("%s: %v", op, a)
+		}
+	}
+}
+
+// Model は World の別名。--receiver Model と --receiver World は同じ読み書きを並べる（受け手は鎖の終わりで比べる）。
+func TestFieldSitesTreatsASynonymAsTheSameAlias(t *testing.T) {
+	root := shape(t, nil)
+	_, viaWorld := runShape(t, root, nil, "field-sites", "--label", "speed", "--receiver", "World", "--json")
+	_, viaModel := runShape(t, root, nil, "field-sites", "--label", "speed", "--receiver", "Model", "--json")
+	sites := func(text string) string {
+		var r struct {
+			Sites, Unsure []FieldSite
+		}
+		if err := json.Unmarshal([]byte(text[strings.Index(text, "{"):]), &r); err != nil {
+			t.Fatalf("%v\n%s", err, text)
+		}
+		var out []string
+		for _, s := range append(r.Sites, r.Unsure...) {
+			out = append(out, s.Where())
+		}
+		return strings.Join(out, " ")
+	}
+	if a, b := sites(viaWorld), sites(viaModel); a != b || !strings.Contains(a, "src/Shape.flix:33") {
+		t.Errorf("World: %s\nModel: %s", a, b)
+	}
+}
+
+// case の payload を束ねた変数の読み（cursorOf の r#cursor。owner=case:Shape.Panel.Open）は --case Panel.Open の読みに数え、止まる。
+func TestRemoveFieldOfACaseCountsTheReadOfTheBoundPayload(t *testing.T) {
+	root := shape(t, nil)
+	code, text := runShape(t, root, nil, "remove-field", "--label", "cursor", "--case", "Panel.Open")
+	if code != 2 || !strings.Contains(text, "直の読み書き 1") || !strings.Contains(text, "src/Shape.flix:40:33") {
 		t.Errorf("exit %d\n%s", code, text)
 	}
 }

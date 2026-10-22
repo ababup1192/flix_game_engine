@@ -1,37 +1,52 @@
-# flixlint-spans 2 stage=resolved columns=kind,file,sl,sc,el,ec,sym,owner,extra
+# flixlint-spans 3 stage=resolved columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=use,type-use,alias-decl,arg
 def-decl	src/Main.flix	1	5	1	9	main	main	pub ext=1:1:2:129
 def-use	src/Main.flix	2	5	2	12	println	main	
 def-use	src/Main.flix	2	16	2	25	Zoo.sound	main	
+arg	src/Main.flix	2	26	2	40	Zoo.sound	main	of=def-use at=2:16 i=0 n=1
 case-construct	src/Main.flix	2	26	2	40	Zoo.Animal.Cat	main	
 def-use	src/Main.flix	2	44	2	52	Zoo.legs	main	
+arg	src/Main.flix	2	53	2	68	Zoo.legs	main	of=def-use at=2:44 i=0 n=1
 case-construct	src/Main.flix	2	53	2	68	Zoo.Animal.Fish	main	
 def-use	src/Main.flix	2	72	2	80	Zoo.pair	main	
+arg	src/Main.flix	2	81	2	96	Zoo.pair	main	of=def-use at=2:72 i=0 n=2
 case-construct	src/Main.flix	2	81	2	96	Zoo.Animal.Fish	main	
+arg	src/Main.flix	2	98	2	112	Zoo.pair	main	of=def-use at=2:72 i=1 n=2
 case-construct	src/Main.flix	2	98	2	112	Zoo.Animal.Cat	main	
 def-use	src/Main.flix	2	116	2	124	Zoo.used	main	
+arg	src/Main.flix	2	116	2	126	println	main	of=def-use at=2:5 i=0 n=1
+arg	src/Main.flix	2	124	2	126	Zoo.used	main	of=def-use at=2:116 i=0 n=1
 enum-decl	src/Zoo.flix	3	14	3	20	Zoo.Animal	Zoo.Animal	
 case-decl	src/Zoo.flix	4	14	4	17	Zoo.Animal.Cat	Zoo.Animal	arity=0
 case-decl	src/Zoo.flix	5	14	5	17	Zoo.Animal.Dog	Zoo.Animal	arity=1
 case-decl	src/Zoo.flix	6	14	6	18	Zoo.Animal.Bird	Zoo.Animal	arity=2
 case-decl	src/Zoo.flix	7	14	7	18	Zoo.Animal.Fish	Zoo.Animal	arity=0
 def-decl	src/Zoo.flix	11	13	11	18	Zoo.sound	Zoo.sound	pub ext=10:5:14:6
+type-use	src/Zoo.flix	11	22	11	28	Zoo.Animal	Zoo.sound	what=enum
 match-site	src/Zoo.flix	11	40	14	6		Zoo.sound	arms=2 wild=1 var=0 guard=0 enum=Zoo.Animal
 match-arm	src/Zoo.flix	12	9	12	34	Zoo.Animal.Cat	Zoo.sound	match=11:40 pat=tag at=12:14:12:24 guard=0 full=1
 case-pattern	src/Zoo.flix	12	14	12	24	Zoo.Animal.Cat	Zoo.sound	
 match-arm	src/Zoo.flix	13	9	13	33		Zoo.sound	match=11:40 pat=wild at=13:14:13:15 guard=0
 def-decl	src/Zoo.flix	16	13	16	17	Zoo.legs	Zoo.legs	pub ext=16:5:19:6
+type-use	src/Zoo.flix	16	21	16	27	Zoo.Animal	Zoo.legs	what=enum
 match-site	src/Zoo.flix	16	38	19	6		Zoo.legs	arms=2 wild=0 var=1 guard=0 enum=Zoo.Animal
 match-arm	src/Zoo.flix	17	9	17	32	Zoo.Animal.Dog	Zoo.legs	match=16:38 pat=tag at=17:14:17:27 guard=0 full=1
 case-pattern	src/Zoo.flix	17	14	17	24	Zoo.Animal.Dog	Zoo.legs	
+arg	src/Zoo.flix	17	25	17	26	Zoo.Animal.Dog	Zoo.legs	of=case-pattern at=17:14 i=0 n=1
 match-arm	src/Zoo.flix	18	9	18	46		Zoo.legs	match=16:38 pat=var at=18:14:18:19 guard=0 name=other uses=1
 def-use	src/Zoo.flix	18	31	18	39	Zoo.describe	Zoo.legs	
+arg	src/Zoo.flix	18	40	18	45	Zoo.describe	Zoo.legs	of=def-use at=18:31 i=0 n=1
 def-decl	src/Zoo.flix	21	9	21	17	Zoo.describe	Zoo.describe	ext=21:5:25:6
+type-use	src/Zoo.flix	21	21	21	27	Zoo.Animal	Zoo.describe	what=enum
 match-site	src/Zoo.flix	21	38	25	6		Zoo.describe	arms=3 wild=2 var=0 guard=2 enum=Zoo.Animal
 match-arm	src/Zoo.flix	22	9	22	45	Zoo.Animal.Bird	Zoo.describe	match=21:38 pat=tag at=22:14:22:31 guard=1 full=1
 case-pattern	src/Zoo.flix	22	14	22	25	Zoo.Animal.Bird	Zoo.describe	
+arg	src/Zoo.flix	22	26	22	27	Zoo.Animal.Bird	Zoo.describe	of=case-pattern at=22:14 i=0 n=2
+arg	src/Zoo.flix	22	29	22	30	Zoo.Animal.Bird	Zoo.describe	of=case-pattern at=22:14 i=1 n=2
 match-arm	src/Zoo.flix	23	9	23	28		Zoo.describe	match=21:38 pat=wild at=23:14:23:15 guard=1
 match-arm	src/Zoo.flix	24	9	24	20		Zoo.describe	match=21:38 pat=wild at=24:14:24:15 guard=0
 def-decl	src/Zoo.flix	27	13	27	17	Zoo.pair	Zoo.pair	pub ext=27:5:33:6
+type-use	src/Zoo.flix	27	21	27	27	Zoo.Animal	Zoo.pair	what=enum
+type-use	src/Zoo.flix	27	32	27	38	Zoo.Animal	Zoo.pair	what=enum
 match-site	src/Zoo.flix	27	50	33	6		Zoo.pair	arms=2 wild=1 var=0 guard=0 enum=Zoo.Animal
 match-arm	src/Zoo.flix	28	9	28	33	Zoo.Animal.Cat	Zoo.pair	match=27:50 pat=tag at=28:14:28:24 guard=0 full=1
 case-pattern	src/Zoo.flix	28	14	28	24	Zoo.Animal.Cat	Zoo.pair	
@@ -39,17 +54,26 @@ match-arm	src/Zoo.flix	29	9	32	10		Zoo.pair	match=27:50 pat=wild at=29:14:29:15 
 match-site	src/Zoo.flix	29	19	32	10		Zoo.pair	arms=2 wild=1 var=0 guard=0 enum=Zoo.Animal
 match-arm	src/Zoo.flix	30	13	30	42	Zoo.Animal.Dog	Zoo.pair	match=29:19 pat=tag at=30:18:30:31 guard=0 full=1
 case-pattern	src/Zoo.flix	30	18	30	28	Zoo.Animal.Dog	Zoo.pair	
+arg	src/Zoo.flix	30	29	30	30	Zoo.Animal.Dog	Zoo.pair	of=case-pattern at=30:18 i=0 n=1
 match-arm	src/Zoo.flix	31	13	31	32		Zoo.pair	match=29:19 pat=wild at=31:18:31:19 guard=0
 def-decl	src/Zoo.flix	37	13	37	23	Zoo.onlyTested	Zoo.onlyTested	pub ann=deprecated ext=35:5:37:56
 def-use	src/Zoo.flix	37	43	37	49	Zoo.helper	Zoo.onlyTested	
+arg	src/Zoo.flix	37	50	37	51	Zoo.helper	Zoo.onlyTested	of=def-use at=37:43 i=0 n=1
 def-decl	src/Zoo.flix	39	9	39	15	Zoo.helper	Zoo.helper	ext=39:5:39:40
 def-decl	src/Zoo.flix	41	13	41	26	Zoo.onlyTestedToo	Zoo.onlyTestedToo	pub ext=41:5:41:51
 def-decl	src/Zoo.flix	43	13	43	19	Zoo.unused	Zoo.unused	pub ext=43:5:43:32
 def-decl	src/Zoo.flix	45	13	45	17	Zoo.used	Zoo.used	pub ext=45:5:45:30
 def-decl	test/TestZoo.flix	3	9	3	26	TestZoo.onlyTestedAddsOne	TestZoo.onlyTestedAddsOne	ann=test ext=2:5:3:94
 def-use	test/TestZoo.flix	3	46	3	61	Assert.assertEq	TestZoo.onlyTestedAddsOne	
+arg	test/TestZoo.flix	3	62	3	74	Assert.assertEq	TestZoo.onlyTestedAddsOne	of=def-use at=3:46 i=0 n=2
 def-use	test/TestZoo.flix	3	76	3	90	Zoo.onlyTested	TestZoo.onlyTestedAddsOne	
+arg	test/TestZoo.flix	3	76	3	93	Assert.assertEq	TestZoo.onlyTestedAddsOne	of=def-use at=3:46 i=1 n=2
+arg	test/TestZoo.flix	3	91	3	92	Zoo.onlyTested	TestZoo.onlyTestedAddsOne	of=def-use at=3:76 i=0 n=1
 def-decl	test/TestZoo.flix	6	9	6	30	TestZoo.onlyTestedTooWithUsed	TestZoo.onlyTestedTooWithUsed	ann=test ext=5:5:6:114
 def-use	test/TestZoo.flix	6	50	6	65	Assert.assertEq	TestZoo.onlyTestedTooWithUsed	
+arg	test/TestZoo.flix	6	66	6	91	Assert.assertEq	TestZoo.onlyTestedTooWithUsed	of=def-use at=6:50 i=0 n=2
 def-use	test/TestZoo.flix	6	77	6	85	Zoo.used	TestZoo.onlyTestedTooWithUsed	
+arg	test/TestZoo.flix	6	85	6	87	Zoo.used	TestZoo.onlyTestedTooWithUsed	of=def-use at=6:77 i=0 n=1
 def-use	test/TestZoo.flix	6	93	6	110	Zoo.onlyTestedToo	TestZoo.onlyTestedTooWithUsed	
+arg	test/TestZoo.flix	6	93	6	113	Assert.assertEq	TestZoo.onlyTestedTooWithUsed	of=def-use at=6:50 i=1 n=2
+arg	test/TestZoo.flix	6	111	6	112	Zoo.onlyTestedToo	TestZoo.onlyTestedTooWithUsed	of=def-use at=6:93 i=0 n=1

@@ -1,4 +1,4 @@
-# flixlint-spans 2 stage=resolved columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=use,type-use,alias-decl,arg
+# flixlint-spans 3 stage=resolved columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=use,type-use,alias-decl,arg
 def-decl	src/Menu.flix	2	13	2	22	Menu.deckScene	Menu.deckScene	pub ext=2:5:2:72
 type-use	src/Menu.flix	2	26	2	37	World.Scene	Menu.deckScene	what=enum
 case-construct	src/Menu.flix	2	40	2	56	World.Scene.Deck	Menu.deckScene	

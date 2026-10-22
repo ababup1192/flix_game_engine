@@ -313,8 +313,7 @@ func finishMoveReport(root string, idx *Index, a args, cfg Config, o Options, sr
 	r := report{Op: "move-fields", Target: world.Name + "#" + strings.Join(labels, ",") + " → " + a.intoCase + "（--finish）", code: CodeMoveFields}
 	var left []FieldSite
 	for _, l := range labels {
-		ans := FieldSites(idx.Rows, FieldQuery{Label: l, Receiver: a.receiver})
-		left = append(append(left, ans.Sites...), ans.Unsure...)
+		left = append(left, FieldSites(idx.Rows, FieldQuery{Label: l, Receiver: a.receiver, Op: "move-fields --finish"}).Sites...)
 	}
 	left, skipped := WithoutSkipped(left, a.skip)
 	if skipped > 0 {
@@ -331,7 +330,7 @@ func finishMoveReport(root string, idx *Index, a args, cfg Config, o Options, sr
 			if s.Write {
 				rw = "書き"
 			}
-			r.lines = append(r.lines, fmt.Sprintf("%s\t%s\t%s#%s\t%s", s.Where(), rw, s.Recv, s.Sym, s.Owner))
+			r.lines = append(r.lines, fmt.Sprintf("%s\t%s\t%s#%s\t%s", s.Where(), rw, s.OwnerText(), s.Sym, s.Owner))
 		}
 		r.fixHint = "読み書きを payload を読む口へ替えてから（場面にいない時の値＝Option か既定値かは人が決める）"
 		return r, nil

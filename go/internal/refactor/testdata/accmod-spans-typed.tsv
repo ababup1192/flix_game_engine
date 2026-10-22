@@ -1,24 +1,27 @@
-# flixlint-spans 2 stage=typed columns=kind,file,sl,sc,el,ec,sym,owner,extra
+# flixlint-spans 3 stage=typed columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=arg,alias-decl
+alias-decl	src/Box.flix	4	20	4	23	Box.Box	Box.Box	
 def-decl	src/Box.flix	9	13	9	19	Box.flagOf	Box.flagOf	pub ext=9:5:9:42
-label-select	src/Box.flix	9	38	9	42	flag	Box.flagOf	recv=Box.Box via=decl
+label-select	src/Box.flix	9	38	9	42	flag	Box.flagOf	owner=alias:Box.Box why=decl rspan=9:36:9:37 rparam=0
 def-decl	src/Box.flix	11	13	11	17	Box.make	Box.make	pub ext=11:5:11:53
+record-literal	src/Box.flix	11	29	11	53		Box.make	labels=flag,size owner=alias:Box.Box why=row
 def-decl	src/Box.flix	13	13	13	17	Box.grow	Box.grow	pub ext=13:5:13:58
-label-update	src/Box.flix	13	35	13	39	size	Box.grow	recv=Box.Box via=decl
-label-select	src/Box.flix	13	44	13	48	size	Box.grow	recv=Box.Box via=decl
+label-update	src/Box.flix	13	35	13	39	size	Box.grow	owner=alias:Box.Box why=decl rspan=13:55:13:56 rparam=0
+label-select	src/Box.flix	13	44	13	48	size	Box.grow	owner=alias:Box.Box why=decl rspan=13:42:13:43 rparam=0
 def-decl	src/Box.flix	15	13	15	18	Box.raise	Box.raise	pub ext=15:5:15:53
-label-update	src/Box.flix	15	36	15	40	flag	Box.raise	recv=Box.Box via=decl
+label-update	src/Box.flix	15	36	15	40	flag	Box.raise	owner=alias:Box.Box why=decl rspan=15:50:15:51 rparam=0
 def-decl	src/Box.flix	17	13	17	18	Box.shown	Box.shown	pub ext=17:5:17:41
-label-select	src/Box.flix	17	37	17	41	flag	Box.shown	recv=Box.Box via=decl
+label-select	src/Box.flix	17	37	17	41	flag	Box.shown	owner=alias:Box.Box why=decl rspan=17:35:17:36 rparam=0
 def-decl	src/Box.flix	19	13	19	18	Box.reset	Box.reset	pub ext=19:5:19:64
-label-update	src/Box.flix	19	36	19	40	flag	Box.reset	recv=Box.Box via=row
-label-update	src/Box.flix	19	50	19	54	size	Box.reset	recv=Box.Box via=decl
+label-update	src/Box.flix	19	36	19	40	flag	Box.reset	owner=alias:Box.Box why=row rspan=19:50:19:62
+label-update	src/Box.flix	19	50	19	54	size	Box.reset	owner=alias:Box.Box why=decl rspan=19:61:19:62 rparam=0
 def-decl	src/Imp.flix	6	13	6	17	Imp.both	Imp.both	pub ext=6:5:6:54
 def-use	src/Imp.flix	6	34	6	40	Box.flagOf	Imp.both	
-label-select	src/Imp.flix	6	50	6	54	flag	Imp.both	recv=Box.Box via=decl
+arg	src/Imp.flix	6	41	6	42	Box.flagOf	Imp.both	of=def-use at=6:34 i=0 n=1
+label-select	src/Imp.flix	6	50	6	54	flag	Imp.both	owner=alias:Box.Box why=decl rspan=6:48:6:49 rparam=0
 def-decl	src/Out.flix	5	13	5	19	Out.sizeOf	Out.sizeOf	pub ext=5:5:5:40
 def-decl	src/Out.flix	7	13	7	22	Out.sizeTwice	Out.sizeTwice	pub ext=7:5:7:50
-label-select	src/Out.flix	7	42	7	46	size	Out.sizeTwice	recv=Box.Box via=decl
+label-select	src/Out.flix	7	42	7	46	size	Out.sizeTwice	owner=alias:Box.Box why=decl rspan=7:40:7:41 rparam=0
 def-decl	src/Out.flix	9	13	9	18	Out.lower	Out.lower	pub ext=9:5:9:54
-label-update	src/Out.flix	9	36	9	40	flag	Out.lower	recv=Box.Box via=decl
+label-update	src/Out.flix	9	36	9	40	flag	Out.lower	owner=alias:Box.Box why=decl rspan=9:51:9:52 rparam=0
 def-decl	src/Out.flix	11	13	11	20	Out.visible	Out.visible	pub ext=11:5:11:43
-label-select	src/Out.flix	11	39	11	43	flag	Out.visible	recv=Box.Box via=decl
+label-select	src/Out.flix	11	39	11	43	flag	Out.visible	owner=alias:Box.Box why=decl rspan=11:37:11:38 rparam=0

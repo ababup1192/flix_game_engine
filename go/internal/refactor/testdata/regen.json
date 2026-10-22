@@ -1,0 +1,24 @@
+{
+  "note": "testdata の索引（*-spans-*.tsv）の一覧。各行は dir（testdata の下の fixture の根）に flixlint --spans --stage <stage> <sources> を掛けた物。作り直しは make refactor-testdata FLIXLINT=<bin/flixlint>（regen_test.go）。flixlint は版を記録する（作り直すたびに書き替わる）。steps は TestRegenIndex では作らない索引と、その作り方。",
+  "flixlint": "0.8.6",
+  "indexes": [
+    {"index": "acc-spans-typed.tsv", "dir": "acc", "stage": "typed", "sources": ["src"]},
+    {"index": "accmod-spans-typed.tsv", "dir": "accmod", "stage": "typed", "sources": ["src"]},
+    {"index": "move-spans-resolved.tsv", "dir": "move", "stage": "resolved", "sources": ["src", "test"]},
+    {"index": "movefields-spans-resolved.tsv", "dir": "movefields", "stage": "resolved", "sources": ["src"]},
+    {"index": "movefields-spans-typed.tsv", "dir": "movefields", "stage": "typed", "sources": ["src"]},
+    {"index": "prefer-spans-resolved.tsv", "dir": "prefer", "stage": "resolved", "sources": ["src"]},
+    {"index": "proj-spans-resolved.tsv", "dir": "proj", "stage": "resolved", "sources": ["src", "test"]},
+    {"index": "propagate-spans-resolved.tsv", "dir": "propagate", "stage": "resolved", "sources": ["src", "test"]},
+    {"index": "refmore-spans-resolved.tsv", "dir": "refmore", "stage": "resolved", "sources": ["src", "test"]},
+    {"index": "reshape-spans-resolved.tsv", "dir": "reshape", "stage": "resolved", "sources": ["src", "test"]},
+    {"index": "shape-spans-resolved.tsv", "dir": "shape", "stage": "resolved", "sources": ["src", "test"]},
+    {"index": "shape-spans-typed.tsv", "dir": "shape", "stage": "typed", "sources": ["src", "test"]},
+    {"index": "sigprep-spans-resolved.tsv", "dir": "sigprep", "stage": "resolved", "sources": ["src", "test"]},
+    {"index": "spans-resolved.tsv", "dir": "spans", "stage": "resolved", "sources": ["src"]},
+    {"index": "spans-typed.tsv", "dir": "spans", "stage": "typed", "sources": ["src"]}
+  ],
+  "steps": [
+    {"index": "game-0877ab5d-resolved.tsv.gz", "how": "internet_dungeon の 0877ab5d の写しで bin/fge refactor index を流し、go test ./internal/refactor -run TestGameIndex -game-index <写し>/build/refactor/spans-resolved.tsv（game_test.go が試験の見る行だけに絞る）"}
+  ]
+}

@@ -91,7 +91,7 @@ func (b Builder) UnusedUses() ([]UseFinding, error) {
 		return nil, err
 	}
 	cmd := []string{b.Flixlint}
-	if versionAtLeast(b.version(), MinFlixlintResident) {
+	if versionAtLeast(b.version(), MinFlixlint) {
 		cmd = append(cmd, "--resident")
 	}
 	cmd = append(cmd, "--rules", rules, "--stage", string(Resolved), "--build-dir", filepath.Join(dir, "build"))

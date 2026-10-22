@@ -450,7 +450,7 @@ func flixFiles(root string, dirs []string) ([]string, int64) {
 }
 
 // readSpans は flixlint の索引から宣言（def・enum・case・alias）の名前を読む。頭の行が flixlint-spans で
-// stage=resolved の物だけ（版は問わない: 9 欄の並びは版 1 と 2 で同じ）。パッケージの物（$ で始まる）は外す。
+// stage=resolved の物だけ（版は問わない: 9 欄の並びは版 1〜3 で同じ）。パッケージの物（$ で始まる）は外す。
 func readSpans(path string) ([]textDecl, bool) {
 	f, err := os.Open(path)
 	if err != nil {

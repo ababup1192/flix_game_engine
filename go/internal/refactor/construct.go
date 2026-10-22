@@ -279,6 +279,69 @@ func lineStart(text string, p int) int { return strings.LastIndexByte(text[:p], 
 // RemoveRecordField は text（`{` で始まる record の式か型・更新）から欄 label を消した字を返す。
 // 欄が自分の行にあれば、その行（と前に付いたコメントの行）ごと消す。最後の欄なら前の欄の `,` も消す。
 func RemoveRecordField(text, label string) (string, error) {
+	out, err := removeRecordField(text, label)
+	if err != nil {
+		return "", err
+	}
+	return noCommentFirst(text, out), nil
+}
+
+// noCommentFirst は、消した後の record が `{` の直後にコメントの行で始まる時（消す前は始まっていなかった時だけ）、
+// そのコメントを次の欄の行の後ろへ移す。
+// WhyNot: Flix 0.78 は record の型で `{` の直後のコメントを読めない（`{ // c` も同じ。「Expected ',' before '='」で止まる）。
+// 最初の欄を消すと、次の欄の説明のコメントが先頭に来る。元から先頭にあるコメント（record の式の説明）は動かさない。
+func noCommentFirst(before, after string) string {
+	first := func(s string) int {
+		i := strings.IndexByte(s, '{')
+		if i < 0 {
+			return -1
+		}
+		for j := i + 1; j < len(s); j++ {
+			if c := s[j]; c != ' ' && c != '\t' && c != '\n' && c != '\r' {
+				return j
+			}
+		}
+		return -1
+	}
+	b, a := first(before), first(after)
+	if a < 0 || !strings.HasPrefix(after[a:], "//") || (b >= 0 && strings.HasPrefix(before[b:], "//")) {
+		return after
+	}
+	start := lineStart(after, a)
+	if strings.TrimSpace(after[start:a]) != "" {
+		start = a // `{ // c` の形: コメントだけを移す
+	}
+	var notes []string
+	i := a
+	for i < len(after) {
+		end := strings.IndexByte(after[i:], '\n')
+		if end < 0 {
+			return after
+		}
+		line := strings.TrimSpace(after[i : i+end])
+		if !strings.HasPrefix(line, "//") {
+			break
+		}
+		notes = append(notes, line)
+		i += end + 1
+		for i < len(after) && (after[i] == ' ' || after[i] == '\t') {
+			i++
+		}
+	}
+	fieldLine := lineStart(after, i)
+	end := strings.IndexByte(after[fieldLine:], '\n')
+	if end < 0 {
+		return after
+	}
+	end += fieldLine
+	head := after[:start]
+	if start == a {
+		head = strings.TrimRight(head, " \t")
+	}
+	return head + after[fieldLine:end] + " " + strings.Join(notes, " ") + after[end:]
+}
+
+func removeRecordField(text, label string) (string, error) {
 	u, _, err := ParseRecord(text)
 	if err != nil {
 		return "", err
@@ -297,7 +360,8 @@ func RemoveRecordField(text, label string) (string, error) {
 		start := ownLinesStart(text, u.Fields, k, ls)
 		if !last {
 			e := f.VEnd + 1
-			if nl := strings.IndexByte(text[e:], '\n'); nl >= 0 && strings.TrimSpace(text[e:e+nl]) == "" {
+			// 行の残りが空か、この欄の後ろのコメントだけ: この行ごと消す（次の欄の前のコメントはその欄の物なので残す）。
+			if nl := strings.IndexByte(text[e:], '\n'); nl >= 0 && (strings.TrimSpace(text[e:e+nl]) == "" || strings.HasPrefix(strings.TrimSpace(text[e:e+nl]), "//")) {
 				return text[:start] + text[e+nl+1:], nil
 			}
 			// `x = 1, y = 2` で x が行の頭: 次の欄の頭まで消す。

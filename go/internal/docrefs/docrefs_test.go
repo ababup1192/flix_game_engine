@@ -167,6 +167,17 @@ func TestSpansIndexFillsWhenFresh(t *testing.T) {
 	}
 }
 
+// 索引の形の版 3（flixlint 0.8.6 から）も同じ 9 欄なので読む。
+func TestSpansIndexOfFormat3IsRead(t *testing.T) {
+	root := gameRepo(t)
+	write(t, root, "docs/gen.md", "`World.generated` は索引だけが知る。\n")
+	write(t, root, "build/refactor/spans-resolved.tsv", "# flixlint-spans 3 stage=resolved columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=use,type-use,alias-decl,arg\n"+
+		"def-decl\tsrc/World.flix\t1\t1\t1\t2\tWorld.generated\tWorld.generated\tpub\n")
+	if got := hitsOf(t, root, "docs/gen.md"); len(got) != 0 {
+		t.Errorf("版 3 の索引を読まない: %v", got)
+	}
+}
+
 func TestLocalAcceptsOnlySkip(t *testing.T) {
 	root := gameRepo(t)
 	write(t, root, "bin/lint-rules/doc-refs.local.json", `{"sources": ["lib"]}`)

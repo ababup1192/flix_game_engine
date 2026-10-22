@@ -389,20 +389,9 @@ func removeFieldReport(root string, idx *Index, a args, cfg Config, o Options) (
 		return report{}, fmt.Errorf("型 %s に欄 %s が無い（型から消した後の組み立ては fix-construction --label %s %s）", shape.Name, a.label, a.label, shapeFlag(a))
 	}
 	r := report{Op: "remove-field", Target: shape.Name + "#" + a.label, code: CodeRemoveField}
-	// 欄の直の読み書き。case の record は受け手に alias が無い。flixlint の typed の索引が case-recv を足していれば
-	// （adds=case-recv）、payload を束ねた変数の受け手は recv=<Enum.Case>[#i] via=case なのでその case の物を数え、
-	// 型の決まらない物（recv=?）も数える（取りこぼすと消した後の check で落ちる）。古い索引では ? を全部数える。
-	var left []FieldSite
-	if a.caseName == "" {
-		ans := FieldSites(idx.Rows, FieldQuery{Label: a.label, Receiver: a.receiver})
-		left = append(ans.Sites, ans.Unsure...)
-	} else {
-		for _, s := range FieldSites(idx.Rows, FieldQuery{Label: a.label}).Sites {
-			if s.Recv == "?" || (s.Via == "case" && caseRecvMatches(s.Recv, a.caseName)) {
-				left = append(left, s)
-			}
-		}
-	}
+	// 欄の直の読み書き。受け手の事実（owner）を扱いの表の remove-field の行で分ける: 問いの alias・case と証明できた物と、
+	// 証明できないが候補にある物（maybe・ambiguous）を数える（取りこぼすと消した後の check で落ちる）。
+	left := FieldSites(idx.Rows, FieldQuery{Label: a.label, Receiver: a.receiver, Case: a.caseName, Op: "remove-field"}).Sites
 	left, skipped := WithoutSkipped(left, a.skip)
 	if skipped > 0 {
 		r.extra = append(r.extra, fmt.Sprintf("--skip で外した読み書き %d（受け手が当たらないと人が決めた所。当たっていれば消した後の確かめで落ちて戻す）", skipped))
@@ -418,7 +407,7 @@ func removeFieldReport(root string, idx *Index, a args, cfg Config, o Options) (
 			return rows
 		}()))
 		if a.caseName != "" {
-			r.extra = append(r.extra, "case の record の受け手は、索引の via=case でその case の物と、型の決まらない ? の物を数えた")
+			r.extra = append(r.extra, "case の record の受け手は、索引の owner がその case の物（case:）と、証明できず候補にその case がある物（maybe・ambiguous）を数えた")
 		}
 		// 読み書きを 0 にした後の手の大きさの見込み（組み立ては止まっても数えられる）。
 		if plan, err := constructionPlan(idx, a, shape, shape.Fields, false, srcs, nil); err == nil {
@@ -430,7 +419,7 @@ func removeFieldReport(root string, idx *Index, a args, cfg Config, o Options) (
 			if s.Write {
 				rw = "書き"
 			}
-			r.lines = append(r.lines, fmt.Sprintf("%s\t%s\t%s\t%s", s.Where(), rw, s.Recv, s.Owner))
+			r.lines = append(r.lines, fmt.Sprintf("%s\t%s\t%s\t%s", s.Where(), rw, s.OwnerText(), s.Owner))
 		}
 		r.fixHint = "読み書きを口へ替える（field-to-accessor）か消してから。使われなくなった口の def は remove-dead --def で消す"
 		if a.caseName == "" {
@@ -510,10 +499,4 @@ func constructionPicker(root string, rows []Row, srcs map[string]string, shape S
 	want := localWant{typ: typ, file: shape.File, mod: modAt(rows, shape.File, srcs[shape.File], shape.Brace)}
 	value := a.value
 	return lp, func(d Row, at int) string { return lp.pick(d.Sym, d.File, at, value, want) }
-}
-
-// caseRecvMatches は索引の受け手 recv（`Panel.Open`・`Panel.Open#1`）が case の名前 c（--case の書き方）に当たるか。
-func caseRecvMatches(recv, c string) bool {
-	recv, _, _ = strings.Cut(recv, "#")
-	return nameMatches(recv, c) || nameMatches(c, recv)
 }

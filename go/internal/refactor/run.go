@@ -173,8 +173,7 @@ const Usage = `使い方: fge refactor <操作> [引数] [--json] [-v|--verbose]
   名前は終わりで当てる（Phase.Clear は World.Phase.Clear に当たる。2 つ以上に当たれば候補を出して止まる）。
   設定は bin/lint-rules/refactor.json（engine が配る）と refactor.local.json（flixlint・sources・verify・verifyTests・testDirs・library・rewrites）。
   library（既定 auto: flix.toml に repository がある package）では remove-dead が pub の def を消さない（使う側が索引の外）。
-  flixlint は ` + MinFlixlint + ` 以上（usages の型の注記・use は ` + MinFlixlintUsages + ` から、change-case-shape・change-signature は
-  ` + MinFlixlintArgs + ` から、lint と 1 つの常駐を分け合う索引作り（--resident）は ` + MinFlixlintResident + ` から。古い版では索引を作るたびに JVM を立てる）。
+  flixlint は ` + MinFlixlint + ` 以上（索引の形 3。lint・make check と 1 つの常駐で索引を作る）。足りなければ索引を作る前に止まる。
   確かめは sh -c で流す（Windows は make と同じく Git Bash か MSYS の sh が要る）。
   終了コード: 0 問題なし・1 --max を超えた／確かめが落ちて戻した（reverted）・2 呼び方か索引の誤り／断った（refused）・
   3 戻せないファイルが残った（revert-failed）。
@@ -615,6 +614,11 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 	}
 	jar := ChooseFlixJar(root, fl, cfg, o.Shared.FlixJar)
 	shared := o.Shared
+	if a.flixlint != "" || os.Getenv("FGE_FLIXLINT") != "" {
+		// 名指しした flixlint は自分の shim で索引を書く（make check の常駐の shim の jar はゲームの submodule の版で、
+		// 名指しの版の形の索引を書かない）。常駐は make check と別の 1 本になる。
+		shared.ShimJar = ""
+	}
 	if jar.Picked {
 		// 常駐も選び直した jar で立てる（版の違う jar の常駐とは identity が違うので混ざらない）。make check にも渡す。
 		shared.FlixJar = jar.Jar
@@ -1117,7 +1121,7 @@ func fieldReport(idx *Index, a args) report {
 		} else {
 			reads++
 		}
-		via[s.Via]++
+		via[s.Why]++
 	}
 	r.gotText = fmt.Sprintf("直の読み書き %d（読み %d・書き %d・%s）", len(ans.Sites), reads, writes, split(rows))
 	if a.outside != "" {
@@ -1126,25 +1130,25 @@ func fieldReport(idx *Index, a args) report {
 	}
 	if len(via) > 0 {
 		var parts []string
-		for _, k := range []string{"decl", "row", "ambiguous"} {
+		for _, k := range []string{"decl", "case", "row"} {
 			if via[k] > 0 {
 				parts = append(parts, fmt.Sprintf("%s %d", k, via[k]))
 			}
 		}
-		r.extra = append(r.extra, "受け手の分かり方: "+strings.Join(parts, "・")+"（decl は書いた型・row は欄の組が 1 つの alias と同じ）")
+		r.extra = append(r.extra, "受け手の分かり方: "+strings.Join(parts, "・")+"（decl は書いた型・case は束ねた case・row は欄の組が 1 つの alias か case の payload と同じ）")
 	}
 	if len(ans.Unsure) > 0 {
-		r.extra = append(r.extra, fmt.Sprintf("受け手の型が決まらない物 %d（数えていない。開いた row・欄の組が同じ alias が複数の ambiguous。unsure に並べた。欄の組が違う別の record（via=none）は並べない）", len(ans.Unsure)))
+		r.extra = append(r.extra, fmt.Sprintf("受け手が証明できない物 %d（数えていない。開いた row の maybe・欄の組が同じ物が複数の ambiguous で、候補に当たる物。unsure に並べた。別の record と分かっている other は並べない）", len(ans.Unsure)))
 	}
 	for _, s := range ans.Sites {
 		rw := "読み"
 		if s.Write {
 			rw = "書き"
 		}
-		r.lines = append(r.lines, fmt.Sprintf("%s\t%s\t%s\t%s", s.Where(), rw, s.Recv, s.Owner))
+		r.lines = append(r.lines, fmt.Sprintf("%s\t%s\t%s\t%s", s.Where(), rw, s.OwnerText(), s.Owner))
 	}
 	for _, s := range ans.Unsure {
-		r.lines = append(r.lines, fmt.Sprintf("%s\t?\t%s\t%s（%s）", s.Where(), s.Recv, s.Owner, s.Via))
+		r.lines = append(r.lines, fmt.Sprintf("%s\t?\t%s\t%s（%s）", s.Where(), s.OwnerText(), s.Owner, s.Why))
 	}
 	if len(ans.Sites) > 0 && a.max < 0 && a.outside == "" && a.receiver != "" {
 		mod := a.receiver
