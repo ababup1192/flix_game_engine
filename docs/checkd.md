@@ -37,10 +37,9 @@ make check ──> bin/fge checkd ──> Unix ソケット (~/Library/Caches/fl
 - 1 回ごとに `~/.cache/flix-checkd/<ハッシュ>/daemon.log` に `check via=server|fallback exit= version= retry= 秒` の 1 行。
   常駐そのものの記録は socket の隣の `<名前>.log`。
 - 常駐が無い・壊れている・答えない時は、1 回だけ起こし直し、それでも駄目なら黙って素の check に落ちる。
-- 型の別名（`type alias`）の宣言が前の check と違う時は、check の前に常駐を入れ替える（`go/internal/checkd/aliases.go`）。
+- 型の別名（`type alias`）が変わった時は、常駐（flixlint 0.8.5 から）がコンパイラのキャッシュを捨ててから検査する。
   Flix 0.78 の増分の compile は別名を引数の型にだけ使うファイルを型付けし直さず、触っていないファイルの呼び出しが
-  「Extra label」で落ちる（素の flix check は通る）。入れ替えた回は起こし直しの分だけ遅い（internet_dungeon で約 12 秒）。
-  flixlint の常駐が別名の変化でキャッシュを捨てる版（0.8.5 の予定）に上げたら外す。
+  「Extra label」で落ちていた（素の flix check は通る）。その回は全部を検査し直す分だけ遅い（internet_dungeon で 4〜5 秒・普段は 1〜4 秒）。
 - `bin/fge refactor` の索引（flixlint --spans）も同じ常駐で作る（同じ shim の jar・ヒープ・寿命を渡すので socket は 1 本）。
   常駐で作る索引は heavy の枠を取らず、書き換えの後の確かめの `make check` は heavy の外で流す（heavy は既定で `CHECKD=0` を
   入れるため、枠の中では素の flix check になる）。

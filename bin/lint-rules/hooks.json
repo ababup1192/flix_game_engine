@@ -28,9 +28,9 @@
     "server": {
       "note": "check を頼む flixlint の常駐 (checkd-freshness §4・C-2・C-3)。lint・refactor の索引と同じ常駐。backendEnvVar が cli の時は素の flix check。shim の jar は flixlint のリリースから取り、sha256 が合う時だけ置く (エンジンの版ごとに flixlint の版を 1 つ決める)。heapMB は C-1 の実測 (ゲームの check と resolved の lint・typed の索引でヒープ 3072 MB の最大 RSS 3.45〜3.65 GB) から。retries は答えの版がディスクと違った時に頼み直す回数で、その後は素の flix check。",
       "backendEnvVar": "CHECKD_BACKEND",
-      "flixlintVersion": "0.8.3",
+      "flixlintVersion": "0.8.5",
       "shimJar": "flixlint-shim-0.78.0.jar",
-      "shimSha256": "cd4fefa3d282bfe0122170864d64a363292bdad5d5b7e61cf799e1ef4e33455a",
+      "shimSha256": "2190b65168f6928fa91b8eb5964443b900b63028a2aea68bc0cc8171e1dcc3db",
       "shimUrl": "https://github.com/ababup1192/flixlint/releases/download/v{version}/{jar}",
       "heapMB": 3072,
       "javaOpts": ["-Xss32m"],
