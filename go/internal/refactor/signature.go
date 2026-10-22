@@ -31,6 +31,10 @@ type SignatureQuery struct {
 	Params    string   // 新しい引数の並び（宣言の字）
 	Templates []string // 新しい引数ごとの式
 	Prefer    bool     // --prefer-local: 同じ値と決められない時も、型が同じ局所の名前が 1 つならそれを書く
+	// --propagate: 同じ回に引数を足す def → そこで束ねた扱いにする @名前（呼ぶ所の確かめで束ねていなくても通す）。
+	Given    map[string][]string
+	Stops    map[string]string            // --propagate で広げなかった def → 訳（その中の呼ぶ所の fix に書く）
+	Provided map[string]map[string]string // --propagate: 型の値をもう持つ def → @名前 → 代わりに書く式（`env#res`）
 }
 
 // SignaturePlan は change-signature の計画。
@@ -45,6 +49,7 @@ type SignaturePlan struct {
 	CallFiles map[string]int
 	UsesAdded []string     // 足す use（`Clock（fge::） → src/X.flix`）
 	Unused    []string     // 本体が使わない新しい引数
+	Unknown   []string     // --params の型の名前で、宣言のファイルで引けない物（`Res（src/Board.flix）`）
 	Local     *localPicker // 呼ぶ所に書いた局所の名前の数（設計 §9）
 }
 
@@ -68,6 +73,7 @@ type sigDef struct {
 	bodyStart, extEnd int
 	params            string            // 宣言に書く新しい引数の並び（型の無い名前を元の引数で埋めた物）
 	types             map[string]string // 新しい引数の名前 → 型の字
+	newTypes          []string          // --params で型を書いた引数の型の字（名前が引けるかの確かめ）
 }
 
 // useNeed は 1 つのファイルの 1 つの mod で、名前の解決に要る頭（use を足すかを決める）。
@@ -98,16 +104,142 @@ func addNeed(needs map[string]*useNeed, order *[]string, file, mod string, at in
 
 // PlanSignature は q の def の引数の並びと、呼ぶ所を替える計画。
 func PlanSignature(rows []Row, srcs *reshapeSources, q SignatureQuery) (SignaturePlan, error) {
+	return PlanSignatures(rows, srcs, []SignatureQuery{q})
+}
+
+// sigPart は PlanSignatures の 1 つの問いの下ごしらえ（引数の並びの違う def ごとに 1 つ）。
+type sigPart struct {
+	q                            SignatureQuery
+	old, news                    []string
+	locals                       []string
+	callTemplates, bodyTemplates []string
+	defs                         map[string]sigDef
+	uses                         map[string]int
+	fallback                     map[int]string // `@名前=式` の式（引数の番号 → 式。呼ぶ所に名前が無ければこれを書く）
+}
+
+// PlanSignatures は幾つかの問いを 1 つの計画にまとめる（--propagate: 葉の def と、上へ引数を足す def）。
+// 呼ぶ所を全部集めてから本体を見るので、ある def の本体の中の別の問いの呼ぶ所も、本体の確かめに入る。
+// use を足す所はファイルと mod ごとに 1 つ（同じ型を 2 つの問いが足しても 1 回）。Old・New は最初の問いの物。
+func PlanSignatures(rows []Row, srcs *reshapeSources, qs []SignatureQuery) (SignaturePlan, error) {
 	p := SignaturePlan{CallFiles: map[string]int{}}
+	ix := newSigIndex(rows)
+	needs := map[string]*useNeed{}
+	var needOrder []string
+	var parts []*sigPart
+	skip := map[string]bool{}
+	for _, q := range qs {
+		part, err := prepSignature(rows, srcs, q, needs, &needOrder)
+		if err != nil {
+			return p, err
+		}
+		parts = append(parts, part)
+		for _, d := range q.Defs {
+			skip[d] = true
+		}
+	}
+	p.Old, p.New = parts[0].old, parts[0].news
+	for _, part := range parts {
+		for _, sym := range part.q.Defs {
+			d := part.defs[sym]
+			for _, typ := range d.newTypes {
+				for _, x := range ix.unknownTypes(srcs, typ, d.row.File, modOf(sym)) {
+					if w := x + "（" + d.row.File + "）"; indexOf(p.Unknown, w) < 0 {
+						p.Unknown = append(p.Unknown, w)
+					}
+				}
+			}
+		}
+	}
+	p.Local = newLocalPicker(rows, srcs, qs[0].Prefer, skip)
+	args := argRowsAt(rows)
+	owners := ownerStarts(rows, srcs)
+	var calls []Edit
+	for _, part := range parts {
+		c, err := planCalls(rows, srcs, part, &p, args, owners, needs, &needOrder)
+		if err != nil {
+			return p, err
+		}
+		calls = append(calls, c...)
+	}
+	// 宣言と本体。本体の中の呼ぶ所（再帰・--def の別の def・別の問いの def）は内側の書き換えとして先に当たる。
+	edits := append([]Edit{}, calls...)
+	for _, part := range parts {
+		var removed []string
+		keep := map[string]bool{}
+		for _, n := range part.news {
+			keep[n] = true
+		}
+		for _, n := range part.old {
+			if !keep[n] {
+				removed = append(removed, n)
+			}
+		}
+		for _, sym := range part.q.Defs {
+			d := part.defs[sym]
+			src, _ := srcs.get(d.row.File)
+			params := d.params
+			edits = append(edits, Edit{File: d.row.File, Start: d.list.Args[0][0], End: d.list.Args[len(d.list.Args)-1][1], Site: d.row,
+				Make: func(string) (string, error) { return params, nil }})
+			sim, err := ApplyEdits(src[d.bodyStart:d.extEnd], shiftEdits(calls, d.row.File, d.bodyStart, d.extEnd))
+			if err != nil {
+				return p, err
+			}
+			rules, why := ix.bodyRules(srcs, sigTarget{file: d.row.File, mod: modOf(sym), types: d.types}, part.news, part.bodyTemplates, removed)
+			if why != "" {
+				p.Fix = append(p.Fix, Fixed{d.row, why})
+				continue
+			}
+			after, lifted, left := liftBody(sim, rules, part.news, removed)
+			if len(left) > 0 {
+				p.Fix = append(p.Fix, Fixed{d.row, fmt.Sprintf("替えた後も本体が消える引数 %s を使う（%d か所。最初: `%s`）。--args の式（とその record の欄）と同じでない形。そこを引数から読む形に直すか、消える引数を残す",
+					strings.Join(dedupe(left), "・"), len(left), firstLineAround(after, left[0], removed))})
+				continue
+			}
+			for _, n := range part.news {
+				if indexOf(part.old, n) < 0 && !strings.HasPrefix(n, "_") && len(identUses(after, map[string]bool{n: true})) == 0 && indexOf(p.Unused, n) < 0 {
+					p.Unused = append(p.Unused, n)
+				}
+			}
+			p.Lifted += lifted
+			news, gone := part.news, removed
+			edits = append(edits, Edit{File: d.row.File, Start: d.bodyStart, End: d.extEnd, Site: d.row,
+				Make: func(cur string) (string, error) {
+					out, _, left := liftBody(cur, rules, news, gone)
+					if len(left) > 0 {
+						return "", fmt.Errorf("本体が消える引数 %s を使う", strings.Join(left, "・"))
+					}
+					return out, nil
+				}})
+			p.Sites = append([]Fixed{{d.row, "宣言と本体"}}, p.Sites...)
+		}
+	}
+	// 新しい引数の型（宣言のファイル）と呼ぶ所の式（def の mod の外のファイル）の名前を引く use。
+	for _, k := range needOrder {
+		n := needs[k]
+		ue, notes := ix.useEdits(srcs, n.file, n.mod, n.before, n.names, n.site)
+		edits = append(edits, ue...)
+		for _, x := range notes {
+			p.UsesAdded = append(p.UsesAdded, x+" → "+n.file)
+		}
+	}
+	p.Edits = edits
+	p.Fix = sortedFixed(p.Fix)
+	return p, nil
+}
+
+// prepSignature は問い q の def の宣言を読み、新しい引数の並びと呼ぶ所・本体のテンプレートを作る。
+func prepSignature(rows []Row, srcs *reshapeSources, q SignatureQuery, needs map[string]*useNeed, needOrder *[]string) (*sigPart, error) {
+	part := &sigPart{q: q, defs: map[string]sigDef{}}
 	newParams, err := splitTop(q.Params)
 	if err != nil {
-		return p, fmt.Errorf("--params: %v", err)
+		return nil, fmt.Errorf("--params: %v", err)
 	}
-	if p.New, err = paramNames(newParams); err != nil {
-		return p, fmt.Errorf("--params: %v", err)
+	if part.news, err = paramNames(newParams); err != nil {
+		return nil, fmt.Errorf("--params: %v", err)
 	}
-	if len(q.Templates) != len(p.New) {
-		return p, fmt.Errorf("--args の式が %d 個・--params の引数が %d 個（同じ数に）", len(q.Templates), len(p.New))
+	if len(q.Templates) != len(part.news) {
+		return nil, fmt.Errorf("--args の式が %d 個・--params の引数が %d 個（同じ数に）", len(q.Templates), len(part.news))
 	}
 	// 型の無い名前（`card`）は、その def の元の引数をそのまま残す（宣言の字を写す）。
 	expand := func(params []string) ([]string, error) {
@@ -132,119 +264,137 @@ func PlanSignature(rows []Row, srcs *reshapeSources, q SignatureQuery) (Signatur
 	}
 	// `@名前` は呼ぶ所の局所の名前（let・case のパターン・lambda・def の引数で束ねた物）。呼ぶ所ではそのまま書き、
 	// 呼ぶ所を囲む def の中で束ねていなければ fix。本体の中に同じ式は無いので、本体から引数へ移す式にはしない。
-	locals, callTemplates, bodyTemplates := localNames(q.Templates), make([]string, len(q.Templates)), make([]string, len(q.Templates))
+	// `@名前=式` は、呼ぶ所に名前が無ければ fix の代わりに式を書き（元の引数の名前が使える）、本体の中の同じ式を引数の名前に替える。
+	part.fallback = map[int]string{}
+	q.Templates = append([]string{}, q.Templates...)
 	for i, t := range q.Templates {
-		callTemplates[i] = localMark.ReplaceAllString(t, "$1")
-		bodyTemplates[i] = t
-		if localMark.MatchString(t) {
-			bodyTemplates[i] = p.New[i]
+		if m := localDefault.FindStringSubmatch(t); m != nil {
+			part.fallback[i], q.Templates[i] = strings.TrimSpace(m[2]), "@"+m[1]
 		}
 	}
-	ix := newSigIndex(rows)
-	needs := map[string]*useNeed{}
-	var needOrder []string
-	defs := map[string]sigDef{}
+	part.q = q
+	part.locals, part.callTemplates, part.bodyTemplates = localNames(q.Templates), make([]string, len(q.Templates)), make([]string, len(q.Templates))
+	for i, t := range q.Templates {
+		part.callTemplates[i] = localMark.ReplaceAllString(t, "$1")
+		part.bodyTemplates[i] = t
+		if localMark.MatchString(t) {
+			part.bodyTemplates[i] = part.news[i]
+		}
+		if e, ok := part.fallback[i]; ok {
+			part.bodyTemplates[i] = e
+		}
+	}
 	for _, sym := range q.Defs {
-		var decl *Row
-		for i := range rows {
-			if rows[i].Kind == KindDefDecl && rows[i].Sym == sym {
-				decl = &rows[i]
-				break
-			}
-		}
-		if decl == nil {
-			return p, fmt.Errorf("def %s の宣言が索引に無い（パッケージの def は直せない）", sym)
-		}
-		src, err := srcs.get(decl.File)
+		decl, src, list, params, err := readDefParams(rows, srcs, sym)
 		if err != nil {
-			return p, err
+			return nil, err
 		}
-		_, nameEnd, err := ByteRange(src, *decl)
-		if err != nil {
-			return p, fmt.Errorf("索引が古い: %s（bin/fge refactor index --rebuild）", decl.Where())
-		}
-		open := nameEnd
-		if open < len(src) && src[open] == '[' {
-			if _, at, err := scanTop(src, open+1, "]"); err == nil {
-				open = at + 1
-			}
-		}
-		list, has, err := argsAfter(src, open)
-		if err != nil || !has {
-			return p, fmt.Errorf("%s: def %s の引数の並びが読めない", decl.Where(), sym)
-		}
-		var params []string
-		for _, a := range list.Args {
-			params = append(params, src[a[0]:a[1]])
-		}
+		_, nameEnd, _ := ByteRange(src, decl)
 		old, err := paramNames(params)
 		if err != nil {
-			return p, fmt.Errorf("%s: %v", decl.Where(), err)
+			return nil, fmt.Errorf("%s: %v", decl.Where(), err)
 		}
 		if len(old) == 0 {
-			return p, fmt.Errorf("def %s に引数が無い（引数の無い def は扱わない）", sym)
+			return nil, fmt.Errorf("def %s に引数が無い（引数の無い def は扱わない）", sym)
 		}
-		if p.Old == nil {
-			p.Old = old
-		} else if strings.Join(old, ",") != strings.Join(p.Old, ",") {
-			return p, fmt.Errorf("--def の def は同じ引数の名前が要る: %s は (%s)・前の def は (%s)", sym, strings.Join(old, ", "), strings.Join(p.Old, ", "))
+		if part.old == nil {
+			part.old = old
+		} else if strings.Join(old, ",") != strings.Join(part.old, ",") {
+			return nil, fmt.Errorf("--def の def は同じ引数の名前が要る: %s は (%s)・前の def は (%s)", sym, strings.Join(old, ", "), strings.Join(part.old, ", "))
 		}
 		span, err := spanOf(decl.File, decl.Attr("ext"))
 		if err != nil {
-			return p, err
+			return nil, err
 		}
 		_, extEnd, err := ByteRange(src, span)
 		if err != nil {
-			return p, fmt.Errorf("索引が古い: %s（bin/fge refactor index --rebuild）", decl.Where())
+			return nil, fmt.Errorf("索引が古い: %s（bin/fge refactor index --rebuild）", decl.Where())
 		}
 		body, ok := DefBodyStart(src, list.Close+1)
 		if !ok || body > extEnd {
-			return p, fmt.Errorf("%s: def %s の本体の始まりが読めない", decl.Where(), sym)
+			return nil, fmt.Errorf("%s: def %s の本体の始まりが読めない", decl.Where(), sym)
 		}
 		items, err := expand(params)
 		if err != nil {
-			return p, err
+			return nil, err
 		}
 		types := map[string]string{}
-		var roots []string
+		var roots, newTypes []string
 		for i, it := range items {
 			n, typ, _ := strings.Cut(it, ":")
 			types[strings.TrimSpace(n)] = strings.TrimSpace(typ)
 			if strings.Contains(newParams[i], ":") {
 				roots = append(roots, typeRoots(typ)...)
+				newTypes = append(newTypes, strings.TrimSpace(typ))
 			}
 		}
-		addNeed(needs, &needOrder, decl.File, modOf(sym), nameEnd, *decl, roots)
-		defs[sym] = sigDef{row: *decl, list: list, bodyStart: body, extEnd: extEnd, params: joinLayout(items, readLayout(src, list)), types: types}
+		addNeed(needs, needOrder, decl.File, modOf(sym), nameEnd, decl, roots)
+		part.defs[sym] = sigDef{row: decl, list: list, bodyStart: body, extEnd: extEnd, params: joinLayout(items, readLayout(src, list)), types: types, newTypes: newTypes}
 	}
-	for _, n := range locals {
-		if indexOf(p.Old, n) >= 0 {
-			return p, fmt.Errorf("--args の @%s は元の引数の名前と同じ（元の引数なら @ を外す）", n)
+	for _, n := range part.locals {
+		if indexOf(part.old, n) >= 0 {
+			return nil, fmt.Errorf("--args の @%s は元の引数の名前と同じ（元の引数なら @ を外す）", n)
 		}
 	}
-	uses := countUses(callTemplates, p.Old)
-	args := argRowsAt(rows)
-	owners := ownerStarts(rows, srcs)
-	skip := map[string]bool{}
-	for _, d := range q.Defs {
-		skip[d] = true
+	part.uses = countUses(part.withFallback(part.callTemplates, nil), part.old)
+	return part, nil
+}
+
+// readDefParams は def sym の宣言の行・ファイルの中身・引数の並び・引数ごとの字（`w: World`）。
+func readDefParams(rows []Row, srcs *reshapeSources, sym string) (Row, string, ArgList, []string, error) {
+	var decl *Row
+	for i := range rows {
+		if rows[i].Kind == KindDefDecl && rows[i].Sym == sym {
+			decl = &rows[i]
+			break
+		}
 	}
-	p.Local = newLocalPicker(rows, srcs, q.Prefer, skip)
+	if decl == nil {
+		return Row{}, "", ArgList{}, nil, fmt.Errorf("def %s の宣言が索引に無い（パッケージの def は直せない）", sym)
+	}
+	src, err := srcs.get(decl.File)
+	if err != nil {
+		return Row{}, "", ArgList{}, nil, err
+	}
+	_, nameEnd, err := ByteRange(src, *decl)
+	if err != nil {
+		return Row{}, "", ArgList{}, nil, fmt.Errorf("索引が古い: %s（bin/fge refactor index --rebuild）", decl.Where())
+	}
+	open := nameEnd
+	if open < len(src) && src[open] == '[' {
+		if _, at, err := scanTop(src, open+1, "]"); err == nil {
+			open = at + 1
+		}
+	}
+	list, has, err := argsAfter(src, open)
+	if err != nil || !has {
+		return Row{}, "", ArgList{}, nil, fmt.Errorf("%s: def %s の引数の並びが読めない", decl.Where(), sym)
+	}
+	var params []string
+	for _, a := range list.Args {
+		params = append(params, src[a[0]:a[1]])
+	}
+	return *decl, src, list, params, nil
+}
+
+// planCalls は問い part の def を呼ぶ所の書き換え（決められない所は p.Fix）。
+func planCalls(rows []Row, srcs *reshapeSources, part *sigPart, p *SignaturePlan, args map[string]argInfo, owners map[string]int, needs map[string]*useNeed, needOrder *[]string) ([]Edit, error) {
 	var calls []Edit
 	for _, r := range rows {
 		if r.Kind != KindDefUse || strings.Contains(r.Extra, "sugar") {
 			continue
 		}
-		if _, ok := defs[r.Sym]; !ok {
+		d, ok := part.defs[r.Sym]
+		if !ok {
 			continue
 		}
 		s, err := srcs.get(r.File)
 		if err != nil {
-			return p, err
+			return nil, err
 		}
 		ns, ne, err := ByteRange(s, r)
 		if err != nil {
-			return p, fmt.Errorf("索引が古い: %s（bin/fge refactor index --rebuild）", r.Where())
+			return nil, fmt.Errorf("索引が古い: %s（bin/fge refactor index --rebuild）", r.Where())
 		}
 		l, h, err := argsAfter(s, ne)
 		info := args[argKey(KindDefUse, r)]
@@ -255,17 +405,17 @@ func PlanSignature(rows []Row, srcs *reshapeSources, q SignatureQuery) (Signatur
 		case info.Synth || !h:
 			p.Fix = append(p.Fix, Fixed{r, "関数として渡している（引数を変えると型が変わる。lambda で包むかは人）"})
 			continue
-		case len(l.Args) != len(p.Old) || info.N != len(l.Args):
-			p.Fix = append(p.Fix, Fixed{r, fmt.Sprintf("引数の数 %d が宣言の %d と違う", len(l.Args), len(p.Old))})
+		case len(l.Args) != len(part.old) || info.N != len(l.Args):
+			p.Fix = append(p.Fix, Fixed{r, fmt.Sprintf("引数の数 %d が宣言の %d と違う", len(l.Args), len(part.old))})
 			continue
 		}
 		var bad []string
-		for i, name := range p.Old {
+		for i, name := range part.old {
 			v := s[l.Args[i][0]:l.Args[i][1]]
 			switch {
-			case uses[name] > 1 && !isSimple(v):
+			case part.uses[name] > 1 && !isSimple(v):
 				bad = append(bad, name+" に `"+oneLine(v)+"`")
-			case uses[name] == 0 && !isSimple(v):
+			case part.uses[name] == 0 && !isSimple(v):
 				p.Dropped++
 			}
 		}
@@ -273,13 +423,41 @@ func PlanSignature(rows []Row, srcs *reshapeSources, q SignatureQuery) (Signatur
 			p.Fix = append(p.Fix, Fixed{r, fmt.Sprintf("--args が 2 回使う引数に式が渡っている: %s（2 回評価される。先に let で名前を付ける）", strings.Join(bad, "・"))})
 			continue
 		}
-		if missing := unboundLocals(s, owners[r.Owner], ns, locals); len(missing) > 0 {
-			p.Fix = append(p.Fix, Fixed{r, fmt.Sprintf("呼ぶ所に局所の名前 %s が無い（呼ぶ所を囲む def の中で let・case のパターン・lambda・引数で束ねていない）", "@"+strings.Join(missing, "・@"))})
+		callTemplates, filled := part.callTemplates, ""
+		missing := withoutAll(unboundLocals(s, owners[r.Owner], ns, part.locals), part.q.Given[r.Owner])
+		var provided []string
+		if pv := part.q.Provided[r.Owner]; len(missing) > 0 && len(pv) > 0 {
+			var rest []string
+			tm := append([]string{}, callTemplates...)
+			for _, n := range missing {
+				e, ok := pv[n]
+				if !ok {
+					rest = append(rest, n)
+					continue
+				}
+				for i, t := range part.q.Templates {
+					if t == "@"+n {
+						tm[i] = e
+					}
+				}
+				provided = append(provided, "@"+n+" の代わりに "+e)
+			}
+			callTemplates, missing = tm, rest
+		}
+		if len(missing) > 0 && part.hasFallback(missing) {
+			callTemplates, filled, missing = part.withFallback(callTemplates, missing), "@"+strings.Join(missing, "・@"), nil
+		}
+		if len(missing) > 0 {
+			why := fmt.Sprintf("呼ぶ所に局所の名前 %s が無い（呼ぶ所を囲む def の中で let・case のパターン・lambda・引数で束ねていない）", "@"+strings.Join(missing, "・@"))
+			if stop := part.q.Stops[r.Owner]; stop != "" {
+				why = fmt.Sprintf("呼ぶ所に局所の名前 %s が無く、囲む def へは広げない: %s", "@"+strings.Join(missing, "・@"), stop)
+			}
+			p.Fix = append(p.Fix, Fixed{r, why})
 			continue
 		}
-		old, tmpl, lay := p.Old, callTemplates, readLayout(s, l)
+		old, tmpl, lay := part.old, callTemplates, readLayout(s, l)
 		if dm := modOf(r.Sym); modOf(r.Owner) != dm {
-			tmpl = qualifyTemplates(callTemplates, dm, rows, append(append([]string{}, p.Old...), locals...))
+			tmpl = qualifyTemplates(callTemplates, dm, rows, append(append([]string{}, part.old...), part.locals...))
 		}
 		// 同じ値の局所の名前（設計 §9）。元の引数そのもの・@名前 の式は見ない。
 		vals := make([]string, len(l.Args))
@@ -288,12 +466,11 @@ func PlanSignature(rows []Row, srcs *reshapeSources, q SignatureQuery) (Signatur
 		}
 		picked := make([]string, len(tmpl))
 		var pickedNames []string
-		d := defs[r.Sym]
 		for i, t := range tmpl {
-			if isIdent(strings.TrimSpace(callTemplates[i])) || localMark.MatchString(q.Templates[i]) {
+			if isIdent(strings.TrimSpace(callTemplates[i])) || (localMark.MatchString(part.q.Templates[i]) && (filled == "" || callTemplates[i] != part.fallback[i])) {
 				continue
 			}
-			want := localWant{typ: d.types[p.New[i]], file: d.row.File, mod: modOf(r.Sym)}
+			want := localWant{typ: d.types[part.news[i]], file: d.row.File, mod: modOf(r.Sym)}
 			if n := p.Local.pick(r.Owner, r.File, ns, Substitute(strings.TrimSpace(t), old, vals), want); n != "" {
 				picked[i] = n
 				pickedNames = append(pickedNames, n)
@@ -306,12 +483,18 @@ func PlanSignature(rows []Row, srcs *reshapeSources, q SignatureQuery) (Signatur
 					roots = append(roots, exprRoots(t)...)
 				}
 			}
-			addNeed(needs, &needOrder, r.File, modOf(r.Owner), ns, r, roots)
+			addNeed(needs, needOrder, r.File, modOf(r.Owner), ns, r, roots)
 		}
 		calls = append(calls, Edit{File: r.File, Start: l.Args[0][0], End: l.Args[len(l.Args)-1][1], Site: r,
 			Check: []Want{{Span: r, Text: s[ns:ne]}},
 			Make:  func(cur string) (string, error) { return rewriteCallArgs(cur, old, tmpl, picked, lay) }})
 		why := "呼ぶ所"
+		if filled != "" {
+			why += "（" + filled + " が無いので式を書く）"
+		}
+		if len(provided) > 0 {
+			why += "（" + strings.Join(provided, "・") + "）"
+		}
 		if len(pickedNames) > 0 {
 			why += "（局所の " + strings.Join(pickedNames, "・") + " を書く）"
 		}
@@ -319,68 +502,48 @@ func PlanSignature(rows []Row, srcs *reshapeSources, q SignatureQuery) (Signatur
 		p.Calls++
 		p.CallFiles[r.File]++
 	}
-	// 宣言と本体。本体の中の呼ぶ所（再帰・--def の別の def）は内側の書き換えとして先に当たる。
-	var removed []string
-	keep := map[string]bool{}
-	for _, n := range p.New {
-		keep[n] = true
-	}
-	for _, n := range p.Old {
-		if !keep[n] {
-			removed = append(removed, n)
+	return calls, nil
+}
+
+// withoutAll は xs から drop の物を除いた列。
+func withoutAll(xs, drop []string) []string {
+	var out []string
+	for _, x := range xs {
+		if indexOf(drop, x) < 0 {
+			out = append(out, x)
 		}
 	}
-	edits := append([]Edit{}, calls...)
-	for _, sym := range q.Defs {
-		d := defs[sym]
-		src, _ := srcs.get(d.row.File)
-		params := d.params
-		edits = append(edits, Edit{File: d.row.File, Start: d.list.Args[0][0], End: d.list.Args[len(d.list.Args)-1][1], Site: d.row,
-			Make: func(string) (string, error) { return params, nil }})
-		sim, err := ApplyEdits(src[d.bodyStart:d.extEnd], shiftEdits(calls, d.row.File, d.bodyStart, d.extEnd))
-		if err != nil {
-			return p, err
-		}
-		rules, why := ix.bodyRules(srcs, sigTarget{file: d.row.File, mod: modOf(sym), types: d.types}, p.New, bodyTemplates, removed)
-		if why != "" {
-			p.Fix = append(p.Fix, Fixed{d.row, why})
-			continue
-		}
-		after, lifted, left := liftBody(sim, rules, p.New, removed)
-		if len(left) > 0 {
-			p.Fix = append(p.Fix, Fixed{d.row, fmt.Sprintf("替えた後も本体が消える引数 %s を使う（%d か所。最初: `%s`）。--args の式（とその record の欄）と同じでない形。そこを引数から読む形に直すか、消える引数を残す",
-				strings.Join(dedupe(left), "・"), len(left), firstLineAround(after, left[0], removed))})
-			continue
-		}
-		for _, n := range p.New {
-			if indexOf(p.Old, n) < 0 && !strings.HasPrefix(n, "_") && len(identUses(after, map[string]bool{n: true})) == 0 && indexOf(p.Unused, n) < 0 {
-				p.Unused = append(p.Unused, n)
+	return out
+}
+
+// localDefault は `@名前=式`（呼ぶ所に名前が無ければ式を書く）。`==` は比べる式なので当てない。
+var localDefault = regexp.MustCompile(`^\s*@([A-Za-z_][A-Za-z0-9_]*)\s*=([^=>][\s\S]*)$`)
+
+// hasFallback は names の局所の名前が全部 `@名前=式` の式を持つか。
+func (part *sigPart) hasFallback(names []string) bool {
+	for _, n := range names {
+		found := false
+		for i := range part.fallback {
+			if part.q.Templates[i] == "@"+n {
+				found = true
 			}
 		}
-		p.Lifted += lifted
-		news, gone := p.New, removed
-		edits = append(edits, Edit{File: d.row.File, Start: d.bodyStart, End: d.extEnd, Site: d.row,
-			Make: func(cur string) (string, error) {
-				out, _, left := liftBody(cur, rules, news, gone)
-				if len(left) > 0 {
-					return "", fmt.Errorf("本体が消える引数 %s を使う", strings.Join(left, "・"))
-				}
-				return out, nil
-			}})
-		p.Sites = append([]Fixed{{d.row, "宣言と本体"}}, p.Sites...)
-	}
-	// 新しい引数の型（宣言のファイル）と呼ぶ所の式（def の mod の外のファイル）の名前を引く use。
-	for _, k := range needOrder {
-		n := needs[k]
-		ue, notes := ix.useEdits(srcs, n.file, n.mod, n.before, n.names, n.site)
-		edits = append(edits, ue...)
-		for _, x := range notes {
-			p.UsesAdded = append(p.UsesAdded, x+" → "+n.file)
+		if !found {
+			return false
 		}
 	}
-	p.Edits = edits
-	p.Fix = sortedFixed(p.Fix)
-	return p, nil
+	return true
+}
+
+// withFallback は呼ぶ所のテンプレート base のうち、名前 names（nil は全部）の `@名前=式` を式にした写し。
+func (part *sigPart) withFallback(base, names []string) []string {
+	out := append([]string{}, base...)
+	for i, e := range part.fallback {
+		if names == nil || indexOf(names, strings.TrimPrefix(part.q.Templates[i], "@")) >= 0 {
+			out[i] = e
+		}
+	}
+	return out
 }
 
 // localMark は --args の中の呼ぶ所の局所の名前（`@名前`）。
@@ -568,9 +731,48 @@ func signatureReport(root string, idx *Index, a args, cfg Config, o Options) (re
 		}
 		q.Defs = append(q.Defs, sym)
 	}
-	plan, err := PlanSignature(idx.Rows, &reshapeSources{root: root, m: map[string]string{}}, q)
+	srcs := &reshapeSources{root: root, m: map[string]string{}}
+	var pr propagation
+	var plan SignaturePlan
+	if a.propagate {
+		stop := map[string]bool{}
+		for _, d := range strings.Split(a.stopAt, ",") {
+			if d = strings.TrimSpace(d); d == "" {
+				continue
+			}
+			sym, err := Resolve(idx.Rows, d, map[string]bool{KindDefDecl: true})
+			if err != nil {
+				return report{}, fmt.Errorf("--stop-at: %v", err)
+			}
+			stop[sym] = true
+		}
+		depth := a.depth
+		if depth == 0 {
+			depth = defaultPropagateDepth
+		}
+		if pr, err = planPropagation(idx.Rows, srcs, q, stop, depth); err != nil {
+			return report{}, err
+		}
+		plan, err = PlanSignatures(idx.Rows, srcs, pr.Queries)
+	} else {
+		plan, err = PlanSignature(idx.Rows, srcs, q)
+	}
 	if err != nil {
 		return report{}, err
+	}
+	// --propagate で葉の本体が足す引数を使わなければ、上の段は通っても葉が Flix の「使わない引数」で落ちる（_ で始める
+	// 名前は上の段で使えない）。check を流す前に止める。
+	if a.propagate {
+		for _, n := range localNames(templates) {
+			if indexOf(plan.Unused, n) < 0 {
+				continue
+			}
+			for _, sym := range q.Defs {
+				if decl, _, _, _, err := readDefParams(idx.Rows, srcs, sym); err == nil {
+					plan.Fix = append(plan.Fix, Fixed{decl, fmt.Sprintf("葉の本体が %s を使わない（Flix は使わない引数を誤りにし、_%s は上の段で使えない）。--args を @%s=<本体の中の式> にして本体の式を %s に替えるか、先に本体を %s の元の式で書く", n, n, n, n, n)})
+				}
+			}
+		}
 	}
 	how := a.applyWith(cfg.Verify, o)
 	if len(plan.Fix) > 0 {
@@ -580,13 +782,14 @@ func signatureReport(root string, idx *Index, a args, cfg Config, o Options) (re
 	if a.apply && len(plan.Fix) > 0 {
 		out.State, out.Reason = StateRefused, fmt.Sprintf("人へ回す所 %d（書くと型が合わない。直してから --apply）", len(plan.Fix))
 	}
+	decls := len(q.Defs) + len(pr.Lifted)
 	r := report{Op: "change-signature", Target: a.def + "（(" + strings.Join(plan.Old, ", ") + ") → (" + strings.Join(plan.New, ", ") + ")）", code: CodeSignature, Outcome: &out, Fix: plan.Fix}
 	r.got = len(plan.Fix)
 	if out.State == StateReverted || out.State == StateRefused {
-		r.got = plan.Calls + len(q.Defs)
+		r.got = plan.Calls + decls
 	}
 	r.Sites = plan.Sites
-	r.gotText = fmt.Sprintf("宣言 %d・呼ぶ所 %d（%d ファイル）・本体から引数へ移す式 %d・人へ回す %d", len(q.Defs), plan.Calls, len(plan.CallFiles), plan.Lifted, len(plan.Fix))
+	r.gotText = fmt.Sprintf("宣言 %d・呼ぶ所 %d（%d ファイル）・本体から引数へ移す式 %d・人へ回す %d", decls, plan.Calls, len(plan.CallFiles), plan.Lifted, len(plan.Fix))
 	note := "（" + strings.Join(plan.Old, "・") + " はその所の式"
 	if ls := localNames(templates); len(ls) > 0 {
 		note += "・@" + strings.Join(ls, "・@") + " は呼ぶ所の局所の名前"
@@ -602,20 +805,29 @@ func signatureReport(root string, idx *Index, a args, cfg Config, o Options) (re
 		r.extra = append(r.extra, fmt.Sprintf("本体が使わない新しい引数 %s（Flix は使わない引数を誤りにする。_ で始めるか本体で使う）", strings.Join(plan.Unused, "・")))
 	}
 	r.wantText = "宣言と呼ぶ所の引数が --params の並び（決められない所は fix。fix があれば書かない）"
+	// 型の名前の警告と --propagate の行は注の頭へ（注は数行で切れて残りは -v）。
+	var head []string
+	if len(plan.Unknown) > 0 {
+		head = append(head, fmt.Sprintf("警告: --params の型の名前 %s が引けない（標準の型・同じ mod の宣言・use・プロジェクトの型のどれでもない。--apply の check で落ちる。修飾を足すか、use の出どころを確かめる）", strings.Join(plan.Unknown, "・")))
+	}
+	if a.propagate {
+		head = append(head, propagateNotes(pr)...)
+	}
+	r.extra = append(head, r.extra...)
 	for _, f := range plan.Fix {
 		r.fixLines = append(r.fixLines, fmt.Sprintf("%s\tfix\t%s（%s）", f.Where(), f.Why, f.Owner))
 	}
 	for _, s := range plan.Sites {
 		r.lines = append(r.lines, fmt.Sprintf("%s\t%s（%s）", s.Where(), s.Why, s.Owner))
 	}
-	base := fmt.Sprintf("bin/fge refactor change-signature --def %s --params %s --args %s", a.def, shellQuote(q.Params), shellQuote(a.argsText)) + preferFlag(a)
+	base := fmt.Sprintf("bin/fge refactor change-signature --def %s --params %s --args %s", a.def, shellQuote(q.Params), shellQuote(a.argsText)) + preferFlag(a) + propagateFlags(a)
 	nextOf(&r, base, a, &out)
 	switch {
 	case len(plan.Fix) > 0:
 		r.fixHint = "fix の所を手で直す（関数として渡す所は lambda で包む・本体に残る消える引数は引数から読む形に）か、索引に合う形にしてから"
 		r.Next, r.NextWhy = base, "fix の所を直してから dry-run から（fix が 0 になれば --apply）"
 	case out.State == StateApplied:
-		r.Done = fmt.Sprintf("done: %d sites（宣言 %d・呼ぶ所 %d）→ 0 left · check ok", plan.Calls+len(q.Defs), len(q.Defs), plan.Calls)
+		r.Done = fmt.Sprintf("done: %d sites（宣言 %d・呼ぶ所 %d）→ 0 left · check ok", plan.Calls+decls, decls, plan.Calls)
 		r.Next, r.NextWhy = "bin/fge refactor usages "+strings.Split(a.def, ",")[0]+" --callers", "替えた後の呼び手（索引は作り直しになる）"
 		r.lines = nil
 	}

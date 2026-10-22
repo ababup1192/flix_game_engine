@@ -135,7 +135,8 @@ func TestRemoveFieldStopsWhileTheFieldIsRead(t *testing.T) {
 	root := shape(t, nil)
 	before := read(t, root, "src/Shape.flix")
 	code, text := runShape(t, root, nil, "remove-field", "--label", "clock", "--receiver", "World", "--apply")
-	if code != 2 || read(t, root, "src/Shape.flix") != before || !strings.Contains(text, "src/Shape.flix:35:39") || !strings.Contains(text, "src/Shape.flix:35:49") {
+	if code != 2 || read(t, root, "src/Shape.flix") != before || !strings.Contains(text, "src/Shape.flix:35:39") || !strings.Contains(text, "src/Shape.flix:35:49") ||
+		!strings.Contains(text, "組み立て: 欄 clock を消す所 3・人へ回す 0") {
 		t.Errorf("exit %d\n%s", code, text)
 	}
 }

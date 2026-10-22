@@ -80,6 +80,10 @@ const Usage = `使い方: fge refactor <操作> [引数] [--json] [-v|--verbose]
                                                        --args の @名前 は呼ぶ所の局所の名前（let・case のパターン・lambda・引数で
                                                        束ねた物。例 --args 'env, @card'）: そのまま書き、呼ぶ所を囲む def で束ねて
                                                        いなければ fix
+                                                       --propagate [--stop-at A.f,B.g] [--depth N]: @名前 を束ねていない呼ぶ所は、
+                                                       囲む def にも同じ引数（--params のその引数の型）を足して上へ広げる（足す位置は
+                                                       葉と同じ先頭か末尾・既定の深さ 8）。止める所: --stop-at・main・@Test・引数の
+                                                       無い def・同じ型の別の名前の引数を持つ def（中の呼ぶ所は fix）
   remove-param --def Mod.f[,Mod.g] [--param x[,y]] [--apply]
                                                        使っていない引数を宣言と呼ぶ所から消す（--param を省くと本体が使わない引数を
                                                        全部。_ で始まる物は残す）。resolved の索引で足り、型検査が通らない途中でも使える:
@@ -199,6 +203,8 @@ type args struct {
 	from, where, in, rule                                 string // rewrite の --from・--where・--in・--rule（--to は move と同じ欄）
 	name, expr, doc                                       string // extract-function・extract-type-alias の --name・--expr・--doc
 	preferLocal                                           bool   // --prefer-local: 書く式の代わりに、型が同じ局所の名前が 1 つならそれを書く
+	propagate                                             bool   // change-signature --propagate: 呼ぶ所に @名前 が無ければ、囲む def にも同じ引数を足して上へ
+	stopAt                                                string // change-signature --stop-at（a,b）: --propagate で広げない def
 	at, remove                                            int    // change-case-shape の --at・--remove（-1 は無し）
 	skip                                                  map[string]bool
 	max, limit                                            int // max < 0 は無し・limit 0 は全部
@@ -308,6 +314,10 @@ func parseArgs(rest []string) (args, error) {
 			a.rule, err = value(&i, x)
 		case "--prefer-local":
 			a.preferLocal = true
+		case "--propagate":
+			a.propagate = true
+		case "--stop-at":
+			a.stopAt, err = value(&i, x)
 		case "--name":
 			a.name, err = value(&i, x)
 		case "--expr":

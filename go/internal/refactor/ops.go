@@ -414,6 +414,10 @@ func removeFieldReport(root string, idx *Index, a args, cfg Config, o Options) (
 		if a.caseName != "" {
 			r.extra = append(r.extra, "case の record は受け手の型が索引で決まらないので、同じ名前の欄で受け手の型が ? の物を全部数えた")
 		}
+		// 読み書きを 0 にした後の手の大きさの見込み（組み立ては止まっても数えられる）。
+		if plan, err := constructionPlan(idx, a, shape, shape.Fields, false, srcs, nil); err == nil {
+			r.extra = append([]string{fmt.Sprintf("組み立て: 欄 %s を消す所 %d・人へ回す %d（読み書きが 0 になった後の remove-field で一緒に消す）", a.label, len(plan.Sites), len(plan.Fix))}, r.extra...)
+		}
 		r.wantText = fmt.Sprintf("欄 %s の直の読み書き 0", a.label)
 		for _, s := range left {
 			rw := "読み"

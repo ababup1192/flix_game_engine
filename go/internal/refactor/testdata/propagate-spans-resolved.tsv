@@ -1,0 +1,52 @@
+# flixlint-spans 2 stage=resolved columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=use,type-use,alias-decl,arg
+def-decl	src/Board.flix	2	13	2	17	Board.show	Board.show	pub ext=2:5:2:56
+def-use	src/Board.flix	2	41	2	51	Rule.twice	Board.show	
+arg	src/Board.flix	2	52	2	53	Rule.twice	Board.show	of=def-use at=2:41 i=0 n=1
+use	src/Calc.flix	2	9	2	16	Kit.Res	Calc	alias=Res what=alias
+def-decl	src/Calc.flix	4	13	4	17	Calc.leaf	Calc.leaf	pub ext=4:5:4:61
+def-use	src/Calc.flix	4	41	4	53	Kit.defaults	Calc.leaf	
+arg	src/Calc.flix	4	53	4	55	Kit.defaults	Calc.leaf	of=def-use at=4:41 i=0 n=1
+def-decl	src/Calc.flix	6	13	6	16	Calc.mid	Calc.mid	pub ext=6:5:6:57
+def-use	src/Calc.flix	6	46	6	50	Calc.leaf	Calc.mid	
+arg	src/Calc.flix	6	51	6	52	Calc.leaf	Calc.mid	of=def-use at=6:46 i=0 n=1
+def-decl	src/Calc.flix	8	13	8	16	Calc.top	Calc.top	pub ext=8:5:8:63
+type-use	src/Calc.flix	8	22	8	25	Kit.Res	Calc.top	what=alias
+def-use	src/Calc.flix	8	46	8	49	Calc.mid	Calc.top	
+arg	src/Calc.flix	8	50	8	51	Calc.mid	Calc.top	of=def-use at=8:46 i=0 n=2
+arg	src/Calc.flix	8	53	8	62	Calc.mid	Calc.top	of=def-use at=8:46 i=1 n=2
+alias-decl	src/Kit.flix	2	20	2	23	Kit.Res	Kit.Res	
+alias-decl	src/Kit.flix	4	20	4	23	Kit.Env	Kit.Env	
+type-use	src/Kit.flix	4	34	4	37	Kit.Res	Kit.Env	what=alias
+def-decl	src/Kit.flix	6	13	6	21	Kit.defaults	Kit.defaults	pub ext=6:5:6:44
+type-use	src/Kit.flix	6	25	6	28	Kit.Res	Kit.defaults	what=alias
+use	src/Rule.flix	2	9	2	16	Kit.Res	Rule	alias=Res what=alias
+def-decl	src/Rule.flix	4	13	4	18	Rule.score	Rule.score	pub ext=4:5:4:62
+def-use	src/Rule.flix	4	42	4	54	Kit.defaults	Rule.score	
+arg	src/Rule.flix	4	54	4	56	Kit.defaults	Rule.score	of=def-use at=4:42 i=0 n=1
+def-decl	src/Rule.flix	6	13	6	18	Rule.total	Rule.total	pub ext=6:5:6:68
+def-use	src/Rule.flix	6	52	6	57	Rule.score	Rule.total	
+arg	src/Rule.flix	6	58	6	59	Rule.score	Rule.total	of=def-use at=6:52 i=0 n=1
+def-decl	src/Rule.flix	8	13	8	18	Rule.twice	Rule.twice	pub ext=8:5:8:63
+def-use	src/Rule.flix	8	38	8	43	Rule.total	Rule.twice	
+arg	src/Rule.flix	8	44	8	45	Rule.total	Rule.twice	of=def-use at=8:38 i=0 n=2
+arg	src/Rule.flix	8	47	8	48	Rule.total	Rule.twice	of=def-use at=8:38 i=1 n=2
+def-use	src/Rule.flix	8	52	8	57	Rule.total	Rule.twice	
+arg	src/Rule.flix	8	58	8	59	Rule.total	Rule.twice	of=def-use at=8:52 i=0 n=2
+arg	src/Rule.flix	8	61	8	62	Rule.total	Rule.twice	of=def-use at=8:52 i=1 n=2
+def-decl	src/Rule.flix	10	13	10	20	Rule.withRes	Rule.withRes	pub ext=10:5:10:66
+type-use	src/Rule.flix	10	24	10	27	Kit.Res	Rule.withRes	what=alias
+def-use	src/Rule.flix	10	48	10	53	Rule.score	Rule.withRes	
+arg	src/Rule.flix	10	54	10	55	Rule.score	Rule.withRes	of=def-use at=10:48 i=0 n=1
+def-decl	src/Rule.flix	12	13	12	18	Rule.entry	Rule.entry	pub ext=12:5:12:38
+def-use	src/Rule.flix	12	30	12	35	Rule.twice	Rule.entry	
+arg	src/Rule.flix	12	36	12	37	Rule.twice	Rule.entry	of=def-use at=12:30 i=0 n=1
+def-decl	src/Rule.flix	14	13	14	20	Rule.stopped	Rule.stopped	pub ext=14:5:14:48
+def-use	src/Rule.flix	14	40	14	45	Rule.score	Rule.stopped	
+arg	src/Rule.flix	14	46	14	47	Rule.score	Rule.stopped	of=def-use at=14:40 i=0 n=1
+def-decl	src/Rule.flix	16	13	16	18	Rule.shown	Rule.shown	pub ext=16:5:16:68
+type-use	src/Rule.flix	16	24	16	31	Kit.Env	Rule.shown	what=alias
+def-use	src/Rule.flix	16	52	16	57	Rule.score	Rule.shown	
+arg	src/Rule.flix	16	58	16	59	Rule.score	Rule.shown	of=def-use at=16:52 i=0 n=1
+def-decl	test/TestRule.flix	3	9	3	22	TestRule.showsTheTotal	TestRule.showsTheTotal	ann=test ext=2:5:3:53
+def-use	test/TestRule.flix	3	33	3	43	Board.show	TestRule.showsTheTotal	
+arg	test/TestRule.flix	3	44	3	45	Board.show	TestRule.showsTheTotal	of=def-use at=3:33 i=0 n=1

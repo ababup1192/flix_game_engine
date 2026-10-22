@@ -870,3 +870,74 @@ func insertUses(srcs *reshapeSources, file, mod string, before int, wants []useW
 	}
 	return edits, notes
 }
+
+// flixTypes は Flix の標準の型の名前（use 無しで引ける物）。
+var flixTypes = map[string]bool{
+	"Unit": true, "Bool": true, "Char": true, "Float32": true, "Float64": true, "BigDecimal": true, "Int8": true, "Int16": true,
+	"Int32": true, "Int64": true, "BigInt": true, "String": true, "Regex": true, "Array": true, "Vector": true, "List": true,
+	"Option": true, "Result": true, "Map": true, "Set": true, "Chain": true, "Nec": true, "Nel": true, "MutList": true,
+	"MutMap": true, "MutSet": true, "MutDeque": true, "Lazy": true, "Region": true, "Ref": true, "IO": true, "Sender": true,
+	"Receiver": true, "Void": true, "Pure": true, "Univ": true, "Validation": true, "Identity": true,
+}
+
+// typePath は型の字の中の名前の並び（`ViewEnv.Res`・`List`）。
+var typePath = regexp.MustCompile(`[A-Z][A-Za-z0-9_]*(?:\.[A-Z][A-Za-z0-9_]*)*`)
+
+// unknownTypes は型の字 typ の名前のうち、file の mod で引けない物（標準の型・同じ mod の宣言・use・同じ回に足す use・
+// プロジェクトの型の宣言のどれでもない物）。パッケージ（fge:: など）の use から始まる名前は索引に宣言が無いので見ない。
+func (ix *sigIndex) unknownTypes(srcs *reshapeSources, typ, file, mod string) []string {
+	var out []string
+	for _, m := range typePath.FindAllStringIndex(typ, -1) {
+		if m[0] > 0 && (typ[m[0]-1] == '.' || typ[m[0]-1] == '#' || identByte(typ[m[0]-1])) {
+			continue
+		}
+		path := typ[m[0]:m[1]]
+		segs := strings.Split(path, ".")
+		head, last := segs[0], segs[len(segs)-1]
+		if len(segs) == 1 {
+			if flixTypes[head] || ix.useSource(srcs, head, file, mod) != "" || ix.hasUse(file, head) {
+				continue
+			}
+			found := false
+			for _, s := range ix.decls[head] {
+				if m := modOf(s); m == mod || m == "" {
+					found = true
+				}
+			}
+			if !found {
+				out = append(out, path)
+			}
+			continue
+		}
+		if u, ok := ix.useOf(file, head); ok && !ix.roots[strings.Split(u, ".")[0]] {
+			continue // パッケージの use（索引に宣言が無い）
+		}
+		rest := strings.Join(segs[1:], ".")
+		found := false
+		for _, s := range ix.decls[last] {
+			if s == path || strings.HasSuffix(s, "."+path) || (ix.hasUse(file, head) && strings.HasSuffix(s, "."+rest)) {
+				found = true
+			}
+		}
+		if !found {
+			out = append(out, path)
+		}
+	}
+	return out
+}
+
+// hasUse は file に名前 x を入れる use があるか。
+func (ix *sigIndex) hasUse(file, x string) bool {
+	_, ok := ix.useOf(file, x)
+	return ok
+}
+
+// useOf は file で名前 x を入れる use の出どころの sym。
+func (ix *sigIndex) useOf(file, x string) (string, bool) {
+	for _, u := range ix.uses[file] {
+		if u.alias == x {
+			return u.Sym, true
+		}
+	}
+	return "", false
+}

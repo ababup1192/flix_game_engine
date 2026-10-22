@@ -214,7 +214,12 @@ func findFpkg(engine string) (string, error) {
 			return p, nil
 		}
 	}
-	return "", fmt.Errorf("%s に組んだエンジン (engine_full/artifact/*.fpkg) がありません — そのエンジンで make sync", engine)
+	return "", fmt.Errorf("%s に組んだエンジンの fpkg がありません（見た所: engine_full/artifact/package.fpkg・engine_full.fpkg）。次のどれか:\n"+
+		"  組む: bin/fge heavy -- make -C %s sync（数分。git worktree で出したばかりなら、先に元の clone の各パッケージの lib/cache・lib/external"+
+		"（engine_full・render_gl など）を写す。無いと依存の取り直しで Maven の 429 に当たる）\n"+
+		"  タグから組ませる: bin/fge use-engine <版> --repo <engine の clone>（~/.flix_ge_studio/engines/<版> があればそれを使い、無ければタグを worktree に出して組む）\n"+
+		"  配った版（Release の zip・Studio の engines）は engine_full.fpkg が入っているので、そのフォルダを渡す",
+		engine, engine)
 }
 
 // buildTag はエンジンのタグを worktree に出して組む。
