@@ -14,4 +14,10 @@ mod Extra {
     pub def piped(res: Res, w: Int32): Int32 = (w |> Rule.score) + res#scale
 
     pub def bonusOf(res: Res, w: Int32): Int32 = (1 |> Rule.total(w)) + res#scale
+
+    pub def tip(w: Int32): Int32 = w + Kit.defaults()#scale
+
+    pub def wrap(f: (Res, Int32) -> Int32, w: Int32): Int32 = f(Kit.defaults(), w)
+
+    pub def viaLambda(w: Int32): Int32 = wrap((res, x) -> res#scale + tip(x), w) + wrap((_, x) -> tip(x), w)
 }

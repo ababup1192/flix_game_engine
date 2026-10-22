@@ -55,6 +55,24 @@ def-use	src/Extra.flix	16	56	16	66	Rule.total	Extra.bonusOf
 arg	src/Extra.flix	16	56	16	69	Rule.total	Extra.bonusOf	of=def-use at=16:56 i=1 n=2 synth
 arg	src/Extra.flix	16	56	16	69	|>	Extra.bonusOf	of=def-use at=16:53 i=1 n=2
 arg	src/Extra.flix	16	67	16	68	Rule.total	Extra.bonusOf	of=def-use at=16:56 i=0 n=2
+def-decl	src/Extra.flix	18	13	18	16	Extra.tip	Extra.tip	pub ext=18:5:18:60
+def-use	src/Extra.flix	18	40	18	52	Kit.defaults	Extra.tip	
+arg	src/Extra.flix	18	52	18	54	Kit.defaults	Extra.tip	of=def-use at=18:40 i=0 n=1
+def-decl	src/Extra.flix	20	13	20	17	Extra.wrap	Extra.wrap	pub ext=20:5:20:83
+type-use	src/Extra.flix	20	22	20	25	Kit.Res	Extra.wrap	what=alias
+def-use	src/Extra.flix	20	65	20	77	Kit.defaults	Extra.wrap	
+arg	src/Extra.flix	20	77	20	79	Kit.defaults	Extra.wrap	of=def-use at=20:65 i=0 n=1
+def-decl	src/Extra.flix	22	13	22	22	Extra.viaLambda	Extra.viaLambda	pub ext=22:5:22:109
+def-use	src/Extra.flix	22	42	22	46	Extra.wrap	Extra.viaLambda	
+arg	src/Extra.flix	22	47	22	77	Extra.wrap	Extra.viaLambda	of=def-use at=22:42 i=0 n=2
+def-use	src/Extra.flix	22	71	22	74	Extra.tip	Extra.viaLambda	
+arg	src/Extra.flix	22	75	22	76	Extra.tip	Extra.viaLambda	of=def-use at=22:71 i=0 n=1
+arg	src/Extra.flix	22	79	22	80	Extra.wrap	Extra.viaLambda	of=def-use at=22:42 i=1 n=2
+def-use	src/Extra.flix	22	84	22	88	Extra.wrap	Extra.viaLambda	
+arg	src/Extra.flix	22	89	22	105	Extra.wrap	Extra.viaLambda	of=def-use at=22:84 i=0 n=2
+def-use	src/Extra.flix	22	99	22	102	Extra.tip	Extra.viaLambda	
+arg	src/Extra.flix	22	103	22	104	Extra.tip	Extra.viaLambda	of=def-use at=22:99 i=0 n=1
+arg	src/Extra.flix	22	107	22	108	Extra.wrap	Extra.viaLambda	of=def-use at=22:84 i=1 n=2
 alias-decl	src/Kit.flix	2	20	2	23	Kit.Res	Kit.Res	
 alias-decl	src/Kit.flix	4	20	4	23	Kit.Env	Kit.Env	
 type-use	src/Kit.flix	4	34	4	37	Kit.Res	Kit.Env	what=alias

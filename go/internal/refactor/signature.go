@@ -444,6 +444,10 @@ func planCalls(rows []Row, srcs *reshapeSources, part *sigPart, p *SignaturePlan
 		}
 		callTemplates, filled := part.callTemplates, ""
 		missing := withoutAll(unboundLocals(s, owners[r.Owner], ns, part.locals), part.q.Given[r.Owner])
+		if hl := holeLambda(s, owners[r.Owner], ns); len(missing) > 0 && hl != "" {
+			p.Fix = append(p.Fix, Fixed{r, holeWhy(missing, hl)})
+			continue
+		}
 		var provided []string
 		if pv := part.q.Provided[r.Owner]; len(missing) > 0 && len(pv) > 0 {
 			var rest []string
@@ -615,7 +619,17 @@ func unboundLocals(src string, from, to int, names []string) []string {
 	text := src[from:to]
 	var missing []string
 	for _, n := range names {
-		if !bindingRe(n).MatchString(text) {
+		bound := false
+		for _, loc := range bindingRe(n).FindAllStringIndex(text, -1) {
+			// lambda の引数（`n ->`・`(…, n, …) ->`）は、呼ぶ所がその lambda の本体の中にある時だけ束ねている。
+			// 前にある別の lambda（`(res, w) -> …` の後の `(_, w) -> f(w)`）の名前は、その外では使えない。
+			if strings.HasSuffix(strings.TrimSpace(text[loc[0]:loc[1]]), "->") && !bodyReaches(text, loc[1], len(text)) {
+				continue
+			}
+			bound = true
+			break
+		}
+		if !bound {
 			missing = append(missing, n)
 		}
 	}
@@ -859,6 +873,9 @@ func signatureReport(root string, idx *Index, a args, cfg Config, o Options) (re
 func (part *sigPart) curriedEdit(rows []Row, s string, r Row, ns, ne int, l ArgList, h bool, owners map[string]int) (Edit, string, bool) {
 	missing := withoutAll(unboundLocals(s, owners[r.Owner], ns, part.locals), part.q.Given[r.Owner])
 	oldSet := map[string]bool{}
+	if len(missing) > 0 && holeLambda(s, owners[r.Owner], ns) != "" {
+		return Edit{}, "", false
+	}
 	for _, o := range part.old {
 		oldSet[o] = true
 	}
@@ -892,4 +909,71 @@ func (part *sigPart) curriedEdit(rows []Row, s string, r Row, ns, ne int, l ArgL
 	}
 	return Edit{File: r.File, Start: at, End: at, Site: r, Check: check,
 		Make: func(string) (string, error) { return text, nil }}, "パイプ・部分適用の呼ぶ所（先頭に " + add + " を書く）", true
+}
+
+// bodyReaches は text の body（lambda の `->` の後ろ）から始まる本体が at まで続くか。本体は、閉じていない `)`・`]`・`}` か、
+// 括弧の外の `,`（lambda を引数に渡した時の次の引数）で終わる。
+func bodyReaches(text string, body, at int) bool {
+	depth := 0
+	for i := body; i < at && i < len(text); i++ {
+		switch text[i] {
+		case '(', '[', '{':
+			depth++
+		case ')', ']', '}':
+			depth--
+			if depth < 0 {
+				return false
+			}
+		case ',':
+			if depth == 0 {
+				return false
+			}
+		case '"':
+			for i++; i < at && text[i] != '"'; i++ {
+				if text[i] == '\\' {
+					i++
+				}
+			}
+		}
+	}
+	return true
+}
+
+// lambdaHead は lambda の引数の並び（`(_, w) ->`・`_ ->`）。
+var lambdaHead = regexp.MustCompile(`\(([^()]*)\)\s*->|(?:^|[^\w.#])(_)\s*->`)
+
+// holeLambda は src の from〜at（呼ぶ所を囲む def の頭から呼ぶ所まで）で、呼ぶ所を囲む lambda のうち引数に `_` を持つ物の
+// 引数の並び（無ければ ""）。`Resources.read((_, w) -> …)` の `_` に足す引数の値が来ることが多いが、どの `_` かは型を見ないと
+// 決まらないので、道具は替えずに人へ回す。
+func holeLambda(src string, from, at int) string {
+	if from < 0 || from > at || at > len(src) {
+		from = 0
+	}
+	text := src[from:at]
+	for _, m := range lambdaHead.FindAllStringSubmatchIndex(text, -1) {
+		params := ""
+		switch {
+		case m[2] >= 0:
+			params = text[m[2]:m[3]]
+		case m[4] >= 0:
+			params = "_"
+		}
+		hole := false
+		for _, p := range strings.Split(params, ",") {
+			if n, _, _ := strings.Cut(p, ":"); strings.TrimSpace(n) == "_" {
+				hole = true
+			}
+		}
+		if hole && bodyReaches(text, m[1], len(text)) {
+			return "(" + strings.TrimSpace(params) + ") ->"
+		}
+	}
+	return ""
+}
+
+// holeWhy は呼ぶ所を囲む lambda の引数に `_` がある時の fix の訳。
+func holeWhy(missing []string, head string) string {
+	n := "@" + strings.Join(missing, "・@")
+	return fmt.Sprintf("呼ぶ所に局所の名前 %s が無く、囲む lambda %s の引数に _ がある（%s の値が入る所なら _ を %s に替えてから流し直す。"+
+		"道具はどの _ かを決めない・囲む def へも広げない）", n, head, n, strings.Join(missing, "・"))
 }

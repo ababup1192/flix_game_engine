@@ -119,6 +119,9 @@ func planPropagation(rows []Row, srcs *reshapeSources, leaf SignatureQuery, stop
 			}
 			o := r.Owner
 			missing := withoutAll(unboundLocals(s, owners[o], ns, names), given[o])
+			if len(missing) > 0 && holeLambda(s, owners[o], ns) != "" {
+				continue // 囲む lambda の _ に値が来るかもしれない所は広げない（計画の方で fix）
+			}
 			missing = withoutKeys(missing, pr.Provided[o])
 			if len(missing) == 0 || pr.Stops[o] != "" {
 				continue

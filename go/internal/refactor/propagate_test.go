@@ -110,3 +110,18 @@ func TestSignatureSkipsUnderscoreNamesAndWritesIntoPipes(t *testing.T) {
 		"(w |> Rule.score(res)) + res#scale")
 	mustContain(t, read(t, root, "src/Rule.flix"), "pub def withRes(r: Res, w: Int32): Int32 = score(r, w) + r#scale")
 }
+
+// 呼ぶ所が `(_, x) -> tip(x)` の中なら、前にある別の lambda `(res, x) -> …` の res は使えない（その外では束ねていない）。
+// どの _ に res が来るかは決めずに人へ回し、res を束ねる lambda の中の呼ぶ所だけ res を書く。
+func TestSignatureDoesNotUseANameBoundByAnotherLambda(t *testing.T) {
+	root := fixtureRoot(t, "propagate")
+	before := read(t, root, "src/Extra.flix")
+	code, out, _ := runPropagate(t, root, "change-signature", "--def", "Extra.tip",
+		"--params", "res: Res, w", "--args", "@res=Kit.defaults(), w", "--propagate", "--apply", "--all")
+	if code != 2 || read(t, root, "src/Extra.flix") != before {
+		t.Fatalf("書かずに断るはず（終了コード %d）:\n%s", code, out)
+	}
+	mustContain(t, out,
+		"fix  呼ぶ所に局所の名前 @res が無く、囲む lambda (_, x) -> の引数に _ がある（@res の値が入る所なら _ を res に替えてから流し直す。",
+		"呼ぶ所（Extra.viaLambda）")
+}
