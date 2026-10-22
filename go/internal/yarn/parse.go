@@ -707,11 +707,15 @@ func (p *parser) lineContent(no int, content string, allowCondition bool) (*Stmt
 				return nil, nil
 			}
 			n := rs[i+1]
-			if !strings.ContainsRune(`\<>{}#/[]:`, n) {
-				p.fail(no, "\\%c は書けない（\\ を前に置けるのは \\ < > { } # / [ ] : だけ）", n)
+			switch {
+			case n == 'n':
+				write('\n') // 強制の改行（描く側の RichText.place・Text は \n で行を変える）
+			case strings.ContainsRune(`\<>{}#/[]:`, n):
+				write(n)
+			default:
+				p.fail(no, "\\%c は書けない（\\ を前に置けるのは \\ < > { } # / [ ] : と改行の n だけ）", n)
 				return nil, nil
 			}
-			write(n)
 			i++
 		case c == '/' && i+1 < len(rs) && rs[i+1] == '/':
 			i = len(rs)

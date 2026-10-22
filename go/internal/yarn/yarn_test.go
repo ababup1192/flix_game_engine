@@ -129,6 +129,24 @@ func TestSpeakerIsBeforeTheFirstUnescapedColon(t *testing.T) {
 	}
 }
 
+// \n は台詞の強制の改行（話し手の : と行末のタグはそのまま分ける）。\\n は字の \ と n のまま。ほかの知らない \ は今どおり止まる。
+func TestBackslashNIsALineBreak(t *testing.T) {
+	prog, ps := buildText(t, "title: A\n---\ngirl: 1 行目\\n2 行目: まだ台詞 #face:happy\n字の \\\\n のまま\n===\n", nil)
+	if len(ps) != 0 {
+		t.Fatalf("problems: %s", messages(ps))
+	}
+	b := prog.Nodes[0].Body
+	got := []string{b[0].Speaker, b[0].Text, b[1].Text}
+	want := []string{"girl", "1 行目\n2 行目: まだ台詞", `字の \n のまま`}
+	if strings.Join(got, "|") != strings.Join(want, "|") || len(b[0].Tags) != 1 || b[0].Tags[0].Key != "face" {
+		t.Errorf("got %q tags %+v want %q", got, b[0].Tags, want)
+	}
+	_, ps = buildText(t, "title: A\n---\nhi\\t\n===\n", nil)
+	if len(ps) != 1 || ps[0].Line != 3 || !strings.Contains(ps[0].Msg, "\\t は書けない") {
+		t.Errorf("got %v", ps)
+	}
+}
+
 // 読まない構文は行番号と「代わりに」を付けて断る。
 func TestRefusedSyntaxNamesTheLineAndTheAlternative(t *testing.T) {
 	_, ps := buildText(t, "title: A\n---\nhi\n<<once>>\n===\n", nil)
