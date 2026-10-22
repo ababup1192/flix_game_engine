@@ -1,5 +1,5 @@
 [package]
-version     = "0.57.1"
+version     = "0.58.0"
 flix        = "0.78.0"
 repository  = "github:ababup1192/flix_render_gl"
 
