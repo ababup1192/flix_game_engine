@@ -20,6 +20,10 @@ label-select	src/Shape.flix	40	33	40	39	cursor	Shape.cursorOf	recv=? via=none
 match-arm	src/Shape.flix	41	9	41	31	Shape.Panel.Closed	Shape.cursorOf	match=39:41 pat=tag at=41:14:41:26 guard=0 full=1
 case-pattern	src/Shape.flix	41	14	41	26	Shape.Panel.Closed	Shape.cursorOf	
 def-decl	src/Shape.flix	44	13	44	17	Shape.note	Shape.note	pub ext=44:5:44:84
+def-decl	src/Shape.flix	47	13	47	19	Shape.flagOf	Shape.flagOf	pub ext=47:5:47:64
+label-select	src/Shape.flix	47	61	47	64	old	Shape.flagOf	recv=? via=none
+def-decl	src/Shape.flix	50	13	50	23	Shape.speedOfAny	Shape.speedOfAny	pub ext=50:5:50:69
+label-select	src/Shape.flix	50	64	50	69	speed	Shape.speedOfAny	recv=? via=open
 def-decl	test/TestShape.flix	2	9	2	14	TestShape.world	TestShape.world	ext=2:5:8:6
 def-decl	test/TestShape.flix	11	9	11	29	TestShape.speedOfReadsTheSpeed	TestShape.speedOfReadsTheSpeed	ann=test ext=10:5:11:102
 def-use	test/TestShape.flix	11	49	11	64	Assert.assertEq	TestShape.speedOfReadsTheSpeed	

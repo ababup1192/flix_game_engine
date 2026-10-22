@@ -141,6 +141,31 @@ func TestRemoveFieldStopsWhileTheFieldIsRead(t *testing.T) {
 	}
 }
 
+// 欄の組が World と違う record の r#old（flagOf。受け手は recv=? via=none）は World の old の読みに数えない。
+func TestRemoveFieldIgnoresTheSameLabelOfAnotherRecord(t *testing.T) {
+	root := shape(t, nil)
+	code, text := runShape(t, root, verifyWith(0, "", new([]string)), "remove-field", "--label", "old", "--receiver", "World")
+	if code != 0 || strings.Contains(text, "src/Shape.flix:47") || !strings.Contains(text, "直の読み書き 0") {
+		t.Errorf("exit %d\n%s", code, text)
+	}
+	// field-sites も同じ判定（決まらない物の unsure にも並べない）。
+	if code, text := runShape(t, root, nil, "field-sites", "--label", "old", "--receiver", "World"); code != 0 || strings.Contains(text, "src/Shape.flix:47") {
+		t.Errorf("field-sites: exit %d\n%s", code, text)
+	}
+}
+
+// 開いた row の r#speed（speedOfAny。recv=? via=open）は World かもしれないので数え、人が --skip で外せば数えない。
+func TestRemoveFieldSkipLeavesOutAReadTheHumanJudged(t *testing.T) {
+	root := shape(t, nil)
+	if code, text := runShape(t, root, nil, "remove-field", "--label", "speed", "--receiver", "World"); code != 2 || !strings.Contains(text, "直の読み書き 2") || !strings.Contains(text, "src/Shape.flix:50:64") {
+		t.Errorf("開いた row を数えていない: exit %d\n%s", code, text)
+	}
+	code, text := runShape(t, root, nil, "remove-field", "--label", "speed", "--receiver", "World", "--skip", "src/Shape.flix:50")
+	if code != 2 || !strings.Contains(text, "直の読み書き 1") || strings.Contains(text, "src/Shape.flix:50:64") || !strings.Contains(text, "--skip で外した読み書き 1") {
+		t.Errorf("--skip が読み書きに効かない: exit %d\n%s", code, text)
+	}
+}
+
 func TestRemoveFieldOnACaseRecord(t *testing.T) {
 	root := shape(t, nil)
 	code, text := runShape(t, root, verifyWith(0, "", new([]string)), "remove-field", "--label", "top", "--case", "Panel.Open", "--apply")

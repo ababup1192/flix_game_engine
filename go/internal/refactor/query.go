@@ -193,6 +193,13 @@ type FieldSite struct {
 	Via   string `json:"via"`   // decl・row・ambiguous・open・none
 }
 
+// OtherRecord は受け手がどの型 alias でもないと決まっている物（recv=? via=none: 閉じた record の欄の組がどの alias とも違う）。
+// WhyNot: unsure に入れない。alias の record なら flixlint は欄の組で via=row（か ambiguous）を出すので、none は
+// --receiver の alias では無い（ArchStudy.stepText の `r: { keys = Int32, … }` の r#keys を World の keys に数えて止まった）。
+// 開いた row（via=open）は alias の値が渡ってくるかもしれないので unsure のまま。case の record は alias が無いので
+// none でも case の物でありうる（remove-field --case はこれを使わない）。
+func (s FieldSite) OtherRecord() bool { return s.Recv == "?" && s.Via == "none" }
+
 // FieldQuery は field-sites の問い。
 type FieldQuery struct {
 	Label    string
@@ -225,9 +232,9 @@ func FieldSites(rows []Row, q FieldQuery) FieldAnswer {
 					candidate = true
 				}
 			}
-			// 決まらない物（候補が複数の ambiguous・型の分からない ?）は数えず unsure へ（設計 §5-1）。
+			// 決まらない物（候補が複数の ambiguous・開いた row の ?）は数えず unsure へ（設計 §5-1）。
 			matched = candidate && s.Via != "ambiguous"
-			unsure = s.Recv == "?" || (candidate && s.Via == "ambiguous")
+			unsure = (s.Recv == "?" && !s.OtherRecord()) || (candidate && s.Via == "ambiguous")
 		}
 		if !matched && !unsure {
 			continue
@@ -243,6 +250,21 @@ func FieldSites(rows []Row, q FieldQuery) FieldAnswer {
 		}
 	}
 	return a
+}
+
+// WithoutSkipped は --skip file:line の行の読み書きを外した残りと、外した数（人が受け手を見て当たらないと決めた所。
+// remove-field・move-fields --finish の「残っている読み書き」に効かせる。組み立ての --skip と同じ鍵）。
+func WithoutSkipped(sites []FieldSite, skip map[string]bool) ([]FieldSite, int) {
+	if len(skip) == 0 {
+		return sites, 0
+	}
+	var kept []FieldSite
+	for _, s := range sites {
+		if !skip[fmt.Sprintf("%s:%d", s.File, s.Line)] {
+			kept = append(kept, s)
+		}
+	}
+	return kept, len(sites) - len(kept)
 }
 
 // inMod は def owner が mod（か、その下の mod）の中か。mod は名前の終わりで当てる（`World` は `$pkg$….World` にも当たる）。

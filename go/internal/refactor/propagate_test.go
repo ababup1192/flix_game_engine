@@ -39,7 +39,8 @@ func TestPropagateAddsTheParameterUpToTheDefThatHasIt(t *testing.T) {
 }
 
 // 止める所: --stop-at・引数の無い def・@Test。止めた def の中の呼ぶ所は fix で、fix があるので書かない。
-// 型の値をもう持つ def（同じ型の引数 r・欄に Res を持つ Env の引数 env）は広げずに r・env#res を書く。Board.show（3 段上・別の mod）には型の use を足す計画になる。
+// 型の値をもう持つ def（同じ型の引数 r・欄に Res を持つ Env の引数 env・使っていない印の同じ型の引数 _r）は広げずに
+// r・env#res・res（_r は res に名前を替える）を書く。Board.show（3 段上・別の mod）には型の use を足す計画になる。
 func TestPropagateStopsAtNamedEntriesAndTypedParameters(t *testing.T) {
 	root := fixtureRoot(t, "propagate")
 	before := read(t, root, "src/Rule.flix")
@@ -49,11 +50,12 @@ func TestPropagateStopsAtNamedEntriesAndTypedParameters(t *testing.T) {
 		t.Fatalf("書かずに断るはず（終了コード %d）:\n%s", code, out)
 	}
 	mustContain(t, out,
-		"上へ広げた def 4・深さの最大 3: Extra.quiet（深さ 1・呼ぶ所 0）・Rule.total（深さ 1・呼ぶ所 3）・Rule.twice（深さ 2・呼ぶ所 2）・Board.show（深さ 3・呼ぶ所 1）",
+		"上へ広げた def 3・深さの最大 3: Rule.total（深さ 1・呼ぶ所 3）・Rule.twice（深さ 2・呼ぶ所 2）・Board.show（深さ 3・呼ぶ所 1）",
 		"関数として渡す所（先頭の引数 res を部分適用で書く）（Extra.scores）",
 		"パイプ・部分適用の呼ぶ所（先頭に res を書く）（Extra.bonusOf）",
 		"広げずに止めた def 3（中の呼ぶ所は fix。@名前=式 なら葉を直に呼ぶ所は式を書く）: --stop-at で名指しした def 1・@Test の def 1・引数の無い def 1",
-		"型の値をもう持つ def 2（広げずに呼ぶ所へその式を書く）: Rule.shown → env#res・Rule.withRes → r",
+		"型の値をもう持つ def 3（広げずに呼ぶ所へその式を書く）: Extra.quiet → res・Rule.shown → env#res・Rule.withRes → r",
+		"使っていない印の _ の引数を使う def 1（引数を足さずに名前を替える）: Extra.quiet（_r → res）",
 		"呼ぶ所（@res の代わりに env#res）（Rule.shown）",
 		"葉の本体が res を使わない",
 		"use を足す: Res（Kit.） → src/Board.flix")
@@ -75,6 +77,21 @@ func TestPropagateWritesTheExpressionWhereItStops(t *testing.T) {
 		"pub def withRes(r: Res, w: Int32): Int32 = score(r, w) + r#scale",
 		"pub def shown(env: Kit.Env, w: Int32): Int32 = score(env#res, w) + env#n")
 	mustContain(t, read(t, root, "test/TestRule.flix"), "Board.show(Kit.defaults(), 1)")
+}
+
+// 呼ぶ所を囲む def が同じ型の引数を使っていない印の名前（quiet の _r: Res）で持っていれば、res を足さずに（二重の
+// `(res: Res, _r: Res, w)`・`quiet(res, res)` にしない）_r を res に名前を替えて呼ぶ所に書く。quiet を呼ぶ所は替えない。
+func TestPropagateRenamesAnUnderscoreParameterOfTheSameType(t *testing.T) {
+	root := fixtureRoot(t, "propagate")
+	code, out, _ := runPropagate(t, root, "change-signature", "--def", "Rule.score",
+		"--params", "res: Res, w", "--args", "@res=Kit.defaults(), w", "--propagate", "--stop-at", "Rule.stopped", "--apply")
+	if code != 0 {
+		t.Fatalf("終了コード %d:\n%s", code, out)
+	}
+	if extra := read(t, root, "src/Extra.flix"); !strings.Contains(extra, "pub def quiet(res: Res, w: Int32): Int32 = Rule.score(res, w)") || strings.Contains(extra, "_r") {
+		t.Errorf("_r を res に替えていない・引数を足した:\n%s", extra)
+	}
+	mustContain(t, out, "使っていない印の _ の引数を使う def 1（引数を足さずに名前を替える）: Extra.quiet（_r → res）")
 }
 
 // --params の型の名前が引けなければ（綴りの誤り・use の無い型）dry-run で警告する。修飾した名前は宣言の mod まで見る。

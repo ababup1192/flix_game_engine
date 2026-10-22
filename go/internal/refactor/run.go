@@ -51,7 +51,9 @@ const Usage = `使い方: fge refactor <操作> [引数] [--json] [-v|--verbose]
   remove-field --label x (--receiver T | --case E.C) [--apply] [--skip file:line]
                                                        record の型（alias T か enum の case E.C の record）から欄 x を消し、
                                                        組み立て（record の式）からも消す（typed の段）。欄の直の読み書きが
-                                                       残っていれば場所を並べて止める（case の record は受け手が ? の物も数える）
+                                                       残っていれば場所を並べて止める（case の record は受け手が ? の物も数える。
+                                                       --receiver は欄の組が違う別の record を数えない・開いた row は数える）。
+                                                       --skip は組み立てと、受け手が当たらないと人が決めた読み書きの行を外す
   fix-construction --label x (--receiver T | --case E.C) [--value EXPR] [--apply] [--skip file:line]
                                                        組み立て（record の式）の欄を型に合わせる: 型に x があれば無い式へ
                                                        x = EXPR を足し、型に x が無ければある式から消す。式は欄の組で当てる
@@ -1132,7 +1134,7 @@ func fieldReport(idx *Index, a args) report {
 		r.extra = append(r.extra, "受け手の分かり方: "+strings.Join(parts, "・")+"（decl は書いた型・row は欄の組が 1 つの alias と同じ）")
 	}
 	if len(ans.Unsure) > 0 {
-		r.extra = append(r.extra, fmt.Sprintf("受け手の型が決まらない物 %d（数えていない。開いた row・別の record・欄の組が同じ alias が複数の ambiguous。unsure に並べた）", len(ans.Unsure)))
+		r.extra = append(r.extra, fmt.Sprintf("受け手の型が決まらない物 %d（数えていない。開いた row・欄の組が同じ alias が複数の ambiguous。unsure に並べた。欄の組が違う別の record（via=none）は並べない）", len(ans.Unsure)))
 	}
 	for _, s := range ans.Sites {
 		rw := "読み"

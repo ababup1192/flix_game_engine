@@ -316,6 +316,10 @@ func finishMoveReport(root string, idx *Index, a args, cfg Config, o Options, sr
 		ans := FieldSites(idx.Rows, FieldQuery{Label: l, Receiver: a.receiver})
 		left = append(append(left, ans.Sites...), ans.Unsure...)
 	}
+	left, skipped := WithoutSkipped(left, a.skip)
+	if skipped > 0 {
+		r.extra = append(r.extra, fmt.Sprintf("--skip で外した読み書き %d（受け手が当たらないと人が決めた所。当たっていれば消した後の確かめで落ちて戻す）", skipped))
+	}
 	if len(left) > 0 {
 		sort.SliceStable(left, func(i, j int) bool { return less(left[i].Row, left[j].Row) })
 		out := Outcome{State: StateRefused, Reason: fmt.Sprintf("%s の欄 %s の直の読み書きが %d 件残っている（0 件の時だけ消す）", world.Name, strings.Join(labels, "・"), len(left))}

@@ -403,6 +403,10 @@ func removeFieldReport(root string, idx *Index, a args, cfg Config, o Options) (
 			}
 		}
 	}
+	left, skipped := WithoutSkipped(left, a.skip)
+	if skipped > 0 {
+		r.extra = append(r.extra, fmt.Sprintf("--skip で外した読み書き %d（受け手が当たらないと人が決めた所。当たっていれば消した後の確かめで落ちて戻す）", skipped))
+	}
 	if len(left) > 0 {
 		out := Outcome{State: StateRefused, Reason: fmt.Sprintf("欄 %s の直の読み書きが %d 件残っている（0 件の時だけ消す）", a.label, len(left))}
 		r.Outcome, r.got, r.Sites = &out, len(left), left

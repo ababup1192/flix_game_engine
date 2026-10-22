@@ -14,6 +14,7 @@ import (
 // 足す位置: 葉の --params で @res の引数が先頭なら広げる def でも先頭、でなければ末尾。呼ぶ所には res をそのまま渡す。
 // 止める所（広げずに、その中の呼ぶ所を fix へ）: --stop-at で名指しした def・main と @Test の def・引数の無い def・
 // 同じ型の別の名前の引数を持つ def（その名前で --args を書き直す）・--depth（既定 8）を超える段・宣言が索引に無い物。
+// 同じ型の引数が使っていない印の `_res` なら、引数を足さずに名前を res に替えて使う（provideFor）。
 // 関数として渡す所（App の口に渡す def など）は広げても型が合わないので、今までどおり fix。
 
 const defaultPropagateDepth = 8
@@ -33,11 +34,13 @@ type propagation struct {
 	Stops   map[string]string // 広げなかった def → 訳
 	// 型の値をもう持つ def → 局所の名前 → 呼ぶ所に書く式（同じ型の引数 `r`・その record の欄 `env#res`）。広げない。
 	Provided map[string]map[string]string
+	// Provided のうち、値を `_` の引数（使っていない印の `_res`）に持つ def → 元の名前 → 局所の名前（宣言の名前を替える）。
+	Renamed map[string]map[string]string
 }
 
 // planPropagation は葉の問い leaf（--args に @名前 を持つ）から、上へ引数を足す def を幅優先で集める。
 func planPropagation(rows []Row, srcs *reshapeSources, leaf SignatureQuery, stopAt map[string]bool, maxDepth int) (propagation, error) {
-	pr := propagation{Stops: map[string]string{}, Provided: map[string]map[string]string{}}
+	pr := propagation{Stops: map[string]string{}, Provided: map[string]map[string]string{}, Renamed: map[string]map[string]string{}}
 	part, err := prepSignature(rows, srcs, leaf, map[string]*useNeed{}, new([]string))
 	if err != nil {
 		return pr, err
@@ -127,12 +130,18 @@ func planPropagation(rows []Row, srcs *reshapeSources, leaf SignatureQuery, stop
 				continue
 			}
 			if !stopAt[o] {
-				if got := provideFor(rows, srcs, o, missing, types); len(got) == len(missing) {
+				if got, renames := provideFor(rows, srcs, o, missing, types); len(got) == len(missing) {
 					if pr.Provided[o] == nil {
 						pr.Provided[o] = map[string]string{}
 					}
 					for k, v := range got {
 						pr.Provided[o][k] = v
+					}
+					for k, v := range renames {
+						if pr.Renamed[o] == nil {
+							pr.Renamed[o] = map[string]string{}
+						}
+						pr.Renamed[o][k] = v
 					}
 					continue
 				}
@@ -157,7 +166,7 @@ func planPropagation(rows []Row, srcs *reshapeSources, leaf SignatureQuery, stop
 		}
 		return pr.Lifted[i].Sym < pr.Lifted[j].Sym
 	})
-	leaf.Given, leaf.Stops, leaf.Provided = given, pr.Stops, pr.Provided
+	leaf.Given, leaf.Stops, leaf.Provided, leaf.Renamed = given, pr.Stops, pr.Provided, pr.Renamed
 	pr.Queries = append(pr.Queries, leaf)
 	for _, l := range pr.Lifted {
 		_, _, _, params, err := readDefParams(rows, srcs, l.Sym)
@@ -249,6 +258,15 @@ func propagateNotes(pr propagation) []string {
 		}
 		out = append(out, fmt.Sprintf("型の値をもう持つ def %d（広げずに呼ぶ所へその式を書く）: %s", len(pr.Provided), strings.Join(xs, "・")))
 	}
+	if len(pr.Renamed) > 0 {
+		var xs []string
+		for _, o := range sortedKeys(pr.Renamed) {
+			for _, n := range sortedKeys(pr.Renamed[o]) {
+				xs = append(xs, o+"（"+n+" → "+pr.Renamed[o][n]+"）")
+			}
+		}
+		out = append(out, fmt.Sprintf("使っていない印の _ の引数を使う def %d（引数を足さずに名前を替える）: %s", len(pr.Renamed), strings.Join(xs, "・")))
+	}
 	if len(pr.Stops) > 0 {
 		kinds := map[string]int{}
 		for _, why := range pr.Stops {
@@ -280,34 +298,81 @@ func propagateFlags(a args) string {
 }
 
 // provideFor は def o の引数から、局所の名前 missing の型の値を読む式（同じ型の引数ならその名前・引数の型が record の
-// alias で、その欄の型が同じなら `引数#欄`）。読めた名前だけを返す。
-func provideFor(rows []Row, srcs *reshapeSources, o string, missing []string, types map[string]string) map[string]string {
+// alias で、その欄の型が同じなら `引数#欄`）。読めた名前だけを返す。同じ型の引数が `_` で始まる名前（使っていない印の
+// `_res`）なら、その引数を使う: 名前を局所の名前に替え（renames に 元の名前 → 局所の名前）、式は局所の名前。
+// 優先は 同じ型の名前の引数 → 同じ型の `_` の引数 → record の欄。
+// WhyNot: `_res` を飛ばして上へ広げると、同じ型の引数が二重になる（`(res: Res, _res: Res, w)`・呼ぶ所は `f(res, res)`）。
+// `_` の名前は本体で使えない（Hidden variable symbol）ので、名前を替えるのが要る。本体はまだ使っていないので替えても壊れない。
+func provideFor(rows []Row, srcs *reshapeSources, o string, missing []string, types map[string]string) (map[string]string, map[string]string) {
 	_, _, _, params, err := readDefParams(rows, srcs, o)
 	if err != nil {
-		return nil
+		return nil, nil
 	}
-	out := map[string]string{}
+	out, renames := map[string]string{}, map[string]string{}
 	for _, m := range missing {
+		var hidden, field string
 		for _, p := range params {
 			n, t, ok := strings.Cut(p, ":")
 			if !ok {
 				continue
 			}
 			n, t = strings.TrimSpace(n), strings.TrimSpace(t)
-			if strings.HasPrefix(n, "_") {
-				continue // _ の名前は使えない（Hidden variable symbol）
-			}
-			if sameTypeText(t, types[m]) {
+			_, taken := renames[n]
+			switch {
+			case strings.HasPrefix(n, "_"):
+				if !taken && sameTypeText(t, types[m]) && (hidden == "" || n == "_"+m) {
+					hidden = n
+				}
+			case sameTypeText(t, types[m]):
 				out[m] = n
-				break
+			case field == "":
+				if f := fieldOfType(rows, srcs, t, types[m]); f != "" {
+					field = n + "#" + f
+				}
 			}
-			if f := fieldOfType(rows, srcs, t, types[m]); f != "" {
-				out[m] = n + "#" + f
+			if out[m] != "" {
 				break
 			}
 		}
+		switch {
+		case out[m] != "":
+		case hidden != "":
+			out[m], renames[hidden] = m, m
+		case field != "":
+			out[m] = field
+		}
 	}
-	return out
+	return out, renames
+}
+
+// renameParamEdits は --propagate で `_` の引数を局所の名前に替える宣言の書き換え（def → 元の名前 → 新しい名前）。
+func renameParamEdits(rows []Row, srcs *reshapeSources, renamed map[string]map[string]string) ([]Edit, []Fixed, error) {
+	var edits []Edit
+	var sites []Fixed
+	for _, sym := range sortedKeys(renamed) {
+		decl, src, list, params, err := readDefParams(rows, srcs, sym)
+		if err != nil {
+			return nil, nil, err
+		}
+		for i, p := range params {
+			old, _, _ := strings.Cut(p, ":")
+			old = strings.TrimSpace(old)
+			to, ok := renamed[sym][old]
+			if !ok {
+				continue
+			}
+			start := list.Args[i][0] + strings.Index(src[list.Args[i][0]:list.Args[i][1]], old)
+			edits = append(edits, Edit{File: decl.File, Start: start, End: start + len(old), Site: decl,
+				Make: func(cur string) (string, error) {
+					if cur != old {
+						return "", fmt.Errorf("引数 %s の字が %q（索引が古い）", old, cur)
+					}
+					return to, nil
+				}})
+			sites = append(sites, Fixed{decl, fmt.Sprintf("引数 %s を %s に名前を替える（同じ型の値をもう持つ。上へ広げない）", old, to)})
+		}
+	}
+	return edits, sites, nil
 }
 
 // sameTypeText は 2 つの型の字が同じ型を指すと見てよいか（字が同じか、型引数の無い名前で最後の区切りが同じ）。

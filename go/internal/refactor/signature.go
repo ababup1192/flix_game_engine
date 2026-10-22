@@ -35,6 +35,7 @@ type SignatureQuery struct {
 	Given    map[string][]string
 	Stops    map[string]string            // --propagate で広げなかった def → 訳（その中の呼ぶ所の fix に書く）
 	Provided map[string]map[string]string // --propagate: 型の値をもう持つ def → @名前 → 代わりに書く式（`env#res`）
+	Renamed  map[string]map[string]string // --propagate: Provided のうち値が `_` の引数の def → 元の名前（`_res`）→ 替える名前
 }
 
 // SignaturePlan は change-signature の計画。
@@ -215,6 +216,13 @@ func PlanSignatures(rows []Row, srcs *reshapeSources, qs []SignatureQuery) (Sign
 			p.Sites = append([]Fixed{{d.row, "宣言と本体"}}, p.Sites...)
 		}
 	}
+	// --propagate で値を `_` の引数に持つ def は、その引数の名前を替える（引数は足さない）。問いは同じ表を分け合う。
+	re, rs, err := renameParamEdits(rows, srcs, qs[0].Renamed)
+	if err != nil {
+		return p, err
+	}
+	edits = append(edits, re...)
+	p.Sites = append(p.Sites, rs...)
 	// 新しい引数の型（宣言のファイル）と呼ぶ所の式（def の mod の外のファイル）の名前を引く use。
 	for _, k := range needOrder {
 		n := needs[k]
