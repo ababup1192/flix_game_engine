@@ -210,33 +210,9 @@ var versionExtra = []string{"flix.toml", "packages.lock"}
 // flix.toml・packages.lock。1 件ずつ「根からの相対パス (/ 区切り)・NUL・中身の SHA-256 の 16 進・NUL」を、パスの
 // バイト順に並べた全体の SHA-256。
 func sourcesVersion(root string) (string, error) {
-	var files []string
-	for _, dir := range []string{"src", "test"} {
-		base := filepath.Join(root, dir)
-		if info, err := os.Stat(base); err != nil || !info.IsDir() {
-			continue
-		}
-		err := filepath.WalkDir(base, func(path string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			if d.IsDir() || !strings.HasSuffix(d.Name(), ".flix") {
-				return nil
-			}
-			if d.Type()&fs.ModeSymlink != 0 {
-				// symlink の先がファイルの時だけ数える (先がディレクトリなら Bootstrap も入らない)
-				if info, err := os.Stat(path); err != nil || !info.Mode().IsRegular() {
-					return nil
-				}
-			} else if !d.Type().IsRegular() {
-				return nil
-			}
-			files = append(files, path)
-			return nil
-		})
-		if err != nil {
-			return "", err
-		}
+	files, err := sourceFiles(root)
+	if err != nil {
+		return "", err
 	}
 	for _, f := range versionExtra {
 		if info, err := os.Stat(filepath.Join(root, f)); err == nil && info.Mode().IsRegular() {
@@ -266,6 +242,39 @@ func sourcesVersion(root string) (string, error) {
 		all.Write([]byte{0})
 	}
 	return hex.EncodeToString(all.Sum(nil)), nil
+}
+
+// sourceFiles は src/・test/ の .flix (ファイルの symlink は数え、symlink のディレクトリには入らない。Flix の Bootstrap と同じ)。
+func sourceFiles(root string) ([]string, error) {
+	var files []string
+	for _, dir := range []string{"src", "test"} {
+		base := filepath.Join(root, dir)
+		if info, err := os.Stat(base); err != nil || !info.IsDir() {
+			continue
+		}
+		err := filepath.WalkDir(base, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() || !strings.HasSuffix(d.Name(), ".flix") {
+				return nil
+			}
+			if d.Type()&fs.ModeSymlink != 0 {
+				// symlink の先がファイルの時だけ数える (先がディレクトリなら Bootstrap も入らない)
+				if info, err := os.Stat(path); err != nil || !info.Mode().IsRegular() {
+					return nil
+				}
+			} else if !d.Type().IsRegular() {
+				return nil
+			}
+			files = append(files, path)
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+	return files, nil
 }
 
 // ---- 常駐を探し、起こし、頼む ----
@@ -478,6 +487,9 @@ func serverCheck(r *hooks.Rules, out, errOut *strings.Builder, root, pkg string)
 	if err != nil {
 		debugLog(errOut, "flixlint の常駐の支度ができない ("+err.Error()+") → 素の check へ")
 		return runFallback(root, pkg, "check")
+	}
+	if aliasesMoved(r, pkg) && stopServer(r, pkg) {
+		debugLog(errOut, "型の別名が前の check と違う → 常駐を入れ替える (aliases.go)")
 	}
 	sv := r.Checkd.Server
 	t0 := time.Now()
