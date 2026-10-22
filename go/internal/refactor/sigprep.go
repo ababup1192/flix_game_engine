@@ -390,12 +390,22 @@ func usesAny(e string, names map[string]bool) []string {
 
 // applyRules は本体に置き換えを順に当てる（替えた数）。消える引数を束ね直す本体には、その引数を使う式を当てない。
 func applyRules(body string, rules []liftRule, removed []string) (string, int) {
+	body, counts := applyRulesCounted(body, rules, removed)
+	n := 0
+	for _, k := range counts {
+		n += k
+	}
+	return body, n
+}
+
+// applyRulesCounted は applyRules の、規則ごとの替えた数（rules と同じ順）。
+func applyRulesCounted(body string, rules []liftRule, removed []string) (string, []int) {
+	counts := make([]int, len(rules))
 	gone := map[string]bool{}
 	for _, r := range removed {
 		gone[r] = true
 	}
-	n := 0
-	for _, r := range rules {
+	for ri, r := range rules {
 		skip := false
 		for _, p := range r.pats {
 			for _, u := range usesAny(p, gone) {
@@ -412,16 +422,16 @@ func applyRules(body string, rules []liftRule, removed []string) (string, int) {
 			for k := len(uses) - 1; k >= 0; k-- {
 				body = body[:uses[k][0]] + r.name + body[uses[k][1]:]
 			}
-			n += len(uses)
+			counts[ri] += len(uses)
 			continue
 		}
 		for _, p := range r.pats {
 			var k int
 			body, k = replaceExpr(body, p, r.name)
-			n += k
+			counts[ri] += k
 		}
 	}
-	return body, n
+	return body, counts
 }
 
 // ── 引数の並びの改行の形 ──

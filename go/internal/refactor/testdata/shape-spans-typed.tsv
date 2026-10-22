@@ -1,7 +1,7 @@
-# flixlint-spans 3 stage=typed columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=arg,alias-decl
-alias-decl	src/Shape.flix	5	20	5	25	Shape.World	Shape.World	
-alias-decl	src/Shape.flix	14	20	14	25	Shape.Model	Shape.Model	syn=Shape.World
-alias-decl	src/Shape.flix	16	20	16	24	Shape.Pair	Shape.Pair	
+# flixlint-spans 3 stage=typed columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=arg,alias-decl,param,aparam,alias-fields
+alias-decl	src/Shape.flix	5	20	5	25	Shape.World	Shape.World	fields=clock:Float64;old:Bool;pointer:{x=Float64,y=Float64};speed:Int32
+alias-decl	src/Shape.flix	14	20	14	25	Shape.Model	Shape.Model	syn=Shape.World fields=clock:Float64;old:Bool;pointer:{x=Float64,y=Float64};speed:Int32
+alias-decl	src/Shape.flix	16	20	16	24	Shape.Pair	Shape.Pair	fields=clock:Float64;speed:Int32
 enum-decl	src/Shape.flix	18	14	18	19	Shape.Panel	Shape.Panel	
 case-decl	src/Shape.flix	19	14	19	20	Shape.Panel.Closed	Shape.Panel	arity=0
 case-decl	src/Shape.flix	20	14	20	18	Shape.Panel.Open	Shape.Panel	arity=1
@@ -14,15 +14,19 @@ record-literal	src/Shape.flix	29	80	29	98		Shape.fresh	labels=x,y owner=other wh
 def-decl	src/Shape.flix	31	13	31	17	Shape.pair	Shape.pair	pub ext=31:5:31:54
 record-literal	src/Shape.flix	31	30	31	54		Shape.pair	labels=clock,speed owner=alias:Shape.Pair why=row
 def-decl	src/Shape.flix	33	13	33	20	Shape.speedOf	Shape.speedOf	pub ext=33:5:33:47
+param	src/Shape.flix	33	21	33	22	Shape.speedOf	Shape.speedOf	i=0 n=1 name=w type=Shape.World tspan=33:24:33:29 reads=1 hidden=0 poly=0 fields=clock:Float64;old:Bool;pointer:{x=Float64,y=Float64};speed:Int32
 label-select	src/Shape.flix	33	42	33	47	speed	Shape.speedOf	owner=alias:Shape.World why=decl rspan=33:40:33:41 rparam=0
 def-decl	src/Shape.flix	35	13	35	17	Shape.tick	Shape.tick	pub ext=35:5:35:66
+param	src/Shape.flix	35	18	35	19	Shape.tick	Shape.tick	i=0 n=1 name=w type=Shape.World tspan=35:21:35:26 reads=2 hidden=0 poly=0 fields=clock:Float64;old:Bool;pointer:{x=Float64,y=Float64};speed:Int32
 label-update	src/Shape.flix	35	39	35	44	clock	Shape.tick	owner=alias:Shape.World why=decl rspan=35:63:35:64 rparam=0
 label-select	src/Shape.flix	35	49	35	54	clock	Shape.tick	owner=alias:Shape.World why=decl rspan=35:47:35:48 rparam=0
 def-decl	src/Shape.flix	37	13	37	17	Shape.open	Shape.open	pub ext=37:5:37:82
+param	src/Shape.flix	37	18	37	20	Shape.open	Shape.open	i=0 n=1 name=at type=Int32 tspan=37:22:37:27 reads=1 hidden=0 poly=0
 case-construct	src/Shape.flix	37	38	37	48	Shape.Panel.Open	Shape.open	
 arg	src/Shape.flix	37	51	37	81	Shape.Panel.Open	Shape.open	of=case-construct at=37:38 i=0 n=1
 record-literal	src/Shape.flix	37	51	37	81		Shape.open	labels=at,cursor,top owner=case:Shape.Panel.Open why=row
 def-decl	src/Shape.flix	39	13	39	21	Shape.cursorOf	Shape.cursorOf	pub ext=39:5:42:6
+param	src/Shape.flix	39	22	39	23	Shape.cursorOf	Shape.cursorOf	i=0 n=1 name=p type=Shape.Panel tspan=39:25:39:30 reads=1 hidden=0 poly=0
 match-site	src/Shape.flix	39	41	42	6		Shape.cursorOf	arms=2 wild=0 var=0 guard=0 enum=Shape.Panel scrut=Shape.Panel
 match-arm	src/Shape.flix	40	9	40	39	Shape.Panel.Open	Shape.cursorOf	match=39:41 pat=tag at=40:14:40:27 guard=0 full=1
 case-pattern	src/Shape.flix	40	14	40	24	Shape.Panel.Open	Shape.cursorOf	
@@ -32,8 +36,10 @@ match-arm	src/Shape.flix	41	9	41	31	Shape.Panel.Closed	Shape.cursorOf	match=39:4
 case-pattern	src/Shape.flix	41	14	41	26	Shape.Panel.Closed	Shape.cursorOf	
 def-decl	src/Shape.flix	44	13	44	17	Shape.note	Shape.note	pub ext=44:5:44:84
 def-decl	src/Shape.flix	47	13	47	19	Shape.flagOf	Shape.flagOf	pub ext=46:5:47:64
+param	src/Shape.flix	47	20	47	21	Shape.flagOf	Shape.flagOf	i=0 n=1 name=r type={id=Int32,old=Bool} tspan=47:23:47:49 reads=1 hidden=0 poly=0 fields=id:Int32;old:Bool
 label-select	src/Shape.flix	47	61	47	64	old	Shape.flagOf	owner=other why=row rspan=47:59:47:60 rparam=0
 def-decl	src/Shape.flix	50	13	50	23	Shape.speedOfAny	Shape.speedOfAny	pub ext=49:5:50:69
+param	src/Shape.flix	50	24	50	25	Shape.speedOfAny	Shape.speedOfAny	i=0 n=1 name=r type={speed=Int32|?} tspan=50:27:50:51 reads=1 hidden=0 poly=1 fields=speed:Int32 row=open
 label-select	src/Shape.flix	50	64	50	69	speed	Shape.speedOfAny	owner=maybe cands=alias:Shape.Pair|alias:Shape.World why=open rspan=50:62:50:63 rparam=0
 def-decl	test/TestShape.flix	2	9	2	14	TestShape.world	TestShape.world	ext=2:5:8:6
 record-literal	test/TestShape.flix	3	9	8	6		TestShape.world	labels=clock,old,pointer,speed owner=alias:Shape.World why=row

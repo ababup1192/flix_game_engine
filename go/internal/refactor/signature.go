@@ -48,10 +48,11 @@ type SignaturePlan struct {
 	Lifted    int // 本体から引数へ移した式の数
 	Dropped   int // 捨てた引数の式のうち、名前・字の値でない物
 	CallFiles map[string]int
-	UsesAdded []string     // 足す use（`Clock（fge::） → src/X.flix`）
-	Unused    []string     // 本体が使わない新しい引数
-	Unknown   []string     // --params の型の名前で、宣言のファイルで引けない物（`Res（src/Board.flix）`）
-	Local     *localPicker // 呼ぶ所に書いた局所の名前の数（設計 §9）
+	UsesAdded []string            // 足す use（`Clock（fge::） → src/X.flix`）
+	Unused    []string            // 本体が使わない新しい引数
+	UnusedIn  map[string][]string // def → その本体が使わない新しい引数（fix はその def に付ける。レビュー 3 の R1）
+	Unknown   []string            // --params の型の名前で、宣言のファイルで引けない物（`Res（src/Board.flix）`）
+	Local     *localPicker        // 呼ぶ所に書いた局所の名前の数（設計 §9）
 }
 
 // paramNames は `a: T, b: U` の名前の列。
@@ -124,7 +125,17 @@ type sigPart struct {
 // 呼ぶ所を全部集めてから本体を見るので、ある def の本体の中の別の問いの呼ぶ所も、本体の確かめに入る。
 // use を足す所はファイルと mod ごとに 1 つ（同じ型を 2 つの問いが足しても 1 回）。Old・New は最初の問いの物。
 func PlanSignatures(rows []Row, srcs *reshapeSources, qs []SignatureQuery) (SignaturePlan, error) {
-	p := SignaturePlan{CallFiles: map[string]int{}}
+	return PlanSignaturesWith(rows, srcs, qs, nil, nil)
+}
+
+// PlanSignaturesWith は PlanSignatures に、計画の外で作った内側の書き換え inner（葉の本体の読み替え `w#x` → `res#x`）と、
+// それが減らす引数の読みの数 freed を足す（設計 §2.6.2 の案 B: 1 つの計画に合成し、ApplyEdits が内側から当てる）。
+// inner は呼ぶ所の書き換えと同じく、本体を前もって書いて確かめる所（sim）にも入る。
+//
+// 呼ぶ所で捨てる引数が呼び手の引数そのもの（arg の aparam=）で、その引数を読む所が全部消える def は fix にする（レビュー 3 の R2）:
+// 書くと Flix の「使わない引数」で確かめが落ちて全部戻る。読み替えで消える分（freed）も同じ数に入れる。
+func PlanSignaturesWith(rows []Row, srcs *reshapeSources, qs []SignatureQuery, inner []Edit, freed map[paramRef]int) (SignaturePlan, error) {
+	p := SignaturePlan{CallFiles: map[string]int{}, UnusedIn: map[string][]string{}}
 	ix := newSigIndex(rows)
 	needs := map[string]*useNeed{}
 	var needOrder []string
@@ -156,16 +167,21 @@ func PlanSignatures(rows []Row, srcs *reshapeSources, qs []SignatureQuery) (Sign
 	p.Local = newLocalPicker(rows, srcs, qs[0].Prefer, skip)
 	args := argRowsAt(rows)
 	owners := ownerStarts(rows, srcs)
+	dropped := map[paramRef]int{}
+	at := argRowsByPlace(rows)
 	var calls []Edit
 	for _, part := range parts {
-		c, err := planCalls(rows, srcs, part, &p, args, owners, needs, &needOrder)
+		c, err := planCalls(rows, srcs, part, &p, args, owners, needs, &needOrder, at, dropped)
 		if err != nil {
 			return p, err
 		}
 		calls = append(calls, c...)
 	}
+	// 呼ぶ所の書き換えと計画の外の内側の書き換え（読み替え）は、どちらも本体の書き換えの内側に入る。
+	calls = append(calls, inner...)
 	// 宣言と本体。本体の中の呼ぶ所（再帰・--def の別の def・別の問いの def）は内側の書き換えとして先に当たる。
 	edits := append([]Edit{}, calls...)
+	removedIn := map[string]map[string]bool{}
 	for _, part := range parts {
 		var removed []string
 		keep := map[string]bool{}
@@ -179,11 +195,16 @@ func PlanSignatures(rows []Row, srcs *reshapeSources, qs []SignatureQuery) (Sign
 		}
 		for _, sym := range part.q.Defs {
 			d := part.defs[sym]
+			removedIn[sym] = map[string]bool{}
+			for _, n := range removed {
+				removedIn[sym][n] = true
+			}
 			src, _ := srcs.get(d.row.File)
 			params := d.params
 			edits = append(edits, Edit{File: d.row.File, Start: d.list.Args[0][0], End: d.list.Args[len(d.list.Args)-1][1], Site: d.row,
 				Make: func(string) (string, error) { return params, nil }})
-			sim, err := ApplyEdits(src[d.bodyStart:d.extEnd], shiftEdits(calls, d.row.File, d.bodyStart, d.extEnd))
+			here := shiftEdits(calls, d.row.File, d.bodyStart, d.extEnd)
+			sim, err := ApplyEdits(src[d.bodyStart:d.extEnd], here)
 			if err != nil {
 				return p, err
 			}
@@ -192,22 +213,35 @@ func PlanSignatures(rows []Row, srcs *reshapeSources, qs []SignatureQuery) (Sign
 				p.Fix = append(p.Fix, Fixed{d.row, why})
 				continue
 			}
-			after, lifted, left := liftBody(sim, rules, part.news, removed)
+			after, lifted, left, wrote := liftBody(sim, rules, part.news, removed)
 			if len(left) > 0 {
 				p.Fix = append(p.Fix, Fixed{d.row, fmt.Sprintf("替えた後も本体が消える引数 %s を使う（%d か所。最初: `%s`）。--args の式（とその record の欄）と同じでない形。そこを引数から読む形に直すか、消える引数を残す",
 					strings.Join(dedupe(left), "・"), len(left), firstLineAround(after, left[0], removed))})
 				continue
 			}
+			// 足す引数を本体が使うか: 置き換えが書いた数と、本体の中の内側の書き換え（呼ぶ所・読み替え）が書いた数（R1）。
+			// WhyNot: 書いた後の字（identUses）で見ない。元から本体にある局所の同じ名前を「使う」と数えてしまう。
 			for _, n := range part.news {
-				if indexOf(part.old, n) < 0 && !strings.HasPrefix(n, "_") && len(identUses(after, map[string]bool{n: true})) == 0 && indexOf(p.Unused, n) < 0 {
+				if indexOf(part.old, n) >= 0 || strings.HasPrefix(n, "_") {
+					continue
+				}
+				uses := wrote[n]
+				for _, e := range here {
+					uses += e.Writes[n]
+				}
+				if uses > 0 {
+					continue
+				}
+				if indexOf(p.Unused, n) < 0 {
 					p.Unused = append(p.Unused, n)
 				}
+				p.UnusedIn[sym] = append(p.UnusedIn[sym], n)
 			}
 			p.Lifted += lifted
 			news, gone := part.news, removed
 			edits = append(edits, Edit{File: d.row.File, Start: d.bodyStart, End: d.extEnd, Site: d.row,
 				Make: func(cur string) (string, error) {
-					out, _, left := liftBody(cur, rules, news, gone)
+					out, _, left, _ := liftBody(cur, rules, news, gone)
 					if len(left) > 0 {
 						return "", fmt.Errorf("本体が消える引数 %s を使う", strings.Join(left, "・"))
 					}
@@ -216,6 +250,7 @@ func PlanSignatures(rows []Row, srcs *reshapeSources, qs []SignatureQuery) (Sign
 			p.Sites = append([]Fixed{{d.row, "宣言と本体"}}, p.Sites...)
 		}
 	}
+	p.Fix = append(p.Fix, freedFixes(rows, removedIn, dropped, freed)...)
 	// --propagate で値を `_` の引数に持つ def は、その引数の名前を替える（引数は足さない）。問いは同じ表を分け合う。
 	re, rs, err := renameParamEdits(rows, srcs, qs[0].Renamed)
 	if err != nil {
@@ -394,7 +429,11 @@ func readDefParams(rows []Row, srcs *reshapeSources, sym string) (Row, string, A
 }
 
 // planCalls は問い part の def を呼ぶ所の書き換え（決められない所は p.Fix）。
-func planCalls(rows []Row, srcs *reshapeSources, part *sigPart, p *SignaturePlan, args map[string]argInfo, owners map[string]int, needs map[string]*useNeed, needOrder *[]string) ([]Edit, error) {
+func planCalls(rows []Row, srcs *reshapeSources, part *sigPart, p *SignaturePlan, args map[string]argInfo, owners map[string]int, needs map[string]*useNeed, needOrder *[]string, at map[string]Row, dropped map[paramRef]int) ([]Edit, error) {
+	locals := map[string]bool{}
+	for _, n := range part.locals {
+		locals[n] = true
+	}
 	var calls []Edit
 	for _, r := range rows {
 		if r.Kind != KindDefUse || strings.Contains(r.Extra, "sugar") {
@@ -417,7 +456,7 @@ func planCalls(rows []Row, srcs *reshapeSources, part *sigPart, p *SignaturePlan
 		// パイプ・部分適用・関数として渡す所: 先頭に局所の名前を足すだけなら、その名前を先頭へ書く（`x |> f(a)` → `x |> f(res, a)`・
 		// `List.map(f, xs)` → `List.map(f(res), xs)`）。Flix の関数は前から部分適用できるので、後ろの引数の渡り方は変わらない。
 		if err == nil && (info.Synth || !h || len(l.Args) < len(part.old)) && part.prefix > 0 {
-			if e, why, ok := part.curriedEdit(rows, s, r, ns, ne, l, h, owners); ok {
+			if e, why, ok := part.curriedEdit(rows, s, r, ns, ne, l, h, owners, locals); ok {
 				calls = append(calls, e)
 				p.Sites = append(p.Sites, Fixed{r, why})
 				p.Calls++
@@ -516,9 +555,29 @@ func planCalls(rows []Row, srcs *reshapeSources, part *sigPart, p *SignaturePlan
 			}
 			addNeed(needs, needOrder, r.File, modOf(r.Owner), ns, r, roots)
 		}
+		// 書く局所の名前の数（足す引数を囲む def が使うかの数。R1）と、捨てる引数のうち呼び手の引数そのもの（R2）。
+		writes := map[string]int{}
+		for i := range tmpl {
+			if picked[i] != "" {
+				writes[picked[i]]++
+				continue
+			}
+			for _, u := range identUses(callTemplates[i], locals) {
+				writes[callTemplates[i][u[0]:u[1]]]++
+			}
+		}
+		for i, name := range part.old {
+			if part.uses[name] > 0 {
+				continue
+			}
+			if a, ok := at[fmt.Sprintf("%s %d:%d %d", r.File, r.Line, r.Col, i)]; ok && a.Attr("aparam") != "" {
+				dropped[paramRef{r.Owner, a.AttrInt("aparam")}]++
+			}
+		}
 		calls = append(calls, Edit{File: r.File, Start: l.Args[0][0], End: l.Args[len(l.Args)-1][1], Site: r,
-			Check: []Want{{Span: r, Text: s[ns:ne]}},
-			Make:  func(cur string) (string, error) { return rewriteCallArgs(cur, old, tmpl, picked, lay) }})
+			Check:  []Want{{Span: r, Text: s[ns:ne]}},
+			Writes: writes,
+			Make:   func(cur string) (string, error) { return rewriteCallArgs(cur, old, tmpl, picked, lay) }})
 		why := "呼ぶ所"
 		if filled != "" {
 			why += "（" + filled + " が無いので式を書く）"
@@ -678,10 +737,35 @@ func qualifyTemplates(templates []string, mod string, rows []Row, old []string) 
 }
 
 // liftBody は本体 body に置き換え（--args の式とその record の欄の式 → 引数の名前・欄の選択。bodyRules）を当て、
-// `let x = x;` を消す。返すのは替えた本体・替えた数・それでも残る消える引数の名前（使う所の数だけ並ぶ）。
-func liftBody(body string, rules []liftRule, news, removed []string) (string, int, []string) {
-	body, n := applyRules(body, rules, removed)
+// `let x = x;` を消す。返すのは替えた本体・替えた数・それでも残る消える引数の名前（使う所の数だけ並ぶ）と、
+// 新しい引数の名前ごとに置き換えが書いた数（足す引数を本体が使うかを計画の数で見る。設計 §2.3・R1）。
+func liftBody(body string, rules []liftRule, news, removed []string) (string, int, []string, map[string]int) {
+	body, counts := applyRulesCounted(body, rules, removed)
+	n := 0
+	wrote := map[string]int{}
+	newSet := map[string]bool{}
+	for _, x := range news {
+		newSet[x] = true
+	}
+	for i, k := range counts {
+		n += k
+		if k == 0 {
+			continue
+		}
+		for _, u := range identUses(rules[i].name, newSet) {
+			wrote[rules[i].name[u[0]:u[1]]] += k
+		}
+	}
+	// `let x = x;` を消すと、その let が束ねた x の代わりに引数 x を読む（数は字のまま。消した後の読みは引数の物）。
+	before := body
 	body = dropSelfLets(body, news)
+	if body != before {
+		for x := range newSet {
+			if k := len(identUses(before, map[string]bool{x: true})) - len(identUses(body, map[string]bool{x: true})); k > 0 {
+				wrote[x] += len(identUses(body, map[string]bool{x: true}))
+			}
+		}
+	}
 	names := map[string]bool{}
 	for _, r := range removed {
 		names[r] = true
@@ -690,7 +774,7 @@ func liftBody(body string, rules []liftRule, news, removed []string) (string, in
 	for _, u := range identUses(body, names) {
 		left = append(left, body[u[0]:u[1]])
 	}
-	return body, n, left
+	return body, n, left, wrote
 }
 
 // firstLineAround は本体の中で name を最初に使う行（報告用）。
@@ -755,8 +839,8 @@ func indexOf(xs []string, x string) int {
 	return -1
 }
 
-// signatureReport は change-signature の入口。
-func signatureReport(root string, idx *Index, a args, cfg Config, o Options) (report, error) {
+// signatureReport は change-signature の入口。extra は --retarget の時の typed の索引（読み替える読みの rparam）。
+func signatureReport(root string, idx *Index, a args, cfg Config, o Options, extra *Index) (report, error) {
 	templates, err := splitTop(a.argsText)
 	if err != nil {
 		return report{}, fmt.Errorf("--args: %v", err)
@@ -772,6 +856,7 @@ func signatureReport(root string, idx *Index, a args, cfg Config, o Options) (re
 	srcs := &reshapeSources{root: root, m: map[string]string{}}
 	var pr propagation
 	var plan SignaturePlan
+	queries := []SignatureQuery{q}
 	if a.propagate {
 		stop := map[string]bool{}
 		for _, d := range strings.Split(a.stopAt, ",") {
@@ -791,26 +876,51 @@ func signatureReport(root string, idx *Index, a args, cfg Config, o Options) (re
 		if pr, err = planPropagation(idx.Rows, srcs, q, stop, depth); err != nil {
 			return report{}, err
 		}
-		plan, err = PlanSignatures(idx.Rows, srcs, pr.Queries)
-	} else {
-		plan, err = PlanSignature(idx.Rows, srcs, q)
+		queries = pr.Queries
 	}
+	// --retarget: 葉の本体の `--from#欄` を足す引数の同じ欄へ読み替える Edit を、計画の内側の書き換えとして合成する（設計 §2.6.2 の案 B）。
+	var rp retargetPlan
+	if a.retarget != "" {
+		if extra == nil {
+			return report{}, fmt.Errorf("--retarget は typed の索引も要る（--stage を付けずに流す）")
+		}
+		part, err := prepSignature(idx.Rows, srcs, queries[0], map[string]*useNeed{}, new([]string))
+		if err != nil {
+			return report{}, err
+		}
+		if rp, err = retargetEdits(idx.Rows, extra.Rows, srcs, queries[0], part, strings.Split(a.retarget, ","), a.from); err != nil {
+			return report{}, err
+		}
+	}
+	plan, err = PlanSignaturesWith(idx.Rows, srcs, queries, rp.Edits, rp.Freed)
 	if err != nil {
 		return report{}, err
 	}
-	// --propagate で葉の本体が足す引数を使わなければ、上の段は通っても葉が Flix の「使わない引数」で落ちる（_ で始める
-	// 名前は上の段で使えない）。check を流す前に止める。
+	plan.Fix = sortedFixed(append(plan.Fix, rp.Fix...))
+	// --propagate で本体が足す引数を使わない def があれば、上の段は通ってもその def が Flix の「使わない引数」で落ちる
+	// （_ で始める名前は上の段で使えない）。check を流す前に止める。fix はその def に付ける（使うかは計画の数。R1）。
 	if a.propagate {
-		for _, n := range localNames(templates) {
-			if indexOf(plan.Unused, n) < 0 {
-				continue
-			}
-			for _, sym := range q.Defs {
-				if decl, _, _, _, err := readDefParams(idx.Rows, srcs, sym); err == nil {
-					plan.Fix = append(plan.Fix, Fixed{decl, fmt.Sprintf("葉の本体が %s を使わない（Flix は使わない引数を誤りにし、_%s は上の段で使えない）。--args を @%s=<本体の中の式> にして本体の式を %s に替えるか、先に本体を %s の元の式で書く", n, n, n, n, n)})
+		locals := localNames(templates)
+		for _, sym := range sortedKeys(plan.UnusedIn) {
+			for _, n := range plan.UnusedIn[sym] {
+				if indexOf(locals, n) < 0 {
+					continue
 				}
+				decl, _, _, _, err := readDefParams(idx.Rows, srcs, sym)
+				if err != nil {
+					continue
+				}
+				why := fmt.Sprintf("広げた def の本体が %s を使わない（呼ぶ所に %s を書けなかった）", n, n)
+				if indexOf(q.Defs, sym) >= 0 {
+					why = fmt.Sprintf("葉の本体が %s を使わない（Flix は使わない引数を誤りにし、_%s は上の段で使えない）。--args を @%s=<本体の中の式> にして本体の式を %s に替えるか、先に本体を %s の元の式で書く", n, n, n, n, n)
+					if a.retarget != "" {
+						why += "（--retarget の欄の読みが葉に無い時も）"
+					}
+				}
+				plan.Fix = append(plan.Fix, Fixed{decl, why})
 			}
 		}
+		plan.Fix = sortedFixed(plan.Fix)
 	}
 	how := a.applyWith(cfg.Verify, o)
 	if len(plan.Fix) > 0 {
@@ -826,8 +936,11 @@ func signatureReport(root string, idx *Index, a args, cfg Config, o Options) (re
 	if out.State == StateReverted || out.State == StateRefused {
 		r.got = plan.Calls + decls
 	}
-	r.Sites = plan.Sites
+	r.Sites = append(append([]Fixed{}, plan.Sites...), rp.Sites...)
 	r.gotText = fmt.Sprintf("宣言 %d・呼ぶ所 %d（%d ファイル）・本体から引数へ移す式 %d・人へ回す %d", decls, plan.Calls, len(plan.CallFiles), plan.Lifted, len(plan.Fix))
+	if a.retarget != "" {
+		r.gotText += fmt.Sprintf("・読み替え %d（%s#%s → %s）", len(rp.Edits), a.from, a.retarget, strings.Join(localNames(templates), ""))
+	}
 	note := "（" + strings.Join(plan.Old, "・") + " はその所の式"
 	if ls := localNames(templates); len(ls) > 0 {
 		note += "・@" + strings.Join(ls, "・@") + " は呼ぶ所の局所の名前"
@@ -855,10 +968,13 @@ func signatureReport(root string, idx *Index, a args, cfg Config, o Options) (re
 	for _, f := range plan.Fix {
 		r.fixLines = append(r.fixLines, fmt.Sprintf("%s\tfix\t%s（%s）", f.Where(), f.Why, f.Owner))
 	}
-	for _, s := range plan.Sites {
+	for _, s := range append(append(append([]Fixed{}, plan.Sites...), rp.Sites...), sortedFixed(rp.Skips)...) {
 		r.lines = append(r.lines, fmt.Sprintf("%s\t%s（%s）", s.Where(), s.Why, s.Owner))
 	}
 	base := fmt.Sprintf("bin/fge refactor change-signature --def %s --params %s --args %s", a.def, shellQuote(q.Params), shellQuote(a.argsText)) + preferFlag(a) + propagateFlags(a)
+	if a.retarget != "" {
+		base += " --retarget " + a.retarget + " --from " + a.from
+	}
 	nextOf(&r, base, a, &out)
 	switch {
 	case len(plan.Fix) > 0:
@@ -868,6 +984,9 @@ func signatureReport(root string, idx *Index, a args, cfg Config, o Options) (re
 		r.Done = fmt.Sprintf("done: %d sites（宣言 %d・呼ぶ所 %d）→ 0 left · check ok", plan.Calls+decls, decls, plan.Calls)
 		r.Next, r.NextWhy = "bin/fge refactor usages "+strings.Split(a.def, ",")[0]+" --callers", "替えた後の呼び手（索引は作り直しになる）"
 		r.lines = nil
+		for _, s := range sortedFixed(rp.Skips) {
+			r.lines = append(r.lines, fmt.Sprintf("%s\t%s（%s）", s.Where(), s.Why, s.Owner))
+		}
 	}
 	localNotes(&r, plan.Local)
 	return r, nil
@@ -875,7 +994,7 @@ func signatureReport(root string, idx *Index, a args, cfg Config, o Options) (re
 
 // curriedEdit は、パイプ（書いていない引数がある）・部分適用（引数が宣言より少ない）・関数として渡す所（括弧が無い）の呼ぶ所に、
 // 先頭の新しい引数（局所の名前・型の値を持つ def の式・元の引数を使わない `@名前=式` の式）を書く書き換え。書けなければ ok=false。
-func (part *sigPart) curriedEdit(rows []Row, s string, r Row, ns, ne int, l ArgList, h bool, owners map[string]int) (Edit, string, bool) {
+func (part *sigPart) curriedEdit(rows []Row, s string, r Row, ns, ne int, l ArgList, h bool, owners map[string]int, locals map[string]bool) (Edit, string, bool) {
 	missing := withoutAll(unboundLocals(s, owners[r.Owner], ns, part.locals), part.q.Given[r.Owner])
 	oldSet := map[string]bool{}
 	if len(missing) > 0 && holeLambda(s, owners[r.Owner], ns) != "" {
@@ -904,15 +1023,21 @@ func (part *sigPart) curriedEdit(rows []Row, s string, r Row, ns, ne int, l ArgL
 	}
 	add := strings.Join(texts, ", ")
 	check := []Want{{Span: r, Text: s[ns:ne]}}
+	writes := map[string]int{}
+	for _, t := range texts {
+		for _, u := range identUses(t, locals) {
+			writes[t[u[0]:u[1]]]++
+		}
+	}
 	if !h {
-		return Edit{File: r.File, Start: ne, End: ne, Site: r, Check: check,
+		return Edit{File: r.File, Start: ne, End: ne, Site: r, Check: check, Writes: writes,
 			Make: func(string) (string, error) { return "(" + add + ")", nil }}, "関数として渡す所（先頭の引数 " + add + " を部分適用で書く）", true
 	}
 	at, text := l.Open+1, add
 	if len(l.Args) > 0 {
 		at, text = l.Args[0][0], add+", "
 	}
-	return Edit{File: r.File, Start: at, End: at, Site: r, Check: check,
+	return Edit{File: r.File, Start: at, End: at, Site: r, Check: check, Writes: writes,
 		Make: func(string) (string, error) { return text, nil }}, "パイプ・部分適用の呼ぶ所（先頭に " + add + " を書く）", true
 }
 

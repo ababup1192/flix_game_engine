@@ -1,6 +1,6 @@
 {
   "note": "testdata の索引（*-spans-*.tsv）の一覧。各行は dir（testdata の下の fixture の根）に flixlint --spans --stage <stage> <sources> を掛けた物。作り直しは make refactor-testdata FLIXLINT=<bin/flixlint>（regen_test.go）。flixlint は版を記録する（作り直すたびに書き替わる）。steps は TestRegenIndex では作らない索引と、その作り方。",
-  "flixlint": "0.8.6",
+  "flixlint": "0.8.7",
   "indexes": [
     {"index": "acc-spans-typed.tsv", "dir": "acc", "stage": "typed", "sources": ["src"]},
     {"index": "accmod-spans-typed.tsv", "dir": "accmod", "stage": "typed", "sources": ["src"]},
@@ -10,7 +10,10 @@
     {"index": "prefer-spans-resolved.tsv", "dir": "prefer", "stage": "resolved", "sources": ["src"]},
     {"index": "proj-spans-resolved.tsv", "dir": "proj", "stage": "resolved", "sources": ["src", "test"]},
     {"index": "propagate-spans-resolved.tsv", "dir": "propagate", "stage": "resolved", "sources": ["src", "test"]},
+    {"index": "propagate-view-spans-resolved.tsv", "dir": "propagate-view", "stage": "resolved", "sources": ["src"]},
     {"index": "refmore-spans-resolved.tsv", "dir": "refmore", "stage": "resolved", "sources": ["src", "test"]},
+    {"index": "retarget-spans-resolved.tsv", "dir": "retarget", "stage": "resolved", "sources": ["src"]},
+    {"index": "retarget-spans-typed.tsv", "dir": "retarget", "stage": "typed", "sources": ["src"]},
     {"index": "reshape-spans-resolved.tsv", "dir": "reshape", "stage": "resolved", "sources": ["src", "test"]},
     {"index": "shape-spans-resolved.tsv", "dir": "shape", "stage": "resolved", "sources": ["src", "test"]},
     {"index": "shape-spans-typed.tsv", "dir": "shape", "stage": "typed", "sources": ["src", "test"]},

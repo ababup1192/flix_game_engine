@@ -203,6 +203,9 @@ type Builder struct {
 	Verbose bool // flixlint の出力を画面へ（既定は build/refactor/index-<段>.log へ書き、1 行だけ言う）
 	// Shared が在れば、索引を make check（checkd の server の道）と同じ常駐で作る（同じ shim の jar・ヒープ・寿命）。
 	Shared Shared
+	// NeedAdds は操作が読む adds= の名前（param など）。それを書く flixlint より古ければ索引を作る前に止め、
+	// 作った（使い回す）索引の頭の行に無ければ止める（設計 §2.8・レビュー 3 の M3）。
+	NeedAdds []string
 }
 
 // IndexError は索引を作れなかった訳と、写してそのまま流せる次の手（無ければ ""。その時は NextWhy を next の 1 行に）。
@@ -233,7 +236,8 @@ func (b Builder) Load(s Stage) (*Index, error) {
 	if !b.Rebuild {
 		if old, secs, ok := readKey(b.keyPath(s)); ok && old == key {
 			if rows, adds, err := readIndex(path, s); err == nil {
-				return &Index{Stage: s, Path: path, Rows: rows, Adds: adds, Cached: true, Seconds: secs, Key: key}, nil
+				idx := &Index{Stage: s, Path: path, Rows: rows, Adds: adds, Cached: true, Seconds: secs, Key: key}
+				return idx, b.checkAdds(idx)
 			}
 		}
 		// 同じソースで前に型検査（名前解決）が落ちていれば、JVM を立てずに同じ答えを返す。
@@ -243,10 +247,15 @@ func (b Builder) Load(s Stage) (*Index, error) {
 	}
 	// 版が読めて足りなければ、JVM を立てる前に止める（冷えた typed は 1 分ほど掛かってから頭の行で分かる）。
 	v := b.version()
-	if _, known := versionNums(lastField(v)); known && !versionAtLeast(v, MinFlixlint) {
+	_, known := versionNums(lastField(v))
+	if min := minFlixlintFor(b.NeedAdds); known && !versionAtLeast(v, min) {
+		what := fmt.Sprintf("索引の形 %d", FormatVersion)
+		if min != MinFlixlint {
+			what += "・adds=" + strings.Join(b.NeedAdds, ",")
+		}
 		return nil, &IndexError{
-			Msg:     fmt.Sprintf("索引を作れません: 使っている flixlint は %s（%s）。この道具は flixlint %s 以上（索引の形 %d）が要る", lastField(v), b.Flixlint, MinFlixlint, FormatVersion),
-			NextWhy: fmt.Sprintf("submodule の flixlint を %s 以上へ上げる（エンジンの追随と同じコミットで）か、--flixlint・FGE_FLIXLINT で名指しする", MinFlixlint),
+			Msg:     fmt.Sprintf("索引を作れません: 使っている flixlint は %s（%s）。この操作は flixlint %s 以上（%s）が要る", lastField(v), b.Flixlint, min, what),
+			NextWhy: fmt.Sprintf("submodule の flixlint を %s 以上へ上げる（エンジンの追随と同じコミットで）か、--flixlint・FGE_FLIXLINT で名指しする", min),
 		}
 	}
 	os.Remove(b.failPath(s))
@@ -310,7 +319,59 @@ func (b Builder) Load(s Stage) (*Index, error) {
 	}
 	// 同じ走行が書いた汎用の AST（式の木と型。rewrite が使う）を、この索引の鍵と一緒に段ごとの置き場へ残す。
 	b.keepGeneric(s, key)
-	return &Index{Stage: s, Path: path, Rows: rows, Adds: adds, Seconds: secs, Key: key}, nil
+	idx := &Index{Stage: s, Path: path, Rows: rows, Adds: adds, Seconds: secs, Key: key}
+	return idx, b.checkAdds(idx)
+}
+
+// checkAdds は操作が要る adds= が索引の頭の行にあるか（無ければ、索引を書いた shim がそれより古い）。
+func (b Builder) checkAdds(idx *Index) error {
+	var missing []string
+	for _, k := range b.NeedAdds {
+		if !idx.hasAdds(k) {
+			missing = append(missing, k)
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	return &IndexError{
+		Msg:     fmt.Sprintf("索引（%s）の頭の行に adds=%s が無い（書いた shim が flixlint %s より古い。頭の行の adds=%s）", idx.Stage, strings.Join(missing, ","), minFlixlintFor(missing), idx.Adds),
+		NextWhy: fmt.Sprintf("flixlint を %s 以上へ上げてから bin/fge refactor index --rebuild（make check の常駐の shim が古い時は hooks.json の flixlintVersion も）", minFlixlintFor(missing)),
+	}
+}
+
+// LoadAll は段 stages の索引を同じソースから作る（最初が主の段）。2 本の行は同じソースの位置なので file・行・列で引き合える。
+// 作っている間にソースが変わったら止める（片方だけ古い索引で書き換えない）。
+func (b Builder) LoadAll(stages []Stage) ([]*Index, error) {
+	before, err := b.contentKey()
+	if err != nil {
+		return nil, err
+	}
+	var out []*Index
+	for _, s := range stages {
+		idx, err := b.Load(s)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, idx)
+	}
+	after, err := b.contentKey()
+	if err != nil {
+		return nil, err
+	}
+	if before != after {
+		return nil, &IndexError{Msg: fmt.Sprintf("索引（%s）を作っている間にソースが変わった（2 本の索引の位置が合わない）", joinStages(stages)),
+			NextWhy: "ソースを変えずに同じコマンドをもう一度（変わった方の索引は次の回に作り直す）"}
+	}
+	return out, nil
+}
+
+func joinStages(ss []Stage) string {
+	var xs []string
+	for _, s := range ss {
+		xs = append(xs, string(s))
+	}
+	return strings.Join(xs, "・")
 }
 
 // tailOf はログの終わりの n 行（索引を作れなかった時に、誤りの所だけ見せる）。
@@ -510,8 +571,17 @@ func joinKey(src, env string) string {
 
 // sourceKey は鍵のうち人が書く物: 段・形の版・sources の .flix（パスと中身）・flix.toml。
 func (b Builder) sourceKey(s Stage) (string, error) {
+	c, err := b.contentKey()
+	if err != nil {
+		return "", err
+	}
+	h := sha256.Sum256([]byte(fmt.Sprintf("refactor-index %d %s\n%s", FormatVersion, s, c)))
+	return hex.EncodeToString(h[:]), nil
+}
+
+// contentKey は段を問わないソースの中身のハッシュ（sources の .flix のパスと中身・flix.toml）。
+func (b Builder) contentKey() (string, error) {
 	h := sha256.New()
-	fmt.Fprintf(h, "refactor-index %d %s\n", FormatVersion, s)
 	files, err := flixFiles(b.Root, b.sources())
 	if err != nil {
 		return "", err
@@ -558,7 +628,41 @@ func (b Builder) envKey() string {
 		fmt.Fprintf(h, "shim %s %d\n", filepath.Base(p), len(data))
 		h.Write(data)
 	}
+	// 索引を書くのは常駐の shim の jar（Shared）の時もある。その jar も鍵に入れる（前面の shim と違う版でも鍵が合わないように）。
+	if sh := b.Shared.ShimJar; sh != "" {
+		if info, err := os.Stat(sh); err == nil {
+			fmt.Fprintf(h, "shared-shim %s %d %d\n", sh, info.Size(), info.ModTime().Unix())
+		} else {
+			fmt.Fprintf(h, "shared-shim %s\n", sh)
+		}
+	}
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+// shimJarVersion は常駐の shim の jar の置き場（<cache>/flixlint/<版>/<jar>。checkd の resident.go）から読む版（読めなければ ""）。
+func shimJarVersion(jar string) string {
+	if jar == "" {
+		return ""
+	}
+	v := filepath.Base(filepath.Dir(jar))
+	if _, ok := versionNums(v); !ok {
+		return ""
+	}
+	return v
+}
+
+func orUnknown(v string) string {
+	if v == "" {
+		return "（版は読めない）"
+	}
+	return v
+}
+
+func logOr(w io.Writer) io.Writer {
+	if w == nil {
+		return os.Stderr
+	}
+	return w
 }
 
 // shimFiles は flixlint の版を表すファイル: 前面の bin/flixlint と shim/*.scala と flix.toml（version）。

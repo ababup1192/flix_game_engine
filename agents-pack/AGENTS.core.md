@@ -50,6 +50,7 @@ lint・フック・make の口で止まる決まりはここに書かない（�
 | 名前の使われ所・呼び手を探す（grep より先に・読むのは道具が出した行だけ） | `bin/fge refactor usages <名前>` |
 | 使われない pub・use を探して消す・pub を外す | `bin/fge refactor usages --unused` → `remove-dead`・`make-private`・`remove-use` |
 | record の欄の直の読み書きを口の関数へ替える（口が無ければ作る） | `bin/fge refactor field-to-accessor` |
+| 欄の読みを別の引数の同じ欄へ（`w#x` → `res#x`） | `bin/fge refactor retarget-field` |
 | 関数・型 alias を別の mod へ移す（呼ぶ所の修飾名と use も） | `bin/fge refactor move --def Mod.f --to Mod2` |
 | record の型に欄を足し、組み立てる所すべてに値を入れる | `bin/fge refactor add-field` |
 | 同じ形の式をまとめて書き替える（lint の規則の直しなど） | `bin/fge refactor rewrite --from --to`・`--rule <規則>` |

@@ -1,30 +1,43 @@
-# flixlint-spans 3 stage=typed columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=arg,alias-decl
-alias-decl	src/Rec.flix	4	20	4	25	Rec.World	Rec.World	
-alias-decl	src/Rec.flix	10	20	10	25	Rec.Other	Rec.Other	
+# flixlint-spans 3 stage=typed columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=arg,alias-decl,param,aparam,alias-fields
+alias-decl	src/Rec.flix	4	20	4	25	Rec.World	Rec.World	fields=clock:Float64;speed:Int32
+alias-decl	src/Rec.flix	10	20	10	25	Rec.Other	Rec.Other	fields=clock:Float64;name:String
 def-decl	src/Rec.flix	12	13	12	20	Rec.clockOf	Rec.clockOf	pub ext=12:5:12:49
+param	src/Rec.flix	12	21	12	22	Rec.clockOf	Rec.clockOf	i=0 n=1 name=w type=Rec.World tspan=12:24:12:29 reads=1 hidden=0 poly=0 fields=clock:Float64;speed:Int32
 label-select	src/Rec.flix	12	44	12	49	clock	Rec.clockOf	owner=alias:Rec.World why=decl rspan=12:42:12:43 rparam=0
 def-decl	src/Rec.flix	14	13	14	21	Rec.mapClock	Rec.mapClock	pub ext=14:5:14:90
+param	src/Rec.flix	14	22	14	23	Rec.mapClock	Rec.mapClock	i=0 n=2 name=f type=(Float64)->Float64 tspan=14:25:14:43 reads=1 hidden=0 poly=0
+param	src/Rec.flix	14	45	14	46	Rec.mapClock	Rec.mapClock	i=1 n=2 name=w type=Rec.World tspan=14:48:14:53 reads=2 hidden=0 poly=0 fields=clock:Float64;speed:Int32
 label-update	src/Rec.flix	14	66	14	71	clock	Rec.mapClock	owner=alias:Rec.World why=decl rspan=14:87:14:88 rparam=1
 label-select	src/Rec.flix	14	78	14	83	clock	Rec.mapClock	owner=alias:Rec.World why=decl rspan=14:76:14:77 rparam=1
 def-decl	src/Rec.flix	16	13	16	22	Rec.withClock	Rec.withClock	pub ext=16:5:16:71
+param	src/Rec.flix	16	23	16	24	Rec.withClock	Rec.withClock	i=0 n=2 name=c type=Float64 tspan=16:26:16:33 reads=1 hidden=0 poly=0
+param	src/Rec.flix	16	35	16	36	Rec.withClock	Rec.withClock	i=1 n=2 name=w type=Rec.World tspan=16:38:16:43 reads=1 hidden=0 poly=0 fields=clock:Float64;speed:Int32
 label-update	src/Rec.flix	16	56	16	61	clock	Rec.withClock	owner=alias:Rec.World why=decl rspan=16:68:16:69 rparam=1
 def-decl	src/Rec.flix	18	13	18	17	Rec.make	Rec.make	pub ext=18:5:18:55
 record-literal	src/Rec.flix	18	31	18	55		Rec.make	labels=clock,speed owner=alias:Rec.World why=row
 def-decl	src/Rec.flix	20	9	20	14	Rec.other	Rec.other	ext=20:5:20:53
 record-literal	src/Rec.flix	20	28	20	53		Rec.other	labels=clock,name owner=alias:Rec.Other why=row
 def-decl	src/Rec.flix	22	9	22	13	Rec.half	Rec.half	ext=22:5:22:44
+param	src/Rec.flix	22	14	22	15	Rec.half	Rec.half	i=0 n=1 name=x type=Float64 tspan=22:17:22:24 reads=1 hidden=0 poly=0
 def-decl	src/Rec.flix	24	13	24	17	Rec.tick	Rec.tick	pub ext=24:5:24:78
+param	src/Rec.flix	24	18	24	20	Rec.tick	Rec.tick	i=0 n=2 name=dt type=Float64 tspan=24:22:24:29 reads=1 hidden=0 poly=0
+param	src/Rec.flix	24	31	24	32	Rec.tick	Rec.tick	i=1 n=2 name=w type=Rec.World tspan=24:34:24:39 reads=2 hidden=0 poly=0 fields=clock:Float64;speed:Int32
 label-update	src/Rec.flix	24	52	24	57	clock	Rec.tick	owner=alias:Rec.World why=decl rspan=24:75:24:76 rparam=1
 label-select	src/Rec.flix	24	62	24	67	clock	Rec.tick	owner=alias:Rec.World why=decl rspan=24:60:24:61 rparam=1
 def-decl	src/Rec.flix	26	13	26	18	Rec.reset	Rec.reset	pub ext=26:5:26:57
+param	src/Rec.flix	26	19	26	20	Rec.reset	Rec.reset	i=0 n=1 name=w type=Rec.World tspan=26:22:26:27 reads=1 hidden=0 poly=0 fields=clock:Float64;speed:Int32
 label-update	src/Rec.flix	26	40	26	45	clock	Rec.reset	owner=alias:Rec.World why=decl rspan=26:54:26:55 rparam=0
 def-decl	src/Rec.flix	28	13	28	17	Rec.both	Rec.both	pub ext=28:5:28:67
+param	src/Rec.flix	28	18	28	19	Rec.both	Rec.both	i=0 n=1 name=w type=Rec.World tspan=28:21:28:26 reads=1 hidden=0 poly=0 fields=clock:Float64;speed:Int32
 label-update	src/Rec.flix	28	39	28	44	clock	Rec.both	owner=alias:Rec.World why=row rspan=28:52:28:65
 label-update	src/Rec.flix	28	52	28	57	speed	Rec.both	owner=alias:Rec.World why=decl rspan=28:64:28:65 rparam=0
 def-decl	src/Rec.flix	30	13	30	17	Rec.late	Rec.late	pub ext=30:5:30:67
+param	src/Rec.flix	30	18	30	19	Rec.late	Rec.late	i=0 n=1 name=w type=Rec.World tspan=30:21:30:26 reads=1 hidden=0 poly=0 fields=clock:Float64;speed:Int32
 label-update	src/Rec.flix	30	39	30	44	speed	Rec.late	owner=alias:Rec.World why=row rspan=30:50:30:65
 label-update	src/Rec.flix	30	50	30	55	clock	Rec.late	owner=alias:Rec.World why=decl rspan=30:64:30:65 rparam=0
 def-decl	src/Rec.flix	32	13	32	16	Rec.sum	Rec.sum	pub ext=32:5:32:65
+param	src/Rec.flix	32	17	32	18	Rec.sum	Rec.sum	i=0 n=2 name=a type=Rec.World tspan=32:20:32:25 reads=1 hidden=0 poly=0 fields=clock:Float64;speed:Int32
+param	src/Rec.flix	32	27	32	28	Rec.sum	Rec.sum	i=1 n=2 name=b type=Rec.World tspan=32:30:32:35 reads=1 hidden=0 poly=0 fields=clock:Float64;speed:Int32
 label-select	src/Rec.flix	32	50	32	55	clock	Rec.sum	owner=alias:Rec.World why=decl rspan=32:48:32:49 rparam=0
 label-select	src/Rec.flix	32	60	32	65	clock	Rec.sum	owner=alias:Rec.World why=decl rspan=32:58:32:59 rparam=1
 def-decl	src/Rec.flix	34	13	34	23	Rec.otherClock	Rec.otherClock	pub ext=34:5:34:50
@@ -36,6 +49,7 @@ def-use	src/Rec.flix	36	31	36	35	Rec.make	Rec.made
 arg	src/Rec.flix	36	35	36	37	Rec.make	Rec.made	of=def-use at=36:31 i=0 n=1
 label-select	src/Rec.flix	36	38	36	43	clock	Rec.made	owner=alias:Rec.World why=decl rspan=36:31:36:37
 def-decl	src/Rec.flix	38	13	38	18	Rec.piped	Rec.piped	pub ext=38:5:38:69
+param	src/Rec.flix	38	19	38	20	Rec.piped	Rec.piped	i=0 n=1 name=w type=Rec.World tspan=38:22:38:27 reads=2 hidden=0 poly=0 fields=clock:Float64;speed:Int32
 label-update	src/Rec.flix	38	40	38	45	clock	Rec.piped	owner=alias:Rec.World why=decl rspan=38:66:38:67 rparam=0
 arg	src/Rec.flix	38	48	38	55	|>	Rec.piped	of=def-use at=38:56 i=0 n=2
 label-select	src/Rec.flix	38	50	38	55	clock	Rec.piped	owner=alias:Rec.World why=decl rspan=38:48:38:49 rparam=0
@@ -44,12 +58,14 @@ arg	src/Rec.flix	38	59	38	63	Rec.half	Rec.piped	of=def-use at=38:59 i=0 n=1 synt
 arg	src/Rec.flix	38	59	38	63	|>	Rec.piped	of=def-use at=38:56 i=1 n=2
 def-use	src/Rec.flix	38	59	38	63	Rec.half	Rec.piped	
 def-decl	src/Rec.flix	40	13	40	18	Rec.total	Rec.total	pub ext=40:5:41:84
+param	src/Rec.flix	40	19	40	20	Rec.total	Rec.total	i=0 n=2 name=w type=Rec.World tspan=40:22:40:27 reads=2 hidden=0 poly=0 fields=clock:Float64;speed:Int32
+param	src/Rec.flix	40	29	40	31	Rec.total	Rec.total	i=1 n=2 name=ws type=List[Rec.World] tspan=40:33:40:44 reads=1 hidden=0 poly=0
 label-update	src/Rec.flix	41	11	41	16	clock	Rec.total	owner=alias:Rec.World why=decl rspan=41:81:41:82 rparam=0
 def-use	src/Rec.flix	41	19	41	32	List.foldLeft	Rec.total	
 arg	src/Rec.flix	41	33	41	58	List.foldLeft	Rec.total	of=def-use at=41:19 i=0 n=3
 label-select	src/Rec.flix	41	53	41	58	clock	Rec.total	owner=alias:Rec.World why=row rspan=41:51:41:52
 arg	src/Rec.flix	41	60	41	63	List.foldLeft	Rec.total	of=def-use at=41:19 i=1 n=3
-arg	src/Rec.flix	41	65	41	67	List.foldLeft	Rec.total	of=def-use at=41:19 i=2 n=3
+arg	src/Rec.flix	41	65	41	67	List.foldLeft	Rec.total	of=def-use at=41:19 i=2 n=3 aparam=1
 label-select	src/Rec.flix	41	73	41	78	clock	Rec.total	owner=alias:Rec.World why=decl rspan=41:71:41:72 rparam=0
 def-decl	src/Rec.flix	43	13	43	19	Rec.spread	Rec.spread	pub ext=43:5:43:113
 def-use	src/Rec.flix	43	33	43	46	List.foldLeft	Rec.spread	
@@ -63,6 +79,8 @@ record-literal	src/Rec.flix	43	81	43	105		Rec.spread	labels=clock,speed owner=al
 arg	src/Rec.flix	43	109	43	112	List.Cons	Rec.spread	of=case-construct at=43:79 i=1 n=2 sugar
 case-construct	src/Rec.flix	43	109	43	112	List.Nil	Rec.spread	
 def-decl	src/Rec.flix	45	13	45	17	Rec.open	Rec.open	pub ext=45:5:45:64
+param	src/Rec.flix	45	18	45	19	Rec.open	Rec.open	i=0 n=1 name=r type={clock=Float64|?} tspan=45:21:45:44 reads=1 hidden=0 poly=1 fields=clock:Float64 row=open
 label-select	src/Rec.flix	45	59	45	64	clock	Rec.open	owner=maybe cands=alias:Rec.Other|alias:Rec.World why=open rspan=45:57:45:58 rparam=0
 def-decl	src/Rec.flix	47	13	47	17	Rec.note	Rec.note	pub ext=47:5:47:57
+param	src/Rec.flix	47	18	47	19	Rec.note	Rec.note	i=0 n=1 name=w type=Rec.World tspan=47:21:47:26 reads=1 hidden=0 poly=0 fields=clock:Float64;speed:Int32
 label-select	src/Rec.flix	47	50	47	55	clock	Rec.note	owner=alias:Rec.World why=decl rspan=47:48:47:49 rparam=0

@@ -66,6 +66,21 @@ func planPropagation(rows []Row, srcs *reshapeSources, leaf SignatureQuery, stop
 		}
 		types[n], front[n] = first.types[part.news[k]], k == 0
 	}
+	// 局所の名前の型を、葉の宣言のファイルで引いた正規の名前にする（設計 J4・レビュー 3 の M2）。provideFor はこれと
+	// 引数の型（param の type=）・欄の型（fields=）を、別名を鎖の終わりへ写して比べる。名前 1 つでない型は比べない（""）。
+	// WhyNot: 索引全体で短い名前を引かない（Resolve）。f の形（ViewEnv.Res と Res.Res）はまさに短い名前が重なる時。
+	pix, tix := newParamIndex(rows), newTypeIndex(rows)
+	want := map[string]string{}
+	for _, n := range part.locals {
+		if !singleName(types[n]) {
+			continue
+		}
+		sym, err := tix.resolveIn(types[n], first.row.File, modOf(leaf.Defs[0]))
+		if err != nil {
+			return pr, fmt.Errorf("--params の @%s の型: %v", n, err)
+		}
+		want[n] = sym
+	}
 	// `@名前=式` の式が使う元の引数の名前と型。広げる def が同じ名前・同じ型の引数を持てば、その段でも式を書ける。
 	fallbacks := map[string]string{}
 	fallbackNeeds := map[string]map[string]string{}
@@ -77,7 +92,12 @@ func planPropagation(rows []Row, srcs *reshapeSources, leaf SignatureQuery, stop
 		n := strings.TrimPrefix(part.q.Templates[k], "@")
 		needs := map[string]string{}
 		for _, at := range identUses(e, oldSet) {
-			needs[e[at[0]:at[1]]] = first.types[e[at[0]:at[1]]]
+			u := e[at[0]:at[1]]
+			if lp, ok := pix.named(leaf.Defs[0], u); ok {
+				needs[u] = lp.Type
+			} else {
+				needs[u] = ""
+			}
 		}
 		fallbacks[n], fallbackNeeds[n] = e, needs
 	}
@@ -130,7 +150,7 @@ func planPropagation(rows []Row, srcs *reshapeSources, leaf SignatureQuery, stop
 				continue
 			}
 			if !stopAt[o] {
-				if got, renames := provideFor(rows, srcs, o, missing, types); len(got) == len(missing) {
+				if got, renames := provideFor(pix, tix, o, missing, want); len(got) == len(missing) {
 					if pr.Provided[o] == nil {
 						pr.Provided[o] = map[string]string{}
 					}
@@ -177,19 +197,15 @@ func planPropagation(rows []Row, srcs *reshapeSources, leaf SignatureQuery, stop
 		if err != nil {
 			return pr, err
 		}
-		ptypes := map[string]string{}
-		for _, p := range params {
-			if n, t, ok := strings.Cut(p, ":"); ok {
-				ptypes[strings.TrimSpace(n)] = strings.TrimSpace(t)
-			}
-		}
+		// `@名前=式` の式が使う元の引数を、広げた def が同じ名前・同じ型（param の type= を別名ごと比べる）で持つ時だけ式を写す。
 		mark := func(n string) string {
 			e, ok := fallbacks[n]
 			if !ok {
 				return "@" + n
 			}
 			for u, t := range fallbackNeeds[n] {
-				if t == "" || !sameTypeText(ptypes[u], t) {
+				lp, ok := pix.named(l.Sym, u)
+				if !ok || !tix.same(lp.Type, t) {
 					return "@" + n
 				}
 			}
@@ -297,37 +313,40 @@ func propagateFlags(a args) string {
 	return s
 }
 
-// provideFor は def o の引数から、局所の名前 missing の型の値を読む式（同じ型の引数ならその名前・引数の型が record の
-// alias で、その欄の型が同じなら `引数#欄`）。読めた名前だけを返す。同じ型の引数が `_` で始まる名前（使っていない印の
-// `_res`）なら、その引数を使う: 名前を局所の名前に替え（renames に 元の名前 → 局所の名前）、式は局所の名前。
-// 優先は 同じ型の名前の引数 → 同じ型の `_` の引数 → record の欄。
+// provideFor は def o の引数から、局所の名前 missing の型（want: 葉のファイルで引いた正規の名前）の値を読む式（同じ型の引数なら
+// その名前・引数の型が record で、その欄の型が同じなら `引数#欄`）。読めた名前だけを返す。同じ型の引数が `_` で始まる名前
+// （使っていない印の `_res`）なら、その引数を使う: 名前を局所の名前に替え（renames に 元の名前 → 局所の名前）、式は局所の名前。
+// 優先は 同じ型の名前の引数 → 同じ型の `_` の引数（`_`＋名前が同じ物を先に）→ record の欄（1 つに決まる時だけ）。
+// 型は索引の param の type=・fields= を、別名を鎖の終わりへ写して名前 1 つどうしで比べる（型の変数を含む物は比べない）。
 // WhyNot: `_res` を飛ばして上へ広げると、同じ型の引数が二重になる（`(res: Res, _res: Res, w)`・呼ぶ所は `f(res, res)`）。
 // `_` の名前は本体で使えない（Hidden variable symbol）ので、名前を替えるのが要る。本体はまだ使っていないので替えても壊れない。
-func provideFor(rows []Row, srcs *reshapeSources, o string, missing []string, types map[string]string) (map[string]string, map[string]string) {
-	_, _, _, params, err := readDefParams(rows, srcs, o)
-	if err != nil {
-		return nil, nil
-	}
+// WhyNot: 型の字の最後の区切りだけで比べない。描き出しの `env#res`（ViewEnv.Res）をゲームの Res.Res と取り違えた（今日の f）。
+func provideFor(pix paramIndex, tix *typeIndex, o string, missing []string, want map[string]string) (map[string]string, map[string]string) {
 	out, renames := map[string]string{}, map[string]string{}
 	for _, m := range missing {
+		w := want[m]
+		if w == "" {
+			continue
+		}
 		var hidden, field string
-		for _, p := range params {
-			n, t, ok := strings.Cut(p, ":")
-			if !ok {
-				continue
-			}
-			n, t = strings.TrimSpace(n), strings.TrimSpace(t)
-			_, taken := renames[n]
+		for _, p := range pix[o] {
+			_, taken := renames[p.Name]
 			switch {
-			case strings.HasPrefix(n, "_"):
-				if !taken && sameTypeText(t, types[m]) && (hidden == "" || n == "_"+m) {
-					hidden = n
+			case p.Hidden:
+				if !taken && tix.same(p.Type, w) && (hidden == "" || p.Name == "_"+m) {
+					hidden = p.Name
 				}
-			case sameTypeText(t, types[m]):
-				out[m] = n
+			case tix.same(p.Type, w):
+				out[m] = p.Name
 			case field == "":
-				if f := fieldOfType(rows, srcs, t, types[m]); f != "" {
-					field = n + "#" + f
+				var hits []string
+				for _, l := range sortedKeys(p.Fields) {
+					if tix.same(p.Fields[l], w) {
+						hits = append(hits, l)
+					}
+				}
+				if len(hits) == 1 {
+					field = p.Name + "#" + hits[0]
 				}
 			}
 			if out[m] != "" {
@@ -373,48 +392,6 @@ func renameParamEdits(rows []Row, srcs *reshapeSources, renamed map[string]map[s
 		}
 	}
 	return edits, sites, nil
-}
-
-// sameTypeText は 2 つの型の字が同じ型を指すと見てよいか（字が同じか、型引数の無い名前で最後の区切りが同じ）。
-func sameTypeText(a, b string) bool {
-	if a == b {
-		return true
-	}
-	if strings.ContainsAny(a+b, "[{(") {
-		return false
-	}
-	return shortName(a) == shortName(b)
-}
-
-// fieldOfType は型の字 typ が record の alias なら、型が want の欄の名前（1 つだけの時。無ければ ""）。
-func fieldOfType(rows []Row, srcs *reshapeSources, typ, want string) string {
-	if strings.ContainsAny(typ, "[{(") {
-		return ""
-	}
-	for _, r := range rows {
-		if r.Kind != KindAliasDecl || shortName(r.Sym) != shortName(typ) || !(r.Sym == typ || strings.HasSuffix(r.Sym, "."+typ) || !strings.Contains(typ, ".")) {
-			continue
-		}
-		src, err := srcs.get(r.File)
-		if err != nil {
-			continue
-		}
-		m := map[string]string{r.File: src}
-		shape, err := FindAliasShape(m, r.Sym)
-		if err != nil {
-			continue
-		}
-		var hits []string
-		for _, f := range shape.Fields {
-			if sameTypeText(fieldTypeOf(m, shape, f), want) {
-				hits = append(hits, f)
-			}
-		}
-		if len(hits) == 1 {
-			return hits[0]
-		}
-	}
-	return ""
 }
 
 // returnType は def sym の宣言の戻り値の型の字（引数の並びの後ろから本体の前まで）。

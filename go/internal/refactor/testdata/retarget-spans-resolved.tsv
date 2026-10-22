@@ -1,0 +1,87 @@
+# flixlint-spans 3 stage=resolved columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=use,type-use,alias-decl,arg,param,aparam,alias-fields
+alias-decl	src/Doc.flix	2	20	2	31	Doc.TutorialDoc	Doc.TutorialDoc	fields=label:String;pen:Int32
+alias-decl	src/Res.flix	2	20	2	23	Res.Res	Res.Res	fields=theme:Int32;tutorialDoc:Doc.TutorialDoc
+type-use	src/Res.flix	2	42	2	57	Doc.TutorialDoc	Res.Res	what=alias
+def-decl	src/Res.flix	4	13	4	21	Res.defaults	Res.defaults	pub ext=4:5:4:84
+type-use	src/Res.flix	4	25	4	28	Res.Res	Res.defaults	what=alias
+def-decl	src/Shots.flix	2	13	2	16	Shots.top	Shots.top	pub ext=2:5:2:68
+param	src/Shots.flix	2	17	2	18	Shots.top	Shots.top	i=0 n=1 name=w type=World.World tspan=2:20:2:31 reads=2 hidden=0 poly=0 fields=step:Int32;tutorialDoc:Doc.TutorialDoc
+type-use	src/Shots.flix	2	20	2	31	World.World	Shots.top	what=alias
+def-use	src/Shots.flix	2	42	2	56	Tutorial.penOf	Shots.top	
+arg	src/Shots.flix	2	57	2	58	Tutorial.penOf	Shots.top	of=def-use at=2:42 i=0 n=1 aparam=0
+def-decl	src/Shots.flix	4	13	4	17	Shots.view	Shots.view	pub ext=4:5:4:75
+param	src/Shots.flix	4	18	4	21	Shots.view	Shots.view	i=0 n=2 name=res type=Res.Res tspan=4:23:4:30 reads=1 hidden=0 poly=0 fields=theme:Int32;tutorialDoc:Doc.TutorialDoc
+type-use	src/Shots.flix	4	23	4	30	Res.Res	Shots.view	what=alias
+param	src/Shots.flix	4	32	4	33	Shots.view	Shots.view	i=1 n=2 name=w type=World.World tspan=4:35:4:46 reads=1 hidden=0 poly=0 fields=step:Int32;tutorialDoc:Doc.TutorialDoc
+type-use	src/Shots.flix	4	35	4	46	World.World	Shots.view	what=alias
+def-use	src/Shots.flix	4	57	4	60	Shots.top	Shots.view	
+arg	src/Shots.flix	4	61	4	62	Shots.top	Shots.view	of=def-use at=4:57 i=0 n=1 aparam=1
+def-decl	src/Shots.flix	6	13	6	21	Shots.shownAge	Shots.shownAge	pub ext=6:5:6:91
+param	src/Shots.flix	6	22	6	23	Shots.shownAge	Shots.shownAge	i=0 n=2 name=w type=World.World tspan=6:25:6:36 reads=1 hidden=0 poly=0 fields=step:Int32;tutorialDoc:Doc.TutorialDoc
+type-use	src/Shots.flix	6	25	6	36	World.World	Shots.shownAge	what=alias
+param	src/Shots.flix	6	38	6	43	Shots.shownAge	Shots.shownAge	i=1 n=2 name=extra type=Int32 tspan=6:45:6:50 reads=1 hidden=0 poly=0
+def-use	src/Shots.flix	6	61	6	80	Tutorial.penSeconds	Shots.shownAge	
+arg	src/Shots.flix	6	81	6	82	Tutorial.penSeconds	Shots.shownAge	of=def-use at=6:61 i=0 n=1 aparam=0
+def-decl	src/Shots.flix	8	13	8	17	Shots.ages	Shots.ages	pub ext=8:5:8:79
+param	src/Shots.flix	8	18	8	21	Shots.ages	Shots.ages	i=0 n=2 name=res type=Res.Res tspan=8:23:8:30 reads=1 hidden=0 poly=0 fields=theme:Int32;tutorialDoc:Doc.TutorialDoc
+type-use	src/Shots.flix	8	23	8	30	Res.Res	Shots.ages	what=alias
+param	src/Shots.flix	8	32	8	33	Shots.ages	Shots.ages	i=1 n=2 name=w type=World.World tspan=8:35:8:46 reads=1 hidden=0 poly=0 fields=step:Int32;tutorialDoc:Doc.TutorialDoc
+type-use	src/Shots.flix	8	35	8	46	World.World	Shots.ages	what=alias
+def-use	src/Shots.flix	8	57	8	65	Shots.shownAge	Shots.ages	
+arg	src/Shots.flix	8	66	8	67	Shots.shownAge	Shots.ages	of=def-use at=8:57 i=0 n=2 aparam=1
+arg	src/Shots.flix	8	69	8	78	Shots.shownAge	Shots.ages	of=def-use at=8:57 i=1 n=2
+def-decl	src/Shots.flix	10	13	10	18	Shots.local	Shots.local	pub ext=10:5:10:90
+param	src/Shots.flix	10	19	10	22	Shots.local	Shots.local	i=0 n=2 name=res type=Res.Res tspan=10:24:10:31 reads=1 hidden=0 poly=0 fields=theme:Int32;tutorialDoc:Doc.TutorialDoc
+type-use	src/Shots.flix	10	24	10	31	Res.Res	Shots.local	what=alias
+param	src/Shots.flix	10	33	10	34	Shots.local	Shots.local	i=1 n=2 name=w type=World.World tspan=10:36:10:47 reads=1 hidden=0 poly=0 fields=step:Int32;tutorialDoc:Doc.TutorialDoc
+type-use	src/Shots.flix	10	36	10	47	World.World	Shots.local	what=alias
+def-use	src/Shots.flix	10	58	10	75	Tutorial.localRes	Shots.local	
+arg	src/Shots.flix	10	76	10	77	Tutorial.localRes	Shots.local	of=def-use at=10:58 i=0 n=1 aparam=1
+def-decl	src/Shots.flix	12	13	12	17	Shots.both	Shots.both	pub ext=12:5:12:90
+param	src/Shots.flix	12	18	12	21	Shots.both	Shots.both	i=0 n=2 name=res type=Res.Res tspan=12:23:12:30 reads=1 hidden=0 poly=0 fields=theme:Int32;tutorialDoc:Doc.TutorialDoc
+type-use	src/Shots.flix	12	23	12	30	Res.Res	Shots.both	what=alias
+param	src/Shots.flix	12	32	12	33	Shots.both	Shots.both	i=1 n=2 name=w type=World.World tspan=12:35:12:46 reads=2 hidden=0 poly=0 fields=step:Int32;tutorialDoc:Doc.TutorialDoc
+type-use	src/Shots.flix	12	35	12	46	World.World	Shots.both	what=alias
+def-use	src/Shots.flix	12	57	12	73	Tutorial.penOnly	Shots.both	
+arg	src/Shots.flix	12	74	12	77	Tutorial.penOnly	Shots.both	of=def-use at=12:57 i=0 n=2 aparam=0
+arg	src/Shots.flix	12	79	12	80	Tutorial.penOnly	Shots.both	of=def-use at=12:57 i=1 n=2 aparam=1
+use	src/Tutorial.flix	2	9	2	20	World.World	Tutorial	alias=World what=alias
+use	src/Tutorial.flix	3	9	3	16	Res.Res	Tutorial	alias=Res what=alias
+def-decl	src/Tutorial.flix	6	13	6	18	Tutorial.penOf	Tutorial.penOf	pub ext=5:5:6:55
+param	src/Tutorial.flix	6	19	6	20	Tutorial.penOf	Tutorial.penOf	i=0 n=1 name=w type=World.World tspan=6:22:6:27 reads=1 hidden=0 poly=0 fields=step:Int32;tutorialDoc:Doc.TutorialDoc
+type-use	src/Tutorial.flix	6	22	6	27	World.World	Tutorial.penOf	what=alias
+def-decl	src/Tutorial.flix	9	13	9	23	Tutorial.penSeconds	Tutorial.penSeconds	pub ext=8:5:9:65
+param	src/Tutorial.flix	9	24	9	25	Tutorial.penSeconds	Tutorial.penSeconds	i=0 n=1 name=w type=World.World tspan=9:27:9:32 reads=1 hidden=0 poly=0 fields=step:Int32;tutorialDoc:Doc.TutorialDoc
+type-use	src/Tutorial.flix	9	27	9	32	World.World	Tutorial.penSeconds	what=alias
+def-decl	src/Tutorial.flix	12	13	12	21	Tutorial.localRes	Tutorial.localRes	pub ext=11:5:14:32
+param	src/Tutorial.flix	12	22	12	23	Tutorial.localRes	Tutorial.localRes	i=0 n=1 name=w type=World.World tspan=12:25:12:30 reads=1 hidden=0 poly=0 fields=step:Int32;tutorialDoc:Doc.TutorialDoc
+type-use	src/Tutorial.flix	12	25	12	30	World.World	Tutorial.localRes	what=alias
+def-decl	src/Tutorial.flix	17	13	17	20	Tutorial.changed	Tutorial.changed	pub ext=16:5:18:92
+param	src/Tutorial.flix	17	21	17	24	Tutorial.changed	Tutorial.changed	i=0 n=3 name=res type=Res.Res tspan=17:26:17:29 reads=1 hidden=0 poly=0 fields=theme:Int32;tutorialDoc:Doc.TutorialDoc
+type-use	src/Tutorial.flix	17	26	17	29	Res.Res	Tutorial.changed	what=alias
+param	src/Tutorial.flix	17	31	17	32	Tutorial.changed	Tutorial.changed	i=1 n=3 name=w type=World.World tspan=17:34:17:39 reads=2 hidden=0 poly=0 fields=step:Int32;tutorialDoc:Doc.TutorialDoc
+type-use	src/Tutorial.flix	17	34	17	39	World.World	Tutorial.changed	what=alias
+param	src/Tutorial.flix	17	41	17	45	Tutorial.changed	Tutorial.changed	i=2 n=3 name=prev type=World.World tspan=17:47:17:52 reads=1 hidden=0 poly=0 fields=step:Int32;tutorialDoc:Doc.TutorialDoc
+type-use	src/Tutorial.flix	17	47	17	52	World.World	Tutorial.changed	what=alias
+def-use	src/Tutorial.flix	18	55	18	61	Tutorial.nextOf	Tutorial.changed	
+arg	src/Tutorial.flix	18	62	18	63	Tutorial.nextOf	Tutorial.changed	of=def-use at=18:55 i=0 n=1 aparam=1
+def-decl	src/Tutorial.flix	20	9	20	15	Tutorial.nextOf	Tutorial.nextOf	ext=20:5:20:60
+param	src/Tutorial.flix	20	16	20	17	Tutorial.nextOf	Tutorial.nextOf	i=0 n=1 name=w type=World.World tspan=20:19:20:24 reads=2 hidden=0 poly=0 fields=step:Int32;tutorialDoc:Doc.TutorialDoc
+type-use	src/Tutorial.flix	20	19	20	24	World.World	Tutorial.nextOf	what=alias
+type-use	src/Tutorial.flix	20	27	20	32	World.World	Tutorial.nextOf	what=alias
+def-decl	src/Tutorial.flix	23	13	23	20	Tutorial.withPen	Tutorial.withPen	pub ext=22:5:23:120
+param	src/Tutorial.flix	23	21	23	24	Tutorial.withPen	Tutorial.withPen	i=0 n=2 name=res type=Res.Res tspan=23:26:23:29 reads=1 hidden=0 poly=0 fields=theme:Int32;tutorialDoc:Doc.TutorialDoc
+type-use	src/Tutorial.flix	23	26	23	29	Res.Res	Tutorial.withPen	what=alias
+param	src/Tutorial.flix	23	31	23	32	Tutorial.withPen	Tutorial.withPen	i=1 n=2 name=w type=World.World tspan=23:34:23:39 reads=2 hidden=0 poly=0 fields=step:Int32;tutorialDoc:Doc.TutorialDoc
+type-use	src/Tutorial.flix	23	34	23	39	World.World	Tutorial.withPen	what=alias
+type-use	src/Tutorial.flix	23	42	23	47	World.World	Tutorial.withPen	what=alias
+arg	src/Tutorial.flix	23	52	23	83	|>	Tutorial.withPen	of=def-use at=23:86 i=0 n=2
+def-use	src/Tutorial.flix	23	86	23	88	|>	Tutorial.withPen	
+arg	src/Tutorial.flix	23	90	23	119	|>	Tutorial.withPen	of=def-use at=23:86 i=1 n=2
+def-decl	src/Tutorial.flix	26	13	26	20	Tutorial.penOnly	Tutorial.penOnly	pub ext=25:5:26:79
+param	src/Tutorial.flix	26	21	26	24	Tutorial.penOnly	Tutorial.penOnly	i=0 n=2 name=res type=Res.Res tspan=26:26:26:29 reads=1 hidden=0 poly=0 fields=theme:Int32;tutorialDoc:Doc.TutorialDoc
+type-use	src/Tutorial.flix	26	26	26	29	Res.Res	Tutorial.penOnly	what=alias
+param	src/Tutorial.flix	26	31	26	32	Tutorial.penOnly	Tutorial.penOnly	i=1 n=2 name=w type=World.World tspan=26:34:26:39 reads=1 hidden=0 poly=0 fields=step:Int32;tutorialDoc:Doc.TutorialDoc
+type-use	src/Tutorial.flix	26	34	26	39	World.World	Tutorial.penOnly	what=alias
+alias-decl	src/World.flix	2	20	2	25	World.World	World.World	fields=step:Int32;tutorialDoc:Doc.TutorialDoc
+type-use	src/World.flix	2	44	2	59	Doc.TutorialDoc	World.World	what=alias

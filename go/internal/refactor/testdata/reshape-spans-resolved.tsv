@@ -1,4 +1,4 @@
-# flixlint-spans 3 stage=resolved columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=use,type-use,alias-decl,arg
+# flixlint-spans 3 stage=resolved columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=use,type-use,alias-decl,arg,param,aparam,alias-fields
 enum-decl	src/Mode.flix	4	14	4	19	Mode.Scene	Mode.Scene	
 case-decl	src/Mode.flix	5	14	5	19	Mode.Scene.Title	Mode.Scene	arity=0
 case-decl	src/Mode.flix	6	14	6	19	Mode.Scene.Fight	Mode.Scene	arity=0
@@ -9,6 +9,7 @@ def-decl	src/Mode.flix	12	13	12	18	Mode.start	Mode.start	pub ext=12:5:12:41
 type-use	src/Mode.flix	12	22	12	27	Mode.Scene	Mode.start	what=enum
 case-construct	src/Mode.flix	12	30	12	41	Mode.Scene.Fight	Mode.start	
 def-decl	src/Mode.flix	14	13	14	17	Mode.deck	Mode.deck	pub ext=14:5:14:54
+param	src/Mode.flix	14	18	14	19	Mode.deck	Mode.deck	i=0 n=1 name=n type=Int32 tspan=14:21:14:26 reads=1 hidden=0 poly=0
 type-use	src/Mode.flix	14	29	14	34	Mode.Scene	Mode.deck	what=enum
 case-construct	src/Mode.flix	14	37	14	47	Mode.Scene.Deck	Mode.deck	
 arg	src/Mode.flix	14	48	14	53	Mode.Scene.Deck	Mode.deck	of=case-construct at=14:37 i=0 n=1
@@ -22,6 +23,7 @@ type-use	src/Mode.flix	19	21	19	26	Mode.Scene	Mode.menu	what=enum
 case-construct	src/Mode.flix	19	29	19	39	Mode.Scene.Menu	Mode.menu	
 arg	src/Mode.flix	19	42	19	62	Mode.Scene.Menu	Mode.menu	of=case-construct at=19:29 i=0 n=1
 def-decl	src/Mode.flix	21	13	21	18	Mode.decks	Mode.decks	pub ext=21:5:21:75
+param	src/Mode.flix	21	19	21	21	Mode.decks	Mode.decks	i=0 n=1 name=xs type=List[Int32] tspan=21:23:21:34 reads=1 hidden=0 poly=0
 type-use	src/Mode.flix	21	23	21	27	List	Mode.decks	what=enum
 type-use	src/Mode.flix	21	37	21	41	List	Mode.decks	what=enum
 type-use	src/Mode.flix	21	42	21	47	Mode.Scene	Mode.decks	what=enum
@@ -29,8 +31,9 @@ def-use	src/Mode.flix	21	51	21	59	List.map	Mode.decks
 arg	src/Mode.flix	21	60	21	70	List.map	Mode.decks	of=def-use at=21:51 i=0 n=2
 arg	src/Mode.flix	21	60	21	70	Mode.Scene.Deck	Mode.decks	of=case-construct at=21:60 i=0 n=1 synth
 case-construct	src/Mode.flix	21	60	21	70	Mode.Scene.Deck	Mode.decks	
-arg	src/Mode.flix	21	72	21	74	List.map	Mode.decks	of=def-use at=21:51 i=1 n=2
+arg	src/Mode.flix	21	72	21	74	List.map	Mode.decks	of=def-use at=21:51 i=1 n=2 aparam=0
 def-decl	src/Mode.flix	23	13	23	19	Mode.nameOf	Mode.nameOf	pub ext=23:5:29:6
+param	src/Mode.flix	23	20	23	21	Mode.nameOf	Mode.nameOf	i=0 n=1 name=s type=Mode.Scene tspan=23:23:23:28 reads=1 hidden=0 poly=0
 type-use	src/Mode.flix	23	23	23	28	Mode.Scene	Mode.nameOf	what=enum
 match-site	src/Mode.flix	23	40	29	6		Mode.nameOf	arms=5 wild=0 var=0 guard=0 enum=Mode.Scene
 match-arm	src/Mode.flix	24	9	24	42	Mode.Scene.Title	Mode.nameOf	match=23:40 pat=tag at=24:14:24:25 guard=0 full=1
@@ -48,93 +51,114 @@ match-arm	src/Mode.flix	28	9	28	53	Mode.Scene.Menu	Mode.nameOf	match=23:40 pat=t
 case-pattern	src/Mode.flix	28	14	28	24	Mode.Scene.Menu	Mode.nameOf	
 arg	src/Mode.flix	28	25	28	26	Mode.Scene.Menu	Mode.nameOf	of=case-pattern at=28:14 i=0 n=1
 def-decl	src/Mode.flix	31	13	31	20	Mode.isFight	Mode.isFight	pub ext=31:5:34:6
+param	src/Mode.flix	31	21	31	22	Mode.isFight	Mode.isFight	i=0 n=1 name=s type=Mode.Scene tspan=31:24:31:29 reads=1 hidden=0 poly=0
 type-use	src/Mode.flix	31	24	31	29	Mode.Scene	Mode.isFight	what=enum
 match-site	src/Mode.flix	31	39	34	6		Mode.isFight	arms=2 wild=1 var=0 guard=0 enum=Mode.Scene
 match-arm	src/Mode.flix	32	9	32	33	Mode.Scene.Fight	Mode.isFight	match=31:39 pat=tag at=32:14:32:25 guard=0 full=1
 case-pattern	src/Mode.flix	32	14	32	25	Mode.Scene.Fight	Mode.isFight	
 match-arm	src/Mode.flix	33	9	33	34		Mode.isFight	match=31:39 pat=wild at=33:14:33:15 guard=0
 def-decl	src/Mode.flix	36	13	36	21	Mode.deckSize	Mode.deckSize	pub ext=36:5:39:6
+param	src/Mode.flix	36	22	36	23	Mode.deckSize	Mode.deckSize	i=0 n=1 name=s type=Mode.Scene tspan=36:25:36:30 reads=1 hidden=0 poly=0
 type-use	src/Mode.flix	36	25	36	30	Mode.Scene	Mode.deckSize	what=enum
 match-site	src/Mode.flix	36	41	39	6		Mode.deckSize	arms=2 wild=1 var=0 guard=0 enum=Mode.Scene
 match-arm	src/Mode.flix	37	9	37	32	Mode.Scene.Deck	Mode.deckSize	match=36:41 pat=tag at=37:14:37:27 guard=0 full=1
 case-pattern	src/Mode.flix	37	14	37	24	Mode.Scene.Deck	Mode.deckSize	
 arg	src/Mode.flix	37	25	37	26	Mode.Scene.Deck	Mode.deckSize	of=case-pattern at=37:14 i=0 n=1
 match-arm	src/Mode.flix	38	9	38	32		Mode.deckSize	match=36:41 pat=wild at=38:14:38:15 guard=0
-alias-decl	src/Sig.flix	4	20	4	23	Sig.Ctx	Sig.Ctx	
-alias-decl	src/Sig.flix	5	20	5	25	Sig.World	Sig.World	
-alias-decl	src/Sig.flix	6	20	6	23	Sig.Env	Sig.Env	
+alias-decl	src/Sig.flix	4	20	4	23	Sig.Ctx	Sig.Ctx	fields=scale:Int32
+alias-decl	src/Sig.flix	5	20	5	25	Sig.World	Sig.World	fields=clock:Int32;speed:Int32
+alias-decl	src/Sig.flix	6	20	6	23	Sig.Env	Sig.Env	fields=clock:Int32;scale:Int32
 def-decl	src/Sig.flix	8	13	8	18	Sig.envOf	Sig.envOf	pub ext=8:5:8:84
+param	src/Sig.flix	8	19	8	22	Sig.envOf	Sig.envOf	i=0 n=2 name=ctx type=Sig.Ctx tspan=8:24:8:27 reads=1 hidden=0 poly=0 fields=scale:Int32
 type-use	src/Sig.flix	8	24	8	27	Sig.Ctx	Sig.envOf	what=alias
+param	src/Sig.flix	8	29	8	30	Sig.envOf	Sig.envOf	i=1 n=2 name=w type=Sig.World tspan=8:32:8:37 reads=1 hidden=0 poly=0 fields=clock:Int32;speed:Int32
 type-use	src/Sig.flix	8	32	8	37	Sig.World	Sig.envOf	what=alias
 type-use	src/Sig.flix	8	40	8	43	Sig.Env	Sig.envOf	what=alias
 def-decl	src/Sig.flix	10	13	10	20	Sig.speedOf	Sig.speedOf	pub ext=10:5:10:47
+param	src/Sig.flix	10	21	10	22	Sig.speedOf	Sig.speedOf	i=0 n=1 name=w type=Sig.World tspan=10:24:10:29 reads=1 hidden=0 poly=0 fields=clock:Int32;speed:Int32
 type-use	src/Sig.flix	10	24	10	29	Sig.World	Sig.speedOf	what=alias
 def-decl	src/Sig.flix	12	13	12	17	Sig.draw	Sig.draw	pub ext=12:5:15:38
+param	src/Sig.flix	12	18	12	21	Sig.draw	Sig.draw	i=0 n=2 name=ctx type=Sig.Ctx tspan=12:23:12:26 reads=1 hidden=0 poly=0 fields=scale:Int32
 type-use	src/Sig.flix	12	23	12	26	Sig.Ctx	Sig.draw	what=alias
+param	src/Sig.flix	12	28	12	29	Sig.draw	Sig.draw	i=1 n=2 name=w type=Sig.World tspan=12:31:12:36 reads=2 hidden=0 poly=0 fields=clock:Int32;speed:Int32
 type-use	src/Sig.flix	12	31	12	36	Sig.World	Sig.draw	what=alias
 def-use	src/Sig.flix	13	19	13	24	Sig.envOf	Sig.draw	
-arg	src/Sig.flix	13	25	13	28	Sig.envOf	Sig.draw	of=def-use at=13:19 i=0 n=2
-arg	src/Sig.flix	13	30	13	31	Sig.envOf	Sig.draw	of=def-use at=13:19 i=1 n=2
+arg	src/Sig.flix	13	25	13	28	Sig.envOf	Sig.draw	of=def-use at=13:19 i=0 n=2 aparam=0
+arg	src/Sig.flix	13	30	13	31	Sig.envOf	Sig.draw	of=def-use at=13:19 i=1 n=2 aparam=1
 def-use	src/Sig.flix	14	21	14	28	Sig.speedOf	Sig.draw	
-arg	src/Sig.flix	14	29	14	30	Sig.speedOf	Sig.draw	of=def-use at=14:21 i=0 n=1
+arg	src/Sig.flix	14	29	14	30	Sig.speedOf	Sig.draw	of=def-use at=14:21 i=0 n=1 aparam=1
 def-decl	src/Sig.flix	17	13	17	21	Sig.drawBoth	Sig.drawBoth	pub ext=17:5:20:41
+param	src/Sig.flix	17	22	17	25	Sig.drawBoth	Sig.drawBoth	i=0 n=2 name=ctx type=Sig.Ctx tspan=17:27:17:30 reads=2 hidden=0 poly=0 fields=scale:Int32
 type-use	src/Sig.flix	17	27	17	30	Sig.Ctx	Sig.drawBoth	what=alias
+param	src/Sig.flix	17	32	17	33	Sig.drawBoth	Sig.drawBoth	i=1 n=2 name=w type=Sig.World tspan=17:35:17:40 reads=3 hidden=0 poly=0 fields=clock:Int32;speed:Int32
 type-use	src/Sig.flix	17	35	17	40	Sig.World	Sig.drawBoth	what=alias
 def-use	src/Sig.flix	18	19	18	24	Sig.envOf	Sig.drawBoth	
-arg	src/Sig.flix	18	25	18	28	Sig.envOf	Sig.drawBoth	of=def-use at=18:19 i=0 n=2
-arg	src/Sig.flix	18	30	18	31	Sig.envOf	Sig.drawBoth	of=def-use at=18:19 i=1 n=2
+arg	src/Sig.flix	18	25	18	28	Sig.envOf	Sig.drawBoth	of=def-use at=18:19 i=0 n=2 aparam=0
+arg	src/Sig.flix	18	30	18	31	Sig.envOf	Sig.drawBoth	of=def-use at=18:19 i=1 n=2 aparam=1
 def-use	src/Sig.flix	19	21	19	28	Sig.speedOf	Sig.drawBoth	
-arg	src/Sig.flix	19	29	19	30	Sig.speedOf	Sig.drawBoth	of=def-use at=19:21 i=0 n=1
+arg	src/Sig.flix	19	29	19	30	Sig.speedOf	Sig.drawBoth	of=def-use at=19:21 i=0 n=1 aparam=1
 def-use	src/Sig.flix	20	9	20	13	Sig.draw	Sig.drawBoth	
-arg	src/Sig.flix	20	14	20	17	Sig.draw	Sig.drawBoth	of=def-use at=20:9 i=0 n=2
-arg	src/Sig.flix	20	19	20	20	Sig.draw	Sig.drawBoth	of=def-use at=20:9 i=1 n=2
+arg	src/Sig.flix	20	14	20	17	Sig.draw	Sig.drawBoth	of=def-use at=20:9 i=0 n=2 aparam=0
+arg	src/Sig.flix	20	19	20	20	Sig.draw	Sig.drawBoth	of=def-use at=20:9 i=1 n=2 aparam=1
 def-decl	src/Sig.flix	22	13	22	18	Sig.label	Sig.label	pub ext=22:5:23:35
+param	src/Sig.flix	22	19	22	22	Sig.label	Sig.label	i=0 n=3 name=ctx type=Sig.Ctx tspan=22:24:22:27 reads=1 hidden=0 poly=0 fields=scale:Int32
 type-use	src/Sig.flix	22	24	22	27	Sig.Ctx	Sig.label	what=alias
+param	src/Sig.flix	22	29	22	30	Sig.label	Sig.label	i=1 n=3 name=w type=Sig.World tspan=22:32:22:37 reads=1 hidden=0 poly=0 fields=clock:Int32;speed:Int32
 type-use	src/Sig.flix	22	32	22	37	Sig.World	Sig.label	what=alias
+param	src/Sig.flix	22	39	22	43	Sig.label	Sig.label	i=2 n=3 name=name type=String tspan=22:45:22:51 reads=1 hidden=0 poly=0
 def-use	src/Sig.flix	23	21	23	25	Sig.draw	Sig.label	
-arg	src/Sig.flix	23	26	23	29	Sig.draw	Sig.label	of=def-use at=23:21 i=0 n=2
-arg	src/Sig.flix	23	31	23	32	Sig.draw	Sig.label	of=def-use at=23:21 i=1 n=2
+arg	src/Sig.flix	23	26	23	29	Sig.draw	Sig.label	of=def-use at=23:21 i=0 n=2 aparam=0
+arg	src/Sig.flix	23	31	23	32	Sig.draw	Sig.label	of=def-use at=23:21 i=1 n=2 aparam=1
 def-decl	src/Sig.flix	25	13	25	18	Sig.twice	Sig.twice	pub ext=25:5:27:31
+param	src/Sig.flix	25	19	25	22	Sig.twice	Sig.twice	i=0 n=2 name=ctx type=Sig.Ctx tspan=25:24:25:27 reads=1 hidden=0 poly=0 fields=scale:Int32
 type-use	src/Sig.flix	25	24	25	27	Sig.Ctx	Sig.twice	what=alias
+param	src/Sig.flix	25	29	25	30	Sig.twice	Sig.twice	i=1 n=2 name=w type=Sig.World tspan=25:32:25:37 reads=2 hidden=0 poly=0 fields=clock:Int32;speed:Int32
 type-use	src/Sig.flix	25	32	25	37	Sig.World	Sig.twice	what=alias
 def-use	src/Sig.flix	26	9	26	13	Sig.draw	Sig.twice	
-arg	src/Sig.flix	26	14	26	17	Sig.draw	Sig.twice	of=def-use at=26:9 i=0 n=2
-arg	src/Sig.flix	26	19	26	20	Sig.draw	Sig.twice	of=def-use at=26:9 i=1 n=2
+arg	src/Sig.flix	26	14	26	17	Sig.draw	Sig.twice	of=def-use at=26:9 i=0 n=2 aparam=0
+arg	src/Sig.flix	26	19	26	20	Sig.draw	Sig.twice	of=def-use at=26:9 i=1 n=2 aparam=1
 def-use	src/Sig.flix	26	24	26	28	Sig.draw	Sig.twice	
 arg	src/Sig.flix	26	31	26	42	Sig.draw	Sig.twice	of=def-use at=26:24 i=0 n=2
-arg	src/Sig.flix	27	29	27	30	Sig.draw	Sig.twice	of=def-use at=26:24 i=1 n=2
+arg	src/Sig.flix	27	29	27	30	Sig.draw	Sig.twice	of=def-use at=26:24 i=1 n=2 aparam=1
 def-decl	src/Sig.flix	29	13	29	20	Sig.asValue	Sig.asValue	pub ext=29:5:29:94
+param	src/Sig.flix	29	21	29	24	Sig.asValue	Sig.asValue	i=0 n=2 name=ctx type=Sig.Ctx tspan=29:26:29:29 reads=1 hidden=0 poly=0 fields=scale:Int32
 type-use	src/Sig.flix	29	26	29	29	Sig.Ctx	Sig.asValue	what=alias
+param	src/Sig.flix	29	31	29	33	Sig.asValue	Sig.asValue	i=1 n=2 name=ws type=List[Sig.World] tspan=29:35:29:46 reads=1 hidden=0 poly=0
 type-use	src/Sig.flix	29	35	29	39	List	Sig.asValue	what=enum
 type-use	src/Sig.flix	29	40	29	45	Sig.World	Sig.asValue	what=alias
 type-use	src/Sig.flix	29	49	29	53	List	Sig.asValue	what=enum
 def-use	src/Sig.flix	29	63	29	71	List.map	Sig.asValue	
 arg	src/Sig.flix	29	72	29	89	List.map	Sig.asValue	of=def-use at=29:63 i=0 n=2
 def-use	src/Sig.flix	29	77	29	81	Sig.draw	Sig.asValue	
-arg	src/Sig.flix	29	82	29	85	Sig.draw	Sig.asValue	of=def-use at=29:77 i=0 n=2
+arg	src/Sig.flix	29	82	29	85	Sig.draw	Sig.asValue	of=def-use at=29:77 i=0 n=2 aparam=0
 arg	src/Sig.flix	29	87	29	88	Sig.draw	Sig.asValue	of=def-use at=29:77 i=1 n=2
-arg	src/Sig.flix	29	91	29	93	List.map	Sig.asValue	of=def-use at=29:63 i=1 n=2
+arg	src/Sig.flix	29	91	29	93	List.map	Sig.asValue	of=def-use at=29:63 i=1 n=2 aparam=1
 def-decl	src/Sig.flix	31	13	31	17	Sig.tick	Sig.tick	pub ext=31:5:31:66
+param	src/Sig.flix	31	18	31	21	Sig.tick	Sig.tick	i=0 n=2 name=ctx type=Sig.Ctx tspan=31:23:31:26 reads=1 hidden=0 poly=0 fields=scale:Int32
 type-use	src/Sig.flix	31	23	31	26	Sig.Ctx	Sig.tick	what=alias
+param	src/Sig.flix	31	28	31	29	Sig.tick	Sig.tick	i=1 n=2 name=w type=Sig.World tspan=31:31:31:36 reads=1 hidden=0 poly=0 fields=clock:Int32;speed:Int32
 type-use	src/Sig.flix	31	31	31	36	Sig.World	Sig.tick	what=alias
 def-decl	src/Sig.flix	33	13	33	18	Sig.ticks	Sig.ticks	pub ext=33:5:34:64
+param	src/Sig.flix	33	19	33	22	Sig.ticks	Sig.ticks	i=0 n=3 name=ctx type=Sig.Ctx tspan=33:24:33:27 reads=2 hidden=0 poly=0 fields=scale:Int32
 type-use	src/Sig.flix	33	24	33	27	Sig.Ctx	Sig.ticks	what=alias
+param	src/Sig.flix	33	29	33	30	Sig.ticks	Sig.ticks	i=1 n=3 name=w type=Sig.World tspan=33:32:33:37 reads=1 hidden=0 poly=0 fields=clock:Int32;speed:Int32
 type-use	src/Sig.flix	33	32	33	37	Sig.World	Sig.ticks	what=alias
+param	src/Sig.flix	33	39	33	41	Sig.ticks	Sig.ticks	i=2 n=3 name=ws type=List[Sig.World] tspan=33:43:33:54 reads=1 hidden=0 poly=0
 type-use	src/Sig.flix	33	43	33	47	List	Sig.ticks	what=enum
 type-use	src/Sig.flix	33	48	33	53	Sig.World	Sig.ticks	what=alias
 type-use	src/Sig.flix	33	57	33	61	List	Sig.ticks	what=enum
 def-use	src/Sig.flix	34	9	34	13	Sig.tick	Sig.ticks	
 arg	src/Sig.flix	34	9	34	37	List.Cons	Sig.ticks	of=case-construct at=34:9 i=0 n=2 sugar
 case-construct	src/Sig.flix	34	9	34	64	List.Cons	Sig.ticks	sugar
-arg	src/Sig.flix	34	14	34	17	Sig.tick	Sig.ticks	of=def-use at=34:9 i=0 n=2
+arg	src/Sig.flix	34	14	34	17	Sig.tick	Sig.ticks	of=def-use at=34:9 i=0 n=2 aparam=0
 arg	src/Sig.flix	34	21	34	34	Sig.tick	Sig.ticks	of=def-use at=34:9 i=1 n=2
 def-use	src/Sig.flix	34	41	34	49	List.map	Sig.ticks	
 arg	src/Sig.flix	34	41	34	64	List.Cons	Sig.ticks	of=case-construct at=34:9 i=1 n=2 sugar
 def-use	src/Sig.flix	34	50	34	54	Sig.tick	Sig.ticks	
 arg	src/Sig.flix	34	50	34	59	List.map	Sig.ticks	of=def-use at=34:41 i=0 n=2
 arg	src/Sig.flix	34	50	34	59	Sig.tick	Sig.ticks	of=def-use at=34:50 i=1 n=2 synth
-arg	src/Sig.flix	34	55	34	58	Sig.tick	Sig.ticks	of=def-use at=34:50 i=0 n=2
-arg	src/Sig.flix	34	61	34	63	List.map	Sig.ticks	of=def-use at=34:41 i=1 n=2
+arg	src/Sig.flix	34	55	34	58	Sig.tick	Sig.ticks	of=def-use at=34:50 i=0 n=2 aparam=0
+arg	src/Sig.flix	34	61	34	63	List.map	Sig.ticks	of=def-use at=34:41 i=1 n=2 aparam=2
 use	test/TestReshape.flix	2	9	2	19	Mode.Scene	TestReshape	alias=Scene what=enum
 def-decl	test/TestReshape.flix	4	13	4	22	TestReshape.drawsOnce	TestReshape.drawsOnce	pub ext=4:5:6:40
 def-use	test/TestReshape.flix	6	9	6	17	Sig.draw	TestReshape.drawsOnce	

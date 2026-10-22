@@ -92,6 +92,14 @@ const Usage = `使い方: fge refactor <操作> [引数] [--json] [-v|--verbose]
                                                        囲む def にも同じ引数（--params のその引数の型）を足して上へ広げる（足す位置は
                                                        葉と同じ先頭か末尾・既定の深さ 8）。止める所: --stop-at・main・@Test・引数の
                                                        無い def・同じ型の別の名前の引数を持つ def（中の呼ぶ所は fix）
+                                                       同じ型は索引の引数の型（param）を、--params の型を葉のファイルで引いた名前と比べる
+                                                       （別名は同じ型・短い名前が同じ別の型は別）。読む所が全部消える呼び手の引数は fix
+                                                       --retarget a[,b] --from w: 葉の本体の w#a を足す引数（@名前）の同じ欄へ読み替え、
+                                                       同じ計画で書く（--params に w を書かなければ w も外す。確かめ 1 回）
+  retarget-field --label a[,b] --from w --to res [--in Mod | --def Mod.f[,Mod.g]] [--drop-from] [--apply]
+                                                       受け手が引数 w そのものの欄の読み（w#a）を、同じ def の引数 res の同じ欄（res#a）へ。
+                                                       別の引数・式の読みと書き込みは書かずに並べる。res の型に欄が無い・型が違う def は fix。
+                                                       w を読む所が 0 になる def は fix（--drop-from で w を外す並びと 1 つの計画に。typed の段）
   remove-param --def Mod.f[,Mod.g] [--param x[,y]] [--apply]
                                                        使っていない引数を宣言と呼ぶ所から消す（--param を省くと本体が使わない引数を
                                                        全部。_ で始まる物は残す）。resolved の索引で足り、型検査が通らない途中でも使える:
@@ -173,7 +181,8 @@ const Usage = `使い方: fge refactor <操作> [引数] [--json] [-v|--verbose]
   名前は終わりで当てる（Phase.Clear は World.Phase.Clear に当たる。2 つ以上に当たれば候補を出して止まる）。
   設定は bin/lint-rules/refactor.json（engine が配る）と refactor.local.json（flixlint・sources・verify・verifyTests・testDirs・library・rewrites）。
   library（既定 auto: flix.toml に repository がある package）では remove-dead が pub の def を消さない（使う側が索引の外）。
-  flixlint は ` + MinFlixlint + ` 以上（索引の形 3。lint・make check と 1 つの常駐で索引を作る）。足りなければ索引を作る前に止まる。
+  flixlint は ` + MinFlixlint + ` 以上（索引の形 3。lint・make check と 1 つの常駐で索引を作る）。change-signature・remove-param・
+  retarget-field は ` + MinFlixlintParam + ` 以上（adds=param・aparam・alias-fields）。足りなければ索引を作る前に止まる。
   確かめは sh -c で流す（Windows は make と同じく Git Bash か MSYS の sh が要る）。
   終了コード: 0 問題なし・1 --max を超えた／確かめが落ちて戻した（reverted）・2 呼び方か索引の誤り／断った（refused）・
   3 戻せないファイルが残った（revert-failed）。
@@ -218,6 +227,8 @@ type args struct {
 	preferLocal                                           bool     // --prefer-local: 書く式の代わりに、型が同じ局所の名前が 1 つならそれを書く
 	propagate                                             bool     // change-signature --propagate: 呼ぶ所に @名前 が無ければ、囲む def にも同じ引数を足して上へ
 	stopAt                                                string   // change-signature --stop-at（a,b）: --propagate で広げない def
+	retarget                                              string   // change-signature --retarget（a,b）: 葉の本体の --from#欄 を足す引数#欄 へ読み替える
+	dropFrom                                              bool     // retarget-field --drop-from: 読み替えで空く --from の引数を同じ計画で外す
 	labels, intoCase                                      string   // move-fields の --labels（a,b）・--into-case
 	valueOf                                               []string // move-fields の --value-of 欄=式（何度でも）
 	finish                                                bool     // move-fields --finish（World から消す段）
@@ -345,6 +356,10 @@ func parseArgs(rest []string) (args, error) {
 			a.propagate = true
 		case "--stop-at":
 			a.stopAt, err = value(&i, x)
+		case "--retarget":
+			a.retarget, err = value(&i, x)
+		case "--drop-from":
+			a.dropFrom = true
 		case "--name":
 			a.name, err = value(&i, x)
 		case "--expr":
@@ -414,13 +429,22 @@ func (a args) applyWith(verify string, o Options) Apply {
 
 // needs は操作に要る一番低い段（欄の読み書きと受け手の型を見る物だけ typed）。
 func (a args) needs() Stage {
-	if a.op == "field-sites" || a.op == "field-to-accessor" || a.op == "remove-field" || (a.op == "move-fields" && a.finish) || a.op == "rewrite" || a.op == "extract-function" {
+	if a.op == "retarget-field" || a.op == "field-sites" || a.op == "field-to-accessor" || a.op == "remove-field" || (a.op == "move-fields" && a.finish) || a.op == "rewrite" || a.op == "extract-function" {
 		return Typed
 	}
 	if _, _, field := a.fieldTarget(); a.op == "usages" && field && !a.unused {
 		return Typed
 	}
 	return Resolved
+}
+
+// stages は操作が読む索引の段（最初が主の段）。change-signature --retarget だけ 2 本: 計画は resolved（use・type-use の行と、
+// 型検査が通らない途中のソースでも動く作り）、読み替える読みは typed の label-select の rparam（設計 §2.6.2 の K3-3）。
+func (a args) stages() []Stage {
+	if a.op == "change-signature" && a.retarget != "" {
+		return []Stage{Resolved, Typed}
+	}
+	return []Stage{a.needs()}
 }
 
 // preflight は索引を作る前に分かる止め所（索引を作らずに答える）。止めなければ msg は ""。
@@ -527,6 +551,15 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 			fmt.Fprintln(errOut, "refactor change-signature: --def <Mod.f>（a,b で複数）・--params '<新しい引数の並び>'・--args '<呼ぶ所の式（元の引数の名前が使える）>' が要ります（例 --def TitleView.titleTree --params 'env: ViewEnv.Env, input: TitleScene.In' --args 'ViewEnv.of(ctx, w), TitleScene.inputOf(w)'）")
 			return 2
 		}
+		if a.retarget != "" && a.from == "" {
+			fmt.Fprintln(errOut, "refactor change-signature: --retarget <欄>（a,b で複数）には読み替える元の引数 --from <名前> が要ります（例 --retarget tutorialDoc --from w）")
+			return 2
+		}
+	case "retarget-field":
+		if a.label == "" || a.from == "" || a.to == "" {
+			fmt.Fprintln(errOut, "refactor retarget-field: --label <欄>（a,b で複数）・--from <元の引数>・--to <読み替え先の引数> が要ります（例 --label tutorialDoc --from w --to res --in Tutorial）")
+			return 2
+		}
 	case "move-fields":
 		if a.labels == "" || a.receiver == "" || a.intoCase == "" {
 			fmt.Fprintln(errOut, "refactor move-fields: --labels <欄>（a,b で複数）・--receiver <record の alias>・--into-case <Enum.Case> が要ります（例 --labels deckCursor,deckScroll --receiver World --into-case Scene.Deck。値は --value-of 欄=<式>・World から消す段は --finish）")
@@ -590,10 +623,10 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 		}
 	case "index":
 	default:
-		fmt.Fprintf(errOut, "refactor: 知らない操作 %s（usages・refs・match-sites・field-sites・index・expand-wildcard・remove-dead・field-to-accessor・remove-field・fix-construction・add-field・move-fields・change-case-shape・change-signature・remove-param・make-private・rename・safe-delete・move・remove-use・rewrite・extract-function・extract-type-alias）\n", a.op)
+		fmt.Fprintf(errOut, "refactor: 知らない操作 %s（usages・refs・match-sites・field-sites・index・expand-wildcard・remove-dead・field-to-accessor・remove-field・fix-construction・add-field・move-fields・change-case-shape・change-signature・retarget-field・remove-param・make-private・rename・safe-delete・move・remove-use・rewrite・extract-function・extract-type-alias）\n", a.op)
 		return 2
 	}
-	if a.op != "field-to-accessor" && (strings.Contains(a.label, ",") || a.labelsFile != "") {
+	if a.op != "field-to-accessor" && a.op != "retarget-field" && (strings.Contains(a.label, ",") || a.labelsFile != "") {
 		fmt.Fprintf(errOut, "refactor %s: 欄は 1 つだけ（複数の欄を 1 回で渡せるのは field-to-accessor）\n", a.op)
 		return 2
 	}
@@ -619,12 +652,20 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 		// 名指しの版の形の索引を書かない）。常駐は make check と別の 1 本になる。
 		shared.ShimJar = ""
 	}
+	need := a.requiredAdds()
+	if v := shimJarVersion(shared.ShimJar); shared.ShimJar != "" && len(need) > 0 && !versionAtLeast("flixlint "+v, minFlixlintFor(need)) {
+		// 索引を書くのは常駐の shim の jar（hooks.json の版）。この操作が要る adds= を書かない版なら、共有せずに前面の flixlint の
+		// shim で作る（常駐は make check と別の 1 本）。設計 M3: 前に版を見るのは前面の flixlint だけでは足りない。
+		fmt.Fprintf(logOr(o.Log), "[refactor] make check の常駐の shim は flixlint %s で、%s は flixlint %s 以上（adds=%s）が要る。前面の flixlint の shim で索引を作ります（hooks.json の flixlintVersion を上げると 1 本にまとまる）\n",
+			orUnknown(v), a.op, minFlixlintFor(need), strings.Join(need, ","))
+		shared.ShimJar = ""
+	}
 	if jar.Picked {
 		// 常駐も選び直した jar で立てる（版の違う jar の常駐とは identity が違うので混ざらない）。make check にも渡す。
 		shared.FlixJar = jar.Jar
 		os.Setenv("FLIX_JAR", jar.Jar)
 	}
-	b := Builder{Root: root, Config: cfg, Flixlint: fl, FlixJar: jar.Jar, FlixHint: jar.Mismatch, Run: o.Run, Log: o.Log, Rebuild: a.rebuild, Verbose: a.verbose, Version: o.Version, Shared: shared}
+	b := Builder{Root: root, Config: cfg, Flixlint: fl, FlixJar: jar.Jar, FlixHint: jar.Mismatch, Run: o.Run, Log: o.Log, Rebuild: a.rebuild, Verbose: a.verbose, Version: o.Version, Shared: shared, NeedAdds: need}
 	if b.Log == nil {
 		b.Log = os.Stderr
 	}
@@ -635,7 +676,15 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 		fmt.Fprintf(errOut, "refactor %s: %s\nnext: %s\n  （%s）\n", a.op, msg, next, why)
 		return 2
 	}
-	idx, err := b.Load(stage)
+	var idx, extra *Index
+	if st := a.stages(); len(st) > 1 && a.stage == "" {
+		var all []*Index
+		if all, err = b.LoadAll(st); err == nil {
+			idx, extra = all[0], all[1]
+		}
+	} else {
+		idx, err = b.Load(stage)
+	}
 	var ie *IndexError
 	if err != nil && errors.As(err, &ie) && ie.Compile && stage == Typed && a.needs() == Resolved {
 		// 型の要らない操作が --stage typed で呼ばれ、型検査が通らない: resolved の索引で続ける。
@@ -683,7 +732,9 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 	case "change-case-shape":
 		rep, err = caseShapeReport(root, idx, a, cfg, o)
 	case "change-signature":
-		rep, err = signatureReport(root, idx, a, cfg, o)
+		rep, err = signatureReport(root, idx, a, cfg, o, extra)
+	case "retarget-field":
+		rep, err = retargetReport(root, idx, a, cfg, o)
 	case "move":
 		rep, err = moveReport(root, idx, a, cfg, o)
 	case "remove-param":

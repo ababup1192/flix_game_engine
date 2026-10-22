@@ -1,0 +1,35 @@
+# flixlint-spans 3 stage=resolved columns=kind,file,sl,sc,el,ec,sym,owner,extra adds=use,type-use,alias-decl,arg,param,aparam,alias-fields
+alias-decl	src/Res.flix	2	20	2	23	Res.Res	Res.Res	fields=scale:Int32
+alias-decl	src/Res.flix	4	20	4	25	Res.Model	Res.Model	syn=Res.Res fields=scale:Int32
+type-use	src/Res.flix	4	28	4	31	Res.Res	Res.Model	what=alias
+def-decl	src/Res.flix	6	13	6	21	Res.defaults	Res.defaults	pub ext=6:5:6:44
+type-use	src/Res.flix	6	25	6	28	Res.Res	Res.defaults	what=alias
+use	src/View.flix	2	9	2	16	Res.Res	View	alias=Res what=alias
+def-decl	src/View.flix	4	13	4	17	View.leaf	View.leaf	pub ext=4:5:4:61
+param	src/View.flix	4	18	4	19	View.leaf	View.leaf	i=0 n=1 name=w type=Int32 tspan=4:21:4:26 reads=1 hidden=0 poly=0
+def-use	src/View.flix	4	41	4	53	Res.defaults	View.leaf	
+arg	src/View.flix	4	53	4	55	Res.defaults	View.leaf	of=def-use at=4:41 i=0 n=1
+def-decl	src/View.flix	7	13	7	20	View.endTree	View.endTree	pub ext=6:5:7:73
+param	src/View.flix	7	21	7	24	View.endTree	View.endTree	i=0 n=2 name=env type=ViewEnv.Env tspan=7:26:7:37 reads=1 hidden=0 poly=0 fields=n:Int32;res:ViewEnv.Res
+type-use	src/View.flix	7	26	7	37	ViewEnv.Env	View.endTree	what=alias
+param	src/View.flix	7	39	7	40	View.endTree	View.endTree	i=1 n=2 name=w type=Int32 tspan=7:42:7:47 reads=1 hidden=0 poly=0
+def-use	src/View.flix	7	58	7	62	View.leaf	View.endTree	
+arg	src/View.flix	7	63	7	64	View.leaf	View.endTree	of=def-use at=7:58 i=0 n=1 aparam=1
+def-decl	src/View.flix	9	13	9	16	View.mid	View.mid	pub ext=9:5:9:82
+param	src/View.flix	9	17	9	18	View.mid	View.mid	i=0 n=1 name=w type=Int32 tspan=9:20:9:25 reads=1 hidden=0 poly=0
+def-use	src/View.flix	9	36	9	43	View.endTree	View.mid	
+arg	src/View.flix	9	46	9	74	View.endTree	View.mid	of=def-use at=9:36 i=0 n=2
+arg	src/View.flix	9	76	9	77	View.endTree	View.mid	of=def-use at=9:36 i=1 n=2 aparam=0
+def-decl	src/View.flix	11	13	11	17	View.mid2	View.mid2	pub ext=11:5:11:47
+param	src/View.flix	11	18	11	19	View.mid2	View.mid2	i=0 n=1 name=w type=Int32 tspan=11:21:11:26 reads=1 hidden=0 poly=0
+def-use	src/View.flix	11	37	11	40	View.mid	View.mid2	
+arg	src/View.flix	11	41	11	42	View.mid	View.mid2	of=def-use at=11:37 i=0 n=1 aparam=0
+def-decl	src/View.flix	14	13	14	16	View.top	View.top	pub ext=13:5:14:67
+param	src/View.flix	14	17	14	18	View.top	View.top	i=0 n=2 name=m type=Res.Model tspan=14:20:14:29 reads=1 hidden=0 poly=0 fields=scale:Int32
+type-use	src/View.flix	14	20	14	29	Res.Model	View.top	what=alias
+param	src/View.flix	14	31	14	32	View.top	View.top	i=1 n=2 name=w type=Int32 tspan=14:34:14:39 reads=1 hidden=0 poly=0
+def-use	src/View.flix	14	50	14	54	View.mid2	View.top	
+arg	src/View.flix	14	55	14	56	View.mid2	View.top	of=def-use at=14:50 i=0 n=1 aparam=1
+alias-decl	src/ViewEnv.flix	2	20	2	23	ViewEnv.Res	ViewEnv.Res	fields=atlas:Int32
+alias-decl	src/ViewEnv.flix	4	20	4	23	ViewEnv.Env	ViewEnv.Env	fields=n:Int32;res:ViewEnv.Res
+type-use	src/ViewEnv.flix	4	34	4	37	ViewEnv.Res	ViewEnv.Env	what=alias
