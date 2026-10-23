@@ -18,10 +18,11 @@ mod Controls {
         World.step(inputs, frame#dt, w)
             |> (w1 -> applyConfirm(frame, w1))
 
-    /// 場面の「決定」（Space / Enter を押した瞬間）を反映する。意味は場面依存（World.confirm）。
+    /// 場面の「決定」（Space / Enter・パッドの Start = Key.Menu を押した瞬間）を反映する。意味は場面依存（World.confirm）。
     /// 走行中の Space/Enter は何もしない。
     def applyConfirm(frame: App.Frame, w: World.World): World.World =
-        let tapped = App.justPressed(Key.Space, frame) or App.justPressed(Key.Enter, frame);
+        let tapped = App.justPressed(Key.Space, frame) or App.justPressed(Key.Enter, frame)
+            or App.justPressed(Key.Menu, frame);
         if (tapped) World.confirm(w) else w
 
     // ── Doc の読み込み・読み直し（watchFile / F1） ──

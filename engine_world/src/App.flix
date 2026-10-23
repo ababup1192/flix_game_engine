@@ -37,8 +37,11 @@ pub mod App {
         realNow = Clock.Time[Clock.Real],  // 実時間の今（起動からの秒。ポーズメニューの点滅・背景の雨のように
                                            // 遊びの時計が止まっても動く物が読む。App が advanceFrame で置く —
                                            // ゲームは実時間の時計を持たないので、止める・2 度進めるができない）
-        padTouched = Bool                  // ゲームパッドのどこかにいま触っているか（案内のキーの絵をパッドの物へ替える判断に。
-                                           // パッドの入力そのものはキーへ読み替えて down / justPressed に入っている）
+        padTouched = Bool,                 // ゲームパッドのどこかにいま触っているか（案内のキーの絵をパッドの物へ替える判断に。
+                                           // パッドの入力そのものはキーへ読み替えて down / justPressed に入っている。
+                                           // 読み替えの表は GamepadMap.table）
+        padKind = GamepadMap.PadKind       // つないだパッドの機種（Generic = Xbox 配置の一般・Steam = Steam Input を通した物・
+                                           // Unknown = つないでいない）。案内に出すボタンの絵を機種で替える判断に
     }
 
     /// key がいま押されているか（押しっぱなしも true）。移動などの連続入力に。
@@ -829,7 +832,8 @@ pub mod App {
           mouseMoved = Option.exists(p -> p#x != cursor#cursor#x or p#y != cursor#cursor#y, cursor#prevCursor),
           wheel = mouse#wheel,
           realNow = Clock.zero(),
-          padTouched = false }
+          padTouched = false,
+          padKind = GamepadMap.PadKind.Unknown }
 
     /// withFixedStep の accumulator。持ち越し carry と実フレームの経過秒 realDt を足し、
     /// fixedDt の倍数だけサブステップ回数を出し、端数を次フレームへの持ち越しとして返す。
@@ -1147,7 +1151,8 @@ pub mod App {
         let mouseDown = GameEngine.Game.isMouseButtonPressed(GameEngine.MouseButton.Left);
         let cursorNow = GameEngine.Game.getMousePosition();
         // realNow は前のフレームまでの実時間（quit・リロード・F8 の停止が読む）。系へ渡す前に advanceFrame が進めて置き直す。
-        let frame = { realNow = Clock.nowOf(st0#stepState#real), padTouched = GameEngine.Game.isGamepadTouched()
+        let frame = { realNow = Clock.nowOf(st0#stepState#real), padTouched = GameEngine.Game.isGamepadTouched(),
+                      padKind = GameEngine.Game.gamepadKind()
                       | frameOf(prev = st0#prevKeys, current = currentKeys, readDt(),
                             GameEngine.Game.getViewportRect()#size,
                             { prevCursor = st0#prevCursor, cursor = cursorNow },

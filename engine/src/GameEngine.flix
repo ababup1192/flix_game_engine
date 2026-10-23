@@ -331,6 +331,9 @@ pub mod GameEngine {
         /// パッドの入力はキーへ読み替えて isKeyPressed にも出るので、読み替えた後のキーからは
         /// キーボードと見分けられない —— 案内の絵をパッドのボタンへ替える判断はここを読む（App が Frame#padTouched に置く）。
         def isGamepadTouched(): Bool
+        /// 1 台目のゲームパッドの機種（Xbox 配置の一般・Steam Input を通した物・つないでいない）。
+        /// App が Frame#padKind に置く。
+        def gamepadKind(): GamepadMap.PadKind
         /// 前回呼び出し以降に蓄積されたマウスホイールの y 方向 delta を返し、
         /// 内部アキュムレータを 0 にリセットする。1 ティックぶんの値が +1.0 / -1.0 程度
         /// （プラットフォーム依存）。スクロールアップで正、ダウンで負。

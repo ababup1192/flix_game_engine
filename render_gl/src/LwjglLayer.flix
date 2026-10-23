@@ -642,32 +642,31 @@ pub mod LwjglLayer {
         let padDown  = () -> padBtn(GLFW.GLFW_GAMEPAD_BUTTON_DPAD_DOWN)  or (padAxis(GLFW.GLFW_GAMEPAD_AXIS_LEFT_Y) >  0.5f32);
         let padLeft  = () -> padBtn(GLFW.GLFW_GAMEPAD_BUTTON_DPAD_LEFT)  or (padAxis(GLFW.GLFW_GAMEPAD_AXIS_LEFT_X) < -0.5f32);
         let padRight = () -> padBtn(GLFW.GLFW_GAMEPAD_BUTTON_DPAD_RIGHT) or (padAxis(GLFW.GLFW_GAMEPAD_AXIS_LEFT_X) >  0.5f32);
-        // 物理キー → ゲームパッド入力の対応。**1 ボタン = 1 キー**を厳守する。
-        // 1 ボタンを複数キーに割り当てると、その 1 押しで複数キーが同フレームに「新規押下」
-        // 扱いになり onKeyPressed が複数回発火する。例えば A→Z/Space/Enter にすると Confirm が
-        // 3 連発し、メニューを開いた直後に確定して行動を消費してしまう
-        // (キーボードは 1 キー 1 入力なのでこの問題は出ない)。
-        // 例: 決定=Z=A / メニュー確定=Enter=Start / キャンセル=X=B /
-        // ミニマップ=M=Y / 危険範囲トグル=LeftShift=LB。
-        // Escape はマップ上でゲーム終了を誘発するためパッドには **割り当てない**。
-        // キャンセル / メニュー戻りは X=B で十分 (dispatchMenuKey が X→Cancel を全サブメニューで処理)。
-        // 方向は arrows のみ (CursorScene は W/A/S/D と Up/Down/Left/Right の両対応なので arrows で足りる)。
+        // 物理キー → ゲームパッド入力の対応は GamepadMap.table（1 ボタン = 1 キー）。
+        let padTable = GamepadMap.byKey();
+        let padInputDown = (input: GamepadMap.PadInput) -> match input {
+            case GamepadMap.PadInput.DirUp      => padUp()
+            case GamepadMap.PadInput.DirDown    => padDown()
+            case GamepadMap.PadInput.DirLeft    => padLeft()
+            case GamepadMap.PadInput.DirRight   => padRight()
+            case GamepadMap.PadInput.A          => padBtn(GLFW.GLFW_GAMEPAD_BUTTON_A)
+            case GamepadMap.PadInput.B          => padBtn(GLFW.GLFW_GAMEPAD_BUTTON_B)
+            case GamepadMap.PadInput.X          => padBtn(GLFW.GLFW_GAMEPAD_BUTTON_X)
+            case GamepadMap.PadInput.Y          => padBtn(GLFW.GLFW_GAMEPAD_BUTTON_Y)
+            case GamepadMap.PadInput.LeftBumper => padBtn(GLFW.GLFW_GAMEPAD_BUTTON_LEFT_BUMPER)
+            case GamepadMap.PadInput.Back       => padBtn(GLFW.GLFW_GAMEPAD_BUTTON_BACK)
+            case GamepadMap.PadInput.Start      => padBtn(GLFW.GLFW_GAMEPAD_BUTTON_START)
+        };
         let padPressed = (key: GameEngine.Key) ->
-            if (not Array.get(0, gamepadConnectedHolder)) false
-            else match key {
-                case GameEngine.Key.Up        => padUp()
-                case GameEngine.Key.Down      => padDown()
-                case GameEngine.Key.Left      => padLeft()
-                case GameEngine.Key.Right     => padRight()
-                case GameEngine.Key.Z         => padBtn(GLFW.GLFW_GAMEPAD_BUTTON_A)
-                case GameEngine.Key.X         => padBtn(GLFW.GLFW_GAMEPAD_BUTTON_B)
-                case GameEngine.Key.Enter     => padBtn(GLFW.GLFW_GAMEPAD_BUTTON_START)
-                // Y = 集合ショートカット(Key.C)、ミニマップ(Key.M)は X ボタンへ移動。
-                case GameEngine.Key.C         => padBtn(GLFW.GLFW_GAMEPAD_BUTTON_Y)
-                case GameEngine.Key.M         => padBtn(GLFW.GLFW_GAMEPAD_BUTTON_X)
-                case GameEngine.Key.LeftShift => padBtn(GLFW.GLFW_GAMEPAD_BUTTON_LEFT_BUMPER)
-                case _                        => false
-            };
+            Array.get(0, gamepadConnectedHolder) and
+                (Map.get(key, padTable) |> Option.exists(padInputDown));
+        // 機種はつないだ時に 1 回だけ読む（GUID と名前は毎フレーム字を作るので）。
+        let padKindHolder = Array#{GamepadMap.PadKind.Unknown} @ Static;
+        let readPadKind = () -> {
+            let guid = GLFW.glfwGetJoystickGUID(GLFW.GLFW_JOYSTICK_1);
+            let name = GLFW.glfwGetGamepadName(GLFW.GLFW_JOYSTICK_1);
+            GamepadMap.kindOf(if (Object.isNull(guid)) "" else guid, if (Object.isNull(name)) "" else name)
+        };
 
         let result = run {
             f()
@@ -807,6 +806,9 @@ pub mod LwjglLayer {
                 // ゲームパッド状態を 1 フレーム 1 回更新（接続かつ gamepad マッピング有効時のみ）。
                 let padConnected = GLFW.glfwJoystickIsGamepad(GLFW.GLFW_JOYSTICK_1);
                 if (padConnected) discard GLFW.glfwGetGamepadState(GLFW.GLFW_JOYSTICK_1, gamepadState) else ();
+                if (padConnected != Array.get(0, gamepadConnectedHolder))
+                    Array.put(if (padConnected) readPadKind() else GamepadMap.PadKind.Unknown, 0, padKindHolder)
+                else ();
                 Array.put(padConnected, 0, gamepadConnectedHolder);
                 k(GLFW.glfwWindowShouldClose(window))
             }
@@ -858,6 +860,7 @@ pub mod LwjglLayer {
                     let tilted = List.range(0, 4) |> List.exists(axis -> Float32.abs(padAxis(axis)) > 0.5f32);
                     k(pressed or tilted)
                 }
+            def gamepadKind(k) = k(Array.get(0, padKindHolder))
             def isMouseButtonPressed(button, k) = {
                 let code = mouseButtonToGlfw(button);
                 // 物理状態 OR 当フレーム内に callback が観測した PRESS。

@@ -34,7 +34,7 @@ mod KeysDoc {
           jump  = Key.Space :: Key.Up :: Key.W :: Nil,
           drop  = Key.Down :: Key.S :: Nil,
           dash  = Key.B :: Key.LeftShift :: Key.X :: Nil,
-          pause = Key.P :: Key.Enter :: Nil })
+          pause = Key.P :: Key.Enter :: Key.Menu :: Nil })
 
     /// テキストから Doc へ(fail-open)。JSON でない・形が違う欄は既定へ落とす。
     pub def fromJson(text: String): Option[Doc] =

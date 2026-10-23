@@ -1,4 +1,4 @@
-<!-- engine v0.58.0 / 生成: 2026-10-22 -->
+<!-- engine v0.58.0 / 生成: 2026-10-23 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine_world
@@ -113,7 +113,7 @@
 - App の中身。ゲームからは読まない（ビルダーで組む）。エンジンの中の口（Flow・RemoteDebug など）が読む。
   `pub def rec(app: App[w, ef]): Rec[w, ef]`
 - このフレームの入力と時計のスナップショット。キーの生読みはランナーが済ませてあるので、
-  `pub type alias Frame = { down = Set[GameEngine.Key], justPressed = Set[GameEngine.Key], dt = Float64, viewport = Vec2.Vec2, cursor = Vec2.Vec2, mouseDown = Bool, mouseClicked = Bool, mouseMoved = Bool, wheel = Float64, realNow = Clock.Time[Clock.Real], padTouched = Bool }`
+  `pub type alias Frame = { down = Set[GameEngine.Key], justPressed = Set[GameEngine.Key], dt = Float64, viewport = Vec2.Vec2, cursor = Vec2.Vec2, mouseDown = Bool, mouseClicked = Bool, mouseMoved = Bool, wheel = Float64, realNow = Clock.Time[Clock.Real], padTouched = Bool, padKind = GamepadMap.PadKind }`
 - key がいま押されているか（押しっぱなしも true）。移動などの連続入力に。
   `pub def isDown(key: GameEngine.Key, frame: Frame): Bool`
 - key がこのフレームで新しく押されたか（押しっぱなしは false）。決定・発射などの単発入力に。
