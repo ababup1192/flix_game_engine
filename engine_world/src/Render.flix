@@ -728,9 +728,9 @@ pub mod Render {
 
     /// Shader 面だけを取り出して eff Shader が食える描画依頼へ変換する（GL 経路専用）。
     /// programOf は Spec → コンパイル済みプログラムのハンドル（バックエンドが用意）。
-    /// Clipped に包まれた Shader も剥がして拾う。GL の無い経路（F8/SoftRaster）は
-    /// これを呼ばず draw / drawWith に任せる（drawWith はテクスチャ 1 枚を読むだけの面をスプライトにし、
-    /// ほかは代表色ベタ塗り。docs/shader-doc.md の「F8 の止めた画面」）。
+    /// Clipped に包まれた Shader も剥がして拾う。GL の無い経路はこれを呼ばず、SoftRaster は shaderSurfaces、
+    /// 命令だけの経路は draw / drawWith に任せる（drawWith はテクスチャ 1 枚を読むだけの面をスプライトにし、
+    /// ほかは代表色ベタ塗り。docs/shader-doc.md の「F8 の止めた画面」）。F8 で止めた画面も GL なのでこれを使う。
     pub def drawShaders(programOf: ShaderDoc.Spec -> GpuHandle.ShaderProgram \ ef,
                         items: List[PlacedItem]): List[ShaderEffect.ShaderRenderCmd] \ ef =
         items |> List.filterMap(placed -> {
@@ -925,7 +925,7 @@ pub mod Render {
                    radiansOf(s#rotation), s#tint, s#alpha, s#centered,
                    uvOff, uvScl, s#zIndex, None,
                    None, s#blend, s#maskPolys) :: Nil
-            // テクスチャ 1 枚を読むだけの面は、代表色の中間の灰より元の絵の方が近い（F8 の止めた画面・注釈のスクショ）。
+            // テクスチャ 1 枚を読むだけの面は、代表色の中間の灰より元の絵の方が近い（GL も ShaderEval も使わない命令だけの経路）。
             // 色の計算（灰色化・明るさ）は落とす — 場を画素ごとに評価するのは GL か ShaderEval の仕事。
             case Item.Shader(s) => match textureReadOf(s#spec, s#t) {
                 case Some((name, area)) => match textureInfoOf(name) {

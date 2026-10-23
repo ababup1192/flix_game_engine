@@ -100,12 +100,16 @@
   `pub def mergeTextRuns(hitList: List[Hit]): List[Hit]`
 - ドラッグ中の矩形オーバーレイ（薄い塗り + 枠線）。デザイン座標の列に混ぜて描く。
   `pub def overlayItems(dragStart: Vec2.Vec2, cursorDesign: Vec2.Vec2): List[Render.PlacedItem]`
+- 描く前の絵（PlacedItem）へ見え方（ズーム・パン）を適用する。式は toScreen と同じで、
+  `pub def applyInspectItems(view: View, items: List[Render.PlacedItem]): List[Render.PlacedItem]`
 - 描画命令の列へ見え方（ズーム・パン）を適用する。位置は toScreen、大きさは zoom 倍。
   `pub def applyInspect(view: View, ds: List[GameEngine.Drawable]): List[GameEngine.Drawable]`
 - 多角形の描画命令へ見え方を適用する（頂点は画面 px の絶対座標なので各頂点を写す）。
   `pub def applyInspectPoly(view: View, ps: List[GameEngine.PolygonRenderCmd]): List[GameEngine.PolygonRenderCmd]`
 - タイルマップの描画命令へ見え方を適用する（位置は toScreen、タイル倍率は zoom 倍）。
   `pub def applyInspectTiles(view: View, ts: List[GameEngine.TileMapRenderCmd]): List[GameEngine.TileMapRenderCmd]`
+- 等倍・ずらし無し（変換しても何も変わらない）か。
+  `pub def isIdentity(view: View): Bool`
 
 ## App — `engine_world/src/App.flix`
 - ゲーム 1 本の宣言。make で作り、addSystem / withView などのビルダーで部品を繋いで launch へ渡す。

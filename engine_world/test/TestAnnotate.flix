@@ -242,6 +242,40 @@ mod TestAnnotate {
             case _ => bug!("円 1 個は描画命令 1 件になるはず")
         }
 
+    /// 描く前の絵へ掛けた見え方は、描画命令へ掛けた見え方と同じ所・同じ大きさに写る
+    /// （止めている間の絵を本編と同じ renderFrame で描いても、ズーム・パンの見た目は変わらない）。
+    @Test
+    def testApplyInspectItemsMatchesApplyInspect(): Unit \ Assert =
+        let view = { zoom = 2.0, pan = { x = 30.0, y = -10.0 }, design = design() };
+        let items = { at = { x = 100.0, y = 50.0 }, item = RawDraw.box({ x = 10.0, y = 20.0 }, { r = 1.0, g = 0.0, b = 0.0 }, 0) } :: Nil;
+        let placeOf = ds -> ds |> List.map(d -> {
+            let spec = DrawCmd.toSpec(d);
+            (spec#position#x, spec#position#y, DrawCmd.scaleOf(d)#x, DrawCmd.scaleOf(d)#y) });
+        let (viaItems, _) = Render.draw(Annotate.applyInspectItems(view, items));
+        let (drawn, _) = Render.draw(items);
+        Assert.assertEq(expected = placeOf(Annotate.applyInspect(view, drawn)), placeOf(viaItems))
+
+    /// シェーダー面も見え方と一緒に動く（位置は toScreen・大きさは zoom 倍）。
+    /// 描画命令へ見え方を掛けると面は掛けられず、止めた絵だけ面が代表色のベタ塗りになっていた。
+    @Test
+    def testApplyInspectItemsMovesShaderSurface(): Unit \ Assert =
+        let view = { zoom = 2.0, pan = { x = 30.0, y = -10.0 }, design = design() };
+        let surface = Render.shaderFill(ShaderDoc.demoSurface(),
+            { position = { x = 100.0, y = 50.0 }, size = { x = 10.0, y = 20.0 } }, 0.0, 0);
+        Assert.assertEq(expected = Some((130.0, 40.0, 20.0, 40.0)),
+            Render.shaderSurfaces(Annotate.applyInspectItems(view, surface :: Nil)) |> List.head
+                |> Option.map(sf -> (sf#rect#position#x, sf#rect#position#y, sf#rect#size#x, sf#rect#size#y)))
+
+    /// 等倍・ずらし無しの見え方は絵をそのまま返す（走っている間の描き方と同じ命令になる）。
+    @Test
+    def testApplyInspectItemsIdentityKeepsItems(): Unit \ Assert =
+        let view = { zoom = 1.0, pan = Vec2.zero(), design = design() };
+        let items = { at = { x = 3.0, y = 4.0 }, item = RawDraw.box({ x = 1.0, y = 1.0 }, { r = 0.0, g = 0.0, b = 1.0 }, 0) } :: Nil;
+        let (kept, _) = Render.draw(Annotate.applyInspectItems(view, items));
+        let (plain, _) = Render.draw(items);
+        let at = ds -> List.map(d -> (DrawCmd.toSpec(d)#position#x, DrawCmd.toSpec(d)#position#y), ds);
+        Assert.assertEq(expected = at(plain), at(kept))
+
     /// 生の描画命令（Drawable）からの列挙: 中心置き・2 倍のスプライト（元 10×20 → 外形 20×40、
     /// 左上 (90,80)）は矩形に重なり、種類 "sprite" とテクスチャ名で報告される。
     /// （view を持たず生チャンネルを登録するゲーム向けの経路）

@@ -82,18 +82,15 @@ pub mod GameEngine {
 
     /// 注釈 1 件の書き出し依頼。ゲーム画面の気になる場所を矩形で囲んだとき、
     /// その情報一式をファイルに残すために `saveAnnotation` へ渡す。
-    /// sprites / tileMaps / polygons は等倍・オーバーレイ無しの 1 フレームぶんの描画命令で、
-    /// ハンドラがこれを描き直してスクリーンショットを撮る。
+    /// スクリーンショットは、直前に画面へ塗ったコマ（呼び側が等倍・重ね物無しで塗った物）を
+    /// ハンドラが塗り直して撮る。
     /// json / readmeBody は呼び側が組み立て済みの本文をそのまま渡す（ハンドラは書くだけ）。
     pub type alias AnnotationRequest = {
         frame = Int64,          // 凍結中のフレーム番号
         rect = Rect2.Rect2,     // 注釈の矩形（デザイン座標系・ズーム非依存）
         json = String,          // annotation.json の本文
         readmeBody = String,    // README.md の中ほどに挟む要約（見出しやコメント欄はハンドラが付ける）
-        worldDump = String,     // world.json の本文（ゲームが組んだシム状態のダンプ。"" = 同梱しない）
-        sprites = List[Drawable],
-        tileMaps = List[TileMapRenderCmd],
-        polygons = List[PolygonRenderCmd]
+        worldDump = String      // world.json の本文（ゲームが組んだシム状態のダンプ。"" = 同梱しない）
     }
 
     /// タイルマップ 1 タイル分のインスタンスデータ。共有型 `DrawCmd.TileInstance`。
@@ -376,6 +373,7 @@ pub mod GameEngine {
         /// 注釈一式（screenshot.png / highlighted.png / annotation.json / README.md）を
         /// debug/annotations/ 配下の新しいディレクトリへ書き出し、そのパスを返す。失敗時 None。
         /// 保存に成功するとシャッター風の効果音を鳴らす。
+        /// screenshot.png は直前に画面へ塗ったコマ — 呼ぶ前に等倍のコマを塗っておく（App の pausedStep）。
         def saveAnnotation(req: AnnotationRequest): Option[String]
         /// デバッグモード中であることをウィンドウタイトルで示す。
         /// true でタイトル末尾に「 (Debug)」を付け、false で元のタイトルへ戻す。

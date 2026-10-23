@@ -529,6 +529,19 @@ pub mod Annotate {
               |> Render.fade(0.25)
               |> Render.outline(red, 1.0) } :: Nil
 
+    /// 描く前の絵（PlacedItem）へ見え方（ズーム・パン）を適用する。式は toScreen と同じで、
+    /// カメラの centerOn（大きさも zoom 倍・シェーダー面の矩形と mask も一緒に動く）に任せる:
+    /// (p − design/2) × zoom + design/2 + pan = centerOn(design/2 − pan/zoom)。
+    /// WhyNot: 描画命令（applyInspect）へ掛けない — シェーダー面・タイル層・静的層は命令の形を持たず、
+    /// 掛けられない物を別の形へ落として描くと、止めた絵だけが本編と違う規則で描かれる。
+    pub def applyInspectItems(view: View, items: List[Render.PlacedItem]): List[Render.PlacedItem] =
+        if (isIdentity(view)) items
+        else {
+            let half = Vec2.div(view#design, 2.0);
+            CameraRig.centerOn(Vec2.sub(half, Vec2.div(view#pan, view#zoom)),
+                               zoom = view#zoom, design = view#design, items)
+        }
+
     /// 描画命令の列へ見え方（ズーム・パン）を適用する。位置は toScreen、大きさは zoom 倍。
     /// 角丸・枠線幅など px 単位の飾り（BoxStyle）も一緒に zoom 倍する —— これを忘れると
     /// 角丸ボックスで描いた円が拡大時に四角へ化ける。
@@ -566,6 +579,6 @@ pub mod Annotate {
                                    tileScale = Vec2.mul(t#tileScale, view#zoom) | t })
 
     /// 等倍・ずらし無し（変換しても何も変わらない）か。
-    def isIdentity(view: View): Bool =
+    pub def isIdentity(view: View): Bool =
         view#zoom == 1.0 and view#pan#x == 0.0 and view#pan#y == 0.0
 }

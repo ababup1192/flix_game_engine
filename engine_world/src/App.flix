@@ -1221,20 +1221,24 @@ pub mod App {
                     } else ();
                     match decided#branch {
                         case Branch.Paused =>
-                            let (nextAnno, ticket) = pausedStep(app, st#warnOnce, st#world, st#history, frame, { paused = true | st#anno });
+                            let (nextAnno, ticket, painted) = pausedStep(app, st#warnOnce, st#world, st#history, frame,
+                                { paused = true | st#anno },
+                                { tileCache = st#tileCache, glyphSeen = st#glyphSeen, budgetWarned = st#budgetWarned });
                             // チケットに、ここまでの遊んだ記録の写し（再生すると表示中の瞬間で止まる）を入れる。
                             match (ticket, st#recorder) {
                                 case (Some(dir), Some(recorder)) => discard Flow.Record.copyInto(recorder, dir, nextAnno#scrub)
                                 case _                      => ()
                             };
-                            loop(app, { anno = nextAnno, cursorShown = CursorLook.State.Stale | carried })
+                            loop(app, { anno = nextAnno, cursorShown = CursorLook.State.Stale,
+                                        tileCache = painted#tileCache, glyphSeen = painted#glyphSeen,
+                                        budgetWarned = painted#budgetWarned | carried })
                         case Branch.Resuming =>
                             // スクラブ位置の World から再開する。巻き戻したぶんの履歴と
                             // フレーム番号も、そこを現在として数え直す。
                             let resumed = resumePoint(st#anno, st#history, st#world);
                             recordJump(app, st#recorder, if (st#anno#scrub > 0) Some("rewind ${Int32.toString(st#anno#scrub)}") else None,
                                        resumed#world);
-                            let (cache1, seen1, warned1) = renderFrame(app, st#warnOnce, resumed#world, fpsOverlayOf(r, resumed#anno), st#tileCache, st#glyphSeen, st#budgetWarned);
+                            let (cache1, seen1, warned1) = renderFrame(app, st#warnOnce, resumed#world, plainLook(fpsOverlayOf(r, resumed#anno)), st#tileCache, st#glyphSeen, st#budgetWarned);
                             let shown = applyCursor(r, resumed#world, st#cursorShown);
                             loop(app, { world = resumed#world, anno = resumed#anno, history = resumed#history,
                                         tileCache = cache1, glyphSeen = seen1,
@@ -1253,7 +1257,7 @@ pub mod App {
                             // fps は debug 有効時だけ計測する（本番ビルドは履歴を積まず無負荷）。
                             let measuredAnno = if (r#debug) Annotate.recordDt(frame#dt, st#anno) else st#anno;
                             // Doc の読み直しが起きたフレームはタイル層の世代を進め、同じ key でも作り直す。
-                            let (cache1, seen1, warned1) = renderFrame(app, st#warnOnce, advanced, fpsOverlayOf(r, measuredAnno),
+                            let (cache1, seen1, warned1) = renderFrame(app, st#warnOnce, advanced, plainLook(fpsOverlayOf(r, measuredAnno)),
                                                               bumpTileGen(watchFired or reloadFired, st#tileCache),
                                                               st#glyphSeen, st#budgetWarned);
                             // 時間スクラブ用の履歴（debug が無効なら一切持たない = 本番ビルドは無負荷）
@@ -1354,9 +1358,11 @@ pub mod App {
     /// ズーム・パン・ドラッグを進め、矩形が確定したら「表示中の瞬間」の注釈一式を書き出し、
     /// その World の絵に見え方とドラッグ中の矩形を重ねて描く。
     /// World には一切触れない（凍結中の絵は選んだ World から毎フレーム投影し直す）。
-    /// 絵の出どころは view（PlacedItem 投影）か debugView（生チャンネル投影）のどちらか。
+    /// view のゲームは走っている間と同じ renderFrame で描く（見え方だけが pausedLook）。
+    /// debugView（生チャンネル投影）のゲームは描画命令へ見え方を掛ける（renderPaused）。
     def pausedStep(app: App[w, ef], warnOnce: String -> Unit, world: w, history: List[w], frame: Frame,
-                   anno: Annotate.State): (Annotate.State, Option[String]) \ (ef + GameEngine.Game) =
+                   anno: Annotate.State, painted: Painted):
+            (Annotate.State, Option[String], Painted) \ (ef + GameEngine.Game + ShaderEffect.Shader + RenderTarget.Target + IO) =
         let r = rec(app);
         let design = GameEngine.Game.getViewportRect()#size;
         let historyLen = Int32.max(1, List.length(history));
@@ -1390,25 +1396,30 @@ pub mod App {
         let dump = { text = dumpText, context = context };
         match r#view {
             case Some(toItems) =>
-                uploadAtlases((r#spriteAtlases)(world));
-                let atlas = GameEngine.Game.getFontAtlas("default");
-                // displayed（スクラブで表示中の瞬間）から絵もカメラも導く — 注釈の hits も同じ items を使う。
-                // F8 停止中は静的レイヤーも通常の動的アイテムにまとめて描く（F8 のズーム/パンは
-                // channels に効く別変換なので、retained の camera uniform では追随できないため）。
-                // 停止中は毎フレーム再投影で軽さは問題にならない。
-                let items = List.append(tilePausedItems(app, design, displayed),
-                            List.append(sceneItems(app, atlas, warnOnce, displayed, toItems),
-                                        staticPausedItems(app, design, displayed)));
-                let (sprites, polygons) = Render.drawWith(
-                    name -> GameEngine.Game.getTextureInfo(name), items);
-                let hitList = match emitted {
-                    case Some(rect) => Annotate.hits(name -> GameEngine.Game.getTextureInfo(name), rect, items)
-                    case None       => Nil
+                // 注釈に残す物（等倍の描画命令・当たり）は、矩形が確定したフレームだけ組む。
+                // 絵は displayed（スクラブで表示中の瞬間）から導く — 注釈の hits も同じ items を使う。
+                // 止めている間も本編と同じ renderFrame で 1 コマ全部を描く（シェーダー面・レンダーターゲット・
+                // 字の用意も同じ規則）。ズーム・パンは描く前の絵に掛ける（pausedLook）。
+                let paint = (look, p) -> {
+                    let (cache, seen, warned) = renderFrame(app, warnOnce, displayed, look,
+                                                            p#tileCache, p#glyphSeen, p#budgetWarned);
+                    { tileCache = cache, glyphSeen = seen, budgetWarned = warned }
                 };
-                finishPaused({ design = design, cursor = input#cursor, atlas = atlas,
-                               historyLen = historyLen, shownFrame = shownFrame },
-                             next, emitted, dump,
-                             { drawables = sprites, tileMaps = Nil, polygons = polygons }, hitList)
+                // 矩形が確定したフレームは、等倍・重ね物無しのコマを先に塗ってからスクリーンショットを撮る
+                // （saveAnnotation は直前に塗ったコマを撮る）。当たりは同じ瞬間の絵から等倍で数える。
+                let (saved, afterShot) = match emitted {
+                    case Some(rect) =>
+                        let shotPainted = paint(plainLook(Nil), painted);
+                        let atlas = GameEngine.Game.getFontAtlas("default");
+                        let items = List.append(tilePausedItems(app, design, displayed),
+                                    List.append(sceneItems(app, atlas, warnOnce, displayed, toItems),
+                                                staticPausedItems(app, design, displayed)));
+                        let hitList = Annotate.hits(name -> GameEngine.Game.getTextureInfo(name), rect, items);
+                        (writeAnnotation(design, rect, shownFrame, dump, hitList), shotPainted)
+                    case None => (None, painted)
+                };
+                let shown = toastAfter(emitted, saved, next);
+                (shown, saved, paint(pausedLook(design, input#cursor, historyLen, shown), afterShot))
             case None => match r#debugView {
                 case Some((fontName, toChannels)) =>
                     let atlas = GameEngine.Game.getFontAtlas(fontName);
@@ -1418,30 +1429,60 @@ pub mod App {
                             Annotate.hitsFromDrawables(name -> GameEngine.Game.getTextureInfo(name), rect, drawables)
                         case None => Nil
                     };
-                    finishPaused({ design = design, cursor = input#cursor, atlas = atlas,
-                                   historyLen = historyLen, shownFrame = shownFrame },
-                                 next, emitted, dump,
-                                 { drawables = drawables, tileMaps = tileMaps, polygons = polygons }, hitList)
-                case None => (next, None)
+                    let (shown, saved) = finishPaused({ design = design, cursor = input#cursor, atlas = atlas,
+                                                         historyLen = historyLen, shownFrame = shownFrame },
+                                                       next, emitted, dump,
+                                                       { drawables = drawables, tileMaps = tileMaps, polygons = polygons }, hitList);
+                    (shown, saved, painted)
+                case None => (next, None, painted)
             }
         }
 
-    /// 一時停止フレームの締め: 矩形が確定していれば注釈を書き出してトーストを出し、凍結画面を描く。
+    /// 注釈を書き出したフレームは保存先のトーストを出し、それ以外はトーストの残りを 1 フレーム減らす。
+    def toastAfter(emitted: Option[Rect2.Rect2], saved: Option[String], anno: Annotate.State): Annotate.State =
+        match (emitted, saved) {
+            case (Some(_), Some(path)) => Annotate.showToast("Saved debug file\n${path}", anno)
+            case (Some(_), None)       => anno
+            case (None, _)             => Annotate.tickToast(anno)
+        }
+
+    /// 止めている間の見え方: ズーム・パン（anno の zoom と pan）と、ドラッグ中の矩形（見え方と一緒に動く）・
+    /// 保存のトーストとスクラブの位置（見え方の後に重ね、ズーム中も画面に固定）。
+    /// デバッグの小物の字は組み込みフォント — ゲームのフォントは出た字から順に用意するので、
+    /// 用意の無い字が欠けうる。組み込みフォントは常に全部そろっている。
+    def pausedLook(design: Vec2.Vec2, cursor: Vec2.Vec2, historyLen: Int32, anno: Annotate.State): Look =
+        let view = Annotate.viewOf(design, anno);
+        let debugAtlas = BootFont.atlas();
+        let debugSize = debugAtlas#fontSize;
+        let toast = match anno#toast {
+            case Some(t) => Annotate.toastItems(debugAtlas, debugSize, t#message)
+            case None    => Nil
+        };
+        let scrub = if (anno#scrub > 0 and anno#scrubShow > 0)
+                        Annotate.scrubIndicatorItems(debugAtlas, debugSize, design, anno#scrub, historyLen)
+                    else Nil;
+        { view = view,
+          inspected = match anno#dragStart {
+              case Some(start) => Annotate.overlayItems(start, Annotate.toDesign(view, cursor))
+              case None        => Nil
+          },
+          fixed = List.append(toast, scrub) }
+
+    /// debugView のゲームの一時停止フレームの締め: 矩形が確定していれば注釈を書き出してトーストを出し、凍結画面を描く。
     /// 返すのは次の停止の状態と、書き出したチケットのフォルダ（遊んだ記録の写しを入れる所）。
     def finishPaused(ctx: { design = Vec2.Vec2, cursor = Vec2.Vec2, atlas = FontAtlas,
                             historyLen = Int32, shownFrame = Int64 },
                      anno: Annotate.State, emitted: Option[Rect2.Rect2],
                      dump: { text = String, context = Annotate.Table },
                      channels: DebugChannels, hitList: List[Annotate.Hit]): (Annotate.State, Option[String]) \ GameEngine.Game =
+        // saveAnnotation は直前に塗ったコマを撮るので、等倍・重ね物無しのコマを先に塗る。
         let saved = match emitted {
-            case Some(rect) => writeAnnotation(ctx#design, rect, ctx#shownFrame, dump, channels, hitList)
-            case None       => None
+            case Some(rect) =>
+                GameEngine.Game.renderCommands(channels#drawables, channels#tileMaps, channels#polygons, None);
+                writeAnnotation(ctx#design, rect, ctx#shownFrame, dump, hitList)
+            case None => None
         };
-        let shown = match (emitted, saved) {
-            case (Some(_), Some(path)) => Annotate.showToast("Saved debug file\n${path}", anno)
-            case (Some(_), None)       => anno
-            case (None, _)             => Annotate.tickToast(anno)
-        };
+        let shown = toastAfter(emitted, saved, anno);
         renderPaused(ctx, shown, channels);
         (shown, saved)
 
@@ -1450,17 +1491,16 @@ pub mod App {
     /// 引き受ける。戻り値は保存先のディレクトリパス（失敗時 None）。
     def writeAnnotation(design: Vec2.Vec2, rect: Rect2.Rect2, frameNo: Int64,
                         dump: { text = String, context = Annotate.Table },
-                        channels: DebugChannels, hitList: List[Annotate.Hit]): Option[String] \ GameEngine.Game =
+                        hitList: List[Annotate.Hit]): Option[String] \ GameEngine.Game =
         let dumpText = dump#text;
         let body = Annotate.readmeBodyWith(dump#context, { frame = frameNo, rect = rect }, hitList);
         GameEngine.Game.saveAnnotation({
             frame = frameNo, rect = rect,
             json = Annotate.annotationJsonWith(dump#context, { frame = frameNo, design = design, rect = rect }, hitList),
             readmeBody = if (dumpText == "") body else body + "\n- シム状態のダンプ: world.json",
-            worldDump = dumpText,
-            sprites = channels#drawables, tileMaps = channels#tileMaps, polygons = channels#polygons })
+            worldDump = dumpText })
 
-    /// 凍結中の絵を描く: ドラッグ中の矩形を重ね、ズーム・パンを適用して描画命令にする。
+    /// debugView のゲームの凍結中の絵を描く: ドラッグ中の矩形を重ね、ズーム・パンを適用して描画命令にする。
     /// 保存完了メッセージとスクラブ位置は見え方の適用後に重ねるので、ズーム中も画面に固定される。
     /// 等倍・ずらし無し・表示物無しのときは通常描画と同じ命令列になる。
     def renderPaused(ctx: { design = Vec2.Vec2, cursor = Vec2.Vec2, atlas = FontAtlas,
@@ -1486,8 +1526,7 @@ pub mod App {
                                                            anno#scrub, ctx#historyLen)
                           else Nil;
         let (fixedSprites, fixedPolygons) = Render.draw(List.append(toastPlaced, scrubPlaced));
-        // 停止中は静的レイヤーを channels#polygons にまとめて渡す（staticPausedItems）ので、
-        // ここでは retained の静的依頼は無し（None）— F8 のズーム/パンが channels に効くため。
+        // debugView のゲームは静的レイヤー（withStaticLayer）を持たないので、retained の静的依頼は無し（None）。
         GameEngine.Game.renderCommands(
             List.append(Annotate.applyInspect(view, List.append(channels#drawables, overlaySprites)), fixedSprites),
             Annotate.applyInspectTiles(view, channels#tileMaps),
@@ -1760,7 +1799,7 @@ pub mod App {
             Annotate.fpsItems(atlas, atlas#fontSize, design, Annotate.fpsOf(anno))
         }
 
-    /// F8 停止中に静的レイヤーを通常の動的アイテムとして描くための PlacedItem 列。
+    /// 静的レイヤーを通常の動的アイテムとして描くための PlacedItem 列（F8 のズーム・パン中と、注釈の書き出し）。
     /// build（ワールド座標）に主 view と同じ camera（resolvedCamera → composeScene）を掛けて、
     /// 動的な絵と重なり順・位置を揃える。静的レイヤーが無ければ空。
     def staticPausedItems(app: App[w, ef], design: Vec2.Vec2, world: w): List[Render.PlacedItem] \ ef =
@@ -1885,8 +1924,8 @@ pub mod App {
                 (List.reverse(cmds), nextCache)
         }
 
-    /// F8 停止中にタイル層を通常の動的アイテムとして描くための PlacedItem 列。
-    /// staticPausedItems と同じ理屈 — F8 のズーム/パンは channels に効く別変換なので、
+    /// タイル層を通常の動的アイテムとして描くための PlacedItem 列（F8 のズーム・パン中と、注釈の書き出し）。
+    /// staticPausedItems と同じ理屈 — F8 のズーム・パンは描く前の絵に掛けるので、
     /// GPU タイル経路の camera では追随できない。CPU 投影（TileScene.toItems）で普通のアイテムに変換する。
     def tilePausedItems(app: App[w, ef], design: Vec2.Vec2, world: w): List[Render.PlacedItem] \ ef =
         let r = rec(app);
@@ -1897,6 +1936,21 @@ pub mod App {
                 let items = f(world) |> List.flatMap(TileScene.toItems);
                 composeScene(center, z, design, { world = items, hud = Nil })
         }
+
+    /// 1 コマの見え方。走っている間は等倍（plainLook）、F8 で止めている間はズーム・パン（pausedLook）。
+    /// どちらも同じ renderFrame で描く。
+    type alias Look = {
+        view = Annotate.View,                  // 絵に掛けるズーム・パン（等倍なら掛けない）
+        inspected = List[Render.PlacedItem],   // 見え方と一緒に動く重ね物（ドラッグ中の矩形）
+        fixed = List[Render.PlacedItem]        // 見え方の後に重ねる物（fps・トースト・スクラブの位置）
+    }
+
+    /// 等倍の見え方に fixed を重ねるだけの Look。design は等倍なので使われず、0 で足りる。
+    def plainLook(fixed: List[Render.PlacedItem]): Look =
+        { view = { zoom = 1.0, pan = Vec2.zero(), design = Vec2.zero() }, inspected = Nil, fixed = fixed }
+
+    /// フレームをまたいで持ち回す、描き方の覚え（タイル層の VAO・欠けの無かった字の指紋・予算を知らせたか）。
+    type alias Painted = { tileCache = TileCache, glyphSeen = Option[Int64], budgetWarned = Bool }
 
     /// view の投影した絵を描画命令にしてエンジンへ渡す。タイルマップは withTileLayers の
     /// 宣言があるときだけ生成して添える（持ち回しの TileCache を返す）。
@@ -1929,7 +1983,7 @@ pub mod App {
             true
         }
 
-    def renderFrame(app: App[w, ef], warnOnce: String -> Unit, world: w, fpsOverlay: List[Render.PlacedItem],
+    def renderFrame(app: App[w, ef], warnOnce: String -> Unit, world: w, look: Look,
                     tileCache: TileCache, glyphSeen: Option[Int64], budgetWarned: Bool):
             (TileCache, Option[Int64], Bool) \ (ef + GameEngine.Game + ShaderEffect.Shader + RenderTarget.Target + IO) =
         let r = rec(app);
@@ -1941,9 +1995,17 @@ pub mod App {
                 let design = GameEngine.Game.getViewportRect()#size;
                 let passList = (r#passes)(world);
                 renderPasses(design, passList);
-                // fpsOverlay は本番ビルドで Nil — 空の append で本編全件を cons し直さない。
+                // タイル層と静的層は GPU 側でカメラを掛けるので、見え方（F8 のズーム・パン）を掛けられない。
+                // 見え方が等倍でない間だけ、ほかの絵と同じ PlacedItem に直して一緒に掛ける。
+                let retained = Annotate.isIdentity(look#view);
                 let scene = sceneItems(app, atlas, warnOnce, world, toItems);
-                let items = if (List.isEmpty(fpsOverlay)) scene else List.append(scene, fpsOverlay);
+                let base = if (retained) scene
+                           else List.append(tilePausedItems(app, design, world),
+                                            List.append(scene, staticPausedItems(app, design, world)));
+                let inspected = Annotate.applyInspectItems(look#view,
+                    if (List.isEmpty(look#inspected)) base else List.append(base, look#inspected));
+                // fixed は本番ビルドで Nil — 空の append で本編全件を cons し直さない。
+                let items = if (List.isEmpty(look#fixed)) inspected else List.append(inspected, look#fixed);
                 // 字の欠け照合はレンダーターゲットの中の字も一緒に見る（ターゲットも本編と
                 // 同じ「初めて出る字は 1 コマ遅れる」に乗せる）。
                 let itemsForGlyphs = List.append(List.flatMap(p -> p#items, passList), items);
@@ -1968,7 +2030,7 @@ pub mod App {
                 let shaderCmds = noteSurfaceZ(warnOnce, items,
                     Render.drawShaders(spec -> ShaderEffect.Shader.buildProgram(spec), items));
                 List.forEach(cmd -> ShaderEffect.Shader.drawSurface(cmd), shaderCmds);
-                let (tileCmds, nextCache) = tileLayerCmds(app, world, tileCache);
+                let (tileCmds, nextCache) = if (retained) tileLayerCmds(app, world, tileCache) else (Nil, tileCache);
                 // drawWith(getTextureInfo): regionRect 付き Sprite(PxSprite.drawQuad の
                 // アトラス 1 クアッド等)の UV を registry の寸法で解決する。regionRect 無しの
                 // 絵は draw と同一の Drawable になる(挙動不変)。
@@ -1979,7 +2041,8 @@ pub mod App {
                                   else Render.withoutShaders(items);
                 let (sprites, polygons) = Render.drawWith(
                     name -> GameEngine.Game.getTextureInfo(name), itemsToDraw);
-                GameEngine.Game.renderCommands(sprites, tileCmds, polygons, staticLayerCmd(app, world));
+                GameEngine.Game.renderCommands(sprites, tileCmds, polygons,
+                                               if (retained) staticLayerCmd(app, world) else None);
                 // 数えるのは itemsForGlyphs（本編 + レンダーターゲットの中）— headless の
                 // 検査と同じ量にそろえる。タイル層・静的層は GPU 側で 1 層 1 draw call に
                 // なるので、ここには最初から乗っていない（= 正しく静的化した絵は安いまま）。
@@ -1996,7 +2059,7 @@ pub mod App {
     pub def paintOnce(app: App[w, ef], world: w, tileCache: TileCache):
             TileCache \ (ef + GameEngine.Game + ShaderEffect.Shader + RenderTarget.Target + IO) =
         def go(cache, left) = {
-            let (next, seen, _) = renderFrame(app, _ -> (), world, Nil, cache, None, true);
+            let (next, seen, _) = renderFrame(app, _ -> (), world, plainLook(Nil), cache, None, true);
             if (Option.isEmpty(seen) and left > 1) go(next, left - 1) else next
         };
         go(tileCache, 3)

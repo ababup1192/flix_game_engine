@@ -382,7 +382,7 @@
 - 静的レイヤー描画依頼。共有型 `DrawCmd.StaticLayerCmd`。
   `pub type alias StaticLayerCmd = DrawCmd.StaticLayerCmd`
 - 注釈 1 件の書き出し依頼。ゲーム画面の気になる場所を矩形で囲んだとき、
-  `pub type alias AnnotationRequest = { frame = Int64, rect = Rect2.Rect2, json = String, readmeBody = String, worldDump = String, sprites = List[Drawable], tileMaps = List[TileMapRenderCmd], polygons = List[PolygonRenderCmd] }`
+  `pub type alias AnnotationRequest = { frame = Int64, rect = Rect2.Rect2, json = String, readmeBody = String, worldDump = String }`
 - タイルマップ 1 タイル分のインスタンスデータ。共有型 `DrawCmd.TileInstance`。
   `pub type alias TileInstance = DrawCmd.TileInstance`
 - `pub def toDrawables(item: n, globalPos: Vec2.Vec2): List[Drawable] \ Game } pub enum Key with Eq, Order, ToString { case A case B case C case D case E case F case G case H case I case J case K case L case M case N case O case P case Q case R case S case T case U case V case W case X case Y case Z case Digit0 case Digit1 case Digit2 case Digit3 case Digit4 case Digit5 case Digit6 case Digit7 case Digit8 case Digit9 case Up case Down case Left case Right case Enter case Space case Escape case Tab case Backspace case Insert case Delete case PageUp case PageDown`

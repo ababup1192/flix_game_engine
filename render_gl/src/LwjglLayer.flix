@@ -952,8 +952,8 @@ pub mod LwjglLayer {
                     let readableStamp = now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
                     let dirPath = "debug/annotations/${dirStamp}_${sanitizeName(config#title)}_f${req#frame}";
                     discard (new File(dirPath)).mkdirs();
-                    // 等倍のフレームを back buffer に描き直して読む。swap しないので画面には
-                    // 映らず、次のフレーム描画がそのまま上書きする。
+                    // 直前に画面へ塗ったコマ（App が等倍で塗った物）を back buffer に塗り直して読む。
+                    // swap しないので画面には映らず、次のフレーム描画がそのまま上書きする。
                     let stack = MemoryStack.stackPush();
                     let wBuf = stack.mallocInt(1);
                     let hBuf = stack.mallocInt(1);
@@ -961,14 +961,9 @@ pub mod LwjglLayer {
                     let fbW = wBuf.get(0);
                     let fbH = hBuf.get(0);
                     discard MemoryStack.stackPop();
-                    // 注釈のスクリーンショットにも静的レイヤーを含める（壁が消えないように）。
-                    // AnnotationRequest は静的レイヤーを運ばないので、直近フレームの依頼を使う
-                    // （キャッシュ済みなので作り直しは起きない）。シェーダー面は本物を使わず、
-                    // req#sprites に含まれる代表色ベタ塗り（App が Render.draw で出す・スクラブ中の
-                    // 表示中の瞬間に一致）を使う。live の面を混ぜると巻き戻し位置とズレるため空で渡す。
-                    RenderPaint.paintFrame(paint, fbW, fbH,
-                        { sprites = req#sprites, tileMaps = req#tileMaps, polygons = req#polygons,
-                          staticLayer = RenderPaint.lastFrame(paint)#staticLayer, surfaces = Nil });
+                    // WhyNot: 依頼に入れた描画命令から組み直さない — シェーダー面・レンダーターゲット・静的層を
+                    // 運べず、スクリーンショットだけが画面と違う規則で描かれる。塗ったコマをそのまま塗り直す。
+                    RenderPaint.paintFrame(paint, fbW, fbH, RenderPaint.lastFrame(paint));
                     let image = framebufferImage(fbW, fbH);
                     writePngFile(image, "${dirPath}/screenshot.png");
                     burnHighlight(image, designRectToImage(req#rect, fbW, fbH, screenW, screenH));
