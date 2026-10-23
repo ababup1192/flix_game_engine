@@ -383,6 +383,7 @@ pub mod GlOffscreen {
             def getMousePosition(k) = k(Vec2.zero())
             def isMouseButtonPressed(_button, k) = k(false)
             def isGamepadTouched(k) = k(false)
+            def gamepadKind(k) = k(GamepadMap.PadKind.Unknown)
             def consumeScrollDelta(k) = k(0.0)
             def getFontAtlas(name, k) = k(RenderPaint.fontAtlas(fonts, name))
             def ensureGlyphs(textureName, codepoints, k) = {

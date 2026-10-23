@@ -1,4 +1,4 @@
-<!-- engine v0.58.0 / 生成: 2026-10-22 -->
+<!-- engine v0.58.0 / 生成: 2026-10-23 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine
@@ -414,6 +414,8 @@
 - `pub eff Game { def isMouseButtonPressed(button: MouseButton): Bool }`
 - 1 台目のゲームパッドのボタン・十字キー・スティックのどれかがいま押されて（倒されて）いるか。
   `pub eff Game { def isGamepadTouched(): Bool }`
+- 1 台目のゲームパッドの機種（Xbox 配置の一般・Steam Input を通した物・つないでいない）。
+  `pub eff Game { def gamepadKind(): GamepadMap.PadKind }`
 - 前回呼び出し以降に蓄積されたマウスホイールの y 方向 delta を返し、
   `pub eff Game { def consumeScrollDelta(): Float64 }`
 - `pub eff Game { def getFontAtlas(name: String): FontAtlas }`
@@ -458,6 +460,18 @@
   `pub eff Audio { def audioSeconds(name: String): Float64 }`
 - macOS では -XstartOnFirstThread 付きでプロセスを再起動する。
   `pub def ensureMainThread(): Bool \ IO`
+
+## GamepadMap — `engine/src/GamepadMap.flix`
+- パッドの入力 1 つ。ボタンは Xbox 配置の名前（Back は Select / View、Start は Menu の物）。
+  `pub enum PadInput with Eq, Order, ToString { case DirUp case DirDown case DirLeft case DirRight case A case B case X case Y case LeftBumper case Back case Start }`
+- つないだパッドの機種。案内に出すボタンの絵や、Steam Input を通っているかの判断に使う。
+  `pub enum PadKind with Eq, ToString { case Generic case Steam case Unknown }`
+- キーとパッドの入力の対応表。**1 ボタン = 1 キー**。
+  `pub def table(): List[(Key, PadInput)]`
+- table をキーで引く形。1 フレームに全キーを引くので Map にしておく。
+  `pub def byKey(): Map[Key, PadInput]`
+- GLFW の joystick の GUID（SDL の形の 32 字の 16 進）とパッドの名前から機種を決める。
+  `pub def kindOf(guid: String, name: String): PadKind`
 
 ## GpuHandle — `engine/src/core/GpuHandle.flix`
 - タイルマップの GPU インスタンスバッファのハンドル（`initTileBuffer` が返す）。

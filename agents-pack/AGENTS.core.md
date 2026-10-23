@@ -15,6 +15,7 @@ lint・フック・make の口で止まる決まりはここに書かない（�
 | 見下ろしで人が木の裏に回る | `ZStack.zIndex(Depth.orderAt(足元のy), leaf(人))` |
 | 画面ごと動かす・縮める・薄める | `ZStack.mapItems(Render.scaledAllAround(..))` |
 | 閉じるボタンで「終了しますか？」・ゲームから終了 | `App.withCloseRequest` + `App.quitWhen` |
+| パッドの Start でメニュー・ポーズを開く・パッドの機種（Steam か）で案内の絵を替える | Start は `Key.Menu`（`Enter` ではない）・Select は `Key.Backspace`・機種は `frame#padKind`（engine の `docs/gamepad.md`） |
 | 隠れてはいけない表示（スコア・案内） | `App.withHudView` |
 | 押す物を見た目の手前から選ぶ（窓の奥を押させない） | 描く木に `ZStack.hit` / `modal` → `SortingLayer.pickFrom` |
 | UI のクリックを描いた所で当てる（字の下に並ぶボタン・字だけの項目） | `UiFocus.hitTestUiWith(atlasOf, ..)`・`UiFocusNav.targetsOfUiWith`（atlasOf は描く時と同じ） |

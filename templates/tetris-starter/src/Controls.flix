@@ -62,8 +62,9 @@ mod Controls {
             |> (w1 -> if (tap(Key.Up))    World.hardDrop(w1)  else w1)
             |> (w1 -> if (tap(Key.Space)) confirm(w1)         else w1)
             |> (w1 -> if (tap(Key.Enter)) confirm(w1)         else w1)
+            |> (w1 -> if (tap(Key.Menu))  confirm(w1)         else w1)
 
-    /// Space / Enter の意味は場面で変わる: GAME OVER なら仕切り直し、遊び中なら叩きつけ。
+    /// Space / Enter（パッドは Start = Key.Menu）の意味は場面で変わる: GAME OVER なら仕切り直し、遊び中なら叩きつけ。
     /// （Enter 中の叩きつけは Space と同じ扱い — どちらでも落とせる。）
     def confirm(w: World.World): World.World \ Emit[World.Event] =
         match w#phase {

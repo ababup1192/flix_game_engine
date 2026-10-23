@@ -27,6 +27,7 @@
 | やりたいこと | モジュール |
 |---|---|
 | ゲームとエンジンの境界の共有型・効果（描画・入力・音・時間）を知りたい | GameEngine |
+| ゲームパッドのボタンがどのキーになるか（Start = Menu・Select = Backspace）・つないだパッドの機種（Steam か） | GamepadMap（table / kindOf。ゲームは Frame#padKind を読む。[gamepad.md](../gamepad.md)） |
 | プロセスの環境変数を読む・終了コードで終える（入口の頭の 1 か所。奥へは引数で渡す） | ProcessEnv（snapshot・exitWith。常駐の入口は App.Headless.envOf(req)） |
 | 効果音・BGM の再生／停止・音量・高さ（pitch）の低レベル効果口を知りたい（`GameEngine.Audio`） | GameEngine（Audio 効果）/ AudioStreamPlayer（呼び口。鳴り続ける音は engine_world の App.withSustained。詳しくは [audio.md](../audio.md)） |
 | WAV ファイルの中身（形式・波形データの位置・ループ点）を読み解きたい | AudioUtil（ループ点は loopPointsOf。smpl チャンク） |
@@ -79,6 +80,7 @@
 ## 土台
 
 - **GameEngine** — ゲームとエンジンの境界に置く共有の型（描画データ・キー・色など）と、副作用の入口（描画・入力・音・時間の取得）をまとめて定義する。各ゲームはここの型とエフェクトだけを見れば、内部実装を知らずに描画や入力を組める。
+- **GamepadMap** — ゲームパッド（Xbox 配置）のボタンとキーの対応表（1 ボタン = 1 キー）と、GUID と名前からパッドの機種（一般・Steam・不明）を決める純関数。GLFW を読むのは render_gl の LwjglLayer。
 - **EngineSentinel** — engine fpkg のロードを consumer 側で trigger するためのモジュール。
 - **EngineSentinel.Marker** — EngineSentinel が使う印だけの小さな型。
 
