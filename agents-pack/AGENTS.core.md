@@ -57,7 +57,7 @@ lint・フック・make の口で止まる決まりはここに書かない（�
 | 式を関数に出す・同じ形の写しも呼び出しへ | `bin/fge refactor extract-function <範囲> --name Mod.f --all` |
 | record の型に名前を付け、同じ欄の組の所を全部その名前へ | `bin/fge refactor extract-type-alias --name Mod.T` |
 | `case _` を書き出す・record や case の欄・引数を足す・消す・替える | `bin/fge refactor --help` |
-| ゲームを Linux・Steam Deck で遊べる形にまとめる（jar・JRE・起動の run.sh を 1 本の tar.gz に） | `make dist-linux`（置き方と実機で見る所は engine の `docs/steam-deck.md`） |
+| ゲームを配る（Java の無い Mac・Windows・Linux・Steam Deck で遊べる形に。jar・JRE・起動を 1 本に） | `make dist-macos` / `dist-windows` / `dist-linux` / `dist-all`（置き方は engine の `docs/dist.md`・Deck は `docs/steam-deck.md`） |
 | 重い処理を順に流す | `bin/fge heavy <コマンド>`（`--help`・`--status`・`--history`） |
 | 作業場を別の版のエンジンへ一時的に向ける | `bin/fge use-engine <版かパス>`・戻すは `--restore` |
 | 案を並べて依頼主に選んでもらう | `reports/<名前>/proposal.json` → `bin/fge proposal` |

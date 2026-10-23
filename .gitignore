@@ -8,8 +8,8 @@ packages.lock
 build/
 # make sync-layers が張る層ごとの検査の作業場（symlink だけ）。
 /.layers/
-dist/
-dist-win/
+/dist/
+/dist-win/
 # make bundle-zip が吐く同梱用 zip (Release に添える生成物)。
 flix_game_engine-engine-v*.zip
 # 同梱 zip の照合の相手（make bundle-zip が焼く）。先頭のスラッシュは必須 ——

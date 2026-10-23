@@ -4,22 +4,13 @@
 
 ## 作る（Mac か Linux で）
 
-```sh
-make dist-linux                       # ゲームの根で。→ build/dist/<フォルダ名>-linux-x64.tar.gz と .sha256
-make dist-linux DIST_NAME=mygame      # 名前を替える（英数字・- _ . だけ）
-make dist-linux DIST_INCLUDE=assets,project.json,data   # jar の隣に置く物を替える
-```
-
-- jar は `make run` と同じ物（`bin/headless-run --build-only`。src が変わっていなければ作り直さない）。
-- JRE は Temurin 21 の linux-x64 の版を固定して取る（版と SHA-256 は `go/internal/distlinux/distlinux.go` の `JRE`）。
-  1 回目だけ落とし（約 52 MB）、OS のキャッシュ置き場の `fge-jre/` に置く（macOS は `~/Library/Caches/fge-jre/`）。
-  SHA-256 が合わなければ止まる。
-- Windows では作れない（jar を作る `headless-run` が bash）。
+`make dist-linux`（ゲームの根で）→ `build/dist/<名前>-<コミット>-linux-x64.tar.gz` と `.sha256`。
+変数・JRE の版・ほかの OS は [dist.md](dist.md)。
 
 中身:
 
 ```
-<名前>-linux-x64/
+<名前>-<コミット>-linux-x64/
   run.sh          起動
   README.txt      Deck での置き方の短い版
   game/game.jar   ゲーム（LWJGL の Linux x64 の native 入り）
@@ -42,8 +33,8 @@ make dist-linux DIST_INCLUDE=assets,project.json,data   # jar の隣に置く物
 1. tar.gz を Deck へ運ぶ（USB・`scp`・デスクトップモードのブラウザ）。
 2. デスクトップモードの Konsole で解く:
    ```sh
-   mkdir -p ~/Games && tar xzf internet_dungeon-linux-x64.tar.gz -C ~/Games
-   ~/Games/internet_dungeon-linux-x64/run.sh      # まずここでウィンドウが出るかを見る
+   mkdir -p ~/Games && tar xzf internet_dungeon-<コミット>-linux-x64.tar.gz -C ~/Games
+   ~/Games/internet_dungeon-<コミット>-linux-x64/run.sh      # まずここでウィンドウが出るかを見る
    ```
    zip や FAT の USB を通すと実行権限が落ちる。その時は `chmod +x run.sh jre/bin/*`。
 3. Steam を開き「ゲーム」→「ゲーム以外の物をマイライブラリに追加」→「参照」で `run.sh` を選ぶ（ファイルの種類を「すべて」に）。

@@ -51,7 +51,7 @@ endif
 # JVM を 1 本抱えたまま寿命が切れるまで待たせないため（1 枚ずつの render は続けて呼ぶので残す）。
 RESIDENT_STOP = if [ -x "$(ENGINE)/bin/fge-go" ]; then "$(ENGINE)/bin/fge-go" resident stop --dir . || true; fi
 
-.PHONY: help status run debug test build dist-linux check flow flow-check flow-vocab render render-all gallery-sounds reference-check reference-update render-budget render-lint lint lint-doc-refs video-entries loc api module src src-index hooks check-docs-sync compare agent-eval agent-eval-compare agent-eval-release
+.PHONY: help status run debug test build dist-linux dist-macos dist-windows dist-all check flow flow-check flow-vocab render render-all gallery-sounds reference-check reference-update render-budget render-lint lint lint-doc-refs video-entries loc api module src src-index hooks check-docs-sync compare agent-eval agent-eval-compare agent-eval-release
 
 # 共通の口の一覧。engine を上げるとここも一緒に新しくなる
 # （ゲーム側の Makefile へ写さないので、口が増えても書き足しに回らなくて済む）。
@@ -63,8 +63,8 @@ help:
 	@echo "  make check              型検査だけ（一番速い確認。常駐が居れば 2 回目からサブ秒）"
 	@echo "  make test               テストを headless で実行（記録は .test-logs/）"
 	@echo "  make build              パッケージをビルドする"
-	@echo "  make dist-linux [DIST_NAME=名前] [DIST_INCLUDE=assets,project.json]"
-	@echo "                          Linux x64（Steam Deck）向けに jar・JRE・run.sh を build/dist/<名前>-linux-x64.tar.gz へまとめる（手順は engine の docs/steam-deck.md）"
+	@echo "  make dist-linux / dist-macos / dist-windows / dist-all  [DIST_OUT=] [DIST_VERSION=] [DIST_NAME=] [DIST_INCLUDE=]"
+	@echo "                          jar・その OS の JRE・起動を build/dist/<名前>-<コミット>-<OS>-<CPU>.<tar.gz|zip> へまとめる（置き方は engine の docs/dist.md）"
 	@echo "  make status             現状 1 画面（テスト記録・絵・チケット・git）。何も実行しない"
 	@echo "  make notes-rotate       NOTES.md の先頭が長すぎたら古い項を notes/<年-月>.md へ送る（閾値は bin/lint-rules/notes-rotate.json）"
 	@echo "  make render SHOT=<場面>  1 枚だけ debug/<場面>.png へ描き出す"
@@ -136,15 +136,21 @@ test:
 build:
 	$(FLIX) build
 
-# Linux x64 向けの配布物。jar は make run と同じ物（headless-run が src の変わった時だけ作り直す）。
-# DIST_INCLUDE は実行時に作業場からの相対で読む物（jar の隣へ置く）。
+# 配布物（Linux x64・macOS arm64・Windows x64）。jar は make run と同じ物（headless-run が src の変わった時だけ作り直す）。
+# DIST_INCLUDE は実行時に作業場からの相対で読む物（jar の隣へ置く）。DIST_VERSION の既定はゲームの短いコミット。
 DIST_INCLUDE ?= assets,project.json
-dist-linux:
+DIST_ARGS = --dir . --include "$(DIST_INCLUDE)" $(if $(DIST_NAME),--name "$(DIST_NAME)") \
+	$(if $(DIST_VERSION),--version "$(DIST_VERSION)") $(if $(DIST_OUT),--out "$(DIST_OUT)")
+dist-linux: DIST_OS := linux
+dist-macos: DIST_OS := macos
+dist-windows: DIST_OS := windows
+dist-all: DIST_OS := all
+dist-linux dist-macos dist-windows dist-all:
 ifeq ($(OS),Windows_NT)
-	@echo "[dist-linux] Windows では作れません（jar を作る headless-run が bash）。macOS か Linux で流してください"; exit 1
+	@echo "[dist] Windows では作れません（jar を作る headless-run が bash）。macOS か Linux で流してください"; exit 1
 else
 	FLIX_CMD=$(FLIX) "$(ENGINE)/bin/headless-run" --build-only
-	"$(ENGINE)/bin/fge" dist-linux --dir . --include "$(DIST_INCLUDE)" $(if $(DIST_NAME),--name "$(DIST_NAME)")
+	"$(ENGINE)/bin/fge" dist $(DIST_OS) $(DIST_ARGS)
 endif
 
 # check の全文は .test-logs/check.log に落とし、画面には要約だけ出す:
