@@ -14,5 +14,5 @@ grep 代わりの重い作業になってしまうため）。調べたいモジ
 | パッケージ | モジュール数 | 宣言数 | ファイル |
 |---|---|---|---|
 | engine | 50 | 521 | [api-digest/engine.md](api-digest/engine.md) |
-| engine_world | 117 | 1427 | [api-digest/engine_world.md](api-digest/engine_world.md) |
+| engine_world | 117 | 1429 | [api-digest/engine_world.md](api-digest/engine_world.md) |
 | engine_tools | 14 | 139 | [api-digest/engine_tools.md](api-digest/engine_tools.md) |

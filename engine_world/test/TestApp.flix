@@ -567,6 +567,13 @@ mod TestApp {
             (App.tileCacheHit("0", "floor", cache) |> Option.map(snd),
              App.tileCacheHit("1", "walls", cache) |> Option.map(snd)))
 
+    // decideClose: 閉じるボタンを押した時、F8 で止めている間はその場で閉じ、止めていない時はゲームの withCloseRequest へ渡す。
+    @Test
+    def testDecideCloseClosesWhilePausedAndAsksGameOtherwise(): Unit \ Assert =
+        Assert.assertEq(expected = (App.CloseAnswer.Close, App.CloseAnswer.AskGame),
+            (App.decideClose({ closing = true, hasCloseRequest = true, paused = true }),
+             App.decideClose({ closing = true, hasCloseRequest = true, paused = false })))
+
     // decideBranch: F8 と停止状態から決まる、このフレームの進み方
 
     /// 何も押していない、走っているフレーム。

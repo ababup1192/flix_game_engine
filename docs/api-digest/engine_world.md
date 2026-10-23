@@ -286,6 +286,10 @@
   `pub def historyLimit(): Int32`
 - リモートコマンドを捌いた後に残る 3 つの進み方。
   `pub enum Branch with Eq, ToString { case Paused case Resuming case Running }`
+- ウィンドウの閉じるボタンへの答え方。loop から切り出した内部 API — ゲームからは呼ばない。
+  `pub enum CloseAnswer with Eq, ToString { case Ignore case AskGame case Close }`
+- 閉じるボタンが押されたか・withCloseRequest があるか・F8 で止めているかから、閉じるボタンへの答え方を決める。
+  `pub def decideClose(input: { closing = Bool, hasCloseRequest = Bool, paused = Bool }): CloseAnswer`
 - F8 と停止状態から、このフレームの進み方と「F8 が今トグルされたか」を決める。
   `pub def decideBranch(input: { f8Pressed = Bool, canDebug = Bool, remoteHold = Bool, wasPaused = Bool }): { branch = Branch, toggled = Bool }`
 - 跳んだ拍の後の出力の鍵: Skip は跳んだ先の鍵を「書いた」ことにし、Write は前に書いた鍵のまま

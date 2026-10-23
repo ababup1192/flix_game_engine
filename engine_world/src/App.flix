@@ -501,6 +501,7 @@ pub mod App {
     ///
     /// quitWhen を差し替えると既定の「Escape で終了」は外れる（Esc も確認へ回すならゲームの入力で拾う）。
     /// 確認の窓が開いている間にもう一度閉じるボタンを押すと、f がもう一度呼ばれる。
+    /// F8 で止めている間（注釈・巻き戻しの作業中）の閉じるボタンは、f を呼ばずにその場で閉じる（decideClose）。
     pub def withCloseRequest(f: w -> w \ ef, app: App[w, ef]): App[w, ef] =
         App.App({ closeRequest = Some(f) | rec(app) })
 
@@ -1105,6 +1106,27 @@ pub mod App {
         case Running
     }
 
+    /// ウィンドウの閉じるボタンへの答え方。loop から切り出した内部 API — ゲームからは呼ばない。
+    pub enum CloseAnswer with Eq, ToString {
+        /// 閉じるボタンは押されていない
+        case Ignore
+        /// ゲームの withCloseRequest へ渡す（確認を出すかはゲームが決める）
+        case AskGame
+        /// その場で閉じる
+        case Close
+    }
+
+    /// 閉じるボタンが押されたか・withCloseRequest があるか・F8 で止めているかから、閉じるボタンへの答え方を決める。
+    ///
+    /// WhyNot: F8 で止めている間はゲームへ渡さない — 止めている間の World は再開の時に履歴から取り直すので、
+    /// 渡すと知らせが消える。持ち越すと、F8 を解いた最初のフレームで思い出したように確認が出る。
+    ///
+    /// loop から切り出した内部 API — ゲームからは呼ばない。
+    pub def decideClose(input: { closing = Bool, hasCloseRequest = Bool, paused = Bool }): CloseAnswer =
+        if (not input#closing) CloseAnswer.Ignore
+        else if (input#paused or not input#hasCloseRequest) CloseAnswer.Close
+        else CloseAnswer.AskGame
+
     /// F8 と停止状態から、このフレームの進み方と「F8 が今トグルされたか」を決める。
     ///
     /// - `remoteHold`（HTTP 側が停止の主導権を持っている間）は F8 を殺す。/resume で戻す
@@ -1161,10 +1183,10 @@ pub mod App {
         let wantsQuit = r#quit;
         // shouldClose は入力の取り込み（poll）も兼ねるので 1 フレームに 1 回だけ呼ぶ。
         let closing = GameEngine.Game.shouldClose();
-        // F8 で止めている間は印を下ろさずに持ち越す（止めている間の World は再開で履歴から
-        // 取り直されるので、ここで渡すと知らせが消える）。動き出した最初のフレームで渡す。
-        let st = if (closing and not st0#anno#paused) noticeCloseRequest(app, st0) else st0;
-        if ((closing and Option.isEmpty(r#closeRequest)) or wantsQuit(frame, st#world)) ()
+        let answer = decideClose({ closing = closing, hasCloseRequest = Option.nonEmpty(r#closeRequest),
+                                   paused = st0#anno#paused });
+        let st = if (answer == CloseAnswer.AskGame) noticeCloseRequest(app, st0) else st0;
+        if (answer == CloseAnswer.Close or wantsQuit(frame, st#world)) ()
         else {
             // 入力の持ち越しはどの分岐でも同じなので、ここで 1 度だけ差し替える。
             let carried = { prevKeys = currentKeys, prevMouseDown = mouseDown,
