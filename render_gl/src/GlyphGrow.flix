@@ -136,8 +136,12 @@ mod RenderGlyphGrow {
                                                             RenderFont.onedge(), RenderFont.pixDist(),
                                                             wBuf, hBuf, xoffBuf, yoffBuf);
                 let out =
-                    if (Object.isNull(sdf)) None
-                    else {
+                    if (Object.isNull(sdf)) {
+                        // 形の無い字（半角・全角スペース）は送り幅だけ載せる。載せないと幅 0 の字として
+                        // 詰まって描かれ、打った空白が画面から消える。フォントが持っていない字は諦める。
+                        if (STBTruetype.stbtt_FindGlyphIndex(info, cp) == 0) None
+                        else Some((RenderFont.advanceOnlyGlyph(advance), font))
+                    } else {
                         let gw = wBuf.get(0);
                         let gh = hBuf.get(0);
                         let side = font#side;
