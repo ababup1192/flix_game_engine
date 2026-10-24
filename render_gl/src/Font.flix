@@ -233,7 +233,7 @@ mod RenderFont {
     }
 
     /// advance のみ持つ（矩形を持たない）グリフメトリクスを作る。スペースや溢れ字用。
-    def advanceOnlyGlyph(advance: Float64): TextLayout.GlyphMetrics =
+    pub def advanceOnlyGlyph(advance: Float64): TextLayout.GlyphMetrics =
         { xOff = 0.0, yOff = 0.0, glyphW = 0.0, glyphH = 0.0,
           advance = advance, s0 = 0.0, t0 = 0.0, s1 = 0.0, t1 = 0.0 }
 
