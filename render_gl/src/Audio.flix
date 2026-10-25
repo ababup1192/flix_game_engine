@@ -6,6 +6,7 @@
 mod RenderAudio {
     import org.lwjgl.openal.AL10
     import org.lwjgl.openal.AL11
+    import org.lwjgl.openal.SOFTDirectChannels
     import org.lwjgl.openal.SOFTLoopPoints
     import org.lwjgl.stb.STBVorbis
     import org.lwjgl.system.MemoryStack
@@ -79,6 +80,15 @@ mod RenderAudio {
         if (String.endsWith({suffix = ".ogg"}, path)) loadOggToALBuffer(path)
         else loadWavToALBuffer(path)
 
+    /// ステレオの音を左右そのまま出口へ流す（AL_SOFT_direct_channels。モノラルの音には効かない）。
+    /// 付けないと OpenAL Soft はステレオの左右を仮想の 2 本のスピーカーとして鳴らし直し、ヘッドホンで HRTF が
+    /// 効くと片側だけの音がもう片側へ半分ほど漏れる（右だけのこだまが主旋律に重なって二重に聞こえる）。
+    /// 音源の設定なので、実行中にバッファを差し替えても（reloadAudio）残る。
+    def withDirectChannels(source: Int32): Unit \ IO =
+        if (AL10.alIsExtensionPresent("AL_SOFT_direct_channels"))
+            AL10.alSourcei(source, SOFTDirectChannels.AL_DIRECT_CHANNELS_SOFT, AL10.AL_TRUE)
+        else ()
+
     /// サウンドマニフェストから全音声を読み込み、AudioRegistry (名前 → OpenAL ソース ID) を返す。
     /// onProgress には「読み終えた本数 / 全本数」を渡す（起動画面が進み具合を出す）。
     pub def loadAudioRegistry(manifest: List[RenderAsset.AudioEntry],
@@ -91,6 +101,7 @@ mod RenderAudio {
             let source = AL10.alGenSources();
             AL10.alSourcei(source, AL10.AL_BUFFER, buffer);
             AL10.alSourcei(source, AL10.AL_LOOPING, if (entry#looping) AL10.AL_TRUE else AL10.AL_FALSE);
+            withDirectChannels(source);
             println("  ${entry#path} loaded");
             onProgress(done + 1, total);
             (Map.insert(entry#name, source, registry), done + 1)
