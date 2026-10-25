@@ -365,8 +365,8 @@ pub mod GameEngine {
         def setCursorVisible(visible: Bool): Unit
         /// ウィンドウ⇄ボーダーレスフルスクリーンを切り替える。フルスクリーンはプライマリ
         /// モニタの現在の解像度を使う（解像度そのものは変えない）。連続して同じ値を渡しても
-        /// 問題ない（冪等）。切替の配線はゲームの system 側 — F8 ポーズ中は system が
-        /// 回らず切替キーも効かない点に注意
+        /// 問題ない（冪等）。ゲームからは呼ばず、App.withFullscreen で World から宣言する
+        /// （系は純粋で、App が実機のフレームの後に当てる）
         def setFullscreen(on: Bool): Unit
         /// 直近の setFullscreen で今フルスクリーン中かを返す
         def isFullscreen(): Bool

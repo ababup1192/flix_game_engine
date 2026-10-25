@@ -211,6 +211,8 @@ pub mod App {
         clocks = List[(Float64, w) -> w],
         // 毎フレームの「マウスの矢印をどう見せたいか」の宣言（withCursor）。None = App は触らない（F8 の十字だけ）。
         cursor = Option[w -> CursorSpec],
+        // 毎フレームの「窓をフルスクリーンにしたいか」の宣言（withFullscreen）。None = App は触らない。
+        fullscreen = Option[w -> Bool],
         // 鍵が変わったフレームに 1 回書く外への出力（addOutput・withDocTable）の列・追加順。
         outputs = List[Output[w]],
         // 始まりの登録簿（withStarts）。START・/start・flow の start・テストが名前で場面を組む。
@@ -264,6 +266,7 @@ pub mod App {
           fixedStep = None,
           clocks = Nil,
           cursor = None,
+          fullscreen = None,
           outputs = Nil,
           starts = Nil,
           flow = Flow.emptyTable(),
@@ -625,6 +628,13 @@ pub mod App {
     /// 呼ぶと /step・台本・F8 の再開で矢印の形が World とずれる。
     pub def withCursor(f: w -> CursorSpec, app: App[w, ef]): App[w, ef] =
         App.App({ cursor = Some(f) | rec(app) })
+
+    /// 毎フレーム「窓をボーダーレスのフルスクリーンにしたいか」を World から宣言する（true = フルスクリーン・
+    /// false = project.json の大きさのウィンドウ）。App は起動の拍と実機のフレームの後に宣言を当てる
+    /// （GameEngine.Game.setFullscreen は同じ値なら何もしない）。F8 で止めている間・/step・台本・trace は当てない。
+    /// 系の中で setFullscreen を呼ばない —— 系は純粋で、呼ぶ口が無い。設定の画面で切り替えたら、その場で窓が替わる。
+    pub def withFullscreen(f: w -> Bool, app: App[w, ef]): App[w, ef] =
+        App.App({ fullscreen = Some(f) | rec(app) })
 
     /// 跳んだ拍（起動・START・/start・/step・/flow?apply・F8 の巻き戻しからの再開）に、出力をどう扱うか。
     pub enum OnJump with Eq, ToString {
@@ -1047,6 +1057,8 @@ pub mod App {
                      else None;
         // 起動時点の更新時刻を「発火なしで」用意しておく — 用意しないと最初のポーリングが
         // 全パスを新規出現と見なし、init 直後にもう一度リロードが走ってしまう。
+        // 窓の宣言（withFullscreen）は最初のコマを描く前に当てる（起動した拍からその窓で見せる）。
+        applyFullscreen(r, world0);
         let watch0 = if (r#debug and not List.isEmpty(r#watch))
                          { sincePoll = 0.0, mtimes = statMtimes(List.map(fst, r#watch)) }
                      else freshWatchState();
@@ -1240,6 +1252,7 @@ pub mod App {
                                        resumed#world);
                             let (cache1, seen1, warned1) = renderFrame(app, st#warnOnce, resumed#world, plainLook(fpsOverlayOf(r, resumed#anno)), st#tileCache, st#glyphSeen, st#budgetWarned);
                             let shown = applyCursor(r, resumed#world, st#cursorShown);
+                            applyFullscreen(r, resumed#world);
                             loop(app, { world = resumed#world, anno = resumed#anno, history = resumed#history,
                                         tileCache = cache1, glyphSeen = seen1,
                                         budgetWarned = warned1, cursorShown = shown,
@@ -1267,6 +1280,7 @@ pub mod App {
                             // 外への出力とマウスの矢印は、実機のフレームの後の World からだけ当てる。
                             let written = writeOutputs(app, advanced, st#outputKeys);
                             let shown = applyCursor(r, advanced, st#cursorShown);
+                            applyFullscreen(r, advanced);
                             loop(app, { world = advanced, history = nextHistory,
                                         outputKeys = written, cursorShown = shown,
                                         anno = { frame = measuredAnno#frame + 1i64 | measuredAnno },
@@ -1316,6 +1330,10 @@ pub mod App {
                 Option.forEach(applyLook, CursorLook.cursorChange(want, state));
                 CursorLook.State.Applied(want)
         }
+
+    /// withFullscreen の宣言を当てる（setFullscreen は今と同じ値なら何もしないので、毎フレーム渡してよい）。
+    def applyFullscreen(r: Rec[w, ef], world: w): Unit \ GameEngine.Game =
+        Option.forEach(f -> GameEngine.Game.setFullscreen(f(world)), r#fullscreen)
 
     /// 止めた画面の出入りの見た目をウィンドウへ当てる。ゲームからは呼ばない（RemoteDebug が呼ぶので公開）。
     pub def applyHaltLook(look: CursorLook.HaltLook): Unit \ GameEngine.Game =
