@@ -26,7 +26,8 @@
 //     中では「拍の分 + 秒の分」の組で足し、秒へ直すのは最後の 1 回（拍を秒にしてから足す誤差を作らない）。
 //   - 置き場所: append = 表の終わり（既定）・join = 直前の行の頭（GSAP の "<"）・atStartOf / atEndOf =
 //     名前のクリップを基準・insert = 表の頭から決まった時刻（DOTween の Insert）・withDelay = そこから遅らせる
-//     （負なら手前へ）。前を延ばすと後ろが付いてくる（insert で置いた物は動かない）。
+//     （負なら手前へ）・afterAll = 並べた基準の全部が済んだ後（基準ごとに間を書ける）。
+//     前を延ばすと後ろが付いてくる（insert で置いた物は動かない）。
 //   - 効果音はクリップの属性（Unity の Timeline の Audio トラック・Godot の音のトラック・Bevy の
 //     AnimationEvent）。描く側（stateOf）と鳴らす側（soundsOn）が同じ start を読むので、鳴らす時刻を
 //     別の場所に書けない。音が鳴るフレームで stateOf はもう Active か After を返す。
@@ -102,6 +103,9 @@ pub mod Timeline {
         case AtEndOf(a)
         /// 表の頭から決まった時刻（秒か拍）。前に何を置いたかに左右されない
         case At(Duration)
+        /// 並べた基準（置き場所 + そこからの間）のうち一番遅い時刻 = 全部が済んだ後（Promise.all と同じ形）。
+        /// 空なら表の頭
+        case AfterAll(List[(Place[a], Duration)])
     }
 
     /// クリップの中で鳴らす効果音。fitted = 書き出す WAV の長さをこのクリップの長さに合わせる音。
@@ -135,12 +139,15 @@ pub mod Timeline {
 
     /// 行のどこか（置き場所・遅らせ・長さ・音の遅れ）に拍で書いた所があるか。
     def usesBeats(s: Step[a]): Bool =
-        let placedAt = match s#place {
-            case Place.At(d) => isBeatDuration(d)
-            case _           => false
-        };
+        let placedAt = placeUsesBeats(s#place);
         placedAt or isBeatDuration(s#delay) or isBeatDuration(s#length) or
             List.exists(cue -> isBeatDuration(cue#offset), s#cues)
+
+    def placeUsesBeats(place: Place[a]): Bool = match place {
+        case Place.At(d)             => isBeatDuration(d)
+        case Place.AfterAll(anchors) => anchors |> List.exists(anchor -> { let (p, gap) = anchor; placeUsesBeats(p) or isBeatDuration(gap) })
+        case _                       => false
+    }
 
     def step(tag: a, place: Place[a], length: Duration): Step[a] =
         { tag = tag, place = place, delay = Duration.Seconds(0.0), length = length, cues = Nil, isWait = false }
@@ -159,6 +166,14 @@ pub mod Timeline {
 
     /// 表の頭から at の時刻に置く（DOTween の Insert・GSAP の時刻を書いた置き方）。重ねて置くクリップに使う。
     pub def insert(at: Duration, tag: a, length: Duration): Step[a] = step(tag, Place.At(at), length)
+
+    /// anchors の全部が済んだ後に置く（基準ごとに間を書ける）。どれの後に始まるかが拍ごとに変わる表
+    /// （手番の時刻表のように、先の拍の数と種類で待ちが決まる物）を、置き直さずに 1 回で解く。
+    ///
+    ///   Timeline.afterAll(List#{ (Place.AtEndOf(Key.Icon(0)), Duration.Seconds(0.2)),
+    ///                            (Place.AtEndOf(Key.Gauge), Duration.Seconds(0.0)) }, Key.Attack, Duration.Seconds(0.3))
+    pub def afterAll(anchors: List[(Place[a], Duration)], tag: a, length: Duration): Step[a] =
+        step(tag, Place.AfterAll(anchors), length)
 
     /// 表の終わりで待つ。後ろの行はここから数える。
     pub def waitFor(tag: a): Step[a] = { isWait = true | step(tag, Place.End, Duration.Seconds(0.0)) }
@@ -225,13 +240,18 @@ pub mod Timeline {
                      segments = (Map.empty(): Map[a, Int32]), lengths = (Map.empty(): Map[a, Pos]),
                      passed = 0, lastWait = -1.0 };
         let built = List.foldLeft((acc, s) -> {
-            let anchor = match s#place {
-                case Place.End          => Ok(acc#end)
-                case Place.WithPrevious => Ok(acc#prevStart)
-                case Place.AtStartOf(o) => Map.get(o, acc#spans) |> Option.map(fst) |> Option.toOk(BuildError.UnknownAnchor(o))
-                case Place.AtEndOf(o)   => Map.get(o, acc#spans) |> Option.map(snd) |> Option.toOk(BuildError.UnknownAnchor(o))
-                case Place.At(d)        => Ok(advanceBy(tempo, zero(), d))
+            def anchorOf(place: Place[a]): Result[BuildError[a], Pos] = match place {
+                case Place.End               => Ok(acc#end)
+                case Place.WithPrevious      => Ok(acc#prevStart)
+                case Place.AtStartOf(o)      => Map.get(o, acc#spans) |> Option.map(fst) |> Option.toOk(BuildError.UnknownAnchor(o))
+                case Place.AtEndOf(o)        => Map.get(o, acc#spans) |> Option.map(snd) |> Option.toOk(BuildError.UnknownAnchor(o))
+                case Place.At(d)             => Ok(advanceBy(tempo, zero(), d))
+                case Place.AfterAll(anchors) => anchors |> List.foldLeft((found, entry) -> {
+                    let (p, gap) = entry;
+                    Result.flatMap(known -> anchorOf(p) |> Result.map(base -> latest(tempo, known, advanceBy(tempo, base, gap))), found)
+                }, Ok(zero()))
             };
+            let anchor = anchorOf(s#place);
             match anchor {
                 case Err(e) => { errors = e :: acc#errors | acc }
                 case Ok(_) if Map.memberOf(s#tag, acc#spans) => { errors = BuildError.DuplicateTag(s#tag) :: acc#errors | acc }
