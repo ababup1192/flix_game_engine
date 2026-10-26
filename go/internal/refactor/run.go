@@ -31,6 +31,8 @@ const Usage = `使い方: fge refactor <操作> [引数] [--json] [-v|--verbose]
   match-sites <Enum|Enum.Case> [--catch-all]           match の位置・腕の数・` + "`_`" + `／変数の腕（--catch-all はそれを持つ物だけ）
   field-sites --label x [--receiver T] [--outside Mod] record の欄 x の直の読み（e#x）と書き（{ x = v | e }）
   index [--stage resolved|typed]                       索引を作る（か使い回す）だけ。種類ごとの行の数と秒
+  index --decls                                        show の宣言の索引まで作る（.flix を直した後に hook-flix-touch が裏で流す。
+                                                       もう流れていれば何もしない。作っている間に直されたら作り直す）
   expand-wildcard --enum E [--apply] [--skip file:line]  E への match の ` + "`case _ =>`" + `（使わない変数の腕も）を残りの case に書き出す
   remove-dead [--with-tests] [--only test-only|unreferenced] [--def Mod.name[,Mod.g]] [--apply] [--skip file:line]
                                                        テストからだけ・どこからも参照されない pub の def を ///・注記ごと消す。
@@ -212,6 +214,7 @@ type args struct {
 	op, target, label, receiver, outside, flixlint, stage string
 	labelsFile                                            string // field-to-accessor の --labels-file
 	callers, catchAll, rebuild, asJSON                    bool
+	decls                                                 bool // index --decls: show の宣言の索引まで作る（.flix を直した後にフックが裏で流す）
 	all                                                   bool // --all（場所を全部画面に。remove-use ではファイルか全体の全部を消す）
 	apply, withTests, unused, verbose                     bool
 	requireClean                                          bool // --require-clean: 書き換えるファイルが git で clean な時だけ --apply
@@ -299,6 +302,8 @@ func parseArgs(rest []string) (args, error) {
 			}
 		case "--rebuild":
 			a.rebuild = true
+		case "--decls":
+			a.decls = true
 		case "--label":
 			a.label, err = value(&i, x)
 		case "--labels-file":
@@ -687,14 +692,18 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 		fmt.Fprintf(errOut, "refactor %s: %s\nnext: %s\n  （%s）\n", a.op, msg, next, why)
 		return 2
 	}
+	if a.op == "show" {
+		return showRun(out, errOut, b, stage, a)
+	}
+	if a.op == "index" && a.decls {
+		return warmDecls(out, errOut, b, stage)
+	}
 	var idx, extra *Index
 	if st := a.stages(); len(st) > 1 && a.stage == "" {
 		var all []*Index
 		if all, err = b.LoadAll(st); err == nil {
 			idx, extra = all[0], all[1]
 		}
-	} else if a.op == "show" {
-		idx, err = b.LoadDecls(stage)
 	} else {
 		idx, err = b.Load(stage)
 	}
@@ -715,9 +724,6 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 			}
 		}
 		return 2
-	}
-	if a.op == "show" {
-		return showRun(out, errOut, root, idx, a)
 	}
 	var rep report
 	switch a.op {
