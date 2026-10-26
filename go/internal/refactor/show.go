@@ -14,6 +14,8 @@ package refactor
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -212,4 +214,62 @@ func showRun(out, errOut *strings.Builder, root string, idx *Index, a args) int 
 		fmt.Fprintf(out, "── %s:%d-%d  %s（%s）\n%s\n", s.File, s.Start, s.End, s.Sym, kind, s.Text)
 	}
 	return code
+}
+
+// LoadDecls は宣言の行（def・enum・case・型 alias）だけの索引を読む。置き場は spans-<段>.decl.tsv、頭の行に全体の索引の鍵。
+// 鍵が今のソースと合えば全体の索引（20 万行・0.3 秒ほど）を読まずに済む。合わなければ全体を Load して（要れば作り直して）書き直す。
+// WhyNot: 全体の索引を速い形（gob など）にしない。show が要るのは宣言の数千行だけで、ほかの操作の読み方は替えずに済む。
+func (b Builder) LoadDecls(s Stage) (*Index, error) {
+	path := filepath.Join(b.Dir(), "spans-"+string(s)+".decl.tsv")
+	if !b.Rebuild {
+		if src, err := b.sourceKey(s); err == nil {
+			key := joinKey(src, b.envKey())
+			if rows, ok := readDecls(path, key); ok {
+				return &Index{Stage: s, Path: path, Rows: rows, Cached: true, Key: key}, nil
+			}
+		}
+	}
+	idx, err := b.Load(s)
+	if err != nil {
+		return nil, err
+	}
+	var keep []Row
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "%s\n", idx.Key)
+	for _, r := range idx.Rows {
+		if !declKindsForShow[r.Kind] {
+			continue
+		}
+		keep = append(keep, r)
+		fmt.Fprintf(&sb, "%s\t%s\t%d\t%d\t%d\t%d\t%s\t%s\t%s\n", r.Kind, r.File, r.Line, r.Col, r.EndLine, r.EndCol, r.Sym, r.Owner, r.Extra)
+	}
+	os.WriteFile(path, []byte(sb.String()), 0o644)
+	return &Index{Stage: idx.Stage, Path: idx.Path, Rows: keep, Adds: idx.Adds, Cached: idx.Cached, Seconds: idx.Seconds, Key: idx.Key}, nil
+}
+
+var declKindsForShow = map[string]bool{KindDefDecl: true, KindEnumDecl: true, KindCaseDecl: true, KindAliasDecl: true}
+
+// readDecls は宣言だけの索引を読む（頭の行の鍵が key と違えば ok=false）。
+func readDecls(path, key string) ([]Row, bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, false
+	}
+	head, body, _ := strings.Cut(string(data), "\n")
+	if head != key {
+		return nil, false
+	}
+	var rows []Row
+	for _, line := range strings.Split(body, "\n") {
+		c := strings.Split(line, "\t")
+		if len(c) != 9 {
+			continue
+		}
+		var n [4]int
+		for i := range n {
+			n[i], _ = strconv.Atoi(c[2+i])
+		}
+		rows = append(rows, Row{Kind: c[0], File: c[1], Line: n[0], Col: n[1], EndLine: n[2], EndCol: n[3], Sym: c[6], Owner: c[7], Extra: c[8]})
+	}
+	return rows, true
 }

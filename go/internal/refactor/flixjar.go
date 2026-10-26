@@ -1,6 +1,8 @@
 package refactor
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
@@ -47,13 +49,42 @@ func javaFlixVersion(jar string) string {
 	if v, ok := flixVersions[jar]; ok {
 		return v
 	}
+	disk := flixVersionCachePath(jar)
+	if disk != "" {
+		if b, err := os.ReadFile(disk); err == nil {
+			v := strings.TrimSpace(string(b))
+			flixVersions[jar] = v
+			return v
+		}
+	}
 	out, _ := exec.Command("java", "-jar", jar, "--version").CombinedOutput()
 	v := ""
 	if m := flixVersionLine.FindStringSubmatch(string(out)); m != nil && strings.Contains(string(out), "Flix") {
 		v = m[1]
 	}
 	flixVersions[jar] = v
+	if disk != "" && v != "" {
+		if os.MkdirAll(filepath.Dir(disk), 0o755) == nil {
+			os.WriteFile(disk, []byte(v+"\n"), 0o644)
+		}
+	}
 	return v
+}
+
+// flixVersionCachePath は jar の版を覚えておく所（<cache>/fge/flix-version/<パス・大きさ・時刻のハッシュ>。取れなければ ""）。
+// WhyNot: 毎回 java -jar --version を立てると、索引を引くだけの問い（show など）に 0.5 秒ほど足される。
+// jar は置き換えると大きさか時刻が替わるので、中身を読まずに見分けられる（envKey と同じ見分け方）。
+func flixVersionCachePath(jar string) string {
+	info, err := os.Stat(jar)
+	if err != nil {
+		return ""
+	}
+	dir, err := os.UserCacheDir()
+	if err != nil {
+		return ""
+	}
+	h := sha256.Sum256([]byte(fmt.Sprintf("%s %d %d", jar, info.Size(), info.ModTime().UnixNano())))
+	return filepath.Join(dir, "fge", "flix-version", hex.EncodeToString(h[:8]))
 }
 
 var tomlFlixLine = regexp.MustCompile(`(?m)^\s*flix\s*=\s*"([^"]+)"`)

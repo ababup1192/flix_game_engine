@@ -693,6 +693,8 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 		if all, err = b.LoadAll(st); err == nil {
 			idx, extra = all[0], all[1]
 		}
+	} else if a.op == "show" {
+		idx, err = b.LoadDecls(stage)
 	} else {
 		idx, err = b.Load(stage)
 	}
