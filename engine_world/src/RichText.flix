@@ -136,4 +136,107 @@ pub mod RichText {
             }, acc)
         }, (Nil, 0.0));
         List.reverse(rev)
+
+    // ── ルビ（ふりがな）──
+
+    /// ルビ 1 つ。start = 親字の頭（plainText の何文字目・0 始まり）、length = 親字の数、text = ふりがな。
+    /// Yarn の [ruby=よみ]字[/ruby] は Yarn.markupOf の範囲そのまま（YarnRunner の出来事の Line の text で数える）。
+    pub type alias Ruby = { start = Int32, length = Int32, text = String }
+
+    /// 折り返しの 1 単位。親字とルビは 1 つの塊で、行をまたいで割らない。
+    enum Piece {
+        case Glyph(Char, Span, Int32)
+        case Group(List[(Char, Span, Int32)], Ruby)
+        case Newline
+    }
+
+    /// 字の列をルビの塊ごとに切る（ルビの範囲が字の外・重なる時は、その分は塊にしない）。
+    def piecesOf(rubies: List[Ruby], spans: List[Span]): List[Piece] =
+        let glyphs = spans |> List.flatMap(span -> String.toList(span#text) |> List.map(ch -> (ch, span)))
+                           |> List.zipWithIndex |> List.map(match (i, (ch, span)) -> (ch, span, i));
+        let rubyAt = i -> List.find(r -> r#start == i and r#length > 0, rubies);
+        def go(rest: List[(Char, Span, Int32)], acc: List[Piece]): List[Piece] = match rest {
+            case Nil => List.reverse(acc)
+            case (ch, span, i) :: more =>
+                if (ch == '\n') go(more, Piece.Newline :: acc)
+                else match rubyAt(i) {
+                    case Some(r) =>
+                        let base = List.take(r#length, rest);
+                        if (List.length(base) == r#length and not List.exists(match (c, _, _) -> c == '\n', base))
+                            go(List.drop(r#length, rest), Piece.Group(base, r) :: acc)
+                        else go(more, Piece.Glyph(ch, span, i) :: acc)
+                    case None => go(more, Piece.Glyph(ch, span, i) :: acc)
+                }
+        };
+        go(glyphs, Nil)
+
+    /// 塊の幅（ルビの塊は親字とふりがなの広い方）。
+    def pieceWidth(charWidth: Char -> Float64, rubyWidth: String -> Float64, piece: Piece): Float64 = match piece {
+        case Piece.Glyph(ch, _, _) => charWidth(ch)
+        case Piece.Group(base, r)  => Float64.max(List.foldLeft((acc, g) -> { let (c, _, _) = g; acc + charWidth(c) }, 0.0, base), rubyWidth(r#text))
+        case Piece.Newline         => 0.0
+    }
+
+    /// 塊の列を最大幅で行に割る（wrapLinesBy と同じ決まり: 行頭では折らない・'\n' で改行・空でも 1 行）。
+    def wrapPieces(charWidth: Char -> Float64, rubyWidth: String -> Float64, maxWidth: Float64, pieces: List[Piece]): List[List[Piece]] =
+        let (lines, line, _) = pieces |> List.foldLeft((acc, piece) -> {
+            let (done, cur, x) = acc;
+            match piece {
+                case Piece.Newline => (List.reverse(cur) :: done, Nil, 0.0)
+                case _ =>
+                    let w = pieceWidth(charWidth, rubyWidth, piece);
+                    if (x + w > maxWidth and x > 0.0) (List.reverse(cur) :: done, piece :: Nil, w)
+                    else (done, piece :: cur, x + w)
+            }
+        }, (Nil, Nil, 0.0));
+        List.reverse(List.reverse(line) :: lines)
+
+    /// ルビつきで折った時の行数（ページ割り・窓の高さの勘定。字幅の決まりは wrapLinesBy と同じ）。
+    pub def rubyLineCountBy(charWidth: Char -> Float64, rubyWidth: String -> Float64, maxWidth: Float64,
+                            rubies: List[Ruby], spans: List[Span]): Int32 =
+        List.length(wrapPieces(charWidth, rubyWidth, maxWidth, piecesOf(rubies, spans)))
+
+    /// ルビつきの字を置く。親字の上に rubySize の字でふりがなを中央そろえで載せる（親字より広ければ親字を中央へ寄せる）。
+    /// 行割りは全文で決める（visible = 見せる字の数。文字送りの途中でも行が動かない）。ふりがなは親字が全部見えてから出る。
+    /// ふりがなは行の上の行間に描くので、lineGap は rubySize 以上にする（1 行目は pos の上に出る）。
+    pub def placeRuby(p: Placement, rubySize: Float64, rubies: List[Ruby], visible: Int32, spans: List[Span]): List[Render.PlacedItem] =
+        let cw = ch -> TextDraw.width(Char.toString(ch), p#atlas, p#size);
+        let rw = text -> TextDraw.width(text, p#atlas, rubySize);
+        wrapPieces(cw, rw, p#maxWidth, piecesOf(rubies, spans))
+            |> List.zipWithIndex
+            |> List.flatMap(match (row, line) -> {
+                let y = p#pos#y + Int32.toFloat64(row) * (p#size + p#lineGap);
+                withOffsets(piece -> pieceWidth(cw, rw, piece), line)
+                    |> List.flatMap(match (piece, x) -> placePiece(p, rubySize, cw, rw, visible, piece, p#pos#x + x, y))
+            })
+
+    /// 並びの各要素に、その頭までの幅の合計を添える。
+    def withOffsets(width: a -> Float64, xs: List[a]): List[(a, Float64)] =
+        let (rev, _) = List.foldLeft((acc, x) -> { let (out, at) = acc; ((x, at) :: out, at + width(x)) }, (Nil, 0.0), xs);
+        List.reverse(rev)
+
+    /// 塊 1 つを x, y に置く（ルビの塊は親字を塊の幅の中央へ・ふりがなを上へ）。
+    def placePiece(p: Placement, rubySize: Float64, cw: Char -> Float64, rw: String -> Float64, visible: Int32,
+                   piece: Piece, x: Float64, y: Float64): List[Render.PlacedItem] = match piece {
+        case Piece.Glyph(ch, span, i) => if (i < visible) glyphItems(p, span, ch, x, y) else Nil
+        case Piece.Group(base, r) =>
+            let w = pieceWidth(cw, rw, piece);
+            let baseW = List.foldLeft((sum, g) -> { let (c, _, _) = g; sum + cw(c) }, 0.0, base);
+            let chars = withOffsets(match (c, _, _) -> cw(c), base)
+                |> List.flatMap(match ((c, span, i), bx) -> if (i < visible) glyphItems(p, span, c, x + (w - baseW) / 2.0 + bx, y) else Nil);
+            let tint = base |> List.head |> Option.flatMap(match (_, span, _) -> span#tint) |> Option.getWithDefault(p#baseTint);
+            if (r#start + r#length <= visible)
+                List.append(chars, { at = { x = x + (w - rw(r#text)) / 2.0, y = y - rubySize - 1.0 },
+                                     item = Render.textTinted(r#text, p#atlas, rubySize, tint, p#z) } :: Nil)
+            else chars
+        case Piece.Newline => Nil
+    }
+
+    /// 字 1 つ（太字なら半ピクセルずらしてもう 1 枚）。
+    def glyphItems(p: Placement, span: Span, ch: Char, x: Float64, y: Float64): List[Render.PlacedItem] =
+        let tint = Option.getWithDefault(p#baseTint, span#tint);
+        let text = Char.toString(ch);
+        let one = { at = { x = x, y = y }, item = Render.textTinted(text, p#atlas, p#size, tint, p#z) };
+        if (span#bold) one :: { at = { x = x + 0.5, y = y }, item = Render.textTinted(text, p#atlas, p#size, tint, p#z) } :: Nil
+        else one :: Nil
 }

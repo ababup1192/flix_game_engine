@@ -21,11 +21,18 @@ pub mod Yarn {
     /// parts = 字と {式} の並び（YarnRunner が式を値にして text へ入れる。出来事の Line では text 1 切れ）。
     pub type alias Line = { speaker = String, text = String, parts = List[Part], tags = List[Tag], source = Source }
 
-    /// 行の 1 切れ。Literal = 書いたとおりの字、Insert = {式}（値を字にして差し込む）。
+    /// 行の 1 切れ。Literal = 書いたとおりの字、Insert = {式}（値を字にして差し込む）、
+    /// Markup(名前, 値) = [名前=値] の始まり、Close(名前) = [/名前] の終わり（字の並びの範囲は markupOf で読む）。
     pub enum Part {
         case Literal(String)
         case Insert(Expr)
+        case Markup(String, String)
+        case Close(String)
     }
+
+    /// マークアップ 1 つ（公式の MarkupAttribute）。start = text の何文字目から（0 始まり・String.length の数え方）、
+    /// length = 何文字か、value = [名前=値] の値。ruby なら字の範囲が親字・value がふりがな。
+    pub type alias Markup = { name = String, value = String, start = Int32, length = Int32 }
 
     /// 変数と式の値（公式と同じ 3 つの型。型は build の check が合わせてある）。
     pub enum Value with Eq, ToString {
@@ -102,7 +109,7 @@ pub mod Yarn {
     pub type alias Program = Nodes
 
     /// 木の JSON の形の版（go/internal/yarn/tree.go の Version と同じ）。これ以下の版を読む。
-    pub def version(): Int32 = 2
+    pub def version(): Int32 = 3
 
     /// ノードの無いシナリオ（どのノードを開いても、すぐ終わる）。
     pub def empty(): Program = Nodes.Nodes({ nodes = Map.empty(), variables = Map.empty() })
@@ -139,6 +146,35 @@ pub mod Yarn {
             |> List.filter(node -> node#source#file == file and node#source#line <= line)
             |> List.maximumBy((a, b) -> a#source#line <=> b#source#line)
             |> Option.map(node -> node#title)
+
+    /// 行のマークアップ（書いた順）。{式} は値の字の長さで数える（YarnRunner の出来事の Line は値を入れてある）。
+    pub def markupOf(line: Line): List[Markup] =
+        let step = (acc, part) -> {
+            let (pos, opened, done) = acc;
+            match part {
+                case Part.Literal(literal) => (pos + String.length(literal), opened, done)
+                case Part.Insert(_)        => (pos, opened, done)
+                case Part.Markup(name, value) => (pos, (name, value, pos) :: opened, done)
+                case Part.Close(name) => match opened {
+                    case (n, value, start) :: rest if n == name => (pos, rest, { name = name, value = value, start = start, length = pos - start } :: done)
+                    case _ => (pos, opened, done)
+                }
+            }
+        };
+        let (_, _, done) = List.foldLeft(step, (0, Nil, Nil), line#parts);
+        done |> List.sortWith((a, b) -> a#start <=> b#start)
+
+    /// 行のルビ（[ruby=よみ]字[/ruby]）を RichText.placeRuby に渡す形で。
+    pub def rubiesOf(line: Line): List[RichText.Ruby] =
+        markupOf(line) |> List.filter(markup -> markup#name == "ruby")
+                       |> List.map(markup -> { start = markup#start, length = markup#length, text = markup#value })
+
+    /// 字の切れだけをつないだ字（{式} とマークアップは字にしない）。
+    pub def plainTextOf(parts: List[Part]): String =
+        parts |> List.map(part -> match part {
+            case Part.Literal(literal) => literal
+            case _                     => ""
+        }) |> String.intercalate("")
 
     /// タグの値（そのキーのタグが無ければ None・値の無いタグは Some("")）。
     pub def tagOf(key: String, tags: List[Tag]): Option[String] =
@@ -290,9 +326,11 @@ pub mod Yarn {
 
     def partFrom(json: Json): Option[Part] = forM (
         obj <- JsonCodec.expectObject(json);
-        part <- match Map.get("expr", obj) {
-            case Some(expr) => exprFrom(expr) |> Option.map(Part.Insert)
-            case None       => Some(Part.Literal(JsonCodec.stringOr("text", "", obj)))
+        part <- match (Map.get("expr", obj), JsonCodec.stringOr("markup", "", obj), JsonCodec.stringOr("close", "", obj)) {
+            case (Some(expr), _, _) => exprFrom(expr) |> Option.map(Part.Insert)
+            case (None, "", "")     => Some(Part.Literal(JsonCodec.stringOr("text", "", obj)))
+            case (None, "", close)  => Some(Part.Close(close))
+            case (None, name, _)    => Some(Part.Markup(name, JsonCodec.stringOr("value", "", obj)))
         }
     ) yield part
 

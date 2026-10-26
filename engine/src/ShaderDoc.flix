@@ -146,6 +146,13 @@ pub mod ShaderDoc {
         /// 読む座標を (dx, dy) だけずらして of を読む。dx/dy は「外側の uv」で評価する
         /// （ずらし量自体は、ずらす前の位置で決まる — GL の式の組み方と同じ）。
         case Shift({ dx = Field, dy = Field, of = Field })
+        /// 名前つきテクスチャを今の uv のまわりで taps 回読み、平均した chan（0..1）を返す（ぼかし）。
+        /// 読む点は半径 radius（uv の単位・x と y 別。横長の面で丸くぼかすなら x = y × 縦÷横）の円の中に
+        /// 黄金角でむらなく撒く（レンズのぼけに近い、縁の柔らかい円形のぼかし）。amount は半径に掛ける場で、
+        /// 0 でぼかさず 1 で radius いっぱい（時間の場を入れるとピントが寄る・外れる演出になる）。
+        /// 1 点ずつの標本は Tex と同じ NEAREST + CLAMP。taps は 1..64 に丸める。
+        /// rgb を全部ぼかす時は r・g・b の 3 本に書く（場は 1 チャンネルなので、読む数は taps × 3 になる）。
+        case TexBlur({ name = String, chan = TexChan, radius = Vec2.Vec2, taps = Int32, amount = Field })
     }
 
     /// 面の色（rgb）。
@@ -347,6 +354,7 @@ pub mod ShaderDoc {
             case Field.Ref(_)          => acc1
             case Field.Tex(_)          => acc1
             case Field.Shift(sh)       => foldField(f, foldField(f, foldField(f, acc1, sh#dx), sh#dy), sh#of)
+            case Field.TexBlur(bl)     => foldField(f, acc1, bl#amount)
         }
 
     /// Spec の場を「bindings（前から）→ 色 → alpha」の順に並べる。texNames と、場を全部見る走査はこの並びを使う。
@@ -368,6 +376,7 @@ pub mod ShaderDoc {
     pub def texNames(spec: Spec): List[String] =
         List.foldLeft((acc, field) -> foldField((names, f) -> match f {
             case Field.Tex(tx) => if (List.memberOf(tx#name, names)) names else tx#name :: names
+            case Field.TexBlur(bl) => if (List.memberOf(bl#name, names)) names else bl#name :: names
             case _             => names
         }, acc, field), Nil, fieldsOf(spec)) |> List.reverse
 
@@ -407,7 +416,18 @@ pub mod ShaderDoc {
             case Field.Angle(_)        => None
             case Field.Ref(_)          => None
             case Field.Tex(_)          => None
+            case Field.TexBlur(_)      => None
         }
+
+    /// taps を 1..64 に丸める（GLSL のループの上限と CPU の評価で同じ数を読む）。
+    pub def blurTaps(taps: Int32): Int32 = Int32.max(1, Int32.min(64, taps))
+
+    /// Spec がぼかし（TexBlur）を使うか（GLSL の sg_blur を宣言するか）。
+    pub def usesBlur(spec: Spec): Bool =
+        fieldsOf(spec) |> List.exists(field -> foldField((found, f) -> match f {
+            case Field.TexBlur(_) => true
+            case _                => found
+        }, false, field))
 
     def smoothstepF(lo: Float64, hi: Float64, x: Float64): Float64 =
         if (hi - lo == 0.0) (if (x < lo) 0.0 else 1.0)

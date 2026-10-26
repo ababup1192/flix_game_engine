@@ -1199,3 +1199,54 @@ def testTexJsonDefaultChan(): Unit \ Assert =
         case Err(_) => None
     };
     Assert.assertEq(expected = Some(("scene", ShaderDoc.TexChan.R)), chan)
+
+// ── blur（TexBlur）──
+
+def blurSpec(radius: Float64, amount: ShaderDoc.Field): ShaderDoc.Spec =
+    { name = "b", cycleRate = 0.0, bindings = Nil,
+      out = ShaderDoc.Out.Fill({
+          shade = ShaderDoc.Shade.Solid({ r = 0.0, g = 0.0, b = 0.0 }),
+          alpha = ShaderDoc.Field.TexBlur({ name = "t", chan = ShaderDoc.TexChan.R,
+                                            radius = { x = radius, y = radius }, taps = 16, amount = amount }) }) }
+
+/// 左半分が黒・右半分が白の 2×1 の絵。
+def halves(): ShaderEval.TexData = { width = 2, height = 1, pixels = Vector#{ -16777216, -1 } }
+
+/// amount が 0 ならぼかさない（Tex と同じ画素）。境目の上では白黒の間の値になり、境目から半径より遠ければ元の値。
+@Test
+def testEvalBlurMixesOnlyNearTheEdge(): Unit \ Assert =
+    let env = Map#{ "t" => halves() };
+    let at = (spec, u) -> ShaderEval.evalAlphaTex(spec, { x = u, y = 0.5 }, 0.0, env);
+    let blurred = blurSpec(0.2, ShaderDoc.Field.Const(1.0));
+    let still = blurSpec(0.2, ShaderDoc.Field.Const(0.0));
+    let mid = at(blurred, 0.5);
+    Assert.assertEq(expected = (0.0, 1.0, true, 0.0, 1.0),
+                    (at(still, 0.49), at(still, 0.51), mid > 0.25 and mid < 0.75, at(blurred, 0.1), at(blurred, 0.9)))
+
+/// blur の JSON 往復で GLSL がバイト一致し、ぼかしを使う Spec にだけ sg_blur が入る。
+@Test
+def testBlurJsonRoundTripAndPreludeOnlyWhenUsed(): Unit \ Assert =
+    let spec = blurSpec(0.02, ShaderDoc.Field.Time({ scale = 0.5, offset = ShaderDoc.Field.Const(0.0) }));
+    let same = match ShaderJson.parse(ShaderJson.toJson(spec)) {
+        case Ok(spec2) => ShaderGen.compile(spec2) == ShaderGen.compile(spec)
+        case Err(_)    => false
+    };
+    let has = s -> String.contains({ substr = "sg_blur(" }, ShaderGen.compile(s));
+    Assert.assertEq(expected = (true, true, false), (same, has(spec), has(ShaderDoc.demoSurface())))
+
+/// blur の taps と radius と amount を省いた JSON は、24 回・半径 0.01・amount 1 で読む。
+@Test
+def testBlurJsonDefaults(): Unit \ Assert =
+    let json = "{\"name\":\"s\",\"out\":{\"kind\":\"fill\"," +
+               "\"shade\":{\"kind\":\"solid\",\"color\":\"#000000\"}," +
+               "\"alpha\":{\"kind\":\"blur\",\"name\":\"photo\"}}}";
+    let got = match Util.Json.parse(json) |> Result.flatMap(ShaderJson.parse) {
+        case Ok(spec) => match spec#out {
+            case ShaderDoc.Out.Fill(f) => match f#alpha {
+                case ShaderDoc.Field.TexBlur(bl) => Some((bl#name, bl#taps, bl#radius#x, ShaderDoc.texNames(spec)))
+                case _ => None
+            }
+        }
+        case Err(_) => None
+    };
+    Assert.assertEq(expected = Some(("photo", 24, 0.01, List#{"photo"})), got)

@@ -2004,6 +2004,12 @@
   `pub def wrapLinesBy(charWidth: Char -> Float64, maxWidth: Float64, spans: List[Span]): List[List[Span]]`
 - スパン列を左上 pos から 1 文字ずつ置いていく。行割りは wrapLinesBy(atlas の実測幅)で、
   `pub def place(p: Placement, spans: List[Span]): List[Render.PlacedItem]`
+- ルビ 1 つ。start = 親字の頭（plainText の何文字目・0 始まり）、length = 親字の数、text = ふりがな。
+  `pub type alias Ruby = { start = Int32, length = Int32, text = String }`
+- ルビつきで折った時の行数（ページ割り・窓の高さの勘定。字幅の決まりは wrapLinesBy と同じ）。
+  `pub def rubyLineCountBy(charWidth: Char -> Float64, rubyWidth: String -> Float64, maxWidth: Float64, rubies: List[Ruby], spans: List[Span]): Int32`
+- ルビつきの字を置く。親字の上に rubySize の字でふりがなを中央そろえで載せる（親字より広ければ親字を中央へ寄せる）。
+  `pub def placeRuby(p: Placement, rubySize: Float64, rubies: List[Ruby], visible: Int32, spans: List[Span]): List[Render.PlacedItem]`
 
 ## SaveManager — `engine_world/src/SaveManager.flix`
 - `saves/slot{N}.json` のパス。
@@ -2913,8 +2919,10 @@
   `pub type alias Tag = { key = String, value = String }`
 - 台詞 1 行。speaker = 話し手の id（地の文は空）、text = 出す字（エスケープは解いてある）、
   `pub type alias Line = { speaker = String, text = String, parts = List[Part], tags = List[Tag], source = Source }`
-- 行の 1 切れ。Literal = 書いたとおりの字、Insert = {式}（値を字にして差し込む）。
-  `pub enum Part { case Literal(String) case Insert(Expr) }`
+- 行の 1 切れ。Literal = 書いたとおりの字、Insert = {式}（値を字にして差し込む）、
+  `pub enum Part { case Literal(String) case Insert(Expr) case Markup(String, String) case Close(String) }`
+- マークアップ 1 つ（公式の MarkupAttribute）。start = text の何文字目から（0 始まり・String.length の数え方）、
+  `pub type alias Markup = { name = String, value = String, start = Int32, length = Int32 }`
 - 変数と式の値（公式と同じ 3 つの型。型は build の check が合わせてある）。
   `pub enum Value with Eq, ToString { case Number(Float64) case Bool(Bool) case Text(String) }`
 - 式。Visited / VisitCount はノードを出た回数を見る（公式の visited("…")・visited_count("…")）。
@@ -2950,6 +2958,12 @@
   `pub def toText(value: Value): String`
 - file の line 行を中に持つノードの名前（そのファイルで title: の行が line 以下の、いちばん後のノード）。
   `pub def nodeAtLine(file: String, line: Int32, program: Program): Option[String]`
+- 行のマークアップ（書いた順）。{式} は値の字の長さで数える（YarnRunner の出来事の Line は値を入れてある）。
+  `pub def markupOf(line: Line): List[Markup]`
+- 行のルビ（[ruby=よみ]字[/ruby]）を RichText.placeRuby に渡す形で。
+  `pub def rubiesOf(line: Line): List[RichText.Ruby]`
+- 字の切れだけをつないだ字（{式} とマークアップは字にしない）。
+  `pub def plainTextOf(parts: List[Part]): String`
 - タグの値（そのキーのタグが無ければ None・値の無いタグは Some("")）。
   `pub def tagOf(key: String, tags: List[Tag]): Option[String]`
 - 「ファイル:行」（F8 のチケットやログに出す形）。
@@ -2980,6 +2994,8 @@
   `pub enum Action with Eq, ToString { case Advance case Choose(Int32) case Tick }`
 - 今出している物。Closed = 開いていない・終わった、Waiting = <<wait>> の途中。
   `pub enum Shown { case Closed case Line(Yarn.Line) case Choices(List[DialogueOption]) case Waiting }`
+- 読んでいる所のブックマーク（セーブに入れる物）。node = 開いているノード、storage = そのノードに入った時の変数と訪れた数、
+  `pub type alias Bookmark = { node = String, storage = YarnStorage.Storage, steps = List[Action] }`
 - 実行器。c は <<wait>> を測る時計の名前（ゲームの物語の時計など）。外では start と closed だけが作る。
   `pub type alias Runner[c] = Machine[c]`
 - 開いていない実行器（World の初期値）。
@@ -3004,6 +3020,14 @@
   `pub def choicesFollow(runner: Runner[c]): Bool`
 - <<wait>> が明ける時刻（待っていなければ None）。
   `pub def waitUntilOf(runner: Runner[c]): Option[Clock.Time[c]]`
+- 読んでいる所のブックマーク（開いていなければ None）。
+  `pub def bookmarkOf(runner: Runner[c]): Option[Bookmark]`
+- ブックマークのノードの頭から steps を当て直し、セーブした時と同じ所（同じ台詞・選択肢）を出す。返す出来事は当て直す間に
+  `pub def resume(program: Yarn.Program, bookmark: Bookmark, now: Clock.Time[c]): (Runner[c], List[Event])`
+- ブックマークを JSON に（セーブ）。steps は Advance を "a"、Choose(i) を i の数で並べる。
+  `pub def bookmarkToJson(bookmark: Bookmark): Util.Json.Json`
+- JSON からブックマークへ（ロード）。形が違えば None（違う所から始めるより、ゲームがセーブを読めないと知らせる方がよい）。
+  `pub def bookmarkFromJson(json: Util.Json.Json): Option[Bookmark]`
 - 変数と訪れた数（セーブや次の会話の startWith へ渡す）。
   `pub def storageOf(runner: Runner[c]): YarnStorage.Storage`
 - 変数と訪れた数を差し替える（ゲームの World の値をシナリオへ渡す・セーブから戻す）。

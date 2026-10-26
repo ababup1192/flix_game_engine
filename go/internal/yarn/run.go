@@ -41,9 +41,11 @@ const usage = `使い方: bin/fge yarn <サブコマンド> ...   会話のシ�
   式: + - * / %・== != < <= > >=・and or not・( )・visited("ノード")・visited_count("ノード")（ノードを出た回数）
   値はゲームの YarnRunner.valueOf / withStorage で読み書きし、YarnStorage.toJson でセーブに乗せる。
   プレビューに値を渡す: bin/fge talk shot / goto <file.yarn>:<行> '$切符=0'（始まりの引数を YarnStorage.withArgs → YarnRunner.startAtWith）。
+ルビ（マークアップ）: 千夏: [ruby=ひぐらし]蜩[/ruby]が鳴く   [/] でも閉じる。同じ行の中で閉じる。値に ] を含むなら "…" で囲む。
+  木の字（text）には [ ] を抜いた字が入り、ゲームは Yarn.markupOf で字の何文字目からがルビかを読む（描くのは RichText.placeRuby）。
 読まない: 宣言の無い変数（公式の暗黙の宣言）・別の綴り（is eq && || ! など）・and と or の括弧なしの混ぜ書き・関数の自作と他の組み込み関数・
   <<declare>> の計算した値と as 型・台詞の行末の <<if>>・コマンドの中の {式}・<<local>>・<<detour>>・<<once>>・=> の行のグループ・
-  when:・tracking:・[マークアップ]・ゲームを待つコマンド。
+  when:・tracking:・ruby の他の [マークアップ]・ゲームを待つコマンド。
 `
 
 const (
@@ -377,7 +379,11 @@ func BuildProgram(names, texts []string, vocab *Vocab, vocabPath string) (*Progr
 			prog.Variables = append(prog.Variables, n.declared...)
 		}
 	}
-	if !usesVersionTwo(prog) {
+	switch {
+	case usesMarkup(prog):
+	case usesVersionTwo(prog):
+		prog.Version = versionTwo
+	default:
 		prog.Version = versionOne
 	}
 	prog.Note = fmt.Sprintf("bin/fge yarn build が %s から書いた木。手で直さない（.yarn を直して build する）", strings.Join(names, " "))
