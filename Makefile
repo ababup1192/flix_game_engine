@@ -576,10 +576,12 @@ release-guard:
 # WhyNot: engine の go test で形を固めるだけにしないのは、固めた期待値ごと書き換えれば通り、
 # Studio 側の直し忘れは止まらないため（0.35.36 で実際に落ちた）。公開の前に Studio の実物と突き合わせる。
 # Studio の clone が無い所では STUDIO=none で飛ばせる（飛ばしたことは出力に残る）。
-STUDIO ?= $(HOME)/Desktop/flix_ge_studio
+# WhyNot: 1 か所に決め打ちしないのは、clone を置き直すたびに release が止まり、毎回 STUDIO= を足すことになるため。
+STUDIO_CANDIDATES := $(abspath $(CURDIR)/../flix_ge_studio) $(HOME)/Desktop/flix_ge_studio
+STUDIO ?= $(or $(patsubst %/Makefile,%,$(firstword $(wildcard $(addsuffix /Makefile,$(STUDIO_CANDIDATES))))),$(firstword $(STUDIO_CANDIDATES)))
 studio-parity:
 	@if [ "$(STUDIO)" = "none" ]; then echo "[release] STUDIO=none: Studio との AGENTS の突き合わせを飛ばしました"; exit 0; fi; \
-	 test -f "$(STUDIO)/Makefile" || { echo "[release] Studio の clone が見つかりません ($(STUDIO))。STUDIO=<パス> で指定するか、無い環境なら STUDIO=none"; exit 1; }; \
+	 test -f "$(STUDIO)/Makefile" || { echo "[release] Studio の clone が見つかりません ($(STUDIO)・探した所: $(STUDIO_CANDIDATES))。STUDIO=<パス> で指定するか、無い環境なら STUDIO=none"; exit 1; }; \
 	 git -C "$(STUDIO)" fetch -q origin main \
 	   && [ "$$(git -C "$(STUDIO)" rev-parse HEAD)" = "$$(git -C "$(STUDIO)" rev-parse origin/main)" ] \
 	   || { echo "[release] Studio の clone ($(STUDIO)) が origin/main と違います。git -C $(STUDIO) pull --ff-only で最新にしてから"; exit 1; }; \

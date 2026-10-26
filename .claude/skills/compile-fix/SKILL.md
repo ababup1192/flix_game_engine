@@ -2,7 +2,7 @@
 name: compile-fix
 description: "Flix のコンパイルエラーを既知の落とし穴（予約語・import の位置・エフェクト・Channel・Java 例外・パターン網羅・Float32/64）と照合して直す。flix check / make check / make test が失敗したとき、E3138・E5252・E6217 等のエラー番号、Parse error・Unable to unify・Non-exhaustive match・Unresolved type、「Expected ',' before '='」のような原因の見えないエラーが出たときに使う。"
 allowed-tools: Read, Grep, Glob, Bash
-sync: 2026-10-17
+sync: 2026-10-26
 ---
 
 # Flix コンパイルエラー診断
@@ -15,7 +15,8 @@ sync: 2026-10-17
 1. エラーメッセージを確認する（ユーザー提示 or `make check`（型検査だけ・一番速い）/ `make test` を実行）
 2. 下記の「既知の落とし穴リスト」と照合する
 3. 該当する場合は修正方法を提示する
-4. 該当しない場合は、エラー箇所と関連する型定義を読んで診断する
+4. 該当しない場合は、エラー箇所と関連する型定義を読んで診断する（ゲームの宣言は
+   `bin/fge refactor show <Mod.T>` で本文だけ引く。ファイルを丸ごと読まない）
 
 補足: `make check` の失敗出力の末尾には `bin/fge explain-error` が処方箋 1 行を自動で添える。
 その対応表の実体は `bin/lint-rules/explain-error.json` にあり、由来はこのスキルの落とし穴リスト —
