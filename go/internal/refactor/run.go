@@ -25,6 +25,8 @@ const Usage = `使い方: fge refactor <操作> [引数] [--json] [-v|--verbose]
   usages --unused                                      外から使われない pub の def（参照 0・テストからだけ・同じ mod の中だけ）と
                                                        使っていない use（flixlint の unused-use と同じ判定。読むだけ。消すのは
                                                        remove-dead・make-private・remove-use）
+  show <Mod.f|Enum|Enum.Case|Alias>[,<名前>…]           宣言の本文だけを読む（/// と注記から本文の終わりまで。頭の行に
+                                                       file:始め-終わり。case はそれを持つ enum。grep → Read の 2 手を 1 手に）
   refs <Mod.name> [--callers]                          def・enum・case の宣言と参照（--callers は参照する def ごと）
   match-sites <Enum|Enum.Case> [--catch-all]           match の位置・腕の数・` + "`_`" + `／変数の腕（--catch-all はそれを持つ物だけ）
   field-sites --label x [--receiver T] [--outside Mod] record の欄 x の直の読み（e#x）と書き（{ x = v | e }）
@@ -625,9 +627,14 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 			fmt.Fprintln(errOut, "refactor usages: 名前を渡してください（例 refactor usages World.moveTo・refactor usages World#scene・refactor usages --unused）")
 			return 2
 		}
+	case "show":
+		if a.target == "" {
+			fmt.Fprintln(errOut, "refactor show: 名前を渡してください（例 refactor show World.enter・a,b で複数）")
+			return 2
+		}
 	case "index":
 	default:
-		fmt.Fprintf(errOut, "refactor: 知らない操作 %s（usages・refs・match-sites・field-sites・index・expand-wildcard・remove-dead・field-to-accessor・remove-field・fix-construction・add-field・move-fields・change-case-shape・change-signature・retarget-field・remove-param・make-private・rename・safe-delete・move・remove-use・rewrite・extract-function・extract-type-alias）\n", a.op)
+		fmt.Fprintf(errOut, "refactor: 知らない操作 %s（usages・show・refs・match-sites・field-sites・index・expand-wildcard・remove-dead・field-to-accessor・remove-field・fix-construction・add-field・move-fields・change-case-shape・change-signature・retarget-field・remove-param・make-private・rename・safe-delete・move・remove-use・rewrite・extract-function・extract-type-alias）\n", a.op)
 		return 2
 	}
 	if a.op != "field-to-accessor" && a.op != "retarget-field" && (strings.Contains(a.label, ",") || a.labelsFile != "") {
@@ -706,6 +713,9 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 			}
 		}
 		return 2
+	}
+	if a.op == "show" {
+		return showRun(out, errOut, root, idx, a)
 	}
 	var rep report
 	switch a.op {
