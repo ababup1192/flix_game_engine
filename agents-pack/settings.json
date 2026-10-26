@@ -7,6 +7,11 @@
             "type": "command",
             "command": "make -s status",
             "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/bin/fge\" hook-index-warm",
+            "timeout": 10
           }
         ]
       }

@@ -94,6 +94,35 @@ func ReserveDecls(pkg string) {
 	_ = cmd.Process.Release()
 }
 
+// WarmIndex は pkg の索引を裏で作り始める（hook-index-warm・SessionStart）。宣言の索引（show・search・outline・context）は
+// いつも、typed の索引（usages の欄・--label）は前に作った物がある時だけ作り直す。どちらも出来ていれば作らずに終わる。
+//
+// WhyNot: 最初の問いまで待たない。1 回目の search が 17 秒・usages が 14 秒かかり、その間はエージェントが止まる。
+// typed を前に作っていない所で作らない。4〜5 GB の JVM で、欄を引かないセッションには要らない。
+func WarmIndex(pkg string) {
+	if _, err := os.Stat(filepath.Join(pkg, "flix.toml")); err != nil {
+		return
+	}
+	self, err := os.Executable()
+	if err != nil {
+		return
+	}
+	runs := [][]string{{"refactor", "index", "--decls", "--root", pkg}}
+	if _, err := os.Stat(filepath.Join(pkg, "build", "refactor", "spans-typed.tsv")); err == nil {
+		runs = append(runs, []string{"refactor", "index", "--stage", "typed", "--root", pkg})
+	}
+	for _, args := range runs {
+		cmd := exec.Command(self, args...)
+		cmd.Dir = pkg
+		cmd.Stdin, cmd.Stdout, cmd.Stderr = nil, nil, nil
+		detach(cmd)
+		if err := cmd.Start(); err != nil {
+			return
+		}
+		_ = cmd.Process.Release()
+	}
+}
+
 // SessionHash は印のファイル名に使うセッションの短い指紋。
 func SessionHash(r *Rules, session string) string {
 	sum := sha1.Sum([]byte(session))

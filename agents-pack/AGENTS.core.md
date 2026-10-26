@@ -51,7 +51,7 @@ lint・フック・make の口で止まる決まりはここに書かない（�
 | 文書が消えた名前・無いファイルを指していないか | `make lint-doc-refs`（古い記録は `doc-refs.local.json` の skip） |
 | 関数・型の本文を読む・名前の一部で宣言を探す・ファイルの宣言の一覧（丸ごと読まない。理由は `/flix-docs`） | `bin/fge refactor show` / `search` / `outline` |
 | 直す前に周り（本文・呼び手・呼ぶ先・型）を 1 回で見る | `bin/fge refactor context <名前>`・呼ぶ先の木は `trace` |
-| 名前の使われ所・呼び手を探す（grep より先に・読むのは道具が出した行だけ） | `bin/fge refactor usages <名前>` |
+| 名前の使われ所・呼び手を探す（grep より先に・読むのは道具が出した行だけ） | `bin/fge refactor usages <名前>`・欄を書く所だけは `--write` |
 | 使われない pub・use を探して消す・pub を外す | `bin/fge refactor usages --unused` → `remove-dead`・`make-private`・`remove-use` |
 | record の欄の直の読み書きを口の関数へ替える（口が無ければ作る） | `bin/fge refactor field-to-accessor` |
 | 欄の読みを別の引数の同じ欄へ（`w#x` → `res#x`） | `bin/fge refactor retarget-field` |
