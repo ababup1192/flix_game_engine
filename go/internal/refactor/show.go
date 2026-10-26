@@ -244,6 +244,7 @@ type declSet struct {
 	changed map[string]bool
 	tried   bool // 作り直しを試した（1 回の show で 2 度は試さない）
 	failed  error
+	src     string // 宣言の索引を作った時のソースの鍵（参照の索引 refs.tsv と合わせる）
 }
 
 // declHeader は decl.tsv の頭の行の印。2 行目からは `#file <パス> <中身のハッシュ>`、その後に宣言の行（索引と同じ 9 列）。
@@ -264,7 +265,7 @@ func (b Builder) LoadDecls(s Stage) (*declSet, error) {
 	env := b.envKey()
 	if !b.Rebuild {
 		if d, ok := readDecls(b.declPath(s)); ok && d.env == env {
-			ds := &declSet{b: b, stage: s, rows: d.rows}
+			ds := &declSet{b: b, stage: s, rows: d.rows, src: d.src}
 			if d.src != src {
 				ds.stale, ds.changed = true, changedFiles(d.hashes, hashes)
 			}
@@ -307,7 +308,8 @@ func (b Builder) rebuildDecls(s Stage, hashes map[string]string, src, env string
 	if os.WriteFile(tmp, []byte(sb.String()), 0o644) == nil {
 		os.Rename(tmp, b.declPath(s))
 	}
-	return &declSet{b: b, stage: s, rows: keep}, nil
+	writeRefs(b.refsPath(s), src, idx.Rows)
+	return &declSet{b: b, stage: s, rows: keep, src: src}, nil
 }
 
 var declKindsForShow = map[string]bool{KindDefDecl: true, KindEnumDecl: true, KindCaseDecl: true, KindAliasDecl: true}
@@ -405,7 +407,7 @@ func (ds *declSet) show(q string, src *srcCache) (Shown, error) {
 		ds.tried = true
 		fresh, ferr := ds.b.rebuildDecls(ds.stage, mustHashes(ds.b), mustKey(ds.b, ds.stage), ds.b.envKey())
 		if ferr == nil {
-			ds.rows, ds.stale, ds.changed = fresh.rows, false, nil
+			ds.rows, ds.stale, ds.changed, ds.src = fresh.rows, false, nil, fresh.src
 			return ShowDecl(ds.rows, q, src)
 		}
 		ds.failed = ferr
