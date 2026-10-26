@@ -634,8 +634,16 @@ pub mod LwjglLayer {
         // 状態は shouldClose で 1 フレーム 1 回更新し、padPressed が読み出す。
         let gamepadState = GLFWGamepadState.create();
         let gamepadConnectedHolder = Array#{false} @ Static;
-        let padBtn = (idx: Int32) -> gamepadState.buttons(idx) != 0i8;
-        let padAxis = (idx: Int32) -> gamepadState.axes(idx);
+        // SDL3 が始められれば SDL3 で、だめなら GLFW で読む（SdlPad の冒頭）。読む元は起動の時に 1 回だけ決める。
+        let sdlReady = SdlPad.start();
+        // SDL3 で開いているパッド。0 は開いていない。
+        let sdlPadHolder = Array#{0i64} @ Static;
+        let padBtn = (idx: Int32) ->
+            if (sdlReady) SdlPad.button(Array.get(0, sdlPadHolder), idx)
+            else gamepadState.buttons(idx) != 0i8;
+        let padAxis = (idx: Int32) ->
+            if (sdlReady) SdlPad.axis(Array.get(0, sdlPadHolder), idx)
+            else gamepadState.axes(idx);
         // 方向は D-pad と左スティック（デッドゾーン 0.5）の両方で受ける。
         // GLFW のスティック Y 軸は上が負。
         let padUp    = () -> padBtn(GLFW.GLFW_GAMEPAD_BUTTON_DPAD_UP)    or (padAxis(GLFW.GLFW_GAMEPAD_AXIS_LEFT_Y) < -0.5f32);
@@ -662,10 +670,27 @@ pub mod LwjglLayer {
                 (Map.get(key, padTable) |> Option.exists(padInputDown));
         // 機種はつないだ時に 1 回だけ読む（GUID と名前は毎フレーム字を作るので）。
         let padKindHolder = Array#{GamepadMap.PadKind.Unknown} @ Static;
-        let readPadKind = () -> {
-            let guid = GLFW.glfwGetJoystickGUID(GLFW.GLFW_JOYSTICK_1);
-            let name = GLFW.glfwGetGamepadName(GLFW.GLFW_JOYSTICK_1);
-            GamepadMap.kindOf(if (Object.isNull(guid)) "" else guid, if (Object.isNull(name)) "" else name)
+        // 読んでいる joystick の番号。-1 はつないでいない。
+        let padJidHolder = Array#{-1} @ Static;
+        let orEmpty = (s: String) -> if (Object.isNull(s)) "" else s;
+        let readPadKind = (jid: Int32) ->
+            GamepadMap.kindOf(orEmpty(GLFW.glfwGetJoystickGUID(jid)), orEmpty(GLFW.glfwGetGamepadName(jid)));
+        // WhyNot: 1 番だけを見ない — Mac の Steam Controller のように、対応表の無い本体が 1 番に、
+        // Steam が作った仮想パッドが 2 番以降に並ぶことがある。
+        let findPad = () ->
+            List.range(GLFW.GLFW_JOYSTICK_1, GLFW.GLFW_JOYSTICK_LAST + 1)
+                |> List.find(jid -> GLFW.glfwJoystickIsGamepad(jid))
+                |> Option.getWithDefault(-1);
+        // 読めるパッドが変わった時に、つながっている joystick を全部 stderr へ出してから機種を返す。
+        // gamepad=false の行は GLFW の対応表に無い機械で、ボタンはキーにならない（docs/gamepad.md）。
+        let kindLogged = (jid: Int32) -> {
+            let present = List.range(GLFW.GLFW_JOYSTICK_1, GLFW.GLFW_JOYSTICK_LAST + 1)
+                |> List.filter(j -> GLFW.glfwJoystickPresent(j));
+            let line = (j: Int32) ->
+                "[gamepad] joystick ${j}: name=\"${orEmpty(GLFW.glfwGetJoystickName(j))}\" guid=${orEmpty(GLFW.glfwGetJoystickGUID(j))} gamepad=${GLFW.glfwJoystickIsGamepad(j)}" +
+                    (if (j == jid) " <- 使う" else "");
+            let lines = if (List.isEmpty(present)) "[gamepad] つながっている joystick は無い" :: Nil else List.map(line, present);
+            Log.warnAllThen(lines, if (jid >= 0) readPadKind(jid) else GamepadMap.PadKind.Unknown)
         };
 
         let result = run {
@@ -804,11 +829,24 @@ pub mod LwjglLayer {
                 Array.put(false, 2, mouseButtonPressedHolder);
                 GLFW.glfwPollEvents();
                 // ゲームパッド状態を 1 フレーム 1 回更新（接続かつ gamepad マッピング有効時のみ）。
-                let padConnected = GLFW.glfwJoystickIsGamepad(GLFW.GLFW_JOYSTICK_1);
-                if (padConnected) discard GLFW.glfwGetGamepadState(GLFW.GLFW_JOYSTICK_1, gamepadState) else ();
-                if (padConnected != Array.get(0, gamepadConnectedHolder))
-                    Array.put(if (padConnected) readPadKind() else GamepadMap.PadKind.Unknown, 0, padKindHolder)
-                else ();
+                let padConnected = if (sdlReady) {
+                    let held = Array.get(0, sdlPadHolder);
+                    let pad = SdlPad.poll(held);
+                    if (pad != held) {
+                        let kind = if (pad != 0i64) Log.warnThen(SdlPad.describe(pad), SdlPad.kindOf(pad))
+                            else Log.warnThen("[gamepad] SDL3: つながっているパッドは無い", GamepadMap.PadKind.Unknown);
+                        Array.put(kind, 0, padKindHolder)
+                    } else ();
+                    Array.put(pad, 0, sdlPadHolder);
+                    pad != 0i64
+                } else {
+                    let held = Array.get(0, padJidHolder);
+                    let jid = if (held >= 0 and GLFW.glfwJoystickIsGamepad(held)) held else findPad();
+                    if (jid >= 0) discard GLFW.glfwGetGamepadState(jid, gamepadState) else ();
+                    if (jid != held) Array.put(kindLogged(jid), 0, padKindHolder) else ();
+                    Array.put(jid, 0, padJidHolder);
+                    jid >= 0
+                };
                 Array.put(padConnected, 0, gamepadConnectedHolder);
                 k(GLFW.glfwWindowShouldClose(window))
             }
@@ -1024,6 +1062,7 @@ pub mod LwjglLayer {
         ALC10.alcDestroyContext(alContext);
         discard ALC10.alcCloseDevice(alDevice);
 
+        if (sdlReady) SdlPad.stop(Array.get(0, sdlPadHolder)) else ();
         Callbacks.glfwFreeCallbacks(window);
         GLFW.glfwDestroyWindow(window);
         GLFW.glfwTerminate();

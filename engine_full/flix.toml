@@ -9,13 +9,14 @@ repository  = "github:ababup1192/flix_game_engine"
 # src/ は make sync-engine-full が張るファイル単位の symlink 集約。
 # ここに依存を書かないのは、外部公開を1リポで完結させるため（差し替え seam より配布の単純さを取る）。
 
-# GL 描画 (opengl) / 画像・フォント (stb) / 音 (openal) / ウィンドウ (glfw) の LWJGL モジュール。
+# GL 描画 (opengl) / 画像・フォント (stb) / 音 (openal) / ウィンドウ (glfw) / ゲームパッド (sdl) の LWJGL モジュール。
 [mvn-dependencies]
 "org.lwjgl:lwjgl"        = "3.4.1"
 "org.lwjgl:lwjgl-opengl" = "3.4.1"
 "org.lwjgl:lwjgl-stb"    = "3.4.1"
 "org.lwjgl:lwjgl-openal" = "3.4.1"
 "org.lwjgl:lwjgl-glfw"   = "3.4.1"
+"org.lwjgl:lwjgl-sdl"    = "3.4.1"
 
 # LWJGL ネイティブは複数プラットフォームを同一 classpath に同居させても無害。
 # 実行時に os.name/os.arch を見て、自分の OS に合う1つだけが選ばれる仕組みだから。
@@ -27,23 +28,28 @@ repository  = "github:ababup1192/flix_game_engine"
 "lwjgl-stb-3.4.1-natives-macos-arm64.jar"    = "url:https://repo1.maven.org/maven2/org/lwjgl/lwjgl-stb/3.4.1/lwjgl-stb-3.4.1-natives-macos-arm64.jar"
 "lwjgl-openal-3.4.1-natives-macos-arm64.jar" = "url:https://repo1.maven.org/maven2/org/lwjgl/lwjgl-openal/3.4.1/lwjgl-openal-3.4.1-natives-macos-arm64.jar"
 "lwjgl-glfw-3.4.1-natives-macos-arm64.jar"   = "url:https://repo1.maven.org/maven2/org/lwjgl/lwjgl-glfw/3.4.1/lwjgl-glfw-3.4.1-natives-macos-arm64.jar"
+"lwjgl-sdl-3.4.1-natives-macos-arm64.jar"    = "url:https://repo1.maven.org/maven2/org/lwjgl/lwjgl-sdl/3.4.1/lwjgl-sdl-3.4.1-natives-macos-arm64.jar"
 "lwjgl-3.4.1-natives-windows.jar"            = "url:https://repo1.maven.org/maven2/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1-natives-windows.jar"
 "lwjgl-opengl-3.4.1-natives-windows.jar"     = "url:https://repo1.maven.org/maven2/org/lwjgl/lwjgl-opengl/3.4.1/lwjgl-opengl-3.4.1-natives-windows.jar"
 "lwjgl-stb-3.4.1-natives-windows.jar"        = "url:https://repo1.maven.org/maven2/org/lwjgl/lwjgl-stb/3.4.1/lwjgl-stb-3.4.1-natives-windows.jar"
 "lwjgl-openal-3.4.1-natives-windows.jar"     = "url:https://repo1.maven.org/maven2/org/lwjgl/lwjgl-openal/3.4.1/lwjgl-openal-3.4.1-natives-windows.jar"
 "lwjgl-glfw-3.4.1-natives-windows.jar"       = "url:https://repo1.maven.org/maven2/org/lwjgl/lwjgl-glfw/3.4.1/lwjgl-glfw-3.4.1-natives-windows.jar"
+"lwjgl-sdl-3.4.1-natives-windows.jar"        = "url:https://repo1.maven.org/maven2/org/lwjgl/lwjgl-sdl/3.4.1/lwjgl-sdl-3.4.1-natives-windows.jar"
 "lwjgl-3.4.1-natives-macos.jar"              = "url:https://repo1.maven.org/maven2/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1-natives-macos.jar"
 "lwjgl-opengl-3.4.1-natives-macos.jar"       = "url:https://repo1.maven.org/maven2/org/lwjgl/lwjgl-opengl/3.4.1/lwjgl-opengl-3.4.1-natives-macos.jar"
 "lwjgl-stb-3.4.1-natives-macos.jar"          = "url:https://repo1.maven.org/maven2/org/lwjgl/lwjgl-stb/3.4.1/lwjgl-stb-3.4.1-natives-macos.jar"
 "lwjgl-openal-3.4.1-natives-macos.jar"       = "url:https://repo1.maven.org/maven2/org/lwjgl/lwjgl-openal/3.4.1/lwjgl-openal-3.4.1-natives-macos.jar"
 "lwjgl-glfw-3.4.1-natives-macos.jar"         = "url:https://repo1.maven.org/maven2/org/lwjgl/lwjgl-glfw/3.4.1/lwjgl-glfw-3.4.1-natives-macos.jar"
+"lwjgl-sdl-3.4.1-natives-macos.jar"          = "url:https://repo1.maven.org/maven2/org/lwjgl/lwjgl-sdl/3.4.1/lwjgl-sdl-3.4.1-natives-macos.jar"
 "lwjgl-3.4.1-natives-linux.jar"              = "url:https://repo1.maven.org/maven2/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1-natives-linux.jar"
 "lwjgl-opengl-3.4.1-natives-linux.jar"       = "url:https://repo1.maven.org/maven2/org/lwjgl/lwjgl-opengl/3.4.1/lwjgl-opengl-3.4.1-natives-linux.jar"
 "lwjgl-stb-3.4.1-natives-linux.jar"          = "url:https://repo1.maven.org/maven2/org/lwjgl/lwjgl-stb/3.4.1/lwjgl-stb-3.4.1-natives-linux.jar"
 "lwjgl-openal-3.4.1-natives-linux.jar"       = "url:https://repo1.maven.org/maven2/org/lwjgl/lwjgl-openal/3.4.1/lwjgl-openal-3.4.1-natives-linux.jar"
 "lwjgl-glfw-3.4.1-natives-linux.jar"         = "url:https://repo1.maven.org/maven2/org/lwjgl/lwjgl-glfw/3.4.1/lwjgl-glfw-3.4.1-natives-linux.jar"
+"lwjgl-sdl-3.4.1-natives-linux.jar"          = "url:https://repo1.maven.org/maven2/org/lwjgl/lwjgl-sdl/3.4.1/lwjgl-sdl-3.4.1-natives-linux.jar"
 "lwjgl-3.4.1-natives-linux-arm64.jar"        = "url:https://repo1.maven.org/maven2/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1-natives-linux-arm64.jar"
 "lwjgl-opengl-3.4.1-natives-linux-arm64.jar" = "url:https://repo1.maven.org/maven2/org/lwjgl/lwjgl-opengl/3.4.1/lwjgl-opengl-3.4.1-natives-linux-arm64.jar"
 "lwjgl-stb-3.4.1-natives-linux-arm64.jar"    = "url:https://repo1.maven.org/maven2/org/lwjgl/lwjgl-stb/3.4.1/lwjgl-stb-3.4.1-natives-linux-arm64.jar"
 "lwjgl-openal-3.4.1-natives-linux-arm64.jar" = "url:https://repo1.maven.org/maven2/org/lwjgl/lwjgl-openal/3.4.1/lwjgl-openal-3.4.1-natives-linux-arm64.jar"
 "lwjgl-glfw-3.4.1-natives-linux-arm64.jar"   = "url:https://repo1.maven.org/maven2/org/lwjgl/lwjgl-glfw/3.4.1/lwjgl-glfw-3.4.1-natives-linux-arm64.jar"
+"lwjgl-sdl-3.4.1-natives-linux-arm64.jar"    = "url:https://repo1.maven.org/maven2/org/lwjgl/lwjgl-sdl/3.4.1/lwjgl-sdl-3.4.1-natives-linux-arm64.jar"

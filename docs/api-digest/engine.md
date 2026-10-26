@@ -472,6 +472,8 @@
   `pub def byKey(): Map[Key, PadInput]`
 - GLFW の joystick の GUID（SDL の形の 32 字の 16 進）とパッドの名前から機種を決める。
   `pub def kindOf(guid: String, name: String): PadKind`
+- USB のベンダー（数・0 は分からない）とパッドの名前から機種を決める。SDL3 で読む時の形。
+  `pub def kindOfVendor(vendor: Int32, name: String): PadKind`
 
 ## GpuHandle — `engine/src/core/GpuHandle.flix`
 - タイルマップの GPU インスタンスバッファのハンドル（`initTileBuffer` が返す）。

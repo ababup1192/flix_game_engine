@@ -52,6 +52,11 @@ pub mod GamepadMap {
         else if (vendorOf(guid) == Some("28de") or String.contains(substr = "Steam", name)) PadKind.Steam
         else PadKind.Generic
 
+    /// USB のベンダー（数・0 は分からない）とパッドの名前から機種を決める。SDL3 で読む時の形。
+    pub def kindOfVendor(vendor: Int32, name: String): PadKind =
+        if (vendor == 0x28de or String.contains(substr = "Steam", name)) PadKind.Steam
+        else PadKind.Generic
+
     /// GUID の USB のベンダー（4 字の 16 進・小文字）。9〜12 字目に 2 バイトが小さい方から並ぶ。形が違えば None。
     def vendorOf(guid: String): Option[String] =
         if (String.length(guid) != 32) None
