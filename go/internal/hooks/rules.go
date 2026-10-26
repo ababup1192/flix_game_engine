@@ -123,6 +123,8 @@ type Rules struct {
 	ArtEdit    ArtEdit     `json:"artEdit"`
 	AssetGuard *AssetGuard `json:"assetGuard"`
 	ReadGuard  *ReadGuard  `json:"readGuard"`
+	// SearchNudge は hook-search-nudge の設定（searchnudge.go）。
+	SearchNudge *SearchNudge `json:"searchNudge"`
 }
 
 // LoadRules は規約データを読む。
