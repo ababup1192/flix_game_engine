@@ -19,8 +19,8 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/ababup1192/flix_game_engine/go/internal/checklevel"
-	"github.com/ababup1192/flix_game_engine/go/internal/checkres"
+	"github.com/ababup1192/flixlint/go/checklevel"
+	"github.com/ababup1192/flixlint/go/checkres"
 )
 
 // finding は検査の結果 1 つ。組み立ては newFinding の 1 か所（got と want を必ず持たせる）。

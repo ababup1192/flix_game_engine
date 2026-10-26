@@ -17,8 +17,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/ababup1192/flix_game_engine/go/internal/checkres"
 	"github.com/ababup1192/flix_game_engine/go/internal/pxlib"
+	"github.com/ababup1192/flixlint/go/checkres"
 )
 
 // pxStyle は機種 1 つの決まり（0 と省略は見ない）。

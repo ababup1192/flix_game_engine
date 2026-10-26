@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/ababup1192/flix_game_engine/go/internal/checkres"
+	"github.com/ababup1192/flixlint/go/checkres"
 )
 
 const checkUsage = `使い方: bin/fge check codes [--md] [--check] [px|snd|state-shape|doc-refs]

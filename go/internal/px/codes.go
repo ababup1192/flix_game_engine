@@ -4,7 +4,7 @@ package px
 // 表に無い code の違反は result で panic する（テストが止める）。docs/check-codes.md はこの表から書き出す。
 
 import (
-	"github.com/ababup1192/flix_game_engine/go/internal/checkres"
+	"github.com/ababup1192/flixlint/go/checkres"
 )
 
 var pxCodes = []checkres.Code{

@@ -6,8 +6,8 @@ package px
 import (
 	"math"
 
-	"github.com/ababup1192/flix_game_engine/go/internal/checkres"
 	"github.com/ababup1192/flix_game_engine/go/internal/pxlib"
+	"github.com/ababup1192/flixlint/go/checkres"
 )
 
 // argNow は op の引数の今の値（書いていなければ op の既定）。

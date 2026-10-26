@@ -6,7 +6,7 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/ababup1192/flix_game_engine/go/internal/checkres"
+	"github.com/ababup1192/flixlint/go/checkres"
 )
 
 // TestMain は snd のテスト全部が組み立てた違反を集め、どれも表にある code・表と同じ基準の向き・got と want を持つかを見る

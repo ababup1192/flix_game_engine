@@ -4,8 +4,8 @@ package snd
 // 表に無い code の結果は result で panic する（テストが止める）。docs/check-codes.md はこの表から書き出す。
 
 import (
-	"github.com/ababup1192/flix_game_engine/go/internal/checklevel"
-	"github.com/ababup1192/flix_game_engine/go/internal/checkres"
+	"github.com/ababup1192/flixlint/go/checklevel"
+	"github.com/ababup1192/flixlint/go/checkres"
 )
 
 var sndCodes = []checkres.Code{

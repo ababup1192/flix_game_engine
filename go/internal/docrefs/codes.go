@@ -3,8 +3,8 @@ package docrefs
 // doc-refs の code の表（checkres に載せる）。docs/check-codes.md はこの表から書き出す。
 
 import (
-	"github.com/ababup1192/flix_game_engine/go/internal/checklevel"
-	"github.com/ababup1192/flix_game_engine/go/internal/checkres"
+	"github.com/ababup1192/flixlint/go/checklevel"
+	"github.com/ababup1192/flixlint/go/checkres"
 )
 
 const (

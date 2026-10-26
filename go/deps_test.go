@@ -1,7 +1,8 @@
 package main
 
 // 外部依存を決めた物だけに機械で絞る。
-// 許すのは Starlark（px の台本。BSD-3-Clause）と、それが POSIX で整数の最適化に使う x/sys だけ。
+// 許すのは Starlark（px の台本。BSD-3-Clause）と、それが POSIX で整数の最適化に使う x/sys と、
+// 同じ持ち主の flixlint の go/（bin/fge refactor の本体の flix-search・flix-refactor と checkres。版は flixlint を上げる時に一緒に）。
 // WhyNot: 目視の約束にしないのは、依存は 1 行の go get で静かに入るため。
 // 足すときは allowedModules に版ごと書き、go list -deps で組み込まれる物を数えて報告する。
 
@@ -17,8 +18,9 @@ import (
 
 // allowedModules は go.mod の require に書いてよいモジュールと版。
 var allowedModules = map[string]string{
-	"go.starlark.net":  "v0.0.0-20261016124120-4811d7e34ea3",
-	"golang.org/x/sys": "v0.42.0",
+	"go.starlark.net":                   "v0.0.0-20261016124120-4811d7e34ea3",
+	"golang.org/x/sys":                  "v0.42.0",
+	"github.com/ababup1192/flixlint/go": "v0.0.0-20261026012143-7c672c65914d",
 }
 
 func TestGoModRequiresOnlyAllowed(t *testing.T) {
@@ -60,7 +62,7 @@ func TestGoSumOnlyKnownModules(t *testing.T) {
 		t.Fatal(err)
 	}
 	// go.sum には Starlark のテストが使うモジュールの検査値も載る（組み込まれはしない）
-	known := map[string]bool{"go.starlark.net": true, "golang.org/x/sys": true,
+	known := map[string]bool{"go.starlark.net": true, "golang.org/x/sys": true, "github.com/ababup1192/flixlint/go": true,
 		"github.com/google/go-cmp": true, "google.golang.org/protobuf": true}
 	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
 		if f := strings.Fields(line); len(f) > 0 && !known[f[0]] {

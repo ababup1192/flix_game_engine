@@ -126,7 +126,7 @@
     "suffix": ".flix",
     "maxLines": 300,
     "catCommands": ["cat"],
-    "message": "{path} は {lines} 行あります（{max} 行を超える .flix は丸ごと読まない）。grep -n か make src Q=<名前> で位置を引き、Read の offset/limit（Codex なら sed -n '開始,終わりp'）で必要な範囲だけ読んでください。"
+    "message": "{path} は {lines} 行あります（{max} 行を超える .flix は丸ごと読まない）。関数・型の本文は bin/fge refactor show <Mod.名前>、このファイルの宣言の一覧は bin/fge refactor outline {path}、名前の一部からは bin/fge refactor search <語>。それ以外は Read の offset/limit（Codex なら sed -n '開始,終わりp'）で必要な範囲だけ読んでください。"
   },
   "resident": {
     "note": "窓なしのゲームの常駐（bin/fge resident・設計 docs/design/render-speed.md 2.4）。maxDaemons は checkd.maxDaemons と同じ式で、全部のゲームの根を合わせた常駐の数の上限。heap は HEADLESS_JAVA_OPTS に -Xmx が無い時に足す蓋（物理メモリの memoryShare を上限の数で割る。数が 1 でも 2 で割るのは checkd と同じ理由）。",

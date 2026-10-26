@@ -386,12 +386,10 @@ go-build-host:
 go-test:
 	@cd go && CGO_ENABLED=0 go test ./...
 
-# refactor の testdata の索引（go/internal/refactor/testdata/regen.json の一覧）を FLIXLINT の flixlint で作り直す。
-# 重い（typed の索引を含む 15 本）ので Mac mini で bin/fge heavy make refactor-testdata FLIXLINT=… として流す。
+# refactor の testdata の索引は道具と一緒に flixlint にある（flixlint の make regen-testdata）。
 .PHONY: refactor-testdata
 refactor-testdata:
-	@test -n "$(FLIXLINT)" || { echo "make refactor-testdata FLIXLINT=<bin/flixlint>"; exit 2; }
-	@cd go && CGO_ENABLED=0 go test ./internal/refactor -count=1 -run TestRegenIndex -regen-index "$(abspath $(FLIXLINT))"
+	@echo "refactor の本体は flixlint の go/refactor。testdata の索引は flixlint の中で make regen-testdata"; exit 2
 
 # arm64 の Mac で x86-64 の結果を確かめる（Rosetta）。arm64 は a*b+c を FMA にまとめることがあり、
 # 包み忘れると境目の画素だけが Mac と Windows でずれる（px の積は float64(…) か dot で包む）。

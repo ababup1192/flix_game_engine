@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -64,8 +65,33 @@ func RunFlixTouch(errOut io.Writer, root string, in io.Reader) int {
 			// ReserveDaemon → tooBusy が持つ。
 			ReserveDaemon(r, root, pkg)
 		}
+		ReserveDecls(pkg)
 	}
 	return 0
+}
+
+// ReserveDecls は、そのパッケージで refactor show を使ったこと（宣言の索引がある）があれば、裏で
+// `fge refactor index --decls` を切り離して起動する。次の show が直したファイルの宣言を引いても待たずに済む。
+// 同じ根で流れている間は、起動した側（decls.lock）が何もせずに降りる。
+//
+// WhyNot: show を使ったことの無いパッケージでは起動しない。索引は常駐の JVM で数秒の CPU を使うので、
+// 探す口を使わない人の保存ごとに払わせない。
+func ReserveDecls(pkg string) {
+	if _, err := os.Stat(filepath.Join(pkg, "build", "refactor", "spans-resolved.decl.tsv")); err != nil {
+		return
+	}
+	self, err := os.Executable()
+	if err != nil {
+		return
+	}
+	cmd := exec.Command(self, "refactor", "index", "--decls", "--root", pkg)
+	cmd.Dir = pkg
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = nil, nil, nil
+	detach(cmd)
+	if err := cmd.Start(); err != nil {
+		return
+	}
+	_ = cmd.Process.Release()
 }
 
 // SessionHash は印のファイル名に使うセッションの短い指紋。

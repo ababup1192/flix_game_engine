@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/ababup1192/flix_game_engine/go/internal/checkres"
+	"github.com/ababup1192/flixlint/go/checkres"
 )
 
 // docs/check-codes.md は表から書き出した物のまま（bin/fge check codes --md）。checkfmt.json の near の code は表にある。
