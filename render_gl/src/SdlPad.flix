@@ -11,12 +11,15 @@ pub mod SdlPad {
     import org.lwjgl.sdl.SDLGamepad
     import org.lwjgl.sdl.SDLInit
     import org.lwjgl.sdl.SDLStdinc
+    import org.lwjgl.sdl.SDLVersion
 
     /// SDL の gamepad を使えるようにする。native が読めないなどで失敗したら false を返し、呼び手は GLFW で読む。
     /// 呼べるのは GLFW と同じスレッド（macOS は main thread）だけ。
     pub def start(): Bool \ IO =
         try {
-            SDLInit.SDL_Init(SDLInit.SDL_INIT_GAMEPAD) or
+            if (SDLInit.SDL_Init(SDLInit.SDL_INIT_GAMEPAD))
+                Log.warnThen("[gamepad] SDL3 ${versionOf()} で読む", true)
+            else
                 Log.warnThen("[gamepad] SDL3 の gamepad を始められない — GLFW で読む", false)
         } catch {
             case _: Throwable => Log.warnThen("[gamepad] SDL3 の native が読めない — GLFW で読む", false)
@@ -68,6 +71,11 @@ pub mod SdlPad {
     pub def stop(held: Int64): Unit \ IO = {
         if (held != 0i64) SDLGamepad.SDL_CloseGamepad(held) else ();
         SDLInit.SDL_Quit()
+    }
+
+    def versionOf(): String \ IO = {
+        let v = SDLVersion.SDL_GetVersion();
+        "${v / 1000000}.${Int32.remainder(v / 1000, 1000)}.${Int32.remainder(v, 1000)}"
     }
 
     def nameOf(pad: Int64): String \ IO = {
