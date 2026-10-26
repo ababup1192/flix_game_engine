@@ -2273,7 +2273,7 @@
 - 長さの書き方。
   `pub enum Duration with Eq { case Seconds(Float64) case Beats(Float64) case Bars(Float64) case ToNextBar case ToBeat(Float64) case ToPickup(Float64) }`
 - クリップを置く基準。
-  `pub enum Place[a] { case End case WithPrevious case AtStartOf(a) case AtEndOf(a) case At(Duration) }`
+  `pub enum Place[a] { case End case WithPrevious case AtStartOf(a) case AtEndOf(a) case At(Duration) case AfterAll(List[(Place[a], Duration)]) }`
 - クリップの中で鳴らす効果音。fitted = 書き出す WAV の長さをこのクリップの長さに合わせる音。
   `pub type alias Cue = { sound = String, offset = Duration, fitted = Bool }`
 - 書く人が並べる 1 行。place から delay だけ遅らせて置き、length だけ続く。
@@ -2290,6 +2290,8 @@
   `pub def atEndOf(anchor: a, tag: a, length: Duration): Step[a]`
 - 表の頭から at の時刻に置く（DOTween の Insert・GSAP の時刻を書いた置き方）。重ねて置くクリップに使う。
   `pub def insert(at: Duration, tag: a, length: Duration): Step[a]`
+- anchors の全部が済んだ後に置く（基準ごとに間を書ける）。どれの後に始まるかが拍ごとに変わる表
+  `pub def afterAll(anchors: List[(Place[a], Duration)], tag: a, length: Duration): Step[a]`
 - 表の終わりで待つ。後ろの行はここから数える。
   `pub def waitFor(tag: a): Step[a]`
 - 置き場所から遅らせる（GSAP の "+=0.5"）。

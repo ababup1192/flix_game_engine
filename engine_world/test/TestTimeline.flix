@@ -353,4 +353,56 @@ mod TestTimeline {
         let mid = startOf(Intro.Wipe, tl) + 0.15;
         let fromZero = Timeline.progressOf(Intro.Wipe, Timeline.playheadAt(mid), tl);
         Assert.assertTrue(Float64.abs(Timeline.progressSince(3.7, 3.7 + mid, Intro.Wipe, tl) - fromZero) < 0.001)
+
+    // ── 場面 4: 手番の時刻表（待ちが拍ごとに変わる）──
+
+    enum Turn with Eq, Order, ToString {
+        case Reveal
+        case Icon
+        case Gauge
+        case Attack
+    }
+
+    /// 攻撃はアイコンが着いて 0.2 秒後と、ゲージが動き終えた後の、遅い方から。
+    def turn(iconSeconds: Float64, gaugeSeconds: Float64): Timeline.Timeline[Turn] =
+        built(Timeline.build(Timeline.noTempo(), List#{
+            Timeline.append(Turn.Reveal, Duration.Seconds(0.4)),
+            Timeline.atEndOf(Turn.Reveal, Turn.Icon, Duration.Seconds(iconSeconds)) |> Timeline.withDelay(Duration.Seconds(0.1)),
+            Timeline.atEndOf(Turn.Icon, Turn.Gauge, Duration.Seconds(gaugeSeconds)),
+            Timeline.afterAll(List#{ (Timeline.Place.AtEndOf(Turn.Icon), Duration.Seconds(0.2)),
+                                     (Timeline.Place.AtEndOf(Turn.Gauge), Duration.Seconds(0.0)) },
+                              Turn.Attack, Duration.Seconds(0.3))
+        }))
+
+    @Test
+    def testAfterAllStartsAfterTheLatestAnchor(): Unit \ Assert =
+        // ゲージが長ければゲージの終わり、短ければアイコンの終わり + 0.2 に合わせる。
+        let near = (want, got) -> Float64.abs(want - got) < 1.0e-9;
+        Assert.assertTrue(near(1.8, startOf(Turn.Attack, turn(0.8, 0.5))) and near(1.5, startOf(Turn.Attack, turn(0.8, 0.1))))
+
+    @Test
+    def testAfterAllWithNoAnchorStartsAtTheHead(): Unit \ Assert =
+        let tl = built(Timeline.build(Timeline.noTempo(), List#{
+            Timeline.append(Turn.Reveal, Duration.Seconds(0.4)),
+            Timeline.afterAll(Nil, Turn.Icon, Duration.Seconds(0.3))
+        }));
+        Assert.assertEq(expected = 0.0, startOf(Turn.Icon, tl))
+
+    @Test
+    def testAfterAllNamingAClipNotPlacedYetIsAnError(): Unit \ Assert =
+        let r = Timeline.build(Timeline.noTempo(), List#{
+            Timeline.append(Turn.Reveal, Duration.Seconds(0.4)),
+            Timeline.afterAll(List#{ (Timeline.Place.AtEndOf(Turn.Reveal), Duration.Seconds(0.0)),
+                                     (Timeline.Place.AtEndOf(Turn.Gauge), Duration.Seconds(0.0)) },
+                              Turn.Attack, Duration.Seconds(0.3))
+        });
+        Assert.assertEq(expected = Err(List#{BuildError.UnknownAnchor(Turn.Gauge)}), r |> Result.map(_ -> ()))
+
+    @Test
+    def testAfterAllWithABeatGapWithoutTempoIsAnError(): Unit \ Assert =
+        let r = Timeline.build(Timeline.noTempo(), List#{
+            Timeline.append(Turn.Reveal, Duration.Seconds(0.4)),
+            Timeline.afterAll(List#{ (Timeline.Place.AtEndOf(Turn.Reveal), Duration.Beats(1.0)) }, Turn.Icon, Duration.Seconds(0.3))
+        });
+        Assert.assertEq(expected = Err(List#{BuildError.BeatsWithoutTempo(Turn.Icon)}), r |> Result.map(_ -> ()))
 }

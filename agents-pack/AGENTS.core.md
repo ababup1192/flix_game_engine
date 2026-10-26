@@ -22,6 +22,7 @@ lint・フック・make の口で止まる決まりはここに書かない（�
 | UI のクリックを描いた所で当てる（字の下に並ぶボタン・字だけの項目） | `UiFocus.hitTestUiWith(atlasOf, ..)`・`UiFocusNav.targetsOfUiWith`（atlasOf は描く時と同じ） |
 | 説明の窓をはみ出さず置く | `UiTooltip` + `ZStack.topLayer` |
 | 演出の時刻表を書く・描く・鳴らす | `Timeline.build`+`withSound` → `soundsBetween`（時計は `soundsOnClock`）→ `App.withAudio` |
+| 演出の待ちが先の拍で変わる（全部が済んでから始める・置き直さない） | `Timeline.afterAll`（基準ごとに間）→ `Timeline.build` |
 | ポーズ・ヒットストップで止める・遅くする（遊びと実時間を分ける） | `App.addClock` + `Clock.Pace`・`frame#realNow` |
 | 規則の奥の出来事で鳴らす（固定刻みでも 1 回） | `Emit.emit` → `Emit.collectInto` で World に溜め `Emit.since` |
 | 粒（花びら・火の粉）に触れたかを規則で取る | `Fx.particlesOfAll(now, bursts)`（絵と同じ式の番号と中心）+ `Fx.touches` |
