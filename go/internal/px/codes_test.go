@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ababup1192/flix_game_engine/go/internal/checkres"
+	"github.com/ababup1192/flixlint/go/checkres"
 )
 
 // 違反は newViolation の 1 か所で組み立てる（got と want を必ず持たせる。px-vs など新しい検査もここを通す）。

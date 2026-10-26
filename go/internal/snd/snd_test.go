@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ababup1192/flix_game_engine/go/internal/checklevel"
 	"github.com/ababup1192/flix_game_engine/go/internal/starbox"
+	"github.com/ababup1192/flixlint/go/checklevel"
 )
 
 // engineRoot はテストから見たリポジトリのルート（bin/lint-rules/ がある所）。

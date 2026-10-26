@@ -13,9 +13,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/ababup1192/flix_game_engine/go/internal/checklevel"
-	"github.com/ababup1192/flix_game_engine/go/internal/checkres"
 	"github.com/ababup1192/flix_game_engine/go/internal/waveform"
+	"github.com/ababup1192/flixlint/go/checklevel"
+	"github.com/ababup1192/flixlint/go/checkres"
 )
 
 // buildResult は spec 1 本の書き出しの結果。

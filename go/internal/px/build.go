@@ -20,9 +20,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/ababup1192/flix_game_engine/go/internal/anim"
-	"github.com/ababup1192/flix_game_engine/go/internal/checkres"
 	"github.com/ababup1192/flix_game_engine/go/internal/pxlib"
 	"github.com/ababup1192/flix_game_engine/go/internal/sprite"
+	"github.com/ababup1192/flixlint/go/checkres"
 )
 
 // techFrameChecks は段 3 でコマごとに足した全体の検査（value-sep は contrast を書いた時だけ・style は spec に style がある時だけ鳴る）。

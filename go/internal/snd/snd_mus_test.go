@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ababup1192/flix_game_engine/go/internal/checklevel"
+	"github.com/ababup1192/flixlint/go/checklevel"
 )
 
 // starBuild は台本を走らせ、書いた spec を全部 build する（WAV は書かない）。

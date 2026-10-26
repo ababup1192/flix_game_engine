@@ -18,10 +18,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/ababup1192/flix_game_engine/go/internal/checklevel"
-	"github.com/ababup1192/flix_game_engine/go/internal/checkres"
 	"github.com/ababup1192/flix_game_engine/go/internal/rounds"
 	"github.com/ababup1192/flix_game_engine/go/internal/starbox"
+	"github.com/ababup1192/flixlint/go/checklevel"
+	"github.com/ababup1192/flixlint/go/checkres"
 )
 
 const usage = `使い方: bin/fge snd <口> ...   音の指定（*.sndsrc.json・台本 *.snd.star）を鳴らして検査する（ゲームのルートで流す）

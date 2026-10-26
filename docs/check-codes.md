@@ -1,6 +1,6 @@
 # 検査の code の表
 
-bin/fge check codes --md が go/internal/checkres の表から書き出す（手で直さない）。
+bin/fge check codes --md が checkres の表（flixlint の go/checkres）から書き出す（手で直さない）。
 1 件の形・status（pass/near/fail）・score・next・終了コードの決まりは docs/check-results.md。
 near の帯は bin/lint-rules/checkfmt.json の near（code ごと。無ければ nearRatio）。
 

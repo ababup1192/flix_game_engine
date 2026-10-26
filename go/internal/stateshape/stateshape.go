@@ -32,8 +32,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/ababup1192/flix_game_engine/go/internal/checkres"
 	"github.com/ababup1192/flix_game_engine/go/internal/lintconf"
+	"github.com/ababup1192/flixlint/go/checkres"
 )
 
 // Name は規約ファイルの名前 (bin/lint-rules/<Name>.json)。

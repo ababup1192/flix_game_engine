@@ -1,6 +1,6 @@
 # 検査の結果の形（px・snd 共通）
 
-`bin/fge px build|check|snap` と `bin/fge snd build|snap` の検査は、同じ形の結果を返す（Go の `go/internal/checkres`）。
+`bin/fge px build|check|snap` と `bin/fge snd build|snap` の検査は、同じ形の結果を返す（Go の `checkres`。flixlint の `go/checkres`）。
 AI が周回の次の手を数で選べるよう、1 件ごとに「何を測り・いくつで・基準はいくつか・あといくつ動かせば合うか・どの op の
 どの引数をいくつにするか」を持つ。全部の code の表は [check-codes.md](check-codes.md)（`bin/fge check codes`）。
 帯・点・止め時の数は `bin/lint-rules/checkfmt.json`。

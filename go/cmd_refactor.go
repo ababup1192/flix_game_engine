@@ -10,10 +10,13 @@ import (
 	"github.com/ababup1192/flix_game_engine/go/internal/checkd"
 	"github.com/ababup1192/flix_game_engine/go/internal/heavy"
 	"github.com/ababup1192/flix_game_engine/go/internal/hooks"
-	"github.com/ababup1192/flix_game_engine/go/internal/refactor"
+	"github.com/ababup1192/flix_game_engine/go/internal/refactorhost"
+	"github.com/ababup1192/flixlint/go/refactor"
 )
 
 func init() {
+	// 道具の本体は flixlint（flix-search・flix-refactor）。エンジンの決まり（engine の置き場・doc-refs・呼び方）を差し込む。
+	refactor.SetHost(refactorhost.Hooks())
 	// WhyNot: engineOnly にしないのは、直したい Flix のコードが配った先のゲームにあるため（engine の src にも効く）。
 	register("refactor",
 		"Flix の名前の位置の索引（flixlint --spans）で探す（usages: 使われ所・呼び手の階層・--unused）・数える（refs・match-sites・field-sites）・書き換える（expand-wildcard・remove-dead・field-to-accessor・remove-field・fix-construction・rewrite（式を型紙で書き替える）。既定は dry-run）。refactor --help",

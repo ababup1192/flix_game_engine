@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ababup1192/flix_game_engine/go/internal/checklevel"
+	"github.com/ababup1192/flixlint/go/checklevel"
 )
 
 // renderChip は譜面 1 つを song で鳴らす（譜面はメモリの中に置く）。

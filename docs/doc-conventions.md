@@ -268,7 +268,7 @@ flix_ge_dungeon の assets/ がこの規約の実例になっている:
 - Flix の標準ライブラリの名前（`Clock.runWithIO`・`List.map`）はそのまま書く。doc-refs は `bin/flix.jar` の
   `src/library` から引く（engine の `Clock` と同じ頭でも標準に在れば通る）。
 - 頭の 5 行に「手で直さない」（か「手で編集しない」・`DO NOT EDIT`）と書いた文書は生成物として見ない。
-  直すのは作る元（`bin/fge check codes --md` なら go/internal/checkres の表）。
+  直すのは作る元（`bin/fge check codes --md` なら flixlint の go/checkres の表）。
 - 古い記録の文書（`notes/<年-月>.md` など）は文書ごと `<ゲーム>/bin/lint-rules/doc-refs.local.json` の skip へ。
 - `.flix` のコメント（`///` と `//`）も同じ記法で読む。拾うのは ` ` の中と、地の文の語のうち `Mod.name`・`/` を含むパス・
   `path:行` の形の物だけ（ほかの地の文は見ない）。`.flix` の物は上限で数える: `make lint-doc-refs` はリポごとの
