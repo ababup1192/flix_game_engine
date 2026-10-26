@@ -27,6 +27,11 @@ const Usage = `使い方: fge refactor <操作> [引数] [--json] [-v|--verbose]
                                                        remove-dead・make-private・remove-use）
   show <Mod.f|Enum|Enum.Case|Alias>[,<名前>…]           宣言の本文だけを読む（/// と注記から本文の終わりまで。頭の行に
                                                        file:始め-終わり。case はそれを持つ enum。grep → Read の 2 手を 1 手に）
+  search <名前の一部> [--kind def|enum|case|alias] [--all]
+                                                       宣言の名前で引く（使っている所は拾わない）。1 行ずつ file:line・種類・名前・pub。
+                                                       並びは名前がそのまま → 頭が同じ → 語の頭から → 途中に含む。30 件まで（--all で全部）
+  outline <file>[,<file>…]                             ファイルの宣言を行の順に、頭の行（シグネチャ）つきで。case は enum の下に
+                                                       （直したファイルは作り直さず今の字から拾い、行の末尾に「字」）
   refs <Mod.name> [--callers]                          def・enum・case の宣言と参照（--callers は参照する def ごと）
   match-sites <Enum|Enum.Case> [--catch-all]           match の位置・腕の数・` + "`_`" + `／変数の腕（--catch-all はそれを持つ物だけ）
   field-sites --label x [--receiver T] [--outside Mod] record の欄 x の直の読み（e#x）と書き（{ x = v | e }）
@@ -214,8 +219,9 @@ type args struct {
 	op, target, label, receiver, outside, flixlint, stage string
 	labelsFile                                            string // field-to-accessor の --labels-file
 	callers, catchAll, rebuild, asJSON                    bool
-	decls                                                 bool // index --decls: show の宣言の索引まで作る（.flix を直した後にフックが裏で流す）
-	all                                                   bool // --all（場所を全部画面に。remove-use ではファイルか全体の全部を消す）
+	kind                                                  string // search --kind def|enum|case|alias
+	decls                                                 bool   // index --decls: show の宣言の索引まで作る（.flix を直した後にフックが裏で流す）
+	all                                                   bool   // --all（場所を全部画面に。remove-use ではファイルか全体の全部を消す）
 	apply, withTests, unused, verbose                     bool
 	requireClean                                          bool // --require-clean: 書き換えるファイルが git で clean な時だけ --apply
 	depth                                                 int  // usages --depth（0 は指定なし）
@@ -304,6 +310,8 @@ func parseArgs(rest []string) (args, error) {
 			a.rebuild = true
 		case "--decls":
 			a.decls = true
+		case "--kind":
+			a.kind, err = value(&i, x)
 		case "--label":
 			a.label, err = value(&i, x)
 		case "--labels-file":
@@ -632,6 +640,20 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 			fmt.Fprintln(errOut, "refactor usages: 名前を渡してください（例 refactor usages World.moveTo・refactor usages World#scene・refactor usages --unused）")
 			return 2
 		}
+	case "search":
+		if a.target == "" {
+			fmt.Fprintln(errOut, "refactor search: 名前の一部を渡してください（例 refactor search enter・refactor search World.Fight --kind def）")
+			return 2
+		}
+		if a.kind != "" && a.kind != "def" && a.kind != "enum" && a.kind != "case" && a.kind != "alias" {
+			fmt.Fprintf(errOut, "refactor search: --kind は def・enum・case・alias のどれか（%s）\n", a.kind)
+			return 2
+		}
+	case "outline":
+		if a.target == "" {
+			fmt.Fprintln(errOut, "refactor outline: ファイルを渡してください（例 refactor outline src/World.flix・a,b で複数）")
+			return 2
+		}
 	case "show":
 		if a.target == "" {
 			fmt.Fprintln(errOut, "refactor show: 名前を渡してください（例 refactor show World.enter・a,b で複数）")
@@ -639,7 +661,7 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 		}
 	case "index":
 	default:
-		fmt.Fprintf(errOut, "refactor: 知らない操作 %s（usages・show・refs・match-sites・field-sites・index・expand-wildcard・remove-dead・field-to-accessor・remove-field・fix-construction・add-field・move-fields・change-case-shape・change-signature・retarget-field・remove-param・make-private・rename・safe-delete・move・remove-use・rewrite・extract-function・extract-type-alias）\n", a.op)
+		fmt.Fprintf(errOut, "refactor: 知らない操作 %s（usages・show・search・outline・refs・match-sites・field-sites・index・expand-wildcard・remove-dead・field-to-accessor・remove-field・fix-construction・add-field・move-fields・change-case-shape・change-signature・retarget-field・remove-param・make-private・rename・safe-delete・move・remove-use・rewrite・extract-function・extract-type-alias）\n", a.op)
 		return 2
 	}
 	if a.op != "field-to-accessor" && a.op != "retarget-field" && (strings.Contains(a.label, ",") || a.labelsFile != "") {
@@ -694,6 +716,9 @@ func Run(out, errOut *strings.Builder, root string, rest []string, o Options) in
 	}
 	if a.op == "show" {
 		return showRun(out, errOut, b, stage, a)
+	}
+	if a.op == "search" || a.op == "outline" {
+		return listRun(out, errOut, b, stage, a)
 	}
 	if a.op == "index" && a.decls {
 		return warmDecls(out, errOut, b, stage)
