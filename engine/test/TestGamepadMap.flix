@@ -76,3 +76,13 @@ def testNothingIsUnknown(): Unit \ Assert =
 @Test
 def testShortGuidFallsBackToName(): Unit \ Assert =
     Assert.assertEq(expected = GamepadMap.PadKind.Generic, GamepadMap.kindOf("de28", "Wireless Controller"))
+
+/// SDL3 で読んだベンダーが Valve（0x28de）なら Steam
+@Test
+def testSdlValveVendorIsSteam(): Unit \ Assert =
+    Assert.assertEq(expected = GamepadMap.PadKind.Steam, GamepadMap.kindOfVendor(0x28de, "Steam Controller"))
+
+/// SDL3 で読んだベンダーが他社なら一般
+@Test
+def testSdlOtherVendorIsGeneric(): Unit \ Assert =
+    Assert.assertEq(expected = GamepadMap.PadKind.Generic, GamepadMap.kindOfVendor(0x045e, "Xbox Series X Controller"))
