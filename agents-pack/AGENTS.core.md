@@ -49,7 +49,7 @@ lint・フック・make の口で止まる決まりはここに書かない（�
 | 直しが別の不具合を生んだ率 | `bin/fge tickets stats`（前の直しの候補は `suspects`） |
 | ゲームの定義を引く | `make src Q=<名前>` |
 | 文書が消えた名前・無いファイルを指していないか | `make lint-doc-refs`（古い記録は `doc-refs.local.json` の skip） |
-| 関数・型の本文を読む・名前の一部で宣言を探す・ファイルの宣言の一覧（丸ごと読まない） | `bin/fge refactor show` / `search` / `outline` |
+| 関数・型の本文を読む・名前の一部で宣言を探す・ファイルの宣言の一覧（丸ごと読まない。理由は `/flix-docs`） | `bin/fge refactor show` / `search` / `outline` |
 | 直す前に周り（本文・呼び手・呼ぶ先・型）を 1 回で見る | `bin/fge refactor context <名前>`・呼ぶ先の木は `trace` |
 | 名前の使われ所・呼び手を探す（grep より先に・読むのは道具が出した行だけ） | `bin/fge refactor usages <名前>` |
 | 使われない pub・use を探して消す・pub を外す | `bin/fge refactor usages --unused` → `remove-dead`・`make-private`・`remove-use` |
