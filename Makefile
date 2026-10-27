@@ -23,7 +23,7 @@ FLIX_TEST := $(CURDIR)/bin/flix
 
 # 全パッケージ共通のバージョン (lockstep)。sync 先ディレクトリ名や release の
 # asset 名に使う。make bump FROM=x TO=y で各 flix.toml と一緒に上げる。
-VERSION := 0.68.0
+VERSION := 0.69.0
 
 # engine は契約層 (依存ゼロ)。render_gl / engine_world / engine_tools はその上に載る層。
 ENGINE_DIR       := engine
