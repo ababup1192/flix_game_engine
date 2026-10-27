@@ -3,6 +3,17 @@
   "note": "エンジン共通のお題（どのゲームの足元でも同じ道具が当たるべき物）。bin/fge agent-eval が読む（make agent-eval）。prompt は依頼の言葉だけにし、道具の名前を入れない。expect は答えに出てほしい道具（1 つ 1 点）、avoid は古い書き方（打ち消しの無い行に出たら 1 点引く）。新しい仕組みを入れた人は、早見表の 1 行と一緒にここへお題を 1 本足す。 avoid の正規表現は、ゲームに実在する名前（bgmFightIntro など）や道具の説明（use-engine が local.mk を書き換える）に当てない。今のコードや道具を説明しただけで減点になる。",
   "tasks": [
     {
+      "id": "view-input",
+      "prompt": "主人公の頭の上に体力のゲージを描きたい。体力の値は World にある。描く関数の引数はどうすればいい？ 足した後、この作り方が崩れていないことも確かめたい",
+      "expect": [
+        {"re": "inputOf|\\bIn\\b", "why": "View.inputOf で組む In に欄を足す"},
+        {"re": "lint-flixlint", "why": "make lint-flixlint"}
+      ],
+      "avoid": [
+        {"re": "\\(\\s*w\\s*:\\s*World\\.World\\s*\\)\\s*:\\s*List\\[Render", "why": "View の部品に World を丸ごと渡す"}
+      ]
+    },
+    {
       "id": "hud-timer",
       "prompt": "画面の右上に残り時間の表示を足したい。ゲームの絵（爆発など）がどれだけ手前に出ても、この表示は隠れないようにしたい",
       "expect": [

@@ -1047,9 +1047,10 @@ new-game: engine-full-fresh
 	git -C "$(GAME)" init -q; \
 	git -C "$(GAME)" config core.hooksPath bin/githooks; \
 	$(MAKE) --no-print-directory sync-agents GAME="$(GAME)"; \
-	echo "[new-game] 産声の確認: check → test → render-all"; \
+	echo "[new-game] 産声の確認: check → test → lint-flixlint → render-all"; \
 	$(MAKE) --no-print-directory -C "$(GAME)" check ENGINE="$(CURDIR)"; \
 	$(MAKE) --no-print-directory -C "$(GAME)" test ENGINE="$(CURDIR)"; \
+	if [ -f "$(GAME)/lint/rules.flix" ]; then $(MAKE) --no-print-directory -C "$(GAME)" lint-flixlint ENGINE="$(CURDIR)"; fi; \
 	$(MAKE) --no-print-directory -C "$(GAME)" render-all ENGINE="$(CURDIR)"; \
 	echo ""; \
 	echo "🎉 新しいゲームが産まれました: $(GAME)"; \
