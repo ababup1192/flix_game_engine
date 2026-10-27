@@ -1,0 +1,26 @@
+// YarnRunner のルビ（マークアップ）とセーブの印のテストが読むシナリオ（engine_world/test/TestYarnNovel.flix）。
+// 書き直したら bin/fge yarn build novel.yarn --no-vocab --out novel.yarn.json
+title: Field
+---
+<<declare $n = 2>>
+<<declare $kind = 0>>
+[ruby=ひぐらし]蜩[/ruby]が{$n}匹鳴く
+girl: [ruby=かわ]川[/ruby]と[ruby=はたけ]畑[/]
+-> 川へ行く
+    <<set $kind += 1>>
+    <<set $n to $n + 10>>
+    水の音
+-> 畑へ行く
+    <<set $kind += 2>>
+    土の匂い
+<<wait 1>>
+数は{$n}
+<<jump Night>>
+===
+
+title: Night
+---
+<<set $n += 100>>
+夜の一行目
+夜の二行目
+===

@@ -57,8 +57,15 @@ pub mod YarnRunner {
         shown = Shown,
         pending = List[Yarn.Choice],
         waitUntil = Option[Clock.Time[c]],
-        storage = YarnStorage.Storage
+        storage = YarnStorage.Storage,
+        entry = Bookmark
     })
+
+    /// 読んでいる所のブックマーク（セーブに入れる物）。node = 開いているノード、storage = そのノードに入った時の変数と訪れた数、
+    /// steps = 入ってから受けた入力（Advance と Choose だけ。<<wait>> は待たずに越える）。resume が node の頭から
+    /// steps を当て直して同じ所へ戻す（行の番号で探さないので、選んだ枝の中の <<set>> も同じに通る）。
+    /// .yarn をセーブの後に書き直すと、当て直した先は書き直した木の上の同じ入力の先になる。
+    pub type alias Bookmark = { node = String, storage = YarnStorage.Storage, steps = List[Action] }
 
     /// 実行器。c は <<wait>> を測る時計の名前（ゲームの物語の時計など）。外では start と closed だけが作る。
     pub type alias Runner[c] = Machine[c]
@@ -69,7 +76,7 @@ pub mod YarnRunner {
     /// 開いていない実行器（World の初期値）。
     pub def closed(): Runner[c] =
         Machine.Machine({ program = Yarn.empty(), node = "", stack = Nil, shown = Shown.Closed, pending = Nil, waitUntil = None,
-                          storage = YarnStorage.empty() })
+                          storage = YarnStorage.empty(), entry = { node = "", storage = YarnStorage.empty(), steps = Nil } })
 
     /// node の頭から、最初に待つ所（台詞・選択肢・wait）か終わりまで流す。node が無ければすぐ Done。
     /// 変数は全部 <<declare>> の初めの値から始まる（前の会話の値を持ち越すなら startWith）。
@@ -79,7 +86,7 @@ pub mod YarnRunner {
     /// start と同じだが、変数と訪れた数を storage から始める（前の会話の storageOf・セーブから読んだ物）。
     pub def startWith(storage: YarnStorage.Storage, program: Yarn.Program, node: String, now: Clock.Time[c]): (Runner[c], List[Event]) =
         let begin = opened -> Machine.Machine({ program = program, node = opened, stack = Nil, shown = Shown.Closed, pending = Nil,
-                                                waitUntil = None, storage = storage });
+                                                waitUntil = None, storage = storage, entry = { node = opened, storage = storage, steps = Nil } });
         match Yarn.nodeOf(node, program) {
             case Some(found) => flow(fuel(), now, withStack(found#body :: Nil, begin(node)), Nil)
             case None        => finish(begin(""), Nil)
@@ -89,10 +96,11 @@ pub mod YarnRunner {
     pub def step(action: Action, now: Clock.Time[c], runner: Runner[c]): (Runner[c], List[Event]) =
         let Machine.Machine(m) = runner;
         match (action, m#shown) {
-            case (Action.Advance, Shown.Line(_))     => flow(fuel(), now, runner, Nil)
+            case (Action.Advance, Shown.Line(_))     => flow(fuel(), now, record(action, runner), Nil)
             case (Action.Choose(i), Shown.Choices(options)) => match List.nth(i, m#pending) {
                 case Some(choice) if isAvailable(i, options) =>
-                    let resumed = Machine.Machine({ pending = Nil, stack = choice#body :: m#stack | m });
+                    let Machine.Machine(r) = record(action, runner);
+                    let resumed = Machine.Machine({ pending = Nil, stack = choice#body :: r#stack | r });
                     flow(fuel(), now, resumed, Nil)
                 case _ => (runner, Nil)
             }
@@ -225,6 +233,59 @@ pub mod YarnRunner {
     /// <<wait>> が明ける時刻（待っていなければ None）。
     pub def waitUntilOf(runner: Runner[c]): Option[Clock.Time[c]] = let Machine.Machine(m) = runner; m#waitUntil
 
+    // ── 読んでいる所のブックマーク（セーブ・ロード）──
+
+    /// 読んでいる所のブックマーク（開いていなければ None）。
+    pub def bookmarkOf(runner: Runner[c]): Option[Bookmark] =
+        let Machine.Machine(m) = runner;
+        if (isOpen(runner)) Some(m#entry) else None
+
+    /// ブックマークのノードの頭から steps を当て直し、セーブした時と同じ所（同じ台詞・選択肢）を出す。返す出来事は当て直す間に
+    /// 起きた全部で、ゲームはコマンドを畳んで背景や曲を今の形に戻す（演出の途中は飛ばして終わりの形にする）。
+    /// <<wait>> は明ける時刻まで飛ばす（待っている間に取ったブックマークも、明けた後の台詞から始まる）。ノードが無ければ start と同じくすぐ Done。
+    pub def resume(program: Yarn.Program, bookmark: Bookmark, now: Clock.Time[c]): (Runner[c], List[Event]) =
+        let (runner, events) = startWith(bookmark#storage, program, bookmark#node, now);
+        replay(fuel(), bookmark#steps, now, runner, events)
+
+    def replay(budget: Int32, steps: List[Action], now: Clock.Time[c], runner: Runner[c], acc: List[Event]): (Runner[c], List[Event]) =
+        let Machine.Machine(m) = runner;
+        let next = (action, at, rest) -> {
+            let (after, events) = step(action, at, runner);
+            replay(budget - 1, rest, now, after, List.append(acc, events))
+        };
+        if (budget <= 0) (runner, acc)
+        else match (m#shown, m#waitUntil, steps) {
+            case (Shown.Waiting, Some(until), _)       => next(Action.Tick, until, steps)
+            case (_, _, Nil)                           => (runner, acc)
+            case (_, _, action :: rest)                => next(action, now, rest)
+        }
+
+    /// ブックマークを JSON に（セーブ）。steps は Advance を "a"、Choose(i) を i の数で並べる。
+    pub def bookmarkToJson(bookmark: Bookmark): Util.Json.Json =
+        let step1 = action -> match action {
+            case Action.Choose(i) => Util.Json.Json.JNumber(JsonCodec.floatToBd(Int32.toFloat64(i)))
+            case _                => Util.Json.Json.JString("a")
+        };
+        Util.Json.Json.JObject(Map#{
+            "node" => Util.Json.Json.JString(bookmark#node),
+            "storage" => YarnStorage.toJson(bookmark#storage),
+            "steps" => Util.Json.Json.JArray(bookmark#steps |> List.filter(action -> action != Action.Tick) |> List.map(step1) |> List.toVector)
+        })
+
+    /// JSON からブックマークへ（ロード）。形が違えば None（違う所から始めるより、ゲームがセーブを読めないと知らせる方がよい）。
+    pub def bookmarkFromJson(json: Util.Json.Json): Option[Bookmark] =
+        let stepOf = j -> match j {
+            case Util.Json.Json.JString("a") => Some(Action.Advance)
+            case Util.Json.Json.JNumber(_)   => JsonCodec.expectFloat(j) |> Option.map(f -> Action.Choose(Float64.round(f) |> Float64.tryToInt32 |> Option.getWithDefault(0)))
+            case _                           => None
+        };
+        forM (
+            obj <- JsonCodec.expectObject(json);
+            node <- Map.get("node", obj) |> Option.flatMap(JsonCodec.expectString);
+            storage <- Map.get("storage", obj) |> Option.flatMap(YarnStorage.fromJson);
+            steps <- Map.get("steps", obj) |> Option.flatMap(JsonCodec.decodeList(stepOf))
+        ) yield { node = node, storage = storage, steps = steps }
+
     // ── 変数 ──
 
     /// 変数と訪れた数（セーブや次の会話の startWith へ渡す）。
@@ -301,16 +362,21 @@ pub mod YarnRunner {
         case _                    => 0.0
     }
 
-    /// {式} を値の字にして、台詞の字を作る（出来事の Line は字 1 切れ）。
+    /// {式} を値の字にして、台詞の字を作る（出来事の Line の parts は字とマークアップだけ。マークアップの無い行は字 1 切れ）。
     def substitute(m: { program = Yarn.Program, storage = YarnStorage.Storage | r }, line: Yarn.Line): Yarn.Line =
         match line#parts {
             case Yarn.Part.Literal(_) :: Nil => line
             case parts =>
-                let text = parts |> List.map(part -> match part {
-                    case Yarn.Part.Literal(literal) => literal
-                    case Yarn.Part.Insert(expr)     => Yarn.toText(evaluate(m, expr))
-                }) |> String.intercalate("");
-                { text = text, parts = Yarn.Part.Literal(text) :: Nil | line }
+                let resolved = parts |> List.map(part -> match part {
+                    case Yarn.Part.Insert(expr) => Yarn.Part.Literal(Yarn.toText(evaluate(m, expr)))
+                    case other                  => other
+                });
+                let text = Yarn.plainTextOf(resolved);
+                let marked = resolved |> List.exists(part -> match part {
+                    case Yarn.Part.Markup(_, _) => true
+                    case _                      => false
+                });
+                { text = text, parts = if (marked) resolved else Yarn.Part.Literal(text) :: Nil | line }
         }
 
     // ── 流す ──
@@ -340,7 +406,7 @@ pub mod YarnRunner {
                     case Yarn.Statement.Jump(target, _) => match Yarn.nodeOf(target, m#program) {
                         case Some(found) =>
                             let Machine.Machine(n) = withStack(found#body :: Nil, leave(runner));
-                            flow(budget - 1, now, Machine.Machine({ node = target | n }), acc)
+                            flow(budget - 1, now, Machine.Machine({ node = target, entry = { node = target, storage = n#storage, steps = Nil } | n }), acc)
                         case None => finish(next, acc)
                     }
                     case Yarn.Statement.Set(name, expr, _) =>
@@ -374,6 +440,11 @@ pub mod YarnRunner {
         let Machine.Machine(m) = runner;
         if (m#node == "") runner
         else Machine.Machine({ storage = YarnStorage.addVisit(m#node, m#storage) | m })
+
+    /// 受けた入力をブックマークに足す（steps は新しい物が後ろ。1 つの台詞を読む間に足すのは 1 つなので append でよい）。
+    def record(action: Action, runner: Runner[c]): Runner[c] =
+        let Machine.Machine(m) = runner;
+        Machine.Machine({ entry = { steps = List.append(m#entry#steps, action :: Nil) | m#entry } | m })
 
     def withStack(stack: List[List[Yarn.Statement]], runner: Runner[c]): Runner[c] =
         let Machine.Machine(m) = runner; Machine.Machine({ stack = stack | m })

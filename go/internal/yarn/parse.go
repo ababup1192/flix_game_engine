@@ -685,6 +685,8 @@ func (p *parser) lineContent(no int, content string, allowCondition bool) (*Stmt
 	var parts []*Part
 	var colons []int // エスケープしていない : の位置（text の中の byte 位置）
 	firstExpr := -1  // 最初の {式} の位置（text の中の byte 位置）
+	firstMarkup := -1 // 最初のマークアップの位置（text の中の byte 位置）
+	var open []string // 閉じていないマークアップの名前（後に開いた物が後ろ）
 	rs := []rune(content)
 	var tags []Tag
 	var cond *Expr
@@ -780,7 +782,23 @@ func (p *parser) lineContent(no int, content string, allowCondition bool) (*Stmt
 			p.fail(no, "対の { が無い }（字の } は \\} と書く）")
 			return nil, nil
 		case c == '[':
-			p.refuse(no, "[…] のマークアップ", "字の [ は \\[ と書く（色や揺れは描く側で付ける）")
+			close := markupEnd(rs, i+1)
+			if close < 0 {
+				p.fail(no, "[ を閉じる ] が無い（字の [ は \\[ と書く）")
+				return nil, nil
+			}
+			part, ok := p.markup(no, string(rs[i+1:close]), &open)
+			if !ok {
+				return nil, nil
+			}
+			if firstMarkup < 0 {
+				firstMarkup = text.Len()
+			}
+			flush()
+			parts = append(parts, part)
+			i = close
+		case c == ']':
+			p.fail(no, "対の [ が無い ]（字の ] は \\] と書く）")
 			return nil, nil
 		case c == ':':
 			colons = append(colons, text.Len())
@@ -790,6 +808,10 @@ func (p *parser) lineContent(no int, content string, allowCondition bool) (*Stmt
 		}
 	}
 	flush()
+	if len(open) > 0 {
+		p.fail(no, "[%s] を閉じる [/%s] が無い（マークアップは同じ行の中で閉じる）", open[len(open)-1], open[len(open)-1])
+		return nil, nil
+	}
 	full := strings.TrimRightFunc(text.String(), unicode.IsSpace)
 	speaker, body := "", full
 	speakerEnd := 0 // 話し手と : の分の byte の長さ
@@ -798,6 +820,10 @@ func (p *parser) lineContent(no int, content string, allowCondition bool) (*Stmt
 		if name != "" {
 			if firstExpr >= 0 && firstExpr < colons[0] {
 				p.fail(no, "話し手の名前に {式} は書けない（字の : は \\: と書く）")
+				return nil, nil
+			}
+			if firstMarkup >= 0 && firstMarkup <= colons[0] {
+				p.fail(no, "話し手の名前にマークアップは書けない（字の : は \\: と書く）")
 				return nil, nil
 			}
 			speaker = name
@@ -809,7 +835,7 @@ func (p *parser) lineContent(no int, content string, allowCondition bool) (*Stmt
 		p.fail(no, "台詞の無い行（タグだけの行・字の無い -> は書けない）")
 		return nil, nil
 	}
-	if firstExpr < 0 {
+	if firstExpr < 0 && firstMarkup < 0 {
 		parts = nil
 	} else {
 		parts = trimParts(parts, speakerEnd)
@@ -817,22 +843,92 @@ func (p *parser) lineContent(no int, content string, allowCondition bool) (*Stmt
 	return &Stmt{Kind: "line", Line: no, Speaker: speaker, Text: body, Parts: parts, Tags: tags}, cond
 }
 
+// markups はエンジンが読むマークアップの名前と、値（= の後ろ）が要るか。
+// ruby = ルビ（値がふりがな。描くのは RichText.placeRuby）。
+var markups = map[string]bool{"ruby": true}
+
+// markup は [ と ] の間（inner）を 1 つの切れにする。[名前]・[名前=値]・[/名前]・[/]（最後に開いた物を閉じる）。
+// open は閉じていない名前の並びで、開くと積み、閉じると下ろす（交差した閉じ方は止める）。
+func (p *parser) markup(no int, inner string, open *[]string) (*Part, bool) {
+	inner = strings.TrimSpace(inner)
+	if strings.HasPrefix(inner, "/") {
+		name := strings.TrimSpace(inner[1:])
+		if len(*open) == 0 {
+			p.fail(no, "開いていないマークアップを閉じている [%s]", inner)
+			return nil, false
+		}
+		top := (*open)[len(*open)-1]
+		if name != "" && name != top {
+			p.fail(no, "[/%s] で閉じる前に [/%s] で閉じる（マークアップは開いた順の逆に閉じる）", name, top)
+			return nil, false
+		}
+		*open = (*open)[:len(*open)-1]
+		return &Part{Close: top}, true
+	}
+	if strings.HasSuffix(inner, "/") {
+		p.refuse(no, "[…/] の閉じ口の無いマークアップ", "字の [ は \\[ と書く")
+		return nil, false
+	}
+	name, value := inner, ""
+	if k := strings.IndexByte(inner, '='); k >= 0 {
+		name, value = strings.TrimSpace(inner[:k]), strings.TrimSpace(inner[k+1:])
+		if len(value) >= 2 && value[0] == '"' && value[len(value)-1] == '"' {
+			value = value[1 : len(value)-1]
+		}
+	}
+	if !isIdentifier(name) {
+		p.fail(no, "マークアップの名前が読めない [%s]（[名前=値]字[/名前] と書く。字の [ は \\[）", inner)
+		return nil, false
+	}
+	if !markups[name] {
+		p.refuse(no, "["+name+"] のマークアップ", "読めるのは [ruby=ふりがな]字[/ruby] だけ（字の [ は \\[ と書く。色や揺れは描く側で付ける）")
+		return nil, false
+	}
+	if value == "" {
+		p.fail(no, "[%s] に値が無い（[ruby=ふりがな]字[/ruby] と書く）", name)
+		return nil, false
+	}
+	*open = append(*open, name)
+	return &Part{Markup: name, Value: value}, true
+}
+
+// markupEnd は [ の後ろ from から、対の ] の位置（"…" の中は飛ばす。無ければ -1）。
+func markupEnd(rs []rune, from int) int {
+	inString := false
+	for i := from; i < len(rs); i++ {
+		switch {
+		case rs[i] == '"':
+			inString = !inString
+		case !inString && rs[i] == ']':
+			return i
+		}
+	}
+	return -1
+}
+
 // trimParts は切れの並びから話し手の分（頭の skip byte。最初の字の切れの中にある）を落とし、頭と尻の空白を落とす。
 func trimParts(parts []*Part, skip int) []*Part {
-	if len(parts) > 0 && parts[0].Expr == nil {
+	if len(parts) > 0 && parts[0].isLiteral() {
 		parts[0].Text = strings.TrimLeftFunc(parts[0].Text[skip:], unicode.IsSpace)
 	}
-	if last := len(parts) - 1; last >= 0 && parts[last].Expr == nil {
+	last := len(parts) - 1
+	for last >= 0 && parts[last].Close != "" {
+		last--
+	}
+	if last >= 0 && parts[last].isLiteral() {
 		parts[last].Text = strings.TrimRightFunc(parts[last].Text, unicode.IsSpace)
 	}
 	var out []*Part
 	for _, part := range parts {
-		if part.Expr != nil || part.Text != "" {
+		if !part.isLiteral() || part.Text != "" {
 			out = append(out, part)
 		}
 	}
 	return out
 }
+
+// isLiteral は字の切れか（式とマークアップでない）。
+func (part *Part) isLiteral() bool { return part.Expr == nil && part.Markup == "" && part.Close == "" }
 
 // exprEnd は { の後ろ from から、対の } の位置（式の文字列の中は飛ばす。無ければ -1）。
 func exprEnd(rs []rune, from int) int {

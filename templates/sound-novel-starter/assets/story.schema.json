@@ -1,0 +1,129 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "画面の言葉（novel.story.json）",
+  "description": "シナリオの外で画面に出す言葉と話し手の呼び名。文章・分岐・結末はシナリオ assets/talk/natsukusa.yarn。",
+  "type": "object",
+  "required": [
+    "version"
+  ],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "description": "Doc の形の版。いまは 1"
+    },
+    "note": {
+      "type": "string",
+      "description": "人間と AI のためのメモ（ゲームは読まない）"
+    },
+    "title": {
+      "type": "string",
+      "description": "表紙の題"
+    },
+    "subtitle": {
+      "type": "string",
+      "description": "表紙の題の下の 1 行"
+    },
+    "hint": {
+      "type": "string",
+      "description": "表紙の下の操作の案内"
+    },
+    "titlePhoto": {
+      "type": "string",
+      "description": "表紙の写真（novel.backdrops.json の photos の鍵）"
+    },
+    "titleGrade": {
+      "type": "string",
+      "description": "表紙の時間帯（novel.backdrops.json の grades の鍵）"
+    },
+    "titleAmbience": {
+      "type": "string",
+      "description": "表紙の環境音（amb_<名前>。空なら鳴らさない）"
+    },
+    "names": {
+      "type": "object",
+      "description": "話し手の id（src/Talk.flix の Speaker）→ 呼び名",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "labels": {
+      "type": "object",
+      "description": "言葉の鍵（src/StoryDoc.flix の Label）→ 言葉。無い鍵は既定の言葉で出る",
+      "properties": {
+        "newGame": {
+          "type": "string"
+        },
+        "continue": {
+          "type": "string"
+        },
+        "settings": {
+          "type": "string"
+        },
+        "credits": {
+          "type": "string"
+        },
+        "quit": {
+          "type": "string"
+        },
+        "log": {
+          "type": "string"
+        },
+        "auto": {
+          "type": "string"
+        },
+        "skip": {
+          "type": "string"
+        },
+        "save": {
+          "type": "string"
+        },
+        "load": {
+          "type": "string"
+        },
+        "hide": {
+          "type": "string"
+        },
+        "toTitle": {
+          "type": "string"
+        },
+        "textSpeed": {
+          "type": "string"
+        },
+        "autoWait": {
+          "type": "string"
+        },
+        "ambienceVolume": {
+          "type": "string"
+        },
+        "seVolume": {
+          "type": "string"
+        },
+        "saveTitle": {
+          "type": "string"
+        },
+        "loadTitle": {
+          "type": "string"
+        },
+        "emptySlot": {
+          "type": "string"
+        },
+        "back": {
+          "type": "string"
+        },
+        "logTitle": {
+          "type": "string"
+        },
+        "saved": {
+          "type": "string"
+        },
+        "loaded": {
+          "type": "string"
+        },
+        "noSave": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

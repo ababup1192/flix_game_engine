@@ -127,7 +127,7 @@ mod TestYarnRunner {
     @Test
     def testBrokenOrOtherVersionJsonIsNotRead(): Unit \ Assert =
         Assert.assertEq(expected = (true, true),
-            (Option.isEmpty(Yarn.fromJson("{ broken")), Option.isEmpty(Yarn.fromJson("{\"version\": 3, \"nodes\": []}"))))
+            (Option.isEmpty(Yarn.fromJson("{ broken")), Option.isEmpty(Yarn.fromJson("{\"version\": 4, \"nodes\": []}"))))
 
     /// ノードの一覧は木の JSON のノードの数に追随する。
     @Test

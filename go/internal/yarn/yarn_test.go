@@ -392,3 +392,45 @@ func TestTrailingTextAfterElseIsReportedOnce(t *testing.T) {
 		t.Errorf("4 行目の 1 件のはず: %v", ps)
 	}
 }
+
+// [ruby=よみ]字[/ruby] は字の切れの間に始まりと終わりの切れを挟み、Text には [ ] を抜いた字が残り、木は版 3 になる。
+func TestRubyMarkupSplitsIntoParts(t *testing.T) {
+	prog, ps := buildText(t, "title: a\n---\n千夏: [ruby=ひぐらし]蜩[/ruby]が鳴く\n-> [ruby=\"かわ\"]川[/]へ\n    <<stop>>\n===\n", nil)
+	if len(ps) > 0 {
+		t.Fatal(messages(ps))
+	}
+	line := prog.Nodes[0].Body[0]
+	if line.Speaker != "千夏" || line.Text != "蜩が鳴く" {
+		t.Errorf("got %q %q", line.Speaker, line.Text)
+	}
+	got, _ := json.Marshal(line.Parts)
+	if string(got) != `[{"markup":"ruby","value":"ひぐらし"},{"text":"蜩"},{"close":"ruby"},{"text":"が鳴く"}]` {
+		t.Errorf("parts: %s", got)
+	}
+	opt := prog.Nodes[0].Body[1].Options[0]
+	if opt.Text != "川へ" || len(opt.Parts) != 4 || opt.Parts[0].Value != "かわ" || opt.Parts[2].Close != "ruby" {
+		t.Errorf("option: %q %d", opt.Text, len(opt.Parts))
+	}
+	if prog.Version != 3 {
+		t.Errorf("version %d", prog.Version)
+	}
+}
+
+// 閉じていない・交差した・名前の違う・値の無いマークアップと、話し手の中のマークアップは行番号つきで止まる。
+func TestMalformedMarkupStopsWithLineNumbers(t *testing.T) {
+	cases := map[string]string{
+		"[ruby=よ]字":             "閉じる [/ruby] が無い",
+		"字[/ruby]":              "開いていない",
+		"[ruby]字[/ruby]":        "値が無い",
+		"[wave]字[/wave]":        "読まない",
+		"[ruby=よ]字[/wave]":      "開いた順の逆",
+		"[ruby=ち]千夏[/ruby]: やあ": "話し手の名前",
+		"字]":                    "対の [ が無い",
+	}
+	for src, want := range cases {
+		_, ps := buildText(t, "title: a\n---\n"+src+"\n===\n", nil)
+		if len(ps) != 1 || ps[0].Line != 3 || !strings.Contains(ps[0].String(), want) {
+			t.Errorf("%s: %s", src, messages(ps))
+		}
+	}
+}

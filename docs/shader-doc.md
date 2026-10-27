@@ -52,6 +52,7 @@ vignette・熱い溶岩を **JSON の保存だけで即調整できる**形で�
 | `worley` | `scale`, `seed`, `out`("f1"/"f2"/"f2mf1") | セル模様。`f2mf1` が網目（水のコースティクス） |
 | `hash1` / `hash2` | `scale`, `seed`, (`comp`), (`bucket`) | 升目ごとの乱数（`hash2` は成分指定） |
 | `tex` **[新19]** | `name`, (`chan`="r"/"g"/"b"/"a"、既定 "r") | 名前つきテクスチャ（pass の生成した絵や普通のテクスチャ）を今の uv で標本した 1 チャンネル |
+| `blur` **[新]** | `name`, (`chan`), `radius{x,y}`, `taps`(既定 24), `amount`（場） | テクスチャをぼかして標本した 1 チャンネル。今の uv のまわり `radius × amount` の円に `taps` 個の点を黄金角で撒いて平均する（GLSL と CPU で同じ点）。実写の背景をピンぼけにする・切り替えの頭でピントを外す（実例: `templates/sound-novel-starter/src/Backdrop.flix`） |
 
 **形**
 

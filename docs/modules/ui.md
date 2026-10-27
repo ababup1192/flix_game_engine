@@ -19,6 +19,8 @@
 | 会話ウィンドウ・文字送りを出す | UiDialog / UiTypewriter（実例: `templates/novel-starter/src/World.flix`） |
 | 会話のシナリオを .yarn（Yarn Spinner の部分集合）で書く・台詞と選択肢を順に出す・話し手やタグを語彙で止める | Yarn（`bin/fge yarn build` が書いた木を loadOr・語彙は vocabJson）/ YarnRunner（start・startAt（.yarn の行まで進める）・step・trace）（実例: `templates/novel-starter/src/World.flix`・`templates/novel-starter/src/Talk.flix`） |
 | 台本の変数（`$x`）と訪れた数を持ち越す・ゲームから読む／書く・セーブに入れる | YarnStorage（empty・get・set・visitCountOf・toJson・fromJson）/ YarnRunner（startWith・storageOf・withStorage・valueOf） |
+| ノベルのセーブ・ロード（読んでいる所に栞を挟み、同じ行・同じ変数から読み直す） | YarnRunner（bookmarkOf・resume・bookmarkToJson・bookmarkFromJson）（実例: `templates/sound-novel-starter/src/World.flix` の saveSlot / loadSlot） |
+| 台詞にルビ（ふりがな）を振る（`[ruby=よみ]字[/ruby]`）・ルビつきで折って描く・行数を数える | Yarn（rubiesOf）/ RichText（placeRuby・rubyLineCountBy。句読点は行頭に送らずぶら下げる）（実例: `templates/sound-novel-starter/src/View.flix`） |
 | マウスの下の UI 要素を知る | UiFocus（実例: `templates/novel-starter/src/Controls.flix`）。UiDoc の画面の各要素の画面矩形は layoutRects |
 | 絵の上に散らばった選べる物を矢印・Tab・ホバーで巡る（キーのフォーカスとホバーを 1 つにする・:focus-visible の枠） | UiFocusNav（Target の列を作るだけ。UiDoc の画面は targetsOfUi。並びの決まったメニューは UiMenu） |
 | 説明の窓（ツールチップ）を見ている物の脇の、画面からはみ出さず他の物に重ならない所へ置く | UiTooltip（computePlacement。脇に余地が無い画面は Side.Over で見ている物の上に重ねる。窓の字を折るのは RichText.wrapLinesBy） |

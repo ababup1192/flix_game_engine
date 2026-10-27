@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "note": "キーの割り当て（GameEngine.Key の名前）。confirm = 送る・選ぶ、back = 窓を閉じる・読んでいる間は文章の窓を隠す、prev / next = カーソル、left / right = 設定の値、log = ログ、auto = オート、skip = スキップ（既読だけ・読んでいない行で止まる）、hide = 窓を隠す、quit = 表紙で終える。クリックは常に決定、ホイールの上でログ。",
+  "confirm": ["Enter", "Space", "Z"],
+  "back": ["Escape", "X", "Backspace"],
+  "prev": ["Up", "W"],
+  "next": ["Down", "S"],
+  "left": ["Left", "A"],
+  "right": ["Right", "D"],
+  "log": ["L", "PageUp"],
+  "auto": ["O"],
+  "skip": ["K", "Tab"],
+  "hide": ["H"],
+  "quit": ["Escape"]
+}

@@ -10,9 +10,12 @@ import (
 )
 
 // Version は木の JSON の形の版。形を変えたら上げ、Yarn.flix の読み手も合わせる。
-// 書く版は木が使う物で決める（変数も条件も {式} も無い木は 1 のまま書く。
-// いつも 2 にすると、文法を足す前に組んだゲームの dialogue.json が全部ずれて組み直しになる）。
-const Version = 2
+// 書く版は木が使う物で決める（変数も条件も {式} も無い木は 1、マークアップの無い木は 2 のまま書く。
+// いつも最新にすると、文法を足す前に組んだゲームの dialogue.json が全部ずれて組み直しになる）。
+const Version = 3
+
+// versionTwo は変数・条件・{式} を使い、マークアップの無い木の版。
+const versionTwo = 2
 
 // versionOne は変数・条件・{式} の無い木の版（読める古い engine_world がある）。
 const versionOne = 1
@@ -65,7 +68,8 @@ type Tag struct {
 //	set      Name（$ から書く変数）・Expr
 //	if       Clauses（上から順に見て、最初に真になった物の Body を流す。Condition の無い物は <<else>>）
 //
-// Parts は {式} のある行だけに書く（字と式の並び。Text は書いたとおりの {式} を残した字で、人とエディタが読む）。
+// Parts は {式} かマークアップのある行だけに書く（字と式とマークアップの並び。Text は書いたとおりの {式} を残し、
+// マークアップの [ ] を抜いた字で、人とエディタが読む）。
 type Stmt struct {
 	Kind    string    `json:"kind"`
 	Line    int       `json:"line"`
@@ -93,10 +97,14 @@ type Option struct {
 	Body      []*Stmt `json:"body"`
 }
 
-// Part は {式} のある行の 1 切れ（Text か Expr のどちらか）。
+// Part は {式} かマークアップのある行の 1 切れ（Text・Expr・Markup の始まり・Close のどれか 1 つ）。
+// Markup は [名前=値] の始まり（Value は = の後ろ。無ければ空）、Close は [/名前] の終わり（[/] も対の名前で書く）。
 type Part struct {
-	Text string `json:"text,omitempty"`
-	Expr *Expr  `json:"expr,omitempty"`
+	Text   string `json:"text,omitempty"`
+	Expr   *Expr  `json:"expr,omitempty"`
+	Markup string `json:"markup,omitempty"`
+	Value  string `json:"value,omitempty"`
+	Close  string `json:"close,omitempty"`
 }
 
 // Clause は <<if>>・<<elseif>>・<<else>> の 1 つ（<<else>> は Condition が無い）。
@@ -121,6 +129,27 @@ func usesVersionTwo(p *Program) bool {
 				if o.Condition != nil || len(o.Parts) > 0 {
 					found = true
 				}
+			}
+		})
+	}
+	return found
+}
+
+// usesMarkup は木がマークアップ（版 3）を使うか。
+func usesMarkup(p *Program) bool {
+	found := false
+	marked := func(parts []*Part) {
+		for _, part := range parts {
+			if part.Markup != "" {
+				found = true
+			}
+		}
+	}
+	for _, n := range p.Nodes {
+		walk(n.Body, func(s *Stmt) {
+			marked(s.Parts)
+			for _, o := range s.Options {
+				marked(o.Parts)
 			}
 		})
 	}

@@ -12,7 +12,8 @@
 //           {"kind":"scaled","factor":..,"scroll":{"x":..,"y":..},"of":{..}} /
 //           {"kind":"warp","amount":..,"scale":..,"seed":..,"of":{..}} /
 //           {"kind":"mix","a":{..},"b":{..},"t":..} / {"kind":"blend","a":{..},"b":{..},"by":{..}} /
-//           {"kind":"tex","name":"..","chan":"r"} / {"kind":"shift","dx":{..},"dy":{..},"of":{..}}
+//           {"kind":"tex","name":"..","chan":"r"} / {"kind":"shift","dx":{..},"dy":{..},"of":{..}} /
+//           {"kind":"blur","name":"..","chan":"r","radius":{"x":..,"y":..},"taps":24,"amount":{..}}
 //   色:     {"kind":"solid","color":<color>} / {"kind":"ramp","lo":<color>,"hi":<color>,"field":{..}} /
 //           {"kind":"rgb","r":{..},"g":{..},"b":{..}}
 //   出力:   {"kind":"fill","shade":{..},"alpha":{..}}
@@ -432,6 +433,17 @@ pub mod ShaderJson {
                         ofJson <- reqKey("of", m);
                         of     <- parseField(ofJson)
                     ) yield ShaderDoc.Field.Shift({ dx = dx, dy = dy, of = of })
+                case "blur" =>
+                    forM (
+                        name   <- strAt("name", m);
+                        chan   <- parseChan(m);
+                        radius <- vec2Or("radius", { x = 0.01, y = 0.01 }, m);
+                        taps   <- intOr("taps", 24, m);
+                        amount <- match Map.get("amount", m) {
+                            case None    => Ok(ShaderDoc.Field.Const(1.0))
+                            case Some(j) => parseField(j)
+                        }
+                    ) yield ShaderDoc.Field.TexBlur({ name = name, chan = chan, radius = radius, taps = taps, amount = amount })
                 case other => Err(err("unknown field kind: '${other}'"))
             }
         })
@@ -770,6 +782,10 @@ pub mod ShaderJson {
             case ShaderDoc.Field.Shift(sh) =>
                 JObject(Map#{ "kind" => JString("shift"), "dx" => fieldToJson(sh#dx),
                               "dy" => fieldToJson(sh#dy), "of" => fieldToJson(sh#of) })
+            case ShaderDoc.Field.TexBlur(bl) =>
+                JObject(Map#{ "kind" => JString("blur"), "name" => JString(bl#name),
+                              "chan" => JString(chanStr(bl#chan)), "radius" => vec2ToJson(bl#radius),
+                              "taps" => num(Int32.toFloat64(bl#taps)), "amount" => fieldToJson(bl#amount) })
         }
 
     // bucket が None なら "bucket" キーを出さない（省略時の JSON を 1 バイトも増やさない）。

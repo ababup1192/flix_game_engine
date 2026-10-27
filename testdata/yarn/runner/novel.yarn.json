@@ -1,0 +1,239 @@
+{
+  "version": 3,
+  "note": "bin/fge yarn build が novel.yarn から書いた木。手で直さない（.yarn を直して build する）",
+  "vocab": "",
+  "files": [
+    "novel.yarn"
+  ],
+  "variables": [
+    {
+      "name": "$n",
+      "value": 2,
+      "file": "novel.yarn",
+      "line": 5
+    },
+    {
+      "name": "$kind",
+      "value": 0,
+      "file": "novel.yarn",
+      "line": 6
+    }
+  ],
+  "nodes": [
+    {
+      "title": "Field",
+      "file": "novel.yarn",
+      "line": 3,
+      "headers": [],
+      "body": [
+        {
+          "kind": "line",
+          "line": 7,
+          "text": "蜩が{$n}匹鳴く",
+          "parts": [
+            {
+              "markup": "ruby",
+              "value": "ひぐらし"
+            },
+            {
+              "text": "蜩"
+            },
+            {
+              "close": "ruby"
+            },
+            {
+              "text": "が"
+            },
+            {
+              "expr": {
+                "kind": "variable",
+                "name": "$n"
+              }
+            },
+            {
+              "text": "匹鳴く"
+            }
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 8,
+          "speaker": "girl",
+          "text": "川と畑",
+          "parts": [
+            {
+              "markup": "ruby",
+              "value": "かわ"
+            },
+            {
+              "text": "川"
+            },
+            {
+              "close": "ruby"
+            },
+            {
+              "text": "と"
+            },
+            {
+              "markup": "ruby",
+              "value": "はたけ"
+            },
+            {
+              "text": "畑"
+            },
+            {
+              "close": "ruby"
+            }
+          ]
+        },
+        {
+          "kind": "options",
+          "line": 9,
+          "options": [
+            {
+              "line": 9,
+              "text": "川へ行く",
+              "body": [
+                {
+                  "kind": "set",
+                  "line": 10,
+                  "name": "$kind",
+                  "expr": {
+                    "kind": "+",
+                    "args": [
+                      {
+                        "kind": "variable",
+                        "name": "$kind"
+                      },
+                      {
+                        "kind": "value",
+                        "value": 1
+                      }
+                    ]
+                  }
+                },
+                {
+                  "kind": "set",
+                  "line": 11,
+                  "name": "$n",
+                  "expr": {
+                    "kind": "+",
+                    "args": [
+                      {
+                        "kind": "variable",
+                        "name": "$n"
+                      },
+                      {
+                        "kind": "value",
+                        "value": 10
+                      }
+                    ]
+                  }
+                },
+                {
+                  "kind": "line",
+                  "line": 12,
+                  "text": "水の音"
+                }
+              ]
+            },
+            {
+              "line": 13,
+              "text": "畑へ行く",
+              "body": [
+                {
+                  "kind": "set",
+                  "line": 14,
+                  "name": "$kind",
+                  "expr": {
+                    "kind": "+",
+                    "args": [
+                      {
+                        "kind": "variable",
+                        "name": "$kind"
+                      },
+                      {
+                        "kind": "value",
+                        "value": 2
+                      }
+                    ]
+                  }
+                },
+                {
+                  "kind": "line",
+                  "line": 15,
+                  "text": "土の匂い"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 16,
+          "name": "wait",
+          "args": [
+            "1"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 17,
+          "text": "数は{$n}",
+          "parts": [
+            {
+              "text": "数は"
+            },
+            {
+              "expr": {
+                "kind": "variable",
+                "name": "$n"
+              }
+            }
+          ]
+        },
+        {
+          "kind": "jump",
+          "line": 18,
+          "node": "Night"
+        }
+      ]
+    },
+    {
+      "title": "Night",
+      "file": "novel.yarn",
+      "line": 21,
+      "headers": [],
+      "body": [
+        {
+          "kind": "set",
+          "line": 23,
+          "name": "$n",
+          "expr": {
+            "kind": "+",
+            "args": [
+              {
+                "kind": "variable",
+                "name": "$n"
+              },
+              {
+                "kind": "value",
+                "value": 100
+              }
+            ]
+          }
+        },
+        {
+          "kind": "line",
+          "line": 24,
+          "text": "夜の一行目"
+        },
+        {
+          "kind": "line",
+          "line": 25,
+          "text": "夜の二行目"
+        }
+      ]
+    }
+  ]
+}

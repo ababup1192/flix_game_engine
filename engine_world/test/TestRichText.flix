@@ -182,4 +182,39 @@ mod TestRichText {
         Assert.assertEq(
             expected = (0.1, 0.2, 0.3) :: (0.1, 0.2, 0.3) :: (0.1, 0.2, 0.3) :: (1.0, 0.0, 0.0) :: Nil,
             items |> List.map(glyphTint))
+
+    // ── ルビ ──
+
+    // ふりがなは親字の上に中央そろえで載り（B=20 幅の上に 8px の "AA"=10 幅 → x は 110+5）、y は行の上の rubySize+1 だけ上。
+    @Test
+    def testPlaceRubyCentersTheReadingAboveTheBase(): Unit \ Assert =
+        let items = RichText.placeRuby(placement(1000.0), 8.0, { start = 1, length = 1, text = "AA" } :: Nil, 99,
+                                       RichText.plain("AB") :: Nil);
+        Assert.assertEq(expected = ("A", 100.0, 200.0) :: ("B", 110.0, 200.0) :: ("AA", 115.0, 191.0) :: Nil,
+                        items |> List.map(glyphAt))
+
+    // 文字送りの途中: 親字が全部見えるまでふりがなは出ない。
+    @Test
+    def testPlaceRubyWaitsForTheWholeBase(): Unit \ Assert =
+        let items = visible -> RichText.placeRuby(placement(1000.0), 8.0, { start = 0, length = 2, text = "C" } :: Nil, visible,
+                                                  RichText.plain("AB") :: Nil) |> List.map(glyphAt) |> List.map(match (t, _, _) -> t);
+        Assert.assertEq(expected = (List#{"A"}, List#{"A", "B", "C"}), (items(1), items(2)))
+
+    // 親字とふりがなは 1 つの塊で行をまたがない。ふりがなが広いと、塊の幅はふりがなの幅から rubySize の 2 倍（両隣へのはみ出し）を引いた幅になる。
+    @Test
+    def testRubyGroupDoesNotBreakAndTakesTheWiderWidth(): Unit \ Assert =
+        let one = _ -> 1.0;
+        let count = (rubies, maxWidth) -> RichText.rubyLineCountBy(one, text -> Int32.toFloat64(String.length(text)), 0.25, maxWidth, rubies,
+                                                                   RichText.plain("abcde") :: Nil);
+        Assert.assertEq(expected = (2, 2, 3),
+                        (count(Nil, 3.0), count({ start = 2, length = 2, text = "x" } :: Nil, 3.0),
+                         count({ start = 2, length = 2, text = "xxx" } :: Nil, 3.0)))
+
+    // 句読点・閉じ括弧は行頭に送らず前の行にぶら下げる（字 1 つ分まで）。普通の字は送る。
+    @Test
+    def testRubyWrapHangsClosingPunctuation(): Unit \ Assert =
+        let one = _ -> 1.0;
+        let count = text -> RichText.rubyLineCountBy(one, t -> Int32.toFloat64(String.length(t)), 0.5, 2.0, Nil,
+                                                     RichText.plain(text) :: Nil);
+        Assert.assertEq(expected = (1, 2, 2), (count("ab。"), count("abc"), count("ab。」")))
 }

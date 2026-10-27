@@ -304,6 +304,9 @@ pub mod ShaderGen {
                 ra#name == rb#name and ra#chan == rb#chan
             case (Field.Shift(ra), Field.Shift(rb))               =>
                 eqField(ra#dx, rb#dx) and eqField(ra#dy, rb#dy) and eqField(ra#of, rb#of)
+            case (Field.TexBlur(ra), Field.TexBlur(rb))           =>
+                ra#name == rb#name and ra#chan == rb#chan and eqVec2(ra#radius, rb#radius)
+                    and ra#taps == rb#taps and eqField(ra#amount, rb#amount)
             case _                                                => false
         }
 
@@ -321,10 +324,26 @@ pub mod ShaderGen {
             "uniform float uTime;\n" ::
             texUniformDecls(names) ::
             preludeSource() ::
+            (if (ShaderDoc.usesBlur(spec)) blurSource() else "") ::
             "void main() {\n" ::
             bindingPrelude(spec#bindings, tex) ::
             "    " :: outStmt(spec#cycleRate, spec#out, envOf(spec#bindings), tex) :: "\n" ::
             "}\n" :: Nil)
+
+    /// ぼかし（TexBlur）の標本。点の並びは ShaderEval.blurTex と同じ。ぼかしを使う Spec にだけ足す
+    /// （使わない Spec の出力を 1 文字も変えない）。
+    def blurSource(): String =
+        "vec4 sg_blur(sampler2D tex, float flip, vec2 uv, vec2 radius, int taps) {\n" +
+        "    vec4 acc = vec4(0.0);\n" +
+        "    for (int i = 0; i < 64; i++) {\n" +
+        "        if (i >= taps) break;\n" +
+        "        float r = sqrt((float(i) + 0.5) / float(taps));\n" +
+        "        float a = float(i) * 2.39996323;\n" +
+        "        vec2 p = uv + vec2(cos(a), sin(a)) * r * radius;\n" +
+        "        acc += texture(tex, vec2(p.x, mix(p.y, 1.0 - p.y, flip)));\n" +
+        "    }\n" +
+        "    return acc / float(taps);\n" +
+        "}\n"
 
     /// texNames の並び（正典順）に uniform 宣言を吐く。空なら空文字（1 文字も足さない）。
     def texUniformDecls(names: List[String]): String =
@@ -597,6 +616,16 @@ pub mod ShaderGen {
                 let uv2 = "((" + uv + ") + vec2(" + fieldExpr(sh#dx, uv, env, tex) + ", " +
                           fieldExpr(sh#dy, uv, env, tex) + "))";
                 fieldExpr(sh#of, uv2, env, tex)
+            case ShaderDoc.Field.TexBlur(bl) =>
+                let i = Map.get(bl#name, tex) |> Option.getWithDefault(0);
+                let chan = match bl#chan {
+                    case ShaderDoc.TexChan.R => ".r"
+                    case ShaderDoc.TexChan.G => ".g"
+                    case ShaderDoc.TexChan.B => ".b"
+                    case ShaderDoc.TexChan.A => ".a"
+                };
+                "sg_blur(uTex${i}, uTexFlip${i}, (" + uv + "), vec2(" + f(bl#radius#x) + ", " + f(bl#radius#y) +
+                    ") * (" + fieldExpr(bl#amount, uv, env, tex) + "), " + iLit(ShaderDoc.blurTaps(bl#taps)) + ")" + chan
         }
 
     /// hash に渡すセル座標の GLSL 式。floor((uv)*scale) を作り、bucket が有ればその式を足す。

@@ -94,6 +94,7 @@ pub mod ShaderEval {
         case Missing                                                  // 未定義の Ref・無い tex（0.0）
         case Tex(Int32, Int32, Vector[Int32], Int32)                  // 幅, 高さ, 画素, チャンネルの shift
         case Shift(Node, Node, Node)                                  // dx, dy, of
+        case TexBlur(Int32, Int32, Vector[Int32], Int32, Float64, Float64, Int32, Node) // 幅, 高さ, 画素, shift, 半径 x/y, taps, amount
     }
 
     /// 面の色。Color は (r, g, b) の位置で持つ。
@@ -215,6 +216,12 @@ pub mod ShaderEval {
                 }
             // dx/dy は外側 uv で評価してから、of をずらした座標で読む（GLSL の式と同じ組み方）。
             case ShaderDoc.Field.Shift(sh)      => Node.Shift(sub(sh#dx), sub(sh#dy), sub(sh#of))
+            case ShaderDoc.Field.TexBlur(bl)    =>
+                match Map.get(bl#name, texEnv) {
+                    case Some(td) => Node.TexBlur(td#width, td#height, td#pixels, texShift(bl#chan),
+                                                  bl#radius#x, bl#radius#y, ShaderDoc.blurTaps(bl#taps), sub(bl#amount))
+                    case None     => Node.Missing
+                }
         }
 
     def texShift(chan: ShaderDoc.TexChan): Int32 =
@@ -419,6 +426,25 @@ pub mod ShaderEval {
                 let dx = evalNode(fdx, x, y, t, env);
                 let dy = evalNode(fdy, x, y, t, env);
                 evalNode(of, x + dx, y + dy, t, env)
+            case Node.TexBlur(w, h, pixels, shift, rx, ry, taps, amount) =>
+                let k = evalNode(amount, x, y, t, env);
+                blurTex(w, h, pixels, shift, x, y, rx * k, ry * k, taps)
+        }
+
+    /// ぼかしの標本（GLSL の sg_blur と同じ点の並び: i 番目は角度 i×黄金角・距離 √((i+0.5)/taps)）。
+    def blurTex(w: Int32, h: Int32, pixels: Vector[Int32], shift: Int32, u: Float64, v: Float64,
+                rx: Float64, ry: Float64, taps: Int32): Float64 =
+        blurSum(w, h, pixels, shift, u, v, rx, ry, taps, 0, 0.0) / Int32.toFloat64(taps)
+
+    def blurSum(w: Int32, h: Int32, pixels: Vector[Int32], shift: Int32, u: Float64, v: Float64,
+                rx: Float64, ry: Float64, taps: Int32, i: Int32, acc: Float64): Float64 =
+        if (i >= taps) acc
+        else {
+            let fi = Int32.toFloat64(i);
+            let r = Vec2.sqrt((fi + 0.5) / Int32.toFloat64(taps));
+            let a = fi * 2.39996323;
+            let s = sampleTex(w, h, pixels, shift, u + Vec2.cos(a) * r * rx, v + Vec2.sin(a) * r * ry);
+            blurSum(w, h, pixels, shift, u, v, rx, ry, taps, i + 1, acc + s)
         }
 
     /// テクスチャ標本（NEAREST + CLAMP の釘打ち式 — GL と同じ量子化になるのが backend-parity の契約）。
