@@ -5,8 +5,8 @@
 mod TestRules {
 
     use fge::{Emit, ShaderDoc}
-    use World.Kind
-    use World.Cell
+    use Pieces.Kind
+    use Pieces.Cell
 
     /// 既定の Doc から空の World を作り、current だけ差し替えられるようにする土台。
     def base(): World.World =
@@ -27,11 +27,6 @@ mod TestRules {
     /// 1 行分（全 COLS）を kind で埋めるセル列。
     def fullRow(r: Int32, kind: Kind): List[(Cell, Kind)] =
         List.range(0, World.cols()) |> List.map(c -> ((c, r), kind))
-
-    /// w から連続して n 回涌かせた World の列（純粋。盤が空なら涌き衝突しない）。
-    def spawnChain(n: Int32, w: World.World): List[World.World] =
-        if (n <= 0) Nil
-        else { let w2 = World.spawnNext(w); w2 :: spawnChain(n - 1, w2) }
 
     // ══════════════════════════════════════════════════════
     // 衝突（壁・床・既存セル）
@@ -154,8 +149,8 @@ mod TestRules {
     def testSpawnIntoStackIsGameOver(): Unit \ Assert =
         // 涌き位置（上端中央）が埋まっていると、次のミノが涌いた瞬間にぶつかり GAME OVER になる。
         // 上 2 行の中央付近だけ塞ぐ（行は満杯にしない = ライン消しには行かせない）。
-        let blockTop = List.range(0, 2) |> List.flatMap(r ->
-            List.range(3, 7) |> List.map(c -> ((c, r), Kind.I)));
+        let blockTop = ((3, 0), Kind.I) :: ((4, 0), Kind.I) :: ((5, 0), Kind.I) :: ((6, 0), Kind.I) ::
+                       ((3, 1), Kind.I) :: ((4, 1), Kind.I) :: ((5, 1), Kind.I) :: ((6, 1), Kind.I) :: Nil;
         // さらに現在のミノがすぐ固定されるよう、その真下も塞いでおく。
         let stacked = withBoard(List.append(blockTop, ((4, 2), Kind.T) :: Nil), base());
         // いまのミノを叩きつけて固定 → 次のミノが涌き位置（塞がれた上端）へ出て衝突する。
@@ -187,7 +182,7 @@ mod TestRules {
     def testNextPreviewMatchesFollowingSpawn(): Unit \ Assert =
         // 空盤で連続して涌かせ、各ステップの NEXT が「次に実際に涌くミノ」と一致することを固定する。
         // 16 回涌かせて 7-bag の切れ目を跨ぐ（袋の最後の 1 枚で NEXT が現在のミノに化けないこと）。
-        let worlds = base() :: spawnChain(16, base());
+        let worlds = List.scanLeft((w, _) -> World.spawnNext(w), base(), List.range(0, 16));
         let pairs = List.zip(worlds, List.drop(1, worlds));
         let allMatch = pairs |> List.forAll(pair -> {
             let (prev, cur) = pair;

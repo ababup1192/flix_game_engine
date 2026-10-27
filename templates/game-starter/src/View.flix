@@ -24,16 +24,36 @@
 mod View {
 
     use fge::{
-        App, Color, DrawCmd, Fx, Num, PxSprite, RawDraw, Render, SortingLayer, Sway, TextDraw,
-        Vec2, ZStack
+        App, Color, DrawCmd, Fx, Num, PxSprite, PxSpriteAtlas, PxSpriteDoc, RawDraw, Render, ShaderDoc,
+        SortingLayer, Sway, TextDraw, Vec2, ZStack
     }
     use ZOrder.Layer
 
+    /// 描くのに要る値。部品は World でなくこれを読む（lint/rules.flix の view-no-world）。
+    /// 描くのに新しい値が要れば欄を足し、規則で導く値（主人公の大きさ・確認の窓が出ているか）は inputOf で World の関数から入れる。
+    pub type alias In = {
+        t = Float64,
+        x = Float64,
+        y = Float64,
+        shader = ShaderDoc.Spec,
+        theme = ThemeDoc.Doc,
+        sprites = PxSpriteDoc.Doc,
+        atlas = PxSpriteAtlas.Baked,
+        heroBox = Vec2.Vec2,
+        askingQuit = Bool,
+        quitPrompt = String
+    }
+
+    /// World から描くのに要る値だけを写す（View の中で World を読むのは入口の frame とここだけ）。
+    pub def inputOf(w: World.World): In =
+        { t = w#t, x = w#x, y = w#y, shader = w#shader, theme = w#theme, sprites = w#sprites, atlas = w#atlas,
+          heroBox = World.heroBox(w), askingQuit = World.isAskingQuit(w), quitPrompt = SampleDoc.rec(w#doc)#quitPrompt }
+
     pub def frame(ctx: App.ViewCtx, w: World.World): List[Render.PlacedItem] =
-        SortingLayer.compose(ctx, layers(ctx, w))
+        SortingLayer.compose(ctx, layers(ctx, inputOf(w)))
 
     /// 層ごとの木（絵と押せる物の当たり）。Controls.tapAt も同じ木から押した物を選ぶ。
-    pub def layers(ctx: App.ViewCtx, w: World.World): List[(Layer, ZStack.Tree[Layer, World.Press])] =
+    pub def layers(ctx: App.ViewCtx, w: In): List[(Layer, ZStack.Tree[Layer, World.Press])] =
         let scene = ZStack.of(
             ZStack.leaf(backdrop(w) :: Nil)
                 :: ZStack.leaf(halo(w))
@@ -46,7 +66,7 @@ mod View {
     /// 画素ごとの計算で塗る面。単色の box の代わりで、上下の色の移り変わりに
     /// 雲のムラが混ざり、ゆっくり流れる。何がどう効くかは Doc の note と
     /// engine の `docs/shader-doc.md` を参照。
-    def backdrop(w: World.World): Render.PlacedItem =
+    def backdrop(w: In): Render.PlacedItem =
         Render.shaderFill(w#shader,
             { position = { x = 0.0, y = 0.0 },
               size = { x = World.width(), y = World.height() } },
@@ -57,8 +77,8 @@ mod View {
     /// 主役の後ろだけ背景を暗く落とす（乗算で重ねる）。主役そのものを明るくするより、
     /// 周りを沈めたほうが背景の絵を殺さずに輪郭が立つ。
     /// 色は黒でなく寒色へ近づけた暗い色にする（黒で沈めると絵が濁る）。
-    def halo(w: World.World): List[Render.PlacedItem] =
-        Render.glowAt({ x = w#x, y = w#y }, World.heroBox(w)#x * 1.7,
+    def halo(w: In): List[Render.PlacedItem] =
+        Render.glowAt({ x = w#x, y = w#y }, w#heroBox#x * 1.7,
             Color.cool(Color.darken(ThemeDoc.rec(w#theme)#bg, 0.3), 0.1),
             { alpha = 0.45, blend = DrawCmd.BlendMode.Multiply }, 0)
 
@@ -71,8 +91,8 @@ mod View {
     /// 描くのは drawQuad（作ったアトラスから 1 コマ = 1 クアッド）。画素ぶんの四角に開く
     /// PxSprite.draw もあるが、そちらは組む数が絵の大きさに比例するので、キャラが増えた
     /// 瞬間に重くなる。作る所と、なぜ作るかは World.bakedOf。
-    def hero(w: World.World): List[Render.PlacedItem] =
-        let box = World.heroBox(w);
+    def hero(w: In): List[Render.PlacedItem] =
+        let box = w#heroBox;
         let bob = Sway.wave(w#t, 0.0, 1.7) * 1.5;
         let topLeft = { x = w#x - box#x / 2.0, y = w#y - box#y / 2.0 + bob };
         let items = PxSprite.drawQuad(w#sprites, w#atlas, World.atlasName(),
@@ -87,7 +107,7 @@ mod View {
 
     /// 粒はどこにも保存せず、番号と時刻だけから計算する（巻き戻しても同じ絵）。
     /// 数や速さを Doc から調整したくなったら fx.json（FxDoc）へ移す。
-    def dust(w: World.World): List[Render.PlacedItem] =
+    def dust(w: In): List[Render.PlacedItem] =
         let color = ThemeDoc.lighten(ThemeDoc.rec(w#theme)#accent, 0.6);
         Fx.derive(22, w#t, (_i, rand, t) -> {
             let speed = 5.0 + rand(1) * 12.0;
@@ -102,8 +122,8 @@ mod View {
     /// 画面の四辺に敷く細い枠。動かないので Main が App.withStaticLayer で 1 度だけ GPU に作り、
     /// 毎フレームは組まない（作り直すのは鍵 staticKey が変わった時 = 色を変えた時だけ）。
     /// 静的な層は compose を通らないので、z は層の表から引く（Layer.Frame = 場面のどれよりも手前・窓より奥）。
-    pub def frameBorder(w: World.World): List[Render.PlacedItem] =
-        let color = Color.darken(ThemeDoc.rec(w#theme)#bg, 0.4);
+    pub def frameBorder(theme: ThemeDoc.Doc): List[Render.PlacedItem] =
+        let color = Color.darken(ThemeDoc.rec(theme)#bg, 0.4);
         let z = SortingLayer.bottom(Layer.Frame);
         let edge = 3.0;
         let rect = (x, y, rw, rh) -> { at = Vec2.zero(), item = RawDraw.polygon(
@@ -114,16 +134,16 @@ mod View {
             :: rect(World.width() - edge, 0.0, edge, World.height()) :: Nil
 
     /// 静的な層の鍵。枠の中身を決める入力（色）を 1 つの文字列にまとめる。
-    pub def staticKey(w: World.World): String =
-        let c = ThemeDoc.rec(w#theme)#bg;
+    pub def staticKey(theme: ThemeDoc.Doc): String =
+        let c = ThemeDoc.rec(theme)#bg;
         "border:${c#r},${c#g},${c#b}"
 
     // ── 終了の確認の窓（Layer.Prompt） ──
 
     /// Esc か閉じるボタンで出る確認。場面を薄く沈める幕・窓・文言（文言は sample.kind.json の quitPrompt）。
     /// 窓の中を押すと QuitYes・外を押すと QuitNo（blocking が奥の当たりを塞ぐ）。
-    def quitPrompt(ctx: App.ViewCtx, w: World.World): ZStack.Tree[Layer, World.Press] =
-        if (not World.isAskingQuit(w)) ZStack.leaf(Nil)
+    def quitPrompt(ctx: App.ViewCtx, w: In): ZStack.Tree[Layer, World.Press] =
+        if (not w#askingQuit) ZStack.leaf(Nil)
         else {
             let theme = ThemeDoc.rec(w#theme);
             let size = { x = World.width() * 0.6, y = 48.0 };
@@ -132,7 +152,7 @@ mod View {
                 { at = Vec2.zero(), item = RawDraw.box({ x = World.width(), y = World.height() }, theme#bg, 0)
                                              |> Render.fade(0.6) }
                     :: { at = at, item = RawDraw.box(size, Color.darken(theme#bg, 0.2), 1) }
-                    :: TextDraw.centeredAt({ text = SampleDoc.rec(w#doc)#quitPrompt, atlas = ctx#atlas, size = 16.0,
+                    :: TextDraw.centeredAt({ text = w#quitPrompt, atlas = ctx#atlas, size = 16.0,
                                              color = theme#accent, z = 2,
                                              center = { x = World.width() / 2.0, y = World.height() / 2.0 } })
                     :: Nil;

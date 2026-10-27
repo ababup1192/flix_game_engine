@@ -51,7 +51,7 @@ endif
 # JVM を 1 本抱えたまま寿命が切れるまで待たせないため（1 枚ずつの render は続けて呼ぶので残す）。
 RESIDENT_STOP = if [ -x "$(ENGINE)/bin/fge-go" ]; then "$(ENGINE)/bin/fge-go" resident stop --dir . || true; fi
 
-.PHONY: help status run debug test build dist-linux dist-macos dist-windows dist-all check flow flow-check flow-vocab render render-all gallery-sounds reference-check reference-update render-budget render-lint lint lint-doc-refs video-entries loc api module src src-index hooks check-docs-sync compare agent-eval agent-eval-compare agent-eval-release
+.PHONY: help status run debug test build dist-linux dist-macos dist-windows dist-all check flow flow-check flow-vocab render render-all gallery-sounds reference-check reference-update render-budget render-lint lint lint-doc-refs lint-flixlint video-entries loc api module src src-index hooks check-docs-sync compare agent-eval agent-eval-compare agent-eval-release
 
 # 共通の口の一覧。engine を上げるとここも一緒に新しくなる
 # （ゲーム側の Makefile へ写さないので、口が増えても書き足しに回らなくて済む）。
@@ -76,7 +76,8 @@ help:
 	@echo "  make reference-update   いまの gallery をリファレンス画像として更新する"
 	@echo "  make render-lint        描き出しが残した表を読み直す: 字の被り・はみ出し（text-audit）・z の外れ（z-audit）・動画の入口の写し（video-entries --check）"
 	@echo "  make lint-doc-refs      docs/**/*.md・NOTES.md・AGENTS.local.md が指す Mod.name・パス・path:行 が実在するか"
-	@echo "  make lint               エンジンの軽い検査（render-lint・lint-doc-refs）＋ゲームの Makefile が「lint: 口」で足した検査"
+	@echo "  make lint-flixlint      lint/rules.flix の規則（View が World を受けない・依存の向き・テストの形）を型つきの AST で見る（上限は lint/limits/<規則>.json）"
+	@echo "  make lint               エンジンの軽い検査（render-lint・lint-doc-refs・lint/rules.flix があれば lint-flixlint）＋ゲームの Makefile が「lint: 口」で足した検査"
 	@echo "  make video-entries      動画の見回りが流す入口の一覧を Makefile の \$$(call video,…) から書き直す"
 	@echo "  make flow FLOW=e2e/<名前>.flow  flow を画面なしで最後まで流す（失敗は行番号つき。Flix は組み直さない）"
 	@echo "  make flow-vocab         flow の語彙 e2e/vocab.json を書き直す（bin/fge flow check が読む）"
@@ -277,7 +278,27 @@ lint-doc-refs:
 # 検査の束。エンジンの軽い検査はここに前提として並べ、エンジンを上げると増えた検査もそのまま届く。
 # ゲームの検査はゲームの Makefile に「lint: lint-view lint-palette」のような前提だけの 1 行で足す
 # （make は前提だけの規則を 1 つにまとめる。レシピを書くと makefile-dup が止める）。
-lint: render-lint lint-doc-refs
+lint: render-lint lint-doc-refs $(if $(wildcard lint/rules.flix),lint-flixlint)
+
+# ゲームの lint/rules.flix（依存の向き・View が World を受けない・テストの形）を flixlint で見る。flixlint の版と shim の jar は
+# エンジンの hooks.json の checkd.server が決め、bin/fge flixlint-prepare がキャッシュへそろえる。数で止める規則の上限は
+# lint/limits/<規則の id>.json（在れば渡す）。FLIXLINT_STAGE=typed で型を見る規則も（遅い）。
+# WhyNot: flixlint を submodule で持つゲーム（flixlint/bin/flixlint がある）には定義しない。上限の基準の取り方まで
+# そのゲームの Makefile が自前で持っていて、同じ名前の口を 2 つ書くと make が後の方で上書きする。
+ifeq ($(wildcard flixlint/bin/flixlint),)
+FLIXLINT_STAGE ?= resolved
+ifeq ($(OS),Windows_NT)
+FLIXLINT_JAR = $(ENGINE)/bin/flix.jar
+else
+FLIXLINT_JAR = $(shell FLIX_PRINT_JAR=1 "$(ENGINE)/bin/flix" 2>/dev/null)
+endif
+lint-flixlint:
+	@[ -f lint/rules.flix ] || { echo "lint-flixlint: lint/rules.flix がありません（手本はテンプレートの lint/rules.flix）"; exit 2; }
+	@fge=bin/fge; [ -x "$$fge" ] || fge="$(ENGINE)/bin/fge"; \
+	prep=$$("$$fge" flixlint-prepare) || exit 2; eval "$$prep"; \
+	"$$FLIXLINT_DIR/bin/flixlint" --flix-jar "$(FLIXLINT_JAR)" --shim "$$FLIXLINT_SHIM" --rules lint/rules.flix \
+	  $(if $(wildcard lint/limits),--limits lint/limits) --stage $(FLIXLINT_STAGE) --build-dir build/flixlint src test
+endif
 
 # flow（e2e/<名前>.flow）を画面なしで流す。入口はゲームの E2e.play（中身は Flow.Cli.main）。
 # 描き出しの jar を使うので、flow を直して流し直すのに Flix を組み直さない（jar は src が変わった時だけ作り直す）。

@@ -5,7 +5,7 @@
 mod ThemeDoc {
     use fge::{Color, DocJson, JsonCodec, UiDoc}
     use Util.Json.Json
-    use World.Kind
+    use Pieces.Kind
 
     /// 画面の色票。bg = 盤の外の背景、board = 盤の中の背景（bg よりわずかに明るい）、
     /// grid = マス目の線（薄い）、wall = 盤を囲う枠、ghost = 着地予測の色、

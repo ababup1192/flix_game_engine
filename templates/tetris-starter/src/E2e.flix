@@ -10,14 +10,14 @@ mod E2e {
     pub def play(): Unit \ IO = App.Headless.exitWith(playJob(App.Headless.requestFromProcess()))
 
     /// E2e.play の中身（常駐の /run からも呼ぶ）。env は要求の表（App.Headless.envOf）だけを読む。戻り値は終了コード。
-    pub def playJob(req: App.Headless.Request): Int32 \ IO =
+    def playJob(req: App.Headless.Request): Int32 \ IO =
         run { Flow.Cli.mainOf(Game.app(Controls.loadDocs()), App.Headless.envOf(req)) } with Fs.FileRead.runWithIO with Fs.FileWrite.runWithIO
 
     /// 語彙 e2e/vocab.json だけを書く入口（bin/headless-run が jar を作った時に流す・make flow-vocab）。
     pub def vocab(): Unit \ IO = App.Headless.exitWith(vocabJob(App.Headless.requestFromProcess()))
 
     /// E2e.vocab の中身（常駐の /run からも呼ぶ）。
-    pub def vocabJob(req: App.Headless.Request): Int32 \ IO =
+    def vocabJob(req: App.Headless.Request): Int32 \ IO =
         run { Flow.Cli.vocabMainOf(Game.app(Controls.loadDocs()), App.Headless.envOf(req)) } with Fs.FileRead.runWithIO with Fs.FileWrite.runWithIO
 
     /// 常駐（App.Headless.serveJobs）が /run で流す E2e の入口の束。

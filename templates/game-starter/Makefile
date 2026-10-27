@@ -41,3 +41,13 @@ include $(subst $(space),\$(space),$(ENGINE))/mk/game.mk
 
 atelier-preview:
 	JAVA_TOOL_OPTIONS="-Djava.awt.headless=true" $(FLIX) run --entrypoint SceneRender.atelier
+
+# コミットで .flix か lint/ を触ったら、lint/rules.flix の決まり（依存の向き・View が World を受けない・テストの形）も見る。
+# flixlint を取れない時（オフラインの初回など）は止めずに知らせる（make lint-flixlint で後から流せる）。
+.PHONY: precommit-local
+precommit-local:
+	@if grep -qE '\.flix$$|^lint/' "$(STAGED_FILE)"; then \
+	  fge=bin/fge; [ -x "$$fge" ] || fge="$(ENGINE)/bin/fge"; \
+	  if "$$fge" flixlint-prepare > /dev/null; then $(MAKE) --no-print-directory lint-flixlint; \
+	  else echo "[pre-commit] flixlint を用意できないので lint/rules.flix の検査は飛ばします（後で make lint-flixlint）"; fi; \
+	fi

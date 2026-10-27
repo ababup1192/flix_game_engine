@@ -40,6 +40,7 @@ lint・フック・make の口で止まる決まりはここに書かない（�
 | Doc が壊れたら既定値で続けて知らせる | `DocJson.loadOr` + `Log.fellBackThen` / `warnThen` |
 | 直した後に絵を確かめる | `make render SHOT=<場面>` → 仕上げ `make reference-check` |
 | 描き出しの字の被り・z の外れを止める | `make render-lint`（許す物は `text-audit.local.json`） |
+| 依存の向き（規則 → View → 入力の逆を呼ばない・ファイルの輪）・View に World を渡さない・テストの分岐を止める | `make lint-flixlint`（決まりは <ゲーム>/lint/rules.flix の冒頭。View の入口が World から In を組み、部品は In を受ける） |
 | 直す前と後の絵・音・動画を比べる | `make compare BASE=<ref>` |
 | 動画が最後まで撮れたか（途中で止まった動画を見つける） | `bin/fge videos status`（Studio のギャラリーの動画） |
 | 動画のコマ・自前のギャラリーで同じ絵を塗り直さない | `RenderCache.writeFramePng`（`SoftRaster.render*` は自動。docs/render-cache.md） |
