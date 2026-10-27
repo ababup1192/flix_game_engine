@@ -28,7 +28,7 @@ mod E2e {
 
     /// ウィンドウなしのゲーム（Studio の会話のプレビューと bin/fge talk shot）と、描き出しの入口の常駐（/run）。
     pub def serveHeadless(): Unit \ IO =
-        let jobs = SceneRender.jobs() ::: jobs();
+        let jobs = SceneRender.jobs() ::: FlowVideo.jobs() ::: jobs();
         run { App.Headless.serveJobs(appOf(), jobs) } with Fs.FileRead.runWithIO
 
     /// 行を読み終えてから送るまでの秒（人が読んでいる間）。

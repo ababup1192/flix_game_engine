@@ -26,3 +26,15 @@ endif
 # 空白を退避してから渡す（レシピの中の $(ENGINE) は "" で括ってあるのでそのままでよい）。
 space := $(subst ,, )
 include $(subst $(space),\$(space),$(ENGINE))/mk/game.mk
+
+# 見せ場をつないだ紹介の動画（e2e/showcase.flow → debug/video/showcase.mp4。X に載せられる H.264 + AAC）。
+# コマと音は FlowVideo が実機と同じ 1 フレームで書き、ここで mp4 に束ねる（GPU で塗れた時は frames.mkv、塗れない時は連番 PNG）。
+.PHONY: showcase-video
+showcase-video:
+	rm -rf debug/video/showcase
+	FLOW=e2e/showcase.flow FLOW_OUT=debug/video/showcase $(HEADLESS_RUN) FlowVideo.play
+	@dir=debug/video/showcase; fps=$$(cat $$dir/fps.txt); \
+	 if [ -f $$dir/frames.mkv ]; then frames="-i $$dir/frames.mkv"; else frames="-framerate $$fps -i $$dir/f%04d.png"; fi; \
+	 ffmpeg -y -loglevel error $$frames -f f64be -ar 44100 -ac 2 -i $$dir/audio.f64 \
+	   -c:v libx264 -pix_fmt yuv420p -crf 20 -r $$fps -c:a aac -b:a 192k -shortest -movflags +faststart debug/video/showcase.mp4
+	@echo "rendered: debug/video/showcase.mp4"

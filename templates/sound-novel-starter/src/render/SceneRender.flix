@@ -10,18 +10,18 @@ mod SceneRender {
     import java.io.File
     import java.lang.ProcessHandle
 
-    def design(): Vec2.Vec2 = { x = Layout.width(), y = Layout.height() }
+    pub def design(): Vec2.Vec2 = { x = Layout.width(), y = Layout.height() }
 
     def ttf(): String = "assets/ShipporiMincho-Regular.subset.ttf"
 
     /// 字の縁も面の縁もならす（写真と明朝の画面。格子に乗せる絵は無い）。
-    def cfgOf(outDir: String, textures: Map[String, String]): HeadlessRender.RenderConfig \ IO =
+    pub def cfgOf(outDir: String, textures: Map[String, String]): HeadlessRender.RenderConfig \ IO =
         { design = design(), scale = 1, background = Backdrop.groundColor(),
           fontTtf = ttf(), fontAtlas = HeadlessFont.buildUiAtlas(ttf(), ttf()), texturePath = textures,
           outDir = outDir, frameW = 960, frameH = 540 | HeadlessRender.defaults() }
 
     /// project.json の textures（名前 → パス）。読めなければ空（背景は代表色ではなく黒になる）。
-    def texturesOf(): Map[String, String] \ IO =
+    pub def texturesOf(): Map[String, String] \ IO =
         let rows = run { DocJson.readJson("project.json") } with Fs.FileRead.runWithIO;
         rows |> Result.toOption |> Option.flatMap(JsonCodec.expectObject)
              |> Option.flatMap(root -> Map.get("textures", root))
@@ -36,7 +36,7 @@ mod SceneRender {
         } with Fs.FileRead.runWithIO
 
     /// 描き出しの「起動した時刻」（2026/08/14 19:32。セーブの日時を毎回同じ字にする）。
-    def clockBase(): Int64 = 1786735920i64
+    pub def clockBase(): Int64 = 1786735920i64
 
     pub def all(): Unit \ IO = App.Headless.exitWith(allJob(App.Headless.requestFromProcess()))
 
