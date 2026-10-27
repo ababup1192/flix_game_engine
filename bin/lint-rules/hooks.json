@@ -123,8 +123,9 @@
     "bashCopy": ["cp", "mv", "install", "rsync", "ln"]
   },
   "searchNudge": {
-    "note": "hook-search-nudge (PostToolUse・Grep / Bash)。suffix のファイルか src/・test/ の下を、名前（def の行・Mod.名前・camelCase の語）で grep・rg した後に message を 1 回だけ返す（止めない・セッションに 1 回）。",
+    "note": "hook-search-nudge (PostToolUse・Grep / Bash)。suffix のファイルか src/・test/ の下を、名前（def の行・Mod.名前・camelCase の語）で grep・rg した後に message を返す（止めない）。担当（セッション × サブエージェント × 記録のファイル）ごとに数え、1 回目と、その後 every 回ごとに返す。",
     "suffix": ".flix",
+    "every": 5,
     "message": "Flix の名前は字で探すより索引で引く方が確か: 宣言は bin/fge refactor search <語>（使う所を拾わない）・本文は show <Mod.名前>・使う所は usages <Mod.名前> [--callers]・直す前の周りは context <Mod.名前>。grep は別の mod の同じ名前を拾い、use で入れた素の名前を落とす。文書の言葉や JSON の値を探すなら grep のままで良い。"
   },
   "readGuard": {

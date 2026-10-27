@@ -1,13 +1,17 @@
 package hooks
 
-// hook-search-nudge (PostToolUse・Grep / Bash) — .flix の名前を字で探した後に、索引で引く道具を 1 回だけ案内する。
+// hook-search-nudge (PostToolUse・Grep / Bash) — .flix の名前を字で探した後に、索引で引く道具を案内する。
 //
 // 当てる形: Grep の道具か、Bash の grep・rg・git grep で、探す字が名前（`def 名前`・`Mod.名前`・camelCase の語）で、
 // 探す先が .flix（glob・type・パス・--include の .flix か、src/・test/ の下）の物。案内は additionalContext で返し、
-// 呼び出しは止めない。同じセッションでは 1 回だけ（印は <cache>/fge/search-nudge/<session のハッシュ>）。
+// 呼び出しは止めない。担当（セッション × サブエージェント × 記録のファイル）ごとに、名前の字の検索を数え、
+// 1 回目と、その後 Every 回ごとに案内する（数は <cache>/fge/search-nudge/<担当のハッシュ> に持つ）。
 //
 // WhyNot: 止めない（exit 2 にしない）。字で探すのが正しい時（文書の言葉・JSON の値・コメントの語）を見分けられず、
-// 止めると正しい探し方まで 1 手増える。案内は索引の道具を知らない時だけ効けばよいので、セッションに 1 回。
+// 止めると正しい探し方まで 1 手増える。
+// WhyNot: セッションに 1 回にしない。サブエージェントも、そこから立てた claude -p も同じ session_id を持つので、
+// 最初の 1 人が案内を受けると、後の担当は誰も受けない。1 回で終わらせないのは、案内を読み流した担当が
+// そのまま grep を続けるため（数を添えて言い直すと、続けていることに気づける）。
 
 import (
 	"crypto/sha1"
@@ -25,6 +29,8 @@ import (
 type SearchNudge struct {
 	Suffix  string `json:"suffix"`
 	Message string `json:"message"`
+	// Every は 1 回目の後に何回ごとに言い直すか（0 なら 1 回目だけ）。
+	Every int `json:"every"`
 }
 
 var (
@@ -48,19 +54,42 @@ func RunSearchNudge(out io.Writer, root, fallback string, in io.Reader) int {
 	if !NameSearchOnFlix(payload, g.Suffix) {
 		return 0
 	}
-	mark := nudgeMark(payload.SessionID())
-	if mark != "" {
-		if _, err := os.Stat(mark); err == nil {
-			return 0
-		}
-		if os.MkdirAll(filepath.Dir(mark), 0o755) == nil {
-			os.WriteFile(mark, nil, 0o644)
-		}
+	n := countNudge(nudgeMark(payload))
+	if !nudgeDue(n, g.Every) {
+		return 0
+	}
+	msg := g.Message
+	if n > 1 {
+		msg = fmt.Sprintf("（.flix の名前を字で探したのはこの担当で %d 回目）%s", n, msg)
 	}
 	js, _ := json.Marshal(map[string]any{"hookSpecificOutput": map[string]any{
-		"hookEventName": "PostToolUse", "additionalContext": g.Message}})
+		"hookEventName": "PostToolUse", "additionalContext": msg}})
 	fmt.Fprintln(out, string(js))
 	return 0
+}
+
+// nudgeDue は n 回目の名前の字の検索で案内するか（1 回目と、その後 every 回ごと）。
+func nudgeDue(n, every int) bool {
+	if n == 1 {
+		return true
+	}
+	return every > 0 && n > 1 && (n-1)%every == 0
+}
+
+// countNudge は印の数を 1 つ増やして、増やした後の数を返す。印を置けない時は毎回 1（毎回案内する）。
+func countNudge(mark string) int {
+	if mark == "" {
+		return 1
+	}
+	n := 0
+	if b, err := os.ReadFile(mark); err == nil {
+		fmt.Sscanf(strings.TrimSpace(string(b)), "%d", &n)
+	}
+	n++
+	if os.MkdirAll(filepath.Dir(mark), 0o755) == nil {
+		os.WriteFile(mark, []byte(fmt.Sprintf("%d\n", n)), 0o644)
+	}
+	return n
 }
 
 // NameSearchOnFlix は呼び出しが .flix の中を名前で字の検索をした物か。
@@ -74,7 +103,7 @@ func NameSearchOnFlix(p Payload, suffix string) bool {
 	if cmd == "" {
 		return false
 	}
-	for _, seg := range shellSegment.Split(cmd, -1) {
+	for _, seg := range shellSegments(cmd) {
 		seg = strings.TrimSpace(seg)
 		if !nudgeTool.MatchString(seg) {
 			continue
@@ -118,14 +147,16 @@ func flixTarget(s, suffix string) bool {
 	return false
 }
 
-func nudgeMark(session string) string {
-	if session == "" {
+// nudgeMark は担当ごとの印の置き場。担当はセッション・サブエージェント（agent_id）・記録のファイルの組で見分ける。
+func nudgeMark(p Payload) string {
+	who := p.SessionID() + "\x00" + p.str("agent_id") + "\x00" + p.TranscriptPath()
+	if who == "\x00\x00" {
 		return ""
 	}
 	dir, err := os.UserCacheDir()
 	if err != nil {
 		return ""
 	}
-	h := sha1.Sum([]byte(session))
+	h := sha1.Sum([]byte(who))
 	return filepath.Join(dir, "fge", "search-nudge", hex.EncodeToString(h[:8]))
 }
