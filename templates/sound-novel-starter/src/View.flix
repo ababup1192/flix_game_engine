@@ -10,7 +10,7 @@
 // ── 画面の層（奥から手前へ）──
 //   world: 前の背景（重ねている間だけ）→ 今の背景（進みで現れる）→ 粒の演出（蛍）        … 揺れはこの層だけに掛かる
 //   hud:   NVL の幕 / ADV の窓 → 本文（ルビつき）・名前 → 送りの印 → 選択肢 → クイックメニュー
-//          → 画面（バックログ・セーブ・ロード・設定。セーブの枠のサムネは背景と同じ式で小さく塗る）→ 確認の窓 → 知らせ
+//          → 画面（バックログ・セーブ・ロード・設定。セーブの枠のサムネはその時の画面を同じ関数で描いて縮める）→ 確認の窓 → 知らせ
 //          タイトルとクレジットも hud（写真の上に字だけを置く画面）
 //
 // ── 時計 ── 背景の重ね・揺れは物語の時計（画面を開くと止まる）、蛍・送りの印の明滅・クレジット・設定の見本は実時間（w#realNow）。
@@ -25,10 +25,12 @@ mod View {
     def zButtons(): Int32 = 40
     def zPanel(): Int32 = 50
     def zCard(): Int32 = 52
-    def zThumb(): Int32 = 54
-    def zPanelText(): Int32 = 56
-    def zAsk(): Int32 = 70
-    def zToast(): Int32 = 90
+    /// サムネの縮めた画面は zThumb + 元の z（元は 0..zButtons の少し上）に入る。縁と印は zThumbTop から。
+    def zThumb(): Int32 = 60
+    def zThumbTop(): Int32 = 110
+    def zPanelText(): Int32 = 120
+    def zAsk(): Int32 = 140
+    def zToast(): Int32 = 160
 
     pub def frame(_ctx: App.ViewCtx, w: World.World): List[Render.PlacedItem] =
         let now = Clock.nowOf(w#storyClock);
@@ -93,11 +95,14 @@ mod View {
     /// 揺れても画面の端が覗かないよう、背景は画面より一回り大きく敷く。
     def backdropRect(): Rect2.Rect2 = { position = { x = -12.0, y = -12.0 }, size = { x = World.width() + 24.0, y = World.height() + 24.0 } }
 
-    def backdrops(w: World.World): List[Render.PlacedItem] =
+    def backdrops(w: World.World): List[Render.PlacedItem] = backdropsIn(backdropRect(), w)
+
+    /// 背景を矩形 area に塗る（実際の画面は揺れの分だけはみ出す backdropRect、サムネは画面ちょうど）。
+    def backdropsIn(area: Rect2.Rect2, w: World.World): List[Render.PlacedItem] =
         let now = Clock.nowOf(w#storyClock);
-        let ground = at(-12.0, -12.0, RawDraw.box(backdropRect()#size, Backdrop.groundColor(), 0));
+        let ground = at(area#position#x, area#position#y, RawDraw.box(area#size, Backdrop.groundColor(), 0));
         let layer = (shot: Stage.Shot, progress, z) -> specOf(shot, w)
-            |> Option.map(spec -> Backdrop.surface(spec, backdropRect(), progress, z) :: Nil)
+            |> Option.map(spec -> Backdrop.surface(spec, area, progress, z) :: Nil)
             |> Option.getWithDefault(Nil);
         let under = w#stage#under |> Option.map(shot -> layer(shot, 1.0, 1)) |> Option.getWithDefault(Nil);
         let top = w#stage#shot |> Option.map(shot -> layer(shot, Stage.fadeProgress(now, w#stage), 2)) |> Option.getWithDefault(Nil);
@@ -500,41 +505,29 @@ mod View {
                 card :: number :: empty :: textIn(thumb, label(StoryDoc.Label.EmptySlot, w), atlas, 13.0, dim(w), zPanelText()) :: Nil
         }
 
-    /// サムネに載せる字の大きさ（px）。
-    def thumbTextSize(): Float64 = 7.5
-
-    /// サムネ: セーブした時の写真と時間帯を背景と同じ式で小さく塗り、文章の窓（NVL の幕・ADV の窓）とその時の文を重ねる。
-    /// 字は画面と同じ縮みでは潰れて読めないので、縮みより大きい thumbTextSize で、窓の幅に収まる所まで折り返して載せる。
-    /// WhyNot: 実機の画面を写して残さない —— 描き出しと実機で同じ絵にならず、セーブの JSON に絵を入れると重い。
+    /// サムネ: その枠の戻れる所へ戻した画面（World.screenOf）を、実際の画面と同じ関数で描いて枠の大きさへ縮める（字は読めなくてよい）。
+    /// 縮めた画面の中の前後は元の z のまま、枠のカードより手前（zThumb から）へ持ち上げる。
     def thumbnail(atlas: FontAtlas, slot: Saves.Slot, r: Rect2.Rect2, w: World.World): List[Render.PlacedItem] =
         let t = theme(w);
-        let ground = at(r#position#x, r#position#y, RawDraw.box(r#size, Backdrop.groundColor(), zThumb()));
-        let photo = slot#mark#shot |> Option.flatMap(shot -> specOf(shot, w))
-            |> Option.map(spec -> Backdrop.surface(spec, r, 1.0, zThumb() + 1) :: Nil) |> Option.getWithDefault(Nil);
-        let ink = Color.mix(t#ink, t#panel, 0.1);
-        let size = thumbTextSize();
-        let rowGap = size + 2.0;
-        let rows = (x, yy, width, maxRows, texts) -> texts
-            |> List.flatMap(text -> linesWithin(width, size, maxRows, atlas, text)) |> List.take(maxRows) |> List.zipWithIndex
-            |> List.map(match (n, row) -> textAt(x, yy + Int32.toFloat64(n) * rowGap, row, atlas, size, ink, zThumb() + 3));
-        let sx = r#size#x / World.width();
-        let sy = r#size#y / World.height();
-        let window = match slot#mark#mode {
-            case Stage.Mode.Nvl =>
-                at(r#position#x, r#position#y, RawDraw.box(r#size, t#panel, zThumb() + 2) |> Render.fade(Float64.min(0.95, windowAlpha(w) * t#veil)))
-                :: rows(r#position#x + 110.0 * sx, r#position#y + 56.0 * sy, Layout.nvlText()#width * sx, 8, slot#page)
-            case Stage.Mode.Adv =>
-                let p = Layout.advPanel();
-                at(r#position#x + p#position#x * sx, r#position#y + p#position#y * sy,
-                   RawDraw.box({ x = p#size#x * sx, y = p#size#y * sy }, t#panel, zThumb() + 2) |> Render.fade(windowAlpha(w)))
-                :: List.append(
-                    if (String.isEmpty(slot#speaker)) Nil
-                    else textAt(r#position#x + 72.0 * sx, r#position#y + 356.0 * sy, slot#speaker, atlas, size, t#name, zThumb() + 3) :: Nil,
-                    rows(r#position#x + 72.0 * sx, r#position#y + 398.0 * sy, Layout.advText()#width * sx, 2,
-                         if (List.isEmpty(slot#page)) slot#excerpt :: Nil else slot#page))
-        };
-        let edge = frameOf(r, Color.mix(t#ink, t#panel, 0.6), zThumb() + 4);
-        List.flatten((ground :: Nil) :: photo :: window :: edge :: Nil)
+        let screen = World.screenOf(slot#mark, w);
+        // WhyNot: 背景を揺れの分はみ出す backdropRect で塗らない —— 写真の面（Shader）は切り抜き（clippedAll）が効かず、枠の外へはみ出す。
+        let whole = { position = { x = 0.0, y = 0.0 }, size = { x = World.width(), y = World.height() } };
+        let shown = List.flatten(backdropsIn(whole, screen) :: particles(screen) :: textLayer(atlas, screen)
+                                 :: choices(atlas, screen) :: quickMenu(atlas, screen) :: Nil);
+        let k = Float64.min(r#size#x / World.width(), r#size#y / World.height());
+        let small = shown |> Render.scaledAllAround(k, { x = 0.0, y = 0.0 }) |> Render.movedAll(r#position)
+            |> List.map(Render.overItem(liftedZ(zThumb()))) |> Render.clippedAll(r);
+        List.append(small, frameOf(r, Color.mix(t#ink, t#panel, 0.6), zThumbTop()))
+
+    /// 絵 1 つの重なり順を dz だけ手前へ（Clipped は中身）。
+    def liftedZ(dz: Int32): Render.Item -> Render.Item = item -> match item {
+        case Render.Item.Sprite(s)  => Render.Item.Sprite({ zIndex = s#zIndex + dz | s })
+        case Render.Item.Text(x)    => Render.Item.Text({ zIndex = x#zIndex + dz | x })
+        case Render.Item.Box(b)     => Render.Item.Box({ zIndex = b#zIndex + dz | b })
+        case Render.Item.Poly(p)    => Render.Item.Poly({ zIndex = p#zIndex + dz | p })
+        case Render.Item.Shader(x)  => Render.Item.Shader({ zIndex = x#zIndex + dz | x })
+        case Render.Item.Clipped(c) => Render.Item.Clipped({ inner = liftedZ(dz)(c#inner) | c })
+    }
 
     /// 矩形の 1px の縁。
     def frameOf(r: Rect2.Rect2, color: Color, z: Int32): List[Render.PlacedItem] =
@@ -551,8 +544,8 @@ mod View {
     def newBadge(atlas: FontAtlas, thumb: Rect2.Rect2, w: World.World): List[Render.PlacedItem] =
         let t = theme(w);
         let r = { position = { x = thumb#position#x + 4.0, y = thumb#position#y + 4.0 }, size = { x = 38.0, y = 17.0 } };
-        at(r#position#x, r#position#y, RawDraw.box(r#size, t#accent, zThumb() + 5) |> Render.rounded(2.0))
-        :: textIn(r, label(StoryDoc.Label.NewBadge, w), atlas, 11.0, t#panel, zThumb() + 6) :: Nil
+        at(r#position#x, r#position#y, RawDraw.box(r#size, t#accent, zThumbTop() + 1) |> Render.rounded(2.0))
+        :: textIn(r, label(StoryDoc.Label.NewBadge, w), atlas, 11.0, t#panel, zThumbTop() + 2) :: Nil
 
     /// 幅 maxWidth に収まるよう末尾を「…」で切る。
     def clipTo(maxWidth: Float64, size: Float64, atlas: FontAtlas, text: String): String =

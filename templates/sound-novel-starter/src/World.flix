@@ -605,10 +605,7 @@ mod World {
                 |> Option.map(photo -> photo#label) |> Option.getWithDefault("");
             let (speaker, excerpt) = w#page#current |> Option.map(line -> (line#speaker, String.takeLeft(80, line#text)))
                 |> Option.getWithDefault(("", ""));
-            let page = if (m#mode == Stage.Mode.Adv) w#page#current |> Option.map(line -> line#text) |> Option.toList
-                else List.append(w#page#lines, w#page#current |> Option.toList)
-                    |> List.map(line -> if (String.isEmpty(line#speaker)) line#text else "${line#speaker}${line#text}");
-            { mark = m, place = place, speaker = speaker, excerpt = excerpt, page = page, savedAt = savedAtNow(w),
+            { mark = m, place = place, speaker = speaker, excerpt = excerpt, savedAt = savedAtNow(w),
               serial = Saves.nextSerial(w#saves) }
         })
 
@@ -698,6 +695,12 @@ mod World {
         let (talk, events) = YarnRunner.resume(w#dialogue, mark#bookmark, now(w));
         let replayed = absorb(true, events, { talk = talk | fresh });
         { stage = Stage.settle(replayed#stage), autosavedNode = talkNodeOf(replayed) | replayed }
+
+    /// セーブの枠のサムネに映す画面: その枠の戻れる所へ黙って戻した World（文は出し終え、画面・確認の窓は閉じ、マウスはどこにも乗せない）。
+    /// WhyNot: 保存の時に画面の絵を撮って残さない —— セーブの JSON に絵を入れると重く、描き出しと実機で同じ絵にならない。
+    pub def screenOf(mark: Saves.Mark, w: World): World =
+        let (back, _) = Emit.collect(() -> restore(mark, w));
+        { pointer = { x = -1.0, y = -1.0 } | back }
 
     // ── 戻る・バックログ ──
 

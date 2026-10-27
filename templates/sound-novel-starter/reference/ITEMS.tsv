@@ -4,11 +4,11 @@ choice	dynamic=125	static=0
 credits	dynamic=311	static=0
 engawa	dynamic=275	static=0
 lane	dynamic=203	static=0
-load	dynamic=506	static=0
+load	dynamic=913	static=0
 log	dynamic=242	static=0
 morning	dynamic=137	static=0
 night	dynamic=783	static=0
 nvl	dynamic=255	static=0
-save	dynamic=793	static=0
+save	dynamic=1200	static=0
 settings	dynamic=172	static=0
 title	dynamic=58	static=0
