@@ -61,12 +61,14 @@ def main():
 
     # 手を打つ（坂道で千夏が背中を叩く）: 乾いた雑音の一打と、低い胴の鳴り。
     sound("se_slap", [hiss(90, amp = 0.6, hz = 4000, decay = 25, attack = 0.5), sine(180, 80, amp = 0.3, decay = 30)], kind = "sfx", room = 0.3, wet = 0.08)
-    # 風鈴: 硝子の鈴を 2 度。2 度目は少し弱く、少し違う所を打つ（部分音の比を変える）。
-    glass = [(1.0, 1.0, 1.0), (2.32, 0.4, 0.5), (4.25, 0.18, 0.3), (6.63, 0.08, 0.18)]
-    sound("se_furin", bell(2350, amp = 0.35, decay = 520, partials = glass) +
-                      bell(2350, at = 650, amp = 0.2, decay = 420, partials = [(1.0, 1.0, 1.0), (2.41, 0.5, 0.5), (4.1, 0.2, 0.3)]) +
-                      [rustle(12, 6000, 6000, amp = 0.15, decay = 4, attack = 0.3, q = 0.3)],
-          kind = "sfx", room = 0.7, wet = 0.3)
+    # 風鈴「チリーン」: 舌が縁に細かく 3 度当たって（チリ）、最後の 1 打が長く伸びる（ーン）。
+    # 硝子の鈴は高さの近い部分音が 2 本あってうなるので、基音に 3 Hz ずらした音を重ねて余韻を揺らす。
+    rim = [(1.0, 1.0, 1.0), (1.0013, 0.7, 1.0), (2.27, 0.35, 0.45), (3.92, 0.12, 0.22)]
+    def strike(at, amp, decay):
+        return bell(3150, at = at, amp = amp, decay = decay, partials = rim) + \
+               [rustle(8, 7500, 7500, at = at, amp = amp * 0.4, decay = 3, attack = 0.3, q = 0.3)]
+    sound("se_furin", strike(0, 0.30, 70) + strike(85, 0.18, 60) + strike(150, 0.24, 80) + strike(260, 0.40, 900),
+          kind = "sfx", room = 0.6, wet = 0.22)
 
     sound("ui_page", [rustle(140, 2600, 1400, amp = 0.5, decay = 55, attack = 18)])                 # 戻る（ロールバック）: 紙の擦れ。文の送りは鳴らさない（Controls.soundOf）
     sound("ui_cursor", [sine(1568, 40, amp = 0.25, decay = 14, attack = 2)])                         # カーソル: 小さな木の粒

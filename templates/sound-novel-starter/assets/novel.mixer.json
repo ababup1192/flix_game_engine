@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "音の通り道。amb_（鳴り続ける環境音）は ambience のバス、se_（シナリオの効果音）と ui_（返事の音）は se のバス。バスの音量は設定の画面の値を Controls.mixerOf が掛ける。panel = 画面（バックログ・セーブ・設定）や確認の窓を開いている間の聞こえ方（環境音を籠もらせる）。全体の音量は両方のバスに掛ける。",
+  "note": "音の通り道。amb_（鳴り続ける環境音）は ambience のバス、se_（シナリオの効果音）と ui_（返事の音）は se のバス。バスの音量は設定の画面の値を Controls.mixerOf が掛ける。panel = 画面（バックログ・セーブ・設定）や確認の窓を開いている間の聞こえ方（環境音を籠もらせる）。全体の音量は両方のバスに掛ける。ducks の depth は返事の音が鳴る間に環境音へ残す倍率（0.85 なら 15% だけ下げる。小さくするほど深く下がる）。",
   "defaultBus": "se",
   "transitionSeconds": 0.4,
   "buses": [
@@ -12,7 +12,7 @@
     { "bus": "se", "prefixes": ["se_", "ui_"] }
   ],
   "ducks": [
-    { "bus": "ambience", "by": ["se"], "depth": 0.2, "attackSeconds": 0.05, "holdSeconds": 0.2, "releaseSeconds": 0.6 }
+    { "bus": "ambience", "by": ["se"], "depth": 0.85, "attackSeconds": 0.05, "holdSeconds": 0.2, "releaseSeconds": 0.6 }
   ],
   "cooldowns": [ { "prefix": "ui_cursor", "seconds": 0.04 } ],
   "snapshots": [ { "name": "panel", "buses": [ { "name": "ambience", "lowpassGainHF": 0.25 } ] } ]
