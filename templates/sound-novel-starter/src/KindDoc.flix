@@ -1,17 +1,18 @@
-// KindDoc — novel.kind.json（手触りの数: 字の大きさ・行の数・オートとスキップの間・揺れ・粒）の宣言ドキュメント層。
-// 設定の画面で人が変える値（文字の速さ・オートの待ち・音量・窓の濃さ）の出発点もここ（変えた値はセーブの config が持つ）。
+// KindDoc — novel.kind.json（手触りの数: 字の大きさ・行の数・オートとスキップの間・揺れ・パーティクル）の宣言ドキュメント層。
+// 設定の画面で人が変える値（文字の速さ・オートの待ち・音量・ウィンドウの濃さ）の出発点もここ（変えた値はセーブの config が持つ）。
 // fail-open — 読めない・壊れているときは defaults() へ落とし、ゲームは必ず起動する。
 mod KindDoc {
     use fge::{DocJson, JsonCodec}
     use Util.Json.Json
 
     /// bodySize / rubySize / nameSize = 本文・ルビ・名前の字の大きさ（px）、lineGap = 行の間（ルビが入るので rubySize 以上）、
-    /// advRows / nvlRows = ADV の窓・NVL の頁に入る行の数（あふれる前に頁をめくる）、
+    /// advRows / nvlRows = ADV のウィンドウ・NVL の頁に入る行の数（あふれる前に頁をめくる）、
     /// cps / autoWait / masterVolume / ambienceVolume / seVolume / windowAlpha = 設定の既定（1 秒の字数・オートで読み終えてから送るまでの秒・
-    /// 全体と環境音と効果音の音量 0〜1・文章の窓の濃さ 0〜1）、
+    /// 全体と環境音と効果音の音量 0〜1・文章のウィンドウの濃さ 0〜1）、
     /// autoPerChar = オートの待ちに足す 1 字あたりの秒（長い行ほど長く待つ）、skipInterval = スキップで 1 行を出す間（秒）、
     /// logMax = ログに残す行の数、shakeSeconds / shakePx = <<shake>> の長さと揺れ幅、
-    /// fireflies = <<fx fireflies>> の粒の数、creditsSpeed = クレジットが流れる速さ（px/秒）、toastSeconds = 知らせを出す秒。
+    /// fireflies = <<fx fireflies>> のパーティクルの数、creditsSpeed = クレジットが流れる速さ（px/秒）、toastSeconds = 知らせを出す秒、
+    /// *Slider = 設定の画面のスライダーの範囲と 1 押しの量。
     pub type alias Rec = {
         version = Int32,
         bodySize = Float64,
@@ -33,8 +34,17 @@ mod KindDoc {
         shakePx = Float64,
         fireflies = Int32,
         creditsSpeed = Float64,
-        toastSeconds = Float64
+        toastSeconds = Float64,
+        cpsSlider = Slider,
+        autoWaitSlider = Slider,
+        masterVolumeSlider = Slider,
+        ambienceVolumeSlider = Slider,
+        seVolumeSlider = Slider,
+        windowAlphaSlider = Slider
     }
+
+    /// スライダーの下限・上限・1 押しの量。
+    pub type alias Slider = { min = Float64, max = Float64, step = Float64 }
 
     /// 型検査が record を展開しないため、World が持つ Doc は 1 case の enum で包む。
     pub enum Doc(Rec)
@@ -48,7 +58,12 @@ mod KindDoc {
         Doc.Doc({ version = 1, bodySize = 22.0, rubySize = 11.0, nameSize = 19.0, lineGap = 14.0,
                   advRows = 3, nvlRows = 11, cps = 40.0, autoWait = 1.2, masterVolume = 1.0, ambienceVolume = 0.7, seVolume = 0.8, windowAlpha = 0.74,
                   autoPerChar = 0.04, skipInterval = 0.06, logMax = 120, shakeSeconds = 0.35, shakePx = 7.0,
-                  fireflies = 28, creditsSpeed = 34.0, toastSeconds = 1.6 })
+                  fireflies = 28, creditsSpeed = 34.0, toastSeconds = 1.6,
+                  cpsSlider = { min = 10.0, max = 120.0, step = 10.0 }, autoWaitSlider = { min = 0.2, max = 4.0, step = 0.2 },
+                  masterVolumeSlider = volume(), ambienceVolumeSlider = volume(), seVolumeSlider = volume(),
+                  windowAlphaSlider = { min = 0.2, max = 1.0, step = 0.1 } })
+
+    def volume(): Slider = { min = 0.0, max = 1.0, step = 0.1 }
 
     pub def fromJson(text: String): Option[Doc] =
         DocJson.decodeObject(fromRoot, text)
@@ -57,6 +72,10 @@ mod KindDoc {
         let d = rec(defaults());
         let num = (key, fallback) -> JsonCodec.floatOr(key, fallback, root);
         let int = (key, fallback) -> JsonCodec.intOr(key, fallback, root);
+        let slider = (key, fallback: Slider) -> Map.get(key, root) |> Option.flatMap(JsonCodec.expectObject)
+            |> Option.map(o -> { min = JsonCodec.floatOr("min", fallback#min, o), max = JsonCodec.floatOr("max", fallback#max, o),
+                                 step = JsonCodec.floatOr("step", fallback#step, o) })
+            |> Option.getWithDefault(fallback);
         Doc.Doc({ version = int("version", d#version),
                   bodySize = num("bodySize", d#bodySize), rubySize = num("rubySize", d#rubySize),
                   nameSize = num("nameSize", d#nameSize), lineGap = num("lineGap", d#lineGap),
@@ -69,7 +88,12 @@ mod KindDoc {
                   logMax = int("logMax", d#logMax),
                   shakeSeconds = num("shakeSeconds", d#shakeSeconds), shakePx = num("shakePx", d#shakePx),
                   fireflies = int("fireflies", d#fireflies), creditsSpeed = num("creditsSpeed", d#creditsSpeed),
-                  toastSeconds = num("toastSeconds", d#toastSeconds) })
+                  toastSeconds = num("toastSeconds", d#toastSeconds),
+                  cpsSlider = slider("cpsSlider", d#cpsSlider), autoWaitSlider = slider("autoWaitSlider", d#autoWaitSlider),
+                  masterVolumeSlider = slider("masterVolumeSlider", d#masterVolumeSlider),
+                  ambienceVolumeSlider = slider("ambienceVolumeSlider", d#ambienceVolumeSlider),
+                  seVolumeSlider = slider("seVolumeSlider", d#seVolumeSlider),
+                  windowAlphaSlider = slider("windowAlphaSlider", d#windowAlphaSlider) })
 
     /// path の Doc を読む。読めない・壊れているときは defaults（fail-open）。
     pub def load(p: String): Doc \ Fs.FileRead =

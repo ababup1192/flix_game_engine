@@ -4,10 +4,32 @@
 mod Layout {
     use fge::{Rect2}
 
+    /// 画面の大きさ（project.json の designWidth / designHeight と同じ値）。
+    pub def width(): Float64 = 960.0
+    pub def height(): Float64 = 540.0
+
+    /// 2 つ並べたボタンのどちら側か（確認のウィンドウのはい・いいえ、設定の 2 択）。
+    pub enum Side with Eq, ToString {
+        case Left
+        case Right
+    }
+
+    pub def sides(): List[Side] = Side.Left :: Side.Right :: Nil
+
+    /// 左から数えた番号（左 = 0）。
+    def columnOf(side: Side): Int32 = match side {
+        case Side.Left  => 0
+        case Side.Right => 1
+    }
+
+    /// side(s) が p を含む側。
+    pub def sideAt(r: Side -> Rect2.Rect2, p: { x = Float64, y = Float64 }): Option[Side] =
+        sides() |> List.find(side -> contains(r(side), p))
+
     def rect(x: Float64, y: Float64, w: Float64, h: Float64): Rect2.Rect2 =
         { position = { x = x, y = y }, size = { x = w, y = h } }
 
-    pub def screen(): Rect2.Rect2 = rect(0.0, 0.0, World.width(), World.height())
+    pub def screen(): Rect2.Rect2 = rect(0.0, 0.0, width(), height())
 
     pub def contains(r: Rect2.Rect2, p: { x = Float64, y = Float64 }): Bool =
         p#x >= r#position#x and p#x < r#position#x + r#size#x and p#y >= r#position#y and p#y < r#position#y + r#size#y
@@ -18,7 +40,7 @@ mod Layout {
 
     // ── 文章 ──
 
-    /// ADV の窓。
+    /// ADV のウィンドウ。
     pub def advPanel(): Rect2.Rect2 = rect(40.0, 348.0, 880.0, 160.0)
 
     /// ADV の名前の左上。
@@ -32,7 +54,7 @@ mod Layout {
 
     // ── 選択肢 ──
 
-    /// i 番目（count 個のうち）の選択肢の矩形。ADV の窓に被らないよう、窓の上の空きの真ん中へ並べる。
+    /// i 番目（count 個のうち）の選択肢の矩形。ADV のウィンドウに被らないよう、ウィンドウの上の空きの真ん中へ並べる。
     pub def choice(i: Int32, count: Int32): Rect2.Rect2 =
         let h = 46.0;
         let gap = 12.0;
@@ -45,7 +67,7 @@ mod Layout {
     /// i 番目のボタン（count 個を画面の真ん中に並べる）。
     pub def button(i: Int32, count: Int32): Rect2.Rect2 =
         let w = 64.0;
-        let x0 = (World.width() - Int32.toFloat64(count) * w) / 2.0;
+        let x0 = (width() - Int32.toFloat64(count) * w) / 2.0;
         rect(x0 + Int32.toFloat64(i) * w, 512.0, w, 24.0)
 
     // ── タイトル ──
@@ -108,9 +130,12 @@ mod Layout {
     /// 列の見出しの左上。
     pub def group(col: Int32): { x = Float64, y = Float64 } = { x = columnX(col), y = 92.0 }
 
-    /// 設定の i 行目（World.settings の並び。左の列に World.leftColumnRows 行、残りは右の列）。
+    /// 設定の左の列（文章）に並べる行の数。残りは右の列（音と画面）。
+    pub def leftColumnRows(): Int32 = 5
+
+    /// 設定の i 行目（WorldSettings.settings の並び。左の列に leftColumnRows 行、残りは右の列）。
     pub def settingRow(i: Int32): Rect2.Rect2 =
-        let left = World.leftColumnRows();
+        let left = leftColumnRows();
         let (col, row) = if (i < left) (0, i) else (1, i - left);
         rect(columnX(col), 126.0 + Int32.toFloat64(row) * 56.0, 400.0, 44.0)
 
@@ -119,10 +144,10 @@ mod Layout {
         let r = settingRow(i);
         rect(r#position#x + 160.0, r#position#y + 19.0, 172.0, 6.0)
 
-    /// 行 i の 2 つから選ぶボタンの side 側（0 = 左・1 = 右）。
-    pub def settingSide(i: Int32, side: Int32): Rect2.Rect2 =
+    /// 行 i の 2 つから選ぶボタンの side 側。
+    pub def settingSide(i: Int32, side: Side): Rect2.Rect2 =
         let r = settingRow(i);
-        rect(r#position#x + 160.0 + Int32.toFloat64(side) * 122.0, r#position#y + 6.0, 116.0, 32.0)
+        rect(r#position#x + 160.0 + Int32.toFloat64(columnOf(side)) * 122.0, r#position#y + 6.0, 116.0, 32.0)
 
     /// 押す行（初期設定に戻す）のボタン。
     pub def settingAction(i: Int32): Rect2.Rect2 =
@@ -132,10 +157,10 @@ mod Layout {
     /// 文字の速さの見本（左の列の下）。
     pub def preview(): Rect2.Rect2 = rect(64.0, 412.0, 400.0, 84.0)
 
-    // ── 確認の窓 ──
+    // ── 確認のウィンドウ ──
 
     pub def askBox(): Rect2.Rect2 = rect(270.0, 186.0, 420.0, 168.0)
 
-    /// はい（0）・いいえ（1）。
-    pub def askButton(i: Int32): Rect2.Rect2 = rect(316.0 + Int32.toFloat64(i) * 172.0, 290.0, 156.0, 40.0)
+    /// 左がはい・右がいいえ。
+    pub def askButton(side: Side): Rect2.Rect2 = rect(316.0 + Int32.toFloat64(columnOf(side)) * 172.0, 290.0, 156.0, 40.0)
 }

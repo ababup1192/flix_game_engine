@@ -6,8 +6,8 @@
   "probes": [
     {"name": "phase", "kind": "text", "doc": "場面（Title・Reading・Credits）"},
     {"name": "panel", "kind": "text", "doc": "開いている画面（Closed・Log・SaveSlots・LoadSlots・Settings・Hidden）"},
-    {"name": "ask", "kind": "text", "doc": "確認の窓で尋ねている事（無ければ空。Overwrite(0)・ToTitle・Quit など）"},
-    {"name": "tab", "kind": "text", "doc": "セーブ・ロードの今のページ（Auto・Quick・Numbered(1) など）"},
+    {"name": "ask", "kind": "text", "doc": "確認のウィンドウで尋ねている事（無ければ空。字の間は詰める。Load(Numbered(1),0)・ToTitle・Quit など）"},
+    {"name": "tab", "kind": "text", "doc": "セーブ・ロードの画面の今のページ（Auto・Quick・Numbered(1) など。画面が閉じていれば空）"},
     {"name": "logSize", "kind": "num", "doc": "バックログの行の数"},
     {"name": "talk", "kind": "text", "doc": "開いているシナリオのノード（閉じていれば空）"},
     {"name": "talkLine", "kind": "text", "doc": "今出している行のシナリオの行（ファイル:行）"},
@@ -15,12 +15,12 @@
     {"name": "photo", "kind": "text", "doc": "今の背景の写真の名前（無ければ空）"},
     {"name": "lineDone", "kind": "flag", "doc": "今の行を出し終えた"},
     {"name": "choice", "kind": "flag", "doc": "選択肢を出している"},
-    {"name": "cursor", "kind": "num", "doc": "カーソル（0 から）"},
+    {"name": "cursor", "kind": "num", "doc": "一番手前のカーソルの番号（0 から。確認のウィンドウ → 画面 → 選択肢 → タイトルの順に見る）"},
     {"name": "stayed", "kind": "flag", "doc": "シナリオの変数 $stayed（true の結末へ向かっている）"},
     {"name": "closeness", "kind": "num", "doc": "シナリオの変数 $closeness"}
   ],
   "drives": [
-    {"name": "reader", "doc": "行を出し終えたら少し読んでから送る（選択肢・窓・タイトル画面では押さない）"}
+    {"name": "reader", "doc": "行を出し終えたら少し読んでから送る（選択肢・ウィンドウ・タイトル画面では押さない）"}
   ],
   "starts": [
     {"name": "title", "doc": "タイトル画面（起動の既定）", "args": {}},

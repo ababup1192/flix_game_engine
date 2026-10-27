@@ -50,7 +50,7 @@ mod Backdrop {
         Render.shaderFill(spec, rect, Float64.max(0.0, Float64.min(1.0, progress)), z)
 
     /// 画面の横÷縦（ぼかしの縦の半径を横とそろえ、四隅の落ち方を丸くする）。
-    def aspect(): Float64 = World.width() / World.height()
+    def aspect(): Float64 = Layout.width() / Layout.height()
 
     def k(v: Float64): Field = Field.Const(v)
 

@@ -1,4 +1,4 @@
-// StoryDoc — novel.story.json（画面に出す言葉: タイトル・メニュー・設定・セーブ・確認の窓の文言と、話し手の呼び名）の宣言ドキュメント層。
+// StoryDoc — novel.story.json（画面に出す言葉: タイトル・メニュー・設定・セーブ・確認のウィンドウの文言と、話し手の呼び名）の宣言ドキュメント層。
 // 文章・分岐・結末はシナリオ assets/talk/natsukusa.yarn（Talk）にあり、ここはシナリオの外で画面に出す言葉だけを持つ。
 // 言葉は Label の enum を鍵に引く（鍵の綴りと既定の言葉の正は entryOf。Doc に無い鍵は既定の言葉で出す = fail-open）。
 mod StoryDoc {
@@ -60,7 +60,7 @@ mod StoryDoc {
         case WindowAlpha
         case Reset
         case Preview
-        // 確認の窓
+        // 確認のウィンドウ
         case Yes
         case No
         case AskOverwrite

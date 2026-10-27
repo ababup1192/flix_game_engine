@@ -1,12 +1,12 @@
-// ThemeDoc — novel.theme.json（色）の宣言ドキュメント層。写真の色は BackdropDoc の時間帯が持ち、ここは字と窓の色だけ。
+// ThemeDoc — novel.theme.json（色）の宣言ドキュメント層。写真の色は BackdropDoc の時間帯が持ち、ここは字とウィンドウの色だけ。
 // fail-open — 読めない綴りの色は既定の色のまま。
 mod ThemeDoc {
     use fge::{Color, DocJson, JsonCodec}
     use Util.Json.Json
 
     /// ink = 本文の字、inkSeen = 既読の行の字（スキップで飛ばせる行だと分かる色）、name = 話し手の名前、
-    /// accent = 選んでいる物・オートやスキップの点灯、panel = ADV の窓・選択肢・画面の地（濃さは設定の「ウィンドウの濃さ」）、
-    /// veil = NVL の頁の下に敷く幕の濃さを、窓の濃さに掛ける割合（頁は画面いっぱいなので窓より薄くしてよい）、firefly = 蛍の光。
+    /// accent = 選んでいる物・オートやスキップの点灯、panel = ADV のウィンドウ・選択肢・画面の地（濃さは設定の「ウィンドウの濃さ」）、
+    /// veil = NVL の頁の下に敷く幕の濃さを、ウィンドウの濃さに掛ける割合（頁は画面いっぱいなのでウィンドウより薄くしてよい）、firefly = 蛍の光。
     pub type alias Rec = {
         version = Int32,
         ink = Color,

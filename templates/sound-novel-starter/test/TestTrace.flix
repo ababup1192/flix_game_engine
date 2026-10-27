@@ -12,7 +12,7 @@ mod TestTrace {
 
     /// 役 → いまの割り当ての先頭のキー（KeysDoc から引く）。
     def keyOf(role: Role, w: World.World): Key =
-        let k = KeysDoc.rec(w#keys);
+        let k = KeysDoc.rec(w#docs#keys);
         let keys = match role {
             case Role.Confirm => k#confirm
             case Role.Back    => k#back
@@ -33,23 +33,23 @@ mod TestTrace {
         List.head(keys) |> Option.getWithDefault(Key.F12)
 
     def setup(): PropertyTest.Setup[Role, World.World] =
-        { keyOf = keyOf, viewport = { x = World.width(), y = World.height() }, dt = 1.0 / 60.0 }
+        { keyOf = keyOf, viewport = { x = Layout.width(), y = Layout.height() }, dt = 1.0 / 60.0 }
 
-    /// 種 16 個 × 400 入力。キー 15 個・画面のあちこちのクリック（本文・選択肢・クイックメニュー・確認の窓のはい / いいえ・
+    /// 種 16 個 × 400 入力。キー 15 個・画面のあちこちのクリック（本文・選択肢・クイックメニュー・確認のウィンドウのはい / いいえ・
     /// セーブの枠とタブと削除・設定の行・バックログの行・戻る）・待ちを明かす長めの間。
     def cases(): PropertyTest.Cases[Role] =
-        let button = i -> { x = Layout.button(i, List.length(World.buttons()))#position#x + 30.0, y = 524.0 };
+        let button = i -> { x = Layout.button(i, List.length(WorldMenu.buttons()))#position#x + 30.0, y = 524.0 };
         let center = r -> { x = r#position#x + r#size#x / 2.0, y = r#position#y + r#size#y / 2.0 };
         { seeds = 16, length = 400,
           spec = { taps = List#{Role.Confirm, Role.Confirm, Role.Confirm, Role.Back, Role.Prev, Role.Next, Role.Left, Role.Right,
                                 Role.Log, Role.Auto, Role.Skip, Role.Hide, Role.Rollback, Role.QuickSave, Role.QuickLoad, Role.TabNext, Role.Remove},
                    idle = 3, dts = List#{1.0 / 60.0, 0.5, 2.0},
-                   points = List#{{ x = World.width() / 2.0, y = 200.0 }, { x = World.width() / 2.0, y = 150.0 },
+                   points = List#{{ x = Layout.width() / 2.0, y = 200.0 }, { x = Layout.width() / 2.0, y = 150.0 },
                                   { x = 470.0, y = 330.0 }, { x = 480.0, y = 488.0 },
                                   button(0), button(4), button(5), button(6), button(7), button(10),
-                                  center(Layout.askButton(0)), center(Layout.askButton(1)),
+                                  center(Layout.askButton(Layout.Side.Left)), center(Layout.askButton(Layout.Side.Right)),
                                   center(Layout.slot(0)), center(Layout.slot(3)), center(Layout.remove(0)), center(Layout.tab(1)),
-                                  center(Layout.settingSide(2, 1)), center(Layout.settingBar(5)), center(Layout.back()), { x = 500.0, y = 300.0 }}
+                                  center(Layout.settingSide(2, Layout.Side.Right)), center(Layout.settingBar(5)), center(Layout.back()), { x = 500.0, y = 300.0 }}
                    | PropertyTest.emptySpec() } }
 
     def check(rule: App.TraceStep[World.World] -> Option[String]): Option[String] \ Fs.FileRead =
@@ -60,10 +60,10 @@ mod TestTrace {
 
     @Test
     def testStoryClockStandsStillWhilePanelIsOpen(): Unit \ {Assert, Fs.FileRead} =
-        // 画面（バックログ・セーブ・設定・隠す）や確認の窓を開いている間は物語の時計が進まない（待ち・文字送り・オートも止まる）。
+        // 画面（バックログ・セーブ・設定・隠す）や確認のウィンドウを開いている間は物語の時計が進まない（待ち・文字送り・オートも止まる）。
         let rule = (step: App.TraceStep[World.World]) ->
             if ((step#before#panel != World.Panel.Closed or Option.nonEmpty(step#before#ask)) and storyNow(step#after) != storyNow(step#before))
-                Some("画面か確認の窓を開いているのに物語の時計が進んだ")
+                Some("画面か確認のウィンドウを開いているのに物語の時計が進んだ")
             else None;
         Assert.assertEq(expected = None, check(rule))
 
@@ -72,8 +72,9 @@ mod TestTrace {
         // 選択肢を出している間、カーソルは選べる選択肢の上にある。
         let rule = (step: App.TraceStep[World.World]) -> {
             let w = step#after;
-            let onOpen = List.nth(w#cursor, w#choices) |> Option.map(option -> option#available) |> Option.getWithDefault(false);
-            if (World.isAsking(w) and w#panel == World.Panel.Closed and not onOpen) Some("カーソルが選べない選択肢の上にある")
+            let onOpen = World.readOf(w) |> Option.flatMap(r -> List.nth(r#choiceCursor, r#choices))
+                |> Option.map(option -> option#available) |> Option.getWithDefault(false);
+            if (World.isChoosing(w) and w#panel == World.Panel.Closed and not onOpen) Some("カーソルが選べない選択肢の上にある")
             else None
         };
         Assert.assertEq(expected = None, check(rule))
@@ -82,7 +83,7 @@ mod TestTrace {
     def testLogNeverOutgrowsLogMax(): Unit \ {Assert, Fs.FileRead} =
         // ログは logMax を超えない。
         let rule = (step: App.TraceStep[World.World]) ->
-            if (List.length(step#after#log) > KindDoc.rec(step#after#kind)#logMax) Some("ログが logMax を超えた") else None;
+            if (List.length(World.logOf(step#after)) > KindDoc.rec(step#after#docs#kind)#logMax) Some("ログが logMax を超えた") else None;
         Assert.assertEq(expected = None, check(rule))
 
     @Test
@@ -92,7 +93,7 @@ mod TestTrace {
         let rule = (step: App.TraceStep[World.World]) -> {
             let replies = List.count(name -> String.startsWith(prefix = "ui_", name), step#sounds);
             let untouched = Set.isEmpty(step#frame#justPressed) and not step#frame#mouseClicked and not step#frame#mouseMoved;
-            let hands = step#before#playback != World.Playback.Manual;
+            let hands = World.playbackOf(step#before) != World.Playback.Manual;
             if (replies > 1) Some("1 フレームに返事が ${replies} 回")
             else if (untouched and not hands and replies > 0) Some("押していないのに返事が鳴った")
             else None
@@ -101,11 +102,11 @@ mod TestTrace {
 
     @Test
     def testAskingHoldsTheStory(): Unit \ {Assert, Fs.FileRead} =
-        // 確認の窓を開いたまま（答えていない）フレームでは、読んでいる行もノードも動かない。
+        // 確認のウィンドウを開いたまま（答えていない）フレームでは、読んでいる行もノードも動かない。
         let rule = (step: App.TraceStep[World.World]) -> {
             let placeOf = (w: World.World) -> (World.talkNodeOf(w), World.talkLineOf(w));
             if (Option.nonEmpty(step#before#ask) and Option.nonEmpty(step#after#ask) and placeOf(step#before) != placeOf(step#after))
-                Some("確認の窓を開いているのに読む所が動いた")
+                Some("確認のウィンドウを開いているのに読む所が動いた")
             else None
         };
         Assert.assertEq(expected = None, check(rule))

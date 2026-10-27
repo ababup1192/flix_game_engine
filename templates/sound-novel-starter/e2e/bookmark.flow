@@ -18,6 +18,6 @@ expect panel=LoadSlots&tab=Auto           # 開くのは一番新しいセーブ
 tap 291,105                            # 「1」のページへ
 expect tab=Numbered(1)
 tap 268,189                            # 1 枚目の枠から読む
-expect ask=Load(0)
+expect ask=Load(Numbered(1),0)
 tap 394,310                            # 確認の「はい」
 expect panel=Closed&talk=Paddy&photo=paddy&mode=Adv

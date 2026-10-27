@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "キーの割り当て（GameEngine.Key の名前）。confirm = 送る・選ぶ、back = 画面を閉じる・確認の窓で「いいえ」・読んでいる間は文章の窓を隠す、prev / next = カーソル、left / right = 設定の値・セーブの枠を横へ、log = バックログ、auto = オート、skip = スキップ（設定で既読のみ / 未読も）、hide = 窓を隠す、rollback = 1 行戻る、quickSave / quickLoad = クイックセーブ・クイックロード、tabPrev / tabNext = セーブのページ、remove = セーブデータの削除、quit = タイトルで終了を尋ねる。クリックは決定、ホイールの上でバックログ（バックログの一番下でホイールを下へ回すと閉じる）。",
+  "note": "キーの割り当て（GameEngine.Key の名前）。confirm = 送る・選ぶ、back = 画面を閉じる・確認のウィンドウで「いいえ」・読んでいる間は文章のウィンドウを隠す、prev / next = カーソル、left / right = 設定の値・セーブの枠を横へ、log = バックログ、auto = オート、skip = スキップ（設定で既読のみ / 未読も）、hide = ウィンドウを隠す、rollback = 1 行戻る、quickSave / quickLoad = クイックセーブ・クイックロード、tabPrev / tabNext = セーブのページ、remove = セーブデータの削除、quit = タイトルで終了を尋ねる。クリックは決定、ホイールの上でバックログ（バックログの一番下でホイールを下へ回すと閉じる）。",
   "confirm": [
     "Enter",
     "Space",

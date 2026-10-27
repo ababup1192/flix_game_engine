@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "シナリオの外で画面に出す言葉（タイトル・クイックメニュー・設定・セーブとロード・バックログ・確認の窓・知らせ）と、話し手の呼び名。文章・分岐・結末はシナリオ assets/talk/natsukusa.yarn（直したら bin/fge yarn build assets/talk）。labels の鍵は src/StoryDoc.flix の Label、names の鍵はシナリオの話し手（src/Talk.flix の Speaker）。titlePhoto / titleGrade は novel.backdrops.json の写真と時間帯、titleAmbience は環境音 amb_<名前>。",
+  "note": "シナリオの外で画面に出す言葉（タイトル・クイックメニュー・設定・セーブとロード・バックログ・確認のウィンドウ・知らせ）と、話し手の呼び名。文章・分岐・結末はシナリオ assets/talk/natsukusa.yarn（直したら bin/fge yarn build assets/talk）。labels の鍵は src/StoryDoc.flix の Label、names の鍵はシナリオの話し手（src/Talk.flix の Speaker）。titlePhoto / titleGrade は novel.backdrops.json の写真と時間帯、titleAmbience は環境音 amb_<名前>。",
   "title": "夏草の駅",
   "subtitle": "十年ぶりに、祖母の町へ帰る。",
   "hint": "クリックか Enter で選ぶ",

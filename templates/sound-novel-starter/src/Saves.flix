@@ -25,14 +25,14 @@ mod Saves {
         case KeepSkip
     }
 
-    /// 窓の出し方。
+    /// ウィンドウの出し方。
     pub enum Display with Eq, ToString {
         case Window
         case Fullscreen
     }
 
     /// 設定の画面で変える値。cps = 1 秒の字数、autoWait = オートで読み終えてから送るまでの秒、
-    /// masterVolume / ambienceVolume / seVolume = 全体・環境音・効果音の音量（0〜1）、windowAlpha = 文章の窓の濃さ（0〜1）。
+    /// masterVolume / ambienceVolume / seVolume = 全体・環境音・効果音の音量（0〜1）、windowAlpha = 文章のウィンドウの濃さ（0〜1）。
     pub type alias Config = {
         cps = Float64,
         autoWait = Float64,
@@ -45,7 +45,7 @@ mod Saves {
         display = Display
     }
 
-    /// 戻れる所 1 つ。bookmark = シナリオの位置、shot / ambience / particles / mode = その時の背景・環境音・粒・文章の出し方
+    /// 戻れる所 1 つ。bookmark = シナリオの位置、shot / ambience / particles / mode = その時の背景・環境音・パーティクル・文章の出し方
     /// （ブックマークが当て直すのは今のノードの頭からなので、前のノードで始まった物はここから戻す）。
     pub type alias Mark = {
         bookmark = YarnRunner.Bookmark,

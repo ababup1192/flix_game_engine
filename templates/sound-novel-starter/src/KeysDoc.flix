@@ -6,8 +6,8 @@ mod KeysDoc {
     use fge::GameEngine.Key
     use Util.Json.Json
 
-    /// 操作ごとのキーの列。confirm = 送る・選ぶ、back = 窓を閉じる・ボタンの窓を開く、prev / next = カーソル、
-    /// left / right = 設定の値・セーブの枠を横へ、log = バックログ、auto = オート、skip = スキップ、hide = 窓を隠す、
+    /// 操作ごとのキーの列。confirm = 送る・選ぶ、back = ウィンドウを閉じる・ボタンのウィンドウを開く、prev / next = カーソル、
+    /// left / right = 設定の値・セーブの枠を横へ、log = バックログ、auto = オート、skip = スキップ、hide = ウィンドウを隠す、
     /// rollback = 1 行戻る、quickSave / quickLoad = クイックセーブ・クイックロード、tabPrev / tabNext = セーブのページを替える、
     /// remove = セーブデータを削除する、quit = タイトルで終了を尋ねる。
     pub type alias Rec = {

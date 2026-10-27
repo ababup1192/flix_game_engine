@@ -41,7 +41,7 @@
     "advRows": {
       "kind": "field",
       "type": "int",
-      "label": "ADV の窓の行の数",
+      "label": "ADV のウィンドウの行の数",
       "order": 5,
       "min": 1,
       "max": 6,
@@ -104,7 +104,7 @@
     "windowAlpha": {
       "kind": "field",
       "type": "float",
-      "label": "文章の窓の濃さの既定（0〜1。ADV の窓と NVL の幕）",
+      "label": "文章のウィンドウの濃さの既定（0〜1。ADV のウィンドウと NVL の幕）",
       "order": 12,
       "min": 0,
       "max": 1,
@@ -181,6 +181,168 @@
       "min": 0.2,
       "max": 10,
       "default": 1.6
+    },
+    "cpsSlider": {
+      "kind": "record",
+      "label": "文字の速さのスライダー（字/秒）",
+      "group": "設定の画面のスライダー",
+      "order": 21,
+      "fields": {
+        "min": {
+          "type": "float",
+          "label": "下限",
+          "order": 1,
+          "default": 10.0
+        },
+        "max": {
+          "type": "float",
+          "label": "上限",
+          "order": 2,
+          "default": 120.0
+        },
+        "step": {
+          "type": "float",
+          "label": "1 押しの量",
+          "order": 3,
+          "min": 0.01,
+          "default": 10.0
+        }
+      }
+    },
+    "autoWaitSlider": {
+      "kind": "record",
+      "label": "オートの待ちのスライダー（秒）",
+      "group": "設定の画面のスライダー",
+      "order": 22,
+      "fields": {
+        "min": {
+          "type": "float",
+          "label": "下限",
+          "order": 1,
+          "default": 0.2
+        },
+        "max": {
+          "type": "float",
+          "label": "上限",
+          "order": 2,
+          "default": 4.0
+        },
+        "step": {
+          "type": "float",
+          "label": "1 押しの量",
+          "order": 3,
+          "min": 0.01,
+          "default": 0.2
+        }
+      }
+    },
+    "masterVolumeSlider": {
+      "kind": "record",
+      "label": "全体の音量のスライダー",
+      "group": "設定の画面のスライダー",
+      "order": 23,
+      "fields": {
+        "min": {
+          "type": "float",
+          "label": "下限",
+          "order": 1,
+          "default": 0.0
+        },
+        "max": {
+          "type": "float",
+          "label": "上限",
+          "order": 2,
+          "default": 1.0
+        },
+        "step": {
+          "type": "float",
+          "label": "1 押しの量",
+          "order": 3,
+          "min": 0.01,
+          "default": 0.1
+        }
+      }
+    },
+    "ambienceVolumeSlider": {
+      "kind": "record",
+      "label": "環境音の音量のスライダー",
+      "group": "設定の画面のスライダー",
+      "order": 24,
+      "fields": {
+        "min": {
+          "type": "float",
+          "label": "下限",
+          "order": 1,
+          "default": 0.0
+        },
+        "max": {
+          "type": "float",
+          "label": "上限",
+          "order": 2,
+          "default": 1.0
+        },
+        "step": {
+          "type": "float",
+          "label": "1 押しの量",
+          "order": 3,
+          "min": 0.01,
+          "default": 0.1
+        }
+      }
+    },
+    "seVolumeSlider": {
+      "kind": "record",
+      "label": "効果音の音量のスライダー",
+      "group": "設定の画面のスライダー",
+      "order": 25,
+      "fields": {
+        "min": {
+          "type": "float",
+          "label": "下限",
+          "order": 1,
+          "default": 0.0
+        },
+        "max": {
+          "type": "float",
+          "label": "上限",
+          "order": 2,
+          "default": 1.0
+        },
+        "step": {
+          "type": "float",
+          "label": "1 押しの量",
+          "order": 3,
+          "min": 0.01,
+          "default": 0.1
+        }
+      }
+    },
+    "windowAlphaSlider": {
+      "kind": "record",
+      "label": "ウィンドウの濃さのスライダー",
+      "group": "設定の画面のスライダー",
+      "order": 26,
+      "fields": {
+        "min": {
+          "type": "float",
+          "label": "下限",
+          "order": 1,
+          "default": 0.2
+        },
+        "max": {
+          "type": "float",
+          "label": "上限",
+          "order": 2,
+          "default": 1.0
+        },
+        "step": {
+          "type": "float",
+          "label": "1 押しの量",
+          "order": 3,
+          "min": 0.01,
+          "default": 0.1
+        }
+      }
     }
   }
 }

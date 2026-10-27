@@ -10,7 +10,7 @@ mod SceneRender {
     import java.io.File
     import java.lang.ProcessHandle
 
-    def design(): Vec2.Vec2 = { x = World.width(), y = World.height() }
+    def design(): Vec2.Vec2 = { x = Layout.width(), y = Layout.height() }
 
     def ttf(): String = "assets/ShipporiMincho-Regular.subset.ttf"
 
@@ -72,22 +72,22 @@ mod SceneRender {
             case "morning"  => Some(at(4.0, nthLine("Morning", 1, w0)))
             // 夜: 蛍の川で、条件つきの選択肢が選べる所（$closeness = 2）。
             case "night"    =>
-                let storage = YarnStorage.withArgs(Map#{ "$closeness" => "2" }, w0#dialogue, YarnStorage.empty()) |> Result.getWithDefault(YarnStorage.empty());
+                let storage = YarnStorage.withArgs(Map#{ "$closeness" => "2" }, w0#docs#dialogue, YarnStorage.empty()) |> Result.getWithDefault(YarnStorage.empty());
                 Some(at(6.5, toChoices("River", storage, w0)))
             // バックログ: 縁側の選択肢まで読んでから開き、田んぼの台詞に触れている所（その行へ戻れると明るくなる）。
             case "log"      =>
-                let w = open(World.Panel.Log, readThrough(w0));
+                let w = quiet(() -> WorldLog.openLog(readThrough(w0)));
                 Some(at(4.0, { pointer = { x = 400.0, y = 300.0 } | w }))
             // セーブ: 読んでいる途中で開いたセーブ画面（1 ページ目に 3 つ。いちばん新しい物に NEW）。
-            case "save"     => Some(at(4.0, open(World.Panel.SaveSlots, withSlots(nthLine("River", 2, w0)))))
+            case "save"     => Some(at(4.0, quiet(() -> WorldSaves.openSave(withSlots(nthLine("River", 2, w0))))))
             // ロード: タイトルから開いたロード画面（いちばん新しいデータのページ）。
-            case "load"     => Some(at(4.0, open(World.Panel.LoadSlots, World.toTitle(withSlots(w0)))))
+            case "load"     => Some(at(4.0, quiet(() -> WorldSaves.openLoad(World.toTitle(withSlots(w0))))))
             // 設定: 読んでいる途中で開いた設定（見本の文が流れている所）。
-            case "settings" => Some(at(1.2, open(World.Panel.Settings, nthLine("Paddy", 3, w0))))
-            // 確認の窓: ADV の台詞の上で「タイトルに戻りますか？」。
+            case "settings" => Some(at(1.2, quiet(() -> WorldSettings.openSettings(nthLine("Paddy", 3, w0)))))
+            // 確認のウィンドウ: ADV の台詞の上で「タイトルに戻りますか？」。
             case "ask"      => Some(at(4.0, quiet(() -> World.askFor(World.Ask.ToTitle, nthLine("Lane", 2, w0)))))
             // クレジット: 流れ始めて 12 秒（写真の出典が見えている所）。
-            case "credits"  => Some(at(12.0, { creditsFrom = Clock.zero() | World.toCredits(w0) }))
+            case "credits"  => Some(at(12.0, World.toCredits(w0)))
             case _          => None
         }
 
@@ -97,29 +97,28 @@ mod SceneRender {
 
     def quiet(f: Unit -> World.World \ Emit[World.Event]): World.World = fst(Emit.collect(f))
 
-    /// node の上から n 番目（0 から）の台詞を出し終えた所（その行までのコマンドは畳んで、演出は終わりの形）。
+    /// node の上から n 番目（0 から）の台詞を出し終えた所（その行までのコマンドは反映して、演出は終わりの形）。
     def nthLine(node: String, n: Int32, w: World.World): World.World =
-        let line = Yarn.nodeOf(node, w#dialogue)
+        let line = Yarn.nodeOf(node, w#docs#dialogue)
             |> Option.map(found -> found#body |> List.filterMap(statement -> match statement {
                    case Yarn.Statement.Say(say) => Some(say#source#line)
                    case _                       => None
                }))
             |> Option.flatMap(List.nth(n)) |> Option.getWithDefault(0);
-        World.revealLine(quiet(() -> World.openAt(YarnStorage.empty(), node, line, w)))
+        WorldRead.revealLine(quiet(() -> WorldRead.openAt(YarnStorage.empty(), node, line, w)))
 
     /// node の頭から選択肢が出るまで送った所（fuel で必ず止まる）。
     def toChoices(node: String, storage: YarnStorage.Storage, w: World.World): World.World =
         def walk(fuel: Int32, cur: World.World): World.World =
-            if (fuel <= 0 or World.isAsking(cur)) cur
-            else walk(fuel - 1, quiet(() -> World.advance(World.revealLine(cur))));
-        World.revealLine(walk(60, quiet(() -> World.openAt(storage, node, 0, w))))
+            if (fuel <= 0 or World.isChoosing(cur)) cur
+            else walk(fuel - 1, quiet(() -> WorldRead.advance(WorldRead.revealLine(cur))));
+        WorldRead.revealLine(walk(60, quiet(() -> WorldRead.openAt(storage, node, 0, w))))
 
-    def open(panel: World.Panel, w: World.World): World.World = quiet(() -> World.openPanel(panel, w))
 
     /// 1 ページ目に 3 つ（田んぼ・坂・縁側）、オートのページに 1 つセーブした World。日時は少しずつずらす。
     def withSlots(w: World.World): World.World =
         let saveAt = (minutes: Int64, i: Int32, scene: World.World, target: World.World) ->
-            { saves = quiet(() -> World.writeSlot(Saves.Tab.Numbered(1), i, { saves = target#saves, clockBase = clockBase() + minutes * 60i64 | scene }))#saves | target };
+            { saves = quiet(() -> WorldSaves.writeSlot(Saves.Tab.Numbered(1), i, { saves = target#saves, clockBase = clockBase() + minutes * 60i64 | scene }))#saves | target };
         w |> saveAt(-2900i64, 0, nthLine("Paddy", 3, w))
           |> saveAt(-2860i64, 1, nthLine("Lane", 2, w))
           |> saveAt(-12i64, 2, nthLine("Engawa", 4, w))
@@ -129,17 +128,17 @@ mod SceneRender {
     def readThrough(w: World.World): World.World =
         def walk(fuel: Int32, picks: List[Int32], cur: World.World): World.World =
             if (fuel <= 0) cur
-            else if (World.isAsking(cur)) match picks {
-                case i :: rest => walk(fuel - 1, rest, quiet(() -> World.pick(i, cur)))
+            else if (World.isChoosing(cur)) match picks {
+                case i :: rest => walk(fuel - 1, rest, quiet(() -> WorldRead.pick(i, cur)))
                 case Nil       => cur
             }
-            else walk(fuel - 1, picks, settleWait(quiet(() -> World.advance(World.revealLine(cur)))));
-        walk(200, 1 :: Nil, settleWait(quiet(() -> World.newGame(w))))
+            else walk(fuel - 1, picks, settleWait(quiet(() -> WorldRead.advance(WorldRead.revealLine(cur)))));
+        walk(200, 1 :: Nil, settleWait(quiet(() -> WorldRead.newGame(w))))
 
     /// <<wait>> を明かす（描き出しは時計を進めないので、明ける時刻で 1 歩だけ流す）。
     def settleWait(w: World.World): World.World =
-        match YarnRunner.waitUntilOf(w#talk) {
-            case Some(until) => quiet(() -> World.step({ storyClock = Clock.startAt(Clock.secondsOf(until)) | w }))
+        match World.readOf(w) |> Option.flatMap(r -> YarnRunner.waitUntilOf(r#talk)) {
+            case Some(until) => quiet(() -> WorldRead.step({ storyClock = Clock.startAt(Clock.secondsOf(until)) | w }))
             case None        => w
         }
 

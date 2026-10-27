@@ -13,14 +13,14 @@ mod Starts {
                   |> Option.getWithDefault(Ok(0));
               forM (
                   at <- line;
-                  storage <- YarnStorage.withArgs(args, w#dialogue, YarnStorage.empty())
-              ) yield fst(Emit.collect(() -> World.openAt(storage, node, at, w)))
+                  storage <- YarnStorage.withArgs(args, w#docs#dialogue, YarnStorage.empty())
+              ) yield fst(Emit.collect(() -> WorldRead.openAt(storage, node, at, w)))
           }) } :: Nil
 
     /// 引数 node のノード（無ければコードが最初に開くノード）。
     def nodeOf(args: Map[String, String], w: World.World): Result[String, String] =
         let node = Map.getWithDefault("node", Talk.nodeName(Talk.Node.Opening), args);
-        let known = Yarn.nodeNames(w#dialogue);
+        let known = Yarn.nodeNames(w#docs#dialogue);
         if (List.memberOf(node, known)) Ok(node)
         else Err("ノード '${node}' はシナリオに無い${Suggest.hint(node, known)}")
 }
