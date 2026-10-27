@@ -11,11 +11,10 @@ mod TestRules {
             ShaderDoc.demoSurface())
 
     /// 4×6 マスの絵を 1 体だけ持つ Doc（大きさが絵に追随することを見るため）。
-    def spritesOf(): PxSpriteDoc.Doc =
+    def spritesOf(): Option[PxSpriteDoc.Doc] =
         PxSpriteDoc.fromJson("{\"version\":1,\"legend\":{\"a\":\"accent\"},\"sprites\":"
             + "{\"hero\":{\"frames\":{\"idle\":[\"aaaa\",\"aaaa\",\"aaaa\","
             + "\"aaaa\",\"aaaa\",\"aaaa\"]}}}}")
-            |> Option.getWithDefault(PxSpriteDoc.empty())
 
     @Test
     def testStepMovesBySpeedFromDoc(): Unit \ Assert =
@@ -35,10 +34,10 @@ mod TestRules {
     def testHeroBoxFollowsTheSprite(): Unit \ Assert =
         // 当たりの大きさは絵から導く（絵を描き替えたら可動域もついてくる）。
         // 縦横は別に測る — 正方形とは限らない。
-        let w = World.withSprites(spritesOf(), w0());
         let scale = Int32.toFloat64(World.spriteScale());
-        Assert.assertEq(expected = (4.0 * scale, 6.0 * scale),
-            (World.heroBox(w)#x, World.heroBox(w)#y))
+        Assert.assertEq(expected = Some((4.0 * scale, 6.0 * scale)),
+            spritesOf() |> Option.map(sprites -> World.heroBox(World.withSprites(sprites, w0())))
+                        |> Option.map(box -> (box#x, box#y)))
 
     @Test
     def testQuitAskedThenNoReturnsToPlay(): Unit \ Assert =

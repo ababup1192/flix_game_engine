@@ -40,7 +40,7 @@ mod SceneRender {
     pub def all(): Unit \ IO = App.Headless.exitWith(allJob(App.Headless.requestFromProcess()))
 
     /// SceneRender.all の中身（常駐の /run からも呼ぶ）。戻り値は終了コード。
-    pub def allJob(_req: App.Headless.Request): Int32 \ IO =
+    def allJob(_req: App.Headless.Request): Int32 \ IO =
         discard allShots();
         0
 
@@ -53,7 +53,7 @@ mod SceneRender {
     /// 場面の題と一言（Studio のギャラリーに出るラベル）は assets/*.scenes.json 側で、
     /// name をここの名前とそろえる。ラベルを足しても描き出す場面は増えない。
     /// 場面を足したら、ここと sceneOf と Makefile の SHOTS を一緒に足す。
-    pub def shotNames(): List[String] =
+    def shotNames(): List[String] =
         "main" :: "quit" :: Nil
 
     /// 名前 → その場面の World。shotNames と対で保つ。名前で引く形にしてあるので、
@@ -75,7 +75,7 @@ mod SceneRender {
     pub def one(): Unit \ IO = App.Headless.exitWith(oneJob(App.Headless.requestFromProcess()))
 
     /// SceneRender.one の中身（常駐の /run からも呼ぶ）。env は要求の表（App.Headless.envOf）だけを読む。
-    pub def oneJob(req: App.Headless.Request): Int32 \ IO =
+    def oneJob(req: App.Headless.Request): Int32 \ IO =
         let wanted = Map.getWithDefault("SHOT", "", App.Headless.envOf(req)) |> String.splitOn(substr = " ")
             |> List.map(String.trim) |> List.filter(n -> not String.isEmpty(n));
         let known = List.toSet(shotNames());
@@ -120,7 +120,7 @@ mod SceneRender {
     def shoot(cfg: HeadlessRender.RenderConfig, texInfo: String -> Option[GameEngine.TextureInfo],
               ctx: App.ViewCtx, w: World.World, name: String): String \ IO =
         // 実機は静的な層（View.frameBorder）を別に敷くので、描き出しでは同じ物を足して並べる。
-        let items = List.append(View.frame(ctx, { t = renderTime() | w }), View.frameBorder(w));
+        let items = List.append(View.frame(ctx, { t = renderTime() | w }), View.frameBorder(w#theme));
         let surfaces = Render.shaderSurfaces(items);
         let (drawables, polygons) = Render.drawWith(texInfo, Render.withoutShaders(items));
         HeadlessRender.renderPngWith(cfg, drawables, polygons, surfaces, name);

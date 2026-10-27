@@ -15,16 +15,15 @@ mod TestPalette {
         let fresh = Palette.toJson(Palette.entriesOf(sprites, theme));
         let onDisk = run { Fs.ReadFile.read(Palette.path()) }
             with Fs.ReadFile.runWithFileRead with Fs.FileRead.runWithIO;
-        Assert.assertEq(expected = fresh,
-            onDisk |> Result.toOption |> Option.getWithDefault(""))
+        Assert.assertEq(expected = Some(fresh), Result.toOption(onDisk))
 
     @Test
     def testPaletteCoversEveryLegendName(): Unit \ {Assert, IO} =
         // legend に出てくる名前が全部そろっていること。抜けた名前は Studio が解けず、
         // その色だけ仮色で描かれる（＝ここが痩せると編集画面が嘘をつく）。
         let sprites = run { PxSpriteDoc.load(World.spritePath()) } with Fs.FileRead.runWithIO;
-        let names = sprites#legend |> Map.valuesOf |> List.distinct;
-        let covered = Palette.entriesOf(sprites, ThemeDoc.defaults()) |> List.map(fst);
-        Assert.assertEq(expected = (List.length(names), true),
-            (List.length(covered), names |> List.forAll(n -> List.memberOf(n, covered))))
+        let names = sprites#legend |> Map.valuesOf |> List.toSet;
+        let covered = List.toMap(Palette.entriesOf(sprites, ThemeDoc.defaults()));
+        Assert.assertEq(expected = (Set.size(names), true),
+            (Map.size(covered), Set.forAll(n -> Map.memberOf(n, covered), names)))
 }

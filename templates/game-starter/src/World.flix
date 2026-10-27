@@ -65,7 +65,7 @@ mod World {
     /// 読み込んだドット絵に仕上げ（ふち光・接地影・ディザ・粒）を掛ける。
     /// 掛かるのは読み込み直後の 1 回だけで、毎フレームの絵づくりには入らない
     /// （何体出しても走行中の負荷は増えない）。強さと光の向きは theme.json から。
-    pub def shaded(theme: ThemeDoc.Doc, doc: PxSpriteDoc.Doc): PxSpriteDoc.Doc =
+    def shaded(theme: ThemeDoc.Doc, doc: PxSpriteDoc.Doc): PxSpriteDoc.Doc =
         PxShade.shadeDoc(ThemeDoc.rec(theme)#shade, shadeRamp(), doc)
 
     /// GPU に登録するアトラスの論理名（View の drawQuad と Main の withSpriteAtlases が
@@ -103,7 +103,7 @@ mod World {
           x = width() / 2.0, y = height() / 2.0, t = 0.0, quit = Quit.Playing }
 
     /// 大きさ box の物が画面から出ない位置へ丸める（端で止まるのはルール）。
-    pub def clampInside(box: Vec2.Vec2, p: Vec2.Vec2): Vec2.Vec2 =
+    def clampInside(box: Vec2.Vec2, p: Vec2.Vec2): Vec2.Vec2 =
         { x = Num.clamp(box#x / 2.0, width() - box#x / 2.0, p#x),
           y = Num.clamp(box#y / 2.0, height() - box#y / 2.0, p#y) }
 
