@@ -1,8 +1,8 @@
 # 素材の出典とライセンス
 
-このテンプレートの背景の写真とフォントは、自由に使える許諾の物を使っています。
-ゲームの中のクレジット（表紙の「クレジット」と、物語を読み終えた後）にも同じ表記を流します（`assets/novel.credits.json`）。
-写真を差し替えたら、ここと `assets/novel.credits.json` の両方を書き直してください。
+このテンプレートの背景の写真・環境音の録音・フォントは、自由に使える許諾の物を使っています。
+ゲームの中のクレジット（タイトル画面の「クレジット」と、物語を読み終えた後）にも同じ表記を流します（`assets/novel.credits.json`）。
+写真や録音を差し替えたら、ここと `assets/novel.credits.json` の両方を書き直してください。
 
 ## 背景の写真（Wikimedia Commons）
 
@@ -26,4 +26,14 @@
 
 ## 音
 
-効果音と環境音は `art/sfx.snd.star` から `bin/fge snd build` で合成した物です（外部の素材は使っていません）。
+夕方・夜・朝の環境音は、Wikimedia Commons の録音を切り出して使っています。どれも低い音を削り、
+継ぎ目が聞こえないよう頭と尾を重ねてループにし、音量をそろえて 22050 Hz のモノラルに書き出しています
+（朝の鶯は、さらに背景の雑音を減らしています）。
+
+| ファイル | 元の録音（切り出した所） | 作者 | ライセンス |
+|---|---|---|---|
+| `assets/sfx/amb_evening.wav` | [Tanna japonensis v01.ogg](https://commons.wikimedia.org/wiki/File:Tanna_japonensis_v01.ogg)（16〜48 秒） | Σ64（ゲームの中のクレジットは字がフォントに無いので Sigma64） | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0) |
+| `assets/sfx/amb_night.wav` | [Suzumushi 06z3286.ogg](https://commons.wikimedia.org/wiki/File:Suzumushi_06z3286.ogg)（1〜15.5 秒） | ISAKA Yoji | [CC BY 2.1 JP](https://creativecommons.org/licenses/by/2.1/jp/deed.en) |
+| `assets/sfx/amb_morning.wav` | [SND 4458a.ogg](https://commons.wikimedia.org/wiki/File:SND_4458a.ogg)（2〜44 秒） | Fg2 | パブリックドメイン |
+
+川の環境音・風鈴・手を打つ音・返事の音（`amb_river`・`se_*`・`ui_*`）は、`art/sfx.snd.star` から `bin/fge snd build` で合成した物です。

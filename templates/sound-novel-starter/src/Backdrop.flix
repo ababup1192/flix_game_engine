@@ -15,8 +15,10 @@ mod Backdrop {
     use fge::{Color, Rect2, Render, ShaderDoc}
     use fge::ShaderDoc.{BinOp, Field, Shade, Out, TexChan}
 
-    /// 写真 1 枚を時間帯の色で塗る Spec。
-    pub def specOf(photo: BackdropDoc.Photo, grade: BackdropDoc.Grade): ShaderDoc.Spec =
+    /// 写真 1 枚を時間帯の色で塗る Spec。key = 写真と時間帯の組の名前（Spec の name になる）。
+    /// WhyNot: name を写真だけから作らない —— 実機は name でシェーダーを覚えるので、同じ写真を別の時間帯で
+    ///         同じフレームに描く（セーブの枠のサムネ）と、毎フレーム組み直しになる。
+    pub def specOf(key: String, photo: BackdropDoc.Photo, grade: BackdropDoc.Grade): ShaderDoc.Spec =
         let progress = Field.Un({ op = ShaderDoc.UnOp.Sat, of = Field.Time({ scale = 1.0, offset = k(0.0) }) });
         let amount = add(k(1.0), mul(k(grade#focusPull), Field.Un({ op = ShaderDoc.UnOp.OneMinus, of = progress })));
         let blur = chan -> Field.TexBlur({ name = photo#texture, chan = chan,
@@ -34,7 +36,7 @@ mod Backdrop {
             let c3 = add(c2, mul(k(sky * grade#skyStrength), Field.Ref("sky")));
             mul(c3, Field.Ref("vig"))
         };
-        { name = "backdrop_${photo#texture}", cycleRate = 0.0,
+        { name = "backdrop_${key}", cycleRate = 0.0,
           bindings = ("r", blur(TexChan.R)) :: ("g", blur(TexChan.G)) :: ("b", blur(TexChan.B)) ::
                      ("l", luma) :: ("sky", skyFade) :: ("vig", vignette) :: Nil,
           out = Out.Fill({
@@ -48,7 +50,7 @@ mod Backdrop {
         Render.shaderFill(spec, rect, Float64.max(0.0, Float64.min(1.0, progress)), z)
 
     /// 画面の横÷縦（ぼかしの縦の半径を横とそろえ、四隅の落ち方を丸くする）。
-    def aspect(): Float64 = World.width() / World.height()
+    def aspect(): Float64 = Layout.width() / Layout.height()
 
     def k(v: Float64): Field = Field.Const(v)
 

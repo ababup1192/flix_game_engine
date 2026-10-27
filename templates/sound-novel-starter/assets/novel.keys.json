@@ -1,15 +1,65 @@
 {
   "version": 1,
-  "note": "キーの割り当て（GameEngine.Key の名前）。confirm = 送る・選ぶ、back = 窓を閉じる・読んでいる間は文章の窓を隠す、prev / next = カーソル、left / right = 設定の値、log = ログ、auto = オート、skip = スキップ（既読だけ・読んでいない行で止まる）、hide = 窓を隠す、quit = 表紙で終える。クリックは常に決定、ホイールの上でログ。",
-  "confirm": ["Enter", "Space", "Z"],
-  "back": ["Escape", "X", "Backspace"],
-  "prev": ["Up", "W"],
-  "next": ["Down", "S"],
-  "left": ["Left", "A"],
-  "right": ["Right", "D"],
-  "log": ["L", "PageUp"],
-  "auto": ["O"],
-  "skip": ["K", "Tab"],
-  "hide": ["H"],
-  "quit": ["Escape"]
+  "note": "キーの割り当て（GameEngine.Key の名前）。confirm = 送る・選ぶ、back = 画面を閉じる・確認のウィンドウで「いいえ」・読んでいる間は文章のウィンドウを隠す、prev / next = カーソル、left / right = 設定の値・セーブの枠を横へ、log = バックログ、auto = オート、skip = スキップ（設定で既読のみ / 未読も）、hide = ウィンドウを隠す、rollback = 1 行戻る、quickSave / quickLoad = クイックセーブ・クイックロード、tabPrev / tabNext = セーブのページ、remove = セーブデータの削除、quit = タイトルで終了を尋ねる。クリックは決定、ホイールの上でバックログ（バックログの一番下でホイールを下へ回すと閉じる）。",
+  "confirm": [
+    "Enter",
+    "Space",
+    "Z"
+  ],
+  "back": [
+    "Escape",
+    "X",
+    "Backspace"
+  ],
+  "prev": [
+    "Up",
+    "W"
+  ],
+  "next": [
+    "Down",
+    "S"
+  ],
+  "left": [
+    "Left",
+    "A"
+  ],
+  "right": [
+    "Right",
+    "D"
+  ],
+  "log": [
+    "L"
+  ],
+  "auto": [
+    "O"
+  ],
+  "skip": [
+    "K",
+    "Tab"
+  ],
+  "hide": [
+    "H"
+  ],
+  "rollback": [
+    "PageUp",
+    "R"
+  ],
+  "quickSave": [
+    "F5"
+  ],
+  "quickLoad": [
+    "F9"
+  ],
+  "tabPrev": [
+    "Q"
+  ],
+  "tabNext": [
+    "E"
+  ],
+  "remove": [
+    "Delete"
+  ],
+  "quit": [
+    "Escape"
+  ]
 }

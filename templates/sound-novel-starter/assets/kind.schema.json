@@ -41,7 +41,7 @@
     "advRows": {
       "kind": "field",
       "type": "int",
-      "label": "ADV の窓の行の数",
+      "label": "ADV のウィンドウの行の数",
       "order": 5,
       "min": 1,
       "max": 6,
@@ -74,11 +74,20 @@
       "max": 10,
       "default": 1.2
     },
+    "masterVolume": {
+      "kind": "field",
+      "type": "float",
+      "label": "全体の音量の既定（0〜1。環境音と効果音に掛ける）",
+      "order": 9,
+      "min": 0,
+      "max": 1,
+      "default": 1.0
+    },
     "ambienceVolume": {
       "kind": "field",
       "type": "float",
       "label": "環境音の音量の既定（0〜1）",
-      "order": 9,
+      "order": 10,
       "min": 0,
       "max": 1,
       "default": 0.7
@@ -87,16 +96,25 @@
       "kind": "field",
       "type": "float",
       "label": "効果音の音量の既定（0〜1）",
-      "order": 10,
+      "order": 11,
       "min": 0,
       "max": 1,
       "default": 0.8
+    },
+    "windowAlpha": {
+      "kind": "field",
+      "type": "float",
+      "label": "文章のウィンドウの濃さの既定（0〜1。ADV のウィンドウと NVL の幕）",
+      "order": 12,
+      "min": 0,
+      "max": 1,
+      "default": 0.74
     },
     "autoPerChar": {
       "kind": "field",
       "type": "float",
       "label": "オートの待ちに足す 1 字あたりの秒",
-      "order": 11,
+      "order": 13,
       "min": 0,
       "max": 0.5,
       "default": 0.04
@@ -105,7 +123,7 @@
       "kind": "field",
       "type": "float",
       "label": "スキップで 1 行を出す間（秒）",
-      "order": 12,
+      "order": 14,
       "min": 0,
       "max": 1,
       "default": 0.06
@@ -114,7 +132,7 @@
       "kind": "field",
       "type": "int",
       "label": "ログに残す行の数",
-      "order": 13,
+      "order": 15,
       "min": 10,
       "max": 1000,
       "default": 120
@@ -123,7 +141,7 @@
       "kind": "field",
       "type": "float",
       "label": "<<shake>> の長さ（秒）",
-      "order": 14,
+      "order": 16,
       "min": 0,
       "max": 3,
       "default": 0.35
@@ -132,7 +150,7 @@
       "kind": "field",
       "type": "float",
       "label": "<<shake>> の揺れ幅（px）",
-      "order": 15,
+      "order": 17,
       "min": 0,
       "max": 40,
       "default": 7.0
@@ -141,7 +159,7 @@
       "kind": "field",
       "type": "int",
       "label": "蛍の数",
-      "order": 16,
+      "order": 18,
       "min": 0,
       "max": 120,
       "default": 28
@@ -150,7 +168,7 @@
       "kind": "field",
       "type": "float",
       "label": "クレジットが流れる速さ（px/秒）",
-      "order": 17,
+      "order": 19,
       "min": 5,
       "max": 200,
       "default": 34.0
@@ -159,10 +177,172 @@
       "kind": "field",
       "type": "float",
       "label": "知らせを出す秒",
-      "order": 18,
+      "order": 20,
       "min": 0.2,
       "max": 10,
       "default": 1.6
+    },
+    "cpsSlider": {
+      "kind": "record",
+      "label": "文字の速さのスライダー（字/秒）",
+      "group": "設定の画面のスライダー",
+      "order": 21,
+      "fields": {
+        "min": {
+          "type": "float",
+          "label": "下限",
+          "order": 1,
+          "default": 10.0
+        },
+        "max": {
+          "type": "float",
+          "label": "上限",
+          "order": 2,
+          "default": 120.0
+        },
+        "step": {
+          "type": "float",
+          "label": "1 押しの量",
+          "order": 3,
+          "min": 0.01,
+          "default": 10.0
+        }
+      }
+    },
+    "autoWaitSlider": {
+      "kind": "record",
+      "label": "オートの待ちのスライダー（秒）",
+      "group": "設定の画面のスライダー",
+      "order": 22,
+      "fields": {
+        "min": {
+          "type": "float",
+          "label": "下限",
+          "order": 1,
+          "default": 0.2
+        },
+        "max": {
+          "type": "float",
+          "label": "上限",
+          "order": 2,
+          "default": 4.0
+        },
+        "step": {
+          "type": "float",
+          "label": "1 押しの量",
+          "order": 3,
+          "min": 0.01,
+          "default": 0.2
+        }
+      }
+    },
+    "masterVolumeSlider": {
+      "kind": "record",
+      "label": "全体の音量のスライダー",
+      "group": "設定の画面のスライダー",
+      "order": 23,
+      "fields": {
+        "min": {
+          "type": "float",
+          "label": "下限",
+          "order": 1,
+          "default": 0.0
+        },
+        "max": {
+          "type": "float",
+          "label": "上限",
+          "order": 2,
+          "default": 1.0
+        },
+        "step": {
+          "type": "float",
+          "label": "1 押しの量",
+          "order": 3,
+          "min": 0.01,
+          "default": 0.1
+        }
+      }
+    },
+    "ambienceVolumeSlider": {
+      "kind": "record",
+      "label": "環境音の音量のスライダー",
+      "group": "設定の画面のスライダー",
+      "order": 24,
+      "fields": {
+        "min": {
+          "type": "float",
+          "label": "下限",
+          "order": 1,
+          "default": 0.0
+        },
+        "max": {
+          "type": "float",
+          "label": "上限",
+          "order": 2,
+          "default": 1.0
+        },
+        "step": {
+          "type": "float",
+          "label": "1 押しの量",
+          "order": 3,
+          "min": 0.01,
+          "default": 0.1
+        }
+      }
+    },
+    "seVolumeSlider": {
+      "kind": "record",
+      "label": "効果音の音量のスライダー",
+      "group": "設定の画面のスライダー",
+      "order": 25,
+      "fields": {
+        "min": {
+          "type": "float",
+          "label": "下限",
+          "order": 1,
+          "default": 0.0
+        },
+        "max": {
+          "type": "float",
+          "label": "上限",
+          "order": 2,
+          "default": 1.0
+        },
+        "step": {
+          "type": "float",
+          "label": "1 押しの量",
+          "order": 3,
+          "min": 0.01,
+          "default": 0.1
+        }
+      }
+    },
+    "windowAlphaSlider": {
+      "kind": "record",
+      "label": "ウィンドウの濃さのスライダー",
+      "group": "設定の画面のスライダー",
+      "order": 26,
+      "fields": {
+        "min": {
+          "type": "float",
+          "label": "下限",
+          "order": 1,
+          "default": 0.2
+        },
+        "max": {
+          "type": "float",
+          "label": "上限",
+          "order": 2,
+          "default": 1.0
+        },
+        "step": {
+          "type": "float",
+          "label": "1 押しの量",
+          "order": 3,
+          "min": 0.01,
+          "default": 0.1
+        }
+      }
     }
   }
 }

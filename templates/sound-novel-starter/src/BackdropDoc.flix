@@ -7,7 +7,7 @@ mod BackdropDoc {
     use fge::{Color, DocJson, JsonCodec}
     use Util.Json.Json
 
-    /// 写真 1 枚。texture = project.json の textures の名前、label = セーブの栞に出す場所の名前。
+    /// 写真 1 枚。texture = project.json の textures の名前、label = セーブの枠に出す場所の名前。
     pub type alias Photo = { texture = String, label = String }
 
     /// 時間帯の色。blur = ぼかしの半径（画面の幅に対する割合）、taps = ぼかしで読む点の数（1〜64）、

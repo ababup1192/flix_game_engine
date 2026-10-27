@@ -1,5 +1,5 @@
 {
-  "//": "novel.theme.json の形の宣言（Studio の sections 方言）。字と窓の色。写真の色は novel.backdrops.json の時間帯。",
+  "//": "novel.theme.json の形の宣言（Studio の sections 方言）。字とウィンドウの色。写真の色は novel.backdrops.json の時間帯。",
   "version": 1,
   "sections": {
     "ink": {
@@ -33,33 +33,24 @@
     "panel": {
       "kind": "field",
       "type": "color",
-      "label": "ADV の窓・選択肢・窓の地",
+      "label": "ADV のウィンドウ・選択肢・ウィンドウの地",
       "order": 5,
       "required": true
-    },
-    "panelAlpha": {
-      "kind": "field",
-      "type": "float",
-      "label": "ADV の窓の濃さ（0〜1）",
-      "order": 6,
-      "min": 0,
-      "max": 1,
-      "default": 0.74
     },
     "veil": {
       "kind": "field",
       "type": "float",
-      "label": "NVL の頁の下に敷く暗さ（0〜1）",
-      "order": 7,
+      "label": "NVL の頁の下の幕の濃さ（ウィンドウの濃さに掛ける割合）",
+      "order": 6,
       "min": 0,
       "max": 1,
-      "default": 0.6
+      "default": 0.8
     },
     "firefly": {
       "kind": "field",
       "type": "color",
       "label": "蛍の光",
-      "order": 8,
+      "order": 7,
       "required": true
     }
   }

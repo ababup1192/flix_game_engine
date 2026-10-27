@@ -4,32 +4,28 @@ mod TestKit {
 
     use fge::{App, Emit, YarnRunner}
 
-    /// assets の Doc とシナリオをそのまま読んだ表紙の World（栞は空・ファイルは書かない）。
+    /// assets の Doc とシナリオをそのまま読んだタイトルの World（セーブデータは空・ファイルは書かない・時刻は 0）。
     pub def w0(): World.World \ Fs.FileRead =
         let docs = Controls.loadDocs();
-        World.initial(docs, Saves.fresh(docs#kind))
+        World.initial(docs, Saves.fresh(docs#kind), 0i64)
 
-    pub def app(w: World.World): App.App[World.World, {}] = Game.app(docsOf(w), w#saves)
-
-    def docsOf(w: World.World): World.Docs =
-        { story = w#story, kind = w#kind, theme = w#theme, backdrops = w#backdrops, credits = w#credits,
-          keys = w#keys, mixer = w#mixer, dialogue = w#dialogue }
+    pub def app(w: World.World): App.App[World.World, {}] = Game.app(w#docs, w#saves, w#clockBase)
 
     /// 系を直に呼ぶ 1 歩: 実機と同じく、先に物語の時計を dt 秒ぶん進めてから World.step。
     pub def stepBy(dt: Float64, w: World.World): World.World =
-        quiet(() -> World.step(App.tickClocks(app(w), dt, w)))
+        quiet(() -> WorldRead.step(App.tickClocks(app(w), dt, w)))
 
     /// 規則が出す返事の出来事（Emit）を捨てて World だけを見る。
     pub def quiet(f: Unit -> World.World \ Emit[World.Event]): World.World = fst(Emit.collect(f))
 
-    pub def advance(w: World.World): World.World = quiet(() -> World.advance(w))
+    pub def advance(w: World.World): World.World = quiet(() -> WorldRead.advance(w))
 
-    pub def pick(i: Int32, w: World.World): World.World = quiet(() -> World.pick(i, w))
+    pub def pick(i: Int32, w: World.World): World.World = quiet(() -> WorldRead.pick(i, w))
 
     /// はじめから読み、最初の行を出し終えた所（頭の <<wait>> も明けている）。
     pub def begun(): World.World \ Fs.FileRead =
         let start = w0();
-        settle(quiet(() -> World.newGame(start)))
+        settle(quiet(() -> WorldRead.newGame(start)))
 
     /// 待ちと文字送りを使い切る（テストは速さを検査しない）。
     pub def settle(w: World.World): World.World = stepBy(30.0, w)
@@ -41,14 +37,14 @@ mod TestKit {
     /// readUntil と同じ読み方で、途中で規則が出した出来事（返事・<<se>>）も古い順に返す。
     pub def readHearing(until: World.World -> Bool, picks: List[Int32], w: World.World): (World.World, List[World.Event]) =
         let heard = (f: Unit -> World.World \ Emit[World.Event]) -> Emit.collect(f);
-        let tick = (cur: World.World) -> heard(() -> World.step(App.tickClocks(app(cur), 30.0, cur)));
+        let tick = (cur: World.World) -> heard(() -> WorldRead.step(App.tickClocks(app(cur), 30.0, cur)));
         def go(fuel: Int32, rest: List[Int32], cur: World.World, acc: List[World.Event]): (World.World, List[World.Event]) =
-            if (fuel <= 0 or until(cur) or cur#phase != World.Phase.Reading) (cur, acc)
+            if (fuel <= 0 or until(cur) or not World.isReading(cur)) (cur, acc)
             else {
-                let (moved, more, events) = if (World.isAsking(cur)) match rest {
-                    case i :: tail => { let (n, es) = heard(() -> World.pick(i, cur)); (Some(n), tail, es) }
+                let (moved, more, events) = if (World.isChoosing(cur)) match rest {
+                    case i :: tail => { let (n, es) = heard(() -> WorldRead.pick(i, cur)); (Some(n), tail, es) }
                     case Nil       => (None, rest, Nil)
-                } else { let (n, es) = heard(() -> World.advance(cur)); (Some(n), rest, es) };
+                } else { let (n, es) = heard(() -> WorldRead.advance(cur)); (Some(n), rest, es) };
                 match moved {
                     case None    => (cur, acc)
                     case Some(n) =>
@@ -63,13 +59,13 @@ mod TestKit {
         readUntil(cur -> World.talkNodeOf(cur) == node, picks, w)
 
     /// 今出している選択肢の数（無ければ 0）。
-    pub def choiceCount(w: World.World): Int32 = List.length(w#choices)
+    pub def choiceCount(w: World.World): Int32 = List.length(World.choicesOf(w))
 
     /// 今のシナリオの位置（ノードと行）。
     pub def placeOf(w: World.World): (String, String) = (World.talkNodeOf(w), World.talkLineOf(w))
 
-    pub def isWaiting(w: World.World): Bool = match YarnRunner.shownOf(w#talk) {
-        case YarnRunner.Shown.Waiting => true
-        case _                        => false
+    pub def isWaiting(w: World.World): Bool = match World.readOf(w) |> Option.map(r -> YarnRunner.shownOf(r#talk)) {
+        case Some(YarnRunner.Shown.Waiting) => true
+        case _                              => false
     }
 }

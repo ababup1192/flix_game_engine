@@ -1,21 +1,24 @@
-// Stage — 舞台（背景・文章の出し方・環境音・粒の演出・揺れ）の状態と、シナリオのコマンドからの畳み方（純粋）。
+// Stage — 舞台（背景・文章の出し方・環境音・パーティクルの演出・揺れ）の状態と、シナリオのコマンドからの反映のし方（純粋）。
 // シナリオに書けるコマンド（Talk の語彙。check は名前だけを見るので、引数はここが読む）:
 //
 //   <<bg 写真 時間帯 秒>>   背景を「写真」（BackdropDoc の photos）に「時間帯」（grades）の色で替え、秒かけて重ねる。秒は省ける（1 秒）
-//   <<nvl>> / <<adv>>       文章を画面いっぱいに積む / 下の窓に 1 行ずつ出す
+//   <<nvl>> / <<adv>>       文章を画面いっぱいに積む / 下のウィンドウに 1 行ずつ出す
 //   <<clear>>               NVL の頁をめくる（ADV では何もしない）
 //   <<ambience 名>>         鳴り続ける環境音を amb_<名> に替える（off で止める）
 //   <<se 名>>               効果音 se_<名> を 1 回（音は World が出来事にして鳴らす）
-//   <<fx 名>>               画面の粒の演出（fireflies / off）
+//   <<fx 名>>               画面のパーティクルの演出（fireflies / off）
 //   <<shake>>               画面を短く揺らす
 //
 // 引数の読めないコマンドは Err で返し、World が 1 行知らせて舞台はそのまま続ける（シナリオの書き損じで止めない）。
-// セーブから戻る時は YarnRunner.resume が通ったコマンドを全部返すので、同じ applyCue で畳んでから settle で
+// セーブから戻る時は YarnRunner.resume が通ったコマンドを全部返すので、同じ applyCue で反映してから settle で
 // 演出の途中を終わりの形にする（背景は重ね終わり・揺れは止まる）。
 mod Stage {
     use fge::{Clock, Vec2, Yarn}
 
-    /// 文章の出し方。Nvl = 画面いっぱいに積む（小説の頁）、Adv = 下の窓に 1 行ずつ。
+    /// 物語の時計の名前（中身は要らない）。文字送り・<<wait>>・背景の重ね・揺れが使い、画面や確認のウィンドウを開くと止まる。
+    pub enum Story
+
+    /// 文章の出し方。Nvl = 画面いっぱいに積む（小説の頁）、Adv = 下のウィンドウに 1 行ずつ。
     pub enum Mode with Eq, ToString {
         case Nvl
         case Adv
@@ -36,16 +39,16 @@ mod Stage {
     }
 
     /// 舞台。shot = 今の背景、under = 重ねている間だけ下に残す前の背景、fadeFrom / fadeSeconds = 重ね始めた時刻と長さ、
-    /// mode = 文章の出し方、ambience = 鳴り続ける環境音の名前、particles = 粒の演出の名前、shakeFrom = 揺れ始めた時刻。
+    /// mode = 文章の出し方、ambience = 鳴り続ける環境音の名前、particles = パーティクルの演出の名前、shakeFrom = 揺れ始めた時刻。
     pub type alias Stage = {
         shot = Option[Shot],
         under = Option[Shot],
-        fadeFrom = Clock.Time[World.Story],
+        fadeFrom = Clock.Time[Story],
         fadeSeconds = Float64,
         mode = Mode,
         ambience = Option[String],
         particles = Option[String],
-        shakeFrom = Option[Clock.Time[World.Story]]
+        shakeFrom = Option[Clock.Time[Story]]
     }
 
     /// 物語を始める前の舞台（背景なし・NVL・音なし）。
@@ -57,7 +60,7 @@ mod Stage {
     pub def commandNames(): List[String] =
         "bg" :: "nvl" :: "adv" :: "clear" :: "ambience" :: "se" :: "fx" :: "shake" :: Nil
 
-    /// 粒の演出の名前（<<fx 名>> に書ける物）。
+    /// パーティクルの演出の名前（<<fx 名>> に書ける物）。
     pub def particleNames(): List[String] = "fireflies" :: Nil
 
     /// コマンドの意味を読む。写真・時間帯の名前は backdrops にあるかまで見る（無い名前で背景が消えないように）。
@@ -85,13 +88,13 @@ mod Stage {
             case ("fx", "off" :: _)     => Ok(Cue.Particles(None))
             case ("fx", name :: _)      =>
                 if (List.memberOf(name, particleNames())) Ok(Cue.Particles(Some(name)))
-                else Err("知らない粒の演出 '${name}'${at}")
+                else Err("知らないパーティクルの演出 '${name}'${at}")
             case ("shake", _)           => Ok(Cue.Shake)
             case (name, _)              => Err("<<${name}>> の引数が足りない${at}")
         }
 
-    /// コマンド 1 つを舞台に畳む（now = 物語の時計の今）。Clear と Se は舞台を変えない（頁と音は World が持つ）。
-    pub def applyCue(now: Clock.Time[World.Story], cue: Cue, stage: Stage): Stage = match cue {
+    /// コマンド 1 つを舞台に反映する（now = 物語の時計の今）。Clear と Se は舞台を変えない（頁と音は World が持つ）。
+    pub def applyCue(now: Clock.Time[Story], cue: Cue, stage: Stage): Stage = match cue {
         case Cue.Backdrop(shot, seconds) =>
             { shot = Some(shot), under = stage#shot, fadeFrom = now, fadeSeconds = seconds | stage }
         case Cue.ToMode(mode)       => { mode = mode | stage }
@@ -107,12 +110,12 @@ mod Stage {
         { under = None, fadeFrom = Clock.never(), shakeFrom = None | stage }
 
     /// 背景の重ねの進み（0〜1。秒が 0 なら 1）。
-    pub def fadeProgress(now: Clock.Time[World.Story], stage: Stage): Float64 =
+    pub def fadeProgress(now: Clock.Time[Story], stage: Stage): Float64 =
         if (stage#fadeSeconds <= 0.0) 1.0
         else Float64.max(0.0, Float64.min(1.0, Clock.since(stage#fadeFrom, now) / stage#fadeSeconds))
 
     /// 揺れのずれ（px）。揺れの長さと幅は novel.kind.json。だんだん収まる。
-    pub def shakeOffset(now: Clock.Time[World.Story], seconds: Float64, px: Float64, stage: Stage): (Float64, Float64) =
+    pub def shakeOffset(now: Clock.Time[Story], seconds: Float64, px: Float64, stage: Stage): (Float64, Float64) =
         match stage#shakeFrom {
             case None       => (0.0, 0.0)
             case Some(start) =>

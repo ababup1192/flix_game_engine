@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "背景の写真と時間帯の色。シナリオの <<bg 写真 時間帯 秒>> の名前はここの鍵。写真はどれも昼の実写で、夕暮れ・夜・朝は時間帯の色でシェーダーが作る（作り方は src/Backdrop.flix の冒頭）。texture = project.json の textures の名前、label = 栞に出す場所の名前。blur = ぼかしの半径（画面の幅に対する割合）、taps = ぼかしで読む点の数、saturation = 彩度、exposure = 明るさ、tint = 赤・緑・青の倍率、lift = 暗い所に足す色、sky / skyStrength / skyReach = 上から差す光の色・強さ・届く深さ、vignette = 四隅を落とす強さ、focusPull = 切り替えの頭で余分にぼかす量。写真の出典は CREDITS.md と novel.credits.json。",
+  "note": "背景の写真と時間帯の色。シナリオの <<bg 写真 時間帯 秒>> の名前はここの鍵。写真はどれも昼の実写で、夕暮れ・夜・朝は時間帯の色でシェーダーが作る（作り方は src/Backdrop.flix の冒頭）。texture = project.json の textures の名前、label = セーブ画面に出す場所の名前。blur = ぼかしの半径（画面の幅に対する割合）、taps = ぼかしで読む点の数、saturation = 彩度、exposure = 明るさ、tint = 赤・緑・青の倍率、lift = 暗い所に足す色、sky / skyStrength / skyReach = 上から差す光の色・強さ・届く深さ、vignette = 四隅を落とす強さ、focusPull = 切り替えの頭で余分にぼかす量。写真の出典は CREDITS.md と novel.credits.json。",
   "photos": {
     "station": { "texture": "bg_station", "label": "無人の駅" },
     "paddy":   { "texture": "bg_paddy",   "label": "田んぼの道" },
@@ -24,10 +24,15 @@
       "tint": [0.62, 0.8, 1.3], "lift": [0.0, 0.012, 0.045],
       "sky": "#30477a", "skyStrength": 0.22, "skyReach": 0.5, "vignette": 0.65, "focusPull": 0.8
     },
+    "lamplight": {
+      "blur": 0.0075, "taps": 28, "saturation": 0.55, "exposure": 0.66,
+      "tint": [1.08, 0.9, 0.86], "lift": [0.015, 0.012, 0.035],
+      "sky": "#ffb46a", "skyStrength": 0.16, "skyReach": 0.45, "vignette": 0.55, "focusPull": 0.8
+    },
     "morning": {
-      "blur": 0.0055, "taps": 24, "saturation": 0.82, "exposure": 1.06,
-      "tint": [1.0, 1.02, 1.05], "lift": [0.07, 0.07, 0.08],
-      "sky": "#ffffff", "skyStrength": 0.28, "skyReach": 0.5, "vignette": 0.2, "focusPull": 0.6
+      "blur": 0.0055, "taps": 24, "saturation": 0.86, "exposure": 1.3,
+      "tint": [0.95, 1.01, 1.08], "lift": [0.02, 0.025, 0.035],
+      "sky": "#f4f8ff", "skyStrength": 0.16, "skyReach": 0.4, "vignette": 0.22, "focusPull": 0.6
     }
   }
 }

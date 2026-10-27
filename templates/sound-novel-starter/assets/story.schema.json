@@ -17,27 +17,27 @@
     },
     "title": {
       "type": "string",
-      "description": "表紙の題"
+      "description": "タイトル画面の題"
     },
     "subtitle": {
       "type": "string",
-      "description": "表紙の題の下の 1 行"
+      "description": "タイトル画面の題の下の 1 行"
     },
     "hint": {
       "type": "string",
-      "description": "表紙の下の操作の案内"
+      "description": "タイトル画面の下の操作の案内"
     },
     "titlePhoto": {
       "type": "string",
-      "description": "表紙の写真（novel.backdrops.json の photos の鍵）"
+      "description": "タイトル画面の写真（novel.backdrops.json の photos の鍵）"
     },
     "titleGrade": {
       "type": "string",
-      "description": "表紙の時間帯（novel.backdrops.json の grades の鍵）"
+      "description": "タイトル画面の時間帯（novel.backdrops.json の grades の鍵）"
     },
     "titleAmbience": {
       "type": "string",
-      "description": "表紙の環境音（amb_<名前>。空なら鳴らさない）"
+      "description": "タイトル画面の環境音（amb_<名前>。空なら鳴らさない）"
     },
     "names": {
       "type": "object",
@@ -56,6 +56,9 @@
         "continue": {
           "type": "string"
         },
+        "loadGame": {
+          "type": "string"
+        },
         "settings": {
           "type": "string"
         },
@@ -63,6 +66,9 @@
           "type": "string"
         },
         "quit": {
+          "type": "string"
+        },
+        "rollback": {
           "type": "string"
         },
         "log": {
@@ -74,10 +80,19 @@
         "skip": {
           "type": "string"
         },
+        "quickSave": {
+          "type": "string"
+        },
+        "quickLoad": {
+          "type": "string"
+        },
         "save": {
           "type": "string"
         },
         "load": {
+          "type": "string"
+        },
+        "config": {
           "type": "string"
         },
         "hide": {
@@ -86,10 +101,79 @@
         "toTitle": {
           "type": "string"
         },
+        "saveTitle": {
+          "type": "string"
+        },
+        "loadTitle": {
+          "type": "string"
+        },
+        "logTitle": {
+          "type": "string"
+        },
+        "settingsTitle": {
+          "type": "string"
+        },
+        "back": {
+          "type": "string"
+        },
+        "tabAuto": {
+          "type": "string"
+        },
+        "tabQuick": {
+          "type": "string"
+        },
+        "emptySlot": {
+          "type": "string"
+        },
+        "newBadge": {
+          "type": "string"
+        },
+        "slotsHint": {
+          "type": "string"
+        },
+        "logHint": {
+          "type": "string"
+        },
+        "groupText": {
+          "type": "string"
+        },
+        "groupSound": {
+          "type": "string"
+        },
         "textSpeed": {
           "type": "string"
         },
         "autoWait": {
+          "type": "string"
+        },
+        "skipScope": {
+          "type": "string"
+        },
+        "skipReadOnly": {
+          "type": "string"
+        },
+        "skipEverything": {
+          "type": "string"
+        },
+        "afterChoice": {
+          "type": "string"
+        },
+        "stopSkip": {
+          "type": "string"
+        },
+        "keepSkip": {
+          "type": "string"
+        },
+        "display": {
+          "type": "string"
+        },
+        "windowMode": {
+          "type": "string"
+        },
+        "fullscreenMode": {
+          "type": "string"
+        },
+        "masterVolume": {
           "type": "string"
         },
         "ambienceVolume": {
@@ -98,28 +182,67 @@
         "seVolume": {
           "type": "string"
         },
-        "saveTitle": {
+        "windowAlpha": {
           "type": "string"
         },
-        "loadTitle": {
+        "reset": {
           "type": "string"
         },
-        "emptySlot": {
+        "preview": {
           "type": "string"
         },
-        "back": {
+        "yes": {
           "type": "string"
         },
-        "logTitle": {
+        "no": {
+          "type": "string"
+        },
+        "askOverwrite": {
+          "type": "string"
+        },
+        "askDelete": {
+          "type": "string"
+        },
+        "askLoad": {
+          "type": "string"
+        },
+        "askJump": {
+          "type": "string"
+        },
+        "askToTitle": {
+          "type": "string"
+        },
+        "askQuit": {
+          "type": "string"
+        },
+        "askReset": {
+          "type": "string"
+        },
+        "lostNote": {
           "type": "string"
         },
         "saved": {
           "type": "string"
         },
+        "quickSaved": {
+          "type": "string"
+        },
         "loaded": {
           "type": "string"
         },
+        "deleted": {
+          "type": "string"
+        },
+        "resetDone": {
+          "type": "string"
+        },
         "noSave": {
+          "type": "string"
+        },
+        "noQuickSave": {
+          "type": "string"
+        },
+        "noRollback": {
           "type": "string"
         }
       },

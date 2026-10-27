@@ -1,13 +1,15 @@
 // KeysDoc — novel.keys.json（キーの割り当て）の宣言ドキュメント層。
-// 「どのキーがどの操作か」だけを外に出す — 操作の意味（送る・ログを開く・オート）はコード（Controls / World）のまま。
+// 「どのキーがどの操作か」だけを外に出す — 操作の意味（送る・バックログを開く・オート）はコード（Controls / World）のまま。
 // fail-open — 欄が無い・全部知らない名前の時は、その操作だけ既定へ落とす（書き間違いで操作不能を作らない）。
 mod KeysDoc {
     use fge::{DocJson, InputMap, JsonCodec}
     use fge::GameEngine.Key
     use Util.Json.Json
 
-    /// 操作ごとのキーの列。confirm = 送る・選ぶ、back = 窓を閉じる・ボタンの窓を開く、prev / next = カーソル、
-    /// left / right = 設定の値を変える、log = ログ、auto = オート、skip = スキップ、hide = 窓を隠す、quit = 表紙で終える。
+    /// 操作ごとのキーの列。confirm = 送る・選ぶ、back = ウィンドウを閉じる・ボタンのウィンドウを開く、prev / next = カーソル、
+    /// left / right = 設定の値・セーブの枠を横へ、log = バックログ、auto = オート、skip = スキップ、hide = ウィンドウを隠す、
+    /// rollback = 1 行戻る、quickSave / quickLoad = クイックセーブ・クイックロード、tabPrev / tabNext = セーブのページを替える、
+    /// remove = セーブデータを削除する、quit = タイトルで終了を尋ねる。
     pub type alias Rec = {
         version = Int32,
         confirm = List[Key],
@@ -20,6 +22,12 @@ mod KeysDoc {
         auto = List[Key],
         skip = List[Key],
         hide = List[Key],
+        rollback = List[Key],
+        quickSave = List[Key],
+        quickLoad = List[Key],
+        tabPrev = List[Key],
+        tabNext = List[Key],
+        remove = List[Key],
         quit = List[Key]
     }
 
@@ -38,10 +46,16 @@ mod KeysDoc {
           next    = Key.Down :: Key.S :: Nil,
           left    = Key.Left :: Key.A :: Nil,
           right   = Key.Right :: Key.D :: Nil,
-          log     = Key.L :: Key.PageUp :: Nil,
+          log     = Key.L :: Nil,
           auto    = Key.O :: Nil,
           skip    = Key.K :: Key.Tab :: Nil,
           hide    = Key.H :: Nil,
+          rollback  = Key.PageUp :: Key.R :: Nil,
+          quickSave = Key.F5 :: Nil,
+          quickLoad = Key.F9 :: Nil,
+          tabPrev = Key.Q :: Nil,
+          tabNext = Key.E :: Nil,
+          remove  = Key.Delete :: Nil,
           quit    = Key.Escape :: Nil })
 
     pub def fromJson(text: String): Option[Doc] =
@@ -59,7 +73,10 @@ mod KeysDoc {
           prev = keys("prev", d#prev), next = keys("next", d#next),
           left = keys("left", d#left), right = keys("right", d#right),
           log = keys("log", d#log), auto = keys("auto", d#auto), skip = keys("skip", d#skip),
-          hide = keys("hide", d#hide), quit = keys("quit", d#quit) })
+          hide = keys("hide", d#hide), rollback = keys("rollback", d#rollback),
+          quickSave = keys("quickSave", d#quickSave), quickLoad = keys("quickLoad", d#quickLoad),
+          tabPrev = keys("tabPrev", d#tabPrev), tabNext = keys("tabNext", d#tabNext), remove = keys("remove", d#remove),
+          quit = keys("quit", d#quit) })
 
     /// 欄の文字列列 → キーの列。知らない名前はその 1 個だけ捨て（InputMap.keysOf）、列ごと空になる形だけ既定へ落とす。
     def keysOr(field: String, fallback: List[Key], root: Map[String, Json]): List[Key] =

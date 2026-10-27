@@ -1,12 +1,11 @@
 {
   "version": 1,
-  "note": "字と窓の色（写真の色は novel.backdrops.json の時間帯）。ink = 本文、inkSeen = 既読の行（スキップで飛ばせる行）、name = 話し手の名前、accent = 選んでいる物・オートとスキップの点灯、panel = ADV の窓・選択肢・窓の地、panelAlpha = ADV の窓の濃さ、veil = NVL の頁の下に敷く暗さ、firefly = 蛍の光。",
+  "note": "字とウィンドウの色（写真の色は novel.backdrops.json の時間帯）。ink = 本文、inkSeen = 既読の行（スキップで飛ばせる行）、name = 話し手の名前、accent = 選んでいる物・オートとスキップの点灯、panel = ADV のウィンドウ・選択肢・画面の地（濃さは設定の「ウィンドウの濃さ」）、veil = NVL の頁の下の幕の濃さをウィンドウの濃さに掛ける割合、firefly = 蛍の光。",
   "ink": "#f3eee4",
   "inkSeen": "#c7d3e8",
   "name": "#e9c873",
   "accent": "#e9c873",
   "panel": "#0a0e16",
-  "panelAlpha": 0.74,
-  "veil": 0.6,
+  "veil": 0.8,
   "firefly": "#d9ff8c"
 }
