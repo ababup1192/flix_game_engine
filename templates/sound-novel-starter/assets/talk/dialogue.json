@@ -252,16 +252,22 @@
                   "line": 49,
                   "speaker": "chinatsu",
                   "text": "正解。忘れられてたら、田んぼに突き落とすとこだった。"
+                },
+                {
+                  "kind": "line",
+                  "line": 50,
+                  "speaker": "me",
+                  "text": "物騒だなあ。相変わらず。"
                 }
               ]
             },
             {
-              "line": 50,
+              "line": 51,
               "text": "「……ちいちゃん」",
               "body": [
                 {
                   "kind": "set",
-                  "line": 51,
+                  "line": 52,
                   "name": "$closeness",
                   "expr": {
                     "kind": "+",
@@ -279,15 +285,21 @@
                 },
                 {
                   "kind": "line",
-                  "line": 52,
+                  "line": 53,
                   "speaker": "chinatsu",
                   "text": "その呼び方、まだ覚えてたんだ。"
                 },
                 {
                   "kind": "line",
-                  "line": 53,
+                  "line": 54,
                   "speaker": "chinatsu",
                   "text": "……ずるいなあ。怒る準備してたのに。"
+                },
+                {
+                  "kind": "line",
+                  "line": 55,
+                  "speaker": "me",
+                  "text": "怒られる覚えなら、あるけどね。"
                 }
               ]
             }
@@ -295,13 +307,25 @@
         },
         {
           "kind": "line",
-          "line": 54,
+          "line": 56,
           "speaker": "chinatsu",
           "text": "おばあちゃんの家でしょ。鍵、開けといたよ。風、通さないと畳が傷むから。"
         },
         {
+          "kind": "line",
+          "line": 57,
+          "speaker": "me",
+          "text": "……ありがとう。ずっと、任せきりにして。"
+        },
+        {
+          "kind": "line",
+          "line": 58,
+          "speaker": "chinatsu",
+          "text": "いいって。おばあちゃんには、私のほうが世話になったんだし。"
+        },
+        {
           "kind": "jump",
-          "line": 55,
+          "line": 59,
           "node": "Lane"
         }
       ]
@@ -309,12 +333,12 @@
     {
       "title": "Lane",
       "file": "assets/talk/natsukusa.yarn",
-      "line": 58,
+      "line": 62,
       "headers": [],
       "body": [
         {
           "kind": "command",
-          "line": 60,
+          "line": 64,
           "name": "bg",
           "args": [
             "lane",
@@ -324,12 +348,12 @@
         },
         {
           "kind": "line",
-          "line": 61,
+          "line": 65,
           "text": "坂の上の家までは、千夏が先に立って歩いた。"
         },
         {
           "kind": "line",
-          "line": 62,
+          "line": 66,
           "text": "石垣の隙間から、蕺草の白い花がのぞいている。",
           "parts": [
             {
@@ -352,28 +376,34 @@
         },
         {
           "kind": "line",
-          "line": 63,
+          "line": 67,
           "text": "どこかの家で夕飯の支度をしているのか、醤油の焦げる匂いが坂を下りてきた。"
         },
         {
           "kind": "line",
-          "line": 64,
+          "line": 68,
           "text": "子どもの頃は、この匂いがすると、どこにいても走って帰ったものだ。"
         },
         {
           "kind": "line",
-          "line": 65,
+          "line": 69,
           "speaker": "chinatsu",
           "text": "東京の人は、坂でもう息が上がるんだ。"
         },
         {
           "kind": "line",
-          "line": 66,
-          "text": "言い返そうとした背中を、思い切り叩かれた。"
+          "line": 70,
+          "speaker": "me",
+          "text": "坂のせいじゃないよ。荷物が重いんだって。"
+        },
+        {
+          "kind": "line",
+          "line": 71,
+          "text": "言い返した背中を、思い切り叩かれた。"
         },
         {
           "kind": "command",
-          "line": 67,
+          "line": 72,
           "name": "se",
           "args": [
             "slap"
@@ -381,23 +411,35 @@
         },
         {
           "kind": "command",
-          "line": 68,
+          "line": 73,
           "name": "shake"
         },
         {
           "kind": "line",
-          "line": 69,
+          "line": 74,
+          "speaker": "me",
+          "text": "っ……痛いって！"
+        },
+        {
+          "kind": "line",
+          "line": 75,
           "speaker": "chinatsu",
           "text": "冗談。……おかえり。"
         },
         {
           "kind": "line",
-          "line": 70,
+          "line": 76,
           "text": "夕暮れの坂の途中で、私はようやく、ただいまを言いそびれていたことに気がついた。"
         },
         {
+          "kind": "line",
+          "line": 77,
+          "speaker": "me",
+          "text": "……ただいま。"
+        },
+        {
           "kind": "jump",
-          "line": 71,
+          "line": 78,
           "node": "Engawa"
         }
       ]
@@ -405,12 +447,12 @@
     {
       "title": "Engawa",
       "file": "assets/talk/natsukusa.yarn",
-      "line": 74,
+      "line": 81,
       "headers": [],
       "body": [
         {
           "kind": "command",
-          "line": 76,
+          "line": 83,
           "name": "ambience",
           "args": [
             "night"
@@ -418,7 +460,7 @@
         },
         {
           "kind": "command",
-          "line": 77,
+          "line": 84,
           "name": "bg",
           "args": [
             "engawa",
@@ -428,7 +470,7 @@
         },
         {
           "kind": "command",
-          "line": 78,
+          "line": 85,
           "name": "wait",
           "args": [
             "1"
@@ -436,27 +478,27 @@
         },
         {
           "kind": "line",
-          "line": 79,
+          "line": 86,
           "text": "縁側に腰を下ろすと、板は昼の熱をまだ少しだけ抱いていた。"
         },
         {
           "kind": "line",
-          "line": 80,
+          "line": 87,
           "text": "家の中は、思っていたより片付いていた。千夏が、ときどき来てくれていたのだろう。"
         },
         {
           "kind": "line",
-          "line": 81,
+          "line": 88,
           "text": "仏間の祖母の写真は、私の記憶よりも少しだけ若い顔で笑っている。"
         },
         {
           "kind": "line",
-          "line": 82,
+          "line": 89,
           "text": "軒の風鈴が、思い出したように一度だけ鳴る。"
         },
         {
           "kind": "command",
-          "line": 83,
+          "line": 90,
           "name": "se",
           "args": [
             "furin"
@@ -464,37 +506,49 @@
         },
         {
           "kind": "line",
-          "line": 84,
+          "line": 91,
           "speaker": "chinatsu",
           "text": "おばあちゃん、毎年この風鈴を出すの、八月の頭だって決めてたよね。"
         },
         {
           "kind": "line",
-          "line": 85,
+          "line": 92,
+          "speaker": "me",
+          "text": "しまうのは、お盆が明けてから。……そうだった。"
+        },
+        {
+          "kind": "line",
+          "line": 93,
+          "speaker": "chinatsu",
+          "text": "で、しまうのを手伝うのは、いつも私。"
+        },
+        {
+          "kind": "line",
+          "line": 94,
           "text": "祖母がいなくなっても、風鈴だけは律儀に夏を数えていたらしい。"
         },
         {
           "kind": "line",
-          "line": 86,
+          "line": 95,
           "speaker": "chinatsu",
           "text": "……で。この家、どうするの。"
         },
         {
           "kind": "line",
-          "line": 87,
+          "line": 96,
           "text": "麦茶の氷が、からんと崩れた。"
         },
         {
           "kind": "options",
-          "line": 88,
+          "line": 97,
           "options": [
             {
-              "line": 88,
+              "line": 97,
               "text": "「売ろうと思ってる」",
               "body": [
                 {
                   "kind": "set",
-                  "line": 89,
+                  "line": 98,
                   "name": "$house",
                   "expr": {
                     "kind": "value",
@@ -503,24 +557,36 @@
                 },
                 {
                   "kind": "line",
-                  "line": 90,
+                  "line": 99,
                   "speaker": "chinatsu",
                   "text": "そっか。……そうだよね。誰も住まないと、家って早く傷むから。"
                 },
                 {
                   "kind": "line",
-                  "line": 91,
+                  "line": 100,
+                  "speaker": "me",
+                  "text": "こっちに戻っても、仕事が無いしね。……ごめん。"
+                },
+                {
+                  "kind": "line",
+                  "line": 101,
+                  "speaker": "chinatsu",
+                  "text": "謝ることないよ。あんたの家なんだから。"
+                },
+                {
+                  "kind": "line",
+                  "line": 102,
                   "text": "千夏はそれきり、庭の暗がりのほうを見ていた。"
                 }
               ]
             },
             {
-              "line": 92,
+              "line": 103,
               "text": "「まだ、決めてない」",
               "body": [
                 {
                   "kind": "set",
-                  "line": 93,
+                  "line": 104,
                   "name": "$house",
                   "expr": {
                     "kind": "value",
@@ -529,7 +595,7 @@
                 },
                 {
                   "kind": "set",
-                  "line": 94,
+                  "line": 105,
                   "name": "$closeness",
                   "expr": {
                     "kind": "+",
@@ -547,15 +613,27 @@
                 },
                 {
                   "kind": "line",
-                  "line": 95,
+                  "line": 106,
                   "speaker": "chinatsu",
                   "text": "なら、決めるまでは私が風を通しといてあげる。"
                 },
                 {
                   "kind": "line",
-                  "line": 96,
+                  "line": 107,
                   "speaker": "chinatsu",
                   "text": "高いよ。かき氷一年分。"
+                },
+                {
+                  "kind": "line",
+                  "line": 108,
+                  "speaker": "me",
+                  "text": "安いもんだよ。"
+                },
+                {
+                  "kind": "line",
+                  "line": 109,
+                  "speaker": "chinatsu",
+                  "text": "言ったね。忘れないから。"
                 }
               ]
             }
@@ -563,13 +641,25 @@
         },
         {
           "kind": "line",
-          "line": 97,
+          "line": 110,
           "speaker": "chinatsu",
           "text": "ねえ。川、行かない？ 今夜あたり、出てると思う。"
         },
         {
+          "kind": "line",
+          "line": 111,
+          "speaker": "me",
+          "text": "出てるって、何が？"
+        },
+        {
+          "kind": "line",
+          "line": 112,
+          "speaker": "chinatsu",
+          "text": "行けばわかるって。"
+        },
+        {
           "kind": "jump",
-          "line": 98,
+          "line": 113,
           "node": "River"
         }
       ]
@@ -577,12 +667,12 @@
     {
       "title": "River",
       "file": "assets/talk/natsukusa.yarn",
-      "line": 101,
+      "line": 116,
       "headers": [],
       "body": [
         {
           "kind": "command",
-          "line": 103,
+          "line": 118,
           "name": "ambience",
           "args": [
             "river"
@@ -590,7 +680,7 @@
         },
         {
           "kind": "command",
-          "line": 104,
+          "line": 119,
           "name": "bg",
           "args": [
             "river",
@@ -600,7 +690,7 @@
         },
         {
           "kind": "command",
-          "line": 105,
+          "line": 120,
           "name": "wait",
           "args": [
             "1"
@@ -608,7 +698,7 @@
         },
         {
           "kind": "command",
-          "line": 106,
+          "line": 121,
           "name": "fx",
           "args": [
             "fireflies"
@@ -616,17 +706,17 @@
         },
         {
           "kind": "line",
-          "line": 107,
+          "line": 122,
           "text": "川べりの草むらが、ふっと息をするように光った。"
         },
         {
           "kind": "line",
-          "line": 108,
+          "line": 123,
           "text": "ひとつ、またひとつ。光は水面の上で揺れて、私たちの足もとまで漂ってくる。"
         },
         {
           "kind": "line",
-          "line": 109,
+          "line": 124,
           "text": "せせらぎの音にまぎれて、遠くで河鹿が鳴いていた。",
           "parts": [
             {
@@ -649,51 +739,63 @@
         },
         {
           "kind": "line",
-          "line": 110,
+          "line": 125,
           "speaker": "chinatsu",
           "text": "蛍はね、帰ってきた人の灯りなんだって。おばあちゃんの受け売り。"
         },
         {
           "kind": "line",
-          "line": 111,
+          "line": 126,
+          "speaker": "me",
+          "text": "おばあちゃん、そういう話ばっかりしてたよね。"
+        },
+        {
+          "kind": "line",
+          "line": 127,
           "text": "鞄の中で、真鍮の鍵がまた小さく鳴った。"
         },
         {
           "kind": "line",
-          "line": 112,
+          "line": 128,
           "speaker": "chinatsu",
           "text": "その鍵。……おばあちゃんの裁縫箱のでしょ。"
         },
         {
           "kind": "line",
-          "line": 113,
+          "line": 129,
+          "speaker": "me",
+          "text": "なんで、知ってるの。"
+        },
+        {
+          "kind": "line",
+          "line": 130,
           "speaker": "chinatsu",
           "text": "あんたが来たら渡してって。中身は、子どもの頃のあんたの手紙だよ。全部、取ってあった。"
         },
         {
           "kind": "options",
-          "line": 114,
+          "line": 131,
           "options": [
             {
-              "line": 114,
+              "line": 131,
               "text": "「ありがとう」と言う",
               "body": [
                 {
                   "kind": "line",
-                  "line": 115,
+                  "line": 132,
                   "speaker": "me",
                   "text": "……ありがとう。教えてくれて。"
                 },
                 {
                   "kind": "line",
-                  "line": 116,
+                  "line": 133,
                   "speaker": "chinatsu",
                   "text": "私に言っても、しょうがないでしょ。"
                 }
               ]
             },
             {
-              "line": 117,
+              "line": 134,
               "text": "何も言わずに、光を見ている",
               "condition": {
                 "kind": ">=",
@@ -711,7 +813,7 @@
               "body": [
                 {
                   "kind": "set",
-                  "line": 118,
+                  "line": 135,
                   "name": "$stayed",
                   "expr": {
                     "kind": "value",
@@ -720,12 +822,12 @@
                 },
                 {
                   "kind": "line",
-                  "line": 119,
+                  "line": 136,
                   "text": "言葉にすると、何かがこぼれてしまう気がした。"
                 },
                 {
                   "kind": "line",
-                  "line": 120,
+                  "line": 137,
                   "text": "千夏も黙ったまま、隣で同じ光を見ていた。"
                 }
               ]
@@ -734,7 +836,7 @@
         },
         {
           "kind": "command",
-          "line": 121,
+          "line": 138,
           "name": "fx",
           "args": [
             "off"
@@ -742,7 +844,7 @@
         },
         {
           "kind": "jump",
-          "line": 122,
+          "line": 139,
           "node": "Morning"
         }
       ]
@@ -750,12 +852,12 @@
     {
       "title": "Morning",
       "file": "assets/talk/natsukusa.yarn",
-      "line": 125,
+      "line": 142,
       "headers": [],
       "body": [
         {
           "kind": "command",
-          "line": 127,
+          "line": 144,
           "name": "ambience",
           "args": [
             "morning"
@@ -763,7 +865,7 @@
         },
         {
           "kind": "command",
-          "line": 128,
+          "line": 145,
           "name": "bg",
           "args": [
             "station",
@@ -773,12 +875,12 @@
         },
         {
           "kind": "command",
-          "line": 129,
+          "line": 146,
           "name": "nvl"
         },
         {
           "kind": "command",
-          "line": 130,
+          "line": 147,
           "name": "wait",
           "args": [
             "1.5"
@@ -786,20 +888,20 @@
         },
         {
           "kind": "line",
-          "line": 131,
+          "line": 148,
           "text": "朝の駅は、夕方とは別の場所のように白かった。"
         },
         {
           "kind": "line",
-          "line": 132,
+          "line": 149,
           "text": "夜露に濡れた夏草が、線路の脇でいっせいに陽を弾いている。"
         },
         {
           "kind": "if",
-          "line": 133,
+          "line": 150,
           "clauses": [
             {
-              "line": 133,
+              "line": 150,
               "condition": {
                 "kind": "variable",
                 "name": "$stayed"
@@ -807,23 +909,23 @@
               "body": [
                 {
                   "kind": "line",
-                  "line": 134,
+                  "line": 151,
                   "text": "私は切符を買わなかった。"
                 },
                 {
                   "kind": "line",
-                  "line": 135,
+                  "line": 152,
                   "text": "裁縫箱の手紙は、まだ半分しか読んでいない。夏も、まだ半分残っている。"
                 },
                 {
                   "kind": "line",
-                  "line": 136,
+                  "line": 153,
                   "text": "改札の無い駅の前で、麦わら帽子が手を振っていた。"
                 }
               ]
             },
             {
-              "line": 137,
+              "line": 154,
               "condition": {
                 "kind": "==",
                 "args": [
@@ -840,37 +942,37 @@
               "body": [
                 {
                   "kind": "line",
-                  "line": 138,
+                  "line": 155,
                   "text": "上りの電車が、遠くで小さく鳴いた。"
                 },
                 {
                   "kind": "line",
-                  "line": 139,
+                  "line": 156,
                   "text": "鞄の中には、真鍮の鍵と、読みかけの手紙の束。"
                 },
                 {
                   "kind": "line",
-                  "line": 140,
+                  "line": 157,
                   "text": "私は、振り返らないことにした。振り返れば、きっと降りてしまうから。"
                 }
               ]
             },
             {
-              "line": 141,
+              "line": 158,
               "body": [
                 {
                   "kind": "line",
-                  "line": 142,
+                  "line": 159,
                   "text": "上りの電車が、遠くで小さく鳴いた。"
                 },
                 {
                   "kind": "line",
-                  "line": 143,
+                  "line": 160,
                   "text": "「また来る」とだけ書いた手紙を、千夏の家の郵便受けに入れてきた。"
                 },
                 {
                   "kind": "line",
-                  "line": 144,
+                  "line": 161,
                   "text": "次に降りる時は、ただいまを言いそびれないようにしようと思う。"
                 }
               ]
@@ -879,7 +981,7 @@
         },
         {
           "kind": "command",
-          "line": 146,
+          "line": 163,
           "name": "wait",
           "args": [
             "1"
@@ -887,12 +989,12 @@
         },
         {
           "kind": "command",
-          "line": 147,
+          "line": 164,
           "name": "clear"
         },
         {
           "kind": "line",
-          "line": 148,
+          "line": 165,
           "text": "—— 夏草の駅 ——"
         }
       ]
