@@ -44,4 +44,10 @@ mod TestShaderCache {
                 { entries = ("a", 7, 10i64) :: ("b", 7, 20i64) :: ("c", 9, 30i64) :: Nil,
                   pinned = Set.empty(), cap = 1 }))
 
+
+    /// 引退した 1・2・3 のうち、今のコマで使った 1 と、別の鍵が指す 2 は残し、3 だけ消す。
+    @Test
+    def testRetiredDeletesOnlyUnusedAndUnkeyed(): Unit \ Assert =
+        Assert.assertEq(expected = (Set#{3}, Set#{1, 2}),
+            RenderShaderCache.retiredToDelete(Set#{1, 2, 3}, Set#{1}, Set#{2}))
 }

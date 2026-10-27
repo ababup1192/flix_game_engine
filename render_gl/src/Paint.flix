@@ -44,8 +44,8 @@ mod RenderPaint {
         programUsedAtRef = Ref[Map[Int32, Int64], Static],
         // このコマに溜まったシェーダー面（queueSurface が積み、submitFrame が取り出す。新しい順）。
         pendingShaderHolder = Array[List[ShaderEffect.ShaderRenderCmd], Static],
-        // program → (uRectPos, uRectSize, uTime, texLocs)。
-        shaderUniformCache = Ref[Map[Int32, (Int32, Int32, Int32, List[(Int32, Int32)])], Static],
+        // program → (uRectPos, uRectSize, uTime, uAlpha, texLocs)。
+        shaderUniformCache = Ref[Map[Int32, (Int32, Int32, Int32, Int32, List[(Int32, Int32)])], Static],
         // レンダーターゲットの名前 → GL 実体。
         targetsRef = Ref[Map[String, RenderTargetGl.Entry], Static],
         // 今開いているターゲット (幅, 高さ, clear 指定)。None = 画面。
@@ -57,7 +57,13 @@ mod RenderPaint {
         // 静的多角形バッファのキャッシュ（RenderStatic.resolve）。
         staticCacheCell = Array[Option[RenderStatic.Entry], Static],
         // 最後に画面へ塗ったコマの命令（リサイズの描き直し・LRU の pin・注釈のスクショ）。
-        lastFrameHolder = Array[Frame, Static]
+        lastFrameHolder = Array[Frame, Static],
+        // 1 コマぶんの診断（setDiagnosticsEnabled の間だけ Some。consumeDiagnostics が取り出す）。
+        diagnosticsRef = Ref[Option[FrameDiagnostics.Diagnostics], Static],
+        // 起動から作ったシェーダーと消したシェーダーの数（[作った, 消した]。診断の liveShaders の元）。
+        shaderLifeHolder = Array[Int32, Static],
+        // 同じ名前で作り直して鍵から外れた program（使われなくなったら evictShaderPrograms が消す）。
+        retiredProgramsRef = Ref[Set[Int32], Static]
     }
 
     /// 空のコマ。
@@ -126,7 +132,7 @@ mod RenderPaint {
         let programUsedAtRef: Ref[Map[Int32, Int64], Static] = Ref.fresh(Static, Map.empty());
         let pendingShaderHolder = Array#{(Nil: List[ShaderEffect.ShaderRenderCmd])} @ Static;
         // texLocs = tex 場の (uTexN, uTexFlipN) の location 列（正典順）。
-        let shaderUniformCache: Ref[Map[Int32, (Int32, Int32, Int32, List[(Int32, Int32)])], Static] = Ref.fresh(Static, Map.empty());
+        let shaderUniformCache: Ref[Map[Int32, (Int32, Int32, Int32, Int32, List[(Int32, Int32)])], Static] = Ref.fresh(Static, Map.empty());
         // tex 場の標本規約（NEAREST + CLAMP）を bind 中の unit へ強制する sampler（起動時に 1 個）。
         let surfaceSampler = RenderSprite.createSurfaceSampler();
         // 見つからないと知らせた tex 場のテクスチャ名（「一度だけ鳴らす」控え）。
@@ -163,9 +169,9 @@ mod RenderPaint {
             // (-1,-1,-1,Nil) で握り潰すので、エラーも例外も出ず絵だけ違う形で壊れる。
             Ref.put(Map.insert(program, Array.get(0, frameGenHolder), Ref.get(programUsedAtRef)),
                     programUsedAtRef);
-            let (uRectPos, uRectSize, uTime, texLocs) =
+            let (uRectPos, uRectSize, uTime, uAlpha, texLocs) =
                 Map.get(program, Ref.get(shaderUniformCache))
-                |> Option.getWithDefault((-1, -1, -1, (Nil: List[(Int32, Int32)])));
+                |> Option.getWithDefault((-1, -1, -1, -1, (Nil: List[(Int32, Int32)])));
             // 名前 → GL テクスチャ id。無い名前は 0（黒）を bind して一度だけ知らせる —
             // pass をこのフレームで宣言せず名前だけ読むと、ずっと 0 bind（黒）のままになる。
             // registry / targets はこの 1 枚の描画中は変わらないので、名前ごとに読み直さない。
@@ -195,13 +201,13 @@ mod RenderPaint {
             // mask が空なら矩形そのまま、非空なら多角形の内側だけにステンシルで抜く
             // （多角形描画は poly バッチ経路を借りる）。
             if (List.isEmpty(cmd#mask))
-                RenderSprite.drawShaderSurface(program, vao, uRectPos, uRectSize, uTime,
+                RenderSprite.drawShaderSurface(program, vao, { rectPos = uRectPos, rectSize = uRectSize, time = uTime, alpha = uAlpha },
                                                texBinds, surfaceSampler,
-                                               cmd#rect, cmd#time, cmd#blend)
+                                               cmd#rect, cmd#time, cmd#alpha, cmd#blend)
             else
-                RenderSprite.drawShaderSurfaceMasked(program, vao, uRectPos, uRectSize, uTime,
+                RenderSprite.drawShaderSurfaceMasked(program, vao, { rectPos = uRectPos, rectSize = uRectSize, time = uTime, alpha = uAlpha },
                                                texBinds, surfaceSampler,
-                                               cmd#rect, cmd#time, cmd#blend,
+                                               cmd#rect, cmd#time, cmd#alpha, cmd#blend,
                                                polyBatchShader, polyBatchVao, polyBatchVbo,
                                                polyBatchUniforms, cmd#mask)
         };
@@ -232,7 +238,9 @@ mod RenderPaint {
           pendingShaderHolder = pendingShaderHolder, shaderUniformCache = shaderUniformCache,
           targetsRef = targetsRef, activeTargetHolder = activeTargetHolder,
           registryRef = registryRef, textureKeyRef = textureKeyRef,
-          staticCacheCell = staticCacheCell, lastFrameHolder = lastFrameHolder }
+          staticCacheCell = staticCacheCell, lastFrameHolder = lastFrameHolder,
+          diagnosticsRef = Ref.fresh(Static, None), shaderLifeHolder = Array#{0, 0} @ Static,
+          retiredProgramsRef = Ref.fresh(Static, Set.empty()) }
 
     // ── 1 コマ塗る ──
 
@@ -428,6 +436,7 @@ mod RenderPaint {
         let textureKeyRef = paint#textureKeyRef;
         if (Map.get(name, Ref.get(textureKeyRef)) == Some(key)) ()
         else {
+            noteDiagnostics(paint, d -> { textureUploads = name :: d#textureUploads | d });
             let prev = Map.get(name, Ref.get(registryRef));
             let sameSize = Option.exists(info ->
                 info#width == Int32.toFloat64(width)
@@ -497,6 +506,8 @@ mod RenderPaint {
         let entry = match hit {
             case Some(found) => found
             case None =>
+                Array.put(Array.get(0, paint#shaderLifeHolder) + 1, 0, paint#shaderLifeHolder);
+                noteDiagnostics(paint, d -> { shaderBuilds = { name = spec#name, reason = buildReason(cache0, spec) } :: d#shaderBuilds | d });
                 let source = ShaderGen.compile(spec);
                 let prog = match RenderShader.tryCreateProgram(
                         ShaderGen.vertexSource(), source, "surface:${spec#name}") {
@@ -506,6 +517,7 @@ mod RenderPaint {
                 let up = GL20.glGetUniformLocation(prog, "uRectPos");
                 let us = GL20.glGetUniformLocation(prog, "uRectSize");
                 let ut = GL20.glGetUniformLocation(prog, "uTime");
+                let ua = GL20.glGetUniformLocation(prog, "uAlpha");
                 // tex 場の sampler / flip の location（正典順）。sampler 番号 = unit 番号を
                 // リンク直後に 1 回だけ差す（毎フレーム差し直さない）。fallback に落ちた
                 // program では全て -1 になり、glUniform が無視するのでそのまま通す。
@@ -525,8 +537,14 @@ mod RenderPaint {
                 };
                 let fresh: RenderShaderCache.ProgramEntry =
                     { program = prog, uRectPos = up, uRectSize = us, uTime = ut };
+                // 同じ名前の古い program は鍵から外れる。すぐ消さず引退させる（同じコマの前の面がまだ描く）。
+                Map.get(spec#name, cache0) |> Option.forEach(se -> {
+                    let old = snd(se)#program;
+                    if (old == prog or old == paint#fallbackShader) ()
+                    else Ref.put(Set.insert(old, Ref.get(paint#retiredProgramsRef)), paint#retiredProgramsRef)
+                });
                 Ref.put(Map.insert(spec#name, (spec, fresh), cache0), shaderProgramCache);
-                Ref.put(Map.insert(prog, (up, us, ut, texLocs), Ref.get(paint#shaderUniformCache)), paint#shaderUniformCache);
+                Ref.put(Map.insert(prog, (up, us, ut, ua, texLocs), Ref.get(paint#shaderUniformCache)), paint#shaderUniformCache);
                 fresh
         };
         Ref.put(Map.insert(entry#program, gen, Ref.get(paint#programUsedAtRef)), paint#programUsedAtRef);
@@ -535,6 +553,68 @@ mod RenderPaint {
         if (Option.isEmpty(hit)) evictShaderPrograms(paint) else ();
         GpuHandle.wrapShaderProgram(entry#program)
 
+    /// 作り直した理由: 同じ名前の Spec が前にあれば、JSON の違う所を値ひとつ分の抜き書きで。
+    /// 診断を集めている時だけ呼ばれる（noteDiagnostics の中）。
+    def buildReason(cache: Map[String, (ShaderDoc.Spec, RenderShaderCache.ProgramEntry)], spec: ShaderDoc.Spec): FrameDiagnostics.BuildReason =
+        match Map.get(spec#name, cache) {
+            case None              => FrameDiagnostics.BuildReason.First
+            case Some((stored, _)) => FrameDiagnostics.BuildReason.Changed(
+                changedPart(ToString.toString(ShaderJson.toJson(stored)), ToString.toString(ShaderJson.toJson(spec))))
+        }
+
+    /// 2 つの文字列の違う所を、前後の切れ目（数字・語）まで広げて「…前の文脈 古い → 新しい」にする。
+    def changedPart(old: String, fresh: String): String =
+        let (a, b) = (String.toList(old), String.toList(fresh));
+        let p = backToBoundary(a, commonPrefix(a, b, 0));
+        let tailA = List.reverse(List.drop(p, a));
+        let tailB = List.reverse(List.drop(p, b));
+        let s = commonPrefix(tailA, tailB, 0);
+        let s1 = backToBoundary(tailA, s) |> Int32.min(backToBoundary(tailB, s));
+        let middle = (text: String) -> text |> String.dropLeft(p) |> String.dropRight(s1) |> clipText(60);
+        "…${old |> String.takeLeft(p) |> String.takeRight(40)} ${middle(old)} → ${middle(fresh)}"
+
+    def commonPrefix(a: List[Char], b: List[Char], n: Int32): Int32 = match (a, b) {
+        case (x :: xs, y :: ys) if x == y => commonPrefix(xs, ys, n + 1)
+        case _                            => n
+    }
+
+    /// 長さ n の共通部分を、値の途中で切らない所まで縮める（数字・文字・小数点・符号の並びの頭へ戻る）。
+    def backToBoundary(chars: List[Char], n: Int32): Int32 =
+        let isValueChar = (c: Char) -> Char.isLetterOrDigit(c) or c == '.' or c == '-' or c == '_';
+        let kept = List.take(n, chars) |> List.reverse;
+        let inValue = List.takeWhile(isValueChar, kept) |> List.length;
+        n - inValue
+
+    def clipText(limit: Int32, text: String): String =
+        if (String.length(text) <= limit) text else String.takeLeft(limit, text) + "…"
+
+    // ── 診断 ──
+
+    /// 診断を集めている時だけ、このコマの診断を f で書き換える（集めていなければ f を呼ばない）。
+    pub def noteDiagnostics(paint: Paint, f: FrameDiagnostics.Diagnostics -> FrameDiagnostics.Diagnostics): Unit \ IO =
+        match Ref.get(paint#diagnosticsRef) {
+            case Some(d) => Ref.put(Some(f(d)), paint#diagnosticsRef)
+            case None    => ()
+        }
+
+    pub def setDiagnosticsEnabled(paint: Paint, on: Bool): Unit \ IO =
+        Ref.put(if (on) Some(FrameDiagnostics.empty()) else None, paint#diagnosticsRef)
+
+    /// 溜まった診断を取り出して空に戻す。liveShaders は起動からの作った数 − 消した数。
+    pub def consumeDiagnostics(paint: Paint): FrameDiagnostics.Diagnostics \ IO =
+        match Ref.get(paint#diagnosticsRef) {
+            case None    => FrameDiagnostics.empty()
+            case Some(d) =>
+                Ref.put(Some(FrameDiagnostics.empty()), paint#diagnosticsRef);
+                let live = Array.get(0, paint#shaderLifeHolder) - Array.get(1, paint#shaderLifeHolder);
+                { shaderBuilds = List.reverse(d#shaderBuilds), textureUploads = List.reverse(d#textureUploads), liveShaders = live | d }
+        }
+
+    /// renderCommands 1 回ぶんを測って記録する。submit は命令を出し終えるまで、swap は画面の入れ替えまで。
+    pub def noteFrame(paint: Paint, submitNs: Int64, swapNs: Int64, drawItems: Unit -> Int32): Unit \ IO =
+        noteDiagnostics(paint, d -> { submitNs = d#submitNs + submitNs, swapNs = d#swapNs + swapNs,
+                                      drawItems = d#drawItems + drawItems() | d })
+
     /// ShaderEffect.Shader.drawSurface の中身。実描画はこのフレームの clear 直後（renderFrameMixed 内）で行う。ここでは溜めるだけ。
     pub def queueSurface(paint: Paint, cmd: ShaderEffect.ShaderRenderCmd): Unit \ IO =
         Array.put(cmd :: Array.get(0, paint#pendingShaderHolder), 0, paint#pendingShaderHolder)
@@ -542,7 +622,6 @@ mod RenderPaint {
     /// 使わなくなったシェーダープログラムを LRU で追い出す。
     def evictShaderPrograms(paint: Paint): Unit \ IO =
         let shaderProgramCache = paint#shaderProgramCache;
-        let shaderUniformCache = paint#shaderUniformCache;
         let programUsedAtRef = paint#programUsedAtRef;
         let gen = Array.get(0, paint#frameGenHolder);
         let usedAt = Ref.get(programUsedAtRef);
@@ -592,9 +671,7 @@ mod RenderPaint {
                         // uniform の差さらない絵になる。
                         if (left > 0) (counts1, n)
                         else {
-                            RenderShader.deleteProgram(prog);
-                            Ref.put(Map.remove(prog, Ref.get(shaderUniformCache)), shaderUniformCache);
-                            Ref.put(Map.remove(prog, Ref.get(programUsedAtRef)), programUsedAtRef);
+                            deleteProgram(paint, prog);
                             (counts1, n + 1)
                         }
                 }
@@ -604,7 +681,31 @@ mod RenderPaint {
             if (deleted > 0) GL20.glUseProgram(0) else ();
             Log.warn("shader: プログラムキャッシュから ${List.length(victims)} 個追い出した"
                 + "（GPU から捨てた program ${deleted} 個・残り ${Map.size(Ref.get(shaderProgramCache))} 個 / 上限 ${cap}）")
+        };
+        retireSweep(paint, pinned)
+
+    /// 引退した program のうち、今と前のコマで使っておらず、ほかの鍵も指していない物を GPU から消す。
+    def retireSweep(paint: Paint, pinned: Set[Int32]): Unit \ IO =
+        let retired = Ref.get(paint#retiredProgramsRef);
+        if (Set.isEmpty(retired)) ()
+        else {
+            let keyed = Map.valuesOf(Ref.get(paint#shaderProgramCache)) |> List.map(se -> snd(se)#program) |> List.toSet;
+            let (drop, keep) = RenderShaderCache.retiredToDelete(retired, pinned, keyed);
+            Ref.put(keep, paint#retiredProgramsRef);
+            if (Set.isEmpty(drop)) ()
+            else {
+                Set.forEach(deleteProgram(paint), drop);
+                GL20.glUseProgram(0)
+            }
         }
+
+    /// program を GPU から消し、uniform と最後に使った世代の控えからも外して数える。
+    def deleteProgram(paint: Paint, prog: Int32): Unit \ IO =
+        RenderShader.deleteProgram(prog);
+        Array.put(Array.get(1, paint#shaderLifeHolder) + 1, 1, paint#shaderLifeHolder);
+        noteDiagnostics(paint, d -> { shaderDeletes = d#shaderDeletes + 1 | d });
+        Ref.put(Map.remove(prog, Ref.get(paint#shaderUniformCache)), paint#shaderUniformCache);
+        Ref.put(Map.remove(prog, Ref.get(paint#programUsedAtRef)), paint#programUsedAtRef)
 
     // ── レンダーターゲット ──
 

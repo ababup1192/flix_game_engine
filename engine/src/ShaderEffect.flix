@@ -26,7 +26,9 @@ pub mod ShaderEffect {
         mask = List[List[Vec2.Vec2]],
         time = Float64,
         zIndex = Int32,
-        blend = DrawCmd.BlendMode
+        blend = DrawCmd.BlendMode,
+        // 面全体の濃さ（uniform uAlpha。場の alpha に掛ける）。
+        alpha = Float64
     }
 
     /// シェーダー面の描画チャンネル。eff Game とは別に隔離した効果。

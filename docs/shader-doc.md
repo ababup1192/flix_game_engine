@@ -11,6 +11,7 @@ vignette・熱い溶岩を **JSON の保存だけで即調整できる**形で�
   **[新19]** を付けた物（tex 場: `tex` / `shift` / 色の `rgb`）は **0.19.0 から**。
   自分のゲームが引いているバージョンは `flix.toml` の `github:ababup1192/flix_game_engine` を見る。
 - 呼び方: `Render.shaderFill(spec, rect, t, z)` / `Render.shaderFillMasked(spec, rect, polys, t, z)`
+- 面全体の濃さは `Render.overItem(Render.fade(k), 面)`（0..1・場の alpha に掛かる）。Spec の場に `Const` で書き込んで毎コマ変えない — Spec が変わるたびに GL のシェーダーを作り直す
 - 読み方: `ShaderJson.load(path)` は **fail-open**。`Result.getWithDefault(既定の Spec)` で受ける
 - 保存即反映: `App.watchFile(path, …)` に繋ぐ（`templates/rpg-starter/src/Controls.flix` が手本）
 

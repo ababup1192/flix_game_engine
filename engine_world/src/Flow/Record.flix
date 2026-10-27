@@ -238,17 +238,25 @@ pub mod Flow.Record {
     /// F8 のチケットの写し: ここまでの記録に「表示中の瞬間まで戻る」（rewind back）と mark ticket を足して
     /// dir/record.flow に書き、チケットの README に再生の仕方を 1 行足す。
     pub def copyInto(rec: Recorder, dir: String, back: Int32): Bool \ IO =
+        let dest = "${dir}/record.flow";
+        copyMarked(rec, dir, back, "# F8 のチケット: ここまで流すとチケットの瞬間に着く", "ticket") and (try {
+            let readme = new FileWriter("${dir}/README.md", true);
+            readme.write("\n- 遊んだ記録: record.flow（`make flow FLOW=${dest}` で再生すると、この瞬間で止まる）\n");
+            readme.close();
+            true
+        } catch {
+            case _: IOException => false
+        })
+
+    /// ここまでの記録を dir/record.flow に写し、末尾に comment・back コマ戻る rewind・mark <name> を足す。
+    pub def copyMarked(rec: Recorder, dir: String, back: Int32, comment: String, name: String): Bool \ IO =
         flush(rec);
         let dest = "${dir}/record.flow";
         try {
             discard Files.copy(new File(rec#path).toPath(), new File(dest).toPath(), StandardCopyOption.REPLACE_EXISTING);
             let out = new FileWriter(dest, true);
-            out.write("# F8 のチケット: ここまで流すとチケットの瞬間に着く\n" +
-                      (if (back > 0) "rewind ${Int32.toString(back)}\n" else "") + "mark ticket\n");
+            out.write("${comment}\n" + (if (back > 0) "rewind ${Int32.toString(back)}\n" else "") + "mark ${name}\n");
             out.close();
-            let readme = new FileWriter("${dir}/README.md", true);
-            readme.write("\n- 遊んだ記録: record.flow（`make flow FLOW=${dest}` で再生すると、この瞬間で止まる）\n");
-            readme.close();
             true
         } catch {
             case _: IOException => false

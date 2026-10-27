@@ -1028,15 +1028,18 @@ def texSpecOf(): ShaderDoc.Spec =
 
 /// compile() の共通ヘッダ（uniform 宣言の直前まで）。
 def glslHeader(): String =
-    "#version 330 core\nin vec2 vUv;\nout vec4 outColor;\nuniform float uTime;\n"
+    "#version 330 core\nin vec2 vUv;\nout vec4 outColor;\nuniform float uTime;\nuniform float uAlpha;\n"
+
+/// compile() の main の終わり（面全体の濃さ uAlpha を掛けて閉じる）。
+def glslMainEnd(): String = "\n    outColor.a *= uAlpha;\n}\n"
 
 /// (a) 新語彙を使わない既存代表 Spec の compile() 全文は「ヘッダ + prelude + main」のままで、
-///   uTex uniform が 1 文字も足されない（GLSL ソースが program キャッシュの鍵なので全文で釘打ち）。
+///   uTex uniform が 1 文字も足されない（使わない Spec の GLSL を変えないことを全文で釘打ち）。
 @Test
 def testNoTexUniformForExistingSpecs(): Unit \ Assert =
     let fullOf = (spec: ShaderDoc.Spec) ->
         glslHeader() + ShaderGen.preludeSource() +
-        "void main() {\n    " + ShaderGen.compileBody(spec) + "\n}\n";
+        "void main() {\n    " + ShaderGen.compileBody(spec) + glslMainEnd();
     let specs = ShaderDoc.demoSurface() :: ShaderDoc.waterVeins() :: ShaderDoc.lavaVeins() :: Nil;
     Assert.assertEq(expected = List.map(fullOf, specs), List.map(ShaderGen.compile, specs))
 
@@ -1055,7 +1058,7 @@ def testTexSpecCompileSnapshot(): Unit \ Assert =
         "uniform sampler2D uTex0;\nuniform float uTexFlip0;\n" +
         "uniform sampler2D uTex1;\nuniform float uTexFlip1;\n" +
         ShaderGen.preludeSource() +
-        "void main() {\n    " + expectedBody + "\n}\n";
+        "void main() {\n    " + expectedBody + glslMainEnd();
     Assert.assertEq(expected = expected, ShaderGen.compile(texSpecOf()))
 
 /// (c) texNames の順序決定性: bindings（前から）→ 色 → alpha の初出順・重複除去。

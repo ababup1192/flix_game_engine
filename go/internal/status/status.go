@@ -550,7 +550,44 @@ func sectionNotes(c *ctx, out *[]string) {
 
 // ---- 入口 ----------------------------------------------------------------
 
+// sectionHitches は DEBUG 実行が書いたヒッチの記録（debug/perf/hitches/<起動時刻>/f<コマ>/hitch.md）の
+// いちばん新しい実行だけを数え、件数と先頭の数件の見出しを出す。記録の無いゲームでは黙る。
+func sectionHitches(c *ctx, out *[]string) {
+	runs := append(c.glob("debug/perf/hitches/*"), c.glob("templates/*/debug/perf/hitches/*")...)
+	latest := ""
+	latestTime := 0.0
+	for _, r := range runs {
+		if !c.isDir(r) {
+			continue
+		}
+		if m, _ := c.mtime(r); m > latestTime {
+			latest, latestTime = r, m
+		}
+	}
+	if latest == "" {
+		return
+	}
+	var files []string
+	for _, f := range c.glob(latest + "/*/hitch.md") {
+		if c.isFile(f) {
+			files = append(files, f)
+		}
+	}
+	if len(files) == 0 {
+		return
+	}
+	sort.Strings(files)
+	*out = append(*out, fmt.Sprintf("ヒッチ %d 件 (%s・%s。直す前に hitch.md を読む):", len(files), latest, c.age(latest)))
+	for i, f := range files {
+		if i >= c.rules.TicketsShown {
+			break
+		}
+		*out = append(*out, "  "+f+" "+pyHead(c.firstLine(f), c.rules.TicketSummaryWidth))
+	}
+}
+
 var sectionsByName = map[string]func(*ctx, *[]string){
+	"section_hitches":       sectionHitches,
 	"section_git":           sectionGit,
 	"section_tests":         sectionTests,
 	"section_reference":     sectionReference,
