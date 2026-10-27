@@ -1,6 +1,6 @@
 ---
 name: flix-docs
-description: "このプロジェクトの Flix の書き方（パイプ・エフェクトの伝播とハンドラ・標準ライブラリ優先・Channel / Java interop の落とし穴）。Flix コードを書く前・直す前、構文や API の書き方に迷ったときに使う。"
+description: "このプロジェクトの Flix の書き方（パイプ・エフェクトの伝播とハンドラ・標準ライブラリ優先・Channel / Java interop の落とし穴）。Flix コードを書く前・直す前、構文や API の書き方に迷ったとき、.flix の名前の宣言・使う所・呼び手を探すとき（grep の前）に使う。"
 sync: 2026-10-26
 ---
 
