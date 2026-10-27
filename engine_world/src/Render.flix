@@ -44,8 +44,10 @@ pub mod Render {
         /// rect はスクリーン空間 px（uv=0..1 がこの矩形）、t は world#time（uTime に渡す）。
         /// mask = この面を切り抜く多角形の列（rect 左上からの相対座標）。空なら矩形そのまま。
         /// 非空なら GL でステンシルへ書き込んで「多角形の内側だけ」塗る（丸い池形など任意形に抜く）。
+        /// alpha は面全体の濃さ（場の alpha に掛ける。1.0 = そのまま）。fade で変える。
+        /// WhyNot: 濃さを Spec の場（Const）に書き込まない。Spec が変わるたびに GL のシェーダーを作り直す。
         case Shader({ rect = Rect2.Rect2, spec = ShaderDoc.Spec, t = Float64,
-                      mask = List[List[Vec2.Vec2]], zIndex = Int32, blend = DrawCmd.BlendMode })
+                      mask = List[List[Vec2.Vec2]], zIndex = Int32, blend = DrawCmd.BlendMode, alpha = Float64 })
     }
 
     /// 置き場所つきの描画物。View はこの列を組み、draw が描画命令へ変換する。
@@ -181,7 +183,7 @@ pub mod Render {
     /// GL 経路では eff Shader が本物のシェーダーで描き、GL の無い経路では代表色ベタ塗りに落ちる。
     pub def shaderFill(spec: ShaderDoc.Spec, rect: Rect2.Rect2, t: Float64, zIndex: Int32): PlacedItem =
         { at = rect#position,
-          item = Item.Shader({ rect = rect, spec = spec, t = t, mask = Nil, zIndex = zIndex,
+          item = Item.Shader({ rect = rect, spec = spec, t = t, mask = Nil, zIndex = zIndex, alpha = 1.0,
                                blend = DrawCmd.BlendMode.Normal }) }
 
     /// 宣言シェーダーで rect を塗り、maskPolys（ワールド座標の多角形の列）の内側だけに抜く面。
@@ -193,7 +195,7 @@ pub mod Render {
         let rel = maskPolys |> List.map(poly ->
             poly |> List.map(v -> Vec2.sub(v, rect#position)));
         { at = rect#position,
-          item = Item.Shader({ rect = rect, spec = spec, t = t, mask = rel, zIndex = zIndex,
+          item = Item.Shader({ rect = rect, spec = spec, t = t, mask = rel, zIndex = zIndex, alpha = 1.0,
                                blend = DrawCmd.BlendMode.Normal }) }
 
     /// pass（レンダーターゲット）を、全面でない面（横長のストリップなど）から等倍で読むための dy 場。
@@ -307,6 +309,7 @@ pub mod Render {
             case Item.Box(b)    => Item.Box({ alpha = alpha | b })
             case Item.Poly(p)   => Item.Poly({ alpha = alpha | p })
             case Item.Text(t)   => Item.Text({ alpha = alpha | t })
+            case Item.Shader(s) => Item.Shader({ alpha = alpha | s })
             case other                => other
         }, item)
 
@@ -747,7 +750,7 @@ pub mod Render {
                            rect = { position = placed#at, size = s#rect#size },
                            mask = s#mask |> List.map(poly ->
                                poly |> List.map(v -> Vec2.add(placed#at, v))),
-                           time = s#t, zIndex = s#zIndex, blend = s#blend })
+                           time = s#t, zIndex = s#zIndex, blend = s#blend, alpha = s#alpha })
                 case _ => None
             }
         })
@@ -768,13 +771,23 @@ pub mod Render {
             match leaf {
                 case Item.Shader(s) =>
                     Some({ rect = { position = placed#at, size = s#rect#size },
-                           spec = s#spec, time = s#t,
+                           spec = foldAlpha(s#alpha, s#spec), time = s#t,
                            mask = s#mask |> List.map(poly ->
                                poly |> List.map(v -> Vec2.add(placed#at, v))),
                            zIndex = s#zIndex, blend = s#blend })
                 case _ => None
             }
         })
+
+    /// GL の無い道へ渡す Spec: 面の濃さを場の alpha への掛け算に畳む（1.0 ならそのまま）。
+    /// CPU はシェーダーを作らないので、Spec が毎コマ違っても重くならない。GL は uAlpha で同じ式（clamp(場の alpha × 濃さ)）になる。
+    def foldAlpha(k: Float64, spec: ShaderDoc.Spec): ShaderDoc.Spec =
+        if (k == 1.0) spec
+        else match spec#out {
+            case ShaderDoc.Out.Fill(fill) =>
+                { out = ShaderDoc.Out.Fill({ alpha = ShaderDoc.Field.Bin({ op = ShaderDoc.BinOp.Mul,
+                        a = fill#alpha, b = ShaderDoc.Field.Const(k) }) | fill }) | spec }
+        }
 
     /// 面（Item.Shader）の後ろに同じ zIndex の他の描き物を並べた z（小さい順）。描き手は同じ z の中を
     /// 種類の順（tiles → sprites → polygons → static → surfaces。docs/z-bands.md）で描くので、面は並びに関わらず
@@ -890,7 +903,7 @@ pub mod Render {
                 // GL の無い経路（SoftRaster / F8 注釈）向けの代表色ベタ塗り。本物のシェーダーは
                 // eff Shader が別チャンネルで描くので、ここは「面がそこにある」ことだけ残す。
                 // 置き場所は drawShaders と同じ pos（scaledAllAround などで動いた後の at）。
-                boxDrawable(s#rect#size, ShaderDoc.representativeColor(s#spec), 1.0, 0.0, None,
+                boxDrawable(s#rect#size, ShaderDoc.representativeColor(s#spec), s#alpha, 0.0, None,
                             s#zIndex, s#blend, pos) :: Nil
             case Item.Clipped(c) =>
                 toDrawables(c#inner, pos)
@@ -934,7 +947,7 @@ pub mod Render {
                            name, pos,
                            { x = s#rect#size#x / (ti#width * area#size#x),
                              y = s#rect#size#y / (ti#height * area#size#y) },
-                           0.0, white(), 1.0, false,
+                           0.0, white(), s#alpha, false,
                            area#position, area#size, s#zIndex, None,
                            None, s#blend, s#mask) :: Nil
                     case _ => toDrawables(item, pos)

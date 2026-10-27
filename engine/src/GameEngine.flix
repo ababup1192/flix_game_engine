@@ -358,6 +358,12 @@ pub mod GameEngine {
         /// （画素ごとの矩形を並べるより桁違いに軽い）。
         def ensureTexture(name: String, key: String, width: Int32, height: Int32,
                           argb: Vector[Int32]): Unit
+        /// 1 コマごとの診断（FrameDiagnostics）を集めるかを切り替える。切っている間は数えない。
+        /// App が DEBUG の起動で入れ、ヒッチの記録（App.HitchDetector）が読む。
+        def setDiagnosticsEnabled(on: Bool): Unit
+        /// 前に取り出してから溜まった診断を返し、空に戻す（consumeScrollDelta と同じ取り出し方）。
+        /// 集めていない間は FrameDiagnostics.empty()。
+        def consumeDiagnostics(): FrameDiagnostics.Diagnostics
         /// マウスカーソル形状を切り替える。連続して同じ Cursor を渡しても問題ない（冪等）
         def setCursor(cursor: Cursor): Unit
         /// マウスカーソルの表示/非表示を切り替える。形状(setCursor)は「どんな絵か」、

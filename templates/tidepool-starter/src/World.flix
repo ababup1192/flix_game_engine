@@ -57,8 +57,8 @@ mod World {
     pub def toTuple(s: State): (Cell, Set[Cell], Set[Cell], Tide.Water, Int32, Phase) =
         (s#crab, s#pebbles, s#driftwood, s#water, s#t, s#phase)
 
-    /// 遊べる 1 面（Doc の名前と最少手数と盤）。
-    pub type alias Stage = { name = String, parMoves = Int32, board = Board.Board }
+    /// 遊べる 1 面（Doc の名前と最少手数と盤）。rocks は盤から導いた岩の段の形（描くための形を前もって作って持つ。atlas と同じ扱い）。
+    pub type alias Stage = { name = String, parMoves = Int32, board = Board.Board, rocks = List[Layout.RockLevel] }
 
     /// 終了の確認。Esc か窓の閉じるボタンで Asking、はいで Confirmed（Main の App.quitWhen が見る）、いいえで Playing へ戻る。
     pub enum Quit with Eq, ToString {
@@ -262,7 +262,7 @@ mod World {
         let built = LevelsDoc.boardsOf(rules, levels);
         built#boards
             |> Log.warnAllThen(built#problems)
-            |> List.map(match (level, b) -> { name = level#name, parMoves = level#parMoves, board = b })
+            |> List.map(match (level, b) -> { name = level#name, parMoves = level#parMoves, board = b, rocks = Layout.rockLevelsOf(b) })
             |> List.toVector
 
     /// 今の面。
@@ -270,6 +270,8 @@ mod World {
         Vector.get(Int32.max(0, Int32.min(Vector.length(w#stages) - 1, w#level)), w#stages)
 
     pub def board(w: World): Board.Board = stage(w)#board
+
+    pub def rockLevels(w: World): List[Layout.RockLevel] = stage(w)#rocks
 
     pub def state(w: World): State = Worldline.current(w#line)
 
