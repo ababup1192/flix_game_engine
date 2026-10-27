@@ -5,7 +5,7 @@
 // 写真は project.json の textures をそのまま読む（実機と同じ名前 → 同じファイル）。
 // 場面は「進めて作る」: 台本が伸びても行番号を数え直さずに済むよう、「ノードの n 番目の台詞」「選択肢が出るまで」で位置を決める。
 mod SceneRender {
-    use fge::{App, Clock, DocJson, Emit, HeadlessFont, HeadlessRender, JsonCodec, Render, Vec2, Yarn, YarnStorage}
+    use fge::{App, Clock, DocJson, Emit, HeadlessFont, HeadlessRender, JsonCodec, Render, Vec2, Yarn, YarnRunner, YarnStorage}
 
     import java.io.File
     import java.lang.ProcessHandle
@@ -32,8 +32,11 @@ mod SceneRender {
     def loadWorld(): World.World \ IO =
         run {
             let docs = Controls.loadDocs();
-            World.initial(docs, Saves.fresh(docs#kind))
+            World.initial(docs, Saves.fresh(docs#kind), clockBase())
         } with Fs.FileRead.runWithIO
+
+    /// 描き出しの「起動した時刻」（2026/08/14 19:32。セーブの日時を毎回同じ字にする）。
+    def clockBase(): Int64 = 1786735920i64
 
     pub def all(): Unit \ IO = App.Headless.exitWith(allJob(App.Headless.requestFromProcess()))
 
@@ -48,12 +51,12 @@ mod SceneRender {
 
     /// 描き出せる場面の名前（make render の SHOT とギャラリーの並びの正）。
     pub def shotNames(): List[String] =
-        "title" :: "nvl" :: "adv" :: "choice" :: "lane" :: "engawa" :: "night" :: "morning" :: "log" :: "load" :: "settings" :: "credits" :: Nil
+        "title" :: "nvl" :: "adv" :: "choice" :: "lane" :: "engawa" :: "night" :: "morning" :: "log" :: "save" :: "load" :: "settings" :: "ask" :: "credits" :: Nil
 
     /// 名前 → その場面の World。時計は秒で据える（蛍もクレジットも実時間から導くので、据えれば毎回同じ絵）。
     def sceneOf(name: String, w0: World.World): Option[World.World] =
         match name {
-            // 表紙: 夕暮れの駅の写真に題とメニュー。
+            // タイトル画面: 夕暮れの駅の写真に題とメニュー。
             case "title"    => Some(at(3.0, w0))
             // NVL: 最初の頁。蜩（ひぐらし）のルビが載った 3 行目まで出した所。
             case "nvl"      => Some(at(4.0, nthLine("Station", 2, w0)))
@@ -71,12 +74,18 @@ mod SceneRender {
             case "night"    =>
                 let storage = YarnStorage.withArgs(Map#{ "$closeness" => "2" }, w0#dialogue, YarnStorage.empty()) |> Result.getWithDefault(YarnStorage.empty());
                 Some(at(6.5, toChoices("River", storage, w0)))
-            // ログ: 田んぼの選択肢まで読んでからログを開いた所。
-            case "log"      => Some(at(4.0, open(World.Panel.Log, toChoices("Paddy", YarnStorage.empty(), w0))))
-            // 栞: 2 枚挟んである栞の窓（ロード）。
-            case "load"     => Some(at(4.0, open(World.Panel.LoadSlots, withTwoSlots(w0))))
-            // 設定: 表紙から開いた設定。
-            case "settings" => Some(at(3.0, open(World.Panel.Settings, w0)))
+            // バックログ: 縁側の選択肢まで読んでから開き、田んぼの台詞に触れている所（その行へ戻れると明るくなる）。
+            case "log"      =>
+                let w = open(World.Panel.Log, readThrough(w0));
+                Some(at(4.0, { pointer = { x = 400.0, y = 300.0 } | w }))
+            // セーブ: 読んでいる途中で開いたセーブ画面（1 ページ目に 3 つ。いちばん新しい物に NEW）。
+            case "save"     => Some(at(4.0, open(World.Panel.SaveSlots, withSlots(nthLine("River", 2, w0)))))
+            // ロード: タイトルから開いたロード画面（いちばん新しいデータのページ）。
+            case "load"     => Some(at(4.0, open(World.Panel.LoadSlots, World.toTitle(withSlots(w0)))))
+            // 設定: 読んでいる途中で開いた設定（見本の文が流れている所）。
+            case "settings" => Some(at(1.2, open(World.Panel.Settings, nthLine("Paddy", 3, w0))))
+            // 確認の窓: ADV の台詞の上で「タイトルに戻りますか？」。
+            case "ask"      => Some(at(4.0, quiet(() -> World.askFor(World.Ask.ToTitle, nthLine("Lane", 2, w0)))))
             // クレジット: 流れ始めて 12 秒（写真の出典が見えている所）。
             case "credits"  => Some(at(12.0, { creditsFrom = Clock.zero() | World.toCredits(w0) }))
             case _          => None
@@ -107,11 +116,32 @@ mod SceneRender {
 
     def open(panel: World.Panel, w: World.World): World.World = quiet(() -> World.openPanel(panel, w))
 
-    /// 田んぼと縁側で 1 枚ずつ栞を挟んだ World（表紙へ戻した形）。
-    def withTwoSlots(w: World.World): World.World =
-        let first = quiet(() -> World.saveSlot(0, nthLine("Paddy", 3, w)));
-        let second = quiet(() -> World.saveSlot(1, nthLine("Engawa", 4, first)));
-        World.toTitle({ toast = None | second })
+    /// 1 ページ目に 3 つ（田んぼ・坂・縁側）、オートのページに 1 つセーブした World。日時は少しずつずらす。
+    def withSlots(w: World.World): World.World =
+        let saveAt = (minutes: Int64, i: Int32, scene: World.World, target: World.World) ->
+            { saves = quiet(() -> World.writeSlot(Saves.Tab.Numbered(1), i, { saves = target#saves, clockBase = clockBase() + minutes * 60i64 | scene }))#saves | target };
+        w |> saveAt(-2900i64, 0, nthLine("Paddy", 3, w))
+          |> saveAt(-2860i64, 1, nthLine("Lane", 2, w))
+          |> saveAt(-12i64, 2, nthLine("Engawa", 4, w))
+          |> (cur -> { toast = None | cur })
+
+    /// はじめから、田んぼで昔の呼び名を選び、縁側の選択肢まで読んだ World（バックログに何行も積むため。文字送りは待たない）。
+    def readThrough(w: World.World): World.World =
+        def walk(fuel: Int32, picks: List[Int32], cur: World.World): World.World =
+            if (fuel <= 0) cur
+            else if (World.isAsking(cur)) match picks {
+                case i :: rest => walk(fuel - 1, rest, quiet(() -> World.pick(i, cur)))
+                case Nil       => cur
+            }
+            else walk(fuel - 1, picks, settleWait(quiet(() -> World.advance(World.revealLine(cur)))));
+        walk(200, 1 :: Nil, settleWait(quiet(() -> World.newGame(w))))
+
+    /// <<wait>> を明かす（描き出しは時計を進めないので、明ける時刻で 1 歩だけ流す）。
+    def settleWait(w: World.World): World.World =
+        match YarnRunner.waitUntilOf(w#talk) {
+            case Some(until) => quiet(() -> World.step({ storyClock = Clock.startAt(Clock.secondsOf(until)) | w }))
+            case None        => w
+        }
 
     pub def allShots(): List[String] \ IO = shotsInto("gallery", _ -> true)
 

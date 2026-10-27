@@ -4,12 +4,12 @@ mod TestKit {
 
     use fge::{App, Emit, YarnRunner}
 
-    /// assets の Doc とシナリオをそのまま読んだ表紙の World（栞は空・ファイルは書かない）。
+    /// assets の Doc とシナリオをそのまま読んだタイトルの World（セーブデータは空・ファイルは書かない・時刻は 0）。
     pub def w0(): World.World \ Fs.FileRead =
         let docs = Controls.loadDocs();
-        World.initial(docs, Saves.fresh(docs#kind))
+        World.initial(docs, Saves.fresh(docs#kind), 0i64)
 
-    pub def app(w: World.World): App.App[World.World, {}] = Game.app(docsOf(w), w#saves)
+    pub def app(w: World.World): App.App[World.World, {}] = Game.app(docsOf(w), w#saves, w#clockBase)
 
     def docsOf(w: World.World): World.Docs =
         { story = w#story, kind = w#kind, theme = w#theme, backdrops = w#backdrops, credits = w#credits,

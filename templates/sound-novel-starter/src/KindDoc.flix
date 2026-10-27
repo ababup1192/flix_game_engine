@@ -1,5 +1,5 @@
 // KindDoc — novel.kind.json（手触りの数: 字の大きさ・行の数・オートとスキップの間・揺れ・粒）の宣言ドキュメント層。
-// 設定の画面で人が変える値（文字の速さ・オートの待ち・音量）の出発点もここ（変えた値はセーブの config が持つ）。
+// 設定の画面で人が変える値（文字の速さ・オートの待ち・音量・窓の濃さ）の出発点もここ（変えた値はセーブの config が持つ）。
 // fail-open — 読めない・壊れているときは defaults() へ落とし、ゲームは必ず起動する。
 mod KindDoc {
     use fge::{DocJson, JsonCodec}
@@ -7,7 +7,8 @@ mod KindDoc {
 
     /// bodySize / rubySize / nameSize = 本文・ルビ・名前の字の大きさ（px）、lineGap = 行の間（ルビが入るので rubySize 以上）、
     /// advRows / nvlRows = ADV の窓・NVL の頁に入る行の数（あふれる前に頁をめくる）、
-    /// cps / autoWait / ambienceVolume / seVolume = 設定の既定（1 秒の字数・オートで読み終えてから送るまでの秒・音量 0〜1）、
+    /// cps / autoWait / masterVolume / ambienceVolume / seVolume / windowAlpha = 設定の既定（1 秒の字数・オートで読み終えてから送るまでの秒・
+    /// 全体と環境音と効果音の音量 0〜1・文章の窓の濃さ 0〜1）、
     /// autoPerChar = オートの待ちに足す 1 字あたりの秒（長い行ほど長く待つ）、skipInterval = スキップで 1 行を出す間（秒）、
     /// logMax = ログに残す行の数、shakeSeconds / shakePx = <<shake>> の長さと揺れ幅、
     /// fireflies = <<fx fireflies>> の粒の数、creditsSpeed = クレジットが流れる速さ（px/秒）、toastSeconds = 知らせを出す秒。
@@ -21,8 +22,10 @@ mod KindDoc {
         nvlRows = Int32,
         cps = Float64,
         autoWait = Float64,
+        masterVolume = Float64,
         ambienceVolume = Float64,
         seVolume = Float64,
+        windowAlpha = Float64,
         autoPerChar = Float64,
         skipInterval = Float64,
         logMax = Int32,
@@ -43,7 +46,7 @@ mod KindDoc {
     /// コード側の既定値（assets/novel.kind.json と同じ値から出発する）。
     pub def defaults(): Doc =
         Doc.Doc({ version = 1, bodySize = 22.0, rubySize = 11.0, nameSize = 19.0, lineGap = 14.0,
-                  advRows = 3, nvlRows = 11, cps = 40.0, autoWait = 1.2, ambienceVolume = 0.7, seVolume = 0.8,
+                  advRows = 3, nvlRows = 11, cps = 40.0, autoWait = 1.2, masterVolume = 1.0, ambienceVolume = 0.7, seVolume = 0.8, windowAlpha = 0.74,
                   autoPerChar = 0.04, skipInterval = 0.06, logMax = 120, shakeSeconds = 0.35, shakePx = 7.0,
                   fireflies = 28, creditsSpeed = 34.0, toastSeconds = 1.6 })
 
@@ -59,7 +62,9 @@ mod KindDoc {
                   nameSize = num("nameSize", d#nameSize), lineGap = num("lineGap", d#lineGap),
                   advRows = int("advRows", d#advRows), nvlRows = int("nvlRows", d#nvlRows),
                   cps = num("cps", d#cps), autoWait = num("autoWait", d#autoWait),
+                  masterVolume = num("masterVolume", d#masterVolume),
                   ambienceVolume = num("ambienceVolume", d#ambienceVolume), seVolume = num("seVolume", d#seVolume),
+                  windowAlpha = num("windowAlpha", d#windowAlpha),
                   autoPerChar = num("autoPerChar", d#autoPerChar), skipInterval = num("skipInterval", d#skipInterval),
                   logMax = int("logMax", d#logMax),
                   shakeSeconds = num("shakeSeconds", d#shakeSeconds), shakePx = num("shakePx", d#shakePx),

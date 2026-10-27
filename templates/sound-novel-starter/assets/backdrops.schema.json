@@ -30,7 +30,7 @@
           },
           "label": {
             "type": "string",
-            "description": "栞に出す場所の名前"
+            "description": "セーブ画面に出す場所の名前"
           }
         }
       }

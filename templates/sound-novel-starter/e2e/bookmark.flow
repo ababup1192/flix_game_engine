@@ -1,11 +1,11 @@
-# 田んぼで栞を挟み、先へ読んでから栞で戻ると、同じ行・同じ舞台（写真・ADV）から読み直せる。
+# 田んぼでセーブし、先へ読んでからロードすると、同じ行・同じ舞台（写真・ADV）から読み直せる。
 start title
 tap confirm
 drive reader until talk=Paddy max 90
 wait 0.5
-tap 641,526                            # 下の帯の「セーブ」
+tap 544,524                            # 下の帯の「セーブ」
 expect panel=SaveSlots
-tap 270,154                            # 1 枚目の枠に挟む
+tap 268,189                            # 1 ページ目の 1 枚目の枠（空なので確認なしで書く）
 expect panel=SaveSlots
 tap back
 expect panel=Closed&talk=Paddy
@@ -13,7 +13,11 @@ drive reader until choice max 60
 tap confirm                            # 「千夏？」
 drive reader until talk=Lane max 60
 expect photo=lane
-tap 703,526                            # 下の帯の「ロード」
-expect panel=LoadSlots
-tap 270,154                            # 1 枚目の栞から読む
+tap 608,524                            # 下の帯の「ロード」
+expect panel=LoadSlots&tab=Auto           # 開くのは一番新しいセーブのページ（坂道のオートセーブ）
+tap 291,105                            # 「1」のページへ
+expect tab=Numbered(1)
+tap 268,189                            # 1 枚目の枠から読む
+expect ask=Load(0)
+tap 394,310                            # 確認の「はい」
 expect panel=Closed&talk=Paddy&photo=paddy&mode=Adv

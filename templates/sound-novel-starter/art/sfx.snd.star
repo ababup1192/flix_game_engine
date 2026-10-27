@@ -80,6 +80,6 @@ def main():
     sound("ui_cursor", [tone(1047, 25, decay = 10, amp = 0.25)])                           # カーソル: 軽い粒
     sound("ui_choice", [tone(659, 90, decay = 50), tone(988, 160, at = 70, decay = 90)])   # 選んだ: E5 → B5
     sound("ui_open", [tone(523, 120, decay = 60), tone(784, 200, at = 70, decay = 120)])   # 窓を開く: C5 → G5
-    sound("ui_save", [tone(784, 120, decay = 60), tone(1047, 260, at = 90, decay = 160)], room = 0.5, wet = 0.18)  # 栞を挟んだ
+    sound("ui_save", [tone(784, 120, decay = 60), tone(1047, 260, at = 90, decay = 160)], room = 0.5, wet = 0.18)  # セーブした
 
 main()

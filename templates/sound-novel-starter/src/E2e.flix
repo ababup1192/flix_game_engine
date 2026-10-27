@@ -16,10 +16,10 @@ mod E2e {
     pub def vocabJob(req: App.Headless.Request): Int32 \ IO =
         run { Flow.Cli.vocabMainOf(appOf(), App.Headless.envOf(req)) } with Fs.FileRead.runWithIO with Fs.FileWrite.runWithIO
 
-    /// flow と窓なしのゲームが使う App（栞は読まない = いつも初めて遊ぶ人と同じ所から）。
+    /// flow と窓なしのゲームが使う App（セーブデータは読まない = いつも初めて遊ぶ人と同じ所から。時刻は 0 に据える）。
     def appOf(): App.App[World.World, {}] \ Fs.FileRead =
         let docs = Controls.loadDocs();
-        Game.app(docs, Saves.fresh(docs#kind))
+        Game.app(docs, Saves.fresh(docs#kind), 0i64)
 
     /// 常駐（App.Headless.serveJobs）が /run で流す E2e の入口の束。
     pub def jobs(): List[App.Headless.Job] =
@@ -41,11 +41,16 @@ mod E2e {
               let rows = (name, list) -> List.map(key -> (key, name), list);
               rows("confirm", keys#confirm) ::: rows("back", keys#back) ::: rows("prev", keys#prev) ::: rows("next", keys#next) :::
               rows("left", keys#left) ::: rows("right", keys#right) ::: rows("log", keys#log) ::: rows("auto", keys#auto) :::
-              rows("skip", keys#skip) ::: rows("hide", keys#hide)
+              rows("skip", keys#skip) ::: rows("hide", keys#hide) ::: rows("rollback", keys#rollback) :::
+              rows("quickSave", keys#quickSave) ::: rows("quickLoad", keys#quickLoad) ::: rows("tabPrev", keys#tabPrev) :::
+              rows("tabNext", keys#tabNext) ::: rows("remove", keys#remove)
           },
           probes =
               { name = "phase", doc = "場面（Title・Reading・Credits）", read = Flow.Probe.Text(w -> "${w#phase}") } ::
-              { name = "panel", doc = "開いている窓（Closed・Log・SaveSlots・LoadSlots・Settings・Hidden）", read = Flow.Probe.Text(w -> "${w#panel}") } ::
+              { name = "panel", doc = "開いている画面（Closed・Log・SaveSlots・LoadSlots・Settings・Hidden）", read = Flow.Probe.Text(w -> "${w#panel}") } ::
+              { name = "ask", doc = "確認の窓で尋ねている事（無ければ空。Overwrite(0)・ToTitle・Quit など）", read = Flow.Probe.Text(w -> w#ask |> Option.map(a -> "${a}") |> Option.getWithDefault("")) } ::
+              { name = "tab", doc = "セーブ・ロードの今のページ（Auto・Quick・Numbered(1) など）", read = Flow.Probe.Text(w -> "${w#slotTab}") } ::
+              { name = "logSize", doc = "バックログの行の数", read = Flow.Probe.Num(w -> Int32.toFloat64(List.length(w#log))) } ::
               { name = "talk", doc = "開いているシナリオのノード（閉じていれば空）", read = Flow.Probe.Text(World.talkNodeOf) } ::
               { name = "talkLine", doc = "今出している行のシナリオの行（ファイル:行）", read = Flow.Probe.Text(World.talkLineOf) } ::
               { name = "mode", doc = "文章の出し方（Nvl・Adv）", read = Flow.Probe.Text(w -> "${w#stage#mode}") } ::
@@ -56,9 +61,9 @@ mod E2e {
               { name = "stayed", doc = "シナリオの変数 $stayed（true の結末へ向かっている）", read = Flow.Probe.Flag(w -> World.variableOf("$stayed", w) == "True") } ::
               { name = "closeness", doc = "シナリオの変数 $closeness", read = Flow.Probe.Num(w -> World.variableOf("$closeness", w) |> Float64.fromString |> Option.getWithDefault(0.0)) } :: Nil,
           drives =
-              { name = "reader", doc = "行を出し終えたら少し読んでから送る（選択肢・窓・表紙では押さない）",
+              { name = "reader", doc = "行を出し終えたら少し読んでから送る（選択肢・窓・タイトル画面では押さない）",
                 act = (waited, w) ->
-                    if (w#phase != World.Phase.Reading or w#panel != World.Panel.Closed or World.isAsking(w)) Flow.DriveAct.Restart
+                    if (w#phase != World.Phase.Reading or w#panel != World.Panel.Closed or Option.nonEmpty(w#ask) or World.isAsking(w)) Flow.DriveAct.Restart
                     else if (not Page.isDone(w#page)) Flow.DriveAct.Restart
                     else if (waited >= readSeconds()) Flow.DriveAct.Tap("confirm")
                     else Flow.DriveAct.Idle } :: Nil,
@@ -69,5 +74,5 @@ mod E2e {
     /// 指紋の元（記録の再生が 60 フレームごとに比べる）: 進行に効く欄だけ。
     pub def fingerprint(w: World.World): String =
         "${w#phase}|${w#panel}|${World.talkNodeOf(w)}|${World.talkLineOf(w)}|done=${Page.isDone(w#page)}|cursor=${w#cursor}" +
-        "|mode=${w#stage#mode}|playback=${w#playback}|events=${Emit.countOf(w#events)}"
+        "|mode=${w#stage#mode}|playback=${w#playback}|ask=${w#ask}|tab=${w#slotTab}|events=${Emit.countOf(w#events)}"
 }

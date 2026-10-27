@@ -6,7 +6,7 @@ mod Starts {
 
     /// 登録簿。先頭が起動の既定。
     pub def all(): List[App.Start[World.World]] =
-        { name = "title", doc = "表紙（起動の既定）", args = Map.empty(), build = (w, _) -> Ok(w) } ::
+        { name = "title", doc = "タイトル画面（起動の既定）", args = Map.empty(), build = (w, _) -> Ok(w) } ::
         { name = "talk", doc = "シナリオのノード（node。既定は最初の Station）の頭から読む所。line = .yarn の行番号を渡すとその行まで進めて出した所（Studio の会話のプレビュー・bin/fge talk goto）。$名前=値 でシナリオの変数をその値にして流す", args = Map.empty(),
           build = (w, args) -> nodeOf(args, w) |> Result.flatMap(node -> {
               let line = Map.get("line", args) |> Option.map(text -> Int32.fromString(text) |> Option.toOk("line は .yarn の行番号（数）: '${text}'"))

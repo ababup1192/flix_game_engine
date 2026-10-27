@@ -1,6 +1,6 @@
-# 表紙から読み始め、3 つの選択でどれも近づく方を選ぶと、川で「何も言わずに」が選べて $stayed が立ち、朝を経てクレジットへ。
+# タイトルから読み始め、3 つの選択でどれも近づく方を選ぶと、川で「何も言わずに」が選べて $stayed が立ち、朝を経てクレジットへ。
 start title
-tap confirm                            # 表紙 → はじめから
+tap confirm                            # タイトル → はじめから
 expect talk=Station&mode=Nvl&photo=station
 drive reader until choice max 90       # 駅（NVL）から田んぼ（ADV）の最初の選択肢まで
 expect talk=Paddy&mode=Adv

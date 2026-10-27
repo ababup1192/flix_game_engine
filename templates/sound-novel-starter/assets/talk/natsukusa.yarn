@@ -74,7 +74,7 @@ chinatsu: 冗談。……おかえり。
 title: Engawa
 ---
 <<ambience night>>
-<<bg engawa night 3.0>>
+<<bg engawa lamplight 3.0>>
 <<wait 1>>
 縁側に腰を下ろすと、板は昼の熱をまだ少しだけ抱いていた。
 家の中は、思っていたより片付いていた。千夏が、ときどき来てくれていたのだろう。

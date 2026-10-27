@@ -31,11 +31,11 @@ mod TestDocs {
 
     @Test
     def testEverySoundTheGameCanPlayIsRegistered(): Unit \ {Assert, Fs.FileRead} =
-        // 返事の音・台本の <<se>> と <<ambience>>・表紙の環境音は、どれも project.json の sounds にある。
+        // 返事の音・台本の <<se>> と <<ambience>>・タイトルの環境音は、どれも project.json の sounds にある。
         let sounds = namesIn("sounds");
         let w = TestKit.w0();
         let replies = World.Event.Paged :: World.Event.Revealed :: World.Event.Moved :: World.Event.Picked ::
-                      World.Event.Opened :: World.Event.Closed :: World.Event.Saved :: World.Event.Loaded :: Nil;
+                      World.Event.Opened :: World.Event.Closed :: World.Event.Saved :: World.Event.Loaded :: World.Event.Rolled :: Nil;
         let ses = commandArgs("se", w#dialogue) |> List.map(n -> World.Event.Cue("se_${n}"));
         let played = List.append(replies, ses) |> List.filterMap(Controls.soundOf);
         let ambiences = (StoryDoc.rec(w#story)#titleAmbience :: commandArgs("ambience", w#dialogue))

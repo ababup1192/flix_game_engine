@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "音の通り道。amb_（鳴り続ける環境音）は ambience のバス、se_（シナリオの効果音）と ui_（返事の音）は se のバス。バスの音量は設定の画面の値を Controls.mixerOf が掛ける。panel = 窓（ログ・栞・設定）を開いている間の聞こえ方（環境音を籠もらせる）。",
+  "note": "音の通り道。amb_（鳴り続ける環境音）は ambience のバス、se_（シナリオの効果音）と ui_（返事の音）は se のバス。バスの音量は設定の画面の値を Controls.mixerOf が掛ける。panel = 画面（バックログ・セーブ・設定）や確認の窓を開いている間の聞こえ方（環境音を籠もらせる）。全体の音量は両方のバスに掛ける。",
   "defaultBus": "se",
   "transitionSeconds": 0.4,
   "buses": [

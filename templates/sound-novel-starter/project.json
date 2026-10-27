@@ -39,7 +39,7 @@
       "hasAlpha": false
     }
   ],
-  "// glyphs": "起動時に焼く字。used = ソースとアセットにある字を先に焼く（シナリオの字がそろってから表紙が出る）",
+  "// glyphs": "起動時に焼く字。used = ソースとアセットにある字を先に焼く（シナリオの字がそろってからタイトル画面が出る）",
   "glyphs": "used",
   "fonts": [
     {
@@ -103,7 +103,7 @@
       {
         "id": "story",
         "pattern": "assets/novel.story.json",
-        "title": "画面の言葉（表紙・ボタン・栞）と話し手の呼び名",
+        "title": "画面の言葉（タイトル画面・ボタン・セーブ）と話し手の呼び名",
         "role": "material",
         "schema": "assets/story.schema.json"
       },
