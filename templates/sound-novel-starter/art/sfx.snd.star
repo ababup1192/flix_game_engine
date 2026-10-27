@@ -68,7 +68,7 @@ def main():
                       [rustle(12, 6000, 6000, amp = 0.15, decay = 4, attack = 0.3, q = 0.3)],
           kind = "sfx", room = 0.7, wet = 0.3)
 
-    sound("ui_page", [rustle(140, 2600, 1400, amp = 0.5, decay = 55, attack = 18)])                 # 頁を送る: 紙の擦れ
+    sound("ui_page", [rustle(140, 2600, 1400, amp = 0.5, decay = 55, attack = 18)])                 # 戻る（ロールバック）: 紙の擦れ。文の送りは鳴らさない（Controls.soundOf）
     sound("ui_cursor", [sine(1568, 40, amp = 0.25, decay = 14, attack = 2)])                         # カーソル: 小さな木の粒
     sound("ui_choice", bell(880, decay = 220) + bell(1319, at = 90, amp = 0.32, decay = 300))       # 選んだ: 柔らかい鈴を 2 つ
     sound("ui_open", bell(659, decay = 160, partials = [(1.0, 1.0, 1.0), (3.0, 0.12, 0.3)]))         # 窓を開く: 低い木琴の 1 打

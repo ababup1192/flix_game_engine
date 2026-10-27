@@ -238,8 +238,9 @@ mod Controls {
     // ── 音 ──
 
     /// 返事の音（project.json の sounds の論理名）。ui_ は決定やカーソルへの返事、se_ はシナリオの <<se>>。
+    /// 文を読み進めるたびに鳴らすと、環境音と台詞の間を音が刻んで読む邪魔になるので、送りは鳴らさない。
     pub def soundOf(event: World.Event): Option[String] = match event {
-        case World.Event.Paged    => Some("ui_page")
+        case World.Event.Paged    => None
         case World.Event.Revealed => None
         case World.Event.Moved    => Some("ui_cursor")
         case World.Event.Picked   => Some("ui_choice")
