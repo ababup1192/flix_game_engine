@@ -24,7 +24,7 @@ mod GifRender {
 
     /// 本番と同じ絵の合成（View.frame + View.hud → App.composeScene → Render.draw）。
     /// 生成の仕方が2通りだと絵がずれるので、SceneRender.flix の静止画もこの GIF も同じ式を通す。
-    pub def worldCmds(ctx: App.ViewCtx, w: World.World):
+    def worldCmds(ctx: App.ViewCtx, w: World.World):
             (List[GameEngine.Drawable], List[GameEngine.PolygonRenderCmd]) =
         Render.draw(App.composeScene(None, 1.0, design(),
             { world = View.frame(ctx, w), hud = View.hud(ctx, w) }))
@@ -43,7 +43,7 @@ mod GifRender {
     /// current を挿げ替えてから hardDrop に落とす（spawn は row = -1 の空中なので
     /// rot/col をどう据えても衝突しない = 本物の落下・接地・固定と同じ経路を通る）。
     /// 盤のセルを直接 Map.insert するのはやめ、実際に置ける並びだけを作る。
-    def placePiece(kind: World.Kind, rot: Int32, col: Int32, w: World.World): World.World =
+    def placePiece(kind: Pieces.Kind, rot: Int32, col: Int32, w: World.World): World.World =
         fst(Emit.collect(() -> World.hardDrop({ current = { kind = kind, rot = rot, col = col, row = -1 } | w })))
 
     /// 下 4 行・右端の 1 列（col 9）だけを空けて積む台本。
@@ -52,19 +52,19 @@ mod GifRender {
     /// 割り出した並び — 同じ形・同じ向きの反復が見えないよう検証済み）。
     /// その上に T/S/Z/J/L を色々な向きで積んで表面をでこぼこにする（I/O だけの
     /// 機械的な縦帯 x 横帯の反復にしない）。
-    def stackScript(): List[(World.Kind, Int32, Int32)] =
+    def stackScript(): List[(Pieces.Kind, Int32, Int32)] =
         // 下 4 行（col 0-8 を J/L/S/Z/T だけで平らに埋める・col 9 は最後まで空けておく）。
         // J(逆さ)を右端の足場に、L を左端の足場に、J を中央に噛ませて土台を作り、
         // T で凹みを均し、S を縦向き 1 個混ぜて高さの差を作り、Z で右肩を埋め、
         // もう 1 個の T で右上の凸を作り、最後に S と L で左側の残りを詰める。
-        (World.Kind.J, 3, 7) :: (World.Kind.L, 0, 0) :: (World.Kind.J, 0, 3) ::
-        (World.Kind.T, 2, 5) :: (World.Kind.S, 3, 3) :: (World.Kind.Z, 0, 4) ::
-        (World.Kind.T, 2, 6) :: (World.Kind.S, 0, 0) :: (World.Kind.L, 2, 0) ::
+        (Pieces.Kind.J, 3, 7) :: (Pieces.Kind.L, 0, 0) :: (Pieces.Kind.J, 0, 3) ::
+        (Pieces.Kind.T, 2, 5) :: (Pieces.Kind.S, 3, 3) :: (Pieces.Kind.Z, 0, 4) ::
+        (Pieces.Kind.T, 2, 6) :: (Pieces.Kind.S, 0, 0) :: (Pieces.Kind.L, 2, 0) ::
         // 上乗せ（でこぼこ）: T を列 0-2 に、L を列 3-5 に、S を列 6-8 に、
         // Z を列 2-4 にまたがせて（尖った側が浮いて穴が 1 つできる）、
         // J を縦向きで列 7-8 に重ねて一番高い山にする。
-        (World.Kind.T, 0, 0) :: (World.Kind.L, 0, 3) :: (World.Kind.S, 0, 6) ::
-        (World.Kind.Z, 0, 2) :: (World.Kind.J, 3, 7) :: Nil
+        (Pieces.Kind.T, 0, 0) :: (Pieces.Kind.L, 0, 3) :: (Pieces.Kind.S, 0, 6) ::
+        (Pieces.Kind.Z, 0, 2) :: (Pieces.Kind.J, 3, 7) :: Nil
 
     /// stackScript を順に hardDrop して積み上げた World（col 9 はまだ空）。
     def buildStackedWorld(w0: World.World): World.World =
@@ -76,8 +76,8 @@ mod GifRender {
     /// 積み上がった盤 + 空いた列の真上に構えた I ミノ（縦向き・rot 1）から始める。
     def scriptWorld(w0: World.World): World.World =
         let stacked = buildStackedWorld(w0);
-        { current = { kind = World.Kind.I, rot = 1, col = 7, row = -1 },
-          nextKind = World.Kind.O,
+        { current = { kind = Pieces.Kind.I, rot = 1, col = 7, row = -1 },
+          nextKind = Pieces.Kind.O,
           phase = World.Phase.Playing,
           gravityTimer = 0.0, lockTimer = 0.0, grounded = false, lockResets = 0,
           score = 0, lines = 0 | stacked }

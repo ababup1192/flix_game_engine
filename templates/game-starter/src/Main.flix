@@ -43,7 +43,7 @@ def main(): Unit \ IO =
                 |> App.withSpriteAtlases(w ->
                     { texture = World.atlasName(), key = w#atlasKey, baked = w#atlas } :: Nil)
                 // 動かない絵（画面の縁の枠）は 1 度だけ GPU に作り、鍵が変わるまで使い回す。
-                |> App.withStaticLayer(View.staticKey, View.frameBorder)
+                |> App.withStaticLayer(w -> View.staticKey(w#theme), w -> View.frameBorder(w#theme))
                 // 窓の閉じるボタンも Esc と同じ確認へ回し、はいを選んだら終わる（quitWhen を差し替えると
                 // 既定の「Esc ですぐ終了」は外れる。Esc は Controls.step が確認へ回す）。
                 |> App.withCloseRequest(w -> checked_ecast(World.askQuit(w)))

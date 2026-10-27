@@ -80,16 +80,16 @@ mod Controls {
           shader = loadShader() }
 
     /// 盤の下に敷く紙の面。読めない・語彙が違うときはエンジンの見本の面へ落とす（fail-open）。
-    pub def loadShader(): ShaderDoc.Spec \ Fs.FileRead =
+    def loadShader(): ShaderDoc.Spec \ Fs.FileRead =
         ShaderJson.loadOr(ShaderDoc.demoSurface(), World.shaderPath())
 
-    pub def reloadRules(w: World.World): World.World \ Fs.FileRead =
+    def reloadRules(w: World.World): World.World \ Fs.FileRead =
         World.withRules(RulesDoc.load(RulesDoc.path()), w)
 
-    pub def reloadTheme(w: World.World): World.World \ Fs.FileRead =
+    def reloadTheme(w: World.World): World.World \ Fs.FileRead =
         World.withTheme(ThemeDoc.load(ThemeDoc.path()), w)
 
-    pub def reloadShader(w: World.World): World.World \ Fs.FileRead =
+    def reloadShader(w: World.World): World.World \ Fs.FileRead =
         World.withShader(loadShader(), w)
 
     /// Doc の一覧表(DocTable)。watchFile(保存即反映)・F1 の一括リロード・Studio へ名乗る
@@ -102,16 +102,4 @@ mod Controls {
             :: DocTable.row("theme",  ThemeDoc.path(),      reloadTheme)
             :: DocTable.row("shader", World.shaderPath(),   reloadShader)
             :: Nil
-
-    /// App.game の reloads(保存即反映の watchFile)へ渡す形。
-    pub def reloads(): List[(String, World.World -> World.World \ Fs.FileRead)] =
-        DocTable.reloads(docTable())
-
-    /// F1: 一覧表の順に Doc を全部読み直す。
-    pub def reloadAll(w: World.World): World.World \ Fs.FileRead =
-        DocTable.reloadAll(docTable(), w)
-
-    /// いま画面に出ている Doc（Studio の「表示中」バッジの材料）。
-    pub def activeDocs(w: World.World): List[(String, List[String])] =
-        DocTable.activeDocs(docTable(), w)
 }

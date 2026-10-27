@@ -23,7 +23,7 @@ mod SceneRender {
     pub def all(): Unit \ IO = App.Headless.exitWith(allJob(App.Headless.requestFromProcess()))
 
     /// SceneRender.all の中身（常駐の /run からも呼ぶ）。戻り値は終了コード。
-    pub def allJob(_req: App.Headless.Request): Int32 \ IO =
+    def allJob(_req: App.Headless.Request): Int32 \ IO =
         discard allShots();
         0
 
@@ -35,7 +35,7 @@ mod SceneRender {
     /// 描き出せる場面の名前。make render の使い方も SHOT の当たり判定も、この並びが source of truth。
     /// 場面の題と一言（Studio のギャラリーに出るラベル）は assets/*.scenes.json 側で、
     /// name をここの名前とそろえる。ラベルを足しても描き出す場面は増えない。
-    pub def shotNames(): List[String] =
+    def shotNames(): List[String] =
         "title" :: "s1_start" :: "s2_stack" :: "s3_clear" :: "s4_over" :: Nil
 
     /// 名前 → その場面の World。shotNames と対で保つ。名前で引く形にしてあるので、
@@ -65,7 +65,7 @@ mod SceneRender {
     pub def one(): Unit \ IO = App.Headless.exitWith(oneJob(App.Headless.requestFromProcess()))
 
     /// SceneRender.one の中身（常駐の /run からも呼ぶ）。env は要求の表（App.Headless.envOf）だけを読む。
-    pub def oneJob(req: App.Headless.Request): Int32 \ IO =
+    def oneJob(req: App.Headless.Request): Int32 \ IO =
         let wanted = Map.getWithDefault("SHOT", "", App.Headless.envOf(req)) |> String.splitOn(substr = " ")
             |> List.map(String.trim) |> List.filter(n -> not String.isEmpty(n));
         let known = List.toSet(shotNames());
@@ -104,8 +104,8 @@ mod SceneRender {
             }, b)
         }, Map.empty());
         { board = board,
-          current = { kind = World.Kind.T, rot = 0, col = 4, row = 3 },
-          nextKind = World.Kind.L, phase = World.Phase.Playing, t = 1.1 | w0 }
+          current = { kind = Pieces.Kind.T, rot = 0, col = 4, row = 3 },
+          nextKind = Pieces.Kind.L, phase = World.Phase.Playing, t = 1.1 | w0 }
 
     /// ライン消しの演出中。下 2 行を満杯にして固定し、演出を途中（40%）で止める。
     def clearScene(w0: World.World): World.World =
@@ -115,7 +115,7 @@ mod SceneRender {
                 Map.insert((c, r), clearKind(c), b2), b), Map.empty());
         // その上に少し土台を残す（消える行の上に積みがある状態を見せる）。
         let withTower = List.range(0, 4) |> List.foldLeft((b, c) ->
-            Map.insert((c, bottom - 2), World.Kind.J, b), full);
+            Map.insert((c, bottom - 2), Pieces.Kind.J, b), full);
         { board = withTower, phase = World.Phase.Clearing,
           clearRows = bottom :: (bottom - 1) :: Nil,
           clearTimer = RulesDoc.rec(w0#doc)#clearDuration * 0.4, t = 2.6 | w0 }
@@ -130,12 +130,12 @@ mod SceneRender {
         { board = board, phase = World.Phase.GameOver, score = 4200, lines = 24, t = 5.0 | w0 }
 
     // ── セルの色を決定的にばらす小物（種類 = 色。7 種を順に舐める） ──
-    def kindAt(i: Int32): World.Kind =
+    def kindAt(i: Int32): Pieces.Kind =
         List.drop(Int32.modulo(Int32.abs(i), 7), Pieces.all()) |> List.head
-            |> Option.getWithDefault(World.Kind.I)
-    def stackKind(i: Int32): World.Kind = kindAt(i)
-    def clearKind(i: Int32): World.Kind = kindAt(i + 2)
-    def overKind(c: Int32, r: Int32): World.Kind = kindAt(c * 3 + r)
+            |> Option.getWithDefault(Pieces.Kind.I)
+    def stackKind(i: Int32): Pieces.Kind = kindAt(i)
+    def clearKind(i: Int32): Pieces.Kind = kindAt(i + 2)
+    def overKind(c: Int32, r: Int32): Pieces.Kind = kindAt(c * 3 + r)
 
     /// 1 場面を PNG に生成し、生成したファイルパスを返す。hud の合流は実機と同じ
     /// App.composeScene を通す（カメラ無しなので center = None・等倍）。

@@ -23,7 +23,7 @@ FLIX_TEST := $(CURDIR)/bin/flix
 
 # 全パッケージ共通のバージョン (lockstep)。sync 先ディレクトリ名や release の
 # asset 名に使う。make bump FROM=x TO=y で各 flix.toml と一緒に上げる。
-VERSION := 0.63.0
+VERSION := 0.65.0
 
 # engine は契約層 (依存ゼロ)。render_gl / engine_world / engine_tools はその上に載る層。
 ENGINE_DIR       := engine
@@ -1047,9 +1047,10 @@ new-game: engine-full-fresh
 	git -C "$(GAME)" init -q; \
 	git -C "$(GAME)" config core.hooksPath bin/githooks; \
 	$(MAKE) --no-print-directory sync-agents GAME="$(GAME)"; \
-	echo "[new-game] 産声の確認: check → test → render-all"; \
+	echo "[new-game] 産声の確認: check → test → lint-flixlint → render-all"; \
 	$(MAKE) --no-print-directory -C "$(GAME)" check ENGINE="$(CURDIR)"; \
 	$(MAKE) --no-print-directory -C "$(GAME)" test ENGINE="$(CURDIR)"; \
+	if [ -f "$(GAME)/lint/rules.flix" ]; then $(MAKE) --no-print-directory -C "$(GAME)" lint-flixlint ENGINE="$(CURDIR)"; fi; \
 	$(MAKE) --no-print-directory -C "$(GAME)" render-all ENGINE="$(CURDIR)"; \
 	echo ""; \
 	echo "🎉 新しいゲームが産まれました: $(GAME)"; \

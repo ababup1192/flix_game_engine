@@ -1,6 +1,10 @@
 // View — World から「(置き場所, 見せたい物) のリスト」への投影（純粋）。
 // 盤・固定セル・落下中ミノ・着地予測（ゴースト）・NEXT・スコア・ライン消しの閃光・
-// GAME OVER の幕を、World を読むだけで（変えずに）絵にする。幾何はここに閉じる。
+// GAME OVER の幕を絵にする。幾何はここに閉じる。
+//
+// World を受けるのは入口の frame・hud と、そこから描くのに要る値だけを In に写す inputOf の 3 つ。
+// 部品は In だけを読む（lint/rules.flix の view-no-world）。描くのに新しい値が要れば In に欄を足し、
+// 規則で導く値（着地点・消える行の進み）は inputOf で World の関数を呼んで入れる。
 //
 // ── この画面の画風（AGENTS.local.md と同じ宣言）──
 // 「生成りの紙に版で刷った積み木」。明るい紙の上に、彩度を落としたインクの色面が乗る。
@@ -23,8 +27,8 @@
 // View は fail-open: 盤が空でも Doc が既定でも必ず何かを描く（プレイヤーの前で白画面にしない）。
 mod View {
 
-    use fge::{App, Color, DrawCmd, FontAtlas, Num, RawDraw, Render, Sway, TextDraw, Vec2}
-    use World.Cell
+    use fge::{App, Color, DrawCmd, FontAtlas, Num, RawDraw, Render, ShaderDoc, Sway, TextDraw, Vec2}
+    use Pieces.{Cell, Kind}
 
     // ── z 層 ──
     def zBg(): Int32 = 0
@@ -48,24 +52,52 @@ mod View {
     def designW(): Float64 = 256.0
     def designH(): Float64 = 352.0
 
+    /// 描くのに要る値。部品は World でなくこれを読む。
+    ///   landed        … いまのミノをこれ以上落ちない所まで落とした位置（ゴースト）。
+    ///   clearProgress … 行を消す光の進み（0 → 1）。
+    type alias In = {
+        phase = World.Phase,
+        t = Float64,
+        theme = ThemeDoc.Doc,
+        shader = ShaderDoc.Spec,
+        board = Map[Cell, Kind],
+        current = World.Piece,
+        landed = World.Piece,
+        nextKind = Kind,
+        clearRows = List[Int32],
+        clearProgress = Float64,
+        score = Int32,
+        lines = Int32
+    }
+
+    /// World から描くのに要る値だけを写す。
+    def inputOf(w: World.World): In =
+        { phase = w#phase, t = w#t, theme = w#theme, shader = w#shader, board = w#board,
+          current = w#current, landed = World.dropToBottom(w)#current, nextKind = w#nextKind,
+          clearRows = w#clearRows,
+          clearProgress = Num.clamp01(w#clearTimer / Float64.max(0.0001, RulesDoc.rec(w#doc)#clearDuration)),
+          score = w#score, lines = w#lines }
+
     pub def frame(_ctx: App.ViewCtx, w: World.World): List[Render.PlacedItem] =
+        let i = inputOf(w);
         List.flatten(
-               background(w)
-            :: gridLines(ThemeDoc.rec(w#theme))
-            :: ghost(w)
-            :: dropShadow(w)
-            :: lockedCells(w)
-            :: currentCells(w)
-            :: clearFx(w)
+               background(i)
+            :: gridLines(ThemeDoc.rec(i#theme))
+            :: ghost(i)
+            :: dropShadow(i)
+            :: lockedCells(i)
+            :: currentCells(i)
+            :: clearFx(i)
             :: Nil)
 
     /// 画面固定の絵（NEXT・スコア・GAME OVER の幕）。App.withHudView へ繋ぐ —
     /// world 側の z がどれだけ大きくても、この絵は必ず手前に出る。
     pub def hud(ctx: App.ViewCtx, w: World.World): List[Render.PlacedItem] =
+        let i = inputOf(w);
         List.flatten(
-               nextPreview(ctx#atlas, w)
-            :: hudPanel(ctx#atlas, w)
-            :: overlay(ctx#atlas, w)
+               nextPreview(ctx#atlas, i)
+            :: hudPanel(ctx#atlas, i)
+            :: overlay(ctx#atlas, i)
             :: Nil)
 
     // ── 盤面の座標（(col,row) → 画面座標） ──
@@ -101,7 +133,7 @@ mod View {
     /// 紙（画素ごとの計算で塗る面）→ 盤の縁 → 盤の窪み。fail-open の土台（常に何か出る）。
     /// 紙は単色の四角ではなく、細かい繊維がごく遅く流れる面。何がどう効くかは Doc の note と
     /// engine の `docs/shader-doc.md` を参照。
-    def background(w: World.World): List[Render.PlacedItem] =
+    def background(w: In): List[Render.PlacedItem] =
         let theme = ThemeDoc.rec(w#theme);
         let boardW = Int32.toFloat64(World.cols()) * cell();
         let boardH = Int32.toFloat64(World.rows()) * cell();
@@ -130,7 +162,7 @@ mod View {
     // ── 固定セル・落下中ミノ・ゴースト ──
 
     /// 盤に固定されたセル（それぞれの Kind の色で）。
-    def lockedCells(w: World.World): List[Render.PlacedItem] =
+    def lockedCells(w: In): List[Render.PlacedItem] =
         Map.toList(w#board) |> List.flatMap(entry -> {
             let (cellPos, kind) = entry;
             let (c, r) = cellPos;
@@ -140,7 +172,7 @@ mod View {
     /// いま操作しているミノ。Clearing / GameOver 中は消える行や幕に集中させるため出さない。
     /// 積んだマスと同じ刷り方の上に、息をする縁を重ねる — 積み山の中で「いま動かせるのはこれ」が
     /// 一目で分かり、手を止めていても画面が静止しない。
-    def currentCells(w: World.World): List[Render.PlacedItem] =
+    def currentCells(w: In): List[Render.PlacedItem] =
         match w#phase {
             case World.Phase.Playing =>
                 let color = ThemeDoc.colorOf(w#theme, w#current#kind);
@@ -159,7 +191,7 @@ mod View {
 
     /// 落下中のミノが紙に落とす影（少し右下へずらした薄いインク）。
     /// 盤から浮いていることが分かるので、ゴースト（着地点）と混ざらない。
-    def dropShadow(w: World.World): List[Render.PlacedItem] =
+    def dropShadow(w: In): List[Render.PlacedItem] =
         match w#phase {
             case World.Phase.Playing =>
                 World.piecesCells(w#current) |> List.filterMap(cellPos -> {
@@ -176,11 +208,10 @@ mod View {
 
     /// 着地予測（ゴースト）: current をこれ以上落ちない所まで落とした位置を薄い色で描く。
     /// 「Space でどこに落ちるか」が一目で分かる補助。Playing のときだけ。
-    def ghost(w: World.World): List[Render.PlacedItem] =
+    def ghost(w: In): List[Render.PlacedItem] =
         match w#phase {
             case World.Phase.Playing =>
-                let landed = World.dropToBottom(w);
-                pieceCells(landed#current, ThemeDoc.rec(w#theme)#ghost, zGhost())
+                pieceCells(w#landed, ThemeDoc.rec(w#theme)#ghost, zGhost())
                     |> Render.fadeAll(0.5)
             case _ => Nil
         }
@@ -193,11 +224,11 @@ mod View {
         })
 
     // ── ライン消しの演出（凝りすぎない: 閃光のストリップ + ソフトな光球）──
-    // 進度 t（0→1）で薄れていく。t は clearTimer / clearDuration。
-    def clearFx(w: World.World): List[Render.PlacedItem] =
+    // 進度 t（0→1）で薄れていく。
+    def clearFx(w: In): List[Render.PlacedItem] =
         match w#phase {
             case World.Phase.Clearing =>
-                let t = Num.clamp01(w#clearTimer / Float64.max(0.0001, RulesDoc.rec(w#doc)#clearDuration));
+                let t = w#clearProgress;
                 let fade = 1.0 - t;                                     // 1→0 に減衰
                 let boardW = Int32.toFloat64(World.cols()) * cell();
                 w#clearRows |> List.flatMap(r -> {
@@ -218,7 +249,7 @@ mod View {
     // ── NEXT プレビュー ──
 
     /// 右パネルに "NEXT" と、次のミノを rot 0 で小さく描く。
-    def nextPreview(atlas: FontAtlas, w: World.World): List[Render.PlacedItem] =
+    def nextPreview(atlas: FontAtlas, w: In): List[Render.PlacedItem] =
         let label = { at = { x = panelX(), y = originY() },
                       item = Render.textTinted("NEXT", atlas, 10.0, ThemeDoc.rec(w#theme)#wall, zHud()) };
         // プレビューの原点（ラベルの下）。cellsOf の相対座標をここから並べる。
@@ -235,7 +266,7 @@ mod View {
 
     // ── HUD（スコア・ライン数）──
 
-    def hudPanel(atlas: FontAtlas, w: World.World): List[Render.PlacedItem] =
+    def hudPanel(atlas: FontAtlas, w: In): List[Render.PlacedItem] =
         let x = panelX();
         // 文言はコードに直書きせず「見出し + 数」を組む。ラベルだけは UI の見出しなので固定でよい。
         let scoreY = 120.0;
@@ -254,7 +285,7 @@ mod View {
 
     // ── GAME OVER の幕 ──
 
-    def overlay(atlas: FontAtlas, w: World.World): List[Render.PlacedItem] =
+    def overlay(atlas: FontAtlas, w: In): List[Render.PlacedItem] =
         match w#phase {
             case World.Phase.GameOver =>
                    { at = { x = 0.0, y = 0.0 },

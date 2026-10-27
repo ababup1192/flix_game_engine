@@ -46,6 +46,7 @@ type CheckdServer struct {
 	ShimJar         *string  `json:"shimJar"`
 	ShimSHA256      *string  `json:"shimSha256"`
 	ShimURL         *string  `json:"shimUrl"`
+	RepoURL         *string  `json:"repoUrl"`
 	HeapMB          *int     `json:"heapMB"`
 	JavaOpts        []string `json:"javaOpts"`
 	IdleMinutes     *int     `json:"idleMinutes"`
@@ -190,6 +191,8 @@ func LoadRules(root string) (*Rules, error) {
 		missing = "checkd.server.shimSha256"
 	case cd.Server.BackendEnvVar != nil && cd.Server.ShimURL == nil:
 		missing = "checkd.server.shimUrl"
+	case cd.Server.BackendEnvVar != nil && cd.Server.RepoURL == nil:
+		missing = "checkd.server.repoUrl"
 	case cd.Server.BackendEnvVar != nil && cd.Server.HeapMB == nil:
 		missing = "checkd.server.heapMB"
 	case cd.Server.BackendEnvVar != nil && cd.Server.IdleMinutes == nil:

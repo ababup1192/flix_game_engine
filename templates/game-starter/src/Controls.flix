@@ -8,7 +8,7 @@ mod Controls {
 
     /// このフレームのキーを World.Input へ。操作ごとのキーの列（keys Doc）の
     /// どれか 1 つでも押されていれば効き、逆向きが同時なら打ち消して 0。
-    pub def inputOf(frame: App.Frame, keys: KeysDoc.Doc): World.Input =
+    def inputOf(frame: App.Frame, keys: KeysDoc.Doc): World.Input =
         let held = ks -> List.exists(k -> App.isDown(k, frame), ks);
         let axis = (negDown, posDown) ->
             (if (posDown) 1.0 else 0.0) - (if (negDown) 1.0 else 0.0);
@@ -33,7 +33,7 @@ mod Controls {
     /// cursor を押した。押した物は絵と同じ木（View.layers）から描く順の手前で選ぶ —— 窓の奥には届かない。
     pub def tapAt(cursor: Vec2.Vec2, w: World.World): World.World =
         let ctx = App.pickCtx({ x = World.width(), y = World.height() });
-        match SortingLayer.pickFrom(cursor, View.layers(ctx, w)) {
+        match SortingLayer.pickFrom(cursor, View.layers(ctx, View.inputOf(w))) {
             case Some(World.Press.QuitYes) => World.answerQuit(true, w)
             case Some(World.Press.QuitNo)  => World.answerQuit(false, w)
             case None                      => w
@@ -41,26 +41,26 @@ mod Controls {
 
     // ── Doc の読み直し（watchFile / F1） ──
 
-    pub def reloadDoc(w: World.World): World.World \ Fs.FileRead =
+    def reloadDoc(w: World.World): World.World \ Fs.FileRead =
         World.withDoc(SampleDoc.load(SampleDoc.path()), w)
 
-    pub def reloadKeys(w: World.World): World.World \ Fs.FileRead =
+    def reloadKeys(w: World.World): World.World \ Fs.FileRead =
         World.withKeys(KeysDoc.load(KeysDoc.path()), w)
 
     /// テーマは色に加えて「塗りの仕上げ」も持つので、絵も読み直して掛け直す
     /// （仕上げは読み込み時に 1 回だけ掛かる = 絵の側に生成の結果として定着しているため）。
-    pub def reloadTheme(w: World.World): World.World \ Fs.FileRead =
+    def reloadTheme(w: World.World): World.World \ Fs.FileRead =
         World.withTheme(ThemeDoc.load(ThemeDoc.path()),
             PxSpriteDoc.load(World.spritePath()), w)
 
-    pub def reloadSprites(w: World.World): World.World \ Fs.FileRead =
+    def reloadSprites(w: World.World): World.World \ Fs.FileRead =
         World.withSprites(PxSpriteDoc.load(World.spritePath()), w)
 
     /// 空の塗り。壊れていれば engine の見本の面にする（何も出ないより気付ける）。
     pub def loadShader(): ShaderDoc.Spec \ Fs.FileRead =
         ShaderJson.loadOr(ShaderDoc.demoSurface(), World.shaderPath())
 
-    pub def reloadShader(w: World.World): World.World \ Fs.FileRead =
+    def reloadShader(w: World.World): World.World \ Fs.FileRead =
         World.withShader(loadShader(), w)
 
     /// Doc の一覧表(DocTable)。watchFile(保存即反映)・F1 の一括リロード・Studio へ名乗る
@@ -77,16 +77,4 @@ mod Controls {
             :: DocTable.row("sprite", World.spritePath(),   reloadSprites)
             :: DocTable.row("shader", World.shaderPath(),   reloadShader)
             :: Nil
-
-    /// App.game の reloads(保存即反映の watchFile)へ渡す形。
-    pub def reloads(): List[(String, World.World -> World.World \ Fs.FileRead)] =
-        DocTable.reloads(docTable())
-
-    /// F1: 一覧表の順に Doc を全部読み直す。
-    pub def reloadAll(w: World.World): World.World \ Fs.FileRead =
-        DocTable.reloadAll(docTable(), w)
-
-    /// いま画面に出ている Doc（Studio の「表示中」バッジの材料）。
-    pub def activeDocs(w: World.World): List[(String, List[String])] =
-        DocTable.activeDocs(docTable(), w)
 }

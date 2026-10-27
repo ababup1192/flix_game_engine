@@ -11,8 +11,19 @@
 // wallKickOffsets（簡易ウォールキック）を World.tryRotate が順に試す。
 mod Pieces {
 
-    use World.Kind
-    use World.Cell
+    /// ミノの 7 種。色（ThemeDoc.colorOf）も形（cellsOf）もこの種類から引く。
+    pub enum Kind with Eq, ToString {
+        case I
+        case O
+        case T
+        case S
+        case Z
+        case J
+        case L
+    }
+
+    /// 盤のマス。(col, row)。row 0 が最上段で、下に行くほど row が増える（画面と同じ向き）。
+    pub type alias Cell = (Int32, Int32)
 
     // ── 形のテーブル（原点基準の相対 4 セル。rot 0..3） ──
     // 見た目のまま素直に並べる（初学者が形を目で追える）。

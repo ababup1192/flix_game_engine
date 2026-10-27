@@ -283,7 +283,7 @@ func prepareResident(r *hooks.Rules, root, pkg string) (residentSetup, error) {
 		return s, fmt.Errorf("flix.jar の場所が分からない: %v", err)
 	}
 	s.flixJar = strings.TrimSpace(string(out))
-	if s.shimJar, err = shimJar(r); err != nil {
+	if s.shimJar, err = ShimJar(r); err != nil {
 		return s, err
 	}
 	s.java = javaCmd(root)
@@ -305,8 +305,8 @@ func prepareResident(r *hooks.Rules, root, pkg string) (residentSetup, error) {
 	return s, nil
 }
 
-// shimJar は flixlint の shim の jar (無ければリリースから取り、sha256 が合う時だけ置く)。
-func shimJar(r *hooks.Rules) (string, error) {
+// ShimJar は flixlint の shim の jar (無ければリリースから取り、sha256 が合う時だけ置く)。
+func ShimJar(r *hooks.Rules) (string, error) {
 	sv := r.Checkd.Server
 	path := filepath.Join(hooks.CacheDir(r), "flixlint", *sv.FlixlintVersion, *sv.ShimJar)
 	if sum, err := fileSum(path); err == nil && sum == *sv.ShimSHA256 {
@@ -543,7 +543,7 @@ func SharedServer(r *hooks.Rules, engineRoot, pkg string) (Shared, error) {
 	if err != nil {
 		return Shared{}, fmt.Errorf("flix.jar の場所が分からない: %v", err)
 	}
-	shim, err := shimJar(r)
+	shim, err := ShimJar(r)
 	if err != nil {
 		return Shared{}, err
 	}
