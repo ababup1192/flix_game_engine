@@ -1,0 +1,19 @@
+# 田んぼで栞を挟み、先へ読んでから栞で戻ると、同じ行・同じ舞台（写真・ADV）から読み直せる。
+start title
+tap confirm
+drive reader until talk=Paddy max 90
+wait 0.5
+tap 641,526                            # 下の帯の「セーブ」
+expect panel=SaveSlots
+tap 270,154                            # 1 枚目の枠に挟む
+expect panel=SaveSlots
+tap back
+expect panel=Closed&talk=Paddy
+drive reader until choice max 60
+tap confirm                            # 「千夏？」
+drive reader until talk=Lane max 60
+expect photo=lane
+tap 703,526                            # 下の帯の「ロード」
+expect panel=LoadSlots
+tap 270,154                            # 1 枚目の栞から読む
+expect panel=Closed&talk=Paddy&photo=paddy&mode=Adv

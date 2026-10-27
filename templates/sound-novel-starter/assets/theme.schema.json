@@ -1,0 +1,66 @@
+{
+  "//": "novel.theme.json の形の宣言（Studio の sections 方言）。字と窓の色。写真の色は novel.backdrops.json の時間帯。",
+  "version": 1,
+  "sections": {
+    "ink": {
+      "kind": "field",
+      "type": "color",
+      "label": "本文の字",
+      "order": 1,
+      "required": true
+    },
+    "inkSeen": {
+      "kind": "field",
+      "type": "color",
+      "label": "既読の行の字（スキップで飛ばせる行）",
+      "order": 2,
+      "required": true
+    },
+    "name": {
+      "kind": "field",
+      "type": "color",
+      "label": "話し手の名前",
+      "order": 3,
+      "required": true
+    },
+    "accent": {
+      "kind": "field",
+      "type": "color",
+      "label": "選んでいる物・オートとスキップの点灯（差し色）",
+      "order": 4,
+      "required": true
+    },
+    "panel": {
+      "kind": "field",
+      "type": "color",
+      "label": "ADV の窓・選択肢・窓の地",
+      "order": 5,
+      "required": true
+    },
+    "panelAlpha": {
+      "kind": "field",
+      "type": "float",
+      "label": "ADV の窓の濃さ（0〜1）",
+      "order": 6,
+      "min": 0,
+      "max": 1,
+      "default": 0.74
+    },
+    "veil": {
+      "kind": "field",
+      "type": "float",
+      "label": "NVL の頁の下に敷く暗さ（0〜1）",
+      "order": 7,
+      "min": 0,
+      "max": 1,
+      "default": 0.6
+    },
+    "firefly": {
+      "kind": "field",
+      "type": "color",
+      "label": "蛍の光",
+      "order": 8,
+      "required": true
+    }
+  }
+}

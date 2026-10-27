@@ -1,4 +1,4 @@
-<!-- engine v0.63.0 / 生成: 2026-10-26 -->
+<!-- engine v0.63.0 / 生成: 2026-10-27 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine_world
@@ -2007,7 +2007,7 @@
 - ルビ 1 つ。start = 親字の頭（plainText の何文字目・0 始まり）、length = 親字の数、text = ふりがな。
   `pub type alias Ruby = { start = Int32, length = Int32, text = String }`
 - ルビつきで折った時の行数（ページ割り・窓の高さの勘定。字幅の決まりは wrapLinesBy と同じ）。
-  `pub def rubyLineCountBy(charWidth: Char -> Float64, rubyWidth: String -> Float64, maxWidth: Float64, rubies: List[Ruby], spans: List[Span]): Int32`
+  `pub def rubyLineCountBy(charWidth: Char -> Float64, rubyWidth: String -> Float64, rubySize: Float64, maxWidth: Float64, rubies: List[Ruby], spans: List[Span]): Int32`
 - ルビつきの字を置く。親字の上に rubySize の字でふりがなを中央そろえで載せる（親字より広ければ親字を中央へ寄せる）。
   `pub def placeRuby(p: Placement, rubySize: Float64, rubies: List[Ruby], visible: Int32, spans: List[Span]): List[Render.PlacedItem]`
 

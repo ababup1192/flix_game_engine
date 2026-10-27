@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "note": "クレジットに流す行（上から順）。style は heading（見出し）/ body（本文）/ small（出典の URL など）/ gap（空き）。写真（CC BY は作者と許諾を出すのが条件）とフォント（SIL OFL）の表記は CREDITS.md と同じ物を置く。",
+  "rows": [
+    { "text": "夏草の駅", "style": "heading" },
+    { "text": "", "style": "gap" },
+    { "text": "背景の写真（Wikimedia Commons より。切り抜き・縮小し、ゲームの中でぼかしと色の調整をしています）", "style": "small" },
+    { "text": "", "style": "gap" },
+    { "text": "無人の駅 — lumoplank（CC0 1.0）", "style": "body" },
+    { "text": "Onuma Quasi-National Park - Onuma544.jpg", "style": "small" },
+    { "text": "田んぼの道 — Tagosaku（CC BY 2.0）", "style": "body" },
+    { "text": "Japanese Summer (14646910072).jpg", "style": "small" },
+    { "text": "坂の上の家 — 田村淳（CC BY 3.0）", "style": "body" },
+    { "text": "滝の下 古民家 - panoramio.jpg", "style": "small" },
+    { "text": "祖母の家の縁側 — 663highland（CC BY 2.5）", "style": "body" },
+    { "text": "Shikokumura19s3200.jpg", "style": "small" },
+    { "text": "蛍の川 — Spedi-sit（CC0 1.0）", "style": "body" },
+    { "text": "中世木川と田んぼ.jpg", "style": "small" },
+    { "text": "", "style": "gap" },
+    { "text": "フォント", "style": "heading" },
+    { "text": "しっぽり明朝 — The Shippori Mincho Project Authors", "style": "body" },
+    { "text": "SIL Open Font License 1.1", "style": "small" },
+    { "text": "", "style": "gap" },
+    { "text": "音", "style": "heading" },
+    { "text": "flix_game_engine の音の台本から合成", "style": "body" },
+    { "text": "", "style": "gap" },
+    { "text": "作り", "style": "heading" },
+    { "text": "flix_game_engine — サウンドノベルの手本", "style": "body" },
+    { "text": "", "style": "gap" },
+    { "text": "読んでくださって、ありがとうございました。", "style": "body" }
+  ]
+}

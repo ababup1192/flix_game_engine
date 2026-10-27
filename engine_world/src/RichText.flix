@@ -170,31 +170,40 @@ pub mod RichText {
         };
         go(glyphs, Nil)
 
-    /// 塊の幅（ルビの塊は親字とふりがなの広い方）。
-    def pieceWidth(charWidth: Char -> Float64, rubyWidth: String -> Float64, piece: Piece): Float64 = match piece {
+    /// 塊の幅。ルビの塊は親字とふりがなの広い方だが、ふりがなは両隣へルビ 1 字ずつ（合わせて rubySize の 2 倍まで）
+    /// はみ出してよい（ふりがなの幅まで広げると、1 字の親字に 4 字のよみで前後が大きく空く）。
+    def pieceWidth(charWidth: Char -> Float64, rubyWidth: String -> Float64, rubySize: Float64, piece: Piece): Float64 = match piece {
         case Piece.Glyph(ch, _, _) => charWidth(ch)
-        case Piece.Group(base, r)  => Float64.max(List.foldLeft((acc, g) -> { let (c, _, _) = g; acc + charWidth(c) }, 0.0, base), rubyWidth(r#text))
+        case Piece.Group(base, r)  => Float64.max(List.foldLeft((acc, g) -> { let (c, _, _) = g; acc + charWidth(c) }, 0.0, base), rubyWidth(r#text) - 2.0 * rubySize)
         case Piece.Newline         => 0.0
     }
 
+    /// 行頭に来てはいけない字（句読点・閉じ括弧）。はみ出しても前の行の末尾にぶら下げる。
+    def isNoLineStart(ch: Char): Bool = String.contains(substr = Char.toString(ch), "、。，．・：；？！ー）」』】〉》〕｝…‥ゝゞぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮ,.!?)")
+
     /// 塊の列を最大幅で行に割る（wrapLinesBy と同じ決まり: 行頭では折らない・'\n' で改行・空でも 1 行）。
-    def wrapPieces(charWidth: Char -> Float64, rubyWidth: String -> Float64, maxWidth: Float64, pieces: List[Piece]): List[List[Piece]] =
+    /// 加えて行頭に来てはいけない字はぶら下げる（はみ出しは字 1 つ分まで。続けて来ても 1 つ目だけ）。
+    def wrapPieces(charWidth: Char -> Float64, rubyWidth: String -> Float64, rubySize: Float64, maxWidth: Float64, pieces: List[Piece]): List[List[Piece]] =
         let (lines, line, _) = pieces |> List.foldLeft((acc, piece) -> {
             let (done, cur, x) = acc;
             match piece {
                 case Piece.Newline => (List.reverse(cur) :: done, Nil, 0.0)
                 case _ =>
-                    let w = pieceWidth(charWidth, rubyWidth, piece);
-                    if (x + w > maxWidth and x > 0.0) (List.reverse(cur) :: done, piece :: Nil, w)
+                    let w = pieceWidth(charWidth, rubyWidth, rubySize, piece);
+                    let hangs = match piece {
+                        case Piece.Glyph(ch, _, _) => isNoLineStart(ch) and x <= maxWidth
+                        case _                     => false
+                    };
+                    if (x + w > maxWidth and x > 0.0 and not hangs) (List.reverse(cur) :: done, piece :: Nil, w)
                     else (done, piece :: cur, x + w)
             }
         }, (Nil, Nil, 0.0));
         List.reverse(List.reverse(line) :: lines)
 
     /// ルビつきで折った時の行数（ページ割り・窓の高さの勘定。字幅の決まりは wrapLinesBy と同じ）。
-    pub def rubyLineCountBy(charWidth: Char -> Float64, rubyWidth: String -> Float64, maxWidth: Float64,
+    pub def rubyLineCountBy(charWidth: Char -> Float64, rubyWidth: String -> Float64, rubySize: Float64, maxWidth: Float64,
                             rubies: List[Ruby], spans: List[Span]): Int32 =
-        List.length(wrapPieces(charWidth, rubyWidth, maxWidth, piecesOf(rubies, spans)))
+        List.length(wrapPieces(charWidth, rubyWidth, rubySize, maxWidth, piecesOf(rubies, spans)))
 
     /// ルビつきの字を置く。親字の上に rubySize の字でふりがなを中央そろえで載せる（親字より広ければ親字を中央へ寄せる）。
     /// 行割りは全文で決める（visible = 見せる字の数。文字送りの途中でも行が動かない）。ふりがなは親字が全部見えてから出る。
@@ -202,11 +211,11 @@ pub mod RichText {
     pub def placeRuby(p: Placement, rubySize: Float64, rubies: List[Ruby], visible: Int32, spans: List[Span]): List[Render.PlacedItem] =
         let cw = ch -> TextDraw.width(Char.toString(ch), p#atlas, p#size);
         let rw = text -> TextDraw.width(text, p#atlas, rubySize);
-        wrapPieces(cw, rw, p#maxWidth, piecesOf(rubies, spans))
+        wrapPieces(cw, rw, rubySize, p#maxWidth, piecesOf(rubies, spans))
             |> List.zipWithIndex
             |> List.flatMap(match (row, line) -> {
                 let y = p#pos#y + Int32.toFloat64(row) * (p#size + p#lineGap);
-                withOffsets(piece -> pieceWidth(cw, rw, piece), line)
+                withOffsets(piece -> pieceWidth(cw, rw, rubySize, piece), line)
                     |> List.flatMap(match (piece, x) -> placePiece(p, rubySize, cw, rw, visible, piece, p#pos#x + x, y))
             })
 
@@ -220,7 +229,7 @@ pub mod RichText {
                    piece: Piece, x: Float64, y: Float64): List[Render.PlacedItem] = match piece {
         case Piece.Glyph(ch, span, i) => if (i < visible) glyphItems(p, span, ch, x, y) else Nil
         case Piece.Group(base, r) =>
-            let w = pieceWidth(cw, rw, piece);
+            let w = pieceWidth(cw, rw, rubySize, piece);
             let baseW = List.foldLeft((sum, g) -> { let (c, _, _) = g; sum + cw(c) }, 0.0, base);
             let chars = withOffsets(match (c, _, _) -> cw(c), base)
                 |> List.flatMap(match ((c, span, i), bx) -> if (i < visible) glyphItems(p, span, c, x + (w - baseW) / 2.0 + bx, y) else Nil);

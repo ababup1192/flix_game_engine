@@ -1,0 +1,118 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "背景の写真と時間帯の色（novel.backdrops.json）",
+  "description": "シナリオの <<bg 写真 時間帯 秒>> の名前はここの鍵。写真は昼の実写で、時間帯の色とぼかしはシェーダー（src/Backdrop.flix）が付ける。",
+  "type": "object",
+  "required": [
+    "version",
+    "photos",
+    "grades"
+  ],
+  "properties": {
+    "version": {
+      "type": "integer"
+    },
+    "note": {
+      "type": "string"
+    },
+    "photos": {
+      "type": "object",
+      "description": "写真の名前 → 写真",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "texture"
+        ],
+        "properties": {
+          "texture": {
+            "type": "string",
+            "description": "project.json の textures の名前"
+          },
+          "label": {
+            "type": "string",
+            "description": "栞に出す場所の名前"
+          }
+        }
+      }
+    },
+    "grades": {
+      "type": "object",
+      "description": "時間帯の名前 → 色とぼかし",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "blur": {
+            "type": "number",
+            "description": "ぼかしの半径（画面の幅に対する割合）",
+            "minimum": 0,
+            "maximum": 0.05
+          },
+          "taps": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 64,
+            "description": "ぼかしで読む点の数"
+          },
+          "saturation": {
+            "type": "number",
+            "description": "彩度（1 = そのまま）",
+            "minimum": 0,
+            "maximum": 2
+          },
+          "exposure": {
+            "type": "number",
+            "description": "明るさ（1 = そのまま）",
+            "minimum": 0,
+            "maximum": 2
+          },
+          "tint": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            },
+            "minItems": 3,
+            "maxItems": 3,
+            "description": "赤・緑・青の倍率"
+          },
+          "lift": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            },
+            "minItems": 3,
+            "maxItems": 3,
+            "description": "暗い所に足す色"
+          },
+          "sky": {
+            "type": "string",
+            "description": "上から差す光の色（#rrggbb）"
+          },
+          "skyStrength": {
+            "type": "number",
+            "description": "上から差す光の強さ",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "skyReach": {
+            "type": "number",
+            "description": "上から差す光の届く深さ（画面の高さに対する割合）",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "vignette": {
+            "type": "number",
+            "description": "四隅を落とす強さ",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "focusPull": {
+            "type": "number",
+            "description": "切り替えの頭で余分にぼかす量（blur の倍数）",
+            "minimum": 0,
+            "maximum": 4
+          }
+        }
+      }
+    }
+  }
+}

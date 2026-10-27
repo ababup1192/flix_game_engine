@@ -1,0 +1,42 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "クレジット（novel.credits.json）",
+  "description": "クレジットに流す行（上から順）。写真とフォントの出典は CREDITS.md と同じ物を置く。",
+  "type": "object",
+  "required": [
+    "version",
+    "rows"
+  ],
+  "properties": {
+    "version": {
+      "type": "integer"
+    },
+    "note": {
+      "type": "string"
+    },
+    "rows": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "text",
+          "style"
+        ],
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "style": {
+            "enum": [
+              "heading",
+              "body",
+              "small",
+              "gap"
+            ],
+            "description": "heading = 見出し / body = 本文 / small = 出典の URL など / gap = 空き"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,21 @@
+lib/
+build/
+artifact/
+dist/
+dist-win/
+*.fpkg
+*.jar
+.DS_Store
+debug/
+gallery/
+# 生成した絵は git に入れない。リファレンス画像は SHA256SUMS.txt だけ追跡する。
+# title.png は Studio のジャンル札のサムネが実体を読むので例外。
+reference/**/*.png
+!reference/title.png
+# マシンごとの実行環境 (ENGINE/JAVA の場所) — 共有しない
+local.mk
+# テスト記録 (make status が読む) — マシンごとの物なので共有しない
+.test-logs/
+__pycache__/
+# セーブ・既読・設定（遊んだ人ごとの物）
+saves/

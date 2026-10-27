@@ -1,0 +1,168 @@
+{
+  "//": "novel.kind.json の形の宣言（Studio の sections 方言）。手触りの数の初期値だけ Doc に置き、規則はコード側。既定は src/KindDoc.flix の defaults() が正。",
+  "version": 1,
+  "sections": {
+    "bodySize": {
+      "kind": "field",
+      "type": "float",
+      "label": "本文の字の大きさ（px）",
+      "order": 1,
+      "min": 12,
+      "max": 40,
+      "default": 22.0
+    },
+    "rubySize": {
+      "kind": "field",
+      "type": "float",
+      "label": "ルビの字の大きさ（px）",
+      "order": 2,
+      "min": 6,
+      "max": 20,
+      "default": 11.0
+    },
+    "nameSize": {
+      "kind": "field",
+      "type": "float",
+      "label": "話し手の名前の字の大きさ（px）",
+      "order": 3,
+      "min": 10,
+      "max": 32,
+      "default": 19.0
+    },
+    "lineGap": {
+      "kind": "field",
+      "type": "float",
+      "label": "行の間（px。ルビが入るので rubySize 以上）",
+      "order": 4,
+      "min": 0,
+      "max": 40,
+      "default": 14.0
+    },
+    "advRows": {
+      "kind": "field",
+      "type": "int",
+      "label": "ADV の窓の行の数",
+      "order": 5,
+      "min": 1,
+      "max": 6,
+      "default": 3
+    },
+    "nvlRows": {
+      "kind": "field",
+      "type": "int",
+      "label": "NVL の頁の行の数（入り切らなければ頁をめくる）",
+      "order": 6,
+      "min": 3,
+      "max": 16,
+      "default": 11
+    },
+    "cps": {
+      "kind": "field",
+      "type": "float",
+      "label": "文字の速さの既定（1 秒の字数。設定の画面で変えた値は saves/novel.json）",
+      "order": 7,
+      "min": 5,
+      "max": 200,
+      "default": 40.0
+    },
+    "autoWait": {
+      "kind": "field",
+      "type": "float",
+      "label": "オートの待ちの既定（秒）",
+      "order": 8,
+      "min": 0,
+      "max": 10,
+      "default": 1.2
+    },
+    "ambienceVolume": {
+      "kind": "field",
+      "type": "float",
+      "label": "環境音の音量の既定（0〜1）",
+      "order": 9,
+      "min": 0,
+      "max": 1,
+      "default": 0.7
+    },
+    "seVolume": {
+      "kind": "field",
+      "type": "float",
+      "label": "効果音の音量の既定（0〜1）",
+      "order": 10,
+      "min": 0,
+      "max": 1,
+      "default": 0.8
+    },
+    "autoPerChar": {
+      "kind": "field",
+      "type": "float",
+      "label": "オートの待ちに足す 1 字あたりの秒",
+      "order": 11,
+      "min": 0,
+      "max": 0.5,
+      "default": 0.04
+    },
+    "skipInterval": {
+      "kind": "field",
+      "type": "float",
+      "label": "スキップで 1 行を出す間（秒）",
+      "order": 12,
+      "min": 0,
+      "max": 1,
+      "default": 0.06
+    },
+    "logMax": {
+      "kind": "field",
+      "type": "int",
+      "label": "ログに残す行の数",
+      "order": 13,
+      "min": 10,
+      "max": 1000,
+      "default": 120
+    },
+    "shakeSeconds": {
+      "kind": "field",
+      "type": "float",
+      "label": "<<shake>> の長さ（秒）",
+      "order": 14,
+      "min": 0,
+      "max": 3,
+      "default": 0.35
+    },
+    "shakePx": {
+      "kind": "field",
+      "type": "float",
+      "label": "<<shake>> の揺れ幅（px）",
+      "order": 15,
+      "min": 0,
+      "max": 40,
+      "default": 7.0
+    },
+    "fireflies": {
+      "kind": "field",
+      "type": "int",
+      "label": "蛍の数",
+      "order": 16,
+      "min": 0,
+      "max": 120,
+      "default": 28
+    },
+    "creditsSpeed": {
+      "kind": "field",
+      "type": "float",
+      "label": "クレジットが流れる速さ（px/秒）",
+      "order": 17,
+      "min": 5,
+      "max": 200,
+      "default": 34.0
+    },
+    "toastSeconds": {
+      "kind": "field",
+      "type": "float",
+      "label": "知らせを出す秒",
+      "order": 18,
+      "min": 0.2,
+      "max": 10,
+      "default": 1.6
+    }
+  }
+}

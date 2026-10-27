@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "note": "シナリオの外で画面に出す言葉（表紙・ボタン・設定・栞の窓・知らせ）と、話し手の呼び名。文章・分岐・結末はシナリオ assets/talk/natsukusa.yarn（直したら bin/fge yarn build assets/talk）。labels の鍵は src/StoryDoc.flix の Label、names の鍵はシナリオの話し手（src/Talk.flix の Speaker）。titlePhoto / titleGrade は novel.backdrops.json の写真と時間帯、titleAmbience は環境音 amb_<名前>。",
+  "title": "夏草の駅",
+  "subtitle": "十年ぶりに、祖母の町へ帰る。",
+  "hint": "クリックか Enter で選ぶ ・ 読んでいる間は L でログ ・ O でオート ・ K でスキップ ・ H で窓を隠す",
+  "titlePhoto": "station",
+  "titleGrade": "dusk",
+  "titleAmbience": "evening",
+  "names": {
+    "chinatsu": "千夏",
+    "me": "私"
+  },
+  "labels": {
+    "newGame": "はじめから",
+    "continue": "つづきから",
+    "settings": "設定",
+    "credits": "クレジット",
+    "quit": "おわる",
+    "log": "ログ",
+    "auto": "オート",
+    "skip": "スキップ",
+    "save": "セーブ",
+    "load": "ロード",
+    "hide": "隠す",
+    "toTitle": "表紙へ",
+    "textSpeed": "文字の速さ",
+    "autoWait": "オートの待ち",
+    "ambienceVolume": "環境音",
+    "seVolume": "効果音",
+    "saveTitle": "どこに栞を挟みますか",
+    "loadTitle": "どの栞から読みますか",
+    "emptySlot": "―― 空き ――",
+    "back": "戻る",
+    "logTitle": "これまでの頁",
+    "saved": "栞を挟みました",
+    "loaded": "栞のところから読みます",
+    "noSave": "まだ栞がありません"
+  }
+}

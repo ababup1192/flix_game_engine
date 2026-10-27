@@ -1,0 +1,27 @@
+# 表紙から読み始め、3 つの選択でどれも近づく方を選ぶと、川で「何も言わずに」が選べて $stayed が立ち、朝を経てクレジットへ。
+start title
+tap confirm                            # 表紙 → はじめから
+expect talk=Station&mode=Nvl&photo=station
+drive reader until choice max 90       # 駅（NVL）から田んぼ（ADV）の最初の選択肢まで
+expect talk=Paddy&mode=Adv
+tap next                               # 「……ちいちゃん」
+tap confirm
+expect closeness=1
+mark paddy
+tap log                                # ログを開いて閉じる（物語の時計は止まる）
+expect panel=Log
+tap back
+expect panel=Closed
+drive reader until choice max 90       # 坂道・縁側の選択肢まで
+expect talk=Engawa
+tap next                               # 「まだ、決めてない」
+tap confirm
+expect closeness=2
+drive reader until choice max 90       # 蛍の川
+expect talk=River
+tap next                               # 条件つきの 2 つ目が選べる
+expect cursor=1
+tap confirm
+expect stayed
+mark river
+drive reader until phase=Credits max 120

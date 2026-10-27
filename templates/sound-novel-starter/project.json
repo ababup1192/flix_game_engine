@@ -1,0 +1,160 @@
+{
+  "version": 1,
+  "title": "夏草の駅",
+  "designWidth": 960,
+  "designHeight": 540,
+  "windowWidth": 1280,
+  "windowHeight": 720,
+  "clearColor": {
+    "r": 0.04,
+    "g": 0.05,
+    "b": 0.08
+  },
+  "maxDeltaTime": 0.05,
+  "// textures": "背景の写真（出典は CREDITS.md）。名前は assets/novel.backdrops.json の photos の texture と対。",
+  "textures": [
+    {
+      "name": "bg_station",
+      "path": "assets/bg/station.jpg",
+      "hasAlpha": false
+    },
+    {
+      "name": "bg_paddy",
+      "path": "assets/bg/paddy.jpg",
+      "hasAlpha": false
+    },
+    {
+      "name": "bg_lane",
+      "path": "assets/bg/lane.jpg",
+      "hasAlpha": false
+    },
+    {
+      "name": "bg_engawa",
+      "path": "assets/bg/engawa.jpg",
+      "hasAlpha": false
+    },
+    {
+      "name": "bg_river",
+      "path": "assets/bg/river.jpg",
+      "hasAlpha": false
+    }
+  ],
+  "// glyphs": "起動時に焼く字。used = ソースとアセットにある字を先に焼く（シナリオの字がそろってから表紙が出る）",
+  "glyphs": "used",
+  "fonts": [
+    {
+      "name": "default",
+      "path": "assets/ShipporiMincho-Regular.subset.ttf",
+      "fontSize": 32.0
+    }
+  ],
+  "sounds": [
+    {
+      "name": "amb_evening",
+      "path": "assets/sfx/amb_evening.wav",
+      "looping": true
+    },
+    {
+      "name": "amb_night",
+      "path": "assets/sfx/amb_night.wav",
+      "looping": true
+    },
+    {
+      "name": "amb_river",
+      "path": "assets/sfx/amb_river.wav",
+      "looping": true
+    },
+    {
+      "name": "amb_morning",
+      "path": "assets/sfx/amb_morning.wav",
+      "looping": true
+    },
+    {
+      "name": "se_slap",
+      "path": "assets/sfx/se_slap.wav"
+    },
+    {
+      "name": "se_furin",
+      "path": "assets/sfx/se_furin.wav"
+    },
+    {
+      "name": "ui_page",
+      "path": "assets/sfx/ui_page.wav"
+    },
+    {
+      "name": "ui_cursor",
+      "path": "assets/sfx/ui_cursor.wav"
+    },
+    {
+      "name": "ui_choice",
+      "path": "assets/sfx/ui_choice.wav"
+    },
+    {
+      "name": "ui_open",
+      "path": "assets/sfx/ui_open.wav"
+    },
+    {
+      "name": "ui_save",
+      "path": "assets/sfx/ui_save.wav"
+    }
+  ],
+  "editor": {
+    "resources": [
+      {
+        "id": "story",
+        "pattern": "assets/novel.story.json",
+        "title": "画面の言葉（表紙・ボタン・栞）と話し手の呼び名",
+        "role": "material",
+        "schema": "assets/story.schema.json"
+      },
+      {
+        "id": "backdrops",
+        "pattern": "assets/novel.backdrops.json",
+        "title": "背景の写真と時間帯の色（ぼかし・夕暮れ・夜・朝）",
+        "role": "material",
+        "schema": "assets/backdrops.schema.json"
+      },
+      {
+        "id": "theme",
+        "pattern": "assets/novel.theme.json",
+        "title": "字と窓の色",
+        "role": "material",
+        "schema": "assets/theme.schema.json"
+      },
+      {
+        "id": "credits",
+        "pattern": "assets/novel.credits.json",
+        "title": "クレジット（写真とフォントの出典）",
+        "role": "material",
+        "schema": "assets/credits.schema.json"
+      },
+      {
+        "id": "kind",
+        "pattern": "assets/novel.kind.json",
+        "title": "手触り（字の大きさ・オート・スキップ・揺れ・蛍）",
+        "role": "tuning",
+        "schema": "assets/kind.schema.json"
+      },
+      {
+        "id": "keys",
+        "pattern": "assets/novel.keys.json",
+        "title": "操作（キーの割り当て）",
+        "role": "tuning",
+        "schema": "assets/keys.schema.json"
+      },
+      {
+        "id": "mixer",
+        "pattern": "assets/novel.mixer.json",
+        "title": "音の通り道（環境音と効果音のバス）",
+        "role": "tuning"
+      },
+      {
+        "id": "project",
+        "pattern": "project.json",
+        "schema": "project.schema.json",
+        "title": "ゲームの題・画面",
+        "role": "tuning"
+      }
+    ]
+  }
+}
