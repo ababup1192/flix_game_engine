@@ -1,7 +1,7 @@
 // JSON とコードの橋渡しだけをテストする: コードが名前で引く物（写真・音・言葉の鍵・語彙）が Doc と素材の側に揃っているか。
 mod TestDocs {
 
-    use fge::{DocJson, JsonCodec, Yarn}
+    use fge::{DocJson, JsonCodec, ProjectLoader, Yarn}
 
     /// project.json の配列 key の各要素の name。
     def namesIn(key: String): Set[String] \ Fs.FileRead =
@@ -19,6 +19,12 @@ mod TestDocs {
         });
         Yarn.nodeNames(program) |> List.filterMap(n -> Yarn.nodeOf(n, program)) |> List.flatMap(node -> walk(node#body))
             |> List.filter(c -> c#name == name) |> List.filterMap(c -> List.head(c#args))
+
+    @Test
+    def testProjectJsonLoads(): Unit \ {Assert, Fs.FileRead} =
+        // project.json は実機の起動と同じ読み手で読める（欠けた欄があると窓が開く前に止まる）。
+        let loaded = ProjectLoader.loadProject(".") |> Result.map(_ -> ());
+        Assert.assertEq(expected = Ok(()), loaded)
 
     @Test
     def testEveryPhotoHasATexture(): Unit \ {Assert, Fs.FileRead} =

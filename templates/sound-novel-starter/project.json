@@ -71,31 +71,38 @@
     },
     {
       "name": "se_slap",
-      "path": "assets/sfx/se_slap.wav"
+      "path": "assets/sfx/se_slap.wav",
+      "looping": false
     },
     {
       "name": "se_furin",
-      "path": "assets/sfx/se_furin.wav"
+      "path": "assets/sfx/se_furin.wav",
+      "looping": false
     },
     {
       "name": "ui_page",
-      "path": "assets/sfx/ui_page.wav"
+      "path": "assets/sfx/ui_page.wav",
+      "looping": false
     },
     {
       "name": "ui_cursor",
-      "path": "assets/sfx/ui_cursor.wav"
+      "path": "assets/sfx/ui_cursor.wav",
+      "looping": false
     },
     {
       "name": "ui_choice",
-      "path": "assets/sfx/ui_choice.wav"
+      "path": "assets/sfx/ui_choice.wav",
+      "looping": false
     },
     {
       "name": "ui_open",
-      "path": "assets/sfx/ui_open.wav"
+      "path": "assets/sfx/ui_open.wav",
+      "looping": false
     },
     {
       "name": "ui_save",
-      "path": "assets/sfx/ui_save.wav"
+      "path": "assets/sfx/ui_save.wav",
+      "looping": false
     }
   ],
   "editor": {
