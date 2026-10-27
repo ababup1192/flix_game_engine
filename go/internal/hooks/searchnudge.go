@@ -97,24 +97,31 @@ func countNudge(mark string) int {
 
 // NameSearchOnFlix は呼び出しが .flix の中を名前で字の検索をした物か。
 func NameSearchOnFlix(p Payload, suffix string) bool {
+	_, _, ok := nameSearchOf(p, suffix)
+	return ok
+}
+
+// nameSearchOf は .flix の中を名前で字の検索をした呼び出しから、探した字と探した場所を取り出す。
+func nameSearchOf(p Payload, suffix string) (pat, dir string, ok bool) {
 	ti := p.sub("tool_input")
 	cwd := p.str("cwd")
 	if pat := ti.str("pattern"); pat != "" && ti.str("command") == "" {
 		target := ti.str("glob") + " " + ti.str("path") + " " + ti.str("type")
+		at := resolveDir(cwd, ti.str("path"))
 		if !nameLike(pat) {
-			return false
+			return "", "", false
 		}
 		if flixTarget(target, suffix) || ti.str("type") == "flix" {
-			return true
+			return pat, at, true
 		}
 		// glob や type で .flix 以外に絞った検索は、探す先が Flix のプロジェクトでも .flix を見ていない。
-		return ti.str("glob") == "" && ti.str("type") == "" && flixProjectDir(resolveDir(cwd, ti.str("path")))
+		return pat, at, ti.str("glob") == "" && ti.str("type") == "" && flixProjectDir(at)
 	}
 	cmd := ti.str("command")
 	if cmd == "" {
-		return false
+		return "", "", false
 	}
-	dir := cwd
+	dir = cwd
 	for _, seg := range shellSegments(cmd) {
 		seg = strings.TrimSpace(seg)
 		if w := shellWords(seg); len(w) == 2 && w[0] == "cd" {
@@ -140,10 +147,17 @@ func NameSearchOnFlix(p Payload, suffix string) bool {
 			continue
 		}
 		if flixTarget(strings.Join(rest, " ")+" "+seg, suffix) || searchesFlixProject(seg, rest, dir) {
-			return true
+			at := dir
+			for _, w := range rest {
+				if !strings.HasPrefix(w, "-") {
+					at = resolveDir(dir, w)
+					break
+				}
+			}
+			return pat, at, true
 		}
 	}
-	return false
+	return "", "", false
 }
 
 // nameLike は探す字が Flix の名前を探す形か（def の行・Mod.名前・Mod.Type・camelCase か大文字で始まる 1 語）。
