@@ -1,8 +1,11 @@
 adv	dynamic=74	static=0
 choice	dynamic=117	static=0
 credits	dynamic=311	static=0
+engawa	dynamic=263	static=0
+lane	dynamic=191	static=0
 load	dynamic=171	static=0
 log	dynamic=182	static=0
+morning	dynamic=125	static=0
 night	dynamic=703	static=0
 nvl	dynamic=243	static=0
 settings	dynamic=52	static=0

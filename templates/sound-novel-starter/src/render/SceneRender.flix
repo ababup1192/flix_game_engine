@@ -48,7 +48,7 @@ mod SceneRender {
 
     /// 描き出せる場面の名前（make render の SHOT とギャラリーの並びの正）。
     pub def shotNames(): List[String] =
-        "title" :: "nvl" :: "adv" :: "choice" :: "night" :: "log" :: "load" :: "settings" :: "credits" :: Nil
+        "title" :: "nvl" :: "adv" :: "choice" :: "lane" :: "engawa" :: "night" :: "morning" :: "log" :: "load" :: "settings" :: "credits" :: Nil
 
     /// 名前 → その場面の World。時計は秒で据える（蛍もクレジットも実時間から導くので、据えれば毎回同じ絵）。
     def sceneOf(name: String, w0: World.World): Option[World.World] =
@@ -61,6 +61,12 @@ mod SceneRender {
             case "adv"      => Some(at(4.0, nthLine("Paddy", 3, w0)))
             // 選択肢: 千夏の呼び方を選ぶ所。
             case "choice"   => Some(at(4.0, toChoices("Paddy", YarnStorage.empty(), w0)))
+            // 坂道: 夕暮れの坂の上の家（ADV）。
+            case "lane"     => Some(at(4.0, nthLine("Lane", 2, w0)))
+            // 縁側: 夜の祖母の家（風鈴が鳴った後）。
+            case "engawa"   => Some(at(4.0, nthLine("Engawa", 3, w0)))
+            // 朝: 駅へ戻る朝（NVL）。
+            case "morning"  => Some(at(4.0, nthLine("Morning", 1, w0)))
             // 夜: 蛍の川で、条件つきの選択肢が選べる所（$closeness = 2）。
             case "night"    =>
                 let storage = YarnStorage.withArgs(Map#{ "$closeness" => "2" }, w0#dialogue, YarnStorage.empty()) |> Result.getWithDefault(YarnStorage.empty());
