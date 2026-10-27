@@ -12,7 +12,7 @@
     { "bus": "se", "prefixes": ["se_", "ui_"] }
   ],
   "ducks": [
-    { "bus": "ambience", "by": ["se"], "depth": 0.75, "attackSeconds": 0.05, "holdSeconds": 0.2, "releaseSeconds": 0.6 }
+    { "bus": "ambience", "by": ["se"], "depth": 0.2, "attackSeconds": 0.05, "holdSeconds": 0.2, "releaseSeconds": 0.6 }
   ],
   "cooldowns": [ { "prefix": "ui_cursor", "seconds": 0.04 } ],
   "snapshots": [ { "name": "panel", "buses": [ { "name": "ambience", "lowpassGainHF": 0.25 } ] } ]

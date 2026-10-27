@@ -1,18 +1,28 @@
-# 環境音 4 本（ループ）と、演出の音 2 つ・返事の音 5 つ（Controls.soundOf と、台本の <<se>> <<ambience>>）。
+# 演出の音 2 つ・返事の音 5 つ・川の環境音（Controls.soundOf と、台本の <<se>> <<ambience>>）。
 # bin/fge snd build art/sfx.snd.star で art/sfx/*.sndsrc.json を書き、検査を通った物を atelier/sfx/<名前>.wav へ書く
 # （採用した物を assets/sfx へ移し、project.json の sounds に載せる）。
-# 田舎の夏なので、主役は環境音。返事の音は小さく柔らかく（矩形波を細く絞って正弦に寄せる）、読む邪魔をしない。
-# 環境音は継ぎ目が出ないよう、頭と尾を絞らない（finish を掛けない）。鳴き声は輪の長さの内に収める。
+# 夕方の蜩・夜の鈴虫・朝の鶯は合成でなく実際の録音（Wikimedia Commons。出典と切り出した所は CREDITS.md）。
+# 虫の声は矩形波の粒を並べるとブザーに聞こえる（倍音が高い所まで梯子に立ち、粒ごとに頭がはじける）ので、合成しない。
+# 返事の音は正弦に近い柔らかい音（矩形波を音の高さで 4 段絞って倍音を落とす）にし、ゲームの電子音に聞こえさせない。
 
-def tone(hz, ms, at = 0, amp = 0.4, decay = 80, to_hz = None, attack = 3):
+def sine(hz, ms, at = 0, amp = 0.4, decay = 80, to_hz = None, attack = 4):
     return {"at": at, "ops": [op.pulse(hz = hz, ms = ms, amp = amp, duty = 0.5, to_hz = to_hz, accumulate = to_hz != None),
-                              op.lowpass(hz = hz * 2, stages = 2),
+                              op.lowpass(hz = hz, stages = 4),
                               op.env(attack_ms = attack, decay_ms = decay)]}
+
+# 鈴の 1 打: 高さの比が整数に並ばない部分音を、高い物ほど速く消す（金属や硝子の鳴り）。
+def bell(hz, at = 0, amp = 0.4, decay = 400, partials = [(1.0, 1.0, 1.0), (2.76, 0.35, 0.45), (5.40, 0.14, 0.25)]):
+    return [sine(hz * ratio, int(decay * d * 7), at = at, amp = amp * a, decay = decay * d, attack = 2) for (ratio, a, d) in partials]
 
 def hiss(ms, at = 0, amp = 0.3, hz = 2000, decay = 40, attack = 2):
     return {"at": at, "ops": [op.noise(ms = ms, amp = amp), op.lowpass(hz = hz, stages = 2), op.env(attack_ms = attack, decay_ms = decay)]}
 
-# 途切れない雑音の床（風・水）。env は掛けない。
+# 帯域を絞った雑音の粒（紙の擦れ・水のはじけ）。
+def rustle(ms, hz, to_hz, at = 0, amp = 0.4, decay = 40, attack = 6, q = 0.5):
+    return {"at": at, "ops": [op.noise(ms = ms, amp = amp), op.svf(hz = hz, to_hz = to_hz, q = q),
+                              op.env(attack_ms = attack, decay_ms = decay)]}
+
+# 途切れない雑音の床（水の流れ）。env は掛けない。
 def bed(ms, amp, hz, stages = 2):
     return {"at": 0, "ops": [op.noise(ms = ms, amp = amp), op.lowpass(hz = hz, stages = stages)]}
 
@@ -21,9 +31,10 @@ def sound(name, voices, kind = "ui", room = 0.4, wet = 0.12):
         "version": 1,
         "target": "//atelier/sfx/%s.wav" % name,
         "kind": kind,
+        "rate": 44100,
         "style": "free",
         "voices": voices,
-        "post": [op.reverb(room = room, wet = wet), op.finish(), op.normalize(lufs = -22 if kind == "ui" else -20)],
+        "post": [op.reverb(room = room, wet = wet), op.finish(), op.normalize(lufs = -24 if kind == "ui" else -20)],
     })
 
 def ambience(name, ms, voices, room = 0.5, wet = 0.2):
@@ -31,55 +42,37 @@ def ambience(name, ms, voices, room = 0.5, wet = 0.2):
         "version": 1,
         "target": "//atelier/sfx/%s.wav" % name,
         "kind": "bgm",
+        "rate": 44100,
         "style": "free",
         "loop_start_ms": 0,
         "voices": voices,
-        "post": [op.reverb(room = room, wet = wet), op.normalize(lufs = -19)],
+        "post": [op.reverb(room = room, wet = wet), op.normalize(lufs = -18, peak_dbtp = -2)],
     })
 
-# 蜩（ひぐらし）の「カナカナカナ」: 短い粒を細かく刻み、だんだん低く弱くなる 1 声。
-def higurashi(at, base, count = 14, amp = 0.3):
-    return [tone(base - i * 18, 55, at = at + i * 85, amp = amp * (1.0 - i * 0.05), decay = 30, to_hz = base - i * 18 - 260)
-            for i in range(count)]
-
-# 鈴虫・蟋蟀の「リーン」: 高い粒を 3 つずつ。
-def cricket(at, hz, amp = 0.16):
-    return [tone(hz, 40, at = at + i * 55, amp = amp, decay = 22) for i in range(3)]
-
-# 朝の小鳥: 上へ跳ねる短い声を 2〜3 つ。
-def bird(at, hz, amp = 0.22):
-    return [tone(hz, 70, at = at, amp = amp, decay = 40, to_hz = hz * 1.35),
-            tone(hz * 1.2, 60, at = at + 110, amp = amp * 0.8, decay = 35, to_hz = hz * 0.9),
-            tone(hz * 1.1, 90, at = at + 230, amp = amp * 0.7, decay = 50, to_hz = hz * 1.5)]
-
 def main():
-    # 夕方の駅と畦道（12 秒）: 遠くの風と、ずれて重なる蜩 3 声。
-    ambience("amb_evening", 12000,
-             [bed(12000, 0.10, 500)] + higurashi(400, 4300) + higurashi(4700, 4050, amp = 0.2) + higurashi(8300, 4450, count = 10, amp = 0.14))
-    # 夜の縁側（8 秒）: 低い風と、2 種の虫の声が 0.6 秒ごと。
-    ambience("amb_night", 8000,
-             [bed(8000, 0.08, 400)] +
-             [v for i in range(13) for v in cricket(i * 600 + 40, 4700)] +
-             [v for i in range(5) for v in cricket(i * 1500 + 330, 3900, amp = 0.1)])
-    # 蛍の川（8 秒）: 低い水の流れと、高い所のさざめき。
-    ambience("amb_river", 8000,
-             [bed(8000, 0.35, 700, stages = 3), bed(8000, 0.06, 2600)] +
-             [hiss(140, at = 300 + i * 610, amp = 0.08, hz = 1800, decay = 60, attack = 30) for i in range(12)],
+    # 蛍の川（12 秒）: 低く籠もった流れと、高さのばらばらな小さなはじけ（同じ間で並べると機械に聞こえる）。
+    pops = [(130, 900), (470, 1500), (820, 700), (1290, 2100), (1610, 1100), (2240, 1800), (2580, 800), (3110, 1300),
+            (3720, 2400), (4050, 950), (4630, 1600), (5200, 1200), (5480, 2000), (6120, 750), (6790, 1400), (7230, 1900),
+            (7660, 1000), (8350, 2300), (8810, 850), (9420, 1700), (9990, 1250), (10540, 2050), (11080, 900), (11500, 1500)]
+    ambience("amb_river", 12000,
+             [bed(12000, 0.30, 600, stages = 3), bed(12000, 0.05, 1500)] +
+             [rustle(60, hz, hz * 1.6, at = at, amp = 0.22, decay = 25, attack = 3, q = 0.25) for (at, hz) in pops],
              room = 0.6, wet = 0.25)
-    # 朝の駅（10 秒）: 澄んだ風と、まばらな小鳥。
-    ambience("amb_morning", 10000,
-             [bed(10000, 0.06, 900)] + bird(600, 2600) + bird(3100, 3000, amp = 0.16) + bird(5400, 2400) + bird(8200, 2800, amp = 0.14))
 
     # 手を打つ（坂道で千夏が背中を叩く）: 乾いた雑音の一打と、低い胴の鳴り。
-    sound("se_slap", [hiss(90, amp = 0.6, hz = 4000, decay = 25, attack = 0.5), tone(180, 80, amp = 0.3, decay = 30)], kind = "sfx", room = 0.3, wet = 0.08)
-    # 風鈴: 高い 2 音が長く残る。
-    sound("se_furin", [tone(2093, 1400, amp = 0.3, decay = 600), tone(2637, 1300, at = 40, amp = 0.2, decay = 520),
-                       tone(2093, 1000, at = 700, amp = 0.15, decay = 450)], kind = "sfx", room = 0.7, wet = 0.3)
+    sound("se_slap", [hiss(90, amp = 0.6, hz = 4000, decay = 25, attack = 0.5), sine(180, 80, amp = 0.3, decay = 30)], kind = "sfx", room = 0.3, wet = 0.08)
+    # 風鈴: 硝子の鈴を 2 度。2 度目は少し弱く、少し違う所を打つ（部分音の比を変える）。
+    glass = [(1.0, 1.0, 1.0), (2.32, 0.4, 0.5), (4.25, 0.18, 0.3), (6.63, 0.08, 0.18)]
+    sound("se_furin", bell(2350, amp = 0.35, decay = 520, partials = glass) +
+                      bell(2350, at = 650, amp = 0.2, decay = 420, partials = [(1.0, 1.0, 1.0), (2.41, 0.5, 0.5), (4.1, 0.2, 0.3)]) +
+                      [rustle(12, 6000, 6000, amp = 0.15, decay = 4, attack = 0.3, q = 0.3)],
+          kind = "sfx", room = 0.7, wet = 0.3)
 
-    sound("ui_page", [hiss(70, amp = 0.35, hz = 3000, decay = 30)])                       # 頁を送る: 紙の擦れ
-    sound("ui_cursor", [tone(1047, 25, decay = 10, amp = 0.25)])                           # カーソル: 軽い粒
-    sound("ui_choice", [tone(659, 90, decay = 50), tone(988, 160, at = 70, decay = 90)])   # 選んだ: E5 → B5
-    sound("ui_open", [tone(523, 120, decay = 60), tone(784, 200, at = 70, decay = 120)])   # 窓を開く: C5 → G5
-    sound("ui_save", [tone(784, 120, decay = 60), tone(1047, 260, at = 90, decay = 160)], room = 0.5, wet = 0.18)  # セーブした
+    sound("ui_page", [rustle(140, 2600, 1400, amp = 0.5, decay = 55, attack = 18)])                 # 頁を送る: 紙の擦れ
+    sound("ui_cursor", [sine(1568, 40, amp = 0.25, decay = 14, attack = 2)])                         # カーソル: 小さな木の粒
+    sound("ui_choice", bell(880, decay = 220) + bell(1319, at = 90, amp = 0.32, decay = 300))       # 選んだ: 柔らかい鈴を 2 つ
+    sound("ui_open", bell(659, decay = 160, partials = [(1.0, 1.0, 1.0), (3.0, 0.12, 0.3)]))         # 窓を開く: 低い木琴の 1 打
+    sound("ui_save", bell(1047, decay = 220) + bell(1319, at = 110, amp = 0.3, decay = 240) +
+                     bell(1568, at = 220, amp = 0.28, decay = 420), room = 0.5, wet = 0.18)          # セーブした: 上がる 3 つの鈴
 
 main()
