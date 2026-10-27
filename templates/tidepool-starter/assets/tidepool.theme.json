@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "title": "色",
+  "note": "絵の見え方。昼の浅瀬: 下地は濡れた岩の灰緑と砂、水はターコイズ、差し色はヤドカリの朱（accent）だけ。強い日差しの白飛びはしないので、light も純白にしない。bg=画面の下地 / accent=ヤドカリの朱 / light=昼の光（受光の側を寄せる）/ shadow=影の色（落ち影）/ cliff=岩の段の側面 / shell=貝 / wood=流木 / weed=海藻 / anemone=イソギンチャク / sea=潮見表の水の色 / foam=水の縁の泡 / panel,ink=HUD の板と字。shade はドット絵の仕上げ（今は使っていない）。",
+  "bg": "#2e4240",
+  "accent": "#d2502c",
+  "shade": {
+    "rim": 1.0,
+    "contact": 1.0,
+    "dither": 0.5,
+    "grain": 0.0,
+    "grainScale": 1,
+    "lightX": -1,
+    "lightY": -1
+  },
+  "light": "#f0e6c4",
+  "shadow": "#1d3436",
+  "cliff": "#3e4a44",
+  "shell": "#b7a58a",
+  "wood": "#8a7660",
+  "weed": "#5f7a3a",
+  "anemone": "#9a6a72",
+  "foam": "#dfe9dc",
+  "panel": "#d9d6c4",
+  "ink": "#24363a",
+  "sea": "#2b9690"
+}

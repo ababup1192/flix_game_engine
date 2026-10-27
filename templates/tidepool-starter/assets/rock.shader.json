@@ -1,0 +1,152 @@
+{
+  "version": 1,
+  "note": "岩の上面と砂の下地（砂はコードが砂の色を薄く重ねる・濡れはコードが影の色で沈める）。明るくざらつく。大きいムラ=warp した fbm(scale 4)・起伏=warp した fbm(scale 16)・小さなくぼみ=worley f1(scale 44)・ざらつき=細かい hash1。stops は明暗の境の内側をいちばん暗くする並び（反射光→暗部→地→受光）。",
+  "name": "rock",
+  "cycleRate": 0.0,
+  "shared": [
+    [
+      "big",
+      {
+        "kind": "warp",
+        "amount": 0.12,
+        "scale": 2.5,
+        "seed": 21,
+        "of": {
+          "kind": "fbm",
+          "octaves": 3,
+          "scale": 4.0,
+          "seed": 22
+        }
+      }
+    ],
+    [
+      "mid",
+      {
+        "kind": "warp",
+        "amount": 0.06,
+        "scale": 5.0,
+        "seed": 28,
+        "of": {
+          "kind": "fbm",
+          "octaves": 3,
+          "scale": 16.0,
+          "seed": 29
+        }
+      }
+    ],
+    [
+      "pits",
+      {
+        "kind": "smoothstep",
+        "lo": 0.05,
+        "hi": 0.35,
+        "of": {
+          "kind": "worley",
+          "scale": 44.0,
+          "seed": 27,
+          "out": "f1"
+        }
+      }
+    ],
+    [
+      "grain",
+      {
+        "kind": "hash1",
+        "scale": 1200.0,
+        "seed": 24
+      }
+    ]
+  ],
+  "out": {
+    "kind": "fill",
+    "shade": {
+      "kind": "gradient",
+      "stops": [
+        [
+          0.0,
+          "#5f6a63"
+        ],
+        [
+          0.2,
+          "#56615a"
+        ],
+        [
+          0.5,
+          "#80867a"
+        ],
+        [
+          0.8,
+          "#a29f8b"
+        ],
+        [
+          1.0,
+          "#b8b29b"
+        ]
+      ],
+      "field": {
+        "kind": "math2",
+        "op": "add",
+        "a": {
+          "kind": "math2",
+          "op": "add",
+          "a": {
+            "kind": "math2",
+            "op": "mul",
+            "a": {
+              "kind": "use",
+              "name": "big"
+            },
+            "b": {
+              "kind": "const",
+              "value": 0.55
+            }
+          },
+          "b": {
+            "kind": "math2",
+            "op": "mul",
+            "a": {
+              "kind": "use",
+              "name": "mid"
+            },
+            "b": {
+              "kind": "const",
+              "value": 0.3
+            }
+          }
+        },
+        "b": {
+          "kind": "math2",
+          "op": "add",
+          "a": {
+            "kind": "math2",
+            "op": "mul",
+            "a": {
+              "kind": "use",
+              "name": "pits"
+            },
+            "b": {
+              "kind": "const",
+              "value": 0.15
+            }
+          },
+          "b": {
+            "kind": "math2",
+            "op": "mul",
+            "a": {
+              "kind": "use",
+              "name": "grain"
+            },
+            "b": {
+              "kind": "const",
+              "value": 0.06
+            }
+          }
+        }
+      }
+    },
+    "alpha": {
+      "kind": "const",
+      "value": 1.0
+    }
+  }
+}

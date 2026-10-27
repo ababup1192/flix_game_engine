@@ -1,0 +1,20 @@
+{
+  "//": "tidepool.levels.json の形の宣言（Studio の sections 方言）。面は 2 枚の格子で書き、上から順に遊ぶ。heights は地面の高さ（0〜3）、props は '.' 何も無い / 'o' 小石 / '=' 流木 / '@' ヤドカリ / '*' 巻き貝。盤は 8×6 まで・押せる物は 4 つまで・盤の外は全部外海。cycle（手数ごとの潮位）は任意で、空なら rules の既定。par・solution・solvedHash は make solve が書く（手で直さない）。水の広がり・押す表・行ける条件はコード（Tide・World）。",
+  "version": 1,
+  "sections": {
+    "levels": {
+      "kind": "list",
+      "label": "面（上から順に遊ぶ）",
+      "order": 1,
+      "fields": {
+        "name": { "type": "text", "label": "面の名前", "order": 1, "required": true },
+        "heights": { "type": "grid", "label": "地面の高さ（0〜3 の数字の格子）", "order": 2, "required": true },
+        "props": { "type": "grid", "label": "置き物（'.'無し 'o'小石 '='流木 '@'ヤドカリ '*'巻き貝）。heights と同じ大きさ", "order": 3, "required": true },
+        "cycle": { "type": { "list": "int" }, "label": "手数ごとの潮位（任意。空なら rules の既定）", "order": 4 },
+        "par": { "type": "int", "label": "最少手数（make solve が書く）", "order": 5 },
+        "solution": { "type": "text", "label": "解き方の手の列 U D L R W（make solve が書く）", "order": 6 },
+        "solvedHash": { "type": "text", "label": "make solve が確かめた面の中身の指紋（手で直さない）", "order": 7 }
+      }
+    }
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "//": "<名前>.scenes.json の形の宣言（Studio の sections 方言）。描き出す場面そのものを決めるのはコード（SceneRender.shotNames）で、この Doc は描き上がった絵に題と一言のラベルを添えるだけ。行を増やしても絵は増えない。",
+  "version": 1,
+  "sections": {
+    "note": {
+      "kind": "field",
+      "type": "text",
+      "label": "メモ",
+      "order": 0,
+      "widget": "multiline",
+      "help": "この Doc が何のためにあるかの覚え書き。絵には効かない"
+    },
+    "rows": {
+      "kind": "list",
+      "label": "場面（1 行 = gallery/<name>.png 1 枚のラベル）",
+      "fields": {
+        "name": {
+          "type": "string",
+          "order": 1,
+          "required": true,
+          "label": "場面の名前",
+          "help": "SceneRender.shotNames() と同じ綴り（拡張子なし）。合わない行はラベルにならない"
+        },
+        "title": {
+          "type": "string",
+          "order": 2,
+          "label": "題",
+          "help": "Studio のギャラリーのカードの見出し。空ならファイル名で代用する"
+        },
+        "desc": {
+          "type": "text",
+          "order": 3,
+          "widget": "multiline",
+          "label": "どういう場面か（一言）",
+          "help": "カードの本文。何が写っているかを普通の言葉で"
+        },
+        "tags": {
+          "type": {
+            "list": "text"
+          },
+          "order": 4,
+          "label": "タグ",
+          "help": "顔 / 演出 / 地形 のような目印。探すときの手がかり"
+        }
+      }
+    }
+  }
+}

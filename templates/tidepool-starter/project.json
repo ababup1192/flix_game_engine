@@ -1,0 +1,148 @@
+{
+  "version": 1,
+  "title": "潮だまり",
+  "designWidth": 640,
+  "designHeight": 360,
+  "windowWidth": 1280,
+  "windowHeight": 720,
+  "windowScale": 2,
+  "clearColor": {
+    "r": 0.18,
+    "g": 0.26,
+    "b": 0.25
+  },
+  "maxDeltaTime": 0.05,
+  "textures": [],
+  "// glyphs": "起動時に焼く字。auto=出た字から順に焼く / used=ソースとアセットにある字を先に焼く / all=フォントの全字",
+  "glyphs": "auto",
+  "fonts": [
+    {
+      "name": "default",
+      "path": "assets/ShipporiMincho-Regular.subset.ttf",
+      "fontSize": 48.0
+    }
+  ],
+  "sounds": [
+    {
+      "name": "step_sand",
+      "path": "assets/sfx/step_sand.wav",
+      "looping": false
+    },
+    {
+      "name": "step_rock",
+      "path": "assets/sfx/step_rock.wav",
+      "looping": false
+    },
+    {
+      "name": "push",
+      "path": "assets/sfx/push.wav",
+      "looping": false
+    },
+    {
+      "name": "driftwood",
+      "path": "assets/sfx/driftwood.wav",
+      "looping": false
+    },
+    {
+      "name": "tide_high",
+      "path": "assets/sfx/tide_high.wav",
+      "looping": false
+    },
+    {
+      "name": "tide_low",
+      "path": "assets/sfx/tide_low.wav",
+      "looping": false
+    },
+    {
+      "name": "washed",
+      "path": "assets/sfx/washed.wav",
+      "looping": false
+    },
+    {
+      "name": "clear",
+      "path": "assets/sfx/clear.wav",
+      "looping": false
+    },
+    {
+      "name": "undo",
+      "path": "assets/sfx/undo.wav",
+      "looping": false
+    },
+    {
+      "name": "select",
+      "path": "assets/sfx/select.wav",
+      "looping": false
+    },
+    {
+      "name": "amb_waves",
+      "path": "assets/sfx/amb_waves.wav",
+      "looping": true
+    }
+  ],
+  "editor": {
+    "resources": [
+      {
+        "id": "levels",
+        "pattern": "assets/tidepool.levels.json",
+        "title": "面（2 枚の格子・最少手数）",
+        "schema": "assets/levels.schema.json",
+        "role": "tuning"
+      },
+      {
+        "id": "rules",
+        "pattern": "assets/tidepool.rules.json",
+        "title": "遊びの決まり（潮・貝殻・取り消し）",
+        "schema": "assets/rules.schema.json",
+        "role": "tuning"
+      },
+      {
+        "id": "theme",
+        "pattern": "assets/tidepool.theme.json",
+        "title": "色（背景・差し色）",
+        "schema": "assets/theme.schema.json",
+        "role": "material"
+      },
+      {
+        "id": "shader",
+        "pattern": "assets/*.shader.json",
+        "title": "岩・水・光の網目の塗り（宣言シェーダー）",
+        "schema": "assets/shader.schema.json",
+        "role": "material"
+      },
+      {
+        "id": "sprite",
+        "pattern": "assets/*.sprite.json",
+        "title": "ドット絵",
+        "schema": "assets/sprite.schema.json",
+        "role": "material"
+      },
+      {
+        "id": "keys",
+        "pattern": "assets/player.keys.json",
+        "title": "キー割り当て（どのキーで動かすか）",
+        "schema": "assets/keys.schema.json",
+        "role": "tuning"
+      },
+      {
+        "id": "scenes",
+        "pattern": "assets/*.scenes.json",
+        "title": "場面の説明（ギャラリーに出る題と一言）",
+        "schema": "assets/scenes.schema.json",
+        "role": "tuning"
+      },
+      {
+        "id": "mixer",
+        "pattern": "assets/tidepool.mixer.json",
+        "title": "音の通り道（波の環境音・効果音・返事の音のバス）",
+        "role": "tuning"
+      },
+      {
+        "id": "project",
+        "pattern": "project.json",
+        "schema": "project.schema.json",
+        "title": "ゲームの題・画面",
+        "role": "tuning"
+      }
+    ]
+  }
+}

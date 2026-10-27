@@ -26,6 +26,16 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "matcher": "Grep|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/bin/fge\" hook-search-nudge",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "Stop": [

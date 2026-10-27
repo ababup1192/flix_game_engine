@@ -1,6 +1,7 @@
 package hooks
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,6 +21,7 @@ func TestNameSearchOnFlixCatchesNameGrepsOnly(t *testing.T) {
 		"grep -rn の camelCase": bash(`grep -rn "enterFight" src/`),
 		"rg の def と --include": bash(`cd game && rg -n 'def armFight' --glob '*.flix'`),
 		"grep -rn --include":   bash(`grep -rn --include=*.flix "pub def step" .`),
+		"引用符の中の | を含む正規表現":     bash(`cd src && cat Main.flix; grep -n "^\\s*\\(pub \\)\\?\\(def\\|mod\\|enum\\)" View.flix World.flix`),
 	}
 	for name, p := range hit {
 		if !NameSearchOnFlix(p, ".flix") {
@@ -40,7 +42,16 @@ func TestNameSearchOnFlixCatchesNameGrepsOnly(t *testing.T) {
 	}
 }
 
-func TestSearchNudgeSpeaksOncePerSession(t *testing.T) {
+func TestShellSegmentsKeepQuotedSeparators(t *testing.T) {
+	got := shellSegments(`cd src && grep -n "a\\|b;c" X.flix | head -3; echo 'x|y'`)
+	want := []string{"cd src ", ` grep -n "a\\|b;c" X.flix `, " head -3", ` echo 'x|y'`}
+	if strings.Join(got, "¦") != strings.Join(want, "¦") {
+		t.Errorf("引用符の中の | ; では区切らないはず: %q", got)
+	}
+}
+
+func nudgeRoot(t *testing.T) string {
+	t.Helper()
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	t.Setenv("HOME", t.TempDir())
 	root := t.TempDir()
@@ -54,12 +65,47 @@ func TestSearchNudgeSpeaksOncePerSession(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, RulesPath), shipped, 0o644); err != nil {
 		t.Fatal(err)
 	}
+	return root
+}
+
+func nudgeOnce(root, payload string) string {
+	var out strings.Builder
+	RunSearchNudge(&out, root, "", strings.NewReader(payload))
+	return out.String()
+}
+
+func TestSearchNudgeSpeaksFirstThenEveryFifth(t *testing.T) {
+	root := nudgeRoot(t)
 	in := `{"session_id": "s1", "tool_name": "Grep", "tool_input": {"pattern": "def step", "glob": "*.flix"}}`
-	var first, second strings.Builder
-	if code := RunSearchNudge(&first, root, "", strings.NewReader(in)); code != 0 || !strings.Contains(first.String(), `"additionalContext":"Flix の名前は`) {
-		t.Fatalf("1 回目は案内を返すはず（code %d）: %s", code, first.String())
+	var spoke []int
+	for n := 1; n <= 11; n++ {
+		if nudgeOnce(root, in) != "" {
+			spoke = append(spoke, n)
+		}
 	}
-	if RunSearchNudge(&second, root, "", strings.NewReader(in)); second.String() != "" {
-		t.Errorf("同じセッションの 2 回目は黙るはず: %s", second.String())
+	if fmt.Sprint(spoke) != "[1 6 11]" {
+		t.Errorf("1 回目と、その後 5 回ごとに案内するはず: %v", spoke)
+	}
+}
+
+func TestSearchNudgeCountsEachSubagentApart(t *testing.T) {
+	root := nudgeRoot(t)
+	parent := `{"session_id": "s1", "tool_name": "Grep", "tool_input": {"pattern": "def step", "glob": "*.flix"}}`
+	sub := `{"session_id": "s1", "agent_id": "a1", "tool_name": "Grep", "tool_input": {"pattern": "def step", "glob": "*.flix"}}`
+	nudgeOnce(root, parent)
+	if nudgeOnce(root, sub) == "" {
+		t.Errorf("同じセッションでも、サブエージェントの 1 回目は案内するはず")
+	}
+}
+
+func TestSearchNudgeSaysHowManyTimes(t *testing.T) {
+	root := nudgeRoot(t)
+	in := `{"session_id": "s1", "tool_name": "Grep", "tool_input": {"pattern": "def step", "glob": "*.flix"}}`
+	var last string
+	for n := 1; n <= 6; n++ {
+		last = nudgeOnce(root, in)
+	}
+	if !strings.Contains(last, "6 回目") {
+		t.Errorf("言い直しには何回目かを添えるはず: %s", last)
 	}
 }

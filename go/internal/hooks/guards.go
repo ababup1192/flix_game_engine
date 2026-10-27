@@ -179,7 +179,40 @@ func splitHeredocs(cmd string) (shell, body string) {
 	return strings.Join(sh, "\n"), strings.Join(bd, "\n")
 }
 
-var shellSegment = regexp.MustCompile(`&&|\|\||;|\n|\|`)
+// shellSegments は 1 行のシェルを単純コマンドに分ける（&& || ; 改行 | で区切る）。
+// WhyNot: 正規表現 1 本で区切らない。grep "a\|b" のように引用符の中の | や ; まで区切り、
+// 探す字と探す先が別の区切りへ泣き別れる（探す先の .flix を見落とす）。
+func shellSegments(shell string) []string {
+	var out []string
+	var cur strings.Builder
+	quote := byte(0)
+	for i := 0; i < len(shell); i++ {
+		c := shell[i]
+		switch {
+		case quote != 0:
+			if c == '\\' && quote == '"' && i+1 < len(shell) {
+				cur.WriteByte(c)
+				i++
+				c = shell[i]
+			} else if c == quote {
+				quote = 0
+			}
+			cur.WriteByte(c)
+		case c == '\'' || c == '"':
+			quote = c
+			cur.WriteByte(c)
+		case c == ';' || c == '\n' || c == '|' || c == '&' && i+1 < len(shell) && shell[i+1] == '&':
+			if (c == '|' || c == '&') && i+1 < len(shell) && shell[i+1] == c {
+				i++
+			}
+			out = append(out, cur.String())
+			cur.Reset()
+		default:
+			cur.WriteByte(c)
+		}
+	}
+	return append(out, cur.String())
+}
 
 func shellWriteTargets(shell string, g *AssetGuard) []string {
 	var out []string
@@ -190,7 +223,7 @@ func shellWriteTargets(shell string, g *AssetGuard) []string {
 		}
 		return filepath.Join(dir, p)
 	}
-	for _, seg := range shellSegment.Split(shell, -1) {
+	for _, seg := range shellSegments(shell) {
 		args := shellWords(seg)
 		var words []string
 		for i := 0; i < len(args); i++ {

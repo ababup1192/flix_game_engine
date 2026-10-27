@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "title": "ドット絵",
+  "note": "ドット絵。文字は意味色キーで、実色は ThemeDoc.resolver が解決する。hero は 8×8・scale 2 で 16×16px。絵は差し色 1 色（a）で平らに塗ってあり、ふち光（A）と接地影（d）は読み込み時に PxShade が乗せる — 光の向きを絵ごとに手で管理しない。手で塗り分けたいなら World.shaded を外す。",
+  "paletteFile": "assets/tidepool.palette.json",
+  "entityId": "tidepool.sprites",
+  "legend": {
+    "a": "accent",
+    "A": "accentLight",
+    "d": "accentDark"
+  },
+  "sprites": {
+    "hero": {
+      "note": "8×8 の丸っこい主人公。平らに塗るだけでよい（明暗は PxShade が足す）。",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "idle": [
+          "..aaaa..",
+          ".aaaaaa.",
+          "aaaaaaaa",
+          "aaaaaaaa",
+          "aaaaaaaa",
+          "aaaaaaaa",
+          ".aaaaaa.",
+          "..aaaa.."
+        ]
+      }
+    }
+  }
+}

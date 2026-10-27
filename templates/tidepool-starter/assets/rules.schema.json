@@ -1,0 +1,11 @@
+{
+  "//": "tidepool.rules.json の形の宣言（Studio の sections 方言）。値の初期値だけを Doc に置き、水の広がり・押す表・行ける条件はコード（Tide・World）側。cycle は配列なので Studio のフォームには出さない（JSON を直接編集する。変えたら make solve）。",
+  "version": 1,
+  "sections": {
+    "shellWidth": { "kind": "field", "type": "int", "label": "貝殻 2 個の幅（手数が par + 幅 以下で 2 個）", "order": 1, "min": 0, "max": 20, "default": 3 },
+    "tweenSeconds": { "kind": "field", "type": "float", "label": "1 手の水位の変化をつなぐ秒", "order": 2, "min": 0.0, "max": 1.5, "default": 0.35 },
+    "forecastAlpha": { "kind": "field", "type": "float", "label": "先読みの重ねの濃さ", "order": 3, "min": 0.0, "max": 1.0, "default": 0.5 },
+    "undoCap": { "kind": "field", "type": "int", "label": "取り消しで戻れる手の数", "order": 4, "min": 1, "max": 4096, "default": 512 },
+    "quitPrompt": { "kind": "field", "type": "text", "label": "終了の確認の文言", "order": 5, "default": "やめますか?  Enter: はい  /  Esc: いいえ" }
+  }
+}
