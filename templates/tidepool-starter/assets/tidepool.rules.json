@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "title": "遊びの決まり（潮・貝殻・動き・取り消し）",
+  "note": "cycle は手数ごとの潮位の表（面に cycle があれば面が勝つ。変えたら make solve で最少手数を出し直す）。shellWidth は貝殻 2 個の幅（手数が par 以下で 3 個・par + 幅 以下で 2 個）。tweenSeconds は 1 手の水位の変化をつなぐ秒、forecastAlpha は先読みの重ねの濃さ、undoCap は取り消しで戻れる手の数。水の広がり・押す表・行ける条件はコード（World・Tide）。",
+  "cycle": [0, 1, 2, 3, 2, 1],
+  "shellWidth": 3,
+  "tweenSeconds": 0.35,
+  "forecastAlpha": 0.5,
+  "undoCap": 512,
+  "quitPrompt": "やめますか?  Enter: はい  /  Esc: いいえ"
+}

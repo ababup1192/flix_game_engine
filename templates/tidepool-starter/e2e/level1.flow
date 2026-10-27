@@ -1,0 +1,25 @@
+# 題名の画面から面 1 をクリアして面 2 へ。面 1 は満ち潮に合わせて岩を登り、潮だまりを上から回って引き潮で下りる（tidepool.levels.json の solution）。
+start title
+expect screen=Title
+tap confirm
+expect screen=Play&level=1&moves=0
+tap right
+tap right
+tap down                     # 潮位 3 で高さ 2 のマスに下りる → 流された
+expect phase=Washed
+tap undo                     # 取り消しで 1 手戻る
+expect phase=Playing&moves=2&col=2
+tap restart                  # 面の初めへ
+expect moves=0&col=0
+tap up
+tap right
+tap right
+tap right
+tap right
+tap down
+tap right
+tap right
+expect phase=Cleared&moves=8
+mark cleared
+tap confirm
+expect level=2&phase=Playing&moves=0

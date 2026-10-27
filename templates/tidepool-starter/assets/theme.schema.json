@@ -1,0 +1,22 @@
+{
+  "//": "tidepool.theme.json の形の宣言（Studio の sections 方言）。色 1 つ = kind field / type color のセクション 1 つ。派生色（ハイライト・影）はコードで導く（独自の色を増やさない）。塗りの仕上げは入れ子 1 階層の record にまとめる（平らに並べると shade* の列がタブを埋める）。",
+  "version": 1,
+  "sections": {
+    "bg":     { "kind": "field", "type": "color", "label": "背景",   "order": 1, "required": true },
+    "accent": { "kind": "field", "type": "color", "label": "差し色", "order": 2, "required": true },
+    "shade": {
+      "kind": "record",
+      "label": "ドット絵の仕上げ",
+      "order": 3,
+      "fields": {
+        "rim":        { "type": "float", "label": "ふち光（光の側の縁を明るく）",   "order": 1, "min": 0, "max": 1, "default": 1.0 },
+        "contact":    { "type": "float", "label": "接地影（影の側の縁を暗く）",     "order": 2, "min": 0, "max": 1, "default": 1.0 },
+        "dither":     { "type": "float", "label": "ディザ（明暗の境を市松に散らす）", "order": 3, "min": 0, "max": 1, "default": 0.5 },
+        "grain":      { "type": "float", "label": "粒（面の内側に明暗の点）",       "order": 4, "min": 0, "max": 1, "default": 0.0 },
+        "grainScale": { "type": "int",   "label": "粒の粗さ（大きいほど塊になる）", "order": 5, "min": 1, "max": 4, "default": 1 },
+        "lightX":     { "type": "int",   "label": "光の向き・横（-1 左 / 0 なし / +1 右）", "order": 6, "min": -1, "max": 1, "default": -1 },
+        "lightY":     { "type": "int",   "label": "光の向き・縦（-1 上 / 0 なし / +1 下）", "order": 7, "min": -1, "max": 1, "default": -1 }
+      }
+    }
+  }
+}

@@ -1,0 +1,101 @@
+{
+  "version": 1,
+  "note": "水底で揺れる光の網目。網=worley の f2mf1 を smoothstep で細く締めたもの・うねり=warp・流れ=scroll。線の太さ=smoothstep の hi、濃さ=最後の mul。白飛びさせないので色は淡い若草の明るい色。",
+  "name": "caustics",
+  "cycleRate": 0.0,
+  "shared": [
+    [
+      "netA",
+      {
+        "kind": "math1",
+        "op": "oneMinus",
+        "of": {
+          "kind": "smoothstep",
+          "lo": 0.0,
+          "hi": 0.05,
+          "of": {
+            "kind": "warp",
+            "amount": 0.12,
+            "scale": 4.0,
+            "seed": 51,
+            "of": {
+              "kind": "scaled",
+              "factor": 1.0,
+              "scroll": {
+                "x": 0.012,
+                "y": 0.007
+              },
+              "of": {
+                "kind": "worley",
+                "scale": 34.0,
+                "seed": 52,
+                "out": "f2mf1"
+              }
+            }
+          }
+        }
+      }
+    ],
+    [
+      "netB",
+      {
+        "kind": "math1",
+        "op": "oneMinus",
+        "of": {
+          "kind": "smoothstep",
+          "lo": 0.0,
+          "hi": 0.08,
+          "of": {
+            "kind": "scaled",
+            "factor": 1.0,
+            "scroll": {
+              "x": -0.009,
+              "y": 0.011
+            },
+            "of": {
+              "kind": "worley",
+              "scale": 24.0,
+              "seed": 53,
+              "out": "f2mf1"
+            }
+          }
+        }
+      }
+    ]
+  ],
+  "out": {
+    "kind": "fill",
+    "shade": {
+      "kind": "solid",
+      "color": "#d6ecc8"
+    },
+    "alpha": {
+      "kind": "math2",
+      "op": "mul",
+      "b": {
+        "kind": "const",
+        "value": 0.2
+      },
+      "a": {
+        "kind": "math2",
+        "op": "max",
+        "a": {
+          "kind": "use",
+          "name": "netA"
+        },
+        "b": {
+          "kind": "math2",
+          "op": "mul",
+          "a": {
+            "kind": "use",
+            "name": "netB"
+          },
+          "b": {
+            "kind": "const",
+            "value": 0.55
+          }
+        }
+      }
+    }
+  }
+}

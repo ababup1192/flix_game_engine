@@ -1,0 +1,23 @@
+{
+  "verbs": ["start", "tap", "hold", "release", "wait", "until", "drive", "expect", "mark", "run", "reload", "request", "close", "rewind"],
+  "settings": ["fps", "ready"],
+  "options": {},
+  "roles": ["left", "right", "up", "down", "wait", "undo", "restart", "confirm"],
+  "probes": [
+    {"name": "screen", "kind": "text", "doc": "画面（Title・Play・Ending）"},
+    {"name": "level", "kind": "num", "doc": "面（1 から数える）"},
+    {"name": "phase", "kind": "text", "doc": "面の中のフェーズ（Playing・Cleared・Washed）"},
+    {"name": "moves", "kind": "num", "doc": "手数"},
+    {"name": "col", "kind": "num", "doc": "ヤドカリの列"},
+    {"name": "row", "kind": "num", "doc": "ヤドカリの行"}
+  ],
+  "drives": [],
+  "starts": [
+    {"name": "title", "doc": "題名の画面（起動の既定）", "args": {}},
+    {"name": "level", "doc": "面 n（1 から数える）の初め", "args": {"n": "1"}}
+  ],
+  "keys": ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", "Digit0", "Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6", "Digit7", "Digit8", "Digit9", "Up", "Down", "Left", "Right", "Enter", "Space", "Escape", "Tab", "Backspace", "Insert", "Delete", "PageUp", "PageDown", "Home", "End", "CapsLock", "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12", "Apostrophe", "Comma", "Minus", "Period", "Slash", "Semicolon", "Equal", "LeftBracket", "Backslash", "RightBracket", "GraveAccent", "LeftShift", "LeftCtrl", "LeftAlt", "LeftSuper", "RightShift", "RightCtrl", "RightAlt", "RightSuper", "Menu", "Numpad0", "Numpad1", "Numpad2", "Numpad3", "Numpad4", "Numpad5", "Numpad6", "Numpad7", "Numpad8", "Numpad9", "NumpadDecimal", "NumpadDivide", "NumpadMultiply", "NumpadSubtract", "NumpadAdd", "NumpadEnter", "NumpadEqual"],
+  "ready": false,
+  "replies": false,
+  "fingerprint": true
+}

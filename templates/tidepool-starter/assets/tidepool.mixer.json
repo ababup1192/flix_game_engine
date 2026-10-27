@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "note": "音の通り道。amb_（鳴り続ける波の環境音）は ambience のバス、select・undo（選ぶ・戻す返事の音）は ui のバス、ほか（歩く・押す・潮・流された・クリア）は sfx のバス。効果音が鳴る間だけ波を少し引く。",
+  "defaultBus": "sfx",
+  "transitionSeconds": 0.4,
+  "buses": [
+    { "name": "ambience", "volume": 0.55, "lowpassGainHF": 1.0 },
+    { "name": "sfx", "volume": 0.8, "lowpassGainHF": 1.0 },
+    { "name": "ui", "volume": 0.7, "lowpassGainHF": 1.0 }
+  ],
+  "routes": [
+    { "bus": "ambience", "prefixes": ["amb_"] },
+    { "bus": "ui", "prefixes": ["select", "undo"] }
+  ],
+  "ducks": [
+    { "bus": "ambience", "by": ["sfx"], "depth": 0.8, "attackSeconds": 0.05, "holdSeconds": 0.15, "releaseSeconds": 0.6 }
+  ],
+  "cooldowns": [ { "prefix": "step_", "seconds": 0.05 } ],
+  "snapshots": []
+}
