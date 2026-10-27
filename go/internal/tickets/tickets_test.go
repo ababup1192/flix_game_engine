@@ -7,15 +7,29 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ababup1192/flix_game_engine/go/internal/lintconf"
 )
 
 const ticketID = "20261018-120000_game_f100"
 
-// commitAt は時刻を決めてコミットし、sha を返す。
-func commitAt(t *testing.T, root, when, msg string, files map[string]string) string {
+// localAt は機械のタイムゾーンの壁時計 wall を RFC3339 にする。
+// WhyNot: 時差を書かない。チケットの ID の時刻も週の区切りも機械のタイムゾーンで読まれるので、+09:00 と書くと
+// ほかのタイムゾーンの機械でチケットの前後や週がずれる。
+func localAt(t *testing.T, wall string) string {
 	t.Helper()
+	at, err := time.ParseInLocation("2006-01-02T15:04:05", wall, time.Local)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return at.Format(time.RFC3339)
+}
+
+// commitAt は時刻（機械のタイムゾーンの壁時計）を決めてコミットし、sha を返す。
+func commitAt(t *testing.T, root, wall, msg string, files map[string]string) string {
+	t.Helper()
+	when := localAt(t, wall)
 	for rel, body := range files {
 		if err := os.WriteFile(filepath.Join(root, rel), []byte(body), 0o644); err != nil {
 			t.Fatal(err)
@@ -54,11 +68,11 @@ func buildHistory(t *testing.T) history {
 	})
 	lintconf.GitInit(t, root)
 	h := history{root: root}
-	commitAt(t, root, "2026-10-01T10:00:00+09:00", "init", nil)
-	h.causer = commitAt(t, root, "2026-10-16T10:00:00+09:00", "draw の枠を直す（F8 のチケット）", map[string]string{"src/View.flix": view("2", "1")})
-	h.sameFile = commitAt(t, root, "2026-10-17T10:00:00+09:00", "other を足す", map[string]string{"src/View.flix": view("2", "2")})
-	h.after = commitAt(t, root, "2026-10-18T13:00:00+09:00", "チケットの後の draw", map[string]string{"src/View.flix": view("3", "2")})
-	h.fixSha = commitAt(t, root, "2026-10-18T14:00:00+09:00", "draw の枠を戻す", map[string]string{"src/View.flix": view("4", "2")})
+	commitAt(t, root, "2026-10-01T10:00:00", "init", nil)
+	h.causer = commitAt(t, root, "2026-10-16T10:00:00", "draw の枠を直す（F8 のチケット）", map[string]string{"src/View.flix": view("2", "1")})
+	h.sameFile = commitAt(t, root, "2026-10-17T10:00:00", "other を足す", map[string]string{"src/View.flix": view("2", "2")})
+	h.after = commitAt(t, root, "2026-10-18T13:00:00", "チケットの後の draw", map[string]string{"src/View.flix": view("3", "2")})
+	h.fixSha = commitAt(t, root, "2026-10-18T14:00:00", "draw の枠を戻す", map[string]string{"src/View.flix": view("4", "2")})
 	return h
 }
 
@@ -129,14 +143,15 @@ func TestCloseNeedsConfidenceForAIAndShowsSuspectsWithoutRegressedBy(t *testing.
 // stats の割合: 埋まり = unknown でない数 / 閉じた数、生んだ割合 = 前の直し / 埋まった数。2 件生んだ直しは cause に出る。
 func TestStatsRatiosAndCause(t *testing.T) {
 	r := &Rules{Ledger: "l", FilledMin: 0.9, RegressedMax: 0.1, CauseMax: 1, Hints: map[string]string{}}
-	rec := func(created string, k Kind, ref string) Record {
+	rec := func(wall string, k Kind, ref string) Record {
+		created := localAt(t, wall)
 		return Record{Ticket: created, Created: created, RegressedBy: RegressedBy{Kind: k, Ref: ref}}
 	}
 	recs := []Record{
-		rec("2026-10-13T10:00:00+09:00", KindCommit, "aaaa"),
-		rec("2026-10-14T10:00:00+09:00", KindCommit, "aaaa"),
-		rec("2026-10-19T10:00:00+09:00", KindNone, ""),
-		rec("2026-10-19T11:00:00+09:00", KindUnknown, ""),
+		rec("2026-10-13T10:00:00", KindCommit, "aaaa"),
+		rec("2026-10-14T10:00:00", KindCommit, "aaaa"),
+		rec("2026-10-19T10:00:00", KindNone, ""),
+		rec("2026-10-19T11:00:00", KindUnknown, ""),
 	}
 	rep, err := r.BuildReport(recs, "", "", "week", 0)
 	if err != nil {
