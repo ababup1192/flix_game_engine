@@ -359,6 +359,9 @@ pub mod LwjglLayer {
         // フレームバッファ = design 寸に固定しないと letterbox 補間が乗り、
         // 画素の突き合わせが成立しないため。
         let hidden = not Object.isNull(System.getenv("FLIX_GE_HIDDEN"));
+        // 音を消して起動するか（計測や見回りで隠し窓を流す時）。音の処理は動かしたまま、全体の音量だけ 0 に止める。
+        let muteValue = System.getenv("FLIX_GE_MUTE");
+        let muted = not Object.isNull(muteValue) and muteValue != "" and muteValue != "0";
         // 1 コマの時間を測るか（FLIX_GE_FRAME_STATS。RenderFrameStats の doc）。
         let frameStats = if (RenderFrameStats.enabled()) Some(RenderFrameStats.fresh()) else None;
         if (hidden) {
@@ -515,6 +518,7 @@ pub mod LwjglLayer {
             bug!("Failed to make OpenAL context current")
         } else ();
         discard AL.createCapabilities(alcCaps);
+        if (muted) AL10.alListenerf(AL10.AL_GAIN, 0.0f32) else ();
 
         println("  Loading sounds...");
         let audioRegistry = RenderAudio.loadAudioRegistry(config#soundManifest,
@@ -736,7 +740,8 @@ pub mod LwjglLayer {
             }
             def setMasterVolume(gain, k) = {
                 // listener gain は全ソースに乗算で効く = マスター音量。範囲外は契約どおりクランプ。
-                AL10.alListenerf(AL10.AL_GAIN, RenderUtil.f32(Float64.max(0.0, Float64.min(1.0, gain))));
+                let audible = if (muted) 0.0 else Float64.max(0.0, Float64.min(1.0, gain));
+                AL10.alListenerf(AL10.AL_GAIN, RenderUtil.f32(audible));
                 k(())
             }
             def setLowpass(name, gainHF, k) = {
@@ -808,13 +813,19 @@ pub mod LwjglLayer {
             def renderCommands(sprites, tileMaps, polygons, staticLayer, k) = {
                 // レンダーターゲットが開いている間は submitFrame がそこへ塗って false を返す。swap は画面のコマだけ。
                 let (fbW, fbH) = Array.get(0, framebufferSizeHolder);
-                let paintFrom = if (Option.isEmpty(frameStats)) 0i64 else System.nanoTime();
-                if (RenderPaint.submitFrame(paint, fbW, fbH, sprites, tileMaps, polygons, staticLayer)) {
-                    Option.forEach(stats -> RenderFrameStats.record(stats, paintFrom, System.nanoTime()), frameStats);
+                // 送る・入れ替えるの時刻は 1 度だけ取り、FrameStats（窓ごとの平均）と診断（コマごと）の両方へ渡す。
+                let paintFrom = System.nanoTime();
+                let toScreen = RenderPaint.submitFrame(paint, fbW, fbH, sprites, tileMaps, polygons, staticLayer);
+                let paintTo = System.nanoTime();
+                if (toScreen) {
+                    Option.forEach(stats -> RenderFrameStats.record(stats, paintFrom, paintTo), frameStats);
                     frameShot(fbW, fbH, frameShotTaken);
                     GLFW.glfwSwapBuffers(window);
                     if (finishAfterSwap) GL11.glFinish() else ()
                 } else ();
+                let swapTo = System.nanoTime();
+                RenderPaint.noteFrame(paint, paintTo - paintFrom, swapTo - paintTo,
+                    () -> List.length(sprites) + List.length(polygons) + List.length(tileMaps));
                 k(())
             }
             def initTileBuffer(instances, k) = k(RenderPaint.initTileBuffer(paint, instances))
@@ -913,8 +924,15 @@ pub mod LwjglLayer {
             }
             def ensureGlyphs(textureName, codepoints, k) = {
                 RenderPaint.ensureGlyphs(fonts, textureName, codepoints);
+                if (Set.isEmpty(codepoints)) ()
+                else RenderPaint.noteDiagnostics(paint, d -> { glyphsAdded = d#glyphsAdded + Set.size(codepoints) | d });
                 k(())
             }
+            def setDiagnosticsEnabled(on, k) = {
+                RenderPaint.setDiagnosticsEnabled(paint, on);
+                k(())
+            }
+            def consumeDiagnostics(k) = k(RenderPaint.consumeDiagnostics(paint))
             def getFontAtlas(name, k) = k(RenderPaint.fontAtlas(fonts, name))
             def getViewportRect(k) = {
                 k({position = Vec2.zero(), size = {x = screenW, y = screenH}})

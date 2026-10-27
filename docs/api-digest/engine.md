@@ -1,4 +1,4 @@
-<!-- engine v0.67.0 / 生成: 2026-10-27 -->
+<!-- engine v0.68.0 / 生成: 2026-10-27 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine
@@ -354,6 +354,16 @@
 ## EngineSentinel.Marker — `engine/src/EngineSentinel/Marker.flix`
 - `pub enum Marker { case M }`
 
+## FrameDiagnostics — `engine/src/FrameDiagnostics.flix`
+- 1 コマの診断。時間はナノ秒。
+  `pub type alias Diagnostics = { submitNs = Int64, swapNs = Int64, shaderBuilds = List[ShaderBuild], shaderDeletes = Int32, liveShaders = Int32, drawItems = Int32, glyphsAdded = Int32, textureUploads = List[String] }`
+- 作ったシェーダー 1 つ。
+  `pub type alias ShaderBuild = { name = String, reason = BuildReason }`
+- 作った理由。Changed は同じ名前で中身が違った時で、違う所の抜き書きを持つ。
+  `pub enum BuildReason with Eq, ToString { case First case Changed(String) }`
+- 何も起きなかったコマ。
+  `pub def empty(): Diagnostics`
+
 ## GameEngine — `engine/src/GameEngine.flix`
 - テクスチャアセットのマニフェストエントリ
   `pub type alias TextureEntry = { name = String, path = String, hasAlpha = Bool }`
@@ -426,6 +436,10 @@
   `pub eff Game { def getTextureInfo(name: String): Option[TextureInfo] }`
 - 実行時に生成した画素を、名前付きテクスチャとして使えるようにする。
   `pub eff Game { def ensureTexture(name: String, key: String, width: Int32, height: Int32, argb: Vector[Int32]): Unit }`
+- 1 コマごとの診断（FrameDiagnostics）を集めるかを切り替える。切っている間は数えない。
+  `pub eff Game { def setDiagnosticsEnabled(on: Bool): Unit }`
+- 前に取り出してから溜まった診断を返し、空に戻す（consumeScrollDelta と同じ取り出し方）。
+  `pub eff Game { def consumeDiagnostics(): FrameDiagnostics.Diagnostics }`
 - マウスカーソル形状を切り替える。連続して同じ Cursor を渡しても問題ない（冪等）
   `pub eff Game { def setCursor(cursor: Cursor): Unit }`
 - マウスカーソルの表示/非表示を切り替える。形状(setCursor)は「どんな絵か」、
@@ -710,7 +724,7 @@
 
 ## ShaderEffect — `engine/src/ShaderEffect.flix`
 - シェーダー面 1 枚ぶんの描画依頼。
-  `pub type alias ShaderRenderCmd = { program = GpuHandle.ShaderProgram, texNames = List[String], rect = Rect2.Rect2, mask = List[List[Vec2.Vec2]], time = Float64, zIndex = Int32, blend = DrawCmd.BlendMode }`
+  `pub type alias ShaderRenderCmd = { program = GpuHandle.ShaderProgram, texNames = List[String], rect = Rect2.Rect2, mask = List[List[Vec2.Vec2]], time = Float64, zIndex = Int32, blend = DrawCmd.BlendMode, alpha = Float64 }`
 - シェーダー面の描画チャンネル。eff Game とは別に隔離した効果。
   `pub eff Shader`
 - Spec を GLSL プログラムへコンパイルしハンドルを返す（起動時/リロード時に 1 回）。

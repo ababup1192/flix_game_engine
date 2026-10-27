@@ -109,6 +109,7 @@ run open_menu.flow             別の flow の手をここへ入れる（同じ�
 - リモートの `POST /step` の本文は flow の文法（`idle N` → `wait Nf`・`press K` → `tap K`・`hold K N` → `hold K Nf`）。
   `POST /flow`（本文か `?path=`）は新しく作った World から流して結果の表を返す（`?apply=1` で最後の World へ差し替える）。ビルドせずに手順を回す口。
   ゲームのループの中で流すので 1 回 36,000 フレーム（60fps で 10 分）まで。
+- リモートの `POST /perf?path=<flow>` は flow を決まった刻みで流した World の列を、実機の GL で 1 コマずつ塗って測り、ヒッチの記録と同じ判定で `hitch.md` を書く（`/step` は塗らない。更新は前もって流し終えているので、測るのは塗る側だけ）。engine の `docs/performance.md` の 11 節。
 
 ## 4 記録
 

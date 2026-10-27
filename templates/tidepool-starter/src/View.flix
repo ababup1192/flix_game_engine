@@ -12,7 +12,7 @@
 mod View {
 
     use fge::{
-        App, Color, DrawCmd, DualGrid, FontAtlas, Fx, Num, Rect2, RawDraw, Render, ShaderDoc,
+        App, Color, DrawCmd, DualGrid, FontAtlas, Fx, Num, Rect2, RawDraw, Render,
         SortingLayer, Sway, Terrain, TextDraw, Vec2, ZStack
     }
     use Board.Cell
@@ -21,9 +21,12 @@ mod View {
     /// 描くのに要る値。部品は World でなくこれを読む（lint/rules.flix の view-no-world）。
     /// before → now を blend（0..1）でつなぐ。age は now になってからの秒（流されたの演出の時計）。
     /// hud・overlay・title は右の板・重ね・題名と終わりの画面へそのまま渡す値。
+    /// rocks は面ごとに作った岩の段の形、tiles は丸い角の 16 通りの表。
     pub type alias In = {
         t = Float64,
         board = Board.Board,
+        rocks = List[Layout.RockLevel],
+        tiles = Layout.RoundTiles,
         now = World.State,
         before = World.State,
         blend = Float64,
@@ -52,7 +55,7 @@ mod View {
         };
         let (parMoves, name) = (World.parMoves(w), World.stageName(w));
         let shells = World.shellsFor(w#rules, parMoves, now#t);
-        { t = w#t, board = b, now = now, before = if (backdrop) now else w#before, blend = if (backdrop) 1.0 else w#blend,
+        { t = w#t, board = b, rocks = World.rockLevels(w), tiles = Layout.buildRoundTiles(), now = now, before = if (backdrop) now else w#before, blend = if (backdrop) 1.0 else w#blend,
           age = w#t - w#since, forecast = World.forecastOf(b, now), screen = w#screen,
           hud = { t = w#t, cycle = b#cycle, moves = now#t, parMoves = parMoves, shells = shells, level = w#level, name = name, theme = w#theme },
           overlay = { t = w#t, age = w#t - w#since, phase = now#phase, moves = now#t, parMoves = parMoves, shells = shells,
@@ -123,20 +126,32 @@ mod View {
         let r = surfaceRect(w);
         let sand = { at = r#position, item = RawDraw.box(r#size, Color.mix(theme#shell, theme#light, 0.2), 0) |> Render.fade(0.38) };
         let floor = (Render.shaderFill(s#rock, r, w#t, 0) :: Nil) :: (sand :: Nil) :: PropView.restingOn(props, 0) :: Nil;
-        let perLevel = List.range(1, Board.maxHeight() + 1) |> List.flatMap(level ->
-            List.append(rockLevel(w, level), PropView.restingOn(props, level) :: Nil));
+        let perLevel = w#rocks |> List.flatMap(rock ->
+            List.append(rockLevel(w, rock), PropView.restingOn(props, rock#level) :: Nil));
         // 題名と終わりの画面は盤を背景として見せるだけなので、遊びの印（先読み・ラベル）は出さない。
         let onlyInPlay = items -> if (isPlay(w)) items else Nil;
-        let top = water(w) ::: (foam(w) :: raisedPool(w) :: PropView.floating(props) :: PropView.fish(props) :: onlyInPlay(gridMarks(w))
-            :: onlyInPlay(forecast(w)) :: PropView.crab(props) :: onlyInPlay(crabWarning(w))
+        let sea = seaCells(w);
+        let wetNow = wetOf(w, sea, w#now);
+        let wets = wetLayers(w, sea, wetNow);
+        let top = water(w, wets) ::: (foam(w, wets) :: raisedPool(w) :: PropView.floating(props) :: PropView.fish(props) :: onlyInPlay(gridMarks(w))
+            :: onlyInPlay(forecast(w, sea, wetNow)) :: PropView.crab(props) :: onlyInPlay(crabWarning(w))
             :: onlyInPlay(poolTag(atlas, w)) :: Nil);
         let toScreen = items -> items |> Render.scaledAllAround(fit(w)#scale, Vec2.zero()) |> Render.movedAll(fit(w)#offset);
         List.map(toScreen, floor ::: perLevel ::: top) ::: (onlyInPlay(washedWave(w)) :: vignette() :: Nil)
 
-    /// 1 手の間の重さ: 前の状態に (1 - u)、今の状態に u。片方が 0 の時は描かない。
-    def weights(w: In): List[(World.State, Float64)] =
+    /// ある状態の水: 水のあるマスと、その水際の小さな辺。水・水際の泡・先読みが同じ物を読む。
+    type alias Wet = { state = World.State, cells = Set[Cell], shore = List[(Vec2.Vec2, Vec2.Vec2)] }
+
+    def wetOf(w: In, sea: Set[Cell], s: World.State): Wet =
+        let cells = wetCells(w, sea, s);
+        { state = s, cells = cells, shore = outline(w, cells) }
+
+    /// 1 手の間に重ねる水と重さ: 前の状態に (1 - u)、今の状態に u。片方が 0 の時は描かない（前の水も作らない）。
+    def wetLayers(w: In, sea: Set[Cell], now: Wet): List[(Wet, Float64)] =
         let u = Num.clamp01(w#blend);
-        ((w#before, 1.0 - u) :: (w#now, u) :: Nil) |> List.filter(e -> snd(e) > 0.001)
+        let before = if (1.0 - u > 0.001) (wetOf(w, sea, w#before), 1.0 - u) :: Nil else Nil;
+        let current = if (u > 0.001) (now, u) :: Nil else Nil;
+        before ::: current
 
     /// 盤の外の水底の高さ: 盤のすぐ周りの半分ほどが高さ 0 の砂、残りは -1 の深み（どれかはマスのハッシュで決める）。
     /// 遊びには効かない（盤の外は全部外海）。引き潮で水際が盤から離れて見えるための絵の地形。
@@ -146,64 +161,41 @@ mod View {
         if (Int32.toFloat64(far) + DualGrid.hash(x, y, 230) * 2.0 < 2.0) 0 else -1
 
     /// 水のあるマス（盤の中の沈んだマスと、手数 t の潮位より低い盤の外）。
-    def wetCells(w: In, s: World.State): Set[Cell] = Set.union(World.submergedCells(w#board, s), seaWet(w, s#t))
+    /// sea は画面に映る盤の外のマス（seaCells）。
+    def wetCells(w: In, sea: Set[Cell], s: World.State): Set[Cell] = Set.union(World.submergedCells(w#board, s), seaWet(w, sea, s#t))
 
-    def seaWet(w: In, t: Int32): Set[Cell] =
-        seaCells(w) |> Set.filter(c -> seaFloorAt(w, c) < Board.tideAt(t, w#board))
+    def seaWet(w: In, sea: Set[Cell], t: Int32): Set[Cell] =
+        sea |> Set.filter(c -> seaFloorAt(w, c) < Board.tideAt(t, w#board))
 
     /// 水の深さ（水面 − 地面。盤の外は潮位 − 水底）。
     def depthAt(w: In, s: World.State, c: Cell): Int32 =
         if (Board.isInside(c, w#board)) Map.getWithDefault(c, 0, s#water) - Board.heightAt(c, w#board)
         else Board.tideAt(s#t, w#board) - seaFloorAt(w, c)
 
-    /// マスの集合を DualGrid の塊（角の丸い多角形の列・盤の座標）にする。jitter で縁を少し揺らす。
-    def blobs(w: In, cells: Set[Cell], offset: Vec2.Vec2): List[List[Vec2.Vec2]] = blobsOf(w, cells, offset, _ -> true)
-
-    /// 塊の縁の角だけ（4 マスとも中の角を抜く）。上面の下に隠れる落ち影・崖の面・光の縁は、中の四角を塗っても見えない。
-    def edgeBlobs(w: In, cells: Set[Cell], offset: Vec2.Vec2): List[List[Vec2.Vec2]] =
-        blobsOf(w, cells, offset, corner -> DualGrid.caseIndex(corner) != 15)
-
-    /// 4 マスとも中の角はただの正方形なので、行ごとに続いた所を 1 枚の長方形にまとめる（部品の数を抑える）。
-    def blobsOf(w: In, cells: Set[Cell], offset: Vec2.Vec2, keep: DualGrid.Corner -> Bool): List[List[Vec2.Vec2]] =
-        let flags = Terrain.flagsOf(cells);
-        let (full, edge) = shownCorners(w) |> List.filter(corner -> keep(flags(corner)))
-            |> List.partition(corner -> DualGrid.caseIndex(flags(corner)) == 15);
-        let runs = full |> List.sortBy(c -> (snd(c), fst(c))) |> List.foldLeft((acc, c) -> match acc {
-            case (first, last) :: rest if snd(last) == snd(c) and fst(last) + 1 == fst(c) => (first, c) :: rest
-            case _ => (c, c) :: acc
-        }, Nil);
-        let squares = runs |> List.map(match (first, last) -> {
-            let a = Vec2.add(DualGrid.originOf(Layout.cell(), first), offset);
-            let b = Vec2.add(Vec2.add(DualGrid.originOf(Layout.cell(), last), offset), { x = Layout.cell(), y = Layout.cell() });
-            { x = a#x, y = a#y } :: { x = b#x, y = a#y } :: { x = b#x, y = b#y } :: { x = a#x, y = b#y } :: Nil
-        });
-        squares ::: (edge |> List.flatMap(corner -> {
-            let tile = DualGrid.resolve({ tile = Layout.cell(), corner = corner,
-                style = DualGrid.styleAt({ round = 0.8, square = 0.0 }, corner), jitter = 4.0 }, flags(corner));
-            let at = Vec2.add(DualGrid.originOf(Layout.cell(), corner), offset);
-            tile#polys |> List.map(poly -> poly |> List.map(v -> Vec2.add(v, at)))
-        }))
+    /// 画面に映る範囲で、マスの集合を DualGrid の塊（角の丸い多角形の列・盤の座標）にする。
+    def blobs(w: In, cells: Set[Cell], offset: Vec2.Vec2): List[List[Vec2.Vec2]] =
+        Layout.blobsOf(w#tiles, shownCorners(w), cells, offset, _ -> true)
 
     /// 水の型（角の丸い塊）。水は縁を揺らさない（水面は岩より平らに見せる）。
+    /// WhyNot: Terrain.maskPolys を使わない。角ごとに丸い角を作り直すので、丸い角の表（Layout.roundTileAt）を引く方が速い。
     def waterMask(w: In, cells: Set[Cell]): List[List[Vec2.Vec2]] =
-        Terrain.maskPolys(Layout.cell(), Terrain.flagsOf(cells), shownCorners(w))
+        let flags = Terrain.flagsOf(cells);
+        shownCorners(w) |> List.flatMap(corner -> {
+            if (DualGrid.caseIndex(flags(corner)) == 0) Nil
+            else {
+                let origin = DualGrid.originOf(Layout.cell(), corner);
+                Layout.roundTileAt(w#tiles, flags(corner))#polys |> List.map(poly -> poly |> List.map(v -> Vec2.add(origin, v)))
+            }
+        })
 
     /// 塊の輪郭の小さな辺（盤の座標）。水際の泡と先読みの破線がこれをなぞる。
     def outline(w: In, cells: Set[Cell]): List[(Vec2.Vec2, Vec2.Vec2)] =
         let flags = Terrain.flagsOf(cells);
         shownCorners(w) |> List.flatMap(corner -> {
-            let tile = DualGrid.resolve({ tile = Layout.cell(), corner = corner, style = DualGrid.CornerStyle.Round, jitter = 0.0 }, flags(corner));
+            let tile = Layout.roundTileAt(w#tiles, flags(corner));
             let at = DualGrid.originOf(Layout.cell(), corner);
             DualGrid.segmentsOf(tile) |> List.map(match (a, b) -> (Vec2.add(a, at), Vec2.add(b, at)))
         })
-
-    /// spec の濃さを k 倍にした面。
-    def withAlpha(k: Float64, spec: ShaderDoc.Spec): ShaderDoc.Spec =
-        match spec#out {
-            case ShaderDoc.Out.Fill(fill) =>
-                { out = ShaderDoc.Out.Fill({ alpha = ShaderDoc.Field.Bin({ op = ShaderDoc.BinOp.Mul,
-                        a = fill#alpha, b = ShaderDoc.Field.Const(k) }) | fill }) | spec }
-        }
 
     /// 多角形の列を 1 色で塗る（濃さ 0 なら何も出さない）。
     def polys(look: { color = Color, alpha = Float64, blend = DrawCmd.BlendMode },
@@ -220,18 +212,16 @@ mod View {
             case None    => if (tideAgo(0) == level) 0.3 else 0.0
         }
 
-    /// 高さ level（1〜3）の段: 落ち影 → 崖の面 → 光の縁 → 上面 → 明るさ → 濡れ。
-    /// 落ち影は光（左上）の反対へ、段の高さぶん伸ばす。
-    def rockLevel(w: In, level: Int32): List[List[Render.PlacedItem]] =
+    /// 高さ rock#level（1〜3）の段: 落ち影 → 崖の面 → 光の縁 → 上面 → 明るさ → 濡れ。形は Layout.rockLevelsOf が面ごとに作った物。
+    def rockLevel(w: In, rock: Layout.RockLevel): List[List[Render.PlacedItem]] =
         let theme = ThemeDoc.rec(w#theme);
-        let cells = Board.cells(w#board) |> List.filter(c -> Board.heightAt(c, w#board) >= level) |> List.toSet;
-        let top = blobs(w, cells, Vec2.zero());
-        let rise = 7.0;
+        let level = rock#level;
+        let top = rock#top;
         // 高い段ほど光の色へ寄せて明るく（乾いて白っぽい岩）、高さを明るさの段でも読ませる。
         let tint = { color = theme#light, alpha = 0.13 * Int32.toFloat64(level - 1), blend = DrawCmd.BlendMode.Normal };
-        polys({ color = theme#shadow, alpha = 0.42, blend = DrawCmd.BlendMode.Multiply }, edgeBlobs(w, cells, { x = rise + 2.0, y = rise + 4.0 }))
-            :: polys({ color = Color.mix(theme#cliff, theme#shadow, 0.25), alpha = 1.0, blend = DrawCmd.BlendMode.Normal }, edgeBlobs(w, cells, { x = 0.0, y = rise }))
-            :: polys({ color = Color.mix(theme#light, theme#cliff, 0.35), alpha = 0.55, blend = DrawCmd.BlendMode.Normal }, edgeBlobs(w, cells, { x = -1.5, y = -1.5 }))
+        polys({ color = theme#shadow, alpha = 0.42, blend = DrawCmd.BlendMode.Multiply }, rock#shadow)
+            :: polys({ color = Color.mix(theme#cliff, theme#shadow, 0.25), alpha = 1.0, blend = DrawCmd.BlendMode.Normal }, rock#cliff)
+            :: polys({ color = Color.mix(theme#light, theme#cliff, 0.35), alpha = 0.55, blend = DrawCmd.BlendMode.Normal }, rock#rim)
             :: (Render.shaderFillMasked(w#surfaces#rock, surfaceRect(w), top, w#t, 0) :: Nil)
             :: polys(tint, top)
             :: polys({ color = Color.mix(theme#shadow, theme#weed, 0.25), alpha = 0.42 * wetnessOf(w, level), blend = DrawCmd.BlendMode.Multiply }, top)
@@ -239,23 +229,23 @@ mod View {
 
     /// 水: 前と今の水の塊を重さで重ね、深さの段ごとに影の色で沈め、光の網目を張る。
     /// WhyNot: 深さの段ごとに水の面を全面で塗り重ねない。面の評価が画面の広さ × 段の数になって描き出しが重くなる。
-    def water(w: In): List[List[Render.PlacedItem]] =
+    def water(w: In, wets: List[(Wet, Float64)]): List[List[Render.PlacedItem]] =
         let theme = ThemeDoc.rec(w#theme);
-        weights(w) |> List.flatMap(match (s, k) -> {
-            let wet = wetCells(w, s);
+        wets |> List.flatMap(match (layer, k) -> {
+            let (s, wet) = (layer#state, layer#cells);
             let mask = waterMask(w, wet);
             let deeper = List.range(2, 5) |> List.map(d ->
                 polys({ color = Color.mix(theme#shadow, theme#sea, 0.5), alpha = 0.13 * k, blend = DrawCmd.BlendMode.Multiply },
                       blobs(w, wet |> Set.filter(c -> depthAt(w, s, c) >= d), Vec2.zero())));
-            (Render.shaderFillMasked(withAlpha(1.4 * k, w#surfaces#water), surfaceRect(w), mask, w#t, 0) :: Nil)
-                :: deeper ::: ((Render.shaderFillMasked(withAlpha(k, w#surfaces#caustics), surfaceRect(w), mask, w#t, 0) :: Nil) :: Nil)
+            (Render.overItem(Render.fade(k), Render.shaderFillMasked(w#surfaces#water, surfaceRect(w), mask, w#t, 0)) :: Nil)
+                :: deeper ::: ((Render.overItem(Render.fade(k), Render.shaderFillMasked(w#surfaces#caustics, surfaceRect(w), mask, w#t, 0)) :: Nil) :: Nil)
         })
 
     /// 水際に沿う泡。辺ごとに濃さと太さを座標と時刻で揺らし、泡の粒を辺の上に浮かべる。
-    def foam(w: In): List[Render.PlacedItem] =
+    def foam(w: In, wets: List[(Wet, Float64)]): List[Render.PlacedItem] =
         let theme = ThemeDoc.rec(w#theme);
-        weights(w) |> List.flatMap(match (s, k) -> {
-            let edges = List.toVector(outline(w, wetCells(w, s)));
+        wets |> List.flatMap(match (layer, k) -> {
+            let edges = List.toVector(layer#shore);
             let lines = Vector.toList(edges) |> List.map(match (a, b) -> {
                 let pulse = 0.5 + 0.5 * Sway.wave(w#t, DualGrid.hash(toCell(a#x), toCell(a#y), 5), 0.9);
                 RawDraw.lineSeg(a, b, 1.2 + pulse * 1.4, theme#foam, 0) |> Render.overItem(Render.fade((0.28 + 0.35 * pulse) * k))
@@ -298,7 +288,7 @@ mod View {
             });
         List.append(rim, spills)
 
-    /// せき止めた池の水位の札（外の潮との段差を数でも読ませる）。
+    /// せき止めた池の水位のラベル（外の潮との段差を数でも読ませる）。
     def poolTag(atlas: FontAtlas, w: In): List[Render.PlacedItem] =
         let theme = ThemeDoc.rec(w#theme);
         let cells = Set.toList(raisedCells(w));
@@ -325,14 +315,13 @@ mod View {
 
     /// 先読み: 次の 1 手の後の水際を、流れる破線で盤に重ねる（Into the Breach の「次に起きること」）。
     /// 沈むマスを淡く塗り、新しく水際になる辺だけを破線にする。1 手の動きの間は動きに合わせて濃くなる。
-    def forecast(w: In): List[Render.PlacedItem] =
+    def forecast(w: In, sea: Set[Cell], wetNow: Wet): List[Render.PlacedItem] =
         let color = Layout.forecastColor(w#theme);
         let strength = RulesDoc.rec(w#rules)#forecastAlpha * w#blend;
-        let wetNow = wetCells(w, w#now);
         let boardNext = Set.difference(Set.union(World.submergedCells(w#board, w#now), w#forecast#flooding), w#forecast#emerging);
-        let wetNext = Set.union(boardNext, seaWet(w, w#now#t + 1));
+        let wetNext = Set.union(boardNext, seaWet(w, sea, w#now#t + 1));
         let key = (a: Vec2.Vec2, b: Vec2.Vec2) -> (toCell(a#x + b#x), toCell(a#y + b#y));
-        let shoreNow = outline(w, wetNow) |> List.map(match (a, b) -> key(a, b)) |> List.toSet;
+        let shoreNow = wetNow#shore |> List.map(match (a, b) -> key(a, b)) |> List.toSet;
         let wash = polys({ color = color, alpha = strength * (0.22 + 0.06 * Sway.wave(w#t, 0.0, 1.1)), blend = DrawCmd.BlendMode.Normal },
             waterMask(w, w#forecast#flooding));
         let edge = outline(w, wetNext) |> List.filter(match (a, b) -> not Set.memberOf(key(a, b), shoreNow))
