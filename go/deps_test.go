@@ -20,7 +20,7 @@ import (
 var allowedModules = map[string]string{
 	"go.starlark.net":                   "v0.0.0-20261016124120-4811d7e34ea3",
 	"golang.org/x/sys":                  "v0.42.0",
-	"github.com/ababup1192/flixlint/go": "v0.0.0-20261026031118-5d3e5ab1c857",
+	"github.com/ababup1192/flixlint/go": "v0.0.0-20261027121931-8610aee60ce9",
 }
 
 func TestGoModRequiresOnlyAllowed(t *testing.T) {

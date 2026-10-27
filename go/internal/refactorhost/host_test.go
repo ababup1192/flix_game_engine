@@ -33,8 +33,8 @@ func TestHooksPinReachesMinFlixlint(t *testing.T) {
 		t.Fatalf("hooks.json の形: %v", err)
 	}
 	pin := hooks.Checkd.Server.FlixlintVersion
-	if !atLeast(pin, refactor.MinFlixlintParam) {
-		t.Fatalf("hooks.json の checkd.server.flixlintVersion は %q。refactor は flixlint %s 以上が要る（flixlintVersion と shimSha256 を上げる）", pin, refactor.MinFlixlintParam)
+	if !atLeast(pin, refactor.MinFlixlintInst) {
+		t.Fatalf("hooks.json の checkd.server.flixlintVersion は %q。refactor は flixlint %s 以上が要る（flixlintVersion と shimSha256 を上げる）", pin, refactor.MinFlixlintInst)
 	}
 }
 
