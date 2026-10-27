@@ -605,7 +605,10 @@ mod World {
                 |> Option.map(photo -> photo#label) |> Option.getWithDefault("");
             let (speaker, excerpt) = w#page#current |> Option.map(line -> (line#speaker, String.takeLeft(80, line#text)))
                 |> Option.getWithDefault(("", ""));
-            { mark = m, place = place, speaker = speaker, excerpt = excerpt, savedAt = savedAtNow(w),
+            let page = if (m#mode == Stage.Mode.Adv) w#page#current |> Option.map(line -> line#text) |> Option.toList
+                else List.append(w#page#lines, w#page#current |> Option.toList)
+                    |> List.map(line -> if (String.isEmpty(line#speaker)) line#text else "${line#speaker}${line#text}");
+            { mark = m, place = place, speaker = speaker, excerpt = excerpt, page = page, savedAt = savedAtNow(w),
               serial = Saves.nextSerial(w#saves) }
         })
 

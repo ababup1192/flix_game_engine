@@ -493,35 +493,45 @@ mod View {
                 let excerpt = linesWithin(textWidth, 13.0, 2, atlas, said) |> List.zipWithIndex
                     |> List.map(match (n, row) -> textAt(tx, y + 62.0 + Int32.toFloat64(n) * 19.0, row, atlas, 13.0, Color.mix(t#ink, t#panel, 0.2), zPanelText()));
                 let badge = if (newest == Some((w#slotTab, i))) newBadge(atlas, thumb, w) else Nil;
-                List.flatten((card :: number :: removeMark :: date :: place :: excerpt) :: thumbnail(slot, thumb, w) :: badge :: Nil)
+                List.flatten((card :: number :: removeMark :: date :: place :: excerpt) :: thumbnail(atlas, slot, thumb, w) :: badge :: Nil)
             case None =>
                 let empty = at(thumb#position#x, thumb#position#y, RawDraw.box(thumb#size, Color.darken(t#panel, 0.3), zThumb())
                                    |> Render.outlineA({ color = Color.mix(t#ink, t#panel, 0.75), alpha = 0.6, width = 1.0 }));
                 card :: number :: empty :: textIn(thumb, label(StoryDoc.Label.EmptySlot, w), atlas, 13.0, dim(w), zPanelText()) :: Nil
         }
 
-    /// サムネ: セーブした時の写真と時間帯を背景と同じ式で小さく塗り、文章の窓の形（NVL の幕・ADV の窓）を重ねる。
+    /// サムネに載せる字の大きさ（px）。
+    def thumbTextSize(): Float64 = 7.5
+
+    /// サムネ: セーブした時の写真と時間帯を背景と同じ式で小さく塗り、文章の窓（NVL の幕・ADV の窓）とその時の文を重ねる。
+    /// 字は画面と同じ縮みでは潰れて読めないので、縮みより大きい thumbTextSize で、窓の幅に収まる所まで折り返して載せる。
     /// WhyNot: 実機の画面を写して残さない —— 描き出しと実機で同じ絵にならず、セーブの JSON に絵を入れると重い。
-    def thumbnail(slot: Saves.Slot, r: Rect2.Rect2, w: World.World): List[Render.PlacedItem] =
+    def thumbnail(atlas: FontAtlas, slot: Saves.Slot, r: Rect2.Rect2, w: World.World): List[Render.PlacedItem] =
         let t = theme(w);
         let ground = at(r#position#x, r#position#y, RawDraw.box(r#size, Backdrop.groundColor(), zThumb()));
         let photo = slot#mark#shot |> Option.flatMap(shot -> specOf(shot, w))
             |> Option.map(spec -> Backdrop.surface(spec, r, 1.0, zThumb() + 1) :: Nil) |> Option.getWithDefault(Nil);
-        let ink = Color.mix(t#ink, t#panel, 0.15);
-        let bar = (x, yy, len) -> at(x, yy, RawDraw.box({ x = len, y = 2.0 }, ink, zThumb() + 3) |> Render.fade(0.7));
+        let ink = Color.mix(t#ink, t#panel, 0.1);
+        let size = thumbTextSize();
+        let rowGap = size + 2.0;
+        let rows = (x, yy, width, maxRows, texts) -> texts
+            |> List.flatMap(text -> linesWithin(width, size, maxRows, atlas, text)) |> List.take(maxRows) |> List.zipWithIndex
+            |> List.map(match (n, row) -> textAt(x, yy + Int32.toFloat64(n) * rowGap, row, atlas, size, ink, zThumb() + 3));
         let sx = r#size#x / World.width();
         let sy = r#size#y / World.height();
         let window = match slot#mark#mode {
             case Stage.Mode.Nvl =>
                 at(r#position#x, r#position#y, RawDraw.box(r#size, t#panel, zThumb() + 2) |> Render.fade(Float64.min(0.95, windowAlpha(w) * t#veil)))
-                :: (List.range(0, 5) |> List.map(n -> bar(r#position#x + 110.0 * sx, r#position#y + (70.0 + Int32.toFloat64(n) * 40.0) * sy,
-                                                       (if (n == 4) 360.0 else 700.0) * sx)))
+                :: rows(r#position#x + 110.0 * sx, r#position#y + 56.0 * sy, Layout.nvlText()#width * sx, 8, slot#page)
             case Stage.Mode.Adv =>
                 let p = Layout.advPanel();
                 at(r#position#x + p#position#x * sx, r#position#y + p#position#y * sy,
                    RawDraw.box({ x = p#size#x * sx, y = p#size#y * sy }, t#panel, zThumb() + 2) |> Render.fade(windowAlpha(w)))
-                :: bar(r#position#x + 72.0 * sx, r#position#y + 410.0 * sy, 620.0 * sx)
-                :: bar(r#position#x + 72.0 * sx, r#position#y + 446.0 * sy, 420.0 * sx) :: Nil
+                :: List.append(
+                    if (String.isEmpty(slot#speaker)) Nil
+                    else textAt(r#position#x + 72.0 * sx, r#position#y + 356.0 * sy, slot#speaker, atlas, size, t#name, zThumb() + 3) :: Nil,
+                    rows(r#position#x + 72.0 * sx, r#position#y + 398.0 * sy, Layout.advText()#width * sx, 2,
+                         if (List.isEmpty(slot#page)) slot#excerpt :: Nil else slot#page))
         };
         let edge = frameOf(r, Color.mix(t#ink, t#panel, 0.6), zThumb() + 4);
         List.flatten((ground :: Nil) :: photo :: window :: edge :: Nil)

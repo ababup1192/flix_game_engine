@@ -56,8 +56,9 @@ mod Saves {
     }
 
     /// セーブデータ 1 つ。place = 場所の名前（背景の写真の label）、speaker / excerpt = その時の話し手と台詞、
+    /// page = その時に画面に出ていた文（NVL は頁の行を上から、ADV は今の 1 行。サムネに小さく写す）、
     /// savedAt = 保存した日時（その土地の時刻の 1970-01-01 からの秒）、serial = 保存した順の通し番号（大きいほど新しい）。
-    pub type alias Slot = { mark = Mark, place = String, speaker = String, excerpt = String, savedAt = Int64, serial = Int32 }
+    pub type alias Slot = { mark = Mark, place = String, speaker = String, excerpt = String, page = List[String], savedAt = Int64, serial = Int32 }
 
     /// セーブのページ。Auto = 場面が替わるたびに自動で残る、Quick = クイックセーブ、Numbered(n) = 1 から数えた n ページ目。
     pub enum Tab with Eq, ToString {
@@ -202,6 +203,7 @@ mod Saves {
             "ambience" => text(s#mark#ambience), "particles" => text(s#mark#particles),
             "mode" => Json.JString("${s#mark#mode}"),
             "place" => Json.JString(s#place), "speaker" => Json.JString(s#speaker), "excerpt" => Json.JString(s#excerpt),
+            "page" => Json.JArray(s#page |> List.map(Json.JString) |> List.toVector),
             "savedAt" => num(Int64.toFloat64(s#savedAt)), "serial" => num(Int32.toFloat64(s#serial)) });
         let r = rec(saves);
         let c = r#config;
@@ -232,6 +234,7 @@ mod Saves {
                            ambience = text("ambience"), particles = text("particles"), mode = mode },
                   place = JsonCodec.stringOr("place", "", obj), speaker = JsonCodec.stringOr("speaker", "", obj),
                   excerpt = JsonCodec.stringOr("excerpt", "", obj),
+                  page = Map.get("page", obj) |> Option.flatMap(JsonCodec.decodeList(JsonCodec.expectString)) |> Option.getWithDefault(Nil),
                   savedAt = Float64.tryToInt64(JsonCodec.floatOr("savedAt", 0.0, obj)) |> Option.getWithDefault(0i64),
                   serial = JsonCodec.intOr("serial", 0, obj) }
             });
