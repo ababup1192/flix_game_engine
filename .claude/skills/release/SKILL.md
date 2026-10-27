@@ -34,37 +34,26 @@ allowed-tools: Read, Grep, Glob, Bash
 
 ## リリース手順
 
+公開は GitHub の Actions の `release`（`.github/workflows/release.yml`）の 1 本。手元は門（テスト）だけを通す。
 このチェックリストを回答にコピーし、埋めながら進める。
 
 ```
-- [ ] 1. engine ソースが全てコミット済み（未コミットなら make release が中断する）
-- [ ] 2. make bump FROM=x TO=y
-- [ ] 3. コミット / push（push を忘れると gh が明示エラーを出す）
-- [ ] 4. make release
+- [ ] 1. make bump FROM=x TO=y → コミット / main へ push（どこで流してもよい）
+- [ ] 2. 手元で make release（= make release-verify。通した commit を release/verified.txt に書く）
+- [ ] 3. release/verified.txt をコミット / main へ push（2 と 3 の間に main へほかを入れない）
+- [ ] 4. Actions の release を main で起動（CI が make release-publish）
 - [ ] 5. lib/ を消したコピーで外部 fetch 検証
 ```
 
-`make release` は sync → `test-par`（全量ゲート）→ `gl-parity` → build-pkg → `bundle-zip` →
-`gh release create` を一括で回す。tag は現在の HEAD SHA に固定される。Release には
-fpkg・toml と一緒に同梱用 zip も上がる。
+手元の `make release` は release-guard → studio-parity → `sync` → `test-par-all`（全量ゲート）→ `gl-parity` を通して
+印を書くだけで、公開はしない。CI は、印の版が `VERSION` と同じか・印の commit から HEAD までの差が印だけか・
+タグがまだ無いかを見て（`make release-marker-check`）、`sync` → build-pkg → `bundle-zip` → `gh release create` を
+流す。tag は印を載せた commit に付く。2 の後に 1 行でも変えたら止まるので、2 からやり直す。
+CI ではテストを流し直さない（スナップショットが OS と JRE のフォントの差でずれる。`release-gate.yml` と同じ）。
 
-### 公開だけを CI に任せる（gh にログインしていない所・クラウドのセッションから出す）
-
-門（テスト）は手元で通し、公開は GitHub の Actions の `release`（`.github/workflows/release.yml`）がする。
-
-```
-- [ ] 1. engine ソースが全てコミット済み
-- [ ] 2. make bump FROM=x TO=y → コミット / push
-- [ ] 3. make release-verify（release と同じ門。通した commit を release/verified.txt に書く）
-- [ ] 4. release/verified.txt をコミット / push
-- [ ] 5. Actions の release を main で起動（CI が make release-publish）
-- [ ] 6. lib/ を消したコピーで外部 fetch 検証
-```
-
-CI は、印の版が `VERSION` と同じか・印の commit から HEAD までの差が印だけか・タグがまだ無いかを見て
-（`make release-marker-check`）、`sync` → build-pkg → `bundle-zip` → `gh release create` を流す。
-3 の後に 1 行でも変えたら止まるので、3 からやり直す。CI ではテストを流し直さない（スナップショットが
-OS と JRE のフォントの差でずれるため。`release-gate.yml` と同じ）。
+配る物を手元で組まないのは、作業ツリーを写すと git の管理外の `debug/`・`gallery/`・`packages.lock` まで
+同梱 zip に入るため（0.67.0・0.68.0 は tidepool-starter の録画で 1.2 GB になった）。CI のきれいな checkout から
+組んだ物が正。
 
 `make bundle-zip`（単体でも打てる）は Studio に同梱する engine 一式（`bin/fge stage-engine`）を
 `flix_game_engine-engine-v<バージョン>.zip` に固める。中身の一覧は
