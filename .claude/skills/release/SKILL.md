@@ -48,6 +48,24 @@ allowed-tools: Read, Grep, Glob, Bash
 `gh release create` を一括で回す。tag は現在の HEAD SHA に固定される。Release には
 fpkg・toml と一緒に同梱用 zip も上がる。
 
+### 公開だけを CI に任せる（gh にログインしていない所・クラウドのセッションから出す）
+
+門（テスト）は手元で通し、公開は GitHub の Actions の `release`（`.github/workflows/release.yml`）がする。
+
+```
+- [ ] 1. engine ソースが全てコミット済み
+- [ ] 2. make bump FROM=x TO=y → コミット / push
+- [ ] 3. make release-verify（release と同じ門。通した commit を release/verified.txt に書く）
+- [ ] 4. release/verified.txt をコミット / push
+- [ ] 5. Actions の release を main で起動（CI が make release-publish）
+- [ ] 6. lib/ を消したコピーで外部 fetch 検証
+```
+
+CI は、印の版が `VERSION` と同じか・印の commit から HEAD までの差が印だけか・タグがまだ無いかを見て
+（`make release-marker-check`）、`sync` → build-pkg → `bundle-zip` → `gh release create` を流す。
+3 の後に 1 行でも変えたら止まるので、3 からやり直す。CI ではテストを流し直さない（スナップショットが
+OS と JRE のフォントの差でずれるため。`release-gate.yml` と同じ）。
+
 `make bundle-zip`（単体でも打てる）は Studio に同梱する engine 一式（`bin/fge stage-engine`）を
 `flix_game_engine-engine-v<バージョン>.zip` に固める。中身の一覧は
 `bin/lint-rules/stage-engine.json` が source of truth で、組み立てた後に `check-refs --bundle` 相当の
