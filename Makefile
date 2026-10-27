@@ -63,7 +63,7 @@ ENGINE_FULL_TOML_NAME := flix_game_engine-$(VERSION).toml
 # 全体の up 階層数を求め、symlink の相対パスを動的に組み立てる。
 SUBPATH_DEPTH := 5
 
-.PHONY: help status sync sync-layers sync-engine-full sync-root-src clean-locks clean-game-builds test test-par render render-all render-par render-changed diff gl-parity release release-guard studio-parity bump lint-palette lint-view lint-loop lint-audio rules check-docs-sync checkd-stop shader-cache-soak
+.PHONY: help status sync sync-layers sync-engine-full sync-root-src clean-locks clean-game-builds test test-par render render-all render-par render-changed diff gl-parity release release-guard studio-parity release-assets release-verify release-marker-check release-publish bump lint-palette lint-view lint-loop lint-audio rules check-docs-sync checkd-stop shader-cache-soak
 
 # セッション立ち上げの固定費を数百トークンに抑える口。SessionStart フックが毎回呼ぶので
 # 実行や変更は一切せず、残っている記録 (.test-logs/ スナップショット チケット git) を集めるだけ。
@@ -540,6 +540,11 @@ sync-engine-full:
 #   3) make release                        … sync → test-par-all(全量ゲート) → gl-parity(A 段階の全一致) → build-pkg → gh release
 #   終了後の案内どおり、lib/ を消したコピーで外部 fetch を検証する。
 #
+# 公開だけを CI に任せる流れ (gh にログインしていない所・クラウドのセッションから出す時):
+#   3') make release-verify                … 3) と同じ門を手元で通し、通した commit を release/verified.txt に書く
+#   4') release/verified.txt を commit → main へ push
+#   5') GitHub の Actions で release を main で手で起動 … CI が make release-publish を流す
+#
 # release は sync (clean-locks はパッケージ配下だけ walk するのでもう固まらない) と
 # test-par (並列全量ゲート) を前提に組み、以下の安全策を持つ:
 #   - engine ソースが未コミットだと配布 fpkg がどのコミットにも対応しなくなるため中断する。
@@ -589,7 +594,14 @@ studio-parity:
 	 $(MAKE) --no-print-directory -C "$(STUDIO)" check-agents-parity ENGINE="$(CURDIR)" \
 	   || { echo "[release] sync-agents の出力が Studio の server/src/NewGame.flix とずれています。Studio 側も同じ変更を入れて main へ push してから公開してください"; exit 1; }
 # gl-parity も全量ゲートの一員 — GL と SoftRaster の絵の退行はテストに出ないため。
-release: release-guard studio-parity sync $(TEST) gl-parity
+RELEASE_GATES := release-guard studio-parity sync $(TEST) gl-parity
+release: $(RELEASE_GATES)
+	@$(MAKE) --no-print-directory release-assets
+	@echo "[release] 完了。外部 fetch 検証: lib/ を消したサンプルで github:ababup1192/flix_game_engine v$(VERSION) を引けるか確認してください"
+	@echo "[release] 任意: ゲームを追随させた後に make agent-eval-release で道具の選び方を測り、前の版と比べる（約 20 分・下がったお題が出る。docs/agent-eval.md）"
+
+# release と release-publish の後半 (配る物を組んで Release に付ける)。直に打たない。
+release-assets:
 	cd $(ENGINE_FULL_DIR) && "$(FLIX)" build-pkg
 	@# WhyNot: build-pkg の後に置くのは、zip の中身に engine_full.fpkg が入るため。
 	@# 先に組むと 1 つ前のバージョンの fpkg を配ってしまう。
@@ -599,8 +611,40 @@ release: release-guard studio-parity sync $(TEST) gl-parity
 	  "$(ENGINE_FULL_FPKG_SRC)#$(ENGINE_FULL_FPKG_NAME)" \
 	  "$(ENGINE_FULL_TOML_SRC)#$(ENGINE_FULL_TOML_NAME)" \
 	  "$(BUNDLE_ZIP)" "$(BUNDLE_SUMS)"
-	@echo "[release] 完了。外部 fetch 検証: lib/ を消したサンプルで github:ababup1192/flix_game_engine v$(VERSION) を引けるか確認してください"
-	@echo "[release] 任意: ゲームを追随させた後に make agent-eval-release で道具の選び方を測り、前の版と比べる（約 20 分・下がったお題が出る。docs/agent-eval.md）"
+
+# 手元で release と同じ門を通し、通した commit を印に書く。公開は CI の release-publish がする。
+# WhyNot: 印に commit を書き、CI はそこから HEAD までの差が印だけかを見る。版やテストの名前だけだと、
+# 門を通した後に入った変更も同じ印で出てしまう。
+RELEASE_MARKER := release/verified.txt
+release-verify: $(RELEASE_GATES)
+	@mkdir -p $(dir $(RELEASE_MARKER))
+	@printf 'version %s\nsha %s\ngates %s\nat %s\n' "$(VERSION)" "$(RELEASE_SHA)" "$(RELEASE_GATES)" "$$(date -u +%Y-%m-%dT%H:%M:%SZ)" > $(RELEASE_MARKER)
+	@echo "[release-verify] v$(VERSION) の門を $(RELEASE_SHA) で通しました。次は:"
+	@echo "  git add $(RELEASE_MARKER) && git commit -m 'release: v$(VERSION) の門を通した' && git push"
+	@echo "  → GitHub の Actions で release を main で起動 (CI が make release-publish を流す)"
+
+# CI が公開の前に見る: 印の版が VERSION と同じ・印の commit から HEAD までの差が印だけ・タグがまだ無い。
+release-marker-check:
+	@test -f $(RELEASE_MARKER) || { echo "[release] $(RELEASE_MARKER) がありません。手元で make release-verify を通して commit してください"; exit 1; }
+	@ver=$$(sed -n 's/^version //p' $(RELEASE_MARKER)); sha=$$(sed -n 's/^sha //p' $(RELEASE_MARKER)); \
+	 [ "$$ver" = "$(VERSION)" ] || { echo "[release] 印の版 $$ver が Makefile の VERSION $(VERSION) と違います。make release-verify をやり直してください"; exit 1; }; \
+	 git cat-file -e "$$sha^{commit}" 2>/dev/null || { echo "[release] 印の commit $$sha が履歴にありません (checkout の fetch-depth が浅いか、push していない)"; exit 1; }; \
+	 git merge-base --is-ancestor "$$sha" HEAD || { echo "[release] 印の commit $$sha が HEAD の祖先ではありません"; exit 1; }; \
+	 extra=$$(git diff --name-only "$$sha" HEAD -- . ':(exclude)$(RELEASE_MARKER)'); \
+	 [ -z "$$extra" ] || { echo "[release] 門を通した $$sha の後に変わったファイルがあります。make release-verify をやり直してください:"; echo "$$extra"; exit 1; }; \
+	 if git ls-remote --exit-code --tags origin "refs/tags/v$(VERSION)" >/dev/null 2>&1; then echo "[release] v$(VERSION) のタグがもうあります"; exit 1; fi; \
+	 echo "[release] 印を確かめました: v$$ver は $$sha で門を通し、その後の変更は印だけ"
+
+# CI が流す公開。テストは手元の release-verify が通した物を印で受け取る。
+# WhyNot: CI で全量テストを流し直さない。描き出しのスナップショットは OS と JRE のフォントの差で CI ではずれる
+# (release-gate.yml と同じ理由)。studio-parity も Studio の clone が要るので手元の門に任せる。
+release-publish: release-marker-check
+	@# WhyNot: go-build を先に置く。release-guard が呼ぶ bin/fge は bin/fge-go を要り、CI の checkout には無い。
+	@$(MAKE) --no-print-directory go-build
+	@$(MAKE) --no-print-directory release-guard
+	@$(MAKE) --no-print-directory sync
+	@$(MAKE) --no-print-directory release-assets
+	@echo "[release] v$(VERSION) を CI から公開しました。外部 fetch 検証: lib/ を消したサンプルで github:ababup1192/flix_game_engine v$(VERSION) を引けるか確認してください"
 
 # ── 同梱用 zip ────────────────────────────────────────────
 # Studio に同梱する engine 一式を、そのまま Release に添えられる zip にする。
