@@ -534,21 +534,20 @@ sync-engine-full:
 # fpkg と flix.toml を添付する。利用側は github:ababup1192/flix_game_engine の1行でこのバージョンを引く。
 # 依存ゼロなので公開はこの1リポで完結する (推移先の別リポは不要)。
 #
-# 推奨フロー (この3手だけ):
-#   1) make bump FROM=<旧> TO=<新>   … 全 flix.toml と VERSION を一括更新
-#   2) git で変更を commit → main へ push  … リリースするバージョンを GitHub に載せる
-#   3) make release                        … sync → test-par-all(全量ゲート) → gl-parity(A 段階の全一致) → build-pkg → gh release
-#   終了後の案内どおり、lib/ を消したコピーで外部 fetch を検証する。
+# 流れ (公開は CI の 1 本。手元は門だけ):
+#   1) make bump FROM=<旧> TO=<新>   … 全 flix.toml と VERSION を一括更新 → commit → main へ push
+#   2) make release (= make release-verify) … sync → test-par-all(全量ゲート) → gl-parity(A 段階の全一致) を手元で通し、
+#                                          通した commit を release/verified.txt に書く
+#   3) release/verified.txt を commit → main へ push
+#   4) GitHub の Actions で release を main で手で起動 … CI が make release-publish で組んで gh release
+#   終了後、lib/ を消したコピーで外部 fetch を検証する。
 #
-# 公開だけを CI に任せる流れ (gh にログインしていない所・クラウドのセッションから出す時):
-#   3') make release-verify                … 3) と同じ門を手元で通し、通した commit を release/verified.txt に書く
-#   4') release/verified.txt を commit → main へ push
-#   5') GitHub の Actions で release を main で手で起動 … CI が make release-publish を流す
+# WhyNot: 手元で配る物を組まない。stage-engine は作業ツリーを写すので、git の管理外の debug/・gallery/・
+# packages.lock まで同梱 zip に入る (0.67.0・0.68.0 は templates/tidepool-starter/debug/video で 1.2 GB)。
+# CI のきれいな checkout から組んだ物だけを正にする。
 #
-# release は sync (clean-locks はパッケージ配下だけ walk するのでもう固まらない) と
-# test-par (並列全量ゲート) を前提に組み、以下の安全策を持つ:
+# release-guard の安全策:
 #   - engine ソースが未コミットだと配布 fpkg がどのコミットにも対応しなくなるため中断する。
-#   - tag は現在の HEAD に固定する。push し忘れていれば gh が「commit が無い」と明示エラーにする。
 # test-par-all に不審な挙動があれば逐次にフォールバックする (make release TEST=test-all)。
 RELEASE_SHA := $(shell git rev-parse HEAD)
 TEST := test-par-all
@@ -595,12 +594,9 @@ studio-parity:
 	   || { echo "[release] sync-agents の出力が Studio の server/src/NewGame.flix とずれています。Studio 側も同じ変更を入れて main へ push してから公開してください"; exit 1; }
 # gl-parity も全量ゲートの一員 — GL と SoftRaster の絵の退行はテストに出ないため。
 RELEASE_GATES := release-guard studio-parity sync $(TEST) gl-parity
-release: $(RELEASE_GATES)
-	@$(MAKE) --no-print-directory release-assets
-	@echo "[release] 完了。外部 fetch 検証: lib/ を消したサンプルで github:ababup1192/flix_game_engine v$(VERSION) を引けるか確認してください"
-	@echo "[release] 任意: ゲームを追随させた後に make agent-eval-release で道具の選び方を測り、前の版と比べる（約 20 分・下がったお題が出る。docs/agent-eval.md）"
+release: release-verify
 
-# release と release-publish の後半 (配る物を組んで Release に付ける)。直に打たない。
+# release-publish の後半 (配る物を組んで Release に付ける)。CI だけが流す。
 release-assets:
 	cd $(ENGINE_FULL_DIR) && "$(FLIX)" build-pkg
 	@# WhyNot: build-pkg の後に置くのは、zip の中身に engine_full.fpkg が入るため。
@@ -612,7 +608,7 @@ release-assets:
 	  "$(ENGINE_FULL_TOML_SRC)#$(ENGINE_FULL_TOML_NAME)" \
 	  "$(BUNDLE_ZIP)" "$(BUNDLE_SUMS)"
 
-# 手元で release と同じ門を通し、通した commit を印に書く。公開は CI の release-publish がする。
+# 手元で門を通し、通した commit を印に書く。公開は CI の release-publish がする。
 # WhyNot: 印に commit を書き、CI はそこから HEAD までの差が印だけかを見る。版やテストの名前だけだと、
 # 門を通した後に入った変更も同じ印で出てしまう。
 RELEASE_MARKER := release/verified.txt
@@ -645,6 +641,7 @@ release-publish: release-marker-check
 	@$(MAKE) --no-print-directory sync
 	@$(MAKE) --no-print-directory release-assets
 	@echo "[release] v$(VERSION) を CI から公開しました。外部 fetch 検証: lib/ を消したサンプルで github:ababup1192/flix_game_engine v$(VERSION) を引けるか確認してください"
+	@echo "[release] 任意: ゲームを追随させた後に make agent-eval-release で道具の選び方を測り、前の版と比べる（約 20 分・下がったお題が出る。docs/agent-eval.md）"
 
 # ── 同梱用 zip ────────────────────────────────────────────
 # Studio に同梱する engine 一式を、そのまま Release に添えられる zip にする。
