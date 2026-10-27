@@ -7,28 +7,15 @@ mod TestTrace {
     use fge::{App, Emit, Flow, PropertyTest, ShaderDoc}
     use fge::GameEngine.Key
 
-    /// 押す操作の役。
-    enum Role with Eq {
-        case Left, Right, Ccw, Cw, Drop, Soft
-    }
+    /// 押す物はキーそのもの（役の enum を挟まない）。
+    def setup(): PropertyTest.Setup[Key, World.World] =
+        { keyOf = (key, _) -> key, viewport = { x = 256.0, y = 352.0 }, dt = 1.0 / 60.0 }
 
-    def keyOf(role: Role, _w: World.World): Key = match role {
-        case Role.Left  => Key.Left
-        case Role.Right => Key.Right
-        case Role.Ccw   => Key.Z
-        case Role.Cw    => Key.X
-        case Role.Drop  => Key.Space
-        case Role.Soft  => Key.Down
-    }
-
-    def setup(): PropertyTest.Setup[Role, World.World] =
-        { keyOf = keyOf, viewport = { x = 256.0, y = 352.0 }, dt = 1.0 / 60.0 }
-
-    /// 種 12 個 × 600 入力。押しっぱなしはそっと落とすだけ。
-    def cases(): PropertyTest.Cases[Role] =
+    /// 種 12 個 × 600 入力。押しっぱなしはそっと落とすだけ（↓）。Z・X は回す、Space は叩きつける。
+    def cases(): PropertyTest.Cases[Key] =
         { seeds = 12, length = 600,
-          spec = { taps = List#{Role.Left, Role.Right, Role.Ccw, Role.Cw, Role.Drop},
-                   holds = List#{Role.Soft}, idle = 4 | PropertyTest.emptySpec() } }
+          spec = { taps = List#{Key.Left, Key.Right, Key.Z, Key.X, Key.Space},
+                   holds = List#{Key.Down}, idle = 4 | PropertyTest.emptySpec() } }
 
     /// 実機（Main）と同じ更新と音の部品だけを繋いだ App。
     def app(): App.App[World.World, {}] =
@@ -38,7 +25,7 @@ mod TestTrace {
         let w = World.initial({ doc = RulesDoc.defaults(), theme = ThemeDoc.defaults(),
                                 shader = ShaderDoc.demoSurface() });
         let cells = List.range(World.rows() - 4, World.rows()) |> List.flatMap(r ->
-            List.range(0, World.cols()) |> List.filter(c -> c != 4) |> List.map(c -> ((c, r), World.Kind.I)));
+            List.range(0, World.cols()) |> List.filter(c -> c != 4) |> List.map(c -> ((c, r), Pieces.Kind.I)));
         { board = List.foldLeft((b, e) -> { let (c, k) = e; Map.insert(c, k, b) }, Map.empty(), cells) | w }
 
     /// そのフレームに溜まった出来事（音と同じ読み方）。
@@ -101,16 +88,15 @@ mod TestTrace {
             case Err(failure) => bug!(failure#why)
         };
         let traced = App.trace(app(), played#frames |> List.map(entry -> entry#step#frame), start());
-        let last = traced |> List.last |> Option.map(step -> step#after) |> Option.getWithDefault(start());
-        Assert.assertEq(expected = (last#board, last#score, List.flatMap(step -> step#sounds, traced)),
-                        (played#last#board, played#last#score, List.flatMap(entry -> entry#step#sounds, played#frames)))
+        Assert.assertEq(expected = (Some((played#last#board, played#last#score)), List.flatMap(entry -> entry#step#sounds, played#frames)),
+                        (List.last(traced) |> Option.map(step -> (step#after#board, step#after#score)), List.flatMap(step -> step#sounds, traced)))
 
     /// 上の決まりが空振りでないこと: どれかの種の列で、固めたフレームも行を消したフレームもある。
     @Test
     def testSomeSeedLocksAndClears(): Unit \ Assert =
         let stepsOf = seed -> PropertyTest.traceOf(app(), setup(), PropertyTest.generate(seed, cases()#length, cases()#spec), start());
-        let seeds = List.range(1, cases()#seeds + 1) |> List.map(Int32.toInt64);
+        let seeds = List.range(1, cases()#seeds + 1);
         Assert.assertEq(expected = (true, true),
-            (List.exists(seed -> List.exists(step -> lockedIn(step) > 0, stepsOf(seed)), seeds),
-             List.exists(seed -> List.exists(step -> clearedIn(step) > 0, stepsOf(seed)), seeds)))
+            (List.exists(seed -> List.exists(step -> lockedIn(step) > 0, stepsOf(Int32.toInt64(seed))), seeds),
+             List.exists(seed -> List.exists(step -> clearedIn(step) > 0, stepsOf(Int32.toInt64(seed))), seeds)))
 }

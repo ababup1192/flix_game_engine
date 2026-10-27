@@ -31,7 +31,31 @@ func cmdRefactor(out, errOut *strings.Builder, rest []string, asJSON bool) int {
 	if asJSON {
 		rest = append(dropJSONFlag(rest), "--json")
 	}
+	useEngineFlixlint(root, rest)
 	return refactor.Run(out, errOut, root, rest, refactor.Options{Run: heavyRunner, Verify: heavyVerify, Log: os.Stderr, Shared: sharedServer(root)})
+}
+
+// useEngineFlixlint は、ゲームが flixlint を名指ししていない時（submodule・--flixlint・FGE_FLIXLINT・FLIXLINT_BIN・
+// refactor.local.json・PATH のどれも無い）に、make lint-flixlint と同じ hooks.json の版の flixlint を使わせる。
+// WhyNot: テンプレートから作ったゲームは flixlint を submodule で持たないので、これが無いと索引を作れず止まる。
+func useEngineFlixlint(root string, rest []string) {
+	if _, _, given := declValueFlag(rest, "--flixlint"); given || os.Getenv("FGE_FLIXLINT") != "" || os.Getenv("FLIXLINT_BIN") != "" {
+		return
+	}
+	for _, p := range []string{filepath.Join(root, "flixlint", "bin", "flixlint"), filepath.Join(root, "bin", "lint-rules", "refactor.local.json")} {
+		if _, err := os.Stat(p); err == nil {
+			return
+		}
+	}
+	if refactor.LookPath("flixlint") != "" {
+		return
+	}
+	if dir, shim, err := prepareFlixlint(repoRoot()); err == nil {
+		os.Setenv("FGE_FLIXLINT", filepath.Join(dir, "bin", "flixlint"))
+		if os.Getenv("FLIXLINT_SHIM") == "" {
+			os.Setenv("FLIXLINT_SHIM", shim)
+		}
+	}
 }
 
 // sharedServer は make check（checkd の server の道）の常駐と同じ jar・ヒープ・寿命。ゲームの hooks.json に checkd.server が

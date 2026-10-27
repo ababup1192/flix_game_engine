@@ -19,17 +19,7 @@
 mod World {
 
     use fge::{Emit, ShaderDoc}
-
-    /// ミノの 7 種。色（ThemeDoc.colorOf）も形（Pieces.cellsOf）もこの種類から引く。
-    pub enum Kind with Eq, ToString {
-        case I
-        case O
-        case T
-        case S
-        case Z
-        case J
-        case L
-    }
+    use Pieces.{Cell, Kind}
 
     /// いま画面が何をしているか。
     ///   Playing  … ミノを操作している（ふつうの状態）。
@@ -53,9 +43,6 @@ mod World {
         case Cleared(Int32)
         case ToppedOut
     }
-
-    /// 盤のマス。(col, row)。row 0 が最上段で、下に行くほど row が増える（画面と同じ向き）。
-    pub type alias Cell = (Int32, Int32)
 
     /// いま操作しているミノ。kind = 種類、rot = 向き（0..3）、(col,row) = 原点セルの盤上の位置。
     /// 実際の 4 マスは Pieces.cellsOf(kind, rot) を (col,row) 平行移動したもの（piecesCells）。

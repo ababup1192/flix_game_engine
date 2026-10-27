@@ -19,13 +19,13 @@ mod Starts {
         match Int32.fromString(text) {
             case Some(gap) if gap >= 0 and gap < World.cols() =>
                 // 最初のミノは袋から引かれるので、I に据え直す（涌く位置と向きは涌いた物のまま）。
-                Ok({ board = bottomRows(4, gap), current = { kind = World.Kind.I | w#current } | w })
+                Ok({ board = bottomRows(4, gap), current = { kind = Pieces.Kind.I | w#current } | w })
             case _ => Err("gap は 0..${World.cols() - 1} の列（'${text}'）")
         }
 
     /// 下から count 行を、gap の列（-1 なら空けない）を除いて I の升で埋めた盤。
-    def bottomRows(count: Int32, gap: Int32): Map[World.Cell, World.Kind] =
+    def bottomRows(count: Int32, gap: Int32): Map[Pieces.Cell, Pieces.Kind] =
         List.range(World.rows() - count, World.rows())
-            |> List.flatMap(row -> List.range(0, World.cols()) |> List.filter(col -> col != gap) |> List.map(col -> ((col, row), World.Kind.I)))
+            |> List.flatMap(row -> List.range(0, World.cols()) |> List.filter(col -> col != gap) |> List.map(col -> ((col, row), Pieces.Kind.I)))
             |> List.toMap
 }
