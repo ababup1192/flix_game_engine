@@ -3,6 +3,17 @@
 エンジンの agents-pack から配られる共通部。ゲーム固有の方針は同じフォルダの `AGENTS.local.md` に書く。
 lint・フック・make の口で止まる決まりはここに書かない（止まった所で hint が代わりの道具を示す）。
 
+## .flix の名前を探す（grep の前に・最初の 1 手から）
+
+| したいこと | 道具 |
+|---|---|
+| 名前の一部から宣言を探す | `bin/fge refactor search <語>` |
+| 関数・型の本文だけを読む | `bin/fge refactor show <Mod.名前>` |
+| 使う所・呼び手を全部（直す所の洗い出し） | `bin/fge refactor usages <Mod.名前> [--callers]` |
+| 使われていない pub | `bin/fge refactor usages --unused` |
+
+grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を落とす。文字列・文書・JSON の値は grep のままで良い。詳しい表は `/flix-docs`。
+
 ## やりたいこと → 道具（早見表。まずここを引く）
 
 1 行 1 件・80 字まで。行には名前だけ置き、詳しい所は `--help`・engine の docs・モジュール冒頭の doc へ。

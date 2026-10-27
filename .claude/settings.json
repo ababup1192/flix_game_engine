@@ -59,6 +59,18 @@
           }
         ]
       }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Grep|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/bin/fge\" hook-search-first",
+            "timeout": 15
+          }
+        ]
+      }
     ]
   },
   "permissions": {

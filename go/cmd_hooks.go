@@ -25,6 +25,7 @@ func init() {
 	register("hook-flix-edit", "保存 1 回ぶんを常駐へ投げて型検査する (手動確認用)", cmdHookFlixEdit)
 	register("hook-asset-guard", "ゲームの assets/ の素材へ直に書くのを止め atelier/ を指す (PreToolUse)", cmdHookAssetGuard)
 	register("hook-read-guard", "大きな .flix の丸読み (Read の範囲なし・cat) を止める (PreToolUse)", cmdHookReadGuard)
+	register("hook-search-first", ".flix の名前を grep で探す最初の 1 回だけ、grep の代わりに索引（refactor usages）の答えを返す (PreToolUse)", cmdHookSearchFirst)
 	register("hook-search-nudge", ".flix の名前を grep で探した後に、索引で引く道具（refactor search・show・usages）を 1 回だけ案内する (PostToolUse)", cmdHookSearchNudge)
 	register("hook-index-warm", "探す道具の索引（refactor show・search・usages）を裏で作り始める (SessionStart)", cmdHookIndexWarm)
 	register("hook-session-diet", "廃止・何もしない (古い settings.json の呼び出しを壊さないため口だけ残す)", cmdHookSessionDiet)
@@ -91,6 +92,10 @@ func cmdHookAssetGuard(_, errOut *strings.Builder, _ []string, _ bool) int {
 func cmdHookIndexWarm(_, _ *strings.Builder, _ []string, _ bool) int {
 	hooks.WarmIndex(hookRoot())
 	return 0
+}
+
+func cmdHookSearchFirst(out, _ *strings.Builder, _ []string, _ bool) int {
+	return hooks.RunSearchFirst(out, hookRoot(), repoRoot(), os.Stdin)
 }
 
 func cmdHookSearchNudge(out, _ *strings.Builder, _ []string, _ bool) int {

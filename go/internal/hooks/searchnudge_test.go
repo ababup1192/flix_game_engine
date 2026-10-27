@@ -42,6 +42,47 @@ func TestNameSearchOnFlixCatchesNameGrepsOnly(t *testing.T) {
 	}
 }
 
+func TestNameSearchOnFlixCatchesWholeProjectAndTypeNames(t *testing.T) {
+	game := t.TempDir()
+	for _, f := range []string{"flix.toml", "src/World.flix", "docs/notes.md"} {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(game, f)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(game, f), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	at := func(tool string, input map[string]any) Payload {
+		return Payload{"tool_name": tool, "cwd": game, "tool_input": input}
+	}
+	hit := map[string]Payload{
+		"プロジェクトの根を grep -rn":         at("Bash", map[string]any{"command": `grep -rn "enterFight" ` + game}),
+		"cd してから grep -rn .":         at("Bash", map[string]any{"command": `cd ` + game + ` && grep -rn enterFight .`}),
+		"探す先を書かない rg":                at("Bash", map[string]any{"command": `rg -n enterFight`}),
+		"Grep で Mod.Type.Case":       at("Grep", map[string]any{"pattern": `Entry.Entry`, "path": game}),
+		"Grep で大文字の 1 語と *.flix":     at("Grep", map[string]any{"pattern": `Entry`, "glob": "*.flix"}),
+		"grep -rn で Mod.Type を src/": at("Bash", map[string]any{"command": `grep -rn "WorldFight.Entry" src/`}),
+	}
+	for name, p := range hit {
+		if !NameSearchOnFlix(p, ".flix") {
+			t.Errorf("%s: 名前の字の検索として拾うはず", name)
+		}
+	}
+	miss := map[string]Payload{
+		"プロジェクトの中の .flix の無いフォルダ":  at("Bash", map[string]any{"command": `grep -rn enterFight ` + filepath.Join(game, "docs")}),
+		"根を探しても文字列":                at("Bash", map[string]any{"command": `grep -rn "着火" ` + game}),
+		"根を探しても全部大文字の語":            at("Bash", map[string]any{"command": `grep -rn TODO .`}),
+		"Grep で *.md に絞った大文字の 1 語": at("Grep", map[string]any{"pattern": `Entry`, "glob": "*.md", "path": game}),
+		"-r の無い grep で 1 ファイル":     at("Bash", map[string]any{"command": `grep -n Entry README.md`}),
+		"出力の絞り込み":                  at("Bash", map[string]any{"command": `make test 2>&1 | grep Passed`}),
+	}
+	for name, p := range miss {
+		if NameSearchOnFlix(p, ".flix") {
+			t.Errorf("%s: 拾わないはず", name)
+		}
+	}
+}
+
 func TestShellSegmentsKeepQuotedSeparators(t *testing.T) {
 	got := shellSegments(`cd src && grep -n "a\\|b;c" X.flix | head -3; echo 'x|y'`)
 	want := []string{"cd src ", ` grep -n "a\\|b;c" X.flix `, " head -3", ` echo 'x|y'`}

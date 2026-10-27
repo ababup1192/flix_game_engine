@@ -17,6 +17,18 @@
 コミット時に `bin/fge jargon` が**新しく書いた行だけ**を検査して止める。
 言い換え先（と英語）はその WORDS を見る。手動で全量なら `make lint-jargon`。
 
+## .flix の名前を探す（grep の前に・最初の 1 手から）
+
+| したいこと | 道具 |
+|---|---|
+| 名前の一部から宣言を探す | `bin/fge refactor search <語>` |
+| 関数・型の本文だけを読む | `bin/fge refactor show <Mod.名前>` |
+| 使う所・呼び手を全部（直す所の洗い出し） | `bin/fge refactor usages <Mod.名前> [--callers]` |
+| 使われていない pub | `bin/fge refactor usages --unused` |
+
+grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を落とす。文字列・文書・JSON の値は grep のままで良い。
+ゲームを調べる時は、そのゲームのフォルダで流す（`cd <ゲーム> && bin/fge refactor …`）。詳しい表は `/flix-docs`。
+
 ## 名前の付け方（モジュール・関数・変数）
 
 **英語にすれば安全、ではない。** `bless` `carve` のように、英単語でも
