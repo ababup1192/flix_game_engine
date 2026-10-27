@@ -1,0 +1,32 @@
+name: Release
+
+# 手元の make release-verify が門を通した版を、main で手で起動して公開する（make release-publish）。
+# 門を通した証拠は release/verified.txt（通した commit）。そこから HEAD までの差が印だけでなければ止まる。
+# WhyNot: タグの push で起動しない。タグは gh release create がこの中で作る（タグを push できない所からも出せる）。
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      # WhyNot: fetch-depth: 0。印の commit から HEAD までの差を見るのに履歴が要る。
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run on main only
+        run: test "${GITHUB_REF_NAME}" = main || { echo "main で起動してください（今は ${GITHUB_REF_NAME}）" >&2; exit 1; }
+
+      # devbox が nix 経由で JDK21 / Flix コンパイラ / Go / make を用意する（ローカルと同じ環境。release-gate.yml と同じ）。
+      - name: Install devbox
+        uses: jetify-com/devbox-install-action@v0.13.0
+
+      - name: make release-publish
+        run: devbox run -- make release-publish
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
