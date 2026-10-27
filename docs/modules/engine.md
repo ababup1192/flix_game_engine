@@ -41,6 +41,7 @@
 | シェーダーの式を GPU なしで評価したい（テスト・SoftRaster の描き出し） | ShaderEval |
 | shader.json を読み書きしたい | ShaderJson |
 | シェーダー面を描く GPU 側の効果口を知りたい | ShaderEffect |
+| 1 コマで作ったシェーダー・足した字・塗りと swap の時間を知りたい（ヒッチの記録の材料） | FrameDiagnostics |
 | 位置ベクトルの足し引き・長さ・回転を計算したい | Vec2 |
 | (x, y) から Vec2 を 1 行で作りたい（リスト内の型注釈を消す） | Vec2.v2 |
 | マス目やピクセルなど整数の (x, y) を計算したい | Vec2i |
@@ -90,6 +91,7 @@
 - **ShaderGen** — Spec を GLSL の fragment シェーダー文字列へ変換する codegen。各部品が自分の GLSL 片（式）を返し、compile が 1 枚の main() に繋ぐ。出力は決定論なのでスナップショットで釘打ちできる。
 - **ShaderEval** — Spec 木を CPU（Float64）で評価する純関数。GL の描画経路ではないが、SoftRaster（描き出し・動画・スナップショット）はシェーダー面の画素をこれで塗り、テストは式の構造が GLSL 側と揃っているかをこれで確かめる。tex 場つきの評価は `ShaderEval.evalPixelTex` / `ShaderEval.evalAlphaTex`。何万画素も評価する画素ループは `ShaderEval.compile` で面ごとに 1 回だけ組み直し、画素ごとに `ShaderEval.evalCompiled` を呼ぶ（色と α を 1 回の shared 先行評価で返す。SoftRaster はこれを全コアで並べて評価し、`FGE_SOFT_SERIAL=1` で 1 本に戻せる）。
 - **ShaderJson** — シェーダー面の宣言（ShaderDoc.Spec）を JSON と相互変換する codec。engine を触らず `*.shader.json` の保存だけで調整できる（App.watchFile によるホットリロードの受け皿）。
+- **FrameDiagnostics** — 1 コマぶんの描く側の診断（作ったシェーダーと理由・GPU にあるシェーダーの数・足した字・塗りと swap の時間）。`GameEngine.Game.consumeDiagnostics` が返し、App のヒッチの記録が 1 コマごとに引き取る。`setDiagnosticsEnabled(true)` の間だけ数える。
 - **ShaderEffect** — 宣言シェーダー面を GPU で描くための別チャンネルの効果口（`eff Shader`）。`eff Game` に描画オペを足すとハンドラ全てが波及するため、シェーダー面だけ別効果に切り出している。
 
 ## レンダーターゲット（RenderTarget）

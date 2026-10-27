@@ -371,7 +371,10 @@ pub mod GlOffscreen {
             f()
         } with handler GameEngine.Game {
             def renderCommands(sprites, tileMaps, polygons, staticLayer, k) = {
+                let paintFrom = System.nanoTime();
                 discard RenderPaint.submitFrame(paint, width, height, sprites, tileMaps, polygons, staticLayer);
+                RenderPaint.noteFrame(paint, System.nanoTime() - paintFrom, 0i64,
+                    () -> List.length(sprites) + List.length(polygons) + List.length(tileMaps));
                 k(())
             }
             def initTileBuffer(instances, k) = k(RenderPaint.initTileBuffer(paint, instances))
@@ -388,8 +391,15 @@ pub mod GlOffscreen {
             def getFontAtlas(name, k) = k(RenderPaint.fontAtlas(fonts, name))
             def ensureGlyphs(textureName, codepoints, k) = {
                 RenderPaint.ensureGlyphs(fonts, textureName, codepoints);
+                if (Set.isEmpty(codepoints)) ()
+                else RenderPaint.noteDiagnostics(paint, d -> { glyphsAdded = d#glyphsAdded + Set.size(codepoints) | d });
                 k(())
             }
+            def setDiagnosticsEnabled(on, k) = {
+                RenderPaint.setDiagnosticsEnabled(paint, on);
+                k(())
+            }
+            def consumeDiagnostics(k) = k(RenderPaint.consumeDiagnostics(paint))
             def getViewportRect(k) = k({ position = Vec2.zero(), size = design })
             def getTextureInfo(name, k) = k(RenderPaint.textureInfo(paint, name))
             def ensureTexture(name, key, w, h, argb, k) = {

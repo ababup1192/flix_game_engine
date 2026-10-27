@@ -32,4 +32,10 @@ mod RenderShaderCache {
                 |> List.take(excess)
                 |> List.map(snd)
 
+    /// 同じ名前で作り直して鍵から外れた（引退した）program のうち、もう消してよい物と、まだ残す物。
+    /// 今と前のコマで使った物（pinned）と、まだ別の鍵が指している物（keyed）は残す —
+    /// 面の描画は後回しなので、同じコマの前の面がまだその program で描く。
+    pub def retiredToDelete(retired: Set[Int32], pinned: Set[Int32], keyed: Set[Int32]): (Set[Int32], Set[Int32]) =
+        Set.partition(program -> not Set.memberOf(program, pinned) and not Set.memberOf(program, keyed), retired)
+
 }

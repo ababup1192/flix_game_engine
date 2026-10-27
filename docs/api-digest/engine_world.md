@@ -1,4 +1,4 @@
-<!-- engine v0.67.0 / 生成: 2026-10-27 -->
+<!-- engine v0.68.0 / 生成: 2026-10-27 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine_world
@@ -432,6 +432,42 @@
 - App を持たないゲームの常駐。/start・/step・/state には「未対応」と答える。立てない時は 1 でプロセスを終える。
   `pub def serveJobsOnly(jobs: List[Job]): Unit \ IO`
 - `pub def helpText(): String`
+
+## App.HitchDetector — `engine_world/src/App/HitchDetector.flix`
+- 1 コマの記録。時間はナノ秒。totalNs はループの 1 周（入力の取り込みから描き終わりの swap まで）、
+  `pub type alias Row = { frame = Int64, totalNs = Int64, updateNs = Int64, renderNs = Int64, diag = FrameDiagnostics.Diagnostics, gc = Int32, gcMs = Int64, pressed = String, status = String, reloaded = Bool }`
+- 決まり: budgetNs は 1 コマの予算・warmup は数えない起動直後のコマ数・context は前に付けるコマ数・
+  `pub type alias Config = { budgetNs = Int64, warmup = Int64, context = Int32, calm = Int32, maxRows = Int32, maxHitches = Int32 }`
+- 切り出した 1 件。rows は古い順（落ち着いた尾は除く）、context はその前の数コマ（古い順）。
+  `pub type alias Hitch = { rows = List[Row], context = List[Row] }`
+- `pub type alias Detector = DetectorState`
+- 60fps の予算で、起動直後の 120 コマは数えず、前 10 コマ・落ち着き 30 コマ・1 件 600 コマ・1 実行 10 件。
+  `pub def defaultConfig(): Config`
+- `pub def fresh(config: Config): Detector`
+- 重いコマか: 仕事が予算を超えた・swap まで含めて予算の 2 倍を超えた（GPU やドライバで止まった）・シェーダーを作った。
+  `pub def isSlow(config: Config, row: Row): Bool`
+- 1 コマ進める。1 件が閉じたらそれを返す。
+  `pub def step(row: Row, detector: Detector): (Detector, Option[Hitch])`
+- 開いている 1 件があれば今の所で閉じて返す（流し終えた時に使う）。
+  `pub def finish(detector: Detector): (Detector, Option[Hitch])`
+- 単発か: 重いコマが 1 つだけで、その時間の半分以上が GC か swap（シェーダー・字・テクスチャ・Doc の読み直しは無し）。
+  `pub def isMinor(config: Config, hitch: Hitch): Bool`
+- 単発の種類と 1 行（summary.md に足す）。
+  `pub def minorOf(hitch: Hitch): (String, String)`
+- 一番重いコマ（無ければ最初のコマ）。
+  `pub def worstOf(hitch: Hitch): Option[Row]`
+- 起点のコマか、それより前で一番近い手（前に付けたコマも探す）。
+  `pub def pressBefore(hitch: Hitch): Option[Row]`
+- 読む側（人・エージェント）向けの報告。dir は record.flow を置いた所（無ければ None）。
+  `pub def report(config: Config, replay: Option[(String, Int64)], hitch: Hitch): String`
+- この実行のヒッチの置き場 debug/perf/hitches/<起動時刻> を作り、古い実行は新しい keep 個を残して消す。
+  `pub def prepareRunDir(keep: Int32): String \ IO`
+- 1 件を dir/hitch.md に書く。書けたら true。
+  `pub def write(dir: String, text: String): Bool \ IO`
+- dir/name に text を書く（dir が無ければ作る）。書けたら true。
+  `pub def writeFile(dir: String, name: String, text: String): Bool \ IO`
+- 起動からの GC の回数と、止まった時間の合計 ms（並行して走る GC は止めないので数えない）。
+  `pub def gcNow(): (Int32, Int64) \ IO`
 
 ## App.RemoteDebug — `engine_world/src/App/RemoteDebug.flix`
 - HTTP サーバ本体と、リクエスト / レスポンスを受け渡す 2 本のキュー。
@@ -1186,6 +1222,8 @@
   `pub def captureReads(f: Unit -> a \ ef): (a, Map[String, Flow.File]) \ ef + Fs.FileRead`
 - F8 のチケットの写し: ここまでの記録に「表示中の瞬間まで戻る」（rewind back）と mark ticket を足して
   `pub def copyInto(rec: Recorder, dir: String, back: Int32): Bool \ IO`
+- ここまでの記録を dir/record.flow に写し、末尾に comment・back コマ戻る rewind・mark <name> を足す。
+  `pub def copyMarked(rec: Recorder, dir: String, back: Int32, comment: String, name: String): Bool \ IO`
 - 記録を閉じる（まとめている行を書き出す）。
   `pub def close(rec: Recorder): Unit \ IO`
 
@@ -1845,7 +1883,7 @@
 
 ## Render — `engine_world/src/Render.flix`
 - 傾き（rotation）の単位は「回転数」— 1 周 = 1.0・正で時計回り。ラジアンへの変換は
-  `pub enum Item { case Sprite({ texture = String, tint = Color, alpha = Float64, scale = Vec2.Vec2, rotation = Float64, centered = Bool, flipH = Bool, flipV = Bool, regionRect = Option[Rect2.Rect2], zIndex = Int32, blend = DrawCmd.BlendMode, maskPolys = List[List[Vec2.Vec2]] }) case Text({ text = String, fontAtlas = FontAtlas, fontSize = Float64, tint = Color, alpha = Float64, rotation = Float64, zIndex = Int32, wrapWidth = Option[Float64] }) case Box({ size = Vec2.Vec2, color = Color, alpha = Float64, rotation = Float64, style = Option[GameEngine.BoxStyle], zIndex = Int32, blend = DrawCmd.BlendMode }) case Poly({ vertices = List[Vec2.Vec2], color = Color, alpha = Float64, zIndex = Int32, blend = DrawCmd.BlendMode, grad = Option[List[DrawCmd.VertexTint]] }) case Clipped({ rect = Rect2.Rect2, inner = Item }) case Shader({ rect = Rect2.Rect2, spec = ShaderDoc.Spec, t = Float64, mask = List[List[Vec2.Vec2]], zIndex = Int32, blend = DrawCmd.BlendMode }) }`
+  `pub enum Item { case Sprite({ texture = String, tint = Color, alpha = Float64, scale = Vec2.Vec2, rotation = Float64, centered = Bool, flipH = Bool, flipV = Bool, regionRect = Option[Rect2.Rect2], zIndex = Int32, blend = DrawCmd.BlendMode, maskPolys = List[List[Vec2.Vec2]] }) case Text({ text = String, fontAtlas = FontAtlas, fontSize = Float64, tint = Color, alpha = Float64, rotation = Float64, zIndex = Int32, wrapWidth = Option[Float64] }) case Box({ size = Vec2.Vec2, color = Color, alpha = Float64, rotation = Float64, style = Option[GameEngine.BoxStyle], zIndex = Int32, blend = DrawCmd.BlendMode }) case Poly({ vertices = List[Vec2.Vec2], color = Color, alpha = Float64, zIndex = Int32, blend = DrawCmd.BlendMode, grad = Option[List[DrawCmd.VertexTint]] }) case Clipped({ rect = Rect2.Rect2, inner = Item }) case Shader({ rect = Rect2.Rect2, spec = ShaderDoc.Spec, t = Float64, mask = List[List[Vec2.Vec2]], zIndex = Int32, blend = DrawCmd.BlendMode, alpha = Float64 }) }`
 - 置き場所つきの描画物。View はこの列を組み、draw が描画命令へ変換する。
   `pub type alias PlacedItem = { at = Vec2.Vec2, item = Item }`
 - 全テクスチャ・等倍・中心原点のスプライト（最頻ケース）。反転が要るときは spriteFlipped。

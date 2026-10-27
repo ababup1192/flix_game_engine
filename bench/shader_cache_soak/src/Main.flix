@@ -29,7 +29,7 @@ mod ShaderCacheSoak {
     def surfaceCmd(prog: GpuHandle.ShaderProgram): ShaderEffect.ShaderRenderCmd =
         { program = prog, texNames = Nil,
           rect = { position = { x = 0.0, y = 0.0 }, size = { x = 32.0, y = 32.0 } },
-          mask = Nil, time = 0.0, zIndex = 0, blend = DrawCmd.BlendMode.Normal }
+          mask = Nil, time = 0.0, zIndex = 0, blend = DrawCmd.BlendMode.Normal, alpha = 1.0 }
 
     /// 1 本ごとに「作って・積んで・フレームを 1 つ送る」。フレームを送らないと世代が進まず、
     /// 全ての program が「いま描いている物」に見えて 1 個も追い出されない。

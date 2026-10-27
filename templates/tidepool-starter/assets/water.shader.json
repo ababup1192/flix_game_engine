@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "水 1 段ぶんの色。深い所ほど段が重なって濃くなる（コードが水面の高さぶん重ねる）。色=stops・1 段の濃さ=alpha の const・水面のゆらぎ=fbm の scroll。",
+  "note": "水 1 段ぶんの色。深い所ほど段が重なって濃くなる（コードが水面の高さぶん重ねる）。色=stops・1 段の濃さ=alpha の const（全体に ×1.4）・水面のゆらぎ=fbm の scroll。1 手の間の入れ替わりの濃さはコードが Render.fade で掛ける。",
   "name": "water",
   "cycleRate": 0.0,
   "out": {
@@ -38,32 +38,40 @@
     },
     "alpha": {
       "kind": "math2",
-      "op": "add",
+      "op": "mul",
       "a": {
-        "kind": "const",
-        "value": 0.37
-      },
-      "b": {
         "kind": "math2",
-        "op": "mul",
-        "b": {
-          "kind": "const",
-          "value": 0.08
-        },
+        "op": "add",
         "a": {
-          "kind": "scaled",
-          "factor": 1.0,
-          "scroll": {
-            "x": -0.008,
-            "y": 0.006
+          "kind": "const",
+          "value": 0.37
+        },
+        "b": {
+          "kind": "math2",
+          "op": "mul",
+          "b": {
+            "kind": "const",
+            "value": 0.08
           },
-          "of": {
-            "kind": "fbm",
-            "octaves": 2,
-            "scale": 9.0,
-            "seed": 42
+          "a": {
+            "kind": "scaled",
+            "factor": 1.0,
+            "scroll": {
+              "x": -0.008,
+              "y": 0.006
+            },
+            "of": {
+              "kind": "fbm",
+              "octaves": 2,
+              "scale": 9.0,
+              "seed": 42
+            }
           }
         }
+      },
+      "b": {
+        "kind": "const",
+        "value": 1.4
       }
     }
   }

@@ -434,6 +434,9 @@ mod RenderSprite {
     pub type alias SurfaceTexBind =
         { texUnit = Int32, texId = Int32, flipLoc = Int32, flip = Float64 }
 
+    /// 宣言シェーダー面の uniform の location（無い uniform は -1。glUniform は -1 を無視する）。
+    pub type alias SurfaceUniforms = { rectPos = Int32, rectSize = Int32, time = Int32, alpha = Int32 }
+
     /// 宣言シェーダー面 1 枚を描く。共有 quad VAO（loc0 = x,y,u,v）を使い、
     /// rect（スクリーン px）と time を uniform で差して 1 draw call で塗る。
     /// projection は起動時に setProjectionMatrix 済みの前提（program ごとに1回）。
@@ -441,16 +444,17 @@ mod RenderSprite {
     ///（unit 0 含む）の sampler を解除して unit 0 へ戻す — unit 0 は sprite / tile / static /
     /// font が glActiveTexture を触らず共用するため、残すとフォント作り直しやアトラス
     /// 差し替えが別 unit へ上がる事故になる。
-    pub def drawShaderSurface(program: Int32, vao: Int32,
-                              uRectPos: Int32, uRectSize: Int32, uTime: Int32,
+    pub def drawShaderSurface(program: Int32, vao: Int32, uniforms: SurfaceUniforms,
                               texBinds: List[SurfaceTexBind], texSampler: Int32,
-                              rect: Rect2.Rect2, time: Float64, blend: DrawCmd.BlendMode): Unit \ IO =
+                              rect: Rect2.Rect2, time: Float64, alpha: Float64, blend: DrawCmd.BlendMode): Unit \ IO =
         let f32 = RenderUtil.f32;
         GL20.glUseProgram(program);
         applyBlend(blend);
-        GL20.glUniform2f(uRectPos, f32(rect#position#x), f32(rect#position#y));
-        GL20.glUniform2f(uRectSize, f32(rect#size#x), f32(rect#size#y));
-        GL20.glUniform1f(uTime, f32(time));
+        GL20.glUniform2f(uniforms#rectPos, f32(rect#position#x), f32(rect#position#y));
+        GL20.glUniform2f(uniforms#rectSize, f32(rect#size#x), f32(rect#size#y));
+        GL20.glUniform1f(uniforms#time, f32(time));
+        // 毎回差す。program は面どうしで共有され、差さないと前の面の濃さ（初めは 0.0 = 透明）が残る。
+        GL20.glUniform1f(uniforms#alpha, f32(alpha));
         List.forEach(tb -> {
             GL13.glActiveTexture(GL13.GL_TEXTURE0 + tb#texUnit);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, tb#texId);
@@ -492,17 +496,16 @@ mod RenderSprite {
     /// mask を GL のステンシルに焼き（色は書かない・内側を 1 に）、EQUAL テスト付きで矩形を塗る。
     /// これで丸い池形など任意の形に水面を切り抜ける（矩形の隅がはみ出さない）。
     /// mask が退化（頂点 3 未満）なら素直に矩形そのまま描く。
-    pub def drawShaderSurfaceMasked(program: Int32, vao: Int32,
-                                    uRectPos: Int32, uRectSize: Int32, uTime: Int32,
+    pub def drawShaderSurfaceMasked(program: Int32, vao: Int32, uniforms: SurfaceUniforms,
                                     texBinds: List[SurfaceTexBind], texSampler: Int32,
-                                    rect: Rect2.Rect2, time: Float64, blend: DrawCmd.BlendMode,
+                                    rect: Rect2.Rect2, time: Float64, alpha: Float64, blend: DrawCmd.BlendMode,
                                     polyShader: Int32, polyVao: Int32, polyVbo: Int32,
                                     polyUniforms: RenderShader.PolyBatchUniforms,
                                     maskPolys: List[List[Vec2.Vec2]]): Unit \ IO =
         let (maskData, maskCount) = buildMaskData(maskPolys);
         if (maskCount < 3)
-            drawShaderSurface(program, vao, uRectPos, uRectSize, uTime, texBinds, texSampler,
-                              rect, time, blend)
+            drawShaderSurface(program, vao, uniforms, texBinds, texSampler,
+                              rect, time, alpha, blend)
         else {
             // 1) mask を stencil に描き込む（色は書かず内側を 1 に）。この面ぶんだけ使うので毎回 clear。
             GL11.glEnable(GL11.GL_STENCIL_TEST);
@@ -519,8 +522,8 @@ mod RenderSprite {
             GL11.glStencilFunc(GL11.GL_EQUAL, 1i32, 255i32);
             GL11.glStencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_KEEP);
             GL11.glStencilMask(0i32);
-            drawShaderSurface(program, vao, uRectPos, uRectSize, uTime, texBinds, texSampler,
-                              rect, time, blend);
+            drawShaderSurface(program, vao, uniforms, texBinds, texSampler,
+                              rect, time, alpha, blend);
             // 3) 後始末（次の描画にステンシル状態を持ち越さない）。
             GL11.glStencilMask(255i32);
             GL11.glDisable(GL11.GL_STENCIL_TEST)

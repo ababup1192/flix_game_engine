@@ -53,6 +53,7 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | 描き出しの字の被り・z の外れを止める | `make render-lint`（許す物は `text-audit.local.json`） |
 | 依存の向き（規則 → View → 入力の逆を呼ばない・ファイルの輪）・View に World を渡さない・テストの分岐を止める | `make lint-flixlint`（決まりは <ゲーム>/lint/rules.flix の冒頭。View の入口が World から In を組み、部品は In を受ける） |
 | 直す前と後の絵・音・動画を比べる | `make compare BASE=<ref>` |
+| 遊んでいて重くなる（動いた瞬間のカクつき）の原因を探す・直したか確かめる | `make debug`（音なしは `FLIX_GE_MUTE=1`）で遊ぶと重いコマだけ `debug/perf/hitches/<起動時刻>/f<コマ>/hitch.md` に出る（`make status` に件数）→ 読んで直す → 同じ手を `POST /perf?path=<flow>`（隠しウィンドウは `FLIX_GE_HIDDEN=1`）で流し、作ったシェーダーの数で比べる（engine の `docs/performance.md` の 11 節） |
 | 動画が最後まで撮れたか（途中で止まった動画を見つける） | `bin/fge videos status`（Studio のギャラリーの動画） |
 | 動画のコマ・自前のギャラリーで同じ絵を塗り直さない | `RenderCache.writeFramePng`（`SoftRaster.render*` は自動。docs/render-cache.md） |
 | 人が見る動画・会話のプレビューを GPU で塗る | 動画 `VideoOut.writeFrames`・1 枚 `GpuShot.shotOf`（`FGE_GPU`） |

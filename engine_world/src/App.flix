@@ -8,6 +8,7 @@
 
 pub mod App {
     import java.lang.System
+    import java.io.{File, FileWriter, IOException}
 
     /// ゲーム 1 本の宣言。make で作り、addSystem / withView などのビルダーで部品を繋いで launch へ渡す。
     /// 中身は Rec。record のままにしないのは、37 欄の record の型が App を受ける全部の def とゲームのビルダーの列で
@@ -1074,7 +1075,8 @@ pub mod App {
                     tileCache = freshTileCache(),
                     glyphSeen = None, budgetWarned = false,
                     warnOnce = warnOnceWith(Ref.fresh(Static, Set.empty())),
-                    cursorShown = CursorLook.State.Stale, outputKeys = keysAfterJump(app, world0, Nil), recorder = recorder });
+                    cursorShown = CursorLook.State.Stale, outputKeys = keysAfterJump(app, world0, Nil), recorder = recorder,
+                    hitches = if (canDebug(r)) Some(startHitchWatch()) else None });
         Option.forEach(RemoteDebug.shutdown, bridge)
 
     /// 時間スクラブ用に持ち回す直近の World の数（60fps で約 30 秒）。
@@ -1104,7 +1106,9 @@ pub mod App {
         // 出力（addOutput）ごとの最後に書いた鍵（outputs と同じ順）。
         outputKeys = List[String],
         // 遊んだ記録（DEBUG の起動・FLOW_RECORD=0 で止まる）。None = 書かない。
-        recorder = Option[Flow.Record.Recorder]
+        recorder = Option[Flow.Record.Recorder],
+        // ヒッチの記録（DEBUG の起動だけ）。None = 見張らない。
+        hitches = Option[HitchWatch]
     }
 
     /// リモートコマンドを捌いた後に残る 3 つの進み方。
@@ -1181,6 +1185,8 @@ pub mod App {
     /// World に触れない分岐では監視も動かさず素通しする。
     def loop(app: App[w, ef], st0: LoopState[w]): Unit \ (ef + GameEngine.Game + GameEngine.Audio + ShaderEffect.Shader + RenderTarget.Target + Fs.FileRead + Fs.FileWrite + IO) =
         let r = rec(app);
+        // ヒッチの記録が測る 1 周の始まり（入力の取り込みから。nanoTime は軽いので見張らない時も取る）。
+        let iterStart = System.nanoTime();
         let currentKeys = InputEvent.currentKeys();
         let mouseDown = GameEngine.Game.isMouseButtonPressed(GameEngine.MouseButton.Left);
         let cursorNow = GameEngine.Game.getMousePosition();
@@ -1208,6 +1214,12 @@ pub mod App {
                 case None    => None
             };
             match (remoteRaw, st#bridge) {
+                case (Some(raw), Some(b)) if String.startsWith(prefix = "POST /perf", raw) =>
+                    // /perf はウィンドウへ塗る（renderFrame）ので、塗れない handleRemote ではなくここで受ける。World は変えない。
+                    let painted = perfRun(app, st#warnOnce, b, RemoteDebug.parseRequest(raw), st#hitches,
+                        { tileCache = st#tileCache, glyphSeen = st#glyphSeen, budgetWarned = st#budgetWarned });
+                    loop(app, { tileCache = painted#tileCache, glyphSeen = painted#glyphSeen,
+                                budgetWarned = painted#budgetWarned | carried })
                 case (Some(raw), Some(b)) =>
                     // リモートコマンドを処理した実フレームは通常の進行を休む
                     // （停止中は元々進まないし、実行中でも 1 フレームの息継ぎに過ぎない）。
@@ -1258,11 +1270,15 @@ pub mod App {
                                         budgetWarned = warned1, cursorShown = shown,
                                         outputKeys = keysAfterJump(app, resumed#world, st#outputKeys) | carried })
                         case Branch.Running =>
+                            let frameStart = iterStart;
+                            // 止めていた間・リモートのコマで塗った分は、このコマの診断に混ぜない。
+                            if (Option.isEmpty(st#hitches)) () else discard GameEngine.Game.consumeDiagnostics();
                             Option.forEach(recorder -> Flow.Record.checkExternalChange(recorder, fingerprintText(r, st#world)), st#recorder);
                             let (watched, nextWatchState, watchFired) = applyWatch(r, frame#dt, st#watchState, st#world, st#recorder);
                             let (reloaded, reloadFired) = applyReload(r, frame, watched, st#recorder);
                             // 1 フレームの中身は trace・台本・/step と同じ traceFrame の 1 本（音の名前もここで導く）。
                             let (traced, nextStepState) = traceFrame(app, frame, st#stepState, reloaded);
+                            let updatedAt = System.nanoTime();
                             let advanced = traced#after;
                             Option.forEach(recorder -> Flow.Record.frame(recorder, frame, fingerprintText(r, advanced)), st#recorder);
                             let (nextSustaining, nextMix, nextUses) = applyAudio(r, frame#dt, traced,
@@ -1270,9 +1286,14 @@ pub mod App {
                             // fps は debug 有効時だけ計測する（本番ビルドは履歴を積まず無負荷）。
                             let measuredAnno = if (r#debug) Annotate.recordDt(frame#dt, st#anno) else st#anno;
                             // Doc の読み直しが起きたフレームはタイル層の世代を進め、同じ key でも作り直す。
+                            let renderStart = System.nanoTime();
                             let (cache1, seen1, warned1) = renderFrame(app, st#warnOnce, advanced, plainLook(fpsOverlayOf(r, measuredAnno)),
                                                               bumpTileGen(watchFired or reloadFired, st#tileCache),
                                                               st#glyphSeen, st#budgetWarned);
+                            let nextHitches = watchHitches(app, st#hitches, st#recorder,
+                                { frame = measuredAnno#frame, start = frameStart, updateNs = updatedAt - frameStart,
+                                  renderNs = System.nanoTime() - renderStart,
+                                  pressed = frame#justPressed, reloaded = watchFired or reloadFired }, advanced);
                             // 時間スクラブ用の履歴（debug が無効なら一切持たない = 本番ビルドは無負荷）
                             let nextHistory = if (canDebug(r))
                                                   List.take(historyLimit(), advanced :: st#history)
@@ -1286,11 +1307,184 @@ pub mod App {
                                         anno = { frame = measuredAnno#frame + 1i64 | measuredAnno },
                                         stepState = nextStepState, watchState = nextWatchState,
                                         sustaining = nextSustaining, mixState = nextMix, soundUses = nextUses, tileCache = cache1,
-                                        glyphSeen = seen1, budgetWarned = warned1 | carried })
+                                        glyphSeen = seen1, budgetWarned = warned1, hitches = nextHitches | carried })
                     }
                 }
             }
         }
+
+    // ── ヒッチの記録（DEBUG の起動だけ）と POST /perf ──
+
+    /// 見張りの状態: 判定（HitchDetector）・この実行の置き場・前のコマまでの GC の合計。
+    /// minors は単発（GC や swap だけの 1 コマ）の種類 → 1 行（新しい順）。
+    type alias HitchWatch = { config = HitchDetector.Config, detector = HitchDetector.Detector, runDir = String,
+                              gc = Int32, gcMs = Int64, minors = Map[String, List[String]] }
+
+    /// DEBUG の起動で見張りを始める（描く側の診断を入れ、置き場を作る）。
+    def startHitchWatch(): HitchWatch \ (GameEngine.Game + IO) =
+        GameEngine.Game.setDiagnosticsEnabled(true);
+        let config = HitchDetector.defaultConfig();
+        let (gc, gcMs) = HitchDetector.gcNow();
+        { config = config, detector = HitchDetector.fresh(config), runDir = HitchDetector.prepareRunDir(5), gc = gc, gcMs = gcMs,
+          minors = Map.empty() }
+
+    /// 1 コマぶんの測った時刻（start は 1 周の始まり、updateNs は World を進めた時間、renderNs は描く所）。
+    type alias FrameTiming = { frame = Int64, start = Int64, updateNs = Int64, renderNs = Int64, pressed = Set[GameEngine.Key], reloaded = Bool }
+
+    def keysText(keys: Set[GameEngine.Key]): String =
+        Set.toList(keys) |> List.map(k -> "${k}") |> String.intercalate(",")
+
+    /// 描き終わったコマを 1 行にする。ゲームの状態の 1 行は、手のあるコマと重いコマだけで作る（毎コマ作ると見張り自身が重くなる）。
+    def hitchRow(app: App[w, ef], watch: HitchWatch, timing: FrameTiming, world: w): (HitchDetector.Row, HitchWatch) \ (ef + GameEngine.Game + IO) =
+        let diag = GameEngine.Game.consumeDiagnostics();
+        let (gc, gcMs) = HitchDetector.gcNow();
+        let base = { frame = timing#frame, totalNs = System.nanoTime() - timing#start, updateNs = timing#updateNs,
+                     renderNs = timing#renderNs, diag = diag,
+                     gc = gc - watch#gc, gcMs = gcMs - watch#gcMs, pressed = keysText(timing#pressed), status = "",
+                     reloaded = timing#reloaded };
+        let row = if (base#pressed != "" or HitchDetector.isSlow(watch#config, base))
+                      { status = rec(app)#statusLine |> Option.map(toLine -> toLine(world)) |> Option.getWithDefault("") | base }
+                  else base;
+        (row, { gc = gc, gcMs = gcMs | watch })
+
+    /// 実機の 1 コマを見張りへ渡す。ヒッチが閉じたら、遊んだ記録をその最初のコマの手前まで戻す形で写し、報告を書く。
+    def watchHitches(app: App[w, ef], hitches: Option[HitchWatch], recorder: Option[Flow.Record.Recorder],
+                     timing: FrameTiming, world: w): Option[HitchWatch] \ (ef + GameEngine.Game + IO) =
+        match hitches {
+            case None        => None
+            case Some(watch) =>
+                let (row, counted) = hitchRow(app, watch, timing, world);
+                let (detector, closed) = HitchDetector.step(row, counted#detector);
+                let stepped = { detector = detector | counted };
+                Some(closed |> Option.map(hitch -> writeHitch(stepped, recorder, timing#frame, hitch)) |> Option.getWithDefault(stepped))
+        }
+
+    /// 閉じた 1 件を書く。単発は置き場の summary.md に数を足すだけ、それ以外は f<コマ>/hitch.md と記録の写し。
+    def writeHitch(watch: HitchWatch, recorder: Option[Flow.Record.Recorder], nowFrame: Int64, hitch: HitchDetector.Hitch): HitchWatch \ IO =
+        if (HitchDetector.isMinor(watch#config, hitch)) {
+            let (kind, line) = HitchDetector.minorOf(hitch);
+            let minors = Map.insert(kind, line :: Map.getWithDefault(kind, Nil, watch#minors), watch#minors);
+            discard HitchDetector.writeFile(watch#runDir, "summary.md", minorSummary(minors));
+            { minors = minors | watch }
+        } else match List.head(hitch#rows) {
+            case None        => watch
+            case Some(first) =>
+                let dir = "${watch#runDir}/f${Int64.toString(first#frame)}";
+                // /perf で塗る最後のコマ数: 前に付けたコマ + ヒッチ + 閉じるまでの落ち着いたコマ。
+                let last = nowFrame - first#frame + 1i64 + Int32.toInt64(List.length(hitch#context));
+                let replay = if (Option.isEmpty(recorder)) None else Some((dir, last));
+                if (HitchDetector.write(dir, HitchDetector.report(watch#config, replay, hitch))) {
+                    Option.forEach(rc -> discard Flow.Record.copyMarked(rc, dir, 0,
+                        "# ヒッチ: 起動からヒッチの最後のコマまでの手（POST /perf の last で最後のコマだけ塗る）", "hitch"), recorder);
+                    println("[hitch] ${dir}/hitch.md")
+                } else ();
+                watch
+        }
+
+    /// 単発の数の表（種類ごとの件数と、新しい 5 件）。
+    def minorSummary(minors: Map[String, List[String]]): String =
+        let lines = Map.toList(minors) |> List.flatMap(entry -> {
+            let (kind, items) = entry;
+            "- ${kind} の単発 ${Int32.toString(List.length(items))} 回（重いコマが 1 つだけで、シェーダー・字・テクスチャは無し）" ::
+            (List.take(5, items) |> List.map(item -> "  - ${item}"))
+        });
+        String.intercalate("\n", "# 単発（1 件にしなかった 1 コマ）" :: "" :: lines) + "\n"
+
+    /// POST /perf?path=<flow>（本文に flow でもよい）&last=N&warmup=N: flow を決まった刻みで流した World の列を、
+    /// 実機のウィンドウへ 1 コマずつ塗り、ヒッチの記録と同じ判定・同じ報告を書く。World の列は flow だけで決まるので、
+    /// 何度流しても同じ絵を同じ順に塗る（直す前と後を、作ったシェーダーの数で比べられる）。
+    /// 測るのは塗る側だけ（更新は前もって流し終えている）。last=N なら最後の N コマだけを塗る（長い記録の手前は流すだけ）。
+    /// FLIX_GE_HIDDEN=1 なら vsync を待たない。走っている World は変えない。
+    def perfRun(app: App[w, ef], warnOnce: String -> Unit, bridge: RemoteDebug.Bridge, request: RemoteDebug.Request,
+                hitches: Option[HitchWatch], painted: Painted): Painted \ (ef + GameEngine.Game + ShaderEffect.Shader + RenderTarget.Target + Fs.FileRead + IO) =
+        let design = GameEngine.Game.getViewportRect()#size;
+        let fresh = freshWorld(app, design);
+        let vocab = Flow.vocabOf(app, fresh);
+        let (name, parsed) = match Map.get("path", request#params) {
+            case Some(path) => (perfNameOf(path), Flow.Parse.parseFile(vocab, path, Flow.Cli.readText))
+            case None       => ("body", Flow.Parse.parseText(vocab, "body", request#body))
+        };
+        match (hitches, parsed) {
+            case (None, _) =>
+                RemoteDebug.respond("error: /perf は DEBUG の起動で使う（描く側の診断を集めていない）\n", bridge);
+                painted
+            case (_, Err(problems)) =>
+                RemoteDebug.respond("error: " + Flow.Parse.problemsText(problems) + "\n", bridge);
+                painted
+            case (Some(watch), Ok(script)) =>
+                let start = Flow.Cli.startWorld(app, design, fresh, script);
+                match Flow.play(app, { design = design, limit = 200000 }, script, { world = start, state = freshStepState() }) {
+                    case Err(failure) =>
+                        RemoteDebug.respond("error: ${failure#at#file}:${Int32.toString(failure#at#number)} で止まった（${failure#why}）\n", bridge);
+                        painted
+                    case Ok(outcome) =>
+                        let warmup = Map.get("warmup", request#params) |> Option.flatMap(Int32.fromString) |> Option.getWithDefault(0);
+                        let config = { warmup = Int32.toInt64(warmup), maxHitches = 50 | watch#config };
+                        let runDir = "${watch#runDir}/perf-${name}-${Int64.toString(System.currentTimeMillis())}";
+                        let total = List.length(outcome#frames);
+                        let last = Map.get("last", request#params) |> Option.flatMap(Int32.fromString) |> Option.getWithDefault(total);
+                        let frames = outcome#frames |> List.zipWithIndex |> List.drop(Int32.max(0, total - last));
+                        let (rows, files, after) = perfPaint(app, warnOnce, { config = config, runDir = runDir | watch }, frames, painted);
+                        RemoteDebug.respond(perfSummary(name, config, rows, files), bridge);
+                        after
+                }
+        }
+
+    def perfNameOf(path: String): String =
+        let base = path |> String.split(regex = "/") |> List.last |> Option.getWithDefault(path);
+        if (String.endsWith(suffix = ".flow", base)) String.dropRight(5, base) else base
+
+    /// World の列を 1 コマずつ塗り、見張りと同じ判定に通す。返すのは全部の行・書いた報告・描き方の覚え。
+    def perfPaint(app: App[w, ef], warnOnce: String -> Unit, watch0: HitchWatch, frames: List[(Int32, Flow.Played[w])], painted: Painted):
+            (List[HitchDetector.Row], List[String], Painted) \ (ef + GameEngine.Game + ShaderEffect.Shader + RenderTarget.Target + IO) =
+        discard GameEngine.Game.consumeDiagnostics();
+        let begin = { detector = HitchDetector.fresh(watch0#config) | watch0 };
+        let (rowsRev, filesRev, watch, last) = frames |> List.foldLeft((acc, entry) -> {
+            let (rows, files, w0, p) = acc;
+            let (i, played) = entry;
+            let startNs = System.nanoTime();
+            let (cache1, seen1, warned1) = renderFrame(app, warnOnce, played#step#after, plainLook(Nil), p#tileCache, p#glyphSeen, p#budgetWarned);
+            let timing = { frame = Int32.toInt64(i), start = startNs, updateNs = 0i64, renderNs = System.nanoTime() - startNs,
+                           pressed = played#step#frame#justPressed, reloaded = false };
+            let (row, counted) = hitchRow(app, w0, timing, played#step#after);
+            let (detector, closed) = HitchDetector.step(row, counted#detector);
+            let written = closed |> Option.map(hitch -> perfWriteHitch(counted, hitch)) |> Option.toList |> List.flatten;
+            (row :: rows, List.append(written, files), { detector = detector | counted },
+             { tileCache = cache1, glyphSeen = seen1, budgetWarned = warned1 })
+        }, (Nil, Nil, begin, painted));
+        let (_, tail) = HitchDetector.finish(watch#detector);
+        let lastFiles = tail |> Option.map(hitch -> perfWriteHitch(watch, hitch)) |> Option.toList |> List.flatten;
+        (List.reverse(rowsRev), List.reverse(List.append(lastFiles, filesRev)), last)
+
+    def perfWriteHitch(watch: HitchWatch, hitch: HitchDetector.Hitch): List[String] \ IO =
+        match List.head(hitch#rows) {
+            case None        => Nil
+            case Some(_) if HitchDetector.isMinor(watch#config, hitch) => Nil
+            case Some(first) =>
+                let dir = "${watch#runDir}/f${Int64.toString(first#frame)}";
+                if (HitchDetector.write(dir, HitchDetector.report(watch#config, None, hitch))) "${dir}/hitch.md" :: Nil else Nil
+        }
+
+    def perfMs(ns: Int64): String = Float64.toString(Float64.round(Int64.toFloat64(ns) / 10000.0) / 100.0)
+
+    /// /perf の答え: 分布と数だけ。中身は書いた hitch.md を読む。
+    def perfSummary(name: String, config: HitchDetector.Config, all: List[HitchDetector.Row], files: List[String]): String =
+        let rows = List.drop(Int64.tryToInt32(config#warmup) |> Option.getWithDefault(0), all);
+        let sorted = rows |> List.map(r -> r#totalNs) |> List.sort |> List.toVector;
+        let n = Vector.length(sorted);
+        let at = (q: Int32) -> if (n == 0) 0i64 else Vector.get(Int32.min(n - 1, n * q / 100), sorted);
+        let builds = rows |> List.foldLeft((acc, r) -> acc + List.length(r#diag#shaderBuilds), 0);
+        let live = match (List.head(rows), List.last(rows)) {
+            case (Some(x), Some(y)) => "${Int32.toString(x#diag#liveShaders)} → ${Int32.toString(y#diag#liveShaders)}"
+            case _                  => "-"
+        };
+        let lines =
+            "ok perf ${name} frames=${Int32.toString(List.length(all))}（最初の ${Int64.toString(config#warmup)} コマは数えない・測るのは塗る側だけ）" ::
+            "1 コマを塗る時間: p50 ${perfMs(at(50))}ms  p95 ${perfMs(at(95))}ms  max ${perfMs(at(100))}ms" ::
+            "シェーダーを作った ${Int32.toString(builds)} 回・GPU にあるシェーダー ${live}" ::
+            "ヒッチ ${Int32.toString(List.length(files))} 件（中身はこれを読む）:" ::
+            (files |> List.map(f -> "  ${f}"));
+        String.intercalate("\n", lines) + "\n"
 
     /// 跳んだ拍の後の出力の鍵: Skip は跳んだ先の鍵を「書いた」ことにし、Write は前に書いた鍵のまま
     /// （次の実機のフレームで鍵が違えば書く）。written が短い所（起動の拍）は "" = まだ何も書いていない。

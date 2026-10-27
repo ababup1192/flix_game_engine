@@ -322,12 +322,14 @@ pub mod ShaderGen {
             "in vec2 vUv;\n" ::
             "out vec4 outColor;\n" ::
             "uniform float uTime;\n" ::
+            "uniform float uAlpha;\n" ::
             texUniformDecls(names) ::
             preludeSource() ::
             (if (ShaderDoc.usesBlur(spec)) blurSource() else "") ::
             "void main() {\n" ::
             bindingPrelude(spec#bindings, tex) ::
             "    " :: outStmt(spec#cycleRate, spec#out, envOf(spec#bindings), tex) :: "\n" ::
+            "    outColor.a *= uAlpha;\n" ::
             "}\n" :: Nil)
 
     /// ぼかし（TexBlur）の標本。点の並びは ShaderEval.blurTex と同じ。ぼかしを使う Spec にだけ足す

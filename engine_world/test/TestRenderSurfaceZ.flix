@@ -7,7 +7,7 @@ mod TestRenderSurfaceZ {
             rect = { position = Vec2.zero(), size = { x = 8.0, y = 8.0 } },
             spec = { name = "fill", cycleRate = 0.0, bindings = Nil,
                      out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Solid({ r = 0.0, g = 0.0, b = 1.0 }), alpha = ShaderDoc.Field.Const(1.0) }) },
-            t = 0.0, mask = Nil, zIndex = z, blend = DrawCmd.BlendMode.Normal }) }
+            t = 0.0, mask = Nil, zIndex = z, blend = DrawCmd.BlendMode.Normal, alpha = 1.0 }) }
 
     def box(z: Int32): Render.PlacedItem = RawDraw.boxAt(Vec2.zero(), { x = 4.0, y = 4.0 }, { r = 1.0, g = 0.0, b = 0.0 }, z)
 
