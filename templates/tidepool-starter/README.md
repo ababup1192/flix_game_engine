@@ -31,8 +31,9 @@ Flix コンパイラはエンジンリポの `bin/flix` ラッパ経由で呼ぶ
 2. コードは **エントリ→状態→描画** の順で読む:
    1. `src/Main.flix` … 3 つを App に繋いで起動する目次。冒頭 doc に**毎フレームの流れ
       （入力→状態更新→描画 がどの行か）**が書いてある。まずここ。
-   2. `src/World.flix` … 1 手の規則（`act`: 動く・押す・水を更新・流された・クリア）・先読み・取り消し・面の進行。
-      水の決まりは `src/Tide.flix`、盤の値（Doc の格子から組む）は `src/Board.flix`。
+   2. `src/World.flix` … 遊びの状態（画面 `Screen`: 題名・遊んでいる面・終わり）と 1 手の規則（`act`: 動く・押す・水を更新・流された・クリア）・
+      先読み・取り消し・面の進行。Doc と、Doc から作る物（アトラス・面の列）は `src/Res.flix` が持ち、App は 2 つを
+      エンジンの `Resources.With` の組で回す（`src/Game.flix`）。水の決まりは `src/Tide.flix`、盤の値（Doc の格子から組む）は `src/Board.flix`。
    3. `src/View.flix` … 状態を絵に写す（何をどこに描くか）。冒頭 doc に場面に**積んだ部品**
       （水底・岩の段・水・泡・先読み・ヤドカリ）が並べてある。右の板と重ね（クリア・流された）は `src/HudView.flix`、
       題名と終わりは `src/TitleView.flix`、物の形は `src/PropView.flix`、盤を画面へ収める寸法は `src/Layout.flix`。

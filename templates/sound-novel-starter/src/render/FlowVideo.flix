@@ -7,13 +7,16 @@
 //               実機と同じミキサー（Controls.mixerOf）で、そのフレームに鳴った音と鳴り続ける環境音を AudioMixdown が混ぜる。
 //   fps.txt   … コマの速さ（flow の fps）
 mod FlowVideo {
-    use fge::{App, AudioMixdown, DocJson, Flow, FontAtlas, JsonCodec, Render, VideoOut}
+    use fge::{App, AudioMixdown, DocJson, Flow, FontAtlas, JsonCodec, Render, Resources, VideoOut}
 
     import java.io.BufferedOutputStream
     import java.io.DataOutputStream
     import java.io.File
     import java.io.FileOutputStream
     import java.io.FileWriter
+
+    /// App の w（描く元と World の組）。
+    type alias AppState = Resources.With[Res.Res, World.World]
 
     pub def play(): Unit \ IO = App.Headless.exitWith(playJob(App.Headless.requestFromProcess()))
 
@@ -53,38 +56,38 @@ mod FlowVideo {
         }
 
     /// e2e と同じ App で、セーブの日時だけ描き出しと同じ「起動した時刻」に据える（e2e の 0 のままだと 1970/01/01 と出る）。
-    def appOf(): App.App[World.World, {}] \ Fs.FileRead =
-        let docs = Controls.loadDocs();
-        Game.app(docs, Saves.fresh(docs#kind), SceneRender.clockBase())
+    def appOf(): App.App[AppState, {}] \ Fs.FileRead =
+        let res = Controls.loadRes();
+        Game.app(res, Saves.fresh(res#kind), SceneRender.clockBase())
 
     /// 撮るコマの上限（30fps で 5 分。flow の until の max が先に当たる）。
     def frameCap(): Int32 = 9000
 
-    def write(settings: VideoOut.Settings, fps: Float64, out: String, outcome: Flow.Outcome[World.World]): Unit \ IO =
+    def write(settings: VideoOut.Settings, fps: Float64, out: String, outcome: Flow.Outcome[AppState]): Unit \ IO =
         discard (new File(out)).mkdirs();
         let rate = Float64.tryToInt32(Float64.round(fps)) |> Option.getWithDefault(30);
         writeText("${out}/fps.txt", Int32.toString(rate));
         writeAudio("${out}/audio.f64", fps, outcome);
         let cfg = SceneRender.cfgOf(out, SceneRender.texturesOf());
         let video = { outDir = out, fps = rate, soft = cfg, softFonts = _ -> cfg#fontAtlas, extraFonts = Map.empty(),
-                      images = Nil, scene = fonts -> w -> sceneOf(fonts, w), wanted = _ -> true, bakeSurfaces = false,
+                      images = Nil, scene = fonts -> h -> sceneOf(fonts, h), wanted = _ -> true, bakeSurfaces = false,
                       encoders = Nil };
         discard VideoOut.writeFrames(settings, video, Flow.worldsOf(outcome))
 
     /// 1 コマの絵（SceneRender.shoot と同じ合流: 背景は frame、文章とウィンドウは hud）。
-    def sceneOf(fonts: String -> FontAtlas, w: World.World): List[Render.PlacedItem] =
+    def sceneOf(fonts: String -> FontAtlas, h: AppState): List[Render.PlacedItem] =
         let ctx = App.viewCtxOf(fonts(""), SceneRender.design());
-        App.composeScene(None, 1.0, SceneRender.design(), { world = View.frame(ctx, w), hud = View.hud(ctx, w) })
+        App.composeScene(None, 1.0, SceneRender.design(), { world = Resources.view(View.frame, ctx, h), hud = Resources.view(View.hud, ctx, h) })
 
     def sampleRate(): Int32 = 44100
 
     /// 各フレームに鳴った音と鳴り続ける音を、そのフレームの World のミキサーで混ぜて書く。
-    def writeAudio(path: String, fps: Float64, outcome: Flow.Outcome[World.World]): Unit \ IO =
+    def writeAudio(path: String, fps: Float64, outcome: Flow.Outcome[AppState]): Unit \ IO =
         let entries = soundFiles();
         let sounds = loadSounds(entries, Map.empty());
         let loops = loadLoops(entries, Map.empty());
         let frames = outcome#frames |> List.map(played ->
-            { plays = played#step#sounds, sustained = played#step#sustained, mixer = Controls.mixerOf(played#step#after) });
+            { plays = played#step#sounds, sustained = played#step#sustained, mixer = Resources.read(Controls.mixerOf, played#step#after) });
         let mixed = AudioMixdown.mixdownStereo(sampleRate(), fps, sounds, loops, frames);
         writeSamples(path, mixed)
 

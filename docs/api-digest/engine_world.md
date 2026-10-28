@@ -1,4 +1,4 @@
-<!-- engine v0.69.0 / 生成: 2026-10-27 -->
+<!-- engine v0.69.0 / 生成: 2026-10-28 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine_world
@@ -2023,6 +2023,32 @@
   `pub def pathOf(outDir: String, name: String): String`
 - 目録を path へ書き出す。親ディレクトリは作らない（`Fs.WriteFile` の流儀）。
   `pub def write(path: String, text: String): Result[String, Unit] \ Fs.FileWrite`
+
+## Resources — `engine_world/src/Resources.flix`
+- 描く元 res と、遊びの状態 w の組。
+  `pub type alias With[res, w] = { resources = res, world = w }`
+- 組を作る（起動の時・テスト・描き出し）。
+  `pub def of(res: res, w: w): With[res, w]`
+- 描く元を読み、World だけを返す関数を、組を受けて組を返す関数にする（描く元はそのまま渡る）。
+  `pub def mapWorld(f: (res, w) -> w \ ef, h: With[res, w]): With[res, w] \ ef`
+- 系: (Frame, res, w) -> w を App の系にする。
+  `pub def system(f: (App.Frame, res, w) -> w \ ef, frame: App.Frame, h: With[res, w]): With[res, w] \ ef`
+- 絵: ViewCtx・描く元・World から絵を組む。
+  `pub def view(f: (App.ViewCtx, res, w) -> List[Render.PlacedItem] \ ef, ctx: App.ViewCtx, h: With[res, w]): List[Render.PlacedItem] \ ef`
+- 読むだけの口（組を受けて値を返す App の口）へ渡す包み。
+  `pub def read(f: (res, w) -> a \ ef, h: With[res, w]): a \ ef`
+- 描く元を替える読み直しの行: reload で描く元を読み直し、settle で替わった描く元に World を収める
+  `pub def reloadRow(docId: String, path: String, reload: res -> res \ Fs.FileRead, settle: (res, w) -> w): DocTable.Entry[With[res, w]]`
+- reloadRow の、Studio に名乗らない行（Doc の編集口を持たないファイル）。
+  `pub def reloadUnnamedRow(path: String, reload: res -> res \ Fs.FileRead, settle: (res, w) -> w): DocTable.Entry[With[res, w]]`
+- 時計: App.addClock と同じ形（違うのは paceOf が (res, w) を受けることだけ）。時計は World の欄のまま。
+  `pub def addClock(spec: { clockOf = w -> Clock.Clock[c], withClock = (Clock.Clock[c], w) -> w, paceOf = (res, w) -> Clock.Pace[c, why] }, app: App.App[With[res, w], ef]): App.App[With[res, w], ef]`
+- 始まりの登録簿の 1 行（App.Start の、build が描く元も受ける形）。build は描く元を読んで World を組む。
+  `pub type alias Start[res, w] = { name = String, doc = String, args = Map[String, String], build = (res, w, Map[String, String]) -> Result[String, w] }`
+- 始まりの登録簿の 1 行を組の行へ持ち上げる（build は World を組み、描く元はそのまま）。
+  `pub def liftStart(start: Start[res, w]): App.Start[With[res, w]]`
+- 外へ書く出力を組の出力へ持ち上げる（鍵と書く物は World から）。
+  `pub def liftOutput(output: App.Output[w]): App.Output[With[res, w]]`
 
 ## RichText — `engine_world/src/RichText.flix`
 - 1 スパン。tint = None は呼び側の基本色で描く。bold は同じ字を半ピクセルずらして

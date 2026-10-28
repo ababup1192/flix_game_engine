@@ -15,8 +15,8 @@
 | 素の中心＋幅高の箱どうし・点×箱の重なりを聞く（接するのは外） | Hit.boxBox / pointBox |
 | テスト用の入力フレームを組む | App.frameOf |
 | 遊んだ通りに再生して、最初に食い違ったフレームを指す | Flow.Record（DEBUG の起動で自動・`make flow FLOW=debug/flow-record/latest.flow`・指紋は App.withFingerprint） |
-| e2e のテスト・動画の手順を 1 行 1 手で書いて画面なしで流す（待ちは問いが立つまで・失敗は行番号つき） | Flow（App.withFlow の表・`make flow FLOW=e2e/x.flow`・`bin/fge flow check`。実例: `templates/tetris-starter/e2e/clear_four.flow`） |
-| でたらめなキー・マウス操作で「どう遊んでも崩れない決まり」を確かめる（性質テスト）・画面なしで実機と同じ経路を流す | PropertyTest（forAll / generate / firstBroken）+ App.trace（実例: `templates/tetris-starter/test/TestTrace.flix`） |
+| e2e のテスト・動画の手順を 1 行 1 手で書いて画面なしで流す（待ちは問いが立つまで・失敗は行番号つき） | Flow（App.withFlow の表・`make flow FLOW=e2e/x.flow`・`bin/fge flow check`。実例: `templates/tidepool-starter/e2e/level1.flow`） |
+| でたらめなキー・マウス操作で「どう遊んでも崩れない決まり」を確かめる（性質テスト）・画面なしで実機と同じ経路を流す | PropertyTest（forAll / generate / firstBroken）+ App.trace（実例: `templates/tidepool-starter/test/TestTrace.flix`） |
 
 ## モジュール 1 行紹介
 

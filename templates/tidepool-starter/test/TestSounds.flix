@@ -2,7 +2,7 @@
 // 盤の手は面 1（Fixtures.world・満ち引きは rules の既定 0 1 2 3 2 1）か、格子で書いた小さな盤で指す。
 mod TestSounds {
 
-    use Fixtures.board
+    use Fixtures.{board, res}
     use World.Move
 
     /// w に f を当てたフレームで鳴る音。
@@ -13,7 +13,7 @@ mod TestSounds {
     def eventsOfMove(b: Board.Board, move: Move): Option[List[World.Event]] =
         World.act(b, move, World.startOf(b)) |> Option.map(next -> World.eventsOf(b, World.startOf(b), next))
 
-    def wait(w: World.World): World.World = World.play(Move.Wait, w)
+    def wait(w: World.World): World.World = World.play(res(), Move.Wait, w)
 
     /// 高さ 0 のマスへは砂、高さ 1 のマスへは岩の足音。潮位がいつも 0 の盤なので潮の音は混ざらない。
     @Test
@@ -44,7 +44,7 @@ mod TestSounds {
     @Test
     def testWalkWashedAndClearEachPlayOneSound(): Unit \ Assert =
         let w0 = Fixtures.world();
-        let right = World.play(Move.Right);
+        let right = World.play(res(), Move.Right);
         let nearGoal = w0 |> wait |> wait |> wait |> wait |> right |> right |> right |> right;
         Assert.assertEq(expected = ("step_rock" :: Nil, "washed" :: Nil, "clear" :: Nil),
             (heard(right, w0), heard(right, right(w0)), heard(right, nearGoal)))
@@ -53,7 +53,14 @@ mod TestSounds {
     @Test
     def testUndoRestartAndEnterSounds(): Unit \ Assert =
         let w0 = Fixtures.world();
-        let title = World.withScreen(World.Screen.Title, w0);
+        let title = World.backToTitle(w0);
         Assert.assertEq(expected = ("undo" :: Nil, "undo" :: Nil, Nil, "select" :: Nil),
-            (heard(World.undo, wait(w0)), heard(World.restart, wait(w0)), heard(World.undo, w0), heard(World.enterLevel(0), title)))
+            (heard(World.undo(res()), wait(w0)), heard(World.restart(res()), wait(w0)), heard(World.undo(res()), w0), heard(World.enterLevel(res(), 0), title)))
+
+    /// 題名の画面では、手・取り消し・やり直しは何も鳴らさない（Play の外では出来事を積まない）。
+    @Test
+    def testMovesOutsidePlayAreSilent(): Unit \ Assert =
+        let title = World.backToTitle(Fixtures.world());
+        Assert.assertEq(expected = (Nil, Nil, Nil),
+            (heard(World.play(res(), Move.Right), title), heard(World.undo(res()), title), heard(World.restart(res()), title)))
 }

@@ -5,7 +5,7 @@
 sh "$ENGINE/testdata/lint/check-refs/_base/build.sh" "$WORK/studio/app/resources/engine"
 [ -d overlay ] && cp -R overlay/. "$WORK"/
 # 同梱テンプレを 1 本増やす（Genesis はこれを知らない = Studio から一生選べない）
-T="$WORK/studio/app/resources/engine/templates/tetris-starter"
+T="$WORK/studio/app/resources/engine/templates/orphan-starter"
 mkdir -p "$T/reference" "$T/src"
 : > "$T/Makefile"; : > "$T/flix.toml"; : > "$T/project.json"
 : > "$T/reference/title.png"; : > "$T/src/Main.flix"

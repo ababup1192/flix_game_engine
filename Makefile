@@ -1003,7 +1003,7 @@ check-docs-sync:
 	fi
 
 # ── 新しいゲームを 1 コマンドで産む ──────────────────────
-# 使い方: make new-game GAME=/abs/path/to/dir NAME=<パッケージ名> TITLE=<題名> W=240 H=320 TEMPLATE=novel-starter
+# 使い方: make new-game GAME=/abs/path/to/dir NAME=<パッケージ名> TITLE=<題名> W=240 H=320 TEMPLATE=sound-novel-starter
 #   - GAME  … 生成先（存在しない絶対パス）。
 #   - TEMPLATE … 複製元（templates/ 直下の名前。省略時は game-starter）。
 #   - NAME  … Flix パッケージ名（小文字英字はじまり・[a-z0-9_]）。sprite の entityId にも使う。

@@ -27,16 +27,16 @@ mod WorldRead {
     // ── はじめから ──
 
     /// はじめから読む。[遷移: Title→Reading]
-    pub def newGame(w: World.World): World.World \ Emit[World.Event] =
+    pub def newGame(res: Res.Res, w: World.World): World.World \ Emit[World.Event] =
         Emit.emit(World.Event.Opened);
         let opened = { panel = World.Panel.Closed, ask = None | w };
         let first = Talk.nodeName(Talk.Node.Opening);
-        match Yarn.nodeOf(first, w#docs#dialogue) {
+        match Yarn.nodeOf(first, res#dialogue) {
             case Some(_) =>
-                let (talk, events) = YarnRunner.start(w#docs#dialogue, first, World.now(w));
-                absorb(Replay.Live, events, { talk = talk | World.emptyRead() }, opened)
+                let (talk, events) = YarnRunner.start(res#dialogue, first, World.now(w));
+                absorb(res, Replay.Live, events, { talk = talk | World.emptyRead() }, opened)
             case None =>
-                showLine(Replay.Live, None, { speaker = "", text = "（シナリオが読めない。assets/talk/natsukusa.yarn を直して bin/fge yarn build assets/talk を流すと、ここに物語が流れる）",
+                showLine(res, Replay.Live, None, { speaker = "", text = "（シナリオが読めない。assets/talk/natsukusa.yarn を直して bin/fge yarn build assets/talk を流すと、ここに物語が流れる）",
                                              parts = Nil, tags = Nil, source = { file = "", line = 0 } }, World.emptyRead(), opened)
         }
 
@@ -45,18 +45,18 @@ mod WorldRead {
     /// 実行器が返した出来事を順に反映する。r は反映を始める読んでいる値（新しいシナリオの位置 talk を入れた物）。
     /// 台詞ごとの戻れる所は、最後のブックマークから「その台詞より後に受けた入力」の数だけ入力を外した物（inputsAfter と markAt）。
     /// [遷移: シナリオが終わる(Done) → Credits]
-    def absorb(replay: Replay, events: List[YarnRunner.Event], r: World.Read, w: World.World): World.World \ Emit[World.Event] =
+    def absorb(res: Res.Res, replay: Replay, events: List[YarnRunner.Event], r: World.Read, w: World.World): World.World \ Emit[World.Event] =
         let last = YarnRunner.bookmarkOf(r#talk);
         List.zip(events, inputsAfter(events)) |> List.foldLeft((acc, pair) -> {
             let (event, later) = pair;
             match event {
                 case YarnRunner.Event.Line(line)       =>
-                    whileReading(cur -> showLine(replay, markAt(last, later, cur#stage), line, cur, acc), acc)
+                    whileReading(cur -> showLine(res, replay, markAt(last, later, cur#stage), line, cur, acc), acc)
                 case YarnRunner.Event.Choices(options) =>
                     World.mapRead(cur -> { choices = options, choiceCursor = firstOpen(options) | cur }, acc)
                 case YarnRunner.Event.Command(command) =>
-                    whileReading(cur -> World.withRead(cue(replay, command, cur, acc), acc), acc)
-                case YarnRunner.Event.Done             => World.toCredits(acc)
+                    whileReading(cur -> World.withRead(cue(res, replay, command, cur, acc), acc), acc)
+                case YarnRunner.Event.Done             => World.toCredits(res, acc)
             }
         }, World.withRead(r, w))
 
@@ -92,9 +92,9 @@ mod WorldRead {
         })
 
     /// コマンド 1 つ（wait は実行器が待つので何もしない）。読めないコマンドは 1 行知らせて舞台はそのまま。
-    def cue(replay: Replay, command: Yarn.Command, r: World.Read, w: World.World): World.Read \ Emit[World.Event] =
+    def cue(res: Res.Res, replay: Replay, command: Yarn.Command, r: World.Read, w: World.World): World.Read \ Emit[World.Event] =
         if (command#name == "wait") r
-        else match Stage.cueOf(w#docs#backdrops, command) {
+        else match Stage.cueOf(res#backdrops, command) {
             case Ok(Stage.Cue.Clear)        => { page = Page.clear(r#page) | r }
             case Ok(Stage.Cue.Se(name))     => if (replay == Replay.Silent) r else { Emit.emit(World.Event.Cue("se_${name}")); r }
             case Ok(Stage.Cue.ToMode(mode)) =>
@@ -105,16 +105,16 @@ mod WorldRead {
         }
 
     /// 台詞 1 行を頁とバックログへ。NVL で頁に入り切らない時は頁をめくってから積む。新しいノードの最初の行ならオートセーブ。
-    def showLine(replay: Replay, mark: Option[Saves.Mark], line: Yarn.Line, r: World.Read, w: World.World): World.World =
-        let entry = Page.lineOf(StoryDoc.nameOf(line#speaker, w#docs#story), line);
-        let page = Page.show(r#stage#mode, fitsNvl(w), entry, r#page);
+    def showLine(res: Res.Res, replay: Replay, mark: Option[Saves.Mark], line: Yarn.Line, r: World.Read, w: World.World): World.World =
+        let entry = Page.lineOf(StoryDoc.nameOf(line#speaker, res#story), line);
+        let page = Page.show(r#stage#mode, fitsNvl(res), entry, r#page);
         let shown = { page = if (replay == Replay.Silent) Page.revealAll(page) else page, choices = Nil, doneAt = None,
-                      log = List.take(KindDoc.rec(w#docs#kind)#logMax, World.Entry.Said(entry, mark) :: r#log) | r };
-        if (replay == Replay.Silent) World.withRead(shown, w) else autosave(mark, shown, w)
+                      log = List.take(KindDoc.rec(res#kind)#logMax, World.Entry.Said(entry, mark) :: r#log) | r };
+        if (replay == Replay.Silent) World.withRead(shown, w) else autosave(res, mark, shown, w)
 
     /// NVL の頁に行の列が入り切るか（行の数は novel.kind.json の nvlRows）。
-    def fitsNvl(w: World.World): List[Page.Line] -> Bool = lines ->
-        let k = KindDoc.rec(w#docs#kind);
+    def fitsNvl(res: Res.Res): List[Page.Line] -> Bool = lines ->
+        let k = KindDoc.rec(res#kind);
         let rows = lines |> List.foldLeft((sum, line) -> sum + Page.rowsOf(k#bodySize, k#rubySize, Layout.nvlText()#width, line), 0);
         rows <= k#nvlRows
 
@@ -126,26 +126,26 @@ mod WorldRead {
 
     /// 決定 1 回分（読んでいる間・画面が閉じている時）。文字送りの途中なら全文へ、出し終えていれば次の行へ。
     /// 選択肢を出している間は動かない（pick だけが進める）。オートとスキップは止める（人が押したら人の速さに戻す）。
-    pub def advance(w: World.World): World.World \ Emit[World.Event] =
+    pub def advance(res: Res.Res, w: World.World): World.World \ Emit[World.Event] =
         match World.readOf(w) {
             case Some(r) if World.isFree(w) and List.isEmpty(r#choices) =>
                 let manual = { playback = World.Playback.Manual | r };
                 if (not Page.isDone(r#page)) {
                     Emit.emit(World.Event.Revealed);
                     World.withRead({ page = Page.revealAll(r#page) | manual }, w)
-                } else next(manual, w)
+                } else next(res, manual, w)
             case _ => w
         }
 
     /// 今の行を既読にして、次の行へ送る。[遷移: 行→次の行 / 選択肢 / シナリオの終わり(Credits)]
-    def next(r: World.Read, w: World.World): World.World \ Emit[World.Event] =
+    def next(res: Res.Res, r: World.Read, w: World.World): World.World \ Emit[World.Event] =
         let marked = markSeen(r, w);
         match YarnRunner.shownOf(r#talk) {
             case YarnRunner.Shown.Line(_) =>
                 Emit.emit(World.Event.Paged);
                 let (talk, events) = YarnRunner.step(YarnRunner.Action.Advance, World.now(marked), r#talk);
-                absorb(Replay.Live, events, { talk = talk | r }, marked)
-            case YarnRunner.Shown.Closed => World.toCredits(World.withRead(r, marked))
+                absorb(res, Replay.Live, events, { talk = talk | r }, marked)
+            case YarnRunner.Shown.Closed => World.toCredits(res, World.withRead(r, marked))
             case _                       => World.withRead(r, marked)
         }
 
@@ -163,26 +163,26 @@ mod WorldRead {
         seen or World.configOf(w)#skipScope == Saves.SkipScope.Everything
 
     /// 選択肢 i を選ぶ。選べない選択肢（行末の <<if>> が偽）の番号なら何もしない。[遷移: 選択肢→選んだ中身]
-    pub def pick(i: Int32, w: World.World): World.World \ Emit[World.Event] =
+    pub def pick(res: Res.Res, i: Int32, w: World.World): World.World \ Emit[World.Event] =
         match World.readOf(w) {
             case Some(r) if World.isFree(w) =>
                 match List.nth(i, r#choices) {
                     case Some(option) if option#available =>
                         Emit.emit(World.Event.Picked);
                         let marked = markSeen(r, w);
-                        let logged = { log = List.take(KindDoc.rec(w#docs#kind)#logMax, World.Entry.Chose(option#line#text) :: r#log),
+                        let logged = { log = List.take(KindDoc.rec(res#kind)#logMax, World.Entry.Chose(option#line#text) :: r#log),
                                        choices = Nil | r };
                         let (talk, events) = YarnRunner.step(YarnRunner.Action.Choose(i), World.now(w), r#talk);
-                        absorb(Replay.Live, events, { talk = talk | logged }, marked)
+                        absorb(res, Replay.Live, events, { talk = talk | logged }, marked)
                     case _ => w
                 }
             case _ => w
         }
 
     /// 選択肢のカーソルで選ぶ。
-    pub def pickHere(w: World.World): World.World \ Emit[World.Event] =
+    pub def pickHere(res: Res.Res, w: World.World): World.World \ Emit[World.Event] =
         match World.readOf(w) {
-            case Some(r) => pick(r#choiceCursor, w)
+            case Some(r) => pick(res, r#choiceCursor, w)
             case None    => w
         }
 
@@ -211,14 +211,14 @@ mod WorldRead {
 
     /// 毎フレーム（App が時計を進めた後）: <<wait>> が明けたら続きを流し、文字送りを進め、出し終えた時刻を記し、オートとスキップを決める。
     /// 画面や確認のウィンドウを開いている間は物語の時計が止まるので、待ちも文字送りもオートも止まる。
-    pub def step(w: World.World): World.World \ Emit[World.Event] =
+    pub def step(res: Res.Res, w: World.World): World.World \ Emit[World.Event] =
         whileReading(r -> {
             let waited = match YarnRunner.shownOf(r#talk) {
                 case YarnRunner.Shown.Waiting =>
                     // スキップ中は待ちも飛ばす（明ける時刻をそのまま渡す）。
                     let at = if (r#playback == World.Playback.Skip) YarnRunner.waitUntilOf(r#talk) |> Option.getWithDefault(World.now(w)) else World.now(w);
                     let (talk, events) = YarnRunner.step(YarnRunner.Action.Tick, at, r#talk);
-                    absorb(Replay.Live, events, { talk = talk | r }, w)
+                    absorb(res, Replay.Live, events, { talk = talk | r }, w)
                 case _ => w
             };
             whileReading(cur -> {
@@ -227,13 +227,13 @@ mod WorldRead {
                            else Page.step(World.configOf(waited)#cps, Clock.dtOf(waited#storyClock), cur#page);
                 let typed = { page = page | cur };
                 let stamped = if (Page.isDone(page) and Option.isEmpty(typed#doneAt)) { doneAt = Some(World.now(waited)) | typed } else typed;
-                autoOrSkip(stamped, waited)
+                autoOrSkip(res, stamped, waited)
             }, waited)
         }, w)
 
     /// オートとスキップ（行を出し終えてから、決めた間が過ぎたら送る）。
     /// スキップは選択肢で止まるか待つか（設定の「選択肢の後」）、読んでいない行で止まるか（設定の「スキップ」）。
-    def autoOrSkip(r: World.Read, w: World.World): World.World \ Emit[World.Event] =
+    def autoOrSkip(res: Res.Res, r: World.Read, w: World.World): World.World \ Emit[World.Event] =
         let manual = World.withRead({ playback = World.Playback.Manual | r }, w);
         if (not World.isFree(w)) World.withRead(r, w)
         else if (r#playback == World.Playback.Skip and not List.isEmpty(r#choices))
@@ -242,13 +242,13 @@ mod WorldRead {
         else match r#doneAt {
             case None     => World.withRead(r, w)
             case Some(at) =>
-                let k = KindDoc.rec(w#docs#kind);
+                let k = KindDoc.rec(res#kind);
                 let waited = Clock.since(at, World.now(w));
                 let chars = r#page#current |> Option.map(line -> String.length(line#text)) |> Option.getWithDefault(0);
                 let autoWait = World.configOf(w)#autoWait + Int32.toFloat64(chars) * k#autoPerChar;
                 match r#playback {
-                    case World.Playback.Skip   => if (waited >= k#skipInterval) next(r, w) else World.withRead(r, w)
-                    case World.Playback.Auto   => if (waited >= autoWait) next(r, w) else World.withRead(r, w)
+                    case World.Playback.Skip   => if (waited >= k#skipInterval) next(res, r, w) else World.withRead(r, w)
+                    case World.Playback.Auto   => if (waited >= autoWait) next(res, r, w) else World.withRead(r, w)
                     case World.Playback.Manual => World.withRead(r, w)
                 }
         }
@@ -263,17 +263,17 @@ mod WorldRead {
     // ── オートセーブ・今の所のデータ ──
 
     /// 今の所のデータ（読んでいなければ None）。セーブの画面とクイックセーブが書く。
-    pub def slotHere(w: World.World): Option[Saves.Slot] =
-        World.readOf(w) |> Option.flatMap(r -> slotAt(None, r, w))
+    pub def slotHere(res: Res.Res, w: World.World): Option[Saves.Slot] =
+        World.readOf(w) |> Option.flatMap(r -> slotAt(res, None, r, w))
 
     /// mark を渡せばその戻れる所で、無ければ今のブックマークで作るデータ。
-    def slotAt(mark: Option[Saves.Mark], r: World.Read, w: World.World): Option[Saves.Slot] =
+    def slotAt(res: Res.Res, mark: Option[Saves.Mark], r: World.Read, w: World.World): Option[Saves.Slot] =
         let here = match mark {
             case Some(m) => Some(m)
             case None    => markAt(YarnRunner.bookmarkOf(r#talk), 0, r#stage)
         };
         here |> Option.map(m -> {
-            let place = m#shot |> Option.flatMap(shot -> BackdropDoc.photoOf(shot#photo, w#docs#backdrops))
+            let place = m#shot |> Option.flatMap(shot -> BackdropDoc.photoOf(shot#photo, res#backdrops))
                 |> Option.map(photo -> photo#label) |> Option.getWithDefault("");
             let (speaker, excerpt) = r#page#current |> Option.map(line -> (line#speaker, String.takeLeft(80, line#text)))
                 |> Option.getWithDefault(("", ""));
@@ -286,10 +286,10 @@ mod WorldRead {
         w#clockBase + (Float64.tryToInt64(Float64.floor(Clock.secondsOf(w#realNow))) |> Option.getWithDefault(0i64))
 
     /// 新しいノードの最初の行でオートセーブ（オートのページの先頭へ。音も知らせも出さない）。
-    def autosave(mark: Option[Saves.Mark], r: World.Read, w: World.World): World.World =
+    def autosave(res: Res.Res, mark: Option[Saves.Mark], r: World.Read, w: World.World): World.World =
         let node = YarnRunner.nodeOf(r#talk);
         if (Option.isEmpty(node) or node == r#autosavedNode) World.withRead(r, w)
-        else match slotAt(mark, r, w) {
+        else match slotAt(res, mark, r, w) {
             case Some(slot) =>
                 World.withSaves(Saves.withPushed(Saves.Tab.Auto, slot, w#saves), World.withRead({ autosavedNode = node | r }, w))
             case None => World.withRead(r, w)
@@ -300,10 +300,10 @@ mod WorldRead {
     /// 戻れる所へ戻す: ブックマークを当て直し、通ったコマンドを音を出さずに反映して舞台と頁とバックログを作り直す。
     /// 前のノードから持ち越す背景・環境音・パーティクル・文章の出し方は Mark の値から始め、背景の重ねや揺れの途中は終わりの形にする。
     /// 画面と確認のウィンドウは閉じる。[遷移: Title / Reading→Reading]
-    pub def restore(mark: Saves.Mark, w: World.World): World.World \ Emit[World.Event] =
+    pub def restore(res: Res.Res, mark: Saves.Mark, w: World.World): World.World \ Emit[World.Event] =
         let carried = { shot = mark#shot, ambience = mark#ambience, particles = mark#particles, mode = mark#mode | Stage.empty() };
-        let (talk, events) = YarnRunner.resume(w#docs#dialogue, mark#bookmark, World.now(w));
-        settled(absorb(Replay.Silent, events, { talk = talk, stage = carried | World.emptyRead() },
+        let (talk, events) = YarnRunner.resume(res#dialogue, mark#bookmark, World.now(w));
+        settled(absorb(res, Replay.Silent, events, { talk = talk, stage = carried | World.emptyRead() },
                        { panel = World.Panel.Closed, ask = None | w }))
 
     /// 当て直した後の形: 演出の途中は終わりの形にし、今のノードはオートセーブ済みとして扱う（戻った所で同じ物を残さない）。
@@ -312,34 +312,37 @@ mod WorldRead {
 
     /// セーブの枠のサムネに映す画面: その枠の戻れる所へ音を出さずに戻した World（文は出し終え、画面・確認のウィンドウは閉じ、マウスはどこにも乗せない）。
     /// WhyNot: 保存の時に画面の絵を撮って残さない —— セーブの JSON に絵を入れると重く、描き出しと実機で同じ絵にならない。
-    pub def screenOf(mark: Saves.Mark, w: World.World): World.World =
-        let (back, _) = Emit.collect(() -> restore(mark, w));
+    pub def screenOf(res: Res.Res, mark: Saves.Mark, w: World.World): World.World =
+        let (back, _) = Emit.collect(() -> restore(res, mark, w));
         World.withPointer({ x = -1.0, y = -1.0 }, back)
 
     // ── 始まりの場面（Starts・描き出し） ──
 
     /// node の頭から、.yarn の line 行を出している所まで進めた World（Studio の会話のプレビュー・bin/fge talk goto）。
     /// 通ったコマンドは音を出さずに反映し、演出の途中は終わりの形にする。
-    pub def openAt(storage: YarnStorage.Storage, node: String, line: Int32, w: World.World): World.World \ Emit[World.Event] =
-        let (talk, events) = YarnRunner.startAtWith(storage, w#docs#dialogue, node, line, World.now(w));
-        settled(absorb(Replay.Silent, events, { talk = talk | World.emptyRead() }, { panel = World.Panel.Closed, ask = None | w }))
+    pub def openAt(res: Res.Res, storage: YarnStorage.Storage, node: String, line: Int32, w: World.World): World.World \ Emit[World.Event] =
+        let (talk, events) = YarnRunner.startAtWith(storage, res#dialogue, node, line, World.now(w));
+        settled(absorb(res, Replay.Silent, events, { talk = talk | World.emptyRead() }, { panel = World.Panel.Closed, ask = None | w }))
 
     /// 今の行を出し終えた形（描き出しが場面を作る時。時計を進めずに 1 行読み終える）。
     pub def revealLine(w: World.World): World.World = World.mapRead(r -> { page = Page.revealAll(r#page) | r }, w)
 
-    /// シナリオの差し替え（保存即反映）。読んでいる途中なら、開いているノードの頭から読み直す（編集がその場で画面に出る）。
+    /// シナリオを差し替えた後に World を収める（保存即反映。res は差し替えた後の描く元）。
+    /// 読んでいる途中なら、開いているノードの頭から読み直す（編集がその場で画面に出る）。
     /// WhyNot: 読んでいた行から続けない —— 行の並びが変わると「同じ行」が決まらない。
-    pub def withDialogue(dialogue: Yarn.Program, w: World.World): World.World =
-        let w1 = { docs = { dialogue = dialogue | w#docs } | w };
-        match World.readOf(w1) {
-            case Some(r) =>
-                match YarnRunner.nodeOf(r#talk) {
-                    case Some(node) if Option.nonEmpty(Yarn.nodeOf(node, dialogue)) =>
-                        let (talk, events) = YarnRunner.startWith(YarnRunner.storageOf(r#talk), dialogue, node, World.now(w1));
-                        fst(Emit.collect(() -> absorb(Replay.Silent, events, { talk = talk, page = Page.empty(), choices = Nil | r }, w1)))
-                    case Some(_) => World.toTitle(w1)
-                    case None    => w1
-                }
-            case None => w1
+    pub def settleDialogue(res: Res.Res, w: World.World): World.World =
+        match World.readOf(w) {
+            case Some(r) => reopenNode(res, r, w)
+            case None    => w
+        }
+
+    /// 開いていたノードを新しいシナリオの頭から開き直す（ノードが消えていればタイトルへ）。
+    def reopenNode(res: Res.Res, r: World.Read, w: World.World): World.World =
+        match YarnRunner.nodeOf(r#talk) {
+            case Some(node) if Option.nonEmpty(Yarn.nodeOf(node, res#dialogue)) =>
+                let (talk, events) = YarnRunner.startWith(YarnRunner.storageOf(r#talk), res#dialogue, node, World.now(w));
+                fst(Emit.collect(() -> absorb(res, Replay.Silent, events, { talk = talk, page = Page.empty(), choices = Nil | r }, w)))
+            case Some(_) => World.toTitle(w)
+            case None    => w
         }
 }

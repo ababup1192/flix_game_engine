@@ -44,7 +44,7 @@ mod Layout {
     }
 
     /// 面ごとの岩の段（低い段から）。作れるのは rockLevelsOf だけ、中身は levelsOf で読む。
-    /// WhyNot: List[RockLevel] のまま World に持たせない。record の型が World を取る全 def で展開され、flix check が重くなる。
+    /// WhyNot: List[RockLevel] のまま Res に持たせない。record の型が Res を取る全 def で展開され、flix check が重くなる。
     enum RockLevelList(List[RockLevel])
 
     pub type alias RockLevels = RockLevelList

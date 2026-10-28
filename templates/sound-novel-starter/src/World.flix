@@ -10,7 +10,7 @@
 //   scene（Scene）… Title(カーソルの項目) / Reading(Read = 読んでいる間だけの値) / Credits(流れ始めた時刻, 最後の舞台)
 //   panel（Panel）… 場面の上に開く画面。カーソルやページはその画面の case が持つ（閉じると一緒に消える）
 //   ask           … 一番手前の確認のウィンドウ（尋ねている事と、はい / いいえのカーソル）
-//   残りの欄は場面をまたぐ物だけ: Doc の束・セーブデータ・マウス・2 本の時計・知らせ・終了・出来事。
+//   残りの欄は場面をまたぐ物だけ: セーブデータ・マウス・2 本の時計・知らせ・終了・出来事。
 // 読んでいる間の値（シナリオの位置・舞台・頁・バックログ…）は Read にしか無いので、タイトルの間に頁を触る、
 // クレジットの間にバックログを足す、のような取り違えはコンパイルで止まる。場面を移ると前の場面の値は自然に消える。
 //
@@ -37,7 +37,7 @@
 //   実時間 realNow（Time[Clock.Real]）          … 蛍の光・タイトルの字の明滅・クレジット・知らせ・設定の文字の速さの見本。止まらない。
 //   セーブの日時は clockBase（起動した時のその土地の時刻。Main が読んで渡す）+ realNow の秒。
 mod World {
-    use fge::{AudioMixer, Clock, Emit, Yarn, YarnRunner}
+    use fge::{Clock, Emit, Yarn, YarnRunner}
 
     /// いまの場面と、その場面だけが持つ値。
     ///   Title(項目) = タイトルのメニュー（カーソルの項目）、Reading(Read) = 読んでいる間、
@@ -178,24 +178,11 @@ mod World {
         case Cue(String)
     }
 
-    /// 起動時に読む Doc の束（Main・描き出し・テストが同じ形で組む）。遊んでいる間は変わらず、読み直しで差し替わるだけ。
-    pub type alias Docs = {
-        story = StoryDoc.Doc,
-        kind = KindDoc.Doc,
-        theme = ThemeDoc.Doc,
-        backdrops = BackdropDoc.Doc,
-        credits = CreditsDoc.Doc,
-        keys = KeysDoc.Doc,
-        mixer = AudioMixer.Mixer,
-        dialogue = Yarn.Program
-    }
-
-    /// ゲームの状態。docs = Doc の束、scene / panel / ask = 冒頭の「状態の形」、
+    /// ゲームの状態（遊びの状態だけ。Doc とシナリオは Res が持つ）。scene / panel / ask = 冒頭の「状態の形」、
     /// saves = セーブデータ・既読・設定、saveRev = saves を変えた回数（Saves を書く出力の鍵）、pointer = マウスの位置（触れている物を明るくする）、
     /// clockBase = 起動した時のその土地の時刻（秒。セーブの日時の元）、toast = 知らせの言葉と出した実時間、quitting = 終了を決めた、
     /// events = 規則が出した出来事（音の材料）。
     pub type alias World = {
-        docs = Docs,
         scene = Scene,
         panel = Panel,
         ask = Option[(Ask, Answer)],
@@ -212,8 +199,8 @@ mod World {
 
     /// 起動の World。タイトルから始まる（カーソルは「はじめから」）。
     /// clockBase = 起動した時のその土地の時刻（1970-01-01 からの秒。テストと描き出しは決めた値を渡す）。
-    pub def initial(docs: Docs, saves: Saves.Saves, clockBase: Int64): World =
-        { docs = docs, scene = Scene.Title(TitleItem.NewGame), panel = Panel.Closed, ask = None,
+    pub def initial(saves: Saves.Saves, clockBase: Int64): World =
+        { scene = Scene.Title(TitleItem.NewGame), panel = Panel.Closed, ask = None,
           saves = saves, saveRev = 0, pointer = { x = -1.0, y = -1.0 }, clockBase = clockBase,
           storyClock = Clock.start(), realNow = Clock.zero(), toast = None, quitting = false, events = Emit.empty() }
 
@@ -240,8 +227,8 @@ mod World {
     }
 
     /// 今の舞台（タイトルはタイトルの写真、クレジットは最後に読んでいた舞台）。背景・環境音・パーティクルの元。
-    pub def stageOf(w: World): Stage.Stage = match w#scene {
-        case Scene.Title(_)       => titleStage(w#docs#story)
+    pub def stageOf(res: Res.Res, w: World): Stage.Stage = match w#scene {
+        case Scene.Title(_)       => titleStage(res#story)
         case Scene.Reading(r)     => r#stage
         case Scene.Credits(_, st) => st
     }
@@ -329,19 +316,19 @@ mod World {
         { scene = Scene.Title(TitleItem.NewGame), panel = Panel.Closed, ask = None | w }
 
     /// クレジットを流す（背景と環境音は今の舞台のまま）。[遷移: Reading / Title→Credits]
-    pub def toCredits(w: World): World =
-        { scene = Scene.Credits(w#realNow, stageOf(w)), panel = Panel.Closed, ask = None | w }
+    pub def toCredits(res: Res.Res, w: World): World =
+        { scene = Scene.Credits(w#realNow, stageOf(res, w)), panel = Panel.Closed, ask = None | w }
 
     /// クレジットが流れ切ったか（行の高さの合計 + 画面の高さを流れたら）。
-    pub def creditsOver(w: World): Bool = match w#scene {
+    pub def creditsOver(res: Res.Res, w: World): Bool = match w#scene {
         case Scene.Credits(startedAt, _) =>
-            Clock.since(startedAt, w#realNow) * KindDoc.rec(w#docs#kind)#creditsSpeed >= creditsLength(w) + Layout.height()
+            Clock.since(startedAt, w#realNow) * KindDoc.rec(res#kind)#creditsSpeed >= creditsLength(res) + Layout.height()
         case _ => false
     }
 
     /// クレジットの行を並べた長さ（View が置く間隔と同じ決まり）。
-    pub def creditsLength(w: World): Float64 =
-        CreditsDoc.rec(w#docs#credits)#rows |> List.foldLeft((sum, row) -> sum + creditsRowHeight(row#style), 0.0)
+    pub def creditsLength(res: Res.Res): Float64 =
+        CreditsDoc.rec(res#credits)#rows |> List.foldLeft((sum, row) -> sum + creditsRowHeight(row#style), 0.0)
 
     pub def creditsRowHeight(style: CreditsDoc.Style): Float64 = match style {
         case CreditsDoc.Style.Heading => 52.0
@@ -392,9 +379,9 @@ mod World {
     pub def notice(label: StoryDoc.Label, w: World): World = { toast = Some((label, w#realNow)) | w }
 
     /// 今の知らせの字（消えていれば None）。
-    pub def toastOf(w: World): Option[String] = match w#toast {
-        case Some((label, at)) if Clock.since(at, w#realNow) < KindDoc.rec(w#docs#kind)#toastSeconds =>
-            Some(StoryDoc.labelOf(label, w#docs#story))
+    pub def toastOf(res: Res.Res, w: World): Option[String] = match w#toast {
+        case Some((label, at)) if Clock.since(at, w#realNow) < KindDoc.rec(res#kind)#toastSeconds =>
+            Some(StoryDoc.labelOf(label, res#story))
         case _ => None
     }
 
@@ -417,20 +404,4 @@ mod World {
     /// シナリオの変数（セーブや結末のテスト・flow の問い）。
     pub def variableOf(name: String, w: World): String =
         readOf(w) |> Option.flatMap(r -> YarnRunner.valueOf(name, r#talk)) |> Option.map(Yarn.toText) |> Option.getWithDefault("")
-
-    // ── Doc の差し替え（保存即反映。シナリオの差し替えは WorldRead.withDialogue） ──
-
-    pub def withStory(story: StoryDoc.Doc, w: World): World = { docs = { story = story | w#docs } | w }
-
-    pub def withKind(kind: KindDoc.Doc, w: World): World = { docs = { kind = kind | w#docs } | w }
-
-    pub def withTheme(theme: ThemeDoc.Doc, w: World): World = { docs = { theme = theme | w#docs } | w }
-
-    pub def withBackdrops(backdrops: BackdropDoc.Doc, w: World): World = { docs = { backdrops = backdrops | w#docs } | w }
-
-    pub def withCredits(credits: CreditsDoc.Doc, w: World): World = { docs = { credits = credits | w#docs } | w }
-
-    pub def withKeys(keys: KeysDoc.Doc, w: World): World = { docs = { keys = keys | w#docs } | w }
-
-    pub def withMixer(mixer: AudioMixer.Mixer, w: World): World = { docs = { mixer = mixer | w#docs } | w }
 }

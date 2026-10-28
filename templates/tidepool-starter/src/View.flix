@@ -32,58 +32,56 @@ mod View {
         blend = Float64,
         age = Float64,
         forecast = World.Forecast,
-        screen = World.Screen,
+        screen = World.ScreenKind,
         hud = HudView.In,
         overlay = HudView.Overlay,
         title = TitleView.In,
         rules = RulesDoc.Doc,
-        surfaces = World.Surfaces,
+        surfaces = Res.Surfaces,
         theme = ThemeDoc.Doc,
         askingQuit = Bool,
         quitPrompt = String
     }
 
-    /// World から描くのに要る値だけを写す（View の中で World を読むのは入口の frame とここだけ）。
+    /// 描く元と World から描くのに要る値だけを写す（View の中で World を読むのは入口の frame とここだけ）。
     /// 題名の画面は選んでいる面の初めの盤を、終わりの画面は最後の面の潮位を 1 手進めた盤を背に敷く。
-    pub def inputOf(w: World.World): In =
-        let b = World.board(w);
-        let backdrop = w#screen != World.Screen.Play;
-        let now = match w#screen {
-            case World.Screen.Title  => World.startOf(b)
-            case World.Screen.Ending => risingOf(b, World.state(w))
-            case World.Screen.Play   => World.state(w)
-        };
-        let (parMoves, name) = (World.parMoves(w), World.stageName(w));
-        let shells = World.shellsFor(w#rules, parMoves, now#t);
-        { t = w#t, board = b, rocks = World.rockLevels(w), tiles = Layout.buildRoundTiles(), now = now, before = if (backdrop) now else w#before, blend = if (backdrop) 1.0 else w#blend,
-          age = w#t - w#since, forecast = World.forecastOf(b, now), screen = w#screen,
-          hud = { t = w#t, cycle = b#cycle, moves = now#t, parMoves = parMoves, shells = shells, level = w#level, name = name, theme = w#theme },
-          overlay = { t = w#t, age = w#t - w#since, phase = now#phase, moves = now#t, parMoves = parMoves, shells = shells,
-                      last = w#level + 1 >= Vector.length(w#stages), theme = w#theme },
-          title = { t = w#t, level = w#level, name = name, canSelect = (World.isOpened(w#level - 1, w), World.isOpened(w#level + 1, w)),
-                    best = w#best, stageCount = Vector.length(w#stages), theme = w#theme },
-          rules = w#rules, surfaces = w#surfaces, theme = w#theme,
-          askingQuit = World.isAskingQuit(w), quitPrompt = RulesDoc.rec(w#rules)#quitPrompt }
+    pub def inputOf(res: Res.Res, w: World.World): In =
+        let b = World.board(res, w);
+        let shown = World.shownOf(res, w);
+        let screen = World.screenKindOf(w);
+        let backdrop = screen != World.ScreenKind.Play;
+        let now = if (screen == World.ScreenKind.Ending) risingOf(b, shown#now) else shown#now;
+        let (parMoves, name, level) = (World.parMoves(res, w), World.stageName(res, w), shown#level);
+        let shells = World.shellsFor(res#rules, parMoves, now#t);
+        { t = w#t, board = b, rocks = World.rockLevels(res, w), tiles = Layout.buildRoundTiles(), now = now, before = if (backdrop) now else shown#before, blend = if (backdrop) 1.0 else shown#blend,
+          age = w#t - shown#since, forecast = World.forecastOf(b, now), screen = screen,
+          hud = { t = w#t, cycle = b#cycle, moves = now#t, parMoves = parMoves, shells = shells, level = level, name = name, theme = res#theme },
+          overlay = { t = w#t, age = w#t - shown#since, phase = now#phase, moves = now#t, parMoves = parMoves, shells = shells,
+                      last = level + 1 >= Vector.length(res#stages), theme = res#theme },
+          title = { t = w#t, level = level, name = name, canSelect = (World.isOpened(res, level - 1, w), World.isOpened(res, level + 1, w)),
+                    best = w#best, stageCount = Vector.length(res#stages), theme = res#theme },
+          rules = res#rules, surfaces = res#surfaces, theme = res#theme,
+          askingQuit = World.isAskingQuit(w), quitPrompt = RulesDoc.rec(res#rules)#quitPrompt }
 
     /// 物はそのままに、満ち引きを 1 周回した後から 1 手ぶん潮を進めた盤（背に敷く絵。遊びの手には数えない）。
     def risingOf(b: Board.Board, s: World.State): World.State =
         { water = Tide.flow(s#pebbles, Board.tideAt(1, b), Tide.cycleOnce(s#pebbles, s#water, b), b), t = 1 | s }
 
-    pub def frame(ctx: App.ViewCtx, w: World.World): List[Render.PlacedItem] =
-        SortingLayer.compose(ctx, layers(ctx, inputOf(w)))
+    pub def frame(ctx: App.ViewCtx, res: Res.Res, w: World.World): List[Render.PlacedItem] =
+        SortingLayer.compose(ctx, layers(ctx, inputOf(res, w)))
 
     /// 層ごとの木（絵と押せる物の当たり）。Controls.tapAt も同じ木から押した物を選ぶ。
     pub def layers(ctx: App.ViewCtx, w: In): List[(Layer, ZStack.Tree[Layer, World.Press])] =
         let front = match w#screen {
-            case World.Screen.Title  => TitleView.title(ctx#atlas, w#title)
-            case World.Screen.Ending => TitleView.ending(ctx#atlas, w#title)
-            case World.Screen.Play   => HudView.hud(ctx#atlas, w#hud) ::: HudView.overlay(ctx#atlas, w#overlay)
+            case World.ScreenKind.Title  => TitleView.title(ctx#atlas, w#title)
+            case World.ScreenKind.Ending => TitleView.ending(ctx#atlas, w#title)
+            case World.ScreenKind.Play   => HudView.hud(ctx#atlas, w#hud) ::: HudView.overlay(ctx#atlas, w#overlay)
         };
         (Layer.Scene, ZStack.of(scene(ctx#atlas, w) |> List.map(ZStack.leaf)))
             :: (Layer.Hud, ZStack.of(front |> List.map(ZStack.leaf)))
             :: (Layer.Prompt, quitPrompt(ctx, w)) :: Nil
 
-    def isPlay(w: In): Bool = w#screen == World.Screen.Play
+    def isPlay(w: In): Bool = w#screen == World.ScreenKind.Play
 
     // ── 盤の置き場所 ──
 

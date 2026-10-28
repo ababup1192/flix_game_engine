@@ -61,6 +61,14 @@
       "hint": "時計を使うゲーム（App.addClock がある）は Timeline.soundsOnClock(時計, 起点, 表) と Timeline.progressOn(時計, 起点, タグ, 表)。実時間（frame#realNow）で鳴らす表は Timeline.soundsBetweenTimes(起点, { before, after }, 表)。前と今の秒は時計が持つので、古い prev を渡せず、止めて戻しても・スロー中でも音は 1 回だけ鳴る（engine の docs/clock.md）"
     },
     {
+      "id": "pair-construct",
+      "suffixes": [".flix"],
+      "skip": ["engine/", "engine_world/", "engine_tools/", "engine_full/", "src/engine/", "src/engine_world/", "src/engine_tools/", "render_gl/", "src/render_gl/", "lib/", "build/"],
+      "whenProject": "\\bResources\\.(?:of|With|read)\\b",
+      "pattern": "\\bresources = |\\{ *world = [^}|]*\\|",
+      "hint": "描く元と World の組（Resources.With）を record で直に組まない・欄を直に書き替えない。組むのは Resources.of、描く元を替えるのは読み直しの行（Resources.reloadRow / reloadUnnamedRow）、World だけを替えるのは Resources.mapWorld / system、読むだけは Resources.read（h#resources・h#world を読むのはよい）"
+    },
+    {
       "id": "clock-made-time",
       "suffixes": [".flix"],
       "skip": ["engine/", "engine_world/", "engine_tools/", "engine_full/", "src/engine/", "src/engine_world/", "src/engine_tools/", "render_gl/", "src/render_gl/", "lib/", "build/"],

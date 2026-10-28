@@ -1,5 +1,5 @@
 {
-  "note": "lint-record-wrap（World が直接持つ大きな record を enum で包んでいるか）の規約データ。この JSON が source of truth で、bin/fge record-wrap はこれを読んで動く。record の型エイリアスは使われるたびに中身のまま展開されるので、World を取る全 def で型の木が大きくなり flix check が伸びる・メモリを食う（docs/flix-conventions.md「型の設計」）。大きさは欄の数ではなく、入れ子の record・List や Option の中の record まで展開した欄の総数で測る（欄 3 つでも中身が大きければ重い。測った数字は docs/flix-conventions.md）。threshold 以上の欄を鳴らす。パッケージの外（エンジン）の型は見えないので数えない。",
+  "note": "lint-record-wrap（World が直接持つ大きな record を enum で包んでいるか）の規約データ。この JSON が source of truth で、bin/fge record-wrap はこれを読んで動く。record の型エイリアスは使われるたびに中身のまま展開されるので、World を取る全 def で型の木が大きくなり flix check が伸びる・メモリを食う（docs/flix-conventions.md「型の設計」）。大きさは欄の数ではなく、入れ子の record・List や Option の中の record まで展開した欄の総数で測る（欄 3 つでも中身が大きければ重い。測った数字は docs/flix-conventions.md）。threshold 以上の欄を鳴らす。パッケージの外（エンジン）の型は見えないので数えない。 worldShape は World の形の 2 規則（roots の型を見る）: world-resource は欄の型を、パッケージ内の型エイリアスと 1 case の enum の payload までたどり、resourceTypes（\"モジュール.型\" に当てる正規表現）に当たる Doc や描く元があれば止める（List・Option・Map などの型引数の中と、何 case もある enum の中は見ない）。world-fields は一番上の欄が maxTopFields を超えたら止める。exemptRules はその 2 規則の除外で、鍵は \"根からのパス::world-resource\" か \"::world-fields\"、値は残す理由 1 行。ゲームの除外は bin/lint-rules/record-wrap.local.json の exemptRules へ（このファイルは配る側なので追従で上書きされる）。このリポに無いファイルの鍵は古い除外と数えない。",
   "scopeSuffixes": [
     ".flix"
   ],
@@ -21,5 +21,23 @@
     "World.World"
   ],
   "threshold": 16,
-  "exempt": {}
+  "exempt": {},
+  "worldShape": {
+    "resourceTypes": [
+      "\\.Doc$",
+      "Doc\\.(Spec|Rec)$",
+      "^PxSpriteAtlas\\.Baked$",
+      "^AudioMixer\\.Mixer$",
+      "^Yarn\\.Program$"
+    ],
+    "maxTopFields": 16
+  },
+  "exemptRules": {
+    "templates/platformer-starter/src/World.flix::world-resource": "このテンプレートの World はまだ Doc と描く元を直に持つ。Resources（手本 tidepool-starter の Res）へ移すまで残す",
+    "templates/platformer-starter/src/World.flix::world-fields": "このテンプレートの World はまだ平ら。画面ごとの値を画面の enum の payload（手本 tidepool-starter の Screen）へ移すまで残す",
+    "templates/race-starter/src/World.flix::world-resource": "このテンプレートの World はまだ Doc と描く元を直に持つ。Resources（手本 tidepool-starter の Res）へ移すまで残す",
+    "templates/race-starter/src/World.flix::world-fields": "このテンプレートの World はまだ平ら。画面ごとの値を画面の enum の payload（手本 tidepool-starter の Screen）へ移すまで残す",
+    "templates/rpg-starter/src/World.flix::world-resource": "このテンプレートの World はまだ Doc と描く元を直に持つ。Resources（手本 tidepool-starter の Res）へ移すまで残す",
+    "templates/rpg-starter/src/World.flix::world-fields": "このテンプレートの World はまだ平ら。画面ごとの値を画面の enum の payload（手本 tidepool-starter の Screen）へ移すまで残す"
+  }
 }

@@ -1,0 +1,1 @@
+bin/fge record-wrap testdata/lint/record-wrap/world-wrapped-in-enum-fires/src/World.flix

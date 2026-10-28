@@ -15,7 +15,7 @@
 | 雨・火花・流星を速度方向の筋で描く | FxDoc（shape: streak / stretch） |
 | 粒をふわっと明滅させる | FxDoc（カーブ pulse） |
 | 撃つたびに出る効果を発生・寿命回収・描画で回す | Fx（burst / expire / drawAll）（実例: `templates/race-starter/src/World.flix`） |
-| 揺れる演出を作る（浮遊・風のなびき） | Sway（実例: `templates/tetris-starter/src/View.flix`） |
+| 揺れる演出を作る（浮遊・風のなびき） | Sway（実例: `templates/game-starter/src/View.flix`） |
 
 ## モジュール 1 行紹介
 

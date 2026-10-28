@@ -25,6 +25,7 @@
 | 二乗の残り 3 形（ループ内の exists・range+nth・sortBy の重いキー） | 文書 | flix.md の芯 | ― |
 | ループの外に置いた式がループへ戻る（Flix 0.78 の let の書き写し） | lint + 文書 | hoist（precommit）・performance.md と該当の def の WhyNot | ― |
 | World の大きな record を enum で包む | lint | record-wrap・E2136 / E6794 に explain-error | ― |
+| World に Doc・描く元を置かない・画面ごとの値は画面の enum へ | lint + 文書 | record-wrap の world-resource・world-fields（precommit と make lint-record-wrap。設定は record-wrap.json の worldShape・除外は exemptRules）・flix-conventions.md | ― |
 | レコードは == で比べられない | 構造 | コンパイラ E5252 / E7027 + explain-error | r1 止まり、欄ごとの比較でコミット |
 | Float32 リテラル | 構造 + lint | 型エラー + explain-error・f32 | ― |
 | Java の import はモジュール直下・例外は import してから | 構造 | Unresolved type + explain-error・compile-fix | ― |

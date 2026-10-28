@@ -1,8 +1,8 @@
-// エントリーポイント。Doc とセーブデータ（saves/novel.json）は App を組む前に読み、その値から初期 World を作る
+// エントリーポイント。描く元（Doc とシナリオ = Res）とセーブデータ（saves/novel.json）は App を組む前に読み、その値から初期 World を作る
 // （壊れていても既定値で必ず起動する）。App の組み立ては Game.app（flow の入口 E2e とテストも同じ物を使う）。
 // ここで足すのは main だけが知る物（デバッグの印・セーブを書く出力・今の時刻）と、外の世界に触れる処理（effect）のハンドラ。
 
-use fge::{App, GameEngine, LwjglLayer}
+use fge::{App, GameEngine, LwjglLayer, Resources}
 
 import java.lang.System
 import java.util.TimeZone
@@ -11,11 +11,11 @@ def main(): Unit \ IO =
     if (GameEngine.ensureMainThread()) ()
     else {
         run {
-            let docs = Controls.loadDocs();
-            Game.app(docs, Saves.load(docs#kind), localEpochSeconds())
+            let res = Controls.loadRes();
+            Game.app(res, Saves.load(res#kind), localEpochSeconds())
                 // セーブデータ・既読・設定を書く（saveRev が変わった実機のフレームの後でだけ。テスト・flow・描き出しは書かない）。
-                |> App.addOutput({ keyOf = w -> if (w#saveRev == 0) "" else Int32.toString(w#saveRev),
-                                   write = w -> Saves.write(w#saves), onJump = App.OnJump.Skip })
+                |> App.addOutput(Resources.liftOutput({ keyOf = w -> if (w#saveRev == 0) "" else Int32.toString(w#saveRev),
+                                                        write = w -> Saves.write(w#saves), onJump = App.OnJump.Skip }))
                 |> App.withDebug(App.debugFromEnv())
                 |> App.launch
         } with LwjglLayer.withProject(".")

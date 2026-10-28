@@ -82,7 +82,8 @@ func writeRepo(t *testing.T, exempt string) string {
 		}
 	}
 	put("bin/lint-rules/record-wrap.json", `{"scopeSuffixes":[".flix"],"skipPrefixes":["testdata/"],`+
-		`"skipDirNames":["lib","test"],"roots":["World.World"],"threshold":5,"exempt":`+exempt+`}`)
+		`"skipDirNames":["lib","test"],"roots":["World.World"],"threshold":5,"exempt":`+exempt+`,`+
+		`"worldShape":{"resourceTypes":["\\.Doc$"],"maxTopFields":4},"exemptRules":{}}`)
 	put("game/flix.toml", "")
 	put("game/src/Big.flix", "mod Big {\n    pub type alias Rec = { a = Float64, b = Float64, c = Float64, d = Float64, e = Float64 }\n}\n")
 	put("game/src/World.flix", "mod World {\n    pub type alias World = { big = Big.Rec, t = Float64 }\n}\n")

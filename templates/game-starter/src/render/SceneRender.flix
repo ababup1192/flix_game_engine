@@ -22,14 +22,9 @@ mod SceneRender {
           outDir = outDir, frameW = __WW__, frameH = __WH__,
           shapeAntialias = false | HeadlessRender.defaults() }
 
-    def loadWorld(): World.World \ IO =
-        run {
-            World.initial(SampleDoc.load(SampleDoc.path()),
-                KeysDoc.load(KeysDoc.path()),
-                ThemeDoc.load(ThemeDoc.path()),
-                PxSpriteDoc.load(World.spritePath()),
-                Controls.loadShader())
-        } with Fs.FileRead.runWithIO
+    /// 描く元（実機の起動と同じ Controls.loadDocs から組む）。
+    def loadRes(): Res.Res \ IO =
+        Res.build(run { Controls.loadDocs() } with Fs.FileRead.runWithIO)
 
     /// 生成するときの時刻（秒）。実時間でなく固定値を使う — 空の流れも塵の位置もこの t
     /// だけで決まるので、何度生成しても同じ PNG が出る（スナップショットのバイト比較が成り立つ）。
@@ -94,21 +89,21 @@ mod SceneRender {
     def shotsInto(outDir: String, keep: String -> Bool): List[String] \ IO =
         discard (new File(outDir)).mkdirs();
         let atlas = HeadlessFont.buildUiAtlas(ttf(), ttf());
-        let w0 = loadWorld();
-        let (cfg, texInfo) = withAtlasOf(cfgOf(outDir, atlas, ThemeDoc.rec(w0#theme)#bg), w0);
+        let res = loadRes();
+        let (cfg, texInfo) = withAtlasOf(cfgOf(outDir, atlas, ThemeDoc.rec(res#theme)#bg), res);
         let ctx = App.viewCtxOf(atlas, design());
         shotNames() |> List.filter(keep) |> List.filterMap(name ->
-            sceneOf(name, w0) |> Option.map(w -> shoot(cfg, texInfo, ctx, w, name)))
+            sceneOf(name, World.initial()) |> Option.map(w -> shoot(cfg, texInfo, ctx, res, w, name)))
 
     /// 実機が GPU へ上げるのと同じアトラスの画素を PNG に落とし、「そこから貼れる cfg」と
     /// texInfo を返す（描き出しは PNG からしか絵を読めない）。View が drawQuad で貼るので、
     /// これを通さないとドット絵が仮色の板になる。
     /// 置き場所は生成先でなく debug/ に固定する — gallery/ に混ぜると、絵の顔ぶれを
     /// 突き合わせる reference-check が「増えた絵」として落とす。
-    def withAtlasOf(cfg: HeadlessRender.RenderConfig, w: World.World):
+    def withAtlasOf(cfg: HeadlessRender.RenderConfig, res: Res.Res):
             (HeadlessRender.RenderConfig, String -> Option[GameEngine.TextureInfo]) \ IO =
         let images = PxSpriteAtlas.asImages(
-            { texture = World.atlasName(), baked = w#atlas } :: Nil);
+            { texture = Res.atlasName(), baked = res#atlas } :: Nil);
         ({ texturePath = HeadlessRender.imagePngs("debug", images) | cfg },
          HeadlessRender.imageTextureInfo(images))
 
@@ -118,9 +113,9 @@ mod SceneRender {
     /// アトラスから貼るクアッドがあるので、素の Render.draw ではなく texInfo つきの
     /// drawWith を通す。
     def shoot(cfg: HeadlessRender.RenderConfig, texInfo: String -> Option[GameEngine.TextureInfo],
-              ctx: App.ViewCtx, w: World.World, name: String): String \ IO =
+              ctx: App.ViewCtx, res: Res.Res, w: World.World, name: String): String \ IO =
         // 実機は静的な層（View.frameBorder）を別に敷くので、描き出しでは同じ物を足して並べる。
-        let items = List.append(View.frame(ctx, { t = renderTime() | w }), View.frameBorder(w#theme));
+        let items = List.append(View.frame(ctx, res, { t = renderTime() | w }), View.frameBorder(res#theme));
         let surfaces = Render.shaderSurfaces(items);
         let (drawables, polygons) = Render.drawWith(texInfo, Render.withoutShaders(items));
         HeadlessRender.renderPngWith(cfg, drawables, polygons, surfaces, name);
@@ -160,13 +155,12 @@ mod SceneRender {
             match (text |> Result.toOption |> Option.flatMap(ThemeDoc.fromJson)) {
                 case None => ()
                 case Some(cand) => {
-                    let w = loadWorld();
                     let sprites = run { PxSpriteDoc.load(World.spritePath()) }
                         with Fs.FileRead.runWithIO;
                     // 候補テーマは配色ごと変わる = アトラスの画素も変わるので、候補ごとに作り直す。
-                    let candWorld = World.withTheme(cand, sprites, w);
-                    let (candCfg, candTex) = withAtlasOf({ background = ThemeDoc.rec(cand)#bg | cfg }, candWorld);
-                    discard shoot(candCfg, candTex, ctx, candWorld, stripJson(f))
+                    let candRes = Res.withTheme(cand, sprites, loadRes());
+                    let (candCfg, candTex) = withAtlasOf({ background = ThemeDoc.rec(cand)#bg | cfg }, candRes);
+                    discard shoot(candCfg, candTex, ctx, candRes, World.initial(), stripJson(f))
                 }
             }
         })

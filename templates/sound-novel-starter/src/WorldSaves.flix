@@ -22,8 +22,8 @@ mod WorldSaves {
     }
 
     /// ページ tab の i 枠目に書く。
-    pub def writeSlot(tab: Saves.Tab, i: Int32, w: World.World): World.World \ Emit[World.Event] =
-        match WorldRead.slotHere(w) {
+    pub def writeSlot(res: Res.Res, tab: Saves.Tab, i: Int32, w: World.World): World.World \ Emit[World.Event] =
+        match WorldRead.slotHere(res, w) {
             case Some(slot) =>
                 Emit.emit(World.Event.Saved);
                 World.notice(StoryDoc.Label.Saved, World.withSaves(Saves.withSlot(tab, i, slot, w#saves), w))
@@ -31,8 +31,8 @@ mod WorldSaves {
         }
 
     /// クイックセーブ（クイックのページの先頭へ。前の物は後ろへ押す）。
-    pub def quickSave(w: World.World): World.World \ Emit[World.Event] =
-        match WorldRead.slotHere(w) {
+    pub def quickSave(res: Res.Res, w: World.World): World.World \ Emit[World.Event] =
+        match WorldRead.slotHere(res, w) {
             case Some(slot) =>
                 Emit.emit(World.Event.Saved);
                 World.notice(StoryDoc.Label.QuickSaved, World.withSaves(Saves.withPushed(Saves.Tab.Quick, slot, w#saves), w))
@@ -40,7 +40,7 @@ mod WorldSaves {
         }
 
     /// 今のページの i 枠目を選ぶ（セーブ: 空なら書き、あれば上書きを尋ねる。ロード: タイトルからはすぐ読み、読んでいる途中なら尋ねる）。
-    pub def chooseSlot(i: Int32, w: World.World): World.World \ Emit[World.Event] =
+    pub def chooseSlot(res: Res.Res, i: Int32, w: World.World): World.World \ Emit[World.Event] =
         match World.slotsOf(w) {
             case Some((tab, _)) =>
                 let at = withSlots(tab, i, w);
@@ -49,19 +49,19 @@ mod WorldSaves {
                     case World.Panel.SaveSlots(_, _) =>
                         if (not Saves.isWritable(tab)) at
                         else if (filled) World.askFor(World.Ask.Overwrite(tab, i), at)
-                        else writeSlot(tab, i, at)
+                        else writeSlot(res, tab, i, at)
                     case _ =>
                         if (not filled) at
                         else if (World.isReading(w)) World.askFor(World.Ask.Load(tab, i), at)
-                        else loadFrom(tab, i, at)
+                        else loadFrom(res, tab, i, at)
                 }
             case None => w
         }
 
     /// カーソルの枠を選ぶ。
-    pub def chooseHere(w: World.World): World.World \ Emit[World.Event] =
+    pub def chooseHere(res: Res.Res, w: World.World): World.World \ Emit[World.Event] =
         match World.slotsOf(w) {
-            case Some((_, i)) => chooseSlot(i, w)
+            case Some((_, i)) => chooseSlot(res, i, w)
             case None         => w
         }
 
@@ -126,11 +126,11 @@ mod WorldSaves {
         }
 
     /// ページ tab の i 枠目から読む。[遷移: Title / Reading→Reading]
-    pub def loadFrom(tab: Saves.Tab, i: Int32, w: World.World): World.World \ Emit[World.Event] =
+    pub def loadFrom(res: Res.Res, tab: Saves.Tab, i: Int32, w: World.World): World.World \ Emit[World.Event] =
         match Saves.slotOf(tab, i, w#saves) {
             case Some(slot) =>
                 Emit.emit(World.Event.Loaded);
-                World.notice(StoryDoc.Label.Loaded, WorldRead.restore(slot#mark, w))
+                World.notice(StoryDoc.Label.Loaded, WorldRead.restore(res, slot#mark, w))
             case None => w
         }
 }

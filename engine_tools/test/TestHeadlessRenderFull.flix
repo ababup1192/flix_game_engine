@@ -9,7 +9,7 @@ mod TestHeadlessRenderFull {
     def outDir(): String = "build/test/renderfull"
 
     def uiTtf(): String = "../templates/game-starter/assets/Xolonium-Regular.ttf"
-    def altTtf(): String = "../templates/novel-starter/assets/PixelMplus10-Regular.ttf"
+    def altTtf(): String = "../templates/rpg-starter/assets/PixelMplus10-Regular.ttf"
 
     def cfg(): HeadlessRender.RenderConfig \ IO =
         { design = { x = 48.0, y = 24.0 }, scale = 1, background = { r = 0.0, g = 0.0, b = 0.0 },

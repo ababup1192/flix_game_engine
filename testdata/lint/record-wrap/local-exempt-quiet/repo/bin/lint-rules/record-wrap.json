@@ -1,0 +1,11 @@
+{
+  "note": "負の見本の偽リポの規約。本物は bin/lint-rules/record-wrap.json",
+  "scopeSuffixes": [".flix"],
+  "skipPrefixes": ["build/", "lib/"],
+  "skipDirNames": ["build", "lib", "test"],
+  "roots": ["World.World"],
+  "threshold": 16,
+  "exempt": {},
+  "worldShape": {"resourceTypes": ["\\.Doc$"], "maxTopFields": 16},
+  "exemptRules": {}
+}

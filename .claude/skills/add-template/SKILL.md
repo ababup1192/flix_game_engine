@@ -28,7 +28,8 @@ allowed-tools: Read, Grep, Glob, Bash, Edit, Write
 **どれか欠けると Studio で「出ない / 絵がない / 作れない」になる。**
 
 ```
-- [ ] 1. templates/<genre>-starter/ を作った（rpg-starter を写経元に。具体値式ならリファレンス画像も生成する）
+- [ ] 1. templates/<genre>-starter/ を作った（World の形は game-starter・tidepool-starter を写経元に。具体値式ならリファレンス画像も生成する）
+- [ ] 1a. World は遊びの状態だけ（Doc と描く元は src/Res.flix・画面は enum。docs/flix-conventions.md「World は遊びの状態だけを持つ」。bin/fge record-wrap が止める）
 - [ ] 1b. Makefile は共有 mk を include するだけにした（共通ターゲットを書かない）
 - [ ] 2. reference/title.png を用意した
 - [ ] 3. make lint-palette が通った

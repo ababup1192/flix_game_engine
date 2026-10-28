@@ -1,0 +1,1 @@
+bin/fge record-wrap testdata/lint/record-wrap/world-resource-list-quiet/src/World.flix

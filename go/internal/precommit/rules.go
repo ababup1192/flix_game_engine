@@ -15,16 +15,21 @@ var RulesPath = filepath.Join("bin", "lint-rules", "precommit.json")
 
 // Matcher はステージしたパスの絞り込み。1 つの Matcher の中は AND
 // （suffixes と prefixes を両方書いたら両方に当たるパスだけ）、AnyOf は OR。
+// exceptPrefixes に当たるパスは、ほかの条件に当たっても外す。
 type Matcher struct {
-	AnyOf      []Matcher `json:"anyOf"`
-	Suffixes   []string  `json:"suffixes"`
-	Prefixes   []string  `json:"prefixes"`
-	Substrings []string  `json:"substrings"`
-	Basenames  []string  `json:"basenames"`
+	AnyOf          []Matcher `json:"anyOf"`
+	Suffixes       []string  `json:"suffixes"`
+	Prefixes       []string  `json:"prefixes"`
+	ExceptPrefixes []string  `json:"exceptPrefixes"`
+	Substrings     []string  `json:"substrings"`
+	Basenames      []string  `json:"basenames"`
 }
 
 // Match は 1 つのパスが当たるかを返す。
 func (m Matcher) Match(path string) bool {
+	if anyPrefix(path, m.ExceptPrefixes) {
+		return false
+	}
 	if len(m.AnyOf) > 0 {
 		for _, sub := range m.AnyOf {
 			if sub.Match(path) {

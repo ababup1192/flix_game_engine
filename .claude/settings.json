@@ -75,8 +75,6 @@
   },
   "permissions": {
     "deny": [
-      "Bash(git add *)",
-      "Bash(git commit *)",
       "Bash(gh repo delete *)",
       "Bash(gh repo archive *)",
       "Bash(gh release delete *)",

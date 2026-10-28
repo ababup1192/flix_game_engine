@@ -48,6 +48,8 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | 会話を人が書く・台詞と選択肢を順に出す・会話の中で数えて分ける | `*.yarn`（`<<declare>>` `<<set>>` `<<if>>` `{$x}` `visited`）を `bin/fge yarn build` → `Yarn.loadOr` + `YarnRunner.start` / `step`・値は `YarnRunner.valueOf` / `startWith` / `YarnStorage`・選べない選択肢は `DialogueOption` の `available` |
 | ノベルのルビ・セーブとロード・実写の背景をぼかす | `[ruby=よみ]字[/ruby]` → `RichText.placeRuby`・`YarnRunner.bookmarkOf` / `resume`・ShaderDoc の `blur` 場（手本 `sound-novel-starter`） |
 | 会話の行を本物の画面で見る・起動中のゲームをその行へ（変数の値を決めて） | Studio の会話・`bin/fge talk shot` / `goto`（始まり `talk node= line=`・`'$名前=値'` は `YarnStorage.withArgs` → `YarnRunner.startAtWith`） |
+| 画面（表紙・遊ぶ・クリア）を足す・その画面だけの値を持つ | World の `screen` の enum に case と payload（手本 game-starter・tidepool-starter） |
+| Doc・アトラス・シェーダーを World に平らに持たず外に出す | App の w を `Resources.With[res, w]`・`Resources.system` / `view` / `read`・読み直しは `Resources.reloadRow` |
 | Doc が壊れたら既定値で続けて知らせる | `DocJson.loadOr` + `Log.fellBackThen` / `warnThen` |
 | 直した後に絵を確かめる | `make render SHOT=<場面>` → 仕上げ `make reference-check` |
 | 描き出しの字の被り・z の外れを止める | `make render-lint`（許す物は `text-audit.local.json`） |

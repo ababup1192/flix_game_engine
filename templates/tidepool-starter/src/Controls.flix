@@ -2,12 +2,12 @@
 // どのキーがどの操作かは KeysDoc（player.keys.json）が決める。1 フレームに当てる操作は 1 つだけ。
 mod Controls {
 
-    use fge::{App, AudioMixer, AudioMixerDoc, DocTable, Emit, GameEngine, PxSpriteDoc, ShaderDoc, ShaderJson, SortingLayer, Vec2}
+    use fge::{App, AudioMixer, AudioMixerDoc, DocTable, Emit, GameEngine, PxSpriteDoc, Resources, ShaderDoc, ShaderJson, SortingLayer, Vec2}
     use fge::GameEngine.Key
 
     /// 毎フレームのシステム。終了の確認の窓が出ている間は Enter で終わる・Esc で戻る（マウスは tapAt）。
     /// Esc と Enter は OS の決まりに合わせた固定のキー（割り当ての Doc には載せない）。
-    pub def step(frame: App.Frame, w: World.World): World.World =
+    pub def step(frame: App.Frame, res: Res.Res, w: World.World): World.World =
         let pressed = key -> App.justPressed(key, frame);
         let w1 = World.tick(frame#dt, w);
         if (World.isAskingQuit(w1))
@@ -15,8 +15,8 @@ mod Controls {
              else if (pressed(Key.Escape)) World.answerQuit(false, w1)
              else w1)
         else if (pressed(Key.Escape)) World.askQuit(w1)
-        else if (frame#mouseClicked) tapAt(frame#cursor, w1)
-        else commandOf(frame, KeysDoc.rec(w1#keys)) |> Option.map(c -> apply(c, w1)) |> Option.getWithDefault(w1)
+        else if (frame#mouseClicked) tapAt(res, frame#cursor, w1)
+        else commandOf(frame, KeysDoc.rec(res#keys)) |> Option.map(c -> apply(res, c, w1)) |> Option.getWithDefault(w1)
 
     /// キーが表す操作。
     pub enum Command with Eq, ToString {
@@ -36,23 +36,23 @@ mod Controls {
             |> List.find(e -> tapped(fst(e))) |> Option.map(snd)
 
     /// 操作を画面ごとに当てる。題名は ←→ で開いた面を選んで決定、遊びは手・取り消し・やり直し・クリアの後の決定、終わりは決定で題名。
-    def apply(command: Command, w: World.World): World.World =
+    def apply(res: Res.Res, command: Command, w: World.World): World.World =
         match (w#screen, command) {
-            case (World.Screen.Title, Command.Confirm)  => World.enterLevel(w#level, w)
-            case (World.Screen.Title, Command.Go(World.Move.Left))  => World.selectLevel(-1, w)
-            case (World.Screen.Title, Command.Go(World.Move.Right)) => World.selectLevel(1, w)
-            case (World.Screen.Play, Command.Go(move))  => World.play(move, w)
-            case (World.Screen.Play, Command.Undo)      => World.undo(w)
-            case (World.Screen.Play, Command.Restart)   => World.restart(w)
-            case (World.Screen.Play, Command.Confirm)   => World.advance(w)
-            case (World.Screen.Ending, Command.Confirm) => World.backToTitle(w)
+            case (World.Screen.Title(level), Command.Confirm)  => World.enterLevel(res, level, w)
+            case (World.Screen.Title(_), Command.Go(World.Move.Left))  => World.selectLevel(res, -1, w)
+            case (World.Screen.Title(_), Command.Go(World.Move.Right)) => World.selectLevel(res, 1, w)
+            case (World.Screen.Play(_), Command.Go(move))  => World.play(res, move, w)
+            case (World.Screen.Play(_), Command.Undo)      => World.undo(res, w)
+            case (World.Screen.Play(_), Command.Restart)   => World.restart(res, w)
+            case (World.Screen.Play(_), Command.Confirm)   => World.advance(res, w)
+            case (World.Screen.Ending(_), Command.Confirm) => World.backToTitle(w)
             case _ => w
         }
 
     /// cursor を押した。押した物は絵と同じ木（View.layers）から描く順の手前で選ぶ —— 窓の奥には届かない。
-    def tapAt(cursor: Vec2.Vec2, w: World.World): World.World =
+    def tapAt(res: Res.Res, cursor: Vec2.Vec2, w: World.World): World.World =
         let ctx = App.pickCtx({ x = World.width(), y = World.height() });
-        match SortingLayer.pickFrom(cursor, View.layers(ctx, View.inputOf(w))) {
+        match SortingLayer.pickFrom(cursor, View.layers(ctx, View.inputOf(res, w))) {
             case Some(World.Press.QuitYes) => World.answerQuit(true, w)
             case Some(World.Press.QuitNo)  => World.answerQuit(false, w)
             case None                      => w
@@ -114,45 +114,50 @@ mod Controls {
     // ── Doc の読み込み・読み直し（watchFile / F1） ──
 
     /// 起動時・描き出し・テストが同じ形で読む Doc の束。
-    pub def loadDocs(): World.Docs \ Fs.FileRead =
+    pub def loadDocs(): Res.Docs \ Fs.FileRead =
         { rules = RulesDoc.load(RulesDoc.path()), levels = LevelsDoc.load(LevelsDoc.path()),
           keys = KeysDoc.load(KeysDoc.path()), theme = ThemeDoc.load(ThemeDoc.path()),
           sprites = PxSpriteDoc.load(World.spritePath()), surfaces = loadSurfaces(),
           mixer = AudioMixerDoc.load(AudioMixer.defaults(), mixerPath()) }
 
     /// 面の塗り一式。壊れた Doc は engine の見本の面にする（何も出ないより気付ける）。
-    def loadSurfaces(): World.Surfaces \ Fs.FileRead =
+    def loadSurfaces(): Res.Surfaces \ Fs.FileRead =
         let load = name -> ShaderJson.loadOr(ShaderDoc.waterVeins(), World.surfacePath(name));
         { rock = load("rock"), water = load("water"), caustics = load("caustics") }
 
-    def reloadRules(w: World.World): World.World \ Fs.FileRead =
-        World.withRules(RulesDoc.load(RulesDoc.path()), w)
+    def reloadRules(res: Res.Res): Res.Res \ Fs.FileRead =
+        Res.withRules(RulesDoc.load(RulesDoc.path()), res)
 
-    def reloadLevels(w: World.World): World.World \ Fs.FileRead =
-        World.withLevels(LevelsDoc.load(LevelsDoc.path()), w)
+    def reloadLevels(res: Res.Res): Res.Res \ Fs.FileRead =
+        Res.withLevels(LevelsDoc.load(LevelsDoc.path()), res)
 
-    def reloadKeys(w: World.World): World.World \ Fs.FileRead =
-        World.withKeys(KeysDoc.load(KeysDoc.path()), w)
+    def reloadKeys(res: Res.Res): Res.Res \ Fs.FileRead =
+        Res.withKeys(KeysDoc.load(KeysDoc.path()), res)
 
     /// テーマは色に加えて「塗りの仕上げ」も持つので、絵も読み直して掛け直す。
-    def reloadTheme(w: World.World): World.World \ Fs.FileRead =
-        World.withTheme(ThemeDoc.load(ThemeDoc.path()), PxSpriteDoc.load(World.spritePath()), w)
+    def reloadTheme(res: Res.Res): Res.Res \ Fs.FileRead =
+        Res.withTheme(ThemeDoc.load(ThemeDoc.path()), PxSpriteDoc.load(World.spritePath()), res)
 
-    def reloadSprites(w: World.World): World.World \ Fs.FileRead =
-        World.withSprites(PxSpriteDoc.load(World.spritePath()), w)
+    def reloadSprites(res: Res.Res): Res.Res \ Fs.FileRead =
+        Res.withSprites(PxSpriteDoc.load(World.spritePath()), res)
 
-    def reloadSurfaces(w: World.World): World.World \ Fs.FileRead =
-        World.withSurfaces(loadSurfaces(), w)
+    def reloadMixer(res: Res.Res): Res.Res \ Fs.FileRead =
+        Res.withMixer(AudioMixerDoc.load(AudioMixer.defaults(), mixerPath()), res)
+
+    def reloadSurfaces(res: Res.Res): Res.Res \ Fs.FileRead =
+        Res.withSurfaces(loadSurfaces(), res)
 
     /// Doc の一覧表(DocTable)。watchFile(保存即反映)・F1 の一括リロード・Studio へ名乗る「表示中」は、
     /// どれもこの 1 枚から導出する。docId は project.json の editor.resources[] の id と同じ物。
-    pub def docTable(): List[DocTable.Entry[World.World]] =
-        DocTable.row("rules",  RulesDoc.path(),   reloadRules)
-            :: DocTable.row("levels", LevelsDoc.path(), reloadLevels)
-            :: DocTable.row("keys",   KeysDoc.path(),   reloadKeys)
-            :: DocTable.row("theme",  ThemeDoc.path(),  reloadTheme)
-            :: DocTable.row("sprite", World.spritePath(), reloadSprites)
-            :: DocTable.row("mixer",  mixerPath(), w -> World.withMixer(AudioMixerDoc.load(AudioMixer.defaults(), mixerPath()), w))
+    /// 決まりと面は面の列が替わるので、World を新しい面の列へ収める（World.settleStages）。ほかは World をそのまま。
+    pub def docTable(): List[DocTable.Entry[Resources.With[Res.Res, World.World]]] =
+        let unchanged = (_, w) -> w;
+        Resources.reloadRow("rules",  RulesDoc.path(),   reloadRules, World.settleStages)
+            :: Resources.reloadRow("levels", LevelsDoc.path(), reloadLevels, World.settleStages)
+            :: Resources.reloadRow("keys",   KeysDoc.path(),   reloadKeys, unchanged)
+            :: Resources.reloadRow("theme",  ThemeDoc.path(),  reloadTheme, unchanged)
+            :: Resources.reloadRow("sprite", World.spritePath(), reloadSprites, unchanged)
+            :: Resources.reloadRow("mixer",  mixerPath(), reloadMixer, unchanged)
             :: (("rock" :: "water" :: "caustics" :: Nil)
-                |> List.map(name -> DocTable.row("shader", World.surfacePath(name), reloadSurfaces)))
+                |> List.map(name -> Resources.reloadRow("shader", World.surfacePath(name), reloadSurfaces, unchanged)))
 }

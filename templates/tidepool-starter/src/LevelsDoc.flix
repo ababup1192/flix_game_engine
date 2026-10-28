@@ -1,6 +1,6 @@
 // LevelsDoc — tidepool.levels.json（面ごとの 2 枚の格子・満ち引きの表・最少手数と解き方）の Doc 層。
 // 盤の値へ組むのは Board.fromRows。par・solution・solvedHash は make solve（Solve）が書く。
-// fail-open — 読めない・組めない面は飛ばし（World.stagesOf が 1 行ずつ言う）、1 面も無ければ defaults() の 1 面で起動する。
+// fail-open — 読めない・組めない面は飛ばし（Res.stagesOf が 1 行ずつ言う）、1 面も無ければ defaults() の 1 面で起動する。
 mod LevelsDoc {
     use fge::{DocJson, JsonCodec}
     use Util.Json.Json
@@ -19,7 +19,7 @@ mod LevelsDoc {
 
     pub type alias Rec = { version = Int32, levels = List[Level] }
 
-    /// 型検査が record を展開しないため、World が持つ形は名前付きの enum にする。
+    /// 型検査が record を展開しないため、Res が持つ形は名前付きの enum にする。
     pub enum Doc(Rec)
 
     pub def rec(d: Doc): Rec = match d { case Doc.Doc(r) => r }

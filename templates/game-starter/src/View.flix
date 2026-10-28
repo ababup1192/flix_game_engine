@@ -30,11 +30,11 @@ mod View {
     use ZOrder.Layer
 
     /// 描くのに要る値。部品は World でなくこれを読む（lint/rules.flix の view-no-world）。
-    /// 描くのに新しい値が要れば欄を足し、規則で導く値（主人公の大きさ・確認の窓が出ているか）は inputOf で World の関数から入れる。
+    /// 描くのに新しい値が要れば欄を足し、規則で導く値（主人公の位置と大きさ・確認の窓が出ているか）は inputOf で World の関数から入れる。
     pub type alias In = {
         t = Float64,
-        x = Float64,
-        y = Float64,
+        // 主人公の中心（主人公が出ていない画面では None。halo と hero は何も描かない）。
+        hero = Option[Vec2.Vec2],
         shader = ShaderDoc.Spec,
         theme = ThemeDoc.Doc,
         sprites = PxSpriteDoc.Doc,
@@ -44,13 +44,13 @@ mod View {
         quitPrompt = String
     }
 
-    /// World から描くのに要る値だけを写す（View の中で World を読むのは入口の frame とここだけ）。
-    pub def inputOf(w: World.World): In =
-        { t = w#t, x = w#x, y = w#y, shader = w#shader, theme = w#theme, sprites = w#sprites, atlas = w#atlas,
-          heroBox = World.heroBox(w), askingQuit = World.isAskingQuit(w), quitPrompt = SampleDoc.rec(w#doc)#quitPrompt }
+    /// 描く元と World から描くのに要る値だけを写す（View の中で World を読むのは入口の frame とここだけ）。
+    pub def inputOf(res: Res.Res, w: World.World): In =
+        { t = w#t, hero = World.heroAt(w), shader = res#shader, theme = res#theme, sprites = res#sprites, atlas = res#atlas,
+          heroBox = World.heroBox(res), askingQuit = World.isAskingQuit(w), quitPrompt = SampleDoc.rec(res#sample)#quitPrompt }
 
-    pub def frame(ctx: App.ViewCtx, w: World.World): List[Render.PlacedItem] =
-        SortingLayer.compose(ctx, layers(ctx, inputOf(w)))
+    pub def frame(ctx: App.ViewCtx, res: Res.Res, w: World.World): List[Render.PlacedItem] =
+        SortingLayer.compose(ctx, layers(ctx, inputOf(res, w)))
 
     /// 層ごとの木（絵と押せる物の当たり）。Controls.tapAt も同じ木から押した物を選ぶ。
     pub def layers(ctx: App.ViewCtx, w: In): List[(Layer, ZStack.Tree[Layer, World.Press])] =
@@ -78,24 +78,28 @@ mod View {
     /// 周りを沈めたほうが背景の絵を殺さずに輪郭が立つ。
     /// 色は黒でなく寒色へ近づけた暗い色にする（黒で沈めると絵が濁る）。
     def halo(w: In): List[Render.PlacedItem] =
-        Render.glowAt({ x = w#x, y = w#y }, w#heroBox#x * 1.7,
+        w#hero |> Option.map(p -> Render.glowAt(p, w#heroBox#x * 1.7,
             Color.cool(Color.darken(ThemeDoc.rec(w#theme)#bg, 0.3), 0.1),
-            { alpha = 0.45, blend = DrawCmd.BlendMode.Multiply }, 0)
+            { alpha = 0.45, blend = DrawCmd.BlendMode.Multiply }, 0))
+            |> Option.getWithDefault(Nil)
 
     // ── 主人公（ドット絵 + 塗りの仕上げ） ──
 
-    /// 絵は差し色 1 色で平らに塗ってあり、ふち光と影は World が読み込み時に
+    /// 絵は差し色 1 色で平らに塗ってあり、ふち光と影は Res が読み込み時に
     /// PxShade で乗せている（走行中の負荷は増えない）。
     /// 立ち止まっていても少し上下する — 画面を完全に静止させないため。
     ///
     /// 描くのは drawQuad（作ったアトラスから 1 コマ = 1 クアッド）。画素ぶんの四角に開く
     /// PxSprite.draw もあるが、そちらは組む数が絵の大きさに比例するので、キャラが増えた
-    /// 瞬間に重くなる。作る所と、なぜ作るかは World.bakedOf。
+    /// 瞬間に重くなる。作る所と、なぜ作るかは Res.bakedOf。
     def hero(w: In): List[Render.PlacedItem] =
+        w#hero |> Option.map(p -> heroSpriteAt(w, p)) |> Option.getWithDefault(Nil)
+
+    def heroSpriteAt(w: In, p: Vec2.Vec2): List[Render.PlacedItem] =
         let box = w#heroBox;
         let bob = Sway.wave(w#t, 0.0, 1.7) * 1.5;
-        let topLeft = { x = w#x - box#x / 2.0, y = w#y - box#y / 2.0 + bob };
-        let items = PxSprite.drawQuad(w#sprites, w#atlas, World.atlasName(),
+        let topLeft = { x = p#x - box#x / 2.0, y = p#y - box#y / 2.0 + bob };
+        let items = PxSprite.drawQuad(w#sprites, w#atlas, Res.atlasName(),
             "hero", "idle", topLeft, false, World.spriteScale(), 0);
         if (List.isEmpty(items))
             // fail-open: スプライトが無い・読めないときは差し色の四角。

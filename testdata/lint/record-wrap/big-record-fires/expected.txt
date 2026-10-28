@@ -2,5 +2,5 @@
    testdata/lint/record-wrap/big-record-fires/src/World.flix:3 track = Option[Track.Track] (展開すると 18)
 [lint-record-wrap] 1 件。record の型エイリアスは使われるたびに中身のまま展開されるので、World を取る全 def で型の木が大きくなり flix check の時間とメモリが伸びます。
   1 case の enum で包むと展開が止まります (docs/flix-conventions.md「型の設計」)。
-  どうしても残すなら bin/lint-rules/record-wrap.json の exempt へ "World.World::欄名" と理由 1 行
+  どうしても残すなら bin/lint-rules/record-wrap.local.json（エンジンのリポでは record-wrap.json）の exempt へ "World.World::欄名" と理由 1 行
 [exit=1]

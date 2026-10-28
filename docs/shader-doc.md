@@ -13,7 +13,7 @@ vignette・熱い溶岩を **JSON の保存だけで即調整できる**形で�
 - 呼び方: `Render.shaderFill(spec, rect, t, z)` / `Render.shaderFillMasked(spec, rect, polys, t, z)`
 - 面全体の濃さは `Render.overItem(Render.fade(k), 面)`（0..1・場の alpha に掛かる）。Spec の場に `Const` で書き込んで毎コマ変えない — Spec が変わるたびに GL のシェーダーを作り直す
 - 読み方: `ShaderJson.load(path)` は **fail-open**。`Result.getWithDefault(既定の Spec)` で受ける
-- 保存即反映: `App.watchFile(path, …)` に繋ぐ（`templates/rpg-starter/src/Controls.flix` が手本）
+- 保存即反映: Spec を Res の欄に置き、`Controls.docTable` に `Resources.reloadRow(id, path, …)` の行を足す（`templates/tidepool-starter/src/Controls.flix` が手本）
 
 ## 全体の形
 
