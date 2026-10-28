@@ -78,7 +78,6 @@
       "Bash(gh repo delete *)",
       "Bash(gh repo archive *)",
       "Bash(gh release delete *)",
-      "Bash(gh pr merge *)",
       "Bash(gh pr close *)",
       "Bash(gh issue close *)",
       "Bash(gh secret set *)",
