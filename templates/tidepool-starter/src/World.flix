@@ -2,13 +2,14 @@
 // 1 手（act）: ヤドカリの手を盤に当てる → t を 1 進める → 水を更新（Tide.flow）→ 流木の浮き沈み → クリアか流されたか。
 // 手ごとの状態（State）は Worldline に積み、取り消し（Z）は 1 つ戻る・やり直し（R）は面の初めを新しく積む。
 // 先読みは同じ act に「待つ」を当てた結果（forecastOf）。盤の値は Board、水は Tide、色は ThemeDoc。
+// Doc と面の列は Res が持ち、World は持たない（読む口は先頭に res を受ける）。
 //
 // ── 場面の移り変わり ──
 //   Title ──決定──▶ Play（Phase: Playing ──巻き貝──▶ Cleared ──決定──▶ 次の面の Play / 最後なら Ending）
 //                              Playing ──沈んだ──▶ Washed ──取り消し・やり直し──▶ Playing
 mod World {
 
-    use fge::{AudioMixer, EcsTween, Emit, Log, PxShade, PxSpriteAtlas, PxSpriteDoc, ShaderDoc, Worldline}
+    use fge::{EcsTween, Emit, Worldline}
     use Board.Cell
 
     /// ヤドカリの手。動けなかった手は手に数えない（act が None を返す）。
@@ -57,9 +58,6 @@ mod World {
     pub def toTuple(s: State): (Cell, Set[Cell], Set[Cell], Tide.Water, Int32, Phase) =
         (s#crab, s#pebbles, s#driftwood, s#water, s#t, s#phase)
 
-    /// 遊べる 1 面（Doc の名前と最少手数と盤）。rocks は盤から導いた岩の段の形（描くための形を前もって作って持つ。atlas と同じ扱い）。
-    pub type alias Stage = { name = String, parMoves = Int32, board = Board.Board, rocks = Layout.RockLevels }
-
     /// 終了の確認。Esc か窓の閉じるボタンで Asking、はいで Confirmed（Main の App.quitWhen が見る）、いいえで Playing へ戻る。
     pub enum Quit with Eq, ToString {
         case Playing
@@ -67,8 +65,19 @@ mod World {
         case Confirmed
     }
 
-    /// どの画面か。
-    pub enum Screen with Eq, ToString {
+    /// どの画面か。その画面だけが持つ値を payload に持つ。
+    /// WhyNot: Eq・ToString を付けない。Session は Worldline と動きの表を持ち、比べられない。比べる・字にするのは ScreenKind。
+    pub enum Screen {
+        /// 選んでいる面（0 から）。
+        case Title(Int32)
+        /// 遊んでいる面。
+        case Play(Session)
+        /// 最後の面を終えた後。最後の面の Session をそのまま持つ（背景の盤と、クリアの演出の時計 since を読む）。
+        case Ending(Session)
+    }
+
+    /// 画面の名前だけ（比べる・flow の問いと指紋の字にする）。
+    pub enum ScreenKind with Eq, ToString {
         case Title
         case Play
         case Ending
@@ -80,17 +89,8 @@ mod World {
         case QuitNo
     }
 
-    pub type alias World = {
-        rules = RulesDoc.Doc,
-        levels = LevelsDoc.Doc,
-        keys = KeysDoc.Doc,
-        theme = ThemeDoc.Doc,
-        sprites = PxSpriteDoc.Doc,
-        // ドット絵を 1 枚にまとめたアトラスと、その画素から導いた鍵（bakedOf）。
-        atlas = PxSpriteAtlas.Baked,
-        atlasKey = String,
-        surfaces = Surfaces,
-        stages = Vector[Stage],
+    /// 遊んでいる面の中身。
+    pub type alias SessionRec = {
         level = Int32,
         line = Worldline.Worldline[State],
         // 1 手の前の状態と、そこから今の状態への進み（0..1。motion が進める）。画面は 2 つの間をつないで描く。
@@ -98,34 +98,26 @@ mod World {
         blend = Float64,
         motion = EcsTween.Tweens[Int32, Int32],
         // 今の状態になった時刻（クリア・流されたの演出の時計）。
-        since = Float64,
-        // クリアした面 → 一番多く取った貝殻の数（題名の画面で開いている面もここから決まる）。
+        since = Float64
+    }
+
+    /// 遊んでいる面。作るのは World の中（freshLevel）だけ。外からは sessionRecOf で読む。
+    enum SessionOf(SessionRec)
+
+    pub type alias Session = SessionOf
+
+    /// 遊びの状態。best はクリアした面 → 一番多く取った貝殻の数（題名の画面で開いている面もここから決まる）。
+    /// events は起きた出来事の溜め（Controls.sounds が前後の差 Emit.since だけを読む）。
+    pub type alias World = {
         best = Map[Int32, Int32],
         t = Float64,
         screen = Screen,
         quit = Quit,
-        // 起きた出来事の溜め（Controls.sounds が前後の差 Emit.since だけを読む）と、音の通り道。
-        events = Emit.Events[Event],
-        mixer = AudioMixer.Mixer
+        events = Emit.Events[Event]
     }
 
-    /// 起動時と描き出しが同じ形で読む Doc の束。
-    pub type alias Docs = {
-        rules = RulesDoc.Doc,
-        levels = LevelsDoc.Doc,
-        keys = KeysDoc.Doc,
-        theme = ThemeDoc.Doc,
-        sprites = PxSpriteDoc.Doc,
-        surfaces = Surfaces,
-        mixer = AudioMixer.Mixer
-    }
-
-    /// 面を塗る宣言シェーダーの一式（どれも assets/*.shader.json から読む）。
-    pub type alias Surfaces = {
-        rock = ShaderDoc.Spec,
-        water = ShaderDoc.Spec,
-        caustics = ShaderDoc.Spec
-    }
+    /// 描くため・問いのために読む、今の面と状態。Title は選んでいる面の初め（before = now・blend = 1）。
+    pub type alias Shown = { level = Int32, now = State, before = State, blend = Float64, since = Float64 }
 
     // ══════════════════════════════════════════════════════
     // 1 手の規則
@@ -254,51 +246,101 @@ mod World {
         if (moves <= parMoves) 3 else if (moves <= parMoves + RulesDoc.rec(rules)#shellWidth) 2 else 1
 
     // ══════════════════════════════════════════════════════
+    // 画面と面を読む
+    // ══════════════════════════════════════════════════════
+
+    def sessionRec(session: Session): SessionRec = match session {
+        case SessionOf.SessionOf(rec) => rec
+    }
+
+    def mapSessionRec(f: SessionRec -> SessionRec, session: Session): Session = SessionOf.SessionOf(f(sessionRec(session)))
+
+    /// 遊んでいる面の中身（Play の外は None）。
+    pub def sessionRecOf(w: World): Option[SessionRec] = match w#screen {
+        case Screen.Play(session) => Some(sessionRec(session))
+        case _                    => None
+    }
+
+    /// 遊んでいる面の中身を f で替える（Play の外はそのまま）。
+    def mapSession(f: SessionRec -> SessionRec, w: World): World = match w#screen {
+        case Screen.Play(session) => { screen = Screen.Play(mapSessionRec(f, session)) | w }
+        case _                    => w
+    }
+
+    def current(s: SessionRec): State = Worldline.current(s#line)
+
+    def shownOfSession(s: SessionRec): Shown =
+        { level = s#level, now = current(s), before = s#before, blend = s#blend, since = s#since }
+
+    /// 今の面と状態（値は加工しない。背景のための差し替えは View.inputOf）。
+    pub def shownOf(res: Res.Res, w: World): Shown = match w#screen {
+        case Screen.Title(level) =>
+            let now = startOf(stageAt(res, level)#board);
+            { level = level, now = now, before = now, blend = 1.0, since = w#t }
+        case Screen.Play(session)   => shownOfSession(sessionRec(session))
+        case Screen.Ending(session) => shownOfSession(sessionRec(session))
+    }
+
+    pub def state(res: Res.Res, w: World): State = shownOf(res, w)#now
+
+    /// 今の面の番号（0 から）。
+    pub def levelOf(w: World): Int32 = match w#screen {
+        case Screen.Title(level)    => level
+        case Screen.Play(session)   => sessionRec(session)#level
+        case Screen.Ending(session) => sessionRec(session)#level
+    }
+
+    pub def screenKindOf(w: World): ScreenKind = match w#screen {
+        case Screen.Title(_)  => ScreenKind.Title
+        case Screen.Play(_)   => ScreenKind.Play
+        case Screen.Ending(_) => ScreenKind.Ending
+    }
+
+    // ══════════════════════════════════════════════════════
     // 面の進行・取り消し・やり直し
     // ══════════════════════════════════════════════════════
 
-    /// Doc から遊べる面の列を組む（組めない面は飛ばして 1 行ずつ言う。LevelsDoc.boardsOf）。
-    def stagesOf(rules: RulesDoc.Doc, levels: LevelsDoc.Doc): Vector[Stage] =
-        let built = LevelsDoc.boardsOf(rules, levels);
-        built#boards
-            |> Log.warnAllThen(built#problems)
-            |> List.map(match (level, b) -> { name = level#name, parMoves = level#parMoves, board = b, rocks = Layout.rockLevelsOf(b) })
-            |> List.toVector
+    /// 面の番号を面の列の内へ収める。
+    def clampLevel(res: Res.Res, level: Int32): Int32 = Int32.max(0, Int32.min(Vector.length(res#stages) - 1, level))
+
+    def stageAt(res: Res.Res, level: Int32): Res.Stage = Vector.get(clampLevel(res, level), res#stages)
 
     /// 今の面。
-    def stage(w: World): Stage =
-        Vector.get(Int32.max(0, Int32.min(Vector.length(w#stages) - 1, w#level)), w#stages)
+    def stage(res: Res.Res, w: World): Res.Stage = stageAt(res, levelOf(w))
 
-    pub def board(w: World): Board.Board = stage(w)#board
+    pub def board(res: Res.Res, w: World): Board.Board = stage(res, w)#board
 
-    pub def rockLevels(w: World): List[Layout.RockLevel] = Layout.levelsOf(stage(w)#rocks)
-
-    pub def state(w: World): State = Worldline.current(w#line)
+    pub def rockLevels(res: Res.Res, w: World): List[Layout.RockLevel] = Layout.levelsOf(stage(res, w)#rocks)
 
     /// 面 index の初めから遊ぶ（取り消しの履歴も新しくする）。
-    pub def enterLevel(index: Int32, w: World): World = freshLevel(index, w) |> logged(Event.Selected :: Nil)
+    pub def enterLevel(res: Res.Res, index: Int32, w: World): World = freshLevel(res, index, w) |> logged(Event.Selected :: Nil)
 
-    def freshLevel(index: Int32, w: World): World =
-        let entered = { level = index, screen = Screen.Play | w };
-        let start = startOf(board(entered));
-        { line = Worldline.make(start, RulesDoc.rec(w#rules)#undoCap), before = start, blend = 1.0,
-          motion = Map.empty(), since = w#t | entered }
+    def freshLevel(res: Res.Res, index: Int32, w: World): World =
+        let start = startOf(stageAt(res, index)#board);
+        let session = { level = index, line = Worldline.make(start, RulesDoc.rec(res#rules)#undoCap), before = start, blend = 1.0,
+                        motion = Map.empty(), since = w#t };
+        { screen = Screen.Play(SessionOf.SessionOf(session)) | w }
 
-    /// 手を当てる。動けなかった手は何も変えない（履歴も積まない）。
-    pub def play(move: Move, w: World): World =
-        match act(board(w), move, state(w)) {
-            case Some(next) => movedFrom(w, { line = Worldline.record(next, w#line) | w }) |> logged(eventsOf(board(w), state(w), next))
-            case None       => w
-        }
+    /// 手を当てる。動けなかった手と、Play の外では何も変えない（履歴も出来事も積まない）。
+    pub def play(res: Res.Res, move: Move, w: World): World =
+        sessionRecOf(w) |> Option.flatMap(s -> {
+            let b = stageAt(res, s#level)#board;
+            act(b, move, current(s)) |> Option.map(next ->
+                w |> mapSession(movedTo(res, w#t, Worldline.record(next, s#line))) |> logged(eventsOf(b, current(s), next)))
+        }) |> Option.getWithDefault(w)
 
-    /// 1 手戻す（流された後・クリアの後も戻れる）。
-    pub def undo(w: World): World =
-        let undone = movedFrom(w, { line = Worldline.undo(w#line) | w });
-        logged(if (toTuple(state(undone)) == toTuple(state(w))) Nil else Event.Undone :: Nil, undone)
+    /// 1 手戻す（流された後・クリアの後も戻れる）。Play の外では何もしない。
+    pub def undo(res: Res.Res, w: World): World =
+        sessionRecOf(w) |> Option.map(s -> {
+            let undone = movedTo(res, w#t, Worldline.undo(s#line), s);
+            w |> mapSession(_ -> undone) |> logged(if (toTuple(current(undone)) == toTuple(current(s))) Nil else Event.Undone :: Nil)
+        }) |> Option.getWithDefault(w)
 
-    /// 面の初めへ。履歴は残すので、取り消しでやり直しの前へ戻れる。
-    pub def restart(w: World): World =
-        movedFrom(w, { line = Worldline.record(startOf(board(w)), w#line) | w }) |> logged(Event.Restarted :: Nil)
+    /// 面の初めへ。履歴は残すので、取り消しでやり直しの前へ戻れる。Play の外では何もしない。
+    pub def restart(res: Res.Res, w: World): World =
+        sessionRecOf(w) |> Option.map(s ->
+            w |> mapSession(movedTo(res, w#t, Worldline.record(startOf(stageAt(res, s#level)#board), s#line))) |> logged(Event.Restarted :: Nil)
+        ) |> Option.getWithDefault(w)
 
     /// 1 手の出来事: 巻き貝に着いた・流されたならそれだけ。ほかは動き（押す・流木・歩く）と、潮の満ち切り・引き切り。
     pub def eventsOf(b: Board.Board, before: State, after: State): List[Event] =
@@ -329,35 +371,44 @@ mod World {
     def logged(events: List[Event], w: World): World =
         { events = snd(Emit.collectInto(() -> List.forEach(event -> Emit.emit(event), events), w#events)) | w }
 
-    /// 状態が変わった後: 前の状態から今の状態へつなぐ動きを始める。
+    /// 状態が変わった後（line が新しい履歴）: 前の状態から今の状態へつなぐ動きを始める。t は今の時刻。
     /// 動いている途中で次の手が来ても、前の状態は「終わった後」の値なので、動きは終わりへ飛んでから次へ移る。
-    def movedFrom(prev: World, w: World): World =
+    def movedTo(res: Res.Res, t: Float64, line: Worldline.Worldline[State], s: SessionRec): SessionRec =
         let track = EcsTween.Track.Scalar({ start = 0.0, target = 1.0 });
-        { before = state(prev), blend = 0.0, since = w#t,
-          motion = EcsTween.start((0, 0), track, RulesDoc.rec(w#rules)#tweenSeconds, EcsTween.Easing.EaseInOut, false, Map.empty()) | w }
+        { line = line, before = current(s), blend = 0.0, since = t,
+          motion = EcsTween.start((0, 0), track, RulesDoc.rec(res#rules)#tweenSeconds, EcsTween.Easing.EaseInOut, false, Map.empty()) | s }
 
-    /// クリアの後の決定: 貝殻を残して次の面へ。最後の面なら Ending。
-    pub def advance(w: World): World =
-        if (state(w)#phase != Phase.Cleared) w
+    /// クリアの後の決定: 貝殻を残して次の面へ。最後の面なら Ending（Session はそのまま持つ）。
+    pub def advance(res: Res.Res, w: World): World = match w#screen {
+        case Screen.Play(session) => advanceFrom(res, session, w)
+        case _                    => w
+    }
+
+    def advanceFrom(res: Res.Res, session: Session, w: World): World =
+        let s = sessionRec(session);
+        if (current(s)#phase != Phase.Cleared) w
         else {
-            let shells = shellsFor(w#rules, stage(w)#parMoves, state(w)#t);
-            let kept = { best = Map.insertWith(Int32.max, w#level, shells, w#best) | w };
-            if (w#level + 1 >= Vector.length(w#stages)) logged(Event.Selected :: Nil, { screen = Screen.Ending | kept })
-            else enterLevel(w#level + 1, kept)
+            let shells = shellsFor(res#rules, stageAt(res, s#level)#parMoves, current(s)#t);
+            let kept = { best = Map.insertWith(Int32.max, s#level, shells, w#best) | w };
+            if (s#level + 1 >= Vector.length(res#stages)) logged(Event.Selected :: Nil, { screen = Screen.Ending(session) | kept })
+            else enterLevel(res, s#level + 1, kept)
         }
 
     /// 題名の画面で開いている面か（面 1 と、前の面をクリアした面）。
-    pub def isOpened(index: Int32, w: World): Bool =
-        index >= 0 and index < Vector.length(w#stages) and (index == 0 or Map.memberOf(index - 1, w#best))
+    pub def isOpened(res: Res.Res, index: Int32, w: World): Bool =
+        index >= 0 and index < Vector.length(res#stages) and (index == 0 or Map.memberOf(index - 1, w#best))
 
-    /// 題名の画面で選ぶ面を delta だけ動かす（開いていない面へは動かない）。
-    pub def selectLevel(delta: Int32, w: World): World =
-        if (isOpened(w#level + delta, w)) logged(Event.Selected :: Nil, { level = w#level + delta | w }) else w
+    /// 題名の画面で選ぶ面を delta だけ動かす（開いていない面へは動かない。題名の外では何もしない）。
+    pub def selectLevel(res: Res.Res, delta: Int32, w: World): World = match w#screen {
+        case Screen.Title(level) if isOpened(res, level + delta, w) =>
+            logged(Event.Selected :: Nil, { screen = Screen.Title(level + delta) | w })
+        case _ => w
+    }
 
     /// 今の面の名前と最少手数。
-    pub def stageName(w: World): String = stage(w)#name
+    pub def stageName(res: Res.Res, w: World): String = stage(res, w)#name
 
-    pub def parMoves(w: World): Int32 = stage(w)#parMoves
+    pub def parMoves(res: Res.Res, w: World): Int32 = stage(res, w)#parMoves
 
     // ══════════════════════════════════════════════════════
     // 起動・画面・Doc の差し替え
@@ -371,55 +422,24 @@ mod World {
     /// 面の名前 → Doc のパス。
     pub def surfacePath(name: String): String = "assets/${name}.shader.json"
 
-    /// 「中の色 → (明るい色, 暗い色)」の対応。文字は sprite.json の legend に合わせる。
-    def shadeRamp(): PxShade.Ramp = Map#{ 'a' => ('A', 'd') }
-
-    /// 読み込んだドット絵に仕上げ（ふち光・接地影・ディザ・粒）を掛ける（読み込み直後の 1 回だけ）。
-    def shaded(theme: ThemeDoc.Doc, doc: PxSpriteDoc.Doc): PxSpriteDoc.Doc =
-        PxShade.shadeDoc(ThemeDoc.rec(theme)#shade, shadeRamp(), doc)
-
-    /// GPU に登録するアトラスの論理名（View の drawQuad と Main の withSpriteAtlases がこの名前で待ち合わせる）。
-    pub def atlasName(): String = "px"
-
-    /// ドット絵を 1 枚のアトラスにまとめ、GPU キャッシュ用の鍵と対で返す。
-    /// WhyNot: 鍵を名前だけにしない。Doc や色票を保存し直して絵が変わっても、鍵が同じだと GPU に古いテクスチャが残る。
-    def bakedOf(theme: ThemeDoc.Doc, sprites: PxSpriteDoc.Doc): (PxSpriteAtlas.Baked, String) =
-        let baked = PxSpriteAtlas.bake(sprites, key -> ThemeDoc.resolver(theme, key));
-        let h = baked#pixels |> Vector.foldLeft((acc, px) -> acc * 31 + px, 17);
-        (baked, "${atlasName()}:${Int32.toString(baked#side)}:${Int32.toString(h)}")
-
-    def withShadedSprites(theme: ThemeDoc.Doc, sprites: PxSpriteDoc.Doc, w: World): World =
-        let doc = shaded(theme, sprites);
-        let (baked, key) = bakedOf(theme, doc);
-        { theme = theme, sprites = doc, atlas = baked, atlasKey = key | w }
-
     /// ゲーム開始時の状態（題名の画面・面 1）。
-    pub def initial(docs: Docs): World =
-        let shadedSprites = shaded(docs#theme, docs#sprites);
-        let (baked, key) = bakedOf(docs#theme, shadedSprites);
-        let stages = stagesOf(docs#rules, docs#levels);
-        let first = Vector.head(stages) |> Option.map(s -> startOf(s#board))
-            |> Option.getWithDefault({ crab = (0, 0), pebbles = Set.empty(), driftwood = Set.empty(),
-                                       water = Map.empty(), t = 0, phase = Phase.Playing });
-        { rules = docs#rules, levels = docs#levels, keys = docs#keys, theme = docs#theme, sprites = shadedSprites,
-          atlas = baked, atlasKey = key, surfaces = docs#surfaces,
-          stages = stages, level = 0, line = Worldline.make(first, RulesDoc.rec(docs#rules)#undoCap),
-          before = first, blend = 1.0, motion = Map.empty(), since = 0.0, best = Map.empty(),
-          t = 0.0, screen = Screen.Title, quit = Quit.Playing, events = Emit.empty(), mixer = docs#mixer }
+    pub def initial(): World =
+        { best = Map.empty(), t = 0.0, screen = Screen.Title(0), quit = Quit.Playing, events = Emit.empty() }
 
-    /// 時刻を進める（水や海藻の揺れ）と、1 手の動きを進める。
+    /// 時刻を進める（水や海藻の揺れ）と、遊んでいる面の 1 手の動きを進める。
     pub def tick(dt: Float64, w: World): World =
-        let (motion, outs, _) = EcsTween.step(dt, w#motion);
+        { t = w#t + dt | w } |> mapSession(tickMotion(dt))
+
+    def tickMotion(dt: Float64, s: SessionRec): SessionRec =
+        let (motion, outs, _) = EcsTween.step(dt, s#motion);
         let blend = outs |> List.foldLeft((acc, out) -> match snd(out) {
             case EcsTween.Out.ScalarOut(v) => v
             case _                         => acc
-        }, w#blend);
-        { t = w#t + dt, motion = motion, blend = blend | w }
+        }, s#blend);
+        { motion = motion, blend = blend | s }
 
-    pub def withScreen(screen: Screen, w: World): World = { screen = screen | w }
-
-    /// 終わりの画面から題名へ。
-    pub def backToTitle(w: World): World = logged(Event.Selected :: Nil, withScreen(Screen.Title, w))
+    /// 題名へ（どの画面からでも。選ぶ面は今の面）。
+    pub def backToTitle(w: World): World = logged(Event.Selected :: Nil, { screen = Screen.Title(levelOf(w)) | w })
 
     // ── 終了の確認 ──
 
@@ -439,27 +459,11 @@ mod World {
 
     // ── Doc の差し替え（保存即反映） ──
 
-    /// 決まりか面の Doc を差し替えたら面を組み直し、遊んでいる面は初めから（盤の形も満ち引きも変わりうるので履歴は持ち越さない）。
-    pub def withRules(rules: RulesDoc.Doc, w: World): World = rebuilt({ rules = rules | w })
-
-    pub def withLevels(levels: LevelsDoc.Doc, w: World): World = rebuilt({ levels = levels | w })
-
-    def rebuilt(w: World): World =
-        let stages = stagesOf(w#rules, w#levels);
-        let level = Int32.max(0, Int32.min(Vector.length(stages) - 1, w#level));
-        let reloaded = { stages = stages | w };
-        if (w#screen == Screen.Play) freshLevel(level, reloaded) else { level = level | reloaded }
-
-    pub def withKeys(keys: KeysDoc.Doc, w: World): World = { keys = keys | w }
-
-    /// テーマには仕上げの強さ・光の向きも入っているので、色を変えたら絵も掛け直す。
-    pub def withTheme(theme: ThemeDoc.Doc, sprites: PxSpriteDoc.Doc, w: World): World =
-        withShadedSprites(theme, sprites, w)
-
-    pub def withSprites(sprites: PxSpriteDoc.Doc, w: World): World =
-        withShadedSprites(w#theme, sprites, w)
-
-    pub def withSurfaces(surfaces: Surfaces, w: World): World = { surfaces = surfaces | w }
-
-    pub def withMixer(mixer: AudioMixer.Mixer, w: World): World = { mixer = mixer | w }
+    /// 面の列が組み直された後（決まりか面の Doc を保存した）: 面の番号を数の内に収める。遊んでいる面は初めから
+    /// （盤の形も満ち引きも変わりうるので履歴は持ち越さない・出来事は積まない）。終わりの画面は番号だけ収め、終えた状態と時刻はそのまま。
+    pub def settleStages(res: Res.Res, w: World): World = match w#screen {
+        case Screen.Title(level)    => { screen = Screen.Title(clampLevel(res, level)) | w }
+        case Screen.Play(session)   => freshLevel(res, clampLevel(res, sessionRec(session)#level), w)
+        case Screen.Ending(session) => { screen = Screen.Ending(mapSessionRec(s -> { level = clampLevel(res, s#level) | s }, session)) | w }
+    }
 }

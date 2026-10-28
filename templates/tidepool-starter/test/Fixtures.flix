@@ -19,13 +19,16 @@ mod Fixtures {
     pub def rowOf(y: Int32, water: Tide.Water, b: Board.Board): List[Int32] =
         List.range(0, b#cols) |> List.map(x -> Map.getWithDefault((x, y), -1, water))
 
-    /// 既定の Doc（面は LevelsDoc の既定の 1 面）で組んだ、面 1 を遊び始めた World。
-    pub def world(): World.World =
+    /// 既定の Doc（面は LevelsDoc の既定の 1 面）で組んだ描く元。
+    pub def res(): Res.Res =
         let demo = ShaderDoc.demoSurface();
-        World.initial({ rules = RulesDoc.defaults(), levels = LevelsDoc.defaults(), keys = KeysDoc.defaults(),
-                        theme = ThemeDoc.defaults(), sprites = PxSpriteDoc.empty(),
-                        surfaces = { rock = demo, water = demo, caustics = demo }, mixer = AudioMixer.defaults() })
-            |> World.enterLevel(0)
+        Res.build({ rules = RulesDoc.defaults(), levels = LevelsDoc.defaults(), keys = KeysDoc.defaults(),
+                 theme = ThemeDoc.defaults(), sprites = PxSpriteDoc.empty(),
+                 surfaces = { rock = demo, water = demo, caustics = demo }, mixer = AudioMixer.defaults() })
+
+    /// res() で、面 1 を遊び始めた World。
+    pub def world(): World.World =
+        World.initial() |> World.enterLevel(res(), 0)
 
     /// 手を当てた後のヤドカリと小石と流木（動けなかったら None）。
     pub def placesAfter(b: Board.Board, move: World.Move, s: World.State): Option[(Board.Cell, Set[Board.Cell], Set[Board.Cell])] =

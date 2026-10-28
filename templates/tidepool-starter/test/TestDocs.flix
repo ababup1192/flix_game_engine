@@ -1,7 +1,7 @@
 // JSON 橋渡しのテスト（1 Doc につき最大 3 本まで。同型の重複は書かない）。
 mod TestDocs {
 
-    use fge::GameEngine
+    use fge::{GameEngine, Resources}
 
     // ══════════════════════════════════════════════════════
     // RulesDoc
@@ -70,4 +70,25 @@ mod TestDocs {
             expected = Some((GameEngine.Key.Left :: Nil, KeysDoc.rec(KeysDoc.defaults())#up, KeysDoc.rec(KeysDoc.defaults())#down)),
             KeysDoc.fromJson("{\"left\": [\"Left\", \"Sinistra\"], \"up\": [\"Hop\"]}")
                 |> Option.map(d -> (KeysDoc.rec(d)#left, KeysDoc.rec(d)#up, KeysDoc.rec(d)#down)))
+
+    // ══════════════════════════════════════════════════════
+    // 保存即反映の一覧表（Controls.docTable）
+    // ══════════════════════════════════════════════════════
+
+    /// 1 手進めた面に、docId の行の読み直しを当てた後の手数（行が無ければ None）。
+    def movesAfterReload(docId: String): Option[Int32] \ IO =
+        let played = Resources.of(Fixtures.res(), World.play(Fixtures.res(), World.Move.Wait, Fixtures.world()));
+        Controls.docTable() |> List.find(row -> row#docId == Some(docId))
+            |> Option.map(row -> run { row#reload(played) } with Fs.FileRead.runWithIO)
+            |> Option.map(h -> World.state(h#resources, h#world)#t)
+
+    /// 面の Doc を保存し直すと、遊んでいる面は初めからになる。
+    @Test
+    def testLevelsReloadRestartsThePlayedLevel(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = Some(0), movesAfterReload("levels"))
+
+    /// キーの Doc を保存し直しても、遊んでいる面はそのまま。
+    @Test
+    def testKeysReloadKeepsThePlayedLevel(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = Some(1), movesAfterReload("keys"))
 }

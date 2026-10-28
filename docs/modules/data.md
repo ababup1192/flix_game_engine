@@ -10,6 +10,7 @@
 | 巻き戻し・リプレイ・履歴 | Worldline |
 | セーブ・ロード | SaveManager / Persistence |
 | Doc の一覧を一覧表 1 枚にし watchFile・一括リロード・表示中バッジを導出 | DocTable |
+| Doc・アトラス・シェーダーを World の外に持ち、読み直しの時だけ替える | Resources（`With[res, w]`・`reloadRow`） |
 | Doc を fail-open で読む（読めない・壊れは既定値へ） | DocJson.loadOr / decodeObject |
 | 既定値で続けたことを 1 行知らせる（純粋な関数の中から） | Log.fellBackThen / warnThen / warnAllThen（`let _ = Log.warn(..)` は消える。docs/error-handling.md の決まり 3） |
 | リソース JSON の形（型・必須・既定値）を公式スキーマ方言で宣言する | Schema（実例: `templates/race-starter/project.schema.json`） |
@@ -24,6 +25,7 @@
 - **EcsCodec** — 「番号ごとの値の表」を JSON と相互変換する共通ヘルパ。
 - **CatalogContainer** — 「1 ファイル = 1 種類の一覧」を表す汎用の入れ物。
 - **Schema** — リソース（ゲームデータ JSON）の形を宣言する公式スキーマ方言（例: level.json の隣の level.schema.json）。データの形（type / required / default）はゲームも検証に使い、見せ方（widget）はエディタ専用でエンジンは開けない封筒として運ぶ。未知の type タグ・kind は黙って通さず Err にする。
+- **Resources** — 描く元（Doc・アトラス・シェーダー）と World の組。Bevy の Resource にならい、読むだけの物を World の外に置く。系・絵・読む口は `system` / `view` / `read` が組を渡し、描く元を替えるのは読み直しの行（`reloadRow`）だけ。
 - **DocTable** — Doc の一覧表（id・パス・読み直し）1 枚から、watchFile の配線・一括リロード・ActiveDocs の名乗りを導出する。一覧の手写しを 1 か所に。既定は `row` で 1 行、外れる行に `watchOnly` / `reloadAllOnly` / `activeWhen` を被せる。
 
 ## 新しい Doc（*.kind.json）を 1 つ足す順

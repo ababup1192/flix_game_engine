@@ -8,9 +8,12 @@
 // 環境変数: VIDEO_FPS（既定 30）・VIDEO_SCALE（design 640×360 の何倍で描くか。既定 2 = 1280×720）・FGE_GPU / FGE_VIDEO_PAINT / FFMPEG（VideoOut.settingsOf）
 mod VideoRender {
     use fge::{App, AudioMixdown, AudioMixer, Flow, FontAtlas, HeadlessFont, HeadlessRender, ProjectLoader,
-              PxSpriteAtlas, Render, SfxSynth, Vec2, VideoOut}
+              PxSpriteAtlas, Render, Resources, SfxSynth, Vec2, VideoOut}
 
     import java.io.File
+
+    /// App の w（描く元と World の組）。
+    type alias AppState = Resources.With[Res.Res, World.World]
 
     def outDir(): String = "debug/video/tidepool"
 
@@ -32,7 +35,8 @@ mod VideoRender {
         let fps = Map.get("VIDEO_FPS", env) |> Option.flatMap(Int32.fromString) |> Option.getWithDefault(30);
         let app = run { Game.app(Controls.loadDocs()) } with Fs.FileRead.runWithIO;
         let fresh = run { App.freshWorld(app, design()) } with Fs.FileRead.runWithIO;
-        let text = scriptText(fps, LevelsDoc.rec(fresh#levels)#levels |> List.map(level -> level#solution));
+        let solutions = Resources.read((res, _) -> LevelsDoc.rec(res#levels)#levels |> List.map(level -> level#solution), fresh);
+        let text = scriptText(fps, solutions);
         discard (new File(outDir())).mkdirs();
         discard writeText("${outDir()}/video.flow", text);
         match Flow.Parse.parseText(Flow.vocabOf(app, fresh), "video.flow", text) {
@@ -58,7 +62,7 @@ mod VideoRender {
         }
 
     /// 区間の mark の間のフレーム。
-    def sliceOf(outcome: Flow.Outcome[World.World], seg: (String, String)): List[Flow.Played[World.World]] =
+    def sliceOf(outcome: Flow.Outcome[AppState], seg: (String, String)): List[Flow.Played[AppState]] =
         let (startMark, endMark) = seg;
         match (Map.get(startMark, outcome#marks), Map.get(endMark, outcome#marks)) {
             case (Some(a), Some(b)) => outcome#frames |> List.drop(a) |> List.take(b - a)
@@ -128,7 +132,7 @@ mod VideoRender {
     // ── 音 ──
 
     /// 撮るコマの音（一発の音・波の環境音・ミキサーのバス）を 1 本の WAV に混ぜ、鳴った時刻の表を添える。
-    def writeAudio(app: App.App[World.World, {}], fps: Int32, shown: List[Flow.Played[World.World]]): Unit \ IO =
+    def writeAudio(app: App.App[AppState, {}], fps: Int32, shown: List[Flow.Played[AppState]]): Unit \ IO =
         let rate = sampleRate();
         let loaded = run { ProjectLoader.loadProject(".") } with Fs.FileRead.runWithIO;
         let sounds = match loaded {
@@ -153,15 +157,16 @@ mod VideoRender {
 
     // ── 絵 ──
 
-    def writeVideo(settings: VideoOut.Settings, size: { fps = Int32, scale = Int32 }, worlds: List[World.World]): Unit \ IO =
+    def writeVideo(settings: VideoOut.Settings, size: { fps = Int32, scale = Int32 }, worlds: List[AppState]): Unit \ IO =
         let atlas = HeadlessFont.buildUiAtlas(ttf(), ttf());
         let first = match List.head(worlds) {
             case Some(w) => w
             case None    => bug!("[video] 撮るコマが無い")
         };
-        let images = PxSpriteAtlas.asImages({ texture = World.atlasName(), baked = first#atlas } :: Nil);
+        let res = Resources.read((r, _) -> r, first);
+        let images = PxSpriteAtlas.asImages({ texture = Res.atlasName(), baked = res#atlas } :: Nil);
         // なめらかな絵なので面の縁もならす（SceneRender と同じ設定）。
-        let soft = { design = design(), scale = size#scale, background = ThemeDoc.rec(first#theme)#bg,
+        let soft = { design = design(), scale = size#scale, background = ThemeDoc.rec(res#theme)#bg,
                      fontTtf = ttf(), fontAtlas = atlas, outDir = outDir(),
                      frameW = 640 * size#scale, frameH = 360 * size#scale,
                      texturePath = HeadlessRender.imagePngs("debug", images),
@@ -173,8 +178,8 @@ mod VideoRender {
         println("[video] コマ: ${outDir()}（${painter}）")
 
     /// 1 コマの絵。実機は静的な層（View.frameBorder）を別に敷くので、同じ物を足して並べる。
-    def sceneOf(fonts: String -> FontAtlas): World.World -> List[Render.PlacedItem] =
-        w -> List.append(View.frame(App.viewCtxOf(fonts("default"), design()), w), View.frameBorder(w#theme))
+    def sceneOf(fonts: String -> FontAtlas): AppState -> List[Render.PlacedItem] =
+        Resources.read((res, w) -> List.append(View.frame(App.viewCtxOf(fonts("default"), design()), res, w), View.frameBorder(res#theme)))
 
     def writeText(path: String, text: String): Bool \ IO =
         run { Fs.WriteFile.write({str = text}, path) |> Result.isOk } with Fs.WriteFile.runWithFileWrite with Fs.FileWrite.runWithIO
