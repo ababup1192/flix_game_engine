@@ -36,8 +36,8 @@
    キー名は `schema`（`schemaPath` ではない — 間違えると黙って sibling 規約へ
    落ちて迷子になるため、未知キーはエディタが警告する）。
    宣言していない Doc はエディタに現れない（それだけ。ゲームは動く）。
-7. **保存で即反映・スナップショットでテスト可能**。ゲームは `App.watchFile` で Doc を
-   監視でき、編集は走っているゲームにその場で映る。Doc → 絵/トレースは
+7. **保存で即反映・スナップショットでテスト可能**。ゲームは `Controls.docTable` の `Resources.reloadRow` で Doc を
+   監視し（Doc は World ではなく Res に置く）、編集は走っているゲームにその場で映る。Doc → 絵/トレースは
    決定的なので、スナップショットのバイト一致でテストできる。
 
 ## 大きさの目安（超えたら割る）
@@ -190,11 +190,13 @@ sprite Doc 直下の `palette`** の 3 つだけで、どれにも無い名前�
 ## データの流れ（Doc がゲームに効くまで）
 
 ```
-*.kind.json → load（起動時に値へ）→ seed（純関数・一度きり）→ World（唯一の権威）
-                                     ↑ 保存を watchFile が拾って再 load
+*.kind.json → load（起動時に値へ）→ Res（Doc と、Doc から作る物）──読む──▶ 系・View
+                     ↑ 保存を Controls.docTable の Resources.reloadRow が拾って Res を替え、settle で World を収める
+                                          seed（純関数・一度きり）→ World（遊びの状態の唯一の権威）
 ```
 
-Doc は「初期値と見た目の宣言」まで。実行中の状態は World だけが持つ。
+Doc は「初期値と見た目の宣言」まで。Doc そのものは World に置かず Res に置き、実行中の状態は World だけが持つ
+（`flix-conventions.md` の「World は遊びの状態だけを持つ」）。
 振る舞い（ルール・生成・物理）はコードで書く — Doc に振る舞いは入れない。
 
 ## 新しい Doc を足すときのチェックリスト
@@ -206,7 +208,7 @@ Doc は「初期値と見た目の宣言」まで。実行中の状態は World 
 - [ ] 読み込みを 3 つに分けたか（`load*` が `Result` を返し、フォールバックは `loadOr` へ）
 - [ ] 既定値で続けたときに 1 行言うか（[docs/error-handling.md](error-handling.md)）
 - [ ] project.json の `editor.resources[]` に宣言したか
-- [ ] `App.watchFile` で監視する配線をゲームに入れたか（即反映が欲しい場合）
+- [ ] Doc を Res の欄に置き、`Controls.docTable` に `Resources.reloadRow` の行を足したか（即反映が欲しい場合）
 - [ ] Doc → 出力（絵・値）を pin するテストを 1 本書いたか
 - [ ] 大きさの目安に収まっているか（タブ 8 枚・1 タブ 15 個・総数 30 個・深さ 2 階層）
 - [ ] 単一値が 5 個以上あるなら `group` で束ねたか

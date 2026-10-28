@@ -17,7 +17,6 @@
 |---|---|---|---|---|---|
 | 動画 transition 910 コマ（Mac mini） | 7.1 ms/コマ | 7.8 ms/コマ | 塗る + PNG で約 215 ms/コマ（93%） | 塗るに含む | 1 回だけ |
 | reference-check 194 枚（ウォーム・この Mac） | 約 3 s | 1.8 s | 203 s（うちシェーダー面が約 70%） | 8.5 s | 約 2 s（src が変わった回は jar の作り直しで +65〜72 s） |
-| 会話の 1 枚撮り（novel-starter） | | | | | コールド 9〜12 s・ウォーム 0.5 s 前後 |
 | internet_dungeon の 1 枚撮り（`HEADLESS_PORT`） | | | 0.8〜1.0 s | | コールド 6.8〜7.2 s、常駐の 2 枚目以降 3.35〜3.66 s |
 
 常駐の 3.35 s の内訳は、約 1 s が Doc の読み直し、約 1 s が `shotOf` の中の `kitOf`（フォントとアトラスを作る）。
@@ -456,8 +455,6 @@ iopure（`ababup1192/id-x-iopure`）の形の上に積む。
 
 | 雛形 | 柱 1 | 柱 3 |
 |---|---|---|
-| novel-starter | `E2e.serveHeadless` を `serveJobs(app, jobs)` に替え、`SceneRender.one/all` を `*Job` にする。Studio の会話の画面がそのまま速くなる | 動画の口は無い。flow の動画を足すなら `VideoOut` を使う |
-| tetris-starter | `SceneRender.one` が `System.exit` と `envOr` を直に使っているので、`oneJob` にする。`E2e.play` の `Flow.Cli.main` は、エンジンの `Flow.Cli.mainOf(app, env): Int32` に替える | 同上 |
 | rpg・game・platformer・race | `one/all` を `*Job` にする。App を持たない入口は `serveJobsOnly` を使う | 同上 |
 
 雛形は `/add-template` の手順で直す。入口の形を変えるだけで絵は変わらないので、`reference/SHA256SUMS.txt` が前と同じことを確かめる。
@@ -468,7 +465,7 @@ iopure（`ababup1192/id-x-iopure`）の形の上に積む。
 
 | 段 | 入れる物 | 完了条件 |
 |---|---|---|
-| 0 | 今の数を測る | transition 動画・reference-check 194 枚・1 枚撮り（novel・internet_dungeon）の今の数と、その内訳（JVM・組む・命令・塗る・PNG・mix）を `docs/performance.md` に残す |
+| 0 | 今の数を測る | transition 動画・reference-check 194 枚・1 枚撮り（sound-novel・internet_dungeon）の今の数と、その内訳（JVM・組む・命令・塗る・PNG・mix）を `docs/performance.md` に残す |
 | 1 | 柱 2（別の担当）+ basecache（鍵に fpkg の SHA と painter） | 194 枚が全部同じときの reference-check が、今の **10% 以下**（実測は 12.4 / 223.7 = 5.5%）。同じ入力 2 回で、鍵が全部一致する |
 | 2 | 柱 1a: `Request`・`Job`・`serveJobs`・`/run`・`fge resident`・中身の指紋・env の照合・jar が作れない時の大きな知らせ・Studio との共有 | `make render SHOT=title` の 2 回目が、コールドの **60% 以下**。`fge resident verify` の 5 つが `SceneRender.all` と `FlowVideo`（transition）で差 0。src を 1 行変えた次の要求が新しい jar で答える（agent-eval のお題）。SHOT・FLOW を変えた続けての要求が、どれも常駐で正しく答える。`make reference-check` の後に常駐が残っていない（`resident status` が「立っていない」）。何もしなければ 180 秒で消え、`talk shot` を続けた時は 600 秒残る。同じ根に 2 つ目を起こそうとしても 1 つのまま。`resident status` にメモリと残りの寿命が出る。engine とゲームの src で、入口の頭の外の `System.getenv` / `Sys.Env.` が 0 件（lint） |
 | 3 | 柱 1b: `ContentCache`・`RenderKit.Shared / PerRequest` | 常駐の 1 枚撮りで、**塗りを除いた時間が 0.4 s 以下**（今は約 2.5 s）。Doc を保存した直後の 1 枚に、その保存が効いている（10 回中 10 回）。PNG を描き直した直後の 1 枚に、新しい絵が出る（10 回中 10 回） |

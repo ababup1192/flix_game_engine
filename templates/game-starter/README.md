@@ -30,12 +30,15 @@ Flix コンパイラはエンジンリポの `bin/flix` ラッパ経由で呼ぶ
 2. コードは **エントリ→状態→描画** の順で読む:
    1. `src/Main.flix` … 3 つを App に繋いで起動する目次。冒頭 doc に**毎フレームの流れ
       （入力→状態更新→描画 がどの行か）**が書いてある。まずここ。
-   2. `src/World.flix` … ゲームの状態そのものと、次の状態を作る規則（`step` が入力→更新。純粋）。
-   3. `src/View.flix` … 状態を絵に写す（何をどこに描くか）。冒頭 doc に場面に**積んだ部品**
+   2. `src/World.flix` … 遊びの状態そのものと、次の状態を作る規則（`step` が入力→更新。純粋）。
+      画面は `Screen` の enum（今は `Play` だけ）で、その画面だけの値は payload の中に持つ。
+   3. `src/Res.flix` … 描く元（Doc と、Doc から作る仕上げ済みのドット絵・アトラス）。Doc を読み直した時だけ替わる。
+      Doc を足すときは World でなくここに欄と `with*` を足す。
+   4. `src/View.flix` … 描く元と状態を絵に写す（何をどこに描くか）。冒頭 doc に場面に**積んだ部品**
       （背景・主役・粒がどの関数か）と、終了の確認の窓・静的な縁の枠が並べてある。
-   4. `src/ZOrder.flix` … 画面全体の層の表（場面・縁の枠・確認の窓の前後）。新しい層はここに case を足す。
-   5. `src/Controls.flix` … キーの割り当てと Doc の読み直し。Esc で終了の確認を出す（閉じるボタンは Main の `App.withCloseRequest`）。
-   6. `src/render/SceneRender.flix` … 決定的な場面を PNG に描き出す（リファレンス画像とアトリエ）。
+   5. `src/ZOrder.flix` … 画面全体の層の表（場面・縁の枠・確認の窓の前後）。新しい層はここに case を足す。
+   6. `src/Controls.flix` … キーの割り当てと Doc の読み込み・読み直し。Esc で終了の確認を出す（閉じるボタンは Main の `App.withCloseRequest`）。
+   7. `src/render/SceneRender.flix` … 決定的な場面を PNG に描き出す（リファレンス画像とアトリエ）。
 3. 手触り・色・絵は下の `assets/` の Doc を保存即反映でいじる。
 
 数値・色・絵は `assets/` の Doc（保存即反映）:

@@ -16,7 +16,8 @@
   背景の重ね・揺れの途中は終わりの形にする（`Stage.settle`）。
 - **時計は 2 本**: 文字送り・`<<wait>>`・背景の切り替え・揺れは物語の時計 `storyClock`（画面や確認のウィンドウを開いている間は止まる）、
   タイトル画面・クレジット・蛍・知らせは実時間 `realNow`。
-- **場面の値は場面の中に**: World の欄はどの場面でも要る物だけ。読んでいる間だけの値は `World.Scene.Reading` の `Read`、
+- **場面の値は場面の中に・Doc は Res に**: Doc とシナリオの木は World に置かず `Res`（`src/Res.flix`。App の w は `Resources.With[Res.Res, World.World]`）。
+  World の欄はどの場面でも要る物だけ。読んでいる間だけの値は `World.Scene.Reading` の `Read`、
   画面のカーソルは `World.Panel` の payload、確認のウィンドウは `ask` の `(Ask, Answer)` に置く。Bool・0/1 の数で
   意味を持たせず enum にする（`Answer.Yes`・`Layout.Side`・`Saves.Display` など）。規則は章のファイル
   （`WorldRead`・`WorldLog`・`WorldSaves`・`WorldSettings`・`WorldMenu`）に置き、外から呼ばない物は pub にしない。

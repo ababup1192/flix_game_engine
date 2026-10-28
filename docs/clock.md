@@ -2,7 +2,7 @@
 
 ゲームの時刻を「どの時計で測ったか」の型つきで持つ仕組み。API は `engine_world/src/Clock.flix` の冒頭、
 ゲームへの繋ぎ方は `App.addClock` の doc、手本は `templates/platformer-starter`（ポーズ・ヒットストップ）と
-`templates/novel-starter`（メニュー）。
+`templates/sound-novel-starter`（画面を開いている間は物語の時計を止める）。
 
 ## 何を解くか
 
@@ -120,6 +120,6 @@ E7491 で止まり、型の無い形では全部通った。今の形で止ま�
 ## テスト
 
 - 決まり（止めて戻しても・スロー中でも音は 1 回・止めている間も実時間は進む）は `App.trace` で
-  実機と同じ経路を流して確かめる（手本 `engine_world/test/TestClock.flix`・`templates/novel-starter/test/TestTrace.flix`）。
+  実機と同じ経路を流して確かめる（手本 `engine_world/test/TestClock.flix`・`templates/sound-novel-starter/test/TestTrace.flix`）。
 - 系を直に呼ぶテストは、先に `App.tickClocks(app, dt, w)` で実機と同じ 1 回の進みを組む（lint は test/ を見ない）。
 - 時刻を手で置くときは `Clock.startAt(秒)` と `Clock.zero()`。`Clock.after(秒, Clock.zero())` で決まった時刻も作れる。

@@ -2,7 +2,7 @@
 // どう読み進めても崩れない決まりを見る。App は実機と同じ繋ぎ（Game.app。セーブのファイルは書かない）。
 mod TestTrace {
 
-    use fge::{App, Clock, PropertyTest}
+    use fge::{App, Clock, PropertyTest, Resources}
     use fge::GameEngine.Key
 
     /// 押す操作の役。
@@ -10,9 +10,12 @@ mod TestTrace {
         case Confirm, Back, Prev, Next, Left, Right, Log, Auto, Skip, Hide, Rollback, QuickSave, QuickLoad, TabNext, Remove
     }
 
+    /// App の w（描く元と World の組）。
+    type alias Run = Resources.With[Res.Res, World.World]
+
     /// 役 → いまの割り当ての先頭のキー（KeysDoc から引く）。
-    def keyOf(role: Role, w: World.World): Key =
-        let k = KeysDoc.rec(w#docs#keys);
+    def keyOf(role: Role, res: Res.Res): Key =
+        let k = KeysDoc.rec(res#keys);
         let keys = match role {
             case Role.Confirm => k#confirm
             case Role.Back    => k#back
@@ -32,8 +35,8 @@ mod TestTrace {
         };
         List.head(keys) |> Option.getWithDefault(Key.F12)
 
-    def setup(): PropertyTest.Setup[Role, World.World] =
-        { keyOf = keyOf, viewport = { x = Layout.width(), y = Layout.height() }, dt = 1.0 / 60.0 }
+    def setup(): PropertyTest.Setup[Role, Run] =
+        { keyOf = (role, h) -> keyOf(role, h#resources), viewport = { x = Layout.width(), y = Layout.height() }, dt = 1.0 / 60.0 }
 
     /// 種 16 個 × 400 入力。キー 15 個・画面のあちこちのクリック（本文・選択肢・クイックメニュー・確認のウィンドウのはい / いいえ・
     /// セーブの枠とタブと削除・設定の行・バックログの行・戻る）・待ちを明かす長めの間。
@@ -52,9 +55,13 @@ mod TestTrace {
                                   center(Layout.settingSide(2, Layout.Side.Right)), center(Layout.settingBar(5)), center(Layout.back()), { x = 500.0, y = 300.0 }}
                    | PropertyTest.emptySpec() } }
 
+    /// rule は World の前後で決まりを見る（描く元は遊んでいる間は替わらない）。
     def check(rule: App.TraceStep[World.World] -> Option[String]): Option[String] \ Fs.FileRead =
-        let w0 = TestKit.w0();
-        PropertyTest.forAll(TestKit.app(w0), setup(), cases(), w0, rule)
+        let res = TestKit.res();
+        let w0 = TestKit.w0(res);
+        let onWorld = (step: App.TraceStep[Run]) ->
+            rule({ frame = step#frame, before = step#before#world, after = step#after#world, sounds = step#sounds, sustained = step#sustained });
+        PropertyTest.forAll(TestKit.app(res, w0), setup(), cases(), Resources.of(res, w0), onWorld)
 
     def storyNow(w: World.World): Float64 = Clock.secondsOf(Clock.nowOf(w#storyClock))
 
@@ -82,8 +89,9 @@ mod TestTrace {
     @Test
     def testLogNeverOutgrowsLogMax(): Unit \ {Assert, Fs.FileRead} =
         // ログは logMax を超えない。
+        let logMax = KindDoc.rec(TestKit.res()#kind)#logMax;
         let rule = (step: App.TraceStep[World.World]) ->
-            if (List.length(World.logOf(step#after)) > KindDoc.rec(step#after#docs#kind)#logMax) Some("ログが logMax を超えた") else None;
+            if (List.length(World.logOf(step#after)) > logMax) Some("ログが logMax を超えた") else None;
         Assert.assertEq(expected = None, check(rule))
 
     @Test

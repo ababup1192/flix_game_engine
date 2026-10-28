@@ -6,7 +6,8 @@
 - **取りうる値が決まっている物（状態・モード・種別）は String で持たず enum にする。**
   Doc(JSON) から来る String は、読み込む所で 1 回だけ enum へ変えて、内側は enum で回す。
 - **その case だけが使う値は、レコードに平らに並べず enum の payload へ入れる。**
-  どの case でも使う値はレコード側に残す。
+  どの case でも使う値はレコード側に残す。World も同じで、画面ごとの値は画面の enum の payload、
+  Doc と描く元は World の外（`Resources`）に置く。
 - **二乗を書かない**（N はゲームが決める。今は軽い、は理由にならない）:
   ループの中で `List.exists` / `List.memberOf` を呼ばず `Set` / `Map` で引く・
   `List.range` を回して `List.nth` で引かず 1 巡で済ませる・
@@ -70,6 +71,30 @@ How と What をコメントに書かない。実装の由来・旧実装・移�
     case へ並べるか、`Eq` を derive した別の enum で包む
 
 詳しくと例は `.claude/skills/flix-docs/reference.md` の「型の設計の例」。
+
+### World は遊びの状態だけを持つ（Doc は Resources・画面は enum）
+
+World に Doc・アトラス・シェーダーの Spec・音の Mixer を平らに並べると、読むだけの物と遊びで変わる物が
+1 つの record に混ざり、画面ごとの値（遊んでいる間だけの位置・取り消しの履歴）も全部の画面に居残る。
+
+- **Doc と、Doc から作る物（仕上げたドット絵・アトラス・面の列）は `Res` に置く。** App の w は
+  `Resources.With[Res, World]` にし、系・絵・読む口は `Resources.system` / `view` / `read` を通す。
+  Doc を読み直すのは `Controls.docTable` の `Resources.reloadRow` の行だけ（settle で World を新しい Res に収める）。
+  Res は World を使わない（使う向きは World → Res だけ）
+- **画面は enum にし、その画面だけの値は payload に持つ。** 1 画面のゲームでも `Screen { Play(Session) }` から
+  始める。表紙やゲームオーバーを足す時は case を足すだけで、直す所は match の網羅が全部知らせる
+- **payload の record は、非 pub の 1 case の enum と `pub type alias` で包む**（外から作らせない）。
+  同じ名前にすると E5848 になるので `enum SessionOf(SessionRec)` + `pub type alias Session = SessionOf`。
+  中は record のまま回し、読む口（`sessionRecOf`）と書く口（`mapSession`）を 1 つずつ置く
+- **比べる・字にする物は名前だけの enum を別に置く**（`ScreenKind with Eq, ToString`）。payload を持つ enum は
+  `Eq` を derive できない
+- **どの画面でも使う値（時刻・終了の確認・出来事・セーブ）は World の欄に残す。** 時計も World の欄
+  （`Resources.addClock`）
+- 手本: エンジンの `templates/game-starter`（1 画面）・`tidepool-starter`（題名・遊び・終わり）・
+  `sound-novel-starter`（場面の enum と、Doc の束を Res に）
+- `bin/fge record-wrap` がコミット時と `make lint` で止める: **world-resource**（World の欄に Doc・描く元がある。
+  型エイリアスと 1 case の enum の中までたどる）・**world-fields**（World の一番上の欄が多すぎる）。
+  前からある平らなゲームは `<ゲーム>/bin/lint-rules/record-wrap.local.json` の `exemptRules` に理由つきで外せる
 
 ### World が直接持つ大きな record は enum で包む（型検査の速さ）
 

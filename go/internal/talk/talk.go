@@ -6,7 +6,7 @@
 //
 // どれもゲームの根で流す。行からノードを引く決まりは engine の Yarn.nodeAtLine と同じ
 // （そのファイルで title: の行が line 以下の、いちばん後のノード）。
-// 飛ばす・撮るのに使う始まりは `talk node=<ノード> line=<行>`（ゲームの App.withStarts。雛形 novel-starter の Starts）。
+// 飛ばす・撮るのに使う始まりは `talk node=<ノード> line=<行>`（ゲームの App.withStarts。雛形 sound-novel-starter の Starts）。
 // $名前=値 はシナリオの変数（<<declare>>）の値として始まりの引数へそのまま足す（ゲームは YarnStorage.withArgs で読む）。
 //
 // goto の行き先: --port → 環境変数 DEBUG_HTTP_PORT → ~/.flix_ge_studio/games.json のこのゲームの行（DEBUG で起動した

@@ -11,7 +11,7 @@ OK: 矩形だけの View はありません（除外 0 件）
 [lint-z-table] OK (パッケージ 1 / z を数で決める行 0 / 除外 0 件)
 [lint-forbid] OK (1 ファイル / 規則 9 / 除外 0)
 [lint-quadratic] OK (除外 1 件)
-[lint-record-wrap] OK (展開した大きさ 16 以上の欄なし / 除外 0 件)
+[lint-record-wrap] OK (展開した大きさ 16 以上の欄なし・World の一番上の欄 16 以下・Doc と描く元なし / 除外で黙らせた 0 件)
 [lint-verb-names] OK (1 ファイル / 除外 3 件)
 [lint-state-shape] OK (0 ファイル / 名指しの enum 0 / 歯止め 3 / 除外 0)
 [lint-jargon] OK (34 語で検査)

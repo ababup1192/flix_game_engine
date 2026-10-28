@@ -1,0 +1,6 @@
+!! World.World の欄が Doc や描く元を持っています (world-resource)
+   testdata/lint/record-wrap/world-wrapped-in-enum-fires/src/World.flix:9 theme = ThemeDoc.Doc (ThemeDoc.Doc)
+[lint-record-wrap] world-resource 1 件。Doc と描く元は World の外へ（engine の Resources・手本 engine の templates/game-starter と templates/tidepool-starter の src/Res.flix、読み直しは Resources.reloadRow）。
+  詳しくは engine の docs/flix-conventions.md「型の設計」の「World は遊びの状態だけを持つ（Doc は Resources・画面は enum）」。
+  どうしても残すなら bin/lint-rules/record-wrap.local.json（エンジンのリポでは record-wrap.json）の exemptRules へ "<パス>::world-resource" と理由 1 行
+[exit=1]

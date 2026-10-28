@@ -1,0 +1,5 @@
+{
+  "exemptRules": {
+    "src/World.flix::world-resource": "Resources へ移すまで残す"
+  }
+}

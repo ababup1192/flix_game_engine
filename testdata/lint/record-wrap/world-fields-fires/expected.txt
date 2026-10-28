@@ -1,0 +1,6 @@
+!! World.World の一番上の欄が 16 を超えています (world-fields)
+   testdata/lint/record-wrap/world-fields-fires/src/World.flix:2 World.World の欄 17 個
+[lint-record-wrap] world-fields 1 件。その画面だけの値は画面の enum の payload へ（手本 engine の templates/tidepool-starter の Screen）。
+  詳しくは engine の docs/flix-conventions.md「型の設計」の「World は遊びの状態だけを持つ（Doc は Resources・画面は enum）」。
+  どうしても残すなら bin/lint-rules/record-wrap.local.json（エンジンのリポでは record-wrap.json）の exemptRules へ "<パス>::world-fields" と理由 1 行
+[exit=1]

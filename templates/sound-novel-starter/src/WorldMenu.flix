@@ -16,23 +16,23 @@ mod WorldMenu {
     }
 
     /// タイトルの項目を選ぶ。[遷移: Title→Reading / LoadSlots / Settings / Credits / 確認のウィンドウ（終了）]
-    pub def chooseTitle(item: World.TitleItem, w: World.World): World.World \ Emit[World.Event] = match item {
-        case World.TitleItem.NewGame  => WorldRead.newGame(w)
+    pub def chooseTitle(res: Res.Res, item: World.TitleItem, w: World.World): World.World \ Emit[World.Event] = match item {
+        case World.TitleItem.NewGame  => WorldRead.newGame(res, w)
         case World.TitleItem.Continue =>
             match Saves.latest(w#saves) {
-                case Some((tab, i)) => WorldSaves.loadFrom(tab, i, w)
+                case Some((tab, i)) => WorldSaves.loadFrom(res, tab, i, w)
                 case None           => World.notice(StoryDoc.Label.NoSave, w)
             }
         case World.TitleItem.LoadGame => WorldSaves.openLoad(w)
         case World.TitleItem.Settings => WorldSettings.openSettings(w)
-        case World.TitleItem.Credits  => World.toCredits(w)
+        case World.TitleItem.Credits  => World.toCredits(res, w)
         case World.TitleItem.Quit     => World.askFor(World.Ask.Quit, w)
     }
 
     /// タイトルのカーソルの項目を選ぶ（選べない項目なら何もしない）。
-    pub def chooseTitleHere(w: World.World): World.World \ Emit[World.Event] =
+    pub def chooseTitleHere(res: Res.Res, w: World.World): World.World \ Emit[World.Event] =
         match World.titleCursorOf(w) {
-            case Some(item) if isTitleItemOpen(item, w#saves) => chooseTitle(item, w)
+            case Some(item) if isTitleItemOpen(item, w#saves) => chooseTitle(res, item, w)
             case _                                     => w
         }
 
@@ -69,14 +69,14 @@ mod WorldMenu {
         World.Button.ToTitle :: Nil
 
     /// クイックメニューを押す（読んでいて、画面も確認のウィンドウも開いていない時だけ）。[遷移: Reading→各 Panel / 確認のウィンドウ]
-    pub def press(button: World.Button, w: World.World): World.World \ Emit[World.Event] =
+    pub def press(res: Res.Res, button: World.Button, w: World.World): World.World \ Emit[World.Event] =
         if (not World.isReading(w) or not World.isFree(w)) w
         else match button {
-            case World.Button.Rollback  => WorldLog.rollback(w)
+            case World.Button.Rollback  => WorldLog.rollback(res, w)
             case World.Button.Log       => WorldLog.openLog(w)
             case World.Button.Auto      => WorldRead.togglePlayback(World.Playback.Auto, w)
             case World.Button.Skip      => WorldRead.togglePlayback(World.Playback.Skip, w)
-            case World.Button.QuickSave => WorldSaves.quickSave(w)
+            case World.Button.QuickSave => WorldSaves.quickSave(res, w)
             case World.Button.QuickLoad =>
                 if (Option.nonEmpty(Saves.slotOf(Saves.Tab.Quick, 0, w#saves))) World.askFor(World.Ask.QuickLoad, w)
                 else World.notice(StoryDoc.Label.NoQuickSave, w)
@@ -102,7 +102,7 @@ mod WorldMenu {
     }
 
     /// 確認のウィンドウに答える。はいなら尋ねていた事を行う。[遷移: 確認のウィンドウ→各行き先]
-    pub def answer(given: World.Answer, w: World.World): World.World \ Emit[World.Event] =
+    pub def answer(res: Res.Res, given: World.Answer, w: World.World): World.World \ Emit[World.Event] =
         match World.askOf(w) {
             case None => w
             case Some(ask) =>
@@ -111,22 +111,22 @@ mod WorldMenu {
                     case World.Answer.No  => Emit.emit(World.Event.Closed); closed
                     case World.Answer.Yes =>
                         match ask {
-                            case World.Ask.Overwrite(tab, i) => WorldSaves.writeSlot(tab, i, closed)
+                            case World.Ask.Overwrite(tab, i) => WorldSaves.writeSlot(res, tab, i, closed)
                             case World.Ask.Delete(tab, i)    => WorldSaves.removeSlot(tab, i, closed)
-                            case World.Ask.Load(tab, i)      => WorldSaves.loadFrom(tab, i, closed)
-                            case World.Ask.QuickLoad         => WorldSaves.loadFrom(Saves.Tab.Quick, 0, closed)
-                            case World.Ask.Jump(k)           => WorldLog.jumpTo(k, closed)
+                            case World.Ask.Load(tab, i)      => WorldSaves.loadFrom(res, tab, i, closed)
+                            case World.Ask.QuickLoad         => WorldSaves.loadFrom(res, Saves.Tab.Quick, 0, closed)
+                            case World.Ask.Jump(k)           => WorldLog.jumpTo(res, k, closed)
                             case World.Ask.ToTitle           => Emit.emit(World.Event.Closed); World.toTitle(closed)
                             case World.Ask.Quit              => { quitting = true | closed }
-                            case World.Ask.Reset             => WorldSettings.reset(closed)
+                            case World.Ask.Reset             => WorldSettings.reset(res, closed)
                         }
                 }
         }
 
     /// 確認のウィンドウのカーソルの答えで答える。
-    pub def answerHere(w: World.World): World.World \ Emit[World.Event] =
+    pub def answerHere(res: Res.Res, w: World.World): World.World \ Emit[World.Event] =
         match World.answerOf(w) {
-            case Some(given) => answer(given, w)
+            case Some(given) => answer(res, given, w)
             case None        => w
         }
 }

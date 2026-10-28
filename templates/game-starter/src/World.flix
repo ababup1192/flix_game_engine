@@ -1,10 +1,13 @@
-// World — ゲームの状態そのものと、次の状態を作る規則（すべて純粋）。
-// 主人公を矢印キーで動かすだけの最小の骨組み。数値の初期値（速さ）は SampleDoc、
-// 色は ThemeDoc、絵の格子は PxSpriteDoc、空の塗りは ShaderDoc — 実行中の状態は
-// この World だけが持つ。
+// World — 遊びの状態そのものと、次の状態を作る規則（すべて純粋）。
+// 主人公を矢印キーで動かすだけの最小の骨組み。Doc（速さ・キー・色・絵・空の塗り）と
+// Doc から作る物（仕上げたドット絵・アトラス）は Res が持ち、World は持たない（読む口は res を受ける）。
+//
+// ── 場面 ──
+// 画面は Screen の enum で分け、その画面だけが持つ値は payload に入れる。今は Play の 1 つだけ。
+// 表紙・クリア等を足すときは Screen に case を足し、step と View を match で分ける（手本は tidepool-starter）。
 mod World {
 
-    use fge::{Num, PxShade, PxSprite, PxSpriteAtlas, PxSpriteDoc, ShaderDoc, Vec2}
+    use fge::{Num, PxSprite, Vec2}
 
     /// このフレームの入力（横・縦の軸値。-1 / 0 / +1）。
     pub type alias Input = { x = Float64, y = Float64 }
@@ -23,18 +26,28 @@ mod World {
         case QuitNo    // 窓の外（Esc と同じ）
     }
 
-    pub type alias World = {
-        doc = SampleDoc.Doc,
-        keys = KeysDoc.Doc,
-        theme = ThemeDoc.Doc,
-        sprites = PxSpriteDoc.Doc,
-        // ドット絵を 1 枚にまとめたアトラスと、その画素から導いた鍵（下の bakedOf を参照）。
-        atlas = PxSpriteAtlas.Baked,
-        atlasKey = String,
-        shader = ShaderDoc.Spec,
+    /// どの画面か。その画面だけが持つ値を payload に持つ。
+    pub enum Screen {
+        /// 主人公を動かしている。
+        case Play(Session)
+    }
+
+    /// 遊んでいる間の中身（主人公の中心の位置）。
+    pub type alias SessionRec = {
         x = Float64,
-        y = Float64,
+        y = Float64
+    }
+
+    /// 遊んでいる間の中身。作るのは World の中（initial・mapSessionRec）だけ。読む口は sessionRecOf・書く口は mapSession。
+    enum SessionOf(SessionRec)
+
+    pub type alias Session = SessionOf
+
+    /// 遊びの状態。t は積み上げた秒（空の流れ・塵・待ち姿の揺れがこれを見る）。
+    /// t と quit はどの画面でも使うので、Screen の外に置く。
+    pub type alias World = {
         t = Float64,
+        screen = Screen,
         quit = Quit
     }
 
@@ -46,78 +59,60 @@ mod World {
     /// ドット絵を何倍の大きさで描くか（1 セル = 何 px か）。
     pub def spriteScale(): Int32 = 2
 
-    /// 主人公の大きさ = 絵の大きさ。絵を描き替えたら当たりもついてくる
-    /// （固定値にすると、絵だけ大きくして当たりが古いまま、という食い違いが出る）。
+    /// 主人公の大きさ = 絵の大きさ。
+    /// WhyNot: 固定値にしない。絵だけ大きくして当たりが古いまま、という食い違いが出る。
     /// 絵がまだ読めていないときだけ 16×16 にする（fail-open）。
-    pub def heroBox(w: World): Vec2.Vec2 =
-        PxSprite.sizeOf(w#sprites, "hero", "idle", spriteScale())
+    pub def heroBox(res: Res.Res): Vec2.Vec2 =
+        PxSprite.sizeOf(res#sprites, "hero", "idle", spriteScale())
             |> Option.getWithDefault({ x = 16.0, y = 16.0 })
 
     pub def spritePath(): String = "assets/__NAME__.sprite.json"
 
     pub def shaderPath(): String = "assets/__NAME__.shader.json"
 
-    /// 「中の色 → (明るい色, 暗い色)」の対応。文字は sprite.json の legend に合わせる。
-    /// 色そのものでなく文字の並びなので、これは絵の構造 = コード側に置く。
-    def shadeRamp(): PxShade.Ramp =
-        Map#{ 'a' => ('A', 'd') }
-
-    /// 読み込んだドット絵に仕上げ（ふち光・接地影・ディザ・粒）を掛ける。
-    /// 掛かるのは読み込み直後の 1 回だけで、毎フレームの絵づくりには入らない
-    /// （何体出しても走行中の負荷は増えない）。強さと光の向きは theme.json から。
-    def shaded(theme: ThemeDoc.Doc, doc: PxSpriteDoc.Doc): PxSpriteDoc.Doc =
-        PxShade.shadeDoc(ThemeDoc.rec(theme)#shade, shadeRamp(), doc)
-
-    /// GPU に登録するアトラスの論理名（View の drawQuad と Main の withSpriteAtlases が
-    /// この名前で待ち合わせる）。
-    pub def atlasName(): String = "px"
-
-    /// ドット絵を 1 枚のアトラスにまとめ、GPU キャッシュ用の鍵と対で返す。
-    ///
-    /// **なぜまとめるか**: 画面に出すとき 1 コマ = 1 クアッドで貼れる（PxSprite.drawQuad）。
-    /// まとめずに描く PxSprite.draw は 1 コマを画素ぶんの四角に開くので、キャラ 1 体なら
-    /// どちらでも同じでも、マス目や群れを出した瞬間に組む数の桁が変わる
-    /// （予算と検査は engine の docs/performance.md §9）。まとめるのは読み込みの 1 回だけ。
-    ///
-    /// **なぜ鍵に画素のハッシュを混ぜるか**: Doc や色票を保存し直して絵が変わったとき、
-    /// 鍵が同じままだと GPU に古いテクスチャが残って画面が更新されない。
-    def bakedOf(theme: ThemeDoc.Doc, sprites: PxSpriteDoc.Doc): (PxSpriteAtlas.Baked, String) =
-        let baked = PxSpriteAtlas.bake(sprites, key -> ThemeDoc.resolver(theme, key));
-        let h = baked#pixels |> Vector.foldLeft((acc, px) -> acc * 31 + px, 17);
-        (baked, "${atlasName()}:${Int32.toString(baked#side)}:${Int32.toString(h)}")
-
-    /// 色か絵が変わったときに、仕上げを掛け直してアトラスを作り直す。
-    /// テーマにも絵にも触らない更新（位置・時刻）はここを通らない。
-    def withShadedSprites(theme: ThemeDoc.Doc, sprites: PxSpriteDoc.Doc, w: World): World =
-        let doc = shaded(theme, sprites);
-        let (baked, key) = bakedOf(theme, doc);
-        { theme = theme, sprites = doc, atlas = baked, atlasKey = key | w }
-
     /// ゲーム開始時の状態。主人公は画面の真ん中。
-    pub def initial(doc: SampleDoc.Doc, keys: KeysDoc.Doc, theme: ThemeDoc.Doc,
-                    sprites: PxSpriteDoc.Doc, shader: ShaderDoc.Spec): World =
-        let shadedSprites = shaded(theme, sprites);
-        let (baked, key) = bakedOf(theme, shadedSprites);
-        { doc = doc, keys = keys, theme = theme, sprites = shadedSprites,
-          atlas = baked, atlasKey = key, shader = shader,
-          x = width() / 2.0, y = height() / 2.0, t = 0.0, quit = Quit.Playing }
+    pub def initial(): World =
+        { t = 0.0, screen = Screen.Play(SessionOf.SessionOf({ x = width() / 2.0, y = height() / 2.0 })),
+          quit = Quit.Playing }
+
+    def sessionRec(session: Session): SessionRec = match session {
+        case SessionOf.SessionOf(rec) => rec
+    }
+
+    def mapSessionRec(f: SessionRec -> SessionRec, session: Session): Session = SessionOf.SessionOf(f(sessionRec(session)))
+
+    /// 遊んでいる間の中身（Play の外は None）。
+    def sessionRecOf(w: World): Option[SessionRec] = match w#screen {
+        case Screen.Play(session) => Some(sessionRec(session))
+    }
+
+    /// 遊んでいる間の中身を f で替える（Play の外はそのまま）。
+    def mapSession(f: SessionRec -> SessionRec, w: World): World = match w#screen {
+        case Screen.Play(session) => { screen = Screen.Play(mapSessionRec(f, session)) | w }
+    }
+
+    /// 主人公の中心（主人公が出ていない画面では None）。
+    pub def heroAt(w: World): Option[Vec2.Vec2] =
+        sessionRecOf(w) |> Option.map(rec -> { x = rec#x, y = rec#y })
 
     /// 大きさ box の物が画面から出ない位置へ丸める（端で止まるのはルール）。
     def clampInside(box: Vec2.Vec2, p: Vec2.Vec2): Vec2.Vec2 =
         { x = Num.clamp(box#x / 2.0, width() - box#x / 2.0, p#x),
           y = Num.clamp(box#y / 2.0, height() - box#y / 2.0, p#y) }
 
-    /// 入力と経過時間から次の状態を作る。速さは Doc（sample.kind.json）から。
-    /// t は積み上げた秒。空の流れ・塵・待ち姿の揺れがこれを見る。
+    /// 入力の向きに Doc（sample.kind.json）の速さで主人公を動かす。
+    def moveHero(res: Res.Res, input: Input, dt: Float64, rec: SessionRec): SessionRec =
+        let speed = SampleDoc.rec(res#sample)#speed;
+        let moved = { x = rec#x + input#x * speed * dt, y = rec#y + input#y * speed * dt };
+        let p = clampInside(heroBox(res), moved);
+        { x = p#x, y = p#y }
+
+    /// 入力と経過時間から次の状態を作る。
     /// 終了の確認の窓が出ている間は動かない（時刻だけ進むので空や塵は流れ続ける）。
-    pub def step(input: Input, dt: Float64, w: World): World =
-        if (w#quit != Quit.Playing) { t = w#t + dt | w }
-        else {
-            let speed = SampleDoc.rec(w#doc)#speed;
-            let moved = { x = w#x + input#x * speed * dt, y = w#y + input#y * speed * dt };
-            let p = clampInside(heroBox(w), moved);
-            { x = p#x, y = p#y, t = w#t + dt | w }
-        }
+    pub def step(res: Res.Res, input: Input, dt: Float64, w: World): World =
+        let advanced = { t = w#t + dt | w };
+        if (w#quit != Quit.Playing) advanced
+        else mapSession(rec -> moveHero(res, input, dt, rec), advanced)
 
     // ── 終了の確認 ──
 
@@ -134,19 +129,4 @@ mod World {
     pub def isAskingQuit(w: World): Bool = w#quit == Quit.Asking
 
     pub def isQuitting(w: World): Bool = w#quit == Quit.Confirmed
-
-    // ── Doc の差し替え（保存即反映） ──
-
-    pub def withDoc(doc: SampleDoc.Doc, w: World): World = { doc = doc | w }
-
-    pub def withKeys(keys: KeysDoc.Doc, w: World): World = { keys = keys | w }
-
-    /// テーマには仕上げの強さ・光の向きも入っているので、色を変えたら絵も掛け直す。
-    pub def withTheme(theme: ThemeDoc.Doc, sprites: PxSpriteDoc.Doc, w: World): World =
-        withShadedSprites(theme, sprites, w)
-
-    pub def withSprites(sprites: PxSpriteDoc.Doc, w: World): World =
-        withShadedSprites(w#theme, sprites, w)
-
-    pub def withShader(shader: ShaderDoc.Spec, w: World): World = { shader = shader | w }
 }

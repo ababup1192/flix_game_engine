@@ -315,6 +315,23 @@ func TestMatcherFieldsAreAndAnyOfIsOr(t *testing.T) {
 	}
 }
 
+func TestMatcherExceptPrefixesDropsPath(t *testing.T) {
+	m := Matcher{Suffixes: []string{".flix"}, ExceptPrefixes: []string{"testdata/"}}
+	if m.Match("testdata/lint/record-wrap/a/src/World.flix") {
+		t.Errorf("exceptPrefixes に当たるパスは外れるはず")
+	}
+	if !m.Match("src/World.flix") {
+		t.Errorf("exceptPrefixes に当たらないパスが落ちた")
+	}
+}
+
+func TestMatcherExceptPrefixesDropsPathEvenWithAnyOf(t *testing.T) {
+	m := Matcher{AnyOf: []Matcher{{Suffixes: []string{".flix"}}}, ExceptPrefixes: []string{"testdata/"}}
+	if m.Match("testdata/lint/record-wrap/a/src/World.flix") {
+		t.Errorf("anyOf に当たっても exceptPrefixes に当たるパスは外れるはず")
+	}
+}
+
 // useEngineRepo は flix.toml を git にステージした偽のゲームと、use-engine の控えを作る。
 func useEngineRepo(t *testing.T, staged string) string {
 	t.Helper()

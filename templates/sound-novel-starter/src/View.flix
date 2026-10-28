@@ -23,17 +23,17 @@
 mod View {
     use fge::{App, Clock, Color, DrawCmd, FontAtlas, Fx, RawDraw, Rect2, Render, RichText, ShaderDoc, TextDraw, UiScroll, Vec2}
 
-    /// どの場面でも使う描く元: Doc の束・セーブデータ（既読と設定と枠）・マウスの位置・2 本の時計の今。
+    /// どの場面でも使う描く元: Doc とシナリオ（res）・セーブデータ（既読と設定と枠）・マウスの位置・2 本の時計の今。
     pub type alias Env = {
-        docs = World.Docs,
+        res = Res.Res,
         saves = Saves.Saves,
         pointer = { x = Float64, y = Float64 },
         realNow = Clock.Time[Clock.Real],
         storyNow = Clock.Time[Stage.Story]
     }
 
-    pub def envOf(w: World.World): Env =
-        { docs = w#docs, saves = w#saves, pointer = w#pointer, realNow = w#realNow, storyNow = World.now(w) }
+    pub def envOf(res: Res.Res, w: World.World): Env =
+        { res = res, saves = w#saves, pointer = w#pointer, realNow = w#realNow, storyNow = World.now(w) }
 
     // ── hud の中の z（小さいほど奥） ──
     def zVeil(): Int32 = 10
@@ -49,17 +49,17 @@ mod View {
     def zAsk(): Int32 = 140
     def zToast(): Int32 = 160
 
-    pub def frame(_ctx: App.ViewCtx, w: World.World): List[Render.PlacedItem] =
-        let env = envOf(w);
-        let stage = World.stageOf(w);
-        let k = KindDoc.rec(env#docs#kind);
+    pub def frame(_ctx: App.ViewCtx, res: Res.Res, w: World.World): List[Render.PlacedItem] =
+        let env = envOf(res, w);
+        let stage = World.stageOf(res, w);
+        let k = KindDoc.rec(env#res#kind);
         let (dx, dy) = Stage.shakeOffset(env#storyNow, k#shakeSeconds, k#shakePx, stage);
         List.append(backdrops(env, stage), particles(env, stage))
             |> List.map(placed -> { at = { x = placed#at#x + dx, y = placed#at#y + dy } | placed })
 
-    pub def hud(ctx: App.ViewCtx, w: World.World): List[Render.PlacedItem] =
+    pub def hud(ctx: App.ViewCtx, res: Res.Res, w: World.World): List[Render.PlacedItem] =
         let atlas = ctx#atlas;
-        let env = envOf(w);
+        let env = envOf(res, w);
         // 画面（バックログ・セーブ・設定）の間は下の画面を描かない（幕越しに字が二重に透けて読みにくい）。背景の写真は frame が描き続ける。
         let covered = match w#panel {
             case World.Panel.Closed => false
@@ -71,15 +71,15 @@ mod View {
             case World.Scene.Credits(startedAt, _) => credits(atlas, env, startedAt)
             case World.Scene.Reading(r)       => if (w#panel == World.Panel.Hidden) Nil else reading(atlas, env, r)
         };
-        List.flatten(screen :: panel(atlas, env, w) :: askLayer(atlas, env, w#ask) :: toast(atlas, env, World.toastOf(w)) :: Nil)
+        List.flatten(screen :: panel(res, atlas, env, w) :: askLayer(atlas, env, w#ask) :: toast(atlas, env, World.toastOf(res, w)) :: Nil)
 
     def realSeconds(env: Env): Float64 = Clock.secondsOf(env#realNow)
 
-    def theme(env: Env): ThemeDoc.Rec = ThemeDoc.rec(env#docs#theme)
+    def theme(env: Env): ThemeDoc.Rec = ThemeDoc.rec(env#res#theme)
 
-    def kindOf(env: Env): KindDoc.Rec = KindDoc.rec(env#docs#kind)
+    def kindOf(env: Env): KindDoc.Rec = KindDoc.rec(env#res#kind)
 
-    def label(l: StoryDoc.Label, env: Env): String = StoryDoc.labelOf(l, env#docs#story)
+    def label(l: StoryDoc.Label, env: Env): String = StoryDoc.labelOf(l, env#res#story)
 
     def isOver(r: Rect2.Rect2, env: Env): Bool = Layout.contains(r, env#pointer)
 
@@ -127,8 +127,8 @@ mod View {
         ground :: List.append(under, top)
 
     def specOf(shot: Stage.Shot, env: Env): Option[ShaderDoc.Spec] =
-        forM (photo <- BackdropDoc.photoOf(shot#photo, env#docs#backdrops);
-              grade <- BackdropDoc.gradeOf(shot#grade, env#docs#backdrops))
+        forM (photo <- BackdropDoc.photoOf(shot#photo, env#res#backdrops);
+              grade <- BackdropDoc.gradeOf(shot#grade, env#res#backdrops))
         yield Backdrop.specOf("${shot#photo}_${shot#grade}", photo, grade)
 
     // ── パーティクル（蛍） ──
@@ -298,7 +298,7 @@ mod View {
 
     def title(atlas: FontAtlas, env: Env, cursor: World.TitleItem): List[Render.PlacedItem] =
         let t = theme(env);
-        let s = StoryDoc.rec(env#docs#story);
+        let s = StoryDoc.rec(env#res#story);
         let center = Layout.width() / 2.0;
         let shade = at(0.0, 0.0, Render.vgrad({ x = Layout.width(), y = Layout.height() },
                                               { top = t#panel, bottom = Color.darken(t#panel, 0.4) }, zVeil()) |> Render.fade(0.35));
@@ -333,7 +333,7 @@ mod View {
         let t = theme(env);
         let scrolled = Clock.since(startedAt, env#realNow) * kindOf(env)#creditsSpeed;
         let veil = at(0.0, 0.0, RawDraw.box({ x = Layout.width(), y = Layout.height() }, t#panel, zVeil()) |> Render.fade(0.7));
-        let (items, _) = CreditsDoc.rec(env#docs#credits)#rows |> List.foldLeft((acc, row) -> {
+        let (items, _) = CreditsDoc.rec(env#res#credits)#rows |> List.foldLeft((acc, row) -> {
             let (done, y) = acc;
             let (size, color) = match row#style {
                 case CreditsDoc.Style.Heading => (26.0, t#accent)
@@ -353,8 +353,8 @@ mod View {
     // ── 画面（バックログ・セーブ・ロード・設定・隠す） ──
 
     /// 開いている画面。サムネはその枠の戻れる所へ戻した画面（WorldRead.screenOf）なので、ここだけ World を使う。
-    def panel(atlas: FontAtlas, env: Env, w: World.World): List[Render.PlacedItem] =
-        let screenOf = (mark: Saves.Mark) -> World.readOf(WorldRead.screenOf(mark, w));
+    def panel(res: Res.Res, atlas: FontAtlas, env: Env, w: World.World): List[Render.PlacedItem] =
+        let screenOf = (mark: Saves.Mark) -> World.readOf(WorldRead.screenOf(res, mark, w));
         match w#panel {
             case World.Panel.Closed            => Nil
             case World.Panel.Hidden            => Nil
@@ -384,7 +384,7 @@ mod View {
     // ── バックログ ──
 
     /// バックログの 1 行の高さ（字の大きさはバックログ用に本文より小さく）。Controls がスクロールの量に使う。
-    pub def logRowHeight(w: World.World): Float64 = rowHeightOf(envOf(w))
+    pub def logRowHeight(res: Res.Res, w: World.World): Float64 = rowHeightOf(envOf(res, w))
 
     def rowHeightOf(env: Env): Float64 =
         let k = kindOf(env);
@@ -422,15 +422,15 @@ mod View {
         rows
 
     /// バックログの長さと読む範囲の高さ（UiScroll の勘定へ）。
-    pub def logScrollSize(w: World.World): { contentPx = Float64, viewportPx = Float64 } = scrollSizeOf(envOf(w), World.logOf(w))
+    pub def logScrollSize(res: Res.Res, w: World.World): { contentPx = Float64, viewportPx = Float64 } = scrollSizeOf(envOf(res, w), World.logOf(w))
 
     def scrollSizeOf(env: Env, log: List[World.Entry]): { contentPx = Float64, viewportPx = Float64 } =
         { contentPx = log |> List.foldLeft((sum, entry) -> sum + logEntryHeight(env, entry), 0.0),
           viewportPx = Layout.logView()#size#y }
 
     /// p の下にある項目の番号（読む範囲の外・戻れない項目は None）。
-    pub def logEntryAt(p: { x = Float64, y = Float64 }, w: World.World): Option[Int32] =
-        entryAtOf(p, envOf(w), World.logOf(w), WorldLog.offsetOf(w))
+    pub def logEntryAt(res: Res.Res, p: { x = Float64, y = Float64 }, w: World.World): Option[Int32] =
+        entryAtOf(p, envOf(res, w), World.logOf(w), WorldLog.offsetOf(w))
 
     def entryAtOf(p: { x = Float64, y = Float64 }, env: Env, log: List[World.Entry], offset: Float64): Option[Int32] =
         if (not Layout.contains(Layout.logView(), p)) None
@@ -642,7 +642,7 @@ mod View {
                           if (picked) t#accent else t#ink, zPanelText());
         match setting {
             case World.Setting.Slider(slider) =>
-                let range = WorldSettings.rangeOf(slider, env#docs#kind);
+                let range = WorldSettings.rangeOf(slider, env#res#kind);
                 let bar = Layout.settingBar(i);
                 let v = WorldSettings.levelOf(slider, config);
                 let filled = if (range#max > range#min) (v - range#min) / (range#max - range#min) else 0.0;

@@ -11,8 +11,8 @@
 | 整数を 1 つずつ動かす（数え下がり・数え上がり・巡って止まるルーレット） | EcsTween（steppedInt） |
 | 演出の時刻表（動き・効果音・待ちを 1 本に書く。拍・小節で書いて秒はテンポから。音を絵と同じクリップに付ける） | Timeline（build / buildOrPanic / append / join / atEndOf / insert / withSound / waitFor → stateOf / progressOf / soundsOn / soundsBetween。手順は `engine_world/src/Timeline.flix` 冒頭） |
 | 演出の長さ・待ち・溜めの目安（窓の出入り 200〜300ms・待ちは 1 秒まで・溜めは 15F・音と絵のずれ） | docs/pacing.md（目安の表と出典。曲に乗る演出は拍へ読み替えて Timeline に書く） |
-| ポーズ・メニューで止める・ゆっくりにする・ヒットストップで音が鳴り直す・止めても動く物（点滅・雨）を分ける | Clock（型で分けた時計 Clock[c] / Time[c]・Clock.Run / Pace / withSlow）+ App.addClock・実時間は frame#realNow（docs/clock.md。実例: `templates/platformer-starter`・`templates/novel-starter`） |
-| 途中で始まる演出（起点の時刻を World に持つ）の音と進みを、同じ時刻表から引く | 時計を使うゲームは Timeline.soundsOnClock(時計, 起点, 表) / progressOn(時計, 起点, タグ, 表)（実例: `templates/novel-starter/src/LampFx.flix`）。秒を World に持つゲームは Timeline.soundsSince(起点, 前の時刻, 今の時刻) / progressSince(起点, 今, タグ) |
+| ポーズ・メニューで止める・ゆっくりにする・ヒットストップで音が鳴り直す・止めても動く物（点滅・雨）を分ける | Clock（型で分けた時計 Clock[c] / Time[c]・Clock.Run / Pace / withSlow）+ App.addClock・実時間は frame#realNow（docs/clock.md。実例: `templates/platformer-starter`・`templates/sound-novel-starter`） |
+| 途中で始まる演出（起点の時刻を World に持つ）の音と進みを、同じ時刻表から引く | 時計を使うゲームは Timeline.soundsOnClock(時計, 起点, 表) / progressOn(時計, 起点, タグ, 表)。秒を World に持つゲームは Timeline.soundsSince(起点, 前の時刻, 今の時刻) / progressSince(起点, 今, タグ) |
 | 曲に乗せる（次の小節の頭まで伸ばす・頭から n 拍目まで・次の小節の頭の n 拍前） | Timeline（Duration.ToNextBar / ToBeat / ToPickup。テンポは Timeline.tempo に譜面の bpm を渡す） |
 | ヒットストップ・スローモーション（hitstop・ゲームの時計を一時的に遅くする） | TimeScale |
 | 長押しで決める・飛ばす（会話のスキップ・消去の確認） | HoldPress |

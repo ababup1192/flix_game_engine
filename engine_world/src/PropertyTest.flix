@@ -12,10 +12,10 @@
 //   4. forAll(app, setup, { seeds, length, spec }, 始まりの World, rule) が None なら全部の種で通った
 //   崩れた列を見たいときは generate で列を作り firstBroken で崩れた所を、traceOf で全フレームを引く。
 //
-// 利用例（tetris-starter の test/TestTrace.flix に全文）:
-//   let rule = (step: App.TraceStep[World]) ->
-//       if (cellsOf(step#after) == cellsOf(step#before) + 4 * locked(step) - 10 * cleared(step)) None
-//       else Some("升の数が合わない");
+// 利用例（tidepool-starter の test/TestTrace.flix に全文）:
+//   let rule = (step: App.TraceStep[Run]) ->
+//       if (heardOf("tide_high" :: "tide_low" :: Nil, step) <= 1) None
+//       else Some("1 フレームに潮の音が 2 つ鳴った");
 //   Assert.assertEq(expected = None, PropertyTest.forAll(app, setup, cases, start, rule))
 //
 // フレームの作り方は実機と同じ App.frameOf（押した瞬間 = 前のフレームに無かったキー）。

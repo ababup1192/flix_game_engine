@@ -77,7 +77,10 @@ Flix コンパイラはエンジンリポの `bin/flix` ラッパ経由で呼ぶ
 2. `assets/talk/natsukusa.yarn` を読む。頭のコメントに、書けるコマンドの一覧がある。
 3. コードは **入口 → 状態 → 描画 → 入力** の順:
    1. `src/Game.flix` … 部品を App に繋ぐ目次。冒頭に**毎フレームの流れ**。`src/Main.flix` は Doc とセーブを読んで起動するだけ。
-   2. `src/World.flix` … 状態の形。下の図のとおり、今の場面（`Scene`）が持つ値はその場面の payload に入っていて、
+      App の w は描く元と遊びの状態の組（エンジンの `Resources.With[Res.Res, World.World]`）。系・絵・問いは `Resources` の口で両方を受ける。
+   2. `src/Res.flix` … 描く元: Doc とシナリオの木（`Controls.loadRes` が読む）。読むだけで、Doc の読み直しの時だけ替わる。
+      規則と View は `res` を先頭の引数で受ける。
+   3. `src/World.flix` … 遊びの状態の形（Doc は持たない）。下の図のとおり、今の場面（`Scene`）が持つ値はその場面の payload に入っていて、
       読んでいる間だけの値（シナリオの現在地 `talk`・頁・選択肢・ログ）は `Reading` の中にしか無い。
       開いている画面（`Panel`）と確認のウィンドウ（`ask`）も、そのカーソルを payload に持つ。
       規則は章ごとのファイルに分けてある: 読み進める `WorldRead`（まず `advance` と `pick`、次に `absorb` で
@@ -86,11 +89,11 @@ Flix コンパイラはエンジンリポの `bin/flix` ラッパ経由で呼ぶ
       時計は 2 本: 文字送り・待ち・背景の切り替えは物語の時計 `storyClock`（画面を開くと止まる = `paceOf`）、
       タイトル画面・クレジット・蛍の明滅・知らせは実時間 `realNow`。
       規則は音を鳴らさず、返事を出来事（`Emit`）として出す。Controls が集めて音へ替える。
-   3. `src/Stage.flix` … 演出のコマンド（`<<bg>>` など）の意味と舞台の状態。`src/Page.flix` … NVL の頁と ADV の 1 行。
-   4. `src/Backdrop.flix` … 写真をぼかして時間帯の色にするシェーダーの式（ShaderDoc を code で組む）。
-   5. `src/View.flix` … 状態を絵に写す（背景と蛍は `frame`、文章・ウィンドウ・タイトル画面は `hud`）。
-      部品は World を丸ごと受けず、Doc と時刻だけの `Env` と、その場面の payload（`Read`・`TitleItem` など）を受ける。
-   6. `src/Controls.flix` … 入力の効き先（確認のウィンドウ → 画面 → 選択肢 → ボタン → 本文）と音と Doc の読み直し。
+   4. `src/Stage.flix` … 演出のコマンド（`<<bg>>` など）の意味と舞台の状態。`src/Page.flix` … NVL の頁と ADV の 1 行。
+   5. `src/Backdrop.flix` … 写真をぼかして時間帯の色にするシェーダーの式（ShaderDoc を code で組む）。
+   6. `src/View.flix` … 状態を絵に写す（背景と蛍は `frame`、文章・ウィンドウ・タイトル画面は `hud`）。
+      部品は World を丸ごと受けず、描く元（`Env.res`）・セーブ・時刻だけの `Env` と、その場面の payload（`Read`・`TitleItem` など）を受ける。
+   7. `src/Controls.flix` … 入力の効き先（確認のウィンドウ → 画面 → 選択肢 → ボタン → 本文）と音と Doc の読み直し（`docTable`。読み直すのは Res で、シナリオの行だけ `WorldRead.settleDialogue` が World を収め直す）。
 4. `assets/*.json` の数値や色を変えて、`make debug` で保存即反映を見る（ぼかしの強さ・時間帯の色・文字の速さ・音量）。
 
 ### 状態の図

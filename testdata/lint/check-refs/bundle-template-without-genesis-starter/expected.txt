@@ -1,2 +1,2 @@
-studio/server/src/Genesis.flix: templates/tetris-starter がどのジャンルの starter にもなっていません (Studio から選べないテンプレです)
+studio/server/src/Genesis.flix: templates/orphan-starter がどのジャンルの starter にもなっていません (Studio から選べないテンプレです)
 [exit=1]

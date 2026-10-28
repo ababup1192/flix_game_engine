@@ -1,0 +1,1 @@
+bin/fge record-wrap testdata/lint/record-wrap/world-resource-enum-fires/src/Res.flix

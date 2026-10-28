@@ -35,7 +35,7 @@ type Exempt struct {
 // Load は <名前>.json を v へ読み、両方のファイルの exempt を足して返す。
 // 規約ファイルが読めなければエラー (空の規約で黙って通さない)。
 func Load(root, name string, v any) (*Exempt, error) {
-	rulesRel, localRel := Paths(name)
+	rulesRel, _ := Paths(name)
 	data, err := os.ReadFile(filepath.Join(root, rulesRel))
 	if err != nil {
 		return nil, fmt.Errorf("規約ファイルを読めません: %v", err)
@@ -43,6 +43,13 @@ func Load(root, name string, v any) (*Exempt, error) {
 	if err := json.Unmarshal(data, v); err != nil {
 		return nil, fmt.Errorf("規約ファイルが JSON として壊れています (%s): %v", rulesRel, err)
 	}
+	return LoadKey(root, name, "exempt")
+}
+
+// LoadKey は両方のファイルの key の欄 ({"鍵": "理由"}) を足して返す。欄の無いファイルは空とみなす。
+// 1 つの規約ファイルが意味の違う除外を 2 つの欄に分けて持つ時に使う (record-wrap の exempt と exemptRules)。
+func LoadKey(root, name, key string) (*Exempt, error) {
+	rulesRel, localRel := Paths(name)
 	ex := &Exempt{Why: map[string]string{}, From: map[string]string{}}
 	for i, rel := range []string{rulesRel, localRel} {
 		body, err := os.ReadFile(filepath.Join(root, rel))
@@ -52,13 +59,17 @@ func Load(root, name string, v any) (*Exempt, error) {
 			}
 			return nil, fmt.Errorf("読めません (%s): %v", rel, err)
 		}
-		var f struct {
-			Exempt map[string]string `json:"exempt"`
-		}
+		var f map[string]json.RawMessage
 		if err := json.Unmarshal(body, &f); err != nil {
 			return nil, fmt.Errorf("JSON として壊れています (%s): %v", rel, err)
 		}
-		for k, why := range f.Exempt {
+		var table map[string]string
+		if raw, ok := f[key]; ok {
+			if err := json.Unmarshal(raw, &table); err != nil {
+				return nil, fmt.Errorf("%s の %s は {\"鍵\": \"理由\"} の形にしてください: %v", rel, key, err)
+			}
+		}
+		for k, why := range table {
 			if !strings.Contains(k, "::") || strings.TrimSpace(why) == "" {
 				return nil, fmt.Errorf("%s の除外 %q: 鍵は \"パス::何か\"、値は残す理由 1 行です", rel, k)
 			}

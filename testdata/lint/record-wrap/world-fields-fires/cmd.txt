@@ -1,0 +1,1 @@
+bin/fge record-wrap testdata/lint/record-wrap/world-fields-fires/src/World.flix

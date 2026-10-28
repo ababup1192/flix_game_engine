@@ -121,10 +121,9 @@ your own.
 | **game-starter** | The bare skeleton: move a pixel-art hero with the arrow keys. The default for `make new-game` |
 | **platformer-starter** | Feel-first platformer (coyote time, 3 stages, coins and a flag) |
 | **rpg-starter** | Top-down RPG/adventure: a sunlit castle town, townsfolk to talk to, an errand to run |
-| **novel-starter** | Visual novel / mystery: a branching script written entirely in JSON rows |
 | **sound-novel-starter** | Sound novel in the countryside: blurred real photos, Mincho prose with ruby, NVL/ADV, log, auto, skip, save/load — all scripted in Yarn |
 | **race-starter** | Top-down racing on a summer coastal highway; only risky driving fills the nitro gauge |
-| **tetris-starter** | Falling-block puzzle |
+| **tidepool-starter** | Turn-based puzzle on a tide pool: push rocks to reroute channels as the tide rises and falls each move; undo, retry and a look-ahead preview |
 
 Every template runs and tests the same way:
 
@@ -355,10 +354,9 @@ make help            # 他ターゲット（sync-layers など）を一覧表示
 | **game-starter** | 骨組みだけ。主人公（ドット絵）を矢印キーで動かせる。`make new-game` の既定 |
 | **platformer-starter** | 手触り重視のプラットフォーマー（コヨーテタイム・3 つの面・コインと旗） |
 | **rpg-starter** | 見下ろし RPG・アドベンチャー。陽だまりの城下町を歩き、住人に話しかけ、おつかいをこなす |
-| **novel-starter** | ノベル・推理。台本（文章・分岐・結末）は全部 JSON の rows |
 | **sound-novel-starter** | 田舎のサウンドノベル。実写の写真をシェーダーでぼかした背景・明朝とルビ・NVL/ADV・ログ・オート・スキップ・セーブとロード。台本は Yarn |
 | **race-starter** | 真夏の海岸ハイウェイの見下ろしレース。危険な走りだけがニトロゲージを貯める |
-| **tetris-starter** | 落ち物パズル |
+| **tidepool-starter** | 潮だまりのターン制パズル。1 手ごとに潮が満ち引きする磯で岩を押して水路を作り変える。取り消し・やり直し・先読みつき |
 
 どのテンプレも同じ手順で実行・テストできる:
 

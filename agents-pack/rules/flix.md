@@ -11,7 +11,8 @@ paths:
 - **取りうる値が決まっている物（状態・モード・種別）は String で持たず enum にする。**
   Doc(JSON) から来る String は、読み込む所で 1 回だけ enum へ変えて、内側は enum で回す。
 - **その case だけが使う値は、レコードに平らに並べず enum の payload へ入れる。**
-  どの case でも使う値はレコード側に残す。
+  どの case でも使う値はレコード側に残す。World も同じで、画面ごとの値は画面の enum の payload、
+  Doc と描く元は World の外（`Resources`）に置く。
 - **二乗を書かない**（N はゲームが決める。今は軽い、は理由にならない）:
   ループの中で `List.exists` / `List.memberOf` を呼ばず `Set` / `Map` で引く・
   `List.range` を回して `List.nth` で引かず 1 巡で済ませる・

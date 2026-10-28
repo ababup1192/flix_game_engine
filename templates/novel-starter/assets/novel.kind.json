@@ -1,9 +1,0 @@
-{
-  "version": 1,
-  "title": "手触り（文字送りの速さ）",
-  "note": "手触りの数値。いじると何が変わるか: cps=本文の文字が出る速さ、dim=疑って灯りが1つ消えるごとに部屋がどれだけ暗くなるか（大きいほど急に暗い）、body* =本文の見た目（文字の大きさ・行間）。各欄の意味は kind.schema.json の label に。増やしたくなったらフィールドを足し、kind.schema.json と KindDoc の defaults も揃える。",
-  "cps": 30.0,
-  "dim": 0.22,
-  "bodySize": 10.0,
-  "bodyGap": 3.0
-}

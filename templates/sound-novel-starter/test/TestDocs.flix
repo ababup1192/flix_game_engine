@@ -29,22 +29,22 @@ mod TestDocs {
     @Test
     def testEveryPhotoHasATexture(): Unit \ {Assert, Fs.FileRead} =
         // novel.backdrops.json の写真は、どれも project.json の textures に名前がある（描き出しと実機が同じ名前で読む）。
+        let res = TestKit.res();
         let textures = namesIn("textures");
-        let w = TestKit.w0();
-        let missing = BackdropDoc.rec(w#docs#backdrops)#photos |> Map.valuesOf |> List.map(photo -> photo#texture)
+        let missing = BackdropDoc.rec(res#backdrops)#photos |> Map.valuesOf |> List.map(photo -> photo#texture)
             |> List.filter(t -> not Set.memberOf(t, textures));
         Assert.assertEq(expected = Nil, missing)
 
     @Test
     def testEverySoundTheGameCanPlayIsRegistered(): Unit \ {Assert, Fs.FileRead} =
         // 返事の音・台本の <<se>> と <<ambience>>・タイトルの環境音は、どれも project.json の sounds にある。
+        let res = TestKit.res();
         let sounds = namesIn("sounds");
-        let w = TestKit.w0();
         let replies = World.Event.Paged :: World.Event.Revealed :: World.Event.Moved :: World.Event.Picked ::
                       World.Event.Opened :: World.Event.Closed :: World.Event.Saved :: World.Event.Loaded :: World.Event.Rolled :: Nil;
-        let ses = commandArgs("se", w#docs#dialogue) |> List.map(n -> World.Event.Cue("se_${n}"));
+        let ses = commandArgs("se", res#dialogue) |> List.map(n -> World.Event.Cue("se_${n}"));
         let played = List.append(replies, ses) |> List.filterMap(Controls.soundOf);
-        let ambiences = (StoryDoc.rec(w#docs#story)#titleAmbience :: commandArgs("ambience", w#docs#dialogue))
+        let ambiences = (StoryDoc.rec(res#story)#titleAmbience :: commandArgs("ambience", res#dialogue))
             |> List.filter(n -> n != "off") |> List.map(n -> "amb_${n}");
         let missing = List.append(played, ambiences) |> List.filter(n -> not Set.memberOf(n, sounds)) |> List.distinct;
         Assert.assertEq(expected = Nil, missing)
@@ -52,17 +52,17 @@ mod TestDocs {
     @Test
     def testStoryDocHasEveryLabel(): Unit \ {Assert, Fs.FileRead} =
         // novel.story.json に、画面に出す言葉の鍵が全部ある（無ければ既定の言葉で出るが、Doc で直せない言葉が残る）。
-        let w = TestKit.w0();
+        let res = TestKit.res();
         let missing = StoryDoc.labels() |> List.map(StoryDoc.labelKey)
-            |> List.filter(key -> not Map.memberOf(key, StoryDoc.rec(w#docs#story)#labels));
+            |> List.filter(key -> not Map.memberOf(key, StoryDoc.rec(res#story)#labels));
         Assert.assertEq(expected = Nil, missing)
 
     @Test
     def testEverySpeakerHasAName(): Unit \ {Assert, Fs.FileRead} =
         // 話し手の id（Talk.Speaker）は、どれも novel.story.json の names に呼び名がある。
-        let w = TestKit.w0();
+        let res = TestKit.res();
         let missing = Talk.speakers() |> List.map(Talk.speakerId)
-            |> List.filter(id -> not Map.memberOf(id, StoryDoc.rec(w#docs#story)#names));
+            |> List.filter(id -> not Map.memberOf(id, StoryDoc.rec(res#story)#names));
         Assert.assertEq(expected = Nil, missing)
 
     @Test
@@ -74,6 +74,6 @@ mod TestDocs {
     @Test
     def testOpeningNodeExists(): Unit \ {Assert, Fs.FileRead} =
         // コードが開くノードが、build したシナリオにある。
-        let w = TestKit.w0();
-        Assert.assertEq(expected = true, Option.nonEmpty(Yarn.nodeOf(Talk.nodeName(Talk.Node.Opening), w#docs#dialogue)))
+        let res = TestKit.res();
+        Assert.assertEq(expected = true, Option.nonEmpty(Yarn.nodeOf(Talk.nodeName(Talk.Node.Opening), res#dialogue)))
 }

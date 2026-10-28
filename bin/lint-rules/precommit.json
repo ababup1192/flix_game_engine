@@ -183,6 +183,9 @@
       "when": {
         "suffixes": [
           ".flix"
+        ],
+        "exceptPrefixes": [
+          "testdata/"
         ]
       }
     },

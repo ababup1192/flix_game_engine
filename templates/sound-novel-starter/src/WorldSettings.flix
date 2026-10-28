@@ -81,8 +81,8 @@ mod WorldSettings {
         if (right) Layout.Side.Right else Layout.Side.Left
 
     /// スライダーの値を v にする（範囲の端で止める。スライダーの帯をクリックした所の値・←→ の 1 押し）。
-    pub def withLevel(slider: World.Slider, v: Float64, w: World.World): World.World \ Emit[World.Event] =
-        let range = rangeOf(slider, w#docs#kind);
+    pub def withLevel(res: Res.Res, slider: World.Slider, v: Float64, w: World.World): World.World \ Emit[World.Event] =
+        let range = rangeOf(slider, res#kind);
         let clamped = Float64.max(range#min, Float64.min(range#max, v));
         let c = World.configOf(w);
         let next = match slider {
@@ -109,10 +109,10 @@ mod WorldSettings {
         else { Emit.emit(World.Event.Moved); World.withSaves(Saves.withConfig(next, w#saves), w) }
 
     /// 行の値を delta 段ぶん動かす（スライダーは 1 押しの量ずつ、2 つから選ぶ行は delta の向きの側へ）。
-    pub def adjust(setting: World.Setting, delta: Int32, w: World.World): World.World \ Emit[World.Event] =
+    pub def adjust(res: Res.Res, setting: World.Setting, delta: Int32, w: World.World): World.World \ Emit[World.Event] =
         match setting {
             case World.Setting.Slider(slider) =>
-                withLevel(slider, levelOf(slider, World.configOf(w)) + Int32.toFloat64(delta) * rangeOf(slider, w#docs#kind)#step, w)
+                withLevel(res, slider, levelOf(slider, World.configOf(w)) + Int32.toFloat64(delta) * rangeOf(slider, res#kind)#step, w)
             case World.Setting.Pair(pair) => withSide(pair, if (delta > 0) Layout.Side.Right else Layout.Side.Left, w)
             case World.Setting.Reset      => w
         }
@@ -127,9 +127,9 @@ mod WorldSettings {
         }
 
     /// 設定を novel.kind.json の既定へ戻す（確認のウィンドウの「はい」）。
-    pub def reset(w: World.World): World.World \ Emit[World.Event] =
+    pub def reset(res: Res.Res, w: World.World): World.World \ Emit[World.Event] =
         Emit.emit(World.Event.Moved);
-        World.notice(StoryDoc.Label.ResetDone, World.withSaves(Saves.withConfig(Saves.defaultConfig(w#docs#kind), w#saves), w))
+        World.notice(StoryDoc.Label.ResetDone, World.withSaves(Saves.withConfig(Saves.defaultConfig(res#kind), w#saves), w))
 
     /// フルスクリーンにしたいか（Game の App.withFullscreen）。
     pub def isFullscreen(w: World.World): Bool = World.configOf(w)#display == Saves.Display.Fullscreen

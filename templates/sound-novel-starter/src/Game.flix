@@ -5,33 +5,34 @@
 //   → Controls.step（待ち・文字送り・オート・スキップ = WorldRead.step）→ Controls.interact（入力）→ View.frame / View.hud が描く
 //   → 前後の World の差から音（Controls.sounds）と、鳴り続ける環境音（Controls.ambience）を鳴らす。
 mod Game {
-    use fge::{App}
+    use fge::{App, Resources}
 
-    /// clockBase = 起動した時のその土地の時刻（1970-01-01 からの秒。セーブの日時の元。テストと描き出しは決めた値）。
-    pub def app(docs: World.Docs, saves: Saves.Saves, clockBase: Int64): App.App[World.World, {}] =
+    /// res = 描く元（Doc とシナリオ）。clockBase = 起動した時のその土地の時刻（1970-01-01 からの秒。セーブの日時の元。テストと描き出しは決めた値）。
+    /// App の w は描く元と遊びの状態の組（Resources.With）。系・絵・問いは Resources の口で両方を受ける。
+    pub def app(res: Res.Res, saves: Saves.Saves, clockBase: Int64): App.App[Resources.With[Res.Res, World.World], {}] =
         App.game({
-            init = World.initial(docs, saves, clockBase),
-            update = (f, w) -> Controls.interact(f, Controls.step(f, w)),
-            view = (ctx, w) -> View.frame(ctx, w),
+            init = Resources.of(res, World.initial(saves, clockBase)),
+            update = Resources.system((f, r, w) -> Controls.interact(f, r, Controls.step(f, r, w))),
+            view = Resources.view(View.frame),
             reloads = Nil
         })
             |> App.withDocTable(Controls.docTable())
-            |> App.addClock({ clockOf = w -> w#storyClock, withClock = (c, w) -> { storyClock = c | w },
-                              paceOf = World.paceOf })
-            |> App.quitWhen((f, w) -> Controls.isQuit(f, w))
+            |> Resources.addClock({ clockOf = w -> w#storyClock, withClock = (c, w) -> { storyClock = c | w },
+                                    paceOf = (_, w) -> World.paceOf(w) })
+            |> App.quitWhen((f, h) -> Resources.read((_, w) -> Controls.isQuit(f, w), h))
             // ウィンドウの閉じるボタンもタイトルの「終了」と同じ確認のウィンドウを通す。
-            |> App.withCloseRequest(World.requestQuit)
+            |> App.withCloseRequest(Resources.mapWorld((_, w) -> World.requestQuit(w)))
             // 設定の「画面」でウィンドウとフルスクリーンをその場で切り替える。
-            |> App.withFullscreen(WorldSettings.isFullscreen)
+            |> App.withFullscreen(Resources.read((_, w) -> WorldSettings.isFullscreen(w)))
             // 文章・ウィンドウ・タイトル画面・クレジットは withHudView — 背景の z に隠されない。
-            |> App.withHudView((ctx, w) -> View.hud(ctx, w))
-            |> App.withAudio(ws -> Controls.sounds(ws))
-            |> App.withSustained(w -> Controls.ambience(w))
-            |> App.withMixer(w -> Controls.mixerOf(w))
-            |> App.withStarts(Starts.all())
+            |> App.withHudView(Resources.view(View.hud))
+            |> App.withAudio(ws -> Controls.sounds({ before = ws#before#world, after = ws#after#world }))
+            |> App.withSustained(Resources.read(Controls.ambience))
+            |> App.withMixer(Resources.read(Controls.mixerOf))
+            |> App.withStarts(Starts.all() |> List.map(Resources.liftStart))
             |> App.withFlow(E2e.table())
-            |> App.withFingerprint(E2e.fingerprint)
-            |> App.withStatusLine(w -> "phase=${World.sceneName(w)} panel=${World.panelName(w)} talk=${World.talkNodeOf(w)} line=${World.talkLineOf(w)} mode=${World.stageOf(w)#mode} playback=${World.playbackOf(w)} ask=${World.askOf(w)}")
+            |> App.withFingerprint(Resources.read(E2e.fingerprint))
+            |> App.withStatusLine(Resources.read((r, w) -> "phase=${World.sceneName(w)} panel=${World.panelName(w)} talk=${World.talkNodeOf(w)} line=${World.talkLineOf(w)} mode=${World.stageOf(r, w)#mode} playback=${World.playbackOf(w)} ask=${World.askOf(w)}"))
             |> App.onRenderRequest(SceneRender.allShots)
-            |> App.onShotRequest(SceneRender.shotOf)
+            |> App.onShotRequest(Resources.read(SceneRender.shotOf))
 }

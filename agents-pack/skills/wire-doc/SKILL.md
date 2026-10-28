@@ -1,6 +1,6 @@
 ---
 name: wire-doc
-description: "まだコードに繋がっていない Doc(JSON) を loader（defaults・fail-open・watchFile）で配線し、橋渡しテストを最大 3 本書く。JSON を作ったがまだコードから読んでいないとき、「この Doc を繋いで」と言われたときに使う。"
+description: "まだコードに繋がっていない Doc(JSON) を loader（defaults・fail-open）と Res の欄・Resources.reloadRow で配線し、橋渡しテストを最大 3 本書く。JSON を作ったがまだコードから読んでいないとき、「この Doc を繋いで」と言われたときに使う。"
 ---
 
 # wire-doc — 未配線 Doc の配線
@@ -17,8 +17,9 @@ description: "まだコードに繋がっていない Doc(JSON) を loader（def
    Doc 本体には必ず `version` を入れる（無いと Studio の健康診断が警告する）。
    schema は Studio の **sections 方言**で書く（engine リポの `docs/doc-conventions.md`
    「スキーマの書き方」。語彙リファレンス形式では Studio のフォームが読めない）。
-3. Main（App 起動部）に `App.watchFile` の配線を足し、保存即反映にする。
-   既存の watchFile 配線をお手本にする。
+3. Doc を `Res`（`<ゲーム>/src/Res.flix`）の欄にし、`with*` を足す。保存即反映は `Controls.docTable` に
+   `Resources.reloadRow(id, path, reload, settle)` の行を 1 つ足す（World に収め直す物が無ければ settle は `(_, w) -> w`）。
+   Doc を World の欄に置かない（`bin/fge record-wrap` の world-resource が止める）。既存の行をお手本にする。
 4. 橋渡しテストを **最大3本** 書く:
    - 壊れた JSON → 既定値へ落ちる
    - 1 フィールド上書き → その値だけ変わる

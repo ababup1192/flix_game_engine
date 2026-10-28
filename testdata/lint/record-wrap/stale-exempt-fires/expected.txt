@@ -1,0 +1,3 @@
+  src/World.flix::world-resource は bin/lint-rules/record-wrap.local.json の exemptRules に載っていますが、もう鳴る所がありません
+[lint-record-wrap] 古い除外 1 件。載っているファイルから消してください
+[exit=1]

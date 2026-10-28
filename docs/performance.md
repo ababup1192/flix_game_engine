@@ -273,7 +273,7 @@ shadeAll(n, i -> ShaderEval.evalCompiled(compiled, u, v, time))
 
 2026-10-15 に `bin/fge quadratic --all` が見つけた、この一覧から漏れていた 3 件
 （どれも 8/13〜8/17 の洗い直しより前に入っていた）: `UiTypewriter.visibleText`
-（`foldLeft(String.concat, "")`。N は見えている文字数で、ゲームが決める）と `templates/tetris-starter` の
+（`foldLeft(String.concat, "")`。N は見えている文字数で、ゲームが決める）と `templates/tetris-starter`（2026-10-28 に引退）の
 `shuffle`（ゲームが写す元）は 3-a として直した。`FontCache.fontHash` は N が 8 で決まっているので
 `bin/lint-rules/quadratic.json` の除外に理由ごと載せた。
 

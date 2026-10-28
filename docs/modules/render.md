@@ -8,7 +8,7 @@
 | やりたいこと | モジュール |
 |---|---|
 | 箱や丸を並べて物・キャラを作りたくなった | PxSprite（+PxShade）/ gradPolygon / Terrain。RawDraw は下地とデバッグ用 |
-| 描画物を矩形で切り抜く（スクロールの表示範囲・PiP。スクリーン空間） | Render（clipped / clippedAll）（実例: `templates/novel-starter/src/View.flix`） |
+| 描画物を矩形で切り抜く（スクロールの表示範囲・PiP。スクリーン空間） | Render（clipped / clippedAll）（実例: `templates/sound-novel-starter/src/View.flix`） |
 | 画面を覆う・晴らす切り替え演出（フェード・ワイプ） | Transition |
 | 絵を傾ける・集まりを丸ごと傾ける（カードの傾き・振り子） | Render（turned / turnedAll）/ ui.json の rotation |
 | スプライトが無い・読めないとき仮色の板にする（穴を開けない） | RawDraw.orBoxAt |

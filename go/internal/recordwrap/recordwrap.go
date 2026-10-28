@@ -1,6 +1,7 @@
 package recordwrap
 
 // record-wrap — World が直接持つ大きな record を、名前付きの型 (1 case の enum) で包んでいるかを見る。
+// あわせて World の形の 2 規則 (world-resource・world-fields。world.go) も見る。
 //
 //	fge-go record-wrap                       名指しが無ければ何も見ない
 //	fge-go record-wrap --all                 リポの全パッケージを見る (古い除外もここで裁く)
@@ -61,12 +62,24 @@ type Hit struct {
 	Root  string
 	Field string
 	Type  string
-	Size  int
+	// Size は大きさの規則では展開した欄の総数、world-fields では一番上の欄の数。
+	Size int
+	// Rule は "" (大きさの規則) か RuleWorldResource / RuleWorldFields。
+	Rule string
+	// Found は world-resource で当たった型の名前。
+	Found []string
 	// Sources は数えた record の宣言のあるファイル (名指しのファイルが関わるかを見るため)。
 	Sources map[string]bool
 }
 
-func (h Hit) key() string { return h.Root + "::" + h.Field }
+// key は除外の鍵。大きさの規則は exempt の "モジュール.型::欄名"、World の形の規則は
+// exemptRules の "根からのパス::規則の id"。
+func (h Hit) key() string {
+	if h.Rule != "" {
+		return h.Path + "::" + h.Rule
+	}
+	return h.Root + "::" + h.Field
+}
 
 // stripComments は // から行末までを空白に置き換える (位置は変えない)。
 func stripComments(text string) string {
@@ -311,14 +324,17 @@ func (r *Rules) scanPackage(root, pkg string, extra []string) ([]Hit, error) {
 		}
 	}
 	var aliases []Alias
+	var enums []Enum
 	for _, f := range files {
 		body, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(f)))
 		if err != nil {
 			return nil, fmt.Errorf("読めません: %v", err)
 		}
 		aliases = append(aliases, ParseAliases(f, string(body))...)
+		enums = append(enums, ParseEnums(f, string(body))...)
 	}
-	return PackageHits(aliases, r.Roots, r.Threshold), nil
+	hits := PackageHits(aliases, r.Roots, r.Threshold)
+	return append(hits, WorldHits(aliases, enums, r.Roots, r.ResourceTypes, r.MaxTopFields)...), nil
 }
 
 // Run は fge record-wrap の本体。
@@ -391,7 +407,7 @@ func Run(out, errOut *strings.Builder, root string, args []string) (int, error) 
 			}
 		}
 	}
-	return report(out, errOut, rules, hits, all, warn), nil
+	return report(out, errOut, root, rules, hits, all, warn), nil
 }
 
 func touches(sources, want map[string]bool) bool {
@@ -403,39 +419,77 @@ func touches(sources, want map[string]bool) bool {
 	return false
 }
 
-func report(out, errOut *strings.Builder, rules *Rules, hits []Hit, all, warn bool) int {
-	var bad []Hit
+func report(out, errOut *strings.Builder, root string, rules *Rules, hits []Hit, all, warn bool) int {
+	var big, resource, fields []Hit
 	live := map[string]bool{}
 	for _, h := range hits {
 		live[h.key()] = true
-		if _, ok := rules.Exempt[h.key()]; !ok {
-			bad = append(bad, h)
+		switch h.Rule {
+		case "":
+			if _, ok := rules.Exempt[h.key()]; !ok {
+				big = append(big, h)
+			}
+		case RuleWorldResource:
+			if _, ok := rules.ExemptRules.Why[h.key()]; !ok {
+				resource = append(resource, h)
+			}
+		case RuleWorldFields:
+			if _, ok := rules.ExemptRules.Why[h.key()]; !ok {
+				fields = append(fields, h)
+			}
 		}
 	}
 	code := 0
 	if all {
-		var stale []string
-		for key := range rules.Exempt {
-			if !live[key] {
-				stale = append(stale, key)
-			}
-		}
-		sort.Strings(stale)
-		for _, key := range stale {
-			fmt.Fprintf(errOut, "  %s は exempt に載っていますが、もう鳴る所がありません\n", key)
-		}
-		if len(stale) > 0 {
-			fmt.Fprintf(errOut, "[lint-record-wrap] 古い除外 %d 件。"+
-				"bin/lint-rules/record-wrap.json の exempt から消してください\n", len(stale))
-			code = 1
+		code = reportStale(errOut, rules, live, root)
+	}
+	silenced := 0
+	for key := range live {
+		_, size := rules.Exempt[key]
+		_, world := rules.ExemptRules.Why[key]
+		if size || world {
+			silenced++
 		}
 	}
-	if len(bad) == 0 {
+	if len(big)+len(resource)+len(fields) == 0 {
 		if code == 0 {
-			fmt.Fprintf(out, "[lint-record-wrap] OK (展開した大きさ %d 以上の欄なし / 除外 %d 件)\n",
-				rules.Threshold, len(rules.Exempt))
+			fmt.Fprintf(out, "[lint-record-wrap] OK (展開した大きさ %d 以上の欄なし・World の一番上の欄 %d 以下・Doc と描く元なし / 除外で黙らせた %d 件)\n",
+				rules.Threshold, rules.MaxTopFields, silenced)
 		}
 		return finish(errOut, code, warn)
+	}
+	reportBig(errOut, rules, big)
+	reportResource(errOut, rules, resource)
+	reportFields(errOut, rules, fields)
+	return finish(errOut, 1, warn)
+}
+
+func reportStale(errOut *strings.Builder, rules *Rules, live map[string]bool, root string) int {
+	var stale []string
+	for key := range rules.Exempt {
+		if !live[key] {
+			stale = append(stale, key)
+		}
+	}
+	sort.Strings(stale)
+	for _, key := range stale {
+		fmt.Fprintf(errOut, "  %s は exempt に載っていますが、もう鳴る所がありません\n", key)
+	}
+	staleRules := rules.ExemptRules.Stale(root, live)
+	for _, key := range staleRules {
+		fmt.Fprintf(errOut, "  %s は %s の exemptRules に載っていますが、もう鳴る所がありません\n",
+			key, rules.ExemptRules.From[key])
+	}
+	if len(stale)+len(staleRules) == 0 {
+		return 0
+	}
+	fmt.Fprintf(errOut, "[lint-record-wrap] 古い除外 %d 件。載っているファイルから消してください\n", len(stale)+len(staleRules))
+	return 1
+}
+
+func reportBig(errOut *strings.Builder, rules *Rules, bad []Hit) {
+	if len(bad) == 0 {
+		return
 	}
 	sort.SliceStable(bad, func(i, j int) bool { return bad[i].Size > bad[j].Size })
 	fmt.Fprintf(errOut, "!! %s の欄が大きな record を包まずに持っています (展開した大きさ %d 以上)\n",
@@ -446,8 +500,46 @@ func report(out, errOut *strings.Builder, rules *Rules, hits []Hit, all, warn bo
 	fmt.Fprintf(errOut, "[lint-record-wrap] %d 件。record の型エイリアスは使われるたびに中身のまま展開されるので、"+
 		"World を取る全 def で型の木が大きくなり flix check の時間とメモリが伸びます。"+
 		"\n  1 case の enum で包むと展開が止まります (docs/flix-conventions.md「型の設計」)。"+
-		"\n  どうしても残すなら bin/lint-rules/record-wrap.json の exempt へ \"World.World::欄名\" と理由 1 行\n", len(bad))
-	return finish(errOut, 1, warn)
+		"\n  どうしても残すなら %sの exempt へ \"World.World::欄名\" と理由 1 行\n", len(bad), exemptFile)
+}
+
+// exemptFile は除外を書く所。
+// WhyNot: エンジンのリポの根に local.json を置かないのは、bin/lint-rules を丸ごとゲームへ配るので
+// ゲームの local を上書きしてしまうため。エンジン自身の除外は配る側の record-wrap.json に書く。
+const exemptFile = "bin/lint-rules/record-wrap.local.json（エンジンのリポでは record-wrap.json）"
+
+// worldShapeDoc は World の形の 2 規則の hint が指す文書の節。
+const worldShapeDoc = "engine の docs/flix-conventions.md「型の設計」の「World は遊びの状態だけを持つ（Doc は Resources・画面は enum）」"
+
+func reportResource(errOut *strings.Builder, rules *Rules, bad []Hit) {
+	if len(bad) == 0 {
+		return
+	}
+	fmt.Fprintf(errOut, "!! %s の欄が Doc や描く元を持っています (%s)\n", strings.Join(rules.Roots, " / "), RuleWorldResource)
+	for _, h := range bad {
+		fmt.Fprintf(errOut, "   %s:%d %s = %s (%s)\n", h.Path, h.Line, h.Field, h.Type, strings.Join(h.Found, ", "))
+	}
+	fmt.Fprintf(errOut, "[lint-record-wrap] %s %d 件。Doc と描く元は World の外へ"+
+		"（engine の Resources・手本 engine の templates/game-starter と templates/tidepool-starter の src/Res.flix、"+
+		"読み直しは Resources.reloadRow）。"+
+		"\n  詳しくは %s。"+
+		"\n  どうしても残すなら %sの exemptRules へ \"<パス>::%s\" と理由 1 行\n",
+		RuleWorldResource, len(bad), worldShapeDoc, exemptFile, RuleWorldResource)
+}
+
+func reportFields(errOut *strings.Builder, rules *Rules, bad []Hit) {
+	if len(bad) == 0 {
+		return
+	}
+	fmt.Fprintf(errOut, "!! %s の一番上の欄が %d を超えています (%s)\n", strings.Join(rules.Roots, " / "), rules.MaxTopFields, RuleWorldFields)
+	for _, h := range bad {
+		fmt.Fprintf(errOut, "   %s:%d %s の欄 %d 個\n", h.Path, h.Line, h.Root, h.Size)
+	}
+	fmt.Fprintf(errOut, "[lint-record-wrap] %s %d 件。その画面だけの値は画面の enum の payload へ"+
+		"（手本 engine の templates/tidepool-starter の Screen）。"+
+		"\n  詳しくは %s。"+
+		"\n  どうしても残すなら %sの exemptRules へ \"<パス>::%s\" と理由 1 行\n",
+		RuleWorldFields, len(bad), worldShapeDoc, exemptFile, RuleWorldFields)
 }
 
 // finish は --warn のとき終了コードだけを 0 に倒す。

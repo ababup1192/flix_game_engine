@@ -10,8 +10,8 @@
 | 起動中のゲームを外から操作・観測する | App.RemoteDebug |
 | 好きな場面を窓なしで 1 枚撮る・起動中のゲームを動かさずに見る（会話のプレビュー） | App.Headless（ゲームの E2e.serveHeadless を bin/headless-run で）+ App.onShotRequest（`view=shot`） |
 | DEBUG で起動したゲームの命令口を外から見つける | App.GameRegistry（~/.flix_ge_studio/games.json・`bin/fge talk goto` が読む） |
-| Studio に「いま表示中の Doc」を名乗る（表示中バッジ） | App.withDocTable（中身は ActiveDocs。実例: `templates/tetris-starter/src/Game.flix`） |
-| 好きな場面から起動する・テストと flow が場面を名前で組む | App.withStarts（START="名前 k=v"・GET /starts・POST /start・App.startOrBug。実例: `templates/tetris-starter/src/Starts.flix`） |
+| Studio に「いま表示中の Doc」を名乗る（表示中バッジ） | App.withDocTable（中身は ActiveDocs。実例: `templates/tidepool-starter/src/Game.flix`） |
+| 好きな場面から起動する・テストと flow が場面を名前で組む | App.withStarts（START="名前 k=v"・GET /starts・POST /start・App.startOrBug。実例: `templates/tidepool-starter/src/Starts.flix`） |
 | 知らない名前に「もしかして」の候補を付ける | Suggest.hint / near |
 | 生成した絵に出ない指定を知る（実機との食い違い防止） | SoftRaster（dropped）/ [対応表](../backend-parity.md) |
 | 描き出した 1 枚に「この塊は何として描いたか」の目録を添える（材質の色の潰れ・主役の埋没を数で出す） | RenderManifest（検査を鳴らす条件は intent。実行中の矩形の記録は Annotate、UI の幾何破綻は RenderLint） |
