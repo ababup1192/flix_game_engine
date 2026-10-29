@@ -1,0 +1,105 @@
+{
+  "version": 1,
+  "title": "宿屋",
+  "note": "宿屋の中。x は寝台の下・k は帳場の机の下（絵は床のまま。k の机越しに宿の人と話せる）。宿の人に話すと宿代（assets/rpg.shops.json の innPrice）を払って泊まれる。下の 4 マスが村への出口。出た所が宿の前（rpg.rules.json の home）。",
+  "tileset": "house",
+  "battleBack": "bg_plains",
+  "rows": [
+    "################",
+    "##WWOWWWWWWOWW##",
+    "##x.x.x......p##",
+    "##...........p##",
+    "##.....kk.....##",
+    "##............##",
+    "##............##",
+    "##............##",
+    "######....######",
+    "################",
+    "################",
+    "################",
+    "################",
+    "################",
+    "################"
+  ],
+  "exits": [
+    {
+      "id": "out_6",
+      "x": 6,
+      "y": 8,
+      "to": "village",
+      "spawnX": 3,
+      "spawnY": 4,
+      "facing": "down"
+    },
+    {
+      "id": "out_7",
+      "x": 7,
+      "y": 8,
+      "to": "village",
+      "spawnX": 3,
+      "spawnY": 4,
+      "facing": "down"
+    },
+    {
+      "id": "out_8",
+      "x": 8,
+      "y": 8,
+      "to": "village",
+      "spawnX": 3,
+      "spawnY": 4,
+      "facing": "down"
+    },
+    {
+      "id": "out_9",
+      "x": 9,
+      "y": 8,
+      "to": "village",
+      "spawnX": 3,
+      "spawnY": 4,
+      "facing": "down"
+    }
+  ],
+  "npcs": [
+    {
+      "id": "innkeeper",
+      "sprite": "woman",
+      "x": 7,
+      "y": 3,
+      "facing": "down",
+      "node": "Innkeeper"
+    }
+  ],
+  "props": [
+    {
+      "sprite": "bed",
+      "frame": "idle",
+      "x": 2,
+      "y": 1
+    },
+    {
+      "sprite": "bed",
+      "frame": "idle",
+      "x": 4,
+      "y": 1
+    },
+    {
+      "sprite": "bed",
+      "frame": "idle",
+      "x": 6,
+      "y": 1
+    },
+    {
+      "sprite": "table",
+      "frame": "idle",
+      "x": 7,
+      "y": 4
+    },
+    {
+      "sprite": "rug",
+      "frame": "idle",
+      "flat": true,
+      "x": 10,
+      "y": 5
+    }
+  ]
+}

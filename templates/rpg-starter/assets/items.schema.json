@@ -1,0 +1,107 @@
+{
+  "//": "rpg.items.json の形の宣言（Studio の sections 方言）。効き目の決まりはコード、ここは道具の名前と数だけ。",
+  "version": 1,
+  "sections": {
+    "items": {
+      "kind": "catalog",
+      "label": "道具（鍵 = 会話の <<give>>・店の品・初めの装備が指す名前）",
+      "order": 1,
+      "fields": {
+        "name": {
+          "type": "text",
+          "label": "画面に出す名前",
+          "order": 1,
+          "required": true,
+          "default": ""
+        },
+        "kind": {
+          "type": {
+            "enum": [
+              "use",
+              "weapon",
+              "armor",
+              "key"
+            ]
+          },
+          "label": "種類（使う / ぶき / よろい / だいじなもの）",
+          "order": 2,
+          "default": "use"
+        },
+        "price": {
+          "type": "int",
+          "label": "店の値段（G。売値は半分）",
+          "order": 3,
+          "min": 0,
+          "max": 9999,
+          "default": 0
+        },
+        "heal": {
+          "type": "int",
+          "label": "使うと戻る HP",
+          "order": 4,
+          "min": 0,
+          "max": 999,
+          "default": 0
+        },
+        "mpHeal": {
+          "type": "int",
+          "label": "使うと戻る MP",
+          "order": 5,
+          "min": 0,
+          "max": 999,
+          "default": 0
+        },
+        "atk": {
+          "type": "int",
+          "label": "装備した時の ちから",
+          "order": 6,
+          "min": 0,
+          "max": 255,
+          "default": 0
+        },
+        "def": {
+          "type": "int",
+          "label": "装備した時の みのまもり",
+          "order": 7,
+          "min": 0,
+          "max": 255,
+          "default": 0
+        },
+        "luka": {
+          "type": "bool",
+          "label": "ルカが装備できる",
+          "order": 8,
+          "default": false
+        },
+        "mina": {
+          "type": "bool",
+          "label": "ミナが装備できる",
+          "order": 9,
+          "default": false
+        },
+        "toto": {
+          "type": "bool",
+          "label": "トトが装備できる",
+          "order": 10,
+          "default": false
+        },
+        "lightSteps": {
+          "type": "int",
+          "label": "暗いマップで使うと明かりが続く歩数（0 なら明かりにならない）",
+          "order": 11,
+          "min": 0,
+          "max": 999,
+          "default": 0
+        },
+        "burn": {
+          "type": "int",
+          "label": "戦いで使うと敵 1 体に与えるダメージ（P6）",
+          "order": 12,
+          "min": 0,
+          "max": 999,
+          "default": 0
+        }
+      }
+    }
+  }
+}

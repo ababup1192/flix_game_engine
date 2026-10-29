@@ -1,0 +1,1068 @@
+{
+  "version": 2,
+  "note": "bin/fge yarn build が assets/talk/rune.yarn から書いた木。手で直さない（.yarn を直して build する）",
+  "vocab": "assets/talk/vocab.json",
+  "files": [
+    "assets/talk/rune.yarn"
+  ],
+  "variables": [
+    {
+      "name": "$quest",
+      "value": "none",
+      "file": "assets/talk/rune.yarn",
+      "line": 52
+    },
+    {
+      "name": "$mina",
+      "value": false,
+      "file": "assets/talk/rune.yarn",
+      "line": 53
+    },
+    {
+      "name": "$toto",
+      "value": false,
+      "file": "assets/talk/rune.yarn",
+      "line": 54
+    },
+    {
+      "name": "$gold",
+      "value": 0,
+      "file": "assets/talk/rune.yarn",
+      "line": 55
+    },
+    {
+      "name": "$innPrice",
+      "value": 0,
+      "file": "assets/talk/rune.yarn",
+      "line": 56
+    },
+    {
+      "name": "$has_totostaff",
+      "value": false,
+      "file": "assets/talk/rune.yarn",
+      "line": 127
+    }
+  ],
+  "nodes": [
+    {
+      "title": "Elder",
+      "file": "assets/talk/rune.yarn",
+      "line": 26,
+      "headers": [],
+      "body": [
+        {
+          "kind": "line",
+          "line": 28,
+          "speaker": "elder",
+          "text": "むらおさなら ひがしの おおきな いえに おるよ。\nいずみの ことで こまって おるようじゃ。"
+        }
+      ]
+    },
+    {
+      "title": "Woman",
+      "file": "assets/talk/rune.yarn",
+      "line": 31,
+      "headers": [],
+      "body": [
+        {
+          "kind": "if",
+          "line": 33,
+          "clauses": [
+            {
+              "line": 33,
+              "condition": {
+                "kind": "==",
+                "args": [
+                  {
+                    "kind": "variable",
+                    "name": "$quest"
+                  },
+                  {
+                    "kind": "value",
+                    "value": "none"
+                  }
+                ]
+              },
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 34,
+                  "speaker": "woman",
+                  "text": "いずみが かれてから\nみずくみが たいへんでねえ。\nむらおさが よんでいたよ。"
+                }
+              ]
+            },
+            {
+              "line": 35,
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 36,
+                  "speaker": "woman",
+                  "text": "こうどうへ いくのかい？\nそういえば ひがしの ほこらで\nまほうつかいの こどもが\nなにか さがしていたよ。"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Child",
+      "file": "assets/talk/rune.yarn",
+      "line": 40,
+      "headers": [],
+      "body": [
+        {
+          "kind": "line",
+          "line": 42,
+          "speaker": "child",
+          "text": "いずみで あそべないの つまんない！"
+        }
+      ]
+    },
+    {
+      "title": "Merchant",
+      "file": "assets/talk/rune.yarn",
+      "line": 45,
+      "headers": [],
+      "body": [
+        {
+          "kind": "line",
+          "line": 47,
+          "speaker": "merchant",
+          "text": "どうぐやは この いえだよ。\nたびの まえには やくそうを わすれずにね！"
+        }
+      ]
+    },
+    {
+      "title": "ChiefQuest",
+      "file": "assets/talk/rune.yarn",
+      "line": 50,
+      "headers": [],
+      "body": [
+        {
+          "kind": "if",
+          "line": 57,
+          "clauses": [
+            {
+              "line": 57,
+              "condition": {
+                "kind": "==",
+                "args": [
+                  {
+                    "kind": "variable",
+                    "name": "$quest"
+                  },
+                  {
+                    "kind": "value",
+                    "value": "none"
+                  }
+                ]
+              },
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 58,
+                  "speaker": "chief",
+                  "text": "おお ルカよ。\nむらの いずみが かれてしもうた…\nきたの こうどうへ いって\nわけを しらべてきては くれんか？"
+                },
+                {
+                  "kind": "options",
+                  "line": 59,
+                  "options": [
+                    {
+                      "line": 59,
+                      "text": "はい",
+                      "body": [
+                        {
+                          "kind": "command",
+                          "line": 60,
+                          "name": "quest",
+                          "args": [
+                            "accept"
+                          ]
+                        },
+                        {
+                          "kind": "command",
+                          "line": 61,
+                          "name": "give",
+                          "args": [
+                            "yakusou",
+                            "3"
+                          ]
+                        },
+                        {
+                          "kind": "line",
+                          "line": 62,
+                          "speaker": "chief",
+                          "text": "おお やってくれるか！\nこころづよい のう。"
+                        },
+                        {
+                          "kind": "line",
+                          "line": 63,
+                          "text": "ルカは てつけの おかねと\nやくそうを 3つ うけとった。\n（もちきん {$gold}G）",
+                          "parts": [
+                            {
+                              "text": "ルカは てつけの おかねと\nやくそうを 3つ うけとった。\n（もちきん "
+                            },
+                            {
+                              "expr": {
+                                "kind": "variable",
+                                "name": "$gold"
+                              }
+                            },
+                            {
+                              "text": "G）"
+                            }
+                          ]
+                        },
+                        {
+                          "kind": "line",
+                          "line": 64,
+                          "speaker": "chief",
+                          "text": "こうどうなら かじやの むすめ\nミナが くわしい。\nにしの みちの さきじゃ。"
+                        }
+                      ]
+                    },
+                    {
+                      "line": 65,
+                      "text": "いいえ",
+                      "body": [
+                        {
+                          "kind": "line",
+                          "line": 66,
+                          "speaker": "chief",
+                          "text": "そこを なんとか…"
+                        },
+                        {
+                          "kind": "jump",
+                          "line": 67,
+                          "node": "ChiefQuest"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "line": 68,
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 69,
+                  "speaker": "chief",
+                  "text": "かじやの ミナを つれて\nきたの こうどうを たのんだぞ。"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Smith",
+      "file": "assets/talk/rune.yarn",
+      "line": 73,
+      "headers": [],
+      "body": [
+        {
+          "kind": "if",
+          "line": 75,
+          "clauses": [
+            {
+              "line": 75,
+              "condition": {
+                "kind": "variable",
+                "name": "$mina"
+              },
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 76,
+                  "speaker": "smith",
+                  "text": "まごを たのんだぞ。\nせがれも きっと\nこうどうの おくに おるはずじゃ。"
+                }
+              ]
+            },
+            {
+              "line": 77,
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 78,
+                  "speaker": "smith",
+                  "text": "カーン カーン…\nせがれが こうどうから\nもどらんのじゃ。"
+                },
+                {
+                  "kind": "line",
+                  "line": 79,
+                  "speaker": "smith",
+                  "text": "まごの ミナは こうどうに\nくわしい。きっと ちからに\nなってくれるじゃろう。"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Mina",
+      "file": "assets/talk/rune.yarn",
+      "line": 83,
+      "headers": [],
+      "body": [
+        {
+          "kind": "if",
+          "line": 85,
+          "clauses": [
+            {
+              "line": 85,
+              "condition": {
+                "kind": "==",
+                "args": [
+                  {
+                    "kind": "variable",
+                    "name": "$quest"
+                  },
+                  {
+                    "kind": "value",
+                    "value": "none"
+                  }
+                ]
+              },
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 86,
+                  "speaker": "mina",
+                  "text": "とうちゃんの こうどうは\nいま あぶないよ。\nだれも ちかよれないんだ。"
+                }
+              ]
+            },
+            {
+              "line": 87,
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 88,
+                  "speaker": "mina",
+                  "text": "むらおさの たのみで\nこうどうへ いくの？\nあたしも いく！ とうちゃんを\nさがさなきゃ！"
+                },
+                {
+                  "kind": "command",
+                  "line": 89,
+                  "name": "join",
+                  "args": [
+                    "mina"
+                  ]
+                },
+                {
+                  "kind": "line",
+                  "line": 90,
+                  "text": "ミナが なかまに くわわった！"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "VillageGate",
+      "file": "assets/talk/rune.yarn",
+      "line": 94,
+      "headers": [],
+      "body": [
+        {
+          "kind": "if",
+          "line": 96,
+          "clauses": [
+            {
+              "line": 96,
+              "condition": {
+                "kind": "==",
+                "args": [
+                  {
+                    "kind": "variable",
+                    "name": "$quest"
+                  },
+                  {
+                    "kind": "value",
+                    "value": "none"
+                  }
+                ]
+              },
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 97,
+                  "text": "むらの そとは あぶない。\nまずは むらおさの いえへ いこう。"
+                }
+              ]
+            },
+            {
+              "line": 98,
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 99,
+                  "text": "ひとりでは こころぼそい。\nにしの かじやの ミナを たずねよう。"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Shopkeeper",
+      "file": "assets/talk/rune.yarn",
+      "line": 103,
+      "headers": [],
+      "body": [
+        {
+          "kind": "line",
+          "line": 105,
+          "speaker": "shop",
+          "text": "いらっしゃい！\nどうぐやへ ようこそ。"
+        },
+        {
+          "kind": "command",
+          "line": 106,
+          "name": "shop"
+        },
+        {
+          "kind": "line",
+          "line": 107,
+          "speaker": "shop",
+          "text": "また きてね！"
+        }
+      ]
+    },
+    {
+      "title": "Innkeeper",
+      "file": "assets/talk/rune.yarn",
+      "line": 110,
+      "headers": [],
+      "body": [
+        {
+          "kind": "line",
+          "line": 112,
+          "speaker": "inn",
+          "text": "たびびとの やどへ ようこそ。\nひとばん {$innPrice}G だよ。\nとまって いくかい？",
+          "parts": [
+            {
+              "text": "たびびとの やどへ ようこそ。\nひとばん "
+            },
+            {
+              "expr": {
+                "kind": "variable",
+                "name": "$innPrice"
+              }
+            },
+            {
+              "text": "G だよ。\nとまって いくかい？"
+            }
+          ]
+        },
+        {
+          "kind": "options",
+          "line": 113,
+          "options": [
+            {
+              "line": 113,
+              "text": "はい",
+              "body": [
+                {
+                  "kind": "if",
+                  "line": 114,
+                  "clauses": [
+                    {
+                      "line": 114,
+                      "condition": {
+                        "kind": ">=",
+                        "args": [
+                          {
+                            "kind": "variable",
+                            "name": "$gold"
+                          },
+                          {
+                            "kind": "variable",
+                            "name": "$innPrice"
+                          }
+                        ]
+                      },
+                      "body": [
+                        {
+                          "kind": "command",
+                          "line": 115,
+                          "name": "inn"
+                        },
+                        {
+                          "kind": "line",
+                          "line": 116,
+                          "speaker": "inn",
+                          "text": "おはよう ございます。\nゆうべは よく ねむれましたか？"
+                        },
+                        {
+                          "kind": "line",
+                          "line": 117,
+                          "text": "ぼうけんの きろくを かきのこした。"
+                        }
+                      ]
+                    },
+                    {
+                      "line": 118,
+                      "body": [
+                        {
+                          "kind": "line",
+                          "line": 119,
+                          "speaker": "inn",
+                          "text": "おや おかねが たりないようだね。"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "line": 121,
+              "text": "いいえ",
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 122,
+                  "speaker": "inn",
+                  "text": "また どうぞ。"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Shrine",
+      "file": "assets/talk/rune.yarn",
+      "line": 125,
+      "headers": [],
+      "body": [
+        {
+          "kind": "if",
+          "line": 128,
+          "clauses": [
+            {
+              "line": 128,
+              "condition": {
+                "kind": "and",
+                "args": [
+                  {
+                    "kind": "not",
+                    "args": [
+                      {
+                        "kind": "variable",
+                        "name": "$toto"
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "variable",
+                    "name": "$has_totostaff"
+                  }
+                ]
+              },
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 129,
+                  "speaker": "toto",
+                  "text": "あっ！ それ ぼくの つえだ！\nとりかえして くれたんだね！"
+                },
+                {
+                  "kind": "command",
+                  "line": 130,
+                  "name": "take",
+                  "args": [
+                    "totostaff",
+                    "1"
+                  ]
+                },
+                {
+                  "kind": "line",
+                  "line": 131,
+                  "text": "ルカは トトに つえを かえした。"
+                },
+                {
+                  "kind": "line",
+                  "line": 132,
+                  "speaker": "toto",
+                  "text": "これで また まほうが つかえる。\nきたの こうどうへ いくんでしょ？\nぼくも つれてって！"
+                },
+                {
+                  "kind": "command",
+                  "line": 133,
+                  "name": "join",
+                  "args": [
+                    "toto"
+                  ]
+                },
+                {
+                  "kind": "line",
+                  "line": 134,
+                  "text": "トトが なかまに くわわった！"
+                }
+              ]
+            },
+            {
+              "line": 135,
+              "condition": {
+                "kind": "and",
+                "args": [
+                  {
+                    "kind": "not",
+                    "args": [
+                      {
+                        "kind": "variable",
+                        "name": "$toto"
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "==",
+                    "args": [
+                      {
+                        "kind": "variable",
+                        "name": "$quest"
+                      },
+                      {
+                        "kind": "value",
+                        "value": "none"
+                      }
+                    ]
+                  }
+                ]
+              },
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 136,
+                  "speaker": "toto",
+                  "text": "ぼく トト。\nここで まほうの しゅぎょうを\nしてるんだ。"
+                }
+              ]
+            },
+            {
+              "line": 137,
+              "condition": {
+                "kind": "not",
+                "args": [
+                  {
+                    "kind": "variable",
+                    "name": "$toto"
+                  }
+                ]
+              },
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 138,
+                  "speaker": "toto",
+                  "text": "たいへんなんだ…\nしゅぎょうの つえを ほりモグに\nもっていかれちゃった。"
+                },
+                {
+                  "kind": "line",
+                  "line": 139,
+                  "speaker": "toto",
+                  "text": "みなみの もりの ほらあなに\nにげこんだんだ。\nつえが ないと まほうが つかえないよ…"
+                },
+                {
+                  "kind": "line",
+                  "line": 140,
+                  "speaker": "mina",
+                  "text": "ほらあなの ほりモグか。\nあたしたちで とりかえして あげよう！"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "CaveMole",
+      "file": "assets/talk/rune.yarn",
+      "line": 144,
+      "headers": [],
+      "body": [
+        {
+          "kind": "line",
+          "line": 146,
+          "text": "ほりモグが つえを かかえて\nうなっている！"
+        },
+        {
+          "kind": "command",
+          "line": 147,
+          "name": "fight",
+          "args": [
+            "horimogu",
+            "StaffBack"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "StaffBack",
+      "file": "assets/talk/rune.yarn",
+      "line": 150,
+      "headers": [],
+      "body": [
+        {
+          "kind": "command",
+          "line": 152,
+          "name": "open",
+          "args": [
+            "cave_mole"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 153,
+          "name": "give",
+          "args": [
+            "totostaff",
+            "1"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 154,
+          "text": "ほりモグは あなを ほって\nにげていった。"
+        },
+        {
+          "kind": "line",
+          "line": 155,
+          "text": "ルカは トトのつえを とりかえした！"
+        }
+      ]
+    },
+    {
+      "title": "MineGate",
+      "file": "assets/talk/rune.yarn",
+      "line": 158,
+      "headers": [],
+      "body": [
+        {
+          "kind": "line",
+          "line": 160,
+          "speaker": "mina",
+          "text": "こうどうの おくは まっくらだよ。\nそういえば ひがしの ほこらに\nだれか いたような…"
+        }
+      ]
+    },
+    {
+      "title": "Boljii",
+      "file": "assets/talk/rune.yarn",
+      "line": 163,
+      "headers": [],
+      "body": [
+        {
+          "kind": "line",
+          "line": 165,
+          "speaker": "boljii",
+          "text": "わしは こうふの ボルじい。\nこうどうが とじてからも\nひとりで ここに おるんじゃ。"
+        },
+        {
+          "kind": "line",
+          "line": 166,
+          "speaker": "boljii",
+          "text": "トロッコは まえから しらべれば\nのれる。どっちへ はしるかは\nかべの レバーしだいじゃ。"
+        },
+        {
+          "kind": "line",
+          "line": 167,
+          "speaker": "boljii",
+          "text": "いわは おして うごかす。\nつまったら かいだんを\nでいりすれば もとに もどるぞ。"
+        },
+        {
+          "kind": "if",
+          "line": 168,
+          "clauses": [
+            {
+              "line": 168,
+              "condition": {
+                "kind": "variable",
+                "name": "$mina"
+              },
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 169,
+                  "speaker": "boljii",
+                  "text": "ミナの とうちゃんなら\nおくへ いったきり もどらん。\nきを つけて いくんじゃぞ。"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Cart",
+      "file": "assets/talk/rune.yarn",
+      "line": 173,
+      "headers": [],
+      "body": [
+        {
+          "kind": "line",
+          "line": 175,
+          "text": "トロッコが ある。\nのって みますか？"
+        },
+        {
+          "kind": "options",
+          "line": 176,
+          "options": [
+            {
+              "line": 176,
+              "text": "はい",
+              "body": [
+                {
+                  "kind": "command",
+                  "line": 177,
+                  "name": "ride"
+                }
+              ]
+            },
+            {
+              "line": 178,
+              "text": "いいえ",
+              "body": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Koron",
+      "file": "assets/talk/rune.yarn",
+      "line": 181,
+      "headers": [],
+      "body": [
+        {
+          "kind": "line",
+          "line": 183,
+          "speaker": "koron",
+          "text": "まいど！ こうどうの\nぎょうしょうにん コロンです。"
+        },
+        {
+          "kind": "line",
+          "line": 184,
+          "speaker": "koron",
+          "text": "このさきは まっくら。\nたいまつを つかえば\nあしもとが よく みえますよ。"
+        },
+        {
+          "kind": "command",
+          "line": 185,
+          "name": "shop",
+          "args": [
+            "mine"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 186,
+          "speaker": "koron",
+          "text": "また どうぞ！"
+        }
+      ]
+    },
+    {
+      "title": "Kurogane",
+      "file": "assets/talk/rune.yarn",
+      "line": 189,
+      "headers": [],
+      "body": [
+        {
+          "kind": "line",
+          "line": 191,
+          "speaker": "kurogane",
+          "text": "グルル…\nこの おたからは わたさねえ！"
+        },
+        {
+          "kind": "command",
+          "line": 192,
+          "name": "fight",
+          "args": [
+            "kurogane",
+            "KuroganeWon"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "KuroganeWon",
+      "file": "assets/talk/rune.yarn",
+      "line": 195,
+      "headers": [],
+      "body": [
+        {
+          "kind": "command",
+          "line": 197,
+          "name": "open",
+          "args": [
+            "b2_kurogane"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 198,
+          "text": "くろがねゴブリンは\nあなの おくへ にげていった！"
+        }
+      ]
+    },
+    {
+      "title": "Mimic",
+      "file": "assets/talk/rune.yarn",
+      "line": 201,
+      "headers": [],
+      "body": [
+        {
+          "kind": "line",
+          "line": 203,
+          "text": "たからばこを あけた！"
+        },
+        {
+          "kind": "line",
+          "line": 204,
+          "text": "なんと たからばこは\nひとくいばこ だった！"
+        },
+        {
+          "kind": "command",
+          "line": 205,
+          "name": "fight",
+          "args": [
+            "mimic",
+            "MimicWon"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "MimicWon",
+      "file": "assets/talk/rune.yarn",
+      "line": 208,
+      "headers": [],
+      "body": [
+        {
+          "kind": "command",
+          "line": 210,
+          "name": "open",
+          "args": [
+            "b3_mimic"
+          ]
+        },
+        {
+          "kind": "command",
+          "line": 211,
+          "name": "gold",
+          "args": [
+            "300"
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 212,
+          "text": "ひとくいばこを たおした！\n300G を てにいれた！"
+        }
+      ]
+    },
+    {
+      "title": "Tablet",
+      "file": "assets/talk/rune.yarn",
+      "line": 215,
+      "headers": [],
+      "body": [
+        {
+          "kind": "line",
+          "line": 217,
+          "text": "いしぶみに なにか ほってある…"
+        },
+        {
+          "kind": "line",
+          "line": 218,
+          "text": "「みずうみの みちは\n ひの のぼる かたより\n ひの しずむ かたへ\n さいごに ほしの みちしるべ」"
+        }
+      ]
+    },
+    {
+      "title": "MinaFather",
+      "file": "assets/talk/rune.yarn",
+      "line": 221,
+      "headers": [],
+      "body": [
+        {
+          "kind": "if",
+          "line": 223,
+          "clauses": [
+            {
+              "line": 223,
+              "condition": {
+                "kind": "variable",
+                "name": "$mina"
+              },
+              "body": [
+                {
+                  "kind": "line",
+                  "line": 224,
+                  "speaker": "father",
+                  "text": "ミナ…！\nミナじゃないか！"
+                },
+                {
+                  "kind": "line",
+                  "line": 225,
+                  "speaker": "mina",
+                  "text": "とうちゃん！\nぶじだったんだね…！"
+                },
+                {
+                  "kind": "line",
+                  "line": 226,
+                  "speaker": "father",
+                  "text": "すまん しんぱいを かけた。\nあしを くじいて\nうごけなかったんだ。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "line",
+          "line": 228,
+          "speaker": "father",
+          "text": "きずぐすりを わけてやろう。"
+        },
+        {
+          "kind": "command",
+          "line": 229,
+          "name": "heal"
+        },
+        {
+          "kind": "line",
+          "line": 230,
+          "text": "みんなの HPと MPが\nすっかり かいふくした！"
+        },
+        {
+          "kind": "line",
+          "line": 231,
+          "speaker": "father",
+          "text": "みずうみの すいしょうは\nひがしの あお、にしの あお、\nきたの あお の じゅんに ともすんだ。"
+        },
+        {
+          "kind": "line",
+          "line": 232,
+          "speaker": "father",
+          "text": "わしは ここで まっている。\nいずみを たのんだぞ。"
+        }
+      ]
+    }
+  ]
+}

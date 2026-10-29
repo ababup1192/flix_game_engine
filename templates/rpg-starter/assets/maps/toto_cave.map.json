@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "title": "森の岩穴",
+  "note": "ほこらの南の森の小さな洞窟（mine の組・1 画面・出会い無し）。入口の部屋の北の通路に鉄格子（cave_bars・gate）、その右の壁にレバー（cave_lever・lever）。レバーを引くと旗 cave_bars が立って格子が開く。奥の部屋でほりモグ（cave_mole・guard）がトトのつえを抱えている（話しかけると CaveMole の会話 → 固定の戦い → 勝つと StaffBack が消して杖をくれる）。< は上り階段（ワールドマップの岩穴の前へ）。仕掛けの初出なので、ここでは 1 回だけ・敵も時間の圧も無く見せる。",
+  "tileset": "mine",
+  "battleBack": "bg_cave",
+  "rows": [
+    "################",
+    "################",
+    "####t#####t#####",
+    "###.........####",
+    "###.,.......####",
+    "###........,####",
+    "######P.P#######",
+    "#######.########",
+    "####t##.########",
+    "###...........##",
+    "###...........##",
+    "###...........##",
+    "###.....<.....##",
+    "################",
+    "################"
+  ],
+  "exits": [
+    {
+      "id": "to_world",
+      "x": 8,
+      "y": 12,
+      "to": "world",
+      "spawnX": 21,
+      "spawnY": 19,
+      "facing": "down"
+    }
+  ],
+  "npcs": [],
+  "props": [],
+  "objects": [
+    {
+      "id": "cave_bars",
+      "kind": "gate",
+      "x": 7,
+      "y": 8,
+      "sprite": "gate_bars",
+      "flag": "cave_bars",
+      "openWhen": "on"
+    },
+    {
+      "id": "cave_lever",
+      "kind": "lever",
+      "x": 9,
+      "y": 8,
+      "sprite": "lever",
+      "flag": "cave_bars"
+    },
+    {
+      "id": "cave_mole",
+      "kind": "guard",
+      "x": 7,
+      "y": 4,
+      "sprite": "mole",
+      "node": "CaveMole"
+    }
+  ],
+  "events": [],
+  "encounter": []
+}

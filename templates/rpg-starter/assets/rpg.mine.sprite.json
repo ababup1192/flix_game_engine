@@ -1,0 +1,2344 @@
+{
+  "version": 1,
+  "title": "水晶の坑道のタイル",
+  "note": "坑道 B1（板で補強した坑道・レール・たいまつ。土と木の暖色）と B3（水晶が光る地底湖・封じられたボスの扉。青紫の寒色）のタイルと小物。B3 で色を変えた物は名前の末尾が _deep。光は左上から、坑道の中ではたいまつと水晶が光源。1 枚のタイルは墨＋3 色まで。台本は art/rpg.mine.gen.py（描き直すときは台本を直し、DEVELOPER_DIR=/Library/Developer/CommandLineTools python3 art/rpg.mine.gen.py で流す）。",
+  "paletteFile": "assets/rpg.palette.json",
+  "entityId": "rpg.mine.sprites",
+  "legend": {
+    "a": "fc00",
+    "w": "fc02",
+    "v": "fc03",
+    "b": "fc08",
+    "n": "fc0C",
+    "A": "fc10",
+    "W": "fc12",
+    "c": "fc13",
+    "r": "fc16",
+    "o": "fc17",
+    "m": "fc18",
+    "x": "fc21",
+    "C": "fc23",
+    "O": "fc27",
+    "G": "fc28",
+    "g": "fc2D",
+    "p": "fc33",
+    "Y": "fc38",
+    "q": "fc3C",
+    "k": "ink"
+  },
+  "sprites": {
+    "rock_top": {
+      "note": "B1 の壁の上の面。墨が地で、岩の頭だけ暗い段が浮く。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "base": [
+          "kkkkkkbkkobbkkkk",
+          "kkkbbbkkkbbbkbkk",
+          "kkbbbkkkkbbkbkkk",
+          "kbbkkkkkkbkkkkkk",
+          "kbbkkkkkkkbkkkkk",
+          "kbkkkkkkkkkkkkkk",
+          "kkkkkkkkkkkkkkkk",
+          "kkkkkkkkbkkkkkkk",
+          "kkkkkkkbbkkkkkkk",
+          "kkkkkbbkkkkkkbkk",
+          "kkbkkkbkkkkkkbkk",
+          "kkkkkkkkkkkkbkkk",
+          "kkkkkkkkkkkkbkkk",
+          "kkkkkkkkkkkkkkkk",
+          "kkkkkkkkkkkkkkkk",
+          "kkkkkkkkkkkkkkkk"
+        ]
+      }
+    },
+    "rock_face": {
+      "note": "B1 の岩肌の正面。塊ごとに左上が光り、下端は床へ沈む。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "base": [
+          "koOoobkkkkoooobk",
+          "kooobokkoobobbkk",
+          "ooobobbkobobbbbk",
+          "bobbbbkkkbbbkbkk",
+          "obbbbkbkkbbkbkkk",
+          "kbkkkkkkkkkkkkkk",
+          "kkkkkoooobbkkoob",
+          "bbkobobobbkkbooo",
+          "bkkkooobobkkooob",
+          "kkkkkbbbkbkkbobb",
+          "kbobkkbkkkkbbbbk",
+          "bbbbkkkkkobkkkkk",
+          "bbbkkkkoobobbkkb",
+          "kkkkkkbbbbkbkkkk",
+          "kkkkkkbbbkbkkkkk",
+          "kkkkkkkkkkkkkkkk"
+        ]
+      }
+    },
+    "rock_face_b": {
+      "note": "rock_face の変種（割れ目の並びが違う）。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "base": [
+          "kkkkkkkkkkkkkkkk",
+          "kobobobbkbkkoobk",
+          "kkobobbbbkkoooob",
+          "kkbbbbkbkkbobobb",
+          "bkkbbkbkkkobobbb",
+          "kkkkkkkkkbbbbbkk",
+          "kbooobkkkkkkbkkk",
+          "bobobbkobobbkkko",
+          "obobbkkoooobbkko",
+          "bbkbkkkobbbbkkkb",
+          "bkbkkkbbbbbkkkkk",
+          "bkkkkkkbkkkkkobo",
+          "bkkbobobkkkbobob",
+          "kkkbbbbbkkkbbbkb",
+          "kkkbbkbkkkkbbkbk",
+          "kkkkkkkkkkkkkkkk"
+        ]
+      }
+    },
+    "rock_face_lit": {
+      "note": "たいまつを掛ける壁。中央ほど照り返しで明るく、左右の端は rock_face と同じ明るさへ戻る。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "base": [
+          "koOOOokkkkoooobk",
+          "kOoOookkOOoobobk",
+          "oooooookooooobbk",
+          "bobobobkbOoobbkk",
+          "oooboookkoobobkk",
+          "bobbbbkkkkkbkkkk",
+          "kkkkkOOOOOokkOOo",
+          "bbkOOOOOOObkOOoo",
+          "okkkOOOOOokkOOob",
+          "kkkkkooobokkoobb",
+          "kbobkkbbbkkbobbk",
+          "bbbbbkkkkOokkkkk",
+          "bbbkbkkoOoobbkkb",
+          "kkkkkkbobbbbkkkk",
+          "kkkkkkbbbkbkkkkk",
+          "kkkkkkkkkkkkkkkk"
+        ]
+      }
+    },
+    "floor": {
+      "note": "B1 の土の床。墨のディザの濃淡で暗い面を作り、小石を 2〜3 個置く。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "base": [
+          "bbbbbbbbbbbbbbbb",
+          "bbkbkbkbbbkbbbbb",
+          "bbbkbkbbbbbbbbbb",
+          "kbkbkbkbkbbbkbbb",
+          "bbbkbbbbbbbbbbbb",
+          "kbkbYmkbbbbbbbkb",
+          "bbbbmkbbbbbbbkbb",
+          "kbbbkbbbbbbbkbkb",
+          "bbbbbbbbbbbbbbbb",
+          "bbbbbbbbbbbbkbkb",
+          "bbbbbbbbbbbbbkbb",
+          "kbbbbbkbkbkbkbkb",
+          "bbbbbbbkbbbbbbbb",
+          "bbbbbbkbkbkbbbkb",
+          "bbbbbbbbbkbbbbbb",
+          "bbbbkbkbkbkbbbbb"
+        ]
+      }
+    },
+    "floor_b": {
+      "note": "floor の小石の多い変種。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "base": [
+          "bbbbbbbbbbbbbbbb",
+          "kbkbbbbbbbbbbbkb",
+          "bkbbbbbbbbYmmbbb",
+          "kbkbkbbbkYmmmkkb",
+          "bbbbbbbbbbkkkbbb",
+          "kbkbbbbbbbkbkbkb",
+          "bbbbbbbbbbbbbkbb",
+          "bbbbbbbbbbkbkbkb",
+          "bbbbbbbbbbbkbbbb",
+          "bbYmbbkbbbkbkbkb",
+          "bbmkbkbbbkbbbkbb",
+          "bbbbkbkbkYmbkbbb",
+          "bbbbbbbkYmmkbbbb",
+          "bbbbkbkbkkkbbbbb",
+          "bbbbbkbbbbbbbbbb",
+          "kbkbkbkbkbbbbbbb"
+        ]
+      }
+    },
+    "floor_lit": {
+      "note": "たいまつの真下の床。上辺の中央ほど明るい。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "base": [
+          "mbmbmmmmmmmmmmmm",
+          "bbbbbmbmbmbmmmbm",
+          "mbbbbbmmmbmmmmmb",
+          "bbkbkbbmbmbmbbbb",
+          "bbbbbbmbmmmbmbbb",
+          "bbkbbbbmbmbbbbkb",
+          "bbbbbbmbmbmbbbbb",
+          "kbbbkbbbbbbbkbkb",
+          "bbbbmbbbmbbbbbbb",
+          "bbbYmbbbbbbbkbkb",
+          "bbYmmkbbbbbbbkbb",
+          "kbbkkbkbkbkbkbkb",
+          "bbbbmbbkbbbbYmbb",
+          "bbbbbbkbkbkbmkkb",
+          "bbbbbbbbbkbbbbbb",
+          "bbbbkbkbkbkbbbbb"
+        ]
+      }
+    },
+    "floor_shadow": {
+      "note": "壁の正面の真下の床。上の数行が壁の影で沈む。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "base": [
+          "bkkkbkbkbkbkbkbk",
+          "kkkkkbkkkbkbkbkb",
+          "bkbkbkbbbkbbbkbk",
+          "kkkkkbkbkbkbkbkb",
+          "bbbkbbbbbbbbbbbb",
+          "kbkbkbbbbbkbkbkb",
+          "bbbbbbbbbbbbbkbb",
+          "kbbbbbbbbbbbkbkb",
+          "bbbbbbbbbbbbbbbb",
+          "bbbbbbbbbbYmkbkb",
+          "bbbbbbbbbbmkbkbb",
+          "kbbbYmkbkbkbkbkb",
+          "bbbYmmkkbbbbbbbb",
+          "bbbbkkkbkbkbbbbb",
+          "bbbbbbbkbkbbbbbb",
+          "kbbbkbkbkbbbbbbb"
+        ]
+      }
+    },
+    "beam": {
+      "note": "壁の正面に立つ板の支柱。岩肌の上に置いた 1 枚で、柱の右に墨の落ち影。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "base": [
+          "kkkOOOOOOOOookkk",
+          "kobOokooookobobk",
+          "kkokkkkkkkkkkoob",
+          "kkbbkOobobbkbobb",
+          "bkkbkOooobkkkbbb",
+          "kkkkkOooobbkbbkk",
+          "kbookOobobkkkkkk",
+          "bobokOobobbkkkko",
+          "obobkOobobkkbkko",
+          "bbkbkOooobbkkkkb",
+          "bkbkkOooobkkkkkk",
+          "bkkkkOobobbkkobo",
+          "bkkbkOobobkkkbob",
+          "kkkbkOobobbkbbkb",
+          "kkkbkOooobkkkkbk",
+          "kkkkkOooobbkkkkk"
+        ]
+      }
+    },
+    "rail_h": {
+      "note": "横のレール。枕木は 4px おきで、左右につないで継ぎ目が出ない。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "base": [
+          "bbbbbbbbbbbbbbbk",
+          "kbkbbbbbbbbbbbkb",
+          "bkbbbbbbbbbbbkbk",
+          "kmmbbmmbkmmbkmmb",
+          "bmmkbmmkbmmkbmmk",
+          "AAAAAAAAAAAAAAAA",
+          "kkkkkkkkkkkkkkkk",
+          "bmmkbmmkkmmkkmmk",
+          "bmmkbmmkbmmkbmmk",
+          "bmbkkmbkkmbkkmbk",
+          "AAAAAAAAAAAAAAAA",
+          "kkkkkkkkkkkkkkkk",
+          "bmbkbmbkbmbkbmbk",
+          "bkmkkkmkbkmkbkmk",
+          "bbbbbkbbbbbbbbbb",
+          "kbkbkbkbbbbbbbkb"
+        ]
+      }
+    },
+    "rail_v": {
+      "note": "縦のレール。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "base": [
+          "bbbbbAkbbbAkbkbb",
+          "bbmmmAkmmmAkmmkb",
+          "bbmmbAkmbmAkbmkb",
+          "kbbkkAkkkkAkkkkb",
+          "bbbbbAkkbbAkbbbb",
+          "bbmmmAkmmmAkmmkb",
+          "bbmmbAkmbmAkbmkb",
+          "kbkkkAkkkkAkkkkb",
+          "bbbbbAkbbbAkbbbb",
+          "kbmmmAkmmmAkmmkb",
+          "bkmmbAkmbmAkbmkb",
+          "kbkkkAkkkkAkkkkb",
+          "bbbkbAkbbbAkbbbb",
+          "bbmmmAkmmmAkmmkb",
+          "bbmmbAkmbmAkbmkb",
+          "kbbkkAkkkkAkkkkb"
+        ]
+      }
+    },
+    "rail_end": {
+      "note": "横のレールの車止め（左から来て右で止まる）。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "base": [
+          "bbbbbbbbbbbbbbbk",
+          "kbkbbbbbbbbbbbkb",
+          "bkbbbbbbbbkkkkkk",
+          "kmmbbmmbkkAAAAAk",
+          "bmmkbmmkbkmmmmmk",
+          "AAAAAAAAAkmbbbmk",
+          "kkkkkkkkkkmmmmmk",
+          "bmmkbmmkkkbmmmbk",
+          "bmmkbmmkbkmmmmmk",
+          "bmbkkmbkkkmbbbmk",
+          "AAAAAAAAAkmmmmmk",
+          "kkkkkkkkkkAAAAAk",
+          "bmbkbmbkbkbbbbbk",
+          "bkmkkkmkbkkkkkkk",
+          "bbbbbkbbbbbbbbbb",
+          "kbkbkbkbbbbbbbkb"
+        ]
+      }
+    },
+    "rail_end_v": {
+      "note": "縦のレールの車止め（下から来て上で止まる）。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "base": [
+          "bbbkkkkkkkkkkkbb",
+          "bbkAmmmmmmmmAkkb",
+          "bbkAmbmmmmbmAkbb",
+          "kbkAmmmmmmmmAkkb",
+          "bbkbbbbbbbbbbkbb",
+          "bbmkkkkkkkkkkmkb",
+          "bbmmbAkmbmAkbmkb",
+          "kbkkkAkkkkAkkkkb",
+          "bbbbbAkbbbAkbbbb",
+          "kbmmmAkmmmAkmmkb",
+          "bkmmbAkmbmAkbmkb",
+          "kbkkkAkkkkAkkkkb",
+          "bbbkbAkbbbAkbbbb",
+          "bbmmmAkmmmAkmmkb",
+          "bbmmbAkmbmAkbmkb",
+          "kbbkkAkkkkAkkkkb"
+        ]
+      }
+    },
+    "minecart": {
+      "note": "鉄のトロッコ（横向き）。rail_h の上に重ね、車輪が手前のレールに乗る。鉱石の頭が縁から覗く。",
+      "kind": "prop",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "base": [
+          "................",
+          "................",
+          "....k..kk..k....",
+          "..kkAkkaAkkAkk..",
+          ".kAAAAAAAAAAAAk.",
+          ".kAkkakkkAkkkak.",
+          ".kAAAAAAAAAAAak.",
+          ".kAaaaaaaaaaaak.",
+          ".kAakaaaaaakaak.",
+          ".kAaaaaaaaaaaak.",
+          "..kaaaaaaaaaak..",
+          "..kkkkkkkkkkkk..",
+          "...kAk....kAk...",
+          "...kak....kak...",
+          "....k......k....",
+          "................"
+        ]
+      }
+    },
+    "torch": {
+      "note": "壁のたいまつ（3 コマで炎が揺れる）。rock_face_lit の上に重ねる。持ち手は墨、炎の外は fc27・芯は fc38。",
+      "kind": "prop",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "f0": [
+          "................",
+          "........O.......",
+          ".......OO.......",
+          ".......OYO......",
+          "......OYYO......",
+          "......OYYYO.....",
+          "......OYYYO.....",
+          ".......OYO......",
+          "......kkkkk.....",
+          "......kOOOk.....",
+          ".......kOk......",
+          ".......kOk......",
+          "......kkOkk.....",
+          "......k.k.k.....",
+          "......kkkkk.....",
+          "................"
+        ],
+        "f1": [
+          "................",
+          "................",
+          ".......O........",
+          "......OO.O......",
+          "......OYOO......",
+          ".....OYYYO......",
+          "......OYYO......",
+          ".......OYO......",
+          "......kkkkk.....",
+          "......kOOOk.....",
+          ".......kOk......",
+          ".......kOk......",
+          "......kkOkk.....",
+          "......k.k.k.....",
+          "......kkkkk.....",
+          "................"
+        ],
+        "f2": [
+          ".........O......",
+          ".........O......",
+          "........OO......",
+          ".......OYO......",
+          ".......OYYO.....",
+          "......OYYYO.....",
+          "......OYYO......",
+          ".......OYO......",
+          "......kkkkk.....",
+          "......kOOOk.....",
+          ".......kOk......",
+          ".......kOk......",
+          "......kkOkk.....",
+          "......k.k.k.....",
+          "......kkkkk.....",
+          "................"
+        ]
+      }
+    },
+    "crystal_s": {
+      "note": "床から生えた小さい水晶の群れ。左の面が光る。",
+      "kind": "prop",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "base": [
+          "................",
+          "................",
+          "................",
+          "......k.........",
+          ".....kpk........",
+          ".....kpCk.......",
+          ".....kpCk..k....",
+          "....kppCck.kk...",
+          "..k.kppCck.kpk..",
+          ".kpkkppCckkpCk..",
+          ".kpCkppCckkpCck.",
+          "kppCckpCckppCck.",
+          "kppCckpCckppCck.",
+          ".kpCckpCckpCck..",
+          "..kkkkkkkkkkk...",
+          "................"
+        ]
+      }
+    },
+    "crystal_l": {
+      "note": "大きい水晶（16×32）。2 コマで明滅する（f1 は影の面が中の段へ上がり、尖りの芯が fc3C で光る）。anchor は下半分の左上＝足元のマス。",
+      "kind": "prop",
+      "anchor": {
+        "x": 0.0,
+        "y": 16.0
+      },
+      "frames": {
+        "f0": [
+          "................",
+          "........k.......",
+          ".......kpk......",
+          ".......kpCk.....",
+          "......kppCk.....",
+          "......kppCck....",
+          "......kppCck....",
+          "......kppCck....",
+          ".....kpppCck....",
+          ".....kpppCck....",
+          ".....kpppCck....",
+          ".k...kpppCck....",
+          "kpk..kpppCck....",
+          "kpCk.kpppCck....",
+          "kpCk.kpppCck..k.",
+          "kpCck.kppCck.kpk",
+          "kppCk.kppCck.kpk",
+          ".kpCck.kpCck.kpC",
+          ".kpCck.kpCckkppC",
+          ".kppCckkpCckkppC",
+          "..kpCckkpCckkpCc",
+          "..kppCckkpCckpCc",
+          "...kpCckkpCckpCk",
+          "...kppCckpCckpCk",
+          "....kpCckpCckpCk",
+          "....kpCckpCcpCck",
+          ".kk.kpCckpCcpCck",
+          "kpCkkpCckpCcpCk.",
+          "kppCkpCckpCcpCk.",
+          ".kkkkkkkkkkkkkk.",
+          "..kkkkkkkkkkkk..",
+          "................"
+        ],
+        "f1": [
+          "................",
+          "........k.......",
+          ".......kqk......",
+          ".......kqCk.....",
+          "......kpqCk.....",
+          "......kppCCk....",
+          "......kppCCk....",
+          "......kppCCk....",
+          ".....kpppCCk....",
+          ".....kpppCCk....",
+          ".....kpppCCk....",
+          ".k...kpppCCk....",
+          "kpk..kpppCCk....",
+          "kpCk.kpppCCk....",
+          "kpCk.kpppCCk..k.",
+          "kpCCk.kppCCk.kpk",
+          "kppCk.kppCCk.kpk",
+          ".kpCCk.kpCCk.kpC",
+          ".kpCCk.kpCCkkppC",
+          ".kppCCkkpCCkkppC",
+          "..kpCCkkpCCkkpCC",
+          "..kppCCkkpCCkpCC",
+          "...kpCCkkpCCkpCk",
+          "...kppCCkpCCkpCk",
+          "....kpCCkpCCkpCk",
+          "....kpCCkpCCpCCk",
+          ".kk.kpCCkpCCpCCk",
+          "kpCkkpCCkpCCpCk.",
+          "kppCkpCCkpCCpCk.",
+          ".kkkkkkkkkkkkkk.",
+          "..kkkkkkkkkkkk..",
+          "................"
+        ]
+      },
+      "lint-anim": "対象外(palette) — 点けた水晶がまたたく光り（2 コマ目だけに明るい色を足す）の意図"
+    },
+    "crystal_pillar": {
+      "note": "背の高い水晶の柱（16×32）。太い柱と細い柱が寄り添い、根元は影の面の段で沈む。anchor は下半分の左上。",
+      "kind": "prop",
+      "anchor": {
+        "x": 0.0,
+        "y": 16.0
+      },
+      "frames": {
+        "base": [
+          "......k.........",
+          ".....kpk........",
+          ".....kpCk.......",
+          "....kppCk.......",
+          "....kppCck......",
+          "....kppCck......",
+          "...kpppCck......",
+          "...kpppCck..k...",
+          "...kpppCck.kpk..",
+          "...kpppCck.kpCk.",
+          "...kpkpCck.kpCk.",
+          "...kppkCck.kpCk.",
+          "...kpppkcckkpCck",
+          "...kpppCkckkpCck",
+          "...kpppCckkkpCck",
+          "...kpppCck.kpCck",
+          "...kpppCck.kpCck",
+          "..kkpppCck.kpCck",
+          ".kpkpppCck.kpCck",
+          ".kpkpppCck.kpCk.",
+          ".kpCkppCckkppCk.",
+          ".kpCkppCckkpCck.",
+          ".kpCkpppkckpCck.",
+          ".kpCkppCkkkpCck.",
+          "kppCkppCcckpCck.",
+          "kppCkppCcckpCck.",
+          "kpCckppCcckpCck.",
+          "kpCckppCcckpCck.",
+          "kkccckkcckkkcck.",
+          ".kkccckcccccckk.",
+          "..kkkkkkkkkkkk..",
+          "................"
+        ]
+      }
+    },
+    "stairs_down": {
+      "note": "下り階段。床に開いた穴の中を段が奥へ降り、深いほど墨に沈む。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "base": [
+          "bbbbbbbbbbbbbbbb",
+          "kkYYYYYYmmmmmmkb",
+          "bkmYYYYYYYYYYkkb",
+          "kkmbbbbbbbbbbkkb",
+          "bkmkkkkkkkkkkkkb",
+          "kkmkYmmmmmmmmkkb",
+          "bkmkbbbbbbbbbkkb",
+          "kkmkkkkkkkkkkkkb",
+          "bkbkkYmmmmmmkkkb",
+          "bkbkkbbbbbbbkkkb",
+          "bkbkkkkkkkkkkkkb",
+          "bkbkkkmbbbbbkkkb",
+          "bkbkkkkkkkkkkkkb",
+          "bkbkkkkkkkkkkkkb",
+          "bkkkkkkkkkkkkkkb",
+          "kbkbkbkbkbbbbbbb"
+        ]
+      }
+    },
+    "stairs_up": {
+      "note": "上り階段。上へ行くほど段の頭が明るい（上の階の光）。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "base": [
+          "bkkkkkkkkkkkkkkb",
+          "kkYYYYYYYYYYYYkb",
+          "bkYmmmmmmmmmmbkk",
+          "kkkkkkkkkkkkkkkb",
+          "bkYYYYYYYYYYmbkk",
+          "bkmmmmmmmmmmbbkb",
+          "bkkkkkkkkkkkkkkb",
+          "bkYmmmmmmmmmbbkb",
+          "bkmbbbbbbbbbbkkb",
+          "bkkkkkkkkkkkkkkb",
+          "bkmmmmmmmmmbbkkb",
+          "bkbbbbbbbbbbkkkb",
+          "bkkkkkkkkkkkkkkb",
+          "bkbbbbbbbbbkkkkb",
+          "bkbkbkbkbkbkkkkb",
+          "kkkkkkkkkkkkkkkb"
+        ]
+      }
+    },
+    "chest": {
+      "note": "宝箱（閉）。明るい木 fc17 の丸い蓋に、左上のつや・四隅の金具・中央の大きい錠前（金 fc28 と鍵穴の墨）。床に重ねる。",
+      "kind": "prop",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "base": [
+          "................",
+          "................",
+          "................",
+          "...kkkkkkkkkk...",
+          "..kGGGooooooGk..",
+          "..kGooooooooGk..",
+          "..kGbbkGGkbbGk..",
+          "..kkkkGGGGkkkk..",
+          "..kGooGkkGooGk..",
+          "..kGookGGkobGk..",
+          "..kGooooooobGk..",
+          "..kGooooooobGk..",
+          "..kGooooooobGk..",
+          "..kGbbbbbbbbGk..",
+          "..kkkkkkkkkkkk..",
+          "...kkkkkkkkkk..."
+        ]
+      }
+    },
+    "chest_open": {
+      "note": "宝箱（開・空）。蓋が後ろへ跳ね上がって箱の上に立ち（蓋の裏は暗い fc08）、蓋は奥へ傾いて上ほど細い。箱の口は 4 行の深さで、奥の内壁 fc08 から底の墨へ沈み、右の内壁だけが光を受ける。錠前の金具は前に垂れ下がる。閉じた方より暗く、背が高い。",
+      "kind": "prop",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "base": [
+          "....kkkkkkkk....",
+          "...kGooooooGk...",
+          "...kGbbbbbbGk...",
+          "..kGbbbbbbbbGk..",
+          "..kGbbbbbbbbGk..",
+          "..kkkkkkkkkkkk..",
+          "..kGooooooooGk..",
+          "..kkbbbbbbbbbk..",
+          "..kkkbkbkbkbbk..",
+          "..kkkkkkkkkkbk..",
+          "..kkkkkkkkkkbk..",
+          "..kGooooooooGk..",
+          "..kGookGkoobGk..",
+          "..kGbbbbbbbbGk..",
+          "..kkkkkkkkkkkk..",
+          "...kkkkkkkkkk..."
+        ]
+      }
+    },
+    "rubble": {
+      "note": "崩れた岩の山。床に重ねる。岩ごとに左上が光る。",
+      "kind": "prop",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "base": [
+          "................",
+          "................",
+          "................",
+          "................",
+          "................",
+          "......kkk.......",
+          ".....kOook......",
+          "....kOooobk.....",
+          "..kkkoobbbkkk...",
+          ".kOokobbbkkook..",
+          ".kOoobkbkOoobbk.",
+          "kOoobbkkkoobbbk.",
+          "koobbbkkoobbbbk.",
+          ".kbbbbkkbbbbkk..",
+          "..kkkkkkkkkkkk..",
+          "................"
+        ]
+      }
+    },
+    "lever": {
+      "note": "壁のレバー（up / down の 2 コマ）。rock_face の上に重ねる。鉄の座金（fc00・左上の縁 fc10）と赤い握り（fc16）。up は柄が座金の上へ立って握りが上端に、down は柄が下へ倒れて握りが座金の下に出る。",
+      "kind": "prop",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "up": [
+          "......kkkk......",
+          ".....krrrrk.....",
+          ".....krrrrk.....",
+          "......kAak......",
+          "......kAak......",
+          "......kAak......",
+          "...kkkkAakkkk...",
+          "...kAAkAakAAk...",
+          "...kAakAakaak...",
+          "...kAkkkkkkak...",
+          "...kAaakkaaak...",
+          "...kAaaaaaaak...",
+          "...kAkaaaakak...",
+          "...kkkkkkkkkk...",
+          "................",
+          "................"
+        ],
+        "down": [
+          "................",
+          "................",
+          "................",
+          "................",
+          "................",
+          "................",
+          "...kkkkkkkkkk...",
+          "...kAAAAAAAAk...",
+          "...kAaakkaaak...",
+          "...kAkkkkkkak...",
+          "...kAakAakaak...",
+          "...kAakAakaak...",
+          "...kAkkAakkak...",
+          "...kkkrrrrkkk...",
+          ".....krrrrk.....",
+          "......kkkk......"
+        ]
+      }
+    },
+    "gate_bars": {
+      "note": "鉄格子（床に重ねる・通れない）。灰の棒が 4px おきに立ち、上と下に横の帯と鋲、棒の先は槍の穂。棒の間は透明で向こうの床が見え、横に並べても継ぎ目が出ない。開いたら描かない。",
+      "kind": "prop",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "base": [
+          ".kk..kk..kk..kk.",
+          ".AAk.AAk.AAk.AAk",
+          ".Aak.Aak.Aak.Aak",
+          "AAAAAAAAAAAAAAAA",
+          "akaaakaaakaaakaa",
+          "kkkkkkkkkkkkkkkk",
+          ".Aak.Aak.Aak.Aak",
+          ".Aak.Aak.Aak.Aak",
+          ".Aak.Aak.Aak.Aak",
+          ".Aak.Aak.Aak.Aak",
+          ".Aak.Aak.Aak.Aak",
+          "AAAAAAAAAAAAAAAA",
+          "akaaakaaakaaakaa",
+          "kkkkkkkkkkkkkkkk",
+          ".kkk.kkk.kkk.kkk",
+          "..kk..kk..kk..kk"
+        ]
+      }
+    },
+    "rail_switch": {
+      "note": "分岐のレール（north / south の 2 コマ）。西の辺で rail_h、北と南の辺で rail_v とつながる。今つながっている側の曲がりだけ鉄が光り（fc10）、外れている側は墨の溝だけが残る。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "north": [
+          "bbbmmAmbbbAkbbbb",
+          "bbkmkAmmmmAmkbbb",
+          "bbmbAAbbbbAbbbbb",
+          "mmbAAkmmkAAbkbbb",
+          "mmAAkbbbmAkbbbbb",
+          "AAAkkmkbAAmbbbbb",
+          "kkkkkkmAAkbbbbbb",
+          "kmkmmkAAkbbbbbkb",
+          "bmbmmAAkmbbbbbbk",
+          "mmkAAAkkkbbbbbkb",
+          "AAAAkkbbkkmbbbbk",
+          "kkkkmbbbmkkbkbkb",
+          "mmbkkbmmbkkbbbbb",
+          "bbmbkkbbbbkbkbkb",
+          "bbbmbkmmmmkmbbbb",
+          "bbbmmkmbkbkbkbbb"
+        ],
+        "south": [
+          "bbbmmkmbbbkkbbbb",
+          "bbkmkkmmmmkmkbbb",
+          "bbmbkkbbbbkbbbbb",
+          "mmbkkbmmkkkbkbbb",
+          "mmkkmbbbmkbbbbbb",
+          "AAAAkmkbkkmbbbbb",
+          "kkkAAAmkkbbbbbbb",
+          "kmkkkAAkmbbbbbkb",
+          "bmbmmkAAmbbbbbbk",
+          "mmkkkkkAAbbbbbkb",
+          "AAAkbmbkAAmbbbbk",
+          "kkAAmbbbkAkbkbkb",
+          "mmkAAbmmbAAbbbbb",
+          "bbmkAAbbbkAbkbkb",
+          "bbbmkAmmmmAmbbbb",
+          "bbbmmAmbkbAbkbbb"
+        ]
+      }
+    },
+    "floor_crack": {
+      "note": "割れた床（落とし穴・B1/B2 の暖色）。floor と同じ地に、まん中の墨の穴と放射に走るひび。持ち上がった欠片の左上の縁が fc38 で光り、明かりの中で「割れている」と読める。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "base": [
+          "bbbbbbbbbbbbbbbb",
+          "bbkbkbkbbbkkbbbb",
+          "bbbkbkbbbbkbbbbb",
+          "kbkbkkkYYkbkkbbb",
+          "bbbkkYmmmkkkbbkb",
+          "kbkbkYmkkkkYkbkb",
+          "bbbkYmkkkkkkmkbb",
+          "kbkkmkkkkkkkmbkb",
+          "bbbbkkkkkkkkbkbb",
+          "bbbkYkkkkkkkbkkb",
+          "bbkbkmkkkkkbkkkb",
+          "kkbbbkmmkkkkkbkb",
+          "bbbbkbkbbkkbkbbb",
+          "bbbkbbkkkbkbkbkb",
+          "bbkbbbbbkkbbbbbb",
+          "bbbbkbkbkbkbbbbb"
+        ]
+      }
+    },
+    "stepping_stone": {
+      "note": "地底湖の飛び石（lake_dark の上に重ねる）。平たい灰の石の上面（fc2D・左上の縁 fc10）、側面は墨のディザで厚みを見せ、左右の水際に fc12 のさざ波。",
+      "kind": "prop",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "base": [
+          "................",
+          "................",
+          "................",
+          "................",
+          "......kkkk......",
+          "....kkAgggkk....",
+          "...kAgggggggk...",
+          "..kggggggggggk..",
+          "..kggggggggggk..",
+          "..kkgggggggggk..",
+          "...kkgggggkkk...",
+          ".W..kkgkgkkk..W.",
+          "W.....kkkk.....W",
+          "................",
+          "................",
+          "................"
+        ]
+      }
+    },
+    "stepping_stone_b": {
+      "note": "stepping_stone の変種（小さめの石が左に寄り、右下に小石が 1 つ）。",
+      "kind": "prop",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "base": [
+          "................",
+          "................",
+          "................",
+          "................",
+          ".....kkkk.......",
+          "...kkggggkk.....",
+          "..kAgggggggk....",
+          "..kggggggggk....",
+          "..kggggggggk....",
+          "..kkgggggkgkk...",
+          ".W.kkgkkkkkkAk..",
+          "W....kkkk..kgk..",
+          "................",
+          "................",
+          "................",
+          "................"
+        ]
+      }
+    },
+    "stepping_stone_c": {
+      "note": "stepping_stone の変種（横に長く、右上が欠けた石）。",
+      "kind": "prop",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "base": [
+          "................",
+          "................",
+          "................",
+          "................",
+          "................",
+          "....kkkkkk......",
+          "...kAAggggk.....",
+          "..kAgggggggk..k.",
+          "..kgggggggggkkk.",
+          "..kgggggggggggk.",
+          "..kkggggggggggk.",
+          "...kgkgkgkgkgk..",
+          ".W..kkkkkkkkk...",
+          "W...............",
+          "................",
+          "................"
+        ]
+      }
+    },
+    "tablet": {
+      "note": "石碑（B3 の寒色・1 マス）。笠石を載せた四角い灰の板が台座に立ち、3 行の刻み文字が水晶と同じ淡い紫（fc23）で光る。光は左上から（左の縁 fc10・右の側面は墨のディザ）。",
+      "kind": "prop",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "base": [
+          "..kkkkkkkkkkkk..",
+          ".kAAAAAAAAAAggk.",
+          ".kkkkkkkkkkkkkk.",
+          "..kAggggggggkk..",
+          "..kACCgCCCgkgk..",
+          "..kAkkgkkkggkk..",
+          "..kAgggggggkgk..",
+          "..kACgCCgCCgkk..",
+          "..kAkgkkgkkkgk..",
+          "..kAggggggggkk..",
+          "..kACCCgCggkgk..",
+          "..kAkkkgkgggkk..",
+          "..kAgggggggkgk..",
+          ".kkkkkkkkkkkkkk.",
+          "kAAAgggggggggkkk",
+          ".kkkkkkkkkkkkkk."
+        ]
+      }
+    },
+    "tablet_l": {
+      "note": "大きい石碑（16×32・B3 の寒色）。笠石の下に水晶の目をはめ、5 行の刻み文字が淡い紫（fc23）で光る。anchor は下半分の左上＝足元のマス。",
+      "kind": "prop",
+      "anchor": {
+        "x": 0.0,
+        "y": 16.0
+      },
+      "frames": {
+        "base": [
+          "................",
+          "................",
+          "..kkkkkkkkkkkk..",
+          ".kAAAAAAAAAAggk.",
+          ".kkkkkkkkkkkkkk.",
+          "..kAgggkggggkk..",
+          "..kAggkCkggkgk..",
+          "..kAggkCkgggkk..",
+          "..kAgggkgggkgk..",
+          "..kAggggggggkk..",
+          "..kAgggggggkgk..",
+          "..kACCgCCCggkk..",
+          "..kAkkgkkkgkgk..",
+          "..kAggggggggkk..",
+          "..kACgCCgCCkgk..",
+          "..kAkgkkgkkgkk..",
+          "..kAgggggggkgk..",
+          "..kACCCgCgCgkk..",
+          "..kAkkkgkgkkgk..",
+          "..kAggggggggkk..",
+          "..kACgCCCggkgk..",
+          "..kAkgkkkgggkk..",
+          "..kAgggggggkgk..",
+          "..kAgCCgCCggkk..",
+          "..kAgkkgkkgkgk..",
+          "..kAggggggggkk..",
+          "..kAgggggggkgk..",
+          "..kAggggggggkk..",
+          "..kAgggggggkgk..",
+          ".kkkkkkkkkkkkkk.",
+          "kAAAgggggggggkkk",
+          ".kkkkkkkkkkkkkk."
+        ]
+      }
+    },
+    "boulder": {
+      "note": "押せる岩（B1/B2 の暖色）。なめらかな丸い 1 個で、面は fc08 / fc17 / fc27 の 3 段に硬く割り、左上につや、足元に横長の墨の接地影。ごつごつの塊の山の rubble と形で分かれる。",
+      "kind": "prop",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "base": [
+          "................",
+          "................",
+          "................",
+          ".....kkkkkk.....",
+          "....kOOOOook....",
+          "...kOOOOooook...",
+          "...kOOOoooobk...",
+          "..kOOOooooobbk..",
+          "..kooooooobbbk..",
+          "..koooooobbbbk..",
+          "...kooobbbbbk...",
+          "...kbbbbbbbbk...",
+          "....kkbbbbkk....",
+          "......kkkk......",
+          "...kkkkkkkkkk...",
+          ".....kkkkkk....."
+        ]
+      }
+    },
+    "boulder_deep": {
+      "note": "押せる岩（B3 の寒色）。boulder と同じ形を fc0C / fc03 / fc23 で塗る。",
+      "kind": "prop",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "base": [
+          "................",
+          "................",
+          "................",
+          ".....kkkkkk.....",
+          "....kCCCCvvk....",
+          "...kCCCCvvvvk...",
+          "...kCCCvvvvnk...",
+          "..kCCCvvvvvnnk..",
+          "..kvvvvvvvnnnk..",
+          "..kvvvvvvnnnnk..",
+          "...kvvvnnnnnk...",
+          "...knnnnnnnnk...",
+          "....kknnnnkk....",
+          "......kkkk......",
+          "...kkkkkkkkkk...",
+          ".....kkkkkk....."
+        ]
+      }
+    },
+    "plate": {
+      "note": "床のスイッチ（B1/B2 の暖色・up / down の 2 コマ）。up は floor から 2px 持ち上がった四角い石の板で、左上の縁が fc38 で光り、手前に厚み、右下に墨の影。down は床と同じ高さへ沈み、縁の光と厚みが消え、墨の溝の内側の上と左に暗い段の影が落ちる。まん中の菱形の刻みはどちらにも残る。岩を載せる時は boulder を重ねる。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "up": [
+          "bbbbbbbbbbbbbbbb",
+          "bbkbkbkbbbkbbbbb",
+          "bkkkkkkkkkkkkkkb",
+          "kkYYYYYYYYYYYYkk",
+          "bkYmmmmkkmmmmmkk",
+          "kkYmmmkbbkmmmmkk",
+          "bkYmmmkmmkmmmmkk",
+          "kkYmmmmkkmmmmmkk",
+          "bkYmmmmmmmmmmmkk",
+          "bkYmmmmmmmmmmmkk",
+          "bkYmmmmmmmmmmmkk",
+          "kkkkkkkkkkkkkkkk",
+          "bkbbbbbbbbbbbbkk",
+          "bkkkkkkkkkkkkkkk",
+          "bbkkkkkkkkkkkkkk",
+          "bbbbkbkbkbkbbbbb"
+        ],
+        "down": [
+          "bbbbbbbbbbbbbbbb",
+          "bbkbkbkbbbkbbbbb",
+          "bbbkbkbbbbbbbbbb",
+          "kbkbkbkbkbbbkbbb",
+          "bkkkkkkkkkkkkkkb",
+          "kkbbbbbbbbbbbbkb",
+          "bkbmmmmkkmmmmmkb",
+          "kkbmmmkmmkmmmmkb",
+          "bkbmmmkmmkmmmmkb",
+          "bkbmmmmkkmmmmmkb",
+          "bkbmmmmmmmmmmmkb",
+          "kkbmmmmmmmmmmmkb",
+          "bkbmmmmmmmmmmmkb",
+          "bkkkkkkkkkkkkkkb",
+          "bbbbbbbbbkbbbbbb",
+          "bbbbkbkbkbkbbbbb"
+        ]
+      }
+    },
+    "plate_deep": {
+      "note": "床のスイッチ（B3 の寒色・up / down）。plate と同じ形を floor_deep の地と fc2D / fc10 で塗る。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "up": [
+          "vkkkvkkkvkvkvvvk",
+          "kkkkkkkkkkkkkvkk",
+          "kkkkkkkkkkkkkkkk",
+          "kkAAAAAAAAAAAAkk",
+          "kkAggggkkgggggkk",
+          "kkAgggkvvkggggkk",
+          "kkAgggkggkggggkk",
+          "kkAggggkkgggggkk",
+          "vkAgggggggggggkk",
+          "kkAgggggggggggkk",
+          "kkAgggggggggggkk",
+          "kkkkkkkkkkkkkkkk",
+          "vkvvvvvvvvvvvvkk",
+          "kkkkkkkkkkkkkkkk",
+          "vkkkkkkkkkkkkkkk",
+          "kkkkkkkkkkkkkvkv"
+        ],
+        "down": [
+          "vkkkvkkkvkvkvvvk",
+          "kkkkkkkkkkkkkvkk",
+          "kkkkkkvkvkvkvkvk",
+          "kkkkkkkkkkkkkkkk",
+          "kkkkkkkkkkkkkkkk",
+          "kkvvvvvvvvvvvvkk",
+          "kkvggggkkgggggkk",
+          "kkvgggkggkggggkk",
+          "vkvgggkggkggggkk",
+          "kkvggggkkgggggkk",
+          "kkvgggggggggggkk",
+          "kkvgggggggggggkk",
+          "vkvgggggggggggkk",
+          "kkkkkkkkkkkkkkkk",
+          "vkvkvkkkkkkkvkvk",
+          "kkkkkkkkkkkkkvkv"
+        ]
+      }
+    },
+    "rail_corner_ne": {
+      "note": "レールの曲がり角（北 と 東 の辺へつながる）。辺の上では rail_h / rail_v と同じ位置で鉄が継ぐ。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "base": [
+          "bbbbbAkbmmAkmmbk",
+          "kbkmmAkmmbAkmmkb",
+          "bkbbbAkbmmAAkmmm",
+          "kbkbbAAkmbkAAkmm",
+          "bbbbmkAkbmmkAAkm",
+          "kbkbbbAAkmkmkAAA",
+          "bbbbbbkAAkmmbkkk",
+          "bbbbkbmkAAkbmmmm",
+          "bbbbbbbbkAAkmbmb",
+          "bbbbbbkbmkAAAkmb",
+          "bbbbbkbbbbkkAAAA",
+          "bbbbkbkbkbbmkkkk",
+          "bbbbbbbbbbbbbbmb",
+          "bbkbkbkbbbbbbbbb",
+          "bbbbbkbbbbbbbbbb",
+          "kbkbkbkbkbbbbbkb"
+        ]
+      }
+    },
+    "rail_corner_nw": {
+      "note": "レールの曲がり角（北 と 西 の辺へつながる）。辺の上では rail_h / rail_v と同じ位置で鉄が継ぐ。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "base": [
+          "bbmmmAkmbbAkbbbk",
+          "kbmmmAkmmmAkmbkb",
+          "mmmmAAkmbbAkbbbb",
+          "mmmAAkbmmAAkkbkb",
+          "mmAAkmmbbAkmbbbb",
+          "AAAkmbmmAAkbkbkb",
+          "kkkbmmbAAkbkbkbb",
+          "mmmmkmAAkmkbkbkb",
+          "bmbmbAAkbbbkbbbb",
+          "bmbAAAkmkbkbkbbb",
+          "AAAAkkbbbbbbbbbb",
+          "kkkkmbkbkbbbkbbb",
+          "bmbbbbbbbbbbbbbb",
+          "bbkbkbkbbbbbbbbb",
+          "bbbbbkbbbbbbbbbb",
+          "kbkbkbkbkbbbbbkb"
+        ]
+      }
+    },
+    "rail_corner_se": {
+      "note": "レールの曲がり角（南 と 東 の辺へつながる）。辺の上では rail_h / rail_v と同じ位置で鉄が継ぐ。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "base": [
+          "bbbbbbbbbbbbbbbk",
+          "kbkbbbbbbbbbbbkb",
+          "bkbbbbbbbbbbbbbb",
+          "kbkbbbbbbbbbkbmb",
+          "bbbbbbbbbbbmbbmb",
+          "kbkbbbbbbbkmAAAA",
+          "bbbbbbbbmkAAAkkk",
+          "bbbbkbbbkAAkkbmb",
+          "bbbbbbmbAAkkmmmm",
+          "bbbbbbkAAkmmkmbm",
+          "bbbbbkAAkmbmmAAA",
+          "bbbbmmAkkmmbAAkk",
+          "bbbbbAAkmbmAAkmm",
+          "bbkbkAkbmmAAkmmm",
+          "bbbmmAkmmbAkmmbb",
+          "kbkbkAkbmmAkmmkb"
+        ]
+      }
+    },
+    "rail_corner_sw": {
+      "note": "レールの曲がり角（南 と 西 の辺へつながる）。辺の上では rail_h / rail_v と同じ位置で鉄が継ぐ。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "base": [
+          "bbbbbbbbbbbbbbbk",
+          "kbkbbbbbbbbbbbkb",
+          "bkbbbbbbbbbbbbbb",
+          "kmkbbbbbbbbbkbkb",
+          "bmbbmbbbbbbbbbbb",
+          "AAAAkbbbbbkbkbkb",
+          "kkkAAAkmbkbkbkbb",
+          "bmbkkAAkkbkbkbkb",
+          "mmmmbkAAkmbkbbbb",
+          "mbmbmmkAAkkbkbbb",
+          "AAAkmkmkAAkbbbbb",
+          "kkAAkmmbkAkmkbbb",
+          "mmkAAkbmmAAkbbbb",
+          "mmmkAAkmbkAkbbbb",
+          "bbmmkAkmmmAkmbbb",
+          "kbmmmAkmkbAkbbkb"
+        ]
+      }
+    },
+    "minecart_v": {
+      "note": "縦向きのトロッコ（rail_v の上に重ねる）。手前を向いた鉄の箱で、上の口から鉱石が覗き、前の面に鋲、左右に車輪の縁。色は minecart と同じ墨 / fc00 / fc10。",
+      "kind": "prop",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "base": [
+          "................",
+          "......kkkk......",
+          ".....kAaaak.....",
+          "...kkkkkkkkkk...",
+          "...kAkakkakak...",
+          "...kAkkaAkkak...",
+          "...kAkkkkkkak...",
+          "...kAAAAAAAAk...",
+          "...kAaaaaaaak...",
+          ".kkkAaaaaaaakkk.",
+          ".kAkAaaaaaaakak.",
+          ".kA.kkaaaakk.ak.",
+          ".kA.kAaaaaak.ak.",
+          ".kk.kkkkkkkk.kk.",
+          "...kkkkkkkkkk...",
+          "................"
+        ]
+      }
+    },
+    "rock_top_deep": {
+      "note": "B3 の壁の上の面（寒色）。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "base": [
+          "kkkkkknkkvnnkkkk",
+          "kkknnnkkknnnknkk",
+          "kknnnkkkknnknkkk",
+          "knnkkkkkknkkkkkk",
+          "knnkkkkkkknkkkkk",
+          "knkkkkkkkkkkkkkk",
+          "kkkkkkkkkkkkkkkk",
+          "kkkkkkkknkkkkkkk",
+          "kkkkkkknnkkkkkkk",
+          "kkkkknnkkkkkknkk",
+          "kknkkknkkkkkknkk",
+          "kkkkkkkkkkkknkkk",
+          "kkkkkkkkkkkknkkk",
+          "kkkkkkkkkkkkkkkk",
+          "kkkkkkkkkkkkkkkk",
+          "kkkkkkkkkkkkkkkk"
+        ]
+      }
+    },
+    "rock_face_deep": {
+      "note": "B3 の岩肌の正面。紫の暗い段と灰で、光は水晶の照り返しの淡い紫。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "base": [
+          "kvCvvnkkkkvvvvnk",
+          "kvvvnvkkvvnvnnkk",
+          "vvvnvnnkvnvnnnnk",
+          "nvnnnnkkknnnknkk",
+          "vnnnnknkknnknkkk",
+          "knkkkkkkkkkkkkkk",
+          "kkkkkvvvvnnkkvvn",
+          "nnkvnvnvnnkknvvv",
+          "nkkkvvvnvnkkvvvn",
+          "kkkkknnnknkknvnn",
+          "knvnkknkkkknnnnk",
+          "nnnnkkkkkvnkkkkk",
+          "nnnkkkkvvnvnnkkn",
+          "kkkkkknnnnknkkkk",
+          "kkkkkknnnknkkkkk",
+          "kkkkkkkkkkkkkkkk"
+        ]
+      }
+    },
+    "rock_face_b_deep": {
+      "note": "rock_face_deep の変種。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "base": [
+          "kkkkkkkkkkkkkkkk",
+          "kvnvnvnnknkkvvnk",
+          "kkvnvnnnnkkvvvvn",
+          "kknnnnknkknvnvnn",
+          "nkknnknkkkvnvnnn",
+          "kkkkkkkkknnnnnkk",
+          "knvvvnkkkkkknkkk",
+          "nvnvnnkvnvnnkkkv",
+          "vnvnnkkvvvvnnkkv",
+          "nnknkkkvnnnnkkkn",
+          "nknkkknnnnnkkkkk",
+          "nkkkkkknkkkkkvnv",
+          "nkknvnvnkkknvnvn",
+          "kkknnnnnkkknnnkn",
+          "kkknnknkkkknnknk",
+          "kkkkkkkkkkkkkkkk"
+        ]
+      }
+    },
+    "floor_deep": {
+      "note": "B3 の岩の床。墨の地に紫のディザ。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "base": [
+          "vkkkvkkkvkvkvvvk",
+          "kkkkkkkkkkkkkvkk",
+          "kkkkkkvkvkvkvkvk",
+          "kkkkkkkkkkAgkkkk",
+          "kkkkkkvkvAggkkkk",
+          "kkkkkkkvkvkkkkkk",
+          "kkkkkkvkvkvkkkkk",
+          "kkkkkkkvkkkkkkkk",
+          "vkvkvkvkvkvkkkkk",
+          "kvkvkvkkkkkkkkkk",
+          "kkvkvkvkkkkkkkkk",
+          "kkkAgkkkkkkkkkkk",
+          "vkvgkkkkkkkkvkkk",
+          "kvkkkkkkkkkkkkkk",
+          "vkvkvkkkkkkkvkvk",
+          "kkkkkkkkkkkkkvkv"
+        ]
+      }
+    },
+    "floor_b_deep": {
+      "note": "floor_deep の小石の多い変種。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "base": [
+          "kkkkvkvkvkvkvkkk",
+          "kkkkkvkkkvkkkkkk",
+          "kkkkvkvkkkvkkkkk",
+          "kkkkAgkkkkkkkkkk",
+          "kkvkgkvkvkkkkkkk",
+          "kkkkkvkkkkkkkkkk",
+          "vkvkvkvkkkkkkkvk",
+          "kkkkkkkkkkkkkkkv",
+          "vkvkvkvkvkkkvkvk",
+          "kvkkkkkkkAggkkkv",
+          "vkvkkkkkAgggkkvk",
+          "kkkkkkkkkkkkkkkv",
+          "vkkkkkkkvkvkvkvk",
+          "kkkkkkkkkvkvkAgk",
+          "kkvkkkkkvkvkvgkk",
+          "kkkkkkkkkvkvkkkk"
+        ]
+      }
+    },
+    "stairs_up_deep": {
+      "note": "B3 の上り階段。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "base": [
+          "vkkkkkkkkkkkkkkv",
+          "kkAAAAAAAAAAAAkv",
+          "vkAggggggggggvkk",
+          "kkkkkkkkkkkkkkkv",
+          "vkAAAAAAAAAAgvkk",
+          "vkggggggggggvvkv",
+          "vkkkkkkkkkkkkkkv",
+          "vkAgggggggggvvkv",
+          "vkgvvvvvvvvvvkkv",
+          "vkkkkkkkkkkkkkkv",
+          "vkgggggggggvvkkv",
+          "vkvvvvvvvvvvkkkv",
+          "vkkkkkkkkkkkkkkv",
+          "vkvvvvvvvvvkkkkv",
+          "vkvkvkvkvkvkkkkv",
+          "kkkkkkkkkkkkkkkv"
+        ]
+      }
+    },
+    "stairs_down_deep": {
+      "note": "B3 の下り階段。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "base": [
+          "vvvvvvvvvvvvvvvv",
+          "kkAAAAAAggggggkv",
+          "vkgAAAAAAAAAAkkv",
+          "kkgvvvvvvvvvvkkv",
+          "vkgkkkkkkkkkkkkv",
+          "kkgkAggggggggkkv",
+          "vkgkvvvvvvvvvkkv",
+          "kkgkkkkkkkkkkkkv",
+          "vkvkkAggggggkkkv",
+          "vkvkkvvvvvvvkkkv",
+          "vkvkkkkkkkkkkkkv",
+          "vkvkkkgvvvvvkkkv",
+          "vkvkkkkkkkkkkkkv",
+          "vkvkkkkkkkkkkkkv",
+          "vkkkkkkkkkkkkkkv",
+          "kvkvkvkvkvvvvvvv"
+        ]
+      }
+    },
+    "rubble_deep": {
+      "note": "B3 のがれき。",
+      "kind": "prop",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "base": [
+          "................",
+          "................",
+          "................",
+          "................",
+          "................",
+          "......kkk.......",
+          ".....kCvvk......",
+          "....kCvvvnk.....",
+          "..kkkvvnnnkkk...",
+          ".kCvkvnnnkkvvk..",
+          ".kCvvnknkCvvnnk.",
+          "kCvvnnkkkvvnnnk.",
+          "kvvnnnkkvvnnnnk.",
+          ".knnnnkknnnnkk..",
+          "..kkkkkkkkkkkk..",
+          "................"
+        ]
+      }
+    },
+    "floor_crystal": {
+      "note": "水晶のかけらが光る床（2 コマ）。かけらのまわりだけ紫が濃く、f1 で光る点が移る。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "f0": [
+          "vkkkvvkkvkvkvkvk",
+          "kkkvkvkkkkkvkvkk",
+          "kkvkvpvkvkvkvkvk",
+          "kvkvpCkvkkkvkvkk",
+          "kvvkCkvkvkvkvvvk",
+          "kkkvkvkvkvkvpvkv",
+          "kkvkvkvkvkvpCCvk",
+          "kkkkkkkvkvkkkkkv",
+          "vkvkvkvkvkvkvvvk",
+          "kvkkkkkvkkkvkvkk",
+          "vkvkkkvkvkkkkkvk",
+          "kkkkkvpvkvkkkvkv",
+          "vkvkvvCkvvvkvpvk",
+          "kvkkkvkvkvkvkCkv",
+          "vkvkkkvkvkvkvkvk",
+          "kkkkkkkvkkkvkvkv"
+        ],
+        "f1": [
+          "vkkkvvkkvkvkvkvk",
+          "kkkvkvkkkkkvkvkk",
+          "kkvkvpvkvkvkvkvk",
+          "kvkvCCkvkkkvkvkk",
+          "kvvpCkvkvkvkvvvk",
+          "kkkvkvkvkvkvpCkv",
+          "kkvkvkvkvkvppCvk",
+          "kkkkkkkvkvkkkkkv",
+          "vkvkvkvkvkvkvvvk",
+          "kvkkkkkvkkkvkvkk",
+          "vkvkkkvkvkkkkkvk",
+          "kkkkkvpCkvkkkvkv",
+          "vkvkvvCpvvvkvpCk",
+          "kvkkkvkvkvkvkpkv",
+          "vkvkkkvkvkvkvkvk",
+          "kkkkkkkvkkkvkvkv"
+        ]
+      }
+    },
+    "lake_dark": {
+      "note": "地底湖の水（2 コマ）。墨と fc02 のディザの深み、fc12 のさざ波が f1 で 2px 流れ、fc21 の光が瞬く。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "f0": [
+          "wkwkwkkkwkwkwwwk",
+          "kwkwkkkkkwkwkwkw",
+          "wkwkwkwkwkxkwkwk",
+          "kwWWWkkkkkkkkkkw",
+          "wwwkwkwkwkwkwkww",
+          "wwkwkkkkkkkkkwkw",
+          "wkwkWkwkkkwkwkww",
+          "kwkkkkkkkkWWWWkw",
+          "wkwkwkwkwkwkwwww",
+          "kwkkkwkkkwkkkxkw",
+          "wkwkwkwkwkwkwkwk",
+          "kwkwkwkkkkkkkwkw",
+          "wwwkwWWkwkkkwwwk",
+          "kwkwkwkkkkkkkwkw",
+          "wkwkwkwkkkwkwkww",
+          "kwkwkkkkkkkwkwkw"
+        ],
+        "f1": [
+          "wkwkwkkkwkwkwwwk",
+          "kwkwkkkkkwkwkwkw",
+          "wkwkwkwkwkwWwkwk",
+          "kwkwWWWkkkkkkkkw",
+          "wwwkwkwkwkwkwkww",
+          "wwkwkkkkkkkkkwkw",
+          "wkwxkkwkkkwkwkww",
+          "kwkkkkkkkkkwWWWW",
+          "wkwkwkwkwkwkwkww",
+          "kwkkkwkkkwkkkwWw",
+          "wkwkwkwkwkwkwkwk",
+          "kwkwkwkkkkkkkwkw",
+          "wwwkwkwWWkkkwwwk",
+          "kwkwkwkkkkkkkwkw",
+          "wkwkwkwkkkwkwkww",
+          "kwkwkkkkkkkwkwkw"
+        ]
+      }
+    },
+    "lake_dark_n": {
+      "note": "北が岸の水。岸の切り立ちが見え、その下に影の帯。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "f0": [
+          "vkkkvkkkvkvkvvvk",
+          "kkkkkkkkkkkkkvkk",
+          "kkkkkkkkkkvkkkkk",
+          "kvvvvkvvvvkvvvvk",
+          "vkkkkvkkkkvkkkkv",
+          "kkkkkkkkkkkkkkkk",
+          "kkwkkkwkkkkkwkww",
+          "kwkkkkkkkkWWWWkw",
+          "wkwkwkwkwkwkwwww",
+          "kwkkkwkkkwkkkwkw",
+          "wkwkwkwkwkwkwkwk",
+          "kwkwkwkkkkkkkwkw",
+          "wwwkwWWkwkkkwwwk",
+          "kwkwkwkkkkkkkwkw",
+          "wkwkwkwkkkwkwkww",
+          "kwkwkkkkkkkwkwkw"
+        ],
+        "f1": [
+          "vkkkvkkkvkvkvvvk",
+          "kkkkkkkkkkkkkvkk",
+          "kkkkkkkkkkvkkkkk",
+          "kvvvvkvvvvkvvvvk",
+          "vkkkkvkkkkvkkkkv",
+          "kkkkkkkkkkkkkkkk",
+          "kkwkkkwkkkkkwkww",
+          "kwkkkkkkkkkwWWWW",
+          "wkwkwkwkwkwkwkww",
+          "kwkkkwkkkwkkkwkw",
+          "wkwkwkwkwkwkwkwk",
+          "kwkwkwkkkkkkkwkw",
+          "wwwkwkwWWkkkwwwk",
+          "kwkwkwkkkkkkkwkw",
+          "wkwkwkwkkkwkwkww",
+          "kwkwkkkkkkkwkwkw"
+        ]
+      }
+    },
+    "lake_dark_s": {
+      "note": "南が岸の水。岸に寄せる波が fc12 で光る。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "f0": [
+          "wkwkwkkkwkwkwwwk",
+          "kwkwkkkkkwkwkwkw",
+          "wkwkwkwkwkwkwkwk",
+          "kwWWWkkkkkkkkkkw",
+          "wwwkwkwkwkwkwkww",
+          "wwkwkkkkkkkkkwkw",
+          "wkwkkkwkkkwkwkww",
+          "kwkkkkkkkkWWWWkw",
+          "wkwkwkwkwkwkwwww",
+          "kwkkkwkkkwkkkwkw",
+          "wkwkwkwkwkwkwkwk",
+          "kwkwkwkkkkkkkwkw",
+          "WwwkwWWWwkkkwwWk",
+          "vWwWwWwvwWwWwWvW",
+          "vvvvvvvkvvvvvvvv",
+          "kkkkkkkkkkkkkvkv"
+        ],
+        "f1": [
+          "wkwkwkkkwkwkwwwk",
+          "kwkwkkkkkwkwkwkw",
+          "wkwkwkwkwkwkwkwk",
+          "kwkwWWWkkkkkkkkw",
+          "wwwkwkwkwkwkwkww",
+          "wwkwkkkkkkkkkwkw",
+          "wkwkkkwkkkwkwkww",
+          "kwkkkkkkkkkwWWWW",
+          "wkwkwkwkwkwkwkww",
+          "kwkkkwkkkwkkkwkw",
+          "wkwkwkwkwkwkwkwk",
+          "kwkwkwkkkkkkkwkw",
+          "WwwkwkwwWkkkwwWk",
+          "vWwWwWwvwWwWwWvW",
+          "vvvvvvvkvvvvvvvv",
+          "kkkkkkkkkkkkkvkv"
+        ]
+      }
+    },
+    "lake_dark_e": {
+      "note": "東が岸の水。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "f0": [
+          "wkwkwkkkwkwkkvvk",
+          "kwkwkkkkkwkwvkkk",
+          "wkwkwkwkwkwkkkvk",
+          "kwWWWkkkkkkkkkkk",
+          "wwwkwkwkwkwkWkkk",
+          "wwkwkkkkkkkkkkkk",
+          "wkwkkkwkkkwkvkkk",
+          "kwkkkkkkkkWWkkkk",
+          "wkwkwkwkwkwkkkkk",
+          "kwkkkwkkkwkkwkkk",
+          "wkwkwkwkwkwkkkkk",
+          "kwkwkwkkkkkkvkkk",
+          "wwwkwWWkwkkkkkkk",
+          "kwkwkwkkkkkkkkkk",
+          "wkwkwkwkkkwkWkvk",
+          "kwkwkkkkkkkkkvkv"
+        ],
+        "f1": [
+          "wkwkwkkkwkwkkvvk",
+          "kwkwkkkkkwkwvkkk",
+          "wkwkwkwkwkwkkkvk",
+          "kwkwWWWkkkkkkkkk",
+          "wwwkwkwkwkwkWkkk",
+          "wwkwkkkkkkkkkkkk",
+          "wkwkkkwkkkwkvkkk",
+          "kwkkkkkkkkkwkkkk",
+          "wkwkwkwkwkwkkkkk",
+          "kwkkkwkkkwkkwkkk",
+          "wkwkwkwkwkwkkkkk",
+          "kwkwkwkkkkkkvkkk",
+          "wwwkwkwWWkkkkkkk",
+          "kwkwkwkkkkkkkkkk",
+          "wkwkwkwkkkwkWkvk",
+          "kwkwkkkkkkkkkvkv"
+        ]
+      }
+    },
+    "lake_dark_w": {
+      "note": "西が岸の水。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "f0": [
+          "vkkkkkkkwkwkwwwk",
+          "kkkvkkkkkwkwkwkw",
+          "kkkvkkwkwkwkwkwk",
+          "kkkkWkkkkkkkkkkw",
+          "kkkvkkwkwkwkwkww",
+          "kkkWkkkkkkkkkwkw",
+          "kkkkkkwkkkwkwkww",
+          "kkkvkkkkkkWWWWkw",
+          "vkkvkkwkwkwkwwww",
+          "kvkkkwkkkwkkkwkw",
+          "kkkvkkwkwkwkwkwk",
+          "kkkWkwkkkkkkkwkw",
+          "vkvkkWWkwkkkwwwk",
+          "kvkvkwkkkkkkkwkw",
+          "vkkvkkwkkkwkwkww",
+          "kkkkkkkkkkkwkwkw"
+        ],
+        "f1": [
+          "vkkkkkkkwkwkwwwk",
+          "kkkvkkkkkwkwkwkw",
+          "kkkvkkwkwkwkwkwk",
+          "kkkkWWWkkkkkkkkw",
+          "kkkvkkwkwkwkwkww",
+          "kkkWkkkkkkkkkwkw",
+          "kkkkkkwkkkwkwkww",
+          "kkkvkkkkkkkwWWWW",
+          "vkkvkkwkwkwkwkww",
+          "kvkkkwkkkwkkkwkw",
+          "kkkvkkwkwkwkwkwk",
+          "kkkWkwkkkkkkkwkw",
+          "vkvkkkwWWkkkwwwk",
+          "kvkvkwkkkkkkkwkw",
+          "vkkvkkwkkkwkwkww",
+          "kkkkkkkkkkkwkwkw"
+        ]
+      }
+    },
+    "lake_dark_ne": {
+      "note": "外角（北と東が岸）。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "f0": [
+          "vkkkvkkkvkvkvvvk",
+          "kkkkkkkkkkkkkvkk",
+          "kkkkkkkkkkvkkkvk",
+          "kvvvvkvvvvkvvkkk",
+          "vkkkkvkkkkvkWkkk",
+          "kkkkkkkkkkkkkkkk",
+          "kkwkkkwkkkkkvkkk",
+          "kwkkkkkkkkWWkkkk",
+          "wkwkwkwkwkwkkkkk",
+          "kwkkkwkkkwkkwkkk",
+          "wkwkwkwkwkwkkkkk",
+          "kwkwkwkkkkkkvkkk",
+          "wwwkwWWkwkkkkkkk",
+          "kwkwkwkkkkkkkkkk",
+          "wkwkwkwkkkwkWkvk",
+          "kwkwkkkkkkkkkvkv"
+        ],
+        "f1": [
+          "vkkkvkkkvkvkvvvk",
+          "kkkkkkkkkkkkkvkk",
+          "kkkkkkkkkkvkkkvk",
+          "kvvvvkvvvvkvvkkk",
+          "vkkkkvkkkkvkWkkk",
+          "kkkkkkkkkkkkkkkk",
+          "kkwkkkwkkkkkvkkk",
+          "kwkkkkkkkkkwkkkk",
+          "wkwkwkwkwkwkkkkk",
+          "kwkkkwkkkwkkwkkk",
+          "wkwkwkwkwkwkkkkk",
+          "kwkwkwkkkkkkvkkk",
+          "wwwkwkwWWkkkkkkk",
+          "kwkwkwkkkkkkkkkk",
+          "wkwkwkwkkkwkWkvk",
+          "kwkwkkkkkkkkkvkv"
+        ]
+      }
+    },
+    "lake_dark_nw": {
+      "note": "外角（北と西が岸）。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "f0": [
+          "vkkkvkkkvkvkvvvk",
+          "kkkkkkkkkkkkkvkk",
+          "kkkkkkkkkkvkkkkk",
+          "kkkvvkvvvvkvvvvk",
+          "kkkvkvkkkkvkkkkv",
+          "kkkWkkkkkkkkkkkk",
+          "kkkkkkwkkkkkwkww",
+          "kkkvkkkkkkWWWWkw",
+          "vkkvkkwkwkwkwwww",
+          "kvkkkwkkkwkkkwkw",
+          "kkkvkkwkwkwkwkwk",
+          "kkkWkwkkkkkkkwkw",
+          "vkvkkWWkwkkkwwwk",
+          "kvkvkwkkkkkkkwkw",
+          "vkkvkkwkkkwkwkww",
+          "kkkkkkkkkkkwkwkw"
+        ],
+        "f1": [
+          "vkkkvkkkvkvkvvvk",
+          "kkkkkkkkkkkkkvkk",
+          "kkkkkkkkkkvkkkkk",
+          "kkkvvkvvvvkvvvvk",
+          "kkkvkvkkkkvkkkkv",
+          "kkkWkkkkkkkkkkkk",
+          "kkkkkkwkkkkkwkww",
+          "kkkvkkkkkkkwWWWW",
+          "vkkvkkwkwkwkwkww",
+          "kvkkkwkkkwkkkwkw",
+          "kkkvkkwkwkwkwkwk",
+          "kkkWkwkkkkkkkwkw",
+          "vkvkkkwWWkkkwwwk",
+          "kvkvkwkkkkkkkwkw",
+          "vkkvkkwkkkwkwkww",
+          "kkkkkkkkkkkwkwkw"
+        ]
+      }
+    },
+    "lake_dark_se": {
+      "note": "外角（南と東が岸）。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "f0": [
+          "wkwkwkkkwkwkkvvk",
+          "kwkwkkkkkwkwvkkk",
+          "wkwkwkwkwkwkkkvk",
+          "kwWWWkkkkkkkkkkk",
+          "wwwkwkwkwkwkWkkk",
+          "wwkwkkkkkkkkvkkk",
+          "wkwkkkwkkkwkvkkk",
+          "kwkkkkkkkkWWkkkk",
+          "wkwkwkwkwkwkkkkk",
+          "kwkkkwkkkwkkwkkk",
+          "wkwkwkwkwkwkvkkk",
+          "kwkwkwkkkkkkvkkk",
+          "WwwkwWWWwkkkkkkk",
+          "vWwWwWwvwWwWwkkk",
+          "vvvvvvvkvvvvvkvk",
+          "kkkkkkkkkkkkkvkv"
+        ],
+        "f1": [
+          "wkwkwkkkwkwkkvvk",
+          "kwkwkkkkkwkwvkkk",
+          "wkwkwkwkwkwkkkvk",
+          "kwkwWWWkkkkkkkkk",
+          "wwwkwkwkwkwkWkkk",
+          "wwkwkkkkkkkkvkkk",
+          "wkwkkkwkkkwkvkkk",
+          "kwkkkkkkkkkwkkkk",
+          "wkwkwkwkwkwkkkkk",
+          "kwkkkwkkkwkkwkkk",
+          "wkwkwkwkwkwkvkkk",
+          "kwkwkwkkkkkkvkkk",
+          "WwwkwkwwWkkkkkkk",
+          "vWwWwWwvwWwWwkkk",
+          "vvvvvvvkvvvvvkvk",
+          "kkkkkkkkkkkkkvkv"
+        ]
+      }
+    },
+    "lake_dark_sw": {
+      "note": "外角（南と西が岸）。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "f0": [
+          "vkkkkkkkwkwkwwwk",
+          "kkkvkkkkkwkwkwkw",
+          "kkkvkkwkwkwkwkwk",
+          "kkkkWkkkkkkkkkkw",
+          "kkkvkkwkwkwkwkww",
+          "kkkWkkkkkkkkkwkw",
+          "kkkvkkwkkkwkwkww",
+          "kkkvkkkkkkWWWWkw",
+          "vkkvkkwkwkwkwwww",
+          "kvkkkwkkkwkkkwkw",
+          "kkkvkkwkwkwkwkwk",
+          "kkkWkwkkkkkkkwkw",
+          "vkvvkWWWwkkkwwWk",
+          "kvkvwWwvwWwWwWvW",
+          "vkvvvvvkvvvvvvvv",
+          "kkkkkkkkkkkkkvkv"
+        ],
+        "f1": [
+          "vkkkkkkkwkwkwwwk",
+          "kkkvkkkkkwkwkwkw",
+          "kkkvkkwkwkwkwkwk",
+          "kkkkWWWkkkkkkkkw",
+          "kkkvkkwkwkwkwkww",
+          "kkkWkkkkkkkkkwkw",
+          "kkkvkkwkkkwkwkww",
+          "kkkvkkkkkkkwWWWW",
+          "vkkvkkwkwkwkwkww",
+          "kvkkkwkkkwkkkwkw",
+          "kkkvkkwkwkwkwkwk",
+          "kkkWkwkkkkkkkwkw",
+          "vkvvkkwwWkkkwwWk",
+          "kvkvwWwvwWwWwWvW",
+          "vkvvvvvkvvvvvvvv",
+          "kkkkkkkkkkkkkvkv"
+        ]
+      }
+    },
+    "lake_dark_in_ne": {
+      "note": "内角（北東の角だけ岸）。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "f0": [
+          "wkwkwkkkwkwkkvvk",
+          "kwkwkkkkkwkkkvkk",
+          "wkwkwkwkwkwkvkvk",
+          "kwWWWkkkkkkkkvkk",
+          "wwwkwkwkwkwkkkvv",
+          "wwkwkkkkkkkkkkkk",
+          "wkwkkkwkkkwkwkkw",
+          "kwkkkkkkkkWWWWkw",
+          "wkwkwkwkwkwkwwww",
+          "kwkkkwkkkwkkkwkw",
+          "wkwkwkwkwkwkwkwk",
+          "kwkwkwkkkkkkkwkw",
+          "wwwkwWWkwkkkwwwk",
+          "kwkwkwkkkkkkkwkw",
+          "wkwkwkwkkkwkwkww",
+          "kwkwkkkkkkkwkwkw"
+        ],
+        "f1": [
+          "wkwkwkkkwkwkkvvk",
+          "kwkwkkkkkwkkkvkk",
+          "wkwkwkwkwkwkvkvk",
+          "kwkwWWWkkkkkkvkk",
+          "wwwkwkwkwkwkkkvv",
+          "wwkwkkkkkkkkkkkk",
+          "wkwkkkwkkkwkwkkw",
+          "kwkkkkkkkkkwWWWW",
+          "wkwkwkwkwkwkwkww",
+          "kwkkkwkkkwkkkwkw",
+          "wkwkwkwkwkwkwkwk",
+          "kwkwkwkkkkkkkwkw",
+          "wwwkwkwWWkkkwwwk",
+          "kwkwkwkkkkkkkwkw",
+          "wkwkwkwkkkwkwkww",
+          "kwkwkkkkkkkwkwkw"
+        ]
+      }
+    },
+    "lake_dark_in_nw": {
+      "note": "内角（北西の角だけ岸）。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "f0": [
+          "vkkkkkkkwkwkwwwk",
+          "kkkkvkkkkwkwkwkw",
+          "kkkvwkwkwkwkwkwk",
+          "kkvkWkkkkkkkkkkw",
+          "vvkkwkwkwkwkwkww",
+          "kkkwkkkkkkkkkwkw",
+          "kkwkkkwkkkwkwkww",
+          "kwkkkkkkkkWWWWkw",
+          "wkwkwkwkwkwkwwww",
+          "kwkkkwkkkwkkkwkw",
+          "wkwkwkwkwkwkwkwk",
+          "kwkwkwkkkkkkkwkw",
+          "wwwkwWWkwkkkwwwk",
+          "kwkwkwkkkkkkkwkw",
+          "wkwkwkwkkkwkwkww",
+          "kwkwkkkkkkkwkwkw"
+        ],
+        "f1": [
+          "vkkkkkkkwkwkwwwk",
+          "kkkkvkkkkwkwkwkw",
+          "kkkvwkwkwkwkwkwk",
+          "kkvkWWWkkkkkkkkw",
+          "vvkkwkwkwkwkwkww",
+          "kkkwkkkkkkkkkwkw",
+          "kkwkkkwkkkwkwkww",
+          "kwkkkkkkkkkwWWWW",
+          "wkwkwkwkwkwkwkww",
+          "kwkkkwkkkwkkkwkw",
+          "wkwkwkwkwkwkwkwk",
+          "kwkwkwkkkkkkkwkw",
+          "wwwkwkwWWkkkwwwk",
+          "kwkwkwkkkkkkkwkw",
+          "wkwkwkwkkkwkwkww",
+          "kwkwkkkkkkkwkwkw"
+        ]
+      }
+    },
+    "lake_dark_in_se": {
+      "note": "内角（南東の角だけ岸）。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "f0": [
+          "wkwkwkkkwkwkwwwk",
+          "kwkwkkkkkwkwkwkw",
+          "wkwkwkwkwkwkwkwk",
+          "kwWWWkkkkkkkkkkw",
+          "wwwkwkwkwkwkwkww",
+          "wwkwkkkkkkkkkwkw",
+          "wkwkkkwkkkwkwkww",
+          "kwkkkkkkkkWWWWkw",
+          "wkwkwkwkwkwkwwww",
+          "kwkkkwkkkwkkkwkw",
+          "wkwkwkwkwkwkwkwk",
+          "kwkwkwkkkkkkkwwW",
+          "wwwkwWWkwkkkwWkk",
+          "kwkwkwkkkkkkwkkk",
+          "wkwkwkwkkkwkkkvk",
+          "kwkwkkkkkkkkkvkv"
+        ],
+        "f1": [
+          "wkwkwkkkwkwkwwwk",
+          "kwkwkkkkkwkwkwkw",
+          "wkwkwkwkwkwkwkwk",
+          "kwkwWWWkkkkkkkkw",
+          "wwwkwkwkwkwkwkww",
+          "wwkwkkkkkkkkkwkw",
+          "wkwkkkwkkkwkwkww",
+          "kwkkkkkkkkkwWWWW",
+          "wkwkwkwkwkwkwkww",
+          "kwkkkwkkkwkkkwkw",
+          "wkwkwkwkwkwkwkwk",
+          "kwkwkwkkkkkkkwwW",
+          "wwwkwkwWWkkkwwkk",
+          "kwkwkwkkkkkkwkkk",
+          "wkwkwkwkkkwkkkvk",
+          "kwkwkkkkkkkkkvkv"
+        ]
+      }
+    },
+    "lake_dark_in_sw": {
+      "note": "内角（南西の角だけ岸）。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "f0": [
+          "wkwkwkkkwkwkwwwk",
+          "kwkwkkkkkwkwkwkw",
+          "wkwkwkwkwkwkwkwk",
+          "kwWWWkkkkkkkkkkw",
+          "wwwkwkwkwkwkwkww",
+          "wwkwkkkkkkkkkwkw",
+          "wkwkkkwkkkwkwkww",
+          "kwkkkkkkkkWWWWkw",
+          "wkwkwkwkwkwkwwww",
+          "kwkkkwkkkwkkkwkw",
+          "wkwkwkwkwkwkwkwk",
+          "wWkwkwkkkkkkkwkw",
+          "kkWkwWWkwkkkwwwk",
+          "kvkWkwkkkkkkkwkw",
+          "vkvkvkwkkkwkwkww",
+          "kkkkkkkkkkkwkwkw"
+        ],
+        "f1": [
+          "wkwkwkkkwkwkwwwk",
+          "kwkwkkkkkwkwkwkw",
+          "wkwkwkwkwkwkwkwk",
+          "kwkwWWWkkkkkkkkw",
+          "wwwkwkwkwkwkwkww",
+          "wwkwkkkkkkkkkwkw",
+          "wkwkkkwkkkwkwkww",
+          "kwkkkkkkkkkwWWWW",
+          "wkwkwkwkwkwkwkww",
+          "kwkkkwkkkwkkkwkw",
+          "wkwkwkwkwkwkwkwk",
+          "wWkwkwkkkkkkkwkw",
+          "kkWkwkwWWkkkwwwk",
+          "kvkWkwkkkkkkkwkw",
+          "vkvkvkwkkkwkwkww",
+          "kkkkkkkkkkkwkwkw"
+        ]
+      }
+    },
+    "lake_dark_b": {
+      "note": "lake_dark の変種（さざ波の並びが違う）。広い湖で交互に置くと格子が消える。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "f0": [
+          "wkwkwkkkwkwkwwwk",
+          "kwkwkkkWWwkwkwkw",
+          "wkwkwkwkwkxkwkwk",
+          "kwkwkkkkkkkkkkkw",
+          "wwwkwkwkwkwkwkww",
+          "wwkwkkkkkkkkkwkw",
+          "WWWkWkwkkkwkwkww",
+          "kkkkkkkkkkkwkwkw",
+          "wkwkwkwkwkwkwwww",
+          "kwkkkwkkkwkkkxkw",
+          "wkwkwkwkwkwWWWwk",
+          "kwkwkwkkkkkkkwkw",
+          "wwwkwkwkwkkkwwwk",
+          "kwkwkwkkkkkkkwkw",
+          "wkwWWWWkkkwkwkww",
+          "kwkwkkkkkkkwkwkw"
+        ],
+        "f1": [
+          "wkwkwkkkwkwkwwwk",
+          "kwkwkkkkkWWwkwkw",
+          "wkwkwkwkwkwWwkwk",
+          "kwkwkkkkkkkkkkkw",
+          "wwwkwkwkwkwkwkww",
+          "wwkwkkkkkkkkkwkw",
+          "wkWxWkwkkkwkwkww",
+          "kwkkkkkkkkkwkwkw",
+          "wkwkwkwkwkwkwwww",
+          "kwkkkwkkkwkkkwWw",
+          "wkwkwkwkwkwkwWWW",
+          "kwkwkwkkkkkkkwkw",
+          "wwwkwkwkwkkkwwwk",
+          "kwkwkwkkkkkkkwkw",
+          "wkwkwWWWWkwkwkww",
+          "kwkwkkkkkkkwkwkw"
+        ]
+      }
+    },
+    "boss_door": {
+      "note": "水晶で封じられたボスの間の扉（48×48）。灰の石のアーチに 2 枚の石の扉、合わせ目を水晶の群れがふさぐ。anchor は左上（3×3 マスの左上）。四隅の外は透明で、後ろの rock_top が見える。",
+      "kind": "prop",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "base": [
+          "................kAAkakkkkkAkaaAk................",
+          ".............kkAaAaAakCpCkakaAaaakk.............",
+          "............kaAaAaAaakppckAkaaAaAaAk............",
+          "..........kAkaaAaAaAkkCcCkaagaaaaakagk..........",
+          ".........kAaAkaaAaAAkkkkkkAaAaAaAaagAak.........",
+          "........aAaAakaaAAAAkAaAAAkaaAaAakgaaaaa........",
+          ".......AAaAaAakaAAAAAaAAAAkaAAAAAaaaaaaaa.......",
+          "......kaaAaAaAAAaAkkkkkkkkkkkkaAkaaaaaaaak......",
+          ".....kkaAaAaAAAkkkkkkgakkgggkkkkAAAaAaaakgk.....",
+          "....kAakkaaAAAAkkkkgggakkgggakgkkAaAaaaagaak....",
+          "....AaAAAkAaAkkkkakgggakkgggakggkkkaAkagaaaa....",
+          "...kaAaAaAkAkkgggakgggakkgggakgggakkkaaagaaak...",
+          "...aAAAaAAAkkkgggakgggakkgggakgggakkaaAaaaaaa...",
+          "..kaaAaAAAAkakgggakgggakkgggakgggakgkAaAaagaak..",
+          "..AaaaAAAAkkkkgggakgggaCkgggakgggakggkAaAaaakk..",
+          "..akkaaAAAkkakgggakgggackgggakgggakggkaAaakggg..",
+          ".kAaAAkkAkkgakgggakgggakcgggakgggakgggkkaaagaak.",
+          ".kaAaAAAAkggakgggakgggakcgggakgggakgggkaaAgaaak.",
+          ".aAaAaAAAkkgakgggakgggackgggakgggakgggaaAaaaaaa.",
+          ".AaAaAAAkkggakgggakgggakkgggakgggakgggakaagagag.",
+          ".AAaAAAAkkkgakgggakgggakkgggakgggakgggakAaAaaaa.",
+          ".aaaaAaAkkggakgggakgggakkgggakgggakgggakaaaagag.",
+          "kkkkkkkCkgggakgggakgggakkgggakgggakgggakCkkkkkkk",
+          "kaaaaaackkggakgggakgggakpkggakgggakgggakcggggggk",
+          "kaaaaaAacgggakgggakgggkppCkgakgggakgggacagggaggk",
+          "kagagaaackggakgggkkgggkppCkgakgkgakgggacgggggggk",
+          "kgaaagaakcggakggkpkggkpppCckakkpkakgggckkkkkkkkk",
+          "kggagggakkcgakggkpCkgkpppCckakpCkakggcakgagagagk",
+          "kgagagaakgggakgkppCckkpppCckkppCckkgggakagagagak",
+          "kkkkkkkkkkggakgkppCckkpppCckkppCckkgggakgagggagk",
+          "kaaaaaAakaaAaakpppCckkppCCckkpppCckaAaaaggagggak",
+          "kaaagaaakkkkkkppppCcckppCCckkppCCckkkkkkgggggggk",
+          "kaaaaaAakgggakpppCCcckppCCcckpppCcckggakgggggggk",
+          "kagagaaakkggakkppCCcckpppCcckppCCckgggakkkkkkkkk",
+          "kgagagaakgggakgkpCCcckpppCcckpCCckkgggakagaaagak",
+          "kggggggakkggakggkkkkkkkkkkkkkkkkkakgggakgagagagk",
+          "kkkkkkkkkgggckgggakgggakkgggakgggakcggakagagagak",
+          "kaaaaaaAkkgcakgggakgggakkgggakgggakgcgakgggggggk",
+          "kaaaaaAakgcgakgggakgggakkgggakgggakggcakgggggggk",
+          "kagagaaakkCgakgggakgggakkgggakgggakggCakgggggggk",
+          "kaagaaaakaaAaaaaaAaaaaakkaaaaaAaaaaaAaaakkkkkkkk",
+          "kagagagakkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkgagagagk",
+          "kgagagaakgggakgggakgggakkgggakgggakgggakagagagak",
+          "kkkkkkkkkkggakgggakgggakkgggakgggakgggakgggggggk",
+          "kaaaaaAakgggakgggakgggakkgggakgggakgggakgggggggk",
+          "kagagaaakkggakgggakgggakkgggakgggakgggakgggggggk",
+          "kgagagaakgkgkgkgkgkgkgkgkgkgkgkgkgkgkgkggggggggk",
+          "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"
+        ]
+      }
+    }
+  }
+}

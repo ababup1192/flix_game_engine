@@ -1,0 +1,84 @@
+# 依頼を受けてミナを仲間にし、村の南の端から外へ出る。
+# 村長の家で依頼を受ける → 村の端（どの辺も出口）はミナがいないので引き返す → 西の道から鍛冶屋の前へ → ミナが加わる → 南の端から出る。
+start talk node=ChiefQuest map=chief_house x=7 y=5 facing=up
+expect talk=ChiefQuest&quest=none&party=luka
+tap confirm                  # 出し切る
+tap confirm                  # はい / いいえ を出す
+expect choice
+tap confirm                  # はい
+expect quest=accepted
+tap confirm
+tap confirm
+tap confirm
+tap confirm
+tap confirm
+tap confirm                  # 窓を閉じる
+expect layer=Walking
+# 家を出て村の扉の前（20, 4）へ。
+hold down
+until map=village max 5
+release down
+until layer=Walking max 2
+expect x=20&y=4
+# 南の道を下りて端のマス（20, 14）へ。外へ出ようとすると引き返す会話が開く。
+hold down
+until talk=VillageGate max 5
+release down
+expect x=20&y=14&facing=Down&map=village
+tap confirm                  # 出し切る
+tap confirm                  # 窓を閉じる
+expect layer=Walking
+# 行 5 へ戻り（行 4 は道具屋の前に人が立つ）、西の端の 1 つ手前（1, 5）まで行って西の道（1, 9）へ下り、
+# 左の西の道の端（0, 9）から鍛冶屋の前へ（端の列（x = 0）を左へ押すと、そこは村の外への出口なのでミナのいない今は引き返す）。
+hold up
+until y=5 max 6
+release up
+until layer=Walking max 1
+hold left
+until x=1 max 8
+release left
+until layer=Walking max 1
+hold down
+until y=9 max 5
+release down
+until layer=Walking max 1
+hold left
+until map=smithy max 5
+release left
+until layer=Walking max 2
+expect x=14&y=6&facing=Left
+# 鍛冶屋の前の道（行 6）を左へ。ミナの下（3, 6）で上を向いて話す。
+hold left
+until x=3 max 5
+release left
+wait 0.3
+tap up
+expect facing=Up
+tap confirm
+expect talk=Mina
+tap confirm                  # 出し切る
+tap confirm                  # ミナが なかまに くわわった！
+expect party=luka,mina
+tap confirm                  # 出し切る
+tap confirm                  # 窓を閉じる
+expect layer=Walking
+# 右の端（15, 6）から村の西の道（1, 9）へ戻る。
+hold right
+until map=village max 5
+release right
+until layer=Walking max 2
+expect x=1&y=9
+# 行 5 へ上がり、東へ行って南の道を下り、南の端から村の外へ。
+hold up
+until y=5 max 3
+release up
+until layer=Walking max 1
+hold right
+until x=20 max 6
+release right
+until layer=Walking max 1
+hold down
+until map=world max 6
+release down
+until layer=Walking max 2
+expect map=world&x=9&y=18&party=luka,mina

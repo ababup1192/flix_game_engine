@@ -1,0 +1,56 @@
+{
+  "//": "rpg.foe_moves.json の形の宣言（Studio の sections 方言）。技の効き目はコード（Battle）、ここは選ぶ重みだけ。",
+  "version": 1,
+  "sections": {
+    "moves": {
+      "kind": "list",
+      "label": "技の行（敵・phase・技・重み）",
+      "order": 1,
+      "fields": {
+        "foe": {
+          "type": "text",
+          "label": "敵（rpg.foes.json の鍵）",
+          "order": 1,
+          "default": "",
+          "required": true
+        },
+        "phase": {
+          "type": "int",
+          "label": "phase（1 = 初め・2 = HP が phase2At を切った後）",
+          "order": 2,
+          "default": 1,
+          "min": 1,
+          "max": 2
+        },
+        "act": {
+          "type": {
+            "enum": [
+              "attack",
+              "sweep",
+              "guard",
+              "sleep",
+              "spell"
+            ]
+          },
+          "label": "技",
+          "order": 3,
+          "default": "attack"
+        },
+        "weight": {
+          "type": "int",
+          "label": "選ぶ重み",
+          "order": 4,
+          "default": 1,
+          "min": 0,
+          "max": 99
+        },
+        "spell": {
+          "type": "text",
+          "label": "呪文（act が spell の時。rpg.spells.json の鍵）",
+          "order": 5,
+          "default": ""
+        }
+      }
+    }
+  }
+}

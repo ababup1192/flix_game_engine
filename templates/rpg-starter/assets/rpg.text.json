@@ -1,0 +1,354 @@
+{
+  "version": 1,
+  "title": "言葉（話し手の呼び名・メニュー・知らせ）",
+  "note": "speakers は会話（assets/talk/rune.yarn）の話し手の id → ウィンドウに出す呼び名（鍵がそのまま会話の語彙の話し手になる。足したら make talk-vocab）。menu は画面の枠に出す短い言葉、notice はメニューと店の知らせ（{name}・{n}・{item}・{gold} はその時の値で埋まる。\\n で行を替える）。無い鍵はコードの既定の言葉。台詞そのものは rune.yarn に書く。 battle は戦いの伝言（{name} は行う人・{target} は受ける人・{n} は数・{lv} は上がった後の Lv・{spell} は呪文の名前・{item} は道具の名前）。",
+  "speakers": {
+    "chief": {
+      "name": "むらおさ",
+      "voice": "low"
+    },
+    "elder": {
+      "name": "おじいさん",
+      "voice": "low"
+    },
+    "woman": {
+      "name": "おかみさん",
+      "voice": "mid"
+    },
+    "child": {
+      "name": "こども",
+      "voice": "high"
+    },
+    "merchant": {
+      "name": "しょうにん",
+      "voice": "mid"
+    },
+    "mina": {
+      "name": "ミナ",
+      "voice": "mid"
+    },
+    "smith": {
+      "name": "かじや",
+      "voice": "low"
+    },
+    "shop": {
+      "name": "どうぐや",
+      "voice": "mid"
+    },
+    "inn": {
+      "name": "やどや",
+      "voice": "mid"
+    },
+    "toto": {
+      "name": "トト",
+      "voice": "high"
+    },
+    "boljii": {
+      "name": "ボルじい",
+      "voice": "low"
+    },
+    "koron": {
+      "name": "コロン",
+      "voice": "mid"
+    },
+    "father": {
+      "name": "ミナのちち",
+      "voice": "low"
+    },
+    "kurogane": {
+      "name": "くろがねゴブリン",
+      "voice": "low"
+    }
+  },
+  "menu": {
+    "newGame": {
+      "text": "はじめから"
+    },
+    "continue": {
+      "text": "つづきから"
+    },
+    "credit": {
+      "text": "2026  ルーネの泉 せいさく いいんかい"
+    },
+    "quitAsk": {
+      "text": "ゲームを おわりますか？"
+    },
+    "yes": {
+      "text": "はい"
+    },
+    "no": {
+      "text": "いいえ"
+    },
+    "talk": {
+      "text": "はなす"
+    },
+    "spell": {
+      "text": "じゅもん"
+    },
+    "status": {
+      "text": "つよさ"
+    },
+    "items": {
+      "text": "どうぐ"
+    },
+    "equip": {
+      "text": "そうび"
+    },
+    "search": {
+      "text": "しらべる"
+    },
+    "buy": {
+      "text": "かう"
+    },
+    "sell": {
+      "text": "うる"
+    },
+    "leave": {
+      "text": "やめる"
+    },
+    "weapon": {
+      "text": "ぶき"
+    },
+    "armor": {
+      "text": "よろい"
+    },
+    "unequip": {
+      "text": "はずす"
+    },
+    "level": {
+      "text": "レベル"
+    },
+    "hp": {
+      "text": "HP"
+    },
+    "mp": {
+      "text": "MP"
+    },
+    "atk": {
+      "text": "ちから"
+    },
+    "agi": {
+      "text": "すばやさ"
+    },
+    "defense": {
+      "text": "みのまもり"
+    },
+    "gold": {
+      "text": "ゴールド"
+    },
+    "fight": {
+      "text": "たたかう"
+    },
+    "defend": {
+      "text": "ぼうぎょ"
+    },
+    "flee": {
+      "text": "にげる"
+    }
+  },
+  "notice": {
+    "healed": {
+      "text": "{name}の HPが {n} かいふくした！"
+    },
+    "mpHealed": {
+      "text": "{name}の MPが {n} かいふくした！"
+    },
+    "noEffect": {
+      "text": "しかし なにも おこらなかった。"
+    },
+    "notHere": {
+      "text": "いまは つかえない。"
+    },
+    "useEquip": {
+      "text": "そうびで つけかえてね。"
+    },
+    "keyItem": {
+      "text": "だいじな ものは つかえない。"
+    },
+    "nobody": {
+      "text": "そっちには だれも いない。"
+    },
+    "nothing": {
+      "text": "なにも みつからなかった。"
+    },
+    "buyAsk": {
+      "text": "{item}を {n}こで {gold}G だよ。\nかうかい？"
+    },
+    "sellAsk": {
+      "text": "{item}を {n}こ うると {gold}G だよ。\nうるかい？"
+    },
+    "chestOpened": {
+      "text": "たからばこを あけた！"
+    },
+    "itemGot": {
+      "text": "{item}を てにいれた！"
+    },
+    "goldGot": {
+      "text": "{gold}G を てにいれた！"
+    },
+    "chestEmpty": {
+      "text": "たからばこは からっぽだ。"
+    },
+    "bagFull": {
+      "text": "しかし もちものが いっぱいで もてない。"
+    },
+    "locked": {
+      "text": "とびらには かぎが かかっている。"
+    },
+    "unlocked": {
+      "text": "{item}で とびらを あけた！"
+    },
+    "notNeeded": {
+      "text": "{name}には いまは ひつようない。"
+    },
+    "leverOn": {
+      "text": "レバーを ひいた。\nどこかで ガラガラと おとが した。"
+    },
+    "leverOff": {
+      "text": "レバーを もとに もどした。\nどこかで ガラガラと おとが した。"
+    },
+    "gateShut": {
+      "text": "てつごうしが おりている。\nちかくに しかけが ありそうだ。"
+    },
+    "platePressed": {
+      "text": "カチッ と おとが した。\nどこかで ガラガラと おとが した。"
+    },
+    "gateRaised": {
+      "text": "ゴゴゴ…\nどこかで てつごうしが あがった！"
+    },
+    "rockHint": {
+      "text": "おおきな いわだ。\nおせば うごきそうだ。"
+    },
+    "crystalLit": {
+      "text": "すいしょうが あおく ひかった！"
+    },
+    "crystalAll": {
+      "text": "すいしょうが いっせいに かがやいた！\nみずうみに いしが うかびあがった！"
+    },
+    "crystalReset": {
+      "text": "すいしょうの ひかりが きえた…"
+    },
+    "crystalShining": {
+      "text": "すいしょうが あおく ひかっている。"
+    },
+    "torchLit": {
+      "text": "{item}に ひを ともした。\nあたりが あかるく なった！"
+    },
+    "torchNotHere": {
+      "text": "ここは じゅうぶん あかるい。"
+    },
+    "cartStuck": {
+      "text": "トロッコは うごかない。\nレールが ふさがっている。"
+    },
+    "noMp": {
+      "text": "MPが たりない。"
+    },
+    "noSpells": {
+      "text": "{name}は じゅもんを おぼえていない。"
+    }
+  },
+  "battle": {
+    "appear": {
+      "text": "{name}が あらわれた！"
+    },
+    "attack": {
+      "text": "{name}の こうげき！"
+    },
+    "foeDamaged": {
+      "text": "{target}に {n}ポイントの ダメージ！"
+    },
+    "allyDamaged": {
+      "text": "{target}は {n}ポイントの ダメージを うけた！"
+    },
+    "critical": {
+      "text": "かいしんの いちげき！"
+    },
+    "miss": {
+      "text": "しかし {target}は もう いない。"
+    },
+    "foeDown": {
+      "text": "{target}を たおした！"
+    },
+    "allyDown": {
+      "text": "{target}は たおれてしまった！"
+    },
+    "defend": {
+      "text": "{name}は みを まもっている。"
+    },
+    "guard": {
+      "text": "{name}は みを かためている。"
+    },
+    "sweep": {
+      "text": "{name}は あばれまわった！"
+    },
+    "run": {
+      "text": "{name}は にげだした！"
+    },
+    "fled": {
+      "text": "うまく にげきれた！"
+    },
+    "blocked": {
+      "text": "しかし まわりこまれてしまった！"
+    },
+    "noFlee": {
+      "text": "しかし にげられない！"
+    },
+    "won": {
+      "text": "まものたちを やっつけた！"
+    },
+    "exp": {
+      "text": "それぞれ {n}ポイントの けいけんちを かくとく！"
+    },
+    "goldGot": {
+      "text": "{n}ゴールドを てにいれた！"
+    },
+    "levelUp": {
+      "text": "{name}は レベル{lv}に あがった！"
+    },
+    "wiped": {
+      "text": "ぜんめつ してしまった…"
+    },
+    "cast": {
+      "text": "{name}は {spell}を となえた！"
+    },
+    "useItem": {
+      "text": "{name}は {item}を つかった！"
+    },
+    "allyHealed": {
+      "text": "{target}の HPが {n} かいふくした！"
+    },
+    "allyMpHealed": {
+      "text": "{target}の MPが {n} かいふくした！"
+    },
+    "foeHealed": {
+      "text": "{target}の キズが {n} ふさがった！"
+    },
+    "mpShort": {
+      "text": "しかし MPが たりない！"
+    },
+    "itemGone": {
+      "text": "しかし {item}は もう なかった！"
+    },
+    "noEffect": {
+      "text": "しかし なにも おこらなかった。"
+    },
+    "asleep": {
+      "text": "{name}は ねむっている。"
+    },
+    "woke": {
+      "text": "{name}は めを さました！"
+    },
+    "sleepAct": {
+      "text": "{name}は あやしい こなを まきちらした！"
+    },
+    "fellAsleep": {
+      "text": "{target}は ねむってしまった！"
+    },
+    "sleepMiss": {
+      "text": "しかし {target}には きかなかった！"
+    },
+    "learned": {
+      "text": "{name}は {spell}を おぼえた！"
+    }
+  }
+}

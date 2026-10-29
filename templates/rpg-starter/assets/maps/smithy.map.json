@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "title": "鍛冶屋の前",
+  "note": "鍛冶屋の前（左に鍛冶屋と炉、右に小さな家）。村の格子と同じ village の組。B は樽・X は木箱・Y は炉と金床の下の草（入れない）。mina はミナ（加わるとマップから消えて隊列に入る）。右の端の道が村の西の道へ出る。",
+  "tileset": "village",
+  "battleBack": "bg_plains",
+  "rows": [
+    "TT....,......T..",
+    ".RRcRR.......b..",
+    ".EEEEEYY.RRcR...",
+    ".WWDOWYY.EEEE..,",
+    "BX.=.Y...WODW...",
+    "...=.......=....",
+    "================",
+    "..,=......,.....",
+    "...=..b......T..",
+    ".--=--......\"\"..",
+    ".|FFF|......\"o..",
+    ".|FFF|.....,....",
+    "...........b...T",
+    "~~~~~...~~~~~~~~",
+    "~~~~~~~~~~~~~~~~"
+  ],
+  "exits": [
+    {
+      "id": "to_village",
+      "x": 15,
+      "y": 6,
+      "to": "village",
+      "spawnX": 1,
+      "spawnY": 9,
+      "facing": "right"
+    }
+  ],
+  "npcs": [
+    {
+      "id": "smith",
+      "sprite": "smith",
+      "x": 4,
+      "y": 4,
+      "facing": "down",
+      "node": "Smith"
+    },
+    {
+      "id": "mina",
+      "sprite": "mina",
+      "x": 3,
+      "y": 5,
+      "facing": "down",
+      "node": "Mina"
+    }
+  ],
+  "props": [
+    {
+      "sprite": "forge",
+      "frame": "idle",
+      "fps": 6,
+      "x": 6,
+      "y": 2
+    },
+    {
+      "sprite": "anvil",
+      "frame": "idle",
+      "x": 5,
+      "y": 4
+    }
+  ]
+}

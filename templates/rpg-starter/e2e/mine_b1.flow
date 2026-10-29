@@ -1,0 +1,97 @@
+# 坑道 B1: 岩の部屋 1 の岩を床のスイッチへ押して格子を上げ、小部屋の宝箱を開ける → 分岐の広間のレバーを引き、
+# トロッコに乗って分かれ目から東の坑道へ → 下り階段で B2 へ。
+# 歩く手順を確かめる flow なので、steps=999 で雑魚に出会わない。
+start field map=mine_b1 x=3 y=27 facing=up party=luka,mina,toto quest=accepted steps=999 lv=4
+# 北へ（3, 24）、東へ岩（14, 24）の手前（13, 24）まで。
+hold up
+until y=24 max 4
+release up
+until layer=Walking max 1
+hold right
+until x=13 max 12
+release right
+wait 0.3
+# 右へ 2 回押す: 岩は（15, 24）→ 床のスイッチ（16, 24）へ。格子が上がる知らせが出る。
+tap right
+wait 0.4
+expect x=14&y=24
+tap right
+until layer=Notice max 1
+tap confirm                  # 出し切る
+tap confirm                  # 閉じる
+expect layer=Walking&x=15&y=24
+wait 0.3
+# 岩を避けて上の段（15, 23）から東へ（18, 23）、下へ（18, 24）、上がった格子（19, 24）を抜けて宝箱の前（21, 24）。
+tap up
+wait 0.4
+expect y=23
+hold right
+until x=18 max 4
+release right
+wait 0.3
+tap down
+wait 0.4
+hold right
+until x=21 max 4
+release right
+wait 0.3
+tap confirm
+expect layer=Notice&bag=yakusou:3
+tap confirm                  # 出し切る
+tap confirm                  # 閉じる
+# 戻る: 格子を抜けて（18, 24）、下の段（18, 25）を西へ（12, 25）、上へ（12, 24）、西へ入口の部屋（5, 24）。
+hold left
+until x=18 max 4
+release left
+wait 0.3
+tap down
+wait 0.4
+hold left
+until x=12 max 7
+release left
+wait 0.3
+tap up
+wait 0.4
+hold left
+until x=5 max 8
+release left
+until layer=Walking max 1
+# 北へ分岐の広間の上の端（5, 12）。上の壁のレバーを引く。
+hold up
+until y=12 max 14
+release up
+wait 0.3
+expect facing=Up
+tap confirm
+expect layer=Notice
+tap confirm                  # 出し切る
+tap confirm                  # 閉じる
+expect layer=Walking
+# 南へ（5, 16）、東へトロッコの駅の前（8, 16）。トロッコに乗る（はい）。
+hold down
+until y=16 max 5
+release down
+until layer=Walking max 1
+hold right
+until x=8 max 4
+release right
+wait 0.3
+tap confirm
+expect talk=Cart
+tap confirm                  # 出し切る
+tap confirm                  # はい / いいえ を出す
+expect choice
+tap confirm                  # はい
+until layer=Busy max 1
+until layer=Walking max 4
+expect x=24&y=20&facing=Right
+# レールの終わりから東へ 2 マス降り（26, 20）、北へまっすぐ下り階段（26, 8）で B2 へ。
+hold right
+until x=26 max 3
+release right
+wait 0.3
+hold up
+until map=mine_b2 max 6
+release up
+until layer=Walking max 2
+expect x=3&y=2

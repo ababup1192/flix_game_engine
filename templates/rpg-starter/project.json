@@ -1,70 +1,189 @@
 {
   "version": 1,
-  "title": "陽だまりの城下町",
-  "designWidth": 320,
+  "title": "ルーネの泉",
+  "designWidth": 256,
   "designHeight": 240,
-  "windowWidth": 960,
+  "windowWidth": 768,
   "windowHeight": 720,
   "windowScale": 3,
-  "clearColor": {"r": 0.450980, "g": 0.650980, "b": 0.850980},
+  "clearColor": {
+    "r": 0.0470588,
+    "g": 0.0392157,
+    "b": 0.1176471
+  },
   "maxDeltaTime": 0.05,
   "textures": [],
   "// glyphs": "起動時に焼く字。auto=出た字から順に焼く / used=ソースとアセットにある字を先に焼く / all=フォントの全字",
   "glyphs": "auto",
   "fonts": [
-    {"name": "default", "path": "assets/PixelMplus10-Regular.ttf", "fontSize": 10.0}
+    {
+      "name": "default",
+      "path": "assets/PixelMplus10-Regular.ttf",
+      "fontSize": 10.0
+    }
   ],
-  "sounds": [],
+  "sounds": [
+    {
+      "name": "cursor",
+      "path": "assets/sfx/cursor.wav",
+      "looping": false
+    },
+    {
+      "name": "confirm",
+      "path": "assets/sfx/confirm.wav",
+      "looping": false
+    },
+    {
+      "name": "cancel",
+      "path": "assets/sfx/cancel.wav",
+      "looping": false
+    },
+    {
+      "name": "bump",
+      "path": "assets/sfx/bump.wav",
+      "looping": false
+    },
+    {
+      "name": "door",
+      "path": "assets/sfx/door.wav",
+      "looping": false
+    },
+    {
+      "name": "talk_open",
+      "path": "assets/sfx/talk_open.wav",
+      "looping": false
+    },
+    {
+      "name": "talk_next",
+      "path": "assets/sfx/talk_next.wav",
+      "looping": false
+    },
+    {
+      "name": "talk_low",
+      "path": "assets/sfx/talk_low.wav",
+      "looping": false
+    },
+    {
+      "name": "talk_mid",
+      "path": "assets/sfx/talk_mid.wav",
+      "looping": false
+    },
+    {
+      "name": "talk_high",
+      "path": "assets/sfx/talk_high.wav",
+      "looping": false
+    },
+    {
+      "name": "lever",
+      "path": "assets/sfx/lever.wav",
+      "looping": false
+    },
+    {
+      "name": "rock",
+      "path": "assets/sfx/rock.wav",
+      "looping": false
+    },
+    {
+      "name": "cart",
+      "path": "assets/sfx/cart.wav",
+      "looping": false
+    },
+    {
+      "name": "chime",
+      "path": "assets/sfx/chime.wav",
+      "looping": false
+    },
+    {
+      "name": "fizzle",
+      "path": "assets/sfx/fizzle.wav",
+      "looping": false
+    }
+  ],
   "editor": {
     "resources": [
       {
-        "id": "map",
-        "pattern": "assets/rpg.map.json",
-        "title": "里の間取り（タイル・住人・扉と約束・薬草）",
-        "schema": "assets/map.schema.json",
-        "role": "material"
+        "id": "rules",
+        "pattern": "assets/rpg.rules.json",
+        "title": "遊びの決まり（歩く・文字送り・暗転・始まり）",
+        "schema": "assets/rules.schema.json",
+        "role": "tuning"
       },
       {
-        "id": "theme",
-        "pattern": "assets/rpg.theme.json",
-        "title": "色（空・畑・霧・灯り）",
-        "schema": "assets/theme.schema.json",
+        "id": "map",
+        "pattern": "assets/maps/*.map.json",
+        "title": "マップ（地図・出入口・人・小物）",
+        "schema": "assets/map.schema.json",
+        "role": "content"
+      },
+      {
+        "id": "text",
+        "pattern": "assets/rpg.text.json",
+        "title": "言葉（話し手の呼び名・メニュー）",
+        "schema": "assets/text.schema.json",
+        "role": "content"
+      },
+      {
+        "id": "party",
+        "pattern": "assets/rpg.party.json",
+        "title": "仲間（仲間ごとの値）",
+        "schema": "assets/party.schema.json",
+        "role": "content"
+      },
+      {
+        "id": "items",
+        "pattern": "assets/rpg.items.json",
+        "title": "道具",
+        "schema": "assets/items.schema.json",
+        "role": "content"
+      },
+      {
+        "id": "shops",
+        "pattern": "assets/rpg.shops.json",
+        "title": "店と宿（品・宿代）",
+        "schema": "assets/shops.schema.json",
+        "role": "tuning"
+      },
+      {
+        "id": "keys",
+        "pattern": "assets/rpg.keys.json",
+        "title": "操作（キーの割り当て）",
+        "schema": "assets/keys.schema.json",
+        "role": "tuning"
+      },
+      {
+        "id": "foes",
+        "pattern": "assets/rpg.foes.json",
+        "title": "敵（敵ごとの数と絵）",
+        "schema": "assets/foes.schema.json",
+        "role": "content"
+      },
+      {
+        "id": "foe_moves",
+        "pattern": "assets/rpg.foe_moves.json",
+        "title": "敵の技（選ぶ重み）",
+        "schema": "assets/foe_moves.schema.json",
+        "role": "tuning"
+      },
+      {
+        "id": "spells",
+        "pattern": "assets/rpg.spells.json",
+        "title": "呪文（呪文ごとの数と的）",
+        "schema": "assets/spells.schema.json",
+        "role": "tuning"
+      },
+      {
+        "id": "recolors",
+        "pattern": "assets/rpg.recolors.json",
+        "title": "色違い（色票の鍵の差し替え）",
+        "schema": "assets/recolors.schema.json",
         "role": "material"
       },
       {
         "id": "sprite",
         "pattern": "assets/*.sprite.json",
-        "title": "ドット絵（主人公・住人・薬草）",
+        "title": "ドット絵（タイル・人・敵・窓）",
         "schema": "assets/sprite.schema.json",
         "role": "material"
-      },
-      {
-        "id": "town-map",
-        "pattern": "assets/town.map.json",
-        "title": "街の間取り（タイルの敷き方）",
-        "schema": "assets/town-map.schema.json",
-        "role": "material"
-      },
-      {
-        "id": "kind",
-        "pattern": "assets/rpg.kind.json",
-        "title": "手触り（歩く速さ・文字送り）",
-        "schema": "assets/kind.schema.json",
-        "role": "tuning"
-      },
-      {
-        "id": "battle",
-        "pattern": "assets/rpg.battle.json",
-        "title": "戦い（出会う歩数・体力・一撃の重さ・文言）",
-        "schema": "assets/battle.schema.json",
-        "role": "tuning"
-      },
-      {
-        "id": "scenes",
-        "pattern": "assets/*.scenes.json",
-        "title": "場面の説明（ギャラリーに出る題と一言）",
-        "schema": "assets/scenes.schema.json",
-        "role": "tuning"
       },
       {
         "id": "project",

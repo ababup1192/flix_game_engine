@@ -1,0 +1,233 @@
+// 『ルーネの泉』の会話（Yarn Spinner の部分集合）。
+// 直したら bin/fge yarn build assets/talk（check が話し手・コマンド・ノードの名前を assets/talk/vocab.json で止める。
+// 話し手を足したら assets/rpg.text.json の speakers に 1 行足して make talk-vocab）。
+//
+// 書き方:
+//   台詞は「chief: ……」（呼び名は assets/rpg.text.json の speakers）。ウィンドウは 1 行の台詞で 1 枚・4 行まで（超えると TestDocs.testEveryLineFitsTheTalkWindow が止める）。
+//   \n でウィンドウの中の行を替える（2 行目からは字下げして出る）。
+//   人に話しかけた時に開くノードは、マップの Doc（assets/maps/*.map.json）の npcs の node・出入口の gateNode・events の node（着いたマス）。
+//
+// 変数 $quest（none / accepted）・$mina / $toto（ミナ・トトが加わったか）・$gold（手持ちのお金）・$innPrice（宿代。rpg.shops.json）・
+// $has_<道具の鍵>（だいじなもの = rpg.items.json の kind が key の物を、ふくろに持っているか）は World と Doc から写す（読むだけ）。
+//   <<set>> で書かない（TestDocs が止める）。World を変えるのは下のコマンドだけ:
+//     <<quest accept>>       依頼を受ける（手付けの rules.advance を払う。受けた後に流しても何もしない）
+//     <<join mina>>          仲間に加える（マップに id が仲間の名前の人が立っていれば、その場所から隊列に入る）
+//     <<give 道具 個数>>      ふくろへ（道具は assets/rpg.items.json の鍵）
+//     <<gold 数>>            お金を足す（負なら引く）
+//     <<shop [店の名前]>>     店を開く（品は rpg.shops.json の、その shop の名前の行。省けば村の道具屋。店を閉じると次の台詞へ続く）
+//     <<inn>>                宿代を払って泊まる（暗転 → 全快 → セーブ → 次の台詞へ）。払える時だけ流す（<<if $gold >= $innPrice>>）
+//     <<take 道具 個数>>      ふくろから減らす（だいじなものを返す時）
+//     <<fight 敵 ノード>>     会話を閉じて戦う。勝つとフィールドへ戻ってノードを開く（固定の戦い。番をする者の会話から）
+//     <<open 物の id>>        今のマップの objects の物を開けた事にする（扉は開き、番をする者は消える。勝ちのノードで流す）
+//     <<heal>>               仲間全員の HP と MP を最大へ（お金も宿も要らない）
+//     <<ride>>               前のマスのトロッコに乗って走り出す（会話は閉じる。走れなければ「うごかない」と知らせる）
+//   コマンドの直後の <<if>> は、もう当てた後の値を読む。
+
+title: Elder
+---
+elder: むらおさなら ひがしの おおきな いえに おるよ。\nいずみの ことで こまって おるようじゃ。
+===
+
+title: Woman
+---
+<<if $quest == "none">>
+    woman: いずみが かれてから\nみずくみが たいへんでねえ。\nむらおさが よんでいたよ。
+<<else>>
+    woman: こうどうへ いくのかい？\nそういえば ひがしの ほこらで\nまほうつかいの こどもが\nなにか さがしていたよ。
+<<endif>>
+===
+
+title: Child
+---
+child: いずみで あそべないの つまんない！
+===
+
+title: Merchant
+---
+merchant: どうぐやは この いえだよ。\nたびの まえには やくそうを わすれずにね！
+===
+
+title: ChiefQuest
+---
+<<declare $quest = "none">>
+<<declare $mina = false>>
+<<declare $toto = false>>
+<<declare $gold = 0>>
+<<declare $innPrice = 0>>
+<<if $quest == "none">>
+    chief: おお ルカよ。\nむらの いずみが かれてしもうた…\nきたの こうどうへ いって\nわけを しらべてきては くれんか？
+    -> はい
+        <<quest accept>>
+        <<give yakusou 3>>
+        chief: おお やってくれるか！\nこころづよい のう。
+        ルカは てつけの おかねと\nやくそうを 3つ うけとった。\n（もちきん {$gold}G）
+        chief: こうどうなら かじやの むすめ\nミナが くわしい。\nにしの みちの さきじゃ。
+    -> いいえ
+        chief: そこを なんとか…
+        <<jump ChiefQuest>>
+<<else>>
+    chief: かじやの ミナを つれて\nきたの こうどうを たのんだぞ。
+<<endif>>
+===
+
+title: Smith
+---
+<<if $mina>>
+    smith: まごを たのんだぞ。\nせがれも きっと\nこうどうの おくに おるはずじゃ。
+<<else>>
+    smith: カーン カーン…\nせがれが こうどうから\nもどらんのじゃ。
+    smith: まごの ミナは こうどうに\nくわしい。きっと ちからに\nなってくれるじゃろう。
+<<endif>>
+===
+
+title: Mina
+---
+<<if $quest == "none">>
+    mina: とうちゃんの こうどうは\nいま あぶないよ。\nだれも ちかよれないんだ。
+<<else>>
+    mina: むらおさの たのみで\nこうどうへ いくの？\nあたしも いく！ とうちゃんを\nさがさなきゃ！
+    <<join mina>>
+    ミナが なかまに くわわった！
+<<endif>>
+===
+
+title: VillageGate
+---
+<<if $quest == "none">>
+    むらの そとは あぶない。\nまずは むらおさの いえへ いこう。
+<<else>>
+    ひとりでは こころぼそい。\nにしの かじやの ミナを たずねよう。
+<<endif>>
+===
+
+title: Shopkeeper
+---
+shop: いらっしゃい！\nどうぐやへ ようこそ。
+<<shop>>
+shop: また きてね！
+===
+
+title: Innkeeper
+---
+inn: たびびとの やどへ ようこそ。\nひとばん {$innPrice}G だよ。\nとまって いくかい？
+-> はい
+    <<if $gold >= $innPrice>>
+        <<inn>>
+        inn: おはよう ございます。\nゆうべは よく ねむれましたか？
+        ぼうけんの きろくを かきのこした。
+    <<else>>
+        inn: おや おかねが たりないようだね。
+    <<endif>>
+-> いいえ
+    inn: また どうぞ。
+===
+
+title: Shrine
+---
+<<declare $has_totostaff = false>>
+<<if not $toto and $has_totostaff>>
+    toto: あっ！ それ ぼくの つえだ！\nとりかえして くれたんだね！
+    <<take totostaff 1>>
+    ルカは トトに つえを かえした。
+    toto: これで また まほうが つかえる。\nきたの こうどうへ いくんでしょ？\nぼくも つれてって！
+    <<join toto>>
+    トトが なかまに くわわった！
+<<elseif not $toto and $quest == "none">>
+    toto: ぼく トト。\nここで まほうの しゅぎょうを\nしてるんだ。
+<<elseif not $toto>>
+    toto: たいへんなんだ…\nしゅぎょうの つえを ほりモグに\nもっていかれちゃった。
+    toto: みなみの もりの ほらあなに\nにげこんだんだ。\nつえが ないと まほうが つかえないよ…
+    mina: ほらあなの ほりモグか。\nあたしたちで とりかえして あげよう！
+<<endif>>
+===
+
+title: CaveMole
+---
+ほりモグが つえを かかえて\nうなっている！
+<<fight horimogu StaffBack>>
+===
+
+title: StaffBack
+---
+<<open cave_mole>>
+<<give totostaff 1>>
+ほりモグは あなを ほって\nにげていった。
+ルカは トトのつえを とりかえした！
+===
+
+title: MineGate
+---
+mina: こうどうの おくは まっくらだよ。\nそういえば ひがしの ほこらに\nだれか いたような…
+===
+
+title: Boljii
+---
+boljii: わしは こうふの ボルじい。\nこうどうが とじてからも\nひとりで ここに おるんじゃ。
+boljii: トロッコは まえから しらべれば\nのれる。どっちへ はしるかは\nかべの レバーしだいじゃ。
+boljii: いわは おして うごかす。\nつまったら かいだんを\nでいりすれば もとに もどるぞ。
+<<if $mina>>
+    boljii: ミナの とうちゃんなら\nおくへ いったきり もどらん。\nきを つけて いくんじゃぞ。
+<<endif>>
+===
+
+title: Cart
+---
+トロッコが ある。\nのって みますか？
+-> はい
+    <<ride>>
+-> いいえ
+===
+
+title: Koron
+---
+koron: まいど！ こうどうの\nぎょうしょうにん コロンです。
+koron: このさきは まっくら。\nたいまつを つかえば\nあしもとが よく みえますよ。
+<<shop mine>>
+koron: また どうぞ！
+===
+
+title: Kurogane
+---
+kurogane: グルル…\nこの おたからは わたさねえ！
+<<fight kurogane KuroganeWon>>
+===
+
+title: KuroganeWon
+---
+<<open b2_kurogane>>
+くろがねゴブリンは\nあなの おくへ にげていった！
+===
+
+title: Mimic
+---
+たからばこを あけた！
+なんと たからばこは\nひとくいばこ だった！
+<<fight mimic MimicWon>>
+===
+
+title: MimicWon
+---
+<<open b3_mimic>>
+<<gold 300>>
+ひとくいばこを たおした！\n300G を てにいれた！
+===
+
+title: Tablet
+---
+いしぶみに なにか ほってある…
+「みずうみの みちは\n ひの のぼる かたより\n ひの しずむ かたへ\n さいごに ほしの みちしるべ」
+===
+
+title: MinaFather
+---
+<<if $mina>>
+    father: ミナ…！\nミナじゃないか！
+    mina: とうちゃん！\nぶじだったんだね…！
+    father: すまん しんぱいを かけた。\nあしを くじいて\nうごけなかったんだ。
+<<endif>>
+father: きずぐすりを わけてやろう。
+<<heal>>
+みんなの HPと MPが\nすっかり かいふくした！
+father: みずうみの すいしょうは\nひがしの あお、にしの あお、\nきたの あお の じゅんに ともすんだ。
+father: わしは ここで まっている。\nいずみを たのんだぞ。
+===

@@ -1,0 +1,71 @@
+{
+  "note": "このゲーム固有の lint-forbid の規則。乱数は Dice（World#dice の回数 + Hash01）だけで引く — 同じ手で流し直すと同じ結果になるのを、テスト・e2e・描き出しが頼りにしている。規則の側（src/World*.flix）はマス（Grid.Cell）と遊びの時計だけで書き、px は View だけが持つ。キーは rpg.keys.json（KeysDoc）から引く。View の部品（*View.flix・FieldScreen）は入口（View.flix）が組んだ In だけを受け、規則の関数を呼んで World の中を読みに行かない（型の向きは lint/rules.flix の view-no-world が見る。こちらは呼び出しの抜け道を止める）。",
+  "rules": [
+    {
+      "id": "rpg-no-random",
+      "suffixes": [
+        ".flix"
+      ],
+      "skip": [
+        "lib/",
+        "build/"
+      ],
+      "pattern": "\\bRandomUtil\\.|\\bMath\\.Random\\b",
+      "hint": "乱数は Dice.roll（World#dice と Hash01）で引く。RandomUtil・Math.Random は流すたびに値が変わり、e2e と描き出しが同じにならない"
+    },
+    {
+      "id": "rpg-no-px-in-rules",
+      "prefixes": [
+        "src/World"
+      ],
+      "suffixes": [
+        ".flix"
+      ],
+      "pattern": "\\bVec2\\b|\\bAutotile\\.tile\\(|\\bFieldView\\.",
+      "hint": "規則の側（World・World*.flix）は場所をマス（Grid.Cell）で持つ。px の Vec2 を World に置くと、歩きの途中の見た目と当たりがずれる。px にするのは View（FieldView.cellPx・View.heroPx）だけ"
+    },
+    {
+      "id": "rpg-keys-from-doc",
+      "suffixes": [
+        ".flix"
+      ],
+      "skip": [
+        "src/KeysDoc.flix",
+        "test/",
+        "lib/",
+        "build/"
+      ],
+      "pattern": "\\bKey\\.[A-Z]",
+      "unlessLine": "Key\\.Escape\\b",
+      "hint": "キーは KeysDoc（assets/rpg.keys.json）から引く（Controls の tapped(k#confirm, frame) の形）。Key.Z と直に書くと Doc でキーを替えても効かない。Esc だけは OS の決まりで固定"
+    },
+    {
+      "id": "rpg-view-part-no-rule-calls",
+      "suffixes": [
+        "View.flix",
+        "/FieldScreen.flix"
+      ],
+      "skip": [
+        "src/View.flix",
+        "lib/",
+        "build/"
+      ],
+      "pattern": "\\bWorld[A-Za-z]*\\.[a-z]\\w*\\(|\\bInputLayer\\.[a-z]\\w*\\(|\\bControls\\.",
+      "hint": "View の部品は World の中を読みに行かない。要る値は View.flix（入口）が World から In に組んで渡す（FieldScreen.In・TitleView.In の欄を足す）"
+    },
+    {
+      "id": "rpg-close-window-in-world",
+      "suffixes": [
+        ".flix"
+      ],
+      "skip": [
+        "src/World.flix",
+        "lib/",
+        "build/"
+      ],
+      "pattern": "window\\s*=\\s*FieldWindow\\.Closed|withWindow\\(FieldWindow\\.Closed",
+      "hint": "ウィンドウを閉じるのは World.closeWindow（閉じたフレームに押していた方向は Controls.step が離すまで歩かせない）。出入口で着いた所は World.arriveAt。window = FieldWindow.Closed や withWindow(FieldWindow.Closed, …) を直に組むと、閉じる口が散って、閉じる時に揃えたい事（メニューのページ・店に渡した会話）を 1 か所で足せなくなる"
+    }
+  ],
+  "exempt": {}
+}

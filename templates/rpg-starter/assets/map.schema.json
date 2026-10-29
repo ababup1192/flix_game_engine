@@ -1,67 +1,462 @@
 {
-  "//": "rpg.map.json の形の宣言（sections 方言）。タイルの rows・住人・扉と約束・薬草と灯りの配置。rows は '#'=石垣 ','=畑 '.'=道（知らない文字は道）。扉は物の鍵でなく約束で開く: promise の住人に話しかけ、need 個の薬草を持っていれば開く。goal 個の薬草を拾うとクリア。歩ける・ぶつかる・開く・クリアの規則はコード（World）側。",
+  "//": "assets/maps/*.map.json の形の宣言（Studio の sections 方言）。rows の 1 文字 = 1 マス。文字の絵と通れるかはコード（src/Tileset.flix）。出入口・人・小物の x, y はマス（左上が 0, 0）。 仕掛けの足し方（4 つだけ）: マスにある物は objects の 1 行（kind を選ぶ）・話す人は npcs の 1 行（node）・マップ全体の性質は dark / minSteps / maxSteps / battleBack・別のマップへ移るのは exits の 1 行 + 通れる 1 文字（階段・落とし穴・洞窟の口）。",
   "version": 1,
   "sections": {
-    "note":      { "kind": "field", "type": "text", "label": "メモ", "order": 1, "widget": "multiline" },
-    "title":     { "kind": "field", "type": "text", "label": "里の名前（表紙）", "order": 2 },
-    "subtitle":  { "kind": "field", "type": "text", "label": "表紙の一行", "order": 3 },
-    "hint":      { "kind": "field", "type": "text", "label": "表紙の操作ヒント", "order": 4 },
-    "clear":     { "kind": "field", "type": "text", "label": "クリア画面の一行", "order": 5 },
-    "clearHint": { "kind": "field", "type": "text", "label": "クリア画面の操作ヒント", "order": 6 },
-
-    "rows": { "kind": "field", "type": "grid", "label": "里の間取り（'#'=石垣 ','=畑 '.'=道）", "order": 10 },
-
-    "start": {
-      "kind": "record",
-      "label": "はじめに立つマス",
-      "fields": {
-        "x": { "type": "int", "label": "x", "order": 1, "min": 0 },
-        "y": { "type": "int", "label": "y", "order": 2, "min": 0 }
-      }
+    "tileset": {
+      "kind": "field",
+      "type": {
+        "enum": [
+          "village",
+          "house",
+          "world",
+          "mine",
+          "mine_deep"
+        ]
+      },
+      "label": "タイルの組（文字の絵と通れるかの表）",
+      "group": "マップ",
+      "order": 1,
+      "default": "village"
     },
-
-    "villagers": {
+    "battleBack": {
+      "kind": "field",
+      "type": {
+        "enum": [
+          "bg_plains",
+          "bg_cave",
+          "bg_lake"
+        ]
+      },
+      "label": "戦いの背景の帯（rpg.battlefx.sprite.json の絵）",
+      "group": "マップ",
+      "order": 2,
+      "default": "bg_plains"
+    },
+    "rows": {
+      "kind": "field",
+      "type": "grid",
+      "label": "地図（1 文字 = 1 マス）",
+      "order": 3
+    },
+    "exits": {
       "kind": "list",
-      "label": "住人（話しかけると 1 行出る）",
+      "label": "出入口（このマスに着いたら・edge の端から外へ出たら to のマップへ移る）",
+      "order": 4,
       "fields": {
-        "id":   { "type": "text", "label": "名前（扉の約束が指す）", "order": 1, "required": true },
-        "x":    { "type": "int",  "label": "x", "order": 2, "min": 0, "required": true },
-        "y":    { "type": "int",  "label": "y", "order": 3, "min": 0, "required": true },
-        "line": { "type": "text", "label": "いつもの 1 行", "order": 4 }
+        "id": {
+          "type": "text",
+          "label": "名前",
+          "order": 1,
+          "required": true
+        },
+        "x": {
+          "type": "int",
+          "label": "列（edge が空の時）",
+          "order": 2,
+          "min": 0
+        },
+        "y": {
+          "type": "int",
+          "label": "行（edge が空の時）",
+          "order": 3,
+          "min": 0
+        },
+        "edge": {
+          "type": {
+            "enum": [
+              "",
+              "all",
+              "up",
+              "down",
+              "left",
+              "right"
+            ]
+          },
+          "label": "マップの端から外へ出る出入口（空 = x, y のマス・all = 4 辺・up / down / left / right = その辺）",
+          "order": 4,
+          "default": ""
+        },
+        "to": {
+          "type": "text",
+          "label": "行き先のマップ（assets/maps の名前）",
+          "order": 5,
+          "required": true
+        },
+        "spawnX": {
+          "type": "int",
+          "label": "行き先の列",
+          "order": 6,
+          "min": 0,
+          "required": true
+        },
+        "spawnY": {
+          "type": "int",
+          "label": "行き先の行",
+          "order": 7,
+          "min": 0,
+          "required": true
+        },
+        "facing": {
+          "type": {
+            "enum": [
+              "up",
+              "down",
+              "left",
+              "right"
+            ]
+          },
+          "label": "着いた時の向き",
+          "order": 8,
+          "default": "down"
+        },
+        "gate": {
+          "type": {
+            "enum": [
+              "",
+              "luka",
+              "mina",
+              "toto"
+            ]
+          },
+          "label": "この仲間が加わるまで通れない（空なら誰でも。書いたら gateNode も要る）",
+          "order": 9,
+          "default": ""
+        },
+        "gateNode": {
+          "type": "text",
+          "label": "通れない時に開く会話のノード",
+          "order": 10,
+          "default": ""
+        }
       }
     },
-
-    "door": {
-      "kind": "record",
-      "label": "約束で開く木戸",
-      "fields": {
-        "x":       { "type": "int",  "label": "x", "order": 1, "min": 0, "required": true },
-        "y":       { "type": "int",  "label": "y", "order": 2, "min": 0, "required": true },
-        "promise": { "type": "text", "label": "約束の相手（住人の名前）", "order": 3, "required": true },
-        "need":    { "type": "int",  "label": "要る薬草の数", "order": 4, "min": 0 },
-        "ask":     { "type": "text", "label": "足りないときの 1 行", "order": 5 },
-        "opened":  { "type": "text", "label": "開くときの 1 行", "order": 6 }
-      }
-    },
-
-    "herbs": {
+    "npcs": {
       "kind": "list",
-      "label": "薬草の生えるマス",
+      "label": "人（その場に立つ。話しかけると node の会話）",
+      "order": 5,
       "fields": {
-        "x": { "type": "int", "label": "x", "order": 1, "min": 0, "required": true },
-        "y": { "type": "int", "label": "y", "order": 2, "min": 0, "required": true }
+        "id": {
+          "type": "text",
+          "label": "名前（仲間の名前 luka / mina / toto なら、加わるとマップから消える）",
+          "order": 1,
+          "required": true
+        },
+        "sprite": {
+          "type": "text",
+          "label": "絵（rpg.chars.sprite.json の名前）",
+          "order": 2,
+          "required": true
+        },
+        "x": {
+          "type": "int",
+          "label": "列",
+          "order": 3,
+          "min": 0,
+          "required": true
+        },
+        "y": {
+          "type": "int",
+          "label": "行",
+          "order": 4,
+          "min": 0,
+          "required": true
+        },
+        "facing": {
+          "type": {
+            "enum": [
+              "up",
+              "down",
+              "left",
+              "right"
+            ]
+          },
+          "label": "向き",
+          "order": 5,
+          "default": "down"
+        },
+        "node": {
+          "type": "text",
+          "label": "会話のノード（assets/talk/rune.yarn の title）",
+          "order": 6
+        }
       }
     },
-
-    "lamps": {
+    "props": {
       "kind": "list",
-      "label": "灯りの立つマス（薬草を拾うたび並び順に点く）",
+      "label": "小物（絵だけ。塞ぐマスは地図の文字で塞ぐ）",
+      "order": 6,
       "fields": {
-        "x": { "type": "int", "label": "x", "order": 1, "min": 0, "required": true },
-        "y": { "type": "int", "label": "y", "order": 2, "min": 0, "required": true }
+        "sprite": {
+          "type": "text",
+          "label": "絵の名前",
+          "order": 1,
+          "required": true
+        },
+        "frame": {
+          "type": "text",
+          "label": "コマの名前",
+          "order": 2,
+          "default": "idle"
+        },
+        "fps": {
+          "type": "float",
+          "label": "コマを回す速さ（0 で止まる）",
+          "order": 3,
+          "min": 0.0,
+          "max": 30.0,
+          "default": 0.0
+        },
+        "flat": {
+          "type": "bool",
+          "label": "床に敷く物（人より奥に描く）",
+          "order": 4,
+          "default": false
+        },
+        "x": {
+          "type": "float",
+          "label": "列（半マスも書ける）",
+          "order": 5,
+          "required": true
+        },
+        "y": {
+          "type": "float",
+          "label": "行（半マスも書ける）",
+          "order": 6,
+          "required": true
+        }
       }
     },
-
-    "goal": { "kind": "field", "type": "int", "label": "クリアに要る薬草の数", "order": 90, "min": 1 }
+    "objects": {
+      "kind": "list",
+      "label": "マスにある物（宝箱・扉・レバー・開く物・番をする者・床のスイッチ・岩・トロッコ・分かれ目・水晶・飛び石・読む物。1 行 = 1 物で、kind ごとに使う欄だけ埋める）",
+      "order": 7,
+      "fields": {
+        "id": {
+          "type": "text",
+          "label": "名前（マップの中で 1 つ。開けた旗の鍵）",
+          "order": 1,
+          "required": true
+        },
+        "kind": {
+          "type": {
+            "enum": [
+              "chest",
+              "door",
+              "lever",
+              "gate",
+              "guard",
+              "plate",
+              "rock",
+              "cart",
+              "junction",
+              "crystal",
+              "bridge",
+              "sign"
+            ]
+          },
+          "label": "種類（chest = 宝箱・door = 鍵の扉・lever = 壁のレバー（flag を切り替える）・gate = 開く物（flag が openWhen の時だけ通れる）・guard = 番をする者（node の会話。勝ちのノードの <<open id>> で消える）・plate = 床のスイッチ（hold = false は踏むと flag・true は同じ flag の床が全部岩で押さえられると flag）・rock = 押せる岩（マップを出ると元の位置）・cart = トロッコ（node の会話の <<ride>> で dir へレールを走る）・junction = レールの分かれ目（flag が下りていれば dir・立っていれば dirOn）・crystal = 水晶（order の順に調べる。全部点くと flag）・bridge = 飛び石（flag が立つと現れ、水の上を渡れる）・sign = 読む物（node の会話））",
+          "order": 2,
+          "default": "chest"
+        },
+        "x": {
+          "type": "int",
+          "label": "列",
+          "order": 3,
+          "min": 0,
+          "required": true
+        },
+        "y": {
+          "type": "int",
+          "label": "行",
+          "order": 4,
+          "min": 0,
+          "required": true
+        },
+        "sprite": {
+          "type": "text",
+          "label": "絵の名前（その組の絵のファイル。空なら種類の既定: chest・boss_door・lever・gate_bars・goblin_guard・plate・boulder・minecart・rail_switch・crystal_l・stepping_stone・tablet_l。開けた宝箱は <名前>_open・レバーと床のスイッチは up / down・分かれ目は north / south・水晶は f0 / f1 のコマ・番をする者は人の絵か敵の絵にあればそれ）",
+          "order": 5,
+          "default": ""
+        },
+        "item": {
+          "type": "text",
+          "label": "宝箱の中の道具（rpg.items.json の鍵。空なら無し）",
+          "order": 6,
+          "default": ""
+        },
+        "count": {
+          "type": "int",
+          "label": "宝箱の中の道具の数",
+          "order": 7,
+          "min": 1,
+          "max": 9,
+          "default": 1
+        },
+        "gold": {
+          "type": "int",
+          "label": "宝箱の中のお金",
+          "order": 8,
+          "min": 0,
+          "default": 0
+        },
+        "key": {
+          "type": "text",
+          "label": "扉を開ける道具（rpg.items.json の鍵）",
+          "order": 9,
+          "default": ""
+        },
+        "flag": {
+          "type": "text",
+          "label": "旗の名前（lever・plate・crystal が立てる / gate・junction・bridge が読む。同じ名前どうしがつながる）",
+          "order": 10,
+          "default": ""
+        },
+        "openWhen": {
+          "type": {
+            "enum": [
+              "on",
+              "off"
+            ]
+          },
+          "label": "gate が通れる時（on = 旗が立っている・off = 旗が下りている）",
+          "order": 11,
+          "default": "on"
+        },
+        "node": {
+          "type": "text",
+          "label": "会話のノード（guard・cart・sign を調べた時に開く。cart は空なら Cart）",
+          "order": 12,
+          "default": ""
+        },
+        "hold": {
+          "type": "bool",
+          "label": "plate: 岩で押さえる床（false = 先頭が踏めば旗が立つ）",
+          "order": 13,
+          "default": false
+        },
+        "dir": {
+          "type": {
+            "enum": [
+              "",
+              "up",
+              "down",
+              "left",
+              "right"
+            ]
+          },
+          "label": "cart が走り出す向き / junction の旗が下りている時に曲がる向き",
+          "order": 14,
+          "default": ""
+        },
+        "dirOn": {
+          "type": {
+            "enum": [
+              "",
+              "up",
+              "down",
+              "left",
+              "right"
+            ]
+          },
+          "label": "junction の旗が立っている時に曲がる向き",
+          "order": 15,
+          "default": ""
+        },
+        "order": {
+          "type": "int",
+          "label": "crystal を点ける順番（1 から）",
+          "order": 16,
+          "min": 1,
+          "max": 9,
+          "default": 1
+        }
+      }
+    },
+    "events": {
+      "kind": "list",
+      "label": "着くと会話を開くマス（台詞が出ずに終わるノードなら何も開かない）",
+      "order": 8,
+      "fields": {
+        "x": {
+          "type": "int",
+          "label": "列",
+          "order": 1,
+          "min": 0,
+          "required": true
+        },
+        "y": {
+          "type": "int",
+          "label": "行",
+          "order": 2,
+          "min": 0,
+          "required": true
+        },
+        "node": {
+          "type": "text",
+          "label": "会話のノード（assets/talk/rune.yarn の title）",
+          "order": 3,
+          "required": true
+        }
+      }
+    },
+    "encounter": {
+      "kind": "list",
+      "label": "出会いの組（行が無いマップでは歩数を数えない）",
+      "order": 9,
+      "fields": {
+        "foe1": {
+          "type": "text",
+          "label": "敵 1",
+          "order": 1,
+          "required": true
+        },
+        "foe2": {
+          "type": "text",
+          "label": "敵 2（空なら無し）",
+          "order": 2,
+          "default": ""
+        },
+        "foe3": {
+          "type": "text",
+          "label": "敵 3（空なら無し）",
+          "order": 3,
+          "default": ""
+        },
+        "weight": {
+          "type": "int",
+          "label": "選ばれやすさ",
+          "order": 4,
+          "min": 1,
+          "max": 100,
+          "default": 1
+        }
+      }
+    },
+    "dark": {
+      "kind": "field",
+      "type": "bool",
+      "label": "暗い（先頭のまわりしか見えない。たいまつで広がる）",
+      "group": "マップ",
+      "order": 10,
+      "default": false
+    },
+    "minSteps": {
+      "kind": "field",
+      "type": "int",
+      "label": "次の戦いまでの歩数の下限（空なら rules。maxSteps と一緒に書く）",
+      "group": "マップ",
+      "order": 11,
+      "min": 1,
+      "max": 999
+    },
+    "maxSteps": {
+      "kind": "field",
+      "type": "int",
+      "label": "次の戦いまでの歩数の上限（空なら rules）",
+      "group": "マップ",
+      "order": 12,
+      "min": 1,
+      "max": 999
+    }
   }
 }

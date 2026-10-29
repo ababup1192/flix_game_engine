@@ -1,0 +1,112 @@
+{
+  "version": 1,
+  "title": "村長の家",
+  "note": "村長の家の中。x は本棚と寝床の下・k は机の下（絵は床のまま。k の机越しに人と話せる）。下の 4 マスが村への出口。",
+  "tileset": "house",
+  "battleBack": "bg_plains",
+  "rows": [
+    "################",
+    "##WWOWWWWWWOWW##",
+    "##xx.........x##",
+    "##...........x##",
+    "##.....kkh....##",
+    "##............##",
+    "##pp..........##",
+    "##............##",
+    "######....######",
+    "################",
+    "################",
+    "################",
+    "################",
+    "################",
+    "################"
+  ],
+  "exits": [
+    {
+      "id": "out_6",
+      "x": 6,
+      "y": 8,
+      "to": "village",
+      "spawnX": 20,
+      "spawnY": 4,
+      "facing": "down"
+    },
+    {
+      "id": "out_7",
+      "x": 7,
+      "y": 8,
+      "to": "village",
+      "spawnX": 20,
+      "spawnY": 4,
+      "facing": "down"
+    },
+    {
+      "id": "out_8",
+      "x": 8,
+      "y": 8,
+      "to": "village",
+      "spawnX": 20,
+      "spawnY": 4,
+      "facing": "down"
+    },
+    {
+      "id": "out_9",
+      "x": 9,
+      "y": 8,
+      "to": "village",
+      "spawnX": 20,
+      "spawnY": 4,
+      "facing": "down"
+    }
+  ],
+  "npcs": [
+    {
+      "id": "chief",
+      "sprite": "chief",
+      "x": 7,
+      "y": 3,
+      "facing": "down",
+      "node": "ChiefQuest"
+    }
+  ],
+  "props": [
+    {
+      "sprite": "fireplace",
+      "frame": "idle",
+      "fps": 6,
+      "x": 7,
+      "y": 0
+    },
+    {
+      "sprite": "bookshelf",
+      "frame": "idle",
+      "x": 2,
+      "y": 1
+    },
+    {
+      "sprite": "bookshelf",
+      "frame": "idle",
+      "x": 3,
+      "y": 1
+    },
+    {
+      "sprite": "bed",
+      "frame": "idle",
+      "x": 13,
+      "y": 2
+    },
+    {
+      "sprite": "rug",
+      "frame": "idle",
+      "flat": true,
+      "x": 10,
+      "y": 4
+    },
+    {
+      "sprite": "table",
+      "frame": "idle",
+      "x": 7,
+      "y": 4
+    }
+  ]
+}

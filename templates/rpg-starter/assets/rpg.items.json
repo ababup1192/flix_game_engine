@@ -1,0 +1,129 @@
+{
+  "version": 1,
+  "title": "道具",
+  "note": "鍵は道具の名前（会話の <<give 鍵 個数>>・店の品・仲間の初めの装備が指す）。name は画面に出す名前、kind は use（使う）/ weapon・armor（装備）/ key（だいじなもの。使えない・売れない）、price は店の値段（売値は半分）。heal / mpHeal は使うと戻る HP / MP（フィールドで使えるのはどちらかがある物と、lightSteps のある物だけ）、lightSteps は暗いマップで使うと明かりが続く歩数、burn は戦いで使うと敵 1 体に与えるダメージ（戦いの道具は P6）、atk / def は装備した時に足す ちから / みのまもり、luka / mina / toto は装備できる仲間。効き目の決まりはコード。",
+  "items": {
+    "yakusou": {
+      "name": "やくそう",
+      "kind": "use",
+      "price": 8,
+      "heal": 30
+    },
+    "seisui": {
+      "name": "せいすい",
+      "kind": "use",
+      "price": 20
+    },
+    "maryoku": {
+      "name": "まりょくのみ",
+      "kind": "use",
+      "price": 30,
+      "mpHeal": 10
+    },
+    "taimatsu": {
+      "name": "たいまつ",
+      "kind": "use",
+      "price": 10,
+      "lightSteps": 120,
+      "burn": 12
+    },
+    "bakudanishi": {
+      "name": "ばくだんいし",
+      "kind": "use",
+      "price": 40,
+      "burn": 40
+    },
+    "hinoki": {
+      "name": "ひのきのぼう",
+      "kind": "weapon",
+      "price": 10,
+      "atk": 2,
+      "luka": true
+    },
+    "tsuruhashi": {
+      "name": "つるはし",
+      "kind": "weapon",
+      "price": 20,
+      "atk": 4,
+      "mina": true
+    },
+    "tetsunotsuruhashi": {
+      "name": "てつのつるはし",
+      "kind": "weapon",
+      "price": 180,
+      "atk": 9,
+      "mina": true
+    },
+    "dounotsurugi": {
+      "name": "どうのつるぎ",
+      "kind": "weapon",
+      "price": 60,
+      "atk": 6,
+      "luka": true
+    },
+    "haganenotsurugi": {
+      "name": "はがねのつるぎ",
+      "kind": "weapon",
+      "price": 250,
+      "atk": 11,
+      "luka": true
+    },
+    "tabibito": {
+      "name": "たびびとのふく",
+      "kind": "armor",
+      "price": 10,
+      "def": 2,
+      "luka": true,
+      "mina": true,
+      "toto": true
+    },
+    "kawanoyoroi": {
+      "name": "かわのよろい",
+      "kind": "armor",
+      "price": 70,
+      "def": 5,
+      "luka": true,
+      "mina": true
+    },
+    "kashinotsue": {
+      "name": "かしのつえ",
+      "kind": "weapon",
+      "price": 10,
+      "atk": 1,
+      "toto": true
+    },
+    "robe": {
+      "name": "ローブ",
+      "kind": "armor",
+      "price": 10,
+      "def": 2,
+      "toto": true
+    },
+    "mahounorobe": {
+      "name": "まほうのローブ",
+      "kind": "armor",
+      "price": 80,
+      "def": 5,
+      "toto": true
+    },
+    "mizunohagoromo": {
+      "name": "みずのはごろも",
+      "kind": "armor",
+      "price": 300,
+      "def": 8,
+      "luka": true,
+      "mina": true,
+      "toto": true
+    },
+    "furubitakagi": {
+      "name": "ふるびたかぎ",
+      "kind": "key",
+      "price": 0
+    },
+    "totostaff": {
+      "name": "トトのつえ",
+      "kind": "key",
+      "price": 0
+    }
+  }
+}

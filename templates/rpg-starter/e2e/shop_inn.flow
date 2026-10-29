@@ -1,0 +1,75 @@
+# 道具屋でやくそうを買い、宿屋に泊まってセーブを書き、起動し直した所から「つづきから」で宿の前に立つ。
+# 村の道具屋の扉の下（11, 4）から始める（お金 100・HP 1 の 2 人）。
+start field map=village x=11 y=4 facing=up gold=100 quest=accepted party=luka,mina hp=1
+# 道具屋に入り、売り台の前（6, 5）で店の人に話す。
+hold up
+until map=shop max 3
+release up
+until layer=Walking max 2
+expect x=7&y=7
+hold up
+until y=5 max 3
+release up
+wait 0.3
+tap left
+wait 0.3
+tap up
+expect x=6&y=5&facing=Up
+tap confirm
+expect talk=Shopkeeper
+tap confirm                  # あいさつを出し切る
+tap confirm                  # 店を開く
+expect layer=Shop
+tap confirm                  # かう
+tap confirm                  # やくそう
+tap confirm                  # 1 こ
+tap confirm                  # はい
+expect bag=yakusou:1&gold=92
+tap cancel                   # かう / うる / やめる へ戻る
+tap down
+tap down
+tap confirm                  # やめる（店の人の会話の続きへ）
+expect layer=Talk
+tap confirm                  # また きてね を出し切る
+tap confirm                  # 窓を閉じる
+expect layer=Walking
+# 店を出て、宿屋の扉の下（3, 4）まで行の 4 を左へ。
+hold down
+until map=village max 3
+release down
+until layer=Walking max 2
+expect x=11&y=4
+hold left
+until x=3 max 4
+release left
+wait 0.3
+hold up
+until map=inn max 3
+release up
+until layer=Walking max 2
+# 帳場の前（7, 5）で宿の人に話し、はいで泊まる。
+hold up
+until y=5 max 3
+release up
+wait 0.3
+tap confirm
+expect talk=Innkeeper
+tap confirm                  # 問いを出し切る
+tap confirm                  # はい / いいえ を出す
+expect choice
+tap confirm                  # はい
+until saved=1 max 3
+until layer=Talk max 3       # 暗転が晴れて会話の続き
+expect hp=28&gold=86
+tap confirm
+tap confirm
+tap confirm
+tap confirm                  # 窓を閉じる
+expect layer=Walking
+# 起動し直した所: 泊まった時の中身のセーブがあるタイトル（中身が泊まった時と同じことは TestShop.testContinueRestoresWhatTheInnSaved が見る）。
+start title saved=yes party=luka,mina quest=accepted gold=86 items=yakusou:1
+expect scene=Title
+tap down                     # つづきから
+tap confirm
+until layer=Walking max 2
+expect map=village&x=3&y=4&facing=Down&gold=86&bag=yakusou:1&party=luka,mina

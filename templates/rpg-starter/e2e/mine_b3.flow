@@ -1,0 +1,70 @@
+# 坑道 B3: 上り階段から湖の岸を回り、水晶を 東 → 西 → 北 の順に点けると飛び石が現れる →
+# 飛び石で小島を通って北の岸へ渡り、ふるびたかぎで封じられた扉を開ける（ボスの扉の前）。
+# 歩く手順を確かめる flow なので、steps=999 で雑魚に出会わない。
+start field map=mine_b3 x=16 y=27 facing=up party=luka,mina,toto quest=accepted steps=999 lv=6 items=furubitakagi:1
+# 北へ南の岸（16, 21）、東へ（26, 21）、北へ東の水晶の前（26, 14）。右を向いて調べる。
+hold up
+until y=21 max 7
+release up
+wait 0.3
+hold right
+until x=26 max 11
+release right
+wait 0.3
+hold up
+until y=14 max 8
+release up
+wait 0.3
+tap right
+expect facing=Right
+tap confirm
+expect layer=Notice
+tap confirm                  # 出し切る
+tap confirm                  # 閉じる
+# 南の岸を通って西の岸（5, 14）へ。左を向いて西の水晶を調べる。
+hold down
+until y=21 max 8
+release down
+wait 0.3
+hold left
+until x=5 max 22
+release left
+wait 0.3
+hold up
+until y=14 max 8
+release up
+wait 0.3
+tap left
+tap confirm
+expect layer=Notice
+tap confirm                  # 出し切る
+tap confirm                  # 閉じる
+# 北へ（5, 9）。上の北の水晶を調べると 3 つとも点き、飛び石が現れる。
+hold up
+until y=9 max 6
+release up
+wait 0.3
+tap confirm
+expect layer=Notice
+tap confirm                  # 出し切る
+tap confirm                  # 閉じる
+expect layer=Walking
+# 南の岸へ戻り（5, 21）、東へ（16, 21）、北へ飛び石と小島を渡って北の岸の扉の前（16, 6）。
+hold down
+until y=21 max 13
+release down
+wait 0.3
+hold right
+until x=16 max 12
+release right
+wait 0.3
+hold up
+until y=6 max 16
+release up
+wait 0.3
+expect x=16&y=6&facing=Up
+tap confirm
+expect layer=Notice
+tap confirm                  # 出し切る（ふるびたかぎで とびらを あけた！）
+tap confirm                  # 閉じる
+expect layer=Walking

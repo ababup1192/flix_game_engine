@@ -1,0 +1,183 @@
+{
+  "version": 1,
+  "title": "敵の技（選ぶ重み）",
+  "note": "1 行 = 1 体の敵の、ある phase で選ぶ技と重み。foe は rpg.foes.json の鍵、phase は 1（初め）か 2（HP が phase2At を切った後）、act は attack（1 人を叩く）/ sweep（生きている仲間全員を ちから × 0.6 で叩く）/ guard（その手番のうちに受けるダメージを半分）/ sleep（仲間 1 人を眠らせる。成功率は rules の sleepRate）/ spell（spell の欄の呪文を唱える。呪文の鍵は rpg.spells.json・数も同じ。敵は MP を使わない）。行の無い敵は attack だけを選ぶ。",
+  "moves": [
+    {
+      "foe": "kusausa",
+      "phase": 1,
+      "act": "attack",
+      "weight": 1
+    },
+    {
+      "foe": "neboke",
+      "phase": 1,
+      "act": "attack",
+      "weight": 3
+    },
+    {
+      "foe": "neboke",
+      "phase": 1,
+      "act": "sleep",
+      "weight": 1
+    },
+    {
+      "foe": "koke",
+      "phase": 1,
+      "act": "attack",
+      "weight": 1
+    },
+    {
+      "foe": "hanausa",
+      "phase": 1,
+      "act": "attack",
+      "weight": 1
+    },
+    {
+      "foe": "koumori",
+      "phase": 1,
+      "act": "attack",
+      "weight": 1
+    },
+    {
+      "foe": "horimogu",
+      "phase": 1,
+      "act": "attack",
+      "weight": 3
+    },
+    {
+      "foe": "horimogu",
+      "phase": 1,
+      "act": "guard",
+      "weight": 1
+    },
+    {
+      "foe": "fukane",
+      "phase": 1,
+      "act": "attack",
+      "weight": 2
+    },
+    {
+      "foe": "fukane",
+      "phase": 1,
+      "act": "sleep",
+      "weight": 1
+    },
+    {
+      "foe": "goblin",
+      "phase": 1,
+      "act": "attack",
+      "weight": 1
+    },
+    {
+      "foe": "hinoko",
+      "phase": 1,
+      "act": "attack",
+      "weight": 3
+    },
+    {
+      "foe": "hinoko",
+      "phase": 1,
+      "act": "spell",
+      "weight": 1,
+      "spell": "fire"
+    },
+    {
+      "foe": "shouyado",
+      "phase": 1,
+      "act": "attack",
+      "weight": 2
+    },
+    {
+      "foe": "shouyado",
+      "phase": 1,
+      "act": "guard",
+      "weight": 1
+    },
+    {
+      "foe": "akabou",
+      "phase": 1,
+      "act": "attack",
+      "weight": 3
+    },
+    {
+      "foe": "akabou",
+      "phase": 1,
+      "act": "sweep",
+      "weight": 1
+    },
+    {
+      "foe": "koriyado",
+      "phase": 1,
+      "act": "attack",
+      "weight": 1
+    },
+    {
+      "foe": "koriyado",
+      "phase": 1,
+      "act": "guard",
+      "weight": 1
+    },
+    {
+      "foe": "koriyado",
+      "phase": 1,
+      "act": "spell",
+      "weight": 1,
+      "spell": "ice"
+    },
+    {
+      "foe": "gemeater",
+      "phase": 1,
+      "act": "attack",
+      "weight": 3
+    },
+    {
+      "foe": "gemeater",
+      "phase": 1,
+      "act": "sweep",
+      "weight": 1
+    },
+    {
+      "foe": "gemeater",
+      "phase": 2,
+      "act": "attack",
+      "weight": 2
+    },
+    {
+      "foe": "gemeater",
+      "phase": 2,
+      "act": "sweep",
+      "weight": 2
+    },
+    {
+      "foe": "kurogane",
+      "phase": 1,
+      "act": "attack",
+      "weight": 2
+    },
+    {
+      "foe": "kurogane",
+      "phase": 1,
+      "act": "sweep",
+      "weight": 1
+    },
+    {
+      "foe": "kurogane",
+      "phase": 1,
+      "act": "guard",
+      "weight": 1
+    },
+    {
+      "foe": "mimic",
+      "phase": 1,
+      "act": "attack",
+      "weight": 2
+    },
+    {
+      "foe": "mimic",
+      "phase": 1,
+      "act": "sleep",
+      "weight": 1
+    }
+  ]
+}

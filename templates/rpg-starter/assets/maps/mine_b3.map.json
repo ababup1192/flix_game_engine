@@ -1,0 +1,324 @@
+{
+  "version": 1,
+  "title": "坑道 B3",
+  "note": "水晶の坑道の 3 階（mine_deep の組・寒色・32×30）。~ は地底湖（入れない）・x は水晶の柱と大きな水晶の下の床（入れない）・< は B2 へ。湖の岸の水晶 3 つ（crystal。order の順 = 東・西・北）を点けると旗 b3_crystals が立ち、飛び石（bridge）が現れて小島（みずのはごろも）と北の岸へ渡れる。北の岸の封じられた扉（door。ふるびたかぎ）の奥がボスの間。上り階段の部屋にミナの父（話すと全快・水晶の順番の手がかり）と石碑（sign）。東の岩の部屋 2（岩 2・床 2。押す順を違えると角に詰まる。階段を出入りすると岩は元へ戻る）の格子の奥に宝箱 2 つ（片方は ひとくいばこ = guard）。北西の小部屋は B2 の落とし穴の先（せいすい×2・上り階段で B2 の入口へ戻る。湖へは出られない）。",
+  "tileset": "mine_deep",
+  "battleBack": "bg_lake",
+  "minSteps": 30,
+  "maxSteps": 44,
+  "rows": [
+    "################################",
+    "#<...#######.........###########",
+    "#....#######.........###########",
+    "#....#######.........###########",
+    "#....#######.........###########",
+    "################.###############",
+    "##############.....#############",
+    "##############.....#############",
+    "#####.~~~~~~~~~~~~~~~~~~~~######",
+    "#####.~~~~~~~~~~~~~~~~~~~~.#####",
+    "####x.~~~~~~~~~~~~~~~~~~~~.x####",
+    "#####.~~~~~~~~~~~~~~~~~~~~.#####",
+    "#####.~~~~~~~~~~~~~~~~~~~~.#####",
+    "#####.~~~~~~~~~~~~~~~~~~~~.#####",
+    "####..~~~~~~~~.....~~~~~~~..####",
+    "#####.~~~~~~~~.....~~~~~~~.#####",
+    "#####.~~~~~~~~.....~~~~~~~.#####",
+    "#####.~~~~~~~~.....~~~~~~~.#####",
+    "#####.~~~~~~~~~~~~~~~~~~~~.#####",
+    "####x.~~~~~~~~~~~~~~~~~~~~.x####",
+    "#####.~~~~~~~~~~~~~~~~~~~~.#####",
+    "#####......................#####",
+    "################.###############",
+    "################.###############",
+    "############.........#......#..#",
+    "############.........#......#..#",
+    "############...................#",
+    "############.........#......#..#",
+    "############....<....#......#..#",
+    "################################"
+  ],
+  "exits": [
+    {
+      "id": "to_b2",
+      "x": 16,
+      "y": 28,
+      "to": "mine_b2",
+      "spawnX": 44,
+      "spawnY": 27,
+      "facing": "up"
+    },
+    {
+      "id": "to_b2_west",
+      "x": 1,
+      "y": 1,
+      "to": "mine_b2",
+      "spawnX": 3,
+      "spawnY": 4,
+      "facing": "down"
+    }
+  ],
+  "npcs": [
+    {
+      "id": "mina_father",
+      "sprite": "mina_father",
+      "x": 13,
+      "y": 25,
+      "facing": "right",
+      "node": "MinaFather"
+    }
+  ],
+  "props": [
+    {
+      "sprite": "crystal_pillar",
+      "frame": "base",
+      "fps": 0,
+      "flat": false,
+      "x": 4,
+      "y": 9
+    },
+    {
+      "sprite": "crystal_pillar",
+      "frame": "base",
+      "fps": 0,
+      "flat": false,
+      "x": 27,
+      "y": 18
+    },
+    {
+      "sprite": "crystal_l",
+      "frame": "f0",
+      "fps": 1,
+      "flat": false,
+      "x": 27,
+      "y": 9
+    },
+    {
+      "sprite": "crystal_l",
+      "frame": "f0",
+      "fps": 1,
+      "flat": false,
+      "x": 4,
+      "y": 18
+    }
+  ],
+  "objects": [
+    {
+      "id": "b3_crystal_e",
+      "kind": "crystal",
+      "x": 27,
+      "y": 14,
+      "sprite": "crystal_l",
+      "flag": "b3_crystals",
+      "order": 1
+    },
+    {
+      "id": "b3_crystal_w",
+      "kind": "crystal",
+      "x": 4,
+      "y": 14,
+      "sprite": "crystal_l",
+      "flag": "b3_crystals",
+      "order": 2
+    },
+    {
+      "id": "b3_crystal_n",
+      "kind": "crystal",
+      "x": 5,
+      "y": 8,
+      "sprite": "crystal_l",
+      "flag": "b3_crystals",
+      "order": 3
+    },
+    {
+      "id": "b3_stone1",
+      "kind": "bridge",
+      "x": 16,
+      "y": 20,
+      "sprite": "stepping_stone",
+      "flag": "b3_crystals"
+    },
+    {
+      "id": "b3_stone2",
+      "kind": "bridge",
+      "x": 16,
+      "y": 19,
+      "sprite": "stepping_stone_b",
+      "flag": "b3_crystals"
+    },
+    {
+      "id": "b3_stone3",
+      "kind": "bridge",
+      "x": 16,
+      "y": 18,
+      "sprite": "stepping_stone_c",
+      "flag": "b3_crystals"
+    },
+    {
+      "id": "b3_stone4",
+      "kind": "bridge",
+      "x": 16,
+      "y": 13,
+      "sprite": "stepping_stone",
+      "flag": "b3_crystals"
+    },
+    {
+      "id": "b3_stone5",
+      "kind": "bridge",
+      "x": 16,
+      "y": 12,
+      "sprite": "stepping_stone_b",
+      "flag": "b3_crystals"
+    },
+    {
+      "id": "b3_stone6",
+      "kind": "bridge",
+      "x": 16,
+      "y": 11,
+      "sprite": "stepping_stone_c",
+      "flag": "b3_crystals"
+    },
+    {
+      "id": "b3_stone7",
+      "kind": "bridge",
+      "x": 16,
+      "y": 10,
+      "sprite": "stepping_stone",
+      "flag": "b3_crystals"
+    },
+    {
+      "id": "b3_stone8",
+      "kind": "bridge",
+      "x": 16,
+      "y": 9,
+      "sprite": "stepping_stone_b",
+      "flag": "b3_crystals"
+    },
+    {
+      "id": "b3_stone9",
+      "kind": "bridge",
+      "x": 16,
+      "y": 8,
+      "sprite": "stepping_stone_c",
+      "flag": "b3_crystals"
+    },
+    {
+      "id": "b3_robe",
+      "kind": "chest",
+      "x": 14,
+      "y": 14,
+      "item": "mizunohagoromo",
+      "count": 1,
+      "gold": 0
+    },
+    {
+      "id": "b3_door",
+      "kind": "door",
+      "x": 16,
+      "y": 5,
+      "key": "furubitakagi"
+    },
+    {
+      "id": "b3_tablet",
+      "kind": "sign",
+      "x": 18,
+      "y": 24,
+      "sprite": "tablet_l",
+      "node": "Tablet"
+    },
+    {
+      "id": "b3_rock_a",
+      "kind": "rock",
+      "x": 23,
+      "y": 26,
+      "sprite": "boulder_deep"
+    },
+    {
+      "id": "b3_rock_b",
+      "kind": "rock",
+      "x": 24,
+      "y": 25,
+      "sprite": "boulder_deep"
+    },
+    {
+      "id": "b3_plate_n",
+      "kind": "plate",
+      "x": 26,
+      "y": 25,
+      "sprite": "plate_deep",
+      "flag": "b3_room",
+      "hold": true
+    },
+    {
+      "id": "b3_plate_s",
+      "kind": "plate",
+      "x": 26,
+      "y": 27,
+      "sprite": "plate_deep",
+      "flag": "b3_room",
+      "hold": true
+    },
+    {
+      "id": "b3_room_bars",
+      "kind": "gate",
+      "x": 28,
+      "y": 26,
+      "sprite": "gate_bars",
+      "flag": "b3_room",
+      "openWhen": "on"
+    },
+    {
+      "id": "b3_bomb",
+      "kind": "chest",
+      "x": 30,
+      "y": 25,
+      "item": "bakudanishi",
+      "count": 3,
+      "gold": 0
+    },
+    {
+      "id": "b3_mimic",
+      "kind": "guard",
+      "x": 30,
+      "y": 27,
+      "sprite": "chest",
+      "node": "Mimic"
+    },
+    {
+      "id": "b3_seisui",
+      "kind": "chest",
+      "x": 4,
+      "y": 1,
+      "item": "seisui",
+      "count": 2,
+      "gold": 0
+    }
+  ],
+  "events": [],
+  "encounter": [
+    {
+      "foe1": "shouyado",
+      "foe2": "goblin",
+      "foe3": "",
+      "weight": 2
+    },
+    {
+      "foe1": "akabou",
+      "foe2": "koriyado",
+      "foe3": "",
+      "weight": 2
+    },
+    {
+      "foe1": "koriyado",
+      "foe2": "shouyado",
+      "foe3": "",
+      "weight": 1
+    },
+    {
+      "foe1": "akabou",
+      "foe2": "goblin",
+      "foe3": "",
+      "weight": 1
+    }
+  ]
+}

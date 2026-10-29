@@ -1,0 +1,70 @@
+{
+  "//": "rpg.text.json の形の宣言（Studio の sections 方言）。台詞は assets/talk/rune.yarn、ここは呼び名とメニュー・知らせの言葉だけ。",
+  "version": 1,
+  "sections": {
+    "speakers": {
+      "kind": "catalog",
+      "label": "話し手の呼び名（鍵 = 会話の話し手の id）",
+      "order": 1,
+      "fields": {
+        "name": {
+          "type": "text",
+          "label": "ウィンドウに出す呼び名",
+          "order": 1,
+          "required": true
+        },
+        "voice": {
+          "type": {
+            "enum": [
+              "low",
+              "mid",
+              "high"
+            ]
+          },
+          "label": "文字送りの音の高さ（low = 低い・mid = 中・high = 高い）",
+          "order": 2,
+          "default": "mid"
+        }
+      }
+    },
+    "menu": {
+      "kind": "catalog",
+      "label": "メニューの言葉（鍵はコードの TextDoc.MenuText。無い鍵は既定の字）",
+      "order": 2,
+      "fields": {
+        "text": {
+          "type": "text",
+          "label": "出す字",
+          "order": 1,
+          "required": true
+        }
+      }
+    },
+    "notice": {
+      "kind": "catalog",
+      "label": "知らせの言葉（鍵はコードの TextDoc.NoticeText。{name}・{n}・{item}・{gold} を埋める）",
+      "order": 3,
+      "fields": {
+        "text": {
+          "type": "text",
+          "label": "出す字（\\n で行を替える）",
+          "order": 1,
+          "required": true
+        }
+      }
+    },
+    "battle": {
+      "kind": "catalog",
+      "label": "戦いの伝言（鍵はコードの TextDoc.BattleText。{name}・{target}・{n}・{lv} を埋める）",
+      "order": 4,
+      "fields": {
+        "text": {
+          "type": "text",
+          "label": "出す字",
+          "order": 1,
+          "required": true
+        }
+      }
+    }
+  }
+}

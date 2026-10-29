@@ -1,0 +1,2202 @@
+{
+  "version": 1,
+  "title": "村と屋内のタイル",
+  "note": "場面 village / quest / join / clear の地面・湖・家・泉・小物・屋内。光は左上から。地面と湖のタイルは 16×16 で四辺が回る。家は 3/4 の見下ろし（棟の段 roof_* → 軒の段 eave_* → 壁の段 wall_*/door/sign_*）。anchor はどれも左上 (0,0) で、タイルの升目に左上をそろえて置く。小物は透明の地に接地影まで描いてあり、草や床の上へ重ねる。湖は f0/f1、泉の水・炉・暖炉の火は f0/f1/f2。色は 1 タイル = 墨 + 3 色を目安（大きい物は 8×8 の升目ごと）。",
+  "paletteFile": "assets/rpg.palette.json",
+  "legend": {
+    "B": "fc21",
+    "G": "fc10",
+    "N": "fc38",
+    "O": "fc27",
+    "P": "fc35",
+    "S": "fc26",
+    "V": "fc0C",
+    "W": "fc30",
+    "b": "fc12",
+    "c": "fc31",
+    "d": "fc0A",
+    "e": "fc1A",
+    "f": "fc2A",
+    "g": "fc00",
+    "h": "fc2D",
+    "k": "ink",
+    "m": "fc08",
+    "n": "fc18",
+    "o": "fc17",
+    "p": "fc37",
+    "r": "fc06",
+    "s": "fc16",
+    "w": "fc02",
+    "y": "fc28"
+  },
+  "sprites": {
+    "grass": {
+      "note": "草（地）。暗い草むらと明るい斑を塊で置き、四辺を回り込ませて継ぎ目を消す。grass_b と混ぜて敷く。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "eeeeeeeeddeeeeee",
+          "eeeeeeeeeefeeeee",
+          "eeeeeeeeefdefeee",
+          "eeeeeefeededdeee",
+          "eeeeffefeedeeeee",
+          "eeeeeeeeeeeeeeee",
+          "eeeeeeeffeeeefee",
+          "eeeeeeeeeeeeedde",
+          "eeeeeeeeeeeeeeee",
+          "eeeeeeeeeeeeeeee",
+          "efefeeeeeeeeeeee",
+          "ededeeeeeeeeeeee",
+          "eedeeeedeeeeeeee",
+          "eeeeeeddeeeeeeee",
+          "eeefeeeeeeeeeeee",
+          "eeeefeeeeeeeeeee"
+        ]
+      }
+    },
+    "grass_b": {
+      "note": "草の変種。斑の密な所を grass と逆の角へ置いた物。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "effeeeeeeeeeeeee",
+          "eefefeeeeeefeeee",
+          "eededeeeeeeefeee",
+          "eeedeeefeeeeeeee",
+          "eeeeeeeefeeeeeee",
+          "eeeeeeeeeeeeeeee",
+          "efeeeeeefeeeeeee",
+          "efeeeeefdefeffee",
+          "eeeeeeededdeeeee",
+          "eeeeeeeedeeeedde",
+          "eeeeeeeeeeeeeeee",
+          "eeeeedeeeeeeeeee",
+          "eeeeddeeeeeeeefe",
+          "eeeeeeeeeeeefede",
+          "eeddeeeedeeeddee",
+          "eeeeeeeddeeffeee"
+        ]
+      }
+    },
+    "flowers": {
+      "note": "花の咲く草。桃色の花びら＋黄の芯。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "edeeeeedeeeeeeee",
+          "eeeeeeeeeeeeedee",
+          "eeePeeeeeeeeedee",
+          "eePkPeeeeeeeeeee",
+          "eeedeeeeeePeeeee",
+          "eeeeeeePePkeeeee",
+          "eeeeeePkedeeeeee",
+          "ePeeeedeeeeeePee",
+          "PkeeeeeeeeeePkee",
+          "deeeeeeeeeedddee",
+          "eeeeeePeeeeedeee",
+          "eeeeePkPeeeeeePe",
+          "eeeeeedeededePkP",
+          "ddeeeedeeedeeede",
+          "eeeeeeeeeeeeeeee",
+          "dedeeeedeeeeeeee"
+        ]
+      }
+    },
+    "tall_grass": {
+      "note": "背の高い草むら。地が暗い緑で、葉先が明るい。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "feddfddeeefdefef",
+          "dfekdkeeffddfdfd",
+          "ddeddeefdkdddkdd",
+          "ekdkeefddedekdke",
+          "eeeeeekdedkeeeee",
+          "eeeeefeeefeeefee",
+          "feeefdefedfefdee",
+          "deffddededdeddef",
+          "dedkdedkeekdkefd",
+          "edkeeeeeeeeeeekd",
+          "eefeeefeeefeeeee",
+          "efdefedfefdeefee",
+          "fddededdeddefdef",
+          "kdedkeekdkefdded",
+          "eefeeefeeeekdedk",
+          "eedfefdeeeefeeee"
+        ]
+      }
+    },
+    "path": {
+      "note": "土の道。明るい斑は左上・暗い礫は右下に寄せる。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "nnnnnNnnnnnnnnnn",
+          "nnnnnNnnnnnnnmmn",
+          "nNnnnnnNNnNNnnnn",
+          "nNnnnnnnnNnmnnnn",
+          "nnnnnnnnnnmmnnnn",
+          "NnnnnnnnnnnnnnnN",
+          "nnnnnnnNnnnnnnNn",
+          "nnnnnnnNnnnnnnmm",
+          "nnnnnnnnnmnnnnnn",
+          "nnNnnnnnnnnnnnnn",
+          "nnmmnnnnnnnnnnnn",
+          "nmnnnnnnnnnnnnnn",
+          "nnnnnnnnnnnnnnmn",
+          "nnnnnnnNnnnnnnnn",
+          "nnnnnnNnmnnnNnnn",
+          "nnnnnnnmmnnnmmnn"
+        ]
+      }
+    },
+    "cobble": {
+      "note": "石畳。不揃いな石（ボロノイ）で目地を灰、石の下の目地を墨で沈める。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "gggggkkggggGghkk",
+          "GggggGkGggggggGk",
+          "GgggggkGggggggkk",
+          "kkggggkkggggkkgk",
+          "ghkkkkghkkkkgGgh",
+          "GGGhgGgGGGhggggh",
+          "GggkGgggggkggggh",
+          "GgkggggggghGgggk",
+          "kkkkgggggkkkGggk",
+          "GggkkGgkkgGkkkkg",
+          "ggggkkkgGggkgkkg",
+          "gggghggggggkGghG",
+          "ggggkggggggkGghk",
+          "GgggkggggghgggGh",
+          "kkkkhkkkkkkkGggh",
+          "kggGGkggGGGkkkgG"
+        ]
+      }
+    },
+    "field": {
+      "note": "畑の畝。4px ごとに畝と溝、芽の列をずらす。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "nenennnnnnnenenn",
+          "nnennneennnnennn",
+          "nnnnnnnnnnnnnnnn",
+          "mmmmmmmmmmmmmmmm",
+          "nnneennnenennnnn",
+          "nnnnnnnnnennnnee",
+          "nnnnnnnnnnnnnnnn",
+          "mmmmmmmmmmmmmmmm",
+          "eennnenennnnnnnn",
+          "nnnnnnennnnnenen",
+          "nnnnnnnnnnnnnenn",
+          "mmmmmmmmmmmmmmmm",
+          "nnenennnnnnnnene",
+          "nnnennnnneennnen",
+          "nnnnnnnnnnnnnnnn",
+          "mmmmmmmmmmmmmmmm"
+        ]
+      }
+    },
+    "lake": {
+      "note": "湖（沖）。波の印が f0→f1 で揺れる。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "f0": [
+          "bbbbbbbbwwbbbbbb",
+          "bbbbbbbbbbbbbbbb",
+          "bbbBBbbbbbbbbbbb",
+          "bbBbbBbbbbbbbbbb",
+          "bbbwwbbbbbBBbbbb",
+          "bbbbbbbbbbbbBbbb",
+          "bbbbbbbbbbwwbbbb",
+          "bbbbbbbbbbbbbbbb",
+          "bbbbbbBBbbbbbbbb",
+          "bbbbbBbbBbbbbbbb",
+          "bbbbbbwwbbbbbbbb",
+          "bbbbbbbbbbbbbBBb",
+          "BbbbbbbbbbbbbbbB",
+          "bbBBbbbbbbbbbwwb",
+          "bBbbbbbbBBbbbbbb",
+          "bbwwbbbbbbBBbbbb"
+        ],
+        "f1": [
+          "bbbbbbbbbwwbbbbb",
+          "bbbbbbbbbbbbbbbb",
+          "bbBBbbbbbbbbbbbb",
+          "bbbbBBbbbbbbbbbb",
+          "bbwwbbbbbbbBBbbb",
+          "bbbbbbbbbbBbbbbb",
+          "bbbbbbbbbbbwwbbb",
+          "bbbbbbbbbbbbbbbb",
+          "bbbbbBBbbbbbbbbb",
+          "bbbbbbbBBbbbbbbb",
+          "bbbbbwwbbbbbbbbb",
+          "bbbbbbbbbbbbbbBB",
+          "BbbbbbbbbbbbbBbb",
+          "bBBbbbbbbbbbbbww",
+          "bbbBbbbbbBBbbbbb",
+          "bwwbbbbbBbbBbbbb"
+        ]
+      }
+    },
+    "lake_n": {
+      "note": "湖の岸の辺。北の辺が草の岸。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "f0": [
+          "eeeeeeeeeeeeeeee",
+          "eeeeeeeeeeeeeeee",
+          "eeeeeeeeeeeeeeee",
+          "eeeeeeeeeeeeeeee",
+          "kkkkkkkeekkkkkkk",
+          "bkBkbkbkkkBkbkbk",
+          "bBBbbbbbkBbbbbbB",
+          "bbbbbbbBBbbbbbbb",
+          "bbbbbbBBbbbbbbbb",
+          "bbbbbBbbBbbbbbbb",
+          "bbbbbbbbbbbbbbbb",
+          "bbbbbbbbbbbbbBBb",
+          "BbbbbbbbbbbbbbbB",
+          "bbBBbbbbbbbbbbbb",
+          "bBbbbbbbBBbbbbbb",
+          "bbbbbbbbbbBBbbbb"
+        ],
+        "f1": [
+          "eeeeeeeeeeeeeeee",
+          "eeeeeeeeeeeeeeee",
+          "eeeeeeeeeeeeeeee",
+          "eeeeeeeeeeeeeeee",
+          "kkkkkkkeekkkkkkk",
+          "BkbkbkbkkkbkbkBk",
+          "BbbbbbBBkbbbbBBb",
+          "bbbbbbbbbbbbbbbb",
+          "bbbbbBBbbbbbbbbb",
+          "bbbbbbbBBbbbbbbb",
+          "bbbbbbbbbbbbbbbb",
+          "bbbbbbbbbbbbbbBB",
+          "BbbbbbbbbbbbbBbb",
+          "bBBbbbbbbbbbbbbb",
+          "bbbBbbbbbBBbbbbb",
+          "bbbbbbbbBbbBbbbb"
+        ]
+      }
+    },
+    "lake_s": {
+      "note": "湖の岸の辺。南の辺が草の岸。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "f0": [
+          "bbbbbbbbbbbbbbbb",
+          "bbbbbbbbbbbbbbbb",
+          "bbbBBbbbbbbbbbbb",
+          "bbBbbBbbbbbbbbbb",
+          "bbbbbbbbbbBBbbbb",
+          "bbbbbbbbbbbbBbbb",
+          "bbbbbbbbbbbbbbbb",
+          "bbbbbbbbbbbbbbbb",
+          "bbbbbbBBbbbbbbbb",
+          "bbbbbBBbbbbbbbbb",
+          "bbbbBBkkkbbBBbbb",
+          "kkkkkkeeekkkkkkk",
+          "eeeeeeeeeeeeeeee",
+          "eeeeeeeeeeeeeeee",
+          "eeeeeeeeeeeeeeee",
+          "eeeeeeeeeeeeeeee"
+        ],
+        "f1": [
+          "bbbbbbbbbbbbbbbb",
+          "bbbbbbbbbbbbbbbb",
+          "bbBBbbbbbbbbbbbb",
+          "bbbbBBbbbbbbbbbb",
+          "bbbbbbbbbbbBBbbb",
+          "bbbbbbbbbbBbbbbb",
+          "bbbbbbbbbbbbbbbb",
+          "bbbbbbbbbbbbbbbb",
+          "bbbbbBBbbbbbbbbb",
+          "bbbbbbbbbbbbbbbb",
+          "bbBBbbkkkBBbbbbb",
+          "kkkkkkeeekkkkkkk",
+          "eeeeeeeeeeeeeeee",
+          "eeeeeeeeeeeeeeee",
+          "eeeeeeeeeeeeeeee",
+          "eeeeeeeeeeeeeeee"
+        ]
+      }
+    },
+    "lake_e": {
+      "note": "湖の岸の辺。東の辺が草の岸。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "f0": [
+          "bbbbbbbbbbbkeeee",
+          "bbbbbbbbbbbkeeee",
+          "bbbBBbbbbbbkeeee",
+          "bbBbbBbbbbbkeeee",
+          "bbbbbbbbbbBkeeee",
+          "bbbbbbbbbbBkeeee",
+          "bbbbbbbbbBkeeeee",
+          "bbbbbbbbbbkeeeee",
+          "bbbbbbBBbbbkeeee",
+          "bbbbbBbbBbbkeeee",
+          "bbbbbbbbbbbkeeee",
+          "bbbbbbbbbbBkeeee",
+          "BbbbbbbbbbBkeeee",
+          "bbBBbbbbbbbkeeee",
+          "bBbbbbbbBBbkeeee",
+          "bbbbbbbbbbbkeeee"
+        ],
+        "f1": [
+          "bbbbbbbbbbbkeeee",
+          "bbbbbbbbbbbkeeee",
+          "bbBBbbbbbbBkeeee",
+          "bbbbBBbbbbBkeeee",
+          "bbbbbbbbbbbkeeee",
+          "bbbbbbbbbbbkeeee",
+          "bbbbbbbbbbkeeeee",
+          "bbbbbbbbbbkeeeee",
+          "bbbbbBBbbbbkeeee",
+          "bbbbbbbBBbBkeeee",
+          "bbbbbbbbbbBkeeee",
+          "bbbbbbbbbbbkeeee",
+          "Bbbbbbbbbbbkeeee",
+          "bBBbbbbbbbbkeeee",
+          "bbbBbbbbbBbkeeee",
+          "bbbbbbbbBbbkeeee"
+        ]
+      }
+    },
+    "lake_w": {
+      "note": "湖の岸の辺。西の辺が草の岸。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "f0": [
+          "eeeekbbbbbbbbbbb",
+          "eeeekbbbbbbbbbbb",
+          "eeeekBbbbbbbbbbb",
+          "eeeekBbbbbbbbbbb",
+          "eeeekbbbbbBBbbbb",
+          "eeeekbbbbbbbBbbb",
+          "eeeekbbbbbbbbbbb",
+          "eeeeekbbbbbbbbbb",
+          "eeeeekBBbbbbbbbb",
+          "eeeekBbbBbbbbbbb",
+          "eeeekBbbbbbbbbbb",
+          "eeeekbbbbbbbbBBb",
+          "eeeekbbbbbbbbbbB",
+          "eeeekbbbbbbbbbbb",
+          "eeeekbbbBBbbbbbb",
+          "eeeekbbbbbBBbbbb"
+        ],
+        "f1": [
+          "eeeekBbbbbbbbbbb",
+          "eeeekBbbbbbbbbbb",
+          "eeeekbbbbbbbbbbb",
+          "eeeekbbbbbbbbbbb",
+          "eeeekbbbbbbBBbbb",
+          "eeeekbbbbbBbbbbb",
+          "eeeekbbbbbbbbbbb",
+          "eeeeekBbbbbbbbbb",
+          "eeeeekbbbbbbbbbb",
+          "eeeekbbBBbbbbbbb",
+          "eeeekbbbbbbbbbbb",
+          "eeeekbbbbbbbbbBB",
+          "eeeekbbbbbbbbBbb",
+          "eeeekbbbbbbbbbbb",
+          "eeeekBbbbBBbbbbb",
+          "eeeekBbbBbbBbbbb"
+        ]
+      }
+    },
+    "lake_ne": {
+      "note": "湖の外角。ne の 2 辺が草の岸。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "f0": [
+          "eeeeeeeeeeeeeeee",
+          "eeeeeeeeeeeeeeee",
+          "eeeeeeeeeeeeeeee",
+          "eeeeeeeeeeeeeeee",
+          "kkkkkkkkkkeeeeee",
+          "bkBkbkbkbkkeeeee",
+          "bBBbbbbbBBkkeeee",
+          "bbbbbbbbbbbkeeee",
+          "bbbbbbBBbbbkeeee",
+          "bbbbbBbbBbbkeeee",
+          "bbbbbbbbbbbkeeee",
+          "bbbbbbbbbbBkeeee",
+          "BbbbbbbbbbBkeeee",
+          "bbBBbbbbbbbkeeee",
+          "bBbbbbbbBBbkeeee",
+          "bbbbbbbbbbbkeeee"
+        ],
+        "f1": [
+          "eeeeeeeeeeeeeeee",
+          "eeeeeeeeeeeeeeee",
+          "eeeeeeeeeeeeeeee",
+          "eeeeeeeeeeeeeeee",
+          "kkkkkkkkkkeeeeee",
+          "BkbkbkbkBkkeeeee",
+          "BbbbbbBBbbkkeeee",
+          "bbbbbbbbbbbkeeee",
+          "bbbbbBBbbbbkeeee",
+          "bbbbbbbBBbBkeeee",
+          "bbbbbbbbbbBkeeee",
+          "bbbbbbbbbbbkeeee",
+          "Bbbbbbbbbbbkeeee",
+          "bBBbbbbbbbbkeeee",
+          "bbbBbbbbbBbkeeee",
+          "bbbbbbbbBbbkeeee"
+        ]
+      }
+    },
+    "lake_nw": {
+      "note": "湖の外角。nw の 2 辺が草の岸。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "f0": [
+          "eeeeeeeeeeeeeeee",
+          "eeeeeeeeeeeeeeee",
+          "eeeeeeeeeeeeeeee",
+          "eeeeeeeeeeeeeeee",
+          "eeeeeekkkkkkkkkk",
+          "eeeeekbkbkBkbkbk",
+          "eeeekbbbBBbbbbbB",
+          "eeeekbbbbbbbbbbb",
+          "eeeekbBBbbbbbbbb",
+          "eeeekBbbBbbbbbbb",
+          "eeeekBbbbbbbbbbb",
+          "eeeekbbbbbbbbBBb",
+          "eeeekbbbbbbbbbbB",
+          "eeeekbbbbbbbbbbb",
+          "eeeekbbbBBbbbbbb",
+          "eeeekbbbbbBBbbbb"
+        ],
+        "f1": [
+          "eeeeeeeeeeeeeeee",
+          "eeeeeeeeeeeeeeee",
+          "eeeeeeeeeeeeeeee",
+          "eeeeeeeeeeeeeeee",
+          "eeeeeekkkkkkkkkk",
+          "eeeeekbkBkbkbkBk",
+          "eeeekbBBbbbbbBBb",
+          "eeeekBbbbbbbbbbb",
+          "eeeekBBbbbbbbbbb",
+          "eeeekbbBBbbbbbbb",
+          "eeeekbbbbbbbbbbb",
+          "eeeekbbbbbbbbbBB",
+          "eeeekbbbbbbbbBbb",
+          "eeeekbbbbbbbbbbb",
+          "eeeekBbbbBBbbbbb",
+          "eeeekBbbBbbBbbbb"
+        ]
+      }
+    },
+    "lake_se": {
+      "note": "湖の外角。se の 2 辺が草の岸。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "f0": [
+          "bbbbbbbbbbbkeeee",
+          "bbbbbbbbbbbkeeee",
+          "bbbBBbbbbbbkeeee",
+          "bbBbbBbbbbbkeeee",
+          "bbbbbbbbbbBkeeee",
+          "bbbbbbbbbbBkeeee",
+          "bbbbbbbbbbbkeeee",
+          "bbbbbbbbbbbkeeee",
+          "bbbbbbBBbbbkeeee",
+          "bbbbbBbbBbbkeeee",
+          "bbbbBBbbbbkeeeee",
+          "kkkkkkkkkkeeeeee",
+          "eeeeeeeeeeeeeeee",
+          "eeeeeeeeeeeeeeee",
+          "eeeeeeeeeeeeeeee",
+          "eeeeeeeeeeeeeeee"
+        ],
+        "f1": [
+          "bbbbbbbbbbbkeeee",
+          "bbbbbbbbbbbkeeee",
+          "bbBBbbbbbbBkeeee",
+          "bbbbBBbbbbBkeeee",
+          "bbbbbbbbbbbkeeee",
+          "bbbbbbbbbbbkeeee",
+          "bbbbbbbbbbbkeeee",
+          "bbbbbbbbbbbkeeee",
+          "bbbbbBBbbbbkeeee",
+          "bbbbbbbBBbBkeeee",
+          "bbBBbbbbbBkeeeee",
+          "kkkkkkkkkkeeeeee",
+          "eeeeeeeeeeeeeeee",
+          "eeeeeeeeeeeeeeee",
+          "eeeeeeeeeeeeeeee",
+          "eeeeeeeeeeeeeeee"
+        ]
+      }
+    },
+    "lake_sw": {
+      "note": "湖の外角。sw の 2 辺が草の岸。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "f0": [
+          "eeeekbbbbbbbbbbb",
+          "eeeekbbbbbbbbbbb",
+          "eeeekBbbbbbbbbbb",
+          "eeeekBbbbbbbbbbb",
+          "eeeekbbbbbBBbbbb",
+          "eeeekbbbbbbbBbbb",
+          "eeeekbbbbbbbbbbb",
+          "eeeekbbbbbbbbbbb",
+          "eeeekbBBbbbbbbbb",
+          "eeeekBbbBbbbbbbb",
+          "eeeeekbbbbbBBbbb",
+          "eeeeeekkkkkkkkkk",
+          "eeeeeeeeeeeeeeee",
+          "eeeeeeeeeeeeeeee",
+          "eeeeeeeeeeeeeeee",
+          "eeeeeeeeeeeeeeee"
+        ],
+        "f1": [
+          "eeeekBbbbbbbbbbb",
+          "eeeekBbbbbbbbbbb",
+          "eeeekbbbbbbbbbbb",
+          "eeeekbbbbbbbbbbb",
+          "eeeekbbbbbbBBbbb",
+          "eeeekbbbbbBbbbbb",
+          "eeeekbbbbbbbbbbb",
+          "eeeekBbbbbbbbbbb",
+          "eeeekBBbbbbbbbbb",
+          "eeeekbbBBbbbbbbb",
+          "eeeeekbbbBBbbbbb",
+          "eeeeeekkkkkkkkkk",
+          "eeeeeeeeeeeeeeee",
+          "eeeeeeeeeeeeeeee",
+          "eeeeeeeeeeeeeeee",
+          "eeeeeeeeeeeeeeee"
+        ]
+      }
+    },
+    "lake_in_ne": {
+      "note": "湖の内角。ne の角だけが草。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "f0": [
+          "bbbbbbbbbbkeeeee",
+          "bbbbbbbbbbbkeeee",
+          "bbbBBbbbbbbkeeee",
+          "bbBbbBbbbbbBkeee",
+          "bbbbbbbbbbBBkkke",
+          "bbbbbbbbbbbbbkbk",
+          "bbbbbbbbbbbbbbbB",
+          "bbbbbbbbbbbbbbbB",
+          "bbbbbbBBbbbbbbbb",
+          "bbbbbBbbBbbbbbbb",
+          "bbbbbbbbbbbbbbbb",
+          "bbbbbbbbbbbbbBBb",
+          "BbbbbbbbbbbbbbbB",
+          "bbBBbbbbbbbbbbbb",
+          "bBbbbbbbBBbbbbbb",
+          "bbbbbbbbbbBBbbbb"
+        ],
+        "f1": [
+          "bbbbbbbbbbkeeeee",
+          "bbbbbbbbbbbkeeee",
+          "bbBBbbbbbbBkeeee",
+          "bbbbBBbbbbbbkeee",
+          "bbbbbbbbbbbBkkke",
+          "bbbbbbbbbbBbbkBk",
+          "bbbbbbbbbbbbbBBb",
+          "bbbbbbbbbbbbbbbb",
+          "bbbbbBBbbbbbbbbb",
+          "bbbbbbbBBbbbbbbb",
+          "bbbbbbbbbbbbbbbb",
+          "bbbbbbbbbbbbbbBB",
+          "BbbbbbbbbbbbbBbb",
+          "bBBbbbbbbbbbbbbb",
+          "bbbBbbbbbBBbbbbb",
+          "bbbbbbbbBbbBbbbb"
+        ]
+      }
+    },
+    "lake_in_nw": {
+      "note": "湖の内角。nw の角だけが草。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "f0": [
+          "eeeeekbbbbbbbbbb",
+          "eeeekbbbbbbbbbbb",
+          "eeeekBbbbbbbbbbb",
+          "eeekBBbbbbbbbbbb",
+          "ekkBbbbbbbBBbbbb",
+          "kkBBbbbbbbbbBbbb",
+          "kBBbbbbbbbbbbbbb",
+          "Bbbbbbbbbbbbbbbb",
+          "bbbbbbBBbbbbbbbb",
+          "bbbbbBbbBbbbbbbb",
+          "bbbbbbbbbbbbbbbb",
+          "bbbbbbbbbbbbbBBb",
+          "BbbbbbbbbbbbbbbB",
+          "bbBBbbbbbbbbbbbb",
+          "bBbbbbbbBBbbbbbb",
+          "bbbbbbbbbbBBbbbb"
+        ],
+        "f1": [
+          "eeeeekBbbbbbbbbb",
+          "eeeekBbbbbbbbbbb",
+          "eeeekbbbbbbbbbbb",
+          "eeekbBbbbbbbbbbb",
+          "ekkbbbbbbbbBBbbb",
+          "kkbbbbbbbbBbbbbb",
+          "kbbbbbbbbbbbbbbb",
+          "bbbbbbbbbbbbbbbb",
+          "bbbbbBBbbbbbbbbb",
+          "bbbbbbbBBbbbbbbb",
+          "bbbbbbbbbbbbbbbb",
+          "bbbbbbbbbbbbbbBB",
+          "BbbbbbbbbbbbbBbb",
+          "bBBbbbbbbbbbbbbb",
+          "bbbBbbbbbBBbbbbb",
+          "bbbbbbbbBbbBbbbb"
+        ]
+      }
+    },
+    "lake_in_se": {
+      "note": "湖の内角。se の角だけが草。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "f0": [
+          "bbbbbbbbbbbbbbbb",
+          "bbbbbbbbbbbbbbbb",
+          "bbbBBbbbbbbbbbbb",
+          "bbBbbBbbbbbbbbbb",
+          "bbbbbbbbbbBBbbbb",
+          "bbbbbbbbbbbbBbbb",
+          "bbbbbbbbbbbbbbbb",
+          "bbbbbbbbbbbbbbbb",
+          "bbbbbbBBbbbbbbbb",
+          "bbbbbBbbBbbbbbbb",
+          "bbbbbbbbbbbbbbbk",
+          "bbbbbbbbbbbbbkke",
+          "Bbbbbbbbbbbbkeee",
+          "bbBBbbbbbbbkeeee",
+          "bBbbbbbbBBbkeeee",
+          "bbbbbbbbbbkeeeee"
+        ],
+        "f1": [
+          "bbbbbbbbbbbbbbbb",
+          "bbbbbbbbbbbbbbbb",
+          "bbBBbbbbbbbbbbbb",
+          "bbbbBBbbbbbbbbbb",
+          "bbbbbbbbbbbBBbbb",
+          "bbbbbbbbbbBbbbbb",
+          "bbbbbbbbbbbbbbbb",
+          "bbbbbbbbbbbbbbbb",
+          "bbbbbBBbbbbbbbbb",
+          "bbbbbbbBBbbbbbbb",
+          "bbbbbbbbbbbbbbbk",
+          "bbbbbbbbbbbbbkke",
+          "Bbbbbbbbbbbbkeee",
+          "bBBbbbbbbbbkeeee",
+          "bbbBbbbbbBbkeeee",
+          "bbbbbbbbBbkeeeee"
+        ]
+      }
+    },
+    "lake_in_sw": {
+      "note": "湖の内角。sw の角だけが草。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "f0": [
+          "bbbbbbbbbbbbbbbb",
+          "bbbbbbbbbbbbbbbb",
+          "bbbBBbbbbbbbbbbb",
+          "bbBbbBbbbbbbbbbb",
+          "bbbbbbbbbbBBbbbb",
+          "bbbbbbbbbbbbBbbb",
+          "bbbbbbbbbbbbbbbb",
+          "bbbbbbbbbbbbbbbb",
+          "bbbbbbBBbbbbbbbb",
+          "bbbbbBbbBbbbbbbb",
+          "kbbbbbbbbbbbbbbb",
+          "ekkBbbbbbbbbbBBb",
+          "eeekbbbbbbbbbbbB",
+          "eeeekbbbbbbbbbbb",
+          "eeeekbbbBBbbbbbb",
+          "eeeeekBbbbBBbbbb"
+        ],
+        "f1": [
+          "bbbbbbbbbbbbbbbb",
+          "bbbbbbbbbbbbbbbb",
+          "bbBBbbbbbbbbbbbb",
+          "bbbbBBbbbbbbbbbb",
+          "bbbbbbbbbbbBBbbb",
+          "bbbbbbbbbbBbbbbb",
+          "bbbbbbbbbbbbbbbb",
+          "bbbbbbbbbbbbbbbb",
+          "bbbbbBBbbbbbbbbb",
+          "bbbbbbbBBbbbbbbb",
+          "kbBbbbbbbbbbbbbb",
+          "ekkbbbbbbbbbbbBB",
+          "eeekbbbbbbbbbBbb",
+          "eeeekbbbbbbbbbbb",
+          "eeeekBbbbBBbbbbb",
+          "eeeeekbbBbbBbbbb"
+        ]
+      }
+    },
+    "roof_l": {
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "kkkkkkkkkkkkkkkk",
+          "kSSSSSSSSSSSSSSS",
+          "kSSSsSSSsSSSsSSS",
+          "kkkkkkkkkkkkkkkk",
+          "kSrSSsrSSsrSSsrS",
+          "kSrSssrSssrSssrS",
+          "kSrsssrsssrsssrs",
+          "kSksrrksrrksrrks",
+          "kSrSSsrSSsrSSsrS",
+          "kSrSssrSssrSssrS",
+          "kSrsssrsssrsssrs",
+          "kSksrrksrrksrrks",
+          "kSrSSsrSSsrSSsrS",
+          "kSrSssrSssrSssrS",
+          "kSrsssrsssrsssrs",
+          "kSksrrksrrksrrks"
+        ]
+      }
+    },
+    "roof_m": {
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "kkkkkkkkkkkkkkkk",
+          "SSSSSSSSSSSSSSSS",
+          "sSSSsSSSsSSSsSSS",
+          "kkkkkkkkkkkkkkkk",
+          "SsrSSsrSSsrSSsrS",
+          "ssrSssrSssrSssrS",
+          "ssrsssrsssrsssrs",
+          "rrksrrksrrksrrks",
+          "SsrSSsrSSsrSSsrS",
+          "ssrSssrSssrSssrS",
+          "ssrsssrsssrsssrs",
+          "rrksrrksrrksrrks",
+          "SsrSSsrSSsrSSsrS",
+          "ssrSssrSssrSssrS",
+          "ssrsssrsssrsssrs",
+          "rrksrrksrrksrrks"
+        ]
+      }
+    },
+    "roof_r": {
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "kkkkkkkkkkkkkkkk",
+          "SSSSSSSSSSSSSSrk",
+          "sSSSsSSSsSSSsSrk",
+          "kkkkkkkkkkkkkkkk",
+          "SsrSSsrSSsrSSsrk",
+          "ssrSssrSssrSssrk",
+          "ssrsssrsssrsssrk",
+          "rrksrrksrrksrrrk",
+          "SsrSSsrSSsrSSsrk",
+          "ssrSssrSssrSssrk",
+          "ssrsssrsssrsssrk",
+          "rrksrrksrrksrrrk",
+          "SsrSSsrSSsrSSsrk",
+          "ssrSssrSssrSssrk",
+          "ssrsssrsssrsssrk",
+          "rrksrrksrrksrrrk"
+        ]
+      }
+    },
+    "eave_l": {
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "kSrSSsrSSsrSSsrS",
+          "kSrSssrSssrSssrS",
+          "kSrsssrsssrsssrs",
+          "kSksrrksrrksrrks",
+          "kSrSssrSssrSssrS",
+          "kSrsssrsssrsssrs",
+          "kSrssrrssrrssrrs",
+          "kSkrrrkrrrkrrrkr",
+          "kSrSssrSssrSssrS",
+          "kSrsssrsssrsssrs",
+          "kSrssrrssrrssrrs",
+          "kSkrrrkrrrkrrrkr",
+          "kSSsSSSsSSSsSSSs",
+          "kSssssssssssssss",
+          "kSrrrrrrrrrrrrrr",
+          "kkkkkkkkkkkkkkkk"
+        ]
+      }
+    },
+    "eave_m": {
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "SsrSSsrSSsrSSsrS",
+          "ssrSssrSssrSssrS",
+          "ssrsssrsssrsssrs",
+          "rrksrrksrrksrrks",
+          "ssrSssrSssrSssrS",
+          "ssrsssrsssrsssrs",
+          "srrssrrssrrssrrs",
+          "rrkrrrkrrrkrrrkr",
+          "ssrSssrSssrSssrS",
+          "ssrsssrsssrsssrs",
+          "srrssrrssrrssrrs",
+          "rrkrrrkrrrkrrrkr",
+          "SSSsSSSsSSSsSSSs",
+          "ssssssssssssssss",
+          "rrrrrrrrrrrrrrrr",
+          "kkkkkkkkkkkkkkkk"
+        ]
+      }
+    },
+    "eave_r": {
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "SsrSSsrSSsrSSsrk",
+          "ssrSssrSssrSssrk",
+          "ssrsssrsssrsssrk",
+          "rrksrrksrrksrrrk",
+          "ssrSssrSssrSssrk",
+          "ssrsssrsssrsssrk",
+          "srrssrrssrrssrrk",
+          "rrkrrrkrrrkrrrrk",
+          "ssrSssrSssrSssrk",
+          "ssrsssrsssrsssrk",
+          "srrssrrssrrssrrk",
+          "rrkrrrkrrrkrrrrk",
+          "SSSsSSSsSSSsSSrk",
+          "ssssssssssssssrk",
+          "rrrrrrrrrrrrrrrk",
+          "kkkkkkkkkkkkkkkk"
+        ]
+      }
+    },
+    "wall_l": {
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "kggggggggggggggg",
+          "kpGgGgGgGgGgGgGg",
+          "kpGpGpGpGpGpGpGp",
+          "kpGppppppppppppp",
+          "kpGppppppppppppp",
+          "kpGGGppppppppppp",
+          "kpGpGppppppppppp",
+          "kpGppppppppppppp",
+          "kpGppppppppGpppp",
+          "kpGppppppppGGppp",
+          "kpGppppGGppppppp",
+          "kpGppppppppppppp",
+          "kpGGGGGGGGGGGGGG",
+          "kpGgggggkgggggkg",
+          "kpGkgggggkgggggk",
+          "kkkkkkkkkkkkkkkk"
+        ]
+      }
+    },
+    "wall_m": {
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "gggggggggggggggg",
+          "GgGgGgGgGgGgGgGg",
+          "GpGpGpGpGpGpGpGp",
+          "pppppppppppppppp",
+          "pppppppppppppppp",
+          "pppGGppppppppppp",
+          "ppppGppppppppppp",
+          "pppppppppppppppp",
+          "pppppppppppGpppp",
+          "pppppppppppGGppp",
+          "pppppppGGppppppp",
+          "pppppppppppppppp",
+          "GGGGGGGGGGGGGGGG",
+          "ggkgggggkgggggkg",
+          "gggkgggggkgggggk",
+          "kkkkkkkkkkkkkkkk"
+        ]
+      }
+    },
+    "wall_r": {
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "gggggggggggggggk",
+          "GgGgGgGgGgGgGGgk",
+          "GpGpGpGpGpGpGGgk",
+          "pppppppppppppGgk",
+          "pppppppppppppGgk",
+          "pppGGppppppppGgk",
+          "ppppGppppppppGgk",
+          "pppppppppppppGgk",
+          "pppppppppppGpGgk",
+          "pppppppppppGGGgk",
+          "pppppppGGppppGgk",
+          "pppppppppppppGgk",
+          "GGGGGGGGGGGGGGgk",
+          "ggkgggggkggggGgk",
+          "gggkgggggkgggGgk",
+          "kkkkkkkkkkkkkkkk"
+        ]
+      }
+    },
+    "wall_window": {
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "gggggggggggggggg",
+          "GgGgGgGgGgGgGgGg",
+          "GpGpGpGpGpGpGpGp",
+          "pppkkkkkkkkkkppp",
+          "pppkgggggggGkppp",
+          "pppkgkkkgkkGkppp",
+          "pppkgkGkgkkGkppp",
+          "pppkgGkkgkkGkppp",
+          "pppkgggggggGkppp",
+          "pppkgkkkgkkGkppp",
+          "pppkgkkkgkkGkppp",
+          "pppkkkkkkkkkkppp",
+          "GGGGppppppppGGGG",
+          "ggkgggggkgggggkg",
+          "gggkgggggkgggggk",
+          "kkkkkkkkkkkkkkkk"
+        ]
+      }
+    },
+    "door": {
+      "note": "板の扉。壁の段に置く。扉の下の 1 行は敷居。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "mmmmmmmmmmmmmmmm",
+          "kkkkkkkkkkkkkkkk",
+          "Ook....kkkk...kO",
+          "Ook.kkkooOokk.kO",
+          "Ookkooooo.Oook.O",
+          "OokoOomoOomoOokO",
+          "OokoOomoOomoOokO",
+          "OokoOomoOomoOokO",
+          "OokoOomoOomoOokO",
+          "OokoOomoOkmoOokO",
+          "OokoOomoOkmoOokO",
+          "OokoOomoOomoOokO",
+          "OokoOomoOomoOokO",
+          "OokmmmmmmmmmmmkO",
+          "OokkkkkkkkkkkkkO",
+          "kkkkkkkkkkkkkkkk"
+        ]
+      }
+    },
+    "sign_inn": {
+      "note": "宿の看板（寝台の印）を掛けた壁。wall_m と差し替えて置く。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "gggggggggggggggg",
+          "GgGgGgGgGgGgGgGg",
+          "GpkpGpGpGpGpGkGp",
+          "ppkppppppppppkpp",
+          "ppkkkkkkkkkkkkpp",
+          "ppkOOOOOOOOOokpp",
+          "ppkOOOOOOOOOokpp",
+          "ppkOOkOOOOOOokpp",
+          "ppkOOkppOOOOokpp",
+          "ppkOOkkkkkkOokpp",
+          "ppkOOkOOOOkOokpp",
+          "ppkooooooooookpp",
+          "GGkkkkkkkkkkkkGG",
+          "ggkGGGGGGGGGGgkg",
+          "gggkgggggkgggggk",
+          "kkkkkkkkkkkkkkkk"
+        ]
+      }
+    },
+    "sign_item": {
+      "note": "道具屋の看板（袋の印）を掛けた壁。wall_m と差し替えて置く。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "gggggggggggggggg",
+          "GgGgGgGgGgGgGgGg",
+          "GpkpGpGpGpGpGkGp",
+          "ppkppppppppppkpp",
+          "ppkkkkkkkkkkkkpp",
+          "ppkOOOOOOOOOokpp",
+          "ppkOOOOkkOOOokpp",
+          "ppkOOOOkkOOOokpp",
+          "ppkOOOkppkOOokpp",
+          "ppkOOkppppkOokpp",
+          "ppkOOOkkkkOOokpp",
+          "ppkooooooooookpp",
+          "GGkkkkkkkkkkkkGG",
+          "ggkGGGGGGGGGGgkg",
+          "gggkgggggkgggggk",
+          "kkkkkkkkkkkkkkkk"
+        ]
+      }
+    },
+    "chimney": {
+      "note": "煙突の付いた屋根の棟の段。roof_m と差し替えて置く（16×16 不透明）。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "kkkkkkkkkkkkkkkk",
+          "SSSSSSSSkSSSSrkS",
+          "sSSSsSSSkkkkkkkS",
+          "kkkkkkkkkkSrrkkk",
+          "SsrSSsrSSkkkkkrS",
+          "ssrSssrSskrrSkrS",
+          "ssrsssrsskkkkkrs",
+          "rrksrrksrkSrrkks",
+          "SsrSSsrSSkkkkkrS",
+          "ssrSssrSsskkksrS",
+          "ssrsssrsssrkssrs",
+          "rrksrrksrrksrrks",
+          "SsrSSsrSSsrSSsrS",
+          "ssrSssrSssrSssrS",
+          "ssrsssrsssrsssrs",
+          "rrksrrksrrksrrks"
+        ]
+      }
+    },
+    "spring_dry": {
+      "note": "枯れた泉。32×32。石の縁＋奥の内壁の影＋ひび割れた泥の底＋中央の石の湧き口。",
+      "kind": "prop",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "................................",
+          "................................",
+          "...........kkkkkkkkkk...........",
+          "........kkkpppppppppGkkk........",
+          "......kkppppkGGGGGkGGGGGkk......",
+          "....kkpkpGGGGkGGGkGGGGGkGGkk....",
+          "...kpppGkGGGkkkkkkkkGGkGGGGGk...",
+          "..kkpGGGGkkkkkkkkkkkkkkGGGGGkk..",
+          ".kppGkGkkkkkkkkkkkkkkkkkkkGGGGk.",
+          ".kpGGGkkkkkknkpGGgknkkkkkkGGGGk.",
+          "kppGGkkkknnnnkkkkkknnnnkkkkGGGGk",
+          "kpkGGkknnnnnnnkpgknnnnnknkkGkGGk",
+          "kpGGGknknnnnnnkGgknnnnknnnkGGGGk",
+          "kpGGknnnkknnnkkkkkknnnnnnnnkGGGk",
+          "kpGGGknnnnknnnnnnnnkknnnnnkGGGGk",
+          "kpGGGknnnnnnnnnnnnnnnknnnnkGGGGk",
+          "kGGGGkknkknnnnnnnnnnnknnnkkGGGGk",
+          "kGGGGGkknnnknknnnnnnnnnnkkGGGGkk",
+          "kGGGGGkkkknnknnnnnnnnnkkkGGkGGkk",
+          "kGGGkGGGGkkkknnnnnnkkkkGGGGGGggk",
+          "kkGGGGGGGkGGkkkkkkkkGGGkGGGGggkk",
+          ".kGGGGGGkGGGGkGGGGkGGGGGkGggggkk",
+          ".kkkGGkGkGGGGkGGGGkGGGGGkggggkk.",
+          "..kkGGkGGGGGGkGGGGGkGgggkggkkk..",
+          "...kkkGGGGGGkGGGgGkGggggggkkk...",
+          "....kkkkGkGGkGGGGgkggkggkkkk....",
+          "......kkkkkGGGGkgGgGgkkkkkk.....",
+          "........kkkkkkkkkkkkkkkk........",
+          "...........kkkkkkkkkk...........",
+          "................................",
+          "................................",
+          "................................"
+        ]
+      }
+    },
+    "spring_full": {
+      "note": "水の戻った泉。32×32。波紋が湧き口から広がり、きらめきが 3 コマで移る。",
+      "kind": "prop",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "f0": [
+          "................................",
+          "................................",
+          "...........kkkkkkkkkk...........",
+          "........kkkpppppppppGkkk........",
+          "......kkppppkGGGGGkGGGGGkk......",
+          "....kkpkpGGGGkGWGkGGGGGkGGkk....",
+          "...kpppGkGGGkkBWBkkkGGkGGGGGk...",
+          "..kkpGGGGkkkkBbkbkBkkkkGGGGGkk..",
+          ".kppGkGkkkkbkbbbbbbbkbkkkkGGGGk.",
+          ".kpGGGkkbkbbbbkkkkbbbbbkkkGGGGk.",
+          "kppGGkkbbBbbbkGGGGkbbbbbkkkGGGGk",
+          "kpkGGkbbBWBBbkkkkkkbbbbbbkkGkGGk",
+          "kpGGGkbbbBBbbbkGGkbbbbbbbbkGGGGk",
+          "kpGGkkbbbBbbBBbbbbbbbbbbbbbkGGGk",
+          "kpGGGkbbbbbbbbbbbbbbbBbbbbkGGGGk",
+          "kpGGGkbbbbbbbbbbbbBBBWBbbbkGGGGk",
+          "kGGGGkkbbbbbbbbbBBbbbBBbbkkGGGGk",
+          "kGGGGGkkbbbbbbbbbbbbBbbbkkGGGGkk",
+          "kGGGGGkkkkbbbbbbBBBbbbkkkGGkGGkk",
+          "kGGGkGGGGkkkkbbbbbbkkkkGGGGGGggk",
+          "kkGGGGGGGkGGkkkkkkkkGGGkGGGGggkk",
+          ".kGGGGGGkGGGGkGGGGkGGGGGkGggggkk",
+          ".kkkGGkGkGGGGkGGGGkGGGGGkggggkk.",
+          "..kkGGkGGGGGGkGGGGGkGgggkggkkk..",
+          "...kkkGGGGGGkGGGgGkGggggggkkk...",
+          "....kkkkGkGGkGGGGgkggkggkkkk....",
+          "......kkkkkGGGGkgGgGgkkkkkk.....",
+          "........kkkkkkkkkkkkkkkk........",
+          "...........kkkkkkkkkk...........",
+          "................................",
+          "................................",
+          "................................"
+        ],
+        "f1": [
+          "................................",
+          "................................",
+          "...........kkkkkkkkkk...........",
+          "........kkkpppppppppGkkk........",
+          "......kkppppkGGGGGkGGGGGkk......",
+          "....kkpkpGGGGkGGWkGGGGGkGGkk....",
+          "...kpppGkGGGkkkBWBkkGGkGGGGGk...",
+          "..kkpGGGGkkkkkBkbBbkkkkGGGGGkk..",
+          ".kppGkGkkkkbkbbbbbbbkbkkkkGGGGk.",
+          ".kpGGGkkbkbbbBkkkkbbBbbkkkGGGGk.",
+          "kppGGkkbbbBBbkGGGGkBWBbbkkkGGGGk",
+          "kpkGGkbbbBbbbkkkkkkbBbbbbkkGkGGk",
+          "kpGGGkbbBbbbBbkGGkbbbbbbbbkGGGGk",
+          "kpGGkkbbBbbBbbbbbbbbbbbbbbbkGGGk",
+          "kpGGGkbbbbbbbbbbbbbbbbbbbbkGGGGk",
+          "kpGGGkbbbbbBbbbbbbbbBbbBbbkGGGGk",
+          "kGGGGkkbbbBWBbbbbbbBbbbBbkkGGGGk",
+          "kGGGGGkkbbbBbbbbBBbbbbBbkkGGGGkk",
+          "kGGGGGkkkkbbbbbbbbbbBBkkkGGkGGkk",
+          "kGGGkGGGGkkkkbbbBBBkkkkGGGGGGggk",
+          "kkGGGGGGGkGGkkkkkkkkGGGkGGGGggkk",
+          ".kGGGGGGkGGGGkGGGGkGGGGGkGggggkk",
+          ".kkkGGkGkGGGGkGGGGkGGGGGkggggkk.",
+          "..kkGGkGGGGGGkGGGGGkGgggkggkkk..",
+          "...kkkGGGGGGkGGGgGkGggggggkkk...",
+          "....kkkkGkGGkGGGGgkggkggkkkk....",
+          "......kkkkkGGGGkgGgGgkkkkkk.....",
+          "........kkkkkkkkkkkkkkkk........",
+          "...........kkkkkkkkkk...........",
+          "................................",
+          "................................",
+          "................................"
+        ],
+        "f2": [
+          "................................",
+          "................................",
+          "...........kkkkkkkkkk...........",
+          "........kkkpppppppppGkkk........",
+          "......kkppppkGGGGGkGGGGGkk......",
+          "....kkpkpGGGGkWGGWGGGGGkGGkk....",
+          "...kpppGkGGGkkkBBkkkGGkGGGGGk...",
+          "..kkpGGGGkkkkkBkbBbkkkkGGGGGkk..",
+          ".kppGkGkkkkbkbbbbbbbkbkkkkGGGGk.",
+          ".kpGGGkkbkbbbbkkkkbbbbbkkkGGGGk.",
+          "kppGGkkbbbbbbkGGGGkbbbbbkkkGGGGk",
+          "kpkGGkbbbbbbBkkkkkkbbbbbbkkGkGGk",
+          "kpGGGkbbbbbBbbkGGkbbbbbbbbkGGGGk",
+          "kpGGkkbbbbBbbbBbbbbbbbbbbbbkGGGk",
+          "kpGGGkbbBbbbbbbbbbbbbbbbbbkGGGGk",
+          "kpGGGkbBWBbbbbbbbBbbbBbbbbkGGGGk",
+          "kGGGGkkbBbbbbbbbbbbbBbbbbkkGGGGk",
+          "kGGGGGkkbbbbbbbbbbBBbbbbkkGGGGkk",
+          "kGGGGGkkkkbbbbbbbbBWBbkkkGGkGGkk",
+          "kGGGkGGGGkkkkbbbbbbkkkkGGGGGGggk",
+          "kkGGGGGGGkGGkkkkkkkkGGGkGGGGggkk",
+          ".kGGGGGGkGGGGkGGGGkGGGGGkGggggkk",
+          ".kkkGGkGkGGGGkGGGGkGGGGGkggggkk.",
+          "..kkGGkGGGGGGkGGGGGkGgggkggkkk..",
+          "...kkkGGGGGGkGGGgGkGggggggkkk...",
+          "....kkkkGkGGkGGGGgkggkggkkkk....",
+          "......kkkkkGGGGkgGgGgkkkkkk.....",
+          "........kkkkkkkkkkkkkkkk........",
+          "...........kkkkkkkkkk...........",
+          "................................",
+          "................................",
+          "................................"
+        ]
+      }
+    },
+    "fence_h": {
+      "kind": "prop",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "................",
+          "................",
+          "................",
+          "................",
+          "..kkkk......kkkk",
+          "..kOok......kOok",
+          "kkkOokkkkkkkkOok",
+          "OOkOokOOOOOOkOok",
+          "mmkOokmmmmmmkOok",
+          "kkkOokkkkkkkkOok",
+          "..kOok......kOok",
+          "kkkOmkkkkkkkkOmk",
+          "OOkOmkOOOOOOkOmk",
+          "mmkOmkmmmmmmkOmk",
+          "kkkmmkkkkkkkkmmk",
+          "..kkkkkk....kkkk"
+        ]
+      }
+    },
+    "fence_v": {
+      "kind": "prop",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          ".....kkkkkk.....",
+          ".....kOOOok.....",
+          ".....kOoomk.....",
+          ".....kOoomk.....",
+          ".....kOommk.....",
+          ".....kkkkkkk....",
+          "......kOmkkk....",
+          "......kOmk......",
+          ".....kkkkkk.....",
+          ".....kOOOok.....",
+          ".....kOoomk.....",
+          ".....kOoomk.....",
+          ".....kOommk.....",
+          ".....kkkkkkk....",
+          "......kOmkkk....",
+          "......kOmk......"
+        ]
+      }
+    },
+    "tree": {
+      "kind": "prop",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "....kkfffekk....",
+          "...kfffeeeddkk..",
+          "..kffeeeedddddk.",
+          ".kffeeeeddddkddk",
+          "kffeeeeddddkkddk",
+          "kfeekkkkkkkkddkk",
+          "keekfffeeeedkkkk",
+          "kekffeeeeddddkkk",
+          ".kfeeeeddddddkk.",
+          "..keeeddddkkkk..",
+          "...kdddddkkkk...",
+          "....kkkkkkkk....",
+          ".....kkmmkk.....",
+          ".....kkmmkk.....",
+          "....kkkmmkkkkk..",
+          "....kkkkkkkkkk.."
+        ]
+      }
+    },
+    "big_tree": {
+      "kind": "prop",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "..........kkfffffeekk...........",
+          ".........kfffffeeeeddkkkk.......",
+          "......kkkffffefeeeedddkeek......",
+          ".....kffffffeeeedddddddeddk.....",
+          "....kffkfffeeeeddddddddkeddk....",
+          "...kffffefeeeedkddddddkkddddk...",
+          "..kffffeeeekkkkfkkkkdkkdddddk...",
+          "..kffeeeekkfffffeeeekkkdddddk...",
+          "..kffeekkffffffeeeeeedkddddkk...",
+          "..kekkkkffffffeeeedddddkkkkkk...",
+          "..kkfffffffefeeeedddddddfeeek...",
+          ".kffffefffefeeeeddddddddeeeedk..",
+          ".kfffeeffeeeeeeddddddddkededddk.",
+          "kfffeeeeeeeededkddddddkkddddddk.",
+          "kffeeeeeeekkkkkfkkkkkkkkdddddkk.",
+          "keeeeddekkffffffeeeeekkkddddkkk.",
+          "keeeeddkfffffefeeeeddddkdddkkkk.",
+          ".kddddkfffeeeeeededdddddkdkkkkk.",
+          ".kedddfffeeeeeeddddddddkdkkkkk..",
+          "..kkddefeeeedddddddddkkkkkkkk...",
+          "....kkkeededdddddddkdkkkkkkk....",
+          ".......kddddddddddkkkkkk........",
+          "........kkddooommmmmkkk.........",
+          "..........kkooommmmmk...........",
+          "...........kooommmmmk...........",
+          "...........kooommmmmk...........",
+          "...........kooommmmmk...........",
+          "..........kkoommmmmmk...........",
+          ".........kkmmmommmmmmkkkkk......",
+          ".......kkkkkkkkkkkkkkkkkkkkk....",
+          ".......kkkkkkkkkkkkkkkkkkkkk....",
+          ".........kkkkkkkkkkkkkkkkk......"
+        ]
+      }
+    },
+    "bush": {
+      "kind": "prop",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "................",
+          "................",
+          "................",
+          ".....kkkkkk.....",
+          "....kffffeek....",
+          "...kfffeeeedk...",
+          "..kkffeeedddkk..",
+          ".kfffekkkkddkek.",
+          "kffekkffffkkdddk",
+          "kfekfffeeeedkdkk",
+          "keeffeeeeddddkkk",
+          ".kdeeeeddddkkkk.",
+          "..kdeddddkkkkk..",
+          "...kkkdkkkkkk...",
+          "...kkkkkkkkkkkkk",
+          "....kkkkkkkkkkk."
+        ]
+      }
+    },
+    "rock": {
+      "kind": "prop",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "................",
+          "................",
+          "................",
+          "................",
+          "....kkkk........",
+          "...kppppkkkkk...",
+          "..kpppGGGgpGGk..",
+          ".kpppGggggGGGGk.",
+          ".kpgggppppggggk.",
+          ".kgpppppGGGGGggk",
+          ".kppppgGGGGkggk.",
+          ".kpGGGGGGgggkgk.",
+          "..kGGGGggggggk..",
+          "...kkkggggkkkkk.",
+          "....kkkkkkkkkkkk",
+          ".......kkkkkk..."
+        ]
+      }
+    },
+    "barrel": {
+      "kind": "prop",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "................",
+          "....kkkkkkkk....",
+          "...kOOOOOOOOk...",
+          "..koommommmook..",
+          "...kooooooook...",
+          "..kmmmkkkkkkkk..",
+          "..kOOOoooommmk..",
+          "..kOOOoooommmk..",
+          "..kOOOoooommmk..",
+          "..kOOOoooommmk..",
+          "..kOOOoooommmk..",
+          "..kmmmkkkkkkkk..",
+          "..kOOOoooommmk..",
+          "...kOOoooommk...",
+          "...kkkkkkkkkkkkk",
+          "...kkkkkkkkkkkkk"
+        ]
+      }
+    },
+    "crate": {
+      "kind": "prop",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "................",
+          "................",
+          "................",
+          "...kkkkkkkkkkk..",
+          "..kOOOOOOOOOOok.",
+          "..kOkkkkkkkkkok.",
+          "..kOOOOOOOOOOok.",
+          "..kkkkkkkkkkkkk.",
+          "..kOoooooooomok.",
+          "..kOmmmmmmmmmmk.",
+          "..kOoooooooooomk",
+          "..kOmmmmmmmmmmk.",
+          "..kOoooooooooomk",
+          "..kOmmmmmmmmmmk.",
+          "..kkkkkkkkkkkkkk",
+          "..kkkkkkkkkkkkkk"
+        ]
+      }
+    },
+    "signpost": {
+      "kind": "prop",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "................",
+          ".kkkkkkkkkkkk...",
+          "kOOOOOOOOOOOok..",
+          "kOkkOkkkOkkOook.",
+          "kOOOOOOOOOOOooOk",
+          "kOkkkOkkOOOOook.",
+          "koooooooooooook.",
+          ".kkkkkkkkkkkkk..",
+          "......kOmk......",
+          "......kOmk......",
+          "......kOmk......",
+          "......kOmk......",
+          "......kOmk......",
+          "......kOmk......",
+          "......kkkkkkk...",
+          "......kkkkkkk..."
+        ]
+      }
+    },
+    "anvil": {
+      "kind": "prop",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "................",
+          "................",
+          "................",
+          "................",
+          ".kkkkkkkkkkkk...",
+          "kGGGGGGGGGGGGkk.",
+          "kpppGGGGGGGGgGgk",
+          ".kgggggggggggkk.",
+          "...kkggggkkk....",
+          "....kgggk.......",
+          "..kkkkkkkkkkk...",
+          ".kooooooooomk...",
+          ".kooooooooommk..",
+          ".komooooommmmk..",
+          "..kkkkkkkkkkkk..",
+          "..kkkkkkkkkkkkk."
+        ]
+      }
+    },
+    "forge": {
+      "note": "鍛冶の炉。32×32。炉の口の火が 3 コマで揺れ、煙突から火の粉。",
+      "kind": "prop",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "f0": [
+          ".................y..............",
+          "...............y.y..............",
+          "..........kkkkkkkkkkkk..........",
+          "..........kpGGGGGGGGgk..........",
+          "..........kGkkkkkkkkgk..........",
+          "..........kGGGGGGGGGgk..........",
+          "........kkkkkkkkkkkkkkkk........",
+          "......kkpppGGGGGGGGGGGGgkk......",
+          ".....kpGGGGGGGGGGGGGGGGGggk.....",
+          "....kkkkkkkkkkkkkkkkkkkkkkkk....",
+          "....kpGGkGGGGkGGGGkGGGGkGGgk....",
+          "....kpGGkGGGGkGGGGkGGGGkGggk....",
+          "....kkkkkkkkkkkkkkkkkkkkkkkk....",
+          "....kpGGGGkGGGGkkkkGGGGkGggk....",
+          "....kpGGGGkGOkkkkkkkkGGkGggk....",
+          "....kkkkkkkkkkkkykkkkkkkkkkk....",
+          "....kpGGkGGkkkykyykkkkkGGGgk....",
+          "....kpGGkGkkkyyOyykykkkkGggk....",
+          "....kkkkkkkkyOOOOOyykkkkkkkk....",
+          "....kpGGGGkkyOOrOOOykkkkGGgk....",
+          "....kpGGGGkyOOrrrOOOykkkGggk....",
+          "....kkkkkkkyOrrrrrOOykkkkkkk....",
+          "....kpGGkGyOrrkrrkrrOykkGggk....",
+          "....kpGGkGrrrkkrrkkrrrkkGggk....",
+          "....kkkkkkkkkkkkkkkkkkkkkkkk....",
+          "....kGGGGGGGGGGGGGGGGGGGGggk....",
+          "....kggggggggggggggggggggggk....",
+          "....kkkkkkkkkkkkkkkkkkkkkkkk....",
+          ".......kkkkkkkkkkkkkkkkkkkkkkk..",
+          ".........k.k.k.k.k.k.k.k.k.k....",
+          "................................",
+          "................................"
+        ],
+        "f1": [
+          "................y...............",
+          "................y...............",
+          "..........kkkkkkkkkkkk..........",
+          "..........kpGGGGGGGGgk..........",
+          "..........kGkkkkkkkkgk..........",
+          "..........kGGGGGGGGGgk..........",
+          "........kkkkkkkkkkkkkkkk........",
+          "......kkpppGGGGGGGGGGGGgkk......",
+          ".....kpGGGGGGGGGGGGGGGGGggk.....",
+          "....kkkkkkkkkkkkkkkkkkkkkkkk....",
+          "....kpGGkGGGGkGGGGkGGGGkGGgk....",
+          "....kpGGkGGGGkGGGGkGGGGkGggk....",
+          "....kkkkkkkkkkkkkkkkkkkkkkkk....",
+          "....kpGGGGkGGGGkkkkGGGGkGggk....",
+          "....kpGGGGkGOkkkkkkkkGGkGggk....",
+          "....kkkkkkkkkkkykkkkkkkkkkkk....",
+          "....kpGGkGGkkyykykykkkkGGGgk....",
+          "....kpGGkGkkyyOyyOykkkkkGggk....",
+          "....kkkkkkkkyOOOOOOykkkkkkkk....",
+          "....kpGGGGkyOOrOOOOykkkkGGgk....",
+          "....kpGGGGkyOrrrrOOOykkkGggk....",
+          "....kkkkkkyOOrrrrrrOykkkkkkk....",
+          "....kpGGkGyOrrkrrkrrOykkGggk....",
+          "....kpGGkGrrrkkrrkkrrrkkGggk....",
+          "....kkkkkkkkkkkkkkkkkkkkkkkk....",
+          "....kGGGGGGGGGGGGGGGGGGGGggk....",
+          "....kggggggggggggggggggggggk....",
+          "....kkkkkkkkkkkkkkkkkkkkkkkk....",
+          ".......kkkkkkkkkkkkkkkkkkkkkkk..",
+          ".........k.k.k.k.k.k.k.k.k.k....",
+          "................................",
+          "................................"
+        ],
+        "f2": [
+          "................................",
+          "..............y..y..............",
+          "..........kkkkkkkkkkkk..........",
+          "..........kpGGGGGGGGgk..........",
+          "..........kGkkkkkkkkgk..........",
+          "..........kGGGGGGGGGgk..........",
+          "........kkkkkkkkkkkkkkkk........",
+          "......kkpppGGGGGGGGGGGGgkk......",
+          ".....kpGGGGGGGGGGGGGGGGGggk.....",
+          "....kkkkkkkkkkkkkkkkkkkkkkkk....",
+          "....kpGGkGGGGkGGGGkGGGGkGGgk....",
+          "....kpGGkGGGGkGGGGkGGGGkGggk....",
+          "....kkkkkkkkkkkkkkkkkkkkkkkk....",
+          "....kpGGGGkGGGGkkkkGGGGkGggk....",
+          "....kpGGGGkGOkkkkkkkkGGkGggk....",
+          "....kkkkkkkkkkkkykykkkkkkkkk....",
+          "....kpGGkGGkykkyykkkkkkGGGgk....",
+          "....kpGGkGkkyyOyyykkkkkkGggk....",
+          "....kkkkkkkkyOOOOOyykkkkkkkk....",
+          "....kpGGGGkkyOOOrOOykkkkGGgk....",
+          "....kpGGGGkyOOrrrrOOykkkGggk....",
+          "....kkkkkkkyOrrrrrrOykkkkkkk....",
+          "....kpGGkGyOrrkrrkrrOykkGggk....",
+          "....kpGGkGrrrkkrrkkrrrkkGggk....",
+          "....kkkkkkkkkkkkkkkkkkkkkkkk....",
+          "....kGGGGGGGGGGGGGGGGGGGGggk....",
+          "....kggggggggggggggggggggggk....",
+          "....kkkkkkkkkkkkkkkkkkkkkkkk....",
+          ".......kkkkkkkkkkkkkkkkkkkkkkk..",
+          ".........k.k.k.k.k.k.k.k.k.k....",
+          "................................",
+          "................................"
+        ]
+      }
+    },
+    "floor_wood": {
+      "note": "板の床。広い面なので焦げ茶を地にして彩度を落とす。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "mmmmmmmmmmmmmmmm",
+          "mmnnnnnnnmmmmmmm",
+          "mmmmmmmmmmmmmmmm",
+          "kkkkkkkkkkkkkkkk",
+          "mmmmmmmmmmmmmmmm",
+          "mmmmmmmmmmmmmmmm",
+          "mmmmmmmmmnnnnnnm",
+          "kkkkkkkkkkkkkkkk",
+          "mmmmmmmmmmmmmmmm",
+          "mmmmmnnnnnmmmmmm",
+          "nmmmmmmmmmmmmnnn",
+          "kkkkkkkkkkkkkkkk",
+          "mmmmmmmmmmmmmmmm",
+          "mmmmmmmmmmmmmmmm",
+          "nnnnnnmmmmmmmmmm",
+          "kkkkkkkkkkkkkkkk"
+        ]
+      }
+    },
+    "wall_in": {
+      "note": "屋内の壁の正面。漆喰＋腰板。横に続く。上に wall_top、下に床。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "GGGGGGGGGGGGGGGG",
+          "pGpGpGpGpGpGpGpG",
+          "pppppppppppppppp",
+          "pppppppppppppppp",
+          "ppppGGpppppppppp",
+          "pppppGpppppppppp",
+          "ppppppppppppGppp",
+          "ppppppppppppGGpp",
+          "pppppppppppppppp",
+          "kkkkkkkkkkkkkkkk",
+          "oooooooooooooooo",
+          "mmmmmmmmmmmmmmmm",
+          "ooomooomooomooom",
+          "ooomooomooomooom",
+          "ooomooomooomooom",
+          "kkkkkkkkkkkkkkkk"
+        ]
+      }
+    },
+    "wall_top": {
+      "note": "屋内の壁の上端（暗い面）。青みの墨で床・壁の暖色から分ける。四辺で回る。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "kkkkkkkkkkkkkkkk",
+          "kkkkkkkkkkkkkkkk",
+          "kkkkkkkkkkkkkkkk",
+          "kkkkkkkkkkkkkkkk",
+          "kkkkkkkkkkkkkkkk",
+          "kkkVVkkkkkkkkkkk",
+          "kkkkkkkkkkkkkkkk",
+          "kkkkkkkkkkkkkkkk",
+          "kkkkkkkkkkkkkkkk",
+          "kkkkkkkkkkkkkkkk",
+          "kkkkkkkkkkkkkkkk",
+          "kkkkkkkkkkkkkkkk",
+          "kkkkkkkkkkkVkkkk",
+          "kkkkkkkkkkkkkkkk",
+          "kkkkkkkkkkkkkkkk",
+          "kkkkkkkkkkkkkkkk"
+        ]
+      }
+    },
+    "rug": {
+      "note": "敷物。32×32。赤地に金の菱形と房。",
+      "kind": "prop",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "................................",
+          "..y.y.y.y.y.y.y.y.y.y.y.y.y.y...",
+          ".kkkkkkkkkkkkkkkkkkkkkkkkkkkkkk.",
+          ".krrrrrrrrrrrrrrrrrrrrrrrrrrrrk.",
+          ".krsysssrsssrsssrsssrsssrssyrrk.",
+          ".kryyyyyyyyyyyyyyyyyyyyyyyyyyrk.",
+          ".krsyssssssssssssssssssssssysrk.",
+          ".krsyssssssssssssssssssssssysrk.",
+          ".krsyssssssssssyyssssssssssyrrk.",
+          ".krrysssssssssyssysssssssssysrk.",
+          ".krsysssssssyrssssrysssssssysrk.",
+          ".krsyssssssyrssssssryssssssysrk.",
+          ".krsysssssyrssssssssrysssssyrrk.",
+          ".krryssssyrssssyyssssryssssysrk.",
+          ".krsysssyrssssyyyyssssrysssysrk.",
+          ".krsyssysssssysrrsysssssyssysrk.",
+          ".krsyssysssssysrrsysssssyssyrrk.",
+          ".krrysssyrssssyyyyssssrysssysrk.",
+          ".krsyssssyrssssyyssssryssssysrk.",
+          ".krsysssssyrssssssssrysssssysrk.",
+          ".krsyssssssyrssssssryssssssyrrk.",
+          ".krrysssssssyrssssrysssssssysrk.",
+          ".krsysssssssssyssysssssssssysrk.",
+          ".krsyssssssssssyyssssssssssysrk.",
+          ".krsyssssssssssssssssssssssyrrk.",
+          ".krryssssssssssssssssssssssysrk.",
+          ".kryyyyyyyyyyyyyyyyyyyyyyyyyyrk.",
+          ".krsyrsssrsssrsssrsssrsssrsysrk.",
+          ".krrrrrrrrrrrrrrrrrrrrrrrrrrrrk.",
+          ".kkkkkkkkkkkkkkkkkkkkkkkkkkkkkk.",
+          "..y.y.y.y.y.y.y.y.y.y.y.y.y.y...",
+          "................................"
+        ]
+      }
+    },
+    "table": {
+      "note": "机。32×16。天板に窓からの光の帯。手前の脚 2 本と床の影。",
+      "kind": "prop",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          ".kkkkkkkkkkkkkkkkkkkkkkkkkkkkkk.",
+          "kOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOk",
+          "kOOOOOOOOONNNNOOOOOOOOOOOOOOOOOk",
+          "kOOOooooooooNNNOOOOOOOOOOOOOOOOk",
+          "kOOOOOOOOOOONNNNOOOOOOOOOOOOOOOk",
+          "kOOOOOOOOOOOONNNNooooooooooOOOOk",
+          "kOOOOOOOOOOOOONNNNOOOOOOOOOOOOOk",
+          "kOOOOOOooooooooNNNNOOOOOOOOOOOOk",
+          "kOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOk",
+          "kooooooooooooooooooooooooooooook",
+          "kmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmk",
+          ".kkomkkkkkkkkkkkkkkkkkkkkkkomkk.",
+          "..komk..kkkkkkkkkkkkkkkkkkkomk..",
+          "..komkkkkkkkkkkkkkkkkkkkkkkomkk.",
+          "...kkkkkkkkkkkkkkkkkkkkkkkkkkkk.",
+          ".......kkkkkkkkkkkkkkkkkkkk....."
+        ]
+      }
+    },
+    "chair": {
+      "kind": "prop",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "................",
+          "....kkkkkkk.....",
+          "....kOOOOok.....",
+          "....kOkkkok.....",
+          "....kOOOOmk.....",
+          "....kOkkkmk.....",
+          "....kOoooomk....",
+          "...kkkkkkkkk....",
+          "...kOOOOOOOOk...",
+          "...kOOOOOOOok...",
+          "...kooooooomk...",
+          "...kmkkkkkmmk...",
+          "...kok....kmk...",
+          "...kok....kmk...",
+          "...kkkkkkkkkkk..",
+          "....kkkkkkkkkkk."
+        ]
+      }
+    },
+    "bookshelf": {
+      "note": "本棚。16×32。棚の段ごとに本の色を変える。",
+      "kind": "prop",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "kkkkkkkkkkkkkkkk",
+          "kOOOOOOOOOOOOOok",
+          "koooooooooooommk",
+          "kkkkkkkkkkkkkkkk",
+          "kokkkkkkkkkkkkmk",
+          "korkkrkkksskskmk",
+          "korskrskkssrskmk",
+          "korskrskrssrssmk",
+          "korssrskrssrssmk",
+          "korssrskrssrssmk",
+          "korssrskrssrssmk",
+          "kooooooooooooook",
+          "kokkkkkkkkkkkkmk",
+          "kowkbkbkkbkwkbmk",
+          "kowbbkbbkbbwkbmk",
+          "kowbbkbbkbbwkbmk",
+          "kowbbkbbwbbwkbmk",
+          "kowbbkbbwbbwkbmk",
+          "kowbbkbbwbbwkbmk",
+          "kooooooooooooook",
+          "kokkkkkkkkkkkkmk",
+          "kokkkdekdkkkkemk",
+          "kodkkdeedkkdkemk",
+          "kodkedeedekdkemk",
+          "kodkedeedekdeemk",
+          "kodkedeedekdeemk",
+          "kodkedeedekdeemk",
+          "kooooooooooooook",
+          "kOOOOOOOOOOOOOOk",
+          "kooooooooooooook",
+          "kmmmmmmmmmmmmmmk",
+          "kkkkkkkkkkkkkkkk"
+        ]
+      }
+    },
+    "bed": {
+      "note": "寝台。16×32。枕と青い掛け布。",
+      "kind": "prop",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          ".kkkkkkkkkkkkkk.",
+          "kOOOOOOOOOOOOOok",
+          "kOoooooooooooomk",
+          "kOkkkkkkkkkkkomk",
+          "kOkppppppppGkomk",
+          "kOkpppppppGGkomk",
+          "kOkpGGGGGGGGkomk",
+          "kOkkkkkkkkkkkomk",
+          "kOBBBBBBBBBBBBmk",
+          "kOBBBbbbbbbbwwmk",
+          "kOBwwwwwwwwwwwmk",
+          "kOBBBBBBBBBBBwmk",
+          "kOBBBbbbbbbbwwmk",
+          "kOBBBbbbbbbbwwmk",
+          "kOBBBbBbbbBbwwmk",
+          "kOBBBbbbbbbbwwmk",
+          "kOBBBbbbbbbbwwmk",
+          "kOBBBbbbbbbbwwmk",
+          "kOBBBbBbbbBbwwmk",
+          "kOBBBbbbbbbbwwmk",
+          "kOBBBbbbbbbbwwmk",
+          "kOBBBbbbbbbbwwmk",
+          "kOBBBbBbbbBbwwmk",
+          "kOBBBbbbbbbbwwmk",
+          "kOBBBbbbbbbbwwmk",
+          "kOBBBbbbbbbbwwmk",
+          "kOBBBbBbbbBbwwmk",
+          "kOkkkkkkkkkkkomk",
+          "kOOOOOOOOOOOOomk",
+          "koooooooooooommk",
+          "kmmmmmmmmmmmmmmk",
+          "kkkkkkkkkkkkkkkk"
+        ]
+      }
+    },
+    "pot": {
+      "kind": "prop",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "................",
+          "....kkkkkkkk....",
+          "...kkkkkkkkkk...",
+          "...kkOookkokk...",
+          "....kkmmmmkk....",
+          "....kOOOOook....",
+          "...kOOOOooook...",
+          "..kOOOpooooook..",
+          "..kOOpoooooomk..",
+          ".kOOooooooommmk.",
+          "..kmomomomomok..",
+          "..koooooommmmk..",
+          "...koooommmmk...",
+          "....koommmmk....",
+          "....kkkkkkkkkkk.",
+          "....kkkkkkkkkkk."
+        ]
+      }
+    },
+    "window_in": {
+      "note": "屋内の窓（wall_in と差し替え）。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "GGGGGGGGGGGGGGGG",
+          "pGpkkkkkkkkkkGpG",
+          "pppkOOOOOOOOkppp",
+          "pppkOccBkcBmkppp",
+          "pppkOcBBkBBmkppp",
+          "pppkOBBBkBBmkppp",
+          "pppkOkkkkkkmkppp",
+          "pppkOBBbkbbmkGpp",
+          "pppkmmmmmmmmkppp",
+          "kkkkkkkkkkkkkkkk",
+          "oooooooooooooooo",
+          "mmmmmmmmmmmmmmmm",
+          "ooomooomooomooom",
+          "ooomooomooomooom",
+          "ooomooomooomooom",
+          "kkkkkkkkkkkkkkkk"
+        ]
+      }
+    },
+    "fireplace": {
+      "note": "暖炉。32×32。石積み＋木の棚板＋火 3 コマ。wall_in の段に置く（上半分が壁の高さ）。",
+      "kind": "prop",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "f0": [
+          "kppGGGgppGGGgppGGGgppGGGgppGGGgk",
+          "kGGGGGgGGGGGgGGGGGgGGGGGgGGGGGgk",
+          "kGGGGGgGGGGGgGGGGGgGGGGGgGGGGGgk",
+          "kGGGGGgGGGGGgGGGGGgGGGGGgGGGGGgk",
+          "kggggggggggggggggggggggggggggggk",
+          "kGGgppGGGgppGGGgppGGGgppGGGgppGk",
+          "kGGgGGGGGgGGGGGgGGGGGgGGGGGgGGGk",
+          "kGGgGGGGGgGGGGGgGGGGGgGGGGGgGGGk",
+          "kGGgGGGGGgGGGGGgGGGGGgGGGGGgGGGk",
+          "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk",
+          "kooooooooooooooooooooooooooooook",
+          "kmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmk",
+          "kmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmk",
+          "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk",
+          "kggggggggggggggggggggggggggggggk",
+          "kGGgppGGGkkkkkkkkkkkkkkpGGGgppGk",
+          "kGGgGGGGkkkkkkkkkkkkkkkkGGGgGGGk",
+          "kGGgGGkkkkkkkkkkkkkkkkkkkkGgGGGk",
+          "kGGgGGkkkkkkkkkkykkkkkkkkkGgGGGk",
+          "kgggggkkkkkkkkykyykkkkkkkkgggggk",
+          "kppGGOkkkkkkkyyOyykykkkkkkOGGGgk",
+          "kGGGGGkkkkkkyOOOOOyykkkkkkGGGGgk",
+          "kGGGGGkkkkkkyOOsOOOykkkkkkGGGGgk",
+          "kGGGGOkkkkkyOOsssOOOykkkkkOGGGgk",
+          "kgggggkkkkkyOssrssOOykkkkkgggggk",
+          "kGGgppkkkkySssrrrssOykkkkkGgppGk",
+          "kGGgGGkkkkmmmmmmmmmmmmkkkkGgGGGk",
+          "kGGgGGkkkmoOommmOoomomkkkkGgGGGk",
+          "kGGgGGkkkkmmkkkkmmkkmmkkkkGgGGGk",
+          "kppppGppppGppppGppppGppppGppppGk",
+          "kGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGk",
+          "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"
+        ],
+        "f1": [
+          "kppGGGgppGGGgppGGGgppGGGgppGGGgk",
+          "kGGGGGgGGGGGgGGGGGgGGGGGgGGGGGgk",
+          "kGGGGGgGGGGGgGGGGGgGGGGGgGGGGGgk",
+          "kGGGGGgGGGGGgGGGGGgGGGGGgGGGGGgk",
+          "kggggggggggggggggggggggggggggggk",
+          "kGGgppGGGgppGGGgppGGGgppGGGgppGk",
+          "kGGgGGGGGgGGGGGgGGGGGgGGGGGgGGGk",
+          "kGGgGGGGGgGGGGGgGGGGGgGGGGGgGGGk",
+          "kGGgGGGGGgGGGGGgGGGGGgGGGGGgGGGk",
+          "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk",
+          "kooooooooooooooooooooooooooooook",
+          "kmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmk",
+          "kmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmk",
+          "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk",
+          "kggggggggggggggggggggggggggggggk",
+          "kGGgppGGGkkkkkkkkkkkkkkpGGGgppGk",
+          "kGGgGGGGkkkkkkkkkkkkkkkkGGGgGGGk",
+          "kGGgGGkkkkkkkkkkkkkkkkkkkkGgGGGk",
+          "kGGgGGkkkkkkkkkykkkkkkkkkkGgGGGk",
+          "kgggggkkkkkkkyykykykkkkkkkgggggk",
+          "kppGGOkkkkkkyyOyyOykkkkkkkOGGGgk",
+          "kGGGGGkkkkkkyOOOOOOykkkkkkGGGGgk",
+          "kGGGGGkkkkkyOOsOOOOykkkkkkGGGGgk",
+          "kGGGGOkkkkkyOsssOOOOykkkkkOGGGgk",
+          "kgggggkkkkyOOssrsssOykkkkkgggggk",
+          "kGGgppkkkkySssrrrrsOykkkkkGgppGk",
+          "kGGgGGkkkkmmmmmmmmmmmmkkkkGgGGGk",
+          "kGGgGGkkkmoOommmOoomomkkkkGgGGGk",
+          "kGGgGGkkkkmmkkkkmmkkmmkkkkGgGGGk",
+          "kppppGppppGppppGppppGppppGppppGk",
+          "kGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGk",
+          "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"
+        ],
+        "f2": [
+          "kppGGGgppGGGgppGGGgppGGGgppGGGgk",
+          "kGGGGGgGGGGGgGGGGGgGGGGGgGGGGGgk",
+          "kGGGGGgGGGGGgGGGGGgGGGGGgGGGGGgk",
+          "kGGGGGgGGGGGgGGGGGgGGGGGgGGGGGgk",
+          "kggggggggggggggggggggggggggggggk",
+          "kGGgppGGGgppGGGgppGGGgppGGGgppGk",
+          "kGGgGGGGGgGGGGGgGGGGGgGGGGGgGGGk",
+          "kGGgGGGGGgGGGGGgGGGGGgGGGGGgGGGk",
+          "kGGgGGGGGgGGGGGgGGGGGgGGGGGgGGGk",
+          "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk",
+          "kooooooooooooooooooooooooooooook",
+          "kmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmk",
+          "kmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmk",
+          "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk",
+          "kggggggggggggggggggggggggggggggk",
+          "kGGgppGGGkkkkkkkkkkkkkkpGGGgppGk",
+          "kGGgGGGGkkkkkkkkkkkkkkkkGGGgGGGk",
+          "kGGgGGkkkkkkkkkkkkkkkkkkkkGgGGGk",
+          "kGGgGGkkkkkkkkkkykykkkkkkkGgGGGk",
+          "kgggggkkkkkkykkyykkkkkkkkkgggggk",
+          "kppGGOkkkkkkyyOyyykkkkkkkkOGGGgk",
+          "kGGGGGkkkkkkyOOOOOyykkkkkkGGGGgk",
+          "kGGGGGkkkkkkyOOOsOOykkkkkkGGGGgk",
+          "kGGGGOkkkkkyOOssssOOykkkkkOGGGgk",
+          "kgggggkkkkkyOssrrssOykkkkkgggggk",
+          "kGGgppkkkkyOssrrrrsOykkkkkGgppGk",
+          "kGGgGGkkkkmmmmmmmmmmmmkkkkGgGGGk",
+          "kGGgGGkkkmoOommmOoomomkkkkGgGGGk",
+          "kGGgGGkkkkmmkkkkmmkkmmkkkkGgGGGk",
+          "kppppGppppGppppGppppGppppGppppGk",
+          "kGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGk",
+          "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"
+        ]
+      }
+    }
+  }
+}

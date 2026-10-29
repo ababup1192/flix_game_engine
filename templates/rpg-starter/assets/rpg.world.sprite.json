@@ -1,0 +1,1353 @@
+{
+  "version": 1,
+  "title": "ワールドマップのタイル",
+  "note": "場面 world の 1:1 タイル（16×16）。光は左上から。1 タイル = 墨 + 3 色（海と岸 = 墨・fc12・fc21・fc1A / 草原・丘・森 = 墨・fc0A・fc1A・fc2A / 山 = 墨・fc00・fc10・fc1A / 雪の峰 = 墨・fc10・fc20・fc1A / 道 = fc08・fc18・fc38 / 橋 = 墨・fc12・fc17・fc27 / 村 = 墨・fc16・fc37・fc1A / 坑道 = 墨・fc00・fc17・fc1A / 祠 = 墨・fc10・fc28・fc1A / 岩穴 = 墨・fc0A・fc1A・fc10）。海の 13 枚は f0/f1 の 2 コマ。",
+  "paletteFile": "assets/rpg.palette.json",
+  "legend": {
+    "k": "ink",
+    "g": "fc1A",
+    "G": "fc2A",
+    "d": "fc0A",
+    "w": "fc12",
+    "W": "fc21",
+    "r": "fc00",
+    "R": "fc10",
+    "S": "fc20",
+    "e": "fc18",
+    "E": "fc38",
+    "b": "fc08",
+    "o": "fc17",
+    "O": "fc27",
+    "h": "fc16",
+    "c": "fc37",
+    "y": "fc28"
+  },
+  "sprites": {
+    "sea": {
+      "note": "海（沖）。波の印が f0→f1 で横へ揺れる。湖も同じ絵を使う。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "f0": [
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwWWwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwWWwwwwwwwwwww",
+          "wwWwwWWwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwWWWwww",
+          "wwwwwwwwwWwwwWww",
+          "wwwWWwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww"
+        ],
+        "f1": [
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwWWww",
+          "wwwwwwwwwwwwwwww",
+          "wwwWWWwwwwwwwwww",
+          "wwwwwwWWwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwWWwWWwww",
+          "wwwwwwwwwwWwwwww",
+          "wwwwWwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww"
+        ]
+      }
+    },
+    "sea_n": {
+      "note": "岸。北の辺が陸。陸の深さは辺の端で 4px（隣の岸とそろう）。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "f0": [
+          "gggggggggggggggg",
+          "ggggggggggkkgggg",
+          "kkkkgggkkkkkkkkk",
+          "kkkkkkkkkkWWkkkk",
+          "WWWwkkkwWWwwWWWw",
+          "wwwwWWwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwWWWwww",
+          "wwwwwwwwwWwwwWww",
+          "wwwWWwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww"
+        ],
+        "f1": [
+          "gggggggggggggggg",
+          "ggggggggggkkgggg",
+          "kkkkgggkkkkkkkkk",
+          "kkkkkkkkkkwWkkkk",
+          "WwWWkkkWWwwwWwWW",
+          "wwwwwWWwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwWWwWWwww",
+          "wwwwwwwwwwWwwwww",
+          "wwwwWwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww"
+        ]
+      }
+    },
+    "sea_s": {
+      "note": "岸。南の辺が陸。陸の深さは辺の端で 4px（隣の岸とそろう）。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "f0": [
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwWWwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwWWwwwwwwwwwww",
+          "wwWwwWWwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwWWwwww",
+          "wWWWwwWWwkkkwWWW",
+          "kkkkWWkkkgggkkkk",
+          "ggggkkgggggggggg",
+          "gggggggggggggggg",
+          "gggggggggggggggg"
+        ],
+        "f1": [
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwWWww",
+          "wwwwwwwwwwwwwwww",
+          "wwwWWWwwwwwwwwww",
+          "wwwwwwWWwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwWWwwwww",
+          "WWwWwwwWWkkkWWwW",
+          "kkkkWwkkkgggkkkk",
+          "ggggkkgggggggggg",
+          "gggggggggggggggg",
+          "gggggggggggggggg"
+        ]
+      }
+    },
+    "sea_e": {
+      "note": "岸。東の辺が陸。陸の深さは辺の端で 4px（隣の岸とそろう）。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "f0": [
+          "wwwwwwwwwwwwkggg",
+          "wwwwwwwwwwwWkggg",
+          "wwwwwwwwwwwWkggg",
+          "wwwWWwwwwwwWkggg",
+          "wwWwwWWwwwwwkggg",
+          "wwwwwwwwwwwWkggg",
+          "wwwwwwwwwwwWkggg",
+          "wwwwwwwwwwwWkggg",
+          "wwwwwwwwwwwwkggg",
+          "wwwwwwwwwwwWkggg",
+          "wwwwwwwwwwwWkggg",
+          "wwwwwwwwwwWkgggg",
+          "wwwWWwwwwwWkgggg",
+          "wwwwwwwwwwwWkggg",
+          "wwwwwwwwwwwWkggg",
+          "wwwwwwwwwwwWkggg"
+        ],
+        "f1": [
+          "wwwwwwwwwwwWkggg",
+          "wwwwwwwwwwwWkggg",
+          "wwwwwwwwwwwwkggg",
+          "wwwWWWwwwwwWkggg",
+          "wwwwwwWWwwwWkggg",
+          "wwwwwwwwwwwWkggg",
+          "wwwwwwwwwwwwkggg",
+          "wwwwwwwwwwwWkggg",
+          "wwwwwwwwwwwWkggg",
+          "wwwwwwwwwwwWkggg",
+          "wwwwwwwwwwwwkggg",
+          "wwwwwwwwwwwkgggg",
+          "wwwwWwwwwwWkgggg",
+          "wwwwwwwwwwwWkggg",
+          "wwwwwwwwwwwwkggg",
+          "wwwwwwwwwwwWkggg"
+        ]
+      }
+    },
+    "sea_w": {
+      "note": "岸。西の辺が陸。陸の深さは辺の端で 4px（隣の岸とそろう）。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "f0": [
+          "gggkWwwwwwwwwwww",
+          "gggkWwwwwwwWWwww",
+          "gggkWwwwwwwwwwww",
+          "gggkwwwwwwwwwwww",
+          "gggkWwwwwwwwwwww",
+          "ggkWwwwwwwwwwwww",
+          "ggkWwwwwwwwwwwww",
+          "gggkwwwwwwwwwwww",
+          "gggkWwwwwwwwwwww",
+          "gggkWwwwwwwwwwww",
+          "gggkWwwwwwWWWwww",
+          "gggkwwwwwWwwwWww",
+          "gggkWwwwwwwwwwww",
+          "gggkWwwwwwwwwwww",
+          "gggkWwwwwwwwwwww",
+          "gggkwwwwwwwwwwww"
+        ],
+        "f1": [
+          "gggkWwwwwwwwwwww",
+          "gggkwwwwwwwwWWww",
+          "gggkWwwwwwwwwwww",
+          "gggkWwwwwwwwwwww",
+          "gggkWwwwwwwwwwww",
+          "ggkWwwwwwwwwwwww",
+          "ggkwwwwwwwwwwwww",
+          "gggkWwwwwwwwwwww",
+          "gggkWwwwwwwwwwww",
+          "gggkwwwwwwwwwwww",
+          "gggkWwwwWWwWWwww",
+          "gggkWwwwwwWwwwww",
+          "gggkWwwwwwwwwwww",
+          "gggkwwwwwwwwwwww",
+          "gggkWwwwwwwwwwww",
+          "gggkWwwwwwwwwwww"
+        ]
+      }
+    },
+    "sea_ne": {
+      "note": "岸。北と東の 2 辺が陸（水は南西）。陸の深さは辺の端で 4px（隣の岸とそろう）。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "f0": [
+          "gggggggggggggggg",
+          "gggggggggggggggg",
+          "kkkkkkkkkkgggggg",
+          "kkkkkkkkkkkggggg",
+          "WWWwWWWwWWkkgggg",
+          "wwwwwwwwwwwkgggg",
+          "wwwwwwwwwwwWkggg",
+          "wwwwwwwwwwwWkggg",
+          "wwwwwwwwwwwwkggg",
+          "wwwwwwwwwwwWkggg",
+          "wwwwwwwwwwwWkggg",
+          "wwwwwwwwwwwWkggg",
+          "wwwWWwwwwwwwkggg",
+          "wwwwwwwwwwwWkggg",
+          "wwwwwwwwwwwWkggg",
+          "wwwwwwwwwwwWkggg"
+        ],
+        "f1": [
+          "gggggggggggggggg",
+          "gggggggggggggggg",
+          "kkkkkkkkkkgggggg",
+          "kkkkkkkkkkkggggg",
+          "WwWWWwWWWwkkgggg",
+          "wwwwwwwwwwWkgggg",
+          "wwwwwwwwwwwwkggg",
+          "wwwwwwwwwwwWkggg",
+          "wwwwwwwwwwwWkggg",
+          "wwwwwwwwwwwWkggg",
+          "wwwwwwwwwwwwkggg",
+          "wwwwwwwwwwwWkggg",
+          "wwwwWwwwwwwWkggg",
+          "wwwwwwwwwwwWkggg",
+          "wwwwwwwwwwwwkggg",
+          "wwwwwwwwwwwWkggg"
+        ]
+      }
+    },
+    "sea_nw": {
+      "note": "岸。北と西の 2 辺が陸（水は南東）。陸の深さは辺の端で 4px（隣の岸とそろう）。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "f0": [
+          "gggggggggggggggg",
+          "gggggggggggggggg",
+          "ggggggkkkkkkkkkk",
+          "gggggkkkkkkkkkkk",
+          "ggggkkWwWWWwWWWw",
+          "ggggkWwwwwwwwwww",
+          "gggkWwwwwwwwwwww",
+          "gggkwwwwwwwwwwww",
+          "gggkWwwwwwwwwwww",
+          "gggkWwwwwwwwwwww",
+          "gggkWwwwwwWWWwww",
+          "gggkwwwwwWwwwWww",
+          "gggkWwwwwwwwwwww",
+          "gggkWwwwwwwwwwww",
+          "gggkWwwwwwwwwwww",
+          "gggkwwwwwwwwwwww"
+        ],
+        "f1": [
+          "gggggggggggggggg",
+          "gggggggggggggggg",
+          "ggggggkkkkkkkkkk",
+          "gggggkkkkkkkkkkk",
+          "ggggkkWWWwWWWwWW",
+          "ggggkWwwwwwwwwww",
+          "gggkWwwwwwwwwwww",
+          "gggkWwwwwwwwwwww",
+          "gggkWwwwwwwwwwww",
+          "gggkwwwwwwwwwwww",
+          "gggkWwwwWWwWWwww",
+          "gggkWwwwwwWwwwww",
+          "gggkWwwwwwwwwwww",
+          "gggkwwwwwwwwwwww",
+          "gggkWwwwwwwwwwww",
+          "gggkWwwwwwwwwwww"
+        ]
+      }
+    },
+    "sea_se": {
+      "note": "岸。南と東の 2 辺が陸（水は北西）。陸の深さは辺の端で 4px（隣の岸とそろう）。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "f0": [
+          "wwwwwwwwwwwwkggg",
+          "wwwwwwwwwwwWkggg",
+          "wwwwwwwwwwwWkggg",
+          "wwwWWwwwwwwWkggg",
+          "wwWwwWWwwwwwkggg",
+          "wwwwwwwwwwwWkggg",
+          "wwwwwwwwwwwWkggg",
+          "wwwwwwwwwwwWkggg",
+          "wwwwwwwwwwwwkggg",
+          "wwwwwwwwwwwWkggg",
+          "wwwwwwwwwwWkgggg",
+          "wWWWwWWWwWkggggg",
+          "kkkkkkkkkkgggggg",
+          "gggggggggggggggg",
+          "gggggggggggggggg",
+          "gggggggggggggggg"
+        ],
+        "f1": [
+          "wwwwwwwwwwwWkggg",
+          "wwwwwwwwwwwWkggg",
+          "wwwwwwwwwwwwkggg",
+          "wwwWWWwwwwwWkggg",
+          "wwwwwwWWwwwWkggg",
+          "wwwwwwwwwwwWkggg",
+          "wwwwwwwwwwwwkggg",
+          "wwwwwwwwwwwWkggg",
+          "wwwwwwwwwwwWkggg",
+          "wwwwwwwwwwwWkggg",
+          "wwwwwwwwwwWkgggg",
+          "WWwWWWwWWWkggggg",
+          "kkkkkkkkkkgggggg",
+          "gggggggggggggggg",
+          "gggggggggggggggg",
+          "gggggggggggggggg"
+        ]
+      }
+    },
+    "sea_sw": {
+      "note": "岸。南と西の 2 辺が陸（水は北東）。陸の深さは辺の端で 4px（隣の岸とそろう）。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "f0": [
+          "gggkWwwwwwwwwwww",
+          "gggkWwwwwwwWWwww",
+          "gggkWwwwwwwwwwww",
+          "gggkwwwwwwwwwwww",
+          "gggkWwwwwwwwwwww",
+          "gggkWwwwwwwwwwww",
+          "gggkWwwwwwwwwwww",
+          "gggkwwwwwwwwwwww",
+          "gggkWwwwwwwwwwww",
+          "gggkWwwwwwwwwwww",
+          "ggggkwwwwwwwwwww",
+          "gggggkWWwWWWwWWW",
+          "ggggggkkkkkkkkkk",
+          "gggggggggggggggg",
+          "gggggggggggggggg",
+          "gggggggggggggggg"
+        ],
+        "f1": [
+          "gggkWwwwwwwwwwww",
+          "gggkwwwwwwwwWWww",
+          "gggkWwwwwwwwwwww",
+          "gggkWwwwwwwwwwww",
+          "gggkWwwwwwwwwwww",
+          "gggkwwwwwwwwwwww",
+          "gggkWwwwwwwwwwww",
+          "gggkWwwwwwwwwwww",
+          "gggkWwwwwwwwwwww",
+          "gggkwwwwwwwwwwww",
+          "ggggkWwwwwwwwwww",
+          "gggggkwWWWwWWWwW",
+          "ggggggkkkkkkkkkk",
+          "gggggggggggggggg",
+          "gggggggggggggggg",
+          "gggggggggggggggg"
+        ]
+      }
+    },
+    "sea_in_ne": {
+      "note": "岸。北東の隅だけが陸（岬の先）。陸の深さは辺の端で 4px（隣の岸とそろう）。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "f0": [
+          "wwwwwwwwwwWkgggg",
+          "wwwwwwwwwwwWkggg",
+          "wwwwwwwwwwwWkkkg",
+          "wwwWWwwwwwwwwkkk",
+          "wwWwwWWwwwwwwWWk",
+          "wwwwwwwwwwwwwwwW",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwWWWwww",
+          "wwwwwwwwwWwwwWww",
+          "wwwWWwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww"
+        ],
+        "f1": [
+          "wwwwwwwwwwWkgggg",
+          "wwwwwwwwwwwWkggg",
+          "wwwwwwwwwwwwkkkg",
+          "wwwWWWwwwwwwWkkk",
+          "wwwwwwWWwwwwwwWk",
+          "wwwwwwwwwwwwwwwW",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwWWwWWwww",
+          "wwwwwwwwwwWwwwww",
+          "wwwwWwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww"
+        ]
+      }
+    },
+    "sea_in_nw": {
+      "note": "岸。北西の隅だけが陸。陸の深さは辺の端で 4px（隣の岸とそろう）。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "f0": [
+          "ggggkWwwwwwwwwww",
+          "gggkWwwwwwwWWwww",
+          "gkkkWwwwwwwwwwww",
+          "kkkWwwwwwwwwwwww",
+          "kWWwwwwwwwwwwwww",
+          "Wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwWWWwww",
+          "wwwwwwwwwWwwwWww",
+          "wwwWWwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww"
+        ],
+        "f1": [
+          "ggggkwwwwwwwwwww",
+          "gggkwwwwwwwwWWww",
+          "gkkkWwwwwwwwwwww",
+          "kkkWwwwwwwwwwwww",
+          "kwWwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwWWwWWwww",
+          "wwwwwwwwwwWwwwww",
+          "wwwwWwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww"
+        ]
+      }
+    },
+    "sea_in_se": {
+      "note": "岸。南東の隅だけが陸。陸の深さは辺の端で 4px（隣の岸とそろう）。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "f0": [
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwWWwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwWWwwwwwwwwwww",
+          "wwWwwWWwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwwW",
+          "wwwwwwwwwwwwwWWk",
+          "wwwWWwwwwwwwWkkg",
+          "wwwwwwwwwwwWkggg",
+          "wwwwwwwwwwwWkggg",
+          "wwwwwwwwwwWkgggg"
+        ],
+        "f1": [
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwWWww",
+          "wwwwwwwwwwwwwwww",
+          "wwwWWWwwwwwwwwww",
+          "wwwwwwWWwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwWwk",
+          "wwwwWwwwwwwwWkkg",
+          "wwwwwwwwwwwWkggg",
+          "wwwwwwwwwwwwkggg",
+          "wwwwwwwwwwwkgggg"
+        ]
+      }
+    },
+    "sea_in_sw": {
+      "note": "岸。南西の隅だけが陸。陸の深さは辺の端で 4px（隣の岸とそろう）。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "f0": [
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwWWwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwWWwwwwwwwwwww",
+          "wwWwwWWwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "WwwwwwwwwwWWWwww",
+          "kWWwwwwwwWwwwWww",
+          "gkkwwwwwwwwwwwww",
+          "gggkWwwwwwwwwwww",
+          "gggkWwwwwwwwwwww",
+          "ggggkWwwwwwwwwww"
+        ],
+        "f1": [
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwWWww",
+          "wwwwwwwwwwwwwwww",
+          "wwwWWWwwwwwwwwww",
+          "wwwwwwWWwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "WwwwwwwwWWwWWwww",
+          "kWwwwwwwwwWwwwww",
+          "gkkWwwwwwwwwwwww",
+          "gggkwwwwwwwwwwww",
+          "gggkWwwwwwwwwwww",
+          "ggggkWwwwwwwwwww"
+        ]
+      }
+    },
+    "plains": {
+      "note": "草原。草の房と、タイルに 1 か所だけ明るい草のディザ。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "gggggggggggggggg",
+          "gggggggggggggggg",
+          "ggggggGggggggggg",
+          "ggggggggggGgGggg",
+          "GgggGgGgGgdGdggg",
+          "gggggggggggdgggg",
+          "ggggggGggggggggg",
+          "gggggggggggggggg",
+          "gggggggggggggggg",
+          "gggggggggggggggg",
+          "gggggggggggggggg",
+          "ggGgGggggggggggg",
+          "ggdGdggggggggggg",
+          "gggdgggggggggGgG",
+          "gggggggggggggdGd",
+          "ggggggggggggggdg"
+        ]
+      }
+    },
+    "plains_b": {
+      "note": "草原の変種（房の位置と明るい所が違う・小石）。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "gggggggggggggggg",
+          "gggggggggggggggg",
+          "gggGgGgggggggggg",
+          "gggdGdgggggggggg",
+          "ggggdggggggggGgG",
+          "gggggggggggggdGd",
+          "ggggggggggggggdg",
+          "ggggggGgGggggggg",
+          "GgggggdGdgggGggg",
+          "gggggggdgggggggg",
+          "ggggggggggGgggGg",
+          "gggggggggggggggg",
+          "GgggggggGddgGggg",
+          "gGgGggggdkkggggg",
+          "gdGdgggggggggggg",
+          "ggdggggggggggggg"
+        ]
+      }
+    },
+    "forest": {
+      "note": "森。敷き詰めると冠が互い違いに重なって塊になる（上下左右に継ぎ目が無い）。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "dddkdGGgggddGGgg",
+          "dddkkdgggdddgggg",
+          "ddkkddggdddddggd",
+          "kkkdkdkkkkkkddkd",
+          "dddGGddkdkddGGdd",
+          "dGGGgggkkdGGGGgd",
+          "GGGgggdddGGGGggd",
+          "GGggggdddGGGgggd",
+          "GGggdddddGGgggdd",
+          "gggggddddGgggddd",
+          "dggddddkddggdddd",
+          "ddkddkddddkkddkk",
+          "GGddddGGGgddkkdd",
+          "GGgddGGGgggkkdGG",
+          "GggdGGGgggdddGGg",
+          "gggdGGgggggddGgg"
+        ]
+      }
+    },
+    "forest_edge_s": {
+      "note": "森の南の縁。上は forest と同じ冠、下に幹と草地。南に草原が来る所に置く。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "dddkdGGgggddGGgg",
+          "dddkkdgggdddgggg",
+          "ddkkddggdddddggd",
+          "kddddddkkddddddd",
+          "ddGGGgdkddGGGgdk",
+          "dGGGgggkdGGGgggk",
+          "GGGgggddGGGgggdd",
+          "GGgggdddGGgggddd",
+          "dgggdddkdgggdddk",
+          "kdgdddkkkdgdddkk",
+          "dkkkkkkddkkkkkkd",
+          "gdddkddggdddkddg",
+          "gggdkggggggdkggg",
+          "gggdkggggggdkggg",
+          "ggdddddGggdddddg",
+          "gggggggdgggggggg"
+        ]
+      }
+    },
+    "forest_edge_n": {
+      "note": "森の北の縁。冠の丸みが草原へ張り出して終わる。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "gggggggggggggggg",
+          "gggggggggggggggg",
+          "gGgggggggggggggg",
+          "gdggggggggggkkdg",
+          "gkkkkkkdggkkGGkk",
+          "kGGGgggkdkGGGGgd",
+          "GGGgggddkGGGGggd",
+          "GGggggdddGGGgggd",
+          "GGggdddddGGgggdd",
+          "gggggddddGgggddd",
+          "dggddddkddggdddd",
+          "ddkddkddddkkddkk",
+          "GGddddGGGgddkkdd",
+          "GGgddGGGgggkkdGG",
+          "GggdGGGgggdddGGg",
+          "gggdGGgggggddGgg"
+        ]
+      }
+    },
+    "forest_edge_e": {
+      "note": "森の東の縁。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "dddkdGGgggdddkdg",
+          "dddkkdgggdddkdgg",
+          "ddkkddggddddkdgg",
+          "kkkdkdkkdddkdggg",
+          "dddGGdddGGGdkdgg",
+          "dGGGgdGGGGgggkdg",
+          "GGGggdGGGgggdkdg",
+          "GGggdGGGgggdddkd",
+          "GGggdGGgggddddkd",
+          "gggggdgggddddkdg",
+          "dggdddggdddddkdg",
+          "ddkddkdddddkkdgg",
+          "GGddddGGGgdkdggg",
+          "GGgddGGGgggkkdgg",
+          "GggdGGGgggddkdgg",
+          "gggdGGgggggdkdgg"
+        ]
+      }
+    },
+    "forest_edge_w": {
+      "note": "森の西の縁。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "ggggkGGgggddGGgg",
+          "ggggdkgggdddgggg",
+          "gGgggkggdddddggd",
+          "gdgggdkkkkkkddkd",
+          "gggkkkGddkddGGdd",
+          "ggkdGGgggdGGGGgd",
+          "ggkGGgggdGGGGggd",
+          "gkGGggggdGGGgggd",
+          "gkGGGgggdGGgggdd",
+          "gdkggggddGgggddd",
+          "ggkdggddddggdddd",
+          "ggdkkkddddkkddkk",
+          "gggdkdGGGgddkkdd",
+          "gggkdGGGgggkkdGG",
+          "gggkGGGgggdddGGg",
+          "gggkGGgggggddGgg"
+        ]
+      }
+    },
+    "forest_ne": {
+      "note": "森の外角（北と東が草原）。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "gggggggggggggggg",
+          "gggggggggggggggg",
+          "gGgggggggggggggg",
+          "gdggggggkkkdgggg",
+          "gkkkkkkkGGGkkdgg",
+          "kGGGgdGGGGgggkdg",
+          "GGGggdGGGgggdkdg",
+          "GGggdGGGgggdddkd",
+          "GGggdGGgggddddkd",
+          "gggggdgggddddkdg",
+          "dggdddggdddddkdg",
+          "ddkddkdddddkkdgg",
+          "GGddddGGGgdkdggg",
+          "GGgddGGGgggkkdgg",
+          "GggdGGGgggddkdgg",
+          "gggdGGgggggdkdgg"
+        ]
+      }
+    },
+    "forest_nw": {
+      "note": "森の外角（北と西が草原）。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "gggggggggggggggg",
+          "gggggggggggggggg",
+          "gGgggggggggggggg",
+          "gdggggggggggkkdg",
+          "gggkkkkkkdkkGGkk",
+          "ggkdGGgggkGGGGgd",
+          "ggkGGgggdGGGGggd",
+          "gkGGggggdGGGgggd",
+          "gkGGGgggdGGgggdd",
+          "gdkggggddGgggddd",
+          "ggkdggddddggdddd",
+          "ggdkkkddddkkddkk",
+          "gggdkdGGGgddkkdd",
+          "gggkdGGGgggkkdGG",
+          "gggkGGGgggdddGGg",
+          "gggkGGgggggddGgg"
+        ]
+      }
+    },
+    "forest_se": {
+      "note": "森の外角（南と東が草原）。南は幹が見える。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "dddkdGGgggdddkdg",
+          "dddkkdgggdddkdgg",
+          "ddkkddggddddkdgg",
+          "kdddddddddddkdgg",
+          "ddGGGgddGGGgdkdg",
+          "dGGGggdGGGgggkdg",
+          "GGGggdGGGgggddkd",
+          "GGgggdGGgggdddkd",
+          "dgggdddgggdddkdg",
+          "kdgdddddgdddkkdg",
+          "dkkkkkkkkkkkkdgg",
+          "gdddkdddddkddggg",
+          "gggdkggggdkggggg",
+          "gggdkggggdkggggg",
+          "ggdddddGdddddggg",
+          "gggggggdgggggggg"
+        ]
+      }
+    },
+    "forest_sw": {
+      "note": "森の外角（南と西が草原）。南は幹が見える。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "ggggkGGgggddGGgg",
+          "ggggdkgggdddgggg",
+          "gGgggkggdddddggd",
+          "gdgkkddddddddddd",
+          "ggkdGGGgddGGGgdk",
+          "ggkGGGggdGGGgggk",
+          "gkGGGggdGGGgggdd",
+          "gkGGgggdGGgggddd",
+          "gdkgggdddgggdddk",
+          "ggkdgdddddgdddkk",
+          "ggdkkkkkkkkkkkkd",
+          "gggdddkdddddkddg",
+          "gggggdkggggdkggg",
+          "gggggdkggggdkggg",
+          "ggggdddddgdddddg",
+          "gggggggggggggggg"
+        ]
+      }
+    },
+    "forest_in_ne": {
+      "note": "森の内角（上下左右は森・北東の斜めだけ草原）。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "dddkdGGgggdddkdg",
+          "dddkkdgggdddkdgg",
+          "ddkkddggddddkdgg",
+          "kkkdkdkkkkkkdkdg",
+          "dddGGddkdkddGGkk",
+          "dGGGgggkkdGGGGgd",
+          "GGGgggdddGGGGggd",
+          "GGggggdddGGGgggd",
+          "GGggdddddGGgggdd",
+          "gggggddddGgggddd",
+          "dggddddkddggdddd",
+          "ddkddkddddkkddkk",
+          "GGddddGGGgddkkdd",
+          "GGgddGGGgggkkdGG",
+          "GggdGGGgggdddGGg",
+          "gggdGGgggggddGgg"
+        ]
+      }
+    },
+    "forest_in_nw": {
+      "note": "森の内角（北西の斜めだけ草原）。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "ggggkGGgggddGGgg",
+          "ggggdkgggdddgggg",
+          "gGgggkggdddddggd",
+          "gdgggdkkkkkkddkd",
+          "gkkkkkdkdkddGGdd",
+          "kGGGgggkkdGGGGgd",
+          "GGGgggdddGGGGggd",
+          "GGggggdddGGGgggd",
+          "GGggdddddGGgggdd",
+          "gggggddddGgggddd",
+          "dggddddkddggdddd",
+          "ddkddkddddkkddkk",
+          "GGddddGGGgddkkdd",
+          "GGgddGGGgggkkdGG",
+          "GggdGGGgggdddGGg",
+          "gggdGGgggggddGgg"
+        ]
+      }
+    },
+    "forest_in_se": {
+      "note": "森の内角（南東の斜めだけ草原）。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "dddkdGGgggddGGgg",
+          "dddkkdgggdddgggg",
+          "ddkkddggdddddggd",
+          "kkkdkdkkkkkkddkd",
+          "dddGGddkdkddGGdd",
+          "dGGGgggkkdGGGGgd",
+          "GGGgggdddGGGGggd",
+          "GGggggdddGGGgggd",
+          "GGggdddddGGgggdd",
+          "gggggddddGgggddd",
+          "dggddddkddggdddd",
+          "ddkddkddddkkddkk",
+          "GGddddGGGgddkkdd",
+          "GGgddGGGgggkkdgg",
+          "GggdGGGgggddkdgg",
+          "gggdGGgggggdkdgg"
+        ]
+      }
+    },
+    "forest_in_sw": {
+      "note": "森の内角（南西の斜めだけ草原）。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "dddkdGGgggddGGgg",
+          "dddkkdgggdddgggg",
+          "ddkkddggdddddggd",
+          "kkkdkdkkkkkkddkd",
+          "dddGGddkdkddGGdd",
+          "dGGGgggkkdGGGGgd",
+          "GGGgggdddGGGGggd",
+          "GGggggdddGGGgggd",
+          "GGggdddddGGgggdd",
+          "gggggddddGgggddd",
+          "kggddddkddggdddd",
+          "dkkkdkddddkkddkk",
+          "gdddkdGGGgddkkdd",
+          "gggkdGGGgggkkdGG",
+          "gggkGGGgggdddGGg",
+          "gggkGGgggggddGgg"
+        ]
+      }
+    },
+    "cave_mouth": {
+      "note": "森の中の岩穴（洞窟の入口）。森の南の縁に置く: 北・東・西の継ぎ目は forest_edge_s と同じで、南は草地へ開く。色は 墨・fc0A・fc1A・fc10。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "dddkdgggggddgggg",
+          "dddkkdgggdddgggg",
+          "ddkkddggdddddggd",
+          "kddddkkkkkkddddd",
+          "ddgkkdRRdRdkkgdk",
+          "dgkRRRRRRRRRdkgk",
+          "gkRRkRRRRRRRRdkd",
+          "gkRRRkRRRkRRddkd",
+          "kRRRRkkkkkkRRdkk",
+          "kRRRkkkkkkkkRddk",
+          "kRRkkkkkkkkkkRdk",
+          "kRRkkdkkkkkkkRdk",
+          "kRdkkkkkkkkkkddk",
+          "kRdkkkkkkkkkkRdk",
+          "kkkkkkkkkkkkkkkk",
+          "gkRdgdgdgdgdgdgg"
+        ]
+      }
+    },
+    "hills": {
+      "note": "丘。草の色の小山 2 つ。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "gggggggggggggggg",
+          "gggggggggggggggg",
+          "gggggggggggggggg",
+          "gggggggggggggggg",
+          "gggggggggggggggg",
+          "gggGGkkkkggggggg",
+          "ggGGGGGggkgggggg",
+          "gGGGGGggggkggggg",
+          "gGGGGgggdddggggg",
+          "GGGGggggdddkgggg",
+          "gGGgggdddGGGGgkg",
+          "kkkkkkkkkkkkgggg",
+          "ggggggggGGGggddk",
+          "gggggggggGggdddg",
+          "ggggggggkkkkkkkk",
+          "gggggggggggggggg"
+        ]
+      }
+    },
+    "mountain": {
+      "note": "山。裾がタイルの左右いっぱいまで広がり、並べると山脈になる。左の面が受光。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "gggggggggggggggg",
+          "gggggggkkggggggg",
+          "ggggggkRrkgggggg",
+          "gggggkRRrrkkgggg",
+          "ggggkRrRrrrrkggg",
+          "ggkkRrRRRrrrrkgg",
+          "gkRRrRRRRrkrrrkg",
+          "kRRrRRRRRrrkrrrk",
+          "RRRrRRRRRrrrkrrr",
+          "RRrRRRRrRrrrkrrr",
+          "RRRRRRrRRRrrrkrr",
+          "RRRRRrRRRRkrrrkr",
+          "RRRRrRRRRRrkrrkr",
+          "RRRrRRRRRrrrkrrk",
+          "RRrRRRRRRrrrrrrr",
+          "RkkkRRkkkrrkkkrr"
+        ]
+      }
+    },
+    "mountain_b": {
+      "note": "山の変種（高い峰と低い峰の 2 つ）。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "gggggggggggggggg",
+          "gggggkgggggggggg",
+          "ggggkRkggggggggg",
+          "ggkkRRrkkggkgggg",
+          "gkRRRRrrrkkRkggg",
+          "kRRRRRrrrkRRrkgg",
+          "RRRrRRrrkkRRrrkg",
+          "RRrRRRRrkRRRrrrk",
+          "RrRRRRRkRRRRrrrr",
+          "RRRRRRRkRRrRrrkr",
+          "RRRRRRRkRrRRRrrk",
+          "RRRRRRRkrRRRRrrr",
+          "RRRRRRRkRRRRRkrr",
+          "RRRRRRRkRRRRRrkr",
+          "RRRRRRRkRRRRRrrr",
+          "RkkkRRkkkRRkkkrr"
+        ]
+      }
+    },
+    "mountain_snow": {
+      "note": "雪をかぶった高い峰。山脈の中ほどに置く。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "gggggggkkggggggg",
+          "ggggggkSRkgggggg",
+          "gggggkSSRRkggggg",
+          "ggggkSSSRRRkgggg",
+          "gggkSSSSSRRRkggg",
+          "gkkSSSSSSRRRRkkg",
+          "kRSSSSSSSRRRRRkk",
+          "RRSSSSSSSRRRRRRk",
+          "RRRSSSSSSRRRRkkk",
+          "RRRkSkSSSSRkRkkk",
+          "RRRRkRRSkkRkkkRk",
+          "RRRkRRRkRRkkkRkk",
+          "RRkRRRkRRRRkRkRk",
+          "RRRRRkRRRRkRkkRR",
+          "RRRRkRRRRRRkkRkk",
+          "RkkkRRkkkRkkRkkk"
+        ]
+      }
+    },
+    "road": {
+      "note": "街道（土）。全面が土で、並べた形が道になる。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "eeeeeeeeeeeeeeee",
+          "eeeeeeeeeeeeeeee",
+          "eeeeeebeeeeeeeee",
+          "eeeeeeeeeeeEEeee",
+          "eeeeeeeeeeeebbee",
+          "eeeeeeeeeeeeeeee",
+          "eeeeeeeeeeeeeeee",
+          "eeEEeeeeeeeeeeee",
+          "EeebbeeeEbeeeeee",
+          "eeeeeeeeeeeeeeee",
+          "eeEeEeEeeeEeeeEe",
+          "eeeeeeeeeeeeeeee",
+          "EeEeEeEeEeeeEEEe",
+          "eeeeeeebeeeeeebb",
+          "beEeeeEeeeeeeeee",
+          "eeeeeeeeeeeeeeee"
+        ]
+      }
+    },
+    "bridge_h": {
+      "note": "東西に渡る橋。上下は水（波の印なし）。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww",
+          "kOkkkkkkkOkkkkkk",
+          "OOOOOOOOOOOOOOOO",
+          "OookOookOookOook",
+          "OookOookOookOook",
+          "OookOookOookOook",
+          "OookOookOookOook",
+          "OookOookOookOook",
+          "oookoookoookoook",
+          "oooooooooooooooo",
+          "kOkkkkkkkOkkkkkk",
+          "kwkkkwkkkwkkkwkk",
+          "wwwwwwwwwwwwwwww",
+          "wwwwwwwwwwwwwwww"
+        ]
+      }
+    },
+    "bridge_v": {
+      "note": "南北に渡る橋。左右は水。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "wwwkOOOOOOookkww",
+          "wwwOOoooooooOwww",
+          "wwwkOoooooookkww",
+          "wwwkOkkkkkkokkww",
+          "wwwkOOOOOOookkww",
+          "wwwkOoooooookwww",
+          "wwwkOoooooookkww",
+          "wwwkOkkkkkkokkww",
+          "wwwkOOOOOOookkww",
+          "wwwOOoooooooOwww",
+          "wwwkOoooooookkww",
+          "wwwkOkkkkkkokkww",
+          "wwwkOOOOOOookkww",
+          "wwwkOoooooookwww",
+          "wwwkOoooooookkww",
+          "wwwkOkkkkkkokkww"
+        ]
+      }
+    },
+    "town": {
+      "note": "ルーネ村の印。赤い屋根の家 3 軒（大 2・小 1）。戸と窓は墨。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "ggggggggggkkkkkg",
+          "gkkkkkkggkhhhhkk",
+          "khhhhhhkgkhkhkhk",
+          "khkhkhkkgkkkkkkk",
+          "kkkkkkkkkkcckckk",
+          "kcccckckgkcckcck",
+          "kckkcckkkkkkkkkk",
+          "kckkcckkhhhhhhkk",
+          "kkkkkkkkhkhkhkkg",
+          "gggkgkgkkkkkkkkk",
+          "gggggggkcccckckg",
+          "gggggggkckkcckkk",
+          "gggggggkckkcckkg",
+          "gggggggkkkkkkkkk",
+          "ggggggggggkgkgkg",
+          "gggggggggggggggg"
+        ]
+      }
+    },
+    "mine": {
+      "note": "水晶の坑道の入口。山と同じ形の峰に板の枠の口と左右のたいまつ。山の並びの中に置く。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "gggggggggggggggg",
+          "gggggggkkggggggg",
+          "ggggggkrkkgggggg",
+          "gggggkrrrkkkgggg",
+          "ggggkrkrrrkrkggg",
+          "ggkkrkrrrrrkrkgg",
+          "gkrkooooooookrkg",
+          "krrkookookookkrk",
+          "rrrkokkkkkkokrkr",
+          "rrokokkkkkkkkork",
+          "rrkkokkkkkkokkrr",
+          "rrkkokkrrkkokkkr",
+          "rrrkokkrrkkkkrkk",
+          "rrrkokrrrrkokkrk",
+          "rrkkokrkkrkokrkr",
+          "rkkkkrkkkkrkkkrk"
+        ]
+      }
+    },
+    "shrine": {
+      "note": "小さな石の祠。屋根の頂と奥の玉が金。",
+      "kind": "tile",
+      "anchor": {
+        "x": 0,
+        "y": 0
+      },
+      "frames": {
+        "idle": [
+          "gggggggkkggggggg",
+          "gggggggyyggggggg",
+          "ggggggkRRkgggggg",
+          "ggggkRRRRRkkgggg",
+          "ggkRRRRRRRRkRkgg",
+          "ggkRkRkRkRkRkkgg",
+          "ggggRkkkkkRkgggg",
+          "ggggRkkkkkRkgggg",
+          "ggggRkkyykRkgggg",
+          "ggggRkkykkRkgggg",
+          "ggggRkkkkkRkgggg",
+          "ggggRkkkkkRkgggg",
+          "gggRRRRRRRkRkggg",
+          "ggkRRRRRRRRRRkgg",
+          "ggkkkkkkkkkkkkkg",
+          "ggggkgkgkgkgkgkg"
+        ]
+      }
+    }
+  }
+}

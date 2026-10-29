@@ -1,0 +1,55 @@
+# はじめから → 村を歩いて東の村長の家に入り、村長と話して（いいえ → そこを なんとか → はい で依頼を受ける）、家から出る。
+start title
+expect scene=Title
+tap confirm
+expect scene=Field&map=village&x=7&y=8
+until layer=Walking max 2
+# 泉の前（7, 8）から南の草地へ下りる。
+hold down
+until y=12 max 3
+release down
+until layer=Walking max 1
+# 東へ 13 マス。
+hold right
+until x=20 max 5
+release right
+wait 0.3
+# 北へ上がって村長の家の扉（20, 3）へ。着くと暗転して家の中（7, 7）。
+hold up
+until map=chief_house max 5
+release up
+until layer=Walking max 2
+expect map=chief_house&x=7&y=7&facing=Up
+# 机の前まで上がり、机越しに村長に話しかける。
+hold up
+until y=5 max 2
+release up
+wait 0.3
+tap confirm
+expect talk=ChiefQuest&layer=Talk
+tap confirm                  # 文字送りを出し切る
+tap confirm                  # はい / いいえ を出す
+expect choice
+tap down
+tap confirm                  # いいえ → そこを なんとか
+expect talk=ChiefQuest&!choice
+tap confirm                  # 出し切る
+tap confirm                  # 同じ問いへ戻る
+tap confirm                  # 出し切る
+tap confirm                  # はい / いいえ を出す
+expect choice
+tap confirm                  # はい → おお やってくれるか
+expect quest=accepted
+tap confirm                  # 出し切る
+tap confirm                  # 手付けとやくそうを うけとった
+tap confirm                  # 出し切る
+tap confirm                  # ミナの話
+tap confirm                  # 出し切る
+tap confirm                  # 窓を閉じる
+expect layer=Walking&talk=
+# 下の出口へ。暗転して村の扉の前（20, 4）へ戻る。
+hold down
+until map=village max 5
+release down
+until layer=Walking max 2
+expect map=village&x=20&y=4&facing=Down

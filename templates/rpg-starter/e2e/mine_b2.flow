@@ -1,0 +1,36 @@
+# 坑道 B2: 暗い迷路の一番奥でたいまつを灯し、はがねのつるぎの宝箱の前に立つ くろがねゴブリン と戦って勝ち、宝箱を開ける。
+# くろがねゴブリンは逃げられない固定の戦い（会話の <<fight kurogane KuroganeWon>>）。勝ち切れるよう lv=6。
+start field map=mine_b2 x=33 y=26 facing=left party=luka,mina,toto quest=accepted steps=999 lv=6 items=taimatsu:1
+# メニューの どうぐ（2 行目の右）→ たいまつ を使う。明かりが広がる。
+tap cancel
+expect layer=Menu
+tap down
+tap right
+tap confirm
+tap confirm
+expect layer=Notice&bag=
+tap confirm                  # 出し切る
+tap confirm                  # 閉じる
+expect layer=Walking
+# 西へ 1 マス（32, 26）。くろがねゴブリン（31, 26）に話しかけると戦いになる。
+tap left
+wait 0.4
+expect x=32&y=26&facing=Left
+tap confirm
+expect talk=Kurogane
+tap confirm                  # 出し切る
+tap confirm                  # 戦いへ（点滅）
+until scene=Battle max 2
+drive battle until talk=KuroganeWon max 120
+tap confirm                  # 出し切る
+tap confirm                  # 閉じる
+expect layer=Walking
+# くろがねゴブリンのいたマス（31, 26）へ進み、左の宝箱（30, 26）を開ける。
+tap left
+wait 0.4
+expect x=31&y=26
+tap confirm
+expect layer=Notice&bag=haganenotsurugi:1
+tap confirm                  # 出し切る
+tap confirm                  # 閉じる
+expect layer=Walking

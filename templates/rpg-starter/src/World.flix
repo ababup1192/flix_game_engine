@@ -1,563 +1,498 @@
-// World — ゲームの状態そのものと、次の状態を作る規則（すべて純粋）。
-// 見下ろしの里を 1 マスずつ歩き、住人に話しかけ、薬草を拾う。
-// 扉の鍵は物ではなく約束 — 頼まれた数の薬草を持って約束の相手と話すと扉が開く。
-// 盤面のデータ（rows・配置・文言）は MapDoc、手触りは KindDoc — 実行中の状態はこの World だけが持つ。
+// World — ゲームの状態の形と、どの規則も使う小さな口（すべて純粋）。
+// 規則は仕組みごとのファイルに分けてある（どれも World を使い、World はそれらを呼ばない）:
+//   WorldField … マップを歩く（当たり・出入口・イベントのマス・出会いの歩数）・話しかける。マスにある物は見つけて WorldObject へ渡す
+//   WorldObject … マスにある物（宝箱・扉…）の規則を種類ごとに（塞ぐか・調べる・着く・押す）。物の今は objectsNow の 1 か所
+//   WorldTransition … 暗転を時間で進め、覆い切った時に World を変える（行き先へ移る・宿で全快とセーブ・戦いへ）
+//   WorldTalk  … 会話のウィンドウ（文字送り・選択肢・コマンドで World を変える・World の値を会話の変数へ写す）
+//   WorldMenu  … フィールドのメニュー（どうぐ・つよさ・そうび・はなす・しらべる）と、その知らせ（Notice）
+//   WorldShop  … 道具屋（かう / うる → 品 → 個数 → 確かめ）と宿（泊まる → 全快 → セーブ）・宿の前
+//   WorldBattle … 戦いの見せ方（コマンドを選ぶ・1 ターンの Beat を遊びの時計で 1 枚ずつ見せる・勝ち / 全滅 / 逃げ切りでフィールドへ）
+//   Battle     … 戦いの式（1 ターンを解く resolveRound・ダメージ・行動順・にげる・勝った後の経験値とレベルアップ。時計を見ない）
+//   Party / Bag / Progress … 仲間の加わった順と今の値・ふくろとお金・依頼の段階と旗（それぞれ 1 case の enum で包んだ値と、変える関数）
+//   Saves      … セーブの中身（仲間・ふくろ・進み具合・乱数の回数）と読み書き
+//   Dice       … 乱数（引いた回数 dice から引く）
 //
-// 場面の移り変わり（Phase）:
+// ── 状態の形: 「その場面でしか触れない値は、その場面の enum の中に持つ」──
+//   scene … Title(カーソルの項目) / Field(FieldState = いるマップ・先頭のマス・向き・歩きの途中・開いたウィンドウ・暗転) /
+//           Battle(BattleState = 戦いの値・コマンドのページか見せている Beat・戻る先の FieldState・選んだ行動・勝った後の会話)
+//   残りの欄は場面をまたぐ物だけ: 仲間・ふくろ・進み具合・乱数の回数・遊びの時計・実時間・終了の確認・出来事・セーブ。
 //
-//     Title ──決定(confirm/begin)──▶ Play ──薬草が goal 個(pickUp)──▶ Clear
-//       ▲                                                                │
-//       └─────────────────────決定(confirm)──────────────────────────────┘
+//     Title ──はじめから──▶ Field（rules の始まりのマス。暗転を晴らして入る）
+//     Title ──つづきから──▶ Field（save の中身で仲間・ふくろ・進み具合・乱数を置き換え、宿の前 = rules の home に立つ）
+//     Field ──出入口のマスに着く──▶ 暗転（TransitionThen.Warp）──▶ 行き先のマップの Field ──▶ 暗転を晴らす（TransitionThen.FadeIn）
+//       暗転の間は歩きを進めない（Controls.tick が WorldTransition か WorldField のどちらか一方を流す）。
+//     Field の上に開くウィンドウ（FieldWindow）: Closed ⇄ Talk（会話）/ Menu（取消のキー）⇄ Notice（メニューの知らせ）/
+//       Talk ──<<shop>>──▶ Shop（閉じると同じ会話の続きへ戻る）/ Talk ──<<inn>>──▶ 暗転（TransitionThen.InnRest）の間は会話を止め、
+//       覆い切ったら全快してセーブ（save と saveRev）を書き、晴れたら会話の続きへ。
+//     party・bag・progress を変えるのは会話のコマンド（<<quest accept>>・<<join mina>>・<<give>>・<<gold>>・<<inn>>）と、
+//       メニュー（道具を使う・装備を替える）と店（かう・うる）だけ。
+//     出入口の gate（その仲間が加わっていなければ通れない）は、そのマスへ進ませずに gateNode の会話を開く。
+//     イベントのマス（マップの events）に着くと、そこで止まってその会話を開く（台詞の出ないノードなら何も開かない）。
+//     マスにある物（マップの objects。宝箱・扉・レバー・開く物・番をする者）は決定・しらべるで WorldObject.examine が働かせる
+//       （宝箱と扉とレバーは知らせ（Notice）を出し、番をする者は会話を開く）。
+//       開けた物は progress の opened、物が立てて別の物が読む名前付きの旗は progress の flags。
+//     Field ──出会いの組のあるマップで歩数が 0（何も無いマスに着いた時）・会話の <<fight>>──▶ 点滅（TransitionThen.StartBattle）
+//       ──▶ Battle（WorldBattle.enter）──勝つ──▶ 戻る先の Field（お金と経験値・afterWin の会話）/ 逃げ切る ──▶ 戻る先の Field /
+//       全滅 ──▶ 宿の前の Field（お金は goldKeep 倍・全快・暗転を晴らす）。戦いの間の仲間の正は Battle の値で、終える時に World へ書き戻す。
+//     Esc の終了の確認（ask）はどの場面より手前。開いている間は遊びの時計が止まる。
+//
+// 規則のファイルどうしの横の向き（逆へは呼ばない）: WorldTitle → WorldField → WorldObject、WorldField → WorldTalk → WorldShop、
+//   WorldMenu → WorldField（メニューの はなす・しらべる）、WorldTransition → WorldShop（宿の暗転を覆い切った時の全快とセーブ）・
+//   WorldTransition → WorldBattle（点滅し終えたら戦う）。WorldField は店と戦いを呼ばない。
+//   店を閉じて会話へ戻すのは、ウィンドウを Talk に戻すだけ（続きは WorldTalk.tick が流す）なので WorldShop は WorldTalk を呼ばない。
 //
 // 遷移を起こす関数の doc には [遷移: X→Y] を付けてある（探すときの目印）。
+// 場面・ウィンドウ・Doc の欄を足す時に触る所の一覧は AGENTS.local.md の早見表。
 //
-// Doc が壊れていても止まらない（fail-open の 3 段階）:
-//   読めない → 既定値で起動（Controls.loadDocs / *Doc.defaults）
-//   一部が欠け → その欄だけ既定値（fromJson が欄ごとに拾う）
-//   型が違う   → その欄は既定値のまま（数を入れる欄に文字 等）
-// だからプレイヤーの前でクラッシュしない。編集ミスは既定へ落ちて遊びは続く。
+// ── 出来事（Emit）── 規則は音を直に鳴らさない。出来事 Event を Emit.emit で出し、鳴らす音は Controls が選ぶ。
+//
+// 時計は 2 本（型で分けてあり、取り違えるとコンパイルが止まる）:
+//   遊びの時計 play（Clock[Play]） … 歩き・暗転・文字送り。終了の確認の間は止まる（paceOf）。進めるのは App だけ。
+//   実時間 realNow（Time[Clock.Real]） … カーソルの点滅・水のゆれ・その場足踏み。止まらない。
 mod World {
+    use fge::{Clock, Dir4, Emit, Grid, UiTypewriter, Yarn, YarnRunner}
 
-    use fge::{
-        Clock, Dir4, FxDoc, Grid, Journey, PxSpriteAtlas, PxSpriteDoc, Rect2, RichText, ShaderDoc,
-        TileLayerSpec, UiDialog, Vec2
+    /// 遊びの時計の名前。
+    pub enum Play
+
+    /// 遊びの時計を止める理由。
+    pub enum Halt with Eq {
+        case Asking
     }
 
-    /// いま画面が何をしているか。Title = 表紙（決定で歩き出す）、Play = 里を歩いている、
-    /// Battle = 魔物と向き合っている、Clear = 薬草がそろった（決定で表紙へ戻る）。
-    pub enum Phase with Eq, ToString {
-        case Title
-        case Play
-        case Battle
-        case Clear
+    /// タイトルのメニューの項目。
+    pub enum TitleItem with Eq, ToString {
+        case NewGame
+        case Continue
     }
 
-    /// 戦いのどのフェーズか。Choosing = コマンドを選んでいる、Report = 打ち合いの結果を読んでいる
-    /// （決定でつぎの番へ）、Done = 決着（決定で里へ戻る）。
-    pub enum BattleStep with Eq, ToString {
-        case Choosing
-        case Report
-        case Done
+    /// 確認のウィンドウの答え（カーソルもこれで持つ）。
+    pub enum Answer with Eq, ToString {
+        case Yes
+        case No
     }
 
-    /// 戦いの終わり方。
-    pub enum Outcome with Eq, ToString {
-        case Win
-        case Lose
+    /// 一番手前の確認で尋ねている事と、カーソル。
+    pub enum Ask with Eq, ToString {
+        case Quit(Answer)
+    }
+
+    /// 確認のカーソルがある答え。
+    pub def answerOf(ask: Ask): Answer = match ask {
+        case Ask.Quit(answer) => answer
+    }
+
+    /// 規則の中で起きた出来事（音の材料）。
+    ///   Cursor … カーソルが動いた / Confirm … 決めた・送った / Cancel … 取り消した /
+    ///   Bump … 壁へ向かって進めなかった / Door … 出入口を通った / Denied … 選べない項目（灰色）を選んだ /
+    ///   TalkOpen … 会話か知らせのウィンドウが開いた / TalkNext … 台詞を出し切った・次へ送った /
+    ///   TalkBlip(声) … 文字送りが 2 字ぶん進んだ（話し手の声の高さ）/ Lever … レバーを動かした /
+    ///   RockPush … 岩を押して動かした / CartRide … トロッコが走り出した / CrystalLit … 水晶を点けた / CrystalReset … 水晶が全部消えた。
+    pub enum Event with Eq, ToString {
+        case Cursor
+        case Confirm
+        case Cancel
+        case Bump
+        case Door
+        case Denied
+        case TalkOpen
+        case TalkNext
+        case TalkBlip(TextDoc.Voice)
+        case Lever
+        case RockPush
+        case CartRide
+        case CrystalLit
+        case CrystalReset
+    }
+
+    /// 先頭の歩き。Walking(前にいたマス, 歩き始めた時刻)。今のマス（FieldRec#hero）へ向かって動いている。
+    /// Boarding = 前のトロッコに乗ると決めた（会話の <<ride>>。次のフレームに WorldField が道を引いて走り出すか、走れなければ止まる）/
+    /// Riding = トロッコで走っている（乗ったトロッコ・走る道。道は乗ったマスから降りるマスまでで、FieldRec#hero は降りるマス）。
+    /// WhyNot: <<ride>> の所で道を引かない — 会話（WorldTalk）から物の今（WorldObject）を読むと、物 → 会話 → 物の輪になる。
+    pub enum Stride {
+        case Still
+        case Walking(Grid.Cell, Clock.Time[Play])
+        case Boarding
+        case Riding(Ride)
+    }
+
+    /// トロッコで走っている所（ほかの歩きなら None）。
+    pub def rideOf(r: FieldRec): Option[Ride] = match r#stride {
+        case Stride.Riding(ride) => Some(ride)
+        case _                   => None
+    }
+
+    /// トロッコに乗ると決めたか走っているか（入力を受けない）。
+    pub def isRiding(r: FieldRec): Bool = match r#stride {
+        case Stride.Boarding  => true
+        case Stride.Riding(_) => true
+        case _                => false
+    }
+
+    /// トロッコで走っている所。cart = 乗ったトロッコの objects の id（走っている間は駅に描かない）・path = 乗ったマスから降りるマスまで・
+    /// startedAt = 走り出した時刻（1 マスは rules の secondsPerRail 秒）。
+    pub type alias Ride = { cart = String, path = List[Grid.Cell], startedAt = Clock.Time[Play] }
+
+    /// 暗転のあとにすること。Warp = そのマップのマスへ移って晴らす / FadeIn = 晴らすだけ /
+    /// InnRest = 宿に泊まる（覆い切ったら全快してセーブを書き、晴らす。開いている会話は晴れるまで止まる）/
+    /// StartBattle = 点滅し終えたら戦う（敵の並び・勝った後に開く会話のノード）。
+    pub enum TransitionThen {
+        case Warp(MapDoc.MapId, Grid.Cell, Dir4.Dir4)
+        case FadeIn
+        case InnRest
+        case StartBattle(List[FoesDoc.FoeId], Option[String])
+    }
+
+    /// 暗転の途中（startedAt から片道。長さは WorldTransition.secondsOf: InnRest は rules の innSeconds・StartBattle は flashSeconds・ほかは fadeSeconds）。
+    pub type alias Transition = { startedAt = Clock.Time[Play], then = TransitionThen }
+
+    /// 会話のウィンドウの中身。line = 出している台詞、reveal = その文字送り、choices / cursor = 出している選択肢とカーソル、
+    /// npc = 話しかけた人の id（その人を主人公の方へ向かせる）。
+    pub type alias TalkRec = {
+        runner = YarnRunner.Runner[Play],
+        line = Option[Yarn.Line],
+        reveal = UiTypewriter.Reveal,
+        choices = List[YarnRunner.DialogueOption],
+        cursor = Int32,
+        npc = Option[String]
+    }
+
+    enum TalkOf(TalkRec)
+
+    /// 会話のウィンドウ（外では wrapTalk と talkRecOf を通す）。
+    pub type alias TalkState = TalkOf
+
+    pub def wrapTalk(r: TalkRec): TalkState = TalkOf.TalkOf(r)
+
+    pub def talkRecOf(t: TalkState): TalkRec = match t { case TalkOf.TalkOf(r) => r }
+
+    /// フィールドのメニューのページ（カーソルの番号を持つ）。取消で戻る先は WorldMenu.parentOf の 1 か所。
+    ///   Root      … はなす / じゅもん / つよさ / どうぐ / そうび / しらべる（2 列 × 3 行）
+    ///   SpellWho  … 誰が唱えるか → Spells（その人の覚えた呪文）→ SpellTarget（誰に。回復の呪文）
+    ///   Items     … ふくろの一覧 → ItemTarget（誰に使うか）
+    ///   Status    … つよさ（左右で仲間を替える）
+    ///   EquipWho  … 誰の装備か → EquipSlot（ぶき / よろい）→ EquipPick（「はずす」とふくろの中の付けられる物）
+    pub enum MenuPage with Eq, ToString {
+        case Root(Int32)
+        case SpellWho(Int32)
+        case Spells(Member.Member, Int32)
+        case SpellTarget(Member.Member, SpellsDoc.SpellId, Int32)
+        case Items(Int32)
+        case ItemTarget(ItemsDoc.ItemId, Int32)
+        case Status(Member.Member)
+        case EquipWho(Int32)
+        case EquipSlot(Member.Member, Int32)
+        case EquipPick(Member.Member, Party.Slot, Int32)
+    }
+
+    /// 店で かう か うる か。
+    pub enum ShopMode with Eq, ToString {
+        case Buy
+        case Sell
+    }
+
+    /// 店のページ。Top = かう / うる / やめる・Goods = 品の一覧・Count = 個数（1 から）・
+    /// Confirm = 「〜G で かいますか？」の はい / いいえ（道具・個数・カーソル）。取消で戻る先は WorldShop.parentOf。
+    pub enum ShopPage with Eq, ToString {
+        case Top(Int32)
+        case Goods(ShopMode, Int32)
+        case Count(ShopMode, ItemsDoc.ItemId, Int32)
+        case Confirm(ShopMode, ItemsDoc.ItemId, Int32, Answer)
+    }
+
+    /// 知らせを送った後に行く所。Close = ウィンドウを閉じる / BackTo = メニューのそのページへ戻る。
+    pub enum NoticeThen {
+        case Close
+        case BackTo(MenuPage)
+    }
+
+    /// 知らせ（1 枚）。reveal = 文字送り（字は reveal#text）。
+    pub type alias NoticeState = { reveal = UiTypewriter.Reveal, then = NoticeThen }
+
+    /// フィールドの上に開いているウィンドウ。Shop は店の名前（rpg.shops.json の品の shop。空は村の道具屋）と開いた会話を持ち、
+    /// 閉じるとその続きへ戻る。
+    pub enum FieldWindow {
+        case Closed
+        case Talk(TalkState)
+        case Menu(MenuPage)
+        case Shop(String, ShopPage, TalkState)
+        case Notice(NoticeState)
+    }
+
+    /// マップを歩いている間だけの値。trail = 先頭が前にいたマスとその時の向き（新しい順に trailLength まで）。
+    /// 2 人目は trail の 1 つ目に立つ（足りなければ先頭と同じマスに重なる）。
+    /// awaitRelease = ウィンドウを閉じたフレームに押していた方向（Controls.step が入れる）。離すまで、その向きへは歩かない（向きだけ変える）。
+    /// stepsToFight = 次の戦いまでの歩数（出会いの組のあるマップで 1 マスごとに減る。0 はまだ引いていない = 次の 1 歩で引く）。
+    /// rocks = 押して動かした岩の今のマス（objects の id → マス。無い岩は Doc の位置。マップを移ると空に戻る）。
+    /// light = たいまつの残りの歩数（暗いマップで 1 マスごとに減る。0 なら明かりは先頭のまわりだけ）。
+    /// WhyNot: 岩とたいまつをセーブに書かない — 岩はマップを出ると戻す決まり（詰まない）で、セーブは宿（明るい村）でだけ書く。
+    pub type alias FieldRec = {
+        map = MapDoc.MapId,
+        hero = Grid.Cell,
+        facing = Dir4.Dir4,
+        stride = Stride,
+        trail = List[(Grid.Cell, Dir4.Dir4)],
+        awaitRelease = List[Dir4.Dir4],
+        stepsToFight = Int32,
+        rocks = Map[String, Grid.Cell],
+        light = Int32,
+        window = FieldWindow,
+        transition = Option[Transition]
+    }
+
+    /// trail に持つマスの数: 2 人目と 3 人目が立つ 2 つと、3 人目が歩き出す 1 つ前のマス。
+    /// WhyNot: 2 つで切らない — 3 人目は「立つマス」の 1 つ古いマスから動いて見せるので、それが無いと歩きの途中で跳ぶ。
+    pub def trailLength(): Int32 = 3
+
+    enum FieldOf(FieldRec)
+
+    /// マップを歩いている間の値（外では fieldRecOf と mapField を通す）。
+    pub type alias FieldState = FieldOf
+
+    // ── 戦い ──
+
+    /// 戦いのコマンドのウィンドウの項目（上から）。選べるかは WorldBattle.isCommandOpen。
+    pub enum BattleCommand with Eq, ToString {
+        case Fight
+        case Spell
+        case Items
+        case Defend
         case Flee
     }
 
-    /// いま戦っている 1 回ぶん。主人公の体力は戦いをまたいで残るので World 側が持ち、
-    /// ここには「この戦いの中だけの物」を置く。
-    ///   step … いまどのフェーズか。cursor … 選んでいるコマンド（0 = たたかう / 1 = にげる）。
-    ///   foeHp … 魔物の残り体力。lines … 下のウィンドウに出す文（上から順）。
-    ///   foeHurt … 魔物が殴られたコマを出すか。outcome … 決着（まだなら None）。
-    pub type alias Battle = {
-        step = BattleStep,
-        cursor = Int32,
-        foeHp = Int32,
-        lines = List[String],
-        foeHurt = Bool,
-        outcome = Option[Outcome]
+    /// 戦いのコマンドを選んでいるページ。Commands = コマンドのウィンドウ（カーソル）/ FoeTarget = たたかう の的（生きている敵の何番目か）/
+    /// SpellList = その仲間の覚えた呪文 / SpellTarget = 呪文の的（敵 1 体の呪文は生きている敵・回復は仲間の何番目か）/
+    /// ItemList = 戦いのどうぐの一覧（WorldBattle.itemsOf）/ ItemTarget = 道具の的（burn の物は生きている敵・ほかは仲間）。
+    /// 取消で戻る先は WorldBattle.cancel（的 → 一覧 → コマンド → 前の仲間の選び直し）。
+    pub enum CommandPage with Eq, ToString {
+        case Commands(Int32)
+        case FoeTarget(Int32)
+        case SpellList(Int32)
+        case SpellTarget(SpellsDoc.SpellId, Int32)
+        case ItemList(Int32)
+        case ItemTarget(ItemsDoc.ItemId, Int32)
     }
 
-    /// 起動時に読む Doc の束（Main と SceneRender が同じ形で組む）。
-    pub type alias Docs = {
-        map = MapDoc.Doc,
-        kind = KindDoc.Doc,
-        theme = ThemeDoc.Doc,
-        battle = BattleDoc.Doc,
-        sprites = PxSpriteDoc.Doc,
-        townSprites = PxSpriteDoc.Doc,
-        townMap = TownMapDoc.Doc,
-        waterShader = ShaderDoc.Spec,
-        smokeFx = FxDoc.Spec
+    /// 伝言を出し終えた後にすること。Choose = 最初の仲間のコマンドへ（現れた時）/ Judge = 勝ち負けを見る（1 ターンの後）/
+    /// Leave = 戦いを終える（勝ち・全滅・逃げ切りの伝言の後）。
+    pub enum AfterShow with Eq, ToString {
+        case Choose
+        case Judge
+        case Leave(Battle.Outcome)
     }
 
-    /// ゲームの状態。hero / facing = 主人公のマスと向き、stepGauge = 次の一歩までの残り秒、
-    /// steps = 歩いた歩数（歩きのコマ送りに使う）、herbs = まだ拾っていない薬草のマス、
-    /// picked = 拾った薬草の数、doorOpen = 扉が開いたか、
-    /// dialog = ふきだし（開いている間は歩けない）、talkingTo = 話し相手のマス（ふきだしの位置）。
-    /// t = 起動からの積み上げ秒（場面に関係なく進む — 待っている画面でも絵を止めないため）。
-    /// heroHp = 主人公の残り体力（戦いをまたいで残る）。battle = いま戦っている 1 回ぶん。
-    pub type alias World = {
-        map = MapDoc.Doc,
-        kind = KindDoc.Doc,
-        theme = ThemeDoc.Doc,
-        battleDoc = BattleDoc.Doc,
-        sprites = PxSpriteDoc.Doc,
-        townSprites = PxSpriteDoc.Doc,
-        townMap = TownMapDoc.Doc,
-        townAtlas = PxSpriteAtlas.Baked,
-        townAtlasKey = String,
-        charAtlas = PxSpriteAtlas.Baked,
-        charAtlasKey = String,
-        tileSpec = TileLayerSpec,
-        bridgeCells = List[Grid.Cell],
-        waterRect = Option[Rect2.Rect2],
-        waterMaskRects = List[Rect2.Rect2],
-        waterShader = ShaderDoc.Spec,
-        smokeFx = FxDoc.Spec,
+    /// 戦いの進み。Choose = その仲間のコマンドを選んでいる /
+    /// Show = 伝言を 1 枚ずつ出している（今の 1 枚・その後に出す残り・今の 1 枚を出し始めた時刻・出し終えた後）。
+    pub enum Phase {
+        case Choose(Member.Member, CommandPage)
+        case Show(Battle.Beat, List[Battle.Beat], Clock.Time[Play], AfterShow)
+    }
+
+    /// 戦いの間だけの値。battle = 戦いの値（ターンの後。表示は Show の今の Beat の after を読む）、
+    /// back = 戻る先のフィールド、plans = このターンに選び終えた仲間の行動、afterWin = 勝った後に開く会話のノード。
+    pub type alias BattleRec = {
+        battle = Battle.Battle,
         phase = Phase,
-        npcClock = Float64,
-        t = Float64,
-        hero = Grid.Cell,
-        facing = Dir4.Dir4,
-        stepGauge = Float64,
-        steps = Int32,
-        herbs = List[Grid.Cell],
-        picked = Int32,
-        doorOpen = Bool,
-        heroHp = Int32,
-        battle = Battle,
-        dialog = UiDialog.Dialog,
-        talkingTo = Option[Grid.Cell]
+        back = FieldState,
+        plans = Map[Member.Member, Battle.Plan],
+        afterWin = Option[String]
     }
 
-    // ── 画面と盤の寸法（design 320×240 は project.json と同じ値。盤は design より広く、
-    //    camera が主人公を追ってスクロールする） ──
+    enum BattleOf(BattleRec)
 
-    pub def width(): Float64 = 320.0
-    pub def height(): Float64 = 240.0
+    /// 戦いの間の値（外では battleRecOf と mapBattle を通す）。
+    pub type alias BattleState = BattleOf
 
-    /// タイルの 1 辺（px）。画面には 20×15 マスぶんが見える。
-    pub def tileSize(): Float64 = 16.0
+    /// 今の場面と、その場面だけが持つ値。
+    pub enum Scene {
+        case Title(TitleItem)
+        case Field(FieldState)
+        case Battle(BattleState)
+    }
 
-    /// 盤全体の world 矩形（camera の bounds）。盤原点は (0,0) 固定 —
-    /// 盤が design より大きいので中央寄せはせず、world 座標 = マス×16 にする。
-    pub def boardRect(w: World): Rect2.Rect2 =
-        { position = { x = 0.0, y = 0.0 },
-          size = { x = Int32.toFloat64(MapDoc.cols(w#map)) * tileSize(),
-                   y = Int32.toFloat64(MapDoc.rowCount(w#map)) * tileSize() } }
+    /// 場面の名前だけ（比べる・字にする）。
+    pub enum SceneKind with Eq, ToString {
+        case Title
+        case Field
+        case Battle
+    }
 
-    /// camera の中心。里（表紙・クリアの幕の下も含む）では主人公のマス中心を追い、
-    /// 戦い（盤を映さない画面）では design の中央に固定してずらしを消す —
-    /// 戦いの絵は画面座標のまま world 側に組んであるため。
-    pub def cameraCenter(w: World): Vec2.Vec2 =
-        match w#phase {
-            case Phase.Battle => { x = width() / 2.0, y = height() / 2.0 }
-            case _            => Grid.cellCenterOf(tileSize(), w#hero)
-        }
+    /// ゲームの状態（遊びの状態だけ。Doc と絵は Res が持つ）。dice = 乱数を引いた回数（Dice）、
+    /// save = 書く（起動の時に読んだ）セーブの中身（タイトルの「つづきから」もここを読む）、
+    /// saveRev = セーブを書く合図（App.addOutput がこの値の変わった時だけ save を書く。0 は書く物が無い）。
+    pub type alias World = {
+        scene = Scene,
+        party = Party.Party,
+        bag = Bag.Bag,
+        progress = Progress.Progress,
+        dice = Int32,
+        play = Clock.Clock[Play],
+        realNow = Clock.Time[Clock.Real],
+        ask = Option[Ask],
+        events = Emit.Events[Event],
+        save = Option[Saves.SaveData],
+        saveRev = Int32
+    }
 
-    /// 人と物の絵の Doc。街の絵と同じく、増える方向ごとに分けてある
-    /// （人が増える / 持ち物が増える / 魔物が増える）。アトラスは 1 枚のまま。
-    pub def charSpritePaths(): List[String] =
-        "assets/rpg_people.sprite.json"
-            :: "assets/rpg_item.sprite.json"
-            :: "assets/rpg_foe.sprite.json"
-            :: Nil
+    /// 起動の World。タイトルから始まる（カーソルは「はじめから」。仲間と手持ちのお金は「はじめから」で Doc から入る）。
+    /// save = 起動の時に読んだセーブ（無ければ「つづきから」は灰色）。
+    pub def initial(save: Option[Saves.SaveData]): World =
+        { scene = Scene.Title(TitleItem.NewGame), party = Party.empty(), bag = Bag.withGold(0), progress = Progress.initial(), dice = 0, play = Clock.start(), realNow = Clock.zero(),
+          ask = None, events = Emit.empty(), save = save, saveRev = 0 }
 
-    /// 人と物の絵を全部読んで 1 枚の Doc にする。
-    pub def loadCharSprites(): PxSpriteDoc.Doc \ Fs.FileRead =
-        charSpritePaths()
-            |> List.map(PxSpriteDoc.load)
-            |> List.foldLeft(joinSpriteDocs, PxSpriteDoc.empty())
+    // ── 場面を読む・書く口 ──
 
-    /// 街の絵の Doc。1 ファイル = 同じときに描き直す物だけ（地面 / 水路と橋 / 小物 /
-    /// 建物は 1 棟ずつ）。分けるのは編集のためで、GPU へ上げるアトラスは 1 枚のまま
-    /// — 読んだ後にここで 1 つの Doc へ束ねる。
-    pub def townSpritePaths(): List[String] =
-        "assets/town_ground.sprite.json"
-            :: "assets/town_water.sprite.json"
-            :: "assets/town_prop.sprite.json"
-            :: "assets/town_house.sprite.json"
-            :: "assets/town_shop.sprite.json"
-            :: "assets/town_church.sprite.json"
-            :: Nil
+    pub def sceneKindOf(w: World): SceneKind = match w#scene {
+        case Scene.Title(_) => SceneKind.Title
+        case Scene.Field(_) => SceneKind.Field
+        case Scene.Battle(_) => SceneKind.Battle
+    }
 
-    /// 街の絵を全部読んで 1 枚の Doc にする。
-    pub def loadTownSprites(): PxSpriteDoc.Doc \ Fs.FileRead =
-        townSpritePaths()
-            |> List.map(PxSpriteDoc.load)
-            |> List.foldLeft(joinSpriteDocs, PxSpriteDoc.empty())
+    /// マップを歩いている間の値（タイトルなら None）。
+    pub def fieldRecOf(w: World): Option[FieldRec] = match w#scene {
+        case Scene.Field(FieldOf.FieldOf(r)) => Some(r)
+        case _                               => None
+    }
 
-    /// 絵の名前はファイルをまたいで重ならない（重ねたら後から読んだ方が勝つ）。
-    def joinSpriteDocs(acc: PxSpriteDoc.Doc, doc: PxSpriteDoc.Doc): PxSpriteDoc.Doc =
-        { legend = Map.union(doc#legend, acc#legend),
-          sprites = Map.union(doc#sprites, acc#sprites) | acc }
+    /// 持っているフィールドの値の中身（戦いの戻る先を読む）。
+    pub def fieldRecOfState(f: FieldState): FieldRec = match f { case FieldOf.FieldOf(r) => r }
 
-    /// 街タイルのアトラスを作り、GPU キャッシュ用の key と対にして返す。
-    /// key に画素のハッシュを織り込むのは、Doc や色票の保存即反映で絵が変わったとき、
-    /// 同じ key のまま古いテクスチャが画面に残らないため（毎フレーム計算しない —
-    /// 作るのはここ 1 回で、World が結果を持つ）。
-    pub def bakeTownAtlas(doc: PxSpriteDoc.Doc, theme: ThemeDoc.Doc): (PxSpriteAtlas.Baked, String) =
-        bakedOf("town-tiles-v1", doc, theme)
+    /// マップを歩いている間だけ f を掛ける（ほかの場面ではそのまま）。
+    pub def mapField(f: FieldRec -> FieldRec \ ef, w: World): World \ ef = match w#scene {
+        case Scene.Field(FieldOf.FieldOf(r)) => { scene = Scene.Field(FieldOf.FieldOf(f(r))) | w }
+        case _                               => w
+    }
 
-    /// 人と物（rpg_*.sprite.json）のアトラス。街タイルとは別の 1 枚にまとめる
-    /// （絵の出どころが違う Doc なので、片方を保存し直したときにもう片方まで作り直さない）。
-    pub def bakeCharAtlas(doc: PxSpriteDoc.Doc, theme: ThemeDoc.Doc): (PxSpriteAtlas.Baked, String) =
-        bakedOf(charAtlasName(), doc, theme)
+    /// 戦いの間の値（戦いでなければ None）。
+    pub def battleRecOf(w: World): Option[BattleRec] = match w#scene {
+        case Scene.Battle(BattleOf.BattleOf(r)) => Some(r)
+        case _                                  => None
+    }
 
-    /// GPU に登録する人と物のアトラスの論理名（View の drawQuad と Main の
-    /// withSpriteAtlases がこの名前で待ち合わせる）。
-    pub def charAtlasName(): String = "chars"
+    /// 戦いの間だけ f を掛ける（ほかの場面ではそのまま）。
+    pub def mapBattle(f: BattleRec -> BattleRec \ ef, w: World): World \ ef = match w#scene {
+        case Scene.Battle(BattleOf.BattleOf(r)) => { scene = Scene.Battle(BattleOf.BattleOf(f(r))) | w }
+        case _                                  => w
+    }
 
-    /// ドット絵の Doc を 1 枚のアトラスにまとめ、GPU キャッシュ用の鍵と対で返す。
-    /// まとめるのは読み込みの 1 回だけで、描くときは 1 コマ = 1 クアッドになる
-    /// （PxSprite.draw は 1 コマを画素ぶんの四角に開くので、人や物が増えるほど重くなる。
-    ///  予算と検査は engine の docs/performance.md §9）。
-    def bakedOf(tag: String, doc: PxSpriteDoc.Doc, theme: ThemeDoc.Doc): (PxSpriteAtlas.Baked, String) =
-        let baked = PxSpriteAtlas.bake(doc, key -> ThemeDoc.resolver(theme, key));
-        let h = baked#pixels |> Vector.foldLeft((acc, px) -> acc * 31 + px, 17);
-        (baked, "${tag}:${Int32.toString(baked#side)}:${Int32.toString(h)}")
+    /// 戦いを始める（back = 戻る先のフィールド）。[遷移: Field→Battle]
+    pub def placeBattle(r: BattleRec, w: World): World = { scene = Scene.Battle(BattleOf.BattleOf(r)) | w }
 
-    /// 街タイル盤から導く値（タイル層の宣言・橋のマス・水面の矩形）を持ち直す。
-    /// 毎フレーム計算しないのは、どれも全盤走査で 1 フレーム予算（120fps=8.3ms）を
-    /// 食い潰すため — 盤とアトラスが変わるのは Doc の保存と F1 だけ。
-    def refreshTownCache(w: World): World =
-        { tileSpec = TownMap.spec(w#townMap, w#townAtlas),
-          bridgeCells = TownMap.bridgeCells(w#townMap),
-          waterRect = TownMap.waterRect(w#townMap),
-          waterMaskRects = TownMap.waterMaskRects(w#townMap) | w }
+    /// 戦いから back のフィールドへ戻る（暗転・歩き・ウィンドウは無し）。[遷移: Battle→Field]
+    pub def returnToField(back: FieldState, w: World): World = { scene = Scene.Field(back) | w }
 
-    /// ゲーム開始時の状態。表紙から始まる。
-    pub def initial(docs: Docs): World =
-        let (townAtlas, townKey) = bakeTownAtlas(docs#townSprites, docs#theme);
-        let (charAtlas, charKey) = bakeCharAtlas(docs#sprites, docs#theme);
-        { map = docs#map, kind = docs#kind, theme = docs#theme, battleDoc = docs#battle,
-          sprites = docs#sprites,
-          townSprites = docs#townSprites, townMap = docs#townMap,
-          townAtlas = townAtlas, townAtlasKey = townKey,
-          charAtlas = charAtlas, charAtlasKey = charKey,
-          tileSpec = TownMap.spec(docs#townMap, townAtlas),
-          bridgeCells = TownMap.bridgeCells(docs#townMap),
-          waterRect = TownMap.waterRect(docs#townMap),
-          waterMaskRects = TownMap.waterMaskRects(docs#townMap),
-          waterShader = docs#waterShader, smokeFx = docs#smokeFx,
-          phase = Phase.Title, t = 0.0, npcClock = 0.0,
-          hero = MapDoc.rec(docs#map)#start, facing = Dir4.Down, stepGauge = 0.0, steps = 0,
-          herbs = MapDoc.rec(docs#map)#herbs, picked = 0, doorOpen = false,
-          heroHp = BattleDoc.rec(docs#battle)#heroMaxHp, battle = noBattle(),
-          dialog = UiDialog.closed(), talkingTo = None }
+    /// 今のフィールドの値（Battle に入る時に戻る先として持つ）。
+    pub def fieldStateOf(w: World): Option[FieldState] = match w#scene {
+        case Scene.Field(f) => Some(f)
+        case _              => None
+    }
 
-    /// 戦っていないときの空の戦い（場が無い間の置き物）。
-    def noBattle(): Battle =
-        { step = BattleStep.Choosing, cursor = 0, foeHp = 0,
-          lines = Nil, foeHurt = false, outcome = None }
+    /// 点滅を始め、点滅し終えたら foes と戦う（afterWin = 勝った後に開く会話のノード）。歩きは止める。
+    pub def startEncounter(foes: List[FoesDoc.FoeId], afterWin: Option[String], w: World): World =
+        mapField(r -> { stride = Stride.Still, transition = Some({ startedAt = now(w), then = TransitionThen.StartBattle(foes, afterWin) }) | r }, w)
 
-    /// 里を歩ける状態に置き直す（表紙から始めるとき・間取りの Doc を差し替えたとき）。
-    /// 薬草は全部戻り、扉は閉じ、体力は満タン、主人公は start のマスに立つ。[遷移: Title→Play]
-    def begin(w: World): World =
-        { phase = Phase.Play,
-          hero = MapDoc.rec(w#map)#start, facing = Dir4.Down, stepGauge = 0.0, steps = 0,
-          herbs = MapDoc.rec(w#map)#herbs, picked = 0, doorOpen = false,
-          heroHp = BattleDoc.rec(w#battleDoc)#heroMaxHp, battle = noBattle(),
-          dialog = UiDialog.closed(), talkingTo = None | w }
+    /// 遊びの時計の今。
+    pub def now(w: World): Clock.Time[Play] = Clock.nowOf(w#play)
 
-    // ── 収支の導出 ──
+    /// 実時間の今（秒）。点滅と足踏みのコマを選ぶ所だけで使う。
+    pub def realSeconds(w: World): Float64 = Clock.secondsOf(w#realNow)
 
-    /// クリアに要る薬草の数。置いてある数より多くは求めない（詰みを作らない）。最低 1。
-    pub def goalOf(w: World): Int32 =
-        Int32.max(1, Int32.min(MapDoc.rec(w#map)#goal, List.length(MapDoc.rec(w#map)#herbs)))
+    // ── 場面の移り ──
 
-    /// ともっている灯りの数（薬草を拾うたびひとつ点く。灯りの数より多くは点かない）。
-    pub def lampsLit(w: World): Int32 =
-        Int32.min(w#picked, List.length(MapDoc.rec(w#map)#lamps))
+    /// 開いているウィンドウを閉じる（どのウィンドウもここを通す）。
+    /// 閉じたフレームに押していた方向は、Controls.step が holdUntilReleased で awaitRelease に入れる。
+    /// WhyNot: 閉じる時の向き 1 つだけを待たない — メニューは方向キーと関係なく開くので、カーソルを動かした方向を押したまま閉じると、
+    /// その方向へすぐ歩き出す（会話でも、押したまま閉じた方向へ出口の gate や人の会話がすぐまた開く）。
+    pub def closeWindow(r: FieldRec): FieldRec = match r#window {
+        case FieldWindow.Closed => r
+        case _                  => { window = FieldWindow.Closed | r }
+    }
 
-    // ── 住人の巡回（Journey: 状態は npcClock だけ・位置は時刻の純関数） ──
+    /// ウィンドウが開いているか。
+    pub def isWindowOpen(w: World): Bool =
+        fieldRecOf(w) |> Option.exists(r -> match r#window {
+            case FieldWindow.Closed => false
+            case _                  => true
+        })
 
-    /// 巡回路（歩けるマスを結ぶ角の列。末尾から先頭へ戻って循環）。
-    /// 知らない id は巡回しない（Doc のマスに立ち続ける = fail-open）。
-    pub def routeOf(id: String): List[Grid.Cell] =
-        match id {
-            case "monban"   => { x = 4, y = 8 } :: { x = 7, y = 8 }
-                            :: { x = 7, y = 6 } :: { x = 4, y = 6 } :: Nil
-            case "hatasaku" => { x = 4, y = 2 } :: { x = 8, y = 2 }
-                            :: { x = 8, y = 4 } :: { x = 4, y = 4 } :: Nil
-            case "ko"       => { x = 14, y = 6 } :: { x = 14, y = 7 }
-                            :: { x = 21, y = 7 } :: { x = 14, y = 7 } :: Nil
-            case _          => Nil
-        }
+    /// 出入口を通って行き先のマスに着いた所（歩き・隊列・ウィンドウ・閉じた向きの待ち・動かした岩を消す。暗転はそのまま）。
+    pub def arriveAt(map: MapDoc.MapId, cell: Grid.Cell, facing: Dir4.Dir4, r: FieldRec): FieldRec =
+        { map = map, hero = cell, facing = facing, stride = Stride.Still, trail = Nil, awaitRelease = Nil, rocks = Map.empty(),
+          window = FieldWindow.Closed | r }
 
-    /// 巡回で踏む全マス（角の間も展開。テストが「歩けるマスしか通らない」を縛る口）。
-    pub def routeCells(id: String): List[Grid.Cell] =
-        match routeOf(id) {
-            case Nil => Nil
-            case pts =>
-                let closed = List.append(pts, List.take(1, pts));
-                List.zip(closed, List.drop(1, closed))
-                    |> List.flatMap(pair -> { let (a, b) = pair; cellsBetween(a, b) })
-        }
+    /// 閉じたフレームに押していた方向を、離すまで歩かない方向にする（Controls.step がウィンドウの閉じたフレームに呼ぶ）。
+    pub def holdUntilReleased(dirs: List[Dir4.Dir4], w: World): World = mapField(r -> { awaitRelease = dirs | r }, w)
 
-    /// 軸に沿った 2 マス間の経路（両端込み）。斜めは想定しない（巡回路は角で曲がる）。
-    def cellsBetween(a: Grid.Cell, b: Grid.Cell): List[Grid.Cell] =
-        if (a#x == b#x)
-            List.range(Int32.min(a#y, b#y), Int32.max(a#y, b#y) + 1)
-                |> List.map(y -> { x = a#x, y = y })
-        else
-            List.range(Int32.min(a#x, b#x), Int32.max(a#x, b#x) + 1)
-                |> List.map(x -> { x = x, y = a#y })
+    /// 離すまで歩かない方向を、まだ押している方向だけに減らす（Controls が歩けるフレームに呼ぶ）。
+    pub def releaseAwait(stillHeld: List[Dir4.Dir4], w: World): World =
+        mapField(r -> { awaitRelease = r#awaitRelease |> List.filter(dir -> List.memberOf(dir, stillHeld)) | r }, w)
 
-    /// 住人の今の見本（位置と歩いた距離）。巡回しない住人は Doc のマスに立つ。
-    pub def villagerSampleAt(w: World, villager: MapDoc.Villager): Journey.Sample =
-        match routeOf(villager#id) {
-            case Nil => { pos = Grid.cellCenterOf(tileSize(), villager#cell),
-                          walking = 0.0, done = true }
-            case pts => {
-                let centers = pts |> List.map(c -> Grid.cellCenterOf(tileSize(), c));
-                let closed = List.append(centers, List.take(1, centers));
-                let legs = List.zip(closed, List.drop(1, closed))
-                    |> List.map(pair -> { let (a, b) = pair;
-                        ({ src = a, dst = b, speed = 22.0 }: Journey.Leg) });
-                let total = Journey.total(legs);
-                // 同じフレームで全員が曲がらないよう、名前の長さで位相をずらす。
-                let phase = Int32.toFloat64(String.length(villager#id)) * 3.7;
-                let tt = wrapBy(total, w#npcClock + phase);
-                Journey.at(legs, tt)
-            }
-        }
+    /// 開いているウィンドウを window にする（閉じるのは closeWindow）。
+    pub def withWindow(window: FieldWindow, w: World): World = mapField(r -> { window = window | r }, w)
 
-    /// 住人が今いるマス（歩ける・話せるの判定はこのマスで行う — 絵と規則を同じ見本から導く）。
-    pub def villagerCellAt(w: World, villager: MapDoc.Villager): Grid.Cell =
-        let smp = villagerSampleAt(w, villager);
-        { x = Float64.tryToInt32(Float64.floor(smp#pos#x / tileSize())) |> Option.getWithDefault(0),
-          y = Float64.tryToInt32(Float64.floor(smp#pos#y / tileSize())) |> Option.getWithDefault(0) }
+    /// 文字送りをしているウィンドウ（会話・知らせ）の話し手の id（地の文と知らせは空）と文字送り。無ければ None。
+    pub def typingOf(w: World): Option[(String, UiTypewriter.Reveal)] =
+        fieldRecOf(w) |> Option.flatMap(r -> match r#window {
+            case FieldWindow.Talk(t)   => talkRecOf(t)#line |> Option.map(line -> (line#speaker, talkRecOf(t)#reveal))
+            case FieldWindow.Notice(n) => Some(("", n#reveal))
+            case _                     => None
+        })
 
-    /// 0 <= 戻り値 < total の折り返し（total が 0 以下なら 0）。
-    def wrapBy(total: Float64, t: Float64): Float64 =
-        if (total <= 0.0) 0.0
-        else t - total * Float64.floor(t / total)
+    /// 知らせを 1 枚出す（then = 送った後に行く所）。
+    pub def showNotice(text: String, then: NoticeThen, w: World): World =
+        withWindow(FieldWindow.Notice({ reveal = UiTypewriter.start(text), then = then }), w)
 
-    // ── 歩ける・ぶつかるの規則 ──
+    // ── セーブ ──
 
-    /// cell へ歩けるか。盤の中で、石垣でなく、住人が立っておらず、閉じた扉でもないこと。
-    pub def walkable(cell: Grid.Cell, w: World): Bool =
-        Grid.inRectOf(cell, MapDoc.cols(w#map), MapDoc.rowCount(w#map))
-            and not MapDoc.solidAt(cell, w#map)
-            and not List.exists(v -> MapDoc.sameCell(villagerCellAt(w, v), cell), MapDoc.rec(w#map)#villagers)
-            and not (MapDoc.sameCell(cell, MapDoc.rec(w#map)#door#cell) and not w#doorOpen)
+    /// 今の World のセーブの中身。
+    pub def saveDataOf(w: World): Saves.SaveData =
+        Saves.of({ party = w#party, bag = w#bag, progress = w#progress, dice = w#dice })
 
-    /// 1 歩の規則: まず向きを変え、行き先に歩ければ進み、薬草があれば拾う。
-    /// 歩けなければ向きだけ変わる（壁の前で足踏みしない）。
-    pub def stepOnce(direction: Dir4.Dir4, w: World): World =
-        let faced = { facing = direction | w };
-        let target = Grid.neighborOf(w#hero, direction);
-        if (walkable(target, faced))
-            pickUp({ hero = target, steps = w#steps + 1 | faced }) |> meetFoe
-        else
-            faced
+    /// 今の中身をセーブにし、書く合図（saveRev）を 1 進める。
+    pub def writeSave(w: World): World = { save = Some(saveDataOf(w)), saveRev = w#saveRev + 1 | w }
 
-    /// いま立っているマスの薬草を拾う。goal に届いたらクリア（Phase.Clear）。[遷移: Play→Clear]
-    /// 拾った薬草は盤から消えるので、同じマスをまた踏んでも二度は数えない。
-    def pickUp(w: World): World =
-        if (List.exists(cell -> MapDoc.sameCell(cell, w#hero), w#herbs)) {
-            let picked = w#picked + 1;
-            { herbs = List.filter(cell -> not MapDoc.sameCell(cell, w#hero), w#herbs),
-              picked = picked,
-              phase = if (picked >= goalOf(w)) Phase.Clear else w#phase | w }
-        } else w
+    /// マップのマスに立つ（ウィンドウは閉じ、暗転は無し）。[遷移: Title / Field→Field]
+    pub def placeField(map: MapDoc.MapId, hero: Grid.Cell, facing: Dir4.Dir4, w: World): World =
+        { scene = Scene.Field(FieldOf.FieldOf({ map = map, hero = hero, facing = facing, stride = Stride.Still, trail = Nil,
+                                                awaitRelease = Nil, stepsToFight = 0, rocks = Map.empty(), light = 0,
+                                                window = FieldWindow.Closed, transition = None })) | w }
 
-    /// 毎フレーム: ふきだしの文字送りを進め、開いていなければ歩みを進める。
-    /// ふきだしが開いている間は歩けない（会話中に動かないのはルール）。
-    /// 歩く速さは KindDoc（walk マス/秒）— 押しっぱなしで 1/walk 秒ごとに 1 歩。
-    /// 時計（t）だけは場面を問わず進める — 表紙でも戦いの最中でも霧が流れ、魔物が息をする。
-    pub def step(direction: Option[Dir4.Dir4], dt: Float64, w: World): World =
-        let ticked = { t = w#t + dt | w };
-        match ticked#phase {
-            case Phase.Play => {
-                let talked = { dialog = UiDialog.step(cps = KindDoc.rec(w#kind)#cps, dt, ticked#dialog) | ticked };
-                if (UiDialog.isOpen(talked#dialog))
-                    // 会話中は住人の巡回も止める — 話し相手が歩き去ると、
-                    // ふきだしの根本が誰も居ないマスを指すため。
-                    talked
-                else
-                    walk(direction, Clock.countdown(talked#stepGauge, dt),
-                         { npcClock = talked#npcClock + dt | talked })
-            }
-            case _ => ticked
-        }
+    /// マップのマスに立ち、暗転を晴らして入る。[遷移: Title→Field]
+    pub def enterField(map: MapDoc.MapId, hero: Grid.Cell, facing: Dir4.Dir4, w: World): World =
+        placeField(map, hero, facing, w)
+            |> mapField(r -> { transition = Some({ startedAt = now(w), then = TransitionThen.FadeIn }) | r })
 
-    /// 歩みの更新。向きは押せばすぐ変わり、gauge が 0 になったフレームだけ 1 歩進む。
-    /// 実際に進んだら次の一歩まで stepInterval を貯め直す。
-    def walk(direction: Option[Dir4.Dir4], gauge: Float64, w: World): World =
-        match direction {
-            case None => { stepGauge = gauge | w }
-            case Some(d) =>
-                if (gauge > 0.0)
-                    { stepGauge = gauge, facing = d | w }
-                else {
-                    let stepped = stepOnce(d, { stepGauge = gauge | w });
-                    if (not MapDoc.sameCell(stepped#hero, w#hero))
-                        { stepGauge = stepInterval(w) | stepped }
-                    else stepped
-                }
-        }
+    /// タイトルのカーソルの項目（タイトルでなければ None）。
+    pub def titleCursorOf(w: World): Option[TitleItem] = match w#scene {
+        case Scene.Title(item) => Some(item)
+        case _                 => None
+    }
 
-    /// 1 歩にかける秒数（walk マス/秒の逆数。1 未満の walk は 1 マス/秒にする）。
-    def stepInterval(w: World): Float64 =
-        1.0 / Float64.max(1.0, KindDoc.rec(w#kind)#walk)
+    /// タイトルのカーソルを item へ。
+    pub def withTitleCursor(item: TitleItem, w: World): World = match w#scene {
+        case Scene.Title(_) => { scene = Scene.Title(item) | w }
+        case _              => w
+    }
 
-    // ══════════════════════════════════════════════════════
-    // 戦い（歩数で出会い、殴り合い、勝つか負けるか逃げる）
-    // ══════════════════════════════════════════════════════
-    //
-    //   Play ──encounterSteps 歩ごと(meetFoe)──▶ Battle
-    //     ▲                                        │
-    //     └────勝ち / 逃げ / 負け(leaveBattle)──────┘
-    //
-    // 乱数は持ち込まない: 何歩めで出会うかも、一撃の重さも Doc の数から決まる。
-    // 決定的なので描き出した絵もテストの期待値も揺れない（強さの調整は Doc 側で足りる）。
+    // ── 終了の確認 ──
 
-    /// この歩数で魔物と出会うか。encounterSteps 歩ごとに 1 回。0 以下なら出会わない。
-    pub def meetsFoeAt(steps: Int32, doc: BattleDoc.Doc): Bool =
-        let d = BattleDoc.rec(doc);
-        d#encounterSteps > 0 and steps > 0 and Int32.modulo(steps, d#encounterSteps) == 0
+    /// 終了を尋ねる（カーソルは「いいえ」から）。もう尋ねていれば何もしない。
+    pub def askQuit(w: World): World =
+        if (Option.isEmpty(w#ask)) { ask = Some(Ask.Quit(Answer.No)) | w } else w
 
-    /// 1 歩ぶん進んだあとの出会い判定。里を歩いている間だけ。[遷移: Play→Battle]
-    def meetFoe(w: World): World =
-        if (w#phase == Phase.Play and meetsFoeAt(w#steps, w#battleDoc))
-            { phase = Phase.Battle,
-              battle = { step = BattleStep.Report, cursor = 0, foeHp = BattleDoc.rec(w#battleDoc)#foeMaxHp,
-                         lines = "${BattleDoc.rec(w#battleDoc)#foeName} ${BattleDoc.rec(w#battleDoc)#foeAppears}" :: Nil,
-                         foeHurt = false, outcome = None } | w }
-        else w
+    /// 確認のカーソルを answer へ。
+    pub def moveAsk(answer: Answer, w: World): World \ Emit[Event] = match w#ask {
+        case Some(Ask.Quit(at)) if at != answer => { Emit.emit(Event.Cursor); { ask = Some(Ask.Quit(answer)) | w } }
+        case _                                  => w
+    }
 
-    /// 戦いのコマンドの並び（見出しは UI の構造なので固定でよい）。
-    pub def battleCommands(): List[String] = "たたかう" :: "にげる" :: Nil
+    /// 確認を閉じる（いいえ・取消）。
+    pub def closeAsk(w: World): World \ Emit[Event] =
+        Emit.emit(Event.Cancel);
+        { ask = None | w }
 
-    /// 選ぶカーソルを 1 つ動かす（上下。端で止まる）。Choosing の間だけ効く。
-    pub def moveCursor(delta: Int32, w: World): World =
-        if (w#phase != Phase.Battle or w#battle#step != BattleStep.Choosing) w
-        else {
-            let last = List.length(battleCommands()) - 1;
-            let cursor = Int32.max(0, Int32.min(last, w#battle#cursor + delta));
-            { battle = { cursor = cursor | w#battle } | w }
-        }
-
-    /// 戦いの決定 1 回分。フェーズによって意味が変わる:
-    ///   Report   … 読み終えた → つぎのコマンド選びへ。
-    ///   Choosing … 選んだコマンドを実行する（たたかう / にげる）。
-    ///   Done     … 決着を読み終えた → 里へ戻る。
-    def battleConfirm(w: World): World =
-        match w#battle#step {
-            case BattleStep.Report =>
-                { battle = { step = BattleStep.Choosing, lines = Nil, foeHurt = false | w#battle } | w }
-            case BattleStep.Done   => leaveBattle(w)
-            case BattleStep.Choosing =>
-                if (w#battle#cursor == 1) flee(w) else strike(w)
-        }
-
-    /// 「たたかう」1 回分。こちらが殴り、倒せなければ相手が殴り返す。
-    def strike(w: World): World =
-        let doc = BattleDoc.rec(w#battleDoc);
-        let foeHp = Int32.max(0, w#battle#foeHp - doc#heroAttack);
-        let hitLine = "${doc#foeName} に ${Int32.toString(doc#heroAttack)} ${doc#damageSuffix}";
-        if (foeHp <= 0)
-            { battle = { step = BattleStep.Done, foeHp = 0, foeHurt = true,
-                         lines = hitLine :: doc#heroWins :: Nil,
-                         outcome = Some(Outcome.Win) | w#battle } | w }
-        else {
-            let heroHp = Int32.max(0, w#heroHp - doc#foeAttack);
-            let backLine = "こちらに ${Int32.toString(doc#foeAttack)} ${doc#damageSuffix}";
-            if (heroHp <= 0)
-                { heroHp = 0,
-                  battle = { step = BattleStep.Done, foeHp = foeHp, foeHurt = true,
-                             lines = hitLine :: backLine :: doc#heroLoses :: Nil,
-                             outcome = Some(Outcome.Lose) | w#battle } | w }
-            else
-                { heroHp = heroHp,
-                  battle = { step = BattleStep.Report, foeHp = foeHp, foeHurt = true,
-                             lines = hitLine :: backLine :: Nil, outcome = None | w#battle } | w }
-        }
-
-    /// 「にげる」1 回分。必ず逃げられる（starter は詰ませない — 難しさは Doc の数で足す）。
-    def flee(w: World): World =
-        { battle = { step = BattleStep.Done, lines = BattleDoc.rec(w#battleDoc)#heroFlees :: Nil,
-                     foeHurt = false, outcome = Some(Outcome.Flee) | w#battle } | w }
-
-    /// 決着して里へ戻る。倒れていたら入口へ戻って体力が満ちる（詰まない）。
-    /// [遷移: Battle→Play]
-    def leaveBattle(w: World): World =
-        let back = { phase = Phase.Play, battle = noBattle() | w };
-        match w#battle#outcome {
-            case Some(Outcome.Lose) =>
-                { hero = MapDoc.rec(w#map)#start, facing = Dir4.Down, heroHp = BattleDoc.rec(w#battleDoc)#heroMaxHp | back }
-            case _ => back
-        }
-
-    // ── 決定（話す・進める）の規則 ──
-
-    /// 決定 1 回分。表紙では歩き出し［遷移: Title→Play］、クリア画面では表紙へ戻る［遷移: Clear→Title］。
-    /// 里では: ふきだしが開いていれば送り（文字送り中なら全文へ・読み終えていれば閉じる）、
-    /// 閉じていれば目の前の住人に話しかける（Play のまま）。
-    /// 戦いの最中は battleConfirm へ渡す。
-    pub def confirm(w: World): World =
-        match w#phase {
-            case Phase.Title  => begin(w)
-            case Phase.Clear  => { phase = Phase.Title | w }
-            case Phase.Battle => battleConfirm(w)
-            case Phase.Play =>
-                if (UiDialog.isOpen(w#dialog)) {
-                    let dialog = UiDialog.advance(w#dialog);
-                    { dialog = dialog,
-                      talkingTo = if (UiDialog.isOpen(dialog)) w#talkingTo else None | w }
-                } else
-                    talk(Grid.neighborOf(w#hero, w#facing), w)
-        }
-
-    /// 目の前のマスに住人がいれば話しかける。いなければ何も起きない。
-    def talk(cell: Grid.Cell, w: World): World =
-        match List.find(v -> MapDoc.sameCell(villagerCellAt(w, v), cell), MapDoc.rec(w#map)#villagers) {
-            case None           => w
-            case Some(villager) => speak(villager, w)
-        }
-
-    /// 住人の 1 行を選び、ふきだしを開く。約束の相手（door の promise）だけは特別で、
-    /// 扉が閉じている間: 薬草が足りなければ頼まれごと（ask）、足りていれば扉が開いて opened。
-    /// それ以外（扉が開いた後も）はその住人のいつもの 1 行。
-    def speak(villager: MapDoc.Villager, w: World): World =
-        let door = MapDoc.rec(w#map)#door;
-        let isPromise = villager#id == door#promise and not w#doorOpen;
-        let fulfilled = isPromise and w#picked >= door#need;
-        let line = if (fulfilled) door#opened
-                   else if (isPromise) door#ask
-                   else villager#line;
-        { doorOpen = w#doorOpen or fulfilled,
-          dialog = UiDialog.openWith(
-              { speaker = villager#id, body = RichText.plain(line) :: Nil } :: Nil),
-          talkingTo = Some(villagerCellAt(w, villager)) | w }
-
-    // ── Doc の差し替え（保存即反映） ──
-
-    /// 間取りの差し替え。歩いている途中なら盤を作り直す（編集がその場で画面に出る。
-    /// 拾いかけの薬草は戻る — 盤が変わったら仕切り直すのが一番迷わない）。
-    pub def withMap(map: MapDoc.Doc, w: World): World =
-        let w1 = { map = map | w };
-        match w1#phase {
-            case Phase.Play => begin(w1)
-            case _          => w1
-        }
-
-    pub def withKind(kind: KindDoc.Doc, w: World): World = { kind = kind | w }
-
-    /// 戦いの数値・文言の差し替え。体力の上限が動くので、いまの体力もそこへ収める。
-    pub def withBattleDoc(doc: BattleDoc.Doc, w: World): World =
-        { battleDoc = doc, heroHp = Int32.min(w#heroHp, BattleDoc.rec(doc)#heroMaxHp) | w }
-
-    /// 色票の差し替え。アトラスは色票から実色を組み込んでいるので、2 枚とも作り直す
-    /// （作り直さないと、タイルや人だけ古い色のまま画面に残る）。
-    pub def withTheme(theme: ThemeDoc.Doc, w: World): World =
-        let (townAtlas, townKey) = bakeTownAtlas(w#townSprites, theme);
-        let (charAtlas, charKey) = bakeCharAtlas(w#sprites, theme);
-        refreshTownCache({ theme = theme, townAtlas = townAtlas, townAtlasKey = townKey,
-                           charAtlas = charAtlas, charAtlasKey = charKey | w })
-
-    /// 人と物の Doc の差し替え（保存即反映）。アトラスも一緒に作り直す。
-    pub def withSprites(sprites: PxSpriteDoc.Doc, w: World): World =
-        let (charAtlas, charKey) = bakeCharAtlas(sprites, w#theme);
-        { sprites = sprites, charAtlas = charAtlas, charAtlasKey = charKey | w }
-
-    /// 街タイルの Doc の差し替え（保存即反映）。アトラスも一緒に作り直す。
-    pub def withTownSprites(doc: PxSpriteDoc.Doc, w: World): World =
-        let (townAtlas, townKey) = bakeTownAtlas(doc, w#theme);
-        refreshTownCache({ townSprites = doc, townAtlas = townAtlas, townAtlasKey = townKey | w })
-
-    /// 街のタイル盤の差し替え（保存即反映）。アトラスは盤に依らないので作り直さない —
-    /// タイル層は Doc の読み直しをエンジンが世代で検知して勝手に敷き直す。
-    pub def withTownMap(doc: TownMapDoc.Doc, w: World): World =
-        refreshTownCache({ townMap = doc | w })
-
-    pub def withWaterShader(spec: ShaderDoc.Spec, w: World): World = { waterShader = spec | w }
-
-    pub def withSmokeFx(spec: FxDoc.Spec, w: World): World = { smokeFx = spec | w }
+    /// 遊びの時計のこのフレームの進み方。止める理由は確認のウィンドウ。
+    pub def paceOf(w: World): Clock.Pace[Play, Halt] =
+        if (Option.nonEmpty(w#ask)) Clock.paceOf(Clock.Run.Paused(Halt.Asking))
+        else Clock.paceOf(Clock.Run.Running)
 }

@@ -1,0 +1,121 @@
+{
+  "version": 1,
+  "title": "仲間（仲間ごとの値）",
+  "note": "鍵は仲間の名前（luka / mina / toto。顔ぶれはコードの Member.Member）。name は画面に出す名前、sprite はフィールドで描く assets/rpg.chars.sprite.json の絵の名前、placeholder は絵が無い時の仮の四角の色（色票の鍵）。hp / mp / atk / def / agi は Lv1 の最大 HP・最大 MP・ちから・みのまもり・すばやさ（装備を除く）、joinLv は加わった時の Lv、weapon / armor は加わった時に付けている物（rpg.items.json の鍵）。行の無い仲間・省いた欄はコードの既定の値で出る。 hpUp / mpUp / atkUp / defUp / agiUp は 1 Lv ごとの伸び（Lv1 の値に (Lv − 1) 回足す。ぶれは付けない）。exp は Lv ごとの経験値の累計（一番上の Lv が上限）。 learns は呪文を覚える行（member が lv に着くと spell = rpg.spells.json の鍵を唱えられる。加わった時の Lv までの行は加わった時から覚えている）。",
+  "members": {
+    "luka": {
+      "sprite": "hero",
+      "placeholder": "fc12",
+      "name": "ルカ",
+      "hp": 28,
+      "mp": 6,
+      "atk": 11,
+      "def": 6,
+      "agi": 8,
+      "weapon": "hinoki",
+      "armor": "tabibito",
+      "joinLv": 1,
+      "hpUp": 6,
+      "mpUp": 2,
+      "atkUp": 3,
+      "defUp": 2,
+      "agiUp": 2
+    },
+    "mina": {
+      "sprite": "mina",
+      "placeholder": "fc27",
+      "name": "ミナ",
+      "hp": 34,
+      "mp": 0,
+      "atk": 13,
+      "def": 8,
+      "agi": 5,
+      "weapon": "tsuruhashi",
+      "armor": "tabibito",
+      "joinLv": 1,
+      "hpUp": 7,
+      "mpUp": 0,
+      "atkUp": 3,
+      "defUp": 2,
+      "agiUp": 1
+    },
+    "toto": {
+      "sprite": "toto",
+      "placeholder": "fc14",
+      "name": "トト",
+      "joinLv": 2,
+      "hp": 18,
+      "mp": 12,
+      "atk": 6,
+      "def": 4,
+      "agi": 10,
+      "weapon": "kashinotsue",
+      "armor": "robe",
+      "hpUp": 4,
+      "mpUp": 4,
+      "atkUp": 1,
+      "defUp": 1,
+      "agiUp": 2
+    }
+  },
+  "exp": [
+    {
+      "lv": 2,
+      "total": 12
+    },
+    {
+      "lv": 3,
+      "total": 35
+    },
+    {
+      "lv": 4,
+      "total": 75
+    },
+    {
+      "lv": 5,
+      "total": 140
+    },
+    {
+      "lv": 6,
+      "total": 240
+    },
+    {
+      "lv": 7,
+      "total": 420
+    },
+    {
+      "lv": 8,
+      "total": 600
+    },
+    {
+      "lv": 9,
+      "total": 820
+    },
+    {
+      "lv": 10,
+      "total": 1100
+    }
+  ],
+  "learns": [
+    {
+      "member": "toto",
+      "spell": "fire",
+      "lv": 1
+    },
+    {
+      "member": "toto",
+      "spell": "heal",
+      "lv": 3
+    },
+    {
+      "member": "luka",
+      "spell": "heal",
+      "lv": 4
+    },
+    {
+      "member": "toto",
+      "spell": "ice",
+      "lv": 5
+    }
+  ]
+}

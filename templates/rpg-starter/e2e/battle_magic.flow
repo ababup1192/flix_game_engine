@@ -1,0 +1,35 @@
+# じゅもんとどうぐの戦い: コケだま 2 体に、ルカは やくそう（せいすいは灰色で選べない）・ミナは たたかう・トトは ファイア。
+# 勝ってフィールドへ戻ると、やくそうは 1 つ減り（せいすいは残る）、トトの MP はファイアの 3 だけ減っている。
+# MP の合計は Lv3 で ルカ 10・ミナ 0・トト 20 = 30。経験値はコケだま 2 体で 10（Lv4 の 75 に届かない）ので MP の最大は変わらない。
+start battle foes=koke,koke map=mine_b1 x=4 y=16 facing=right party=luka,mina,toto quest=accepted lv=3 hp=20 items=yakusou:1,seisui:1
+expect scene=Battle&layer=BattleMessage&mp=30&bag=seisui:1,yakusou:1
+tap confirm                  # あらわれた（2 行）を出し切る
+tap confirm                  # 送る
+expect layer=BattleChoose&page=Commands
+# ルカ: どうぐ（3 つ目）→ せいすい は灰色で選べない → やくそう → ルカ
+tap down
+tap down
+tap confirm
+expect page=ItemList
+tap down
+tap confirm
+expect page=ItemList
+tap up
+tap confirm
+expect page=ItemTarget
+tap confirm
+# ミナ: たたかう → 先頭の敵
+expect page=Commands
+tap confirm
+tap confirm
+# トト: じゅもん → ファイア（1 つ目）→ 先頭の敵
+expect page=Commands
+tap down
+tap confirm
+expect page=SpellList
+tap confirm
+expect page=SpellTarget
+tap confirm
+expect page=
+drive battle until scene=Field max 40
+expect map=mine_b1&bag=seisui:1&mp=27&hp>30

@@ -1,0 +1,127 @@
+{
+  "//": "rpg.foes.json の形の宣言（Studio の sections 方言）。戦いの式はコード（Battle）、ここは敵ごとの数と絵だけ。",
+  "version": 1,
+  "sections": {
+    "foes": {
+      "kind": "catalog",
+      "label": "敵（鍵 = encounter の foe1..foe3・<<fight>> が指す名前）",
+      "order": 1,
+      "fields": {
+        "name": {
+          "type": "text",
+          "label": "画面に出す名前",
+          "order": 1,
+          "default": "",
+          "required": true
+        },
+        "sprite": {
+          "type": "text",
+          "label": "絵（rpg.monsters.sprite.json の名前）",
+          "order": 2,
+          "default": "koke",
+          "required": true
+        },
+        "recolor": {
+          "type": "text",
+          "label": "色違い（rpg.recolors.json の鍵。空なら元の色）",
+          "order": 3,
+          "default": ""
+        },
+        "width": {
+          "type": "int",
+          "label": "仮の四角の幅（px）",
+          "order": 4,
+          "default": 32,
+          "min": 8,
+          "max": 128
+        },
+        "height": {
+          "type": "int",
+          "label": "仮の四角の高さ（px）",
+          "order": 5,
+          "default": 32,
+          "min": 8,
+          "max": 128
+        },
+        "lift": {
+          "type": "int",
+          "label": "足元を上げる高さ（px。負で下げる）",
+          "order": 6,
+          "default": 0,
+          "min": -64,
+          "max": 64
+        },
+        "lv": {
+          "type": "int",
+          "label": "Lv（つり合いの目安・せいすいの比べ）",
+          "order": 7,
+          "default": 1,
+          "min": 1,
+          "max": 99
+        },
+        "hp": {
+          "type": "int",
+          "label": "最大 HP",
+          "order": 8,
+          "default": 10,
+          "min": 1,
+          "max": 9999
+        },
+        "atk": {
+          "type": "int",
+          "label": "ちから",
+          "order": 9,
+          "default": 0,
+          "min": 0,
+          "max": 255
+        },
+        "def": {
+          "type": "int",
+          "label": "みのまもり",
+          "order": 10,
+          "default": 0,
+          "min": 0,
+          "max": 255
+        },
+        "agi": {
+          "type": "int",
+          "label": "すばやさ",
+          "order": 11,
+          "default": 0,
+          "min": 0,
+          "max": 255
+        },
+        "exp": {
+          "type": "int",
+          "label": "倒した時の経験値",
+          "order": 12,
+          "default": 0,
+          "min": 0,
+          "max": 9999
+        },
+        "gold": {
+          "type": "int",
+          "label": "倒した時のお金（G）",
+          "order": 13,
+          "default": 0,
+          "min": 0,
+          "max": 9999
+        },
+        "noFlee": {
+          "type": "bool",
+          "label": "逃げられない",
+          "order": 14,
+          "default": false
+        },
+        "phase2At": {
+          "type": "float",
+          "label": "技を phase 2 へ替える HP の割合（0 なら替えない）",
+          "order": 15,
+          "default": 0.0,
+          "min": 0.0,
+          "max": 1.0
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,142 @@
+# ワールドマップでトトの杖を取り戻して仲間にし、坑道へ入って B1 の入口のボルじいに話しかける。
+# 村の南の端 → 村の印の北（9, 18）→ ほこらのトト（26, 12）に話を聞く → 南の森の岩穴（21, 18）→ 洞窟のレバーで鉄格子を開け、
+# ほりモグと戦って杖を取り戻す → トトに杖を返すと加わる → 橋を渡って坑道の入口 → B1 のボルじい。
+# 歩く手順を確かめる flow なので、steps=999 で雑魚に出会わない（ほりモグとの固定の戦いだけ。勝ち切れるよう lv=3）。
+start field map=village x=20 y=14 facing=down party=luka,mina quest=accepted steps=999 lv=3
+hold down
+until map=world max 5
+release down
+until layer=Walking max 2
+expect x=9&y=18&party=luka,mina
+# 道を北へ（9, 13）、東へ（20, 13）、北へ 1 マス（20, 12）、ほこらへの道を東へ（25, 12）。トトが横に立つ。
+hold up
+until y=13 max 5
+release up
+until layer=Walking max 1
+hold right
+until x=20 max 6
+release right
+until layer=Walking max 1
+hold up
+until y=12 max 2
+release up
+until layer=Walking max 1
+hold right
+until x=25 max 4
+release right
+wait 0.3
+expect facing=Right
+# トトに話しかけると、杖をほりモグに持っていかれた話（3 枚）。トトはまだ加わらない。
+tap confirm
+expect talk=Shrine
+tap confirm                  # 出し切る
+tap confirm
+tap confirm                  # 出し切る
+tap confirm
+tap confirm                  # 出し切る（ミナの一言）
+tap confirm                  # 窓を閉じる
+expect layer=Walking&party=luka,mina
+# 西へ（21, 12）、南へ森を抜けて岩穴（21, 18）から洞窟へ。
+hold left
+until x=21 max 5
+release left
+until layer=Walking max 1
+hold down
+until map=toto_cave max 10
+release down
+until layer=Walking max 2
+expect x=8&y=11&facing=Up
+# 右へ 1 マス（9, 11）、北へ（9, 9）。上の壁のレバーを調べると「ガラガラ」と鉄格子が上がる。
+hold right
+until x=9 max 2
+release right
+until layer=Walking max 1
+hold up
+until y=9 max 3
+release up
+wait 0.3
+tap confirm
+expect layer=Notice
+tap confirm                  # 出し切る
+tap confirm                  # 閉じる
+expect layer=Walking
+# 西へ 2 マス（7, 9）、開いた鉄格子（7, 8）を抜けて北へ。ほりモグ（7, 4）の前（7, 5）で止まる。
+hold left
+until x=7 max 3
+release left
+until layer=Walking max 1
+hold up
+until y=5 max 6
+release up
+wait 0.3
+tap confirm
+expect talk=CaveMole
+tap confirm                  # 出し切る
+tap confirm                  # ほりモグとの固定の戦いへ（点滅）
+until scene=Battle max 2
+drive battle until talk=StaffBack max 60
+tap confirm                  # 出し切る
+tap confirm
+tap confirm                  # 出し切る
+tap confirm                  # 閉じる
+expect layer=Walking&bag=totostaff:1
+# ほりモグのいたマス（7, 4）は通れる。南へ戻り（7, 11）、東へ（8, 11）、上り階段（8, 12）からワールドマップの岩穴の前へ。
+hold down
+until y=11 max 8
+release down
+until layer=Walking max 1
+hold right
+until x=8 max 2
+release right
+until layer=Walking max 1
+hold down
+until map=world max 5
+release down
+until layer=Walking max 2
+expect x=21&y=19
+# 東へ 1 マス（22, 19）、北へ森を抜けて（22, 12）、東へトトの横（25, 12）。杖を返すとトトが加わる。
+hold right
+until x=22 max 2
+release right
+until layer=Walking max 1
+hold up
+until y=12 max 10
+release up
+until layer=Walking max 1
+hold right
+until x=25 max 4
+release right
+wait 0.3
+tap confirm
+expect talk=Shrine
+tap confirm                  # 出し切る
+tap confirm
+tap confirm                  # 出し切る（つえを かえした）
+tap confirm
+tap confirm                  # 出し切る
+tap confirm
+tap confirm                  # 出し切る（トトが なかまに くわわった！）
+expect party=luka,mina,toto
+tap confirm                  # 窓を閉じる
+expect layer=Walking&bag=
+# 西へ戻り（20, 12）、北へ。橋を渡って坑道の入口（20, 3）から B1 の入口の部屋（3, 27）へ。
+hold left
+until x=20 max 6
+release left
+until layer=Walking max 1
+hold up
+until map=mine_b1 max 8
+release up
+until layer=Walking max 2
+expect x=3&y=27&facing=Up
+# 北へ（3, 23）、東へ 2 マス（5, 23）。右の年寄りの鉱夫ボルじい（6, 23）に話しかける。
+hold up
+until y=23 max 4
+release up
+until layer=Walking max 1
+hold right
+until x=5 max 3
+release right
+wait 0.3
+tap confirm
+expect talk=Boljii

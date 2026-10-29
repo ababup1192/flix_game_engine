@@ -1,0 +1,68 @@
+{
+  "//": "rpg.spells.json の形の宣言（Studio の sections 方言）。効き目の式は Battle、ここは数と的と絵の名前だけ。",
+  "version": 1,
+  "sections": {
+    "spells": {
+      "kind": "catalog",
+      "label": "呪文（鍵 = 呪文の名前）",
+      "order": 1,
+      "fields": {
+        "name": {
+          "type": "text",
+          "label": "画面に出す名前",
+          "order": 1,
+          "default": "",
+          "required": true
+        },
+        "mp": {
+          "type": "int",
+          "label": "使う MP",
+          "order": 2,
+          "default": 0,
+          "min": 0,
+          "max": 99
+        },
+        "power": {
+          "type": "int",
+          "label": "ダメージか戻す HP の真ん中（× 0.9〜1.1）",
+          "order": 3,
+          "default": 0,
+          "min": 0,
+          "max": 999
+        },
+        "aim": {
+          "type": {
+            "enum": [
+              "foe",
+              "allFoes",
+              "ally"
+            ]
+          },
+          "label": "的（敵 1 体 / 敵全部 / 仲間 1 人を回復）",
+          "order": 4,
+          "default": "foe"
+        },
+        "field": {
+          "type": "bool",
+          "label": "フィールドでも唱えられる",
+          "order": 5,
+          "default": false
+        },
+        "fx": {
+          "type": {
+            "enum": [
+              "fire",
+              "ice",
+              "heal",
+              "hit",
+              "slash"
+            ]
+          },
+          "label": "戦いの演出の絵（battlefx）",
+          "order": 6,
+          "default": "hit"
+        }
+      }
+    }
+  }
+}

@@ -1,133 +1,171 @@
-// JSON 橋渡しのテスト(1 Doc につき最大 3 本まで。同型の重複は書かない)。
-// ThemeDoc は KindDoc と同型(フィールドの Or 読み)なので橋渡しは書かない。
+// JSON 橋渡しのテスト（1 Doc につき最大 3 本まで）と、Doc どうし・会話の語彙の食い違い。
 mod TestDocs {
-
-    use fge::Grid
-
-    // ══════════════════════════════════════════════════════
-    // MapDoc(里の間取り: rows と配置)
-    // ══════════════════════════════════════════════════════
-
-    @Test
-    def testMapBrokenJsonFallsBackToDefaults(): Unit \ Assert =
-        // 壊れた JSON は既定の間取りへ落ちる(ゲームは必ず起動する)。
-        let doc = MapDoc.fromJson("{ broken") |> Option.getWithDefault(MapDoc.defaults());
-        Assert.assertEq(
-            expected = (MapDoc.rec(MapDoc.defaults())#start#x, MapDoc.rec(MapDoc.defaults())#start#y, MapDoc.rec(MapDoc.defaults())#goal),
-            (MapDoc.rec(doc)#start#x, MapDoc.rec(doc)#start#y, MapDoc.rec(doc)#goal))
-
-    @Test
-    def testMapOverridesOneField(): Unit \ Assert =
-        // 1 フィールドだけ書いた JSON はそこだけ効き、残りは既定のまま。
-        let doc = MapDoc.fromJson("{\"version\":1, \"hint\": \"Xではじめる\"}")
-            |> Option.getWithDefault(MapDoc.defaults());
-        Assert.assertEq(expected = ("Xではじめる", MapDoc.rec(MapDoc.defaults())#goal), (MapDoc.rec(doc)#hint, MapDoc.rec(doc)#goal))
-
-    @Test
-    def testMapRowsLengthFollowsJson(): Unit \ Assert =
-        // rows・villagers・herbs の行数を増減すれば Doc も追随する。
-        let text = "{\"version\":1,"
-            + " \"rows\":[\"###\",\"#.#\",\"###\"],"
-            + " \"villagers\":[{\"id\":\"a\",\"x\":1,\"y\":1},{\"id\":\"b\",\"x\":1,\"y\":1}],"
-            + " \"herbs\":[{\"x\":1,\"y\":1}]}";
-        let doc = MapDoc.fromJson(text) |> Option.getWithDefault(MapDoc.defaults());
-        Assert.assertEq(expected = (3, 2, 1),
-            (List.length(MapDoc.rec(doc)#rows), List.length(MapDoc.rec(doc)#villagers), List.length(MapDoc.rec(doc)#herbs)))
+    use fge::{Yarn}
 
     // ══════════════════════════════════════════════════════
-    // KindDoc(手触りの数値)
+    // MapDoc
     // ══════════════════════════════════════════════════════
 
+    /// 読めない JSON は None（MapDoc.load はそこで既定の 1 マスの草地へ落ちる）。
     @Test
-    def testKindBrokenJsonFallsBackToDefaults(): Unit \ Assert =
-        let doc = KindDoc.fromJson("{ broken") |> Option.getWithDefault(KindDoc.defaults());
-        Assert.assertEq(expected = KindDoc.rec(KindDoc.defaults())#walk, KindDoc.rec(doc)#walk)
+    def testMapBrokenJsonIsNone(): Unit \ Assert =
+        Assert.assertEq(expected = None, MapDoc.fromJson(ItemsDoc.defaults(), "village", "{ broken") |> Option.map(doc -> MapDoc.rec(doc)#rows))
 
+    /// rows だけ書いた JSON は、組の既定（village）と、出入口・人・小物の無いマップになる。
     @Test
-    def testKindOverridesOneField(): Unit \ Assert =
-        let doc = KindDoc.fromJson("{\"version\":1, \"walk\": 9.0}")
-            |> Option.getWithDefault(KindDoc.defaults());
-        Assert.assertEq(expected = (9.0, KindDoc.rec(KindDoc.defaults())#cps), (KindDoc.rec(doc)#walk, KindDoc.rec(doc)#cps))
+    def testMapWithOnlyRows(): Unit \ Assert =
+        Assert.assertEq(expected = Some((Tileset.TilesetId.Village, 3, 2, 0)),
+            MapDoc.fromJson(ItemsDoc.defaults(), "x", "{\"version\":1, \"rows\":[\"...\", \"...\"]}")
+                |> Option.map(doc -> { let m = MapDoc.rec(doc); (m#tileset, m#cols, m#height, Map.size(m#npcAt)) }))
+
+    /// 人の一覧は JSON の行に追随し、読めない行（x が無い 2 行目）だけ飛ばして、その行を問題に挙げる。
+    @Test
+    def testMapNpcsFollowTheRows(): Unit \ Assert =
+        let text = "{\"version\":1, \"rows\":[\"...\"], \"npcs\":[" +
+            "{\"id\":\"a\", \"sprite\":\"woman\", \"x\":0, \"y\":0}," +
+            "{\"id\":\"b\", \"sprite\":\"child\", \"y\":0}," +
+            "{\"id\":\"c\", \"sprite\":\"child\", \"x\":2, \"y\":0, \"node\":\"Child\"}]}";
+        Assert.assertEq(expected = Some((2, "[map] x の npcs の 2 行目を読めないので飛ばす" :: Nil)),
+            MapDoc.fromJson(ItemsDoc.defaults(), "x", text) |> Option.map(doc -> (Map.size(MapDoc.rec(doc)#npcAt), MapDoc.rec(doc)#problems)))
 
     // ══════════════════════════════════════════════════════
-    // TownMapDoc(街のタイル盤: rows と legend)
+    // RulesDoc・KeysDoc・TextDoc
     // ══════════════════════════════════════════════════════
 
+    /// 読めない JSON は None。
     @Test
-    def testTownMapBrokenJsonFallsBackToDefaults(): Unit \ Assert =
-        // 壊れた JSON は既定の盤へ落ちる(街の絵は必ず出る)。
-        let doc = TownMapDoc.fromJson("{ broken") |> Option.getWithDefault(TownMapDoc.defaults());
-        Assert.assertEq(
-            expected = (TownMapDoc.rowCount(TownMapDoc.defaults()),
-                        Map.size(TownMapDoc.rec(TownMapDoc.defaults())#legend)),
-            (TownMapDoc.rowCount(doc), Map.size(TownMapDoc.rec(doc)#legend)))
+    def testRulesBrokenJsonIsNone(): Unit \ Assert =
+        Assert.assertEq(expected = None, RulesDoc.fromJson("{ broken") |> Option.map(doc -> RulesDoc.rec(doc)#cps))
 
+    /// 1 欄だけ書いた JSON はそこだけ効き、残りは既定のまま。
     @Test
-    def testTownMapOverridesLegendOnly(): Unit \ Assert =
-        // legend だけ書いた JSON はそこだけ効き、rows は既定のまま。
-        // 2 文字以上のキーは黙って捨てられ、legend に無い文字は None(敷かれないだけ)。
-        let doc = TownMapDoc.fromJson("{\"version\":1, \"legend\": {\"g\": \"tile_pave\", \"ng\": \"x\"}}")
-            |> Option.getWithDefault(TownMapDoc.defaults());
-        Assert.assertEq(
-            expected = (Some("tile_pave"), None, TownMapDoc.rowCount(TownMapDoc.defaults())),
-            (TownMapDoc.tileNameOf(doc, 'g'), TownMapDoc.tileNameOf(doc, 'n'),
-             TownMapDoc.rowCount(doc)))
+    def testRulesOverridesOneField(): Unit \ Assert =
+        Assert.assertEq(expected = Some((0.5, RulesDoc.rec(RulesDoc.defaults())#cps)),
+            RulesDoc.fromJson("{\"version\":1, \"secondsPerTile\": 0.5}") |> Option.map(doc -> (RulesDoc.rec(doc)#secondsPerTile, RulesDoc.rec(doc)#cps)))
 
+    /// 知らない向きの名前の startFacing は既定の向きへ落ちる。
     @Test
-    def testTownMapRowsLengthFollowsJson(): Unit \ Assert =
-        // rows の行数・列数を増減すれば Doc も追随する(列数は一番長い行に合わせる)。
-        let doc = TownMapDoc.fromJson("{\"version\":1, \"rows\":[\"gg\",\"gggg\",\"g\"]}")
-            |> Option.getWithDefault(TownMapDoc.defaults());
-        Assert.assertEq(expected = (3, 4), (TownMapDoc.rowCount(doc), TownMapDoc.cols(doc)))
+    def testRulesUnknownFacingFallsBack(): Unit \ Assert =
+        Assert.assertEq(expected = Some(RulesDoc.rec(RulesDoc.defaults())#startFacing),
+            RulesDoc.fromJson("{\"version\":1, \"startFacing\": \"sideways\"}") |> Option.map(doc -> RulesDoc.rec(doc)#startFacing))
 
+    /// 知らないキーの名前だけの操作は既定のキーへ落ちる（書き間違いで操作できなくしない）。
     @Test
-    def testGrassEdgeSelectionFollowsNeighbors(): Unit \ Assert =
-        // 縁選定の代表ケース: 中央 1 マスの石畳の周囲 8 マスで、
-        // 四方は縁、斜めは内角になる（rows は素材の文字のまま、縁はコードが選ぶ）。
-        let doc = TownMapDoc.Doc.Doc({ rows = "ggg" :: "gpg" :: "ggg" :: Nil | TownMapDoc.rec(TownMapDoc.defaults()) });
-        Assert.assertEq(
-            expected = ("tile_grass_edge_s", "tile_grass_edge_n",
-                        "tile_grass_edge_e", "tile_grass_edge_w",
-                        "tile_grass_incorner_se", "tile_grass_incorner_nw",
-                        Some("tile_pave")),
-            (TownMap.grassTileAt(doc, 1, 0), TownMap.grassTileAt(doc, 1, 2),
-             TownMap.grassTileAt(doc, 0, 1), TownMap.grassTileAt(doc, 2, 1),
-             TownMap.grassTileAt(doc, 0, 0), TownMap.grassTileAt(doc, 2, 2),
-             TownMap.groundTileAt(doc, 1, 1)))
+    def testKeysWithOnlyUnknownNamesFallBack(): Unit \ Assert =
+        Assert.assertEq(expected = Some(KeysDoc.rec(KeysDoc.defaults())#confirm),
+            KeysDoc.fromJson("{\"version\":1, \"confirm\": [\"NoSuchKey\"]}") |> Option.map(doc -> KeysDoc.rec(doc)#confirm))
 
+    /// 呼び名の無い話し手は id のまま・書いていないメニューの言葉はコードの既定。
     @Test
-    def testFenceCellsAreSolid(): Unit \ {Assert, IO} =
-        // 柵のマス(門の並びの隙間)は歩けない。絵(TownMap.fences)と当たり(rpg.map の '#')の
-        // 対応が崩れると「見えない壁/すり抜ける柵」になるので、Doc と突き合わせて縛る。
-        let map = run { MapDoc.load(MapDoc.path()) } with Fs.FileRead.runWithIO;
-        Assert.assertEq(
-            expected = TownMap.fences() |> List.map(_ -> true),
-            TownMap.fences() |> List.map(cell -> MapDoc.solidAt(cell, map)))
-
-    @Test
-    def testPatrolRoutesStayOnWalkableCells(): Unit \ {Assert, IO} =
-        // 住人の巡回路は「歩けるマスしか通らない」— これはルール。角の間も展開して、
-        // 実際の間取り Doc の '#'（建物・水路・柵）と突き合わせる。
-        let map = run { MapDoc.load(MapDoc.path()) } with Fs.FileRead.runWithIO;
-        let cells = MapDoc.rec(map)#villagers |> List.flatMap(v -> World.routeCells(v#id));
-        Assert.assertEq(
-            expected = (false, cells |> List.map(_ -> true)),
-            (List.isEmpty(cells),
-             cells |> List.map(c ->
-                 Grid.inRectOf(c, MapDoc.cols(map), MapDoc.rowCount(map))
-                     and not MapDoc.solidAt(c, map))))
+    def testTextFallsBackPerEntry(): Unit \ Assert =
+        Assert.assertEq(expected = Some(("むらおさ", "woman", "はい")),
+            TextDoc.fromJson("{\"version\":1, \"speakers\": {\"chief\": {\"name\": \"むらおさ\"}}}")
+                |> Option.map(doc -> (TextDoc.speakerName("chief", doc), TextDoc.speakerName("woman", doc), TextDoc.menuText(TextDoc.MenuText.Yes, doc))))
 
     // ══════════════════════════════════════════════════════
-    // ThemeDoc resolver（意味色キー → 実色の派生）
+    // PartyDoc・ItemsDoc
     // ══════════════════════════════════════════════════════
 
+    /// 読めない JSON は None（PartyDoc.load はそこで既定へ落ちる）。
     @Test
-    def testThemeResolverDerivesWallTop(): Unit \ Assert =
-        // 派生色はテーマの基準色から導かれる（導出できる値は Doc に置かない）。
-        let d = ThemeDoc.defaults();
-        let expectedColor = ThemeDoc.lighten(ThemeDoc.rec(d)#wall, 0.18);
-        let got = ThemeDoc.resolver(d, "wallTop");
-        Assert.assertEq(
-            expected = (expectedColor#r, expectedColor#g, expectedColor#b),
-            (got#r, got#g, got#b))
+    def testPartyBrokenJsonIsNone(): Unit \ Assert =
+        Assert.assertEq(expected = None, PartyDoc.fromJson("{ broken") |> Option.map(doc -> PartyDoc.memberOf(Member.Member.Luka, doc)#sprite))
+
+    /// 1 人の sprite だけ書いた JSON はその人だけに効き、行の無い人はコードの既定の絵（ルカは hero）。
+    @Test
+    def testPartyOverridesOneMember(): Unit \ Assert =
+        Assert.assertEq(expected = Some(("hero", "child")),
+            PartyDoc.fromJson("{\"version\":1, \"members\": {\"mina\": {\"sprite\": \"child\"}}}")
+                |> Option.map(doc -> (PartyDoc.memberOf(Member.Member.Luka, doc)#sprite, PartyDoc.memberOf(Member.Member.Mina, doc)#sprite)))
+
+    /// 読めない行（sprite が無い mina）はその人だけ既定へ落ち、読める行（luka）は効く。
+    @Test
+    def testPartyRowsFallBackOneByOne(): Unit \ Assert =
+        Assert.assertEq(expected = Some(("woman", "mina")),
+            PartyDoc.fromJson("{\"version\":1, \"members\": {\"luka\": {\"sprite\": \"woman\"}, \"mina\": {\"name\": \"ミナ\"}}}")
+                |> Option.map(doc -> (PartyDoc.memberOf(Member.Member.Luka, doc)#sprite, PartyDoc.memberOf(Member.Member.Mina, doc)#sprite)))
+
+    /// 道具の catalog は行に追随し、name の無い行だけ飛ばしてその行を問題に挙げる。
+    @Test
+    def testItemsFollowTheRows(): Unit \ Assert =
+        let text = "{\"version\":1, \"items\": {\"a\": {\"name\": \"A\"}, \"b\": {}, \"c\": {\"name\": \"C\"}}}";
+        Assert.assertEq(expected = Some(("a" :: "c" :: Nil, "[items] 'b' の行を読めない（name が無いか kind が use / weapon / armor / key でない）ので飛ばす" :: Nil)),
+            ItemsDoc.fromJson(text) |> Option.map(doc -> (ItemsDoc.keysOf(doc), ItemsDoc.rec(doc)#problems)))
+
+    /// kind と数の欄を省いた道具は、使う物・値段 0・誰も装備できない。kind を読めない行は飛ばす。
+    @Test
+    def testItemsDefaultTheOmittedFields(): Unit \ Assert =
+        let text = "{\"version\":1, \"items\": {\"a\": {\"name\": \"A\"}, \"b\": {\"name\": \"B\", \"kind\": \"food\"}}}";
+        Assert.assertEq(expected = Some((Some((ItemsDoc.Kind.Use, 0, Set.empty())), ("a" :: Nil))),
+            ItemsDoc.fromJson(text) |> Option.map(doc ->
+                (ItemsDoc.idOf(doc, "a") |> Option.flatMap(ItemsDoc.itemOf(doc)) |> Option.map(item -> (item#kind, item#price, item#equip)), ItemsDoc.keysOf(doc))))
+
+    // ══════════════════════════════════════════════════════
+    // ShopsDoc
+    // ══════════════════════════════════════════════════════
+
+    /// 読めない JSON は None（ShopsDoc.load はそこで品の無い店へ落ちる）。
+    @Test
+    def testShopsBrokenJsonIsNone(): Unit \ Assert =
+        Assert.assertEq(expected = None, ShopsDoc.fromJson("{ broken") |> Option.map(doc -> ShopsDoc.rec(doc)#innPrice))
+
+    /// innPrice だけ書いた JSON はそこだけ反映され、品は無い。
+    @Test
+    def testShopsOverridesTheInnPrice(): Unit \ Assert =
+        Assert.assertEq(expected = Some((10, Nil)),
+            ShopsDoc.fromJson("{\"version\":1, \"innPrice\": 10}") |> Option.map(doc -> (ShopsDoc.rec(doc)#innPrice, ShopsDoc.goodsOf("", doc))))
+
+    /// 品の一覧は JSON の行に追随し、item の無い 2 行目だけ飛ばしてその行を問題に挙げる。shop を書かない行は村の道具屋（空の名前）。
+    @Test
+    def testShopsGoodsFollowTheRows(): Unit \ Assert =
+        let text = "{\"version\":1, \"goods\": [{\"item\": \"a\"}, {}, {\"item\": \"c\", \"shop\": \"mine\"}]}";
+        Assert.assertEq(expected = Some(("a" :: Nil, "c" :: Nil, "[shops] goods の 2 行目に item が無いので飛ばす" :: Nil)),
+            ShopsDoc.fromJson(text) |> Option.map(doc -> (ShopsDoc.goodsOf("", doc), ShopsDoc.goodsOf("mine", doc), ShopsDoc.rec(doc)#problems)))
+
+    // ══════════════════════════════════════════════════════
+    // Doc どうし
+    // ══════════════════════════════════════════════════════
+
+    /// assets の Doc に食い違いが無い（出入口の行き先・人と gate の会話のノード・始まりのマップ・
+    /// 会話のコマンドの引数が Doc で引ける・World から写す変数を <<set>> で書いていない）。
+    @Test
+    def testAssetsHaveNoProblems(): Unit \ Assert + Fs.FileRead =
+        Assert.assertEq(expected = Nil, Res.problemsOf(Res.load()))
+
+    /// 全部の台詞が、出し切った時に会話のウィンドウ 1 枚に収まる（収まらない台詞は yarn で 2 行に分ける）。
+    @Test
+    def testEveryLineFitsTheTalkWindow(): Unit \ Assert + Fs.FileRead + IO =
+        let res = Res.load();
+        Assert.assertEq(expected = Nil, FieldScreen.overflowingLines(Fixtures.windowEnv(res), Talk.linesOf(res#dialogue)))
+
+    /// assets/maps の *.map.json は全部 MapDoc.names に載っている（載せ忘れたマップは読まれず、出入口の行き先が無いと言われる）。
+    @Test
+    def testEveryMapFileIsListed(): Unit \ Assert + Fs.DirList =
+        Assert.assertEq(expected = Ok(Nil), Fs.DirList.list("assets/maps") |> Result.map(MapDoc.unlistedIn))
+
+    /// マップのスキーマの gate に書ける名前は、空（gate 無し）と仲間の名前（Member.ids）だけ。
+    @Test
+    def testGateNamesInTheSchemaAreTheMembers(): Unit \ Assert + Fs.FileRead =
+        Assert.assertEq(expected = Some("" :: Member.ids()), Fixtures.schemaGateNames())
+
+    /// Doc で引けないコマンドの引数（無い道具・居ない仲間・どのマップにも無い物の id）は 1 つずつ問題に挙がり、引ける物（accept）は挙がらない。
+    @Test
+    def testUnknownCommandArgsAreProblems(): Unit \ Assert + Fs.FileRead =
+        let res = Res.load();
+        let tree = Fixtures.command("give", "nosuch") + "," + Fixtures.command("join", "nobody") + "," + Fixtures.command("open", "nosuch") + "," +
+                   Fixtures.command("quest", "accept");
+        Assert.assertEq(expected = Some(3), Talk.fromJson(Fixtures.treeOf(tree)) |> Option.map(program -> List.length(Talk.problemsOf(res#items, res#foes, Set#{"cave_mole"}, program))))
+
+    /// World から写す変数（$gold）への <<set>> は問題に挙がる（書いても次の写しで消える）。
+    @Test
+    def testSetOnACopiedVarIsAProblem(): Unit \ Assert + Fs.FileRead =
+        let res = Res.load();
+        let set = "{\"kind\":\"set\",\"line\":2,\"name\":\"$gold\",\"expr\":{\"kind\":\"value\",\"value\":5}}";
+        Assert.assertEq(expected = Some(1), Talk.fromJson(Fixtures.treeOf(set)) |> Option.map(program -> List.length(Talk.problemsOf(res#items, res#foes, Set.empty(), program))))
+
+    /// 会話の語彙 assets/talk/vocab.json が、コードの語彙（Talk.vocabOf）と同じ（ずれたら make talk-vocab）。
+    @Test
+    def testTalkVocabMatchesTheCode(): Unit \ Assert + Fs.FileRead =
+        Assert.assertEq(expected = Ok(String.trim(Yarn.vocabJson(Talk.vocabOf(MapDoc.loadTable(ItemsDoc.load(ItemsDoc.path())), TextDoc.load(TextDoc.path()))))),
+            Fs.FileRead.read(Talk.vocabPath()) |> Result.map(String.trim))
 }

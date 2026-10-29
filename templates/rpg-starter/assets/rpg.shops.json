@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "title": "店と宿",
+  "note": "innPrice は宿の 1 泊の値段（会話の $innPrice）。goods は店に並ぶ品（rpg.items.json の鍵。上から並べる順）。shop は並べる店の名前（会話の <<shop 名前>>。空は村の道具屋 <<shop>>・mine は坑道 B2 の行商人コロン）。値段は rpg.items.json の price。",
+  "innPrice": 6,
+  "goods": [
+    {
+      "shop": "",
+      "item": "yakusou"
+    },
+    {
+      "shop": "",
+      "item": "seisui"
+    },
+    {
+      "shop": "",
+      "item": "dounotsurugi"
+    },
+    {
+      "shop": "",
+      "item": "kawanoyoroi"
+    },
+    {
+      "shop": "mine",
+      "item": "yakusou"
+    },
+    {
+      "shop": "mine",
+      "item": "maryoku"
+    },
+    {
+      "shop": "mine",
+      "item": "taimatsu"
+    },
+    {
+      "shop": "mine",
+      "item": "seisui"
+    }
+  ]
+}

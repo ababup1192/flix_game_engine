@@ -1,0 +1,35 @@
+{
+  "//": "rpg.shops.json の形の宣言（Studio の sections 方言）。値段は rpg.items.json の price、ここは並べる品と宿代だけ。",
+  "version": 1,
+  "sections": {
+    "innPrice": {
+      "kind": "field",
+      "type": "int",
+      "label": "宿の 1 泊の値段（G）",
+      "order": 1,
+      "min": 0,
+      "max": 9999,
+      "default": 6
+    },
+    "goods": {
+      "kind": "list",
+      "label": "店の品（上から並べる順。shop の名前ごとの店に並ぶ）",
+      "order": 2,
+      "fields": {
+        "item": {
+          "type": "text",
+          "label": "道具（rpg.items.json の鍵）",
+          "order": 1,
+          "required": true,
+          "default": ""
+        },
+        "shop": {
+          "type": "text",
+          "label": "店の名前（会話の <<shop 名前>>。空は村の道具屋）",
+          "order": 0,
+          "default": ""
+        }
+      }
+    }
+  }
+}

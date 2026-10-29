@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "title": "呪文（呪文ごとの数と的）",
+  "note": "鍵は呪文の名前（rpg.party.json の learns の spell・rpg.foe_moves.json の spell が指す）。name は画面に出す名前、mp は唱えるのに使う MP、power はダメージか戻す HP の真ん中（実際は power × 0.9〜1.1。ダメージは まもり を見ない。戻す HP は最大で止まる）、aim は的（foe = 敵 1 体 / allFoes = 生きている敵全部 / ally = 仲間 1 人の HP を戻す）、field はフィールドのメニューの じゅもん でも唱えられるか、fx は戦いの演出の絵（rpg.battlefx.sprite.json の fire / ice / heal / hit / slash）。敵が唱える時も同じ数（敵は MP を使わない）。",
+  "spells": {
+    "fire": {
+      "name": "ファイア",
+      "mp": 3,
+      "power": 14,
+      "aim": "foe",
+      "field": false,
+      "fx": "fire"
+    },
+    "heal": {
+      "name": "ヒール",
+      "mp": 3,
+      "power": 30,
+      "aim": "ally",
+      "field": true,
+      "fx": "heal"
+    },
+    "ice": {
+      "name": "アイス",
+      "mp": 5,
+      "power": 10,
+      "aim": "allFoes",
+      "field": false,
+      "fx": "ice"
+    }
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "title": "色違い（色票の鍵の差し替え）",
+  "note": "鍵は色違いの名前（rpg.foes.json の recolor が指す）。from1..from4 の色票の鍵を、同じ番号の to1..to4 へ差し替えて絵を作り直す（色票は assets/rpg.palette.json。色を足さない）。",
+  "recolors": {
+    "pink": {
+      "from1": "fc0A",
+      "to1": "fc04",
+      "from2": "fc1A",
+      "to2": "fc14",
+      "from3": "fc27",
+      "to3": "fc24",
+      "from4": "fc37",
+      "to4": "fc34"
+    },
+    "purple": {
+      "from1": "fc06",
+      "to1": "fc03",
+      "from2": "fc16",
+      "to2": "fc13",
+      "from3": "fc26",
+      "to3": "fc23"
+    },
+    "red_bat": {
+      "from1": "fc17",
+      "to1": "fc06",
+      "from2": "fc27",
+      "to2": "fc16",
+      "from3": "fc13",
+      "to3": "fc28"
+    },
+    "red_cap": {
+      "from1": "fc28",
+      "to1": "fc16",
+      "from2": "fc38",
+      "to2": "fc26"
+    },
+    "blue": {
+      "from1": "fc06",
+      "to1": "fc02",
+      "from2": "fc16",
+      "to2": "fc12",
+      "from3": "fc26",
+      "to3": "fc22"
+    },
+    "iron": {
+      "from1": "fc28",
+      "to1": "fc00",
+      "from2": "fc38",
+      "to2": "fc10"
+    }
+  }
+}

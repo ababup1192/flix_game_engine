@@ -1,0 +1,263 @@
+{
+  "version": 1,
+  "title": "坑道 B1",
+  "note": "水晶の坑道の 1 階（mine の組・暖色・32×30）。# は岩（真下が床なら正面の絵）・t はたいまつを掛けた壁・P は板の支柱・= | はレール（歩けない。曲がり角の絵は隣のレールから選ぶ）・u はがれき（入れない）・, は水晶のかけらの床・< は上り階段（ワールドマップへ）・> は下り階段（B2 へ）。仕掛けは 2 つ: 分岐の広間のトロッコ（b1_cart）と分かれ目（b1_junction）— 壁のレバー b1_lever の旗 b1_switch が下りていれば北の行き止まり（てつのつるはし・帰りのトロッコ）へ、立っていれば東の坑道（下り階段）へ走る。岩の部屋 1（岩 1・床 1。押すと格子が上がり、小部屋に やくそう×3 と 120G）。東の坑道の南の細道の奥のレバー b1_shortcut_lever で入口の格子が上がる（帰りの近道）。",
+  "tileset": "mine",
+  "battleBack": "bg_cave",
+  "minSteps": 30,
+  "maxSteps": 44,
+  "rows": [
+    "################################",
+    "############P###t###############",
+    "############.......#############",
+    "############.......#############",
+    "####========.......#############",
+    "####|#######......u#############",
+    "####|#########|#################",
+    "####|#########|#################",
+    "####|#########|#########t#>#####",
+    "####|#########|##########...####",
+    "####|#########|##########..,####",
+    "##P#|##t######|##########...####",
+    "##.......#####|##########u..P###",
+    "##.......#####|##########...####",
+    "##.......#####|##########...####",
+    "##.......#####|##########,..####",
+    "##.......======##########..u####",
+    "##.......#####|##########...P###",
+    "##.......#####|##########...####",
+    "#####.########|##########..,####",
+    "#####.########|==========...####",
+    "####t.##P################...####",
+    "##.......##t#########t####.#####",
+    "##.......###.......#...###.#####",
+    "##.....................###.#####",
+    "##.......###.......#...###.#####",
+    "##,......###,......#######.#####",
+    "##.......#################.#####",
+    "##.<.......................#####",
+    "################################"
+  ],
+  "exits": [
+    {
+      "id": "to_world",
+      "x": 3,
+      "y": 28,
+      "to": "world",
+      "spawnX": 20,
+      "spawnY": 4,
+      "facing": "down"
+    },
+    {
+      "id": "to_b2",
+      "x": 26,
+      "y": 8,
+      "to": "mine_b2",
+      "spawnX": 3,
+      "spawnY": 2,
+      "facing": "right"
+    }
+  ],
+  "npcs": [
+    {
+      "id": "boljii",
+      "sprite": "old_miner",
+      "x": 6,
+      "y": 23,
+      "facing": "down",
+      "node": "Boljii"
+    }
+  ],
+  "props": [
+    {
+      "sprite": "rail_h",
+      "frame": "base",
+      "fps": 0,
+      "flat": true,
+      "x": 12,
+      "y": 28
+    },
+    {
+      "sprite": "rail_h",
+      "frame": "base",
+      "fps": 0,
+      "flat": true,
+      "x": 13,
+      "y": 28
+    },
+    {
+      "sprite": "rail_end",
+      "frame": "base",
+      "fps": 0,
+      "flat": true,
+      "x": 15,
+      "y": 28
+    },
+    {
+      "sprite": "rail_h",
+      "frame": "base",
+      "fps": 0,
+      "flat": true,
+      "x": 18,
+      "y": 28
+    },
+    {
+      "sprite": "rail_h",
+      "frame": "base",
+      "fps": 0,
+      "flat": true,
+      "x": 19,
+      "y": 28
+    },
+    {
+      "sprite": "rail_h",
+      "frame": "base",
+      "fps": 0,
+      "flat": true,
+      "x": 20,
+      "y": 28
+    },
+    {
+      "sprite": "rail_end",
+      "frame": "base",
+      "fps": 0,
+      "flat": true,
+      "x": 23,
+      "y": 28
+    }
+  ],
+  "objects": [
+    {
+      "id": "b1_lever",
+      "kind": "lever",
+      "x": 5,
+      "y": 11,
+      "sprite": "lever",
+      "flag": "b1_switch"
+    },
+    {
+      "id": "b1_cart",
+      "kind": "cart",
+      "x": 9,
+      "y": 16,
+      "sprite": "minecart",
+      "dir": "right",
+      "node": "Cart"
+    },
+    {
+      "id": "b1_junction",
+      "kind": "junction",
+      "x": 14,
+      "y": 16,
+      "sprite": "rail_switch",
+      "flag": "b1_switch",
+      "dir": "up",
+      "dirOn": "down"
+    },
+    {
+      "id": "b1_cart_back",
+      "kind": "cart",
+      "x": 11,
+      "y": 4,
+      "sprite": "minecart",
+      "dir": "left",
+      "node": "Cart"
+    },
+    {
+      "id": "b1_pick",
+      "kind": "chest",
+      "x": 17,
+      "y": 2,
+      "item": "tetsunotsuruhashi",
+      "count": 1,
+      "gold": 0
+    },
+    {
+      "id": "b1_kawa",
+      "kind": "chest",
+      "x": 2,
+      "y": 12,
+      "item": "kawanoyoroi",
+      "count": 1,
+      "gold": 0
+    },
+    {
+      "id": "b1_rock",
+      "kind": "rock",
+      "x": 14,
+      "y": 24,
+      "sprite": "boulder"
+    },
+    {
+      "id": "b1_plate",
+      "kind": "plate",
+      "x": 16,
+      "y": 24,
+      "sprite": "plate",
+      "flag": "b1_room",
+      "hold": true
+    },
+    {
+      "id": "b1_room_bars",
+      "kind": "gate",
+      "x": 19,
+      "y": 24,
+      "sprite": "gate_bars",
+      "flag": "b1_room",
+      "openWhen": "on"
+    },
+    {
+      "id": "b1_reward",
+      "kind": "chest",
+      "x": 22,
+      "y": 24,
+      "item": "yakusou",
+      "count": 3,
+      "gold": 120
+    },
+    {
+      "id": "b1_shortcut_lever",
+      "kind": "lever",
+      "x": 24,
+      "y": 27,
+      "sprite": "lever",
+      "flag": "b1_shortcut"
+    },
+    {
+      "id": "b1_shortcut_bars",
+      "kind": "gate",
+      "x": 9,
+      "y": 28,
+      "sprite": "gate_bars",
+      "flag": "b1_shortcut",
+      "openWhen": "on"
+    }
+  ],
+  "events": [],
+  "encounter": [
+    {
+      "foe1": "koke",
+      "foe2": "koke",
+      "foe3": "",
+      "weight": 2
+    },
+    {
+      "foe1": "koumori",
+      "foe2": "koke",
+      "foe3": "",
+      "weight": 2
+    },
+    {
+      "foe1": "horimogu",
+      "foe2": "",
+      "foe3": "",
+      "weight": 1
+    },
+    {
+      "foe1": "koumori",
+      "foe2": "koke",
+      "foe3": "koke",
+      "weight": 1
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+# くさウサ 1 体と戦って勝つ: あらわれた → たたかう → 伝言を送る → 勝ちの伝言 → フィールドへ戻り、お金と経験値が入る。
+start battle foes=kusausa gold=0
+expect scene=Battle&layer=BattleMessage&foes=1&gold=0
+tap confirm                  # あらわれた を出し切る
+tap confirm                  # 送る
+expect layer=BattleChoose
+tap confirm                  # たたかう
+tap confirm                  # 的（くさウサ）
+expect layer=Busy            # ルカの斬撃か、くさウサの当たりの演出の途中
+drive battle until scene=Field max 30
+expect map=world&x=20&y=12&foes=-1&gold=3&lv=1&hp<28

@@ -1,0 +1,297 @@
+{
+  "//": "rpg.rules.json の形の宣言（Studio の sections 方言）。値だけを Doc に置き、歩ける条件・出入口の決まりはコード（WorldField）。",
+  "version": 1,
+  "sections": {
+    "secondsPerTile": {
+      "kind": "field",
+      "type": "float",
+      "label": "1 マス歩く秒",
+      "group": "フィールド",
+      "order": 1,
+      "min": 0.05,
+      "max": 1.0,
+      "default": 0.22
+    },
+    "cps": {
+      "kind": "field",
+      "type": "float",
+      "label": "会話の文字送り（1 秒の字数）",
+      "group": "フィールド",
+      "order": 2,
+      "min": 1.0,
+      "max": 200.0,
+      "default": 30.0
+    },
+    "fadeSeconds": {
+      "kind": "field",
+      "type": "float",
+      "label": "暗転の片道の秒",
+      "group": "暗転",
+      "order": 3,
+      "min": 0.0,
+      "max": 2.0,
+      "default": 0.3
+    },
+    "startMap": {
+      "kind": "field",
+      "type": "text",
+      "label": "「はじめから」で立つマップ（assets/maps の名前）",
+      "group": "始まり",
+      "order": 4,
+      "default": "village"
+    },
+    "startX": {
+      "kind": "field",
+      "type": "int",
+      "label": "始まりのマス（列）",
+      "group": "始まり",
+      "order": 5,
+      "min": 0,
+      "max": 255,
+      "default": 7
+    },
+    "startY": {
+      "kind": "field",
+      "type": "int",
+      "label": "始まりのマス（行）",
+      "group": "始まり",
+      "order": 6,
+      "min": 0,
+      "max": 255,
+      "default": 8
+    },
+    "startFacing": {
+      "kind": "field",
+      "type": {
+        "enum": [
+          "up",
+          "down",
+          "left",
+          "right"
+        ]
+      },
+      "label": "始まりの向き",
+      "group": "始まり",
+      "order": 7,
+      "default": "up"
+    },
+    "startGold": {
+      "kind": "field",
+      "type": "int",
+      "label": "はじめの手持ちのお金（G）",
+      "group": "お金",
+      "order": 8,
+      "min": 0,
+      "max": 9999,
+      "default": 50
+    },
+    "advance": {
+      "kind": "field",
+      "type": "int",
+      "label": "依頼の手付け（G。<<quest accept>> が払う）",
+      "group": "お金",
+      "order": 9,
+      "min": 0,
+      "max": 9999,
+      "default": 50
+    },
+    "homeMap": {
+      "kind": "field",
+      "type": "text",
+      "label": "宿の前のマップ（「つづきから」で立つ）",
+      "group": "宿の前",
+      "order": 10,
+      "default": "village"
+    },
+    "homeX": {
+      "kind": "field",
+      "type": "int",
+      "label": "宿の前のマス（列）",
+      "group": "宿の前",
+      "order": 11,
+      "min": 0,
+      "max": 255,
+      "default": 3
+    },
+    "homeY": {
+      "kind": "field",
+      "type": "int",
+      "label": "宿の前のマス（行）",
+      "group": "宿の前",
+      "order": 12,
+      "min": 0,
+      "max": 255,
+      "default": 4
+    },
+    "innSeconds": {
+      "kind": "field",
+      "type": "float",
+      "label": "宿に泊まる時の暗転（覆う方）の秒",
+      "group": "暗転",
+      "order": 13,
+      "min": 0.0,
+      "max": 5.0,
+      "default": 1.2
+    },
+    "minSteps": {
+      "kind": "field",
+      "type": "int",
+      "label": "次の戦いまでの歩数（少ない方）",
+      "group": "出会い",
+      "order": 14,
+      "min": 1,
+      "max": 255,
+      "default": 12
+    },
+    "maxSteps": {
+      "kind": "field",
+      "type": "int",
+      "label": "次の戦いまでの歩数（多い方）",
+      "group": "出会い",
+      "order": 15,
+      "min": 1,
+      "max": 255,
+      "default": 20
+    },
+    "flashSeconds": {
+      "kind": "field",
+      "type": "float",
+      "label": "出会った時の点滅の秒",
+      "group": "暗転",
+      "order": 16,
+      "min": 0.0,
+      "max": 2.0,
+      "default": 0.5
+    },
+    "messageWait": {
+      "kind": "field",
+      "type": "float",
+      "label": "伝言を出し切ってから次へ送るまでの秒",
+      "group": "戦い",
+      "order": 17,
+      "min": 0.0,
+      "max": 5.0,
+      "default": 0.8
+    },
+    "fxSeconds": {
+      "kind": "field",
+      "type": "float",
+      "label": "戦いの演出（斬撃・当たり）の秒",
+      "group": "戦い",
+      "order": 18,
+      "min": 0.0,
+      "max": 2.0,
+      "default": 0.4
+    },
+    "spread": {
+      "kind": "field",
+      "type": "float",
+      "label": "ダメージのぶれの幅（0.125 なら ±12.5%）",
+      "group": "戦い",
+      "order": 19,
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.125
+    },
+    "critRate": {
+      "kind": "field",
+      "type": "float",
+      "label": "会心の率",
+      "group": "戦い",
+      "order": 20,
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.03125
+    },
+    "fleeBase": {
+      "kind": "field",
+      "type": "float",
+      "label": "にげる率の基本",
+      "group": "戦い",
+      "order": 21,
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.5
+    },
+    "fleeSlope": {
+      "kind": "field",
+      "type": "float",
+      "label": "すばやさの差 1 あたりのにげる率",
+      "group": "戦い",
+      "order": 22,
+      "min": 0.0,
+      "max": 0.5,
+      "default": 0.03
+    },
+    "maxFoes": {
+      "kind": "field",
+      "type": "int",
+      "label": "1 戦の敵の数の上限（3 まで）",
+      "group": "出会い",
+      "order": 23,
+      "min": 1,
+      "max": 3,
+      "default": 3
+    },
+    "goldKeep": {
+      "kind": "field",
+      "type": "float",
+      "label": "全滅した時に残るお金の割合",
+      "group": "お金",
+      "order": 24,
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.5
+    },
+    "secondsPerRail": {
+      "kind": "field",
+      "type": "float",
+      "label": "トロッコが 1 マス走る秒",
+      "group": "フィールド",
+      "order": 25,
+      "min": 0.02,
+      "max": 1.0,
+      "default": 0.08
+    },
+    "darkRadius": {
+      "kind": "field",
+      "type": "float",
+      "label": "暗いマップで見えるマスの数（たいまつの前）",
+      "group": "フィールド",
+      "order": 26,
+      "min": 0.0,
+      "max": 8.0,
+      "default": 1.0
+    },
+    "torchRadius": {
+      "kind": "field",
+      "type": "float",
+      "label": "暗いマップで見えるマスの数（たいまつを灯した後）",
+      "group": "フィールド",
+      "order": 27,
+      "min": 0.0,
+      "max": 8.0,
+      "default": 3.0
+    },
+    "sleepRate": {
+      "kind": "field",
+      "type": "float",
+      "label": "敵の sleep が効く率",
+      "group": "戦い",
+      "order": 28,
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.6
+    },
+    "wakeRate": {
+      "kind": "field",
+      "type": "float",
+      "label": "眠った人が手番の頭で起きる率",
+      "group": "戦い",
+      "order": 29,
+      "min": 0.0,
+      "max": 1.0,
+      "default": 0.5
+    }
+  }
+}

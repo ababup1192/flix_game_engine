@@ -1,0 +1,110 @@
+{
+  "version": 1,
+  "title": "道具屋",
+  "note": "道具屋の中。x は棚の下・k は売り台の下（絵は床のまま。k の売り台越しに店の人と話せる）。店の人に話すと <<shop>> で店が開く（品は assets/rpg.shops.json）。下の 4 マスが村への出口。",
+  "tileset": "house",
+  "battleBack": "bg_plains",
+  "rows": [
+    "################",
+    "##WWOWWWWWWOWW##",
+    "##xx........xx##",
+    "##............##",
+    "##...kkkk.....##",
+    "##............##",
+    "##p..........p##",
+    "##............##",
+    "######....######",
+    "################",
+    "################",
+    "################",
+    "################",
+    "################",
+    "################"
+  ],
+  "exits": [
+    {
+      "id": "out_6",
+      "x": 6,
+      "y": 8,
+      "to": "village",
+      "spawnX": 11,
+      "spawnY": 4,
+      "facing": "down"
+    },
+    {
+      "id": "out_7",
+      "x": 7,
+      "y": 8,
+      "to": "village",
+      "spawnX": 11,
+      "spawnY": 4,
+      "facing": "down"
+    },
+    {
+      "id": "out_8",
+      "x": 8,
+      "y": 8,
+      "to": "village",
+      "spawnX": 11,
+      "spawnY": 4,
+      "facing": "down"
+    },
+    {
+      "id": "out_9",
+      "x": 9,
+      "y": 8,
+      "to": "village",
+      "spawnX": 11,
+      "spawnY": 4,
+      "facing": "down"
+    }
+  ],
+  "npcs": [
+    {
+      "id": "shopkeeper",
+      "sprite": "merchant",
+      "x": 6,
+      "y": 3,
+      "facing": "down",
+      "node": "Shopkeeper"
+    }
+  ],
+  "props": [
+    {
+      "sprite": "bookshelf",
+      "frame": "idle",
+      "x": 2,
+      "y": 1
+    },
+    {
+      "sprite": "bookshelf",
+      "frame": "idle",
+      "x": 3,
+      "y": 1
+    },
+    {
+      "sprite": "bookshelf",
+      "frame": "idle",
+      "x": 12,
+      "y": 1
+    },
+    {
+      "sprite": "bookshelf",
+      "frame": "idle",
+      "x": 13,
+      "y": 1
+    },
+    {
+      "sprite": "table",
+      "frame": "idle",
+      "x": 5,
+      "y": 4
+    },
+    {
+      "sprite": "table",
+      "frame": "idle",
+      "x": 7,
+      "y": 4
+    }
+  ]
+}
