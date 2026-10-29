@@ -92,9 +92,9 @@ pub mod ShaderEval {
         case Snap(Float64, Float64, Node)                             // 分割数 x/y（下切り済み）, of
         case Ref(Int32)                                               // bindings の添字
         case Missing                                                  // 未定義の Ref・無い tex（0.0）
-        case Tex(Int32, Int32, Vector[Int32], Int32)                  // 幅, 高さ, 画素, チャンネルの shift
+        case Tex(Int32, Int32, Vector[Int32], Int32, Bool)            // 幅, 高さ, 画素, チャンネルの shift, Linear で読むか
         case Shift(Node, Node, Node)                                  // dx, dy, of
-        case TexBlur(Int32, Int32, Vector[Int32], Int32, Float64, Float64, Int32, Node) // 幅, 高さ, 画素, shift, 半径 x/y, taps, amount
+        case TexBlur(Int32, Int32, Vector[Int32], Int32, Float64, Float64, Int32, Node, Bool) // 幅, 高さ, 画素, shift, 半径 x/y, taps, amount, Linear
     }
 
     /// 面の色。Color は (r, g, b) の位置で持つ。
@@ -164,7 +164,11 @@ pub mod ShaderEval {
         }
 
     def compileField(scope: Map[String, Int32], texEnv: Map[String, TexData], field: ShaderDoc.Field): Node =
-        let sub = f -> compileField(scope, texEnv, f);
+        compileFieldIn(false, scope, texEnv, field)
+
+    /// linear = この節の tex / blur を Linear で読むか（Sampler の内側）。
+    def compileFieldIn(linear: Bool, scope: Map[String, Int32], texEnv: Map[String, TexData], field: ShaderDoc.Field): Node =
+        let sub = f -> compileFieldIn(linear, scope, texEnv, f);
         match field {
             case ShaderDoc.Field.Const(v)       => Node.Const(v)
             case ShaderDoc.Field.Uv(u)          =>
@@ -211,7 +215,7 @@ pub mod ShaderEval {
             // 無い名前は 0.0（黒）。警告は IO を持つ生成側（SoftRaster）が出す — ここは純関数。
             case ShaderDoc.Field.Tex(tx)        =>
                 match Map.get(tx#name, texEnv) {
-                    case Some(td) => Node.Tex(td#width, td#height, td#pixels, texShift(tx#chan))
+                    case Some(td) => Node.Tex(td#width, td#height, td#pixels, texShift(tx#chan), linear)
                     case None     => Node.Missing
                 }
             // dx/dy は外側 uv で評価してから、of をずらした座標で読む（GLSL の式と同じ組み方）。
@@ -219,9 +223,11 @@ pub mod ShaderEval {
             case ShaderDoc.Field.TexBlur(bl)    =>
                 match Map.get(bl#name, texEnv) {
                     case Some(td) => Node.TexBlur(td#width, td#height, td#pixels, texShift(bl#chan),
-                                                  bl#radius#x, bl#radius#y, ShaderDoc.blurTaps(bl#taps), sub(bl#amount))
+                                                  bl#radius#x, bl#radius#y, ShaderDoc.blurTaps(bl#taps), sub(bl#amount), linear)
                     case None     => Node.Missing
                 }
+            case ShaderDoc.Field.Sampler(sm)    =>
+                compileFieldIn(sm#filter == ShaderDoc.FilterMode.Linear, scope, texEnv, sm#of)
         }
 
     def texShift(chan: ShaderDoc.TexChan): Int32 =
@@ -380,6 +386,7 @@ pub mod ShaderEval {
                     case ShaderDoc.BinOp.Min  => Float64.min(a, b)
                     case ShaderDoc.BinOp.Max  => Float64.max(a, b)
                     case ShaderDoc.BinOp.Step => if (b >= a) 1.0 else 0.0
+                    case ShaderDoc.BinOp.Div  => if (b == 0.0) 0.0 else a / b
                 }
             // hash に渡すセル座標は floor(uv*scale)。bucket が有ればその値を両成分へ足す（GLSL の
             // vec2+float 自動配りと同じ）。
@@ -421,30 +428,58 @@ pub mod ShaderEval {
                 evalNode(of, (Float64.floor(x * cx) + 0.5) / cx, (Float64.floor(y * cy) + 0.5) / cy, t, env)
             case Node.Ref(i) => Array.get(i, env)
             case Node.Missing => 0.0
-            case Node.Tex(w, h, pixels, shift) => sampleTex(w, h, pixels, shift, x, y)
+            case Node.Tex(w, h, pixels, shift, linear) => sampleTexAs(linear, w, h, pixels, shift, x, y)
             case Node.Shift(fdx, fdy, of) =>
                 let dx = evalNode(fdx, x, y, t, env);
                 let dy = evalNode(fdy, x, y, t, env);
                 evalNode(of, x + dx, y + dy, t, env)
-            case Node.TexBlur(w, h, pixels, shift, rx, ry, taps, amount) =>
+            case Node.TexBlur(w, h, pixels, shift, rx, ry, taps, amount, linear) =>
                 let k = evalNode(amount, x, y, t, env);
-                blurTex(w, h, pixels, shift, x, y, rx * k, ry * k, taps)
+                blurTex({ w = w, h = h, pixels = pixels, shift = shift, linear = linear }, x, y, rx * k, ry * k, taps)
         }
 
     /// ぼかしの標本（GLSL の sg_blur と同じ点の並び: i 番目は角度 i×黄金角・距離 √((i+0.5)/taps)）。
-    def blurTex(w: Int32, h: Int32, pixels: Vector[Int32], shift: Int32, u: Float64, v: Float64,
-                rx: Float64, ry: Float64, taps: Int32): Float64 =
-        blurSum(w, h, pixels, shift, u, v, rx, ry, taps, 0, 0.0) / Int32.toFloat64(taps)
+    /// 半径が 0 なら 1 点だけ読む（sg_blur と同じ分岐）。
+    def blurTex(tex: BlurTex, u: Float64, v: Float64, rx: Float64, ry: Float64, taps: Int32): Float64 =
+        if (rx == 0.0 and ry == 0.0) sampleTexAs(tex#linear, tex#w, tex#h, tex#pixels, tex#shift, u, v)
+        else blurSum(tex, u, v, rx, ry, taps, 0, 0.0) / Int32.toFloat64(taps)
 
-    def blurSum(w: Int32, h: Int32, pixels: Vector[Int32], shift: Int32, u: Float64, v: Float64,
+    /// ぼかしが読む 1 枚（寸法・画素・チャンネルの shift・Linear で読むか）。
+    type alias BlurTex = { w = Int32, h = Int32, pixels = Vector[Int32], shift = Int32, linear = Bool }
+
+    def blurSum(tex: BlurTex, u: Float64, v: Float64,
                 rx: Float64, ry: Float64, taps: Int32, i: Int32, acc: Float64): Float64 =
         if (i >= taps) acc
         else {
             let fi = Int32.toFloat64(i);
             let r = Vec2.sqrt((fi + 0.5) / Int32.toFloat64(taps));
             let a = fi * 2.39996323;
-            let s = sampleTex(w, h, pixels, shift, u + Vec2.cos(a) * r * rx, v + Vec2.sin(a) * r * ry);
-            blurSum(w, h, pixels, shift, u, v, rx, ry, taps, i + 1, acc + s)
+            let s = sampleTexAs(tex#linear, tex#w, tex#h, tex#pixels, tex#shift, u + Vec2.cos(a) * r * rx, v + Vec2.sin(a) * r * ry);
+            blurSum(tex, u, v, rx, ry, taps, i + 1, acc + s)
+        }
+
+    def sampleTexAs(linear: Bool, w: Int32, h: Int32, pixels: Vector[Int32], shift: Int32, u: Float64, v: Float64): Float64 =
+        if (linear) sampleTexLinear(w, h, pixels, shift, u, v) else sampleTex(w, h, pixels, shift, u, v)
+
+    /// Linear の標本（GL の GL_LINEAR + CLAMP_TO_EDGE と同じ点・同じ重み）。テクセルの中心が (i+0.5)/w なので
+    /// 読む点から 0.5 引いた所の左下の 4 テクセルを、端に張り付けて、はみ出した分の割合で混ぜる。
+    /// GPU は重みを固定小数（たいてい 8bit）に丸めるので ±1/255 程度ずれうる（docs/backend-parity.md の近似の行）。
+    def sampleTexLinear(w: Int32, h: Int32, pixels: Vector[Int32], shift: Int32, u: Float64, v: Float64): Float64 =
+        if (w <= 0 or h <= 0) 0.0
+        else {
+            let x = u * Int32.toFloat64(w) - 0.5;
+            let y = v * Int32.toFloat64(h) - 0.5;
+            let x0 = Float64.floor(x);
+            let y0 = Float64.floor(y);
+            let fx = x - x0;
+            let fy = y - y0;
+            let at = (tx, ty) -> {
+                let argb = Vector.get(clampTexel(ty, h) * w + clampTexel(tx, w), pixels);
+                Int32.toFloat64(Int32.bitwiseAnd(Int32.logicalRightShift(dist = shift, argb), 255)) / 255.0
+            };
+            let top = at(x0, y0) + (at(x0 + 1.0, y0) - at(x0, y0)) * fx;
+            let bottom = at(x0, y0 + 1.0) + (at(x0 + 1.0, y0 + 1.0) - at(x0, y0 + 1.0)) * fx;
+            top + (bottom - top) * fy
         }
 
     /// テクスチャ標本（NEAREST + CLAMP の釘打ち式 — GL と同じ量子化になるのが backend-parity の契約）。
@@ -466,10 +501,18 @@ pub mod ShaderEval {
     // 非整数のみ Float64.pow を呼ぶ（第 1 引数はレコード）。負の底は 0 で下切り。
     def powf(x: Float64, p: Float64): Float64 =
         let base = Float64.max(0.0, x);
-        if (Float64.floor(p) == p)
+        if (p < 0.0) negPow(x, p)
+        else if (Float64.floor(p) == p)
             powProduct(base, Float64.floor(p))
         else
             Float64.pow({ base = base }, p)
+
+    // 負の指数の pow（ShaderGen.negPowExpr と同じ下切り・上切り・掛け順）。
+    def negPow(x: Float64, p: Float64): Float64 =
+        let base = Float64.max(ShaderDoc.negPowFloor(), x);
+        let raw = if (Float64.floor(p) == p) 1.0 / powProduct(base, Float64.floor(-p))
+                  else Float64.pow({ base = base }, p);
+        Float64.min(ShaderDoc.negPowCeil(), raw)
 
     // Snap の分割数（ShaderGen.snapCells と同じ下切り）。
     def snapCells(c: Float64): Float64 = Float64.max(1.0, c)

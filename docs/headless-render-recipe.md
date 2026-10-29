@@ -174,3 +174,15 @@ bin/fge digest gallery/my_scene.png                       # 目視の前に数�
 形が物として読める）を満たしているかは、機械では最後まで判定できない。造形が怪しいときは
 `HeadlessRender.silhouettePng`（シルエットの描き出し — 対象を黒・背景を白）で形だけを取り出して見る
 （写経例は [docs/drawing-floor.md](drawing-floor.md)）。
+
+## pass（レンダーターゲット）を使う場面
+
+実機で `App.withPassPlan`（または `App.withPasses`）に渡している計画を、描き出しでもそのまま
+`Render.passSpecsOf` に渡す。倍率（`targets`）と読みの決まり（まだ描いていない pass は黒・自分の名前は history）が
+実機と同じになる。pass の列を 1 枚ずつ `Render.passSpecOf` で下ろすと、この 2 つが抜ける（`bin/fge forbid` が止める）。
+
+```flix
+let prepared = Render.passSpecsOf(texInfo, View.passPlanOf(input));
+prepared#issues |> List.forEach(issue -> println("[render] ${issue}"));
+HeadlessRender.renderPngWithPasses(cfg, prepared#specs, drawables, polygons, Render.shaderSurfaces(items), name)
+```

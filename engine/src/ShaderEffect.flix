@@ -13,13 +13,13 @@ pub mod ShaderEffect {
     /// program = buildProgram が返した GPU ハンドル、rect = 塗る矩形（スクリーン空間 px・uv=0..1 が
     /// この矩形）、time = uTime uniform に渡す秒、zIndex = 重なり順（骨格では固定 z-index の範囲へそろせる）、
     /// blend = 重ね方。
-    /// texNames = Spec の Tex ノードが読むテクスチャ名（ShaderDoc.texNames の正典順）。
+    /// texReads = Spec の tex / blur が読む (テクスチャ名, 補間) の組（ShaderDoc.texReads の正典順 = sampler unit の番号）。
     /// program は GLSL ソースが鍵のキャッシュで共有され、名前を GLSL に写さないため、
     /// 「どの名前をどの sampler unit に bind するか」は cmd がここで運ぶ（構造が同じで
     /// 名前だけ違う 2 面が同じ program を使っても正しい絵になる）。
     pub type alias ShaderRenderCmd = {
         program = GpuHandle.ShaderProgram,
-        texNames = List[String],
+        texReads = List[(String, ShaderDoc.FilterMode)],
         rect = Rect2.Rect2,
         // 面を切り抜く多角形の列（スクリーン空間 px の三角形化前の頂点）。空なら矩形そのまま、
         // 非空なら GL がステンシルへ生成して「多角形の内側だけ」塗る（丸い池形など任意形に抜く）。

@@ -30,12 +30,19 @@ mod ParityMain {
 
     def glShoot(sc: Scenes.Scene): Unit \ IO + GameEngine.Game + ShaderEffect.Shader + RenderTarget.Target =
         let texInfoOf = name -> GameEngine.Game.getTextureInfo(name);
-        List.forEach(p -> {
-            RenderTarget.Target.beginTarget(p#name, Scenes.designWi(), Scenes.designHi(), p#clear);
+        // 実機（App.renderPasses）と同じく、読みの書き換えを通した列を描き、Pass の中の面も描く。
+        let plan = Render.resolvePassReads(Set.empty(), planOf(sc))#plan;
+        let passes = plan#passes;
+        let design = { x = Scenes.designW(), y = Scenes.designH() };
+        List.range(0, sc#repeats) |> List.forEach(_ -> List.forEach(p -> {
+            let (tw, th) = RenderTarget.sizeOf(design, { scale = Render.targetScaleOf(plan, p#name) | RenderTarget.defaultDescriptor() });
+            RenderTarget.Target.beginTarget(p#name, tw, th, p#clear);
+            let cmds = Render.drawShaders(spec -> ShaderEffect.Shader.buildProgram(spec), p#items);
+            List.forEach(c -> ShaderEffect.Shader.drawSurface(c), cmds);
             let (pds, pps) = toDraw(texInfoOf, p#items);
             GameEngine.Game.renderCommands(pds, Nil, pps, None);
             RenderTarget.Target.endTarget()
-        }, sc#passes);
+        }, passes));
         match sc#via {
             case Scenes.ShotVia.ViaTarget =>
                 // target 分岐は swap しないので、endTarget の前に bind 中の FBO を読める。
@@ -53,6 +60,8 @@ mod ParityMain {
                 let (ds, ps) = toDraw(texInfoOf, sc#items);
                 GameEngine.Game.renderCommands(ds, Nil, ps, None)
         }
+
+    def planOf(sc: Scenes.Scene): Render.PassPlan = { targets = sc#targets | Render.passPlan(sc#passes) }
 
     /// frame-<n>.png（FRAME_SHOT の通し番号）を scene 名へ付け替える。番号は
     /// 「画面口 scene の宣言順 = 画面フレームの順」で決まる（他に画面へ描く物は無い）。
@@ -74,7 +83,7 @@ mod ParityMain {
             Some({ id = GpuHandle.wrapTextureId(0),
                    width = Scenes.atlasSide(), height = Scenes.atlasSide() })
         // pass 名は Scenes の宣言から引く — ここに名前を書き足す二重管理をしない
-        // （pass は常に design 寸なので、名前さえ分かれば寸法は決まる）。
+        // （pass は縮んでいても registry に design 寸で載るので、名前さえ分かれば寸法は決まる）。
         else if (List.memberOf(name, Scenes.passNames()))
             Some({ id = GpuHandle.wrapTextureId(0),
                    width = Scenes.designW(), height = Scenes.designH() })
@@ -95,10 +104,10 @@ mod ParityMain {
                 let (ds, ps) = toDraw(softTexInfo, sc#items);
                 let spec: HeadlessRender.PassSpec =
                     { name = sc#name, clear = RenderTarget.LoadOp.Clear(black()),
-                      drawables = ds, polygons = ps };
+                      drawables = ds, polygons = ps, surfaces = Nil, scale = 1.0 };
                 PixelDiff.writePng(HeadlessRender.renderPassImage(cfg, spec, None), "debug/soft/${sc#name}.png")
             case Scenes.ShotVia.ViaScreen =>
-                let passSpecs = sc#passes |> List.map(p -> Render.passSpecOf(softTexInfo, p));
+                let passSpecs = Render.passSpecsOf(softTexInfo, planOf(sc))#specs;
                 let surfaces = Render.shaderSurfaces(sc#items);
                 let (ds, ps) = toDraw(softTexInfo, sc#items);
                 HeadlessRender.renderPngWithPasses(cfg, passSpecs, ds, ps, surfaces, sc#name)
@@ -107,11 +116,12 @@ mod ParityMain {
     // ── 表と exit code ──
 
     /// 表の 1 行。行頭タグ・列順は回帰の grep が読むので変えない（pin）。
-    def line(o: PixelDiff.Outcome): String =
+    def line(exact: Bool, o: PixelDiff.Outcome): String =
         let padded = pad(o#name, 14);
-        if (o#diffPx == 0) "[parity] ${padded} A  一致 (0 px)"
-        else if (o#diffPx < 0) "[parity] ${padded} A  比較不能"
-        else "[parity] ${padded} A  差 ${o#diffPx} px, max ±${o#maxDelta}"
+        let stage = if (exact) "A" else "B";
+        if (o#diffPx == 0) "[parity] ${padded} ${stage}  一致 (0 px)"
+        else if (o#diffPx < 0) "[parity] ${padded} ${stage}  比較不能"
+        else "[parity] ${padded} ${stage}  差 ${o#diffPx} px, max ±${o#maxDelta}"
 
     def pad(s: String, n: Int32): String =
         if (String.length(s) >= n) s else pad(s + " ", n)
@@ -126,10 +136,10 @@ mod ParityMain {
         let cfg = cfgOf(atlas);
         Scenes.all() |> List.forEach(sc -> softShoot(cfg, sc));
         let outcomes = Scenes.all() |> List.map(sc ->
-            PixelDiff.compare(sc#name, "debug/gl/${sc#name}.png",
-                "debug/soft/${sc#name}.png", "debug/diff/${sc#name}.png"));
-        List.forEach(o -> println(line(o)), outcomes);
-        if (List.exists(o -> o#diffPx != 0, outcomes)) System.exit(1) else ()
+            (sc#exact, PixelDiff.compare(sc#name, "debug/gl/${sc#name}.png",
+                "debug/soft/${sc#name}.png", "debug/diff/${sc#name}.png")));
+        List.forEach(eo -> { let (exact, o) = eo; println(line(exact, o)) }, outcomes);
+        if (List.exists(eo -> { let (exact, o) = eo; exact and o#diffPx != 0 }, outcomes)) System.exit(1) else ()
 }
 
 def main(): Unit \ IO =

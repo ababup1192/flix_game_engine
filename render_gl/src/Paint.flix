@@ -8,6 +8,7 @@
 // 1 コマの流れ（呼ぶ側）: queueSurface（シェーダー面を溜める）→ submitFrame（溜めた面と命令を塗る。
 // レンダーターゲットが開いていればそこへ）→ 画面なら swap（窓）か読み戻し（GlOffscreen）。
 mod RenderPaint {
+    import org.lwjgl.opengl.GL11
     import org.lwjgl.opengl.GL20
     import java.lang.System
 
@@ -48,8 +49,12 @@ mod RenderPaint {
         shaderUniformCache = Ref[Map[Int32, (Int32, Int32, Int32, Int32, List[(Int32, Int32)])], Static],
         // レンダーターゲットの名前 → GL 実体。
         targetsRef = Ref[Map[String, RenderTargetGl.Entry], Static],
-        // 今開いているターゲット (幅, 高さ, clear 指定)。None = 画面。
-        activeTargetHolder = Array[Option[(Int32, Int32, RenderTarget.LoadOp)], Static],
+        // 今開いているターゲット (名前, 幅, 高さ, clear 指定)。None = 画面。
+        activeTargetHolder = Array[Option[(String, Int32, Int32, RenderTarget.LoadOp)], Static],
+        // ターゲットの名前 → 前のコマの中身の写し（RenderTarget.historyName で読ませる。自分を読む Pass がある時だけ作る）。
+        historyRef = Ref[Map[String, RenderTargetGl.Entry], Static],
+        // history に前のコマを写すか（窓で遊ぶ時）、毎回透明で塗るか（1 枚撮り・動画 — 描き出しと同じ「1 コマ目」）。
+        keepHistory = Bool,
         // テクスチャの名前 → GL の実体（実行中に増える）。
         registryRef = Ref[RenderAsset.TextureRegistry, Static],
         // ensureTexture が上げた名前 → 最後の key（同じ key の上げ直しを弾く）。
@@ -134,13 +139,14 @@ mod RenderPaint {
         // texLocs = tex 場の (uTexN, uTexFlipN) の location 列（正典順）。
         let shaderUniformCache: Ref[Map[Int32, (Int32, Int32, Int32, Int32, List[(Int32, Int32)])], Static] = Ref.fresh(Static, Map.empty());
         // tex 場の標本規約（NEAREST + CLAMP）を bind 中の unit へ強制する sampler（起動時に 1 個）。
-        let surfaceSampler = RenderSprite.createSurfaceSampler();
+        let surfaceSampler = RenderSprite.createSurfaceSampler(false);
+        let surfaceSamplerLinear = RenderSprite.createSurfaceSampler(true);
         // 見つからないと知らせた tex 場のテクスチャ名（「一度だけ鳴らす」控え）。
         let missingSurfaceTexRef: Ref[Set[String], Static] = Ref.fresh(Static, Set.empty());
 
         // ターゲットは初回の beginTarget で作られ、寸法が変わらない限り使い回す。
         let targetsRef: Ref[Map[String, RenderTargetGl.Entry], Static] = Ref.fresh(Static, Map.empty());
-        let activeTargetHolder = Array#{(None: Option[(Int32, Int32, RenderTarget.LoadOp)])} @ Static;
+        let activeTargetHolder = Array#{(None: Option[(String, Int32, Int32, RenderTarget.LoadOp)])} @ Static;
 
         // テクスチャ表は実行時に増える（ensureTexture が生成したアトラスを足す）ので可変で持つ。
         let registryRef: Ref[RenderAsset.TextureRegistry, Static] = Ref.fresh(Static, Map.empty());
@@ -156,7 +162,7 @@ mod RenderPaint {
         // シェーダー面 1 枚を GL へ描く閉包。program の uniform location を逆引きして差す。
         // z の合流（sprites/polygons/静的レンジとの重なり順）は renderFrameMixed が受け持つので、
         // ここは 1 枚の描画だけに徹する。
-        // cmd#texNames と texLocs の長さ不一致は List.zip が短い方に合わせて黙って吸収する —
+        // cmd#texReads と texLocs の長さ不一致は List.zip が短い方に合わせて黙って吸収する —
         // コンパイル失敗した複数 Spec が同じ fallback program を鍵に uniform cache を上書きし合い、
         // fallback では texLocs が空（または全 -1）になるため、names 2 本 × locs 0 本は正常系
         //（glUniform の location -1 も無視される）。
@@ -177,10 +183,10 @@ mod RenderPaint {
             // registry / targets はこの 1 枚の描画中は変わらないので、名前ごとに読み直さない。
             let registry = Ref.get(registryRef);
             let targets = Ref.get(targetsRef);
-            let texBinds = List.zip(cmd#texNames, texLocs) |> List.zipWithIndex
+            let texBinds = List.zip(cmd#texReads, texLocs) |> List.zipWithIndex
                 |> List.map(itb -> {
-                    let (i, nameLocs) = itb;
-                    let (name, locs) = nameLocs;
+                    let (i, readLocs) = itb;
+                    let ((name, filter), locs) = readLocs;
                     let (_samplerLoc, flipLoc) = locs;
                     let texId = match Map.get(name, registry) {
                         case Some(info) => GpuHandle.textureIdInt(info#id)
@@ -196,17 +202,18 @@ mod RenderPaint {
                     };
                     // pass ターゲットは上下逆格納なので flip=1（貼る側で吸収する既存規約と同型）。
                     let flip = if (Map.memberOf(name, targets)) 1.0 else 0.0;
-                    ({ texUnit = i, texId = texId, flipLoc = flipLoc, flip = flip }: RenderSprite.SurfaceTexBind)
+                    let sampler = if (filter == ShaderDoc.FilterMode.Linear) surfaceSamplerLinear else surfaceSampler;
+                    ({ texUnit = i, texId = texId, flipLoc = flipLoc, flip = flip, sampler = sampler }: RenderSprite.SurfaceTexBind)
                 });
             // mask が空なら矩形そのまま、非空なら多角形の内側だけにステンシルで抜く
             // （多角形描画は poly バッチ経路を借りる）。
             if (List.isEmpty(cmd#mask))
                 RenderSprite.drawShaderSurface(program, vao, { rectPos = uRectPos, rectSize = uRectSize, time = uTime, alpha = uAlpha },
-                                               texBinds, surfaceSampler,
+                                               texBinds,
                                                cmd#rect, cmd#time, cmd#alpha, cmd#blend)
             else
                 RenderSprite.drawShaderSurfaceMasked(program, vao, { rectPos = uRectPos, rectSize = uRectSize, time = uTime, alpha = uAlpha },
-                                               texBinds, surfaceSampler,
+                                               texBinds,
                                                cmd#rect, cmd#time, cmd#alpha, cmd#blend,
                                                polyBatchShader, polyBatchVao, polyBatchVbo,
                                                polyBatchUniforms, cmd#mask)
@@ -237,6 +244,7 @@ mod RenderPaint {
           frameGenHolder = frameGenHolder, programUsedAtRef = programUsedAtRef,
           pendingShaderHolder = pendingShaderHolder, shaderUniformCache = shaderUniformCache,
           targetsRef = targetsRef, activeTargetHolder = activeTargetHolder,
+          historyRef = Ref.fresh(Static, Map.empty()), keepHistory = true,
           registryRef = registryRef, textureKeyRef = textureKeyRef,
           staticCacheCell = staticCacheCell, lastFrameHolder = lastFrameHolder,
           diagnosticsRef = Ref.fresh(Static, None), shaderLifeHolder = Array#{0, 0} @ Static,
@@ -261,18 +269,51 @@ mod RenderPaint {
             targetNames = Map.keysOf(Ref.get(paint#targetsRef)) | paint#frameArgsBase })
 
     /// レンダーターゲットへの 1 フレーム。画面用の paintFrame と違い、黒帯 clear を
-    /// せず（targetClear）、タイル層・静的レンジ・シェーダー面は乗らない（Pass の doc の
-    /// 決まり）。ターゲットは design と同寸なので投影行列はそのままでよい。
-    def paintTarget(paint: Paint, target: (Int32, Int32, RenderTarget.LoadOp),
-                    sprites: List[GameEngine.Drawable], polygons: List[GameEngine.PolygonRenderCmd]): Unit \ IO =
-        let (tw, th, op) = target;
+    /// せず（targetClear）、タイル層・静的レンジは乗らない。シェーダー面は画面と同じく z で合流する。
+    /// 中は design 座標のまま描き、viewport がテクセル寸法へ縮める（投影行列は design 前提のまま）。
+    def paintTarget(paint: Paint, target: (String, Int32, Int32, RenderTarget.LoadOp),
+                    sprites: List[GameEngine.Drawable], polygons: List[GameEngine.PolygonRenderCmd],
+                    surfaces: List[ShaderEffect.ShaderRenderCmd]): Unit \ IO =
+        let (name, tw, th, op) = target;
+        let history = RenderTarget.historyName(name);
+        let readsHistory = List.exists(cmd -> List.exists(read -> fst(read) == history, cmd#texReads), surfaces)
+            or List.exists(d -> DrawCmd.textureOf(d) == history, sprites);
+        if (readsHistory) prepareHistory(paint, name, tw, th) else ();
         RenderFrame.renderFrameMixed({
             registry = Ref.get(paint#registryRef),
-            designW = Int32.toFloat64(tw), designH = Int32.toFloat64(th),
+            designW = paint#screenW, designH = paint#screenH,
             fbW = tw, fbH = th,
             sprites = sprites, polygons = polygons,
+            surfaces = surfaces,
             targetClear = Some(op),
             targetNames = Map.keysOf(Ref.get(paint#targetsRef)) | paint#frameArgsBase })
+
+    /// 開いているターゲット name の history を用意する（clear の前・描く前に呼ぶ）。窓では今の中身（= 前のコマの最後）を写し、
+    /// 1 枚撮り・動画では透明で塗る。history は registry とターゲットの表に載せる（上下逆格納なので貼る・読む時の反転も効く）。
+    def prepareHistory(paint: Paint, name: String, tw: Int32, th: Int32): Unit \ IO =
+        let history = RenderTarget.historyName(name);
+        let existing = Map.get(name, Ref.get(paint#historyRef)) |> Option.filter(e -> e#width == tw and e#height == th);
+        let entry = match existing {
+            case Some(e) => e
+            case None =>
+                Option.forEach(RenderTargetGl.destroy, Map.get(name, Ref.get(paint#historyRef)));
+                let fresh = RenderTargetGl.create(tw, th);
+                Ref.put(Map.insert(name, fresh, Ref.get(paint#historyRef)), paint#historyRef);
+                fresh
+        };
+        match Map.get(name, Ref.get(paint#targetsRef)) {
+            case Some(target) =>
+                if (paint#keepHistory) {
+                    // WhyNot: scissor を外さずに blit しない — glBlitFramebuffer は scissor に切られる。renderFrameMixed はコマの
+                    // 終わりで外す決まりだが、崩れた時に history が四角く欠けて気づきにくいので、ここで 1 回外す。
+                    GL11.glDisable(GL11.GL_SCISSOR_TEST);
+                    RenderTargetGl.copyTo(target, entry)
+                } else RenderTargetGl.clearTransparent(entry, target)
+            case None => ()
+        };
+        Ref.put(Map.insert(history, entry, Ref.get(paint#targetsRef)), paint#targetsRef);
+        putTexture(history, ({ id = GpuHandle.wrapTextureId(entry#tex),
+                               width = paint#screenW, height = paint#screenH }: RenderAsset.TextureInfo), paint)
 
     /// Game.renderCommands の中身（swap の手前まで）。レンダーターゲットが開いていればそこへ塗って false。
     /// 開いていなければ、溜めたシェーダー面を取り出して画面（今 bind されている fbW × fbH）へ塗り、
@@ -285,7 +326,10 @@ mod RenderPaint {
             case Some(target) =>
                 // ターゲットが開いている間の描画は画面でなくそこに着く。swap も
                 // 控え（リサイズ再描画の元）も触らない — 画面のフレームは同じ絵のフレームの末尾に必ず別で来る。
-                paintTarget(paint, target, sprites, polygons);
+                // この Pass で積んだシェーダー面もここで取り出す（残すと画面の方に描かれる）。
+                let surfaces = List.reverse(Array.get(0, paint#pendingShaderHolder));
+                Array.put(Nil, 0, paint#pendingShaderHolder);
+                paintTarget(paint, target, sprites, polygons, surfaces);
                 false
             case None =>
                 // queueSurface が積んだこのフレームのシェーダー面を取り出して holder を空にする。
@@ -521,7 +565,7 @@ mod RenderPaint {
                 // tex 場の sampler / flip の location（正典順）。sampler 番号 = unit 番号を
                 // リンク直後に 1 回だけ差す（毎フレーム差し直さない）。fallback に落ちた
                 // program では全て -1 になり、glUniform が無視するのでそのまま通す。
-                let texLocs = ShaderDoc.texNames(spec) |> List.zipWithIndex
+                let texLocs = ShaderDoc.texReads(spec) |> List.zipWithIndex
                     |> List.map(iname -> {
                         let (i, _) = iname;
                         (GL20.glGetUniformLocation(prog, "uTex${i}"),
@@ -709,7 +753,7 @@ mod RenderPaint {
 
     // ── レンダーターゲット ──
 
-    /// RenderTarget.Target.beginTarget の中身。レジストリから引く。無い・寸法が変わったら作り直す（古い方は必ず捨てる）。
+    /// RenderTarget.Target.beginTarget の中身。レジストリから引く。無い・寸法（テクセル寸法）が変わったら作り直す（古い方は必ず捨てる）。
     /// ターゲットのテクスチャを registry へ登録し（以降 Render.sprite(name, z) が普通のスプライトとして引ける）、bind する。
     /// clear は submitFrame（renderFrameMixed の targetClear）が行う — GL の clear 手順を 1 箇所に保つため、ここでは開いた印を残すだけ。
     pub def beginTarget(paint: Paint, name: String, w: Int32, h: Int32, clearOp: RenderTarget.LoadOp): Unit \ IO =
@@ -722,13 +766,27 @@ mod RenderPaint {
         let entry = match Map.get(name, Ref.get(targetsRef)) {
             case Some(e) =>
                 if (e#width == w and e#height == h) e
-                else { RenderTargetGl.destroy(e); freshEntry() }
+                else { RenderTargetGl.destroy(e); dropHistory(paint, name); freshEntry() }
             case None => freshEntry()
         };
+        // registry には design の寸法で載せる — sprite の大きさと region の UV は registry の寸法で決まるので、
+        // 縮んだターゲットも design 全面に貼れる（region の src も design px のまま）。
         putTexture(name, ({ id = GpuHandle.wrapTextureId(entry#tex),
-                            width = Int32.toFloat64(w), height = Int32.toFloat64(h) }: RenderAsset.TextureInfo), paint);
+                            width = paint#screenW, height = paint#screenH }: RenderAsset.TextureInfo), paint);
         RenderTargetGl.bind(entry);
-        Array.put(Some((w, h, clearOp)), 0, paint#activeTargetHolder)
+        Array.put(Some((name, w, h, clearOp)), 0, paint#activeTargetHolder)
+
+    /// ターゲット name を作り直す時に、その history も捨てる（次に要る時に新しい寸法で透明から作る）。
+    def dropHistory(paint: Paint, name: String): Unit \ IO =
+        match Map.get(name, Ref.get(paint#historyRef)) {
+            case None    => ()
+            case Some(e) =>
+                RenderTargetGl.destroy(e);
+                let history = RenderTarget.historyName(name);
+                Ref.put(Map.remove(name, Ref.get(paint#historyRef)), paint#historyRef);
+                Ref.put(Map.remove(history, Ref.get(paint#targetsRef)), paint#targetsRef);
+                Ref.put(Map.remove(history, Ref.get(paint#registryRef)), paint#registryRef)
+        }
 
     /// RenderTarget.Target.endTarget の中身。画面のフレームバッファへ戻す。
     pub def endTarget(paint: Paint): Unit \ IO =

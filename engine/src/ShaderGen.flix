@@ -169,45 +169,56 @@ pub mod ShaderGen {
         }
 
     /// Spec 2 つの構造比較（program キャッシュの正当性の中核）。真 ⇒ compile は純関数なので
-    /// GLSL も等しい、が構成的に成り立つ。確保ゼロの純関数。
+    /// GLSL も等しい、が構成的に成り立つ。
     /// WhyNot: derive の Eq にしない — Field 等の payload はレコードで、Flix のレコードは
     /// Eq を持てず導出がそこで止まる。GLSL 全文を鍵にしない — 当たったフレームでも
     /// compile（GLSL 全文の組み立て）を毎回払うことになる。ハッシュにしない — 衝突しない
     /// ことを証明できない。1 フィールドでも比べ忘れると、違う Spec を同じと誤答して
     /// 古い program の絵が何も知らせずに出続けるため、全 case・全フィールドをテストで pin する
     /// （engine/test/TestShaderGenEqSpec.flix）。
+    /// テクスチャの名前は比べず、texNames の正典順での番号を比べる（GLSL に出るのは番号だけで、
+    /// どの名前を bind するかは描画依頼の texNames が運ぶ）。
+    /// WhyNot: 名前のまま比べない — Pass の中で読みを別名（`x@history` / `@missing:c`）へ書き換えた Spec と
+    /// 書き換えない Spec が同じ name で並ぶと、毎コマ偽になって GLSL を作り直し続ける。
     pub def eqSpec(a: ShaderDoc.Spec, b: ShaderDoc.Spec): Bool =
+        let ix = { a = texIndexFrom(ShaderDoc.texNames(a)), b = texIndexFrom(ShaderDoc.texNames(b)) };
         a#name == b#name
             and a#cycleRate == b#cycleRate
-            and eqBindings(a#bindings, b#bindings)
-            and eqOut(a#out, b#out)
+            and eqBindings(ix, a#bindings, b#bindings)
+            and eqOut(ix, a#out, b#out)
 
-    def eqBindings(a: List[(String, ShaderDoc.Field)], b: List[(String, ShaderDoc.Field)]): Bool =
+    /// 2 つの Spec のテクスチャ名 → 正典順の番号。
+    type alias TexIx = { a = Map[String, Int32], b = Map[String, Int32] }
+
+    def eqTexName(ix: TexIx, na: String, nb: String): Bool =
+        Map.get(na, ix#a) == Map.get(nb, ix#b)
+
+    def eqBindings(ix: TexIx, a: List[(String, ShaderDoc.Field)], b: List[(String, ShaderDoc.Field)]): Bool =
         match (a, b) {
             case (Nil, Nil)                       => true
-            case ((na, fa) :: ra, (nb, fb) :: rb) => na == nb and eqField(fa, fb) and eqBindings(ra, rb)
+            case ((na, fa) :: ra, (nb, fb) :: rb) => na == nb and eqField(ix, fa, fb) and eqBindings(ix, ra, rb)
             case _                                => false
         }
 
-    def eqOut(a: ShaderDoc.Out, b: ShaderDoc.Out): Bool =
+    def eqOut(ix: TexIx, a: ShaderDoc.Out, b: ShaderDoc.Out): Bool =
         match (a, b) {
             case (ShaderDoc.Out.Fill(fa), ShaderDoc.Out.Fill(fb)) =>
-                eqShade(fa#shade, fb#shade) and eqField(fa#alpha, fb#alpha)
+                eqShade(ix, fa#shade, fb#shade) and eqField(ix, fa#alpha, fb#alpha)
         }
 
-    def eqShade(a: ShaderDoc.Shade, b: ShaderDoc.Shade): Bool =
+    def eqShade(ix: TexIx, a: ShaderDoc.Shade, b: ShaderDoc.Shade): Bool =
         use ShaderDoc.Shade;
         match (a, b) {
             case (Shade.Solid(ca), Shade.Solid(cb))       => eqColor(ca, cb)
             case (Shade.Ramp(ra), Shade.Ramp(rb))         =>
-                eqColor(ra#lo, rb#lo) and eqColor(ra#hi, rb#hi) and eqField(ra#field, rb#field)
+                eqColor(ra#lo, rb#lo) and eqColor(ra#hi, rb#hi) and eqField(ix, ra#field, rb#field)
             case (Shade.Gradient(ga), Shade.Gradient(gb)) =>
-                eqStops(ga#stops, gb#stops) and eqField(ga#field, gb#field)
+                eqStops(ga#stops, gb#stops) and eqField(ix, ga#field, gb#field)
             case (Shade.Cosine(ca), Shade.Cosine(cb))     =>
                 eqColor(ca#a, cb#a) and eqColor(ca#b, cb#b) and eqColor(ca#c, cb#c)
-                    and eqColor(ca#d, cb#d) and eqField(ca#field, cb#field)
+                    and eqColor(ca#d, cb#d) and eqField(ix, ca#field, cb#field)
             case (Shade.Rgb(ra), Shade.Rgb(rb))           =>
-                eqField(ra#r, rb#r) and eqField(ra#g, rb#g) and eqField(ra#b, rb#b)
+                eqField(ix, ra#r, rb#r) and eqField(ix, ra#g, rb#g) and eqField(ix, ra#b, rb#b)
             case _                                        => false
         }
 
@@ -224,14 +235,14 @@ pub mod ShaderGen {
     def eqVec2(a: Vec2.Vec2, b: Vec2.Vec2): Bool =
         a#x == b#x and a#y == b#y
 
-    def eqOptField(a: Option[ShaderDoc.Field], b: Option[ShaderDoc.Field]): Bool =
+    def eqOptField(ix: TexIx, a: Option[ShaderDoc.Field], b: Option[ShaderDoc.Field]): Bool =
         match (a, b) {
             case (None, None)         => true
-            case (Some(fa), Some(fb)) => eqField(fa, fb)
+            case (Some(fa), Some(fb)) => eqField(ix, fa, fb)
             case _                    => false
         }
 
-    def eqField(a: ShaderDoc.Field, b: ShaderDoc.Field): Bool =
+    def eqField(ix: TexIx, a: ShaderDoc.Field, b: ShaderDoc.Field): Bool =
         use ShaderDoc.Field;
         match (a, b) {
             case (Field.Const(va), Field.Const(vb))               => va == vb
@@ -244,16 +255,16 @@ pub mod ShaderGen {
                 ra#octaves == rb#octaves and ra#scale == rb#scale
                     and eqVec2(ra#period, rb#period) and ra#seed == rb#seed
             case (Field.Smoothstep(ra), Field.Smoothstep(rb))     =>
-                ra#lo == rb#lo and ra#hi == rb#hi and eqField(ra#of, rb#of)
+                ra#lo == rb#lo and ra#hi == rb#hi and eqField(ix, ra#of, rb#of)
             case (Field.Scaled(ra), Field.Scaled(rb))             =>
-                ra#factor == rb#factor and eqVec2(ra#scroll, rb#scroll) and eqField(ra#of, rb#of)
+                ra#factor == rb#factor and eqVec2(ra#scroll, rb#scroll) and eqField(ix, ra#of, rb#of)
             case (Field.Warp(ra), Field.Warp(rb))                 =>
                 ra#amount == rb#amount and ra#scale == rb#scale and ra#seed == rb#seed
-                    and eqField(ra#of, rb#of)
+                    and eqField(ix, ra#of, rb#of)
             case (Field.Mix(ra), Field.Mix(rb))                   =>
-                eqField(ra#a, rb#a) and eqField(ra#b, rb#b) and ra#t == rb#t
+                eqField(ix, ra#a, rb#a) and eqField(ix, ra#b, rb#b) and ra#t == rb#t
             case (Field.Blend(ra), Field.Blend(rb))               =>
-                eqField(ra#a, rb#a) and eqField(ra#b, rb#b) and eqField(ra#by, rb#by)
+                eqField(ix, ra#a, rb#a) and eqField(ix, ra#b, rb#b) and eqField(ix, ra#by, rb#by)
             case (Field.Disk(ra), Field.Disk(rb))                 =>
                 ra#cx == rb#cx and ra#cy == rb#cy
                     and ra#radius == rb#radius and ra#feather == rb#feather
@@ -262,7 +273,7 @@ pub mod ShaderGen {
             case (Field.RadialAspect(ra), Field.RadialAspect(rb)) =>
                 ra#cx == rb#cx and ra#cy == rb#cy and ra#aspect == rb#aspect
             case (Field.Quantize(ra), Field.Quantize(rb))         =>
-                eqField(ra#of, rb#of) and ra#steps == rb#steps
+                eqField(ix, ra#of, rb#of) and ra#steps == rb#steps
             case (Field.Scales(ra), Field.Scales(rb))             =>
                 ra#scale == rb#scale and ra#stagger == rb#stagger
             case (Field.Glints(ra), Field.Glints(rb))             =>
@@ -275,38 +286,40 @@ pub mod ShaderGen {
                 ra#scale == rb#scale and ra#rate == rb#rate
                     and ra#density == rb#density and ra#seed == rb#seed
             case (Field.Bin(ra), Field.Bin(rb))                   =>
-                ra#op == rb#op and eqField(ra#a, rb#a) and eqField(ra#b, rb#b)
+                ra#op == rb#op and eqField(ix, ra#a, rb#a) and eqField(ix, ra#b, rb#b)
             case (Field.Hash1(ra), Field.Hash1(rb))               =>
-                ra#scale == rb#scale and ra#seed == rb#seed and eqOptField(ra#bucket, rb#bucket)
+                ra#scale == rb#scale and ra#seed == rb#seed and eqOptField(ix, ra#bucket, rb#bucket)
             case (Field.Hash2(ra), Field.Hash2(rb))               =>
                 ra#scale == rb#scale and ra#seed == rb#seed
-                    and ra#comp == rb#comp and eqOptField(ra#bucket, rb#bucket)
+                    and ra#comp == rb#comp and eqOptField(ix, ra#bucket, rb#bucket)
             case (Field.Un(ra), Field.Un(rb))                     =>
-                ra#op == rb#op and eqField(ra#of, rb#of)
+                ra#op == rb#op and eqField(ix, ra#of, rb#of)
             case (Field.Pow(ra), Field.Pow(rb))                   =>
-                eqField(ra#of, rb#of) and ra#p == rb#p
+                eqField(ix, ra#of, rb#of) and ra#p == rb#p
             case (Field.Time(ra), Field.Time(rb))                 =>
-                ra#scale == rb#scale and eqField(ra#offset, rb#offset)
+                ra#scale == rb#scale and eqField(ix, ra#offset, rb#offset)
             case (Field.Tiling(ra), Field.Tiling(rb))             =>
-                eqVec2(ra#tiles, rb#tiles) and eqField(ra#of, rb#of)
+                eqVec2(ra#tiles, rb#tiles) and eqField(ix, ra#of, rb#of)
             case (Field.Snap(ra), Field.Snap(rb))                 =>
-                eqVec2(ra#cells, rb#cells) and eqField(ra#of, rb#of)
+                eqVec2(ra#cells, rb#cells) and eqField(ix, ra#of, rb#of)
             case (Field.Swirl(ra), Field.Swirl(rb))               =>
                 ra#cx == rb#cx and ra#cy == rb#cy and ra#strength == rb#strength
-                    and ra#rate == rb#rate and eqField(ra#of, rb#of)
+                    and ra#rate == rb#rate and eqField(ix, ra#of, rb#of)
             case (Field.Angle(ra), Field.Angle(rb))               =>
                 ra#cx == rb#cx and ra#cy == rb#cy
             case (Field.Rotate(ra), Field.Rotate(rb))             =>
                 ra#cx == rb#cx and ra#cy == rb#cy and ra#turns == rb#turns
-                    and ra#rate == rb#rate and eqField(ra#of, rb#of)
+                    and ra#rate == rb#rate and eqField(ix, ra#of, rb#of)
             case (Field.Ref(na), Field.Ref(nb))                   => na == nb
             case (Field.Tex(ra), Field.Tex(rb))                   =>
-                ra#name == rb#name and ra#chan == rb#chan
+                eqTexName(ix, ra#name, rb#name) and ra#chan == rb#chan
             case (Field.Shift(ra), Field.Shift(rb))               =>
-                eqField(ra#dx, rb#dx) and eqField(ra#dy, rb#dy) and eqField(ra#of, rb#of)
+                eqField(ix, ra#dx, rb#dx) and eqField(ix, ra#dy, rb#dy) and eqField(ix, ra#of, rb#of)
+            case (Field.Sampler(ra), Field.Sampler(rb))           =>
+                ra#filter == rb#filter and eqField(ix, ra#of, rb#of)
             case (Field.TexBlur(ra), Field.TexBlur(rb))           =>
-                ra#name == rb#name and ra#chan == rb#chan and eqVec2(ra#radius, rb#radius)
-                    and ra#taps == rb#taps and eqField(ra#amount, rb#amount)
+                eqTexName(ix, ra#name, rb#name) and ra#chan == rb#chan and eqVec2(ra#radius, rb#radius)
+                    and ra#taps == rb#taps and eqField(ix, ra#amount, rb#amount)
             case _                                                => false
         }
 
@@ -315,27 +328,30 @@ pub mod ShaderGen {
     /// 出力は 1 文字も変えない（headless のスナップショットを無傷に保つ）。
     pub def compile(spec: ShaderDoc.Spec): String =
         // texNames は木を全走査するので、宣言と番号表で使い回す（毎回呼ぶと走査が重複する）。
-        let names = ShaderDoc.texNames(spec);
-        let tex = texIndexFrom(names);
+        let reads = ShaderDoc.texReads(spec);
+        let tex = texScopeFrom(reads);
         joinParts(
             "#version 330 core\n" ::
             "in vec2 vUv;\n" ::
             "out vec4 outColor;\n" ::
             "uniform float uTime;\n" ::
             "uniform float uAlpha;\n" ::
-            texUniformDecls(names) ::
+            texUniformDecls(reads) ::
             preludeSource() ::
             (if (ShaderDoc.usesBlur(spec)) blurSource() else "") ::
+            (if (ShaderDoc.usesDiv(spec)) divSource() else "") ::
             "void main() {\n" ::
-            bindingPrelude(spec#bindings, tex) ::
-            "    " :: outStmt(spec#cycleRate, spec#out, envOf(spec#bindings), tex) :: "\n" ::
+            (mainStatements(spec, tex) |> List.map(st -> "    " + st + "\n") |> joinParts) ::
             "    outColor.a *= uAlpha;\n" ::
             "}\n" :: Nil)
 
     /// ぼかし（TexBlur）の標本。点の並びは ShaderEval.blurTex と同じ。ぼかしを使う Spec にだけ足す
-    /// （使わない Spec の出力を 1 文字も変えない）。
+    /// （使わない Spec の出力を 1 文字も変えない）。半径が 0 なら 1 点だけ読む（ShaderEval.blurTex と同じ分岐）。
+    /// WhyNot: 分岐の中の texture() を textureLod にしない — ターゲットにも面のテクスチャにも mipmap が無く、微分は答えに効かない。
+    /// mipmap を入れる時は textureLod(…, 0.0) に替える。
     def blurSource(): String =
         "vec4 sg_blur(sampler2D tex, float flip, vec2 uv, vec2 radius, int taps) {\n" +
+        "    if (radius.x == 0.0 && radius.y == 0.0) return texture(tex, vec2(uv.x, mix(uv.y, 1.0 - uv.y, flip)));\n" +
         "    vec4 acc = vec4(0.0);\n" +
         "    for (int i = 0; i < 64; i++) {\n" +
         "        if (i >= taps) break;\n" +
@@ -347,12 +363,39 @@ pub mod ShaderGen {
         "    return acc / float(taps);\n" +
         "}\n"
 
+    /// 割り算（BinOp.Div）。割る数が 0 なら 0。割り算を使う Spec にだけ足す。
+    /// WhyNot: 式に `(b == 0.0 ? 0.0 : a / b)` と直に書かない — b の式を 2 回書くことになり、b に tex や blur が入ると読みが倍になる。
+    def divSource(): String =
+        "float sg_div(float a, float b) {\n" +
+        "    return b == 0.0 ? 0.0 : a / b;\n" +
+        "}\n"
+
     /// texNames の並び（正典順）に uniform 宣言を吐く。空なら空文字（1 文字も足さない）。
-    def texUniformDecls(names: List[String]): String =
+    def texUniformDecls(names: List[a]): String =
         names |> List.zipWithIndex |> List.joinWith(iname -> {
             let (i, _) = iname;
             "uniform sampler2D uTex${i};\nuniform float uTexFlip${i};\n"
         }, "")
+
+    /// fieldExpr が tex / blur の番号を引く表（texReads の正典順の番号）。素の名前 = 今の補間の番号、
+    /// scopedKey(名前, 補間) = その補間の番号。Sampler の節が素の名前を指し直す（rescope）。
+    def texScopeFrom(reads: List[(String, ShaderDoc.FilterMode)]): Map[String, Int32] =
+        reads |> List.zipWithIndex |> List.foldLeft((acc, ir) -> {
+            let (i, (name, filter)) = ir;
+            let withScoped = Map.insert(scopedKey(name, filter), i, acc);
+            if (filter == ShaderDoc.FilterMode.Nearest) Map.insert(name, i, withScoped) else withScoped
+        }, Map.empty())
+
+    def scopedKey(name: String, filter: ShaderDoc.FilterMode): String = name + "@sampler:" + ToString.toString(filter)
+
+    /// Sampler の内側: 素の名前を filter の番号へ指し直す（その組が無い名前は素の名前ごと外す — 内側では読まれない）。
+    def rescope(filter: ShaderDoc.FilterMode, tex: Map[String, Int32]): Map[String, Int32] =
+        let suffix = "@sampler:" + ToString.toString(filter);
+        Map.foldLeftWithKey((acc, key, i) ->
+            if (String.endsWith({ suffix = suffix }, key))
+                Map.insert(String.dropRight(String.length(suffix), key), i, acc)
+            else acc,
+        tex |> Map.filterWithKey((key, _) -> String.contains({ substr = "@sampler:" }, key)), tex)
 
     /// テクスチャ名 → sampler 番号（texNames の正典順）。Tex ノードが uTexN を選ぶのに使う。
     def texIndexFrom(names: List[String]): Map[String, Int32] =
@@ -362,23 +405,110 @@ pub mod ShaderGen {
 
     // ── main 本体（prelude 抜き）のスナップショット用。ノイズテンプレを混ぜず Spec だけ pin する。──
     pub def compileBody(spec: ShaderDoc.Spec): String =
-        let tex = texIndexFrom(ShaderDoc.texNames(spec));
-        bindingPrelude(spec#bindings, tex) +
-        outStmt(spec#cycleRate, spec#out, envOf(spec#bindings), tex)
+        let tex = texScopeFrom(ShaderDoc.texReads(spec));
+        let stmts = mainStatements(spec, tex);
+        let n = List.length(stmts);
+        stmts |> List.zipWithIndex
+              |> List.map(ist -> { let (i, st) = ist; if (i == n - 1) st else "    " + st + "\n" })
+              |> joinParts
 
-    /// bindings を main 先頭の `float sg_b_<name> = <式>;` 宣言に並べる（前から順）。
-    /// 各 binding の式は自分より前の binding だけ Ref できるので、env を前から畳み込みながら組む。
-    /// bindings が空（既存 Spec）なら 1 文字も吐かない（main 本体は現行と完全一致）。
-    def bindingPrelude(bindings: List[(String, ShaderDoc.Field)], tex: Map[String, Int32]): String =
-        if (List.isEmpty(bindings)) ""
+    /// main の文（binding の宣言を前から・最後に outColor）。同じ読みは共通部分式として括り出してある（finishReads）。
+    def mainStatements(spec: ShaderDoc.Spec, tex: Map[String, Int32]): List[String] =
+        let (rev, _) = List.foldLeft((acc, nf) -> {
+            let (out, env) = acc;
+            let (name, field) = nf;
+            let line = "float sg_b_" + name + " = " + fieldExpr(field, "vUv", env, tex) + ";";
+            (line :: out, Map.insert(name, "sg_b_" + name, env))
+        }, (Nil, Map.empty()), spec#bindings);
+        let out = outStmt(spec#cycleRate, spec#out, envOf(spec#bindings), tex);
+        finishReads(List.reverse(out :: rev))
+
+    // ── 同じ読みの括り出し（CSE / hoist）──
+    // fieldExpr は tex / blur の呼び出しを ⟦ ⟧ で囲んで返す（チャンネルの .r は外）。finishReads が全部の文で
+    // 同じ呼び出しの字を数え、2 回以上出る物だけ vec4 の変数に括り出して、最初に使う文の直前に宣言する。
+    // 呼び出しの字は vUv・uTime・uniform・前の binding の変数だけで閉じているので、どの文の前に置いても同じ値になる。
+
+    /// 文の中の読みの木（⟦ ⟧ は入れ子になる — blur の amount の中に tex があるなど）。
+    enum ReadPiece {
+        case Text(String)
+        case Read(List[ReadPiece])
+    }
+
+    /// 括り出しの途中の状態: 括り出した呼び出しの字 → 変数名・この文の前に置く宣言（逆順）・次の番号。
+    type alias HoistState = { declared = Map[String, String], decls = List[String], next = Int32 }
+
+    def markRead(call: String): String = "⟦" + call + "⟧"
+
+    /// 印の付いた文の列を、印の無い GLSL の文の列へ。1 回しか出ない読みはそのまま書き戻す
+    /// （同じ読みが 2 回以上無い Spec の GLSL は印を入れる前と 1 文字も変わらない）。
+    def finishReads(stmts: List[String]): List[String] =
+        if (not List.exists(st -> String.contains({ substr = "⟦" }, st), stmts)) stmts
         else {
-            let (rev, _) = List.foldLeft((acc, nf) -> {
-                let (out, env) = acc;
-                let (name, field) = nf;
-                let line = "    float sg_b_" + name + " = " + fieldExpr(field, "vUv", env, tex) + ";\n";
-                (line :: out, Map.insert(name, "sg_b_" + name, env))
-            }, (Nil, Map.empty()), bindings);
-            joinParts(List.reverse(rev))
+            let parsed = stmts |> List.map(st -> fst(parseReads(st, 0)));
+            let counts = parsed |> List.foldLeft((acc, ps) -> countReads(ps, acc), Map.empty());
+            let (out, _) = parsed |> List.foldLeft((acc, ps) -> {
+                let (lines, st0) = acc;
+                let (text, st1) = renderReads(counts, ps, { decls = Nil | st0 });
+                (List.append(text :: st1#decls, lines), st1)
+            }, (Nil, { declared = Map.empty(), decls = Nil, next = 0 }));
+            List.reverse(out)
+        }
+
+    /// s の i 文字目から、閉じの ⟧ か終わりまでを木にする。戻りの Int32 は読み終えた次の位置。
+    def parseReads(s: String, i: Int32): (List[ReadPiece], Int32) =
+        let n = String.length(s);
+        let textOf = (start, end, acc) ->
+            if (end > start) ReadPiece.Text(String.slice({ start = start }, { end = end }, s)) :: acc else acc;
+        def go(j, start, acc) =
+            if (j >= n) (List.reverse(textOf(start, j, acc)), j)
+            else {
+                let c = String.charAt(j, s);
+                if (c == '⟦') {
+                    let (inner, next) = parseReads(s, j + 1);
+                    go(next, next, ReadPiece.Read(inner) :: textOf(start, j, acc))
+                } else if (c == '⟧') (List.reverse(textOf(start, j, acc)), j + 1)
+                else go(j + 1, start, acc)
+            };
+        go(i, i, Nil)
+
+    /// 印を全部外した字（括り出しの鍵）。
+    def plainReads(ps: List[ReadPiece]): String =
+        ps |> List.map(p -> match p {
+            case ReadPiece.Text(t) => t
+            case ReadPiece.Read(inner) => plainReads(inner)
+        }) |> joinParts
+
+    def countReads(ps: List[ReadPiece], acc: Map[String, Int32]): Map[String, Int32] =
+        List.foldLeft((m, p) -> match p {
+            case ReadPiece.Text(_) => m
+            case ReadPiece.Read(inner) =>
+                let key = plainReads(inner);
+                countReads(inner, Map.insert(key, 1 + Option.getWithDefault(0, Map.get(key, m)), m))
+        }, acc, ps)
+
+    def renderReads(counts: Map[String, Int32], ps: List[ReadPiece], st: HoistState): (String, HoistState) =
+        let (rev, stOut) = List.foldLeft((acc, p) -> {
+            let (parts, st0) = acc;
+            match p {
+                case ReadPiece.Text(t) => (t :: parts, st0)
+                case ReadPiece.Read(inner) =>
+                    let (call, st1) = renderReads(counts, inner, st0);
+                    let (text, st2) = hoistRead(counts, plainReads(inner), call, st1);
+                    (text :: parts, st2)
+            }
+        }, (Nil, st), ps);
+        (joinParts(List.reverse(rev)), stOut)
+
+    /// 2 回以上出る読みは変数へ（初めてならこの文の前に宣言を積む）、1 回きりなら呼び出しのまま。
+    def hoistRead(counts: Map[String, Int32], key: String, call: String, st: HoistState): (String, HoistState) =
+        if (Option.getWithDefault(0, Map.get(key, counts)) < 2) (call, st)
+        else match Map.get(key, st#declared) {
+            case Some(var) => (var, st)
+            case None =>
+                let var = "sg_r${st#next}";
+                (var, { declared = Map.insert(key, var, st#declared),
+                        decls = ("vec4 " + var + " = " + call + ";") :: st#decls,
+                        next = st#next + 1 })
         }
 
     /// bindings 名 → GLSL 変数名（sg_b_<name>）の env。out 式（shade/alpha）が Ref を解くのに使う。
@@ -551,6 +681,7 @@ pub mod ShaderGen {
                     case ShaderDoc.BinOp.Min  => "min(" + ae + ", " + be + ")"
                     case ShaderDoc.BinOp.Max  => "max(" + ae + ", " + be + ")"
                     case ShaderDoc.BinOp.Step => "step(" + ae + ", " + be + ")"
+                    case ShaderDoc.BinOp.Div  => "sg_div(" + ae + ", " + be + ")"
                 }
             case ShaderDoc.Field.Hash1(h) =>
                 // セルの整数座標 floor(uv*scale) を hash に渡す。bucket が有れば座標に足す（GLSL の
@@ -577,11 +708,14 @@ pub mod ShaderGen {
             case ShaderDoc.Field.Pow(pw) =>
                 // 整数指数は pow() でなく反復積の文字列にして CPU 側の反復積と構造を合わせる
                 // （GPU/CPU で丸め順が揃いパリティが強くなる）。負の底の非整数乗は NaN なので 0 で下切り。
-                let base = "max(0.0, " + fieldExpr(pw#of, uv, env, tex) + ")";
-                if (Float64.floor(pw#p) == pw#p)
-                    powProduct(base, Float64.floor(pw#p))
-                else
-                    "pow(max(0.0, (" + fieldExpr(pw#of, uv, env, tex) + ")), " + f(pw#p) + ")"
+                if (pw#p < 0.0) negPowExpr(fieldExpr(pw#of, uv, env, tex), pw#p)
+                else {
+                    let base = "max(0.0, " + fieldExpr(pw#of, uv, env, tex) + ")";
+                    if (Float64.floor(pw#p) == pw#p)
+                        powProduct(base, Float64.floor(pw#p))
+                    else
+                        "pow(max(0.0, (" + fieldExpr(pw#of, uv, env, tex) + ")), " + f(pw#p) + ")"
+                }
             case ShaderDoc.Field.Time(tm) =>
                 "(uTime * " + f(tm#scale) + " + (" + fieldExpr(tm#offset, uv, env, tex) + "))"
             case ShaderDoc.Field.Tiling(tl) =>
@@ -611,13 +745,15 @@ pub mod ShaderGen {
                     case ShaderDoc.TexChan.B => ".b"
                     case ShaderDoc.TexChan.A => ".a"
                 };
-                "texture(uTex${i}, vec2((" + uv + ").x, mix((" + uv +
-                    ").y, 1.0 - (" + uv + ").y, uTexFlip${i})))" + chan
+                markRead("texture(uTex${i}, vec2((" + uv + ").x, mix((" + uv +
+                    ").y, 1.0 - (" + uv + ").y, uTexFlip${i})))") + chan
             case ShaderDoc.Field.Shift(sh) =>
                 // ずらし量 dx/dy は外側の uv で評価してから、of をずらした座標で読む。
                 let uv2 = "((" + uv + ") + vec2(" + fieldExpr(sh#dx, uv, env, tex) + ", " +
                           fieldExpr(sh#dy, uv, env, tex) + "))";
                 fieldExpr(sh#of, uv2, env, tex)
+            case ShaderDoc.Field.Sampler(sm) =>
+                fieldExpr(sm#of, uv, env, rescope(sm#filter, tex))
             case ShaderDoc.Field.TexBlur(bl) =>
                 let i = Map.get(bl#name, tex) |> Option.getWithDefault(0);
                 let chan = match bl#chan {
@@ -626,8 +762,8 @@ pub mod ShaderGen {
                     case ShaderDoc.TexChan.B => ".b"
                     case ShaderDoc.TexChan.A => ".a"
                 };
-                "sg_blur(uTex${i}, uTexFlip${i}, (" + uv + "), vec2(" + f(bl#radius#x) + ", " + f(bl#radius#y) +
-                    ") * (" + fieldExpr(bl#amount, uv, env, tex) + "), " + iLit(ShaderDoc.blurTaps(bl#taps)) + ")" + chan
+                markRead("sg_blur(uTex${i}, uTexFlip${i}, (" + uv + "), vec2(" + f(bl#radius#x) + ", " + f(bl#radius#y) +
+                    ") * (" + fieldExpr(bl#amount, uv, env, tex) + "), " + iLit(ShaderDoc.blurTaps(bl#taps)) + ")") + chan
         }
 
     /// hash に渡すセル座標の GLSL 式。floor((uv)*scale) を作り、bucket が有ればその式を足す。
@@ -641,6 +777,13 @@ pub mod ShaderGen {
 
     /// Snap の分割数（ShaderEval.snapCells と同じ下切り）。
     def snapCells(c: Float64): Float64 = Float64.max(1.0, c)
+
+    /// 負の指数の pow（ShaderEval.negPow と同じ下切り・上切り・掛け順）。
+    def negPowExpr(x: String, p: Float64): String =
+        let base = "max(" + f(ShaderDoc.negPowFloor()) + ", " + x + ")";
+        let raw = if (Float64.floor(p) == p) "(1.0 / " + powProduct(base, Float64.floor(-p)) + ")"
+                  else "pow(" + base + ", " + f(p) + ")";
+        "min(" + f(ShaderDoc.negPowCeil()) + ", " + raw + ")"
 
     /// base を n 回掛けた GLSL 積の文字列（n=0 は 1.0・n=1 は base そのもの）。
     /// CPU 側の反復積と同じ左結合の並びにする。

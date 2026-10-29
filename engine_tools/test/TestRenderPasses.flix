@@ -31,7 +31,7 @@ mod TestRenderPasses {
           gifDelayMs = 66, gifFps = 15, shapeAntialias = true, textAntialias = true }
 
     def emptyPass(op: RenderTarget.LoadOp): HeadlessRender.PassSpec =
-        { name = "paper", clear = op, drawables = Nil, polygons = Nil }
+        { name = "paper", clear = op, drawables = Nil, polygons = Nil, surfaces = Nil, scale = 1.0 }
 
     /// 最小の Drawable（テクスチャ名だけ指定。位置・拡大は個々のテストで上書きする）。
     def drawable(texture: String): GameEngine.Drawable =
@@ -127,7 +127,7 @@ mod TestRenderPasses {
             let p: HeadlessRender.PassSpec =
                 { name = "paper",
                   clear = RenderTarget.LoadOp.Clear({ r = t, g = 0.0, b = 0.0 }),
-                  drawables = Nil, polygons = Nil };
+                  drawables = Nil, polygons = Nil, surfaces = Nil, scale = 1.0 };
             (p :: Nil, drawable("paper") :: Nil,
              (Nil: List[GameEngine.PolygonRenderCmd]), (Nil: List[SoftRaster.SurfaceCmd]))
         };
@@ -156,4 +156,98 @@ mod TestRenderPasses {
         let img = SoftRaster.renderToImageFull(req, Nil, Map.empty(), Map.empty());
         Assert.assertEq(expected = (255, 255, 255, 255) :: (255, 0, 0, 0) :: Nil,
             channels(img.getRGB(128i32, 128i32)) :: channels(img.getRGB(0i32, 0i32)) :: Nil)
+
+    // ── Pass の中のシェーダー面（GL と同じく pass の絵に描く）──
+
+    /// rgb だけ（pass の alpha は GL のブレンドの副産物で、一致を約束していない — docs/backend-parity.md）。
+    def rgbOf(p: Int32): (Int32, Int32, Int32) =
+        let (_, r, g, b) = channels(p);
+        (r, g, b)
+
+    /// design 4×4 全面の面。shade と alpha 1。
+    def faceOf(shade: ShaderDoc.Shade): SoftRaster.SurfaceCmd =
+        { rect = { position = { x = 0.0, y = 0.0 }, size = { x = 4.0, y = 4.0 } },
+          spec = { name = "face", cycleRate = 0.0, bindings = Nil,
+                   out = ShaderDoc.Out.Fill({ shade = shade, alpha = ShaderDoc.Field.Const(1.0) }) },
+          time = 0.0, mask = Nil, zIndex = 0, blend = DrawCmd.BlendMode.Normal }
+
+    /// name のテクスチャを rgb で素通しする面。
+    def passThrough(name: String): SoftRaster.SurfaceCmd =
+        let texOf = chan -> ShaderDoc.Field.Tex({ name = name, chan = chan });
+        faceOf(ShaderDoc.Shade.Rgb({ r = texOf(ShaderDoc.TexChan.R), g = texOf(ShaderDoc.TexChan.G),
+                                     b = texOf(ShaderDoc.TexChan.B) }))
+
+    def withSurface(surface: SoftRaster.SurfaceCmd, p: HeadlessRender.PassSpec): HeadlessRender.PassSpec =
+        { surfaces = surface :: Nil | p }
+
+    // 面は Clear の枝と ClearTransparent の枝の両方で pass の絵に塗られる（落とす所が 2 か所あったため両方見る）。
+    @Test
+    def testPassSurfaceIsPaintedInBothClearBranches(): Unit \ {Assert, IO} =
+        let green = faceOf(ShaderDoc.Shade.Solid({ r = 0.0, g = 1.0, b = 0.0 }));
+        let cleared = HeadlessRender.renderPassImage(cfg(1), withSurface(green, emptyPass(RenderTarget.LoadOp.Clear({ r = 1.0, g = 0.0, b = 0.0 }))), None);
+        let transparent = HeadlessRender.renderPassImage(cfg(1), withSurface(green, emptyPass(RenderTarget.LoadOp.ClearTransparent)), None);
+        Assert.assertEq(expected = (0, 255, 0) :: (0, 255, 0) :: Nil,
+            rgbOf(cleared.getRGB(1i32, 1i32)) :: rgbOf(transparent.getRGB(1i32, 1i32)) :: Nil)
+
+    // 2 段の連鎖: 前の pass の絵を次の pass の面が tex で読む。
+    @Test
+    def testPassSurfaceReadsEarlierPass(): Unit \ {Assert, IO} =
+        let blue = faceOf(ShaderDoc.Shade.Solid({ r = 0.0, g = 0.0, b = 1.0 }));
+        let first = HeadlessRender.renderPassImage(cfg(1), withSurface(blue, emptyPass(RenderTarget.LoadOp.ClearTransparent)), None);
+        let second = HeadlessRender.renderPassImageWith(cfg(1), Map#{ "paper" => first },
+            withSurface(passThrough("paper"), { name = "copy" | emptyPass(RenderTarget.LoadOp.ClearTransparent) }), None);
+        Assert.assertEq(expected = (0, 0, 255), rgbOf(second.getRGB(2i32, 2i32)))
+
+    // 自分の history（"paper@history"）は描き出しでは毎回透明 = rgb 0 を読む。本編で貼ると黒。
+    @Test
+    def testPassHistoryReadsTransparentInHeadless(): Unit \ {Assert, IO} =
+        let c = { outDir = "build/test/renderpasses_history" | cfg(1) };
+        let p = withSurface(passThrough(RenderTarget.historyName("paper")),
+                            emptyPass(RenderTarget.LoadOp.Clear({ r = 1.0, g = 1.0, b = 1.0 })));
+        HeadlessRender.renderPngFull({ background = { r = 1.0, g = 0.0, b = 0.0 } | c },
+            { passes = p :: Nil, drawables = drawable("paper") :: Nil, polygons = Nil, surfaces = Nil,
+              fonts = Map.empty(), fontAntialias = Map.empty() }, "history");
+        Assert.assertEq(expected = (255, 0, 0, 0), readPixel("build/test/renderpasses_history/history.png", 1, 1))
+
+    // ── 縮んだ pass（RenderTarget.Descriptor の scale）──
+
+    /// x = 2..4 の白い箱（design 4×4・整数座標）。
+    def whiteBoxRight(): GameEngine.Drawable =
+        DrawCmd.make({
+          texture = "", position = { x = 2.0, y = 0.0 }, scale = { x = 2.0, y = 4.0 },
+          rotation = 0.0, color = { r = 1.0, g = 1.0, b = 1.0 }, alpha = 1.0,
+          centered = false, uvOffset = { x = 0.0, y = 0.0 }, uvScale = { x = 1.0, y = 1.0 },
+          zIndex = 0, style = None, clip = None, blend = DrawCmd.BlendMode.Normal, mask = Nil })
+
+    def halfPass(): HeadlessRender.PassSpec =
+        { drawables = whiteBoxRight() :: Nil, scale = 0.5 | emptyPass(RenderTarget.LoadOp.Clear({ r = 0.0, g = 0.0, b = 0.0 })) }
+
+    // scale 0.5 の pass はテクセル寸法 2×2 で、テクセル i は design の点 2i+1 を塗る:
+    // テクセル 0（点 1）は箱の外の黒・テクセル 1（点 3）は箱（2..4）の白。
+    @Test
+    def testHalfPassPicksTexelCenters(): Unit \ {Assert, IO} =
+        let img = HeadlessRender.renderPassImage(cfg(1), halfPass(), None);
+        Assert.assertEq(expected = (2, 2, (0, 0, 0), (255, 255, 255)),
+                        (img.getWidth(), img.getHeight(), rgbOf(img.getRGB(0i32, 0i32)), rgbOf(img.getRGB(1i32, 0i32))))
+
+    // 縮んだ pass を sprite で貼ると design 全面を覆い、1 テクセルが 2px の塊になる（GL が registry に design 寸法で載せるのと同じ）。
+    @Test
+    def testHalfPassBlitsAsTwoPixelBlocks(): Unit \ {Assert, IO} =
+        let c = { outDir = "build/test/renderpasses_half" | cfg(1) };
+        HeadlessRender.renderPngFull({ background = { r = 1.0, g = 0.0, b = 0.0 } | c },
+            { passes = halfPass() :: Nil, drawables = drawable("paper") :: Nil, polygons = Nil, surfaces = Nil,
+              fonts = Map.empty(), fontAntialias = Map.empty() }, "half");
+        let at = x -> readPixel("build/test/renderpasses_half/half.png", x, 1);
+        Assert.assertEq(expected = (255, 0, 0, 0) :: (255, 0, 0, 0) :: (255, 255, 255, 255) :: (255, 255, 255, 255) :: Nil,
+                        at(0) :: at(1) :: at(2) :: at(3) :: Nil)
+
+    // Keep の縮んだ pass は、何も描かなければ前の中身のテクセルをそのまま残す（広げて拾う往復で元に戻る）。
+    @Test
+    def testHalfKeepPassRoundTripsPrev(): Unit \ {Assert, IO} =
+        let prev = new BufferedImage(2i32, 2i32, 2i32);
+        prev.setRGB(0i32, 0i32, argb(255, 10, 20, 30));
+        prev.setRGB(1i32, 1i32, argb(255, 200, 100, 50));
+        let img = HeadlessRender.renderPassImage(cfg(1), { scale = 0.5 | emptyPass(RenderTarget.LoadOp.Keep) }, Some(prev));
+        Assert.assertEq(expected = (10, 20, 30) :: (200, 100, 50) :: Nil,
+                        rgbOf(img.getRGB(0i32, 0i32)) :: rgbOf(img.getRGB(1i32, 1i32)) :: Nil)
 }

@@ -664,6 +664,16 @@
 ## RenderTarget — `engine/src/RenderTarget.flix`
 - ターゲットを開くたびに前の中身をどう始末するかの 3 択（wgpu / Vulkan の LoadOp と同じ語彙）。
   `pub enum LoadOp { case Keep case Clear(Color) case ClearTransparent }`
+- ターゲットの作り方（毎コマの中身 = Render.Pass とは別に、名前ごとに 1 つ）。wgpu / Unity の
+  `pub type alias Descriptor = { scale = Float64 }`
+- 既定（design 解像度そのまま）。
+  `pub def defaultDescriptor(): Descriptor`
+- 範囲に収めた倍率。0 以下・1 より大きい・非有限は 1.0（既定値で続ける。知らせるのは呼び手）。
+  `pub def scaleOf(d: Descriptor): Float64`
+- ターゲットのテクセル寸法。どの経路もこの 1 本で決める（GL・描き出し・App が別々に丸めると 1px 割れる）。
+  `pub def sizeOf(design: Vec2.Vec2, d: Descriptor): (Int32, Int32)`
+- 自分の名前を読む Pass が、前のコマの中身（history）を読むための別名。Render.resolvePassReads が書き換え、
+  `pub def historyName(name: String): String`
 - レンダーターゲットへの描画チャンネル。eff Game とは別に隔離した効果。
   `pub eff Target`
 - ターゲットを開く。以降の renderCommands は画面でなくここに描かれる（swap もしない）。
@@ -689,12 +699,14 @@
   `pub enum WorleyOut with Eq, ToString { case F1 case F2 case F2mF1 }`
 - Tex がテクスチャのどのチャンネルを読むか。既定は R（明るさ・マスクの慣習）。
   `pub enum TexChan with Eq, ToString { case R case G case B case A }`
+- tex / blur がテクスチャを読むときの補間（wgpu の FilterMode・Unity の Point/Linear と同じ 2 択）。
+  `pub enum FilterMode with Eq, ToString { case Nearest case Linear }`
 - 2 つの場を合わせる素の計算。混ぜる意図（0..1 の重み）は Blend を使い、これは生の値の合成。
-  `pub enum BinOp with Eq, ToString { case Add case Sub case Mul case Min case Max case Step }`
+  `pub enum BinOp with Eq, ToString { case Add case Sub case Mul case Min case Max case Step case Div }`
 - 1 つの場に掛ける素の関数。
   `pub enum UnOp with Eq, ToString { case Neg case Abs case Fract case Floor case Sin case Cos case Sat case OneMinus }`
 - 値の場（スカラー・0..1 目安）。GPU では 1 個の float、CPU では Float64 になる。
-  `pub enum Field { case Const(Float64) case Uv({ axis = Axis }) case Worley({ scale = Float64, seed = Int32, out = WorleyOut }) case Fbm({ octaves = Int32, scale = Float64, seed = Int32 }) case FbmTile({ octaves = Int32, scale = Float64, period = Vec2.Vec2, seed = Int32 }) case Smoothstep({ lo = Float64, hi = Float64, of = Field }) case Scaled({ factor = Float64, scroll = Vec2.Vec2, of = Field }) case Warp({ amount = Float64, scale = Float64, seed = Int32, of = Field }) case Mix({ a = Field, b = Field, t = Float64 }) case Blend({ a = Field, b = Field, by = Field }) case Disk({ cx = Float64, cy = Float64, radius = Float64, feather = Float64 }) case Radial({ cx = Float64, cy = Float64 }) case RadialAspect({ cx = Float64, cy = Float64, aspect = Float64 }) case Quantize({ of = Field, steps = Int32 }) case Scales({ scale = Float64, stagger = Float64 }) case Glints({ scale = Float64, rate = Float64, density = Float64, seed = Int32 }) case Ripples({ freq = Float64, amp = Float64, speed = Float64, seed = Int32 }) case Sparkle({ scale = Float64, rate = Float64, density = Float64, seed = Int32 }) case Bin({ op = BinOp, a = Field, b = Field }) case Hash1({ scale = Float64, seed = Int32, bucket = Option[Field] }) case Hash2({ scale = Float64, seed = Int32, comp = Axis, bucket = Option[Field] }) case Un({ op = UnOp, of = Field }) case Pow({ of = Field, p = Float64 }) case Time({ scale = Float64, offset = Field }) case Tiling({ tiles = Vec2.Vec2, of = Field }) case Snap({ cells = Vec2.Vec2, of = Field }) case Swirl({ cx = Float64, cy = Float64, strength = Float64, rate = Float64, of = Field }) case Angle({ cx = Float64, cy = Float64 }) case Rotate({ cx = Float64, cy = Float64, turns = Float64, rate = Float64, of = Field }) case Ref(String) case Tex({ name = String, chan = TexChan }) case Shift({ dx = Field, dy = Field, of = Field }) case TexBlur({ name = String, chan = TexChan, radius = Vec2.Vec2, taps = Int32, amount = Field }) }`
+  `pub enum Field { case Const(Float64) case Uv({ axis = Axis }) case Worley({ scale = Float64, seed = Int32, out = WorleyOut }) case Fbm({ octaves = Int32, scale = Float64, seed = Int32 }) case FbmTile({ octaves = Int32, scale = Float64, period = Vec2.Vec2, seed = Int32 }) case Smoothstep({ lo = Float64, hi = Float64, of = Field }) case Scaled({ factor = Float64, scroll = Vec2.Vec2, of = Field }) case Warp({ amount = Float64, scale = Float64, seed = Int32, of = Field }) case Mix({ a = Field, b = Field, t = Float64 }) case Blend({ a = Field, b = Field, by = Field }) case Disk({ cx = Float64, cy = Float64, radius = Float64, feather = Float64 }) case Radial({ cx = Float64, cy = Float64 }) case RadialAspect({ cx = Float64, cy = Float64, aspect = Float64 }) case Quantize({ of = Field, steps = Int32 }) case Scales({ scale = Float64, stagger = Float64 }) case Glints({ scale = Float64, rate = Float64, density = Float64, seed = Int32 }) case Ripples({ freq = Float64, amp = Float64, speed = Float64, seed = Int32 }) case Sparkle({ scale = Float64, rate = Float64, density = Float64, seed = Int32 }) case Bin({ op = BinOp, a = Field, b = Field }) case Hash1({ scale = Float64, seed = Int32, bucket = Option[Field] }) case Hash2({ scale = Float64, seed = Int32, comp = Axis, bucket = Option[Field] }) case Un({ op = UnOp, of = Field }) case Pow({ of = Field, p = Float64 }) case Time({ scale = Float64, offset = Field }) case Tiling({ tiles = Vec2.Vec2, of = Field }) case Snap({ cells = Vec2.Vec2, of = Field }) case Swirl({ cx = Float64, cy = Float64, strength = Float64, rate = Float64, of = Field }) case Angle({ cx = Float64, cy = Float64 }) case Rotate({ cx = Float64, cy = Float64, turns = Float64, rate = Float64, of = Field }) case Ref(String) case Tex({ name = String, chan = TexChan }) case Shift({ dx = Field, dy = Field, of = Field }) case TexBlur({ name = String, chan = TexChan, radius = Vec2.Vec2, taps = Int32, amount = Field }) case Sampler({ filter = FilterMode, of = Field }) }`
 - 面の色（rgb）。
   `pub enum Shade { case Solid(Color) case Ramp({ lo = Color, hi = Color, field = Field }) case Gradient({ stops = List[(Float64, Color)], field = Field }) case Cosine({ a = Color, b = Color, c = Color, d = Color, field = Field }) case Rgb({ r = Field, g = Field, b = Field }) }`
 - 面の出力（このピクセルの最終色とアルファ）。
@@ -711,20 +723,32 @@
   `pub def representativeColor(spec: Spec): Color`
 - 場の木を前置順（親 → 子）で 1 本ずつ f に渡して畳み込む汎用の走査。
   `pub def foldField(f: (a, Field) -> a, acc: a, field: Field): a`
+- foldField の、各節に「その節の tex / blur が読む補間」（Sampler の内側なら その filter）も渡す形。
+  `pub def foldFieldScoped(f: (a, FilterMode, Field) -> a, filter: FilterMode, acc: a, field: Field): a`
+- Spec の tex / blur が読むテクスチャ名を f で書き換える（形は変えない）。
+  `pub def renameTex(f: String -> String, spec: Spec): Spec`
 - Spec の場を「bindings（前から）→ 色 → alpha」の順に並べる。texNames と、場を全部見る走査はこの並びを使う。
   `pub def fieldsOf(spec: Spec): List[Field]`
 - Spec が読むテクスチャ名を「bindings（前から）→ 色 → alpha」の初出順・重複なしで列挙する。
   `pub def texNames(spec: Spec): List[String]`
+- Spec が読む (テクスチャ名, 補間) の組を「bindings（前から）→ 色 → alpha」の初出順・重複なしで列挙する。
+  `pub def texReads(spec: Spec): List[(String, FilterMode)]`
 - この節が、子の場を自分の uv と違う uv で読むなら、その子（shift の dx・dy は今の uv で読むので入らない）。
   `pub def remappedChild(field: Field): Option[Field]`
+- 負の指数の pow の底の下限（GLSL と CPU が同じ値を読む）。
+  `pub def negPowFloor(): Float64`
+- 負の指数の pow の答えの上限。
+  `pub def negPowCeil(): Float64`
 - taps を 1..64 に丸める（GLSL のループの上限と CPU の評価で同じ数を読む）。
   `pub def blurTaps(taps: Int32): Int32`
 - Spec がぼかし（TexBlur）を使うか（GLSL の sg_blur を宣言するか）。
   `pub def usesBlur(spec: Spec): Bool`
+- Spec が割り算（BinOp.Div）を使うか（GLSL の sg_div を宣言するか）。
+  `pub def usesDiv(spec: Spec): Bool`
 
 ## ShaderEffect — `engine/src/ShaderEffect.flix`
 - シェーダー面 1 枚ぶんの描画依頼。
-  `pub type alias ShaderRenderCmd = { program = GpuHandle.ShaderProgram, texNames = List[String], rect = Rect2.Rect2, mask = List[List[Vec2.Vec2]], time = Float64, zIndex = Int32, blend = DrawCmd.BlendMode, alpha = Float64 }`
+  `pub type alias ShaderRenderCmd = { program = GpuHandle.ShaderProgram, texReads = List[(String, ShaderDoc.FilterMode)], rect = Rect2.Rect2, mask = List[List[Vec2.Vec2]], time = Float64, zIndex = Int32, blend = DrawCmd.BlendMode, alpha = Float64 }`
 - シェーダー面の描画チャンネル。eff Game とは別に隔離した効果。
   `pub eff Shader`
 - Spec を GLSL プログラムへコンパイルしハンドルを返す（起動時/リロード時に 1 回）。

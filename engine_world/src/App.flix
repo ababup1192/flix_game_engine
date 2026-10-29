@@ -129,11 +129,11 @@ pub mod App {
         // World を (置き場所, 見せたい物) の列へ投影する。None のゲームは App に描画させず自分の
         // システム内で描く（タイルマップ等の複数チャンネルを直接組むゲーム向け）。
         view = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef],
-        // 本編より先にレンダーターゲットへ描く列（追加順に描く）。各ターゲットは名前の
+        // 本編より先にレンダーターゲットへ描く計画（列は追加順に描く・名前ごとの倍率）。各ターゲットは名前の
         // テクスチャになり、view から Render.sprite(名前, z) で貼れる。カメラ・zoom は
         // 掛からない（ターゲットの中は常に design 座標そのまま — カメラを効かせたい絵は
         // view と同じ composeScene をゲーム側で通してから渡す）。
-        passes = w -> List[Render.Pass] \ ef,
+        passes = w -> Render.PassPlan \ ef,
         // 既定フォント以外に使うフォントの名前（project.json の fonts[].name）。ここに宣言した
         // 名前だけが ViewCtx#fontOf で引ける。withFonts で足す。
         fonts = List[String],
@@ -240,7 +240,7 @@ pub mod App {
           reload = None,
           watch = Nil,
           view = None,
-          passes = _ -> checked_ecast(Nil),
+          passes = _ -> checked_ecast(Render.passPlan(Nil)),
           fonts = Nil,
           camera = None,
           zoom = None,
@@ -309,7 +309,13 @@ pub mod App {
     /// スプライトとして貼れる（部分切り出し regionRect・blend・拡大も既存の道がそのまま効く）。
     /// 複数光源の光マップ・画面を素材にする演出・残像（clear = RenderTarget.LoadOp.Keep で
     /// 前フレームを残す）に使う。
+    /// 倍率（RenderTarget.Descriptor）を付けるなら withPassPlan を使う。
     pub def withPasses(f: w -> List[Render.Pass] \ ef, app: App[w, ef]): App[w, ef] =
+        withPassPlan(w -> Render.passPlan(f(w)), app)
+
+    /// withPasses の、名前ごとのターゲットの作り方（倍率）も付ける形。描き出しは同じ PassPlan を
+    /// Render.passSpecsOf に渡す（倍率を 2 か所に書かない）。Pass の中の読みは Render.resolvePassReads の決まりに従う。
+    pub def withPassPlan(f: w -> Render.PassPlan \ ef, app: App[w, ef]): App[w, ef] =
         App.App({ passes = f | rec(app) })
 
     /// 既定フォント以外に使うフォントの名前を宣言する（project.json の fonts[].name と同じ字）。
@@ -2055,11 +2061,13 @@ pub mod App {
     /// entries は層のスロット（宣言リストの並び順）→ (生成した時点の世代, 生成した時の key, VAO, 数)。
     /// スロットで引くので、key が頻繁に転がる層（照明・カメラ追随で作り直しが多い地形など）でも
     /// VAO は 1 層に 1 本のまま — 作り直しは updateTileBuffer の入れ直しで済む。
+    /// passTargets はこれまでに Pass として描いたターゲットの名前（GPU に残っている物。増えるだけ）—
+    /// Pass の中で、このコマで宣言していない古いターゲットを読んだのを見分ける（Render.resolvePassReads）。
     pub type alias TileCache =
-        { gen = Int32, entries = Map[String, (Int32, String, GpuHandle.TileVao, Int32)] }
+        { gen = Int32, entries = Map[String, (Int32, String, GpuHandle.TileVao, Int32)], passTargets = Set[String] }
 
     /// まだ何も生成していない起動時の持ち回し。
-    pub def freshTileCache(): TileCache = { gen = 0, entries = Map.empty() }
+    pub def freshTileCache(): TileCache = { gen = 0, entries = Map.empty(), passTargets = Set.empty() }
 
     /// Doc の読み直しが起きたフレームで世代を進める。ゲームの書く key は素のまま、
     /// 世代の不一致が「作り直しが要る」の判定になる（tileCacheHit が見る）。
@@ -2205,8 +2213,11 @@ pub mod App {
                 uploadAtlases((r#spriteAtlases)(world));
                 let atlas = GameEngine.Game.getFontAtlas("default");
                 let design = GameEngine.Game.getViewportRect()#size;
-                let passList = (r#passes)(world);
-                renderPasses(design, passList);
+                let plan = notePassIssues(warnOnce, Render.resolvePassReads(tileCache#passTargets, (r#passes)(world)));
+                let passList = plan#passes;
+                renderPasses(warnOnce, design, plan);
+                let cacheSeen = { passTargets = passList |> List.foldLeft((acc, p) -> Set.insert(p#name, acc), tileCache#passTargets)
+                                  | tileCache };
                 // タイル層と静的層は GPU 側でカメラを掛けるので、見え方（F8 のズーム・パン）を掛けられない。
                 // 見え方が等倍でない間だけ、ほかの絵と同じ PlacedItem に直して一緒に掛ける。
                 let retained = Annotate.isIdentity(look#view);
@@ -2242,7 +2253,7 @@ pub mod App {
                 let shaderCmds = noteSurfaceZ(warnOnce, items,
                     Render.drawShaders(spec -> ShaderEffect.Shader.buildProgram(spec), items));
                 List.forEach(cmd -> ShaderEffect.Shader.drawSurface(cmd), shaderCmds);
-                let (tileCmds, nextCache) = if (retained) tileLayerCmds(app, world, tileCache) else (Nil, tileCache);
+                let (tileCmds, nextCache) = if (retained) tileLayerCmds(app, world, cacheSeen) else (Nil, cacheSeen);
                 // drawWith(getTextureInfo): regionRect 付き Sprite(PxSprite.drawQuad の
                 // アトラス 1 クアッド等)の UV を registry の寸法で解決する。regionRect 無しの
                 // 絵は draw と同一の Drawable になる(挙動不変)。
@@ -2276,19 +2287,38 @@ pub mod App {
         };
         go(tileCache, 3)
 
-    /// レンダーターゲットの列を本編より先に描く（宣言順）。ターゲットの中は design 座標
-    /// そのまま・Shader 面は乗らない（Pass の doc を参照）。design はターゲットの寸法に使う。
-    def renderPasses(design: Vec2.Vec2, passList: List[Render.Pass]):
-            Unit \ (GameEngine.Game + RenderTarget.Target) =
+    /// レンダーターゲットの列を本編より先に描く（宣言順・resolvePassReads を通した後の計画）。ターゲットの中は
+    /// design 座標そのままで、Shader 面も本編と同じ道（drawShaders → drawSurface）で描く。
+    /// テクセル寸法は RenderTarget.sizeOf（design × 名前の倍率）。
+    def renderPasses(warnOnce: String -> Unit, design: Vec2.Vec2, plan: Render.PassPlan):
+            Unit \ (GameEngine.Game + ShaderEffect.Shader + RenderTarget.Target) =
         List.forEach(p -> {
-            RenderTarget.Target.beginTarget(p#name,
-                Num.floorInt(design#x), Num.floorInt(design#y), p#clear);
+            let (tw, th) = RenderTarget.sizeOf(design, { scale = Render.targetScaleOf(plan, p#name) | RenderTarget.defaultDescriptor() });
+            RenderTarget.Target.beginTarget(p#name, tw, th, p#clear);
+            let shaderCmds = noteSurfaceZ(warnOnce, p#items,
+                Render.drawShaders(spec -> ShaderEffect.Shader.buildProgram(spec), p#items));
+            List.forEach(cmd -> ShaderEffect.Shader.drawSurface(cmd), shaderCmds);
             let (passDs, passPolys) = Render.drawWith(
                 name -> GameEngine.Game.getTextureInfo(name),
-                Render.withoutShaders(p#items));
+                if (List.isEmpty(shaderCmds)) p#items else Render.withoutShaders(p#items));
             GameEngine.Game.renderCommands(passDs, Nil, passPolys, None);
             RenderTarget.Target.endTarget()
-        }, passList)
+        }, plan#passes)
+
+    /// 計画の問題を知らせてから、書き換えた計画を返す。
+    def notePassIssues(note: String -> Unit, resolved: { plan = Render.PassPlan, issues = List[Render.PassPlanIssue] }): Render.PassPlan =
+        match resolved#issues |> List.forEach(issue -> note("[render] pass: ${passIssueText(issue)}")) {
+            case () => resolved#plan
+        }
+
+    /// Pass の計画の問題 1 件の知らせの字。
+    def passIssueText(issue: Render.PassPlanIssue): String = match issue {
+        case Render.PassPlanIssue.ReadsLaterPass(pass, reads)        => "'${pass}' がまだ描いていない '${reads}' を読む — 黒になる（読む Pass を前に宣言する。前のコマが欲しいなら自分の名前を読む）"
+        case Render.PassPlanIssue.ReadsUndeclaredTarget(pass, reads) => "'${pass}' がこのコマで宣言していない '${reads}' を読む — 黒になる"
+        case Render.PassPlanIssue.DuplicatePass(name)                => "'${name}' を 2 回宣言した — 2 回目以降は描かない"
+        case Render.PassPlanIssue.ReservedPassName(name)             => "'${name}' に '@' がある — 描かない（'@' は history の別名に使う）"
+        case Render.PassPlanIssue.UnknownDescriptor(name)            => "targets の '${name}' に当たる Pass が無い — 倍率が効いていない"
+    }
 
     // WhyNot: 同じ 10 行を UiRender・SortingLayer・App に 1 つずつ置く。pub にするとゲームから z を書き換えられ、
     //   どの層に入るかが表から読めなくなる（Flix 0.77 にはパッケージの中だけで見える pub が無い）。

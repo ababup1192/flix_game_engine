@@ -9,7 +9,8 @@ mod RenderTargetGl {
     import org.lwjgl.BufferUtils
 
     /// レンダーターゲット 1 枚の GL 実体。tex が registry へ TextureInfo として渡る。
-    pub type alias Entry = { fbo = Int32, tex = Int32, width = Int32, height = Int32 }
+    /// depthStencil = mask 付きの面・sprite を抜くためのステンシル（テクセル寸法の renderbuffer）。
+    pub type alias Entry = { fbo = Int32, tex = Int32, depthStencil = Int32, width = Int32, height = Int32 }
 
     /// レンダーターゲットを 1 枚作る。テクスチャは全画素透明から始まる（clearColor = None の
     /// 初回でもゴミが出ない）。ラップが CLAMP_TO_EDGE なのは、貼るときの縁の標本が反対側の行へ
@@ -26,16 +27,22 @@ mod RenderTargetGl {
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_NEAREST);
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_NEAREST);
+        let depthStencil = GL30.glGenRenderbuffers();
+        GL30.glBindRenderbuffer(GL30.GL_RENDERBUFFER, depthStencil);
+        GL30.glRenderbufferStorage(GL30.GL_RENDERBUFFER, GL30.GL_DEPTH24_STENCIL8, width, height);
+        GL30.glBindRenderbuffer(GL30.GL_RENDERBUFFER, 0);
         let fbo = GL30.glGenFramebuffers();
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, fbo);
         GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0,
                                     GL11.GL_TEXTURE_2D, tex, 0);
+        GL30.glFramebufferRenderbuffer(GL30.GL_FRAMEBUFFER, GL30.GL_DEPTH_STENCIL_ATTACHMENT,
+                                       GL30.GL_RENDERBUFFER, depthStencil);
         let status = GL30.glCheckFramebufferStatus(GL30.GL_FRAMEBUFFER);
         if (status != GL30.GL_FRAMEBUFFER_COMPLETE)
             println("[RenderTargetGl] レンダーターゲット (FBO) が完成しない status=${status} — ここへの描画は出ない")
         else ();
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, 0);
-        { fbo = fbo, tex = tex, width = width, height = height }
+        { fbo = fbo, tex = tex, depthStencil = depthStencil, width = width, height = height }
 
     /// 以降の描画をこのターゲットに向ける。
     pub def bind(e: Entry): Unit \ IO =
@@ -45,8 +52,25 @@ mod RenderTargetGl {
     pub def unbind(screen: Int32): Unit \ IO =
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, screen)
 
+    /// source の中身を dest へ等倍で写す（同じ寸法の前提・NEAREST）。描き先は source に戻す。
+    pub def copyTo(source: Entry, dest: Entry): Unit \ IO =
+        GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, source#fbo);
+        GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, dest#fbo);
+        GL30.glBlitFramebuffer(0, 0, source#width, source#height, 0, 0, dest#width, dest#height,
+                               GL11.GL_COLOR_BUFFER_BIT, GL11.GL_NEAREST);
+        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, source#fbo)
+
+    /// e を全画素透明で塗る。描き先は back に戻す。
+    pub def clearTransparent(e: Entry, back: Entry): Unit \ IO =
+        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, e#fbo);
+        GL11.glDisable(GL11.GL_SCISSOR_TEST);
+        GL11.glClearColor(0.0f32, 0.0f32, 0.0f32, 0.0f32);
+        GL11.glClear(GL11.GL_COLOR_BUFFER_BIT);
+        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, back#fbo)
+
     /// ターゲットを捨てる（寸法が変わって作り直すとき用。捨て忘れると GPU メモリが増え続ける）。
     pub def destroy(e: Entry): Unit \ IO =
         GL30.glDeleteFramebuffers(e#fbo);
+        GL30.glDeleteRenderbuffers(e#depthStencil);
         GL11.glDeleteTextures(e#tex)
 }

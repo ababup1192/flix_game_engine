@@ -84,7 +84,7 @@
 - silhouettePng の「宣言シェーダー面も写す」版。地面・空・水面を ShaderDoc の面で
   `pub def silhouettePngWith(cfg: RenderConfig, scope: SilhouetteScope, drawables: List[GameEngine.Drawable], polygons: List[GameEngine.PolygonRenderCmd], surfaces: List[SoftRaster.SurfaceCmd], name: String): Unit \ IO`
 - pass 1 枚ぶんの宣言（Render.Pass のコマンド列版）。name はそのままテクスチャ名になり、
-  `pub type alias PassSpec = { name = String, clear = RenderTarget.LoadOp, drawables = List[GameEngine.Drawable], polygons = List[GameEngine.PolygonRenderCmd] }`
+  `pub type alias PassSpec = { name = String, clear = RenderTarget.LoadOp, drawables = List[GameEngine.Drawable], polygons = List[GameEngine.PolygonRenderCmd], surfaces = List[SoftRaster.SurfaceCmd], scale = Float64 }`
 - pass 1 枚を design 解像度（scale = 1）の画像に生成する。GL のターゲットが design ×1 の
   `pub def renderPassImage(cfg: RenderConfig, p: PassSpec, prev: Option[BufferedImage]): BufferedImage \ IO`
 - renderPassImage の「先に生成したターゲットも参照できる」版。`images` は既に生成した pass の
@@ -298,8 +298,14 @@
   `pub def renderToImageCachedAntialias(req: RasterReq, surfaces: List[SurfaceCmd], extraFonts: Map[String, FontEntry], fontAntialias: FontAntialias, extraImages: Map[String, BufferedImage], warnLog: TexWarnLog, cache: TextureCache): BufferedImage \ IO`
 - pass（レンダーターゲット）描き出し用の入口。req#background は使わない — 塗るかどうか
   `pub def renderPassImage(req: RasterReq, base: Option[BufferedImage], extraImages: Map[String, BufferedImage]): BufferedImage \ IO`
-- 追加フォントも使える renderPassImage（pass の中の字を、本編と同じ本で描く）。
-  `pub def renderPassImageFonts(req: RasterReq, base: Option[BufferedImage], extraFonts: Map[String, FontEntry], fontAntialias: FontAntialias, extraImages: Map[String, BufferedImage]): BufferedImage \ IO`
+- 追加フォントとシェーダー面も使える renderPassImage（pass の中の字を、本編と同じ本で描く）。
+  `pub def renderPassImageFonts(req: RasterReq, base: Option[BufferedImage], surfaces: List[SurfaceCmd], extraFonts: Map[String, FontEntry], fontAntialias: FontAntialias, extraImages: Map[String, BufferedImage]): BufferedImage \ IO`
+- tex 場が読む縮んだターゲットのテクセルの絵の名前（sprite で貼る design 寸法の絵と並べて images に入れる）。
+  `pub def texelsName(name: String): String`
+- img を w × h へ最近傍で写す。広げるとき（GL が Nearest で貼る式）は元の (floor((x+0.5)·元幅/w), floor((y+0.5)·元高/h))。
+  `pub def resampleNearest(img: BufferedImage, w: Int32, h: Int32): BufferedImage \ IO`
+- 縮んだターゲット（テクセル寸法 texels）の pass を描き出す。design 解像度で描いてから GL がテクセルを塗る点で拾う
+  `pub def renderPassImageScaled(req: RasterReq, base: Option[BufferedImage], background: Option[Color], surfaces: List[SurfaceCmd], extraFonts: Map[String, FontEntry], fontAntialias: FontAntialias, extraImages: Map[String, BufferedImage], texels: (Int32, Int32)): BufferedImage \ IO`
 - ARGB 1 画素の合成（src を dst に重ねた結果。out の alpha は dst のまま —
   `pub def blendPixel(blend: DrawCmd.BlendMode, srcArgb: Int32, dstArgb: Int32): Int32`
 - 扇割り三角形列から、点 at を含む三角形の補間色を引く（どの三角形にも入らなければ None）。

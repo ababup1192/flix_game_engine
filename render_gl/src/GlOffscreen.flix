@@ -129,7 +129,8 @@ pub mod GlOffscreen {
                 Err("FBO が完成しない status=${status}")
             } else {
                 let paint0 = p#paint;
-                let paint = { screenFramebuffer = fbo,
+                // history は毎回透明（App.paintOnce は字が欠けると描き直すので、写すと 2 回目以降が 1 回目の結果を読んで描き出しと割れる）。
+                let paint = { screenFramebuffer = fbo, keepHistory = false,
                               frameArgsBase = { clearColor = cfg#background | paint0#frameArgsBase } | paint0 };
                 Ok(SessionData.SessionData({
                     context = p#context, fbo = fbo, colorTex = colorTex, depthStencil = depthStencil,

@@ -628,9 +628,11 @@ pub mod Render {
     /// （RenderTarget.LoadOp: Keep = 残す（残像）・Clear = その色の不透明・
     /// ClearTransparent = 透明。明部だけ描くターゲットは ClearTransparent にすると
     /// Normal 合成でも下の絵が生きる）。
-    /// items の中の Shader 面は M1 では描かれない（中身は sprites/box/text/多角形のみ）。
-    /// ターゲットの標本は最近傍（NEAREST）を保証する — 縮小→再拡大のピクセライズ/モザイクは
-    /// これに依存してよい。補間を変える拡張は opt-in にする（黙って既定を変えない）。
+    /// items の中の Shader 面も本編と同じく (zIndex, 追加順) で描かれる。面の tex / blur と sprite が読める名前は
+    /// 「前に宣言した Pass（このコマの中身）」「自分の名前（前のコマの history）」「普通のテクスチャ」。
+    /// まだ描いていない Pass を読むと黒（resolvePassReads）。
+    /// sprite で貼る時の標本は最近傍（NEAREST）を保証する — 縮小→再拡大のピクセライズ/モザイクは
+    /// これに依存してよい。補間は読む側（ShaderDoc の sampler）で opt-in にする。
     pub type alias Pass = {
         name = String,
         clear = RenderTarget.LoadOp,
@@ -658,17 +660,118 @@ pub mod Render {
               blend = DrawCmd.BlendMode.Normal, maskPolys = Nil }) }
 
     /// Pass 1 枚を描き出し側の宣言（engine_tools の HeadlessRender.PassSpec と同形のレコード）へ
-    /// 詰め替える。items は withoutShaders で外してから下ろす — ターゲットの中の
-    /// Shader 面は GL が描かないので、代表色ベタ塗りを混ぜると実機とズレる。この決まりを
-    /// 呼び側ごとに書かせない（書き忘れた側だけズレる）ための 1 本。
+    /// 詰め替える。Shader 面は surfaces に分け（ShaderEval が画素ごとに描く）、残りを drawables にする。
+    /// 倍率は 1.0・読みの書き換えはしない 1 枚用 — **Pass の列は passSpecsOf を通す**（まだ描いていない Pass の読みと
+    /// history の書き換えを実機と同じにするため）。
     /// textureInfoOf は region 付き sprite の UV 解決口（region を使わない pass なら
     /// `_ -> None` でよい）。
-    pub def passSpecOf(textureInfoOf: String -> Option[GameEngine.TextureInfo] \ ef, p: Pass):
-            { name = String, clear = RenderTarget.LoadOp,
-              drawables = List[GameEngine.Drawable],
-              polygons = List[GameEngine.PolygonRenderCmd] } \ ef =
+    pub def passSpecOf(textureInfoOf: String -> Option[GameEngine.TextureInfo] \ ef, p: Pass): PassSpecRec \ ef =
+        passSpecScaled(textureInfoOf, 1.0, p)
+
+    /// 描き出し側の Pass 1 枚の宣言（HeadlessRender.PassSpec と同じ欄）。
+    pub type alias PassSpecRec = {
+        name = String, clear = RenderTarget.LoadOp,
+        drawables = List[GameEngine.Drawable],
+        polygons = List[GameEngine.PolygonRenderCmd],
+        surfaces = List[ShaderSurface],
+        scale = Float64
+    }
+
+    def passSpecScaled(textureInfoOf: String -> Option[GameEngine.TextureInfo] \ ef, scale: Float64, p: Pass): PassSpecRec \ ef =
         let (ds, ps) = drawWith(textureInfoOf, withoutShaders(p#items));
-        { name = p#name, clear = p#clear, drawables = ds, polygons = ps }
+        { name = p#name, clear = p#clear, drawables = ds, polygons = ps,
+          surfaces = shaderSurfaces(p#items), scale = scale }
+
+    /// Pass の計画を描き出し側の宣言の列へ。実機（App.withPassPlan）と同じ resolvePassReads を通し、
+    /// 倍率は plan#targets から読む。issues は呼び手が知らせる。
+    pub def passSpecsOf(textureInfoOf: String -> Option[GameEngine.TextureInfo] \ ef, plan: PassPlan):
+            { specs = List[PassSpecRec], issues = List[PassPlanIssue] } \ ef =
+        let resolved = resolvePassReads(Set.empty(), plan);
+        let specs = resolved#plan#passes |> List.map(p ->
+            passSpecScaled(textureInfoOf, targetScaleOf(resolved#plan, p#name), p));
+        { specs = specs, issues = resolved#issues }
+
+    // ── Pass の計画（列と、名前ごとのターゲットの作り方）──
+
+    /// 本編より先に描く Pass の列と、名前ごとのターゲットの作り方をまとめた 1 つの宣言。
+    /// 実機（App.withPassPlan）と描き出し（passSpecsOf）が同じこれを読むので、倍率を片方だけ書き忘れられない。
+    /// 組む時は `{ targets = m | Render.passPlan(passes) }` の形で書く（欄を足してもゲームの字が止まらないように）。
+    /// passes = 宣言順に描く Pass、targets = Pass の名前 → 作り方（書かなかった名前は RenderTarget.defaultDescriptor()）。
+    pub type alias PassPlan = { passes = List[Pass], targets = Map[String, RenderTarget.Descriptor] }
+
+    /// 作り方を全部既定にした計画。
+    pub def passPlan(passes: List[Pass]): PassPlan = { passes = passes, targets = Map.empty() }
+
+    /// 計画の中の、読み方・宣言の問題（resolvePassReads が知らせる物）。payload は (Pass の名前, 読んだ名前)。
+    pub enum PassPlanIssue with Eq, ToString {
+        /// 宣言順で後ろの Pass を読む（forward reference）。黒を読む。
+        case ReadsLaterPass(String, String)
+        /// このコマで宣言していない古いターゲットを読む。黒を読む。
+        case ReadsUndeclaredTarget(String, String)
+        /// 同じ名前の Pass の 2 回目以降（描かない）。
+        case DuplicatePass(String)
+        /// 名前に '@' を含む Pass（history の別名と混ざるので描かない）。
+        case ReservedPassName(String)
+        /// targets に書いたが Pass に無い名前（倍率が効いていない）。
+        case UnknownDescriptor(String)
+    }
+
+    /// Pass の名前 → このコマで使うターゲットの倍率（RenderTarget.scaleOf で範囲に収めた値）。
+    pub def targetScaleOf(plan: PassPlan, name: String): Float64 =
+        Map.get(name, plan#targets) |> Option.map(RenderTarget.scaleOf) |> Option.getWithDefault(1.0)
+
+    /// 読んではいけない名前の置き換え先（必ず存在しない名前 — 面は黒・sprite は貼らない）。
+    def missingName(name: String): String = "@missing:" + name
+
+    /// Pass の items の読みを書き換えた計画と、問題の一覧。
+    /// 前に宣言した Pass と普通のテクスチャはそのまま・自分の名前は RenderTarget.historyName・後ろの Pass と、knownTargets にあって
+    /// このコマで宣言していない名前は missingName へ。同名の 2 回目以降と '@' を含む名前の Pass は列から外す。
+    /// knownTargets = これまでに Pass として宣言した名前（実機はコマをまたいで増えるだけ・描き出しは空）。
+    pub def resolvePassReads(knownTargets: Set[String], plan: PassPlan): { plan = PassPlan, issues = List[PassPlanIssue] } =
+        let declared = plan#passes |> List.map(p -> p#name) |> List.toSet;
+        let (keptRev, _, issuesRev) = plan#passes |> List.foldLeft((acc, p) -> {
+            let (kept, seen, issues) = acc;
+            if (String.contains({ substr = "@" }, p#name)) (kept, seen, PassPlanIssue.ReservedPassName(p#name) :: issues)
+            else if (Set.memberOf(p#name, seen)) (kept, seen, PassPlanIssue.DuplicatePass(p#name) :: issues)
+            else {
+                let issueOf = name ->
+                    if (name == p#name or Set.memberOf(name, seen)) None
+                    else if (Set.memberOf(name, declared)) Some(PassPlanIssue.ReadsLaterPass(p#name, name))
+                    else if (Set.memberOf(name, knownTargets)) Some(PassPlanIssue.ReadsUndeclaredTarget(p#name, name))
+                    else None;
+                let found = passReadNames(p#items) |> List.filterMap(issueOf);
+                let rename = name ->
+                    if (name == p#name) RenderTarget.historyName(name)
+                    else if (Option.isEmpty(issueOf(name))) name
+                    else missingName(name);
+                let p1 = { items = p#items |> List.map(placed -> { item = renameReads(rename, placed#item) | placed }) | p };
+                (p1 :: kept, Set.insert(p#name, seen), List.append(List.reverse(found), issues))
+            }
+        }, (Nil, Set.empty(), Nil));
+        let unknown = Map.keysOf(plan#targets) |> Set.toList
+            |> List.filter(name -> not Set.memberOf(name, declared))
+            |> List.map(PassPlanIssue.UnknownDescriptor);
+        { plan = { passes = List.reverse(keptRev) | plan },
+          issues = List.append(List.reverse(issuesRev), unknown) }
+
+    /// items が読む名前（面の tex / blur と sprite の texture）を初出順・重複なしで。
+    def passReadNames(items: List[PlacedItem]): List[String] =
+        items |> List.flatMap(placed -> {
+            let (leaf, _clip) = unwrapClip(placed#item, None);
+            match leaf {
+                case Item.Sprite(sp) => sp#texture :: Nil
+                case Item.Shader(sh) => ShaderDoc.texNames(sh#spec)
+                case _               => Nil
+            }
+        }) |> List.distinct
+
+    /// 面の tex / blur と sprite の texture の名前を f で替える（Clipped の中まで）。
+    def renameReads(f: String -> String, item: Item): Item =
+        onLeaf(leaf -> match leaf {
+            case Item.Sprite(sp) => Item.Sprite({ texture = f(sp#texture) | sp })
+            case Item.Shader(sh) => Item.Shader({ spec = ShaderDoc.renameTex(f, sh#spec) | sh })
+            case other           => other
+        }, item)
 
     // ── extract / 射影（lib が Drawable を1回だけ組む）──
 
@@ -746,7 +849,7 @@ pub mod Render {
                     // mask も同じ理屈で rect 左上相対 + at にして画面座標にする（rect と同じ
                     // カメラ変換に乗るので形がずれない）。
                     Some({ program = programOf(s#spec),
-                           texNames = ShaderDoc.texNames(s#spec),
+                           texReads = ShaderDoc.texReads(s#spec),
                            rect = { position = placed#at, size = s#rect#size },
                            mask = s#mask |> List.map(poly ->
                                poly |> List.map(v -> Vec2.add(placed#at, v))),
@@ -962,8 +1065,10 @@ pub mod Render {
     /// None（矩形 1 枚に写せない）: uv を変えて読む節（ShaderDoc.remappedChild）の下に tex か ref がある
     /// （ref は bindings の値で、どの uv で読んだ物かをここでは辿らない）・shift のずらし量が 1 次式でない
     /// （isAffineIn）・読む所ごとに範囲が食い違う。
+    /// Linear で読む Spec も None（sprite に落とすと Nearest で貼られて実機と変わる）。
     def textureReadOf(spec: ShaderDoc.Spec, t: Float64): Option[(String, Rect2.Rect2)] =
-        match ShaderDoc.texNames(spec) {
+        if (ShaderDoc.texReads(spec) |> List.exists(read -> snd(read) == ShaderDoc.FilterMode.Linear)) None
+        else match ShaderDoc.texNames(spec) {
             case name :: Nil =>
                 let nodes = ShaderDoc.fieldsOf(spec)
                     |> List.flatMap(field -> ShaderDoc.foldField((acc, node) -> node :: acc, Nil, field));
@@ -1005,6 +1110,7 @@ pub mod Render {
                 case ShaderDoc.BinOp.Min  => isUvFree(field)
                 case ShaderDoc.BinOp.Max  => isUvFree(field)
                 case ShaderDoc.BinOp.Step => isUvFree(field)
+                case ShaderDoc.BinOp.Div  => isAffineIn(axis, bn#a) and isUvFree(bn#b)
             }
             case _ => isUvFree(field)
         }

@@ -1045,13 +1045,12 @@ def testNoTexUniformForExistingSpecs(): Unit \ Assert =
 
 /// (b) tex 場つき Spec の compile() 全文: uniform 行が texNames の正典順（glow=0, mask=1）で
 ///   uTime の直後に並び、main は texture() 標本 + flip の mix を含む（番号割当を全文で固定）。
+///   glow を r・g・b で 3 回読む所は 1 回の標本に括り出され、mask の 1 回きりの読みはそのまま。
 @Test
 def testTexSpecCompileSnapshot(): Unit \ Assert =
     let expectedBody =
-        "outColor = vec4(vec3(" +
-        "texture(uTex0, vec2((vUv).x, mix((vUv).y, 1.0 - (vUv).y, uTexFlip0))).r, " +
-        "texture(uTex0, vec2((vUv).x, mix((vUv).y, 1.0 - (vUv).y, uTexFlip0))).g, " +
-        "texture(uTex0, vec2((vUv).x, mix((vUv).y, 1.0 - (vUv).y, uTexFlip0))).b), " +
+        "vec4 sg_r0 = texture(uTex0, vec2((vUv).x, mix((vUv).y, 1.0 - (vUv).y, uTexFlip0)));\n    " +
+        "outColor = vec4(vec3(sg_r0.r, sg_r0.g, sg_r0.b), " +
         "texture(uTex1, vec2((vUv).x, mix((vUv).y, 1.0 - (vUv).y, uTexFlip1))).r);";
     let expected =
         glslHeader() +
@@ -1253,3 +1252,150 @@ def testBlurJsonDefaults(): Unit \ Assert =
         case Err(_) => None
     };
     Assert.assertEq(expected = Some(("photo", 24, 0.01, List#{"photo"})), got)
+
+// ════════════════════════════════════════════════════════════════════
+// 負の指数の pow と割り算（div）
+// ════════════════════════════════════════════════════════════════════
+
+/// 負の整数の指数は逆数の積。底 0 は 1e-6 に下切り → 1/1e-6 = 1e6、指数 -30 は 1e6 で上切り。
+/// 正の指数（4^0.5 = 2）は今のまま。
+@Test
+def testPowNegativeExponentEval(): Unit \ Assert =
+    let at = (x, p) -> ShaderEval.evalField(ShaderDoc.Field.Pow({ of = ShaderDoc.Field.Const(x), p = p }), { x = 0.0, y = 0.0 }, 0.0);
+    Assert.assertEq(expected = (0.5, 0.25, 1000000.0, 1000000.0, 2.0),
+                    (at(2.0, -1.0), at(2.0, -2.0), at(0.0, -1.0), at(0.5, -30.0), at(4.0, 0.5)))
+
+/// 負の整数の指数の GLSL は上切りの min と逆数の割り算になる（1.0 だけの式に潰れない）。
+@Test
+def testPowNegativeExponentSnapshot(): Unit \ Assert =
+    let field = ShaderDoc.Field.Pow({ of = ShaderDoc.Field.Uv({ axis = ShaderDoc.Axis.U }), p = -1.0 });
+    Assert.assertEq(expected = "outColor = vec4(vec3(0.0, 0.0, 0.0), min(1000000.0, (1.0 / max(1.0E-6, (vUv).x))));",
+                    bodyOfField(field))
+
+/// div は割り算で、割る数が 0 なら 0。
+@Test
+def testDivEval(): Unit \ Assert =
+    let at = (a, b) -> ShaderEval.evalField(ShaderDoc.Field.Bin({ op = ShaderDoc.BinOp.Div,
+        a = ShaderDoc.Field.Const(a), b = ShaderDoc.Field.Const(b) }), { x = 0.0, y = 0.0 }, 0.0);
+    Assert.assertEq(expected = (0.25, 0.0), (at(1.0, 4.0), at(1.0, 0.0)))
+
+/// div を使う Spec にだけ sg_div の宣言が入り、JSON の往復で op が残る。
+@Test
+def testDivDeclaredOnlyWhenUsedAndRoundTrips(): Unit \ Assert =
+    let spec = { name = "d", cycleRate = 0.0, bindings = Nil,
+        out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Solid({ r = 0.0, g = 0.0, b = 0.0 }),
+            alpha = ShaderDoc.Field.Bin({ op = ShaderDoc.BinOp.Div,
+                a = ShaderDoc.Field.Const(1.0), b = ShaderDoc.Field.Uv({ axis = ShaderDoc.Axis.U }) }) }) };
+    let has = s -> String.contains({ substr = "float sg_div(" }, ShaderGen.compile(s));
+    let same = match ShaderJson.parse(ShaderJson.toJson(spec)) {
+        case Ok(s2) => ShaderGen.compile(s2) == ShaderGen.compile(spec)
+        case Err(_) => false
+    };
+    Assert.assertEq(expected = (true, false, true), (has(spec), has(ShaderDoc.demoSurface()), same))
+
+/// 半径 × amount が 0 の blur は 1 点だけ読み、値は同じ点の tex とぴったり同じ
+/// （128/255 のような半端な値でも、taps 回足して割った時の最後の桁の揺れが出ない）。
+@Test
+def testBlurWithZeroRadiusEqualsTexExactly(): Unit \ Assert =
+    let env = Map#{ "t" => tex2x2() };
+    let texSpec: ShaderDoc.Spec = { name = "t", cycleRate = 0.0, bindings = Nil,
+        out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Solid({ r = 0.0, g = 0.0, b = 0.0 }),
+            alpha = ShaderDoc.Field.Tex({ name = "t", chan = ShaderDoc.TexChan.G }) }) };
+    let blurG: ShaderDoc.Spec = { name = "t", cycleRate = 0.0, bindings = Nil,
+        out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Solid({ r = 0.0, g = 0.0, b = 0.0 }),
+            alpha = ShaderDoc.Field.TexBlur({ name = "t", chan = ShaderDoc.TexChan.G,
+                radius = { x = 0.3, y = 0.3 }, taps = 24, amount = ShaderDoc.Field.Const(0.0) }) }) };
+    let at = spec -> ShaderEval.evalAlphaTex(spec, { x = 0.75, y = 0.25 }, 0.0, env);
+    Assert.assertEq(expected = at(texSpec), at(blurG))
+
+// ════════════════════════════════════════════════════════════════════
+// 同じ読みの括り出し（CSE / hoist）
+// ════════════════════════════════════════════════════════════════════
+
+def rgbBlurSpec(): ShaderDoc.Spec =
+    let b = chan -> ShaderDoc.Field.TexBlur({ name = "t", chan = chan, radius = { x = 0.1, y = 0.1 }, taps = 8,
+                                              amount = ShaderDoc.Field.Const(1.0) });
+    { name = "rgb", cycleRate = 0.0, bindings = Nil,
+      out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Rgb({ r = b(ShaderDoc.TexChan.R), g = b(ShaderDoc.TexChan.G),
+                                                               b = b(ShaderDoc.TexChan.B) }),
+                                 alpha = ShaderDoc.Field.Const(1.0) }) }
+
+/// r・g・b を同じ引数で blur する Spec は、sg_blur の呼び出しが 1 回（関数の宣言の 1 回を足して 2 回）になり、
+/// 各チャンネルは括り出した変数から読む。
+@Test
+def testSameBlurReadIsHoistedOnce(): Unit \ Assert =
+    let glsl = ShaderGen.compile(rgbBlurSpec());
+    let calls = List.length(String.splitOn({ substr = "sg_blur(" }, glsl)) - 1;
+    Assert.assertEq(expected = (2, true, false),
+                    (calls, String.contains({ substr = "sg_r0.g" }, glsl), String.contains({ substr = "⟦" }, glsl)))
+
+/// 1 回しか読まない tex は括り出さず、印も残らない（今ある 1 チャンネルの Spec の GLSL は変わらない）。
+@Test
+def testSingleTexReadIsNotHoisted(): Unit \ Assert =
+    let body = bodyOfField(ShaderDoc.Field.Tex({ name = "t", chan = ShaderDoc.TexChan.R }));
+    Assert.assertEq(expected = "outColor = vec4(vec3(0.0, 0.0, 0.0), texture(uTex0, vec2((vUv).x, mix((vUv).y, 1.0 - (vUv).y, uTexFlip0))).r);",
+                    body)
+
+// ════════════════════════════════════════════════════════════════════
+// レンダーターゲットのテクセル寸法（RenderTarget.sizeOf）
+// ════════════════════════════════════════════════════════════════════
+
+/// 各軸 ceil(design × scale)。270 × 0.25 = 67.5 は 68 に切り上げ。範囲外（0・2・NaN）は 1.0 として design そのもの。
+@Test
+def testTargetSizeOf(): Unit \ Assert =
+    let at = scale -> RenderTarget.sizeOf({ x = 480.0, y = 270.0 }, { scale = scale | RenderTarget.defaultDescriptor() });
+    Assert.assertEq(expected = ((240, 135), (120, 68), (480, 270), (480, 270), (480, 270), (480, 270)),
+                    (at(0.5), at(0.25), at(1.0), at(0.0), at(2.0), at(Float64.nan())))
+
+// ════════════════════════════════════════════════════════════════════
+// sampler 節（Linear で読む）
+// ════════════════════════════════════════════════════════════════════
+
+def alphaSpec(field: ShaderDoc.Field): ShaderDoc.Spec =
+    { name = "s", cycleRate = 0.0, bindings = Nil,
+      out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Solid({ r = 0.0, g = 0.0, b = 0.0 }), alpha = field }) }
+
+def texR(): ShaderDoc.Field = ShaderDoc.Field.Tex({ name = "t", chan = ShaderDoc.TexChan.R })
+
+def linearOf(field: ShaderDoc.Field): ShaderDoc.Field =
+    ShaderDoc.Field.Sampler({ filter = ShaderDoc.FilterMode.Linear, of = field })
+
+/// 黒・白の 2×1 を Linear で読む: u = 0.25 は左のテクセルの中心で 0・u = 0.5 は 2 つの境目で半分ずつの 0.5・
+/// u = 0 は端の張り付きで 0。
+@Test
+def testLinearSamplerBlendsNeighbours(): Unit \ Assert =
+    let env = Map#{ "t" => halves() };
+    let at = u -> ShaderEval.evalAlphaTex(alphaSpec(linearOf(texR())), { x = u, y = 0.5 }, 0.0, env);
+    Assert.assertEq(expected = (0.0, 0.5, 0.0), (at(0.25), at(0.5), at(0.0)))
+
+/// 入れ子の sampler は内側が勝つ（外 Linear・内 Nearest の境目は Nearest の白）。
+@Test
+def testInnerSamplerWins(): Unit \ Assert =
+    let env = Map#{ "t" => halves() };
+    let nested = linearOf(ShaderDoc.Field.Sampler({ filter = ShaderDoc.FilterMode.Nearest, of = texR() }));
+    Assert.assertEq(expected = 1.0, ShaderEval.evalAlphaTex(alphaSpec(nested), { x = 0.5, y = 0.5 }, 0.0, env))
+
+/// 同じ名前を Nearest と Linear で読む Spec は sampler が 2 本（uTex0 = Nearest・uTex1 = Linear）。
+@Test
+def testSameTextureTwoFiltersGetTwoUniforms(): Unit \ Assert =
+    let spec = alphaSpec(ShaderDoc.Field.Bin({ op = ShaderDoc.BinOp.Add, a = texR(), b = linearOf(texR()) }));
+    let glsl = ShaderGen.compile(spec);
+    Assert.assertEq(expected = (("t", ShaderDoc.FilterMode.Nearest) :: ("t", ShaderDoc.FilterMode.Linear) :: Nil, true, true),
+                    (ShaderDoc.texReads(spec), String.contains({ substr = "uniform sampler2D uTex1;" }, glsl),
+                     String.contains({ substr = "texture(uTex1," }, glsl)))
+
+/// sampler の JSON の往復で GLSL が同じ・filter の綴り違いは Err。
+@Test
+def testSamplerJsonRoundTripAndBadFilter(): Unit \ Assert =
+    let spec = alphaSpec(linearOf(texR()));
+    let same = match ShaderJson.parse(ShaderJson.toJson(spec)) {
+        case Ok(s2) => ShaderGen.compile(s2) == ShaderGen.compile(spec)
+        case Err(_) => false
+    };
+    let bad = "{\"name\":\"s\",\"out\":{\"kind\":\"fill\",\"shade\":{\"kind\":\"solid\",\"color\":\"#000000\"}," +
+              "\"alpha\":{\"kind\":\"sampler\",\"filter\":\"bilinear\",\"of\":{\"kind\":\"tex\",\"name\":\"t\"}}}}";
+    let badIsErr = match Util.Json.parse(bad) {
+        case Ok(j)  => Result.isErr(ShaderJson.parse(j))
+        case Err(_) => false
+    };
+    Assert.assertEq(expected = (true, true), (same, badIsErr))

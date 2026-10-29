@@ -23,11 +23,36 @@ pub mod RenderTarget {
         case ClearTransparent
     }
 
+    /// ターゲットの作り方（毎コマの中身 = Render.Pass とは別に、名前ごとに 1 つ）。wgpu / Unity の
+    /// TextureDescriptor・RenderTextureDescriptor と同じ分け方で、LoadOp は「描くたび」の性質なので Pass に、
+    /// 寸法は「テクスチャを作る時」の性質なのでここに置く。
+    /// scale = design 解像度に掛ける倍率（Unity の renderScale・Godot の scaling_3d_scale と同じ語）。0 より大きく 1 以下。
+    /// 組む時は `{ scale = 0.5 | RenderTarget.defaultDescriptor() }` の形で書く（欄を足してもゲームの字が止まらないように）。
+    pub type alias Descriptor = { scale = Float64 }
+
+    /// 既定（design 解像度そのまま）。
+    pub def defaultDescriptor(): Descriptor = { scale = 1.0 }
+
+    /// 範囲に収めた倍率。0 以下・1 より大きい・非有限は 1.0（既定値で続ける。知らせるのは呼び手）。
+    pub def scaleOf(d: Descriptor): Float64 =
+        if (Float64.isFinite(d#scale) and d#scale > 0.0 and d#scale <= 1.0) d#scale else 1.0
+
+    /// ターゲットのテクセル寸法。どの経路もこの 1 本で決める（GL・描き出し・App が別々に丸めると 1px 割れる）。
+    /// 各軸 max(1, ceil(design × scale))。scale = 1 なら design そのもの。
+    pub def sizeOf(design: Vec2.Vec2, d: Descriptor): (Int32, Int32) =
+        let s = scaleOf(d);
+        let axis = v -> Int32.max(1, Float64.tryToInt32(Float64.ceil(v * s)) |> Option.getWithDefault(1));
+        (axis(design#x), axis(design#y))
+
+    /// 自分の名前を読む Pass が、前のコマの中身（history）を読むための別名。Render.resolvePassReads が書き換え、
+    /// GL（RenderPaint）と描き出し（HeadlessRender）が同じ字で用意する。
+    pub def historyName(name: String): String = name + "@history"
+
     /// レンダーターゲットへの描画チャンネル。eff Game とは別に隔離した効果。
     pub eff Target {
         /// ターゲットを開く。以降の renderCommands は画面でなくここに描かれる（swap もしない）。
-        /// width/height はターゲットの px 寸法 — **design 解像度と同じ値を渡すこと**（投影行列が
-        /// design 前提で固定されているため。別寸法のターゲットは投影の差し替えごと将来の拡張）。
+        /// width/height はターゲットのテクセル寸法（sizeOf の答え）。中は design 座標のまま描き、design 全面が
+        /// テクスチャ全面に写る（投影は差し替えない）。貼るときの大きさは design 寸法のまま。
         /// clear は前の中身の始末（LoadOp の doc を参照）。
         def beginTarget(name: String, width: Int32, height: Int32, clear: RenderTarget.LoadOp): Unit
         /// ターゲットを閉じて描画先を画面へ戻す。

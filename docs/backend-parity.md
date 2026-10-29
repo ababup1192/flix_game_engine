@@ -35,12 +35,15 @@ SoftRaster が指定を黙って落とすと、**スナップショットは「�
 | style（角丸・枠・縞・市松）on 単色 box | ○ | ○ | 枠の濃さ（borderAlpha）も両者対応 |
 | 単色多角形の塗り | ○ | ○ | **縁だけ近似**: SoftRaster は Java2D の AA、GL は AA なし |
 | 頂点色つき多角形（grad のグラデ） | ○ | ○ | 補間は同じ線形の式（扇割りは `DrawCmd.gradTriangles` を共有、式は `SoftRaster.gradSample` にテストで固定）。縁は両者とも画素中心判定で AA なし — 単色多角形とは縁の写りが違う |
-| 多角形マスク付きスプライト（mask の型抜き） | ○ | ○ | **縁だけ近似**（単色多角形と同じ注記）: GL はステンシル・SoftRaster は Java2D の clip で、どちらも AA なしの硬い縁。mask はクアッドのローカル座標なので rotation・反転が両経路とも同じ式で追随する。グリフ（font_）は対象外。GL では mask 付き 1 体ごとに run の一括 draw から単発 draw に落ちる。レンダーターゲット（Pass）の中では GL は抜けない（ターゲットの FBO にステンシルが無い — 抜きたい物は画面側で貼る） |
+| 多角形マスク付きスプライト（mask の型抜き） | ○ | ○ | **縁だけ近似**（単色多角形と同じ注記）: GL はステンシル・SoftRaster は Java2D の clip で、どちらも AA なしの硬い縁。mask はクアッドのローカル座標なので rotation・反転が両経路とも同じ式で追随する。グリフ（font_）は対象外。GL では mask 付き 1 体ごとに run の一括 draw から単発 draw に落ちる。レンダーターゲット（Pass）の中でも抜ける（ターゲットの FBO にもテクセル寸法のステンシルがある。gl_parity の passMask） |
 | **style on テクスチャ / 文字** | ○ | **×** | 落とす。生成するときに件数を報告する |
 | 文字の描き方 | SDF シェーダ | 出力解像度の TTF を直接 drawString | **近似**。小サイズでは生成した方がくっきり出る |
 | 宣言シェーダーの面 | 本物の GLSL | `ShaderEval` の画素評価 | **近似**。式は揃えてあるが完全一致は保証しない |
 | シェーダー面の tex 場（`Field.Tex`） | sampler uniform + sampler object | `texEnv`（画素表）を `ShaderEval` が標本 | 標本の量子化は**同一を保証する**: NEAREST（`floor` の釘打ち式）・CLAMP（端に張り付き）・8bit/255 の正規化・pass の上下逆の吸収位置（GL の uTexFlip だけが持つ）。テクスチャ値**以降**の float 合成は宣言シェーダー面と同じく近似。pass の alpha チャンネル（`chan:"a"`）は GL のブレンド副産物なので一致保証なし |
-| レンダーターゲット（Pass） | ○ | ○ | ターゲットは両経路とも design 解像度で生成し、貼るとき最近傍拡大。標本は最近傍（NEAREST）を**保証する** — 縮小→再拡大のピクセライズ/モザイクはこれに依存してよい（補間を変える拡張は opt-in にする）。ターゲットの中の Shader 面はどちらも描かない（`withoutShaders` で外す） |
+| レンダーターゲット（Pass） | ○ | ○ | sprite で貼るときの標本は最近傍（NEAREST）を**保証する** — 縮小→再拡大のピクセライズ/モザイクはこれに依存してよい。中の Shader 面も両経路で描く（gl_parity の passChain）。読みの決まり（まだ描いていない pass は黒・自分の名前は history）は `Render.resolvePassReads` 1 か所で書き換え、両経路が同じ結果を使う（passLaterRead）。**history（前のコマ）は突き合わせない** — 描き出しと GL の 1 枚撮り・動画は透明、窓だけが前のコマを写す |
+| 縮んだ pass（`RenderTarget.Descriptor` の scale） | viewport でテクセル寸法へ縮める（投影は design のまま） | design 解像度で描き、GL がテクセルを塗る点で 1 画素拾う（面はその点で評価） | テクセルの格子にそろった座標（scale 0.5 なら偶数）の絵は**同一を保証する**（passHalf）。奇数座標の箱の縁も合わせてある（縦は「境目なら上」— GL のターゲットが上下逆格納のため）。面の中の式（市松の升目など）が標本点にちょうど乗る所は近似。割り切れない倍率（0.33 など）は B 段階（この Mac では 0 px） |
+| tex 場の Linear（`sampler` 節） | sampler object の GL_LINEAR | `ShaderEval.sampleTexLinear`（同じ点・同じ重み） | **近似**: GPU は補間の重みを固定小数に丸めるので ±1/255 程度ずれうる（B 段階 linearRead。この Mac の実測は 0 px） |
+| `pow` の負の指数・`div` | float32 | float64 | 近似: 答えの上切り 1e6 の手前の大きな値・`div` の割る数が 0 に近い所（0 になるかが float32 と float64 で割れうる）は差が出うる |
 | 組み込み放射テクスチャのスプライト（`Render.lightAt` / `darkAt`） | ○ | ○ | **一致**（radial scene が機械証明）。土台は `RadialBuiltin` の画素定義 — 減衰カーブは rgb だけに書き込み **alpha は常に 255**。alpha=255 なら Add は `d+s` の整数の足し算で GL（float 合成）と CPU（整数合成）の丸めが消える。Multiply（`darkAt`）は `d×s/255` が割り切れる下地（白・黒）でのみバイト一致 — 中間色の下地では ±1 の丸め差が出うる（GL は最近接丸め・CPU は切り捨て）。tint・strength の中間値も float 乗算が入るため一致保証は白 tint・strength=1.0 の範囲。もう 1 つの条件は四角の左上が画面内にあること — SoftRaster の出力矩形の丸め（`SoftRaster.ri` = 0 方向切り捨て）が**負座標で 1px 内側にずれ**、等倍の貼りが 1px 縮む（放射に限らず全スプライト共通の既知の穴。画面の左上からはみ出す置き方だけで踏む） |
 
 ## エンジンを拡張するときの手順

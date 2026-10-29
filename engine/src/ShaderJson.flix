@@ -13,7 +13,8 @@
 //           {"kind":"warp","amount":..,"scale":..,"seed":..,"of":{..}} /
 //           {"kind":"mix","a":{..},"b":{..},"t":..} / {"kind":"blend","a":{..},"b":{..},"by":{..}} /
 //           {"kind":"tex","name":"..","chan":"r"} / {"kind":"shift","dx":{..},"dy":{..},"of":{..}} /
-//           {"kind":"blur","name":"..","chan":"r","radius":{"x":..,"y":..},"taps":24,"amount":{..}}
+//           {"kind":"blur","name":"..","chan":"r","radius":{"x":..,"y":..},"taps":24,"amount":{..}} /
+//           {"kind":"sampler","filter":"linear","of":{..}}
 //   色:     {"kind":"solid","color":<color>} / {"kind":"ramp","lo":<color>,"hi":<color>,"field":{..}} /
 //           {"kind":"rgb","r":{..},"g":{..},"b":{..}}
 //   出力:   {"kind":"fill","shade":{..},"alpha":{..}}
@@ -444,6 +445,12 @@ pub mod ShaderJson {
                             case Some(j) => parseField(j)
                         }
                     ) yield ShaderDoc.Field.TexBlur({ name = name, chan = chan, radius = radius, taps = taps, amount = amount })
+                case "sampler" =>
+                    forM (
+                        filter <- parseFilter(m);
+                        ofJson <- reqKey("of", m);
+                        of     <- parseField(ofJson)
+                    ) yield ShaderDoc.Field.Sampler({ filter = filter, of = of })
                 case other => Err(err("unknown field kind: '${other}'"))
             }
         })
@@ -491,7 +498,8 @@ pub mod ShaderJson {
             case "min"  => Ok(ShaderDoc.BinOp.Min)
             case "max"  => Ok(ShaderDoc.BinOp.Max)
             case "step" => Ok(ShaderDoc.BinOp.Step)
-            case other  => Err(err("math2 op must be add/sub/mul/min/max/step (got '${other}')"))
+            case "div"  => Ok(ShaderDoc.BinOp.Div)
+            case other  => Err(err("math2 op must be add/sub/mul/min/max/step/div (got '${other}')"))
         }) yield o
 
     def parseUnOp(m: Map[String, Json]): Result[JsonError, ShaderDoc.UnOp] =
@@ -786,7 +794,24 @@ pub mod ShaderJson {
                 JObject(Map#{ "kind" => JString("blur"), "name" => JString(bl#name),
                               "chan" => JString(chanStr(bl#chan)), "radius" => vec2ToJson(bl#radius),
                               "taps" => num(Int32.toFloat64(bl#taps)), "amount" => fieldToJson(bl#amount) })
+            case ShaderDoc.Field.Sampler(sm) =>
+                JObject(Map#{ "kind" => JString("sampler"), "filter" => JString(filterStr(sm#filter)),
+                              "of" => fieldToJson(sm#of) })
         }
+
+    def filterStr(f: ShaderDoc.FilterMode): String =
+        match f {
+            case ShaderDoc.FilterMode.Nearest => "nearest"
+            case ShaderDoc.FilterMode.Linear  => "linear"
+        }
+
+    // sampler の補間は "filter":"nearest"/"linear"（必須 — 書かない sampler は意味が無い）。
+    def parseFilter(m: Map[String, Json]): Result[JsonError, ShaderDoc.FilterMode] =
+        forM (s <- strAt("filter", m); f <- match s {
+            case "nearest" => Ok(ShaderDoc.FilterMode.Nearest)
+            case "linear"  => Ok(ShaderDoc.FilterMode.Linear)
+            case other     => Err(err("sampler filter must be 'nearest'/'linear' (got '${other}')"))
+        }) yield f
 
     // bucket が None なら "bucket" キーを出さない（省略時の JSON を 1 バイトも増やさない）。
     def withBucket(base: Map[String, Json], bucket: Option[ShaderDoc.Field]): Json =
@@ -803,6 +828,7 @@ pub mod ShaderJson {
             case ShaderDoc.BinOp.Min  => "min"
             case ShaderDoc.BinOp.Max  => "max"
             case ShaderDoc.BinOp.Step => "step"
+            case ShaderDoc.BinOp.Div  => "div"
         }
 
     def unOpStr(op: ShaderDoc.UnOp): String =

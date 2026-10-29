@@ -421,10 +421,12 @@ mod RenderSprite {
     /// NEAREST + CLAMP_TO_EDGE を unit へ強制する — 通常テクスチャは REPEAT で上がっているため、
     /// Shift で端を越えた標本が反対側へ回り込むと CPU（端に張り付き）と絵が割れる。
     /// テクスチャ本体のパラメータは触らない（sprite 経路の見え方を変えない）。
-    pub def createSurfaceSampler(): Int32 \ IO =
+    /// linear = true で GL_LINEAR（ShaderDoc の sampler 節の Linear）。端の張り付きは同じ。
+    pub def createSurfaceSampler(linear: Bool): Int32 \ IO =
         let sampler = GL33.glGenSamplers();
-        GL33.glSamplerParameteri(sampler, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_NEAREST);
-        GL33.glSamplerParameteri(sampler, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_NEAREST);
+        let filter = if (linear) GL11.GL_LINEAR else GL11.GL_NEAREST;
+        GL33.glSamplerParameteri(sampler, GL11.GL_TEXTURE_MIN_FILTER, filter);
+        GL33.glSamplerParameteri(sampler, GL11.GL_TEXTURE_MAG_FILTER, filter);
         GL33.glSamplerParameteri(sampler, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE);
         GL33.glSamplerParameteri(sampler, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE);
         sampler
@@ -432,7 +434,7 @@ mod RenderSprite {
     /// tex 場の bind 指示 1 本。Int32 が 3 つ並ぶので位置タプルだと取り違えても型では
     /// 捕まらない — 名前渡しのレコードにして混線を型より手前で防ぐ。
     pub type alias SurfaceTexBind =
-        { texUnit = Int32, texId = Int32, flipLoc = Int32, flip = Float64 }
+        { texUnit = Int32, texId = Int32, flipLoc = Int32, flip = Float64, sampler = Int32 }
 
     /// 宣言シェーダー面の uniform の location（無い uniform は -1。glUniform は -1 を無視する）。
     pub type alias SurfaceUniforms = { rectPos = Int32, rectSize = Int32, time = Int32, alpha = Int32 }
@@ -445,7 +447,7 @@ mod RenderSprite {
     /// font が glActiveTexture を触らず共用するため、残すとフォント作り直しやアトラス
     /// 差し替えが別 unit へ上がる事故になる。
     pub def drawShaderSurface(program: Int32, vao: Int32, uniforms: SurfaceUniforms,
-                              texBinds: List[SurfaceTexBind], texSampler: Int32,
+                              texBinds: List[SurfaceTexBind],
                               rect: Rect2.Rect2, time: Float64, alpha: Float64, blend: DrawCmd.BlendMode): Unit \ IO =
         let f32 = RenderUtil.f32;
         GL20.glUseProgram(program);
@@ -458,7 +460,7 @@ mod RenderSprite {
         List.forEach(tb -> {
             GL13.glActiveTexture(GL13.GL_TEXTURE0 + tb#texUnit);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, tb#texId);
-            GL33.glBindSampler(tb#texUnit, texSampler);
+            GL33.glBindSampler(tb#texUnit, tb#sampler);
             GL20.glUniform1f(tb#flipLoc, f32(tb#flip))
         }, texBinds);
         GL30.glBindVertexArray(vao);
@@ -497,14 +499,14 @@ mod RenderSprite {
     /// これで丸い池形など任意の形に水面を切り抜ける（矩形の隅がはみ出さない）。
     /// mask が退化（頂点 3 未満）なら素直に矩形そのまま描く。
     pub def drawShaderSurfaceMasked(program: Int32, vao: Int32, uniforms: SurfaceUniforms,
-                                    texBinds: List[SurfaceTexBind], texSampler: Int32,
+                                    texBinds: List[SurfaceTexBind],
                                     rect: Rect2.Rect2, time: Float64, alpha: Float64, blend: DrawCmd.BlendMode,
                                     polyShader: Int32, polyVao: Int32, polyVbo: Int32,
                                     polyUniforms: RenderShader.PolyBatchUniforms,
                                     maskPolys: List[List[Vec2.Vec2]]): Unit \ IO =
         let (maskData, maskCount) = buildMaskData(maskPolys);
         if (maskCount < 3)
-            drawShaderSurface(program, vao, uniforms, texBinds, texSampler,
+            drawShaderSurface(program, vao, uniforms, texBinds,
                               rect, time, alpha, blend)
         else {
             // 1) mask を stencil に描き込む（色は書かず内側を 1 に）。この面ぶんだけ使うので毎回 clear。
@@ -522,7 +524,7 @@ mod RenderSprite {
             GL11.glStencilFunc(GL11.GL_EQUAL, 1i32, 255i32);
             GL11.glStencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_KEEP);
             GL11.glStencilMask(0i32);
-            drawShaderSurface(program, vao, uniforms, texBinds, texSampler,
+            drawShaderSurface(program, vao, uniforms, texBinds,
                               rect, time, alpha, blend);
             // 3) 後始末（次の描画にステンシル状態を持ち越さない）。
             GL11.glStencilMask(255i32);

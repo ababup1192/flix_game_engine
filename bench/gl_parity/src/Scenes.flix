@@ -32,11 +32,18 @@ mod Scenes {
         name = String,
         via = ShotVia,
         passes = List[Render.Pass],
+        // GL で Pass の列を何コマ描いてから撮るか（2 以上 = 前のコマの中身が見えていないことを確かめる場面）。
+        repeats = Int32,
+        // Pass の名前 → ターゲットの作り方（倍率）。
+        targets = Map[String, RenderTarget.Descriptor],
+        // A 段階（バイト一致を主張する）か。false は B 段階（差の数だけ報告し、落とさない）。
+        exact = Bool,
         items = List[Render.PlacedItem]
     }
 
     pub def all(): List[Scene] =
-        boxes() :: spriteNearest() :: passPaste() :: texField() :: lightMap() :: radial() :: veil() :: Nil
+        boxes() :: spriteNearest() :: passPaste() :: texField() :: lightMap() :: radial() :: veil()
+            :: passChain() :: passLaterRead() :: passMask() :: passHalf() :: passQuarterOdd() :: linearRead() :: Nil
 
     /// 8bit の値そのままの色（k/255）。A 段階の規約 2 をこの入口で守る。
     def c8(r: Int32, g: Int32, b: Int32): Color =
@@ -51,7 +58,7 @@ mod Scenes {
     // ── scene 1: 単色 box の重なり（塗り・並び順・ブレンド式・軸平行縞・市松）──
 
     def boxes(): Scene =
-        { name = "boxes", via = ShotVia.ViaTarget, passes = Nil, items =
+        { name = "boxes", via = ShotVia.ViaTarget, repeats = 1, targets = Map.empty(), exact = true, passes = Nil, items =
             // 左上の白枠なし赤箱 = 向きの目印（gl/soft で同じ隅に出なければ上下反転を疑う）
             at(8.0, 8.0, RawDraw.box({ x = 16.0, y = 16.0 }, c8(255, 64, 64), 10)) ::
             // zIndex 交差: 青(z1) の上に 緑(z2)
@@ -94,7 +101,7 @@ mod Scenes {
                       sx = sx, sy = sx, fH = fH, fV = fV, z = z })
 
     def spriteNearest(): Scene =
-        { name = "spriteNearest", via = ShotVia.ViaTarget, passes = Nil, items =
+        { name = "spriteNearest", via = ShotVia.ViaTarget, repeats = 1, targets = Map.empty(), exact = true, passes = Nil, items =
             // 等倍の全面（regionRect = 全面）
             at(40.0, 40.0, fullAtlas(1.0, false, false, 1)) ::
             // 左上 8x8 の区画を 2 倍
@@ -123,7 +130,7 @@ mod Scenes {
             at(0.0, 20.0, RawDraw.box({ x = 80.0, y = 25.0 }, c8(60, 60, 200), 1)) ::
             at(10.0, 5.0, RawDraw.box({ x = 8.0, y = 8.0 }, c8(255, 255, 255), 2)) ::
             Nil };
-        { name = "passPaste", via = ShotVia.ViaScreen, passes = p3 :: Nil, items =
+        { name = "passPaste", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = true, passes = p3 :: Nil, items =
             // 左上 80x45 を 2 倍（整数倍）で画面中央へ
             Render.blitRegion({ name = "p3", design = { x = designW(), y = designH() },
                                 src = { position = { x = 0.0, y = 0.0 }, size = { x = 80.0, y = 45.0 } },
@@ -156,7 +163,7 @@ mod Scenes {
             at(120.0, 60.0, RawDraw.box({ x = 80.0, y = 60.0 }, c8(90, 90, 90), 2)
                 |> Render.checker({ color = c8(30, 30, 30), alpha = 1.0, cell = 4.0 })) ::
             Nil };
-        { name = "texField", via = ShotVia.ViaScreen, passes = p4 :: Nil, items =
+        { name = "texField", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = true, passes = p4 :: Nil, items =
             Render.shaderFill(passthroughSpec("p4"),
                 { position = { x = 0.0, y = 0.0 }, size = { x = designW(), y = designH() } },
                 0.0, 1) ::
@@ -193,7 +200,7 @@ mod Scenes {
                 |> Render.blended(DrawCmd.BlendMode.Add)) ::
             Nil;
         let p = { items = List.append(base#items, lamps) | base };
-        { name = "lightmap", via = ShotVia.ViaScreen,
+        { name = "lightmap", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = true,
           passes = p :: Nil,
           items =
             at(0.0, 0.0, RawDraw.box({ x = designW(), y = designH() }, white, 1)) ::
@@ -215,7 +222,7 @@ mod Scenes {
     //     なくなる — 右下への はみ出しは正の座標のままなので等倍が保たれる
 
     def radial(): Scene =
-        { name = "radial", via = ShotVia.ViaTarget, passes = Nil, items =
+        { name = "radial", via = ShotVia.ViaTarget, repeats = 1, targets = Map.empty(), exact = true, passes = Nil, items =
             // 右側の白下地（darkAt の Multiply が exact になる面）
             at(192.0, 0.0, RawDraw.box({ x = 128.0, y = 180.0 }, c8(255, 255, 255), 2)) ::
             // 翳り: 白と黒の下地にだけ掛かる
@@ -233,11 +240,103 @@ mod Scenes {
     // 規約 2 の例外: α は 0.5 だけ使い、色は偶数の k/255 にして、重ねた答えが 8bit で割り切れるようにする
     // （0.5·src + 0.5·dst が整数になる組 —— 丸めの差を出さずに、重ね方そのものの違いだけを見る）。
     def veil(): Scene =
-        { name = "veil", via = ShotVia.ViaTarget, passes = Nil, items =
+        { name = "veil", via = ShotVia.ViaTarget, repeats = 1, targets = Map.empty(), exact = true, passes = Nil, items =
             at(20.0, 20.0, RawDraw.box({ x = 120.0, y = 80.0 }, c8(200, 120, 60), 1)) ::
             at(160.0, 40.0, RawDraw.box({ x = 100.0, y = 100.0 }, c8(40, 160, 220), 1)) ::
             at(60.0, 110.0, atlasSprite({ srcPos = { x = 0.0, y = 0.0 }, srcSize = { x = 16.0, y = 16.0 },
                                           sx = 4.0, sy = 4.0, fH = false, fV = false, z = 2 })) ::
             at(0.0, 0.0, RawDraw.box({ x = designW(), y = designH() }, c8(40, 20, 60), 10) |> Render.fade(0.5)) ::
             Nil }
+
+    // ── scene 8: Pass の連鎖（前の Pass を次の Pass の面が tex で素通しに読む・3 段）──
+    // 素通しの tex 場は A 段階（texField）と同じ標本の量子化だけを見る。段を重ねても 1 段ごとに同じ texel を写すこと。
+
+    def passChain(): Scene =
+        let c1: Render.Pass = { name = "c1", clear = RenderTarget.LoadOp.Clear(c8(0, 0, 0)), items =
+            at(0.0, 0.0, RawDraw.box({ x = 160.0, y = 90.0 }, c8(200, 40, 40), 1)) ::
+            at(160.0, 90.0, RawDraw.box({ x = 160.0, y = 90.0 }, c8(40, 200, 40), 1)) ::
+            at(8.0, 8.0, RawDraw.box({ x = 16.0, y = 16.0 }, c8(255, 255, 255), 2)) ::
+            at(120.0, 60.0, RawDraw.box({ x = 80.0, y = 60.0 }, c8(90, 90, 90), 2)
+                |> Render.checker({ color = c8(30, 30, 30), alpha = 1.0, cell = 4.0 })) ::
+            Nil };
+        let full = { position = { x = 0.0, y = 0.0 }, size = { x = designW(), y = designH() } };
+        let copyOf = (name, src) -> ({ name = name, clear = RenderTarget.LoadOp.Clear(c8(0, 0, 0)), items =
+            Render.shaderFill(passthroughSpec(src), full, 0.0, 1) :: Nil }: Render.Pass);
+        { name = "passChain", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = true,
+          passes = c1 :: copyOf("c2", "c1") :: copyOf("c3", "c2") :: Nil, items =
+            Render.shaderFill(passthroughSpec("c3"), full, 0.0, 1) :: Nil }
+
+    // ── scene 9: まだ描いていない Pass を読む（forward reference）は、面は黒・sprite は貼らない ──
+    // GL は Pass の列を 2 コマ描いてから撮る。前のコマの lb の中身が見えていたら右半分・左半分に赤が出て割れる。
+
+    def passLaterRead(): Scene =
+        let la: Render.Pass = { name = "la", clear = RenderTarget.LoadOp.Clear(c8(40, 40, 40)), items =
+            Render.shaderFill(passthroughSpec("lb"), { position = { x = 0.0, y = 0.0 }, size = { x = 160.0, y = designH() } }, 0.0, 1) ::
+            Render.blitRegion({ name = "lb", design = { x = designW(), y = designH() },
+                                src = { position = { x = 0.0, y = 0.0 }, size = { x = designW(), y = designH() } },
+                                at = { x = 240.0, y = 90.0 }, size = { x = 160.0, y = designH() }, z = 2 }) ::
+            Nil };
+        let lb: Render.Pass = { name = "lb", clear = RenderTarget.LoadOp.Clear(c8(200, 60, 60)), items = Nil };
+        { name = "passLaterRead", via = ShotVia.ViaScreen, repeats = 2, targets = Map.empty(), exact = true, passes = la :: lb :: Nil, items =
+            Render.blit("la", { x = designW(), y = designH() }, 1) :: Nil }
+
+    // ── scene 10: Pass の中の mask 付きの面（ターゲットにもステンシルがある）──
+    // 整数座標の矩形 2 枚で抜く（斜めの縁は GL だけ AA が掛かる — 規約 3）。
+
+    def passMask(): Scene =
+        let solid: ShaderDoc.Spec = { name = "parity_solid", cycleRate = 0.0, bindings = Nil,
+            out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Solid(c8(60, 200, 120)), alpha = ShaderDoc.Field.Const(1.0) }) };
+        let rect = (x, y, w, h) -> { x = x, y = y } :: { x = x + w, y = y } :: { x = x + w, y = y + h } :: { x = x, y = y + h } :: Nil;
+        let pm: Render.Pass = { name = "pm", clear = RenderTarget.LoadOp.Clear(c8(20, 20, 40)), items =
+            Render.shaderFillMasked(solid, { position = { x = 0.0, y = 0.0 }, size = { x = designW(), y = designH() } },
+                rect(20.0, 20.0, 100.0, 60.0) :: rect(180.0, 100.0, 80.0, 50.0) :: Nil, 0.0, 1) :: Nil };
+        { name = "passMask", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = true, passes = pm :: Nil, items =
+            Render.blit("pm", { x = designW(), y = designH() }, 1) :: Nil }
+
+    // ── scene 11: 半分の解像度の Pass（RenderTarget.Descriptor の scale = 0.5）──
+    // 整数座標の箱と市松を半分のターゲットに描き、左半分は面の tex 場（Nearest）で・右半分は sprite で貼る。
+    // GL はテクセル i を design の点 2i+1 で塗り、描き出しは design で描いてその点を拾う — 整数の縁なら同じテクセルになる。
+
+    def halfItems(): List[Render.PlacedItem] =
+        at(0.0, 0.0, RawDraw.box({ x = 160.0, y = 90.0 }, c8(200, 40, 40), 1)) ::
+        at(160.0, 90.0, RawDraw.box({ x = 160.0, y = 90.0 }, c8(40, 200, 40), 1)) ::
+        at(9.0, 7.0, RawDraw.box({ x = 15.0, y = 13.0 }, c8(255, 255, 255), 2)) ::
+        // 市松の升目の境（箱の中心から cell ごと）は偶数にそろえる — 縁が標本点 2i+1 にちょうど乗ると、
+        // 升目の色が GL の式の浮動小数の端で決まって割れる（箱の縁は pickedPixel で合わせてあるが、升目は面の中の式）。
+        at(122.0, 62.0, RawDraw.box({ x = 80.0, y = 56.0 }, c8(90, 90, 90), 2)
+            |> Render.checker({ color = c8(30, 30, 30), alpha = 1.0, cell = 4.0 })) ::
+        Nil
+
+    def scaledScene(name: String, scale: Float64, exact: Bool): Scene =
+        let pass: Render.Pass = { name = name + "T", clear = RenderTarget.LoadOp.Clear(c8(16, 24, 40)), items = halfItems() };
+        { name = name, via = ShotVia.ViaScreen, repeats = 1,
+          targets = Map#{ name + "T" => { scale = scale | RenderTarget.defaultDescriptor() } }, exact = exact,
+          passes = pass :: Nil, items =
+            Render.shaderFill(passthroughSpec(name + "T"), { position = { x = 0.0, y = 0.0 }, size = { x = 160.0, y = designH() } }, 0.0, 1) ::
+            Render.blitRegion({ name = name + "T", design = { x = designW(), y = designH() },
+                                src = { position = { x = 160.0, y = 0.0 }, size = { x = 160.0, y = designH() } },
+                                at = { x = 240.0, y = 90.0 }, size = { x = 160.0, y = designH() }, z = 1 }) ::
+            Nil }
+
+    def passHalf(): Scene = scaledScene("passHalf", 0.5, true)
+
+    // ── scene 12: 割り切れない倍率（320 × 0.33 → 106・180 × 0.33 → 60）。B 段階（縦横の倍率が少し違い、整数の縁でも割れうる）──
+
+    def passQuarterOdd(): Scene = scaledScene("passQuarterOdd", 0.33, false)
+
+    // ── scene 13: 半分の Pass を Linear で全面へ読む（sampler 節）。B 段階 — 読む点は同じだが、GPU は補間の重みを
+    // 固定小数に丸めるので ±1/255 程度ずれうる ──
+
+    def linearRead(): Scene =
+        let lin = chan -> ShaderDoc.Field.Sampler({ filter = ShaderDoc.FilterMode.Linear,
+                                                    of = ShaderDoc.Field.Tex({ name = "lrT", chan = chan }) });
+        let spec: ShaderDoc.Spec = { name = "parity_linear", cycleRate = 0.0, bindings = Nil,
+            out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Rgb({ r = lin(ShaderDoc.TexChan.R), g = lin(ShaderDoc.TexChan.G),
+                                                                     b = lin(ShaderDoc.TexChan.B) }),
+                                       alpha = ShaderDoc.Field.Const(1.0) }) };
+        let pass: Render.Pass = { name = "lrT", clear = RenderTarget.LoadOp.Clear(c8(16, 24, 40)), items = halfItems() };
+        { name = "linearRead", via = ShotVia.ViaScreen, repeats = 1,
+          targets = Map#{ "lrT" => { scale = 0.5 | RenderTarget.defaultDescriptor() } }, exact = false,
+          passes = pass :: Nil, items =
+            Render.shaderFill(spec, { position = { x = 0.0, y = 0.0 }, size = { x = designW(), y = designH() } }, 0.0, 1) :: Nil }
 }

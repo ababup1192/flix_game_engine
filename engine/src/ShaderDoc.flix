@@ -29,11 +29,19 @@ pub mod ShaderDoc {
         case R case G case B case A
     }
 
+    /// tex / blur がテクスチャを読むときの補間（wgpu の FilterMode・Unity の Point/Linear と同じ 2 択）。
+    /// Nearest = 補間なし（既定・ドット絵を崩さない）、Linear = 隣のテクセルとなめらかにつなぐ（GL の GL_LINEAR と同じ点と重み）。
+    pub enum FilterMode with Eq, ToString {
+        case Nearest
+        case Linear
+    }
+
     /// 2 つの場を合わせる素の計算。混ぜる意図（0..1 の重み）は Blend を使い、これは生の値の合成。
     pub enum BinOp with Eq, ToString {
         case Add  case Sub  case Mul      // 足す・引く・掛ける
         case Min  case Max                // 小さい方・大きい方
         case Step                         // b が a 以上なら 1、そうでなければ 0
+        case Div                          // a を b で割る。b が 0 なら 0（無限大・NaN の画素で潰れないように）
     }
 
     /// 1 つの場に掛ける素の関数。
@@ -111,6 +119,7 @@ pub mod ShaderDoc {
         /// 場 of に op（sin・絶対値・反転…）を 1 つ掛ける。
         case Un({ op = UnOp, of = Field })
         /// of を p 乗して尖らせる（山を細くする）。負にならないよう 0 で下切りしてから累乗する。
+        /// p が負なら、底を negPowFloor() で下切りし、答えを negPowCeil() で上切りする（1/x などの逆数）。
         case Pow({ of = Field, p = Float64 })
         /// 今の時刻（秒）を scale 倍して offset の場を足す。動きの元。
         /// offset を Const にすれば「時刻 × scale + 定数」の素直な時間項になる。
@@ -153,6 +162,9 @@ pub mod ShaderDoc {
         /// 1 点ずつの標本は Tex と同じ NEAREST + CLAMP。taps は 1..64 に丸める。
         /// rgb を全部ぼかす時は r・g・b の 3 本に書く（場は 1 チャンネルなので、読む数は taps × 3 になる）。
         case TexBlur({ name = String, chan = TexChan, radius = Vec2.Vec2, taps = Int32, amount = Field })
+        /// of の中の tex / blur を filter の補間で読む（Unity Shader Graph の Sampler State 節）。入れ子なら内側が勝つ。
+        /// use（shared）の中までは届かない — use は基準 uv で 1 回だけ評価する決まりと同じで、shared の側に自分の sampler を書く。
+        case Sampler({ filter = FilterMode, of = Field })
     }
 
     /// 面の色（rgb）。
@@ -314,7 +326,12 @@ pub mod ShaderDoc {
     /// Ref 集め（ShaderJson）と Tex 名集め（texNames）がこれに乗る — ノードを増やすときは
     /// ここへ 1 case 足せば全部の走査が追随する（走査を何本も別々に持たない）。
     pub def foldField(f: (a, Field) -> a, acc: a, field: Field): a =
-        let acc1 = f(acc, field);
+        foldFieldScoped((a1, _, fl) -> f(a1, fl), FilterMode.Nearest, acc, field)
+
+    /// foldField の、各節に「その節の tex / blur が読む補間」（Sampler の内側なら その filter）も渡す形。
+    pub def foldFieldScoped(f: (a, FilterMode, Field) -> a, filter: FilterMode, acc: a, field: Field): a =
+        let acc1 = f(acc, filter, field);
+        let foldField = (_f, a0, child) -> foldFieldScoped(f, filter, a0, child);
         match field {
             case Field.Const(_)        => acc1
             case Field.Uv(_)           => acc1
@@ -355,6 +372,65 @@ pub mod ShaderDoc {
             case Field.Tex(_)          => acc1
             case Field.Shift(sh)       => foldField(f, foldField(f, foldField(f, acc1, sh#dx), sh#dy), sh#of)
             case Field.TexBlur(bl)     => foldField(f, acc1, bl#amount)
+            case Field.Sampler(sm)     => foldFieldScoped(f, sm#filter, acc1, sm#of)
+        }
+
+    /// Spec の tex / blur が読むテクスチャ名を f で書き換える（形は変えない）。
+    /// Pass の中の読みを別名（history・見つからない名前）へ替えるのに使う（Render.resolvePassReads）。
+    pub def renameTex(f: String -> String, spec: Spec): Spec =
+        let rf = renameTexField(f);
+        let shade = match spec#out {
+            case Out.Fill(fill) => match fill#shade {
+                case Shade.Solid(c)    => Shade.Solid(c)
+                case Shade.Ramp(r)     => Shade.Ramp({ field = rf(r#field) | r })
+                case Shade.Gradient(g) => Shade.Gradient({ field = rf(g#field) | g })
+                case Shade.Cosine(cs)  => Shade.Cosine({ field = rf(cs#field) | cs })
+                case Shade.Rgb(c)      => Shade.Rgb({ r = rf(c#r), g = rf(c#g), b = rf(c#b) })
+            }
+        };
+        let alpha = match spec#out {
+            case Out.Fill(fill) => rf(fill#alpha)
+        };
+        { bindings = List.map(nf -> { let (n, fld) = nf; (n, rf(fld)) }, spec#bindings),
+          out = Out.Fill({ shade = shade, alpha = alpha }) | spec }
+
+    def renameTexField(f: String -> String): Field -> Field = field ->
+        let go = renameTexField(f);
+        match field {
+            case Field.Const(_)        => field
+            case Field.Uv(_)           => field
+            case Field.Worley(_)       => field
+            case Field.Fbm(_)          => field
+            case Field.FbmTile(_)      => field
+            case Field.Smoothstep(s)   => Field.Smoothstep({ of = go(s#of) | s })
+            case Field.Scaled(s)       => Field.Scaled({ of = go(s#of) | s })
+            case Field.Warp(wp)        => Field.Warp({ of = go(wp#of) | wp })
+            case Field.Mix(m)          => Field.Mix({ a = go(m#a), b = go(m#b) | m })
+            case Field.Blend(bl)       => Field.Blend({ a = go(bl#a), b = go(bl#b), by = go(bl#by) })
+            case Field.Disk(_)         => field
+            case Field.Radial(_)       => field
+            case Field.RadialAspect(_) => field
+            case Field.Quantize(q)     => Field.Quantize({ of = go(q#of) | q })
+            case Field.Scales(_)       => field
+            case Field.Glints(_)       => field
+            case Field.Ripples(_)      => field
+            case Field.Sparkle(_)      => field
+            case Field.Bin(bn)         => Field.Bin({ a = go(bn#a), b = go(bn#b) | bn })
+            case Field.Hash1(h)        => Field.Hash1({ bucket = Option.map(go, h#bucket) | h })
+            case Field.Hash2(h)        => Field.Hash2({ bucket = Option.map(go, h#bucket) | h })
+            case Field.Un(un)          => Field.Un({ of = go(un#of) | un })
+            case Field.Pow(pw)         => Field.Pow({ of = go(pw#of) | pw })
+            case Field.Time(tm)        => Field.Time({ offset = go(tm#offset) | tm })
+            case Field.Tiling(tl)      => Field.Tiling({ of = go(tl#of) | tl })
+            case Field.Snap(sn)        => Field.Snap({ of = go(sn#of) | sn })
+            case Field.Swirl(sw)       => Field.Swirl({ of = go(sw#of) | sw })
+            case Field.Angle(_)        => field
+            case Field.Rotate(rt)      => Field.Rotate({ of = go(rt#of) | rt })
+            case Field.Ref(_)          => field
+            case Field.Tex(tx)         => Field.Tex({ name = f(tx#name) | tx })
+            case Field.Shift(sh)       => Field.Shift({ dx = go(sh#dx), dy = go(sh#dy), of = go(sh#of) })
+            case Field.TexBlur(bl)     => Field.TexBlur({ name = f(bl#name), amount = go(bl#amount) | bl })
+            case Field.Sampler(sm)     => Field.Sampler({ of = go(sm#of) | sm })
         }
 
     /// Spec の場を「bindings（前から）→ 色 → alpha」の順に並べる。texNames と、場を全部見る走査はこの並びを使う。
@@ -379,6 +455,16 @@ pub mod ShaderDoc {
             case Field.TexBlur(bl) => if (List.memberOf(bl#name, names)) names else bl#name :: names
             case _             => names
         }, acc, field), Nil, fieldsOf(spec)) |> List.reverse
+
+    /// Spec が読む (テクスチャ名, 補間) の組を「bindings（前から）→ 色 → alpha」の初出順・重複なしで列挙する。
+    /// GLSL の uniform 番号・GL の sampler unit 番号・描画依頼の texReads が全部この並びを使う。sampler を使わない Spec では
+    /// texNames と同じ並びに Nearest を添えた物になる（今ある Spec の GLSL を変えない）。
+    pub def texReads(spec: Spec): List[(String, FilterMode)] =
+        List.foldLeft((acc, field) -> foldFieldScoped((reads, filter, f) -> match f {
+            case Field.Tex(tx)     => if (List.memberOf((tx#name, filter), reads)) reads else (tx#name, filter) :: reads
+            case Field.TexBlur(bl) => if (List.memberOf((bl#name, filter), reads)) reads else (bl#name, filter) :: reads
+            case _                 => reads
+        }, FilterMode.Nearest, acc, field), Nil, fieldsOf(spec)) |> List.reverse
 
     /// この節が、子の場を自分の uv と違う uv で読むなら、その子（shift の dx・dy は今の uv で読むので入らない）。
     /// 場を足したらここへも 1 case 足す（wildcard を置かないのは、uv を曲げる場を足した時に黙らせないため）。
@@ -417,7 +503,15 @@ pub mod ShaderDoc {
             case Field.Ref(_)          => None
             case Field.Tex(_)          => None
             case Field.TexBlur(_)      => None
+            case Field.Sampler(_)      => None
         }
+
+    /// 負の指数の pow の底の下限（GLSL と CPU が同じ値を読む）。
+    pub def negPowFloor(): Float64 = 0.000001
+
+    /// 負の指数の pow の答えの上限。
+    /// WhyNot: 上切りしないと、底が小さく指数が -7 以下の所で GPU（float32）は inf、CPU（float64）は有限になって割れる。
+    pub def negPowCeil(): Float64 = 1000000.0
 
     /// taps を 1..64 に丸める（GLSL のループの上限と CPU の評価で同じ数を読む）。
     pub def blurTaps(taps: Int32): Int32 = Int32.max(1, Int32.min(64, taps))
@@ -427,6 +521,13 @@ pub mod ShaderDoc {
         fieldsOf(spec) |> List.exists(field -> foldField((found, f) -> match f {
             case Field.TexBlur(_) => true
             case _                => found
+        }, false, field))
+
+    /// Spec が割り算（BinOp.Div）を使うか（GLSL の sg_div を宣言するか）。
+    pub def usesDiv(spec: Spec): Bool =
+        fieldsOf(spec) |> List.exists(field -> foldField((found, f) -> match f {
+            case Field.Bin(bn) => found or bn#op == BinOp.Div
+            case _             => found
         }, false, field))
 
     def smoothstepF(lo: Float64, hi: Float64, x: Float64): Float64 =

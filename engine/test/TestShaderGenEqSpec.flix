@@ -72,6 +72,7 @@ mod TestShaderGenEqSpec {
     def cRotate(): Field = Field.Rotate({ cx = 0.5, cy = 0.5, turns = 0.25, rate = 0.1, of = f0() })
     def cRef(): Field = Field.Ref("a")
     def cTex(): Field = Field.Tex({ name = "a", chan = TexChan.R })
+    def cSampler(): Field = Field.Sampler({ filter = ShaderDoc.FilterMode.Linear, of = cTex() })
     def cShift(): Field = Field.Shift({ dx = f0(), dy = g0(), of = f0() })
 
     def sSolid(): Shade = Shade.Solid(col1())
@@ -179,13 +180,27 @@ mod TestShaderGenEqSpec {
         :: ("Rotate.rate",        cRotate(), Field.Rotate({ cx = 0.5, cy = 0.5, turns = 0.25, rate = 0.2, of = f0() }))
         :: ("Rotate.of",          cRotate(), Field.Rotate({ cx = 0.5, cy = 0.5, turns = 0.25, rate = 0.1, of = g0() }))
         :: ("Ref.name",           cRef(), Field.Ref("b"))
-        :: ("Tex.name",           cTex(), Field.Tex({ name = "b", chan = TexChan.R }))
+        :: ("Tex.name の並び",    Field.Bin({ op = BinOp.Add, a = cTex(), b = cTex() }),
+                                  Field.Bin({ op = BinOp.Add, a = cTex(), b = Field.Tex({ name = "b", chan = TexChan.R }) }))
         :: ("Tex.chan",           cTex(), Field.Tex({ name = "a", chan = TexChan.G }))
         :: ("Shift.dx",           cShift(), Field.Shift({ dx = h0(), dy = g0(), of = f0() }))
         :: ("Shift.dy",           cShift(), Field.Shift({ dx = f0(), dy = h0(), of = f0() }))
         :: ("Shift.of",           cShift(), Field.Shift({ dx = f0(), dy = g0(), of = h0() }))
+        :: ("Sampler.filter",     cSampler(), Field.Sampler({ filter = ShaderDoc.FilterMode.Nearest, of = cTex() }))
+        :: ("Sampler.of",         cSampler(), Field.Sampler({ filter = ShaderDoc.FilterMode.Linear, of = f0() }))
         :: ("ctor Const/Uv",      f0(), cUv())
         :: Nil
+
+    /// テクスチャの名前だけを別名に替えた Spec は等しい（GLSL に出るのは番号だけ）。Pass の中で読みを
+    /// `x@history` / `@missing:c` に書き換えた Spec と元の Spec が、同じ program を使い回せることの証拠。
+    @Test
+    def testRenamedTexStillEqual(): Unit \ Assert =
+        let spec: ShaderDoc.Spec = { name = "s", cycleRate = 0.0, bindings = Nil,
+            out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Rgb({ r = cTex(), g = Field.Tex({ name = "c", chan = TexChan.G }),
+                                                                     b = cTex() }),
+                                       alpha = Field.Const(1.0) }) };
+        let renamed = ShaderDoc.renameTex(n -> if (n == "a") "a@history" else "@missing:" + n, spec);
+        Assert.assertEq(expected = true, ShaderGen.eqSpec(spec, renamed))
 
     @Test
     def testFieldChangesBreakEquality(): Unit \ Assert =
@@ -284,6 +299,7 @@ mod TestShaderGenEqSpec {
         :: ("Ref",          eqF(cRef(), cRef()))
         :: ("Tex",          eqF(cTex(), cTex()))
         :: ("Shift",        eqF(cShift(), cShift()))
+        :: ("Sampler",      eqF(cSampler(), cSampler()))
         :: ("Solid",        eqSh(sSolid(), sSolid()))
         :: ("Ramp",         eqSh(sRamp(), sRamp()))
         :: ("Gradient",     eqSh(sGrad(), sGrad()))

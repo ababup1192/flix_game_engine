@@ -137,7 +137,7 @@
 - 生成したドット絵アトラス 1 枚ぶんの受け渡し。
   `pub type alias AtlasUpload = { texture = String, key = String, baked = PxSpriteAtlas.Baked }`
 - App の中身（欄の意味は右の // コメント）。ゲームからは読まず、ビルダー（addSystem / withView など）で組む。
-  `pub type alias Rec[w: Type, ef: Eff] = { init = Vec2.Vec2 -> w \ ef, startupSystems = List[w -> w \ ef], updateSystems = List[(Frame, w) -> w \ ef], reload = Option[(GameEngine.Key, w -> w \ {Fs.FileRead})], watch = List[(String, w -> w \ {Fs.FileRead})], view = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], passes = w -> List[Render.Pass] \ ef, fonts = List[String], camera = Option[w -> Vec2.Vec2 \ ef], zoom = Option[w -> Float64 \ ef], cameraBounds = Option[w -> Rect2.Rect2 \ ef], parallaxLayers = List[(Float64, (ViewCtx, w) -> List[Render.PlacedItem] \ ef)], hudView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], audio = { before = w, after = w } -> List[String] \ ef, sustained = w -> List[Sustain] \ ef, mixer = Option[w -> AudioMixer.Mixer \ ef], quit = (Frame, w) -> Bool \ ef, closeRequest = Option[w -> w \ ef], debug = Bool, debugView = Option[(String, w -> (List[GameEngine.Drawable], List[GameEngine.TileMapRenderCmd], List[GameEngine.PolygonRenderCmd]) \ ef)], worldDump = Option[(Rect2.Rect2, w) -> String \ ef], annotationContext = Option[w -> Annotate.Table \ ef], staticLayer = Option[{ key = w -> GameEngine.StaticKey, build = w -> List[Render.PlacedItem] }], tileLayers = Option[w -> List[TileLayerSpec]], spriteAtlases = w -> List[AtlasUpload], pixelSnap = w -> Float64, statusLine = Option[w -> String \ ef], remoteRender = Option[Unit -> List[String] \ IO], shot = Option[w -> String \ IO], remoteHandlers = List[(String, (Map[String, String], w) -> Result[String, w] \ {Fs.FileRead})], fixedStep = Option[Float64], clocks = List[(Float64, w) -> w], cursor = Option[w -> CursorSpec], fullscreen = Option[w -> Bool], outputs = List[Output[w]], starts = List[Start[w]], flow = Flow.Table[w], fingerprint = Option[w -> String] }`
+  `pub type alias Rec[w: Type, ef: Eff] = { init = Vec2.Vec2 -> w \ ef, startupSystems = List[w -> w \ ef], updateSystems = List[(Frame, w) -> w \ ef], reload = Option[(GameEngine.Key, w -> w \ {Fs.FileRead})], watch = List[(String, w -> w \ {Fs.FileRead})], view = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], passes = w -> Render.PassPlan \ ef, fonts = List[String], camera = Option[w -> Vec2.Vec2 \ ef], zoom = Option[w -> Float64 \ ef], cameraBounds = Option[w -> Rect2.Rect2 \ ef], parallaxLayers = List[(Float64, (ViewCtx, w) -> List[Render.PlacedItem] \ ef)], hudView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], audio = { before = w, after = w } -> List[String] \ ef, sustained = w -> List[Sustain] \ ef, mixer = Option[w -> AudioMixer.Mixer \ ef], quit = (Frame, w) -> Bool \ ef, closeRequest = Option[w -> w \ ef], debug = Bool, debugView = Option[(String, w -> (List[GameEngine.Drawable], List[GameEngine.TileMapRenderCmd], List[GameEngine.PolygonRenderCmd]) \ ef)], worldDump = Option[(Rect2.Rect2, w) -> String \ ef], annotationContext = Option[w -> Annotate.Table \ ef], staticLayer = Option[{ key = w -> GameEngine.StaticKey, build = w -> List[Render.PlacedItem] }], tileLayers = Option[w -> List[TileLayerSpec]], spriteAtlases = w -> List[AtlasUpload], pixelSnap = w -> Float64, statusLine = Option[w -> String \ ef], remoteRender = Option[Unit -> List[String] \ IO], shot = Option[w -> String \ IO], remoteHandlers = List[(String, (Map[String, String], w) -> Result[String, w] \ {Fs.FileRead})], fixedStep = Option[Float64], clocks = List[(Float64, w) -> w], cursor = Option[w -> CursorSpec], fullscreen = Option[w -> Bool], outputs = List[Output[w]], starts = List[Start[w]], flow = Flow.Table[w], fingerprint = Option[w -> String] }`
 - 初期 World だけを持つ空の App。絵はまだ無い（withView で繋ぐまで何も描かない）。
   `pub def make(init: w): App[w, ef]`
 - 初期 World を design 解像度（project.json の designWidth/Height）から組む入口。
@@ -154,6 +154,8 @@
   `pub def withView(v: (ViewCtx, w) -> List[Render.PlacedItem] \ ef, app: App[w, ef]): App[w, ef]`
 - 本編より先にレンダーターゲット（描いた結果を読み返せる描き込み先）へ描く列を
   `pub def withPasses(f: w -> List[Render.Pass] \ ef, app: App[w, ef]): App[w, ef]`
+- withPasses の、名前ごとのターゲットの作り方（倍率）も付ける形。描き出しは同じ PassPlan を
+  `pub def withPassPlan(f: w -> Render.PassPlan \ ef, app: App[w, ef]): App[w, ef]`
 - 既定フォント以外に使うフォントの名前を宣言する（project.json の fonts[].name と同じ字）。
   `pub def withFonts(names: List[String], app: App[w, ef]): App[w, ef]`
 - ゲーム 1 本の標準形を 1 つのレコードで宣言する入口（初学者向け）。
@@ -1980,7 +1982,21 @@
 - レンダーターゲット name の一部 src（ターゲット上の px 矩形）を、at を中心に size の
   `pub def blitRegion(spec: { name = String, design = Vec2.Vec2, src = Rect2.Rect2, at = Vec2.Vec2, size = Vec2.Vec2, z = Int32 }): PlacedItem`
 - Pass 1 枚を描き出し側の宣言（engine_tools の HeadlessRender.PassSpec と同形のレコード）へ
-  `pub def passSpecOf(textureInfoOf: String -> Option[GameEngine.TextureInfo] \ ef, p: Pass): { name = String, clear = RenderTarget.LoadOp, drawables = List[GameEngine.Drawable], polygons = List[GameEngine.PolygonRenderCmd] } \ ef`
+  `pub def passSpecOf(textureInfoOf: String -> Option[GameEngine.TextureInfo] \ ef, p: Pass): PassSpecRec \ ef`
+- 描き出し側の Pass 1 枚の宣言（HeadlessRender.PassSpec と同じ欄）。
+  `pub type alias PassSpecRec = { name = String, clear = RenderTarget.LoadOp, drawables = List[GameEngine.Drawable], polygons = List[GameEngine.PolygonRenderCmd], surfaces = List[ShaderSurface], scale = Float64 }`
+- Pass の計画を描き出し側の宣言の列へ。実機（App.withPassPlan）と同じ resolvePassReads を通し、
+  `pub def passSpecsOf(textureInfoOf: String -> Option[GameEngine.TextureInfo] \ ef, plan: PassPlan): { specs = List[PassSpecRec], issues = List[PassPlanIssue] } \ ef`
+- 本編より先に描く Pass の列と、名前ごとのターゲットの作り方をまとめた 1 つの宣言。
+  `pub type alias PassPlan = { passes = List[Pass], targets = Map[String, RenderTarget.Descriptor] }`
+- 作り方を全部既定にした計画。
+  `pub def passPlan(passes: List[Pass]): PassPlan`
+- 計画の中の、読み方・宣言の問題（resolvePassReads が知らせる物）。payload は (Pass の名前, 読んだ名前)。
+  `pub enum PassPlanIssue with Eq, ToString { case ReadsLaterPass(String, String) case ReadsUndeclaredTarget(String, String) case DuplicatePass(String) case ReservedPassName(String) case UnknownDescriptor(String) }`
+- Pass の名前 → このコマで使うターゲットの倍率（RenderTarget.scaleOf で範囲に収めた値）。
+  `pub def targetScaleOf(plan: PassPlan, name: String): Float64`
+- Pass の items の読みを書き換えた計画と、問題の一覧。
+  `pub def resolvePassReads(knownTargets: Set[String], plan: PassPlan): { plan = PassPlan, issues = List[PassPlanIssue] }`
 - draw list 全体を描画命令へ（zIndex 順は render_gl が stable sort する）。
   `pub def draw(items: List[PlacedItem]): (List[GameEngine.Drawable], List[GameEngine.PolygonRenderCmd])`
 - `draw` の atlas 注入版。Sprite の region UV を textureInfoOf で解決しつつ、

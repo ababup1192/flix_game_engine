@@ -269,7 +269,7 @@ pub mod SoftRaster {
         g.setColor(awtColor(req#background, 1.0f32));
         g.fillRect(0i32, 0i32, w, h);
         g.dispose();
-        drawAllInto(image, req, surfaces, extraFonts, fontAntialias, extraImages, warnLog, cache);
+        drawAllInto(image, req, surfaces, extraFonts, fontAntialias, extraImages, warnLog, cache, None);
         image
 
     /// pass（レンダーターゲット）描き出し用の入口。req#background は使わない — 塗るかどうか
@@ -278,18 +278,18 @@ pub mod SoftRaster {
     /// 前フレームの中身は残像の証拠としてそのまま残したい）、None なら全画素透明から始める。
     pub def renderPassImage(req: RasterReq, base: Option[BufferedImage],
                             extraImages: Map[String, BufferedImage]): BufferedImage \ IO =
-        renderPassImageFonts(req, base, Map.empty(), Map.empty(), extraImages)
+        renderPassImageFonts(req, base, Nil, Map.empty(), Map.empty(), extraImages)
 
-    /// 追加フォントも使える renderPassImage（pass の中の字を、本編と同じ本で描く）。
-    pub def renderPassImageFonts(req: RasterReq, base: Option[BufferedImage], extraFonts: Map[String, FontEntry],
-                                 fontAntialias: FontAntialias,
+    /// 追加フォントとシェーダー面も使える renderPassImage（pass の中の字を、本編と同じ本で描く）。
+    pub def renderPassImageFonts(req: RasterReq, base: Option[BufferedImage], surfaces: List[SurfaceCmd],
+                                 extraFonts: Map[String, FontEntry], fontAntialias: FontAntialias,
                                  extraImages: Map[String, BufferedImage]): BufferedImage \ IO =
         HeadlessFont.ensureHeadless();
         let image = match base {
             case Some(b) => toArgb(b)
             case None    => { let (w, h) = outSize(req); new BufferedImage(w, h, 2i32) }
         };
-        drawAllInto(image, req, Nil, extraFonts, fontAntialias, extraImages, freshTexWarnLog(), None);
+        drawAllInto(image, req, surfaces, extraFonts, fontAntialias, extraImages, freshTexWarnLog(), None, None);
         image
 
     /// 出力ピクセル寸法（design × scale、最低 1px）。
@@ -299,10 +299,12 @@ pub mod SoftRaster {
 
     /// 描画本体（z 合流 + 種類ごとの分岐）。背景を塗る/塗らないの違いは入口関数側に置き、
     /// ここを二重実装しない — 分岐の式が 2 か所に割れると、片方だけ直して絵が食い違う。
+    /// texels = 縮んだターゲットへ拾う時のテクセル寸法（Some なら面は「その画素を拾うテクセルの点」で評価し、拾われない画素は飛ばす）。
     def drawAllInto(image: BufferedImage, req: RasterReq, surfaces: List[SurfaceCmd],
                     extraFonts: Map[String, FontEntry], fontAntialias: FontAntialias,
                     extraImages: Map[String, BufferedImage],
-                    warnLog: TexWarnLog, cache: Option[TextureCache]): Unit \ IO = region rc {
+                    warnLog: TexWarnLog, cache: Option[TextureCache],
+                    texels: Option[(Int32, Int32)]): Unit \ IO = region rc {
         let sf = Int32.toFloat64(req#scale);
         let g: Graphics2D = image.createGraphics();
         applyQualityHints(g, hintsOf(req));
@@ -325,7 +327,7 @@ pub mod SoftRaster {
             |> List.flatMap(sc -> ShaderDoc.texNames(sc#spec))
             |> List.distinct;
         let texEnv = usedTexNames |> List.foldLeft((acc, name) -> {
-            match Map.get(name, textures) {
+            match Map.get(texelsName(name), textures) |> Option.withDefault(default = Map.get(name, textures)) {
                 case Some(img) => Map.insert(name, texDataOf(img), acc)
                 case None =>
                     let warned = Ref.get(warnLog);
@@ -368,7 +370,7 @@ pub mod SoftRaster {
                 else
                     blendedDraw(image, sf, hintsOf(req), p#blend, p#clip, polygonAabb(req#design, p),
                                 gs -> drawPolygon(rc, gs, sf, p))
-            case RItem.RSurf(s) => drawSurface(image, sf, texEnv, s)
+            case RItem.RSurf(s) => drawSurface(image, sf, texEnv, texels, s)
         }, sorted);
         g.dispose()
     }
@@ -381,7 +383,7 @@ pub mod SoftRaster {
     /// 画素は shadeAll でコアの数だけ並べて評価する。
     /// mask が非空なら「どれかの多角形の内側」の画素だけ塗る（GL のステンシル抜きと同じ意図）。
     def drawSurface(image: BufferedImage, sf: Float64, texEnv: Map[String, ShaderEval.TexData],
-                    s: SurfaceCmd): Unit \ IO = region rc {
+                    texels: Option[(Int32, Int32)], s: SurfaceCmd): Unit \ IO = region rc {
         let dw = image.getWidth();
         let dh = image.getHeight();
         let (rx0, ry0, rx1, ry1) = DrawCmd.clipPixels({ scaleX = sf, scaleY = sf }, s#rect);
@@ -401,21 +403,28 @@ pub mod SoftRaster {
             let (ox, oy, sw, sh, time) = onceOutsideLoop(rc,
                 (s#rect#position#x, s#rect#position#y, s#rect#size#x, s#rect#size#y, s#time));
             let blend = onceOutsideLoop(rc, s#blend);
+            let sample = onceOutsideLoop(rc, texels |> Option.map(t -> {
+                let (tw, th) = t;
+                (Int32.toFloat64(tw) / Int32.toFloat64(dw), Int32.toFloat64(th) / Int32.toFloat64(dh))
+            }));
             // 下地の画素（読むだけ）。1 画素の答えは下地と面の式だけで決まる純関数なので、
             // どの順・どのスレッドで評価しても同じ画素になる。
             let dstPixels = Array.toVector(buf);
             let pixelOf = i -> {
                 let px = Int32.remainder(i, w) + x0;
                 let py = i / w + y0;
-                // 出力ピクセル中心 → design px → rect 内 uv（0..1）。
-                let dx = (Int32.toFloat64(px) + 0.5) / sf;
-                let dy = (Int32.toFloat64(py) + 0.5) / sf;
+                // 出力ピクセル中心 → design px → rect 内 uv（0..1）。縮んだターゲットへ拾う時は、この画素を拾う
+                // テクセルの中心（GL がそのテクセルを塗る点）で評価する。
+                let (pickedX, sampleX) = samplePoint(px, sample |> Option.map(fst), false);
+                let (pickedY, sampleY) = samplePoint(py, sample |> Option.map(snd), true);
+                let dx = sampleX / sf;
+                let dy = sampleY / sf;
                 let dst = Vector.get(i, dstPixels);
                 let inside = match maskPolys {
                     case Nil => true
                     case _   => insideMask(maskPolys, { x = dx, y = dy })
                 };
-                if (not inside) dst
+                if (not inside or not pickedX or not pickedY) dst
                 else {
                     let (r, g, b, a0) = ShaderEval.evalCompiled(compiled, (dx - ox) / sw, (dy - oy) / sh, time);
                     let a = Float64.max(0.0, Float64.min(1.0, a0));
@@ -425,6 +434,71 @@ pub mod SoftRaster {
             image.setRGB(x0, y0, w, h, shadeAll(n, pixelOf), 0i32, w)
         }
     }
+
+    /// 画素 p（1 軸）の評価点と、その画素が縮んだターゲットへ拾われるか。ratio = テクセル / 画素（None は縮めない）。
+    /// p を拾うテクセル（pickedPixel の式）があれば、そのテクセルの中心で評価する。
+    def samplePoint(p: Int32, ratio: Option[Float64], vertical: Bool): (Bool, Float64) =
+        match ratio {
+            case None => (true, Int32.toFloat64(p) + 0.5)
+            case Some(k) =>
+                let i = Float64.floor((Int32.toFloat64(p) + 0.5) * k);
+                let center = (i + 0.5) / k;
+                (pickedPixel(center, vertical) == Int32.toFloat64(p), center)
+        }
+
+    /// テクセルの中心 center（design px）を塗る画素。横は floor・縦は「ちょうど画素の境目なら上の画素」。
+    /// WhyNot: 縦も floor にしない — GL のターゲットは上下逆に格納されるので、標本点がちょうど縁に乗った時に
+    /// 含めるのは design の下の縁（窓座標で上の縁）の側になる。floor だと奇数座標の縁で 1 行ずれる（gl_parity の passHalf）。
+    def pickedPixel(center: Float64, vertical: Bool): Float64 =
+        if (vertical) Float64.ceil(center) - 1.0 else Float64.floor(center)
+
+    /// tex 場が読む縮んだターゲットのテクセルの絵の名前（sprite で貼る design 寸法の絵と並べて images に入れる）。
+    /// '@' は Pass の名前に使えない（Render.resolvePassReads）ので、ゲームの名前と混ざらない。
+    pub def texelsName(name: String): String = name + "@texels"
+
+    /// img を w × h へ最近傍で写す。広げるとき（GL が Nearest で貼る式）は元の (floor((x+0.5)·元幅/w), floor((y+0.5)·元高/h))。
+    /// 縮めるとき（GL が縮んだターゲットのテクセルを塗る点を拾う）は縦だけ pickedPixel の「境目なら上」。往復で元に戻る。
+    pub def resampleNearest(img: BufferedImage, w: Int32, h: Int32): BufferedImage \ IO = region rc {
+        let sw = img.getWidth();
+        let sh = img.getHeight();
+        let src: Array[Int32, rc] = Array.empty(rc, sw * sh);
+        discard img.getRGB(0i32, 0i32, sw, sh, src, 0i32, sw);
+        let pick = (o, n, srcN, vertical) -> {
+            let center = (Int32.toFloat64(o) + 0.5) * Int32.toFloat64(srcN) / Int32.toFloat64(n);
+            let at = if (n < srcN) pickedPixel(center, vertical) else Float64.floor(center);
+            Int32.max(0, Int32.min(srcN - 1, Float64.tryToInt32(at) |> Option.getWithDefault(0)))
+        };
+        let out: Array[Int32, rc] = Array.empty(rc, w * h);
+        List.range(0, h) |> List.forEach(y -> {
+            let sy = pick(y, h, sh, true);
+            List.range(0, w) |> List.forEach(x -> Array.put(Array.get(sy * sw + pick(x, w, sw, false), src), y * w + x, out))
+        });
+        let dest = new BufferedImage(w, h, 2i32);
+        dest.setRGB(0i32, 0i32, w, h, out, 0i32, w);
+        dest
+    }
+
+    /// 縮んだターゲット（テクセル寸法 texels）の pass を描き出す。design 解像度で描いてから GL がテクセルを塗る点で拾う
+    /// （面はその点で評価する）。base は前の中身（テクセル寸法）・background は Clear の色（None なら塗らない）。戻りはテクセル寸法。
+    pub def renderPassImageScaled(req: RasterReq, base: Option[BufferedImage], background: Option[Color],
+                                  surfaces: List[SurfaceCmd], extraFonts: Map[String, FontEntry],
+                                  fontAntialias: FontAntialias, extraImages: Map[String, BufferedImage],
+                                  texels: (Int32, Int32)): BufferedImage \ IO =
+        HeadlessFont.ensureHeadless();
+        let (w, h) = outSize(req);
+        let image = match base {
+            case Some(b) => toArgb(resampleNearest(b, w, h))
+            case None    => new BufferedImage(w, h, 2i32)
+        };
+        background |> Option.forEach(c -> {
+            let g: Graphics2D = image.createGraphics();
+            g.setColor(awtColor(c, 1.0f32));
+            g.fillRect(0i32, 0i32, w, h);
+            g.dispose()
+        });
+        drawAllInto(image, req, surfaces, extraFonts, fontAntialias, extraImages, freshTexWarnLog(), None, Some(texels));
+        let (tw, th) = texels;
+        resampleNearest(image, tw, th)
 
     /// 画素ループの外で 1 回だけ計算した値を、そのまま返す。
     /// WhyNot: 面ごとの値を `let x = 式` で直に置かない。Flix 0.78 の最適化は、純粋な let の値が

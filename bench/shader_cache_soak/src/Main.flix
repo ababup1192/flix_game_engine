@@ -27,7 +27,7 @@ mod ShaderCacheSoak {
         { cycleRate = 0.5 + Int32.toFloat64(i) / 1000.0 | base }
 
     def surfaceCmd(prog: GpuHandle.ShaderProgram): ShaderEffect.ShaderRenderCmd =
-        { program = prog, texNames = Nil,
+        { program = prog, texReads = Nil,
           rect = { position = { x = 0.0, y = 0.0 }, size = { x = 32.0, y = 32.0 } },
           mask = Nil, time = 0.0, zIndex = 0, blend = DrawCmd.BlendMode.Normal, alpha = 1.0 }
 

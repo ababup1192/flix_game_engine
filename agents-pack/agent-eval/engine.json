@@ -3,6 +3,18 @@
   "note": "エンジン共通のお題（どのゲームの足元でも同じ道具が当たるべき物）。bin/fge agent-eval が読む（make agent-eval）。prompt は依頼の言葉だけにし、道具の名前を入れない。expect は答えに出てほしい道具（1 つ 1 点）、avoid は古い書き方（打ち消しの無い行に出たら 1 点引く）。新しい仕組みを入れた人は、早見表の 1 行と一緒にここへお題を 1 本足す。 avoid の正規表現は、ゲームに実在する名前（bgmFightIntro など）や道具の説明（use-engine が local.mk を書き換える）に当てない。今のコードや道具を説明しただけで減点になる。",
   "tasks": [
     {
+      "id": "half-res-bloom",
+      "prompt": "明るい所だけを抜き出して広くにじませる光のにじみ（ブルーム）を、画面全体に掛けたい。重くならないよう、にじませる所は画面より小さい解像度で計算して、なめらかに引き伸ばして足したい",
+      "expect": [
+        { "re": "withPassPlan|passPlan", "why": "App.withPassPlan / Render.passPlan" },
+        { "re": "RenderTarget\\.Descriptor|defaultDescriptor|scale\\s*=\\s*0\\.", "why": "RenderTarget.Descriptor の scale" },
+        { "re": "Sampler|\"sampler\"|FilterMode\\.Linear", "why": "ShaderDoc の sampler（Linear）" }
+      ],
+      "avoid": [
+        { "re": "Render\\.sprite\\([^)]*\\)\\s*\\|>\\s*Render\\.scaled", "why": "縮んだ pass を sprite で引き伸ばす（Nearest の塊になる）" }
+      ]
+    },
+    {
       "id": "view-input",
       "prompt": "主人公の頭の上に体力のゲージを描きたい。体力の値は World にある。描く関数の引数はどうすればいい？ 足した後、この作り方が崩れていないことも確かめたい",
       "expect": [

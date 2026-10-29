@@ -816,7 +816,11 @@ mod RenderFrame {
         let surfaces     = args#surfaces;
         let drawSurface  = args#drawSurface;
         if (fbW > 0 and fbH > 0) {
-            let (vpX, vpY, vpW, vpH) = calcViewport(fbW, fbH, designW, designH);
+            // レンダーターゲットは design 全面をテクセル全面へ写す（縦横の倍率が少し違ってよい — uv で読む限りずれない）。
+            let (vpX, vpY, vpW, vpH) = match args#targetClear {
+                case None    => calcViewport(fbW, fbH, designW, designH)
+                case Some(_) => (0, 0, fbW, fbH)
+            };
             match args#targetClear {
                 case None =>
                     // 画面: 黒帯を含む全面を黒 → design 領域だけ clearColor の 2 段階の clear。
@@ -831,7 +835,7 @@ mod RenderFrame {
                     GL11.glClear(GL11.GL_COLOR_BUFFER_BIT);
                     GL11.glDisable(GL11.GL_SCISSOR_TEST)
                 case Some(op) =>
-                    // レンダーターゲット: 全面が design なので黒帯は無い。前の中身の始末は
+                    // レンダーターゲット: 全面に写すので黒帯は無い。前の中身の始末は
                     // op の 3 択（RenderTarget.LoadOp の doc を参照）。
                     GL11.glViewport(vpX, vpY, vpW, vpH);
                     match op {
