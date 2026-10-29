@@ -48,6 +48,14 @@
       "to1": "fc00",
       "from2": "fc38",
       "to2": "fc10"
+    },
+    "brown": {
+      "from1": "fc00",
+      "to1": "fc07",
+      "from2": "fc10",
+      "to2": "fc17",
+      "from3": "fc0C",
+      "to3": "fc06"
     }
   }
 }

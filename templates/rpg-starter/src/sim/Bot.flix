@@ -94,11 +94,13 @@ mod Bot {
             |> Option.withDefault(default = stepsOf(res) |> List.findMap(step -> if (step#done(w)) None else step#goal(w)))
             |> Option.getWithDefault(Goal.Go("village", Aim.Talk("chief_spring")))
 
-    /// 道筋より先にする事: ふくろに付けられる良い装備 → 村の外で HP が 60% 未満なら回復 → 村で HP が 60% 未満でお金があれば宿。
+    /// 道筋より先にする事: ふくろに付けられる良い装備 → 村の外で倒れた仲間が居れば起こしに行く（reviveOf）→ 村の外で HP が 60% 未満なら回復
+    /// → 村で HP が 60% 未満でお金があれば宿。
     def interruptOf(res: Res.Res, w: World.World): Option[Goal] =
         let inVillage = Set.memberOf(hereOf(w), villageMaps());
-        let inn = inVillage and isTired(res, w) and Bag.goldOf(w#bag) >= ShopsDoc.rec(res#shops)#innPrice;
+        let inn = inVillage and isTired(res, w) and canPayInn(res, w);
         upgradeOf(res, w)
+            |> Option.withDefault(default = if (inVillage or not isAnyoneDown(w)) None else reviveOf(res, w))
             |> Option.withDefault(default = if (inVillage) None else healOf(res, w))
             |> Option.withDefault(default = if (inn) Some(Goal.Go("inn", Aim.Talk("innkeeper"))) else None)
 
@@ -178,6 +180,22 @@ mod Bot {
     def healSpellOf(res: Res.Res, m: Member.Member, party: Party.Party): Option[SpellsDoc.SpellId] =
         Party.spellsOf(res#party, res#spells, m, party) |> List.find(id -> SpellsDoc.spellOf(res#spells, id)
             |> Option.exists(s -> s#field and s#aim == SpellsDoc.Aim.Ally and Party.mpOf(m, party) >= s#mp))
+
+    /// 倒れた仲間を起こせる所へ: ミナの父（<<heal>>。依頼を受けている間だけ B3 に居る）が出入口の数で宿より近ければ父、ほかは宿（お金があれば）。
+    /// WhyNot: いつも宿へ戻らない — 坑道の奥からだと 1 周が 10 分以上延び、人もそうは遊ばない。
+    def reviveOf(res: Res.Res, w: World.World): Option[Goal] =
+        let here = hereOf(w);
+        let hops = map -> BotRoute.hopsOf(res, here, map) |> Option.getWithDefault(Int32.maxValue());
+        let fatherHere = Progress.rec(w#progress)#quest == Quest.Quest.Accepted;
+        if (fatherHere and hops(doorMap()) < hops("inn")) Some(Goal.Go(doorMap(), Aim.Talk("mina_father")))
+        else if (canPayInn(res, w)) Some(Goal.Go("inn", Aim.Talk("innkeeper")))
+        else None
+
+    def canPayInn(res: Res.Res, w: World.World): Bool = Bag.goldOf(w#bag) >= ShopsDoc.rec(res#shops)#innPrice
+
+    /// 倒れている仲間が居るか。
+    def isAnyoneDown(w: World.World): Bool =
+        Party.statsList(w#party) |> List.exists(match (_, s) -> s#hp <= 0)
 
     /// 誰かの HP が最大の 60% 未満か。
     def isTired(res: Res.Res, w: World.World): Bool =

@@ -1,0 +1,257 @@
+# 紹介の動画（make video → debug/video/rune.mp4）の手順。1 周を 60〜90 秒に縮めて見せる。
+# 撮るのは mark in_<名前> から out_<名前> の間だけ（VideoRender が並んだ順につなぐ）。間の手は流すが動画に入れない。
+# 会話は「少し読ませてから出し切る → 読む間 → 送る」の順で押す（文字送りは rules.cps = 1 秒 30 字。0.3 秒で出し切らない短い行も無い）。
+# 歩く所は steps=999 で雑魚に出会わない。make flow FLOW=e2e/video.flow でも同じ手で流れる。
+fps 60
+
+# タイトル → はじめから → 村の泉の前から南へ下りて東へ。
+start title
+expect scene=Title
+mark in_title
+wait 2.2
+tap confirm
+until scene=Field max 3
+until layer=Walking max 2
+expect map=village&x=7&y=8
+wait 0.4
+hold down
+until y=12 max 3
+release down
+until layer=Walking max 1
+hold right
+until x=13 max 4
+release right
+wait 0.4
+mark out_title
+
+# 村長の家で依頼を受ける。
+start talk node=ChiefQuest map=chief_house x=7 y=5 facing=up
+expect talk=ChiefQuest&quest=none
+mark in_quest
+wait 1.0
+tap confirm                  # 出し切る
+wait 1.6
+tap confirm                  # はい / いいえ を出す
+expect choice
+wait 0.8
+tap confirm                  # はい
+expect quest=accepted
+wait 0.3
+tap confirm                  # 出し切る（おお やってくれるか）
+wait 1.1
+tap confirm
+wait 0.4
+tap confirm                  # 出し切る（てつけと やくそう）
+wait 1.6
+mark out_quest
+
+# 鍛冶屋の前でミナが加わる。
+start talk node=Mina map=smithy x=3 y=6 facing=up quest=accepted
+expect talk=Mina
+mark in_join
+wait 0.8
+tap confirm                  # 出し切る
+wait 1.4
+tap confirm
+wait 0.3
+tap confirm                  # 出し切る（ミナが なかまに くわわった！）
+expect party=luka,mina
+wait 1.4
+tap confirm                  # 窓を閉じる
+expect layer=Walking
+wait 0.5
+mark out_join
+
+# ワールドマップ: 3 人で村の印の北から橋を渡り、坑道の入口から B1 へ。
+start field map=world x=9 y=18 facing=up party=luka,mina,toto quest=accepted steps=999
+mark in_world
+wait 0.4
+hold up
+until y=13 max 5
+release up
+until layer=Walking max 1
+hold right
+until x=20 max 6
+release right
+until layer=Walking max 1
+hold up
+until map=mine_b1 max 8
+release up
+until layer=Walking max 2
+expect x=3&y=27
+wait 0.8
+mark out_world
+
+# 坑道 B1: レバーを引いた後のトロッコに乗り、分かれ目で南の線へ。
+start field map=mine_b1 x=8 y=16 facing=right party=luka,mina,toto quest=accepted steps=999 flags=b1_switch trail=7:16,6:16
+mark in_cart
+wait 0.5
+tap confirm
+expect talk=Cart
+wait 0.4
+tap confirm                  # 出し切る
+wait 0.8
+tap confirm                  # はい / いいえ を出す
+expect choice
+wait 0.5
+tap confirm                  # はい
+until layer=Busy max 1
+until layer=Walking max 4
+expect x=24&y=20
+wait 0.6
+mark out_cart
+
+# 坑道 B2: 暗い迷路でたいまつを灯す。
+start field map=mine_b2 x=33 y=26 facing=left party=luka,mina,toto quest=accepted steps=999 lv=6 items=taimatsu:1
+mark in_torch
+wait 0.8
+tap cancel
+expect layer=Menu
+wait 0.4
+tap down
+wait 0.25
+tap right
+wait 0.3
+tap confirm
+wait 0.4
+tap confirm
+expect layer=Notice&bag=
+wait 0.3
+tap confirm                  # 出し切る
+wait 1.0
+tap confirm                  # 閉じる
+expect layer=Walking
+wait 0.8
+mark out_torch
+
+# 出会いとコマンドバトル: ルカとミナは たたかう・トトは じゅもん の ファイア。勝ってフィールドへ戻るまで。
+start battle foes=koke,koumori,goblin map=mine_b1 x=4 y=16 facing=right party=luka,mina,toto quest=accepted lv=5
+expect scene=Battle&layer=BattleMessage
+mark in_battle
+wait 1.4                     # あらわれた（伝言は rules.messageWait の後に送れる）
+drive battle until layer=BattleChoose max 5
+expect page=Commands
+wait 0.5
+tap confirm                  # ルカ: たたかう
+wait 0.3
+tap confirm                  # 先頭の敵
+wait 0.4
+tap confirm                  # ミナ: たたかう
+wait 0.3
+tap confirm
+wait 0.4
+tap down                     # トト: じゅもん
+wait 0.3
+tap confirm
+expect page=SpellList
+wait 0.4
+tap confirm                  # ファイア
+expect page=SpellTarget
+wait 0.3
+tap confirm
+expect page=
+drive battle until scene=Field max 40
+wait 0.6
+mark out_battle
+
+# ボス: B3 の開いた扉の奥のジェムイーターに話しかけて戦う。初めの 1 ターンだけを見せ、勝つまでは流すが撮らない。
+start field map=mine_b3 x=16 y=6 facing=up party=luka,mina,toto quest=accepted steps=999 lv=10 opened=b3_door
+mark in_boss
+wait 0.4
+hold up
+until y=5 max 2
+release up
+wait 0.4
+tap confirm
+expect talk=Boss
+wait 0.4
+tap confirm                  # 出し切る
+wait 1.2
+tap confirm
+wait 0.4
+tap confirm                  # 出し切る（ミナ）
+wait 1.4
+tap confirm
+wait 0.3
+tap confirm                  # 出し切る（トト）
+wait 1.0
+tap confirm                  # 閉じて戦う
+until scene=Battle max 3
+drive battle until layer=BattleChoose max 10
+wait 0.5
+tap confirm                  # ルカ: たたかう
+wait 0.25
+tap confirm
+wait 0.3
+tap confirm                  # ミナ: たたかう
+wait 0.25
+tap confirm
+wait 0.3
+tap down                     # トト: じゅもん → ファイア
+wait 0.25
+tap confirm
+wait 0.3
+tap confirm
+wait 0.25
+tap confirm
+drive battle until layer=BattleChoose max 30
+wait 0.4
+mark out_boss
+drive battle until talk=BossWon max 300
+expect scene=Field&quest=bossdown&map=mine_b3
+mark in_bosswon
+wait 0.4
+tap confirm                  # 出し切る（くずれおちた）
+wait 1.0
+tap confirm
+wait 0.4
+tap confirm                  # 出し切る（みずが ふきだした）
+wait 1.4
+tap confirm
+wait 0.4
+tap confirm                  # 出し切る（ミナ）
+wait 1.2
+mark out_bosswon
+tap confirm
+tap confirm                  # ミナ
+tap confirm
+tap confirm                  # あとにした
+tap confirm                  # 閉じて暗転
+until map=world max 3
+until layer=Walking max 2
+
+# 帰村と報告: 泉に水が戻った村で村長に報告し、暗転してエンディングへ。
+start talk node=ChiefReport map=village x=8 y=5 facing=left party=luka,mina,toto quest=bossdown gold=100 trail=9:5,10:5
+expect talk=ChiefReport
+mark in_report
+wait 0.8
+tap confirm                  # 出し切る（いずみに みずが もどったぞ）
+wait 1.4
+tap confirm
+wait 0.4
+tap confirm                  # 出し切る（かいぶつを たおして）
+wait 1.0
+tap confirm                  # <<quest report>>
+expect quest=reported
+wait 0.4
+tap confirm                  # 出し切る（いずみに みずが もどった！）
+wait 1.6
+mark out_report
+tap confirm
+tap confirm                  # おれい
+tap confirm
+tap confirm                  # わきつづける
+tap confirm                  # 閉じて暗転
+until scene=Ending max 3
+
+# エンディング: 字の流れ始めと、流れ切った後の決定でタイトルへ戻る所。
+mark in_ending
+wait 5.0
+mark out_ending
+wait 33.0
+mark in_theend
+wait 5.0                     # 入ってから 43 秒 = rules.creditSeconds（42 秒）を流し切った後
+tap confirm
+until scene=Title max 3
+wait 1.6
+mark out_theend

@@ -178,6 +178,18 @@
       "phase": 1,
       "act": "sleep",
       "weight": 1
+    },
+    {
+      "foe": "oyabunmogu",
+      "phase": 1,
+      "act": "attack",
+      "weight": 3
+    },
+    {
+      "foe": "oyabunmogu",
+      "phase": 1,
+      "act": "sweep",
+      "weight": 1
     }
   ]
 }

@@ -1,9 +1,9 @@
 # このゲーム固有の設計原則
 
 王道 RPG のテンプレート「ルーネの泉」。山あいの湖の村から依頼を受け、仲間と水晶の坑道（3 階層）へ向かい、
-ボスを倒して帰ると泉がまた湧く。実装の道筋は `docs/PLAN.md`（フェーズ P1〜P8）、絵の設計は `docs/ART_BRIEF.md`。
-いまは P7 まで（はじめからエンディングまで通して遊べる）と P8 の音（効果音・曲 6 本・mixer）・つり合いと長さとクレジット（`docs/balance.md`）。残りの仕上げは P8。遊べる物の並びは `docs/PLAN.md` の 7 節の頭。
-規則の読み始めは `src/World.flix` の冒頭の図。
+ボスを倒して帰ると泉がまた湧く。完成（P8 まで: はじめからエンディングまで通して遊べ、音・つり合い・紹介の動画まで入っている）。
+設計は `docs/DESIGN.md`、つり合いの最終の数は `docs/balance.md`、絵の設計は `docs/ART_BRIEF.md`、作った順とテストプレイの指摘は `docs/history.md`。
+人向けの入口（遊び方・make の口・フォルダの地図）は `README.md`。規則の読み始めは `src/World.flix` の冒頭の図。
 
 ## このゲームの早見表（やりたいこと → どこを触るか）
 
@@ -56,8 +56,7 @@ case を足して `make check` を流すと、触る所をコンパイラが並�
 | 読む物（sign・石碑） | `objects` に `sign`（`node`）。調べると会話（番をする者と違い、消えない） |
 | 暗いマップ・たいまつ | マップ Doc の `dark`、見える広さは `rules.darkRadius / torchRadius`、たいまつは items の `lightSteps`（`WorldMenu.lightTorch`・残りは `FieldRec#light`。墨は `FieldScreen.darkness` が `ZOrder.Layer.Dark` に） |
 | 落とし穴 | 床の文字のマスに `exits` を 1 行（行き先は別の部屋）と、絵は `props` の `floor_crack`（flat）。bot は目的でない出入口を踏まない |
-| マップごとの出会いの歩数 | マップ Doc の `minSteps / maxSteps`（両方書く。無ければ rules。`WorldField.drawSteps`） |
-| 出会いの組・歩数 | マップ Doc の `encounter` と `rules.minSteps / maxSteps`（マップの `minSteps / maxSteps` が先。数えるのは `WorldField.countStep`） |
+| 出会いの組・歩数 | 組はマップ Doc の `encounter`。歩数はマップ Doc の `minSteps / maxSteps`（両方書く。無ければ `rules.minSteps / maxSteps`。引くのは `WorldField.drawSteps`・数えるのは `WorldField.countStep`） |
 | 地図の 1 マス幅の縁を避ける | 森（`&`）・水（`~`）はどこも 2 マス幅以上にする |
 
 ### 会話と進み具合
@@ -131,6 +130,7 @@ case を足して `make check` を流すと、触る所をコンパイラが並�
 | 描き出す場面を足す | `SceneRender.shotNames` / `worldOf` と Makefile の `SHOTS` に足す（場面を進めるのは `Drive.play` でキーを流す） |
 | テストプレイ（bot・つり合い） | `make bot`（`Bot.goalOf` の表）・`make balance`（`BalanceSim.sectionTable`。区間のふくろも書く）。道筋の表は `Bot`・道の計算は `BotRoute`・戦いの方針は `BotBattle.battlePlans` の 1 か所（BalanceSim も同じ物を回す。ボスの行の見比べは `BotBattle.attackOnlyPlans`）。依存は Bot → BotRoute・BotBattle の一方通行。流れを変えたら `Bot.goalOf` も直す。最終の数は `docs/balance.md` に写す（debug/ は git に入らない）。岩の部屋は押す手を `Bot.rockPlanOf` に、トロッコとレバーは歩いて着けない時に `BotRoute.detourOf` が自分で選ぶ。1 周の人の目安はレポートの「人の目安」（歩き + 戦い × 33 秒 + ウィンドウ × 3 秒） |
 | 描き出しの場面の作り方 | どの場面も `SceneRender.worldOf` で Starts から組んで決まった手（`Drive.play`・`confirmTimes`・`playSeconds`）を進めた World を、実機と同じ `View.frame` / `hud` で描く（直に組んだ絵の場面は無い） |
+| 紹介の動画（`make video`） | 手は `e2e/video.flow`（区間ごとに `start` で始め直し、撮るのは `mark in_<名前>` から `mark out_<名前>` の間だけ）。区間を足す・替えるのはこの flow だけ（`make flow FLOW=e2e/video.flow` で手が通るかを先に見る）。描くのは `VideoRender`（`SceneRender.worldItems` と同じ絵）・出力は `debug/video/rune.mp4` |
 | 通しの手を流し直す | `make bot` の 1 本目が `debug/bot/playthrough.flow` を書く（区間の頭ごとに `mark` と `expect`）。`make flow FLOW=debug/bot/playthrough.flow` でタイトルからエンディングまで同じ指紋で流れる（bot の 1 フレームはナノ秒に丸めた 1/60 秒 = `BotRun.dt`） |
 | 古い書き方を止める | 1 行の正規表現は `bin/lint-rules/forbid.local.json`、型と呼び出しの向きは `lint/rules.flix`（`make lint-flixlint`） |
 

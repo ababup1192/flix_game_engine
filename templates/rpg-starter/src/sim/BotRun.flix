@@ -14,19 +14,19 @@ mod BotRun {
     type alias Run = Resources.With[Res.Res, World.World]
 
     /// 1 本の結果。done = エンディングに着いた・reason = 止めた理由・playSeconds = 遊びの時計・battles = 区間（sectionOf）ごとの戦った数・
-    /// lvAt = 区間に初めて入った時のルカの Lv・wipes = 全滅したマップ（ボス戦は boss）・lastLv = 終わった時の Lv（仲間ごと）・gold = 終わった時のお金・
+    /// lvAt = 区間に初めて入った時の仲間の Lv（partyLvOf）・wipes = 全滅したマップ（ボス戦は boss）・lastLv = 終わった時の Lv（仲間ごと）・gold = 終わった時のお金・
     /// fingerprint = 止めた時の World の指紋と目的。
     /// moveSeconds = 歩き・暗転・トロッコの秒（入力の層が Walking か Busy のフィールド）・windows = 会話と知らせのウィンドウを開いた数・
     /// supplies = 終わった時のふくろの使う物と、仲間ごとの MP（今 / 最大）・log = 流した手と区間の印（新しい順。playthrough.flow に書く）。
     type alias Report = { seed = Int32, done = Bool, reason = String, frames = Int32, playSeconds = Float64,
-                          battles = Map[String, Int32], lvAt = List[(String, Int32)], wipes = List[String],
+                          battles = Map[String, Int32], lvAt = List[(String, String)], wipes = List[String],
                           lastLv = String, gold = Int32, fingerprint = String, moveSeconds = Float64, windows = Int32, supplies = String,
                           log = List[Logged] }
 
     /// 流している間の値。
     type alias Loop = { h = Run, bot = Bot.State, step = App.StepState, prev = Set[Key], frames = Int32,
                         fieldTime = Float64, best = Int32, bestAt = Float64, goal = String,
-                        battles = Map[String, Int32], lvAt = List[(String, Int32)], wipes = List[String], lastMap = String,
+                        battles = Map[String, Int32], lvAt = List[(String, String)], wipes = List[String], lastMap = String,
                         moveSeconds = Float64, windows = Int32, log = List[Logged], ending = Option[{ world = World.World, frames = Int32 }] }
 
     /// playthrough.flow に書く物: Played = 流した 1 フレームとその後の指紋の元 / Note = そのまま書く 1 行（区間の頭の mark と expect）。
@@ -133,7 +133,7 @@ mod BotRun {
         let section = sectionOf(after, mapName);
         let battles = if (entered) Map.insertWith((a, b) -> a + b, sectionOf(after, l#lastMap), 1, l#battles) else l#battles;
         let firstVisit = List.memberOf(section, sections()) and not List.exists(p -> fst(p) == section, l#lvAt);
-        let lvAt = if (firstVisit) List.append(l#lvAt, (section, leadLvOf(after)) :: Nil) else l#lvAt;
+        let lvAt = if (firstVisit) List.append(l#lvAt, (section, partyLvOf(after)) :: Nil) else l#lvAt;
         let log = if (firstVisit) List.append(List.reverse(sectionNotesOf(section, after)), l#log) else l#log;
         let goal = "${Bot.goalOf(res, after)}";
         let inField = World.sceneKindOf(after) == World.SceneKind.Field;
@@ -152,7 +152,9 @@ mod BotRun {
           lastMap = mapName, goal = goal, log = log, fieldTime = fieldTime, best = best, bestAt = bestAt,
           moveSeconds = if (moving) l#moveSeconds + dt() else l#moveSeconds, windows = if (opened) l#windows + 1 else l#windows | l }
 
-    def leadLvOf(w: World.World): Int32 = Party.statsList(w#party) |> List.head |> Option.map(row -> snd(row)#lv) |> Option.getWithDefault(0)
+    /// 加わっている仲間の Lv を並び順に「·」でつなぐ（倒れている人は後ろに †）。例: 5·3†·1
+    def partyLvOf(w: World.World): String =
+        Party.statsList(w#party) |> List.map(match (_, s) -> if (s#hp <= 0) "${s#lv}†" else "${s#lv}") |> List.join("·")
 
     /// 1 本の結果。エンディングに着いていれば、その時の World とフレームで数える（タイトルへ戻ると仲間とふくろは空に戻る）。
     def reportOf(seed: Int32, done: Bool, reason: String, l: Loop): Report =
@@ -204,13 +206,13 @@ mod BotRun {
     def reportText(reports: List[Report], seconds: Float64): String =
         let sectionNames = "（world / B1 / B2 / B3 / ボス / 帰り）";
         let columns = "種" :: "結果" :: "ゲーム内時間" :: "人の目安（歩き / ウィンドウの数）" :: "フレーム" :: "戦った数${sectionNames}" ::
-                      "区間に入った時の Lv${sectionNames}" :: "全滅" :: "終わりの Lv（装備）" :: "お金" :: "終わりの使う物 / MP" :: Nil;
+                      "区間に入った時の Lv（ルカ·ミナ·トト・† は倒れている）${sectionNames}" :: "全滅" :: "終わりの Lv（装備）" :: "お金" :: "終わりの使う物 / MP" :: Nil;
         let header = List.join("\n",
             "# 自動の通しプレイ（make bot）" ::
             "" ::
-            "タイトルからエンディングまで（ボスを倒して村長に報告する）。方針は src/sim/Bot.flix（戦いは Bot.battlePlans: HP 35% 未満の仲間を" +
+            "タイトルからエンディングまで（ボスを倒して村長に報告する）。方針は src/sim/Bot.flix（戦いは BotBattle.battlePlans: HP 35% 未満の仲間を" +
             "回復の呪文 → やくそう・逃げられない組では攻めの呪文 → ばくだんいし・ほかは たたかう・にげない。" +
-            "村の外で HP 60% 未満ならフィールドで回復の呪文 → やくそう・村で HP 60% 未満なら宿）。" ::
+            "村の外で倒れた仲間が居れば宿へ戻る・村の外で HP 60% 未満ならフィールドで回復の呪文 → やくそう・村で HP 60% 未満なら宿）。" ::
             "流した時間: ${minutes(seconds)}（${List.length(reports)} 本）" ::
             "人の目安 = 歩き・暗転・トロッコの秒（bot と同じ）+ 戦い × ${humanBattleSeconds()} 秒 + 会話と知らせのウィンドウ × ${humanWindowSeconds()} 秒" +
             "（bot は文字送りと伝言をすぐ送るので、ゲーム内時間は人より短い）。" ::
@@ -220,7 +222,7 @@ mod BotRun {
             "" :: Nil);
         let rows = reports |> List.map(r -> {
             let fights = sections() |> List.map(s -> "${Map.getWithDefault(s, 0, r#battles)}") |> List.join(" / ");
-            let lvs = sections() |> List.map(s -> List.find(p -> fst(p) == s, r#lvAt) |> Option.map(p -> "${snd(p)}") |> Option.getWithDefault("-")) |> List.join(" / ");
+            let lvs = sections() |> List.map(s -> List.find(p -> fst(p) == s, r#lvAt) |> Option.map(snd) |> Option.getWithDefault("-")) |> List.join(" / ");
             let wipes = if (List.isEmpty(r#wipes)) "0" else "${List.length(r#wipes)}（${List.join("・", r#wipes)}）";
             tableRow("${r#seed}" :: (if (r#done) "着いた" else r#reason) :: minutes(r#playSeconds) ::
                      "${minutes(humanSecondsOf(r))}（${minutes(r#moveSeconds)} / ${r#windows}）" :: "${r#frames}" :: fights :: lvs :: wipes ::

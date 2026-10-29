@@ -155,8 +155,8 @@ mod SceneRender {
         Starts.all() |> List.find(s -> s#name == name)
             |> Option.flatMap(s -> s#build(res, World.initial(None), args) |> Result.toOption)
 
-    /// 実機と同じ絵: タイル層・world（カメラを掛ける）・HUD。
-    def worldItems(ctx: App.ViewCtx, res: Res.Res, w: World.World): List[Render.PlacedItem] =
+    /// 実機と同じ絵: タイル層・world（カメラを掛ける）・HUD（動画の VideoRender も同じ物で描く）。
+    pub def worldItems(ctx: App.ViewCtx, res: Res.Res, w: World.World): List[Render.PlacedItem] =
         let center = CameraRig.clampCenter(bounds = View.boundsOf(res, w), seen = design(), View.cameraOf(res, w));
         let seen = { visible = CameraRig.visibleRect(center, zoom = 1.0, design = design()) | ctx };
         let tiles = View.tileLayers(res, w) |> List.flatMap(TileScene.toItems);

@@ -2,7 +2,7 @@
 // BattleActs.resolveRound を直に回し、フレームも時計も WorldBattle も通さない。行動は bot と同じ方針（BotBattle.battlePlans: 回復の呪文・やくそう・
 // 逃げられない組での攻めの呪文と ばくだんいし）。ボスの組は見比べに「たたかうだけ」（BotBattle.attackOnlyPlans）の行も並べる。1 戦ごとに区間の初めの HP / MP（最大）とふくろから始める。
 // テストではなく知らせる口（重いので make test に入れない。終了コードはいつも 0）。外れた行には ⚠ を付ける。
-// 外れたら Doc（敵の値・出会いの組・経験値）の数だけで直して流し直す。式は直さない（直す時は docs/PLAN.md を先に直す）。
+// 外れたら Doc（敵の値・出会いの組・経験値）の数だけで直して流し直す。式は直さない（直す時は docs/DESIGN.md の 4.4 を先に直す）。
 //   BALANCE_SEEDS=n … 1 組あたりの種の数（既定 500）
 mod BalanceSim {
     use fge::App
@@ -20,7 +20,7 @@ mod BalanceSim {
         { map = "world", title = "ワールド（行き）", members = Member.Member.Luka :: Member.Member.Mina :: Nil, lv = 1,
           gear = (Member.Member.Luka, "dounotsurugi") :: Nil, bag = ("yakusou", 3) :: Nil, encounters = true, fixed = Nil } ::
         { map = "toto_cave", title = "森の岩穴（トトの杖）", members = Member.Member.Luka :: Member.Member.Mina :: Nil, lv = 1,
-          gear = (Member.Member.Luka, "dounotsurugi") :: Nil, bag = ("yakusou", 3) :: Nil, encounters = true, fixed = ("horimogu" :: Nil) :: Nil } ::
+          gear = (Member.Member.Luka, "dounotsurugi") :: Nil, bag = ("yakusou", 3) :: Nil, encounters = true, fixed = ("oyabunmogu" :: Nil) :: Nil } ::
         { map = "mine_b1", title = "坑道 B1", members = Member.all(), lv = 3,
           gear = (Member.Member.Luka, "dounotsurugi") :: Nil, bag = ("yakusou", 3) :: Nil, encounters = true, fixed = Nil } ::
         { map = "mine_b2", title = "坑道 B2", members = Member.all(), lv = 4,
@@ -53,8 +53,12 @@ mod BalanceSim {
 
     /// 逃げられない固定の戦い（中ボス・ひとくいばこ）のターン数の目安（中央値。両端を含む）。
     /// WhyNot: 固定の戦いの敵を「ルカの 2〜3 発」で見ない — HP を多く持たせた敵で、呪文と道具も合わせて数ターンで倒す作り。
+    /// 受けるダメージ（中央値）は fixedDamageLo〜Hi。
+    /// WhyNot: 雑魚の damageCap（30% 以下）を当てない — 道中の山場なので、やくそうか回復を考えるほど削られて当たり前。
     def fixedTurnsLo(): Float64 = 3.0
     def fixedTurnsHi(): Float64 = 5.0
+    def fixedDamageLo(): Float64 = 0.40
+    def fixedDamageHi(): Float64 = 0.80
 
     /// ボス戦の目安: bot がボスに着く Lv（bossLv。make bot の「区間に入った時の Lv」のボスの欄）の区間で、ターン数（中央値）が bossTurnsLo〜Hi・勝率が bossWinLo〜Hi（両端を含む）。
     /// WhyNot: 前後の Lv（6 と 8）まで目安に入れない — 1 Lv で勝率が 15〜20 点動くので、3 つの Lv を同じ幅に収める数は無い。8 は帰り道の Lv（見比べるだけ）。
@@ -78,7 +82,7 @@ mod BalanceSim {
         let aims = List.join(" / ",
             "雑魚はその区間の Lv のルカが ${hitsLo()}〜${hitsHi()} 発" ::
             "1 戦で受けるダメージは中央値で最大 HP の ${Float64.round(damageCap() * 100.0)}% 以下" ::
-            "逃げられない固定の戦いは ${fixedTurnsLo()}〜${fixedTurnsHi()} ターン（中央値）/ ボスは Lv${bossLv()} で ${bossTurnsLo()}〜${bossTurnsHi()} ターン（中央値）・勝率 ${percent(bossWinLo())}〜${percent(bossWinHi())}" +
+            "逃げられない固定の戦いは ${fixedTurnsLo()}〜${fixedTurnsHi()} ターン・受けるダメージ ${percent(fixedDamageLo())}〜${percent(fixedDamageHi())}（中央値）/ ボスは Lv${bossLv()} で ${bossTurnsLo()}〜${bossTurnsHi()} ターン（中央値）・勝率 ${percent(bossWinLo())}〜${percent(bossWinHi())}" +
             "・たたかうだけの勝率は ${percent(attackOnlyWinHi())} 以下（受けるダメージは見ない。ほかの Lv の行は見比べるだけ）" :: Nil);
         let text = List.join("\n",
             "# つり合いのシミュレーション（make balance）" ::
@@ -190,11 +194,13 @@ mod BalanceSim {
         let fixed = g#weight <= 0;
         let boss = List.memberOf(BotBattle.bossFoe(), g#foes);
         let guarded = fixed and not boss and List.exists(id -> FoesDoc.foeOrBlank(res#foes, id)#noFlee, foes);
-        let turnsOff = guarded and (quantile(0.5, rounds) < fixedTurnsLo() or quantile(0.5, rounds) > fixedTurnsHi());
+        let damage = quantile(0.5, fights |> List.map(f -> f#damage));
+        let turnsOff = guarded and (quantile(0.5, rounds) < fixedTurnsLo() or quantile(0.5, rounds) > fixedTurnsHi() or
+                                    damage < fixedDamageLo() or damage > fixedDamageHi());
         let aimed = boss and lv == bossLv();
         let bossOff = aimed and (quantile(0.5, rounds) < bossTurnsLo() or quantile(0.5, rounds) > bossTurnsHi() or
                                  wins < bossWinLo() or wins > bossWinHi());
-        let damageOff = not boss and quantile(0.5, fights |> List.map(f -> f#damage)) > damageCap();
+        let damageOff = not fixed and damage > damageCap();
         let weight = if (fixed) "固定" else "${g#weight}";
         let main = statsRow(List.join("・", g#foes), weight, damageOff or turnsOff or bossOff, fights);
         if (not boss) main

@@ -46,7 +46,8 @@ mod GameLint {
                 |> allowIn(Fn.SceneRender_jobs, "描き出しの常駐（HEADLESS_RESIDENT=1）が名前で呼ぶ入口の束")
                 |> allowIn(Fn.Talk_vocab, "Makefile の口（make talk-vocab）と bin/headless-run が名前で呼ぶ入口")
                 |> allowIn(Fn.BotRun_play, "Makefile の口（make bot）が名前で呼ぶ入口")
-                |> allowIn(Fn.BalanceSim_play, "Makefile の口（make balance）が名前で呼ぶ入口"),
+                |> allowIn(Fn.BalanceSim_play, "Makefile の口（make balance）が名前で呼ぶ入口")
+                |> allowIn(Fn.VideoAuditEntries_runAll, "engine の動画の見回りが名前で呼ぶ入口（bin/fge video-entries の生成物）"),
             customRule({ id = "test-calc", check = testCalc }),
             customRule({ id = "test-branch", check = testBranch })
                 |> allowIn(Fn.Fixtures_strideStartOf, "歩きの enum（World.Stride）から歩き始めの時刻を取り出すだけ（値で分けない）")

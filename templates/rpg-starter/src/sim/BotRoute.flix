@@ -28,6 +28,10 @@ mod BotRoute {
     def nextExitOf(res: Res.Res, start: String, goal: String): Option[(MapDoc.Exit, Int32)] =
         if (start == goal) None else hopsFrom(res, goal, (start, Nil) :: Nil, Set#{start})
 
+    /// start から goal までに通る出入口の数（同じマップなら 0・つながっていなければ None）。
+    pub def hopsOf(res: Res.Res, start: String, goal: String): Option[Int32] =
+        if (start == goal) Some(0) else nextExitOf(res, start, goal) |> Option.map(snd)
+
     /// 歩いて通れる出入口か（会話の <<warp>> だけが通る edge = none の出入口は図に入れない）。
     def isWalkable(exit: MapDoc.Exit): Bool = match exit#place {
         case MapDoc.ExitPlace.Cell(_, _) => true
@@ -100,17 +104,22 @@ mod BotRoute {
           arrive = targets |> List.filter(t -> snd(t) != Arrive.Stand) |> List.toMap }
 
     /// 目的の道（base）へ歩いて着けない時の寄り道: 歩いて乗れて、降りた所から base へ歩けるトロッコを調べる。
-    /// 無ければ、歩いて行けるレバーのうち、動かすとそういうトロッコができる物を調べる（分かれ目の向きを替える）。どちらも無ければ None。
+    /// 無ければ、歩いて行けるレバーのうち、動かすとそういうトロッコができる物か、格子が上がって base へ歩けるようになる物を調べる。
+    /// どれも無ければ None。
     pub def detourOf(w: World.World, r: World.FieldRec, map: MapDoc.Doc, base: Route): Option[Aim] =
-        let occ = WorldField.occupancyOf(map, w);
         let exits = MapDoc.rec(map)#exitAt;
         let heroCell = (r#hero#x, r#hero#y);
-        let fromHero = GridSearch.distances(cell -> cell == heroCell or
-            (not Map.memberOf(cell, exits) and WorldField.canEnter(map, occ, { x = fst(cell), y = snd(cell) })), heroCell :: Nil, 4000);
+        let walkFrom = (world: World.World) -> {
+            let occ = WorldField.occupancyOf(map, world);
+            GridSearch.distances(cell -> cell == heroCell or
+                (not Map.memberOf(cell, exits) and WorldField.canEnter(map, occ, { x = fst(cell), y = snd(cell) })), heroCell :: Nil, 4000)
+        };
+        let fromHero = walkFrom(w);
         let besides = (cell: Grid.Cell, dist: Map[(Int32, Int32), Int32]) -> Dir4.all() |> List.exists(d -> {
             let (dx, dy) = Dir4.delta(d);
             Map.memberOf((cell#x + dx, cell#y + dy), dist)
         });
+        let reachesBase = progress -> walkFrom({ progress = progress | w }) |> Map.keysOf |> Set.exists(c -> Map.memberOf(c, base#dist));
         let landing = progress -> {
             let placed = WorldObject.objectsNow(map, r, progress);
             placed |> List.filter(Rail.isCart) |> List.filter(p -> besides(p#cell, fromHero))
@@ -121,10 +130,11 @@ mod BotRoute {
                 case MapDoc.ObjectKind.Lever(l) => Some((p#object#id, l#flag))
                 case _                          => None
             });
+        let flipped = flag -> Progress.withFlag(flag, not Progress.isFlagSet(flag, w#progress), w#progress);
         match landing(w#progress) {
             case Some(cart) => Some(Aim.Examine(cart#object#id))
             case None => levers
-                |> List.find(match (_, flag) -> Option.nonEmpty(landing(Progress.withFlag(flag, not Progress.isFlagSet(flag, w#progress), w#progress))))
+                |> List.find(match (_, flag) -> Option.nonEmpty(landing(flipped(flag))) or reachesBase(flipped(flag)))
                 |> Option.map(match (id, _) -> Aim.Examine(id))
         }
 }

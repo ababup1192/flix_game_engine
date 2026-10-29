@@ -1,0 +1,16 @@
+battle	dynamic=245	static=0
+boss	dynamic=193	static=0
+cave	dynamic=250	static=0
+clear	dynamic=535	static=0
+dungeon1	dynamic=989	static=0
+dungeon2	dynamic=1718	static=0
+dungeon3	dynamic=889	static=0
+ending	dynamic=531	static=0
+equip	dynamic=720	static=0
+item	dynamic=702	static=0
+join	dynamic=370	static=0
+magic	dynamic=195	static=0
+quest	dynamic=422	static=0
+title	dynamic=66	static=0
+village	dynamic=422	static=0
+world	dynamic=598	static=0

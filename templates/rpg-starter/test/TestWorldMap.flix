@@ -132,15 +132,15 @@ mod TestWorldMap {
         let node = Fixtures.guardNodeOf("toto_cave", "cave_mole", h);
         Assert.assertEq(expected = node, Fixtures.talkNodeOf(Fixtures.play(Fixtures.tap(Fixtures.confirm()), h)))
 
-    /// ほりモグの会話を送ると固定の戦いになり、ほりモグと戦って、勝った後に StaffBack を開く。
+    /// おやぶんモグの会話を送ると固定の戦いになり、おやぶんモグと戦って、勝った後に StaffBack を開く。
     @Test
     def testGuardTalkStartsItsFight(): Unit \ Assert + Fs.FileRead =
         let h = inCave("7", "5", "up", "cave_bars");
         let fighting = Fixtures.play(Fixtures.tap(Fixtures.confirm()) ::: Fixtures.tap(Fixtures.confirm()) ::: Fixtures.tap(Fixtures.confirm()) ::: Fixtures.idle(60), h);
-        Assert.assertEq(expected = Fixtures.foeNameOf("horimogu", h) |> Option.map(name -> (name :: Nil, Some("StaffBack"))),
+        Assert.assertEq(expected = Fixtures.foeNameOf("oyabunmogu", h) |> Option.map(name -> (name :: Nil, Some("StaffBack"))),
             Fixtures.battleOf(fighting) |> Option.map(r -> (Fixtures.foeLabelsOf(r#battle), r#afterWin)))
 
-    /// 勝ちのノード StaffBack を送り切ると、ほりモグは消えて（通れる）トトのつえがふくろに入る。
+    /// 勝ちのノード StaffBack を送り切ると、おやぶんモグは消えて（通れる）トトのつえがふくろに入る。
     @Test
     def testWinningTheGuardFightReturnsTheStaff(): Unit \ Assert + Fs.FileRead =
         let h = Fixtures.started("talk", Map#{"node" => "StaffBack", "map" => "toto_cave", "x" => "7", "y" => "5", "facing" => "up",

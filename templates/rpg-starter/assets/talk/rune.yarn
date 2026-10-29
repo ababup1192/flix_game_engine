@@ -148,23 +148,23 @@ title: Shrine
 <<elseif not $toto and $quest == "none">>
     toto: ぼく トト。\nここで まほうの しゅぎょうを\nしてるんだ。
 <<elseif not $toto>>
-    toto: たいへんなんだ…\nしゅぎょうの つえを ほりモグに\nもっていかれちゃった。
+    toto: たいへんなんだ…\nつえを ほりモグの おやぶんに\nもっていかれちゃった。
     toto: みなみの もりの ほらあなに\nにげこんだんだ。\nつえが ないと まほうが つかえないよ…
-    mina: ほらあなの ほりモグか。\nあたしたちで とりかえして あげよう！
+    mina: ほらあなの おやぶんモグか。\nあたしたちで とりかえして あげよう！
 <<endif>>
 ===
 
 title: CaveMole
 ---
-ほりモグが つえを かかえて\nうなっている！
-<<fight horimogu StaffBack>>
+おやぶんモグが つえを かかえて\nうなっている！
+<<fight oyabunmogu StaffBack>>
 ===
 
 title: StaffBack
 ---
 <<open cave_mole>>
 <<give totostaff 1>>
-ほりモグは あなを ほって\nにげていった。
+おやぶんモグは あなを ほって\nにげていった。
 ルカは トトのつえを とりかえした！
 ===
 
