@@ -11,27 +11,19 @@
 //   B3 で HP が 60% 未満ならミナの父に話す → 岩の部屋 2 → ばくだんいし → ひとくいばこ（固定の戦い）→ 水晶を order の順に →
 //   小島の みずのはごろも → 封じられた扉を開ける → HP か MP が減っていればミナの父の全快 → 奥のジェムイーター（固定の戦い）/
 //   ボスを倒した後（坑道の入口へ戻される）→ ワールドマップを歩いて村へ → 泉の上の村長に報告 → エンディングの字が流れ切ったら決定でタイトルへ（そこで終わり）
-// 歩き: マップの間は exits をつないだ図の最短、マップの中は GridSearch.distances（通れるかは規則と同じ WorldField.canEnter）。
-//   目的のマスへ歩いて着けない時は寄り道（detourOf）: 乗れば着くトロッコに乗り、無ければ、動かせば乗れば着くようになる分かれ目のレバーを動かす。
-//   落とし穴（目的でない出入口のマス）は踏まない。
-// 戦い: battlePlans（HP が 35% 未満の仲間を回復の呪文 → やくそう で回復・逃げられない組では攻めの呪文 → ばくだんいし・
+// 歩きの道の計算は BotRoute（マップの間の最短・マップの中の幅優先・トロッコとレバーの寄り道 detourOf）。落とし穴（目的でない出入口のマス）は踏まない。
+// 戦いの方針は BotBattle.battlePlans（HP が 35% 未満の仲間を回復の呪文 → やくそう で回復・逃げられない組では攻めの呪文 → ばくだんいし・
 //   ほかは HP の一番少ない敵を たたかう。にげない）。村の外で HP が 60% 未満なら、フィールドで回復の呪文 → やくそう。
+// 依存は Bot → BotRoute・BotBattle の一方通行（BotRoute と BotBattle は Bot を使わない）。
 // 会話: 文字送りは決定で進め、はい / いいえ は「はい」（先頭）。
 mod Bot {
-    use fge::{Dir4, Grid, GridSearch}
+    use fge::{Dir4}
     use fge::GameEngine.Key
-    use World.{CommandPage, MenuPage, ShopMode, ShopPage}
+    use World.{MenuPage, ShopMode, ShopPage}
+
+    use BotRoute.{Aim, Arrive}
 
     // ── 目的 ──
-
-    /// 着いたらする事。Talk = その人に話しかける / Examine = 物（宝箱・レバー・番をする者・トロッコ・水晶）を調べる / Reach = そのマスに立つ（着いたら終わり）/
-    /// Push(岩の id, x, y, 向き) = (x, y) にある岩をその向きへ 1 マス押す（岩の手前のマスで押す）。
-    pub enum Aim with Eq, ToString {
-        case Talk(String)
-        case Examine(String)
-        case Reach(Int32, Int32)
-        case Push(String, Int32, Int32, Dir4.Dir4)
-    }
 
     /// 次の目的。Go = マップ（名前）へ行って Aim する / Equip = メニューのそうびで付け替える（仲間・置き場・道具）/
     /// Heal = メニューのどうぐで、その仲間にその道具を使う（坑道で HP が減った時の やくそう）/
@@ -45,9 +37,6 @@ mod Bot {
 
     /// 坑道の封じられた扉のあるマップ（扉を開け、奥のボスを調べる）。
     def doorMap(): String = "mine_b3"
-
-    /// ボスの敵の鍵（BotRun がボス戦を区間に分ける）。
-    pub def bossFoe(): String = "gemeater"
 
     /// 岩を押す 1 手: 岩の id・押す前の岩のマス・押す向き。
     type alias Push = { rock = String, x = Int32, y = Int32, dir = Dir4.Dir4 }
@@ -209,102 +198,22 @@ mod Bot {
 
     // ── 道 ──
 
-    /// 目標のマスに着いた所でする事。Stand = 立つだけ（出入口のマス・Reach）/ Face = その向きを向いて決定（話す・調べる）/
-    /// Push = その向きを押す（マップの端の出入口から外へ出る）。
-    enum Arrive with Eq {
-        case Stand
-        case Face(Dir4.Dir4)
-        case Push(Dir4.Dir4)
+    /// 目的の行き先（歩く目的でなければ None）。
+    def destinationOf(goal: Goal): Option[(String, Aim)] = match goal {
+        case Goal.Equip(_, _, _) => None
+        case Goal.Heal(_, _)     => None
+        case Goal.Cast(_, _, _)  => None
+        case Goal.Go(dest, aim)  => Some((dest, aim))
     }
 
-    /// マップの中の道: どのマップ・どの目的の、マスごとの残りのマス数と、着いた所でする事（Stand は持たない）。
-    pub type alias Route = { key = String, dist = Map[(Int32, Int32), Int32], arrive = Map[(Int32, Int32), Arrive] }
-
-    /// マップの間の図で、from から goal へ行く最初の出入口（同じマップなら None）と、残りの出入口の数。
-    def nextExitOf(res: Res.Res, start: String, goal: String): Option[(MapDoc.Exit, Int32)] =
-        if (start == goal) None else hopsFrom(res, goal, (start, Nil) :: Nil, Set#{start})
-
-    /// 歩いて通れる出入口か（会話の <<warp>> だけが通る edge = none の出入口は図に入れない）。
-    def isWalkable(exit: MapDoc.Exit): Bool = match exit#place {
-        case MapDoc.ExitPlace.Cell(_, _) => true
-        case MapDoc.ExitPlace.Edge(_)    => true
-        case MapDoc.ExitPlace.Nowhere    => false
-    }
-
-    /// 幅優先: 行けるマップを順に広げ、goal に着いたら最初の出入口と出入口の数。
-    def hopsFrom(res: Res.Res, goal: String, todo: List[(String, List[MapDoc.Exit])], seen: Set[String]): Option[(MapDoc.Exit, Int32)] =
-        match todo {
-            case Nil => None
-            case (map, path) :: rest =>
-                if (map == goal) List.reverse(path) |> List.head |> Option.map(first -> (first, List.length(path)))
-                else {
-                    let exits = Map.get(map, res#maps) |> Option.map(d -> MapDoc.rec(d)#exits) |> Option.getWithDefault(Nil)
-                        |> List.filter(e -> not Set.memberOf(e#to, seen) and isWalkable(e));
-                    let nextSeen = exits |> List.foldLeft((acc, e) -> Set.insert(e#to, acc), seen);
-                    hopsFrom(res, goal, List.append(rest, exits |> List.map(e -> (e#to, e :: path))), nextSeen)
-                }
-        }
-
-    /// 今いるマップの中の目標のマスと、着いた所でする事。マップの間を移る時は最初の出入口のマス（端の出入口はその辺の立てるマス）。
-    def targetsOf(res: Res.Res, map: MapDoc.Doc, here: String, goal: Goal): (List[((Int32, Int32), Arrive)], Int32) =
-        match goal {
-            case Goal.Equip(_, _, _) => (Nil, 0)
-            case Goal.Heal(_, _)     => (Nil, 0)
-            case Goal.Cast(_, _, _)  => (Nil, 0)
-            case Goal.Go(dest, aim) =>
-                match nextExitOf(res, here, dest) {
-                    case Some((exit, hops)) => (exitCellsOf(map, exit), hops)
-                    case None if here == dest => (aimCellsOf(map, aim), 0)
-                    case None => (Nil, 99)
-                }
-        }
-
-    /// 出入口を通るマス: マスの出入口はそのマス、端の出入口はその辺の全部のマスと、外へ押す向き。
-    def exitCellsOf(map: MapDoc.Doc, exit: MapDoc.Exit): List[((Int32, Int32), Arrive)] =
-        match MapDoc.cellOf(exit) {
-            case Some(cell) => (cell, Arrive.Stand) :: Nil
-            case None =>
-                Grid.cellsOfRows(MapDoc.rec(map)#rows) |> List.map(fst) |> List.flatMap(cell -> Dir4.all()
-                    |> List.filter(d -> MapDoc.edgeExitOf(cell#x, cell#y, d, map) |> Option.exists(e -> e#id == exit#id))
-                    |> List.map(d -> ((cell#x, cell#y), Arrive.Push(d))))
-        }
-
-    /// 目的のマス: Talk はその人の隣（机の向こうなら 2 マス手前）、Open は物の隣、Reach はそのマス。
-    def aimCellsOf(map: MapDoc.Doc, aim: Aim): List[((Int32, Int32), Arrive)] =
-        let m = MapDoc.rec(map);
-        let near = (x, y) -> Dir4.all() |> List.flatMap(d -> {
-            let (dx, dy) = Dir4.delta(d);
-            let one = (x - dx, y - dy);
-            let two = (x - 2 * dx, y - 2 * dy);
-            let counter = MapDoc.charAt(fst(one), snd(one), map) |> Option.exists(ch -> Tileset.passageOf(m#tileset, ch) == Tileset.Passage.Counter);
-            (one, Arrive.Face(d)) :: (if (counter) (two, Arrive.Face(d)) :: Nil else Nil)
-        });
-        match aim {
-            case Aim.Talk(id)    => m#npcs |> List.find(n -> n#id == id) |> Option.map(n -> near(n#x, n#y)) |> Option.getWithDefault(Nil)
-            case Aim.Examine(id) => m#objects |> List.find(o -> o#id == id) |> Option.map(o -> near(o#x, o#y)) |> Option.getWithDefault(Nil)
-            case Aim.Reach(x, y) => ((x, y), Arrive.Stand) :: Nil
-            case Aim.Push(_, x, y, d) =>
-                let (dx, dy) = Dir4.delta(d);
-                ((x - dx, y - dy), Arrive.Push(d)) :: Nil
-        }
-
-    /// 道を引く（目標のマスを 0 とする幅優先。目標でない出入口のマスは通らない — 踏むと別のマップへ移る）。
-    /// 先頭の今のマスは通れる事にする（トロッコを降りたレールの終わりは歩いて入れないマスだが、そこから出られる）。
-    def routeOf(w: World.World, map: MapDoc.Doc, key: String, targets: List[((Int32, Int32), Arrive)]): Route =
-        let occ = WorldField.occupancyOf(map, w);
-        let goalCells = targets |> List.map(fst) |> List.toSet;
-        let exits = MapDoc.rec(map)#exitAt;
-        let hero = World.fieldRecOf(w) |> Option.map(r -> (r#hero#x, r#hero#y));
-        let canEnter = cell -> Some(cell) == hero or ((Set.memberOf(cell, goalCells) or not Map.memberOf(cell, exits))
-            and WorldField.canEnter(map, occ, { x = fst(cell), y = snd(cell) }));
-        let sources = targets |> List.map(fst) |> List.filter(cell -> Map.memberOf(cell, exits) or canEnter(cell));
-        { key = key, dist = GridSearch.distances(canEnter, sources, 4000),
-          arrive = targets |> List.filter(t -> snd(t) != Arrive.Stand) |> List.toMap }
+    /// 今いるマップの中の目標のマスと、着いた所でする事（行き先が無ければ空）。
+    def goalTargetsOf(res: Res.Res, map: MapDoc.Doc, here: String, goal: Goal): (List[((Int32, Int32), Arrive)], Int32) =
+        destinationOf(goal) |> Option.map(match (dest, aim) -> BotRoute.targetsOf(res, map, here, dest, aim)) |> Option.getWithDefault((Nil, 0))
 
     // ── 状態 ──
 
     /// bot の値。route = 引いた道（マップか目的が変わった時だけ引き直す）、tapped = 前のフレームに決定などを押した（次は離す）。
-    pub type alias State = { route = Option[Route], tapped = Bool }
+    pub type alias State = { route = Option[BotRoute.Route], tapped = Bool }
 
     pub def initial(): State = { route = None, tapped = false }
 
@@ -312,7 +221,7 @@ mod Bot {
     pub def remainingOf(res: Res.Res, w: World.World, st: State): Int32 =
         match (World.fieldRecOf(w), st#route) {
             case (Some(r), Some(route)) =>
-                let (_, hops) = MapDoc.docOf(res#maps, r#map) |> Option.map(map -> targetsOf(res, map, MapDoc.nameOf(r#map), goalOf(res, w))) |> Option.getWithDefault((Nil, 99));
+                let (_, hops) = MapDoc.docOf(res#maps, r#map) |> Option.map(map -> goalTargetsOf(res, map, MapDoc.nameOf(r#map), goalOf(res, w))) |> Option.getWithDefault((Nil, 99));
                 hops * 100 + Map.getWithDefault((r#hero#x, r#hero#y), 100000, route#dist)
             case _ => 100000
         }
@@ -334,130 +243,13 @@ mod Bot {
             case InputLayer.Layer.Shop(page)      => tap(shopKeys(res, w, k, page))
             case InputLayer.Layer.Menu(page)      => tap(menuKeys(res, w, k, page))
             case InputLayer.Layer.BattleMessage   => tap(k#confirm)
-            case InputLayer.Layer.BattleChoose(m, page) => tap(battleKeys(res, w, k, m, page))
+            case InputLayer.Layer.BattleChoose(m, page) => tap(BotBattle.battleKeys(res, w, k, m, page))
             case InputLayer.Layer.Walking         => walkKeys(res, w, k, st)
             case InputLayer.Layer.Ending if WorldTitle.creditProgressOf(res, w) >= 1.0 => tap(k#confirm)
             case InputLayer.Layer.Ending          => (Set.empty(), { tapped = false | st })
         }
 
     // ── 戦い ──
-
-    /// m の行動（battlePlans）へ向けてページを進める: 今のページで選ぶ行へカーソルを動かして決定。行動と違うページなら取消で戻る。
-    def battleKeys(res: Res.Res, w: World.World, k: KeysDoc.Rec, m: Member.Member, page: CommandPage): List[Key] =
-        let want = World.battleRecOf(w) |> Option.flatMap(r -> {
-            let plan = Map.get(m, battlePlans(res, r#battle)) |> Option.getWithDefault(Battle.Plan.Attack(0));
-            wantedRowOf(res, r, m, plan, page)
-        });
-        let at = WorldBattle.cursorOf(page);
-        match want {
-            case Some(row) if row == at => k#confirm
-            case Some(row) if row > at  => k#down
-            case Some(_)                => k#up
-            case None                   => k#cancel
-        }
-
-    /// 行動 plan のために、page で選ぶ行（そのページで選ぶ物が plan に無ければ None = 取消で戻る）。
-    def wantedRowOf(res: Res.Res, r: World.BattleRec, m: Member.Member, plan: Battle.Plan, page: CommandPage): Option[Int32] =
-        let targets = WorldBattle.targetsOfPage(res, r, page);
-        match (page, plan) {
-            case (CommandPage.Commands(_), _)                                      => List.indexOf(commandOf(plan), WorldBattle.commands())
-            case (CommandPage.FoeTarget(_), Battle.Plan.Attack(i))                 => List.indexOf(Battle.Target.Foe(i), targets)
-            case (CommandPage.SpellList(_), Battle.Plan.Cast(id, _))               => List.indexOf(id, WorldBattle.spellsOf(res, r, m) |> List.map(s -> s#spell))
-            case (CommandPage.SpellTarget(at, _), Battle.Plan.Cast(id, t)) if at == id => List.indexOf(t, targets)
-            case (CommandPage.ItemList(_), Battle.Plan.UseItem(id, _))             => List.indexOf(id, WorldBattle.itemChoicesOf(res, r) |> List.map(fst))
-            case (CommandPage.ItemTarget(at, _), Battle.Plan.UseItem(id, t)) if at == id => List.indexOf(t, targets)
-            case _                                                                 => None
-        }
-
-    /// 行動を選ぶコマンド。
-    def commandOf(plan: Battle.Plan): World.BattleCommand = match plan {
-        case Battle.Plan.Attack(_)     => World.BattleCommand.Fight
-        case Battle.Plan.Defend        => World.BattleCommand.Defend
-        case Battle.Plan.Flee          => World.BattleCommand.Flee
-        case Battle.Plan.Cast(_, _)    => World.BattleCommand.Spell
-        case Battle.Plan.UseItem(_, _) => World.BattleCommand.Items
-    }
-
-    /// 生きている敵のうち HP の一番少ない物の、敵の並びでの番号。
-    def weakestOf(b: Battle.Battle): Int32 =
-        Battle.aliveFoes(b)
-            |> List.filterMap(i -> Vector.nth(i, Battle.rec(b)#foes) |> Option.map(f -> ((f#hp, i), i)))
-            |> List.sortBy(fst) |> List.head |> Option.map(snd) |> Option.getWithDefault(0)
-
-    /// 戦いで回復する HP の割合の線（これより減った仲間を回復する）。
-    def battleHealBelow(): Float64 = 0.35
-
-    /// 1 ターンの方針を決める間の値: 決めた行動・このターンに回復する仲間・このターンに使う道具の数。
-    type alias Planning = { plans = Map[Member.Member, Battle.Plan], healing = Set[Member.Member], used = Map[ItemsDoc.ItemId, Int32] }
-
-    /// つり合いのシミュレーションと同じ方針の行動（行動を選ぶ仲間を加わった順に）:
-    ///   HP が最大の 35% 未満の仲間（一番減っている人。このターンにまだ誰も回復しない人）がいれば、回復の呪文（MP があれば）→ HP の戻る道具。
-    ///   逃げられない組（中ボス・ひとくいばこ・ボス）では、攻めの呪文（回復の呪文の分の MP を残して。敵が 2 体以上なら敵全部の呪文）→
-    ///   たたかう の 2 倍より強いなら burn の道具（攻めの弱い人が投げる）。ほかは HP の一番少ない敵を たたかう。にげない。
-    pub def battlePlans(res: Res.Res, b: Battle.Battle): Map[Member.Member, Battle.Plan] =
-        let done = Battle.choosersOf(b) |> List.foldLeft((acc, m) -> {
-            let plan = healPlanOf(res, b, m, acc) |> Option.withDefault(default = bossPlanOf(res, b, m, acc))
-                |> Option.getWithDefault(Battle.Plan.Attack(weakestOf(b)));
-            planned(m, plan, acc)
-        }, { plans = Map.empty(), healing = Set.empty(), used = Map.empty() });
-        done#plans
-
-    def planned(m: Member.Member, plan: Battle.Plan, acc: Planning): Planning =
-        let healing = match plan {
-            case Battle.Plan.Cast(_, Battle.Target.Ally(t))    => Set.insert(t, acc#healing)
-            case Battle.Plan.UseItem(_, Battle.Target.Ally(t)) => Set.insert(t, acc#healing)
-            case _                                             => acc#healing
-        };
-        let used = match plan {
-            case Battle.Plan.UseItem(id, _) => Map.insertWith((x, y) -> x + y, id, 1, acc#used)
-            case _                          => acc#used
-        };
-        { plans = Map.insert(m, plan, acc#plans), healing = healing, used = used }
-
-    /// 呪文の値と、m が今の MP で唱えられるか（残す MP を引いて）。
-    def castable(res: Res.Res, b: Battle.Battle, m: Member.Member, keep: Int32, aim: SpellsDoc.Aim): List[(SpellsDoc.SpellId, SpellsDoc.Spell)] =
-        let mp = Party.mpOf(m, Battle.rec(b)#party);
-        Party.spellsOf(res#party, res#spells, m, Battle.rec(b)#party)
-            |> List.filterMap(id -> SpellsDoc.spellOf(res#spells, id) |> Option.map(s -> (id, s)))
-            |> List.filter(match (_, s) -> s#aim == aim and mp - keep >= s#mp)
-
-    /// ふくろの道具のうち、条件に合い、このターンにまだ残る物（Bag.listOf の順で最初）。
-    def bagItemOf(res: Res.Res, b: Battle.Battle, acc: Planning, wanted: ItemsDoc.Item -> Bool): Option[ItemsDoc.ItemId] =
-        Bag.listOf(res#items, Battle.rec(b)#bag)
-            |> List.filter(match (id, n) -> n - Map.getWithDefault(id, 0, acc#used) > 0)
-            |> List.map(fst)
-            |> List.find(id -> ItemsDoc.itemOf(res#items, id) |> Option.exists(item -> Battle.isBattleItem(item) and wanted(item)))
-
-    /// HP が減った仲間の回復（回復の呪文 → HP の戻る道具）。回復する人が居なければ None。
-    def healPlanOf(res: Res.Res, b: Battle.Battle, m: Member.Member, acc: Planning): Option[Battle.Plan] =
-        let party = Battle.rec(b)#party;
-        let ratioOf = x -> Int32.toFloat64(Party.hpOf(x, party)) / Int32.toFloat64(Int32.max(1, Party.maxHpOf(res#party, x, party)));
-        let hurt = Party.aliveOf(party) |> List.filter(x -> not Set.memberOf(x, acc#healing))
-            |> List.map(x -> (ratioOf(x), x)) |> List.filter(pair -> fst(pair) < battleHealBelow())
-            |> List.sortBy(fst) |> List.head |> Option.map(snd);
-        hurt |> Option.flatMap(t -> {
-            let bySpell = castable(res, b, m, 0, SpellsDoc.Aim.Ally) |> List.head |> Option.map(match (id, _) -> Battle.Plan.Cast(id, Battle.Target.Ally(t)));
-            let byItem = bagItemOf(res, b, acc, item -> item#heal > 0) |> Option.map(id -> Battle.Plan.UseItem(id, Battle.Target.Ally(t)));
-            Option.withDefault(default = byItem, bySpell)
-        })
-
-    /// 逃げられない組での攻め: 回復の呪文の MP を残した攻めの呪文（敵が 2 体以上なら敵全部の呪文が先）→ たたかう の 2 倍より強い burn の道具。
-    def bossPlanOf(res: Res.Res, b: Battle.Battle, m: Member.Member, acc: Planning): Option[Battle.Plan] =
-        if (not Battle.isNoFlee(res, b)) None
-        else {
-            let keep = castable(res, b, m, 0, SpellsDoc.Aim.Ally) |> List.map(pair -> snd(pair)#mp) |> List.minimum |> Option.getWithDefault(0);
-            let target = weakestOf(b);
-            let strongest = spells -> spells |> List.map(match (id, s) -> (0 - s#power, id)) |> List.sortBy(fst) |> List.head |> Option.map(snd);
-            let all = if (List.length(Battle.aliveFoes(b)) >= 2) strongest(castable(res, b, m, keep, SpellsDoc.Aim.AllFoes)) else None;
-            let one = strongest(castable(res, b, m, keep, SpellsDoc.Aim.Foe));
-            let atk = Party.atkOf(res#party, res#items, m, Battle.rec(b)#party);
-            let foeDef = Vector.nth(target, Battle.rec(b)#foes) |> Option.map(f -> FoesDoc.foeOrBlank(res#foes, f#id)#defense) |> Option.getWithDefault(0);
-            let hit = Battle.damageOf(RulesDoc.rec(res#rules)#spread, atk, foeDef, 0.5);
-            let bomb = bagItemOf(res, b, acc, item -> item#burn > 2 * hit);
-            all |> Option.map(id -> Battle.Plan.Cast(id, Battle.Target.AllFoes))
-                |> Option.withDefault(default = one |> Option.map(id -> Battle.Plan.Cast(id, Battle.Target.Foe(target))))
-                |> Option.withDefault(default = bomb |> Option.map(id -> Battle.Plan.UseItem(id, Battle.Target.Foe(target))))
-        }
 
     // ── 店とメニュー ──
 
@@ -554,41 +346,12 @@ mod Bot {
                 let heroCell = (r#hero#x, r#hero#y);
                 if (st#route |> Option.exists(rt -> rt#key == key and Map.memberOf(heroCell, rt#dist))) st
                 else {
-                    let (targets, _) = targetsOf(res, map, here, goal);
-                    let base = routeOf(w, map, key, targets);
+                    let (targets, _) = goalTargetsOf(res, map, here, goal);
+                    let base = BotRoute.routeOf(w, map, key, targets);
                     let route = if (Map.memberOf(heroCell, base#dist) or List.isEmpty(targets)) base
-                        else detourOf(w, r, map, base) |> Option.map(aim -> routeOf(w, map, key, aimCellsOf(map, aim))) |> Option.getWithDefault(base);
+                        else BotRoute.detourOf(w, r, map, base) |> Option.map(aim -> BotRoute.routeOf(w, map, key, BotRoute.aimCellsOf(map, aim))) |> Option.getWithDefault(base);
                     { route = Some(route) | st }
                 }
-        }
-
-    /// 目的の道（base）へ歩いて着けない時の寄り道: 歩いて乗れて、降りた所から base へ歩けるトロッコを調べる。
-    /// 無ければ、歩いて行けるレバーのうち、動かすとそういうトロッコができる物を調べる（分かれ目の向きを替える）。どちらも無ければ None。
-    def detourOf(w: World.World, r: World.FieldRec, map: MapDoc.Doc, base: Route): Option[Aim] =
-        let occ = WorldField.occupancyOf(map, w);
-        let exits = MapDoc.rec(map)#exitAt;
-        let heroCell = (r#hero#x, r#hero#y);
-        let fromHero = GridSearch.distances(cell -> cell == heroCell or
-            (not Map.memberOf(cell, exits) and WorldField.canEnter(map, occ, { x = fst(cell), y = snd(cell) })), heroCell :: Nil, 4000);
-        let besides = (cell: Grid.Cell, dist: Map[(Int32, Int32), Int32]) -> Dir4.all() |> List.exists(d -> {
-            let (dx, dy) = Dir4.delta(d);
-            Map.memberOf((cell#x + dx, cell#y + dy), dist)
-        });
-        let landing = progress -> {
-            let placed = WorldObject.objectsNow(map, r, progress);
-            placed |> List.filter(Rail.isCart) |> List.filter(p -> besides(p#cell, fromHero))
-                |> List.find(p -> Rail.pathOf(map, placed, p) |> List.last |> Option.exists(end -> besides(end, base#dist)))
-        };
-        let levers = WorldObject.objectsNow(map, r, w#progress) |> List.filter(p -> besides(p#cell, fromHero))
-            |> List.filterMap(p -> match p#object#kind {
-                case MapDoc.ObjectKind.Lever(l) => Some((p#object#id, l#flag))
-                case _                          => None
-            });
-        match landing(w#progress) {
-            case Some(cart) => Some(Aim.Examine(cart#object#id))
-            case None => levers
-                |> List.find(match (_, flag) -> Option.nonEmpty(landing(Progress.withFlag(flag, not Progress.isFlagSet(flag, w#progress), w#progress))))
-                |> Option.map(match (id, _) -> Aim.Examine(id))
         }
 
     /// 道を今の World で引き直しておく（BotRun が残りを数える前に呼ぶ）。

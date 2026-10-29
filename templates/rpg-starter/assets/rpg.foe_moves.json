@@ -129,7 +129,7 @@
       "foe": "gemeater",
       "phase": 1,
       "act": "attack",
-      "weight": 3
+      "weight": 1
     },
     {
       "foe": "gemeater",
@@ -141,13 +141,13 @@
       "foe": "gemeater",
       "phase": 2,
       "act": "attack",
-      "weight": 2
+      "weight": 3
     },
     {
       "foe": "gemeater",
       "phase": 2,
       "act": "sweep",
-      "weight": 2
+      "weight": 1
     },
     {
       "foe": "kurogane",

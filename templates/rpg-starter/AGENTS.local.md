@@ -2,7 +2,7 @@
 
 王道 RPG のテンプレート「ルーネの泉」。山あいの湖の村から依頼を受け、仲間と水晶の坑道（3 階層）へ向かい、
 ボスを倒して帰ると泉がまた湧く。実装の道筋は `docs/PLAN.md`（フェーズ P1〜P8）、絵の設計は `docs/ART_BRIEF.md`。
-いまは P7 まで（はじめからエンディングまで通して遊べる）と P8 の音（効果音・曲 6 本・mixer）。残りの仕上げは P8。遊べる物の並びは `docs/PLAN.md` の 7 節の頭。
+いまは P7 まで（はじめからエンディングまで通して遊べる）と P8 の音（効果音・曲 6 本・mixer）・つり合いと長さとクレジット（`docs/balance.md`）。残りの仕上げは P8。遊べる物の並びは `docs/PLAN.md` の 7 節の頭。
 規則の読み始めは `src/World.flix` の冒頭の図。
 
 ## このゲームの早見表（やりたいこと → どこを触るか）
@@ -24,7 +24,7 @@ case を足して `make check` を流すと、触る所をコンパイラが並�
 | 会話から別のウィンドウを開く（`<<shop>>` の形） | `WorldTalk.applyCommand` の枝で `Flow.Handed` を返し、会話をそのウィンドウの payload に持たせる |
 | 暗転の間に World を変える（宿の形） | `World.TransitionThen` の case を足し、`make check` が並べる所（`WorldTransition.secondsOf` / `transitionDone`・`ViewField.transitionProgress`）を埋める |
 | 重なり順（層）を足す | `src/ZOrder.flix` の `Layer` / `HudLayer` に case と `zRange` を足す |
-| エンディング（`World.Scene.Ending`） | 会話の `<<ending>>` → 暗転（`TransitionThen.Ending`・覆う方は `rules.innSeconds`）→ `World.enterEnding`（今のフィールドを下敷きに持つ）。絵は下敷きを `FieldScreen` で・字は `EndingView`（`View.endingIn` が組む）。スタッフの字は `rpg.text.json` の `credits`（`{lv}`・`{gold}`）・流れる秒は `rules.creditSeconds`・流れている間の決定は流れ切った所まで早送り（`World.skipCredits`）・流れ切った後の決定でタイトルへ（`WorldTitle.confirmEnding` → `World.toTitle`。セーブは書かない） |
+| エンディング（`World.Scene.Ending`） | 会話の `<<ending>>` → 暗転（`TransitionThen.Ending`・覆う方は `rules.innSeconds`）→ `World.enterEnding`（今のフィールドを下敷きに持つ）。絵は下敷きを `FieldScreen` で・字は `EndingView`（`View.endingIn` が組む）。エンディングの字は `rpg.text.json` の `credits`（後日談 → きろく → スタッフ。`{lv}`・`{gold}`。テンプレを写したらスタッフの「Flix Game Engine」「rpg-starter」の行を自分の名前に）・流れる秒は `rules.creditSeconds`・流れている間の決定は流れ切った所まで早送り（`World.skipCredits`）・流れ切った後の決定でタイトルへ（`WorldTitle.confirmEnding` → `World.toTitle`。セーブは書かない） |
 | 場面が終わった後にフィールドを絵の下敷きにする | 場面の payload に `FieldState` を持ち、`World.shownFieldOf` の枝に足す（`ViewField.fieldIn`・カメラ・タイル層はここを読む。歩きの規則は `fieldRecOf` のままなので動かない） |
 
 ### マップと物
@@ -100,7 +100,7 @@ case を足して `make check` を流すと、触る所をコンパイラが並�
 | フィールドで唱えられる呪文 | spells の行の `field = true`（唱えられるのは `aim = ally` の回復だけ。`WorldMenu.confirmSpell`） |
 | 敵に呪文・眠りを持たせる | `rpg.foe_moves.json` の行に `act = spell` と `spell`（呪文の鍵）、か `act = sleep`（率は `rules.sleepRate`・起きる率は `wakeRate`） |
 | 戦いで使える道具 | `rpg.items.json` の use の行に `heal` / `mpHeal`（仲間 1 人）か `burn`（敵 1 体）。どれも無い use の物は戦いの一覧で灰色（`Battle.isBattleItem`） |
-| 戦いのコマンドのページを足す | `World.CommandPage` の case を足し、`make check` が並べる所（`WorldBattle.pageLengthOf` / `withCursor` / `cursorOf` / `parentOf` / `confirm`・`ViewBattle.sideOf`・`Bot.wantedRowOf`・`E2e.commandPageOf`）を埋める |
+| 戦いのコマンドのページを足す | `World.CommandPage` の case を足し、`make check` が並べる所（`WorldBattle.pageLengthOf` / `withCursor` / `cursorOf` / `parentOf` / `confirm`・`ViewBattle.sideOf`・`BotBattle.wantedRowOf`・`E2e.commandPageOf`）を埋める |
 | 戦いの間の仲間とふくろ | `Battle.Rec` の `party` と `bag` が正（World へは `WorldBattle.leave` が勝ち・逃げ・全滅のどれでも書き戻す） |
 | ボス（逃げられない固定の戦い・HP で技を替える） | マップの `objects` に `guard`（`sprite` は敵の絵。大きい絵は下端の中央をマスに合わせて上と左右に重なる）と会話の `<<fight 敵 勝ちのノード>>`、敵の行に `noFlee` と `phase2At`（割合）、技は `rpg.foe_moves.json` の `phase` 2 の行（HP が切った手番の後のターンから。`BattleActs.foeActsOf`）。勝ちのノードで `<<open id>>`・`<<quest defeat>>`・`<<warp>>`（手本 `Boss` / `BossWon`。数は `make balance` のボスの区間 `BalanceSim.bossAt`） |
 | 勝った後の経験値・レベルアップ | 式は `Battle.resolveVictory`（全滅の 1 枚は `Battle.wipedBeat`）。表と伸びは `rpg.party.json` の `exp` と `hpUp…agiUp` |
@@ -129,7 +129,7 @@ case を足して `make check` を流すと、触る所をコンパイラが並�
 | 仕掛けの途中から始める | Starts の field に `flags=`（旗）・`opened=`（立つマップの開けた物・点けた水晶）・`rocks=id:x:y`（動かした岩）・`light=`（たいまつの残り） |
 | e2e を足す | `e2e/<名前>.flow` を書いて `make flow FLOW=e2e/<名前>.flow`（戦いの問いは `foes`・`mp`（仲間の MP の合計）・`page`（コマンドのページ）。手本 `e2e/battle_magic.flow`） |
 | 描き出す場面を足す | `SceneRender.shotNames` / `worldOf` と Makefile の `SHOTS` に足す（場面を進めるのは `Drive.play` でキーを流す） |
-| テストプレイ（bot・つり合い） | `make bot`（`Bot.goalOf` の表）・`make balance`（`BalanceSim.sectionTable`。区間のふくろも書く）。戦いの方針は `Bot.battlePlans` の 1 か所（BalanceSim も同じ物を回す）。流れを変えたら `Bot.goalOf` も直す。岩の部屋は押す手を `Bot.rockPlanOf` に、トロッコとレバーは歩いて着けない時に `Bot.detourOf` が自分で選ぶ。1 周の人の目安はレポートの「人の目安」（歩き + 戦い × 33 秒 + ウィンドウ × 3 秒） |
+| テストプレイ（bot・つり合い） | `make bot`（`Bot.goalOf` の表）・`make balance`（`BalanceSim.sectionTable`。区間のふくろも書く）。道筋の表は `Bot`・道の計算は `BotRoute`・戦いの方針は `BotBattle.battlePlans` の 1 か所（BalanceSim も同じ物を回す。ボスの行の見比べは `BotBattle.attackOnlyPlans`）。依存は Bot → BotRoute・BotBattle の一方通行。流れを変えたら `Bot.goalOf` も直す。最終の数は `docs/balance.md` に写す（debug/ は git に入らない）。岩の部屋は押す手を `Bot.rockPlanOf` に、トロッコとレバーは歩いて着けない時に `BotRoute.detourOf` が自分で選ぶ。1 周の人の目安はレポートの「人の目安」（歩き + 戦い × 33 秒 + ウィンドウ × 3 秒） |
 | 描き出しの場面の作り方 | どの場面も `SceneRender.worldOf` で Starts から組んで決まった手（`Drive.play`・`confirmTimes`・`playSeconds`）を進めた World を、実機と同じ `View.frame` / `hud` で描く（直に組んだ絵の場面は無い） |
 | 通しの手を流し直す | `make bot` の 1 本目が `debug/bot/playthrough.flow` を書く（区間の頭ごとに `mark` と `expect`）。`make flow FLOW=debug/bot/playthrough.flow` でタイトルからエンディングまで同じ指紋で流れる（bot の 1 フレームはナノ秒に丸めた 1/60 秒 = `BotRun.dt`） |
 | 古い書き方を止める | 1 行の正規表現は `bin/lint-rules/forbid.local.json`、型と呼び出しの向きは `lint/rules.flix`（`make lint-flixlint`） |

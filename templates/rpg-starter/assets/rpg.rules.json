@@ -15,8 +15,8 @@
   "homeX": 3,
   "homeY": 4,
   "innSeconds": 1.2,
-  "minSteps": 12,
-  "maxSteps": 20,
+  "minSteps": 7,
+  "maxSteps": 11,
   "flashSeconds": 0.5,
   "messageWait": 0.8,
   "fxSeconds": 0.4,
@@ -32,6 +32,6 @@
   "sleepRate": 0.6,
   "wakeRate": 0.5,
   "reward": 300,
-  "creditSeconds": 24.0,
+  "creditSeconds": 42.0,
   "creditSkipAfter": 3.0
 }

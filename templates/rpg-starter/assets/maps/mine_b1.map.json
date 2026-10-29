@@ -5,8 +5,8 @@
   "tileset": "mine",
   "battleBack": "bg_cave",
   "bgm": "mine",
-  "minSteps": 30,
-  "maxSteps": 44,
+  "minSteps": 26,
+  "maxSteps": 38,
   "rows": [
     "################################",
     "############P###t###############",

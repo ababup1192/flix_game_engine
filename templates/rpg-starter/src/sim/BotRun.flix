@@ -14,7 +14,7 @@ mod BotRun {
     type alias Run = Resources.With[Res.Res, World.World]
 
     /// 1 本の結果。done = エンディングに着いた・reason = 止めた理由・playSeconds = 遊びの時計・battles = 区間（sectionOf）ごとの戦った数・
-    /// lvAt = 区間に初めて入った時のルカの Lv・wipes = 全滅したマップ・lastLv = 終わった時の Lv（仲間ごと）・gold = 終わった時のお金・
+    /// lvAt = 区間に初めて入った時のルカの Lv・wipes = 全滅したマップ（ボス戦は boss）・lastLv = 終わった時の Lv（仲間ごと）・gold = 終わった時のお金・
     /// fingerprint = 止めた時の World の指紋と目的。
     /// moveSeconds = 歩き・暗転・トロッコの秒（入力の層が Walking か Busy のフィールド）・windows = 会話と知らせのウィンドウを開いた数・
     /// supplies = 終わった時のふくろの使う物と、仲間ごとの MP（今 / 最大）・log = 流した手と区間の印（新しい順。playthrough.flow に書く）。
@@ -59,7 +59,7 @@ mod BotRun {
         else mapName
 
     def isBossFight(w: World.World): Bool =
-        World.battleRecOf(w) |> Option.exists(r -> Battle.rec(r#battle)#foes |> Vector.exists(f -> FoesDoc.keyOf(f#id) == Bot.bossFoe()))
+        World.battleRecOf(w) |> Option.exists(r -> Battle.rec(r#battle)#foes |> Vector.exists(f -> FoesDoc.keyOf(f#id) == BotBattle.bossFoe()))
 
     /// 1 フレームの秒（ナノ秒に丸めた 1/60 秒）。
     /// WhyNot: 1/60 秒のまま流さない — playthrough.flow はナノ秒で書くので、流し直すと文字送りの境目が 1 フレームずれて手が食い違う。
@@ -147,7 +147,8 @@ mod BotRun {
             case _                        => false
         });
         let opened = Option.isEmpty(World.typingOf(before)) and Option.nonEmpty(World.typingOf(after));
-        { h = h, battles = battles, lvAt = lvAt, wipes = if (lost) List.append(l#wipes, l#lastMap :: Nil) else l#wipes,
+        let wipedAt = if (isBossFight(before)) "boss" else l#lastMap;
+        { h = h, battles = battles, lvAt = lvAt, wipes = if (lost) List.append(l#wipes, wipedAt :: Nil) else l#wipes,
           lastMap = mapName, goal = goal, log = log, fieldTime = fieldTime, best = best, bestAt = bestAt,
           moveSeconds = if (moving) l#moveSeconds + dt() else l#moveSeconds, windows = if (opened) l#windows + 1 else l#windows | l }
 

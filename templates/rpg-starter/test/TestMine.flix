@@ -1,7 +1,7 @@
 // 坑道 B1〜B3 の仕掛け: トロッコと分かれ目・岩と床のスイッチ・暗さとたいまつ・落とし穴・水晶と飛び石・番をする者・坑道の店・全快・セーブ。
 // 場所の数（マス）は assets/maps/mine_b*.map.json の物の行と同じ。
 mod TestMine {
-    use fge::Dir4
+    use fge::{Dir4, Emit}
     use fge::GameEngine.Key
 
     /// B1 で、仲間 3 人・依頼の後に立った所（args は足す・上書きする引数）。
@@ -236,4 +236,36 @@ mod TestMine {
             (b3 |> Option.map(m -> Progress.isOpened(m, "b3_crystal_e", p)), Progress.isFlagSet(Fixtures.flagId("b3_crystals"), p),
              Progress.isFlagSet(Fixtures.flagId("b1_switch"), p))
         }))
+
+    // ══════════════════════════════════════════════════════
+    // 種類の旗（profileOf の steps / pushable）と onArrive / onPush の枝
+    // steps / pushable が真の種類ごとに、onArrive / onPush が Some を返す場面を 1 本ずつ持つ。
+    // 種類の旗を真にしたら、ここに同じ形の 1 本を足す（WorldObject の onArrive / onPush は case _ で畳むので、枝の書き忘れはここで止める）。
+    // ══════════════════════════════════════════════════════
+
+    /// B1 の床（13, 24）に置いた、踏むだけの床のスイッチ（hold = false・旗 test_flag）。
+    def floorPlate(): WorldObject.Placed =
+        { object = { id = "test_plate", x = 13, y = 24, sprite = "plate", kind = MapDoc.ObjectKind.Plate({ flag = Fixtures.flagId("test_flag"), hold = false }) },
+          cell = { x = 13, y = 24 }, state = WorldObject.ObjectState.Closed }
+
+    /// 床のスイッチ（steps が真）に着くと、onArrive が Some を返し、その旗が立つ。
+    @Test
+    def testFloorPlateActsOnArrive(): Unit \ Assert + Fs.FileRead =
+        let h = inB1("13", "24", "down", Map.empty());
+        let plate = floorPlate();
+        let arrived = MapDoc.idOf(h#resources#maps, "mine_b1") |> Option.flatMap(map ->
+            Emit.collect(() -> WorldObject.onArrive(h#resources, map, plate, h#world)) |> fst);
+        Assert.assertEq(expected = (true, Some(true)),
+                        (MapDoc.profileOf(plate#object#kind)#steps, arrived |> Option.map(w -> Progress.isFlagSet(Fixtures.flagId("test_flag"), w#progress))))
+
+    /// 岩（pushable が真。B1 の 14, 24）を右へ押すと、onPush が Some を返し、岩の今のマスが 1 つ右になる。
+    @Test
+    def testRockActsOnPush(): Unit \ Assert + Fs.FileRead =
+        let h = inB1("13", "24", "right", Map.empty());
+        let pushed = forM (map <- MapDoc.idOf(h#resources#maps, "mine_b1"); doc <- MapDoc.docOf(h#resources#maps, map);
+                           r <- World.fieldRecOf(h#world);
+                           rock <- WorldObject.objectsNow(doc, r, h#world#progress) |> List.find(p -> p#object#id == "b1_rock");
+                           w <- Emit.collect(() -> WorldObject.onPush(h#resources, map, rock, Dir4.Dir4.Right, h#world)) |> fst;
+                           after <- World.fieldRecOf(w)) yield Map.get("b1_rock", after#rocks) |> Option.map(c -> (c#x, c#y));
+        Assert.assertEq(expected = (true, Some(Some((15, 24)))), (MapDoc.profileOf(MapDoc.ObjectKind.Rock)#pushable, pushed))
 }

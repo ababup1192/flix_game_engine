@@ -1,6 +1,6 @@
 // BalanceSim — つり合いのシミュレーション（make balance → debug/balance.md）。戦いだけを流す。
-// BattleActs.resolveRound を直に回し、フレームも時計も WorldBattle も通さない。行動は bot と同じ方針（Bot.battlePlans: 回復の呪文・やくそう・
-// 逃げられない組での攻めの呪文と ばくだんいし）。1 戦ごとに区間の初めの HP / MP（最大）とふくろから始める。
+// BattleActs.resolveRound を直に回し、フレームも時計も WorldBattle も通さない。行動は bot と同じ方針（BotBattle.battlePlans: 回復の呪文・やくそう・
+// 逃げられない組での攻めの呪文と ばくだんいし）。ボスの組は見比べに「たたかうだけ」（BotBattle.attackOnlyPlans）の行も並べる。1 戦ごとに区間の初めの HP / MP（最大）とふくろから始める。
 // テストではなく知らせる口（重いので make test に入れない。終了コードはいつも 0）。外れた行には ⚠ を付ける。
 // 外れたら Doc（敵の値・出会いの組・経験値）の数だけで直して流し直す。式は直さない（直す時は docs/PLAN.md を先に直す）。
 //   BALANCE_SEEDS=n … 1 組あたりの種の数（既定 500）
@@ -21,9 +21,9 @@ mod BalanceSim {
           gear = (Member.Member.Luka, "dounotsurugi") :: Nil, bag = ("yakusou", 3) :: Nil, encounters = true, fixed = Nil } ::
         { map = "toto_cave", title = "森の岩穴（トトの杖）", members = Member.Member.Luka :: Member.Member.Mina :: Nil, lv = 1,
           gear = (Member.Member.Luka, "dounotsurugi") :: Nil, bag = ("yakusou", 3) :: Nil, encounters = true, fixed = ("horimogu" :: Nil) :: Nil } ::
-        { map = "mine_b1", title = "坑道 B1", members = Member.all(), lv = 2,
+        { map = "mine_b1", title = "坑道 B1", members = Member.all(), lv = 3,
           gear = (Member.Member.Luka, "dounotsurugi") :: Nil, bag = ("yakusou", 3) :: Nil, encounters = true, fixed = Nil } ::
-        { map = "mine_b2", title = "坑道 B2", members = Member.all(), lv = 3,
+        { map = "mine_b2", title = "坑道 B2", members = Member.all(), lv = 4,
           gear = (Member.Member.Luka, "dounotsurugi") :: (Member.Member.Luka, "kawanoyoroi") :: (Member.Member.Mina, "tetsunotsuruhashi") :: Nil,
           bag = ("yakusou", 6) :: ("taimatsu", 2) :: Nil, encounters = true, fixed = Nil } ::
         { map = "mine_b2", title = "坑道 B2 の奥（くろがねゴブリン）", members = Member.all(), lv = 5,
@@ -34,14 +34,14 @@ mod BalanceSim {
           gear = (Member.Member.Luka, "haganenotsurugi") :: (Member.Member.Luka, "kawanoyoroi") :: (Member.Member.Mina, "tetsunotsuruhashi") ::
                  (Member.Member.Toto, "mahounorobe") :: Nil,
           bag = ("yakusou", 4) :: ("maryoku", 2) :: ("bakudanishi", 3) :: Nil, encounters = true, fixed = ("mimic" :: Nil) :: Nil } ::
-        bossAt(5) :: bossAt(6) :: bossAt(7) :: Nil
+        bossAt(6) :: bossAt(7) :: bossAt(8) :: Nil
 
     /// ボス戦（ジェムイーター）の区間を Lv lv で。装備とふくろは bot が扉の奥に入った時の物（ミナの父の全快の後）。
     def bossAt(lv: Int32): Section =
         { map = "mine_b3", title = "ボス（ジェムイーター・Lv${lv}）", members = Member.all(), lv = lv,
           gear = (Member.Member.Luka, "haganenotsurugi") :: (Member.Member.Luka, "mizunohagoromo") :: (Member.Member.Mina, "tetsunotsuruhashi") ::
                  (Member.Member.Mina, "kawanoyoroi") :: (Member.Member.Toto, "mahounorobe") :: Nil,
-          bag = ("yakusou", 4) :: ("taimatsu", 3) :: ("bakudanishi", 3) :: Nil, encounters = false, fixed = (Bot.bossFoe() :: Nil) :: Nil }
+          bag = ("yakusou", 4) :: ("taimatsu", 3) :: ("bakudanishi", 3) :: Nil, encounters = false, fixed = (BotBattle.bossFoe() :: Nil) :: Nil }
 
     /// 1 戦を打ち切るターンの数。
     def maxRounds(): Int32 = 60
@@ -56,13 +56,16 @@ mod BalanceSim {
     def fixedTurnsLo(): Float64 = 3.0
     def fixedTurnsHi(): Float64 = 5.0
 
-    /// ボス戦の目安: bossLv の区間で、ターン数（中央値）が bossTurnsLo〜Hi・勝率が bossWinLo〜Hi（両端を含む）。
-    /// WhyNot: ボスを中ボスの 3〜5 ターンや「受けるダメージ 30% 以下」で見ない — 回復を挟みながら 6〜8 ターン競る山場の作り。
-    def bossLv(): Int32 = 6
-    def bossTurnsLo(): Float64 = 6.0
-    def bossTurnsHi(): Float64 = 8.0
+    /// ボス戦の目安: bot がボスに着く Lv（bossLv。make bot の「区間に入った時の Lv」のボスの欄）の区間で、ターン数（中央値）が bossTurnsLo〜Hi・勝率が bossWinLo〜Hi（両端を含む）。
+    /// WhyNot: 前後の Lv（6 と 8）まで目安に入れない — 1 Lv で勝率が 15〜20 点動くので、3 つの Lv を同じ幅に収める数は無い。8 は帰り道の Lv（見比べるだけ）。
+    /// 同じ区間の「たたかうだけ」（BotBattle.attackOnlyPlans）の勝率は attackOnlyWinHi 以下（回復と呪文を使わないと負ける手応え）。
+    /// WhyNot: ボスを中ボスの 3〜5 ターンや「受けるダメージ 30% 以下」で見ない — 回復を挟みながら 10 ターン余り競る山場の作り。
+    def bossLv(): Int32 = 7
+    def bossTurnsLo(): Float64 = 10.0
+    def bossTurnsHi(): Float64 = 14.0
     def bossWinLo(): Float64 = 0.70
-    def bossWinHi(): Float64 = 0.95
+    def bossWinHi(): Float64 = 0.85
+    def attackOnlyWinHi(): Float64 = 0.40
 
     pub def play(): Unit \ IO = App.Headless.exitWith(playJob(App.Headless.requestFromProcess()))
 
@@ -76,11 +79,11 @@ mod BalanceSim {
             "雑魚はその区間の Lv のルカが ${hitsLo()}〜${hitsHi()} 発" ::
             "1 戦で受けるダメージは中央値で最大 HP の ${Float64.round(damageCap() * 100.0)}% 以下" ::
             "逃げられない固定の戦いは ${fixedTurnsLo()}〜${fixedTurnsHi()} ターン（中央値）/ ボスは Lv${bossLv()} で ${bossTurnsLo()}〜${bossTurnsHi()} ターン（中央値）・勝率 ${percent(bossWinLo())}〜${percent(bossWinHi())}" +
-            "（受けるダメージは見ない。Lv5・7 の行は見比べるだけ）" :: Nil);
+            "・たたかうだけの勝率は ${percent(attackOnlyWinHi())} 以下（受けるダメージは見ない。ほかの Lv の行は見比べるだけ）" :: Nil);
         let text = List.join("\n",
             "# つり合いのシミュレーション（make balance）" ::
             "" ::
-            "組ごとに ${seeds} 種。方針は bot と同じ（Bot.battlePlans: HP 35% 未満の仲間を回復の呪文 → やくそう・" +
+            "組ごとに ${seeds} 種。方針は bot と同じ（BotBattle.battlePlans: HP 35% 未満の仲間を回復の呪文 → やくそう・" +
             "逃げられない組では攻めの呪文 → ばくだんいし・ほかは HP の一番少ない敵を たたかう）。1 戦ごとに HP / MP は最大・ふくろは区間の初めの物から。" ::
             "目安: ${aims}。外れた行に ⚠。" ::
             "区間の Lv と装備とふくろは make bot の表（debug/bot.md）の「区間に入った時の Lv」の多い値と、その区間に入った時の物を" +
@@ -122,17 +125,20 @@ mod BalanceSim {
     /// 1 戦の初めの値（ダメージ・MP・道具の数を比べる元）。
     type alias Start = { maxHp = Int32, mp = Int32, items = Int32 }
 
-    def fightOf(res: Res.Res, party: Party.Party, bag: Bag.Bag, foes: List[FoesDoc.FoeId], seed: Int32): Fight =
+    /// 1 ターンの行動の決め方（bot と同じ BotBattle.battlePlans か、見比べの attackOnlyPlans）。
+    type alias Tactic = Battle.Battle -> Map[Member.Member, Battle.Plan]
+
+    def fightOf(res: Res.Res, tactic: Tactic, party: Party.Party, bag: Bag.Bag, foes: List[FoesDoc.FoeId], seed: Int32): Fight =
         let b = Battle.start(res, foes, party, bag);
         let start = { maxHp = Party.membersOf(party) |> List.map(m -> Party.maxHpOf(res#party, m, party)) |> List.sum,
                       mp = mpSum(party), items = itemSum(bag) };
-        roundsOf(res, b, seed * 10007, 0, start)
+        roundsOf(res, tactic, b, seed * 10007, 0, start)
 
     def mpSum(party: Party.Party): Int32 = Party.statsList(party) |> List.map(row -> snd(row)#mp) |> List.sum
 
     def itemSum(bag: Bag.Bag): Int32 = Bag.itemsOf(bag) |> List.map(snd) |> List.sum
 
-    def roundsOf(res: Res.Res, b: Battle.Battle, dice: Int32, rounds: Int32, start: Start): Fight =
+    def roundsOf(res: Res.Res, tactic: Tactic, b: Battle.Battle, dice: Int32, rounds: Int32, start: Start): Fight =
         let outcome = Battle.outcomeOf(b);
         if (outcome != Battle.Outcome.Ongoing or rounds >= maxRounds()) {
             let r = Battle.rec(b);
@@ -141,8 +147,8 @@ mod BalanceSim {
               damage = Int32.toFloat64(start#maxHp - hp) / Float64.max(1.0, Int32.toFloat64(start#maxHp)),
               mp = start#mp - mpSum(r#party), items = start#items - itemSum(r#bag) }
         } else {
-            let (next, _, d) = BattleActs.resolveRound(res, b, Bot.battlePlans(res, b), dice);
-            roundsOf(res, next, d, rounds + 1, start)
+            let (next, _, d) = BattleActs.resolveRound(res, b, tactic(b), dice);
+            roundsOf(res, tactic, next, d, rounds + 1, start)
         }
 
     // ── 表 ──
@@ -174,25 +180,41 @@ mod BalanceSim {
     /// 表の頭の 2 行（名前の行と |---| の行）。
     def tableHead(names: List[String]): String = tableRow(names) + "\n|" + (names |> List.map(_ -> "---|") |> List.join(""))
 
+    /// 組の行。ボスの組は bot の方針の行の下に「たたかうだけ」の行を並べる。
     def groupRow(res: Res.Res, seeds: Int32, lv: Int32, party: Party.Party, bag: Bag.Bag, g: MapDoc.Encounter): String =
         let foes = g#foes |> List.filterMap(FoesDoc.idOf(res#foes));
-        let fights = List.range(0, seeds) |> List.map(seed -> fightOf(res, party, bag, foes, seed));
-        let n = Int32.toFloat64(Int32.max(1, List.length(fights)));
-        let wins = Int32.toFloat64(List.count(f -> f#won, fights)) / n;
-        let lost = Int32.toFloat64(List.count(f -> f#lost, fights)) / n;
+        let fightsBy = tactic -> List.range(0, seeds) |> List.map(seed -> fightOf(res, tactic, party, bag, foes, seed));
+        let fights = fightsBy(b -> BotBattle.battlePlans(res, b));
         let rounds = fights |> List.map(f -> Int32.toFloat64(f#rounds));
-        let damage = fights |> List.map(f -> f#damage);
+        let wins = winRateOf(fights);
         let fixed = g#weight <= 0;
-        let boss = List.memberOf(Bot.bossFoe(), g#foes);
+        let boss = List.memberOf(BotBattle.bossFoe(), g#foes);
         let guarded = fixed and not boss and List.exists(id -> FoesDoc.foeOrBlank(res#foes, id)#noFlee, foes);
         let turnsOff = guarded and (quantile(0.5, rounds) < fixedTurnsLo() or quantile(0.5, rounds) > fixedTurnsHi());
-        let bossOff = boss and lv == bossLv() and (quantile(0.5, rounds) < bossTurnsLo() or quantile(0.5, rounds) > bossTurnsHi() or
-                                                   wins < bossWinLo() or wins > bossWinHi());
-        let warn = if ((not boss and quantile(0.5, damage) > damageCap()) or turnsOff or bossOff) "⚠ " else "";
+        let aimed = boss and lv == bossLv();
+        let bossOff = aimed and (quantile(0.5, rounds) < bossTurnsLo() or quantile(0.5, rounds) > bossTurnsHi() or
+                                 wins < bossWinLo() or wins > bossWinHi());
+        let damageOff = not boss and quantile(0.5, fights |> List.map(f -> f#damage)) > damageCap();
         let weight = if (fixed) "固定" else "${g#weight}";
+        let main = statsRow(List.join("・", g#foes), weight, damageOff or turnsOff or bossOff, fights);
+        if (not boss) main
+        else {
+            let plain = fightsBy(BotBattle.attackOnlyPlans);
+            main + "\n" + statsRow("${List.join("・", g#foes)}（たたかうだけ）", weight, aimed and winRateOf(plain) > attackOnlyWinHi(), plain)
+        }
+
+    def winRateOf(fights: List[Fight]): Float64 =
+        Int32.toFloat64(List.count(f -> f#won, fights)) / Int32.toFloat64(Int32.max(1, List.length(fights)))
+
+    /// 表の 1 行（勝率・ターン・受けたダメージ・全滅の率・使った MP と道具）。off なら頭に ⚠。
+    def statsRow(label: String, weight: String, off: Bool, fights: List[Fight]): String =
+        let lost = Int32.toFloat64(List.count(f -> f#lost, fights)) / Int32.toFloat64(Int32.max(1, List.length(fights)));
+        let rounds = fights |> List.map(f -> Int32.toFloat64(f#rounds));
+        let damage = fights |> List.map(f -> f#damage);
         let mp = quantile(0.5, fights |> List.map(f -> Int32.toFloat64(f#mp)));
         let items = quantile(0.5, fights |> List.map(f -> Int32.toFloat64(f#items)));
-        tableRow("${warn}${List.join("・", g#foes)}" :: weight :: percent(wins) :: "${quantile(0.5, rounds)} / ${quantile(0.9, rounds)}" ::
+        let warn = if (off) "⚠ " else "";
+        tableRow("${warn}${label}" :: weight :: percent(winRateOf(fights)) :: "${quantile(0.5, rounds)} / ${quantile(0.9, rounds)}" ::
                  "${percent(quantile(0.5, damage))} / ${percent(quantile(0.9, damage))}" :: percent(lost) :: "${mp}" :: "${items}" :: Nil)
 
     /// その区間の Lv のルカの たたかう（ぶれの真ん中・会心なし）で倒れるまでの回数（固定の戦いの敵は目安と比べない）。
