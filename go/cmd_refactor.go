@@ -11,6 +11,7 @@ import (
 	"github.com/ababup1192/flix_game_engine/go/internal/heavy"
 	"github.com/ababup1192/flix_game_engine/go/internal/hooks"
 	"github.com/ababup1192/flix_game_engine/go/internal/refactorhost"
+	"github.com/ababup1192/flix_game_engine/go/internal/status"
 	"github.com/ababup1192/flixlint/go/refactor"
 )
 
@@ -32,6 +33,7 @@ func cmdRefactor(out, errOut *strings.Builder, rest []string, asJSON bool) int {
 		rest = append(dropJSONFlag(rest), "--json")
 	}
 	useEngineFlixlint(root, rest)
+	useEngineJava(engineDirOf(repoRoot()))
 	return refactor.Run(out, errOut, root, rest, refactor.Options{Run: heavyRunner, Verify: heavyVerify, Log: os.Stderr, Shared: sharedServer(root)})
 }
 
@@ -56,6 +58,39 @@ func useEngineFlixlint(root string, rest []string) {
 			os.Setenv("FLIXLINT_SHIM", shim)
 		}
 	}
+}
+
+// useEngineJava は、PATH の java が動かない時に engine の devbox の jdk を PATH の先頭へ足す（checkd の javaCmd と同じ順）。
+// WhyNot: flixlint へ java のパスを渡す口は無く、flixlint は PATH の java で常駐を起こす。macOS の /usr/bin/java は
+// jdk の無い入口なので、engine の外（ゲーム・templates/*）で流すと索引を作れずに止まっていた。
+func useEngineJava(engine string) {
+	if exec.Command("java", "-version").Run() == nil {
+		return
+	}
+	if path, ok := pathWithEngineJava(os.Getenv("PATH"), engine); ok {
+		os.Setenv("PATH", path)
+	}
+}
+
+// engineDirOf は root から engine の置き場（mk/game.mk のある所）を引く。生成したゲームでは local.mk・Makefile の ENGINE を辿る。
+// WhyNot: repoRoot のままにしない — 生成したゲームでは bin/fge-go がゲームの bin に写されていて、repoRoot はゲームの根になる。
+func engineDirOf(root string) string {
+	if dir, _ := status.FindEngineDir(root, "mk/game.mk"); dir != "" {
+		return dir
+	}
+	return root
+}
+
+// pathWithEngineJava は engine の devbox の java がある時だけ、その bin を先頭に足した PATH を返す。
+func pathWithEngineJava(path, engine string) (string, bool) {
+	bin := filepath.Join(engine, ".devbox", "nix", "profile", "default", "bin")
+	if _, err := os.Stat(filepath.Join(bin, "java")); err != nil {
+		return path, false
+	}
+	if path == "" {
+		return bin, true
+	}
+	return bin + string(os.PathListSeparator) + path, true
 }
 
 // sharedServer は make check（checkd の server の道）の常駐と同じ jar・ヒープ・寿命。ゲームの hooks.json に checkd.server が

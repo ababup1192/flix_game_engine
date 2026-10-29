@@ -26,6 +26,12 @@ func init() {
 				return orAbort(errOut, 0, err)
 			}
 			fmt.Fprintf(out, "FLIXLINT_DIR='%s'\nFLIXLINT_SHIM='%s'\n", dir, shim)
+			// WhyNot: flixlint へ java のパスを渡す口は無いので、PATH の java が動かない時は engine の devbox の jdk を前に足させる。
+			if exec.Command("java", "-version").Run() != nil {
+				if path, ok := pathWithEngineJava(os.Getenv("PATH"), engineDirOf(repoRoot())); ok {
+					fmt.Fprintf(out, "PATH='%s'\n", path)
+				}
+			}
 			return 0
 		})
 }

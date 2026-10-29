@@ -61,6 +61,7 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | 人が見る動画・会話のプレビューを GPU で塗る | 動画 `VideoOut.writeFrames`・1 枚 `GpuShot.shotOf`（`FGE_GPU`） |
 | 描き出しに ShaderDoc の面と追加フォントを一緒に渡す（字の縁は本ごとに） | `HeadlessRender.renderPngFull(cfg, scene, name)`（`Scene` の `fonts`・本ごとの字の縁は `fontAntialias`） |
 | 遊ぶ起動を速くする（src を変えていない 2 回目からコンパイルしない） | `make run` / `make debug`（engine の headless-run `--window main` が描き出しと同じ jar から流す）・裏で作るだけは `--build-only` |
+| 起動して確かめるだけ（数十秒で自分で止め、ウィンドウを残さない） | `make run RUN_SECONDS=40`（プロセスの組ごと止め、時間で止めた時は成功で返る） |
 | 描き出しを続けて流すたびの JVM の立ち上げを省く（render・reference-check・会話の撮り） | `HEADLESS_RESIDENT=1`（窓なしのゲームを常駐・入口は `<名前>Job(req): Int32` と `jobs()`）・`bin/fge resident status` / `verify` |
 | F8 のチケット・閉じる | `debug/annotations/` の README → `world.json`・`bin/fge tickets close` |
 | 直しが別の不具合を生んだ率 | `bin/fge tickets stats`（前の直しの候補は `suspects`） |

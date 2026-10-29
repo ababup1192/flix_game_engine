@@ -70,3 +70,7 @@ go/go
 go/go.exe
 # checkd の版の fixture（flixlint の test/resident/version の写し）: packages.lock も版に入るので git に入れる
 !go/internal/checkd/testdata/resident/version/packages.lock
+
+# engine リポの中のテンプレートが lint の時に張る、engine の規約へのリンク（mk/game.mk の lint-rules-link）。ゲーム固有の .local.json は追跡する。
+templates/*/bin/lint-rules/*.json
+!templates/*/bin/lint-rules/*.local.json

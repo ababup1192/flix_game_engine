@@ -19,15 +19,22 @@
 
 ## .flix の名前を探す（grep の前に・最初の 1 手から）
 
-| したいこと | 道具 |
-|---|---|
-| 名前の一部から宣言を探す | `bin/fge refactor search <語>` |
-| 関数・型の本文だけを読む | `bin/fge refactor show <Mod.名前>` |
-| 使う所・呼び手を全部（直す所の洗い出し） | `bin/fge refactor usages <Mod.名前> [--callers]` |
-| 使われていない pub | `bin/fge refactor usages --unused` |
+`.flix` に grep / rg / `sed -n` を打ちそうになったら、打つ前にこの表の行に置き換える。
 
-grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を落とす。文字列・文書・JSON の値は grep のままで良い。
-ゲームを調べる時は、そのゲームのフォルダで流す（`cd <ゲーム> && bin/fge refactor …`）。詳しい表は `/flix-docs`。
+| したいこと | 打ちそうになる形 | 代わりに打つ |
+|---|---|---|
+| 名前の一部から宣言を探す | `grep -rn "def foo"` / `"enum Foo"` | `bin/fge refactor search <語>` |
+| 関数・型の本文だけを読む | `grep -n -A30 "def foo"`・`sed -n 120,180p X.flix` | `bin/fge refactor show <Mod.名前>` |
+| 使う所・呼び手を全部（直す所の洗い出し） | `grep -rn "foo("`・`grep -rn "Mod.foo"` | `bin/fge refactor usages <Mod.名前> [--callers]` |
+| 使われていない pub | （grep では探せない） | `bin/fge refactor usages --unused` |
+
+grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を落とす。grep のままで良いのは文字列・文書（.md）・JSON の値・Makefile と設定だけ。
+
+- **どこで流すか**: engine の .flix は engine 直下で `bin/fge refactor …`。ゲーム・テンプレートの .flix はそのフォルダで流す（`cd <ゲーム> && bin/fge refactor …`。`bin/fge` の無い `templates/*` は `../../bin/fge refactor …`）。
+- **refactor が落ちたら grep へ戻らない**: 出たログ（`build/refactor/*.log`）を読んで直す。java は PATH の物が動かなければ engine の devbox の jdk を自分で使う。
+- **サブエージェントに .flix を読ませる・書かせる時**は、依頼文にこの表を貼り、報告に「refactor で引いた回数と、.flix に grep を使った所とその理由」を書かせる（AGENTS.md を読めと書くだけでは守られなかった）。
+
+詳しい表は `/flix-docs`。
 
 ## 名前の付け方（モジュール・関数・変数）
 

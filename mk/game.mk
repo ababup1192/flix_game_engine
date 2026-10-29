@@ -46,12 +46,19 @@ else
 HEADLESS_RUN ?= JAVA_TOOL_OPTIONS="-Djava.awt.headless=true" FLIX_CMD=$(FLIX) "$(ENGINE)/bin/headless-run"
 endif
 
+# engine リポの中のテンプレートだけ、lint の前に engine の規約へのリンクを張る（下の lint-rules-link）。
+# WhyNot: 規則の前提は読み込みの時に展開されるので、使う規則より前のここで決める。
+ENGINE_ABS := $(abspath $(ENGINE))
+ifneq ($(filter $(ENGINE_ABS)/templates/%,$(CURDIR)),)
+LINT_RULES_LINK := lint-rules-link
+endif
+
 # 窓なしのゲームの常駐（HEADLESS_RESIDENT=1 の時に headless-run が起こす）を落とす。居なければ何もしない。
 # WhyNot: render-all・reference-check・compare の最後に成否にかかわらず流すのは、まとめて描く口の後に
 # JVM を 1 本抱えたまま寿命が切れるまで待たせないため（1 枚ずつの render は続けて呼ぶので残す）。
 RESIDENT_STOP = if [ -x "$(ENGINE)/bin/fge-go" ]; then "$(ENGINE)/bin/fge-go" resident stop --dir . || true; fi
 
-.PHONY: help status run debug test build dist-linux dist-macos dist-windows dist-all check flow flow-check flow-vocab render render-all gallery-sounds reference-check reference-update render-budget render-lint lint lint-doc-refs lint-record-wrap lint-flixlint video-entries loc api module src src-index hooks check-docs-sync compare agent-eval agent-eval-compare agent-eval-release
+.PHONY: help status run debug test build dist-linux dist-macos dist-windows dist-all check flow flow-check flow-vocab render render-all gallery-sounds reference-check reference-update render-budget render-lint lint lint-doc-refs lint-record-wrap lint-flixlint lint-forbid lint-rules-link video-entries loc api module src src-index hooks check-docs-sync compare agent-eval agent-eval-compare agent-eval-release
 
 # 共通の口の一覧。engine を上げるとここも一緒に新しくなる
 # （ゲーム側の Makefile へ写さないので、口が増えても書き足しに回らなくて済む）。
@@ -114,8 +121,14 @@ else
 PLAY_RUN ?= FGE_HEADLESS_FALLBACK=1 FLIX_CMD=$(FLIX) "$(ENGINE)/bin/headless-run" --window main
 endif
 
+# RUN_SECONDS=N を付けると N 秒でゲームを止める（起動して確かめるだけの時。止め忘れでウィンドウが残らない）。
+# WhyNot: kill でゲームの pid だけを止めない — headless-run が java を子として起こすので、子が残る。プロセスの組ごと止める。
 run:
+ifeq ($(RUN_SECONDS),)
 	$(PLAY_RUN)
+else
+	@perl -e '$$t = shift; $$p = fork; if (!$$p) { setpgrp(0, 0); exec @ARGV } $$timed = 0; $$SIG{ALRM} = sub { $$timed = 1; kill "TERM", -$$p; sleep 2; kill "KILL", -$$p }; alarm $$t; waitpid($$p, 0); exit($$timed ? 0 : $$? >> 8)' $(RUN_SECONDS) sh -c '$(PLAY_RUN)'
+endif
 
 debug:
 	DEBUG=true $(PLAY_RUN)
@@ -266,24 +279,39 @@ render-budget:
 # 字の被り・はみ出しの許す物は bin/lint-rules/text-audit.local.json の allow に理由つき、表の置き場と直し方の 1 行は
 # bin/lint-rules/{text-audit,z-audit}.json（ゲームは .local.json で上書き）。表が無ければ見ずに通す。
 # 動画の見回りの入口の写し（video-entries）は動画の口が無いゲームでは見ずに通す。
-render-lint:
+render-lint: $(LINT_RULES_LINK)
 	@fge=bin/fge; [ -x "$$fge" ] || fge="$(ENGINE)/bin/fge"; \
 	code=0; "$$fge" text-audit --root . || code=1; "$$fge" z-audit --root . || code=1; \
 	"$$fge" video-entries --check --root . || code=1; exit $$code
 
 # 文書（docs/**/*.md・NOTES.md・AGENTS.local.md）が指す Mod.name・パス・path:行 が今のリポに在るか（下の lint が束ねる）。
 # 古い記録の文書は bin/lint-rules/doc-refs.local.json の skip へ。コミットでは触った .md だけを precommit が見る。
-lint-doc-refs:
+lint-doc-refs: $(LINT_RULES_LINK)
 	@fge=bin/fge; [ -x "$$fge" ] || fge="$(ENGINE)/bin/fge"; "$$fge" doc-refs --root .
+
+# 古い書き方を 1 行の正規表現で止める（engine の forbid.json + ゲームの bin/lint-rules/forbid.local.json）。
+lint-forbid: $(LINT_RULES_LINK)
+	@fge=bin/fge; [ -x "$$fge" ] || fge="$(ENGINE)/bin/fge"; "$$fge" forbid --all --root .
+
+# engine リポの中のテンプレートは規約（bin/lint-rules/<名前>.json）を持たない（生成したゲームには new-game が写す）。
+# 無い規約だけ engine の物へのリンクを張り、生成したゲームと同じ形で lint を流す。
+# WhyNot: 道具ごとに「無ければ engine の規約を読む」を足さない — 規約を読む所が道具の数（30 余り）だけあり、1 つ漏れると黙ってずれる。
+# WhyNot: 写さずにリンクにする — 写すと engine の規約を直しても古いまま残る。リンクは .gitignore で追跡しない。
+lint-rules-link:
+	@d=bin/lint-rules; mkdir -p "$$d"; \
+	for f in "$(ENGINE_ABS)"/"$$d"/*.json; do \
+	  n=$$(basename "$$f"); case "$$n" in *.local.json) continue;; esac; \
+	  [ -e "$$d/$$n" ] || ln -s "$$f" "$$d/$$n"; \
+	done
 
 # 検査の束。エンジンの軽い検査はここに前提として並べ、エンジンを上げると増えた検査もそのまま届く。
 # ゲームの検査はゲームの Makefile に「lint: lint-view lint-palette」のような前提だけの 1 行で足す
 # （make は前提だけの規則を 1 つにまとめる。レシピを書くと makefile-dup が止める）。
-lint: render-lint lint-doc-refs lint-record-wrap $(if $(wildcard lint/rules.flix),lint-flixlint)
+lint: render-lint lint-doc-refs lint-record-wrap lint-forbid $(if $(wildcard lint/rules.flix),lint-flixlint)
 
 # World の形（大きな record を包む・Doc と描く元は Resources へ・一番上の欄の数）と古い除外を見る。
 # ゲームの除外は bin/lint-rules/record-wrap.local.json の exemptRules へ理由つき。
-lint-record-wrap:
+lint-record-wrap: $(LINT_RULES_LINK)
 	@fge=bin/fge; [ -x "$$fge" ] || fge="$(ENGINE)/bin/fge"; "$$fge" record-wrap --all --root .
 
 # ゲームの lint/rules.flix（依存の向き・View が World を受けない・テストの形）を flixlint で見る。flixlint の版と shim の jar は
