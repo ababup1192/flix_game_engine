@@ -4,6 +4,7 @@
   "note": "鍛冶屋の前（左に鍛冶屋と炉、右に小さな家）。村の格子と同じ village の組。B は樽・X は木箱・Y は炉と金床の下の草（入れない）。mina はミナ（加わるとマップから消えて隊列に入る）。右の端の道が村の西の道へ出る。",
   "tileset": "village",
   "battleBack": "bg_plains",
+  "bgm": "village",
   "rows": [
     "TT....,......T..",
     ".RRcRR.......b..",

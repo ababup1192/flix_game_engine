@@ -4,7 +4,8 @@
 //
 // 毎フレームの流れ: App が遊びの時計を進める（終了の確認の間は止まる = World.paceOf）
 //   → Controls.step（暗転・歩き・文字送り → 入力 1 つ）→ View.frame / View.hud とタイル層が描く
-//   → 前後の World の出来事の差から音（Controls.sounds）を鳴らす。
+//   → 前後の World の出来事の差から音（Controls.sounds）を鳴らし、場面とマップから曲（Controls.musicOf）を宣言する
+//   （どちらも rpg.mixer.json のバスを通る = Controls.mixerOf）。
 mod Game {
     use fge::{App, Log, Resources}
 
@@ -31,6 +32,8 @@ mod Game {
             |> App.withPixelSnap(_ -> 1.0)
             |> App.withTileLayers(Resources.read(View.tileLayers))
             |> App.withAudio(ws -> Controls.sounds({ before = ws#before#world, after = ws#after#world }))
+            |> App.withSustained(Resources.read(Controls.musicOf))
+            |> App.withMixer(Resources.read(Controls.mixerOf))
             // Esc とウィンドウの閉じるボタンは終了の確認へ（quitWhen を差し替えると既定の「Esc ですぐ終了」は外れる）。
             |> App.quitWhen((f, h) -> Resources.read((r, w) -> Controls.isQuit(f, r, w), h))
             |> App.withCloseRequest(Resources.mapWorld((_, w) -> World.askQuit(w)))

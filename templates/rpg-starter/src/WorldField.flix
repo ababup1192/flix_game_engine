@@ -257,13 +257,21 @@ mod WorldField {
     def startWarp(res: Res.Res, exit: MapDoc.Exit, at: Clock.Time[World.Play], r: FieldRec): FieldRec \ Emit[World.Event] =
         match MapDoc.idOf(res#maps, exit#to) {
             case Some(id) => {
-                Emit.emit(World.Event.Door);
+                Emit.emit(if (isStairsExit(res, exit, r)) World.Event.Stairs else World.Event.Door);
                 let arrival = { x = exit#spawnX, y = exit#spawnY };
                 { stride = Stride.Still, transition = Some({ startedAt = at, then = TransitionThen.Warp(id, arrival, exit#facing) }) | r }
             }
             case None =>
                 Log.warnThen("[map] 出入口 '${exit#id}' の行き先 '${exit#to}' が無いので移らない", { stride = Stride.Still | r })
         }
+
+    /// 出入口のマスが階段の文字か（端の出口・歩いては通らない出口は階段でない）。
+    def isStairsExit(res: Res.Res, exit: MapDoc.Exit, r: FieldRec): Bool = match exit#place {
+        case MapDoc.ExitPlace.Cell(x, y) =>
+            mapOf(res, r) |> Option.exists(m -> MapDoc.charAt(x, y, m) |> Option.exists(Tileset.isStairs(MapDoc.rec(m)#tileset)))
+        case MapDoc.ExitPlace.Edge(_)    => false
+        case MapDoc.ExitPlace.Nowhere    => false
+    }
 
     // ── 話しかける・調べる ──
 

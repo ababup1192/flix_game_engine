@@ -147,7 +147,7 @@ mod MapDoc {
     /// fps > 0 ならコマを名前の順に回し、0 なら frame の 1 コマ。flat は床に敷く物（人より奥に描く）。span = 依頼の段階で出る間。
     pub type alias Prop = { sprite = String, frame = String, fps = Float64, flat = Bool, x = Float64, y = Float64, span = Span }
 
-    /// マップ 1 枚。battleBack = このマップで戦う時の背景の帯（rpg.battlefx.sprite.json の絵の名前）、
+    /// マップ 1 枚。battleBack = このマップで戦う時の背景の帯（rpg.battlefx.sprite.json の絵の名前）、bgm = このマップで鳴らす曲（None は鳴らさない）、
     /// dark = 暗い（先頭のまわりしか見えない。たいまつで広がる）、steps = 次の戦いまでの歩数を引く範囲（None なら rules の minSteps..maxSteps）、
     /// grid は rows を Vector にした物、exitAt・npcAt・eventAt はマス → その物（objects は動く物があるのでマスで引かない。WorldObject.objectsNow）、
     /// problems は読む時に既定へ落とした欄・飛ばした行（load が 1 行ずつ言う）。
@@ -156,6 +156,7 @@ mod MapDoc {
         title = String,
         tileset = Tileset.TilesetId,
         battleBack = String,
+        bgm = Option[Bgm.Track],
         dark = Bool,
         steps = Option[(Int32, Int32)],
         rows = List[String],
@@ -209,14 +210,14 @@ mod MapDoc {
     pub def docOf(table: Table, id: MapId): Option[Doc] = Map.get(nameOf(id), table)
 
     /// 既定（読めない時の 1 マスの草地。出入口も人も無い）。
-    def defaults(): Doc = build({ version = 1, title = "", tileset = Tileset.TilesetId.Village, battleBack = "bg_plains", dark = false, steps = None, rows = "." :: Nil,
+    def defaults(): Doc = build({ version = 1, title = "", tileset = Tileset.TilesetId.Village, battleBack = "bg_plains", bgm = None, dark = false, steps = None, rows = "." :: Nil,
                                       exits = Nil, npcs = Nil, props = Nil, objects = Nil, events = Nil, encounter = Nil, problems = Nil })
 
-    def build(spec: { version = Int32, title = String, tileset = Tileset.TilesetId, battleBack = String, dark = Bool, steps = Option[(Int32, Int32)],
+    def build(spec: { version = Int32, title = String, tileset = Tileset.TilesetId, battleBack = String, bgm = Option[Bgm.Track], dark = Bool, steps = Option[(Int32, Int32)],
                       rows = List[String], exits = List[Exit], npcs = List[Npc], props = List[Prop], objects = List[Object], events = List[Event],
                       encounter = List[Encounter], problems = List[String] }): Doc =
         let grid = spec#rows |> List.map(row -> String.toList(row) |> List.toVector) |> List.toVector;
-        MapDocOf.MapDocOf({ version = spec#version, title = spec#title, tileset = spec#tileset, battleBack = spec#battleBack,
+        MapDocOf.MapDocOf({ version = spec#version, title = spec#title, tileset = spec#tileset, battleBack = spec#battleBack, bgm = spec#bgm,
                   dark = spec#dark, steps = spec#steps, rows = spec#rows, grid = grid,
                   cols = spec#rows |> List.map(String.length) |> List.maximum |> Option.getWithDefault(0),
                   height = List.length(spec#rows),
@@ -270,14 +271,23 @@ mod MapDoc {
         let (events, eventProblems) = listOf(name, "events", eventOf, root);
         let (encounter, encounterProblems) = listOf(name, "encounter", encounterOf, root);
         let (steps, stepsProblem) = stepsOf(name, root);
+        let (bgm, bgmProblem) = bgmOf(name, root);
         build({ version = JsonCodec.intOr("version", d#version, root),
                 title = JsonCodec.stringOr("title", d#title, root),
-                tileset = tileset, battleBack = JsonCodec.stringOr("battleBack", d#battleBack, root),
+                tileset = tileset, battleBack = JsonCodec.stringOr("battleBack", d#battleBack, root), bgm = bgm,
                 dark = JsonCodec.boolOr("dark", false, root), steps = steps,
                 rows = rows, exits = exits, npcs = npcs, props = props,
                 objects = objects, events = events, encounter = encounter,
-                problems = List.flatten(tilesetProblem :: stepsProblem :: exitProblems :: npcProblems :: propProblems ::
+                problems = List.flatten(tilesetProblem :: bgmProblem :: stepsProblem :: exitProblems :: npcProblems :: propProblems ::
                                         objectProblems :: eventProblems :: encounterProblems :: Nil) })
+
+    /// bgm の欄（無ければ曲を鳴らさないマップ）。知らない名前は鳴らさないへ落として 1 行言う。
+    def bgmOf(name: String, root: Map[String, Json]): (Option[Bgm.Track], List[String]) =
+        match JsonCodec.stringOr("bgm", "", root) {
+            case ""   => (None, Nil)
+            case text => Bgm.idOf(text) |> Option.map(t -> (Some(t), Nil))
+                |> Option.getWithDefault((None, Log.fellBackLine("map", "${name} の bgm '${text}'", "曲なし", "知らない曲") :: Nil))
+        }
 
     /// minSteps / maxSteps の欄（どちらも 1 以上で min ≤ max なら Some。両方無ければ None で rules の範囲）。
     /// WhyNot: 片方だけ・逆さまの範囲を片方の値で埋めない — 書き損じで出会いが黙って多く・少なくなる。rules の範囲へ落として 1 行言う。

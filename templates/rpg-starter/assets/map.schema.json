@@ -1,5 +1,5 @@
 {
-  "//": "assets/maps/*.map.json の形の宣言（Studio の sections 方言）。rows の 1 文字 = 1 マス。文字の絵と通れるかはコード（src/Tileset.flix）。出入口・人・小物の x, y はマス（左上が 0, 0）。 仕掛けの足し方（4 つだけ）: マスにある物は objects の 1 行（kind を選ぶ）・話す人は npcs の 1 行（node）・マップ全体の性質は dark / minSteps / maxSteps / battleBack・別のマップへ移るのは exits の 1 行 + 通れる 1 文字（階段・落とし穴・洞窟の口）。",
+  "//": "assets/maps/*.map.json の形の宣言（Studio の sections 方言）。rows の 1 文字 = 1 マス。文字の絵と通れるかはコード（src/Tileset.flix）。出入口・人・小物の x, y はマス（左上が 0, 0）。 仕掛けの足し方（4 つだけ）: マスにある物は objects の 1 行（kind を選ぶ）・話す人は npcs の 1 行（node）・マップ全体の性質は dark / minSteps / maxSteps / battleBack / bgm・別のマップへ移るのは exits の 1 行 + 通れる 1 文字（階段・落とし穴・洞窟の口）。",
   "version": 1,
   "sections": {
     "tileset": {
@@ -31,6 +31,22 @@
       "group": "マップ",
       "order": 2,
       "default": "bg_plains"
+    },
+    "bgm": {
+      "kind": "field",
+      "type": {
+        "enum": [
+          "title",
+          "village",
+          "world",
+          "mine",
+          "battle",
+          "boss"
+        ]
+      },
+      "label": "このマップで鳴らす曲（src/Bgm.flix の Track。書かなければ鳴らさない）",
+      "group": "マップ",
+      "order": 2
     },
     "rows": {
       "kind": "field",

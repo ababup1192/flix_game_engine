@@ -4,6 +4,7 @@
   "note": "村長の家の中。x は本棚と寝床の下・k は机の下（絵は床のまま。k の机越しに人と話せる）。下の 4 マスが村への出口。 村長はボスを倒した後（bossdown から）泉のまわりへ出るので、家には居ない（questUntil = accepted）。",
   "tileset": "house",
   "battleBack": "bg_plains",
+  "bgm": "village",
   "rows": [
     "################",
     "##WWOWWWWWWOWW##",

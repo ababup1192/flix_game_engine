@@ -2,7 +2,7 @@
 // どのキーがどの操作かは KeysDoc（rpg.keys.json）。どの層が入力を受けるかは InputLayer の 1 か所で決め、ここは match するだけ。
 // Esc は OS の決まりに合わせた固定のキー（終了の確認。割り当ての Doc には載せない）。
 mod Controls {
-    use fge::{App, Clock, Dir4, DocTable, Emit, PxSpriteDoc, Resources, UiTypewriter}
+    use fge::{App, AudioMixer, Clock, Dir4, DocTable, Emit, PxSpriteDoc, Resources, UiTypewriter}
     use fge::GameEngine.Key
     use InputLayer.Layer
 
@@ -15,6 +15,8 @@ mod Controls {
             let after = interpret(res, frame, tick(res, frame, w1));
             talkSoundsOf(res, w1, after) |> List.forEach(Emit.emit);
             rideSoundsOf(w1, after) |> List.forEach(Emit.emit);
+            transitionSoundsOf(res, w1, after) |> List.forEach(Emit.emit);
+            goldSoundsOf(w1, after) |> List.forEach(Emit.emit);
             after
         }, w1#events);
         let closed = World.isWindowOpen(w1) and not World.isWindowOpen(next);
@@ -160,8 +162,7 @@ mod Controls {
     // ── 音（project.json の sounds の論理名。素材は art/sfx.snd.star → assets/sfx） ──
 
     /// 出来事の音の名前。
-    /// WhyNot: 床のスイッチ（Switch）に別の素材を作らない — 仕掛けが動いた手応えはレバーと同じ音で通じる。出来事は分けてあるので、音だけ後で替えられる。
-    def soundOf(event: World.Event): String = match event {
+    pub def soundOf(event: World.Event): String = match event {
         case World.Event.Cursor   => "cursor"
         case World.Event.Confirm  => "confirm"
         case World.Event.Cancel   => "cancel"
@@ -174,12 +175,102 @@ mod Controls {
         case World.Event.TalkBlip(TextDoc.Voice.Mid)  => "talk_mid"
         case World.Event.TalkBlip(TextDoc.Voice.High) => "talk_high"
         case World.Event.Lever    => "lever"
-        case World.Event.Switch   => "lever"
+        case World.Event.Switch   => "plate"
         case World.Event.RockPush => "rock"
         case World.Event.CartRide => "cart"
         case World.Event.CrystalLit   => "chime"
         case World.Event.CrystalReset => "fizzle"
+        case World.Event.Stairs   => "stairs"
+        case World.Event.Chest    => "chest"
+        case World.Event.Unlock   => "door"
+        case World.Event.Gold     => "gold"
+        case World.Event.Inn      => "inn"
+        case World.Event.Encounter  => "encounter"
+        case World.Event.BossAppear => "boss"
+        case World.Event.Attack   => "attack"
+        case World.Event.Critical => "critical"
+        case World.Event.Hurt     => "hurt"
+        case World.Event.Spell(fx) => spellSoundOf(fx)
+        case World.Event.Heal     => "heal"
+        case World.Event.Sleep    => "sleep"
+        case World.Event.Flee     => "flee"
+        case World.Event.FoeDown  => "foe_down"
+        case World.Event.Victory  => "fanfare"
+        case World.Event.LevelUp  => "level_up"
+        case World.Event.Wiped    => "wiped"
     }
+
+    /// 呪文の演出の絵（rpg.spells.json の fx）→ 音。
+    /// WhyNot: 知らない絵を無音にしない — 呪文を Doc に足しただけで唱えた手応えが消える。素材を作るまでは炎の音を借りる。
+    def spellSoundOf(fx: String): String = match fx {
+        case "ice"  => "spell_ice"
+        case "heal" => "heal"
+        case _      => "spell_fire"
+    }
+
+    /// 暗転の始まりの音: 戦いの点滅（逃げられない敵がいればボスの登場）・宿に泊まる。
+    /// WhyNot: 点滅を始める所（WorldField の出会い・会話の <<fight>>・<<inn>>）で出さない — 始める道が 3 つあり、
+    /// 逃げられない敵かを見るには敵の Doc が要る。前後の見比べ 1 か所にそろえる。
+    def transitionSoundsOf(res: Res.Res, before: World.World, after: World.World): List[World.Event] =
+        let thenOf = w -> World.fieldRecOf(w) |> Option.flatMap(r -> r#transition) |> Option.map(t -> t#then);
+        let started = if (Option.isEmpty(thenOf(before))) thenOf(after) else None;
+        started |> Option.flatMap(t -> match t {
+            case World.TransitionThen.StartBattle(foes, _) => Some(if (isNoFleeGroup(res, foes)) World.Event.BossAppear else World.Event.Encounter)
+            case World.TransitionThen.InnRest              => Some(World.Event.Inn)
+            case World.TransitionThen.Warp(_, _, _)        => None
+            case World.TransitionThen.FadeIn               => None
+            case World.TransitionThen.Ending               => None
+        }) |> Option.toList
+
+    /// 敵の並びに逃げられない敵がいるか（ボスの登場の音とボス戦の曲）。
+    def isNoFleeGroup(res: Res.Res, foes: List[FoesDoc.FoeId]): Bool =
+        foes |> List.exists(id -> FoesDoc.foeOrBlank(res#foes, id)#noFlee)
+
+    /// お金の音: フィールドにいる前後のフレームでお金が変わった（宝箱・会話の <<gold>>・店・お礼）。
+    /// WhyNot: 戦いから戻ったフレームでは鳴らさない — 勝ったお金はファンファーレと伝言が先に知らせている。
+    def goldSoundsOf(before: World.World, after: World.World): List[World.Event] =
+        let onField = w -> Option.nonEmpty(World.fieldRecOf(w));
+        if (onField(before) and onField(after) and Bag.goldOf(before#bag) != Bag.goldOf(after#bag)) World.Event.Gold :: Nil else Nil
+
+    // ── 曲（App.withSustained。素材は art/bgm.snd.star → assets/bgm） ──
+
+    /// このフレームに鳴らし続ける曲（0 か 1 本）。
+    pub def musicOf(res: Res.Res, w: World.World): List[App.Sustain] =
+        trackOf(res, w) |> Option.map(t -> { name = Bgm.soundOf(t), volume = 1.0, pitch = 1.0 }) |> Option.toList
+
+    /// 場面の曲: タイトル → タイトル / フィールド → マップの bgm（戦いの点滅に入ったら戦いの曲）/ 戦い → 戦いかボス戦の曲
+    /// （勝ちと全滅の伝言の間は鳴らさない = ファンファーレと全滅の音）/ エンディング → 村の曲。
+    pub def trackOf(res: Res.Res, w: World.World): Option[Bgm.Track] = match World.sceneKindOf(w) {
+        case World.SceneKind.Title  => Some(Bgm.Track.Title)
+        case World.SceneKind.Field  => World.fieldRecOf(w) |> Option.flatMap(fieldTrackOf(res))
+        case World.SceneKind.Battle => World.battleRecOf(w) |> Option.flatMap(battleTrackOf(res))
+        case World.SceneKind.Ending => Some(Bgm.Track.Village)
+    }
+
+    def fieldTrackOf(res: Res.Res, r: World.FieldRec): Option[Bgm.Track] =
+        let fighting = r#transition |> Option.flatMap(t -> match t#then {
+            case World.TransitionThen.StartBattle(foes, _) => Some(foes)
+            case World.TransitionThen.Warp(_, _, _)        => None
+            case World.TransitionThen.FadeIn               => None
+            case World.TransitionThen.InnRest              => None
+            case World.TransitionThen.Ending               => None
+        });
+        match fighting {
+            case Some(foes) => Some(fightTrackOf(isNoFleeGroup(res, foes)))
+            case None       => MapDoc.docOf(res#maps, r#map) |> Option.flatMap(m -> MapDoc.rec(m)#bgm)
+        }
+
+    def battleTrackOf(res: Res.Res, r: World.BattleRec): Option[Bgm.Track] = match r#phase {
+        case World.Phase.Show(_, _, _, World.AfterShow.Leave(Battle.Outcome.Won))  => None
+        case World.Phase.Show(_, _, _, World.AfterShow.Leave(Battle.Outcome.Lost)) => None
+        case _ => Some(fightTrackOf(Battle.isNoFlee(res, r#battle)))
+    }
+
+    def fightTrackOf(noFlee: Bool): Bgm.Track = if (noFlee) Bgm.Track.Boss else Bgm.Track.Battle
+
+    /// 音の通り道（rpg.mixer.json）。終了の確認を開いている間は snapshot「ask」（曲を籠もらせる）。
+    pub def mixerOf(res: Res.Res, w: World.World): AudioMixer.Mixer =
+        if (Option.nonEmpty(w#ask)) AudioMixer.withSnapshot("ask", res#mixer) else res#mixer
 
     /// トロッコの音: 前のフレームに走っていなかったのが、このフレームに走り出した（CartRide）。
     /// WhyNot: 走り出す所（WorldField.board）で出さない — 走れなかった時の知らせと同じ枝に音を混ぜず、出来事は前後の見比べ 1 か所にそろえる。
@@ -222,6 +313,7 @@ mod Controls {
             :: Resources.reloadRow("foe_moves", FoeMovesDoc.path(), res -> Res.withFoeMoves(FoeMovesDoc.load(FoeMovesDoc.path()), res), unchanged)
             :: Resources.reloadRow("spells", SpellsDoc.path(), res -> Res.withSpells(SpellsDoc.load(SpellsDoc.path()), res), unchanged)
             :: Resources.reloadRow("recolors", RecolorsDoc.path(), res -> Res.withRecolors(RecolorsDoc.load(RecolorsDoc.path()), res), unchanged)
+            :: Resources.reloadRow("mixer", Res.mixerPath(), res -> Res.withMixer(Res.loadMixer(), res), unchanged)
             :: Resources.reloadUnnamedRow(Talk.dialoguePath(), res -> Res.withDialogue(Talk.load(), res), (_, w) -> WorldTalk.close(w))
             :: Resources.reloadUnnamedRow(Palette.path(), reloadSprites, unchanged)
             :: List.append(

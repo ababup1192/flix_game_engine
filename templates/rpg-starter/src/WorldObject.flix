@@ -225,7 +225,7 @@ mod WorldObject {
         World.showNotice(text, NoticeThen.Close, w)
 
     /// 宝箱を開ける: 中の道具をふくろへ・お金を足し、開けた旗を立てる。ふくろに空きが無ければ開けずに知らせる。
-    def openChest(res: Res.Res, map: MapDoc.MapId, id: String, chest: MapDoc.ChestContents, w: World.World): World.World =
+    def openChest(res: Res.Res, map: MapDoc.MapId, id: String, chest: MapDoc.ChestContents, w: World.World): World.World \ Emit[World.Event] =
         let roomy = chest#item |> Option.forAll(item -> Bag.hasRoomFor(item, w#bag));
         let name = chest#item |> Option.map(item -> ItemsDoc.nameOf(res#items, item) + (if (chest#count > 1) " ×${chest#count}" else "")) |> Option.getWithDefault("");
         let lines = TextDoc.NoticeText.ChestOpened ::
@@ -235,13 +235,16 @@ mod WorldObject {
         if (not roomy) say(res, TextDoc.NoticeText.ChestOpened :: TextDoc.NoticeText.BagFull :: Nil, Nil, w)
         else {
             let bag = chest#item |> Option.map(item -> Bag.give(item, chest#count, w#bag)) |> Option.getWithDefault(w#bag) |> Bag.addGold(chest#gold);
+            Emit.emit(World.Event.Chest);
             say(res, lines, values, { bag = bag, progress = Progress.markOpened(map, id, w#progress) | w })
         }
 
     /// 扉: 鍵の道具がふくろにあれば開けて旗を立てる（鍵は減らさない）。無ければ鍵が掛かっていると知らせる。
-    def tryUnlock(res: Res.Res, map: MapDoc.MapId, id: String, key: ItemsDoc.ItemId, w: World.World): World.World =
-        if (Bag.countOf(key, w#bag) > 0)
+    def tryUnlock(res: Res.Res, map: MapDoc.MapId, id: String, key: ItemsDoc.ItemId, w: World.World): World.World \ Emit[World.Event] =
+        if (Bag.countOf(key, w#bag) > 0) {
+            Emit.emit(World.Event.Unlock);
             say(res, TextDoc.NoticeText.Unlocked :: Nil, (Placeholder.Item, ItemsDoc.nameOf(res#items, key)) :: Nil,
                 { progress = Progress.markOpened(map, id, w#progress) | w })
+        }
         else say(res, TextDoc.NoticeText.Locked :: Nil, Nil, w)
 }

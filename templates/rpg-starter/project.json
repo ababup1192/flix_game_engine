@@ -97,6 +97,131 @@
       "name": "fizzle",
       "path": "assets/sfx/fizzle.wav",
       "looping": false
+    },
+    {
+      "name": "attack",
+      "path": "assets/sfx/attack.wav",
+      "looping": false
+    },
+    {
+      "name": "boss",
+      "path": "assets/sfx/boss.wav",
+      "looping": false
+    },
+    {
+      "name": "chest",
+      "path": "assets/sfx/chest.wav",
+      "looping": false
+    },
+    {
+      "name": "critical",
+      "path": "assets/sfx/critical.wav",
+      "looping": false
+    },
+    {
+      "name": "encounter",
+      "path": "assets/sfx/encounter.wav",
+      "looping": false
+    },
+    {
+      "name": "fanfare",
+      "path": "assets/sfx/fanfare.wav",
+      "looping": false
+    },
+    {
+      "name": "flee",
+      "path": "assets/sfx/flee.wav",
+      "looping": false
+    },
+    {
+      "name": "foe_down",
+      "path": "assets/sfx/foe_down.wav",
+      "looping": false
+    },
+    {
+      "name": "gold",
+      "path": "assets/sfx/gold.wav",
+      "looping": false
+    },
+    {
+      "name": "heal",
+      "path": "assets/sfx/heal.wav",
+      "looping": false
+    },
+    {
+      "name": "hurt",
+      "path": "assets/sfx/hurt.wav",
+      "looping": false
+    },
+    {
+      "name": "inn",
+      "path": "assets/sfx/inn.wav",
+      "looping": false
+    },
+    {
+      "name": "level_up",
+      "path": "assets/sfx/level_up.wav",
+      "looping": false
+    },
+    {
+      "name": "plate",
+      "path": "assets/sfx/plate.wav",
+      "looping": false
+    },
+    {
+      "name": "sleep",
+      "path": "assets/sfx/sleep.wav",
+      "looping": false
+    },
+    {
+      "name": "spell_fire",
+      "path": "assets/sfx/spell_fire.wav",
+      "looping": false
+    },
+    {
+      "name": "spell_ice",
+      "path": "assets/sfx/spell_ice.wav",
+      "looping": false
+    },
+    {
+      "name": "stairs",
+      "path": "assets/sfx/stairs.wav",
+      "looping": false
+    },
+    {
+      "name": "wiped",
+      "path": "assets/sfx/wiped.wav",
+      "looping": false
+    },
+    {
+      "name": "bgm_battle",
+      "path": "assets/bgm/bgm_battle.wav",
+      "looping": false
+    },
+    {
+      "name": "bgm_boss",
+      "path": "assets/bgm/bgm_boss.wav",
+      "looping": false
+    },
+    {
+      "name": "bgm_mine",
+      "path": "assets/bgm/bgm_mine.wav",
+      "looping": false
+    },
+    {
+      "name": "bgm_title",
+      "path": "assets/bgm/bgm_title.wav",
+      "looping": false
+    },
+    {
+      "name": "bgm_village",
+      "path": "assets/bgm/bgm_village.wav",
+      "looping": false
+    },
+    {
+      "name": "bgm_world",
+      "path": "assets/bgm/bgm_world.wav",
+      "looping": false
     }
   ],
   "editor": {
@@ -169,6 +294,12 @@
         "pattern": "assets/rpg.spells.json",
         "title": "呪文（呪文ごとの数と的）",
         "schema": "assets/spells.schema.json",
+        "role": "tuning"
+      },
+      {
+        "id": "mixer",
+        "pattern": "assets/rpg.mixer.json",
+        "title": "音の通り道（曲・効果音・UI のバスの音量とダッキング）",
         "role": "tuning"
       },
       {

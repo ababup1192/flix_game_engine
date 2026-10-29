@@ -2,7 +2,7 @@
 // 遊びの状態は World が持ち、App の w は Resources.With[Res, World] の組（Game.app）。
 // Res は World を使わない（使う向きは World → Res だけ）。
 mod Res {
-    use fge::{PxSpriteAtlas, PxSpriteDoc, Yarn}
+    use fge::{AudioMixer, AudioMixerDoc, PxSpriteAtlas, PxSpriteDoc, Yarn}
     use Sheet.SheetId
 
     /// 起動時・描き出し・テストが同じ形で読む Doc の束。
@@ -20,6 +20,7 @@ mod Res {
         recolors = RecolorsDoc.Doc,
         spells = SpellsDoc.Doc,
         maps = MapDoc.Table,
+        mixer = AudioMixer.Mixer,
         dialogue = Yarn.Program
     }
 
@@ -42,6 +43,7 @@ mod Res {
         foeSheets = Map[String, Sheet.Sheet],
         maps = MapDoc.Table,
         arts = Map[String, MapArt.Art],
+        mixer = AudioMixer.Mixer,
         dialogue = Yarn.Program
     }
 
@@ -61,6 +63,7 @@ mod Res {
           recolors = RecolorsDoc.load(RecolorsDoc.path()),
           spells = SpellsDoc.load(SpellsDoc.path()),
           maps =MapDoc.loadTable(items),
+          mixer = loadMixer(),
           dialogue = Talk.load() }
 
     /// Doc の束から描く元を組む（アトラスとマップの地面の層もここで作る）。
@@ -70,7 +73,7 @@ mod Res {
           rules = docs#rules, text = docs#text, keys = docs#keys, party = docs#party, items = docs#items, shops = docs#shops,
           foes = docs#foes, foeMoves = docs#foeMoves, recolors = docs#recolors, spells = docs#spells,
           foeSheets = foeSheetsOf(docs#palette, docs#sprites, docs#foes, docs#recolors),
-          maps = docs#maps, arts = artsOf(docs#palette, sheets, docs#maps), dialogue = docs#dialogue }
+          maps = docs#maps, arts = artsOf(docs#palette, sheets, docs#maps), mixer = docs#mixer, dialogue = docs#dialogue }
 
     /// Doc の問題（各 Doc の読めない欄と行）と Doc どうしの食い違い（始まりのマップが無い・出入口と人の食い違い・会話のコマンドの引数を Doc で引けない）を 1 行ずつ。
     /// 起動時に言い（Game.app）、テストは空であることを見る。
@@ -244,6 +247,14 @@ mod Res {
     pub def withItems(items: ItemsDoc.Doc, res: Res): Res = { items = items | res }
 
     pub def withShops(shops: ShopsDoc.Doc, res: Res): Res = { shops = shops | res }
+
+    pub def withMixer(mixer: AudioMixer.Mixer, res: Res): Res = { mixer = mixer | res }
+
+    /// 音の通り道（バス・ダッキング・連打の間引き）の Doc。
+    pub def mixerPath(): String = "assets/rpg.mixer.json"
+
+    /// 音の通り道を読む（無い・壊れていれば engine の既定 = 名前のまま鳴らす）。
+    pub def loadMixer(): AudioMixer.Mixer \ Fs.FileRead = AudioMixerDoc.load(AudioMixer.defaults(), mixerPath())
 
     /// 敵か色違いを差し替えたら、色違いのアトラスも作り直す。
     pub def withFoes(foes: FoesDoc.Doc, res: Res): Res =

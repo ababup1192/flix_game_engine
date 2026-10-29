@@ -352,12 +352,13 @@ Opening（「〜が あらわれた！」）→ Choose(member, CommandPage) → 
   「つづきから」は `save` の中身で party・bag・progress・dice を置き換え、宿の前で Field に入る。
 - 読み書きは `Util.Json` の自前の符号（sound-novel の `Saves` を写す）。`saves/.gitkeep` を置く。
 
-### 4.9 音（`Sounds.flix`・docs/audio.md）
+### 4.9 音（`Controls.soundOf` / `Controls.musicOf`・`Bgm`・docs/audio.md）
 
-- 規則は音を鳴らさない。出来事 `Event` を `Emit` で出し、`Controls.soundOf` が名前を選ぶ。
-- **効果音**（音の下限の 4 種を必ず）: カーソル・決定・取消・ぶつかる・階段・扉・宝箱・お金・攻撃・当たった・会心・呪文 3 種・回復・眠り・逃げる・敵を倒した・レベルアップ・宿・会話の字（2 字に 1 回・UI のバス）。
-- **曲**（`App.withSustained` で World から宣言）: タイトル / 村 / ワールドマップ / 坑道 / 戦い / ボス戦 の 6 本 + 勝ちのファンファーレ（一発）。曲はマップの `bgm`。
-- 素材は全部 `bin/fge snd build`（`art/sfx.snd.star`・`art/bgm.snd.star`（予定））で合成する（矩形波 2 本 + 三角波 + 雑音）。曲は 8 小節のループ点つき WAV。録音素材は混ぜない。
+- 規則は音を鳴らさない。出来事 `Event` を `Emit` で出し、`Controls.soundOf` が名前を選ぶ。戦いの 1 手の出来事は `WorldBattle.beatEventsOf`（伝言と演出の種類から）、暗転の始まり（出会い・ボスの登場・宿）とお金の増減は `Controls` が前後の World を見比べて出す。
+- **効果音**（音の下限の 4 種を必ず。`art/sfx.snd.star` → `assets/sfx`。34 個）: カーソル・決定・取消・ぶつかる・扉（鍵で開けるのも）・階段・宝箱・お金・レバー・床のスイッチ・岩・トロッコ・水晶（点く・消える）・宿・出会い・ボスの登場・攻撃・会心・叩かれた・呪文 3 種（炎・氷・回復。道具の炎と回復も同じ音）・眠り・逃げる・敵を倒した・全滅・レベルアップ・勝ちのファンファーレ・会話（開く・送る・字の声 3 つ。2 字に 1 回・UI のバス）。
+- **曲**（`App.withSustained` で World から宣言。`art/bgm.snd.star` → `assets/bgm`。頭 + 輪のループ点つき）: タイトル（頭 1 + 輪 8 小節・21.6 秒）/ 村（8 小節・21.8 秒。家の中とエンディングも）/ ワールドマップ（8 小節・16.0 秒）/ 坑道（8 小節・25.3 秒）/ 戦い（頭 1 + 輪 8 小節・14.4 秒）/ ボス戦（頭 2 + 輪 8 小節・15.0 秒）。フィールドの曲はマップ Doc の `bgm`、戦いの点滅に入ったら戦いの曲、逃げられない敵（`noFlee`。中ボス・ひとくいばこ・ボス）ならボス戦の曲、勝ちと全滅の伝言の間は止める（ファンファーレと全滅の音が一発で鳴る）。
+- **mixer**（`assets/rpg.mixer.json`）: music 0.45・sfx 1.0・ui 0.8。効果音の間は曲を 0.6 倍へ（ducks）。カーソルと会話の字は連打を間引く。終了の確認の間は snapshot `ask`（曲を籠もらせる）。曲は -16 LUFS・効果音は -22 LUFS で作り、バスで合わせる。
+- 素材は全部 `bin/fge snd build` で合成する（効果音は矩形波と雑音、曲は矩形波 2 本 + 三角波 + 雑音。style は free・reverb や pan は使わない）。録音素材は混ぜない。
 
 ## 5. つり合いの土台（Doc の初めの値）
 
@@ -761,9 +762,10 @@ B3 の扉の奥のジェムイーター（逃げられない・HP 半分で phas
 
 ### P8 — 音と仕上げ・テンプレとしての出荷
 
-- 作る: 曲 6 本とファンファーレ・残りの効果音・mixer・`make video`（`VideoRender`）で通しの動画を撮って依頼主へ渡す・つり合いの確かめ（bot と balance の最終の数を 5.4 の表と並べ、README と `docs/balance.md`（予定） に残す）・`reference/title.png` と `SHA256SUMS.txt`・`/add-template` の 7 手順・`AGENTS.local.md` の早見表の見直し（9 節）・README。
+- 作った（P8 前半）: 曲 6 本とファンファーレ・残りの効果音・mixer（4.9 節）・テスト `TestSounds`。
+- 作る（P8 後半）: `make video`（`VideoRender`）で通しの動画を撮って依頼主へ渡す・つり合いの確かめ（bot と balance の最終の数を 5.4 の表と並べ、README と `docs/balance.md`（予定） に残す）・`reference/title.png` と `SHA256SUMS.txt`・`/add-template` の 7 手順・`AGENTS.local.md` の早見表の見直し（9 節）・README。
 - 完了の条件: `/add-template` のチェックリストが全部埋まる。`make reference-check` が緑。音の下限を満たす。`debug/video/rune.mp4` を依頼主が見られる。`make bot BOT_RUNS=10` が緑のまま。
-- テスト: 出来事 → 音の名前の表（`TestSounds`）/ project.json の sounds に全部ある / 曲の宣言はマップの bgm に従い、戦いの間は戦いの曲・ボス戦はボスの曲。
+- テスト（`TestSounds`・済み）: 出来事 → 音の名前の表 / project.json の sounds に全部ある（出来事・呪文の fx・曲）/ 階段は扉と別の音 / 曲の宣言はマップの bgm に従い（どのマップにも曲がある）、戦いの間は戦いの曲・逃げられない敵はボスの曲・勝ちの伝言の間は止めてからマップの曲へ戻る。
 
 ## 8. ファイルの割り方（目安）
 
@@ -803,6 +805,7 @@ B3 の扉の奥のジェムイーター（逃げられない・HP 半分で phas
    engine の実行器に「wait 以外のコマンドの後で止まる」選べる口があれば差し込みが要らなくなる。別のゲームで同じ物が要った時に足すかを決める。
    それまでは `TestQuest.testGoldLineAfterAcceptShowsTheNewGold`（本物の dialogue.json）と `testGoldIsCopiedBeforeTheNextIf` が差し込みを守る。
 7. agent-eval: P8 で `agents-pack/agent-eval/engine.json` に RPG のお題（「敵を 1 体足す」「NPC の台詞を依頼の段階で変える」）を 1〜2 本足してよいか。
+   → 依頼主の決定（2026-10-29）: 足さない。
 
 ## 12. 危険（重くなる所・壊れやすい所）
 

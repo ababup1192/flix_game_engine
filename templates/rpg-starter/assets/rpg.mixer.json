@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "note": "音の通り道（engine の docs/audio.md の mixer.json）。bgm_ は music のバス、会話の字（talk_）とカーソル・決定・取消は ui のバス、ほか（戦い・仕掛け・ファンファーレ）は sfx のバス。曲は -16 LUFS・効果音は -22 LUFS で作ってあるので、music を 0.45 倍（約 -7 dB）に置いて効果音の下へ。ducks は効果音が鳴る間に曲を depth 倍へ下げる（曲が効果音を食わない）。cooldowns は細かい連打を間引く（会話の字は 2 字に 1 回でも速い時に重なる）。snapshot ask = 終了の確認を開いている間（曲を籠もらせる。Controls.mixerOf が選ぶ）。",
+  "defaultBus": "sfx",
+  "transitionSeconds": 0.25,
+  "buses": [
+    { "name": "music", "volume": 0.45, "lowpassGainHF": 1.0 },
+    { "name": "sfx", "volume": 1.0, "lowpassGainHF": 1.0 },
+    { "name": "ui", "volume": 0.8, "lowpassGainHF": 1.0 }
+  ],
+  "routes": [
+    { "bus": "music", "prefixes": ["bgm_"] },
+    { "bus": "ui", "prefixes": ["talk_", "cursor", "confirm", "cancel"] }
+  ],
+  "ducks": [
+    { "bus": "music", "by": ["sfx"], "depth": 0.6, "attackSeconds": 0.02, "holdSeconds": 0.08, "releaseSeconds": 0.4 }
+  ],
+  "cooldowns": [
+    { "prefix": "cursor", "seconds": 0.045 },
+    { "prefix": "talk_", "seconds": 0.05 }
+  ],
+  "snapshots": [ { "name": "ask", "buses": [ { "name": "music", "volume": 0.3, "lowpassGainHF": 0.2 } ] } ]
+}

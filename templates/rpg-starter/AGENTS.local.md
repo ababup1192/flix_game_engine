@@ -2,7 +2,7 @@
 
 王道 RPG のテンプレート「ルーネの泉」。山あいの湖の村から依頼を受け、仲間と水晶の坑道（3 階層）へ向かい、
 ボスを倒して帰ると泉がまた湧く。実装の道筋は `docs/PLAN.md`（フェーズ P1〜P8）、絵の設計は `docs/ART_BRIEF.md`。
-いまは P7 まで（はじめからエンディングまで通して遊べる）。音と仕上げは P8。遊べる物の並びは `docs/PLAN.md` の 7 節の頭。
+いまは P7 まで（はじめからエンディングまで通して遊べる）と P8 の音（効果音・曲 6 本・mixer）。残りの仕上げは P8。遊べる物の並びは `docs/PLAN.md` の 7 節の頭。
 規則の読み始めは `src/World.flix` の冒頭の図。
 
 ## このゲームの早見表（やりたいこと → どこを触るか）
@@ -112,7 +112,10 @@ case を足して `make check` を流すと、触る所をコンパイラが並�
 | キーを足す・替える | `assets/rpg.keys.json` と `KeysDoc.Rec`（コードに `Key.Z` と書かない。方向は `KeysDoc.dirKeys`） |
 | Doc に欄を足す | `bin/fge refactor add-field` で型と既定に足し、`fromRoot` で読み、JSON とスキーマと `TestDocs` を足す（手本 `rules.fxSeconds`） |
 | Doc のファイルを足す | `src/<名前>Doc.flix`（手本 `RulesDoc`）と `Res` の束・`Controls.docTable`・`project.json` の `editor.resources` に足す |
-| 規則の出来事に音を付ける | `World.Event` の case を足し、`Controls.soundOf` と `project.json` の `sounds` を埋める（素材は `art/sfx.snd.star` に足して `bin/fge snd build art/sfx.snd.star` → `atelier/sfx` から `assets/sfx` へ） |
+| 規則の出来事に音を付ける | `World.Event` の case を足して規則から `Emit.emit`（戦いの 1 手は `WorldBattle.beatEventsOf`・暗転の始まりとお金は `Controls` の前後の見比べ）、`Controls.soundOf` に音の名前を書く（規則は音の名前を知らない） |
+| 効果音を 1 つ足す | `art/sfx.snd.star` の `main` に `sound("名前", [...])` を 1 行（矩形波 `square` と雑音 `hiss` だけ）→ `../../bin/fge snd build art/sfx.snd.star` → `atelier/sfx/名前.wav` を `assets/sfx` へ写し、`project.json` の `sounds` に 1 行（論理名 = ファイル名）。鳴らすのは上の行。突き合わせは `make -C ../.. lint-audio`・波形は `make gallery-sounds`（`debug/sounds.png`） |
+| 曲を 1 本足す / マップの曲を替える | 替えるだけならマップ Doc の `bgm`（`title` / `village` / `world` / `mine` / `battle` / `boss`。書かなければ鳴らさない）。足すなら `art/bgm.snd.star` に関数を 1 つ（`mus.mml` の旋律・`mus.bass`・`mus.drums` を `snd.write_chip` へ。輪の終わりを無音にしない = 継ぎ目の検査）→ `../../bin/fge snd build art/bgm.snd.star` → `assets/bgm` へ写して `project.json` の `sounds` に 1 行、`Bgm.Track` の case と `Bgm.all` / `nameOf` / `soundOf`・`map.schema.json` の `bgm` の enum を埋める。どの場面で鳴らすかは `Controls.trackOf`（戦いの曲・勝ちの間は止める）、`App.withSustained` が宣言を受ける |
+| 曲と効果音の音量のつり合い | `assets/rpg.mixer.json`（music / sfx / ui のバス・効果音で曲を下げる ducks・連打の cooldowns・終了の確認の間の snapshot `ask`。選ぶのは `Controls.mixerOf`）。曲は -16 LUFS・効果音は -22 LUFS で作り、バスで合わせる |
 | 乱数を引く | `Dice.roll(Dice.Channel.<用途>, w)`（用途は `Dice.Channel` の case と `numberOf` に足す） |
 
 ### 確かめる

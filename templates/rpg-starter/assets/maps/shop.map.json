@@ -4,6 +4,7 @@
   "note": "道具屋の中。x は棚の下・k は売り台の下（絵は床のまま。k の売り台越しに店の人と話せる）。店の人に話すと <<shop>> で店が開く（品は assets/rpg.shops.json）。下の 4 マスが村への出口。",
   "tileset": "house",
   "battleBack": "bg_plains",
+  "bgm": "village",
   "rows": [
     "################",
     "##WWOWWWWWWOWW##",

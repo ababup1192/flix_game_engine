@@ -361,4 +361,50 @@ mod Fixtures {
 
     /// 決定を 1 回押して離し、演出と文字送りが済むまで待つ（1 秒）を n 回。戦いを先へ送る。
     pub def confirmEach(n: Int32): List[Set[Key]] = List.repeat(n, List.append(tap(confirm()), idle(60))) |> List.flatten
+
+    // ── 音と曲 ──
+
+    /// xs のうち、音の名前（soundOf）が project.json の sounds に無い物の名前（載っていない名前は黙って鳴らない。読めなければ None）。
+    pub def notInProject(soundOf: a -> String, xs: List[a]): Option[List[String]] \ Fs.FileRead =
+        Fs.FileRead.read("project.json") |> Result.toOption
+            |> Option.flatMap(DocJson.parse) |> Option.flatMap(JsonCodec.expectObject)
+            |> Option.flatMap(Map.get("sounds"))
+            |> Option.flatMap(JsonCodec.decodeList(json -> JsonCodec.expectObject(json) |> Option.map(JsonCodec.stringOr("name", ""))))
+            |> Option.map(List.toSet)
+            |> Option.map(known -> xs |> List.map(soundOf) |> List.filter(name -> not Set.memberOf(name, known)))
+
+    /// payload の無い出来事の全部と、声の 3 つ（呪文は Doc の fx から）。
+    pub def allEvents(): List[World.Event] =
+        World.Event.Cursor :: World.Event.Confirm :: World.Event.Cancel :: World.Event.Bump :: World.Event.Door ::
+        World.Event.Denied :: World.Event.TalkOpen :: World.Event.TalkNext ::
+        World.Event.TalkBlip(TextDoc.Voice.Low) :: World.Event.TalkBlip(TextDoc.Voice.Mid) :: World.Event.TalkBlip(TextDoc.Voice.High) ::
+        World.Event.Lever :: World.Event.Switch :: World.Event.RockPush :: World.Event.CartRide :: World.Event.CrystalLit ::
+        World.Event.CrystalReset :: World.Event.Stairs :: World.Event.Chest :: World.Event.Unlock :: World.Event.Gold ::
+        World.Event.Inn :: World.Event.Encounter :: World.Event.BossAppear :: World.Event.Attack :: World.Event.Critical ::
+        World.Event.Hurt :: World.Event.Heal :: World.Event.Sleep :: World.Event.Flee :: World.Event.FoeDown ::
+        World.Event.Victory :: World.Event.LevelUp :: World.Event.Wiped :: Nil
+
+    /// マップの名前の順に、その Doc の bgm。
+    pub def mapBgmsOf(res: Res.Res): List[Option[Bgm.Track]] =
+        MapDoc.names() |> List.map(name -> Map.get(name, res#maps) |> Option.flatMap(m -> MapDoc.rec(m)#bgm))
+
+    /// マップの Doc の bgm（マップが無ければ None）。
+    pub def mapBgmOf(map: String, h: Run): Option[Bgm.Track] =
+        Map.get(map, h#resources#maps) |> Option.flatMap(m -> MapDoc.rec(m)#bgm)
+
+    /// マップの名前の順に、そのマップへ入る出入口の着くマスに立った時の曲。
+    pub def fieldTracksOf(res: Res.Res): List[Option[Bgm.Track]] \ Fs.FileRead =
+        let arrivals = res#maps |> Map.valuesOf |> List.flatMap(m -> MapDoc.rec(m)#exits) |> List.map(e -> (e#to, (e#spawnX, e#spawnY))) |> List.toMap;
+        MapDoc.names() |> List.map(name -> Map.get(name, arrivals) |> Option.flatMap(cell -> {
+            let h = started("field", Map#{"map" => name, "x" => Int32.toString(fst(cell)), "y" => Int32.toString(snd(cell))});
+            Controls.trackOf(h#resources, h#world)
+        }))
+
+    /// keys を 1 フレームずつ流し、フレームごとの音と曲を集める（Emit の溜めは数フレームで捨てるので、1 フレームずつ見る）。
+    pub def playCollecting(keys: List[Set[Key]], h: Run): { last = Run, sounds = List[String], tracks = List[Option[Bgm.Track]] } =
+        keys |> List.foldLeft((acc, k) -> {
+            let after = play(k :: Nil, acc#last);
+            { last = after, sounds = List.append(acc#sounds, Controls.sounds({ before = acc#last#world, after = after#world })),
+              tracks = acc#tracks ::: Controls.trackOf(after#resources, after#world) :: Nil }
+        }, { last = h, sounds = Nil, tracks = Nil })
 }

@@ -4,6 +4,7 @@
   "note": "宿屋の中。x は寝台の下・k は帳場の机の下（絵は床のまま。k の机越しに宿の人と話せる）。宿の人に話すと宿代（assets/rpg.shops.json の innPrice）を払って泊まれる。下の 4 マスが村への出口。出た所が宿の前（rpg.rules.json の home）。",
   "tileset": "house",
   "battleBack": "bg_plains",
+  "bgm": "village",
   "rows": [
     "################",
     "##WWOWWWWWWOWW##",

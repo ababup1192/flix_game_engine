@@ -14,6 +14,7 @@
 mod WorldBattle {
     use fge::{Clock, Emit, Log}
     use World.{AfterShow, BattleCommand, BattleRec, CommandPage, Phase}
+    use TextDoc.BattleText
 
     /// 戦いの間だけ f で World を作り直す（戦いでなければそのまま）。
     def withBattle(f: BattleRec -> World.World \ ef, w: World.World): World.World \ ef =
@@ -76,7 +77,7 @@ mod WorldBattle {
     // ── 時間で進む物（毎フレーム） ──
 
     /// 出し切ってから messageWait 秒経った Beat を送る。
-    pub def tick(res: Res.Res, w: World.World): World.World =
+    pub def tick(res: Res.Res, w: World.World): World.World \ Emit[World.Event] =
         match World.battleRecOf(w) |> Option.map(r -> r#phase) {
             case Some(Phase.Show(beat, _, at, _)) if sinceTextOf(beat, at, w) >= revealSecondsOf(res, beat) + RulesDoc.rec(res#rules)#messageWait =>
                 advance(res, w)
@@ -96,25 +97,54 @@ mod WorldBattle {
         }
 
     /// 今の Beat を捨てて残りを出す（残りが無ければ出し終えた後へ）。
-    def advance(res: Res.Res, w: World.World): World.World =
+    def advance(res: Res.Res, w: World.World): World.World \ Emit[World.Event] =
         match World.battleRecOf(w) |> Option.map(r -> r#phase) {
             case Some(Phase.Show(_, rest, _, then)) => show(res, rest, then, w)
             case _ => w
         }
 
     /// 伝言を出し終えた後。
-    def finish(res: Res.Res, then: AfterShow, w: World.World): World.World = match then {
+    def finish(res: Res.Res, then: AfterShow, w: World.World): World.World \ Emit[World.Event] = match then {
         case AfterShow.Choose        => chooseFrom(res, None, w)
         case AfterShow.Judge         => judge(res, w)
         case AfterShow.Leave(outcome) => leave(res, outcome, w)
     }
 
     /// 伝言を出す（beats が空なら出し終えた後へ直に進む）。
-    def show(res: Res.Res, beats: List[Battle.Beat], then: AfterShow, w: World.World): World.World =
+    /// 出し始める Beat の出来事を出す（音の材料）。
+    def show(res: Res.Res, beats: List[Battle.Beat], then: AfterShow, w: World.World): World.World \ Emit[World.Event] =
         match beats {
-            case beat :: rest => World.mapBattle(r -> { phase = Phase.Show(beat, rest, World.now(w), then) | r }, w)
+            case beat :: rest =>
+                beatEventsOf(beat) |> List.forEach(Emit.emit);
+                World.mapBattle(r -> { phase = Phase.Show(beat, rest, World.now(w), then) | r }, w)
             case Nil          => finish(res, then, w)
         }
+
+    /// 1 枚の Beat の出来事: 勝ち・全滅・逃げ切り・レベルアップ・眠りの伝言があればそれを、無ければ演出の種類から 1 つ。
+    /// 敵が倒れた伝言があれば、それも足す。
+    /// WhyNot: 眠りを演出（Hit）から選ばない — 眠らせる技は叩く演出を借りているので、叩かれた音になる。
+    pub def beatEventsOf(beat: Battle.Beat): List[World.Event] =
+        let r = Battle.beatRecOf(beat);
+        let texts = r#lines |> List.map(line -> line#text) |> List.toSet;
+        let has = t -> Set.memberOf(t, texts);
+        let headline =
+            if (has(BattleText.Won)) Some(World.Event.Victory)
+            else if (has(BattleText.Wiped)) Some(World.Event.Wiped)
+            else if (has(BattleText.Fled)) Some(World.Event.Flee)
+            else if (has(BattleText.LevelUp)) Some(World.Event.LevelUp)
+            else if (has(BattleText.FellAsleep)) Some(World.Event.Sleep)
+            else r#fx |> Option.map(fx -> fxEventOf(fx#kind, has(BattleText.Critical)));
+        let down = if (has(BattleText.FoeDown)) World.Event.FoeDown :: Nil else Nil;
+        List.append(Option.toList(headline), down)
+
+    /// 演出の種類の出来事（道具の炎は炎の呪文と同じ音の材料）。
+    def fxEventOf(kind: Battle.FxKind, critical: Bool): World.Event = match kind {
+        case Battle.FxKind.Slash      => if (critical) World.Event.Critical else World.Event.Attack
+        case Battle.FxKind.Hit        => World.Event.Hurt
+        case Battle.FxKind.Spell(fx)  => World.Event.Spell(fx)
+        case Battle.FxKind.Burn       => World.Event.Spell("fire")
+        case Battle.FxKind.Mend       => World.Event.Heal
+    }
 
     // ── コマンドを選ぶ ──
 
@@ -179,7 +209,7 @@ mod WorldBattle {
     }
 
     /// after の次に選ぶ仲間（生きていて眠っていない人。after が None なら先頭）。居なければ 1 ターンを解く（全員眠っていれば敵だけが動く）。
-    def chooseFrom(res: Res.Res, after: Option[Member.Member], w: World.World): World.World =
+    def chooseFrom(res: Res.Res, after: Option[Member.Member], w: World.World): World.World \ Emit[World.Event] =
         withBattle(r -> {
             let choosers = Battle.choosersOf(r#battle);
             let rest = after |> Option.map(m -> choosers |> List.dropWhile(x -> x != m) |> List.drop(1)) |> Option.getWithDefault(choosers);
@@ -306,7 +336,7 @@ mod WorldBattle {
     def withPlan(m: Member.Member, plan: Battle.Plan, w: World.World): World.World =
         World.mapBattle(r -> { plans = Map.insert(m, plan, r#plans) | r }, w)
 
-    def planned(res: Res.Res, m: Member.Member, plan: Battle.Plan, w: World.World): World.World =
+    def planned(res: Res.Res, m: Member.Member, plan: Battle.Plan, w: World.World): World.World \ Emit[World.Event] =
         chooseFrom(res, Some(m), withPlan(m, plan, w))
 
     /// コマンドのウィンドウでの c の行。
@@ -344,12 +374,12 @@ mod WorldBattle {
     // ── 1 ターン ──
 
     /// 選び終えた行動（r#plans）で 1 ターンを解き、Beat を見せる。
-    def resolve(res: Res.Res, r: BattleRec, w: World.World): World.World =
+    def resolve(res: Res.Res, r: BattleRec, w: World.World): World.World \ Emit[World.Event] =
         let (b, beats, dice) = BattleActs.resolveRound(res, r#battle, r#plans, w#dice);
         show(res, beats, AfterShow.Judge, World.mapBattle(br -> { battle = b, plans = Map.empty() | br }, { dice = dice | w }))
 
     /// 1 ターンの後: 勝ち → 勝ちの伝言 / 全滅 → ぜんめつ / 逃げ切った → フィールドへ / どちらでもない → 次のターン。
-    def judge(res: Res.Res, w: World.World): World.World =
+    def judge(res: Res.Res, w: World.World): World.World \ Emit[World.Event] =
         withBattle(r -> match Battle.outcomeOf(r#battle) {
             case Battle.Outcome.Won     =>
                 let (after, beats) = Battle.resolveVictory(res, r#battle);

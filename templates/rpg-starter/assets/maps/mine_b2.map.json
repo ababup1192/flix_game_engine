@@ -4,6 +4,7 @@
   "note": "水晶の坑道の 2 階（mine の組・48×30・暗い）。dark = 先頭のまわりしか見えない（たいまつを使うと広がる。rules の darkRadius / torchRadius・items の lightSteps）。入口の小部屋に行商人コロン（<<shop mine>>）と たいまつ×3 の宝箱。暗い迷路の行き止まりに ふるびたかぎ・まほうのローブ・まりょくのみ×2、一番奥で くろがねゴブリン（guard）が はがねのつるぎ の宝箱の前に立つ。割れた床（floor_crack の小物）の 3 マスは落とし穴（exits。B3 の西の小部屋へ落ちる。寄り道で近道ではない）。< は B1 へ・> は B3 へ。",
   "tileset": "mine",
   "battleBack": "bg_cave",
+  "bgm": "mine",
   "dark": true,
   "minSteps": 30,
   "maxSteps": 44,

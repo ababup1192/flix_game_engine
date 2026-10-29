@@ -94,7 +94,12 @@ mod World {
     ///   TalkOpen … 会話か知らせのウィンドウが開いた / TalkNext … 台詞を出し切った・次へ送った /
     ///   TalkBlip(声) … 文字送りが 2 字ぶん進んだ（話し手の声の高さ）/ Lever … レバーを動かした /
     ///   Switch … 床のスイッチが沈んで旗が立った（踏んだ・岩で押さえ揃った）/
-    ///   RockPush … 岩を押して動かした / CartRide … トロッコが走り出した / CrystalLit … 水晶を点けた / CrystalReset … 水晶が全部消えた。
+    ///   RockPush … 岩を押して動かした / CartRide … トロッコが走り出した / CrystalLit … 水晶を点けた / CrystalReset … 水晶が全部消えた /
+    ///   Stairs … 階段を通った / Chest … 宝箱を開けた / Unlock … 鍵で扉を開けた / Gold … フィールドでお金が増えた・減った /
+    ///   Inn … 宿に泊まった（暗転が始まった）/ Encounter … 戦いの点滅が始まった / BossAppear … 逃げられない敵との点滅が始まった /
+    ///   Attack … 仲間の攻撃が当たった / Critical … 会心 / Hurt … 仲間が叩かれた /
+    ///   Spell(演出の絵) … 呪文か道具の炎・氷（rpg.spells.json の fx）/ Heal … HP・MP を戻した / Sleep … 眠った /
+    ///   Flee … 逃げ切った / FoeDown … 敵を倒した / Victory … 勝った / LevelUp … レベルが上がった / Wiped … 全滅した。
     pub enum Event with Eq, ToString {
         case Cursor
         case Confirm
@@ -111,6 +116,24 @@ mod World {
         case CartRide
         case CrystalLit
         case CrystalReset
+        case Stairs
+        case Chest
+        case Unlock
+        case Gold
+        case Inn
+        case Encounter
+        case BossAppear
+        case Attack
+        case Critical
+        case Hurt
+        case Spell(String)
+        case Heal
+        case Sleep
+        case Flee
+        case FoeDown
+        case Victory
+        case LevelUp
+        case Wiped
     }
 
     /// 先頭の歩き。Walking(前にいたマス, 歩き始めた時刻)。今のマス（FieldRec#hero）へ向かって動いている。

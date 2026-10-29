@@ -80,6 +80,15 @@ mod Tileset {
         '<' => Passage.Door, '>' => Passage.Door
     }
 
+    /// 階段の文字か（坑道の < と >。通った時の音を扉と分ける）。
+    pub def isStairs(id: TilesetId, ch: Char): Bool = match id {
+        case TilesetId.Mine     => ch == '<' or ch == '>'
+        case TilesetId.MineDeep => ch == '<' or ch == '>'
+        case TilesetId.Village  => false
+        case TilesetId.House    => false
+        case TilesetId.World    => false
+    }
+
     /// 文字 → 敷く物。
     pub def legendOf(id: TilesetId): Map[Char, Cell] = match id {
         case TilesetId.Village => villageLegend()
