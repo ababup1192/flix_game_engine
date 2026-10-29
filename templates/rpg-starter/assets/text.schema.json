@@ -65,6 +65,19 @@
           "required": true
         }
       }
+    },
+    "credits": {
+      "kind": "list",
+      "label": "エンディングのスタッフの字（上から 1 行ずつ下から上へ流れる。空の行は間を空ける。{lv} = 先頭の Lv・{gold} = 手持ちのお金）",
+      "order": 5,
+      "fields": {
+        "text": {
+          "type": "text",
+          "label": "字（1 行 22 字まで）",
+          "order": 1,
+          "default": ""
+        }
+      }
     }
   }
 }

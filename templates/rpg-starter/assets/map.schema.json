@@ -69,10 +69,11 @@
               "up",
               "down",
               "left",
-              "right"
+              "right",
+              "none"
             ]
           },
-          "label": "マップの端から外へ出る出入口（空 = x, y のマス・all = 4 辺・up / down / left / right = その辺）",
+          "label": "マップの端から外へ出る出入口（空 = x, y のマス・all = 4 辺・up / down / left / right = その辺・none = 歩いては通らない。会話の <<warp 出口の id>> だけが通る）",
           "order": 4,
           "default": ""
         },
@@ -178,6 +179,34 @@
           "type": "text",
           "label": "会話のノード（assets/talk/rune.yarn の title）",
           "order": 6
+        },
+        "questFrom": {
+          "type": {
+            "enum": [
+              "",
+              "none",
+              "accepted",
+              "bossdown",
+              "reported"
+            ]
+          },
+          "label": "出る段階の始め（依頼の段階。空 = 始めから。bossdown ならボスを倒した後から）",
+          "order": 7,
+          "default": ""
+        },
+        "questUntil": {
+          "type": {
+            "enum": [
+              "",
+              "none",
+              "accepted",
+              "bossdown",
+              "reported"
+            ]
+          },
+          "label": "出る段階の終わり（この段階まで出る。空 = ずっと。accepted ならボスを倒すまで）",
+          "order": 8,
+          "default": ""
         }
       }
     },
@@ -223,6 +252,34 @@
           "label": "行（半マスも書ける）",
           "order": 6,
           "required": true
+        },
+        "questFrom": {
+          "type": {
+            "enum": [
+              "",
+              "none",
+              "accepted",
+              "bossdown",
+              "reported"
+            ]
+          },
+          "label": "出る段階の始め（依頼の段階。空 = 始めから。bossdown ならボスを倒した後から）",
+          "order": 7,
+          "default": ""
+        },
+        "questUntil": {
+          "type": {
+            "enum": [
+              "",
+              "none",
+              "accepted",
+              "bossdown",
+              "reported"
+            ]
+          },
+          "label": "出る段階の終わり（この段階まで出る。空 = ずっと。accepted ならボスを倒すまで）",
+          "order": 8,
+          "default": ""
         }
       }
     },

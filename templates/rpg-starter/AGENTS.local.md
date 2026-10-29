@@ -2,7 +2,9 @@
 
 王道 RPG のテンプレート「ルーネの泉」。山あいの湖の村から依頼を受け、仲間と水晶の坑道（3 階層）へ向かい、
 ボスを倒して帰ると泉がまた湧く。実装の道筋は `docs/PLAN.md`（フェーズ P1〜P8）、絵の設計は `docs/ART_BRIEF.md`。
-いまはフェーズ P5.5 の後半まで（タイトル → 村を歩く・家に出入りする・村人と話す・依頼を受ける・ミナが仲間に加わる・村の外周の端の出口と gate・メニュー（どうぐ・つよさ・そうび）・道具屋・宿とセーブ・「つづきから」・ワールドマップ・ほこらのトトの杖の話 → 森の岩穴のレバーと鉄格子とほりモグ → 杖を返すとトトが加わる・坑道 B1（トロッコと分かれ目のレバー・岩の部屋 1・ボルじい）・B2（暗い迷路とたいまつ・落とし穴・行商人コロンの店・中ボスくろがねゴブリン）・B3（水晶の順番と飛び石・岩の部屋 2 とひとくいばこ・ミナの父）・ふるびたかぎの扉・出会いとコマンドバトル（たたかう / ぼうぎょ / にげる）・経験値とレベルアップ・全滅・会話の音・戦いの じゅもん / どうぐ・眠り・敵の呪文・フィールドの じゅもん（ヒール））まで（P6 済み）。ボスは P7。規則の読み始めは `src/World.flix` の冒頭の図。
+いまはフェーズ P5.5 の後半まで（タイトル → 村を歩く・家に出入りする・村人と話す・依頼を受ける・ミナが仲間に加わる・村の外周の端の出口と gate・メニュー（どうぐ・つよさ・そうび）・道具屋・宿とセーブ・「つづきから」・ワールドマップ・ほこらのトトの杖の話 → 森の岩穴のレバーと鉄格子とほりモグ → 杖を返すとトトが加わる・坑道 B1（トロッコと分かれ目のレバー・岩の部屋 1・ボルじい）・B2（暗い迷路とたいまつ・落とし穴・行商人コロンの店・中ボスくろがねゴブリン）・B3（水晶の順番と飛び石・岩の部屋 2 とひとくいばこ・ミナの父）・ふるびたかぎの扉・出会いとコマンドバトル（たたかう / ぼうぎょ / にげる）・経験値とレベルアップ・全滅・会話の音・戦いの じゅもん / どうぐ・眠り・敵の呪文・フィールドの じゅもん（ヒール）・B3 の扉の奥のジェムイーター（逃げられない・HP 半分で phase 2）・勝つと坑道の入口へ戻されワールドマップを歩いて帰る・
+泉に水が戻った村（村人が泉に集まる）・村長への報告とお礼・エンディング（スタッフの字）→ タイトル）まで、はじめからエンディングまで通して遊べる（P7 済み）。
+音と仕上げは P8。規則の読み始めは `src/World.flix` の冒頭の図。
 
 ## このゲームの早見表（やりたいこと → どこを触るか）
 
@@ -23,6 +25,8 @@ case を足して `make check` を流すと、触る所をコンパイラが並�
 | 会話から別のウィンドウを開く（`<<shop>>` の形） | `WorldTalk.applyCommand` の枝で `Flow.Handed` を返し、会話をそのウィンドウの payload に持たせる |
 | 暗転の間に World を変える（宿の形） | `World.TransitionThen` の case を足し、`make check` が並べる所（`WorldTransition.secondsOf` / `transitionDone`・`ViewField.transitionProgress`）を埋める |
 | 重なり順（層）を足す | `src/ZOrder.flix` の `Layer` / `HudLayer` に case と `zRange` を足す |
+| エンディング（`World.Scene.Ending`） | 会話の `<<ending>>` → 暗転（`TransitionThen.Ending`・覆う方は `rules.innSeconds`）→ `World.enterEnding`（今のフィールドを下敷きに持つ）。絵は下敷きを `FieldScreen` で・字は `EndingView`（`View.endingIn` が組む）。スタッフの字は `rpg.text.json` の `credits`（`{lv}`・`{gold}`）・流れる秒は `rules.creditSeconds`・流れ切った後の決定でタイトルへ（`WorldTitle.confirmEnding` → `World.toTitle`。セーブは書かない） |
+| 場面が終わった後にフィールドを絵の下敷きにする | 場面の payload に `FieldState` を持ち、`World.shownFieldOf` の枝に足す（`ViewField.fieldIn`・カメラ・タイル層はここを読む。歩きの規則は `fieldRecOf` のままなので動かない） |
 
 ### マップと物
 
@@ -34,6 +38,7 @@ case を足して `make check` を流すと、触る所をコンパイラが並�
 | 着くと会話を開くマス | マップ Doc の `events` に 1 行足す（判定は `WorldField.arrive`） |
 | 階段・マップの間をつなぐ | 段の文字のマスに `exits` を 1 行足し、行き先のマップにも戻りの 1 行を足す |
 | マップの端から外へ出る出口 | `exits` の行に `edge`（`all` か辺の向き）を書き、x / y は書かない（判定は `MapDoc.edgeExitOf`・`WorldField.stepFrom`。端のマスへ着いただけでは移らず、外へ押した時に移る） |
+| 歩いては通らない出口（会話で移す） | `exits` の行に `edge` = `none`（x / y は書かない）と `id`。会話の `<<warp 出口の id>>` が今のマップのその行の行き先へ暗転で移す（門は見ない。`WorldTalk.warp`。どのマップにも無い id は `Talk.problemsOf` が言う。手本は B3 の `to_surface`） |
 | 出口を仲間が加わるまで閉じる | マップ Doc の `exits` の行に `gate` と `gateNode` を書く（判定は `WorldField.closedGateOf`。端の出口も同じ） |
 | マスにある物（宝箱・扉）を置く | マップ Doc の `objects` に 1 行足す（JSON は平ら。読む時に `MapDoc.objectKindOf` が種類の値を組む） |
 | 物の種類（`kind`）を足す | `MapDoc.ObjectKind` に case（その種類だけの値は payload）と `objectKindOf` に 1 行を足し、`make check` が並べる所（`WorldObject` の `stateOf`・`examine`・`onArrive`・`onPush`・`MapDoc.defaultSpriteOf` / `raisedFlagOf` / `readFlagOf` / `guardNodeOf`・`FieldScreen.thingBoxOf`（大きさ・仮の色・絵の選び方 `Look`）・`Res.kindProblemsOf`）を埋め、`map.schema.json` の `kind` の enum と欄に足し、テストは「調べると旗が変わる」「旗で通れるかが変わる」の 2 本（手本 `TestWorldMap` の森の岩穴の節・`TestMine`） |
@@ -64,10 +69,13 @@ case を足して `make check` を流すと、触る所をコンパイラが並�
 | 台詞の長さ | 1 行の台詞はウィンドウ 1 枚・4 行まで（超えると `TestDocs.testEveryLineFitsTheTalkWindow` が止める） |
 | 会話のコマンド（`<<名前 引数>>`）を足す | `Talk.Command` の case と `Talk.commandNames` / `commandOf` に足し、`WorldTalk.applyCommand` を埋めて `make talk-vocab` |
 | 会話が読む World の値（`$quest` の類）を足す | `Talk.SyncedVar` の case と `Talk.syncedVars` / `varNameOf` に足し、`WorldTalk.valueOf` と `rune.yarn` の `<<declare>>` を埋める |
+| 会話で別のマップへ移す・エンディングへ | `<<warp 出口の id>>`（歩いては通らない出口は `edge` = `none`）・`<<ending>>`（どちらも会話を閉じて暗転） |
 | 会話で全快・トロッコ | `<<heal>>`（仲間全員の HP と MP を最大へ。手本 `MinaFather`）・`<<ride>>`（前のトロッコに乗る。手本 `Cart`） |
 | 会話で持ち物を見る・返す | だいじなもの（items の `kind` = key）は `$has_<鍵>` で読める（`rune.yarn` に `<<declare $has_<鍵> = false>>`）。返すのは `<<take 鍵 個数>>`（手本 `Shrine`） |
 | 会話の音（文字送り・開く・送る） | 話し手の声の高さは `rpg.text.json` の `speakers` の `voice`（low / mid / high）。鳴らす所は `Controls.talkSoundsOf`（前後の World の見比べ）、素材は `art/sfx.snd.star` の `talk_*` |
-| 依頼の段階を足す | `Progress.Quest` の case と `Progress.nameOf` に足し、`WorldTalk.payOf`・`Talk.questVerbOf` を埋める |
+| 依頼の段階を足す | `Quest.Quest` の case と `Quest.all` / `Quest.nameOf` に足し、`WorldTalk.payOf`・`Talk.questVerbTable`・`map.schema.json` の `questFrom` / `questUntil` の enum を埋める |
+| 依頼の段階で村の人・小物を替える | マップ Doc の `npcs` / `props` の行に `questFrom` / `questUntil`（段階の名前。両端を含む。同じマスに段階の違う人を並べてよい。判定は `MapDoc.isShownIn`・立つ人は `MapDoc.standingAt`。手本は村の泉 `spring_dry` / `spring_full` と `chief_spring`） |
+| 段階を進めてお金を払う | 会話の `<<quest accept / defeat / report>>`（払う額は `WorldTalk.payOf`。お礼は `rules.reward`・台詞では `{$reward}`） |
 | 仲間を足す | `Member.Member` の case と `Member.all` / `idOf` に足し、`PartyDoc.memberDefaultOf`・`rpg.party.json`・装備できる道具の真偽・`map.schema.json` の `gate` と `party.schema.json` の `learns` の `member` を埋める |
 | セーブに欄を足す | `Saves.Rec` と `toJson` / `fromJson`（`version` を上げる）・`World.saveDataOf`・`WorldTitle.confirm` に足す（往復は `TestShop` のテスト） |
 
@@ -95,6 +103,7 @@ case を足して `make check` を流すと、触る所をコンパイラが並�
 | 戦いで使える道具 | `rpg.items.json` の use の行に `heal` / `mpHeal`（仲間 1 人）か `burn`（敵 1 体）。どれも無い use の物は戦いの一覧で灰色（`Battle.isBattleItem`） |
 | 戦いのコマンドのページを足す | `World.CommandPage` の case を足し、`make check` が並べる所（`WorldBattle.pageLengthOf` / `withCursor` / `cursorOf` / `parentOf` / `confirm`・`ViewBattle.sideOf`・`Bot.wantedRowOf`・`E2e.commandPageOf`）を埋める |
 | 戦いの間の仲間とふくろ | `Battle.Rec` の `party` と `bag` が正（World へは `WorldBattle.leave` が勝ち・逃げ・全滅のどれでも書き戻す） |
+| ボス（逃げられない固定の戦い・HP で技を替える） | マップの `objects` に `guard`（`sprite` は敵の絵。大きい絵は下端の中央をマスに合わせて上と左右に重なる）と会話の `<<fight 敵 勝ちのノード>>`、敵の行に `noFlee` と `phase2At`（割合）、技は `rpg.foe_moves.json` の `phase` 2 の行（HP が切った手番の後のターンから。`Battle.foeActsOf`）。勝ちのノードで `<<open id>>`・`<<quest defeat>>`・`<<warp>>`（手本 `Boss` / `BossWon`。数は `make balance` のボスの区間 `BalanceSim.bossAt`） |
 | 勝った後の経験値・レベルアップ | 式は `Battle.resolveVictory`（全滅の 1 枚は `Battle.wipedBeat`）。表と伸びは `rpg.party.json` の `exp` と `hpUp…agiUp` |
 
 ### 入力・Doc・乱数
@@ -119,7 +128,8 @@ case を足して `make check` を流すと、触る所をコンパイラが並�
 | e2e を足す | `e2e/<名前>.flow` を書いて `make flow FLOW=e2e/<名前>.flow`（戦いの問いは `foes`・`mp`（仲間の MP の合計）・`page`（コマンドのページ）。手本 `e2e/battle_magic.flow`） |
 | 描き出す場面を足す | `SceneRender.shotNames` / `worldOf` と Makefile の `SHOTS` に足す（場面を進めるのは `Drive.play` でキーを流す） |
 | テストプレイ（bot・つり合い） | `make bot`（`Bot.goalOf` の表）・`make balance`（`BalanceSim.sectionTable`。区間のふくろも書く）。戦いの方針は `Bot.battlePlans` の 1 か所（BalanceSim も同じ物を回す）。流れを変えたら `Bot.goalOf` も直す。岩の部屋は押す手を `Bot.rockPlanOf` に、トロッコとレバーは歩いて着けない時に `Bot.detourOf` が自分で選ぶ。1 周の人の目安はレポートの「人の目安」（歩き + 戦い × 33 秒 + ウィンドウ × 3 秒） |
-| 旧い描き出しの場面 | `src/render/FieldScenes.flix`・`BattleScenes.flix` は Starts から描けない場面の仮の物（中の関数を写さない） |
+| 描き出しの場面の作り方 | どの場面も `SceneRender.worldOf` で Starts から組んで決まった手（`Drive.play`・`confirmTimes`・`playSeconds`）を進めた World を、実機と同じ `View.frame` / `hud` で描く（直に組んだ絵の場面は無い） |
+| 通しの手を流し直す | `make bot` の 1 本目が `debug/bot/playthrough.flow` を書く（区間の頭ごとに `mark` と `expect`）。`make flow FLOW=debug/bot/playthrough.flow` でタイトルからエンディングまで同じ指紋で流れる（bot の 1 フレームはナノ秒に丸めた 1/60 秒 = `BotRun.dt`） |
 | 古い書き方を止める | 1 行の正規表現は `bin/lint-rules/forbid.local.json`、型と呼び出しの向きは `lint/rules.flix`（`make lint-flixlint`） |
 
 ## この画面の画風

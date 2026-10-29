@@ -12,6 +12,8 @@ mod RulesDoc {
     ///   startMap / startX / startY / startFacing … 「はじめから」で立つマップとマスと向き。
     ///   startGold      … 「はじめから」の手持ちのお金。
     ///   advance        … 依頼を受けた時の手付け（<<quest accept>> が払う）。
+    ///   reward         … 依頼のお礼（<<quest report>> が払う。会話では $reward）。
+    ///   creditSeconds  … エンディングのスタッフの字が流れ切るまでの秒（流れ切ると決定でタイトルへ戻れる）。
     ///   homeMap / homeX / homeY … 宿の前（「つづきから」で立つマップとマス。下を向いて立つ）。
     ///   innSeconds     … 宿に泊まる時の暗転（覆う方）の秒。晴らす方は fadeSeconds。
     ///   minSteps / maxSteps … 次の戦いまでの歩数を引く範囲（両端を含む。出会いの組のあるマップだけ数える）。
@@ -39,6 +41,8 @@ mod RulesDoc {
         startFacing = Dir4.Dir4,
         startGold = Int32,
         advance = Int32,
+        reward = Int32,
+        creditSeconds = Float64,
         homeMap = String,
         homeX = Int32,
         homeY = Int32,
@@ -76,7 +80,7 @@ mod RulesDoc {
     pub def defaults(): Doc =
         RulesDocOf.RulesDocOf({ version = 1, secondsPerTile = 0.22, cps = 30.0, fadeSeconds = 0.3,
                   startMap = "village", startX = 7, startY = 8, startFacing = Dir4.Dir4.Up,
-                  startGold = 50, advance = 50, homeMap = "village", homeX = 3, homeY = 4, innSeconds = 1.2, problems = Nil, minSteps = 12, maxSteps = 20,
+                  startGold = 50, advance = 50, reward = 300, creditSeconds = 24.0, homeMap = "village", homeX = 3, homeY = 4, innSeconds = 1.2, problems = Nil, minSteps = 12, maxSteps = 20,
                   flashSeconds = 0.5, messageWait = 0.8, fxSeconds = 0.4, spread = 0.125, critRate = 0.03125, fleeBase = 0.5, fleeSlope = 0.03,
                   maxFoes = 3, goldKeep = 0.5, secondsPerRail = 0.08, darkRadius = 1.0, torchRadius = 3.0,
                   sleepRate = 0.6, wakeRate = 0.5 })
@@ -98,6 +102,8 @@ mod RulesDoc {
                   startFacing = startFacing,
                   startGold = JsonCodec.intOr("startGold", d#startGold, root),
                   advance = JsonCodec.intOr("advance", d#advance, root),
+                  reward = JsonCodec.intOr("reward", d#reward, root),
+                  creditSeconds = JsonCodec.floatOr("creditSeconds", d#creditSeconds, root),
                   homeMap = JsonCodec.stringOr("homeMap", d#homeMap, root),
                   homeX = JsonCodec.intOr("homeX", d#homeX, root),
                   homeY = JsonCodec.intOr("homeY", d#homeY, root),

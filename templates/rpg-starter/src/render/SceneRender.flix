@@ -37,7 +37,7 @@ mod SceneRender {
     /// 場面を足したら、ここと sceneOf と Makefile の SHOTS を一緒に足す。
     def shotNames(): List[String] =
         "title" :: "village" :: "quest" :: "join" :: "world" :: "cave" :: "dungeon1" :: "dungeon2" :: "dungeon3" ::
-        "battle" :: "magic" :: "item" :: "equip" :: "boss" :: "clear" :: Nil
+        "battle" :: "magic" :: "item" :: "equip" :: "boss" :: "clear" :: "ending" :: Nil
 
     /// 描き出す時刻（秒）。WhyNot: 実時間を使わない — 点滅や水のゆれのコマが毎回変わり、
     /// 同じ PNG が出なくなる。0.25 秒はカーソルが見えていて、歩きが 1 コマ目の時刻。
@@ -87,8 +87,26 @@ mod SceneRender {
             case "magic"    => started(res, "battle", Map#{"foes" => "koke,koumori,goblin", "map" => "mine_b1", "x" => "4", "y" => "16", "facing" => "right",
                                                          "party" => "luka,mina,toto", "quest" => "accepted", "lv" => "3"})
                 |> Option.map(confirmUntilChoose(res, 4)) |> Option.map(castFire(res)) |> Option.map(at)
+            // 坑道 B3 の扉の奥でジェムイーターと出会い、「ジェムイーターが あらわれた！」を出し切った所（地底湖の背景）。
+            case "boss"     => started(res, "battle", Map#{"foes" => "gemeater", "map" => "mine_b3", "x" => "16", "y" => "6", "facing" => "up",
+                                                         "party" => "luka,mina,toto", "quest" => "accepted", "lv" => "6", "opened" => "b3_door"})
+                |> Option.map(playSeconds(res, 1.0)) |> Option.map(at)
+            // ボスを倒して村へ帰り、泉の上の村長に報告して「いずみに みずが もどった！ 〜G を うけとった」を出し切った所
+            // （水の戻った泉と、まわりに集まった村人）。
+            case "clear"    => started(res, "talk", Map#{"node" => "ChiefReport", "map" => "village", "x" => "8", "y" => "5", "facing" => "left",
+                                                       "party" => "luka,mina,toto", "quest" => "bossdown"})
+                |> Option.map(confirmTimes(res, 5)) |> Option.map(at)
+            // エンディング: 報告を終えた村を下敷きに、スタッフの字が 3 割ほど流れた所。
+            case "ending"   => started(res, "ending", Map#{"map" => "village", "x" => "8", "y" => "5", "facing" => "left", "party" => "luka,mina,toto",
+                                                        "quest" => "reported", "lv" => "7", "gold" => "640"})
+                |> Option.map(w -> playSeconds(res, RulesDoc.rec(res#rules)#creditSeconds * 0.3, w)) |> Option.map(at)
             case _         => None
         }
+
+    /// 遊びの時計を seconds 秒ぶん、キーを押さずに進めた所（実機と同じ道。Drive.play）。
+    def playSeconds(res: Res.Res, seconds: Float64, w: World.World): World.World =
+        let frames = Float64.floor(seconds * 60.0) |> Float64.tryToInt32 |> Option.getWithDefault(0);
+        Drive.play(List.repeat(frames, Set.empty()), Resources.of(res, w))#world
 
     /// ルカとミナは たたかう（先頭の敵）・トトは じゅもん の 1 つ目を先頭の敵へ。ファイアの演出の Beat まで伝言を送り、
     /// 演出の半ばまで遊びの時計を進めた所（音の出来事は捨てる）。
@@ -145,19 +163,9 @@ mod SceneRender {
         App.composeScene(Some(center), 1.0, design(),
             { world = List.append(tiles, View.frame(seen, res, w)), hud = View.hud(seen, res, w) })
 
-    /// 名前 → その場面の描き物。shotNames と対で保つ。World から描ける場面は worldOf、残りは描き出し用に直に組む場面。
+    /// 名前 → その場面の描き物（どの場面も Starts から組んだ World を実機と同じ View で描く）。shotNames と対で保つ。
     def sceneOf(name: String, ctx: App.ViewCtx, env: WindowView.Env): Option[List[Render.PlacedItem]] =
-        match worldOf(name, env#res) {
-            case Some(w) => Some(worldItems(ctx, env#res, w))
-            case None    => legacySceneOf(name, env)
-        }
-
-    def legacySceneOf(name: String, env: WindowView.Env): Option[List[Render.PlacedItem]] =
-        match name {
-            case "boss"     => Some(BattleScenes.bossFight(env))
-            case "clear"    => Some(FieldScenes.clear(env))
-            case _          => None
-        }
+        worldOf(name, env#res) |> Option.map(worldItems(ctx, env#res))
 
     /// 全部の場面を gallery/ へ。描いた PNG のパス列を返す。
     pub def allShots(): List[String] \ IO =

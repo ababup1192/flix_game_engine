@@ -33,7 +33,15 @@ mod BalanceSim {
         { map = "mine_b3", title = "坑道 B3", members = Member.all(), lv = 6,
           gear = (Member.Member.Luka, "haganenotsurugi") :: (Member.Member.Luka, "kawanoyoroi") :: (Member.Member.Mina, "tetsunotsuruhashi") ::
                  (Member.Member.Toto, "mahounorobe") :: Nil,
-          bag = ("yakusou", 4) :: ("maryoku", 2) :: ("bakudanishi", 3) :: Nil, encounters = true, fixed = ("mimic" :: Nil) :: Nil } :: Nil
+          bag = ("yakusou", 4) :: ("maryoku", 2) :: ("bakudanishi", 3) :: Nil, encounters = true, fixed = ("mimic" :: Nil) :: Nil } ::
+        bossAt(5) :: bossAt(6) :: bossAt(7) :: Nil
+
+    /// ボス戦（ジェムイーター）の区間を Lv lv で。装備とふくろは bot が扉の奥に入った時の物（ミナの父の全快の後）。
+    def bossAt(lv: Int32): Section =
+        { map = "mine_b3", title = "ボス（ジェムイーター・Lv${lv}）", members = Member.all(), lv = lv,
+          gear = (Member.Member.Luka, "haganenotsurugi") :: (Member.Member.Luka, "mizunohagoromo") :: (Member.Member.Mina, "tetsunotsuruhashi") ::
+                 (Member.Member.Mina, "kawanoyoroi") :: (Member.Member.Toto, "mahounorobe") :: Nil,
+          bag = ("yakusou", 4) :: ("taimatsu", 3) :: ("bakudanishi", 3) :: Nil, encounters = false, fixed = (Bot.bossFoe() :: Nil) :: Nil }
 
     /// 1 戦を打ち切るターンの数。
     def maxRounds(): Int32 = 60
@@ -48,6 +56,14 @@ mod BalanceSim {
     def fixedTurnsLo(): Float64 = 3.0
     def fixedTurnsHi(): Float64 = 5.0
 
+    /// ボス戦の目安: bossLv の区間で、ターン数（中央値）が bossTurnsLo〜Hi・勝率が bossWinLo〜Hi（両端を含む）。
+    /// WhyNot: ボスを中ボスの 3〜5 ターンや「受けるダメージ 30% 以下」で見ない — 回復を挟みながら 6〜8 ターン競る山場の作り。
+    def bossLv(): Int32 = 6
+    def bossTurnsLo(): Float64 = 6.0
+    def bossTurnsHi(): Float64 = 8.0
+    def bossWinLo(): Float64 = 0.70
+    def bossWinHi(): Float64 = 0.95
+
     pub def play(): Unit \ IO = App.Headless.exitWith(playJob(App.Headless.requestFromProcess()))
 
     def playJob(req: App.Headless.Request): Int32 \ IO =
@@ -60,7 +76,7 @@ mod BalanceSim {
             "組ごとに ${seeds} 種。方針は bot と同じ（Bot.battlePlans: HP 35% 未満の仲間を回復の呪文 → やくそう・逃げられない組では攻めの呪文 → ばくだんいし・ほかは HP の一番少ない敵を たたかう）。" +
             "1 戦ごとに HP / MP は最大・ふくろは区間の初めの物から。\n" +
             "目安: 雑魚はその区間の Lv のルカが ${hitsLo()}〜${hitsHi()} 発 / 1 戦で受けるダメージは中央値で最大 HP の ${Float64.round(damageCap() * 100.0)}% 以下 / " +
-            "逃げられない固定の戦いは ${fixedTurnsLo()}〜${fixedTurnsHi()} ターン（中央値）。外れた行に ⚠。\n" +
+            "逃げられない固定の戦いは ${fixedTurnsLo()}〜${fixedTurnsHi()} ターン（中央値）/ ボスは Lv${bossLv()} で ${bossTurnsLo()}〜${bossTurnsHi()} ターン（中央値）・勝率 ${percent(bossWinLo())}〜${percent(bossWinHi())}（受けるダメージは見ない。Lv5・7 の行は見比べるだけ）。外れた行に ⚠。\n" +
             "区間の Lv と装備とふくろは make bot の表（debug/bot.md）の「区間に入った時の Lv」の多い値と、その区間に入った時の物を BalanceSim.sectionTable に写した物（bot の流れが変わったら写し直す）。\n" +
             "流した時間: ${Float64.round(seconds * 10.0) / 10.0} 秒\n\n" + body;
         println(text);
@@ -129,7 +145,7 @@ mod BalanceSim {
         let groups = List.append(encounters, s#fixed |> List.map(foes -> { foes = foes, weight = 0 }));
         let lv = Party.statsList(party) |> List.map(match (m, st) -> "${PartyDoc.memberOf(m, res#party)#name} Lv${st#lv}") |> List.join("・");
         let carried = s#bag |> List.map(match (key, n) -> "${key}×${n}") |> List.join("・");
-        let groupRows = groups |> List.map(g -> groupRow(res, seeds, party, bag, g)) |> List.join("\n");
+        let groupRows = groups |> List.map(g -> groupRow(res, seeds, s#lv, party, bag, g)) |> List.join("\n");
         let fixedKeys = s#fixed |> List.flatten |> List.toSet;
         let foeKeys = groups |> List.flatMap(g -> g#foes) |> firstOccurrences;
         let foeRows = foeKeys |> List.filterMap(FoesDoc.idOf(res#foes)) |> List.map(id -> foeRow(res, party, id, Set.memberOf(FoesDoc.keyOf(id), fixedKeys))) |> List.join("\n");
@@ -137,7 +153,7 @@ mod BalanceSim {
         "| 組 | 重み | 勝率 | ターン（中央値 / 9 割） | 受けたダメージ（中央値 / 9 割） | 全滅の率 | 使った MP（中央値） | 使った道具（中央値） |\n|---|---|---|---|---|---|---|---|\n" + groupRows + "\n\n" +
         "| 敵 | HP | まもり | ルカの たたかう 1 発（中央値） | 倒れるまでの回数 |\n|---|---|---|---|---|\n" + foeRows + "\n"
 
-    def groupRow(res: Res.Res, seeds: Int32, party: Party.Party, bag: Bag.Bag, g: MapDoc.Encounter): String =
+    def groupRow(res: Res.Res, seeds: Int32, lv: Int32, party: Party.Party, bag: Bag.Bag, g: MapDoc.Encounter): String =
         let foes = g#foes |> List.filterMap(FoesDoc.idOf(res#foes));
         let fights = List.range(0, seeds) |> List.map(seed -> fightOf(res, party, bag, foes, seed));
         let n = Int32.toFloat64(Int32.max(1, List.length(fights)));
@@ -146,9 +162,12 @@ mod BalanceSim {
         let rounds = fights |> List.map(f -> Int32.toFloat64(f#rounds));
         let damage = fights |> List.map(f -> f#damage);
         let fixed = g#weight <= 0;
-        let guarded = fixed and List.exists(id -> FoesDoc.foeOrBlank(res#foes, id)#noFlee, foes);
+        let boss = List.memberOf(Bot.bossFoe(), g#foes);
+        let guarded = fixed and not boss and List.exists(id -> FoesDoc.foeOrBlank(res#foes, id)#noFlee, foes);
         let turnsOff = guarded and (quantile(0.5, rounds) < fixedTurnsLo() or quantile(0.5, rounds) > fixedTurnsHi());
-        let warn = if (quantile(0.5, damage) > damageCap() or turnsOff) "⚠ " else "";
+        let bossOff = boss and lv == bossLv() and (quantile(0.5, rounds) < bossTurnsLo() or quantile(0.5, rounds) > bossTurnsHi() or
+                                                   wins < bossWinLo() or wins > bossWinHi());
+        let warn = if ((not boss and quantile(0.5, damage) > damageCap()) or turnsOff or bossOff) "⚠ " else "";
         let weight = if (fixed) "固定" else "${g#weight}";
         let mp = quantile(0.5, fights |> List.map(f -> Int32.toFloat64(f#mp)));
         let items = quantile(0.5, fights |> List.map(f -> Int32.toFloat64(f#items)));

@@ -20,18 +20,20 @@ mod Talk {
 
     /// 会話が読むだけの変数（World が正。WorldTalk.valueOf が今の値を出す）。
     ///   Quest … $quest（依頼の段階の名前）/ Gold … $gold（手持ちのお金）/ InnPrice … $innPrice（宿の 1 泊の値段。rpg.shops.json）/
+    ///   Reward … $reward（依頼のお礼。rules の reward。<<quest report>> が払う額）/
     ///   Joined(仲間) … $<仲間の名前>（加わったか）/ Has(だいじなもの) … $has_<道具の鍵>（ふくろに 1 つ以上あるか。items の kind = key の物だけ）
     pub enum SyncedVar with Eq, Order, ToString {
         case Quest
         case Gold
         case InnPrice
+        case Reward
         case Joined(Member.Member)
         case Has(ItemsDoc.ItemId)
     }
 
     /// 写す変数の全部（$has_ は items の Doc のだいじなものの数だけ）。
     pub def syncedVars(items: ItemsDoc.Doc): List[SyncedVar] =
-        List.flatten((SyncedVar.Quest :: SyncedVar.Gold :: SyncedVar.InnPrice :: Nil) :: (Member.all() |> List.map(SyncedVar.Joined)) ::
+        List.flatten((SyncedVar.Quest :: SyncedVar.Gold :: SyncedVar.InnPrice :: SyncedVar.Reward :: Nil) :: (Member.all() |> List.map(SyncedVar.Joined)) ::
                      (ItemsDoc.keyItemsOf(items) |> List.map(SyncedVar.Has)) :: Nil)
 
     /// 会話の中の名前（$ 付き）。
@@ -39,6 +41,7 @@ mod Talk {
         case SyncedVar.Quest          => "$quest"
         case SyncedVar.Gold           => "$gold"
         case SyncedVar.InnPrice       => "$innPrice"
+        case SyncedVar.Reward         => "$reward"
         case SyncedVar.Joined(member) => "$${Member.idOf(member)}"
         case SyncedVar.Has(item)      => "$has_${ItemsDoc.keyOf(item)}"
     }
@@ -46,7 +49,7 @@ mod Talk {
     // ── コマンド ──
 
     /// World を変えるコマンド（<<名前 引数…>> を commandOf で読んだ物）。
-    ///   Quest(段階) … <<quest accept>>: 依頼の段階を進め、手付けを払う（前の段階が合わなければ何もしない）
+    ///   Quest(段階) … <<quest accept / defeat / report>>: 依頼の段階を進め、その段階のお金を払う（accept は手付け・report はお礼。前の段階が合わなければ何もしない）
     ///   Join(仲間)  … <<join mina>>: 仲間に加える（加わっていれば何もしない）
     ///   Give(道具, 個数) … <<give yakusou 3>>: ふくろへ
     ///   Gold(数)    … <<gold 10>>: お金を足す（負なら引く。0 で止まる）
@@ -57,8 +60,10 @@ mod Talk {
     ///   Open(物の id) … <<open cave_mole>>: 今のマップの objects のその物を開けた事にする（扉は開き・番をする者は消える）
     ///   Heal … <<heal>>: 仲間全員の HP と MP を最大へ（倒れた人も起こす。お金も宿も要らない）
     ///   Ride … <<ride>>: 向いている前のマスのトロッコに乗って走り出す（会話は閉じる）
+    ///   Warp(出口の id) … <<warp to_surface>>: 会話を閉じ、今のマップの exits のその行の行き先へ暗転で移る（門は見ない）
+    ///   Ending … <<ending>>: 会話を閉じ、暗転してエンディングへ
     pub enum Command {
-        case Quest(Progress.Quest)
+        case Quest(Quest.Quest)
         case Join(Member.Member)
         case Give(ItemsDoc.ItemId, Int32)
         case Gold(Int32)
@@ -69,10 +74,13 @@ mod Talk {
         case Open(String)
         case Heal
         case Ride
+        case Warp(String)
+        case Ending
     }
 
     /// コマンドの名前（会話の語彙）。<<wait 秒>> は engine の実行器が扱うので並べない。
-    def commandNames(): List[String] = "quest" :: "join" :: "give" :: "gold" :: "shop" :: "inn" :: "fight" :: "take" :: "open" :: "heal" :: "ride" :: Nil
+    def commandNames(): List[String] =
+        "quest" :: "join" :: "give" :: "gold" :: "shop" :: "inn" :: "fight" :: "take" :: "open" :: "heal" :: "ride" :: "warp" :: "ending" :: Nil
 
     /// コマンドの書き方（知らせる文に並べる。引数の名前は Doc のどこを引くか）。
     def usageOf(name: String): String = match name {
@@ -84,16 +92,18 @@ mod Talk {
         case "take"  => "take 道具 個数"
         case "open"  => "open 物の id"
         case "shop"  => "shop [店の名前]"
+        case "warp"  => "warp 出口の id"
         case _       => name
     }
 
     /// <<quest 動詞>> の動詞と、進めた先の段階の表（動詞を足すのはここ 1 か所）。
-    def questVerbTable(): List[(String, Progress.Quest)] = ("accept", Progress.Quest.Accepted) :: Nil
+    def questVerbTable(): List[(String, Quest.Quest)] =
+        ("accept", Quest.Quest.Accepted) :: ("defeat", Quest.Quest.BossDown) :: ("report", Quest.Quest.Reported) :: Nil
 
     def questVerbs(): List[String] = questVerbTable() |> List.map(fst)
 
     /// <<quest 動詞>> の動詞 → 進めた先の段階。
-    def questVerbOf(verb: String): Option[Progress.Quest] =
+    def questVerbOf(verb: String): Option[Quest.Quest] =
         questVerbTable() |> List.find(row -> fst(row) == verb) |> Option.map(snd)
 
     /// コマンドを読む。名前・引数の数・Doc で引けない引数は理由を返す（会話の場所つき）。
@@ -116,6 +126,8 @@ mod Talk {
             case ("heal", Nil) => Ok(Command.Heal)
             case ("ride", Nil) => Ok(Command.Ride)
             case ("inn", Nil)  => Ok(Command.Inn)
+            case ("ending", Nil) => Ok(Command.Ending)
+            case ("warp", id :: Nil) => Ok(Command.Warp(id))
             case ("take", item :: count :: Nil) =>
                 forM (
                     id <- ItemsDoc.idOf(items, item) |> Option.toOk("<<take>> の道具 '${item}' は ${ItemsDoc.path()} に無い${Suggest.hint(item, ItemsDoc.keysOf(items))}${at}");
@@ -133,16 +145,19 @@ mod Talk {
             |> Option.toOk("<<fight>> の敵 '${foe}' は ${FoesDoc.path()} に無い${Suggest.hint(foe, FoesDoc.keysOf(foes))}${at}")
 
     /// 会話の食い違い: 読めないコマンド・<<fight>> の勝った後のノードが無い・<<open>> の物がどのマップの objects にも無い
-    /// （objectIds = 全部のマップの objects の id）・World から写す変数への <<set>>（書いても次の写しで消える）。
+    /// （ids#objects = 全部のマップの objects の id）・<<warp>> の出口がどのマップの exits にも無い（ids#exits = 全部のマップの exits の id）・
+    /// World から写す変数への <<set>>（書いても次の写しで消える）。
     /// Res.problemsOf が起動時に言い、テストは空であることを見る。
-    pub def problemsOf(items: ItemsDoc.Doc, foes: FoesDoc.Doc, objectIds: Set[String], program: Yarn.Program): List[String] =
+    pub def problemsOf(items: ItemsDoc.Doc, foes: FoesDoc.Doc, ids: { objects = Set[String], exits = Set[String] }, program: Yarn.Program): List[String] =
         let synced = syncedVars(items) |> List.map(varNameOf) |> List.toSet;
         let nodes = Yarn.nodeNames(program) |> List.toSet;
         let commandProblems = commandsOf(program) |> List.filterMap(c -> match commandOf(items, foes, c) {
             case Ok(Command.Fight(_, Some(node))) if not Set.memberOf(node, nodes) =>
                 Some("[talk] <<fight>> の勝った後のノード '${node}' が会話に無い（${Yarn.sourceText(c#source)}）")
-            case Ok(Command.Open(id)) if not Set.memberOf(id, objectIds) =>
+            case Ok(Command.Open(id)) if not Set.memberOf(id, ids#objects) =>
                 Some("[talk] <<open>> の物 '${id}' がどのマップの objects にも無い（${Yarn.sourceText(c#source)}）")
+            case Ok(Command.Warp(id)) if not Set.memberOf(id, ids#exits) =>
+                Some("[talk] <<warp>> の出口 '${id}' がどのマップの exits にも無い（${Yarn.sourceText(c#source)}）")
             case Ok(_)       => None
             case Err(reason) => Some("[talk] ${reason}")
         });

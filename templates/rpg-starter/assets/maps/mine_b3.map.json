@@ -1,7 +1,7 @@
 {
   "version": 1,
   "title": "坑道 B3",
-  "note": "水晶の坑道の 3 階（mine_deep の組・寒色・32×30）。~ は地底湖（入れない）・x は水晶の柱と大きな水晶の下の床（入れない）・< は B2 へ。湖の岸の水晶 3 つ（crystal。order の順 = 東・西・北）を点けると旗 b3_crystals が立ち、飛び石（bridge）が現れて小島（みずのはごろも）と北の岸へ渡れる。北の岸の封じられた扉（door。ふるびたかぎ）の奥がボスの間。上り階段の部屋にミナの父（話すと全快・水晶の順番の手がかり）と石碑（sign）。東の岩の部屋 2（岩 2・床 2。押す順を違えると角に詰まる。階段を出入りすると岩は元へ戻る）の格子の奥に宝箱 2 つ（片方は ひとくいばこ = guard）。北西の小部屋は B2 の落とし穴の先（せいすい×2・上り階段で B2 の入口へ戻る。湖へは出られない）。",
+  "note": "水晶の坑道の 3 階（mine_deep の組・寒色・32×30）。~ は地底湖（入れない）・x は水晶の柱と大きな水晶の下の床（入れない）・< は B2 へ。湖の岸の水晶 3 つ（crystal。order の順 = 東・西・北）を点けると旗 b3_crystals が立ち、飛び石（bridge）が現れて小島（みずのはごろも）と北の岸へ渡れる。北の岸の封じられた扉（door。ふるびたかぎ）の奥がボスの間。上り階段の部屋にミナの父（話すと全快・水晶の順番の手がかり）と石碑（sign）。東の岩の部屋 2（岩 2・床 2。押す順を違えると角に詰まる。階段を出入りすると岩は元へ戻る）の格子の奥に宝箱 2 つ（片方は ひとくいばこ = guard）。北西の小部屋は B2 の落とし穴の先（せいすい×2・上り階段で B2 の入口へ戻る。湖へは出られない）。 扉の奥のボスの間（12..20, 1..4）にジェムイーター（guard・b3_boss。扉のマスから調べると Boss の会話 → <<fight gemeater BossWon>>）。勝つと BossWon が <<open b3_boss>>・<<quest defeat>> を流し、歩いては通らない出口 to_surface（edge = none）で坑道の入口（ワールドマップ）へ戻す。全滅しても b3_boss は残るので挑み直せる。ミナの父はボスを倒すと村へ帰る（questUntil = accepted）。",
   "tileset": "mine_deep",
   "battleBack": "bg_lake",
   "minSteps": 30,
@@ -56,6 +56,14 @@
       "spawnX": 3,
       "spawnY": 4,
       "facing": "down"
+    },
+    {
+      "id": "to_surface",
+      "edge": "none",
+      "to": "world",
+      "spawnX": 20,
+      "spawnY": 4,
+      "facing": "down"
     }
   ],
   "npcs": [
@@ -65,7 +73,8 @@
       "x": 13,
       "y": 25,
       "facing": "right",
-      "node": "MinaFather"
+      "node": "MinaFather",
+      "questUntil": "accepted"
     }
   ],
   "props": [
@@ -100,6 +109,38 @@
       "flat": false,
       "x": 4,
       "y": 18
+    },
+    {
+      "sprite": "crystal_pillar",
+      "frame": "base",
+      "fps": 0,
+      "flat": false,
+      "x": 12,
+      "y": 2
+    },
+    {
+      "sprite": "crystal_pillar",
+      "frame": "base",
+      "fps": 0,
+      "flat": false,
+      "x": 20,
+      "y": 2
+    },
+    {
+      "sprite": "crystal_l",
+      "frame": "f0",
+      "fps": 1,
+      "flat": false,
+      "x": 13,
+      "y": 4
+    },
+    {
+      "sprite": "crystal_l",
+      "frame": "f0",
+      "fps": 1,
+      "flat": false,
+      "x": 19,
+      "y": 4
     }
   ],
   "objects": [
@@ -292,6 +333,14 @@
       "item": "seisui",
       "count": 2,
       "gold": 0
+    },
+    {
+      "id": "b3_boss",
+      "kind": "guard",
+      "x": 16,
+      "y": 4,
+      "sprite": "boss",
+      "node": "Boss"
     }
   ],
   "events": [],

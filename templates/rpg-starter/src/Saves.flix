@@ -40,7 +40,7 @@ mod Saves {
             "party" => Json.JArray(Party.statsList(r#party) |> List.map(member) |> List.toVector),
             "gold" => int(Bag.goldOf(r#bag)),
             "items" => Json.JObject(Bag.itemsOf(r#bag) |> List.map(match (id, n) -> (ItemsDoc.keyOf(id), int(n))) |> List.toMap),
-            "quest" => Json.JString(Progress.nameOf(Progress.rec(r#progress)#quest)),
+            "quest" => Json.JString(Quest.nameOf(Progress.rec(r#progress)#quest)),
             "opened" => Json.JArray(Progress.rec(r#progress)#opened |> Set.toList
                 |> List.map(match (map, id) -> Json.JObject(Map#{ "map" => Json.JString(MapDoc.nameOf(map)), "id" => Json.JString(id) }))
                 |> List.toVector),
@@ -56,7 +56,7 @@ mod Saves {
             rows <- Map.get("party", root) |> Option.flatMap(JsonCodec.decodeList(json1 -> Some(json1))) |> Option.toOk("party が無い");
             party <- rows |> List.map(memberOf(items)) |> List.sequence;
             _ <- if (List.isEmpty(party)) Err("party が空") else Ok(());
-            quest <- Progress.questOf(JsonCodec.stringOr("quest", "", root)) |> Option.toOk("quest を読めない")
+            quest <- Quest.questOf(JsonCodec.stringOr("quest", "", root)) |> Option.toOk("quest を読めない")
         ) yield {
             let counts = Map.get("items", root) |> Option.flatMap(JsonCodec.decodeStringMap(JsonCodec.expectInt)) |> Option.getWithDefault(Map.empty())
                 |> Map.toList |> List.filterMap(match (key, n) -> ItemsDoc.idOf(items, key) |> Option.map(id -> (id, n))) |> List.toMap;

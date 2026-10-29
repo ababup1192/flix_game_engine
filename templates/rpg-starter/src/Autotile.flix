@@ -131,7 +131,7 @@ mod Autotile {
         if (hasVariant and cellHash(c, r) < 2) { sprite = variant | part } else part
 
     /// 文字の並びを格子へ。
-    pub def gridOf(rows: List[String]): Grid = rows |> List.map(row -> String.toList(row) |> List.toVector) |> List.toVector
+    def gridOf(rows: List[String]): Grid = rows |> List.map(row -> String.toList(row) |> List.toVector) |> List.toVector
 
     /// (c, r) のマスに重ねる部品（奥から。0 番は地面で、変種の絵があれば座標で散らした物）。
     /// 凡例に無い文字は色票の外の色の仮の四角の部品。

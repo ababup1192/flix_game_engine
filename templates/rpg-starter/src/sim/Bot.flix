@@ -7,7 +7,8 @@
 //   B1 の かわのよろい → てつのつるはし（北の行き止まり）→ 岩の部屋 1（押す手は rockPlanOf）→ 小部屋の宝箱 /
 //   B2 の たいまつ → ふるびたかぎ → まほうのローブ → くろがねゴブリン（固定の戦い）→ はがねのつるぎ /
 //   B3 で HP が 60% 未満ならミナの父に話す → 岩の部屋 2 → ばくだんいし → ひとくいばこ（固定の戦い）→ 水晶を order の順に →
-//   小島の みずのはごろも → B3 の封じられた扉の前（ここで着いた事にする。ボスと帰りはまだ遊べない）
+//   小島の みずのはごろも → 封じられた扉を開ける → HP か MP が減っていればミナの父の全快 → 奥のジェムイーター（固定の戦い）/
+//   ボスを倒した後（坑道の入口へ戻される）→ ワールドマップを歩いて村へ → 泉の上の村長に報告（エンディングに着けば終わり）
 // 歩き: マップの間は exits をつないだ図の最短、マップの中は GridSearch.distances（通れるかは規則と同じ WorldField.canEnter）。
 //   目的のマスへ歩いて着けない時は寄り道（detourOf）: 乗れば着くトロッコに乗り、無ければ、動かせば乗れば着くようになる分かれ目のレバーを動かす。
 //   落とし穴（目的でない出入口のマス）は踏まない。
@@ -40,8 +41,11 @@ mod Bot {
         case Cast(Member.Member, Member.Member, SpellsDoc.SpellId)
     }
 
-    /// 坑道の封じられた扉の前（着いた事にするマス）。
-    def doorFront(): (String, Int32, Int32) = ("mine_b3", 16, 6)
+    /// 坑道の封じられた扉のあるマップ（扉を開け、奥のボスを調べる）。
+    def doorMap(): String = "mine_b3"
+
+    /// ボスの敵の鍵（BotRun がボス戦を区間に分ける）。
+    pub def bossFoe(): String = "gemeater"
 
     /// 岩の部屋の押す手（旗 → マップと、岩の id・押す前の岩のマス・向きの並び）。岩が今いるマスの手を押す（押し終えた手は飛ばされる）。
     def rockPlanOf(flag: String): (String, List[(String, Int32, Int32, Dir4.Dir4)]) = match flag {
@@ -87,8 +91,8 @@ mod Bot {
         let joined = m -> Party.hasJoined(m, w#party);
         let raised = (map, id) -> flagRaisedBy(res, map, id, w);
         let here = World.fieldRecOf(w) |> Option.map(r -> MapDoc.nameOf(r#map)) |> Option.getWithDefault("");
-        let (doorMap, doorX, doorY) = doorFront();
-        if (quest == Progress.Quest.NotAsked) Goal.Go("chief_house", Aim.Talk("chief"))
+        let door = doorMap();
+        if (quest == Quest.Quest.NotAsked) Goal.Go("chief_house", Aim.Talk("chief"))
         else if (not joined(Member.Member.Mina)) Goal.Go("smithy", Aim.Talk("mina"))
         else if (wantsSword(res, w)) Goal.Go("shop", Aim.Talk("shopkeeper"))
         else upgradeOf(res, w) |> Option.withDefault(default = if (Set.memberOf(here, villageMaps())) None else healOf(res, w)) |> Option.getWithDefault(
@@ -111,7 +115,10 @@ mod Bot {
             else if (not opened("mine_b3", "b3_mimic")) Goal.Go("mine_b3", Aim.Examine("b3_mimic"))
             else if (not isFlagNamed("b3_crystals", w)) Goal.Go("mine_b3", Aim.Examine(nextCrystalOf(res, "mine_b3", w)))
             else if (not opened("mine_b3", "b3_robe")) Goal.Go("mine_b3", Aim.Examine("b3_robe"))
-            else Goal.Go(doorMap, Aim.Reach(doorX, doorY)))
+            else if (quest == Quest.Quest.Accepted and not opened(door, "b3_door")) Goal.Go(door, Aim.Examine("b3_door"))
+            else if (quest == Quest.Quest.Accepted and here == door and isWorn(res, w)) Goal.Go(door, Aim.Talk("mina_father"))
+            else if (quest == Quest.Quest.Accepted) Goal.Go(door, Aim.Examine("b3_boss"))
+            else Goal.Go("village", Aim.Talk("chief_spring")))
 
     /// map の id のレバーの旗が立っているか（レバーが無ければ false）。
     def flagRaisedBy(res: Res.Res, map: String, id: String, w: World.World): Bool =
@@ -179,6 +186,13 @@ mod Bot {
     def nextExitOf(res: Res.Res, start: String, goal: String): Option[(MapDoc.Exit, Int32)] =
         if (start == goal) None else hopsFrom(res, goal, (start, Nil) :: Nil, Set#{start})
 
+    /// 歩いて通れる出入口か（会話の <<warp>> だけが通る edge = none の出入口は図に入れない）。
+    def isWalkable(exit: MapDoc.Exit): Bool = match exit#place {
+        case MapDoc.ExitPlace.Cell(_, _) => true
+        case MapDoc.ExitPlace.Edge(_)    => true
+        case MapDoc.ExitPlace.Nowhere    => false
+    }
+
     /// 幅優先: 行けるマップを順に広げ、goal に着いたら最初の出入口と出入口の数。
     def hopsFrom(res: Res.Res, goal: String, todo: List[(String, List[MapDoc.Exit])], seen: Set[String]): Option[(MapDoc.Exit, Int32)] =
         match todo {
@@ -187,7 +201,7 @@ mod Bot {
                 if (map == goal) List.reverse(path) |> List.head |> Option.map(first -> (first, List.length(path)))
                 else {
                     let exits = Map.get(map, res#maps) |> Option.map(d -> MapDoc.rec(d)#exits) |> Option.getWithDefault(Nil)
-                        |> List.filter(e -> not Set.memberOf(e#to, seen));
+                        |> List.filter(e -> not Set.memberOf(e#to, seen) and isWalkable(e));
                     let nextSeen = exits |> List.foldLeft((acc, e) -> Set.insert(e#to, acc), seen);
                     hopsFrom(res, goal, List.append(rest, exits |> List.map(e -> (e#to, e :: path))), nextSeen)
                 }
@@ -284,6 +298,7 @@ mod Bot {
             case InputLayer.Layer.BattleMessage   => tap(k#confirm)
             case InputLayer.Layer.BattleChoose(m, page) => tap(battleKeys(res, w, k, m, page))
             case InputLayer.Layer.Walking         => walkKeys(res, w, k, st)
+            case InputLayer.Layer.Ending          => (Set.empty(), { tapped = false | st })
         }
 
     // ── 戦い ──
@@ -540,8 +555,11 @@ mod Bot {
     /// 道を今の World で引き直しておく（BotRun が残りを数える前に呼ぶ）。
     pub def refresh(res: Res.Res, w: World.World, st: State): State = withRoute(res, w, goalOf(res, w), st)
 
-    /// 着いた事にするマスに立っているか。
-    pub def isDone(w: World.World): Bool =
-        let (map, x, y) = doorFront();
-        World.fieldRecOf(w) |> Option.exists(r -> MapDoc.nameOf(r#map) == map and r#hero#x == x and r#hero#y == y)
+    /// エンディングに着いたか（1 周の終わり）。
+    pub def isDone(w: World.World): Bool = World.sceneKindOf(w) == World.SceneKind.Ending
+
+    /// 仲間の誰かの HP か MP が最大でないか（ボスの前にミナの父の全快を受ける）。
+    def isWorn(res: Res.Res, w: World.World): Bool =
+        Party.statsList(w#party) |> List.exists(match (m, s) ->
+            s#hp < Party.maxHpOf(res#party, m, w#party) or s#mp < Party.maxMpOf(res#party, m, w#party))
 }

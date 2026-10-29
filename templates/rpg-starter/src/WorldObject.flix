@@ -175,7 +175,7 @@ mod WorldObject {
         let m = MapDoc.rec(doc);
         let key = (cell#x, cell#y);
         let walkable = MapDoc.charAt(cell#x, cell#y, doc) |> Option.exists(ch -> Tileset.passageOf(m#tileset, ch) == Tileset.Passage.Walk);
-        let someone = Map.get(key, m#npcAt) |> Option.exists(npc -> not Set.memberOf(npc#id, Party.joinedIds(w#party)));
+        let someone = Option.nonEmpty(MapDoc.standingAt(Party.joinedIds(w#party), Progress.rec(w#progress)#quest, cell#x, cell#y, doc));
         let things = objectsNow(doc, r, w#progress) |> List.filter(o -> o#cell#x == cell#x and o#cell#y == cell#y);
         let onlyPlates = things |> List.forAll(o -> match o#object#kind {
             case ObjectKind.Plate(_) => true

@@ -5,12 +5,14 @@ mod WorldTransition {
     use fge::Clock
     use World.TransitionThen
 
-    /// 暗転の片道の秒（宿に泊まる時の覆う方は innSeconds・出会いの点滅は flashSeconds・ほかは fadeSeconds）。
+    /// 暗転の片道の秒（宿に泊まる時とエンディングへの覆う方は innSeconds・出会いの点滅は flashSeconds・ほかは fadeSeconds）。
+    /// WhyNot: エンディングへの暗転を fadeSeconds にしない — 報告の台詞から 0.3 秒で切り替わると、終わった余韻が無い。
     pub def secondsOf(res: Res.Res, then: TransitionThen): Float64 = match then {
         case TransitionThen.InnRest           => RulesDoc.rec(res#rules)#innSeconds
         case TransitionThen.StartBattle(_, _) => RulesDoc.rec(res#rules)#flashSeconds
         case TransitionThen.Warp(_, _, _)     => RulesDoc.rec(res#rules)#fadeSeconds
         case TransitionThen.FadeIn            => RulesDoc.rec(res#rules)#fadeSeconds
+        case TransitionThen.Ending            => RulesDoc.rec(res#rules)#innSeconds
     }
 
     /// 暗転を進め、片道が終わっていれば transitionDone へ。
@@ -29,5 +31,6 @@ mod WorldTransition {
             case TransitionThen.StartBattle(foes, afterWin) =>
                 WorldBattle.enter(res, foes, afterWin, World.mapField(r -> { transition = None | r }, w))
             case TransitionThen.FadeIn                  => World.mapField(r -> { transition = None | r }, w)
+            case TransitionThen.Ending                  => World.enterEnding(at, w)
         }
 }

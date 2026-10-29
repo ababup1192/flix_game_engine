@@ -35,6 +35,7 @@ mod TextDoc {
         case Fight
         case Defend
         case Flee
+        case TheEnd
     }
 
     def menuKeyOf(m: MenuText): String = match m {
@@ -66,6 +67,7 @@ mod TextDoc {
         case MenuText.Fight => "fight"
         case MenuText.Defend => "defend"
         case MenuText.Flee => "flee"
+        case MenuText.TheEnd => "theEnd"
     }
 
     def menuDefaultOf(m: MenuText): String = match m {
@@ -97,6 +99,7 @@ mod TextDoc {
         case MenuText.Fight => "たたかう"
         case MenuText.Defend => "ぼうぎょ"
         case MenuText.Flee => "にげる"
+        case MenuText.TheEnd => "おわり"
     }
 
     /// 知らせの言葉の名前（rpg.text.json の notice の鍵）。{name}・{n}・{item}・{gold} は fill が埋める。
@@ -338,9 +341,10 @@ mod TextDoc {
 
     /// speakers = 会話の話し手の id → 呼び名、voices = 話し手の id → 声の高さ（書いていない話し手は無い）、
     /// menu = メニューの言葉の鍵 → 字、notice = 知らせの言葉の鍵 → 字、
-    /// battle = 戦いの伝言の鍵 → 字、problems = 読めずに飛ばした行（Res.problemsOf が言う）。
+    /// battle = 戦いの伝言の鍵 → 字、credits = エンディングのスタッフの字（上から 1 行ずつ。空の行は間を空ける。{lv}・{gold} は EndingView が埋める）、
+    /// problems = 読めずに飛ばした行（Res.problemsOf が言う）。
     pub type alias Rec = { version = Int32, speakers = Map[String, String], voices = Map[String, Voice], menu = Map[String, String],
-                           notice = Map[String, String], battle = Map[String, String], problems = List[String] }
+                           notice = Map[String, String], battle = Map[String, String], credits = List[String], problems = List[String] }
 
     /// WhyNot: 外で組ませない — 既定へ落とした欄と知らせる行は fromJson と既定を通さないと揃わない。
     enum TextDocOf(Rec)
@@ -352,7 +356,7 @@ mod TextDoc {
 
     pub def path(): String = "assets/rpg.text.json"
 
-    def defaults(): Doc = TextDocOf.TextDocOf({ version = 1, speakers = Map.empty(), voices = Map.empty(), menu = Map.empty(), notice = Map.empty(), battle = Map.empty(), problems = Nil })
+    def defaults(): Doc = TextDocOf.TextDocOf({ version = 1, speakers = Map.empty(), voices = Map.empty(), menu = Map.empty(), notice = Map.empty(), battle = Map.empty(), credits = Nil, problems = Nil })
 
     /// 話し手の呼び名（書いていなければ id のまま。地の文の空の id は空）。
     pub def speakerName(id: String, d: Doc): String = Map.getWithDefault(id, id, rec(d)#speakers)
@@ -410,9 +414,24 @@ mod TextDoc {
         let (notice, noticeProblems) = catalogOf("notice", "text", root);
         let (battle, battleProblems) = catalogOf("battle", "text", root);
         let (voices, voiceProblems) = voicesOf(root);
+        let (credits, creditProblems) = creditsOf(root);
         TextDocOf.TextDocOf({ version = JsonCodec.intOr("version", d#version, root),
-                  speakers = speakers, voices = voices, menu = menu, notice = notice, battle = battle,
-                  problems = List.flatten(speakerProblems :: voiceProblems :: menuProblems :: noticeProblems :: battleProblems :: Nil) })
+                  speakers = speakers, voices = voices, menu = menu, notice = notice, battle = battle, credits = credits,
+                  problems = List.flatten(speakerProblems :: voiceProblems :: menuProblems :: noticeProblems :: battleProblems :: creditProblems :: Nil) })
+
+    /// credits の list（1 行 = { text }）を上からの字の並びへ。text の無い行は飛ばして問題に挙げる。
+    def creditsOf(root: Map[String, Json]): (List[String], List[String]) =
+        let rows = Map.get("credits", root)
+            |> Option.flatMap(JsonCodec.decodeList(json -> Some(json)))
+            |> Option.getWithDefault(Nil)
+            |> List.map(row -> JsonCodec.expectObject(row) |> Option.flatMap(obj -> Map.get("text", obj)) |> Option.flatMap(JsonCodec.expectString));
+        let problems = rows |> List.zipWithIndex |> List.filterMap(match (i, text) ->
+            if (Option.isEmpty(text)) Some("[text] credits の ${i + 1} 行目に text が無いので飛ばす") else None);
+        (rows |> List.filterMap(x -> x), problems)
+
+    /// エンディングのスタッフの字（{鍵} を values で埋めた物。上から）。
+    pub def creditLines(values: List[(Placeholder, String)], d: Doc): List[String] =
+        rec(d)#credits |> List.map(fillIn(values))
 
     /// speakers の行の voice（low / mid / high）。書いていない行は飛ばし、知らない名前は Mid で出すと問題に挙げる。
     def voicesOf(root: Map[String, Json]): (Map[String, Voice], List[String]) =

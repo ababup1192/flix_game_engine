@@ -7,10 +7,12 @@
 //   \n でウィンドウの中の行を替える（2 行目からは字下げして出る）。
 //   人に話しかけた時に開くノードは、マップの Doc（assets/maps/*.map.json）の npcs の node・出入口の gateNode・events の node（着いたマス）。
 //
-// 変数 $quest（none / accepted）・$mina / $toto（ミナ・トトが加わったか）・$gold（手持ちのお金）・$innPrice（宿代。rpg.shops.json）・
+// 変数 $quest（none / accepted / bossdown / reported）・$reward（依頼のお礼。rules の reward）・$mina / $toto（ミナ・トトが加わったか）・$gold（手持ちのお金）・$innPrice（宿代。rpg.shops.json）・
 // $has_<道具の鍵>（だいじなもの = rpg.items.json の kind が key の物を、ふくろに持っているか）は World と Doc から写す（読むだけ）。
 //   <<set>> で書かない（TestDocs が止める）。World を変えるのは下のコマンドだけ:
 //     <<quest accept>>       依頼を受ける（手付けの rules.advance を払う。受けた後に流しても何もしない）
+//     <<quest defeat>>       坑道の奥のボスを倒した（受けた後だけ進む。村の泉に水が戻り、マップの questFrom = bossdown の人と小物が出る）
+//     <<quest report>>       村長に報告した（ボスを倒した後だけ進み、お礼の rules.reward を払う）
 //     <<join mina>>          仲間に加える（マップに id が仲間の名前の人が立っていれば、その場所から隊列に入る）
 //     <<give 道具 個数>>      ふくろへ（道具は assets/rpg.items.json の鍵）
 //     <<gold 数>>            お金を足す（負なら引く）
@@ -21,6 +23,8 @@
 //     <<open 物の id>>        今のマップの objects の物を開けた事にする（扉は開き、番をする者は消える。勝ちのノードで流す）
 //     <<heal>>               仲間全員の HP と MP を最大へ（お金も宿も要らない）
 //     <<ride>>               前のマスのトロッコに乗って走り出す（会話は閉じる。走れなければ「うごかない」と知らせる）
+//     <<warp 出口の id>>      会話を閉じ、今のマップの exits のその行の行き先へ暗転で移る（門は見ない。歩いて通らない出口は edge = none）
+//     <<ending>>             会話を閉じ、暗転してエンディングへ（スタッフの字は assets/rpg.text.json の credits）
 //   コマンドの直後の <<if>> は、もう当てた後の値を読む。
 
 title: Elder
@@ -32,6 +36,8 @@ title: Woman
 ---
 <<if $quest == "none">>
     woman: いずみが かれてから\nみずくみが たいへんでねえ。\nむらおさが よんでいたよ。
+<<elseif $quest == "bossdown" or $quest == "reported">>
+    woman: いずみに みずが もどったよ！\nこれで みずくみも らくになるねえ。\nほんとうに ありがとう。
 <<else>>
     woman: こうどうへ いくのかい？\nそういえば ひがしの ほこらで\nまほうつかいの こどもが\nなにか さがしていたよ。
 <<endif>>
@@ -39,7 +45,11 @@ title: Woman
 
 title: Child
 ---
-child: いずみで あそべないの つまんない！
+<<if $quest == "bossdown" or $quest == "reported">>
+    child: みて みて！ いずみが\nキラキラ してる！\nまた いっぱい あそべるね！
+<<else>>
+    child: いずみで あそべないの つまんない！
+<<endif>>
 ===
 
 title: Merchant
@@ -54,6 +64,7 @@ title: ChiefQuest
 <<declare $toto = false>>
 <<declare $gold = 0>>
 <<declare $innPrice = 0>>
+<<declare $reward = 0>>
 <<if $quest == "none">>
     chief: おお ルカよ。\nむらの いずみが かれてしもうた…\nきたの こうどうへ いって\nわけを しらべてきては くれんか？
     -> はい
@@ -72,7 +83,9 @@ title: ChiefQuest
 
 title: Smith
 ---
-<<if $mina>>
+<<if $quest == "bossdown" or $quest == "reported">>
+    smith: せがれを つれかえって\nくれたんじゃな。\nこの とおりじゃ… ありがとう。
+<<elseif $mina>>
     smith: まごを たのんだぞ。\nせがれも きっと\nこうどうの おくに おるはずじゃ。
 <<else>>
     smith: カーン カーン…\nせがれが こうどうから\nもどらんのじゃ。
@@ -230,4 +243,47 @@ father: きずぐすりを わけてやろう。
 みんなの HPと MPが\nすっかり かいふくした！
 father: みずうみの すいしょうは\nひがしの あお、にしの あお、\nきたの あお の じゅんに ともすんだ。
 father: わしは ここで まっている。\nいずみを たのんだぞ。
+===
+
+title: Boss
+---
+<<if $quest == "accepted">>
+    おおきな トカゲが\nすいしょうを かみくだいている…！
+    mina: こいつだ！ こいつが\nすいみゃくの すいしょうを\nたべて いたんだ！
+    toto: くるよ！ みんな\nきを つけて！
+    <<fight gemeater BossWon>>
+<<endif>>
+===
+
+title: BossWon
+---
+<<open b3_boss>>
+<<quest defeat>>
+ジェムイーターは\nくずれおちた！
+ゴゴゴゴ…\nいわの すきまから\nみずが ふきだした！
+mina: すいみゃくが ひらいたんだ！\nこれで むらの いずみにも\nみずが もどるよ！
+mina: とうちゃんを むかえに いって\nいっしょに むらへ かえろう！
+ルカたちは ミナの とうちゃんと\nこうどうを あとにした…
+<<warp to_surface>>
+===
+
+title: ChiefReport
+---
+<<if $quest == "bossdown">>
+    chief: おお ルカ！ みよ、\nいずみに みずが もどったぞ！
+    chief: こうどうの おくの\nかいぶつを たおして\nくれたのじゃな。
+    <<quest report>>
+    いずみに みずが もどった！\nルカたちは {$reward}G を うけとった。
+    chief: これは むらからの おれいじゃ。\nほんとうに ありがとう。
+    chief: ルーネの いずみは\nこれからも ずっと\nわきつづける じゃろう。
+    <<ending>>
+<<else>>
+    chief: ルーネの いずみは\nこれからも ずっと\nわきつづける じゃろう。
+<<endif>>
+===
+
+title: FatherHome
+---
+father: ミナから きいたよ。\nむすめを たすけてくれて\nありがとう。
+father: これからは また\nこうどうで すいしょうを\nほって くらすよ。
 ===

@@ -1,0 +1,35 @@
+# ボス: B3 の開いた扉のマスから奥のジェムイーターを調べる → Boss の会話 → 固定の戦い（逃げられない）→ 勝つと BossWon の会話 →
+# 段階が bossdown になり、歩いては通らない出口 to_surface（<<warp>>）で坑道の入口（ワールドマップ）へ暗転で戻る。
+# たたかう だけで勝てるよう Lv10 で始める（戦いの数は make balance が見る）。歩く手順を確かめる flow なので steps=999。
+start field map=mine_b3 x=16 y=6 facing=up party=luka,mina,toto quest=accepted steps=999 lv=10 opened=b3_door
+hold up
+until y=5 max 2
+release up
+wait 0.3
+expect x=16&y=5&facing=Up&layer=Walking
+tap confirm
+expect talk=Boss
+tap confirm                  # 出し切る
+tap confirm                  # ミナ
+tap confirm
+tap confirm                  # トト
+tap confirm
+tap confirm                  # 閉じて戦う
+until scene=Battle max 3
+expect foes=1&quest=accepted
+# にげる は手番を使うだけ（逃げられない）。ここでは たたかう で送る。
+drive battle until talk=BossWon max 180
+expect scene=Field&quest=bossdown&map=mine_b3
+tap confirm                  # くずれおちた
+tap confirm
+tap confirm                  # みずが ふきだした
+tap confirm
+tap confirm                  # ミナ
+tap confirm
+tap confirm                  # ミナ
+tap confirm
+tap confirm                  # あとにした
+tap confirm                  # 閉じて暗転
+until map=world max 3
+until layer=Walking max 2
+expect x=20&y=4&facing=Down&quest=bossdown&party=luka,mina,toto

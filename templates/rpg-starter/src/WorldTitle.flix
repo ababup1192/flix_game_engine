@@ -1,7 +1,23 @@
-// WorldTitle — タイトルのメニューの規則（カーソル・選ぶ）。
+// WorldTitle — タイトルのメニューの規則（カーソル・選ぶ）と、エンディングからタイトルへ戻る規則。
+//   Field ──<<ending>>──▶ 暗転（TransitionThen.Ending）──▶ Ending（スタッフの字が rules の creditSeconds かけて流れる）
+//     ──流れ切った後の決定──▶ Title（セーブはそのまま。「つづきから」は最後に泊まった宿から）
 mod WorldTitle {
-    use fge::{Emit}
+    use fge::{Clock, Emit}
     use World.TitleItem
+
+    // ── エンディング ──
+
+    /// スタッフの字の流れた割合（0..1。エンディングでなければ 0）。
+    pub def creditProgressOf(res: Res.Res, w: World.World): Float64 =
+        let length = RulesDoc.rec(res#rules)#creditSeconds;
+        World.endingRecOf(w)
+            |> Option.map(e -> if (length <= 0.0) 1.0 else Float64.min(1.0, Clock.since(e#startedAt, World.now(w)) / length))
+            |> Option.getWithDefault(0.0)
+
+    /// エンディングの決定: 字が流れ切っていればタイトルへ（流れている間は何もしない）。[遷移: Ending→Title]
+    /// WhyNot: 流れている間の決定で飛ばさない — 報告の台詞を送る決定の連打が、そのままエンディングを飛ばしてしまう。
+    pub def confirmEnding(res: Res.Res, w: World.World): World.World \ Emit[World.Event] =
+        if (creditProgressOf(res, w) >= 1.0) { Emit.emit(World.Event.Confirm); World.toTitle(w) } else w
 
     /// 上から並べた項目。
     pub def items(): List[TitleItem] = TitleItem.NewGame :: TitleItem.Continue :: Nil

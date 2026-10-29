@@ -1,7 +1,7 @@
 {
   "version": 1,
   "title": "ルーネ村",
-  "note": "村の地図。rows の 1 文字 = 1 マス（文字の絵と通れるかは src/Tileset.flix の village の組）。w は泉の下・Y は大きな木の下（絵は石畳と草のまま、入れない）。D の扉は exits のあるマスだけ入れる。props は通れるかに効かない。 左の家の扉（3, 3）が宿屋・真ん中の家の扉（11, 3）が道具屋、西の道の端（0, 9）が鍛冶屋の前へ、外周の端のマスから外へ出ると（edge = all）ワールドマップの村の印の北へ出る（どの辺もミナが加わるまで通れない）。南の道は外への道しるべ。",
+  "note": "村の地図。rows の 1 文字 = 1 マス（文字の絵と通れるかは src/Tileset.flix の village の組）。w は泉の下・Y は大きな木の下（絵は石畳と草のまま、入れない）。D の扉は exits のあるマスだけ入れる。props は通れるかに効かない。 左の家の扉（3, 3）が宿屋・真ん中の家の扉（11, 3）が道具屋、西の道の端（0, 9）が鍛冶屋の前へ、外周の端のマスから外へ出ると（edge = all）ワールドマップの村の印の北へ出る（どの辺もミナが加わるまで通れない）。南の道は外への道しるべ。 泉は依頼の段階で描き分ける（spring_dry は questUntil = accepted・spring_full は questFrom = bossdown）。ボスを倒した後（bossdown から）は村長・鍛冶屋・ミナの父たちが泉のまわりに集まり、泉の上の村長に話すと報告になる（ChiefReport）。",
   "tileset": "village",
   "battleBack": "bg_plains",
   "rows": [
@@ -76,7 +76,8 @@
       "x": 9,
       "y": 6,
       "facing": "left",
-      "node": "Elder"
+      "node": "Elder",
+      "questUntil": "accepted"
     },
     {
       "id": "woman",
@@ -92,7 +93,8 @@
       "x": 3,
       "y": 10,
       "facing": "up",
-      "node": "Child"
+      "node": "Child",
+      "questUntil": "accepted"
     },
     {
       "id": "merchant",
@@ -100,7 +102,53 @@
       "x": 12,
       "y": 4,
       "facing": "down",
-      "node": "Merchant"
+      "node": "Merchant",
+      "questUntil": "accepted"
+    },
+    {
+      "id": "chief_spring",
+      "sprite": "chief",
+      "x": 7,
+      "y": 5,
+      "facing": "down",
+      "node": "ChiefReport",
+      "questFrom": "bossdown"
+    },
+    {
+      "id": "child_spring",
+      "sprite": "child",
+      "x": 9,
+      "y": 6,
+      "facing": "left",
+      "node": "Child",
+      "questFrom": "bossdown"
+    },
+    {
+      "id": "merchant_spring",
+      "sprite": "merchant",
+      "x": 9,
+      "y": 8,
+      "facing": "left",
+      "node": "Merchant",
+      "questFrom": "bossdown"
+    },
+    {
+      "id": "smith_spring",
+      "sprite": "smith",
+      "x": 5,
+      "y": 8,
+      "facing": "right",
+      "node": "Smith",
+      "questFrom": "bossdown"
+    },
+    {
+      "id": "father_spring",
+      "sprite": "mina_father",
+      "x": 6,
+      "y": 8,
+      "facing": "up",
+      "node": "FatherHome",
+      "questFrom": "bossdown"
     }
   ],
   "props": [
@@ -108,7 +156,16 @@
       "sprite": "spring_dry",
       "frame": "idle",
       "x": 7,
-      "y": 6
+      "y": 6,
+      "questUntil": "accepted"
+    },
+    {
+      "sprite": "spring_full",
+      "frame": "f0",
+      "fps": 3,
+      "x": 7,
+      "y": 6,
+      "questFrom": "bossdown"
     },
     {
       "sprite": "big_tree",

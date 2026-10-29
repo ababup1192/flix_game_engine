@@ -68,6 +68,7 @@ mod Controls {
             case Layer.Walking      => walkInput(res, frame, w)
             case Layer.BattleChoose(_, _) => battleChooseInput(res, frame, w)
             case Layer.BattleMessage => battleMessageInput(res, frame, w)
+            case Layer.Ending       => if (tapped(keysOf(res)#confirm, frame)) WorldTitle.confirmEnding(res, w) else w
         }
 
     // ── 戦い ──

@@ -16,11 +16,13 @@ mod InputLayer {
         case Walking                 // ウィンドウが閉じていて歩ける
         case BattleChoose(Member.Member, World.CommandPage)  // 戦いのコマンドを選んでいる（誰の・どのページ）
         case BattleMessage           // 戦いの伝言を出している（決定で出し切る・次へ）
+        case Ending                  // エンディング（字が流れ切った後の決定でタイトルへ）
     }
 
     pub def layerOf(w: World.World): Layer = match (w#ask, w#scene) {
         case (Some(ask), _)                => Layer.Asking(ask)
         case (None, World.Scene.Title(it)) => Layer.Title(it)
+        case (None, World.Scene.Ending(_)) => Layer.Ending
         case (None, World.Scene.Field(_))  => World.fieldRecOf(w) |> Option.map(fieldLayerOf) |> Option.getWithDefault(Layer.Busy)
         case (None, World.Scene.Battle(_)) => battleLayerOf(w)
     }
@@ -55,5 +57,6 @@ mod InputLayer {
         case Layer.Walking   => "Walking"
         case Layer.BattleChoose(_, _) => "BattleChoose"
         case Layer.BattleMessage => "BattleMessage"
+        case Layer.Ending    => "Ending"
     }
 }

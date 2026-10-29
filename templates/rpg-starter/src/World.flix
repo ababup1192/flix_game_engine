@@ -14,7 +14,8 @@
 //
 // ── 状態の形: 「その場面でしか触れない値は、その場面の enum の中に持つ」──
 //   scene … Title(カーソルの項目) / Field(FieldState = いるマップ・先頭のマス・向き・歩きの途中・開いたウィンドウ・暗転) /
-//           Battle(BattleState = 戦いの値・コマンドのページか見せている Beat・戻る先の FieldState・選んだ行動・勝った後の会話)
+//           Battle(BattleState = 戦いの値・コマンドのページか見せている Beat・戻る先の FieldState・選んだ行動・勝った後の会話) /
+//           Ending(EndingState = 入った時刻・下敷きに描くフィールド)
 //   残りの欄は場面をまたぐ物だけ: 仲間・ふくろ・進み具合・乱数の回数・遊びの時計・実時間・終了の確認・出来事・セーブ。
 //
 //     Title ──はじめから──▶ Field（rules の始まりのマス。暗転を晴らして入る）
@@ -34,6 +35,11 @@
 //     Field ──出会いの組のあるマップで歩数が 0（何も無いマスに着いた時）・会話の <<fight>>──▶ 点滅（TransitionThen.StartBattle）
 //       ──▶ Battle（WorldBattle.enter）──勝つ──▶ 戻る先の Field（お金と経験値・afterWin の会話）/ 逃げ切る ──▶ 戻る先の Field /
 //       全滅 ──▶ 宿の前の Field（お金は goldKeep 倍・全快・暗転を晴らす）。戦いの間の仲間の正は Battle の値で、終える時に World へ書き戻す。
+//     ボス: B3 の扉の奥の番をする者 ──<<fight gemeater BossWon>>──▶ 勝つと BossWon の会話（<<quest defeat>> で段階 BossDown）
+//       ──<<warp to_surface>>──▶ 暗転して坑道の入口（ワールドマップ）。負ければ宿の前で、ボスは残る（挑み直せる）。
+//     依頼の段階（progress の quest）でマップの人と小物が替わる（MapDoc.Span。BossDown から泉に水が戻り、村長たちが泉に集まる）。
+//     Field ──村長への報告（<<quest report>> でお礼・<<ending>>）──▶ 暗転（TransitionThen.Ending）──▶ Ending（報告した村を下敷きに
+//       スタッフの字が流れる）──流れ切った後の決定──▶ Title（セーブはそのまま）。
 //     Esc の終了の確認（ask）はどの場面より手前。開いている間は遊びの時計が止まる。
 //
 // 規則のファイルどうしの横の向き（逆へは呼ばない）: WorldTitle → WorldField → WorldObject、WorldField → WorldTalk → WorldShop、
@@ -135,12 +141,14 @@ mod World {
 
     /// 暗転のあとにすること。Warp = そのマップのマスへ移って晴らす / FadeIn = 晴らすだけ /
     /// InnRest = 宿に泊まる（覆い切ったら全快してセーブを書き、晴らす。開いている会話は晴れるまで止まる）/
-    /// StartBattle = 点滅し終えたら戦う（敵の並び・勝った後に開く会話のノード）。
+    /// StartBattle = 点滅し終えたら戦う（敵の並び・勝った後に開く会話のノード）/
+    /// Ending = 覆い切ったらエンディングへ（会話の <<ending>>。今のフィールドを絵の下敷きに持って入る）。
     pub enum TransitionThen {
         case Warp(MapDoc.MapId, Grid.Cell, Dir4.Dir4)
         case FadeIn
         case InnRest
         case StartBattle(List[FoesDoc.FoeId], Option[String])
+        case Ending
     }
 
     /// 暗転の途中（startedAt から片道。長さは WorldTransition.secondsOf: InnRest は rules の innSeconds・StartBattle は flashSeconds・ほかは fadeSeconds）。
@@ -303,11 +311,23 @@ mod World {
     /// 戦いの間の値（外では battleRecOf と mapBattle を通す）。
     pub type alias BattleState = BattleOf
 
+    // ── エンディング ──
+
+    /// エンディングの間だけの値。startedAt = 入った時刻（スタッフの字はここから rules の creditSeconds かけて流れる）、
+    /// back = 下敷きに描くフィールド（報告した村。ウィンドウと暗転は閉じてある）。
+    pub type alias EndingRec = { startedAt = Clock.Time[Play], back = FieldState }
+
+    enum EndingOf(EndingRec)
+
+    /// エンディングの間の値（外では endingRecOf を通す。作るのは enterEnding だけ）。
+    pub type alias EndingState = EndingOf
+
     /// 今の場面と、その場面だけが持つ値。
     pub enum Scene {
         case Title(TitleItem)
         case Field(FieldState)
         case Battle(BattleState)
+        case Ending(EndingState)
     }
 
     /// 場面の名前だけ（比べる・字にする）。
@@ -315,6 +335,7 @@ mod World {
         case Title
         case Field
         case Battle
+        case Ending
     }
 
     /// ゲームの状態（遊びの状態だけ。Doc と絵は Res が持つ）。dice = 乱数を引いた回数（Dice）、
@@ -346,6 +367,7 @@ mod World {
         case Scene.Title(_) => SceneKind.Title
         case Scene.Field(_) => SceneKind.Field
         case Scene.Battle(_) => SceneKind.Battle
+        case Scene.Ending(_) => SceneKind.Ending
     }
 
     /// マップを歩いている間の値（タイトルなら None）。
@@ -353,6 +375,34 @@ mod World {
         case Scene.Field(FieldOf.FieldOf(r)) => Some(r)
         case _                               => None
     }
+
+    /// 描くフィールド: 歩いている間はそのフィールド、エンディングの間は下敷きのフィールド（ほかは None）。
+    /// WhyNot: fieldRecOf にエンディングの下敷きを混ぜない — 歩き・入力・出会いの規則がエンディングの間にも動き出す。
+    pub def shownFieldOf(w: World): Option[FieldRec] = match w#scene {
+        case Scene.Field(FieldOf.FieldOf(r))    => Some(r)
+        case Scene.Ending(EndingOf.EndingOf(e)) => Some(fieldRecOfState(e#back))
+        case _                                  => None
+    }
+
+    /// エンディングの間の値（ほかの場面では None）。
+    pub def endingRecOf(w: World): Option[EndingRec] = match w#scene {
+        case Scene.Ending(EndingOf.EndingOf(e)) => Some(e)
+        case _                                  => None
+    }
+
+    /// 今のフィールドを下敷きにエンディングへ入る（at = 入った時刻。ウィンドウと暗転は閉じる）。フィールドでなければ何もしない。
+    /// [遷移: Field→Ending]
+    pub def enterEnding(at: Clock.Time[Play], w: World): World = match w#scene {
+        case Scene.Field(FieldOf.FieldOf(r)) =>
+            let back = FieldOf.FieldOf({ window = FieldWindow.Closed, transition = None, stride = Stride.Still | r });
+            { scene = Scene.Ending(EndingOf.EndingOf({ startedAt = at, back = back })) | w }
+        case _ => w
+    }
+
+    /// タイトルへ戻る（仲間・ふくろ・進み具合は起動の時と同じ空に戻す。セーブと時計はそのまま。カーソルは「はじめから」）。
+    /// WhyNot: セーブを消さない・書かない — エンディングの後の「つづきから」は、最後に泊まった宿から（ボスの前）。[遷移: Ending→Title]
+    pub def toTitle(w: World): World =
+        { play = w#play, realNow = w#realNow, events = w#events, saveRev = w#saveRev, dice = w#dice | initial(w#save) }
 
     /// 持っているフィールドの値の中身（戦いの戻る先を読む）。
     pub def fieldRecOfState(f: FieldState): FieldRec = match f { case FieldOf.FieldOf(r) => r }
@@ -389,7 +439,11 @@ mod World {
 
     /// 点滅を始め、点滅し終えたら foes と戦う（afterWin = 勝った後に開く会話のノード）。歩きは止める。
     pub def startEncounter(foes: List[FoesDoc.FoeId], afterWin: Option[String], w: World): World =
-        mapField(r -> { stride = Stride.Still, transition = Some({ startedAt = now(w), then = TransitionThen.StartBattle(foes, afterWin) }) | r }, w)
+        startTransition(TransitionThen.StartBattle(foes, afterWin), w)
+
+    /// 今から暗転（点滅）を始め、覆い切ったら then をする（WorldTransition）。歩きは止める。フィールドでなければ何もしない。
+    pub def startTransition(then: TransitionThen, w: World): World =
+        mapField(r -> { stride = Stride.Still, transition = Some({ startedAt = now(w), then = then }) | r }, w)
 
     /// 遊びの時計の今。
     pub def now(w: World): Clock.Time[Play] = Clock.nowOf(w#play)

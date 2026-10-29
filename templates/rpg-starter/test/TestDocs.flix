@@ -154,14 +154,14 @@ mod TestDocs {
         let res = Res.load();
         let tree = Fixtures.command("give", "nosuch") + "," + Fixtures.command("join", "nobody") + "," + Fixtures.command("open", "nosuch") + "," +
                    Fixtures.command("quest", "accept");
-        Assert.assertEq(expected = Some(3), Talk.fromJson(Fixtures.treeOf(tree)) |> Option.map(program -> List.length(Talk.problemsOf(res#items, res#foes, Set#{"cave_mole"}, program))))
+        Assert.assertEq(expected = Some(3), Talk.fromJson(Fixtures.treeOf(tree)) |> Option.map(program -> List.length(Talk.problemsOf(res#items, res#foes, { objects = Set#{"cave_mole"}, exits = Set.empty() }, program))))
 
     /// World から写す変数（$gold）への <<set>> は問題に挙がる（書いても次の写しで消える）。
     @Test
     def testSetOnACopiedVarIsAProblem(): Unit \ Assert + Fs.FileRead =
         let res = Res.load();
         let set = "{\"kind\":\"set\",\"line\":2,\"name\":\"$gold\",\"expr\":{\"kind\":\"value\",\"value\":5}}";
-        Assert.assertEq(expected = Some(1), Talk.fromJson(Fixtures.treeOf(set)) |> Option.map(program -> List.length(Talk.problemsOf(res#items, res#foes, Set.empty(), program))))
+        Assert.assertEq(expected = Some(1), Talk.fromJson(Fixtures.treeOf(set)) |> Option.map(program -> List.length(Talk.problemsOf(res#items, res#foes, { objects = Set.empty(), exits = Set.empty() }, program))))
 
     /// 会話の語彙 assets/talk/vocab.json が、コードの語彙（Talk.vocabOf）と同じ（ずれたら make talk-vocab）。
     @Test

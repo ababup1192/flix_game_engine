@@ -29,7 +29,7 @@ mod TestQuest {
     /// 村長の問いに「いいえ」と答えても、依頼の段階は NotAsked のまま。
     @Test
     def testNoKeepsTheQuestStage(): Unit \ Assert + Fs.FileRead =
-        Assert.assertEq(expected = Progress.Quest.NotAsked, Fixtures.questOf(Fixtures.play(answerNo(), chiefTalk())))
+        Assert.assertEq(expected = Quest.Quest.NotAsked, Fixtures.questOf(Fixtures.play(answerNo(), chiefTalk())))
 
     /// 「いいえ」ではお金も変わらない（rules.startGold のまま）。
     @Test
@@ -49,7 +49,7 @@ mod TestQuest {
     /// 「はい」で依頼の段階が Accepted になる。
     @Test
     def testYesAcceptsTheQuest(): Unit \ Assert + Fs.FileRead =
-        Assert.assertEq(expected = Progress.Quest.Accepted, Fixtures.questOf(Fixtures.play(answerYes(), chiefTalk())))
+        Assert.assertEq(expected = Quest.Quest.Accepted, Fixtures.questOf(Fixtures.play(answerYes(), chiefTalk())))
 
     /// 「はい」で手付け（rules.advance）を受け取る。
     @Test
@@ -78,7 +78,7 @@ mod TestQuest {
     def testQuestAcceptTwicePaysOnce(): Unit \ Assert + Fs.FileRead =
         let h = Fixtures.started("field", Map#{"map" => "village", "x" => "7", "y" => "8", "gold" => "0"});
         let tree = Fixtures.command("quest", "accept") + "," + Fixtures.command("quest", "accept") + "," + Fixtures.line("A");
-        Assert.assertEq(expected = Some((Progress.Quest.Accepted, RulesDoc.rec(h#resources#rules)#advance)),
+        Assert.assertEq(expected = Some((Quest.Quest.Accepted, RulesDoc.rec(h#resources#rules)#advance)),
             Fixtures.openTree(tree, h) |> Option.map(after -> (Fixtures.questOf(after), Fixtures.goldOf(after))))
 
     // ══════════════════════════════════════════════════════

@@ -6,7 +6,7 @@
 //   HUD（動かない）     : メニュー・店・会話・選択肢・タイトルのメニュー → 暗転 → 終了の確認
 // 層の名前と z の範囲は ZOrder。
 mod View {
-    use fge::{App, Rect2, Render, SortingLayer, TileLayerSpec, Vec2}
+    use fge::{App, Clock, Rect2, Render, SortingLayer, TileLayerSpec, Vec2}
     use ZOrder.HudLayer
 
     /// ウィンドウと部品を描く元。t = 実時間の秒（点滅と足踏みのコマ）。
@@ -19,6 +19,7 @@ mod View {
             case World.Scene.Title(_) => TitleView.world(env)
             case World.Scene.Field(_) => ViewField.fieldIn(res, w) |> Option.map(FieldScreen.world(ctx, env)) |> Option.getWithDefault(Nil)
             case World.Scene.Battle(_) => ViewBattle.battleIn(env, w) |> Option.map(BattleView.world(env)) |> Option.getWithDefault(Nil)
+            case World.Scene.Ending(_) => ViewField.fieldIn(res, w) |> Option.map(FieldScreen.world(ctx, env)) |> Option.getWithDefault(Nil)
         };
         SortingLayer.compose(ctx, layers)
 
@@ -29,6 +30,7 @@ mod View {
             case World.Scene.Title(item) => TitleView.hud(env, titleIn(res, item, Option.nonEmpty(w#save)))
             case World.Scene.Field(_)    => ViewField.fieldIn(res, w) |> Option.map(FieldScreen.hud(env, WindowView.design())) |> Option.getWithDefault(Nil)
             case World.Scene.Battle(_)   => ViewBattle.battleIn(env, w) |> Option.map(BattleView.hud(env)) |> Option.getWithDefault(Nil)
+            case World.Scene.Ending(_)   => endingIn(res, w) |> Option.map(EndingView.hud(env, WindowView.design())) |> Option.getWithDefault(Nil)
         };
         let prompt = w#ask |> Option.map(ask -> (HudLayer.Prompt, PromptView.quit(env, res#text, World.answerOf(ask))) :: Nil) |> Option.getWithDefault(Nil);
         SortingLayer.compose(ctx, List.append(scene, prompt))
@@ -40,6 +42,18 @@ mod View {
           selected = List.indexOf(item, items) |> Option.getWithDefault(0),
           credit = TextDoc.menuText(TextDoc.MenuText.Credit, res#text) }
 
+    /// エンディングの In: スタッフの字（{lv} = 先頭の Lv・{gold} = 手持ちのお金）と、流れた割合・晴らす進み具合（遊びの時計）。
+    def endingIn(res: Res.Res, w: World.World): Option[EndingView.In] =
+        World.endingRecOf(w) |> Option.map(e -> {
+            let since = Clock.since(e#startedAt, World.now(w));
+            let rules = RulesDoc.rec(res#rules);
+            let lv = Party.statsList(w#party) |> List.head |> Option.map(row -> snd(row)#lv) |> Option.getWithDefault(1);
+            { lines = TextDoc.creditLines((TextDoc.Placeholder.Lv, "${lv}") :: (TextDoc.Placeholder.Gold, "${Bag.goldOf(w#bag)}") :: Nil, res#text),
+              scrolled = WorldTitle.creditProgressOf(res, w),
+              theEnd = TextDoc.menuText(TextDoc.MenuText.TheEnd, res#text),
+              fadeIn = if (rules#fadeSeconds <= 0.0) 1.0 else since / rules#fadeSeconds }
+        })
+
     def menuTextOf(item: World.TitleItem): TextDoc.MenuText = match item {
         case World.TitleItem.NewGame  => TextDoc.MenuText.NewGame
         case World.TitleItem.Continue => TextDoc.MenuText.Continue
@@ -47,16 +61,16 @@ mod View {
 
     // ── カメラとタイル層 ──
 
-    /// カメラの中心: フィールドは先頭の真ん中、タイトルは画面の真ん中。
+    /// カメラの中心: フィールド（とエンディングの下敷き）は先頭の真ん中、タイトルと戦いは画面の真ん中。
     pub def cameraOf(res: Res.Res, w: World.World): Vec2.Vec2 =
         let half = Autotile.tile() / 2.0;
-        World.fieldRecOf(w)
+        World.shownFieldOf(w)
             |> Option.map(r -> { let p = ViewField.heroPx(res, World.now(w), r); ({ x = p#x + half, y = p#y + half }: Vec2.Vec2) })
             |> Option.getWithDefault({ x = WindowView.design()#x / 2.0, y = WindowView.design()#y / 2.0 })
 
-    /// カメラが映してよい矩形: フィールドはマップの矩形、タイトルは画面。
+    /// カメラが映してよい矩形: フィールド（とエンディングの下敷き）はマップの矩形、タイトルと戦いは画面。
     pub def boundsOf(res: Res.Res, w: World.World): Rect2.Rect2 =
-        World.fieldRecOf(w) |> Option.flatMap(r -> MapDoc.docOf(res#maps, r#map))
+        World.shownFieldOf(w) |> Option.flatMap(r -> MapDoc.docOf(res#maps, r#map))
             |> Option.map(map -> {
                 let m = MapDoc.rec(map);
                 ({ position = { x = 0.0, y = 0.0 },
@@ -66,7 +80,7 @@ mod View {
 
     /// いるマップの地面のタイル層（App.withTileLayers）。鍵はマップとアトラスの鍵なので、作り直しはマップを移った時と絵を読み直した時だけ。
     pub def tileLayers(res: Res.Res, w: World.World): List[TileLayerSpec] =
-        World.fieldRecOf(w)
+        World.shownFieldOf(w)
             |> Option.flatMap(r -> Map.get(MapDoc.nameOf(r#map), res#arts) |> Option.map(art -> (MapDoc.nameOf(r#map), art)))
             |> Option.map(match (name, art) -> MapArt.rec(art)#layers |> List.filterMap(layerSpec(res, name)))
             |> Option.getWithDefault(Nil)

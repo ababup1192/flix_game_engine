@@ -17,30 +17,61 @@ mod MapDoc {
                             gate = Option[Gate] }
 
     /// 出入口の通り方。Cell = そのマスに着いたら（扉・階段・道の端）/
-    /// Edge = マップの端のマスから、その向きの外へ出ようとしたら（村の外周。書いた向きの辺の全部のマス）。
+    /// Edge = マップの端のマスから、その向きの外へ出ようとしたら（村の外周。書いた向きの辺の全部のマス）/
+    /// Nowhere = 歩いては通らない（会話の <<warp 出口の id>> だけが通る。ボスの後に坑道の入口へ戻す類）。
     pub enum ExitPlace {
         case Cell(Int32, Int32)
         case Edge(List[Dir4.Dir4])
+        case Nowhere
     }
 
-    /// 着いたら通るマス（端の出入口は None）。
+    /// 着いたら通るマス（端の出入口と歩いては通らない出入口は None）。
     pub def cellOf(exit: Exit): Option[(Int32, Int32)] = match exit#place {
         case ExitPlace.Cell(x, y) => Some((x, y))
         case ExitPlace.Edge(_)    => None
+        case ExitPlace.Nowhere    => None
     }
 
     /// その向きの端から出る出入口か。
     def leavesBy(dir: Dir4.Dir4, exit: Exit): Bool = match exit#place {
         case ExitPlace.Cell(_, _) => false
         case ExitPlace.Edge(dirs) => List.memberOf(dir, dirs)
+        case ExitPlace.Nowhere    => false
     }
+
+    /// id の出入口（会話の <<warp>> が引く）。
+    pub def exitNamed(id: String, d: Doc): Option[Exit] = rec(d)#exits |> List.find(e -> e#id == id)
+
+    /// 依頼の段階で出る間（since の段階から until の段階まで。両端を含み、None はその側に限りが無い）。
+    /// 人と小物に書き、泉が湧いた後の村（水の戻った泉と集まる人）を同じマップのまま描き分ける。
+    pub type alias Span = { since = Option[Quest.Quest], until = Option[Quest.Quest] }
+
+    /// 段階 q の間に出るか。
+    def isShownIn(q: Quest.Quest, span: Span): Bool =
+        Option.forAll(first -> q >= first, span#since) and Option.forAll(last -> q <= last, span#until)
+
+    /// その人が今マップに立っているか: 依頼の段階 q で出る間にいて、加わってマップから消えた仲間（absent の id）でない。
+    def isStanding(absent: Set[String], q: Quest.Quest, npc: Npc): Bool =
+        not Set.memberOf(npc#id, absent) and isShownIn(q, npc#span)
+
+    /// (x, y) に今立っている人（同じマスに段階の違う人を何人書いてもよい。立っているのは isStanding の 1 人目）。
+    pub def standingAt(absent: Set[String], q: Quest.Quest, x: Int32, y: Int32, d: Doc): Option[Npc] =
+        Map.getWithDefault((x, y), Nil, rec(d)#npcAt) |> List.find(isStanding(absent, q))
+
+    /// 今立っている人の全部（Doc の並び）。
+    pub def standingOf(absent: Set[String], q: Quest.Quest, d: Doc): List[Npc] =
+        rec(d)#npcs |> List.filter(isStanding(absent, q))
+
+    /// 段階 q の間に出る小物（Doc の並び）。
+    pub def propsIn(q: Quest.Quest, d: Doc): List[Prop] = rec(d)#props |> List.filter(p -> isShownIn(q, p#span))
 
     /// 出入口を閉じる条件: member が加わるまで、このマスへ進めない・この端から出られない（進もうとすると node の会話を開く）。
     pub type alias Gate = { member = Member.Member, node = String }
 
     /// 人 1 人: sprite は rpg.chars.sprite.json の絵の名前・node は話しかけた時に開く会話のノード。
     /// id が仲間の名前（Member.idOf）の人は、その仲間が加わるとマップから消える（隊列に入る）。
-    pub type alias Npc = { id = String, sprite = String, x = Int32, y = Int32, facing = Dir4.Dir4, node = String }
+    /// span = 依頼の段階で出る間（questFrom / questUntil の欄。書かなければいつでも）。
+    pub type alias Npc = { id = String, sprite = String, x = Int32, y = Int32, facing = Dir4.Dir4, node = String, span = Span }
 
     /// マスにある物の種類と、その種類だけが使う値（JSON は平らな 1 行で、読む時に組む）。規則は WorldObject に kind ごとに置く。
     ///   Chest = 宝箱（item = 中の道具・無ければ None / count = その数 / gold = 中のお金）
@@ -132,8 +163,8 @@ mod MapDoc {
     pub type alias Encounter = { foes = List[String], weight = Int32 }
 
     /// 小物 1 つ（通れるかには効かない。塞ぎたいマスは格子の文字で塞ぐ）。x, y はマス（半マスも書ける）。
-    /// fps > 0 ならコマを名前の順に回し、0 なら frame の 1 コマ。flat は床に敷く物（人より奥に描く）。
-    pub type alias Prop = { sprite = String, frame = String, fps = Float64, flat = Bool, x = Float64, y = Float64 }
+    /// fps > 0 ならコマを名前の順に回し、0 なら frame の 1 コマ。flat は床に敷く物（人より奥に描く）。span = 依頼の段階で出る間。
+    pub type alias Prop = { sprite = String, frame = String, fps = Float64, flat = Bool, x = Float64, y = Float64, span = Span }
 
     /// マップ 1 枚。battleBack = このマップで戦う時の背景の帯（rpg.battlefx.sprite.json の絵の名前）、
     /// dark = 暗い（先頭のまわりしか見えない。たいまつで広がる）、steps = 次の戦いまでの歩数を引く範囲（None なら rules の minSteps..maxSteps）、
@@ -157,7 +188,7 @@ mod MapDoc {
         events = List[Event],
         encounter = List[Encounter],
         exitAt = Map[(Int32, Int32), Exit],
-        npcAt = Map[(Int32, Int32), Npc],
+        npcAt = Map[(Int32, Int32), List[Npc]],
         eventAt = Map[(Int32, Int32), Event],
         problems = List[String]
     }
@@ -211,7 +242,7 @@ mod MapDoc {
                   exits = spec#exits, npcs = spec#npcs, props = spec#props,
                   objects = spec#objects, events = spec#events, encounter = spec#encounter,
                   exitAt = spec#exits |> List.filterMap(e -> cellOf(e) |> Option.map(cell -> (cell, e))) |> List.toMap,
-                  npcAt = spec#npcs |> List.map(n -> ((n#x, n#y), n)) |> List.toMap,
+                  npcAt = spec#npcs |> List.foldRight((n, acc) -> Map.insertWith((mine, rest) -> List.append(mine, rest), (n#x, n#y), n :: Nil, acc), Map.empty()),
                   eventAt = spec#events |> List.map(e -> ((e#x, e#y), e)) |> List.toMap,
                   problems = spec#problems })
 
@@ -298,11 +329,14 @@ mod MapDoc {
         yield { id = id, place = place, to = to, spawnX = spawnX, spawnY = spawnY,
                 facing = dirAt("facing", obj) |> Option.getWithDefault(Dir4.Dir4.Down), gate = gate }
 
-    /// edge の欄（空・無し = x, y のマス / all = 4 辺 / up・down・left・right = その辺）。知らない名前と、edge も x, y も無い行は None。
+    /// edge の欄（空・無し = x, y のマス / all = 4 辺 / up・down・left・right = その辺 / none = 歩いては通らない）。
+    /// 知らない名前と、edge も x, y も無い行は None。
+    /// WhyNot: x, y の無い行を「歩いては通らない」と読まない — x, y の書き忘れで、出口が黙ってどこからも通れなくなる。none と書かせる。
     def placeAt(obj: Map[String, Json]): Option[ExitPlace] =
         match textAt("edge", obj) |> Option.getWithDefault("") {
-            case ""    => forM (x <- intAt("x", obj); y <- intAt("y", obj)) yield ExitPlace.Cell(x, y)
-            case "all" => Some(ExitPlace.Edge(Dir4.all()))
+            case ""     => forM (x <- intAt("x", obj); y <- intAt("y", obj)) yield ExitPlace.Cell(x, y)
+            case "all"  => Some(ExitPlace.Edge(Dir4.all()))
+            case "none" => Some(ExitPlace.Nowhere)
             case name  => DirName.dirOf(name) |> Option.map(dir -> ExitPlace.Edge(dir :: Nil))
         }
 
@@ -317,19 +351,29 @@ mod MapDoc {
              yield Some({ member = member, node = open })
 
     def npcOf(obj: Map[String, Json]): Option[Npc] =
-        forM (id <- textAt("id", obj); sprite <- textAt("sprite", obj); x <- intAt("x", obj); y <- intAt("y", obj))
+        forM (id <- textAt("id", obj); sprite <- textAt("sprite", obj); x <- intAt("x", obj); y <- intAt("y", obj); span <- spanAt(obj))
         yield { id = id, sprite = sprite, x = x, y = y,
                 facing = dirAt("facing", obj) |> Option.getWithDefault(Dir4.Dir4.Down),
-                node = textAt("node", obj) |> Option.getWithDefault("") }
+                node = textAt("node", obj) |> Option.getWithDefault(""), span = span }
 
     def propOf(obj: Map[String, Json]): Option[Prop] =
         forM (sprite <- textAt("sprite", obj);
               x <- Map.get("x", obj) |> Option.flatMap(JsonCodec.expectFloat);
-              y <- Map.get("y", obj) |> Option.flatMap(JsonCodec.expectFloat))
+              y <- Map.get("y", obj) |> Option.flatMap(JsonCodec.expectFloat);
+              span <- spanAt(obj))
         yield { sprite = sprite, x = x, y = y,
                 frame = JsonCodec.stringOr("frame", "idle", obj),
                 fps = JsonCodec.floatOr("fps", 0.0, obj),
-                flat = JsonCodec.boolOr("flat", false, obj) }
+                flat = JsonCodec.boolOr("flat", false, obj), span = span }
+
+    /// questFrom / questUntil の欄（依頼の段階の名前。無し・空ならその側に限りが無い）。知らない名前は None（行ごと読めない）。
+    /// WhyNot: 知らない名前を「限り無し」へ落とさない — 書き損じで、泉が湧く前から湧いた後の人が立つ。
+    def spanAt(obj: Map[String, Json]): Option[Span] =
+        let bound = key -> match textAt(key, obj) |> Option.getWithDefault("") {
+            case ""   => Some(None)
+            case name => Quest.questOf(name) |> Option.map(Some)
+        };
+        forM (first <- bound("questFrom"); last <- bound("questUntil")) yield { since = first, until = last }
 
     /// objects の欄を 1 行ずつ読む。読めない行は飛ばし、何行目かとわけを問題の行として返す。
     /// WhyNot: 書き損じた道具の名前を「無し」へ落とさない — 扉なら鍵が無いのに開き、宝箱なら空になって、どちらも黙って遊びが変わる。

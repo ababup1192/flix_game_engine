@@ -14,11 +14,11 @@ mod WindowView {
     def fontSize(): Float64 = 10.0
 
     /// ウィンドウの中の 1 行の高さ。
-    def lineHeight(): Float64 = 14.0
+    pub def lineHeight(): Float64 = 14.0
 
     /// ウィンドウの縁から 1 行目の字の左上までの間（左・上）。左はカーソル ▶ の 1 升ぶんを含む。
     pub def padLeft(): Float64 = 16.0
-    def padTop(): Float64 = 9.0
+    pub def padTop(): Float64 = 9.0
 
     // ウィンドウの中の重なり順（場面の絵より手前に置く物の、ウィンドウの中での順）。
     def zFrame(): Int32 = 0
@@ -138,6 +138,9 @@ mod WindowView {
     pub def labelRight(env: Env, colorKey: String, text: String, right: Float64, y: Float64, z: Int32): Render.PlacedItem =
         labelIn(env, colorKey, text, { x = right - Float64.ceil(textWidth(env, text)), y = y }, z)
 
+    /// 横の真ん中 centerX（px）に字の真ん中を合わせた 1 行（エンディングのスタッフの字）。画素にそろえて切り捨てる。
+    pub def labelCentered(env: Env, colorKey: String, text: String, centerX: Float64, y: Float64, z: Int32): Render.PlacedItem =
+        labelIn(env, colorKey, text, { x = Float64.floor(centerX - textWidth(env, text) / 2.0), y = y }, z)
     /// 一覧のウィンドウ: 枠・名前・行（右の字は右寄せ）・▶。行が無ければ ▶ を出さない。
     pub def listWindow(env: Env, rect: Rect2.Rect2, box: ListBox, z: Int32): List[Render.PlacedItem] =
         let right = rect#position#x + rect#size#x - cell() - 2.0;

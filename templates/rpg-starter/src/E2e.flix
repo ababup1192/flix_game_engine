@@ -35,15 +35,15 @@ mod E2e {
               rows("confirm", k#confirm) ::: rows("cancel", k#cancel)
           }),
           probes =
-              { name = "scene", doc = "場面（Title・Field・Battle）", read = Flow.Probe.Text(onWorld(w -> "${World.sceneKindOf(w)}")) } ::
-              { name = "layer", doc = "入力を受ける層（Asking・Busy・Title・Talk・Menu・Shop・Notice・Walking・BattleChoose・BattleMessage）", read = Flow.Probe.Text(onWorld(w -> InputLayer.nameOf(InputLayer.layerOf(w)))) } ::
+              { name = "scene", doc = "場面（Title・Field・Battle・Ending）", read = Flow.Probe.Text(onWorld(w -> "${World.sceneKindOf(w)}")) } ::
+              { name = "layer", doc = "入力を受ける層（Asking・Busy・Title・Talk・Menu・Shop・Notice・Walking・BattleChoose・BattleMessage・Ending）", read = Flow.Probe.Text(onWorld(w -> InputLayer.nameOf(InputLayer.layerOf(w)))) } ::
               { name = "map", doc = "いるマップ（タイトルなら空）", read = Flow.Probe.Text(onWorld(mapNameOf)) } ::
               { name = "x", doc = "先頭のマスの列（タイトルなら -1）", read = Flow.Probe.Num(fieldNum(r -> r#hero#x)) } ::
               { name = "y", doc = "先頭のマスの行（タイトルなら -1）", read = Flow.Probe.Num(fieldNum(r -> r#hero#y)) } ::
               { name = "facing", doc = "先頭の向き（Up・Down・Left・Right）", read = Flow.Probe.Text(onWorld(w -> World.fieldRecOf(w) |> Option.map(r -> "${r#facing}") |> Option.getWithDefault(""))) } ::
               { name = "talk", doc = "開いている会話のノード（閉じていれば空）", read = Flow.Probe.Text(onWorld(talkNodeOf)) } ::
               { name = "choice", doc = "選択肢を出している", read = Flow.Probe.Flag(onWorld(w -> WorldTalk.openTalkOf(w) |> Option.exists(t -> not List.isEmpty(t#choices)))) } ::
-              { name = "quest", doc = "依頼の段階（none・accepted）", read = Flow.Probe.Text(onWorld(questNameOf)) } ::
+              { name = "quest", doc = "依頼の段階（none・accepted・bossdown・reported）", read = Flow.Probe.Text(onWorld(questNameOf)) } ::
               { name = "party", doc = "加わった仲間（先頭から。luka,mina）", read = Flow.Probe.Text(onWorld(partyNamesOf)) } ::
               { name = "gold", doc = "手持ちのお金", read = Flow.Probe.Num(onWorld(w -> Int32.toFloat64(Bag.goldOf(w#bag)))) } ::
               { name = "bag", doc = "ふくろの道具と個数（鍵の名前の順。yakusou:3,seisui:1）", read = Flow.Probe.Text(onWorld(bagTextOf)) } ::
@@ -93,7 +93,7 @@ mod E2e {
     def foesLeftOf(w: World.World): Float64 =
         World.battleRecOf(w) |> Option.map(r -> Int32.toFloat64(List.length(Battle.aliveFoes(WorldBattle.shownBattleOf(r))))) |> Option.getWithDefault(-1.0)
 
-    def questNameOf(w: World.World): String = Progress.nameOf(Progress.rec(w#progress)#quest)
+    def questNameOf(w: World.World): String = Quest.nameOf(Progress.rec(w#progress)#quest)
 
     def partyNamesOf(w: World.World): String = Party.membersOf(w#party) |> List.map(Member.idOf) |> List.join(",")
 

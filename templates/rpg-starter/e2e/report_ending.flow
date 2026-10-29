@@ -1,0 +1,39 @@
+# 帰村と報告とエンディング: ボスを倒した後にワールドマップの村の印から村へ入ると、泉に水が戻り村人が集まっている →
+# 泉の上の村長に話すと報告（お礼の rules の reward を受け取り、段階は reported）→ 暗転してエンディング →
+# スタッフの字が流れ切るまで決定は効かず、流れ切った後の決定でタイトルへ（セーブは書かない）。
+start field map=world x=9 y=18 facing=down party=luka,mina,toto quest=bossdown steps=999 gold=100
+hold down
+until map=village max 3
+release down
+until layer=Walking max 2
+expect x=20&y=13&quest=bossdown
+# 村の東の道を北へ（20, 5）、西へ泉の上の村長の右（8, 5）。
+hold up
+until y=5 max 6
+release up
+wait 0.3
+hold left
+until x=8 max 6
+release left
+wait 0.3
+expect x=8&y=5&facing=Left
+tap confirm
+expect talk=ChiefReport&gold=100
+tap confirm                  # 出し切る
+tap confirm
+tap confirm                  # かいぶつを たおして
+tap confirm                  # （<<quest report>>）
+expect quest=reported&gold=400
+tap confirm                  # いずみに みずが もどった
+tap confirm
+tap confirm                  # おれい
+tap confirm
+tap confirm                  # わきつづける
+tap confirm                  # 閉じて暗転
+until scene=Ending max 3
+expect layer=Ending&saved=0
+tap confirm                  # 字が流れている間は何も起きない
+expect scene=Ending
+wait 25
+tap confirm
+expect scene=Title&layer=Title&saved=0

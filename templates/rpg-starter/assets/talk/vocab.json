@@ -1,6 +1,6 @@
 {
   "speakers": ["boljii", "chief", "child", "elder", "father", "inn", "koron", "kurogane", "merchant", "mina", "shop", "smith", "toto", "woman"],
-  "nodes": ["Boljii", "Cart", "CaveMole", "ChiefQuest", "Child", "Elder", "Innkeeper", "Koron", "Kurogane", "Merchant", "Mimic", "Mina", "MinaFather", "MineGate", "Shopkeeper", "Shrine", "Smith", "Tablet", "VillageGate", "Woman"],
+  "nodes": ["Boljii", "Boss", "Cart", "CaveMole", "ChiefQuest", "ChiefReport", "Child", "Elder", "FatherHome", "Innkeeper", "Koron", "Kurogane", "Merchant", "Mimic", "Mina", "MinaFather", "MineGate", "Shopkeeper", "Shrine", "Smith", "Tablet", "VillageGate", "Woman"],
   "tags": {},
-  "commands": ["fight", "give", "gold", "heal", "inn", "join", "open", "quest", "ride", "shop", "take"]
+  "commands": ["ending", "fight", "give", "gold", "heal", "inn", "join", "open", "quest", "ride", "shop", "take", "warp"]
 }

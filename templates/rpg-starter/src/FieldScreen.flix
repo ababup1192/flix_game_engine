@@ -7,7 +7,7 @@ mod FieldScreen {
     use Sheet.SheetId
 
     /// 描くのに要る値（ViewField.fieldIn が World から組む）。party = 隊列の全員（先頭から）、facing = 先頭の向き、
-    /// npcs = マップに立っている人（加わった仲間は除いてある）、
+    /// npcs = マップに立っている人（加わった仲間と、依頼の段階で出る間の外の人は除いてある）・props = 今出ている小物、
     /// talkingTo = 話している人の id（その人は主人公の方を向く）、menu / shop = メニューと店のウィンドウ、
     /// talk = 画面の下の文のウィンドウ（会話・知らせ・店の台詞と確かめ）、transition = 暗転の種類と進み具合、
     /// things = マスにある物（WorldObject.objectsNow の今のマスと状態。無い物は描かない）。
@@ -17,6 +17,7 @@ mod FieldScreen {
         party = List[Walker],
         facing = Dir4.Dir4,
         npcs = List[MapDoc.Npc],
+        props = List[MapDoc.Prop],
         things = List[Thing],
         talkingTo = Option[String],
         menu = Option[MenuView.In],
@@ -58,7 +59,7 @@ mod FieldScreen {
                 |> List.filter(match (depth, _) -> depthOk(depth))
                 |> List.flatMap(match (_, part) -> Sheet.drawTile(env#res#sheets, env#res#palette, env#t,
                     { part = part, at = FieldView.cellPx(cell), z = 0 })));
-        let (flat, standing) = MapDoc.rec(field#map)#props |> List.partition(p -> p#flat);
+        let (flat, standing) = field#props |> List.partition(p -> p#flat);
         let (flatThings, standingThings) = field#things |> List.partition(isFlat);
         let underfoot = List.flatten(movingAt(d -> d > 0) :: (flat |> List.flatMap(propItems(env, field))) ::
                                      (flatThings |> List.filterMap(thingItems(env, field)) |> List.flatten) :: Nil);

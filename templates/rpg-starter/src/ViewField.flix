@@ -5,16 +5,17 @@ mod ViewField {
     use World.{FieldWindow, ShopMode, ShopPage, TransitionThen, FieldRec, Stride}
     use TextDoc.MenuText
 
-    /// World から FieldScreen の In を組む（マップが読み直しで消えていれば None）。
+    /// World から FieldScreen の In を組む（エンディングの間は下敷きのフィールド。マップが読み直しで消えていれば None）。
     pub def fieldIn(res: Res.Res, w: World.World): Option[FieldScreen.In] =
         forM (
-            r <- World.fieldRecOf(w);
+            r <- World.shownFieldOf(w);
             map <- MapDoc.docOf(res#maps, r#map);
             art <- Map.get(MapDoc.nameOf(r#map), res#arts)
         ) yield {
-            let absent = Party.joinedIds(w#party);
+            let quest = Progress.rec(w#progress)#quest;
             { map = map, art = art, party = walkersOf(res, World.now(w), Party.membersOf(w#party), r), facing = r#facing,
-              npcs = MapDoc.rec(map)#npcs |> List.filter(npc -> not Set.memberOf(npc#id, absent)),
+              npcs = MapDoc.standingOf(Party.joinedIds(w#party), quest, map),
+              props = MapDoc.propsIn(quest, map),
               things = WorldObject.objectsNow(map, r, w#progress)
                   |> List.map(p -> { kind = p#object#kind, sprite = p#object#sprite, x = p#cell#x, y = p#cell#y, state = p#state }),
               talkingTo = openTalkOf(r#window) |> Option.flatMap(t -> t#npc),
@@ -130,6 +131,7 @@ mod ViewField {
         match transition#then {
             case TransitionThen.Warp(_, _, _)       => FieldScreen.Cover.Fade(Transition.Kind.FadeOut, t)
             case TransitionThen.InnRest             => FieldScreen.Cover.Fade(Transition.Kind.FadeOut, t)
+            case TransitionThen.Ending              => FieldScreen.Cover.Fade(Transition.Kind.FadeOut, t)
             case TransitionThen.FadeIn              => FieldScreen.Cover.Fade(Transition.Kind.FadeIn, t)
             case TransitionThen.StartBattle(_, _)   => FieldScreen.Cover.Flash(t)
         }

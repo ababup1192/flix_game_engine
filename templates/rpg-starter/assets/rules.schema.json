@@ -292,6 +292,26 @@
       "min": 0.0,
       "max": 1.0,
       "default": 0.5
+    },
+    "reward": {
+      "kind": "field",
+      "type": "int",
+      "label": "依頼のお礼（G。<<quest report>> が払う・会話では $reward）",
+      "group": "お金",
+      "order": 30,
+      "min": 0,
+      "max": 9999,
+      "default": 300
+    },
+    "creditSeconds": {
+      "kind": "field",
+      "type": "float",
+      "label": "エンディングのスタッフの字が下から上へ流れ切るまでの秒（流れ切ると決定でタイトルへ）",
+      "group": "暗転",
+      "order": 31,
+      "min": 1.0,
+      "max": 120.0,
+      "default": 24.0
     }
   }
 }

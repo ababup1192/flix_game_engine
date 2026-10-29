@@ -14,9 +14,10 @@ mod WorldTalk {
 
     /// 会話へ写す World（と Doc）の値。
     def valueOf(res: Res.Res, v: Talk.SyncedVar, w: World.World): Yarn.Value = match v {
-        case Talk.SyncedVar.Quest          => Yarn.Value.Text(Progress.nameOf(Progress.rec(w#progress)#quest))
+        case Talk.SyncedVar.Quest          => Yarn.Value.Text(Quest.nameOf(Progress.rec(w#progress)#quest))
         case Talk.SyncedVar.Gold           => Yarn.Value.Number(Int32.toFloat64(Bag.goldOf(w#bag)))
         case Talk.SyncedVar.InnPrice       => Yarn.Value.Number(Int32.toFloat64(ShopsDoc.rec(res#shops)#innPrice))
+        case Talk.SyncedVar.Reward         => Yarn.Value.Number(Int32.toFloat64(RulesDoc.rec(res#rules)#reward))
         case Talk.SyncedVar.Joined(member) => Yarn.Value.Bool(Party.hasJoined(member, w#party))
         case Talk.SyncedVar.Has(item)      => Yarn.Value.Bool(Bag.countOf(item, w#bag) > 0)
     }
@@ -192,6 +193,21 @@ mod WorldTalk {
             case Talk.Command.Take(item, n)   => (flow, { bag = Bag.give(item, -n, w#bag) | w })
             case Talk.Command.Open(id)        => (flow, World.fieldRecOf(w) |> Option.map(r -> { progress = Progress.markOpened(r#map, id, w#progress) | w })
                                                             |> Option.getWithDefault(w))
+            case Talk.Command.Warp(id)        => (Flow.Ended, warp(res, id, w))
+            case Talk.Command.Ending          => (Flow.Ended, World.startTransition(World.TransitionThen.Ending, w))
+        }
+
+    /// 今のマップの exits の id の行を通って、行き先へ暗転で移る（門は見ない）。出口か行き先のマップが引けなければ、動かずに 1 行言う。
+    def warp(res: Res.Res, id: String, w: World.World): World.World =
+        let target = forM (
+            r <- World.fieldRecOf(w);
+            map <- MapDoc.docOf(res#maps, r#map);
+            exit <- MapDoc.exitNamed(id, map);
+            to <- MapDoc.idOf(res#maps, exit#to)
+        ) yield World.TransitionThen.Warp(to, { x = exit#spawnX, y = exit#spawnY }, exit#facing);
+        match target {
+            case Some(then) => World.startTransition(then, w)
+            case None       => Log.warnThen("[talk] <<warp>> の出口 '${id}' が今のマップに無いか、行き先のマップが無いので移らない", w)
         }
 
     /// 店を開き、会話を店のウィンドウへ渡す（店を閉じると、この会話の続きへ戻る）。会話が出ていなければ何もしない。
@@ -201,14 +217,16 @@ mod WorldTalk {
     }
 
     /// 依頼の段階を to へ進め、その段階のお金を払う。前の段階が合わなければ何もしない（2 回流しても 1 回だけ払う）。
-    def advanceQuest(res: Res.Res, to: Progress.Quest, w: World.World): World.World =
+    def advanceQuest(res: Res.Res, to: Quest.Quest, w: World.World): World.World =
         Progress.advanceQuest(to, w#progress)
             |> Option.map(p -> { progress = p, bag = Bag.addGold(payOf(res, to), w#bag) | w })
             |> Option.getWithDefault(w)
 
-    def payOf(res: Res.Res, q: Progress.Quest): Int32 = match q {
-        case Progress.Quest.NotAsked => 0
-        case Progress.Quest.Accepted => RulesDoc.rec(res#rules)#advance
+    def payOf(res: Res.Res, q: Quest.Quest): Int32 = match q {
+        case Quest.Quest.NotAsked => 0
+        case Quest.Quest.Accepted => RulesDoc.rec(res#rules)#advance
+        case Quest.Quest.BossDown => 0
+        case Quest.Quest.Reported => RulesDoc.rec(res#rules)#reward
     }
 
     /// 仲間に加える（加わっていれば何もしない）。いるマップに id が仲間の名前の人が立っていれば、その人のマスから隊列に入る

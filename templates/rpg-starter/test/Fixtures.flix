@@ -72,7 +72,7 @@ mod Fixtures {
     pub def layerOf(h: Run): String = InputLayer.nameOf(InputLayer.layerOf(h#world))
 
     /// 依頼の段階。
-    pub def questOf(h: Run): Progress.Quest = Progress.rec(h#world#progress)#quest
+    pub def questOf(h: Run): Quest.Quest = Progress.rec(h#world#progress)#quest
 
     /// 加わった仲間（先頭から）。
     pub def membersOf(h: Run): List[Member.Member] = Party.membersOf(h#world#party)
@@ -88,9 +88,10 @@ mod Fixtures {
     pub def trailCellAt(i: Int32, h: Run): Option[(Int32, Int32)] =
         World.fieldRecOf(h#world) |> Option.flatMap(r -> List.nth(i, r#trail)) |> Option.map(spot -> (fst(spot)#x, fst(spot)#y))
 
-    /// マップの (x, y) に立つ人（無ければ None）。
+    /// マップの (x, y) に今立つ人（今の依頼の段階と加わった仲間で決まる。無ければ None）。
     pub def npcAt(map: String, x: Int32, y: Int32, h: Run): Option[MapDoc.Npc] =
-        Map.get(map, h#resources#maps) |> Option.flatMap(doc -> Map.get((x, y), MapDoc.rec(doc)#npcAt))
+        Map.get(map, h#resources#maps)
+            |> Option.flatMap(doc -> MapDoc.standingAt(Party.joinedIds(h#world#party), Progress.rec(h#world#progress)#quest, x, y, doc))
 
     /// マップの id の人の立つマス（無ければ None）。
     pub def npcCellOf(map: String, id: String, h: Run): Option[(Int32, Int32)] =
@@ -164,6 +165,17 @@ mod Fixtures {
     /// <<name arg>> の文。
     pub def command(name: String, arg: String): String =
         "{\"kind\":\"command\",\"line\":2,\"name\":\"${name}\",\"args\":[\"${arg}\"]}"
+
+    /// マップの、依頼の段階 q の間に出る小物の絵の名前（Doc の並び。マップが無ければ None）。
+    pub def propSpritesOf(map: String, q: Quest.Quest, h: Run): Option[List[String]] =
+        Map.get(map, h#resources#maps) |> Option.map(doc -> MapDoc.propsIn(q, doc) |> List.map(p -> p#sprite))
+
+    /// seconds 秒ぶんのフレームの数（1/60 秒で切り上げ。Int32 に収まらなければ None）。
+    pub def framesOf(seconds: Float64): Option[Int32] = Float64.ceil(seconds * 60.0) |> Float64.tryToInt32
+
+    /// 引数の無い <<name>> の文。
+    pub def bareCommand(name: String): String =
+        "{\"kind\":\"command\",\"line\":2,\"name\":\"${name}\",\"args\":[]}"
 
     /// 話し手の無い台詞の文。
     pub def line(text: String): String = "{\"kind\":\"line\",\"line\":3,\"text\":\"${text}\"}"

@@ -126,6 +126,6 @@ mod TestShop {
     def testContinueRestoresWhatTheInnSaved(): Unit \ Assert + Fs.FileRead =
         let stayed = stayedAtTheInn(Map#{"gold" => "100", "items" => "yakusou:4", "party" => "luka,mina", "quest" => "accepted"});
         let after = continued(Fixtures.relaunch(stayed));
-        Assert.assertEq(expected = (Fixtures.goldOf(stayed), Some(4), Member.Member.Luka :: Member.Member.Mina :: Nil, Progress.Quest.Accepted),
+        Assert.assertEq(expected = (Fixtures.goldOf(stayed), Some(4), Member.Member.Luka :: Member.Member.Mina :: Nil, Quest.Quest.Accepted),
             (Fixtures.goldOf(after), Fixtures.itemCountOf("yakusou", after), Fixtures.membersOf(after), Fixtures.questOf(after)))
 }

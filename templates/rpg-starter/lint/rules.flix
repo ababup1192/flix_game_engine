@@ -33,7 +33,8 @@ mod GameLint {
                 |> allowIn(Fn.View_cameraOf, "カメラの入口（App.withCamera が World を渡す）")
                 |> allowIn(Fn.View_boundsOf, "カメラの矩形の入口（App.withCameraBounds が World を渡す）")
                 |> allowIn(Fn.View_tileLayers, "タイル層の入口（App.withTileLayers が World を渡す）")
-                |> allowIn(Fn.ViewBattle_battleIn, "World から BattleView の In を組む口（View の層で World を読むのは入口と In を組む口だけ）"),
+                |> allowIn(Fn.ViewBattle_battleIn, "World から BattleView の In を組む口（View の層で World を読むのは入口と In を組む口だけ）")
+                |> allowIn(Fn.View_endingIn, "World から EndingView の In を組む口（View の層で World を読むのは入口と In を組む口だけ）"),
             customRule({ id = "rule-to-view", check = ruleToView }),
             customRule({ id = "module-cycle", check = moduleCycle }),
             customRule({ id = "pub-no-caller", check = pubNoCaller })

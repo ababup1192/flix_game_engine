@@ -6,14 +6,19 @@ mod Starts {
 
     /// 登録簿。先頭が起動の既定。
     pub def all(): List[Resources.Start[Res.Res, World.World]] =
-        { name = "title", doc = "タイトル画面（起動の既定）。saved = yes なら、field と同じ引数（party・quest・gold・items・seed）の中身のセーブがある所（「つづきから」を選べる）",
+        { name = "title", doc = "タイトル画面（起動の既定）。seed = 乱数の回数（bot の通しプレイの種）。saved = yes なら、field と同じ引数（party・quest・gold・items・seed）の中身のセーブがある所（「つづきから」を選べる）",
           args = Map#{"saved" => "no"}, build = title } ::
-        { name = "field", doc = "マップのマスに立つ（暗転なし）。map = assets/maps の名前・x / y = マス・facing = up / down / left / right・seed = 乱数の回数・party = 加わった仲間（luka,mina。先頭から）・quest = 依頼の段階（none / accepted）・gold = 手持ちのお金・items = ふくろの道具（yakusou:3,seisui:1）・hp = 仲間全員の HP（最大で止める）・mp = 仲間全員の MP（最大で止める）・lv = 仲間全員の Lv・steps = 次の戦いまでの歩数（0 = 出会いのあるマップの最初の 1 歩で引く。歩く手順を確かめる flow は 999 で出会わない）・flags = 立てておく旗（cave_bars。, で区切る。仕掛けの途中から始める）・opened = 開けておく立つマップの objects の id（b1_pick,b2_kurogane。宝箱・番をする者・点けた水晶）・rocks = 押して動かした岩の今のマス（b1_rock:9:20。id:x:y を , で区切る）・light = たいまつの残りの歩数（暗いマップの明かり）。省いた物は rules の始まり（仲間はルカ 1 人・依頼の前・ふくろは空・HP は最大）",
+        { name = "field", doc = "マップのマスに立つ（暗転なし）。map = assets/maps の名前・x / y = マス・facing = up / down / left / right・seed = 乱数の回数・party = 加わった仲間（luka,mina。先頭から）・quest = 依頼の段階（none / accepted / bossdown / reported）・gold = 手持ちのお金・items = ふくろの道具（yakusou:3,seisui:1）・hp = 仲間全員の HP（最大で止める）・mp = 仲間全員の MP（最大で止める）・lv = 仲間全員の Lv・steps = 次の戦いまでの歩数（0 = 出会いのあるマップの最初の 1 歩で引く。歩く手順を確かめる flow は 999 で出会わない）・flags = 立てておく旗（cave_bars。, で区切る。仕掛けの途中から始める）・opened = 開けておく立つマップの objects の id（b1_pick,b2_kurogane。宝箱・番をする者・点けた水晶）・rocks = 押して動かした岩の今のマス（b1_rock:9:20。id:x:y を , で区切る）・light = たいまつの残りの歩数（暗いマップの明かり）。省いた物は rules の始まり（仲間はルカ 1 人・依頼の前・ふくろは空・HP は最大）",
           args = Map#{"map" => "village", "x" => "7", "y" => "8", "facing" => "up", "seed" => "0", "party" => "luka", "quest" => "none", "items" => ""}, build = field } ::
         { name = "talk", doc = "field と同じ所に立ち、node の会話を開いた所（前のマスの人がそのノードの人なら、その人に話しかけた所）",
           args = Map#{"node" => "ChiefQuest", "map" => "chief_house", "x" => "7", "y" => "5", "facing" => "up"}, build = talk } ::
         { name = "battle", doc = "field と同じ所に立ち、foes の敵と戦い始めた所（「〜が あらわれた！」）。foes = rpg.foes.json の鍵（koke,koumori。3 体まで）・背景は map の battleBack・lv = 仲間全員の Lv（省けば加わった時の Lv）。勝つとそのマスへ戻る",
-          args = Map#{"foes" => "koke", "map" => "world", "x" => "20", "y" => "12", "facing" => "up", "party" => "luka"}, build = battle } :: Nil
+          args = Map#{"foes" => "koke", "map" => "world", "x" => "20", "y" => "12", "facing" => "up", "party" => "luka"}, build = battle } ::
+        { name = "ending", doc = "field と同じ所に立ち、そのフィールドを下敷きにエンディングに入った所（スタッフの字が流れ始める）。既定は報告を終えた村の泉の前",
+          args = Map#{"map" => "village", "x" => "8", "y" => "5", "facing" => "left", "party" => "luka,mina,toto", "quest" => "reported"}, build = ending } :: Nil
+
+    def ending(res: Res.Res, w: World.World, args: Map[String, String]): Result[String, World.World] =
+        field(res, w, args) |> Result.map(placed -> World.enterEnding(World.now(placed), placed))
 
     def battle(res: Res.Res, w: World.World, args: Map[String, String]): Result[String, World.World] =
         forM (
@@ -56,11 +61,12 @@ mod Starts {
 
     /// タイトル。saved = yes なら field と同じ引数で組んだ中身をセーブにする（宿で書いた後に起動し直した所）。
     def title(res: Res.Res, w: World.World, args: Map[String, String]): Result[String, World.World] =
-        match Map.getWithDefault("saved", "no", args) {
-            case "no"  => Ok(w)
-            case "yes" => field(res, w, args) |> Result.map(saved -> { save = Some(World.saveDataOf(saved)) | w })
+        let seeded = intArg("seed", 0, args) |> Result.map(seed -> Dice.withSeed(seed, w));
+        seeded |> Result.flatMap(start -> match Map.getWithDefault("saved", "no", args) {
+            case "no"  => Ok(start)
+            case "yes" => field(res, start, args) |> Result.map(saved -> { save = Some(World.saveDataOf(saved)) | start })
             case other => Err("saved は yes / no: '${other}'")
-        }
+        })
 
     def talk(res: Res.Res, w: World.World, args: Map[String, String]): Result[String, World.World] =
         let node = Map.getWithDefault("node", "", args);
@@ -112,8 +118,8 @@ mod Starts {
             n <- Int32.fromString(count) |> Option.toOk("items の個数は数: '${entry}'")
         ) yield (id, n)
 
-    def questArg(name: String): Result[String, Progress.Quest] =
-        Progress.questOf(name) |> Option.toOk("quest は ${Progress.quests() |> List.map(Progress.nameOf) |> List.join(" / ")}: '${name}'")
+    def questArg(name: String): Result[String, Quest.Quest] =
+        Quest.questOf(name) |> Option.toOk("quest は ${Quest.names()}: '${name}'")
 
     def mapArg(res: Res.Res, name: String): Result[String, MapDoc.MapId] =
         MapDoc.idOf(res#maps, name) |> Option.toOk("マップ '${name}' は無い${Suggest.hint(name, Map.keysOf(res#maps) |> Set.toList)}")

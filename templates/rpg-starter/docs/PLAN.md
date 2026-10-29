@@ -411,7 +411,7 @@ Opening（「〜が あらわれた！」）→ Choose(member, CommandPage) → 
 | shouyado | ショウヤドカリ | hermit | 6 | 50 | 22 | 24 | 5 | 20 | 15 | attack 2・guard 1 | B3 |
 | akabou | あかぼうしゴブリン | goblin（赤） | 7 | 50 | 20 | 18 | 10 | 24 | 18 | attack 3・sweep 1 | B3 |
 | koriyado | こおりヤドカリ | hermit（青） | 7 | 54 | 23 | 22 | 6 | 24 | 16 | attack 1・ice 1・guard 1 | B3 |
-| gemeater | ジェムイーター | boss | 10 | 360 | 34 | 22 | 9 | 200 | 0 | 1: attack 3・sweep 1 / 2（HP 50% 未満）: attack 2・sweep 2 | B3 の奥・noFlee |
+| gemeater | ジェムイーター | boss | 10 | 360（P5.5 で 460・P7 で 360）| 41（P7 で 34 → 41） | 22 | 9 | 200 | 0 | 1: attack 3・sweep 1 / 2（HP 50% 未満）: attack 2・sweep 2 | B3 の奥・noFlee |
 
 P5 の `make balance` で直した数（上の表は直した後の値）: くさウサ HP 12→16（ルカ Lv1 の 1 発で倒れた）・はなウサ ちから 13→11・
 坑道コウモリ ちから 14→12・ひのこコウモリ ちから 18→17・こおりヤドカリ まもり 26→22（4 発かかった）・あかぼうしゴブリン HP 56→50・ちから 25→20。
@@ -492,8 +492,8 @@ B1 の 坑道コウモリ×2・コケだま → 坑道コウモリ・コケだ�
 | `src/Palette.flix`・`src/Res.flix` | 生かす。Res に Doc の束（`Res.Docs` と `Res.build`。tidepool の形）と色違いのアトラスを足す |
 | `src/WindowView.flix` | **生かす**。足すのは「灰色の項目」「途中まで出した文」「数字の右寄せ」「名前ごとの数（コケだま 2）」 |
 | `src/FieldView.flix` | 生かす。地面をタイル層の宣言（下）へ写す関数と、水と岸だけを動く側で描く関数に分ける。人に「歩きの途中の px のずれ」と歩いている間だけ回すコマを足す |
-| `src/render/FieldScenes.flix` | **ばらす**。凡例は `src/Tileset.flix` へ（`Passage` を足す）。格子はマップ Doc へ。小物と人の置き場はマップ Doc の `props`・`npcs` へ。場面を組む関数は捨てる |
-| `src/render/BattleScenes.flix` | 背景・敵の置き方・3 人のウィンドウ・コマンドのウィンドウの矩形は `BattleView.flix` へ。敵の大きさと高さは `foes.json` へ |
+| ~~`src/render/FieldScenes.flix`~~（P7 で消した） | **ばらす**。凡例は `src/Tileset.flix` へ（`Passage` を足す）。格子はマップ Doc へ。小物と人の置き場はマップ Doc の `props`・`npcs` へ。場面を組む関数は捨てる |
+| ~~`src/render/BattleScenes.flix`~~（P7 で消した） | 背景・敵の置き方・3 人のウィンドウ・コマンドのウィンドウの矩形は `BattleView.flix` へ。敵の大きさと高さは `foes.json` へ |
 | `src/render/SceneRender.flix` | 残す。`sceneOf` を「名前 → `Starts` で World を作り、決まった手を進めた World」に替え、描くのは実機と同じ `View.frame` / `View.hud` |
 | `src/Main.flix` | `Game.app` を呼ぶだけに替える |
 
@@ -723,6 +723,33 @@ View のファイル: `View.flix`（場面で振り分ける入口・画風の�
 - 完了の条件: はじめからエンディングまで通して遊べる。`make bot BOT_RUNS=10` が 10 本ともエンディングに着き、ゲーム内時間が 10〜20 分に入る。`make balance` のボスの表が 6〜8 ターン・Lv 6 で勝率 70〜95% に入る（入らなければ Doc で直す）。bot が `playthrough.flow` を書く。
 - テスト: ボスに勝つと段階が BossDown で坑道の入口にいる / BossDown の前は報告できない / 報告でお金が rules.reward だけ増え段階が Reported / ボスに負けて宿の前から戻ると、扉の奥のイベントでまた戦える / HP が phase2At を切った手番の後から phase 2 の技を選ぶ。
   e2e: `e2e/playthrough_*.flow` の 4 本（村 → 出発 / ワールド → B1 / B2 → B3 / ボス → 報告。Starts で各区間の頭から）。
+
+- P7 で決めた事（実装して決めた。上の節より新しい）:
+  - **依頼の段階** `Quest { NotAsked | Accepted | BossDown | Reported }` は `src/Quest.flix` の `Quest.Quest` へ移した（~~`Progress.Quest`~~ から）。マップ Doc の人と小物が段階を持つので、
+    MapDoc が段階を使う。Progress はマップの名前（`MapDoc.MapId`）を使うので、~~`Progress.Quest`~~ のままだとファイルの輪になる。
+  - **ボスを倒した段階は会話の `<<quest defeat>>`**（勝ちのノード `BossWon` が流す）。4.2 の「`foes.noFlee` のボス戦に勝つと BossDown」はやめた: 中ボスとひとくいばこ（P5.5）も noFlee なので、
+    勝っただけで段階が進んでしまう。お礼は `<<quest report>>`（`rules.reward` = 300。台詞は `{$reward}`）。会話の変数 `$reward` を足した（`Talk.SyncedVar.Reward`）。
+  - **ボスの間**: B3 の扉の奥（12..20, 1..4）に `guard` の `b3_boss`（絵は敵の `boss` 96×80。扉のマス (16, 5) から調べる。部屋いっぱいに描かれる）と水晶の小物 4 つ。
+    `Boss` のノードは `$quest == "accepted"` の間だけ `<<fight gemeater BossWon>>`。負ければ宿の前で、`b3_boss` は開いていないので挑み直せる（イベントのマスは使わず、番をする者の形）。
+  - **坑道の入口へ戻す**: 出口に `edge` = `none`（`MapDoc.ExitPlace.Nowhere`。歩いては通らない）を足し、B3 に `to_surface`（行き先はワールドマップの (20, 4)）。会話の `<<warp 出口の id>>` が暗転で移す（`WorldTalk.warp`）。
+    x / y の書き忘れを「通らない出口」と読まないよう、`none` は書かせる。bot のマップの間の道はこの出口を通らない（`Bot.isWalkable`）。
+  - **泉が湧いた村**: マップ Doc の `npcs` / `props` の行に `questFrom` / `questUntil`（段階の名前。両端を含む。`MapDoc.Span`）。知らない名前は行ごと読めない扱い。同じマスに段階の違う人を並べてよい（`npcAt` はマス → 並び。立つのは `MapDoc.standingAt`）。
+    村: `spring_dry` は accepted まで・`spring_full`（3 コマ）は bossdown から。bossdown から村長（`chief_spring`。泉の上 (7, 5)・`ChiefReport`）・子ども・商人・鍛冶屋（ミナの祖父）・ミナの父が泉のまわりに立ち、長老・元の子ども・商人は accepted まで。
+    村長の家の村長と B3 のミナの父は accepted まで（ミナの父はボスを倒すと村へ帰る。案の筋）。旧 ~~`FieldScenes.clear`~~ の人の並びを写した。
+  - **エンディング**: `World.Scene.Ending(EndingState = { startedAt, back })`。`<<ending>>` → `TransitionThen.Ending`（覆う方は `rules.innSeconds`）→ `World.enterEnding`。
+    2.3 の `Ending(Clock.Time[Clock.Real])` はやめ、遊びの時計にした（流れ切ったかで決定が効くかを決めるので、絵だけの時刻ではない）。絵は報告した村を下敷きに描き（`World.shownFieldOf`）、
+    下のウィンドウの中をスタッフの字（`rpg.text.json` の `credits`。`{lv}`・`{gold}`）が `rules.creditSeconds`（24 秒）かけて下から上へ流れ、流れ切ると「おわり」（`menu` の `theEnd`）。
+    流れている間の決定は効かない（報告の台詞を送る連打で飛ばさない）。流れ切った後の決定で `World.toTitle`（セーブは書かない・消さない。「つづきから」は最後に泊まった宿から）。
+  - **描き出し**: 旧 ~~`FieldScenes`~~ / ~~`BattleScenes`~~ を消し、15 場面 + `ending` の 16 場面を全部 Starts から描く（`boss` = `battle foes=gemeater` の現れた・`clear` = `ChiefReport` のお礼の行・`ending` = Starts の `ending` で 3 割流れた所）。
+  - **e2e**: 4 本の `playthrough_*.flow` は作らず、`e2e/boss.flow`（扉の奥 → ボス → BossWon → 坑道の入口）と `e2e/report_ending.flow`（ワールドマップ → 村 → 報告 → エンディング → タイトル）の 2 本にした。
+    前の 3 区間は `quest_join`・`world_mine`・`mine_b1`〜`b3` が同じ道を見ている。通しは bot の `debug/bot/playthrough.flow`（下）。
+  - **bot**: `Bot.goalOf` に「扉を開ける → HP か MP が減っていればミナの父 → ボス → 村の泉の村長」の 4 行。終わりはエンディング（`Bot.isDone`）。区間に `boss`・`return`（`BotRun.sectionOf`）。
+    1 本目の手を `debug/bot/playthrough.flow` に engine の記録の書き手で書く（区間の頭ごとに `mark` と `expect quest=…&scene=…&map=…`）。bot の 1 フレームはナノ秒に丸めた 1/60 秒（丸めないと流し直した時に文字送りの境目が 1 フレームずれる）。
+    `make flow FLOW=debug/bot/playthrough.flow` でタイトルからエンディングまで同じ指紋で流れる。Starts の `title` に `seed=` を足した。
+  - **数**（BOT_RUNS=10・種 0〜9）: 10 本ともエンディング・全滅 0。ゲーム内時間 4:38〜5:09・人の目安 16:05〜18:28（歩き 3 分前後・戦い 19〜21 回・ウィンドウ 42〜49 枚。人が仕掛けを考える時間は入っていない。
+    案の見積もりでは仕掛けに 3.1 分 → 足すと 19〜21.5 分）。ボスに入った時の Lv は 7（10 本とも）、帰り道で 0〜2 戦。
+  - **balance のボス**: `BalanceSim.bossAt(5 / 6 / 7)`（装備とふくろは bot が扉の奥に入った時の物）。HP 460・ちから 34 では Lv6 で勝率 99%・9 ターン（長くて負けない）だったので、
+    Doc で HP 460 → 360・ちから 34 → 41 に直した: Lv6 で勝率 83%・8 ターン（中央値）・全滅 17%。Lv5 は 35%・Lv7 は 100%（bot は Lv7 で入るので楽に勝つ）。目安は「Lv6 で 6〜8 ターン・勝率 70〜95%」（受けるダメージは見ない）。
 
 ### P8 — 音と仕上げ・テンプレとしての出荷
 

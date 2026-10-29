@@ -3,24 +3,9 @@
 // 旗は 2 つに分ける: opened = 開けた物（(マップ, objects の id)。その物だけが読む）/
 // flags = 名前付きの旗（FlagId。物が立てて、別の物や会話が読む。マップをまたいでよい）。
 mod Progress {
+    use Quest.Quest
 
-    /// 依頼の段階（並びの順に進む）。会話の変数 $quest には nameOf の名前で写る。
-    pub enum Quest with Eq, Order, ToString {
-        case NotAsked
-        case Accepted
-    }
-
-    pub def quests(): List[Quest] = Quest.NotAsked :: Quest.Accepted :: Nil
-
-    /// 会話の変数 $quest・Starts の quest= の名前。
-    pub def nameOf(q: Quest): String = match q {
-        case Quest.NotAsked => "none"
-        case Quest.Accepted => "accepted"
-    }
-
-    /// 名前 → 段階（知らない名前は None）。
-    pub def questOf(name: String): Option[Quest] = quests() |> List.find(q -> nameOf(q) == name)
-
+    /// quest = 依頼の段階（Quest）・opened = 開けた物・flags = 名前付きの旗。
     pub type alias Rec = { quest = Quest, opened = Set[(MapDoc.MapId, String)], flags = Set[Flag.FlagId] }
 
     enum ProgressOf(Rec)
@@ -34,7 +19,7 @@ mod Progress {
 
     /// 段階を to へ進める。今が to の 1 つ前の段階の時だけ Some（同じ段階・先の段階・飛び越しは None）。
     pub def advanceQuest(to: Quest, p: Progress): Option[Progress] =
-        let before = List.zip(quests(), List.drop(1, quests())) |> List.find(pair -> snd(pair) == to) |> Option.map(fst);
+        let before = List.zip(Quest.all(), List.drop(1, Quest.all())) |> List.find(pair -> snd(pair) == to) |> Option.map(fst);
         if (before == Some(rec(p)#quest)) Some(ProgressOf.ProgressOf({ quest = to | rec(p) })) else None
 
     /// 段階を直に置く（Starts の quest=。遊びの中では advanceQuest を通す）。

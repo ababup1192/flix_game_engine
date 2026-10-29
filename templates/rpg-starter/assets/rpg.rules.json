@@ -1,7 +1,7 @@
 {
   "version": 1,
   "title": "遊びの決まり（歩く・文字送り・暗転・始まり・お金・宿の前・出会い・戦い）",
-  "note": "secondsPerTile は 1 マス歩く秒、cps は会話の文字送り（1 秒の字数）、fadeSeconds は暗転の片道の秒。startMap / startX / startY / startFacing は「はじめから」で立つマップ（assets/maps の名前）とマスと向き。歩ける条件・出入口の決まりはコード（WorldField）。 startGold は「はじめから」の手持ちのお金、advance は依頼を受けた時の手付け（<<quest accept>> が払う）。 homeMap / homeX / homeY は宿の前（「つづきから」で立つ所。下を向く）、innSeconds は宿に泊まる時の暗転（覆う方）の秒。 minSteps / maxSteps は次の戦いまでの歩数を引く範囲（両端を含む。マップの encounter に行がある所だけ数える）。 flashSeconds は出会った時の点滅の秒。messageWait は戦いの伝言を出し切ってから次へ送るまでの秒、fxSeconds は戦いの演出（斬撃・当たり）の秒、spread はダメージのぶれの幅、critRate は会心の率、fleeBase / fleeSlope はにげる率（fleeBase + (仲間の一番速い − 敵の一番速い) × fleeSlope を 0.1..0.95 に収める）、maxFoes は 1 戦の敵の数の上限（3 まで）、goldKeep は全滅した時に残るお金の割合。ダメージの式・行動順はコード（Battle）。 secondsPerRail はトロッコが 1 マス走る秒。darkRadius / torchRadius は暗いマップ（マップの dark）で見えるマスの数（たいまつを灯す前 / 後。たいまつの歩数は items の lightSteps）。マップに minSteps / maxSteps を書くと、そのマップの出会いの歩数はそちらを使う。 sleepRate は敵の sleep が眠っていない仲間に効く率、wakeRate は眠った人がその人の手番の頭で起きる率（眠った次の手番は必ず眠る。起きた手番は動かない）。",
+  "note": "secondsPerTile は 1 マス歩く秒、cps は会話の文字送り（1 秒の字数）、fadeSeconds は暗転の片道の秒。startMap / startX / startY / startFacing は「はじめから」で立つマップ（assets/maps の名前）とマスと向き。歩ける条件・出入口の決まりはコード（WorldField）。 startGold は「はじめから」の手持ちのお金、advance は依頼を受けた時の手付け（<<quest accept>> が払う）。 homeMap / homeX / homeY は宿の前（「つづきから」で立つ所。下を向く）、innSeconds は宿に泊まる時の暗転（覆う方）の秒。 minSteps / maxSteps は次の戦いまでの歩数を引く範囲（両端を含む。マップの encounter に行がある所だけ数える）。 flashSeconds は出会った時の点滅の秒。messageWait は戦いの伝言を出し切ってから次へ送るまでの秒、fxSeconds は戦いの演出（斬撃・当たり）の秒、spread はダメージのぶれの幅、critRate は会心の率、fleeBase / fleeSlope はにげる率（fleeBase + (仲間の一番速い − 敵の一番速い) × fleeSlope を 0.1..0.95 に収める）、maxFoes は 1 戦の敵の数の上限（3 まで）、goldKeep は全滅した時に残るお金の割合。ダメージの式・行動順はコード（Battle）。 secondsPerRail はトロッコが 1 マス走る秒。darkRadius / torchRadius は暗いマップ（マップの dark）で見えるマスの数（たいまつを灯す前 / 後。たいまつの歩数は items の lightSteps）。マップに minSteps / maxSteps を書くと、そのマップの出会いの歩数はそちらを使う。 sleepRate は敵の sleep が眠っていない仲間に効く率、wakeRate は眠った人がその人の手番の頭で起きる率（眠った次の手番は必ず眠る。起きた手番は動かない）。 reward は依頼のお礼（<<quest report>> が払う。会話では $reward）。creditSeconds はエンディングのスタッフの字が流れ切るまでの秒（流れ切ると決定でタイトルへ）。",
   "secondsPerTile": 0.22,
   "cps": 30.0,
   "fadeSeconds": 0.3,
@@ -30,5 +30,7 @@
   "darkRadius": 1.0,
   "torchRadius": 3.0,
   "sleepRate": 0.6,
-  "wakeRate": 0.5
+  "wakeRate": 0.5,
+  "reward": 300,
+  "creditSeconds": 24.0
 }

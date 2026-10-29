@@ -13,22 +13,22 @@ mod WorldField {
 
     // ── 当たり ──
 
-    /// マップの人と物の今: absent = マップから消えた人の id（加わった仲間）・
+    /// マップの人と物の今: absent = マップから消えた人の id（加わった仲間）・quest = 依頼の段階（人の出る間 MapDoc.Span を見る）・
     /// objects = 物の今のマス → そのマスの物（WorldObject.objectsNow。床のスイッチに載った岩のように 1 マスに 2 つ並ぶ事がある。塞ぐ物が先）。
-    pub type alias Occupancy = { absent = Set[String], objects = Map[(Int32, Int32), List[WorldObject.Placed]] }
+    pub type alias Occupancy = { absent = Set[String], quest = Quest.Quest, objects = Map[(Int32, Int32), List[WorldObject.Placed]] }
 
     /// World の今の、map（いるマップの Doc）の人と物（フィールドでなければ物は無し）。
     pub def occupancyOf(map: MapDoc.Doc, w: World.World): Occupancy =
         let objects = World.fieldRecOf(w) |> Option.map(r -> WorldObject.objectsNow(map, r, w#progress)) |> Option.getWithDefault(Nil);
         let (blocking, flat) = objects |> List.partition(WorldObject.blocks);
-        { absent = Party.joinedIds(w#party),
+        { absent = Party.joinedIds(w#party), quest = Progress.rec(w#progress)#quest,
           objects = List.append(blocking, flat) |> List.foldRight((p, acc) -> Map.insertWith((mine, rest) -> List.append(mine, rest), (p#cell#x, p#cell#y), p :: Nil, acc), Map.empty()) }
 
     /// cell に立てるか: 地図の文字が歩ける（扉の文字は出入口のあるマスだけ。現れた飛び石の上は水でも立てる）・人がいない・塞ぐ物が無い。
     pub def canEnter(map: MapDoc.Doc, occ: Occupancy, cell: Grid.Cell): Bool =
         let m = MapDoc.rec(map);
         let key = (cell#x, cell#y);
-        let someone = Map.get(key, m#npcAt) |> Option.exists(npc -> not Set.memberOf(npc#id, occ#absent));
+        let someone = Option.nonEmpty(MapDoc.standingAt(occ#absent, occ#quest, cell#x, cell#y, map));
         let here = Map.getWithDefault(key, Nil, occ#objects);
         let thing = here |> List.exists(WorldObject.blocks);
         let floored = here |> List.exists(WorldObject.floors);
@@ -284,10 +284,10 @@ mod WorldField {
 
     /// 向いている前のマスの人（机などの Counter の向こうの人も。加わってマップから消えた人は数えない）。
     pub def npcInFrontOf(res: Res.Res, w: World.World): Option[MapDoc.Npc] =
-        forM (r <- World.fieldRecOf(w); map <- mapOf(res, r); npc <- npcInFront(map, Party.joinedIds(w#party), r)) yield npc
+        forM (r <- World.fieldRecOf(w); map <- mapOf(res, r); npc <- npcInFront(map, Party.joinedIds(w#party), Progress.rec(w#progress)#quest, r)) yield npc
 
-    def npcInFront(map: MapDoc.Doc, absent: Set[String], r: FieldRec): Option[MapDoc.Npc] =
-        let npcAt = cell -> Map.get((cell#x, cell#y), MapDoc.rec(map)#npcAt) |> Option.filter(npc -> not Set.memberOf(npc#id, absent));
+    def npcInFront(map: MapDoc.Doc, absent: Set[String], quest: Quest.Quest, r: FieldRec): Option[MapDoc.Npc] =
+        let npcAt = cell -> MapDoc.standingAt(absent, quest, cell#x, cell#y, map);
         let front = Grid.neighborOf(r#hero, r#facing);
         let beyond = Grid.neighborOf(front, r#facing);
         let acrossCounter = if (passageAt(map, front) == Tileset.Passage.Counter) npcAt(beyond) else None;
