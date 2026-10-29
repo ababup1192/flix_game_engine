@@ -145,29 +145,28 @@ mod FieldScreen {
         else if (has(SheetId.Monsters)) Sheet.cycling(SheetId.Monsters, sprite, 2.0, placeholder, size)
         else Sheet.part(sheet, sprite, "base", placeholder, size)
 
-    /// 種類ごとの絵の形: size = 絵が無い時の仮の四角の大きさ・placeholder = その色・look = 絵の選び方・
-    /// flat = 床に敷く物（人と岩より奥の Over の層に描く。床のスイッチに載った岩が下に隠れない）。
-    type alias ThingBox = { size = Vec2.Vec2, placeholder = String, look = Look, flat = Bool }
+    /// 種類ごとの絵の形: size = 絵が無い時の仮の四角の大きさ・placeholder = その色・look = 絵の選び方。
+    type alias ThingBox = { size = Vec2.Vec2, placeholder = String, look = Look }
 
     def thingBoxOf(kind: MapDoc.ObjectKind): ThingBox =
         let one = { x = tile(), y = tile() };
         match kind {
-            case MapDoc.ObjectKind.Chest(_)    => { size = one, placeholder = "fc28", look = Look.Lid, flat = false }
-            case MapDoc.ObjectKind.Door(_)     => { size = { x = 3.0 * tile(), y = 3.0 * tile() }, placeholder = "fc04", look = Look.Lid, flat = false }
-            case MapDoc.ObjectKind.Lever(_)    => { size = one, placeholder = "fc16", look = Look.Frames("up", "down"), flat = false }
-            case MapDoc.ObjectKind.Gate(_)     => { size = one, placeholder = "fc10", look = Look.Lid, flat = false }
-            case MapDoc.ObjectKind.Guard(_)    => { size = one, placeholder = "fc06", look = Look.Creature, flat = false }
-            case MapDoc.ObjectKind.Plate(_)    => { size = one, placeholder = "fc10", look = Look.Frames("up", "down"), flat = true }
-            case MapDoc.ObjectKind.Rock        => { size = one, placeholder = "fc2D", look = Look.Still, flat = false }
-            case MapDoc.ObjectKind.Cart(_)     => { size = one, placeholder = "fc2D", look = Look.Still, flat = false }
-            case MapDoc.ObjectKind.Junction(_) => { size = one, placeholder = "fc18", look = Look.Frames("north", "south"), flat = true }
-            case MapDoc.ObjectKind.Crystal(_)  => { size = { x = tile(), y = 2.0 * tile() }, placeholder = "fc22", look = Look.Frames("f0", "f1"), flat = false }
-            case MapDoc.ObjectKind.Bridge(_)   => { size = one, placeholder = "fc0C", look = Look.Still, flat = true }
-            case MapDoc.ObjectKind.Sign(_)     => { size = { x = tile(), y = 2.0 * tile() }, placeholder = "fc00", look = Look.Still, flat = false }
+            case MapDoc.ObjectKind.Chest(_)    => { size = one, placeholder = "fc28", look = Look.Lid }
+            case MapDoc.ObjectKind.Door(_)     => { size = { x = 3.0 * tile(), y = 3.0 * tile() }, placeholder = "fc04", look = Look.Lid }
+            case MapDoc.ObjectKind.Lever(_)    => { size = one, placeholder = "fc16", look = Look.Frames("up", "down") }
+            case MapDoc.ObjectKind.Gate(_)     => { size = one, placeholder = "fc10", look = Look.Lid }
+            case MapDoc.ObjectKind.Guard(_)    => { size = one, placeholder = "fc06", look = Look.Creature }
+            case MapDoc.ObjectKind.Plate(_)    => { size = one, placeholder = "fc10", look = Look.Frames("up", "down") }
+            case MapDoc.ObjectKind.Rock        => { size = one, placeholder = "fc2D", look = Look.Still }
+            case MapDoc.ObjectKind.Cart(_)     => { size = one, placeholder = "fc2D", look = Look.Still }
+            case MapDoc.ObjectKind.Junction(_) => { size = one, placeholder = "fc18", look = Look.Frames("north", "south") }
+            case MapDoc.ObjectKind.Crystal(_)  => { size = { x = tile(), y = 2.0 * tile() }, placeholder = "fc22", look = Look.Frames("f0", "f1") }
+            case MapDoc.ObjectKind.Bridge(_)   => { size = one, placeholder = "fc0C", look = Look.Still }
+            case MapDoc.ObjectKind.Sign(_)     => { size = { x = tile(), y = 2.0 * tile() }, placeholder = "fc00", look = Look.Still }
         }
 
-    /// 床に敷く物か（thingBoxOf の flat）。
-    def isFlat(thing: Thing): Bool = thingBoxOf(thing#kind)#flat
+    /// 床に敷く物か（人と岩より奥の Over の層に描く。床のスイッチに載った岩が下に隠れない）。
+    def isFlat(thing: Thing): Bool = MapDoc.profileOf(thing#kind)#flat
 
     /// 物は、絵の下端の中央をマスの下端の中央に合わせる（3 マス幅の扉は扉のマスの左右と上の壁に、大きい敵の絵は上と左右に重なる）。
     def thingNode(env: WindowView.Env, field: In, thing: Thing): Option[ZStack.Tree[Layer, Unit]] =

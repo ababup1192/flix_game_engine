@@ -170,12 +170,14 @@ mod TestMine {
             (FoesDoc.foeOf(res#foes, Fixtures.foeId(res, "kurogane")) |> Option.map(f -> f#noFlee),
              FoesDoc.foeOf(res#foes, Fixtures.foeId(res, "mimic")) |> Option.map(f -> f#noFlee)))
 
-    /// <<shop mine>> は坑道の店（名前 mine。品は rpg.shops.json の shop = mine の行）を開き、<<shop>> は村の道具屋（空の名前）を開く。
+    /// <<shop mine>> は坑道の店（名前 mine。品は rpg.shops.json の shop = mine の行）を開き、<<shop>> は村の道具屋（名前の無い店）を開く。
     @Test
     def testTwoShopsOpenByName(): Unit \ Assert + Fs.FileRead =
         let h = inMap("mine_b2", "4", "2", "right", Map.empty());
-        let shopIn = shop -> Fixtures.openTree(Fixtures.command("shop", shop) + "," + Fixtures.line("x"), h) |> Option.map(opened -> WorldShop.shopOf(opened#world));
-        Assert.assertEq(expected = (Some("mine"), Some("")), (shopIn("mine"), shopIn("")))
+        let shopIn = command -> Fixtures.openTree(command + "," + Fixtures.line("x"), h) |> Option.map(opened ->
+            (Option.nonEmpty(WorldShop.openShopOf(opened#world)), WorldShop.shopOf(opened#world) |> Option.map(ShopsDoc.nameOf)));
+        let village = "{\"kind\":\"command\",\"line\":2,\"name\":\"shop\",\"args\":[]}";
+        Assert.assertEq(expected = (Some((true, Some("mine"))), Some((true, None))), (shopIn(Fixtures.command("shop", "mine")), shopIn(village)))
 
     // ══════════════════════════════════════════════════════
     // B3: 水晶と飛び石・ひとくいばこ・ミナの父・セーブ

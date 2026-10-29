@@ -15,8 +15,8 @@ mod WorldShop {
 
     // ── 店を開く・閉じる ──
 
-    /// 店を開く（shop = rpg.shops.json の品の shop の名前。空は村の道具屋 / talk = 閉じた時に戻る会話）。[遷移: Talk→Shop]
-    pub def open(shop: String, talk: World.TalkState, w: World.World): World.World =
+    /// 店を開く（shop = rpg.shops.json の品の shop の店。None は村の道具屋 / talk = 閉じた時に戻る会話）。[遷移: Talk→Shop]
+    pub def open(shop: Option[ShopsDoc.ShopId], talk: World.TalkState, w: World.World): World.World =
         World.withWindow(FieldWindow.Shop(shop, ShopPage.Top(0), talk), w)
 
     /// 開いている店のページと、戻る会話（店でなければ None）。
@@ -26,12 +26,12 @@ mod WorldShop {
             case _                               => None
         })
 
-    /// 開いている店の名前（店でなければ空 = 村の道具屋）。
-    pub def shopOf(w: World.World): String =
+    /// 開いている店（村の道具屋と、店が開いていない時は None）。
+    pub def shopOf(w: World.World): Option[ShopsDoc.ShopId] =
         World.fieldRecOf(w) |> Option.flatMap(r -> match r#window {
-            case FieldWindow.Shop(shop, _, _) => Some(shop)
+            case FieldWindow.Shop(shop, _, _) => shop
             case _                            => None
-        }) |> Option.getWithDefault("")
+        })
 
     def withPage(page: ShopPage, w: World.World): World.World =
         openShopOf(w) |> Option.map(match (_, talk) -> World.withWindow(FieldWindow.Shop(shopOf(w), page, talk), w)) |> Option.getWithDefault(w)
@@ -48,8 +48,8 @@ mod WorldShop {
 
     def topIndexOf(mode: ShopMode): Int32 = List.indexOf(Some(mode), topModes()) |> Option.getWithDefault(0)
 
-    /// 品の一覧。かう = rpg.shops.json の、その店（shop の名前）の品（値段は rpg.items.json）、うる = ふくろの中（売値は半分。どの店でも同じ）。
-    pub def goodsOf(res: Res.Res, shop: String, mode: ShopMode, bag: Bag.Bag): List[Goods] = match mode {
+    /// 品の一覧。かう = rpg.shops.json の、その店（None は村の道具屋）の品（値段は rpg.items.json）、うる = ふくろの中（売値は半分。どの店でも同じ）。
+    pub def goodsOf(res: Res.Res, shop: Option[ShopsDoc.ShopId], mode: ShopMode, bag: Bag.Bag): List[Goods] = match mode {
         case ShopMode.Buy  => ShopsDoc.goodsOf(shop, res#shops) |> List.filterMap(key -> ItemsDoc.idOf(res#items, key))
             |> List.filterMap(id -> ItemsDoc.itemOf(res#items, id) |> Option.map(item ->
                 { item = id, price = item#price, open = item#price <= Bag.goldOf(bag) and Bag.hasRoomFor(id, bag) }))

@@ -312,6 +312,16 @@
       "min": 1.0,
       "max": 120.0,
       "default": 24.0
+    },
+    "creditSkipAfter": {
+      "kind": "field",
+      "type": "float",
+      "label": "エンディングに入ってから、決定で字を早送りできるようになるまでの秒（報告の台詞を送る連打で飛ばさない）",
+      "group": "暗転",
+      "order": 32,
+      "min": 0.0,
+      "max": 30.0,
+      "default": 3.0
     }
   }
 }

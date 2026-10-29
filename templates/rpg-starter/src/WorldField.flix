@@ -111,7 +111,8 @@ mod WorldField {
     /// 塞がれた前のマスへ進もうとした: そこの物が押されて何かするならそれを（押した物がどいて前が空けば、そこへ 1 マス歩き始める）、
     /// しなければ押したフレームだけぶつかる音。
     def pushOrBump(res: Res.Res, r: FieldRec, next: Grid.Cell, dir: Dir4.Dir4, pressed: Bool, w: World.World): World.World \ Emit[World.Event] =
-        match objectAt(res, next, w) |> Option.flatMap(p -> WorldObject.onPush(res, r#map, p, dir, w)) {
+        match objectAt(res, next, w) |> Option.filter(p -> MapDoc.profileOf(p#object#kind)#pushable)
+                |> Option.flatMap(p -> WorldObject.onPush(res, r#map, p, dir, w)) {
             case Some(pushed) if canStep(res, pushed, r, next) => World.mapField(rec -> stepTo(next, dir, World.now(pushed), rec), pushed)
             case Some(pushed) => pushed
             case None => {
@@ -193,7 +194,8 @@ mod WorldField {
 
     def arriveAtObject(res: Res.Res, held: Option[Dir4.Dir4], at: Clock.Time[World.Play], map: MapDoc.MapId, p: WorldObject.Placed,
                        w: World.World): World.World \ Emit[World.Event] =
-        match WorldObject.onArrive(res, map, p, w) {
+        let arrived = if (MapDoc.profileOf(p#object#kind)#steps) WorldObject.onArrive(res, map, p, w) else None;
+        match arrived {
             case Some(handled) => handled
             case None          => continueOrMeet(res, held, at, countStep(res, w))
         }

@@ -113,14 +113,20 @@ mod TestDocs {
     @Test
     def testShopsOverridesTheInnPrice(): Unit \ Assert =
         Assert.assertEq(expected = Some((10, Nil)),
-            ShopsDoc.fromJson("{\"version\":1, \"innPrice\": 10}") |> Option.map(doc -> (ShopsDoc.rec(doc)#innPrice, ShopsDoc.goodsOf("", doc))))
+            ShopsDoc.fromJson("{\"version\":1, \"innPrice\": 10}") |> Option.map(doc -> (ShopsDoc.rec(doc)#innPrice, ShopsDoc.goodsOf(None, doc))))
 
-    /// 品の一覧は JSON の行に追随し、item の無い 2 行目だけ飛ばしてその行を問題に挙げる。shop を書かない行は村の道具屋（空の名前）。
+    /// 品の一覧は JSON の行に追随し、item の無い 2 行目だけ飛ばしてその行を問題に挙げる。shop を書かない行は村の道具屋（None）。
     @Test
     def testShopsGoodsFollowTheRows(): Unit \ Assert =
         let text = "{\"version\":1, \"goods\": [{\"item\": \"a\"}, {}, {\"item\": \"c\", \"shop\": \"mine\"}]}";
         Assert.assertEq(expected = Some(("a" :: Nil, "c" :: Nil, "[shops] goods の 2 行目に item が無いので飛ばす" :: Nil)),
-            ShopsDoc.fromJson(text) |> Option.map(doc -> (ShopsDoc.goodsOf("", doc), ShopsDoc.goodsOf("mine", doc), ShopsDoc.rec(doc)#problems)))
+            ShopsDoc.fromJson(text) |> Option.map(doc -> (ShopsDoc.goodsOf(None, doc), ShopsDoc.goodsOf(ShopsDoc.idOf("mine", doc), doc), ShopsDoc.rec(doc)#problems)))
+
+    /// goods のどの行の shop にも無い名前の店は引けない（None）。
+    @Test
+    def testUnknownShopNameHasNoId(): Unit \ Assert =
+        let text = "{\"version\":1, \"goods\": [{\"item\": \"c\", \"shop\": \"mine\"}]}";
+        Assert.assertEq(expected = Some(None), ShopsDoc.fromJson(text) |> Option.map(doc -> ShopsDoc.idOf("nosuch", doc)))
 
     // ══════════════════════════════════════════════════════
     // Doc どうし
@@ -154,14 +160,27 @@ mod TestDocs {
         let res = Res.load();
         let tree = Fixtures.command("give", "nosuch") + "," + Fixtures.command("join", "nobody") + "," + Fixtures.command("open", "nosuch") + "," +
                    Fixtures.command("quest", "accept");
-        Assert.assertEq(expected = Some(3), Talk.fromJson(Fixtures.treeOf(tree)) |> Option.map(program -> List.length(Talk.problemsOf(res#items, res#foes, { objects = Set#{"cave_mole"}, exits = Set.empty() }, program))))
+        Assert.assertEq(expected = Some(3), Talk.fromJson(Fixtures.treeOf(tree)) |> Option.map(program -> List.length(Talk.problemsOf(res, res#maps, program))))
+
+    /// <<shop 名前>> の店が rpg.shops.json の goods の shop に無ければ問題に挙がる。
+    @Test
+    def testUnknownShopIsAProblem(): Unit \ Assert + Fs.FileRead =
+        let res = Res.load();
+        Assert.assertEq(expected = Some(1), Talk.fromJson(Fixtures.treeOf(Fixtures.command("shop", "nosuch"))) |> Option.map(program -> List.length(Talk.problemsOf(res, res#maps, program))))
+
+    /// <<open>> の物は、そのノードが流れうるマップの objects だけで引く（村の長老のノード Elder から坑道の扉を開けるのは問題に挙がる）。
+    @Test
+    def testOpenLooksOnlyAtTheMapsThatRunTheNode(): Unit \ Assert + Fs.FileRead =
+        let res = Res.load();
+        let tree = "{\"version\":1,\"variables\":[],\"nodes\":[{\"title\":\"Elder\",\"file\":\"t.yarn\",\"line\":1,\"headers\":[],\"body\":[${Fixtures.command("open", "b3_door")}]}]}";
+        Assert.assertEq(expected = Some(1), Talk.fromJson(tree) |> Option.map(program -> List.length(Talk.problemsOf(res, res#maps, program))))
 
     /// World から写す変数（$gold）への <<set>> は問題に挙がる（書いても次の写しで消える）。
     @Test
     def testSetOnACopiedVarIsAProblem(): Unit \ Assert + Fs.FileRead =
         let res = Res.load();
         let set = "{\"kind\":\"set\",\"line\":2,\"name\":\"$gold\",\"expr\":{\"kind\":\"value\",\"value\":5}}";
-        Assert.assertEq(expected = Some(1), Talk.fromJson(Fixtures.treeOf(set)) |> Option.map(program -> List.length(Talk.problemsOf(res#items, res#foes, { objects = Set.empty(), exits = Set.empty() }, program))))
+        Assert.assertEq(expected = Some(1), Talk.fromJson(Fixtures.treeOf(set)) |> Option.map(program -> List.length(Talk.problemsOf(res, res#maps, program))))
 
     /// 会話の語彙 assets/talk/vocab.json が、コードの語彙（Talk.vocabOf）と同じ（ずれたら make talk-vocab）。
     @Test

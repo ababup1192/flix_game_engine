@@ -6,8 +6,9 @@
 //   examine  … 前のマスを調べた時（決定・メニューの しらべる）
 //   onArrive … そのマスに着いた時（床のスイッチ。何もしない種類は None で、歩きはそのまま続く）
 //   onPush   … 塞がれたマスへ進もうとした時（岩。何もしない種類は None で、ぶつかる音が鳴る）
-// 種類を足す時は MapDoc.ObjectKind に case を足して make check を流すと、stateOf・blocks・examine・onArrive・onPush・
-// MapDoc.defaultSpriteOf・FieldScreen.thingBoxOf・Res.kindProblemsOf が並ぶ。読むのは MapDoc.objectKindOf に 1 行。
+// 種類を足す時は MapDoc.ObjectKind に case を足して make check を流すと、網羅の match の 6 つ（MapDoc.objectKindOf・
+// MapDoc.profileOf・stateOf・examine・FieldScreen.thingBoxOf・Res.kindProblemsOf）が並ぶ。種類の変わらない値（既定の絵・旗・会話の
+// ノード・床に敷くか・着く / 押されると何かするか）は profileOf の 1 行で、onArrive / onPush はその種類の中身だけを足す。
 mod WorldObject {
     use fge::{Dir4, Emit, Grid}
     use MapDoc.ObjectKind
@@ -84,13 +85,9 @@ mod WorldObject {
             case ObjectKind.Sign(_)     => ObjectState.Closed
         }
 
-    /// そのマスを塞ぐか: 床に敷く物（床のスイッチ・分かれ目・飛び石）は塞がず、ほかは無い物だけ通れる。
-    pub def blocks(p: Placed): Bool = match p#object#kind {
-        case ObjectKind.Plate(_)    => false
-        case ObjectKind.Junction(_) => false
-        case ObjectKind.Bridge(_)   => false
-        case _                      => p#state != ObjectState.Gone
-    }
+    /// そのマスを塞ぐか: 床に敷く物（MapDoc.profileOf の flat）は塞がず、ほかは無い物だけ通れる。
+    pub def blocks(p: Placed): Bool =
+        not MapDoc.profileOf(p#object#kind)#flat and p#state != ObjectState.Gone
 
     /// 地図の文字が入れないマス（湖）でも立てるようにするか（現れた飛び石）。
     pub def floors(p: Placed): Bool = match p#object#kind {
@@ -119,43 +116,26 @@ mod WorldObject {
             case ObjectKind.Sign(sign)                            => Some(WorldTalk.open(res, sign#node, None, w))
         }
 
-    /// 着いた時。踏むだけの床のスイッチ（hold = false）は、旗がまだなら立てて知らせ（歩きはそこで止まる）、ほかは何もしない。
+    /// 着いた時（WorldField は MapDoc.profileOf の steps が真の種類にだけ呼ぶ）。踏むだけの床のスイッチ（hold = false）は、
+    /// 旗がまだなら立てて知らせ（歩きはそこで止まる）、ほかは何もしない。
+    /// WhyNot: case _ で畳む — 着いて何かする種類かは profileOf の steps が網羅の match で決め、ここはその中身だけ。
     pub def onArrive(res: Res.Res, _map: MapDoc.MapId, p: Placed, w: World.World): Option[World.World] \ Emit[World.Event] =
         match p#object#kind {
             case ObjectKind.Plate(plate) if not plate#hold and not Progress.isFlagSet(plate#flag, w#progress) => {
-                Emit.emit(World.Event.Lever);
+                Emit.emit(World.Event.Switch);
                 Some(say(res, TextDoc.NoticeText.PlatePressed :: Nil, Nil,
                          { progress = Progress.withFlag(plate#flag, true, w#progress) | World.mapField(r -> { stride = Stride.Still | r }, w) }))
             }
-            case ObjectKind.Chest(_)    => None
-            case ObjectKind.Door(_)     => None
-            case ObjectKind.Lever(_)    => None
-            case ObjectKind.Gate(_)     => None
-            case ObjectKind.Guard(_)    => None
-            case ObjectKind.Plate(_)    => None
-            case ObjectKind.Rock        => None
-            case ObjectKind.Cart(_)     => None
-            case ObjectKind.Junction(_) => None
-            case ObjectKind.Crystal(_)  => None
-            case ObjectKind.Bridge(_)   => None
-            case ObjectKind.Sign(_)     => None
+            case _ => None
         }
 
-    /// dir へ進もうとして塞がれた時。岩は 1 マス先が空いていれば動き（先頭が進むのは WorldField）、ほかの種類は動かない。
+    /// dir へ進もうとして塞がれた時（WorldField は MapDoc.profileOf の pushable が真の種類にだけ呼ぶ）。岩は 1 マス先が空いていれば
+    /// 動き（先頭が進むのは WorldField）、ほかの種類は動かない。
+    /// WhyNot: case _ で畳む — 押せる種類かは profileOf の pushable が網羅の match で決め、ここはその中身だけ。
     pub def onPush(res: Res.Res, map: MapDoc.MapId, p: Placed, dir: Dir4.Dir4, w: World.World): Option[World.World] \ Emit[World.Event] =
         match p#object#kind {
-            case ObjectKind.Rock        => pushRock(res, map, p, dir, w)
-            case ObjectKind.Chest(_)    => None
-            case ObjectKind.Door(_)     => None
-            case ObjectKind.Lever(_)    => None
-            case ObjectKind.Gate(_)     => None
-            case ObjectKind.Guard(_)    => None
-            case ObjectKind.Plate(_)    => None
-            case ObjectKind.Cart(_)     => None
-            case ObjectKind.Junction(_) => None
-            case ObjectKind.Crystal(_)  => None
-            case ObjectKind.Bridge(_)   => None
-            case ObjectKind.Sign(_)     => None
+            case ObjectKind.Rock => pushRock(res, map, p, dir, w)
+            case _               => None
         }
 
     // ── 岩と床のスイッチ ──
@@ -196,7 +176,7 @@ mod WorldObject {
             |> List.map(fst);
         if (List.isEmpty(solved)) w
         else {
-            Emit.emit(World.Event.Lever);
+            Emit.emit(World.Event.Switch);
             let progress = solved |> List.foldLeft((acc, flag) -> Progress.withFlag(flag, true, acc), w#progress);
             say(res, TextDoc.NoticeText.GateRaised :: Nil, Nil, { progress = progress | w })
         }

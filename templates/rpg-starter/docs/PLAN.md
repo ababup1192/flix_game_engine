@@ -291,9 +291,9 @@ Opening（「〜が あらわれた！」）→ Choose(member, CommandPage) → 
 にげる成功 → Fled（「うまく にげきれた！」）→ Field（歩数は引き直す）
 ```
 
-- **式と見せ方の境目**: 1 ターン（全員の行動を順に実行するまで）は純関数 `Battle.resolveRound(res, rec, plans, dice): (rec, List[Beat], dice)` が決める。
+- **式と見せ方の境目**: 1 ターン（全員の行動を順に実行するまで）は純関数 `BattleActs.resolveRound(res, rec, plans, dice): (rec, List[Beat], dice)` が決める。
   敵の行動の選び・行動順・眠り・guard・振り替え・ダメージ・倒れた事は全部この中。`Beat = { message: BattleMsg, fx: Option[Fx], after: Battle.Rec }`（1 手ぶんの伝言と、その手の後の戦いの値）。
-  勝ち負けは `Battle.outcomeOf(rec)`、経験値とレベルアップは `Party.gainExp`、にげるは `Battle.tryFlee(res, rec, dice)`。どれも時計とフレームを見ない。
+  勝ち負けは `Battle.outcomeOf(rec)`、経験値とレベルアップは `Party.gainExp`、にげるは `BattleActs.tryFlee`。どれも時計とフレームを見ない。
   `WorldBattle` は見せる側: Choose で集めた plans を resolveRound に渡し、返った Beat を Play の時計で 1 つずつ演出 → 伝言にする。HP の表示は今見せている Beat の `after` を読む（先に結果が出ない）。
   `BalanceSim`（5.5）も同じ resolveRound を呼び、フレームも時計も通さない。
 - `Battle.Rec = { party: Party.Party, bag: Bag.Bag, foes: Vector[FoeState], asleep: Set[Member], guarding: Set[Int32] }`（戦いの値）。**戦いの間の正は Battle.Rec の party と bag**（World の party と bag は触らない）。勝った時・逃げた時に party と bag を一緒に World へ書き戻す（全滅の時は書き戻した後に 4.4 の全滅の決まりを当てる）。Doc を読み直した時は Battle.Rec の party と foes の両方を新しい最大に収める。
@@ -469,7 +469,7 @@ B1 の 坑道コウモリ×2・コケだま → 坑道コウモリ・コケだ�
 
 **2. つり合いのシミュレーション — `make balance` → `debug/balance.md`**
 
-- 置き場: `src/sim/BalanceSim.flix`。戦いだけを流す。**`Battle.resolveRound`（4.4）を直に回し、フレームも時計も `WorldBattle` も通さない**。plans は bot と同じ戦いの方針（`Bot.battlePlans(res, rec)` を Field の bot と分けて pub にする）。
+- 置き場: `src/sim/BalanceSim.flix`。戦いだけを流す。**`BattleActs.resolveRound`（4.4）を直に回し、フレームも時計も `WorldBattle` も通さない**。plans は bot と同じ戦いの方針（`Bot.battlePlans(res, rec)` を Field の bot と分けて pub にする）。
 - 区間ごとのパーティは `src/sim/BalanceSim.flix` の表で決める（5.4 の各区間の Lv と、その時に持っているはずの装備・やくそうの数。bot のレポートの値で書き直してよい）。
 - 流す物: 各マップの encounter の組ぜんぶ × 500 種（`dice` の始めの値を変える）、ボス戦 × 500 種を Lv 5 / 6 / 7 で。合わせて約 14000 戦・7 万ターン。**全部の表で 1 分以内**を目標にする（超えたら種の数を `BALANCE_SEEDS` で下げられるようにする。既定 500）。
 - レポートの中身（区間ごと・組ごとの表）: 勝率・ターン数（中央値と 9 割の値）・受けたダメージ（最大 HP に対する割合の中央値と 9 割の値）・全滅の率・使った MP とやくそう。
@@ -529,6 +529,14 @@ View のファイル: `View.flix`（場面で振り分ける入口・画風の�
 - z の数は `ZOrder` の `zRange` だけに書き、ほかは積んだ順で決める。
 
 ## 7. フェーズ
+
+**いま遊べる物（P7 まで）**: タイトル → 村を歩く・家に出入りする・村人と話す・依頼を受ける・ミナが仲間に加わる・村の外周の端の出口と gate・
+メニュー（どうぐ・つよさ・そうび・じゅもん）・道具屋・宿とセーブ・「つづきから」・ワールドマップ・ほこらのトトの杖の話 → 森の岩穴のレバーと鉄格子とほりモグ →
+杖を返すとトトが加わる・坑道 B1（トロッコと分かれ目のレバー・岩の部屋 1・ボルじい）・B2（暗い迷路とたいまつ・落とし穴・行商人コロンの店・
+中ボスくろがねゴブリン）・B3（水晶の順番と飛び石・岩の部屋 2 とひとくいばこ・ミナの父）・ふるびたかぎの扉・出会いとコマンドバトル
+（たたかう / ぼうぎょ / にげる / じゅもん / どうぐ）・経験値とレベルアップ・全滅・会話の音・眠り・敵の呪文・フィールドの じゅもん（ヒール）・
+B3 の扉の奥のジェムイーター（逃げられない・HP 半分で phase 2）・勝つと坑道の入口へ戻されワールドマップを歩いて帰る・
+泉に水が戻った村（村人が泉に集まる）・村長への報告とお礼・エンディング（スタッフの字。決定で早送り → もう一度でタイトル）。
 
 どのフェーズも終わりに: `make check`・`make test`・`make render-all`（Starts から描ける場面）が緑、`/critique-code` と `/critique-render`、レビュー役 90 点。
 テストは `/quality-assurance` の形（期待値は Doc から導く・1 テスト 1 アサート・Starts から作る）。
@@ -743,7 +751,7 @@ View のファイル: `View.flix`（場面で振り分ける入口・画風の�
   - **描き出し**: 旧 ~~`FieldScenes`~~ / ~~`BattleScenes`~~ を消し、15 場面 + `ending` の 16 場面を全部 Starts から描く（`boss` = `battle foes=gemeater` の現れた・`clear` = `ChiefReport` のお礼の行・`ending` = Starts の `ending` で 3 割流れた所）。
   - **e2e**: 4 本の `playthrough_*.flow` は作らず、`e2e/boss.flow`（扉の奥 → ボス → BossWon → 坑道の入口）と `e2e/report_ending.flow`（ワールドマップ → 村 → 報告 → エンディング → タイトル）の 2 本にした。
     前の 3 区間は `quest_join`・`world_mine`・`mine_b1`〜`b3` が同じ道を見ている。通しは bot の `debug/bot/playthrough.flow`（下）。
-  - **bot**: `Bot.goalOf` に「扉を開ける → HP か MP が減っていればミナの父 → ボス → 村の泉の村長」の 4 行。終わりはエンディング（`Bot.isDone`）。区間に `boss`・`return`（`BotRun.sectionOf`）。
+  - **bot**: `Bot.goalOf` に「扉を開ける → HP か MP が減っていればミナの父 → ボス → 村の泉の村長」の 4 行。エンディングに着いた所で表を数え（`Bot.isAtEnding`）、字が流れ切ってタイトルへ戻るまで流す。区間に `boss`・`return`（`BotRun.sectionOf`）。
     1 本目の手を `debug/bot/playthrough.flow` に engine の記録の書き手で書く（区間の頭ごとに `mark` と `expect quest=…&scene=…&map=…`）。bot の 1 フレームはナノ秒に丸めた 1/60 秒（丸めないと流し直した時に文字送りの境目が 1 フレームずれる）。
     `make flow FLOW=debug/bot/playthrough.flow` でタイトルからエンディングまで同じ指紋で流れる。Starts の `title` に `seed=` を足した。
   - **数**（BOT_RUNS=10・種 0〜9）: 10 本ともエンディング・全滅 0。ゲーム内時間 4:38〜5:09・人の目安 16:05〜18:28（歩き 3 分前後・戦い 19〜21 回・ウィンドウ 42〜49 枚。人が仕掛けを考える時間は入っていない。

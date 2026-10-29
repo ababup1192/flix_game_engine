@@ -37,7 +37,7 @@ mod TestMagic {
         let res = Res.load();
         let koke = Fixtures.foeId(res, "koke");
         let b = Battle.start(res, koke :: koke :: koke :: Nil, partyAt(res, Member.Member.Toto :: Nil, 5), Bag.withGold(0));
-        let (after, _, _) = Battle.resolveRound(res, b, Map#{Member.Member.Toto => Battle.Plan.Cast(Fixtures.spellId(res, "ice"), Battle.Target.AllFoes)}, 0);
+        let (after, _, _) = BattleActs.resolveRound(res, b, Map#{Member.Member.Toto => Battle.Plan.Cast(Fixtures.spellId(res, "ice"), Battle.Target.AllFoes)}, 0);
         let full = FoesDoc.foeOrBlank(res#foes, koke)#hp;
         Assert.assertEq(expected = false, Fixtures.foeHpsOf(after) |> List.exists(hp -> hp >= full))
 
@@ -49,7 +49,7 @@ mod TestMagic {
             let top = Party.maxHpOf(res#party, Member.Member.Luka, party0);
             let party = Party.withHp(res#party, Member.Member.Luka, top - 1, party0);
             let b = Battle.start(res, Fixtures.foeId(res, "koke") :: Nil, party, Bag.withGold(0));
-            let (after, _, _) = Battle.resolveRound(res, b, Map#{Member.Member.Luka => Battle.Plan.Cast(Fixtures.spellId(res, "heal"), Battle.Target.Ally(Member.Member.Luka))}, 0);
+            let (after, _, _) = BattleActs.resolveRound(res, b, Map#{Member.Member.Luka => Battle.Plan.Cast(Fixtures.spellId(res, "heal"), Battle.Target.Ally(Member.Member.Luka))}, 0);
             (top, Fixtures.allyHpsOf(after))
         });
         Assert.assertEq(expected = found |> Option.map(pair -> fst(pair) :: Nil), found |> Option.map(snd))
@@ -60,7 +60,7 @@ mod TestMagic {
         let res = Res.load();
         let party = partyAt(res, Member.Member.Toto :: Nil, 2);
         let b = Battle.start(res, Fixtures.foeId(res, "koke") :: Nil, party, Bag.withGold(0));
-        let (after, _, _) = Battle.resolveRound(res, b, Map#{Member.Member.Toto => Battle.Plan.Cast(Fixtures.spellId(res, "fire"), Battle.Target.Foe(0))}, 0);
+        let (after, _, _) = BattleActs.resolveRound(res, b, Map#{Member.Member.Toto => Battle.Plan.Cast(Fixtures.spellId(res, "fire"), Battle.Target.Foe(0))}, 0);
         Assert.assertEq(expected = Party.maxMpOf(res#party, Member.Member.Toto, party) - Fixtures.spellOf(res, "fire")#mp,
             Party.mpOf(Member.Member.Toto, Battle.rec(after)#party))
 
@@ -85,7 +85,7 @@ mod TestMagic {
         let res = Res.load();
         let herb = Fixtures.itemId(res, "yakusou");
         let b = Battle.start(res, Fixtures.foeId(res, "koke") :: Nil, partyAt(res, Member.Member.Luka :: Nil, 1), Bag.give(herb, 2, Bag.withGold(0)));
-        let (after, _, _) = Battle.resolveRound(res, b, Map#{Member.Member.Luka => Battle.Plan.UseItem(herb, Battle.Target.Ally(Member.Member.Luka))}, 0);
+        let (after, _, _) = BattleActs.resolveRound(res, b, Map#{Member.Member.Luka => Battle.Plan.UseItem(herb, Battle.Target.Ally(Member.Member.Luka))}, 0);
         Assert.assertEq(expected = 1, Bag.countOf(herb, Battle.rec(after)#bag))
 
     /// 戦いのどうぐの一覧で、せいすいは灰色・やくそうは選べる（並びは使う物の値段の安い順）。
@@ -106,7 +106,7 @@ mod TestMagic {
             let bomb = Fixtures.itemId(res, "bakudanishi");
             let goblin = Fixtures.foeId(res, "goblin");
             let b = Battle.start(res, goblin :: Nil, partyAt(res, Member.Member.Luka :: Nil, 1), Bag.give(bomb, 1, Bag.withGold(0)));
-            let (after, _, _) = Battle.resolveRound(res, b, Map#{Member.Member.Luka => Battle.Plan.UseItem(bomb, Battle.Target.Foe(0))}, 0);
+            let (after, _, _) = BattleActs.resolveRound(res, b, Map#{Member.Member.Luka => Battle.Plan.UseItem(bomb, Battle.Target.Foe(0))}, 0);
             (FoesDoc.foeOrBlank(res#foes, goblin)#hp - item#burn, Fixtures.foeHpsOf(after))
         };
         Assert.assertEq(expected = found |> Option.map(pair -> fst(pair) :: Nil), found |> Option.map(snd))
@@ -131,9 +131,9 @@ mod TestMagic {
     def testSleeperSkipsChoosingAndSleepsOneTurn(): Unit \ Assert + Fs.FileRead =
         let found = sleepyRes("sleep") |> Option.map(res -> {
             let b0 = Battle.start(res, Fixtures.foeId(res, "koke") :: Nil, partyAt(res, Member.Member.Luka :: Nil, 10), Bag.withGold(0));
-            let (b1, _, d1) = Battle.resolveRound(res, b0, Map#{Member.Member.Luka => Battle.Plan.Defend}, 0);
-            let (b2, beats2, d2) = Battle.resolveRound(res, b1, Map.empty(), d1);
-            let (_, beats3, _) = Battle.resolveRound(res, b2, Map.empty(), d2);
+            let (b1, _, d1) = BattleActs.resolveRound(res, b0, Map#{Member.Member.Luka => Battle.Plan.Defend}, 0);
+            let (b2, beats2, d2) = BattleActs.resolveRound(res, b1, Map.empty(), d1);
+            let (_, beats3, _) = BattleActs.resolveRound(res, b2, Map.empty(), d2);
             let luka = (TextDoc.Placeholder.Name, nameOf(res, Member.Member.Luka)) :: Nil;
             (Battle.choosersOf(b1),
              List.memberOf(line(res, TextDoc.BattleText.Asleep, luka) :: Nil, Fixtures.transcriptOf(res, beats2)),
@@ -148,7 +148,7 @@ mod TestMagic {
         let h0 = Fixtures.started("battle", Map#{"foes" => "koke", "lv" => "10"});
         let found = sleepyRes("sleep") |> Option.map(res -> {
             let b0 = Battle.start(res, Fixtures.foeId(res, "koke") :: Nil, partyAt(res, Member.Member.Luka :: Nil, 10), Bag.withGold(0));
-            let (b1, _, d1) = Battle.resolveRound(res, b0, Map#{Member.Member.Luka => Battle.Plan.Defend}, 0);
+            let (b1, _, d1) = BattleActs.resolveRound(res, b0, Map#{Member.Member.Luka => Battle.Plan.Defend}, 0);
             let judged = World.mapBattle(r -> { battle = b1, phase = World.Phase.Show(Battle.openingOf(b1), Nil, World.now(h0#world), World.AfterShow.Judge) | r },
                                          { dice = d1 | h0#world });
             let c = Fixtures.tap(Fixtures.confirm());

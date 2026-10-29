@@ -1,5 +1,5 @@
 // BalanceSim — つり合いのシミュレーション（make balance → debug/balance.md）。戦いだけを流す。
-// Battle.resolveRound を直に回し、フレームも時計も WorldBattle も通さない。行動は bot と同じ方針（Bot.battlePlans: 回復の呪文・やくそう・
+// BattleActs.resolveRound を直に回し、フレームも時計も WorldBattle も通さない。行動は bot と同じ方針（Bot.battlePlans: 回復の呪文・やくそう・
 // 逃げられない組での攻めの呪文と ばくだんいし）。1 戦ごとに区間の初めの HP / MP（最大）とふくろから始める。
 // テストではなく知らせる口（重いので make test に入れない。終了コードはいつも 0）。外れた行には ⚠ を付ける。
 // 外れたら Doc（敵の値・出会いの組・経験値）の数だけで直して流し直す。式は直さない（直す時は docs/PLAN.md を先に直す）。
@@ -72,13 +72,22 @@ mod BalanceSim {
         let res = run { Res.load() } with Fs.FileRead.runWithIO;
         let body = sectionTable() |> List.map(section -> sectionText(res, seeds, section)) |> List.join("\n");
         let seconds = Int64.toFloat64(System.nanoTime() - started) / 1.0e9;
-        let text = "# つり合いのシミュレーション（make balance）\n\n" +
-            "組ごとに ${seeds} 種。方針は bot と同じ（Bot.battlePlans: HP 35% 未満の仲間を回復の呪文 → やくそう・逃げられない組では攻めの呪文 → ばくだんいし・ほかは HP の一番少ない敵を たたかう）。" +
-            "1 戦ごとに HP / MP は最大・ふくろは区間の初めの物から。\n" +
-            "目安: 雑魚はその区間の Lv のルカが ${hitsLo()}〜${hitsHi()} 発 / 1 戦で受けるダメージは中央値で最大 HP の ${Float64.round(damageCap() * 100.0)}% 以下 / " +
-            "逃げられない固定の戦いは ${fixedTurnsLo()}〜${fixedTurnsHi()} ターン（中央値）/ ボスは Lv${bossLv()} で ${bossTurnsLo()}〜${bossTurnsHi()} ターン（中央値）・勝率 ${percent(bossWinLo())}〜${percent(bossWinHi())}（受けるダメージは見ない。Lv5・7 の行は見比べるだけ）。外れた行に ⚠。\n" +
-            "区間の Lv と装備とふくろは make bot の表（debug/bot.md）の「区間に入った時の Lv」の多い値と、その区間に入った時の物を BalanceSim.sectionTable に写した物（bot の流れが変わったら写し直す）。\n" +
-            "流した時間: ${Float64.round(seconds * 10.0) / 10.0} 秒\n\n" + body;
+        let aims = List.join(" / ",
+            "雑魚はその区間の Lv のルカが ${hitsLo()}〜${hitsHi()} 発" ::
+            "1 戦で受けるダメージは中央値で最大 HP の ${Float64.round(damageCap() * 100.0)}% 以下" ::
+            "逃げられない固定の戦いは ${fixedTurnsLo()}〜${fixedTurnsHi()} ターン（中央値）/ ボスは Lv${bossLv()} で ${bossTurnsLo()}〜${bossTurnsHi()} ターン（中央値）・勝率 ${percent(bossWinLo())}〜${percent(bossWinHi())}" +
+            "（受けるダメージは見ない。Lv5・7 の行は見比べるだけ）" :: Nil);
+        let text = List.join("\n",
+            "# つり合いのシミュレーション（make balance）" ::
+            "" ::
+            "組ごとに ${seeds} 種。方針は bot と同じ（Bot.battlePlans: HP 35% 未満の仲間を回復の呪文 → やくそう・" +
+            "逃げられない組では攻めの呪文 → ばくだんいし・ほかは HP の一番少ない敵を たたかう）。1 戦ごとに HP / MP は最大・ふくろは区間の初めの物から。" ::
+            "目安: ${aims}。外れた行に ⚠。" ::
+            "区間の Lv と装備とふくろは make bot の表（debug/bot.md）の「区間に入った時の Lv」の多い値と、その区間に入った時の物を" +
+            " BalanceSim.sectionTable に写した物（bot の流れが変わったら写し直す）。" ::
+            "流した時間: ${Float64.round(seconds * 10.0) / 10.0} 秒" ::
+            "" ::
+            body :: Nil);
         println(text);
         run {
             discard Fs.FileWrite.mkDirs("debug");
@@ -132,7 +141,7 @@ mod BalanceSim {
               damage = Int32.toFloat64(start#maxHp - hp) / Float64.max(1.0, Int32.toFloat64(start#maxHp)),
               mp = start#mp - mpSum(r#party), items = start#items - itemSum(r#bag) }
         } else {
-            let (next, _, d) = Battle.resolveRound(res, b, Bot.battlePlans(res, b), dice);
+            let (next, _, d) = BattleActs.resolveRound(res, b, Bot.battlePlans(res, b), dice);
             roundsOf(res, next, d, rounds + 1, start)
         }
 
@@ -149,9 +158,21 @@ mod BalanceSim {
         let fixedKeys = s#fixed |> List.flatten |> List.toSet;
         let foeKeys = groups |> List.flatMap(g -> g#foes) |> firstOccurrences;
         let foeRows = foeKeys |> List.filterMap(FoesDoc.idOf(res#foes)) |> List.map(id -> foeRow(res, party, id, Set.memberOf(FoesDoc.keyOf(id), fixedKeys))) |> List.join("\n");
-        "## ${s#title}（${lv}・${carried}）\n\n" +
-        "| 組 | 重み | 勝率 | ターン（中央値 / 9 割） | 受けたダメージ（中央値 / 9 割） | 全滅の率 | 使った MP（中央値） | 使った道具（中央値） |\n|---|---|---|---|---|---|---|---|\n" + groupRows + "\n\n" +
-        "| 敵 | HP | まもり | ルカの たたかう 1 発（中央値） | 倒れるまでの回数 |\n|---|---|---|---|---|\n" + foeRows + "\n"
+        List.join("\n",
+            "## ${s#title}（${lv}・${carried}）" ::
+            "" ::
+            tableHead("組" :: "重み" :: "勝率" :: "ターン（中央値 / 9 割）" :: "受けたダメージ（中央値 / 9 割）" :: "全滅の率" :: "使った MP（中央値）" :: "使った道具（中央値）" :: Nil) ::
+            groupRows ::
+            "" ::
+            tableHead("敵" :: "HP" :: "まもり" :: "ルカの たたかう 1 発（中央値）" :: "倒れるまでの回数" :: Nil) ::
+            foeRows ::
+            "" :: Nil)
+
+    /// 表の 1 行（| a | b |）。
+    def tableRow(cells: List[String]): String = "| ${List.join(" | ", cells)} |"
+
+    /// 表の頭の 2 行（名前の行と |---| の行）。
+    def tableHead(names: List[String]): String = tableRow(names) + "\n|" + (names |> List.map(_ -> "---|") |> List.join(""))
 
     def groupRow(res: Res.Res, seeds: Int32, lv: Int32, party: Party.Party, bag: Bag.Bag, g: MapDoc.Encounter): String =
         let foes = g#foes |> List.filterMap(FoesDoc.idOf(res#foes));
@@ -171,7 +192,8 @@ mod BalanceSim {
         let weight = if (fixed) "固定" else "${g#weight}";
         let mp = quantile(0.5, fights |> List.map(f -> Int32.toFloat64(f#mp)));
         let items = quantile(0.5, fights |> List.map(f -> Int32.toFloat64(f#items)));
-        "| ${warn}${List.join("・", g#foes)} | ${weight} | ${percent(wins)} | ${quantile(0.5, rounds)} / ${quantile(0.9, rounds)} | ${percent(quantile(0.5, damage))} / ${percent(quantile(0.9, damage))} | ${percent(lost)} | ${mp} | ${items} |"
+        tableRow("${warn}${List.join("・", g#foes)}" :: weight :: percent(wins) :: "${quantile(0.5, rounds)} / ${quantile(0.9, rounds)}" ::
+                 "${percent(quantile(0.5, damage))} / ${percent(quantile(0.9, damage))}" :: percent(lost) :: "${mp}" :: "${items}" :: Nil)
 
     /// その区間の Lv のルカの たたかう（ぶれの真ん中・会心なし）で倒れるまでの回数（固定の戦いの敵は目安と比べない）。
     def foeRow(res: Res.Res, party: Party.Party, id: FoesDoc.FoeId, fixed: Bool): String =
@@ -181,7 +203,7 @@ mod BalanceSim {
         let hits = (foe#hp + hit - 1) / Int32.max(1, hit);
         let warn = if (not fixed and (hits < hitsLo() or hits > hitsHi())) "⚠ " else "";
         let note = if (fixed) "（固定の戦い）" else "";
-        "| ${warn}${foe#name}（${FoesDoc.keyOf(id)}） | ${foe#hp} | ${foe#defense} | ${hit} | ${hits}${note} |"
+        tableRow("${warn}${foe#name}（${FoesDoc.keyOf(id)}）" :: "${foe#hp}" :: "${foe#defense}" :: "${hit}" :: "${hits}${note}" :: Nil)
 
     /// 同じ値の 2 つ目からを除いた並び（最初に出た順）。
     def firstOccurrences(xs: List[String]): List[String] =

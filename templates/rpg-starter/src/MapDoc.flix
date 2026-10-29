@@ -101,53 +101,34 @@ mod MapDoc {
         case Sign({ node = String })
     }
 
-    /// その種類が立てる・下ろす旗（レバー・床のスイッチ・水晶）。Res.flagProblemsOf が、旗を読む物に立てる物があるかを見る。
-    pub def raisedFlagOf(kind: ObjectKind): Option[Flag.FlagId] = match kind {
-        case ObjectKind.Chest(_)    => None
-        case ObjectKind.Door(_)     => None
-        case ObjectKind.Lever(l)    => Some(l#flag)
-        case ObjectKind.Gate(_)     => None
-        case ObjectKind.Guard(_)    => None
-        case ObjectKind.Plate(p)    => Some(p#flag)
-        case ObjectKind.Rock        => None
-        case ObjectKind.Cart(_)     => None
-        case ObjectKind.Junction(_) => None
-        case ObjectKind.Crystal(c)  => Some(c#flag)
-        case ObjectKind.Bridge(_)   => None
-        case ObjectKind.Sign(_)     => None
-    }
+    /// 種類ごとの変わらない値（その物の今の状態に依らない物）。
+    ///   sprite   = 既定の絵（行に sprite を書かない時）
+    ///   raises   = 立てる・下ろす旗（Res.flagProblemsOf が、読む旗に立てる物があるかを見る）
+    ///   reads    = 読むだけの旗
+    ///   node     = 開く会話のノード（会話の語彙の「コードが開くノード」）
+    ///   flat     = 床に敷く物（マスを塞がず、絵は人と岩より奥の層）
+    ///   steps    = 着いた時に WorldObject.onArrive が何かする
+    ///   pushable = 塞がれて押された時に WorldObject.onPush が何かする
+    pub type alias KindProfile = { sprite = String, raises = Option[Flag.FlagId], reads = Option[Flag.FlagId], node = Option[String],
+                                   flat = Bool, steps = Bool, pushable = Bool }
 
-    /// その種類が読むだけの旗（開く物・分かれ目・飛び石）。
-    pub def readFlagOf(kind: ObjectKind): Option[Flag.FlagId] = match kind {
-        case ObjectKind.Chest(_)    => None
-        case ObjectKind.Door(_)     => None
-        case ObjectKind.Lever(_)    => None
-        case ObjectKind.Gate(g)     => Some(g#flag)
-        case ObjectKind.Guard(_)    => None
-        case ObjectKind.Plate(_)    => None
-        case ObjectKind.Rock        => None
-        case ObjectKind.Cart(_)     => None
-        case ObjectKind.Junction(j) => Some(j#flag)
-        case ObjectKind.Crystal(_)  => None
-        case ObjectKind.Bridge(b)   => Some(b#flag)
-        case ObjectKind.Sign(_)     => None
-    }
-
-    /// 物が開く会話のノード（番をする者・トロッコ・読む物。会話の語彙の「コードが開くノード」）。
-    pub def guardNodeOf(kind: ObjectKind): Option[String] = match kind {
-        case ObjectKind.Chest(_)    => None
-        case ObjectKind.Door(_)     => None
-        case ObjectKind.Lever(_)    => None
-        case ObjectKind.Gate(_)     => None
-        case ObjectKind.Guard(g)    => Some(g#node)
-        case ObjectKind.Plate(_)    => None
-        case ObjectKind.Rock        => None
-        case ObjectKind.Cart(c)     => Some(c#node)
-        case ObjectKind.Junction(_) => None
-        case ObjectKind.Crystal(_)  => None
-        case ObjectKind.Bridge(_)   => None
-        case ObjectKind.Sign(s)     => Some(s#node)
-    }
+    /// 種類の変わらない値（KindProfile）。種類を足す時の網羅はここが受け持つ。
+    pub def profileOf(kind: ObjectKind): KindProfile =
+        let base = { sprite = "", raises = None, reads = None, node = None, flat = false, steps = false, pushable = false };
+        match kind {
+            case ObjectKind.Chest(_)    => { sprite = "chest" | base }
+            case ObjectKind.Door(_)     => { sprite = "boss_door" | base }
+            case ObjectKind.Lever(l)    => { sprite = "lever", raises = Some(l#flag) | base }
+            case ObjectKind.Gate(g)     => { sprite = "gate_bars", reads = Some(g#flag) | base }
+            case ObjectKind.Guard(g)    => { sprite = "goblin_guard", node = Some(g#node) | base }
+            case ObjectKind.Plate(p)    => { sprite = "plate", raises = Some(p#flag), flat = true, steps = true | base }
+            case ObjectKind.Rock        => { sprite = "boulder", pushable = true | base }
+            case ObjectKind.Cart(c)     => { sprite = "minecart", node = Some(c#node) | base }
+            case ObjectKind.Junction(j) => { sprite = "rail_switch", reads = Some(j#flag), flat = true | base }
+            case ObjectKind.Crystal(c)  => { sprite = "crystal_l", raises = Some(c#flag) | base }
+            case ObjectKind.Bridge(b)   => { sprite = "stepping_stone", reads = Some(b#flag), flat = true | base }
+            case ObjectKind.Sign(s)     => { sprite = "tablet_l", node = Some(s#node) | base }
+        }
 
     /// 宝箱の中身（ObjectKind.Chest の値）。
     pub type alias ChestContents = { item = Option[ItemsDoc.ItemId], count = Int32, gold = Int32 }
@@ -397,26 +378,10 @@ mod MapDoc {
               x <- intAt("x", obj) |> Option.toOk("x が無い");
               y <- intAt("y", obj) |> Option.toOk("y が無い");
               kind <- objectKindOf(items, obj))
-        yield { id = id, x = x, y = y, sprite = spriteOr(defaultSpriteOf(kind), obj), kind = kind }
+        yield { id = id, x = x, y = y, sprite = spriteOr(profileOf(kind)#sprite, obj), kind = kind }
 
     def spriteOr(fallback: String, obj: Map[String, Json]): String =
         textAt("sprite", obj) |> Option.filter(sprite -> not String.isEmpty(sprite)) |> Option.getWithDefault(fallback)
-
-    /// 種類ごとの既定の絵（sprite を書かない行）。
-    def defaultSpriteOf(kind: ObjectKind): String = match kind {
-        case ObjectKind.Chest(_) => "chest"
-        case ObjectKind.Door(_)  => "boss_door"
-        case ObjectKind.Lever(_) => "lever"
-        case ObjectKind.Gate(_)  => "gate_bars"
-        case ObjectKind.Guard(_) => "goblin_guard"
-        case ObjectKind.Plate(_) => "plate"
-        case ObjectKind.Rock     => "boulder"
-        case ObjectKind.Cart(_)  => "minecart"
-        case ObjectKind.Junction(_) => "rail_switch"
-        case ObjectKind.Crystal(_)  => "crystal_l"
-        case ObjectKind.Bridge(_)   => "stepping_stone"
-        case ObjectKind.Sign(_)     => "tablet_l"
-    }
 
     /// kind の名前と、その種類が使う欄から ObjectKind を組む。
     def objectKindOf(items: ItemsDoc.Doc, obj: Map[String, Json]): Result[String, ObjectKind] =

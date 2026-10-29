@@ -93,6 +93,7 @@ mod World {
     ///   Bump … 壁へ向かって進めなかった / Door … 出入口を通った / Denied … 選べない項目（灰色）を選んだ /
     ///   TalkOpen … 会話か知らせのウィンドウが開いた / TalkNext … 台詞を出し切った・次へ送った /
     ///   TalkBlip(声) … 文字送りが 2 字ぶん進んだ（話し手の声の高さ）/ Lever … レバーを動かした /
+    ///   Switch … 床のスイッチが沈んで旗が立った（踏んだ・岩で押さえ揃った）/
     ///   RockPush … 岩を押して動かした / CartRide … トロッコが走り出した / CrystalLit … 水晶を点けた / CrystalReset … 水晶が全部消えた。
     pub enum Event with Eq, ToString {
         case Cursor
@@ -105,6 +106,7 @@ mod World {
         case TalkNext
         case TalkBlip(TextDoc.Voice)
         case Lever
+        case Switch
         case RockPush
         case CartRide
         case CrystalLit
@@ -217,13 +219,13 @@ mod World {
     /// 知らせ（1 枚）。reveal = 文字送り（字は reveal#text）。
     pub type alias NoticeState = { reveal = UiTypewriter.Reveal, then = NoticeThen }
 
-    /// フィールドの上に開いているウィンドウ。Shop は店の名前（rpg.shops.json の品の shop。空は村の道具屋）と開いた会話を持ち、
+    /// フィールドの上に開いているウィンドウ。Shop は店（rpg.shops.json の品の shop。None は村の道具屋）と開いた会話を持ち、
     /// 閉じるとその続きへ戻る。
     pub enum FieldWindow {
         case Closed
         case Talk(TalkState)
         case Menu(MenuPage)
-        case Shop(String, ShopPage, TalkState)
+        case Shop(Option[ShopsDoc.ShopId], ShopPage, TalkState)
         case Notice(NoticeState)
     }
 
@@ -314,8 +316,8 @@ mod World {
     // ── エンディング ──
 
     /// エンディングの間だけの値。startedAt = 入った時刻（スタッフの字はここから rules の creditSeconds かけて流れる）、
-    /// back = 下敷きに描くフィールド（報告した村。ウィンドウと暗転は閉じてある）。
-    pub type alias EndingRec = { startedAt = Clock.Time[Play], back = FieldState }
+    /// back = 下敷きに描くフィールド（報告した村。ウィンドウと暗転は閉じてある）、skipped = 決定で字を流れ切った所まで早送りした。
+    pub type alias EndingRec = { startedAt = Clock.Time[Play], back = FieldState, skipped = Bool }
 
     enum EndingOf(EndingRec)
 
@@ -395,8 +397,14 @@ mod World {
     pub def enterEnding(at: Clock.Time[Play], w: World): World = match w#scene {
         case Scene.Field(FieldOf.FieldOf(r)) =>
             let back = FieldOf.FieldOf({ window = FieldWindow.Closed, transition = None, stride = Stride.Still | r });
-            { scene = Scene.Ending(EndingOf.EndingOf({ startedAt = at, back = back })) | w }
+            { scene = Scene.Ending(EndingOf.EndingOf({ startedAt = at, back = back, skipped = false })) | w }
         case _ => w
+    }
+
+    /// スタッフの字を流れ切った所まで早送りする（エンディングでなければ何もしない）。
+    pub def skipCredits(w: World): World = match w#scene {
+        case Scene.Ending(EndingOf.EndingOf(e)) => { scene = Scene.Ending(EndingOf.EndingOf({ skipped = true | e })) | w }
+        case _                                  => w
     }
 
     /// タイトルへ戻る（仲間・ふくろ・進み具合は起動の時と同じ空に戻す。セーブと時計はそのまま。カーソルは「はじめから」）。

@@ -1,6 +1,6 @@
 // Dice — 乱数。引いた回数 dice と用途（Channel）から Hash01 で引き、引くたびに 1 足す。
 // 同じ操作の列は同じ結果になり、テスト・e2e・描き出しが毎回同じになる。
-// 回数を持つ物は World（遊びの間）と戦いの式（Battle.resolveRound が回数を受けて返す）の 2 つなので、
+// 回数を持つ物は World（遊びの間）と戦いの式（BattleActs.resolveRound が回数を受けて返す）の 2 つなので、
 // dice の欄を持つ record なら何でも受ける（World を名指ししない。戦いの式が World を使わずに済む）。
 // WhyNot: Math.Random と RandomUtil を使わない — 引いた値が World の外にあると、同じ手で流し直しても戦いや出会いが変わる
 // （bin/lint-rules/forbid.local.json が止める）。

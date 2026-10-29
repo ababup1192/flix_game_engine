@@ -8,14 +8,14 @@ mod Starts {
     pub def all(): List[Resources.Start[Res.Res, World.World]] =
         { name = "title", doc = "タイトル画面（起動の既定）。seed = 乱数の回数（bot の通しプレイの種）。saved = yes なら、field と同じ引数（party・quest・gold・items・seed）の中身のセーブがある所（「つづきから」を選べる）",
           args = Map#{"saved" => "no"}, build = title } ::
-        { name = "field", doc = "マップのマスに立つ（暗転なし）。map = assets/maps の名前・x / y = マス・facing = up / down / left / right・seed = 乱数の回数・party = 加わった仲間（luka,mina。先頭から）・quest = 依頼の段階（none / accepted / bossdown / reported）・gold = 手持ちのお金・items = ふくろの道具（yakusou:3,seisui:1）・hp = 仲間全員の HP（最大で止める）・mp = 仲間全員の MP（最大で止める）・lv = 仲間全員の Lv・steps = 次の戦いまでの歩数（0 = 出会いのあるマップの最初の 1 歩で引く。歩く手順を確かめる flow は 999 で出会わない）・flags = 立てておく旗（cave_bars。, で区切る。仕掛けの途中から始める）・opened = 開けておく立つマップの objects の id（b1_pick,b2_kurogane。宝箱・番をする者・点けた水晶）・rocks = 押して動かした岩の今のマス（b1_rock:9:20。id:x:y を , で区切る）・light = たいまつの残りの歩数（暗いマップの明かり）。省いた物は rules の始まり（仲間はルカ 1 人・依頼の前・ふくろは空・HP は最大）",
+        { name = "field", doc = "マップのマスに立つ（暗転なし）。map = assets/maps の名前・x / y = マス・facing = up / down / left / right・seed = 乱数の回数・party = 加わった仲間（luka,mina。先頭から）・quest = 依頼の段階（none / accepted / bossdown / reported）・gold = 手持ちのお金・items = ふくろの道具（yakusou:3,seisui:1）・hp = 仲間全員の HP（最大で止める）・mp = 仲間全員の MP（最大で止める）・lv = 仲間全員の Lv・steps = 次の戦いまでの歩数（0 = 出会いのあるマップの最初の 1 歩で引く。歩く手順を確かめる flow は 999 で出会わない）・flags = 立てておく旗（cave_bars。, で区切る。仕掛けの途中から始める）・opened = 開けておく立つマップの objects の id（b1_pick,b2_kurogane。宝箱・番をする者・点けた水晶）・rocks = 押して動かした岩の今のマス（b1_rock:9:20。id:x:y を , で区切る）・light = たいまつの残りの歩数（暗いマップの明かり）・trail = 隊列の後ろの仲間が立つマス（9:5,10:5。x:y を , で区切り 2 人目から順。向きは facing。省けば先頭と同じマスに重なる）。省いた物は rules の始まり（仲間はルカ 1 人・依頼の前・ふくろは空・HP は最大）",
           args = Map#{"map" => "village", "x" => "7", "y" => "8", "facing" => "up", "seed" => "0", "party" => "luka", "quest" => "none", "items" => ""}, build = field } ::
         { name = "talk", doc = "field と同じ所に立ち、node の会話を開いた所（前のマスの人がそのノードの人なら、その人に話しかけた所）",
           args = Map#{"node" => "ChiefQuest", "map" => "chief_house", "x" => "7", "y" => "5", "facing" => "up"}, build = talk } ::
         { name = "battle", doc = "field と同じ所に立ち、foes の敵と戦い始めた所（「〜が あらわれた！」）。foes = rpg.foes.json の鍵（koke,koumori。3 体まで）・背景は map の battleBack・lv = 仲間全員の Lv（省けば加わった時の Lv）。勝つとそのマスへ戻る",
           args = Map#{"foes" => "koke", "map" => "world", "x" => "20", "y" => "12", "facing" => "up", "party" => "luka"}, build = battle } ::
         { name = "ending", doc = "field と同じ所に立ち、そのフィールドを下敷きにエンディングに入った所（スタッフの字が流れ始める）。既定は報告を終えた村の泉の前",
-          args = Map#{"map" => "village", "x" => "8", "y" => "5", "facing" => "left", "party" => "luka,mina,toto", "quest" => "reported"}, build = ending } :: Nil
+          args = Map#{"map" => "village", "x" => "8", "y" => "5", "facing" => "left", "party" => "luka,mina,toto", "quest" => "reported", "trail" => "9:5,10:5"}, build = ending } :: Nil
 
     def ending(res: Res.Res, w: World.World, args: Map[String, String]): Result[String, World.World] =
         field(res, w, args) |> Result.map(placed -> World.enterEnding(World.now(placed), placed))
@@ -52,11 +52,14 @@ mod Starts {
             mp <- Map.get("mp", args) |> Option.map(text -> Int32.fromString(text) |> Option.toOk("mp は数: '${text}'") |> Result.map(Some)) |> Option.getWithDefault(Ok(None));
             steps <- intArg("steps", 0, args);
             light <- intArg("light", 0, args);
-            rocks <- rocksArg(Map.getWithDefault("rocks", "", args))
+            rocks <- rocksArg(Map.getWithDefault("rocks", "", args));
+            trail <- trailArg(Map.getWithDefault("trail", "", args))
         ) yield { party = party |> leveled(res, lv) |> (p -> hp |> Option.map(n -> withHp(res, n, p)) |> Option.getWithDefault(p))
                                |> (p -> mp |> Option.map(n -> withMp(res, n, p)) |> Option.getWithDefault(p)), progress = withFlags(Flag.listOfArg(Map.getWithDefault("flags", "", args)), Progress.withQuest(quest, w#progress)), bag = Bag.of(items, gold) | w }
             |> withOpened(id, Map.getWithDefault("opened", "", args))
-            |> World.placeField(id, { x = x, y = y }, facing) |> World.mapField(r -> { stepsToFight = steps, light = light, rocks = rocks | r }) |> Dice.withSeed(seed))
+            |> World.placeField(id, { x = x, y = y }, facing)
+            |> World.mapField(r -> { stepsToFight = steps, light = light, rocks = rocks, trail = trail |> List.map(cell -> (cell, facing)) | r })
+            |> Dice.withSeed(seed))
             |> Result.flatMap(standable(res))
 
     /// タイトル。saved = yes なら field と同じ引数で組んだ中身をセーブにする（宿で書いた後に起動し直した所）。
@@ -151,6 +154,15 @@ mod Starts {
                 case _ => None
             } |> Option.toOk("rocks は id:x:y を , で区切る: '${entry}'"))
             |> Result.sequence |> Result.map(List.toMap)
+
+    /// trail= のマスの並び（x:y を , で区切る。読めない 1 つがあれば Err）。
+    def trailArg(text: String): Result[String, List[Grid.Cell]] =
+        text |> String.splitOn(substr = ",") |> List.map(String.trim) |> List.filter(entry -> not String.isEmpty(entry))
+            |> List.map(entry -> match String.splitOn(substr = ":", entry) {
+                case x :: y :: Nil => forM (cx <- Int32.fromString(x); cy <- Int32.fromString(y)) yield { x = cx, y = cy }
+                case _             => None
+            } |> Option.toOk("trail は x:y を , で区切る: '${entry}'"))
+            |> Result.sequence
 
     def standable(res: Res.Res, w: World.World): Result[String, World.World] =
         let cell = World.fieldRecOf(w) |> Option.map(r -> "(${r#hero#x}, ${r#hero#y})") |> Option.getWithDefault("");

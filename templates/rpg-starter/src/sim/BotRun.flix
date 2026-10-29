@@ -27,7 +27,7 @@ mod BotRun {
     type alias Loop = { h = Run, bot = Bot.State, step = App.StepState, prev = Set[Key], frames = Int32,
                         fieldTime = Float64, best = Int32, bestAt = Float64, goal = String,
                         battles = Map[String, Int32], lvAt = List[(String, Int32)], wipes = List[String], lastMap = String,
-                        moveSeconds = Float64, windows = Int32, log = List[Logged] }
+                        moveSeconds = Float64, windows = Int32, log = List[Logged], ending = Option[{ world = World.World, frames = Int32 }] }
 
     /// playthrough.flow に書く物: Played = 流した 1 フレームとその後の指紋の元 / Note = そのまま書く 1 行（区間の頭の mark と expect）。
     enum Logged {
@@ -99,15 +99,18 @@ mod BotRun {
         let h = App.startOrBug(app, "title", startArgsOf(seed));
         loop(app, seed, { h = h, bot = Bot.initial(), step = App.freshStepState(), prev = Set.empty(), frames = 0,
                           fieldTime = 0.0, best = 1000000, bestAt = 0.0, goal = "", battles = Map.empty(), lvAt = Nil, wipes = Nil, lastMap = "",
-                          moveSeconds = 0.0, windows = 0, log = Nil })
+                          moveSeconds = 0.0, windows = 0, log = Nil, ending = None })
 
     /// 1 本の始まりの引数（Starts の title。dice の始めの値 = 種）。
     def startArgsOf(seed: Int32): Map[String, String] = Map#{"seed" => "${seed}"}
 
-    def loop(app: App.App[Run, {}], seed: Int32, l: Loop): Report =
-        let res = l#h#resources;
-        let w = l#h#world;
-        if (Bot.isDone(w)) reportOf(seed, true, "エンディングに着いた", l)
+    /// 1 フレームずつ流す。エンディングに着いたら、その時の World とフレームを数え（表の値はそこまで）、字が流れ切ってタイトルへ
+    /// 戻るまで流し続ける（通しの手はタイトルまで）。
+    def loop(app: App.App[Run, {}], seed: Int32, l0: Loop): Report =
+        let res = l0#h#resources;
+        let w = l0#h#world;
+        let l = if (Option.isEmpty(l0#ending) and Bot.isAtEnding(w)) { ending = Some({ world = w, frames = l0#frames }) | l0 } else l0;
+        if (Option.nonEmpty(l#ending) and World.sceneKindOf(w) == World.SceneKind.Title) reportOf(seed, true, "エンディングからタイトルへ戻った", l)
         else if (l#frames >= maxFrames()) reportOf(seed, false, "打ち切り（${maxFrames()} フレーム）", l)
         else if (l#fieldTime - l#bestAt > stuckSeconds()) reportOf(seed, false, "詰んだ（${stuckSeconds()} 秒 目的地に近づかない）", l)
         else {
@@ -150,9 +153,11 @@ mod BotRun {
 
     def leadLvOf(w: World.World): Int32 = Party.statsList(w#party) |> List.head |> Option.map(row -> snd(row)#lv) |> Option.getWithDefault(0)
 
+    /// 1 本の結果。エンディングに着いていれば、その時の World とフレームで数える（タイトルへ戻ると仲間とふくろは空に戻る）。
     def reportOf(seed: Int32, done: Bool, reason: String, l: Loop): Report =
-        let w = l#h#world;
-        { seed = seed, done = done, reason = reason, frames = l#frames, playSeconds = Clock.secondsOf(World.now(w)),
+        let w = l#ending |> Option.map(e -> e#world) |> Option.getWithDefault(l#h#world);
+        let frames = l#ending |> Option.map(e -> e#frames) |> Option.getWithDefault(l#frames);
+        { seed = seed, done = done, reason = reason, frames = frames, playSeconds = Clock.secondsOf(World.now(w)),
           battles = l#battles, lvAt = l#lvAt, wipes = l#wipes,
           lastLv = Party.statsList(w#party) |> List.map(match (m, s) -> {
               let gear = (s#weapon :: s#armor :: Nil) |> List.filterMap(x -> x) |> List.map(ItemsDoc.keyOf) |> List.join("+");
@@ -177,6 +182,7 @@ mod BotRun {
                     case Logged.Played(frame, fp) => Flow.Record.frame(rec, frame, Some(fp))
                     case Logged.Note(text)        => Flow.Record.line(rec, text)
                 });
+                if (r#done) Flow.Record.line(rec, "expect scene=Title") else ();
                 Flow.Record.close(rec)
         }
 
@@ -195,19 +201,33 @@ mod BotRun {
         "${total / 60}:${if (Int32.modulo(total, 60) < 10) "0" else ""}${Int32.modulo(total, 60)}"
 
     def reportText(reports: List[Report], seconds: Float64): String =
-        let header = "# 自動の通しプレイ（make bot）\n\n" +
-            "タイトルからエンディングまで（ボスを倒して村長に報告する）。方針は src/sim/Bot.flix（戦いは Bot.battlePlans: HP 35% 未満の仲間を回復の呪文 → やくそう・逃げられない組では攻めの呪文 → ばくだんいし・ほかは たたかう・にげない。" +
-            "村の外で HP 60% 未満ならフィールドで回復の呪文 → やくそう・村で HP 60% 未満なら宿）。\n" +
-            "流した時間: ${minutes(seconds)}（${List.length(reports)} 本）\n" +
-            "人の目安 = 歩き・暗転・トロッコの秒（bot と同じ）+ 戦い × ${humanBattleSeconds()} 秒 + 会話と知らせのウィンドウ × ${humanWindowSeconds()} 秒（bot は文字送りと伝言をすぐ送るので、ゲーム内時間は人より短い）。\n\n" +
-            "| 種 | 結果 | ゲーム内時間 | 人の目安（歩き / ウィンドウの数） | フレーム | 戦った数（world / B1 / B2 / B3 / ボス / 帰り） | 区間に入った時の Lv（world / B1 / B2 / B3 / ボス / 帰り） | 全滅 | 終わりの Lv（装備） | お金 | 終わりの使う物 / MP |\n" +
-            "|---|---|---|---|---|---|---|---|---|---|---|\n";
+        let sectionNames = "（world / B1 / B2 / B3 / ボス / 帰り）";
+        let columns = "種" :: "結果" :: "ゲーム内時間" :: "人の目安（歩き / ウィンドウの数）" :: "フレーム" :: "戦った数${sectionNames}" ::
+                      "区間に入った時の Lv${sectionNames}" :: "全滅" :: "終わりの Lv（装備）" :: "お金" :: "終わりの使う物 / MP" :: Nil;
+        let header = List.join("\n",
+            "# 自動の通しプレイ（make bot）" ::
+            "" ::
+            "タイトルからエンディングまで（ボスを倒して村長に報告する）。方針は src/sim/Bot.flix（戦いは Bot.battlePlans: HP 35% 未満の仲間を" +
+            "回復の呪文 → やくそう・逃げられない組では攻めの呪文 → ばくだんいし・ほかは たたかう・にげない。" +
+            "村の外で HP 60% 未満ならフィールドで回復の呪文 → やくそう・村で HP 60% 未満なら宿）。" ::
+            "流した時間: ${minutes(seconds)}（${List.length(reports)} 本）" ::
+            "人の目安 = 歩き・暗転・トロッコの秒（bot と同じ）+ 戦い × ${humanBattleSeconds()} 秒 + 会話と知らせのウィンドウ × ${humanWindowSeconds()} 秒" +
+            "（bot は文字送りと伝言をすぐ送るので、ゲーム内時間は人より短い）。" ::
+            "" ::
+            tableRow(columns) ::
+            "|" + (columns |> List.map(_ -> "---|") |> List.join("")) ::
+            "" :: Nil);
         let rows = reports |> List.map(r -> {
             let fights = sections() |> List.map(s -> "${Map.getWithDefault(s, 0, r#battles)}") |> List.join(" / ");
             let lvs = sections() |> List.map(s -> List.find(p -> fst(p) == s, r#lvAt) |> Option.map(p -> "${snd(p)}") |> Option.getWithDefault("-")) |> List.join(" / ");
             let wipes = if (List.isEmpty(r#wipes)) "0" else "${List.length(r#wipes)}（${List.join("・", r#wipes)}）";
-            "| ${r#seed} | ${if (r#done) "着いた" else r#reason} | ${minutes(r#playSeconds)} | ${minutes(humanSecondsOf(r))}（${minutes(r#moveSeconds)} / ${r#windows}） | ${r#frames} | ${fights} | ${lvs} | ${wipes} | ${r#lastLv} | ${r#gold} | ${r#supplies} |"
+            tableRow("${r#seed}" :: (if (r#done) "着いた" else r#reason) :: minutes(r#playSeconds) ::
+                     "${minutes(humanSecondsOf(r))}（${minutes(r#moveSeconds)} / ${r#windows}）" :: "${r#frames}" :: fights :: lvs :: wipes ::
+                     r#lastLv :: "${r#gold}" :: r#supplies :: Nil)
         }) |> List.join("\n");
         let stuck = reports |> List.filter(r -> not r#done) |> List.map(r -> "- 種 ${r#seed}: ${r#reason} — `${r#fingerprint}`") |> List.join("\n");
         header + rows + "\n" + (if (String.isEmpty(stuck)) "" else "\n## 止まった所\n\n" + stuck + "\n")
+
+    /// 表の 1 行（| a | b |）。
+    def tableRow(cells: List[String]): String = "| ${List.join(" | ", cells)} |"
 }

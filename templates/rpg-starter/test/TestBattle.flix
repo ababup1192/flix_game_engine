@@ -77,8 +77,8 @@ mod TestBattle {
         let b = startBattle(res, Fixtures.foeId(res, "koke") :: Fixtures.foeId(res, "koumori") :: Nil,
                              partyAt(res, Member.Member.Luka :: Member.Member.Mina :: Nil, 2));
         let plans = Map#{Member.Member.Luka => Battle.Plan.Attack(1), Member.Member.Mina => Battle.Plan.Defend};
-        Assert.assertEq(expected = Fixtures.roundShapeOf(res, Battle.resolveRound(res, b, plans, 50)),
-            Fixtures.roundShapeOf(res, Battle.resolveRound(res, b, plans, 50)))
+        Assert.assertEq(expected = Fixtures.roundShapeOf(res, BattleActs.resolveRound(res, b, plans, 50)),
+            Fixtures.roundShapeOf(res, BattleActs.resolveRound(res, b, plans, 50)))
 
     /// guard した敵へのダメージは、guard しない時の半分（切り上げ）。技の行だけを替えた同じ乱数の 2 戦で比べる。
     @Test
@@ -88,7 +88,7 @@ mod TestBattle {
             |> Option.map(doc -> Res.withFoeMoves(doc, base))
             |> Option.flatMap(res -> {
                 let b = startBattle(res, Fixtures.foeId(res, "koke") :: Nil, partyAt(res, Member.Member.Luka :: Nil, 1));
-                let (after, _, _) = Battle.resolveRound(res, b, Map#{Member.Member.Luka => Battle.Plan.Attack(0)}, 0);
+                let (after, _, _) = BattleActs.resolveRound(res, b, Map#{Member.Member.Luka => Battle.Plan.Attack(0)}, 0);
                 Fixtures.foeHpsOf(after) |> List.head |> Option.map(hp -> FoesDoc.foeOrBlank(res#foes, Fixtures.foeId(res, "koke"))#hp - hp)
             });
         Assert.assertEq(expected = lossWith("attack") |> Option.map(n -> (n + 1) / 2), lossWith("guard"))
@@ -99,7 +99,7 @@ mod TestBattle {
         let res = Res.load();
         let firstLine = key -> {
             let b = startBattle(res, Fixtures.foeId(res, key) :: Nil, partyAt(res, Member.Member.Luka :: Nil, 1));
-            let (_, beats, _) = Battle.resolveRound(res, b, Map#{Member.Member.Luka => Battle.Plan.Defend}, 0);
+            let (_, beats, _) = BattleActs.resolveRound(res, b, Map#{Member.Member.Luka => Battle.Plan.Defend}, 0);
             beats |> List.head |> Option.flatMap(beat -> List.head(Fixtures.beatLinesOf(res, beat)))
         };
         Assert.assertEq(expected = (Some(line(res, TextDoc.BattleText.Defend, (TextDoc.Placeholder.Name, nameOf(res, Member.Member.Luka)) :: Nil)),
@@ -112,7 +112,7 @@ mod TestBattle {
         let res = Res.load();
         let b = startBattle(res, Fixtures.foeId(res, "koke") :: Fixtures.foeId(res, "koke") :: Nil,
                              partyAt(res, Member.Member.Luka :: Member.Member.Mina :: Nil, 10));
-        let (after, _, _) = Battle.resolveRound(res, b, Map#{Member.Member.Luka => Battle.Plan.Attack(1), Member.Member.Mina => Battle.Plan.Attack(1)}, 0);
+        let (after, _, _) = BattleActs.resolveRound(res, b, Map#{Member.Member.Luka => Battle.Plan.Attack(1), Member.Member.Mina => Battle.Plan.Attack(1)}, 0);
         Assert.assertEq(expected = Battle.Outcome.Won, Battle.outcomeOf(after))
 
     /// 逃げる率は 0.1..0.95 に収まる（すばやさ 200 の敵には 0.1・すばやさ 0 の敵へ Lv10 のルカは 0.95）。
@@ -129,7 +129,7 @@ mod TestBattle {
     def testNoFleeUsesTheTurn(): Unit \ Assert + Fs.FileRead =
         let res = Res.load();
         let b = startBattle(res, Fixtures.foeId(res, "gemeater") :: Nil, partyAt(res, Member.Member.Luka :: Nil, 10));
-        let (after, beats, _) = Battle.resolveRound(res, b, Map#{Member.Member.Luka => Battle.Plan.Flee}, 0);
+        let (after, beats, _) = BattleActs.resolveRound(res, b, Map#{Member.Member.Luka => Battle.Plan.Flee}, 0);
         let expected = line(res, TextDoc.BattleText.Run, (TextDoc.Placeholder.Name, nameOf(res, Member.Member.Luka)) :: Nil) :: line(res, TextDoc.BattleText.NoFlee, Nil) :: Nil;
         Assert.assertEq(expected = (true, Battle.Outcome.Ongoing),
             (List.memberOf(expected, Fixtures.transcriptOf(res, beats)), Battle.outcomeOf(after)))

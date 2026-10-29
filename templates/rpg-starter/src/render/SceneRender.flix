@@ -94,11 +94,11 @@ mod SceneRender {
             // ボスを倒して村へ帰り、泉の上の村長に報告して「いずみに みずが もどった！ 〜G を うけとった」を出し切った所
             // （水の戻った泉と、まわりに集まった村人）。
             case "clear"    => started(res, "talk", Map#{"node" => "ChiefReport", "map" => "village", "x" => "8", "y" => "5", "facing" => "left",
-                                                       "party" => "luka,mina,toto", "quest" => "bossdown"})
+                                                       "party" => "luka,mina,toto", "quest" => "bossdown", "trail" => "9:5,10:5"})
                 |> Option.map(confirmTimes(res, 5)) |> Option.map(at)
             // エンディング: 報告を終えた村を下敷きに、スタッフの字が 3 割ほど流れた所。
             case "ending"   => started(res, "ending", Map#{"map" => "village", "x" => "8", "y" => "5", "facing" => "left", "party" => "luka,mina,toto",
-                                                        "quest" => "reported", "lv" => "7", "gold" => "640"})
+                                                        "quest" => "reported", "lv" => "7", "gold" => "640", "trail" => "9:5,10:5"})
                 |> Option.map(w -> playSeconds(res, RulesDoc.rec(res#rules)#creditSeconds * 0.3, w)) |> Option.map(at)
             case _         => None
         }

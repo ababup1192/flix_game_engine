@@ -53,7 +53,7 @@ mod Talk {
     ///   Join(仲間)  … <<join mina>>: 仲間に加える（加わっていれば何もしない）
     ///   Give(道具, 個数) … <<give yakusou 3>>: ふくろへ
     ///   Gold(数)    … <<gold 10>>: お金を足す（負なら引く。0 で止まる）
-    ///   Shop        … <<shop>>: 道具屋を開く（閉じたら会話の続きへ）
+    ///   Shop(店)    … <<shop>> / <<shop 名前>>: 店を開く（None は村の道具屋・名前は rpg.shops.json の goods の shop。閉じたら会話の続きへ）
     ///   Inn         … <<inn>>: 宿代を払って泊まる（暗転 → 全快 → セーブ → 会話の続きへ。払える時だけ流す）
     ///   Fight(敵, 勝った後のノード) … <<fight 敵 ノード>>: 会話を閉じて戦う。勝ったらフィールドへ戻ってそのノードを開く（ノードは省ける）
     ///   Take(道具, 個数) … <<take totostaff 1>>: ふくろから減らす（無い分は 0 で止まる）
@@ -67,7 +67,7 @@ mod Talk {
         case Join(Member.Member)
         case Give(ItemsDoc.ItemId, Int32)
         case Gold(Int32)
-        case Shop(String)
+        case Shop(Option[ShopsDoc.ShopId])
         case Inn
         case Fight(FoesDoc.FoeId, Option[String])
         case Take(ItemsDoc.ItemId, Int32)
@@ -106,8 +106,12 @@ mod Talk {
     def questVerbOf(verb: String): Option[Quest.Quest] =
         questVerbTable() |> List.find(row -> fst(row) == verb) |> Option.map(snd)
 
+    /// コマンドの引数を引く Doc（Res.Res をそのまま渡せる）。
+    pub type alias Docs[r: RecordRow] = { items = ItemsDoc.Doc, foes = FoesDoc.Doc, shops = ShopsDoc.Doc | r }
+
     /// コマンドを読む。名前・引数の数・Doc で引けない引数は理由を返す（会話の場所つき）。
-    pub def commandOf(items: ItemsDoc.Doc, foes: FoesDoc.Doc, c: Yarn.Command): Result[String, Command] =
+    pub def commandOf(docs: Docs[r], c: Yarn.Command): Result[String, Command] =
+        let (items, foes) = (docs#items, docs#foes);
         let at = "（${Yarn.sourceText(c#source)}）";
         match (c#name, c#args) {
             case ("quest", verb :: Nil) =>
@@ -121,8 +125,10 @@ mod Talk {
                 ) yield Command.Give(id, n)
             case ("gold", amount :: Nil) =>
                 Int32.fromString(amount) |> Option.map(Command.Gold) |> Option.toOk("<<gold>> の数は数: '${amount}'${at}")
-            case ("shop", Nil) => Ok(Command.Shop(""))
-            case ("shop", name :: Nil) => Ok(Command.Shop(name))
+            case ("shop", Nil) => Ok(Command.Shop(None))
+            case ("shop", name :: Nil) =>
+                ShopsDoc.idOf(name, docs#shops) |> Option.map(id -> Command.Shop(Some(id)))
+                    |> Option.toOk("<<shop>> の店 '${name}' は ${ShopsDoc.path()} の goods の shop に無い${Suggest.hint(name, ShopsDoc.namesOf(docs#shops))}${at}")
             case ("heal", Nil) => Ok(Command.Heal)
             case ("ride", Nil) => Ok(Command.Ride)
             case ("inn", Nil)  => Ok(Command.Inn)
@@ -144,26 +150,65 @@ mod Talk {
         FoesDoc.idOf(foes, foe) |> Option.map(id -> Command.Fight(id, node))
             |> Option.toOk("<<fight>> の敵 '${foe}' は ${FoesDoc.path()} に無い${Suggest.hint(foe, FoesDoc.keysOf(foes))}${at}")
 
-    /// 会話の食い違い: 読めないコマンド・<<fight>> の勝った後のノードが無い・<<open>> の物がどのマップの objects にも無い
-    /// （ids#objects = 全部のマップの objects の id）・<<warp>> の出口がどのマップの exits にも無い（ids#exits = 全部のマップの exits の id）・
-    /// World から写す変数への <<set>>（書いても次の写しで消える）。
+    /// 会話の食い違い: 読めないコマンド・<<fight>> の勝った後のノードが無い・<<open>> の物 / <<warp>> の出口が、そのノードが流れうる
+    /// マップ（idsAt）の objects / exits に無い・World から写す変数への <<set>>（書いても次の写しで消える）。
     /// Res.problemsOf が起動時に言い、テストは空であることを見る。
-    pub def problemsOf(items: ItemsDoc.Doc, foes: FoesDoc.Doc, ids: { objects = Set[String], exits = Set[String] }, program: Yarn.Program): List[String] =
-        let synced = syncedVars(items) |> List.map(varNameOf) |> List.toSet;
+    pub def problemsOf(docs: Docs[r], maps: MapDoc.Table, program: Yarn.Program): List[String] =
+        let synced = syncedVars(docs#items) |> List.map(varNameOf) |> List.toSet;
         let nodes = Yarn.nodeNames(program) |> List.toSet;
-        let commandProblems = commandsOf(program) |> List.filterMap(c -> match commandOf(items, foes, c) {
-            case Ok(Command.Fight(_, Some(node))) if not Set.memberOf(node, nodes) =>
-                Some("[talk] <<fight>> の勝った後のノード '${node}' が会話に無い（${Yarn.sourceText(c#source)}）")
-            case Ok(Command.Open(id)) if not Set.memberOf(id, ids#objects) =>
-                Some("[talk] <<open>> の物 '${id}' がどのマップの objects にも無い（${Yarn.sourceText(c#source)}）")
-            case Ok(Command.Warp(id)) if not Set.memberOf(id, ids#exits) =>
-                Some("[talk] <<warp>> の出口 '${id}' がどのマップの exits にも無い（${Yarn.sourceText(c#source)}）")
+        let reach = nodesByMapOf(maps, program);
+        let places = maps |> Map.map(doc -> placeOf(MapDoc.rec(doc)));
+        let commandProblems = commandsByNodeOf(program) |> List.filterMap(match (node, c) -> match commandOf(docs, c) {
+            case Ok(Command.Fight(_, Some(win))) if not Set.memberOf(win, nodes) =>
+                Some("[talk] <<fight>> の勝った後のノード '${win}' が会話に無い（${Yarn.sourceText(c#source)}）")
+            case Ok(Command.Open(id)) if not Set.memberOf(id, idsAt(node, reach, places)#objects) =>
+                Some("[talk] <<open>> の物 '${id}' が、ノード ${node} の流れうるマップの objects に無い（${Yarn.sourceText(c#source)}）")
+            case Ok(Command.Warp(id)) if not Set.memberOf(id, idsAt(node, reach, places)#exits) =>
+                Some("[talk] <<warp>> の出口 '${id}' が、ノード ${node} の流れうるマップの exits に無い（${Yarn.sourceText(c#source)}）")
             case Ok(_)       => None
             case Err(reason) => Some("[talk] ${reason}")
         });
         let setProblems = setsOf(program) |> List.filter(pair -> Set.memberOf(fst(pair), synced))
             |> List.map(match (name, at) -> "[talk] ${name} は World から写す変数なので <<set>> で書かない（${at}）。コマンドで World を変える");
-        List.flatten(commandProblems :: setProblems :: varNameProblems(items) :: Nil)
+        List.flatten(commandProblems :: setProblems :: varNameProblems(docs#items) :: Nil)
+
+    /// マップにある物と出口の id（<<open>> / <<warp>> が引ける物）。
+    type alias Place = { objects = Set[String], exits = Set[String] }
+
+    def placeOf(m: MapDoc.Rec): Place =
+        { objects = m#objects |> List.map(o -> o#id) |> List.toSet, exits = m#exits |> List.map(e -> e#id) |> List.toSet }
+
+    /// node が流れうるマップ（reach でそのノードに届くマップ）の物と出口の id を合わせた物。
+    /// WhyNot: どのマップからも届かないノードは全部のマップの id で見る — コードが名指しで開くノード（Starts の talk など）は、
+    /// 開く所が地図に書いていないので、流れうるマップを決められない。
+    def idsAt(node: String, reach: Map[String, Set[String]], places: Map[String, Place]): Place =
+        let here = reach |> Map.filter(reached -> Set.memberOf(node, reached)) |> Map.keysOf;
+        let chosen = if (Set.isEmpty(here)) places else places |> Map.filterWithKey((name, _) -> Set.memberOf(name, here));
+        chosen |> Map.valuesOf |> List.foldLeft((acc, p) -> { objects = Set.union(acc#objects, p#objects), exits = Set.union(acc#exits, p#exits) },
+                                                 { objects = Set.empty(), exits = Set.empty() })
+
+    /// マップごとに、そこで流れうるノード: マップが開くノード（entryNodesOf）から、<<jump>> と <<fight>> の勝った後のノードをたどった物。
+    def nodesByMapOf(maps: MapDoc.Table, program: Yarn.Program): Map[String, Set[String]] =
+        let next = nextNodesOf(program);
+        maps |> Map.map(doc -> reachedFrom(next, entryNodesOf(MapDoc.rec(doc)), Set.empty()))
+
+    /// ノードから移る先のノード（<<jump>> と <<fight>> の勝った後のノード。勝つと同じマップのフィールドへ戻って開く）。
+    def nextNodesOf(program: Yarn.Program): Map[String, List[String]] =
+        Yarn.nodeNames(program)
+            |> List.filterMap(name -> Yarn.nodeOf(name, program) |> Option.map(node -> (name, statementsIn(node#body) |> List.filterMap(nextNodeIn))))
+            |> List.toMap
+
+    def nextNodeIn(statement: Yarn.Statement): Option[String] = match statement {
+        case Yarn.Statement.Jump(target, _)                    => Some(target)
+        case Yarn.Statement.Command(c) if c#name == "fight"    => List.drop(1, c#args) |> List.head
+        case _                                                 => None
+    }
+
+    def reachedFrom(next: Map[String, List[String]], todo: List[String], seen: Set[String]): Set[String] = match todo {
+        case Nil                                       => seen
+        case node :: rest if Set.memberOf(node, seen)  => reachedFrom(next, rest, seen)
+        case node :: rest                              => reachedFrom(next, List.append(Map.getWithDefault(node, Nil, next), rest), Set.insert(node, seen))
+    }
 
     /// World から写す変数の名前の重なり（仲間の名前が quest や gold だと、$quest を 2 つの値で書き合う）。
     def varNameProblems(items: ItemsDoc.Doc): List[String] =
@@ -233,12 +278,14 @@ mod Talk {
             case _                        => None
         })
 
-    /// 会話の全部のゲームのコマンド（wait は除く）。
-    def commandsOf(program: Yarn.Program): List[Yarn.Command] =
-        statementsOf(program) |> List.filterMap(statement -> match statement {
-            case Yarn.Statement.Command(c) if c#name != "wait" => Some(c)
-            case _                                             => None
-        })
+    /// 会話の全部のゲームのコマンド（wait は除く）と、それを書いたノードの名前（ノードの名前の順）。
+    def commandsByNodeOf(program: Yarn.Program): List[(String, Yarn.Command)] =
+        Yarn.nodeNames(program)
+            |> List.filterMap(name -> Yarn.nodeOf(name, program) |> Option.map(node -> (name, statementsIn(node#body))))
+            |> List.flatMap(match (name, statements) -> statements |> List.filterMap(statement -> match statement {
+                case Yarn.Statement.Command(c) if c#name != "wait" => Some((name, c))
+                case _                                             => None
+            }))
 
     /// <<set>> で書いている変数と、その場所（「ファイル:行」）。
     def setsOf(program: Yarn.Program): List[(String, String)] =
@@ -251,12 +298,15 @@ mod Talk {
 
     /// コードが開くノード: マップの人の node・出入口の gateNode・イベントのマスの node・番をする者の node（名前の順・重なりなし）。
     def openedNodesOf(maps: MapDoc.Table): List[String] =
-        let docs = maps |> Map.valuesOf |> List.map(MapDoc.rec);
-        let npcNodes = docs |> List.flatMap(m -> m#npcs) |> List.map(npc -> npc#node);
-        let gateNodes = docs |> List.flatMap(m -> m#exits) |> List.filterMap(exit -> exit#gate |> Option.map(gate -> gate#node));
-        let eventNodes = docs |> List.flatMap(m -> m#events) |> List.map(e -> e#node);
-        let guardNodes = docs |> List.flatMap(m -> m#objects) |> List.filterMap(o -> MapDoc.guardNodeOf(o#kind));
-        List.flatten(npcNodes :: gateNodes :: eventNodes :: guardNodes :: Nil) |> List.filter(node -> not String.isEmpty(node)) |> List.toSet |> Set.toList
+        maps |> Map.valuesOf |> List.flatMap(doc -> entryNodesOf(MapDoc.rec(doc))) |> List.toSet |> Set.toList
+
+    /// マップが開くノード: 人の node・出入口の gateNode・イベントのマスの node・物の node（空の名前は除く）。
+    def entryNodesOf(m: MapDoc.Rec): List[String] =
+        let npcNodes = m#npcs |> List.map(npc -> npc#node);
+        let gateNodes = m#exits |> List.filterMap(exit -> exit#gate |> Option.map(gate -> gate#node));
+        let eventNodes = m#events |> List.map(e -> e#node);
+        let objectNodes = m#objects |> List.filterMap(o -> MapDoc.profileOf(o#kind)#node);
+        List.flatten(npcNodes :: gateNodes :: eventNodes :: objectNodes :: Nil) |> List.filter(node -> not String.isEmpty(node))
 
     /// 会話の語彙（bin/fge yarn build の検査の材料）。speakers は rpg.text.json の話し手・nodes はコードが開くノード・commands はコマンドの名前。
     pub def vocabOf(maps: MapDoc.Table, text: TextDoc.Doc): Yarn.Vocab =

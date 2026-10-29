@@ -1,23 +1,31 @@
 // WorldTitle — タイトルのメニューの規則（カーソル・選ぶ）と、エンディングからタイトルへ戻る規則。
 //   Field ──<<ending>>──▶ 暗転（TransitionThen.Ending）──▶ Ending（スタッフの字が rules の creditSeconds かけて流れる）
-//     ──流れ切った後の決定──▶ Title（セーブはそのまま。「つづきから」は最後に泊まった宿から）
+//     ──流れている間の決定──▶ 流れ切った所まで早送り ──流れ切った後の決定──▶ Title（セーブはそのまま。「つづきから」は最後に泊まった宿から）
 mod WorldTitle {
     use fge::{Clock, Emit}
     use World.TitleItem
 
     // ── エンディング ──
 
-    /// スタッフの字の流れた割合（0..1。エンディングでなければ 0）。
+    /// スタッフの字の流れた割合（0..1。早送りした後は 1。エンディングでなければ 0）。
     pub def creditProgressOf(res: Res.Res, w: World.World): Float64 =
         let length = RulesDoc.rec(res#rules)#creditSeconds;
         World.endingRecOf(w)
-            |> Option.map(e -> if (length <= 0.0) 1.0 else Float64.min(1.0, Clock.since(e#startedAt, World.now(w)) / length))
+            |> Option.map(e -> if (e#skipped or length <= 0.0) 1.0 else Float64.min(1.0, Clock.since(e#startedAt, World.now(w)) / length))
             |> Option.getWithDefault(0.0)
 
-    /// エンディングの決定: 字が流れ切っていればタイトルへ（流れている間は何もしない）。[遷移: Ending→Title]
-    /// WhyNot: 流れている間の決定で飛ばさない — 報告の台詞を送る決定の連打が、そのままエンディングを飛ばしてしまう。
+    /// エンディングの決定: 入ってから rules の creditSkipAfter 秒までは受けず、その後は、字が流れている間なら流れ切った所まで
+    /// 早送りし、流れ切っていればタイトルへ。[遷移: Ending→Title]
+    /// WhyNot: 入ってすぐの決定を受けない・1 回目でタイトルへ飛ばさない — 報告の台詞を送る決定の連打が、そのまま字を読ませずに
+    /// エンディングを終えてしまう。
     pub def confirmEnding(res: Res.Res, w: World.World): World.World \ Emit[World.Event] =
-        if (creditProgressOf(res, w) >= 1.0) { Emit.emit(World.Event.Confirm); World.toTitle(w) } else w
+        let settled = World.endingRecOf(w)
+            |> Option.exists(e -> Clock.since(e#startedAt, World.now(w)) >= RulesDoc.rec(res#rules)#creditSkipAfter);
+        if (not settled) w
+        else {
+            Emit.emit(World.Event.Confirm);
+            if (creditProgressOf(res, w) >= 1.0) World.toTitle(w) else World.skipCredits(w)
+        }
 
     /// 上から並べた項目。
     pub def items(): List[TitleItem] = TitleItem.NewGame :: TitleItem.Continue :: Nil

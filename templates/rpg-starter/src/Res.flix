@@ -81,17 +81,15 @@ mod Res {
         let mapProblems = res#maps |> Map.toList |> List.flatMap(match (name, map) ->
             List.flatten(exitProblemsOf(res#maps, nodes, name, MapDoc.rec(map)#exits) :: npcProblemsOf(nodes, name, MapDoc.rec(map)#npcs) ::
                          objectProblemsOf(nodes, name, MapDoc.rec(map)#objects) :: eventProblemsOf(nodes, name, MapDoc.rec(map)#events) :: Nil));
-        let objectIds = res#maps |> Map.valuesOf |> List.flatMap(map -> MapDoc.rec(map)#objects) |> List.map(o -> o#id) |> List.toSet;
-        let exitIds = res#maps |> Map.valuesOf |> List.flatMap(map -> MapDoc.rec(map)#exits) |> List.map(e -> e#id) |> List.toSet;
         List.flatten(docProblemsOf(res) :: startProblem :: homeProblemOf(res) :: mapProblems :: flagProblemsOf(res#maps) :: itemRefProblemsOf(res) ::
-                     foeRefProblemsOf(res) :: spellRefProblemsOf(res) :: Talk.problemsOf(res#items, res#foes, { objects = objectIds, exits = exitIds }, res#dialogue) :: Nil)
+                     foeRefProblemsOf(res) :: spellRefProblemsOf(res) :: Talk.problemsOf(res, res#maps, res#dialogue) :: Nil)
 
     /// 旗の食い違い: 旗を読む物（開く物・分かれ目・飛び石）の旗を立てる物（レバー・床のスイッチ・水晶）がどのマップにも無い
     /// （書き損じた旗で、読む物が黙ってずっと閉じたまま・開いたまま）。
     pub def flagProblemsOf(maps: MapDoc.Table): List[String] =
         let objects = maps |> Map.toList |> List.flatMap(match (name, map) -> MapDoc.rec(map)#objects |> List.map(o -> (name, o)));
-        let raised = objects |> List.filterMap(pair -> MapDoc.raisedFlagOf(snd(pair)#kind)) |> List.toSet;
-        objects |> List.filterMap(match (name, o) -> MapDoc.readFlagOf(o#kind)
+        let raised = objects |> List.filterMap(pair -> MapDoc.profileOf(snd(pair)#kind)#raises) |> List.toSet;
+        objects |> List.filterMap(match (name, o) -> MapDoc.profileOf(o#kind)#reads
             |> Option.filter(flag -> not Set.memberOf(flag, raised))
             |> Option.map(flag -> "[map] ${name} の物 '${o#id}' の旗 '${Flag.nameOf(flag)}' を立てる物（レバー・床のスイッチ・水晶）がどのマップにも無い"))
 

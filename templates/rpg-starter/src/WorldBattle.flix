@@ -1,4 +1,4 @@
-// WorldBattle — 戦いの見せ方の規則（すべて純粋）: コマンドを選ぶ・1 ターンを Battle.resolveRound に解かせる・
+// WorldBattle — 戦いの見せ方の規則（すべて純粋）: コマンドを選ぶ・1 ターンを BattleActs.resolveRound に解かせる・
 // 返った Beat を遊びの時計で 1 枚ずつ見せる・勝ち / 全滅 / 逃げ切りでフィールドへ戻る。
 // 式（ダメージ・経験値の配り方・レベルアップ・伝言の Beat）は Battle（時計を見ない）。ここは時計と Phase だけを持つ。
 //
@@ -345,7 +345,7 @@ mod WorldBattle {
 
     /// 選び終えた行動（r#plans）で 1 ターンを解き、Beat を見せる。
     def resolve(res: Res.Res, r: BattleRec, w: World.World): World.World =
-        let (b, beats, dice) = Battle.resolveRound(res, r#battle, r#plans, w#dice);
+        let (b, beats, dice) = BattleActs.resolveRound(res, r#battle, r#plans, w#dice);
         show(res, beats, AfterShow.Judge, World.mapBattle(br -> { battle = b, plans = Map.empty() | br }, { dice = dice | w }))
 
     /// 1 ターンの後: 勝ち → 勝ちの伝言 / 全滅 → ぜんめつ / 逃げ切った → フィールドへ / どちらでもない → 次のターン。

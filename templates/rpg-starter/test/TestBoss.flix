@@ -49,9 +49,9 @@ mod TestBoss {
             let plans = Map#{Member.Member.Luka => Battle.Plan.UseItem(bomb, Battle.Target.Foe(0))};
             let sweep = TextDoc.battleText(TextDoc.BattleText.Sweep, (TextDoc.Placeholder.Name, "ジェムイーター") :: Nil, res#text);
             let swept = beats -> List.memberOf(sweep, List.flatten(Fixtures.transcriptOf(res, beats)));
-            let (b1, beats1, d1) = Battle.resolveRound(res, b0, plans, 0);
-            let (b2, beats2, d2) = Battle.resolveRound(res, b1, plans, d1);
-            let (_, beats3, _) = Battle.resolveRound(res, b2, plans, d2);
+            let (b1, beats1, d1) = BattleActs.resolveRound(res, b0, plans, 0);
+            let (b2, beats2, d2) = BattleActs.resolveRound(res, b1, plans, d1);
+            let (_, beats3, _) = BattleActs.resolveRound(res, b2, plans, d2);
             (swept(beats1), swept(beats2), swept(beats3))
         };
         Assert.assertEq(expected = Some((false, false, true)), sweeps)
@@ -163,4 +163,16 @@ mod TestBoss {
         let late = forM (h <- early; n <- wait) yield Fixtures.play(Fixtures.idle(n) ::: Fixtures.tap(Fixtures.confirm()), h);
         let kindOf = h -> "${World.sceneKindOf(h#world)}";
         Assert.assertEq(expected = (Some("Ending"), Some("Title")), (early |> Option.map(kindOf), late |> Option.map(kindOf)))
+
+    /// rules の creditSkipAfter 秒の後、字が流れている間の決定は字を流れ切った所まで早送りし（エンディングのまま）、
+    /// もう一度の決定でタイトルへ戻る。
+    @Test
+    def testConfirmFastForwardsTheCreditsThenReturnsToTitle(): Unit \ Assert + Fs.FileRead =
+        let opened = Fixtures.openTree(Fixtures.bareCommand("ending"), atSpring("reported", "0"));
+        let ending = opened |> Option.map(h -> Fixtures.play(Fixtures.idle(120), h));
+        let guard = ending |> Option.flatMap(h -> Fixtures.framesOf(RulesDoc.rec(h#resources#rules)#creditSkipAfter));
+        let skipped = forM (h <- ending; n <- guard) yield Fixtures.play(Fixtures.idle(n) ::: Fixtures.tap(Fixtures.confirm()), h);
+        let again = skipped |> Option.map(h -> Fixtures.play(Fixtures.idle(2) ::: Fixtures.tap(Fixtures.confirm()), h));
+        Assert.assertEq(expected = (Some(1.0), Some("Title")),
+            (skipped |> Option.map(h -> WorldTitle.creditProgressOf(h#resources, h#world)), again |> Option.map(h -> "${World.sceneKindOf(h#world)}")))
 }

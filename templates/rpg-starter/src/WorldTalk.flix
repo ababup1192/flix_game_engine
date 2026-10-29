@@ -174,7 +174,7 @@ mod WorldTalk {
     /// コマンド 1 つを World へ当てる（wait は実行器が待つので何もしない）。読めないコマンドは 1 行言って飛ばす。
     def runCommand(res: Res.Res, c: Yarn.Command, flow: Flow, w: World.World): (Flow, World.World) =
         if (c#name == "wait") (flow, w)
-        else match Talk.commandOf(res#items, res#foes, c) {
+        else match Talk.commandOf(res, c) {
             case Ok(command) => applyCommand(res, command, flow, w)
             case Err(reason) => Log.warnThen("[talk] ${reason}。飛ばす", (flow, w))
         }
@@ -211,7 +211,7 @@ mod WorldTalk {
         }
 
     /// 店を開き、会話を店のウィンドウへ渡す（店を閉じると、この会話の続きへ戻る）。会話が出ていなければ何もしない。
-    def handToShop(shop: String, flow: Flow, w: World.World): (Flow, World.World) = match flow {
+    def handToShop(shop: Option[ShopsDoc.ShopId], flow: Flow, w: World.World): (Flow, World.World) = match flow {
         case Flow.Showing(t) => (Flow.Handed, WorldShop.open(shop, World.wrapTalk(t), w))
         case _               => (flow, w)
     }

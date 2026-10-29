@@ -65,6 +65,20 @@
       ],
       "pattern": "window\\s*=\\s*FieldWindow\\.Closed|withWindow\\(FieldWindow\\.Closed",
       "hint": "ウィンドウを閉じるのは World.closeWindow（閉じたフレームに押していた方向は Controls.step が離すまで歩かせない）。出入口で着いた所は World.arriveAt。window = FieldWindow.Closed や withWindow(FieldWindow.Closed, …) を直に組むと、閉じる口が散って、閉じる時に揃えたい事（メニューのページ・店に渡した会話）を 1 か所で足せなくなる"
+    },
+    {
+      "id": "rpg-battle-inner",
+      "suffixes": [
+        ".flix"
+      ],
+      "skip": [
+        "src/Battle.flix",
+        "src/BattleActs.flix",
+        "lib/",
+        "build/"
+      ],
+      "pattern": "\\bBattle\\.(wrap|roll|beatOf)\\(",
+      "hint": "Battle.wrap・roll・beatOf は戦いの規則（Battle・BattleActs）の中だけで使う。外から戦いの値を組み立てると Battle.start の検査を通らない物ができる。外は Battle.start と BattleActs.resolveRound を呼ぶ"
     }
   ],
   "exempt": {}

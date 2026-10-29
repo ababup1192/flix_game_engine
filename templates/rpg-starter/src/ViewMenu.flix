@@ -127,7 +127,7 @@ mod ViewMenu {
         case _                               => None
     }
 
-    def shopOf(res: Res.Res, bag: Bag.Bag, shop: String, page: ShopPage): ShopView.In =
+    def shopOf(res: Res.Res, bag: Bag.Bag, shop: Option[ShopsDoc.ShopId], page: ShopPage): ShopView.In =
         let modeIndex = mode -> List.indexOf(Some(mode), WorldShop.topModes()) |> Option.getWithDefault(0);
         let goodsIndex = (mode, item) -> WorldShop.goodsOf(res, shop, mode, bag) |> List.map(g -> g#item) |> List.indexOf(item) |> Option.getWithDefault(0);
         let priceOf = (mode, item) -> WorldShop.goodsOf(res, shop, mode, bag) |> List.find(g -> g#item == item) |> Option.map(g -> g#price) |> Option.getWithDefault(0);
@@ -153,7 +153,7 @@ mod ViewMenu {
           gold = (text(res, MenuText.Gold), "${Bag.goldOf(bag)}G"), goods = goods, count = count }
 
     /// 品の一覧（右に 1 つの値段。買えない・売れない物は灰色）。
-    def goodsBox(res: Res.Res, bag: Bag.Bag, shop: String, mode: ShopMode, cursor: Int32, active: Bool): WindowView.ListBox =
+    def goodsBox(res: Res.Res, bag: Bag.Bag, shop: Option[ShopsDoc.ShopId], mode: ShopMode, cursor: Int32, active: Bool): WindowView.ListBox =
         let title = match mode {
             case ShopMode.Buy  => text(res, MenuText.Buy)
             case ShopMode.Sell => text(res, MenuText.Sell)

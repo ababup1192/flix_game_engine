@@ -51,7 +51,7 @@ mod ViewField {
         let choices = if (withChoices) t#choices |> List.map(o -> (o#line#text, o#available)) else Nil;
         t#line |> Option.map(line -> FieldScreen.buildTalk(TextDoc.speakerName(line#speaker, res#text), t#reveal, choices, t#cursor))
 
-    def askBoxOf(res: Res.Res, bag: Bag.Bag, shop: String, mode: ShopMode, item: ItemsDoc.ItemId, n: Int32, answer: World.Answer): FieldScreen.TalkBox =
+    def askBoxOf(res: Res.Res, bag: Bag.Bag, shop: Option[ShopsDoc.ShopId], mode: ShopMode, item: ItemsDoc.ItemId, n: Int32, answer: World.Answer): FieldScreen.TalkBox =
         let price = WorldShop.goodsOf(res, shop, mode, bag) |> List.find(g -> g#item == item) |> Option.map(g -> g#price) |> Option.getWithDefault(0);
         let ask = match mode {
             case ShopMode.Buy  => TextDoc.NoticeText.BuyAsk

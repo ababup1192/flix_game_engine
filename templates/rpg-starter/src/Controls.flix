@@ -159,6 +159,8 @@ mod Controls {
 
     // ── 音（project.json の sounds の論理名。素材は art/sfx.snd.star → assets/sfx） ──
 
+    /// 出来事の音の名前。
+    /// WhyNot: 床のスイッチ（Switch）に別の素材を作らない — 仕掛けが動いた手応えはレバーと同じ音で通じる。出来事は分けてあるので、音だけ後で替えられる。
     def soundOf(event: World.Event): String = match event {
         case World.Event.Cursor   => "cursor"
         case World.Event.Confirm  => "confirm"
@@ -172,6 +174,7 @@ mod Controls {
         case World.Event.TalkBlip(TextDoc.Voice.Mid)  => "talk_mid"
         case World.Event.TalkBlip(TextDoc.Voice.High) => "talk_high"
         case World.Event.Lever    => "lever"
+        case World.Event.Switch   => "lever"
         case World.Event.RockPush => "rock"
         case World.Event.CartRide => "cart"
         case World.Event.CrystalLit   => "chime"

@@ -11,9 +11,29 @@ mod ShopsDoc {
     /// 品 1 行: shop = 並べる店の名前（会話の <<shop 名前>>。空は村の道具屋 <<shop>>）・item = rpg.items.json の鍵。
     pub type alias Goods = { shop = String, item = String }
 
-    /// shop の店に並ぶ品の鍵（並べる順）。
-    pub def goodsOf(shop: String, d: Doc): List[String] =
-        rec(d)#goods |> List.filter(g -> g#shop == shop) |> List.map(g -> g#item)
+    /// 店の名前（goods の行の shop に書いた名前）。
+    enum ShopKey with Eq, Order, ToString {
+        case Key(String)
+    }
+
+    /// 名前のある店（作るのは idOf だけ。村の道具屋は名前が無いので None で表す）。
+    pub type alias ShopId = ShopKey
+
+    /// 名前の店（goods のどれかの行の shop に書いてあれば）。空の名前は村の道具屋なので None。
+    pub def idOf(name: String, d: Doc): Option[ShopId] =
+        if (not String.isEmpty(name) and List.exists(g -> g#shop == name, rec(d)#goods)) Some(ShopKey.Key(name)) else None
+
+    /// 店の名前。
+    pub def nameOf(id: ShopId): String = match id { case ShopKey.Key(name) => name }
+
+    /// 名前のある店の名前（名前の順・重なりなし。村の道具屋は入らない）。
+    pub def namesOf(d: Doc): List[String] =
+        rec(d)#goods |> List.map(g -> g#shop) |> List.filter(name -> not String.isEmpty(name)) |> List.toSet |> Set.toList
+
+    /// その店に並ぶ品の鍵（並べる順）。None は村の道具屋（shop を書かない行）。
+    pub def goodsOf(shop: Option[ShopId], d: Doc): List[String] =
+        let name = shop |> Option.map(nameOf) |> Option.getWithDefault("");
+        rec(d)#goods |> List.filter(g -> g#shop == name) |> List.map(g -> g#item)
 
     /// WhyNot: 外で組ませない — 既定へ落とした欄と知らせる行は fromJson と既定を通さないと揃わない。
     enum ShopsDocOf(Rec)

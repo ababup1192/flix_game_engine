@@ -289,7 +289,7 @@ mod Fixtures {
 
     /// map の id の番をする者の会話のノード（番をする者でなければ None）。
     pub def guardNodeOf(map: String, id: String, h: Run): Option[String] =
-        objectOf(map, id, h) |> Option.flatMap(o -> MapDoc.guardNodeOf(o#kind))
+        objectOf(map, id, h) |> Option.flatMap(o -> MapDoc.profileOf(o#kind)#node)
 
     /// ふくろの道具の個数。
     pub def bagCountOf(id: ItemsDoc.ItemId, h: Run): Int32 = Bag.countOf(id, h#world#bag)

@@ -40,7 +40,7 @@ precommit-local:
 	  else echo "[pre-commit] flixlint を用意できないので lint/rules.flix の検査は飛ばします（後で make lint-flixlint）"; fi; \
 	fi
 
-# 自動の通しプレイ（タイトルから坑道 B3 の扉の前まで。方針は src/sim/Bot.flix）→ debug/bot.md。詰んだら終了コード 1。
+# 自動の通しプレイ（タイトルからエンディングを見てタイトルへ戻るまで。方針は src/sim/Bot.flix）→ debug/bot.md。詰んだら終了コード 1。
 #   make bot                  5 本（種 0..4）
 #   make bot BOT_RUNS=1 BOT_SEED=7
 BOT_RUNS ?= 5
@@ -49,7 +49,7 @@ BOT_SEED ?= 0
 bot:
 	BOT_RUNS=$(BOT_RUNS) BOT_SEED=$(BOT_SEED) $(HEADLESS_RUN) BotRun.play
 
-# つり合いのシミュレーション（戦いだけを Battle.resolveRound で回す。src/sim/BalanceSim.flix）→ debug/balance.md。
+# つり合いのシミュレーション（戦いだけを BattleActs.resolveRound で回す。src/sim/BalanceSim.flix）→ debug/balance.md。
 # テストではなく知らせる口（終了コードはいつも 0）。BALANCE_SEEDS で 1 組あたりの種の数を下げられる（既定 500）。
 BALANCE_SEEDS ?= 500
 balance:
