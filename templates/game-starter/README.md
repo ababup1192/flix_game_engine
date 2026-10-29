@@ -21,6 +21,8 @@ Flix コンパイラはエンジンリポの `bin/flix` ラッパ経由で呼ぶ
 | `make reference-check`  | 描き出した絵をリファレンス画像とバイト比較する |
 | `make reference-update` | いまの gallery をリファレンス画像として更新する |
 | `make atelier-preview` | atelier/ の候補と assets/ の現行を debug/atelier/ に描き出す |
+| `make flow FLOW=e2e/walk.flow` | 手順書（1 行 1 手）を画面なしで実機と同じ道に流す |
+| `START="at x=40 y=40" make run` | 始まりの登録簿（`src/Starts.flix`）の場面から起動する |
 
 ## 読む順（全体像のつかみ方）
 
@@ -28,8 +30,9 @@ Flix コンパイラはエンジンリポの `bin/flix` ラッパ経由で呼ぶ
 
 1. まず `make run` で遊ぶ（矢印キーで主人公が動く）。
 2. コードは **エントリ→状態→描画** の順で読む:
-   1. `src/Main.flix` … 3 つを App に繋いで起動する目次。冒頭 doc に**毎フレームの流れ
-      （入力→状態更新→描画 がどの行か）**が書いてある。まずここ。
+   1. `src/Game.flix` … 3 つを App に繋ぐ目次。冒頭 doc に**毎フレームの流れ
+      （入力→状態更新→描画 がどの行か）**が書いてある。まずここ。実機の起動（`src/Main.flix`）・
+      flow・テストが同じ `Game.app` を使う。`src/Main.flix` は窓にだけ効く口（アトラス・終了の確認）を足して起動する。
    2. `src/World.flix` … 遊びの状態そのものと、次の状態を作る規則（`step` が入力→更新。純粋）。
       画面は `Screen` の enum（今は `Play` だけ）で、その画面だけの値は payload の中に持つ。
    3. `src/Res.flix` … 描く元（Doc と、Doc から作る仕上げ済みのドット絵・アトラス）。Doc を読み直した時だけ替わる。
@@ -38,7 +41,9 @@ Flix コンパイラはエンジンリポの `bin/flix` ラッパ経由で呼ぶ
       （背景・主役・粒がどの関数か）と、終了の確認の窓・静的な縁の枠が並べてある。
    5. `src/ZOrder.flix` … 画面全体の層の表（場面・縁の枠・確認の窓の前後）。新しい層はここに case を足す。
    6. `src/Controls.flix` … キーの割り当てと Doc の読み込み・読み直し。Esc で終了の確認を出す（閉じるボタンは Main の `App.withCloseRequest`）。
-   7. `src/render/SceneRender.flix` … 決定的な場面を PNG に描き出す（リファレンス画像とアトリエ）。
+   7. `src/Starts.flix` … 始まりの登録簿。起動（`START=`）・flow の `start`・テストが名前で場面を組む。
+   8. `src/E2e.flix` … `e2e/*.flow` の語彙（役・問い）と指紋。手順書の書き方は engine の `engine_world/src/Flow.flix` 冒頭。
+   9. `src/render/SceneRender.flix` … 決定的な場面を PNG に描き出す（リファレンス画像とアトリエ）。
 3. 手触り・色・絵は下の `assets/` の Doc を保存即反映でいじる。
 
 数値・色・絵は `assets/` の Doc（保存即反映）:
@@ -59,7 +64,7 @@ Flix コンパイラはエンジンリポの `bin/flix` ラッパ経由で呼ぶ
 ## 絵の開発ループ
 
 - **画風は最初に決めて `AGENTS.local.md` に書く**。この骨組みの見た目は一例で、
-  そのまま引き継ぐ物ではありません（決め方は engine の `docs/art-ref/visual-dict.md`）。
+  そのまま引き継ぐ物ではありません（好みの聞き取りは `/style-interview`、部品選びは engine の `docs/art-ref/visual-dict.md`）。
 - `make render-all` で `gallery/` に決定的な PNG を描き出し、`make reference-update` で更新、`make reference-check` で防護。
 - 候補のスプライト・テーマは `atelier/` に置き、`make atelier-preview` で `debug/atelier/` に描き出して目視。
 

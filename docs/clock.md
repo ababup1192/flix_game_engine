@@ -1,8 +1,7 @@
 # 型で分けた時計（Clock[c] / Time[c]）
 
 ゲームの時刻を「どの時計で測ったか」の型つきで持つ仕組み。API は `engine_world/src/Clock.flix` の冒頭、
-ゲームへの繋ぎ方は `App.addClock` の doc、手本は `templates/platformer-starter`（ポーズ・ヒットストップ）と
-`templates/sound-novel-starter`（画面を開いている間は物語の時計を止める）。
+ゲームへの繋ぎ方は `App.addClock` の doc、手本は `templates/sound-novel-starter`（画面を開いている間は物語の時計を止める）。
 
 ## 何を解くか
 

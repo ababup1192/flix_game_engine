@@ -133,7 +133,7 @@ mod TestScatter {
             Scatter.strip({ lo = 0.0, hi = 79.9 }, stripSpec(4), colRand))
 
     /// 乱数の鍵の合成（col + lane * 37 + salt）を実測値で pin する。ここが変わると
-    /// strip を使う既存の絵（race の草原）がバイト単位でずれる。
+    /// strip を使う既存の絵がバイト単位でずれる。
     @Test
     def testStripRandKeyPinned(): Unit \ Assert =
         let got = Scatter.strip({ lo = 35.0, hi = 35.0 }, stripSpec(100), colRand)

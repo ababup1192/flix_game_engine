@@ -95,6 +95,11 @@ mod World {
     pub def heroAt(w: World): Option[Vec2.Vec2] =
         sessionRecOf(w) |> Option.map(rec -> { x = rec#x, y = rec#y })
 
+    /// 主人公の中心を p に置く（画面の外は内へ寄せる。主人公が出ていない画面ではそのまま）。
+    pub def placeHero(res: Res.Res, p: Vec2.Vec2, w: World): World =
+        let q = clampInside(heroBox(res), p);
+        mapSession(_ -> { x = q#x, y = q#y }, w)
+
     /// 大きさ box の物が画面から出ない位置へ丸める（端で止まるのはルール）。
     def clampInside(box: Vec2.Vec2, p: Vec2.Vec2): Vec2.Vec2 =
         { x = Num.clamp(box#x / 2.0, width() - box#x / 2.0, p#x),

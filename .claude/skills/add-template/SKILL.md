@@ -10,7 +10,7 @@ allowed-tools: Read, Grep, Glob, Bash, Edit, Write
 
 ## 2 系統ある
 
-- **具体値式**（rpg / novel / race / tetris / platformer-starter）: 値をそのまま書く。**in-repo で
+- **具体値式**（rpg / sound-novel / tidepool-starter）: 値をそのまま書く。**in-repo で
   `make -C templates/<name> check / test / render-all` が通りリファレンス画像を持つ**作り込み例。
   凝った演出もテストも載せられる。Studio の「はじめる」は複製で始まる。
 - **トークン式**（game-starter）: `__NAME__` `__W__` などを埋めた最小の骨組み。

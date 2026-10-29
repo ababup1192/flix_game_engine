@@ -146,8 +146,8 @@ vignette・熱い溶岩を **JSON の保存だけで即調整できる**形で�
 ### 2. 水面のコースティクス（網目）
 
 `worley` の `out` を `"f2mf1"` にして `smoothstep` で細く締め、`ramp` で 2 色。
-完成形は `templates/rpg-starter/assets/town.shader.json`（水路の水面を `shared` で網とムラを
-分けて足し合わせる実践形）。
+完成形は `templates/tidepool-starter/assets/caustics.shader.json`（水底の光の網を `shared` で
+網とうねりに分けて組む実践形）。
 
 ### 3. vignette（画面の四隅を落とす）— `radialAspect` **[新]** が要る
 

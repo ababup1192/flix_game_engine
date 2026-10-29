@@ -88,6 +88,17 @@ func TestFindPkgReturnsEmpty(t *testing.T) {
 	}
 }
 
+// make new-game の写し元（project.json に置き換える前の字が残る）はパッケージ無し（型検査しない）。
+func TestFindPkgSkipsUnfilledTemplate(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "flix.toml"), "")
+	writeFile(t, filepath.Join(root, "project.json"), `{"title": "__TITLE__", "sprites": "assets/__NAME__.sprite.json"}`)
+	writeFile(t, filepath.Join(root, "src", "A.flix"), "")
+	if got := FindPkg(load(t), filepath.Join(root, "src", "A.flix")); got != "" {
+		t.Errorf("got %q", got)
+	}
+}
+
 // 状態の置き場はパッケージのパスから決まる (同じパスなら同じ置き場)。
 func TestStateDirIsStable(t *testing.T) {
 	r := load(t)

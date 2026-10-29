@@ -9,14 +9,14 @@
 |---|---|
 | メニューを作る（項目列・カーソル・ハイライト） | UiMenu |
 | 表示範囲より長い内容をスクロールで覗く（ログ・履歴・一覧） | UiScroll |
-| 文章を幅で行に折る（折り返し・wrap）・描く前に行数を数える | RichText（wrapLinesBy）（実例: `templates/rpg-starter/src/View.flix`） |
+| 文章を幅で行に折る（折り返し・wrap）・描く前に行数を数える | RichText（wrapLinesBy） |
 | 固定スロットに可変個の項目を流し込む | UiSlots |
 | UI を JSON（ui.json）で宣言する | UiDoc / UiSpec |
 | 宣言した UI の「名前 → 画面上の矩形」を引く（当たり判定を宣言と共有） | UiDoc（rectsOf / renderWithRects）/ Flex（keyed） |
 | UI の箱にドット絵の皮を着せる（九分割スキン。box の skin） | UiExtract（boxPlacedItems）/ UiDoc |
 | UI 要素を並べる・整列する | UiLayout / Flex |
 | UI の文字欄に実行時の値を差し込む | UiBinding |
-| 会話ウィンドウ・文字送りを出す | UiDialog / UiTypewriter（実例: `templates/rpg-starter/src/World.flix`・`templates/sound-novel-starter/src/Page.flix`） |
+| 会話ウィンドウ・文字送りを出す | UiDialog / UiTypewriter（実例: `templates/sound-novel-starter/src/Page.flix`） |
 | 会話のシナリオを .yarn（Yarn Spinner の部分集合）で書く・台詞と選択肢を順に出す・話し手やタグを語彙で止める | Yarn（`bin/fge yarn build` が書いた木を loadOr・語彙は vocabJson）/ YarnRunner（start・startAt（.yarn の行まで進める）・step・trace）（実例: `templates/sound-novel-starter/src/Talk.flix`・`templates/sound-novel-starter/src/Stage.flix`） |
 | 台本の変数（`$x`）と訪れた数を持ち越す・ゲームから読む／書く・セーブに入れる | YarnStorage（empty・get・set・visitCountOf・toJson・fromJson）/ YarnRunner（startWith・storageOf・withStorage・valueOf） |
 | ノベルのセーブ・ロード（読んでいる所に栞を挟み、同じ行・同じ変数から読み直す） | YarnRunner（bookmarkOf・resume・bookmarkToJson・bookmarkFromJson）（実例: `templates/sound-novel-starter/src/World.flix` の saveSlot / loadSlot） |

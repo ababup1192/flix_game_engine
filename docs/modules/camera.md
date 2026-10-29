@@ -7,8 +7,8 @@
 
 | やりたいこと | モジュール |
 |---|---|
-| カメラでズームする・追いかける | CameraRig（実例: `templates/platformer-starter/src/World.flix`） |
-| 被弾・着弾で画面を揺らす（減衰ノイズの画面揺れ・screen shake） | CameraRig（addTrauma / tick / shakeOffset）（実例: `templates/platformer-starter/src/World.flix`） |
+| カメラでズームする・追いかける | CameraRig |
+| 被弾・着弾で画面を揺らす（減衰ノイズの画面揺れ・screen shake） | CameraRig（addTrauma / tick / shakeOffset） |
 | 見下ろしで「足元が下にある物ほど手前」に並べる（人が木の裏に回る） | ZStack.zIndex(Depth.orderAt(足元の y), 1 人の葉) |
 | 一人称・疑似 3D（2.5D）で世界の点を画面へ落とす（透視除算・近クリップ・逆投影・距離霧） | Persp |
 | マス目の迷路から「カメラに見える壁の面」だけを集める（内部面・裏面は落とす） | WallFaces |

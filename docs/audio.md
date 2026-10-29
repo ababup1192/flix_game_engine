@@ -22,7 +22,7 @@
 ]
 ```
 
-3. 「前後の World から鳴らす音名を導く」純関数を書く（templates/race-starter/src/Sfx.flix を削った形）。
+3. 「前後の World から鳴らす音名を導く」純関数を書く（templates/tidepool-starter/src/Controls.flix の `sounds` と同じ形）。
 
 ```flix
 mod Sfx {
@@ -244,7 +244,7 @@ engine_tools 側の `SfxSynth.wavBytes` / `writeBytes` / `renderSet`（ループ
 ステレオは `wavBytesStereo` / `renderLoopedStereo`）が持つので、
 ゲーム側は波形の足し算だけ書けばよい。
 
-`templates/race-starter/src/render/SfxRender.flix` と同じ組み立て方の抜粋:
+組み立て方の抜粋:
 
 ```flix
 def cfg(): SfxSynth.Config = { sampleRate = 22050 }

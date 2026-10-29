@@ -7,17 +7,17 @@
 
 | やりたいこと | モジュール |
 |---|---|
-| 効果音を鳴らしたい | App.withAudio（前後 World の差分から鳴らす名前の List を返す。詳しくは [audio.md](../audio.md)。実例: `templates/game-starter/src/Main.flix`） |
+| 効果音を鳴らしたい | App.withAudio（前後 World の差分から鳴らす名前の List を返す。詳しくは [audio.md](../audio.md)。実例: `templates/tidepool-starter/src/Game.flix`） |
 | 規則の奥の出来事（行を消した・頁を送った）で音を鳴らす・固定刻みでも 1 回ずつ鳴らす | Emit（規則は effect の op `emit` で出し・系は `Emit.collectInto` で World の Emit.Events に溜め・audio は `Emit.since(before, after)`。実例: `templates/sound-novel-starter/src/Controls.flix`） |
-| 鳴り続ける音を出したい（走行音・風・雨・炎・足音のループ） | App.withSustained（World から「鳴り続けていてほしい音」を宣言。音量と高さを毎フレーム与える。詳しくは [audio.md](../audio.md)。実例: `templates/race-starter/src/Sounds.flix`） |
-| 音の名前の綴り違い・一発の音と鳴り続ける音の取り違えを型で止めたい | Sfx（effect の op `play` で鳴らし、`Sfx.collect` で withAudio へ）/ Loop（op `hold` で宣言し、`Loop.collect` で withSustained へ）。一発と鳴り続ける音は別の enum。実例: `templates/race-starter/src/Sounds.flix` |
+| 鳴り続ける音を出したい（走行音・風・雨・炎・足音のループ） | App.withSustained（World から「鳴り続けていてほしい音」を宣言。音量と高さを毎フレーム与える。詳しくは [audio.md](../audio.md)。実例: `templates/tidepool-starter/src/Controls.flix` の ambience） |
+| 音の名前の綴り違い・一発の音と鳴り続ける音の取り違えを型で止めたい | Sfx（effect の op `play` で鳴らし、`Sfx.collect` で withAudio へ）/ Loop（op `hold` で宣言し、`Loop.collect` で withSustained へ）。一発と鳴り続ける音は別の enum。 |
 | BGM を流す・止める・音量やループを変える | AudioStreamPlayer（play / stop / setVolume / setLooping。詳しくは [audio.md](../audio.md)） |
 | 曲の頭（イントロ）を 1 回だけ鳴らし、後ろの輪だけを回す | WAV のループ点（SfxSynth.renderLooped で smpl チャンクを書く・実機と AudioMixdown.mixdownLooped が読む。[audio.md](../audio.md) の「ループ点」） |
 | BGM をだんだん出す・消す・入れ替える（音量カーブ） | AudioFade |
 | 音をバス（曲・効果音・UI・声）に分けて音量を決めたい・効果音の間だけ BGM を下げたい（ダッキング）・高い音を削って籠もらせたい（ローパス）・同じ音の細かい連打を間引きたい・場面ごとの聞こえ方を切り替えたい（スナップショット） | App.withMixer + AudioMixer（mixer.json は AudioMixerDoc。詳しくは [audio.md](../audio.md)） |
 | 実機と同じ規則で混ぜた音を WAV に書き出したい（動画の音・聞き比べ） | AudioMixdown（コマごとの withAudio / withSustained / withMixer の結果から波形を作る。ステレオは loadWavStereo + mixdownStereo） |
 | ステレオの WAV を鳴らしたい・書き出したい | そのまま置けば鳴る（実機は 16bit のモノラル・ステレオどちらも）。書き出しは SfxSynth.wavBytesStereo / renderLoopedStereo（[audio.md](../audio.md) の「ステレオの WAV」） |
-| 効果音の素材を録音なしで作りたい（波形合成） | SfxSynth（engine_tools。詳しくは [audio.md](../audio.md)。実例: `templates/race-starter/src/render/SfxRender.flix`） |
+| 効果音の素材を録音なしで作りたい（波形合成） | SfxSynth（engine_tools。詳しくは [audio.md](../audio.md)） |
 
 ## モジュール 1 行紹介
 

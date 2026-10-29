@@ -9,7 +9,8 @@
 // 利用例（流れは今の App.withAudio のまま。名前へ写す関数は project.json の sounds の名前を返す）:
 //   def events(ws: { before = World, after = World }): Unit \ Sfx[Shot] =
 //       if (crashed(ws)) Sfx.play(Shot.Crash) else ()
-//   app |> App.withAudio(ws -> Sfx.collect(Shot.name, () -> events(ws)))
+//   def shotName(s: Shot): String = match s { case Shot.Crash => "crash" }
+//   app |> App.withAudio(ws -> Sfx.collect(shotName, () -> events(ws)))
 //
 // 制限（Flix 0.78.0）: 1 つの関数の中で Sfx を 2 つの型に使えない（E6795）。
 // 型引数に trait の制約を付けたハンドラ（`with ToString[s]`）はコンパイラが落ちるので、

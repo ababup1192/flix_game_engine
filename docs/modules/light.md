@@ -7,7 +7,7 @@
 
 | やりたいこと | モジュール |
 |---|---|
-| 面を画素ごとの計算で塗る（動く霧・水面・溶岩・vignette。単色 box の置き換え） | ShaderDoc + Render（shaderFill / shaderFillMasked）→ [書き方](../shader-doc.md)（実例: `templates/rpg-starter/assets/town.shader.json`） |
+| 面を画素ごとの計算で塗る（動く霧・水面・溶岩・vignette。単色 box の置き換え） | ShaderDoc + Render（shaderFill / shaderFillMasked）→ [書き方](../shader-doc.md)（実例: `templates/tidepool-starter/assets/caustics.shader.json`） |
 | シェーダー面を多角形の形に抜く（池・水たまり） | Render（shaderFillMasked） |
 | 光らせる・暗く沈める（加算・乗算の重ね方） | Render（blended） |
 | 色を作る（0〜1・0〜255・#rrggbb）・2 色を混ぜる・比べる | Color.rgb / rgb8 / hex / mix / channels |
@@ -20,7 +20,7 @@
 | 光源を JSON で宣言する（light.json） | LightDoc + Light |
 | 壁に影を落とす（単一光源のハードシャドウ） | Shadow |
 | 夜のガラス・鏡・磨いた床に姿を映す（明るいところは光として返し、暗いところは影として重ねる） | Mirror |
-| 時刻で世界の色を変える（朝の青・夕の橙・夜の紺）・影の向きと長さを回す | Daylight（実例: `templates/rpg-starter/src/View.flix`） |
+| 時刻で世界の色を変える（朝の青・夕の橙・夜の紺）・影の向きと長さを回す | Daylight |
 | 見下ろしの落ち影を置く（接地の暗がり + 時刻で回る日影） | Daylight.groundShadow |
 | 光側は暖色・影側は寒色へ近づけて階調を増やす | Color.warm / Color.cool |
 

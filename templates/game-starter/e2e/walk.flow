@@ -1,0 +1,10 @@
+# 主人公を左上の寄りに置いて右へ歩かせ、Esc で終了の確認を出して取り消す。
+start at x=60 y=60
+expect quit=Playing&x=60
+hold right 0.5
+expect x>60&y=60
+tap cancel
+expect quit=Asking
+hold right 0.5
+tap cancel
+expect quit=Playing

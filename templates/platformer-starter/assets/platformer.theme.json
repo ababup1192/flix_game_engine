@@ -1,9 +1,0 @@
-{
-  "version": 1,
-  "title": "色",
-  "note": "色テーマ(夕方の空気)。上書きしたい色だけ #RRGGBB で書く — 書かない色はコードの既定。skyTop/skyBottom = 空の二色、coin/shirt = 報酬と主役の暖色、ink = 輪郭と最暗部(黒は使わない約束)。ドット絵の legend 色(dirt/stone/enemyA…)もここで差し替えられる。",
-  "colors": {
-    "skyTop": "#4A7FA8",
-    "skyBottom": "#E8B96A"
-  }
-}

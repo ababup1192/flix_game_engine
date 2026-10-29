@@ -1,0 +1,20 @@
+{
+  "verbs": ["start", "tap", "hold", "release", "wait", "until", "drive", "expect", "mark", "run", "reload", "request", "close", "rewind"],
+  "settings": ["fps", "ready"],
+  "options": {},
+  "roles": ["left", "right", "up", "down", "confirm", "cancel"],
+  "probes": [
+    {"name": "x", "kind": "num", "doc": "主人公の中心の x（出ていない画面では -1）"},
+    {"name": "y", "kind": "num", "doc": "主人公の中心の y（出ていない画面では -1）"},
+    {"name": "quit", "kind": "text", "doc": "終了の確認（Playing・Asking・Confirmed）"}
+  ],
+  "drives": [],
+  "starts": [
+    {"name": "play", "doc": "主人公が画面の真ん中に立つ所（起動の既定）", "args": {}},
+    {"name": "at", "doc": "主人公を x・y（design の px。画面の外は内へ寄せる）に置いた所", "args": {"x": "0", "y": "0"}}
+  ],
+  "keys": ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", "Digit0", "Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6", "Digit7", "Digit8", "Digit9", "Up", "Down", "Left", "Right", "Enter", "Space", "Escape", "Tab", "Backspace", "Insert", "Delete", "PageUp", "PageDown", "Home", "End", "CapsLock", "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12", "Apostrophe", "Comma", "Minus", "Period", "Slash", "Semicolon", "Equal", "LeftBracket", "Backslash", "RightBracket", "GraveAccent", "LeftShift", "LeftCtrl", "LeftAlt", "LeftSuper", "RightShift", "RightCtrl", "RightAlt", "RightSuper", "Menu", "Numpad0", "Numpad1", "Numpad2", "Numpad3", "Numpad4", "Numpad5", "Numpad6", "Numpad7", "Numpad8", "Numpad9", "NumpadDecimal", "NumpadDivide", "NumpadMultiply", "NumpadSubtract", "NumpadAdd", "NumpadEnter", "NumpadEqual"],
+  "ready": false,
+  "replies": false,
+  "fingerprint": true
+}

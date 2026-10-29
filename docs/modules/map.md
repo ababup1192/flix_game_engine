@@ -7,9 +7,9 @@
 
 | やりたいこと | モジュール |
 |---|---|
-| タイルのマス目と移動範囲 | Grid / GridSearch（実例: `templates/platformer-starter/src/Stage.flix`） |
+| タイルのマス目と移動範囲 | Grid / GridSearch |
 | 敵を追わせる・逃がす・ふらつかせる(距離場の 1 歩) | Steering |
-| チップ絵タイル（タイルマップ・tilemap）を 1 draw call で敷く(事前に生成・マスごとの照明色 tint・屋根や庇は zIndex で手前にも) | App.withTileLayers / TileScene（実例: `templates/platformer-starter/src/Main.flix` / `templates/rpg-starter/src/TownMap.flix`） |
+| チップ絵タイル（タイルマップ・tilemap）を 1 draw call で敷く(事前に生成・マスごとの照明色 tint・屋根や庇は zIndex で手前にも) | App.withTileLayers / TileScene（実例: `templates/rpg-starter/src/Game.flix`） |
 | チップ絵なしでマップ地形(壁・水)を多角形で描く（タイルマップを絵なしで） | DualGrid / Material（repo 内に見本なし。[dual-grid.md](../dual-grid.md)） |
 | rows の文字格子から地形の見た目を作る(*.terrain.json) | Terrain / TerrainDoc（repo 内に見本なし。[dual-grid.md](../dual-grid.md)） |
 | 側面・斜めの自然地形（丘・砂丘・崖）を高さの関数で 1px ドット絵に敷く | PxTerrain（init で 1 回組んで持ち回す） |

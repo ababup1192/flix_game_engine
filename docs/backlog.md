@@ -39,7 +39,6 @@
 
 - **lighten / darken の重複を一本化** — **解消済み**（2026-08-13 確認）。engine の
   `Color.lighten` / `Color.darken` が source of truth で、`TerrainDoc` はそれを直接呼ぶ。
-  rpg-starter の `ThemeDoc.lighten` / `darken` は `Color` へ委譲するだけの薄い別名。
 
 - **dungeon の Surfaces を engine Terrain へ移す移行** — 将来計画（定期見直し）。
   dungeon は当面 engine の `DualGrid` / `Material` を呼ぶだけに留め、セル種→質感の表

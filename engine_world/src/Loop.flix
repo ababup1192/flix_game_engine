@@ -7,7 +7,8 @@
 // 利用例:
 //   def hums(w: World): Unit \ Loop[Hum] =
 //       if (w#racing) Loop.hold(Hum.Engine, { volume = 0.8, pitch = 1.2 }) else ()
-//   app |> App.withSustained(w -> Loop.collect(Hum.name, () -> hums(w)))
+//   def humName(h: Hum): String = match h { case Hum.Engine => "engine" }
+//   app |> App.withSustained(w -> Loop.collect(humName, () -> hums(w)))
 //
 // 制限は Sfx と同じ（1 つの関数で 2 つの型に使えない・trait の制約付きのハンドラは落ちる）。
 

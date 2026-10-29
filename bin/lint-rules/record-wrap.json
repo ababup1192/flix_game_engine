@@ -32,12 +32,5 @@
     ],
     "maxTopFields": 16
   },
-  "exemptRules": {
-    "templates/platformer-starter/src/World.flix::world-resource": "このテンプレートの World はまだ Doc と描く元を直に持つ。Resources（手本 tidepool-starter の Res）へ移すまで残す",
-    "templates/platformer-starter/src/World.flix::world-fields": "このテンプレートの World はまだ平ら。画面ごとの値を画面の enum の payload（手本 tidepool-starter の Screen）へ移すまで残す",
-    "templates/race-starter/src/World.flix::world-resource": "このテンプレートの World はまだ Doc と描く元を直に持つ。Resources（手本 tidepool-starter の Res）へ移すまで残す",
-    "templates/race-starter/src/World.flix::world-fields": "このテンプレートの World はまだ平ら。画面ごとの値を画面の enum の payload（手本 tidepool-starter の Screen）へ移すまで残す",
-    "templates/rpg-starter/src/World.flix::world-resource": "このテンプレートの World はまだ Doc と描く元を直に持つ。Resources（手本 tidepool-starter の Res）へ移すまで残す",
-    "templates/rpg-starter/src/World.flix::world-fields": "このテンプレートの World はまだ平ら。画面ごとの値を画面の enum の payload（手本 tidepool-starter の Screen）へ移すまで残す"
-  }
+  "exemptRules": {}
 }

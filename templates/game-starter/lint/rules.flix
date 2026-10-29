@@ -35,6 +35,9 @@ mod GameLint {
                 |> allowIn(Fn.SceneRender_all, "Makefile の口（make render-all）が名前で呼ぶ入口")
                 |> allowIn(Fn.SceneRender_one, "Makefile の口（make render）が名前で呼ぶ入口")
                 |> allowIn(Fn.SceneRender_jobs, "描き出しの常駐（HEADLESS_RESIDENT=1）が名前で呼ぶ入口の束")
+                |> allowIn(Fn.E2e_play, "Makefile の口（make flow）が名前で呼ぶ入口")
+                |> allowIn(Fn.E2e_vocab, "Makefile の口（make flow-vocab）と bin/headless-run が名前で呼ぶ入口")
+                |> allowIn(Fn.E2e_jobs, "描き出しの常駐（HEADLESS_RESIDENT=1）が名前で呼ぶ入口の束")
                 |> allowIn(Fn.SceneRender_atelier, "Makefile の口（make atelier-preview）が flix run --entrypoint で呼ぶ入口")
                 |> allowIn(Fn.Palette_write, "Makefile の口（make palette）が flix run --entrypoint で呼ぶ入口"),
             customRule({ id = "test-calc", check = testCalc }),

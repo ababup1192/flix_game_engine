@@ -7,14 +7,14 @@
 
 | やりたいこと | モジュール |
 |---|---|
-| 粒（パーティクル・particle）を舞わせる | Fx / Scatter（実例: `templates/race-starter/src/World.flix`） |
-| 疑似遠近のストリップ（横一列）ごとに立ち物・床を敷く | Scatter.strip（実例: `templates/race-starter/src/ViewScene.flix`） |
-| 爆発・火花を fx.json で宣言して時刻から描く | FxDoc / Fx（sample / sampleAt）（実例: `templates/race-starter/assets/fx/spark.fx.json`） |
-| 粒を輪に等分して撒く・破片を回しながら飛ばす | FxDoc（dir.mode: even / turn）（実例: `templates/race-starter/assets/fx/crash.fx.json` / `nitro-burst.fx.json`） |
+| 粒（パーティクル・particle）を舞わせる | Fx / Scatter |
+| 疑似遠近のストリップ（横一列）ごとに立ち物・床を敷く | Scatter.strip |
+| 爆発・火花を fx.json で宣言して時刻から描く | FxDoc / Fx（sample / sampleAt） |
+| 粒を輪に等分して撒く・破片を回しながら飛ばす | FxDoc（dir.mode: even / turn） |
 | 蛍・湯気をその場でゆらゆら舞わせる | FxDoc（wobble） |
 | 雨・火花・流星を速度方向の筋で描く | FxDoc（shape: streak / stretch） |
 | 粒をふわっと明滅させる | FxDoc（カーブ pulse） |
-| 撃つたびに出る効果を発生・寿命回収・描画で回す | Fx（burst / expire / drawAll）（実例: `templates/race-starter/src/World.flix`） |
+| 撃つたびに出る効果を発生・寿命回収・描画で回す | Fx（burst / expire / drawAll） |
 | 揺れる演出を作る（浮遊・風のなびき） | Sway（実例: `templates/game-starter/src/View.flix`） |
 
 ## モジュール 1 行紹介

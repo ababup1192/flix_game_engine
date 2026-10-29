@@ -27,7 +27,7 @@
 | 小さすぎて見えない物・画面外の物を大量に作っている | Scatter.strip（作る前に捨てる。reach 余白と cellsMax の倍々間引き） |
 | 動かない背景を毎フレーム作り直している | App.withStaticLayer（鍵が同じ間は GPU バッファを使い回す） |
 | タイルが多い・タイル宣言の組み立てが毎フレーム走る | App.withTileLayers（tiles はサンク — 鍵が変わるまで評価されない） |
-| 遠くで 1px を切る物まで組み立てている | 倍率の床で place ごと切る（実戦の例: templates/race-starter の propCull / palmCull） |
+| 遠くで 1px を切る物まで組み立てている | 倍率の床で place ごと切る |
 | 1 マスを画素ぶんの box で組んでいる（絵は同じでも桁が違う） | PxSprite.drawQuad（1 コマ = 1 クアッド）。アトラスは PxSpriteAtlas.bake + App.withSpriteAtlases |
 | 動画の連番・ギャラリーの描き出しが遅い（コマごとにテクスチャのファイルを読み直している） | SoftRaster.freshTextureCache + renderToImageCached（コマ列の前に 1 本作って持ち回る。画素は同じ） |
 | 描き出しの口を流すたびにコンパイルし直している | mk/game.mk の HEADLESS_RUN（bin/headless-run が jar を 1 回だけ作って使い回す。ゲームの Makefile で上書きしない） |

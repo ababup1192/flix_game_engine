@@ -44,7 +44,26 @@ func expandHome(path string) string {
 }
 
 // FindPkg は編集ファイルから flix.toml まで遡ってパッケージの根を探す（無ければ空）。
+// 置き換える前の写し元（make new-game の雛形）はパッケージとして扱わない。
 func FindPkg(r *Rules, path string) string {
+	pkg := findPkgRoot(r, path)
+	if pkg != "" && isUnfilledTemplate(pkg) {
+		return ""
+	}
+	return pkg
+}
+
+// unfilledTemplateToken は make new-game が置き換える字。project.json に残っていれば写し元のまま。
+// WhyNot: templates/game-starter の名前で外さない。名前で外すと、雛形を足した・名前を変えた時に
+// 型検査が通らない写し元をまた検査して赤を出す（engine の Makefile の new-game も同じ字で見分ける）。
+const unfilledTemplateToken = "__NAME__"
+
+func isUnfilledTemplate(pkg string) bool {
+	body, err := os.ReadFile(filepath.Join(pkg, "project.json"))
+	return err == nil && strings.Contains(string(body), unfilledTemplateToken)
+}
+
+func findPkgRoot(r *Rules, path string) string {
 	d, err := filepath.EvalSymlinks(path)
 	if err != nil {
 		d = path

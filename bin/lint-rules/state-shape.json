@@ -12,11 +12,7 @@
     "suffixes": ["View.flix"]
   },
   "predicateRhs": "true|false|None|Nil",
-  "boolFieldLimits": {
-    "templates/platformer-starter/src/Physics.flix::Slide": 3,
-    "templates/platformer-starter/src/Player.flix::Input": 4,
-    "templates/race-starter/src/World.flix::Inputs": 3
-  },
+  "boolFieldLimits": {},
   "hints": {
     "state-shape.bool-fields": "同時に立たない Bool は 1 つの enum にまとめる（例 isOpen・isClosing・isDone → enum Stage { case Open, Closing, Done }）。ありえない組み合わせを型で作れなくすると、片方の直し忘れの連鎖が起きない",
     "state-shape.option-bool": "3 つの状態に名前を付けた enum にする（例 Option[Bool] → enum Outcome { case Pending, Won, Lost }・enum FightDeck { case Closed, Open(Side) }）",

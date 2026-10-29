@@ -8,8 +8,8 @@
 // 使い方（ゲーム側は mixer.json を用意して App に繋ぐだけ）:
 //
 //     App.make(initialWorld)
-//         |> App.withAudio(Sfx.events)
-//         |> App.withSustained(Sfx.hums)
+//         |> App.withAudio(Controls.sounds)       // 手本は templates/tidepool-starter の Controls.sounds
+//         |> App.withSustained(Controls.ambience)
 //         |> App.withMixer(w -> w.mixer)   // AudioMixerDoc.load で読んだ Mixer。場面で差し替えてよい
 //
 // - 振り分け（routes）: バスごとに「名前の頭（prefixes）」を並べる。長く一致した方が勝ち。

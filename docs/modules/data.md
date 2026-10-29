@@ -13,7 +13,7 @@
 | Doc・アトラス・シェーダーを World の外に持ち、読み直しの時だけ替える | Resources（`With[res, w]`・`reloadRow`。手本 templates/game-starter/src/Res.flix・templates/tidepool-starter/src/Res.flix・templates/sound-novel-starter/src/Res.flix） |
 | Doc を fail-open で読む（読めない・壊れは既定値へ） | DocJson.loadOr / decodeObject |
 | 既定値で続けたことを 1 行知らせる（純粋な関数の中から） | Log.fellBackThen / warnThen / warnAllThen（`let _ = Log.warn(..)` は消える。docs/error-handling.md の決まり 3） |
-| リソース JSON の形（型・必須・既定値）を公式スキーマ方言で宣言する | Schema（実例: `templates/race-starter/project.schema.json`） |
+| リソース JSON の形（型・必須・既定値）を公式スキーマ方言で宣言する | Schema（実例: `templates/tidepool-starter/project.schema.json`） |
 
 ## モジュール 1 行紹介
 

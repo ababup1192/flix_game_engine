@@ -9,7 +9,7 @@
 |---|---|
 | ホイールの生 delta を目盛りにまとめる | InputMap（wheelSteps） |
 | 重なり判定・物理 | Collision / Physics2D |
-| 当たり判定を JSON で宣言する | HitDoc + Hit（実例: `templates/platformer-starter/src/World.flix`） |
+| 当たり判定を JSON で宣言する | HitDoc + Hit |
 | キーが押された瞬間を取る | InputEdge |
 | 複数キーを 1 つの操作にまとめる（WASD と矢印の両対応） | InputMap（実例: `templates/game-starter/src/KeysDoc.flix`） |
 | 素の中心＋幅高の箱どうし・点×箱の重なりを聞く（接するのは外） | Hit.boxBox / pointBox |

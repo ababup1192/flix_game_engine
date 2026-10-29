@@ -1,7 +1,0 @@
-{
-  "note": "このゲームだけの record-wrap の除外（bin/fge record-wrap が配る側の record-wrap.json と足して読む）。exemptRules の鍵は \"根からのパス::world-resource\" か \"::world-fields\"、値は残す理由 1 行。直したら消す（--all が古い除外を止める）。",
-  "exemptRules": {
-    "src/World.flix::world-resource": "このゲームの World はまだ Doc と描く元を直に持つ。Resources（手本 tidepool-starter の Res）へ移すまで残す",
-    "src/World.flix::world-fields": "このゲームの World はまだ平ら。画面ごとの値を画面の enum の payload（手本 tidepool-starter の Screen）へ移すまで残す"
-  }
-}
