@@ -554,7 +554,13 @@ mod RenderPaint {
         let gen = Array.get(0, paint#frameGenHolder);
         let hit = match Map.get(spec#name, cache0) {
             case Some((stored, found)) =>
-                if (ShaderGen.eqSpec(stored, spec)) Some(found) else None
+                if (ShaderGen.isSameSpec(stored, spec)) Some(found)
+                else if (ShaderGen.eqSpec(stored, spec)) {
+                    // 中身が同じ別の物は、来た方を持ち直す — 古い方を持ち続けると次のコマも参照の一致で
+                    // 抜けられず、毎コマ木を丸ごと比べ続ける（Doc の読み直しで Spec が作り直された後など）。
+                    Ref.put(Map.insert(spec#name, (spec, found), cache0), shaderProgramCache);
+                    Some(found)
+                } else None
             case None => None
         };
         let entry = match hit {

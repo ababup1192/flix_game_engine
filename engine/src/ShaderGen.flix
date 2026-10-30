@@ -184,7 +184,7 @@ pub mod ShaderGen {
     /// 書き換えない Spec が同じ name で並ぶと、毎コマ偽になって GLSL を作り直し続ける。
     /// 同じ物（参照が同じ）なら木を辿らずに真を返す — 作り置きの Spec を毎コマ渡す面では、ここで抜ける。
     pub def eqSpec(a: ShaderDoc.Spec, b: ShaderDoc.Spec): Bool =
-        isSameObject(a, b) or eqSpecTree(a, b)
+        isSameSpec(a, b) or eqSpecTree(a, b)
 
     def eqSpecTree(a: ShaderDoc.Spec, b: ShaderDoc.Spec): Bool =
         let ix = { a = texIndexFrom(ShaderDoc.texNames(a)), b = texIndexFrom(ShaderDoc.texNames(b)) };
@@ -195,7 +195,7 @@ pub mod ShaderGen {
 
     /// a と b が同じ物か（中身ではなく参照）。
     /// WhyNot: Objects.equals で比べない — Flix の値が equals を中身の比べにした時に、木を辿る比べへ黙って戻る。
-    def isSameObject(a: ShaderDoc.Spec, b: ShaderDoc.Spec): Bool =
+    pub def isSameSpec(a: ShaderDoc.Spec, b: ShaderDoc.Spec): Bool =
         unsafe IO {
             let held = new WeakReference(unchecked_cast(a as JObject));
             held.refersTo(unchecked_cast(b as JObject))
@@ -738,6 +738,7 @@ pub mod ShaderGen {
                     case ShaderDoc.UnOp.Cos      => "cos(" + x + ")"
                     case ShaderDoc.UnOp.Sat      => "clamp(" + x + ", 0.0, 1.0)"
                     case ShaderDoc.UnOp.OneMinus => "(1.0 - (" + x + "))"
+                    case ShaderDoc.UnOp.Sqrt     => "sqrt(max(" + x + ", 0.0))"
                 }
             case ShaderDoc.Field.Pow(pw) =>
                 // 整数指数は pow() でなく反復積の文字列にして CPU 側の反復積と構造を合わせる

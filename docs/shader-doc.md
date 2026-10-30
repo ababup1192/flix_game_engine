@@ -92,7 +92,7 @@ vignette・熱い溶岩を **JSON の保存だけで即調整できる**形で�
 | `smoothstep` | `lo`, `hi`, `of` | しきい値でくっきりさせる（境の太さ = `hi`） |
 | `quantize` **[新]** | `of`, `steps` | 段階の数を減らす（ポスタリゼーション） |
 | `pow` | `of`, `p` | 明暗のカーブ。`p` が負なら逆数（底は 1e-6 で下切り・答えは 1e6 で上切り） |
-| `math1` | `op`, `of` | `neg`/`abs`/`fract`/`floor`/`sin`/`cos`/`sat`/`oneMinus` |
+| `math1` | `op`, `of` | `neg`/`abs`/`fract`/`floor`/`sin`/`cos`/`sat`/`oneMinus`/`sqrt`（負の数は 0 として扱う） |
 | `math2` | `op`, `a`, `b` | `add`/`sub`/`mul`/`min`/`max`/`step`/`div`（`div` は `b` が 0 なら 0） |
 | `sampler` **[新]** | `filter`(`"nearest"`/`"linear"`), `of` | `of` の中の `tex` / `blur` を、その補間で読む（入れ子は内側が勝つ・`use` の中までは届かない） |
 | `param` **[新]** | `name`（英数字と `_`） | 面を置く時に渡す数（`Render.withShaderParams(Map#{"focus" => v}, 面)`）。毎フレーム変わる数（ピントの位置・体力の割合）はここで渡す — `const` に入れると実機は GLSL を作り直す。渡さなかった名前は 0（実機は `[render] 面 …: param '…'` を 1 回知らせる。描き出しは `Render.missingShaderParams` で同じ物を引ける） |

@@ -50,6 +50,7 @@ pub mod ShaderDoc {
         case Sin case Cos
         case Sat        // 0..1 に丸める
         case OneMinus   // 1 から引く（反転）
+        case Sqrt       // 平方根。負の数は 0 として扱う（NaN の画素を出さない）
     }
 
     /// 値の場（スカラー・0..1 目安）。GPU では 1 個の float、CPU では Float64 になる。
@@ -576,6 +577,21 @@ pub mod ShaderDoc {
             case Field.Bin(bn) => found or bn#op == BinOp.Div
             case _             => found
         }, false, field))
+
+    /// ベクトルの長さ。成分を並べて渡す（2 つなら xy、3 つなら xyz）。空なら 0。
+    pub def lengthOf(parts: List[Field]): Field =
+        let sum = parts
+            |> List.map(p -> Field.Bin({ op = BinOp.Mul, a = p, b = p }))
+            |> List.reduceLeft((a, b) -> Field.Bin({ op = BinOp.Add, a = a, b = b }))
+            |> Option.getWithDefault(Field.Const(0.0));
+        Field.Un({ op = UnOp.Sqrt, of = sum })
+
+    /// 長さ 1 にそろえた成分。長さ 0 のベクトルは 0 のまま（Div の 0 割りの決まり）。
+    /// WhyNot: 長さの式を成分ごとに複製する — 共通の式をまとめる仕組みが無い。重いなら長さを
+    /// bindings に置いて Field.Ref で引く。
+    pub def normalized(parts: List[Field]): List[Field] =
+        let len = lengthOf(parts);
+        parts |> List.map(p -> Field.Bin({ op = BinOp.Div, a = p, b = len }))
 
     def smoothstepF(lo: Float64, hi: Float64, x: Float64): Float64 =
         if (hi - lo == 0.0) (if (x < lo) 0.0 else 1.0)

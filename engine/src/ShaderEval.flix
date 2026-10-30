@@ -422,6 +422,7 @@ pub mod ShaderEval {
                     case ShaderDoc.UnOp.Cos      => Vec2.cos(v)
                     case ShaderDoc.UnOp.Sat      => Num.clamp01(v)
                     case ShaderDoc.UnOp.OneMinus => 1.0 - v
+                    case ShaderDoc.UnOp.Sqrt     => Vec2.sqrt(Float64.max(v, 0.0))
                 }
             case Node.Pow(of, p) => powf(evalNode(of, x, y, t, env), p)
             case Node.Time(scale, offset) => t * scale + evalNode(offset, x, y, t, env)

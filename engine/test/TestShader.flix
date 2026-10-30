@@ -1448,3 +1448,49 @@ def testParamJsonRoundTripAndBadName(): Unit \ Assert =
         case Err(_) => false
     };
     Assert.assertEq(expected = (true, true), (same, badIsErr))
+
+// ── 平方根と長さ ──
+
+def sqrtOf(x: Float64): ShaderDoc.Field =
+    ShaderDoc.Field.Un({ op = ShaderDoc.UnOp.Sqrt, of = ShaderDoc.Field.Const(x) })
+
+def sqrtSpec(): ShaderDoc.Spec =
+    { name = "sqrt", cycleRate = 0.0, bindings = Nil,
+      out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Solid({ r = 1.0, g = 1.0, b = 1.0 }), alpha = sqrtOf(0.25) }) }
+
+@Test
+def testSqrtEvaluatesRoot(): Unit \ Assert =
+    Assert.assertEq(expected = 3.0, ShaderEval.evalField(sqrtOf(9.0), { x = 0.0, y = 0.0 }, 0.0))
+
+@Test
+def testSqrtOfNegativeIsZero(): Unit \ Assert =
+    Assert.assertEq(expected = 0.0, ShaderEval.evalField(sqrtOf(-4.0), { x = 0.0, y = 0.0 }, 0.0))
+
+@Test
+def testSqrtGlslClampsNegative(): Unit \ Assert =
+    Assert.assertEq(expected = true, String.contains(substr = "sqrt(max(", ShaderGen.compileBody(sqrtSpec())))
+
+@Test
+def testSqrtSurvivesJsonRoundTrip(): Unit \ Assert =
+    let same = match ShaderJson.parse(ShaderJson.toJson(sqrtSpec())) {
+        case Ok(s2) => ShaderGen.compile(s2) == ShaderGen.compile(sqrtSpec())
+        case Err(_) => false
+    };
+    Assert.assertEq(expected = true, same)
+
+@Test
+def testLengthOfThreeFourIsFive(): Unit \ Assert =
+    let len = ShaderDoc.lengthOf(ShaderDoc.Field.Const(3.0) :: ShaderDoc.Field.Const(4.0) :: Nil);
+    Assert.assertEq(expected = 5.0, ShaderEval.evalField(len, { x = 0.0, y = 0.0 }, 0.0))
+
+@Test
+def testNormalizedHasUnitComponents(): Unit \ Assert =
+    let parts = ShaderDoc.normalized(ShaderDoc.Field.Const(3.0) :: ShaderDoc.Field.Const(4.0) :: Nil);
+    let got = parts |> List.map(p -> ShaderEval.evalField(p, { x = 0.0, y = 0.0 }, 0.0));
+    Assert.assertEq(expected = 0.6 :: 0.8 :: Nil, got)
+
+@Test
+def testNormalizedZeroStaysZero(): Unit \ Assert =
+    let parts = ShaderDoc.normalized(ShaderDoc.Field.Const(0.0) :: ShaderDoc.Field.Const(0.0) :: Nil);
+    let got = parts |> List.map(p -> ShaderEval.evalField(p, { x = 0.0, y = 0.0 }, 0.0));
+    Assert.assertEq(expected = 0.0 :: 0.0 :: Nil, got)

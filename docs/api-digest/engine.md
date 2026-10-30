@@ -1,4 +1,4 @@
-<!-- engine v0.71.0 / 生成: 2026-10-29 -->
+<!-- engine v0.71.0 / 生成: 2026-10-30 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine
@@ -704,7 +704,7 @@
 - 2 つの場を合わせる素の計算。混ぜる意図（0..1 の重み）は Blend を使い、これは生の値の合成。
   `pub enum BinOp with Eq, ToString { case Add case Sub case Mul case Min case Max case Step case Div }`
 - 1 つの場に掛ける素の関数。
-  `pub enum UnOp with Eq, ToString { case Neg case Abs case Fract case Floor case Sin case Cos case Sat case OneMinus }`
+  `pub enum UnOp with Eq, ToString { case Neg case Abs case Fract case Floor case Sin case Cos case Sat case OneMinus case Sqrt }`
 - 値の場（スカラー・0..1 目安）。GPU では 1 個の float、CPU では Float64 になる。
   `pub enum Field { case Const(Float64) case Uv({ axis = Axis }) case Worley({ scale = Float64, seed = Int32, out = WorleyOut }) case Fbm({ octaves = Int32, scale = Float64, seed = Int32 }) case FbmTile({ octaves = Int32, scale = Float64, period = Vec2.Vec2, seed = Int32 }) case Smoothstep({ lo = Float64, hi = Float64, of = Field }) case Scaled({ factor = Float64, scroll = Vec2.Vec2, of = Field }) case Warp({ amount = Float64, scale = Float64, seed = Int32, of = Field }) case Mix({ a = Field, b = Field, t = Float64 }) case Blend({ a = Field, b = Field, by = Field }) case Disk({ cx = Float64, cy = Float64, radius = Float64, feather = Float64 }) case Radial({ cx = Float64, cy = Float64 }) case RadialAspect({ cx = Float64, cy = Float64, aspect = Float64 }) case Quantize({ of = Field, steps = Int32 }) case Scales({ scale = Float64, stagger = Float64 }) case Glints({ scale = Float64, rate = Float64, density = Float64, seed = Int32 }) case Ripples({ freq = Float64, amp = Float64, speed = Float64, seed = Int32 }) case Sparkle({ scale = Float64, rate = Float64, density = Float64, seed = Int32 }) case Bin({ op = BinOp, a = Field, b = Field }) case Hash1({ scale = Float64, seed = Int32, bucket = Option[Field] }) case Hash2({ scale = Float64, seed = Int32, comp = Axis, bucket = Option[Field] }) case Un({ op = UnOp, of = Field }) case Pow({ of = Field, p = Float64 }) case Time({ scale = Float64, offset = Field }) case Tiling({ tiles = Vec2.Vec2, of = Field }) case Snap({ cells = Vec2.Vec2, of = Field }) case Swirl({ cx = Float64, cy = Float64, strength = Float64, rate = Float64, of = Field }) case Angle({ cx = Float64, cy = Float64 }) case Rotate({ cx = Float64, cy = Float64, turns = Float64, rate = Float64, of = Field }) case Ref(String) case Tex({ name = String, chan = TexChan }) case Shift({ dx = Field, dy = Field, of = Field }) case TexBlur({ name = String, chan = TexChan, radius = Vec2.Vec2, taps = Int32, amount = Field }) case Sampler({ filter = FilterMode, of = Field }) case Param({ name = String }) }`
 - 面の色（rgb）。
@@ -755,6 +755,10 @@
   `pub def usesBlur(spec: Spec): Bool`
 - Spec が割り算（BinOp.Div）を使うか（GLSL の sg_div を宣言するか）。
   `pub def usesDiv(spec: Spec): Bool`
+- ベクトルの長さ。成分を並べて渡す（2 つなら xy、3 つなら xyz）。空なら 0。
+  `pub def lengthOf(parts: List[Field]): Field`
+- 長さ 1 にそろえた成分。長さ 0 のベクトルは 0 のまま（Div の 0 割りの決まり）。
+  `pub def normalized(parts: List[Field]): List[Field]`
 
 ## ShaderEffect — `engine/src/ShaderEffect.flix`
 - シェーダー面 1 枚ぶんの描画依頼。
@@ -797,6 +801,8 @@
   `pub def preludeSource(): String`
 - Spec 2 つの構造比較（program キャッシュの正当性の中核）。真 ⇒ compile は純関数なので
   `pub def eqSpec(a: ShaderDoc.Spec, b: ShaderDoc.Spec): Bool`
+- a と b が同じ物か（中身ではなく参照）。
+  `pub def isSameSpec(a: ShaderDoc.Spec, b: ShaderDoc.Spec): Bool`
 - Spec → fragment シェーダー全体（prelude + main）。uTime uniform を前提に持つ。
   `pub def compile(spec: ShaderDoc.Spec): String`
 - `pub def compileBody(spec: ShaderDoc.Spec): String`
