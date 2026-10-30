@@ -94,32 +94,4 @@ mod TestPassPlan {
         let specs = Render.passSpecsOf(_ -> None, plan)#specs;
         Assert.assertEq(expected = (1, 1, 0.5) :: (0, 0, 1.0) :: Nil,
                         specs |> List.map(sp -> (List.length(sp#surfaces), List.length(sp#drawables), sp#scale)))
-
-    // ── Pass の計画が受ける見え方（withPassPlanView / passCtxOf） ──
-
-    def design480(): Vec2.Vec2 = { x = 480.0, y = 270.0 }
-
-    /// world 1200×270 の中で、中心 (1000, 50) を映したがる camera（端で止まる）。
-    def boundedApp(): App.App[Int32, {}] =
-        App.make(0)
-            |> App.withCamera(_ -> { x = 1000.0, y = 50.0 })
-            |> App.withCameraBounds(_ -> { position = Vec2.zero(), size = { x = 1200.0, y = 270.0 } })
-            |> App.withPassPlanView((pc, _) -> Render.passPlan(
-                   pc#camera#center |> Option.map(c -> pass("cam_${Float64.toString(c#x)}_${Float64.toString(c#y)}", Nil)) |> Option.toList))
-
-    /// 計画を組む関数が受ける camera は、bounds で端に寄せた後の値（横は 1200 − 240 = 960・縦は画面と同じ高さなので中央の 135）。
-    @Test
-    def testPassPlanViewSeesTheBoundedCamera(): Unit \ Assert =
-        let app = boundedApp();
-        let pc = App.passCtxOf(app, App.pickCtx(design480()), 0);
-        Assert.assertEq(expected = ("cam_960.0_135.0" :: Nil, Some((960.0, 135.0))),
-            (((App.rec(app)#passes)(pc, 0))#passes |> List.map(p -> p#name),
-             App.cameraViewOf(app, design480(), 0)#center |> Option.map(c -> (c#x, c#y))))
-
-    /// withPassPlan（見え方を受けない形）は見え方に関わらず同じ計画を返す。
-    @Test
-    def testPassPlanIgnoresTheView(): Unit \ Assert =
-        let app = App.make(0) |> App.withPassPlan(_ -> Render.passPlan(pass("only", Nil) :: Nil));
-        Assert.assertEq(expected = "only" :: Nil,
-            ((App.rec(app)#passes)(App.passCtxOf(app, App.pickCtx(design480()), 0), 0))#passes |> List.map(p -> p#name))
 }

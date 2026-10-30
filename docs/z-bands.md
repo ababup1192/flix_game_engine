@@ -8,7 +8,6 @@
 | world | 0 〜 数百（慣習） | 背景・キャラ・エフェクトなどゲームの絵 | ゲームが自由に決める。`Depth` が使う範囲もここに入る |
 | UI layer | layer × 10000 | ui.json の root ごとの層（`CanvasLayer.layerStride`） | UiRender が layer から加算する |
 | Transition | 100000 | 画面を覆う切り替え演出の既定（`Transition.defaultZ`） | UI より手前・HUD の範囲より奥 |
-| （world の範囲のまま） | 0 〜 | `App.withScreenView` の絵（camera を掛けない本編。pass を読み返す全面の面など） | 持ち上げない。world の絵（camera 済み）の後ろに繋ぐので、同じ z なら world の手前・Transition より奥 |
 | HUD の範囲 | 1,000,000,000 〜 +99,999,999 | `App.withHudView` の絵 | `composeScene` が `ZBand.liftHud` で持ち上げる。ゲームが書く z は 0..99,999,999（はみ出しは clamp・wrap しない） |
 | エンジンデバッグの範囲 | 2,000,000,000 〜 +10 | fps・矩形注釈・トースト・スクラブ表示（Annotate） | エンジン専用。ゲームは使わない |
 

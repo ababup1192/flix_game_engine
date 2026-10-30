@@ -44,8 +44,7 @@ SoftRaster が指定を黙って落とすと、**スナップショットは「�
 | 縮んだ pass（`RenderTarget.Descriptor` の scale） | viewport でテクセル寸法へ縮める（投影は design のまま） | design 解像度で描き、GL がテクセルを塗る点で 1 画素拾う（面はその点で評価） | テクセルの格子にそろった座標（scale 0.5 なら偶数）の絵は**同一を保証する**（passHalf）。奇数座標の箱の縁も合わせてある（縦は「境目なら上」— GL のターゲットが上下逆格納のため）。面の中の式（市松の升目など）が標本点にちょうど乗る所は近似。割り切れない倍率（0.33 など）は B 段階（この Mac では 0 px） |
 | tex 場の Linear（`sampler` 節） | sampler object の GL_LINEAR | `ShaderEval.sampleTexLinear`（同じ点・同じ重み） | **近似**: GPU は補間の重みを固定小数に丸めるので ±1/255 程度ずれうる（B 段階 linearRead。この Mac の実測は 0 px） |
 | 面に渡す数（`param`） | uniform `uParamN`（float32） | `ShaderDoc.bindParams` で `const` に置き換えて評価（float64） | `const` と同じ扱い（gl_parity の paramRead は 8bit で半分に乗らない値で A 段階 0 px） |
-| 輪郭光（`PxSprite.drawRimQuad`） | 白の縁の絵を tint・fade して Add | 同じ | **近似**: fade（灯りの強さ）が k/255 に乗らないので GL（float）と CPU（8bit 整数）で ±2 ずれうる。塗る画素の集合は一致（B 段階 rimLight） |
-| 倒した影（`Shadow.projectedRuns` / `projectedBox`） | gradPolygon（Multiply） | 同じ | 斜めの縁と頂点ごとの濃さは多角形の近似のまま（B 段階 castShadow） |
+| 倒した影（`Shadow.projectedRuns`） | gradPolygon（Multiply） | 同じ | 斜めの縁と頂点ごとの濃さは多角形の近似のまま（B 段階 castShadow） |
 | `pow` の負の指数・`div` | float32 | float64 | 近似: 答えの上切り 1e6 の手前の大きな値・`div` の割る数が 0 に近い所（0 になるかが float32 と float64 で割れうる）は差が出うる |
 | 組み込み放射テクスチャのスプライト（`Render.lightAt` / `darkAt`） | ○ | ○ | **一致**（radial scene が機械証明）。土台は `RadialBuiltin` の画素定義 — 減衰カーブは rgb だけに書き込み **alpha は常に 255**。alpha=255 なら Add は `d+s` の整数の足し算で GL（float 合成）と CPU（整数合成）の丸めが消える。Multiply（`darkAt`）は `d×s/255` が割り切れる下地（白・黒）でのみバイト一致 — 中間色の下地では ±1 の丸め差が出うる（GL は最近接丸め・CPU は切り捨て）。tint・strength の中間値も float 乗算が入るため一致保証は白 tint・strength=1.0 の範囲。もう 1 つの条件は四角の左上が画面内にあること — SoftRaster の出力矩形の丸め（`SoftRaster.ri` = 0 方向切り捨て）が**負座標で 1px 内側にずれ**、等倍の貼りが 1px 縮む（放射に限らず全スプライト共通の既知の穴。画面の左上からはみ出す置き方だけで踏む） |
 

@@ -216,9 +216,6 @@ vignette・熱い溶岩を **JSON の保存だけで即調整できる**形で�
 - **まだ描いていない pass**（後ろに宣言した pass・このコマで宣言していない古い pass）を読むと黒になり、1 回だけ知らせる。
 - 倍率は `App.withPassPlan` に `{ targets = Map#{ "名前" => { scale = 0.5 | RenderTarget.defaultDescriptor() } } | Render.passPlan(passes) }`。
   描き出しは同じ計画を `Render.passSpecsOf` に渡す。sprite で貼ると常に Nearest（1 テクセルが塊になる）・なめらかに広げるなら面で `sampler` を通して読む。
-- 場面を pass に描いて camera を動かすなら、計画を `App.withPassPlanView` で組み、`PassCtx#camera` を木の部分ごとに
-  `CameraRig.follow`（world の物）/ `CameraRig.followParallax(cam, {x, y}, …)`（遠景。縦と横で別の割合）で写す。pass を読み返す全面の面は
-  camera の掛からない `App.withScreenView` に置く（`withCamera` の本編に置くと面ごと動く）。光マップは `Light.worldLightMapPass(cam, cfg)`。
 
 ## 生成での注意
 

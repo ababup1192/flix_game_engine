@@ -31,12 +31,6 @@ pub mod PxShade {
 
     /// 1 コマ（文字格子）に仕上げを掛ける。
     pub def shade(spec: Spec, ramp: Ramp, rows: List[String]): List[String] =
-        let solid = isSolid(ramp);
-        mapCells(rows, (src, x, y) -> pixel(spec, ramp, src, solid, x, y))
-
-    /// 行の長さを元のまま保って、1 画素ずつ f で決め直す（そろえて詰めるとコマの形が変わる）。
-    /// f は (近くを読む関数, x, y)。枠の外と行の右の外は '.'。
-    def mapCells(rows: List[String], f: ((Int32, Int32) -> Char, Int32, Int32) -> Char): List[String] =
         let height = List.length(rows);
         if (height == 0) rows
         else {
@@ -48,68 +42,17 @@ pub mod PxShade {
                     let row = Vector.get(y, grid);
                     if (x >= Vector.length(row)) '.' else Vector.get(x, row)
                 };
+            // 「地の続き」= 表に載っている色（中・明・暗のどれか）。それ以外（透明・輪郭）は外。
+            let solid = ch -> Map.memberOf(ch, ramp)
+                or Map.exists((_, tones) -> fst(tones) == ch or snd(tones) == ch, ramp);
+            // 行の長さは元のまま保つ（そろえて詰めるとコマの形が変わる）。
             List.range(0, height) |> List.map(y ->
                 region rc {
                     let sb = StringBuilder.empty(rc);
                     List.range(0, widthAt(y))
-                        |> List.forEach(x -> StringBuilder.append(f(src, x, y), sb));
+                        |> List.forEach(x -> StringBuilder.append(pixel(spec, ramp, src, solid, x, y), sb));
                     StringBuilder.toString(sb)
                 })
-        }
-
-    /// 「地の続き」= 表に載っている色（中・明・暗のどれか）。それ以外（透明・輪郭）は外。
-    def isSolid(ramp: Ramp): Char -> Bool = ch ->
-        Map.memberOf(ch, ramp) or Map.exists((_, tones) -> fst(tones) == ch or snd(tones) == ch, ramp)
-
-    // ── 輪郭光（rim light）の縁の絵 ──
-
-    /// 縁の絵の Doc の legend で、縁の画素の文字と意味色キー。アトラスは白で作り、描く時に灯りの色を掛ける。
-    pub def rimChar(): Char = '#'
-
-    pub def rimKey(): String = "rim"
-
-    /// 8 方向の名前と、画面の向き（x は右が +・y は下が +）。
-    def rimDirections(): List[(String, Int32, Int32)] =
-        ("n", 0, -1) :: ("ne", 1, -1) :: ("e", 1, 0) :: ("se", 1, 1)
-            :: ("s", 0, 1) :: ("sw", -1, 1) :: ("w", -1, 0) :: ("nw", -1, -1) :: Nil
-
-    /// 縁の絵のコマの名前（元のコマ・向き）。
-    pub def rimFrameName(frame: String, direction: String): String = "${frame}@rim-${direction}"
-
-    /// 8 方向（n ne e se s sw w nw）の縁の画素だけを残したコマの Doc を作る（読み込み時に 1 度）。
-    /// 縁 = 地の続き（ramp に載った色。shade と同じ決まり）で、その向きの隣が地でない画素。残す画素は rimChar、ほかは '.'。
-    /// 斜めの向きは縦と横の両方を見る（ne = 上か右が空いている）。
-    /// スプライト名は元と同じ・コマの名前は rimFrameName（"<元のコマ>@rim-<向き>"）・legend は rimChar → rimKey だけ。
-    /// 返す Doc は元とは別の物で、別のアトラスに作る — 元のコマと同じ表に並ばないので、名前は混ざらない。
-    /// 動き（clips）は持たない（どのコマを描くかは本体の絵の側で決まる）。
-    pub def rimMasks(ramp: Ramp, doc: PxSpriteDoc.Doc): PxSpriteDoc.Doc =
-        let solid = isSolid(ramp);
-        let masked = (dx, dy, rows) -> mapCells(rows, (src, x, y) -> {
-            let open = (dx != 0 and not solid(src(x + dx, y))) or (dy != 0 and not solid(src(x, y + dy)));
-            if (solid(src(x, y)) and open) rimChar() else '.'
-        });
-        { legend = Map#{ rimChar() => rimKey() },
-          sprites = doc#sprites |> Map.map(sp -> {
-              let frames = Map.foldLeftWithKey((acc, name, rows) ->
-                  rimDirections() |> List.foldLeft((inner, d) -> {
-                      let (dir, dx, dy) = d;
-                      Map.insert(rimFrameName(name, dir), masked(dx, dy, rows), inner)
-                  }, acc), Map.empty(), sp#frames);
-              { frames = frames, clips = Map.empty() | sp }
-          }) | doc }
-
-    /// 向き（画面の下が +y）から、いちばん近い 8 方向の名前。長さ 0（と非有限）は None。
-    /// 境は 22.5 度（tan 22.5° = √2 − 1）: 片方の成分が他方の √2 − 1 倍より小さければ、その成分は 0 と見る。
-    pub def rimDirectionOf(towardLight: Vec2.Vec2): Option[String] =
-        let ax = Float64.abs(towardLight#x);
-        let ay = Float64.abs(towardLight#y);
-        let k = 0.41421356237309503;
-        if (not Float64.isFinite(ax) or not Float64.isFinite(ay) or (ax <= 0.0 and ay <= 0.0)) None
-        else {
-            let sx = if (ax > k * ay) (if (towardLight#x > 0.0) 1 else -1) else 0;
-            let sy = if (ay > k * ax) (if (towardLight#y > 0.0) 1 else -1) else 0;
-            rimDirections() |> List.find(d -> { let (_, dx, dy) = d; dx == sx and dy == sy })
-                |> Option.map(d -> { let (name, _, _) = d; name })
         }
 
     /// 全コマ・全スプライトに同じ仕上げを掛けた Doc を返す（読み込み直後に 1 度だけ呼ぶ）。

@@ -8,7 +8,7 @@ use fge::GameEngine
 mod ParityMain {
     use fge::{
         Color, FontAtlas, GameEngine, GlReadback, GpuHandle, HeadlessFont, HeadlessRender,
-        LwjglLayer, PxSpriteAtlas, Render, RenderTarget, ShaderEffect
+        LwjglLayer, Render, RenderTarget, ShaderEffect
     }
 
     import java.io.File
@@ -28,20 +28,7 @@ mod ParityMain {
 
     // ── GL 側（隠しウィンドウの中で 1 scene = 1 コマ）──
 
-    /// 実行時に作るアトラス（Scenes.bakedTextures）を GL へ上げる（同じ鍵の間は何もしない）。
-    def uploadBaked(): Unit \ GameEngine.Game =
-        Scenes.bakedTextures() |> List.forEach(e -> {
-            let (name, baked) = e;
-            GameEngine.Game.ensureTexture(name, "parity:${name}", baked#side, baked#side, baked#pixels)
-        })
-
-    /// SoftRaster が読む、実行時に作るアトラスの PNG（debug/ に書く）。
-    def bakedImages(): List[{ name = String, side = Int32, pixelAt = (Int32, Int32) -> Int32 }] =
-        Scenes.bakedTextures() |> List.map(e -> { let (name, baked) = e; { texture = name, baked = baked } })
-            |> PxSpriteAtlas.asImages
-
     def glShoot(sc: Scenes.Scene): Unit \ IO + GameEngine.Game + ShaderEffect.Shader + RenderTarget.Target =
-        uploadBaked();
         let texInfoOf = name -> GameEngine.Game.getTextureInfo(name);
         // 実機（App.renderPasses）と同じく、読みの書き換えを通した列を描き、Pass の中の面も描く。
         let plan = Render.resolvePassReads(Set.empty(), planOf(sc))#plan;
@@ -92,12 +79,6 @@ mod ParityMain {
 
     /// SoftRaster 側の寸法引き（実機の getTextureInfo に当たる口の headless 版）。
     def softTexInfo(name: String): Option[GameEngine.TextureInfo] =
-        match HeadlessRender.imageTextureInfo(bakedImages())(name) {
-            case Some(info) => Some(info)
-            case None       => atlasOrPassInfo(name)
-        }
-
-    def atlasOrPassInfo(name: String): Option[GameEngine.TextureInfo] =
         if (name == "atlas")
             Some({ id = GpuHandle.wrapTextureId(0),
                    width = Scenes.atlasSide(), height = Scenes.atlasSide() })
@@ -110,10 +91,10 @@ mod ParityMain {
 
     /// 縁のつまみ（shapeAntialias / textAntialias）は既定のまま。ここは GL と SoftRaster の
     /// 差だけを見る場なので、片方だけ切ると差がどちら由来か読めなくなる。
-    def cfgOf(atlas: FontAtlas): HeadlessRender.RenderConfig \ IO =
+    def cfgOf(atlas: FontAtlas): HeadlessRender.RenderConfig =
         { design = { x = Scenes.designW(), y = Scenes.designH() }, scale = 1,
           background = black(),
-          texturePath = Map.insert("atlas", "assets/atlas.png", HeadlessRender.imagePngs("debug/baked", bakedImages())),
+          texturePath = Map#{"atlas" => "assets/atlas.png"},
           fontTtf = ttf(), fontAtlas = atlas, outDir = "debug/soft",
           frameW = Scenes.designWi(), frameH = Scenes.designHi() | HeadlessRender.defaults() }
 

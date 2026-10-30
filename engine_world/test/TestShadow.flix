@@ -341,7 +341,7 @@ mod TestShadow {
         Assert.assertEq(expected = Some(0.25), rimAlpha)
 
 
-    // ── 立っている物を倒した影（projectedRuns / projectedBox） ──
+    // ── 立っている物を倒した影（projectedRuns） ──
 
     def runAt(x: Float64, y: Float64, w: Float64, h: Float64): PxSprite.Run = { x = x, y = y, w = w, h = h, key = "body" }
 
@@ -382,20 +382,4 @@ mod TestShadow {
         let differ = runAt(99.0, 95.0, 2.0, 5.0) :: runAt(98.0, 90.0, 4.0, 5.0) :: Nil;
         Assert.assertEq(expected = (0.8 :: 0.8 :: 0.4 :: 0.4 :: Nil) :: (0.4 :: 0.4 :: 0.0 :: 0.0 :: Nil) :: Nil,
                         runsShadow(differ, at(0.0, 100.0)) |> List.map(p -> snd(polyOf(p))))
-
-    /// 灯りが真左: 根元の半幅 = max(2, 10 × |side.x| + 4 × |side.y|) = 4（横へ倒れるので楕円の縦の半径）・先は 4 × 1.35 = 5.4。
-    @Test
-    def testProjectedBoxUsesTheFootEllipse(): Unit \ Assert =
-        let quad = Shadow.projectedBox({ foot = at(100.0, 100.0), halfX = 10.0, halfY = 4.0, height = 20.0, light = at(0.0, 100.0),
-                                         reach = 1.0, ink = ink(), alpha = 0.8, z = 1 })
-            |> Option.map(p -> fst(polyOf(p))) |> Option.getWithDefault(Nil);
-        Assert.assertTrue(verticesNear(at(100.0, 104.0) :: at(120.0, 105.4) :: at(120.0, 94.6) :: at(100.0, 96.0) :: Nil, quad))
-
-    /// 根元の半幅は 2 より細くならない（縦の半径 1 でも 2）。
-    @Test
-    def testProjectedBoxKeepsTheMinimumWidth(): Unit \ Assert =
-        let quad = Shadow.projectedBox({ foot = at(100.0, 100.0), halfX = 10.0, halfY = 1.0, height = 20.0, light = at(0.0, 100.0),
-                                         reach = 1.0, ink = ink(), alpha = 0.8, z = 1 })
-            |> Option.map(p -> fst(polyOf(p))) |> Option.getWithDefault(Nil);
-        Assert.assertTrue(verticesNear(at(100.0, 102.0) :: at(120.0, 102.7) :: at(120.0, 97.3) :: at(100.0, 98.0) :: Nil, quad))
 }

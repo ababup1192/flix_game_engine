@@ -252,26 +252,6 @@ pub mod Light {
     /// 領域を横切ると、B の灯りもその領域では消える**。厳密にするには光 1 個 = pass 1 本が
     /// 要り、pass 数が光源数に比例して増えるため v1 はこの割り切りを仕様にする。
     pub def lightMapPass(cfg: LightMapConfig): Render.Pass =
-        lightMapPassOf(cfg, items -> items)
-
-    /// 光マップの Pass を world 座標の灯り・遮る物から組む（場面を camera で動かすゲーム用）。
-    /// 灯りの放射と影は world 座標で組んでから cam で画面へ写す（zoom で半径と遮る物の形も一緒に合う）。
-    /// 環境光の全面の box だけは画面に固定のまま。見える範囲（CameraRig.visibleRectOf）と半径の円が重ならない灯りは落とす。
-    /// cfg#lights / cfg#occluders は world 座標で渡す（lightMapPass は画面座標のまま。どちらも同じ形の Pass を返す）。
-    pub def worldLightMapPass(cam: CameraRig.CameraView, cfg: LightMapConfig): Render.Pass =
-        let seen = CameraRig.visibleRectOf(cam);
-        lightMapPassOf({ lights = cfg#lights |> List.filter(light -> reaches(seen, light)) | cfg }, CameraRig.follow(cam))
-
-    /// 灯りの円（中心 at・半径 radius）が矩形 r に掛かるか（円の中心から矩形までのいちばん近い点の距離 ≤ 半径）。
-    def reaches(r: Rect2.Rect2, light: Light): Bool =
-        let nx = Float64.max(r#position#x, Float64.min(light#at#x, r#position#x + r#size#x));
-        let ny = Float64.max(r#position#y, Float64.min(light#at#y, r#position#y + r#size#y));
-        let dx = light#at#x - nx;
-        let dy = light#at#y - ny;
-        dx * dx + dy * dy <= light#radius * light#radius
-
-    /// 光マップの Pass の組み立て。place は灯りの放射と影に掛ける写し（環境光の box には掛けない）。
-    def lightMapPassOf(cfg: LightMapConfig, place: List[Render.PlacedItem] -> List[Render.PlacedItem]): Render.Pass =
         let ambientFloor = { at = Vec2.zero(), item = RawDraw.box(cfg#viewport, cfg#ambient, 0) };
         let radiance = cfg#lights |> List.map(light -> Render.lightAt({
             at = light#at, radius = light#radius, color = light#color,
@@ -282,28 +262,7 @@ pub mod Light {
                 |> List.map(quad -> ambientQuad(quad, cfg#ambient, cfg#shadowStrength)));
         { name = cfg#passName,
           clear = RenderTarget.LoadOp.Clear({ r = 0.0, g = 0.0, b = 0.0 }),
-          items = ambientFloor :: place(List.append(radiance, shadows)) }
-
-    /// 光マップの Pass に、光を落とさない範囲（Unity 2D の Unlit と同じ考え方）を足す。
-    /// areas の形（Box・Poly・gradPolygon・Sprite）の色を白に替え、環境光の上・灯りの放射の下（unlitZ）に描く。
-    /// 形の濃さ（alpha・gradPolygon の頂点の濃さ）は残すので、縁をぼかせる（地平の手前でなめらかに光マップへ戻す）。
-    /// areas は Pass と同じ座標で渡す（lightMapPass なら画面・worldLightMapPass なら CameraRig.follow / followParallax で写した後）。
-    /// 注意: Sprite は tint を白にしても絵の色が掛かる（tint は掛け算）。白い絵を渡す。
-    pub def withUnlit(areas: List[Render.PlacedItem], pass: Render.Pass): Render.Pass =
-        { items = List.append(pass#items, areas |> List.map(placed -> { item = unlitItem(placed#item) | placed })) | pass }
-
-    /// 白にして unlitZ に置く（Text と Shader 面は色だけ替えない — 光を落とさない範囲には使わない物）。
-    def unlitItem(item: Render.Item): Render.Item =
-        let white = { r = 1.0, g = 1.0, b = 1.0 };
-        match item {
-            case Render.Item.Box(b)     => Render.Item.Box({ color = white, zIndex = unlitZ() | b })
-            case Render.Item.Poly(p)    => Render.Item.Poly({ color = white, zIndex = unlitZ(),
-                                                              grad = p#grad |> Option.map(List.map(t -> { color = white | t })) | p })
-            case Render.Item.Sprite(sp) => Render.Item.Sprite({ tint = white, zIndex = unlitZ() | sp })
-            case Render.Item.Text(x)    => Render.Item.Text({ zIndex = unlitZ() | x })
-            case Render.Item.Shader(sh) => Render.Item.Shader({ zIndex = unlitZ() | sh })
-            case Render.Item.Clipped(c) => Render.Item.Clipped({ inner = unlitItem(c#inner) | c })
-        }
+          items = ambientFloor :: List.append(radiance, shadows) }
 
     /// 光マップを本編へ Multiply で 1 枚貼る PlacedItem（view の列の末尾側に足す）。
     /// 光が掛かるのは cfg#z 未満の zIndex の絵だけ — HUD 等の掛けたくない物は
@@ -315,8 +274,6 @@ pub mod Light {
     /// 光マップの中の z-index の範囲。影（20）は放射（10）より上 — 影が灯りの Add の後に掛からないと
     /// 「灯りを打ち消して環境光へ戻す」順にならないため。
     def radianceZ(): Int32 = 10
-    /// 光を落とさない範囲（withUnlit）の z。環境光（0）の上・放射（10）の下 — 白の上に放射を足しても 1 で頭打ちになる。
-    def unlitZ(): Int32 = 5
     def shadowZ(): Int32 = 20
 
     /// 影四角形を環境光色・Normal の Poly にする。Shadow.blackQuad（Multiply 黒）と色も
@@ -324,44 +281,6 @@ pub mod Light {
     def ambientQuad(quad: List[Vec2.Vec2], ambient: Color, strength: Float64): Render.PlacedItem =
         { at = Vec2.zero(),
           item = RawDraw.polygon(quad, ambient, shadowZ()) |> Render.fade(strength) }
-
-    // ── 輪郭光（rim light） ──
-
-    /// 輪郭光 1 方向ぶん: at から灯りへの向き（長さ 1）・灯りの色・強さ 0..1。
-    /// PxSprite.drawRimQuad がこの向きに近い 8 方向の縁の絵（PxShade.rimMasks）を選んで重ねる。
-    pub type alias Rim = { toward = Vec2.Vec2, color = Color, strength = Float64 }
-
-    /// at に立つ物の輪郭光。灯りごとに寄与（(1 − 距離/半径)² × halo。半径の外・at に重なる灯りは 0）を求め、
-    /// 8 方向の同じ向きに入った灯りどうしだけをまとめる（強さは和で 1 が頭打ち・向きと色は寄与で重みを付けた平均）。
-    /// 強い順に最大 limit 方向を返す（同じ強さは向きの名前の順。届く灯りが無ければ Nil）。
-    /// WhyNot: 全部の灯りの向きを 1 本の和にしない — 左右に灯りがあると向きが打ち消し合って縁が出なくなる。
-    ///   向きごとに分けて返すので、両側に灯りがあれば両側の縁が光る（limit = 2 なら 2 方向まで重ねる）。
-    pub def rimsFrom(lights: List[Light], at: Vec2.Vec2, limit: Int32): List[Rim] =
-        let reached = lights |> List.filterMap(light -> {
-            let offset = Vec2.sub(light#at, at);
-            let d = Vec2.length(offset);
-            let k = if (light#radius <= 0.0 or d >= light#radius) 0.0
-                    else { let f = 1.0 - d / light#radius; f * f * light#halo };
-            if (k <= 0.0 or d <= 0.0) None
-            else PxShade.rimDirectionOf(offset) |> Option.map(dir -> (dir, (k, Vec2.div(offset, d), light#color)))
-        });
-        let grouped = reached |> List.foldLeft((acc, entry) -> {
-            let (dir, (k, unit, c)) = entry;
-            let (k0, v0, c0) = Map.getWithDefault(dir, (0.0, Vec2.zero(), { r = 0.0, g = 0.0, b = 0.0 }), acc);
-            Map.insert(dir, (k0 + k, Vec2.add(v0, Vec2.mul(unit, k)),
-                             { r = c0#r + c#r * k, g = c0#g + c#g * k, b = c0#b + c#b * k }), acc)
-        }, Map.empty());
-        Map.toList(grouped)
-            |> List.map(entry -> {
-                let (dir, (k, v, c)) = entry;
-                let len = Vec2.length(v);
-                (dir, { toward = if (len > 0.0) Vec2.div(v, len) else v,
-                        color = { r = c#r / k, g = c#g / k, b = c#b / k },
-                        strength = Float64.min(1.0, k) })
-            })
-            |> List.sortBy(entry -> { let (dir, rim) = entry; (0.0 - rim#strength, dir) })
-            |> List.take(Int32.max(0, limit))
-            |> List.map(snd)
 
     /// 8bit 値 k をそのままの色成分（k/255）にする。
     def c255(k: Int32): Float64 =

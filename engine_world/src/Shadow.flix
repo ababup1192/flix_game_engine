@@ -265,7 +265,7 @@ pub mod Shadow {
             }))
 
     /// 絵の走り（PxSprite.runs）を灯りの反対の地面へ倒した影。行ごとの帯の gradPolygon（Multiply）の列。
-    /// depth = 足元の楕円の縦の半径 ÷ 横の半径（横へ倒れる影の太さ。projectedBox の halfY / halfX と同じ意味）。
+    /// depth = 足元の楕円の縦の半径 ÷ 横の半径（横へ倒れる影の太さ）。
     /// 横の位置 u は、倒す向きに直交する軸へ |side.x| + depth × |side.y| 倍して置く（下へ倒れる影は絵の幅のまま・横へ倒れる影は細い）。
     /// 同じ行の触れ合う走りは 1 本に、上下で同じ区間の行は 1 枚にまとめる（数を減らす）。
     /// 灯りが足元に重なる（距離 1px 未満）・reach が 0 以下・足元より上に絵が無い時は Nil。
@@ -288,25 +288,6 @@ pub mod Shadow {
                               |> Render.blended(DrawCmd.BlendMode.Multiply) })
                 }
         }
-
-    /// 絵の走りを持たない物（家・木を多角形で描いた物）用: 足元の楕円（横の半径 halfX・縦の半径 halfY）から
-    /// 高さ height × reach だけ倒した台形 1 枚（gradPolygon・Multiply）。
-    /// 根元の半幅 = max(2, halfX × |side.x| + halfY × |side.y|)・先の半幅は 1.35 倍・濃さは根元 alpha → 先 0。
-    /// 灯りが足元に重なる（距離 1px 未満）時は None。
-    pub def projectedBox(spec: { foot = Vec2.Vec2, halfX = Float64, halfY = Float64, height = Float64, light = Vec2.Vec2,
-                                 reach = Float64, ink = Color, alpha = Float64, z = Int32 }): Option[Render.PlacedItem] =
-        awayFrom(spec#light, spec#foot) |> Option.map(dir -> {
-            let side = sideOf(dir);
-            let w0 = Float64.max(2.0, spec#halfX * Float64.abs(side#x) + spec#halfY * Float64.abs(side#y));
-            let w1 = w0 * 1.35;
-            let tip = Vec2.add(spec#foot, Vec2.mul(dir, spec#height * spec#reach));
-            let v = (pt, a) -> { pos = pt, color = spec#ink, alpha = a };
-            { at = Vec2.zero(),
-              item = Render.gradPolygon(
-                  v(Vec2.add(spec#foot, Vec2.mul(side, w0)), spec#alpha) :: v(Vec2.add(tip, Vec2.mul(side, w1)), 0.0)
-                      :: v(Vec2.sub(tip, Vec2.mul(side, w1)), 0.0) :: v(Vec2.sub(spec#foot, Vec2.mul(side, w0)), spec#alpha) :: Nil, spec#z)
-                  |> Render.blended(DrawCmd.BlendMode.Multiply) }
-        })
 
     // ── 幾何ユーティリティ（テストの「影が壁を透過しない」検証にも使う） ──
 

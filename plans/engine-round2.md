@@ -674,3 +674,24 @@ Shadow.projectedRuns({ runs = PxSprite.runs(w#sprites, "hero", "idle", topLeft, 
 | gl_parity | 実行時に作るアトラス（`Scenes.bakedTextures`）を GL は `ensureTexture`・SoftRaster は PNG で読む口を足した。場面 `rimLight`（B: fade の丸めで ±2）・`castShadow`（B）・`paramRead`（A・0 px） |
 | SoftRaster の不具合の直し | Add / Multiply の合成の範囲（`drawableAabb`）が regionRect 付きの sprite で region の割合を二重に掛けて小さくなり、アトラスの 1 コマを Add で貼ると描き出しで消えていた。表示の大きさと同じ「テクスチャ全寸 × scale」に直した |
 | schema | `templates/*/assets/shader.schema.json` は out を生 JSON 行で持ち kind を列挙していないので、変えていない |
+
+---
+
+## 12. 外した口（試作が 3D の地形へ切り替えて、使う人がいなくなった）
+
+round2a で HD-2D の 2D 版のために足した口のうち、次の物を外した。試作（港町 hd2d_lab・ダンジョン dungeon3d_lab）が
+3D の地形へ切り替えたため、どちらからも使われなくなった。engine の中でも、使っていたのは engine のテストと
+bench/gl_parity の場面だけだった。要るゲームが出たら、この節と §1・§2・§4・§5 の設計から足し直す。
+
+| 外した物 | 節 | 一緒に外した物 |
+|---|---|---|
+| `PxShade.rimMasks`・`rimDirectionOf`・`rimFrameName`・`rimChar`・`rimKey`・`Light.Rim`・`Light.rimsFrom`・`PxSprite.drawRimQuad` | §1 | `PxShade` の `mapCells` / `isSolid` への切り出しを元の `shade` へ戻した・TestPxShade / TestLight / TestPxSprite の輪郭光の検査・gl_parity の場面 `rimLight` と実行時に作るアトラスの口（`Scenes.bakedTextures`・`Main.uploadBaked` / `bakedImages`） |
+| `Shadow.projectedBox` | §2 | TestShadow の 2 本・gl_parity の `castShadow` の家の影 |
+| `CameraRig.CameraView`・`screenView`・`follow`・`followParallax`・`parallaxCenterScaled`・`toScreen`・`visibleRectOf` | §4.2 | TestCameraRig の 5 本 |
+| `App.PassCtx`・`withPassPlanView`・`withScreenView`・`cameraViewOf`・`passCtxOf` | §4.3 | `App.Rec#passes` を `w -> Render.PassPlan` へ戻した・`Rec#screenView` の欄・`renderFrame` で camera を 1 回だけ求める受け渡し（`sceneItemsAt`・`cameraViewIn`）・TestPassPlan の 2 本 |
+| `Light.worldLightMapPass`・`Light.withUnlit` | §4.3・§5 | `lightMapPassOf` への切り出しを元の `lightMapPass` へ戻した・TestLight の 2 本 |
+
+残した物（試作が使っている・round2a の前からある）: `Shadow.projectedRuns`・`ShaderDoc.Field.Param`・`Render.withShaderParams`・
+`Render.missingShaderParams`・`App.withPassPlan`・`Render.passSpecsOf`・`Render.resolvePassReads`。
+文書は `docs/api-digest`（作り直し）・`docs/z-bands.md`・`docs/backend-parity.md`・`docs/headless-render-recipe.md`・`docs/shader-doc.md`・
+`agents-pack/AGENTS.core.md` の早見表・`agents-pack/agent-eval/engine.json` のお題（`pass-scene-camera`・`rim-light-sprite`）を直した。

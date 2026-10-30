@@ -13,7 +13,6 @@
 //          SortingLayer.pickFrom(pointer, layers)     // 押した物（窓の間は Door に届かない）`
 //         HUD の木は場面より手前なので `pickIn(点, over(hitsOf(HUD の層), hitsOf(場面の層)))`。
 //         入力の側で木を組むときの ViewCtx は App.pickCtx（当たりの矩形は字の幅から作らない）。
-//         Pass の中の木は App.withPassPlanView の PassCtx#view（本編と同じ字と warnOnce）で compose する。
 // 注意: 区画を越えた分は天井で止めて続け、ViewCtx#warnOnce で層の名前ごとに知らせる（毎フレーム通るので
 //   止めない。描き出しはこの口に集まった名前で止める）。範囲の地図（world / UI / Transition / HUD /
 //   デバッグ）は docs/z-bands.md。
