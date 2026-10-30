@@ -188,6 +188,7 @@ mod TestShaderGenEqSpec {
         :: ("Shift.of",           cShift(), Field.Shift({ dx = f0(), dy = g0(), of = h0() }))
         :: ("Sampler.filter",     cSampler(), Field.Sampler({ filter = ShaderDoc.FilterMode.Nearest, of = cTex() }))
         :: ("Sampler.of",         cSampler(), Field.Sampler({ filter = ShaderDoc.FilterMode.Linear, of = f0() }))
+        :: ("Param.name",         Field.Param({ name = "a" }), Field.Param({ name = "b" }))
         :: ("ctor Const/Uv",      f0(), cUv())
         :: Nil
 
@@ -317,4 +318,12 @@ mod TestShaderGenEqSpec {
             if (isEqual) None else Some(label)
         });
         Assert.assertEq(expected = (Nil: List[String]), wrongUnequal)
+
+    /// 同じ物を 2 回渡したら木を辿らずに等しい。NaN の Const は中身の比べでは自分とも等しくないので、
+    /// 同じ物（真）と、同じ中身で組み直した物（偽）の差が、参照で抜けたことを示す。
+    @Test
+    def testSameObjectIsEqualWithoutWalkingTheTree(): Unit \ Assert =
+        let spec = specOf(Field.Const(Float64.nan()));
+        Assert.assertEq(expected = (true, false),
+                        (ShaderGen.eqSpec(spec, spec), ShaderGen.eqSpec(spec, specOf(Field.Const(Float64.nan())))))
 }

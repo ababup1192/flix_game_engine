@@ -45,8 +45,8 @@ mod RenderPaint {
         programUsedAtRef = Ref[Map[Int32, Int64], Static],
         // このコマに溜まったシェーダー面（queueSurface が積み、submitFrame が取り出す。新しい順）。
         pendingShaderHolder = Array[List[ShaderEffect.ShaderRenderCmd], Static],
-        // program → (uRectPos, uRectSize, uTime, uAlpha, texLocs)。
-        shaderUniformCache = Ref[Map[Int32, (Int32, Int32, Int32, Int32, List[(Int32, Int32)])], Static],
+        // program → (uRectPos, uRectSize, uTime, uAlpha, texLocs, paramLocs)。
+        shaderUniformCache = Ref[Map[Int32, (Int32, Int32, Int32, Int32, List[(Int32, Int32)], List[Int32])], Static],
         // レンダーターゲットの名前 → GL 実体。
         targetsRef = Ref[Map[String, RenderTargetGl.Entry], Static],
         // 今開いているターゲット (名前, 幅, 高さ, clear 指定)。None = 画面。
@@ -137,7 +137,7 @@ mod RenderPaint {
         let programUsedAtRef: Ref[Map[Int32, Int64], Static] = Ref.fresh(Static, Map.empty());
         let pendingShaderHolder = Array#{(Nil: List[ShaderEffect.ShaderRenderCmd])} @ Static;
         // texLocs = tex 場の (uTexN, uTexFlipN) の location 列（正典順）。
-        let shaderUniformCache: Ref[Map[Int32, (Int32, Int32, Int32, Int32, List[(Int32, Int32)])], Static] = Ref.fresh(Static, Map.empty());
+        let shaderUniformCache: Ref[Map[Int32, (Int32, Int32, Int32, Int32, List[(Int32, Int32)], List[Int32])], Static] = Ref.fresh(Static, Map.empty());
         // tex 場の標本規約（NEAREST + CLAMP）を bind 中の unit へ強制する sampler（起動時に 1 個）。
         let surfaceSampler = RenderSprite.createSurfaceSampler(false);
         let surfaceSamplerLinear = RenderSprite.createSurfaceSampler(true);
@@ -175,9 +175,19 @@ mod RenderPaint {
             // (-1,-1,-1,Nil) で握り潰すので、エラーも例外も出ず絵だけ違う形で壊れる。
             Ref.put(Map.insert(program, Array.get(0, frameGenHolder), Ref.get(programUsedAtRef)),
                     programUsedAtRef);
-            let (uRectPos, uRectSize, uTime, uAlpha, texLocs) =
+            let (uRectPos, uRectSize, uTime, uAlpha, texLocs, paramLocs) =
                 Map.get(program, Ref.get(shaderUniformCache))
-                |> Option.getWithDefault((-1, -1, -1, -1, (Nil: List[(Int32, Int32)])));
+                |> Option.getWithDefault((-1, -1, -1, -1, (Nil: List[(Int32, Int32)]), (Nil: List[Int32])));
+            // Param の値（uParamN・正典順）。program を使う間だけ効く uniform なので、描く直前に差す。
+            // 長さの不一致は List.zip が短い方に合わせて吸収する（fallback の program では locs が空）。
+            if (List.isEmpty(paramLocs)) ()
+            else {
+                GL20.glUseProgram(program);
+                List.zip(paramLocs, cmd#params) |> List.forEach(lv -> {
+                    let (loc, value) = lv;
+                    GL20.glUniform1f(loc, RenderUtil.f32(value))
+                })
+            };
             // 名前 → GL テクスチャ id。無い名前は 0（黒）を bind して一度だけ知らせる —
             // pass をこのフレームで宣言せず名前だけ読むと、ずっと 0 bind（黒）のままになる。
             // registry / targets はこの 1 枚の描画中は変わらないので、名前ごとに読み直さない。
@@ -579,6 +589,8 @@ mod RenderPaint {
                         GL20.glUniform1i(samplerLoc, i)
                     }, texLocs)
                 };
+                let paramLocs = ShaderDoc.paramNames(spec) |> List.zipWithIndex
+                    |> List.map(iname -> { let (i, _) = iname; GL20.glGetUniformLocation(prog, "uParam${i}") });
                 let fresh: RenderShaderCache.ProgramEntry =
                     { program = prog, uRectPos = up, uRectSize = us, uTime = ut };
                 // 同じ名前の古い program は鍵から外れる。すぐ消さず引退させる（同じコマの前の面がまだ描く）。
@@ -588,7 +600,7 @@ mod RenderPaint {
                     else Ref.put(Set.insert(old, Ref.get(paint#retiredProgramsRef)), paint#retiredProgramsRef)
                 });
                 Ref.put(Map.insert(spec#name, (spec, fresh), cache0), shaderProgramCache);
-                Ref.put(Map.insert(prog, (up, us, ut, ua, texLocs), Ref.get(paint#shaderUniformCache)), paint#shaderUniformCache);
+                Ref.put(Map.insert(prog, (up, us, ut, ua, texLocs, paramLocs), Ref.get(paint#shaderUniformCache)), paint#shaderUniformCache);
                 fresh
         };
         Ref.put(Map.insert(entry#program, gen, Ref.get(paint#programUsedAtRef)), paint#programUsedAtRef);

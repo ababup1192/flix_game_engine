@@ -77,6 +77,13 @@ pub mod App {
     pub type alias ViewCtx = { atlas = FontAtlas, fontOf = String -> FontAtlas, visible = Rect2.Rect2,
                                warnOnce = String -> Unit }
 
+    /// Pass の計画を組む関数（withPassPlanView）が受け取る「このコマの見え方」。
+    /// view = 本編の view と同じ字のアトラス・fontOf・warnOnce（visible は画面全体 = 画面座標。
+    /// world の見える範囲は CameraRig.visibleRectOf(camera)）。Pass の中の木は SortingLayer.stack(view, 層, 木) で絵の列へ戻す。
+    /// camera = 本編に掛けるのと同じ camera の確定値（bounds で収め、pixelSnap で丸め済み）。Pass の中の物は
+    /// CameraRig.follow / followParallax で木の部分ごとに写す（Pass の items に App は camera を掛けない）。
+    pub type alias PassCtx = { view = ViewCtx, camera = CameraRig.CameraView }
+
     /// ヘッドレス描き出しから view を呼ぶときの ViewCtx。画面全体が見えている扱いにする。
     /// フォント 1 本だけの版 — どの名前で引いても同じ本が返る。
     pub def viewCtxOf(atlas: FontAtlas, design: Vec2.Vec2): ViewCtx =
@@ -132,8 +139,8 @@ pub mod App {
         // 本編より先にレンダーターゲットへ描く計画（列は追加順に描く・名前ごとの倍率）。各ターゲットは名前の
         // テクスチャになり、view から Render.sprite(名前, z) で貼れる。カメラ・zoom は
         // 掛からない（ターゲットの中は常に design 座標そのまま — カメラを効かせたい絵は
-        // view と同じ composeScene をゲーム側で通してから渡す）。
-        passes = w -> Render.PassPlan \ ef,
+        // PassCtx#camera を CameraRig.follow / followParallax で木の部分ごとに掛ける）。
+        passes = (PassCtx, w) -> Render.PassPlan \ ef,
         // 既定フォント以外に使うフォントの名前（project.json の fonts[].name）。ここに宣言した
         // 名前だけが ViewCtx#fontOf で引ける。withFonts で足す。
         fonts = List[String],
@@ -153,6 +160,8 @@ pub mod App {
         // カメラを掛けずに描く絵（スコア等の HUD）。合流時に z が HUD の範囲（ZBand.liftHud）へ
         // 持ち上がるので、world の z に関わらず必ず手前。zIndex が決めるのは HUD の中の前後だけ。
         hudView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef],
+        // camera を掛けず、z も持ち上げない本編の絵（後処理の全面の面など）。world の絵の後ろ・hud の前に繋ぐ。
+        screenView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef],
         audio = { before = w, after = w } -> List[String] \ ef,    // 1 フレームの前後から鳴らす音名を導く
         // 「このフレームで鳴り続けていてほしい音」の宣言。宣言が続く間は鳴り続け、消えたフレームで
         // 止まる（風・雨・炎・機械の唸り・足音のループ）。毎フレーム音量と高さを与えられる。
@@ -240,13 +249,14 @@ pub mod App {
           reload = None,
           watch = Nil,
           view = None,
-          passes = _ -> checked_ecast(Render.passPlan(Nil)),
+          passes = (_, _) -> checked_ecast(Render.passPlan(Nil)),
           fonts = Nil,
           camera = None,
           zoom = None,
           cameraBounds = None,
           parallaxLayers = Nil,
           hudView = None,
+          screenView = None,
           staticLayer = None,
           tileLayers = None,
           spriteAtlases = _ -> Nil,
@@ -316,6 +326,13 @@ pub mod App {
     /// withPasses の、名前ごとのターゲットの作り方（倍率）も付ける形。描き出しは同じ PassPlan を
     /// Render.passSpecsOf に渡す（倍率を 2 か所に書かない）。Pass の中の読みは Render.resolvePassReads の決まりに従う。
     pub def withPassPlan(f: w -> Render.PassPlan \ ef, app: App[w, ef]): App[w, ef] =
+        withPassPlanView((_, w) -> f(w), app)
+
+    /// withPassPlan の、このコマの見え方（PassCtx: 本編と同じ字の ViewCtx と camera の確定値）を受けて組む形。
+    /// 場面を Pass に描いて後処理を掛けるゲームは、Pass の中の物に PassCtx#camera を木の部分ごとに掛ける
+    /// （遠景は CameraRig.followParallax・world の物は CameraRig.follow・画面に付いた物はそのまま）。
+    /// 描き出しは App.passCtxOf で同じ PassCtx を作り、同じ関数で計画を組む。
+    pub def withPassPlanView(f: (PassCtx, w) -> Render.PassPlan \ ef, app: App[w, ef]): App[w, ef] =
         App.App({ passes = f | rec(app) })
 
     /// 既定フォント以外に使うフォントの名前を宣言する（project.json の fonts[].name と同じ字）。
@@ -450,6 +467,27 @@ pub mod App {
     pub def withHudView(v: (ViewCtx, w) -> List[Render.PlacedItem] \ ef,
                         app: App[w, ef]): App[w, ef] =
         App.App({ hudView = Some(v) | rec(app) })
+
+    /// camera を掛けない本編の絵を繋ぐ（Godot の follow_viewport を切った CanvasLayer）。後処理の面（Pass を読み返す
+    /// 全面の shaderFill）と、それと同じ層に置く物（確認の窓など）を置く。
+    /// withHudView と違い z を HUD の範囲へ持ち上げない — world の範囲（Transition の 100000 より奥）に置くので、
+    /// 画面の切り替え演出はこの絵の手前に出る。ViewCtx の visible は画面全体。world の絵（camera 済み）の後ろに繋ぐ。
+    pub def withScreenView(v: (ViewCtx, w) -> List[Render.PlacedItem] \ ef,
+                           app: App[w, ef]): App[w, ef] =
+        App.App({ screenView = Some(v) | rec(app) })
+
+    /// 描き出し（SceneRender・動画）が実機と同じ camera を使うための口。App が本編に掛ける値そのもの
+    /// （withCamera・withZoom・withCameraBounds・withPixelSnap を通した確定値）。
+    pub def cameraViewOf(app: App[w, ef], design: Vec2.Vec2, world: w): CameraRig.CameraView \ ef =
+        cameraViewIn(rec(app), design, world)
+
+    /// 描き出しで Pass の計画を組むときの PassCtx。ctx は App.viewCtxOf(atlas, design) で作った物（visible の大きさを design とする）。
+    pub def passCtxOf(app: App[w, ef], ctx: ViewCtx, world: w): PassCtx \ ef =
+        { view = ctx, camera = cameraViewOf(app, ctx#visible#size, world) }
+
+    def cameraViewIn(r: Rec[w, ef], design: Vec2.Vec2, world: w): CameraRig.CameraView \ ef =
+        let (center, z) = resolvedCamera(r, world, design);
+        { center = center, zoom = z, design = design, pixelSnap = (r#pixelSnap)(world) }
 
     /// 1 フレームの前後の World（{before, after}）から鳴らす音名を導く関数を繋ぐ
     /// （再生は App が引き受ける）。同じ名前が同じフレームに 2 回入っても 1 回だけ鳴る。
@@ -1984,10 +2022,22 @@ pub mod App {
     def sceneItems(app: App[w, ef], atlas: FontAtlas, warnOnce: String -> Unit, world: w,
                    toItems: (ViewCtx, w) -> List[Render.PlacedItem] \ ef):
             List[Render.PlacedItem] \ (ef + GameEngine.Game) =
+        let design = GameEngine.Game.getViewportRect()#size;
+        sceneItemsAt(app, atlas, warnOnce, world, toItems, resolvedCamera(rec(app), world, design))
+
+    /// sceneItems の、確定した camera（中心と zoom）を受ける形（renderFrame は Pass と同じ値を渡す）。
+    def sceneItemsAt(app: App[w, ef], atlas: FontAtlas, warnOnce: String -> Unit, world: w,
+                     toItems: (ViewCtx, w) -> List[Render.PlacedItem] \ ef,
+                     camera: (Option[Vec2.Vec2], Float64)):
+            List[Render.PlacedItem] \ (ef + GameEngine.Game) =
         let r = rec(app);
         let design = GameEngine.Game.getViewportRect()#size;
         let fontOf = fontResolver(r, atlas);
-        let (center, z) = resolvedCamera(r, world, design);
+        let (center, z) = camera;
+        let screen = match r#screenView {
+            case None    => Nil
+            case Some(v) => v({ atlas = atlas, fontOf = fontOf, visible = visibleOf(None, 1.0, design), warnOnce = warnOnce }, world)
+        };
         let hud = match r#hudView {
             case None    => Nil
             // HUD は画面固定なので、見えている矩形は常に design 全体（原点起点）で zoom も掛けない。
@@ -2001,7 +2051,10 @@ pub mod App {
             composeScene(lcenter, z, design, { world = lview(lctx, world), hud = Nil })
         });
         let ctx = { atlas = atlas, fontOf = fontOf, visible = visibleOf(center, z, design), warnOnce = warnOnce };
-        List.append(layers, composeScene(center, z, design, { world = toItems(ctx, world), hud = hud }))
+        let main = composeScene(center, z, design, { world = toItems(ctx, world), hud = Nil });
+        // screen は camera を掛けず z も持ち上げない（world の範囲のまま）。hud は持ち上げて最後に。
+        let lifted = composeScene(None, 1.0, design, { world = Nil, hud = hud });
+        List.append(layers, List.append(main, List.append(screen, lifted)))
 
     /// debug 有効時だけ、画面右上に小さく fps を出す絵を組む（無効なら空 = 本番に一切出ない）。
     /// fps 表示は withView を使うゲームのみ（view = None の自前描画ゲームには出ない）—
@@ -2186,11 +2239,20 @@ pub mod App {
     /// headless の検査（reference-check の予算判定）は代表フレーム 1 枚しか見ないので、
     /// Fx の最悪化・場面の切り替わり・GIF でしか作らない場面はここでしか捕まらない。
     /// WhyNot: 毎フレーム出さない — 遅い画面をさらに遅くし、ログも読めなくなる。
-    /// 面のある画面で、面の後ろに同じ z の描き物を並べた z を知らせてから shaderCmds を返す（面が無ければ見ない）。
+    /// 面のある画面で、面の後ろに同じ z の描き物を並べた z と、値の渡されていない Param を知らせてから shaderCmds を返す（面が無ければ見ない）。
     def noteSurfaceZ(note: String -> Unit, items: List[Render.PlacedItem], shaderCmds: List[c]): List[c] =
         if (List.isEmpty(shaderCmds)) shaderCmds
         else match Render.surfaceZShared(items) |> List.forEach(z ->
                 note("[render] z=${Int32.toString(z)}: ShaderDoc の面の後ろに同じ z の描き物がある — 同じ z の中では面が一番手前に描かれ、並びの順は効かない。手前に出す物の z を大きくする（docs/z-bands.md）")) {
+            case () => noteMissingParams(note, items, shaderCmds)
+        }
+
+    /// 面の Spec が読む Param に値が渡されていない物を知らせてから shaderCmds を返す（その値は 0 で描く）。
+    def noteMissingParams(note: String -> Unit, items: List[Render.PlacedItem], shaderCmds: List[c]): List[c] =
+        match Render.missingShaderParams(items) |> List.forEach(sp -> {
+                let (specName, param) = sp;
+                note("[render] 面 ${specName}: param '${param}' の値が渡されていない — 0 で描きました。Render.withShaderParams で値を付ける（docs/shader-doc.md）")
+            }) {
             case () => shaderCmds
         }
 
@@ -2213,7 +2275,12 @@ pub mod App {
                 uploadAtlases((r#spriteAtlases)(world));
                 let atlas = GameEngine.Game.getFontAtlas("default");
                 let design = GameEngine.Game.getViewportRect()#size;
-                let plan = notePassIssues(warnOnce, Render.resolvePassReads(tileCache#passTargets, (r#passes)(world)));
+                // camera は Pass と本編で同じ値を 1 回だけ求める（タイル層・静的層は今のまま自分で求める — 同じ World から同じ値）。
+                let camera = cameraViewIn(r, design, world);
+                let passCtx = { view = { atlas = atlas, fontOf = fontResolver(r, atlas), visible = visibleOf(None, 1.0, design),
+                                         warnOnce = warnOnce },
+                                camera = camera };
+                let plan = notePassIssues(warnOnce, Render.resolvePassReads(tileCache#passTargets, (r#passes)(passCtx, world)));
                 let passList = plan#passes;
                 renderPasses(warnOnce, design, plan);
                 let cacheSeen = { passTargets = passList |> List.foldLeft((acc, p) -> Set.insert(p#name, acc), tileCache#passTargets)
@@ -2221,7 +2288,7 @@ pub mod App {
                 // タイル層と静的層は GPU 側でカメラを掛けるので、見え方（F8 のズーム・パン）を掛けられない。
                 // 見え方が等倍でない間だけ、ほかの絵と同じ PlacedItem に直して一緒に掛ける。
                 let retained = Annotate.isIdentity(look#view);
-                let scene = sceneItems(app, atlas, warnOnce, world, toItems);
+                let scene = sceneItemsAt(app, atlas, warnOnce, world, toItems, (camera#center, camera#zoom));
                 let base = if (retained) scene
                            else List.append(tilePausedItems(app, design, world),
                                             List.append(scene, staticPausedItems(app, design, world)));

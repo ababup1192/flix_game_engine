@@ -15,6 +15,7 @@
 //           {"kind":"tex","name":"..","chan":"r"} / {"kind":"shift","dx":{..},"dy":{..},"of":{..}} /
 //           {"kind":"blur","name":"..","chan":"r","radius":{"x":..,"y":..},"taps":24,"amount":{..}} /
 //           {"kind":"sampler","filter":"linear","of":{..}}
+//           {"kind":"param","name":"focus"}（値は面を置く時に Render.withShaderParams で渡す）
 //   色:     {"kind":"solid","color":<color>} / {"kind":"ramp","lo":<color>,"hi":<color>,"field":{..}} /
 //           {"kind":"rgb","r":{..},"g":{..},"b":{..}}
 //   出力:   {"kind":"fill","shade":{..},"alpha":{..}}
@@ -451,6 +452,12 @@ pub mod ShaderJson {
                         ofJson <- reqKey("of", m);
                         of     <- parseField(ofJson)
                     ) yield ShaderDoc.Field.Sampler({ filter = filter, of = of })
+                case "param" =>
+                    forM (
+                        name <- strAt("name", m);
+                        ok   <- if (ShaderDoc.paramNameOk(name)) Ok(name)
+                                else Err(err("param name must be letters, digits or '_' (got '${name}')"))
+                    ) yield ShaderDoc.Field.Param({ name = ok })
                 case other => Err(err("unknown field kind: '${other}'"))
             }
         })
@@ -797,6 +804,8 @@ pub mod ShaderJson {
             case ShaderDoc.Field.Sampler(sm) =>
                 JObject(Map#{ "kind" => JString("sampler"), "filter" => JString(filterStr(sm#filter)),
                               "of" => fieldToJson(sm#of) })
+            case ShaderDoc.Field.Param(pm) =>
+                JObject(Map#{ "kind" => JString("param"), "name" => JString(pm#name) })
         }
 
     def filterStr(f: ShaderDoc.FilterMode): String =

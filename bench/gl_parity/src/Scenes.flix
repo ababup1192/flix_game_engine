@@ -9,7 +9,7 @@
 //   4. 時刻は固定値（アニメ無し — 2 回描き出して同じ絵になることが決定性検証の前提）
 mod Scenes {
 
-    use fge::{Color, DrawCmd, Light, RawDraw, Render, RenderTarget, ShaderDoc, Vec2}
+    use fge::{Color, DrawCmd, Light, PxShade, PxSprite, PxSpriteAtlas, PxSpriteDoc, RawDraw, Render, RenderTarget, ShaderDoc, Shadow, Vec2}
 
     // 寸法の権威は整数側 — Float 側を権威にすると Int へ戻す丸めが要る。
     pub def designWi(): Int32 = 320
@@ -43,7 +43,8 @@ mod Scenes {
 
     pub def all(): List[Scene] =
         boxes() :: spriteNearest() :: passPaste() :: texField() :: lightMap() :: radial() :: veil()
-            :: passChain() :: passLaterRead() :: passMask() :: passHalf() :: passQuarterOdd() :: linearRead() :: Nil
+            :: passChain() :: passLaterRead() :: passMask() :: passHalf() :: passQuarterOdd() :: linearRead()
+            :: rimLight() :: castShadow() :: paramRead() :: Nil
 
     /// 8bit の値そのままの色（k/255）。A 段階の規約 2 をこの入口で守る。
     def c8(r: Int32, g: Int32, b: Int32): Color =
@@ -339,4 +340,95 @@ mod Scenes {
           targets = Map#{ "lrT" => { scale = 0.5 | RenderTarget.defaultDescriptor() } }, exact = false,
           passes = pass :: Nil, items =
             Render.shaderFill(spec, { position = { x = 0.0, y = 0.0 }, size = { x = designW(), y = designH() } }, 0.0, 1) :: Nil }
+
+    // ── scene: 輪郭光（PxShade.rimMasks / Light.rimsFrom / PxSprite.drawRimQuad）──
+    //
+    // 実行時に作るアトラス 2 枚（本体と縁の絵）を、GL は ensureTexture・SoftRaster は PNG で読む（Main.uploadBaked / bakedPngs）。
+    // 左に橙・右に青の灯り。右の人は反転して描く（縁の向きの左右の入れ替えを見る）。
+    // B 段階: 縁の重ねは「白の絵を tint して fade して Add」で、fade が k/255 に乗らない強さ（灯りからの距離で決まる）のため
+    // GL（float）と SoftRaster（8bit の整数）の丸めで ±2 ずれる。置く画素の集合は一致する（差は縁の画素の色の値だけ）。
+
+    /// 人の形（8×12）。'h' 髪・'s' 肌・'c' 服・'p' 脚。
+    def heroDoc(): PxSpriteDoc.Doc =
+        { version = 1, note = None,
+          legend = Map#{ 'h' => "hair", 's' => "skin", 'c' => "cloth", 'p' => "leg" },
+          sprites = Map#{ "hero" => { anchor = Vec2.zero(), clips = Map.empty(), frames = Map#{ "idle" =>
+              ("..hhhh.." :: ".hhhhhh." :: ".hssssh." :: ".ssssss." :: "..ssss.." :: ".cccccc." ::
+               "cccccccc" :: "cccccccc" :: "s.cccc.s" :: "..cccc.." :: "..pp.pp." :: "..pp.pp." :: Nil) } } } }
+
+    def heroRamp(): PxShade.Ramp = Map#{ 'h' => ('h', 'h'), 's' => ('s', 's'), 'c' => ('c', 'c'), 'p' => ('p', 'p') }
+
+    def heroColor(key: String): Color = match key {
+        case "hair"  => c8(60, 40, 40)
+        case "skin"  => c8(200, 150, 120)
+        case "cloth" => c8(80, 90, 140)
+        case "leg"   => c8(60, 50, 60)
+        case _       => c8(255, 255, 255)
+    }
+
+    def rimDoc(): PxSpriteDoc.Doc = PxShade.rimMasks(heroRamp(), heroDoc())
+
+    /// 実行時に作るアトラスの (テクスチャ名, 生成した物)。GL と SoftRaster の両方がこの列を読む。
+    pub def bakedTextures(): List[(String, PxSpriteAtlas.Baked)] =
+        ("rimHero", PxSpriteAtlas.bake(heroDoc(), heroColor))
+            :: ("rimMasks", PxSpriteAtlas.bake(rimDoc(), _ -> c8(255, 255, 255))) :: Nil
+
+    def bakedOf(name: String): PxSpriteAtlas.Baked =
+        bakedTextures() |> List.find(e -> fst(e) == name) |> Option.map(snd) |> Option.getWithDefault(PxSpriteAtlas.empty())
+
+    def rimLights(): List[Light.Light] =
+        { at = { x = 40.0, y = 90.0 }, radius = 200.0, color = c8(255, 160, 80), halo = 1.0 }
+            :: { at = { x = 280.0, y = 90.0 }, radius = 200.0, color = c8(100, 160, 255), halo = 1.0 } :: Nil
+
+    def heroWithRim(at: Vec2.Vec2, flip: Bool): List[Render.PlacedItem] =
+        let body = PxSprite.drawQuad(heroDoc(), bakedOf("rimHero"), "rimHero", "hero", "idle", at, flip, 4, 1);
+        let rims = Light.rimsFrom(rimLights(), { x = at#x + 16.0, y = at#y + 24.0 }, 2);
+        let rim = PxSprite.drawRimQuad({ rimDoc = rimDoc(), rimBaked = bakedOf("rimMasks"), texture = "rimMasks",
+                                         sprite = "hero", frame = "idle", at = at, flipX = flip, scale = 4, rims = rims, z = 2 });
+        List.append(body, rim)
+
+    def rimLight(): Scene =
+        { name = "rimLight", via = ShotVia.ViaTarget, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            at(0.0, 0.0, RawDraw.box({ x = designW(), y = designH() }, c8(24, 24, 40), 0))
+                :: List.append(heroWithRim({ x = 100.0, y = 60.0 }, false), heroWithRim({ x = 188.0, y = 60.0 }, true)) }
+
+    // ── scene: 灯りの反対へ倒した影（Shadow.projectedRuns / projectedBox）──
+    // 影の帯は斜めの縁と頂点ごとの濃さ（gradPolygon）なので B 段階（差の数だけ報告）。
+
+    def castShadow(): Scene =
+        let foot = { x = 160.0, y = 130.0 };
+        let heroAt = { x = 144.0, y = 82.0 };
+        let runs = PxSprite.runs(heroDoc(), "hero", "idle", heroAt, false, 4);
+        let shadowOf = light -> Shadow.projectedRuns({ runs = runs, foot = foot, light = light, reach = 0.8, depth = 0.3,
+                                                       ink = c8(40, 30, 60), alpha = 0.7, z = 1 });
+        let boxShadow = Shadow.projectedBox({ foot = { x = 60.0, y = 130.0 }, halfX = 16.0, halfY = 5.0, height = 40.0,
+                                              light = { x = 20.0, y = 60.0 }, reach = 0.8, ink = c8(40, 30, 60), alpha = 0.7, z = 1 })
+            |> Option.toList;
+        { name = "castShadow", via = ShotVia.ViaTarget, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            at(0.0, 0.0, RawDraw.box({ x = designW(), y = designH() }, c8(150, 140, 120), 0))
+                :: List.flatten(shadowOf({ x = 100.0, y = 110.0 }) :: shadowOf({ x = 230.0, y = 100.0 }) :: boxShadow
+                    :: PxSprite.draw(heroDoc(), "hero", "idle", heroAt, false, 4, heroColor, 2)
+                    :: (at(44.0, 90.0, RawDraw.box({ x = 32.0, y = 40.0 }, c8(110, 80, 70), 2)) :: Nil) :: Nil) }
+
+    // ── scene: 面に渡す数（Field.Param / Render.withShaderParams）──
+    // 同じ Spec（同じ program）の面 3 枚に別の値を渡す: GL は uniform を描く直前に差し、描き出しは Const に置き換える。
+    // 値は 8bit で半分に乗らない数（0.6 → 153・0.2 → 51・0.25 → 64）。右端は値を渡さない（0 で描く）。
+
+    def paramSpec(): ShaderDoc.Spec =
+        { name = "parity_param", cycleRate = 0.0, bindings = Nil,
+          out = ShaderDoc.Out.Fill({
+              shade = ShaderDoc.Shade.Rgb({ r = ShaderDoc.Field.Param({ name = "red" }),
+                                            g = ShaderDoc.Field.Param({ name = "green" }),
+                                            b = ShaderDoc.Field.Const(0.0) }),
+              alpha = ShaderDoc.Field.Const(1.0) }) }
+
+    def paramFill(x: Float64, params: Map[String, Float64]): Render.PlacedItem =
+        Render.shaderFill(paramSpec(), { position = { x = x, y = 40.0 }, size = { x = 80.0, y = 100.0 } }, 0.0, 1)
+            |> Render.withShaderParams(params)
+
+    def paramRead(): Scene =
+        { name = "paramRead", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = true, passes = Nil, items =
+            paramFill(20.0, Map#{ "red" => 0.6, "green" => 0.2 })
+                :: paramFill(120.0, Map#{ "red" => 0.25, "green" => 0.6 })
+                :: paramFill(220.0, Map.empty()) :: Nil }
 }

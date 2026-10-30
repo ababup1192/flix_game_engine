@@ -28,7 +28,9 @@ pub mod ShaderEffect {
         zIndex = Int32,
         blend = DrawCmd.BlendMode,
         // 面全体の濃さ（uniform uAlpha。場の alpha に掛ける）。
-        alpha = Float64
+        alpha = Float64,
+        // Spec の Param の値（ShaderDoc.paramNames の正典順 = uniform uParamN の番号）。
+        params = List[Float64]
     }
 
     /// シェーダー面の描画チャンネル。eff Game とは別に隔離した効果。

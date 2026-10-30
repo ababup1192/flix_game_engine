@@ -126,6 +126,8 @@
   `pub def axis(negative: {negative = GameEngine.Key}, positive: {positive = GameEngine.Key}, frame: Frame): Float64`
 - view / hudView が受け取る「この 1 フレームの見え方」。atlas は文字描画用の既定フォント、
   `pub type alias ViewCtx = { atlas = FontAtlas, fontOf = String -> FontAtlas, visible = Rect2.Rect2, warnOnce = String -> Unit }`
+- Pass の計画を組む関数（withPassPlanView）が受け取る「このコマの見え方」。
+  `pub type alias PassCtx = { view = ViewCtx, camera = CameraRig.CameraView }`
 - ヘッドレス描き出しから view を呼ぶときの ViewCtx。画面全体が見えている扱いにする。
   `pub def viewCtxOf(atlas: FontAtlas, design: Vec2.Vec2): ViewCtx`
 - viewCtxOf の複数フォント版。fontOf には実機と同じ名前で引ける関数を渡す
@@ -137,7 +139,7 @@
 - 生成したドット絵アトラス 1 枚ぶんの受け渡し。
   `pub type alias AtlasUpload = { texture = String, key = String, baked = PxSpriteAtlas.Baked }`
 - App の中身（欄の意味は右の // コメント）。ゲームからは読まず、ビルダー（addSystem / withView など）で組む。
-  `pub type alias Rec[w: Type, ef: Eff] = { init = Vec2.Vec2 -> w \ ef, startupSystems = List[w -> w \ ef], updateSystems = List[(Frame, w) -> w \ ef], reload = Option[(GameEngine.Key, w -> w \ {Fs.FileRead})], watch = List[(String, w -> w \ {Fs.FileRead})], view = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], passes = w -> Render.PassPlan \ ef, fonts = List[String], camera = Option[w -> Vec2.Vec2 \ ef], zoom = Option[w -> Float64 \ ef], cameraBounds = Option[w -> Rect2.Rect2 \ ef], parallaxLayers = List[(Float64, (ViewCtx, w) -> List[Render.PlacedItem] \ ef)], hudView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], audio = { before = w, after = w } -> List[String] \ ef, sustained = w -> List[Sustain] \ ef, mixer = Option[w -> AudioMixer.Mixer \ ef], quit = (Frame, w) -> Bool \ ef, closeRequest = Option[w -> w \ ef], debug = Bool, debugView = Option[(String, w -> (List[GameEngine.Drawable], List[GameEngine.TileMapRenderCmd], List[GameEngine.PolygonRenderCmd]) \ ef)], worldDump = Option[(Rect2.Rect2, w) -> String \ ef], annotationContext = Option[w -> Annotate.Table \ ef], staticLayer = Option[{ key = w -> GameEngine.StaticKey, build = w -> List[Render.PlacedItem] }], tileLayers = Option[w -> List[TileLayerSpec]], spriteAtlases = w -> List[AtlasUpload], pixelSnap = w -> Float64, statusLine = Option[w -> String \ ef], remoteRender = Option[Unit -> List[String] \ IO], shot = Option[w -> String \ IO], remoteHandlers = List[(String, (Map[String, String], w) -> Result[String, w] \ {Fs.FileRead})], fixedStep = Option[Float64], clocks = List[(Float64, w) -> w], cursor = Option[w -> CursorSpec], fullscreen = Option[w -> Bool], outputs = List[Output[w]], starts = List[Start[w]], flow = Flow.Table[w], fingerprint = Option[w -> String] }`
+  `pub type alias Rec[w: Type, ef: Eff] = { init = Vec2.Vec2 -> w \ ef, startupSystems = List[w -> w \ ef], updateSystems = List[(Frame, w) -> w \ ef], reload = Option[(GameEngine.Key, w -> w \ {Fs.FileRead})], watch = List[(String, w -> w \ {Fs.FileRead})], view = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], passes = (PassCtx, w) -> Render.PassPlan \ ef, fonts = List[String], camera = Option[w -> Vec2.Vec2 \ ef], zoom = Option[w -> Float64 \ ef], cameraBounds = Option[w -> Rect2.Rect2 \ ef], parallaxLayers = List[(Float64, (ViewCtx, w) -> List[Render.PlacedItem] \ ef)], hudView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], screenView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], audio = { before = w, after = w } -> List[String] \ ef, sustained = w -> List[Sustain] \ ef, mixer = Option[w -> AudioMixer.Mixer \ ef], quit = (Frame, w) -> Bool \ ef, closeRequest = Option[w -> w \ ef], debug = Bool, debugView = Option[(String, w -> (List[GameEngine.Drawable], List[GameEngine.TileMapRenderCmd], List[GameEngine.PolygonRenderCmd]) \ ef)], worldDump = Option[(Rect2.Rect2, w) -> String \ ef], annotationContext = Option[w -> Annotate.Table \ ef], staticLayer = Option[{ key = w -> GameEngine.StaticKey, build = w -> List[Render.PlacedItem] }], tileLayers = Option[w -> List[TileLayerSpec]], spriteAtlases = w -> List[AtlasUpload], pixelSnap = w -> Float64, statusLine = Option[w -> String \ ef], remoteRender = Option[Unit -> List[String] \ IO], shot = Option[w -> String \ IO], remoteHandlers = List[(String, (Map[String, String], w) -> Result[String, w] \ {Fs.FileRead})], fixedStep = Option[Float64], clocks = List[(Float64, w) -> w], cursor = Option[w -> CursorSpec], fullscreen = Option[w -> Bool], outputs = List[Output[w]], starts = List[Start[w]], flow = Flow.Table[w], fingerprint = Option[w -> String] }`
 - 初期 World だけを持つ空の App。絵はまだ無い（withView で繋ぐまで何も描かない）。
   `pub def make(init: w): App[w, ef]`
 - 初期 World を design 解像度（project.json の designWidth/Height）から組む入口。
@@ -156,6 +158,8 @@
   `pub def withPasses(f: w -> List[Render.Pass] \ ef, app: App[w, ef]): App[w, ef]`
 - withPasses の、名前ごとのターゲットの作り方（倍率）も付ける形。描き出しは同じ PassPlan を
   `pub def withPassPlan(f: w -> Render.PassPlan \ ef, app: App[w, ef]): App[w, ef]`
+- withPassPlan の、このコマの見え方（PassCtx: 本編と同じ字の ViewCtx と camera の確定値）を受けて組む形。
+  `pub def withPassPlanView(f: (PassCtx, w) -> Render.PassPlan \ ef, app: App[w, ef]): App[w, ef]`
 - 既定フォント以外に使うフォントの名前を宣言する（project.json の fonts[].name と同じ字）。
   `pub def withFonts(names: List[String], app: App[w, ef]): App[w, ef]`
 - ゲーム 1 本の標準形を 1 つのレコードで宣言する入口（初学者向け）。
@@ -178,6 +182,12 @@
   `pub def addParallaxLayer(factor: Float64, v: (ViewCtx, w) -> List[Render.PlacedItem] \ ef, app: App[w, ef]): App[w, ef]`
 - カメラを掛けない絵（スコア等の HUD）を繋ぐ。ここに繋いだ絵は常に view の絵より
   `pub def withHudView(v: (ViewCtx, w) -> List[Render.PlacedItem] \ ef, app: App[w, ef]): App[w, ef]`
+- camera を掛けない本編の絵を繋ぐ（Godot の follow_viewport を切った CanvasLayer）。後処理の面（Pass を読み返す
+  `pub def withScreenView(v: (ViewCtx, w) -> List[Render.PlacedItem] \ ef, app: App[w, ef]): App[w, ef]`
+- 描き出し（SceneRender・動画）が実機と同じ camera を使うための口。App が本編に掛ける値そのもの
+  `pub def cameraViewOf(app: App[w, ef], design: Vec2.Vec2, world: w): CameraRig.CameraView \ ef`
+- 描き出しで Pass の計画を組むときの PassCtx。ctx は App.viewCtxOf(atlas, design) で作った物（visible の大きさを design とする）。
+  `pub def passCtxOf(app: App[w, ef], ctx: ViewCtx, world: w): PassCtx \ ef`
 - 1 フレームの前後の World（{before, after}）から鳴らす音名を導く関数を繋ぐ
   `pub def withAudio(sfx: { before = w, after = w } -> List[String] \ ef, app: App[w, ef]): App[w, ef]`
 - 鳴り続けてほしい音 1 本の宣言。name は project.json の sounds の論理名、
@@ -747,6 +757,20 @@
   `pub def clampCenter(bounds: {bounds = Rect2.Rect2}, seen: {seen = Vec2.Vec2}, center: Vec2.Vec2): Vec2.Vec2`
 - 視差レイヤの見かけの camera 中心: 画面中央と本来の center を factor で混ぜる。
   `pub def parallaxCenter(factor: Float64, center: Vec2.Vec2, design: {design = Vec2.Vec2}): Vec2.Vec2`
+- parallaxCenter の縦横別の形（Godot の Parallax2D.scroll_scale と同じ Vector2）。
+  `pub def parallaxCenterScaled(scrollScale: Vec2.Vec2, center: Vec2.Vec2, design: {design = Vec2.Vec2}): Vec2.Vec2`
+- このコマの camera の確定値。App が本編に掛けるのと同じ値（bounds で収め、pixelSnap で丸め済み）。
+  `pub type alias CameraView = { center = Option[Vec2.Vec2], zoom = Float64, design = Vec2.Vec2, pixelSnap = Float64 }`
+- camera を掛けない見え方（画面座標のまま）。
+  `pub def screenView(design: Vec2.Vec2): CameraView`
+- world 座標の列を画面へ写す。App の本編（composeScene の world 側）と同じ式。
+  `pub def follow(cam: CameraView, items: List[Render.PlacedItem]): List[Render.PlacedItem]`
+- 縦と横で別の割合で付いていく（Godot の Parallax2D.scroll_scale）。{1, 1} は follow と同じ・{0, 0} は画面に固定。
+  `pub def followParallax(cam: CameraView, scrollScale: Vec2.Vec2, items: List[Render.PlacedItem]): List[Render.PlacedItem]`
+- 点 1 つを写す（光源の位置など）。follow が置き場所に使う式そのもの。
+  `pub def toScreen(cam: CameraView, world: Vec2.Vec2): Vec2.Vec2`
+- 画面に見えている world の矩形（間引きに使う）。App.visibleOf と同じ答え。
+  `pub def visibleRectOf(cam: CameraView): Rect2.Rect2`
 - 追従の仕様: 不感帯の幅と寄せ率（1 秒あたり）。
   `pub type alias Follow = { deadzone = Float64, k = Float64 }`
 - target が current±deadzone の不感帯を出たぶん × min(1, k×dt) の移動量。
@@ -1535,8 +1559,16 @@
   `pub def defaultShadowStrength(): Float64`
 - 光マップの Pass を導く純関数（App.withPasses へ渡す）。並びは
   `pub def lightMapPass(cfg: LightMapConfig): Render.Pass`
+- 光マップの Pass を world 座標の灯り・遮る物から組む（場面を camera で動かすゲーム用）。
+  `pub def worldLightMapPass(cam: CameraRig.CameraView, cfg: LightMapConfig): Render.Pass`
+- 光マップの Pass に、光を落とさない範囲（Unity 2D の Unlit と同じ考え方）を足す。
+  `pub def withUnlit(areas: List[Render.PlacedItem], pass: Render.Pass): Render.Pass`
 - 光マップを本編へ Multiply で 1 枚貼る PlacedItem（view の列の末尾側に足す）。
   `pub def lightMapOverlay(cfg: LightMapConfig): Render.PlacedItem`
+- 輪郭光 1 方向ぶん: at から灯りへの向き（長さ 1）・灯りの色・強さ 0..1。
+  `pub type alias Rim = { toward = Vec2.Vec2, color = Color, strength = Float64 }`
+- at に立つ物の輪郭光。灯りごとに寄与（(1 − 距離/半径)² × halo。半径の外・at に重なる灯りは 0）を求め、
+  `pub def rimsFrom(lights: List[Light], at: Vec2.Vec2, limit: Int32): List[Rim]`
 
 ## LightDoc — `engine_world/src/LightDoc.flix`
 - 1 光源ぶんの宣言。at は初期位置（実行時に World の値で上書きしてよい）。
@@ -1735,6 +1767,15 @@
   `pub type alias Ramp = Map[Char, (Char, Char)]`
 - 1 コマ（文字格子）に仕上げを掛ける。
   `pub def shade(spec: Spec, ramp: Ramp, rows: List[String]): List[String]`
+- 縁の絵の Doc の legend で、縁の画素の文字と意味色キー。アトラスは白で作り、描く時に灯りの色を掛ける。
+  `pub def rimChar(): Char`
+- `pub def rimKey(): String`
+- 縁の絵のコマの名前（元のコマ・向き）。
+  `pub def rimFrameName(frame: String, direction: String): String`
+- 8 方向（n ne e se s sw w nw）の縁の画素だけを残したコマの Doc を作る（読み込み時に 1 度）。
+  `pub def rimMasks(ramp: Ramp, doc: PxSpriteDoc.Doc): PxSpriteDoc.Doc`
+- 向き（画面の下が +y）から、いちばん近い 8 方向の名前。長さ 0（と非有限）は None。
+  `pub def rimDirectionOf(towardLight: Vec2.Vec2): Option[String]`
 - 全コマ・全スプライトに同じ仕上げを掛けた Doc を返す（読み込み直後に 1 度だけ呼ぶ）。
   `pub def shadeDoc(spec: Spec, ramp: Ramp, doc: PxSpriteDoc.Doc): PxSpriteDoc.Doc`
 - スプライトごとに仕上げを変えて掛ける。
@@ -1747,6 +1788,8 @@
   `pub def draw(doc: PxSpriteDoc.Doc, sprite: String, frame: String, at: Vec2.Vec2, flipX: Bool, scale: Int32, resolver: String -> Color, z: Int32): List[Render.PlacedItem]`
 - コマを「アトラス 1 クアッド」で描く(opt-in の GL 実行時最適化)。
   `pub def drawQuad(doc: PxSpriteDoc.Doc, baked: PxSpriteAtlas.Baked, texture: String, sprite: String, frame: String, at: Vec2.Vec2, flipX: Bool, scale: Int32, z: Int32): List[Render.PlacedItem]`
+- drawQuad と同じ所（at = anchor セルの左上）に、輪郭光の縁の絵を灯りの色で Add に重ねる。rims の 1 つごとに 1 枚。
+  `pub def drawRimQuad(spec: { rimDoc = PxSpriteDoc.Doc, rimBaked = PxSpriteAtlas.Baked, texture = String, sprite = String, frame = String, at = Vec2.Vec2, flipX = Bool, scale = Int32, rims = List[Light.Rim], z = Int32 }): List[Render.PlacedItem]`
 - draw の座標計算だけ(テストと当たり判定用)。矩形は行ごと・左から右の順。
   `pub def runs(doc: PxSpriteDoc.Doc, sprite: String, frame: String, at: Vec2.Vec2, flipX: Bool, scale: Int32): List[Run]`
 - 絵の真ん中から anchor（握るところ）へ向かうベクトル（px）。
@@ -1885,7 +1928,7 @@
 
 ## Render — `engine_world/src/Render.flix`
 - 傾き（rotation）の単位は「回転数」— 1 周 = 1.0・正で時計回り。ラジアンへの変換は
-  `pub enum Item { case Sprite({ texture = String, tint = Color, alpha = Float64, scale = Vec2.Vec2, rotation = Float64, centered = Bool, flipH = Bool, flipV = Bool, regionRect = Option[Rect2.Rect2], zIndex = Int32, blend = DrawCmd.BlendMode, maskPolys = List[List[Vec2.Vec2]] }) case Text({ text = String, fontAtlas = FontAtlas, fontSize = Float64, tint = Color, alpha = Float64, rotation = Float64, zIndex = Int32, wrapWidth = Option[Float64] }) case Box({ size = Vec2.Vec2, color = Color, alpha = Float64, rotation = Float64, style = Option[GameEngine.BoxStyle], zIndex = Int32, blend = DrawCmd.BlendMode }) case Poly({ vertices = List[Vec2.Vec2], color = Color, alpha = Float64, zIndex = Int32, blend = DrawCmd.BlendMode, grad = Option[List[DrawCmd.VertexTint]] }) case Clipped({ rect = Rect2.Rect2, inner = Item }) case Shader({ rect = Rect2.Rect2, spec = ShaderDoc.Spec, t = Float64, mask = List[List[Vec2.Vec2]], zIndex = Int32, blend = DrawCmd.BlendMode, alpha = Float64 }) }`
+  `pub enum Item { case Sprite({ texture = String, tint = Color, alpha = Float64, scale = Vec2.Vec2, rotation = Float64, centered = Bool, flipH = Bool, flipV = Bool, regionRect = Option[Rect2.Rect2], zIndex = Int32, blend = DrawCmd.BlendMode, maskPolys = List[List[Vec2.Vec2]] }) case Text({ text = String, fontAtlas = FontAtlas, fontSize = Float64, tint = Color, alpha = Float64, rotation = Float64, zIndex = Int32, wrapWidth = Option[Float64] }) case Box({ size = Vec2.Vec2, color = Color, alpha = Float64, rotation = Float64, style = Option[GameEngine.BoxStyle], zIndex = Int32, blend = DrawCmd.BlendMode }) case Poly({ vertices = List[Vec2.Vec2], color = Color, alpha = Float64, zIndex = Int32, blend = DrawCmd.BlendMode, grad = Option[List[DrawCmd.VertexTint]] }) case Clipped({ rect = Rect2.Rect2, inner = Item }) case Shader({ rect = Rect2.Rect2, spec = ShaderDoc.Spec, t = Float64, mask = List[List[Vec2.Vec2]], zIndex = Int32, blend = DrawCmd.BlendMode, alpha = Float64, params = Map[String, Float64] }) }`
 - 置き場所つきの描画物。View はこの列を組み、draw が描画命令へ変換する。
   `pub type alias PlacedItem = { at = Vec2.Vec2, item = Item }`
 - 全テクスチャ・等倍・中心原点のスプライト（最頻ケース）。反転が要るときは spriteFlipped。
@@ -1905,6 +1948,10 @@
   `pub def darkAt(spec: { at = Vec2.Vec2, radius = Float64, strength = Float64, z = Int32 }): PlacedItem`
 - 宣言シェーダーで矩形 rect を塗る面（PlacedItem）。at に rect の左上を入れる —
   `pub def shaderFill(spec: ShaderDoc.Spec, rect: Rect2.Rect2, t: Float64, zIndex: Int32): PlacedItem`
+- Shader 面に、Spec の Param（ShaderDoc.Field.Param）の値の表を付ける（Clipped の中の Shader 面にも効く。
+  `pub def withShaderParams(params: Map[String, Float64], placed: PlacedItem): PlacedItem`
+- 面の Spec が読む Param のうち、面に値が渡されていない物の (Spec の名前, Param の名前)（重複なし・知らせる物）。
+  `pub def missingShaderParams(items: List[PlacedItem]): List[(String, String)]`
 - 宣言シェーダーで rect を塗り、maskPolys（ワールド座標の多角形の列）の内側だけに抜く面。
   `pub def shaderFillMasked(spec: ShaderDoc.Spec, rect: Rect2.Rect2, maskPolys: List[List[Vec2.Vec2]], t: Float64, zIndex: Int32): PlacedItem`
 - pass（レンダーターゲット）を、全面でない面（横長のストリップなど）から等倍で読むための dy 場。
@@ -2174,6 +2221,10 @@
   `pub def defaultRimStrength(): Float64`
 - occluders それぞれについて、(1) 遮蔽物自身の胴体を光と同じ darkness・z の Multiply 黒 Poly、
   `pub def itemsFor(light: Light.Light, occluders: List[List[Vec2.Vec2]], cfg: ShadowConfig): List[Render.PlacedItem]`
+- 絵の走り（PxSprite.runs）を灯りの反対の地面へ倒した影。行ごとの帯の gradPolygon（Multiply）の列。
+  `pub def projectedRuns(spec: { runs = List[PxSprite.Run], foot = Vec2.Vec2, light = Vec2.Vec2, reach = Float64, depth = Float64, ink = Color, alpha = Float64, z = Int32 }): List[Render.PlacedItem]`
+- 絵の走りを持たない物（家・木を多角形で描いた物）用: 足元の楕円（横の半径 halfX・縦の半径 halfY）から
+  `pub def projectedBox(spec: { foot = Vec2.Vec2, halfX = Float64, halfY = Float64, height = Float64, light = Vec2.Vec2, reach = Float64, ink = Color, alpha = Float64, z = Int32 }): Option[Render.PlacedItem]`
 - 点 p が凸四角形 quad（4頂点・向きは時計回り/反時計回りのどちらでもよい）の内側にあるか。
   `pub def containsPoint(quad: List[Vec2.Vec2], p: Vec2.Vec2): Bool`
 

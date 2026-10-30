@@ -723,9 +723,12 @@ pub mod SoftRaster {
         else {
             let base = if (String.isEmpty(d#texture)) { x = 1.0, y = 1.0 }
                        else match Map.get(d#texture, textures) {
+                           // 表示の大きさは drawTextured と同じ「テクスチャ全寸 × scale」。
+                           // WhyNot: uvScale を掛けない — regionRect 付きの sprite（アトラスの 1 コマ）は scale の側で
+                           //   既に region の割合を掛けてあるので、二重に掛けると外形が小さくなり、Add / Multiply の合成が欠ける。
                            case Some(img) =>
-                               { x = Int32.toFloat64(img.getWidth()) * d#uvScale#x,
-                                 y = Int32.toFloat64(img.getHeight()) * d#uvScale#y }
+                               { x = Int32.toFloat64(img.getWidth()),
+                                 y = Int32.toFloat64(img.getHeight()) }
                            case None      => Vec2.zero()
                        };
             let size = { x = base#x * Float64.abs(d#scale#x), y = base#y * Float64.abs(d#scale#y) };

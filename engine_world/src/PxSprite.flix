@@ -64,6 +64,26 @@ pub mod PxSprite {
             case _ => Nil
         }
 
+    /// drawQuad と同じ所（at = anchor セルの左上）に、輪郭光の縁の絵を灯りの色で Add に重ねる。rims の 1 つごとに 1 枚。
+    /// rimDoc / rimBaked は PxShade.rimMasks の Doc と、それを白で作ったアトラス（本体とは別のアトラス）。
+    /// flipX なら向きの左右を入れ替えて選ぶ — 反転して描いた絵の右の縁は、元の絵の左の縁なので。
+    /// 強さ 0 の向き・アトラスにそのコマが無い向きは描かない。z は本体の z より大きくする（本体の上に足すため）。
+    pub def drawRimQuad(spec: { rimDoc = PxSpriteDoc.Doc, rimBaked = PxSpriteAtlas.Baked, texture = String,
+                                sprite = String, frame = String, at = Vec2.Vec2, flipX = Bool, scale = Int32,
+                                rims = List[Light.Rim], z = Int32 }): List[Render.PlacedItem] =
+        spec#rims
+            |> List.filter(rim -> rim#strength > 0.0)
+            |> List.flatMap(rim -> {
+                let seen = if (spec#flipX) { x = 0.0 - rim#toward#x | rim#toward } else rim#toward;
+                PxShade.rimDirectionOf(seen) |> Option.toList |> List.flatMap(dir ->
+                    drawQuad(spec#rimDoc, spec#rimBaked, spec#texture, spec#sprite, PxShade.rimFrameName(spec#frame, dir),
+                             spec#at, spec#flipX, spec#scale, spec#z)
+                        |> List.map(Render.overItem(item -> item
+                            |> Render.tinted(rim#color)
+                            |> Render.fade(rim#strength)
+                            |> Render.blended(DrawCmd.BlendMode.Add))))
+            })
+
     /// draw の座標計算だけ(テストと当たり判定用)。矩形は行ごと・左から右の順。
     pub def runs(doc: PxSpriteDoc.Doc, sprite: String, frame: String, at: Vec2.Vec2,
                  flipX: Bool, scale: Int32): List[Run] =

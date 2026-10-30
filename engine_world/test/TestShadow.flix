@@ -339,4 +339,63 @@ mod TestShadow {
         };
         let rimAlpha = items |> List.filterMap(alphaOf) |> List.head;
         Assert.assertEq(expected = Some(0.25), rimAlpha)
+
+
+    // ── 立っている物を倒した影（projectedRuns / projectedBox） ──
+
+    def runAt(x: Float64, y: Float64, w: Float64, h: Float64): PxSprite.Run = { x = x, y = y, w = w, h = h, key = "body" }
+
+    def ink(): Color = { r = 0.1, g = 0.1, b = 0.2 }
+
+    /// gradPolygon の頂点と濃さ（Poly でない物は bug!）。
+    def polyOf(p: Render.PlacedItem): (List[Vec2.Vec2], List[Float64]) = match p#item {
+        case Render.Item.Poly(poly) => (poly#vertices, poly#grad |> Option.getWithDefault(Nil) |> List.map(t -> t#alpha))
+        case _                      => bug!("影は gradPolygon のはず")
+    }
+
+    def runsShadow(runs: List[PxSprite.Run], light: Vec2.Vec2): List[Render.PlacedItem] =
+        Shadow.projectedRuns({ runs = runs, foot = at(100.0, 100.0), light = light, reach = 1.0, depth = 0.5,
+                               ink = ink(), alpha = 0.8, z = 1 })
+
+    /// 灯りが真左: 幅 2・高さ 10 の 1 列が右へ高さぶん倒れる。横へ倒れる影の太さは幅 × depth（2 × 0.5 = 1）。
+    /// 濃さは根元 0.8 → 先 0。
+    @Test
+    def testProjectedRunsFallAwayFromTheLight(): Unit \ Assert =
+        Assert.assertEq(expected = (((100.0, 99.5) :: (100.0, 100.5) :: (110.0, 100.5) :: (110.0, 99.5) :: Nil), (0.8 :: 0.8 :: 0.0 :: 0.0 :: Nil)) :: Nil,
+                        runsShadow(runAt(99.0, 90.0, 2.0, 10.0) :: Nil, at(0.0, 100.0)) |> List.map(p -> {
+                            let (vs, alphas) = polyOf(p);
+                            (vs |> List.map(v -> (v#x, v#y)), alphas)
+                        }))
+
+    /// 同じ幅の 3 行は 1 枚に・幅の違う 2 行は 2 枚・灯りが足元に重なると何も出ない。
+    @Test
+    def testProjectedRunsMergeRowsOfTheSameWidth(): Unit \ Assert =
+        let same = runAt(99.0, 97.0, 2.0, 1.0) :: runAt(99.0, 98.0, 2.0, 1.0) :: runAt(99.0, 99.0, 2.0, 1.0) :: Nil;
+        let differ = runAt(99.0, 95.0, 2.0, 5.0) :: runAt(98.0, 90.0, 4.0, 5.0) :: Nil;
+        Assert.assertEq(expected = (1, 2, 0),
+            (List.length(runsShadow(same, at(0.0, 100.0))), List.length(runsShadow(differ, at(0.0, 100.0))),
+             List.length(runsShadow(same, at(100.0, 100.0)))))
+
+    /// 濃さは影全体で付く: 高さ 10 の影の真ん中（高さ 5）の境で、下の帯の先と上の帯の根元が同じ 0.8 × 0.5 = 0.4。
+    @Test
+    def testProjectedRunsFadeAcrossTheWholeShadow(): Unit \ Assert =
+        let differ = runAt(99.0, 95.0, 2.0, 5.0) :: runAt(98.0, 90.0, 4.0, 5.0) :: Nil;
+        Assert.assertEq(expected = (0.8 :: 0.8 :: 0.4 :: 0.4 :: Nil) :: (0.4 :: 0.4 :: 0.0 :: 0.0 :: Nil) :: Nil,
+                        runsShadow(differ, at(0.0, 100.0)) |> List.map(p -> snd(polyOf(p))))
+
+    /// 灯りが真左: 根元の半幅 = max(2, 10 × |side.x| + 4 × |side.y|) = 4（横へ倒れるので楕円の縦の半径）・先は 4 × 1.35 = 5.4。
+    @Test
+    def testProjectedBoxUsesTheFootEllipse(): Unit \ Assert =
+        let quad = Shadow.projectedBox({ foot = at(100.0, 100.0), halfX = 10.0, halfY = 4.0, height = 20.0, light = at(0.0, 100.0),
+                                         reach = 1.0, ink = ink(), alpha = 0.8, z = 1 })
+            |> Option.map(p -> fst(polyOf(p))) |> Option.getWithDefault(Nil);
+        Assert.assertTrue(verticesNear(at(100.0, 104.0) :: at(120.0, 105.4) :: at(120.0, 94.6) :: at(100.0, 96.0) :: Nil, quad))
+
+    /// 根元の半幅は 2 より細くならない（縦の半径 1 でも 2）。
+    @Test
+    def testProjectedBoxKeepsTheMinimumWidth(): Unit \ Assert =
+        let quad = Shadow.projectedBox({ foot = at(100.0, 100.0), halfX = 10.0, halfY = 1.0, height = 20.0, light = at(0.0, 100.0),
+                                         reach = 1.0, ink = ink(), alpha = 0.8, z = 1 })
+            |> Option.map(p -> fst(polyOf(p))) |> Option.getWithDefault(Nil);
+        Assert.assertTrue(verticesNear(at(100.0, 102.0) :: at(120.0, 102.7) :: at(120.0, 97.3) :: at(100.0, 98.0) :: Nil, quad))
 }

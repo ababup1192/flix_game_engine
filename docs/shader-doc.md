@@ -95,6 +95,7 @@ vignette・熱い溶岩を **JSON の保存だけで即調整できる**形で�
 | `math1` | `op`, `of` | `neg`/`abs`/`fract`/`floor`/`sin`/`cos`/`sat`/`oneMinus` |
 | `math2` | `op`, `a`, `b` | `add`/`sub`/`mul`/`min`/`max`/`step`/`div`（`div` は `b` が 0 なら 0） |
 | `sampler` **[新]** | `filter`(`"nearest"`/`"linear"`), `of` | `of` の中の `tex` / `blur` を、その補間で読む（入れ子は内側が勝つ・`use` の中までは届かない） |
+| `param` **[新]** | `name`（英数字と `_`） | 面を置く時に渡す数（`Render.withShaderParams(Map#{"focus" => v}, 面)`）。毎フレーム変わる数（ピントの位置・体力の割合）はここで渡す — `const` に入れると実機は GLSL を作り直す。渡さなかった名前は 0（実機は `[render] 面 …: param '…'` を 1 回知らせる。描き出しは `Render.missingShaderParams` で同じ物を引ける） |
 | `mix` | `a`, `b`, `t` | 一定の割合で混ぜる |
 | `blend` | `a`, `b`, `by` | 場で混ぜ具合を決めて混ぜる |
 | `time` | `scale`, `offset` | 時刻そのもの（明滅・呼吸に） |
@@ -215,6 +216,9 @@ vignette・熱い溶岩を **JSON の保存だけで即調整できる**形で�
 - **まだ描いていない pass**（後ろに宣言した pass・このコマで宣言していない古い pass）を読むと黒になり、1 回だけ知らせる。
 - 倍率は `App.withPassPlan` に `{ targets = Map#{ "名前" => { scale = 0.5 | RenderTarget.defaultDescriptor() } } | Render.passPlan(passes) }`。
   描き出しは同じ計画を `Render.passSpecsOf` に渡す。sprite で貼ると常に Nearest（1 テクセルが塊になる）・なめらかに広げるなら面で `sampler` を通して読む。
+- 場面を pass に描いて camera を動かすなら、計画を `App.withPassPlanView` で組み、`PassCtx#camera` を木の部分ごとに
+  `CameraRig.follow`（world の物）/ `CameraRig.followParallax(cam, {x, y}, …)`（遠景。縦と横で別の割合）で写す。pass を読み返す全面の面は
+  camera の掛からない `App.withScreenView` に置く（`withCamera` の本編に置くと面ごと動く）。光マップは `Light.worldLightMapPass(cam, cfg)`。
 
 ## 生成での注意
 

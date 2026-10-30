@@ -706,7 +706,7 @@
 - 1 つの場に掛ける素の関数。
   `pub enum UnOp with Eq, ToString { case Neg case Abs case Fract case Floor case Sin case Cos case Sat case OneMinus }`
 - 値の場（スカラー・0..1 目安）。GPU では 1 個の float、CPU では Float64 になる。
-  `pub enum Field { case Const(Float64) case Uv({ axis = Axis }) case Worley({ scale = Float64, seed = Int32, out = WorleyOut }) case Fbm({ octaves = Int32, scale = Float64, seed = Int32 }) case FbmTile({ octaves = Int32, scale = Float64, period = Vec2.Vec2, seed = Int32 }) case Smoothstep({ lo = Float64, hi = Float64, of = Field }) case Scaled({ factor = Float64, scroll = Vec2.Vec2, of = Field }) case Warp({ amount = Float64, scale = Float64, seed = Int32, of = Field }) case Mix({ a = Field, b = Field, t = Float64 }) case Blend({ a = Field, b = Field, by = Field }) case Disk({ cx = Float64, cy = Float64, radius = Float64, feather = Float64 }) case Radial({ cx = Float64, cy = Float64 }) case RadialAspect({ cx = Float64, cy = Float64, aspect = Float64 }) case Quantize({ of = Field, steps = Int32 }) case Scales({ scale = Float64, stagger = Float64 }) case Glints({ scale = Float64, rate = Float64, density = Float64, seed = Int32 }) case Ripples({ freq = Float64, amp = Float64, speed = Float64, seed = Int32 }) case Sparkle({ scale = Float64, rate = Float64, density = Float64, seed = Int32 }) case Bin({ op = BinOp, a = Field, b = Field }) case Hash1({ scale = Float64, seed = Int32, bucket = Option[Field] }) case Hash2({ scale = Float64, seed = Int32, comp = Axis, bucket = Option[Field] }) case Un({ op = UnOp, of = Field }) case Pow({ of = Field, p = Float64 }) case Time({ scale = Float64, offset = Field }) case Tiling({ tiles = Vec2.Vec2, of = Field }) case Snap({ cells = Vec2.Vec2, of = Field }) case Swirl({ cx = Float64, cy = Float64, strength = Float64, rate = Float64, of = Field }) case Angle({ cx = Float64, cy = Float64 }) case Rotate({ cx = Float64, cy = Float64, turns = Float64, rate = Float64, of = Field }) case Ref(String) case Tex({ name = String, chan = TexChan }) case Shift({ dx = Field, dy = Field, of = Field }) case TexBlur({ name = String, chan = TexChan, radius = Vec2.Vec2, taps = Int32, amount = Field }) case Sampler({ filter = FilterMode, of = Field }) }`
+  `pub enum Field { case Const(Float64) case Uv({ axis = Axis }) case Worley({ scale = Float64, seed = Int32, out = WorleyOut }) case Fbm({ octaves = Int32, scale = Float64, seed = Int32 }) case FbmTile({ octaves = Int32, scale = Float64, period = Vec2.Vec2, seed = Int32 }) case Smoothstep({ lo = Float64, hi = Float64, of = Field }) case Scaled({ factor = Float64, scroll = Vec2.Vec2, of = Field }) case Warp({ amount = Float64, scale = Float64, seed = Int32, of = Field }) case Mix({ a = Field, b = Field, t = Float64 }) case Blend({ a = Field, b = Field, by = Field }) case Disk({ cx = Float64, cy = Float64, radius = Float64, feather = Float64 }) case Radial({ cx = Float64, cy = Float64 }) case RadialAspect({ cx = Float64, cy = Float64, aspect = Float64 }) case Quantize({ of = Field, steps = Int32 }) case Scales({ scale = Float64, stagger = Float64 }) case Glints({ scale = Float64, rate = Float64, density = Float64, seed = Int32 }) case Ripples({ freq = Float64, amp = Float64, speed = Float64, seed = Int32 }) case Sparkle({ scale = Float64, rate = Float64, density = Float64, seed = Int32 }) case Bin({ op = BinOp, a = Field, b = Field }) case Hash1({ scale = Float64, seed = Int32, bucket = Option[Field] }) case Hash2({ scale = Float64, seed = Int32, comp = Axis, bucket = Option[Field] }) case Un({ op = UnOp, of = Field }) case Pow({ of = Field, p = Float64 }) case Time({ scale = Float64, offset = Field }) case Tiling({ tiles = Vec2.Vec2, of = Field }) case Snap({ cells = Vec2.Vec2, of = Field }) case Swirl({ cx = Float64, cy = Float64, strength = Float64, rate = Float64, of = Field }) case Angle({ cx = Float64, cy = Float64 }) case Rotate({ cx = Float64, cy = Float64, turns = Float64, rate = Float64, of = Field }) case Ref(String) case Tex({ name = String, chan = TexChan }) case Shift({ dx = Field, dy = Field, of = Field }) case TexBlur({ name = String, chan = TexChan, radius = Vec2.Vec2, taps = Int32, amount = Field }) case Sampler({ filter = FilterMode, of = Field }) case Param({ name = String }) }`
 - 面の色（rgb）。
   `pub enum Shade { case Solid(Color) case Ramp({ lo = Color, hi = Color, field = Field }) case Gradient({ stops = List[(Float64, Color)], field = Field }) case Cosine({ a = Color, b = Color, c = Color, d = Color, field = Field }) case Rgb({ r = Field, g = Field, b = Field }) }`
 - 面の出力（このピクセルの最終色とアルファ）。
@@ -733,6 +733,16 @@
   `pub def texNames(spec: Spec): List[String]`
 - Spec が読む (テクスチャ名, 補間) の組を「bindings（前から）→ 色 → alpha」の初出順・重複なしで列挙する。
   `pub def texReads(spec: Spec): List[(String, FilterMode)]`
+- Spec が読む Param の名前を「bindings（前から）→ 色 → alpha」の初出順・重複なしで列挙する。
+  `pub def paramNames(spec: Spec): List[String]`
+- Param の名前に使える字か（英数字と '_'・1 字以上）。JSON の読みが確かめる。
+  `pub def paramNameOk(name: String): Bool`
+- 面に渡された値の表から、Spec の Param の値を正典順に並べる（表に無い名前は 0）。
+  `pub def paramValues(spec: Spec, params: Map[String, Float64]): List[Float64]`
+- Spec の Param を、値の表の値の Const に置き換える（表に無い名前は 0）。
+  `pub def bindParams(params: Map[String, Float64], spec: Spec): Spec`
+- 面に渡された値の表に無い Param の名前（知らせる物）。
+  `pub def missingParams(spec: Spec, params: Map[String, Float64]): List[String]`
 - この節が、子の場を自分の uv と違う uv で読むなら、その子（shift の dx・dy は今の uv で読むので入らない）。
   `pub def remappedChild(field: Field): Option[Field]`
 - 負の指数の pow の底の下限（GLSL と CPU が同じ値を読む）。
@@ -748,7 +758,7 @@
 
 ## ShaderEffect — `engine/src/ShaderEffect.flix`
 - シェーダー面 1 枚ぶんの描画依頼。
-  `pub type alias ShaderRenderCmd = { program = GpuHandle.ShaderProgram, texReads = List[(String, ShaderDoc.FilterMode)], rect = Rect2.Rect2, mask = List[List[Vec2.Vec2]], time = Float64, zIndex = Int32, blend = DrawCmd.BlendMode, alpha = Float64 }`
+  `pub type alias ShaderRenderCmd = { program = GpuHandle.ShaderProgram, texReads = List[(String, ShaderDoc.FilterMode)], rect = Rect2.Rect2, mask = List[List[Vec2.Vec2]], time = Float64, zIndex = Int32, blend = DrawCmd.BlendMode, alpha = Float64, params = List[Float64] }`
 - シェーダー面の描画チャンネル。eff Game とは別に隔離した効果。
   `pub eff Shader`
 - Spec を GLSL プログラムへコンパイルしハンドルを返す（起動時/リロード時に 1 回）。

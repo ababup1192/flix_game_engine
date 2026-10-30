@@ -121,4 +121,41 @@ mod TestPxSprite {
         Assert.assertEq(expected = (None, None),
             (xy(PxSprite.sizeOf(doc(), "nobody", "f0", 2)),
              xy(PxSprite.sizeOf(doc(), "guy", "nosuchframe", 2))))
+
+
+    // ── 輪郭光の重ね（drawRimQuad） ──
+
+    /// 反転して描く絵へ右（e）からの灯り → 元の絵の左の縁（@rim-w）のコマを貼る。
+    @Test
+    def testDrawRimQuadMirrorsTheDirectionWhenFlipped(): Unit \ Assert =
+        let rimDoc = PxShade.rimMasks(Map#{ 'a' => ('a', 'a') }, doc());
+        let baked = PxSpriteAtlas.bake(rimDoc, _ -> Color.rgb(1.0, 1.0, 1.0));
+        let rim = { toward = { x = 1.0, y = 0.0 }, color = Color.rgb(1.0, 0.5, 0.0), strength = 0.5 };
+        let items = PxSprite.drawRimQuad({ rimDoc = rimDoc, rimBaked = baked, texture = "rim", sprite = "guy", frame = "f0",
+                                           at = Vec2.zero(), flipX = true, scale = 1, rims = rim :: Nil, z = 3 });
+        Assert.assertEq(expected = PxSpriteAtlas.regionOf(baked, "guy", "f0@rim-w") |> Option.toList |> List.map(rectTuple),
+                        items |> List.filterMap(spriteRegionOf) |> List.map(rectTuple))
+
+    /// 灯りの色で Add に足す（tint・濃さ・重ね方）。
+    @Test
+    def testDrawRimQuadAddsTheLightColor(): Unit \ Assert =
+        let rimDoc = PxShade.rimMasks(Map#{ 'a' => ('a', 'a') }, doc());
+        let baked = PxSpriteAtlas.bake(rimDoc, _ -> Color.rgb(1.0, 1.0, 1.0));
+        let rim = { toward = { x = 1.0, y = 0.0 }, color = Color.rgb(1.0, 0.5, 0.0), strength = 0.5 };
+        let items = PxSprite.drawRimQuad({ rimDoc = rimDoc, rimBaked = baked, texture = "rim", sprite = "guy", frame = "f0",
+                                           at = Vec2.zero(), flipX = false, scale = 1, rims = rim :: Nil, z = 3 });
+        Assert.assertEq(expected = ((1.0, 0.5, 0.0), 0.5, DrawCmd.BlendMode.Add, 3) :: Nil,
+                        items |> List.filterMap(spriteLookOf))
+
+    def spriteRegionOf(p: Render.PlacedItem): Option[Rect2.Rect2] = match p#item {
+        case Render.Item.Sprite(s) => s#regionRect
+        case _                     => None
+    }
+
+    def rectTuple(r: Rect2.Rect2): (Float64, Float64, Float64, Float64) = (r#position#x, r#position#y, r#size#x, r#size#y)
+
+    def spriteLookOf(p: Render.PlacedItem): Option[((Float64, Float64, Float64), Float64, DrawCmd.BlendMode, Int32)] = match p#item {
+        case Render.Item.Sprite(s) => Some(((s#tint#r, s#tint#g, s#tint#b), s#alpha, s#blend, s#zIndex))
+        case _                     => None
+    }
 }

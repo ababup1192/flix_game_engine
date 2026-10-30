@@ -34,6 +34,9 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | 説明の窓をはみ出さず置く | `UiTooltip` + `ZStack.topLayer` |
 | 演出の時刻表を書く・描く・鳴らす | `Timeline.build`+`withSound` → `soundsBetween`（時計は `soundsOnClock`）→ `App.withAudio` |
 | 画面ごとの後処理（ブルーム・ぼかし）を半分の解像度で組む | `App.withPassPlan`（`targets` に `RenderTarget.Descriptor` の scale）+ pass の中の `Render.shaderFill`・なめらかに読むのは ShaderDoc の `sampler`（描き出しは `Render.passSpecsOf`） |
+| 場面を Pass に描いて後処理を掛けつつ camera を動かす（遠景は横だけゆっくり） | `App.withPassPlanView`（`PassCtx#camera` を `CameraRig.follow` / `followParallax` で木の部分ごとに）+ 後処理の面は `App.withScreenView`・光マップは `Light.worldLightMapPass`（描き出しは `App.passCtxOf`） |
+| 面に毎フレーム変わる数（ピント・体力の割合）を渡す | ShaderDoc の `param` + `Render.withShaderParams`（Spec の Const に入れない） |
+| ドット絵の灯り側の縁を灯りの色で光らせる（輪郭光）・灯りの反対へ倒した影 | `PxShade.rimMasks`（別アトラス）+ `Light.rimsFrom` → `PxSprite.drawRimQuad`・影は `Shadow.projectedRuns` / `projectedBox` |
 | 演出の待ちが先の拍で変わる（全部が済んでから始める・置き直さない） | `Timeline.afterAll`（基準ごとに間）→ `Timeline.build` |
 | ポーズ・ヒットストップで止める・遅くする（遊びと実時間を分ける） | `App.addClock` + `Clock.Pace`・`frame#realNow` |
 | 規則の奥の出来事で鳴らす（固定刻みでも 1 回） | `Emit.emit` → `Emit.collectInto` で World に溜め `Emit.since` |

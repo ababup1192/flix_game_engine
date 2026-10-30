@@ -120,4 +120,36 @@ mod TestPxShade {
             |> Option.flatMap(rows -> List.nth(0, rows))
             |> Option.getWithDefault("");
         Assert.assertEq(expected = (".MMM.", ".MMM."), (frameOf("a"), frameOf("b")))
+
+
+    // ── 輪郭光の縁の絵（rimMasks） ──
+
+    /// 3×3 の地 1 体の Doc（anchor は左上）。
+    def rimSource(): PxSpriteDoc.Doc =
+        { version = 1, note = None, legend = Map#{ 'm' => "stone" },
+          sprites = Map#{ "box" => { anchor = Vec2.zero(), frames = Map#{ "f" => ("mmm" :: "mmm" :: "mmm" :: Nil) }, clips = Map.empty() } } }
+
+    def rimFrameOf(d: PxSpriteDoc.Doc, dir: String): List[String] =
+        PxShade.rimMasks(ramp(), d)#sprites |> Map.get("box")
+            |> Option.flatMap(sp -> Map.get(PxShade.rimFrameName("f", dir), sp#frames))
+            |> Option.getWithDefault(Nil)
+
+    /// e は右の列だけ・ne は上の行と右の列（斜めは縦と横の両方を見る）。
+    @Test
+    def testRimMasksKeepTheEdgeFacingTheLight(): Unit \ Assert =
+        Assert.assertEq(expected = (("..#" :: "..#" :: "..#" :: Nil), ("###" :: "..#" :: "..#" :: Nil)),
+                        (rimFrameOf(rimSource(), "e"), rimFrameOf(rimSource(), "ne")))
+
+    /// 輪郭の色（表に無い 'o'）と透明は縁にならない。'o' の左の地は、右隣が地でないので縁になる。
+    @Test
+    def testRimMasksSkipOutlineAndClear(): Unit \ Assert =
+        let d = { sprites = Map#{ "box" => { anchor = Vec2.zero(), frames = Map#{ "f" => ("mo." :: Nil) }, clips = Map.empty() } } | rimSource() };
+        Assert.assertEq(expected = "#.." :: Nil, rimFrameOf(d, "e"))
+
+    /// 境は 22.5 度: (1, 0.3) は e・(0.2, 1) は s・長さ 0 は None。
+    @Test
+    def testRimDirectionOfPicksTheNearestOfEight(): Unit \ Assert =
+        Assert.assertEq(expected = (Some("ne"), Some("e"), Some("s"), None),
+            (PxShade.rimDirectionOf({ x = 1.0, y = -1.0 }), PxShade.rimDirectionOf({ x = 1.0, y = 0.3 }),
+             PxShade.rimDirectionOf({ x = 0.2, y = 1.0 }), PxShade.rimDirectionOf(Vec2.zero())))
 }

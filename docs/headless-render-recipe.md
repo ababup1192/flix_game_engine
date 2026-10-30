@@ -181,6 +181,9 @@ bin/fge digest gallery/my_scene.png                       # 目視の前に数�
 `Render.passSpecsOf` に渡す。倍率（`targets`）と読みの決まり（まだ描いていない pass は黒・自分の名前は history）が
 実機と同じになる。pass の列を 1 枚ずつ `Render.passSpecOf` で下ろすと、この 2 つが抜ける（`bin/fge forbid` が止める）。
 
+計画を `App.withPassPlanView`（見え方を受ける形）で組んでいるゲームは、描き出しでも同じ見え方を
+`App.passCtxOf(app, App.viewCtxOf(atlas, design), world)` で作って渡す（camera は実機と同じ `App.cameraViewOf` の値）。
+
 ```flix
 let prepared = Render.passSpecsOf(texInfo, View.passPlanOf(input));
 prepared#issues |> List.forEach(issue -> println("[render] ${issue}"));

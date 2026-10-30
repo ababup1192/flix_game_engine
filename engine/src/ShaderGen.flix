@@ -7,6 +7,8 @@
 // 座標変換（Scaled/Warp）は「inner が読む uv の式」を差し替えることで表す。
 
 pub mod ShaderGen {
+    import java.lang.{Object => JObject}
+    import java.lang.ref.WeakReference
 
     /// vertex シェーダー（面 quad 1 枚・uv を渡すだけ）。Spec に依存しない固定ソース。
     /// vertex.xy = 0..1 の quad ローカル座標を rect（px）へ写し、vertex.zw を uv として渡す。
@@ -180,12 +182,24 @@ pub mod ShaderGen {
     /// どの名前を bind するかは描画依頼の texNames が運ぶ）。
     /// WhyNot: 名前のまま比べない — Pass の中で読みを別名（`x@history` / `@missing:c`）へ書き換えた Spec と
     /// 書き換えない Spec が同じ name で並ぶと、毎コマ偽になって GLSL を作り直し続ける。
+    /// 同じ物（参照が同じ）なら木を辿らずに真を返す — 作り置きの Spec を毎コマ渡す面では、ここで抜ける。
     pub def eqSpec(a: ShaderDoc.Spec, b: ShaderDoc.Spec): Bool =
+        isSameObject(a, b) or eqSpecTree(a, b)
+
+    def eqSpecTree(a: ShaderDoc.Spec, b: ShaderDoc.Spec): Bool =
         let ix = { a = texIndexFrom(ShaderDoc.texNames(a)), b = texIndexFrom(ShaderDoc.texNames(b)) };
         a#name == b#name
             and a#cycleRate == b#cycleRate
             and eqBindings(ix, a#bindings, b#bindings)
             and eqOut(ix, a#out, b#out)
+
+    /// a と b が同じ物か（中身ではなく参照）。
+    /// WhyNot: Objects.equals で比べない — Flix の値が equals を中身の比べにした時に、木を辿る比べへ黙って戻る。
+    def isSameObject(a: ShaderDoc.Spec, b: ShaderDoc.Spec): Bool =
+        unsafe IO {
+            let held = new WeakReference(unchecked_cast(a as JObject));
+            held.refersTo(unchecked_cast(b as JObject))
+        }
 
     /// 2 つの Spec のテクスチャ名 → 正典順の番号。
     type alias TexIx = { a = Map[String, Int32], b = Map[String, Int32] }
@@ -317,6 +331,7 @@ pub mod ShaderGen {
                 eqField(ix, ra#dx, rb#dx) and eqField(ix, ra#dy, rb#dy) and eqField(ix, ra#of, rb#of)
             case (Field.Sampler(ra), Field.Sampler(rb))           =>
                 ra#filter == rb#filter and eqField(ix, ra#of, rb#of)
+            case (Field.Param(ra), Field.Param(rb))               => ra#name == rb#name
             case (Field.TexBlur(ra), Field.TexBlur(rb))           =>
                 eqTexName(ix, ra#name, rb#name) and ra#chan == rb#chan and eqVec2(ra#radius, rb#radius)
                     and ra#taps == rb#taps and eqField(ix, ra#amount, rb#amount)
@@ -329,7 +344,8 @@ pub mod ShaderGen {
     pub def compile(spec: ShaderDoc.Spec): String =
         // texNames は木を全走査するので、宣言と番号表で使い回す（毎回呼ぶと走査が重複する）。
         let reads = ShaderDoc.texReads(spec);
-        let tex = texScopeFrom(reads);
+        let params = ShaderDoc.paramNames(spec);
+        let tex = withParamScope(params, texScopeFrom(reads));
         joinParts(
             "#version 330 core\n" ::
             "in vec2 vUv;\n" ::
@@ -337,6 +353,7 @@ pub mod ShaderGen {
             "uniform float uTime;\n" ::
             "uniform float uAlpha;\n" ::
             texUniformDecls(reads) ::
+            paramUniformDecls(params) ::
             preludeSource() ::
             (if (ShaderDoc.usesBlur(spec)) blurSource() else "") ::
             (if (ShaderDoc.usesDiv(spec)) divSource() else "") ::
@@ -377,6 +394,23 @@ pub mod ShaderGen {
             "uniform sampler2D uTex${i};\nuniform float uTexFlip${i};\n"
         }, "")
 
+    /// Param の名前の並び（paramNames の正典順）に uniform 宣言を吐く。空なら空文字（Param を使わない Spec の GLSL を変えない）。
+    def paramUniformDecls(names: List[String]): String =
+        names |> List.zipWithIndex |> List.joinWith(iname -> {
+            let (i, _) = iname;
+            "uniform float uParam${i};\n"
+        }, "")
+
+    /// fieldExpr が Param の番号（uParamN）を引く鍵。tex の表に同居させる（fieldExpr の引数を増やさない）。
+    def paramKey(name: String): String = "@param:" + name
+
+    /// Param の名前 → 正典順の番号を tex の表へ足す。
+    def withParamScope(params: List[String], tex: Map[String, Int32]): Map[String, Int32] =
+        params |> List.zipWithIndex |> List.foldLeft((acc, iname) -> {
+            let (i, name) = iname;
+            Map.insert(paramKey(name), i, acc)
+        }, tex)
+
     /// fieldExpr が tex / blur の番号を引く表（texReads の正典順の番号）。素の名前 = 今の補間の番号、
     /// scopedKey(名前, 補間) = その補間の番号。Sampler の節が素の名前を指し直す（rescope）。
     def texScopeFrom(reads: List[(String, ShaderDoc.FilterMode)]): Map[String, Int32] =
@@ -395,7 +429,7 @@ pub mod ShaderGen {
             if (String.endsWith({ suffix = suffix }, key))
                 Map.insert(String.dropRight(String.length(suffix), key), i, acc)
             else acc,
-        tex |> Map.filterWithKey((key, _) -> String.contains({ substr = "@sampler:" }, key)), tex)
+        tex |> Map.filterWithKey((key, _) -> String.contains({ substr = "@sampler:" }, key) or String.startsWith({ prefix = "@param:" }, key)), tex)
 
     /// テクスチャ名 → sampler 番号（texNames の正典順）。Tex ノードが uTexN を選ぶのに使う。
     def texIndexFrom(names: List[String]): Map[String, Int32] =
@@ -405,7 +439,7 @@ pub mod ShaderGen {
 
     // ── main 本体（prelude 抜き）のスナップショット用。ノイズテンプレを混ぜず Spec だけ pin する。──
     pub def compileBody(spec: ShaderDoc.Spec): String =
-        let tex = texScopeFrom(ShaderDoc.texReads(spec));
+        let tex = withParamScope(ShaderDoc.paramNames(spec), texScopeFrom(ShaderDoc.texReads(spec)));
         let stmts = mainStatements(spec, tex);
         let n = List.length(stmts);
         stmts |> List.zipWithIndex
@@ -754,6 +788,12 @@ pub mod ShaderGen {
                 fieldExpr(sh#of, uv2, env, tex)
             case ShaderDoc.Field.Sampler(sm) =>
                 fieldExpr(sm#of, uv, env, rescope(sm#filter, tex))
+            case ShaderDoc.Field.Param(pm) =>
+                // 番号は paramNames の正典順なので表に必ずある。無い場合の 0.0 は保険。
+                match Map.get(paramKey(pm#name), tex) {
+                    case Some(i) => "uParam${i}"
+                    case None    => "0.0"
+                }
             case ShaderDoc.Field.TexBlur(bl) =>
                 let i = Map.get(bl#name, tex) |> Option.getWithDefault(0);
                 let chan = match bl#chan {

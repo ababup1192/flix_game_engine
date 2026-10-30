@@ -6,6 +6,8 @@
 // 注意: 置き場所は持たず呼び側が渡す。テキストの実寸計算は engine の純粋関数を使う。
 
 pub mod Render {
+    import java.lang.{Object => JObject}
+    import java.util.IdentityHashMap
 
     // ── render component（位置を持たない・ノードでない）──
 
@@ -46,8 +48,10 @@ pub mod Render {
         /// 非空なら GL でステンシルへ書き込んで「多角形の内側だけ」塗る（丸い池形など任意形に抜く）。
         /// alpha は面全体の濃さ（場の alpha に掛ける。1.0 = そのまま）。fade で変える。
         /// WhyNot: 濃さを Spec の場（Const）に書き込まない。Spec が変わるたびに GL のシェーダーを作り直す。
+        /// params は Spec の Param（ShaderDoc.Field.Param）の値の表（withShaderParams で付ける。無い名前は 0）。
         case Shader({ rect = Rect2.Rect2, spec = ShaderDoc.Spec, t = Float64,
-                      mask = List[List[Vec2.Vec2]], zIndex = Int32, blend = DrawCmd.BlendMode, alpha = Float64 })
+                      mask = List[List[Vec2.Vec2]], zIndex = Int32, blend = DrawCmd.BlendMode, alpha = Float64,
+                      params = Map[String, Float64] })
     }
 
     /// 置き場所つきの描画物。View はこの列を組み、draw が描画命令へ変換する。
@@ -184,7 +188,52 @@ pub mod Render {
     pub def shaderFill(spec: ShaderDoc.Spec, rect: Rect2.Rect2, t: Float64, zIndex: Int32): PlacedItem =
         { at = rect#position,
           item = Item.Shader({ rect = rect, spec = spec, t = t, mask = Nil, zIndex = zIndex, alpha = 1.0,
-                               blend = DrawCmd.BlendMode.Normal }) }
+                               blend = DrawCmd.BlendMode.Normal, params = Map.empty() }) }
+
+    /// Shader 面に、Spec の Param（ShaderDoc.Field.Param）の値の表を付ける（Clipped の中の Shader 面にも効く。
+    /// Shader 面でない物はそのまま）。前に付けた表に足す — 同じ名前は後の値。
+    /// GL は uniform（uParamN）で渡し、描き出しは Spec の Param を値の Const に置き換えて評価する（shaderSurfaces）。
+    /// 毎フレーム変わる数（ピントの位置・体力の割合）はここで渡す — Spec の Const に入れると実機は GLSL を作り直す。
+    pub def withShaderParams(params: Map[String, Float64], placed: PlacedItem): PlacedItem =
+        { item = withParamsItem(params, placed#item) | placed }
+
+    def withParamsItem(params: Map[String, Float64], item: Item): Item =
+        match item {
+            case Item.Shader(s)  => Item.Shader({ params = Map.union(params, s#params) | s })
+            case Item.Clipped(c) => Item.Clipped({ inner = withParamsItem(params, c#inner) | c })
+            case other           => other
+        }
+
+    /// 面の Spec が読む Param のうち、面に値が渡されていない物の (Spec の名前, Param の名前)（重複なし・知らせる物）。
+    /// 実機は App が z の知らせと同じ所で 1 回だけ知らせる。描き出しは呼び手がこれを呼べば同じ物を出せる。
+    pub def missingShaderParams(items: List[PlacedItem]): List[(String, String)] = unsafe IO {
+        let paramNamesOf = specTable();
+        items |> List.foldLeft((acc, placed) -> {
+            let (leaf, _clip) = unwrapClip(placed#item, None);
+            match leaf {
+                case Item.Shader(s) => cachedBySpec(paramNamesOf, ShaderDoc.paramNames, s#spec)
+                    |> List.filter(n -> not Map.memberOf(n, s#params))
+                    |> List.foldLeft((a, n) -> if (List.memberOf((s#spec#name, n), a)) a else (s#spec#name, n) :: a, acc)
+                case _ => acc
+            }
+        }, Nil) |> List.reverse
+    }
+
+    /// 1 回の呼び出しの中で、Spec から求める値を Spec 1 つ（同じ物）につき 1 度だけ求めるための表。
+    /// 面がいくつあっても、作り置きの Spec を使い回していれば木を辿るのは Spec の数だけになる。
+    /// WhyNot: Spec の中身を鍵にしない — 中身の比べ・ハッシュがそれだけで木を辿り、省きたい走査と同じだけ掛かる。
+    /// WhyNot: コマをまたいで覚えない — 持ち回れる所が pub の型（App.TileCache など）にしか無く、足すと外から見える形が変わる。
+    def specTable(): IdentityHashMap[JObject, JObject] \ IO = new IdentityHashMap()
+
+    /// table に spec の f の値があればそれを、無ければ f で求めて覚えてから返す（f は Spec から値を作るだけの関数）。
+    def cachedBySpec(table: IdentityHashMap[JObject, JObject], f: ShaderDoc.Spec -> v, spec: ShaderDoc.Spec): v \ IO =
+        let key: JObject = unchecked_cast(spec as JObject);
+        if (table.containsKey(key)) unchecked_cast(table.get(key) as v)
+        else {
+            let value = f(spec);
+            discard table.put(key, unchecked_cast(value as JObject));
+            value
+        }
 
     /// 宣言シェーダーで rect を塗り、maskPolys（ワールド座標の多角形の列）の内側だけに抜く面。
     /// 丸い池のような任意の形に水面を切り抜くのに使う（GL 経路がステンシルで抜く）。
@@ -196,7 +245,7 @@ pub mod Render {
             poly |> List.map(v -> Vec2.sub(v, rect#position)));
         { at = rect#position,
           item = Item.Shader({ rect = rect, spec = spec, t = t, mask = rel, zIndex = zIndex, alpha = 1.0,
-                               blend = DrawCmd.BlendMode.Normal }) }
+                               blend = DrawCmd.BlendMode.Normal, params = Map.empty() }) }
 
     /// pass（レンダーターゲット）を、全面でない面（横長のストリップなど）から等倍で読むための dy 場。
     /// 面の uv.v（0..1）を pass の縦の区間（design px の top / height）の texV へ写す。
@@ -727,7 +776,8 @@ pub mod Render {
     /// 前に宣言した Pass と普通のテクスチャはそのまま・自分の名前は RenderTarget.historyName・後ろの Pass と、knownTargets にあって
     /// このコマで宣言していない名前は missingName へ。同名の 2 回目以降と '@' を含む名前の Pass は列から外す。
     /// knownTargets = これまでに Pass として宣言した名前（実機はコマをまたいで増えるだけ・描き出しは空）。
-    pub def resolvePassReads(knownTargets: Set[String], plan: PassPlan): { plan = PassPlan, issues = List[PassPlanIssue] } =
+    pub def resolvePassReads(knownTargets: Set[String], plan: PassPlan): { plan = PassPlan, issues = List[PassPlanIssue] } = unsafe IO {
+        let texNamesOf = specTable();
         let declared = plan#passes |> List.map(p -> p#name) |> List.toSet;
         let (keptRev, _, issuesRev) = plan#passes |> List.foldLeft((acc, p) -> {
             let (kept, seen, issues) = acc;
@@ -739,12 +789,17 @@ pub mod Render {
                     else if (Set.memberOf(name, declared)) Some(PassPlanIssue.ReadsLaterPass(p#name, name))
                     else if (Set.memberOf(name, knownTargets)) Some(PassPlanIssue.ReadsUndeclaredTarget(p#name, name))
                     else None;
-                let found = passReadNames(p#items) |> List.filterMap(issueOf);
+                let found = passReadNames(texNamesOf, p#items) |> List.filterMap(issueOf);
                 let rename = name ->
                     if (name == p#name) RenderTarget.historyName(name)
                     else if (Option.isEmpty(issueOf(name))) name
                     else missingName(name);
-                let p1 = { items = p#items |> List.map(placed -> { item = renameReads(rename, placed#item) | placed }) | p };
+                let renamedOf = specTable();
+                let renameSpec = spec -> {
+                    let names = cachedBySpec(texNamesOf, ShaderDoc.texNames, spec);
+                    cachedBySpec(renamedOf, sp -> renameKeepingSame(rename, names, sp), spec)
+                };
+                let p1 = { items = p#items |> List.map(placed -> { item = renameReads(rename, renameSpec, placed#item) | placed }) | p };
                 (p1 :: kept, Set.insert(p#name, seen), List.append(List.reverse(found), issues))
             }
         }, (Nil, Set.empty(), Nil));
@@ -753,25 +808,40 @@ pub mod Render {
             |> List.map(PassPlanIssue.UnknownDescriptor);
         { plan = { passes = List.reverse(keptRev) | plan },
           issues = List.append(List.reverse(issuesRev), unknown) }
+    }
 
-    /// items が読む名前（面の tex / blur と sprite の texture）を初出順・重複なしで。
-    def passReadNames(items: List[PlacedItem]): List[String] =
+    /// items が読む名前（面の tex / blur と sprite の texture）を初出順・重複なしで。面の名前は texNamesOf に覚える。
+    def passReadNames(texNamesOf: IdentityHashMap[JObject, JObject], items: List[PlacedItem]): List[String] \ IO =
         items |> List.flatMap(placed -> {
             let (leaf, _clip) = unwrapClip(placed#item, None);
             match leaf {
                 case Item.Sprite(sp) => sp#texture :: Nil
-                case Item.Shader(sh) => ShaderDoc.texNames(sh#spec)
+                case Item.Shader(sh) => cachedBySpec(texNamesOf, ShaderDoc.texNames, sh#spec)
                 case _               => Nil
             }
         }) |> List.distinct
 
-    /// 面の tex / blur と sprite の texture の名前を f で替える（Clipped の中まで）。
-    def renameReads(f: String -> String, item: Item): Item =
-        onLeaf(leaf -> match leaf {
+    /// 読む名前 names が f で 1 つも変わらないなら spec そのもの（同じ物）を、変わるなら書き換えた Spec を返す。
+    /// WhyNot: 変わらない時も renameTex を通さない — 木を丸ごと作り直すので、毎コマ別の物になって
+    /// program の当たり（ShaderGen.eqSpec の参照の早抜け）が外れ、構造の比べに戻る。
+    def renameKeepingSame(f: String -> String, names: List[String], spec: ShaderDoc.Spec): ShaderDoc.Spec =
+        if (List.forAll(name -> f(name) == name, names)) spec
+        else ShaderDoc.renameTex(f, spec)
+
+    /// 面の tex / blur（renameSpec）と sprite の texture（f）の名前を替える（Clipped の中まで）。
+    def renameReads(f: String -> String, renameSpec: ShaderDoc.Spec -> ShaderDoc.Spec \ IO, item: Item): Item \ IO =
+        onLeafIO(leaf -> match leaf {
             case Item.Sprite(sp) => Item.Sprite({ texture = f(sp#texture) | sp })
-            case Item.Shader(sh) => Item.Shader({ spec = ShaderDoc.renameTex(f, sh#spec) | sh })
+            case Item.Shader(sh) => Item.Shader({ spec = renameSpec(sh#spec) | sh })
             case other           => other
         }, item)
+
+    /// onLeaf の、葉の書き換えに効果のある形。
+    def onLeafIO(f: Item -> Item \ IO, item: Item): Item \ IO =
+        match item {
+            case Item.Clipped(c) => Item.Clipped({ inner = onLeafIO(f, c#inner) | c })
+            case leaf            => f(leaf)
+        }
 
     // ── extract / 射影（lib が Drawable を1回だけ組む）──
 
@@ -839,23 +909,32 @@ pub mod Render {
     /// ほかは代表色ベタ塗り。docs/shader-doc.md の「F8 の止めた画面」）。F8 で止めた画面も GL なのでこれを使う。
     pub def drawShaders(programOf: ShaderDoc.Spec -> GpuHandle.ShaderProgram \ ef,
                         items: List[PlacedItem]): List[ShaderEffect.ShaderRenderCmd] \ ef =
-        items |> List.filterMap(placed -> {
+        let surfaces = items |> List.filterMap(placed -> {
             let (leaf, _clip) = unwrapClip(placed#item, None);
             match leaf {
-                case Item.Shader(s) =>
-                    // 位置は placed#at（カメラの平行移動＋ズームを済ませた点）、大きさは
-                    // scaled 済みの rect#size から取る — HUD/画面固定（カメラ無しなら at は
-                    // rect#position のまま）は不変で、withCamera 下だけワールドの矩形が追従する。
-                    // mask も同じ理屈で rect 左上相対 + at にして画面座標にする（rect と同じ
-                    // カメラ変換に乗るので形がずれない）。
-                    Some({ program = programOf(s#spec),
-                           texReads = ShaderDoc.texReads(s#spec),
-                           rect = { position = placed#at, size = s#rect#size },
-                           mask = s#mask |> List.map(poly ->
-                               poly |> List.map(v -> Vec2.add(placed#at, v))),
-                           time = s#t, zIndex = s#zIndex, blend = s#blend, alpha = s#alpha })
-                case _ => None
+                case Item.Shader(s) => Some((placed, s))
+                case _              => None
             }
+        });
+        // WhyNot: 表を let に置いて closure から引かない — 純粋な let は closure の中へ畳まれて、面ごとに空の表になりうる。
+        let reads = unsafe IO {
+            let readsOf = specTable();
+            surfaces |> List.map(ps -> cachedBySpec(readsOf, sp -> (ShaderDoc.texReads(sp), ShaderDoc.paramNames(sp)), snd(ps)#spec))
+        };
+        List.zip(surfaces, reads) |> List.map(surfaceReads -> {
+            let ((placed, s), (texReads, paramNames)) = surfaceReads;
+            // 位置は placed#at（カメラの平行移動＋ズームを済ませた点）、大きさは
+            // scaled 済みの rect#size から取る — HUD/画面固定（カメラ無しなら at は
+            // rect#position のまま）は不変で、withCamera 下だけワールドの矩形が追従する。
+            // mask も同じ理屈で rect 左上相対 + at にして画面座標にする（rect と同じ
+            // カメラ変換に乗るので形がずれない）。
+            { program = programOf(s#spec),
+              texReads = texReads,
+              rect = { position = placed#at, size = s#rect#size },
+              mask = s#mask |> List.map(poly ->
+                  poly |> List.map(v -> Vec2.add(placed#at, v))),
+              time = s#t, zIndex = s#zIndex, blend = s#blend, alpha = s#alpha,
+              params = paramNames |> List.map(n -> Map.getWithDefault(n, 0.0, s#params)) }
         })
 
     /// GL の無い経路（描き出し / SoftRaster）が ShaderEval で面を描くための純データ。
@@ -874,7 +953,7 @@ pub mod Render {
             match leaf {
                 case Item.Shader(s) =>
                     Some({ rect = { position = placed#at, size = s#rect#size },
-                           spec = foldAlpha(s#alpha, s#spec), time = s#t,
+                           spec = ShaderDoc.bindParams(s#params, foldAlpha(s#alpha, s#spec)), time = s#t,
                            mask = s#mask |> List.map(poly ->
                                poly |> List.map(v -> Vec2.add(placed#at, v))),
                            zIndex = s#zIndex, blend = s#blend })
@@ -1120,6 +1199,7 @@ pub mod Render {
         match field {
             case ShaderDoc.Field.Const(_) => true
             case ShaderDoc.Field.Time(tm) => isUvFree(tm#offset)
+            case ShaderDoc.Field.Param(_) => true
             case ShaderDoc.Field.Bin(bn)  => isUvFree(bn#a) and isUvFree(bn#b)
             case ShaderDoc.Field.Un(un)   => isUvFree(un#of)
             case ShaderDoc.Field.Pow(pw)  => isUvFree(pw#of)

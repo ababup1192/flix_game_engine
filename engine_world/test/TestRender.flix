@@ -508,4 +508,47 @@ mod TestRender {
                                                                      g = ShaderDoc.Field.Ref("gray"),
                                                                      b = ShaderDoc.Field.Ref("gray") }),
                                      alpha = read(ShaderDoc.TexChan.A) }) }
+
+    // ── 面に渡す数（withShaderParams） ──
+
+    def paramSurface(): Render.PlacedItem =
+        let spec: ShaderDoc.Spec = { name = "p", cycleRate = 0.0, bindings = Nil,
+            out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Solid(red()),
+                alpha = ShaderDoc.Field.Bin({ op = ShaderDoc.BinOp.Add,
+                    a = ShaderDoc.Field.Param({ name = "focus" }), b = ShaderDoc.Field.Param({ name = "lift" }) }) }) };
+        Render.shaderFill(spec, { position = Vec2.zero(), size = { x = 8.0, y = 8.0 } }, 0.0, 0)
+
+    /// 後から付けた値が勝ち、GL の描画依頼には正典順（focus, lift）の値が並ぶ。渡していない名前は知らせる物に出る。
+    @Test
+    def testWithShaderParamsReachesTheDrawCommand(): Unit \ Assert =
+        let placed = paramSurface() |> Render.withShaderParams(Map#{ "focus" => 0.25 }) |> Render.withShaderParams(Map#{ "focus" => 0.5 });
+        let cmds = Render.drawShaders(_ -> GpuHandle.wrapShaderProgram(0), placed :: Nil);
+        Assert.assertEq(expected = ((0.5 :: 0.0 :: Nil) :: Nil, ("p", "lift") :: Nil),
+                        (cmds |> List.map(c -> c#params), Render.missingShaderParams(placed :: Nil)))
+
+    /// Param を 1 つ（zoom）だけ読む、paramSurface と別の Spec の面。
+    def zoomSurface(): Render.PlacedItem =
+        let spec: ShaderDoc.Spec = { name = "z", cycleRate = 0.0, bindings = Nil,
+            out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Solid(red()), alpha = ShaderDoc.Field.Param({ name = "zoom" }) }) };
+        Render.shaderFill(spec, { position = Vec2.zero(), size = { x = 8.0, y = 8.0 } }, 0.0, 0)
+
+    /// 同じ Spec（同じ物）の面を 2 枚、間に別の Spec を挟んで並べても、値は面ごと・名前は Spec ごと。
+    /// 知らせる物は (Spec の名前, Param の名前) ごとに 1 つ（2 枚目の lift と、zoom の面の zoom）。
+    @Test
+    def testSharedSpecKeepsParamsPerSurface(): Unit \ Assert =
+        let base = paramSurface();
+        let first = base |> Render.withShaderParams(Map#{ "focus" => 0.25, "lift" => 1.0 });
+        let second = base |> Render.withShaderParams(Map#{ "focus" => 0.5 });
+        let items = first :: zoomSurface() :: second :: Nil;
+        let cmds = Render.drawShaders(_ -> GpuHandle.wrapShaderProgram(0), items);
+        Assert.assertEq(expected = ((0.25 :: 1.0 :: Nil) :: (0.0 :: Nil) :: (0.5 :: 0.0 :: Nil) :: Nil,
+                                    ("z", "zoom") :: ("p", "lift") :: Nil),
+                        (cmds |> List.map(c -> c#params), Render.missingShaderParams(items)))
+
+    /// 描き出しの面は Param を値の Const に置き換えて渡す（focus 0.25 + lift 0.5 = 0.75 の濃さ）。
+    @Test
+    def testShaderSurfacesBindTheParams(): Unit \ Assert =
+        let placed = paramSurface() |> Render.withShaderParams(Map#{ "focus" => 0.25, "lift" => 0.5 });
+        Assert.assertEq(expected = 0.75 :: Nil,
+            Render.shaderSurfaces(placed :: Nil) |> List.map(sc -> ShaderEval.evalAlpha(sc#spec, { x = 0.5, y = 0.5 }, 0.0)))
 }

@@ -226,6 +226,9 @@ pub mod ShaderEval {
                                                   bl#radius#x, bl#radius#y, ShaderDoc.blurTaps(bl#taps), sub(bl#amount), linear)
                     case None     => Node.Missing
                 }
+            // 描き出しは Render.shaderSurfaces が値の表で Const に置き換えてから渡す（ShaderDoc.bindParams）。
+            // ここへ来るのは表を通さずに評価した時で、渡されなかった名前と同じく 0。
+            case ShaderDoc.Field.Param(_)      => Node.Missing
             case ShaderDoc.Field.Sampler(sm)    =>
                 compileFieldIn(sm#filter == ShaderDoc.FilterMode.Linear, scope, texEnv, sm#of)
         }

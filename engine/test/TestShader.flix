@@ -1399,3 +1399,52 @@ def testSamplerJsonRoundTripAndBadFilter(): Unit \ Assert =
         case Err(_) => false
     };
     Assert.assertEq(expected = (true, true), (same, badIsErr))
+
+// ════════════════════════════════════════════════════════════════════
+// 面に渡す数（Param）
+// ════════════════════════════════════════════════════════════════════
+
+def paramOf(name: String): ShaderDoc.Field = ShaderDoc.Field.Param({ name = name })
+
+/// 値の表で Const に置き換えると、その値で評価される（focus = 0.25）。置き換えずに評価すると 0。
+@Test
+def testParamEvalUsesTheBoundValue(): Unit \ Assert =
+    let spec = alphaSpec(paramOf("focus"));
+    Assert.assertEq(expected = (0.25, 0.0),
+        (ShaderEval.evalAlpha(ShaderDoc.bindParams(Map#{ "focus" => 0.25 }, spec), { x = 0.5, y = 0.5 }, 0.0),
+         ShaderEval.evalAlpha(spec, { x = 0.5, y = 0.5 }, 0.0)))
+
+/// Param は正典順（初出順）に uParam0・uParam1 の uniform になる。Param を使わない Spec の GLSL には出ない。
+@Test
+def testParamUniformsFollowTheCanonicalOrder(): Unit \ Assert =
+    let spec = alphaSpec(ShaderDoc.Field.Bin({ op = ShaderDoc.BinOp.Add, a = paramOf("focus"), b = paramOf("lift") }));
+    let glsl = ShaderGen.compile(spec);
+    Assert.assertEq(expected = ("focus" :: "lift" :: Nil, true, true, false),
+        (ShaderDoc.paramNames(spec), String.contains({ substr = "uniform float uParam1;" }, glsl),
+         String.contains({ substr = "uParam0" }, ShaderGen.compileBody(spec)),
+         String.contains({ substr = "uParam" }, ShaderGen.compile(ShaderDoc.demoSurface()))))
+
+/// 置き換えた Spec の JSON は値ごとに違う（描き出しのキャッシュの鍵に値が入る）。表に無い名前は 0 で置き換わる。
+@Test
+def testBoundParamsReachTheJsonKey(): Unit \ Assert =
+    let spec = alphaSpec(paramOf("focus"));
+    let key = m -> ToString.toString(ShaderJson.toJson(ShaderDoc.bindParams(m, spec)));
+    Assert.assertEq(expected = (false, true),
+        (key(Map#{ "focus" => 0.25 }) == key(Map#{ "focus" => 0.6 }),
+         key(Map.empty()) == ToString.toString(ShaderJson.toJson(alphaSpec(ShaderDoc.Field.Const(0.0))))))
+
+/// param の JSON の往復で GLSL が同じ・名前に使えない字は Err。
+@Test
+def testParamJsonRoundTripAndBadName(): Unit \ Assert =
+    let spec = alphaSpec(paramOf("focus_2"));
+    let same = match ShaderJson.parse(ShaderJson.toJson(spec)) {
+        case Ok(s2) => ShaderGen.compile(s2) == ShaderGen.compile(spec)
+        case Err(_) => false
+    };
+    let bad = "{\"name\":\"s\",\"out\":{\"kind\":\"fill\",\"shade\":{\"kind\":\"solid\",\"color\":\"#000000\"}," +
+              "\"alpha\":{\"kind\":\"param\",\"name\":\"focus-y\"}}}";
+    let badIsErr = match Util.Json.parse(bad) {
+        case Ok(j)  => Result.isErr(ShaderJson.parse(j))
+        case Err(_) => false
+    };
+    Assert.assertEq(expected = (true, true), (same, badIsErr))

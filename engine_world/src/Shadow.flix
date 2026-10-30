@@ -210,6 +210,104 @@ pub mod Shadow {
               |> Render.blended(DrawCmd.BlendMode.Add)
               |> Render.fade(strength) }
 
+    // ── 立っている物を灯りの反対の地面へ倒した影（planar projected shadow を見下ろしの 2D に落とした物） ──
+    //
+    // foot と light はどちらも地面の点（高さを持たない）。足元から高さ h の所は「足元 + 向き × h × reach」へ倒れる。
+    // 濃さは影全体で付ける: 倒した距離 s の所の濃さ = alpha × (1 − s / 影の長さ)。帯の境では隣の帯と同じ値になる。
+    // 近い灯りを選ぶ・灯りから遠いほど薄くする・先が別の段へ出たら縮める、は呼び手が決める。
+
+    /// 影の横の軸（倒す向きに直交）。x が正の側を選ぶ（x が 0 なら y が正）—
+    /// 下へ倒れる影で絵の右が画面の右に来るように（どちら向きでも左右が裏返らない）。
+    def sideOf(dir: Vec2.Vec2): Vec2.Vec2 =
+        let side = { x = 0.0 - dir#y, y = dir#x };
+        if (side#x < 0.0 or (side#x == 0.0 and side#y < 0.0)) Vec2.neg(side) else side
+
+    /// 足元から光と反対の向き（長さ 1）。灯りが足元に重なる（1px 未満）時は None。
+    def awayFrom(light: Vec2.Vec2, foot: Vec2.Vec2): Option[Vec2.Vec2] =
+        let away = Vec2.sub(foot, light);
+        let d = Vec2.length(away);
+        if (not Float64.isFinite(d) or d < 1.0) None else Some(Vec2.div(away, d))
+
+    /// 影の帯 1 枚（足元からの高さ lo..hi・足元からの横の位置 u0..u1）。
+    type alias Band = { lo = Float64, hi = Float64, u0 = Float64, u1 = Float64 }
+
+    /// 絵の走りを、行ごとに「横に続く走りを 1 本にまとめた区間」へ。行は下（足元に近い方）から順。
+    /// 足元より下の行は捨て、足元をまたぐ行は足元で切る。
+    def rowsOf(foot: Vec2.Vec2, runs: List[PxSprite.Run]): List[{ lo = Float64, hi = Float64, spans = List[(Float64, Float64)] }] =
+        let byRow = runs
+            |> List.filter(r -> r#w > 0.0 and r#h > 0.0 and r#y < foot#y)
+            |> List.foldLeft((acc, r) -> Map.insertWith((fresh, old) -> List.append(old, fresh), (r#y, r#h), r :: Nil, acc), Map.empty());
+        Map.toList(byRow)
+            |> List.map(entry -> {
+                let ((y, h), row) = entry;
+                { lo = Float64.max(0.0, foot#y - (y + h)), hi = foot#y - y,
+                  spans = spansOf(foot#x, List.sortBy(r -> r#x, row)) }
+            })
+            |> List.sortBy(row -> row#lo)
+
+    /// 左から順の走りを、端が触れている物どうし 1 つの区間にまとめる（足元の x からの位置で）。
+    def spansOf(footX: Float64, sorted: List[PxSprite.Run]): List[(Float64, Float64)] =
+        sorted |> List.foldLeft((acc, r) -> match acc {
+            case (u0, u1) :: rest if (r#x - footX) <= u1 => (u0, Float64.max(u1, r#x + r#w - footX)) :: rest
+            case _ => (r#x - footX, r#x + r#w - footX) :: acc
+        }, Nil) |> List.reverse
+
+    /// 上下に続き、区間の並びが同じ行を 1 つにまとめて帯にする（濃さは高さの一次式なので、まとめても絵は同じ）。
+    def bandsOf(rows: List[{ lo = Float64, hi = Float64, spans = List[(Float64, Float64)] }]): List[Band] =
+        rows |> List.foldLeft((acc, row) -> match acc {
+            case prev :: rest if prev#spans == row#spans and prev#hi == row#lo => { hi = row#hi | prev } :: rest
+            case _ => row :: acc
+        }, Nil)
+            |> List.reverse
+            |> List.flatMap(row -> row#spans |> List.map(span -> {
+                let (u0, u1) = span;
+                { lo = row#lo, hi = row#hi, u0 = u0, u1 = u1 }
+            }))
+
+    /// 絵の走り（PxSprite.runs）を灯りの反対の地面へ倒した影。行ごとの帯の gradPolygon（Multiply）の列。
+    /// depth = 足元の楕円の縦の半径 ÷ 横の半径（横へ倒れる影の太さ。projectedBox の halfY / halfX と同じ意味）。
+    /// 横の位置 u は、倒す向きに直交する軸へ |side.x| + depth × |side.y| 倍して置く（下へ倒れる影は絵の幅のまま・横へ倒れる影は細い）。
+    /// 同じ行の触れ合う走りは 1 本に、上下で同じ区間の行は 1 枚にまとめる（数を減らす）。
+    /// 灯りが足元に重なる（距離 1px 未満）・reach が 0 以下・足元より上に絵が無い時は Nil。
+    pub def projectedRuns(spec: { runs = List[PxSprite.Run], foot = Vec2.Vec2, light = Vec2.Vec2, reach = Float64,
+                                  depth = Float64, ink = Color, alpha = Float64, z = Int32 }): List[Render.PlacedItem] =
+        match awayFrom(spec#light, spec#foot) {
+            case None      => Nil
+            case Some(dir) =>
+                let bands = bandsOf(rowsOf(spec#foot, spec#runs));
+                let top = bands |> List.foldLeft((acc, b) -> Float64.max(acc, b#hi), 0.0);
+                if (spec#reach <= 0.0 or top <= 0.0) Nil
+                else {
+                    let side = sideOf(dir);
+                    let widen = Float64.abs(side#x) + spec#depth * Float64.abs(side#y);
+                    let at = (u, h) -> Vec2.add(spec#foot, Vec2.add(Vec2.mul(side, u * widen), Vec2.mul(dir, h * spec#reach)));
+                    let v = (u, h) -> { pos = at(u, h), color = spec#ink, alpha = spec#alpha * (1.0 - h / top) };
+                    bands |> List.map(b ->
+                        { at = Vec2.zero(),
+                          item = Render.gradPolygon(v(b#u0, b#lo) :: v(b#u1, b#lo) :: v(b#u1, b#hi) :: v(b#u0, b#hi) :: Nil, spec#z)
+                              |> Render.blended(DrawCmd.BlendMode.Multiply) })
+                }
+        }
+
+    /// 絵の走りを持たない物（家・木を多角形で描いた物）用: 足元の楕円（横の半径 halfX・縦の半径 halfY）から
+    /// 高さ height × reach だけ倒した台形 1 枚（gradPolygon・Multiply）。
+    /// 根元の半幅 = max(2, halfX × |side.x| + halfY × |side.y|)・先の半幅は 1.35 倍・濃さは根元 alpha → 先 0。
+    /// 灯りが足元に重なる（距離 1px 未満）時は None。
+    pub def projectedBox(spec: { foot = Vec2.Vec2, halfX = Float64, halfY = Float64, height = Float64, light = Vec2.Vec2,
+                                 reach = Float64, ink = Color, alpha = Float64, z = Int32 }): Option[Render.PlacedItem] =
+        awayFrom(spec#light, spec#foot) |> Option.map(dir -> {
+            let side = sideOf(dir);
+            let w0 = Float64.max(2.0, spec#halfX * Float64.abs(side#x) + spec#halfY * Float64.abs(side#y));
+            let w1 = w0 * 1.35;
+            let tip = Vec2.add(spec#foot, Vec2.mul(dir, spec#height * spec#reach));
+            let v = (pt, a) -> { pos = pt, color = spec#ink, alpha = a };
+            { at = Vec2.zero(),
+              item = Render.gradPolygon(
+                  v(Vec2.add(spec#foot, Vec2.mul(side, w0)), spec#alpha) :: v(Vec2.add(tip, Vec2.mul(side, w1)), 0.0)
+                      :: v(Vec2.sub(tip, Vec2.mul(side, w1)), 0.0) :: v(Vec2.sub(spec#foot, Vec2.mul(side, w0)), spec#alpha) :: Nil, spec#z)
+                  |> Render.blended(DrawCmd.BlendMode.Multiply) }
+        })
+
     // ── 幾何ユーティリティ（テストの「影が壁を透過しない」検証にも使う） ──
 
     /// 点 p が凸四角形 quad（4頂点・向きは時計回り/反時計回りのどちらでもよい）の内側にあるか。

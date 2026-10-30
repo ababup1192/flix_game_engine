@@ -165,6 +165,11 @@ pub mod ShaderDoc {
         /// of の中の tex / blur を filter の補間で読む（Unity Shader Graph の Sampler State 節）。入れ子なら内側が勝つ。
         /// use（shared）の中までは届かない — use は基準 uv で 1 回だけ評価する決まりと同じで、shared の側に自分の sampler を書く。
         case Sampler({ filter = FilterMode, of = Field })
+        /// 面を置く時に渡す数（Unity の Material.SetFloat・Godot の shader parameter と同じ「名前で渡す uniform」）。
+        /// 値は Render.withShaderParams で面ごとに渡す。渡されなかった名前は 0（知らせは Render.drawShaders と
+        /// Render.shaderSurfaces の側で、GL と描き出しのどちらでも出る）。名前は英数字と '_'（paramNameOk）。
+        /// WhyNot: 毎フレーム変わる数を Const に入れない — Spec が変わり、実機は GLSL を作り直す。
+        case Param({ name = String })
     }
 
     /// 面の色（rgb）。
@@ -373,30 +378,39 @@ pub mod ShaderDoc {
             case Field.Shift(sh)       => foldField(f, foldField(f, foldField(f, acc1, sh#dx), sh#dy), sh#of)
             case Field.TexBlur(bl)     => foldField(f, acc1, bl#amount)
             case Field.Sampler(sm)     => foldFieldScoped(f, sm#filter, acc1, sm#of)
+            case Field.Param(_)        => acc1
         }
 
     /// Spec の tex / blur が読むテクスチャ名を f で書き換える（形は変えない）。
     /// Pass の中の読みを別名（history・見つからない名前）へ替えるのに使う（Render.resolvePassReads）。
     pub def renameTex(f: String -> String, spec: Spec): Spec =
-        let rf = renameTexField(f);
+        mapSpecFields(rewriteField(node -> match node {
+            case Field.Tex(tx)     => Field.Tex({ name = f(tx#name) | tx })
+            case Field.TexBlur(bl) => Field.TexBlur({ name = f(bl#name) | bl })
+            case other             => other
+        }), spec)
+
+    /// Spec の全部の場（bindings・色・alpha）に g を掛ける（形は変えない）。
+    def mapSpecFields(g: Field -> Field, spec: Spec): Spec =
         let shade = match spec#out {
             case Out.Fill(fill) => match fill#shade {
                 case Shade.Solid(c)    => Shade.Solid(c)
-                case Shade.Ramp(r)     => Shade.Ramp({ field = rf(r#field) | r })
-                case Shade.Gradient(g) => Shade.Gradient({ field = rf(g#field) | g })
-                case Shade.Cosine(cs)  => Shade.Cosine({ field = rf(cs#field) | cs })
-                case Shade.Rgb(c)      => Shade.Rgb({ r = rf(c#r), g = rf(c#g), b = rf(c#b) })
+                case Shade.Ramp(r)     => Shade.Ramp({ field = g(r#field) | r })
+                case Shade.Gradient(gr) => Shade.Gradient({ field = g(gr#field) | gr })
+                case Shade.Cosine(cs)  => Shade.Cosine({ field = g(cs#field) | cs })
+                case Shade.Rgb(c)      => Shade.Rgb({ r = g(c#r), g = g(c#g), b = g(c#b) })
             }
         };
         let alpha = match spec#out {
-            case Out.Fill(fill) => rf(fill#alpha)
+            case Out.Fill(fill) => g(fill#alpha)
         };
-        { bindings = List.map(nf -> { let (n, fld) = nf; (n, rf(fld)) }, spec#bindings),
+        { bindings = List.map(nf -> { let (n, fld) = nf; (n, g(fld)) }, spec#bindings),
           out = Out.Fill({ shade = shade, alpha = alpha }) | spec }
 
-    def renameTexField(f: String -> String): Field -> Field = field ->
-        let go = renameTexField(f);
-        match field {
+    /// 場の木を下から作り直し、各節に node を掛ける（子を先に作り直してから、その節に node）。
+    def rewriteField(node: Field -> Field): Field -> Field = field ->
+        let go = rewriteField(node);
+        let rebuilt = match field {
             case Field.Const(_)        => field
             case Field.Uv(_)           => field
             case Field.Worley(_)       => field
@@ -427,11 +441,13 @@ pub mod ShaderDoc {
             case Field.Angle(_)        => field
             case Field.Rotate(rt)      => Field.Rotate({ of = go(rt#of) | rt })
             case Field.Ref(_)          => field
-            case Field.Tex(tx)         => Field.Tex({ name = f(tx#name) | tx })
+            case Field.Tex(_)          => field
             case Field.Shift(sh)       => Field.Shift({ dx = go(sh#dx), dy = go(sh#dy), of = go(sh#of) })
-            case Field.TexBlur(bl)     => Field.TexBlur({ name = f(bl#name), amount = go(bl#amount) | bl })
+            case Field.TexBlur(bl)     => Field.TexBlur({ amount = go(bl#amount) | bl })
             case Field.Sampler(sm)     => Field.Sampler({ of = go(sm#of) | sm })
-        }
+            case Field.Param(_)        => field
+        };
+        node(rebuilt)
 
     /// Spec の場を「bindings（前から）→ 色 → alpha」の順に並べる。texNames と、場を全部見る走査はこの並びを使う。
     pub def fieldsOf(spec: Spec): List[Field] =
@@ -465,6 +481,36 @@ pub mod ShaderDoc {
             case Field.TexBlur(bl) => if (List.memberOf((bl#name, filter), reads)) reads else (bl#name, filter) :: reads
             case _                 => reads
         }, FilterMode.Nearest, acc, field), Nil, fieldsOf(spec)) |> List.reverse
+
+    /// Spec が読む Param の名前を「bindings（前から）→ 色 → alpha」の初出順・重複なしで列挙する。
+    /// この並びが正典 — GLSL の uniform 番号（uParam0…）と、描画依頼・描き出しが渡す値の並びが全部これを使う。
+    pub def paramNames(spec: Spec): List[String] =
+        List.foldLeft((acc, field) -> foldField((names, f) -> match f {
+            case Field.Param(pm) => if (List.memberOf(pm#name, names)) names else pm#name :: names
+            case _               => names
+        }, acc, field), Nil, fieldsOf(spec)) |> List.reverse
+
+    /// Param の名前に使える字か（英数字と '_'・1 字以上）。JSON の読みが確かめる。
+    pub def paramNameOk(name: String): Bool =
+        not String.isEmpty(name) and String.forAll(c -> Char.isLetterOrDigit(c) or c == '_', name)
+
+    /// 面に渡された値の表から、Spec の Param の値を正典順に並べる（表に無い名前は 0）。
+    pub def paramValues(spec: Spec, params: Map[String, Float64]): List[Float64] =
+        paramNames(spec) |> List.map(n -> Map.getWithDefault(n, 0.0, params))
+
+    /// Spec の Param を、値の表の値の Const に置き換える（表に無い名前は 0）。
+    /// 描き出し（CPU）はこれを通した Spec を評価する — Const と同じ道で読むので、DrawHash の鍵にも値が入る
+    /// （ShaderJson.toJson が値を書く）。GL は Spec を置き換えず uniform で渡す（値が変わっても program を作り直さない）。
+    pub def bindParams(params: Map[String, Float64], spec: Spec): Spec =
+        if (List.isEmpty(paramNames(spec))) spec
+        else mapSpecFields(rewriteField(node -> match node {
+            case Field.Param(pm) => Field.Const(Map.getWithDefault(pm#name, 0.0, params))
+            case other           => other
+        }), spec)
+
+        /// 面に渡された値の表に無い Param の名前（知らせる物）。
+    pub def missingParams(spec: Spec, params: Map[String, Float64]): List[String] =
+        paramNames(spec) |> List.filter(n -> not Map.memberOf(n, params))
 
     /// この節が、子の場を自分の uv と違う uv で読むなら、その子（shift の dx・dy は今の uv で読むので入らない）。
     /// 場を足したらここへも 1 case 足す（wildcard を置かないのは、uv を曲げる場を足した時に黙らせないため）。
@@ -504,6 +550,7 @@ pub mod ShaderDoc {
             case Field.Tex(_)          => None
             case Field.TexBlur(_)      => None
             case Field.Sampler(_)      => None
+            case Field.Param(_)        => None
         }
 
     /// 負の指数の pow の底の下限（GLSL と CPU が同じ値を読む）。
