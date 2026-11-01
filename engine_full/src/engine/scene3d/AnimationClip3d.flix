@@ -1,0 +1,1 @@
+../../../../engine/src/scene3d/AnimationClip3d.flix

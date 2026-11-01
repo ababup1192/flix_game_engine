@@ -1,5 +1,5 @@
 // 入口。同じ scene 宣言（Scenes）を GL と SoftRaster の両方で 1 コマ描き出し、画素を突き合わせて
-// 1 行 1 scene の表を出す。A 段階（バイト一致層）に不一致があれば exit 1。
+// 1 行 1 scene の表を出す。A 段階（バイト一致層）に不一致があるか、許容差のある B 段階（Scenes.toleranceOf）が上限を超えれば exit 1。
 //
 // GL の絵はリファレンス画像化しない — 基準は「もう片方の経路」であって過去の絵ではない
 // （過去の絵との突き合わせは templates の reference-check / reference-update の役目）。
@@ -7,7 +7,7 @@ use fge::GameEngine
 
 mod ParityMain {
     use fge::{
-        Color, FontAtlas, GameEngine, GlReadback, GpuHandle, HeadlessFont, HeadlessRender,
+        App, Color, FontAtlas, GameEngine, GlReadback, GpuHandle, HeadlessFont, HeadlessRender,
         LwjglLayer, Render, RenderTarget, ShaderEffect
     }
 
@@ -18,29 +18,27 @@ mod ParityMain {
 
     def black(): Color = { r = 0.0, g = 0.0, b = 0.0 }
 
-    /// 投影の共通 1 関数。GL / SoftRaster の両側が必ずここを通る — withoutShaders を
-    /// 通し忘れた側だけ代表色ベタ塗りが二重に乗り、harness 自身のバグが「経路差」に
-    /// 化けるので、外す場所を 2 つに増やさない。
+    /// ターゲット口の投影（面と 3D の場面を描かない口）。GL / SoftRaster の両側が必ずここを通る — 外し忘れた側だけ
+    /// 代わりの矩形が乗り、harness 自身のバグが「経路差」に化けるので、外す場所を 2 つに増やさない。
+    /// 画面口は外す所を engine の App.submitGpuItems（GL）と Render.softSceneOf（CPU）に任せる。
     def toDraw(texInfoOf: String -> Option[GameEngine.TextureInfo] \ ef,
                items: List[Render.PlacedItem]):
             (List[GameEngine.Drawable], List[GameEngine.PolygonRenderCmd]) \ ef =
-        Render.drawWith(texInfoOf, Render.withoutShaders(items))
+        Render.drawWith(texInfoOf, Render.withoutScenes3d(Render.withoutShaders(items)))
 
     // ── GL 側（隠しウィンドウの中で 1 scene = 1 コマ）──
 
     def glShoot(sc: Scenes.Scene): Unit \ IO + GameEngine.Game + ShaderEffect.Shader + RenderTarget.Target =
         let texInfoOf = name -> GameEngine.Game.getTextureInfo(name);
-        // 実機（App.renderPasses）と同じく、読みの書き換えを通した列を描き、Pass の中の面も描く。
+        // 実機（App.renderPasses）と同じく、読みの書き換えを通した列を描き、Pass の中の面と 3D の場面も実機と同じ
+        // App.submitGpuItems で描く（手順を写すと、実機と違う道を突き合わせることになる）。
         let plan = Render.resolvePassReads(Set.empty(), planOf(sc))#plan;
         let passes = plan#passes;
         let design = { x = Scenes.designW(), y = Scenes.designH() };
         List.range(0, sc#repeats) |> List.forEach(_ -> List.forEach(p -> {
             let (tw, th) = RenderTarget.sizeOf(design, { scale = Render.targetScaleOf(plan, p#name) | RenderTarget.defaultDescriptor() });
             RenderTarget.Target.beginTarget(p#name, tw, th, p#clear);
-            let cmds = Render.drawShaders(spec -> ShaderEffect.Shader.buildProgram(spec), p#items);
-            List.forEach(c -> ShaderEffect.Shader.drawSurface(c), cmds);
-            let (pds, pps) = toDraw(texInfoOf, p#items);
-            GameEngine.Game.renderCommands(pds, Nil, pps, None);
+            App.submitGpuItems(_ -> (), p#items, Nil, None);
             RenderTarget.Target.endTarget()
         }, passes));
         match sc#via {
@@ -55,10 +53,7 @@ mod ParityMain {
             case Scenes.ShotVia.ViaScreen =>
                 // 画面の絵は swap 後に読めないため、FLIX_GE_FRAME_SHOT（swap 直前のフック）が
                 // debug/gl/frame-<n>.png へ落とす。名前への対応は renameFrames が引き受ける。
-                let cmds = Render.drawShaders(spec -> ShaderEffect.Shader.buildProgram(spec), sc#items);
-                List.forEach(c -> ShaderEffect.Shader.drawSurface(c), cmds);
-                let (ds, ps) = toDraw(texInfoOf, sc#items);
-                GameEngine.Game.renderCommands(ds, Nil, ps, None)
+                App.submitGpuItems(_ -> (), sc#items, Nil, None)
         }
 
     def planOf(sc: Scenes.Scene): Render.PassPlan = { targets = sc#targets | Render.passPlan(sc#passes) }
@@ -104,24 +99,33 @@ mod ParityMain {
                 let (ds, ps) = toDraw(softTexInfo, sc#items);
                 let spec: HeadlessRender.PassSpec =
                     { name = sc#name, clear = RenderTarget.LoadOp.Clear(black()),
-                      drawables = ds, polygons = ps, surfaces = Nil, scale = 1.0 };
+                      drawables = ds, polygons = ps, surfaces = Nil, scenes = Nil, scale = 1.0 };
                 PixelDiff.writePng(HeadlessRender.renderPassImage(cfg, spec, None), "debug/soft/${sc#name}.png")
             case Scenes.ShotVia.ViaScreen =>
                 let passSpecs = Render.passSpecsOf(softTexInfo, planOf(sc))#specs;
-                let surfaces = Render.shaderSurfaces(sc#items);
-                let (ds, ps) = toDraw(softTexInfo, sc#items);
-                HeadlessRender.renderPngWithPasses(cfg, passSpecs, ds, ps, surfaces, sc#name)
+                let soft = Render.softSceneOf(softTexInfo, sc#items);
+                HeadlessRender.renderPngFull(cfg, { passes = passSpecs, drawables = soft#drawables, polygons = soft#polygons,
+                                                    surfaces = soft#surfaces, scenes = soft#scenes,
+                                                    fonts = Map.empty(), fontAntialias = Map.empty() }, sc#name)
         }
 
     // ── 表と exit code ──
 
-    /// 表の 1 行。行頭タグ・列順は回帰の grep が読むので変えない（pin）。
+    /// 表の 1 行。行頭タグ・列順は回帰の grep が読むので変えない（pin）。許容差のある scene は末尾に上限を添える。
     def line(exact: Bool, o: PixelDiff.Outcome): String =
         let padded = pad(o#name, 14);
         let stage = if (exact) "A" else "B";
-        if (o#diffPx == 0) "[parity] ${padded} ${stage}  一致 (0 px)"
-        else if (o#diffPx < 0) "[parity] ${padded} ${stage}  比較不能"
-        else "[parity] ${padded} ${stage}  差 ${o#diffPx} px, max ±${o#maxDelta}"
+        let limit = Scenes.toleranceOf(o#name) |> Option.map(n -> " (許容 ${n} px)") |> Option.getWithDefault("");
+        if (o#diffPx == 0) "[parity] ${padded} ${stage}  一致 (0 px)${limit}"
+        else if (o#diffPx < 0) "[parity] ${padded} ${stage}  比較不能${limit}"
+        else "[parity] ${padded} ${stage}  差 ${o#diffPx} px, max ±${o#maxDelta}${limit}"
+
+    /// 落とす scene か: A 段階は 1 px でも違えば・許容差のある B 段階は上限を超えるか比べられなければ。
+    def failed(exact: Bool, o: PixelDiff.Outcome): Bool =
+        match Scenes.toleranceOf(o#name) {
+            case Some(limit) => o#diffPx < 0 or o#diffPx > limit
+            case None        => exact and o#diffPx != 0
+        }
 
     def pad(s: String, n: Int32): String =
         if (String.length(s) >= n) s else pad(s + " ", n)
@@ -139,7 +143,7 @@ mod ParityMain {
             (sc#exact, PixelDiff.compare(sc#name, "debug/gl/${sc#name}.png",
                 "debug/soft/${sc#name}.png", "debug/diff/${sc#name}.png")));
         List.forEach(eo -> { let (exact, o) = eo; println(line(exact, o)) }, outcomes);
-        if (List.exists(eo -> { let (exact, o) = eo; exact and o#diffPx != 0 }, outcomes)) System.exit(1) else ()
+        if (List.exists(eo -> { let (exact, o) = eo; failed(exact, o) }, outcomes)) System.exit(1) else ()
 }
 
 def main(): Unit \ IO =

@@ -41,6 +41,7 @@ println(RenderCache.statsLine(session))   // [render-cache] 塗った 12・写�
 | 描く命令: `Drawable` の全欄（テクスチャ名・位置・倍率・傾き・色・濃さ・中心・UV・z・style・clip・blend・mask） | 値そのまま（Float64 はビット列。**丸めない**） |
 | `PolygonRenderCmd` の全欄（`grad` の `None` と `Some(Nil)` は別の物） | 値そのまま |
 | シェーダー面 `SurfaceCmd`（置き場・Spec・時刻・mask・z・blend） | Spec は `ShaderJson.toJson` の字（往復テストのある正規の形） |
+| 3D の場面 `RasterReq#scenes`（at・size・clip・カメラ・置いた物・ビルボード・光・環境・Resolution・Output・z） | メッシュは `Mesh3d.contentHash` の字だけ・行列は `Mat4.toColumns` の 16 個・材質は Spec の JSON と Param。**場面が空なら何も入れない**（3D を使わない絵の鍵は欄を足す前と同じ）。ビルボードの絵は下のテクスチャの行で入る |
 | 描き出しの設定（design・scale・背景・`shapeAntialias`・`textAntialias`） | 値そのまま |
 | テクスチャ（そのコマの命令が引く名前だけ） | 名前 + 塗る時に使う `TextureCache` の中の画像の画素の SHA-256（パスは入れない — compare の基準は別の場所の worktree。画素は塗りと同じ物を見るので、読む間に保存されても鍵と絵がずれない） |
 | フォント（`fontTtf` の中身・`fontAtlas`・`extraFonts` の名前・TTF の中身・atlas） | TTF はファイルの中身の SHA-256（session で 1 回）、atlas は全欄 |

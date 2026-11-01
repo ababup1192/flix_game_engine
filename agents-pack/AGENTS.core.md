@@ -36,6 +36,8 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | 画面ごとの後処理（ブルーム・ぼかし）を半分の解像度で組む | `App.withPassPlan`（`targets` に `RenderTarget.Descriptor` の scale）+ pass の中の `Render.shaderFill`・なめらかに読むのは ShaderDoc の `sampler`（描き出しは `Render.passSpecsOf`） |
 | 面に毎フレーム変わる数（ピント・体力の割合）を渡す | ShaderDoc の `param` + `Render.withShaderParams`（Spec の Const に入れない） |
 | 面の中で光の向きや距離を計算する（平方根・長さ 1 にそろえる） | ShaderDoc の `math1` の `sqrt`（`UnOp.Sqrt`）・`ShaderDoc.lengthOf` / `normalized`（近い値で代わりにしない） |
+| 3D の部屋・家具（メッシュを深度で前後させる）を 2D の画面に入れる | `Render.scene3d(at, Scene3d.scene(camera, size))`（`Mesh3d.fromObj` / `fromPolygons` → `Scene3d.meshInstance`）・描き出しは `Render.softSceneOf` → `HeadlessRender.renderPngSoft`（三角形を多角形で並べない。手本 `bench/scene3d`） |
+| Blender で骨を入れたキャラ（.glb）を 3D の場面で動かす（歩く・敬礼など） | `Gltf.load` → `AnimationClip3d.sample`（混ぜるなら `Pose3d.blend`）→ `Pose3d.compute` → `Scene3d.withPose`（骨は GPU と SoftRaster の両方で曲がる。曲げを手で頂点に掛けない） |
 | 灯りの反対の地面へ倒した影（ドット絵の走りから） | `Shadow.projectedRuns`（`PxSprite.runs` を渡す） |
 | 演出の待ちが先の拍で変わる（全部が済んでから始める・置き直さない） | `Timeline.afterAll`（基準ごとに間）→ `Timeline.build` |
 | ポーズ・ヒットストップで止める・遅くする（遊びと実時間を分ける） | `App.addClock` + `Clock.Pace`・`frame#realNow` |
@@ -62,7 +64,7 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | 遊んでいて重くなる（動いた瞬間のカクつき）の原因を探す・直したか確かめる | `make debug`（音なしは `FLIX_GE_MUTE=1`）で遊ぶと重いコマだけ `debug/perf/hitches/<起動時刻>/f<コマ>/hitch.md` に出る（`make status` に件数）→ 読んで直す → 同じ手を `POST /perf?path=<flow>`（隠しウィンドウは `FLIX_GE_HIDDEN=1`）で流し、作ったシェーダーの数で比べる（engine の `docs/performance.md` の 11 節） |
 | 動画が最後まで撮れたか（途中で止まった動画を見つける） | `bin/fge videos status`（Studio のギャラリーの動画） |
 | 動画のコマ・自前のギャラリーで同じ絵を塗り直さない | `RenderCache.writeFramePng`（`SoftRaster.render*` は自動。docs/render-cache.md） |
-| 人が見る動画・会話のプレビューを GPU で塗る | 動画 `VideoOut.writeFrames`・1 枚 `GpuShot.shotOf`（`FGE_GPU`） |
+| 人が見る動画・会話のプレビューを GPU で塗る | 動画 `VideoOut.writeFrames`（Pass を使う画面は `writeFramesWithPasses`）・1 枚 `GpuShot.shotOf`（`FGE_GPU`） |
 | 描き出しに ShaderDoc の面と追加フォントを一緒に渡す（字の縁は本ごとに） | `HeadlessRender.renderPngFull(cfg, scene, name)`（`Scene` の `fonts`・本ごとの字の縁は `fontAntialias`） |
 | 遊ぶ起動を速くする（src を変えていない 2 回目からコンパイルしない） | `make run` / `make debug`（engine の headless-run `--window main` が描き出しと同じ jar から流す）・裏で作るだけは `--build-only` |
 | 起動して確かめるだけ（数十秒で自分で止め、ウィンドウを残さない） | `make run RUN_SECONDS=40`（プロセスの組ごと止め、時間で止めた時は成功で返る） |

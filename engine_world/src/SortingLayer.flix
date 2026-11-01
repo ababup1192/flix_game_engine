@@ -323,6 +323,7 @@ pub mod SortingLayer {
             case Render.Item.Box(b)     => Render.Item.Box({ zIndex = f(b#zIndex) | b })
             case Render.Item.Poly(p)    => Render.Item.Poly({ zIndex = f(p#zIndex) | p })
             case Render.Item.Shader(s)  => Render.Item.Shader({ zIndex = f(s#zIndex) | s })
+            case Render.Item.Scene3d(s) => Render.Item.Scene3d({ zIndex = f(s#zIndex) | s })
             case Render.Item.Clipped(c) => Render.Item.Clipped({ inner = zMapped(f, c#inner) | c })
         }
 }

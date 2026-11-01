@@ -1,4 +1,4 @@
-<!-- engine v0.71.0 / 生成: 2026-10-30 -->
+<!-- engine v0.71.0 / 生成: 2026-11-02 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine_world
@@ -323,8 +323,11 @@
   `pub def tileCacheVaoAt(slot: String, cache: TileCache): Option[GpuHandle.TileVao]`
 - 生成した結果をスロットへ上書きで置く（一覧表は宣言中のレイヤーの数までしか育たない）。
   `pub def tileCacheStore(slot: String, key: String, vao: GpuHandle.TileVao, count: Int32, cache: TileCache): TileCache`
+- `pub def submitGpuItems(warnOnce: String -> Unit \ ef, items: List[Render.PlacedItem], tiles: List[GameEngine.TileMapRenderCmd], staticLayer: Option[GameEngine.StaticLayerCmd]): Unit \ (ef + GameEngine.Game + ShaderEffect.Shader)`
 - 1 コマだけ描く（窓なしで GPU に塗る 1 枚撮り・動画。render_gl の GlOffscreen.handle の下で呼ぶ）。
   `pub def paintOnce(app: App[w, ef], world: w, tileCache: TileCache): TileCache \ (ef + GameEngine.Game + ShaderEffect.Shader + RenderTarget.Target + IO)`
+- Pass の計画を、本編より先に今の描き先へ描く（実機の毎コマと同じ道: resolvePassReads → 倍率 → drawShaders → renderCommands）。
+  `pub def drawPassPlan(warnOnce: String -> Unit \ ef, design: Vec2.Vec2, known: Set[String], plan: Render.PassPlan): Set[String] \ (ef + GameEngine.Game + ShaderEffect.Shader + RenderTarget.Target)`
 
 ## App.CursorLook — `engine_world/src/App/CursorLook.flix`
 - withCursor の宣言を最後にどう当てたか。Stale = まだ当てていない・止めた画面の見た目が上書きした
@@ -1885,7 +1888,7 @@
 
 ## Render — `engine_world/src/Render.flix`
 - 傾き（rotation）の単位は「回転数」— 1 周 = 1.0・正で時計回り。ラジアンへの変換は
-  `pub enum Item { case Sprite({ texture = String, tint = Color, alpha = Float64, scale = Vec2.Vec2, rotation = Float64, centered = Bool, flipH = Bool, flipV = Bool, regionRect = Option[Rect2.Rect2], zIndex = Int32, blend = DrawCmd.BlendMode, maskPolys = List[List[Vec2.Vec2]] }) case Text({ text = String, fontAtlas = FontAtlas, fontSize = Float64, tint = Color, alpha = Float64, rotation = Float64, zIndex = Int32, wrapWidth = Option[Float64] }) case Box({ size = Vec2.Vec2, color = Color, alpha = Float64, rotation = Float64, style = Option[GameEngine.BoxStyle], zIndex = Int32, blend = DrawCmd.BlendMode }) case Poly({ vertices = List[Vec2.Vec2], color = Color, alpha = Float64, zIndex = Int32, blend = DrawCmd.BlendMode, grad = Option[List[DrawCmd.VertexTint]] }) case Clipped({ rect = Rect2.Rect2, inner = Item }) case Shader({ rect = Rect2.Rect2, spec = ShaderDoc.Spec, t = Float64, mask = List[List[Vec2.Vec2]], zIndex = Int32, blend = DrawCmd.BlendMode, alpha = Float64, params = Map[String, Float64] }) }`
+  `pub enum Item { case Sprite({ texture = String, tint = Color, alpha = Float64, scale = Vec2.Vec2, rotation = Float64, centered = Bool, flipH = Bool, flipV = Bool, regionRect = Option[Rect2.Rect2], zIndex = Int32, blend = DrawCmd.BlendMode, maskPolys = List[List[Vec2.Vec2]] }) case Text({ text = String, fontAtlas = FontAtlas, fontSize = Float64, tint = Color, alpha = Float64, rotation = Float64, zIndex = Int32, wrapWidth = Option[Float64] }) case Box({ size = Vec2.Vec2, color = Color, alpha = Float64, rotation = Float64, style = Option[GameEngine.BoxStyle], zIndex = Int32, blend = DrawCmd.BlendMode }) case Poly({ vertices = List[Vec2.Vec2], color = Color, alpha = Float64, zIndex = Int32, blend = DrawCmd.BlendMode, grad = Option[List[DrawCmd.VertexTint]] }) case Clipped({ rect = Rect2.Rect2, inner = Item }) case Shader({ rect = Rect2.Rect2, spec = ShaderDoc.Spec, t = Float64, mask = List[List[Vec2.Vec2]], zIndex = Int32, blend = DrawCmd.BlendMode, alpha = Float64, params = Map[String, Float64] }) case Scene3d(Scene3d.Scene3dCmd) }`
 - 置き場所つきの描画物。View はこの列を組み、draw が描画命令へ変換する。
   `pub type alias PlacedItem = { at = Vec2.Vec2, item = Item }`
 - 全テクスチャ・等倍・中心原点のスプライト（最頻ケース）。反転が要るときは spriteFlipped。
@@ -1905,8 +1908,12 @@
   `pub def darkAt(spec: { at = Vec2.Vec2, radius = Float64, strength = Float64, z = Int32 }): PlacedItem`
 - 宣言シェーダーで矩形 rect を塗る面（PlacedItem）。at に rect の左上を入れる —
   `pub def shaderFill(spec: ShaderDoc.Spec, rect: Rect2.Rect2, t: Float64, zIndex: Int32): PlacedItem`
+- 3D の場面を at（左上・画面 px）に置く。大きさは cmd#size、重なり順は cmd#zIndex。
+  `pub def scene3d(at: Vec2.Vec2, cmd: Scene3d.Scene3dCmd): PlacedItem`
 - Shader 面に、Spec の Param（ShaderDoc.Field.Param）の値の表を付ける（Clipped の中の Shader 面にも効く。
   `pub def withShaderParams(params: Map[String, Float64], placed: PlacedItem): PlacedItem`
+- World / Normal を読む面の Spec の名前（重複なし・知らせる物）。2D の面ではその値は 0 になる。
+  `pub def shadersReadingWorld3d(items: List[PlacedItem]): List[String]`
 - 面の Spec が読む Param のうち、面に値が渡されていない物の (Spec の名前, Param の名前)（重複なし・知らせる物）。
   `pub def missingShaderParams(items: List[PlacedItem]): List[(String, String)]`
 - 宣言シェーダーで rect を塗り、maskPolys（ワールド座標の多角形の列）の内側だけに抜く面。
@@ -1988,7 +1995,7 @@
 - Pass 1 枚を描き出し側の宣言（engine_tools の HeadlessRender.PassSpec と同形のレコード）へ
   `pub def passSpecOf(textureInfoOf: String -> Option[GameEngine.TextureInfo] \ ef, p: Pass): PassSpecRec \ ef`
 - 描き出し側の Pass 1 枚の宣言（HeadlessRender.PassSpec と同じ欄）。
-  `pub type alias PassSpecRec = { name = String, clear = RenderTarget.LoadOp, drawables = List[GameEngine.Drawable], polygons = List[GameEngine.PolygonRenderCmd], surfaces = List[ShaderSurface], scale = Float64 }`
+  `pub type alias PassSpecRec = { name = String, clear = RenderTarget.LoadOp, drawables = List[GameEngine.Drawable], polygons = List[GameEngine.PolygonRenderCmd], surfaces = List[ShaderSurface], scenes = List[Scene3d.RenderCmd], scale = Float64 }`
 - Pass の計画を描き出し側の宣言の列へ。実機（App.withPassPlan）と同じ resolvePassReads を通し、
   `pub def passSpecsOf(textureInfoOf: String -> Option[GameEngine.TextureInfo] \ ef, plan: PassPlan): { specs = List[PassSpecRec], issues = List[PassPlanIssue] } \ ef`
 - 本編より先に描く Pass の列と、名前ごとのターゲットの作り方をまとめた 1 つの宣言。
@@ -2015,10 +2022,16 @@
   `pub type alias ShaderSurface = { rect = Rect2.Rect2, spec = ShaderDoc.Spec, time = Float64, mask = List[List[Vec2.Vec2]], zIndex = Int32, blend = DrawCmd.BlendMode }`
 - Shader 面を純データ（ShaderSurface）で取り出す（描き出し / SoftRaster 用）。
   `pub def shaderSurfaces(items: List[PlacedItem]): List[ShaderSurface]`
-- 面（Item.Shader）の後ろに同じ zIndex の他の描き物を並べた z（小さい順）。描き手は同じ z の中を
-  `pub def surfaceZShared(items: List[PlacedItem]): List[Int32]`
+- `pub def surfaceZShared(items: List[PlacedItem]): List[Int32]`
 - Shader 面を除いた PlacedItem 列（GL 経路で draw に渡す前に外す — 本物のシェーダーは
   `pub def withoutShaders(items: List[PlacedItem]): List[PlacedItem]`
+- 3D の場面だけを取り出して eff Shader の drawScene3d が食える命令へ（GL 経路専用。Clipped も剥がして拾う）。
+  `pub def drawScenes3d(items: List[PlacedItem]): List[Scene3d.RenderCmd]`
+- 3D の場面を除いた PlacedItem 列（GL 経路と CPU の描き出しで drawWith に渡す前に外す — 場面は drawScenes3d が
+  `pub def withoutScenes3d(items: List[PlacedItem]): List[PlacedItem]`
+- `pub type alias SoftSceneRec = { drawables = List[GameEngine.Drawable], polygons = List[GameEngine.PolygonRenderCmd], surfaces = List[ShaderSurface], scenes = List[Scene3d.RenderCmd] }`
+- 描き物の列を CPU の描き出しへ渡す形にまとめる（HeadlessRender.renderPngSoft にそのまま渡せる）。
+  `pub def softSceneOf(textureInfoOf: String -> Option[GameEngine.TextureInfo] \ ef, items: List[PlacedItem]): SoftSceneRec \ ef`
 - World 由来 Drawable 群に camera のズーム倍率を適用する（位置は `Projection.applyToWorldPos` で
   `pub def applyCameraScale(transform: Projection.ViewTransform, ds: List[GameEngine.Drawable]): List[GameEngine.Drawable]`
 - 1 アイテム → 複数 Drawable（ボタン等は呼び側で複数アイテムにする）。

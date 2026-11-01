@@ -1,4 +1,4 @@
-<!-- engine v0.71.0 / 生成: 2026-10-29 -->
+<!-- engine v0.71.0 / 生成: 2026-11-02 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine_tools
@@ -79,20 +79,29 @@
   `pub def silhouette(scope: SilhouetteScope, drawables: List[GameEngine.Drawable], polygons: List[GameEngine.PolygonRenderCmd]): (List[GameEngine.Drawable], List[GameEngine.PolygonRenderCmd])`
 - 宣言シェーダー面も含めた silhouette。面は「rect と mask の形をそのまま黒で塗る」に
   `pub def silhouetteWith(scope: SilhouetteScope, drawables: List[GameEngine.Drawable], polygons: List[GameEngine.PolygonRenderCmd], surfaces: List[SoftRaster.SurfaceCmd]): (List[GameEngine.Drawable], List[GameEngine.PolygonRenderCmd], List[SoftRaster.SurfaceCmd])`
+- `pub def silhouetteScenes(scope: SilhouetteScope, scenes: List[Scene3d.RenderCmd]): List[Scene3d.RenderCmd]`
 - シルエット PNG を生成する（renderPng の変形版）。対象を黒・背景を白で <name>.png に書く。
   `pub def silhouettePng(cfg: RenderConfig, scope: SilhouetteScope, drawables: List[GameEngine.Drawable], polygons: List[GameEngine.PolygonRenderCmd], name: String): Unit \ IO`
 - silhouettePng の「宣言シェーダー面も写す」版。地面・空・水面を ShaderDoc の面で
   `pub def silhouettePngWith(cfg: RenderConfig, scope: SilhouetteScope, drawables: List[GameEngine.Drawable], polygons: List[GameEngine.PolygonRenderCmd], surfaces: List[SoftRaster.SurfaceCmd], name: String): Unit \ IO`
 - pass 1 枚ぶんの宣言（Render.Pass のコマンド列版）。name はそのままテクスチャ名になり、
-  `pub type alias PassSpec = { name = String, clear = RenderTarget.LoadOp, drawables = List[GameEngine.Drawable], polygons = List[GameEngine.PolygonRenderCmd], surfaces = List[SoftRaster.SurfaceCmd], scale = Float64 }`
+  `pub type alias PassSpec = { name = String, clear = RenderTarget.LoadOp, drawables = List[GameEngine.Drawable], polygons = List[GameEngine.PolygonRenderCmd], surfaces = List[SoftRaster.SurfaceCmd], scenes = List[Scene3d.RenderCmd], scale = Float64 }`
 - pass 1 枚を design 解像度（scale = 1）の画像に生成する。GL のターゲットが design ×1 の
   `pub def renderPassImage(cfg: RenderConfig, p: PassSpec, prev: Option[BufferedImage]): BufferedImage \ IO`
 - renderPassImage の「先に生成したターゲットも参照できる」版。`images` は既に生成した pass の
   `pub def renderPassImageWith(cfg: RenderConfig, images: Map[String, BufferedImage], p: PassSpec, prev: Option[BufferedImage]): BufferedImage \ IO`
 - 1 枚の絵に要る物の全部。passes = 本編より先に描く pass（後の pass と本編は前の pass の名前を貼れる）、
-  `pub type alias Scene = { passes = List[PassSpec], drawables = List[GameEngine.Drawable], polygons = List[GameEngine.PolygonRenderCmd], surfaces = List[SoftRaster.SurfaceCmd], fonts = Map[String, SoftRaster.FontEntry], fontAntialias = SoftRaster.FontAntialias }`
+  `pub type alias Scene = { passes = List[PassSpec], drawables = List[GameEngine.Drawable], polygons = List[GameEngine.PolygonRenderCmd], surfaces = List[SoftRaster.SurfaceCmd], scenes = List[Scene3d.RenderCmd], fonts = Map[String, SoftRaster.FontEntry], fontAntialias = SoftRaster.FontAntialias }`
 - pass・ShaderDoc の面・追加フォントを一緒に使って 1 枚の PNG に生成する（他の renderPng* はどれもこれの一部）。
   `pub def renderPngFull(cfg: RenderConfig, scene: Scene, name: String): Unit \ IO`
+- CPU で描く 1 枚に要る物（engine_world の Render.softSceneOf が同じ形のレコードを返す）。
+  `pub type alias SoftScene = { drawables = List[GameEngine.Drawable], polygons = List[GameEngine.PolygonRenderCmd], surfaces = List[SoftRaster.SurfaceCmd], scenes = List[Scene3d.RenderCmd] }`
+- SoftScene を 1 枚の PNG に生成する（3D のゲームはこれを 1 回呼べば済む）。知らせと値段の記録は renderPngFull と同じ。
+  `pub def renderPngSoft(cfg: RenderConfig, soft: SoftScene, name: String): Unit \ IO`
+- SoftScene のシルエット PNG（silhouettePngWith の 3D 込みの版）。3D の場面は silhouetteScenes で黒にする。
+  `pub def silhouettePngSoft(cfg: RenderConfig, scope: SilhouetteScope, soft: SoftScene, name: String): Unit \ IO`
+- passes を宣言順に生成した画像（毎回透明から。後の pass は前の pass の名前を貼れる）。
+  `pub def passImagesOf(cfg: RenderConfig, fonts: Map[String, SoftRaster.FontEntry], fontAntialias: SoftRaster.FontAntialias, passes: List[PassSpec]): Map[String, BufferedImage] \ IO`
 - 追加の生成済み画像（pass のレンダーターゲットなど）を textures に混ぜて本編を PNG に生成する。
   `pub def renderPngWithImages(cfg: RenderConfig, images: Map[String, BufferedImage], drawables: List[GameEngine.Drawable], polygons: List[GameEngine.PolygonRenderCmd], surfaces: List[SoftRaster.SurfaceCmd], name: String): Unit \ IO`
 - passes を宣言順に生成してから本編を PNG に生成する（GL の renderFrame と同じ順序 —
@@ -251,7 +260,7 @@
 
 ## SoftRaster — `engine_tools/src/SoftRaster.flix`
 - ラスタライズ要求。design 解像度の Drawable 群を `scale` 倍に拡大して `outPath` に PNG 出力。
-  `pub type alias RasterReq = { drawables = List[GameEngine.Drawable], polygons = List[GameEngine.PolygonRenderCmd], design = Vec2.Vec2, scale = Int32, background = Color, texturePath = Map[String, String], fontTtf = String, fontAtlas = FontAtlas, outPath = String, shapeAntialias = Bool, textAntialias = Bool }`
+  `pub type alias RasterReq = { drawables = List[GameEngine.Drawable], polygons = List[GameEngine.PolygonRenderCmd], design = Vec2.Vec2, scale = Int32, background = Color, texturePath = Map[String, String], fontTtf = String, fontAtlas = FontAtlas, outPath = String, shapeAntialias = Bool, textAntialias = Bool, scenes = List[Scene3d.RenderCmd] }`
 - 追加フォント 1 本（既定フォント以外も混ぜて描き出すとき）。ttf = 実サイズ描き出し用の TTF、
   `pub type alias FontEntry = { ttf = String, atlas = FontAtlas }`
 - 字の縁を本ごとに決める表（テクスチャ名 "font_…" → ならすか）。表に無い本は絵全体の RasterReq#textAntialias に従う
@@ -306,9 +315,28 @@
   `pub def resampleNearest(img: BufferedImage, w: Int32, h: Int32): BufferedImage \ IO`
 - 縮んだターゲット（テクセル寸法 texels）の pass を描き出す。design 解像度で描いてから GL がテクセルを塗る点で拾う
   `pub def renderPassImageScaled(req: RasterReq, base: Option[BufferedImage], background: Option[Color], surfaces: List[SurfaceCmd], extraFonts: Map[String, FontEntry], fontAntialias: FontAntialias, extraImages: Map[String, BufferedImage], texels: (Int32, Int32)): BufferedImage \ IO`
+- 色の成分 r, g, b（0..1）と alpha（0..1）を ARGB int へ。画素ごとに呼ぶ所（シェーダー面・
+  `pub def argbOfRgba(r: Float64, g: Float64, b: Float64, a: Float64): Int32`
 - ARGB 1 画素の合成（src を dst に重ねた結果。out の alpha は dst のまま —
   `pub def blendPixel(blend: DrawCmd.BlendMode, srcArgb: Int32, dstArgb: Int32): Int32`
+- ARGB int から 8bit チャンネルを取り出す（shift = 24/16/8/0 = A/R/G/B）。
+  `pub def channelOf(shift: Int32, argb: Int32): Int32`
 - 扇割り三角形列から、点 at を含む三角形の補間色を引く（どの三角形にも入らなければ None）。
   `pub def gradSample(tris: List[(DrawCmd.GradVertex, DrawCmd.GradVertex, DrawCmd.GradVertex)], at: Vec2.Vec2): Option[DrawCmd.VertexTint]`
 - size×size の正方形を pixelOf(x, y) で画素ごとに埋めて PNG に書く。
   `pub def writeRadialPng(size: Int32, pixelOf: (Int32, Int32) -> Int32, outPath: String): Unit \ IO`
+
+## SoftRaster3d — `engine_tools/src/SoftRaster3d.flix`
+- スポットライトの円錐で、明るさが落ち始める角の割合（円錐の半角 × この値の内側は落ちない）。
+  `pub def spotInnerRatio(): Float64`
+- 光が面を回り込む量（facing の wrap）。Environment3d に欄が無いので固定。
+  `pub def wrap(): Float64`
+- ビルボードの絵の α がこれ未満の画素は捨てる。
+  `pub def billboardCutoff(): Float64`
+- cutout の材質で、α がこれ未満の画素は捨てる。
+  `pub def materialCutoff(): Float64`
+- `pub def lightAt(env: Scene3d.Environment3d, pointLights: List[Scene3d.PointLight], spotLights: List[Scene3d.SpotLight], position: Vec3.Vec3, normal: Vec3.Vec3): Color`
+- 目 eye から見た world の点 position の色 c に、距離のかすみを掛けた色（fog が None なら c のまま）。
+  `pub def fogAt(env: Scene3d.Environment3d, eye: Vec3.Vec3, position: Vec3.Vec3, c: Color): Color`
+- 場面 cmd を image へ重ねる。sf = design px → 出力の画素の倍率。textures = ビルボードが引く絵（名前 → 画素）。
+  `pub def drawScene(image: BufferedImage, sf: Float64, textures: Map[String, ShaderEval.TexData], time: Float64, cmd: Scene3d.RenderCmd): Unit \ IO`

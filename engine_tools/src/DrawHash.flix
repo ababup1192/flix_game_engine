@@ -59,14 +59,17 @@ pub mod DrawHash {
         fontAntialias = SoftRaster.FontAntialias
     }
 
-    /// このコマの命令が名前で引く絵（Drawable のテクスチャ名・シェーダー面の tex 場）。
+    /// このコマの命令が名前で引く絵（Drawable のテクスチャ名・シェーダー面の tex 場・3D の場面のビルボード）。
     /// texturePath と extraImages のうち、鍵に入れるのはこの名前の物だけ。
     // WhyNot: texturePath の全部を入れない — 画像 1 枚を描き直すと、その画像を使わない絵まで
     // 全部塗り直しになる。引かない絵は SoftRaster が読んでも画素に出ない。
     pub def usedTextures(frame: Frame): Set[String] =
         let fromDrawables = frame#req#drawables |> List.map(DrawCmd.textureOf) |> List.toSet;
         let fromSurfaces = frame#surfaces |> List.flatMap(sc -> ShaderDoc.texNames(sc#spec)) |> List.toSet;
-        Set.union(fromDrawables, fromSurfaces)
+        let fromBillboards = frame#req#scenes
+            |> List.flatMap(c -> c#scene#billboards |> List.map(b -> Scene3d.billboardFieldsOf(b)#texture))
+            |> List.toSet;
+        Set.union(fromDrawables, Set.union(fromSurfaces, fromBillboards))
 
     /// 鍵を作るのに中身の指紋が要るファイル（引く絵・既定の TTF・追加の TTF）。
     pub def filesOf(frame: Frame): List[String] =
@@ -152,7 +155,7 @@ pub mod DrawHash {
         case { drawables = drawables, polygons = polygons, design = design, scale = scale,
                background = background, texturePath = texturePath, fontTtf = fontTtf,
                fontAtlas = fontAtlas, outPath = _outPath, shapeAntialias = shapeAntialias,
-               textAntialias = textAntialias } =>
+               textAntialias = textAntialias, scenes = scenes } =>
             putVec2(out, design);
             out.writeInt(scale);
             putColor(out, background);
@@ -166,7 +169,154 @@ pub mod DrawHash {
             putSize(out, List.length(drawables));
             drawables |> List.forEach(putDrawable(out));
             putSize(out, List.length(polygons));
-            polygons |> List.forEach(putPolygon(out))
+            polygons |> List.forEach(putPolygon(out));
+            // 3D の場面は空でない時だけ鍵に入れる（場面の無い絵の鍵は場面の欄を足す前と同じ）。
+            if (List.isEmpty(scenes)) ()
+            else {
+                putStr(out, "scenes");
+                putSize(out, List.length(scenes));
+                scenes |> List.forEach(putScene3d(out))
+            }
+    }
+
+    def putScene3d(out: DataOutputStream, cmd: Scene3d.RenderCmd): Unit \ IO = match cmd {
+        case { at = at, clip = clip, scene = scene } =>
+            putVec2(out, at);
+            putClip(out, clip);
+            putSceneCmd(out, scene)
+    }
+
+    def putSceneCmd(out: DataOutputStream, scene: Scene3d.Scene3dCmd): Unit \ IO = match scene {
+        case { size = size, camera = camera, instances = instances, billboards = billboards,
+               pointLights = pointLights, spotLights = spotLights, environment = environment,
+               resolution = resolution, output = output, zIndex = zIndex, time = time } =>
+            out.writeDouble(time);
+            putVec2(out, size);
+            putCamera(out, camera);
+            putSize(out, List.length(instances));
+            instances |> List.forEach(i -> putInstance(out, Scene3d.instanceFieldsOf(i)));
+            putSize(out, List.length(billboards));
+            billboards |> List.forEach(b -> putBillboard(out, Scene3d.billboardFieldsOf(b)));
+            putSize(out, List.length(pointLights));
+            pointLights |> List.forEach(putPointLight(out));
+            putSize(out, List.length(spotLights));
+            spotLights |> List.forEach(putSpotLight(out));
+            putEnvironment(out, environment);
+            match resolution {
+                case Scene3d.Resolution.Native => out.writeByte(0i32)
+                case Scene3d.Resolution.Design => out.writeByte(1i32)
+            };
+            match output {
+                case Scene3d.Output.Color    => out.writeByte(0i32)
+                case Scene3d.Output.Depth(d) => out.writeByte(1i32); putF(out, d#near); putF(out, d#range)
+            };
+            out.writeInt(zIndex)
+    }
+
+    def putCamera(out: DataOutputStream, c: Camera3d.Camera3d): Unit \ IO = match c {
+        case { eye = eye, yaw = yaw, pitch = pitch, fovY = fovY, near = near, far = far } =>
+            putVec3(out, eye);
+            (yaw :: pitch :: fovY :: near :: far :: Nil) |> List.forEach(putF(out))
+    }
+
+    // WhyNot: メッシュの頂点を畳まない — 作る時に中身から求めた contentHash が中身の代わりになる（GL が頂点バッファを引く鍵と同じ）。
+    def putInstance(out: DataOutputStream, i: Scene3d.InstanceFields): Unit \ IO = match i {
+        case { mesh = mesh, world = world, tint = tint, material = material, pose = pose } =>
+            putStr(out, Mesh3d.contentHash(mesh));
+            Mat4.toColumns(world) |> Vector.forEach(putF(out));
+            putColor(out, tint);
+            match material {
+                case None    => out.writeByte(0i32)
+                case Some(m) => out.writeByte(1i32); putMaterial(out, m)
+            };
+            putPose(out, pose)
+    }
+
+    // WhyNot: None にも印のバイトを書かない — pose の欄を足す前の鍵の字を保ち、ジョイントの無い場面のキャッシュの PNG を塗り直させない。
+    // WhyNot: skinningOf で落とす（バインドポーズで描く）pose も行列のまま書く — 落とすかは形と照らす判定で、鍵が別になるだけで絵は誤らない。
+    def putPose(out: DataOutputStream, pose: Option[Pose3d.Pose3d]): Unit \ IO = match pose {
+        case None => ()
+        case Some(p) =>
+            out.writeByte(1i32);
+            putSize(out, Pose3d.jointCount(p));
+            Pose3d.jointMatrices(p) |> Vector.forEach(m -> Mat4.toColumns(m) |> Vector.forEach(putF(out)))
+    }
+
+    def putMaterial(out: DataOutputStream, m: Scene3d.Material3d): Unit \ IO = match m {
+        case { spec = spec, params = params, cutout = cutout, emission = emission } =>
+            putStr(out, ToString.toString(ShaderJson.toJson(spec)));
+            putSize(out, Map.size(params));
+            params |> Map.forEach((name, v) -> { putStr(out, name); putF(out, v) });
+            putBool(out, cutout);
+            match emission {
+                case None        => out.writeByte(0i32)
+                case Some(shade) => out.writeByte(1i32); putStr(out, ToString.toString(ShaderJson.toJson(shadeSpec(shade))))
+            }
+    }
+
+    /// Shade を 1 枚の Spec の Out に包む（JSON に書く口が Spec にしか無いため）。
+    def shadeSpec(shade: ShaderDoc.Shade): ShaderDoc.Spec =
+        { name = "emission", cycleRate = 0.0, bindings = Nil,
+          out = ShaderDoc.Out.Fill({ shade = shade, alpha = ShaderDoc.Field.Const(1.0) }) }
+
+    def putBillboard(out: DataOutputStream, b: Scene3d.BillboardFields): Unit \ IO = match b {
+        case { texture = texture, regionRect = regionRect, position = position, size = size,
+               anchor = anchor, tint = tint, lit = lit } =>
+            putStr(out, texture);
+            putRect(out, regionRect);
+            putVec3(out, position);
+            putVec2(out, size);
+            putVec2(out, anchor);
+            putColor(out, tint);
+            putBool(out, lit)
+    }
+
+    def putPointLight(out: DataOutputStream, l: Scene3d.PointLight): Unit \ IO = match l {
+        case { position = position, color = color, intensity = intensity, range = range } =>
+            putVec3(out, position);
+            putColor(out, color);
+            putF(out, intensity);
+            putF(out, range)
+    }
+
+    def putSpotLight(out: DataOutputStream, l: Scene3d.SpotLight): Unit \ IO = match l {
+        case { position = position, target = target, fovY = fovY, color = color, intensity = intensity,
+               range = range, shadow = shadow } =>
+            putVec3(out, position);
+            putVec3(out, target);
+            putF(out, fovY);
+            putColor(out, color);
+            putF(out, intensity);
+            putF(out, range);
+            match shadow {
+                case None => out.writeByte(0i32)
+                case Some({ mapSize = mapSize, bias = bias, pcfRadius = pcfRadius, strength = strength }) =>
+                    out.writeByte(1i32);
+                    out.writeInt(mapSize);
+                    putF(out, bias);
+                    out.writeInt(pcfRadius);
+                    putF(out, strength)
+            }
+    }
+
+    def putEnvironment(out: DataOutputStream, e: Scene3d.Environment3d): Unit \ IO = match e {
+        case { ambient = ambient, hemisphere = hemisphere, toonSteps = toonSteps, fog = fog, background = background } =>
+            putColor(out, ambient);
+            putF(out, hemisphere);
+            out.writeInt(toonSteps);
+            match fog {
+                case None    => out.writeByte(0i32)
+                case Some({ color = color, near = near, far = far }) =>
+                    out.writeByte(1i32); putColor(out, color); putF(out, near); putF(out, far)
+            };
+            match background {
+                case None    => out.writeByte(0i32)
+                case Some(c) => out.writeByte(1i32); putColor(out, c)
+            }
+    }
+
+    def putVec3(out: DataOutputStream, v: Vec3.Vec3): Unit \ IO = match v {
+        case { x = x, y = y, z = z } => putF(out, x); putF(out, y); putF(out, z)
     }
 
     def putFile(out: DataOutputStream, inputs: Inputs, path: String): Unit \ IO =

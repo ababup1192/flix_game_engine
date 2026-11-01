@@ -1,0 +1,15 @@
+{
+  "title": "Scene3d Bench",
+  "designWidth": 320,
+  "designHeight": 180,
+  "windowScale": 3,
+  "clearColor": {
+    "r": 0.0,
+    "g": 0.0,
+    "b": 0.0
+  },
+  "maxDeltaTime": 10.0,
+  "textures": [],
+  "fonts": [],
+  "sounds": []
+}

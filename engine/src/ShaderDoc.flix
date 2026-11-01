@@ -17,6 +17,13 @@ pub mod ShaderDoc {
         case V
     }
 
+    /// 3D の world の軸（左手系。X = 東・Y = 上・Z = 北。Scene3d と同じ約束）。World / Normal の成分。
+    pub enum Axis3 with Eq, ToString {
+        case X
+        case Y
+        case Z
+    }
+
     /// Worley（セルノイズ）の出力の選び方。F2mF1 が網目（水面の目地）。
     pub enum WorleyOut with Eq, ToString {
         case F1     // 一番近いセル点までの距離（斑点）
@@ -171,6 +178,13 @@ pub mod ShaderDoc {
         /// Render.shaderSurfaces の側で、GL と描き出しのどちらでも出る）。名前は英数字と '_'（paramNameOk）。
         /// WhyNot: 毎フレーム変わる数を Const に入れない — Spec が変わり、実機は GLSL を作り直す。
         case Param({ name = String })
+        /// 3D のメッシュに塗る時の、画素の world の点の axis の成分（Scene3d の材質だけが値を持つ）。
+        /// Scaled・Tiling・Shift などの uv の変換を受けない — 内側に置いても、いつも画素の world の値。
+        /// 2D の面（Item.Shader）では 0。Uv を読む場（Fbm・Worley…）を world の上で読むなら atWorld で包む。
+        case World({ axis = Axis3 })
+        /// 3D のメッシュに塗る時の、画素の外向きの単位の法線の axis の成分（-1..1）。uv の変換を受けない。
+        /// 2D の面では 0。
+        case Normal({ axis = Axis3 })
     }
 
     /// 面の色（rgb）。
@@ -380,6 +394,8 @@ pub mod ShaderDoc {
             case Field.TexBlur(bl)     => foldField(f, acc1, bl#amount)
             case Field.Sampler(sm)     => foldFieldScoped(f, sm#filter, acc1, sm#of)
             case Field.Param(_)        => acc1
+            case Field.World(_)        => acc1
+            case Field.Normal(_)       => acc1
         }
 
     /// Spec の tex / blur が読むテクスチャ名を f で書き換える（形は変えない）。
@@ -393,20 +409,21 @@ pub mod ShaderDoc {
 
     /// Spec の全部の場（bindings・色・alpha）に g を掛ける（形は変えない）。
     def mapSpecFields(g: Field -> Field, spec: Spec): Spec =
-        let shade = match spec#out {
-            case Out.Fill(fill) => match fill#shade {
-                case Shade.Solid(c)    => Shade.Solid(c)
-                case Shade.Ramp(r)     => Shade.Ramp({ field = g(r#field) | r })
-                case Shade.Gradient(gr) => Shade.Gradient({ field = g(gr#field) | gr })
-                case Shade.Cosine(cs)  => Shade.Cosine({ field = g(cs#field) | cs })
-                case Shade.Rgb(c)      => Shade.Rgb({ r = g(c#r), g = g(c#g), b = g(c#b) })
-            }
-        };
-        let alpha = match spec#out {
-            case Out.Fill(fill) => g(fill#alpha)
+        let (shade, alpha) = match spec#out {
+            case Out.Fill(fill) => (mapShadeFields(g, fill#shade), g(fill#alpha))
         };
         { bindings = List.map(nf -> { let (n, fld) = nf; (n, g(fld)) }, spec#bindings),
           out = Out.Fill({ shade = shade, alpha = alpha }) | spec }
+
+    /// 色の全部の場に g を掛ける（形は変えない）。
+    def mapShadeFields(g: Field -> Field, shade: Shade): Shade =
+        match shade {
+            case Shade.Solid(c)     => Shade.Solid(c)
+            case Shade.Ramp(r)      => Shade.Ramp({ field = g(r#field) | r })
+            case Shade.Gradient(gr) => Shade.Gradient({ field = g(gr#field) | gr })
+            case Shade.Cosine(cs)   => Shade.Cosine({ field = g(cs#field) | cs })
+            case Shade.Rgb(c)       => Shade.Rgb({ r = g(c#r), g = g(c#g), b = g(c#b) })
+        }
 
     /// 場の木を下から作り直し、各節に node を掛ける（子を先に作り直してから、その節に node）。
     def rewriteField(node: Field -> Field): Field -> Field = field ->
@@ -447,21 +464,27 @@ pub mod ShaderDoc {
             case Field.TexBlur(bl)     => Field.TexBlur({ amount = go(bl#amount) | bl })
             case Field.Sampler(sm)     => Field.Sampler({ of = go(sm#of) | sm })
             case Field.Param(_)        => field
+            case Field.World(_)        => field
+            case Field.Normal(_)       => field
         };
         node(rebuilt)
 
     /// Spec の場を「bindings（前から）→ 色 → alpha」の順に並べる。texNames と、場を全部見る走査はこの並びを使う。
     pub def fieldsOf(spec: Spec): List[Field] =
-        let shadeFields = match spec#out {
-            case Out.Fill(f) => match f#shade {
-                case Shade.Solid(_)    => f#alpha :: Nil
-                case Shade.Ramp(r)     => r#field :: f#alpha :: Nil
-                case Shade.Gradient(g) => g#field :: f#alpha :: Nil
-                case Shade.Cosine(cs)  => cs#field :: f#alpha :: Nil
-                case Shade.Rgb(c)      => c#r :: c#g :: c#b :: f#alpha :: Nil
-            }
+        let outFields = match spec#out {
+            case Out.Fill(f) => List.append(shadeFieldsOf(f#shade), f#alpha :: Nil)
         };
-        List.append(List.map(snd, spec#bindings), shadeFields)
+        List.append(List.map(snd, spec#bindings), outFields)
+
+    /// 色の場を並べる（Rgb は r → g → b）。
+    def shadeFieldsOf(shade: Shade): List[Field] =
+        match shade {
+            case Shade.Solid(_)    => Nil
+            case Shade.Ramp(r)     => r#field :: Nil
+            case Shade.Gradient(g) => g#field :: Nil
+            case Shade.Cosine(cs)  => cs#field :: Nil
+            case Shade.Rgb(c)      => c#r :: c#g :: c#b :: Nil
+        }
 
     /// Spec が読むテクスチャ名を「bindings（前から）→ 色 → alpha」の初出順・重複なしで列挙する。
     /// この並びが正典 — GLSL の uniform 番号・GL の sampler unit 番号・描画依頼の texNames が
@@ -485,11 +508,14 @@ pub mod ShaderDoc {
 
     /// Spec が読む Param の名前を「bindings（前から）→ 色 → alpha」の初出順・重複なしで列挙する。
     /// この並びが正典 — GLSL の uniform 番号（uParam0…）と、描画依頼・描き出しが渡す値の並びが全部これを使う。
-    pub def paramNames(spec: Spec): List[String] =
+    pub def paramNames(spec: Spec): List[String] = paramNamesIn(fieldsOf(spec))
+
+    /// fields の順に、Param の名前を初出順・重複なしで。
+    def paramNamesIn(fields: List[Field]): List[String] =
         List.foldLeft((acc, field) -> foldField((names, f) -> match f {
             case Field.Param(pm) => if (List.memberOf(pm#name, names)) names else pm#name :: names
             case _               => names
-        }, acc, field), Nil, fieldsOf(spec)) |> List.reverse
+        }, acc, field), Nil, fields) |> List.reverse
 
     /// Param の名前に使える字か（英数字と '_'・1 字以上）。JSON の読みが確かめる。
     pub def paramNameOk(name: String): Bool =
@@ -552,6 +578,8 @@ pub mod ShaderDoc {
             case Field.TexBlur(_)      => None
             case Field.Sampler(_)      => None
             case Field.Param(_)        => None
+            case Field.World(_)        => None
+            case Field.Normal(_)       => None
         }
 
     /// 負の指数の pow の底の下限（GLSL と CPU が同じ値を読む）。
@@ -592,6 +620,62 @@ pub mod ShaderDoc {
     pub def normalized(parts: List[Field]): List[Field] =
         let len = lengthOf(parts);
         parts |> List.map(p -> Field.Bin({ op = BinOp.Div, a = p, b = len }))
+
+    // ── 3D の材質（Scene3d.Material3d）──
+
+    /// field を、world の 2 軸 plane = (u に写す軸, v に写す軸) を uv として読ませる（Fbm・Worley など uv を読む場を
+    /// 3D のメッシュの表面に貼る）。Shift のずらし量を「world − 今の uv」にするので、外側の uv が何でも world の値で読む。
+    /// field の中の Ref（shared）は world を読まない — shared は面の基準 uv で 1 回だけ評価する決まりなので、
+    /// atWorld は shared の定義の側に書く（`("rock", atWorld((Axis3.X, Axis3.Z), fbm))` の形）。
+    /// WhyNot: World を uv の代わりに読む専用の場を足さない — Fbm・Worley・Hash… の全部に「どの座標を読むか」を
+    /// 持たせることになる。uv を差し替える仕組み（Shift）がすでにある。
+    pub def atWorld(plane: (Axis3, Axis3), field: Field): Field =
+        let (onU, onV) = plane;
+        Field.Shift({
+            dx = Field.Bin({ op = BinOp.Sub, a = Field.World({ axis = onU }), b = Field.Uv({ axis = Axis.U }) }),
+            dy = Field.Bin({ op = BinOp.Sub, a = Field.World({ axis = onV }), b = Field.Uv({ axis = Axis.V }) }),
+            of = field })
+
+    /// Spec が World か Normal を読むか（2D の面に置くと 0 になるので知らせる物）。
+    pub def usesWorld3d(spec: Spec): Bool =
+        fieldsOf(spec) |> List.exists(field -> foldField((found, f) -> match f {
+            case Field.World(_)  => true
+            case Field.Normal(_) => true
+            case _               => found
+        }, false, field))
+
+    /// 材質（Spec と自分で光る色 emission）の中の Param の名前。Spec の paramNames の後ろに、emission にだけ出てくる名前を
+    /// 初出順で足す。この並びが 3D の GLSL の uniform 番号（uParam0…）の正典（ShaderGen.compile3d）。
+    pub def materialParamNames(spec: Spec, emission: Option[Shade]): List[String] =
+        paramNamesIn(List.append(fieldsOf(spec), Option.getWithDefault(Nil, Option.map(shadeFieldsOf, emission))))
+
+    /// 材質に渡された値の表から、materialParamNames の順に値を並べる（表に無い名前は 0）。
+    pub def materialParamValues(spec: Spec, emission: Option[Shade], params: Map[String, Float64]): List[Float64] =
+        materialParamNames(spec, emission) |> List.map(n -> Map.getWithDefault(n, 0.0, params))
+
+    /// 色の Param を値の表の値の Const に置き換える（bindParams の色の版。emission を CPU で評価する前に通す）。
+    pub def bindShadeParams(params: Map[String, Float64], shade: Shade): Shade =
+        mapShadeFields(rewriteField(node -> match node {
+            case Field.Param(pm) => Field.Const(Map.getWithDefault(pm#name, 0.0, params))
+            case other           => other
+        }), shade)
+
+    /// Spec の tex / blur を 0 の Const に置き換える（3D の材質はテクスチャを読まない）。
+    /// WhyNot: 3D の GLSL に tex の sampler を足さない — メッシュの画素に対応する uv が無く（vUv は 0）、
+    /// どの点を読むかが決まらない。
+    pub def withoutTextures(spec: Spec): Spec =
+        if (List.isEmpty(texNames(spec))) spec else mapSpecFields(rewriteField(zeroTex), spec)
+
+    /// 色の tex / blur を 0 の Const に置き換える（withoutTextures の色の版）。
+    pub def shadeWithoutTextures(shade: Shade): Shade =
+        mapShadeFields(rewriteField(zeroTex), shade)
+
+    def zeroTex(node: Field): Field =
+        match node {
+            case Field.Tex(_)     => Field.Const(0.0)
+            case Field.TexBlur(_) => Field.Const(0.0)
+            case other            => other
+        }
 
     def smoothstepF(lo: Float64, hi: Float64, x: Float64): Float64 =
         if (hi - lo == 0.0) (if (x < lo) 0.0 else 1.0)

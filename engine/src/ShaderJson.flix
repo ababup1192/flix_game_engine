@@ -16,6 +16,7 @@
 //           {"kind":"blur","name":"..","chan":"r","radius":{"x":..,"y":..},"taps":24,"amount":{..}} /
 //           {"kind":"sampler","filter":"linear","of":{..}}
 //           {"kind":"param","name":"focus"}（値は面を置く時に Render.withShaderParams で渡す）
+//           {"kind":"world","axis":"x"} / {"kind":"normal","axis":"y"}（3D の材質だけが値を持つ・2D の面では 0）
 //   色:     {"kind":"solid","color":<color>} / {"kind":"ramp","lo":<color>,"hi":<color>,"field":{..}} /
 //           {"kind":"rgb","r":{..},"g":{..},"b":{..}}
 //   出力:   {"kind":"fill","shade":{..},"alpha":{..}}
@@ -458,6 +459,10 @@ pub mod ShaderJson {
                         ok   <- if (ShaderDoc.paramNameOk(name)) Ok(name)
                                 else Err(err("param name must be letters, digits or '_' (got '${name}')"))
                     ) yield ShaderDoc.Field.Param({ name = ok })
+                case "world" =>
+                    forM (axis <- parseAxis3(m)) yield ShaderDoc.Field.World({ axis = axis })
+                case "normal" =>
+                    forM (axis <- parseAxis3(m)) yield ShaderDoc.Field.Normal({ axis = axis })
                 case other => Err(err("unknown field kind: '${other}'"))
             }
         })
@@ -467,6 +472,15 @@ pub mod ShaderJson {
             case "u" => Ok(ShaderDoc.Axis.U)
             case "v" => Ok(ShaderDoc.Axis.V)
             case other => Err(err("axis must be 'u'/'v' (got '${other}')"))
+        }) yield a
+
+    // world / normal の軸は "axis":"x"/"y"/"z"（uv の "u"/"v" とは別の語彙 — 3D の軸は 3 つある）。
+    def parseAxis3(m: Map[String, Json]): Result[JsonError, ShaderDoc.Axis3] =
+        forM (s <- strAt("axis", m); a <- match s {
+            case "x" => Ok(ShaderDoc.Axis3.X)
+            case "y" => Ok(ShaderDoc.Axis3.Y)
+            case "z" => Ok(ShaderDoc.Axis3.Z)
+            case other => Err(err("axis must be 'x'/'y'/'z' (got '${other}')"))
         }) yield a
 
     // hash2 の成分（x か y）は "comp":"u"/"v"。Axis を共有（Uv の axis と同じ語彙）。
@@ -807,6 +821,10 @@ pub mod ShaderJson {
                               "of" => fieldToJson(sm#of) })
             case ShaderDoc.Field.Param(pm) =>
                 JObject(Map#{ "kind" => JString("param"), "name" => JString(pm#name) })
+            case ShaderDoc.Field.World(w) =>
+                JObject(Map#{ "kind" => JString("world"), "axis" => JString(axis3Str(w#axis)) })
+            case ShaderDoc.Field.Normal(n) =>
+                JObject(Map#{ "kind" => JString("normal"), "axis" => JString(axis3Str(n#axis)) })
         }
 
     def filterStr(f: ShaderDoc.FilterMode): String =
@@ -870,6 +888,13 @@ pub mod ShaderJson {
 
     def axisStr(a: ShaderDoc.Axis): String =
         match a { case ShaderDoc.Axis.U => "u" case ShaderDoc.Axis.V => "v" }
+
+    def axis3Str(a: ShaderDoc.Axis3): String =
+        match a {
+            case ShaderDoc.Axis3.X => "x"
+            case ShaderDoc.Axis3.Y => "y"
+            case ShaderDoc.Axis3.Z => "z"
+        }
 
     def worleyOutStr(o: ShaderDoc.WorleyOut): String =
         match o {

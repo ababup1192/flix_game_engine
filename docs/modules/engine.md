@@ -58,6 +58,17 @@
 | 凹みのある多角形を三角形に分割したい | Triangulate |
 | GL の uniform に渡す前の数値変換・丸めをしたい | RenderUtil |
 | 0〜1 に収める・小数部だけ残す（core 側の基礎計算） | Num |
+| 3D の位置・向きのベクトルを計算したい（左手系・X 東・Y 上・Z 北） | Vec3 |
+| 3D の 4×4 行列（移動・回転・拡大・視点・透視）を組みたい | Mat4 |
+| 3D の物の置き場所（位置・回転・拡大）を 1 つの値で持ちたい | Transform3d |
+| 3D の回転を四元数で持つ・2 つの向きの間をなめらかにつなぐ | Quat |
+| 3D の形（頂点・法線・色・三角形）を作る・箱や板を組む | Mesh3d |
+| 3D の視点（位置・向き・画角）を持ちたい | Camera3d |
+| 3D の部屋や物を 1 つの描き物（Render.Item.Scene3d）にまとめる・灯り・霧・影 | Scene3d（shadowMatrix の約束は Scene3d.flix の doc） |
+| 3D の形に骨を入れる（関節の並び・頂点ごとの重み） | Skin3d |
+| 骨の動き（キーフレームの並び）を持つ・ある時刻の姿勢を取り出す | AnimationClip3d |
+| 骨ごとの姿勢を混ぜる・Scene3d へ渡す | Pose3d（Scene3d.withPose） |
+| Blender などで書き出した .glb を読む（形・骨・動き） | Gltf（load / fromGlb。X を反転して左手系へ） |
 | 起動画面（ロゴ+ゲージ）を組み立てたい | Splash |
 | 起動画面の組み込みフォント・ロゴを使いたい | BootFont（素データは BootFontData。生成物なので手で触らない） |
 | 円弧・リングを描きたい（Drawable 経路） | Arc |

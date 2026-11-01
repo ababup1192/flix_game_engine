@@ -35,7 +35,7 @@ mod TestDrawHash {
                   design = { x = 320.0, y = 180.0 }, scale = 2, background = { r = 0.0, g = 0.0, b = 0.1 },
                   texturePath = Map#{ "hero" => "assets/hero.png" }, fontTtf = "assets/ui.ttf",
                   fontAtlas = atlas(8.0), outPath = "gallery/a.png",
-                  shapeAntialias = false, textAntialias = true },
+                  shapeAntialias = false, textAntialias = true, scenes = Nil },
           surfaces = surface(0.5) :: Nil,
           extraFonts = Map#{ "font_girl" => { ttf = "assets/girl.ttf", atlas = atlas(9.0) } }, fontAntialias = Map.empty() }
 
@@ -175,6 +175,81 @@ mod TestDrawHash {
         let filmstrip = DrawHash.computeKey(inputs(), DrawHash.PngEncoding.Filmstrip, frame())
             |> Option.map(DrawHash.toHex) |> Option.getWithDefault("none");
         Assert.assertTrue(filmstrip != base())
+
+    // 3D の場面の無いコマの鍵は、場面の欄を足す前の字のまま（キャッシュの PNG を全部塗り直させない）。
+    @Test
+    def testKeyWithoutScenesIsPinned(): Unit \ Assert =
+        Assert.assertEq(expected = "e3776a9ffd5da514e0cc778f0ed7dc2601af86f301a4511b20119acea365dacf", base())
+
+    /// 赤い三角 1 枚を world の行列 world で置いた 3D の場面。
+    def sceneAt(world: Mat4.Mat4): Scene3d.RenderCmd = sceneWith(Scene3d.meshInstance(redTriangle(), world))
+
+    def redTriangle(): Mesh3d.Mesh3d =
+        Mesh3d.fromPolygons(
+            { points = Vec3.v3(0.0, 1.0, 0.0) :: Vec3.v3(1.0, 1.0, 0.0) :: Vec3.v3(1.0, 0.0, 0.0) :: Nil,
+              color = { r = 1.0, g = 0.0, b = 0.0 } } :: Nil)
+
+    /// 置いた物 i 1 つだけの 3D の場面。
+    def sceneWith(i: Scene3d.Instance3d): Scene3d.RenderCmd =
+        let camera = { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 0.1, far = 100.0 };
+        { at = Vec2.zero(), clip = None,
+          scene = { instances = i :: Nil | Scene3d.scene(camera, { x = 64.0, y = 64.0 }) } }
+
+    /// 原点に立つジョイント 1 本を rotation へ回した Pose。
+    def poseTurnedTo(rotation: Quat.Quat): Pose3d.Pose3d =
+        let rest = { translation = Vec3.zero(), rotation = Quat.identity(), scale = Vec3.one() };
+        match Skin3d.make({ names = Vector#{ "root" }, parents = Vector#{ -1 }, rest = Vector#{ rest },
+                            inverseBinds = None, rootTransform = Mat4.identity() }) {
+            case Ok(skin) => Pose3d.compute(skin, Vector#{ { rotation = rotation | rest } })
+            case Err(e)   => bug!(e)
+        }
+
+    // 同じ板・同じ行列でも、ジョイントの向きが違う pose なら鍵が違う（joint 行列の 16 個 × 本数を鍵に入れている）。
+    @Test
+    def testScenePoseChangesKey(): Unit \ Assert =
+        let f = frame();
+        let at = (rotation: Quat.Quat) -> {
+            let i = Scene3d.withPose(poseTurnedTo(rotation), Scene3d.meshInstance(redTriangle(), Mat4.identity()));
+            keyOf(inputs(), { req = { scenes = sceneWith(i) :: Nil | f#req } | f })
+        };
+        Assert.assertTrue(at(Quat.identity()) != at(Quat.normalized({ x = 0.0, y = 0.0, z = 1.0, w = 1.0 })))
+
+    // 同じ板でも置く行列が違えば鍵が違う（行列の 16 個を鍵に入れている）。
+    @Test
+    def testSceneWorldMatrixChangesKey(): Unit \ Assert =
+        let f = frame();
+        let at = (world: Mat4.Mat4) -> keyOf(inputs(), { req = { scenes = sceneAt(world) :: Nil | f#req } | f });
+        Assert.assertTrue(at(Mat4.identity()) != at(Mat4.translate(Vec3.v3(1.0, 0.0, 0.0))))
+
+    // pose の無い置いた物の鍵は、pose の欄を足す前の字のまま（3D の場面のキャッシュの PNG を塗り直させない）。
+    @Test
+    def testSceneKeyWithoutPoseIsPinned(): Unit \ Assert =
+        let f = frame();
+        Assert.assertEq(expected = "4cb4ec7a3c590f9a91b987afd4b565f921f58e92a86b9d86440d77b8a97d6999", keyOf(inputs(), { req = { scenes = sceneAt(Mat4.identity()) :: Nil | f#req } | f }))
+
+    // スポットの影の濃さ（strength）だけが違う場面は鍵が違う（shadow の欄を鍵に入れている）。
+    @Test
+    def testSpotShadowStrengthChangesKey(): Unit \ Assert =
+        let f = frame();
+        let base = sceneAt(Mat4.identity());
+        let at = (strength: Float64) -> {
+            let spot = { position = Vec3.v3(0.0, 4.0, 0.0), target = Vec3.zero(), fovY = 1.0, color = { r = 1.0, g = 1.0, b = 1.0 },
+                         intensity = 1.0, range = 8.0, shadow = Some({ mapSize = 64, bias = 0.005, pcfRadius = 1, strength = strength }) };
+            keyOf(inputs(), { req = { scenes = { scene = { spotLights = spot :: Nil | base#scene } | base } :: Nil | f#req } | f })
+        };
+        Assert.assertTrue(at(0.5) != at(1.0))
+
+    // ビルボードの絵の中身は鍵に入る（usedTextures にビルボードの名前が入る）。
+    @Test
+    def testBillboardTextureContentChangesKey(): Unit \ Assert =
+        let f = frame();
+        let base = sceneAt(Mat4.identity());
+        let board = Scene3d.billboard("tree", { position = Vec2.zero(), size = { x = 8.0, y = 8.0 } }, Vec3.v3(0.0, 0.0, 2.0), { x = 1.0, y = 1.0 });
+        let withBoard = { req = { scenes = { scene = { billboards = board :: Nil | base#scene } | base } :: Nil,
+                                  texturePath = Map.insert("tree", "assets/tree.png", f#req#texturePath) | f#req } | f };
+        let i = inputs();
+        let filesWith = (sha: String) -> { files = Map.insert("assets/tree.png", sha, i#files) | i };
+        Assert.assertTrue(keyOf(filesWith("x1"), withBoard) != keyOf(filesWith("x2"), withBoard))
 
     // ── 指紋が欠けたら鍵を作らない ──
 

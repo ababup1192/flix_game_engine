@@ -18,7 +18,8 @@ mod RenderPaint {
         tileMaps = List[GameEngine.TileMapRenderCmd],
         polygons = List[GameEngine.PolygonRenderCmd],
         staticLayer = Option[GameEngine.StaticLayerCmd],
-        surfaces = List[ShaderEffect.ShaderRenderCmd]
+        surfaces = List[ShaderEffect.ShaderRenderCmd],
+        scenes = List[Scene3d.RenderCmd]
     }
 
     /// 塗りのコアの状態。作るのは create だけ。
@@ -45,6 +46,10 @@ mod RenderPaint {
         programUsedAtRef = Ref[Map[Int32, Int64], Static],
         // このコマに溜まったシェーダー面（queueSurface が積み、submitFrame が取り出す。新しい順）。
         pendingShaderHolder = Array[List[ShaderEffect.ShaderRenderCmd], Static],
+        // このコマに溜まった 3D の場面（queueScene3d が積み、submitFrame が取り出す。新しい順）。
+        pendingScene3dHolder = Array[List[Scene3d.RenderCmd], Static],
+        // 3D の場面の描き手（メッシュの置き場・プログラム・Design の描き先）。
+        render3d = Render3d.State,
         // program → (uRectPos, uRectSize, uTime, uAlpha, texLocs, paramLocs)。
         shaderUniformCache = Ref[Map[Int32, (Int32, Int32, Int32, Int32, List[(Int32, Int32)], List[Int32])], Static],
         // レンダーターゲットの名前 → GL 実体。
@@ -73,7 +78,7 @@ mod RenderPaint {
 
     /// 空のコマ。
     pub def emptyFrame(): Frame =
-        { sprites = Nil, tileMaps = Nil, polygons = Nil, staticLayer = None, surfaces = Nil }
+        { sprites = Nil, tileMaps = Nil, polygons = Nil, staticLayer = None, surfaces = Nil, scenes = Nil }
 
     /// GL の資源を作り、空の登録簿で塗りのコアを始める。GL の文脈が今の糸に付いていること。
     /// design = 描く座標の寸（ゲームの designWidth × designHeight）、clearColor = design の中の地の色、
@@ -228,6 +233,9 @@ mod RenderPaint {
                                                polyBatchShader, polyBatchVao, polyBatchVbo,
                                                polyBatchUniforms, cmd#mask)
         };
+        let render3d = Render3d.fresh();
+        let drawScene = (vp: Render3d.Viewport, item: Render3d.SceneItem) ->
+            Render3d.drawItem(render3d, Array.get(0, frameGenHolder), billboardTexture(registryRef, targetsRef), vp, item);
         // renderFrameMixed への FrameArgs は固定値（シェーダ・VAO・buf・uniforms 等）が
         // 大半なので、共通ベースを 1 つ組み、呼び出し側は変わる所だけ上書きする。
         // registry / targetNames は毎フレーム育つ Ref から読むため、ベースの値は仮
@@ -245,6 +253,7 @@ mod RenderPaint {
             spriteUniforms = spriteUniforms, tileUniforms = tileUniforms,
             instMultiplyBlend = instMultiplyBlend,
             surfaces = Nil, drawSurface = drawSurface,
+            scenes = Nil, drawScene = drawScene,
             targetClear = None, targetNames = Set.empty(),
             texWarnLog = missingTextureRef
         };
@@ -253,6 +262,7 @@ mod RenderPaint {
           tileVboRegistry = tileVboRegistry, shaderProgramCache = shaderProgramCache,
           frameGenHolder = frameGenHolder, programUsedAtRef = programUsedAtRef,
           pendingShaderHolder = pendingShaderHolder, shaderUniformCache = shaderUniformCache,
+          pendingScene3dHolder = Array#{(Nil: List[Scene3d.RenderCmd])} @ Static, render3d = render3d,
           targetsRef = targetsRef, activeTargetHolder = activeTargetHolder,
           historyRef = Ref.fresh(Static, Map.empty()), keepHistory = true,
           registryRef = registryRef, textureKeyRef = textureKeyRef,
@@ -270,12 +280,13 @@ mod RenderPaint {
             case None    => Nil
             case Some(l) => RenderStatic.resolve(paint#staticCacheCell, l)
         };
+        let scenes = prepareScenes(paint, paint#screenFramebuffer, frame#scenes);
         RenderFrame.renderFrameMixed({
             registry = Ref.get(paint#registryRef),
             fbW = fbW, fbH = fbH,
             sprites = frame#sprites, tileMaps = frame#tileMaps, polygons = frame#polygons,
             staticRanges = staticRanges,
-            surfaces = frame#surfaces,
+            surfaces = frame#surfaces, scenes = scenes,
             targetNames = Map.keysOf(Ref.get(paint#targetsRef)) | paint#frameArgsBase })
 
     /// レンダーターゲットへの 1 フレーム。画面用の paintFrame と違い、黒帯 clear を
@@ -283,18 +294,21 @@ mod RenderPaint {
     /// 中は design 座標のまま描き、viewport がテクセル寸法へ縮める（投影行列は design 前提のまま）。
     def paintTarget(paint: Paint, target: (String, Int32, Int32, RenderTarget.LoadOp),
                     sprites: List[GameEngine.Drawable], polygons: List[GameEngine.PolygonRenderCmd],
-                    surfaces: List[ShaderEffect.ShaderRenderCmd]): Unit \ IO =
+                    surfaces: List[ShaderEffect.ShaderRenderCmd], scenes: List[Scene3d.RenderCmd]): Unit \ IO =
         let (name, tw, th, op) = target;
         let history = RenderTarget.historyName(name);
         let readsHistory = List.exists(cmd -> List.exists(read -> fst(read) == history, cmd#texReads), surfaces)
-            or List.exists(d -> DrawCmd.textureOf(d) == history, sprites);
+            or List.exists(d -> DrawCmd.textureOf(d) == history, sprites)
+            or List.exists(cmd -> List.exists(b -> Scene3d.billboardFieldsOf(b)#texture == history, cmd#scene#billboards), scenes);
         if (readsHistory) prepareHistory(paint, name, tw, th) else ();
+        let framebuffer = Map.get(name, Ref.get(paint#targetsRef)) |> Option.map(e -> e#fbo) |> Option.getWithDefault(paint#screenFramebuffer);
+        let prepared = prepareScenes(paint, framebuffer, scenes);
         RenderFrame.renderFrameMixed({
             registry = Ref.get(paint#registryRef),
             designW = paint#screenW, designH = paint#screenH,
             fbW = tw, fbH = th,
             sprites = sprites, polygons = polygons,
-            surfaces = surfaces,
+            surfaces = surfaces, scenes = prepared,
             targetClear = Some(op),
             targetNames = Map.keysOf(Ref.get(paint#targetsRef)) | paint#frameArgsBase })
 
@@ -339,7 +353,8 @@ mod RenderPaint {
                 // この Pass で積んだシェーダー面もここで取り出す（残すと画面の方に描かれる）。
                 let surfaces = List.reverse(Array.get(0, paint#pendingShaderHolder));
                 Array.put(Nil, 0, paint#pendingShaderHolder);
-                paintTarget(paint, target, sprites, polygons, surfaces);
+                let scenes = takeScenes(paint);
+                paintTarget(paint, target, sprites, polygons, surfaces, scenes);
                 false
             case None =>
                 // queueSurface が積んだこのフレームのシェーダー面を取り出して holder を空にする。
@@ -347,15 +362,35 @@ mod RenderPaint {
                 let surfaces = List.reverse(Array.get(0, paint#pendingShaderHolder));
                 Array.put(Nil, 0, paint#pendingShaderHolder);
                 let frame = { sprites = sprites, tileMaps = tileMaps, polygons = polygons,
-                              staticLayer = staticLayer, surfaces = surfaces };
+                              staticLayer = staticLayer, surfaces = surfaces, scenes = takeScenes(paint) };
                 Array.put(frame, 0, paint#lastFrameHolder);
                 // 進めるのはここ 1 箇所だけ。上のレンダーターゲットへの分岐でも進めると、
                 // Pass を N 枚描くゲームでは絵 1 枚あたり N+1 回進み、「現世代 = いま描いて
                 // いる面」という数え方が壊れる。
                 Array.put(Array.get(0, paint#frameGenHolder) + 1i64, 0, paint#frameGenHolder);
                 paintFrame(paint, fbW, fbH, frame);
+                Render3d.endFrame(paint#render3d, Array.get(0, paint#frameGenHolder));
                 true
         }
+
+    /// このコマ（か Pass）に溜まった 3D の場面を、積んだ順で取り出して溜め場を空にする。
+    def takeScenes(paint: Paint): List[Scene3d.RenderCmd] \ IO =
+        let scenes = List.reverse(Array.get(0, paint#pendingScene3dHolder));
+        Array.put(Nil, 0, paint#pendingScene3dHolder);
+        scenes
+
+    /// Design の解像度の場面を先に描いておき、2D の並びへ渡す形にする。framebuffer = 描き終えた後に戻す描き先。
+    def prepareScenes(paint: Paint, framebuffer: Int32, scenes: List[Scene3d.RenderCmd]): List[Render3d.SceneItem] \ IO =
+        Render3d.prepareScenes(paint#render3d, Array.get(0, paint#frameGenHolder),
+                               billboardTexture(paint#registryRef, paint#targetsRef), framebuffer, scenes)
+
+    /// ビルボードが貼るテクスチャを名前で引く（レンダーターゲットは上下逆に格納されているので flipped）。
+    def billboardTexture(registryRef: Ref[RenderAsset.TextureRegistry, Static],
+                         targetsRef: Ref[Map[String, RenderTargetGl.Entry], Static],
+                         name: String): Option[Render3d.BillboardTexture] \ IO =
+        Map.get(name, Ref.get(registryRef)) |> Option.map(info ->
+            ({ texId = GpuHandle.textureIdInt(info#id), width = info#width, height = info#height,
+               flipped = Map.memberOf(name, Ref.get(targetsRef)) }: Render3d.BillboardTexture))
 
     /// 最後に画面へ塗ったコマの命令。
     pub def lastFrame(paint: Paint): Frame \ IO = Array.get(0, paint#lastFrameHolder)
@@ -680,6 +715,10 @@ mod RenderPaint {
     /// ShaderEffect.Shader.drawSurface の中身。実描画はこのフレームの clear 直後（renderFrameMixed 内）で行う。ここでは溜めるだけ。
     pub def queueSurface(paint: Paint, cmd: ShaderEffect.ShaderRenderCmd): Unit \ IO =
         Array.put(cmd :: Array.get(0, paint#pendingShaderHolder), 0, paint#pendingShaderHolder)
+
+    /// ShaderEffect.Shader.drawScene3d の中身。描くのは submitFrame（renderFrameMixed の中で z の位置に）。ここでは溜めるだけ。
+    pub def queueScene3d(paint: Paint, cmd: Scene3d.RenderCmd): Unit \ IO =
+        Array.put(cmd :: Array.get(0, paint#pendingScene3dHolder), 0, paint#pendingScene3dHolder)
 
     /// 使わなくなったシェーダープログラムを LRU で追い出す。
     def evictShaderPrograms(paint: Paint): Unit \ IO =

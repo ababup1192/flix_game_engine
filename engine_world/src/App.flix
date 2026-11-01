@@ -2182,27 +2182,59 @@ pub mod App {
     /// bin/check-render-budget.py の DEFAULT_CAP と同じ数。
     def budgetCap(): Int32 = 2000
 
-    /// 予算を超えていたら標準エラーへ 1 回だけ知らせる（戻り値は「もう知らせたか」）。
-    /// headless の検査（reference-check の予算判定）は代表フレーム 1 枚しか見ないので、
-    /// Fx の最悪化・場面の切り替わり・GIF でしか作らない場面はここでしか捕まらない。
-    /// WhyNot: 毎フレーム出さない — 遅い画面をさらに遅くし、ログも読めなくなる。
-    /// 面のある画面で、面の後ろに同じ z の描き物を並べた z と、値の渡されていない Param を知らせてから shaderCmds を返す（面が無ければ見ない）。
-    def noteSurfaceZ(note: String -> Unit, items: List[Render.PlacedItem], shaderCmds: List[c]): List[c] =
-        if (List.isEmpty(shaderCmds)) shaderCmds
+    /// GPU の道へ 1 枚分（画面のコマか、開いている Pass の中）の描き物を渡す。順は Shader 面（drawSurface）→ 3D の場面
+    /// （drawScene3d）→ 残りの 2D（drawWith → renderCommands）。面と場面は 2D の列から外して二重に描かない。
+    /// 重なり順は描き手が (zIndex, 種類, 追加順) で合流させて決める（docs/z-bands.md）。
+    /// warnOnce = 同じ z の並びと Param の渡し忘れの知らせ（黙らせるなら `_ -> ()`）。
+    /// tiles と staticLayer は画面のコマの物（Pass の中は Nil と None）。
+    // WhyNot: 面も場面も無いコマで withoutShaders / withoutScenes3d を通さない — filter が全件を作り直す。
+    //   drawShaders・drawScenes3d と同じ unwrapClip で見るので、命令が空 = 外す物も無い。
+    pub def submitGpuItems(warnOnce: String -> Unit \ ef, items: List[Render.PlacedItem],
+                           tiles: List[GameEngine.TileMapRenderCmd], staticLayer: Option[GameEngine.StaticLayerCmd]):
+            Unit \ (ef + GameEngine.Game + ShaderEffect.Shader) =
+        let sceneCmds = Render.drawScenes3d(items);
+        let shaderCmds = noteSurfaceZ(warnOnce, items, sceneCmds,
+            Render.drawShaders(spec -> ShaderEffect.Shader.buildProgram(spec), items));
+        List.forEach(cmd -> ShaderEffect.Shader.drawSurface(cmd), shaderCmds);
+        List.forEach(cmd -> ShaderEffect.Shader.drawScene3d(cmd), sceneCmds);
+        let withoutSurfaces = if (List.isEmpty(shaderCmds)) items else Render.withoutShaders(items);
+        let itemsToDraw = if (List.isEmpty(sceneCmds)) withoutSurfaces else Render.withoutScenes3d(withoutSurfaces);
+        // drawWith(getTextureInfo): regionRect 付き Sprite（PxSprite.drawQuad のアトラス 1 クアッド等）の UV を
+        // registry の寸法で解決する。regionRect 無しの絵は draw と同一の Drawable になる。
+        let (sprites, polygons) = Render.drawWith(name -> GameEngine.Game.getTextureInfo(name), itemsToDraw);
+        GameEngine.Game.renderCommands(sprites, tiles, polygons, staticLayer)
+
+    /// 面か 3D の場面のある画面で、面か場面の後ろに同じ z の描き物を並べた z・面と場面を同じ z に並べた z と、
+    /// 値の渡されていない Param を知らせてから shaderCmds を返す（面も場面も無ければ見ない）。
+    // WhyNot: 知らせを文として並べて Unit を捨てない — note が純粋な型だと、Flix はその呼び出しごと消す
+    //   （docs/flix-conventions.md「値を let _ = で捨てない」）。返す値に繋いで必ず走らせる。
+    def noteSurfaceZ(note: String -> Unit \ ef, items: List[Render.PlacedItem], sceneCmds: List[d], shaderCmds: List[c]): List[c] \ ef =
+        if (List.isEmpty(shaderCmds) and List.isEmpty(sceneCmds)) shaderCmds
         else match Render.surfaceZShared(items) |> List.forEach(z ->
-                note("[render] z=${Int32.toString(z)}: ShaderDoc の面の後ろに同じ z の描き物がある — 同じ z の中では面が一番手前に描かれ、並びの順は効かない。手前に出す物の z を大きくする（docs/z-bands.md）")) {
-            case () => noteMissingParams(note, items, shaderCmds)
+                note("[render] z=${Int32.toString(z)}: ShaderDoc の面か 3D の場面の後ろに同じ z の描き物がある（または面と場面が同じ z にある）— 同じ z の中では面と場面が一番手前（面 → 場面の順）に描かれ、並びの順は効かない。手前に出す物の z を大きくする（docs/z-bands.md）")) {
+            case () => if (List.isEmpty(shaderCmds)) shaderCmds else noteMissingParams(note, items, shaderCmds)
         }
 
     /// 面の Spec が読む Param に値が渡されていない物を知らせてから shaderCmds を返す（その値は 0 で描く）。
-    def noteMissingParams(note: String -> Unit, items: List[Render.PlacedItem], shaderCmds: List[c]): List[c] =
+    def noteMissingParams(note: String -> Unit \ ef, items: List[Render.PlacedItem], shaderCmds: List[c]): List[c] \ ef =
         match Render.missingShaderParams(items) |> List.forEach(sp -> {
                 let (specName, param) = sp;
                 note("[render] 面 ${specName}: param '${param}' の値が渡されていない — 0 で描きました。Render.withShaderParams で値を付ける（docs/shader-doc.md）")
             }) {
+            case () => noteWorld3dOnSurface(note, items, shaderCmds)
+        }
+
+    /// World / Normal を読む Spec が 2D の面に置かれていることを知らせてから shaderCmds を返す（その値は 0 で描く）。
+    def noteWorld3dOnSurface(note: String -> Unit \ ef, items: List[Render.PlacedItem], shaderCmds: List[c]): List[c] \ ef =
+        match Render.shadersReadingWorld3d(items) |> List.forEach(specName ->
+                note("[render] 面 ${specName}: world / normal は 3D の材質（Scene3d.withMaterial）だけが値を持つ — 2D の面では 0 で描きました（docs/shader-doc.md）")) {
             case () => shaderCmds
         }
 
+    /// 予算を超えていたら標準エラーへ 1 回だけ知らせる（戻り値は「もう知らせたか」）。
+    /// headless の検査（reference-check の予算判定）は代表フレーム 1 枚しか見ないので、
+    /// Fx の最悪化・場面の切り替わり・GIF でしか作らない場面はここでしか捕まらない。
+    /// WhyNot: 毎フレーム出さない — 遅い画面をさらに遅くし、ログも読めなくなる。
     def warnOverBudget(count: Int32, warned: Bool): Bool \ IO =
         if (warned or count < budgetCap()) warned
         else {
@@ -2254,27 +2286,9 @@ pub mod App {
                                 missing);
                     if (Map.isEmpty(missing)) Some(fp) else None
                 };
-                // 宣言シェーダー面は別チャンネル（eff Shader）へ積む。drawSurface は描画依頼を
-                // 溜めるだけで、重なり順は renderFrameMixed が (zIndex, 追加順) の安定ソートで
-                // sprites / polygons / タイル / 静的レンジと合流させて決める。通常の絵からは
-                // Shader 面を外して二重描きを避ける。
-                // 面の後ろに同じ z の物を並べても、面が手前に描かれる（並びは効かない）。z ごとに 1 度だけ言う。
-                let shaderCmds = noteSurfaceZ(warnOnce, items,
-                    Render.drawShaders(spec -> ShaderEffect.Shader.buildProgram(spec), items));
-                List.forEach(cmd -> ShaderEffect.Shader.drawSurface(cmd), shaderCmds);
+                // 面と 3D の場面は別チャンネル（eff Shader）へ積み、残りの 2D と一緒に描き手が z で合流させる。
                 let (tileCmds, nextCache) = if (retained) tileLayerCmds(app, world, cacheSeen) else (Nil, cacheSeen);
-                // drawWith(getTextureInfo): regionRect 付き Sprite(PxSprite.drawQuad の
-                // アトラス 1 クアッド等)の UV を registry の寸法で解決する。regionRect 無しの
-                // 絵は draw と同一の Drawable になる(挙動不変)。
-                // シェーダー面 0 枚なら withoutShaders（filter が全件を作り直す）を通さない —
-                // drawShaders と withoutShaders は同じ unwrapClip で面を見るので、
-                // shaderCmds が空 = 外す物も無い。
-                let itemsToDraw = if (List.isEmpty(shaderCmds)) items
-                                  else Render.withoutShaders(items);
-                let (sprites, polygons) = Render.drawWith(
-                    name -> GameEngine.Game.getTextureInfo(name), itemsToDraw);
-                GameEngine.Game.renderCommands(sprites, tileCmds, polygons,
-                                               if (retained) staticLayerCmd(app, world) else None);
+                submitGpuItems(warnOnce, items, tileCmds, if (retained) staticLayerCmd(app, world) else None);
                 // 数えるのは itemsForGlyphs（本編 + レンダーターゲットの中）— headless の
                 // 検査と同じ量にそろえる。タイル層・静的層は GPU 側で 1 層 1 draw call に
                 // なるので、ここには最初から乗っていない（= 正しく静的化した絵は安いまま）。
@@ -2297,25 +2311,29 @@ pub mod App {
         go(tileCache, 3)
 
     /// レンダーターゲットの列を本編より先に描く（宣言順・resolvePassReads を通した後の計画）。ターゲットの中は
-    /// design 座標そのままで、Shader 面も本編と同じ道（drawShaders → drawSurface）で描く。
+    /// design 座標そのままで、Shader 面と 3D の場面も本編と同じ道（submitGpuItems）で描く。
     /// テクセル寸法は RenderTarget.sizeOf（design × 名前の倍率）。
-    def renderPasses(warnOnce: String -> Unit, design: Vec2.Vec2, plan: Render.PassPlan):
-            Unit \ (GameEngine.Game + ShaderEffect.Shader + RenderTarget.Target) =
+    def renderPasses(warnOnce: String -> Unit \ ef, design: Vec2.Vec2, plan: Render.PassPlan):
+            Unit \ (ef + GameEngine.Game + ShaderEffect.Shader + RenderTarget.Target) =
         List.forEach(p -> {
             let (tw, th) = RenderTarget.sizeOf(design, { scale = Render.targetScaleOf(plan, p#name) | RenderTarget.defaultDescriptor() });
             RenderTarget.Target.beginTarget(p#name, tw, th, p#clear);
-            let shaderCmds = noteSurfaceZ(warnOnce, p#items,
-                Render.drawShaders(spec -> ShaderEffect.Shader.buildProgram(spec), p#items));
-            List.forEach(cmd -> ShaderEffect.Shader.drawSurface(cmd), shaderCmds);
-            let (passDs, passPolys) = Render.drawWith(
-                name -> GameEngine.Game.getTextureInfo(name),
-                if (List.isEmpty(shaderCmds)) p#items else Render.withoutShaders(p#items));
-            GameEngine.Game.renderCommands(passDs, Nil, passPolys, None);
+            submitGpuItems(warnOnce, p#items, Nil, None);
             RenderTarget.Target.endTarget()
         }, plan#passes)
 
+    /// Pass の計画を、本編より先に今の描き先へ描く（実機の毎コマと同じ道: resolvePassReads → 倍率 → drawShaders → renderCommands）。
+    /// known = これまでに作ったターゲットの名前（コマをまたいで増える。実機の TileCache#passTargets と同じ役）。返すのは次の known。
+    /// 実機の外で GL に描く所（VideoOut の GPU の道）が、App を持たずに同じ道を通るための口。
+    /// warnOnce = 計画の問題・同じ z の並び・Param の渡し忘れの知らせ（毎コマ呼ばれるので、同じ字を 1 回にまとめるのは渡す側）。
+    pub def drawPassPlan(warnOnce: String -> Unit \ ef, design: Vec2.Vec2, known: Set[String], plan: Render.PassPlan):
+            Set[String] \ (ef + GameEngine.Game + ShaderEffect.Shader + RenderTarget.Target) =
+        let resolved = notePassIssues(warnOnce, Render.resolvePassReads(known, plan));
+        renderPasses(warnOnce, design, resolved);
+        resolved#passes |> List.foldLeft((acc, p) -> Set.insert(p#name, acc), known)
+
     /// 計画の問題を知らせてから、書き換えた計画を返す。
-    def notePassIssues(note: String -> Unit, resolved: { plan = Render.PassPlan, issues = List[Render.PassPlanIssue] }): Render.PassPlan =
+    def notePassIssues(note: String -> Unit \ ef, resolved: { plan = Render.PassPlan, issues = List[Render.PassPlanIssue] }): Render.PassPlan \ ef =
         match resolved#issues |> List.forEach(issue -> note("[render] pass: ${passIssueText(issue)}")) {
             case () => resolved#plan
         }
@@ -2339,6 +2357,7 @@ pub mod App {
             case Render.Item.Box(b)     => Render.Item.Box({ zIndex = f(b#zIndex) | b })
             case Render.Item.Poly(p)    => Render.Item.Poly({ zIndex = f(p#zIndex) | p })
             case Render.Item.Shader(s)  => Render.Item.Shader({ zIndex = f(s#zIndex) | s })
+            case Render.Item.Scene3d(s) => Render.Item.Scene3d({ zIndex = f(s#zIndex) | s })
             case Render.Item.Clipped(c) => Render.Item.Clipped({ inner = zMapped(f, c#inner) | c })
         }
 }

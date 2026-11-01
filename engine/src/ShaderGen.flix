@@ -332,6 +332,8 @@ pub mod ShaderGen {
             case (Field.Sampler(ra), Field.Sampler(rb))           =>
                 ra#filter == rb#filter and eqField(ix, ra#of, rb#of)
             case (Field.Param(ra), Field.Param(rb))               => ra#name == rb#name
+            case (Field.World(ra), Field.World(rb))               => ra#axis == rb#axis
+            case (Field.Normal(ra), Field.Normal(rb))             => ra#axis == rb#axis
             case (Field.TexBlur(ra), Field.TexBlur(rb))           =>
                 eqTexName(ix, ra#name, rb#name) and ra#chan == rb#chan and eqVec2(ra#radius, rb#radius)
                     and ra#taps == rb#taps and eqField(ix, ra#amount, rb#amount)
@@ -358,9 +360,66 @@ pub mod ShaderGen {
             (if (ShaderDoc.usesBlur(spec)) blurSource() else "") ::
             (if (ShaderDoc.usesDiv(spec)) divSource() else "") ::
             "void main() {\n" ::
-            (mainStatements(spec, tex) |> List.map(st -> "    " + st + "\n") |> joinParts) ::
+            (mainStatements(spec, "vUv", Map.empty(), tex) |> List.map(st -> "    " + st + "\n") |> joinParts) ::
             "    outColor.a *= uAlpha;\n" ::
             "}\n" :: Nil)
+
+    // ── 3D の材質（Scene3d.Material3d）──
+
+    /// 3D の材質を GLSL にした部品。render_gl の 3D の frag が、自分の光の計算の前に差し込む。
+    /// uniforms  = `uniform float uTime;` と Param の `uniform float uParamN;`（N は paramNames の並び）。
+    /// functions = ノイズの関数と `void materialEval(out vec4 albedo, out vec3 emission)` の定義。
+    ///             albedo = 光を当てる前の色と α（Out の Fill）・emission = 自分で光る色（無ければ 0）。
+    /// paramNames = uParamN に渡す値の名前の並び（ShaderDoc.materialParamNames と同じ）。
+    /// 差し込む側の約束: `in vec3 vWorld;`（画素の world の点）と `in vec3 vNormal;`（外向きの法線・長さは問わない）を
+    /// functions より前に宣言し、uniforms → functions の順に置く（ノイズの関数が uTime を読む）。
+    pub type alias MaterialGlsl = { uniforms = String, functions = String, paramNames = List[String] }
+
+    /// 3D の材質（spec と自分で光る色 emission）の GLSL の部品。World / Normal は varying の vWorld / vNormal を読み、
+    /// uv は (0, 0)（uv を読む場は ShaderDoc.atWorld で world の上へ写す）。tex / blur は 0（ShaderDoc.withoutTextures）。
+    /// emission の場は spec の bindings を Ref で読める。cycleRate は emission の色にも掛かる。
+    pub def compile3d(spec: ShaderDoc.Spec, emission: Option[ShaderDoc.Shade]): MaterialGlsl =
+        let flat = ShaderDoc.withoutTextures(spec);
+        let glow = Option.map(ShaderDoc.shadeWithoutTextures, emission);
+        let params = ShaderDoc.materialParamNames(flat, glow);
+        let tex = withParamScope(params, Map.empty());
+        let baseEnv = Map#{ worldKey() => "vWorld", normalKey() => "sg_normal" };
+        let uv = "sg_uv";
+        let env = bindingEnv(flat#bindings, baseEnv);
+        let albedo = match flat#out {
+            case ShaderDoc.Out.Fill(f) =>
+                "albedo = vec4(" + shadeExpr(flat#cycleRate, f#shade, uv, env, tex) + ", " + fieldExpr(f#alpha, uv, env, tex) + ");"
+        };
+        let glowStmt = match glow {
+            case Some(shade) => "emission = " + shadeExpr(flat#cycleRate, shade, uv, env, tex) + ";"
+            case None        => "emission = vec3(0.0, 0.0, 0.0);"
+        };
+        let body = List.append(List.reverse(bindingStatements(flat#bindings, uv, baseEnv, tex)), albedo :: glowStmt :: Nil);
+        { uniforms = "uniform float uTime;\n" + paramUniformDecls(params),
+          functions = joinParts(
+              preludeSource() ::
+              divSource() ::
+              "void materialEval(out vec4 albedo, out vec3 emission) {\n" ::
+              "    vec2 sg_uv = vec2(0.0, 0.0);\n" ::
+              "    vec3 sg_normal = normalize(vNormal);\n" ::
+              (body |> List.map(st -> "    " + st + "\n") |> joinParts) ::
+              "}\n" :: Nil),
+          paramNames = params }
+
+    /// fieldExpr の env で World / Normal の変数名を引く鍵（'@' を含む binding の名前は sg_b_ の変数名として GLSL が通さないので、
+    /// 動く Spec の binding とは重ならない）。
+    def worldKey(): String = "@world"
+
+    def normalKey(): String = "@normal"
+
+    /// 2 つの材質の emission が同じ GLSL を生むか（render_gl の材質の program キャッシュの鍵を eqSpec と組む）。
+    pub def eqEmission(a: Option[ShaderDoc.Shade], b: Option[ShaderDoc.Shade]): Bool =
+        let ix = { a = Map.empty(), b = Map.empty() };
+        match (a, b) {
+            case (None, None)         => true
+            case (Some(sa), Some(sb)) => eqShade(ix, sa, sb)
+            case _                    => false
+        }
 
     /// ぼかし（TexBlur）の標本。点の並びは ShaderEval.blurTex と同じ。ぼかしを使う Spec にだけ足す
     /// （使わない Spec の出力を 1 文字も変えない）。半径が 0 なら 1 点だけ読む（ShaderEval.blurTex と同じ分岐）。
@@ -440,22 +499,29 @@ pub mod ShaderGen {
     // ── main 本体（prelude 抜き）のスナップショット用。ノイズテンプレを混ぜず Spec だけ pin する。──
     pub def compileBody(spec: ShaderDoc.Spec): String =
         let tex = withParamScope(ShaderDoc.paramNames(spec), texScopeFrom(ShaderDoc.texReads(spec)));
-        let stmts = mainStatements(spec, tex);
+        let stmts = mainStatements(spec, "vUv", Map.empty(), tex);
         let n = List.length(stmts);
         stmts |> List.zipWithIndex
               |> List.map(ist -> { let (i, st) = ist; if (i == n - 1) st else "    " + st + "\n" })
               |> joinParts
 
     /// main の文（binding の宣言を前から・最後に outColor）。同じ読みは共通部分式として括り出してある（finishReads）。
-    def mainStatements(spec: ShaderDoc.Spec, tex: Map[String, Int32]): List[String] =
+    /// uv = 場が読む座標の GLSL 式・baseEnv = binding より前から見える名前（3D の world と法線の変数）。
+    def mainStatements(spec: ShaderDoc.Spec, uv: String, baseEnv: Map[String, String], tex: Map[String, Int32]): List[String] =
+        let rev = bindingStatements(spec#bindings, uv, baseEnv, tex);
+        let out = outStmt(spec#cycleRate, spec#out, uv, bindingEnv(spec#bindings, baseEnv), tex);
+        finishReads(List.reverse(out :: rev))
+
+    /// binding の宣言の文（逆順）。
+    def bindingStatements(bindings: List[(String, ShaderDoc.Field)], uv: String, baseEnv: Map[String, String],
+                          tex: Map[String, Int32]): List[String] =
         let (rev, _) = List.foldLeft((acc, nf) -> {
             let (out, env) = acc;
             let (name, field) = nf;
-            let line = "float sg_b_" + name + " = " + fieldExpr(field, "vUv", env, tex) + ";";
+            let line = "float sg_b_" + name + " = " + fieldExpr(field, uv, env, tex) + ";";
             (line :: out, Map.insert(name, "sg_b_" + name, env))
-        }, (Nil, Map.empty()), spec#bindings);
-        let out = outStmt(spec#cycleRate, spec#out, envOf(spec#bindings), tex);
-        finishReads(List.reverse(out :: rev))
+        }, (Nil, baseEnv), bindings);
+        rev
 
     // ── 同じ読みの括り出し（CSE / hoist）──
     // fieldExpr は tex / blur の呼び出しを ⟦ ⟧ で囲んで返す（チャンネルの .r は外）。finishReads が全部の文で
@@ -546,21 +612,21 @@ pub mod ShaderGen {
         }
 
     /// bindings 名 → GLSL 変数名（sg_b_<name>）の env。out 式（shade/alpha）が Ref を解くのに使う。
-    def envOf(bindings: List[(String, ShaderDoc.Field)]): Map[String, String] =
+    def bindingEnv(bindings: List[(String, ShaderDoc.Field)], baseEnv: Map[String, String]): Map[String, String] =
         List.foldLeft((env, nf) -> {
             let (name, _) = nf;
             Map.insert(name, "sg_b_" + name, env)
-        }, Map.empty(), bindings)
+        }, baseEnv, bindings)
 
-    def outStmt(cycleRate: Float64, out: ShaderDoc.Out, env: Map[String, String],
+    def outStmt(cycleRate: Float64, out: ShaderDoc.Out, uv: String, env: Map[String, String],
                 tex: Map[String, Int32]): String =
         match out {
             case ShaderDoc.Out.Fill(f) =>
-                "outColor = vec4(" + shadeExpr(cycleRate, f#shade, env, tex) + ", " +
-                fieldExpr(f#alpha, "vUv", env, tex) + ");"
+                "outColor = vec4(" + shadeExpr(cycleRate, f#shade, uv, env, tex) + ", " +
+                fieldExpr(f#alpha, uv, env, tex) + ");"
         }
 
-    def shadeExpr(cycleRate: Float64, shade: ShaderDoc.Shade, env: Map[String, String],
+    def shadeExpr(cycleRate: Float64, shade: ShaderDoc.Shade, uv: String, env: Map[String, String],
                   tex: Map[String, Int32]): String =
         match shade {
             case ShaderDoc.Shade.Solid(c) => vec3Lit(c)
@@ -569,18 +635,18 @@ pub mod ShaderGen {
                 // field を cycleRate*uTime で往復させる三角波にして色が呼吸する（パレット循環）。
                 let factor =
                     if (cycleRate == 0.0)
-                        "clamp(" + fieldExpr(r#field, "vUv", env, tex) + ", 0.0, 1.0)"
+                        "clamp(" + fieldExpr(r#field, uv, env, tex) + ", 0.0, 1.0)"
                     else
-                        "clamp(abs(fract((" + fieldExpr(r#field, "vUv", env, tex) + ") + " +
+                        "clamp(abs(fract((" + fieldExpr(r#field, uv, env, tex) + ") + " +
                         f(cycleRate) + " * uTime) * 2.0 - 1.0), 0.0, 1.0)";
                 "mix(" + vec3Lit(r#lo) + ", " + vec3Lit(r#hi) + ", " + factor + ")"
             case ShaderDoc.Shade.Gradient(g) =>
                 // 係数 f は Ramp と同じ規約（cycleRate=0 は clamp・>0 は三角波で往復）。
                 let factor =
                     if (cycleRate == 0.0)
-                        "clamp(" + fieldExpr(g#field, "vUv", env, tex) + ", 0.0, 1.0)"
+                        "clamp(" + fieldExpr(g#field, uv, env, tex) + ", 0.0, 1.0)"
                     else
-                        "clamp(abs(fract((" + fieldExpr(g#field, "vUv", env, tex) + ") + " +
+                        "clamp(abs(fract((" + fieldExpr(g#field, uv, env, tex) + ") + " +
                         f(cycleRate) + " * uTime) * 2.0 - 1.0), 0.0, 1.0)";
                 // 先頭色から始め、隣り合う区切りごとに mix(..., 次の色, smoothstep(前,次,f)) を入れ子で重ねる
                 // （sg_gradient は作らず素の mix/smoothstep を直書き＝prelude を増やさない）。
@@ -589,15 +655,15 @@ pub mod ShaderGen {
                 // t = field（cycleRate>0 なら uTime を足して位相を回す。clamp しない＝cos の周期で色が巡る）。
                 let t =
                     if (cycleRate == 0.0)
-                        "(" + fieldExpr(cs#field, "vUv", env, tex) + ")"
+                        "(" + fieldExpr(cs#field, uv, env, tex) + ")"
                     else
-                        "(" + fieldExpr(cs#field, "vUv", env, tex) + " + " + f(cycleRate) + " * uTime)";
+                        "(" + fieldExpr(cs#field, uv, env, tex) + " + " + f(cycleRate) + " * uTime)";
                 "sg_cospal(" + t + ", " + vec3Lit(cs#a) + ", " + vec3Lit(cs#b) + ", " +
                     vec3Lit(cs#c) + ", " + vec3Lit(cs#d) + ")"
             case ShaderDoc.Shade.Rgb(c) =>
                 // cycleRate は読まない（Shade.Rgb の doc の決まり — 3 本の場に三角波は掛けない）。
-                "vec3(" + fieldExpr(c#r, "vUv", env, tex) + ", " +
-                fieldExpr(c#g, "vUv", env, tex) + ", " + fieldExpr(c#b, "vUv", env, tex) + ")"
+                "vec3(" + fieldExpr(c#r, uv, env, tex) + ", " +
+                fieldExpr(c#g, uv, env, tex) + ", " + fieldExpr(c#b, uv, env, tex) + ")"
         }
 
     /// stops を先頭色から入れ子 mix にする GLSL 式。区切りが 2 つなら
@@ -795,6 +861,9 @@ pub mod ShaderGen {
                     case Some(i) => "uParam${i}"
                     case None    => "0.0"
                 }
+            // uv を受けないので uv の式は読まない。2D（compile）の env には変数が無く 0.0。
+            case ShaderDoc.Field.World(w)  => scene3dRead(worldKey(), w#axis, env)
+            case ShaderDoc.Field.Normal(n) => scene3dRead(normalKey(), n#axis, env)
             case ShaderDoc.Field.TexBlur(bl) =>
                 let i = Map.get(bl#name, tex) |> Option.getWithDefault(0);
                 let chan = match bl#chan {
@@ -805,6 +874,20 @@ pub mod ShaderGen {
                 };
                 markRead("sg_blur(uTex${i}, uTexFlip${i}, (" + uv + "), vec2(" + f(bl#radius#x) + ", " + f(bl#radius#y) +
                     ") * (" + fieldExpr(bl#amount, uv, env, tex) + "), " + iLit(ShaderDoc.blurTaps(bl#taps)) + ")") + chan
+        }
+
+    /// env の key に置いた 3D の変数（vec3）の axis の成分。無ければ 0.0（2D の面）。
+    def scene3dRead(key: String, axis: ShaderDoc.Axis3, env: Map[String, String]): String =
+        match Map.get(key, env) {
+            case Some(glslVar) => glslVar + axis3Suffix(axis)
+            case None          => "0.0"
+        }
+
+    def axis3Suffix(axis: ShaderDoc.Axis3): String =
+        match axis {
+            case ShaderDoc.Axis3.X => ".x"
+            case ShaderDoc.Axis3.Y => ".y"
+            case ShaderDoc.Axis3.Z => ".z"
         }
 
     /// hash に渡すセル座標の GLSL 式。floor((uv)*scale) を作り、bucket が有ればその式を足す。

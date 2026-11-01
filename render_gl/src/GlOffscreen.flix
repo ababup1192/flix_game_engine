@@ -419,6 +419,10 @@ pub mod GlOffscreen {
                 RenderPaint.queueSurface(paint, cmd);
                 k(())
             }
+            def drawScene3d(cmd, k) = {
+                RenderPaint.queueScene3d(paint, cmd);
+                k(())
+            }
         } with handler RenderTarget.Target {
             def beginTarget(name, w, h, clearOp, k) = {
                 RenderPaint.beginTarget(paint, name, w, h, clearOp);

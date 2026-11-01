@@ -114,6 +114,8 @@ help:
 	@echo "  make diff DIR=<dir>       直す前(スナップショット)と後(gallery)を左右に並べて <dir>/debug/diff/ に描き出す"
 	@echo "  make gl-parity            GL と SoftRaster が同じ絵を出すかを隠しウィンドウで突き合わせ (不一致で exit 1)"
 	@echo "  make shader-cache-soak    シェーダープログラムのキャッシュが上限で頭打ちになるかを隠しウィンドウで確認 (増え続ければ exit 1)"
+	@echo "  make scene3d-still        3D の場面の固定の部屋を CPU で 1 枚描く (bench/scene3d/debug/room.png・窓は開かない)"
+	@echo "  make scene3d-bench        同じ部屋を実機の窓で毎コマ描き、1 コマの p50 / p95 を出す (窓が開く)"
 	@echo "  make sync                 層の作業場を張り、engine_full を build-pkg して templates / bench に配布"
 	@echo "  make sync-layers          render_gl / engine_world / engine_tools の検査用の作業場 (.layers/) を張り直す"
 	@echo "  make sync-root-src        コミュニティビルド用にルート src/ の symlink 集を再生成"
@@ -318,6 +320,16 @@ gl-parity:
 # 頭打ちにならなければ exit 1。ShaderCache / buildProgram / ShaderGen を触ったら回す。
 shader-cache-soak:
 	@$(MAKE) -C bench/shader_cache_soak run
+
+# 3D の描き物 (Render.scene3d) の固定の部屋 (bench/scene3d)。still は CPU (SoftRaster) で静止画を
+# bench/scene3d/debug/room.png に描く (窓を開かない)。bench は実機の窓で同じ部屋を毎コマ描き、
+# 1 コマの p50 / p95 を出して閉じる (窓が開く)。Render3d / SoftRaster3d / submitGpuItems を触ったら回す。
+.PHONY: scene3d-still scene3d-bench
+scene3d-still:
+	@$(MAKE) -C bench/scene3d still
+
+scene3d-bench:
+	@$(MAKE) -C bench/scene3d run
 
 # 個別テスト: make test-rpg-starter (templates/ を先に探し、無ければルート直下のパッケージ名)
 # 出力は .test-logs/ に落とし (test-par と同じ命名)、緑なら末尾 5 行だけ見せる。

@@ -87,7 +87,7 @@
       "id": "process-env-entry",
       "suffixes": [".flix"],
       "prefixes": ["engine/src/", "engine_world/src/", "engine_tools/src/", "templates/"],
-      "skip": ["engine/src/ProcessEnv.flix", "engine_tools/src/SoftRaster.flix"],
+      "skip": ["engine/src/ProcessEnv.flix", "engine_tools/src/SoftRaster.flix", "engine_tools/src/SoftRaster3d.flix"],
       "skipDirs": ["test", "build", "lib"],
       "pattern": "\\bSystem\\.getenv\\b|\\bSys\\.Env\\.|\\bFlow\\.Cli\\.envOr\\b",
       "hint": "環境変数は入口の頭で 1 回だけ読み、要る値を引数で奥へ渡す。入口の頭で App.Headless.envOf(req)（常駐の /run からも呼ぶ <名前>Job(req)）か ProcessEnv.snapshot() を読み、奥は Map[String, String] を引数で受ける（Flow.Cli.getEnvOr(env, 名前, 既定値)・Flow.Cli.mainOf(app, env) の形）。常駐では奥で読むと、要求の env ではなく常駐を起こした時の env が見える。例外は skip に並べたファイルだけ（ProcessEnv が読む 1 か所と、出力に効かない調子の旗 FGE_SOFT_SERIAL。理由はその行の WhyNot）（engine の docs/design/render-speed.md 2.5 節）"

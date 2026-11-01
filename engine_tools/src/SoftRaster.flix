@@ -40,6 +40,9 @@ pub mod SoftRaster {
     /// `textAntialias` は文字の縁と送り幅。こちらは**可読性**のつまみで、面とは理由が違う —
     /// 7px の TTF は縁をならさないと字が潰れる。ドット絵のキャラと小さい TTF が同じ画面に
     /// 出るゲーム（ノベル・RPG）は `shapeAntialias = false` / `textAntialias = true` にする。
+    ///
+    /// `scenes` は 3D の場面（SoftRaster3d が深度つきで塗る）。2D の描き物と同じ z の並びに入り、同じ z では Shader 面の後に描く。
+    /// 3D を使わない絵は Nil。
     pub type alias RasterReq = {
         drawables = List[GameEngine.Drawable],
         polygons = List[GameEngine.PolygonRenderCmd],
@@ -51,7 +54,8 @@ pub mod SoftRaster {
         fontAtlas = FontAtlas,
         outPath = String,
         shapeAntialias = Bool,
-        textAntialias = Bool
+        textAntialias = Bool,
+        scenes = List[Scene3d.RenderCmd]
     }
 
     /// 描画品質ヒントの 2 つ組（面の縁 / 文字の縁と送り幅）。本体と下書き（blendedDraw）へ
@@ -110,6 +114,7 @@ pub mod SoftRaster {
         case RDraw(DrawCmd.DrawableSpec)
         case RPoly(GameEngine.PolygonRenderCmd)
         case RSurf(SurfaceCmd)
+        case RScene(Scene3d.RenderCmd)
     }
 
     // ════════════════════════════════════════════════════════
@@ -340,6 +345,7 @@ pub mod SoftRaster {
                     acc
             }
         }, (Map.empty(): Map[String, ShaderEval.TexData]));
+        let sceneTextures = sceneTexturesOf(textures, warnLog, req#scenes);
         // Drawable / Polygon / シェーダー面を 1 列にまとめ、(z, 追加順) で安定ソートする。
         // Drawable は入口で 1 回だけ名前付きレコードへ展開する（描き出しは 1 枚きりの経路
         // なので、以降の細かな読み出しをフィールド名のまま書けるほうを取る）。
@@ -347,7 +353,9 @@ pub mod SoftRaster {
             List.map(d -> RItem.RDraw(DrawCmd.toSpec(d)), req#drawables),
             List.append(
                 List.map(p -> RItem.RPoly(p), req#polygons),
-                List.map(s -> RItem.RSurf(s), surfaces)));
+                List.append(
+                    List.map(s -> RItem.RSurf(s), surfaces),
+                    List.map(c -> RItem.RScene(c), req#scenes))));
         let sorted = tagged
             |> List.zipWithIndex
             |> List.sortBy(ix -> let (idx, item) = ix; (zOf(item), idx))
@@ -371,9 +379,22 @@ pub mod SoftRaster {
                     blendedDraw(image, sf, hintsOf(req), p#blend, p#clip, polygonAabb(req#design, p),
                                 gs -> drawPolygon(rc, gs, sf, p))
             case RItem.RSurf(s) => drawSurface(image, sf, texEnv, texels, s)
+            case RItem.RScene(c) => SoftRaster3d.drawScene(image, sf, sceneTextures, c#scene#time, c)
         }, sorted);
         g.dispose()
     }
+
+    /// 3D の場面のビルボードが引く絵（名前 → 画素）。無い名前は Drawable と同じ文面で 1 度だけ知らせ、そのビルボードは描かない。
+    // WhyNot: 画素の Vector を場面ごとに作り直さない — 同じ絵を何枚ものビルボードと場面が引くので、名前ごとに 1 回だけ写す。
+    def sceneTexturesOf(textures: Map[String, BufferedImage], warnLog: TexWarnLog,
+                        scenes: List[Scene3d.RenderCmd]): Map[String, ShaderEval.TexData] \ IO =
+        scenes
+            |> List.flatMap(c -> c#scene#billboards |> List.map(b -> Scene3d.billboardFieldsOf(b)#texture))
+            |> List.distinct
+            |> List.foldLeft((acc, name) -> match Map.get(name, textures) {
+                case Some(img) => Map.insert(name, texDataOf(img), acc)
+                case None      => warnMissingTexture(warnLog, name); acc
+            }, Map.empty())
 
     /// シェーダー面を画素ごとに描き出す。rect を出力ピクセルへ量子化し、各画素の中心を
     /// uv（rect 内 0..1）に写して ShaderEval.compile で組み直した面（色と α を 1 回の shared
@@ -556,7 +577,7 @@ pub mod SoftRaster {
 
     /// 色の成分 r, g, b（0..1）と alpha（0..1）を ARGB int へ。画素ごとに呼ぶ所（シェーダー面・
     /// 頂点色の多角形）で使うので、Color の record ではなく成分で受ける。
-    def argbOfRgba(r: Float64, g: Float64, b: Float64, a: Float64): Int32 =
+    pub def argbOfRgba(r: Float64, g: Float64, b: Float64, a: Float64): Int32 =
         Int32.leftShift(clampI(ri(a * 255.0), 0i32, 255i32), 24)
             |> Int32.bitwiseOr(Int32.leftShift(byteOf(f32(r)), 16))
             |> Int32.bitwiseOr(Int32.leftShift(byteOf(f32(g)), 8))
@@ -684,15 +705,16 @@ pub mod SoftRaster {
             |> Int32.bitwiseOr(b)
 
     /// ARGB int から 8bit チャンネルを取り出す（shift = 24/16/8/0 = A/R/G/B）。
-    def channelOf(shift: Int32, argb: Int32): Int32 =
+    pub def channelOf(shift: Int32, argb: Int32): Int32 =
         Int32.bitwiseAnd(Int32.logicalRightShift(dist = shift, argb), 255)
 
-    /// z 値取り出し（Drawable / Polygon / シェーダー面）。
+    /// z 値取り出し（Drawable / Polygon / シェーダー面 / 3D の場面）。
     def zOf(item: RItem): Int32 =
         match item {
             case RItem.RDraw(d) => d#zIndex
             case RItem.RPoly(p) => p#zIndex
             case RItem.RSurf(s) => s#zIndex
+            case RItem.RScene(c) => c#scene#zIndex
         }
 
     // ════════════════════════════════════════════════════════

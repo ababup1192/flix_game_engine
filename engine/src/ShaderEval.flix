@@ -41,16 +41,18 @@ pub mod ShaderEval {
 
     /// 場を Float64 へ（shared も tex も無い所で 1 点だけ）。
     pub def evalField(field: ShaderDoc.Field, uv: Vec2.Vec2, t: Float64): Float64 = region rc {
-        let env: Array[Float64, rc] = Array.empty(rc, 0);
+        let env: Array[Float64, rc] = Array.repeat(rc, inputSlots(), 0.0);
         evalNode(compileField(Map.empty(), Map.empty(), field), uv#x, uv#y, t, env)
     }
 
     // ── 組み直し（面ごとに 1 回）──
 
     /// compile が組み直した面 1 枚（外からは作らせない — compile で作る）。
-    /// bindings は前から順の場（Ref は添字で読む）、shade は色、alpha は α の場。
+    /// bindings は前から順の場（Ref は添字で読む）、shade は色、alpha は α の場、cycleRate、
+    /// 画素ごとの値の置き場の大きさ、World / Normal の置き場を先頭に取るか（取るなら添字 0..5・bindings はその後ろ）、
+    /// emission は 3D の材質の自分で光る色。
     enum Compiled {
-        case Compiled(List[Node], CShade, Node, Float64, Int32)
+        case Compiled(List[Node], CShade, Node, Float64, Int32, Bool, Option[CShade])
     }
 
     /// 組み直した面。compile で作り、evalCompiled に画素ごとに渡す。
@@ -114,29 +116,107 @@ pub mod ShaderEval {
     /// 書き写す（@DontInline でも止まらない）ので、組み立てが画素ごとに走る。組み直しはデータ
     /// （CompiledSpec）で返し、呼ぶ側は画素ループの外で受ける（SoftRaster.onceOutsideLoop）。
     pub def compile(spec: ShaderDoc.Spec, texEnv: Map[String, TexData]): CompiledSpec =
-        let (revBindings, scope, count) = List.foldLeft((acc, nf) -> {
+        compileWith(spec, None, texEnv)
+
+    /// 3D の材質（Scene3d.Material3d の spec・emission・params）を組み直す。Param は params の値の Const に置き換え
+    /// （ShaderDoc.bindParams）、tex / blur は 0（テクスチャを渡さない）。evalCompiled3 / evalMaterial3 に画素ごとに渡す。
+    pub def compileMaterial(spec: ShaderDoc.Spec, emission: Option[ShaderDoc.Shade], params: Map[String, Float64]): CompiledSpec =
+        compileWith(ShaderDoc.bindParams(params, spec), Option.map(ShaderDoc.bindShadeParams(params), emission), Map.empty())
+
+    def compileWith(spec: ShaderDoc.Spec, emission: Option[ShaderDoc.Shade], texEnv: Map[String, TexData]): CompiledSpec =
+        let withInputs = ShaderDoc.usesWorld3d(spec) or Option.exists(readsWorld3d, emission);
+        let first = if (withInputs) inputSlots() else 0;
+        let (revBindings, scope, next) = List.foldLeft((acc, nf) -> {
             let (nodes, sc, i) = acc;
             let (name, field) = nf;
             (compileField(sc, texEnv, field) :: nodes, Map.insert(name, i, sc), i + 1)
-        }, (Nil, Map.empty(), 0), spec#bindings);
+        }, (Nil, Map.empty(), first), spec#bindings);
         match spec#out {
             case ShaderDoc.Out.Fill(f) =>
                 Compiled.Compiled(List.reverse(revBindings), compileShade(scope, texEnv, f#shade),
-                                  compileField(scope, texEnv, f#alpha), spec#cycleRate, count)
+                                  compileField(scope, texEnv, f#alpha), spec#cycleRate, next, withInputs,
+                                  Option.map(compileShade(scope, texEnv), emission))
+        }
+
+    /// 色が World か Normal を読むか。
+    def readsWorld3d(shade: ShaderDoc.Shade): Bool =
+        ShaderDoc.usesWorld3d({ name = "", cycleRate = 0.0, bindings = Nil,
+                                out = ShaderDoc.Out.Fill({ shade = shade, alpha = ShaderDoc.Field.Const(1.0) }) })
+
+    /// World（x, y, z）と Normal（x, y, z）の置き場の数。値の置き場の先頭に取る。
+    def inputSlots(): Int32 = 6
+
+    /// World / Normal の axis の値の置き場の添字。
+    def inputIndex(normal: Bool, axis: ShaderDoc.Axis3): Int32 =
+        let base = if (normal) 3 else 0;
+        match axis {
+            case ShaderDoc.Axis3.X => base
+            case ShaderDoc.Axis3.Y => base + 1
+            case ShaderDoc.Axis3.Z => base + 2
         }
 
     /// 画素 1 つ（uv = (u, v)・時刻 t）の (r, g, b, α)。値は evalPixelAlphaTex と同じ。
     /// out から参照されない binding もここで必ず評価する — 使わない shared は合法だが、その分は
     /// 黙って画素ごとの計算に乗る。
+    /// World / Normal は 0（2D の面）。
     pub def evalCompiled(compiled: CompiledSpec, u: Float64, v: Float64, t: Float64): (Float64, Float64, Float64, Float64) =
         match compiled {
-            case Compiled.Compiled(bindings, shade, alpha, cycleRate, count) => region rc {
-                let env: Array[Float64, rc] = Array.empty(rc, count);
-                fillEnv(bindings, 0, u, v, t, env);
+            case Compiled.Compiled(bindings, shade, alpha, cycleRate, size, withInputs, _) => region rc {
+                let env: Array[Float64, rc] = Array.empty(rc, size);
+                if (withInputs) putInputs(Vec3.zero(), Vec3.zero(), env) else ();
+                fillEnv(bindings, if (withInputs) inputSlots() else 0, u, v, t, env);
                 let (r, g, b) = evalShade(shade, cycleRate, u, v, t, env);
                 (r, g, b, evalNode(alpha, u, v, t, env))
             }
         }
+
+    /// 3D のメッシュの画素 1 つ（world の点・外向きの法線・時刻 t）の (r, g, b, α)。色は光を当てる前の色（albedo）。
+    /// uv は (0, 0)（ShaderGen.compile3d と同じ）。法線は長さ 1 にそろえてから読む（長さ 0 なら 0 のまま）。
+    pub def evalCompiled3(compiled: CompiledSpec, world: Vec3.Vec3, normal: Vec3.Vec3, t: Float64): (Float64, Float64, Float64, Float64) =
+        match compiled {
+            case Compiled.Compiled(bindings, shade, alpha, cycleRate, size, withInputs, _) => region rc {
+                let env = env3(bindings, size, withInputs, world, normal, t, rc);
+                let (r, g, b) = evalShade(shade, cycleRate, 0.0, 0.0, t, env);
+                (r, g, b, evalNode(alpha, 0.0, 0.0, t, env))
+            }
+        }
+
+    /// 3D の材質の画素 1 つ: 光を当てる前の色（albedo）・α・自分で光る色（emission。無ければ黒）。
+    pub type alias MaterialSample = { albedo = Color, alpha = Float64, emission = Color }
+
+    /// evalCompiled3 に emission を足した版（bindings の評価を色・α・emission で共有する）。
+    /// 光の計算は呼び手（SoftRaster3d）が albedo に掛け、その後に emission を足す。
+    pub def evalMaterial3(compiled: CompiledSpec, world: Vec3.Vec3, normal: Vec3.Vec3, t: Float64): MaterialSample =
+        match compiled {
+            case Compiled.Compiled(bindings, shade, alpha, cycleRate, size, withInputs, emission) => region rc {
+                let env = env3(bindings, size, withInputs, world, normal, t, rc);
+                let (r, g, b) = evalShade(shade, cycleRate, 0.0, 0.0, t, env);
+                let (er, eg, eb) = match emission {
+                    case Some(glow) => evalShade(glow, cycleRate, 0.0, 0.0, t, env)
+                    case None       => (0.0, 0.0, 0.0)
+                };
+                { albedo = { r = r, g = g, b = b }, alpha = evalNode(alpha, 0.0, 0.0, t, env),
+                  emission = { r = er, g = eg, b = eb } }
+            }
+        }
+
+    /// 3D の画素の値の置き場（World / Normal を先頭に置き、bindings を uv (0, 0) で評価して後ろに積む）。
+    def env3(bindings: List[Node], size: Int32, withInputs: Bool, world: Vec3.Vec3, normal: Vec3.Vec3, t: Float64,
+             rc: Region[r]): Array[Float64, r] \ r =
+        let env: Array[Float64, r] = Array.empty(rc, size);
+        if (withInputs) putInputs(world, normal, env) else ();
+        fillEnv(bindings, if (withInputs) inputSlots() else 0, 0.0, 0.0, t, env);
+        env
+
+    def putInputs(world: Vec3.Vec3, normal: Vec3.Vec3, env: Array[Float64, r]): Unit \ r =
+        let len = Vec2.sqrt(normal#x * normal#x + normal#y * normal#y + normal#z * normal#z);
+        let unit = c -> if (len == 0.0) 0.0 else c / len;
+        Array.put(world#x, inputIndex(false, ShaderDoc.Axis3.X), env);
+        Array.put(world#y, inputIndex(false, ShaderDoc.Axis3.Y), env);
+        Array.put(world#z, inputIndex(false, ShaderDoc.Axis3.Z), env);
+        Array.put(unit(normal#x), inputIndex(true, ShaderDoc.Axis3.X), env);
+        Array.put(unit(normal#y), inputIndex(true, ShaderDoc.Axis3.Y), env);
+        Array.put(unit(normal#z), inputIndex(true, ShaderDoc.Axis3.Z), env)
 
     def fillEnv(bindings: List[Node], i: Int32, u: Float64, v: Float64, t: Float64, env: Array[Float64, r]): Unit \ r =
         match bindings {
@@ -231,6 +311,9 @@ pub mod ShaderEval {
             case ShaderDoc.Field.Param(_)      => Node.Missing
             case ShaderDoc.Field.Sampler(sm)    =>
                 compileFieldIn(sm#filter == ShaderDoc.FilterMode.Linear, scope, texEnv, sm#of)
+            // 置き場は先頭の inputSlots 個（compileWith が取る）。uv の変換を受けないので Ref と同じく置き場を読むだけ。
+            case ShaderDoc.Field.World(w)       => Node.Ref(inputIndex(false, w#axis))
+            case ShaderDoc.Field.Normal(n)      => Node.Ref(inputIndex(true, n#axis))
         }
 
     def texShift(chan: ShaderDoc.TexChan): Int32 =

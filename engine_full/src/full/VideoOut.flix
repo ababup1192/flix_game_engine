@@ -24,6 +24,7 @@ pub mod VideoOut {
     import java.lang.Throwable
     import java.nio.ByteBuffer
     import java.util.concurrent.ConcurrentHashMap
+    import java.awt.image.BufferedImage
     import javax.imageio.ImageIO
 
     /// 何で塗ったか（frames.json の painter）。
@@ -112,8 +113,25 @@ pub mod VideoOut {
     /// 書き出した面: 名前（surface_<幅>_<高さ>_<z>）→ (PNG のパス, 書き出した範囲に合わせた面)。
     type alias Baked = Map[String, (String, Render.ShaderSurface)]
 
+    /// 本編より先に描く Pass の計画の引き口（字のアトラスの引き口 → World → 計画）。None は Pass を描かない writeFrames。
+    type alias PassesOf[w] = Option[(String -> FontAtlas) -> w -> Render.PassPlan]
+
     /// コマを書き、frames.json と drawhash.txt を添える。何で塗ったかを返す。
     pub def writeFrames(settings: Settings, video: Video[w], worlds: List[w]): Painter \ IO =
+        writeFramesWith(settings, video, None, worlds)
+
+    /// writeFrames の、本編より先に Pass を描く形。passes = 字のアトラスの引き口 → World → Pass の計画（実機の App.withPassPlan と同じ物を渡す）。
+    /// GPU の道は App.drawPassPlan で（known はコマをまたいで持ち回す）、SoftRaster の道は HeadlessRender.passImagesOf で Pass を塗ってから本編を描く。
+    /// history は動画でも毎コマ透明（どのコマから見ても同じ絵）。bakeSurfaces は本編の面にだけ効き、Pass の中の面は毎コマ評価する。
+    /// 鍵（drawhash.txt）: Pass の無いコマは writeFrames と同じ鍵。Pass のあるコマは、SoftRaster で塗る時だけ塗った Pass の画素込みの鍵で、
+    /// GPU の道と鍵だけの回は `-`。
+    // WhyNot: GPU の道で Pass の鍵を作らない — 今の鍵は Pass を塗った画素の指紋を要るので、鍵のために CPU で Pass を塗ると
+    //   GPU で撮る意味が消える（後処理の Pass は 1 コマ数秒）。Pass の描く命令から鍵を畳む口（DrawHash.withPasses）が来るまで `-`。
+    pub def writeFramesWithPasses(settings: Settings, video: Video[w],
+                                  passes: (String -> FontAtlas) -> w -> Render.PassPlan, worlds: List[w]): Painter \ IO =
+        writeFramesWith(settings, video, Some(passes), worlds)
+
+    def writeFramesWith(settings: Settings, video: Video[w], passesOf: PassesOf[w], worlds: List[w]): Painter \ IO =
         discard (new File(video#outDir)).mkdirs();
         let jobs = worlds |> List.zipWithIndex |> List.filter(p -> video#wanted(fst(p)));
         let all = List.length(jobs) == List.length(worlds);
@@ -124,17 +142,17 @@ pub mod VideoOut {
             else if (settings#gpu == GpuShot.Mode.Off or settings#paint != PaintRange.All or not all) Painter.Soft
             else Painter.Gl;
         let (painter, keys) = match chosen {
-            case Painter.Gl => match writeGl(settings, video, baked, jobs) {
+            case Painter.Gl => match writeGl(settings, video, passesOf, baked, jobs) {
                 case Ok(keys) => (Painter.Gl, keys)
                 case Err(why) =>
                     if (settings#gpu == GpuShot.Mode.On) bug!("[video] FGE_GPU=on だが GPU で塗れない: ${why}")
                     else {
                         println("[video] GPU が使えない: ${why} — SoftRaster で塗る");
-                        (Painter.Soft, writeSoft(settings#paint, video, baked, jobs))
+                        (Painter.Soft, writeSoft(settings#paint, video, passesOf, baked, jobs))
                     }
             }
-            case Painter.Soft     => (Painter.Soft, writeSoft(settings#paint, video, baked, jobs))
-            case Painter.KeysOnly => (Painter.KeysOnly, writeSoft(PaintRange.Nothing, video, baked, jobs))
+            case Painter.Soft     => (Painter.Soft, writeSoft(settings#paint, video, passesOf, baked, jobs))
+            case Painter.KeysOnly => (Painter.KeysOnly, writeSoft(PaintRange.Nothing, video, passesOf, baked, jobs))
         };
         writeKeys(video#outDir, keys);
         writeFramesJson(video, settings#paint, painter, jobs, keys);
@@ -168,14 +186,14 @@ pub mod VideoOut {
                     case None          => HeadlessRender.imageTextureInfo(video#images)(name)
                 };
                 let withBaked = Map.foldLeftWithKey((acc, name, entry) -> Map.insert(name, fst(entry), acc), cfg#texturePath, baked);
-                (List.append(pasted, Render.withoutShaders(items0)), Nil, infoOf, withBaked)
-            } else (Render.withoutShaders(items0), Render.shaderSurfaces(items0), HeadlessRender.imageTextureInfo(video#images), cfg#texturePath);
+                (List.append(pasted, Render.withoutScenes3d(Render.withoutShaders(items0))), Nil, infoOf, withBaked)
+            } else (Render.withoutScenes3d(Render.withoutShaders(items0)), Render.shaderSurfaces(items0), HeadlessRender.imageTextureInfo(video#images), cfg#texturePath);
         let (drawables, polygons) = Render.drawWith(info, items);
         let req = { drawables = drawables, polygons = polygons,
                     design = cfg#design, scale = cfg#scale, background = cfg#background,
                     texturePath = paths, fontTtf = cfg#fontTtf,
                     fontAtlas = cfg#fontAtlas, outPath = framePath(video#outDir, index),
-                    shapeAntialias = cfg#shapeAntialias, textAntialias = cfg#textAntialias };
+                    shapeAntialias = cfg#shapeAntialias, textAntialias = cfg#textAntialias, scenes = Render.drawScenes3d(items0) };
         // 字の縁の表は RenderCache.writeFramePng と同じ空（鍵と SoftRaster の塗りを同じ値から出す）。
         { req = req, surfaces = surfaces, extraFonts = video#extraFonts, fontAntialias = Map.empty() }
 
@@ -208,7 +226,7 @@ pub mod VideoOut {
                     design = cfg#design, scale = cfg#scale, background = cfg#background,
                     texturePath = cfg#texturePath, fontTtf = cfg#fontTtf,
                     fontAtlas = cfg#fontAtlas, outPath = "",
-                    shapeAntialias = cfg#shapeAntialias, textAntialias = cfg#textAntialias };
+                    shapeAntialias = cfg#shapeAntialias, textAntialias = cfg#textAntialias, scenes = Nil };
         let full = SoftRaster.renderToImageCached(req, sc :: Nil, video#extraFonts, Map.empty(), warnLog, textures);
         // 面の位置と大きさは design px。書き出した絵は出力の画素なので scale 倍で切り抜く。
         let px = v -> roundInt(v * Int32.toFloat64(cfg#scale));
@@ -239,29 +257,50 @@ pub mod VideoOut {
         Map.forEach((i, key) -> out.write("${Int32.toString(i)} ${key}\n"), keys);
         out.close()
 
+    /// このコマの Pass の計画（Pass を描かない動画は空）。
+    def planOf(passesOf: PassesOf[w], fonts: String -> FontAtlas, world: w): Render.PassPlan =
+        match passesOf {
+            case Some(f) => f(fonts)(world)
+            case None    => Render.passPlan(Nil)
+        }
+
+    /// 塗らずに作る 1 コマの鍵（Pass のあるコマは `-` — writeFramesWithPasses の doc）。
+    def keyWithoutPainting(session: RenderCache.Session, textures: SoftRaster.TextureCache, video: Video[w],
+                           passesOf: PassesOf[w], baked: Baked, index: Int32, world: w): String \ IO =
+        if (not List.isEmpty(planOf(passesOf, video#softFonts, world)#passes)) "-"
+        else RenderCache.keyOf(session, DrawHash.PngEncoding.Filmstrip, softFrame(video, baked, index, world), Map.empty(), textures)
+            |> Option.map(DrawHash.toHex) |> Option.getWithDefault("-")
+
+    /// 同じ知らせを 1 回だけ出す（コマごとに同じ計画の問題が来るので）。
+    def warnOnceIn(seen: ConcurrentHashMap[String, String], text: String): Unit \ IO =
+        if (Option.isEmpty(Object.toOption(seen.putIfAbsent(text, text)))) println(text) else ()
+
     // ── SoftRaster ──
 
     /// 何本の糸で並べて描くか（コマは互いに独立なので、糸を分けても絵は変わらない）。
     def lanes(): Int32 = 4
 
     /// SoftRaster で塗る（paint が真のコマだけ）。全部のコマの鍵を返す。
-    def writeSoft(paint: PaintRange, video: Video[w], baked: Baked, jobs: List[(Int32, w)]): Map[Int32, String] \ IO =
+    def writeSoft(paint: PaintRange, video: Video[w], passesOf: PassesOf[w], baked: Baked, jobs: List[(Int32, w)]): Map[Int32, String] \ IO =
         let session = RenderCache.freshSession();
         let warnLog = SoftRaster.freshTexWarnLog();
         let textures = SoftRaster.freshTextureCache();
         let keys: ConcurrentHashMap[Int32, String] = new ConcurrentHashMap();
+        let seen: ConcurrentHashMap[String, String] = new ConcurrentHashMap();
         region rc {
             List.range(0, lanes()) |> List.forEach(lane ->
                 spawn (jobs |> List.filter(p -> Int32.modulo(fst(p), lanes()) == lane) |> List.forEach(p -> {
                     let (i, w) = p;
                     noteProgress(video#outDir, i);
-                    let frame = softFrame(video, baked, i, w);
-                    let key = RenderCache.keyOf(session, DrawHash.PngEncoding.Filmstrip, frame, Map.empty(), textures)
-                        |> Option.map(DrawHash.toHex) |> Option.getWithDefault("-");
-                    discard keys.put(i, key);
-                    if (paints(paint, i))
-                        RenderCache.writeFramePng(session, frame#req, frame#surfaces, frame#extraFonts, Map.empty(), warnLog, textures)
-                    else ()
+                    if (not paints(paint, i)) discard keys.put(i, keyWithoutPainting(session, textures, video, passesOf, baked, i, w))
+                    else {
+                        let frame = softFrame(video, baked, i, w);
+                        let images = passImages(video, warnOnceIn(seen), frame, planOf(passesOf, video#softFonts, w));
+                        let key = RenderCache.keyOf(session, DrawHash.PngEncoding.Filmstrip, frame, images, textures)
+                            |> Option.map(DrawHash.toHex) |> Option.getWithDefault("-");
+                        discard keys.put(i, key);
+                        RenderCache.writeFramePng(session, frame#req, frame#surfaces, frame#extraFonts, images, warnLog, textures)
+                    }
                 })) @ rc)
         };
         if (paint == PaintRange.Nothing) () else println(RenderCache.statsLine(session));
@@ -270,11 +309,20 @@ pub mod VideoOut {
             Map.insert(i, Option.getWithDefault("-", Object.toOption(keys.get(i))), acc)
         }, Map.empty())
 
+    /// Pass を宣言順に SoftRaster で塗った画像（名前 → 画像。Pass の無いコマは空）。本編と同じ絵の表と字を使う。
+    def passImages(video: Video[w], warn: String -> Unit \ IO, frame: DrawHash.Frame, plan: Render.PassPlan): Map[String, BufferedImage] \ IO =
+        if (List.isEmpty(plan#passes)) Map.empty()
+        else {
+            let prepared = Render.passSpecsOf(HeadlessRender.imageTextureInfo(video#images), plan);
+            prepared#issues |> List.forEach(issue -> warn("[video] pass: ${issue}"));
+            HeadlessRender.passImagesOf({ texturePath = frame#req#texturePath | video#soft }, video#extraFonts, Map.empty(), prepared#specs)
+        }
+
     // ── GPU ──
 
     /// GPU で塗って ffmpeg へ生の画素を流す。鍵は SoftRaster の命令から（GL とは別の糸で並べて作る）。
     /// GL の文脈は呼んだ糸が持つ。GL が作れない・ffmpeg が立たない時は何も書かずに Err。
-    def writeGl(settings: Settings, video: Video[w], baked: Baked, jobs: List[(Int32, w)]): Result[String, Map[Int32, String]] \ IO =
+    def writeGl(settings: Settings, video: Video[w], passesOf: PassesOf[w], baked: Baked, jobs: List[(Int32, w)]): Result[String, Map[Int32, String]] \ IO =
         let config = run { ProjectLoader.loadProject(".") } with Fs.FileRead.runWithIO;
         match config {
             case Err(why) => Err("project.json を読めない: ${why}")
@@ -290,7 +338,7 @@ pub mod VideoOut {
                     case Err(why) => Err(why)
                     case Ok(session) =>
                         let result = try {
-                            paintGl(settings, video, baked, session, jobs)
+                            paintGl(settings, video, passesOf, baked, session, jobs)
                         } catch {
                             case e: Throwable => Err("GPU で塗る途中で止まった: ${e.toString()}")
                         };
@@ -299,7 +347,7 @@ pub mod VideoOut {
                 }
         }
 
-    def paintGl(settings: Settings, video: Video[w], baked: Baked, session: GlOffscreen.Session, jobs: List[(Int32, w)]): Result[String, Map[Int32, String]] \ IO =
+    def paintGl(settings: Settings, video: Video[w], passesOf: PassesOf[w], baked: Baked, session: GlOffscreen.Session, jobs: List[(Int32, w)]): Result[String, Map[Int32, String]] \ IO =
         let (width, height) = GlOffscreen.sizeOf(session);
         // ファイルの無い絵を画素で載せる。
         video#images |> List.forEach(img -> {
@@ -320,20 +368,20 @@ pub mod VideoOut {
                     // 鍵は別の糸で（SoftRaster の命令を組むのは GL と無関係なので、塗りと重ねる）。region の終わりで待つ。
                     spawn (jobs |> List.forEach(p -> {
                         let (i, w) = p;
-                        let key = RenderCache.keyOf(keySession, DrawHash.PngEncoding.Filmstrip, softFrame(video, baked, i, w), Map.empty(), keyTextures)
-                            |> Option.map(DrawHash.toHex) |> Option.getWithDefault("-");
-                        discard keys.put(i, key)
+                        discard keys.put(i, keyWithoutPainting(keySession, keyTextures, video, passesOf, baked, i, w))
                     })) @ rc;
                     let bytes: Array[Int8, rc] = Array.empty(rc, width * height * 4);
-                    jobs |> List.forEach(p -> {
+                    let seen: ConcurrentHashMap[String, String] = new ConcurrentHashMap();
+                    discard jobs |> List.foldLeft((known, p) -> {
                         let (i, w) = p;
                         noteProgress(video#outDir, i);
-                        paintOne(video, session, w);
+                        let next = paintOne(video, passesOf, warnOnceIn(seen), session, known, w);
                         GlOffscreen.readRgba(session, buf);
                         discard buf.rewind();
                         discard buf.get(bytes);
-                        outs |> List.forEach(out -> out.write(bytes))
-                    });
+                        outs |> List.forEach(out -> out.write(bytes));
+                        next
+                    }, Set.empty());
                     outs |> List.forEach(out -> out.close())
                 };
                 let code = procs |> List.foldLeft((worst, proc) -> Int32.max(worst, proc.waitFor()), 0);
@@ -346,27 +394,29 @@ pub mod VideoOut {
                 if (code != 0) Err("ffmpeg が ${Int32.toString(code)} で終わった") else Ok(table)
         }
 
-    /// 1 コマを GL へ塗る。初めて出る字があればアトラスを育てて組み直す（最大 3 回）。
-    def paintOne(video: Video[w], session: GlOffscreen.Session, world: w): Unit \ IO =
+    /// 1 コマを GL へ塗る（Pass を宣言順に描いてから本編）。初めて出る字（Pass の中の字も）があればアトラスを育てて組み直す（最大 3 回）。
+    /// known = これまでに描いた Pass の名前。返すのは次の known。
+    def paintOne(video: Video[w], passesOf: PassesOf[w], warn: String -> Unit \ IO, session: GlOffscreen.Session,
+                 known: Set[String], world: w): Set[String] \ IO =
         let scene = video#scene;
         def build(left) = {
             let table = GlOffscreen.fontTable(session);
             let fallback = Map.get("default", table) |> Option.getWithDefault(video#soft#fontAtlas);
-            let items = scene(name -> Map.get(name, table) |> Option.getWithDefault(fallback))(world);
-            let missing = Render.missingGlyphs(items);
-            if (Map.isEmpty(missing) or left <= 1) items
+            let fonts = name -> Map.get(name, table) |> Option.getWithDefault(fallback);
+            let items = scene(fonts)(world);
+            let plan = planOf(passesOf, fonts, world);
+            let missing = Render.missingGlyphs(List.append(List.flatMap(p -> p#items, plan#passes), items));
+            if (Map.isEmpty(missing) or left <= 1) (plan, items)
             else {
                 Map.forEach((textureName, cps) -> GlOffscreen.ensureGlyphs(session, textureName, cps), missing);
                 build(left - 1)
             }
         };
-        let items = build(3);
+        let (plan, items) = build(3);
         GlOffscreen.handle(session, () -> {
-            let shaderCmds = Render.drawShaders(spec -> ShaderEffect.Shader.buildProgram(spec), items);
-            List.forEach(cmd -> ShaderEffect.Shader.drawSurface(cmd), shaderCmds);
-            let itemsToDraw = if (List.isEmpty(shaderCmds)) items else Render.withoutShaders(items);
-            let (sprites, polygons) = Render.drawWith(name -> GameEngine.Game.getTextureInfo(name), itemsToDraw);
-            GameEngine.Game.renderCommands(sprites, Nil, polygons, None)
+            let next = if (List.isEmpty(plan#passes)) known else App.drawPassPlan(warn, video#soft#design, known, plan);
+            App.submitGpuItems(_ -> (), items, Nil, None);
+            next
         })
 
     /// ffmpeg を立てる（標準入力に RGBA の生の画素・下の行から）。video#encoders が空なら ffv1 の可逆で frames.mkv へ 1 本、

@@ -31,7 +31,7 @@ mod TestRenderPasses {
           gifDelayMs = 66, gifFps = 15, shapeAntialias = true, textAntialias = true }
 
     def emptyPass(op: RenderTarget.LoadOp): HeadlessRender.PassSpec =
-        { name = "paper", clear = op, drawables = Nil, polygons = Nil, surfaces = Nil, scale = 1.0 }
+        { name = "paper", clear = op, drawables = Nil, polygons = Nil, surfaces = Nil, scenes = Nil, scale = 1.0 }
 
     /// 最小の Drawable（テクスチャ名だけ指定。位置・拡大は個々のテストで上書きする）。
     def drawable(texture: String): GameEngine.Drawable =
@@ -79,7 +79,7 @@ mod TestRenderPasses {
             { drawables = DrawCmd.make({ position = { x = 1.0, y = 1.0 } | DrawCmd.toSpec(drawable("paper")) }) :: Nil,
               polygons = Nil, design = c#design, scale = c#scale, background = c#background,
               texturePath = c#texturePath, fontTtf = c#fontTtf, fontAtlas = c#fontAtlas,
-              outPath = "", shapeAntialias = true, textAntialias = true };
+              outPath = "", shapeAntialias = true, textAntialias = true, scenes = Nil };
         let img = SoftRaster.renderToImageFull(req, Nil, Map.empty(), Map#{"paper" => paper});
         Assert.assertEq(expected = (255, 0, 255, 0), channels(img.getRGB(2i32, 2i32)))
 
@@ -96,7 +96,7 @@ mod TestRenderPasses {
         let req: SoftRaster.RasterReq =
             { drawables = Nil, polygons = Nil, design = c#design, scale = c#scale,
               background = c#background, texturePath = c#texturePath, fontTtf = c#fontTtf,
-              fontAtlas = c#fontAtlas, outPath = "", shapeAntialias = true, textAntialias = true };
+              fontAtlas = c#fontAtlas, outPath = "", shapeAntialias = true, textAntialias = true, scenes = Nil };
         let texOf = chan -> ShaderDoc.Field.Tex({ name = "paper", chan = chan });
         let surface: SoftRaster.SurfaceCmd =
             { rect = { position = { x = 0.0, y = 0.0 }, size = { x = 4.0, y = 4.0 } },
@@ -127,7 +127,7 @@ mod TestRenderPasses {
             let p: HeadlessRender.PassSpec =
                 { name = "paper",
                   clear = RenderTarget.LoadOp.Clear({ r = t, g = 0.0, b = 0.0 }),
-                  drawables = Nil, polygons = Nil, surfaces = Nil, scale = 1.0 };
+                  drawables = Nil, polygons = Nil, surfaces = Nil, scenes = Nil, scale = 1.0 };
             (p :: Nil, drawable("paper") :: Nil,
              (Nil: List[GameEngine.PolygonRenderCmd]), (Nil: List[SoftRaster.SurfaceCmd]))
         };
@@ -152,7 +152,7 @@ mod TestRenderPasses {
             { drawables = light :: Nil,
               polygons = Nil, design = { x = 256.0, y = 256.0 }, scale = c#scale,
               background = c#background, texturePath = c#texturePath, fontTtf = c#fontTtf,
-              fontAtlas = c#fontAtlas, outPath = "", shapeAntialias = true, textAntialias = true };
+              fontAtlas = c#fontAtlas, outPath = "", shapeAntialias = true, textAntialias = true, scenes = Nil };
         let img = SoftRaster.renderToImageFull(req, Nil, Map.empty(), Map.empty());
         Assert.assertEq(expected = (255, 255, 255, 255) :: (255, 0, 0, 0) :: Nil,
             channels(img.getRGB(128i32, 128i32)) :: channels(img.getRGB(0i32, 0i32)) :: Nil)
@@ -205,7 +205,7 @@ mod TestRenderPasses {
         let p = withSurface(passThrough(RenderTarget.historyName("paper")),
                             emptyPass(RenderTarget.LoadOp.Clear({ r = 1.0, g = 1.0, b = 1.0 })));
         HeadlessRender.renderPngFull({ background = { r = 1.0, g = 0.0, b = 0.0 } | c },
-            { passes = p :: Nil, drawables = drawable("paper") :: Nil, polygons = Nil, surfaces = Nil,
+            { passes = p :: Nil, drawables = drawable("paper") :: Nil, polygons = Nil, surfaces = Nil, scenes = Nil,
               fonts = Map.empty(), fontAntialias = Map.empty() }, "history");
         Assert.assertEq(expected = (255, 0, 0, 0), readPixel("build/test/renderpasses_history/history.png", 1, 1))
 
@@ -235,7 +235,7 @@ mod TestRenderPasses {
     def testHalfPassBlitsAsTwoPixelBlocks(): Unit \ {Assert, IO} =
         let c = { outDir = "build/test/renderpasses_half" | cfg(1) };
         HeadlessRender.renderPngFull({ background = { r = 1.0, g = 0.0, b = 0.0 } | c },
-            { passes = halfPass() :: Nil, drawables = drawable("paper") :: Nil, polygons = Nil, surfaces = Nil,
+            { passes = halfPass() :: Nil, drawables = drawable("paper") :: Nil, polygons = Nil, surfaces = Nil, scenes = Nil,
               fonts = Map.empty(), fontAntialias = Map.empty() }, "half");
         let at = x -> readPixel("build/test/renderpasses_half/half.png", x, 1);
         Assert.assertEq(expected = (255, 0, 0, 0) :: (255, 0, 0, 0) :: (255, 255, 255, 255) :: (255, 255, 255, 255) :: Nil,

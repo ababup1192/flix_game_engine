@@ -354,6 +354,8 @@ pub mod LwjglLayer {
         // シェーダー面を任意形（丸い池など）に抜くステンシル用に、既定フレームバッファへ
         // 8bit のステンシルを確保する。使うのはマスク描画のときだけ（通常描画は無影響）。
         GLFW.glfwWindowHint(GLFW.GLFW_STENCIL_BITS, 8);
+        // 3D の場面（Scene3d の Native）を窓へ直に描く時の深度。
+        GLFW.glfwWindowHint(GLFW.GLFW_DEPTH_BITS, 24);
 
         // 隠しウィンドウモード（GL 突き合わせ harness 用）。Retina の 2 倍化を切るのは、
         // フレームバッファ = design 寸に固定しないと letterbox 補間が乗り、
@@ -1051,6 +1053,10 @@ pub mod LwjglLayer {
             def buildProgram(spec, k) = k(RenderPaint.buildProgram(paint, spec))
             def drawSurface(cmd, k) = {
                 RenderPaint.queueSurface(paint, cmd);
+                k(())
+            }
+            def drawScene3d(cmd, k) = {
+                RenderPaint.queueScene3d(paint, cmd);
                 k(())
             }
         } with handler RenderTarget.Target {

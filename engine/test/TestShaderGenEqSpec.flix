@@ -189,6 +189,9 @@ mod TestShaderGenEqSpec {
         :: ("Sampler.filter",     cSampler(), Field.Sampler({ filter = ShaderDoc.FilterMode.Nearest, of = cTex() }))
         :: ("Sampler.of",         cSampler(), Field.Sampler({ filter = ShaderDoc.FilterMode.Linear, of = f0() }))
         :: ("Param.name",         Field.Param({ name = "a" }), Field.Param({ name = "b" }))
+        :: ("World.axis",         Field.World({ axis = ShaderDoc.Axis3.X }), Field.World({ axis = ShaderDoc.Axis3.Y }))
+        :: ("Normal.axis",        Field.Normal({ axis = ShaderDoc.Axis3.X }), Field.Normal({ axis = ShaderDoc.Axis3.Z }))
+        :: ("ctor World/Normal",  Field.World({ axis = ShaderDoc.Axis3.X }), Field.Normal({ axis = ShaderDoc.Axis3.X }))
         :: ("ctor Const/Uv",      f0(), cUv())
         :: Nil
 
@@ -301,6 +304,8 @@ mod TestShaderGenEqSpec {
         :: ("Tex",          eqF(cTex(), cTex()))
         :: ("Shift",        eqF(cShift(), cShift()))
         :: ("Sampler",      eqF(cSampler(), cSampler()))
+        :: ("World",        eqF(Field.World({ axis = ShaderDoc.Axis3.Y }), Field.World({ axis = ShaderDoc.Axis3.Y })))
+        :: ("Normal",       eqF(Field.Normal({ axis = ShaderDoc.Axis3.Y }), Field.Normal({ axis = ShaderDoc.Axis3.Y })))
         :: ("Solid",        eqSh(sSolid(), sSolid()))
         :: ("Ramp",         eqSh(sRamp(), sRamp()))
         :: ("Gradient",     eqSh(sGrad(), sGrad()))

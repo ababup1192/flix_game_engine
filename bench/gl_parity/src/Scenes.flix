@@ -9,7 +9,7 @@
 //   4. 時刻は固定値（アニメ無し — 2 回描き出して同じ絵になることが決定性検証の前提）
 mod Scenes {
 
-    use fge::{Color, DrawCmd, Light, PxSprite, PxSpriteDoc, RawDraw, Render, RenderTarget, ShaderDoc, Shadow, Vec2}
+    use fge::{Camera3d, Color, DrawCmd, Light, Mat4, Mesh3d, Pose3d, PxSprite, PxSpriteDoc, RawDraw, Render, RenderTarget, RenderUtil, Scene3d, ShaderDoc, Shadow, Skin3d, Vec2, Vec3}
 
     // 寸法の権威は整数側 — Float 側を権威にすると Int へ戻す丸めが要る。
     pub def designWi(): Int32 = 320
@@ -44,7 +44,20 @@ mod Scenes {
     pub def all(): List[Scene] =
         boxes() :: spriteNearest() :: passPaste() :: texField() :: lightMap() :: radial() :: veil()
             :: passChain() :: passLaterRead() :: passMask() :: passHalf() :: passQuarterOdd() :: linearRead()
-            :: castShadow() :: paramRead() :: Nil
+            :: castShadow() :: paramRead() :: depthRed() :: afterScene3d() :: materialStripes() :: spotShadow() :: skinBend() :: Nil
+
+    /// B 段階の scene のうち、違う画素の数に上限を置く物（名前 → 許す画素数）。3D の場面は GL と CPU で三角形の縁の
+    /// 画素の取り方と浮動小数の丸めが違い、バイトでは一致しない（docs/backend-parity.md の Shader 面と同じ扱い）。
+    /// 上限は縁の画素の数から決める（この 2 つは軸にそろった縁で、Apple Silicon では 0 px だった）— 前後や状態の漏れが
+    /// 崩れると、面の中が丸ごと違って桁が変わる。
+    pub def toleranceOf(name: String): Option[Int32] = match name {
+        case "depthRed"        => Some(300)
+        case "afterScene3d"    => Some(200)
+        case "materialStripes" => Some(300)
+        case "spotShadow"      => Some(300)
+        case "skinBend"        => Some(400)
+        case _                 => None
+    }
 
     /// 8bit の値そのままの色（k/255）。A 段階の規約 2 をこの入口で守る。
     def c8(r: Int32, g: Int32, b: Int32): Color =
@@ -392,4 +405,174 @@ mod Scenes {
             paramFill(20.0, Map#{ "red" => 0.6, "green" => 0.2 })
                 :: paramFill(120.0, Map#{ "red" => 0.25, "green" => 0.6 })
                 :: paramFill(220.0, Map.empty()) :: Nil }
+
+    // ── scene 16 / 17: 3D の場面（Render.scene3d → GL は Shader.drawScene3d・CPU は SoftRaster3d）。B 段階（toleranceOf）──
+    // 光は白の環境光だけ（光の式の差を持ち込まず、前後と状態だけを見る）。目は原点で +Z を向く。
+
+    /// z（world）の平面に立つ、目の側（−Z）を向く四角。x0..x1・y0..y1 は world の範囲。
+    def facingQuad(x0: Float64, x1: Float64, y0: Float64, y1: Float64, z: Float64, color: Color): Mesh3d.Polygon =
+        { points = Vec3.v3(x0, y0, z) :: Vec3.v3(x0, y1, z) :: Vec3.v3(x1, y1, z) :: Vec3.v3(x1, y0, z) :: Nil, color = color }
+
+    def flatCamera(): Camera3d.Camera3d =
+        { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 1.0, far = 100.0 }
+
+    def flatScene(size: Vec2.Vec2, z: Int32, instances: List[Scene3d.Instance3d], billboards: List[Scene3d.Billboard3d]): Scene3d.Scene3dCmd =
+        { instances = instances, billboards = billboards, zIndex = z,
+          environment = { ambient = c8(255, 255, 255), hemisphere = 0.0, toonSteps = 0, fog = None, background = Some(c8(10, 10, 30)) }
+          | Scene3d.scene(flatCamera(), size) }
+
+    def shape(polys: List[Mesh3d.Polygon]): Scene3d.Instance3d =
+        Scene3d.meshInstance(Mesh3d.fromPolygons(polys), Mat4.identity())
+
+    // 手前（z = 10）の赤い板の後に、奥（z = 20）の青い板を渡す — 渡した順に塗ると青が勝つ。深度で赤が勝てば真ん中は赤。
+    // 赤と青の間（z = 15）に市松アトラスのビルボードを立てる（青より手前・赤より奥）。
+    def depthRed(): Scene =
+        let red = shape(facingQuad(-3.0, 1.0, -2.0, 2.0, 10.0, c8(220, 30, 30)) :: Nil);
+        let blue = shape(facingQuad(-8.0, 8.0, -6.0, 6.0, 20.0, c8(30, 60, 220)) :: Nil);
+        let board = Scene3d.billboard("atlas", { position = { x = 0.0, y = 0.0 }, size = { x = 16.0, y = 16.0 } },
+                                      Vec3.v3(1.5, -2.0, 15.0), { x = 3.0, y = 3.0 }) |> Scene3d.unlit;
+        { name = "depthRed", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            Render.scene3d({ x = 40.0, y = 20.0 }, flatScene({ x = 240.0, y = 140.0 }, 1, red :: blue :: Nil, board :: Nil)) :: Nil }
+
+    // 3D の場面の後に、同じコマで場面に重なる箱・sprite・mask 付きの面を描く。深度判定・面の向きでの間引き・blend・
+    // ステンシルが場面の後に残っていると、2D が欠けるか色が変わる。
+    def afterScene3d(): Scene =
+        let solid: ShaderDoc.Spec = { name = "parity_after3d", cycleRate = 0.0, bindings = Nil,
+            out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Solid(c8(60, 200, 120)), alpha = ShaderDoc.Field.Const(1.0) }) };
+        let rect = (x, y, w, h) -> { x = x, y = y } :: { x = x + w, y = y } :: { x = x + w, y = y + h } :: { x = x, y = y + h } :: Nil;
+        let plate = shape(facingQuad(-4.0, 4.0, -3.0, 3.0, 10.0, c8(200, 120, 40)) :: Nil);
+        { name = "afterScene3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            Render.scene3d({ x = 0.0, y = 0.0 }, flatScene({ x = 200.0, y = 180.0 }, 1, plate :: Nil, Nil)) ::
+            at(60.0, 60.0, RawDraw.box({ x = 40.0, y = 40.0 }, c8(240, 240, 240), 2)) ::
+            at(150.0, 90.0, fullAtlas(4.0, false, false, 2)) ::
+            Render.shaderFillMasked(solid, { position = { x = 120.0, y = 20.0 }, size = { x = 180.0, y = 140.0 } },
+                rect(130.0, 30.0, 60.0, 40.0) :: rect(220.0, 100.0, 60.0, 50.0) :: Nil, 0.0, 3) ::
+            Nil }
+
+    // ── scene 18: 3D の材質（Scene3d.withMaterial → GL は材質のプログラム・CPU は ShaderEval の材質）。B 段階 ──
+    // 左の板は World.x の 1 単位ごとの縞（赤と黄）。右の板は cutout で World.y の縞の半分を抜き、色は Param で渡す。
+    // 抜けた所から奥の青い板（頂点の色）が見える。光は白の環境光だけなので、色は albedo そのまま。
+
+    /// World の軸 axis の 1 単位ごとに 0 と 1 が入れ替わる縞。
+    def worldStripe(axis: ShaderDoc.Axis3): ShaderDoc.Field =
+        ShaderDoc.Field.Bin({ op = ShaderDoc.BinOp.Step, a = ShaderDoc.Field.Const(0.5),
+                              b = ShaderDoc.Field.Un({ op = ShaderDoc.UnOp.Fract, of = ShaderDoc.Field.World({ axis = axis }) }) })
+
+    def stripeMaterial(): Scene3d.Material3d =
+        { spec = { name = "parity_stripe3d", cycleRate = 0.0, bindings = Nil,
+                   out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Ramp({ lo = c8(220, 40, 40), hi = c8(240, 220, 60),
+                                                                             field = worldStripe(ShaderDoc.Axis3.X) }),
+                                              alpha = ShaderDoc.Field.Const(1.0) }) },
+          params = Map.empty(), cutout = false, emission = None }
+
+    def cutoutMaterial(): Scene3d.Material3d =
+        { spec = { name = "parity_cutout3d", cycleRate = 0.0, bindings = Nil,
+                   out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Rgb({ r = ShaderDoc.Field.Param({ name = "red" }),
+                                                                            g = ShaderDoc.Field.Const(0.2),
+                                                                            b = ShaderDoc.Field.Const(0.8) }),
+                                              alpha = worldStripe(ShaderDoc.Axis3.Y) }) },
+          params = Map#{ "red" => 0.6 }, cutout = true, emission = None }
+
+    def materialStripes(): Scene =
+        let back = shape(facingQuad(-8.0, 8.0, -6.0, 6.0, 20.0, c8(30, 60, 220)) :: Nil);
+        let stripes = shape(facingQuad(-4.5, -0.5, -2.5, 2.5, 10.0, c8(255, 255, 255)) :: Nil) |> Scene3d.withMaterial(stripeMaterial());
+        let cut = shape(facingQuad(0.5, 4.5, -2.5, 2.5, 10.0, c8(255, 255, 255)) :: Nil) |> Scene3d.withMaterial(cutoutMaterial());
+        { name = "materialStripes", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            Render.scene3d({ x = 40.0, y = 20.0 }, flatScene({ x = 240.0, y = 140.0 }, 1, back :: stripes :: cut :: Nil, Nil)) :: Nil }
+
+    // ── scene 19: スポットライトの影（SpotLight.shadow → GL は影の地図・CPU は SoftRaster3d）。B 段階 ──
+    // 真上から下を向くスポットの下に床を敷き、左の場面だけ光と床の間に板を置く。左の床の板の真下は暗く、右は明るい。
+    // 左右とも同じ mapSize の影を持つ — 同じコマの 2 つの場面が地図を取り違えると、左の影が消える。
+
+    /// 高さ y の水平な四角（上を向く。x0..x1・z0..z1 は world の範囲）。
+    def upQuad(x0: Float64, x1: Float64, z0: Float64, z1: Float64, y: Float64, color: Color): Mesh3d.Polygon =
+        { points = Vec3.v3(x0, y, z0) :: Vec3.v3(x0, y, z1) :: Vec3.v3(x1, y, z1) :: Vec3.v3(x1, y, z0) :: Nil, color = color }
+
+    def shadowSpot(): Scene3d.SpotLight =
+        { position = Vec3.v3(0.0, 8.0, 10.0), target = Vec3.v3(0.0, -2.0, 10.0), fovY = 1.4, color = c8(255, 255, 255),
+          intensity = 1.0, range = 20.0, shadow = Some({ mapSize = 512, bias = 0.0015, pcfRadius = 1, strength = 0.8 }) }
+
+    def shadowScene(withBoard: Bool): Scene3d.Scene3dCmd =
+        let camera = { eye = Vec3.v3(0.0, 7.0, 0.0), yaw = 0.0, pitch = 0.73, fovY = 1.0, near = 1.0, far = 100.0 };
+        let floor = shape(upQuad(-8.0, 8.0, 2.0, 18.0, -2.0, c8(200, 200, 200)) :: Nil);
+        let board = shape(upQuad(-1.5, 1.5, 8.5, 11.5, 2.0, c8(200, 80, 60)) :: Nil);
+        { instances = if (withBoard) floor :: board :: Nil else floor :: Nil, spotLights = shadowSpot() :: Nil, zIndex = 1,
+          environment = { ambient = c8(40, 40, 40), hemisphere = 0.0, toonSteps = 0, fog = None, background = Some(c8(10, 10, 30)) }
+          | Scene3d.scene(camera, { x = 160.0, y = 180.0 }) }
+
+    def spotShadow(): Scene =
+        { name = "spotShadow", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            Render.scene3d({ x = 0.0, y = 0.0 }, shadowScene(true)) ::
+            Render.scene3d({ x = 160.0, y = 0.0 }, shadowScene(false)) :: Nil }
+
+    // ── scene 20: ジョイントで曲げた板（Scene3d.withPose → GL は骨つきの版のプログラム・CPU は SoftRaster3d のスキニング）。B 段階 ──
+    // 縦に長い板 2 枚を、根のジョイント（下の端）と上のジョイント（真ん中）で曲げる。左は頂点の色・右は材質（縞）で、
+    // 上のジョイントを左は反時計回り・右は時計回りに回す。影を落とすスポットを目の上に置き、曲がった影を奥の板に落とす。
+    // 曲げずに描くと板はまっすぐ立ち、影もまっすぐになる。
+
+    /// 板の行の高さ（形の座標の y）。真ん中の行だけ 2 つのジョイントに半分ずつ掛かる。
+    def skinRows(): List[Float64] = -3.0 :: -1.5 :: 0.0 :: 1.5 :: 3.0 :: Nil
+
+    def skinWeightOfRow(y: Float64): (Float64, Float64) =
+        if (y < -0.5) (1.0, 0.0) else if (y > 0.5) (0.0, 1.0) else (0.5, 0.5)
+
+    /// 幅 2.4・高さ 6 の、目の側（−Z）を向く板（z = 10）。行ごとに左右 2 頂点・色は下の橙から上の水色へ。
+    def skinPlate(): Mesh3d.Mesh3d =
+        let rows = skinRows();
+        let count = List.length(rows);
+        let positions = rows |> List.flatMap(y -> -1.2 :: y :: 10.0 :: 1.2 :: y :: 10.0 :: Nil) |> List.toVector;
+        let normals = rows |> List.flatMap(_ -> 0.0 :: 0.0 :: -1.0 :: 0.0 :: 0.0 :: -1.0 :: Nil) |> List.toVector;
+        let colors = rows |> List.mapWithIndex((i, _) -> {
+            let t = Int32.toFloat64(i) / Int32.toFloat64(count - 1);
+            let c = (0.86 - 0.7 * t) :: (0.47 + 0.24 * t) :: (0.16 + 0.62 * t) :: Nil;
+            List.append(c, c)
+        }) |> List.flatten |> List.toVector;
+        let indices = List.range(0, count - 1)
+            |> List.flatMap(r -> { let a = 2 * r; a :: a + 2 :: a + 3 :: a :: a + 3 :: a + 1 :: Nil })
+            |> List.toVector;
+        let joints = rows |> List.flatMap(_ -> 0 :: 1 :: 0 :: 0 :: 0 :: 1 :: 0 :: 0 :: Nil) |> List.toVector;
+        let weights = rows |> List.flatMap(y -> {
+            let (w0, w1) = skinWeightOfRow(y);
+            w0 :: w1 :: 0.0 :: 0.0 :: w0 :: w1 :: 0.0 :: 0.0 :: Nil
+        }) |> List.toVector;
+        match Mesh3d.fromArrays({ positions = positions, normals = normals, colors = colors, indices = indices,
+                                  skin = Some({ joints = joints, weights = weights }) }) {
+            case Ok(mesh) => mesh
+            case Err(e)   => bug!(e)
+        }
+
+    /// 根（板の下の端）と、その 3 上のジョイント（板の真ん中）。逆バインド行列はレストポーズから求めさせる。
+    def skinPlateSkin(): Skin3d.Skin3d =
+        let still = { x = 0.0, y = 0.0, z = 0.0, w = 1.0 };
+        let one = Vec3.v3(1.0, 1.0, 1.0);
+        match Skin3d.make({ names = Vector#{"root", "upper"}, parents = Vector#{-1, 0},
+                            rest = Vector#{ { translation = Vec3.v3(0.0, -3.0, 10.0), rotation = still, scale = one },
+                                            { translation = Vec3.v3(0.0, 3.0, 0.0), rotation = still, scale = one } },
+                            inverseBinds = None, rootTransform = Mat4.identity() }) {
+            case Ok(skin) => skin
+            case Err(e)   => bug!(e)
+        }
+
+    /// 上のジョイントだけを z 軸まわりに angle（ラジアン）回した Pose（bend の途中）。
+    def skinBendPose(angle: Float64): Pose3d.Pose3d =
+        let skin = skinPlateSkin();
+        let half = angle / 2.0;
+        let bent = Skin3d.restPose(skin) |> Vector.mapWithIndex((i, rest) ->
+            if (i == 1) { rotation = { x = 0.0, y = 0.0, z = RenderUtil.sinF(half), w = RenderUtil.cosF(half) } | rest } else rest);
+        Pose3d.compute(skin, bent)
+
+    def skinBendSpot(): Scene3d.SpotLight =
+        { position = Vec3.v3(0.0, 3.0, 0.0), target = Vec3.v3(0.0, 0.0, 20.0), fovY = 1.2, color = c8(255, 255, 255),
+          intensity = 1.0, range = 40.0, shadow = Some({ mapSize = 512, bias = 0.0015, pcfRadius = 1, strength = 0.8 }) }
+
+    def skinBend(): Scene =
+        let back = shape(facingQuad(-8.0, 8.0, -6.0, 6.0, 20.0, c8(200, 200, 200)) :: Nil);
+        let left = Scene3d.meshInstance(skinPlate(), Mat4.translate(Vec3.v3(-2.5, 0.0, 0.0))) |> Scene3d.withPose(skinBendPose(0.7));
+        let right = Scene3d.meshInstance(skinPlate(), Mat4.translate(Vec3.v3(2.5, 0.0, 0.0)))
+            |> Scene3d.withMaterial(stripeMaterial()) |> Scene3d.withPose(skinBendPose(-0.7));
+        let scene = { instances = back :: left :: right :: Nil, spotLights = skinBendSpot() :: Nil, zIndex = 1,
+                      environment = { ambient = c8(90, 90, 90), hemisphere = 0.0, toonSteps = 0, fog = None, background = Some(c8(10, 10, 30)) }
+                      | Scene3d.scene(flatCamera(), { x = 240.0, y = 140.0 }) };
+        { name = "skinBend", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil }
 }

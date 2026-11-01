@@ -1,4 +1,4 @@
-<!-- engine v0.71.0 / 生成: 2026-10-30 -->
+<!-- engine v0.71.0 / 生成: 2026-11-02 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine
@@ -16,6 +16,22 @@
   `pub def fromString(s: String): Option[Anchor]`
 - anchor preset と親 rect (+ 子の natural size + margin) から子の rect を計算する。
   `pub def applyAnchor(anchor: Anchor, parentRect: Rect2.Rect2, childSize: Vec2.Vec2, margin: Float64): Rect2.Rect2`
+
+## AnimationClip3d — `engine/src/scene3d/AnimationClip3d.flix`
+- キーフレームの間のつなぎ方。Linear = 2 つの値の間をなめらかにつなぐ（回転は球面の上で）・Step = 次のキーフレームまで前の値のまま。
+  `pub enum Interpolation with Eq { case Linear case Step }`
+- どの欄を動かすか。値の幅は Translation・Scale が 3、Rotation が 4（x, y, z, w）。
+  `pub enum Path with Eq { case Translation case Rotation case Scale }`
+- 1 本の欄。joint = スキンの中の番号・times = キーフレームの秒（増える順）・values = 時刻ごとに幅の数だけ並べた値。
+  `pub type alias Channel = { joint = Int32, path = Path, times = Vector[Float64], values = Vector[Float64], interpolation = Interpolation }`
+- `pub type alias AnimationClip3d = ClipData`
+- 欄の列から作る。times が増える順でない・values の数が times の数 × 幅でない・joint が負の欄は Err。
+  `pub def make(name: String, channels: List[Channel]): Result[String, AnimationClip3d]`
+- `pub def name(c: AnimationClip3d): String`
+- 全部の欄の最後のキーフレームの時刻（欄が無ければ 0）。
+  `pub def duration(c: AnimationClip3d): Float64`
+- 時刻 t（秒）の局所の姿勢（ジョイントの数だけ）。loop が真なら t を duration で回し（duration が 0 なら 0）、偽なら最後のキーフレームで止める。
+  `pub def sample(skin: Skin3d.Skin3d, clip: AnimationClip3d, t: Float64, loop: Bool): Vector[Skin3d.JointPose]`
 
 ## Arc — `engine/src/render/Arc.flix`
 - 全周 = 2π（ラジアン）。全周リングの endAngle 既定や、比率→角度の換算に使う。
@@ -134,6 +150,22 @@
   `pub def setZoom(zoom: Vec2.Vec2, camera: Camera): Camera`
 - カメラから ViewTransform（world → screen 変換）を作る。
   `pub def getViewTransform(camera: Camera, center: Vec2.Vec2, viewport: {viewportWidth = Float64, viewportHeight = Float64}): Projection.ViewTransform`
+
+## Camera3d — `engine/src/scene3d/Camera3d.flix`
+- eye = 目の位置・yaw / pitch = 向き（ラジアン。座標の約束はファイルの頭）・fovY = 縦の画角（ラジアン）・near / far = 写す奥行きの範囲。
+  `pub type alias Camera3d = { eye = Vec3.Vec3, yaw = Float64, pitch = Float64, fovY = Float64, near = Float64, far = Float64 }`
+- 見ている向き（長さ 1）。
+  `pub def forward(c: Camera3d): Vec3.Vec3`
+- 画面の右の向き（長さ 1）。
+  `pub def right(c: Camera3d): Vec3.Vec3`
+- 画面の上の向き（長さ 1）。
+  `pub def up(c: Camera3d): Vec3.Vec3`
+- world → GL の目の座標（右手系・−Z を見る）。左手系の前の向きを −Z へ写すので Z が反転する。
+  `pub def viewMatrix(c: Camera3d): Mat4.Mat4`
+- GL の透視の行列（右手系の目の座標 → clip。奥行きは near で −1・far で +1）。aspect = 幅 / 高さ。
+  `pub def projectionMatrix(c: Camera3d, aspect: Float64): Mat4.Mat4`
+- 3D の点が描き物の中のどこに写るか（左上が 0・y は下へ増える px）。near より手前と目の後ろは None。
+  `pub def worldToScreen(c: Camera3d, size: Vec2.Vec2, p: Vec3.Vec3): Option[Vec2.Vec2]`
 
 ## CanvasLayer — `engine/src/render/CanvasLayer.flix`
 - レイヤー間の z-index ストライド。
@@ -489,6 +521,12 @@
 - USB のベンダー（数・0 は分からない）とパッドの名前から機種を決める。SDL3 で読む時の形。
   `pub def kindOfVendor(vendor: Int32, name: String): PadKind`
 
+## Gltf — `engine/src/scene3d/Gltf.flix`
+- path の .glb を読む（Fs.FileRead.readBytes）。読めない・壊れている時は Err（パスつき）。
+  `pub def load(path: String): Result[String, Model3d.Model3d] \ Fs.FileRead`
+- .glb のバイトから作る。壊れている・読まない物を含む時は Err。
+  `pub def fromGlb(bytes: Vector[Int8]): Result[String, Model3d.Model3d]`
+
 ## GpuHandle — `engine/src/core/GpuHandle.flix`
 - タイルマップの GPU インスタンスバッファのハンドル（`initTileBuffer` が返す）。
   `pub enum TileVao { case TileVao(Int32) }`
@@ -539,6 +577,72 @@
 - fellBack の定型文の 1 行（出さない）。行を集めて warnAllThen へ渡すときに使う。
   `pub def fellBackLine(domain: String, subject: String, fallback: String, reason: String): String`
 
+## Mat4 — `engine/src/scene3d/Mat4.flix`
+- `pub type alias Mat4 = Mat4Data`
+- `pub def identity(): Mat4`
+- a × b（点には b を先に当て、次に a を当てる）。
+  `pub def mul(a: Mat4, b: Mat4): Mat4`
+- 点を写す（w = 1 で掛け、w での割り算はしない。射影の行列には applyPerspective）。
+  `pub def apply(m: Mat4, p: Vec3.Vec3): Vec3.Vec3`
+- 向きを写す（w = 0。平行移動を受けない）。法線には normalMatrix を掛けた物を使う。
+  `pub def applyDir(m: Mat4, d: Vec3.Vec3): Vec3.Vec3`
+- 点を w = 1 で掛け、出た w で割る（projectionMatrix × viewMatrix の後の NDC）。w が 0 以下（目の後ろ）は None。
+  `pub def applyPerspective(m: Mat4, p: Vec3.Vec3): Option[Vec3.Vec3]`
+- `pub def normalMatrix(m: Mat4): Mat4`
+- GL の uniform（glUniformMatrix4fv の transpose = false）に渡す列優先の 16 個。
+  `pub def toColumns(m: Mat4): Vector[Float64]`
+- 列優先の 16 個から作る（toColumns の逆・glTF の MAT4 と同じ並び）。長さが 16 でなければ Err。
+  `pub def ofColumns(v: Vector[Float64]): Result[String, Mat4]`
+- `pub def inverse(m: Mat4): Option[Mat4]`
+- 平行移動。
+  `pub def translate(v: Vec3.Vec3): Mat4`
+- 軸ごとの倍率。
+  `pub def scale(v: Vec3.Vec3): Mat4`
+- 3 本の行で左上 3×3 を組む（平行移動なし）。目の座標の軸を並べる時に使う。
+  `pub def ofLinearRows(row0: Vec3.Vec3, row1: Vec3.Vec3, row2: Vec3.Vec3): Mat4`
+- GL の透視（右手系の目の座標 → clip。奥行きは near で −1・far で +1。w = −z）。
+  `pub def perspective(lens: { xScale = Float64, yScale = Float64, near = Float64, far = Float64 }): Mat4`
+- Y 軸まわり（ラジアン）。増えると +Z が +X へ回る（カメラの yaw と同じ向き）。
+  `pub def rotateY(angle: Float64): Mat4`
+- X 軸まわり（ラジアン）。増えると +Z が −Y へ倒れる（カメラの pitch と同じ「正で下を向く」）。
+  `pub def rotateX(angle: Float64): Mat4`
+- Z 軸まわり（ラジアン）。増えると +X が +Y へ回る。
+  `pub def rotateZ(angle: Float64): Mat4`
+
+## Mesh3d — `engine/src/scene3d/Mesh3d.flix`
+- 多角形 1 つ: 頂点の列（3 つ以上・凸・外から見て時計回り）と色。
+  `pub type alias Polygon = { points = List[Vec3.Vec3], color = Color }`
+- 頂点ごとに 4 つのジョイントの番号（スキンの中の何番目か）と重み（頂点 i の値は [4i, 4i + 4)）。
+  `pub type alias SkinWeights = { joints = Vector[Int32], weights = Vector[Float64] }`
+- `pub type alias Mesh3d = Mesh3dData`
+- 多角形の列から作る。各多角形は頂点 0 を要に扇に割り、巻き方は入力のまま保つ（外から見て時計回りが表）。
+  `pub def fromPolygons(polys: List[Polygon]): Mesh3d`
+- 頂点の並びから作る。positions・normals・colors は頂点ごとに 3 つ、indices は 3 つで三角 1 枚（表は外から見て時計回り）。
+  `pub def fromArrays(arrays: { positions = Vector[Float64], normals = Vector[Float64], colors = Vector[Float64], indices = Vector[Int32], skin = Option[SkinWeights] }): Result[String, Mesh3d]`
+- `pub def fromObj(objText: String, mtlText: String): Result[String, Mesh3d]`
+- 中身の鍵（位置・色・番号の SHA-256 の 16 進）。同じ中身なら同じ字になる。GL はこれで頂点バッファを引く。
+  `pub def contentHash(m: Mesh3d): String`
+- 頂点の最小と最大（形の座標）。頂点の無い形は 0。
+  `pub def bounds(m: Mesh3d): { min = Vec3.Vec3, max = Vec3.Vec3 }`
+- `pub def triangleCount(m: Mesh3d): Int32`
+- `pub def vertexCount(m: Mesh3d): Int32`
+- 頂点の位置（形の座標。頂点ごとに x・y・z の 3 つ）。
+  `pub def positions(m: Mesh3d): Vector[Float64]`
+- 頂点の法線（長さ 1。頂点ごとに 3 つ。面積 0 の面は 0）。
+  `pub def normals(m: Mesh3d): Vector[Float64]`
+- 頂点の色（頂点ごとに r・g・b の 3 つ）。
+  `pub def colors(m: Mesh3d): Vector[Float64]`
+- 頂点ごとに 4 つのジョイントの番号（スキンの中の何番目か）。ジョイントの無い形は None。
+  `pub def skinJoints(m: Mesh3d): Option[Vector[Int32]]`
+- 頂点ごとに 4 つの重み（足して 1）。ジョイントの無い形は None。
+  `pub def skinWeights(m: Mesh3d): Option[Vector[Float64]]`
+- `pub def maxSkinJoint(m: Mesh3d): Option[Int32]`
+- 三角形の頂点の番号（3 つで 1 枚・外から見て時計回り）。
+  `pub def indices(m: Mesh3d): Vector[Int32]`
+
+## Model3d — `engine/src/scene3d/Model3d.flix`
+- `pub type alias Model3d = { mesh = Mesh3d.Mesh3d, skin = Option[Skin3d.Skin3d], clips = Map[String, AnimationClip3d.AnimationClip3d] }`
+
 ## Num — `engine/src/core/Num.flix`
 - 0 以上 1 以下に収める。濃さ・進み具合・混ぜ具合など「0〜1 のはずの値」を
   `pub def clamp01(x: Float64): Float64`
@@ -576,6 +680,17 @@
 - スクリーン px の塗り潰しコマンドに変換する。`screenPos` は描画原点
   `pub def toRenderCmd(screenPos: Vec2.Vec2, scaleVec: Vec2.Vec2, poly: Polygon): GameEngine.PolygonRenderCmd`
 
+## Pose3d — `engine/src/scene3d/Pose3d.flix`
+- `pub type alias Pose3d = PoseData`
+- `pub def compute(skin: Skin3d.Skin3d, local: Vector[Skin3d.JointPose]): Pose3d`
+- `pub def jointCount(p: Pose3d): Int32`
+- 2 つの局所の姿勢を混ぜる（t = 0 で a・1 で b）。平行移動と倍率は 2 つの値の間をなめらかにつなぎ、回転は球面の上で。
+  `pub def blend(a: Vector[Skin3d.JointPose], b: Vector[Skin3d.JointPose], t: Float64): Vector[Skin3d.JointPose]`
+- ジョイントの番号の順の joint 行列（GL の UBO・CPU のスキニングが読む）。
+  `pub def jointMatrices(p: Pose3d): Vector[Mat4.Mat4]`
+- ジョイントの変換（rootTransform × world。形の座標で、インスタンスの world 行列はまだ掛かっていない）。
+  `pub def jointTransform(p: Pose3d, joint: Int32): Mat4.Mat4`
+
 ## ProcessEnv — `engine/src/ProcessEnv.flix`
 - `pub def snapshot(): Map[String, String] \ IO`
 - 0 ならそのまま戻り、それ以外はその終了コードでプロセスを終える。
@@ -598,6 +713,15 @@
   `pub def applyToWorldPos(transform: ViewTransform, worldPos: Vec2.Vec2): Vec2.Vec2`
 - カメラ位置 `center` を画面中央に置く投影を作る。
   `pub def viewTransform(zoom: Vec2.Vec2, center: Vec2.Vec2, viewport: {viewportWidth = Float64, viewportHeight = Float64}): ViewTransform`
+
+## Quat — `engine/src/scene3d/Quat.flix`
+- `pub type alias Quat = { x = Float64, y = Float64, z = Float64, w = Float64 }`
+- 回さない向き。
+  `pub def identity(): Quat`
+- `pub def normalized(q: Quat): Quat`
+- `pub def slerp(a: Quat, b: Quat, t: Float64): Quat`
+- 回転の行列（平行移動なし）。q は長さ 1 として読む。
+  `pub def toMat4(q: Quat): Mat4.Mat4`
 
 ## RadialBuiltin — `engine/src/render/RadialBuiltin.flix`
 - テクスチャの 1 辺の px 数（正方形）。Render.lightAt / darkAt が
@@ -692,9 +816,73 @@
 - `pub def cosF(x: Float64): Float64`
 - `pub def sqrtF(x: Float64): Float64`
 
+## Scene3d — `engine/src/scene3d/Scene3d.flix`
+- 点光源。range より遠い所には届かない（落ち方は (1 − d² / range²)²）。
+  `pub type alias PointLight = { position = Vec3.Vec3, color = Color, intensity = Float64, range = Float64 }`
+- 影の地図（段 C）。mapSize = 一辺の画素数・bias = 自分の面に影を落とさないための奥行きのずらし・
+  `pub type alias ShadowMap = { mapSize = Int32, bias = Float64, pcfRadius = Int32, strength = Float64 }`
+- スポットライト。position から target を向き、fovY（ラジアン）の円錐の中だけを照らす。shadow が Some なら影を落とす（段 C）。
+  `pub type alias SpotLight = { position = Vec3.Vec3, target = Vec3.Vec3, fovY = Float64, color = Color, intensity = Float64, range = Float64, shadow = Option[ShadowMap] }`
+- 距離のかすみ。目からの距離が near から far へ向かって color に寄る。
+  `pub type alias DistanceFog = { color = Color, near = Float64, far = Float64 }`
+- 場面全体の光。ambient = どこにでも当たる光の色・hemisphere = 上を向く面ほど明るくする量（0 で無し）・
+  `pub type alias Environment3d = { ambient = Color, hemisphere = Float64, toonSteps = Int32, fog = Option[DistanceFog], background = Option[Color] }`
+- 描く解像度。Native = 窓の画素で描く・Design = 設計の解像度で描いてから拡げる（ドット絵と画素の大きさをそろえる）。
+  `pub enum Resolution with Eq { case Native case Design }`
+- `pub enum Output { case Color case Depth({ near = Float64, range = Float64 }) }`
+- 材質（段 B）。spec の Out の色 = 光を当てる前の色・params = spec の Param・
+  `pub type alias Material3d = { spec = ShaderDoc.Spec, params = Map[String, Float64], cutout = Bool, emission = Option[ShaderDoc.Shade] }`
+- 置いた物の中身。mesh = 形・world = 形の座標 → world の行列・tint = 頂点の色に掛ける色・material = 材質（None なら頂点の色）・
+  `pub type alias InstanceFields = { mesh = Mesh3d.Mesh3d, world = Mat4.Mat4, tint = Color, material = Option[Material3d], pose = Option[Pose3d.Pose3d] }`
+- 置いた物（閉じた型 — 欄を後から足しても、ゲームの書いた値が壊れない）。
+  `pub type alias Instance3d = InstanceData`
+- 形を world の行列で置く（tint 白・材質なし）。
+  `pub def meshInstance(mesh: Mesh3d.Mesh3d, world: Mat4.Mat4): Instance3d`
+- `pub def withTint(c: Color, i: Instance3d): Instance3d`
+- `pub def withMaterial(m: Material3d, i: Instance3d): Instance3d`
+- ジョイントの行列で曲げる（mesh にジョイントの重みが無ければ描く時に無視される）。
+  `pub def withPose(p: Pose3d.Pose3d, i: Instance3d): Instance3d`
+- 描く時に曲げる Pose（GL と CPU が同じ判定に使う）。None ならバインドポーズのまま描く:
+  `pub def skinningOf(i: Instance3d): Option[Pose3d.Pose3d]`
+- `pub def skinningWarning(i: Instance3d): Option[String]`
+- 置いた物の中身を読む（GL・CPU・鍵が使う）。
+  `pub def instanceFieldsOf(i: Instance3d): InstanceFields`
+- ビルボードの中身。texture と regionRect = 貼る絵（テクスチャの px）・position = 立てる world の点・
+  `pub type alias BillboardFields = { texture = String, regionRect = Rect2.Rect2, position = Vec3.Vec3, size = Vec2.Vec2, anchor = Vec2.Vec2, tint = Color, lit = Bool }`
+- 深度つきのビルボード（ドット絵を 3D に立てる。閉じた型 — 欄を後から足してもゲームの値が壊れない）。
+  `pub type alias Billboard3d = BillboardData`
+- anchor 足元の真ん中・tint 白・光を当てる。
+  `pub def billboard(texture: String, regionRect: Rect2.Rect2, position: Vec3.Vec3, size: Vec2.Vec2): Billboard3d`
+- `pub def withAnchor(a: Vec2.Vec2, b: Billboard3d): Billboard3d`
+- `pub def withBillboardTint(c: Color, b: Billboard3d): Billboard3d`
+- 光とかすみを当てない（炎・光る目）。
+  `pub def unlit(b: Billboard3d): Billboard3d`
+- ビルボードの中身を読む（GL・CPU・鍵が使う）。
+  `pub def billboardFieldsOf(b: Billboard3d): BillboardFields`
+- 場面 1 つ。size = 描き物の大きさ（位置は PlacedItem の at。Shader 面と同じ決まり）・zIndex = 2D の並びの中の重なり順。
+  `pub type alias Scene3dCmd = { size = Vec2.Vec2, camera = Camera3d.Camera3d, instances = List[Instance3d], billboards = List[Billboard3d], pointLights = List[PointLight], spotLights = List[SpotLight], environment = Environment3d, resolution = Resolution, output = Output, zIndex = Int32, time = Float64 }`
+- `pub def scene(camera: Camera3d.Camera3d, size: Vec2.Vec2): Scene3dCmd`
+- 1 つの場面で計算する点光源の上限。
+  `pub def maxPointLights(): Int32`
+- 1 つの場面で計算するスポットライトの上限。
+  `pub def maxSpotLights(): Int32`
+- 影の地図の縦横の上限（GL 3.3 が約束する大きさより大きいが、今の GPU なら作れる）。GL と CPU が同じ値で頭打ちにする。
+  `pub def maxShadowMapSize(): Int32`
+- pcfRadius の上限（(2r+1)² 回の読みを画素ごとに行うので、大きすぎる値で GPU を止めない）。GL と CPU が同じ値で頭打ちにする。
+  `pub def maxShadowPcfRadius(): Int32`
+- スポットライトから見たカメラ（影の地図を描く目）。位置から target を向き、fovY の角で見る。near は 1・far は range。
+  `pub def shadowCamera(spot: SpotLight): Camera3d.Camera3d`
+- 影の地図の行列（world → 光の clip 空間。縦横の比は 1）。GL と CPU が同じ物を使う。
+  `pub def shadowMatrix(spot: SpotLight): Mat4.Mat4`
+- 上限を超えた光を、目に近い物から選んで残す（同じ距離なら並びの前の物）。残った物は元の並びの順のまま。
+  `pub def pickLights(eye: Vec3.Vec3, cmd: Scene3dCmd): Scene3dCmd`
+- `pub type alias RenderCmd = { at = Vec2.Vec2, clip = Option[Rect2.Rect2], scene = Scene3dCmd }`
+
 ## ShaderDoc — `engine/src/ShaderDoc.flix`
 - 位置 (u,v) のどちらの軸を読むか。
   `pub enum Axis with Eq, ToString { case U case V }`
+- 3D の world の軸（左手系。X = 東・Y = 上・Z = 北。Scene3d と同じ約束）。World / Normal の成分。
+  `pub enum Axis3 with Eq, ToString { case X case Y case Z }`
 - Worley（セルノイズ）の出力の選び方。F2mF1 が網目（水面の目地）。
   `pub enum WorleyOut with Eq, ToString { case F1 case F2 case F2mF1 }`
 - Tex がテクスチャのどのチャンネルを読むか。既定は R（明るさ・マスクの慣習）。
@@ -706,7 +894,7 @@
 - 1 つの場に掛ける素の関数。
   `pub enum UnOp with Eq, ToString { case Neg case Abs case Fract case Floor case Sin case Cos case Sat case OneMinus case Sqrt }`
 - 値の場（スカラー・0..1 目安）。GPU では 1 個の float、CPU では Float64 になる。
-  `pub enum Field { case Const(Float64) case Uv({ axis = Axis }) case Worley({ scale = Float64, seed = Int32, out = WorleyOut }) case Fbm({ octaves = Int32, scale = Float64, seed = Int32 }) case FbmTile({ octaves = Int32, scale = Float64, period = Vec2.Vec2, seed = Int32 }) case Smoothstep({ lo = Float64, hi = Float64, of = Field }) case Scaled({ factor = Float64, scroll = Vec2.Vec2, of = Field }) case Warp({ amount = Float64, scale = Float64, seed = Int32, of = Field }) case Mix({ a = Field, b = Field, t = Float64 }) case Blend({ a = Field, b = Field, by = Field }) case Disk({ cx = Float64, cy = Float64, radius = Float64, feather = Float64 }) case Radial({ cx = Float64, cy = Float64 }) case RadialAspect({ cx = Float64, cy = Float64, aspect = Float64 }) case Quantize({ of = Field, steps = Int32 }) case Scales({ scale = Float64, stagger = Float64 }) case Glints({ scale = Float64, rate = Float64, density = Float64, seed = Int32 }) case Ripples({ freq = Float64, amp = Float64, speed = Float64, seed = Int32 }) case Sparkle({ scale = Float64, rate = Float64, density = Float64, seed = Int32 }) case Bin({ op = BinOp, a = Field, b = Field }) case Hash1({ scale = Float64, seed = Int32, bucket = Option[Field] }) case Hash2({ scale = Float64, seed = Int32, comp = Axis, bucket = Option[Field] }) case Un({ op = UnOp, of = Field }) case Pow({ of = Field, p = Float64 }) case Time({ scale = Float64, offset = Field }) case Tiling({ tiles = Vec2.Vec2, of = Field }) case Snap({ cells = Vec2.Vec2, of = Field }) case Swirl({ cx = Float64, cy = Float64, strength = Float64, rate = Float64, of = Field }) case Angle({ cx = Float64, cy = Float64 }) case Rotate({ cx = Float64, cy = Float64, turns = Float64, rate = Float64, of = Field }) case Ref(String) case Tex({ name = String, chan = TexChan }) case Shift({ dx = Field, dy = Field, of = Field }) case TexBlur({ name = String, chan = TexChan, radius = Vec2.Vec2, taps = Int32, amount = Field }) case Sampler({ filter = FilterMode, of = Field }) case Param({ name = String }) }`
+  `pub enum Field { case Const(Float64) case Uv({ axis = Axis }) case Worley({ scale = Float64, seed = Int32, out = WorleyOut }) case Fbm({ octaves = Int32, scale = Float64, seed = Int32 }) case FbmTile({ octaves = Int32, scale = Float64, period = Vec2.Vec2, seed = Int32 }) case Smoothstep({ lo = Float64, hi = Float64, of = Field }) case Scaled({ factor = Float64, scroll = Vec2.Vec2, of = Field }) case Warp({ amount = Float64, scale = Float64, seed = Int32, of = Field }) case Mix({ a = Field, b = Field, t = Float64 }) case Blend({ a = Field, b = Field, by = Field }) case Disk({ cx = Float64, cy = Float64, radius = Float64, feather = Float64 }) case Radial({ cx = Float64, cy = Float64 }) case RadialAspect({ cx = Float64, cy = Float64, aspect = Float64 }) case Quantize({ of = Field, steps = Int32 }) case Scales({ scale = Float64, stagger = Float64 }) case Glints({ scale = Float64, rate = Float64, density = Float64, seed = Int32 }) case Ripples({ freq = Float64, amp = Float64, speed = Float64, seed = Int32 }) case Sparkle({ scale = Float64, rate = Float64, density = Float64, seed = Int32 }) case Bin({ op = BinOp, a = Field, b = Field }) case Hash1({ scale = Float64, seed = Int32, bucket = Option[Field] }) case Hash2({ scale = Float64, seed = Int32, comp = Axis, bucket = Option[Field] }) case Un({ op = UnOp, of = Field }) case Pow({ of = Field, p = Float64 }) case Time({ scale = Float64, offset = Field }) case Tiling({ tiles = Vec2.Vec2, of = Field }) case Snap({ cells = Vec2.Vec2, of = Field }) case Swirl({ cx = Float64, cy = Float64, strength = Float64, rate = Float64, of = Field }) case Angle({ cx = Float64, cy = Float64 }) case Rotate({ cx = Float64, cy = Float64, turns = Float64, rate = Float64, of = Field }) case Ref(String) case Tex({ name = String, chan = TexChan }) case Shift({ dx = Field, dy = Field, of = Field }) case TexBlur({ name = String, chan = TexChan, radius = Vec2.Vec2, taps = Int32, amount = Field }) case Sampler({ filter = FilterMode, of = Field }) case Param({ name = String }) case World({ axis = Axis3 }) case Normal({ axis = Axis3 }) }`
 - 面の色（rgb）。
   `pub enum Shade { case Solid(Color) case Ramp({ lo = Color, hi = Color, field = Field }) case Gradient({ stops = List[(Float64, Color)], field = Field }) case Cosine({ a = Color, b = Color, c = Color, d = Color, field = Field }) case Rgb({ r = Field, g = Field, b = Field }) }`
 - 面の出力（このピクセルの最終色とアルファ）。
@@ -759,6 +947,20 @@
   `pub def lengthOf(parts: List[Field]): Field`
 - 長さ 1 にそろえた成分。長さ 0 のベクトルは 0 のまま（Div の 0 割りの決まり）。
   `pub def normalized(parts: List[Field]): List[Field]`
+- field を、world の 2 軸 plane = (u に写す軸, v に写す軸) を uv として読ませる（Fbm・Worley など uv を読む場を
+  `pub def atWorld(plane: (Axis3, Axis3), field: Field): Field`
+- Spec が World か Normal を読むか（2D の面に置くと 0 になるので知らせる物）。
+  `pub def usesWorld3d(spec: Spec): Bool`
+- 材質（Spec と自分で光る色 emission）の中の Param の名前。Spec の paramNames の後ろに、emission にだけ出てくる名前を
+  `pub def materialParamNames(spec: Spec, emission: Option[Shade]): List[String]`
+- 材質に渡された値の表から、materialParamNames の順に値を並べる（表に無い名前は 0）。
+  `pub def materialParamValues(spec: Spec, emission: Option[Shade], params: Map[String, Float64]): List[Float64]`
+- 色の Param を値の表の値の Const に置き換える（bindParams の色の版。emission を CPU で評価する前に通す）。
+  `pub def bindShadeParams(params: Map[String, Float64], shade: Shade): Shade`
+- Spec の tex / blur を 0 の Const に置き換える（3D の材質はテクスチャを読まない）。
+  `pub def withoutTextures(spec: Spec): Spec`
+- 色の tex / blur を 0 の Const に置き換える（withoutTextures の色の版）。
+  `pub def shadeWithoutTextures(shade: Shade): Shade`
 
 ## ShaderEffect — `engine/src/ShaderEffect.flix`
 - シェーダー面 1 枚ぶんの描画依頼。
@@ -769,6 +971,8 @@
   `pub eff Shader { def buildProgram(spec: ShaderDoc.Spec): GpuHandle.ShaderProgram }`
 - シェーダー面 1 枚を描く。骨格では「床タイルと壁の間の固定 z-index の範囲」へそろえて
   `pub eff Shader { def drawSurface(cmd: ShaderRenderCmd): Unit }`
+- 3D の場面 1 つを、深度で前後を決めて描く（2D の並びの中では cmd#scene#zIndex の 1 点に入る）。
+  `pub eff Shader { def drawScene3d(cmd: Scene3d.RenderCmd): Unit }`
 - シェーダーを使わないゲーム・GL の無い環境（テスト等）向けの何もしないハンドラ。
   `pub def runNoop(f: Unit -> a \ ef + Shader): a \ ef`
 
@@ -791,8 +995,16 @@
   `pub type alias CompiledSpec = Compiled`
 - Spec を面 1 枚ぶん組み直す。texEnv の名前もここで引いておく（画素ごとに Map を引かない）。
   `pub def compile(spec: ShaderDoc.Spec, texEnv: Map[String, TexData]): CompiledSpec`
+- 3D の材質（Scene3d.Material3d の spec・emission・params）を組み直す。Param は params の値の Const に置き換え
+  `pub def compileMaterial(spec: ShaderDoc.Spec, emission: Option[ShaderDoc.Shade], params: Map[String, Float64]): CompiledSpec`
 - 画素 1 つ（uv = (u, v)・時刻 t）の (r, g, b, α)。値は evalPixelAlphaTex と同じ。
   `pub def evalCompiled(compiled: CompiledSpec, u: Float64, v: Float64, t: Float64): (Float64, Float64, Float64, Float64)`
+- 3D のメッシュの画素 1 つ（world の点・外向きの法線・時刻 t）の (r, g, b, α)。色は光を当てる前の色（albedo）。
+  `pub def evalCompiled3(compiled: CompiledSpec, world: Vec3.Vec3, normal: Vec3.Vec3, t: Float64): (Float64, Float64, Float64, Float64)`
+- 3D の材質の画素 1 つ: 光を当てる前の色（albedo）・α・自分で光る色（emission。無ければ黒）。
+  `pub type alias MaterialSample = { albedo = Color, alpha = Float64, emission = Color }`
+- evalCompiled3 に emission を足した版（bindings の評価を色・α・emission で共有する）。
+  `pub def evalMaterial3(compiled: CompiledSpec, world: Vec3.Vec3, normal: Vec3.Vec3, t: Float64): MaterialSample`
 
 ## ShaderGen — `engine/src/ShaderGen.flix`
 - vertex シェーダー（面 quad 1 枚・uv を渡すだけ）。Spec に依存しない固定ソース。
@@ -805,6 +1017,12 @@
   `pub def isSameSpec(a: ShaderDoc.Spec, b: ShaderDoc.Spec): Bool`
 - Spec → fragment シェーダー全体（prelude + main）。uTime uniform を前提に持つ。
   `pub def compile(spec: ShaderDoc.Spec): String`
+- 3D の材質を GLSL にした部品。render_gl の 3D の frag が、自分の光の計算の前に差し込む。
+  `pub type alias MaterialGlsl = { uniforms = String, functions = String, paramNames = List[String] }`
+- 3D の材質（spec と自分で光る色 emission）の GLSL の部品。World / Normal は varying の vWorld / vNormal を読み、
+  `pub def compile3d(spec: ShaderDoc.Spec, emission: Option[ShaderDoc.Shade]): MaterialGlsl`
+- 2 つの材質の emission が同じ GLSL を生むか（render_gl の材質の program キャッシュの鍵を eqSpec と組む）。
+  `pub def eqEmission(a: Option[ShaderDoc.Shade], b: Option[ShaderDoc.Shade]): Bool`
 - `pub def compileBody(spec: ShaderDoc.Spec): String`
 
 ## ShaderJson — `engine/src/ShaderJson.flix`
@@ -821,6 +1039,30 @@
   `pub def loadOr(fallback: ShaderDoc.Spec, path: String): ShaderDoc.Spec \ Fs.FileRead`
 - loadOr の「色を名前で書ける」版。
   `pub def loadOrWith(palette: Map[String, Color], fallback: ShaderDoc.Spec, path: String): ShaderDoc.Spec \ Fs.FileRead`
+
+## Skin3d — `engine/src/scene3d/Skin3d.flix`
+- ジョイント 1 本の局所の姿勢（親のジョイントの座標で。根は rootTransform の座標で）。
+  `pub type alias JointPose = { translation = Vec3.Vec3, rotation = Quat.Quat, scale = Vec3.Vec3 }`
+- `pub type alias Skin3d = SkinData`
+- 1 体のジョイントの上限。GL のジョイントの行列の UBO（64 × mat4）と CPU が同じ値を使う。
+  `pub def maxJoints(): Int32`
+- names・parents（-1 が根。親の番号は自分より小さい）・レストポーズ・逆バインド行列から作る。
+  `pub def make(spec: { names = Vector[String], parents = Vector[Int32], rest = Vector[JointPose], inverseBinds = Option[Vector[Mat4.Mat4]], rootTransform = Mat4.Mat4 }): Result[String, Skin3d]`
+- ジョイントごとの「根からの行列」（rootTransform は掛けない）。parents は親が子より先の並び。
+  `pub def jointWorlds(parents: Vector[Int32], local: Vector[JointPose]): Vector[Mat4.Mat4]`
+- 局所の姿勢の行列（平行移動 × 回転 × 倍率）。
+  `pub def jointPoseToMat4(p: JointPose): Mat4.Mat4`
+- `pub def jointCount(s: Skin3d): Int32`
+- 名前からジョイントの番号（同じ名前が 2 つあれば前の物）。
+  `pub def jointIndex(s: Skin3d, name: String): Option[Int32]`
+- ジョイントの名前（番号の順）。
+  `pub def names(s: Skin3d): Vector[String]`
+- 親の番号（根は -1）。
+  `pub def parents(s: Skin3d): Vector[Int32]`
+- `pub def restPose(s: Skin3d): Vector[JointPose]`
+- 逆バインド行列（番号の順）。
+  `pub def inverseBinds(s: Skin3d): Vector[Mat4.Mat4]`
+- `pub def rootTransform(s: Skin3d): Mat4.Mat4`
 
 ## Splash — `engine/src/render/Splash.flix`
 - 起動画面 1 枚の見え方。
@@ -1001,6 +1243,16 @@
 - 指定した点の方を向くように回転する
   `pub def lookAt(point: Vec2.Vec2, t: Transform): Transform`
 
+## Transform3d — `engine/src/scene3d/Transform3d.flix`
+- at = 形の原点を置く world の点・yaw / pitch / roll = 回す角（ラジアン）・pivot = 回す中心（形の座標）・scale = 軸ごとの倍率。
+  `pub type alias Transform3d = { at = Vec3.Vec3, yaw = Float64, pitch = Float64, roll = Float64, pivot = Vec3.Vec3, scale = Vec3.Vec3 }`
+- 回さず・等倍で at に置く。
+  `pub def of(at: Vec3.Vec3): Transform3d`
+- 形の座標 → world の行列。
+  `pub def toMat4(t: Transform3d): Mat4.Mat4`
+- 親の行列の下に子を置いた行列（親 × 子）。鎖 → 枠 → 蝋燭のように何段でも重ねられる。
+  `pub def toWorld(parent: Mat4.Mat4, child: Transform3d): Mat4.Mat4`
+
 ## Triangulate — `engine/src/core/Triangulate.flix`
 - 多角形を三角形に分割する。3頂点未満は空。凸なら n−2 枚（ファンと同じ枚数）。
   `pub def triangles(points: List[Vec2.Vec2]): List[(Vec2.Vec2, Vec2.Vec2, Vec2.Vec2)]`
@@ -1084,6 +1336,24 @@
   `pub def toVec2(v: {x = Int32, y = Int32}): Vec2.Vec2`
 - Float64 座標 → Int 座標 (floor 切り捨て)
   `pub def fromVec2Floor(v: Vec2.Vec2): {x = Int32, y = Int32}`
+
+## Vec3 — `engine/src/scene3d/Vec3.flix`
+- x = 東・y = 上・z = 北。
+  `pub type alias Vec3 = { x = Float64, y = Float64, z = Float64 }`
+- (x, y, z) から作る。リストの中などでレコードの型が決まらない所の注釈を消す。
+  `pub def v3(x: Float64, y: Float64, z: Float64): Vec3`
+- `pub def zero(): Vec3`
+- `pub def one(): Vec3`
+- `pub def add(a: Vec3, b: Vec3): Vec3`
+- `pub def sub(a: Vec3, b: Vec3): Vec3`
+- 長さを s 倍する。
+  `pub def mul(v: Vec3, s: Float64): Vec3`
+- `pub def dot(a: Vec3, b: Vec3): Float64`
+- 外積。左手系では、外から見て時計回りの a → b → c について cross(b − a, c − a) が外を向く。
+  `pub def cross(a: Vec3, b: Vec3): Vec3`
+- `pub def length(v: Vec3): Float64`
+- `pub def distanceSquared(a: Vec3, b: Vec3): Float64`
+- `pub def normalized(v: Vec3): Vec3`
 
 ## Visual — `engine/src/render/Visual.flix`
 - 既定の見た目（白で色変調なし・表示・重なり順 0）。

@@ -52,6 +52,13 @@ pub mod Render {
         case Shader({ rect = Rect2.Rect2, spec = ShaderDoc.Spec, t = Float64,
                       mask = List[List[Vec2.Vec2]], zIndex = Int32, blend = DrawCmd.BlendMode, alpha = Float64,
                       params = Map[String, Float64] })
+        /// 3D の場面 1 つ（scene3d で置く）。位置は PlacedItem の at（左上・画面 px）、大きさは cmd#size。
+        /// 2D の並びの中では cmd#zIndex の 1 点に入り、その中だけ深度で前後を決める。GL では eff Shader の
+        /// drawScene3d が描き、SoftRaster は softSceneOf の scenes で描く。3D を知らない道（drawWith だけの
+        /// 描き出し）では場面の大きさの暗い矩形に落ちる。
+        /// fade・blended・turned・tinted は効かない — 暗くするなら場面の上に幕を重ねる。
+        // WhyNot: 三角形を 1 枚ずつ描き物にしない — 毎コマ数千件を組み、前後の並べ替えも CPU に残る。
+        case Scene3d(Scene3d.Scene3dCmd)
     }
 
     /// 置き場所つきの描画物。View はこの列を組み、draw が描画命令へ変換する。
@@ -190,6 +197,11 @@ pub mod Render {
           item = Item.Shader({ rect = rect, spec = spec, t = t, mask = Nil, zIndex = zIndex, alpha = 1.0,
                                blend = DrawCmd.BlendMode.Normal, params = Map.empty() }) }
 
+    /// 3D の場面を at（左上・画面 px）に置く。大きさは cmd#size、重なり順は cmd#zIndex。
+    /// withCamera の下では at がカメラの平行移動とズームを受ける（Shader 面と同じ決まり）。
+    pub def scene3d(at: Vec2.Vec2, cmd: Scene3d.Scene3dCmd): PlacedItem =
+        { at = at, item = Item.Scene3d(cmd) }
+
     /// Shader 面に、Spec の Param（ShaderDoc.Field.Param）の値の表を付ける（Clipped の中の Shader 面にも効く。
     /// Shader 面でない物はそのまま）。前に付けた表に足す — 同じ名前は後の値。
     /// GL は uniform（uParamN）で渡し、描き出しは Spec の Param を値の Const に置き換えて評価する（shaderSurfaces）。
@@ -203,6 +215,24 @@ pub mod Render {
             case Item.Clipped(c) => Item.Clipped({ inner = withParamsItem(params, c#inner) | c })
             case other           => other
         }
+
+    /// World / Normal を読む面の Spec の名前（重複なし・知らせる物）。2D の面ではその値は 0 になる。
+    pub def shadersReadingWorld3d(items: List[PlacedItem]): List[String] = unsafe IO {
+        let readersOf = specTable();
+        items |> List.foldLeft((acc, placed) -> {
+            let (leaf, _clip) = unwrapClip(placed#item, None);
+            match leaf {
+                case Item.Shader(s) => cachedBySpec(readersOf, worldReaderName, s#spec)
+                    |> List.foldLeft((a, n) -> if (List.memberOf(n, a)) a else n :: a, acc)
+                case _ => acc
+            }
+        }, Nil) |> List.reverse
+    }
+
+    /// World / Normal を読む Spec なら、その名前 1 つ。
+    // WhyNot: Bool を返して cachedBySpec に渡さない — 表は値を Object で持ち、Bool（Java の boolean）はそのまま入らない。
+    def worldReaderName(spec: ShaderDoc.Spec): List[String] =
+        if (ShaderDoc.usesWorld3d(spec)) spec#name :: Nil else Nil
 
     /// 面の Spec が読む Param のうち、面に値が渡されていない物の (Spec の名前, Param の名前)（重複なし・知らせる物）。
     /// 実機は App が z の知らせと同じ所で 1 回だけ知らせる。描き出しは呼び手がこれを呼べば同じ物を出せる。
@@ -394,6 +424,7 @@ pub mod Render {
             case Item.Box(b)     => b#zIndex
             case Item.Poly(p)    => p#zIndex
             case Item.Shader(s)  => s#zIndex
+            case Item.Scene3d(s) => s#zIndex
             case Item.Clipped(c) => zOf(c#inner)
         }
 
@@ -577,13 +608,14 @@ pub mod Render {
     /// rotation に t を加算、Poly は頂点を自前回転（絶対座標で組んだ lineSeg / polygon が
     /// そのまま正しく回る）、Clipped は中身だけ回して clip 矩形は据え置き（clip 矩形が画面に平行という決まりを保つ）。
     /// Shader の面は非対応 — そのまま返す（uv の向きが面と回ると模様の意味が変わるため。
-    /// 模様を回したいときは spec 側の Rotate を使う）。
+    /// 模様を回したいときは spec 側の Rotate を使う）。3D の場面もそのまま返す（向きはカメラの yaw で変える）。
     /// turnedAll と違い anchor（Box の中心）を見ない素朴な at 公転 — Box を「1 枚の板」として
     /// 回したいときは turnedAll、破片に細物（ハイライトの Poly など）を追随させるのはこちら。
     pub def rotatedAroundAll(t: Float64, pivot: Vec2.Vec2, items: List[PlacedItem]): List[PlacedItem] =
         items |> List.map(placed -> match leafOf(placed#item) {
-            case Item.Shader(_) => placed
-            case _              => { at = rotAbout(t, pivot, placed#at), item = turned(t, placed#item) }
+            case Item.Shader(_)  => placed
+            case Item.Scene3d(_) => placed
+            case _               => { at = rotAbout(t, pivot, placed#at), item = turned(t, placed#item) }
         })
 
     /// その item が「自分の軸で回るときの中心」（画面座標）。turnedAll はこの点を pivot の
@@ -661,6 +693,8 @@ pub mod Render {
                                        size = Vec2.mul(s#rect#size, factor) },
                               mask = s#mask |> List.map(poly ->
                                   poly |> List.map(v -> Vec2.mul(v, factor))) | s })
+            // カメラの画角はそのまま — 場面の矩形が伸びれば中の絵も同じ割合で伸びる。
+            case Item.Scene3d(s) => Item.Scene3d({ size = Vec2.mul(s#size, factor) | s })
             case Item.Clipped(_) => bug!("Render.scaled: onLeaf が Clipped を剥がすのでここには届かない")
         }, item)
 
@@ -709,7 +743,7 @@ pub mod Render {
               blend = DrawCmd.BlendMode.Normal, maskPolys = Nil }) }
 
     /// Pass 1 枚を描き出し側の宣言（engine_tools の HeadlessRender.PassSpec と同形のレコード）へ
-    /// 詰め替える。Shader 面は surfaces に分け（ShaderEval が画素ごとに描く）、残りを drawables にする。
+    /// 詰め替える。Shader 面は surfaces に分け（ShaderEval が画素ごとに描く）、3D の場面は scenes に分け、残りを drawables にする。
     /// 倍率は 1.0・読みの書き換えはしない 1 枚用 — **Pass の列は passSpecsOf を通す**（まだ描いていない Pass の読みと
     /// history の書き換えを実機と同じにするため）。
     /// textureInfoOf は region 付き sprite の UV 解決口（region を使わない pass なら
@@ -723,13 +757,14 @@ pub mod Render {
         drawables = List[GameEngine.Drawable],
         polygons = List[GameEngine.PolygonRenderCmd],
         surfaces = List[ShaderSurface],
+        scenes = List[Scene3d.RenderCmd],
         scale = Float64
     }
 
     def passSpecScaled(textureInfoOf: String -> Option[GameEngine.TextureInfo] \ ef, scale: Float64, p: Pass): PassSpecRec \ ef =
-        let (ds, ps) = drawWith(textureInfoOf, withoutShaders(p#items));
+        let (ds, ps) = drawWith(textureInfoOf, withoutScenes3d(withoutShaders(p#items)));
         { name = p#name, clear = p#clear, drawables = ds, polygons = ps,
-          surfaces = shaderSurfaces(p#items), scale = scale }
+          surfaces = shaderSurfaces(p#items), scenes = drawScenes3d(p#items), scale = scale }
 
     /// Pass の計画を描き出し側の宣言の列へ。実機（App.withPassPlan）と同じ resolvePassReads を通し、
     /// 倍率は plan#targets から読む。issues は呼び手が知らせる。
@@ -815,9 +850,10 @@ pub mod Render {
         items |> List.flatMap(placed -> {
             let (leaf, _clip) = unwrapClip(placed#item, None);
             match leaf {
-                case Item.Sprite(sp) => sp#texture :: Nil
-                case Item.Shader(sh) => cachedBySpec(texNamesOf, ShaderDoc.texNames, sh#spec)
-                case _               => Nil
+                case Item.Sprite(sp)  => sp#texture :: Nil
+                case Item.Shader(sh)  => cachedBySpec(texNamesOf, ShaderDoc.texNames, sh#spec)
+                case Item.Scene3d(sc) => sc#billboards |> List.map(b -> Scene3d.billboardFieldsOf(b)#texture)
+                case _                => Nil
             }
         }) |> List.distinct
 
@@ -831,10 +867,24 @@ pub mod Render {
     /// 面の tex / blur（renameSpec）と sprite の texture（f）の名前を替える（Clipped の中まで）。
     def renameReads(f: String -> String, renameSpec: ShaderDoc.Spec -> ShaderDoc.Spec \ IO, item: Item): Item \ IO =
         onLeafIO(leaf -> match leaf {
-            case Item.Sprite(sp) => Item.Sprite({ texture = f(sp#texture) | sp })
-            case Item.Shader(sh) => Item.Shader({ spec = renameSpec(sh#spec) | sh })
-            case other           => other
+            case Item.Sprite(sp)  => Item.Sprite({ texture = f(sp#texture) | sp })
+            case Item.Shader(sh)  => Item.Shader({ spec = renameSpec(sh#spec) | sh })
+            case Item.Scene3d(sc) => Item.Scene3d({ billboards = List.map(renameBillboard(f), sc#billboards) | sc })
+            case other            => other
         }, item)
+
+    /// ビルボードの貼る絵の名前だけを f で替える（ほかの欄はそのまま）。
+    // WhyNot: Scene3d に名前を替える口を足さない — engine の閉じた型を増やさずに、公開の作る関数で組み直せる。
+    def renameBillboard(f: String -> String, b: Scene3d.Billboard3d): Scene3d.Billboard3d =
+        let r = Scene3d.billboardFieldsOf(b);
+        let renamed = f(r#texture);
+        if (renamed == r#texture) b
+        else {
+            let base = Scene3d.billboard(renamed, r#regionRect, r#position, r#size)
+                |> Scene3d.withAnchor(r#anchor)
+                |> Scene3d.withBillboardTint(r#tint);
+            if (r#lit) base else Scene3d.unlit(base)
+        }
 
     /// onLeaf の、葉の書き換えに効果のある形。
     def onLeafIO(f: Item -> Item \ IO, item: Item): Item \ IO =
@@ -971,20 +1021,26 @@ pub mod Render {
                         a = fill#alpha, b = ShaderDoc.Field.Const(k) }) | fill }) | spec }
         }
 
-    /// 面（Item.Shader）の後ろに同じ zIndex の他の描き物を並べた z（小さい順）。描き手は同じ z の中を
-    /// 種類の順（tiles → sprites → polygons → static → surfaces。docs/z-bands.md）で描くので、面は並びに関わらず
+    /// 面（Item.Shader）か 3D の場面（Item.Scene3d）の後ろに同じ zIndex の他の描き物を並べた z と、
+    /// 面と場面が同じ z に並んだ z（小さい順）。描き手は同じ z の中を種類の順
+    /// （tiles → sprites → polygons → static → surfaces → scenes。docs/z-bands.md）で描くので、面と場面は並びに関わらず
     /// 一番手前になり、後ろに並べたドット絵や字を覆う。並びどおりに重ねたいなら、z を分ける（手前の物を大きい z へ）。
-    /// App は面のある画面でこれを見て、z ごとに 1 度だけ知らせる。描き出しのテストからも呼べる（純粋）。
+    /// App は面か場面のある画面でこれを見て、z ごとに 1 度だけ知らせる。描き出しのテストからも呼べる（純粋）。
+    // WhyNot: 面どうし・場面どうしの同じ z は数えない — 同じ種類の中は並びの順で描かれ、並びが効く。
     pub def surfaceZShared(items: List[PlacedItem]): List[Int32] =
-        let (_, shared) = items |> List.foldLeft((acc, placed) -> {
-            let (surfaceZs, found) = acc;
+        let (_, _, shared) = items |> List.foldLeft((acc, placed) -> {
+            let (surfaceZs, sceneZs, found) = acc;
             let (leaf, _clip) = unwrapClip(placed#item, None);
             let z = zOf(leaf);
             match leaf {
-                case Item.Shader(_) => (Set.insert(z, surfaceZs), found)
-                case _              => if (Set.memberOf(z, surfaceZs)) (surfaceZs, Set.insert(z, found)) else acc
+                case Item.Shader(_)  =>
+                    (Set.insert(z, surfaceZs), sceneZs, if (Set.memberOf(z, sceneZs)) Set.insert(z, found) else found)
+                case Item.Scene3d(_) =>
+                    (surfaceZs, Set.insert(z, sceneZs), if (Set.memberOf(z, surfaceZs)) Set.insert(z, found) else found)
+                case _               =>
+                    if (Set.memberOf(z, surfaceZs) or Set.memberOf(z, sceneZs)) (surfaceZs, sceneZs, Set.insert(z, found)) else acc
             }
-        }, ((Set.empty(): Set[Int32]), (Set.empty(): Set[Int32])));
+        }, ((Set.empty(): Set[Int32]), (Set.empty(): Set[Int32]), (Set.empty(): Set[Int32])));
         Set.toList(shared)
 
     /// Shader 面を除いた PlacedItem 列（GL 経路で draw に渡す前に外す — 本物のシェーダーは
@@ -997,6 +1053,47 @@ pub mod Render {
                 case _              => true
             }
         })
+
+    /// 3D の場面だけを取り出して eff Shader の drawScene3d が食える命令へ（GL 経路専用。Clipped も剥がして拾う）。
+    /// 位置は placed#at（カメラの平行移動とズームを済ませた点）、大きさは scaled 済みの cmd#size。
+    /// Clipped の矩形（入れ子は交差）は命令の clip に写す — GL はその矩形と場面の矩形の重なりの外を描かない。
+    pub def drawScenes3d(items: List[PlacedItem]): List[Scene3d.RenderCmd] =
+        items |> List.filterMap(placed -> {
+            let (leaf, clip) = unwrapClip(placed#item, None);
+            match leaf {
+                case Item.Scene3d(sc) => Some({ at = placed#at, clip = clip, scene = sc })
+                case _                => None
+            }
+        })
+
+    /// 3D の場面を除いた PlacedItem 列（GL 経路と CPU の描き出しで drawWith に渡す前に外す — 場面は drawScenes3d が
+    /// 別に運ぶので、toDrawables の代わりの暗い矩形を同じ z に重ねない）。
+    pub def withoutScenes3d(items: List[PlacedItem]): List[PlacedItem] =
+        items |> List.filter(placed -> {
+            let (leaf, _clip) = unwrapClip(placed#item, None);
+            match leaf {
+                case Item.Scene3d(_) => false
+                case _               => true
+            }
+        })
+
+    /// CPU の描き出しへ渡す物（engine_tools の HeadlessRender.SoftScene と同じ欄）。
+    // WhyNot: HeadlessRender.SoftScene を直に返さない — engine_world は engine_tools を参照しない層。欄が同じなので
+    //   そのまま renderPngSoft に渡せる。
+    pub type alias SoftSceneRec = {
+        drawables = List[GameEngine.Drawable],
+        polygons = List[GameEngine.PolygonRenderCmd],
+        surfaces = List[ShaderSurface],
+        scenes = List[Scene3d.RenderCmd]
+    }
+
+    /// 描き物の列を CPU の描き出しへ渡す形にまとめる（HeadlessRender.renderPngSoft にそのまま渡せる）。
+    /// Shader 面は surfaces、3D の場面は scenes に分け、drawables と polygons からは外す（二重に描かない）。
+    /// textureInfoOf は region 付き sprite の UV 解決口（drawWith と同じ。region を使わないなら `_ -> None`）。
+    pub def softSceneOf(textureInfoOf: String -> Option[GameEngine.TextureInfo] \ ef,
+                        items: List[PlacedItem]): SoftSceneRec \ ef =
+        let (ds, ps) = drawWith(textureInfoOf, withoutScenes3d(withoutShaders(items)));
+        { drawables = ds, polygons = ps, surfaces = shaderSurfaces(items), scenes = drawScenes3d(items) }
 
     /// draw / drawWith の共通トラバーサル。Clipped を剥がして有効な clip 矩形（入れ子は交差）を決め、
     /// 葉を Drawable / PolygonRenderCmd へ振り分けてから clip 矩形を刻む。振り分けの分岐を 1 本に
@@ -1087,10 +1184,17 @@ pub mod Render {
                 // 置き場所は drawShaders と同じ pos（scaledAllAround などで動いた後の at）。
                 boxDrawable(s#rect#size, ShaderDoc.representativeColor(s#spec), s#alpha, 0.0, None,
                             s#zIndex, s#blend, pos) :: Nil
+            case Item.Scene3d(sc) =>
+                // 3D を知らない道（drawWith だけの描き出し）向け。場面の何も描かれない所に下の 2D が
+                // 透けて見えるより、「ここに場面がある」と分かる暗い矩形の方が取り違えない。
+                boxDrawable(sc#size, scene3dStandIn(), 1.0, 0.0, None, sc#zIndex, DrawCmd.BlendMode.Normal, pos) :: Nil
             case Item.Clipped(c) =>
                 toDrawables(c#inner, pos)
                     |> List.map(d -> DrawCmd.withClip(mergeClip(c#rect, DrawCmd.clipOf(d)), d))
         }
+
+    /// 3D を描けない道で場面の代わりに塗る色。
+    def scene3dStandIn(): Color = { r = 0.08, g = 0.08, b = 0.1 }
 
     /// clip 矩形 rect を既存の clip と重ねる（両方あれば交差）。
     def mergeClip(rect: Rect2.Rect2, existing: Option[Rect2.Rect2]): Option[Rect2.Rect2] =

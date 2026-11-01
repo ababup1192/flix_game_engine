@@ -42,13 +42,16 @@ pub mod ShaderEffect {
         /// シェーダー面 1 枚を描く。骨格では「床タイルと壁の間の固定 z-index の範囲」へそろえて
         /// renderCommands の下に敷く（暗くするオーバーレイ・ハロが上に正しく乗る）。
         def drawSurface(cmd: ShaderRenderCmd): Unit
+        /// 3D の場面 1 つを、深度で前後を決めて描く（2D の並びの中では cmd#scene#zIndex の 1 点に入る）。
+        def drawScene3d(cmd: Scene3d.RenderCmd): Unit
     }
 
     /// シェーダーを使わないゲーム・GL の無い環境（テスト等）向けの何もしないハンドラ。
-    /// buildProgram は無効ハンドル（0）を返し、drawSurface は捨てる。面が来ても落ちない。
+    /// buildProgram は無効ハンドル（0）を返し、drawSurface と drawScene3d は捨てる。面や場面が来ても落ちない。
     pub def runNoop(f: Unit -> a \ ef + Shader): a \ ef =
         run f() with handler Shader {
             def buildProgram(_spec, k) = k(GpuHandle.wrapShaderProgram(0))
             def drawSurface(_cmd, k)   = k(())
+            def drawScene3d(_cmd, k)   = k(())
         }
 }

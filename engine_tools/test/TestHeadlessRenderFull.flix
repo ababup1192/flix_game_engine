@@ -32,7 +32,7 @@ mod TestHeadlessRenderFull {
     def bytesOf(path: String): List[Int8] \ IO = Files.readAllBytes(new File(path).toPath()) |> Array.toList
 
     def scene(fonts: Map[String, SoftRaster.FontEntry], drawables: List[GameEngine.Drawable]): HeadlessRender.Scene =
-        { passes = Nil, drawables = drawables, polygons = Nil, surfaces = surface() :: Nil, fonts = fonts, fontAntialias = Map.empty() }
+        { passes = Nil, drawables = drawables, polygons = Nil, surfaces = surface() :: Nil, scenes = Nil, fonts = fonts, fontAntialias = Map.empty() }
 
     /// 面と追加フォントを一緒に渡した絵は、SoftRaster.renderFull に同じ物を直に渡した絵とバイトまで同じ。
     @Test
@@ -43,7 +43,7 @@ mod TestHeadlessRenderFull {
         let req: SoftRaster.RasterReq =
             { drawables = drawables, polygons = Nil, design = c#design, scale = c#scale, background = c#background,
               texturePath = c#texturePath, fontTtf = c#fontTtf, fontAtlas = c#fontAtlas, outPath = "${outDir()}/direct.png",
-              shapeAntialias = c#shapeAntialias, textAntialias = c#textAntialias };
+              shapeAntialias = c#shapeAntialias, textAntialias = c#textAntialias, scenes = Nil };
         SoftRaster.renderFull(req, surface() :: Nil, fonts, Map.empty());
         Assert.assertEq(expected = bytesOf("${outDir()}/direct.png"), bytesOf("${outDir()}/full.png"))
 
@@ -62,7 +62,7 @@ mod TestHeadlessRenderFull {
         let fonts = Map#{ "font_alt" => { ttf = uiTtf(), atlas = atlas } };
         let antialias = perFont |> Option.map(smooth -> Map#{ "font_alt" => smooth }) |> Option.getWithDefault(Map.empty());
         HeadlessRender.renderPngFull({ textAntialias = whole | cfg() },
-            { passes = Nil, drawables = drawables, polygons = Nil, surfaces = Nil, fonts = fonts, fontAntialias = antialias }, name);
+            { passes = Nil, drawables = drawables, polygons = Nil, surfaces = Nil, scenes = Nil, fonts = fonts, fontAntialias = antialias }, name);
         bytesOf("${outDir()}/${name}.png")
 
     /// 絵全体はならす設定のまま表で本を false にした字は、絵全体で切った字とバイトまで同じ（逆も同じ）。

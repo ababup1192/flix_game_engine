@@ -568,6 +568,7 @@ mod View {
         case Render.Item.Box(b)     => Render.Item.Box({ zIndex = b#zIndex + dz | b })
         case Render.Item.Poly(p)    => Render.Item.Poly({ zIndex = p#zIndex + dz | p })
         case Render.Item.Shader(x)  => Render.Item.Shader({ zIndex = x#zIndex + dz | x })
+        case Render.Item.Scene3d(x) => Render.Item.Scene3d({ zIndex = x#zIndex + dz | x })
         case Render.Item.Clipped(c) => Render.Item.Clipped({ inner = liftedZ(dz)(c#inner) | c })
     }
 

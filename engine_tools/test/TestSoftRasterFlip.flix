@@ -39,7 +39,7 @@ mod TestSoftRasterFlip {
               fontTtf = "../templates/game-starter/assets/Xolonium-Regular.ttf",
               fontAtlas = { textureName = "font_ui", fontSize = 16.0, textureSize = 256.0,
                             ascent = 12.0, descent = 4.0, lineGap = 0.0, glyphs = Map.empty() },
-              outPath = "", shapeAntialias = true, textAntialias = true };
+              outPath = "", shapeAntialias = true, textAntialias = true, scenes = Nil };
         SoftRaster.renderToImageFull(req, Nil, Map.empty(), Map#{ "paper" => halvesImage() })
 
     /// 反転しても紙の (1,3)（絵の左隣）と (6,3)（絵の右隣）は背景の黒のまま。

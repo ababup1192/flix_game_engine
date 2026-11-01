@@ -101,7 +101,7 @@ pub mod HeadlessRender {
           design = cfg#design, scale = cfg#scale, background = cfg#background,
           texturePath = cfg#texturePath, fontTtf = cfg#fontTtf, fontAtlas = cfg#fontAtlas,
           outPath = outPath,
-          shapeAntialias = cfg#shapeAntialias, textAntialias = cfg#textAntialias }
+          shapeAntialias = cfg#shapeAntialias, textAntialias = cfg#textAntialias, scenes = Nil }
 
     def pngPath(cfg: RenderConfig, name: String): String = "${cfg#outDir}/${name}.png"
     def gifPath(cfg: RenderConfig, name: String): String = "${cfg#outDir}/${name}.gif"
@@ -223,6 +223,21 @@ pub mod HeadlessRender {
 
     def silhouetteInk(): Color = { r = 0.0, g = 0.0, b = 0.0 }
 
+    /// 3D の場面を「三角形とビルボードが覆う画素は黒・それ以外は透明」に写す（silhouetteWith の 3D 版）。
+    /// 色は頂点の色 × tint × 光なので tint を黒にすれば光の量によらず黒になる。かすみと地の色は外す
+    /// （かすみの色が乗ると灰色になり、地の色は場面の矩形をまるごと 1 つの塊に塗る）。
+    // WhyNot: silhouetteWith の戻りの組に足さない — pub の口の型が変わり、今それを呼んでいる所が全部止まる。
+    pub def silhouetteScenes(scope: SilhouetteScope, scenes: List[Scene3d.RenderCmd]): List[Scene3d.RenderCmd] =
+        scenes
+            |> List.filter(c -> silhouetteKeeps(scope, c#scene#zIndex))
+            |> List.map(c -> {
+                let sc = c#scene;
+                { scene = { instances = sc#instances |> List.map(Scene3d.withTint(silhouetteInk())),
+                            billboards = sc#billboards |> List.map(b -> Scene3d.unlit(Scene3d.withBillboardTint(silhouetteInk(), b))),
+                            environment = { fog = None, background = None | sc#environment },
+                            output = Scene3d.Output.Color | sc } | c }
+            })
+
     /// シェーダー面を「黒のベタ・alpha は全面 1」に写す。alpha を場のまま残すと、
     /// 面のふちの薄さが灰色として出てシルエットの縁がぼやける（blackenDrawable と同じ理由）。
     /// rect と mask は触らない — 形はそこが持っている。
@@ -277,12 +292,14 @@ pub mod HeadlessRender {
     ///（Field.Tex）も同じ name で生成した絵を読める。
     /// 組むのは Render.passSpecsOf（Pass の列と倍率を実機と同じ決まりで下ろす）。Shader 面は surfaces に入り、
     /// drawables には入らない（代表色ベタ塗りと二重にしない）。scale は RenderTarget.Descriptor の倍率。
+    /// scenes = Pass の中の 3D の場面（RasterReq#scenes と同じ扱い）。
     pub type alias PassSpec = {
         name = String,
         clear = RenderTarget.LoadOp,
         drawables = List[GameEngine.Drawable],
         polygons = List[GameEngine.PolygonRenderCmd],
         surfaces = List[SoftRaster.SurfaceCmd],
+        scenes = List[Scene3d.RenderCmd],
         scale = Float64
     }
 
@@ -306,7 +323,7 @@ pub mod HeadlessRender {
     def renderPassImageFonts(cfg: RenderConfig, fonts: Map[String, SoftRaster.FontEntry], fontAntialias: SoftRaster.FontAntialias,
                              images: Map[String, BufferedImage],
                              p: PassSpec, prev: Option[BufferedImage]): BufferedImage \ IO =
-        let req = { scale = 1 | reqOf(cfg, p#drawables, p#polygons, "") };
+        let req = { scale = 1, scenes = p#scenes | reqOf(cfg, p#drawables, p#polygons, "") };
         if (p#scale != 1.0) {
             let texels = RenderTarget.sizeOf(cfg#design, { scale = p#scale | RenderTarget.defaultDescriptor() });
             match p#clear {
@@ -328,12 +345,14 @@ pub mod HeadlessRender {
     /// 1 枚の絵に要る物の全部。passes = 本編より先に描く pass（後の pass と本編は前の pass の名前を貼れる）、
     /// surfaces = ShaderDoc の面（Render.shaderSurfaces の出力と同形）、fonts = 追加フォント（renderPngFonts と同じ名前の決まり）、
     /// fontAntialias = 字の縁を本ごとに決める表（テクスチャ名 → ならすか。表に無い本は cfg#textAntialias）。
+    /// scenes = 3D の場面（RasterReq#scenes と同じ扱い）。
     /// 何も足さない欄は Nil / Map.empty()。items は Render.withoutShaders → Render.draw で下ろす（renderPngWithPasses と同じ決まり）。
     pub type alias Scene = {
         passes = List[PassSpec],
         drawables = List[GameEngine.Drawable],
         polygons = List[GameEngine.PolygonRenderCmd],
         surfaces = List[SoftRaster.SurfaceCmd],
+        scenes = List[Scene3d.RenderCmd],
         fonts = Map[String, SoftRaster.FontEntry],
         fontAntialias = SoftRaster.FontAntialias
     }
@@ -352,13 +371,36 @@ pub mod HeadlessRender {
                        passItems, List.length(scene#surfaces) + passSurfaces);
         let images = passImagesOf(cfg, scene#fonts, scene#fontAntialias, scene#passes);
         warnDropped(scene#drawables, name);
-        RenderCache.writePlainPngAntialias(reqOf(cfg, scene#drawables, scene#polygons, pngPath(cfg, name)),
+        RenderCache.writePlainPngAntialias({ scenes = scene#scenes | reqOf(cfg, scene#drawables, scene#polygons, pngPath(cfg, name)) },
             scene#surfaces, scene#fonts, scene#fontAntialias, images)
+
+    /// CPU で描く 1 枚に要る物（engine_world の Render.softSceneOf が同じ形のレコードを返す）。
+    /// drawables は Shader 面と 3D の場面を外して下ろした物（代わりの矩形と二重にしない）。
+    pub type alias SoftScene = {
+        drawables = List[GameEngine.Drawable],
+        polygons = List[GameEngine.PolygonRenderCmd],
+        surfaces = List[SoftRaster.SurfaceCmd],
+        scenes = List[Scene3d.RenderCmd]
+    }
+
+    /// SoftScene を 1 枚の PNG に生成する（3D のゲームはこれを 1 回呼べば済む）。知らせと値段の記録は renderPngFull と同じ。
+    pub def renderPngSoft(cfg: RenderConfig, soft: SoftScene, name: String): Unit \ IO =
+        renderPngFull(cfg, { passes = Nil, drawables = soft#drawables, polygons = soft#polygons, surfaces = soft#surfaces,
+                             scenes = soft#scenes, fonts = Map.empty(), fontAntialias = Map.empty() }, name)
+
+    /// SoftScene のシルエット PNG（silhouettePngWith の 3D 込みの版）。3D の場面は silhouetteScenes で黒にする。
+    pub def silhouettePngSoft(cfg: RenderConfig, scope: SilhouetteScope, soft: SoftScene, name: String): Unit \ IO =
+        let (blackDrawables, blackPolygons, blackSurfaces) =
+            silhouetteWith(scope, soft#drawables, soft#polygons, soft#surfaces);
+        renderPngSoft({ background = { r = 1.0, g = 1.0, b = 1.0 } | cfg },
+                      { drawables = blackDrawables, polygons = blackPolygons, surfaces = blackSurfaces,
+                        scenes = silhouetteScenes(scope, soft#scenes) }, name)
 
     /// passes を宣言順に生成した画像（毎回透明から。後の pass は前の pass の名前を貼れる）。
     /// 自分の history（RenderTarget.historyName）を読む pass には、全画素透明の 1 枚をその名前で渡す
     /// （描き出しは毎コマ「1 コマ目」— GIF もコマをまたがない決まりと同じ）。
-    def passImagesOf(cfg: RenderConfig, fonts: Map[String, SoftRaster.FontEntry], fontAntialias: SoftRaster.FontAntialias,
+    /// 動画のコマ（RenderCache.writeFramePng の extraImages）にも渡せる。
+    pub def passImagesOf(cfg: RenderConfig, fonts: Map[String, SoftRaster.FontEntry], fontAntialias: SoftRaster.FontAntialias,
                      passes: List[PassSpec]): Map[String, BufferedImage] \ IO =
         passes |> List.foldLeft((acc, p) -> {
             let history = RenderTarget.historyName(p#name);
@@ -379,6 +421,7 @@ pub mod HeadlessRender {
     def passReads(name: String, p: PassSpec): Bool =
         List.exists(sc -> List.memberOf(name, ShaderDoc.texNames(sc#spec)), p#surfaces)
             or List.exists(d -> DrawCmd.toSpec(d)#texture == name, p#drawables)
+            or List.exists(c -> List.exists(b -> Scene3d.billboardFieldsOf(b)#texture == name, c#scene#billboards), p#scenes)
 
     /// pass と同じテクセル寸法の全画素透明の 1 枚。
     def transparentLike(cfg: RenderConfig, p: PassSpec): BufferedImage \ IO =
@@ -413,7 +456,7 @@ pub mod HeadlessRender {
                                 drawables: List[GameEngine.Drawable],
                                 polygons: List[GameEngine.PolygonRenderCmd],
                                 surfaces: List[SoftRaster.SurfaceCmd], name: String): Unit \ IO =
-        renderPngFull(cfg, { passes = passes, drawables = drawables, polygons = polygons, surfaces = surfaces, fonts = Map.empty(), fontAntialias = Map.empty() }, name)
+        renderPngFull(cfg, { passes = passes, drawables = drawables, polygons = polygons, surfaces = surfaces, scenes = Nil, fonts = Map.empty(), fontAntialias = Map.empty() }, name)
 
     /// frames を stride 枚ごとに間引き、各コマを toCmds で描いて GIF ＋ コマ別 PNG に生成する。
     /// 返り値は ReferenceSite 用のフィルムストリップ情報（駒送りビューア）。
@@ -498,7 +541,7 @@ pub mod HeadlessRender {
                               name: String): ReferenceSite.Filmstrip \ IO =
         renderGifFull(cfg, frames, stride, w -> {
             let (passes, drawables, polygons, surfaces) = toCmds(w);
-            { passes = passes, drawables = drawables, polygons = polygons, surfaces = surfaces, fonts = Map.empty(), fontAntialias = Map.empty() }
+            { passes = passes, drawables = drawables, polygons = polygons, surfaces = surfaces, scenes = Nil, fonts = Map.empty(), fontAntialias = Map.empty() }
         }, name)
 
     /// renderGifWithPasses の、コマごとの絵を Scene で渡す形（追加フォントも使える）。
@@ -519,7 +562,7 @@ pub mod HeadlessRender {
             let (i, w) = pair;
             let scene = toScene(w);
             let passImages = passImagesOf(cfg, scene#fonts, scene#fontAntialias, scene#passes);
-            let img = SoftRaster.renderToImageCachedAntialias(reqOf(cfg, scene#drawables, scene#polygons, gifPath(cfg, name)),
+            let img = SoftRaster.renderToImageCachedAntialias({ scenes = scene#scenes | reqOf(cfg, scene#drawables, scene#polygons, gifPath(cfg, name)) },
                                                               scene#surfaces, scene#fonts, scene#fontAntialias, passImages, warnLog, cache);
             Filmstrip.renderFrame(img, "${cfg#outDir}/frames/${name}/${i}.png");
             img

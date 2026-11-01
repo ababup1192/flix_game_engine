@@ -96,6 +96,8 @@ vignette・熱い溶岩を **JSON の保存だけで即調整できる**形で�
 | `math2` | `op`, `a`, `b` | `add`/`sub`/`mul`/`min`/`max`/`step`/`div`（`div` は `b` が 0 なら 0） |
 | `sampler` **[新]** | `filter`(`"nearest"`/`"linear"`), `of` | `of` の中の `tex` / `blur` を、その補間で読む（入れ子は内側が勝つ・`use` の中までは届かない） |
 | `param` **[新]** | `name`（英数字と `_`） | 面を置く時に渡す数（`Render.withShaderParams(Map#{"focus" => v}, 面)`）。毎フレーム変わる数（ピントの位置・体力の割合）はここで渡す — `const` に入れると実機は GLSL を作り直す。渡さなかった名前は 0（実機は `[render] 面 …: param '…'` を 1 回知らせる。描き出しは `Render.missingShaderParams` で同じ物を引ける） |
+| `world` **[新]** | `axis`(`"x"`/`"y"`/`"z"`) | 3D のメッシュに塗る時の、画素の world の点の成分（左手系。X = 東・Y = 上・Z = 北）。`scaled`・`tiling`・`shift` などの uv の変換を受けない（いつも画素の world の値）。2D の面では 0（実機は `[render] 面 …: world / normal は…` を 1 回知らせる） |
+| `normal` **[新]** | `axis`(`"x"`/`"y"`/`"z"`) | 3D のメッシュに塗る時の、外向きの単位の法線の成分（-1〜1）。uv の変換を受けない。2D の面では 0 |
 | `mix` | `a`, `b`, `t` | 一定の割合で混ぜる |
 | `blend` | `a`, `b`, `by` | 場で混ぜ具合を決めて混ぜる |
 | `time` | `scale`, `offset` | 時刻そのもの（明滅・呼吸に） |
@@ -199,6 +201,16 @@ vignette・熱い溶岩を **JSON の保存だけで即調整できる**形で�
   タップごとに `tex` をインライン展開すること
 - 性能注記: shared は out から参照されなくても**画素ごとに必ず評価される**（unused な
   shared は合法だが黙って生成が重くなる。使わない束ねは消す）
+
+### 3D の材質と `atWorld` — `use` の定義の側に書く **[新]**
+
+3D のメッシュ（`Scene3d.withMaterial`）に塗る時、uv は (0, 0) で、uv を読む場（`fbm`・`worley`・`hash` …）は
+どこでも同じ値になる。world の上で読ませるには `ShaderDoc.atWorld((Axis3.X, Axis3.Z), 場)` で包む
+（world の 2 軸を uv として読ませる `shift`。床なら X と Z、東西を向く壁なら Z と Y）。
+`use` は面の基準 uv で 1 回だけ評価するので、`atWorld(p, ref("rock"))` と外から包んでも world を読まない —
+**`atWorld` は `shared` の定義の側に書く**（`("rock", atWorld(p, fbm))` と置いてから `use("rock")` で引く）。
+材質は「光を当てる前の色」（out の色と α）と、任意で「自分で光る色」（`Material3d.emission`。光の計算の後に足す）を返す。
+3D の材質は `tex` / `blur` を読まない（0 になる）。
 
 ### ぼかしのコスト（正直な試算）
 

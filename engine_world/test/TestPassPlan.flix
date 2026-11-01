@@ -94,4 +94,42 @@ mod TestPassPlan {
         let specs = Render.passSpecsOf(_ -> None, plan)#specs;
         Assert.assertEq(expected = (1, 1, 0.5) :: (0, 0, 1.0) :: Nil,
                         specs |> List.map(sp -> (List.length(sp#surfaces), List.length(sp#drawables), sp#scale)))
+
+    /// GL の無い所で App.drawPassPlan を 1 回流す（描く命令は全部捨てる）。
+    def drawPassPlanStubbed(known: Set[String], plan: Render.PassPlan): Set[String] =
+        RenderTarget.runNoop(() -> ShaderEffect.runNoop(() -> run {
+            App.drawPassPlan(_ -> (), { x = 8.0, y = 8.0 }, known, plan)
+        } with handler GameEngine.Game {
+            def renderCommands(_sprites, _tileMaps, _polygons, _staticLayer, k) = k(())
+            def initTileBuffer(_instances, _k) = bug!("unused")
+            def updateTileBuffer(_vaoId, _instances, _k) = bug!("unused")
+            def shouldClose(k) = k(false)
+            def setShouldClose(_close, k) = k(())
+            def getDeltaTime(_k) = bug!("unused")
+            def isKeyPressed(_key, k) = k(false)
+            def getMousePosition(k) = k(Vec2.zero())
+            def isMouseButtonPressed(_button, k) = k(false)
+            def isGamepadTouched(k) = k(false)
+            def gamepadKind(_k) = bug!("unused")
+            def consumeScrollDelta(k) = k(0.0)
+            def getFontAtlas(_name, _k) = bug!("unused")
+            def ensureGlyphs(_textureName, _codepoints, k) = k(())
+            def getViewportRect(_k) = bug!("unused")
+            def getTextureInfo(_name, k) = k(None)
+            def ensureTexture(_name, _key, _w, _h, _argb, k) = k(())
+            def setDiagnosticsEnabled(_on, k) = k(())
+            def consumeDiagnostics(_k) = bug!("unused")
+            def setCursor(_cursor, k) = k(())
+            def setCursorVisible(_visible, k) = k(())
+            def setFullscreen(_on, k) = k(())
+            def isFullscreen(k) = k(false)
+            def saveAnnotation(_req, k) = k(None)
+            def setDebugBadge(_enabled, k) = k(())
+        }))
+
+    // 返す known は前の known にこのコマの Pass の名前を足した物（コマをまたいで減らない）。
+    @Test
+    def testDrawPassPlanGrowsKnownTargets(): Unit \ Assert =
+        let plan = Render.passPlan(pass("a", Nil) :: pass("b", readsFill("a") :: Nil) :: Nil);
+        Assert.assertEq(expected = Set#{"old", "a", "b"}, drawPassPlanStubbed(Set#{"old"}, plan))
 }

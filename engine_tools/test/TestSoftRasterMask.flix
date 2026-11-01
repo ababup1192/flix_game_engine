@@ -40,7 +40,7 @@ mod TestSoftRasterMask {
               fontTtf = "../templates/game-starter/assets/Xolonium-Regular.ttf",
               fontAtlas = { textureName = "font_ui", fontSize = 16.0, textureSize = 256.0,
                             ascent = 12.0, descent = 4.0, lineGap = 0.0, glyphs = Map.empty() },
-              outPath = "", shapeAntialias = true, textAntialias = true };
+              outPath = "", shapeAntialias = true, textAntialias = true, scenes = Nil };
         SoftRaster.renderToImageFull(req, Nil, Map.empty(), Map#{ "paper" => greenImage() })
 
     // mask の内側（画素 (1,1)・三角形の奥）はテクスチャの緑がそのまま出る。

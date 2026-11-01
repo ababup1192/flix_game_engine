@@ -291,6 +291,8 @@ pub mod Annotate {
             case Render.Item.Shader(s) =>
                 // 置き場所は描く時と同じ pos（scaledAllAround などで動いた後の at）、大きさは塗る矩形。
                 { position = pos, size = s#rect#size }
+            case Render.Item.Scene3d(sc) =>
+                { position = pos, size = sc#size }
             case Render.Item.Clipped(c) =>
                 // clip 矩形の外は描かれないので、外形も clip 矩形と交差させる — 完全に切り取られて
                 // 見えない物が注釈やヒット一覧に載る嘘を作らない(交差が空なら負サイズ)。
@@ -352,6 +354,8 @@ pub mod Annotate {
                 { kind = "poly", name = "", position = pos, zIndex = p#zIndex, aabb = aabb }
             case Render.Item.Shader(s) =>
                 { kind = "shader", name = s#spec#name, position = pos, zIndex = s#zIndex, aabb = aabb }
+            case Render.Item.Scene3d(sc) =>
+                { kind = "scene3d", name = "", position = pos, zIndex = sc#zIndex, aabb = aabb }
             case Render.Item.Clipped(c) =>
                 // Hit の種類・名前・z は clip 矩形ではなく中身のもの。
                 hitOf({ at = pos, item = c#inner }, aabb)
