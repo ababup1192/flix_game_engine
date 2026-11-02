@@ -251,6 +251,7 @@ pub mod Light {
     /// 割り切り: 影は Normal 合成で領域ごと環境光へ戻すため、**光 A の影が光 B の照らす
     /// 領域を横切ると、B の灯りもその領域では消える**。厳密にするには光 1 個 = pass 1 本が
     /// 要り、pass 数が光源数に比例して増えるため v1 はこの割り切りを仕様にする。
+    /// 8bit の描き先へ Multiply で貼る時は光マップの値が 1 に切られる（GL の決まり）ので、Rgba16Float の光マップでも 1 を超えて明るくはできない。
     pub def lightMapPass(cfg: LightMapConfig): Render.Pass =
         let ambientFloor = { at = Vec2.zero(), item = RawDraw.box(cfg#viewport, cfg#ambient, 0) };
         let radiance = cfg#lights |> List.map(light -> Render.lightAt({

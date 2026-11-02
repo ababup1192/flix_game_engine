@@ -24,7 +24,6 @@ pub mod VideoOut {
     import java.lang.Throwable
     import java.nio.ByteBuffer
     import java.util.concurrent.ConcurrentHashMap
-    import java.awt.image.BufferedImage
     import javax.imageio.ImageIO
 
     /// 何で塗ったか（frames.json の painter）。
@@ -310,7 +309,7 @@ pub mod VideoOut {
         }, Map.empty())
 
     /// Pass を宣言順に SoftRaster で塗った画像（名前 → 画像。Pass の無いコマは空）。本編と同じ絵の表と字を使う。
-    def passImages(video: Video[w], warn: String -> Unit \ IO, frame: DrawHash.Frame, plan: Render.PassPlan): Map[String, BufferedImage] \ IO =
+    def passImages(video: Video[w], warn: String -> Unit \ IO, frame: DrawHash.Frame, plan: Render.PassPlan): Map[String, SoftRaster.PassImage] \ IO =
         if (List.isEmpty(plan#passes)) Map.empty()
         else {
             let prepared = Render.passSpecsOf(HeadlessRender.imageTextureInfo(video#images), plan);

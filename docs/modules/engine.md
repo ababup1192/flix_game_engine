@@ -40,6 +40,8 @@
 | シェーダー宣言を GLSL のソースへ変換する仕組みを知りたい | ShaderGen |
 | シェーダーの式を GPU なしで評価したい（テスト・SoftRaster の描き出し） | ShaderEval |
 | shader.json を読み書きしたい | ShaderJson |
+| 1 を超える明るさの Pass を 0..1 に収めたい（トーンマップ・露出・白の点）・縁のギザギザをならしたい（FXAA）・明るさ（709）を場で作りたい | PostProcess（tonemapped / tonemappedWith / fxaaSpec / luma709。使い方は [shader-doc.md](../shader-doc.md) の「後処理」） |
+| 面の中でテクスチャ（Pass）のテクセルの数を読む・1 テクセルずつずらす | ShaderDoc.Field.TexSize（`Div(Const(1), TexSize)` がずらす量） |
 | シェーダー面を描く GPU 側の効果口を知りたい | ShaderEffect |
 | 1 コマで作ったシェーダー・足した字・塗りと swap の時間を知りたい（ヒッチの記録の材料） | FrameDiagnostics |
 | 位置ベクトルの足し引き・長さ・回転を計算したい | Vec2 |
@@ -62,13 +64,16 @@
 | 3D の 4×4 行列（移動・回転・拡大・視点・透視）を組みたい | Mat4 |
 | 3D の物の置き場所（位置・回転・拡大）を 1 つの値で持ちたい | Transform3d |
 | 3D の回転を四元数で持つ・2 つの向きの間をなめらかにつなぐ | Quat |
-| 3D の形（頂点・法線・色・三角形）を作る・箱や板を組む | Mesh3d |
+| 3D の形（頂点・法線・色・三角形）を作る・箱や板を組む・uv を付ける（withUvs・withBoxUvs） | Mesh3d |
+| 3D の材質に貼る絵を場面に持たせる（PNG / JPEG を読む・中身のハッシュの名前） | Texture3d（Scene3d.texturedMaterial と組む） |
+| 絵の縮小の段（mip）を作る・3D の絵を読む段を選ぶ（GPU と CPU で同じ式） | Mip（build / lodOf） |
 | 3D の視点（位置・向き・画角）を持ちたい | Camera3d |
 | 3D の部屋や物を 1 つの描き物（Render.Item.Scene3d）にまとめる・灯り・霧・影 | Scene3d（shadowMatrix の約束は Scene3d.flix の doc） |
 | 3D の形に骨を入れる（関節の並び・頂点ごとの重み） | Skin3d |
 | 骨の動き（キーフレームの並び）を持つ・ある時刻の姿勢を取り出す | AnimationClip3d |
 | 骨ごとの姿勢を混ぜる・Scene3d へ渡す | Pose3d（Scene3d.withPose） |
 | Blender などで書き出した .glb を読む（形・骨・動き） | Gltf（load / fromGlb。X を反転して左手系へ） |
+| .glb の絵と材質（baseColorTexture・normalTexture）も読んで primitive ごとに置く | Gltf.loadTextured（Model3d の parts と textures） |
 | 起動画面（ロゴ+ゲージ）を組み立てたい | Splash |
 | 起動画面の組み込みフォント・ロゴを使いたい | BootFont（素データは BootFontData。生成物なので手で触らない） |
 | 円弧・リングを描きたい（Drawable 経路） | Arc |
@@ -86,6 +91,7 @@
 | HUD を本体より確実に手前に出す | ゲームからは App.withHudView（中は ZStack の木）。CanvasLayer は ui.json の層の内側の仕組み |
 | 放射グラデの組み込みテクスチャ（`__radial_light` / `__radial_dark`）の画素・名前・寸法を知りたい | RadialBuiltin（ゲーム側の入口は engine_world の `Render.lightAt` / `Render.darkAt`） |
 | Drawable 経路のカメラ・投影を知りたい（`view = None` のゲーム以外では使わない） | Camera / Projection |
+| Pass のターゲットを画面（窓・書き出し）の画素で描きたい（3D・後処理を design より細かく） | RenderTarget.windowDescriptor（Descriptor の basis = Window。寸法は RenderTarget.texelSizeOf） |
 | 画面でなくレンダーターゲットに描いてテクスチャとして読み返したい（`eff Target`） | RenderTarget（GL 実装は render_gl の Target.flix / RenderTargetGl。ゲーム側の入口は engine_world の `Render.Pass` + `App.withPasses`、[逆引き](../module-index.md)を参照） |
 | いま bind 中のフレームバッファ（FBO でも既定でも）を画像 / PNG に吸い出したい | GlReadback（render_gl の GlReadback.flix。`readBoundImage`（RGBA・左上原点）/ `readBoundImageRgb`（RGB に落とす皮）/ `readBoundPng`。splashShot・注釈スクショ・GL 突き合わせ（bench/gl_parity）が共有する読み出しの核） |
 
@@ -102,6 +108,7 @@
 - **ShaderGen** — Spec を GLSL の fragment シェーダー文字列へ変換する codegen。各部品が自分の GLSL 片（式）を返し、compile が 1 枚の main() に繋ぐ。出力は決定論なのでスナップショットで釘打ちできる。
 - **ShaderEval** — Spec 木を CPU（Float64）で評価する純関数。GL の描画経路ではないが、SoftRaster（描き出し・動画・スナップショット）はシェーダー面の画素をこれで塗り、テストは式の構造が GLSL 側と揃っているかをこれで確かめる。tex 場つきの評価は `ShaderEval.evalPixelTex` / `ShaderEval.evalAlphaTex`。何万画素も評価する画素ループは `ShaderEval.compile` で面ごとに 1 回だけ組み直し、画素ごとに `ShaderEval.evalCompiled` を呼ぶ（色と α を 1 回の shared 先行評価で返す。SoftRaster はこれを全コアで並べて評価し、`FGE_SOFT_SERIAL=1` で 1 本に戻せる）。
 - **ShaderJson** — シェーダー面の宣言（ShaderDoc.Spec）を JSON と相互変換する codec。engine を触らず `*.shader.json` の保存だけで調整できる（App.watchFile によるホットリロードの受け皿）。
+- **PostProcess** — 画面の仕上げの面を ShaderDoc の Spec で組む部品（Unity URP / Unreal の Post Process と同じ並び）。`PostProcess.tonemapped` / `tonemappedWith`（AcesFitted・Reinhard。既定は `defaultExposure()` = 0.4 stop・`defaultWhitePoint()` = 4.0）・`PostProcess.fxaaSpec`（FXAA 3.11 の PC の簡単な版）・`PostProcess.luma709`。今の場と bindings だけで組むので GPU と CPU が同じ木を評価する。
 - **FrameDiagnostics** — 1 コマぶんの描く側の診断（作ったシェーダーと理由・GPU にあるシェーダーの数・足した字・塗りと swap の時間）。`GameEngine.Game.consumeDiagnostics` が返し、App のヒッチの記録が 1 コマごとに引き取る。`setDiagnosticsEnabled(true)` の間だけ数える。
 - **ShaderEffect** — 宣言シェーダー面を GPU で描くための別チャンネルの効果口（`eff Shader`）。`eff Game` に描画オペを足すとハンドラ全てが波及するため、シェーダー面だけ別効果に切り出している。
 

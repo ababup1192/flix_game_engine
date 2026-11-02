@@ -1030,8 +1030,8 @@ def texSpecOf(): ShaderDoc.Spec =
 def glslHeader(): String =
     "#version 330 core\nin vec2 vUv;\nout vec4 outColor;\nuniform float uTime;\nuniform float uAlpha;\n"
 
-/// compile() の main の終わり（面全体の濃さ uAlpha を掛けて閉じる）。
-def glslMainEnd(): String = "\n    outColor.a *= uAlpha;\n}\n"
+/// compile() の main の終わり（rgb を [0, 65504]・α に面全体の濃さ uAlpha を掛けて [0, 1] に切って閉じる）。
+def glslMainEnd(): String = "\n    outColor = vec4(clamp(outColor.rgb, 0.0, 65504.0), clamp(outColor.a * uAlpha, 0.0, 1.0));\n}\n"
 
 /// (a) 新語彙を使わない既存代表 Spec の compile() 全文は「ヘッダ + prelude + main」のままで、
 ///   uTex uniform が 1 文字も足されない（使わない Spec の GLSL を変えないことを全文で釘打ち）。
@@ -1337,15 +1337,59 @@ def testSingleTexReadIsNotHoisted(): Unit \ Assert =
                     body)
 
 // ════════════════════════════════════════════════════════════════════
-// レンダーターゲットのテクセル寸法（RenderTarget.sizeOf）
+// レンダーターゲットのテクセル寸法（RenderTarget.texelSizeOf）
 // ════════════════════════════════════════════════════════════════════
 
 /// 各軸 ceil(design × scale)。270 × 0.25 = 67.5 は 68 に切り上げ。範囲外（0・2・NaN）は 1.0 として design そのもの。
 @Test
 def testTargetSizeOf(): Unit \ Assert =
-    let at = scale -> RenderTarget.sizeOf({ x = 480.0, y = 270.0 }, { scale = scale | RenderTarget.defaultDescriptor() });
+    let at = scale -> RenderTarget.texelSizeOf({ x = 480.0, y = 270.0 }, 1.0, { scale = scale | RenderTarget.defaultDescriptor() });
     Assert.assertEq(expected = ((240, 135), (120, 68), (480, 270), (480, 270), (480, 270), (480, 270)),
                     (at(0.5), at(0.25), at(1.0), at(0.0), at(2.0), at(Float64.nan())))
+
+/// Design の基準は描き手の画素の倍率（1・2・4）に依らず design × scale。
+@Test
+def testDesignTargetIgnoresPixelScale(): Unit \ Assert =
+    let at = (px: Float64) -> RenderTarget.texelSizeOf({ x = 480.0, y = 270.0 }, px, { scale = 0.5 | RenderTarget.defaultDescriptor() });
+    Assert.assertEq(expected = ((240, 135), (240, 135), (240, 135)), (at(1.0), at(2.0), at(4.0)))
+
+/// Window の基準は design × 描き手の画素の倍率（1・2・4）× scale。
+@Test
+def testWindowTargetFollowsPixelScale(): Unit \ Assert =
+    let at = (px: Float64, scale: Float64) -> RenderTarget.texelSizeOf({ x = 480.0, y = 270.0 }, px, { scale = scale | RenderTarget.windowDescriptor() });
+    Assert.assertEq(expected = ((480, 270), (960, 540), (1920, 1080), (960, 540)), (at(1.0, 1.0), at(2.0, 1.0), at(4.0, 1.0), at(4.0, 0.5)))
+
+/// Window の基準で、描き手の画素の倍率が窓に合わせた端数（2.5）なら切り上げ。0 以下・非有限の倍率は 1 として扱う。
+@Test
+def testWindowTargetRoundsUpAndRejectsBadPixelScale(): Unit \ Assert =
+    let at = (px: Float64) -> RenderTarget.texelSizeOf({ x = 3.0, y = 3.0 }, px, RenderTarget.windowDescriptor());
+    Assert.assertEq(expected = ((8, 8), (3, 3), (3, 3)), (at(2.5), at(0.0), at(Float64.nan())))
+
+/// 作り方の既定の形式は 2 つとも Rgba8Unorm（今の 8bit の Pass のまま）。withHdr は形式だけを Rgba16Float に替え、倍率と基準は残す。
+@Test
+def testDescriptorFormatDefaultsAndWithHdr(): Unit \ Assert =
+    let hdr = RenderTarget.withHdr({ scale = 0.5 | RenderTarget.windowDescriptor() });
+    Assert.assertEq(expected = (RenderTarget.Format.Rgba8Unorm, RenderTarget.Format.Rgba8Unorm,
+                                (RenderTarget.Format.Rgba16Float, 0.5, RenderTarget.Basis.Window)),
+                    (RenderTarget.defaultDescriptor()#format, RenderTarget.windowDescriptor()#format,
+                     (hdr#format, hdr#scale, hdr#basis)))
+
+// ════════════════════════════════════════════════════════════════════
+// Rgba16Float の Pass を読む tex（ShaderEval.TexImage.Rgba16Float）と、切らない Rgb
+// ════════════════════════════════════════════════════════════════════
+
+/// 1 × 1 の Rgba16Float の絵（r = 1.5・α = 3.0）を読む面: r の tex は 1.5 のまま、α の tex は 0..1 に切って 1、
+/// Linear で読んでも 1 テクセルなら 1.5。Rgb の色は 0..1 に切らない（切るのは書く所）。
+@Test
+def testTexFReadsAboveOneAndClampsAlpha(): Unit \ Assert =
+    let env = Map#{ "t" => ShaderEval.TexImage.Rgba16Float(ShaderEval.hdrTextureOf(1, 1, Vector#{1.5, 0.0, 0.0, 3.0})) };
+    let tex = chan -> ShaderDoc.Field.Tex({ name = "t", chan = chan });
+    let spec: ShaderDoc.Spec = { name = "s", cycleRate = 0.0, bindings = Nil,
+        out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Rgb({ r = tex(ShaderDoc.TexChan.R), g = linearOf(tex(ShaderDoc.TexChan.R)),
+                                                                 b = ShaderDoc.Field.Const(0.0) }),
+                                   alpha = tex(ShaderDoc.TexChan.A) }) };
+    let (r, g, _, a) = ShaderEval.evalCompiled(ShaderEval.compile(spec, env), 0.5, 0.5, 0.0);
+    Assert.assertEq(expected = (1.5, 1.5, 1.0), (r, g, a))
 
 // ════════════════════════════════════════════════════════════════════
 // sampler 節（Linear で読む）
@@ -1494,3 +1538,83 @@ def testNormalizedZeroStaysZero(): Unit \ Assert =
     let parts = ShaderDoc.normalized(ShaderDoc.Field.Const(0.0) :: ShaderDoc.Field.Const(0.0) :: Nil);
     let got = parts |> List.map(p -> ShaderEval.evalField(p, { x = 0.0, y = 0.0 }, 0.0));
     Assert.assertEq(expected = 0.0 :: 0.0 :: Nil, got)
+
+// ════════════════════════════════════════════════════════════════════
+// テクセルの数（TexSize）
+// ════════════════════════════════════════════════════════════════════
+
+def texSizeOf(name: String, axis: ShaderDoc.Axis): ShaderDoc.Field = ShaderDoc.Field.TexSize({ name = name, axis = axis })
+
+/// 2×1 の絵の U は 2・V は 1、無い名前は 0。
+@Test
+def testTexSizeReadsWidthHeightAndMissingIsZero(): Unit \ Assert =
+    let env = Map#{ "t" => halves() };
+    let at = field -> ShaderEval.evalAlphaTex(alphaSpec(field), { x = 0.5, y = 0.5 }, 0.0, env);
+    Assert.assertEq(expected = (2.0, 1.0, 0.0),
+                    (at(texSizeOf("t", ShaderDoc.Axis.U)), at(texSizeOf("t", ShaderDoc.Axis.V)), at(texSizeOf("none", ShaderDoc.Axis.U))))
+
+/// Rgba16Float の絵（3×2）でも寸法を読む。
+@Test
+def testTexSizeReadsHdrImage(): Unit \ Assert =
+    let hdr = ShaderEval.hdrTextureOf(3, 2, List.toVector(List.repeat(24, 0.0)));
+    let compiled = ShaderEval.compile(alphaSpec(ShaderDoc.Field.Bin({ op = ShaderDoc.BinOp.Mul,
+        a = texSizeOf("t", ShaderDoc.Axis.U), b = texSizeOf("t", ShaderDoc.Axis.V) })), Map#{ "t" => ShaderEval.TexImage.Rgba16Float(hdr) });
+    let (_, _, _, a) = ShaderEval.evalCompiled(compiled, 0.5, 0.5, 0.0);
+    Assert.assertEq(expected = 6.0, a)
+
+/// TexSize だけの Spec は (名前, Nearest) を 1 組読み、GLSL は textureSize で寸法を読む。
+@Test
+def testTexSizeAloneCountsAsNearestRead(): Unit \ Assert =
+    let spec = alphaSpec(texSizeOf("t", ShaderDoc.Axis.V));
+    Assert.assertEq(expected = (("t", ShaderDoc.FilterMode.Nearest) :: Nil, true),
+                    (ShaderDoc.texReads(spec), String.contains({ substr = "float(textureSize(uTex0, 0).y)" }, ShaderGen.compile(spec))))
+
+/// 同じ名前を Linear で読む Spec では、TexSize はその sampler に相乗りして組を増やさない（TexSize が先に出てきても）。
+@Test
+def testTexSizeSharesSamplerOfSameName(): Unit \ Assert =
+    let spec = alphaSpec(ShaderDoc.Field.Bin({ op = ShaderDoc.BinOp.Add, a = texSizeOf("t", ShaderDoc.Axis.U), b = linearOf(texR()) }));
+    Assert.assertEq(expected = ("t", ShaderDoc.FilterMode.Linear) :: Nil, ShaderDoc.texReads(spec))
+
+/// Sampler の内側の TexSize も、外の Nearest の読みの番号で寸法を読む（Linear の組を新しく作らない）。
+@Test
+def testTexSizeInsideSamplerUsesExistingUnit(): Unit \ Assert =
+    let spec = alphaSpec(ShaderDoc.Field.Bin({ op = ShaderDoc.BinOp.Add, a = texR(), b = linearOf(texSizeOf("t", ShaderDoc.Axis.U)) }));
+    Assert.assertEq(expected = (("t", ShaderDoc.FilterMode.Nearest) :: Nil, true),
+                    (ShaderDoc.texReads(spec), String.contains({ substr = "float(textureSize(uTex0, 0).x)" }, ShaderGen.compile(spec))))
+
+/// JSON の往復で GLSL が同じ・"texSize" の字で書かれる。
+@Test
+def testTexSizeJsonRoundTrip(): Unit \ Assert =
+    let spec = alphaSpec(texSizeOf("scene", ShaderDoc.Axis.U));
+    let same = match ShaderJson.parse(ShaderJson.toJson(spec)) {
+        case Ok(s2) => ShaderGen.compile(s2) == ShaderGen.compile(spec)
+        case Err(_) => false
+    };
+    Assert.assertEq(expected = (true, true), (same, String.contains({ substr = "\"texSize\"" }, ToString.toString(ShaderJson.toJson(spec)))))
+
+/// renameTex は TexSize の名前も替え、texNames と foldField はその名前を拾う。
+@Test
+def testTexSizeRenamedAndFolded(): Unit \ Assert =
+    let spec = ShaderDoc.renameTex(n -> n + "@history", alphaSpec(texSizeOf("a", ShaderDoc.Axis.U)));
+    let folded = ShaderDoc.fieldsOf(spec) |> List.flatMap(field -> ShaderDoc.foldField((acc, node) -> match node {
+        case ShaderDoc.Field.TexSize(ts) => ts#name :: acc
+        case _                           => acc
+    }, Nil, field));
+    Assert.assertEq(expected = ("a@history" :: Nil, "a@history" :: Nil), (ShaderDoc.texNames(spec), folded))
+
+/// 名前だけ違う 2 つの TexSize の Spec は同じ GLSL（eqSpec が真）・軸が違えば偽。
+@Test
+def testTexSizeEqSpecComparesByIndexAndAxis(): Unit \ Assert =
+    let mk = (name, axis) -> alphaSpec(texSizeOf(name, axis));
+    Assert.assertEq(expected = (true, false),
+                    (ShaderGen.eqSpec(mk("a", ShaderDoc.Axis.U), mk("b", ShaderDoc.Axis.U)),
+                     ShaderGen.eqSpec(mk("a", ShaderDoc.Axis.U), mk("a", ShaderDoc.Axis.V))))
+
+/// 3D の材質の中では段 0 の寸法（段 0 が 4×4・段 1 が 2×2 なら 4）。
+@Test
+def testTexSizeInMaterialIsLevelZero(): Unit \ Assert =
+    let level = (n: Int32) -> ({ width = n, height = n, pixels = List.toVector(List.repeat(n * n, -1)) }: ShaderEval.TexData);
+    let compiled = ShaderEval.compileMaterial({ spec = alphaSpec(texSizeOf("t", ShaderDoc.Axis.U)), emission = None, params = Map.empty(),
+                                                textures = Map#{ "t" => Vector#{ level(4), level(2) } }, repeat = false });
+    let point = { world = Vec3.zero(), normal = Vec3.zero(), uv = { x = 0.5, y = 0.5 }, color = { r = 1.0, g = 1.0, b = 1.0 } };
+    Assert.assertEq(expected = 4.0, ShaderEval.evalMaterial3(compiled, point, 0.0)#alpha)

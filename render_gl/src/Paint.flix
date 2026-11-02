@@ -54,10 +54,12 @@ mod RenderPaint {
         shaderUniformCache = Ref[Map[Int32, (Int32, Int32, Int32, Int32, List[(Int32, Int32)], List[Int32])], Static],
         // レンダーターゲットの名前 → GL 実体。
         targetsRef = Ref[Map[String, RenderTargetGl.Entry], Static],
-        // 今開いているターゲット (名前, 幅, 高さ, clear 指定)。None = 画面。
-        activeTargetHolder = Array[Option[(String, Int32, Int32, RenderTarget.LoadOp)], Static],
+        // 今開いているターゲットの宣言。None = 画面。
+        activeTargetHolder = Array[Option[RenderTarget.TargetSpec], Static],
         // ターゲットの名前 → 前のコマの中身の写し（RenderTarget.historyName で読ませる。自分を読む Pass がある時だけ作る）。
         historyRef = Ref[Map[String, RenderTargetGl.Entry], Static],
+        // Rgba16Float で作れず Rgba8Unorm で作り直したことを知らせたターゲットの名前（名前ごとに 1 回）。
+        formatFallbackWarnedRef = Ref[Set[String], Static],
         // history に前のコマを写すか（窓で遊ぶ時）、毎回透明で塗るか（1 枚撮り・動画 — 描き出しと同じ「1 コマ目」）。
         keepHistory = Bool,
         // テクスチャの名前 → GL の実体（実行中に増える）。
@@ -151,7 +153,7 @@ mod RenderPaint {
 
         // ターゲットは初回の beginTarget で作られ、寸法が変わらない限り使い回す。
         let targetsRef: Ref[Map[String, RenderTargetGl.Entry], Static] = Ref.fresh(Static, Map.empty());
-        let activeTargetHolder = Array#{(None: Option[(String, Int32, Int32, RenderTarget.LoadOp)])} @ Static;
+        let activeTargetHolder = Array#{(None: Option[RenderTarget.TargetSpec])} @ Static;
 
         // テクスチャ表は実行時に増える（ensureTexture が生成したアトラスを足す）ので可変で持つ。
         let registryRef: Ref[RenderAsset.TextureRegistry, Static] = Ref.fresh(Static, Map.empty());
@@ -235,7 +237,7 @@ mod RenderPaint {
         };
         let render3d = Render3d.fresh();
         let drawScene = (vp: Render3d.Viewport, item: Render3d.SceneItem) ->
-            Render3d.drawItem(render3d, Array.get(0, frameGenHolder), billboardTexture(registryRef, targetsRef), vp, item);
+            Render3d.drawItem(render3d, Array.get(0, frameGenHolder), billboardTexture(registryRef, targetsRef, textureKeyRef), vp, item);
         // renderFrameMixed への FrameArgs は固定値（シェーダ・VAO・buf・uniforms 等）が
         // 大半なので、共通ベースを 1 つ組み、呼び出し側は変わる所だけ上書きする。
         // registry / targetNames は毎フレーム育つ Ref から読むため、ベースの値は仮
@@ -264,7 +266,7 @@ mod RenderPaint {
           pendingShaderHolder = pendingShaderHolder, shaderUniformCache = shaderUniformCache,
           pendingScene3dHolder = Array#{(Nil: List[Scene3d.RenderCmd])} @ Static, render3d = render3d,
           targetsRef = targetsRef, activeTargetHolder = activeTargetHolder,
-          historyRef = Ref.fresh(Static, Map.empty()), keepHistory = true,
+          historyRef = Ref.fresh(Static, Map.empty()), formatFallbackWarnedRef = Ref.fresh(Static, Set.empty()), keepHistory = true,
           registryRef = registryRef, textureKeyRef = textureKeyRef,
           staticCacheCell = staticCacheCell, lastFrameHolder = lastFrameHolder,
           diagnosticsRef = Ref.fresh(Static, None), shaderLifeHolder = Array#{0, 0} @ Static,
@@ -280,7 +282,7 @@ mod RenderPaint {
             case None    => Nil
             case Some(l) => RenderStatic.resolve(paint#staticCacheCell, l)
         };
-        let scenes = prepareScenes(paint, paint#screenFramebuffer, frame#scenes);
+        let scenes = prepareScenes(paint, paint#screenFramebuffer, RenderTarget.Format.Rgba8Unorm, frame#scenes);
         RenderFrame.renderFrameMixed({
             registry = Ref.get(paint#registryRef),
             fbW = fbW, fbH = fbH,
@@ -292,17 +294,17 @@ mod RenderPaint {
     /// レンダーターゲットへの 1 フレーム。画面用の paintFrame と違い、黒帯 clear を
     /// せず（targetClear）、タイル層・静的レンジは乗らない。シェーダー面は画面と同じく z で合流する。
     /// 中は design 座標のまま描き、viewport がテクセル寸法へ縮める（投影行列は design 前提のまま）。
-    def paintTarget(paint: Paint, target: (String, Int32, Int32, RenderTarget.LoadOp),
+    def paintTarget(paint: Paint, target: RenderTarget.TargetSpec,
                     sprites: List[GameEngine.Drawable], polygons: List[GameEngine.PolygonRenderCmd],
                     surfaces: List[ShaderEffect.ShaderRenderCmd], scenes: List[Scene3d.RenderCmd]): Unit \ IO =
-        let (name, tw, th, op) = target;
+        let (name, tw, th, op) = (target#name, target#width, target#height, target#clear);
         let history = RenderTarget.historyName(name);
         let readsHistory = List.exists(cmd -> List.exists(read -> fst(read) == history, cmd#texReads), surfaces)
             or List.exists(d -> DrawCmd.textureOf(d) == history, sprites)
             or List.exists(cmd -> List.exists(b -> Scene3d.billboardFieldsOf(b)#texture == history, cmd#scene#billboards), scenes);
-        if (readsHistory) prepareHistory(paint, name, tw, th) else ();
+        if (readsHistory) prepareHistory(paint, target) else ();
         let framebuffer = Map.get(name, Ref.get(paint#targetsRef)) |> Option.map(e -> e#fbo) |> Option.getWithDefault(paint#screenFramebuffer);
-        let prepared = prepareScenes(paint, framebuffer, scenes);
+        let prepared = prepareScenes(paint, framebuffer, target#format, scenes);
         RenderFrame.renderFrameMixed({
             registry = Ref.get(paint#registryRef),
             designW = paint#screenW, designH = paint#screenH,
@@ -314,14 +316,16 @@ mod RenderPaint {
 
     /// 開いているターゲット name の history を用意する（clear の前・描く前に呼ぶ）。窓では今の中身（= 前のコマの最後）を写し、
     /// 1 枚撮り・動画では透明で塗る。history は registry とターゲットの表に載せる（上下逆格納なので貼る・読む時の反転も効く）。
-    def prepareHistory(paint: Paint, name: String, tw: Int32, th: Int32): Unit \ IO =
+    /// history は target と同じ形式で作る（作り直しの鍵は寸法と形式）。
+    def prepareHistory(paint: Paint, spec: RenderTarget.TargetSpec): Unit \ IO =
+        let name = spec#name;
         let history = RenderTarget.historyName(name);
-        let existing = Map.get(name, Ref.get(paint#historyRef)) |> Option.filter(e -> e#width == tw and e#height == th);
+        let existing = Map.get(name, Ref.get(paint#historyRef)) |> Option.filter(sameShape(spec));
         let entry = match existing {
             case Some(e) => e
             case None =>
                 Option.forEach(RenderTargetGl.destroy, Map.get(name, Ref.get(paint#historyRef)));
-                let fresh = RenderTargetGl.create(tw, th);
+                let fresh = RenderTargetGl.create(spec#width, spec#height, spec#format);
                 Ref.put(Map.insert(name, fresh, Ref.get(paint#historyRef)), paint#historyRef);
                 fresh
         };
@@ -379,18 +383,22 @@ mod RenderPaint {
         Array.put(Nil, 0, paint#pendingScene3dHolder);
         scenes
 
-    /// Design の解像度の場面を先に描いておき、2D の並びへ渡す形にする。framebuffer = 描き終えた後に戻す描き先。
-    def prepareScenes(paint: Paint, framebuffer: Int32, scenes: List[Scene3d.RenderCmd]): List[Render3d.SceneItem] \ IO =
+    /// Design の解像度の場面を先に描いておき、2D の並びへ渡す形にする。framebuffer = 描き終えた後に戻す描き先・format = その形式。
+    def prepareScenes(paint: Paint, framebuffer: Int32, format: RenderTarget.Format, scenes: List[Scene3d.RenderCmd]): List[Render3d.SceneItem] \ IO =
         Render3d.prepareScenes(paint#render3d, Array.get(0, paint#frameGenHolder),
-                               billboardTexture(paint#registryRef, paint#targetsRef), framebuffer, scenes)
+                               billboardTexture(paint#registryRef, paint#targetsRef, paint#textureKeyRef),
+                               { framebuffer = framebuffer, format = format }, scenes)
 
-    /// ビルボードが貼るテクスチャを名前で引く（レンダーターゲットは上下逆に格納されているので flipped）。
+    /// ビルボードと 3D の材質が貼るテクスチャを名前で引く（レンダーターゲットは上下逆に格納されているので flipped）。
+    /// version = ensureTexture の key（同じ GL ハンドルのまま画素を差し替えると変わる。key の無い絵は空の字）。
     def billboardTexture(registryRef: Ref[RenderAsset.TextureRegistry, Static],
                          targetsRef: Ref[Map[String, RenderTargetGl.Entry], Static],
+                         textureKeyRef: Ref[Map[String, String], Static],
                          name: String): Option[Render3d.BillboardTexture] \ IO =
         Map.get(name, Ref.get(registryRef)) |> Option.map(info ->
             ({ texId = GpuHandle.textureIdInt(info#id), width = info#width, height = info#height,
-               flipped = Map.memberOf(name, Ref.get(targetsRef)) }: Render3d.BillboardTexture))
+               flipped = Map.memberOf(name, Ref.get(targetsRef)),
+               version = Map.getWithDefault(name, "", Ref.get(textureKeyRef)) }: Render3d.BillboardTexture))
 
     /// 最後に画面へ塗ったコマの命令。
     pub def lastFrame(paint: Paint): Frame \ IO = Array.get(0, paint#lastFrameHolder)
@@ -813,16 +821,18 @@ mod RenderPaint {
     /// RenderTarget.Target.beginTarget の中身。レジストリから引く。無い・寸法（テクセル寸法）が変わったら作り直す（古い方は必ず捨てる）。
     /// ターゲットのテクスチャを registry へ登録し（以降 Render.sprite(name, z) が普通のスプライトとして引ける）、bind する。
     /// clear は submitFrame（renderFrameMixed の targetClear）が行う — GL の clear 手順を 1 箇所に保つため、ここでは開いた印を残すだけ。
-    pub def beginTarget(paint: Paint, name: String, w: Int32, h: Int32, clearOp: RenderTarget.LoadOp): Unit \ IO =
+    pub def beginTarget(paint: Paint, spec: RenderTarget.TargetSpec): Unit \ IO =
+        let name = spec#name;
         let targetsRef = paint#targetsRef;
         let freshEntry = () -> {
-            let fresh = RenderTargetGl.create(w, h);
+            let fresh = RenderTargetGl.create(spec#width, spec#height, spec#format);
+            if (RenderTargetGl.isFallback(fresh)) warnFormatFallback(paint, name) else ();
             Ref.put(Map.insert(name, fresh, Ref.get(targetsRef)), targetsRef);
             fresh
         };
         let entry = match Map.get(name, Ref.get(targetsRef)) {
             case Some(e) =>
-                if (e#width == w and e#height == h) e
+                if (sameShape(spec, e)) e
                 else { RenderTargetGl.destroy(e); dropHistory(paint, name); freshEntry() }
             case None => freshEntry()
         };
@@ -831,7 +841,25 @@ mod RenderPaint {
         putTexture(name, ({ id = GpuHandle.wrapTextureId(entry#tex),
                             width = paint#screenW, height = paint#screenH }: RenderAsset.TextureInfo), paint);
         RenderTargetGl.bind(entry);
-        Array.put(Some((name, w, h, clearOp)), 0, paint#activeTargetHolder)
+        Array.put(Some(spec), 0, paint#activeTargetHolder)
+
+    /// 作ってある e が spec と同じ寸法・形式か（作り直しの鍵）。
+    def sameShape(spec: RenderTarget.TargetSpec, e: RenderTargetGl.Entry): Bool =
+        e#width == spec#width and e#height == spec#height and e#format == spec#format
+
+    /// Rgba16Float で作れずに Rgba8Unorm で作り直したことを、名前ごとに 1 回だけ知らせる。
+    def warnFormatFallback(paint: Paint, name: String): Unit \ IO =
+        let warned = Ref.get(paint#formatFallbackWarnedRef);
+        if (Set.memberOf(name, warned)) ()
+        else {
+            Ref.put(Set.insert(name, warned), paint#formatFallbackWarnedRef);
+            Log.fellBack("render-target", name, "Rgba8Unorm", "この描き先は Rgba16Float の FBO を作れない（1 を超える明るさは 1 に切られる）")
+        }
+
+    /// 描き先 fbW × fbH の画素へ design を収めた時の倍率（Target.pixelScale の答え。黒帯の分は入れない）。
+    pub def pixelScaleOf(paint: Paint, fbW: Int32, fbH: Int32): Float64 =
+        let (_, _, vpW, _) = RenderFrame.calcViewport(fbW, fbH, paint#screenW, paint#screenH);
+        Int32.toFloat64(vpW) / Float64.max(1.0, paint#screenW)
 
     /// ターゲット name を作り直す時に、その history も捨てる（次に要る時に新しい寸法で透明から作る）。
     def dropHistory(paint: Paint, name: String): Unit \ IO =

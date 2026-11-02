@@ -59,7 +59,7 @@ pub mod DrawHash {
         fontAntialias = SoftRaster.FontAntialias
     }
 
-    /// このコマの命令が名前で引く絵（Drawable のテクスチャ名・シェーダー面の tex 場・3D の場面のビルボード）。
+    /// このコマの命令が名前で引く絵（Drawable のテクスチャ名・シェーダー面の tex 場・3D の場面のビルボードと材質の tex 場）。
     /// texturePath と extraImages のうち、鍵に入れるのはこの名前の物だけ。
     // WhyNot: texturePath の全部を入れない — 画像 1 枚を描き直すと、その画像を使わない絵まで
     // 全部塗り直しになる。引かない絵は SoftRaster が読んでも画素に出ない。
@@ -69,7 +69,14 @@ pub mod DrawHash {
         let fromBillboards = frame#req#scenes
             |> List.flatMap(c -> c#scene#billboards |> List.map(b -> Scene3d.billboardFieldsOf(b)#texture))
             |> List.toSet;
-        Set.union(fromDrawables, Set.union(fromSurfaces, fromBillboards))
+        let fromMaterials = frame#req#scenes
+            |> List.flatMap(c -> c#scene#instances |> List.filterMap(i -> Scene3d.instanceFieldsOf(i)#material))
+            |> List.flatMap(m -> {
+                let f = Scene3d.materialFieldsOf(m);
+                List.append(ShaderDoc.materialTexReads(f#spec, f#emission) |> List.map(fst), f#normalMap |> Option.toList |> List.map(n -> n#texture))
+            })
+            |> List.toSet;
+        Set.union(fromDrawables, Set.union(fromSurfaces, Set.union(fromBillboards, fromMaterials)))
 
     /// 鍵を作るのに中身の指紋が要るファイル（引く絵・既定の TTF・追加の TTF）。
     pub def filesOf(frame: Frame): List[String] =
@@ -189,7 +196,7 @@ pub mod DrawHash {
     def putSceneCmd(out: DataOutputStream, scene: Scene3d.Scene3dCmd): Unit \ IO = match scene {
         case { size = size, camera = camera, instances = instances, billboards = billboards,
                pointLights = pointLights, spotLights = spotLights, environment = environment,
-               resolution = resolution, output = output, zIndex = zIndex, time = time } =>
+               resolution = resolution, output = output, zIndex = zIndex, time = time, textures = textures } =>
             out.writeDouble(time);
             putVec2(out, size);
             putCamera(out, camera);
@@ -210,8 +217,19 @@ pub mod DrawHash {
                 case Scene3d.Output.Color    => out.writeByte(0i32)
                 case Scene3d.Output.Depth(d) => out.writeByte(1i32); putF(out, d#near); putF(out, d#range)
             };
-            out.writeInt(zIndex)
+            out.writeInt(zIndex);
+            putSceneTextures(out, textures)
     }
+
+    // WhyNot: 絵の無い場面にも数を書かない — textures の欄を足す前の鍵の字を保ち、絵の無い場面のキャッシュの PNG を塗り直させない。
+    // WhyNot: 画素を畳まない — 作る時に中身から求めた contentHash が中身の代わりになる（GL が絵を上げる鍵と同じ）。
+    def putSceneTextures(out: DataOutputStream, textures: List[Texture3d.Texture3d]): Unit \ IO =
+        if (List.isEmpty(textures)) ()
+        else {
+            out.writeByte(0x54);
+            putSize(out, List.length(textures));
+            textures |> List.forEach(t -> putStr(out, Texture3d.contentHash(t)))
+        }
 
     def putCamera(out: DataOutputStream, c: Camera3d.Camera3d): Unit \ IO = match c {
         case { eye = eye, yaw = yaw, pitch = pitch, fovY = fovY, near = near, far = far } =>
@@ -242,8 +260,9 @@ pub mod DrawHash {
             Pose3d.jointMatrices(p) |> Vector.forEach(m -> Mat4.toColumns(m) |> Vector.forEach(putF(out)))
     }
 
-    def putMaterial(out: DataOutputStream, m: Scene3d.Material3d): Unit \ IO = match m {
-        case { spec = spec, params = params, cutout = cutout, emission = emission } =>
+    // WhyNot: 法線マップの無い材質と Repeat にも印を書かない — 欄を足す前の鍵の字を保ち、前からある材質のキャッシュの PNG を塗り直させない。
+    def putMaterial(out: DataOutputStream, m: Scene3d.Material3d): Unit \ IO = match Scene3d.materialFieldsOf(m) {
+        case { spec = spec, params = params, cutout = cutout, emission = emission, normalMap = normalMap, wrap = wrap } =>
             putStr(out, ToString.toString(ShaderJson.toJson(spec)));
             putSize(out, Map.size(params));
             params |> Map.forEach((name, v) -> { putStr(out, name); putF(out, v) });
@@ -251,7 +270,9 @@ pub mod DrawHash {
             match emission {
                 case None        => out.writeByte(0i32)
                 case Some(shade) => out.writeByte(1i32); putStr(out, ToString.toString(ShaderJson.toJson(shadeSpec(shade))))
-            }
+            };
+            normalMap |> Option.forEach(n -> { out.writeByte(0x4e); putStr(out, n#texture); putF(out, n#strength) });
+            if (wrap == Scene3d.Wrap.Clamp) out.writeByte(0x43) else ()
     }
 
     /// Shade を 1 枚の Spec の Out に包む（JSON に書く口が Spec にしか無いため）。

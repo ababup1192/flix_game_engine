@@ -56,7 +56,7 @@ mod TestSoftRaster3d {
                             ascent = 12.0, descent = 4.0, lineGap = 0.0, glyphs = Map.empty() },
               outPath = "", shapeAntialias = true, textAntialias = true,
               scenes = cmdOf(scene) :: Nil };
-        SoftRaster.renderToImageFull(req, Nil, Map.empty(), images)
+        SoftRaster.renderToImageFull(req, Nil, Map.empty(), Map.map(SoftRaster.PassImage.Rgba8Unorm, images))
 
     def render(scene: Scene3d.Scene3dCmd): BufferedImage \ IO = renderWith(black(), Map.empty(), scene)
 
@@ -166,8 +166,7 @@ mod TestSoftRaster3d {
 
     /// 色 shade・α alpha の材質の Spec（Param なし・emission なし・cutout なし）。
     def materialOf(shade: ShaderDoc.Shade, alpha: ShaderDoc.Field): Scene3d.Material3d =
-        { spec = { name = "test", cycleRate = 0.0, bindings = Nil, out = ShaderDoc.Out.Fill({ shade = shade, alpha = alpha }) },
-          params = Map.empty(), cutout = false, emission = None }
+        Scene3d.material({ name = "test", cycleRate = 0.0, bindings = Nil, out = ShaderDoc.Out.Fill({ shade = shade, alpha = alpha }) })
 
     def solid(c: Color): Scene3d.Material3d = materialOf(ShaderDoc.Shade.Solid(c), ShaderDoc.Field.Const(1.0))
 
@@ -192,7 +191,7 @@ mod TestSoftRaster3d {
     // 環境光を黒にし光も置かない場面で、黒の材質に emission の緑を付けた板は緑に光る（光の後に足すので光が 0 でも出る）。
     @Test
     def testEmissionMaterialShowsWithoutLight(): Unit \ {Assert, IO} =
-        let glowing = { emission = Some(ShaderDoc.Shade.Solid(green())) | solid(black()) };
+        let glowing = solid(black()) |> Scene3d.withEmission(ShaderDoc.Shade.Solid(green()));
         let base = sceneOf(Scene3d.withMaterial(glowing, plate(white(), 2.0, -1.0, 1.0, -1.0, 1.0)) :: Nil);
         let img = render({ environment = { ambient = black() | base#environment } | base });
         Assert.assertEq(expected = (255, 0, 255, 0), pixel(img, 4, 4))
@@ -203,7 +202,7 @@ mod TestSoftRaster3d {
     def testCutoutMaterialShowsFarPlateThroughTransparentPixels(): Unit \ {Assert, IO} =
         let clear = materialOf(ShaderDoc.Shade.Solid(red()), ShaderDoc.Field.Const(0.0));
         let far = plate(blue(), 4.0, -2.0, 2.0, -2.0, 2.0);
-        let near = (cutout: Bool) -> Scene3d.withMaterial({ cutout = cutout | clear }, plate(white(), 2.0, -1.0, 1.0, -1.0, 1.0));
+        let near = (cutout: Bool) -> Scene3d.withMaterial(Scene3d.withCutout(cutout, clear), plate(white(), 2.0, -1.0, 1.0, -1.0, 1.0));
         let cut = render(sceneOf(near(true) :: far :: Nil));
         let kept = render(sceneOf(near(false) :: far :: Nil));
         Assert.assertEq(expected = ((255, 0, 0, 255), (255, 255, 0, 0)), (pixel(cut, 4, 4), pixel(kept, 4, 4)))
@@ -211,7 +210,7 @@ mod TestSoftRaster3d {
     // Output.Depth でも cutout で抜いた画素は深度に出ない: 手前の抜けた板があっても、奥の板だけの場面と同じ灰色。
     @Test
     def testCutoutMaterialIsSkippedInDepthOutput(): Unit \ {Assert, IO} =
-        let clear = { cutout = true | materialOf(ShaderDoc.Shade.Solid(red()), ShaderDoc.Field.Const(0.0)) };
+        let clear = Scene3d.withCutout(true, materialOf(ShaderDoc.Shade.Solid(red()), ShaderDoc.Field.Const(0.0)));
         let far = plate(white(), 4.0, -2.0, 2.0, -2.0, 2.0);
         let depthOf = (instances: List[Scene3d.Instance3d]) ->
             render({ output = Scene3d.Output.Depth({ near = 0.0, range = 8.0 }) | sceneOf(instances) });
@@ -227,6 +226,148 @@ mod TestSoftRaster3d {
         let alone = render(sceneOf(plain :: Nil));
         let together = render(sceneOf(painted :: plain :: Nil));
         Assert.assertEq(expected = pixel(alone, 1, 4), pixel(together, 1, 4))
+
+    /// 左上が赤・右上が青・左下が緑・右下が白の 2 × 2 の絵。
+    def quadTexture(): Texture3d.Texture3d =
+        match Texture3d.fromArgb(2, 2, Vector#{ -65536, -16776961, -16711936, -1 }) {
+            case Ok(t)  => t
+            case Err(e) => bug!(e)
+        }
+
+    /// plate と同じ板に、左上の角が uv (0, 0)・右下の角が (1, 1) の uv を付けた物。
+    def texturedPlate(color: Color, z: Float64, left: Float64, right: Float64, bottom: Float64, top: Float64): Scene3d.Instance3d =
+        let mesh = Mesh3d.fromTexturedPolygons(
+            { points = Vec3.v3(left, top, z) :: Vec3.v3(right, top, z) :: Vec3.v3(right, bottom, z) :: Vec3.v3(left, bottom, z) :: Nil,
+              uvs = { x = 0.0, y = 0.0 } :: { x = 1.0, y = 0.0 } :: { x = 1.0, y = 1.0 } :: { x = 0.0, y = 1.0 } :: Nil,
+              color = color } :: Nil);
+        match mesh {
+            case Ok(m)  => Scene3d.meshInstance(m, Mat4.identity())
+            case Err(e) => bug!(e)
+        }
+
+    // 画面いっぱいの板に絵を貼ると、uv (0, 0) の絵の左上（赤）が画面の左上に、右下（白）が画面の右下に出る。
+    @Test
+    def testTexturedPlateShowsTopLeftTexelAtTopLeft(): Unit \ {Assert, IO} =
+        let tex = quadTexture();
+        let board = texturedPlate(white(), 2.0, -2.0, 2.0, -2.0, 2.0)
+            |> Scene3d.withMaterial(Scene3d.texturedMaterial(Texture3d.name(tex), ShaderDoc.FilterMode.Nearest));
+        let img = render({ textures = tex :: Nil | sceneOf(board :: Nil) });
+        Assert.assertEq(expected = ((255, 255, 0, 0), (255, 255, 255, 255)), (pixel(img, 1, 1), pixel(img, 6, 6)))
+
+    // 絵つきの材質は頂点の色を掛ける（VertexColor）: 絵の白い所に緑の頂点の色 → 緑。
+    @Test
+    def testTexturedMaterialMultipliesVertexColor(): Unit \ {Assert, IO} =
+        let tex = quadTexture();
+        let board = texturedPlate(green(), 2.0, -2.0, 2.0, -2.0, 2.0)
+            |> Scene3d.withMaterial(Scene3d.texturedMaterial(Texture3d.name(tex), ShaderDoc.FilterMode.Nearest));
+        let img = render({ textures = tex :: Nil | sceneOf(board :: Nil) });
+        Assert.assertEq(expected = (255, 0, 255, 0), pixel(img, 6, 6))
+
+    // ── 法線マップの錨（外の決まり: タンジェント空間・OpenGL 流＝緑が絵の上・赤が絵の右） ──
+    // 板は z = 2 でカメラ（−Z）を向き、uv の (0, 0) が画面の左上（絵の上 = world の +Y・絵の右 = world の +X）。
+    // 環境光は黒で、点光源 1 つだけ。法線マップは全部の画素が同じ色の 2 × 2。
+
+    /// 全部の画素が argb の 2 × 2 の法線マップ。
+    def flatNormalMap(argb: Int32): Texture3d.Texture3d =
+        match Texture3d.fromArgb(2, 2, Vector#{ argb, argb, argb, argb }) {
+            case Ok(t)  => t
+            case Err(e) => bug!(e)
+        }
+
+    /// 法線マップ map（strength）の白い材質の板を、light の点光源だけで照らした真ん中の画素の緑の成分。map が None なら法線マップなし。
+    def litGreen(map: Option[(Texture3d.Texture3d, Float64)], light: Vec3.Vec3): Int32 \ IO =
+        let base = Scene3d.material({ name = "nm", cycleRate = 0.0, bindings = Nil,
+                                      out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Solid(white()), alpha = ShaderDoc.Field.Const(1.0) }) });
+        let material = match map {
+            case Some((t, strength)) => base |> Scene3d.withNormalMap({ texture = Texture3d.name(t), strength = strength })
+            case None                => base
+        };
+        let board = texturedPlate(white(), 2.0, -2.0, 2.0, -2.0, 2.0) |> Scene3d.withMaterial(material);
+        let scene = sceneOf(board :: Nil);
+        let lit = { textures = map |> Option.toList |> List.map(fst),
+                    pointLights = { position = light, color = white(), intensity = 1.0, range = 10.0 } :: Nil,
+                    environment = { ambient = black() | scene#environment } | scene };
+        let (_, _, g, _) = pixel(render(lit), 4, 4);
+        g
+
+    // ── 大きな平行移動と拡大で置いた板の法線マップ ──
+    // 板（uv つき・z = 2・x y −2..2）を world = 平行移動 (500, 0, 300) × 拡大 (30 × stretch, 30, 30) で置き、目を (500, 0, 300) に移す。
+    // 全部の画素が (128, 128, 255)（傾けない）の法線マップは、法線マップが無い時とほぼ同じ明るさになるはず。
+
+    /// 全部の画素が (128, 128, 255) の 2 × 2 の絵。
+    def flatBlueImage(): BufferedImage \ IO =
+        let img = new BufferedImage(2, 2, 2);
+        List.range(0, 4) |> List.forEach(k -> img.setRGB(Int32.remainder(k, 2), k / 2, -8355585));
+        img
+
+    /// 法線マップの出どころ。Scene = 場面の textures（Texture3d）・Named = 名前の絵・NoMap = 法線マップなし。
+    enum NormalSource with Eq { case Scene case Named case NoMap }
+
+    /// stretch（x の倍率）で置いた板の真ん中の画素の緑の成分。
+    def farLitGreen(source: NormalSource, stretch: Float64): Int32 \ IO =
+        let base = Scene3d.material({ name = "nm-far", cycleRate = 0.0, bindings = Nil,
+                                      out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Solid(white()), alpha = ShaderDoc.Field.Const(1.0) }) });
+        let tex = flatNormalMap(-8355585);
+        let material = match source {
+            case NormalSource.Scene => base |> Scene3d.withNormalMap({ texture = Texture3d.name(tex), strength = 1.0 })
+            case NormalSource.Named => base |> Scene3d.withNormalMap({ texture = "flatnm", strength = 1.0 })
+            case NormalSource.NoMap => base
+        };
+        let mesh = Scene3d.instanceFieldsOf(texturedPlate(white(), 2.0, -2.0, 2.0, -2.0, 2.0))#mesh;
+        let world = Mat4.mul(Mat4.translate(Vec3.v3(500.0, 0.0, 300.0)), Mat4.scale(Vec3.v3(30.0 * stretch, 30.0, 30.0)));
+        let board = Scene3d.meshInstance(mesh, world) |> Scene3d.withMaterial(material);
+        let scene = sceneOf(board :: Nil);
+        let lit = { textures = tex :: Nil, camera = { eye = Vec3.v3(500.0, 0.0, 300.0) | camera() },
+                    pointLights = { position = Vec3.v3(500.0, 30.0, 330.0), color = white(), intensity = 1.0, range = 200.0 } :: Nil,
+                    environment = { ambient = black() | scene#environment } | scene };
+        let (_, _, g, _) = pixel(renderWith(black(), Map#{ "flatnm" => flatBlueImage() }, lit), 4, 4);
+        g
+
+    def nearlySame(a: Int32, b: Int32): Bool = Int32.abs(a - b) <= 2
+
+    // 場面の textures の平らな法線マップは、大きく動かして拡大した板でも法線マップなしと同じ明るさ。
+    @Test
+    def testFlatSceneNormalMapOnFarScaledPlateKeepsLight(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = (true, true), (farLitGreen(NormalSource.NoMap, 1.0) > 0,
+                                                  nearlySame(farLitGreen(NormalSource.Scene, 1.0), farLitGreen(NormalSource.NoMap, 1.0))))
+
+    // 名前の絵の平らな法線マップも同じ。
+    @Test
+    def testFlatNamedNormalMapOnFarScaledPlateKeepsLight(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = true, nearlySame(farLitGreen(NormalSource.Named, 1.0), farLitGreen(NormalSource.NoMap, 1.0)))
+
+    // x だけ 1.5 倍に伸ばした板でも同じ。
+    @Test
+    def testFlatNormalMapOnStretchedPlateKeepsLight(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = (true, true),
+            (nearlySame(farLitGreen(NormalSource.Scene, 1.5), farLitGreen(NormalSource.NoMap, 1.5)),
+             nearlySame(farLitGreen(NormalSource.Named, 1.5), farLitGreen(NormalSource.NoMap, 1.5))))
+
+    def above(): Vec3.Vec3 = Vec3.v3(0.0, 3.0, 1.0)
+    def below(): Vec3.Vec3 = Vec3.v3(0.0, -3.0, 1.0)
+
+    // (128, 255, 128) は法線を絵の上（+Y）へ倒す: 上に置いた灯りの方が、下に置いた灯りより明るい。
+    @Test
+    def testGreenNormalMapTiltsTowardTextureUp(): Unit \ {Assert, IO} =
+        let up = flatNormalMap(-8323200);
+        Assert.assertEq(expected = true, litGreen(Some((up, 1.0)), above()) > litGreen(Some((up, 1.0)), below()))
+
+    // (128, 0, 128) は法線を絵の下（−Y）へ倒す: 下に置いた灯りの方が明るい。
+    @Test
+    def testNoGreenNormalMapTiltsTowardTextureDown(): Unit \ {Assert, IO} =
+        let down = flatNormalMap(-8388480);
+        Assert.assertEq(expected = true, litGreen(Some((down, 1.0)), below()) > litGreen(Some((down, 1.0)), above()))
+
+    // (255, 128, 128) は法線を絵の右（u が増える向き = +X）へ倒す: 右に置いた灯りの方が明るい。
+    @Test
+    def testRedNormalMapTiltsTowardTextureRight(): Unit \ {Assert, IO} =
+        let right = flatNormalMap(-32640);
+        Assert.assertEq(expected = true, litGreen(Some((right, 1.0)), Vec3.v3(3.0, 0.0, 1.0)) > litGreen(Some((right, 1.0)), Vec3.v3(-3.0, 0.0, 1.0)))
+
+    // strength 0 の法線マップは、法線マップが無い時と同じ色。
+    @Test
+    def testZeroStrengthNormalMapMatchesNoNormalMap(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = litGreen(None, above()), litGreen(Some((flatNormalMap(-8323200), 0.0)), above()))
 
     // ════════════════════════════════════════════════════════
     // 影

@@ -424,14 +424,15 @@ pub mod GlOffscreen {
                 k(())
             }
         } with handler RenderTarget.Target {
-            def beginTarget(name, w, h, clearOp, k) = {
-                RenderPaint.beginTarget(paint, name, w, h, clearOp);
+            def beginTarget(spec, k) = {
+                RenderPaint.beginTarget(paint, spec);
                 k(())
             }
             def endTarget(k) = {
                 RenderPaint.endTarget(paint);
                 k(())
             }
+            def pixelScale(k) = k(RenderPaint.pixelScaleOf(paint, width, height))
         }
 
     // ── 読み戻す ──

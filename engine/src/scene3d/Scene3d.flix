@@ -43,9 +43,74 @@ pub mod Scene3d {
         case Depth({ near = Float64, range = Float64 })
     }
 
-    /// 材質（段 B）。spec の Out の色 = 光を当てる前の色・params = spec の Param・
-    /// cutout = 真なら α が 0.5 未満の画素を捨てる・emission = 光の計算の後に足す、自分で光る色。
-    pub type alias Material3d = { spec = ShaderDoc.Spec, params = Map[String, Float64], cutout = Bool, emission = Option[ShaderDoc.Shade] }
+    /// uv が 0..1 の外へ出た時の読み方。Repeat = 繰り返す・Clamp = 端の色を伸ばす。
+    pub enum Wrap with Eq {
+        case Repeat
+        case Clamp
+    }
+
+    /// 法線マップ。texture = 絵の名前（タンジェント空間・緑が絵の上）・strength = でこぼこの強さ（1 で絵のまま）。
+    pub type alias NormalMap = { texture = String, strength = Float64 }
+
+    /// 材質の中身。spec の Out の色 = 光を当てる前の色・params = spec の Param・
+    /// cutout = 真なら α が 0.5 未満の画素を捨てる・emission = 光の計算の後に足す、自分で光る色・
+    /// normalMap = 法線マップ（None なら頂点の法線のまま）・wrap = spec の Tex が 0..1 の外の uv を読む時の読み方（法線マップにも掛かる）。
+    /// spec の Tex の名前は、"tex3d:" で始まれば場面の textures（Texture3d.name）、ほかは全体の登録（project.json の textures・
+    /// レンダーターゲット）から引く。無い名前は 0（黒・透明）。1 つの材質が読める (名前, 補間) の組は maxMaterialTextures() まで。
+    pub type alias MaterialFields = { spec = ShaderDoc.Spec, params = Map[String, Float64], cutout = Bool, emission = Option[ShaderDoc.Shade],
+                                      normalMap = Option[NormalMap], wrap = Wrap }
+
+    enum MaterialData { case MaterialData(MaterialFields) }
+
+    /// 材質（閉じた型 — 欄を後から足しても、ゲームの書いた値が壊れない）。material から作り、with… で足す。
+    pub type alias Material3d = MaterialData
+
+    /// spec だけの材質（params 空・cutout なし・emission なし・法線マップなし・Repeat）。
+    pub def material(spec: ShaderDoc.Spec): Material3d =
+        MaterialData.MaterialData({ spec = spec, params = Map.empty(), cutout = false, emission = None, normalMap = None, wrap = Wrap.Repeat })
+
+    /// spec の Param に渡す値（Unity のマテリアルの float の値を渡すのと同じ。渡さない名前は 0）。
+    pub def withParams(p: Map[String, Float64], m: Material3d): Material3d =
+        let MaterialData.MaterialData(r) = m;
+        MaterialData.MaterialData({ params = p | r })
+
+    /// on が真なら α が 0.5 未満の画素を捨てる（深度も書かない）。
+    pub def withCutout(on: Bool, m: Material3d): Material3d =
+        let MaterialData.MaterialData(r) = m;
+        MaterialData.MaterialData({ cutout = on | r })
+
+    /// 光の計算の後に足す、自分で光る色（かすみに沈まない）。
+    pub def withEmission(s: ShaderDoc.Shade, m: Material3d): Material3d =
+        let MaterialData.MaterialData(r) = m;
+        MaterialData.MaterialData({ emission = Some(s) | r })
+
+    pub def withNormalMap(n: NormalMap, m: Material3d): Material3d =
+        let MaterialData.MaterialData(r) = m;
+        MaterialData.MaterialData({ normalMap = Some(n) | r })
+
+    pub def withWrap(w: Wrap, m: Material3d): Material3d =
+        let MaterialData.MaterialData(r) = m;
+        MaterialData.MaterialData({ wrap = w | r })
+
+    /// 材質の中身を読む（GL・CPU・鍵が使う）。
+    pub def materialFieldsOf(m: Material3d): MaterialFields =
+        let MaterialData.MaterialData(r) = m;
+        r
+
+    /// 絵 1 枚 × 頂点の色の材質（絵の r・g・b に VertexColor の r・g・b を掛け、α は絵の α）。filter = 絵の読み方（ドット絵なら Nearest）。
+    /// 頂点の色が灰色の形（Kd の無い OBJ の材質は 0.6）に貼ると、その分だけ暗くなる。
+    pub def texturedMaterial(texture: String, filter: ShaderDoc.FilterMode): Material3d =
+        let read = (chan: ShaderDoc.TexChan) -> ShaderDoc.Field.Sampler({ filter = filter, of = ShaderDoc.Field.Tex({ name = texture, chan = chan }) });
+        let tinted = (chan: ShaderDoc.TexChan) ->
+            ShaderDoc.Field.Bin({ op = ShaderDoc.BinOp.Mul, a = read(chan), b = ShaderDoc.Field.VertexColor({ chan = chan }) });
+        material({ name = "scene3d:textured:${ToString.toString(filter)}", cycleRate = 0.0, bindings = Nil,
+                   out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Rgb({ r = tinted(ShaderDoc.TexChan.R), g = tinted(ShaderDoc.TexChan.G),
+                                                                            b = tinted(ShaderDoc.TexChan.B) }),
+                                              alpha = read(ShaderDoc.TexChan.A) }) })
+
+    /// 1 つの材質が読める (テクスチャ名, 補間) の組の上限（ShaderDoc.materialTexReads の並びの前から。法線マップは別枠）。
+    /// 超えた組は描く時に 0 になり、材質ごとに 1 回知らせる（GL と CPU で同じ）。寸法だけを引く TexSize の名前も 1 組として数える（寸法は段 0 の数）。
+    pub def maxMaterialTextures(): Int32 = 6
 
     /// 置いた物の中身。mesh = 形・world = 形の座標 → world の行列・tint = 頂点の色に掛ける色・material = 材質（None なら頂点の色）・
     /// pose = ジョイントの行列（None ならバインドポーズのまま。曲げるかどうかは skinningOf で決める）。
@@ -132,19 +197,21 @@ pub mod Scene3d {
         let BillboardData.BillboardData(r) = b;
         r
 
-    /// 場面 1 つ。size = 描き物の大きさ（位置は PlacedItem の at。Shader 面と同じ決まり）・zIndex = 2D の並びの中の重なり順。
+    /// 場面 1 つ。size = 描き物の大きさ（位置は PlacedItem の at。Shader 面と同じ決まり）・zIndex = 2D の並びの中の重なり順・
+    /// textures = 材質が "tex3d:" の名前（Texture3d.name）で読む絵。
     pub type alias Scene3dCmd = { size = Vec2.Vec2, camera = Camera3d.Camera3d, instances = List[Instance3d], billboards = List[Billboard3d],
                                   pointLights = List[PointLight], spotLights = List[SpotLight], environment = Environment3d,
-                                  resolution = Resolution, output = Output, zIndex = Int32, time = Float64 }
+                                  resolution = Resolution, output = Output, zIndex = Int32, time = Float64,
+                                  textures = List[Texture3d.Texture3d] }
 
-    /// 空の場面（環境光は白・光なし・かすみなし・地の色なし・Native・色を書き出す・zIndex 0・時刻 0）。
+    /// 空の場面（環境光は白・光なし・かすみなし・地の色なし・Native・色を書き出す・zIndex 0・時刻 0・絵なし）。
     /// time = 材質の ShaderDoc の時刻（秒）（ゲームの遊びの時計を渡すと、ポーズやヒットストップで材質の動きも止まる）。
     /// Scene3dCmd は開いたレコードなので `{ instances = … | s }` で足す。
     // WhyNot: 環境光を黒にしない — 光を置く前の場面が真っ黒になり、形を置いたのに何も出ないように見える。
     pub def scene(camera: Camera3d.Camera3d, size: Vec2.Vec2): Scene3dCmd =
         { size = size, camera = camera, instances = Nil, billboards = Nil, pointLights = Nil, spotLights = Nil,
           environment = { ambient = Color.rgb(1.0, 1.0, 1.0), hemisphere = 0.0, toonSteps = 0, fog = None, background = None },
-          resolution = Resolution.Native, output = Output.Color, zIndex = 0, time = 0.0 }
+          resolution = Resolution.Native, output = Output.Color, zIndex = 0, time = 0.0, textures = Nil }
 
     /// 1 つの場面で計算する点光源の上限。
     pub def maxPointLights(): Int32 = 8

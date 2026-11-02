@@ -11,6 +11,10 @@
 //   toonSteps > 0 なら light = floor(light × steps + 0.5) / steps（色の成分ごと）
 //   色 = 頂点の色 × tint × light。fog は目からの距離で near〜far の間を fog の色へ近づける。
 //   材質のある物は 色 = fog(albedo × tint × light) + emission（頂点の色は掛けない）。cutout なら α < 0.5 を捨てる。
+//   材質の Tex は unit 0〜5（ShaderDoc.materialTexReads の並び・上限 Scene3d.maxMaterialTextures()）に貼り、材質を描いた後に
+//   その unit の sampler を外して unit 0 へ戻す（ビルボードと 2D の面が unit 0 で読む）。法線マップは unit 6・影の地図は unit 7。
+//   法線マップ（uv つきの形だけ）: T = normalize(T − N (N·T))・B = cross(N, T) × w・c = 絵の rgb・
+//   m = ((c.x·2 − 1)·s, (c.y·2 − 1)·s, c.z·2 − 1)・n' = normalize(T m.x + B m.y + N m.z)。光の計算は n'、Spec の Normal は当てる前の N。
 //   ビルボードの法線はカメラへ向く向き（−forward）。Output.Depth の灰色は目からの距離で (d − near) / range。
 mod Render3d {
     import java.lang.System
@@ -22,13 +26,18 @@ mod Render3d {
     import org.lwjgl.opengl.GL20
     import org.lwjgl.opengl.GL30
     import org.lwjgl.opengl.GL31
+    import org.lwjgl.opengl.GL33
+    import org.lwjgl.system.MemoryUtil
 
     // ── 型 ──
 
     /// GPU に置いたメッシュ 1 つ。vbo は位置・法線・色の 9 個ずつを交互に並べた物。lastUsed = 最後に描いたコマの世代。
     /// skin = ジョイントの番号と重みの VBO（ジョイントの無い形は None）。
+    /// surface = uv（location 5）とタンジェント（location 6）を 6 個ずつ交互に並べた VBO（uv の無い形は None）。
+    // WhyNot: uv を位置・法線・色の並びへ混ぜない — uv の無い形まで stride が伸び、uv の無い形の頂点バッファの中身が変わる。
     pub type alias MeshEntry = {
-        vao = Int32, vbo = Int32, ibo = Int32, skin = Option[SkinBuffers], indexCount = Int32, vertexCount = Int32, lastUsed = Int64
+        vao = Int32, vbo = Int32, ibo = Int32, skin = Option[SkinBuffers], surface = Option[Int32], indexCount = Int32, vertexCount = Int32,
+        lastUsed = Int64
     }
 
     /// 頂点ごとのジョイントの番号（ivec4・location 3）と重み（vec4・location 4）の VBO。
@@ -42,7 +51,8 @@ mod Render3d {
     pub type alias PixelBox = { x = Int32, y = Int32, width = Int32, height = Int32 }
 
     /// ビルボードが貼るテクスチャ。flipped = レンダーターゲット（行 0 が下）で、v を上下反転して読む。
-    pub type alias BillboardTexture = { texId = Int32, width = Float64, height = Float64, flipped = Bool }
+    /// version = 中身の版（実行中に画素を差し替えた絵は字が変わる。3D の材質が段を作り直す合図）。
+    pub type alias BillboardTexture = { texId = Int32, width = Float64, height = Float64, flipped = Bool, version = String }
 
     /// 場面 1 つと、Design の解像度で先に描いておいた描き先（Native なら None）と、先に描いておいた影の地図（無ければ None）。
     pub type alias SceneItem = { cmd = Scene3d.RenderCmd, designTarget = Option[RenderTargetGl.Entry], shadow = Option[ShadowUse] }
@@ -93,21 +103,40 @@ mod Render3d {
     /// 置いた物 1 つと、描く時に曲げる Pose（Scene3d.skinningOf。None なら骨の無い版で曲げずに描く）。
     type alias MeshDraw = { fields = Scene3d.InstanceFields, pose = Option[Pose3d.Pose3d] }
 
-    /// 材質のプログラムの uniform の location。params = uParamN の location（paramNames の並び）。
+    /// 材質のプログラムの uniform の location。params = uParamN の location（paramNames の並び）・
+    /// texFlips = uTexFlipN の location（texReads の並び）。
     type alias MaterialLocs = {
         mesh = MeshLocs, tint = Int32, light = LightLocs, shadow = ShadowLocs, time = Int32, cutout = Int32,
-        depthOut = Int32, depthRange = Int32, params = List[Int32]
+        depthOut = Int32, depthRange = Int32, params = List[Int32], texFlips = List[Int32],
+        normalStrength = Int32, normalFlip = Int32, texLevels = List[Int32], normalLevels = Int32
     }
 
     /// 組んだ材質のプログラム 1 つ。spec と emission は組んだ時の物（次に来た材質と比べる）。
-    /// paramNames = ShaderGen.compile3d が uParamN に割り当てた名前の並び。locs#mesh#program が 0 なら組めなかった。
+    /// paramNames = ShaderGen.compile3d が uParamN に割り当てた名前の並び・texReads = uTexN に貼る (名前, 補間) の並び
+    /// （組んだ時の材質の名前。同じプログラムを名前だけ違う材質が使うので、貼る名前は描く材質から引き直す）。
+    /// locs#mesh#program が 0 なら組めなかった。
     type alias MaterialEntry = {
         spec = ShaderDoc.Spec, emission = Option[ShaderDoc.Shade], paramNames = List[String],
-        locs = MaterialLocs, lastUsed = Int64
+        texReads = List[(String, ShaderDoc.FilterMode)], normalMapped = Bool, locs = MaterialLocs, lastUsed = Int64
     }
 
     /// 材質のある置いた物 1 つを描く材料（プログラムは組めた物だけ）。
-    type alias MaterialDraw = { entry = MaterialEntry, material = Scene3d.Material3d, draw = MeshDraw }
+    type alias MaterialDraw = { entry = MaterialEntry, material = Scene3d.MaterialFields, draw = MeshDraw }
+
+    /// 材質の Tex の名前を絵に引く元。textureOf = 全体の登録（project.json・レンダーターゲット）・
+    /// own = 場面の textures（Texture3d.name → 絵）。
+    type alias TextureSource = { textureOf = String -> Option[BillboardTexture] \ IO, own = Map[String, Texture3d.Texture3d] }
+
+    /// GPU に上げた場面の絵 1 枚（Texture3d の contentHash で引く）。levels = 段の数・bytes = 段を合わせた置き場の大きさ・
+    /// lastUsed = 最後に貼ったコマの世代。
+    type alias Texture3dEntry = { texId = Int32, levels = Int32, bytes = Int64, lastUsed = Int64 }
+
+    /// 全体の登録の絵を 3D の材質のために段つきで上げ直した写し。sourceId と version が元の絵と食い違えば作り直す。
+    // WhyNot: 元のテクスチャに段を足さない — 2D の sprite と面は段の無い元の絵を読む決まりで、そちらの絵を変えない。
+    type alias MipCopy = { sourceId = Int32, version = String, texId = Int32, levels = Int32, lastUsed = Int64 }
+
+    /// 材質の 1 枚を貼る材料。levels = 段の数（1 なら段の無い sampler で段 0 を読む）。
+    type alias BoundTexture = { texId = Int32, flipped = Bool, levels = Int32 }
 
     /// 材質のプログラムを何のために使うか。Color = 光を当てた色・Depth = cutout で抜いた奥行きの灰色。
     enum MaterialPass {
@@ -138,7 +167,7 @@ mod Render3d {
         // ジョイントの数の食い違いを知らせた形（contentHash）。
         skinWarnedRef = Ref[Set[String], Static],
         // Design の解像度の描き先（そのコマの Design の場面の並びの番号 → FBO。大きさが同じなら使い回す）。
-        designTargetsRef = Ref[Map[Int32, RenderTargetGl.Entry], Static],
+        designTargetsRef = Ref[Map[(Int32, String), RenderTargetGl.Entry], Static],
         // 見つからないと知らせたビルボードのテクスチャの名前。
         missingTexturesRef = Ref[Set[String], Static],
         // "3d:" + spec の名前 → 材質のプログラム（2D の Shader 面のキャッシュとは分ける）。
@@ -154,7 +183,17 @@ mod Render3d {
         // 影の地図の描き先（(mapSize, 同じ prepareScenes の中で同じ mapSize の何枚目か) → FBO）。
         shadowTargetsRef = Ref[Map[(Int32, Int32), ShadowTarget], Static],
         // 影について知らせ済みの種類（同じ知らせを毎コマ出さない）。
-        shadowWarnedRef = Ref[Set[String], Static]
+        shadowWarnedRef = Ref[Set[String], Static],
+        // 場面の絵（Texture3d の contentHash → GPU のテクスチャ）。
+        textures3dRef = Ref[Map[String, Texture3dEntry], Static],
+        // 材質の絵の sampler（[Repeat Nearest, Repeat Linear, Clamp Nearest, Clamp Linear] の段なし 4 つ・段つき 4 つ。0 は未作成）。
+        materialSamplers = Array[Int32, Static],
+        // 全体の登録の絵の段つきの写し（絵の名前 → 写し）。
+        mipCopiesRef = Ref[Map[String, MipCopy], Static],
+        // 見つからない材質の絵に貼る 1 × 1 の透明な黒（0 は未作成）。
+        blankTexture = Array[Int32, Static],
+        // 材質の絵について知らせ済みの鍵（見つからない名前・上限を超えた材質・場面の絵の置き場あふれ）。
+        textureWarnedRef = Ref[Set[String], Static]
     }
 
     // ── 決まりの数 ──
@@ -174,8 +213,16 @@ mod Render3d {
     /// 影の地図を貼るテクスチャの unit（2D の Shader 面は 0 から順に使い、描いた後に unit 0 へ戻す）。
     def shadowTextureUnit(): Int32 = 7
 
+    /// 材質の法線マップを貼るテクスチャの unit（材質の絵は 0〜5）。
+    def normalMapTextureUnit(): Int32 = 6
+
     /// joint 行列の UBO を付ける binding の番号（GL の文脈で他に UBO を使う所は無い）。
     def jointsBinding(): Int32 = 1
+
+    /// 場面の絵の置き場の上限（枚数と、合計の大きさ）。超えたら今と前のコマで使っていない古い物から捨てる。
+    def texture3dCountBudget(): Int32 = 64
+
+    def texture3dByteBudget(): Int64 = 268435456i64
 
     def maxShadowMapSize(): Int32 = Scene3d.maxShadowMapSize()
 
@@ -189,7 +236,10 @@ mod Render3d {
           materialsRef = Ref.fresh(Static, Map.empty()), retiredMaterialsRef = Ref.fresh(Static, Nil),
           thrashWarnedRef = Ref.fresh(Static, Set.empty()), timeHolder = Array#{0.0} @ Static,
           createdAt = System.nanoTime(), shadowTargetsRef = Ref.fresh(Static, Map.empty()),
-          shadowWarnedRef = Ref.fresh(Static, Set.empty()) }
+          shadowWarnedRef = Ref.fresh(Static, Set.empty()), textures3dRef = Ref.fresh(Static, Map.empty()),
+          materialSamplers = Array#{0, 0, 0, 0, 0, 0, 0, 0} @ Static, mipCopiesRef = Ref.fresh(Static, Map.empty()),
+          blankTexture = Array#{0} @ Static,
+          textureWarnedRef = Ref.fresh(Static, Set.empty()) }
 
     /// 描き手を作ってからの実時間（秒）。
     pub def elapsedSeconds(state: State): Float64 \ IO =
@@ -198,10 +248,11 @@ mod Render3d {
     // ── 場面を描く（2D の並びの中から）──
 
     /// Design の解像度の場面を、そのテクスチャへ先に描いておく（2D の並びを描き始める前に呼ぶ）。
-    /// framebuffer = 描き終えた後に戻す描き先（今開いているレンダーターゲットか画面）。
+    /// dest#framebuffer = 描き終えた後に戻す描き先（今開いているレンダーターゲットか画面）・dest#format = その形式
+    /// （Design の中継の描き先も同じ形式で作る — HDR の Pass の中で、中継だけ 0..1 に切られないように）。
     // WhyNot: 2D の並びの途中で FBO を替えて描かない — タイル型の GPU で描き先の出し入れが重く、viewport と scissor の戻し漏れも増える。
     pub def prepareScenes(state: State, gen: Int64, textureOf: String -> Option[BillboardTexture] \ IO,
-                          framebuffer: Int32, cmds: List[Scene3d.RenderCmd]): List[SceneItem] \ IO =
+                          dest: { framebuffer = Int32, format = RenderTarget.Format }, cmds: List[Scene3d.RenderCmd]): List[SceneItem] \ IO =
         if (List.isEmpty(cmds)) Nil
         else {
             // 影の地図は Design の場面より先に描く — Design の場面の塗りがその地図を読む。
@@ -214,11 +265,11 @@ mod Render3d {
                     case Scene3d.Resolution.Design =>
                         let index = Array.get(0, designCount);
                         Array.put(index + 1, 0, designCount);
-                        { cmd = cmd, designTarget = renderDesign(state, gen, textureOf, index, shadow, cmd), shadow = shadow }
+                        { cmd = cmd, designTarget = renderDesign(state, gen, textureOf, (index, dest#format), shadow, cmd), shadow = shadow }
                 }
             });
             let movedTarget = Array.get(0, designCount) > 0 or List.exists(Option.nonEmpty, shadows);
-            if (movedTarget) GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, framebuffer) else ();
+            if (movedTarget) GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, dest#framebuffer) else ();
             items
         }
 
@@ -266,12 +317,12 @@ mod Render3d {
 
     /// Design の場面を design px の FBO に透明から描く。大きさが 0 なら None。
     def renderDesign(state: State, gen: Int64, textureOf: String -> Option[BillboardTexture] \ IO,
-                     index: Int32, shadow: Option[ShadowUse], cmd: Scene3d.RenderCmd): Option[RenderTargetGl.Entry] \ IO =
+                     slot: (Int32, RenderTarget.Format), shadow: Option[ShadowUse], cmd: Scene3d.RenderCmd): Option[RenderTargetGl.Entry] \ IO =
         let w = Num.floorInt(cmd#scene#size#x + 0.5);
         let h = Num.floorInt(cmd#scene#size#y + 0.5);
         if (w <= 0 or h <= 0) None
         else {
-            let target = designTarget(state, index, w, h);
+            let target = designTarget(state, slot, w, h);
             RenderTargetGl.bind(target);
             let full = { x = 0, y = 0, width = w, height = h };
             GL11.glViewport(0, 0, w, h);
@@ -283,15 +334,19 @@ mod Render3d {
             Some(target)
         }
 
-    /// 番号 index の Design の描き先。大きさが変わったら作り直し、古い方は捨てる。
-    def designTarget(state: State, index: Int32, w: Int32, h: Int32): RenderTargetGl.Entry \ IO =
+    /// (番号, 形式) の Design の描き先。大きさが変わったら作り直し、古い方は捨てる。
+    /// WhyNot: 鍵を番号だけにしない — 画面（Rgba8Unorm）と HDR の Pass で同じ番号の場面を描くと、コマごとに作り直しが続く。
+    /// 鍵の形式は Format の名前（Map の鍵には Order が要り、Format は Eq と ToString だけを持つ）。
+    def designTarget(state: State, slot: (Int32, RenderTarget.Format), w: Int32, h: Int32): RenderTargetGl.Entry \ IO =
+        let (index, format) = slot;
+        let key = (index, ToString.toString(format));
         let targets = Ref.get(state#designTargetsRef);
-        match Map.get(index, targets) {
+        match Map.get(key, targets) {
             case Some(e) if e#width == w and e#height == h => e
             case old =>
                 Option.forEach(RenderTargetGl.destroy, old);
-                let made = RenderTargetGl.create(w, h);
-                Ref.put(Map.insert(index, made, targets), state#designTargetsRef);
+                let made = RenderTargetGl.create(w, h, format);
+                Ref.put(Map.insert(key, made, targets), state#designTargetsRef);
                 made
         }
 
@@ -515,18 +570,19 @@ mod Render3d {
         let view = matrixArray(Camera3d.viewMatrix(scene#camera));
         let proj = matrixArray(Camera3d.projectionMatrix(scene#camera, aspect));
         let camera = { view = view, proj = proj, lights = lights, shadow = shadow };
+        let source = { textureOf = textureOf, own = scene#textures |> List.map(t -> (Texture3d.name(t), t)) |> List.toMap };
         match scene#output {
             case Scene3d.Output.Color =>
                 let (plain, materials) = splitByMaterial(state, gen, _ -> true, scene#instances);
                 bindShadowMap(shadow);
                 drawInstancesLit(state, gen, programs#lit, camera, plain);
-                drawMaterials(state, gen, camera, MaterialPass.Color, materials);
+                drawMaterials(state, gen, camera, MaterialPass.Color, source, materials);
                 unbindShadowMap(shadow)
             case Scene3d.Output.Depth(dr) =>
                 // WhyNot: cutout でない材質に材質のプログラムを組まない — 奥行きは形だけで決まり、色の計算は捨てられる。
                 let (plain, cutouts) = splitByMaterial(state, gen, m -> m#cutout, scene#instances);
                 drawInstancesDepth(state, gen, programs#depth, camera, scene#camera#eye, dr, plain);
-                drawMaterials(state, gen, camera, MaterialPass.Depth(dr), cutouts)
+                drawMaterials(state, gen, camera, MaterialPass.Depth(dr), source, cutouts)
         };
         drawBillboards(state, textureOf, programs#billboard, view, proj, lights, scene);
         endScene()
@@ -609,22 +665,36 @@ mod Render3d {
 
     /// 置いた物を、頂点の色で描く物と材質のプログラムで描く物に分ける。wants が偽の材質と、組めなかった材質は頂点の色の側へ。
     /// 初めての材質はここで組む（3D を使わないゲームと、材質を使わない場面は GLSL のコンパイルを払わない）。
-    def splitByMaterial(state: State, gen: Int64, wants: Scene3d.Material3d -> Bool,
+    def splitByMaterial(state: State, gen: Int64, wants: Scene3d.MaterialFields -> Bool,
                         instances: List[Scene3d.Instance3d]): (List[MeshDraw], List[MaterialDraw]) \ IO =
         let classified = instances |> List.map(placed -> {
             let draw = meshDrawOf(state, placed);
             let material = draw#fields#material
+                |> Option.map(Scene3d.materialFieldsOf)
                 |> Option.filter(wants)
-                |> Option.flatMap(m -> materialEntry(state, gen, m, isSkinned(draw)) |> Option.map(e -> { entry = e, material = m, draw = draw }));
+                |> Option.flatMap(m -> materialEntry(state, gen, m, vertexKindOf(state, draw, m))
+                    |> Option.map(e -> { entry = e, material = m, draw = draw }));
             (draw, material)
         });
         let plain = classified |> List.filterMap(fd -> if (Option.isEmpty(snd(fd))) Some(fst(fd)) else None);
         let materials = classified |> List.filterMap(snd);
         (plain, materials)
 
+    /// 置いた物 d を材質 m で描くプログラムの頂点の形。法線マップは uv つきの形にだけ当てる（uv の無い形は形ごとに 1 回知らせて無視する）。
+    def vertexKindOf(state: State, d: MeshDraw, m: Scene3d.MaterialFields): VertexKind \ IO =
+        let uv = hasUv(d);
+        let wantsNormalMap = Option.nonEmpty(m#normalMap);
+        if (wantsNormalMap and not uv)
+            warnTextureOnce(state, "nouv:" + Mesh3d.contentHash(d#fields#mesh),
+                "scene3d: uv の無い形に法線マップの材質 '${m#spec#name}' が付いている — 法線マップを当てずに描く（Mesh3d.withUvs か withBoxUvs で uv を付ける）")
+        else ();
+        { skinned = isSkinned(d), uv = uv, normalMap = wantsNormalMap and uv }
+
     /// 材質のある物を、プログラムごとにまとめて描く（プログラムの切り替えを減らす。深度で前後が決まるので順は絵を変えない）。
-    def drawMaterials(state: State, gen: Int64, camera: CameraData, pass: MaterialPass, draws: List[MaterialDraw]): Unit \ IO =
-        let bound = Array#{0} @ Static;
+    /// 描き終えたら、絵を貼った unit（材質の絵と法線マップ）の sampler を外して unit 0 へ戻す。
+    def drawMaterials(state: State, gen: Int64, camera: CameraData, pass: MaterialPass, source: TextureSource,
+                      draws: List[MaterialDraw]): Unit \ IO =
+        let bound = Array#{0, 0, 0} @ Static;
         draws |> List.sortBy(d -> d#entry#locs#mesh#program) |> List.forEach(d -> {
             let locs = d#entry#locs;
             if (locs#mesh#program == Array.get(0, bound)) ()
@@ -632,8 +702,21 @@ mod Render3d {
                 Array.put(locs#mesh#program, 0, bound);
                 useMaterialProgram(state, camera, pass, locs)
             };
-            drawMaterialInstance(state, gen, d)
-        })
+            let units = drawMaterialInstance(state, gen, source, d);
+            Array.put(Int32.max(units, Array.get(1, bound)), 1, bound);
+            if (d#entry#normalMapped) Array.put(1, 2, bound) else ()
+        });
+        releaseMaterialUnits(Array.get(1, bound), Array.get(2, bound) == 1)
+
+    /// unit 0〜count−1（と、normalMap が真なら法線マップの unit）の sampler を外して unit 0 へ戻す。どれも貼っていなければ何もしない。
+    // WhyNot: 貼ったテクスチャまでは外さない — ビルボードと 2D の面は描く前に自分のテクスチャを貼り直すが、sampler は貼り直さず unit の物を読む。
+    def releaseMaterialUnits(count: Int32, normalMap: Bool): Unit \ IO =
+        if (count <= 0 and not normalMap) ()
+        else {
+            List.range(0, count) |> List.forEach(unit -> GL33.glBindSampler(unit, 0));
+            if (normalMap) GL33.glBindSampler(normalMapTextureUnit(), 0) else ();
+            GL13.glActiveTexture(GL13.GL_TEXTURE0)
+        }
 
     def useMaterialProgram(state: State, camera: CameraData, pass: MaterialPass, locs: MaterialLocs): Unit \ IO =
         useMeshProgram(locs#mesh, camera#view, camera#proj);
@@ -647,61 +730,257 @@ mod Render3d {
                 putDepthRange(locs#depthRange, dr)
         }
 
-    def drawMaterialInstance(state: State, gen: Int64, d: MaterialDraw): Unit \ IO =
+    /// 材質のある物 1 つを描き、絵を貼った unit の数を返す。
+    def drawMaterialInstance(state: State, gen: Int64, source: TextureSource, d: MaterialDraw): Int32 \ IO =
         let locs = d#entry#locs;
         putColor(locs#tint, d#draw#fields#tint);
         GL20.glUniform1i(locs#cutout, if (d#material#cutout) 1 else 0);
-        // WhyNot: ShaderDoc.materialParamValues で並べない — あちらは tex を外す前の Spec から名前を拾い、
-        //   compile3d が uParamN に割り当てた並び（tex を外した後）と食い違う余地がある。uniform を宣言した側の並びで引く。
+        // WhyNot: ShaderDoc.materialParamValues で並べない — あちらは上限を超えた tex を 0 にする前の Spec から名前を拾い、
+        //   compile3d が uParamN に割り当てた並び（0 にした後）と食い違う余地がある。uniform を宣言した側の並びで引く。
         List.zip(locs#params, d#entry#paramNames) |> List.forEach(ln -> {
             let (paramLoc, name) = ln;
             GL20.glUniform1f(paramLoc, RenderUtil.f32(Map.getWithDefault(name, 0.0, d#material#params)))
         });
-        drawPosedMesh(state, gen, locs#mesh, d#draw)
+        let units = bindMaterialTextures(state, gen, source, d);
+        bindNormalMap(state, gen, source, d);
+        drawPosedMesh(state, gen, locs#mesh, d#draw);
+        units
+
+    /// 法線マップを法線マップの unit に貼る（材質の wrap・Linear で読む）。法線マップを当てないプログラムは何もしない。
+    def bindNormalMap(state: State, gen: Int64, source: TextureSource, d: MaterialDraw): Unit \ IO =
+        match (d#entry#normalMapped, d#material#normalMap) {
+            case (true, Some(n)) =>
+                let unit = normalMapTextureUnit();
+                GL13.glActiveTexture(GL13.GL_TEXTURE0 + unit);
+                let bound = resolveMaterialTexture(state, gen, source, n#texture);
+                GL11.glBindTexture(GL11.GL_TEXTURE_2D, bound#texId);
+                GL33.glBindSampler(unit, materialSampler(state, d#material#wrap, ShaderDoc.FilterMode.Linear, bound#levels > 1));
+                GL20.glUniform1f(d#entry#locs#normalStrength, RenderUtil.f32(n#strength));
+                GL20.glUniform1f(d#entry#locs#normalFlip, if (bound#flipped) 1.0f32 else 0.0f32);
+                GL20.glUniform1f(d#entry#locs#normalLevels, RenderUtil.f32(Int32.toFloat64(bound#levels)))
+            case _ => ()
+        }
+
+    /// 材質の絵を unit 0〜 に貼り、読み方（wrap と補間）の sampler を付けて、貼った数を返す。
+    /// 名前は描く材質から引き直す（eqSpec は tex の名前を並びの番号で比べるので、名前だけ違う材質が同じプログラムを使う）。
+    def bindMaterialTextures(state: State, gen: Int64, source: TextureSource, d: MaterialDraw): Int32 \ IO =
+        if (List.isEmpty(d#entry#texReads)) 0
+        else {
+            let reads = ShaderDoc.materialTexReads(d#material#spec, d#material#emission) |> List.take(Scene3d.maxMaterialTextures());
+            List.zip(reads, List.zip(d#entry#locs#texFlips, d#entry#locs#texLevels)) |> List.forEachWithIndex((unit, pair) -> {
+                let ((name, filter), (flipLoc, levelsLoc)) = pair;
+                // WhyNot: 引いてから unit を選ばない — 初めての絵は引く時に上げて今の unit に貼るので、前の unit に貼った絵を外してしまう。
+                GL13.glActiveTexture(GL13.GL_TEXTURE0 + unit);
+                let bound = resolveMaterialTexture(state, gen, source, name);
+                GL11.glBindTexture(GL11.GL_TEXTURE_2D, bound#texId);
+                GL33.glBindSampler(unit, materialSampler(state, d#material#wrap, filter, bound#levels > 1));
+                GL20.glUniform1f(flipLoc, if (bound#flipped) 1.0f32 else 0.0f32);
+                GL20.glUniform1f(levelsLoc, RenderUtil.f32(Int32.toFloat64(bound#levels)))
+            });
+            List.length(reads)
+        }
+
+    /// 材質の Tex の名前を、貼る GPU のテクスチャ・上下を反転して読むか（レンダーターゲット）・段の数へ引く。
+    /// "tex3d:" は場面の textures（置き場に無ければ段ごと上げる）・ほかは全体の登録（段つきの写しを作る。レンダーターゲットは
+    /// 毎コマ書き換わるので段を作らず、そのまま読む）・どちらにも無ければ透明な黒（名前ごとに 1 回知らせる）。
+    def resolveMaterialTexture(state: State, gen: Int64, source: TextureSource, name: String): BoundTexture \ IO =
+        let found = if (String.startsWith(prefix = Texture3d.namePrefix(), name))
+            Map.get(name, source#own) |> Option.map(t -> texture3dBound(state, gen, t))
+        else (source#textureOf)(name) |> Option.map(t ->
+            if (t#flipped) { texId = t#texId, flipped = true, levels = 1 } else mipCopyOf(state, gen, name, t));
+        match found {
+            case Some(hit) => hit
+            case None =>
+                warnTextureOnce(state, "missing:" + name, "scene3d: 材質の絵 '${name}' が見つからない — 0（黒・透明）で読む"
+                    + "（tex3d: の名前は場面の textures に、ほかは project.json の textures に同名の宣言があるか確認）");
+                { texId = blankTextureId(state), flipped = false, levels = 1 }
+        }
+
+    /// 全体の登録の絵 t の段つきの写し（無いか、元の絵が作り直されていたら、元の段 0 を読み戻して段を作り、上げ直す）。
+    // WhyNot: 登録の絵の画素を Java の側に持ち続けない — STB で直に上げているので持っておらず、全部の絵をヒープに二重に持つことになる。
+    def mipCopyOf(state: State, gen: Int64, name: String, t: BillboardTexture): BoundTexture \ IO =
+        let copies = Ref.get(state#mipCopiesRef);
+        let copy = match Map.get(name, copies) {
+            case Some(c) if c#sourceId == t#texId and c#version == t#version => { lastUsed = gen | c }
+            case old =>
+                old |> Option.forEach(c -> GL11.glDeleteTextures(c#texId));
+                let w = Float64.tryToInt32(Float64.round(t#width)) |> Option.getWithDefault(1);
+                let h = Float64.tryToInt32(Float64.round(t#height)) |> Option.getWithDefault(1);
+                let pixels = Array.repeat(Static, Int32.max(1, w * h), 0);
+                GL11.glBindTexture(GL11.GL_TEXTURE_2D, t#texId);
+                GL11.glGetTexImage(GL11.GL_TEXTURE_2D, 0, GL12.GL_BGRA, GL12.GL_UNSIGNED_INT_8_8_8_8_REV, pixels);
+                let chain = Mip.build({ width = w, height = h, pixels = Array.toVector(pixels) });
+                { sourceId = t#texId, version = t#version, texId = uploadMipChain(chain), levels = List.length(chain), lastUsed = gen }
+        };
+        Ref.put(Map.insert(name, copy, copies), state#mipCopiesRef);
+        { texId = copy#texId, flipped = false, levels = copy#levels }
+
+    /// 段の列を 1 枚のテクスチャの段 0〜 に上げる（行 0 が絵の上・ARGB）。
+    def uploadMipChain(chain: List[ShaderEval.TexData]): Int32 \ IO =
+        let texId = GL11.glGenTextures();
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, texId);
+        chain |> List.forEachWithIndex((level, td) -> {
+            let buf = MemoryUtil.memAllocInt(Int32.max(1, Vector.length(td#pixels)));
+            discard buf.put(unchecked_cast(td#pixels as Array[Int32, Static]));
+            discard buf.flip();
+            GL11.glTexImage2D(GL11.GL_TEXTURE_2D, level, GL11.GL_RGBA, td#width, td#height, 0,
+                              GL12.GL_BGRA, GL12.GL_UNSIGNED_INT_8_8_8_8_REV, buf);
+            MemoryUtil.memFree(buf)
+        });
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL12.GL_TEXTURE_BASE_LEVEL, 0);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL12.GL_TEXTURE_MAX_LEVEL, Int32.max(0, List.length(chain) - 1));
+        texId
+
+    def warnTextureOnce(state: State, key: String, message: String): Unit \ IO =
+        let warned = Ref.get(state#textureWarnedRef);
+        if (Set.memberOf(key, warned)) ()
+        else {
+            Ref.put(Set.insert(key, warned), state#textureWarnedRef);
+            Log.warn(message)
+        }
+
+    /// 見つからない絵の代わりに貼る 1 × 1 の透明な黒（初めて要る時に作る）。
+    // WhyNot: テクスチャ 0 を貼らない — 完全でないテクスチャの読みはドライバ次第で α が 1 になり、CPU の 0 と食い違う。
+    def blankTextureId(state: State): Int32 \ IO =
+        let held = Array.get(0, state#blankTexture);
+        if (held != 0) held
+        else {
+            let made = GpuHandle.textureIdInt(RenderTexture.loadTextureFromPixels(1, 1, Vector#{0})#id);
+            Array.put(made, 0, state#blankTexture);
+            made
+        }
+
+    /// wrap と補間と段の有無の組の sampler（初めて要る時に作る）。段つきの Nearest は NEAREST_MIPMAP_LINEAR（段の切り替わりの筋を出さない）・
+    /// Linear は LINEAR_MIPMAP_LINEAR（CPU の Mip の読み方と同じ）。段の無い絵（レンダーターゲット・代わりの絵）は段なしで読む。
+    def materialSampler(state: State, wrap: Scene3d.Wrap, filter: ShaderDoc.FilterMode, mipped: Bool): Int32 \ IO =
+        let linear = filter == ShaderDoc.FilterMode.Linear;
+        let index = (if (mipped) 4 else 0) + (if (wrap == Scene3d.Wrap.Clamp) 2 else 0) + (if (linear) 1 else 0);
+        let held = Array.get(index, state#materialSamplers);
+        if (held != 0) held
+        else {
+            let sampler = GL33.glGenSamplers();
+            let glFilter = if (linear) GL11.GL_LINEAR else GL11.GL_NEAREST;
+            let minFilter = match (mipped, linear) {
+                case (true, true)  => GL11.GL_LINEAR_MIPMAP_LINEAR
+                case (true, false) => GL11.GL_NEAREST_MIPMAP_LINEAR
+                case (false, _)    => glFilter
+            };
+            let glWrap = if (wrap == Scene3d.Wrap.Clamp) GL12.GL_CLAMP_TO_EDGE else GL11.GL_REPEAT;
+            GL33.glSamplerParameteri(sampler, GL11.GL_TEXTURE_MIN_FILTER, minFilter);
+            GL33.glSamplerParameteri(sampler, GL11.GL_TEXTURE_MAG_FILTER, glFilter);
+            GL33.glSamplerParameteri(sampler, GL11.GL_TEXTURE_WRAP_S, glWrap);
+            GL33.glSamplerParameteri(sampler, GL11.GL_TEXTURE_WRAP_T, glWrap);
+            Array.put(sampler, index, state#materialSamplers);
+            sampler
+        }
+
+    // ── 場面の絵の置き場 ──
+
+    /// 場面の絵を contentHash で引き、無ければ段を作って段ごと上げる。どちらでも lastUsed を今の世代にする。
+    def texture3dBound(state: State, gen: Int64, t: Texture3d.Texture3d): BoundTexture \ IO =
+        let key = Texture3d.contentHash(t);
+        let held = Ref.get(state#textures3dRef);
+        let entry = match Map.get(key, held) {
+            case Some(found) => { lastUsed = gen | found }
+            case None =>
+                let chain = Mip.build({ width = Texture3d.width(t), height = Texture3d.height(t), pixels = Texture3d.argb(t) });
+                { texId = uploadMipChain(chain), levels = List.length(chain),
+                  bytes = chain |> List.foldLeft((acc, td) -> acc + Int32.toInt64(td#width) * Int32.toInt64(td#height) * 4i64, 0i64),
+                  lastUsed = gen }
+        };
+        Ref.put(Map.insert(key, entry, held), state#textures3dRef);
+        { texId = entry#texId, flipped = false, levels = entry#levels }
+
+    /// 使われない場面の絵を捨て、上限を超えたら今と前のコマで使っていない古い物から捨てる（画面のコマの終わりに 1 回）。
+    /// 今と前のコマで使う物だけで上限を超えていたら 1 回だけ知らせる（Pass の場面は画面のコマの 1 つ前の世代で描かれる）。
+    def sweepTextures3d(state: State, gen: Int64): Unit \ IO =
+        let held = Ref.get(state#textures3dRef);
+        let isIdle = (e: Texture3dEntry) -> gen - e#lastUsed > meshIdleFrames();
+        let kept = Map.filter(e -> not isIdle(e), held);
+        let overBudget = (m: Map[String, Texture3dEntry]) ->
+            Map.size(m) > texture3dCountBudget() or Map.foldLeft((acc, e) -> acc + e#bytes, 0i64, m) > texture3dByteBudget();
+        let oldestFirst = Map.toList(kept) |> List.filter(ke -> snd(ke)#lastUsed < gen - 1i64)
+            |> List.map(ke -> (snd(ke)#lastUsed, ke)) |> List.sortBy(fst) |> List.map(snd);
+        let trimmed = List.foldLeft((acc, ke) -> if (overBudget(acc)) Map.remove(fst(ke), acc) else acc, kept, oldestFirst);
+        let dropped = Map.difference(held, trimmed);
+        Map.forEach((_key, e) -> GL11.glDeleteTextures(e#texId), dropped);
+        Ref.put(trimmed, state#textures3dRef);
+        let copies = Ref.get(state#mipCopiesRef);
+        let idleCopies = Map.filter(c -> gen - c#lastUsed > meshIdleFrames(), copies);
+        Map.forEach((_name, c) -> GL11.glDeleteTextures(c#texId), idleCopies);
+        Ref.put(Map.difference(copies, idleCopies), state#mipCopiesRef);
+        if (overBudget(trimmed))
+            warnTextureOnce(state, "@budget", "scene3d: 場面の絵（Texture3d）が ${texture3dCountBudget()} 枚か"
+                + " ${Int64.toString(texture3dByteBudget() / 1048576i64)} MB を超えて使われている — 絵を減らすか小さくする")
+        else ()
 
     // ── 材質のプログラムの置き場 ──
 
-    /// 材質のプログラムの鍵（2D の Shader 面の鍵 = spec の名前 と重ならない）。骨つきの版は頂点シェーダーが違うので別の鍵。
+    /// 材質のプログラムを分ける形。skinned = 骨つき・uv = uv とタンジェントを持つ・normalMap = 法線マップを当てる（uv つきの時だけ真）。
+    type alias VertexKind = { skinned = Bool, uv = Bool, normalMap = Bool }
+
+    /// 材質のプログラムの鍵（2D の Shader 面の鍵 = spec の名前 と重ならない）。骨つき・uv つき・法線マップつきの版は GLSL が違うので別の鍵。
     // WhyNot: 骨つきかどうかの字を "3d:" の後ろへ足さない — "3d:" + 名前 の名前の側が同じ字で始まると、骨の無い版と鍵が重なる。
-    def materialKey(m: Scene3d.Material3d, skinned: Bool): String =
-        (if (skinned) "3d+skin:" else "3d:") + m#spec#name
+    def materialKey(m: Scene3d.MaterialFields, kind: VertexKind): String =
+        "3d" + (if (kind#skinned) "+skin" else "") + (if (kind#uv) "+uv" else "") + (if (kind#normalMap) "+nm" else "") + ":" + m#spec#name
 
     /// 材質のプログラムを引く。無いか、同じ名前で中身が違えば組み直す。組めなかった材質は None（頂点の色で描く）。
-    def materialEntry(state: State, gen: Int64, m: Scene3d.Material3d, skinned: Bool): Option[MaterialEntry] \ IO =
-        let key = materialKey(m, skinned);
+    def materialEntry(state: State, gen: Int64, m: Scene3d.MaterialFields, kind: VertexKind): Option[MaterialEntry] \ IO =
+        let key = materialKey(m, kind);
         let cache = Ref.get(state#materialsRef);
         let entry = match Map.get(key, cache) {
             // 来た方の spec を持ち直す — 古い方を持ち続けると、次のコマも参照の一致で抜けられず毎回木を比べる。
             case Some(found) if sameMaterial(found, m) => { spec = m#spec, emission = m#emission, lastUsed = gen | found }
-            case old                                   => rebuildMaterial(state, gen, { key = key, skinned = skinned }, old, m)
+            case old                                   => rebuildMaterial(state, gen, { key = key, kind = kind }, old, m)
         };
         Ref.put(Map.insert(key, entry, Ref.get(state#materialsRef)), state#materialsRef);
         if (entry#locs#mesh#program == 0) None else Some(entry)
 
-    def sameMaterial(entry: MaterialEntry, m: Scene3d.Material3d): Bool =
+    def sameMaterial(entry: MaterialEntry, m: Scene3d.MaterialFields): Bool =
         ShaderGen.eqSpec(entry#spec, m#spec) and ShaderGen.eqEmission(entry#emission, m#emission)
 
     /// 鍵 key の材質を組み直す。古いプログラムはすぐ消さず引退させる（同じコマの先の物がまだ使う）。
-    def rebuildMaterial(state: State, gen: Int64, slot: { key = String, skinned = Bool }, old: Option[MaterialEntry],
-                        m: Scene3d.Material3d): MaterialEntry \ IO =
+    def rebuildMaterial(state: State, gen: Int64, slot: { key = String, kind = VertexKind }, old: Option[MaterialEntry],
+                        m: Scene3d.MaterialFields): MaterialEntry \ IO =
         old |> Option.forEach(e -> {
             if (e#lastUsed == gen) warnMaterialThrash(state, slot#key, m#spec#name) else ();
             retireMaterial(state, e)
         });
-        buildMaterial(gen, m, slot#skinned)
+        buildMaterial(state, gen, m, slot#kind)
 
-    def buildMaterial(gen: Int64, m: Scene3d.Material3d, skinned: Bool): MaterialEntry \ IO =
-        let glsl = ShaderGen.compile3d(m#spec, m#emission);
-        let (vertex, label) = if (skinned) (skinnedMeshVertexSource(), "scene3d:material:skin:${m#spec#name}")
-                              else (meshVertexSource(), "scene3d:material:${m#spec#name}");
-        let program = match RenderShader.tryCreateProgram(vertex, materialFragmentSource(glsl), label) {
+    /// 材質のプログラムを組む。読む絵の組が Scene3d.maxMaterialTextures() を超える材質は、後ろの組を 0 にして組み、1 回知らせる。
+    def buildMaterial(state: State, gen: Int64, m: Scene3d.MaterialFields, kind: VertexKind): MaterialEntry \ IO =
+        let readCount = List.length(ShaderDoc.materialTexReads(m#spec, m#emission));
+        if (readCount > Scene3d.maxMaterialTextures())
+            warnTextureOnce(state, "limit:" + m#spec#name, "scene3d: 材質 '${m#spec#name}' が読む絵の組が ${readCount} 組ある"
+                + " — ${Scene3d.maxMaterialTextures()} 組目より後ろは 0 で描く")
+        else ();
+        let (spec, emission) = ShaderDoc.limitMaterialTexReads(Scene3d.maxMaterialTextures(), m#spec, m#emission);
+        let glsl = ShaderGen.compile3d(spec, emission);
+        let label = "scene3d:material" + (if (kind#skinned) ":skin" else "") + (if (kind#uv) ":uv" else "")
+            + (if (kind#normalMap) ":nm" else "") + ":${m#spec#name}";
+        let vertex = materialVertexSource({ skinned = kind#skinned, uv = kind#uv });
+        let fragment = materialFragmentSource(glsl, { uv = kind#uv, normalMap = kind#normalMap });
+        let program = match RenderShader.tryCreateProgram(vertex, fragment, label) {
             case Some(p) => p
             case None    =>
                 Log.warnThen("scene3d: 材質 '${m#spec#name}' のプログラムが組めなかった — この材質の物は頂点の色で描く", 0)
         };
-        if (skinned) bindJointsBlock(program) else ();
-        { spec = m#spec, emission = m#emission, paramNames = glsl#paramNames,
-          locs = materialLocsOf(program, glsl#paramNames), lastUsed = gen }
+        if (kind#skinned) bindJointsBlock(program) else ();
+        bindTextureUnits(program, List.length(glsl#texReads), kind#normalMap);
+        { spec = m#spec, emission = m#emission, paramNames = glsl#paramNames, texReads = glsl#texReads, normalMapped = kind#normalMap,
+          locs = materialLocsOf(program, glsl#paramNames, List.length(glsl#texReads)), lastUsed = gen }
+
+    /// uTexN を unit N へ、uNormalMap を法線マップの unit へ向ける（プログラムごとに 1 回。組めなかったプログラムと、
+    /// 絵も法線マップも無い材質は何もしない）。
+    def bindTextureUnits(program: Int32, count: Int32, normalMap: Bool): Unit \ IO =
+        if (program == 0 or (count == 0 and not normalMap)) ()
+        else {
+            GL20.glUseProgram(program);
+            List.range(0, count) |> List.forEach(unit -> GL20.glUniform1i(loc(program, "uTex${unit}"), unit));
+            if (normalMap) GL20.glUniform1i(loc(program, "uNormalMap"), normalMapTextureUnit()) else ();
+            GL20.glUseProgram(0)
+        }
 
     def retireMaterial(state: State, e: MaterialEntry): Unit \ IO =
         if (e#locs#mesh#program == 0) ()
@@ -716,11 +995,14 @@ mod Render3d {
                 + " — 毎コマ組み直している。材質ごとに spec の name を分ける")
         }
 
-    def materialLocsOf(program: Int32, paramNames: List[String]): MaterialLocs \ IO =
+    def materialLocsOf(program: Int32, paramNames: List[String], texCount: Int32): MaterialLocs \ IO =
         { mesh = meshLocsOf(program), tint = loc(program, "uTint"), light = lightLocsOf(program), shadow = shadowLocsOf(program),
           time = loc(program, "uTime"), cutout = loc(program, "uCutout"),
           depthOut = loc(program, "uDepthOut"), depthRange = loc(program, "uDepthRange"),
-          params = paramNames |> List.mapWithIndex((i, _) -> loc(program, "uParam${i}")) }
+          params = paramNames |> List.mapWithIndex((i, _) -> loc(program, "uParam${i}")),
+          texFlips = List.range(0, texCount) |> List.map(i -> loc(program, "uTexFlip${i}")),
+          normalStrength = loc(program, "uNormalStrength"), normalFlip = loc(program, "uNormalFlip"),
+          texLevels = List.range(0, texCount) |> List.map(i -> loc(program, "uTexLevels${i}")), normalLevels = loc(program, "uNormalLevels") }
 
     /// 引退した材質のプログラムを消し、使われない材質を LRU で追い出す（画面のコマの終わりに 1 回）。
     /// 今と前のコマで使った材質は捨てない（Pass の場面は画面のコマの 1 つ前の世代で描かれる）。
@@ -764,6 +1046,8 @@ mod Render3d {
         drawMesh(state, gen, locs, d#fields#mesh, d#fields#world)
 
     def isSkinned(d: MeshDraw): Bool = Option.nonEmpty(d#pose)
+
+    def hasUv(d: MeshDraw): Bool = Option.nonEmpty(Mesh3d.uvs(d#fields#mesh))
 
     /// 置いた物を描く材料にする。ジョイントの数の食い違いは形ごとに 1 回だけ知らせる（Scene3d.skinningWarning）。
     def meshDrawOf(state: State, placed: Scene3d.Instance3d): MeshDraw \ IO =
@@ -834,12 +1118,13 @@ mod Render3d {
         GL20.glEnableVertexAttribArray(2);
         GL20.glVertexAttribPointer(2, 3, GL11.GL_FLOAT, false, 36, 24i64);
         let skin = uploadSkin(mesh);
+        let surface = uploadSurface(mesh);
         GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, ibo);
         GL15.glBufferData(GL15.GL_ELEMENT_ARRAY_BUFFER, indexArray, GL15.GL_STATIC_DRAW);
         GL30.glBindVertexArray(0);
         GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
         GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, 0);
-        { vao = vao, vbo = vbo, ibo = ibo, skin = skin, indexCount = Vector.length(indices), vertexCount = n, lastUsed = gen }
+        { vao = vao, vbo = vbo, ibo = ibo, skin = skin, surface = surface, indexCount = Vector.length(indices), vertexCount = n, lastUsed = gen }
 
     /// ジョイントの番号と重みを、bind 中の VAO の location 3・4 へ上げる（ジョイントの無い形は None・何もしない）。
     /// 骨の無い版のプログラムはこの 2 つを宣言しないので、同じ VAO のまま曲げずに描ける。
@@ -865,6 +1150,24 @@ mod Render3d {
         GL20.glVertexAttribPointer(4, 4, GL11.GL_FLOAT, false, 16, 0i64);
         { joints = jointVbo, weights = weightVbo }
 
+    /// uv とタンジェントを、bind 中の VAO の location 5・6 へ上げる（uv の無い形は None・何もしない）。
+    /// 頂点の色と骨の無い版のプログラムはこの 2 つを宣言しないので、同じ VAO のまま描ける。
+    def uploadSurface(mesh: Mesh3d.Mesh3d): Option[Int32] \ IO =
+        Mesh3d.uvs(mesh) |> Option.flatMap(uvs -> Mesh3d.tangents(mesh) |> Option.map(tangents -> {
+            let n = Vector.length(uvs) / 2;
+            let data = Array.repeat(Static, Int32.max(1, n * 6), 0.0f32);
+            uvs |> Vector.forEachWithIndex((i, v) -> Array.put(RenderUtil.f32(v), (i / 2) * 6 + Int32.remainder(i, 2), data));
+            tangents |> Vector.forEachWithIndex((i, v) -> Array.put(RenderUtil.f32(v), (i / 4) * 6 + 2 + Int32.remainder(i, 4), data));
+            let vbo = GL15.glGenBuffers();
+            GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vbo);
+            GL15.glBufferData(GL15.GL_ARRAY_BUFFER, data, GL15.GL_STATIC_DRAW);
+            GL20.glEnableVertexAttribArray(5);
+            GL20.glVertexAttribPointer(5, 2, GL11.GL_FLOAT, false, 24, 0i64);
+            GL20.glEnableVertexAttribArray(6);
+            GL20.glVertexAttribPointer(6, 4, GL11.GL_FLOAT, false, 24, 8i64);
+            vbo
+        }))
+
     def interleave(mesh: Mesh3d.Mesh3d, n: Int32): Array[Float32, Static] \ IO =
         let out = Array.repeat(Static, Int32.max(1, n * 9), 0.0f32);
         let put = (offset: Int32, values: Vector[Float64]) ->
@@ -881,13 +1184,15 @@ mod Render3d {
         entry#skin |> Option.forEach(s -> {
             GL15.glDeleteBuffers(s#joints);
             GL15.glDeleteBuffers(s#weights)
-        })
+        });
+        entry#surface |> Option.forEach(vbo -> GL15.glDeleteBuffers(vbo))
 
     /// 画面のコマを描き終えた後に 1 回呼ぶ。使われないメッシュと上限を超えた分を捨て、毎コマの作り直しを知らせる。
     pub def endFrame(state: State, gen: Int64): Unit \ IO =
         noteUploadStreak(state);
         sweepMaterials(state, gen);
         sweepShadowTargets(state, gen);
+        sweepTextures3d(state, gen);
         let meshes = Ref.get(state#meshesRef);
         let isIdle = (e: MeshEntry) -> gen - e#lastUsed > meshIdleFrames();
         let idle = Map.filter(isIdle, meshes);
@@ -1205,28 +1510,64 @@ mod Render3d {
 
     /// 置いた物の頂点シェーダー（頂点の色のプログラム・深度だけのプログラム・材質のプログラムで共有）。
     pub def meshVertexSource(): String =
-        meshVertexSourceOf({ declarations = "", prelude = "", position = "vec4(aPos, 1.0)", normal = "aNormal" })
+        meshVertexSourceOf({ declarations = "", prelude = "", position = "vec4(aPos, 1.0)", normal = "aNormal", tangent = None })
 
     /// 骨つきの版: 位置と法線を joint 行列の重みつきの和（Pose3d.jointMatrices の並び）で曲げてから uModel を掛ける。
     // WhyNot: 法線を skin の逆行列の転置で曲げない — 左上 3×3 のままだと倍率が軸ごとに違うジョイントで少し傾くが、
     //   CPU の描き手も同じ式なので GL と CPU の絵は一致する。その差は許す。
     pub def skinnedMeshVertexSource(): String =
         meshVertexSourceOf({
-            declarations =
-                "layout (location = 3) in ivec4 aJoints;\n" +
-                "layout (location = 4) in vec4 aWeights;\n" +
-                "layout (std140) uniform Joints {\n" +
-                "    mat4 uJoints[${Skin3d.maxJoints()}];\n" +
-                "};\n",
-            prelude =
-                "    mat4 skin = aWeights.x * uJoints[aJoints.x] + aWeights.y * uJoints[aJoints.y]\n" +
-                "              + aWeights.z * uJoints[aJoints.z] + aWeights.w * uJoints[aJoints.w];\n",
+            declarations = skinDeclarations(),
+            prelude = skinPrelude(),
             position = "skin * vec4(aPos, 1.0)",
-            normal = "mat3(skin) * aNormal" })
+            normal = "mat3(skin) * aNormal",
+            tangent = None })
+
+    /// 材質のプログラムの頂点シェーダー。uv の無い形は頂点の色のプログラムと同じ物・uv つきは vUv と vTangent も出す。
+    pub def materialVertexSource(kind: { skinned = Bool, uv = Bool }): String =
+        match (kind#skinned, kind#uv) {
+            case (false, false) => meshVertexSource()
+            case (true, false)  => skinnedMeshVertexSource()
+            case (false, true)  =>
+                meshVertexSourceOf({ declarations = surfaceDeclarations(), prelude = "", position = "vec4(aPos, 1.0)", normal = "aNormal",
+                                     tangent = Some("aTangent.xyz") })
+            case (true, true)   =>
+                meshVertexSourceOf({ declarations = skinDeclarations() + surfaceDeclarations(), prelude = skinPrelude(),
+                                     position = "skin * vec4(aPos, 1.0)", normal = "mat3(skin) * aNormal",
+                                     tangent = Some("mat3(skin) * aTangent.xyz") })
+        }
+
+    def skinDeclarations(): String =
+        "layout (location = 3) in ivec4 aJoints;\n" +
+        "layout (location = 4) in vec4 aWeights;\n" +
+        "layout (std140) uniform Joints {\n" +
+        "    mat4 uJoints[${Skin3d.maxJoints()}];\n" +
+        "};\n"
+
+    def skinPrelude(): String =
+        "    mat4 skin = aWeights.x * uJoints[aJoints.x] + aWeights.y * uJoints[aJoints.y]\n" +
+        "              + aWeights.z * uJoints[aJoints.z] + aWeights.w * uJoints[aJoints.w];\n"
+
+    def surfaceDeclarations(): String =
+        "layout (location = 5) in vec2 aUv;\n" +
+        "layout (location = 6) in vec4 aTangent;\n" +
+        "out vec2 vUv;\n" +
+        "out vec4 vTangent;\n"
 
     /// 置いた物の頂点シェーダーの組み立て。declarations = 足す属性と uniform・prelude = main の頭・
-    /// position = uModel を掛ける前の形の座標（vec4）・normal = uNormal を掛ける前の法線（vec3）。
-    def meshVertexSourceOf(parts: { declarations = String, prelude = String, position = String, normal = String }): String =
+    /// position = uModel を掛ける前の形の座標（vec4）・normal = uNormal を掛ける前の法線（vec3）・
+    /// tangent = uModel の左上 3×3 を掛ける前のタンジェントの xyz（vec3。uv の無い形は None で vUv・vTangent を出さない）。
+    /// タンジェントの w には uModel の左上 3×3 の行列式の符号を掛ける（鏡写しの置き方で絵の上の向きを保つ）。
+    // WhyNot: タンジェントを uNormal で写さない — 法線の行列は面に垂直な向きを保つための物で、面の上の向きは uModel のまま写る。
+    def meshVertexSourceOf(parts: { declarations = String, prelude = String, position = String, normal = String,
+                                    tangent = Option[String] }): String =
+        let surfaceBody = match parts#tangent {
+            case None    => ""
+            case Some(t) =>
+                "    vUv = aUv;\n" +
+                "    mat3 modelLinear = mat3(uModel);\n" +
+                "    vTangent = vec4(modelLinear * (" + t + "), aTangent.w * sign(determinant(modelLinear)));\n"
+        };
         "#version 330 core\n" +
         "layout (location = 0) in vec3 aPos;\n" +
         "layout (location = 1) in vec3 aNormal;\n" +
@@ -1245,6 +1586,7 @@ mod Render3d {
         "    vWorld = world.xyz;\n" +
         "    vNormal = (uNormal * vec4(" + parts#normal + ", 0.0)).xyz;\n" +
         "    vColor = aColor;\n" +
+        surfaceBody +
         "    gl_Position = uProj * uView * world;\n" +
         "}\n"
 
@@ -1360,12 +1702,17 @@ mod Render3d {
         "    fragColor = vec4(fogged(c, vWorld), 1.0);\n" +
         "}\n"
 
-    /// 材質の frag。光の式は litFragmentSource と同じで、頂点の色の代わりに materialEval の albedo を使う。
+    /// 材質の frag。光の式は litFragmentSource と同じで、頂点の色の代わりに materialEval の albedo を使う（頂点の色は
+    /// 材質の Spec が VertexColor で読む）。surface#uv = uv つきの形か（偽なら vUv は (0, 0) の const）・
+    /// surface#normalMap = 法線マップを当てるか（uv つきの時だけ。光の計算の法線を、法線マップで傾けた n' にする）。
     /// uDepthOut = 1 なら cutout で抜いた後の奥行きの灰色を書く（Output.Depth の cutout の材質）。
-    pub def materialFragmentSource(glsl: ShaderGen.MaterialGlsl): String =
+    pub def materialFragmentSource(glsl: ShaderGen.MaterialGlsl, surface: { uv = Bool, normalMap = Bool }): String =
+        let normalMapped = surface#uv and surface#normalMap;
         "#version 330 core\n" +
         "in vec3 vWorld;\n" +
         "in vec3 vNormal;\n" +
+        "in vec3 vColor;\n" +
+        (if (surface#uv) "in vec2 vUv;\n" else "const vec2 vUv = vec2(0.0, 0.0);\n") +
         "out vec4 fragColor;\n" +
         "uniform vec3 uTint;\n" +
         "uniform int uCutout;\n" +
@@ -1374,18 +1721,45 @@ mod Render3d {
         depthGraySource() +
         glsl#uniforms +
         glsl#functions +
+        (if (normalMapped) normalMapSource(glsl) else "") +
         "void main() {\n" +
         "    vec4 albedo;\n" +
         "    vec3 emission;\n" +
         "    materialEval(albedo, emission);\n" +
-        "    if (uCutout == 1 && albedo.a < 0.5) discard;\n" +
+        "    if (uCutout == 1 && " + glsl#cutoutAlpha + " < 0.5) discard;\n" +
         "    if (uDepthOut == 1) {\n" +
         "        float g = depthGray(vWorld);\n" +
         "        fragColor = vec4(g, g, g, 1.0);\n" +
         "        return;\n" +
         "    }\n" +
-        "    vec3 c = albedo.rgb * uTint * lightAt(vWorld, normalize(vNormal));\n" +
+        (if (normalMapped)
+            "    vec3 c = albedo.rgb * uTint * lightAt(vWorld, normalMapped(normalize(vNormal)));\n"
+         else
+            "    vec3 c = albedo.rgb * uTint * lightAt(vWorld, normalize(vNormal));\n") +
         "    fragColor = vec4(fogged(c, vWorld) + emission, 1.0);\n" +
+        "}\n"
+
+    /// 法線マップの uniform と、外向きの法線 n を法線マップで傾けた n'（式はファイルの頭。CPU の描き手と同じ）。
+    /// uNormalFlip = 1 はレンダーターゲット（行 0 が下）で、v を上下反転して読む。
+    // WhyNot: タンジェントを頂点の値のまま使わない — 補間で N との直交が崩れ、傾ける向きが法線の側へ漏れる。
+    // WhyNot: 長さ 0 のタンジェントで傾けない — normalize が NaN を出し、画素が黒く抜ける。その画素は n のまま。
+    /// 法線マップは段つきの Linear で読む（sg_texMip。材質の functions に無ければここで足す）。
+    def normalMapSource(glsl: ShaderGen.MaterialGlsl): String =
+        (if (String.contains(substr = "vec4 sg_texMip(", glsl#functions)) "" else ShaderGen.texMipSource()) +
+        "in vec4 vTangent;\n" +
+        "uniform sampler2D uNormalMap;\n" +
+        "uniform float uNormalStrength;\n" +
+        "uniform float uNormalFlip;\n" +
+        "uniform float uNormalLevels;\n" +
+        "vec3 normalMapped(vec3 n) {\n" +
+        "    vec3 t = vTangent.xyz - n * dot(n, vTangent.xyz);\n" +
+        "    if (dot(t, t) < 1e-12) return n;\n" +
+        "    t = normalize(t);\n" +
+        "    vec3 b = cross(n, t) * vTangent.w;\n" +
+        "    vec3 c = sg_texMip(uNormalMap, uNormalFlip, uNormalLevels, vUv).rgb;\n" +
+        "    vec3 m = vec3((c.x * 2.0 - 1.0) * uNormalStrength, (c.y * 2.0 - 1.0) * uNormalStrength, c.z * 2.0 - 1.0);\n" +
+        "    vec3 p = t * m.x + b * m.y + n * m.z;\n" +
+        "    return dot(p, p) < 1e-12 ? n : normalize(p);\n" +
         "}\n"
 
     def depthFragmentSource(): String =

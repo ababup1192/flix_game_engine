@@ -40,7 +40,7 @@ mod TestSoftRasterFlip {
               fontAtlas = { textureName = "font_ui", fontSize = 16.0, textureSize = 256.0,
                             ascent = 12.0, descent = 4.0, lineGap = 0.0, glyphs = Map.empty() },
               outPath = "", shapeAntialias = true, textAntialias = true, scenes = Nil };
-        SoftRaster.renderToImageFull(req, Nil, Map.empty(), Map#{ "paper" => halvesImage() })
+        SoftRaster.renderToImageFull(req, Nil, Map.empty(), Map#{ "paper" => SoftRaster.PassImage.Rgba8Unorm(halvesImage()) })
 
     /// 反転しても紙の (1,3)（絵の左隣）と (6,3)（絵の右隣）は背景の黒のまま。
     /// 絵が横へ飛ぶと、どちらかに色が乗る。

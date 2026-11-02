@@ -524,8 +524,12 @@
 ## Gltf — `engine/src/scene3d/Gltf.flix`
 - path の .glb を読む（Fs.FileRead.readBytes）。読めない・壊れている時は Err（パスつき）。
   `pub def load(path: String): Result[String, Model3d.Model3d] \ Fs.FileRead`
-- .glb のバイトから作る。壊れている・読まない物を含む時は Err。
+- .glb のバイトから作る。壊れている・読まない物を含む時は Err。parts は primitive ごと（材質 None）・textures は空。
   `pub def fromGlb(bytes: Vector[Int8]): Result[String, Model3d.Model3d]`
+- path の .glb を、絵と材質つきで読む。parts に材質（baseColorTexture → Scene3d.texturedMaterial・normalTexture → 法線マップ・
+  `pub def loadTextured(path: String): Result[String, Model3d.Model3d] \ Fs.FileRead + IO`
+- loadTextured のバイトの版。
+  `pub def fromGlbTextured(bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO`
 
 ## GpuHandle — `engine/src/core/GpuHandle.flix`
 - タイルマップの GPU インスタンスバッファのハンドル（`initTileBuffer` が返す）。
@@ -619,8 +623,17 @@
   `pub def fromPolygons(polys: List[Polygon]): Mesh3d`
 - 頂点の並びから作る。positions・normals・colors は頂点ごとに 3 つ、indices は 3 つで三角 1 枚（表は外から見て時計回り）。
   `pub def fromArrays(arrays: { positions = Vector[Float64], normals = Vector[Float64], colors = Vector[Float64], indices = Vector[Int32], skin = Option[SkinWeights] }): Result[String, Mesh3d]`
+- uv を付ける（頂点ごとに u・v の 2 つ）。タンジェントは三角形の辺と uv の差から求める（作る時に 1 回・GL と CPU は同じ値を読む）。
+  `pub def withUvs(uvs: Vector[Float64], m: Mesh3d): Result[String, Mesh3d]`
+- 外で求めたタンジェント（頂点ごとに x・y・z・w の 4 つ。glTF の TANGENT）で置き換える。xyz は長さ 1 にそろえる。
+  `pub def withTangents(tangents: Vector[Float64], m: Mesh3d): Result[String, Mesh3d]`
+- uv つきの多角形（uvs は points と同じ数・同じ並び）。
+  `pub type alias TexturedPolygon = { points = List[Vec3.Vec3], uvs = List[Vec2.Vec2], color = Color }`
+- uv つきの多角形の列から作る（割り方と法線は fromPolygons と同じ・3 点未満の多角形は捨てる）。
+  `pub def fromTexturedPolygons(polys: List[TexturedPolygon]): Result[String, Mesh3d]`
+- `pub def withBoxUvs(scale: Float64, m: Mesh3d): Mesh3d`
 - `pub def fromObj(objText: String, mtlText: String): Result[String, Mesh3d]`
-- 中身の鍵（位置・色・番号の SHA-256 の 16 進）。同じ中身なら同じ字になる。GL はこれで頂点バッファを引く。
+- 中身の鍵（位置・色・番号の SHA-256 の 16 進。uv つきは uv とタンジェントも）。同じ中身なら同じ字になる。GL はこれで頂点バッファを引く。
   `pub def contentHash(m: Mesh3d): String`
 - 頂点の最小と最大（形の座標）。頂点の無い形は 0。
   `pub def bounds(m: Mesh3d): { min = Vec3.Vec3, max = Vec3.Vec3 }`
@@ -639,9 +652,21 @@
 - `pub def maxSkinJoint(m: Mesh3d): Option[Int32]`
 - 三角形の頂点の番号（3 つで 1 枚・外から見て時計回り）。
   `pub def indices(m: Mesh3d): Vector[Int32]`
+- 頂点の uv（頂点ごとに u・v の 2 つ。(0, 0) が絵の左上）。uv の無い形は None。
+  `pub def uvs(m: Mesh3d): Option[Vector[Float64]]`
+- 頂点のタンジェント（頂点ごとに x・y・z・w の 4 つ。cross(法線, xyz) × w が絵の上を向く）。uv の無い形は None。
+  `pub def tangents(m: Mesh3d): Option[Vector[Float64]]`
+
+## Mip — `engine/src/Mip.flix`
+- `pub def build(tex: ShaderEval.TexData): List[ShaderEval.TexData]`
+- 絵を読む座標の、画面の右隣と下隣の画素との差（uv の単位）。
+  `pub type alias Derivatives = { dudx = Float64, dvdx = Float64, dudy = Float64, dvdy = Float64 }`
+- `pub def lodOf(d: Derivatives, width: Int32, height: Int32, levels: Int32): Float64`
 
 ## Model3d — `engine/src/scene3d/Model3d.flix`
-- `pub type alias Model3d = { mesh = Mesh3d.Mesh3d, skin = Option[Skin3d.Skin3d], clips = Map[String, AnimationClip3d.AnimationClip3d] }`
+- primitive 1 つ。mesh = 形（uv を持つ primitive だけ uv つき）・material = 材質（絵の無い材質は None で、頂点の色で描く）。
+  `pub type alias ModelPart = { mesh = Mesh3d.Mesh3d, material = Option[Scene3d.Material3d] }`
+- `pub type alias Model3d = { mesh = Mesh3d.Mesh3d, skin = Option[Skin3d.Skin3d], clips = Map[String, AnimationClip3d.AnimationClip3d], parts = List[ModelPart], textures = List[Texture3d.Texture3d] }`
 
 ## Num — `engine/src/core/Num.flix`
 - 0 以上 1 以下に収める。濃さ・進み具合・混ぜ具合など「0〜1 のはずの値」を
@@ -690,6 +715,22 @@
   `pub def jointMatrices(p: Pose3d): Vector[Mat4.Mat4]`
 - ジョイントの変換（rootTransform × world。形の座標で、インスタンスの world 行列はまだ掛かっていない）。
   `pub def jointTransform(p: Pose3d, joint: Int32): Mat4.Mat4`
+
+## PostProcess — `engine/src/PostProcess.flix`
+- トーンマップの曲線（Unity の Tonemapping Mode・Unreal の Filmic と同じ役目）。
+  `pub enum Tonemap with Eq, ToString { case AcesFitted case Reinhard }`
+- 既定の露出（stop の数。2^stops 倍してから曲線に掛ける）。曲線の正規化で落ちる白を持ち上げる値で、
+  `pub def defaultExposure(): Float64`
+- 既定の白の点（この明るさで 1 になる）。
+  `pub def defaultWhitePoint(): Float64`
+- ITU-R BT.709 の明るさ（0.2126 r + 0.7152 g + 0.0722 b）。
+  `pub def luma709(r: Field, g: Field, b: Field): Field`
+- spec の色を、露出 2^exposureStops を掛けてから op でトーンマップした色にした Spec（α はそのまま）。
+  `pub def tonemapped(op: Tonemap, exposureStops: Float64, whitePoint: Float64, spec: ShaderDoc.Spec): ShaderDoc.Spec`
+- tonemapped の、トーンマップの後の色に after を掛ける形（色調・かすみなど 0..1 を前提にした仕上げを同じ面の中で）。
+  `pub def tonemappedWith(op: Tonemap, exposureStops: Float64, whitePoint: Float64, after: (Field, Field, Field) -> Shade, spec: ShaderDoc.Spec): ShaderDoc.Spec`
+- source の Pass を FXAA 3.11（PC の簡単な版）でならした面。斜めの 4 点（NW・NE・SW・SE）と真ん中の明るさから縁の向きを出し、
+  `pub def fxaaSpec(source: String): ShaderDoc.Spec`
 
 ## ProcessEnv — `engine/src/ProcessEnv.flix`
 - `pub def snapshot(): Map[String, String] \ IO`
@@ -788,20 +829,34 @@
 ## RenderTarget — `engine/src/RenderTarget.flix`
 - ターゲットを開くたびに前の中身をどう始末するかの 3 択（wgpu / Vulkan の LoadOp と同じ語彙）。
   `pub enum LoadOp { case Keep case Clear(Color) case ClearTransparent }`
+- ターゲットの寸法の基準。Design = design 解像度（ドット絵の画素の大きさにそろえる）・
+  `pub enum Basis with Eq, ToString { case Design case Window }`
+- ターゲットの画素の形式（wgpu の TextureFormat と同じ名前）。
+  `pub enum Format with Eq, ToString { case Rgba8Unorm case Rgba16Float }`
 - ターゲットの作り方（毎コマの中身 = Render.Pass とは別に、名前ごとに 1 つ）。wgpu / Unity の
-  `pub type alias Descriptor = { scale = Float64 }`
-- 既定（design 解像度そのまま）。
+  `pub type alias Descriptor = { scale = Float64, basis = Basis, format = Format }`
+- 既定（design 解像度そのまま・Rgba8Unorm）。
   `pub def defaultDescriptor(): Descriptor`
+- 描き先の画素そのまま（窓が 1920 × 1080 なら 1920 × 1080 で描く）・Rgba8Unorm。
+  `pub def windowDescriptor(): Descriptor`
+- d の形式を Rgba16Float にした作り方（1 を超える明るさを持つ Pass。`RenderTarget.withHdr(RenderTarget.windowDescriptor())`）。
+  `pub def withHdr(d: Descriptor): Descriptor`
+- scale が範囲（0 より大きく 1 以下・有限）の中か。外なら scaleOf が 1.0 に直す（Render.resolvePassReads が知らせる）。
+  `pub def isScaleInRange(d: Descriptor): Bool`
 - 範囲に収めた倍率。0 以下・1 より大きい・非有限は 1.0（既定値で続ける。知らせるのは呼び手）。
   `pub def scaleOf(d: Descriptor): Float64`
 - ターゲットのテクセル寸法。どの経路もこの 1 本で決める（GL・描き出し・App が別々に丸めると 1px 割れる）。
-  `pub def sizeOf(design: Vec2.Vec2, d: Descriptor): (Int32, Int32)`
+  `pub def texelSizeOf(design: Vec2.Vec2, pixelScale: Float64, d: Descriptor): (Int32, Int32)`
 - 自分の名前を読む Pass が、前のコマの中身（history）を読むための別名。Render.resolvePassReads が書き換え、
   `pub def historyName(name: String): String`
+- ターゲットを開く時の宣言（Target.beginTarget に渡す 1 つ）。
+  `pub type alias TargetSpec = { name = String, width = Int32, height = Int32, format = Format, clear = LoadOp }`
 - レンダーターゲットへの描画チャンネル。eff Game とは別に隔離した効果。
   `pub eff Target`
 - ターゲットを開く。以降の renderCommands は画面でなくここに描かれる（swap もしない）。
-  `pub eff Target { def beginTarget(name: String, width: Int32, height: Int32, clear: RenderTarget.LoadOp): Unit }`
+  `pub eff Target { def beginTarget(spec: RenderTarget.TargetSpec): Unit }`
+- 描き手の design px → 描き先の画素の倍率（窓なら窓の実際の大きさに収めた倍率・動画やスクリーンショットはその書き出しの倍率）。
+  `pub eff Target { def pixelScale(): Float64 }`
 - ターゲットを閉じて描画先を画面へ戻す。
   `pub eff Target { def endTarget(): Unit }`
 - レンダーターゲットを使わないゲーム・GL の無い環境（テスト等）向けの何もしないハンドラ。
@@ -830,8 +885,30 @@
 - 描く解像度。Native = 窓の画素で描く・Design = 設計の解像度で描いてから拡げる（ドット絵と画素の大きさをそろえる）。
   `pub enum Resolution with Eq { case Native case Design }`
 - `pub enum Output { case Color case Depth({ near = Float64, range = Float64 }) }`
-- 材質（段 B）。spec の Out の色 = 光を当てる前の色・params = spec の Param・
-  `pub type alias Material3d = { spec = ShaderDoc.Spec, params = Map[String, Float64], cutout = Bool, emission = Option[ShaderDoc.Shade] }`
+- uv が 0..1 の外へ出た時の読み方。Repeat = 繰り返す・Clamp = 端の色を伸ばす。
+  `pub enum Wrap with Eq { case Repeat case Clamp }`
+- 法線マップ。texture = 絵の名前（タンジェント空間・緑が絵の上）・strength = でこぼこの強さ（1 で絵のまま）。
+  `pub type alias NormalMap = { texture = String, strength = Float64 }`
+- 材質の中身。spec の Out の色 = 光を当てる前の色・params = spec の Param・
+  `pub type alias MaterialFields = { spec = ShaderDoc.Spec, params = Map[String, Float64], cutout = Bool, emission = Option[ShaderDoc.Shade], normalMap = Option[NormalMap], wrap = Wrap }`
+- 材質（閉じた型 — 欄を後から足しても、ゲームの書いた値が壊れない）。material から作り、with… で足す。
+  `pub type alias Material3d = MaterialData`
+- spec だけの材質（params 空・cutout なし・emission なし・法線マップなし・Repeat）。
+  `pub def material(spec: ShaderDoc.Spec): Material3d`
+- spec の Param に渡す値（Unity のマテリアルの float の値を渡すのと同じ。渡さない名前は 0）。
+  `pub def withParams(p: Map[String, Float64], m: Material3d): Material3d`
+- on が真なら α が 0.5 未満の画素を捨てる（深度も書かない）。
+  `pub def withCutout(on: Bool, m: Material3d): Material3d`
+- 光の計算の後に足す、自分で光る色（かすみに沈まない）。
+  `pub def withEmission(s: ShaderDoc.Shade, m: Material3d): Material3d`
+- `pub def withNormalMap(n: NormalMap, m: Material3d): Material3d`
+- `pub def withWrap(w: Wrap, m: Material3d): Material3d`
+- 材質の中身を読む（GL・CPU・鍵が使う）。
+  `pub def materialFieldsOf(m: Material3d): MaterialFields`
+- 絵 1 枚 × 頂点の色の材質（絵の r・g・b に VertexColor の r・g・b を掛け、α は絵の α）。filter = 絵の読み方（ドット絵なら Nearest）。
+  `pub def texturedMaterial(texture: String, filter: ShaderDoc.FilterMode): Material3d`
+- 1 つの材質が読める (テクスチャ名, 補間) の組の上限（ShaderDoc.materialTexReads の並びの前から。法線マップは別枠）。
+  `pub def maxMaterialTextures(): Int32`
 - 置いた物の中身。mesh = 形・world = 形の座標 → world の行列・tint = 頂点の色に掛ける色・material = 材質（None なら頂点の色）・
   `pub type alias InstanceFields = { mesh = Mesh3d.Mesh3d, world = Mat4.Mat4, tint = Color, material = Option[Material3d], pose = Option[Pose3d.Pose3d] }`
 - 置いた物（閉じた型 — 欄を後から足しても、ゲームの書いた値が壊れない）。
@@ -859,8 +936,8 @@
   `pub def unlit(b: Billboard3d): Billboard3d`
 - ビルボードの中身を読む（GL・CPU・鍵が使う）。
   `pub def billboardFieldsOf(b: Billboard3d): BillboardFields`
-- 場面 1 つ。size = 描き物の大きさ（位置は PlacedItem の at。Shader 面と同じ決まり）・zIndex = 2D の並びの中の重なり順。
-  `pub type alias Scene3dCmd = { size = Vec2.Vec2, camera = Camera3d.Camera3d, instances = List[Instance3d], billboards = List[Billboard3d], pointLights = List[PointLight], spotLights = List[SpotLight], environment = Environment3d, resolution = Resolution, output = Output, zIndex = Int32, time = Float64 }`
+- 場面 1 つ。size = 描き物の大きさ（位置は PlacedItem の at。Shader 面と同じ決まり）・zIndex = 2D の並びの中の重なり順・
+  `pub type alias Scene3dCmd = { size = Vec2.Vec2, camera = Camera3d.Camera3d, instances = List[Instance3d], billboards = List[Billboard3d], pointLights = List[PointLight], spotLights = List[SpotLight], environment = Environment3d, resolution = Resolution, output = Output, zIndex = Int32, time = Float64, textures = List[Texture3d.Texture3d] }`
 - `pub def scene(camera: Camera3d.Camera3d, size: Vec2.Vec2): Scene3dCmd`
 - 1 つの場面で計算する点光源の上限。
   `pub def maxPointLights(): Int32`
@@ -894,7 +971,7 @@
 - 1 つの場に掛ける素の関数。
   `pub enum UnOp with Eq, ToString { case Neg case Abs case Fract case Floor case Sin case Cos case Sat case OneMinus case Sqrt }`
 - 値の場（スカラー・0..1 目安）。GPU では 1 個の float、CPU では Float64 になる。
-  `pub enum Field { case Const(Float64) case Uv({ axis = Axis }) case Worley({ scale = Float64, seed = Int32, out = WorleyOut }) case Fbm({ octaves = Int32, scale = Float64, seed = Int32 }) case FbmTile({ octaves = Int32, scale = Float64, period = Vec2.Vec2, seed = Int32 }) case Smoothstep({ lo = Float64, hi = Float64, of = Field }) case Scaled({ factor = Float64, scroll = Vec2.Vec2, of = Field }) case Warp({ amount = Float64, scale = Float64, seed = Int32, of = Field }) case Mix({ a = Field, b = Field, t = Float64 }) case Blend({ a = Field, b = Field, by = Field }) case Disk({ cx = Float64, cy = Float64, radius = Float64, feather = Float64 }) case Radial({ cx = Float64, cy = Float64 }) case RadialAspect({ cx = Float64, cy = Float64, aspect = Float64 }) case Quantize({ of = Field, steps = Int32 }) case Scales({ scale = Float64, stagger = Float64 }) case Glints({ scale = Float64, rate = Float64, density = Float64, seed = Int32 }) case Ripples({ freq = Float64, amp = Float64, speed = Float64, seed = Int32 }) case Sparkle({ scale = Float64, rate = Float64, density = Float64, seed = Int32 }) case Bin({ op = BinOp, a = Field, b = Field }) case Hash1({ scale = Float64, seed = Int32, bucket = Option[Field] }) case Hash2({ scale = Float64, seed = Int32, comp = Axis, bucket = Option[Field] }) case Un({ op = UnOp, of = Field }) case Pow({ of = Field, p = Float64 }) case Time({ scale = Float64, offset = Field }) case Tiling({ tiles = Vec2.Vec2, of = Field }) case Snap({ cells = Vec2.Vec2, of = Field }) case Swirl({ cx = Float64, cy = Float64, strength = Float64, rate = Float64, of = Field }) case Angle({ cx = Float64, cy = Float64 }) case Rotate({ cx = Float64, cy = Float64, turns = Float64, rate = Float64, of = Field }) case Ref(String) case Tex({ name = String, chan = TexChan }) case Shift({ dx = Field, dy = Field, of = Field }) case TexBlur({ name = String, chan = TexChan, radius = Vec2.Vec2, taps = Int32, amount = Field }) case Sampler({ filter = FilterMode, of = Field }) case Param({ name = String }) case World({ axis = Axis3 }) case Normal({ axis = Axis3 }) }`
+  `pub enum Field { case Const(Float64) case Uv({ axis = Axis }) case Worley({ scale = Float64, seed = Int32, out = WorleyOut }) case Fbm({ octaves = Int32, scale = Float64, seed = Int32 }) case FbmTile({ octaves = Int32, scale = Float64, period = Vec2.Vec2, seed = Int32 }) case Smoothstep({ lo = Float64, hi = Float64, of = Field }) case Scaled({ factor = Float64, scroll = Vec2.Vec2, of = Field }) case Warp({ amount = Float64, scale = Float64, seed = Int32, of = Field }) case Mix({ a = Field, b = Field, t = Float64 }) case Blend({ a = Field, b = Field, by = Field }) case Disk({ cx = Float64, cy = Float64, radius = Float64, feather = Float64 }) case Radial({ cx = Float64, cy = Float64 }) case RadialAspect({ cx = Float64, cy = Float64, aspect = Float64 }) case Quantize({ of = Field, steps = Int32 }) case Scales({ scale = Float64, stagger = Float64 }) case Glints({ scale = Float64, rate = Float64, density = Float64, seed = Int32 }) case Ripples({ freq = Float64, amp = Float64, speed = Float64, seed = Int32 }) case Sparkle({ scale = Float64, rate = Float64, density = Float64, seed = Int32 }) case Bin({ op = BinOp, a = Field, b = Field }) case Hash1({ scale = Float64, seed = Int32, bucket = Option[Field] }) case Hash2({ scale = Float64, seed = Int32, comp = Axis, bucket = Option[Field] }) case Un({ op = UnOp, of = Field }) case Pow({ of = Field, p = Float64 }) case Time({ scale = Float64, offset = Field }) case Tiling({ tiles = Vec2.Vec2, of = Field }) case Snap({ cells = Vec2.Vec2, of = Field }) case Swirl({ cx = Float64, cy = Float64, strength = Float64, rate = Float64, of = Field }) case Angle({ cx = Float64, cy = Float64 }) case Rotate({ cx = Float64, cy = Float64, turns = Float64, rate = Float64, of = Field }) case Ref(String) case Tex({ name = String, chan = TexChan }) case Shift({ dx = Field, dy = Field, of = Field }) case TexBlur({ name = String, chan = TexChan, radius = Vec2.Vec2, taps = Int32, amount = Field }) case TexSize({ name = String, axis = Axis }) case Sampler({ filter = FilterMode, of = Field }) case Param({ name = String }) case World({ axis = Axis3 }) case Normal({ axis = Axis3 }) case VertexColor({ chan = TexChan }) }`
 - 面の色（rgb）。
   `pub enum Shade { case Solid(Color) case Ramp({ lo = Color, hi = Color, field = Field }) case Gradient({ stops = List[(Float64, Color)], field = Field }) case Cosine({ a = Color, b = Color, c = Color, d = Color, field = Field }) case Rgb({ r = Field, g = Field, b = Field }) }`
 - 面の出力（このピクセルの最終色とアルファ）。
@@ -911,13 +988,13 @@
   `pub def representativeColor(spec: Spec): Color`
 - 場の木を前置順（親 → 子）で 1 本ずつ f に渡して畳み込む汎用の走査。
   `pub def foldField(f: (a, Field) -> a, acc: a, field: Field): a`
-- foldField の、各節に「その節の tex / blur が読む補間」（Sampler の内側なら その filter）も渡す形。
+- foldField の、各節に「その節の tex / blur の補間」（Sampler の内側なら その filter）も渡す形。
   `pub def foldFieldScoped(f: (a, FilterMode, Field) -> a, filter: FilterMode, acc: a, field: Field): a`
 - Spec の tex / blur が読むテクスチャ名を f で書き換える（形は変えない）。
   `pub def renameTex(f: String -> String, spec: Spec): Spec`
 - Spec の場を「bindings（前から）→ 色 → alpha」の順に並べる。texNames と、場を全部見る走査はこの並びを使う。
   `pub def fieldsOf(spec: Spec): List[Field]`
-- Spec が読むテクスチャ名を「bindings（前から）→ 色 → alpha」の初出順・重複なしで列挙する。
+- Spec が読むテクスチャ名を texReads の並びから重複なしで列挙する（寸法だけを引く TexSize の名前も入る）。
   `pub def texNames(spec: Spec): List[String]`
 - Spec が読む (テクスチャ名, 補間) の組を「bindings（前から）→ 色 → alpha」の初出順・重複なしで列挙する。
   `pub def texReads(spec: Spec): List[(String, FilterMode)]`
@@ -957,10 +1034,10 @@
   `pub def materialParamValues(spec: Spec, emission: Option[Shade], params: Map[String, Float64]): List[Float64]`
 - 色の Param を値の表の値の Const に置き換える（bindParams の色の版。emission を CPU で評価する前に通す）。
   `pub def bindShadeParams(params: Map[String, Float64], shade: Shade): Shade`
-- Spec の tex / blur を 0 の Const に置き換える（3D の材質はテクスチャを読まない）。
-  `pub def withoutTextures(spec: Spec): Spec`
-- 色の tex / blur を 0 の Const に置き換える（withoutTextures の色の版）。
-  `pub def shadeWithoutTextures(shade: Shade): Shade`
+- 材質（Spec と emission）の中の (テクスチャ名, 補間) の組。Spec の texReads の後ろに、emission にだけ出てくる組を
+  `pub def materialTexReads(spec: Spec, emission: Option[Shade]): List[(String, FilterMode)]`
+- 材質の tex / blur のうち、materialTexReads の limit 組目より後ろの組を読む物を 0 の Const に置き換える
+  `pub def limitMaterialTexReads(limit: Int32, spec: Spec, emission: Option[Shade]): (Spec, Option[Shade])`
 
 ## ShaderEffect — `engine/src/ShaderEffect.flix`
 - シェーダー面 1 枚ぶんの描画依頼。
@@ -979,7 +1056,21 @@
 ## ShaderEval — `engine/src/ShaderEval.flix`
 - テクスチャ 1 枚ぶんの画素（ARGB・正立・行優先）。Tex ノードが CPU 側で標本する素材。
   `pub type alias TexData = { width = Int32, height = Int32, pixels = Vector[Int32] }`
-- 代表点 uv（0..1 目安）と時刻 t の最終色（Color = 0..1 の rgb）。
+- Rgba16Float の Pass の画素（wgpu の TextureFormat::Rgba16Float の絵を CPU で持つ形）。
+  `pub type alias HdrTexture = HdrTextureData`
+- x を half（16bit の浮動小数）の精度に丸めた値（GPU の Rgba16Float の描き先が書く値。65504 を超えると無限大）。
+  `pub def roundToHalf(x: Float64): Float64`
+- width × height の画素（rgba = 1 画素に r, g, b, α の 4 つ・行優先）を half に丸めて凍らせる。足りない分は 0。
+  `pub def hdrTextureOf(width: Int32, height: Int32, rgba: Vector[Float64]): HdrTexture`
+- 幅（テクセルの数）。
+  `pub def hdrWidthOf(tex: HdrTexture): Int32`
+- 高さ（テクセルの数）。
+  `pub def hdrHeightOf(tex: HdrTexture): Int32`
+- index 番目の値（index = (y × 幅 + x) × 4 + 成分。成分は r = 0・g = 1・b = 2・α = 3）。外なら 0。
+  `pub def hdrChannelOf(tex: HdrTexture, index: Int32): Float64`
+- 面の tex / blur の読み先の 1 枚（case の名前は RenderTarget.Format と同じ）。Rgba8Unorm = 8bit の絵（ファイル・Rgba8Unorm の Pass）・
+  `pub enum TexImage { case Rgba8Unorm(TexData) case Rgba16Float(HdrTexture) }`
+- 代表点 uv（0..1 目安）と時刻 t の最終色（Color の rgb。ここでは 0..1 に切らない — 1 を超える色の場や Rgba16Float の Pass を読む面は 1 を超え得る。切るのは書き込む側）。
   `pub def evalPixel(spec: ShaderDoc.Spec, uv: Vec2.Vec2, t: Float64): Color`
 - 代表点のアルファ（Fill#alpha の場を評価）。
   `pub def evalAlpha(spec: ShaderDoc.Spec, uv: Vec2.Vec2, t: Float64): Float64`
@@ -994,17 +1085,24 @@
 - 組み直した面。compile で作り、evalCompiled に画素ごとに渡す。
   `pub type alias CompiledSpec = Compiled`
 - Spec を面 1 枚ぶん組み直す。texEnv の名前もここで引いておく（画素ごとに Map を引かない）。
-  `pub def compile(spec: ShaderDoc.Spec, texEnv: Map[String, TexData]): CompiledSpec`
-- 3D の材質（Scene3d.Material3d の spec・emission・params）を組み直す。Param は params の値の Const に置き換え
-  `pub def compileMaterial(spec: ShaderDoc.Spec, emission: Option[ShaderDoc.Shade], params: Map[String, Float64]): CompiledSpec`
+  `pub def compile(spec: ShaderDoc.Spec, texEnv: Map[String, TexImage]): CompiledSpec`
+- 3D の材質を組み直す材料。textures = tex / blur の読み先の絵の段の列（名前 → Mip.build の段。段 0 が元の絵。
+  `pub type alias MaterialInput = { spec = ShaderDoc.Spec, emission = Option[ShaderDoc.Shade], params = Map[String, Float64], textures = Map[String, Vector[TexData]], repeat = Bool }`
+- 3D の材質（Scene3d.Material3d の spec・emission・params）を組み直す。Param は params の値の Const に置き換える
+  `pub def compileMaterial(input: MaterialInput): CompiledSpec`
 - 画素 1 つ（uv = (u, v)・時刻 t）の (r, g, b, α)。値は evalPixelAlphaTex と同じ。
   `pub def evalCompiled(compiled: CompiledSpec, u: Float64, v: Float64, t: Float64): (Float64, Float64, Float64, Float64)`
-- 3D のメッシュの画素 1 つ（world の点・外向きの法線・時刻 t）の (r, g, b, α)。色は光を当てる前の色（albedo）。
-  `pub def evalCompiled3(compiled: CompiledSpec, world: Vec3.Vec3, normal: Vec3.Vec3, t: Float64): (Float64, Float64, Float64, Float64)`
+- 3D のメッシュの画素 1 つの入力。world = 画素の world の点・normal = 外向きの法線（長さは問わない）・
+  `pub type alias SurfacePoint = { world = Vec3.Vec3, normal = Vec3.Vec3, uv = Vec2.Vec2, color = Color }`
+- 3D のメッシュの画素 1 つ（時刻 t）の (r, g, b, α)。色は光を当てる前の色（albedo）。
+  `pub def evalCompiled3(compiled: CompiledSpec, point: SurfacePoint, t: Float64): (Float64, Float64, Float64, Float64)`
 - 3D の材質の画素 1 つ: 光を当てる前の色（albedo）・α・自分で光る色（emission。無ければ黒）。
   `pub type alias MaterialSample = { albedo = Color, alpha = Float64, emission = Color }`
 - evalCompiled3 に emission を足した版（bindings の評価を色・α・emission で共有する）。
-  `pub def evalMaterial3(compiled: CompiledSpec, world: Vec3.Vec3, normal: Vec3.Vec3, t: Float64): MaterialSample`
+  `pub def evalMaterial3(compiled: CompiledSpec, point: SurfacePoint, t: Float64): MaterialSample`
+- `pub def evalMaterial3Mip(compiled: CompiledSpec, center: SurfacePoint, nextX: SurfacePoint, nextY: SurfacePoint, t: Float64): MaterialSample`
+- 段の列 chain の uv (u, v) の r・g・b を lod で読む（sampleMip と同じ読み方。3D の法線マップが読む）。
+  `pub def sampleMipRgb(chain: Vector[TexData], sampling: { linear = Bool, repeat = Bool }, lod: Float64, u: Float64, v: Float64): (Float64, Float64, Float64)`
 
 ## ShaderGen — `engine/src/ShaderGen.flix`
 - vertex シェーダー（面 quad 1 枚・uv を渡すだけ）。Spec に依存しない固定ソース。
@@ -1018,11 +1116,12 @@
 - Spec → fragment シェーダー全体（prelude + main）。uTime uniform を前提に持つ。
   `pub def compile(spec: ShaderDoc.Spec): String`
 - 3D の材質を GLSL にした部品。render_gl の 3D の frag が、自分の光の計算の前に差し込む。
-  `pub type alias MaterialGlsl = { uniforms = String, functions = String, paramNames = List[String] }`
-- 3D の材質（spec と自分で光る色 emission）の GLSL の部品。World / Normal は varying の vWorld / vNormal を読み、
+  `pub type alias MaterialGlsl = { uniforms = String, functions = String, paramNames = List[String], texReads = List[(String, ShaderDoc.FilterMode)], cutoutAlpha = String }`
+- 3D の材質（spec と自分で光る色 emission）の GLSL の部品。World / Normal / VertexColor は varying の vWorld / vNormal / vColor を、
   `pub def compile3d(spec: ShaderDoc.Spec, emission: Option[ShaderDoc.Shade]): MaterialGlsl`
 - 2 つの材質の emission が同じ GLSL を生むか（render_gl の材質の program キャッシュの鍵を eqSpec と組む）。
   `pub def eqEmission(a: Option[ShaderDoc.Shade], b: Option[ShaderDoc.Shade]): Bool`
+- `pub def texMipSource(): String`
 - `pub def compileBody(spec: ShaderDoc.Spec): String`
 
 ## ShaderJson — `engine/src/ShaderJson.flix`
@@ -1173,6 +1272,25 @@
   `pub def glyphQuadBounds(penPos: (Float64, Float64), glyph: GlyphMetrics, scale: Float64, basePos: Vec2.Vec2, offsetX: Float64): QuadBounds`
 - 折り返した結果、何行になるかを数える。
   `pub def lineCount(advances: List[Float64], wrapWidth: Float64, scale: Float64, lineHeight: Float64): Int32`
+
+## Texture3d — `engine/src/scene3d/Texture3d.flix`
+- `pub type alias Texture3d = Texture3dData`
+- 辺の上限（GL 3.3 が約束する大きさより大きいが、今の GPU なら作れる）。
+  `pub def maxSide(): Int32`
+- ARGB（行優先・行 0 が絵の上）から作る。数の食い違い・辺が 0 以下・辺が maxSide() を超える、は Err。
+  `pub def fromArgb(width: Int32, height: Int32, argb: Vector[Int32]): Result[String, Texture3d]`
+- PNG / JPEG のバイトを画素に戻す（javax.imageio）。読めない・辺が fromArgb の決まりの外、は Err。
+  `pub def decode(bytes: Vector[Int8]): Result[String, Texture3d] \ IO`
+- `pub def width(t: Texture3d): Int32`
+- `pub def height(t: Texture3d): Int32`
+- ARGB（行優先・行 0 が絵の上）。
+  `pub def argb(t: Texture3d): Vector[Int32]`
+- 中身の鍵（寸法と画素の SHA-256 の 16 進）。同じ画素なら同じ字になる。
+  `pub def contentHash(t: Texture3d): String`
+- 材質の Tex の読み先の名前（"tex3d:" + contentHash の頭 16 字）。場面の textures に入れた絵はこの名前で引く。
+  `pub def name(t: Texture3d): String`
+- 場面の textures から引く名前の頭（GL と CPU が名前の引き分けに使う）。
+  `pub def namePrefix(): String`
 
 ## TileLayer — `engine/src/render/TileLayer.flix`
 - 色変調なし（白 = テクスチャの色のまま）。tint の既定値として使う。

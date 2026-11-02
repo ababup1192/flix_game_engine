@@ -291,7 +291,7 @@ pub mod HeadlessRender {
     /// 本編の drawables から普通のスプライトとして参照できる。本編のシェーダー面の tex 場
     ///（Field.Tex）も同じ name で生成した絵を読める。
     /// 組むのは Render.passSpecsOf（Pass の列と倍率を実機と同じ決まりで下ろす）。Shader 面は surfaces に入り、
-    /// drawables には入らない（代表色ベタ塗りと二重にしない）。scale は RenderTarget.Descriptor の倍率。
+    /// drawables には入らない（代表色ベタ塗りと二重にしない）。target はターゲットの作り方（倍率・基準）。
     /// scenes = Pass の中の 3D の場面（RasterReq#scenes と同じ扱い）。
     pub type alias PassSpec = {
         name = String,
@@ -300,47 +300,47 @@ pub mod HeadlessRender {
         polygons = List[GameEngine.PolygonRenderCmd],
         surfaces = List[SoftRaster.SurfaceCmd],
         scenes = List[Scene3d.RenderCmd],
-        scale = Float64
+        target = RenderTarget.Descriptor
     }
 
-    /// pass 1 枚を design 解像度（scale = 1）の画像に生成する。GL のターゲットが design ×1 の
-    /// テクスチャなので、ここで cfg#scale を掛けると本編に貼るときの拡大と二重になる。
+    /// pass 1 枚を描き出す（形式は p#target#format。Rgba8Unorm は Rgba8Unorm・Rgba16Float は Rgba16Float の絵）。Design の基準は design 解像度
+    /// （scale = 1）で描く — GL のターゲットが design ×1 のテクスチャなので、ここで cfg#scale を掛けると本編に貼るときの拡大と二重になる。
     /// clear が Clear ならその色（不透明）で塗ってから — prev は見ない（GL の glClear と
     /// 同じで、塗った時点で前の中身は消えるため）。ClearTransparent も prev を見ずに透明から。
     /// Keep なら prev のコピーの上に描き足し（残像・軌跡を GIF やプレロールで再現する口）、
     /// prev が無ければ透明から。
     pub def renderPassImage(cfg: RenderConfig, p: PassSpec,
-                          prev: Option[BufferedImage]): BufferedImage \ IO =
+                          prev: Option[SoftRaster.PassImage]): SoftRaster.PassImage \ IO =
         renderPassImageWith(cfg, Map.empty(), p, prev)
 
     /// renderPassImage の「先に生成したターゲットも参照できる」版。`images` は既に生成した pass の
     /// 名前 → 画像（GL が宣言順に描くのと同じで、後の pass は前の pass を貼れる）。
-    pub def renderPassImageWith(cfg: RenderConfig, images: Map[String, BufferedImage],
-                              p: PassSpec, prev: Option[BufferedImage]): BufferedImage \ IO =
+    pub def renderPassImageWith(cfg: RenderConfig, images: Map[String, SoftRaster.PassImage],
+                              p: PassSpec, prev: Option[SoftRaster.PassImage]): SoftRaster.PassImage \ IO =
         renderPassImageFonts(cfg, Map.empty(), Map.empty(), images, p, prev)
 
     /// 追加フォントも使える renderPassImageWith。
+    /// 描き先の画素を基準にした pass（RenderTarget.Basis.Window）は書き出しの倍率 cfg#scale で描き、テクセル寸法
+    /// （RenderTarget.texelSizeOf）へ合わせる。scale が 1 なら書き出しの画素そのまま（3D の縁の段も書き出しの 1 画素）。
+    /// 縮んだ pass（Design は scale が 1 でない時・Window はテクセル寸法が書き出しの寸法と違う時）は、描いてから GL がテクセルを塗る点で拾う（SoftRaster.PassDraw の texels）。
+    // WhyNot: Window の pass を design 解像度で描いてから拡げない — Window の基準を選ぶのは、design より細かい画素で 3D や後処理を描くため。
     def renderPassImageFonts(cfg: RenderConfig, fonts: Map[String, SoftRaster.FontEntry], fontAntialias: SoftRaster.FontAntialias,
-                             images: Map[String, BufferedImage],
-                             p: PassSpec, prev: Option[BufferedImage]): BufferedImage \ IO =
-        let req = { scale = 1, scenes = p#scenes | reqOf(cfg, p#drawables, p#polygons, "") };
-        if (p#scale != 1.0) {
-            let texels = RenderTarget.sizeOf(cfg#design, { scale = p#scale | RenderTarget.defaultDescriptor() });
-            match p#clear {
-                case RenderTarget.LoadOp.Clear(c)         =>
-                    SoftRaster.renderPassImageScaled(req, None, Some(c), p#surfaces, fonts, fontAntialias, images, texels)
-                case RenderTarget.LoadOp.Keep             =>
-                    SoftRaster.renderPassImageScaled(req, prev, None, p#surfaces, fonts, fontAntialias, images, texels)
-                case RenderTarget.LoadOp.ClearTransparent =>
-                    SoftRaster.renderPassImageScaled(req, None, None, p#surfaces, fonts, fontAntialias, images, texels)
-            }
-        } else match p#clear {
-            case RenderTarget.LoadOp.Clear(c)         =>
-                SoftRaster.renderToImageCachedAntialias({ background = c | req }, p#surfaces, fonts, fontAntialias, images,
-                                                        SoftRaster.freshTexWarnLog(), SoftRaster.freshTextureCache())
-            case RenderTarget.LoadOp.Keep             => SoftRaster.renderPassImageFonts(req, prev, p#surfaces, fonts, fontAntialias, images)
-            case RenderTarget.LoadOp.ClearTransparent => SoftRaster.renderPassImageFonts(req, None, p#surfaces, fonts, fontAntialias, images)
-        }
+                             images: Map[String, SoftRaster.PassImage],
+                             p: PassSpec, prev: Option[SoftRaster.PassImage]): SoftRaster.PassImage \ IO =
+        let window = p#target#basis == RenderTarget.Basis.Window;
+        let exportScale = if (window) cfg#scale else 1;
+        let req = { scale = exportScale, scenes = p#scenes | reqOf(cfg, p#drawables, p#polygons, "") };
+        let (tw, th) = RenderTarget.texelSizeOf(cfg#design, Int32.toFloat64(exportScale), p#target);
+        let (clear, base) = match p#clear {
+            case RenderTarget.LoadOp.Clear(c)         => (Some(c), None)
+            case RenderTarget.LoadOp.Keep             => (None, prev)
+            case RenderTarget.LoadOp.ClearTransparent => (None, None)
+        };
+        let shrunk = if (window) (tw, th) != SoftRaster.outSize(req) else p#target#scale != 1.0;
+        let texels = if (shrunk) Some((tw, th)) else None;
+        let drawn = SoftRaster.renderPass({ format = p#target#format, base = base, clear = clear, texels = texels },
+                                            req, p#surfaces, fonts, fontAntialias, images);
+        if (window) SoftRaster.resampleNearestPass(drawn, tw, th) else drawn
 
     /// 1 枚の絵に要る物の全部。passes = 本編より先に描く pass（後の pass と本編は前の pass の名前を貼れる）、
     /// surfaces = ShaderDoc の面（Render.shaderSurfaces の出力と同形）、fonts = 追加フォント（renderPngFonts と同じ名前の決まり）、
@@ -401,20 +401,20 @@ pub mod HeadlessRender {
     /// （描き出しは毎コマ「1 コマ目」— GIF もコマをまたがない決まりと同じ）。
     /// 動画のコマ（RenderCache.writeFramePng の extraImages）にも渡せる。
     pub def passImagesOf(cfg: RenderConfig, fonts: Map[String, SoftRaster.FontEntry], fontAntialias: SoftRaster.FontAntialias,
-                     passes: List[PassSpec]): Map[String, BufferedImage] \ IO =
+                     passes: List[PassSpec]): Map[String, SoftRaster.PassImage] \ IO =
         passes |> List.foldLeft((acc, p) -> {
             let history = RenderTarget.historyName(p#name);
             let withHistory = if (passReads(history, p)) withPassImage(cfg, history, transparentLike(cfg, p), acc) else acc;
             withPassImage(cfg, p#name, renderPassImageFonts(cfg, fonts, fontAntialias, withHistory, p, None), withHistory)
-        }, (Map.empty(): Map[String, BufferedImage]))
+        }, (Map.empty(): Map[String, SoftRaster.PassImage]))
 
     /// pass の絵（テクセル寸法）を images に入れる。縮んだ pass は sprite 用に design 寸法へ広げた絵を名前で・
     /// tex 場用にテクセル寸法の絵を SoftRaster.texelsName で並べる（GL が registry に design 寸法で載せ、tex 場はテクセルを読むのと同じ）。
-    def withPassImage(cfg: RenderConfig, name: String, img: BufferedImage,
-                      images: Map[String, BufferedImage]): Map[String, BufferedImage] \ IO =
-        let (dw, dh) = RenderTarget.sizeOf(cfg#design, RenderTarget.defaultDescriptor());
-        if (img.getWidth() == dw and img.getHeight() == dh) Map.insert(name, img, images)
-        else images |> Map.insert(name, SoftRaster.resampleNearest(img, dw, dh))
+    def withPassImage(cfg: RenderConfig, name: String, img: SoftRaster.PassImage,
+                      images: Map[String, SoftRaster.PassImage]): Map[String, SoftRaster.PassImage] \ IO =
+        let (dw, dh) = RenderTarget.texelSizeOf(cfg#design, 1.0, RenderTarget.defaultDescriptor());
+        if (SoftRaster.passImageSize(img) == (dw, dh)) Map.insert(name, img, images)
+        else images |> Map.insert(name, SoftRaster.resampleNearestPass(img, dw, dh))
                     |> Map.insert(SoftRaster.texelsName(name), img)
 
     /// pass が name を読むか（面の tex / blur か sprite の texture）。
@@ -423,13 +423,16 @@ pub mod HeadlessRender {
             or List.exists(d -> DrawCmd.toSpec(d)#texture == name, p#drawables)
             or List.exists(c -> List.exists(b -> Scene3d.billboardFieldsOf(b)#texture == name, c#scene#billboards), p#scenes)
 
-    /// pass と同じテクセル寸法の全画素透明の 1 枚。
-    def transparentLike(cfg: RenderConfig, p: PassSpec): BufferedImage \ IO =
-        let (tw, th) = RenderTarget.sizeOf(cfg#design, { scale = p#scale | RenderTarget.defaultDescriptor() });
-        new BufferedImage(tw, th, 2i32)
+    /// pass と同じテクセル寸法・同じ形式の全画素透明の 1 枚。
+    def transparentLike(cfg: RenderConfig, p: PassSpec): SoftRaster.PassImage \ IO =
+        let (tw, th) = RenderTarget.texelSizeOf(cfg#design, Int32.toFloat64(cfg#scale), p#target);
+        match p#target#format {
+            case RenderTarget.Format.Rgba8Unorm  => SoftRaster.PassImage.Rgba8Unorm(new BufferedImage(tw, th, 2i32))
+            case RenderTarget.Format.Rgba16Float => SoftRaster.PassImage.Rgba16Float(ShaderEval.hdrTextureOf(tw, th, Vector.empty()))
+        }
 
     /// 追加の生成済み画像（pass のレンダーターゲットなど）を textures に混ぜて本編を PNG に生成する。
-    pub def renderPngWithImages(cfg: RenderConfig, images: Map[String, BufferedImage],
+    pub def renderPngWithImages(cfg: RenderConfig, images: Map[String, SoftRaster.PassImage],
                                 drawables: List[GameEngine.Drawable],
                                 polygons: List[GameEngine.PolygonRenderCmd],
                                 surfaces: List[SoftRaster.SurfaceCmd], name: String): Unit \ IO =
@@ -440,7 +443,7 @@ pub mod HeadlessRender {
     /// renderPngWithImages の中身から「値段の記録」だけを外した実体。
     /// WhyNot: renderPngWithPasses からはこちらを呼ぶ — 公開の方を呼ぶと、pass を足した数を
     /// 本編だけの数で上書きしてしまい、pass へ絵を移した場面が予算をすり抜ける。
-    def renderPngWithImagesCore(cfg: RenderConfig, images: Map[String, BufferedImage],
+    def renderPngWithImagesCore(cfg: RenderConfig, images: Map[String, SoftRaster.PassImage],
                                 drawables: List[GameEngine.Drawable],
                                 polygons: List[GameEngine.PolygonRenderCmd],
                                 surfaces: List[SoftRaster.SurfaceCmd], name: String): Unit \ IO =

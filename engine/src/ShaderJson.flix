@@ -17,6 +17,7 @@
 //           {"kind":"sampler","filter":"linear","of":{..}}
 //           {"kind":"param","name":"focus"}（値は面を置く時に Render.withShaderParams で渡す）
 //           {"kind":"world","axis":"x"} / {"kind":"normal","axis":"y"}（3D の材質だけが値を持つ・2D の面では 0）
+//           {"kind":"vertexColor","chan":"r"}（3D の材質の頂点の色・2D の面では 1）
 //   色:     {"kind":"solid","color":<color>} / {"kind":"ramp","lo":<color>,"hi":<color>,"field":{..}} /
 //           {"kind":"rgb","r":{..},"g":{..},"b":{..}}
 //   出力:   {"kind":"fill","shade":{..},"alpha":{..}}
@@ -447,6 +448,11 @@ pub mod ShaderJson {
                             case Some(j) => parseField(j)
                         }
                     ) yield ShaderDoc.Field.TexBlur({ name = name, chan = chan, radius = radius, taps = taps, amount = amount })
+                case "texSize" =>
+                    forM (
+                        name <- strAt("name", m);
+                        axis <- parseAxis(m)
+                    ) yield ShaderDoc.Field.TexSize({ name = name, axis = axis })
                 case "sampler" =>
                     forM (
                         filter <- parseFilter(m);
@@ -463,6 +469,8 @@ pub mod ShaderJson {
                     forM (axis <- parseAxis3(m)) yield ShaderDoc.Field.World({ axis = axis })
                 case "normal" =>
                     forM (axis <- parseAxis3(m)) yield ShaderDoc.Field.Normal({ axis = axis })
+                case "vertexColor" =>
+                    forM (chan <- parseChan(m)) yield ShaderDoc.Field.VertexColor({ chan = chan })
                 case other => Err(err("unknown field kind: '${other}'"))
             }
         })
@@ -816,6 +824,9 @@ pub mod ShaderJson {
                 JObject(Map#{ "kind" => JString("blur"), "name" => JString(bl#name),
                               "chan" => JString(chanStr(bl#chan)), "radius" => vec2ToJson(bl#radius),
                               "taps" => num(Int32.toFloat64(bl#taps)), "amount" => fieldToJson(bl#amount) })
+            case ShaderDoc.Field.TexSize(ts) =>
+                JObject(Map#{ "kind" => JString("texSize"), "name" => JString(ts#name),
+                              "axis" => JString(axisStr(ts#axis)) })
             case ShaderDoc.Field.Sampler(sm) =>
                 JObject(Map#{ "kind" => JString("sampler"), "filter" => JString(filterStr(sm#filter)),
                               "of" => fieldToJson(sm#of) })
@@ -825,6 +836,8 @@ pub mod ShaderJson {
                 JObject(Map#{ "kind" => JString("world"), "axis" => JString(axis3Str(w#axis)) })
             case ShaderDoc.Field.Normal(n) =>
                 JObject(Map#{ "kind" => JString("normal"), "axis" => JString(axis3Str(n#axis)) })
+            case ShaderDoc.Field.VertexColor(vc) =>
+                JObject(Map#{ "kind" => JString("vertexColor"), "chan" => JString(chanStr(vc#chan)) })
         }
 
     def filterStr(f: ShaderDoc.FilterMode): String =

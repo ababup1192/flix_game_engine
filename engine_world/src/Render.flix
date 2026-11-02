@@ -749,7 +749,7 @@ pub mod Render {
     /// textureInfoOf は region 付き sprite の UV 解決口（region を使わない pass なら
     /// `_ -> None` でよい）。
     pub def passSpecOf(textureInfoOf: String -> Option[GameEngine.TextureInfo] \ ef, p: Pass): PassSpecRec \ ef =
-        passSpecScaled(textureInfoOf, 1.0, p)
+        passSpecScaled(textureInfoOf, RenderTarget.defaultDescriptor(), p)
 
     /// 描き出し側の Pass 1 枚の宣言（HeadlessRender.PassSpec と同じ欄）。
     pub type alias PassSpecRec = {
@@ -758,13 +758,15 @@ pub mod Render {
         polygons = List[GameEngine.PolygonRenderCmd],
         surfaces = List[ShaderSurface],
         scenes = List[Scene3d.RenderCmd],
-        scale = Float64
+        target = RenderTarget.Descriptor
     }
 
-    def passSpecScaled(textureInfoOf: String -> Option[GameEngine.TextureInfo] \ ef, scale: Float64, p: Pass): PassSpecRec \ ef =
+    /// target の scale は RenderTarget.scaleOf で範囲に収めて入れる（描き出し側は読むだけ）。
+    def passSpecScaled(textureInfoOf: String -> Option[GameEngine.TextureInfo] \ ef, target: RenderTarget.Descriptor, p: Pass): PassSpecRec \ ef =
         let (ds, ps) = drawWith(textureInfoOf, withoutScenes3d(withoutShaders(p#items)));
         { name = p#name, clear = p#clear, drawables = ds, polygons = ps,
-          surfaces = shaderSurfaces(p#items), scenes = drawScenes3d(p#items), scale = scale }
+          surfaces = shaderSurfaces(p#items), scenes = drawScenes3d(p#items),
+          target = { scale = RenderTarget.scaleOf(target) | target } }
 
     /// Pass の計画を描き出し側の宣言の列へ。実機（App.withPassPlan）と同じ resolvePassReads を通し、
     /// 倍率は plan#targets から読む。issues は呼び手が知らせる。
@@ -772,7 +774,7 @@ pub mod Render {
             { specs = List[PassSpecRec], issues = List[PassPlanIssue] } \ ef =
         let resolved = resolvePassReads(Set.empty(), plan);
         let specs = resolved#plan#passes |> List.map(p ->
-            passSpecScaled(textureInfoOf, targetScaleOf(resolved#plan, p#name), p));
+            passSpecScaled(textureInfoOf, targetDescriptorOf(resolved#plan, p#name), p));
         { specs = specs, issues = resolved#issues }
 
     // ── Pass の計画（列と、名前ごとのターゲットの作り方）──
@@ -798,11 +800,17 @@ pub mod Render {
         case ReservedPassName(String)
         /// targets に書いたが Pass に無い名前（倍率が効いていない）。
         case UnknownDescriptor(String)
+        /// targets の scale が範囲（0 より大きく 1 以下）の外。1 に直して描く。payload は (Pass の名前, 書いた scale)。
+        case ScaleOutOfRange(String, Float64)
     }
 
     /// Pass の名前 → このコマで使うターゲットの倍率（RenderTarget.scaleOf で範囲に収めた値）。
     pub def targetScaleOf(plan: PassPlan, name: String): Float64 =
-        Map.get(name, plan#targets) |> Option.map(RenderTarget.scaleOf) |> Option.getWithDefault(1.0)
+        RenderTarget.scaleOf(targetDescriptorOf(plan, name))
+
+    /// Pass の名前 → ターゲットの作り方（書かなかった名前は RenderTarget.defaultDescriptor()）。寸法は RenderTarget.texelSizeOf で決める。
+    pub def targetDescriptorOf(plan: PassPlan, name: String): RenderTarget.Descriptor =
+        Map.getWithDefault(name, RenderTarget.defaultDescriptor(), plan#targets)
 
     /// 読んではいけない名前の置き換え先（必ず存在しない名前 — 面は黒・sprite は貼らない）。
     def missingName(name: String): String = "@missing:" + name
@@ -841,8 +849,12 @@ pub mod Render {
         let unknown = Map.keysOf(plan#targets) |> Set.toList
             |> List.filter(name -> not Set.memberOf(name, declared))
             |> List.map(PassPlanIssue.UnknownDescriptor);
+        // WhyNot: 範囲の外の scale を黙って 1 に直さない — 「画面の画素で描きたい」つもりの 2.0 が design の寸法に縮み、絵が荒いまま気づかない。
+        let outOfRange = Map.toList(plan#targets)
+            |> List.filter(nd -> not RenderTarget.isScaleInRange(snd(nd)))
+            |> List.map(nd -> PassPlanIssue.ScaleOutOfRange(fst(nd), snd(nd)#scale));
         { plan = { passes = List.reverse(keptRev) | plan },
-          issues = List.append(List.reverse(issuesRev), unknown) }
+          issues = List.append(List.reverse(issuesRev), List.append(unknown, outOfRange)) }
     }
 
     /// items が読む名前（面の tex / blur と sprite の texture）を初出順・重複なしで。面の名前は texNamesOf に覚える。

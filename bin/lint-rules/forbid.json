@@ -100,6 +100,25 @@
       "skipDirs": ["test", "build", "lib"],
       "pattern": "\\bSystem\\.exit\\b",
       "hint": "奥でプロセスを終えない（常駐の /run から呼ばれると常駐ごと落ちる）。奥は終了コード（Int32）を返し、入口の頭の 1 行で App.Headless.exitWith(xJob(App.Headless.requestFromProcess())) か ProcessEnv.exitWith(コード) に渡す。例外は skip に並べたファイルだけ（ProcessEnv が終える 1 か所と、子の終了コードで必ず終わる macOS の起動し直し GameEngine.ensureMainThread。理由はその行の WhyNot）（engine の docs/design/render-speed.md 2.5 節）"
+    },
+    {
+      "id": "hand-tonemap",
+      "suffixes": [
+        ".flix"
+      ],
+      "prefixes": [
+        "engine_world/src/",
+        "engine_tools/src/",
+        "templates/"
+      ],
+      "skip": [],
+      "skipDirs": [
+        "test",
+        "build",
+        "lib"
+      ],
+      "pattern": "\\b2\\.51\\b|\\b2\\.43\\b",
+      "hint": "トーンマップの曲線（ACES の近似の 2.51 / 2.43）を手で書かない。PostProcess.tonemapped / tonemappedWith を使う（x の式を 1 回だけ評価し、白の点で正規化し、GPU と CPU で同じ木を通る）。場面の Pass は RenderTarget.withHdr にして 1 を超えた明るさを持つ（engine の docs/shader-doc.md「後処理（PostProcess）」）"
     }
   ],
   "exempt": {}

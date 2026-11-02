@@ -8,7 +8,7 @@ use fge::GameEngine
 mod ParityMain {
     use fge::{
         App, Color, FontAtlas, GameEngine, GlReadback, GpuHandle, HeadlessFont, HeadlessRender,
-        LwjglLayer, Render, RenderTarget, ShaderEffect
+        LwjglLayer, Render, RenderTarget, ShaderEffect, SoftRaster
     }
 
     import java.io.File
@@ -30,22 +30,15 @@ mod ParityMain {
 
     def glShoot(sc: Scenes.Scene): Unit \ IO + GameEngine.Game + ShaderEffect.Shader + RenderTarget.Target =
         let texInfoOf = name -> GameEngine.Game.getTextureInfo(name);
-        // 実機（App.renderPasses）と同じく、読みの書き換えを通した列を描き、Pass の中の面と 3D の場面も実機と同じ
-        // App.submitGpuItems で描く（手順を写すと、実機と違う道を突き合わせることになる）。
-        let plan = Render.resolvePassReads(Set.empty(), planOf(sc))#plan;
-        let passes = plan#passes;
+        // Pass は実機の毎コマと同じ App.drawPassPlan で描く（手順を写すと、実機と違う道を突き合わせることになる）。
         let design = { x = Scenes.designW(), y = Scenes.designH() };
-        List.range(0, sc#repeats) |> List.forEach(_ -> List.forEach(p -> {
-            let (tw, th) = RenderTarget.sizeOf(design, { scale = Render.targetScaleOf(plan, p#name) | RenderTarget.defaultDescriptor() });
-            RenderTarget.Target.beginTarget(p#name, tw, th, p#clear);
-            App.submitGpuItems(_ -> (), p#items, Nil, None);
-            RenderTarget.Target.endTarget()
-        }, passes));
+        discard List.range(0, sc#repeats) |> List.foldLeft((known, _) ->
+            App.drawPassPlan(_ -> (), design, known, planOf(sc)), Set.empty());
         match sc#via {
             case Scenes.ShotVia.ViaTarget =>
                 // target 分岐は swap しないので、endTarget の前に bind 中の FBO を読める。
-                RenderTarget.Target.beginTarget("parityShot", Scenes.designWi(), Scenes.designHi(),
-                    RenderTarget.LoadOp.Clear(black()));
+                RenderTarget.Target.beginTarget({ name = "parityShot", width = Scenes.designWi(), height = Scenes.designHi(),
+                                                  format = RenderTarget.Format.Rgba8Unorm, clear = RenderTarget.LoadOp.Clear(black()) });
                 let (ds, ps) = toDraw(texInfoOf, sc#items);
                 GameEngine.Game.renderCommands(ds, Nil, ps, None);
                 GlReadback.readBoundPng(Scenes.designWi(), Scenes.designHi(), "debug/gl/${sc#name}.png");
@@ -99,8 +92,8 @@ mod ParityMain {
                 let (ds, ps) = toDraw(softTexInfo, sc#items);
                 let spec: HeadlessRender.PassSpec =
                     { name = sc#name, clear = RenderTarget.LoadOp.Clear(black()),
-                      drawables = ds, polygons = ps, surfaces = Nil, scenes = Nil, scale = 1.0 };
-                PixelDiff.writePng(HeadlessRender.renderPassImage(cfg, spec, None), "debug/soft/${sc#name}.png")
+                      drawables = ds, polygons = ps, surfaces = Nil, scenes = Nil, target = RenderTarget.defaultDescriptor() };
+                PixelDiff.writePng(SoftRaster.toArgbImage(HeadlessRender.renderPassImage(cfg, spec, None)), "debug/soft/${sc#name}.png")
             case Scenes.ShotVia.ViaScreen =>
                 let passSpecs = Render.passSpecsOf(softTexInfo, planOf(sc))#specs;
                 let soft = Render.softSceneOf(softTexInfo, sc#items);

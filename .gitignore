@@ -54,6 +54,8 @@ scratch/
 # 巻き込むので、焼いた画像だけに絞る。
 **/debug/**/*.png
 **/debug/**/*.gif
+# 描き出しが PNG の隣に書く描き物の表（<名前>.items.tsv）も生成物。描き直すたび変わる。
+**/debug/**/*.items.tsv
 # 次の自分への引き継ぎメモ。マシン固有なので git で運ばない
 NOTES.md
 # precommit の負の見本は NOTES.md そのものが入力（jargon が新しい行を裁くか）。

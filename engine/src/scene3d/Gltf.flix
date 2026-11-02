@@ -1,11 +1,13 @@
 // Gltf — 3D の場面（Scene3d）の部品。座標の約束は scene3d/Scene3d.flix の頭。
 
-/// glTF 2.0 のバイナリ（.glb）を読む: メッシュ・スキン・頂点のジョイントの重み・アニメーション。
+/// glTF 2.0 のバイナリ（.glb）を読む: メッシュ・スキン・頂点のジョイントの重み・アニメーション・uv（TEXCOORD_0）とタンジェント（TANGENT）。
+/// loadTextured はさらに、BIN に埋めた画像（PNG / JPEG）と材質（baseColorTexture・normalTexture・sampler）も読む。
 /// 右手系の glTF を左手系の engine へ X の反転（S = diag(−1, 1, 1)）で写す。glTF の正面 +Z は engine でも +Z のまま、
 /// キャラの右手（glTF の −X）は engine の +X に来る。位置と法線は x を反転し、三角形の巡りを逆にする。
 /// 回転は (x, −y, −z, w)、倍率はそのまま、行列（逆バインド行列・matrix のノード・rootTransform）は S·M·S。
 /// 読まない物（Err）: 外の uri・data URI・sparse accessor・三角形以外の primitive・1 体 64 本を超えるジョイント。
 /// 捨てて 1 回知らせる物: JOINTS_1 / WEIGHTS_1・ジョイントでないノードを動かす欄・CUBICSPLINE の接線。
+/// 絵（loadTextured）で読み飛ばして 1 行ずつ知らせる物: texCoord ≠ 0・KHR_texture_transform・MIRRORED_REPEAT（REPEAT で読む）・外の uri の画像。
 // WhyNot: Mesh3d.fromObj と同じく反転せずに読まない — 左右の決まったキャラ（右手に剣）が鏡写しになる。
 pub mod Gltf {
     use Util.Json.Json
@@ -30,9 +32,14 @@ pub mod Gltf {
         case NoSkin
     }
 
-    /// 頂点の欄（glTF の座標のまま）。
+    /// 頂点の欄（glTF の座標のまま）。uvs = TEXCOORD_0（無ければ None）・tangents = TANGENT（uv が無いか TANGENT が無ければ None）・
+    /// material = primitive の材質の番号。
     type alias Part = { positions = Vector[Float64], normals = Vector[Float64], colors = Vector[Float64], indices = Vector[Int32],
-                        joints = Vector[Int32], weights = Vector[Float64] }
+                        joints = Vector[Int32], weights = Vector[Float64], uvs = Option[Vector[Float64]],
+                        tangents = Option[Vector[Float64]], material = Option[Int32] }
+
+    /// 組んだ Model3d と、parts の並びの材質の番号（loadTextured が材質を付ける）。
+    type alias Built = { model = Model3d.Model3d, jointOfNode = Map[Int32, Int32], partMaterials = List[Option[Int32]] }
 
     /// path の .glb を読む（Fs.FileRead.readBytes）。読めない・壊れている時は Err（パスつき）。
     pub def load(path: String): Result[String, Model3d.Model3d] \ Fs.FileRead =
@@ -40,13 +47,110 @@ pub mod Gltf {
             |> Result.mapErr(e -> "${path}: 読めない（${e}）")
             |> Result.flatMap(bytes -> fromGlb(bytes) |> Result.mapErr(e -> "${path}: ${e}"))
 
-    /// .glb のバイトから作る。壊れている・読まない物を含む時は Err。
+    /// .glb のバイトから作る。壊れている・読まない物を含む時は Err。parts は primitive ごと（材質 None）・textures は空。
+    /// TEXCOORD_0・TANGENT が読めない（数が頂点の数と違う・NaN か無限）時は、その欄を使わずに読んで 1 行知らせる。
     pub def fromGlb(bytes: Vector[Int8]): Result[String, Model3d.Model3d] =
         forM (
             glb <- parseGlb(bytes);
             _ <- checkBuffers(glb#json);
-            model <- buildModel(glb)
-        ) yield Log.warnAllThen(warningsOf(glb#json, model#jointOfNode), model#model)
+            built <- buildModel(glb)
+        ) yield Log.warnAllThen(warningsOf(glb#json, built#jointOfNode), built#model)
+
+    /// path の .glb を、絵と材質つきで読む。parts に材質（baseColorTexture → Scene3d.texturedMaterial・normalTexture → 法線マップ・
+    /// sampler の wrap）、textures に BIN に埋めた画像（Texture3d.decode）。baseColorFactor は頂点の色に書き込んであり、VertexColor で掛かる。
+    /// 絵の無い材質の primitive は材質 None（頂点の色で描く）。読めない・壊れている時は Err（パスつき）。
+    pub def loadTextured(path: String): Result[String, Model3d.Model3d] \ Fs.FileRead + IO =
+        Fs.FileRead.readBytes(path)
+            |> Result.mapErr(e -> "${path}: 読めない（${e}）")
+            |> Result.flatMap(bytes -> fromGlbTextured(bytes) |> Result.mapErr(e -> "${path}: ${e}"))
+
+    /// loadTextured のバイトの版。
+    pub def fromGlbTextured(bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO =
+        let builtR = forM (
+            glb <- parseGlb(bytes);
+            _ <- checkBuffers(glb#json);
+            built <- buildModel(glb)
+        ) yield (glb, built);
+        match builtR {
+            case Err(e) => Err(e)
+            case Ok((glb, built)) =>
+                let images = objectsOf("images", glb#json) |> Vector.map(decodeImage(glb));
+                let decoded = images |> Vector.map(fst);
+                let materials = objectsOf("materials", glb#json) |> Vector.map(materialOf(glb, decoded));
+                let parts = List.zip(built#model#parts, built#partMaterials) |> List.map(pm -> {
+                    let (part, index) = pm;
+                    { material = index |> Option.flatMap(k -> Vector.nth(k, materials)) |> Option.flatMap(fst) | part }
+                });
+                let lines = List.append(Vector.toList(images) |> List.flatMap(snd), Vector.toList(materials) |> List.flatMap(snd)) |> List.distinct;
+                Ok(Log.warnAllThen(List.append(warningsOf(glb#json, built#jointOfNode), lines),
+                                   { parts = parts, textures = Vector.toList(decoded) |> List.filterMap(identity) | built#model }))
+        }
+
+    /// images[k] を絵に戻す（BIN の bufferView の PNG / JPEG）。外の uri・読めない画像は None と知らせる 1 行。
+    def decodeImage(glb: Glb, image: Obj): (Option[Texture3d.Texture3d], List[String]) \ IO =
+        match (intOf("bufferView", image), stringOf("uri", image)) {
+            case (Some(view), _) =>
+                match Result.flatMap(Texture3d.decode, viewBytes(glb, view)) {
+                    case Ok(t)  => (Some(t), Nil)
+                    case Err(e) => (None, "glTF: 画像が読めないので、その絵の材質は頂点の色で描く（${e}）" :: Nil)
+                }
+            case (None, Some(_)) => (None, "glTF: 外の uri の画像は読まない — その絵の材質は頂点の色で描く（画像は .glb に埋める）" :: Nil)
+            case (None, None)    => (None, "glTF: bufferView も uri も無い画像を読み飛ばした" :: Nil)
+        }
+
+    /// bufferView のバイト（BIN の中）。
+    def viewBytes(glb: Glb, viewIndex: Int32): Result[String, Vector[Int8]] =
+        forM (
+            view <- objectAt("bufferViews", viewIndex, glb#json);
+            bin <- glb#bin |> Option.toOk("glTF: BIN のチャンクが無い");
+            length <- intOf("byteLength", view) |> Option.toOk("glTF: bufferViews[${viewIndex}] に byteLength が無い");
+            offset <- Ok(Option.getWithDefault(0, intOf("byteOffset", view)));
+            _ <- require(offset >= 0 and length >= 0 and offset + length <= bin#length, "glTF: bufferViews[${viewIndex}] が BIN の外を指す")
+        ) yield Vector.slice(start = bin#start + offset, end = bin#start + offset + length, glb#bytes)
+
+    /// 材質 1 つ。baseColorTexture の絵が読めれば Scene3d.texturedMaterial（sampler の magFilter が NEAREST なら Nearest・ほかは Linear・
+    /// wrapS か wrapT が CLAMP_TO_EDGE なら Clamp）に、normalTexture があれば法線マップ（strength = scale・既定 1）を足す。
+    /// 絵が無い・読めない材質は None（頂点の色）。読み飛ばした物の知らせも返す。
+    def materialOf(glb: Glb, images: Vector[Option[Texture3d.Texture3d]], material: Obj): (Option[Scene3d.Material3d], List[String]) =
+        let pbr = objectOf("pbrMetallicRoughness", material);
+        let base = textureRefOf(glb, images, objectOf("baseColorTexture", pbr));
+        let normal = textureRefOf(glb, images, objectOf("normalTexture", material));
+        let lines = List.append(snd(base), snd(normal));
+        let built = fst(base) |> Option.map(ref -> {
+            let textured = Scene3d.texturedMaterial(Texture3d.name(ref#texture), ref#filter) |> Scene3d.withWrap(ref#wrap);
+            match fst(normal) {
+                case Some(n) =>
+                    let strength = numberAt("scale", objectOf("normalTexture", material)) |> Option.getWithDefault(1.0);
+                    textured |> Scene3d.withNormalMap({ texture = Texture3d.name(n#texture), strength = strength })
+                case None => textured
+            }
+        });
+        (built, lines)
+
+    /// textureInfo（{ index, texCoord, extensions }）が指す絵と、sampler の読み方。
+    type alias TextureRef = { texture = Texture3d.Texture3d, filter = ShaderDoc.FilterMode, wrap = Scene3d.Wrap }
+
+    def textureRefOf(glb: Glb, images: Vector[Option[Texture3d.Texture3d]], info: Obj): (Option[TextureRef], List[String]) =
+        let transformLine = if (Map.memberOf("KHR_texture_transform", objectOf("extensions", info)))
+            "glTF: KHR_texture_transform を読み飛ばした（uv をずらさず・回さずに読む）" :: Nil else Nil;
+        match intOf("index", info) {
+            case None => (None, Nil)
+            case Some(_) if Option.getWithDefault(0, intOf("texCoord", info)) != 0 =>
+                (None, "glTF: texCoord が 0 でない絵を読み飛ばした（TEXCOORD_0 だけを読む）" :: transformLine)
+            case Some(k) =>
+                let texture = objectsOf("textures", glb#json) |> Vector.nth(k) |> Option.getWithDefault(Map.empty());
+                let sampler = intOf("sampler", texture) |> Option.flatMap(sk -> Vector.nth(sk, objectsOf("samplers", glb#json)))
+                    |> Option.getWithDefault(Map.empty());
+                let wraps = intOf("wrapS", sampler) :: intOf("wrapT", sampler) :: Nil;
+                let mirroredLine = if (List.exists(w -> w == Some(33648), wraps))
+                    "glTF: MIRRORED_REPEAT を REPEAT として読んだ" :: Nil else Nil;
+                let filter = if (intOf("magFilter", sampler) == Some(9728)) ShaderDoc.FilterMode.Nearest else ShaderDoc.FilterMode.Linear;
+                let wrap = if (List.exists(w -> w == Some(33071), wraps)) Scene3d.Wrap.Clamp else Scene3d.Wrap.Repeat;
+                let found = intOf("source", texture) |> Option.flatMap(src -> Vector.nth(src, images)) |> Option.flatMap(identity);
+                (Option.map(t -> { texture = t, filter = filter, wrap = wrap }, found), List.append(transformLine, mirroredLine))
+        }
+
+    def numberAt(key: String, o: Obj): Option[Float64] = Map.get(key, o) |> Option.flatMap(numberOf)
 
     // ── バイト ──────────────────────────────────────────────
 
@@ -415,7 +519,7 @@ pub mod Gltf {
 
     // ── メッシュ ────────────────────────────────────────────
 
-    def buildModel(glb: Glb): Result[String, { model = Model3d.Model3d, jointOfNode = Map[Int32, Int32] }] =
+    def buildModel(glb: Glb): Result[String, Built] =
         let nodes = objectsOf("nodes", glb#json);
         let parentOf = parentsOfNodes(nodes);
         let meshNodes = Vector.range(0, Vector.length(nodes)) |> Vector.filter(i -> Map.memberOf("mesh", Vector.get(i, nodes)));
@@ -429,12 +533,16 @@ pub mod Gltf {
             };
             forM (
                 skinBuild <- skinR;
-                parts <- Vector.toList(meshNodes) |> Result.traverse(i -> nodeParts(glb, nodes, parentOf, skinBuild, i));
-                mesh <- meshOfParts(List.flatten(parts), Option.nonEmpty(skinBuild));
+                nested <- Vector.toList(meshNodes) |> Result.traverse(i -> nodeParts(glb, nodes, parentOf, skinBuild, i));
+                parts <- Ok(List.flatten(nested));
+                mesh <- meshOfParts(parts, Option.nonEmpty(skinBuild));
+                partMeshes <- parts |> Result.traverse(part -> partMeshOf(part, Option.nonEmpty(skinBuild)));
                 clips <- readAnimations(glb, Option.map(b -> b#jointOfNode, skinBuild) |> Option.getWithDefault(Map.empty()))
             ) yield {
-                model = { mesh = mesh, skin = Option.map(b -> b#skin, skinBuild), clips = clips },
-                jointOfNode = Option.map(b -> b#jointOfNode, skinBuild) |> Option.getWithDefault(Map.empty())
+                model = { mesh = mesh, skin = Option.map(b -> b#skin, skinBuild), clips = clips,
+                          parts = partMeshes |> List.map(m -> { mesh = m, material = None }), textures = Nil },
+                jointOfNode = Option.map(b -> b#jointOfNode, skinBuild) |> Option.getWithDefault(Map.empty()),
+                partMaterials = parts |> List.map(p -> p#material)
             }
         }
 
@@ -480,6 +588,8 @@ pub mod Gltf {
             color <- baseColorOf(glb, prim)
         ) yield {
             let count = positions#count;
+            let uvs = optionalAttribute(glb, attributes, "TEXCOORD_0", 2, count);
+            let tangents = optionalAttribute(glb, attributes, "TANGENT", 4, count);
             let indexList = match indices {
                 case Some(a) => Vector.map(toIndex, a#values)
                 case None => Vector.range(0, count)
@@ -488,11 +598,41 @@ pub mod Gltf {
             let placedPositions = Vector.range(0, count) |> Vector.flatMap(v -> xyzOf(Mat4.apply(transform, vec3At(positions#values, v * 3))));
             let placedNormals = Option.map(n -> Vector.range(0, count) |> Vector.flatMap(v ->
                 xyzOf(Vec3.normalized(Mat4.applyDir(normalMat, vec3At(n#values, v * 3))))), normals);
+            let placedTangents = forM (_ <- uvs; t <- tangents) yield placeTangents(transform, t#values);
             let part = { positions = placedPositions, normals = Option.getWithDefault(Vector.empty(), placedNormals),
                          colors = Vector.range(0, count) |> Vector.flatMap(_ -> color), indices = indexList,
-                         joints = fst(skin), weights = snd(skin) };
+                         joints = fst(skin), weights = snd(skin), uvs = Option.map(a -> a#values, uvs), tangents = placedTangents,
+                         material = intOf("material", prim) };
             if (Option.nonEmpty(normals)) part else flatShaded(part)
         }
+
+    /// 無くても形は描ける頂点の欄（TEXCOORD_0・TANGENT）を読む。読めない・数が頂点の数と違う・NaN か無限がある時は、
+    /// その欄を使わずに続けて 1 行知らせる（None）。
+    // WhyNot: Err にしない — uv を使わない fromGlb まで読めなくなる。形（POSITION・indices）が読めれば描ける。
+    def optionalAttribute(glb: Glb, attributes: Obj, key: String, width: Int32, count: Int32): Option[Accessor] =
+        match traverseOpt(intOf(key, attributes), k -> readAccessorWidth(glb, k, width, key)) {
+            case Ok(None)    => None
+            case Ok(Some(a)) => usableAttribute(key, count, a)
+            case Err(e)      => Log.warnThen("${e} — ${key} を使わずに読む", None)
+        }
+
+    /// 読めた欄 a が頂点の数 count とそろい、全部が有限の数なら Some。違えば 1 行知らせて None。
+    def usableAttribute(key: String, count: Int32, a: Accessor): Option[Accessor] =
+        if (a#count != count) Log.warnThen("glTF: ${key} の数 ${a#count} が頂点の数 ${count} と違う — ${key} を使わずに読む", None)
+        else if (Vector.exists(x -> Float64.isNan(x) or Float64.isInfinite(x), a#values))
+            Log.warnThen("glTF: ${key} に NaN か無限がある — ${key} を使わずに読む", None)
+        else Some(a)
+
+    /// TANGENT を置き場所の行列 transform で写す（xyz は左上 3×3 を掛けて長さ 1 に・行列が裏返すなら w の符号も裏返す）。
+    // WhyNot: 法線の行列で写さない — タンジェントは面の上の向きで、置き場所の行列のまま写る。
+    def placeTangents(transform: Mat4.Mat4, values: Vector[Float64]): Vector[Float64] =
+        let c = Mat4.toColumns(transform);
+        let col = (j: Int32) -> Vec3.v3(Vector.get(j * 4, c), Vector.get(j * 4 + 1, c), Vector.get(j * 4 + 2, c));
+        let flip = if (Vec3.dot(col(0), Vec3.cross(col(1), col(2))) < 0.0) -1.0 else 1.0;
+        Vector.range(0, Vector.length(values) / 4) |> Vector.flatMap(v -> {
+            let t = Vec3.normalized(Mat4.applyDir(transform, vec3At(values, v * 4)));
+            Vector#{ t#x, t#y, t#z, Vector.get(v * 4 + 3, values) * flip }
+        })
 
     def traverseOpt(o: Option[Int32], f: Int32 -> Result[String, a]): Result[String, Option[a]] = match o {
         case Some(k) => Result.map(Some, f(k))
@@ -553,7 +693,10 @@ pub mod Gltf {
           colors = Vector.flatMap(v -> sliceAt(3, part#colors, v), corners),
           indices = Vector.range(0, tris * 3),
           joints = if (hasSkin) Vector.flatMap(v -> sliceAt(4, part#joints, v), corners) else Vector.empty(),
-          weights = if (hasSkin) Vector.flatMap(v -> sliceAt(4, part#weights, v), corners) else Vector.empty() }
+          weights = if (hasSkin) Vector.flatMap(v -> sliceAt(4, part#weights, v), corners) else Vector.empty(),
+          uvs = Option.map(uv -> Vector.flatMap(v -> sliceAt(2, uv, v), corners), part#uvs),
+          tangents = Option.map(t -> Vector.flatMap(v -> sliceAt(4, t, v), corners), part#tangents),
+          material = part#material }
 
     def sliceAt(width: Int32, src: Vector[a], v: Int32): Vector[a] = Vector.slice(start = v * width, end = v * width + width, src)
 
@@ -582,6 +725,28 @@ pub mod Gltf {
             indices = rewound,
             skin = if (skinned) Some({ joints = concatOf(p -> p#joints, parts), weights = concatOf(p -> p#weights, parts) }) else None
         }) |> Result.mapErr(e -> "glTF: ${e}")
+
+    /// primitive 1 つの形（meshOfParts と同じ写し方）。uv があれば uv つきにし、TANGENT があれば x と w の符号を反転して使う
+    /// （X の反転で cross(N, T) の向きが裏返るので、w も裏返すと絵の上の向きが保たれる）。無ければ Mesh3d が uv から求める。
+    /// uv を付けられなければ uv なしの形で続けて 1 行知らせる（uv は形を描くのに要らない）。
+    def partMeshOf(part: Part, skinned: Bool): Result[String, Mesh3d.Mesh3d] =
+        Result.map(mesh -> part#uvs |> Option.map(uv -> withPartUvs(part, uv, mesh)) |> Option.getWithDefault(mesh),
+                   meshOfParts(part :: Nil, skinned))
+
+    /// mesh に uv を付け、part に TANGENT があればそれも付ける。uv を付けられなければ mesh のまま。
+    def withPartUvs(part: Part, uv: Vector[Float64], mesh: Mesh3d.Mesh3d): Mesh3d.Mesh3d =
+        match Mesh3d.withUvs(uv, mesh) {
+            case Ok(textured) => part#tangents |> Option.map(t -> withPartTangents(t, textured)) |> Option.getWithDefault(textured)
+            case Err(e)       => Log.warnThen("glTF: uv を使わずに読む（${e}）", mesh)
+        }
+
+    /// TANGENT の x と w の符号を反転して付ける。付けられなければ uv から求めた物のまま。
+    def withPartTangents(tangents: Vector[Float64], textured: Mesh3d.Mesh3d): Mesh3d.Mesh3d =
+        let mirrored = Vector.mapWithIndex((k, x) -> if (Int32.remainder(k, 4) == 0 or Int32.remainder(k, 4) == 3) 0.0 - x else x, tangents);
+        match Mesh3d.withTangents(mirrored, textured) {
+            case Ok(m)  => m
+            case Err(e) => Log.warnThen("glTF: TANGENT を使えないので uv から求め直した（${e}）", textured)
+        }
 
     // ── アニメーション ──────────────────────────────────────
 

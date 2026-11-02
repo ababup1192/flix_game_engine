@@ -11,6 +11,7 @@ pub mod RenderCache {
     import java.io.IOException
     import java.lang.ClassLoader
     import java.lang.Exception
+    import java.lang.{Float => JFloat}
     import java.lang.RuntimeException
     import java.lang.System
     import java.lang.Thread
@@ -88,7 +89,7 @@ pub mod RenderCache {
     /// 引数は SoftRaster.renderToImageCached と同じ。鍵がキャッシュにあれば塗らずに写す。
     pub def writeFramePng(session: Session, req: SoftRaster.RasterReq, surfaces: List[SoftRaster.SurfaceCmd],
                           extraFonts: Map[String, SoftRaster.FontEntry],
-                          extraImages: Map[String, BufferedImage],
+                          extraImages: Map[String, SoftRaster.PassImage],
                           warnLog: SoftRaster.TexWarnLog, textures: SoftRaster.TextureCache): Unit \ IO =
         writePng(session, DrawHash.PngEncoding.Filmstrip,
                  { req = req, surfaces = surfaces, extraFonts = extraFonts, fontAntialias = Map.empty() }, extraImages, warnLog, textures)
@@ -96,13 +97,13 @@ pub mod RenderCache {
     /// SoftRaster.render* の書き方（フルカラー）で req#outPath へ書く。SoftRaster.render* の中身。
     pub def writePlainPng(req: SoftRaster.RasterReq, surfaces: List[SoftRaster.SurfaceCmd],
                           extraFonts: Map[String, SoftRaster.FontEntry],
-                          extraImages: Map[String, BufferedImage]): Unit \ IO =
+                          extraImages: Map[String, SoftRaster.PassImage]): Unit \ IO =
         writePlainPngAntialias(req, surfaces, extraFonts, Map.empty(), extraImages)
 
     /// writePlainPng の、字の縁を本ごとに決める表（SoftRaster.FontAntialias）つき版。
     pub def writePlainPngAntialias(req: SoftRaster.RasterReq, surfaces: List[SoftRaster.SurfaceCmd],
                                    extraFonts: Map[String, SoftRaster.FontEntry], fontAntialias: SoftRaster.FontAntialias,
-                                   extraImages: Map[String, BufferedImage]): Unit \ IO =
+                                   extraImages: Map[String, SoftRaster.PassImage]): Unit \ IO =
         let session = freshSession();
         let SessionData.SessionData(s) = session;
         writePng(session, DrawHash.PngEncoding.Plain,
@@ -112,7 +113,7 @@ pub mod RenderCache {
     /// 1 コマの鍵（writeFramePng がキャッシュに使うのと同じ物）。鍵を作れなければ None。
     /// テクスチャの指紋は `textures` の中の画像（塗る時に使う物）から取る。
     pub def keyOf(session: Session, encoding: DrawHash.PngEncoding, frame: DrawHash.Frame,
-                  extraImages: Map[String, BufferedImage], textures: SoftRaster.TextureCache): Option[DrawHash.Key] \ IO =
+                  extraImages: Map[String, SoftRaster.PassImage], textures: SoftRaster.TextureCache): Option[DrawHash.Key] \ IO =
         let SessionData.SessionData(s) = session;
         let used = DrawHash.usedTextures(frame);
         let texturePaths = frame#req#texturePath
@@ -125,7 +126,7 @@ pub mod RenderCache {
             }) |> List.toMap;
             let images = extraImages
                 |> Map.filterWithKey((name, _) -> Set.memberOf(name, used))
-                |> Map.map(imageDigest);
+                |> Map.map(passImageDigest);
             DrawHash.computeKeyCached(s#atlases, { engine = s#engine, runtime = s#runtime, files = files, images = images }, encoding, frame)
         } catch {
             case ex: RuntimeException =>
@@ -136,7 +137,7 @@ pub mod RenderCache {
     // WhyNot: 鍵と塗りを別の関数に分けない — 鍵に入れる値（frame・extraImages・textures）と塗りに渡す値が
     // 同じ 1 か所から出ていないと、塗りにだけ入力を足して鍵に入れ忘れる（偽の緑）。
     def writePng(session: Session, encoding: DrawHash.PngEncoding, frame: DrawHash.Frame,
-                 extraImages: Map[String, BufferedImage],
+                 extraImages: Map[String, SoftRaster.PassImage],
                  warnLog: SoftRaster.TexWarnLog, textures: SoftRaster.TextureCache): Unit \ IO =
         let SessionData.SessionData(s) = session;
         let outPath = frame#req#outPath;
@@ -349,7 +350,7 @@ pub mod RenderCache {
     // WhyNot: ファイルのバイト列を別に読まない — 鍵と塗りが別の時点で読むと、その間に保存された絵が
     // 古い中身の鍵の下に入る。塗りが見る画像そのものから取る。
     def textureDigest(cache: SoftRaster.TextureCache, path: String): String \ IO =
-        let SoftRaster.TextureCache.TextureCache(_, memo, _) = cache;
+        let SoftRaster.TextureCache.TextureCache(_, memo, _, _) = cache;
         let hit: String = memo.get(path);
         if (not Object.isNull(hit)) hit
         else {
@@ -372,6 +373,26 @@ pub mod RenderCache {
                 catch { case ex: IOException => warnOnce("ttf", "${path} を読めない（${ex.getMessage()}）— 鍵を作らず塗る"); None };
             digest |> Option.forEach(d -> discard memo.put(path, d));
             digest
+        }
+
+    /// Pass の絵の SHA-256。Rgba8Unorm は imageDigest・Rgba16Float は形式の名前と寸法と half の bit を指紋に入れる
+    /// （1 を超えた所だけ違う 2 枚を、8bit に切って同じ物とみなさない）。
+    pub def passImageDigest(image: SoftRaster.PassImage): String \ IO =
+        match image {
+            case SoftRaster.PassImage.Rgba8Unorm(argb)  => imageDigest(argb)
+            case SoftRaster.PassImage.Rgba16Float(hdr) =>
+                let w = ShaderEval.hdrWidthOf(hdr);
+                let h = ShaderEval.hdrHeightOf(hdr);
+                let md = MessageDigest.getInstance("SHA-256");
+                md.update("Rgba16f:${Int32.toString(w)}x${Int32.toString(h)}".getBytes("UTF-8"));
+                let bytes = ByteBuffer.allocate(w * 4 * 2);
+                List.range(0, h) |> List.forEach(y -> {
+                    discard bytes.clear();
+                    List.range(0, w * 4) |> List.forEach(k ->
+                        discard bytes.putShort(JFloat.floatToFloat16(RenderUtil.f32(ShaderEval.hdrChannelOf(hdr, y * w * 4 + k)))));
+                    md.update(bytes.array())
+                });
+                HexFormat.of().formatHex(md.digest())
         }
 
     /// 描き出し済み画像の画素の SHA-256（型・幅・高さも入れる）。

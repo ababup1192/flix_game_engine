@@ -9,12 +9,53 @@
 
 pub mod ShaderEval {
 
+    import java.lang.{Float => JFloat}
+
     /// テクスチャ 1 枚ぶんの画素（ARGB・正立・行優先）。Tex ノードが CPU 側で標本する素材。
     /// GL の pass ターゲットは上下逆格納だが描き出しの pass 画像は正立なので、CPU 側は反転しない
     /// （反転の吸収は GL の uTexFlip だけが持つ既存の非対称と同型）。
     pub type alias TexData = { width = Int32, height = Int32, pixels = Vector[Int32] }
 
-    /// 代表点 uv（0..1 目安）と時刻 t の最終色（Color = 0..1 の rgb）。
+    /// 1 を超える値を持てる画素（Rgba16Float の Pass を CPU で読む形。1 画素に r, g, b, α の 4 つ・行優先・正立）。
+    /// 値は half の精度に丸めた物。外から作らせない（hdrTextureOf だけが作る・読むのは hdrWidthOf / hdrHeightOf / hdrChannelOf）。
+    enum HdrTextureData {
+        case HdrTextureData(Int32, Int32, Vector[Float32])
+    }
+
+    /// Rgba16Float の Pass の画素（wgpu の TextureFormat::Rgba16Float の絵を CPU で持つ形）。
+    pub type alias HdrTexture = HdrTextureData
+
+    /// x を half（16bit の浮動小数）の精度に丸めた値（GPU の Rgba16Float の描き先が書く値。65504 を超えると無限大）。
+    pub def roundToHalf(x: Float64): Float64 =
+        Float32.toFloat64(JFloat.float16ToFloat(JFloat.floatToFloat16(RenderUtil.f32(x))))
+
+    /// width × height の画素（rgba = 1 画素に r, g, b, α の 4 つ・行優先）を half に丸めて凍らせる。足りない分は 0。
+    pub def hdrTextureOf(width: Int32, height: Int32, rgba: Vector[Float64]): HdrTexture =
+        let w = Int32.max(1, width);
+        let h = Int32.max(1, height);
+        let n = w * h * 4;
+        let values = if (Vector.length(rgba) >= n) Vector.take(n, rgba) else Vector.append(rgba, Vector.repeat(n - Vector.length(rgba), 0.0));
+        HdrTextureData.HdrTextureData(w, h, Vector.map(x -> RenderUtil.f32(roundToHalf(x)), values))
+
+    /// 幅（テクセルの数）。
+    pub def hdrWidthOf(tex: HdrTexture): Int32 = let HdrTextureData.HdrTextureData(w, _, _) = tex; w
+
+    /// 高さ（テクセルの数）。
+    pub def hdrHeightOf(tex: HdrTexture): Int32 = let HdrTextureData.HdrTextureData(_, h, _) = tex; h
+
+    /// index 番目の値（index = (y × 幅 + x) × 4 + 成分。成分は r = 0・g = 1・b = 2・α = 3）。外なら 0。
+    pub def hdrChannelOf(tex: HdrTexture, index: Int32): Float64 =
+        let HdrTextureData.HdrTextureData(_, _, values) = tex;
+        if (index < 0 or index >= Vector.length(values)) 0.0 else Float32.toFloat64(Vector.get(index, values))
+
+    /// 面の tex / blur の読み先の 1 枚（case の名前は RenderTarget.Format と同じ）。Rgba8Unorm = 8bit の絵（ファイル・Rgba8Unorm の Pass）・
+    /// Rgba16Float = Rgba16Float の Pass（1 を超える値を切らずに読む。α だけ 0..1 に切る）。
+    pub enum TexImage {
+        case Rgba8Unorm(TexData)
+        case Rgba16Float(HdrTexture)
+    }
+
+    /// 代表点 uv（0..1 目安）と時刻 t の最終色（Color の rgb。ここでは 0..1 に切らない — 1 を超える色の場や Rgba16Float の Pass を読む面は 1 を超え得る。切るのは書き込む側）。
     pub def evalPixel(spec: ShaderDoc.Spec, uv: Vec2.Vec2, t: Float64): Color =
         evalPixelTex(spec, uv, t, Map.empty())
 
@@ -36,23 +77,25 @@ pub mod ShaderEval {
     /// 1 点だけ評価する入口で、呼ぶたびに組み直す。何万画素も塗るなら compile + evalCompiled。
     pub def evalPixelAlphaTex(spec: ShaderDoc.Spec, uv: Vec2.Vec2, t: Float64,
                               texEnv: Map[String, TexData]): (Color, Float64) =
-        let (r, g, b, a) = evalCompiled(compile(spec, texEnv), uv#x, uv#y, t);
+        let (r, g, b, a) = evalCompiled(compile(spec, Map.map(TexImage.Rgba8Unorm, texEnv)), uv#x, uv#y, t);
         ({ r = r, g = g, b = b }, a)
 
     /// 場を Float64 へ（shared も tex も無い所で 1 点だけ）。
     pub def evalField(field: ShaderDoc.Field, uv: Vec2.Vec2, t: Float64): Float64 = region rc {
         let env: Array[Float64, rc] = Array.repeat(rc, inputSlots(), 0.0);
-        evalNode(compileField(Map.empty(), Map.empty(), field), uv#x, uv#y, t, env)
+        let ids = Ref.fresh(rc, 0);
+        evalNode(compileField(clampSampling(), ids, Map.empty(), Map.empty(), field), uv#x, uv#y, t, env)
     }
 
     // ── 組み直し（面ごとに 1 回）──
 
     /// compile が組み直した面 1 枚（外からは作らせない — compile で作る）。
     /// bindings は前から順の場（Ref は添字で読む）、shade は色、alpha は α の場、cycleRate、
-    /// 画素ごとの値の置き場の大きさ、World / Normal の置き場を先頭に取るか（取るなら添字 0..5・bindings はその後ろ）、
-    /// emission は 3D の材質の自分で光る色。
+    /// 画素ごとの値の置き場の大きさ、World / Normal / VertexColor の置き場を先頭に取るか（取るなら添字 0..8・bindings はその後ろ）、
+    /// emission は 3D の材質の自分で光る色、段つきの絵を読む節（MipTex）の数。
+    /// MipTex のある面は、値の置き場の後ろに lod を求めるための区画（節ごとに右隣と下隣の座標の 4 つ・最後に読み方の番号）を取る。
     enum Compiled {
-        case Compiled(List[Node], CShade, Node, Float64, Int32, Bool, Option[CShade])
+        case Compiled(List[Node], CShade, Node, Float64, Int32, Bool, Option[CShade], Int32)
     }
 
     /// 組み直した面。compile で作り、evalCompiled に画素ごとに渡す。
@@ -94,9 +137,12 @@ pub mod ShaderEval {
         case Snap(Float64, Float64, Node)                             // 分割数 x/y（下切り済み）, of
         case Ref(Int32)                                               // bindings の添字
         case Missing                                                  // 未定義の Ref・無い tex（0.0）
-        case Tex(Int32, Int32, Vector[Int32], Int32, Bool)            // 幅, 高さ, 画素, チャンネルの shift, Linear で読むか
+        case Tex(Int32, Int32, Vector[Int32], Int32, Bool, Bool)      // 幅, 高さ, 画素, チャンネルの shift, Linear で読むか, REPEAT か
+        case MipTex(Int32, Vector[TexData], Int32, Bool, Bool)        // 節の番号, 段の列, チャンネルの shift, Linear で読むか, REPEAT か
         case Shift(Node, Node, Node)                                  // dx, dy, of
-        case TexBlur(Int32, Int32, Vector[Int32], Int32, Float64, Float64, Int32, Node, Bool) // 幅, 高さ, 画素, shift, 半径 x/y, taps, amount, Linear
+        case TexBlur(Int32, Int32, Vector[Int32], Int32, Float64, Float64, Int32, Node, Bool, Bool) // 幅, 高さ, 画素, shift, 半径 x/y, taps, amount, Linear, REPEAT
+        case TexF(Int32, Int32, Vector[Float32], Int32, Bool, Bool)   // Tex の Rgba16Float 版（幅, 高さ, 値, 成分の位置, Linear, REPEAT）
+        case TexBlurF(Int32, Int32, Vector[Float32], Int32, Float64, Float64, Int32, Node, Bool, Bool) // TexBlur の Rgba16Float 版
     }
 
     /// 面の色。Color は (r, g, b) の位置で持つ。
@@ -115,36 +161,67 @@ pub mod ShaderEval {
     /// Flix 0.78 の最適化は、純粋な let の値がラムダの中で 1 回だけ使われると式をラムダの中へ
     /// 書き写す（@DontInline でも止まらない）ので、組み立てが画素ごとに走る。組み直しはデータ
     /// （CompiledSpec）で返し、呼ぶ側は画素ループの外で受ける（SoftRaster.onceOutsideLoop）。
-    pub def compile(spec: ShaderDoc.Spec, texEnv: Map[String, TexData]): CompiledSpec =
-        compileWith(spec, None, texEnv)
+    pub def compile(spec: ShaderDoc.Spec, texEnv: Map[String, TexImage]): CompiledSpec =
+        compileWith(spec, None, clampSampling(), texEnv)
 
-    /// 3D の材質（Scene3d.Material3d の spec・emission・params）を組み直す。Param は params の値の Const に置き換え
-    /// （ShaderDoc.bindParams）、tex / blur は 0（テクスチャを渡さない）。evalCompiled3 / evalMaterial3 に画素ごとに渡す。
-    pub def compileMaterial(spec: ShaderDoc.Spec, emission: Option[ShaderDoc.Shade], params: Map[String, Float64]): CompiledSpec =
-        compileWith(ShaderDoc.bindParams(params, spec), Option.map(ShaderDoc.bindShadeParams(params), emission), Map.empty())
+    /// 3D の材質を組み直す材料。textures = tex / blur の読み先の絵の段の列（名前 → Mip.build の段。段 0 が元の絵。
+    /// 段が 1 つなら lod を求めずに段 0 を読む。無い名前は 0）・repeat = 0..1 の外の uv を繰り返すか（偽なら端の色を伸ばす）。
+    pub type alias MaterialInput = { spec = ShaderDoc.Spec, emission = Option[ShaderDoc.Shade], params = Map[String, Float64],
+                                     textures = Map[String, Vector[TexData]], repeat = Bool }
 
-    def compileWith(spec: ShaderDoc.Spec, emission: Option[ShaderDoc.Shade], texEnv: Map[String, TexData]): CompiledSpec =
-        let withInputs = ShaderDoc.usesWorld3d(spec) or Option.exists(readsWorld3d, emission);
+    /// 3D の材質（Scene3d.Material3d の spec・emission・params）を組み直す。Param は params の値の Const に置き換える
+    /// （ShaderDoc.bindParams）。evalCompiled3 / evalMaterial3 に画素ごとに渡す。
+    pub def compileMaterial(input: MaterialInput): CompiledSpec =
+        let mips = input#textures |> Map.filter(chain -> Vector.length(chain) > 1);
+        let level0 = input#textures |> Map.filterMap(Vector.head);
+        compileWith(ShaderDoc.bindParams(input#params, input#spec), Option.map(ShaderDoc.bindShadeParams(input#params), input#emission),
+                    { linear = false, repeat = input#repeat, mips = mips }, Map.map(TexImage.Rgba8Unorm, level0))
+
+    /// tex / blur の読み方。linear = Linear で読むか（Sampler の内側）・repeat = 0..1 の外の uv を繰り返すか（3D の材質の Wrap）・
+    /// mips = 段の列を持つ絵（3D の材質だけ。tex はここにある名前なら lod を求めて段を読む）。
+    type alias Sampling = { linear = Bool, repeat = Bool, mips = Map[String, Vector[TexData]] }
+
+    /// 1 枚の読み方（Sampling から段の列を除いた物）。
+    type alias Filter = { linear = Bool, repeat = Bool }
+
+    def clampSampling(): Sampling = { linear = false, repeat = false, mips = Map.empty() }
+
+    def compileWith(spec: ShaderDoc.Spec, emission: Option[ShaderDoc.Shade], sampling: Sampling, texEnv: Map[String, TexImage]): CompiledSpec = region rc {
+        let ids = Ref.fresh(rc, 0);
+        let withInputs = readsSurface(spec) or Option.exists(shade -> readsSurface(specOfShade(shade)), emission);
         let first = if (withInputs) inputSlots() else 0;
         let (revBindings, scope, next) = List.foldLeft((acc, nf) -> {
             let (nodes, sc, i) = acc;
             let (name, field) = nf;
-            (compileField(sc, texEnv, field) :: nodes, Map.insert(name, i, sc), i + 1)
+            (compileField(sampling, ids, sc, texEnv, field) :: nodes, Map.insert(name, i, sc), i + 1)
         }, (Nil, Map.empty(), first), spec#bindings);
         match spec#out {
             case ShaderDoc.Out.Fill(f) =>
-                Compiled.Compiled(List.reverse(revBindings), compileShade(scope, texEnv, f#shade),
-                                  compileField(scope, texEnv, f#alpha), spec#cycleRate, next, withInputs,
-                                  Option.map(compileShade(scope, texEnv), emission))
+                let shade = compileShade(sampling, ids, scope, texEnv, f#shade);
+                let alpha = compileField(sampling, ids, scope, texEnv, f#alpha);
+                let glow = match emission {
+                    case Some(e) => Some(compileShade(sampling, ids, scope, texEnv, e))
+                    case None    => None
+                };
+                let mipCount = Ref.get(ids);
+                let size = if (mipCount > 0) next + mipCount * 4 + 1 else next;
+                Compiled.Compiled(List.reverse(revBindings), shade, alpha, spec#cycleRate, size, withInputs, glow, mipCount)
         }
+    }
 
-    /// 色が World か Normal を読むか。
-    def readsWorld3d(shade: ShaderDoc.Shade): Bool =
-        ShaderDoc.usesWorld3d({ name = "", cycleRate = 0.0, bindings = Nil,
-                                out = ShaderDoc.Out.Fill({ shade = shade, alpha = ShaderDoc.Field.Const(1.0) }) })
+    /// Spec が World・Normal・VertexColor のどれかを読むか（読むなら置き場の先頭にその値を取る）。
+    def readsSurface(spec: ShaderDoc.Spec): Bool =
+        ShaderDoc.usesWorld3d(spec) or (ShaderDoc.fieldsOf(spec) |> List.exists(field -> ShaderDoc.foldField((found, f) -> match f {
+            case ShaderDoc.Field.VertexColor(_) => true
+            case _                              => found
+        }, false, field)))
 
-    /// World（x, y, z）と Normal（x, y, z）の置き場の数。値の置き場の先頭に取る。
-    def inputSlots(): Int32 = 6
+    /// 色だけを持つ Spec（色の場を Spec の走査に掛けるため）。
+    def specOfShade(shade: ShaderDoc.Shade): ShaderDoc.Spec =
+        { name = "", cycleRate = 0.0, bindings = Nil, out = ShaderDoc.Out.Fill({ shade = shade, alpha = ShaderDoc.Field.Const(1.0) }) }
+
+    /// World（x, y, z）・Normal（x, y, z）・頂点の色（r, g, b）の置き場の数。値の置き場の先頭に取る。
+    def inputSlots(): Int32 = 9
 
     /// World / Normal の axis の値の置き場の添字。
     def inputIndex(normal: Bool, axis: ShaderDoc.Axis3): Int32 =
@@ -155,29 +232,47 @@ pub mod ShaderEval {
             case ShaderDoc.Axis3.Z => base + 2
         }
 
+    /// 頂点の色の chan の値の場（R・G・B は置き場・A は 1）。
+    def vertexColorNode(chan: ShaderDoc.TexChan): Node =
+        match chan {
+            case ShaderDoc.TexChan.R => Node.Ref(6)
+            case ShaderDoc.TexChan.G => Node.Ref(7)
+            case ShaderDoc.TexChan.B => Node.Ref(8)
+            case ShaderDoc.TexChan.A => Node.Const(1.0)
+        }
+
     /// 画素 1 つ（uv = (u, v)・時刻 t）の (r, g, b, α)。値は evalPixelAlphaTex と同じ。
     /// out から参照されない binding もここで必ず評価する — 使わない shared は合法だが、その分は
     /// 黙って画素ごとの計算に乗る。
-    /// World / Normal は 0（2D の面）。
+    /// World / Normal は 0・VertexColor は 1（2D の面）。
     pub def evalCompiled(compiled: CompiledSpec, u: Float64, v: Float64, t: Float64): (Float64, Float64, Float64, Float64) =
         match compiled {
-            case Compiled.Compiled(bindings, shade, alpha, cycleRate, size, withInputs, _) => region rc {
+            case Compiled.Compiled(bindings, shade, alpha, cycleRate, size, withInputs, _, _) => region rc {
                 let env: Array[Float64, rc] = Array.empty(rc, size);
-                if (withInputs) putInputs(Vec3.zero(), Vec3.zero(), env) else ();
+                if (withInputs) putInputs(flatPoint(u, v), env) else ();
                 fillEnv(bindings, if (withInputs) inputSlots() else 0, u, v, t, env);
                 let (r, g, b) = evalShade(shade, cycleRate, u, v, t, env);
                 (r, g, b, evalNode(alpha, u, v, t, env))
             }
         }
 
-    /// 3D のメッシュの画素 1 つ（world の点・外向きの法線・時刻 t）の (r, g, b, α)。色は光を当てる前の色（albedo）。
-    /// uv は (0, 0)（ShaderGen.compile3d と同じ）。法線は長さ 1 にそろえてから読む（長さ 0 なら 0 のまま）。
-    pub def evalCompiled3(compiled: CompiledSpec, world: Vec3.Vec3, normal: Vec3.Vec3, t: Float64): (Float64, Float64, Float64, Float64) =
+    /// 3D のメッシュの画素 1 つの入力。world = 画素の world の点・normal = 外向きの法線（長さは問わない）・
+    /// uv = 絵の上の位置（uv の無い形は (0, 0)）・color = 頂点の色（置いた物の tint は入れない）。
+    pub type alias SurfacePoint = { world = Vec3.Vec3, normal = Vec3.Vec3, uv = Vec2.Vec2, color = Color }
+
+    /// 2D の面の画素の入力（World / Normal は 0・頂点の色は白）。
+    def flatPoint(u: Float64, v: Float64): SurfacePoint =
+        { world = Vec3.zero(), normal = Vec3.zero(), uv = { x = u, y = v }, color = { r = 1.0, g = 1.0, b = 1.0 } }
+
+    /// 3D のメッシュの画素 1 つ（時刻 t）の (r, g, b, α)。色は光を当てる前の色（albedo）。
+    /// 場は point の uv で読む（ShaderGen.compile3d の sg_uv = vUv と同じ）。法線は長さ 1 にそろえてから読む（長さ 0 なら 0 のまま）。
+    pub def evalCompiled3(compiled: CompiledSpec, point: SurfacePoint, t: Float64): (Float64, Float64, Float64, Float64) =
         match compiled {
-            case Compiled.Compiled(bindings, shade, alpha, cycleRate, size, withInputs, _) => region rc {
-                let env = env3(bindings, size, withInputs, world, normal, t, rc);
-                let (r, g, b) = evalShade(shade, cycleRate, 0.0, 0.0, t, env);
-                (r, g, b, evalNode(alpha, 0.0, 0.0, t, env))
+            case Compiled.Compiled(bindings, shade, alpha, cycleRate, size, withInputs, _, _) => region rc {
+                let env = env3(bindings, size, withInputs, point, t, rc);
+                let (u, v) = (point#uv#x, point#uv#y);
+                let (r, g, b) = evalAlbedo(shade, cycleRate, u, v, t, env);
+                (r, g, b, evalNode(alpha, u, v, t, env))
             }
         }
 
@@ -186,29 +281,70 @@ pub mod ShaderEval {
 
     /// evalCompiled3 に emission を足した版（bindings の評価を色・α・emission で共有する）。
     /// 光の計算は呼び手（SoftRaster3d）が albedo に掛け、その後に emission を足す。
-    pub def evalMaterial3(compiled: CompiledSpec, world: Vec3.Vec3, normal: Vec3.Vec3, t: Float64): MaterialSample =
+    pub def evalMaterial3(compiled: CompiledSpec, point: SurfacePoint, t: Float64): MaterialSample =
         match compiled {
-            case Compiled.Compiled(bindings, shade, alpha, cycleRate, size, withInputs, emission) => region rc {
-                let env = env3(bindings, size, withInputs, world, normal, t, rc);
-                let (r, g, b) = evalShade(shade, cycleRate, 0.0, 0.0, t, env);
-                let (er, eg, eb) = match emission {
-                    case Some(glow) => evalShade(glow, cycleRate, 0.0, 0.0, t, env)
-                    case None       => (0.0, 0.0, 0.0)
-                };
-                { albedo = { r = r, g = g, b = b }, alpha = evalNode(alpha, 0.0, 0.0, t, env),
-                  emission = { r = er, g = eg, b = eb } }
+            case Compiled.Compiled(bindings, shade, alpha, cycleRate, size, withInputs, emission, _) => region rc {
+                let env = env3(bindings, size, withInputs, point, t, rc);
+                sampleMaterial(shade, alpha, emission, cycleRate, point, t, env)
             }
         }
 
-    /// 3D の画素の値の置き場（World / Normal を先頭に置き、bindings を uv (0, 0) で評価して後ろに積む）。
-    def env3(bindings: List[Node], size: Int32, withInputs: Bool, world: Vec3.Vec3, normal: Vec3.Vec3, t: Float64,
+    /// evalMaterial3 の、段つきの絵を lod で読む版。nextX・nextY = 右隣・下隣の画素の入力（隣が三角形の外でも、重みを外へ延ばした値）。
+    /// 隣の入力では bindings（shared）から評価し直して、各 tex の節が読む座標を控え、真ん中の画素で座標の差から lod を求める（Mip.lodOf）。
+    /// 隣の入力の評価では tex を段 0 で読む（座標の式の中にある入れ子の tex は、隣では lod を求めずに読む）。
+    /// 段つきの絵を読まない材質は evalMaterial3 と同じ（隣を評価しない）。
+    // WhyNot: 真ん中の bindings の値を隣の評価に使い回さない — atWorld を shared に書く形では座標が bindings で決まり、差が 0 になって段 0 に落ちる。
+    pub def evalMaterial3Mip(compiled: CompiledSpec, center: SurfacePoint, nextX: SurfacePoint, nextY: SurfacePoint, t: Float64): MaterialSample =
+        match compiled {
+            case Compiled.Compiled(bindings, shade, alpha, cycleRate, size, withInputs, emission, mipCount) => region rc {
+                let env: Array[Float64, rc] = Array.repeat(rc, size, 0.0);
+                let pass = (point: SurfacePoint, mode: Float64) -> {
+                    if (mipCount > 0) Array.put(mode, size - 1, env) else ();
+                    if (withInputs) putInputs(point, env) else ();
+                    fillEnv(bindings, if (withInputs) inputSlots() else 0, point#uv#x, point#uv#y, t, env);
+                    sampleMaterial(shade, alpha, emission, cycleRate, point, t, env)
+                };
+                if (mipCount == 0) pass(center, modeLevel0())
+                else {
+                    discard pass(nextX, modeRecordX());
+                    discard pass(nextY, modeRecordY());
+                    pass(center, modeLod())
+                }
+            }
+        }
+
+    def sampleMaterial(shade: CShade, alpha: Node, emission: Option[CShade], cycleRate: Float64, point: SurfacePoint, t: Float64,
+                       env: Array[Float64, r]): MaterialSample \ r =
+        let (u, v) = (point#uv#x, point#uv#y);
+        let (cr, cg, cb) = evalAlbedo(shade, cycleRate, u, v, t, env);
+        // emission は 1 を超えて持つ（Rgba16Float の描き先で炎が 1 を超えて残る。8bit の描き先は書く所で 0..1 に切る）。負だけ 0 に切る。
+        let (er, eg, eb) = match emission {
+            case Some(glow) =>
+                let (gr, gg, gb) = evalShade(glow, cycleRate, u, v, t, env);
+                (Float64.max(0.0, gr), Float64.max(0.0, gg), Float64.max(0.0, gb))
+            case None       => (0.0, 0.0, 0.0)
+        };
+        { albedo = { r = cr, g = cg, b = cb }, alpha = evalNode(alpha, u, v, t, env), emission = { r = er, g = eg, b = eb } }
+
+    // MipTex の読み方の番号（値の置き場の最後に置く）: 段 0 を読む・右隣の座標を控える・下隣の座標を控える・控えから lod を求めて読む。
+    def modeLevel0(): Float64 = 0.0
+
+    def modeRecordX(): Float64 = 1.0
+
+    def modeRecordY(): Float64 = 2.0
+
+    def modeLod(): Float64 = 3.0
+
+    /// 3D の画素の値の置き場（World / Normal / 頂点の色を先頭に置き、bindings を point の uv で評価して後ろに積む）。
+    def env3(bindings: List[Node], size: Int32, withInputs: Bool, point: SurfacePoint, t: Float64,
              rc: Region[r]): Array[Float64, r] \ r =
-        let env: Array[Float64, r] = Array.empty(rc, size);
-        if (withInputs) putInputs(world, normal, env) else ();
-        fillEnv(bindings, if (withInputs) inputSlots() else 0, 0.0, 0.0, t, env);
+        let env: Array[Float64, r] = Array.repeat(rc, size, 0.0);
+        if (withInputs) putInputs(point, env) else ();
+        fillEnv(bindings, if (withInputs) inputSlots() else 0, point#uv#x, point#uv#y, t, env);
         env
 
-    def putInputs(world: Vec3.Vec3, normal: Vec3.Vec3, env: Array[Float64, r]): Unit \ r =
+    def putInputs(point: SurfacePoint, env: Array[Float64, r]): Unit \ r =
+        let (world, normal, color) = (point#world, point#normal, point#color);
         let len = Vec2.sqrt(normal#x * normal#x + normal#y * normal#y + normal#z * normal#z);
         let unit = c -> if (len == 0.0) 0.0 else c / len;
         Array.put(world#x, inputIndex(false, ShaderDoc.Axis3.X), env);
@@ -216,7 +352,10 @@ pub mod ShaderEval {
         Array.put(world#z, inputIndex(false, ShaderDoc.Axis3.Z), env);
         Array.put(unit(normal#x), inputIndex(true, ShaderDoc.Axis3.X), env);
         Array.put(unit(normal#y), inputIndex(true, ShaderDoc.Axis3.Y), env);
-        Array.put(unit(normal#z), inputIndex(true, ShaderDoc.Axis3.Z), env)
+        Array.put(unit(normal#z), inputIndex(true, ShaderDoc.Axis3.Z), env);
+        Array.put(color#r, 6, env);
+        Array.put(color#g, 7, env);
+        Array.put(color#b, 8, env)
 
     def fillEnv(bindings: List[Node], i: Int32, u: Float64, v: Float64, t: Float64, env: Array[Float64, r]): Unit \ r =
         match bindings {
@@ -226,29 +365,28 @@ pub mod ShaderEval {
                 fillEnv(rest, i + 1, u, v, t, env)
         }
 
-    def compileShade(scope: Map[String, Int32], texEnv: Map[String, TexData], shade: ShaderDoc.Shade): CShade =
+    def compileShade(sampling: Sampling, ids: Ref[Int32, r], scope: Map[String, Int32], texEnv: Map[String, TexImage], shade: ShaderDoc.Shade): CShade \ r =
         let rgb = (c: Color) -> (c#r, c#g, c#b);
         match shade {
             case ShaderDoc.Shade.Solid(c)    => CShade.Solid(c#r, c#g, c#b)
-            case ShaderDoc.Shade.Ramp(r)     => CShade.Ramp(rgb(r#lo), rgb(r#hi), compileField(scope, texEnv, r#field))
+            case ShaderDoc.Shade.Ramp(r)     => CShade.Ramp(rgb(r#lo), rgb(r#hi), compileField(sampling, ids, scope, texEnv, r#field))
             case ShaderDoc.Shade.Gradient(g) =>
                 CShade.Gradient(List.map(pc -> { let (p, c) = pc; (p, rgb(c)) }, g#stops),
-                                compileField(scope, texEnv, g#field))
+                                compileField(sampling, ids, scope, texEnv, g#field))
             case ShaderDoc.Shade.Cosine(cs)  =>
                 let (a, b, c, d) = (cs#a, cs#b, cs#c, cs#d);
                 let k = List.map(colorF64, a#r :: b#r :: c#r :: d#r :: a#g :: b#g :: c#g :: d#g :: a#b :: b#b :: c#b :: d#b :: Nil);
-                CShade.Cosine(List.toVector(k), compileField(scope, texEnv, cs#field))
+                CShade.Cosine(List.toVector(k), compileField(sampling, ids, scope, texEnv, cs#field))
             case ShaderDoc.Shade.Rgb(c)      =>
-                CShade.Rgb(compileField(scope, texEnv, c#r), compileField(scope, texEnv, c#g),
-                           compileField(scope, texEnv, c#b))
+                CShade.Rgb(compileField(sampling, ids, scope, texEnv, c#r), compileField(sampling, ids, scope, texEnv, c#g),
+                           compileField(sampling, ids, scope, texEnv, c#b))
         }
 
-    def compileField(scope: Map[String, Int32], texEnv: Map[String, TexData], field: ShaderDoc.Field): Node =
-        compileFieldIn(false, scope, texEnv, field)
-
-    /// linear = この節の tex / blur を Linear で読むか（Sampler の内側）。
-    def compileFieldIn(linear: Bool, scope: Map[String, Int32], texEnv: Map[String, TexData], field: ShaderDoc.Field): Node =
-        let sub = f -> compileFieldIn(linear, scope, texEnv, f);
+    /// sampling = この節の tex / blur の読み方（Sampler の内側なら linear が真）。
+    /// ids = 段つきの絵を読む節に振る次の番号。
+    def compileField(sampling: Sampling, ids: Ref[Int32, r], scope: Map[String, Int32], texEnv: Map[String, TexImage],
+                     field: ShaderDoc.Field): Node \ r =
+        let sub = f -> compileField(sampling, ids, scope, texEnv, f);
         match field {
             case ShaderDoc.Field.Const(v)       => Node.Const(v)
             case ShaderDoc.Field.Uv(u)          =>
@@ -294,26 +432,58 @@ pub mod ShaderEval {
                 }
             // 無い名前は 0.0（黒）。警告は IO を持つ生成側（SoftRaster）が出す — ここは純関数。
             case ShaderDoc.Field.Tex(tx)        =>
-                match Map.get(tx#name, texEnv) {
-                    case Some(td) => Node.Tex(td#width, td#height, td#pixels, texShift(tx#chan), linear)
-                    case None     => Node.Missing
+                match (Map.get(tx#name, sampling#mips), Map.get(tx#name, texEnv)) {
+                    case (Some(chain), _) =>
+                        let id = Ref.get(ids);
+                        Ref.put(id + 1, ids);
+                        Node.MipTex(id, chain, texShift(tx#chan), sampling#linear, sampling#repeat)
+                    case (None, Some(TexImage.Rgba8Unorm(td))) =>
+                        Node.Tex(td#width, td#height, td#pixels, texShift(tx#chan), sampling#linear, sampling#repeat)
+                    case (None, Some(TexImage.Rgba16Float(HdrTextureData.HdrTextureData(w, h, values)))) =>
+                        Node.TexF(w, h, values, texChanIndex(tx#chan), sampling#linear, sampling#repeat)
+                    case (None, None)     => Node.Missing
                 }
             // dx/dy は外側 uv で評価してから、of をずらした座標で読む（GLSL の式と同じ組み方）。
             case ShaderDoc.Field.Shift(sh)      => Node.Shift(sub(sh#dx), sub(sh#dy), sub(sh#of))
             case ShaderDoc.Field.TexBlur(bl)    =>
                 match Map.get(bl#name, texEnv) {
-                    case Some(td) => Node.TexBlur(td#width, td#height, td#pixels, texShift(bl#chan),
-                                                  bl#radius#x, bl#radius#y, ShaderDoc.blurTaps(bl#taps), sub(bl#amount), linear)
+                    case Some(TexImage.Rgba8Unorm(td)) => Node.TexBlur(td#width, td#height, td#pixels, texShift(bl#chan),
+                                                  bl#radius#x, bl#radius#y, ShaderDoc.blurTaps(bl#taps), sub(bl#amount),
+                                                  sampling#linear, sampling#repeat)
+                    case Some(TexImage.Rgba16Float(HdrTextureData.HdrTextureData(w, h, values))) =>
+                        Node.TexBlurF(w, h, values, texChanIndex(bl#chan), bl#radius#x, bl#radius#y, ShaderDoc.blurTaps(bl#taps),
+                                      sub(bl#amount), sampling#linear, sampling#repeat)
                     case None     => Node.Missing
+                }
+            // 3D の材質の texEnv は段 0 の絵なので、寸法も段 0 の数（GL の textureSize(…, 0) と同じ）。
+            case ShaderDoc.Field.TexSize(ts)    =>
+                let pick = (w: Int32, h: Int32) -> match ts#axis {
+                    case ShaderDoc.Axis.U => Int32.toFloat64(w)
+                    case ShaderDoc.Axis.V => Int32.toFloat64(h)
+                };
+                match Map.get(ts#name, texEnv) {
+                    case Some(TexImage.Rgba8Unorm(td))                        => Node.Const(pick(td#width, td#height))
+                    case Some(TexImage.Rgba16Float(HdrTextureData.HdrTextureData(w, h, _))) => Node.Const(pick(w, h))
+                    case None                                            => Node.Const(0.0)
                 }
             // 描き出しは Render.shaderSurfaces が値の表で Const に置き換えてから渡す（ShaderDoc.bindParams）。
             // ここへ来るのは表を通さずに評価した時で、渡されなかった名前と同じく 0。
             case ShaderDoc.Field.Param(_)      => Node.Missing
             case ShaderDoc.Field.Sampler(sm)    =>
-                compileFieldIn(sm#filter == ShaderDoc.FilterMode.Linear, scope, texEnv, sm#of)
+                compileField({ linear = sm#filter == ShaderDoc.FilterMode.Linear | sampling }, ids, scope, texEnv, sm#of)
             // 置き場は先頭の inputSlots 個（compileWith が取る）。uv の変換を受けないので Ref と同じく置き場を読むだけ。
             case ShaderDoc.Field.World(w)       => Node.Ref(inputIndex(false, w#axis))
             case ShaderDoc.Field.Normal(n)      => Node.Ref(inputIndex(true, n#axis))
+            case ShaderDoc.Field.VertexColor(vc) => vertexColorNode(vc#chan)
+        }
+
+    /// Rgba16Float の 1 画素の中の成分の位置（r, g, b, α の順）。
+    def texChanIndex(chan: ShaderDoc.TexChan): Int32 =
+        match chan {
+            case ShaderDoc.TexChan.R => 0
+            case ShaderDoc.TexChan.G => 1
+            case ShaderDoc.TexChan.B => 2
+            case ShaderDoc.TexChan.A => 3
         }
 
     def texShift(chan: ShaderDoc.TexChan): Int32 =
@@ -348,11 +518,20 @@ pub mod ShaderEval {
                 let tt = if (cycleRate == 0.0) v else v + cycleRate * t;
                 cosColor(k, tt)
             case CShade.Rgb(fr, fg, fb) =>
-                // cycleRate は読まない（Shade.Rgb の doc の決まり）。
-                let r = colorF32(evalNode(fr, x, y, t, env));
-                let g = colorF32(evalNode(fg, x, y, t, env));
-                let b = colorF32(evalNode(fb, x, y, t, env));
+                // cycleRate は読まない（Shade.Rgb の doc の決まり）。0..1 に切るのは書く所（Rgba16Float の描き先は 1 を超えて持つ）。
+                let r = colorF64(evalNode(fr, x, y, t, env));
+                let g = colorF64(evalNode(fg, x, y, t, env));
+                let b = colorF64(evalNode(fb, x, y, t, env));
                 (r, g, b)
+        }
+
+    /// 3D の材質の光を当てる前の色（albedo）。Rgb の 3 本は 0..1 に切る（evalShade は切らない）。
+    def evalAlbedo(shade: CShade, cycleRate: Float64, x: Float64, y: Float64, t: Float64,
+                   env: Array[Float64, r]): (Float64, Float64, Float64) \ r =
+        match shade {
+            case CShade.Rgb(fr, fg, fb) =>
+                (colorF32(evalNode(fr, x, y, t, env)), colorF32(evalNode(fg, x, y, t, env)), colorF32(evalNode(fb, x, y, t, env)))
+            case _ => evalShade(shade, cycleRate, x, y, t, env)
         }
 
     /// コサインパレット col = a + b·cos(2π(c·t + d)) を各チャンネルで（ShaderGen の sg_cospal と同じ数式）。
@@ -515,24 +694,69 @@ pub mod ShaderEval {
                 evalNode(of, (Float64.floor(x * cx) + 0.5) / cx, (Float64.floor(y * cy) + 0.5) / cy, t, env)
             case Node.Ref(i) => Array.get(i, env)
             case Node.Missing => 0.0
-            case Node.Tex(w, h, pixels, shift, linear) => sampleTexAs(linear, w, h, pixels, shift, x, y)
+            case Node.Tex(w, h, pixels, shift, linear, repeat) => sampleTexAs({ linear = linear, repeat = repeat }, w, h, pixels, shift, x, y)
+            case Node.MipTex(id, chain, shift, linear, repeat) => evalMipTex(id, chain, shift, { linear = linear, repeat = repeat }, x, y, env)
             case Node.Shift(fdx, fdy, of) =>
                 let dx = evalNode(fdx, x, y, t, env);
                 let dy = evalNode(fdy, x, y, t, env);
                 evalNode(of, x + dx, y + dy, t, env)
-            case Node.TexBlur(w, h, pixels, shift, rx, ry, taps, amount, linear) =>
+            case Node.TexBlur(w, h, pixels, shift, rx, ry, taps, amount, linear, repeat) =>
                 let k = evalNode(amount, x, y, t, env);
-                blurTex({ w = w, h = h, pixels = pixels, shift = shift, linear = linear }, x, y, rx * k, ry * k, taps)
+                blurTex({ w = w, h = h, pixels = pixels, shift = shift, sampling = { linear = linear, repeat = repeat } }, x, y, rx * k, ry * k, taps)
+            case Node.TexF(w, h, values, chan, linear, repeat) => sampleTexFAs({ linear = linear, repeat = repeat }, w, h, values, chan, x, y)
+            case Node.TexBlurF(w, h, values, chan, rx, ry, taps, amount, linear, repeat) =>
+                let k = evalNode(amount, x, y, t, env);
+                blurTexF({ w = w, h = h, values = values, chan = chan, sampling = { linear = linear, repeat = repeat } }, x, y, rx * k, ry * k, taps)
         }
+
+    /// 段つきの絵の節 id を座標 (x, y) で読む（値の置き場の最後の番号で、段 0 を読むか・隣の座標を控えるか・lod を求めて読むか）。
+    def evalMipTex(id: Int32, chain: Vector[TexData], shift: Int32, sampling: { linear = Bool, repeat = Bool },
+                   x: Float64, y: Float64, env: Array[Float64, r]): Float64 \ r =
+        let size = Array.length(env);
+        let mode = Array.get(size - 1, env);
+        let slot = size - 1 - (id + 1) * 4;
+        if (mode == modeRecordX()) { Array.put(x, slot, env); Array.put(y, slot + 1, env) }
+        else if (mode == modeRecordY()) { Array.put(x, slot + 2, env); Array.put(y, slot + 3, env) }
+        else ();
+        let lod = if (mode != modeLod()) 0.0 else match Vector.head(chain) {
+            case Some(base) =>
+                Mip.lodOf({ dudx = Array.get(slot, env) - x, dvdx = Array.get(slot + 1, env) - y,
+                            dudy = Array.get(slot + 2, env) - x, dvdy = Array.get(slot + 3, env) - y },
+                          base#width, base#height, Vector.length(chain))
+            case None => 0.0
+        };
+        sampleMip(chain, sampling, shift, lod, x, y)
+
+    /// 段の列 chain を lod で読む（GL の NEAREST_MIPMAP_LINEAR・LINEAR_MIPMAP_LINEAR と同じ）。lod ≤ 0 は段 0 を sampling の補間で、
+    /// ほかは隣り合う 2 段をそれぞれ sampling の補間で読み、lod の小数で混ぜる。wrap は各段に掛かる。
+    def sampleMip(chain: Vector[TexData], sampling: { linear = Bool, repeat = Bool }, shift: Int32, lod: Float64, u: Float64, v: Float64): Float64 =
+        let n = Vector.length(chain);
+        let read = (k: Int32) -> {
+            let td = Vector.get(Int32.max(0, Int32.min(n - 1, k)), chain);
+            sampleTexAs(sampling, td#width, td#height, td#pixels, shift, u, v)
+        };
+        if (n == 0) 0.0
+        else if (lod <= 0.0) read(0)
+        else {
+            let k = Float64.tryToInt32(Float64.floor(lod)) |> Option.getWithDefault(0);
+            // WhyNot: lod の小数をそのまま混ぜる重みにしない — GPU は 1/256 ほどに切り捨てて混ぜ、段の境目の帯の画素が GL とずれる。
+            let f = Float64.floor((lod - Float64.floor(lod)) * 256.0) / 256.0;
+            let a = read(k);
+            if (f == 0.0) a else a + (read(k + 1) - a) * f
+        }
+
+    /// 段の列 chain の uv (u, v) の r・g・b を lod で読む（sampleMip と同じ読み方。3D の法線マップが読む）。
+    pub def sampleMipRgb(chain: Vector[TexData], sampling: { linear = Bool, repeat = Bool }, lod: Float64, u: Float64, v: Float64): (Float64, Float64, Float64) =
+        (sampleMip(chain, sampling, 16, lod, u, v), sampleMip(chain, sampling, 8, lod, u, v), sampleMip(chain, sampling, 0, lod, u, v))
 
     /// ぼかしの標本（GLSL の sg_blur と同じ点の並び: i 番目は角度 i×黄金角・距離 √((i+0.5)/taps)）。
     /// 半径が 0 なら 1 点だけ読む（sg_blur と同じ分岐）。
     def blurTex(tex: BlurTex, u: Float64, v: Float64, rx: Float64, ry: Float64, taps: Int32): Float64 =
-        if (rx == 0.0 and ry == 0.0) sampleTexAs(tex#linear, tex#w, tex#h, tex#pixels, tex#shift, u, v)
+        if (rx == 0.0 and ry == 0.0) sampleTexAs(tex#sampling, tex#w, tex#h, tex#pixels, tex#shift, u, v)
         else blurSum(tex, u, v, rx, ry, taps, 0, 0.0) / Int32.toFloat64(taps)
 
-    /// ぼかしが読む 1 枚（寸法・画素・チャンネルの shift・Linear で読むか）。
-    type alias BlurTex = { w = Int32, h = Int32, pixels = Vector[Int32], shift = Int32, linear = Bool }
+    /// ぼかしが読む 1 枚（寸法・画素・チャンネルの shift・読み方）。
+    type alias BlurTex = { w = Int32, h = Int32, pixels = Vector[Int32], shift = Int32, sampling = Filter }
 
     def blurSum(tex: BlurTex, u: Float64, v: Float64,
                 rx: Float64, ry: Float64, taps: Int32, i: Int32, acc: Float64): Float64 =
@@ -541,12 +765,44 @@ pub mod ShaderEval {
             let fi = Int32.toFloat64(i);
             let r = Vec2.sqrt((fi + 0.5) / Int32.toFloat64(taps));
             let a = fi * 2.39996323;
-            let s = sampleTexAs(tex#linear, tex#w, tex#h, tex#pixels, tex#shift, u + Vec2.cos(a) * r * rx, v + Vec2.sin(a) * r * ry);
+            let s = sampleTexAs(tex#sampling, tex#w, tex#h, tex#pixels, tex#shift, u + Vec2.cos(a) * r * rx, v + Vec2.sin(a) * r * ry);
             blurSum(tex, u, v, rx, ry, taps, i + 1, acc + s)
         }
 
-    def sampleTexAs(linear: Bool, w: Int32, h: Int32, pixels: Vector[Int32], shift: Int32, u: Float64, v: Float64): Float64 =
-        if (linear) sampleTexLinear(w, h, pixels, shift, u, v) else sampleTex(w, h, pixels, shift, u, v)
+    def sampleTexAs(sampling: Filter, w: Int32, h: Int32, pixels: Vector[Int32], shift: Int32, u: Float64, v: Float64): Float64 =
+        match (sampling#linear, sampling#repeat) {
+            case (true, false)  => sampleTexLinear(w, h, pixels, shift, u, v)
+            case (false, false) => sampleTex(w, h, pixels, shift, u, v)
+            case (true, true)   => sampleTexLinearRepeat(w, h, pixels, shift, wrapUnit(u), wrapUnit(v))
+            case (false, true)  => sampleTex(w, h, pixels, shift, wrapUnit(u), wrapUnit(v))
+        }
+
+    /// 座標を 0..1 へ戻す（GL の REPEAT と同じ fract）。
+    def wrapUnit(x: Float64): Float64 = x - Float64.floor(x)
+
+    /// Linear の REPEAT の標本（GL の GL_LINEAR + REPEAT と同じ）。0..1 へ戻した座標で、端をまたぐ 4 テクセルは反対の端から読む。
+    def sampleTexLinearRepeat(w: Int32, h: Int32, pixels: Vector[Int32], shift: Int32, u: Float64, v: Float64): Float64 =
+        if (w <= 0 or h <= 0) 0.0
+        else {
+            let x = u * Int32.toFloat64(w) - 0.5;
+            let y = v * Int32.toFloat64(h) - 0.5;
+            let x0 = Float64.floor(x);
+            let y0 = Float64.floor(y);
+            let fx = x - x0;
+            let fy = y - y0;
+            let at = (tx, ty) -> {
+                let argb = Vector.get(wrapTexel(ty, h) * w + wrapTexel(tx, w), pixels);
+                Int32.toFloat64(Int32.bitwiseAnd(Int32.logicalRightShift(dist = shift, argb), 255)) / 255.0
+            };
+            let top = at(x0, y0) + (at(x0 + 1.0, y0) - at(x0, y0)) * fx;
+            let bottom = at(x0, y0 + 1.0) + (at(x0 + 1.0, y0 + 1.0) - at(x0, y0 + 1.0)) * fx;
+            top + (bottom - top) * fy
+        }
+
+    /// texel 添字を [0, n−1] へ回す（REPEAT。−1 は n−1・n は 0）。floor 済みの値を受ける。
+    def wrapTexel(x: Float64, n: Int32): Int32 =
+        let k = Float64.tryToInt32(x) |> Option.getWithDefault(0);
+        Int32.remainder(Int32.remainder(k, n) + n, n)
 
     /// Linear の標本（GL の GL_LINEAR + CLAMP_TO_EDGE と同じ点・同じ重み）。テクセルの中心が (i+0.5)/w なので
     /// 読む点から 0.5 引いた所の左下の 4 テクセルを、端に張り付けて、はみ出した分の割合で混ぜる。
@@ -583,6 +839,63 @@ pub mod ShaderEval {
     /// texel 添字を [0, n−1] に張り付ける（CLAMP）。floor 済みの値を受ける。
     def clampTexel(x: Float64, n: Int32): Int32 =
         Int32.max(0, Int32.min(n - 1, Float64.tryToInt32(x) |> Option.getWithDefault(0)))
+
+    // ── Rgba16Float の標本（点・重み・端の扱いは 8bit の同名の関数と同じ。値を 255 で割らず、α だけ 0..1 に切る）──
+    // WhyNot: 8bit の関数に値の読み方を関数で渡して 1 本にしない — テクセルごとに閉包を呼ぶ分が、8bit の面の描き出しに乗る。
+
+    /// texel (ix, iy) の chan の値（α は 0..1 に切る — Add が溜めた α を混ぜ式に入れない。GL の sprite も読む所で切る）。
+    def texelF(w: Int32, values: Vector[Float32], chan: Int32, ix: Int32, iy: Int32): Float64 =
+        let v = Float32.toFloat64(Vector.get((iy * w + ix) * 4 + chan, values));
+        if (chan == 3) Num.clamp01(v) else v
+
+    def sampleTexFAs(sampling: Filter, w: Int32, h: Int32, values: Vector[Float32], chan: Int32, u: Float64, v: Float64): Float64 =
+        match (sampling#linear, sampling#repeat) {
+            case (true, false)  => sampleTexFLinear(w, h, values, chan, u, v, clampTexel)
+            case (false, false) => sampleTexF(w, h, values, chan, u, v)
+            case (true, true)   => sampleTexFLinear(w, h, values, chan, wrapUnit(u), wrapUnit(v), wrapTexel)
+            case (false, true)  => sampleTexF(w, h, values, chan, wrapUnit(u), wrapUnit(v))
+        }
+
+    /// NEAREST の標本（sampleTex と同じ添字）。
+    def sampleTexF(w: Int32, h: Int32, values: Vector[Float32], chan: Int32, u: Float64, v: Float64): Float64 =
+        if (w <= 0 or h <= 0) 0.0
+        else texelF(w, values, chan, clampTexel(Float64.floor(u * Int32.toFloat64(w)), w), clampTexel(Float64.floor(v * Int32.toFloat64(h)), h))
+
+    /// Linear の標本（sampleTexLinear・sampleTexLinearRepeat と同じ点と重み）。edge = 端の扱い（clampTexel か wrapTexel）。
+    def sampleTexFLinear(w: Int32, h: Int32, values: Vector[Float32], chan: Int32, u: Float64, v: Float64,
+                         edge: (Float64, Int32) -> Int32): Float64 =
+        if (w <= 0 or h <= 0) 0.0
+        else {
+            let x = u * Int32.toFloat64(w) - 0.5;
+            let y = v * Int32.toFloat64(h) - 0.5;
+            let x0 = Float64.floor(x);
+            let y0 = Float64.floor(y);
+            let fx = x - x0;
+            let fy = y - y0;
+            let at = (tx, ty) -> texelF(w, values, chan, edge(tx, w), edge(ty, h));
+            let top = at(x0, y0) + (at(x0 + 1.0, y0) - at(x0, y0)) * fx;
+            let bottom = at(x0, y0 + 1.0) + (at(x0 + 1.0, y0 + 1.0) - at(x0, y0 + 1.0)) * fx;
+            top + (bottom - top) * fy
+        }
+
+    /// ぼかしが読む Rgba16Float の 1 枚（BlurTex の Rgba16Float 版）。
+    type alias BlurTexF = { w = Int32, h = Int32, values = Vector[Float32], chan = Int32, sampling = Filter }
+
+    /// blurTex の Rgba16Float 版（点の並びは同じ）。
+    def blurTexF(tex: BlurTexF, u: Float64, v: Float64, rx: Float64, ry: Float64, taps: Int32): Float64 =
+        if (rx == 0.0 and ry == 0.0) sampleTexFAs(tex#sampling, tex#w, tex#h, tex#values, tex#chan, u, v)
+        else blurSumF(tex, u, v, rx, ry, taps, 0, 0.0) / Int32.toFloat64(taps)
+
+    def blurSumF(tex: BlurTexF, u: Float64, v: Float64,
+                 rx: Float64, ry: Float64, taps: Int32, i: Int32, acc: Float64): Float64 =
+        if (i >= taps) acc
+        else {
+            let fi = Int32.toFloat64(i);
+            let r = Vec2.sqrt((fi + 0.5) / Int32.toFloat64(taps));
+            let a = fi * 2.39996323;
+            let s = sampleTexFAs(tex#sampling, tex#w, tex#h, tex#values, tex#chan, u + Vec2.cos(a) * r * rx, v + Vec2.sin(a) * r * ry);
+            blurSumF(tex, u, v, rx, ry, taps, i + 1, acc + s)
+        }
 
     // Pow の CPU 評価。整数指数は反復積（GLSL の powProduct と同じ左結合の並び）で、
     // 非整数のみ Float64.pow を呼ぶ（第 1 引数はレコード）。負の底は 0 で下切り。

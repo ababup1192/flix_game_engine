@@ -40,6 +40,7 @@
   },
   "exempt": {
     "engine_tools/src/HeadlessRender.flix::imageTextureInfo": "Render.drawWith に関数で渡す API。表は Ref を通してラムダの外に留めてある（doc の WhyNot）",
-    "engine/src/ShaderDoc.flix::rewriteField": "中で作るのは自分を呼ぶ小さなクロージャ go だけで、木を組む重い式は無い。呼び手は 1 回の Spec 書き換えで 1 度だけ呼ぶ"
+    "engine/src/ShaderDoc.flix::rewriteField": "中で作るのは自分を呼ぶ小さなクロージャ go だけで、木を組む重い式は無い。呼び手は 1 回の Spec 書き換えで 1 度だけ呼ぶ",
+    "engine/src/ShaderDoc.flix::rewriteFieldScoped": "rewriteField と同じ形。中で作るのは自分を呼ぶ小さなクロージャ go だけで、木を組む重い式は無い（field を受けてから節ごとに作り直す）"
   }
 }

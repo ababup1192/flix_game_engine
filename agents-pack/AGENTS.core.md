@@ -34,10 +34,12 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | 説明の窓をはみ出さず置く | `UiTooltip` + `ZStack.topLayer` |
 | 演出の時刻表を書く・描く・鳴らす | `Timeline.build`+`withSound` → `soundsBetween`（時計は `soundsOnClock`）→ `App.withAudio` |
 | 画面ごとの後処理（ブルーム・ぼかし）を半分の解像度で組む | `App.withPassPlan`（`targets` に `RenderTarget.Descriptor` の scale）+ pass の中の `Render.shaderFill`・なめらかに読むのは ShaderDoc の `sampler`（描き出しは `Render.passSpecsOf`） |
+| 3D の場面を窓の画素で描く・白飛びを HDR とトーンマップで収める・縁を FXAA でならす | `RenderTarget.windowDescriptor()` / `withHdr` の Pass → 本編の面を `PostProcess.tonemappedWith` → 8bit の Pass を `PostProcess.fxaaSpec`（1 で切って白飛びを抑えない） |
 | 面に毎フレーム変わる数（ピント・体力の割合）を渡す | ShaderDoc の `param` + `Render.withShaderParams`（Spec の Const に入れない） |
 | 面の中で光の向きや距離を計算する（平方根・長さ 1 にそろえる） | ShaderDoc の `math1` の `sqrt`（`UnOp.Sqrt`）・`ShaderDoc.lengthOf` / `normalized`（近い値で代わりにしない） |
 | 3D の部屋・家具（メッシュを深度で前後させる）を 2D の画面に入れる | `Render.scene3d(at, Scene3d.scene(camera, size))`（`Mesh3d.fromObj` / `fromPolygons` → `Scene3d.meshInstance`）・描き出しは `Render.softSceneOf` → `HeadlessRender.renderPngSoft`（三角形を多角形で並べない。手本 `bench/scene3d`） |
 | Blender で骨を入れたキャラ（.glb）を 3D の場面で動かす（歩く・敬礼など） | `Gltf.load` → `AnimationClip3d.sample`（混ぜるなら `Pose3d.blend`）→ `Pose3d.compute` → `Scene3d.withPose`（骨は GPU と SoftRaster の両方で曲がる。曲げを手で頂点に掛けない） |
+| 3D の家具・壁に木目や石の絵と凹凸（法線マップ）を貼る | 絵つきの .glb は `Gltf.loadTextured` → 部品は `model#parts`・絵は場面の `{ textures = model#textures | 場面 }` に渡す（渡さないと黒い）・コードの形は `Mesh3d.withBoxUvs` + `Scene3d.texturedMaterial` + `withNormalMap` |
 | 灯りの反対の地面へ倒した影（ドット絵の走りから） | `Shadow.projectedRuns`（`PxSprite.runs` を渡す） |
 | 演出の待ちが先の拍で変わる（全部が済んでから始める・置き直さない） | `Timeline.afterAll`（基準ごとに間）→ `Timeline.build` |
 | ポーズ・ヒットストップで止める・遅くする（遊びと実時間を分ける） | `App.addClock` + `Clock.Pace`・`frame#realNow` |

@@ -85,11 +85,11 @@
 - silhouettePng の「宣言シェーダー面も写す」版。地面・空・水面を ShaderDoc の面で
   `pub def silhouettePngWith(cfg: RenderConfig, scope: SilhouetteScope, drawables: List[GameEngine.Drawable], polygons: List[GameEngine.PolygonRenderCmd], surfaces: List[SoftRaster.SurfaceCmd], name: String): Unit \ IO`
 - pass 1 枚ぶんの宣言（Render.Pass のコマンド列版）。name はそのままテクスチャ名になり、
-  `pub type alias PassSpec = { name = String, clear = RenderTarget.LoadOp, drawables = List[GameEngine.Drawable], polygons = List[GameEngine.PolygonRenderCmd], surfaces = List[SoftRaster.SurfaceCmd], scenes = List[Scene3d.RenderCmd], scale = Float64 }`
-- pass 1 枚を design 解像度（scale = 1）の画像に生成する。GL のターゲットが design ×1 の
-  `pub def renderPassImage(cfg: RenderConfig, p: PassSpec, prev: Option[BufferedImage]): BufferedImage \ IO`
+  `pub type alias PassSpec = { name = String, clear = RenderTarget.LoadOp, drawables = List[GameEngine.Drawable], polygons = List[GameEngine.PolygonRenderCmd], surfaces = List[SoftRaster.SurfaceCmd], scenes = List[Scene3d.RenderCmd], target = RenderTarget.Descriptor }`
+- pass 1 枚を描き出す（形式は p#target#format。Rgba8Unorm は Rgba8Unorm・Rgba16Float は Rgba16Float の絵）。Design の基準は design 解像度
+  `pub def renderPassImage(cfg: RenderConfig, p: PassSpec, prev: Option[SoftRaster.PassImage]): SoftRaster.PassImage \ IO`
 - renderPassImage の「先に生成したターゲットも参照できる」版。`images` は既に生成した pass の
-  `pub def renderPassImageWith(cfg: RenderConfig, images: Map[String, BufferedImage], p: PassSpec, prev: Option[BufferedImage]): BufferedImage \ IO`
+  `pub def renderPassImageWith(cfg: RenderConfig, images: Map[String, SoftRaster.PassImage], p: PassSpec, prev: Option[SoftRaster.PassImage]): SoftRaster.PassImage \ IO`
 - 1 枚の絵に要る物の全部。passes = 本編より先に描く pass（後の pass と本編は前の pass の名前を貼れる）、
   `pub type alias Scene = { passes = List[PassSpec], drawables = List[GameEngine.Drawable], polygons = List[GameEngine.PolygonRenderCmd], surfaces = List[SoftRaster.SurfaceCmd], scenes = List[Scene3d.RenderCmd], fonts = Map[String, SoftRaster.FontEntry], fontAntialias = SoftRaster.FontAntialias }`
 - pass・ShaderDoc の面・追加フォントを一緒に使って 1 枚の PNG に生成する（他の renderPng* はどれもこれの一部）。
@@ -101,9 +101,9 @@
 - SoftScene のシルエット PNG（silhouettePngWith の 3D 込みの版）。3D の場面は silhouetteScenes で黒にする。
   `pub def silhouettePngSoft(cfg: RenderConfig, scope: SilhouetteScope, soft: SoftScene, name: String): Unit \ IO`
 - passes を宣言順に生成した画像（毎回透明から。後の pass は前の pass の名前を貼れる）。
-  `pub def passImagesOf(cfg: RenderConfig, fonts: Map[String, SoftRaster.FontEntry], fontAntialias: SoftRaster.FontAntialias, passes: List[PassSpec]): Map[String, BufferedImage] \ IO`
+  `pub def passImagesOf(cfg: RenderConfig, fonts: Map[String, SoftRaster.FontEntry], fontAntialias: SoftRaster.FontAntialias, passes: List[PassSpec]): Map[String, SoftRaster.PassImage] \ IO`
 - 追加の生成済み画像（pass のレンダーターゲットなど）を textures に混ぜて本編を PNG に生成する。
-  `pub def renderPngWithImages(cfg: RenderConfig, images: Map[String, BufferedImage], drawables: List[GameEngine.Drawable], polygons: List[GameEngine.PolygonRenderCmd], surfaces: List[SoftRaster.SurfaceCmd], name: String): Unit \ IO`
+  `pub def renderPngWithImages(cfg: RenderConfig, images: Map[String, SoftRaster.PassImage], drawables: List[GameEngine.Drawable], polygons: List[GameEngine.PolygonRenderCmd], surfaces: List[SoftRaster.SurfaceCmd], name: String): Unit \ IO`
 - passes を宣言順に生成してから本編を PNG に生成する（GL の renderFrame と同じ順序 —
   `pub def renderPngWithPasses(cfg: RenderConfig, passes: List[PassSpec], drawables: List[GameEngine.Drawable], polygons: List[GameEngine.PolygonRenderCmd], surfaces: List[SoftRaster.SurfaceCmd], name: String): Unit \ IO`
 - frames を stride 枚ごとに間引き、各コマを toCmds で描いて GIF ＋ コマ別 PNG に生成する。
@@ -165,17 +165,19 @@
 - 塗った・写した・鍵なしで塗った枚数を 1 行に（描き出しの終わりに出す）。
   `pub def statsLine(session: Session): String \ IO`
 - 動画・GIF のコマを 1 枚 req#outPath へ書く（Filmstrip.renderFrame と同じバイト列）。
-  `pub def writeFramePng(session: Session, req: SoftRaster.RasterReq, surfaces: List[SoftRaster.SurfaceCmd], extraFonts: Map[String, SoftRaster.FontEntry], extraImages: Map[String, BufferedImage], warnLog: SoftRaster.TexWarnLog, textures: SoftRaster.TextureCache): Unit \ IO`
+  `pub def writeFramePng(session: Session, req: SoftRaster.RasterReq, surfaces: List[SoftRaster.SurfaceCmd], extraFonts: Map[String, SoftRaster.FontEntry], extraImages: Map[String, SoftRaster.PassImage], warnLog: SoftRaster.TexWarnLog, textures: SoftRaster.TextureCache): Unit \ IO`
 - SoftRaster.render* の書き方（フルカラー）で req#outPath へ書く。SoftRaster.render* の中身。
-  `pub def writePlainPng(req: SoftRaster.RasterReq, surfaces: List[SoftRaster.SurfaceCmd], extraFonts: Map[String, SoftRaster.FontEntry], extraImages: Map[String, BufferedImage]): Unit \ IO`
+  `pub def writePlainPng(req: SoftRaster.RasterReq, surfaces: List[SoftRaster.SurfaceCmd], extraFonts: Map[String, SoftRaster.FontEntry], extraImages: Map[String, SoftRaster.PassImage]): Unit \ IO`
 - writePlainPng の、字の縁を本ごとに決める表（SoftRaster.FontAntialias）つき版。
-  `pub def writePlainPngAntialias(req: SoftRaster.RasterReq, surfaces: List[SoftRaster.SurfaceCmd], extraFonts: Map[String, SoftRaster.FontEntry], fontAntialias: SoftRaster.FontAntialias, extraImages: Map[String, BufferedImage]): Unit \ IO`
+  `pub def writePlainPngAntialias(req: SoftRaster.RasterReq, surfaces: List[SoftRaster.SurfaceCmd], extraFonts: Map[String, SoftRaster.FontEntry], fontAntialias: SoftRaster.FontAntialias, extraImages: Map[String, SoftRaster.PassImage]): Unit \ IO`
 - 1 コマの鍵（writeFramePng がキャッシュに使うのと同じ物）。鍵を作れなければ None。
-  `pub def keyOf(session: Session, encoding: DrawHash.PngEncoding, frame: DrawHash.Frame, extraImages: Map[String, BufferedImage], textures: SoftRaster.TextureCache): Option[DrawHash.Key] \ IO`
+  `pub def keyOf(session: Session, encoding: DrawHash.PngEncoding, frame: DrawHash.Frame, extraImages: Map[String, SoftRaster.PassImage], textures: SoftRaster.TextureCache): Option[DrawHash.Key] \ IO`
 - 前に inputs から書いた一式（noteWrittenFiles で控えた物）が、そのままのバイト列で残っているか。
   `pub def writtenFilesKept(inputs: String): Bool \ IO`
 - files（パスの列）を inputs から書いたと控える（次の writtenFilesKept が当たるように）。
   `pub def noteWrittenFiles(inputs: String, files: List[String]): Unit \ IO`
+- Pass の絵の SHA-256。Rgba8Unorm は imageDigest・Rgba16Float は形式の名前と寸法と half の bit を指紋に入れる
+  `pub def passImageDigest(image: SoftRaster.PassImage): String \ IO`
 - packages.lock の字から、エンジンの版の fpkg の SHA-256（`fpkg = "sha256:…"`）を取り出す（純粋）。無ければ None。
   `pub def lockedEngineDigestOf(version: String, lock: String): Option[String]`
 
@@ -267,6 +269,8 @@
   `pub type alias FontAntialias = Map[String, Bool]`
 - 宣言シェーダー面 1 枚の headless ラスタライズ要求（Render.ShaderSurface と同形の
   `pub type alias SurfaceCmd = { rect = Rect2.Rect2, spec = ShaderDoc.Spec, time = Float64, mask = List[List[Vec2.Vec2]], zIndex = Int32, blend = DrawCmd.BlendMode }`
+- 描き出した Pass の 1 枚（case の名前は RenderTarget.Format と同じ）。Rgba8Unorm = Java2D の画像・
+  `pub enum PassImage { case Rgba8Unorm(BufferedImage) case Rgba16Float(ShaderEval.HdrTexture) }`
 - 「絵に出ない指定」1 種類ぶんの報告。attr は指定の名前、count は件数、hint は逃げ道。
   `pub type alias Dropped = { attr = String, count = Int32, hint = String }`
 - この経路が描けずに落とす指定を数える（純粋・描き出す前に呼べる）。
@@ -280,7 +284,7 @@
 - シェーダー面つきの render（面は ShaderEval で画素評価して z 順に合流する）。
   `pub def renderWithSurfaces(req: RasterReq, surfaces: List[SurfaceCmd]): Unit \ IO`
 - 追加の描き出し済み画像（pass のレンダーターゲットなど）も混ぜて描き、PNG に書き出す render。
-  `pub def renderFull(req: RasterReq, surfaces: List[SurfaceCmd], extraFonts: Map[String, FontEntry], extraImages: Map[String, BufferedImage]): Unit \ IO`
+  `pub def renderFull(req: RasterReq, surfaces: List[SurfaceCmd], extraFonts: Map[String, FontEntry], extraImages: Map[String, PassImage]): Unit \ IO`
 - 要求を 1 枚の BufferedImage に描き出して返す（PNG 書き出しはしない）。
   `pub def renderToImage(req: RasterReq): BufferedImage \ IO`
 - renderToImage のシェーダー面つき版。surfaces は Drawable / Polygon と同じ
@@ -288,33 +292,47 @@
 - renderToImageWith の複数フォント版。`extraFonts` はテクスチャ名 → 追加の本。
   `pub def renderToImageFonts(req: RasterReq, surfaces: List[SurfaceCmd], extraFonts: Map[String, FontEntry]): BufferedImage \ IO`
 - renderToImageFonts の「追加の描き出し済み画像」つき版。`extraImages` はテクスチャ名 →
-  `pub def renderToImageFull(req: RasterReq, surfaces: List[SurfaceCmd], extraFonts: Map[String, FontEntry], extraImages: Map[String, BufferedImage]): BufferedImage \ IO`
+  `pub def renderToImageFull(req: RasterReq, surfaces: List[SurfaceCmd], extraFonts: Map[String, FontEntry], extraImages: Map[String, PassImage]): BufferedImage \ IO`
 - tex 場の欠け名を知らせた控え。GIF などコマ列の描き出しで同じ物を渡し続けると、
   `pub type alias TexWarnLog = Ref[Set[String], Static]`
 - 欠け名の控えを新しく作る（コマ列の描き出しの前に 1 本作って持ち回る）。
   `pub def freshTexWarnLog(): TexWarnLog \ IO`
 - renderToImageFull の欠け名控えつき版。控えは知らせの回数にだけ効き、
-  `pub def renderToImageLogged(req: RasterReq, surfaces: List[SurfaceCmd], extraFonts: Map[String, FontEntry], extraImages: Map[String, BufferedImage], warnLog: TexWarnLog): BufferedImage \ IO`
+  `pub def renderToImageLogged(req: RasterReq, surfaces: List[SurfaceCmd], extraFonts: Map[String, FontEntry], extraImages: Map[String, PassImage], warnLog: TexWarnLog): BufferedImage \ IO`
 - texturePath の画像を 1 回だけ読むためのキャッシュ（ファイルのパス → ARGB にそろえた画像）。
-  `pub enum TextureCache(ConcurrentHashMap[String, BufferedImage], ConcurrentHashMap[String, String], ConcurrentHashMap[String, List[FontCtx]])`
+  `pub enum TextureCache(ConcurrentHashMap[String, BufferedImage], ConcurrentHashMap[String, String], ConcurrentHashMap[String, List[FontCtx]], ConcurrentHashMap[String, Vector[ShaderEval.TexData]])`
 - 空のキャッシュを作る（コマ列の描き出しの前に 1 本）。
   `pub def freshTextureCache(): TextureCache \ IO`
 - キャッシュからパスの画像を引く（無ければ読んで入れる。読み方は塗る時と同じ）。無い・読めないなら None。
   `pub def cachedTexture(cache: TextureCache, path: String): Option[BufferedImage] \ IO`
 - renderToImageLogged のテクスチャキャッシュつき版。画素は renderToImageLogged と 1 バイトも
-  `pub def renderToImageCached(req: RasterReq, surfaces: List[SurfaceCmd], extraFonts: Map[String, FontEntry], extraImages: Map[String, BufferedImage], warnLog: TexWarnLog, cache: TextureCache): BufferedImage \ IO`
+  `pub def renderToImageCached(req: RasterReq, surfaces: List[SurfaceCmd], extraFonts: Map[String, FontEntry], extraImages: Map[String, PassImage], warnLog: TexWarnLog, cache: TextureCache): BufferedImage \ IO`
 - renderToImageCached の、字の縁を本ごとに決める表つき版（表に無い本は絵全体の設定）。
-  `pub def renderToImageCachedAntialias(req: RasterReq, surfaces: List[SurfaceCmd], extraFonts: Map[String, FontEntry], fontAntialias: FontAntialias, extraImages: Map[String, BufferedImage], warnLog: TexWarnLog, cache: TextureCache): BufferedImage \ IO`
-- pass（レンダーターゲット）描き出し用の入口。req#background は使わない — 塗るかどうか
-  `pub def renderPassImage(req: RasterReq, base: Option[BufferedImage], extraImages: Map[String, BufferedImage]): BufferedImage \ IO`
+  `pub def renderToImageCachedAntialias(req: RasterReq, surfaces: List[SurfaceCmd], extraFonts: Map[String, FontEntry], fontAntialias: FontAntialias, extraImages: Map[String, PassImage], warnLog: TexWarnLog, cache: TextureCache): BufferedImage \ IO`
+- image 全面を c の不透明で塗る（画面の clearColor と LoadOp.Clear の塗りはどれもこれを通す）。
+  `pub def fillClear(image: BufferedImage, c: Color): Unit \ IO`
+- pass（レンダーターゲット）描き出し用の入口（Rgba8Unorm・等倍）。req#background は使わない — 塗るかどうか
+  `pub def renderPassImage(req: RasterReq, base: Option[BufferedImage], extraImages: Map[String, PassImage]): BufferedImage \ IO`
 - 追加フォントとシェーダー面も使える renderPassImage（pass の中の字を、本編と同じ本で描く）。
-  `pub def renderPassImageFonts(req: RasterReq, base: Option[BufferedImage], surfaces: List[SurfaceCmd], extraFonts: Map[String, FontEntry], fontAntialias: FontAntialias, extraImages: Map[String, BufferedImage]): BufferedImage \ IO`
+  `pub def renderPassImageFonts(req: RasterReq, base: Option[BufferedImage], surfaces: List[SurfaceCmd], extraFonts: Map[String, FontEntry], fontAntialias: FontAntialias, extraImages: Map[String, PassImage]): BufferedImage \ IO`
+- Pass 1 枚の描き方。format = 描き先の形式。base = 前の中身（Keep。texels が Some ならテクセル寸法の絵・None ならそのままの寸法で写す）。
+  `pub type alias PassDraw = { format = RenderTarget.Format, base = Option[PassImage], clear = Option[Color], texels = Option[(Int32, Int32)] }`
+- Pass 1 枚を how の決まりで描き出す（HeadlessRender が Pass ごとに呼ぶ入口）。
+  `pub def renderPass(how: PassDraw, req: RasterReq, surfaces: List[SurfaceCmd], extraFonts: Map[String, FontEntry], fontAntialias: FontAntialias, extraImages: Map[String, PassImage]): PassImage \ IO`
+- 出力ピクセル寸法（design × scale、最低 1px）。
+  `pub def outSize(req: RasterReq): (Int32, Int32)`
 - tex 場が読む縮んだターゲットのテクセルの絵の名前（sprite で貼る design 寸法の絵と並べて images に入れる）。
   `pub def texelsName(name: String): String`
 - img を w × h へ最近傍で写す。広げるとき（GL が Nearest で貼る式）は元の (floor((x+0.5)·元幅/w), floor((y+0.5)·元高/h))。
   `pub def resampleNearest(img: BufferedImage, w: Int32, h: Int32): BufferedImage \ IO`
-- 縮んだターゲット（テクセル寸法 texels）の pass を描き出す。design 解像度で描いてから GL がテクセルを塗る点で拾う
-  `pub def renderPassImageScaled(req: RasterReq, base: Option[BufferedImage], background: Option[Color], surfaces: List[SurfaceCmd], extraFonts: Map[String, FontEntry], fontAntialias: FontAntialias, extraImages: Map[String, BufferedImage], texels: (Int32, Int32)): BufferedImage \ IO`
+- resampleNearest の PassImage 版（形式は変えない）。同じ寸法ならそのまま返す。
+  `pub def resampleNearestPass(img: PassImage, w: Int32, h: Int32): PassImage \ IO`
+- Pass の絵の寸法（テクセルの数）。
+  `pub def passImageSize(img: PassImage): (Int32, Int32) \ IO`
+- Pass の絵の 8bit の形（Rgba8Unorm はそのまま・Rgba16Float は各成分を 0..1 に切って 8bit に丸める）。
+  `pub def toArgbImage(img: PassImage): BufferedImage \ IO`
+- Rgba16Float の描き先の画素 i へ src (sr, sg, sb, sa) を blend で混ぜ、half に丸めて書く。sa は 0..1。
+  `pub def blendPixelF(blend: DrawCmd.BlendMode, sr: Float64, sg: Float64, sb: Float64, sa: Float64, rgba: Array[Float64, r], i: Int32): Unit \ r`
 - 色の成分 r, g, b（0..1）と alpha（0..1）を ARGB int へ。画素ごとに呼ぶ所（シェーダー面・
   `pub def argbOfRgba(r: Float64, g: Float64, b: Float64, a: Float64): Int32`
 - ARGB 1 画素の合成（src を dst に重ねた結果。out の alpha は dst のまま —
@@ -338,5 +356,7 @@
 - `pub def lightAt(env: Scene3d.Environment3d, pointLights: List[Scene3d.PointLight], spotLights: List[Scene3d.SpotLight], position: Vec3.Vec3, normal: Vec3.Vec3): Color`
 - 目 eye から見た world の点 position の色 c に、距離のかすみを掛けた色（fog が None なら c のまま）。
   `pub def fogAt(env: Scene3d.Environment3d, eye: Vec3.Vec3, position: Vec3.Vec3, c: Color): Color`
-- 場面 cmd を image へ重ねる。sf = design px → 出力の画素の倍率。textures = ビルボードが引く絵（名前 → 画素）。
-  `pub def drawScene(image: BufferedImage, sf: Float64, textures: Map[String, ShaderEval.TexData], time: Float64, cmd: Scene3d.RenderCmd): Unit \ IO`
+- 場面 cmd を image へ重ねる。sf = design px → 出力の画素の倍率。textures = ビルボードと材質が引く絵（名前 → 段の列。段 0 が元の絵）。
+  `pub def drawScene(image: BufferedImage, sf: Float64, textures: Map[String, Vector[ShaderEval.TexData]], time: Float64, cmd: Scene3d.RenderCmd): Unit \ IO`
+- drawScene の Rgba16Float の描き先版。rgba = 描き先（1 画素に r, g, b, α の 4 つ）・size = その幅と高さ。
+  `pub def drawSceneHdr(rgba: Array[Float64, Static], size: (Int32, Int32), sf: Float64, textures: Map[String, Vector[ShaderEval.TexData]], time: Float64, cmd: Scene3d.RenderCmd): Unit \ IO`

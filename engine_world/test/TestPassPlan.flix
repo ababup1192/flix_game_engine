@@ -51,6 +51,21 @@ mod TestPassPlan {
         Assert.assertEq(expected = ("a@history" :: "a@history" :: Nil) :: ("a" :: "b@history" :: Nil) :: Nil,
                         List.map(readsIn, passes))
 
+    /// 名前のテクスチャの幅（TexSize）だけを読む全面の面（4×4）。
+    def sizeFill(name: String): Render.PlacedItem =
+        let spec: ShaderDoc.Spec = { name = "size_" + name, cycleRate = 0.0, bindings = Nil,
+            out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Solid({ r = 0.0, g = 0.0, b = 0.0 }),
+                                       alpha = ShaderDoc.Field.TexSize({ name = name, axis = ShaderDoc.Axis.U }) }) };
+        Render.shaderFill(spec, { position = { x = 0.0, y = 0.0 }, size = { x = 4.0, y = 4.0 } }, 0.0, 0)
+
+    // TexSize も読みとして書き換わる: 自分の名前は history・後ろの Pass は見つからない名前（寸法 0）へ・後ろを読んだことを知らせる。
+    @Test
+    def testTexSizeReadsAreRenamedLikeTex(): Unit \ Assert =
+        let plan = Render.passPlan(pass("a", sizeFill("a") :: sizeFill("b") :: Nil) :: pass("b", Nil) :: Nil);
+        let resolved = Render.resolvePassReads(Set.empty(), plan);
+        Assert.assertEq(expected = (Render.PassPlanIssue.ReadsLaterPass("a", "b") :: Nil, ("a@history" :: "@missing:b" :: Nil) :: Nil :: Nil),
+                        (resolved#issues, List.map(readsIn, resolved#plan#passes)))
+
     // sprite で貼る名前も面と同じに書き換わる（GL で後ろの Pass の古い中身が貼られない）。
     @Test
     def testSpriteReadIsRenamedLikeSurface(): Unit \ Assert =
@@ -84,6 +99,23 @@ mod TestPassPlan {
         Assert.assertEq(expected = Render.PassPlanIssue.UnknownDescriptor("ghost") :: Nil,
                         Render.resolvePassReads(Set.empty(), plan)#issues)
 
+    // targets の scale が範囲（0 より大きく 1 以下）の外なら、Pass の名前と書いた値つきで知らせる（黙って 1 に直さない）。
+    @Test
+    def testScaleOutOfRangeIsReported(): Unit \ Assert =
+        let plan = { targets = Map#{ "a" => { scale = 2.0 | RenderTarget.defaultDescriptor() } }
+                     | Render.passPlan(pass("a", Nil) :: Nil) };
+        Assert.assertEq(expected = Render.PassPlanIssue.ScaleOutOfRange("a", 2.0) :: Nil,
+                        Render.resolvePassReads(Set.empty(), plan)#issues)
+
+    // Window の作り方は passSpecsOf の target に届き、targetDescriptorOf で引ける（書かない名前は Design）。
+    @Test
+    def testWindowDescriptorReachesPassSpec(): Unit \ Assert =
+        let plan = { targets = Map#{ "a" => { scale = 0.5 | RenderTarget.windowDescriptor() } }
+                     | Render.passPlan(pass("a", Nil) :: pass("b", Nil) :: Nil) };
+        let specs = Render.passSpecsOf(_ -> None, plan)#specs;
+        Assert.assertEq(expected = ((RenderTarget.Basis.Window, 0.5) :: (RenderTarget.Basis.Design, 1.0) :: Nil, RenderTarget.Basis.Design),
+                        (specs |> List.map(sp -> (sp#target#basis, sp#target#scale)), Render.targetDescriptorOf(plan, "b")#basis))
+
     // passSpecsOf は面を surfaces に・残りを drawables に分け、倍率を targets から読む（書かない名前は 1.0）。
     @Test
     def testPassSpecsOfSplitsSurfacesAndReadsScale(): Unit \ Assert =
@@ -93,7 +125,7 @@ mod TestPassPlan {
                                        :: pass("b", Nil) :: Nil) };
         let specs = Render.passSpecsOf(_ -> None, plan)#specs;
         Assert.assertEq(expected = (1, 1, 0.5) :: (0, 0, 1.0) :: Nil,
-                        specs |> List.map(sp -> (List.length(sp#surfaces), List.length(sp#drawables), sp#scale)))
+                        specs |> List.map(sp -> (List.length(sp#surfaces), List.length(sp#drawables), sp#target#scale)))
 
     /// GL の無い所で App.drawPassPlan を 1 回流す（描く命令は全部捨てる）。
     def drawPassPlanStubbed(known: Set[String], plan: Render.PassPlan): Set[String] =

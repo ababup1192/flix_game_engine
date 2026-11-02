@@ -334,9 +334,12 @@ pub mod ShaderGen {
             case (Field.Param(ra), Field.Param(rb))               => ra#name == rb#name
             case (Field.World(ra), Field.World(rb))               => ra#axis == rb#axis
             case (Field.Normal(ra), Field.Normal(rb))             => ra#axis == rb#axis
+            case (Field.VertexColor(ra), Field.VertexColor(rb))   => ra#chan == rb#chan
             case (Field.TexBlur(ra), Field.TexBlur(rb))           =>
                 eqTexName(ix, ra#name, rb#name) and ra#chan == rb#chan and eqVec2(ra#radius, rb#radius)
                     and ra#taps == rb#taps and eqField(ix, ra#amount, rb#amount)
+            case (Field.TexSize(ra), Field.TexSize(rb))           =>
+                eqTexName(ix, ra#name, rb#name) and ra#axis == rb#axis
             case _                                                => false
         }
 
@@ -361,56 +364,89 @@ pub mod ShaderGen {
             (if (ShaderDoc.usesDiv(spec)) divSource() else "") ::
             "void main() {\n" ::
             (mainStatements(spec, "vUv", Map.empty(), tex) |> List.map(st -> "    " + st + "\n") |> joinParts) ::
-            "    outColor.a *= uAlpha;\n" ::
+            writeRuleStatement() ::
             "}\n" :: Nil)
+
+    /// 面の出力の書き込みの決まり（CPU の SoftRaster も同じ式で切る）: rgb は [0, 65504]（half の最大）・α は uAlpha を掛けて [0, 1]。
+    /// Rgba8Unorm の描き先は GL が書く前に 0..1 に切るので、8bit の絵は変わらない。
+    /// WhyNot: α を 1 より上に通さない — Rgba16Float の描き先で Normal の (1 − α) が負になり、下の絵を引いてしまう。
+    def writeRuleStatement(): String =
+        "    outColor = vec4(clamp(outColor.rgb, 0.0, 65504.0), clamp(outColor.a * uAlpha, 0.0, 1.0));\n"
 
     // ── 3D の材質（Scene3d.Material3d）──
 
     /// 3D の材質を GLSL にした部品。render_gl の 3D の frag が、自分の光の計算の前に差し込む。
-    /// uniforms  = `uniform float uTime;` と Param の `uniform float uParamN;`（N は paramNames の並び）。
+    /// uniforms  = `uniform float uTime;`・tex の `uniform sampler2D uTexN; uniform float uTexFlipN;`（N は texReads の並び）・
+    ///             Param の `uniform float uParamN;`（N は paramNames の並び）。
     /// functions = ノイズの関数と `void materialEval(out vec4 albedo, out vec3 emission)` の定義。
     ///             albedo = 光を当てる前の色と α（Out の Fill）・emission = 自分で光る色（無ければ 0）。
     /// paramNames = uParamN に渡す値の名前の並び（ShaderDoc.materialParamNames と同じ）。
-    /// 差し込む側の約束: `in vec3 vWorld;`（画素の world の点）と `in vec3 vNormal;`（外向きの法線・長さは問わない）を
-    /// functions より前に宣言し、uniforms → functions の順に置く（ノイズの関数が uTime を読む）。
-    pub type alias MaterialGlsl = { uniforms = String, functions = String, paramNames = List[String] }
+    /// texReads = uTexN に貼る (テクスチャ名, 補間) の並び（ShaderDoc.materialTexReads と同じ）。
+    /// 差し込む側の約束: `in vec3 vWorld;`（画素の world の点）・`in vec3 vNormal;`（外向きの法線・長さは問わない）・
+    /// `in vec3 vColor;`（頂点の色）・`vUv`（vec2。uv の無い形は (0, 0) の const）を functions より前に宣言し、
+    /// uniforms → functions の順に置く（ノイズの関数が uTime を読む）。
+    /// cutoutAlpha = cutout の判定に使う α の GLSL 式（絵を読む材質は段 0 で読み直す materialCutoutAlpha()・ほかは albedo.a）。
+    /// 絵を読む材質の uniforms には `uniform float uTexLevelsN;`（N 番の絵の段の数。1 なら段 0 だけを読む）も入る。
+    pub type alias MaterialGlsl = { uniforms = String, functions = String, paramNames = List[String],
+                                    texReads = List[(String, ShaderDoc.FilterMode)], cutoutAlpha = String }
 
-    /// 3D の材質（spec と自分で光る色 emission）の GLSL の部品。World / Normal は varying の vWorld / vNormal を読み、
-    /// uv は (0, 0)（uv を読む場は ShaderDoc.atWorld で world の上へ写す）。tex / blur は 0（ShaderDoc.withoutTextures）。
+    /// 3D の材質（spec と自分で光る色 emission）の GLSL の部品。World / Normal / VertexColor は varying の vWorld / vNormal / vColor を、
+    /// uv は vUv を読む。tex / blur は uTexN を読む（unit の数に収めるのは呼ぶ側 — ShaderDoc.limitMaterialTexReads）。
+    /// tex は読む座標の画面の微分から段を選んで読む（sg_texMip。式は Mip.lodOf と同じ）。blur と cutout の α は段 0 で読む。
     /// emission の場は spec の bindings を Ref で読める。cycleRate は emission の色にも掛かる。
     pub def compile3d(spec: ShaderDoc.Spec, emission: Option[ShaderDoc.Shade]): MaterialGlsl =
-        let flat = ShaderDoc.withoutTextures(spec);
-        let glow = Option.map(ShaderDoc.shadeWithoutTextures, emission);
-        let params = ShaderDoc.materialParamNames(flat, glow);
-        let tex = withParamScope(params, Map.empty());
-        let baseEnv = Map#{ worldKey() => "vWorld", normalKey() => "sg_normal" };
+        let reads = ShaderDoc.materialTexReads(spec, emission);
+        let params = ShaderDoc.materialParamNames(spec, emission);
+        let tex = withParamScope(params, texScopeFrom(reads));
+        let mipTex = Map.insert(mipModeKey(), 0, tex);
+        let baseEnv = Map#{ worldKey() => "vWorld", normalKey() => "sg_normal", colorKey() => "vColor" };
         let uv = "sg_uv";
-        let env = bindingEnv(flat#bindings, baseEnv);
-        let albedo = match flat#out {
+        let env = bindingEnv(spec#bindings, baseEnv);
+        let albedo = match spec#out {
             case ShaderDoc.Out.Fill(f) =>
-                "albedo = vec4(" + shadeExpr(flat#cycleRate, f#shade, uv, env, tex) + ", " + fieldExpr(f#alpha, uv, env, tex) + ");"
+                "albedo = vec4(" + shadeExpr(spec#cycleRate, f#shade, uv, env, mipTex) + ", " + fieldExpr(f#alpha, uv, env, mipTex) + ");"
         };
-        let glowStmt = match glow {
-            case Some(shade) => "emission = " + shadeExpr(flat#cycleRate, shade, uv, env, tex) + ";"
+        let glowStmt = match emission {
+            case Some(shade) => "emission = " + shadeExpr(spec#cycleRate, shade, uv, env, mipTex) + ";"
             case None        => "emission = vec3(0.0, 0.0, 0.0);"
         };
-        let body = List.append(List.reverse(bindingStatements(flat#bindings, uv, baseEnv, tex)), albedo :: glowStmt :: Nil);
-        { uniforms = "uniform float uTime;\n" + paramUniformDecls(params),
+        let body = finishReads(List.append(List.reverse(bindingStatements(spec#bindings, uv, baseEnv, mipTex)), albedo :: glowStmt :: Nil));
+        let readsTextures = not List.isEmpty(reads);
+        let indent = (stmts: List[String]) -> stmts |> List.map(st -> "    " + st + "\n") |> joinParts;
+        let cutoutFunction = if (not readsTextures) "" else {
+            let level0 = Map.insert(level0ModeKey(), 0, tex);
+            let alphaExpr = match spec#out {
+                case ShaderDoc.Out.Fill(f) => "return " + fieldExpr(f#alpha, uv, env, level0) + ";"
+            };
+            joinParts(
+                "float materialCutoutAlpha() {\n" ::
+                "    vec2 sg_uv = vUv;\n" ::
+                "    vec3 sg_normal = normalize(vNormal);\n" ::
+                indent(finishReads(List.append(List.reverse(bindingStatements(spec#bindings, uv, baseEnv, level0)), alphaExpr :: Nil))) ::
+                "}\n" :: Nil)
+        };
+        { uniforms = "uniform float uTime;\n" + texUniformDecls(reads) + texLevelDecls(reads) + paramUniformDecls(params),
           functions = joinParts(
               preludeSource() ::
+              (if (readsTextures) blurSourceWith(e -> "textureLod(tex, " + e + ", 0.0)") + texMipSource() else "") ::
               divSource() ::
               "void materialEval(out vec4 albedo, out vec3 emission) {\n" ::
-              "    vec2 sg_uv = vec2(0.0, 0.0);\n" ::
+              "    vec2 sg_uv = vUv;\n" ::
               "    vec3 sg_normal = normalize(vNormal);\n" ::
-              (body |> List.map(st -> "    " + st + "\n") |> joinParts) ::
-              "}\n" :: Nil),
-          paramNames = params }
+              indent(body) ::
+              "}\n" ::
+              cutoutFunction :: Nil),
+          paramNames = params,
+          texReads = reads,
+          cutoutAlpha = if (readsTextures) "materialCutoutAlpha()" else "albedo.a" }
 
     /// fieldExpr の env で World / Normal の変数名を引く鍵（'@' を含む binding の名前は sg_b_ の変数名として GLSL が通さないので、
     /// 動く Spec の binding とは重ならない）。
     def worldKey(): String = "@world"
 
     def normalKey(): String = "@normal"
+
+    def colorKey(): String = "@color"
 
     /// 2 つの材質の emission が同じ GLSL を生むか（render_gl の材質の program キャッシュの鍵を eqSpec と組む）。
     pub def eqEmission(a: Option[ShaderDoc.Shade], b: Option[ShaderDoc.Shade]): Bool =
@@ -425,18 +461,36 @@ pub mod ShaderGen {
     /// （使わない Spec の出力を 1 文字も変えない）。半径が 0 なら 1 点だけ読む（ShaderEval.blurTex と同じ分岐）。
     /// WhyNot: 分岐の中の texture() を textureLod にしない — ターゲットにも面のテクスチャにも mipmap が無く、微分は答えに効かない。
     /// mipmap を入れる時は textureLod(…, 0.0) に替える。
-    def blurSource(): String =
+    def blurSource(): String = blurSourceWith(e -> "texture(tex, " + e + ")")
+
+    /// blurSource の、1 点を読む式を read で組む形（3D の材質は段 0 を読む textureLod(…, 0.0)）。
+    def blurSourceWith(read: String -> String): String =
         "vec4 sg_blur(sampler2D tex, float flip, vec2 uv, vec2 radius, int taps) {\n" +
-        "    if (radius.x == 0.0 && radius.y == 0.0) return texture(tex, vec2(uv.x, mix(uv.y, 1.0 - uv.y, flip)));\n" +
+        "    if (radius.x == 0.0 && radius.y == 0.0) return " + read("vec2(uv.x, mix(uv.y, 1.0 - uv.y, flip))") + ";\n" +
         "    vec4 acc = vec4(0.0);\n" +
         "    for (int i = 0; i < 64; i++) {\n" +
         "        if (i >= taps) break;\n" +
         "        float r = sqrt((float(i) + 0.5) / float(taps));\n" +
         "        float a = float(i) * 2.39996323;\n" +
         "        vec2 p = uv + vec2(cos(a), sin(a)) * r * radius;\n" +
-        "        acc += texture(tex, vec2(p.x, mix(p.y, 1.0 - p.y, flip)));\n" +
+        "        acc += " + read("vec2(p.x, mix(p.y, 1.0 - p.y, flip))") + ";\n" +
         "    }\n" +
         "    return acc / float(taps);\n" +
+        "}\n"
+
+    /// 3D の材質の段つきの読み。c = 読む座標（Spec の変換の後・REPEAT で 0..1 に戻す前）・levels = 段の数（1 なら段 0）。
+    /// lod の式は Mip.lodOf と同じ（微分は dFdx / dFdy・各成分から floor(d + 0.5) を引く）。
+    // WhyNot: texture() の自動の段選びに任せない — 選び方がドライバ任せで、REPEAT の継ぎ目で段が跳ね、CPU の描き出しとそろわない。
+    pub def texMipSource(): String =
+        "vec4 sg_texMip(sampler2D tex, float flip, float levels, vec2 c) {\n" +
+        "    vec2 dx = dFdx(c);\n" +
+        "    vec2 dy = dFdy(c);\n" +
+        "    dx -= floor(dx + 0.5);\n" +
+        "    dy -= floor(dy + 0.5);\n" +
+        "    vec2 size = vec2(textureSize(tex, 0));\n" +
+        "    float rho = max(length(dx * size), length(dy * size));\n" +
+        "    float lod = (levels <= 1.0 || rho <= 1.0) ? 0.0 : min(levels - 1.0, log2(rho));\n" +
+        "    return textureLod(tex, vec2(c.x, mix(c.y, 1.0 - c.y, flip)), lod);\n" +
         "}\n"
 
     /// 割り算（BinOp.Div）。割る数が 0 なら 0。割り算を使う Spec にだけ足す。
@@ -452,6 +506,18 @@ pub mod ShaderGen {
             let (i, _) = iname;
             "uniform sampler2D uTex${i};\nuniform float uTexFlip${i};\n"
         }, "")
+
+    /// texReads の並びに、絵の段の数の uniform を吐く（3D の材質だけ）。
+    def texLevelDecls(names: List[a]): String =
+        names |> List.zipWithIndex |> List.joinWith(iname -> {
+            let (i, _) = iname;
+            "uniform float uTexLevels${i};\n"
+        }, "")
+
+    /// fieldExpr が tex を段つきで読むか（3D の材質の materialEval）・段 0 で読むか（cutout の α）を引く鍵。tex の表に同居させる。
+    def mipModeKey(): String = "@mode:mip"
+
+    def level0ModeKey(): String = "@mode:level0"
 
     /// Param の名前の並び（paramNames の正典順）に uniform 宣言を吐く。空なら空文字（Param を使わない Spec の GLSL を変えない）。
     def paramUniformDecls(names: List[String]): String =
@@ -472,12 +538,16 @@ pub mod ShaderGen {
 
     /// fieldExpr が tex / blur の番号を引く表（texReads の正典順の番号）。素の名前 = 今の補間の番号、
     /// scopedKey(名前, 補間) = その補間の番号。Sampler の節が素の名前を指し直す（rescope）。
+    /// sizeKey(名前) = その名前の最初の組の番号（TexSize が寸法を読む sampler。補間に依らない）。
     def texScopeFrom(reads: List[(String, ShaderDoc.FilterMode)]): Map[String, Int32] =
         reads |> List.zipWithIndex |> List.foldLeft((acc, ir) -> {
             let (i, (name, filter)) = ir;
             let withScoped = Map.insert(scopedKey(name, filter), i, acc);
-            if (filter == ShaderDoc.FilterMode.Nearest) Map.insert(name, i, withScoped) else withScoped
+            let withSize = if (Map.memberOf(sizeKey(name), withScoped)) withScoped else Map.insert(sizeKey(name), i, withScoped);
+            if (filter == ShaderDoc.FilterMode.Nearest) Map.insert(name, i, withSize) else withSize
         }, Map.empty())
+
+    def sizeKey(name: String): String = "@size:" + name
 
     def scopedKey(name: String, filter: ShaderDoc.FilterMode): String = name + "@sampler:" + ToString.toString(filter)
 
@@ -488,7 +558,9 @@ pub mod ShaderGen {
             if (String.endsWith({ suffix = suffix }, key))
                 Map.insert(String.dropRight(String.length(suffix), key), i, acc)
             else acc,
-        tex |> Map.filterWithKey((key, _) -> String.contains({ substr = "@sampler:" }, key) or String.startsWith({ prefix = "@param:" }, key)), tex)
+        tex |> Map.filterWithKey((key, _) -> String.contains({ substr = "@sampler:" }, key) or String.startsWith({ prefix = "@param:" }, key)
+                                             or String.startsWith({ prefix = "@mode:" }, key)
+                                             or String.startsWith({ prefix = "@size:" }, key)), tex)
 
     /// テクスチャ名 → sampler 番号（texNames の正典順）。Tex ノードが uTexN を選ぶのに使う。
     def texIndexFrom(names: List[String]): Map[String, Int32] =
@@ -846,8 +918,7 @@ pub mod ShaderGen {
                     case ShaderDoc.TexChan.B => ".b"
                     case ShaderDoc.TexChan.A => ".a"
                 };
-                markRead("texture(uTex${i}, vec2((" + uv + ").x, mix((" + uv +
-                    ").y, 1.0 - (" + uv + ").y, uTexFlip${i})))") + chan
+                markRead(texReadCall(i, uv, tex)) + chan
             case ShaderDoc.Field.Shift(sh) =>
                 // ずらし量 dx/dy は外側の uv で評価してから、of をずらした座標で読む。
                 let uv2 = "((" + uv + ") + vec2(" + fieldExpr(sh#dx, uv, env, tex) + ", " +
@@ -864,6 +935,7 @@ pub mod ShaderGen {
             // uv を受けないので uv の式は読まない。2D（compile）の env には変数が無く 0.0。
             case ShaderDoc.Field.World(w)  => scene3dRead(worldKey(), w#axis, env)
             case ShaderDoc.Field.Normal(n) => scene3dRead(normalKey(), n#axis, env)
+            case ShaderDoc.Field.VertexColor(vc) => vertexColorRead(vc#chan, env)
             case ShaderDoc.Field.TexBlur(bl) =>
                 let i = Map.get(bl#name, tex) |> Option.getWithDefault(0);
                 let chan = match bl#chan {
@@ -874,13 +946,40 @@ pub mod ShaderGen {
                 };
                 markRead("sg_blur(uTex${i}, uTexFlip${i}, (" + uv + "), vec2(" + f(bl#radius#x) + ", " + f(bl#radius#y) +
                     ") * (" + fieldExpr(bl#amount, uv, env, tex) + "), " + iLit(ShaderDoc.blurTaps(bl#taps)) + ")") + chan
+            // 番号は texReads の正典順なので表に必ずある。無い場合の 0.0 は保険。
+            // WhyNot: 寸法を uniform で渡さない — 縮んだ Pass に registry の design の寸法を入れる取り違えが起きうる。
+            case ShaderDoc.Field.TexSize(ts) =>
+                let axis = match ts#axis {
+                    case ShaderDoc.Axis.U => ".x"
+                    case ShaderDoc.Axis.V => ".y"
+                };
+                match Map.get(sizeKey(ts#name), tex) {
+                    case Some(i) => "float(textureSize(uTex${i}, 0)" + axis + ")"
+                    case None    => "0.0"
+                }
         }
+
+    /// uTexN を uv で読む GLSL の呼び出し（2D の面は texture・3D の材質は段つきの sg_texMip・cutout の α は段 0 の textureLod）。
+    def texReadCall(i: Int32, uv: String, tex: Map[String, Int32]): String =
+        let flipped = "vec2((" + uv + ").x, mix((" + uv + ").y, 1.0 - (" + uv + ").y, uTexFlip${i}))";
+        if (Map.memberOf(mipModeKey(), tex)) "sg_texMip(uTex${i}, uTexFlip${i}, uTexLevels${i}, (" + uv + "))"
+        else if (Map.memberOf(level0ModeKey(), tex)) "textureLod(uTex${i}, " + flipped + ", 0.0)"
+        else "texture(uTex${i}, " + flipped + ")"
 
     /// env の key に置いた 3D の変数（vec3）の axis の成分。無ければ 0.0（2D の面）。
     def scene3dRead(key: String, axis: ShaderDoc.Axis3, env: Map[String, String]): String =
         match Map.get(key, env) {
             case Some(glslVar) => glslVar + axis3Suffix(axis)
             case None          => "0.0"
+        }
+
+    /// 頂点の色の chan の成分。A と、3D の変数の無い 2D の面は 1.0。
+    def vertexColorRead(chan: ShaderDoc.TexChan, env: Map[String, String]): String =
+        match (Map.get(colorKey(), env), chan) {
+            case (Some(glslVar), ShaderDoc.TexChan.R) => glslVar + ".r"
+            case (Some(glslVar), ShaderDoc.TexChan.G) => glslVar + ".g"
+            case (Some(glslVar), ShaderDoc.TexChan.B) => glslVar + ".b"
+            case _                                    => "1.0"
         }
 
     def axis3Suffix(axis: ShaderDoc.Axis3): String =

@@ -49,6 +49,34 @@ mod TestGltf {
         glb(json, List.append(f32s(-1.0 :: 0.0 :: 0.0 :: 1.0 :: 0.0 :: 0.0 :: 0.0 :: 1.0 :: 0.0 :: Nil),
                               f32s(0.0 :: 0.0 :: 1.0 :: 0.0 :: 0.0 :: 1.0 :: 0.0 :: 0.0 :: 1.0 :: Nil)))
 
+    /// triangleGlb と同じ三角に、uvs を TEXCOORD_0（VEC2・count = uvs の数 / 2）として足した .glb。
+    def triangleWithUvsGlb(uvs: List[Float64]): Vector[Int8] =
+        let uvCount = List.length(uvs) / 2;
+        let json = "{\"asset\":{\"version\":\"2.0\"},\"nodes\":[{\"mesh\":0}]," +
+            "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0,\"NORMAL\":1,\"TEXCOORD_0\":2}}]}]," +
+            "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\"}," +
+            "{\"bufferView\":1,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\"}," +
+            "{\"bufferView\":2,\"componentType\":5126,\"count\":${uvCount},\"type\":\"VEC2\"}]," +
+            "\"bufferViews\":[{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},{\"buffer\":0,\"byteOffset\":36,\"byteLength\":36}," +
+            "{\"buffer\":0,\"byteOffset\":72,\"byteLength\":${uvCount * 8}}]," +
+            "\"buffers\":[{\"byteLength\":${72 + uvCount * 8}}]}";
+        glb(json, List.flatten(f32s(-1.0 :: 0.0 :: 0.0 :: 1.0 :: 0.0 :: 0.0 :: 0.0 :: 1.0 :: 0.0 :: Nil) ::
+                               f32s(0.0 :: 0.0 :: 1.0 :: 0.0 :: 0.0 :: 1.0 :: 0.0 :: 0.0 :: 1.0 :: Nil) :: f32s(uvs) :: Nil))
+
+    /// fromGlb で読んだ最初の part の uv（読めなければ Err のまま）。
+    def firstPartUvs(bytes: Vector[Int8]): Result[String, Option[Vector[Float64]]] =
+        Gltf.fromGlb(bytes) |> Result.map(m -> List.head(m#parts) |> Option.flatMap(p -> Mesh3d.uvs(p#mesh)))
+
+    /// firstPartUvs と、読む間に stderr へ TEXCOORD_0 を名指す 1 行が出たか。
+    /// 差し替えた後に読んだ数（いつも 0）だけバイトを落としてから読む（loadSkinned と同じ理由）。
+    def firstPartUvsWarned(bytes: Vector[Int8]): (Result[String, Option[Vector[Float64]]], Bool) \ IO =
+        let old = System.err;
+        let buf = new ByteArrayOutputStream();
+        System.setErr(new PrintStream(buf, true));
+        let uvs = firstPartUvs(Vector.drop(buf.size(), bytes));
+        System.setErr(old);
+        (uvs, String.contains(substr = "TEXCOORD_0", buf.toString()))
+
     /// triangleGlb と同じ三角を、頂点ごとに 4 つ目の数（99）を挟んだ byteStride 16 の並びで持つ .glb。
     def stridedTriangleGlb(): Vector[Int8] =
         let json = "{\"asset\":{\"version\":\"2.0\"},\"nodes\":[{\"mesh\":0}]," +
@@ -195,6 +223,23 @@ mod TestGltf {
     def testGltfRejectsExternalUri(): Unit \ Assert =
         Assert.assertTrue(Result.isErr(Gltf.fromGlb(triangleGlb("", ",\"uri\":\"tri.bin\""))))
 
+    /// 有限の TEXCOORD_0 は part の uv になる（uv の (0, 0)・(1, 0)・(0, 1) が頂点の並びのまま）。
+    @Test
+    def testGltfReadsTexcoordIntoPart(): Unit \ Assert =
+        Assert.assertEq(expected = Ok(Some(Vector#{0.0, 0.0, 1.0, 0.0, 0.0, 1.0})),
+                        firstPartUvs(triangleWithUvsGlb(0.0 :: 0.0 :: 1.0 :: 0.0 :: 0.0 :: 1.0 :: Nil)))
+
+    /// NaN のある TEXCOORD_0 は Err にせず、uv なしの part で読んで 1 行知らせる（uv を使わない fromGlb が読めなくならない）。
+    @Test
+    def testGltfReadsWithoutUvWhenTexcoordHasNaN(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = (Ok(None), true),
+                        firstPartUvsWarned(triangleWithUvsGlb(0.0 :: 0.0 :: Float64.nan() :: 0.0 :: 0.0 :: 1.0 :: Nil)))
+
+    /// 頂点の数（3）と数が違う TEXCOORD_0（2 つ）も、uv なしの part で読んで 1 行知らせる。
+    @Test
+    def testGltfReadsWithoutUvWhenTexcoordCountDiffers(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = (Ok(None), true), firstPartUvsWarned(triangleWithUvsGlb(0.0 :: 0.0 :: 1.0 :: 0.0 :: Nil)))
+
     // ════════════════════════════════════════════════════════════════════
     // Blender の資材（two_joints.glb）
     // ════════════════════════════════════════════════════════════════════
@@ -235,4 +280,79 @@ mod TestGltf {
         let mats = Pose3d.jointMatrices(Pose3d.compute(skin, AnimationClip3d.sample(skin, clip, AnimationClip3d.duration(clip), false)));
         let moved = Mat4.apply(Vector.get(jointOf(skin, "tip"), mats), Vec3.v3(-0.1, 1.0, 0.0));
         Assert.assertTrue(Vec3.distanceSquared(moved, Vec3.v3(-0.1, 0.5, 0.5)) < 1.0e-9)
+
+    // ════════════════════════════════════════════════════════════════════
+    // 絵と材質（loadTextured・textured_two_materials.glb）
+    // ════════════════════════════════════════════════════════════════════
+    // 板 A は材質 A（4 × 4 の絵・左上が赤・NEAREST と、(128, 255, 128) の法線マップ・scale 0.5）、板 B は材質 B（baseColorFactor だけ）。
+
+    def textured(): Model3d.Model3d \ {Fs.FileRead, IO} = okOrBug(Gltf.loadTextured("test/data/textured_two_materials.glb"))
+
+    def partAt(m: Model3d.Model3d, k: Int32): Model3d.ModelPart = match List.nth(k, m#parts) {
+        case Some(p) => p
+        case None => bug!("part ${k} が無い")
+    }
+
+    def materialA(m: Model3d.Model3d): Scene3d.MaterialFields = match partAt(m, 0)#material {
+        case Some(mat) => Scene3d.materialFieldsOf(mat)
+        case None => bug!("板 A に材質が無い")
+    }
+
+    /// primitive ごとに part が 2 つ。
+    @Test
+    def testTexturedPartsPerPrimitive(): Unit \ {Assert, Fs.FileRead, IO} =
+        Assert.assertEq(expected = 2, List.length(textured()#parts))
+
+    /// 絵のある材質 A の板だけが材質を持ち、絵の無い材質 B の板は None（頂点の色で描く）。
+    @Test
+    def testOnlyTexturedMaterialBecomesMaterial(): Unit \ {Assert, Fs.FileRead, IO} =
+        let m = textured();
+        Assert.assertEq(expected = (true, false), (Option.nonEmpty(partAt(m, 0)#material), Option.nonEmpty(partAt(m, 1)#material)))
+
+    /// 材質 A の絵は 4 × 4 で、左上のテクセルが赤。
+    @Test
+    def testBaseColorImageTopLeftIsRed(): Unit \ {Assert, Fs.FileRead, IO} =
+        let m = textured();
+        let name = ShaderDoc.materialTexReads(materialA(m)#spec, None) |> List.head |> Option.map(fst) |> Option.getWithDefault("");
+        let image = m#textures |> List.find(t -> Texture3d.name(t) == name);
+        Assert.assertEq(expected = Some((4, 4, -65536)),
+            Option.map(t -> (Texture3d.width(t), Texture3d.height(t), Vector.get(0, Texture3d.argb(t))), image))
+
+    /// sampler の magFilter が NEAREST の絵は Nearest で読む。
+    @Test
+    def testNearestSamplerReadsNearest(): Unit \ {Assert, Fs.FileRead, IO} =
+        Assert.assertEq(expected = Some(ShaderDoc.FilterMode.Nearest),
+            ShaderDoc.materialTexReads(materialA(textured())#spec, None) |> List.head |> Option.map(snd))
+
+    /// normalTexture は法線マップになり、strength は scale（0.5）。
+    @Test
+    def testNormalTextureStrengthIsScale(): Unit \ {Assert, Fs.FileRead, IO} =
+        Assert.assertEq(expected = Some(0.5), materialA(textured())#normalMap |> Option.map(n -> n#strength))
+
+    /// 書き出した TANGENT（x と w を反転して読んだ物）は、同じ形と uv から Mesh3d が求めたタンジェントと向きも w も一致する。
+    @Test
+    def testExportedTangentMatchesComputed(): Unit \ {Assert, Fs.FileRead, IO} =
+        let mesh = partAt(textured(), 0)#mesh;
+        let exported = Mesh3d.tangents(mesh) |> Option.getWithDefault(Vector.empty());
+        let computed = Mesh3d.uvs(mesh) |> Option.flatMap(uv -> Mesh3d.withUvs(uv, mesh) |> Result.toOption) |> Option.flatMap(Mesh3d.tangents)
+            |> Option.getWithDefault(Vector.empty());
+        Assert.assertEq(expected = (16, true),
+            (Vector.length(exported), Vector.length(computed) == 16 and Vector.forAll(pair -> Float64.abs(fst(pair) - snd(pair)) < 1.0e-4, Vector.zip(exported, computed))))
+
+    /// 板 A は uv を持ち、uv の (0, 0)（絵の左上）は板の左上の角（engine の +X 側・上）に来る（glTF の −X が engine の +X）。
+    @Test
+    def testTexturedPlateTopLeftUvAtTopLeftCorner(): Unit \ {Assert, Fs.FileRead, IO} =
+        let mesh = partAt(textured(), 0)#mesh;
+        let uvs = Mesh3d.uvs(mesh) |> Option.getWithDefault(Vector.empty());
+        let corner = Vector.range(0, Mesh3d.vertexCount(mesh)) |> Vector.find(v -> Vector.get(v * 2, uvs) == 0.0 and Vector.get(v * 2 + 1, uvs) == 0.0)
+            |> Option.map(v -> positionOf(mesh, v));
+        Assert.assertEq(expected = Some((1.5, 1.0)), Option.map(p -> (p#x, p#y), corner))
+
+    /// 絵を読まない load は、loadTextured と同じ mesh（全部の primitive をつないだ形）を返し、parts の材質は None。
+    @Test
+    def testLoadKeepsMeshAndHasNoMaterials(): Unit \ {Assert, Fs.FileRead, IO} =
+        let plain = okOrBug(Gltf.load("test/data/textured_two_materials.glb"));
+        Assert.assertEq(expected = (true, true, 0),
+            (Mesh3d.contentHash(plain#mesh) == Mesh3d.contentHash(textured()#mesh),
+             List.forAll(p -> Option.isEmpty(p#material), plain#parts), List.length(plain#textures)))
 }

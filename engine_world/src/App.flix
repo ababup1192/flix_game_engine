@@ -2312,12 +2312,14 @@ pub mod App {
 
     /// レンダーターゲットの列を本編より先に描く（宣言順・resolvePassReads を通した後の計画）。ターゲットの中は
     /// design 座標そのままで、Shader 面と 3D の場面も本編と同じ道（submitGpuItems）で描く。
-    /// テクセル寸法は RenderTarget.sizeOf（design × 名前の倍率）。
+    /// テクセル寸法は RenderTarget.texelSizeOf（名前の作り方と、描き手の画素の倍率 Target.pixelScale）。
     def renderPasses(warnOnce: String -> Unit \ ef, design: Vec2.Vec2, plan: Render.PassPlan):
             Unit \ (ef + GameEngine.Game + ShaderEffect.Shader + RenderTarget.Target) =
+        let pixelScale = RenderTarget.Target.pixelScale();
         List.forEach(p -> {
-            let (tw, th) = RenderTarget.sizeOf(design, { scale = Render.targetScaleOf(plan, p#name) | RenderTarget.defaultDescriptor() });
-            RenderTarget.Target.beginTarget(p#name, tw, th, p#clear);
+            let descriptor = Render.targetDescriptorOf(plan, p#name);
+            let (tw, th) = RenderTarget.texelSizeOf(design, pixelScale, descriptor);
+            RenderTarget.Target.beginTarget({ name = p#name, width = tw, height = th, format = descriptor#format, clear = p#clear });
             submitGpuItems(warnOnce, p#items, Nil, None);
             RenderTarget.Target.endTarget()
         }, plan#passes)
@@ -2345,6 +2347,8 @@ pub mod App {
         case Render.PassPlanIssue.DuplicatePass(name)                => "'${name}' を 2 回宣言した — 2 回目以降は描かない"
         case Render.PassPlanIssue.ReservedPassName(name)             => "'${name}' に '@' がある — 描かない（'@' は history の別名に使う）"
         case Render.PassPlanIssue.UnknownDescriptor(name)            => "targets の '${name}' に当たる Pass が無い — 倍率が効いていない"
+        case Render.PassPlanIssue.ScaleOutOfRange(name, scale)       =>
+            "targets の '${name}' の scale ${scale} は 0 より大きく 1 以下の外 — 1 として描く（画面の画素で描くなら RenderTarget.windowDescriptor()）"
     }
 
     // WhyNot: 同じ 10 行を UiRender・SortingLayer・App に 1 つずつ置く。pub にするとゲームから z を書き換えられ、

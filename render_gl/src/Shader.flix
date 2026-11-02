@@ -70,7 +70,11 @@ mod RenderShader {
         "            if (a < 0.004) discard;\n" +
         "            color = vec4(spriteColor, spriteAlpha * a);\n" +
         "        } else {\n" +
-        "            color = vec4(spriteColor, spriteAlpha) * texture(image, TexCoords);\n" +
+        // Rgba16Float の Pass の α は Add で 1 を超えて溜まるので、読む所で 0..1 に切る（8bit の絵では α は 1 以下で変わらない）。
+        // WhyNot: glBlendFuncSeparate で α の溜まり方を変えない — 8bit の ClearTransparent の Pass の α が変わり、それを貼った絵が変わる。
+        "            vec4 t = texture(image, TexCoords);\n" +
+        "            t.a = clamp(t.a, 0.0, 1.0);\n" +
+        "            color = vec4(spriteColor, spriteAlpha) * t;\n" +
         "        }\n" +
         "    } else if (styleEnabled) {\n" +
         "        vec2 hsz = rectSize * 0.5;\n" +
@@ -235,7 +239,10 @@ mod RenderShader {
         "            if (a < 0.004) discard;\n" +
         "            color = vec4(InstColor.rgb, InstColor.a * a);\n" +
         "        } else {\n" +
-        "            color = InstColor * texture(image, TexCoords);\n" +
+        // α を読む所で切る理由は fragmentShaderSource と同じ。
+        "            vec4 t = texture(image, TexCoords);\n" +
+        "            t.a = clamp(t.a, 0.0, 1.0);\n" +
+        "            color = InstColor * t;\n" +
         "        }\n" +
         "    } else if (InstFlags.z > 0.5) {\n" +
         "        vec2 hsz = InstRect.xy * 0.5;\n" +

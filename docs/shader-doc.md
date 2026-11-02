@@ -53,6 +53,7 @@ vignette・熱い溶岩を **JSON の保存だけで即調整できる**形で�
 | `worley` | `scale`, `seed`, `out`("f1"/"f2"/"f2mf1") | セル模様。`f2mf1` が網目（水のコースティクス） |
 | `hash1` / `hash2` | `scale`, `seed`, (`comp`), (`bucket`) | 升目ごとの乱数（`hash2` は成分指定） |
 | `tex` **[新19]** | `name`, (`chan`="r"/"g"/"b"/"a"、既定 "r") | 名前つきテクスチャ（pass の生成した絵や普通のテクスチャ）を今の uv で標本した 1 チャンネル |
+| `texSize` **[新]** | `name`, `axis`("u"/"v") | 名前つきテクスチャの幅（`u`）・高さ（`v`）のテクセルの数。1 テクセルずつずらすなら `{"kind":"math2","op":"div","a":{"kind":"const","value":1},"b":{"kind":"texSize",…}}` を `shift` の `dx` / `dy` に。縮んだ pass は縮んだ後の数・3D の材質の中では段 0 の数・無い名前は 0（割れば 0） |
 | `blur` **[新]** | `name`, (`chan`), `radius{x,y}`, `taps`(既定 24), `amount`（場） | テクスチャをぼかして標本した 1 チャンネル。今の uv のまわり `radius × amount` の円に `taps` 個の点を黄金角で撒いて平均する（GLSL と CPU で同じ点）。実写の背景をピンぼけにする・切り替えの頭でピントを外す（実例: `templates/sound-novel-starter/src/Backdrop.flix`） |
 
 **形**
@@ -98,6 +99,7 @@ vignette・熱い溶岩を **JSON の保存だけで即調整できる**形で�
 | `param` **[新]** | `name`（英数字と `_`） | 面を置く時に渡す数（`Render.withShaderParams(Map#{"focus" => v}, 面)`）。毎フレーム変わる数（ピントの位置・体力の割合）はここで渡す — `const` に入れると実機は GLSL を作り直す。渡さなかった名前は 0（実機は `[render] 面 …: param '…'` を 1 回知らせる。描き出しは `Render.missingShaderParams` で同じ物を引ける） |
 | `world` **[新]** | `axis`(`"x"`/`"y"`/`"z"`) | 3D のメッシュに塗る時の、画素の world の点の成分（左手系。X = 東・Y = 上・Z = 北）。`scaled`・`tiling`・`shift` などの uv の変換を受けない（いつも画素の world の値）。2D の面では 0（実機は `[render] 面 …: world / normal は…` を 1 回知らせる） |
 | `normal` **[新]** | `axis`(`"x"`/`"y"`/`"z"`) | 3D のメッシュに塗る時の、外向きの単位の法線の成分（-1〜1）。uv の変換を受けない。2D の面では 0 |
+| `vertexColor` **[新]** | `chan`(`"r"`/`"g"`/`"b"`/`"a"`) | 3D のメッシュに塗る時の、画素の頂点の色の成分（0〜1。`a` は 1）。置いた物の tint は入らない（tint は材質の色の後で掛かる）。uv の変換を受けない。2D の面では 1 |
 | `mix` | `a`, `b`, `t` | 一定の割合で混ぜる |
 | `blend` | `a`, `b`, `by` | 場で混ぜ具合を決めて混ぜる |
 | `time` | `scale`, `offset` | 時刻そのもの（明滅・呼吸に） |
@@ -185,7 +187,7 @@ vignette・熱い溶岩を **JSON の保存だけで即調整できる**形で�
   隣のテクセルとなめらかにつなぐ（GL の `GL_LINEAR` と同じ点と重み。読む側で選ぶので、同じ pass をくっきり読む所と
   なめらかに読む所を 1 枚の面に並べられる）。`shift` で端を越えても
   反対側へ回り込まない（実機は sampler object で通常テクスチャの REPEAT も封じる）
-- 値は 8bit を 255 で割った 0〜1。pass の上下逆格納は実機側が自動で吸収する（JSON は何もしない）
+- 値は、8bit の絵（ファイル・Rgba8Unorm の Pass）なら 255 で割った 0〜1。Rgba16Float の Pass（`RenderTarget.withHdr`）は切らずに読むので 1 を超えることがある（α だけ 0〜1 に切る）。pass の上下逆格納は実機側が自動で吸収する（JSON は何もしない）
 - **無い名前は黒（0.0）**になり、標準エラーに一度だけ知らせる。特に「pass を宣言しない
   フレームで名前だけ読む」と恒常的に黒のままなので、面を出すフレームでは pass も必ず宣言する
 - `chan:"a"` を pass に使うのは**近似**。GL ターゲットの alpha チャンネルはブレンドの
@@ -209,8 +211,24 @@ vignette・熱い溶岩を **JSON の保存だけで即調整できる**形で�
 （world の 2 軸を uv として読ませる `shift`。床なら X と Z、東西を向く壁なら Z と Y）。
 `use` は面の基準 uv で 1 回だけ評価するので、`atWorld(p, ref("rock"))` と外から包んでも world を読まない —
 **`atWorld` は `shared` の定義の側に書く**（`("rock", atWorld(p, fbm))` と置いてから `use("rock")` で引く）。
-材質は「光を当てる前の色」（out の色と α）と、任意で「自分で光る色」（`Material3d.emission`。光の計算の後に足す）を返す。
-3D の材質は `tex` / `blur` を読まない（0 になる）。
+材質は「光を当てる前の色」（out の色と α）と、任意で「自分で光る色」（`Scene3d.withEmission`。光の計算の後に足す）を返す。
+材質は `Scene3d.material(spec) |> Scene3d.withParams(…) |> Scene3d.withCutout(true)` の形で作る（閉じた型。中身は `materialFieldsOf`）。
+
+### 3D の材質で絵を読む（`tex` / `blur` / `uv`）**[新]**
+
+- uv は頂点の uv（`Mesh3d.withUvs`・`fromTexturedPolygons`・`withBoxUvs`）。(0, 0) が絵の左上で、v は絵の下へ増える。
+  uv の無い形では (0, 0)。uv とタンジェントは**読み込みの時に 1 回**付ける（毎コマ View で付けると、そのたびに中身の鍵の SHA を取り直す）。
+- 絵の名前は `tex3d:` で始まれば場面の `textures`（`Texture3d.name`）、ほかは全体の登録（project.json の textures・レンダーターゲット）から引く。
+  どちらにも無ければ 0（黒・透明）で、名前ごとに 1 回知らせる。
+- 0〜1 の外の uv は材質の `Scene3d.withWrap`（既定は `Repeat`。`Clamp` は端の色を伸ばす）。2D の面の `tex` はいつも端の色を伸ばす。
+- 1 つの材質が読める (名前, 補間) の組は `Scene3d.maxMaterialTextures()`（6）まで。7 組目からは 0 で描き、材質ごとに 1 回知らせる。
+- 絵 1 枚 × 頂点の色なら `Scene3d.texturedMaterial(名前, FilterMode.Nearest)`。頂点の色が灰色の形（Kd の無い OBJ の材質は 0.6）に貼ると、その分だけ暗くなる。
+- 絵の色は sRGB を線形へ戻さずにそのまま光の計算に入れる（頂点の色と同じ）。
+- 3D の材質の `tex` と法線マップは段（mipmap）つきで読む。段は `Mip.build`（2 × 2 の平均）で作り、読む段は読む座標の画面の微分から
+  `Mip.lodOf` の式で選ぶ（GL と描き出しで同じ）。`blur` と cutout の α は段 0 で読む。レンダーターゲットの名前は段を作らずに読む。
+- 法線マップは `Scene3d.withNormalMap({ texture = 名前, strength = 1.0 })`（タンジェント空間・OpenGL 流＝緑が絵の上・赤が絵の右。
+  Blender と glTF と同じ）。uv つきの形にだけ当たり、uv の無い形では形ごとに 1 回知らせて無視する。材質の wrap が掛かり、Linear で読む。
+  光の計算は傾けた法線で行い、Spec の `normal` は当てる前の法線を読む。
 
 ### ぼかしのコスト（正直な試算）
 
@@ -227,7 +245,50 @@ vignette・熱い溶岩を **JSON の保存だけで即調整できる**形で�
   効き方は 1 コマあたりなので、尾の長さを秒で決めるなら遊びの時計の dt から係数を作る（docs/clock.md）。
 - **まだ描いていない pass**（後ろに宣言した pass・このコマで宣言していない古い pass）を読むと黒になり、1 回だけ知らせる。
 - 倍率は `App.withPassPlan` に `{ targets = Map#{ "名前" => { scale = 0.5 | RenderTarget.defaultDescriptor() } } | Render.passPlan(passes) }`。
+- 3D や後処理を画面の解像度で描くなら、作り方を `RenderTarget.windowDescriptor()`（描き先の画素 × scale。窓の実際の大きさ・動画やスクリーンショットの書き出しの倍率に付いてくる）にする。
+  scale は design でも窓でも 0 より大きく 1 以下で、外の値（2.0 など）は 1 に直して `[render] pass: … scale … の外` と 1 回知らせる。
+  描き出し（CPU）では、Window の Pass を sprite で貼ると design の寸法に縮めた絵になる（面の tex で読むと書き出しの画素のまま）。
   描き出しは同じ計画を `Render.passSpecsOf` に渡す。sprite で貼ると常に Nearest（1 テクセルが塊になる）・なめらかに広げるなら面で `sampler` を通して読む。
+
+### テクセルの数（`texSize`）と読みの数え方 **[新]**
+
+- 実機は `float(textureSize(uTexN, 0).x)`、描き出しは texEnv の絵の寸法を読む（uniform で寸法を渡さないので、縮んだ pass でも
+  GL と同じテクセルの数になる）。
+- `texSize` も「読み」として数える: 同じ名前の `tex` / `blur` があればその sampler に相乗りし、無ければ Nearest の 1 組が増える。
+  3D の材質の絵の上限（`Scene3d.maxMaterialTextures()`）でも 1 組。pass の読みの決まり（自分の名前は history・まだ描いていない pass は黒）も
+  `tex` と同じに掛かる（まだ描いていない pass の寸法は 0）。
+
+## 後処理（`PostProcess`）— トーンマップと FXAA **[新]**
+
+1 を超える明るさを持てる pass（`RenderTarget.withHdr`）に本編を描き、最後に 0..1 へなめらかに収める（トーンマッピング）。
+その後で縁のギザギザをならす（FXAA）。どちらも今の場と `shared` だけで組んだ Spec なので、実機と描き出しが同じ木を評価する。
+
+```flix
+// 本編の面（Rgba16Float の pass "scene" を読む）をトーンマップして、窓の画素の Rgba8Unorm の pass "post" へ。
+let toned = PostProcess.tonemapped(PostProcess.Tonemap.AcesFitted, PostProcess.defaultExposure(),
+                                   PostProcess.defaultWhitePoint(), mainSpec);
+// 色調は 0..1 を前提にするので、トーンマップの後に同じ面の中で掛ける（after が受けるのは pp_tr / pp_tg / pp_tb の use）。
+let warm = (field, k) -> ShaderDoc.Field.Bin({ op = ShaderDoc.BinOp.Mul, a = field, b = ShaderDoc.Field.Const(k) });
+let graded = PostProcess.tonemappedWith(PostProcess.Tonemap.AcesFitted, 0.4, 4.0,
+                                        (r, g, b) -> ShaderDoc.Shade.Rgb({ r = r, g = warm(g, 0.95), b = warm(b, 0.85) }), mainSpec);
+// "post" を FXAA でならして画面へ。
+let aa = PostProcess.fxaaSpec("post");
+```
+
+- **曲線**: `AcesFitted`（Narkowicz 2015 の ACES の近似を白の点の値で割る）・`Reinhard`（拡張 Reinhard `x(1 + x/W²)/(1 + x)`）。
+  どちらも白の点 W でちょうど 1 になる（W が 0 以下なら白の点でそろえず、AcesFitted は式のまま・Reinhard は `x/(1 + x)`）。
+  露出は `2^stops` を掛ける。既定は 0.4 stop・W = 4.0 で、8bit の白 1.0 は AcesFitted でおよそ 0.83〜0.9・Reinhard でおよそ 0.62 になる
+  （ガンマのままの値をトーンマップするので、白を戻すのは露出の役目）。
+- **露出の目安**: 色をガンマのまま扱う今は、既定の +0.4 では中間の明るさも持ち上がり、画面が白っぽくなる（AcesFitted で 0.3 → 0.55）。
+  中間の明るさを保つなら −0.6 前後（0.3 → 0.3）。白の伸びより中間の色を優先する画面はこちらから始める。
+- **名前**: 包んだ面の名前は `tonemap:曲線:露出:白の点:元の名前`（実機の program の控えは名前を鍵にするので、包む前の面と取り違えない）。
+  `after` は名前に入らないので、after だけ違う面を同じコマに並べるなら元の Spec の名前を変えて渡す。`cycleRate` は 0 になる（往復は `pp_f` に写してある）。
+- **形**: 色の場は `shared` の `pp_r` / `pp_g` / `pp_b` に 1 回だけ置く（Ramp・Gradient・Cosine は係数の場を `pp_f` に置き、
+  `cycleRate` の往復も写す）。元の Spec の `shared` に `pp_` で始まるこれらの名前があると、トーンマップせずに元のまま描き、1 行知らせる。
+- **FXAA** は斜めの 4 点と真ん中の明るさ（`luma709`）から縁の向きを出し、向きに沿った 4 点を Linear で読んで混ぜる（読みは 27 回）。
+  読む pass は**トーンマップ済みの Rgba8Unorm・窓の画素**（`RenderTarget.windowDescriptor()`・scale 1）を前提にする。
+  縮んだ pass では 1 テクセルが 1 画素にならず、ならし方がずれる。α は 1。
+- HUD と UI はトーンマップしない（本編の面だけを包む）。
 
 ## 生成での注意
 

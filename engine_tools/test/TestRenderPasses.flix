@@ -30,8 +30,12 @@ mod TestRenderPasses {
           outDir = "build/test/renderpasses", frameW = 4, frameH = 4,
           gifDelayMs = 66, gifFps = 15, shapeAntialias = true, textAntialias = true }
 
+    /// pass を描き出して 8bit の画像で受け取る（prev は 8bit の前の中身）。
+    def renderArgb(c: HeadlessRender.RenderConfig, p: HeadlessRender.PassSpec, prev: Option[BufferedImage]): BufferedImage \ IO =
+        SoftRaster.toArgbImage(HeadlessRender.renderPassImage(c, p, Option.map(SoftRaster.PassImage.Rgba8Unorm, prev)))
+
     def emptyPass(op: RenderTarget.LoadOp): HeadlessRender.PassSpec =
-        { name = "paper", clear = op, drawables = Nil, polygons = Nil, surfaces = Nil, scenes = Nil, scale = 1.0 }
+        { name = "paper", clear = op, drawables = Nil, polygons = Nil, surfaces = Nil, scenes = Nil, target = RenderTarget.defaultDescriptor() }
 
     /// 最小の Drawable（テクスチャ名だけ指定。位置・拡大は個々のテストで上書きする）。
     def drawable(texture: String): GameEngine.Drawable =
@@ -45,7 +49,7 @@ mod TestRenderPasses {
     @Test
     def testRenderPassImageClearColorFillsWholeTarget(): Unit \ {Assert, IO} =
         let img: BufferedImage =
-            HeadlessRender.renderPassImage(cfg(1),
+            renderArgb(cfg(1),
                 emptyPass(RenderTarget.LoadOp.Clear({ r = 1.0, g = 0.0, b = 0.0 })), None);
         Assert.assertEq(expected = (255, 255, 0, 0) :: (255, 255, 0, 0) :: Nil,
             channels(img.getRGB(0i32, 0i32)) :: channels(img.getRGB(3i32, 3i32)) :: Nil)
@@ -54,17 +58,17 @@ mod TestRenderPasses {
     @Test
     def testRenderPassImageNoneKeepsPrevContent(): Unit \ {Assert, IO} =
         let prev: BufferedImage =
-            HeadlessRender.renderPassImage(cfg(1),
+            renderArgb(cfg(1),
                 emptyPass(RenderTarget.LoadOp.Clear({ r = 0.0, g = 0.0, b = 1.0 })), None);
         let img: BufferedImage =
-            HeadlessRender.renderPassImage(cfg(1), emptyPass(RenderTarget.LoadOp.Keep), Some(prev));
+            renderArgb(cfg(1), emptyPass(RenderTarget.LoadOp.Keep), Some(prev));
         Assert.assertEq(expected = (255, 0, 0, 255), channels(img.getRGB(2i32, 2i32)))
 
     // clear Keep で prev が無ければ透明から（ターゲットを作った直後の 1 コマ目と同じ）。
     @Test
     def testRenderPassImageNoneWithoutPrevStartsTransparent(): Unit \ {Assert, IO} =
         let img: BufferedImage =
-            HeadlessRender.renderPassImage(cfg(1), emptyPass(RenderTarget.LoadOp.Keep), None);
+            renderArgb(cfg(1), emptyPass(RenderTarget.LoadOp.Keep), None);
         Assert.assertEq(expected = (0, 0, 0, 0), channels(img.getRGB(0i32, 0i32)))
 
     // extraImages の絵（2×2）を design (1,1) に置き scale=2 で描き出すと、出力 (2,2) は
@@ -80,7 +84,7 @@ mod TestRenderPasses {
               polygons = Nil, design = c#design, scale = c#scale, background = c#background,
               texturePath = c#texturePath, fontTtf = c#fontTtf, fontAtlas = c#fontAtlas,
               outPath = "", shapeAntialias = true, textAntialias = true, scenes = Nil };
-        let img = SoftRaster.renderToImageFull(req, Nil, Map.empty(), Map#{"paper" => paper});
+        let img = SoftRaster.renderToImageFull(req, Nil, Map.empty(), Map#{"paper" => SoftRaster.PassImage.Rgba8Unorm(paper)});
         Assert.assertEq(expected = (255, 0, 255, 0), channels(img.getRGB(2i32, 2i32)))
 
     // シェーダー面の tex 場が pass の描き出し（extraImages）を読める。
@@ -108,7 +112,7 @@ mod TestRenderPasses {
                            alpha = ShaderDoc.Field.Const(1.0) }) },
               time = 0.0, mask = Nil, zIndex = 0, blend = DrawCmd.BlendMode.Normal };
         let img = SoftRaster.renderToImageFull(req, surface :: Nil, Map.empty(),
-                                               Map#{"paper" => paper});
+                                               Map#{"paper" => SoftRaster.PassImage.Rgba8Unorm(paper)});
         Assert.assertEq(expected = (255, 0, 255, 0) :: (255, 255, 0, 0) :: Nil,
             channels(img.getRGB(1i32, 1i32)) :: channels(img.getRGB(3i32, 3i32)) :: Nil)
 
@@ -127,7 +131,7 @@ mod TestRenderPasses {
             let p: HeadlessRender.PassSpec =
                 { name = "paper",
                   clear = RenderTarget.LoadOp.Clear({ r = t, g = 0.0, b = 0.0 }),
-                  drawables = Nil, polygons = Nil, surfaces = Nil, scenes = Nil, scale = 1.0 };
+                  drawables = Nil, polygons = Nil, surfaces = Nil, scenes = Nil, target = RenderTarget.defaultDescriptor() };
             (p :: Nil, drawable("paper") :: Nil,
              (Nil: List[GameEngine.PolygonRenderCmd]), (Nil: List[SoftRaster.SurfaceCmd]))
         };
@@ -184,8 +188,8 @@ mod TestRenderPasses {
     @Test
     def testPassSurfaceIsPaintedInBothClearBranches(): Unit \ {Assert, IO} =
         let green = faceOf(ShaderDoc.Shade.Solid({ r = 0.0, g = 1.0, b = 0.0 }));
-        let cleared = HeadlessRender.renderPassImage(cfg(1), withSurface(green, emptyPass(RenderTarget.LoadOp.Clear({ r = 1.0, g = 0.0, b = 0.0 }))), None);
-        let transparent = HeadlessRender.renderPassImage(cfg(1), withSurface(green, emptyPass(RenderTarget.LoadOp.ClearTransparent)), None);
+        let cleared = renderArgb(cfg(1), withSurface(green, emptyPass(RenderTarget.LoadOp.Clear({ r = 1.0, g = 0.0, b = 0.0 }))), None);
+        let transparent = renderArgb(cfg(1), withSurface(green, emptyPass(RenderTarget.LoadOp.ClearTransparent)), None);
         Assert.assertEq(expected = (0, 255, 0) :: (0, 255, 0) :: Nil,
             rgbOf(cleared.getRGB(1i32, 1i32)) :: rgbOf(transparent.getRGB(1i32, 1i32)) :: Nil)
 
@@ -193,9 +197,9 @@ mod TestRenderPasses {
     @Test
     def testPassSurfaceReadsEarlierPass(): Unit \ {Assert, IO} =
         let blue = faceOf(ShaderDoc.Shade.Solid({ r = 0.0, g = 0.0, b = 1.0 }));
-        let first = HeadlessRender.renderPassImage(cfg(1), withSurface(blue, emptyPass(RenderTarget.LoadOp.ClearTransparent)), None);
-        let second = HeadlessRender.renderPassImageWith(cfg(1), Map#{ "paper" => first },
-            withSurface(passThrough("paper"), { name = "copy" | emptyPass(RenderTarget.LoadOp.ClearTransparent) }), None);
+        let first = renderArgb(cfg(1), withSurface(blue, emptyPass(RenderTarget.LoadOp.ClearTransparent)), None);
+        let second = SoftRaster.toArgbImage(HeadlessRender.renderPassImageWith(cfg(1), Map#{ "paper" => SoftRaster.PassImage.Rgba8Unorm(first) },
+            withSurface(passThrough("paper"), { name = "copy" | emptyPass(RenderTarget.LoadOp.ClearTransparent) }), None));
         Assert.assertEq(expected = (0, 0, 255), rgbOf(second.getRGB(2i32, 2i32)))
 
     // 自分の history（"paper@history"）は描き出しでは毎回透明 = rgb 0 を読む。本編で貼ると黒。
@@ -220,13 +224,13 @@ mod TestRenderPasses {
           zIndex = 0, style = None, clip = None, blend = DrawCmd.BlendMode.Normal, mask = Nil })
 
     def halfPass(): HeadlessRender.PassSpec =
-        { drawables = whiteBoxRight() :: Nil, scale = 0.5 | emptyPass(RenderTarget.LoadOp.Clear({ r = 0.0, g = 0.0, b = 0.0 })) }
+        { drawables = whiteBoxRight() :: Nil, target = { scale = 0.5 | RenderTarget.defaultDescriptor() } | emptyPass(RenderTarget.LoadOp.Clear({ r = 0.0, g = 0.0, b = 0.0 })) }
 
     // scale 0.5 の pass はテクセル寸法 2×2 で、テクセル i は design の点 2i+1 を塗る:
     // テクセル 0（点 1）は箱の外の黒・テクセル 1（点 3）は箱（2..4）の白。
     @Test
     def testHalfPassPicksTexelCenters(): Unit \ {Assert, IO} =
-        let img = HeadlessRender.renderPassImage(cfg(1), halfPass(), None);
+        let img = renderArgb(cfg(1), halfPass(), None);
         Assert.assertEq(expected = (2, 2, (0, 0, 0), (255, 255, 255)),
                         (img.getWidth(), img.getHeight(), rgbOf(img.getRGB(0i32, 0i32)), rgbOf(img.getRGB(1i32, 0i32))))
 
@@ -247,7 +251,39 @@ mod TestRenderPasses {
         let prev = new BufferedImage(2i32, 2i32, 2i32);
         prev.setRGB(0i32, 0i32, argb(255, 10, 20, 30));
         prev.setRGB(1i32, 1i32, argb(255, 200, 100, 50));
-        let img = HeadlessRender.renderPassImage(cfg(1), { scale = 0.5 | emptyPass(RenderTarget.LoadOp.Keep) }, Some(prev));
+        let img = renderArgb(cfg(1), { target = { scale = 0.5 | RenderTarget.defaultDescriptor() } | emptyPass(RenderTarget.LoadOp.Keep) }, Some(prev));
         Assert.assertEq(expected = (10, 20, 30) :: (200, 100, 50) :: Nil,
                         rgbOf(img.getRGB(0i32, 0i32)) :: rgbOf(img.getRGB(1i32, 1i32)) :: Nil)
+
+    // ── 描き先の画素を基準にした pass（RenderTarget.Basis.Window）──
+
+    /// 書き出しの倍率 scale で描いた pass の寸法。
+    def passSize(scale: Int32, basis: RenderTarget.Basis): (Int32, Int32) \ IO =
+        let img = renderArgb(cfg(scale), { target = { basis = basis | RenderTarget.defaultDescriptor() } | emptyPass(RenderTarget.LoadOp.ClearTransparent) }, None);
+        (img.getWidth(), img.getHeight())
+
+    // Window の pass は書き出しの倍率 2 で design の 2 倍の寸法、Design の pass は design のまま。
+    @Test
+    def testWindowPassFollowsExportScale(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = ((8, 8), (4, 4)), (passSize(2, RenderTarget.Basis.Window), passSize(2, RenderTarget.Basis.Design)))
+
+    /// 赤い板（x/z が −1..−0.3。design の x 0..1.4 に写る）と青い地の 3D の場面を描いた pass の 1 行（y = design の 2）の色。
+    def plateRow(scale: Int32, basis: RenderTarget.Basis): List[(Int32, Int32, Int32, Int32)] \ IO =
+        let red = { r = 1.0, g = 0.0, b = 0.0 };
+        let plate = Scene3d.meshInstance(Mesh3d.fromPolygons(
+            { points = Vec3.v3(-2.0, 2.0, 2.0) :: Vec3.v3(-0.6, 2.0, 2.0) :: Vec3.v3(-0.6, -2.0, 2.0) :: Vec3.v3(-2.0, -2.0, 2.0) :: Nil,
+              color = red } :: Nil), Mat4.identity());
+        let camera = { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.5707963267948966, near = 0.1, far = 100.0 };
+        let base = Scene3d.scene(camera, { x = 4.0, y = 4.0 });
+        let scene = { instances = plate :: Nil, environment = { background = Some({ r = 0.0, g = 0.0, b = 1.0 }) | base#environment } | base };
+        let img = renderArgb(cfg(scale),
+            { target = { basis = basis | RenderTarget.defaultDescriptor() }, scenes = { at = { x = 0.0, y = 0.0 }, clip = None, scene = scene } :: Nil | emptyPass(RenderTarget.LoadOp.ClearTransparent) }, None);
+        let y = img.getHeight() / 2;
+        List.range(0, img.getWidth()) |> List.map(x -> channels(img.getRGB(x, y)))
+
+    // Window の pass の 3D の縁は書き出しの 1 画素で切れる: 倍率 2 では板が 3 画素（design の 1.5 画素ぶん）・Design の pass は design の 1 画素。
+    @Test
+    def testWindowPassDrawsSceneEdgeAtExportPixels(): Unit \ {Assert, IO} =
+        let redCount = (row: List[(Int32, Int32, Int32, Int32)]) -> List.count(c -> { let (_, r, g, b) = c; r == 255 and g == 0 and b == 0 }, row);
+        Assert.assertEq(expected = (3, 1), (redCount(plateRow(2, RenderTarget.Basis.Window)), redCount(plateRow(2, RenderTarget.Basis.Design))))
 }

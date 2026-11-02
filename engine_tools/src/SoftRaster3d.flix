@@ -13,8 +13,14 @@
 //            spotDir = normalize(target − position)・smoothstep(a, b, x) = t² (3 − 2t)、t = clamp((x − a) / (b − a), 0, 1)
 //   toonSteps > 0 なら light の各成分を floor(light × steps + 0.5) / steps に丸める
 //   色     = 頂点の色 × tint × light
-//   材質のある置いた物: 色 = albedo × tint × light（頂点の色は掛けない）・fog の後に emission を足す
-//            albedo・α・emission = ShaderEval.evalMaterial3(world の点, 法線, 時刻)。cutout なら α < materialCutoff() の画素を捨てる（深度も書かない）
+//   材質のある置いた物: 色 = albedo × tint × light（頂点の色は掛けない。材質の Spec が VertexColor で読む）・fog の後に emission を足す
+//            albedo・α・emission = ShaderEval.evalMaterial3(world の点・法線・uv・頂点の色, 時刻)。cutout なら α < materialCutoff() の画素を捨てる（深度も書かない）
+//            材質の Tex の名前は "tex3d:" なら場面の textures、ほかは全体の登録から引いた絵（drawScene の textures）。
+//            段つきの絵は lod を求めて段を読む（ShaderEval.evalMaterial3Mip。右隣と下隣の画素の入力は、三角形の重みを外へ延ばして求める）。
+//            cutout の α は段 0 で読む。
+//            1 つの材質が読む絵の組は Scene3d.maxMaterialTextures() まで（後ろの組は 0。GL と同じ）。
+//            法線マップ（uv つきの形だけ・材質の wrap・Linear）: T = normalize(T − N (N·T))・B = cross(N, T) × w・c = 絵の rgb・
+//            m = ((c.x·2 − 1)·s, (c.y·2 − 1)·s, c.z·2 − 1)・n' = normalize(T m.x + B m.y + N m.z)。光の計算は n'、Spec の Normal は当てる前の N。
 //   fog    = clamp((|点 − 目| − near) / max(far − near, 1e-6), 0, 1) の割合で fog の色へ寄せる
 //   range は 1e-6 未満にしない（0 割りを避ける）
 //   Output.Depth の灰色 = clamp((|点 − 目| − near) / max(range, 1e-6), 0, 1)（目からの直線の距離。view の z ではない）
@@ -209,11 +215,11 @@ pub mod SoftRaster3d {
     // 場面 1 つを下地へ
     // ════════════════════════════════════════════════════════
 
-    /// 場面 cmd を image へ重ねる。sf = design px → 出力の画素の倍率。textures = ビルボードが引く絵（名前 → 画素）。
+    /// 場面 cmd を image へ重ねる。sf = design px → 出力の画素の倍率。textures = ビルボードと材質が引く絵（名前 → 段の列。段 0 が元の絵）。
     /// time = 材質の Spec に渡す秒（Shader 面の time と同じ物）。
     /// Native は出力の画素で塗り、Design は design の画素で塗ってから最も近い画素で広げる。
     /// 何も描かれない画素は background が Some ならその色、None なら透明（下地が見える）。重ね方は Shader 面と同じ blendPixel。
-    pub def drawScene(image: BufferedImage, sf: Float64, textures: Map[String, ShaderEval.TexData],
+    pub def drawScene(image: BufferedImage, sf: Float64, textures: Map[String, Vector[ShaderEval.TexData]],
                       time: Float64, cmd: Scene3d.RenderCmd): Unit \ IO = region rc {
         let scene = cmd#scene;
         let (rx0, ry0, rx1, ry1) = DrawCmd.clipPixels({ scaleX = sf, scaleY = sf }, { position = cmd#at, size = scene#size });
@@ -236,7 +242,8 @@ pub mod SoftRaster3d {
                 case Scene3d.Resolution.Design =>
                     (Int32.max(1, roundInt(scene#size#x)), Int32.max(1, roundInt(scene#size#y)))
             };
-            let layer = renderLayer(scene, lw, lh, textures, time);
+            let layer: Array[Int32, Static] = Array.repeat(Static, lw * lh, 0);
+            renderLayer(scene, lw, lh, textures, time, LayerOut.Argb(layer));
             let buf: Array[Int32, rc] = Array.empty(rc, w * h);
             discard image.getRGB(x0, y0, w, h, buf, 0, w);
             List.range(0, h) |> List.forEach(j -> {
@@ -251,6 +258,61 @@ pub mod SoftRaster3d {
         }
     }
 
+    /// drawScene の Rgba16Float の描き先版。rgba = 描き先（1 画素に r, g, b, α の 4 つ）・size = その幅と高さ。
+    /// 層は色を切らずに塗り（emission が 1 を超えて残る）、SoftRaster.blendPixelF の Normal で重ねる。
+    pub def drawSceneHdr(rgba: Array[Float64, Static], size: (Int32, Int32), sf: Float64, textures: Map[String, Vector[ShaderEval.TexData]],
+                         time: Float64, cmd: Scene3d.RenderCmd): Unit \ IO =
+        let (width, height) = size;
+        let scene = cmd#scene;
+        let (rx0, ry0, rx1, ry1) = DrawCmd.clipPixels({ scaleX = sf, scaleY = sf }, { position = cmd#at, size = scene#size });
+        let dw = rx1 - rx0;
+        let dh = ry1 - ry0;
+        let (cx0, cy0, cx1, cy1) = match cmd#clip {
+            case None    => (rx0, ry0, rx1, ry1)
+            case Some(r) => DrawCmd.clipPixels({ scaleX = sf, scaleY = sf }, r)
+        };
+        let x0 = Int32.max(0, Int32.max(rx0, cx0));
+        let y0 = Int32.max(0, Int32.max(ry0, cy0));
+        let x1 = Int32.min(width, Int32.min(rx1, cx1));
+        let y1 = Int32.min(height, Int32.min(ry1, cy1));
+        let w = x1 - x0;
+        let h = y1 - y0;
+        if (dw <= 0 or dh <= 0 or w <= 0 or h <= 0 or scene#size#x <= 0.0 or scene#size#y <= 0.0) ()
+        else {
+            let (lw, lh) = match scene#resolution {
+                case Scene3d.Resolution.Native => (dw, dh)
+                case Scene3d.Resolution.Design =>
+                    (Int32.max(1, roundInt(scene#size#x)), Int32.max(1, roundInt(scene#size#y)))
+            };
+            let layer: Array[Float64, Static] = Array.repeat(Static, lw * lh * 4, 0.0);
+            renderLayer(scene, lw, lh, textures, time, LayerOut.Rgba(layer));
+            List.range(0, h) |> List.forEach(j -> {
+                let ly = nearestIndex(y0 + j - ry0, dh, lh);
+                List.range(0, w) |> List.forEach(i -> {
+                    let k = (ly * lw + nearestIndex(x0 + i - rx0, dw, lw)) * 4;
+                    SoftRaster.blendPixelF(DrawCmd.BlendMode.Normal, Array.get(k, layer), Array.get(k + 1, layer), Array.get(k + 2, layer),
+                                           Array.get(k + 3, layer), rgba, (y0 + j) * width + x0 + i)
+                })
+            })
+        }
+
+    /// 層の画素の置き場。Argb = 8bit（argbOfRgba で 0..1 に切る）・Rgba = 1 画素に r, g, b, α の 4 つ（切らない）。
+    enum LayerOut {
+        case Argb(Array[Int32, Static])
+        case Rgba(Array[Float64, Static])
+    }
+
+    /// 層の画素 i に (r, g, b, a) を書く。
+    def putLayer(out: LayerOut, i: Int32, r: Float64, g: Float64, b: Float64, a: Float64): Unit \ IO =
+        match out {
+            case LayerOut.Argb(argb) => Array.put(SoftRaster.argbOfRgba(r, g, b, a), i, argb)
+            case LayerOut.Rgba(rgba) =>
+                Array.put(r, i * 4, rgba);
+                Array.put(g, i * 4 + 1, rgba);
+                Array.put(b, i * 4 + 2, rgba);
+                Array.put(a, i * 4 + 3, rgba)
+        }
+
     /// 出力の画素 o（0..outN−1）が拾う層の画素（0..srcN−1）。同じ数なら o のまま。
     def nearestIndex(o: Int32, outN: Int32, srcN: Int32): Int32 =
         if (outN == srcN) o
@@ -260,19 +322,38 @@ pub mod SoftRaster3d {
     // 場面 1 つを lw × lh の ARGB へ
     // ════════════════════════════════════════════════════════
 
-    // 1 頂点の欄の数。clip の段では (clip x, y, z, w, world x, y, z, 法線 x, y, z, 色 r, g, b か uv u, v, 0)、
-    // 画面へ写した後は先頭 4 つが (画面 x, y, NDC の z, 1 / w) に替わる。材質のある置いた物の色の欄は tint だけ。
-    def stride(): Int32 = 13
+    // 1 頂点の欄の数。clip の段では (clip x, y, z, w, world x, y, z, 法線 x, y, z, 色 r, g, b, uv u, v, タンジェント x, y, z, w)、
+    // 画面へ写した後は先頭 4 つが (画面 x, y, NDC の z, 1 / w) に替わる。
+    // 材質の無い物の色の欄は 頂点の色 × tint・材質のある物は頂点の色だけ（tint は Mat）・ビルボードは白で、uv の欄に絵の px。
+    def stride(): Int32 = 19
+
+    def colorSlot(): Int32 = 10
+
+    def uvSlot(): Int32 = 13
+
+    def tangentSlot(): Int32 = 15
 
     /// 画面へ写した三角形 1 枚。頂点 3 つ（stride() 個ずつ）・符号つきの面積（画面の px²）・
     /// ビルボードの番号（メッシュは −1）・材質の番号（材質の無い物とビルボードは −1）。
     enum Tri { case Tri(Vector[Float64], Float64, Int32, Int32) }
 
-    /// 置いた物 1 つの材質。組み直した Spec（Param は値に置き換え済み）・cutout。
-    enum Mat { case Mat(ShaderEval.CompiledSpec, Bool) }
+    /// 置いた物 1 つの材質。組み直した Spec（Param は値に置き換え済み）・cutout・置いた物の tint r, g, b・法線マップ。
+    enum Mat { case Mat(ShaderEval.CompiledSpec, Bool, Float64, Float64, Float64, Option[NormalMapping]) }
 
-    def matOf(m: Scene3d.Material3d): Mat =
-        Mat.Mat(ShaderEval.compileMaterial(m#spec, m#emission, m#params), m#cutout)
+    /// 当てる法線マップ。絵の段の列・strength・0..1 の外の uv を繰り返すか。
+    type alias NormalMapping = { texture = Vector[ShaderEval.TexData], strength = Float64, repeat = Bool }
+
+    /// hasUv = 形が uv を持つか（uv の無い形には法線マップを当てない。GL と同じ）。法線マップの絵が無ければ透明な黒で読む（GL の代わりの絵と同じ）。
+    def matOf(textures: Map[String, Vector[ShaderEval.TexData]], tint: Color, hasUv: Bool, m: Scene3d.Material3d): Mat =
+        let f = Scene3d.materialFieldsOf(m);
+        let (spec, emission) = ShaderDoc.limitMaterialTexReads(Scene3d.maxMaterialTextures(), f#spec, f#emission);
+        let repeat = f#wrap == Scene3d.Wrap.Repeat;
+        let compiled = ShaderEval.compileMaterial({ spec = spec, emission = emission, params = f#params, textures = textures,
+                                                    repeat = repeat });
+        let normal = if (not hasUv) None else f#normalMap |> Option.map(n ->
+            { texture = Map.getWithDefault(n#texture, Vector#{ { width = 1, height = 1, pixels = Vector#{0} } }, textures),
+              strength = n#strength, repeat = repeat });
+        Mat.Mat(compiled, f#cutout, tint#r, tint#g, tint#b, normal)
 
     /// 置いた物ごとの材質の番号（材質の無い物は −1）。番号は材質のある物だけを前から数える。
     def numberMaterials(placed: List[Placed]): List[(Placed, Int32)] =
@@ -282,11 +363,13 @@ pub mod SoftRaster3d {
         }, (0, Nil));
         List.reverse(numbered)
 
-    /// 置いた物 1 つの中身と、ジョイントで曲げた後の頂点の位置と法線（形の座標・頂点ごとに 3 つ。曲げない物は形のまま）。
-    type alias Placed = { fields = Scene3d.InstanceFields, positions = Vector[Float64], normals = Vector[Float64] }
+    /// 置いた物 1 つの中身と、ジョイントで曲げた後の頂点の位置と法線（形の座標・頂点ごとに 3 つ。曲げない物は形のまま）と
+    /// タンジェント（頂点ごとに 4 つ・w はそのまま。uv の無い形は None）。
+    type alias Placed = { fields = Scene3d.InstanceFields, positions = Vector[Float64], normals = Vector[Float64],
+                          tangents = Option[Vector[Float64]] }
 
     /// 置いた物 i を、Scene3d.skinningOf が Some なら曲げて Placed にする（GL の Render3d の頂点シェーダーと同じ式）:
-    ///   位置 = Σ w_k × (jointMatrices[j_k] × p)・法線 = Σ w_k × (jointMatrices[j_k] の左上 3×3 × n)
+    ///   位置 = Σ w_k × (jointMatrices[j_k] × p)・法線とタンジェントの xyz = Σ w_k × (jointMatrices[j_k] の左上 3×3 × n)
     /// world と normalMatrix(world) は instanceTris が後から掛ける。
     // WhyNot: instanceTris の中で曲げない — 影の地図と画面の 2 回通るので、置いた物ごとに 1 回で済むようここで曲げる。
     // WhyNot: 法線に skin の逆行列の転置を使わない — ジョイントの倍率が軸ごとに違うと少しずれるが、GL も左上 3×3 のままで、両方の絵がそろう方を取る。
@@ -297,13 +380,13 @@ pub mod SoftRaster3d {
             joints <- Mesh3d.skinJoints(f#mesh);
             weights <- Mesh3d.skinWeights(f#mesh)
         ) yield bendVertices(Pose3d.jointMatrices(pose), joints, weights, f#mesh);
-        let (positions, normals) = Option.getWithDefault((Mesh3d.positions(f#mesh), Mesh3d.normals(f#mesh)), bent);
-        { fields = f, positions = positions, normals = normals }
+        let (positions, normals, tangents) = Option.getWithDefault((Mesh3d.positions(f#mesh), Mesh3d.normals(f#mesh), Mesh3d.tangents(f#mesh)), bent);
+        { fields = f, positions = positions, normals = normals, tangents = tangents }
 
-    /// 形 mesh の頂点を、頂点ごとの 4 つのジョイント（joints の番号・weights の重み。頂点 k は [4k, 4k + 4)）で曲げた位置と法線。
+    /// 形 mesh の頂点を、頂点ごとの 4 つのジョイント（joints の番号・weights の重み。頂点 k は [4k, 4k + 4)）で曲げた位置と法線とタンジェント。
     // WhyNot: 重み 0 の欄を飛ばす — 足しても値が変わらず、多くの頂点は 1〜2 本しか使わない。
     def bendVertices(matrices: Vector[Mat4.Mat4], joints: Vector[Int32], weights: Vector[Float64],
-                     mesh: Mesh3d.Mesh3d): (Vector[Float64], Vector[Float64]) =
+                     mesh: Mesh3d.Mesh3d): (Vector[Float64], Vector[Float64], Option[Vector[Float64]]) =
         let blendAt = (move: (Mat4.Mat4, Vec3.Vec3) -> Vec3.Vec3, v: Vec3.Vec3, k: Int32) ->
             List.range(k * 4, k * 4 + 4) |> List.foldLeft((acc, s) -> {
                 let w = Vector.get(s, weights);
@@ -313,7 +396,12 @@ pub mod SoftRaster3d {
         let ns = Mesh3d.normals(mesh);
         let bent = Vector.range(0, Mesh3d.vertexCount(mesh)) |> Vector.map(k ->
             (blendAt(Mat4.apply, vec3At(ps, k), k), blendAt(Mat4.applyDir, vec3At(ns, k), k)));
-        (Vector.flatMap(pair -> xyzOf(fst(pair)), bent), Vector.flatMap(pair -> xyzOf(snd(pair)), bent))
+        let tangents = Mesh3d.tangents(mesh) |> Option.map(ts -> Vector.range(0, Mesh3d.vertexCount(mesh)) |> Vector.flatMap(k -> {
+            let (xyz, w) = vec4At(ts, k);
+            let moved = blendAt(Mat4.applyDir, xyz, k);
+            Vector#{ moved#x, moved#y, moved#z, w }
+        }));
+        (Vector.flatMap(pair -> xyzOf(fst(pair)), bent), Vector.flatMap(pair -> xyzOf(snd(pair)), bent), tangents)
 
     /// 頂点ごとに 3 つ並んだ v の k 番目の頂点。
     def vec3At(v: Vector[Float64], k: Int32): Vec3.Vec3 =
@@ -321,12 +409,16 @@ pub mod SoftRaster3d {
 
     def xyzOf(v: Vec3.Vec3): Vector[Float64] = Vector#{ v#x, v#y, v#z }
 
+    /// 頂点ごとに 4 つ並んだ v の k 番目の頂点（xyz と w）。
+    def vec4At(v: Vector[Float64], k: Int32): (Vec3.Vec3, Float64) =
+        (Vec3.v3(Vector.get(k * 4, v), Vector.get(k * 4 + 1, v), Vector.get(k * 4 + 2, v)), Vector.get(k * 4 + 3, v))
+
     /// ビルボード 1 枚の絵。画素・region の px 矩形（x0, y0, x1, y1。x1・y1 は含まない）・tint r, g, b・光を当てるか。
     enum Ink { case Ink(ShaderEval.TexData, Int32, Int32, Int32, Int32, Float64, Float64, Float64, Bool) }
 
-    /// 場面を lw × lh の ARGB（行優先）に塗る。
+    /// 場面を lw × lh（行優先）の out に塗る。
     def renderLayer(scene: Scene3d.Scene3dCmd, lw: Int32, lh: Int32,
-                    textures: Map[String, ShaderEval.TexData], time: Float64): Array[Int32, Static] \ IO = region rc {
+                    textures: Map[String, Vector[ShaderEval.TexData]], time: Float64, out: LayerOut): Unit \ IO = region rc {
         let cam = scene#camera;
         let picked = Scene3d.pickLights(cam#eye, scene);
         let view = Camera3d.viewMatrix(cam);
@@ -334,12 +426,15 @@ pub mod SoftRaster3d {
         let screen = { w = Int32.toFloat64(lw), h = Int32.toFloat64(lh), near = cam#near };
         let placed = scene#billboards |> List.filterMap(b -> {
             let f = Scene3d.billboardFieldsOf(b);
-            Map.get(f#texture, textures) |> Option.map(tex -> (f, tex))
+            Map.get(f#texture, textures) |> Option.flatMap(Vector.head) |> Option.map(tex -> (f, tex))
         });
         let inks = placed |> List.map(pair -> inkOf(snd(pair), fst(pair))) |> List.toVector;
         let numbered = numberMaterials(scene#instances |> List.map(placedOf));
         // WhyNot: 同じ Spec の材質を 1 つに束ねない — Spec に Eq が無く、束ねる鍵（JSON の字）を作る手間が組み直しと同じくらいかかる。
-        let mats = hoist(rc, numbered |> List.filterMap(pair -> fst(pair)#fields#material) |> List.map(matOf) |> List.toVector);
+        let mats = hoist(rc, numbered |> List.filterMap(pair -> {
+            let fields = fst(pair)#fields;
+            fields#material |> Option.map(matOf(textures, fields#tint, Option.nonEmpty(Mesh3d.uvs(fields#mesh))))
+        }) |> List.toVector);
         let meshTris = numbered |> List.flatMap(pair -> instanceTris(view, proj, screen, true, fst(pair), snd(pair)));
         let billboardTris = List.zipWithIndex(placed) |> List.flatMap(entry -> {
             let (index, (f, _)) = entry;
@@ -356,14 +451,13 @@ pub mod SoftRaster3d {
         let inkTable = hoist(rc, inks);
         let eye = hoist(rc, (cam#eye#x, cam#eye#y, cam#eye#z));
         let fill = hoist(rc, match scene#environment#background {
-            case Some(c) => SoftRaster.argbOfRgba(c#r, c#g, c#b, 1.0)
-            case None    => 0
+            case Some(c) => (c#r, c#g, c#b, 1.0)
+            case None    => (0.0, 0.0, 0.0, 0.0)
         });
         let depthBand = hoist(rc, match scene#output {
             case Scene3d.Output.Color    => None
             case Scene3d.Output.Depth(d) => Some((d#near, d#range))
         });
-        let out: Array[Int32, Static] = Array.repeat(Static, lw * lh, 0);
         forEachRow(lh, y -> region rr {
             let depth: Array[Float64, rr] = Array.repeat(rr, lw, 2.0);
             let winner: Array[Int32, rr] = Array.repeat(rr, lw, -1);
@@ -373,13 +467,12 @@ pub mod SoftRaster3d {
             Vector.get(y, bins) |> List.forEach(ti -> coverRow(lw, py, tris, inkTable, mats, time, ti, depth, winner, w0, w1));
             List.range(0, lw) |> List.forEach(x -> {
                 let ti = Array.get(x, winner);
-                let argb = if (ti < 0) fill
-                           else shadePixel(Vector.get(ti, tris), inkTable, mats, time, lights, fog, eye, depthBand,
+                let (r, g, b, a) = if (ti < 0) fill
+                           else shadePixel(Vector.get(ti, tris), inkTable, mats, time, lights, fog, eye, depthBand, (x, y),
                                            Array.get(x, w0), Array.get(x, w1));
-                Array.put(argb, y * lw + x, out)
+                putLayer(out, y * lw + x, r, g, b, a)
             })
-        });
-        out
+        })
     }
 
     /// 画素ループの外で 1 回だけ計算した値を、そのまま返す。
@@ -458,24 +551,39 @@ pub mod SoftRaster3d {
     type alias Screen = { w = Float64, h = Float64, near = Float64 }
 
     /// clip の段の頂点（stride() 個）。w は目の座標の −z（Mat4.perspective の 4 行目が (0, 0, −1, 0)）。
+    /// rest = 色 3・uv 2・タンジェント 4 の欄。
     // WhyNot: proj × view の 1 本の行列で w を出さない — Mat4 は閉じた型で 4 行目を読めず、apply は w を返さない。
-    def clipVertex(view: Mat4.Mat4, proj: Mat4.Mat4, p: Vec3.Vec3, n: Vec3.Vec3,
-                   a0: Float64, a1: Float64, a2: Float64): Vector[Float64] =
+    def clipVertex(view: Mat4.Mat4, proj: Mat4.Mat4, p: Vec3.Vec3, n: Vec3.Vec3, rest: Vector[Float64]): Vector[Float64] =
         let e = Mat4.apply(view, p);
         let c = Mat4.apply(proj, e);
-        Vector#{ c#x, c#y, c#z, 0.0 - e#z, p#x, p#y, p#z, n#x, n#y, n#z, a0, a1, a2 }
+        Vector.append(Vector#{ c#x, c#y, c#z, 0.0 - e#z, p#x, p#y, p#z, n#x, n#y, n#z }, rest)
 
-    /// 置いた物 placed の三角形（頂点は placedOf で曲げた後の物）。mat = 材質の番号（−1 なら頂点の色 × tint を色の欄に、それ以外は tint だけを入れる）。
+    /// 置いた物 placed の三角形（頂点は placedOf で曲げた後の物）。mat = 材質の番号（−1 なら頂点の色 × tint を色の欄に、それ以外は頂点の色だけを入れる）。
+    /// タンジェントの xyz は world の左上 3×3 で写し（法線の normalMatrix ではない）、world が裏返す行列なら w の符号も裏返す。
     /// cull が真なら裏の三角形を捨てる。
     def instanceTris(view: Mat4.Mat4, proj: Mat4.Mat4, screen: Screen, cull: Bool, placed: Placed, mat: Int32): List[Tri] =
         let f = placed#fields;
         let world = f#world;
         let nm = Mat4.normalMatrix(world);
+        let flip = if (linearDeterminant(world) < 0.0) -1.0 else 1.0;
         let cs = Mesh3d.colors(f#mesh);
-        let colorAt = (k: Int32, channel: Int32) -> if (mat < 0) Vector.get(k * 3 + channel, cs) else 1.0;
+        let uvs = Mesh3d.uvs(f#mesh);
+        let tint = if (mat < 0) f#tint else { r = 1.0, g = 1.0, b = 1.0 };
+        let surfaceAt = (k: Int32) -> {
+            let (u, v) = match uvs {
+                case Some(uv) => (Vector.get(k * 2, uv), Vector.get(k * 2 + 1, uv))
+                case None     => (0.0, 0.0)
+            };
+            let (t, w) = match placed#tangents {
+                case Some(ts) => let (xyz, tw) = vec4At(ts, k); (Vec3.normalized(Mat4.applyDir(world, xyz)), tw * flip)
+                case None     => (Vec3.zero(), 0.0)
+            };
+            Vector#{ Vector.get(k * 3, cs) * tint#r, Vector.get(k * 3 + 1, cs) * tint#g, Vector.get(k * 3 + 2, cs) * tint#b,
+                     u, v, t#x, t#y, t#z, w }
+        };
         let vertices = List.range(0, Mesh3d.vertexCount(f#mesh)) |> List.map(k ->
             clipVertex(view, proj, Mat4.apply(world, vec3At(placed#positions, k)), Vec3.normalized(Mat4.applyDir(nm, vec3At(placed#normals, k))),
-                       colorAt(k, 0) * f#tint#r, colorAt(k, 1) * f#tint#g, colorAt(k, 2) * f#tint#b))
+                       surfaceAt(k)))
             |> List.toVector;
         let idx = Mesh3d.indices(f#mesh);
         List.range(0, Vector.length(idx) / 3) |> List.flatMap(t ->
@@ -483,6 +591,12 @@ pub mod SoftRaster3d {
                        Vector.get(Vector.get(t * 3, idx), vertices) ::
                        Vector.get(Vector.get(t * 3 + 1, idx), vertices) ::
                        Vector.get(Vector.get(t * 3 + 2, idx), vertices) :: Nil))
+
+    /// m の左上 3×3 の行列式（負なら鏡写しにする行列）。
+    def linearDeterminant(m: Mat4.Mat4): Float64 =
+        let c = Mat4.toColumns(m);
+        let col = (j: Int32) -> Vec3.v3(Vector.get(j * 4, c), Vector.get(j * 4 + 1, c), Vector.get(j * 4 + 2, c));
+        Vec3.dot(col(0), Vec3.cross(col(1), col(2)))
 
     /// ビルボード 1 枚の三角形 2 枚。四角はカメラの right / up に沿って立て、anchor の点を position に合わせる。
     /// uv の欄には絵の px（region の中）を入れる。
@@ -496,7 +610,7 @@ pub mod SoftRaster3d {
         let corner = (u: Float64, v: Float64) -> {
             let p = Vec3.add(f#position, Vec3.add(Vec3.mul(right, (u - f#anchor#x) * f#size#x),
                                                   Vec3.mul(up, (f#anchor#y - v) * f#size#y)));
-            clipVertex(view, proj, p, facing, r#position#x + u * r#size#x, r#position#y + v * r#size#y, 0.0)
+            clipVertex(view, proj, p, facing, Vector#{ 1.0, 1.0, 1.0, r#position#x + u * r#size#x, r#position#y + v * r#size#y, 0.0, 0.0, 0.0, 0.0 })
         };
         let tl = corner(0.0, 0.0);
         let tr = corner(1.0, 0.0);
@@ -626,15 +740,81 @@ pub mod SoftRaster3d {
         let (b0, b1, b2, _) = weights;
         Vec3.normalized(Vec3.v3(attr(v, 7, b0, b1, b2), attr(v, 8, b0, b1, b2), attr(v, 9, b0, b1, b2)))
 
+    /// 奥行きで補正した重みでの、材質が読む画素の入力（world の点・法線・uv・頂点の色）。
+    def surfaceAt(v: Vector[Float64], weights: (Float64, Float64, Float64, Float64)): ShaderEval.SurfacePoint =
+        let (b0, b1, b2, _) = weights;
+        let (c, uv) = (colorSlot(), uvSlot());
+        { world = worldAt(v, weights), normal = normalAt(v, weights),
+          uv = { x = attr(v, uv, b0, b1, b2), y = attr(v, uv + 1, b0, b1, b2) },
+          color = { r = attr(v, c, b0, b1, b2), g = attr(v, c + 1, b0, b1, b2), b = attr(v, c + 2, b0, b1, b2) } }
+
+    /// 奥行きで補正した重みでのタンジェント（xyz は長さをそろえない・w は ±1 の補間）。
+    def tangentAt(v: Vector[Float64], weights: (Float64, Float64, Float64, Float64)): (Vec3.Vec3, Float64) =
+        let (b0, b1, b2, _) = weights;
+        let t = tangentSlot();
+        (Vec3.v3(attr(v, t, b0, b1, b2), attr(v, t + 1, b0, b1, b2), attr(v, t + 2, b0, b1, b2)), attr(v, t + 3, b0, b1, b2))
+
+    def normalMappingOf(m: Mat): Option[NormalMapping] =
+        let Mat.Mat(_, _, _, _, _, normal) = m;
+        normal
+
+    /// 三角形 tri の、画面の重み (l0, l1) の画素 pixel と 2 × 2 の区画を組む横隣と縦隣の画素の入力（偶数の列・行は右・下、奇数は左・上）。
+    /// 重みは画面の上で線形なので、隣が三角形の外でも同じ式を外へ延ばす（GL の区画の helper の画素と同じ）。
+    // WhyNot: いつも右隣と下隣を取らない — GL の dFdx / dFdy は 2 × 2 の区画の中の差なので、奇数の列では左隣との差になる。
+    //   右隣で取ると奇数の列の lod が半画素ずれ、段の境目の画素が GL とそろわない（区画は層の左上を原点に取る）。
+    // WhyNot: 段つきの絵を読む材質かを見てから隣を求める形にしない — 法線マップも隣の uv を読むので分岐が 2 つに割れる。ここは重みの
+    //   足し算と surfaceAt 2 回で済み、重い評価（隣の bindings からの評価）は ShaderEval.evalMaterial3Mip が段つきの材質だけで行う。
+    def neighborPoints(tri: Tri, pixel: (Int32, Int32), l0: Float64, l1: Float64): (ShaderEval.SurfacePoint, ShaderEval.SurfacePoint) =
+        let Tri.Tri(v, area, _, _) = tri;
+        let (px, py) = pixel;
+        let stepOf = (k: Int32) -> if (Int32.remainder(k, 2) == 0) 1.0 else -1.0;
+        let (sx, sy) = (stepOf(px), stepOf(py));
+        let s = stride();
+        let (x0, y0, q0) = (Vector.get(0, v), Vector.get(1, v), Vector.get(3, v));
+        let (x1, y1, q1) = (Vector.get(s, v), Vector.get(s + 1, v), Vector.get(s + 3, v));
+        let (x2, y2, q2) = (Vector.get(s * 2, v), Vector.get(s * 2 + 1, v), Vector.get(s * 2 + 3, v));
+        let at = (a: Float64, b: Float64) -> surfaceAt(v, perspectiveWeights(a, b, 1.0 - a - b, q0, q1, q2));
+        (at(l0 - sx * (y2 - y1) / area, l1 - sx * (y0 - y2) / area), at(l0 + sy * (x2 - x1) / area, l1 + sy * (x0 - x2) / area))
+
+    /// 光の計算に使う法線（法線マップが無ければ point の法線のまま。式はファイルの頭）。法線マップは段つきの Linear で読む
+    /// （lod は uv の右隣と下隣との差から Mip.lodOf）。
+    // WhyNot: 長さ 0 のタンジェントで傾けない — 長さ 1 にそろえられず、画素の法線が 0 になる。GL も同じ画素は n のまま。
+    def mappedNormal(normal: Option[NormalMapping], point: ShaderEval.SurfacePoint, neighbors: (ShaderEval.SurfacePoint, ShaderEval.SurfacePoint),
+                     tangent: (Vec3.Vec3, Float64)): Vec3.Vec3 =
+        let n = point#normal;
+        match normal {
+            case None => n
+            case Some(nm) =>
+                let (raw, w) = tangent;
+                let ortho = Vec3.sub(raw, Vec3.mul(n, Vec3.dot(n, raw)));
+                if (Vec3.dot(ortho, ortho) < 1.0e-12) n
+                else {
+                    let t = Vec3.normalized(ortho);
+                    let b = Vec3.mul(Vec3.cross(n, t), w);
+                    let (nextX, nextY) = neighbors;
+                    let (u, uvV) = (point#uv#x, point#uv#y);
+                    let lod = match Vector.head(nm#texture) {
+                        case Some(base) =>
+                            Mip.lodOf({ dudx = nextX#uv#x - u, dvdx = nextX#uv#y - uvV, dudy = nextY#uv#x - u, dvdy = nextY#uv#y - uvV },
+                                      base#width, base#height, Vector.length(nm#texture))
+                        case None => 0.0
+                    };
+                    let (cr, cg, cb) = ShaderEval.sampleMipRgb(nm#texture, { linear = true, repeat = nm#repeat }, lod, u, uvV);
+                    let (mx, my, mz) = ((cr * 2.0 - 1.0) * nm#strength, (cg * 2.0 - 1.0) * nm#strength, cb * 2.0 - 1.0);
+                    let p = Vec3.add(Vec3.add(Vec3.mul(t, mx), Vec3.mul(b, my)), Vec3.mul(n, mz));
+                    if (Vec3.dot(p, p) < 1.0e-12) n else Vec3.normalized(p)
+                }
+        }
+
     /// cutout の材質 m で、この画素の α が materialCutoff() 未満か（cutout でない材質は捨てない）。
     def isCutAway(m: Mat, time: Float64, v: Vector[Float64], weights: (Float64, Float64, Float64, Float64)): Bool =
-        let Mat.Mat(compiled, cutout) = m;
-        cutout and ShaderEval.evalMaterial3(compiled, worldAt(v, weights), normalAt(v, weights), time)#alpha < materialCutoff()
+        let Mat.Mat(compiled, cutout, _, _, _, _) = m;
+        cutout and ShaderEval.evalMaterial3(compiled, surfaceAt(v, weights), time)#alpha < materialCutoff()
 
     def perspectiveUv(v: Vector[Float64], l0: Float64, l1: Float64, l2: Float64,
                       q0: Float64, q1: Float64, q2: Float64): (Float64, Float64) =
         let (b0, b1, b2, _) = perspectiveWeights(l0, l1, l2, q0, q1, q2);
-        (attr(v, 10, b0, b1, b2), attr(v, 11, b0, b1, b2))
+        (attr(v, uvSlot(), b0, b1, b2), attr(v, uvSlot() + 1, b0, b1, b2))
 
     def sampleInk(ink: Ink, u: Float64, v: Float64): Int32 =
         let Ink.Ink(tex, x0, y0, x1, y1, _, _, _, _) = ink;
@@ -646,9 +826,10 @@ pub mod SoftRaster3d {
 
     def channel01(shift: Int32, argb: Int32): Float64 = Int32.toFloat64(SoftRaster.channelOf(shift, argb)) / 255.0
 
-    /// 勝った三角形の画素の色（ARGB・不透明）。
+    /// 勝った三角形の画素の色（r, g, b, α = 1。0..1 に切らない — 切るのは書く所）。
     def shadePixel(tri: Tri, inks: Vector[Ink], mats: Vector[Mat], time: Float64, lights: Lights, fog: Fog,
-                   eye: (Float64, Float64, Float64), depthBand: Option[(Float64, Float64)], l0: Float64, l1: Float64): Int32 =
+                   eye: (Float64, Float64, Float64), depthBand: Option[(Float64, Float64)], pixel: (Int32, Int32),
+                   l0: Float64, l1: Float64): (Float64, Float64, Float64, Float64) =
         let Tri.Tri(v, _, ink, mat) = tri;
         let s = stride();
         let weights = perspectiveWeights(l0, l1, 1.0 - l0 - l1, Vector.get(3, v), Vector.get(s + 3, v), Vector.get(s * 2 + 3, v));
@@ -659,20 +840,25 @@ pub mod SoftRaster3d {
             case Some((near, range)) =>
                 let (dx, dy, dz) = (px - ex, py - ey, pz - ez);
                 let gray = clamp01((Vec2.sqrt(dx * dx + dy * dy + dz * dz) - near) / Float64.max(range, 1.0e-6));
-                SoftRaster.argbOfRgba(gray, gray, gray, 1.0)
+                (gray, gray, gray, 1.0)
             case None =>
-                let n = normalAt(v, weights);
-                let (a0, a1, a2) = (attr(v, 10, b0, b1, b2), attr(v, 11, b0, b1, b2), attr(v, 12, b0, b1, b2));
-                let litFogged = (base: (Float64, Float64, Float64)) -> {
+                let point = surfaceAt(v, weights);
+                let litWith = (n: Vec3.Vec3, base: (Float64, Float64, Float64)) -> {
                     let (br, bg, bb) = base;
                     let (lr, lg, lb) = evalLight(lights, px, py, pz, n#x, n#y, n#z);
                     applyFog(fog, ex, ey, ez, px, py, pz, br * lr, bg * lg, bb * lb)
                 };
+                let litFogged = (base: (Float64, Float64, Float64)) -> litWith(point#normal, base);
                 let (r, g, b) =
-                    if (ink >= 0) inkColor(Vector.get(ink, inks), a0, a1, litFogged)
-                    else if (mat < 0) litFogged((a0, a1, a2))
-                    else materialColor(Vector.get(mat, mats), time, Vec3.v3(px, py, pz), n, (a0, a1, a2), litFogged);
-                SoftRaster.argbOfRgba(r, g, b, 1.0)
+                    if (ink >= 0) inkColor(Vector.get(ink, inks), point#uv#x, point#uv#y, litFogged)
+                    else if (mat < 0) litFogged((point#color#r, point#color#g, point#color#b))
+                    else {
+                        let material = Vector.get(mat, mats);
+                        let neighbors = neighborPoints(tri, pixel, l0, l1);
+                        let lightNormal = mappedNormal(normalMappingOf(material), point, neighbors, tangentAt(v, weights));
+                        materialColor(material, time, point, neighbors, base -> litWith(lightNormal, base))
+                    };
+                (r, g, b, 1.0)
         }
 
     /// ビルボードの絵の (u, v) の色に tint を掛け、lit なら光とかすみを当てる。
@@ -685,11 +871,11 @@ pub mod SoftRaster3d {
 
     /// 材質の色: albedo × tint に光とかすみを当ててから emission を足す（GL の Render3d と同じ順）。
     // WhyNot: emission にかすみを掛けない — 自分で光る物（溶岩・目）は遠くでもかすみに沈まずに見えてほしい。
-    def materialColor(m: Mat, time: Float64, world: Vec3.Vec3, normal: Vec3.Vec3, tint: (Float64, Float64, Float64),
+    def materialColor(m: Mat, time: Float64, point: ShaderEval.SurfacePoint, neighbors: (ShaderEval.SurfacePoint, ShaderEval.SurfacePoint),
                       litFogged: ((Float64, Float64, Float64)) -> (Float64, Float64, Float64)): (Float64, Float64, Float64) =
-        let Mat.Mat(compiled, _) = m;
-        let sample = ShaderEval.evalMaterial3(compiled, world, normal, time);
-        let (tr, tg, tb) = tint;
+        let Mat.Mat(compiled, _, tr, tg, tb, _) = m;
+        let (nextX, nextY) = neighbors;
+        let sample = ShaderEval.evalMaterial3Mip(compiled, point, nextX, nextY, time);
         let (r, g, b) = litFogged((sample#albedo#r * tr, sample#albedo#g * tg, sample#albedo#b * tb));
         (r + sample#emission#r, g + sample#emission#g, b + sample#emission#b)
 

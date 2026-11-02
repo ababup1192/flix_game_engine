@@ -9,7 +9,7 @@
 //   4. 時刻は固定値（アニメ無し — 2 回描き出して同じ絵になることが決定性検証の前提）
 mod Scenes {
 
-    use fge::{Camera3d, Color, DrawCmd, Light, Mat4, Mesh3d, Pose3d, PxSprite, PxSpriteDoc, RawDraw, Render, RenderTarget, RenderUtil, Scene3d, ShaderDoc, Shadow, Skin3d, Vec2, Vec3}
+    use fge::{Camera3d, Color, DrawCmd, Gltf, Light, Mat4, Mesh3d, Model3d, Pose3d, PostProcess, PxSprite, PxSpriteDoc, RawDraw, Render, RenderTarget, RenderUtil, Scene3d, ShaderDoc, Shadow, Skin3d, Texture3d, Vec2, Vec3}
 
     // 寸法の権威は整数側 — Float 側を権威にすると Int へ戻す丸めが要る。
     pub def designWi(): Int32 = 320
@@ -44,18 +44,37 @@ mod Scenes {
     pub def all(): List[Scene] =
         boxes() :: spriteNearest() :: passPaste() :: texField() :: lightMap() :: radial() :: veil()
             :: passChain() :: passLaterRead() :: passMask() :: passHalf() :: passQuarterOdd() :: linearRead()
-            :: castShadow() :: paramRead() :: depthRed() :: afterScene3d() :: materialStripes() :: spotShadow() :: skinBend() :: Nil
+            :: castShadow() :: paramRead() :: depthRed() :: afterScene3d() :: materialStripes() :: spotShadow() :: skinBend()
+            :: texturedBox() :: normalBump() :: skinNormal()
+            :: mipFloor() :: mipFloorScaled() :: mipFloorWorld() :: gltfTextured() :: windowPass3d()
+            :: hdrPass() :: hdrWindowHalf() :: hdrMultiply() :: texSizeScaled() :: tonemap() :: fxaa() :: Nil
 
     /// B 段階の scene のうち、違う画素の数に上限を置く物（名前 → 許す画素数）。3D の場面は GL と CPU で三角形の縁の
     /// 画素の取り方と浮動小数の丸めが違い、バイトでは一致しない（docs/backend-parity.md の Shader 面と同じ扱い）。
     /// 上限は縁の画素の数から決める（この 2 つは軸にそろった縁で、Apple Silicon では 0 px だった）— 前後や状態の漏れが
-    /// 崩れると、面の中が丸ごと違って桁が変わる。
+    /// 崩れると、面の中が丸ごと違って桁が変わる。mip の 3 つは、段の境目の帯で GPU が lod の小数と混ぜる重みを丸める ±1 が
+    /// 数百 px 出る（段を 1 つ取り違えると ±40 の差が千 px を超える）。
+    /// HDR の Pass を補間で読む 2 つ（hdrWindowHalf・tonemap）は、half と float32 / float64 の丸めが 8bit の境目に落ちた平らな面が
+    /// まとめて ±1 になり千 px の桁が出る（式を取り違えると ±10 を超える差が面ごとに出る）。fxaa は斜めの縁の画素だけが割れる
+    /// （FXAA が効かないと縁の全部が割れて数百 px を超える）。texSizeScaled は寸法を取り違えると縁が 1 画素ずれて百 px を超える。
     pub def toleranceOf(name: String): Option[Int32] = match name {
         case "depthRed"        => Some(300)
         case "afterScene3d"    => Some(200)
         case "materialStripes" => Some(300)
         case "spotShadow"      => Some(300)
         case "skinBend"        => Some(400)
+        case "texturedBox"     => Some(400)
+        case "normalBump"      => Some(400)
+        case "skinNormal"      => Some(400)
+        case "mipFloor"        => Some(800)
+        case "mipFloorScaled"  => Some(800)
+        case "mipFloorWorld"   => Some(800)
+        case "gltfTextured"    => Some(400)
+        case "windowPass3d"    => Some(300)
+        case "hdrWindowHalf"   => Some(3500)
+        case "texSizeScaled"   => Some(100)
+        case "tonemap"         => Some(7000)
+        case "fxaa"            => Some(300)
         case _                 => None
     }
 
@@ -434,20 +453,36 @@ mod Scenes {
         { name = "depthRed", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
             Render.scene3d({ x = 40.0, y = 20.0 }, flatScene({ x = 240.0, y = 140.0 }, 1, red :: blue :: Nil, board :: Nil)) :: Nil }
 
-    // 3D の場面の後に、同じコマで場面に重なる箱・sprite・mask 付きの面を描く。深度判定・面の向きでの間引き・blend・
-    // ステンシルが場面の後に残っていると、2D が欠けるか色が変わる。
+    // 3D の場面の後に、同じコマで場面に重なる箱・sprite・mask 付きの面・tex を読む面を描く。深度判定・面の向きでの間引き・blend・
+    // ステンシルが場面の後に残っていると、2D が欠けるか色が変わる。場面の中では Linear で読む絵つきの材質（unit 0）の後に
+    // NEAREST のビルボードを立てる — 材質の sampler が unit 0 に残ると、ビルボードと sprite の市松がにじむ。
     def afterScene3d(): Scene =
         let solid: ShaderDoc.Spec = { name = "parity_after3d", cycleRate = 0.0, bindings = Nil,
             out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Solid(c8(60, 200, 120)), alpha = ShaderDoc.Field.Const(1.0) }) };
         let rect = (x, y, w, h) -> { x = x, y = y } :: { x = x + w, y = y } :: { x = x + w, y = y + h } :: { x = x, y = y + h } :: Nil;
         let plate = shape(facingQuad(-4.0, 4.0, -3.0, 3.0, 10.0, c8(200, 120, 40)) :: Nil);
+        let painted = Scene3d.meshInstance(texturedQuad(-5.8, -4.4, 3.4, 4.8, 10.0, 0.0, 1.0), Mat4.identity())
+            |> Scene3d.withMaterial(Scene3d.texturedMaterial("atlas", ShaderDoc.FilterMode.Linear));
+        let board = Scene3d.billboard("atlas", { position = { x = 0.0, y = 0.0 }, size = { x = 16.0, y = 16.0 } },
+                                      Vec3.v3(4.6, -5.0, 9.0), { x = 1.6, y = 1.6 }) |> Scene3d.unlit;
         { name = "afterScene3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
-            Render.scene3d({ x = 0.0, y = 0.0 }, flatScene({ x = 200.0, y = 180.0 }, 1, plate :: Nil, Nil)) ::
+            Render.scene3d({ x = 0.0, y = 0.0 }, flatScene({ x = 200.0, y = 180.0 }, 1, plate :: painted :: Nil, board :: Nil)) ::
             at(60.0, 60.0, RawDraw.box({ x = 40.0, y = 40.0 }, c8(240, 240, 240), 2)) ::
             at(150.0, 90.0, fullAtlas(4.0, false, false, 2)) ::
             Render.shaderFillMasked(solid, { position = { x = 120.0, y = 20.0 }, size = { x = 180.0, y = 140.0 } },
                 rect(130.0, 30.0, 60.0, 40.0) :: rect(220.0, 100.0, 60.0, 50.0) :: Nil, 0.0, 3) ::
+            Render.shaderFill(passthroughSpec("atlas"), { position = { x = 208.0, y = 152.0 }, size = { x = 48.0, y = 24.0 } }, 0.0, 3) ::
             Nil }
+
+    /// z の平面に立つ、目の側（−Z）を向く uv つきの四角。左上の角が uv (lo, lo)・右下の角が (hi, hi)（0..1 の外は wrap で読む）。
+    def texturedQuad(x0: Float64, x1: Float64, y0: Float64, y1: Float64, z: Float64, lo: Float64, hi: Float64): Mesh3d.Mesh3d =
+        let quad = { points = Vec3.v3(x0, y0, z) :: Vec3.v3(x0, y1, z) :: Vec3.v3(x1, y1, z) :: Vec3.v3(x1, y0, z) :: Nil,
+                     uvs = { x = lo, y = hi } :: { x = lo, y = lo } :: { x = hi, y = lo } :: { x = hi, y = hi } :: Nil,
+                     color = c8(255, 255, 255) };
+        match Mesh3d.fromTexturedPolygons(quad :: Nil) {
+            case Ok(mesh) => mesh
+            case Err(e)   => bug!(e)
+        }
 
     // ── scene 18: 3D の材質（Scene3d.withMaterial → GL は材質のプログラム・CPU は ShaderEval の材質）。B 段階 ──
     // 左の板は World.x の 1 単位ごとの縞（赤と黄）。右の板は cutout で World.y の縞の半分を抜き、色は Param で渡す。
@@ -459,19 +494,19 @@ mod Scenes {
                               b = ShaderDoc.Field.Un({ op = ShaderDoc.UnOp.Fract, of = ShaderDoc.Field.World({ axis = axis }) }) })
 
     def stripeMaterial(): Scene3d.Material3d =
-        { spec = { name = "parity_stripe3d", cycleRate = 0.0, bindings = Nil,
-                   out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Ramp({ lo = c8(220, 40, 40), hi = c8(240, 220, 60),
-                                                                             field = worldStripe(ShaderDoc.Axis3.X) }),
-                                              alpha = ShaderDoc.Field.Const(1.0) }) },
-          params = Map.empty(), cutout = false, emission = None }
+        Scene3d.material({ name = "parity_stripe3d", cycleRate = 0.0, bindings = Nil,
+                           out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Ramp({ lo = c8(220, 40, 40), hi = c8(240, 220, 60),
+                                                                                     field = worldStripe(ShaderDoc.Axis3.X) }),
+                                                      alpha = ShaderDoc.Field.Const(1.0) }) })
 
     def cutoutMaterial(): Scene3d.Material3d =
-        { spec = { name = "parity_cutout3d", cycleRate = 0.0, bindings = Nil,
-                   out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Rgb({ r = ShaderDoc.Field.Param({ name = "red" }),
-                                                                            g = ShaderDoc.Field.Const(0.2),
-                                                                            b = ShaderDoc.Field.Const(0.8) }),
-                                              alpha = worldStripe(ShaderDoc.Axis3.Y) }) },
-          params = Map#{ "red" => 0.6 }, cutout = true, emission = None }
+        Scene3d.material({ name = "parity_cutout3d", cycleRate = 0.0, bindings = Nil,
+                           out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Rgb({ r = ShaderDoc.Field.Param({ name = "red" }),
+                                                                                    g = ShaderDoc.Field.Const(0.2),
+                                                                                    b = ShaderDoc.Field.Const(0.8) }),
+                                                      alpha = worldStripe(ShaderDoc.Axis3.Y) }) })
+            |> Scene3d.withParams(Map#{ "red" => 0.6 })
+            |> Scene3d.withCutout(true)
 
     def materialStripes(): Scene =
         let back = shape(facingQuad(-8.0, 8.0, -6.0, 6.0, 20.0, c8(30, 60, 220)) :: Nil);
@@ -575,4 +610,330 @@ mod Scenes {
                       | Scene3d.scene(flatCamera(), { x = 240.0, y = 140.0 }) };
         { name = "skinBend", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
             Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil }
+
+    // ── scene 21: 絵つきの材質（Scene3d.texturedMaterial → GL は uTexN と sampler・CPU は ShaderEval の 3D の Tex）。B 段階 ──
+    // 左は箱投影の uv（Mesh3d.withBoxUvs。uv が −0.5..0.5 なので REPEAT で回り込む）の箱を NEAREST で、
+    // 右は uv が −0.25..1.25 の板を Linear + Clamp で読む。絵は場面の textures（Texture3d）から。
+    // 左上の象限が赤・対角が白なので、uv の上下・左右の取り違えと鏡写しは色の位置で分かる。
+
+    /// 8 × 8 の絵。象限ごとに赤・黄・青・緑で、対角（x = y）が白。
+    def parityTexture(): Texture3d.Texture3d =
+        let argbOf = (c: Color) -> {
+            let k = (x: Float64) -> Float64.round(x * 255.0) |> Float64.tryToInt32 |> Option.getWithDefault(0);
+            Int32.bitwiseOr(Int32.bitwiseOr(Int32.leftShift(255, 24), Int32.leftShift(k(c#r), 16)),
+                            Int32.bitwiseOr(Int32.leftShift(k(c#g), 8), k(c#b)))
+        };
+        let texel = (x: Int32, y: Int32) ->
+            if (x == y) c8(255, 255, 255)
+            else if (y < 4) (if (x < 4) c8(220, 40, 40) else c8(240, 220, 60))
+            else if (x < 4) c8(40, 80, 220) else c8(60, 200, 90);
+        let pixels = Vector.range(0, 64) |> Vector.map(k -> argbOf(texel(Int32.remainder(k, 8), k / 8)));
+        match Texture3d.fromArgb(8, 8, pixels) {
+            case Ok(t)  => t
+            case Err(e) => bug!(e)
+        }
+
+    /// 1 辺 2 の箱（6 面とも外から見て時計回り）。
+    def boxMesh(): Mesh3d.Mesh3d =
+        let p = (x: Float64, y: Float64, z: Float64) -> Vec3.v3(x, y, z);
+        let face = (pts: List[Vec3.Vec3]) -> { points = pts, color = c8(255, 255, 255) };
+        Mesh3d.fromPolygons(
+            face(p(1.0, -1.0, -1.0) :: p(1.0, 1.0, -1.0) :: p(1.0, 1.0, 1.0) :: p(1.0, -1.0, 1.0) :: Nil) ::
+            face(p(-1.0, -1.0, 1.0) :: p(-1.0, 1.0, 1.0) :: p(-1.0, 1.0, -1.0) :: p(-1.0, -1.0, -1.0) :: Nil) ::
+            face(p(-1.0, 1.0, -1.0) :: p(-1.0, 1.0, 1.0) :: p(1.0, 1.0, 1.0) :: p(1.0, 1.0, -1.0) :: Nil) ::
+            face(p(-1.0, -1.0, 1.0) :: p(-1.0, -1.0, -1.0) :: p(1.0, -1.0, -1.0) :: p(1.0, -1.0, 1.0) :: Nil) ::
+            face(p(1.0, -1.0, 1.0) :: p(1.0, 1.0, 1.0) :: p(-1.0, 1.0, 1.0) :: p(-1.0, -1.0, 1.0) :: Nil) ::
+            face(p(-1.0, -1.0, -1.0) :: p(-1.0, 1.0, -1.0) :: p(1.0, 1.0, -1.0) :: p(1.0, -1.0, -1.0) :: Nil) ::
+            Nil)
+
+    def texturedBox(): Scene =
+        let tex = parityTexture();
+        let world = Mat4.mul(Mat4.translate(Vec3.v3(-2.3, 0.0, 10.0)), Mat4.mul(Mat4.rotateX(0.45), Mat4.rotateY(0.6)));
+        let box = Scene3d.meshInstance(Mesh3d.withBoxUvs(0.5, boxMesh()), world)
+            |> Scene3d.withMaterial(Scene3d.texturedMaterial(Texture3d.name(tex), ShaderDoc.FilterMode.Nearest));
+        let plate = Scene3d.meshInstance(texturedQuad(0.8, 4.6, -2.4, 2.4, 10.0, -0.25, 1.25), Mat4.identity())
+            |> Scene3d.withMaterial(Scene3d.texturedMaterial(Texture3d.name(tex), ShaderDoc.FilterMode.Linear) |> Scene3d.withWrap(Scene3d.Wrap.Clamp));
+        let scene = { textures = tex :: Nil, environment = { hemisphere = 0.3, ambient = c8(180, 180, 180) | flatScene({ x = 240.0, y = 140.0 }, 1, Nil, Nil)#environment }
+                      | flatScene({ x = 240.0, y = 140.0 }, 1, box :: plate :: Nil, Nil) };
+        { name = "texturedBox", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil }
+
+    // ── scene 22: 法線マップ（Scene3d.withNormalMap → GL は unit 6 と frag の傾け・CPU は SoftRaster3d の同じ式）。B 段階 ──
+    // 半球の出っ張りを並べた法線マップを、uv 0..2（REPEAT で 2 × 2 個）の板に貼り、左から点光源を当てる。
+    // 出っ張りは灯りの側（左）が明るく、反対の側（右）が暗い。向きを取り違えると明暗が逆になる。
+
+    /// 32 × 32 の、真ん中に半径 0.8 の半球の出っ張りがある法線マップ（タンジェント空間・緑が絵の上）。
+    def bumpTexture(): Texture3d.Texture3d =
+        let channel = (x: Float64) -> Float64.round((x * 0.5 + 0.5) * 255.0) |> Float64.tryToInt32 |> Option.getWithDefault(0);
+        let texel = (k: Int32) -> {
+            let fx = (Int32.toFloat64(Int32.remainder(k, 32)) + 0.5) / 32.0 * 2.0 - 1.0;
+            let fy = 0.0 - ((Int32.toFloat64(k / 32) + 0.5) / 32.0 * 2.0 - 1.0);
+            let (px, py) = (fx / 0.8, fy / 0.8);
+            let inside = px * px + py * py < 1.0;
+            let (nx, ny, nz) = if (inside) (px, py, Vec2.sqrt(1.0 - px * px - py * py)) else (0.0, 0.0, 1.0);
+            Int32.bitwiseOr(Int32.bitwiseOr(Int32.leftShift(255, 24), Int32.leftShift(channel(nx), 16)),
+                            Int32.bitwiseOr(Int32.leftShift(channel(ny), 8), channel(nz)))
+        };
+        match Texture3d.fromArgb(32, 32, Vector.range(0, 1024) |> Vector.map(texel)) {
+            case Ok(t)  => t
+            case Err(e) => bug!(e)
+        }
+
+    def bumpMaterial(texture: Texture3d.Texture3d): Scene3d.Material3d =
+        Scene3d.material({ name = "parity_bump3d", cycleRate = 0.0, bindings = Nil,
+                           out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Solid(c8(220, 220, 220)), alpha = ShaderDoc.Field.Const(1.0) }) })
+            |> Scene3d.withNormalMap({ texture = Texture3d.name(texture), strength = 1.0 })
+
+    def normalBump(): Scene =
+        let tex = bumpTexture();
+        let plate = Scene3d.meshInstance(texturedQuad(-4.0, 4.0, -3.0, 3.0, 10.0, 0.0, 2.0), Mat4.identity())
+            |> Scene3d.withMaterial(bumpMaterial(tex));
+        let light = { position = Vec3.v3(-7.0, 1.0, 8.0), color = c8(255, 255, 255), intensity = 1.2, range = 20.0 };
+        let base = flatScene({ x = 240.0, y = 140.0 }, 1, plate :: Nil, Nil);
+        let scene = { textures = tex :: Nil, pointLights = light :: Nil, environment = { ambient = c8(40, 40, 40) | base#environment } | base };
+        { name = "normalBump", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil }
+
+    // ── scene 23: 骨で曲げた板の法線マップ（skinBend の板に uv と法線マップ）。B 段階 ──
+    // タンジェントがジョイントの回転で曲がらないと、曲げた上半分の出っ張りの明暗の向きがずれる。
+
+    /// skinPlate に uv を付けた物（左の辺が u = 0・右の辺が u = 1・上の端が v = 0 で、下へ 2.5 まで）。
+    def skinPlateWithUvs(): Mesh3d.Mesh3d =
+        let uvs = skinRows() |> List.flatMap(y -> { let v = (3.0 - y) / 6.0 * 2.5; 0.0 :: v :: 1.0 :: v :: Nil }) |> List.toVector;
+        match Mesh3d.withUvs(uvs, skinPlate()) {
+            case Ok(mesh) => mesh
+            case Err(e)   => bug!(e)
+        }
+
+    def skinNormal(): Scene =
+        let tex = bumpTexture();
+        let back = shape(facingQuad(-8.0, 8.0, -6.0, 6.0, 20.0, c8(200, 200, 200)) :: Nil);
+        let left = Scene3d.meshInstance(skinPlateWithUvs(), Mat4.translate(Vec3.v3(-2.5, 0.0, 0.0)))
+            |> Scene3d.withMaterial(bumpMaterial(tex)) |> Scene3d.withPose(skinBendPose(0.7));
+        let right = Scene3d.meshInstance(skinPlateWithUvs(), Mat4.translate(Vec3.v3(2.5, 0.0, 0.0)))
+            |> Scene3d.withMaterial(stripeMaterial() |> Scene3d.withNormalMap({ texture = Texture3d.name(tex), strength = 1.0 }))
+            |> Scene3d.withPose(skinBendPose(-0.7));
+        let light = { position = Vec3.v3(-6.0, 2.0, 6.0), color = c8(255, 255, 255), intensity = 1.0, range = 20.0 };
+        let scene = { instances = back :: left :: right :: Nil, spotLights = skinBendSpot() :: Nil, pointLights = light :: Nil,
+                      textures = tex :: Nil, zIndex = 1,
+                      environment = { ambient = c8(60, 60, 60), hemisphere = 0.0, toonSteps = 0, fog = None, background = Some(c8(10, 10, 30)) }
+                      | Scene3d.scene(flatCamera(), { x = 240.0, y = 140.0 }) };
+        { name = "skinNormal", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil }
+
+    // ── scene 24〜26: 段つきの絵（mipmap。GL は sg_texMip と段つきの sampler・CPU は ShaderEval.evalMaterial3Mip）。B 段階 ──
+    // 遠くまで伸びる床に、1 テクセルごとの濃淡の市松を貼る。段が効けば遠くは中間の灰に落ち着き、効かなければ市松がざらつく。
+    // 素の uv（mipFloor）・Scaled で uv を何倍にもした座標（mipFloorScaled）・shared に書いた atWorld の world の座標（mipFloorWorld）の 3 通りで、
+    // GL の dFdx と CPU の隣の画素の評価が同じ段を選ぶかを見る。
+
+    /// 32 × 32 の、1 テクセルごとの明るい灰（170）と暗い灰（90）の市松。
+    // WhyNot: 白黒の市松にしない — GPU は lod の小数と混ぜる重みを 8 bit ほどに丸めるので、段の境目の帯の画素が ±2 ずつ食い違い、
+    //   段を 1 つ取り違えた時の差（灰の差の半分 ≈ ±40）との見分けが px の数でつかなくなる。濃淡を半分にすると丸めの差は ±1 以下に沈む。
+    def checkerTexture(): Texture3d.Texture3d =
+        let light = Int32.bitwiseOr(Int32.leftShift(255, 24), 170 * 65793);
+        let dark = Int32.bitwiseOr(Int32.leftShift(255, 24), 90 * 65793);
+        let pixels = Vector.range(0, 1024) |> Vector.map(k -> if (Int32.remainder(Int32.remainder(k, 32) + k / 32, 2) == 0) light else dark);
+        match Texture3d.fromArgb(32, 32, pixels) {
+            case Ok(t)  => t
+            case Err(e) => bug!(e)
+        }
+
+    /// 目の少し下（y = −1.5）を奥へ伸びる床（x −8..8・z 1.5..60）。uvRepeat = Some(n) なら uv を x 方向に n・z 方向に n × 4 まで振る。
+    def floorMesh(uvRepeat: Option[Float64]): Mesh3d.Mesh3d =
+        let points = Vec3.v3(-8.0, -1.5, 1.5) :: Vec3.v3(-8.0, -1.5, 60.0) :: Vec3.v3(8.0, -1.5, 60.0) :: Vec3.v3(8.0, -1.5, 1.5) :: Nil;
+        match uvRepeat {
+            case None => Mesh3d.fromPolygons({ points = points, color = c8(255, 255, 255) } :: Nil)
+            case Some(n) =>
+                let uvs = { x = 0.0, y = n * 4.0 } :: { x = 0.0, y = 0.0 } :: { x = n, y = 0.0 } :: { x = n, y = n * 4.0 } :: Nil;
+                match Mesh3d.fromTexturedPolygons({ points = points, uvs = uvs, color = c8(255, 255, 255) } :: Nil) {
+                    case Ok(mesh) => mesh
+                    case Err(e)   => bug!(e)
+                }
+        }
+
+    def floorScene(name: String, mesh: Mesh3d.Mesh3d, material: Scene3d.Material3d, tex: Texture3d.Texture3d): Scene =
+        let camera = { eye = Vec3.zero(), yaw = 0.0, pitch = 0.2, fovY = 1.0, near = 1.0, far = 100.0 };
+        let floor = Scene3d.meshInstance(mesh, Mat4.identity()) |> Scene3d.withMaterial(material);
+        let scene = { instances = floor :: Nil, textures = tex :: Nil, zIndex = 1,
+                      environment = { ambient = c8(255, 255, 255), hemisphere = 0.0, toonSteps = 0, fog = None, background = Some(c8(10, 10, 30)) }
+                      | Scene3d.scene(camera, { x = 240.0, y = 140.0 }) };
+        { name = name, via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil }
+
+    /// 絵の r・g・b を f で包んで読む材質（f = 読む座標を変える場）。
+    def checkerMaterial(name: String, wrapRead: ShaderDoc.Field -> ShaderDoc.Field, tex: Texture3d.Texture3d): Scene3d.Material3d =
+        let read = (c: ShaderDoc.TexChan) -> wrapRead(ShaderDoc.Field.Tex({ name = Texture3d.name(tex), chan = c }));
+        Scene3d.material({ name = name, cycleRate = 0.0, bindings = Nil,
+                           out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Rgb({ r = read(ShaderDoc.TexChan.R), g = read(ShaderDoc.TexChan.G),
+                                                                                    b = read(ShaderDoc.TexChan.B) }),
+                                                      alpha = ShaderDoc.Field.Const(1.0) }) })
+
+    def mipFloor(): Scene =
+        let tex = checkerTexture();
+        floorScene("mipFloor", floorMesh(Some(4.0)), Scene3d.texturedMaterial(Texture3d.name(tex), ShaderDoc.FilterMode.Nearest), tex)
+
+    def mipFloorScaled(): Scene =
+        let tex = checkerTexture();
+        let scaled = (f: ShaderDoc.Field) -> ShaderDoc.Field.Scaled({ factor = 4.0, scroll = { x = 0.0, y = 0.0 }, of = f });
+        floorScene("mipFloorScaled", floorMesh(Some(1.0)), checkerMaterial("parity_mipScaled", scaled, tex), tex)
+
+    def mipFloorWorld(): Scene =
+        let tex = checkerTexture();
+        let lit = ShaderDoc.atWorld((ShaderDoc.Axis3.X, ShaderDoc.Axis3.Z),
+            ShaderDoc.Field.Scaled({ factor = 0.25, scroll = { x = 0.0, y = 0.0 }, of = ShaderDoc.Field.Tex({ name = Texture3d.name(tex), chan = ShaderDoc.TexChan.R }) }));
+        let material = Scene3d.material({ name = "parity_mipWorld", cycleRate = 0.0, bindings = ("lit", lit) :: Nil,
+                                          out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Rgb({ r = ShaderDoc.Field.Ref("lit"), g = ShaderDoc.Field.Ref("lit"),
+                                                                                                   b = ShaderDoc.Field.Ref("lit") }),
+                                                                     alpha = ShaderDoc.Field.Const(1.0) }) });
+        floorScene("mipFloorWorld", floorMesh(None), material, tex)
+
+    // ── scene 27: Blender で書き出した絵つきの glb（Gltf.loadTextured → parts の材質と textures）。B 段階 ──
+    // 板 A（4 × 4 の絵・左上が赤・NEAREST・法線マップ）と板 B（baseColorFactor の水色・材質なし）。glb の板の表は engine の +Z を向くので、
+    // Y 軸まわりに半周させて目へ向ける。絵の左上の赤が画面の左上に来れば、uv の向きと X の反転がそろっている。
+
+    /// assets の textured_two_materials.glb（engine/test/data と同じ物）。
+    // WhyNot: Scenes.all を IO にしない — 場面の宣言は GL と SoftRaster と名前の付け替えの 3 か所から何度も引く純粋な列で、
+    //   1 枚の資材を読むために全部の呼び手の効果を広げることになる。読むのは小さな glb 1 つで、何度読んでも同じ物になる。
+    def texturedModel(): Model3d.Model3d =
+        let loaded = unsafe IO { run Gltf.loadTextured("assets/textured_two_materials.glb") with Fs.FileRead.runWithIO };
+        match loaded {
+            case Ok(m)  => m
+            case Err(e) => bug!(e)
+        }
+
+    def gltfTextured(): Scene =
+        let model = texturedModel();
+        let world = Mat4.mul(Mat4.translate(Vec3.v3(0.0, -0.5, 4.0)), Mat4.rotateY(Vec2.pi()));
+        let instances = model#parts |> List.map(part -> {
+            let placed = Scene3d.meshInstance(part#mesh, world);
+            match part#material {
+                case Some(m) => Scene3d.withMaterial(m, placed)
+                case None    => placed
+            }
+        });
+        let light = { position = Vec3.v3(0.0, 2.0, 1.0), color = c8(255, 255, 255), intensity = 0.6, range = 10.0 };
+        let base = flatScene({ x = 240.0, y = 140.0 }, 1, instances, Nil);
+        let scene = { textures = model#textures, pointLights = light :: Nil,
+                      environment = { ambient = c8(170, 170, 170) | base#environment } | base };
+        { name = "gltfTextured", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil }
+
+    // ── scene 28: 描き先の画素を基準にした Pass（RenderTarget.windowDescriptor）の中に 3D の場面を描き、後処理の面で画面に出す。B 段階 ──
+    // GL は Target.pixelScale・CPU は RenderConfig#scale で寸法を決める（この harness はどちらも 1 なので design と同じ寸法）。
+    // 基準の欄が描き出しの側（Render.passSpecsOf → HeadlessRender）と実機の側（renderPasses）の両方に届くかを、同じ絵で見る。
+    def windowPass3d(): Scene =
+        let red = shape(facingQuad(-3.0, 1.0, -2.0, 2.0, 10.0, c8(220, 30, 30)) :: Nil);
+        let blue = shape(facingQuad(-8.0, 8.0, -6.0, 6.0, 20.0, c8(30, 60, 220)) :: Nil);
+        let p: Render.Pass = { name = "w3d", clear = RenderTarget.LoadOp.Clear(c8(0, 0, 0)), items =
+            Render.scene3d({ x = 40.0, y = 20.0 }, flatScene({ x = 240.0, y = 140.0 }, 1, red :: blue :: Nil, Nil)) :: Nil };
+        { name = "windowPass3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map#{ "w3d" => RenderTarget.windowDescriptor() },
+          exact = false, passes = p :: Nil, items =
+            Render.shaderFill(passthroughSpec("w3d"), { position = { x = 0.0, y = 0.0 }, size = { x = designW(), y = designH() } }, 0.0, 1) :: Nil }
+
+    // ── scene 29: Rgba16Float の Pass（RenderTarget.withHdr）。A 段階 ──
+    // Pass に Add の箱を重ね（180/255 × 2 ≈ 1.41・200/255 × 3 ≈ 2.35）、1 を超える色の面（1.5, 2.0, 0.25）を置き、本編の面が
+    // 0.5 倍して読む。Rgba8Unorm なら 1 に切られて 128 になる所が 180・255 などになる（切っていないことを絵で示す）。
+    // 値は half の丸めと 8bit の丸めがどちらの経路でも同じ側に落ちる数（×255 が .5 から離れる）にしてある。
+    def hdrPassItems(): List[Render.PlacedItem] =
+        let add = (x, y, w, h, c) -> at(x, y, RawDraw.box({ x = w, y = h }, c, 1) |> Render.blended(DrawCmd.BlendMode.Add));
+        let bright: ShaderDoc.Spec = { name = "parity_bright", cycleRate = 0.0, bindings = Nil,
+            out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Solid({ r = 1.5, g = 2.0, b = 0.25 }), alpha = ShaderDoc.Field.Const(1.0) }) };
+        add(20.0, 20.0, 120.0, 60.0, c8(180, 90, 30)) ::
+        add(20.0, 20.0, 120.0, 60.0, c8(180, 90, 30)) ::
+        add(80.0, 50.0, 100.0, 80.0, c8(200, 200, 200)) ::
+        add(80.0, 50.0, 100.0, 80.0, c8(200, 200, 200)) ::
+        add(80.0, 50.0, 100.0, 80.0, c8(200, 200, 200)) ::
+        at(220.0, 30.0, RawDraw.box({ x = 60.0, y = 40.0 }, c8(40, 120, 220), 1)) ::
+        Render.shaderFill(bright, { position = { x = 200.0, y = 100.0 }, size = { x = 100.0, y = 60.0 } }, 0.0, 2) ::
+        Nil
+
+    /// name の絵の rgb を 0.5 倍して出す面（読み方は filter）。
+    def halfReadSpec(name: String, filter: ShaderDoc.FilterMode): ShaderDoc.Spec =
+        let read = chan -> ShaderDoc.Field.Bin({ op = ShaderDoc.BinOp.Mul, b = ShaderDoc.Field.Const(0.5),
+            a = ShaderDoc.Field.Sampler({ filter = filter, of = ShaderDoc.Field.Tex({ name = name, chan = chan }) }) });
+        { name = "parity_half_read", cycleRate = 0.0, bindings = Nil,
+          out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Rgb({ r = read(ShaderDoc.TexChan.R), g = read(ShaderDoc.TexChan.G),
+                                                                   b = read(ShaderDoc.TexChan.B) }),
+                                     alpha = ShaderDoc.Field.Const(1.0) }) }
+
+    def hdrPass(): Scene =
+        let p: Render.Pass = { name = "hdrP", clear = RenderTarget.LoadOp.Clear(c8(0, 0, 0)), items = hdrPassItems() };
+        { name = "hdrPass", via = ShotVia.ViaScreen, repeats = 1,
+          targets = Map#{ "hdrP" => RenderTarget.withHdr(RenderTarget.defaultDescriptor()) }, exact = true, passes = p :: Nil, items =
+            Render.shaderFill(halfReadSpec("hdrP", ShaderDoc.FilterMode.Nearest),
+                              { position = { x = 0.0, y = 0.0 }, size = { x = designW(), y = designH() } }, 0.0, 1) :: Nil }
+
+    // ── scene 30: Window の基準・scale 0.5 の Rgba16Float の Pass を Linear と TexBlur で読む。B 段階（補間の重みの丸め）──
+    def hdrWindowHalf(): Scene =
+        let p: Render.Pass = { name = "hdrW", clear = RenderTarget.LoadOp.Clear(c8(0, 0, 0)), items = hdrPassItems() };
+        let blurred = chan -> ShaderDoc.Field.Bin({ op = ShaderDoc.BinOp.Mul, b = ShaderDoc.Field.Const(0.5),
+            a = ShaderDoc.Field.TexBlur({ name = "hdrW", chan = chan, radius = { x = 0.02, y = 0.035 }, taps = 8,
+                                          amount = ShaderDoc.Field.Const(1.0) }) });
+        let blurSpec: ShaderDoc.Spec = { name = "parity_hdr_blur", cycleRate = 0.0, bindings = Nil,
+            out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Rgb({ r = blurred(ShaderDoc.TexChan.R), g = blurred(ShaderDoc.TexChan.G),
+                                                                     b = blurred(ShaderDoc.TexChan.B) }),
+                                       alpha = ShaderDoc.Field.Const(1.0) }) };
+        { name = "hdrWindowHalf", via = ShotVia.ViaScreen, repeats = 1,
+          targets = Map#{ "hdrW" => RenderTarget.withHdr({ scale = 0.5 | RenderTarget.windowDescriptor() }) }, exact = false,
+          passes = p :: Nil, items =
+            Render.shaderFill(halfReadSpec("hdrW", ShaderDoc.FilterMode.Linear),
+                              { position = { x = 0.0, y = 0.0 }, size = { x = 160.0, y = designH() } }, 0.0, 1) ::
+            Render.shaderFill(blurSpec, { position = { x = 160.0, y = 0.0 }, size = { x = 160.0, y = designH() } }, 0.0, 1) :: Nil }
+
+    // ── scene 31: 1 を超えた dst へ Multiply（Rgba16Float の Pass）。B 段階 ──
+    // Add で ≈ 1.41 にした所へ 128/255 の箱を Multiply すると ≈ 0.71 が残る（Rgba8Unorm なら 1 に切られてから掛けて ≈ 0.5）。
+    def hdrMultiply(): Scene =
+        let add = at(20.0, 20.0, RawDraw.box({ x = 280.0, y = 140.0 }, c8(180, 180, 180), 1) |> Render.blended(DrawCmd.BlendMode.Add));
+        let p: Render.Pass = { name = "hdrM", clear = RenderTarget.LoadOp.Clear(c8(0, 0, 0)), items =
+            add :: add ::
+            at(60.0, 40.0, RawDraw.box({ x = 120.0, y = 100.0 }, c8(128, 64, 255), 2) |> Render.blended(DrawCmd.BlendMode.Multiply)) :: Nil };
+        { name = "hdrMultiply", via = ShotVia.ViaScreen, repeats = 1,
+          targets = Map#{ "hdrM" => RenderTarget.withHdr(RenderTarget.defaultDescriptor()) }, exact = false, passes = p :: Nil, items =
+            Render.shaderFill(halfReadSpec("hdrM", ShaderDoc.FilterMode.Nearest),
+                              { position = { x = 0.0, y = 0.0 }, size = { x = designW(), y = designH() } }, 0.0, 1) :: Nil }
+
+    // ── scene 32: 縮んだ Pass（scale 0.5 → 160 × 90 テクセル）を TexSize で 1 テクセルずつずらして読む。B 段階 ──
+    // r は右へ 1 テクセル・g はそのまま・b は下へ 1 テクセルずらして読む。寸法を design（320 × 180）で取り違えると、ずらしが半分になって縁が 1 画素ずれる。
+    def texSizeScaled(): Scene =
+        let pass: Render.Pass = { name = "tszT", clear = RenderTarget.LoadOp.Clear(c8(16, 24, 40)), items = halfItems() };
+        let texel = axis -> ShaderDoc.Field.Bin({ op = ShaderDoc.BinOp.Div, a = ShaderDoc.Field.Const(1.0),
+                                                   b = ShaderDoc.Field.TexSize({ name = "tszT", axis = axis }) });
+        let read = (dx, dy, chan) -> ShaderDoc.Field.Shift({ dx = dx, dy = dy, of = ShaderDoc.Field.Tex({ name = "tszT", chan = chan }) });
+        let zero = ShaderDoc.Field.Const(0.0);
+        let spec: ShaderDoc.Spec = { name = "parity_texsize", cycleRate = 0.0, bindings = Nil,
+            out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Rgb({ r = read(texel(ShaderDoc.Axis.U), zero, ShaderDoc.TexChan.R),
+                                                                     g = read(zero, zero, ShaderDoc.TexChan.G),
+                                                                     b = read(zero, texel(ShaderDoc.Axis.V), ShaderDoc.TexChan.B) }),
+                                       alpha = ShaderDoc.Field.Const(1.0) }) };
+        { name = "texSizeScaled", via = ShotVia.ViaScreen, repeats = 1,
+          targets = Map#{ "tszT" => { scale = 0.5 | RenderTarget.defaultDescriptor() } }, exact = false, passes = pass :: Nil, items =
+            Render.shaderFill(spec, { position = { x = 0.0, y = 0.0 }, size = { x = designW(), y = designH() } }, 0.0, 1) :: Nil }
+
+    // ── scene 33: Rgba16Float の Pass を AcesFitted（既定の露出・白の点）でトーンマップして画面へ。B 段階（曲線の式の float32 と float64 の丸め）──
+    def tonemap(): Scene =
+        let p: Render.Pass = { name = "tmP", clear = RenderTarget.LoadOp.Clear(c8(0, 0, 0)), items = hdrPassItems() };
+        let spec = PostProcess.tonemapped(PostProcess.Tonemap.AcesFitted, PostProcess.defaultExposure(), PostProcess.defaultWhitePoint(),
+                                          passthroughSpec("tmP"));
+        { name = "tonemap", via = ShotVia.ViaScreen, repeats = 1,
+          targets = Map#{ "tmP" => RenderTarget.withHdr(RenderTarget.defaultDescriptor()) }, exact = false, passes = p :: Nil, items =
+            Render.shaderFill(spec, { position = { x = 0.0, y = 0.0 }, size = { x = designW(), y = designH() } }, 0.0, 1) :: Nil }
+
+    // ── scene 34: 斜めの縁（Step の段々）を窓の画素の Pass に描き、FXAA の面で画面へ。B 段階（Linear の重みの丸め・明るさの比べの境目）──
+    def fxaa(): Scene =
+        let u = ShaderDoc.Field.Uv({ axis = ShaderDoc.Axis.U });
+        let v = ShaderDoc.Field.Uv({ axis = ShaderDoc.Axis.V });
+        let lin = (cu, cv, k) -> ShaderDoc.Field.Bin({ op = ShaderDoc.BinOp.Add, a = ShaderDoc.Field.Const(k),
+            b = ShaderDoc.Field.Bin({ op = ShaderDoc.BinOp.Add,
+                a = ShaderDoc.Field.Bin({ op = ShaderDoc.BinOp.Mul, a = ShaderDoc.Field.Const(cu), b = u }),
+                b = ShaderDoc.Field.Bin({ op = ShaderDoc.BinOp.Mul, a = ShaderDoc.Field.Const(cv), b = v }) }) });
+        let edge = (field) -> ShaderDoc.Field.Bin({ op = ShaderDoc.BinOp.Step, a = ShaderDoc.Field.Const(0.5), b = field });
+        let jaggy: ShaderDoc.Spec = { name = "parity_jaggy", cycleRate = 0.0, bindings = Nil,
+            out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Rgb({ r = edge(lin(0.8, 0.35, 0.0)), g = edge(lin(-0.25, 0.9, 0.2)),
+                                                                     b = ShaderDoc.Field.Const(0.3) }),
+                                       alpha = ShaderDoc.Field.Const(1.0) }) };
+        let p: Render.Pass = { name = "fxP", clear = RenderTarget.LoadOp.Clear(c8(0, 0, 0)), items =
+            Render.shaderFill(jaggy, { position = { x = 0.0, y = 0.0 }, size = { x = designW(), y = designH() } }, 0.0, 1) :: Nil };
+        { name = "fxaa", via = ShotVia.ViaScreen, repeats = 1,
+          targets = Map#{ "fxP" => RenderTarget.windowDescriptor() }, exact = false, passes = p :: Nil, items =
+            Render.shaderFill(PostProcess.fxaaSpec("fxP"), { position = { x = 0.0, y = 0.0 }, size = { x = designW(), y = designH() } }, 0.0, 1) :: Nil }
 }

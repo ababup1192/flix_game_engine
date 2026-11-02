@@ -1995,7 +1995,7 @@
 - Pass 1 枚を描き出し側の宣言（engine_tools の HeadlessRender.PassSpec と同形のレコード）へ
   `pub def passSpecOf(textureInfoOf: String -> Option[GameEngine.TextureInfo] \ ef, p: Pass): PassSpecRec \ ef`
 - 描き出し側の Pass 1 枚の宣言（HeadlessRender.PassSpec と同じ欄）。
-  `pub type alias PassSpecRec = { name = String, clear = RenderTarget.LoadOp, drawables = List[GameEngine.Drawable], polygons = List[GameEngine.PolygonRenderCmd], surfaces = List[ShaderSurface], scenes = List[Scene3d.RenderCmd], scale = Float64 }`
+  `pub type alias PassSpecRec = { name = String, clear = RenderTarget.LoadOp, drawables = List[GameEngine.Drawable], polygons = List[GameEngine.PolygonRenderCmd], surfaces = List[ShaderSurface], scenes = List[Scene3d.RenderCmd], target = RenderTarget.Descriptor }`
 - Pass の計画を描き出し側の宣言の列へ。実機（App.withPassPlan）と同じ resolvePassReads を通し、
   `pub def passSpecsOf(textureInfoOf: String -> Option[GameEngine.TextureInfo] \ ef, plan: PassPlan): { specs = List[PassSpecRec], issues = List[PassPlanIssue] } \ ef`
 - 本編より先に描く Pass の列と、名前ごとのターゲットの作り方をまとめた 1 つの宣言。
@@ -2003,9 +2003,11 @@
 - 作り方を全部既定にした計画。
   `pub def passPlan(passes: List[Pass]): PassPlan`
 - 計画の中の、読み方・宣言の問題（resolvePassReads が知らせる物）。payload は (Pass の名前, 読んだ名前)。
-  `pub enum PassPlanIssue with Eq, ToString { case ReadsLaterPass(String, String) case ReadsUndeclaredTarget(String, String) case DuplicatePass(String) case ReservedPassName(String) case UnknownDescriptor(String) }`
+  `pub enum PassPlanIssue with Eq, ToString { case ReadsLaterPass(String, String) case ReadsUndeclaredTarget(String, String) case DuplicatePass(String) case ReservedPassName(String) case UnknownDescriptor(String) case ScaleOutOfRange(String, Float64) }`
 - Pass の名前 → このコマで使うターゲットの倍率（RenderTarget.scaleOf で範囲に収めた値）。
   `pub def targetScaleOf(plan: PassPlan, name: String): Float64`
+- Pass の名前 → ターゲットの作り方（書かなかった名前は RenderTarget.defaultDescriptor()）。寸法は RenderTarget.texelSizeOf で決める。
+  `pub def targetDescriptorOf(plan: PassPlan, name: String): RenderTarget.Descriptor`
 - Pass の items の読みを書き換えた計画と、問題の一覧。
   `pub def resolvePassReads(knownTargets: Set[String], plan: PassPlan): { plan = PassPlan, issues = List[PassPlanIssue] }`
 - draw list 全体を描画命令へ（zIndex 順は render_gl が stable sort する）。

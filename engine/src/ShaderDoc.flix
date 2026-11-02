@@ -157,19 +157,23 @@ pub mod ShaderDoc {
         /// 内側に置いても変換後の座標では読み直さない（GL が main 先頭で 1 回計算する挙動が正）。
         case Ref(String)
         /// 名前つきテクスチャ（pass のレンダーターゲットや普通のテクスチャ）を今の uv で
-        /// 標本して chan のチャンネル（0..1）を返す。標本は補間なし（NEAREST）・端は
+        /// 標本して chan のチャンネルを返す（8bit の絵と Rgba8Unorm の Pass は 0..1・Rgba16Float の Pass は 1 を超える。α はどちらも 0..1）。標本は補間なし（NEAREST）・端は
         /// 張り付き（CLAMP）。Shift や Warp と組むと「前フレームの絵を歪めて読む」が書ける。
         case Tex({ name = String, chan = TexChan })
         /// 読む座標を (dx, dy) だけずらして of を読む。dx/dy は「外側の uv」で評価する
         /// （ずらし量自体は、ずらす前の位置で決まる — GL の式の組み方と同じ）。
         case Shift({ dx = Field, dy = Field, of = Field })
-        /// 名前つきテクスチャを今の uv のまわりで taps 回読み、平均した chan（0..1）を返す（ぼかし）。
+        /// 名前つきテクスチャを今の uv のまわりで taps 回読み、平均した chan（値の範囲は Tex と同じ）を返す（ぼかし）。
         /// 読む点は半径 radius（uv の単位・x と y 別。横長の面で丸くぼかすなら x = y × 縦÷横）の円の中に
         /// 黄金角でむらなく撒く（レンズのぼけに近い、縁の柔らかい円形のぼかし）。amount は半径に掛ける場で、
         /// 0 でぼかさず 1 で radius いっぱい（時間の場を入れるとピントが寄る・外れる演出になる）。
         /// 1 点ずつの標本は Tex と同じ NEAREST + CLAMP。taps は 1..64 に丸める。
         /// rgb を全部ぼかす時は r・g・b の 3 本に書く（場は 1 チャンネルなので、読む数は taps × 3 になる）。
         case TexBlur({ name = String, chan = TexChan, radius = Vec2.Vec2, taps = Int32, amount = Field })
+        /// 名前つきテクスチャの axis（U = 幅・V = 高さ）のテクセルの数。uv で 1 テクセルずつずらす量は
+        /// `Div(Const(1), TexSize)` で作る。縮んだ Pass は縮んだ後の数・3D の材質の中では段 0 の数。無い名前は 0（Div で割れば 0）。
+        /// 読みとして数える（texReads に Nearest で入り、同じ名前の tex / blur があればその sampler に相乗りする）。
+        case TexSize({ name = String, axis = Axis })
         /// of の中の tex / blur を filter の補間で読む（Unity Shader Graph の Sampler State 節）。入れ子なら内側が勝つ。
         /// use（shared）の中までは届かない — use は基準 uv で 1 回だけ評価する決まりと同じで、shared の側に自分の sampler を書く。
         case Sampler({ filter = FilterMode, of = Field })
@@ -185,6 +189,9 @@ pub mod ShaderDoc {
         /// 3D のメッシュに塗る時の、画素の外向きの単位の法線の axis の成分（-1..1）。uv の変換を受けない。
         /// 2D の面では 0。
         case Normal({ axis = Axis3 })
+        /// 3D のメッシュに塗る時の、画素の頂点の色の chan の成分（R・G・B は 0..1。A はいつも 1）。置いた物の tint は入らない
+        /// （tint は材質の色の後で掛かる）。uv の変換を受けない。2D の面では 1。
+        case VertexColor({ chan = TexChan })
     }
 
     /// 面の色（rgb）。
@@ -348,7 +355,7 @@ pub mod ShaderDoc {
     pub def foldField(f: (a, Field) -> a, acc: a, field: Field): a =
         foldFieldScoped((a1, _, fl) -> f(a1, fl), FilterMode.Nearest, acc, field)
 
-    /// foldField の、各節に「その節の tex / blur が読む補間」（Sampler の内側なら その filter）も渡す形。
+    /// foldField の、各節に「その節の tex / blur の補間」（Sampler の内側なら その filter）も渡す形。
     pub def foldFieldScoped(f: (a, FilterMode, Field) -> a, filter: FilterMode, acc: a, field: Field): a =
         let acc1 = f(acc, filter, field);
         let foldField = (_f, a0, child) -> foldFieldScoped(f, filter, a0, child);
@@ -392,10 +399,12 @@ pub mod ShaderDoc {
             case Field.Tex(_)          => acc1
             case Field.Shift(sh)       => foldField(f, foldField(f, foldField(f, acc1, sh#dx), sh#dy), sh#of)
             case Field.TexBlur(bl)     => foldField(f, acc1, bl#amount)
+            case Field.TexSize(_)      => acc1
             case Field.Sampler(sm)     => foldFieldScoped(f, sm#filter, acc1, sm#of)
             case Field.Param(_)        => acc1
             case Field.World(_)        => acc1
             case Field.Normal(_)       => acc1
+            case Field.VertexColor(_)  => acc1
         }
 
     /// Spec の tex / blur が読むテクスチャ名を f で書き換える（形は変えない）。
@@ -404,6 +413,7 @@ pub mod ShaderDoc {
         mapSpecFields(rewriteField(node -> match node {
             case Field.Tex(tx)     => Field.Tex({ name = f(tx#name) | tx })
             case Field.TexBlur(bl) => Field.TexBlur({ name = f(bl#name) | bl })
+            case Field.TexSize(ts) => Field.TexSize({ name = f(ts#name) | ts })
             case other             => other
         }), spec)
 
@@ -426,8 +436,12 @@ pub mod ShaderDoc {
         }
 
     /// 場の木を下から作り直し、各節に node を掛ける（子を先に作り直してから、その節に node）。
-    def rewriteField(node: Field -> Field): Field -> Field = field ->
-        let go = rewriteField(node);
+    def rewriteField(node: Field -> Field): Field -> Field =
+        rewriteFieldScoped((_, fl) -> node(fl), FilterMode.Nearest)
+
+    /// rewriteField の、各節に「その節の tex / blur の補間」（Sampler の内側なら その filter）も渡す形。
+    def rewriteFieldScoped(node: (FilterMode, Field) -> Field, filter: FilterMode): Field -> Field = field ->
+        let go = rewriteFieldScoped(node, filter);
         let rebuilt = match field {
             case Field.Const(_)        => field
             case Field.Uv(_)           => field
@@ -462,12 +476,14 @@ pub mod ShaderDoc {
             case Field.Tex(_)          => field
             case Field.Shift(sh)       => Field.Shift({ dx = go(sh#dx), dy = go(sh#dy), of = go(sh#of) })
             case Field.TexBlur(bl)     => Field.TexBlur({ amount = go(bl#amount) | bl })
-            case Field.Sampler(sm)     => Field.Sampler({ of = go(sm#of) | sm })
+            case Field.TexSize(_)      => field
+            case Field.Sampler(sm)     => Field.Sampler({ of = rewriteFieldScoped(node, sm#filter)(sm#of) | sm })
             case Field.Param(_)        => field
             case Field.World(_)        => field
             case Field.Normal(_)       => field
+            case Field.VertexColor(_)  => field
         };
-        node(rebuilt)
+        node(filter, rebuilt)
 
     /// Spec の場を「bindings（前から）→ 色 → alpha」の順に並べる。texNames と、場を全部見る走査はこの並びを使う。
     pub def fieldsOf(spec: Spec): List[Field] =
@@ -486,25 +502,31 @@ pub mod ShaderDoc {
             case Shade.Rgb(c)      => c#r :: c#g :: c#b :: Nil
         }
 
-    /// Spec が読むテクスチャ名を「bindings（前から）→ 色 → alpha」の初出順・重複なしで列挙する。
-    /// この並びが正典 — GLSL の uniform 番号・GL の sampler unit 番号・描画依頼の texNames が
-    /// 全部この関数の並びを使うので、3 者がずれない。
+    /// Spec が読むテクスチャ名を texReads の並びから重複なしで列挙する（寸法だけを引く TexSize の名前も入る）。
+    /// この並びが正典 — 描画依頼の texNames・Pass の読みの検査が全部この関数の並びを使う。
     pub def texNames(spec: Spec): List[String] =
-        List.foldLeft((acc, field) -> foldField((names, f) -> match f {
-            case Field.Tex(tx) => if (List.memberOf(tx#name, names)) names else tx#name :: names
-            case Field.TexBlur(bl) => if (List.memberOf(bl#name, names)) names else bl#name :: names
-            case _             => names
-        }, acc, field), Nil, fieldsOf(spec)) |> List.reverse
+        texReads(spec) |> List.map(fst) |> List.distinct
 
     /// Spec が読む (テクスチャ名, 補間) の組を「bindings（前から）→ 色 → alpha」の初出順・重複なしで列挙する。
     /// GLSL の uniform 番号・GL の sampler unit 番号・描画依頼の texReads が全部この並びを使う。sampler を使わない Spec では
     /// texNames と同じ並びに Nearest を添えた物になる（今ある Spec の GLSL を変えない）。
-    pub def texReads(spec: Spec): List[(String, FilterMode)] =
-        List.foldLeft((acc, field) -> foldFieldScoped((reads, filter, f) -> match f {
-            case Field.Tex(tx)     => if (List.memberOf((tx#name, filter), reads)) reads else (tx#name, filter) :: reads
-            case Field.TexBlur(bl) => if (List.memberOf((bl#name, filter), reads)) reads else (bl#name, filter) :: reads
-            case _                 => reads
-        }, FilterMode.Nearest, acc, field), Nil, fieldsOf(spec)) |> List.reverse
+    pub def texReads(spec: Spec): List[(String, FilterMode)] = texReadsIn(fieldsOf(spec))
+
+    /// fields の順に、(テクスチャ名, 補間) の組を初出順・重複なしで。寸法だけを引く TexSize の名前は、tex / blur の組の後ろに
+    /// (名前, Nearest) で足す（同じ名前の組があればそれに相乗りして足さない）。
+    /// WhyNot: TexSize を出てきた順に並べない — 後ろに同じ名前の Linear の読みがあると、寸法のためだけの unit が 1 つ余分に増える。
+    def texReadsIn(fields: List[Field]): List[(String, FilterMode)] =
+        let reads = List.foldLeft((acc, field) -> foldFieldScoped((rs, filter, f) -> match f {
+            case Field.Tex(tx)     => if (List.memberOf((tx#name, filter), rs)) rs else (tx#name, filter) :: rs
+            case Field.TexBlur(bl) => if (List.memberOf((bl#name, filter), rs)) rs else (bl#name, filter) :: rs
+            case _                 => rs
+        }, FilterMode.Nearest, acc, field), Nil, fields) |> List.reverse;
+        let readNames = reads |> List.map(fst) |> List.toSet;
+        let sizeOnly = List.foldLeft((acc, field) -> foldField((names, f) -> match f {
+            case Field.TexSize(ts) => if (Set.memberOf(ts#name, readNames) or List.memberOf(ts#name, names)) names else ts#name :: names
+            case _                 => names
+        }, acc, field), Nil, fields) |> List.reverse;
+        List.append(reads, List.map(name -> (name, FilterMode.Nearest), sizeOnly))
 
     /// Spec が読む Param の名前を「bindings（前から）→ 色 → alpha」の初出順・重複なしで列挙する。
     /// この並びが正典 — GLSL の uniform 番号（uParam0…）と、描画依頼・描き出しが渡す値の並びが全部これを使う。
@@ -576,10 +598,12 @@ pub mod ShaderDoc {
             case Field.Ref(_)          => None
             case Field.Tex(_)          => None
             case Field.TexBlur(_)      => None
+            case Field.TexSize(_)      => None
             case Field.Sampler(_)      => None
             case Field.Param(_)        => None
             case Field.World(_)        => None
             case Field.Normal(_)       => None
+            case Field.VertexColor(_)  => None
         }
 
     /// 負の指数の pow の底の下限（GLSL と CPU が同じ値を読む）。
@@ -660,21 +684,25 @@ pub mod ShaderDoc {
             case other           => other
         }), shade)
 
-    /// Spec の tex / blur を 0 の Const に置き換える（3D の材質はテクスチャを読まない）。
-    /// WhyNot: 3D の GLSL に tex の sampler を足さない — メッシュの画素に対応する uv が無く（vUv は 0）、
-    /// どの点を読むかが決まらない。
-    pub def withoutTextures(spec: Spec): Spec =
-        if (List.isEmpty(texNames(spec))) spec else mapSpecFields(rewriteField(zeroTex), spec)
+    /// 材質（Spec と emission）の中の (テクスチャ名, 補間) の組。Spec の texReads の後ろに、emission にだけ出てくる組を
+    /// 初出順で足す。この並びが 3D の GLSL の sampler の番号（uTex0…）と GL の unit の番号の正典（ShaderGen.compile3d）。
+    pub def materialTexReads(spec: Spec, emission: Option[Shade]): List[(String, FilterMode)] =
+        texReadsIn(List.append(fieldsOf(spec), Option.getWithDefault(Nil, Option.map(shadeFieldsOf, emission))))
 
-    /// 色の tex / blur を 0 の Const に置き換える（withoutTextures の色の版）。
-    pub def shadeWithoutTextures(shade: Shade): Shade =
-        mapShadeFields(rewriteField(zeroTex), shade)
-
-    def zeroTex(node: Field): Field =
-        match node {
-            case Field.Tex(_)     => Field.Const(0.0)
-            case Field.TexBlur(_) => Field.Const(0.0)
-            case other            => other
+    /// 材質の tex / blur のうち、materialTexReads の limit 組目より後ろの組を読む物を 0 の Const に置き換える
+    /// （GL の unit の数に収める。GL と CPU は同じ物を描く）。limit 組に収まる材質はそのまま返す。
+    pub def limitMaterialTexReads(limit: Int32, spec: Spec, emission: Option[Shade]): (Spec, Option[Shade]) =
+        let reads = materialTexReads(spec, emission);
+        if (List.length(reads) <= limit) (spec, emission)
+        else {
+            let kept = List.take(limit, reads);
+            let zeroDropped = rewriteFieldScoped((filter, node) -> match node {
+                case Field.Tex(tx)     => if (List.memberOf((tx#name, filter), kept)) node else Field.Const(0.0)
+                case Field.TexBlur(bl) => if (List.memberOf((bl#name, filter), kept)) node else Field.Const(0.0)
+                case Field.TexSize(ts) => if (List.exists(read -> fst(read) == ts#name, kept)) node else Field.Const(0.0)
+                case other             => other
+            }, FilterMode.Nearest);
+            (mapSpecFields(zeroDropped, spec), Option.map(mapShadeFields(zeroDropped), emission))
         }
 
     def smoothstepF(lo: Float64, hi: Float64, x: Float64): Float64 =
