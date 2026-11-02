@@ -113,9 +113,17 @@ pub mod Scene3d {
     pub def maxMaterialTextures(): Int32 = 6
 
     /// 置いた物の中身。mesh = 形・world = 形の座標 → world の行列・tint = 頂点の色に掛ける色・material = 材質（None なら頂点の色）・
-    /// pose = ジョイントの行列（None ならバインドポーズのまま。曲げるかどうかは skinningOf で決める）。
+    /// pose = ジョイントの行列（None ならバインドポーズのまま。曲げるかどうかは skinningOf で決める）・
+    /// lightmap = ベイクした光（None なら無し。使うかどうかは lightmapOf で決める）。
     pub type alias InstanceFields = { mesh = Mesh3d.Mesh3d, world = Mat4.Mat4, tint = Color, material = Option[Material3d],
-                                      pose = Option[Pose3d.Pose3d] }
+                                      pose = Option[Pose3d.Pose3d], lightmap = Option[Lightmap] }
+
+    /// 3D のベイクした光（Blender などで前もって計算した光の絵。2D の Light.lightMapPass とは別）。
+    /// texture = 絵の名前（Texture3d.name。場面の textures から引く）・colorSpace = 8bit の絵の値の意味・
+    /// intensity = 線形の光の量に戻した後に掛ける倍率（PointLight の intensity と同じ意味。露出の stop の数ではない）・
+    /// maxLevels = 読む mip のレベルの数の上限（UV の島の間が狭い lightmap は lightmapLevelsForGap で小さくする）。
+    /// 欄は後から増えうるので、{ intensity = 2.0 | Scene3d.lightmap(name) } のようにレコードの更新で書く。
+    pub type alias Lightmap = { texture = String, colorSpace = Texture3d.ColorSpace, intensity = Float64, maxLevels = Int32 }
 
     enum InstanceData { case InstanceData(InstanceFields) }
 
@@ -124,7 +132,7 @@ pub mod Scene3d {
 
     /// 形を world の行列で置く（tint 白・材質なし）。
     pub def meshInstance(mesh: Mesh3d.Mesh3d, world: Mat4.Mat4): Instance3d =
-        InstanceData.InstanceData({ mesh = mesh, world = world, tint = Color.rgb(1.0, 1.0, 1.0), material = None, pose = None })
+        InstanceData.InstanceData({ mesh = mesh, world = world, tint = Color.rgb(1.0, 1.0, 1.0), material = None, pose = None, lightmap = None })
 
     pub def withTint(c: Color, i: Instance3d): Instance3d =
         let InstanceData.InstanceData(r) = i;
@@ -143,8 +151,9 @@ pub mod Scene3d {
     ///   - pose が None
     ///   - mesh にジョイントの重みが無い（pose を無視する）
     ///   - mesh のジョイントの番号の最大 ≧ Pose のジョイントの数（skinningWarning が知らせる文を返す）
-    pub def skinningOf(i: Instance3d): Option[Pose3d.Pose3d] =
-        let r = instanceFieldsOf(i);
+    pub def skinningOf(i: Instance3d): Option[Pose3d.Pose3d] = skinningOfFields(instanceFieldsOf(i))
+
+    def skinningOfFields(r: InstanceFields): Option[Pose3d.Pose3d] =
         Option.flatMap(p -> Option.flatMap(top ->
             if (top < Pose3d.jointCount(p)) Some(p) else None, Mesh3d.maxSkinJoint(r#mesh)), r#pose)
 
@@ -162,6 +171,56 @@ pub mod Scene3d {
     pub def instanceFieldsOf(i: Instance3d): InstanceFields =
         let InstanceData.InstanceData(r) = i;
         r
+
+    /// lightmap を読む mip のレベルの数の上限の既定（レベル 0〜3。UV の島の間が 16 px の lightmap に合う）。
+    // WhyNot: 全部のレベルを読まない — UV のアイランドの間の空き（黒）がレベルが上がるほど混ざり、継ぎ目が暗くなる。
+    pub def lightmapMaxLevels(): Int32 = 4
+
+    /// UV の島の間の px（読み込んだ lightmap の絵の上で）から、読む mip のレベルの数の上限を決める（1 以上）。
+    /// レベル k の 1 texel は元の 2^k px で、Linear は隣の texel も読むので、2^(上限のレベル + 1) ≦ 島の間。16 px で 4（レベル 0〜3）・7 px で 2。
+    /// Texture3d.limitSize で lightmap を半分にしたら、島の間も半分になる。
+    pub def lightmapLevelsForGap(gapPx: Int32): Int32 =
+        if (gapPx < 4) 1 else 1 + lightmapLevelsForGap(gapPx / 2)
+
+    /// colorSpace = Srgb・intensity = 1・maxLevels = lightmapMaxLevels() の lightmap。ほかの値は { intensity = 2.0 | Scene3d.lightmap(name) } の形で替える。
+    pub def lightmap(texture: String): Lightmap =
+        { texture = texture, colorSpace = Texture3d.ColorSpace.Srgb, intensity = 1.0, maxLevels = lightmapMaxLevels() }
+
+    /// 置いた物にベイクした光を付ける（2 本目の uv で読む）。付けた物は環境光と hemisphere を足さず、動く光（点光源・スポット）は足す。
+    /// ベイクに入れた光は pointLights に入れない（二重に照らす）。骨つき・材質の無い物・2 本目の uv の無い形には使われない（lightmapWarning）。
+    pub def withLightmap(lm: Lightmap, i: Instance3d): Instance3d =
+        let InstanceData.InstanceData(r) = i;
+        InstanceData.InstanceData({ lightmap = Some(lm) | r })
+
+    /// 描く時に使う lightmap（使える時だけ Some。intensity の負・NaN・無限は 0 に・maxLevels は 1 以上に直す）。GL・CPU・描き出しの鍵はこれだけを読む。
+    pub def lightmapOf(i: Instance3d): Option[Lightmap] = lightmapOfFields(instanceFieldsOf(i))
+
+    /// lightmapOf の本体（置いた物の中身から。描き出しの鍵が使う）。
+    pub def lightmapOfFields(f: InstanceFields): Option[Lightmap] =
+        if (Option.nonEmpty(lightmapProblem(f))) None
+        else f#lightmap |> Option.map(lm -> { intensity = if (lm#intensity > 0.0 and not Float64.isInfinite(lm#intensity)) lm#intensity else 0.0,
+                                              maxLevels = Int32.max(1, lm#maxLevels) | lm })
+
+    /// 付けたのに使わない理由（1 行）。理由が重なる時は 1 行だけ（材質が無い → 骨つき → 2 本目の uv が無い → tex3d: でない の順）。
+    /// 毎コマ通るので、呼ぶ側が名前ごとに初回 1 回だけ出す。
+    pub def lightmapWarning(i: Instance3d): Option[String] = lightmapProblem(instanceFieldsOf(i))
+
+    def lightmapProblem(f: InstanceFields): Option[String] =
+        f#lightmap |> Option.flatMap(lm ->
+            if (Option.isEmpty(f#material)) Some("scene3d: lightmap ${lm#texture} を付けた物に材質が無い — lightmap を使わずに描く（Scene3d.material で包む）")
+            else if (Option.nonEmpty(skinningOfFields(f))) Some("scene3d: lightmap ${lm#texture} は骨つきの物には使わない — 今の光で描く")
+            else if (Option.isEmpty(Mesh3d.uvs2(f#mesh))) Some("scene3d: lightmap ${lm#texture} を付けた形に 2 本目の uv が無い — lightmap を使わずに描く（glb の TEXCOORD_1 か Mesh3d.withUvs2）")
+            else if (not String.startsWith(prefix = Texture3d.namePrefix(), lm#texture)) Some("scene3d: lightmap の名前 ${lm#texture} は場面の textures の絵（Texture3d.name）でない — lightmap を使わずに描く")
+            else None)
+
+    /// 置いた物が読む絵の名前（材質の tex 場と emission・法線マップ・使える lightmap）。材質の絵の上限（maxMaterialTextures）で切らずに全部。
+    /// 描き出しが読む絵の組・描き出しの鍵の絵の一覧は、これから数える。
+    pub def textureNamesOf(i: Instance3d): List[String] =
+        let fromMaterial = instanceFieldsOf(i)#material |> Option.toList |> List.flatMap(m -> {
+            let f = materialFieldsOf(m);
+            List.append(ShaderDoc.materialTexReads(f#spec, f#emission) |> List.map(fst), f#normalMap |> Option.toList |> List.map(n -> n#texture))
+        });
+        List.append(fromMaterial, lightmapOf(i) |> Option.toList |> List.map(lm -> lm#texture))
 
     /// ビルボードの中身。texture と regionRect = 貼る絵（テクスチャの px）・position = 立てる world の点・
     /// size = world の幅と高さ・anchor = position に合わせる絵の中の点（0〜1。(0.5, 1) で足元の真ん中）・

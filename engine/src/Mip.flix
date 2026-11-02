@@ -14,6 +14,12 @@ pub mod Mip {
         if (tex#width <= 0 or tex#height <= 0 or (tex#width == 1 and tex#height == 1)) tex :: Nil
         else tex :: build(halve(tex))
 
+    /// tex の長い辺が maxSide 以下になるまで、段を作るのと同じ縮め方で半分にした絵（もう収まっていれば tex のまま）。
+    /// 段の列の頭を落とした物と同じ画素になる（読み込みの時に大きすぎる絵を縮める・取り込みの最大サイズと同じ）。
+    pub def shrinkTo(maxSide: Int32, tex: ShaderEval.TexData): ShaderEval.TexData =
+        if (Int32.max(tex#width, tex#height) <= Int32.max(1, maxSide) or (tex#width <= 1 and tex#height <= 1)) tex
+        else shrinkTo(maxSide, halve(tex))
+
     def halve(tex: ShaderEval.TexData): ShaderEval.TexData = region rc {
         let (w, h) = (tex#width, tex#height);
         let (nw, nh) = (Int32.max(1, w / 2), Int32.max(1, h / 2));

@@ -47,7 +47,8 @@ mod Scenes {
             :: castShadow() :: paramRead() :: depthRed() :: afterScene3d() :: materialStripes() :: spotShadow() :: skinBend()
             :: texturedBox() :: normalBump() :: skinNormal()
             :: mipFloor() :: mipFloorScaled() :: mipFloorWorld() :: gltfTextured() :: windowPass3d()
-            :: hdrPass() :: hdrWindowHalf() :: hdrMultiply() :: texSizeScaled() :: tonemap() :: fxaa() :: Nil
+            :: hdrPass() :: hdrWindowHalf() :: hdrMultiply() :: texSizeScaled() :: tonemap() :: fxaa()
+            :: lightmapBaked3d() :: lightmapNormal3d() :: Nil
 
     /// B 段階の scene のうち、違う画素の数に上限を置く物（名前 → 許す画素数）。3D の場面は GL と CPU で三角形の縁の
     /// 画素の取り方と浮動小数の丸めが違い、バイトでは一致しない（docs/backend-parity.md の Shader 面と同じ扱い）。
@@ -57,6 +58,9 @@ mod Scenes {
     /// HDR の Pass を補間で読む 2 つ（hdrWindowHalf・tonemap）は、half と float32 / float64 の丸めが 8bit の境目に落ちた平らな面が
     /// まとめて ±1 になり千 px の桁が出る（式を取り違えると ±10 を超える差が面ごとに出る）。fxaa は斜めの縁の画素だけが割れる
     /// （FXAA が効かないと縁の全部が割れて数百 px を超える）。texSizeScaled は寸法を取り違えると縁が 1 画素ずれて百 px を超える。
+    /// lightmap の 2 つは、GPU の補間の重みの丸めの ±1 が段差の縁に出る（lightmapBaked3d は約 400 px で、全部が市松の升の境・
+    /// 材質の絵の texel の境・板のふちの 1 px 以内。lightmapNormal3d は約 260 px で、ほぼ同じ）。環境光か hemisphere を足す・
+    /// 色空間や intensity を取り違えると、板（約 4,700 px と 7,700 px）の中が丸ごと違い、差も ±1 を超える。
     pub def toleranceOf(name: String): Option[Int32] = match name {
         case "depthRed"        => Some(300)
         case "afterScene3d"    => Some(200)
@@ -75,6 +79,8 @@ mod Scenes {
         case "texSizeScaled"   => Some(100)
         case "tonemap"         => Some(7000)
         case "fxaa"            => Some(300)
+        case "lightmapBaked3d" => Some(600)
+        case "lightmapNormal3d" => Some(400)
         case _                 => None
     }
 
@@ -936,4 +942,64 @@ mod Scenes {
         { name = "fxaa", via = ShotVia.ViaScreen, repeats = 1,
           targets = Map#{ "fxP" => RenderTarget.windowDescriptor() }, exact = false, passes = p :: Nil, items =
             Render.shaderFill(PostProcess.fxaaSpec("fxP"), { position = { x = 0.0, y = 0.0 }, size = { x = designW(), y = designH() } }, 0.0, 1) :: Nil }
+
+    // ── scene 35: ベイクした光（Scene3d.withLightmap → GL は unit 8 と frag の bakedLight・CPU は SoftRaster3d の同じ式）。B 段階 ──
+    // 左右は同じ形・同じ材質で、lightmap の絵と intensity だけが違う（置いた物ごとの uniform の入れ直しが漏れると右が左の絵で出る）。
+    // 環境光は白・hemisphere は 1 だが、lightmap つきの物には足さない（足すと板が白く飛ぶ）。点光源は右の板にだけ届く。
+    // 板は 0.5 rad 上へ向けて法線の y を正にする（正面向きのままだと hemisphere × max(0, n.y) が 0 で、足しても絵に出ない）。
+
+    /// 8 × 8 升の市松（明 200・暗 40 の灰。1 升 = 4 × 4 texel の 32 × 32）。brightFirst なら左上の升が明るい。
+    // WhyNot: 1 升 = 1 texel の 8 × 8 にしない — 板（約 46 px）へ引き伸ばすと板の全部が Linear の明暗の坂になり、GPU の補間の重みの
+    //   丸めの ±1 が板じゅうに散って、式の取り違えとの差が 4 倍ほどしか開かない。升の中を平らにして、±1 を升の境の帯に寄せる。
+    def bakedChecker(brightFirst: Bool): Texture3d.Texture3d =
+        let gray = (v: Int32) -> Int32.bitwiseOr(Int32.leftShift(255, 24), v * 65536 + v * 256 + v);
+        let texel = (k: Int32) -> {
+            let even = Int32.remainder(Int32.remainder(k, 32) / 4 + k / 128, 2) == 0;
+            if (even == brightFirst) gray(200) else gray(40)
+        };
+        match Texture3d.fromArgb(32, 32, Vector.range(0, 1024) |> Vector.map(texel)) {
+            case Ok(t)  => t
+            case Err(e) => bug!(e)
+        }
+
+    /// mesh の 1 本目の uv に k を掛けた値を、2 本目の uv として付けた形。
+    def withScaledUvs2(k: Float64, mesh: Mesh3d.Mesh3d): Mesh3d.Mesh3d =
+        let uvs = Mesh3d.uvs(mesh) |> Option.getWithDefault(Vector.empty()) |> Vector.map(x -> x * k);
+        match Mesh3d.withUvs2(uvs, mesh) {
+            case Ok(m)  => m
+            case Err(e) => bug!(e)
+        }
+
+    def lightmapBaked3d(): Scene =
+        let tex = parityTexture();
+        let left = bakedChecker(true);
+        let right = bakedChecker(false);
+        let mesh = withScaledUvs2(1.0, texturedQuad(-1.8, 1.8, -2.2, 2.2, 0.0, 0.0, 1.0));
+        // WhyNot: 材質の絵を Linear で読まない — 板じゅうが albedo の坂になり、補間の丸めの ±1 が lightmap の差に混ざって見分けにくい。
+        let material = Scene3d.texturedMaterial(Texture3d.name(tex), ShaderDoc.FilterMode.Nearest);
+        let plateAt = (x: Float64, lm: Scene3d.Lightmap) ->
+            Scene3d.meshInstance(mesh, Mat4.mul(Mat4.translate(Vec3.v3(x, 0.0, 10.0)), Mat4.rotateX(0.5)))
+                |> Scene3d.withMaterial(material) |> Scene3d.withLightmap(lm);
+        let plates = plateAt(-2.2, Scene3d.lightmap(Texture3d.name(left)))
+            :: plateAt(2.2, { intensity = 1.6 | Scene3d.lightmap(Texture3d.name(right)) }) :: Nil;
+        let light = { position = Vec3.v3(2.2, 0.5, 8.5), color = c8(255, 200, 150), intensity = 0.8, range = 3.0 };
+        let base = flatScene({ x = 240.0, y = 140.0 }, 1, plates, Nil);
+        let scene = { textures = tex :: left :: right :: Nil, pointLights = light :: Nil,
+                      environment = { hemisphere = 1.0 | base#environment } | base };
+        { name = "lightmapBaked3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil }
+
+    // ── scene 36: 法線マップとベイクした光（normalBump の板に lightmap）。B 段階 ──
+    // 法線マップは動く光（左の点光源）にだけ効くので、出っ張りの明暗は灯りの側だけに出て、市松のベイクした光は平らなまま足される。
+    def lightmapNormal3d(): Scene =
+        let tex = bumpTexture();
+        let checker = bakedChecker(true);
+        let plate = Scene3d.meshInstance(withScaledUvs2(0.5, texturedQuad(-4.0, 4.0, -3.0, 3.0, 10.0, 0.0, 2.0)), Mat4.identity())
+            |> Scene3d.withMaterial(bumpMaterial(tex))
+            |> Scene3d.withLightmap({ intensity = 0.5 | Scene3d.lightmap(Texture3d.name(checker)) });
+        let light = { position = Vec3.v3(-7.0, 1.0, 8.0), color = c8(255, 255, 255), intensity = 1.2, range = 20.0 };
+        let base = flatScene({ x = 240.0, y = 140.0 }, 1, plate :: Nil, Nil);
+        let scene = { textures = tex :: checker :: Nil, pointLights = light :: Nil, environment = { ambient = c8(40, 40, 40) | base#environment } | base };
+        { name = "lightmapNormal3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil }
 }

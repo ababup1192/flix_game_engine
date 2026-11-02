@@ -410,7 +410,9 @@
 - テクスチャの論理名 → TextureInfo
   `pub type alias TextureRegistry = Map[String, TextureInfo]`
 - エンジン初期化に必要な設定
-  `pub type alias EngineConfig = { rootDir = String, glyphs = String, designWidth = Int32, designHeight = Int32, windowWidth = Int32, windowHeight = Int32, title = String, textureManifest = List[TextureEntry], fontManifest = List[FontEntry], soundManifest = List[AudioEntry], clearColor = Color, maxDeltaTime = Float64 }`
+  `pub type alias EngineConfig = { rootDir = String, glyphs = String, designWidth = Int32, designHeight = Int32, windowWidth = Int32, windowHeight = Int32, title = String, textureManifest = List[TextureEntry], fontManifest = List[FontEntry], soundManifest = List[AudioEntry], clearColor = Color, maxDeltaTime = Float64, scene3dTextureBudgetMB = Int32 }`
+- 3D の場面の絵を GPU に持つ量の上限の既定（MB）。
+  `pub def defaultScene3dTextureBudgetMB(): Int32`
 - 角丸＋枠線スタイル。共有の描画命令型 `DrawCmd.BoxStyle`。
   `pub type alias BoxStyle = DrawCmd.BoxStyle`
 - スプライト 1 つ分の描画命令。renderCommands ハンドラに渡す共有型 `DrawCmd.Drawable`。
@@ -528,8 +530,16 @@
   `pub def fromGlb(bytes: Vector[Int8]): Result[String, Model3d.Model3d]`
 - path の .glb を、絵と材質つきで読む。parts に材質（baseColorTexture → Scene3d.texturedMaterial・normalTexture → 法線マップ・
   `pub def loadTextured(path: String): Result[String, Model3d.Model3d] \ Fs.FileRead + IO`
+- 材質の絵の長い辺の上限（px）。baseColor = baseColorTexture・normal = normalTexture。上限を超える絵は mip と同じ縮め方で半分にしていく。
+  `pub type alias TextureLimits = { baseColor = Int32, normal = Int32 }`
+- 上限なし（loadTextured と同じ）。ほかの値は { normal = 1024 | Gltf.noTextureLimits() } の形で替える。
+  `pub def noTextureLimits(): TextureLimits`
+- loadTextured の、材質の絵の大きさに上限を掛ける版（場面の絵の上限に収める・近くで見ない法線マップを小さくする）。
+  `pub def loadTexturedWith(limits: TextureLimits, path: String): Result[String, Model3d.Model3d] \ Fs.FileRead + IO`
 - loadTextured のバイトの版。
   `pub def fromGlbTextured(bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO`
+- loadTexturedWith のバイトの版。
+  `pub def fromGlbTexturedWith(limits: TextureLimits, bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO`
 
 ## GpuHandle — `engine/src/core/GpuHandle.flix`
 - タイルマップの GPU インスタンスバッファのハンドル（`initTileBuffer` が返す）。
@@ -644,6 +654,8 @@
 - uv つきの多角形の列から作る（割り方と法線は fromPolygons と同じ・3 点未満の多角形は捨てる）。
   `pub def fromTexturedPolygons(polys: List[TexturedPolygon]): Result[String, Mesh3d]`
 - `pub def withBoxUvs(scale: Float64, m: Mesh3d): Mesh3d`
+- 2 本目の uv（lightmap を読む UV。頂点ごとに u・v の 2 つ・(0, 0) が絵の左上）を付ける。Unity の uv2・Godot の UV2・
+  `pub def withUvs2(uvs: Vector[Float64], m: Mesh3d): Result[String, Mesh3d]`
 - `pub def fromObj(objText: String, mtlText: String): Result[String, Mesh3d]`
 - 中身の鍵（位置・色・番号の SHA-256 の 16 進。uv つきは uv とタンジェントも）。同じ中身なら同じ字になる。GL はこれで頂点バッファを引く。
   `pub def contentHash(m: Mesh3d): String`
@@ -666,11 +678,15 @@
   `pub def indices(m: Mesh3d): Vector[Int32]`
 - 頂点の uv（頂点ごとに u・v の 2 つ。(0, 0) が絵の左上）。uv の無い形は None。
   `pub def uvs(m: Mesh3d): Option[Vector[Float64]]`
+- 頂点の 2 本目の uv（lightmap を読む UV。頂点ごとに u・v の 2 つ）。無い形は None。
+  `pub def uvs2(m: Mesh3d): Option[Vector[Float64]]`
 - 頂点のタンジェント（頂点ごとに x・y・z・w の 4 つ。cross(法線, xyz) × w が絵の上を向く）。uv の無い形は None。
   `pub def tangents(m: Mesh3d): Option[Vector[Float64]]`
 
 ## Mip — `engine/src/Mip.flix`
 - `pub def build(tex: ShaderEval.TexData): List[ShaderEval.TexData]`
+- tex の長い辺が maxSide 以下になるまで、段を作るのと同じ縮め方で半分にした絵（もう収まっていれば tex のまま）。
+  `pub def shrinkTo(maxSide: Int32, tex: ShaderEval.TexData): ShaderEval.TexData`
 - 絵を読む座標の、画面の右隣と下隣の画素との差（uv の単位）。
   `pub type alias Derivatives = { dudx = Float64, dvdx = Float64, dudy = Float64, dvdy = Float64 }`
 - `pub def lodOf(d: Derivatives, width: Int32, height: Int32, levels: Int32): Float64`
@@ -751,7 +767,7 @@
 
 ## ProjectLoader — `engine/src/core/ProjectLoader.flix`
 - project.json から組み立てた、engine 起動に渡すための設定。
-  `pub type alias ProjectConfig = { rootDir = String, glyphs = String, designWidth = Int32, designHeight = Int32, windowWidth = Int32, windowHeight = Int32, title = String, textureManifest = List[{name = String, path = String, hasAlpha = Bool}], fontManifest = List[{name = String, path = String, fontSize = Float64}], soundManifest = List[{name = String, path = String, looping = Bool}], clearColor = Color, maxDeltaTime = Float64 }`
+  `pub type alias ProjectConfig = { rootDir = String, glyphs = String, designWidth = Int32, designHeight = Int32, windowWidth = Int32, windowHeight = Int32, title = String, textureManifest = List[{name = String, path = String, hasAlpha = Bool}], fontManifest = List[{name = String, path = String, fontSize = Float64}], soundManifest = List[{name = String, path = String, looping = Bool}], clearColor = Color, maxDeltaTime = Float64, scene3dTextureBudgetMB = Int32 }`
 - 読み込み結果。シーンは別途 `findSceneFiles` で列挙する。
   `pub type alias Project = { rootDir = String, config = ProjectConfig }`
 - project.json を読んで Project を組み立てる。
@@ -922,7 +938,9 @@
 - 1 つの材質が読める (テクスチャ名, 補間) の組の上限（ShaderDoc.materialTexReads の並びの前から。法線マップは別枠）。
   `pub def maxMaterialTextures(): Int32`
 - 置いた物の中身。mesh = 形・world = 形の座標 → world の行列・tint = 頂点の色に掛ける色・material = 材質（None なら頂点の色）・
-  `pub type alias InstanceFields = { mesh = Mesh3d.Mesh3d, world = Mat4.Mat4, tint = Color, material = Option[Material3d], pose = Option[Pose3d.Pose3d] }`
+  `pub type alias InstanceFields = { mesh = Mesh3d.Mesh3d, world = Mat4.Mat4, tint = Color, material = Option[Material3d], pose = Option[Pose3d.Pose3d], lightmap = Option[Lightmap] }`
+- 3D のベイクした光（Blender などで前もって計算した光の絵。2D の Light.lightMapPass とは別）。
+  `pub type alias Lightmap = { texture = String, colorSpace = Texture3d.ColorSpace, intensity = Float64, maxLevels = Int32 }`
 - 置いた物（閉じた型 — 欄を後から足しても、ゲームの書いた値が壊れない）。
   `pub type alias Instance3d = InstanceData`
 - 形を world の行列で置く（tint 白・材質なし）。
@@ -936,6 +954,21 @@
 - `pub def skinningWarning(i: Instance3d): Option[String]`
 - 置いた物の中身を読む（GL・CPU・鍵が使う）。
   `pub def instanceFieldsOf(i: Instance3d): InstanceFields`
+- `pub def lightmapMaxLevels(): Int32`
+- UV の島の間の px（読み込んだ lightmap の絵の上で）から、読む mip のレベルの数の上限を決める（1 以上）。
+  `pub def lightmapLevelsForGap(gapPx: Int32): Int32`
+- colorSpace = Srgb・intensity = 1・maxLevels = lightmapMaxLevels() の lightmap。ほかの値は { intensity = 2.0 | Scene3d.lightmap(name) } の形で替える。
+  `pub def lightmap(texture: String): Lightmap`
+- 置いた物にベイクした光を付ける（2 本目の uv で読む）。付けた物は環境光と hemisphere を足さず、動く光（点光源・スポット）は足す。
+  `pub def withLightmap(lm: Lightmap, i: Instance3d): Instance3d`
+- 描く時に使う lightmap（使える時だけ Some。intensity の負・NaN・無限は 0 に・maxLevels は 1 以上に直す）。GL・CPU・描き出しの鍵はこれだけを読む。
+  `pub def lightmapOf(i: Instance3d): Option[Lightmap]`
+- lightmapOf の本体（置いた物の中身から。描き出しの鍵が使う）。
+  `pub def lightmapOfFields(f: InstanceFields): Option[Lightmap]`
+- 付けたのに使わない理由（1 行）。理由が重なる時は 1 行だけ（材質が無い → 骨つき → 2 本目の uv が無い → tex3d: でない の順）。
+  `pub def lightmapWarning(i: Instance3d): Option[String]`
+- 置いた物が読む絵の名前（材質の tex 場と emission・法線マップ・使える lightmap）。材質の絵の上限（maxMaterialTextures）で切らずに全部。
+  `pub def textureNamesOf(i: Instance3d): List[String]`
 - ビルボードの中身。texture と regionRect = 貼る絵（テクスチャの px）・position = 立てる world の点・
   `pub type alias BillboardFields = { texture = String, regionRect = Rect2.Rect2, position = Vec3.Vec3, size = Vec2.Vec2, anchor = Vec2.Vec2, tint = Color, lit = Bool }`
 - 深度つきのビルボード（ドット絵を 3D に立てる。閉じた型 — 欄を後から足してもゲームの値が壊れない）。
@@ -1303,6 +1336,17 @@
   `pub def name(t: Texture3d): String`
 - 場面の textures から引く名前の頭（GL と CPU が名前の引き分けに使う）。
   `pub def namePrefix(): String`
+- 長い辺が maxSide 以下になるまで半分にした絵（mip の段を作るのと同じ縮め方。もう収まっていれば t のまま）。
+  `pub def limitSize(maxSide: Int32, t: Texture3d): Texture3d`
+- 8bit の絵の値の意味。Srgb = sRGB の曲線で書いた値（Blender の PNG・色の絵）・Linear = 値がそのまま量（法線マップ・数値の絵）。
+  `pub enum ColorSpace with Eq, ToString { case Srgb case Linear }`
+- sRGB の曲線で書いた値 s（0〜1）を線形の量へ戻す（区分の式: s ≦ 0.04045 は s / 12.92、ほかは ((s + 0.055) / 1.055)^2.4）。
+  `pub def srgbToLinear(s: Float64): Float64`
+- 線形の量 l を sRGB の曲線の値へ（l ≦ 0.0031308 は 12.92 l、ほかは 1.055 l^(1/2.4) − 0.055）。1 を超えても同じ式で返し、負は 0。
+  `pub def linearToSrgb(l: Float64): Float64`
+- `pub def srgbToLinearGlsl(name: String): String`
+- linearToSrgb と同じ式の GLSL の関数（vec3 → vec3。負は 0・1 を超えても切らない）。
+  `pub def linearToSrgbGlsl(name: String): String`
 
 ## TileLayer — `engine/src/render/TileLayer.flix`
 - 色変調なし（白 = テクスチャの色のまま）。tint の既定値として使う。

@@ -21,6 +21,11 @@
 //            1 つの材質が読む絵の組は Scene3d.maxMaterialTextures() まで（後ろの組は 0。GL と同じ）。
 //            法線マップ（uv つきの形だけ・材質の wrap・Linear）: T = normalize(T − N (N·T))・B = cross(N, T) × w・c = 絵の rgb・
 //            m = ((c.x·2 − 1)·s, (c.y·2 − 1)·s, c.z·2 − 1)・n' = normalize(T m.x + B m.y + N m.z)。光の計算は n'、Spec の Normal は当てる前の N。
+//            lightmap（Scene3d.lightmapOf が Some の物だけ）: light = toon(baked + Σ 点光源 + Σ スポット)（ambient と hemisphere は足さない）
+//              baked = linearToSrgb(max(toLinear(s) × intensity, 0))・toLinear = Srgb なら srgbToLinear、Linear ならそのまま（Texture3d の式）
+//              s = lightmap の絵を 2 本目の uv で段つきの Linear・Clamp で読んだ rgb（段は min(段の数, その lightmap の maxLevels)。
+//              lod は 2 本目の uv の右隣と下隣との差から Mip.lodOf）。名前が場面の textures に無い絵は 0 で読む。
+//              法線マップの n' は点光源とスポットにだけ効く。
 //   fog    = clamp((|点 − 目| − near) / max(far − near, 1e-6), 0, 1) の割合で fog の色へ寄せる
 //   range は 1e-6 未満にしない（0 割りを避ける）
 //   Output.Depth の灰色 = clamp((|点 − 目| − near) / max(range, 1e-6), 0, 1)（目からの直線の距離。view の z ではない）
@@ -107,6 +112,20 @@ pub mod SoftRaster3d {
         let (pr, pg, pb) = sumPoints(points, 0, px, py, pz, nx, ny, nz, 0.0, 0.0, 0.0);
         let (sr, sg, sb) = sumSpots(spots, shadow, 0, px, py, pz, nx, ny, nz, 0.0, 0.0, 0.0);
         (toon(steps, ar + sky + pr + sr), toon(steps, ag + sky + pg + sg), toon(steps, ab + sky + pb + sb))
+
+    /// lightmap つきの物に当たる光: evalLight の ambient と hemisphere の代わりに baked（ベイクした光・画面の値）を足す。
+    def evalLightBaked(lights: Lights, baked: (Float64, Float64, Float64), px: Float64, py: Float64, pz: Float64,
+                       nx: Float64, ny: Float64, nz: Float64): (Float64, Float64, Float64) =
+        let Lights.Lights(_, _, _, _, steps, points, spots, shadow) = lights;
+        let (kr, kg, kb) = baked;
+        let (pr, pg, pb) = sumPoints(points, 0, px, py, pz, nx, ny, nz, 0.0, 0.0, 0.0);
+        let (sr, sg, sb) = sumSpots(spots, shadow, 0, px, py, pz, nx, ny, nz, 0.0, 0.0, 0.0);
+        (toon(steps, kr + pr + sr), toon(steps, kg + pg + sg), toon(steps, kb + pb + sb))
+
+    /// lightmap の絵から読んだ値 s（0..1）を、光の足し算に入れる画面の値へ（ファイルの頭の baked の式）。
+    def bakedValue(srgb: Bool, intensity: Float64, s: Float64): Float64 =
+        let linear = if (srgb) Texture3d.srgbToLinear(s) else s;
+        Texture3d.linearToSrgb(Float64.max(0.0, linear * intensity))
 
     def rangeSquared(range: Float64): Float64 =
         let r = Float64.max(range, 1.0e-6);
@@ -322,16 +341,19 @@ pub mod SoftRaster3d {
     // 場面 1 つを lw × lh の ARGB へ
     // ════════════════════════════════════════════════════════
 
-    // 1 頂点の欄の数。clip の段では (clip x, y, z, w, world x, y, z, 法線 x, y, z, 色 r, g, b, uv u, v, タンジェント x, y, z, w)、
+    // 1 頂点の欄の数。clip の段では (clip x, y, z, w, world x, y, z, 法線 x, y, z, 色 r, g, b, uv u, v, タンジェント x, y, z, w, 2 本目の uv u, v)、
     // 画面へ写した後は先頭 4 つが (画面 x, y, NDC の z, 1 / w) に替わる。
     // 材質の無い物の色の欄は 頂点の色 × tint・材質のある物は頂点の色だけ（tint は Mat）・ビルボードは白で、uv の欄に絵の px。
-    def stride(): Int32 = 19
+    // 2 本目の uv の無い形とビルボードは 2 本目の uv が (0, 0)。
+    def stride(): Int32 = 21
 
     def colorSlot(): Int32 = 10
 
     def uvSlot(): Int32 = 13
 
     def tangentSlot(): Int32 = 15
+
+    def uv2Slot(): Int32 = 19
 
     /// 画面へ写した三角形 1 枚。頂点 3 つ（stride() 個ずつ）・符号つきの面積（画面の px²）・
     /// ビルボードの番号（メッシュは −1）・材質の番号（材質の無い物とビルボードは −1）。
@@ -342,6 +364,15 @@ pub mod SoftRaster3d {
 
     /// 当てる法線マップ。絵の段の列・strength・0..1 の外の uv を繰り返すか。
     type alias NormalMapping = { texture = Vector[ShaderEval.TexData], strength = Float64, repeat = Bool }
+
+    /// 置いた物 1 つに貼る lightmap。絵の段の列・Srgb で読むか・intensity・読む段の数の上限。
+    type alias Baked = { texture = Vector[ShaderEval.TexData], srgb = Bool, intensity = Float64, maxLevels = Int32 }
+
+    /// 置いた物 f の lightmap（Scene3d.lightmapOfFields が Some の時だけ）。絵が無ければ透明な黒で読む（GL の代わりの絵と同じ）。
+    def bakedOf(textures: Map[String, Vector[ShaderEval.TexData]], f: Scene3d.InstanceFields): Option[Baked] =
+        Scene3d.lightmapOfFields(f) |> Option.map(lm ->
+            { texture = Map.getWithDefault(lm#texture, Vector#{ { width = 1, height = 1, pixels = Vector#{0} } }, textures),
+              srgb = lm#colorSpace == Texture3d.ColorSpace.Srgb, intensity = lm#intensity, maxLevels = lm#maxLevels })
 
     /// hasUv = 形が uv を持つか（uv の無い形には法線マップを当てない。GL と同じ）。法線マップの絵が無ければ透明な黒で読む（GL の代わりの絵と同じ）。
     def matOf(textures: Map[String, Vector[ShaderEval.TexData]], tint: Color, hasUv: Bool, m: Scene3d.Material3d): Mat =
@@ -435,6 +466,11 @@ pub mod SoftRaster3d {
             let fields = fst(pair)#fields;
             fields#material |> Option.map(matOf(textures, fields#tint, Option.nonEmpty(Mesh3d.uvs(fields#mesh))))
         }) |> List.toVector);
+        // WhyNot: lightmap を Mat に入れない — Mat は材質の中身で、lightmap は置いた物ごと（同じ材質を別の光の場所に置く）。
+        let bakes = hoist(rc, numbered |> List.filterMap(pair -> {
+            let fields = fst(pair)#fields;
+            fields#material |> Option.map(_ -> bakedOf(textures, fields))
+        }) |> List.toVector);
         let meshTris = numbered |> List.flatMap(pair -> instanceTris(view, proj, screen, true, fst(pair), snd(pair)));
         let billboardTris = List.zipWithIndex(placed) |> List.flatMap(entry -> {
             let (index, (f, _)) = entry;
@@ -468,7 +504,7 @@ pub mod SoftRaster3d {
             List.range(0, lw) |> List.forEach(x -> {
                 let ti = Array.get(x, winner);
                 let (r, g, b, a) = if (ti < 0) fill
-                           else shadePixel(Vector.get(ti, tris), inkTable, mats, time, lights, fog, eye, depthBand, (x, y),
+                           else shadePixel(Vector.get(ti, tris), inkTable, mats, bakes, time, lights, fog, eye, depthBand, (x, y),
                                            Array.get(x, w0), Array.get(x, w1));
                 putLayer(out, y * lw + x, r, g, b, a)
             })
@@ -551,7 +587,7 @@ pub mod SoftRaster3d {
     type alias Screen = { w = Float64, h = Float64, near = Float64 }
 
     /// clip の段の頂点（stride() 個）。w は目の座標の −z（Mat4.perspective の 4 行目が (0, 0, −1, 0)）。
-    /// rest = 色 3・uv 2・タンジェント 4 の欄。
+    /// rest = 色 3・uv 2・タンジェント 4・2 本目の uv 2 の欄。
     // WhyNot: proj × view の 1 本の行列で w を出さない — Mat4 は閉じた型で 4 行目を読めず、apply は w を返さない。
     def clipVertex(view: Mat4.Mat4, proj: Mat4.Mat4, p: Vec3.Vec3, n: Vec3.Vec3, rest: Vector[Float64]): Vector[Float64] =
         let e = Mat4.apply(view, p);
@@ -568,6 +604,7 @@ pub mod SoftRaster3d {
         let flip = if (linearDeterminant(world) < 0.0) -1.0 else 1.0;
         let cs = Mesh3d.colors(f#mesh);
         let uvs = Mesh3d.uvs(f#mesh);
+        let uvs2 = Mesh3d.uvs2(f#mesh);
         let tint = if (mat < 0) f#tint else { r = 1.0, g = 1.0, b = 1.0 };
         let surfaceAt = (k: Int32) -> {
             let (u, v) = match uvs {
@@ -578,8 +615,12 @@ pub mod SoftRaster3d {
                 case Some(ts) => let (xyz, tw) = vec4At(ts, k); (Vec3.normalized(Mat4.applyDir(world, xyz)), tw * flip)
                 case None     => (Vec3.zero(), 0.0)
             };
+            let (u2, v2) = match uvs2 {
+                case Some(uv) => (Vector.get(k * 2, uv), Vector.get(k * 2 + 1, uv))
+                case None     => (0.0, 0.0)
+            };
             Vector#{ Vector.get(k * 3, cs) * tint#r, Vector.get(k * 3 + 1, cs) * tint#g, Vector.get(k * 3 + 2, cs) * tint#b,
-                     u, v, t#x, t#y, t#z, w }
+                     u, v, t#x, t#y, t#z, w, u2, v2 }
         };
         let vertices = List.range(0, Mesh3d.vertexCount(f#mesh)) |> List.map(k ->
             clipVertex(view, proj, Mat4.apply(world, vec3At(placed#positions, k)), Vec3.normalized(Mat4.applyDir(nm, vec3At(placed#normals, k))),
@@ -610,7 +651,7 @@ pub mod SoftRaster3d {
         let corner = (u: Float64, v: Float64) -> {
             let p = Vec3.add(f#position, Vec3.add(Vec3.mul(right, (u - f#anchor#x) * f#size#x),
                                                   Vec3.mul(up, (f#anchor#y - v) * f#size#y)));
-            clipVertex(view, proj, p, facing, Vector#{ 1.0, 1.0, 1.0, r#position#x + u * r#size#x, r#position#y + v * r#size#y, 0.0, 0.0, 0.0, 0.0 })
+            clipVertex(view, proj, p, facing, Vector#{ 1.0, 1.0, 1.0, r#position#x + u * r#size#x, r#position#y + v * r#size#y, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 })
         };
         let tl = corner(0.0, 0.0);
         let tr = corner(1.0, 0.0);
@@ -758,13 +799,16 @@ pub mod SoftRaster3d {
         let Mat.Mat(_, _, _, _, _, normal) = m;
         normal
 
-    /// 三角形 tri の、画面の重み (l0, l1) の画素 pixel と 2 × 2 の区画を組む横隣と縦隣の画素の入力（偶数の列・行は右・下、奇数は左・上）。
-    /// 重みは画面の上で線形なので、隣が三角形の外でも同じ式を外へ延ばす（GL の区画の helper の画素と同じ）。
+    /// 奥行きで補正した重み（perspectiveWeights の値）の、横隣と縦隣の画素の組。
+    type alias NeighborWeights = ((Float64, Float64, Float64, Float64), (Float64, Float64, Float64, Float64))
+
+    /// 三角形 tri の、画面の重み (l0, l1) の画素 pixel と 2 × 2 の区画を組む横隣と縦隣の画素の、奥行きで補正した重み
+    /// （偶数の列・行は右・下、奇数は左・上）。重みは画面の上で線形なので、隣が三角形の外でも同じ式を外へ延ばす（GL の区画の helper の画素と同じ）。
     // WhyNot: いつも右隣と下隣を取らない — GL の dFdx / dFdy は 2 × 2 の区画の中の差なので、奇数の列では左隣との差になる。
     //   右隣で取ると奇数の列の lod が半画素ずれ、段の境目の画素が GL とそろわない（区画は層の左上を原点に取る）。
     // WhyNot: 段つきの絵を読む材質かを見てから隣を求める形にしない — 法線マップも隣の uv を読むので分岐が 2 つに割れる。ここは重みの
-    //   足し算と surfaceAt 2 回で済み、重い評価（隣の bindings からの評価）は ShaderEval.evalMaterial3Mip が段つきの材質だけで行う。
-    def neighborPoints(tri: Tri, pixel: (Int32, Int32), l0: Float64, l1: Float64): (ShaderEval.SurfacePoint, ShaderEval.SurfacePoint) =
+    //   足し算で済み、重い評価（隣の bindings からの評価）は ShaderEval.evalMaterial3Mip が段つきの材質だけで行う。
+    def neighborWeights(tri: Tri, pixel: (Int32, Int32), l0: Float64, l1: Float64): NeighborWeights =
         let Tri.Tri(v, area, _, _) = tri;
         let (px, py) = pixel;
         let stepOf = (k: Int32) -> if (Int32.remainder(k, 2) == 0) 1.0 else -1.0;
@@ -773,8 +817,41 @@ pub mod SoftRaster3d {
         let (x0, y0, q0) = (Vector.get(0, v), Vector.get(1, v), Vector.get(3, v));
         let (x1, y1, q1) = (Vector.get(s, v), Vector.get(s + 1, v), Vector.get(s + 3, v));
         let (x2, y2, q2) = (Vector.get(s * 2, v), Vector.get(s * 2 + 1, v), Vector.get(s * 2 + 3, v));
-        let at = (a: Float64, b: Float64) -> surfaceAt(v, perspectiveWeights(a, b, 1.0 - a - b, q0, q1, q2));
+        let at = (a: Float64, b: Float64) -> perspectiveWeights(a, b, 1.0 - a - b, q0, q1, q2);
         (at(l0 - sx * (y2 - y1) / area, l1 - sx * (y0 - y2) / area), at(l0 + sy * (x2 - x1) / area, l1 + sy * (x0 - x2) / area))
+
+    /// 頂点の欄 v の、横隣と縦隣の画素（neighborWeights の重み）の材質が読む入力。
+    def neighborPoints(v: Vector[Float64], neighbors: NeighborWeights): (ShaderEval.SurfacePoint, ShaderEval.SurfacePoint) =
+        let (nextX, nextY) = neighbors;
+        (surfaceAt(v, nextX), surfaceAt(v, nextY))
+
+    /// 奥行きで補正した重みでの 2 本目の uv。
+    def uv2At(v: Vector[Float64], weights: (Float64, Float64, Float64, Float64)): (Float64, Float64) =
+        let (b0, b1, b2, _) = weights;
+        (attr(v, uv2Slot(), b0, b1, b2), attr(v, uv2Slot() + 1, b0, b1, b2))
+
+    /// lightmap bake の、頂点の欄 v の画素（奥行きで補正した重み weights・横隣と縦隣の重み neighbors）でのベイクした光（画面の値）。
+    def bakedAt(bake: Baked, v: Vector[Float64], weights: (Float64, Float64, Float64, Float64), neighbors: NeighborWeights): (Float64, Float64, Float64) =
+        let (u, uvV) = uv2At(v, weights);
+        let (nextX, nextY) = neighbors;
+        let (xu, xv) = uv2At(v, nextX);
+        let (yu, yv) = uv2At(v, nextY);
+        let levels = Int32.min(Vector.length(bake#texture), bake#maxLevels);
+        let lod = match Vector.head(bake#texture) {
+            case Some(base) => Mip.lodOf({ dudx = xu - u, dvdx = xv - uvV, dudy = yu - u, dvdy = yv - uvV }, base#width, base#height, levels)
+            case None       => 0.0
+        };
+        let (sr, sg, sb) = ShaderEval.sampleMipRgb(bake#texture, { linear = true, repeat = false }, lod, u, uvV);
+        (bakedValue(bake#srgb, bake#intensity, sr), bakedValue(bake#srgb, bake#intensity, sg), bakedValue(bake#srgb, bake#intensity, sb))
+
+    /// 材質のある物の画素の光（lightmap が無ければ evalLight・あれば evalLightBaked）。n = 光の計算に使う法線。
+    def materialLight(bake: Option[Baked], lights: Lights, v: Vector[Float64], weights: (Float64, Float64, Float64, Float64),
+                      neighbors: NeighborWeights, p: (Float64, Float64, Float64), n: Vec3.Vec3): (Float64, Float64, Float64) =
+        let (px, py, pz) = p;
+        match bake {
+            case None    => evalLight(lights, px, py, pz, n#x, n#y, n#z)
+            case Some(b) => evalLightBaked(lights, bakedAt(b, v, weights, neighbors), px, py, pz, n#x, n#y, n#z)
+        }
 
     /// 光の計算に使う法線（法線マップが無ければ point の法線のまま。式はファイルの頭）。法線マップは段つきの Linear で読む
     /// （lod は uv の右隣と下隣との差から Mip.lodOf）。
@@ -827,7 +904,7 @@ pub mod SoftRaster3d {
     def channel01(shift: Int32, argb: Int32): Float64 = Int32.toFloat64(SoftRaster.channelOf(shift, argb)) / 255.0
 
     /// 勝った三角形の画素の色（r, g, b, α = 1。0..1 に切らない — 切るのは書く所）。
-    def shadePixel(tri: Tri, inks: Vector[Ink], mats: Vector[Mat], time: Float64, lights: Lights, fog: Fog,
+    def shadePixel(tri: Tri, inks: Vector[Ink], mats: Vector[Mat], bakes: Vector[Option[Baked]], time: Float64, lights: Lights, fog: Fog,
                    eye: (Float64, Float64, Float64), depthBand: Option[(Float64, Float64)], pixel: (Int32, Int32),
                    l0: Float64, l1: Float64): (Float64, Float64, Float64, Float64) =
         let Tri.Tri(v, _, ink, mat) = tri;
@@ -854,9 +931,14 @@ pub mod SoftRaster3d {
                     else if (mat < 0) litFogged((point#color#r, point#color#g, point#color#b))
                     else {
                         let material = Vector.get(mat, mats);
-                        let neighbors = neighborPoints(tri, pixel, l0, l1);
+                        let nextWeights = neighborWeights(tri, pixel, l0, l1);
+                        let neighbors = neighborPoints(v, nextWeights);
                         let lightNormal = mappedNormal(normalMappingOf(material), point, neighbors, tangentAt(v, weights));
-                        materialColor(material, time, point, neighbors, base -> litWith(lightNormal, base))
+                        let (lr, lg, lb) = materialLight(Vector.get(mat, bakes), lights, v, weights, nextWeights, (px, py, pz), lightNormal);
+                        materialColor(material, time, point, neighbors, base -> {
+                            let (br, bg, bb) = base;
+                            applyFog(fog, ex, ey, ez, px, py, pz, br * lr, bg * lg, bb * lb)
+                        })
                     };
                 (r, g, b, 1.0)
         }

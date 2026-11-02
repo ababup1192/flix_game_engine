@@ -11,6 +11,7 @@
 //     "windowWidth": Int, "windowHeight": Int,
 //     "clearColor": {"r": Float, "g": Float, "b": Float},
 //     "maxDeltaTime": Float,
+//     "scene3dTextureBudgetMB": Int,   （任意。3D の場面の絵を GPU に持つ量の上限。既定 256）
 //     "textures": [{"name": String, "path": String, "hasAlpha": Bool}, ...],
 //     "fonts":    [{"name": String, "path": String, "fontSize": Float}, ...],
 //     "sounds":   [{"name": String, "path": String, "looping": Bool}, ...]
@@ -45,7 +46,8 @@ pub mod ProjectLoader {
         fontManifest    = List[{name = String, path = String, fontSize = Float64}],
         soundManifest   = List[{name = String, path = String, looping = Bool}],
         clearColor      = Color,
-        maxDeltaTime    = Float64
+        maxDeltaTime    = Float64,
+        scene3dTextureBudgetMB = Int32
     }
 
     /// 読み込み結果。シーンは別途 `findSceneFiles` で列挙する。
@@ -101,9 +103,17 @@ pub mod ProjectLoader {
                 fontManifest    = fonts,
                 soundManifest   = sounds,
                 clearColor      = clearColor,
-                maxDeltaTime    = maxDelta
+                maxDeltaTime    = maxDelta,
+                scene3dTextureBudgetMB = getTextureBudget(root)
             };
             { rootDir = rootDir, config = config }
+        }
+
+    /// scene3dTextureBudgetMB（任意）: 3D の場面の絵を GPU に持つ量の上限（MB）。無い・1 未満は既定。
+    def getTextureBudget(root: Map[String, Util.Json.Json]): Int32 =
+        match Map.get("scene3dTextureBudgetMB", root) {
+            case Some(JNumber(n)) if n.intValue() >= 1 => n.intValue()
+            case _                                     => GameEngine.defaultScene3dTextureBudgetMB()
         }
 
     /// glyphs（任意）: 起動時にどの字を生成するか。

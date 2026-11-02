@@ -47,6 +47,9 @@ pub mod GameEngine {
     /// glyphs は起動時にどの字を生成するか: "auto"（既定・生成せずに出た字から順に）/
     /// "used"（出しうる字を先に）/ "all"（フォントの全字）。どれを選んでも、
     /// 足りない字は出そうとしたときに追加生成される。
+    /// scene3dTextureBudgetMB:
+    ///   3D の場面の絵（Texture3d）を GPU に持つ量の上限（MB）。超えると今と前のコマで使っていない古い絵から捨てる。
+    ///   project.json の任意キー `scene3dTextureBudgetMB`（既定 defaultScene3dTextureBudgetMB()）。
     pub type alias EngineConfig = {
         rootDir         = String,
         glyphs          = String,
@@ -59,8 +62,12 @@ pub mod GameEngine {
         fontManifest = List[FontEntry],
         soundManifest = List[AudioEntry],
         clearColor = Color,
-        maxDeltaTime = Float64
+        maxDeltaTime = Float64,
+        scene3dTextureBudgetMB = Int32
     }
+
+    /// 3D の場面の絵を GPU に持つ量の上限の既定（MB）。
+    pub def defaultScene3dTextureBudgetMB(): Int32 = 256
 
     /// 角丸＋枠線スタイル。共有の描画命令型 `DrawCmd.BoxStyle`。
     pub type alias BoxStyle = DrawCmd.BoxStyle

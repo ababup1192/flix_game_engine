@@ -75,6 +75,9 @@
 | 骨ごとの姿勢を混ぜる・Scene3d へ渡す | Pose3d（Scene3d.withPose） |
 | Blender などで書き出した .glb を読む（形・骨・動き） | Gltf（load / fromGlb。X を反転して左手系へ） |
 | .glb の絵と材質（baseColorTexture・normalTexture）も読んで primitive ごとに置く | Gltf.loadTextured（Model3d の parts と textures） |
+| Blender でベイクした光（lightmap と 2 本目の uv）を 3D の部屋に貼る | Scene3d.withLightmap（Gltf の TEXCOORD_1 → Mesh3d.uvs2・docs/lightmap.md） |
+| 3D の絵が場面の絵の上限（256 MB）を超える・大きすぎる絵を縮める | Gltf.loadTexturedWith・Texture3d.limitSize・project.json の scene3dTextureBudgetMB（docs/lightmap.md の「場面の絵の予算」） |
+| 8bit の絵の値の意味（sRGB の曲線か線形か）と変換の式 | Texture3d.ColorSpace・srgbToLinear・linearToSrgb |
 | 起動画面（ロゴ+ゲージ）を組み立てたい | Splash |
 | 起動画面の組み込みフォント・ロゴを使いたい | BootFont（素データは BootFontData。生成物なので手で触らない） |
 | 円弧・リングを描きたい（Drawable 経路） | Arc |

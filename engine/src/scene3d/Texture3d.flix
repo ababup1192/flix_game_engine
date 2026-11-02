@@ -58,6 +58,65 @@ pub mod Texture3d {
     /// 場面の textures から引く名前の頭（GL と CPU が名前の引き分けに使う）。
     pub def namePrefix(): String = "tex3d:"
 
+    /// 長い辺が maxSide 以下になるまで半分にした絵（mip の段を作るのと同じ縮め方。もう収まっていれば t のまま）。
+    /// 大きすぎる絵を読み込みの時に縮め、場面の絵の上限（project.json の scene3dTextureBudgetMB）に収めるのに使う。
+    pub def limitSize(maxSide: Int32, t: Texture3d): Texture3d =
+        let r = recOf(t);
+        if (Int32.max(r#width, r#height) <= maxSide) t
+        else {
+            let small = Mip.shrinkTo(maxSide, { width = r#width, height = r#height, pixels = r#argb });
+            Texture3dData.Texture3dData({ width = small#width, height = small#height, argb = small#pixels,
+                                          hash = hashOf(small#width, small#height, small#pixels) })
+        }
+
+    // ── 色空間（8bit の絵の値の意味）──
+
+    /// 8bit の絵の値の意味。Srgb = sRGB の曲線で書いた値（Blender の PNG・色の絵）・Linear = 値がそのまま量（法線マップ・数値の絵）。
+    pub enum ColorSpace with Eq, ToString {
+        case Srgb
+        case Linear
+    }
+
+    /// sRGB の曲線で書いた値 s（0〜1）を線形の量へ戻す（区分の式: s ≦ 0.04045 は s / 12.92、ほかは ((s + 0.055) / 1.055)^2.4）。
+    pub def srgbToLinear(s: Float64): Float64 =
+        if (s <= srgbEdge()) s / srgbSlope()
+        else Float64.pow({ base = (s + srgbOffset()) / (1.0 + srgbOffset()) }, srgbGamma())
+
+    /// 線形の量 l を sRGB の曲線の値へ（l ≦ 0.0031308 は 12.92 l、ほかは 1.055 l^(1/2.4) − 0.055）。1 を超えても同じ式で返し、負は 0。
+    pub def linearToSrgb(l: Float64): Float64 =
+        let x = Float64.max(0.0, l);
+        if (x <= linearEdge()) x * srgbSlope()
+        else (1.0 + srgbOffset()) * Float64.pow({ base = x }, 1.0 / srgbGamma()) - srgbOffset()
+
+    /// srgbToLinear と同じ式の GLSL の関数（vec3 → vec3）。名前は呼ぶ側が決める（ShaderGen の sg_ と重ねない）。
+    // WhyNot: float の重みの mix で区分を選ばない — 選ばない側の NaN・無限が 0 倍でも NaN として漏れる。bvec の mix はそのまま選ぶ。
+    pub def srgbToLinearGlsl(name: String): String =
+        "vec3 ${name}(vec3 s) {\n" +
+        "    vec3 lo = s / ${glslFloat(srgbSlope())};\n" +
+        "    vec3 hi = pow((s + ${glslFloat(srgbOffset())}) / ${glslFloat(1.0 + srgbOffset())}, vec3(${glslFloat(srgbGamma())}));\n" +
+        "    return mix(hi, lo, lessThanEqual(s, vec3(${glslFloat(srgbEdge())})));\n" +
+        "}\n"
+
+    /// linearToSrgb と同じ式の GLSL の関数（vec3 → vec3。負は 0・1 を超えても切らない）。
+    pub def linearToSrgbGlsl(name: String): String =
+        "vec3 ${name}(vec3 l) {\n" +
+        "    vec3 x = max(l, vec3(0.0));\n" +
+        "    vec3 lo = x * ${glslFloat(srgbSlope())};\n" +
+        "    vec3 hi = ${glslFloat(1.0 + srgbOffset())} * pow(x, vec3(1.0 / ${glslFloat(srgbGamma())})) - ${glslFloat(srgbOffset())};\n" +
+        "    return mix(hi, lo, lessThanEqual(x, vec3(${glslFloat(linearEdge())})));\n" +
+        "}\n"
+
+    def srgbEdge(): Float64 = 0.04045
+    def linearEdge(): Float64 = 0.0031308
+    def srgbSlope(): Float64 = 12.92
+    def srgbOffset(): Float64 = 0.055
+    def srgbGamma(): Float64 = 2.4
+
+    /// GLSL の float の字（整数に見える数にも小数点を付ける）。
+    def glslFloat(x: Float64): String =
+        let s = Float64.toString(x);
+        if (String.contains(substr = ".", s) or String.contains(substr = "E", s)) s else s + ".0"
+
     // WhyNot: 画素を文字列につないでから SHA を取らない — 1024² の絵で数十 MB の字を作ることになる。
     def hashOf(width: Int32, height: Int32, argb: Vector[Int32]): String =
         unsafe IO {

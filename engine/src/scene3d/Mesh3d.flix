@@ -12,7 +12,7 @@ pub mod Mesh3d {
     /// 頂点の欄（頂点 i の値は [3i, 3i + 3) の 3 つ）。uvSet = 絵の上の位置とタンジェント（uv の無い形は None）。
     // WhyNot: 欄を並びの位置で持たない — 骨の重みなどを後から足した時、位置で読む所が全部ずれる。
     type alias Vertices = { positions = Vector[Float64], normals = Vector[Float64], colors = Vector[Float64], skin = Option[SkinWeights],
-                            uvSet = Option[UvSet] }
+                            uvSet = Option[UvSet], uvs2 = Option[Vector[Float64]] }
 
     /// 頂点ごとの uv（[2i, 2i + 2)。(0, 0) が絵の左上・v は絵の下へ増える）とタンジェント（[4i, 4i + 4)。xyz は u が増える向きの単位ベクトル・
     /// w = ±1 で cross(法線, xyz) × w が絵の上（−v）を向く）。
@@ -66,7 +66,7 @@ pub mod Mesh3d {
         let (low, high) = boundsOfPositions(positions);
         let hash = hashOf(positions, colors, indices);
         Mesh3dData.Mesh3dData({
-            vertices = { positions = positions, normals = normals, colors = colors, skin = None, uvSet = None },
+            vertices = { positions = positions, normals = normals, colors = colors, skin = None, uvSet = None, uvs2 = None },
             indices = indices,
             hash = hash,
             baseHash = hash,
@@ -98,7 +98,7 @@ pub mod Mesh3d {
                 let (low, high) = boundsOfPositions(positions);
                 let hash = arraysHashOf(positions, arrays#normals, arrays#colors, arrays#indices, skin);
                 Mesh3dData.Mesh3dData({
-                    vertices = { positions = positions, normals = arrays#normals, colors = arrays#colors, skin = skin, uvSet = None },
+                    vertices = { positions = positions, normals = arrays#normals, colors = arrays#colors, skin = skin, uvSet = None, uvs2 = None },
                     indices = arrays#indices,
                     hash = hash,
                     baseHash = hash,
@@ -203,8 +203,9 @@ pub mod Mesh3d {
                 let normals = pickRows(sources, 3, v#normals);
                 let colors = pickRows(sources, 3, v#colors);
                 let skin = Option.map(sw -> { joints = pickRows(sources, 4, sw#joints), weights = pickRows(sources, 4, sw#weights) }, v#skin);
+                let uvs2 = Option.map(pickRows(sources, 2), v#uvs2);
                 let hash = arraysHashOf(positions, normals, colors, split#indices, skin);
-                { vertices = { positions = positions, normals = normals, colors = colors, skin = skin, uvSet = None },
+                { vertices = { positions = positions, normals = normals, colors = colors, skin = skin, uvSet = None, uvs2 = uvs2 },
                   indices = split#indices, hash = hash, baseHash = hash | r }
             };
         withUvSet({ uvs = uvs, tangents = computeTangents(moved#vertices#positions, moved#vertices#normals, uvs, moved#indices) }, moved)
@@ -265,11 +266,27 @@ pub mod Mesh3d {
     }
 
     def withUvSet(set: UvSet, r: Mesh3dRec): Mesh3d =
-        Mesh3dData.Mesh3dData({ vertices = { uvSet = Some(set) | r#vertices }, hash = uvHashOf(r#baseHash, set) | r })
+        Mesh3dData.Mesh3dData({ vertices = { uvSet = Some(set) | r#vertices }, hash = surfaceHashOf(r#baseHash, Some(set), r#vertices#uvs2) | r })
 
-    // WhyNot: uv の無い形の鍵に uv の欄を足さない — 前からある形の鍵（GL の頂点バッファ・描き出しの鍵）を変えない。
-    def uvHashOf(baseHash: String, set: UvSet): String =
-        digestOf("uv|${baseHash}", set#uvs :: set#tangents :: Nil, Nil)
+    /// 2 本目の uv（lightmap を読む UV。頂点ごとに u・v の 2 つ・(0, 0) が絵の左上）を付ける。Unity の uv2・Godot の UV2・
+    /// Bevy の ATTRIBUTE_UV_1・glTF の TEXCOORD_1 にあたる。タンジェントは作らない（法線マップは 1 本目の uv で読む）。
+    /// 数が頂点の数 × 2 でない・NaN・無限は Err。
+    pub def withUvs2(uvs: Vector[Float64], m: Mesh3d): Result[String, Mesh3d] =
+        let r = recOf(m);
+        let count = Vector.length(r#vertices#positions) / 3;
+        if (Vector.length(uvs) != count * 2) Err("Mesh3d.withUvs2: uvs の数が頂点の数 × 2（${count * 2}）でない")
+        else if (Vector.exists(x -> not isFiniteNumber(x), uvs)) Err("Mesh3d.withUvs2: uvs に NaN か無限がある")
+        else Ok(Mesh3dData.Mesh3dData({ vertices = { uvs2 = Some(uvs) | r#vertices }, hash = surfaceHashOf(r#baseHash, r#vertices#uvSet, Some(uvs)) | r }))
+
+    /// uv の欄（1 本目の uv とタンジェント・2 本目の uv）を足した中身の鍵。withUvSet と withUvs2 のどちらの順で付けても同じ鍵になる。
+    // WhyNot: uv の無い形の鍵に uv の欄を足さない — 前からある形の鍵（GL の頂点バッファ・描き出しの鍵）を変えない。2 本目の uv の無い形も同じ。
+    def surfaceHashOf(baseHash: String, set: Option[UvSet], uvs2: Option[Vector[Float64]]): String =
+        match (set, uvs2) {
+            case (None, None)          => baseHash
+            case (Some(s), None)       => digestOf("uv|${baseHash}", s#uvs :: s#tangents :: Nil, Nil)
+            case (None, Some(second))  => digestOf("uv2|${baseHash}", second :: Nil, Nil)
+            case (Some(s), Some(second)) => digestOf("uv+uv2|${baseHash}", s#uvs :: s#tangents :: second :: Nil, Nil)
+        }
 
     /// 頂点ごとのタンジェント（x・y・z・w）。三角形ごとに
     ///   t = (e1·dv2 − e2·dv1) / det（u が増える向き）・b = (e2·du1 − e1·du2) / det（v が増える向き）
@@ -518,6 +535,9 @@ pub mod Mesh3d {
 
     /// 頂点の uv（頂点ごとに u・v の 2 つ。(0, 0) が絵の左上）。uv の無い形は None。
     pub def uvs(m: Mesh3d): Option[Vector[Float64]] = recOf(m)#vertices#uvSet |> Option.map(set -> set#uvs)
+
+    /// 頂点の 2 本目の uv（lightmap を読む UV。頂点ごとに u・v の 2 つ）。無い形は None。
+    pub def uvs2(m: Mesh3d): Option[Vector[Float64]] = recOf(m)#vertices#uvs2
 
     /// 頂点のタンジェント（頂点ごとに x・y・z・w の 4 つ。cross(法線, xyz) × w が絵の上を向く）。uv の無い形は None。
     pub def tangents(m: Mesh3d): Option[Vector[Float64]] = recOf(m)#vertices#uvSet |> Option.map(set -> set#tangents)

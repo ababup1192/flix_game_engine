@@ -221,6 +221,40 @@ mod TestDrawHash {
         let at = (world: Mat4.Mat4) -> keyOf(inputs(), { req = { scenes = sceneAt(world) :: Nil | f#req } | f });
         Assert.assertTrue(at(Mat4.identity()) != at(Mat4.translate(Vec3.v3(1.0, 0.0, 0.0))))
 
+    /// 白い材質の赤い三角に、2 本目の uv（withUv2 の時だけ）を付けた物。
+    def paintedTriangle(withUv2: Bool): Scene3d.Instance3d =
+        let mesh = if (withUv2) Mesh3d.withUvs2(Vector#{ 0.0, 0.0, 1.0, 0.0, 1.0, 1.0 }, redTriangle()) |> Result.getWithDefault(redTriangle())
+                   else redTriangle();
+        let material = Scene3d.material({ name = "lm", cycleRate = 0.0, bindings = Nil,
+            out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Solid({ r = 1.0, g = 1.0, b = 1.0 }), alpha = ShaderDoc.Field.Const(1.0) }) });
+        Scene3d.meshInstance(mesh, Mat4.identity()) |> Scene3d.withMaterial(material)
+
+    /// paintedTriangle に lightmap（intensity）を付けた物。
+    def bakedTriangle(withUv2: Bool, intensity: Float64): Scene3d.Instance3d =
+        paintedTriangle(withUv2) |> Scene3d.withLightmap({ intensity = intensity | Scene3d.lightmap("tex3d:lm") })
+
+    def sceneKeyOf(i: Scene3d.Instance3d): String =
+        let f = frame();
+        keyOf(inputs(), { req = { scenes = sceneWith(i) :: Nil | f#req } | f })
+
+    // 使える lightmap の intensity だけが違う場面は鍵が違う（lightmapOfFields の欄を鍵に入れている）。
+    @Test
+    def testLightmapIntensityChangesKey(): Unit \ Assert =
+        let f = frame();
+        let at = (intensity: Float64) -> keyOf(inputs(), { req = { scenes = sceneWith(bakedTriangle(true, intensity)) :: Nil | f#req } | f });
+        Assert.assertTrue(at(1.0) != at(2.0))
+
+    // 使える lightmap の段の上限（maxLevels）だけが違う場面は鍵が違う。
+    @Test
+    def testLightmapMaxLevelsChangesKey(): Unit \ Assert =
+        let at = (levels: Int32) -> sceneKeyOf(paintedTriangle(true) |> Scene3d.withLightmap({ maxLevels = levels | Scene3d.lightmap("tex3d:lm") }));
+        Assert.assertTrue(at(4) != at(2))
+
+    // 2 本目の uv の無い形の lightmap は絵に出ないので、鍵は lightmap を付けない同じ三角と同じ。
+    @Test
+    def testUnusedLightmapKeyEqualsKeyWithoutLightmap(): Unit \ Assert =
+        Assert.assertEq(expected = sceneKeyOf(paintedTriangle(false)), sceneKeyOf(bakedTriangle(false, 2.0)))
+
     // pose の無い置いた物の鍵は、pose の欄を足す前の字のまま（3D の場面のキャッシュの PNG を塗り直させない）。
     @Test
     def testSceneKeyWithoutPoseIsPinned(): Unit \ Assert =

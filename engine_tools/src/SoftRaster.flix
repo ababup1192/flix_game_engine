@@ -435,12 +435,7 @@ pub mod SoftRaster {
     def argbReadNames(req: RasterReq): Set[String] =
         let fromDrawables = req#drawables |> List.map(DrawCmd.textureOf);
         let fromBillboards = req#scenes |> List.flatMap(c -> c#scene#billboards |> List.map(b -> Scene3d.billboardFieldsOf(b)#texture));
-        let fromMaterials = req#scenes
-            |> List.flatMap(c -> c#scene#instances |> List.filterMap(i -> Scene3d.instanceFieldsOf(i)#material))
-            |> List.flatMap(m -> {
-                let f = Scene3d.materialFieldsOf(m);
-                List.append(ShaderDoc.materialTexReads(f#spec, f#emission) |> List.map(fst), f#normalMap |> Option.toList |> List.map(n -> n#texture))
-            });
+        let fromMaterials = req#scenes |> List.flatMap(c -> c#scene#instances |> List.flatMap(Scene3d.textureNamesOf));
         List.toSet(List.append(fromDrawables, List.append(fromBillboards, fromMaterials)))
 
     /// Pass の絵の 8bit の形（Rgba8Unorm はそのまま・Rgba16Float は names にある物だけ 0..1 に切って写す）。
@@ -518,7 +513,7 @@ pub mod SoftRaster {
 
     /// 3D の場面のビルボードと材質が引く絵（名前 → 段の列。段 0 が元の絵）。無い名前は Drawable と同じ文面で 1 度だけ知らせ、
     /// そのビルボードは描かない（材質の Tex は 0 で読む）。"tex3d:" の名前は場面の textures から引く。
-    /// 材質と法線マップが読む絵は Mip.build の段まで作る（描き出したばかりの絵 = レンダーターゲットは段を作らない。GL と同じ）。
+    /// 材質・法線マップ・lightmap の絵は Mip.build の段まで作る（描き出したばかりの絵 = レンダーターゲットは段を作らない。GL と同じ）。
     /// ビルボードだけが読む絵は段 0 だけ。材質の絵の組が Scene3d.maxMaterialTextures() を超えたら、材質の名前ごとに 1 度だけ知らせる。
     // WhyNot: 画素の Vector を場面ごとに作り直さない — 同じ絵を何枚ものビルボードと場面が引くので、名前ごとに 1 回だけ写す。
     def sceneTexturesOf(textures: Map[String, BufferedImage], mipSource: MipSource, warnLog: TexWarnLog,
@@ -528,12 +523,17 @@ pub mod SoftRaster {
             |> List.flatMap(c -> c#scene#instances |> List.filterMap(i -> Scene3d.instanceFieldsOf(i)#material))
             |> List.map(Scene3d.materialFieldsOf);
         scenes |> List.flatMap(c -> c#scene#instances) |> List.map(Scene3d.instanceFieldsOf) |> List.forEach(warnNormalMapWithoutUv(warnLog));
-        let materialNames = materials |> List.flatMap(f -> {
+        scenes |> List.flatMap(c -> c#scene#instances) |> List.forEach(warnUnusedLightmap(warnLog));
+        let lightmapNames = scenes |> List.flatMap(c -> c#scene#instances |> List.filterMap(Scene3d.lightmapOf)) |> List.map(lm -> lm#texture);
+        let materialReads = materials |> List.flatMap(f -> {
             let reads = ShaderDoc.materialTexReads(f#spec, f#emission);
             warnTooManyMaterialTextures(warnLog, f#spec#name, List.length(reads));
             List.append(List.take(Scene3d.maxMaterialTextures(), reads) |> List.map(fst),
                         f#normalMap |> Option.toList |> List.map(n -> n#texture))
-        }) |> List.distinct;
+        });
+        let materialNames = List.append(materialReads, lightmapNames) |> List.distinct;
+        // WhyNot: 材質も読む名前を lightmap の絵と呼ばない — GL は名前ごとに 1 回だけ知らせ、材質の絵として先に引く。
+        let lightmapOnly = Set.difference(List.toSet(lightmapNames), List.toSet(materialReads));
         let billboardNames = scenes |> List.flatMap(c -> c#scene#billboards |> List.map(b -> Scene3d.billboardFieldsOf(b)#texture));
         let lookup = (name: String) ->
             if (String.startsWith(prefix = Texture3d.namePrefix(), name))
@@ -545,7 +545,7 @@ pub mod SoftRaster {
             case Some((td, key)) =>
                 let rendered = Set.memberOf(name, mipSource#rendered);
                 Map.insert(name, if (rendered) Vector#{ td } else mipChainOf(mipSource#cache, key, td), acc)
-            case None => warnMissingMaterialTexture(warnLog, name); acc
+            case None => warnMissingSceneTexture(warnLog, if (Set.memberOf(name, lightmapOnly)) "lightmap の絵" else "材質の絵", name); acc
         }, Map.empty());
         billboardNames |> List.distinct |> List.filter(name -> not Set.memberOf(name, materialSet)) |> List.foldLeft((acc, name) -> match lookup(name) {
             case Some((td, _)) => Map.insert(name, Vector#{ td }, acc)
@@ -573,14 +573,26 @@ pub mod SoftRaster {
             case _ => List.toVector(Mip.build(td))
         }
 
-    def warnMissingMaterialTexture(warnLog: TexWarnLog, name: String): Unit \ IO =
+    /// 3D の場面の材質・法線マップ・lightmap の絵 name が無いことを、名前ごとに 1 度だけ知らせる（label = 何の絵か。GL と同じ文面）。
+    def warnMissingSceneTexture(warnLog: TexWarnLog, label: String, name: String): Unit \ IO =
         let key = "@material-texture:" + name;
         if (Set.memberOf(key, Ref.get(warnLog))) ()
         else {
             Ref.put(Set.insert(key, Ref.get(warnLog)), warnLog);
-            Log.warn("scene3d: 材質の絵 '${name}' が見つからない — 0（黒・透明）で読む"
+            Log.warn("scene3d: ${label} '${name}' が見つからない — 0（黒・透明）で読む"
                 + "（tex3d: の名前は場面の textures に、ほかは project.json の textures に同名の宣言があるか確認）")
         }
+
+    /// 付けたのに使わない lightmap（Scene3d.lightmapWarning）を、理由と形ごとに 1 度だけ知らせる（lightmap を使わず今の式で描く。GL と同じ）。
+    def warnUnusedLightmap(warnLog: TexWarnLog, i: Scene3d.Instance3d): Unit \ IO =
+        Scene3d.lightmapWarning(i) |> Option.forEach(line -> {
+            let key = "@lightmap:" + line + Mesh3d.contentHash(Scene3d.instanceFieldsOf(i)#mesh);
+            if (Set.memberOf(key, Ref.get(warnLog))) ()
+            else {
+                Ref.put(Set.insert(key, Ref.get(warnLog)), warnLog);
+                Log.warn(line)
+            }
+        })
 
     /// uv の無い形に法線マップの材質が付いていたら、形ごとに 1 度だけ知らせる（法線マップは当てずに描く。GL と同じ）。
     def warnNormalMapWithoutUv(warnLog: TexWarnLog, f: Scene3d.InstanceFields): Unit \ IO =

@@ -33,10 +33,10 @@ pub mod Gltf {
     }
 
     /// 頂点の欄（glTF の座標のまま）。uvs = TEXCOORD_0（無ければ None）・tangents = TANGENT（uv が無いか TANGENT が無ければ None）・
-    /// material = primitive の材質の番号。
+    /// uvs2 = TEXCOORD_1（lightmap を読む 2 本目の uv。無ければ None）・material = primitive の材質の番号。
     type alias Part = { positions = Vector[Float64], normals = Vector[Float64], colors = Vector[Float64], indices = Vector[Int32],
                         joints = Vector[Int32], weights = Vector[Float64], uvs = Option[Vector[Float64]],
-                        tangents = Option[Vector[Float64]], material = Option[Int32] }
+                        tangents = Option[Vector[Float64]], uvs2 = Option[Vector[Float64]], material = Option[Int32] }
 
     /// 組んだ Model3d と、parts の並びの材質の番号（loadTextured が材質を付ける）。
     type alias Built = { model = Model3d.Model3d, jointOfNode = Map[Int32, Int32], partMaterials = List[Option[Int32]] }
@@ -64,8 +64,23 @@ pub mod Gltf {
             |> Result.mapErr(e -> "${path}: 読めない（${e}）")
             |> Result.flatMap(bytes -> fromGlbTextured(bytes) |> Result.mapErr(e -> "${path}: ${e}"))
 
+    /// 材質の絵の長い辺の上限（px）。baseColor = baseColorTexture・normal = normalTexture。上限を超える絵は mip と同じ縮め方で半分にしていく。
+    pub type alias TextureLimits = { baseColor = Int32, normal = Int32 }
+
+    /// 上限なし（loadTextured と同じ）。ほかの値は { normal = 1024 | Gltf.noTextureLimits() } の形で替える。
+    pub def noTextureLimits(): TextureLimits = { baseColor = Texture3d.maxSide(), normal = Texture3d.maxSide() }
+
+    /// loadTextured の、材質の絵の大きさに上限を掛ける版（場面の絵の上限に収める・近くで見ない法線マップを小さくする）。
+    pub def loadTexturedWith(limits: TextureLimits, path: String): Result[String, Model3d.Model3d] \ Fs.FileRead + IO =
+        Fs.FileRead.readBytes(path)
+            |> Result.mapErr(e -> "${path}: 読めない（${e}）")
+            |> Result.flatMap(bytes -> fromGlbTexturedWith(limits, bytes) |> Result.mapErr(e -> "${path}: ${e}"))
+
     /// loadTextured のバイトの版。
-    pub def fromGlbTextured(bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO =
+    pub def fromGlbTextured(bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO = fromGlbTexturedWith(noTextureLimits(), bytes)
+
+    /// loadTexturedWith のバイトの版。
+    pub def fromGlbTexturedWith(limits: TextureLimits, bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO =
         let builtR = forM (
             glb <- parseGlb(bytes);
             _ <- checkBuffers(glb#json);
@@ -74,7 +89,11 @@ pub mod Gltf {
         match builtR {
             case Err(e) => Err(e)
             case Ok((glb, built)) =>
-                let images = objectsOf("images", glb#json) |> Vector.map(decodeImage(glb));
+                let used = usedImages(limits, glb#json);
+                let images = objectsOf("images", glb#json) |> Vector.mapWithIndex((k, image) -> match Map.get(k, used) {
+                    case Some(maxSide) => decodeImage(glb, image) |> (decoded -> (Option.map(Texture3d.limitSize(maxSide), fst(decoded)), snd(decoded)))
+                    case None          => (None, Nil)
+                });
                 let decoded = images |> Vector.map(fst);
                 let materials = objectsOf("materials", glb#json) |> Vector.map(materialOf(glb, decoded));
                 let parts = List.zip(built#model#parts, built#partMaterials) |> List.map(pm -> {
@@ -85,6 +104,17 @@ pub mod Gltf {
                 Ok(Log.warnAllThen(List.append(warningsOf(glb#json, built#jointOfNode), lines),
                                    { parts = parts, textures = Vector.toList(decoded) |> List.filterMap(identity) | built#model }))
         }
+
+    /// 材質の baseColorTexture と normalTexture が指す画像の番号 → その絵の長い辺の上限（両方から指されたら大きい方）。
+    // WhyNot: 全部の画像を decode しない — metallicRoughness・occlusion・emissive の絵は描くのに使わず、2048² なら 1 枚 16 MB をヒープに持つ。
+    def usedImages(limits: TextureLimits, json: Obj): Map[Int32, Int32] =
+        let textures = objectsOf("textures", json);
+        objectsOf("materials", json) |> Vector.toList
+            |> List.flatMap(material -> (objectOf("baseColorTexture", objectOf("pbrMetallicRoughness", material)), limits#baseColor)
+                                        :: (objectOf("normalTexture", material), limits#normal) :: Nil)
+            |> List.filterMap(entry -> { let (info, maxSide) = entry; intOf("index", info) |> Option.map(k -> (k, maxSide)) })
+            |> List.filterMap(entry -> { let (k, maxSide) = entry; Vector.nth(k, textures) |> Option.flatMap(texture -> intOf("source", texture)) |> Option.map(src -> (src, maxSide)) })
+            |> List.foldLeft((acc, entry) -> { let (src, maxSide) = entry; Map.insertWith((a, b) -> Int32.max(a, b), src, maxSide, acc) }, Map.empty())
 
     /// images[k] を絵に戻す（BIN の bufferView の PNG / JPEG）。外の uri・読めない画像は None と知らせる 1 行。
     def decodeImage(glb: Glb, image: Obj): (Option[Texture3d.Texture3d], List[String]) \ IO =
@@ -589,6 +619,7 @@ pub mod Gltf {
         ) yield {
             let count = positions#count;
             let uvs = optionalAttribute(glb, attributes, "TEXCOORD_0", 2, count);
+            let uvs2 = optionalAttribute(glb, attributes, "TEXCOORD_1", 2, count);
             let tangents = optionalAttribute(glb, attributes, "TANGENT", 4, count);
             let indexList = match indices {
                 case Some(a) => Vector.map(toIndex, a#values)
@@ -602,7 +633,7 @@ pub mod Gltf {
             let part = { positions = placedPositions, normals = Option.getWithDefault(Vector.empty(), placedNormals),
                          colors = rowsOf(count, Vector.length(color), (_, c) -> Vector.get(c, color)), indices = indexList,
                          joints = fst(skin), weights = snd(skin), uvs = Option.map(a -> a#values, uvs), tangents = placedTangents,
-                         material = intOf("material", prim) };
+                         uvs2 = Option.map(a -> a#values, uvs2), material = intOf("material", prim) };
             if (Option.nonEmpty(normals)) part else flatShaded(part)
         }
 
@@ -692,6 +723,7 @@ pub mod Gltf {
           weights = if (hasSkin) gather(4, part#weights, corners) else Vector.empty(),
           uvs = Option.map(uv -> gather(2, uv, corners), part#uvs),
           tangents = Option.map(t -> gather(4, t, corners), part#tangents),
+          uvs2 = Option.map(uv -> gather(2, uv, corners), part#uvs2),
           material = part#material }
 
     /// count 行 × width 列の並び（行 k・列 c の値は cell(k, c)）。
@@ -736,9 +768,20 @@ pub mod Gltf {
     /// primitive 1 つの形（meshOfParts と同じ写し方）。uv があれば uv つきにし、TANGENT があれば x と w の符号を反転して使う
     /// （X の反転で cross(N, T) の向きが裏返るので、w も裏返すと絵の上の向きが保たれる）。無ければ Mesh3d が uv から求める。
     /// uv を付けられなければ uv なしの形で続けて 1 行知らせる（uv は形を描くのに要らない）。
+    /// 2 本目の uv（TEXCOORD_1）があれば付ける（X の反転は受けない — uv と同じく絵の上の位置）。付けられなければ 2 本目の uv なしで続けて 1 行知らせる。
     def partMeshOf(part: Part, skinned: Bool): Result[String, Mesh3d.Mesh3d] =
-        Result.map(mesh -> part#uvs |> Option.map(uv -> withPartUvs(part, uv, mesh)) |> Option.getWithDefault(mesh),
+        Result.map(mesh -> part#uvs |> Option.map(uv -> withPartUvs(part, uv, mesh)) |> Option.getWithDefault(mesh)
+                               |> withPartUvs2(part),
                    meshOfParts(part :: Nil, skinned))
+
+    def withPartUvs2(part: Part, mesh: Mesh3d.Mesh3d): Mesh3d.Mesh3d =
+        part#uvs2 |> Option.map(uv -> attachUvs2(uv, mesh)) |> Option.getWithDefault(mesh)
+
+    def attachUvs2(uv: Vector[Float64], mesh: Mesh3d.Mesh3d): Mesh3d.Mesh3d =
+        match Mesh3d.withUvs2(uv, mesh) {
+            case Ok(withSecond) => withSecond
+            case Err(e)         => Log.warnThen("glTF: TEXCOORD_1 を使わずに読む（${e}）", mesh)
+        }
 
     /// mesh に uv を付け、part に TANGENT があればそれも付ける。uv を付けられなければ mesh のまま。
     def withPartUvs(part: Part, uv: Vector[Float64], mesh: Mesh3d.Mesh3d): Mesh3d.Mesh3d =

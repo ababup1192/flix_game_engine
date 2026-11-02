@@ -18,7 +18,8 @@
       "assets/"
     ],
     "allowedSubstrings": [
-      "/assets/"
+      "/assets/",
+      "/testdata/"
     ],
     "allowedSuffixes": [
       "/reference/title.png"

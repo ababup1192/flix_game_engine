@@ -69,13 +69,7 @@ pub mod DrawHash {
         let fromBillboards = frame#req#scenes
             |> List.flatMap(c -> c#scene#billboards |> List.map(b -> Scene3d.billboardFieldsOf(b)#texture))
             |> List.toSet;
-        let fromMaterials = frame#req#scenes
-            |> List.flatMap(c -> c#scene#instances |> List.filterMap(i -> Scene3d.instanceFieldsOf(i)#material))
-            |> List.flatMap(m -> {
-                let f = Scene3d.materialFieldsOf(m);
-                List.append(ShaderDoc.materialTexReads(f#spec, f#emission) |> List.map(fst), f#normalMap |> Option.toList |> List.map(n -> n#texture))
-            })
-            |> List.toSet;
+        let fromMaterials = frame#req#scenes |> List.flatMap(c -> c#scene#instances |> List.flatMap(Scene3d.textureNamesOf)) |> List.toSet;
         Set.union(fromDrawables, Set.union(fromSurfaces, Set.union(fromBillboards, fromMaterials)))
 
     /// 鍵を作るのに中身の指紋が要るファイル（引く絵・既定の TTF・追加の TTF）。
@@ -239,7 +233,7 @@ pub mod DrawHash {
 
     // WhyNot: メッシュの頂点を畳まない — 作る時に中身から求めた contentHash が中身の代わりになる（GL が頂点バッファを引く鍵と同じ）。
     def putInstance(out: DataOutputStream, i: Scene3d.InstanceFields): Unit \ IO = match i {
-        case { mesh = mesh, world = world, tint = tint, material = material, pose = pose } =>
+        case { mesh = mesh, world = world, tint = tint, material = material, pose = pose, lightmap = _ } =>
             putStr(out, Mesh3d.contentHash(mesh));
             Mat4.toColumns(world) |> Vector.forEach(putF(out));
             putColor(out, tint);
@@ -247,7 +241,20 @@ pub mod DrawHash {
                 case None    => out.writeByte(0i32)
                 case Some(m) => out.writeByte(1i32); putMaterial(out, m)
             };
-            putPose(out, pose)
+            putPose(out, pose);
+            putLightmap(out, Scene3d.lightmapOfFields(i))
+    }
+
+    // WhyNot: None にも印のバイトを書かない — lightmap の欄を足す前の鍵の字を保ち、lightmap の無い場面のキャッシュの PNG を塗り直させない。
+    // WhyNot: 付けた lightmap の欄でなく lightmapOfFields を書く — 使わない lightmap（骨つき・2 本目の uv 無し）は絵に出ないので鍵も変えない。
+    def putLightmap(out: DataOutputStream, lightmap: Option[Scene3d.Lightmap]): Unit \ IO = match lightmap {
+        case None => ()
+        case Some({ texture = texture, colorSpace = colorSpace, intensity = intensity, maxLevels = maxLevels }) =>
+            out.writeByte(0x4c);
+            putStr(out, texture);
+            putStr(out, ToString.toString(colorSpace));
+            putF(out, intensity);
+            out.writeInt(maxLevels)
     }
 
     // WhyNot: None にも印のバイトを書かない — pose の欄を足す前の鍵の字を保ち、ジョイントの無い場面のキャッシュの PNG を塗り直させない。

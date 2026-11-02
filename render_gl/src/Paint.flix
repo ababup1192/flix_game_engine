@@ -85,7 +85,7 @@ mod RenderPaint {
     /// GL の資源を作り、空の登録簿で塗りのコアを始める。GL の文脈が今の糸に付いていること。
     /// design = 描く座標の寸（ゲームの designWidth × designHeight）、clearColor = design の中の地の色、
     /// screenFramebuffer = 画面のフレームバッファ（窓なら 0）。
-    pub def create(cfg: { designWidth = Int32, designHeight = Int32, clearColor = Color, screenFramebuffer = Int32 }): Paint \ IO =
+    pub def create(cfg: { designWidth = Int32, designHeight = Int32, clearColor = Color, screenFramebuffer = Int32, scene3dTextureBudgetMB = Int32 }): Paint \ IO =
         let screenW = Int32.toFloat64(cfg#designWidth);
         let screenH = Int32.toFloat64(cfg#designHeight);
 
@@ -235,7 +235,7 @@ mod RenderPaint {
                                                polyBatchShader, polyBatchVao, polyBatchVbo,
                                                polyBatchUniforms, cmd#mask)
         };
-        let render3d = Render3d.fresh();
+        let render3d = Render3d.fresh(cfg#scene3dTextureBudgetMB);
         let drawScene = (vp: Render3d.Viewport, item: Render3d.SceneItem) ->
             Render3d.drawItem(render3d, Array.get(0, frameGenHolder), billboardTexture(registryRef, targetsRef, textureKeyRef), vp, item);
         // renderFrameMixed への FrameArgs は固定値（シェーダ・VAO・buf・uniforms 等）が

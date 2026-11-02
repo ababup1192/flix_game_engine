@@ -453,7 +453,8 @@ pub mod LwjglLayer {
         // 塗りのコア（シェーダー・VAO・テクスチャ・シェーダー面・レンダーターゲット・静的レイヤーの登録簿）。
         // 窓なしで動画を塗る GlOffscreen も同じ RenderPaint で塗る（窓・入力・音・swap はここが持つ）。
         let paint = RenderPaint.create({ designWidth = config#designWidth, designHeight = config#designHeight,
-                                         clearColor = config#clearColor, screenFramebuffer = 0 });
+                                         clearColor = config#clearColor, screenFramebuffer = 0,
+                                                     scene3dTextureBudgetMB = config#scene3dTextureBudgetMB });
 
         // macOS ではリサイズ中に glfwPollEvents がブロックされるため、
         // フレームバッファサイズ変更コールバックで再描画を行う。

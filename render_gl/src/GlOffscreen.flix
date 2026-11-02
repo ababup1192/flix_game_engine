@@ -98,7 +98,8 @@ pub mod GlOffscreen {
                     GL11.glEnable(GL11.GL_BLEND);
                     GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
                     let paint = RenderPaint.create({ designWidth = config#designWidth, designHeight = config#designHeight,
-                                                     clearColor = config#clearColor, screenFramebuffer = 0 });
+                                                     clearColor = config#clearColor, screenFramebuffer = 0,
+                                                     scene3dTextureBudgetMB = config#scene3dTextureBudgetMB });
                     // 組み込みのフォント（受け皿）とロゴを先に載せる（窓の起動画面と同じ並び）。
                     RenderPaint.addTextures(RenderSplash.install(), paint);
                     let fonts = RenderPaint.loadAssets(paint, config, (_, _, _) -> checked_ecast(()));
