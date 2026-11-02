@@ -225,7 +225,7 @@ mod TestDrawHash {
     @Test
     def testSceneKeyWithoutPoseIsPinned(): Unit \ Assert =
         let f = frame();
-        Assert.assertEq(expected = "4cb4ec7a3c590f9a91b987afd4b565f921f58e92a86b9d86440d77b8a97d6999", keyOf(inputs(), { req = { scenes = sceneAt(Mat4.identity()) :: Nil | f#req } | f }))
+        Assert.assertEq(expected = "73983f80c098083aae3bb0301e8f088057b10d4b1b24c064e066cecfedee2262", keyOf(inputs(), { req = { scenes = sceneAt(Mat4.identity()) :: Nil | f#req } | f }))
 
     // スポットの影の濃さ（strength）だけが違う場面は鍵が違う（shadow の欄を鍵に入れている）。
     @Test

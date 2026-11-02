@@ -183,15 +183,55 @@ pub mod ShaderGen {
     /// WhyNot: 名前のまま比べない — Pass の中で読みを別名（`x@history` / `@missing:c`）へ書き換えた Spec と
     /// 書き換えない Spec が同じ name で並ぶと、毎コマ偽になって GLSL を作り直し続ける。
     /// 同じ物（参照が同じ）なら木を辿らずに真を返す — 作り置きの Spec を毎コマ渡す面では、ここで抜ける。
+    /// 番号がそろうかは、2 つの木をたどりながら作る名前の対応が 1 対 1 で崩れないかで見る（texNames の正典の順は
+    /// 「どの位置の名前どうしが同じか」と位置の形だけで決まるので、対応が崩れなければ番号もそろい、その逆も成り立つ）。
     pub def eqSpec(a: ShaderDoc.Spec, b: ShaderDoc.Spec): Bool =
         isSameSpec(a, b) or eqSpecTree(a, b)
 
+    // WhyNot: 先に texNames と名前 → 番号の Map を作らない — 毎コマ作り直した Spec は参照の一致で抜けられず、比べるたびに両方の木を 2 度たどる。
     def eqSpecTree(a: ShaderDoc.Spec, b: ShaderDoc.Spec): Bool =
-        let ix = { a = texIndexFrom(ShaderDoc.texNames(a)), b = texIndexFrom(ShaderDoc.texNames(b)) };
+        eqSpecWith(sameName, a, b) or region rc { eqSpecWith(namePairing(rc), a, b) }
+
+    /// 2 つの材質（spec と自分で光る色 emission）が同じ GLSL を生むか（render_gl の材質の program キャッシュの鍵）。
+    /// emission の uTexN の番号は spec と emission をつないだ並びで決まる（ShaderDoc.materialTexReads）ので、名前の対応は spec と emission を通して 1 本で取る。
+    /// WhyNot: spec が同じ物というだけで抜けない — spec の名前が対応に入らないまま emission を比べると、spec と同じ名前を読む emission と
+    ///   別の名前を読む emission を同じと答える。
+    pub def eqMaterial(specA: ShaderDoc.Spec, emissionA: Option[ShaderDoc.Shade],
+                       specB: ShaderDoc.Spec, emissionB: Option[ShaderDoc.Shade]): Bool =
+        (isSameSpec(specA, specB) and isSameEmission(emissionA, emissionB))
+            or eqMaterialWith(sameName, specA, emissionA, specB, emissionB)
+            or region rc { eqMaterialWith(namePairing(rc), specA, emissionA, specB, emissionB) }
+
+    def eqMaterialWith(names: (String, String) -> Bool \ ef, specA: ShaderDoc.Spec, emissionA: Option[ShaderDoc.Shade],
+                       specB: ShaderDoc.Spec, emissionB: Option[ShaderDoc.Shade]): Bool \ ef =
+        eqSpecWith(names, specA, specB) and match (emissionA, emissionB) {
+            case (None, None)         => true
+            case (Some(sa), Some(sb)) => eqShade(names, sa, sb)
+            case _                    => false
+        }
+
+    /// names = テクスチャの名前 2 つ（a 側・b 側）を同じ番号と見なすかの比べ。
+    def eqSpecWith(names: (String, String) -> Bool \ ef, a: ShaderDoc.Spec, b: ShaderDoc.Spec): Bool \ ef =
         a#name == b#name
             and a#cycleRate == b#cycleRate
-            and eqBindings(ix, a#bindings, b#bindings)
-            and eqOut(ix, a#out, b#out)
+            and eqBindings(names, a#bindings, b#bindings)
+            and eqOut(names, a#out, b#out)
+
+    /// 名前がそのまま同じ（対応が恒等なら 1 対 1 は崩れない。名前を書き換えない Spec は 1 回のたどりで済む）。
+    def sameName(a: String, b: String): Bool = a == b
+
+    /// 「a の名前 → b の名前」と「b → a」の対応を rc の中に持つ名前の比べ（2 つの木を 1 回たどる間だけ使う）。
+    /// どちらの名前も初めてなら対応を足し、どちらかが既にあれば対応が合うかを見る。
+    def namePairing(rc: Region[r]): ((String, String) -> Bool \ r) \ r =
+        let pairs: Ref[(Map[String, String], Map[String, String]), r] = Ref.fresh(rc, (Map.empty(), Map.empty()));
+        (na, nb) -> {
+            let (forward, backward) = Ref.get(pairs);
+            match (Map.get(na, forward), Map.get(nb, backward)) {
+                case (None, None)         => Ref.put((Map.insert(na, nb, forward), Map.insert(nb, na, backward)), pairs); true
+                case (Some(mb), Some(ma)) => mb == nb and ma == na
+                case _                    => false
+            }
+        }
 
     /// a と b が同じ物か（中身ではなく参照）。
     /// WhyNot: Objects.equals で比べない — Flix の値が equals を中身の比べにした時に、木を辿る比べへ黙って戻る。
@@ -201,26 +241,31 @@ pub mod ShaderGen {
             held.refersTo(unchecked_cast(b as JObject))
         }
 
-    /// 2 つの Spec のテクスチャ名 → 正典順の番号。
-    type alias TexIx = { a = Map[String, Int32], b = Map[String, Int32] }
+    /// 2 つの emission が同じ物か（両方無いか、参照が同じ）。
+    def isSameEmission(a: Option[ShaderDoc.Shade], b: Option[ShaderDoc.Shade]): Bool =
+        match (a, b) {
+            case (None, None)         => true
+            case (Some(sa), Some(sb)) => unsafe IO {
+                let held = new WeakReference(unchecked_cast(sa as JObject));
+                held.refersTo(unchecked_cast(sb as JObject))
+            }
+            case _                    => false
+        }
 
-    def eqTexName(ix: TexIx, na: String, nb: String): Bool =
-        Map.get(na, ix#a) == Map.get(nb, ix#b)
-
-    def eqBindings(ix: TexIx, a: List[(String, ShaderDoc.Field)], b: List[(String, ShaderDoc.Field)]): Bool =
+    def eqBindings(ix: (String, String) -> Bool \ ef, a: List[(String, ShaderDoc.Field)], b: List[(String, ShaderDoc.Field)]): Bool \ ef =
         match (a, b) {
             case (Nil, Nil)                       => true
             case ((na, fa) :: ra, (nb, fb) :: rb) => na == nb and eqField(ix, fa, fb) and eqBindings(ix, ra, rb)
             case _                                => false
         }
 
-    def eqOut(ix: TexIx, a: ShaderDoc.Out, b: ShaderDoc.Out): Bool =
+    def eqOut(ix: (String, String) -> Bool \ ef, a: ShaderDoc.Out, b: ShaderDoc.Out): Bool \ ef =
         match (a, b) {
             case (ShaderDoc.Out.Fill(fa), ShaderDoc.Out.Fill(fb)) =>
                 eqShade(ix, fa#shade, fb#shade) and eqField(ix, fa#alpha, fb#alpha)
         }
 
-    def eqShade(ix: TexIx, a: ShaderDoc.Shade, b: ShaderDoc.Shade): Bool =
+    def eqShade(ix: (String, String) -> Bool \ ef, a: ShaderDoc.Shade, b: ShaderDoc.Shade): Bool \ ef =
         use ShaderDoc.Shade;
         match (a, b) {
             case (Shade.Solid(ca), Shade.Solid(cb))       => eqColor(ca, cb)
@@ -249,14 +294,14 @@ pub mod ShaderGen {
     def eqVec2(a: Vec2.Vec2, b: Vec2.Vec2): Bool =
         a#x == b#x and a#y == b#y
 
-    def eqOptField(ix: TexIx, a: Option[ShaderDoc.Field], b: Option[ShaderDoc.Field]): Bool =
+    def eqOptField(ix: (String, String) -> Bool \ ef, a: Option[ShaderDoc.Field], b: Option[ShaderDoc.Field]): Bool \ ef =
         match (a, b) {
             case (None, None)         => true
             case (Some(fa), Some(fb)) => eqField(ix, fa, fb)
             case _                    => false
         }
 
-    def eqField(ix: TexIx, a: ShaderDoc.Field, b: ShaderDoc.Field): Bool =
+    def eqField(ix: (String, String) -> Bool \ ef, a: ShaderDoc.Field, b: ShaderDoc.Field): Bool \ ef =
         use ShaderDoc.Field;
         match (a, b) {
             case (Field.Const(va), Field.Const(vb))               => va == vb
@@ -326,7 +371,7 @@ pub mod ShaderGen {
                     and ra#rate == rb#rate and eqField(ix, ra#of, rb#of)
             case (Field.Ref(na), Field.Ref(nb))                   => na == nb
             case (Field.Tex(ra), Field.Tex(rb))                   =>
-                eqTexName(ix, ra#name, rb#name) and ra#chan == rb#chan
+                ix(ra#name, rb#name) and ra#chan == rb#chan
             case (Field.Shift(ra), Field.Shift(rb))               =>
                 eqField(ix, ra#dx, rb#dx) and eqField(ix, ra#dy, rb#dy) and eqField(ix, ra#of, rb#of)
             case (Field.Sampler(ra), Field.Sampler(rb))           =>
@@ -336,10 +381,10 @@ pub mod ShaderGen {
             case (Field.Normal(ra), Field.Normal(rb))             => ra#axis == rb#axis
             case (Field.VertexColor(ra), Field.VertexColor(rb))   => ra#chan == rb#chan
             case (Field.TexBlur(ra), Field.TexBlur(rb))           =>
-                eqTexName(ix, ra#name, rb#name) and ra#chan == rb#chan and eqVec2(ra#radius, rb#radius)
+                ix(ra#name, rb#name) and ra#chan == rb#chan and eqVec2(ra#radius, rb#radius)
                     and ra#taps == rb#taps and eqField(ix, ra#amount, rb#amount)
             case (Field.TexSize(ra), Field.TexSize(rb))           =>
-                eqTexName(ix, ra#name, rb#name) and ra#axis == rb#axis
+                ix(ra#name, rb#name) and ra#axis == rb#axis
             case _                                                => false
         }
 
@@ -448,15 +493,6 @@ pub mod ShaderGen {
 
     def colorKey(): String = "@color"
 
-    /// 2 つの材質の emission が同じ GLSL を生むか（render_gl の材質の program キャッシュの鍵を eqSpec と組む）。
-    pub def eqEmission(a: Option[ShaderDoc.Shade], b: Option[ShaderDoc.Shade]): Bool =
-        let ix = { a = Map.empty(), b = Map.empty() };
-        match (a, b) {
-            case (None, None)         => true
-            case (Some(sa), Some(sb)) => eqShade(ix, sa, sb)
-            case _                    => false
-        }
-
     /// ぼかし（TexBlur）の標本。点の並びは ShaderEval.blurTex と同じ。ぼかしを使う Spec にだけ足す
     /// （使わない Spec の出力を 1 文字も変えない）。半径が 0 なら 1 点だけ読む（ShaderEval.blurTex と同じ分岐）。
     /// WhyNot: 分岐の中の texture() を textureLod にしない — ターゲットにも面のテクスチャにも mipmap が無く、微分は答えに効かない。
@@ -561,12 +597,6 @@ pub mod ShaderGen {
         tex |> Map.filterWithKey((key, _) -> String.contains({ substr = "@sampler:" }, key) or String.startsWith({ prefix = "@param:" }, key)
                                              or String.startsWith({ prefix = "@mode:" }, key)
                                              or String.startsWith({ prefix = "@size:" }, key)), tex)
-
-    /// テクスチャ名 → sampler 番号（texNames の正典順）。Tex ノードが uTexN を選ぶのに使う。
-    def texIndexFrom(names: List[String]): Map[String, Int32] =
-        names |> List.zipWithIndex
-            |> List.foldLeft((acc, iname) -> { let (i, name) = iname; Map.insert(name, i, acc) },
-                             Map.empty())
 
     // ── main 本体（prelude 抜き）のスナップショット用。ノイズテンプレを混ぜず Spec だけ pin する。──
     pub def compileBody(spec: ShaderDoc.Spec): String =

@@ -595,12 +595,12 @@ pub mod Gltf {
                 case None => Vector.range(0, count)
             };
             let normalMat = Mat4.normalMatrix(transform);
-            let placedPositions = Vector.range(0, count) |> Vector.flatMap(v -> xyzOf(Mat4.apply(transform, vec3At(positions#values, v * 3))));
-            let placedNormals = Option.map(n -> Vector.range(0, count) |> Vector.flatMap(v ->
-                xyzOf(Vec3.normalized(Mat4.applyDir(normalMat, vec3At(n#values, v * 3))))), normals);
+            let placedPositions = flatXyz(Vector.range(0, count) |> Vector.map(v -> Mat4.apply(transform, vec3At(positions#values, v * 3))));
+            let placedNormals = Option.map(n -> flatXyz(Vector.range(0, count) |> Vector.map(v ->
+                Vec3.normalized(Mat4.applyDir(normalMat, vec3At(n#values, v * 3))))), normals);
             let placedTangents = forM (_ <- uvs; t <- tangents) yield placeTangents(transform, t#values);
             let part = { positions = placedPositions, normals = Option.getWithDefault(Vector.empty(), placedNormals),
-                         colors = Vector.range(0, count) |> Vector.flatMap(_ -> color), indices = indexList,
+                         colors = rowsOf(count, Vector.length(color), (_, c) -> Vector.get(c, color)), indices = indexList,
                          joints = fst(skin), weights = snd(skin), uvs = Option.map(a -> a#values, uvs), tangents = placedTangents,
                          material = intOf("material", prim) };
             if (Option.nonEmpty(normals)) part else flatShaded(part)
@@ -629,22 +629,19 @@ pub mod Gltf {
         let c = Mat4.toColumns(transform);
         let col = (j: Int32) -> Vec3.v3(Vector.get(j * 4, c), Vector.get(j * 4 + 1, c), Vector.get(j * 4 + 2, c));
         let flip = if (Vec3.dot(col(0), Vec3.cross(col(1), col(2))) < 0.0) -1.0 else 1.0;
-        Vector.range(0, Vector.length(values) / 4) |> Vector.flatMap(v -> {
-            let t = Vec3.normalized(Mat4.applyDir(transform, vec3At(values, v * 4)));
-            Vector#{ t#x, t#y, t#z, Vector.get(v * 4 + 3, values) * flip }
-        })
+        let count = Vector.length(values) / 4;
+        let placed = Vector.range(0, count) |> Vector.map(v -> Vec3.normalized(Mat4.applyDir(transform, vec3At(values, v * 4))));
+        rowsOf(count, 4, (v, axis) -> if (axis == 3) Vector.get(v * 4 + 3, values) * flip else component(axis, Vector.get(v, placed)))
 
     def traverseOpt(o: Option[Int32], f: Int32 -> Result[String, a]): Result[String, Option[a]] = match o {
         case Some(k) => Result.map(Some, f(k))
         case None => Ok(None)
     }
 
-    def xyzOf(v: Vec3.Vec3): Vector[Float64] = Vector#{ v#x, v#y, v#z }
-
     /// 頂点ごとの 4 つのジョイントの番号（並べ替えた後）と重み。重みの無い形は空。
     def readSkinAttributes(glb: Glb, attributes: Obj, binding: Binding, count: Int32): Result[String, (Vector[Int32], Vector[Float64])] =
-        let rigid = (j: Int32) -> Ok((Vector.range(0, count) |> Vector.flatMap(_ -> Vector#{ j, 0, 0, 0 }),
-                                      Vector.range(0, count) |> Vector.flatMap(_ -> Vector#{ 1.0, 0.0, 0.0, 0.0 })));
+        let rigid = (j: Int32) -> Ok((rowsOf(count, 4, (_, c) -> if (c == 0) j else 0),
+                                      rowsOf(count, 4, (_, c) -> if (c == 0) 1.0 else 0.0)));
         match binding {
             case Binding.NoSkin => Ok((Vector.empty(), Vector.empty()))
             case Binding.Rigid(j) => rigid(j)
@@ -682,23 +679,33 @@ pub mod Gltf {
         let tris = Vector.length(part#indices) / 3;
         let corner = (t: Int32, c: Int32) -> Vector.get(t * 3 + c, part#indices);
         let corners = Vector.range(0, tris * 3) |> Vector.map(k -> corner(k / 3, k - (k / 3) * 3));
-        let normals = Vector.range(0, tris) |> Vector.flatMap(t -> {
+        let faceNormals = Vector.range(0, tris) |> Vector.map(t -> {
             let p = c -> vec3At(part#positions, corner(t, c) * 3);
-            let n = xyzOf(Vec3.normalized(Vec3.cross(Vec3.sub(p(1), p(0)), Vec3.sub(p(2), p(0)))));
-            Vector.flatten(Vector#{ n, n, n })
+            Vec3.normalized(Vec3.cross(Vec3.sub(p(1), p(0)), Vec3.sub(p(2), p(0))))
         });
         let hasSkin = not Vector.isEmpty(part#joints);
-        { positions = Vector.flatMap(v -> sliceAt(3, part#positions, v), corners),
-          normals = normals,
-          colors = Vector.flatMap(v -> sliceAt(3, part#colors, v), corners),
+        { positions = gather(3, part#positions, corners),
+          normals = rowsOf(tris * 3, 3, (k, c) -> component(c, Vector.get(k / 3, faceNormals))),
+          colors = gather(3, part#colors, corners),
           indices = Vector.range(0, tris * 3),
-          joints = if (hasSkin) Vector.flatMap(v -> sliceAt(4, part#joints, v), corners) else Vector.empty(),
-          weights = if (hasSkin) Vector.flatMap(v -> sliceAt(4, part#weights, v), corners) else Vector.empty(),
-          uvs = Option.map(uv -> Vector.flatMap(v -> sliceAt(2, uv, v), corners), part#uvs),
-          tangents = Option.map(t -> Vector.flatMap(v -> sliceAt(4, t, v), corners), part#tangents),
+          joints = if (hasSkin) gather(4, part#joints, corners) else Vector.empty(),
+          weights = if (hasSkin) gather(4, part#weights, corners) else Vector.empty(),
+          uvs = Option.map(uv -> gather(2, uv, corners), part#uvs),
+          tangents = Option.map(t -> gather(4, t, corners), part#tangents),
           material = part#material }
 
-    def sliceAt(width: Int32, src: Vector[a], v: Int32): Vector[a] = Vector.slice(start = v * width, end = v * width + width, src)
+    /// count 行 × width 列の並び（行 k・列 c の値は cell(k, c)）。
+    // WhyNot: 行ごとの小さな Vector を Vector.flatMap でつながない — 頂点数万の glb で数百 ms かかる。
+    def rowsOf(count: Int32, width: Int32, cell: (Int32, Int32) -> a \ ef): Vector[a] \ ef =
+        Vector.range(0, count * width) |> Vector.map(j -> cell(j / width, Int32.remainder(j, width)))
+
+    /// src（頂点ごとに width 個）から、sources の頂点の順に写した並び。
+    def gather(width: Int32, src: Vector[a], sources: Vector[Int32]): Vector[a] =
+        rowsOf(Vector.length(sources), width, (k, c) -> Vector.get(Vector.get(k, sources) * width + c, src))
+
+    def flatXyz(vs: Vector[Vec3.Vec3]): Vector[Float64] = rowsOf(Vector.length(vs), 3, (k, c) -> component(c, Vector.get(k, vs)))
+
+    def component(c: Int32, v: Vec3.Vec3): Float64 = if (c == 0) v#x else if (c == 1) v#y else v#z
 
     def concatOf(f: Part -> Vector[a], parts: List[Part]): Vector[a] = Vector.flatten(List.toVector(List.map(f, parts)))
 

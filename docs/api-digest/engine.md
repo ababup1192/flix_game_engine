@@ -567,6 +567,18 @@
 - アトラスにベイクする全コードポイントを 1 行の文字列として返す。
   `pub def text(): String`
 
+## LoadProgress — `engine/src/LoadProgress.flix`
+- 起動の読み込みの進み具合（区切りごとに 1 回）。
+  `pub eff LoadProgress`
+- phase = 今やっていること（起動画面の字）・done / total = その中の何本目 / 全何本（total 0 以下は本数不明）。
+  `pub eff LoadProgress { def report(phase: String, done: Int32, total: Int32): Unit }`
+- 知らせを捨てる handler（headless の描き出し・動画・テスト・flow の再生）。
+  `pub def runNoop(f: Unit -> a \ ef + LoadProgress): a \ ef`
+- xs を f で 1 つずつ作り、作るたびに (phase, 作った数, 全部の数) を知らせる（最初に (phase, 0, n)）。
+  `pub def mapWithProgress(phase: String, f: a -> b \ ef, xs: List[a]): List[b] \ ef + LoadProgress`
+- xs を f で並列に作り、1 つ届くたびと 50 ms ごとに進み具合を知らせる（スレッドは CPU の数まで・結果の並びは xs のまま）。
+  `pub def parMapWithProgress(phase: String, f: a -> b \ IO, xs: List[a]): List[b] \ IO + LoadProgress`
+
 ## Log — `engine/src/core/Log.flix`
 - stderr へ 1 行。効果は `unsafe IO` で隠す
   `pub def warn(line: String): Unit`
@@ -1111,6 +1123,8 @@
   `pub def preludeSource(): String`
 - Spec 2 つの構造比較（program キャッシュの正当性の中核）。真 ⇒ compile は純関数なので
   `pub def eqSpec(a: ShaderDoc.Spec, b: ShaderDoc.Spec): Bool`
+- 2 つの材質（spec と自分で光る色 emission）が同じ GLSL を生むか（render_gl の材質の program キャッシュの鍵）。
+  `pub def eqMaterial(specA: ShaderDoc.Spec, emissionA: Option[ShaderDoc.Shade], specB: ShaderDoc.Spec, emissionB: Option[ShaderDoc.Shade]): Bool`
 - a と b が同じ物か（中身ではなく参照）。
   `pub def isSameSpec(a: ShaderDoc.Spec, b: ShaderDoc.Spec): Bool`
 - Spec → fragment シェーダー全体（prelude + main）。uTime uniform を前提に持つ。
@@ -1119,8 +1133,6 @@
   `pub type alias MaterialGlsl = { uniforms = String, functions = String, paramNames = List[String], texReads = List[(String, ShaderDoc.FilterMode)], cutoutAlpha = String }`
 - 3D の材質（spec と自分で光る色 emission）の GLSL の部品。World / Normal / VertexColor は varying の vWorld / vNormal / vColor を、
   `pub def compile3d(spec: ShaderDoc.Spec, emission: Option[ShaderDoc.Shade]): MaterialGlsl`
-- 2 つの材質の emission が同じ GLSL を生むか（render_gl の材質の program キャッシュの鍵を eqSpec と組む）。
-  `pub def eqEmission(a: Option[ShaderDoc.Shade], b: Option[ShaderDoc.Shade]): Bool`
 - `pub def texMipSource(): String`
 - `pub def compileBody(spec: ShaderDoc.Spec): String`
 

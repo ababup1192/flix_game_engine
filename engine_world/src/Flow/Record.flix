@@ -109,6 +109,14 @@ pub mod Flow.Record {
             case _ => ()
         }
 
+    /// start の行の直後に、起動の World の指紋を確かめる行を書く（再生が start の直後に同じ World かを比べる）。
+    pub def expectStart(rec: Recorder, fingerprint: String): Unit \ IO =
+        startCheckLines(fingerprint) |> List.forEach(text -> write(rec, text))
+
+    /// expectStart が書く行（確かめる行と、ずれた時に読む指紋の元）。
+    pub def startCheckLines(fingerprint: String): List[String] =
+        "expect fp=${Flow.fingerprintOf(fingerprint)}" :: "# fp ${fingerprint}" :: Nil
+
     /// 記録の行で World を変えた（start・reload…）後の指紋の元を覚え直す（# ext を誤って書かない）。
     pub def resetFingerprint(rec: Recorder, fingerprint: Option[String]): Unit \ IO =
         match fingerprint {

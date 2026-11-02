@@ -191,14 +191,15 @@ mod TestShaderWorld3d {
         Assert.assertEq(expected = "outColor = vec4(vec3(0.5, 0.5, 0.5), 1.0);",
             ShaderGen.compileBody(alphaSpec(Field.VertexColor({ chan = ShaderDoc.TexChan.R }))))
 
-    /// emission の色の比べ: 場の軸が違えば等しくない・同じ中身なら等しい・片方だけ無ければ等しくない。
+    /// 材質の emission の比べ: 場の軸が違えば等しくない・同じ中身なら等しい・片方だけ無ければ等しくない。
     @Test
-    def testEqEmission(): Unit \ Assert =
+    def testEqMaterialComparesEmission(): Unit \ Assert =
         let glow = a -> Some(Shade.Rgb({ r = world(a), g = Field.Const(0.0), b = Field.Const(0.0) }));
+        let spec = alphaSpec(Field.Const(1.0));
         Assert.assertEq(expected = (false, true, false),
-            (ShaderGen.eqEmission(glow(Axis3.X), glow(Axis3.Y)),
-             ShaderGen.eqEmission(glow(Axis3.X), glow(Axis3.X)),
-             ShaderGen.eqEmission(glow(Axis3.X), None)))
+            (ShaderGen.eqMaterial(spec, glow(Axis3.X), spec, glow(Axis3.Y)),
+             ShaderGen.eqMaterial(spec, glow(Axis3.X), spec, glow(Axis3.X)),
+             ShaderGen.eqMaterial(spec, glow(Axis3.X), spec, None)))
 
     // ════════════════════════════════════════════════════════════════════
     // JSON（ShaderJson）

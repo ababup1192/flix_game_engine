@@ -77,6 +77,20 @@ func TestEffOpsAreListed(t *testing.T) {
 	}
 }
 
+// TestTopLevelEffGoesToSameNamedMod は mod の外の eff を同じ名前の mod の宣言として返す
+func TestTopLevelEffGoesToSameNamedMod(t *testing.T) {
+	src := "pub eff Load {\n    def report(done: Int32): Unit\n}\n\npub mod Load {\n    pub def runNoop(): Unit = ()\n}\n"
+	got := declsOf(t, src, "Load")
+	want := []string{
+		"pub eff Load",
+		"pub eff Load { def report(done: Int32): Unit }",
+		"pub def runNoop(): Unit",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("mod の外の eff が %q", got)
+	}
+}
+
 // TestEffEndsAtBraceInsideString は eff の範囲だけ文字列リテラルの中の括弧も数える
 // ことを縛る。
 func TestEffEndsAtBraceInsideString(t *testing.T) {

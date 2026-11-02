@@ -18,15 +18,26 @@ pub mod Mip {
         let (w, h) = (tex#width, tex#height);
         let (nw, nh) = (Int32.max(1, w / 2), Int32.max(1, h / 2));
         let out: Array[Int32, rc] = Array.empty(rc, nw * nh);
-        let at = (x: Int32, y: Int32) -> Vector.get(Int32.min(y, h - 1) * w + Int32.min(x, w - 1), tex#pixels);
-        List.range(0, nh) |> List.forEach(j -> List.range(0, nw) |> List.forEach(i -> {
-            let quad = at(2 * i, 2 * j) :: at(2 * i + 1, 2 * j) :: at(2 * i, 2 * j + 1) :: at(2 * i + 1, 2 * j + 1) :: Nil;
-            let mean = (shift: Int32) ->
-                Int32.leftShift((List.sum(List.map(c -> Int32.bitwiseAnd(Int32.logicalRightShift(dist = shift, c), 255), quad)) + 2) / 4, shift);
-            Array.put(Int32.bitwiseOr(Int32.bitwiseOr(mean(24), mean(16)), Int32.bitwiseOr(mean(8), mean(0))), j * nw + i, out)
-        }));
+        let src = tex#pixels;
+        List.range(0, nh) |> List.forEach(j -> {
+            let row0 = Int32.min(2 * j, h - 1) * w;
+            let row1 = Int32.min(2 * j + 1, h - 1) * w;
+            List.range(0, nw) |> List.forEach(i -> {
+                let x0 = Int32.min(2 * i, w - 1);
+                let x1 = Int32.min(2 * i + 1, w - 1);
+                let (a, b, c, d) = (Vector.get(row0 + x0, src), Vector.get(row0 + x1, src), Vector.get(row1 + x0, src), Vector.get(row1 + x1, src));
+                let pixel = Int32.bitwiseOr(Int32.bitwiseOr(meanOf(24, a, b, c, d), meanOf(16, a, b, c, d)),
+                                            Int32.bitwiseOr(meanOf(8, a, b, c, d), meanOf(0, a, b, c, d)));
+                Array.put(pixel, j * nw + i, out)
+            })
+        });
         { width = nw, height = nh, pixels = Array.toVector(out) }
     }
+
+    /// 4 つの ARGB の、shift ビット目から 8 ビットの成分の平均（(和 + 2) / 4 の切り捨て）を同じ位置に置いた値。
+    def meanOf(shift: Int32, a: Int32, b: Int32, c: Int32, d: Int32): Int32 =
+        let channel = (x: Int32) -> Int32.bitwiseAnd(Int32.logicalRightShift(dist = shift, x), 255);
+        Int32.leftShift((channel(a) + channel(b) + channel(c) + channel(d) + 2) / 4, shift)
 
     /// 絵を読む座標の、画面の右隣と下隣の画素との差（uv の単位）。
     pub type alias Derivatives = { dudx = Float64, dvdx = Float64, dudy = Float64, dvdy = Float64 }

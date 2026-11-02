@@ -24,6 +24,7 @@
     "render_gl/src/Audio.flix::loadWavToALBuffer": "正当 C: 同梱の WAV が壊れているのはビルドの誤り。リリース前に確実に気づける方を選ぶ",
     "render_gl/src/RenderTexture.flix::loadTexture": "正当 C: 同梱の画像が読めないのはビルドの誤り。リリース前に確実に気づける方を選ぶ",
     "engine/src/render/drawable/Sprite.flix::toDrawable": "正当 C: 未登録テクスチャは配線漏れ。黙って透明になるより止める方が気づける",
+    "engine/src/LoadProgress.flix::parMapWithProgress": "正当 B: 待つ回数の上限は Int32.maxValue × 50 ms（約 3 年）で、届くのはスレッドの待ち方の誤り",
     "render_gl/src/LwjglLayer.flix::withProject": "正当 C: project.json は起動時の必須入力 (決まり 1 の loadOrBug 相当。名前が *OrBug でないのが宿題)"
   }
 }

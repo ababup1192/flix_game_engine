@@ -330,13 +330,14 @@ pub mod LwjglLayer {
     /// 直接 with-chain に並べて使う。loadProject 失敗時は bug! で停止する
     /// (project.json が壊れているのは開発者が直すべき状態)。
     pub def withProject(rootDir: String, f: Unit -> a \ ef):
-            a \ ef - GameEngine.Game - GameEngine.Audio - ShaderEffect.Shader - RenderTarget.Target + IO + Fs.FileRead =
+            a \ ef - GameEngine.Game - GameEngine.Audio - ShaderEffect.Shader - RenderTarget.Target - LoadProgress + IO + Fs.FileRead =
         match ProjectLoader.loadProject(rootDir) {
             case Ok(proj)  => withLwjgl(proj#config, f)
             case Err(msg) => bug!("Failed to load project.json: ${msg}")
         }
 
-    pub def withLwjgl(config: GameEngine.EngineConfig, f: Unit -> a \ ef): a \ ef - GameEngine.Game - GameEngine.Audio - ShaderEffect.Shader - RenderTarget.Target + IO =
+    /// ゲームの本体 f が最初のコマを描くまでに送る LoadProgress.report は、起動画面を進めてウィンドウのイベントを poll する。
+    pub def withLwjgl(config: GameEngine.EngineConfig, f: Unit -> a \ ef): a \ ef - GameEngine.Game - GameEngine.Audio - ShaderEffect.Shader - RenderTarget.Target - LoadProgress + IO =
         // GLFW と AWT は macOS で同じメインスレッド・GL を取り合って固まるため、
         // このウィンドウ（GLFW）のプロセスでは AWT を headless に固定する。注釈のスクリーンショット
         // 保存（BufferedImage / Graphics2D / ImageIO）はオフスクリーン描画なので headless でも動く。
@@ -480,6 +481,8 @@ pub mod LwjglLayer {
         let splashShotAt = Array#{0i64} @ Static;
         let frameShotTaken = Array#{0} @ Static;
         let splashDesign = { x = screenW, y = screenH };
+        // 最後にイベントを poll した時刻（LoadProgress の知らせが、描かない回にも poll するかを決める）。
+        let polledAt = Array#{0i64} @ Static;
         // 起動画面も塗りのコアの控えへ入れる。読み込み中にウィンドウの大きさを変えると
         // リサイズ callback が控えの中身で描き直すので、空だと真っ黒に落ちる。
         // macOS では画面を出すたびにイベントを汲まないとウィンドウが「応答なし」になる。
@@ -490,7 +493,8 @@ pub mod LwjglLayer {
             RenderPaint.paintFrame(paint, splashW, splashH, splashFrame);
             splashShot(splashW, splashH, splashShotTaken, splashShotAt);
             GLFW.glfwSwapBuffers(window);
-            GLFW.glfwPollEvents()
+            GLFW.glfwPollEvents();
+            Array.put(System.nanoTime(), 0, polledAt)
         };
         let splash = (phase: String, done: Int32, total: Int32) ->
             RenderSplash.tick(splashState, drawSplash, splashDesign, phase, done, total);
@@ -549,11 +553,12 @@ pub mod LwjglLayer {
         // 注釈保存時のシャッター音（合成なのでゲーム側の音声マニフェストに依存しない）
         let shutterSource = buildShutterSource();
         println("  Audio ready");
+        // ゲームの本体は LoadProgress で知らせるまで（知らせないゲームは最初のコマまで）描き直さないので、残る字をここで合わせる。
+        RenderSplash.show(splashState, drawSplash, splashDesign, "preparing game...", 0, 0);
 
-        // 読み込みは済んだので画面の垂直同期を戻す。ここから先（ゲームの下ごしらえ）も
-        // 起動画面は出続けるが、枚数が知れているので待ちは体感に出ない。
-        // 隠しウィンドウでは戻さない（swap の 1 秒級の待ちを避ける理由が本編でも変わらないため）。
-        GLFW.glfwSwapInterval(if (hidden) 0 else 1);
+        // 本体が初めて shouldClose を呼んだか（ゲームのループが回り始めたか）。垂直同期はそこで戻す。
+        // WhyNot: f() の前に垂直同期を戻さない — 最初のコマまでの LoadProgress の 1 枚ごとに 1 コマ分待つ。
+        let looping = Array#{false} @ Static;
 
         // Windows だけ、毎フレームの受け渡し後に GPU の完了を待つ。ドライバが 2〜3 フレーム
         // 先まで絵を貯め込むことがあり、60fps のままでも入力から表示までがその分遅れて
@@ -833,6 +838,11 @@ pub mod LwjglLayer {
             def initTileBuffer(instances, k) = k(RenderPaint.initTileBuffer(paint, instances))
             def updateTileBuffer(vaoId, instances, k) = k(RenderPaint.updateTileBuffer(paint, vaoId, instances))
             def shouldClose(k) = {
+                // WhyNot: 隠しウィンドウでは 1 に戻さない — 見えないウィンドウの swap は 1 回が 1 秒級に落ちる（ウィンドウを作る所と同じ理由）。
+                if (not Array.get(0, looping)) {
+                    Array.put(true, 0, looping);
+                    GLFW.glfwSwapInterval(if (hidden) 0 else 1)
+                } else ();
                 // glfwPollEvents の **直前** に PRESS フラグをリセット。
                 // poll 中に発火した callback が立てたフラグが、その後の
                 // `isMouseButtonPressed` 経路で 1 フレーム間だけ true として読まれ、
@@ -1071,6 +1081,24 @@ pub mod LwjglLayer {
             def pixelScale(k) = {
                 let (fbW, fbH) = Array.get(0, framebufferSizeHolder);
                 k(RenderPaint.pixelScaleOf(paint, fbW, fbH))
+            }
+        } with handler LoadProgress {
+            // WhyNot: ループが回り始めた後は何もしない — コマの途中で poll すると、リサイズの callback が
+            // 描いている途中の RenderTarget を開いたまま描き直しと swap をしうる。
+            def report(phase, done, total, k) = {
+                if (not Array.get(0, looping)) {
+                    splash(phase, done, total);
+                    // tick は間引いた回と FLIX_GE_NO_SPLASH の時に poll しないので、描かなくても poll だけはする。
+                    let now = System.nanoTime();
+                    if ((now - Array.get(0, polledAt)) / 1000000i64 >= RenderSplash.intervalMillis()) {
+                        GLFW.glfwPollEvents();
+                        Array.put(now, 0, polledAt)
+                    } else ();
+                    // 読み込み中のホイールは捨てる（最初のコマで一度に出さない）。
+                    // WhyNot: 最初の shouldClose で 0 に戻さない — ループは shouldClose より前にホイールを読む。
+                    Array.put(0.0, 0, scrollDeltaHolder)
+                } else ();
+                k(())
             }
         };
 

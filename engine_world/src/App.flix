@@ -126,6 +126,7 @@ pub mod App {
         updateSystems = List[(Frame, w) -> w \ ef],                // 毎フレーム・追加順
         reload = Option[(GameEngine.Key, w -> w \ {Fs.FileRead})], // ホットリロード（キーと、ファイル読みの副作用）
         watch = List[(String, w -> w \ {Fs.FileRead})],            // 保存検知のホットリロード（パスと関数）の列・追加順
+        reloadPaths = Option[List[String]],                        // freshWorld の読み直しが読む Doc のパス（自前の reloadOn で分からない時は None）
         // World を (置き場所, 見せたい物) の列へ投影する。None のゲームは App に描画させず自分の
         // システム内で描く（タイルマップ等の複数チャンネルを直接組むゲーム向け）。
         view = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef],
@@ -239,6 +240,7 @@ pub mod App {
           updateSystems = Nil,
           reload = None,
           watch = Nil,
+          reloadPaths = Some(Nil),
           view = None,
           passes = _ -> checked_ecast(Render.passPlan(Nil)),
           fonts = Nil,
@@ -286,7 +288,7 @@ pub mod App {
     /// key が押された瞬間に World を作り直すホットリロードを繋ぐ（ファイル読みの副作用つき）。
     /// 遊びながら設定ファイルを編集し、キー一発で効きを変える用途に。
     pub def reloadOn(key: GameEngine.Key, f: w -> w \ {Fs.FileRead}, app: App[w, ef]): App[w, ef] =
-        App.App({ reload = Some((key, f)) | rec(app) })
+        App.App({ reload = Some((key, f)), reloadPaths = None | rec(app) })
 
     /// path の保存（更新時刻の変化）を検知して World を作り直すホットリロードを繋ぐ。
     /// reloadOn と同型の関数を渡せるので、F1 と保存検知に同じ関数を繋げる。
@@ -295,7 +297,8 @@ pub mod App {
     /// 同じパスを複数回登録すると、保存のたびに登録順で全部発火する。
     pub def watchFile(path: String, f: w -> w \ {Fs.FileRead}, app: App[w, ef]): App[w, ef] =
         let r = rec(app);
-        App.App({ watch = List.append(r#watch, (path, f) :: Nil) | r })
+        App.App({ watch = List.append(r#watch, (path, f) :: Nil),
+                  reloadPaths = Option.map(paths -> List.append(paths, path :: Nil), r#reloadPaths) | r })
 
     /// World を絵（(置き場所, 見せたい物) の列）へ投影する関数を繋ぐ。
     /// 第 1 引数の ViewCtx から既定フォント（atlas）と見えている world 矩形（visible）が取れる。
@@ -669,9 +672,14 @@ pub mod App {
         DocTable.reloads(rows)
             |> List.foldLeft((acc, entry) -> { let (path, f) = entry; watchFile(path, f, acc) }, app)
             |> reloadOn(GameEngine.Key.F1, world -> DocTable.reloadAll(rows, world))
+            |> withReloadPaths(rows |> List.map(row -> row#path))
             |> addOutput({ keyOf = world -> ActiveDocs.fingerprint(DocTable.activeDocs(rows, world)),
                            write = world -> ActiveDocs.write(DocTable.activeDocs(rows, world)),
                            onJump = OnJump.Write })
+
+    /// freshWorld の読み直しが読む Doc のパスを置き直す（DocTable の一括読み直しは表の全部の行を読みうる）。
+    def withReloadPaths(paths: List[String], app: App[w, ef]): App[w, ef] =
+        App.App({ reloadPaths = Some(paths) | rec(app) })
 
     // ── 始まりの登録簿（好きな場面から起動・テスト・flow の start）──
 
@@ -692,8 +700,7 @@ pub mod App {
     /// 読み直すのは、main が起動の時に読んだ Doc ではなく今のファイルで場面を組むため（/start・記録の再生）。
     pub def freshWorld(app: App[w, ef], design: Vec2.Vec2): w \ ef + Fs.FileRead =
         let r = rec(app);
-        let init = r#init;
-        let started = List.foldLeft((acc, sys) -> sys(acc), init(design), r#startupSystems);
+        let started = initialWorld(app, design);
         match r#reload {
             case Some((_, reloadAll)) => reloadAll(started)
             case None => List.foldLeft((acc, entry) -> { let (_, f) = entry; f(acc) }, started, r#watch)
@@ -711,8 +718,14 @@ pub mod App {
             case Some(start) => buildStartFrom(start, freshWorld(app, design), name, args)
         }
 
+    /// init（design 解像度から）+ 起動時の系。Doc は読み直さない。
+    def initialWorld(app: App[w, ef], design: Vec2.Vec2): w \ ef =
+        let r = rec(app);
+        let init = r#init;
+        List.foldLeft((acc, sys) -> sys(acc), init(design), r#startupSystems)
+
     /// buildStart の、初期の World を渡す形（窓なしのゲームが Doc の読み直しを取り置いた World から組む）。
-    /// fresh は freshWorld(app, design) と同じ物であること。
+    /// fresh は freshWorld(app, design) か、同じ Doc で組んだ init + 起動時の系であること。
     pub def buildStartOn(app: App[w, ef], fresh: w, name: String, args: Map[String, String]): Result[String, w] \ Fs.FileRead =
         match rec(app)#starts |> List.find(start -> start#name == name) {
             case None        => Err("始まり '${name}' は登録簿に無い${Suggest.hint(name, startNames(app))}")
@@ -777,21 +790,38 @@ pub mod App {
     pub def withFingerprint(f: w -> String, app: App[w, ef]): App[w, ef] =
         App.App({ fingerprint = Some(f) | rec(app) })
 
-    /// 起動の World: 登録簿が無ければ init + 起動時の系（今までどおり）、あれば START（無ければ先頭の始まり）。
+    /// 記録する起動の World と、start の行に載せるファイルの中身。
+    /// captured（App を組む間に読んだ物）があり、読み直しが読むパスも分かる時は Doc を読み直さず、
+    /// captured と起動の World を組む間に読んだ物に、読み直しのパスのうち未だ無い物を読んで足す（同じパスは captured を使う）。
+    /// それ以外は freshWorld で読み直して拾う。
+    def buildBootRecord(app: App[w, ef], design: Vec2.Vec2, env: Map[String, String], captured: Option[Map[String, Flow.File]]):
+            (Result[String, (w, Option[(String, Map[String, String])])], Map[String, Flow.File]) \ ef + Fs.FileRead =
+        match (captured, rec(app)#reloadPaths) {
+            case (Some(loaded), Some(paths)) =>
+                let (booted, bootRead) = Flow.Record.captureReads(() -> bootWorld(app, design, env, false));
+                let known = Map.unionWith((first, _) -> first, loaded, bootRead);
+                let missing = paths |> List.filter(path -> not Map.memberOf(path, known));
+                let (_, extra) = Flow.Record.captureReads(() -> List.forEach(path -> discard Fs.FileRead.read(path), missing));
+                (booted, Map.unionWith((first, _) -> first, known, extra))
+            case _ => Flow.Record.captureReads(() -> bootWorld(app, design, env, true))
+        }
+
+    /// 起動の World: 登録簿が無ければ init + 起動時の系、あれば START（無ければ先頭の始まり）。
+    /// 始まりの下地は、reread なら freshWorld（Doc を全部読み直す）、そうでなければ init + 起動時の系。
     /// 返すのは起動の World と、通った始まり（名前と書いた引数。登録簿が無ければ None）。
-    def bootWorld(app: App[w, ef], design: Vec2.Vec2, env: Map[String, String]): Result[String, (w, Option[(String, Map[String, String])])] \ ef + Fs.FileRead =
+    // WhyNot: 記録しない起動で Doc を読み直さない — main が読んだばかりの物をもう一度読むだけで、重い Doc（3D の形）では起動が秒単位で延びる。
+    def bootWorld(app: App[w, ef], design: Vec2.Vec2, env: Map[String, String], reread: Bool): Result[String, (w, Option[(String, Map[String, String])])] \ ef + Fs.FileRead =
         let r = rec(app);
+        let base = () -> if (reread) freshWorld(app, design) else initialWorld(app, design);
         match List.head(r#starts) {
-            case None =>
-                let init = r#init;
-                Ok((List.foldLeft((acc, sys) -> sys(acc), init(design), r#startupSystems), None))
+            case None => Ok((initialWorld(app, design), None))
             case Some(first) =>
                 let line = Map.getWithDefault("START", "", env);
                 let wanted = if (String.isEmpty(String.trim(line))) Ok((first#name, Map.empty()))
                              else parseStartLine(line) |> Result.mapErr(why -> "START: ${why}");
                 forM (
                     chosen <- wanted;
-                    world <- { let (name, args) = chosen; buildStart(app, design, name, args) |> Result.mapErr(why -> "START: ${why}") }
+                    world <- { let (name, args) = chosen; buildStartOn(app, base(), name, args) |> Result.mapErr(why -> "START: ${why}") }
                 ) yield (world, Some(chosen))
         }
 
@@ -1029,17 +1059,33 @@ pub mod App {
     /// 自分の effect ハンドラ束を張った内側で呼ぶ。
     /// デバッグ有効（withDebug）かつ環境変数 DEBUG_HTTP_PORT があれば、リモートデバッグの
     /// HTTP エンドポイントも一緒に立ち上がる（例: `DEBUG=1 DEBUG_HTTP_PORT=7777 flix run`）。
+    /// 組み終えた App を渡すこの形では、flow を記録する起動は Doc を読み直して start の行に載せる（App.loadAndLaunch は読み直さない）。
     pub def launch(app: App[w, ef]): Unit \ (ef + GameEngine.Game + GameEngine.Audio + ShaderEffect.Shader + RenderTarget.Target + Fs.FileRead + Fs.FileWrite + IO) =
-        let r = rec(app);
-        // 下ごしらえの間、画面には読み込み中の起動画面が出たまま残る（描き直さないので止まって見えるが、
-        // 出し直す入口をここに作ると、間引きも中止スイッチも持たない 2 つ目の経路が生まれる）。
+        launchWith(app, None, ProcessEnv.snapshot())
+
+    /// loadApp で App を組んで launch する。flow を記録する起動では、loadApp が Fs.FileRead で読んだ中身を start の行に載せ、
+    /// Doc を読み直さない。loadApp の中の効果（LoadProgress など）は、外の handler が受ける。
+    pub def loadAndLaunch(loadApp: Unit -> App[w, ef] \ ef2): Unit \ (ef + ef2 + GameEngine.Game + GameEngine.Audio + ShaderEffect.Shader + RenderTarget.Target + Fs.FileRead + Fs.FileWrite + IO) =
         let env = ProcessEnv.snapshot();
+        // WhyNot: 記録しないと env で分かる起動で中身を控えない — 3D の形などの大きな字を、起動の World が決まるまで抱えることになる。
+        if (not debugOf(env) or Option.isEmpty(Flow.Record.pathOf(env))) launchWith(loadApp(), None, env)
+        else {
+            let (app, read) = Flow.Record.captureReads(loadApp);
+            launchWith(app, Some(read), env)
+        }
+
+    /// launch の本体。captured = App を組む間に読んだファイルの中身（控えていなければ None）。
+    def launchWith(app: App[w, ef], captured: Option[Map[String, Flow.File]], env: Map[String, String]): Unit \ (ef + GameEngine.Game + GameEngine.Audio + ShaderEffect.Shader + RenderTarget.Target + Fs.FileRead + Fs.FileWrite + IO) =
+        let r = rec(app);
+        // 下ごしらえの間、画面にはバックエンドが最後に出した起動画面（「preparing game...」）が出たまま残る。
+        // 長い下ごしらえは、ゲームが LoadProgress.report で区切りを知らせ、バックエンドの handler が起動画面を進める。
+        // WhyNot: ここで起動画面を出し直さない — 間引きも中止スイッチも持たない 2 つ目の経路が生まれる。
         let recorder = if (r#debug) Flow.Record.pathOf(env) |> Option.flatMap(Flow.Record.open) else None;
         let design = GameEngine.Game.getViewportRect()#size;
-        // 記録するなら、起動の World が読んだファイルの中身も拾って start の行に載せる（再生が同じ Doc で始まる）。
+        // 記録するなら、起動の World を組む間に読んだ中身も拾い、start の行に載せる（再生が同じ Doc で始まる）。
         let (booted, files) = match recorder {
-            case Some(_) => Flow.Record.captureReads(() -> bootWorld(app, design, env))
-            case None    => (bootWorld(app, design, env), Map.empty())
+            case Some(_) => buildBootRecord(app, design, env, captured)
+            case None    => (bootWorld(app, design, env, false), Map.empty())
         };
         match booted {
             // 知らない始まりの名前で黙って先頭の場面から始めると、別の場面を見て直していることに気づけない。
@@ -1047,7 +1093,9 @@ pub mod App {
             case Ok((world0, started)) =>
                 Option.forEach(recording -> {
                     match started {
-                        case Some((name, args)) => Flow.Record.started(recording, Flow.Record.startLine(name, args, files))
+                        case Some((name, args)) =>
+                            Flow.Record.started(recording, Flow.Record.startLine(name, args, files));
+                            Option.forEach(Flow.Record.expectStart(recording), fingerprintText(r, world0))
                         case None => Flow.Record.line(recording, "# App.withStarts が無いので、再生は flow の既定の World（init）から")
                     };
                     Flow.Record.resetFingerprint(recording, fingerprintText(r, world0))

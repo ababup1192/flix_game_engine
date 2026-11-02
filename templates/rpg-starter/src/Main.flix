@@ -9,15 +9,17 @@ def main(): Unit \ IO =
     if (GameEngine.ensureMainThread()) ()
     else {
         run {
-            let docs = Res.loadDocs();
-            Game.app(docs, Saves.load(docs#items, docs#maps))
-                // セーブを書く（宿で saveRev が進んだ実機のフレームの後でだけ。テスト・flow・描き出しは書かない）。
-                |> App.addOutput(Resources.liftOutput({ keyOf = w -> if (w#saveRev == 0) "" else Int32.toString(w#saveRev),
-                                                        write = w -> w#save |> Option.forEach(Saves.write), onJump = App.OnJump.Skip }))
-                // ドット絵のファイルごとのアトラスを GPU へ上げる（鍵が同じ間は上げ直さない）。
-                |> App.withSpriteAtlases(Resources.read((res, _) -> Res.atlases(res)))
-                |> App.withDebug(App.debugFromEnv())
-                |> App.launch
+            // Doc を読んで App を組む所ごと渡す（flow を記録する make debug の起動でも、ここで読んだ中身を使い Doc を読み直さない）。
+            App.loadAndLaunch(() -> {
+                let docs = Res.loadDocs();
+                Game.app(docs, Saves.load(docs#items, docs#maps))
+                    // セーブを書く（宿で saveRev が進んだ実機のフレームの後でだけ。テスト・flow・描き出しは書かない）。
+                    |> App.addOutput(Resources.liftOutput({ keyOf = w -> if (w#saveRev == 0) "" else Int32.toString(w#saveRev),
+                                                            write = w -> w#save |> Option.forEach(Saves.write), onJump = App.OnJump.Skip }))
+                    // ドット絵のファイルごとのアトラスを GPU へ上げる（鍵が同じ間は上げ直さない）。
+                    |> App.withSpriteAtlases(Resources.read((res, _) -> Res.atlases(res)))
+                    |> App.withDebug(App.debugFromEnv())
+            })
         } with LwjglLayer.withProject(".")
           with Fs.FileRead.runWithIO
           with Fs.FileWrite.runWithIO

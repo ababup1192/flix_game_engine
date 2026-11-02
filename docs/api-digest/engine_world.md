@@ -137,7 +137,7 @@
 - 生成したドット絵アトラス 1 枚ぶんの受け渡し。
   `pub type alias AtlasUpload = { texture = String, key = String, baked = PxSpriteAtlas.Baked }`
 - App の中身（欄の意味は右の // コメント）。ゲームからは読まず、ビルダー（addSystem / withView など）で組む。
-  `pub type alias Rec[w: Type, ef: Eff] = { init = Vec2.Vec2 -> w \ ef, startupSystems = List[w -> w \ ef], updateSystems = List[(Frame, w) -> w \ ef], reload = Option[(GameEngine.Key, w -> w \ {Fs.FileRead})], watch = List[(String, w -> w \ {Fs.FileRead})], view = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], passes = w -> Render.PassPlan \ ef, fonts = List[String], camera = Option[w -> Vec2.Vec2 \ ef], zoom = Option[w -> Float64 \ ef], cameraBounds = Option[w -> Rect2.Rect2 \ ef], parallaxLayers = List[(Float64, (ViewCtx, w) -> List[Render.PlacedItem] \ ef)], hudView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], audio = { before = w, after = w } -> List[String] \ ef, sustained = w -> List[Sustain] \ ef, mixer = Option[w -> AudioMixer.Mixer \ ef], quit = (Frame, w) -> Bool \ ef, closeRequest = Option[w -> w \ ef], debug = Bool, debugView = Option[(String, w -> (List[GameEngine.Drawable], List[GameEngine.TileMapRenderCmd], List[GameEngine.PolygonRenderCmd]) \ ef)], worldDump = Option[(Rect2.Rect2, w) -> String \ ef], annotationContext = Option[w -> Annotate.Table \ ef], staticLayer = Option[{ key = w -> GameEngine.StaticKey, build = w -> List[Render.PlacedItem] }], tileLayers = Option[w -> List[TileLayerSpec]], spriteAtlases = w -> List[AtlasUpload], pixelSnap = w -> Float64, statusLine = Option[w -> String \ ef], remoteRender = Option[Unit -> List[String] \ IO], shot = Option[w -> String \ IO], remoteHandlers = List[(String, (Map[String, String], w) -> Result[String, w] \ {Fs.FileRead})], fixedStep = Option[Float64], clocks = List[(Float64, w) -> w], cursor = Option[w -> CursorSpec], fullscreen = Option[w -> Bool], outputs = List[Output[w]], starts = List[Start[w]], flow = Flow.Table[w], fingerprint = Option[w -> String] }`
+  `pub type alias Rec[w: Type, ef: Eff] = { init = Vec2.Vec2 -> w \ ef, startupSystems = List[w -> w \ ef], updateSystems = List[(Frame, w) -> w \ ef], reload = Option[(GameEngine.Key, w -> w \ {Fs.FileRead})], watch = List[(String, w -> w \ {Fs.FileRead})], reloadPaths = Option[List[String]], view = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], passes = w -> Render.PassPlan \ ef, fonts = List[String], camera = Option[w -> Vec2.Vec2 \ ef], zoom = Option[w -> Float64 \ ef], cameraBounds = Option[w -> Rect2.Rect2 \ ef], parallaxLayers = List[(Float64, (ViewCtx, w) -> List[Render.PlacedItem] \ ef)], hudView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], audio = { before = w, after = w } -> List[String] \ ef, sustained = w -> List[Sustain] \ ef, mixer = Option[w -> AudioMixer.Mixer \ ef], quit = (Frame, w) -> Bool \ ef, closeRequest = Option[w -> w \ ef], debug = Bool, debugView = Option[(String, w -> (List[GameEngine.Drawable], List[GameEngine.TileMapRenderCmd], List[GameEngine.PolygonRenderCmd]) \ ef)], worldDump = Option[(Rect2.Rect2, w) -> String \ ef], annotationContext = Option[w -> Annotate.Table \ ef], staticLayer = Option[{ key = w -> GameEngine.StaticKey, build = w -> List[Render.PlacedItem] }], tileLayers = Option[w -> List[TileLayerSpec]], spriteAtlases = w -> List[AtlasUpload], pixelSnap = w -> Float64, statusLine = Option[w -> String \ ef], remoteRender = Option[Unit -> List[String] \ IO], shot = Option[w -> String \ IO], remoteHandlers = List[(String, (Map[String, String], w) -> Result[String, w] \ {Fs.FileRead})], fixedStep = Option[Float64], clocks = List[(Float64, w) -> w], cursor = Option[w -> CursorSpec], fullscreen = Option[w -> Bool], outputs = List[Output[w]], starts = List[Start[w]], flow = Flow.Table[w], fingerprint = Option[w -> String] }`
 - 初期 World だけを持つ空の App。絵はまだ無い（withView で繋ぐまで何も描かない）。
   `pub def make(init: w): App[w, ef]`
 - 初期 World を design 解像度（project.json の designWidth/Height）から組む入口。
@@ -290,6 +290,8 @@
   `pub def changedPaths(watch: List[String], prev: Map[String, Int64], current: Map[String, Int64]): List[String]`
 - App を走らせる単一の効果多相ランナー。startup を 1 回だけ畳み込み、いま押されているキーを prev の
   `pub def launch(app: App[w, ef]): Unit \ (ef + GameEngine.Game + GameEngine.Audio + ShaderEffect.Shader + RenderTarget.Target + Fs.FileRead + Fs.FileWrite + IO)`
+- loadApp で App を組んで launch する。flow を記録する起動では、loadApp が Fs.FileRead で読んだ中身を start の行に載せ、
+  `pub def loadAndLaunch(loadApp: Unit -> App[w, ef] \ ef2): Unit \ (ef + ef2 + GameEngine.Game + GameEngine.Audio + ShaderEffect.Shader + RenderTarget.Target + Fs.FileRead + Fs.FileWrite + IO)`
 - 時間スクラブ用に持ち回す直近の World の数（60fps で約 30 秒）。
   `pub def historyLimit(): Int32`
 - リモートコマンドを捌いた後に残る 3 つの進み方。
@@ -1047,6 +1049,10 @@
   `pub def steppedInt(start: Int32, end: Int32, easing: Easing, u: Float64): Int32`
 
 ## Emit — `engine_world/src/Emit.flix`
+- 出来事を 1 つ外へ出す effect。e はゲームが選ぶ出来事の型。
+  `pub eff Emit`
+- event が起きたと知らせる。同じ出来事が 2 回来れば 2 回とも残る。
+  `pub eff Emit { def emit(event: e): Unit }`
 - f を走らせ、戻り値と、その間に出た出来事の列（出た順）を返す。
   `pub def collect(f: Unit -> a \ ef): (a, List[e]) \ (ef - Emit[e])`
 - `pub type alias Events[e] = EventLog[e]`
@@ -1213,6 +1219,10 @@
   `pub def started(rec: Recorder, text: String): Unit \ IO`
 - 外から World が変わった（記録の行で説明の付かない変化）か: 指紋の元が前のフレームの後と違えば # ext を書く。
   `pub def checkExternalChange(rec: Recorder, fingerprint: Option[String]): Unit \ IO`
+- start の行の直後に、起動の World の指紋を確かめる行を書く（再生が start の直後に同じ World かを比べる）。
+  `pub def expectStart(rec: Recorder, fingerprint: String): Unit \ IO`
+- expectStart が書く行（確かめる行と、ずれた時に読む指紋の元）。
+  `pub def startCheckLines(fingerprint: String): List[String]`
 - 記録の行で World を変えた（start・reload…）後の指紋の元を覚え直す（# ext を誤って書かない）。
   `pub def resetFingerprint(rec: Recorder, fingerprint: Option[String]): Unit \ IO`
 - 実機のフレーム 1 つ（App.traceFrame に渡した Frame そのもの）と、そのフレームの後の指紋の元。
@@ -1562,6 +1572,10 @@
   `pub def load(path: String): Result[JsonError, Spec] \ Fs.FileRead`
 
 ## Loop — `engine_world/src/Loop.flix`
+- 鳴り続ける音の effect。s はゲームが選ぶ音の型。
+  `pub eff Loop`
+- このフレームで sound を鳴らし続ける。mix は音量 0.0〜1.0 と高さ（1.0 = 元のまま）。
+  `pub eff Loop { def hold(sound: s, mix: Loop.Mix): Unit }`
 - 鳴り続ける音の音量と高さ。volume は 0.0〜1.0、pitch は 1.0 = 元のまま・2.0 で 1 オクターブ上。
   `pub type alias Mix = { volume = Float64, pitch = Float64 }`
 - 元の音量・元の高さ。
@@ -2169,6 +2183,10 @@
   `pub def typeToJson(fieldType: FieldType): Json`
 
 ## Sfx — `engine_world/src/Sfx.flix`
+- 一発で鳴り切る効果音の effect。s はゲームが選ぶ音の型。
+  `pub eff Sfx`
+- このフレームで sound を 1 回鳴らす。同じ音が同じフレームに 2 回来ても 1 回だけ鳴る。
+  `pub eff Sfx { def play(sound: s): Unit }`
 - f の中で鳴らした音を、鳴らした順の名前の列にする（App.withAudio に渡す形）。
   `pub def collect(nameOf: s -> String, f: Unit -> Unit \ ef): List[String] \ (ef - Sfx[s])`
 

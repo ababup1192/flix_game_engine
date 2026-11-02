@@ -58,6 +58,9 @@ Doc の読み直しは `traceFrame` の手前で同じ関数（watchFile・reloa
 - 引数の値が `@パス` ならエンジンがそのファイルを読んで中身を渡す（無ければその引数は無い）。セーブを読む始まり
   （タイトルの「つづきから」）は `start title save=@saves/slot1.json` と書き、build は文字の中身から組む（build は純粋なまま・読んだ中身は記録に残る）。
 - `withStarts` を繋いだゲームは、起動も登録簿を通る: `START` が無ければ先頭の始まり（引数は `Start#args` の既定）。
+  起動の始まりの下地は `init` + 起動時の系で、Doc は読み直さない（main が読んだ物を使う）。記録する起動は、main が
+  `App.loadAndLaunch` なら main が読んだ中身（+ 始まりの @パス と DocTable の全部の行のパス）を start の行に載せ、`App.launch` なら
+  `App.freshWorld` で読み直して拾う。どちらも start の直後に `expect fp=` を書き、再生の始まりの World が違えばそこで止まる。
 - `/start` は固定刻みの持ち越しと手の様子も初めに戻す（flow の `start` と記録の再生も同じ）。止めている間の onRequest は履歴の先頭にも置く（`/resume` で消さない）。
 - 起動: 環境変数 `START="feedHome t=10"`（手順の `start` の行と同じ形）。無ければ先頭の始まり。知らない名前は近い名前の案を出して起動しない。
 - リモート: `GET /starts`（名前・説明の一覧）・`POST /start?name=feedHome&t=10`（新しく作った World から組み直して差し替える）。

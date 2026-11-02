@@ -3,6 +3,8 @@
 /// GPU に置く形（閉じた型 — 作る関数からだけ作り、中身と contentHash が食い違わない）。
 /// 頂点は面ごとに分けて持つ（面の法線を各頂点へ写すため、隣の面と頂点を共有しない）。
 pub mod Mesh3d {
+    import java.nio.ByteBuffer
+    import java.security.MessageDigest
 
     /// 多角形 1 つ: 頂点の列（3 つ以上・凸・外から見て時計回り）と色。
     pub type alias Polygon = { points = List[Vec3.Vec3], color = Color }
@@ -34,26 +36,33 @@ pub mod Mesh3d {
     /// 法線は多角形 1 つに 1 本（Newell の式で頂点の並びから求め、各頂点へ写す）。3 点未満の多角形は捨てる。
     pub def fromPolygons(polys: List[Polygon]): Mesh3d =
         let kept = List.filter(p -> List.length(p#points) >= 3, polys);
-        let (_, revFaces) = List.foldLeft((acc, p) -> {
-            let (base, out) = acc;
-            (base + List.length(p#points), (base, p) :: out)
-        }, (0, Nil), kept);
-        let faces = List.reverse(revFaces);
-        let positions = faces |> List.flatMap(face -> snd(face)#points |> List.flatMap(xyz)) |> List.toVector;
-        let normals = faces |> List.flatMap(face -> {
-            let points = snd(face)#points;
-            let n = xyz(polygonNormal(points));
-            points |> List.flatMap(_ -> n)
-        }) |> List.toVector;
-        let colors = faces |> List.flatMap(face -> {
-            let p = snd(face);
-            let c = p#color#r :: p#color#g :: p#color#b :: Nil;
-            p#points |> List.flatMap(_ -> c)
-        }) |> List.toVector;
-        let indices = faces |> List.flatMap(face -> {
-            let (base, p) = face;
-            List.range(1, List.length(p#points) - 1) |> List.flatMap(i -> base :: base + i :: base + i + 1 :: Nil)
-        }) |> List.toVector;
+        let vertexCount = List.foldLeft((acc, p) -> acc + List.length(p#points), 0, kept);
+        let triangleCount = vertexCount - 2 * List.length(kept);
+        let (positions, normals, colors, indices) = region rc {
+            let pos: Array[Float64, rc] = Array.empty(rc, vertexCount * 3);
+            let nor: Array[Float64, rc] = Array.empty(rc, vertexCount * 3);
+            let col: Array[Float64, rc] = Array.empty(rc, vertexCount * 3);
+            let idx: Array[Int32, rc] = Array.empty(rc, triangleCount * 3);
+            discard List.foldLeft((cursor, p) -> {
+                let (base, slot) = cursor;
+                let n = polygonNormal(p#points);
+                let c = Vec3.v3(p#color#r, p#color#g, p#color#b);
+                let size = List.foldLeft((k, q) -> {
+                    putVec3(base + k, q, pos);
+                    putVec3(base + k, n, nor);
+                    putVec3(base + k, c, col);
+                    k + 1
+                }, 0, p#points);
+                List.range(1, size - 1) |> List.forEach(i -> {
+                    let t = (slot + i - 1) * 3;
+                    Array.put(base, t, idx);
+                    Array.put(base + i, t + 1, idx);
+                    Array.put(base + i + 1, t + 2, idx)
+                });
+                (base + size, slot + size - 2)
+            }, (0, 0), kept);
+            (Array.toVector(pos), Array.toVector(nor), Array.toVector(col), Array.toVector(idx))
+        };
         let (low, high) = boundsOfPositions(positions);
         let hash = hashOf(positions, colors, indices);
         Mesh3dData.Mesh3dData({
@@ -137,10 +146,13 @@ pub mod Mesh3d {
                 else match Vector.findIndexOf(k -> not isTangentOk(vec4At(tangents, k)), Vector.range(0, count)) {
                     case Some(k) => Err("Mesh3d.withTangents: 頂点 ${k} のタンジェントの w が ±1 でないか、xyz の長さが 0")
                     case None =>
-                        let unit = Vector.range(0, count) |> Vector.flatMap(k -> {
+                        let rows = Vector.range(0, count) |> Vector.map(k -> {
                             let (t, w) = vec4At(tangents, k);
-                            let n = Vec3.normalized(t);
-                            Vector#{ n#x, n#y, n#z, w }
+                            (Vec3.normalized(t), w)
+                        });
+                        let unit = rowsOf(count, 4, (k, c) -> {
+                            let (n, w) = Vector.get(k, rows);
+                            if (c == 3) w else component(c, n)
                         });
                         Ok(withUvSet({ tangents = unit | set }, r))
                 }
@@ -184,7 +196,8 @@ pub mod Mesh3d {
         let sources = Vector.append(Vector.range(0, count), split#extra |> Vector.map(fst));
         let faceOfVertex = Vector.append(split#home, split#extra |> Vector.map(snd));
         let positions = pickRows(sources, 3, v#positions);
-        let uvs = Vector.range(0, Vector.length(sources)) |> Vector.flatMap(k -> boxUv(scale, Vector.get(k, faceOfVertex), vec3At(positions, k)));
+        let uvRows = Vector.range(0, Vector.length(sources)) |> Vector.map(k -> boxUv(scale, Vector.get(k, faceOfVertex), vec3At(positions, k)));
+        let uvs = rowsOf(Vector.length(sources), 2, (k, c) -> { let (u, w) = Vector.get(k, uvRows); if (c == 0) u else w });
         let moved = if (Vector.isEmpty(split#extra)) r
             else {
                 let normals = pickRows(sources, 3, v#normals);
@@ -198,7 +211,14 @@ pub mod Mesh3d {
 
     /// 元の並び values（頂点ごとに width 個）から、sources の頂点の順に写した並び。
     def pickRows(sources: Vector[Int32], width: Int32, values: Vector[a]): Vector[a] =
-        sources |> Vector.flatMap(k -> Vector.slice(start = k * width, end = k * width + width, values))
+        rowsOf(Vector.length(sources), width, (k, c) -> Vector.get(Vector.get(k, sources) * width + c, values))
+
+    /// count 行 × width 列の並び（行 k・列 c の値は cell(k, c)）。
+    // WhyNot: 行ごとの小さな Vector を Vector.flatMap でつながない — 頂点 16 万の形で 1 秒近くかかる。
+    def rowsOf(count: Int32, width: Int32, cell: (Int32, Int32) -> a \ ef): Vector[a] \ ef =
+        Vector.range(0, count * width) |> Vector.map(j -> cell(j / width, Int32.remainder(j, width)))
+
+    def component(c: Int32, v: Vec3.Vec3): Float64 = if (c == 0) v#x else if (c == 1) v#y else v#z
 
     /// 箱の面の番号（0 = +X・1 = −X・2 = +Y・3 = −Y・4 = +Z・5 = −Z）。同じ大きさの軸は X → Y → Z の順に取る。
     def boxFaceOf(n: Vec3.Vec3): Int32 =
@@ -207,7 +227,7 @@ pub mod Mesh3d {
         else if (ay >= az) (if (n#y >= 0.0) 2 else 3)
         else if (n#z >= 0.0) 4 else 5
 
-    def boxUv(scale: Float64, face: Int32, p: Vec3.Vec3): Vector[Float64] =
+    def boxUv(scale: Float64, face: Int32, p: Vec3.Vec3): (Float64, Float64) =
         let (u, w) = match face {
             case 0 => (p#z, 0.0 - p#y)
             case 1 => (0.0 - p#z, 0.0 - p#y)
@@ -216,7 +236,7 @@ pub mod Mesh3d {
             case 4 => (0.0 - p#x, 0.0 - p#y)
             case _ => (p#x, 0.0 - p#y)
         };
-        Vector#{ u * scale, w * scale }
+        (u * scale, w * scale)
 
     /// 頂点を面ごとに分けた結果。home = 元の頂点 k の面（最初に使う三角形の面・使われない頂点は 0）・
     /// extra = 足した頂点の (元の頂点, 面) の並び（番号は count から）・indices = 分けた後の三角形の番号。
@@ -249,8 +269,7 @@ pub mod Mesh3d {
 
     // WhyNot: uv の無い形の鍵に uv の欄を足さない — 前からある形の鍵（GL の頂点バッファ・描き出しの鍵）を変えない。
     def uvHashOf(baseHash: String, set: UvSet): String =
-        let text = "${baseHash}|uv|${Vector.join(",", set#uvs)}|${Vector.join(",", set#tangents)}";
-        Util.Codec.encodeHex(Util.Checksum.sha256(String.toBytes(text)))
+        digestOf("uv|${baseHash}", set#uvs :: set#tangents :: Nil, Nil)
 
     /// 頂点ごとのタンジェント（x・y・z・w）。三角形ごとに
     ///   t = (e1·dv2 − e2·dv1) / det（u が増える向き）・b = (e2·du1 − e1·du2) / det（v が増える向き）
@@ -278,13 +297,23 @@ pub mod Mesh3d {
                 (i0 :: i1 :: i2 :: Nil) |> List.forEach(k -> { addVec3(k, tangent, tSum); addVec3(k, bitangent, bSum) })
             }
         });
-        Vector.range(0, count) |> Vector.flatMap(k -> tangentOf(vec3At(normals, k), readVec3(k, tSum), readVec3(k, bSum)))
+        let out: Array[Float64, rc] = Array.empty(rc, count * 4);
+        Vector.range(0, count) |> Vector.forEach(k -> {
+            let t = tangentOf(vec3At(normals, k), readVec3(k, tSum), readVec3(k, bSum));
+            List.range(0, 4) |> List.forEach(c -> Array.put(Vector.get(c, t), k * 4 + c, out))
+        });
+        Array.toVector(out)
     }
 
     def addVec3(k: Int32, v: Vec3.Vec3, sums: Array[Float64, r]): Unit \ r =
         Array.put(Array.get(k * 3, sums) + v#x, k * 3, sums);
         Array.put(Array.get(k * 3 + 1, sums) + v#y, k * 3 + 1, sums);
         Array.put(Array.get(k * 3 + 2, sums) + v#z, k * 3 + 2, sums)
+
+    def putVec3(k: Int32, v: Vec3.Vec3, out: Array[Float64, r]): Unit \ r =
+        Array.put(v#x, k * 3, out);
+        Array.put(v#y, k * 3 + 1, out);
+        Array.put(v#z, k * 3 + 2, out)
 
     def readVec3(k: Int32, sums: Array[Float64, r]): Vec3.Vec3 \ r =
         Vec3.v3(Array.get(k * 3, sums), Array.get(k * 3 + 1, sums), Array.get(k * 3 + 2, sums))
@@ -309,14 +338,31 @@ pub mod Mesh3d {
     // WhyNot: fromPolygons と同じ字にしない — 法線は位置から決まらず外から来るので、法線と重みも鍵に入れる（同じ位置で法線だけ違う形を取り違えない）。
     def arraysHashOf(positions: Vector[Float64], normals: Vector[Float64], colors: Vector[Float64], indices: Vector[Int32],
                      skin: Option[SkinWeights]): String =
-        let skinText = match skin {
-            case None => "-"
-            case Some(sw) => "${Vector.join(",", sw#joints)}|${Vector.join(",", sw#weights)}"
-        };
-        let text = "arrays|${Vector.join(",", positions)}|${Vector.join(",", normals)}|${Vector.join(",", colors)}|${Vector.join(",", indices)}|${skinText}";
-        Util.Codec.encodeHex(Util.Checksum.sha256(String.toBytes(text)))
+        match skin {
+            case None     => digestOf("arrays", positions :: normals :: colors :: Nil, indices :: Nil)
+            case Some(sw) => digestOf("arrays+skin", positions :: normals :: colors :: sw#weights :: Nil, indices :: sw#joints :: Nil)
+        }
 
-    def xyz(v: Vec3.Vec3): List[Float64] = v#x :: v#y :: v#z :: Nil
+    /// 鍵の字（SHA-256 の 16 進）。tag の字と、各並びの長さと値のバイト（Float64 は IEEE 754 のビットのまま）を順に流す。
+    // WhyNot: 値を文字列につないでから SHA を取らない — 頂点 16 万の形で Double.toString だけで数十 ms かかる。
+    def digestOf(tag: String, floats: List[Vector[Float64]], ints: List[Vector[Int32]]): String =
+        unsafe IO {
+            let md = MessageDigest.getInstance("SHA-256");
+            md.update(unchecked_cast(String.toBytes(tag) as Array[Int8, Static]));
+            floats |> List.forEach(v -> {
+                let buffer = ByteBuffer.allocate(4 + Vector.length(v) * 8);
+                discard buffer.putInt(Vector.length(v));
+                discard buffer.asDoubleBuffer().put(unchecked_cast(v as Array[Float64, Static]));
+                md.update(buffer.array())
+            });
+            ints |> List.forEach(v -> {
+                let buffer = ByteBuffer.allocate(4 + Vector.length(v) * 4);
+                discard buffer.putInt(Vector.length(v));
+                discard buffer.asIntBuffer().put(unchecked_cast(v as Array[Int32, Static]));
+                md.update(buffer.array())
+            });
+            Util.Codec.encodeHex(Array.toVector(md.digest()))
+        }
 
     // WhyNot: 頂点 0・1・2 の外積だけで法線を出さない — 先頭の 3 点が一直線に並ぶ多角形（辺の途中に頂点がある壁）で 0 になる。
     def polygonNormal(points: List[Vec3.Vec3]): Vec3.Vec3 =
@@ -343,8 +389,7 @@ pub mod Mesh3d {
 
     // 法線は位置から決まるので鍵に入れない。
     def hashOf(positions: Vector[Float64], colors: Vector[Float64], indices: Vector[Int32]): String =
-        let text = "${Vector.join(",", positions)}|${Vector.join(",", colors)}|${Vector.join(",", indices)}";
-        Util.Codec.encodeHex(Util.Checksum.sha256(String.toBytes(text)))
+        digestOf("polygons", positions :: colors :: Nil, indices :: Nil)
 
     /// Wavefront OBJ と .mtl の字から作る。読むのは v・vt・f（v/vt/vn の形は 1 番目と 2 番目の番号・負の番号はその行までの頂点から数える）・
     /// usemtl と .mtl の newmtl・Kd。ほかの行は読み飛ばす。.mtl に無い材質と Kd の無い材質は灰色。

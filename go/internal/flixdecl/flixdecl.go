@@ -419,7 +419,12 @@ func ScanText(text string) []ModDecls {
 			}
 		case strings.HasPrefix(stripped, "pub eff "):
 			effName, ops, _ := extractEffBlock(lines, i)
-			if mod := modOf[i]; mod != "" {
+			// mod の外の eff は、同じ名前の mod（runNoop などを置く組の mod）の見出しへ入れる。
+			mod := modOf[i]
+			if mod == "" {
+				mod = effName
+			}
+			if mod != "" {
 				add(mod, Decl{Doc: pendingDoc, Text: "pub eff " + effName})
 				for _, op := range ops {
 					add(mod, Decl{Doc: op.Doc, Text: "pub eff " + effName + " { " + op.Sig + " }"})

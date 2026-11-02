@@ -682,4 +682,17 @@ mod TestApp {
     def testBuildStartSuggestsANearName(): Unit \ Assert + Fs.FileRead =
         Assert.assertEq(expected = Err("始まり 'cuont' は登録簿に無い（もしかして: count）"),
             App.buildStart(startApp(), Vec2.zero(), "cuont", Map.empty()))
+
+    // 起動時の系が LoadProgress.report で知らせた区切りは、freshWorld を包む handler へ届く（App は知らせを受けない）。
+    @Test
+    def testStartupSystemReportReachesOuterHandler(): Unit \ Assert + Fs.FileRead =
+        let app = App.make(0) |> App.addStartup(n -> { LoadProgress.report("boot", 1, 2); n + 1 });
+        let seen = region rc {
+            let got = MutList.empty(rc);
+            discard run App.freshWorld(app, testViewport()) with handler LoadProgress {
+                def report(phase, done, total, k) = { MutList.push((phase, done, total), got); k(()) }
+            };
+            MutList.toList(got)
+        };
+        Assert.assertEq(expected = ("boot", 1, 2) :: Nil, seen)
 }

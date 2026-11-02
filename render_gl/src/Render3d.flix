@@ -18,6 +18,7 @@
 //   ビルボードの法線はカメラへ向く向き（−forward）。Output.Depth の灰色は目からの距離で (d − near) / range。
 mod Render3d {
     import java.lang.System
+    import java.lang.{Float => JFloat}
     import org.lwjgl.opengl.GL11
     import org.lwjgl.opengl.GL12
     import org.lwjgl.opengl.GL13
@@ -97,8 +98,8 @@ mod Render3d {
 
     type alias Programs = { lit = LitLocs, depth = DepthLocs, billboard = BillboardLocs, blit = Int32, quadVao = Int32, quadVbo = Int32 }
 
-    /// 骨つきの版のプログラムと、joint 行列の UBO（std140 の mat4 × Skin3d.maxJoints()）。
-    type alias SkinnedPrograms = { lit = LitLocs, depth = DepthLocs, jointsUbo = Int32 }
+    /// 骨つきの版のプログラムと、joint 行列の UBO（std140 の mat4 × Skin3d.maxJoints()）と、その UBO へ最後に書いた中身。
+    type alias SkinnedPrograms = { lit = LitLocs, depth = DepthLocs, jointsUbo = Int32, uploadedJoints = Ref[Array[Float32, Static], Static] }
 
     /// 置いた物 1 つと、描く時に曲げる Pose（Scene3d.skinningOf。None なら骨の無い版で曲げずに描く）。
     type alias MeshDraw = { fields = Scene3d.InstanceFields, pose = Option[Pose3d.Pose3d] }
@@ -937,7 +938,7 @@ mod Render3d {
         if (entry#locs#mesh#program == 0) None else Some(entry)
 
     def sameMaterial(entry: MaterialEntry, m: Scene3d.MaterialFields): Bool =
-        ShaderGen.eqSpec(entry#spec, m#spec) and ShaderGen.eqEmission(entry#emission, m#emission)
+        ShaderGen.eqMaterial(entry#spec, entry#emission, m#spec, m#emission)
 
     /// 鍵 key の材質を組み直す。古いプログラムはすぐ消さず引退させる（同じコマの先の物がまだ使う）。
     def rebuildMaterial(state: State, gen: Int64, slot: { key = String, kind = VertexKind }, old: Option[MaterialEntry],
@@ -1042,7 +1043,7 @@ mod Render3d {
 
     /// 骨つきの物は joint 行列を UBO へ置いてから描く（locs は骨つきの版のプログラム）。pose が None なら drawMesh と同じ。
     def drawPosedMesh(state: State, gen: Int64, locs: MeshLocs, d: MeshDraw): Unit \ IO =
-        d#pose |> Option.forEach(putJoints(skinnedProgramsOf(state)#jointsUbo));
+        d#pose |> Option.forEach(putJoints(skinnedProgramsOf(state)));
         drawMesh(state, gen, locs, d#fields#mesh, d#fields#world)
 
     def isSkinned(d: MeshDraw): Bool = Option.nonEmpty(d#pose)
@@ -1064,16 +1065,33 @@ mod Render3d {
         }
 
     /// joint 行列を UBO の頭から詰めて置き、binding に付ける（std140 の mat4 は列優先 16 個 = Mat4.toColumns の並び）。
+    /// 前に書いた中身と同じなら書かない。書く時はバッファを作り直してから書く（前のドローが読む古い中身はドライバが別に持つ）。
     // WhyNot: 64 本ぶんを毎回書かない — 頂点が引く番号は skinningOf がジョイントの数未満と確かめてあり、後ろの残りは読まれない。
-    def putJoints(ubo: Int32, pose: Pose3d.Pose3d): Unit \ IO =
+    // WhyNot: 作り直さずに書き足さない — 前のドローがまだ読んでいる UBO へ書くと、ドライバが GPU を待つ（同じ pose の部品を描くたびに待っていた）。
+    // WhyNot: 1 本の大きな UBO の別の場所へ書いて glBindBufferRange で指さない — 1 コマの pose の数を先に数える道とオフセットのそろえが要り、
+    //   同じ中身を書き直さないだけで書くのは 1 コマに体の数だけになる。
+    def putJoints(skinned: SkinnedPrograms, pose: Pose3d.Pose3d): Unit \ IO =
         let matrices = Pose3d.jointMatrices(pose) |> Vector.take(Skin3d.maxJoints());
         let data = Array.repeat(Static, Int32.max(1, Vector.length(matrices) * 16), 0.0f32);
         matrices |> Vector.forEachWithIndex((j, m) ->
             Mat4.toColumns(m) |> Vector.forEachWithIndex((k, v) -> Array.put(RenderUtil.f32(v), j * 16 + k, data)));
-        GL15.glBindBuffer(GL31.GL_UNIFORM_BUFFER, ubo);
-        GL15.glBufferSubData(GL31.GL_UNIFORM_BUFFER, 0i64, data);
-        GL15.glBindBuffer(GL31.GL_UNIFORM_BUFFER, 0);
-        GL30.glBindBufferBase(GL31.GL_UNIFORM_BUFFER, jointsBinding(), ubo)
+        if (needsUpload(Ref.get(skinned#uploadedJoints), data)) {
+            GL15.glBindBuffer(GL31.GL_UNIFORM_BUFFER, skinned#jointsUbo);
+            GL15.glBufferData(GL31.GL_UNIFORM_BUFFER, Int32.toInt64(Skin3d.maxJoints() * 64), GL15.GL_DYNAMIC_DRAW);
+            GL15.glBufferSubData(GL31.GL_UNIFORM_BUFFER, 0i64, data);
+            GL15.glBindBuffer(GL31.GL_UNIFORM_BUFFER, 0);
+            Ref.put(data, skinned#uploadedJoints)
+        } else ();
+        GL30.glBindBufferBase(GL31.GL_UNIFORM_BUFFER, jointsBinding(), skinned#jointsUbo)
+
+    /// 前に UBO へ書いた中身 before と今の中身 after が違うか（長さが違うか、どれか 1 つのビットが違う）。
+    /// WhyNot: Float32 の == で比べない — -0.0 と +0.0 を同じと見なし、NaN をいつも違うと見なす。書いた物をそのまま持っているかを見たい。
+    def needsUpload(before: Array[Float32, r1], after: Array[Float32, r2]): Bool \ r1 + r2 =
+        let n = Array.length(after);
+        Array.length(before) != n or not List.forAll(i -> sameBits(Array.get(i, before), Array.get(i, after)), List.range(0, n))
+
+    def sameBits(a: Float32, b: Float32): Bool =
+        JFloat.floatToRawIntBits(a) == JFloat.floatToRawIntBits(b)
 
     /// 列優先 16 個の float の並び（glUniformMatrix4fv に transpose = false で渡す形）。
     def matrixArray(m: Mat4.Mat4): Array[Float32, Static] \ IO =
@@ -1425,7 +1443,8 @@ mod Render3d {
         let depth = compile(skinnedMeshVertexSource(), depthFragmentSource(), "scene3d:depth:skin");
         bindJointsBlock(lit);
         bindJointsBlock(depth);
-        { lit = litLocsOf(lit), depth = depthLocsOf(depth), jointsUbo = createJointsBuffer() }
+        { lit = litLocsOf(lit), depth = depthLocsOf(depth), jointsUbo = createJointsBuffer(),
+          uploadedJoints = Ref.fresh(Static, Array.empty(Static, 0)) }
 
     /// プログラムの Joints の uniform block を jointsBinding() へ向ける（block の無いプログラムと 0 は何もしない）。
     def bindJointsBlock(program: Int32): Unit \ IO =

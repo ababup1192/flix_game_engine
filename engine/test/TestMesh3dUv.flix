@@ -112,12 +112,26 @@ mod TestMesh3dUv {
 
     // ── 鍵 ────────────────────────────────────────────────
 
-    /// uv の無い形の鍵は前と同じ字（位置・色・番号を | でつないだ字の SHA-256）。
+    def triangle(top: Float64, color: Color): Mesh3d.Mesh3d =
+        Mesh3d.fromPolygons({ points = Vec3.v3(0.0, 0.0, 0.0) :: Vec3.v3(0.0, top, 0.0) :: Vec3.v3(1.0, 0.0, 0.0) :: Nil, color = color } :: Nil)
+
+    /// 同じ位置・色・番号の形は、別々に作っても同じ鍵。
     @Test
-    def testHashWithoutUvIsUnchanged(): Unit \ Assert =
-        let tri = Mesh3d.fromPolygons({ points = Vec3.v3(0.0, 0.0, 0.0) :: Vec3.v3(0.0, 1.0, 0.0) :: Vec3.v3(1.0, 0.0, 0.0) :: Nil,
-                                        color = Color.rgb(1.0, 1.0, 1.0) } :: Nil);
-        Assert.assertEq(expected = "553f4f4453f20c96f3b5077c15f4317ba9e69654eadc3a6f07cf57fac71272cd", Mesh3d.contentHash(tri))
+    def testHashIsSameForSameContent(): Unit \ Assert =
+        Assert.assertEq(expected = Mesh3d.contentHash(triangle(1.0, Color.rgb(1.0, 1.0, 1.0))),
+                        Mesh3d.contentHash(triangle(1.0, Color.rgb(1.0, 1.0, 1.0))))
+
+    /// 頂点の位置が 1 つ違えば鍵も違う。
+    @Test
+    def testHashChangesWithPosition(): Unit \ Assert =
+        Assert.assertFalse(Mesh3d.contentHash(triangle(1.0, Color.rgb(1.0, 1.0, 1.0))) ==
+                           Mesh3d.contentHash(triangle(1.5, Color.rgb(1.0, 1.0, 1.0))))
+
+    /// 色が違えば鍵も違う（GL の頂点バッファは色を持つ）。
+    @Test
+    def testHashChangesWithColor(): Unit \ Assert =
+        Assert.assertFalse(Mesh3d.contentHash(triangle(1.0, Color.rgb(1.0, 1.0, 1.0))) ==
+                           Mesh3d.contentHash(triangle(1.0, Color.rgb(1.0, 0.0, 1.0))))
 
     /// uv を付けると鍵が変わり、uv が違えば鍵も違う。
     @Test
