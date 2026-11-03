@@ -63,6 +63,7 @@ pub mod Gltf {
     /// （glTF の決まりどおり。止めるなら Scene3d.withoutEmission）。emissive の付く材質の spec の名前は "gltf:" で始まり、
     /// 木の形を変える物（絵の読み方・emissiveFactor の値・絵の有無）を全部名前に入れる（strength は木の外の倍率なので入れない）。emissive の無い材質は Scene3d.texturedMaterial のまま。
     /// emissiveTexture を指しているのに読めない時（texCoord ≠ 0・画像が読めない・形に TEXCOORD_0 が無い）は光らせず、材質ごとに 1 行知らせる。
+    /// 0.84.0 で消える: loadTexturedUsing(decoder, noTextureLimits(), path) に替える（絵のデコードを handler から受け取る）。
     pub def loadTextured(path: String): Result[String, Model3d.Model3d] \ Fs.FileRead + IO =
         loadWith(fromGlbTextured, path)
 
@@ -74,20 +75,36 @@ pub mod Gltf {
     pub def noTextureLimits(): TextureLimits = { baseColor = Texture3d.maxSide(), normal = Texture3d.maxSide() }
 
     /// loadTextured の、材質の絵の大きさに上限を掛ける版（場面の絵の上限に収める・近くで見ない法線マップを小さくする）。
+    /// 0.84.0 で消える: loadTexturedUsing(decoder, limits, path) に替える。
     pub def loadTexturedWith(limits: TextureLimits, path: String): Result[String, Model3d.Model3d] \ Fs.FileRead + IO =
         loadWith(fromGlbTexturedWith(limits), path)
 
     /// loadTextured のバイトの版。
+    /// 0.84.0 で消える: fromGlbTexturedUsing(decoder, noTextureLimits(), bytes) に替える。
     pub def fromGlbTextured(bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO = fromGlbTexturedWith(noTextureLimits(), bytes)
 
     /// loadTexturedWith のバイトの版。
+    /// 0.84.0 で消える: fromGlbTexturedUsing(decoder, limits, bytes) に替える。
     pub def fromGlbTexturedWith(limits: TextureLimits, bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO =
+        fromGlbTexturedBy(Texture3d.decode, limits, bytes)
+
+    /// loadTexturedWith の、絵を decoder で解く版（読み込みの頭で LoadProgress.imageDecoder() で受け取り、並列の仕事へ渡す）。
+    /// 上限を掛けないなら limits に noTextureLimits()。
+    pub def loadTexturedUsing(decoder: ImageData.ImageDecoder, limits: TextureLimits, path: String): Result[String, Model3d.Model3d] \ Fs.FileRead + IO =
+        loadWith(fromGlbTexturedUsing(decoder, limits), path)
+
+    /// loadTexturedUsing のバイトの版。
+    pub def fromGlbTexturedUsing(decoder: ImageData.ImageDecoder, limits: TextureLimits, bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO =
+        fromGlbTexturedBy(Texture3d.decodeUsing(decoder), limits, bytes)
+
+    def fromGlbTexturedBy(decode: Vector[Int8] -> Result[String, Texture3d.Texture3d] \ IO, limits: TextureLimits,
+                          bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO =
         match parseAndBuild(bytes) {
             case Err(e) => Err(e)
             case Ok((glb, built)) =>
                 let used = usedImages(limits, glb#json);
                 let images = objectsOf("images", glb#json) |> Vector.mapWithIndex((k, image) -> match Map.get(k, used) {
-                    case Some(maxSide) => decodeImage(glb, image) |> (decoded -> (Option.map(Texture3d.limitSize(maxSide), fst(decoded)), snd(decoded)))
+                    case Some(maxSide) => decodeImage(decode, glb, image) |> (decoded -> (Option.map(Texture3d.limitSize(maxSide), fst(decoded)), snd(decoded)))
                     case None          => (None, Nil)
                 });
                 let decoded = images |> Vector.map(fst);
@@ -151,10 +168,10 @@ pub mod Gltf {
             |> List.foldLeft((acc, entry) -> { let (src, maxSide) = entry; Map.insertWith((a, b) -> Int32.max(a, b), src, maxSide, acc) }, Map.empty())
 
     /// images[k] を絵に戻す（BIN の bufferView の PNG / JPEG）。外の uri・読めない画像は None と知らせる 1 行。
-    def decodeImage(glb: Glb, image: Obj): (Option[Texture3d.Texture3d], List[String]) \ IO =
+    def decodeImage(decode: Vector[Int8] -> Result[String, Texture3d.Texture3d] \ IO, glb: Glb, image: Obj): (Option[Texture3d.Texture3d], List[String]) \ IO =
         match (intOf("bufferView", image), stringOf("uri", image)) {
             case (Some(view), _) =>
-                match Result.flatMap(Texture3d.decode, viewBytes(glb, view)) {
+                match Result.flatMap(decode, viewBytes(glb, view)) {
                     case Ok(t)  => (Some(t), Nil)
                     case Err(e) => (None, "glTF: 画像が読めないので、その絵の材質は頂点の色で描く（${e}）" :: Nil)
                 }

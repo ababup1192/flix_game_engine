@@ -8,6 +8,8 @@
 | やりたいこと | モジュール |
 |---|---|
 | 起動中のゲームを外から操作・観測する | App.RemoteDebug |
+| プロセスの環境変数を読む・終了コードで終える（入口の頭の 1 か所。奥へは引数で渡す） | ProcessEnv（snapshot・exitWith。常駐の入口は App.Headless.envOf(req)） |
+| ある処理が N の二乗で割り当てていないかをテストで確かめたい | AllocMeter（絶対バイトは見ず、N を増やしたときの比だけを見る。呼ぶのはテストから） |
 | 好きな場面を窓なしで 1 枚撮る・起動中のゲームを動かさずに見る（会話のプレビュー） | App.Headless（ゲームの E2e.serveHeadless を bin/headless-run で）+ App.onShotRequest（`view=shot`） |
 | DEBUG で起動したゲームの命令口を外から見つける | App.GameRegistry（~/.flix_ge_studio/games.json・`bin/fge talk goto` が読む） |
 | Studio に「いま表示中の Doc」を名乗る（表示中バッジ） | App.withDocTable（中身は ActiveDocs。実例: `templates/tidepool-starter/src/Game.flix`） |

@@ -9,7 +9,7 @@
 //   4. 時刻は固定値（アニメ無し — 2 回描き出して同じ絵になることが決定性検証の前提）
 mod Scenes {
 
-    use fge::{Camera3d, Color, DrawCmd, Gltf, Light, Mat4, Mesh3d, Model3d, Pose3d, PostProcess, PxSprite, PxSpriteDoc, RawDraw, Render, RenderTarget, RenderUtil, Scene3d, ShaderDoc, Shadow, Skin3d, Texture3d, Num, Vec2, Vec3}
+    use fge::{Camera3d, Color, DrawCmd, Gltf, HeadlessLoad, Light, Mat4, Mesh3d, Model3d, Pose3d, PostProcess, PxSprite, PxSpriteDoc, RawDraw, Render, RenderTarget, RenderUtil, Scene3d, ShaderDoc, Shadow, Skin3d, Texture3d, Num, Vec2, Vec3}
 
     // 寸法の権威は整数側 — Float 側を権威にすると Int へ戻す丸めが要る。
     pub def designWi(): Int32 = 320
@@ -826,15 +826,15 @@ mod Scenes {
                                                                      alpha = ShaderDoc.Field.Const(1.0) }) });
         floorScene("mipFloorWorld", floorMesh(None), material, tex)
 
-    // ── scene 27: Blender で書き出した絵つきの glb（Gltf.loadTextured → parts の材質と textures）。B 段階 ──
+    // ── scene 27: Blender で書き出した絵つきの glb（Gltf.loadTexturedUsing → parts の材質と textures）。B 段階 ──
     // 板 A（4 × 4 の絵・左上が赤・NEAREST・法線マップ）と板 B（baseColorFactor の水色・材質なし）。glb の板の表は engine の +Z を向くので、
     // Y 軸まわりに半周させて目へ向ける。絵の左上の赤が画面の左上に来れば、uv の向きと X の反転がそろっている。
 
-    /// assets の glb（engine/test/data と同じ物）を loadTextured で読む。
+    /// assets の glb（engine/test/data と同じ物）を loadTexturedUsing で読む。
     // WhyNot: Scenes.all を IO にしない — 場面の宣言は GL と SoftRaster と名前の付け替えの 3 か所から何度も引く純粋な列で、
     //   1 枚の資材を読むために全部の呼び手の効果を広げることになる。読むのは小さな glb 1 つで、何度読んでも同じ物になる。
     def texturedModel(path: String): Model3d.Model3d =
-        let loaded = unsafe IO { run Gltf.loadTextured(path) with Fs.FileRead.runWithIO };
+        let loaded = unsafe IO { run Gltf.loadTexturedUsing(HeadlessLoad.imageIoDecoder(), Gltf.noTextureLimits(), path) with Fs.FileRead.runWithIO };
         match loaded {
             case Ok(m)  => m
             case Err(e) => bug!(e)

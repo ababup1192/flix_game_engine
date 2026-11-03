@@ -45,7 +45,7 @@ let flashlight = { color = Color.rgb(1.0, 0.95, 0.85), intensity = 3.0, range = 
 
 ## glb のノードを名前で引く
 
-`Gltf.load` / `loadTextured` は、glTF のノードを全部（mesh の無い empty・ライト・カメラも）`model#nodes` に入れる。
+`Gltf.load` / `loadTexturedUsing` は、glTF のノードを全部（mesh の無い empty・ライト・カメラも）`model#nodes` に入れる。
 Blender で付けた名前で引けば、扉・調べる物・当たり判定の箱・印の点（炎の芯の先など）を、位置や大きさから探さずに済む。
 
 ```flix
@@ -65,7 +65,7 @@ let byName = Model3d.nodesByName(collision);                     // たくさん
 
 ## glb の emissive
 
-`Gltf.loadTextured` は材質の `emissiveFactor`・`KHR_materials_emissive_strength`・`emissiveTexture` を読み、材質の emission と emissionIntensity にする
+`Gltf.loadTexturedUsing` は材質の `emissiveFactor`・`KHR_materials_emissive_strength`・`emissiveTexture` を読み、材質の emission と emissionIntensity にする
 （glTF の決まりどおり光る。Godot・Unity と同じ）。baseColorTexture の無い emissive だけの材質（炎など）も、頂点の色の材質に emission を付けて光る。
 
 - 止めたい時は `Scene3d.withoutEmission(m)`
@@ -122,7 +122,7 @@ let glass = Scene3d.material(spec) |> Scene3d.withAlphaBlend(true) |> Scene3d.wi
 - `withCutout(true)` と両方なら、α が 0.5 未満の画素を捨ててから重ねる
 - 半透明の物は影を落とさない・Output.Depth（ピントの Pass）には描かない（ピントはガラスの奥に合う）。lightmap は付けられる
 - `withDoubleSided(true, m)`: 裏の面も描く。裏の面は光の計算の法線を裏返す（spec の Normal は裏返さない）。網・葉・ガラスの板に
-- glb: `Gltf.loadTextured` は `alphaMode: BLEND` を `withAlphaBlend(true)`・`MASK` を `withCutout(true)`（`alphaCutoff` は 0.5 の固定。
+- glb: `Gltf.loadTexturedUsing` は `alphaMode: BLEND` を `withAlphaBlend(true)`・`MASK` を `withCutout(true)`（`alphaCutoff` は 0.5 の固定。
   ほかの値は 1 回知らせる）にする。**`doubleSided` は当てない**（Blender の書き出しは全部の材質を真にするので、要る物だけゲームが当てる）:
 
   ```flix

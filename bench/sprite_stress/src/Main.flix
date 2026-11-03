@@ -1,10 +1,10 @@
 // エントリーポイント。Bench の世界を App に繋ぎ、4 区間を走り切ったら自動終了する。
 // HUD=1 で HUD あり構成（withHudView = HUD の範囲持ち上げ + 範囲別ソート経路）の計測になる。
 
-use fge::{App, GameEngine, LwjglLayer}
+use fge::{App, LwjglLayer}
 
 def main(): Unit \ IO =
-    if (GameEngine.ensureMainThread()) ()
+    if (LwjglLayer.ensureMainThread()) ()
     else {
         let withHud = Bench.hudEnabled();
         run {

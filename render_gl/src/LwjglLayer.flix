@@ -22,6 +22,9 @@ pub mod LwjglLayer {
     import org.lwjgl.system.MemoryStack
     import org.lwjgl.system.MemoryUtil
     import java.lang.System
+    import java.lang.ProcessBuilder
+    import java.lang.ProcessHandle
+    import java.util.ArrayList
     import java.lang.Exception
     import java.lang.Math
     import java.awt.BasicStroke
@@ -212,6 +215,44 @@ pub mod LwjglLayer {
 
     // 実機の handler
     // ========================================================================
+
+    /// macOS では -XstartOnFirstThread 付きでプロセスを起動し直す（GLFW は窓をプロセスの最初のスレッドで開く）。
+    /// すでに付いて動いている・macOS でない時は何もせず false。起動し直した時は子が終わるのを待ち、子の終了コードで
+    /// このプロセスを終える（true は返らない）。ゲームの main の頭で `if (LwjglLayer.ensureMainThread()) () else ...` と呼ぶ。
+    pub def ensureMainThread(): Bool \ IO =
+        let osName = System.getProperty("os.name");
+        if (Object.isNull(osName) or not String.contains({substr = "Mac"}, osName))
+            false
+        else if (not Object.isNull(System.getProperty("game.relaunched")))
+            false
+        else if (isStartedOnFirstThread())
+            false
+        else {
+            println("Relaunching with -XstartOnFirstThread...");
+            let args = new ArrayList();
+            discard args.add("${System.getProperty("java.home")}/bin/java");
+            discard args.add("-XstartOnFirstThread");
+            discard args.add("-Dgame.relaunched=true");
+            let projectPath = System.getProperty("projectPath");
+            if (not Object.isNull(projectPath))
+                discard args.add("-DprojectPath=${projectPath}")
+            else ();
+            discard args.add("-jar");
+            discard args.add(System.getProperty("java.class.path"));
+            discard args.add("run");
+            let pb = new ProcessBuilder(args);
+            discard pb.inheritIO();
+            let code = pb.start().waitFor();
+            // WhyNot: 終了コードを返して呼び元に終えさせない — 子が 0 で終わっても親はここで必ず終わる（戻ると呼び元が窓を開きにいく）。
+            // WhyNot: Bool を返す形をやめない — 古い GameEngine.ensureMainThread と同じ形なら、ゲームの Main を 1 語の置き換えで直せる。
+            System.exit(code);
+            true
+        }
+
+    /// java ランチャは -XstartOnFirstThread 付きの起動で、環境変数 `JAVA_STARTED_ON_FIRST_THREAD_<pid>` を "1" にする
+    /// （LWJGL / GLFW が最初のスレッドで動いているかを見るのと同じ変数）。game.relaunched の無い起動でも二重に起動し直さない。
+    def isStartedOnFirstThread(): Bool \ IO =
+        Map.get("JAVA_STARTED_ON_FIRST_THREAD_${ProcessHandle.current().pid()}", LwjglEnv.snapshot()) == Some("1")
 
     /// `rootDir` 直下の project.json を読んで `withLwjgl` を起動する便利ラッパ。
     /// examples の Main.flix からは `with LwjglLayer.withProject(".")` の形で
@@ -902,27 +943,27 @@ pub mod LwjglLayer {
         }
 
     /// LoadProgress の知らせで起動画面を進める（ループが回り始めた後＝最初の pollEvents の後は何もしない）。
-    /// polledAt = 最後にイベントを poll した時刻。
+    /// 仕事の pool とデコーダーは LwjglLoad。polledAt = 最後にイベントを poll した時刻。
     def handleLoadProgress(load: { looping = Array[Bool, Static], splash = (String, Int32, Int32) -> Unit \ IO,
                                    polledAt = Array[Int64, Static], devices = LwjglInput.Devices },
                            f: Unit -> a \ ef): a \ (ef - LoadProgress) + IO =
-        run f() with handler LoadProgress {
-            // WhyNot: ループが回り始めた後は何もしない — コマの途中で poll すると、リサイズの callback が
-            // 描いている途中の RenderTarget を開いたまま描き直しと swap をしうる。
-            def report(phase, done, total, k) = {
-                if (not Array.get(0, load#looping)) {
-                    (load#splash)(phase, done, total);
-                    // tick は間引いた回と FLIX_GE_NO_SPLASH の時に poll しないので、描かなくても poll だけはする。
-                    let now = System.nanoTime();
-                    if ((now - Array.get(0, load#polledAt)) / 1000000i64 >= RenderSplash.intervalMillis()) {
-                        GLFW.glfwPollEvents();
-                        Array.put(now, 0, load#polledAt)
-                    } else ();
-                    // 読み込み中のホイールは捨てる（最初のコマで一度に出さない）。
-                    // WhyNot: 最初の pollEvents で 0 に戻さない — ループは pollEvents より前にホイールを読む。
-                    LwjglInput.dropScroll(load#devices)
-                } else ();
-                k(())
-            }
-        }
+        LwjglLoad.handleWith(showLoadProgress(load), f)
+
+    // WhyNot: ループが回り始めた後は何もしない — コマの途中で poll すると、リサイズの callback が
+    // 描いている途中の RenderTarget を開いたまま描き直しと swap をしうる。
+    def showLoadProgress(load: { looping = Array[Bool, Static], splash = (String, Int32, Int32) -> Unit \ IO,
+                                 polledAt = Array[Int64, Static], devices = LwjglInput.Devices },
+                         phase: String, done: Int32, total: Int32): Unit \ IO =
+        if (not Array.get(0, load#looping)) {
+            (load#splash)(phase, done, total);
+            // tick は間引いた回と FLIX_GE_NO_SPLASH の時に poll しないので、描かなくても poll だけはする。
+            let now = System.nanoTime();
+            if ((now - Array.get(0, load#polledAt)) / 1000000i64 >= RenderSplash.intervalMillis()) {
+                GLFW.glfwPollEvents();
+                Array.put(now, 0, load#polledAt)
+            } else ();
+            // 読み込み中のホイールは捨てる（最初のコマで一度に出さない）。
+            // WhyNot: 最初の pollEvents で 0 に戻さない — ループは pollEvents より前にホイールを読む。
+            LwjglInput.dropScroll(load#devices)
+        } else ()
 }

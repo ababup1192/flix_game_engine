@@ -153,6 +153,8 @@ mod App.Internal.Runner.TestBoot {
             let got = MutList.empty(rc);
             discard run onDisk(disk(), () -> Flow.Record.captureReads(() -> { LoadProgress.report("docs", 0, 0); 1 })) with handler LoadProgress {
                 def report(phase, done, total, k) = { MutList.push((phase, done, total), got); k(()) }
+                def runTasks(_phase, _tasks, _k) = bug!("このテストは仕事を回さない")
+                def imageDecoder(k) = k(ImageData.failingDecoder("このテストは絵を解かない"))
             };
             MutList.toList(got)
         };

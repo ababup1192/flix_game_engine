@@ -741,6 +741,8 @@ mod TestApp {
             let got = MutList.empty(rc);
             discard run App.freshWorld(app, testViewport()) with handler LoadProgress {
                 def report(phase, done, total, k) = { MutList.push((phase, done, total), got); k(()) }
+                def runTasks(_phase, _tasks, _k) = bug!("このテストは仕事を回さない")
+                def imageDecoder(k) = k(ImageData.failingDecoder("このテストは絵を解かない"))
             };
             MutList.toList(got)
         };

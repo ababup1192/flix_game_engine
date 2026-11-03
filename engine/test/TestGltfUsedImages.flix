@@ -44,4 +44,11 @@ mod TestGltf.UsedImages {
         Assert.assertEq(expected = Ok((4, 4) :: Nil),
             Gltf.fromGlbTexturedWith({ normal = 2 | Gltf.noTextureLimits() }, baseAndOrmGlbOfSide(4))
                 |> Result.map(m -> m#textures |> List.map(t -> (Texture3d.width(t), Texture3d.height(t)))))
+
+    @Test
+    def testUsingDecodesWithTheGivenDecoder(): Unit \ {Assert, IO} =
+        let green = -16711936;
+        let decoder = { decode = _ -> checked_ecast(Ok({ width = 1, height = 1, argb = Vector#{green} })) };
+        Assert.assertEq(expected = Ok(Vector#{green} :: Nil),
+            Gltf.fromGlbTexturedUsing(decoder, Gltf.noTextureLimits(), baseAndOrmGlb()) |> Result.map(m -> m#textures |> List.map(Texture3d.argb)))
 }

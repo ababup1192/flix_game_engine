@@ -3,10 +3,10 @@
 // ここで足すのは main だけが知る物（アトラス・セーブを書く出力・デバッグの印）。
 //
 // 規則は World.flix の冒頭の図から読むとよい（場面の移り・時計・出来事）。
-use fge::{App, GameEngine, LwjglLayer, Resources}
+use fge::{App, LwjglLayer, Resources}
 
 def main(): Unit \ IO =
-    if (GameEngine.ensureMainThread()) ()
+    if (LwjglLayer.ensureMainThread()) ()
     else {
         run {
             // Doc を読んで App を組む所ごと渡す（flow を記録する make debug の起動でも、ここで読んだ中身を使い Doc を読み直さない）。

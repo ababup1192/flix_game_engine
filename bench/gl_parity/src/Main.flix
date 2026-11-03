@@ -5,7 +5,7 @@
 //
 // GL の絵はリファレンス画像化しない — 基準は「もう片方の経路」であって過去の絵ではない
 // （過去の絵との突き合わせは templates の reference-check / reference-update の役目）。
-use fge::GameEngine
+use fge::LwjglLayer
 
 mod ParityMain {
     use fge::{
@@ -205,5 +205,5 @@ mod ParityMain {
 }
 
 def main(): Unit \ IO =
-    if (GameEngine.ensureMainThread()) ()
+    if (LwjglLayer.ensureMainThread()) ()
     else ParityMain.go()

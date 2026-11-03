@@ -1,4 +1,5 @@
-// ProcessEnv — プロセスの境目。環境変数の表を読むのと、終了コードでプロセスを終えるのはここだけ。
+// ProcessEnv — プロセスの境目。環境変数の表を読むのと、終了コードでプロセスを終えるのはここだけ（engine_world とその上。
+// engine は環境変数を読まず、engine_world が見えない render_gl・engine_tools は環境変数を読む写しを 1 つずつ持つ）。
 // 入口の頭（ゲームの main・描き出しの入口・App.launch など）で 1 回だけ snapshot を読み、要る値を引数で奥へ渡す。
 // 常駐（App.Headless）から呼ばれる入口は snapshot を読まず、要求の表（App.Headless.envOf(req)）を読む。
 pub mod ProcessEnv {

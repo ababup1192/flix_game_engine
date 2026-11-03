@@ -1055,6 +1055,11 @@ check-docs-sync:
 	    fi; \
 	  fi; \
 	done; \
+	echo "[check-docs-sync] render_gl の LwjglLoad と engine_tools の HeadlessLoad の pool とデコーダーが同じか"; \
+	copy_of() { sed -n -e '/def pollMillis/p' -e '/PNG \/ JPEG を javax.imageio/,$$p' "$$1"; }; \
+	if [ "$$(copy_of render_gl/src/LwjglLoad.flix)" != "$$(copy_of engine_tools/src/HeadlessLoad.flix)" ]; then \
+	  echo "[check-docs-sync] NG: LwjglLoad と HeadlessLoad の写し（pollMillis と「PNG / JPEG を javax.imageio」から下）が違います。片方を直したらもう片方へ写す（層が互いに見えないので 2 つ持つ）"; ok=0; \
+	fi; \
 	echo "[check-docs-sync] 図形プリミティブの旧名 Render.box 等が docs/ と AGENTS.md に残っていないか"; \
 	old_names='Render\.(box|boxAt|orBoxAt|circle|circleAt|polygon|ngon|ngonAt|ellipse|ellipseAt|ellipseSegs|ellipseSegsAt|ellipseSegsFor|sector|sectorAt|circleSegment|circleSegmentAt|star|starAt|lineQuad|lineSeg)\b'; \
 	if grep -rlE "$$old_names" docs/*.md AGENTS.md 2>/dev/null | grep -v docs/api-digest; then \

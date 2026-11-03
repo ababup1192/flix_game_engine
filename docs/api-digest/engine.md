@@ -1,15 +1,9 @@
-<!-- engine v0.76.0 / 生成: 2026-11-03 -->
+<!-- engine v0.76.0 / 生成: 2026-11-04 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine
 
 `engine/src` 配下の `pub def` / `pub enum` / `pub type alias` の一覧。索引は [api-digest.md](../api-digest.md)。
-
-## AllocMeter — `engine/src/core/AllocMeter.flix`
-- この JVM でスレッドの割り当てバイト数を読めるか。false なら測っても 0 しか返らない。
-  `pub def isThreadAllocatedMemoryEnabled(): Bool`
-- `body` を 1 回動かす間に今のスレッドが割り当てたバイト数。
-  `pub def measureBytes(warmups: Int32, body: Unit -> a): Int64`
 
 ## Anchor — `engine/src/core/Anchor.flix`
 - 文字列から Anchor を parse する。scene.json の `"anchor": "FullRect"` 等のパース用。
@@ -537,7 +531,7 @@
   `pub eff Audio { def setLowpass(name: String, gainHF: Float64): Unit }`
 - 指定した名前のサウンドの長さ（秒）。知らない名前は 0.0。
   `pub eff Audio { def audioSeconds(name: String): Float64 }`
-- macOS では -XstartOnFirstThread 付きでプロセスを再起動する。
+- 0.84.0 で消える: LwjglLayer.ensureMainThread() に替える（窓を開く GLFW の都合なので GL の層が持つ）。
   `pub def ensureMainThread(): Bool \ IO`
 
 ## GamepadMap — `engine/src/GamepadMap.flix`
@@ -571,6 +565,10 @@
   `pub def fromGlbTextured(bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO`
 - loadTexturedWith のバイトの版。
   `pub def fromGlbTexturedWith(limits: TextureLimits, bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO`
+- loadTexturedWith の、絵を decoder で解く版（読み込みの頭で LoadProgress.imageDecoder() で受け取り、並列の仕事へ渡す）。
+  `pub def loadTexturedUsing(decoder: ImageData.ImageDecoder, limits: TextureLimits, path: String): Result[String, Model3d.Model3d] \ Fs.FileRead + IO`
+- loadTexturedUsing のバイトの版。
+  `pub def fromGlbTexturedUsing(decoder: ImageData.ImageDecoder, limits: TextureLimits, bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO`
 
 ## GpuHandle — `engine/src/core/GpuHandle.flix`
 - タイルマップの GPU インスタンスバッファのハンドル（`initTileBuffer` が返す）。
@@ -599,6 +597,14 @@
   `pub def wrapShaderProgram(v: Int32): ShaderProgram`
 - ハンドルから Int32 の実体を取り出す（描画時に使う）。
   `pub def shaderProgramInt(h: ShaderProgram): Int32`
+
+## ImageData — `engine/src/core/ImageData.flix`
+- width × height・argb = ARGB（行優先・行 0 が絵の上）。数の食い違いは使う側（Texture3d.fromImage など）が確かめる。
+  `pub type alias ImageData = { width = Int32, height = Int32, argb = Vector[Int32] }`
+- PNG / JPEG のバイトを画素に戻す。読めないバイトは Err。スレッドをまたいで使える（並列の仕事の中から呼んでよい）。
+  `pub type alias ImageDecoder = { decode = Vector[Int8] -> Result[String, ImageData] \ IO }`
+- 何も解かず、いつも Err を返すデコーダー（絵を読まないテストの handler 用）。
+  `pub def failingDecoder(reason: String): ImageDecoder`
 
 ## InputEvent — `engine/src/render/InputEvent.flix`
 - 現在押されているキーのセットを取得する（GameEngine.allKeys() を全て走査）
@@ -647,16 +653,33 @@
 - `pub def toGlsl(name: String, perPixel: List[Vec3Input], e: Vec3Expr): String`
 
 ## LoadProgress — `engine/src/LoadProgress.flix`
-- 起動の読み込みの進み具合（区切りごとに 1 回）。
+- 起動の読み込みの進み具合（区切りごとに 1 回）と、読み込みの仕事を回す口。
   `pub eff LoadProgress`
 - phase = 今やっていること（起動画面の字）・done / total = その中の何本目 / 全何本（total 0 以下は本数不明）。
   `pub eff LoadProgress { def report(phase: String, done: Int32, total: Int32): Unit }`
-- 知らせを捨てる handler（headless の描き出し・動画・テスト・flow の再生）。
-  `pub def runNoop(f: Unit -> a \ ef + LoadProgress): a \ ef`
+- tasks を全部回してから戻る（並列にするかは handler が決める・ゲームは parMapWithProgress から使う）。
+  `pub eff LoadProgress { def runTasks(phase: String, tasks: List[Unit -> Unit \ IO]): Unit }`
+- PNG / JPEG を画素に戻すデコーダー。読み込みの関数の頭（本体のスレッド）で受け取り、並列の仕事へ引数で渡す
+  `pub eff LoadProgress { def imageDecoder(): ImageData.ImageDecoder }`
+- `pub def runNoop(f: Unit -> a \ ef): a \ (ef - LoadProgress) + IO`
+- tasks を 1 つずつ回し、最初に (phase, 0, n)・1 つ終わるたびに (phase, 終わった数, n) を report へ渡す（空なら何も渡さない）。
+  `pub def runTasksInOrder(report: (String, Int32, Int32) -> Unit \ ef, phase: String, tasks: List[Unit -> Unit \ IO]): Unit \ ef + IO`
 - xs を f で 1 つずつ作り、作るたびに (phase, 作った数, 全部の数) を知らせる（最初に (phase, 0, n)）。
   `pub def mapWithProgress(phase: String, f: a -> b \ ef, xs: List[a]): List[b] \ ef + LoadProgress`
-- xs を f で並列に作り、1 つ届くたびと 50 ms ごとに進み具合を知らせる（スレッドは CPU の数まで・結果の並びは xs のまま）。
+- xs を f で作る（handler が並列に回す・結果の並びは xs のまま）。知らせと例外の決まりは runTasks のとおり
   `pub def parMapWithProgress(phase: String, f: a -> b \ IO, xs: List[a]): List[b] \ IO + LoadProgress`
+
+## LoadProgress.Conformance — `engine/src/LoadProgress/Conformance.flix`
+- 確かめる handler と、テストの側が用意する道具。
+  `pub type alias Harness = { handle = (Unit -> List[Int32] \ IO + LoadProgress) -> (List[Int32], List[(String, Int32, Int32)]) \ IO, sleepMs = Int64 -> Unit \ IO, fail = String -> Unit \ IO, nowMs = Unit -> Int64 \ IO, newFlag = Unit -> Flag \ IO }`
+- スレッドをまたいで立てて読むフラグ。
+  `pub type alias Flag = { raise = Unit -> Unit \ IO, isRaised = Unit -> Bool \ IO }`
+- 知らせの並びと結果の並び: 後ろほど早く終わる 5 つの仕事で、結果は xs の順・最初が (p, 0, 5)・最後が (p, 5, 5)・
+  `pub def orderViolations(harness: Harness): List[String] \ IO`
+- 50 ms ごとの知らせ: 300 ms 眠る 1 つの仕事の間に、done 0 の知らせが 3 回以上届く（並列で回す handler だけが守る）。
+  `pub def pollingViolations(harness: Harness): List[String] \ IO`
+- 例外で抜ける: 最初の仕事が 20 ms で投げ、残りは 3 秒眠る。同じ message の例外で、残りを待たずに（2 秒より前に）抜け、
+  `pub def failureViolations(harness: Harness): List[String] \ IO`
 
 ## Log — `engine/src/core/Log.flix`
 - stderr へ 1 行。効果は `unsafe IO` で隠す
@@ -955,11 +978,6 @@
   `pub def tonemappedWith(op: Tonemap, exposureStops: Float64, whitePoint: Float64, after: (Field, Field, Field) -> Shade, spec: ShaderDoc.Spec): ShaderDoc.Spec`
 - source の Pass を FXAA 3.11（PC の簡単な版）でならした面。斜めの 4 点（NW・NE・SW・SE）と真ん中の明るさから縁の向きを出し、
   `pub def fxaaSpec(source: String): ShaderDoc.Spec`
-
-## ProcessEnv — `engine/src/ProcessEnv.flix`
-- `pub def snapshot(): Map[String, String] \ IO`
-- 0 ならそのまま戻り、それ以外はその終了コードでプロセスを終える。
-  `pub def exitWith(code: Int32): Unit \ IO`
 
 ## ProjectLoader — `engine/src/core/ProjectLoader.flix`
 - project.json から組み立てた、engine 起動に渡すための設定。
@@ -1610,6 +1628,10 @@
   `pub def maxSide(): Int32`
 - ARGB（行優先・行 0 が絵の上）から作る。数の食い違い・辺が 0 以下・辺が maxSide() を超える、は Err。
   `pub def fromArgb(width: Int32, height: Int32, argb: Vector[Int32]): Result[String, Texture3d]`
+- 解いた絵から作る（決まりは fromArgb と同じ）。
+  `pub def fromImage(image: ImageData.ImageData): Result[String, Texture3d]`
+- PNG / JPEG のバイトを decoder で画素に戻して作る（decoder は LoadProgress.imageDecoder() で受け取る）。
+  `pub def decodeUsing(decoder: ImageData.ImageDecoder, bytes: Vector[Int8]): Result[String, Texture3d] \ IO`
 - PNG / JPEG のバイトを画素に戻す（javax.imageio）。読めない・辺が fromArgb の決まりの外、は Err。
   `pub def decode(bytes: Vector[Int8]): Result[String, Texture3d] \ IO`
 - `pub def width(t: Texture3d): Int32`

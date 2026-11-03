@@ -24,10 +24,16 @@ mod LwjglEnv {
     // WhyNot: 読めない FLIX_GE_FIXED_DT で起動を止めない — 開発の道具の口なので、遊べる窓を落とすほどではない。
     // 黙って実時間に戻すと「固定したつもりで絵が揺れる」になるので、知らせだけは出す。
     pub def load(): Settings \ IO =
-        let env = ProcessEnv.snapshot();
+        let env = snapshot();
         let settings = fromMap(env);
         warnUnreadableFixedDt(env, settings);
         settings
+
+    /// 今のプロセスの環境変数を丸ごと表にする（render_gl の中で環境変数を読むのはここだけ）。
+    /// mod が pub でないので、ゲームからは見えない（ゲームは engine_world の ProcessEnv.snapshot）。
+    // WhyNot: engine_world の ProcessEnv.snapshot を呼ばない — 層は engine と自分のソースしか見ないので、render_gl から engine_world は見えない。
+    pub def snapshot(): Map[String, String] \ IO =
+        run { Sys.Env.getEnv() } with Sys.Env.runWithIO
 
     /// 環境変数の表から読む（知らせは出さない）。FLIX_GE_FIXED_DT が読めない値なら fixedDt は None。
     pub def fromMap(env: Map[String, String]): Settings =

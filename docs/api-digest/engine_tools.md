@@ -1,4 +1,4 @@
-<!-- engine v0.76.0 / 生成: 2026-11-03 -->
+<!-- engine v0.76.0 / 生成: 2026-11-04 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine_tools
@@ -65,6 +65,14 @@
   `pub def buildUiAtlas(ttfPath: String, _joyoPath: String): FontAtlas \ IO`
 - 名前つきでアトラスを組む（textureName = "font_${name}"）。実機の RenderFont が
   `pub def buildAtlas(name: String, ttfPath: String): FontAtlas \ IO`
+
+## HeadlessLoad — `engine_tools/src/HeadlessLoad.flix`
+- f を流す（知らせは捨てる・仕事は並列・絵は javax.imageio で解く）。
+  `pub def handle(f: Unit -> a \ ef): a \ (ef - LoadProgress) + IO`
+- handle の、知らせを onReport へ渡す版（進み具合を見るテスト・自前の進み具合の表示）。
+  `pub def handleWith(onReport: (String, Int32, Int32) -> Unit \ ef1, f: Unit -> a \ ef): a \ (ef - LoadProgress) + ef1 + IO`
+- PNG / JPEG を javax.imageio で画素に戻すデコーダー（スレッドをまたいで使える）。
+  `pub def imageIoDecoder(): ImageData.ImageDecoder`
 
 ## HeadlessRender — `engine_tools/src/HeadlessRender.flix`
 - ゲームごとに 1 回宣言する生成設定。design を `scale` 倍に拡大して出力する。
@@ -393,3 +401,7 @@
   `pub def fogAt(pX: Float64, pY: Float64, pZ: Float64, eyeX: Float64, eyeY: Float64, eyeZ: Float64, colorX: Float64, colorY: Float64, colorZ: Float64, fogColorX: Float64, fogColorY: Float64, fogColorZ: Float64, fogNear: Float64, fogFar: Float64): (Float64, Float64, Float64)`
 - skyModel の空の色。
   `pub def skyAt(_dirX: Float64, dirY: Float64, _dirZ: Float64, zenithX: Float64, zenithY: Float64, zenithZ: Float64, horizonX: Float64, horizonY: Float64, horizonZ: Float64, groundX: Float64, groundY: Float64, groundZ: Float64, skyCurve: Float64): (Float64, Float64, Float64)`
+
+## ToolsProcessEnv — `engine_tools/src/ToolsProcessEnv.flix`
+- 今のプロセスの環境変数を丸ごと表にする。
+  `pub def snapshot(): Map[String, String] \ IO`

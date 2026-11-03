@@ -4,7 +4,7 @@
 // キャッシュの個数を外から読む口は無い（本番の pub 面を検査のために増やさない）ので、
 // 追い出しが 1 行ずつ書く stderr を捕まえて数える。捕まえた行のうち追い出し以外は
 // 本物の stderr へ流し直す — 起動時の知らせを握り潰すと、落ちたときに何も残らない。
-use fge::GameEngine
+use fge::LwjglLayer
 
 mod ShaderCacheSoak {
     use fge::{DrawCmd, GameEngine, GpuHandle, LwjglLayer, Platform, ShaderDoc}
@@ -118,5 +118,5 @@ mod ShaderCacheSoak {
 }
 
 def main(): Unit \ IO =
-    if (GameEngine.ensureMainThread()) ()
+    if (LwjglLayer.ensureMainThread()) ()
     else ShaderCacheSoak.go()

@@ -31,17 +31,21 @@ pub def loadDocs(): Res.Docs \ Fs.FileRead + IO + LoadProgress =
 
 - `report(phase, done, total)`: phase は起動画面の字（組み込みのフォントなので英数字）・done / total は今の phase の中の本数。total 0 以下は本数不明。
 - `mapWithProgress`: 1 つ作るたびに知らせる。
-- `parMapWithProgress`: 並列に作る（スレッドは CPU の数まで・結果の並びは元のまま）。待つ間も 50 ms ごとに知らせるので、1 つが長くてもウィンドウが応答する。
+- `parMapWithProgress`: handler が仕事を回す（`LoadProgress.runTasks`。実機と `HeadlessLoad.handle` は CPU の数までのスレッドで並列・結果の並びは元のまま）。
+  待つ間も 50 ms ごとに知らせるので、1 つが長くてもウィンドウが応答する。仕事が例外を投げたら残りを止めて同じ例外で抜ける。
   渡す関数は `IO` だけ — effect の handler はスレッドをまたがないので、`Fs.FileRead` で読む物は先に読んでおく。
+- 並列の仕事の中で絵（PNG / JPEG・glb の絵）を解くなら、読み込みの関数の頭で `let dec = LoadProgress.imageDecoder();` と受け取り、
+  仕事へ引数で渡す（`Gltf.fromGlbTexturedUsing(dec, limits, bytes)`・`Texture3d.decodeUsing(dec, bytes)`）。仕事の中から op は呼べない。
 - 本体のスレッドで、知らせの間が 0.5 秒を超えないように区切る。エンジンは 1 つの区切りの中に割り込めない。
 - 自前の handler（テストで知らせを集める時など）は必ず `k` を呼んで返す。RenderTarget を開いたまま（Pass に描いている途中で）`report` を呼ばない。
+  `runTasks` は順に回すなら `LoadProgress.runTasksInOrder`、並列に回す handler を書いたら `LoadProgress.Conformance` で決まりを確かめる。
 
 受ける側:
 
 | 経路 | 知らせは |
 |---|---|
 | 実機（`LwjglLayer.withProject`） | 起動画面を進めて poll する（間引きは 80 ms）。最初のコマの後に来た知らせは何もしない |
-| headless の描き出し・動画・flow・テスト | 入口で `LoadProgress.runNoop` を張って捨てる |
+| headless の描き出し・動画・flow・テスト | 入口で `HeadlessLoad.handle` を張る（並列・絵を解く・知らせは捨てる）。絵を解かないなら `LoadProgress.runNoop`（順に回す）でもよい |
 | `LoadProgress` を使わないゲーム | 何も変わらない |
 
 - 読み込み中に閉じるボタンが押されたら、読み込みの後の最初のコマで、いつもの閉じる処理（`App.withCloseRequest`）が受ける。

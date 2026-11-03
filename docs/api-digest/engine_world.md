@@ -1,4 +1,4 @@
-<!-- engine v0.76.0 / 生成: 2026-11-03 -->
+<!-- engine v0.76.0 / 生成: 2026-11-04 -->
 <!-- 生成物: bin/fge api-digest が作る。手で編集しない（make api-digest で作り直す） -->
 
 # API ダイジェスト — engine_world
@@ -14,6 +14,12 @@
   `pub def fingerprint(entries: List[(String, List[String])]): String`
 - 一覧を debug/active-docs.json に書く（App.withDocTable が、一覧が変わった実機のフレームの後でだけ呼ぶ）。
   `pub def write(entries: List[(String, List[String])]): Unit \ Fs.FileWrite`
+
+## AllocMeter — `engine_world/src/AllocMeter.flix`
+- この JVM でスレッドの割り当てバイト数を読めるか。false なら測っても 0 しか返らない。
+  `pub def isThreadAllocatedMemoryEnabled(): Bool`
+- `body` を 1 回動かす間に今のスレッドが割り当てたバイト数。
+  `pub def measureBytes(warmups: Int32, body: Unit -> a): Int64`
 
 ## Anim — `engine_world/src/Anim.flix`
 - クリップ: シート上の 1 行ぶんの連続コマと再生のしかた（純データ）。
@@ -1707,6 +1713,11 @@
   `pub def bounce(contacts: List[Contact], restitutions: Map[EntityId, Float64], velocities: Map[EntityId, Vec2.Vec2]): Map[EntityId, Vec2.Vec2]`
 - 各接触のめり込みを解消するよう位置を押し出す。動かせる側（velocities に居る側）だけを動かし、
   `pub def separate(contacts: List[Contact], velocities: Map[EntityId, Vec2.Vec2], positions: Map[EntityId, Vec2.Vec2]): Map[EntityId, Vec2.Vec2]`
+
+## ProcessEnv — `engine_world/src/ProcessEnv.flix`
+- `pub def snapshot(): Map[String, String] \ IO`
+- 0 ならそのまま戻り、それ以外はその終了コードでプロセスを終える。
+  `pub def exitWith(code: Int32): Unit \ IO`
 
 ## PropertyTest — `engine_world/src/PropertyTest.flix`
 - 1 回分の入力。r はゲームの役の enum。マウスは左ボタン 1 つ。

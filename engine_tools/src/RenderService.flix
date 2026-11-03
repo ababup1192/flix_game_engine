@@ -50,7 +50,7 @@ pub mod RenderService {
         { status = 200, contentType = contentType, body = body }
 
     /// 環境変数 RENDER_PORT から待ち受けるポートを読む。未設定・数値でなければ None。
-    pub def portFromEnv(): Option[Int32] \ IO = portOf(ProcessEnv.snapshot())
+    pub def portFromEnv(): Option[Int32] \ IO = portOf(ToolsProcessEnv.snapshot())
 
     /// portFromEnv の中身。env は入口の頭で読んだ環境変数の表。
     pub def portOf(env: Map[String, String]): Option[Int32] =

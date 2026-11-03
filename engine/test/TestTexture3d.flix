@@ -46,6 +46,23 @@ mod TestTexture3d {
     def testDecodeRejectsGarbage(): Unit \ {Assert, IO} =
         Assert.assertTrue(Result.isErr(Texture3d.decode(Vector#{ 1i8, 2i8, 3i8 })))
 
+    /// decoder が返す画素から作る（バイトは decoder だけが読む）。
+    @Test
+    def testDecodeUsingBuildsFromTheDecodedImage(): Unit \ {Assert, IO} =
+        let decoder = { decode = _ -> checked_ecast(Ok({ width = 2, height = 2, argb = quad() })) };
+        Assert.assertEq(expected = Ok(quad()), Texture3d.decodeUsing(decoder, Vector#{ 1i8 }) |> Result.map(Texture3d.argb))
+
+    /// decoder の Err はそのまま Err。
+    @Test
+    def testDecodeUsingKeepsTheDecoderError(): Unit \ {Assert, IO} =
+        Assert.assertTrue(Result.isErr(Texture3d.decodeUsing(ImageData.failingDecoder("読めない"), Vector#{ 1i8 })))
+
+    /// decoder の画素の数が寸法と合わなければ Err（fromArgb と同じ決まり）。
+    @Test
+    def testDecodeUsingRejectsCountMismatch(): Unit \ {Assert, IO} =
+        let decoder = { decode = _ -> checked_ecast(Ok({ width = 2, height = 2, argb = Vector#{ 0 } })) };
+        Assert.assertTrue(Result.isErr(Texture3d.decodeUsing(decoder, Vector#{ 1i8 })))
+
     /// 同じ画素なら同じ鍵、1 画素違えば違う鍵。
     @Test
     def testContentHashFollowsPixels(): Unit \ Assert =

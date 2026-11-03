@@ -73,10 +73,10 @@ pub mod GameEngine {
 
     /// root の project.json の scene3dLinearColor（ProjectLoader.scene3dLinearColorOf）を、root ごとに JVM の中で 1 回だけ読んだ値。
     /// GL の描き手（窓を開く時）と CPU の描き手・描き出しの鍵（描くたび）が同じ値を見る。旗を変えたら起動し直す（常駐も）。
-    /// engine の中だけで使う（GL は config#rootDir・CPU は "." を渡すので、両方がゲームのフォルダを指す前提）。0.80.0 で消える。
+    /// engine の中だけで使う（GL は config#rootDir・CPU は "." を渡すので、両方がゲームのフォルダを指す前提）。
+    /// 消すまで engine/src の import の lint（engine-contract-*）はこのファイルを例外にする（消す版は計画書 engine-core-polish.md の C4 の表）。
     // WhyNot: 呼ぶたびに読み直さない — 起動したままの JVM で project.json を書き換えると、GL の文脈を作った時の値と CPU の絵・鍵が食い違う。
     // WhyNot: 読んで控える間を lock で守らない — 2 本の糸が同時に初めて読むと偽の知らせが 2 行出うるだけで、読む値は同じ。
-    // WhyNot: engine/src から System の直の呼び出しを外す決まりの例外にしない — その決まりが入るより前の 0.80.0 でこの関数ごと消える。
     pub def loadScene3dLinearColor(root: String): Bool \ IO =
         let memoKey = "fge.scene3dLinearColor:" + new File(root).getAbsoluteFile().toPath().normalize().toString();
         let memo = System.getProperty(memoKey);
@@ -367,6 +367,7 @@ pub mod GameEngine {
     // プラットフォーム
     // ========================================================================
 
+    /// 0.84.0 で消える: LwjglLayer.ensureMainThread() に替える（窓を開く GLFW の都合なので GL の層が持つ）。
     /// macOS では -XstartOnFirstThread 付きでプロセスを再起動する。
     /// すでに -XstartOnFirstThread 付きで動いている場合は何もせず false を返す。
     /// 再起動した場合は true を返す（呼び出し元は終了すべき）。
@@ -411,5 +412,5 @@ pub mod GameEngine {
     /// 通常起動など）でも二重に再起動せずに済む。
     def isStartedOnFirstThread(): Bool \ IO =
         let pid = ProcessHandle.current().pid();
-        Map.get("JAVA_STARTED_ON_FIRST_THREAD_${pid}", ProcessEnv.snapshot()) == Some("1")
+        Map.get("JAVA_STARTED_ON_FIRST_THREAD_${pid}", run { Sys.Env.getEnv() } with Sys.Env.runWithIO) == Some("1")
 }

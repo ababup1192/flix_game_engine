@@ -10,7 +10,7 @@
 // 1 フレームに 320x240 を 2 枚上げる（material_lab の実際の使い方に合わせた大きさと枚数）。
 // 画素の中身は毎フレーム同じ物を使う — 画素を作る費用を測りたいのではなく、GPU へ上げる
 // 費用だけを見たいので。
-use fge::{App, GameEngine, LwjglLayer}
+use fge::{App, LwjglLayer}
 
 mod BenchTextureUpload {
     use fge::{App, GpuHandle, RawDraw, Render, RenderAsset, RenderTexture, RenderUtil}
@@ -170,7 +170,7 @@ mod BenchTextureUpload {
 }
 
 def main(): Unit \ IO =
-    if (GameEngine.ensureMainThread()) ()
+    if (LwjglLayer.ensureMainThread()) ()
     else
         run {
             App.make(BenchTextureUpload.initialWorld())

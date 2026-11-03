@@ -287,7 +287,7 @@ pub mod RenderCache {
     def settings(): (Option[String], Mode) \ IO =
         // WhyNot: 引数で受けない — SoftRaster.render* の奥で 1 枚ごとに呼ばれるので、通すと描き出しの pub の口の型が
         // 全部変わる。常駐はこのキーを起動時に通し、要求の値と違えば立て直す（go/internal/resident の renderCacheKey）。
-        let env = Map.get("FGE_RENDER_CACHE", ProcessEnv.snapshot()) |> Option.getWithDefault("");
+        let env = Map.get("FGE_RENDER_CACHE", ToolsProcessEnv.snapshot()) |> Option.getWithDefault("");
         let home = "${System.getProperty("user.home")}/.cache/flix-render-cache";
         if (String.isEmpty(env)) (Some(home), Mode.Reuse)
         else if (env == "off" or env == "0") (None, Mode.Reuse)

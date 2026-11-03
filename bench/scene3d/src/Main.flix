@@ -1,7 +1,7 @@
 // 入口。実機の窓で毎コマ同じ部屋を描き、カメラを左右へゆっくり振る。300 コマごとに 1 コマの p50 / p95 と GPU の時間の p50
 // （FrameDiagnostics.gpuNs・1〜2 コマ遅れの値）を出し、4 区間で閉じる。
 // 描く道は実機と同じ（App の view → App.Internal.Paint.submitGpuItems → Platform.Draw3d.drawScene3d）。
-use fge::GameEngine
+use fge::LwjglLayer
 
 mod SceneBench {
     use fge::{App, LwjglLayer, RenderUtil, Num, Vec2}
@@ -92,5 +92,5 @@ mod SceneBench {
 }
 
 def main(): Unit \ IO =
-    if (GameEngine.ensureMainThread()) ()
+    if (LwjglLayer.ensureMainThread()) ()
     else SceneBench.go()

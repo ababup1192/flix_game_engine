@@ -29,7 +29,16 @@ pub mod Texture3d {
         else if (Vector.length(argb) != width * height) Err("Texture3d.fromArgb: argb の数が ${width} × ${height} でない")
         else Ok(Texture3dData.Texture3dData({ width = width, height = height, argb = argb, hash = hashOf(width, height, argb) }))
 
+    /// 解いた絵から作る（決まりは fromArgb と同じ）。
+    pub def fromImage(image: ImageData.ImageData): Result[String, Texture3d] = fromArgb(image#width, image#height, image#argb)
+
+    /// PNG / JPEG のバイトを decoder で画素に戻して作る（decoder は LoadProgress.imageDecoder() で受け取る）。
+    /// 読めない・辺が fromArgb の決まりの外、は Err。
+    pub def decodeUsing(decoder: ImageData.ImageDecoder, bytes: Vector[Int8]): Result[String, Texture3d] \ IO =
+        (decoder#decode)(bytes) |> Result.mapErr(e -> "Texture3d.decodeUsing: ${e}") |> Result.flatMap(fromImage)
+
     /// PNG / JPEG のバイトを画素に戻す（javax.imageio）。読めない・辺が fromArgb の決まりの外、は Err。
+    /// 0.84.0 で消える: decodeUsing(LoadProgress.imageDecoder() で受け取った物, bytes) に替える（engine に機種の物を置かないため）。
     pub def decode(bytes: Vector[Int8]): Result[String, Texture3d] \ IO =
         let image = ImageIO.read(new ByteArrayInputStream(unchecked_cast(bytes as Array[Int8, Static])));
         if (Object.isNull(image)) Err("Texture3d.decode: PNG / JPEG として読めない")

@@ -87,19 +87,55 @@
       "id": "process-env-entry",
       "suffixes": [".flix"],
       "prefixes": ["engine/src/", "engine_world/src/", "engine_tools/src/", "templates/"],
-      "skip": ["engine/src/ProcessEnv.flix", "engine_tools/src/SoftRaster.flix", "engine_tools/src/SoftRaster3d.flix"],
+      "skip": ["engine_world/src/ProcessEnv.flix", "engine_tools/src/SoftRaster.flix", "engine_tools/src/SoftRaster3d.flix", "engine_tools/src/ToolsProcessEnv.flix"],
       "skipDirs": ["test", "build", "lib"],
       "pattern": "\\bSystem\\.getenv\\b|\\bSys\\.Env\\.|\\bFlow\\.Cli\\.envOr\\b",
-      "hint": "環境変数は入口の頭で 1 回だけ読み、要る値を引数で奥へ渡す。入口の頭で App.Headless.envOf(req)（常駐の /run からも呼ぶ <名前>Job(req)）か ProcessEnv.snapshot() を読み、奥は Map[String, String] を引数で受ける（Flow.Cli.getEnvOr(env, 名前, 既定値)・Flow.Cli.mainOf(app, env) の形）。常駐では奥で読むと、要求の env ではなく常駐を起こした時の env が見える。例外は skip に並べたファイルだけ（ProcessEnv が読む 1 か所と、出力に効かない調子の旗 FGE_SOFT_SERIAL。理由はその行の WhyNot）（engine の docs/design/render-speed.md 2.5 節）"
+      "hint": "環境変数は入口の頭で 1 回だけ読み、要る値を引数で奥へ渡す。入口の頭で App.Headless.envOf(req)（常駐の /run からも呼ぶ <名前>Job(req)）か ProcessEnv.snapshot() を読み、奥は Map[String, String] を引数で受ける（Flow.Cli.getEnvOr(env, 名前, 既定値)・Flow.Cli.mainOf(app, env) の形）。常駐では奥で読むと、要求の env ではなく常駐を起こした時の env が見える。例外は skip に並べたファイルだけ（ProcessEnv が読む 1 か所・engine_world が見えない engine_tools の写し ToolsProcessEnv と、出力に効かない調子の旗 FGE_SOFT_SERIAL。理由はその行の WhyNot）（engine の docs/design/render-speed.md 2.5 節）"
     },
     {
       "id": "process-exit-entry",
       "suffixes": [".flix"],
       "prefixes": ["engine/src/", "engine_world/src/", "engine_tools/src/", "templates/"],
-      "skip": ["engine/src/ProcessEnv.flix", "engine/src/GameEngine.flix"],
+      "skip": ["engine_world/src/ProcessEnv.flix", "engine/src/GameEngine.flix"],
       "skipDirs": ["test", "build", "lib"],
       "pattern": "\\bSystem\\.exit\\b",
       "hint": "奥でプロセスを終えない（常駐の /run から呼ばれると常駐ごと落ちる）。奥は終了コード（Int32）を返し、入口の頭の 1 行で App.Headless.exitWith(xJob(App.Headless.requestFromProcess())) か ProcessEnv.exitWith(コード) に渡す。例外は skip に並べたファイルだけ（ProcessEnv が終える 1 か所と、子の終了コードで必ず終わる macOS の起動し直し GameEngine.ensureMainThread。理由はその行の WhyNot）（engine の docs/design/render-speed.md 2.5 節）"
+    },
+    {
+      "id": "engine-contract-import",
+      "suffixes": [".flix"],
+      "prefixes": ["engine/src/"],
+      "skip": [],
+      "skipDirs": ["test", "build", "lib"],
+      "pattern": "\\bimport\\s+\\S",
+      "hint": "engine（契約層）は型と純粋な関数だけを持つ。import してよいのは java.lang.{Math, Float, Double, Object, Throwable, System（stderr だけ）}・java.math.*・java.security.MessageDigest・java.nio.ByteBuffer・java.lang.ref.WeakReference。スレッド（java.util.concurrent）・絵のデコード（java.awt・javax.imageio）・プロセス・ファイル（java.io.File）・開発の道具（java.lang.management・com.sun）は handler の側（render_gl・engine_tools・engine_world）へ置き、effect の op（LoadProgress.runTasks・imageDecoder など）で受け取る（engine の docs/migrations/0.81.0.md）",
+      "unlessLine": "^\\s*import\\s+(?:java\\.lang\\.\\{\\s*(?:Math|Float|Double|Object|Throwable|System)(?:\\s*=>\\s*\\w+)?(?:\\s*,\\s*(?:Math|Float|Double|Object|Throwable|System)(?:\\s*=>\\s*\\w+)?)*\\s*\\}|java\\.lang\\.(?:Math|Float|Double|Object|Throwable|System)|java\\.math\\.[\\w.{}=> ,]+|java\\.security\\.MessageDigest|java\\.nio\\.ByteBuffer|java\\.lang\\.ref\\.WeakReference)\\s*(?://.*)?$"
+    },
+    {
+      "id": "engine-contract-jvm-call",
+      "suffixes": [".flix"],
+      "prefixes": ["engine/src/"],
+      "skip": [],
+      "skipDirs": ["test", "build", "lib"],
+      "pattern": "\\bSys\\.Env\\.|\\bProcessBuilder\\b|\\bProcessHandle\\b|\\bspawn\\s+\\S|\\bChannel\\.|\\.runWithIO\\b",
+      "hint": "engine（契約層）で JVM の物を直に呼ばない: 環境変数（Sys.Env）は engine_world の ProcessEnv.snapshot() を入口の頭で読んで引数で渡す・スレッド（spawn・Channel）は LoadProgress.runTasks のように handler へ任せる・ファイルや時計の runWithIO は handler の側で張る・プロセスの起動し直しは LwjglLayer.ensureMainThread()（engine の docs/migrations/0.81.0.md）"
+    },
+    {
+      "id": "engine-contract-system",
+      "suffixes": [".flix"],
+      "prefixes": ["engine/src/"],
+      "skip": [],
+      "skipDirs": ["test", "build", "lib"],
+      "pattern": "\\bSystem\\.(?:[a-df-z]\\w*|e[a-qs-z]\\w*|er[a-qs-z]\\w*|err\\w+)",
+      "hint": "engine（契約層）で使ってよい System は stderr（System.err・Log が持つ）だけ。設定の値（System.getProperty）・時刻・プロセスの終わりは handler の側（render_gl・engine_tools・engine_world）で読み、値か effect の op で受け取る（engine の docs/migrations/0.81.0.md）"
+    },
+    {
+      "id": "engine-jvm-old-calls",
+      "suffixes": [".flix"],
+      "skip": ["engine/", "engine_world/", "engine_tools/", "engine_full/", "render_gl/", "src/engine/", "src/engine_world/", "src/engine_tools/", "src/render_gl/", "lib/", "build/"],
+      "notice": true,
+      "pattern": "\\bGltf\\.(?:fromGlbTextured|loadTextured)(?:With)?\\(|\\bTexture3d\\.decode\\(|\\bGameEngine\\.ensureMainThread\\b",
+      "hint": "中で javax.imageio・ProcessBuilder を呼ぶ古い口は 0.84.0 で消える: 読み込みの頭で let dec = LoadProgress.imageDecoder() を受け取り Gltf.fromGlbTexturedUsing(dec, limits, bytes)・Gltf.loadTexturedUsing(dec, limits, path)・Texture3d.decodeUsing(dec, bytes)（上限なしは Gltf.noTextureLimits()）。main の頭は LwjglLayer.ensureMainThread()。画面なしとテストの入口は HeadlessLoad.handle（engine の docs/migrations/0.81.0.md）"
     },
     {
       "id": "hand-tonemap",
@@ -268,6 +304,11 @@
   "exempt": {
     "src/AssistShow.flix::game-unchecked-pure": "internet_dungeon の Math.sin・cos の包み。Num.sin・Num.cos へ寄せるまで",
     "src/CardPile.flix::game-unchecked-pure": "internet_dungeon の Math.sin の包み。Num.sin へ寄せるまで",
-    "src/EndScreen.flix::game-unchecked-pure": "internet_dungeon の Math.sin・cos の包み。Num.sin・Num.cos へ寄せるまで"
+    "src/EndScreen.flix::game-unchecked-pure": "internet_dungeon の Math.sin・cos の包み。Num.sin・Num.cos へ寄せるまで",
+    "engine/src/GameEngine.flix::engine-contract-import": "古い GameEngine.ensureMainThread（ProcessBuilder・ProcessHandle・ArrayList）と loadScene3dLinearColor（java.io.File）。0.84.0 で消える（LwjglLayer.ensureMainThread へ）",
+    "engine/src/GameEngine.flix::engine-contract-jvm-call": "古い GameEngine.ensureMainThread（ProcessBuilder・ProcessHandle・Sys.Env）と loadScene3dLinearColor（Fs.FileRead.runWithIO）。0.84.0 で消える（LwjglLayer.ensureMainThread へ）",
+    "engine/src/scene3d/Texture3d.flix::engine-contract-import": "古い Texture3d.decode（javax.imageio・java.awt・ByteArrayInputStream）。0.84.0 で消える（decodeUsing へ）",
+    "engine/src/GameEngine.flix::engine-contract-system": "古い GameEngine.ensureMainThread（System.getProperty・System.exit）と loadScene3dLinearColor（System.getProperty・System.setProperty）。0.84.0 で消える",
+    "engine/src/GameEngine.flix::process-env-entry": "古い GameEngine.ensureMainThread が起動し直しのフラグ（JAVA_STARTED_ON_FIRST_THREAD_<pid>）を読む。ProcessEnv は engine_world へ移り engine から見えない。0.84.0 で消える"
   }
 }

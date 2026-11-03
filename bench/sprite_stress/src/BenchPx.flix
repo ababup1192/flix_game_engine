@@ -8,7 +8,7 @@
 // 読み込まれる — GL 実行時とヘッドレス(bakeAtlas の PNG)が同一ソース(PxSpriteAtlas.bake)。
 mod BenchPx {
     use fge::{
-        App, Color, GameEngine, LwjglLayer, PxSprite, PxSpriteAtlas, PxSpriteDoc, Render,
+        App, Color, LwjglLayer, PxSprite, PxSpriteAtlas, PxSpriteDoc, Render,
         RenderUtil, SoftRaster, Vec2
     }
 
@@ -44,7 +44,7 @@ mod BenchPx {
         println("baked: ${atlasPng()} (${baked#side}x${baked#side}, ${Map.size(baked#regions)} frames)")
 
     pub def bench(): Unit \ IO =
-        if (GameEngine.ensureMainThread()) ()
+        if (LwjglLayer.ensureMainThread()) ()
         else {
             let doc = run { PxSpriteDoc.load(spritePath()) } with Fs.FileRead.runWithIO;
             let baked = PxSpriteAtlas.bake(doc, resolver);

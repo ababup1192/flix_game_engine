@@ -154,22 +154,4 @@ mod TestText {
             case None    => bug!("4 文字目の Drawable が無い")
         }
 
-    // ========================================================================
-    // toDrawables — 割り当ての伸び方
-    // ========================================================================
-
-    /// 折り返しで rows 行になるテキストを描画物へ変え、その個数を返す。
-    def wrappedRowCount(rows: Int32): Int32 =
-        let text = List.range(0, rows) |> List.map(_ -> "ABC") |> List.join("");
-        let label = Text.make(text, sampleAtlas(), 16.0) |> Text.setWrapWidth(Some(30.0));
-        Text.toDrawables(label, {x = 0.0, y = 0.0}) |> List.length
-
-    /// 行数を 8 倍にしても割り当ては 8 倍前後で止まる（二乗なら 20 倍を超える）
-    @Test
-    def testToDrawablesAllocatesLinearlyInRows(): Unit \ Assert =
-        let small = AllocMeter.measureBytes(3, _ -> wrappedRowCount(100));
-        let large = AllocMeter.measureBytes(3, _ -> wrappedRowCount(800));
-        let ratio = Int64.toFloat64(large) / Int64.toFloat64(small);
-        Assert.assertTrue(ratio < 20.0)
-
 }

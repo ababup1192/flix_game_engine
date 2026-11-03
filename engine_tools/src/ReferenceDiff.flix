@@ -19,7 +19,7 @@ pub mod ReferenceDiff {
     /// 環境変数で受け取って描き出す。DIFF_DIR = ゲームのディレクトリ、
     /// DIFF_NAMES = 並べたい PNG の名前をカンマで繋いだ物（例 "title.png,talk.png"）。
     /// 名前を呼び側（make）から貰うのは、どれが変わったかを決めるのが cmp の仕事だから。
-    pub def pairs(): Unit \ IO = pairsOf(ProcessEnv.snapshot())
+    pub def pairs(): Unit \ IO = pairsOf(ToolsProcessEnv.snapshot())
 
     /// pairs の中身。env は入口の頭で読んだ環境変数の表。
     pub def pairsOf(env: Map[String, String]): Unit \ IO =

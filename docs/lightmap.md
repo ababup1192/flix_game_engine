@@ -6,8 +6,9 @@ lightmap ＝ 動かない物に当たる光（直接光と間接光）を前も�
 ## 使い方
 
 ```flix
-let model = Gltf.loadTexturedWith({ normal = 1024 | Gltf.noTextureLimits() }, "assets/room.glb");   // TEXCOORD_1 → part の uvs2
-let lightmap = Texture3d.decode(bytesOf("assets/room_lightmap.png")) |> Result.map(Texture3d.limitSize(1024));
+let dec = LoadProgress.imageDecoder();                                                                // 読み込みの関数の頭で受け取る
+let model = Gltf.loadTexturedUsing(dec, { normal = 1024 | Gltf.noTextureLimits() }, "assets/room.glb");   // TEXCOORD_1 → part の uvs2
+let lightmap = Texture3d.decodeUsing(dec, bytesOf("assets/room_lightmap.png")) |> Result.map(Texture3d.limitSize(1024));
 // 場面の textures に model#textures と lightmap の絵を入れ、置いた物に付ける:
 Scene3d.meshInstance(part#mesh, world)
     |> Scene3d.withMaterial(material)
@@ -43,8 +44,8 @@ Scene3d.meshInstance(part#mesh, world)
 場面の絵（Texture3d）は GPU に持つ量に上限がある（既定 256 MB・64 枚）。超えると今と前のコマで使っていない古い絵から捨て、次に要る時に上げ直す（知らせが 1 回出る）。
 2048² の RGBA8 の絵は mip 込みで 1 枚約 21 MB で、12 枚で 256 MB に届く。
 
-- `Gltf.loadTextured` は描くのに使う絵（baseColorTexture・normalTexture）だけを読む（metallicRoughness・occlusion・emissive は読まない）。
-- `Gltf.loadTexturedWith(limits, path)` で、材質の絵の長い辺に上限を掛ける（mip を作るのと同じ縮め方で半分にしていく）。lightmap の PNG は `Texture3d.limitSize`。
+- `Gltf.loadTexturedUsing` は描くのに使う絵（baseColorTexture・normalTexture）だけを読む（metallicRoughness・occlusion・emissive は読まない）。
+- `Gltf.loadTexturedUsing(dec, limits, path)` の limits で、材質の絵の長い辺に上限を掛ける（mip を作るのと同じ縮め方で半分にしていく）。lightmap の PNG は `Texture3d.limitSize`。
   lightmap はなめらかなので 1024 に縮めても目立ちにくい。法線マップも近くで見ない物は 1024 で足りる。
 - それでも足りない時は、project.json の `scene3dTextureBudgetMB` で上限を上げる（例 512）。VRAM の少ない機械では重くなる。
 - 小さな絵がたくさんある場面（部品ごとの絵・lightmap を物ごとに分けた場面）で枚数の 64 に先に届くなら、project.json の `scene3dTextureBudgetCount` で枚数の上限を上げる（例 128。texture unit の数ではなく、GPU に持っておく絵の枚数）。

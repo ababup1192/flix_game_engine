@@ -1,125 +1,112 @@
-// LoadProgress の知らせの並び・結果の並び・例外・時間切れの知らせを、知らせを集める handler の中で確かめる。
+// LoadProgress の知らせの並び・結果の並び・例外を、知らせを集める handler の中で確かめる。
+// 並列の handler（LwjglLoad・HeadlessLoad）の決まりは、それぞれの層のテストが LoadProgress.Conformance で確かめる。
 mod TestLoadProgress {
-    import java.lang.Thread
+    import java.lang.{RuntimeException, System, Thread}
+    import java.util.concurrent.atomic.AtomicBoolean
+    import java.util.concurrent.{Callable, Executors}
 
     /// f を流し、届いた知らせを (phase, done, total) の並びで結果と一緒に返す。
-    pub def collecting(f: Unit -> a \ ef + LoadProgress): (a, List[(String, Int32, Int32)]) \ ef =
+    pub def collecting(f: Unit -> a \ ef): (a, List[(String, Int32, Int32)]) \ (ef - LoadProgress) + IO =
         region rc {
             let seen = MutList.empty(rc);
+            let push = (phase, done, total) -> MutList.push((phase, done, total), seen);
             let result = run f() with handler LoadProgress {
-                def report(phase, done, total, k) = { MutList.push((phase, done, total), seen); k(()) }
+                def report(phase, done, total, k) = { push(phase, done, total); k(()) }
+                def runTasks(phase, tasks, k) = { LoadProgress.runTasksInOrder(push, phase, tasks); k(()) }
+                def imageDecoder(k) = k(ImageData.failingDecoder("テストの handler は絵を解かない"))
             };
             (result, MutList.toList(seen))
         }
 
+    /// 順に回す handler（runTasksInOrder）を LoadProgress.Conformance へ渡す道具。
+    def harness(): LoadProgress.Conformance.Harness = {
+        handle = collecting,
+        sleepMs = ms -> Thread.sleep(ms),
+        fail = message -> throw new RuntimeException(message),
+        nowMs = () -> System.currentTimeMillis(),
+        newFlag = () -> {
+            let flag = new AtomicBoolean(false);
+            { raise = () -> flag.set(true), isRaised = () -> flag.get() }
+        }
+    }
+
     def threeChars(): List[String] = "a" :: "b" :: "c" :: Nil
 
     @Test
-    def testMapReportsEachStep(): Unit \ Assert =
+    def testMapReportsEachStep(): Unit \ {Assert, IO} =
         let (_, seen) = collecting(() -> LoadProgress.mapWithProgress("p", String.toUpperCase, threeChars()));
         Assert.assertEq(expected = ("p", 0, 3) :: ("p", 1, 3) :: ("p", 2, 3) :: ("p", 3, 3) :: Nil, seen)
 
     @Test
-    def testMapKeepsResultOrder(): Unit \ Assert =
+    def testMapKeepsResultOrder(): Unit \ {Assert, IO} =
         let (ys, _) = collecting(() -> LoadProgress.mapWithProgress("p", String.toUpperCase, threeChars()));
         Assert.assertEq(expected = "A" :: "B" :: "C" :: Nil, ys)
 
     @Test
-    def testMapOfEmptyReportsNothing(): Unit \ Assert =
+    def testMapOfEmptyReportsNothing(): Unit \ {Assert, IO} =
         let (_, seen) = collecting(() -> LoadProgress.mapWithProgress("p", String.toUpperCase, (Nil: List[String])));
         Assert.assertEq(expected = Nil, seen)
 
     @Test
-    def testRunNoopReturnsValue(): Unit \ Assert =
+    def testRunNoopReturnsValue(): Unit \ {Assert, IO} =
         let ys = LoadProgress.runNoop(() -> LoadProgress.mapWithProgress("p", String.toUpperCase, threeChars()));
         Assert.assertEq(expected = "A" :: "B" :: "C" :: Nil, ys)
 
-    /// 後ろの要素ほど早く終わる仕事（並びが届いた順でなく xs の順に戻ることを見る）。
-    def slowerFirst(x: Int32): Int32 \ IO =
-        Thread.sleep(Int32.toInt64((5 - x) * 5));
-        x * 10
+    @Test
+    def testInOrderHandlerKeepsTheOrderRules(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = Nil, LoadProgress.Conformance.orderViolations(harness()))
 
     @Test
-    def testParMapKeepsResultOrder(): Unit \ {Assert, IO} =
-        let (ys, _) = collecting(() -> LoadProgress.parMapWithProgress("p", slowerFirst, List.range(0, 5)));
-        Assert.assertEq(expected = 0 :: 10 :: 20 :: 30 :: 40 :: Nil, ys)
+    def testInOrderHandlerEndsOnTheFirstException(): Unit \ {Assert, IO} =
+        Assert.assertEq(expected = Nil, LoadProgress.Conformance.failureViolations(harness()))
 
+    /// 順に回す handler は何も終わらない間に知らせないので、50 ms ごとの決まりの検査に引っかかる（検査が handler の違いを見分ける）。
     @Test
-    def testParMapStartsAtZero(): Unit \ {Assert, IO} =
-        let (_, seen) = collecting(() -> LoadProgress.parMapWithProgress("p", slowerFirst, List.range(0, 5)));
-        Assert.assertEq(expected = Some(("p", 0, 5)), List.head(seen))
+    def testPollingCheckCatchesAnInOrderHandler(): Unit \ {Assert, IO} =
+        Assert.assertFalse(List.isEmpty(LoadProgress.Conformance.pollingViolations(harness())))
 
-    @Test
-    def testParMapEndsAtTotal(): Unit \ {Assert, IO} =
-        let (_, seen) = collecting(() -> LoadProgress.parMapWithProgress("p", slowerFirst, List.range(0, 5)));
-        Assert.assertEq(expected = Some(("p", 5, 5)), List.last(seen))
-
-    @Test
-    def testParMapDoneGrowsOneByOne(): Unit \ {Assert, IO} =
-        let (_, seen) = collecting(() -> LoadProgress.parMapWithProgress("p", slowerFirst, List.range(0, 5)));
-        let dones = List.map(s -> { let (_, done, _) = s; done }, seen);
-        Assert.assertEq(expected = List.range(0, 6), List.distinct(dones))
-
-    @Test
-    def testParMapOfEmptyReportsNothing(): Unit \ {Assert, IO} =
-        let (ys, seen) = collecting(() -> LoadProgress.parMapWithProgress("p", slowerFirst, Nil));
-        Assert.assertEq(expected = (Nil, Nil), (ys, seen))
-}
-
-// 非 pub の parMapPolling（待つ時間と待つ回数の上限を取る）を、上限つきで確かめる。
-mod LoadProgress.TestPolling {
-    import java.lang.{InterruptedException, RuntimeException, Thread}
-    import java.util.concurrent.atomic.AtomicBoolean
-
-    /// 2 だけ、時間切れの知らせが何度か出た後で投げる（知らせから戻った後の例外を通す）。
-    def failOnTwo(x: Int32): Int32 \ IO =
-        if (x == 2) { Thread.sleep(20i64); throw new RuntimeException("two") } else x
-
-    @Test
-    def testExceptionEndsBeforeTheWaitLimit(): Unit \ {Assert, IO} =
-        let outcome = try {
-            match LoadProgress.runNoop(() -> LoadProgress.parMapPolling(1i64, 2000, "p", failOnTwo, List.range(0, 4))) {
-                case Some(_) => "finished"
-                case None    => "hit the wait limit"
+    /// 仕事の例外を包み直して投げる handler（同じ例外で抜けない）。
+    def wrappingFailures(f: Unit -> a \ ef): (a, List[(String, Int32, Int32)]) \ (ef - LoadProgress) + IO =
+        let result = run f() with handler LoadProgress {
+            def report(_phase, _done, _total, k) = k(())
+            def runTasks(phase, tasks, k) = {
+                try { LoadProgress.runTasksInOrder((_, _, _) -> (), phase, tasks) } catch {
+                    case e: RuntimeException => throw new RuntimeException("wrapped: ${e.getMessage()}")
+                };
+                k(())
             }
-        } catch {
-            case e: RuntimeException => e.getMessage()
+            def imageDecoder(k) = k(ImageData.failingDecoder("テストの handler は絵を解かない"))
         };
-        Assert.assertEq(expected = "two", outcome)
+        (result, Nil)
 
-    /// 0 は 20 ms で投げ、1 は長く眠る。1 が途中で起こされたら interrupted に印を付ける。
-    def failOrSleep(interrupted: AtomicBoolean, x: Int32): Int32 \ IO =
-        if (x == 0) { Thread.sleep(20i64); throw new RuntimeException("zero") }
-        else {
-            try { Thread.sleep(5000i64) } catch {
-                case _: InterruptedException => interrupted.set(true)
-            };
-            x
-        }
+    /// 例外を包み直す handler は、例外の決まりの検査に引っかかる（検査が handler の違いを見分ける）。
+    @Test
+    def testFailureCheckCatchesAWrappingHandler(): Unit \ {Assert, IO} =
+        Assert.assertFalse(List.isEmpty(LoadProgress.Conformance.failureViolations({ handle = wrappingFailures | harness() })))
 
-    /// interrupted に印が付くまで最大 1 秒待つ。
-    def waitForMark(interrupted: AtomicBoolean, left: Int32): Bool \ IO =
-        if (interrupted.get() or left <= 0) interrupted.get()
-        else { Thread.sleep(10i64); waitForMark(interrupted, left - 1) }
+    /// 2 本目からを別のスレッドで始め、1 本目の例外で抜ける時に残りを止めない handler。
+    def leavingTheRestRunning(f: Unit -> a \ ef): (a, List[(String, Int32, Int32)]) \ (ef - LoadProgress) + IO =
+        let result = run f() with handler LoadProgress {
+            def report(_phase, _done, _total, k) = k(())
+            def runTasks(_phase, tasks, k) = {
+                let pool = Executors.newCachedThreadPool();
+                List.drop(1, tasks) |> List.forEach(task -> discard pool.submit(new Callable[Bool] {
+                    def call(_this: Callable[Bool]): Bool \ IO = { task(); true }
+                }));
+                List.take(1, tasks) |> List.forEach(task -> task());
+                k(())
+            }
+            def imageDecoder(k) = k(ImageData.failingDecoder("テストの handler は絵を解かない"))
+        };
+        (result, Nil)
+
+    /// 例外の後に残りを止めない handler は、例外の決まりの検査に引っかかる。
+    @Test
+    def testFailureCheckCatchesAHandlerThatLeavesTheRestRunning(): Unit \ {Assert, IO} =
+        Assert.assertFalse(List.isEmpty(LoadProgress.Conformance.failureViolations({ handle = leavingTheRestRunning | harness() })))
 
     @Test
-    def testExceptionStopsTheRestOfThePool(): Unit \ {Assert, IO} =
-        let interrupted = new AtomicBoolean(false);
-        discard try {
-            discard LoadProgress.runNoop(() -> LoadProgress.parMapPolling(1i64, 2000, "p", failOrSleep(interrupted), 0 :: 1 :: Nil));
-            ""
-        } catch {
-            case e: RuntimeException => e.getMessage()
-        };
-        Assert.assertTrue(waitForMark(interrupted, 100))
-
-    def sleepy(x: Int32): Int32 \ IO =
-        Thread.sleep(30i64);
-        x
-
-    @Test
-    def testTimeoutRepeatsTheSameDone(): Unit \ {Assert, IO} =
-        let (_, seen) = TestLoadProgress.collecting(() -> LoadProgress.parMapPolling(1i64, 2000, "p", sleepy, 0 :: Nil));
-        let zeros = List.count(s -> { let (_, done, _) = s; done == 0 }, seen);
-        Assert.assertTrue(zeros >= 2)
+    def testRunNoopRunsTasksInOrder(): Unit \ {Assert, IO} =
+        let ys = LoadProgress.runNoop(() -> LoadProgress.parMapWithProgress("p", x -> checked_ecast(x * 10), List.range(0, 3)));
+        Assert.assertEq(expected = 0 :: 10 :: 20 :: Nil, ys)
 }
