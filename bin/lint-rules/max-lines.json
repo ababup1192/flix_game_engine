@@ -1,0 +1,20 @@
+{
+  "note": "lint-max-lines（engine の 4 パッケージの src の .flix が上限の行数を超えていないか。ESLint の max-lines と同じ考え）の規約データ。この JSON が source of truth で、bin/fge max-lines はこれを読んで動く。超えている物は exempt（\"パス::max-lines\" と理由 1 行）に載せて通し、分け終えたら --all が「もう鳴らない」と言うので消す。ゲームの src は見ない（ゲームの大きさと分け方はゲームが決める）。",
+  "prefixes": [
+    "engine/src/",
+    "render_gl/src/",
+    "engine_world/src/",
+    "engine_tools/src/"
+  ],
+  "suffixes": [
+    ".flix"
+  ],
+  "maxLines": 1200,
+  "hint": "読む所が見つからない大きさなので、役ごとに子のモジュールへ分ける（ゲームが呼ぶ関数は元のモジュールに残し、中身は <元>.Internal.<役> へ。例: App と App.Internal.*）。",
+  "exempt": {
+    "engine_tools/src/SoftRaster.flix::max-lines": "塗る段・字・面・Pass に分けるまで",
+    "engine_world/src/Render.flix::max-lines": "描き物の型・Pass の計画・ヘルパーに分けるまで",
+    "render_gl/src/Render3d.flix::max-lines": "描く本体・材質とプログラム・影・GLSL の字に分けるまで",
+    "engine/src/ShaderGen.flix::max-lines": "部品ごとの GLSL 片（色・ノイズ・形）と、片を 1 枚の main() へ繋ぐ所に分けるまで"
+  }
+}

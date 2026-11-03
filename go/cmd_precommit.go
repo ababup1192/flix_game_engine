@@ -13,6 +13,7 @@ import (
 	"github.com/ababup1192/flix_game_engine/go/internal/hoist"
 	"github.com/ababup1192/flix_game_engine/go/internal/jargon"
 	"github.com/ababup1192/flix_game_engine/go/internal/makefiledup"
+	"github.com/ababup1192/flix_game_engine/go/internal/maxlines"
 	"github.com/ababup1192/flix_game_engine/go/internal/notesrotate"
 	"github.com/ababup1192/flix_game_engine/go/internal/precommit"
 	"github.com/ababup1192/flix_game_engine/go/internal/quadratic"
@@ -70,6 +71,7 @@ func cmdPrecommit(out, errOut *strings.Builder, rest []string, _ bool) int {
 		"doc-shape":     lintOf(docshape.Run, abs),
 		"doc-refs":      lintOf(docrefs.Run, abs),
 		"makefile-dup":  lintOf(makefiledup.Run, abs),
+		"max-lines":     lintOf(maxlines.Run, abs),
 		"verb-names":    lintOf(verbnames.Run, abs),
 		"state-shape":   lintOf(stateshape.Run, abs),
 		"f32": func(o, e *strings.Builder, args []string) int {

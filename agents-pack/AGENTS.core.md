@@ -62,6 +62,7 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | 粒（花びら・火の粉）に触れたかを規則で取る | `Fx.particlesOfAll(now, bursts)`（絵と同じ式の番号と中心）+ `Fx.touches` |
 | テストで系に渡す 1 コマ（押したキー・dt・カーソル）を組む | `{ down = Set#{Key.Space}, justPressed = Set#{Key.Space}, dt = 0.016 \| App.emptyFrame() }`（字で `App.Frame` の全部の欄を書かない。前のコマとの差から作るなら `App.frameOf`） |
 | どう遊んでも崩れない決まりを確かめる（性質テスト） | `PropertyTest.forAll`（画面なしで `App.trace` と同じ道） |
+| テストで実機と同じ 1 コマ（時計・固定刻み・押した瞬間の持ち越し・系・音）を進める | `App.traceFrame`（`App.freshStepState()` から持ち回す）か列ごと `App.trace`（`App.Internal.*` は App の中身で、ゲームの src と test に書くと lint-forbid の app-internal が止める） |
 | e2e・動画の手順を書いて画面なしで流す（失敗は行番号つき） | `e2e/<名前>.flow` + `App.withFlow`・`bin/fge flow check`・`make flow` |
 | 好きな場面から起動・テスト・遊んだ通りに再生 | `App.withStarts`（`START=`・`startOrBug`）・記録は `make flow` で再生 |
 | 実機の GL の絵が同じ起動で毎回同じかを、頭の数コマを撮って確かめる（2 コマ目以降も） | `FLIX_GE_FIXED_DT=1/60`（dt を固定）+ `FLIX_GE_HIDDEN=1` + `FLIX_GE_FRAME_SHOT=<フォルダ>` + `START=<場面>` で `make run RUN_SECONDS=30` を 2 回（撮る口は 64 枚で止まるだけで窓は閉じない）し、`frame-N.png` を比べる |

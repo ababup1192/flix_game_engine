@@ -183,3 +183,14 @@ func TestRepoDigestIsUpToDate(t *testing.T) {
 		t.Fatalf("docs/api-digest がソースとずれている: %s", errOut.String())
 	}
 }
+
+// 名前の段に Internal を持つモジュールだけを中身の部品と見なす（Internals のような語の一部は見なさない）。
+func TestIsInternalModuleMatchesWholeSegmentOnly(t *testing.T) {
+	got := []bool{IsInternalModule("App.Internal.Runner"), IsInternalModule("App.Internal"), IsInternalModule("App"), IsInternalModule("App.Internals")}
+	want := []bool{true, true, false, false}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("got %v want %v", got, want)
+		}
+	}
+}

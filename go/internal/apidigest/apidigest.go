@@ -82,6 +82,17 @@ type modEntry struct {
 	decls []flixdecl.Decl
 }
 
+// IsInternalModule は、名前の段のどれかが Internal のモジュール（App.Internal.Runner など）か。
+// WhyNot: 載せない — 親が呼ぶので pub だが中身の部品で、ダイジェストを引いたゲームの書き手が呼んでしまう。
+func IsInternalModule(mod string) bool {
+	for _, seg := range strings.Split(mod, ".") {
+		if seg == "Internal" {
+			return true
+		}
+	}
+	return false
+}
+
 // buildPackageDigest は 1 パッケージ分の Markdown 本文と、モジュール数・宣言数を返す。
 func buildPackageDigest(root string, pkg flixdecl.Package) (string, int, int) {
 	lines := []string{
@@ -98,6 +109,9 @@ func buildPackageDigest(root string, pkg flixdecl.Package) (string, int, int) {
 	modules := map[string]*modEntry{}
 	for _, file := range flixdecl.ScanPackage(root, pkg) {
 		for _, md := range file.Mods {
+			if IsInternalModule(md.Mod) {
+				continue
+			}
 			entry, seen := modules[md.Mod]
 			if !seen {
 				entry = &modEntry{rel: file.Rel}

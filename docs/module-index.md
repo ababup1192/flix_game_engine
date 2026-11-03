@@ -34,7 +34,7 @@ make module Q=<語>    # 例: make module Q=スクロール / Q=ツールチッ�
 
 **初学者向け概念ノート**（黒箱に見えがちな再利用パーツを 1 画面で解説）:
 - [dual-grid.md](dual-grid.md) — チップ絵なしでマップ地形を描く仕組み（DualGrid / Material / Terrain の分業と「角の 4 セル → 16 ケース」）。
-- App のゲームループ（更新系システムで進める → view で描く の 2 役割と 1 周の順）は `engine_world/src/App.flix` 冒頭の doc。
+- App のゲームループ（更新系システムで進める → view で描く の 2 役割）は `engine_world/src/App.flix` 冒頭の doc、1 周の順は `App.Internal.Runner.loop` の doc。
 - 座標 → [0,1) の決定的なばらつき（乱数を使わない理由 = スナップショット決定性）は `engine_world/src/Hash01.flix`。
 
 **モジュールを足したら**、分野のファイルの「やりたいこと → モジュール」に 1 行と「モジュール 1 行紹介」に 1 行を足す

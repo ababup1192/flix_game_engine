@@ -136,7 +136,7 @@ pub mod Flow.Record {
         let derivedMoved = st#cursor |> Option.exists(p -> p#x != frame#cursor#x or p#y != frame#cursor#y);
         // WhyNot: 動いた量をいつも書かない — キャプチャしていなければ位置の差と同じで、行が長くなるだけ。
         // WhyNot: != で比べない — 実機の量は引いてから窓の大きさで割るので、位置の差と最後の桁がずれる（そのずれでは書かない）。
-        let derivedLook = App.cursorDelta(st#cursor, frame#cursor);
+        let derivedLook = App.Internal.Frame.cursorDelta(st#cursor, frame#cursor);
         let lookDiffers = Float64.abs(frame#mouseDelta#x - derivedLook#x) > 0.000001 or Float64.abs(frame#mouseDelta#y - derivedLook#y) > 0.000001;
         let opts =
             (if (frame#cursor#x != lastCursor#x or frame#cursor#y != lastCursor#y)

@@ -106,7 +106,7 @@ pub mod AudioMixdown {
                             channels |> List.forEach(c -> addLoop(channelOf(v, c), head, pos, h#pitch, h#volume, span, Vector.get(c, bufs)))
                         case None => ()
                     }, declared);
-                // バスの値は実機（App.applyMixed）と同じ AudioMixer の読み出しで決める。
+                // バスの値は実機（App.Internal.Output.applyMixed）と同じ AudioMixer の読み出しで決める。
                 let target = AudioMixer.busGainOf(f#mixer, mix, bus);
                 let lowpass = AudioMixer.busLowpassGainHFOf(f#mixer, mix, bus);
                 let start = Map.get(bus, lv) |> Option.getWithDefault(target);

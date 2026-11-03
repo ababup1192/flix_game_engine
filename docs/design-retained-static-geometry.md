@@ -29,7 +29,7 @@
 ### カメラの当て方（retained 化の可否を決める最重要点・確定）
 
 - **`withView` 経路のカメラは「App が CPU で全 item の座標を一様にずらす」方式。GL の uniform ではない。**
-  - `App.composeScene`(`engine_world/src/App.flix:366-372`) → `CameraRig.centerOn`(`CameraRig.flix:28-34`) が各 PlacedItem に `at = (at−center)×zoom + design/2`、`item = Render.scaled(zoom, item)` を CPU の `List.map` で適用。
+  - `App.composeScene` → `CameraRig.centerOn`(`CameraRig.flix:28-34`) が各 PlacedItem に `at = (at−center)×zoom + design/2`、`item = Render.scaled(zoom, item)` を CPU の `List.map` で適用。
   - 多角形は `Render.scaled` の Poly 分岐(`Render.flix:368`)で全頂点を `List.map(v -> Vec2.mul(v, factor))`、`polyCmd`(`Render.flix:439`)で全頂点に `Vec2.add(v, pos)`。→ 多角形は「camera を書き込んだスクリーン座標」で GL に届く（`PolygonRenderCmd.vertices` は「スクリーン px に変換済み」・`DrawCmd.flix:116`）。
   - GL の多角形シェーダ `polyBatchVertexShaderSource`(`Shader.flix:284-293`) は `projection`（zoom 無し正射影）のみで座標変換 uniform を持たない。
 
@@ -37,7 +37,7 @@
 
 ### 1 パス z ソートの構造（C1 の核心・別 draw call 分離が壊す理由）
 
-- 通常経路は `App.renderFrame`(`App.flix:772-780`) が `sceneItems`（world+hud 全部合成）→ `Render.draw` → **1 回の** `GameEngine.Game.renderCommands(sprites, Nil, polygons)`。
+- 通常経路は `App.Internal.Paint.renderFrame` が `sceneItems`（world+hud 全部合成）→ `Render.draw` → **1 回の** `GameEngine.Game.renderCommands(sprites, Nil, polygons)`。
 - `renderFrameMixed`(`Frame.flix:167-175`) が **sprites と polygons を 1 本の列にマージ**（`List.append(sprites map Ok, polygons map Err)`）して `stableByZ` で z 安定ソート。
 - `renderFrameMixed`(`Frame.flix:330-338` のコメント原文): 「スプライト run と多角形 run を並行して溜める。種類が切り替わる瞬間にもう一方を吐き出すことで、**sortedMerged の列順（＝重なり順）を厳密に守る**」。同じ z 内は「入力順（sprites→polygons）」を stableByZ が構造的に保証(`Frame.flix:165`)。
 - run を切るのはテクスチャ/scissor/blend の変化と、sprite↔polygon の種別切替のみ(`Frame.flix:200-209` の順序不変条件コメント: 「列順は一切入れ替えない」)。
@@ -314,7 +314,7 @@ SoftRaster は `DrawCmd` を CPU で描くだけで GPU を知らない。retain
 ### Flix 固有の落とし穴
 - **sync**: engine（`GameEngine.flix`/`GpuHandle.flix`/`DrawCmd.flix`/`render_gl`）変更後は `make sync-engine`・`make sync-render-gl`・`make sync-engine-world` を個別に（`make sync` の clean-locks は全 worktree 走査でハング）。fpkg は `.flix` のみ・テスト非同梱。
 - **レコード `#` はホットパス**: retained の狙いは「頂点ごとの `#vertices` 読みを毎フレームから消す」こと。逆に毎フレーム走る `key`/レンジ fold で不要な `#` チェーンを増やさない（`StaticKey` は浅い record・`StaticRange` の fold は薄く）。
-- **エフェクト多相**: 新 op は `Game` eff に乗るので `staticLayer` の関数は `ef` を帯びる。既定は純粋 hook を `checked_ecast` で widen（`makeWith` 作法・`App.flix:107-127`）。
+- **エフェクト多相**: 新 op は `Game` eff に乗るので `staticLayer` の関数は `ef` を帯びる。既定は純粋 hook を `checked_ecast` で widen（`App.makeWith` の作法）。
 - **BSD userland**: 一括置換は `sed -i` 不可 → Python バイト処理。新 Makefile ターゲット（計測・glReadPixels 実行）は実運転 1 回通すまで頼らない。
 - **stableByZ の安定性**: 3 種マージでも `stableByZ` が同 z の入力順を保つことに依存する。ソート実装が安定でなくなると z=2 の壁/粒が入れ替わる → §4.2 で常設検知。
 

@@ -2,7 +2,7 @@
 //   覆う矩形は position から右へ伸びる（反転してもそこは動かない）
 //   絵の中身だけが左右入れ替わる
 // これが崩れると、左を向いた瞬間だけキャラが幅ぶん横へ飛ぶ（見下ろしの 4 方向で
-// 「左に進むと 1 マス飛ぶ」に見える）。GL 側の同じ規約は render_gl の Frame.originAxis。
+// 「左に進むと 1 マス飛ぶ」に見える）。GL 側の同じ規約は render_gl の RenderFrame.originAxis。
 mod TestSoftRasterFlip {
     import java.awt.image.BufferedImage
 

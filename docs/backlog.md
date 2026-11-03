@@ -66,9 +66,9 @@
   約 2.3μs という既存の見積もりと一致）。
   **さらに、設計の見立て自体が 2 点まちがっていた**（次にやるとき同じ道を歩かないよう残す）:
   - `glyphFingerprint` / `missingGlyphs` が舐めるのは `itemsForGlyphs`
-    （`App.flix:1232`＝レンダーターゲットの items ＋ 本編の items）で、`drawInto` が見る
+    （`App.Internal.Paint.renderFrame` のレンダーターゲットの items ＋ 本編の items）で、`drawInto` が見る
     `withoutShaders(items)` とは**別のリスト**。1 本の畳み込みには入らない
-  - `missingGlyphs` は指紋が変わったフレームだけ走る（`App.flix:1240`）。同乗させると
+  - `missingGlyphs` は指紋が変わったフレームだけ走る（`App.Internal.Paint.renderFrame`）。同乗させると
     毎フレーム走ることになり、**速くなるどころか 0.23〜0.33ms の持ち出し**になる
   同乗できるのは `drawShaders` と `withoutShaders` の 2 本だけで、合わせて 0.31〜0.42ms。
   代金（1 回の走査で 4 つの仕事を同時に進める形は、後から 1 つだけ直したい人に最悪）に

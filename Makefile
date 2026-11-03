@@ -99,6 +99,7 @@ help:
 	@echo "  make lint-z-table         重なり順の z を数で決める所がパッケージに 1 か所か検査 (借用は警告だけ)"
 	@echo "  make lint-value-discard   値を let _ = で捨てていないか検査 (純粋な式だと Flix が呼び出しごと消す)"
 	@echo "  make lint-forbid          古い書き方を止める (bin/lint-rules/forbid.json。代わりの物を出す)"
+	@echo "  make lint-max-lines       engine の src の .flix の行数の上限 (bin/lint-rules/max-lines.json。超えた物は除外の一覧)"
 	@echo "  make lint-quadratic       fold の中で蓄積を作り直す二乗の形が無いか検査 (全量)"
 	@echo "  make lint-hoist           ループの外に置いた式がループの中へ書き写される形が無いか検査 (全量)"
 	@echo "  make lint-record-wrap     World が直接持つ大きな record を enum で包んでいるか検査"
@@ -518,6 +519,13 @@ lint-z-table:
 .PHONY: lint-forbid
 lint-forbid:
 	@bin/fge forbid --all
+
+# ── ゲート: engine のソースの 1 ファイルの行数 ─────────────────
+# engine の 4 パッケージの src の .flix が上限 (bin/lint-rules/max-lines.json の maxLines) を超えていないか。
+# 超えている物は同じ JSON の exempt の一覧に載せて通す。分け終えたら --all が「もう鳴らない」と言う。
+.PHONY: lint-max-lines
+lint-max-lines:
+	@bin/fge max-lines --all
 
 # ── ゲート: 値を let _ = で捨てない ──────────────────────────
 # Flix は純粋な式の値を let _ = で捨てると式ごと消す。知らせ (Log.warn) と bug! が黙って消える

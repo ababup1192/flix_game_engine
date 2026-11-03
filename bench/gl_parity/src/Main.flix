@@ -23,7 +23,7 @@ mod ParityMain {
 
     /// ターゲット口の投影（面と 3D の場面を描かない口）。GL / SoftRaster の両側が必ずここを通る — 外し忘れた側だけ
     /// 代わりの矩形が乗り、harness 自身のバグが「経路差」に化けるので、外す場所を 2 つに増やさない。
-    /// 画面口は外す所を engine の App.submitGpuItems（GL）と Render.softSceneOf（CPU）に任せる。
+    /// 画面口は外す所を engine の App.Internal.Paint.submitGpuItems（GL）と Render.softSceneOf（CPU）に任せる。
     def toDraw(texInfoOf: String -> Option[GameEngine.TextureInfo] \ ef,
                items: List[Render.PlacedItem]):
             (List[GameEngine.Drawable], List[GameEngine.PolygonRenderCmd]) \ ef =
@@ -33,10 +33,10 @@ mod ParityMain {
 
     def glShoot(sc: Scenes.Scene): Unit \ IO + GameEngine.Game + ShaderEffect.Shader + RenderTarget.Target =
         let texInfoOf = name -> GameEngine.Game.getTextureInfo(name);
-        // Pass は実機の毎コマと同じ App.drawPassPlan で描く（手順を写すと、実機と違う道を突き合わせることになる）。
+        // Pass は実機の毎コマと同じ App.Internal.Paint.drawPassPlan で描く（手順を写すと、実機と違う道を突き合わせることになる）。
         let design = { x = Scenes.designW(), y = Scenes.designH() };
         discard List.range(0, sc#repeats) |> List.foldLeft((known, _) ->
-            App.drawPassPlan(_ -> (), design, known, planOf(sc)), Set.empty());
+            App.Internal.Paint.drawPassPlan(_ -> (), design, known, planOf(sc)), Set.empty());
         match sc#via {
             case Scenes.ShotVia.ViaTarget =>
                 // target 分岐は swap しないので、endTarget の前に bind 中の FBO を読める。
@@ -49,7 +49,7 @@ mod ParityMain {
             case Scenes.ShotVia.ViaScreen =>
                 // 画面の絵は swap 後に読めないため、FLIX_GE_FRAME_SHOT（swap 直前のフック）が
                 // debug/gl/frame-<n>.png へ落とす。名前への対応は renameFrames が引き受ける。
-                App.submitGpuItems(_ -> (), sc#items, Nil, None)
+                App.Internal.Paint.submitGpuItems(_ -> (), sc#items, Nil, None)
         }
 
     def planOf(sc: Scenes.Scene): Render.PassPlan = { targets = sc#targets | Render.passPlan(sc#passes) }

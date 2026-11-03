@@ -137,12 +137,12 @@ mod TestApp {
     @Test
     def testApplySystemsRunsInOrder(): Unit \ Assert =
         let systems = ((_frame, n) -> n + 1) :: ((_frame, n) -> n * 2) :: Nil;
-        Assert.assertEq(expected = 2, App.applySystems(emptyFrame(), systems, 0))
+        Assert.assertEq(expected = 2, App.Internal.Frame.applySystems(emptyFrame(), systems, 0))
 
     // システム無しなら World はそのまま。
     @Test
     def testApplySystemsEmptyIsIdentity(): Unit \ Assert =
-        Assert.assertEq(expected = 7, App.applySystems(emptyFrame(), Nil, 7))
+        Assert.assertEq(expected = 7, App.Internal.Frame.applySystems(emptyFrame(), Nil, 7))
 
     // ========================================================================
     // axis: 負・正キーの押し下げ → -1 / 0 / +1
@@ -349,26 +349,26 @@ mod TestApp {
     // 経過秒がそのまま持ち越しに残る。
     @Test
     def testFixedStepsBelowOneQuantumIsZeroSteps(): Unit \ Assert =
-        Assert.assertEq(expected = (0, 0.01), App.fixedSteps(0.0, 0.01, 1.0 / 60.0))
+        Assert.assertEq(expected = (0, 0.01), App.Internal.Frame.fixedSteps(0.0, 0.01, 1.0 / 60.0))
 
     // 刻みちょうど 2 回分（1/30 秒）: 2 回分回り、持ち越しはほぼ 0（浮動小数の丸め誤差のみ）。
     @Test
     def testFixedStepsExactMultipleConsumesCarry(): Unit \ Assert =
-        let (steps, carry) = App.fixedSteps(0.0, 1.0 / 30.0, 1.0 / 60.0);
+        let (steps, carry) = App.Internal.Frame.fixedSteps(0.0, 1.0 / 30.0, 1.0 / 60.0);
         Assert.assertEq(expected = (2, true), (steps, Float64.abs(carry) < 0.000001))
 
     // 端数の持ち越し: 前フレームの余り 0.02 + 今回 0.01 = 0.03 秒、刻み 1/60（≈0.01667s）で
     // 1 回分消費し、残り約 0.0133 秒が次へ持ち越る。
     @Test
     def testFixedStepsCarriesRemainderToNextFrame(): Unit \ Assert =
-        let (steps, carry) = App.fixedSteps(0.02, 0.01, 1.0 / 60.0);
+        let (steps, carry) = App.Internal.Frame.fixedSteps(0.02, 0.01, 1.0 / 60.0);
         Assert.assertEq(expected = (1, true), (steps, Float64.abs(carry - (0.03 - 1.0 / 60.0)) < 0.000001))
 
     // 暴走防止: 1 秒分もの貯金（本来 60 回分）があっても上限 5 回でクランプし、
     // 超過ぶんの貯金は次フレームへ持ち越さず捨てる（carry = 0）。
     @Test
     def testFixedStepsClampsToFiveAndDropsOverflow(): Unit \ Assert =
-        Assert.assertEq(expected = (5, 0.0), App.fixedSteps(0.0, 1.0, 1.0 / 60.0))
+        Assert.assertEq(expected = (5, 0.0), App.Internal.Frame.fixedSteps(0.0, 1.0, 1.0 / 60.0))
 
     // スライシング不変: 16.667ms を 3 回に分けて渡しても、50ms を 1 回で渡しても、
     // 合計ステップ数と最終持ち越しは一致する（固定ステップが存在する意義そのもの）。
@@ -377,10 +377,10 @@ mod TestApp {
         let fixedDt = 1.0 / 60.0;
         let sliced = List.range(0, 3) |> List.foldLeft((state, _i) -> {
             let (stepsSoFar, carry) = state;
-            let (steps, nextCarry) = App.fixedSteps(carry, 0.016667, fixedDt);
+            let (steps, nextCarry) = App.Internal.Frame.fixedSteps(carry, 0.016667, fixedDt);
             (stepsSoFar + steps, nextCarry)
         }, (0, 0.0));
-        let lumped = App.fixedSteps(0.0, 0.050001, fixedDt);
+        let lumped = App.Internal.Frame.fixedSteps(0.0, 0.050001, fixedDt);
         let (slicedSteps, slicedCarry) = sliced;
         let (lumpedSteps, lumpedCarry) = lumped;
         Assert.assertEq(expected = (slicedSteps, true),
@@ -408,7 +408,7 @@ mod TestApp {
     // （押しっぱなし入力は消えない。動いた量を 2 つ目のサブステップで 2 回回さない）。
     @Test
     def testSuppressEdgesClearsEdgesKeepsHeld(): Unit \ Assert =
-        let suppressed = App.suppressEdges(edgyFrame());
+        let suppressed = App.Internal.Frame.suppressEdges(edgyFrame());
         Assert.assertEq(
             expected = (Set#{}, false, false, 0.0, (0.0, 0.0), Set#{GameEngine.Key.Left}, true),
             (suppressed#justPressed, suppressed#mouseClicked, suppressed#mouseMoved, suppressed#wheel,
@@ -427,21 +427,21 @@ mod TestApp {
         let prev = Some({ x = 10.0, y = 10.0 });
         let raw = { x = 900.0, y = -50.0 };
         Assert.assertEq(expected = ((10.0, 10.0), (900.0, -50.0), (900.0, -50.0)),
-                        ((App.heldCursor(Some(true), prev, raw)#x, App.heldCursor(Some(true), prev, raw)#y),
-                         (App.heldCursor(Some(false), prev, raw)#x, App.heldCursor(Some(false), prev, raw)#y),
-                         (App.heldCursor(None, prev, raw)#x, App.heldCursor(None, prev, raw)#y)))
+                        ((App.Internal.Frame.heldCursor(Some(true), prev, raw)#x, App.Internal.Frame.heldCursor(Some(true), prev, raw)#y),
+                         (App.Internal.Frame.heldCursor(Some(false), prev, raw)#x, App.Internal.Frame.heldCursor(Some(false), prev, raw)#y),
+                         (App.Internal.Frame.heldCursor(None, prev, raw)#x, App.Internal.Frame.heldCursor(None, prev, raw)#y)))
 
     // 0 ステップのフレームで取り置いた動いた量は、次のフレームの量に足される（ホイールと同じ量の扱い）。
     @Test
     def testMergeEdgesAddsMouseDelta(): Unit \ Assert =
-        let merged = App.mergeEdges(App.pendingOf(edgyFrame()), edgyFrame());
+        let merged = App.Internal.Frame.mergeEdges(App.Internal.Frame.pendingOf(edgyFrame()), edgyFrame());
         Assert.assertEq(expected = (10.0, 10.0), (merged#mouseDelta#x, merged#mouseDelta#y))
 
     // dt はそのまま素通し（fixedStep の呼び出し側が固定値をセットしてから渡す想定であり、
     // suppressEdges 自体は dt に触れない）。
     @Test
     def testSuppressEdgesLeavesDtUntouched(): Unit \ Assert =
-        Assert.assertEq(expected = 0.016, App.suppressEdges(edgyFrame())#dt)
+        Assert.assertEq(expected = 0.016, App.Internal.Frame.suppressEdges(edgyFrame())#dt)
 
     // ========================================================================
     // advanceFrame: 0 ステップのフレームで立ったエッジは取り置かれ、
@@ -504,7 +504,7 @@ mod TestApp {
         let app = App.make(0)
             |> App.addSystem((f, n) -> n + Set.size(f#justPressed));
         let seeded = { carry = 0.0, real = Clock.start(),
-                       pending = App.pendingOf(stepFrame(Set#{}, Set#{GameEngine.Key.Z}, 0.016, 0.0)) };
+                       pending = App.Internal.Frame.pendingOf(stepFrame(Set#{}, Set#{GameEngine.Key.Z}, 0.016, 0.0)) };
         let (w1, s1) = App.advanceFrame(app, stepFrame(Set#{}, Set#{}, 0.016, 0.0), seeded, 0);
         Assert.assertEq(
             expected = (0, (Set#{GameEngine.Key.Z}, false, false, 0.0)),
@@ -519,13 +519,13 @@ mod TestApp {
     def testChangedPathsNoChangeIsEmpty(): Unit \ Assert =
         let times = Map#{"a.json" => 100i64, "b.json" => 200i64};
         Assert.assertEq(expected = Nil,
-            App.changedPaths("a.json" :: "b.json" :: Nil, times, times))
+            App.Internal.Runner.changedPaths("a.json" :: "b.json" :: Nil, times, times))
 
     // 更新時刻の変化: 変わったパスだけが返る。
     @Test
     def testChangedPathsMtimeChangeFires(): Unit \ Assert =
         Assert.assertEq(expected = "a.json" :: Nil,
-            App.changedPaths("a.json" :: "b.json" :: Nil,
+            App.Internal.Runner.changedPaths("a.json" :: "b.json" :: Nil,
                 Map#{"a.json" => 100i64, "b.json" => 200i64},
                 Map#{"a.json" => 150i64, "b.json" => 200i64}))
 
@@ -533,19 +533,19 @@ mod TestApp {
     @Test
     def testChangedPathsNewFileFires(): Unit \ Assert =
         Assert.assertEq(expected = "a.json" :: Nil,
-            App.changedPaths("a.json" :: Nil, Map#{}, Map#{"a.json" => 100i64}))
+            App.Internal.Runner.changedPaths("a.json" :: Nil, Map#{}, Map#{"a.json" => 100i64}))
 
     // 消失: 今回見えないパス（消えた・読めない）は発火しない。
     @Test
     def testChangedPathsMissingFileIsSilent(): Unit \ Assert =
         Assert.assertEq(expected = Nil,
-            App.changedPaths("a.json" :: Nil, Map#{"a.json" => 100i64}, Map#{}))
+            App.Internal.Runner.changedPaths("a.json" :: Nil, Map#{"a.json" => 100i64}, Map#{}))
 
     // 登録順: 複数のパスが同時に変わっても、返る順は watch の登録順のまま。
     @Test
     def testChangedPathsKeepsRegistrationOrder(): Unit \ Assert =
         Assert.assertEq(expected = "b.json" :: "a.json" :: Nil,
-            App.changedPaths("b.json" :: "a.json" :: Nil,
+            App.Internal.Runner.changedPaths("b.json" :: "a.json" :: Nil,
                 Map#{"a.json" => 100i64, "b.json" => 200i64},
                 Map#{"a.json" => 101i64, "b.json" => 201i64}))
 
@@ -558,52 +558,52 @@ mod TestApp {
     // 置いたスロット・key は同じ世代のうちは引ける（インスタンス数がそのまま返る）。
     @Test
     def testTileCacheHitSameGen(): Unit \ Assert =
-        let cache = App.tileCacheStore("0", "map-1", testVao(), 42, App.freshTileCache());
+        let cache = App.Internal.Paint.tileCacheStore("0", "map-1", testVao(), 42, App.Internal.Paint.freshTileCache());
         Assert.assertEq(expected = Some(42),
-            App.tileCacheHit("0", "map-1", cache) |> Option.map(snd))
+            App.Internal.Paint.tileCacheHit("0", "map-1", cache) |> Option.map(snd))
 
     // 読み直しが起きた（世代が進んだ）後は、同じスロット・key でも引けない = 生成し直しになる。
     @Test
     def testTileCacheMissAfterBump(): Unit \ Assert =
-        let cache = App.tileCacheStore("0", "map-1", testVao(), 42, App.freshTileCache());
+        let cache = App.Internal.Paint.tileCacheStore("0", "map-1", testVao(), 42, App.Internal.Paint.freshTileCache());
         Assert.assertEq(expected = None,
-            App.tileCacheHit("0", "map-1", App.bumpTileGen(true, cache)) |> Option.map(snd))
+            App.Internal.Paint.tileCacheHit("0", "map-1", App.Internal.Paint.bumpTileGen(true, cache)) |> Option.map(snd))
 
     // 読み直しの無いフレームでは世代は動かず、事前に生成した物は生きたまま。
     @Test
     def testTileCacheBumpFalseKeepsHit(): Unit \ Assert =
-        let cache = App.tileCacheStore("0", "map-1", testVao(), 42, App.freshTileCache());
+        let cache = App.Internal.Paint.tileCacheStore("0", "map-1", testVao(), 42, App.Internal.Paint.freshTileCache());
         Assert.assertEq(expected = Some(42),
-            App.tileCacheHit("0", "map-1", App.bumpTileGen(false, cache)) |> Option.map(snd))
+            App.Internal.Paint.tileCacheHit("0", "map-1", App.Internal.Paint.bumpTileGen(false, cache)) |> Option.map(snd))
 
     // key が変わってもスロットの VAO は残る（updateTileBuffer の入れ直し先に使う）—
     // 一覧表は 1 スロット = 1 件のままで、key がいくら変わっても育たない。
     @Test
     def testTileCacheRollingKeyKeepsSlotVao(): Unit \ Assert =
-        let c0 = App.tileCacheStore("0", "light:1", testVao(), 42, App.freshTileCache());
+        let c0 = App.Internal.Paint.tileCacheStore("0", "light:1", testVao(), 42, App.Internal.Paint.freshTileCache());
         Assert.assertEq(expected = (None, Some(testVao() |> GpuHandle.tileVaoInt), 1),
-            (App.tileCacheHit("0", "light:2", c0) |> Option.map(snd),
-             App.tileCacheVaoAt("0", c0) |> Option.map(GpuHandle.tileVaoInt),
+            (App.Internal.Paint.tileCacheHit("0", "light:2", c0) |> Option.map(snd),
+             App.Internal.Paint.tileCacheVaoAt("0", c0) |> Option.map(GpuHandle.tileVaoInt),
              Map.size(c0#entries)));
-        let c1 = App.tileCacheStore("0", "light:2", testVao(), 43, c0);
+        let c1 = App.Internal.Paint.tileCacheStore("0", "light:2", testVao(), 43, c0);
         Assert.assertEq(expected = (1, Some(43)),
-            (Map.size(c1#entries), App.tileCacheHit("0", "light:2", c1) |> Option.map(snd)))
+            (Map.size(c1#entries), App.Internal.Paint.tileCacheHit("0", "light:2", c1) |> Option.map(snd)))
 
     // 別のスロットは独立に生成して置かれ、世代が同じ間はどちらも引ける。
     @Test
     def testTileCacheTwoSlotsIndependent(): Unit \ Assert =
-        let cache = App.tileCacheStore("0", "floor", testVao(), 10,
-                    App.tileCacheStore("1", "walls", testVao(), 20, App.freshTileCache()));
+        let cache = App.Internal.Paint.tileCacheStore("0", "floor", testVao(), 10,
+                    App.Internal.Paint.tileCacheStore("1", "walls", testVao(), 20, App.Internal.Paint.freshTileCache()));
         Assert.assertEq(expected = (Some(10), Some(20)),
-            (App.tileCacheHit("0", "floor", cache) |> Option.map(snd),
-             App.tileCacheHit("1", "walls", cache) |> Option.map(snd)))
+            (App.Internal.Paint.tileCacheHit("0", "floor", cache) |> Option.map(snd),
+             App.Internal.Paint.tileCacheHit("1", "walls", cache) |> Option.map(snd)))
 
     // decideClose: 閉じるボタンを押した時、F8 で止めている間はその場で閉じ、止めていない時はゲームの withCloseRequest へ渡す。
     @Test
     def testDecideCloseClosesWhilePausedAndAsksGameOtherwise(): Unit \ Assert =
-        Assert.assertEq(expected = (App.CloseAnswer.Close, App.CloseAnswer.AskGame),
-            (App.decideClose({ closing = true, hasCloseRequest = true, paused = true }),
-             App.decideClose({ closing = true, hasCloseRequest = true, paused = false })))
+        Assert.assertEq(expected = (App.Internal.Runner.CloseAnswer.Close, App.Internal.Runner.CloseAnswer.AskGame),
+            (App.Internal.Runner.decideClose({ closing = true, hasCloseRequest = true, paused = true }),
+             App.Internal.Runner.decideClose({ closing = true, hasCloseRequest = true, paused = false })))
 
     // decideBranch: F8 と停止状態から決まる、このフレームの進み方
 
@@ -614,44 +614,44 @@ mod TestApp {
     // 走っているときに F8 を押すと止まる。
     @Test
     def testDecideBranchF8Pauses(): Unit \ Assert =
-        Assert.assertEq(expected = (App.Branch.Paused, true),
-            App.decideBranch({ f8Pressed = true | running() }) |> b -> (b#branch, b#toggled))
+        Assert.assertEq(expected = (App.Internal.Runner.Branch.Paused, true),
+            App.Internal.Runner.decideBranch({ f8Pressed = true | running() }) |> b -> (b#branch, b#toggled))
 
     // 止まっているときに F8 を押すと、その場では再開のフレームになる（まだ World は進めない）。
     @Test
     def testDecideBranchF8Resumes(): Unit \ Assert =
-        Assert.assertEq(expected = App.Branch.Resuming,
-            App.decideBranch({ f8Pressed = true, wasPaused = true | running() })#branch)
+        Assert.assertEq(expected = App.Internal.Runner.Branch.Resuming,
+            App.Internal.Runner.decideBranch({ f8Pressed = true, wasPaused = true | running() })#branch)
 
     // 再開の次のフレームは、ふつうに走る。
     @Test
     def testDecideBranchAfterResumeRuns(): Unit \ Assert =
-        Assert.assertEq(expected = App.Branch.Running, App.decideBranch(running())#branch)
+        Assert.assertEq(expected = App.Internal.Runner.Branch.Running, App.Internal.Runner.decideBranch(running())#branch)
 
     // 止まっていて F8 を押さなければ、止まったまま。
     @Test
     def testDecideBranchStaysPaused(): Unit \ Assert =
-        Assert.assertEq(expected = App.Branch.Paused,
-            App.decideBranch({ wasPaused = true | running() })#branch)
+        Assert.assertEq(expected = App.Internal.Runner.Branch.Paused,
+            App.Internal.Runner.decideBranch({ wasPaused = true | running() })#branch)
 
     // HTTP 側が停止の主導権を持っている間は、F8 が効かない。
     @Test
     def testDecideBranchRemoteHoldBlocksF8(): Unit \ Assert =
-        Assert.assertEq(expected = (App.Branch.Running, false),
-            App.decideBranch({ f8Pressed = true, remoteHold = true | running() })
+        Assert.assertEq(expected = (App.Internal.Runner.Branch.Running, false),
+            App.Internal.Runner.decideBranch({ f8Pressed = true, remoteHold = true | running() })
                 |> b -> (b#branch, b#toggled))
 
     // デバッグ機能が使えない構成では、F8 が効かない。
     @Test
     def testDecideBranchNoDebugBlocksF8(): Unit \ Assert =
-        Assert.assertEq(expected = App.Branch.Running,
-            App.decideBranch({ f8Pressed = true, canDebug = false | running() })#branch)
+        Assert.assertEq(expected = App.Internal.Runner.Branch.Running,
+            App.Internal.Runner.decideBranch({ f8Pressed = true, canDebug = false | running() })#branch)
 
     // 停止中に HTTP 側が主導権を取ると、F8 では解除できない（止まったまま）。
     @Test
     def testDecideBranchRemoteHoldKeepsPaused(): Unit \ Assert =
-        Assert.assertEq(expected = App.Branch.Paused,
-            App.decideBranch({ f8Pressed = true, remoteHold = true, wasPaused = true | running() })#branch)
+        Assert.assertEq(expected = App.Internal.Runner.Branch.Paused,
+            App.Internal.Runner.decideBranch({ f8Pressed = true, remoteHold = true, wasPaused = true | running() })#branch)
 
     // ========================================================================
     // 外への出力（addOutput）: 書くのは実機のフレームの後だけ・跳んだ拍の扱いは onJump
@@ -666,23 +666,23 @@ mod TestApp {
     // 起動の拍（まだ何も書いていない）: セーブは起動した World の鍵を書いた扱い、名乗りは "" のまま。
     @Test
     def testKeysAfterJumpAtLaunchSeedsOnlySkip(): Unit \ Assert =
-        Assert.assertEq(expected = "5" :: "" :: Nil, App.keysAfterJump(outputApp(), 5, Nil))
+        Assert.assertEq(expected = "5" :: "" :: Nil, App.Internal.Output.keysAfterJump(outputApp(), 5, Nil))
 
     // 起動した World のまま進んだフレーム: セーブは書かない（鍵が同じ）・名乗りは書く（"" から変わった）。
     @Test
     def testFirstFrameWritesOnlyTheNaming(): Unit \ Assert =
-        Assert.assertEq(expected = 1 :: Nil, App.dueOutputs(outputApp(), 5, App.keysAfterJump(outputApp(), 5, Nil)))
+        Assert.assertEq(expected = 1 :: Nil, App.Internal.Output.dueOutputs(outputApp(), 5, App.Internal.Output.keysAfterJump(outputApp(), 5, Nil)))
 
     // 遊んで数が 5 → 6 になったフレーム: 両方書く。
     @Test
     def testPlayChangeWritesBoth(): Unit \ Assert =
-        Assert.assertEq(expected = 0 :: 1 :: Nil, App.dueOutputs(outputApp(), 6, "5" :: "名乗り5" :: Nil))
+        Assert.assertEq(expected = 0 :: 1 :: Nil, App.Internal.Output.dueOutputs(outputApp(), 6, "5" :: "名乗り5" :: Nil))
 
     // 5 を書いた後に /start などで 9 へ跳び、そのまま進んだフレーム: セーブは書かない（作り物で上書きしない）・名乗りは書く。
     @Test
     def testJumpWritesOnlyTheNaming(): Unit \ Assert =
-        let afterJump = App.keysAfterJump(outputApp(), 9, "5" :: "名乗り5" :: Nil);
-        Assert.assertEq(expected = 1 :: Nil, App.dueOutputs(outputApp(), 9, afterJump))
+        let afterJump = App.Internal.Output.keysAfterJump(outputApp(), 9, "5" :: "名乗り5" :: Nil);
+        Assert.assertEq(expected = 1 :: Nil, App.Internal.Output.dueOutputs(outputApp(), 9, afterJump))
 
     // ========================================================================
     // 始まりの登録簿（withStarts）: 行の読み・名前の誤り・既定の引数

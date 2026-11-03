@@ -77,7 +77,7 @@ engine / engine_world の `pub` は、このリポジトリの外にある独立
 データの持ち方を根本から変える。→ **測ってから決める。**
 
 **3-c: 性能に関係なく、決まった壊れ方は例外を残さず直す。**
-`App.sustainOps` のように N が数本で実害が無くても直す。例外を 1 つ残すと、
+`App.Internal.Output.sustainOps` のように N が数本で実害が無くても直す。例外を 1 つ残すと、
 次の人が「前例がある」と言える。
 
 ---
@@ -162,7 +162,7 @@ engine / engine_world の `pub` は、このリポジトリの外にある独立
 |---|---|---|
 | `Text.toDrawables` | 33.3 | 7.68 |
 | `RichText.place` | 19.2 | 8.26 |
-| `App.sustainOps` | 54.6 | 9.96 |
+| `App.Internal.Output.sustainOps` | 54.6 | 9.96 |
 | `UiLayout.computeLayout`（`UiHierarchy` 側の二乗） | 63.3 | 11.5 |
 | `GridSearch.reachable` | 43.7 | 10.8 |
 
@@ -344,7 +344,7 @@ shadeAll(n, i -> ShaderEval.evalCompiled(compiled, u, v, time))
 | ループの中の `List.memberOf` | 約 12 |
 
 合計 約 22 件。**このうち 6 件をこの回で直した**（`Text.toDrawables` /
-`RichText.placeLine` / `UiSlots.fill` / `App.sustainOps` / `UiHierarchy` の呼び出し側 /
+`RichText.placeLine` / `UiSlots.fill` / `App.Internal.Output.sustainOps` / `UiHierarchy` の呼び出し側 /
 `GridSearch.floodList`）ので、**残りは 16 件前後**。
 
 内訳は数え直していない（数え直す代金が高く、機械で数える物も無いため）。
@@ -371,7 +371,7 @@ N が定数なので実害は無いと判断している。**N を決めるの�
 
 | 場所 | 事実 | 止めた理由 |
 |---|---|---|
-| `Paint.buildProgram` | 面の Spec を **name で引き、中身（`eqSpec`）が違えば GLSL を組んでコンパイル・リンクし直す**。当たれば GLSL は組まない | 毎コマ中身が変わる Spec（濃さを `Const` で書き込む等）は毎コマ作り直しになる。濃さは `Render.fade`（uniform `uAlpha`）で渡す。作り直した古い program は引退させ、使われなくなってから消す。見つけ方は §11 |
+| `RenderPaint.buildProgram` | 面の Spec を **name で引き、中身（`eqSpec`）が違えば GLSL を組んでコンパイル・リンクし直す**。当たれば GLSL は組まない | 毎コマ中身が変わる Spec（濃さを `Const` で書き込む等）は毎コマ作り直しになる。濃さは `Render.fade`（uniform `uAlpha`）で渡す。作り直した古い program は引退させ、使われなくなってから消す。見つけ方は §11 |
 | `Sprite.buildMaskData:470` | mask 付き描画ごとに毎フレーム再三角形化（凹なら二乗） | mask はカメラ変換後の座標で毎フレーム値が変わる。**鍵にできる不変量が無い** |
 | `Shadow.rimBlocked:109` | 前面辺 × 全影四角形の O(E²) | 本物の二乗だが `Light.items` の呼び出し元がテストのみ。直しは空間分割 = 3-b |
 | `UiExtract.measureTexts:10` | 毎フレーム全テキストを再計測（可視でなくても・変わっていなくても） | 二乗ではなく係数。§10 の「まだ 1 度も採っていない手」に当たる |
@@ -438,8 +438,8 @@ PNG は git 外・一覧は git 内、という既存の非対称と同型なの
 基準にする所で止まる）。意図した増加は `make reference-update BUDGET=accept`、
 場面ごとに上限そのものを上げるなら caps.tsv に `cap` と `note`。どちらも git 差分に残る。
 
-**実行時の網**: `App.renderFrame` が本編 + pass の items を数え、2000 を超えたら
-標準エラーへ**初回 1 回だけ**知らせる（`App.warnOverBudget`）。headless の代表フレームに
+**実行時の網**: `App.Internal.Paint.renderFrame` が本編 + pass の items を数え、2000 を超えたら
+標準エラーへ**初回 1 回だけ**知らせる（`App.Internal.Paint.warnOverBudget`）。headless の代表フレームに
 無い瞬間（Fx の最悪化・場面の切り替わり・GIF でしか描き出さない場面）の最後の受け皿。
 
 **捕まえられない物**: 個数が増えない「毎フレーム組み直し」（541 個を組み直しても 541 個）・

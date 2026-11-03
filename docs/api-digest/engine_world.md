@@ -186,8 +186,6 @@
   `pub def withSustained(f: w -> List[Sustain] \ ef, app: App[w, ef]): App[w, ef]`
 - 音の通り道（AudioMixer.Mixer）を World から導く関数を繋ぐ。繋ぐと、withAudio の音と
   `pub def withMixer(f: w -> AudioMixer.Mixer \ ef, app: App[w, ef]): App[w, ef]`
-- 前のフレームの宣言（名前の列）と今のフレームの宣言から、鳴らし始める音・
-  `pub def sustainOps(prev: List[String], next: List[Sustain]): { start = List[Sustain], keep = List[Sustain], stop = List[String] }`
 - 終了判定を差し替える。既定は「Escape のエッジで終了」だが、モーダル表示中は
   `pub def quitWhen(f: (Frame, w) -> Bool \ ef, app: App[w, ef]): App[w, ef]`
 - 窓の閉じるボタン（OS の閉じる要求・GLFW の window close）をすぐの終了にせず、World へ知らせる。
@@ -264,26 +262,12 @@
   `pub def frameOf(prev: {prev = Set[GameEngine.Key]}, current: {current = Set[GameEngine.Key]}, dt: Float64, viewport: Vec2.Vec2, cursor: {prevCursor = Option[Vec2.Vec2], cursor = Vec2.Vec2}, mouse: {prevDown = Bool, down = Bool, wheel = Float64}): Frame`
 - 何も押していない・動いていない・dt 0 のフレーム（全部の欄が既定の値。viewport と cursor は (0, 0)）。
   `pub def emptyFrame(): Frame`
-- Frame#cursor に置く位置: キャプチャしている間（applied = Some(true)）は前の位置 prev のまま止め、ほかは読んだ位置 raw。
-  `pub def heldCursor(applied: Option[Bool], prev: Option[Vec2.Vec2], raw: Vec2.Vec2): Vec2.Vec2`
-- 前の位置 prev から今の位置 cursor へ動いた量（前の位置が無ければ 0）。
-  `pub def cursorDelta(prev: Option[Vec2.Vec2], cursor: Vec2.Vec2): Vec2.Vec2`
-- withFixedStep の accumulator。持ち越し carry と実フレームの経過秒 realDt を足し、
-  `pub def fixedSteps(carry: Float64, realDt: Float64, fixedDt: Float64): (Int32, Float64)`
-- withFixedStep の 2 サブステップ目以降に渡す Frame: エッジ 5 種（justPressed /
-  `pub def suppressEdges(frame: Frame): Frame`
 - 0 サブステップのフレームで捨てられそうになったエッジのバッファ。エッジは prev との
   `pub type alias PendingEdges = { justPressed = Set[GameEngine.Key], mouseClicked = Bool, mouseMoved = Bool, wheel = Float64, mouseDelta = Vec2.Vec2 }`
 - withFixedStep がフレームをまたいで持ち回す状態（持ち越し秒 + 未消費エッジ）。
   `pub type alias StepState = { carry = Float64, pending = PendingEdges, real = Clock.Clock[Clock.Real] }`
 - 起動直後の StepState（貯金ゼロ・未消費エッジなし）。
   `pub def freshStepState(): StepState`
-- バッファしたエッジを今フレームの Frame へ合流させる: justPressed は和集合・
-  `pub def mergeEdges(pending: PendingEdges, frame: Frame): Frame`
-- Frame からエッジ 5 種を抜き出してバッファの形にする（0 ステップのフレームの持ち越し用）。
-  `pub def pendingOf(frame: Frame): PendingEdges`
-- システムの列を追加順（左から右）に World へ畳み込む。
-  `pub def applySystems(frame: Frame, systems: List[(Frame, w) -> w \ ef], world: w): w \ ef`
 - 1 実フレームぶんの updateSystems 適用。fixedStep 未指定なら現行どおり frame を 1 回
   `pub def advanceFrame(app: App[w, ef], frame: Frame, state: StepState, world: w): (w, StepState) \ ef`
 - trace の 1 フレーム: そのフレームの入力・進める前後の World・鳴らす一発の音（同じ名前は 1 つ）・
@@ -296,50 +280,12 @@
   `pub def composeScene(center: Option[Vec2.Vec2], zoom: Float64, design: Vec2.Vec2, items: { world = List[Render.PlacedItem], hud = List[Render.PlacedItem] }): List[Render.PlacedItem]`
 - camera 中心と zoom から、画面に見えている world の矩形を出す（大きさ design/zoom。
   `pub def visibleOf(center: Option[Vec2.Vec2], zoom: Float64, design: Vec2.Vec2): Rect2.Rect2`
-- 監視中パスのうち「World を作り直すべき物」を watch の登録順で返す: current で見えて
-  `pub def changedPaths(watch: List[String], prev: Map[String, Int64], current: Map[String, Int64]): List[String]`
+- 時間スクラブ用に持ち回す直近の World の数（60fps で約 30 秒）。
+  `pub def historyLimit(): Int32`
 - App を走らせる単一の効果多相ランナー。startup を 1 回だけ畳み込み、いま押されているキーを prev の
   `pub def launch(app: App[w, ef]): Unit \ (ef + GameEngine.Game + GameEngine.Audio + ShaderEffect.Shader + RenderTarget.Target + Fs.FileRead + Fs.FileWrite + IO)`
 - loadApp で App を組んで launch する。flow を記録する起動では、loadApp が Fs.FileRead で読んだ中身を start の行に載せ、
   `pub def loadAndLaunch(loadApp: Unit -> App[w, ef] \ ef2): Unit \ (ef + ef2 + GameEngine.Game + GameEngine.Audio + ShaderEffect.Shader + RenderTarget.Target + Fs.FileRead + Fs.FileWrite + IO)`
-- 時間スクラブ用に持ち回す直近の World の数（60fps で約 30 秒）。
-  `pub def historyLimit(): Int32`
-- リモートコマンドを捌いた後に残る 3 つの進み方。
-  `pub enum Branch with Eq, ToString { case Paused case Resuming case Running }`
-- ウィンドウの閉じるボタンへの答え方。loop から切り出した内部 API — ゲームからは呼ばない。
-  `pub enum CloseAnswer with Eq, ToString { case Ignore case AskGame case Close }`
-- 閉じるボタンが押されたか・withCloseRequest があるか・F8 で止めているかから、閉じるボタンへの答え方を決める。
-  `pub def decideClose(input: { closing = Bool, hasCloseRequest = Bool, paused = Bool }): CloseAnswer`
-- F8 と停止状態から、このフレームの進み方と「F8 が今トグルされたか」を決める。
-  `pub def decideBranch(input: { f8Pressed = Bool, canDebug = Bool, remoteHold = Bool, wasPaused = Bool }): { branch = Branch, toggled = Bool }`
-- 跳んだ拍の後の出力の鍵: Skip は跳んだ先の鍵を「書いた」ことにし、Write は前に書いた鍵のまま
-  `pub def keysAfterJump(app: App[w, ef], world: w, written: List[String]): List[String]`
-- 実機のフレームの後の World で書くべき出力の番号（outputs の順）: 鍵が最後に書いた鍵と違う物。
-  `pub def dueOutputs(app: App[w, ef], world: w, written: List[String]): List[Int32]`
-- 止めた画面の出入りの見た目をウィンドウへ当てる。ゲームからは呼ばない（RemoteDebug が呼ぶので公開）。
-  `pub def applyHaltLook(look: CursorLook.HaltLook): Unit \ GameEngine.Game`
-- 一発で鳴らした名前とループで鳴らした名前の覚え（ゲームの間ずっと持つ）。
-  `pub type alias SoundUses = { oneShot = Set[String], looped = Set[String] }`
-- このフレームの一発の音 plays とループの音 looped を覚えに足し、初めて両方に出た名前を返す。
-  `pub def noteSoundUses(plays: List[String], looped: List[String], uses: SoundUses): (SoundUses, List[String])`
-- 一発の音（audio）のうち、鳴らす前にループを外す名前。鳴り続ける音（sustained）として
-  `pub def unloopedOneShots(plays: List[String], living: List[String]): List[String]`
-- タイル層の GPU 生成結果の持ち回し。ループが引数で持ち回す。
-  `pub type alias TileCache =`
-- まだ何も生成していない起動時の持ち回し。
-  `pub def freshTileCache(): TileCache`
-- `pub def bumpTileGen(fired: Bool, cache: TileCache): TileCache`
-- スロットに取ってある生成結果を引く。生成した時点の世代と key が今と一致した時だけ使い回せる。
-  `pub def tileCacheHit(slot: String, key: String, cache: TileCache): Option[(GpuHandle.TileVao, Int32)]`
-- スロットに生成結果があれば、その VAO を返す（世代・key が古くてもよい —
-  `pub def tileCacheVaoAt(slot: String, cache: TileCache): Option[GpuHandle.TileVao]`
-- 生成した結果をスロットへ上書きで置く（一覧表は宣言中のレイヤーの数までしか育たない）。
-  `pub def tileCacheStore(slot: String, key: String, vao: GpuHandle.TileVao, count: Int32, cache: TileCache): TileCache`
-- `pub def submitGpuItems(warnOnce: String -> Unit \ ef, items: List[Render.PlacedItem], tiles: List[GameEngine.TileMapRenderCmd], staticLayer: Option[GameEngine.StaticLayerCmd]): Unit \ (ef + GameEngine.Game + ShaderEffect.Shader)`
-- 1 コマだけ描く（窓なしで GPU に塗る 1 枚撮り・動画。render_gl の GlOffscreen.handle の下で呼ぶ）。
-  `pub def paintOnce(app: App[w, ef], world: w, tileCache: TileCache): TileCache \ (ef + GameEngine.Game + ShaderEffect.Shader + RenderTarget.Target + IO)`
-- Pass の計画を、本編より先に今の描き先へ描く（実機の毎コマと同じ道: resolvePassReads → 倍率 → drawShaders → renderCommands）。
-  `pub def drawPassPlan(warnOnce: String -> Unit \ ef, design: Vec2.Vec2, known: Set[String], plan: Render.PassPlan): Set[String] \ (ef + GameEngine.Game + ShaderEffect.Shader + RenderTarget.Target)`
 
 ## App.CursorLook — `engine_world/src/App/CursorLook.flix`
 - withCursor の宣言を最後にどう当てたか。Stale = まだ当てていない・止めた画面の見た目が上書きした

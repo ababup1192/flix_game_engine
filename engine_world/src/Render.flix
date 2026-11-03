@@ -252,7 +252,7 @@ pub mod Render {
     /// 1 回の呼び出しの中で、Spec から求める値を Spec 1 つ（同じ物）につき 1 度だけ求めるための表。
     /// 面がいくつあっても、作り置きの Spec を使い回していれば木を辿るのは Spec の数だけになる。
     /// WhyNot: Spec の中身を鍵にしない — 中身の比べ・ハッシュがそれだけで木を辿り、省きたい走査と同じだけ掛かる。
-    /// WhyNot: コマをまたいで覚えない — 持ち回れる所が pub の型（App.TileCache など）にしか無く、足すと外から見える形が変わる。
+    /// WhyNot: コマをまたいで覚えない — 持ち回れる所が pub の型（App.Internal.Paint.TileCache など）にしか無く、足すと外から見える形が変わる。
     def specTable(): IdentityHashMap[JObject, JObject] \ IO = new IdentityHashMap()
 
     /// table に spec の f の値があればそれを、無ければ f で求めて覚えてから返す（f は Spec から値を作るだけの関数）。

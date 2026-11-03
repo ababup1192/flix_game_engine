@@ -1,7 +1,7 @@
 // RenderTargetGl — レンダーターゲット（eff RenderTarget.Target）の GL 実体。FBO 1 枚 +
 // カラーテクスチャ 1 枚。ターゲットのテクスチャは registry に登録され、以降は普通の
 // スプライトとして貼られる。GL は行 0 が下なのでターゲットの中身は上下逆に格納される —
-// 反転は貼るとき（Frame.emitSprite の uv 反転）に吸収し、ここでは何もしない。
+// 反転は貼るとき（RenderFrame.emitSprite の uv 反転）に吸収し、ここでは何もしない。
 mod RenderTargetGl {
     import org.lwjgl.opengl.GL11
     import org.lwjgl.opengl.GL12

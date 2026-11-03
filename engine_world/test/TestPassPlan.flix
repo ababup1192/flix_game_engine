@@ -127,10 +127,10 @@ mod TestPassPlan {
         Assert.assertEq(expected = (1, 1, 0.5) :: (0, 0, 1.0) :: Nil,
                         specs |> List.map(sp -> (List.length(sp#surfaces), List.length(sp#drawables), sp#target#scale)))
 
-    /// GL の無い所で App.drawPassPlan を 1 回流す（描く命令は全部捨てる）。
+    /// GL の無い所で App.Internal.Paint.drawPassPlan を 1 回流す（描く命令は全部捨てる）。
     def drawPassPlanStubbed(known: Set[String], plan: Render.PassPlan): Set[String] =
         RenderTarget.runNoop(() -> ShaderEffect.runNoop(() -> run {
-            App.drawPassPlan(_ -> (), { x = 8.0, y = 8.0 }, known, plan)
+            App.Internal.Paint.drawPassPlan(_ -> (), { x = 8.0, y = 8.0 }, known, plan)
         } with handler GameEngine.Game {
             def renderCommands(_sprites, _tileMaps, _polygons, _staticLayer, k) = k(())
             def initTileBuffer(_instances, _k) = bug!("unused")

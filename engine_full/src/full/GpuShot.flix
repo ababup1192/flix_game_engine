@@ -39,7 +39,7 @@ pub mod GpuShot {
     /// GL の用意の今。
     enum State {
         case NotYet
-        case Ready(GlOffscreen.Session, App.TileCache)
+        case Ready(GlOffscreen.Session, App.Internal.Paint.TileCache)
         case Unavailable(String)
     }
 
@@ -59,7 +59,7 @@ pub mod GpuShot {
                     case State.NotYet =>
                         let opened = openSession(scale);
                         let next = match opened {
-                            case Ok(session) => State.Ready(session, App.freshTileCache())
+                            case Ok(session) => State.Ready(session, App.Internal.Paint.freshTileCache())
                             case Err(why)    =>
                                 println("[shot] GPU が使えない: ${why} — SoftRaster で塗る");
                                 State.Unavailable(why)
@@ -72,7 +72,7 @@ pub mod GpuShot {
                     case State.Ready(session, cache) =>
                         // 描き直した PNG が次の 1 枚にすぐ出るように、撮る前に絵のファイルを見直す。
                         Option.forEach(manifest -> discard GlOffscreen.refreshTextures(session, manifest), textureManifest());
-                        let next = GlOffscreen.handle(session, () -> App.paintOnce(app, prepare(world), cache));
+                        let next = GlOffscreen.handle(session, () -> App.Internal.Paint.paintOnce(app, prepare(world), cache));
                         Ref.put(State.Ready(session, next), state);
                         writeFastPng(GlOffscreen.readImage(session), shotPath())
                     case _ if mode == Mode.On => bug!("FGE_GPU=on だが GPU が使えない")

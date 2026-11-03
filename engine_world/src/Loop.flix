@@ -15,7 +15,7 @@
 /// 鳴り続ける音の effect。s はゲームが選ぶ音の型。
 pub eff Loop[s] {
     /// このフレームで sound を鳴らし続ける。mix は音量 0.0〜1.0 と高さ（1.0 = 元のまま）。
-    /// 同じ音を同じフレームに 2 回宣言したら先の 1 つが勝つ（App.sustainOps の決まり）。
+    /// 同じ音を同じフレームに 2 回宣言したら先の 1 つが勝つ（App.Internal.Output.sustainOps の決まり）。
     def hold(sound: s, mix: Loop.Mix): Unit
 }
 

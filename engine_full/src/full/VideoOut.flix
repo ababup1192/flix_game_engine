@@ -120,7 +120,7 @@ pub mod VideoOut {
         writeFramesWith(settings, video, None, worlds)
 
     /// writeFrames の、本編より先に Pass を描く形。passes = 字のアトラスの引き口 → World → Pass の計画（実機の App.withPassPlan と同じ物を渡す）。
-    /// GPU の道は App.drawPassPlan で（known はコマをまたいで持ち回す）、SoftRaster の道は HeadlessRender.passImagesOf で Pass を塗ってから本編を描く。
+    /// GPU の道は App.Internal.Paint.drawPassPlan で（known はコマをまたいで持ち回す）、SoftRaster の道は HeadlessRender.passImagesOf で Pass を塗ってから本編を描く。
     /// history は動画でも毎コマ透明（どのコマから見ても同じ絵）。bakeSurfaces は本編の面にだけ効き、Pass の中の面は毎コマ評価する。
     /// 鍵（drawhash.txt）: Pass の無いコマは writeFrames と同じ鍵。Pass のあるコマは、SoftRaster で塗る時だけ塗った Pass の画素込みの鍵で、
     /// GPU の道と鍵だけの回は `-`。
@@ -413,8 +413,8 @@ pub mod VideoOut {
         };
         let (plan, items) = build(3);
         GlOffscreen.handle(session, () -> {
-            let next = if (List.isEmpty(plan#passes)) known else App.drawPassPlan(warn, video#soft#design, known, plan);
-            App.submitGpuItems(_ -> (), items, Nil, None);
+            let next = if (List.isEmpty(plan#passes)) known else App.Internal.Paint.drawPassPlan(warn, video#soft#design, known, plan);
+            App.Internal.Paint.submitGpuItems(_ -> (), items, Nil, None);
             next
         })
 

@@ -36,7 +36,7 @@ mod TestAllocGrowth {
 
     def sustainNames(n: Int32): Int32 =
         let next = List.range(0, n) |> List.map(i -> ({ name = "s${i}", volume = 0.5, pitch = 1.0 }: App.Sustain));
-        let ops = App.sustainOps(Nil, next);
+        let ops = App.Internal.Output.sustainOps(Nil, next);
         List.length(ops#start)
 
     /// 4 分木（1 つの親が子 4 つ）で n 個の entity を並べた UI ツリーのレイアウトを解く。
@@ -80,7 +80,7 @@ mod TestAllocGrowth {
         let ratio = Int64.toFloat64(large) / Int64.toFloat64(small);
         Assert.assertTrue(ratio < 16.0)
 
-    /// App.sustainOps の割り当ては宣言の本数に比例する。
+    /// App.Internal.Output.sustainOps の割り当ては宣言の本数に比例する。
     /// 本数を 8 倍にしても、割り当ては 16 倍までしか増えない。
     @Test
     def testSustainOpsAllocatesLinearlyInDeclarationCount(): Unit \ Assert =

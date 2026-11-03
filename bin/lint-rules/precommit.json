@@ -124,6 +124,23 @@
       }
     },
     {
+      "id": "max-lines",
+      "sub": "max-lines",
+      "flags": [],
+      "pass": "matched",
+      "when": {
+        "suffixes": [
+          ".flix"
+        ],
+        "prefixes": [
+          "engine/src/",
+          "render_gl/src/",
+          "engine_world/src/",
+          "engine_tools/src/"
+        ]
+      }
+    },
+    {
       "id": "z-table",
       "sub": "z-table",
       "flags": [],

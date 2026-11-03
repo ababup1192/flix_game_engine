@@ -153,6 +153,14 @@
       "hint": "App.Frame を字で全部の欄を書かず、{ down = …, dt = … | App.emptyFrame() } の形で替える（次の版で Frame に欄が増えても止まらない。前のフレームとの差から作るなら App.frameOf）。engine の docs/migrations/0.77.0.md"
     },
     {
+      "id": "app-internal",
+      "suffixes": [".flix"],
+      "skip": ["engine/", "engine_world/", "engine_tools/", "engine_full/", "render_gl/", "bench/", "src/engine/", "src/engine_world/", "src/engine_tools/", "src/render_gl/", "lib/", "build/"],
+      "skipDirs": ["build", "lib"],
+      "pattern": "\\bApp\\.Internal\\b",
+      "hint": "App.Internal.* は App の中身でゲームからは呼ばない（版を上げると名前も形も黙って変わる）。ゲームが使う関数は App にある（App.launch・App.trace・App.traceFrame・App.frameOf・App.composeScene など。make api Q=App.）。足りない関数があれば engine に足すよう相談する"
+    },
+    {
       "id": "light-uniform-in-glsl",
       "suffixes": [".flix"],
       "rawLine": true,

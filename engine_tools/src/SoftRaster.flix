@@ -1598,7 +1598,7 @@ pub mod SoftRaster {
     def floorI(x: Float64): Int32 =
         Num.floorInt(x)
 
-    /// 表示矩形の起点（1 軸ぶん）。規約は GL の Frame.originAxis と同一 — flipH / flipV で
+    /// 表示矩形の起点（1 軸ぶん）。規約は GL の RenderFrame.originAxis と同一 — flipH / flipV で
     /// display が負になっても、覆う範囲は position から正の向きへ伸ばす。
     /// dx1 > dx2 の向きが Java2D の drawImage に鏡像を描かせるので、display は負のまま使う。
     def originAxis(centered: Bool, position: Float64, display: Float64): Float64 =

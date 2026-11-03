@@ -1,6 +1,6 @@
-// 起動の World（非 pub の App.bootWorld・App.buildBootRecord）が、記録しない起動では Doc を読み直さず、
+// 起動の World（非 pub の App.Internal.Runner.bootWorld・App.Internal.Runner.buildBootRecord）が、記録しない起動では Doc を読み直さず、
 // 記録する起動では start の行に載せた中身で、再生（Flow.play の start）が同じ World から始まること。
-mod App.TestBoot {
+mod App.Internal.Runner.TestBoot {
     use Flow.File
 
     type alias Disk = Map[String, String]
@@ -61,7 +61,7 @@ mod App.TestBoot {
     def recordOn(d: Disk, makeApp: String -> App.App[Int32, {}], env: Map[String, String], keepCaptured: Bool):
             (Result[String, (Int32, Option[(String, Map[String, String])])], Map[String, File]) =
         let (app, loaded) = loadedOn(d, makeApp);
-        fst(onDisk(d, () -> App.buildBootRecord(app, Vec2.zero(), env, if (keepCaptured) Some(loaded) else None)))
+        fst(onDisk(d, () -> App.Internal.Runner.buildBootRecord(app, Vec2.zero(), env, if (keepCaptured) Some(loaded) else None)))
 
     /// 記録の start の行と、その直後の確かめの行からなる flow。
     def flowOf(booted: Result[String, (Int32, Option[(String, Map[String, String])])], files: Map[String, File]): String =
@@ -87,24 +87,24 @@ mod App.TestBoot {
 
     @Test
     def testBootWithoutRecordingReadsNoFile(): Unit \ Assert =
-        let (_, reads) = onDisk(disk(), () -> App.bootWorld(watchedApp(docText()), Vec2.zero(), Map.empty(), false));
+        let (_, reads) = onDisk(disk(), () -> App.Internal.Runner.bootWorld(watchedApp(docText()), Vec2.zero(), Map.empty(), false));
         Assert.assertEq(expected = 0, reads)
 
     @Test
     def testBootWhileRecordingWithoutCapturedRereadsTheDocs(): Unit \ Assert =
-        let (_, reads) = onDisk(disk(), () -> App.bootWorld(watchedApp(docText()), Vec2.zero(), Map.empty(), true));
+        let (_, reads) = onDisk(disk(), () -> App.Internal.Runner.bootWorld(watchedApp(docText()), Vec2.zero(), Map.empty(), true));
         Assert.assertEq(expected = 1, reads)
 
     @Test
     def testBootWithoutRecordingStartsLikeTheReplay(): Unit \ Assert =
-        let (booted, _) = onDisk(disk(), () -> App.bootWorld(watchedApp(docText()), Vec2.zero(), Map.empty(), false));
+        let (booted, _) = onDisk(disk(), () -> App.Internal.Runner.bootWorld(watchedApp(docText()), Vec2.zero(), Map.empty(), false));
         let (replayed, _) = onDisk(disk(), () -> App.buildStart(watchedApp(docText()), Vec2.zero(), "here", Map.empty()));
         Assert.assertEq(expected = replayed, worldOf(booted))
 
     @Test
     def testRecordWithCapturedDoesNotRereadTheDocs(): Unit \ Assert =
         let (app, loaded) = loadedOn(disk(), watchedApp);
-        let (_, reads) = onDisk(disk(), () -> App.buildBootRecord(app, Vec2.zero(), Map.empty(), Some(loaded)));
+        let (_, reads) = onDisk(disk(), () -> App.Internal.Runner.buildBootRecord(app, Vec2.zero(), Map.empty(), Some(loaded)));
         Assert.assertEq(expected = 0, reads)
 
     @Test
@@ -139,7 +139,7 @@ mod App.TestBoot {
     @Test
     def testCustomReloadOnRereadsWhileRecording(): Unit \ Assert =
         let (app, loaded) = loadedOn(disk(), customReloadApp);
-        let (_, reads) = onDisk(disk(), () -> App.buildBootRecord(app, Vec2.zero(), Map.empty(), Some(loaded)));
+        let (_, reads) = onDisk(disk(), () -> App.Internal.Runner.buildBootRecord(app, Vec2.zero(), Map.empty(), Some(loaded)));
         Assert.assertEq(expected = 1, reads)
 
     @Test
@@ -160,6 +160,6 @@ mod App.TestBoot {
 
     @Test
     def testRecordingCapturesTheDocForTheStartLine(): Unit \ Assert =
-        let ((_, files), _) = onDisk(disk(), () -> Flow.Record.captureReads(() -> App.bootWorld(watchedApp(docText()), Vec2.zero(), Map.empty(), true)));
+        let ((_, files), _) = onDisk(disk(), () -> Flow.Record.captureReads(() -> App.Internal.Runner.bootWorld(watchedApp(docText()), Vec2.zero(), Map.empty(), true)));
         Assert.assertEq(expected = Some(File.Text(docText())), Map.get("doc.json", files))
 }
