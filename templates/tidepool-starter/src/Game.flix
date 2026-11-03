@@ -25,6 +25,4 @@ mod Game {
             |> App.withFingerprint(Resources.read(E2e.fingerprint))
             // 1 行の要点（flow の失敗・リモートの /step が最後の World として見せる）。
             |> App.withStatusLine(Resources.read(E2e.fingerprint))
-            // 走行中の POST /render（Studio の「生成して」）は SceneRender.all と同じ実体を呼ぶ。
-            |> App.onRenderRequest(SceneRender.allShots)
 }

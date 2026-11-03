@@ -17,7 +17,7 @@ pub mod App.Internal.Hitch {
           minors = Map.empty() }
 
     /// 1 コマぶんの測った時刻（start は 1 周の始まり、updateNs は World を進めた時間、renderNs は描く所）。
-    type alias FrameTiming = { frame = Int64, start = Int64, updateNs = Int64, renderNs = Int64, pressed = Set[GameEngine.Key], reloaded = Bool }
+    pub type alias FrameTiming = { frame = Int64, start = Int64, updateNs = Int64, renderNs = Int64, pressed = Set[GameEngine.Key], reloaded = Bool }
 
     def keysText(keys: Set[GameEngine.Key]): String =
         Set.toList(keys) |> List.map(k -> "${k}") |> String.intercalate(",")

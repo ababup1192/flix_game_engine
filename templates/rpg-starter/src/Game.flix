@@ -41,5 +41,4 @@ mod Game {
             |> App.withFlow(E2e.table())
             |> App.withFingerprint(Resources.read((_, w) -> E2e.fingerprint(w)))
             |> App.withStatusLine(Resources.read((_, w) -> E2e.fingerprint(w)))
-            |> App.onRenderRequest(SceneRender.allShots)
 }

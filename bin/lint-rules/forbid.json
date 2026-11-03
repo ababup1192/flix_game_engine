@@ -293,6 +293,15 @@
       "hint": "App.Internal.* は App の中身でゲームからは呼ばない（版を上げると名前も形も黙って変わる）。ゲームが使う関数は App にある（App.launch・App.trace・App.traceFrame・App.frameOf・App.composeScene など。make api Q=App.）。足りない関数があれば engine に足すよう相談する"
     },
     {
+      "id": "dev-request-outside-main",
+      "suffixes": [".flix"],
+      "skip": ["src/Main.flix", "src/E2e.flix", "templates/game-starter/src/Main.flix", "templates/game-starter/src/E2e.flix", "templates/rpg-starter/src/Main.flix", "templates/rpg-starter/src/E2e.flix", "templates/sound-novel-starter/src/Main.flix", "templates/sound-novel-starter/src/E2e.flix", "templates/tidepool-starter/src/Main.flix", "templates/tidepool-starter/src/E2e.flix", "engine/", "engine_world/", "engine_tools/", "engine_full/", "render_gl/", "bench/", "src/engine/", "src/engine_world/", "src/engine_tools/", "src/render_gl/", "lib/", "build/"],
+      "skipDirs": ["build", "lib", "test", "render"],
+      "notice": true,
+      "pattern": "\\bApp\\.on(?:Render|Shot)Request\\b",
+      "hint": "App.onRenderRequest・App.onShotRequest は開発の道具（リモートデバッグの /render と view=shot）の API なので、Game.app（テスト・flow・ブラウザ版と共有）では繋がず、Main（デスクトップの入口）と E2e（画面なしの入口）で繋ぐ。0.84.0 から止める（engine の docs/migrations/0.81.0.md）"
+    },
+    {
       "id": "light-uniform-in-glsl",
       "suffixes": [".flix"],
       "rawLine": true,
@@ -305,10 +314,10 @@
     "src/AssistShow.flix::game-unchecked-pure": "internet_dungeon の Math.sin・cos の包み。Num.sin・Num.cos へ寄せるまで",
     "src/CardPile.flix::game-unchecked-pure": "internet_dungeon の Math.sin の包み。Num.sin へ寄せるまで",
     "src/EndScreen.flix::game-unchecked-pure": "internet_dungeon の Math.sin・cos の包み。Num.sin・Num.cos へ寄せるまで",
-    "engine/src/GameEngine.flix::engine-contract-import": "古い GameEngine.ensureMainThread（ProcessBuilder・ProcessHandle・ArrayList）と loadScene3dLinearColor（java.io.File）。0.84.0 で消える（LwjglLayer.ensureMainThread へ）",
-    "engine/src/GameEngine.flix::engine-contract-jvm-call": "古い GameEngine.ensureMainThread（ProcessBuilder・ProcessHandle・Sys.Env）と loadScene3dLinearColor（Fs.FileRead.runWithIO）。0.84.0 で消える（LwjglLayer.ensureMainThread へ）",
+    "engine/src/GameEngine.flix::engine-contract-import": "古い GameEngine.ensureMainThread（ProcessBuilder・ProcessHandle・ArrayList）と loadScene3dLinearColor（java.io.File）。どちらも 0.84.0 で消える（LwjglLayer.ensureMainThread へ・旗はほかの古い口と一緒に）",
+    "engine/src/GameEngine.flix::engine-contract-jvm-call": "古い GameEngine.ensureMainThread（ProcessBuilder・ProcessHandle・Sys.Env）と loadScene3dLinearColor（Fs.FileRead.runWithIO）。どちらも 0.84.0 で消える（LwjglLayer.ensureMainThread へ・旗はほかの古い口と一緒に）",
     "engine/src/scene3d/Texture3d.flix::engine-contract-import": "古い Texture3d.decode（javax.imageio・java.awt・ByteArrayInputStream）。0.84.0 で消える（decodeUsing へ）",
-    "engine/src/GameEngine.flix::engine-contract-system": "古い GameEngine.ensureMainThread（System.getProperty・System.exit）と loadScene3dLinearColor（System.getProperty・System.setProperty）。0.84.0 で消える",
+    "engine/src/GameEngine.flix::engine-contract-system": "古い GameEngine.ensureMainThread（System.getProperty・System.exit）と loadScene3dLinearColor（System.getProperty・System.setProperty）。どちらも 0.84.0 で消える",
     "engine/src/GameEngine.flix::process-env-entry": "古い GameEngine.ensureMainThread が起動し直しのフラグ（JAVA_STARTED_ON_FIRST_THREAD_<pid>）を読む。ProcessEnv は engine_world へ移り engine から見えない。0.84.0 で消える"
   }
 }

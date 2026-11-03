@@ -235,7 +235,7 @@ pub mod SoftRaster3d {
     // ════════════════════════════════════════════════════════
 
     /// 場面 cmd を image へ重ねる。sf = design px → 出力の画素の倍率。textures = ビルボードと材質が引く絵（(名前, 段の平均の色空間) → 段の列。
-    /// 段 0 が元の絵。鍵の色空間は SoftRaster.mipKeySpace）。linear = 3D の色を線形の量で計算するか（偽なら 0.78 の式。0.80.0 で消える引数）。
+    /// 段 0 が元の絵。鍵の色空間は SoftRaster.mipKeySpace）。linear = 3D の色を線形の量で計算するか（偽なら 0.78 の式。0.84.0 で消える引数）。
     /// time = 材質の Spec に渡す秒（Shader 面の time と同じ物）。
     /// Native は出力の画素で塗り、Design は design の画素で塗ってから最も近い画素で広げる。
     /// 何も描かれない画素は background が Some ならその色、None なら透明（下地が見える）。重ね方は Shader 面と同じ blendPixel。

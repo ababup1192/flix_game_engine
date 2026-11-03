@@ -290,11 +290,15 @@
   `pub def visibleOf(center: Option[Vec2.Vec2], zoom: Float64, design: Vec2.Vec2): Rect2.Rect2`
 - 時間スクラブ用に持ち回す直近の World の数（60fps で約 30 秒）。
   `pub def historyLimit(): Int32`
+- 開発の道具（リモートデバッグの命令口・ゲームの名簿・flow の記録・ヒッチの見張り・Doc の保存検知・F8 の注釈の書き出し・
+  `pub type alias DevTools[w: Type, efTools: Eff] = DevToolsFactory[w, efTools]`
 - App を実機で走らせる。startup を 1 回だけ畳み込み、いま押されているキーを prev の
   `pub def launch(app: App[w, {}]): Unit \ (Platform.Services + Platform.Annotation + Fs.FileRead + Fs.FileWrite + IO)`
 - loadApp で App を組んで launch する。flow を記録する起動では、loadApp が Fs.FileRead で読んだ中身を start の行に載せ、
   `pub def loadAndLaunch(loadApp: Unit -> App[w, {}] \ ef2): Unit \ (ef2 + Platform.Services + Platform.Annotation + Fs.FileRead + Fs.FileWrite + IO)`
-- `pub def launchForBench(app: App[w, ef]): Unit \ (ef + Platform.Services + Platform.Annotation + Fs.FileRead + Fs.FileWrite + IO)`
+- 開発の道具の組を選んで App を実機で走らせる（launch はデスクトップの道具の組でこれを呼ぶ）。
+  `pub def launchWithDevTools(tools: DevTools[w, efTools], app: App[w, {}]): Unit \ (efTools + Platform.Services + Fs.FileRead + Fs.FileWrite + IO)`
+- `pub def launchForBench(app: App[w, ef]): Unit \ (ef + Platform.Services + Fs.FileRead + Fs.FileWrite + IO)`
 
 ## App.CursorLook — `engine_world/src/App/CursorLook.flix`
 - withCursor の宣言を最後にどう当てたか。Stale = まだ当てていない・止めた画面の見た目が上書きした
@@ -317,6 +321,12 @@
   `pub def haltEnterLook(): HaltLook`
 - 止めた画面を抜ける時の見た目: バッジを外し、形だけ戻す。見せるか隠すかは触らない（動き出した拍に
   `pub def haltLeaveLook(): HaltLook`
+
+## App.DevTools — `engine_world/src/App/DevTools.flix`
+- 道具なしの組。命令口・flow の記録・ゲームの名簿・ヒッチの見張り・Doc の保存検知・F8 の注釈の書き出しのどれも動かさず、
+  `pub def none(): App.DevTools[w, {}]`
+- デスクトップの道具の組。env は入口の頭で読んだ環境変数の表（ProcessEnv.snapshot()。DEBUG_HTTP_PORT・FLOW_RECORD・START を読む）。
+  `pub def desktop(env: Map[String, String]): App.DevTools[w, Platform.Annotation]`
 
 ## App.GameRegistry — `engine_world/src/App/GameRegistry.flix`
 - 書き置き 1 行。

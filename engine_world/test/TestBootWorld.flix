@@ -61,7 +61,7 @@ mod App.Internal.Runner.TestBoot {
     def recordOn(d: Disk, makeApp: String -> App.App[Int32, {}], env: Map[String, String], keepCaptured: Bool):
             (Result[String, (Int32, Option[(String, Map[String, String])])], Map[String, File]) =
         let (app, loaded) = loadedOn(d, makeApp);
-        fst(onDisk(d, () -> App.Internal.Runner.buildBootRecord(app, Vec2.zero(), env, if (keepCaptured) Some(loaded) else None)))
+        fst(onDisk(d, () -> App.Internal.DevTools.buildBootRecord(app, if (keepCaptured) Some(loaded) else None, reread -> App.Internal.Runner.bootWorld(app, Vec2.zero(), env, reread))))
 
     /// 記録の start の行と、その直後の確かめの行からなる flow。
     def flowOf(booted: Result[String, (Int32, Option[(String, Map[String, String])])], files: Map[String, File]): String =
@@ -104,7 +104,7 @@ mod App.Internal.Runner.TestBoot {
     @Test
     def testRecordWithCapturedDoesNotRereadTheDocs(): Unit \ Assert =
         let (app, loaded) = loadedOn(disk(), watchedApp);
-        let (_, reads) = onDisk(disk(), () -> App.Internal.Runner.buildBootRecord(app, Vec2.zero(), Map.empty(), Some(loaded)));
+        let (_, reads) = onDisk(disk(), () -> App.Internal.DevTools.buildBootRecord(app, Some(loaded), reread -> App.Internal.Runner.bootWorld(app, Vec2.zero(), Map.empty(), reread)));
         Assert.assertEq(expected = 0, reads)
 
     @Test
@@ -139,7 +139,7 @@ mod App.Internal.Runner.TestBoot {
     @Test
     def testCustomReloadOnRereadsWhileRecording(): Unit \ Assert =
         let (app, loaded) = loadedOn(disk(), customReloadApp);
-        let (_, reads) = onDisk(disk(), () -> App.Internal.Runner.buildBootRecord(app, Vec2.zero(), Map.empty(), Some(loaded)));
+        let (_, reads) = onDisk(disk(), () -> App.Internal.DevTools.buildBootRecord(app, Some(loaded), reread -> App.Internal.Runner.bootWorld(app, Vec2.zero(), Map.empty(), reread)));
         Assert.assertEq(expected = 1, reads)
 
     @Test
@@ -164,4 +164,24 @@ mod App.Internal.Runner.TestBoot {
     def testRecordingCapturesTheDocForTheStartLine(): Unit \ Assert =
         let ((_, files), _) = onDisk(disk(), () -> Flow.Record.captureReads(() -> App.Internal.Runner.bootWorld(watchedApp(docText()), Vec2.zero(), Map.empty(), true)));
         Assert.assertEq(expected = Some(File.Text(docText())), Map.get("doc.json", files))
+
+    /// 起動の World を「渡された環境変数の表の大きさ」にする boot。
+    def envSizeBoot(env: Map[String, String], _reread: Bool): Result[String, (Int32, Option[(String, Map[String, String])])] =
+        Ok((Map.size(env), None))
+
+    /// 道具なしの組は環境変数を読まない（START が効かない）。
+    @Test
+    def testNoToolsBootWithEmptyEnv(): Unit \ {Assert, IO} =
+        let hooks: App.Internal.DevTools.Hooks[Int32, {}, {}] = App.Internal.DevTools.none();
+        let (booted, _) = run { hooks#open((env, reread) -> checked_ecast(envSizeBoot(env, reread))) } with Fs.FileRead.runWithIO;
+        Assert.assertEq(expected = Ok((0, None)), booted)
+
+    /// デスクトップの組は入口で読んだ環境変数の表をそのまま渡す（START は withDebug が無くても効く）。
+    @Test
+    def testDesktopToolsBootWithTheirEnv(): Unit \ {Assert, IO} =
+        let app: App.App[Int32, {}] = App.make(0);
+        let hooks = App.Internal.DevTools.desktopOf(Map#{"START" => "here"}, None, app);
+        let (booted, tools) = run { hooks#open((env, reread) -> checked_ecast(envSizeBoot(env, reread))) } with Fs.FileRead.runWithIO;
+        hooks#close(tools);
+        Assert.assertEq(expected = Ok((1, None)), booted)
 }

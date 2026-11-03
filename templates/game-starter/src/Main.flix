@@ -1,5 +1,5 @@
 // エントリーポイント。App の組み立ては Game.app（flow の入口 E2e とテストも同じ物を使う）。
-// ここで足すのは main だけが知る物（GPU のアトラス・静的な枠・終了の確認・注釈・デバッグの印）。
+// ここで足すのは main だけが知る物（GPU のアトラス・静的な枠・終了の確認・注釈・デバッグの印・開発の道具の /render）。
 // 外の世界に触れる処理（effect）は隠さず with で並べる。
 // 複数システムの明示的な列挙が要る高度なゲームは、make から始める従来のビルダー（addSystem / withView / …）へ降りる。
 
@@ -29,6 +29,8 @@ def main(): Unit \ IO =
                           // HUD（App.withHudView）を足したら、HUD の層の enum を ZOrder に作ってその列を渡す。
                           layers = ZOrder.layers(), hudLayers = (Nil: List[ZOrder.Layer]) }))
                     |> App.withDebug(App.debugFromEnv())
+                    // WhyNot: Game.app で繋がない — Game.app はテスト・flow・ブラウザ版と共有するので、開発の道具（POST /render）を持たせない。
+                    |> App.onRenderRequest(SceneRender.allShots)
             })
         } with LwjglLayer.withProject(".")
           with Fs.FileRead.runWithIO

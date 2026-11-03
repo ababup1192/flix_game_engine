@@ -1,6 +1,6 @@
 // エントリーポイント。描く元（Doc とシナリオ = Res）とセーブデータ（saves/novel.json）は App を組む前に読み、その値から初期 World を作る
 // （壊れていても既定値で必ず起動する）。App の組み立ては Game.app（flow の入口 E2e とテストも同じ物を使う）。
-// ここで足すのは main だけが知る物（デバッグの印・セーブを書く出力・今の時刻）と、外の世界に触れる処理（effect）のハンドラ。
+// ここで足すのは main だけが知る物（デバッグの印・開発の道具の /render と view=shot・セーブを書く出力・今の時刻）と、外の世界に触れる処理（effect）のハンドラ。
 
 use fge::{App, LwjglLayer, Resources}
 
@@ -19,6 +19,9 @@ def main(): Unit \ IO =
                     |> App.addOutput(Resources.liftOutput({ keyOf = w -> if (w#saveRev == 0) "" else Int32.toString(w#saveRev),
                                                             write = w -> Saves.write(w#saves), onJump = App.OnJump.Skip }))
                     |> App.withDebug(App.debugFromEnv())
+                    // WhyNot: Game.app で繋がない — Game.app はテスト・flow・ブラウザ版と共有するので、開発の道具（POST /render）を持たせない。
+                    |> App.onRenderRequest(SceneRender.allShots)
+                    |> App.onShotRequest(Resources.read(SceneRender.shotOf))
             })
         } with LwjglLayer.withProject(".")
           with Fs.FileRead.runWithIO

@@ -222,7 +222,7 @@ mod Render3d {
         sceneWarnedRef = Ref[Set[String], Static],
         // 前に takeCounts してからの数（[置いた物, 描いた物, draw call, 落とした点光源, 落としたスポット]。FrameDiagnostics.Diagnostics.scene3dCounts の元）。
         countsHolder = Array[Int32, Static],
-        // 3D の色を線形の量で計算するか（project.json の scene3dLinearColor。GL の文脈を作る時に 1 回だけ決める。0.80.0 で消える）。
+        // 3D の色を線形の量で計算するか（project.json の scene3dLinearColor。GL の文脈を作る時に 1 回だけ決める。0.84.0 で消える）。
         linearColor = Bool
     }
 

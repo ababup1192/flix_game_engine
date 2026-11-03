@@ -1,6 +1,6 @@
 // エントリーポイント。Doc は App を組む前に読み、その値から描く元（Res）を作る
 // （壊れていても defaults で必ず起動する）。App の組み立ては Game.app（flow の入口 E2e とテストも同じ物を使う）。
-// ここで足すのは main だけが知る物（GPU のアトラス・静的な枠・終了の確認・注釈・デバッグの印）。
+// ここで足すのは main だけが知る物（GPU のアトラス・静的な枠・終了の確認・注釈・デバッグの印・開発の道具の /render）。
 //
 // 1 手の規則（動く・押す・水の広がり・流された・クリア）は World.flix と Tide.flix。まず World 冒頭の図を読むとよい。
 use fge::{App, LwjglLayer, Resources}
@@ -26,6 +26,8 @@ def main(): Unit \ IO =
                         { facts = ("面", "${World.levelOf(w)}") :: ("状態", E2e.fingerprint(res, w)) :: ("終了の確認", "${w#quit}") :: Nil,
                           layers = ZOrder.layers(), hudLayers = (Nil: List[ZOrder.Layer]) }))
                     |> App.withDebug(App.debugFromEnv())
+                    // WhyNot: Game.app で繋がない — Game.app はテスト・flow・ブラウザ版と共有するので、開発の道具（POST /render）を持たせない。
+                    |> App.onRenderRequest(SceneRender.allShots)
             })
         } with LwjglLayer.withProject(".")
           with Fs.FileRead.runWithIO

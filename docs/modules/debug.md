@@ -17,6 +17,7 @@
 | 知らない名前に「もしかして」の候補を付ける | Suggest.hint / near |
 | 生成した絵に出ない指定を知る（実機との食い違い防止） | SoftRaster（dropped）/ [対応表](../backend-parity.md) |
 | 描き出した 1 枚に「この塊は何として描いたか」の目録を添える（材質の色の潰れ・主役の埋没を数で出す） | RenderManifest（検査を鳴らす条件は intent。実行中の矩形の記録は Annotate、UI の幾何破綻は RenderLint） |
+| 開発の道具（命令口・flow の記録・名簿・ヒッチの見張り・保存検知・F8 の注釈）を持たずにゲームを走らせる（ブラウザ版の入口・配る版） | App.DevTools（`App.launchWithDevTools(App.DevTools.none(), app)`） |
 | 走行中に生成した絵を静止画の描き出しでも同じ絵にする | HeadlessRender.imagePngs / imageTextureInfo（実例: `templates/tidepool-starter/src/render/SceneRender.flix`） |
 
 ## モジュール 1 行紹介
@@ -27,5 +28,6 @@
 - **Annotate** — 実行中のゲームを一時停止して、画面の気になる場所を矩形で囲んで記録する。App.withAnnotationContext でゲームが「その瞬間の文脈」（場面・台本の行など (見出し, 値) の並びと、層の enum の列。z の範囲は zRange から引く）を渡すと、チケットの README 冒頭と z の横に載る。App.withWorldDump を繋ぐとその瞬間の World の要約が world.json として同梱される（チケットから直す Doc を引く順: README の文脈 → annotation.json → world.json）。README では 1 字ずつ置かれた字を 1 行の文字列に束ねて出す。
 - **App.RemoteDebug** — 起動中のゲームを外部プロセスが HTTP で操作・観測する口。POST /render は App.onRenderRequest で登録した「描き出しの実体」を温まった JVM で実行し、描き出したパス列を返す（プレイ状態には触れない）。`view=shot` は App.onShotRequest で今の World を 1 枚に描く。
 - **App.Headless** — 窓を開かないゲーム。始まり（`talk node=… line=…` など）から組んで 1 枚撮る口を、待ち受けか 1 回きり（FGE_SHOT）で開く。セーブも記録も書かない。
+- **App.DevTools** — 開発の道具（リモートデバッグの命令口・ゲームの名簿・flow の記録・ヒッチの見張り・Doc の保存検知・F8 の注釈の書き出し・環境変数の表）の組。`App.launch` はデスクトップの組（`App.DevTools.desktop(env)`）で走り、道具を持たない起動（ブラウザ版の入口など）は `App.launchWithDevTools(App.DevTools.none(), app)`。
 - **App.GameRegistry** — DEBUG で起動したゲームの命令口の書き置き（~/.flix_ge_studio/games.json）。DEBUG_HTTP_PORT が無ければ空いたポートを自分で取って書く。
 - **GameLogger** — 起きたことを 1 行ずつログに積み、あとでまとめて取り出す effect。

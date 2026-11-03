@@ -513,6 +513,10 @@ pub mod App {
     pub def debugOf(env: Map[String, String]): Bool =
         Map.getWithDefault("DEBUG", "", env) != ""
 
+    /// デバッグ機能が使える構成か（debug 有効 かつ 凍結画面を描く手段 = view か debugView がある）。
+    def canDebug(r: Rec[w, ef]): Bool =
+        r#debug and (Option.nonEmpty(r#view) or Option.nonEmpty(r#debugView))
+
     /// 自前描画（view = None）のゲームがデバッグ機能（F8）を使えるようにする生投影を繋ぐ。
     /// f は World を描画チャンネル（drawable / tileMap / polygon）へ投影する（描画はしない）。
     /// font は一時停止中のメッセージ表示に使うフォントアトラス名（そのゲームが持つ物を指定）。
@@ -1045,6 +1049,19 @@ pub mod App {
 
     // ── ランナー: 起動して、閉じるまで回す ──
 
+    // 開発の道具の組の中身: App を受けて、ループが呼ぶフックの組を作る関数。
+    // WhyNot: 道具の組を record のまま pub にしない — 外で組めると、道具のフックを直に書いたゲームが App の中の型に縛られる。
+    enum DevToolsFactory[w: Type, efTools: Eff](App[w, {}] -> App.Internal.DevTools.Hooks[w, {}, efTools])
+
+    /// 開発の道具（リモートデバッグの命令口・ゲームの名簿・flow の記録・ヒッチの見張り・Doc の保存検知・F8 の注釈の書き出し・
+    /// 環境変数の表）の組。App.DevTools.none()（道具なし）か App.DevTools.desktop(env)（デスクトップの道具）で作り、
+    /// launchWithDevTools へ渡す。efTools は道具が加える機種の effect（デスクトップは Platform.Annotation・道具なしは {}）。
+    pub type alias DevTools[w: Type, efTools: Eff] = DevToolsFactory[w, efTools]
+
+    /// デスクトップの道具の組。captured = App を組む間に読んだファイルの中身（flow の記録の start の行に載せる。控えていなければ None）。
+    def desktopTools(env: Map[String, String], captured: Option[Map[String, Flow.File]]): DevTools[w, Platform.Annotation] =
+        DevToolsFactory.DevToolsFactory(app -> App.Internal.DevTools.desktopOf(env, captured, app))
+
     /// App を実機で走らせる。startup を 1 回だけ畳み込み、いま押されているキーを prev の
     /// 種にしてループへ入る（起動時にすでに押されているキーは、一度離すまでエッジにならない）。
     ///
@@ -1052,28 +1069,37 @@ pub mod App {
     /// （ゲームの src の unsafe と、effect を消す unchecked_cast は lint-forbid が止める）。
     /// effect を持つ App は画面なしの道（App.trace・App.traceFrame・flow）とテストで流す。
     /// 機種の effect（Platform.Services と Platform.Annotation）と Fs は Main が `with` で明示的に張る。
-    /// デバッグ有効（withDebug）かつ環境変数 DEBUG_HTTP_PORT があれば、リモートデバッグの
-    /// HTTP エンドポイントも一緒に立ち上がる（例: `DEBUG=1 DEBUG_HTTP_PORT=7777 flix run`）。
+    /// 開発の道具はデスクトップの組（App.DevTools.desktop）: デバッグ有効（withDebug）かつ環境変数 DEBUG_HTTP_PORT があれば、
+    /// リモートデバッグの HTTP エンドポイントも一緒に立ち上がる（例: `DEBUG=1 DEBUG_HTTP_PORT=7777 flix run`）。
     /// 組み終えた App を渡すこの形では、flow を記録する起動は Doc を読み直して start の行に載せる（App.loadAndLaunch は読み直さない）。
     pub def launch(app: App[w, {}]): Unit \ (Platform.Services + Platform.Annotation + Fs.FileRead + Fs.FileWrite + IO) =
-        App.Internal.Runner.launchWith(app, None, ProcessEnv.snapshot())
+        launchWithDevTools(App.DevTools.desktop(ProcessEnv.snapshot()), app)
 
     /// loadApp で App を組んで launch する。flow を記録する起動では、loadApp が Fs.FileRead で読んだ中身を start の行に載せ、
     /// Doc を読み直さない。loadApp の中の効果（LoadProgress など）は、外の handler が受ける。組んだ App は launch と同じく純粋な物だけ。
     pub def loadAndLaunch(loadApp: Unit -> App[w, {}] \ ef2): Unit \ (ef2 + Platform.Services + Platform.Annotation + Fs.FileRead + Fs.FileWrite + IO) =
         let env = ProcessEnv.snapshot();
         // WhyNot: 記録しないと env で分かる起動で中身を控えない — 3D の形などの大きな字を、起動の World が決まるまで抱えることになる。
-        if (not debugOf(env) or Option.isEmpty(Flow.Record.pathOf(env))) App.Internal.Runner.launchWith(loadApp(), None, env)
+        if (not debugOf(env) or Option.isEmpty(Flow.Record.pathOf(env))) launchWithDevTools(App.DevTools.desktop(env), loadApp())
         else {
             let (app, read) = Flow.Record.captureReads(loadApp);
-            App.Internal.Runner.launchWith(app, Some(read), env)
+            launchWithDevTools(desktopTools(env, Some(read)), app)
         }
 
-    /// 系の中で IO を測る bench のための launch（effect を持つ App も受ける）。ゲームからは呼ばない
+    /// 開発の道具の組を選んで App を実機で走らせる（launch はデスクトップの道具の組でこれを呼ぶ）。
+    /// 道具を持たない起動（ブラウザ版の入口など）は `App.launchWithDevTools(App.DevTools.none(), app)` と書く:
+    /// 命令口・記録・名簿・ヒッチの見張り・保存検知・F8 の注釈の書き出しのコードへ呼び出しが届かず、Platform.Annotation も要らない。
+    /// 道具なしでは環境変数を読まないので、START も効かない（いつも先頭の始まりから）。F8 で止めて囲んでも注釈は書き出さない。
+    /// 道具なしの入口では App.debugFromEnv も呼ばない（環境変数を読む JVM の API（System.getenv）が残る）。withDebug は値で渡す。
+    pub def launchWithDevTools(tools: DevTools[w, efTools], app: App[w, {}]): Unit \ (efTools + Platform.Services + Fs.FileRead + Fs.FileWrite + IO) =
+        let DevToolsFactory.DevToolsFactory(attach) = tools;
+        App.Internal.Runner.runLoop(app, attach(app))
+
+    /// 系の中で IO を測る bench のための launch（effect を持つ App も受ける）。開発の道具は持たない。ゲームからは呼ばない
     /// （ゲームの src で書くと lint-forbid の launch-for-bench が止める）。
     // WhyNot: launch を効果多相に戻さない — 実機の入口が effect を持つ App を受けると、系が IO に触らないことを型で言えなくなる。
-    pub def launchForBench(app: App[w, ef]): Unit \ (ef + Platform.Services + Platform.Annotation + Fs.FileRead + Fs.FileWrite + IO) =
-        App.Internal.Runner.launchWith(app, None, ProcessEnv.snapshot())
+    pub def launchForBench(app: App[w, ef]): Unit \ (ef + Platform.Services + Fs.FileRead + Fs.FileWrite + IO) =
+        App.Internal.Runner.runLoop(app, App.Internal.DevTools.none())
 
     // WhyNot: 同じ 10 行を UiRender・SortingLayer・App に 1 つずつ置く。pub にするとゲームから z を書き換えられ、
     //   どの層に入るかが表から読めなくなる（Flix 0.77 にはパッケージの中だけで見える pub が無い）。

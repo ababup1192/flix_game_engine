@@ -15,10 +15,10 @@ pub mod App.Internal.Halt {
     /// World には一切触れない（凍結中の絵は選んだ World から毎フレーム投影し直す）。
     /// view のゲームは走っている間と同じ renderFrame で描く（見え方だけが pausedLook）。
     /// debugView（生チャンネル投影）のゲームは描画命令へ見え方を掛ける（renderPaused）。
-    /// 塗ったコマを画面へ出す（presentFrame）のは呼ぶ側。
-    pub def pausedStep(app: App[w, ef], warnOnce: String -> Unit, design: Vec2.Vec2, world: w, history: List[w], frame: App.Frame,
+    /// 塗ったコマを画面へ出す（presentFrame）のは呼ぶ側。saveAnnotation は注釈を書き出す開発の道具（書いたフォルダ。持たなければ None）。
+    pub def pausedStep(app: App[w, ef], saveAnnotation: GameEngine.AnnotationRequest -> Option[String] \ efTools, warnOnce: String -> Unit, design: Vec2.Vec2, world: w, history: List[w], frame: App.Frame,
                        anno: Annotate.State, painted: App.Internal.Paint.Painted):
-            (Annotate.State, Option[String], App.Internal.Paint.Painted) \ (ef + Platform.Input + Platform.Rendering + RenderTarget.Target + Platform.Annotation + IO) =
+            (Annotate.State, Option[String], App.Internal.Paint.Painted) \ (ef + Platform.Input + Platform.Rendering + RenderTarget.Target + efTools + IO) =
         let r = App.rec(app);
         let historyLen = Int32.max(1, List.length(history));
         let scrubbed = Annotate.scrubStep(
@@ -71,7 +71,7 @@ pub mod App.Internal.Halt {
                                     List.append(App.sceneItems(app, design, atlas, warnOnce, displayed, toItems),
                                                 App.Internal.Paint.staticPausedItems(app, design, displayed)));
                         let hitList = Annotate.hits(name -> Platform.GpuResources.getTextureInfo(name), rect, items);
-                        (writeAnnotation(design, rect, shownFrame, dump, hitList), shotPainted)
+                        (saveAnnotation(buildAnnotationRequest(design, rect, shownFrame, dump, hitList)), shotPainted)
                     case None => (None, painted)
                 };
                 let shown = toastAfter(emitted, saved, next);
@@ -85,7 +85,7 @@ pub mod App.Internal.Halt {
                             Annotate.hitsFromDrawables(name -> Platform.GpuResources.getTextureInfo(name), rect, drawables)
                         case None => Nil
                     };
-                    let (shown, saved) = finishPaused({ design = design, cursor = input#cursor, atlas = atlas,
+                    let (shown, saved) = finishPaused(saveAnnotation, { design = design, cursor = input#cursor, atlas = atlas,
                                                          historyLen = historyLen, shownFrame = shownFrame },
                                                        next, emitted, dump,
                                                        { drawables = drawables, tileMaps = tileMaps, polygons = polygons }, hitList);
@@ -126,35 +126,34 @@ pub mod App.Internal.Halt {
 
     /// debugView のゲームの一時停止フレームの締め: 矩形が確定していれば注釈を書き出してトーストを出し、凍結画面を描く。
     /// 返すのは次の停止の状態と、書き出したチケットのフォルダ（遊んだ記録の写しを入れる所）。
-    def finishPaused(ctx: { design = Vec2.Vec2, cursor = Vec2.Vec2, atlas = FontAtlas,
+    def finishPaused(saveAnnotation: GameEngine.AnnotationRequest -> Option[String] \ efTools, ctx: { design = Vec2.Vec2, cursor = Vec2.Vec2, atlas = FontAtlas,
                             historyLen = Int32, shownFrame = Int64 },
                      anno: Annotate.State, emitted: Option[Rect2.Rect2],
                      dump: { text = String, context = Annotate.Table },
-                     channels: DebugChannels, hitList: List[Annotate.Hit]): (Annotate.State, Option[String]) \ (Platform.Draw2d + Platform.Annotation) =
+                     channels: DebugChannels, hitList: List[Annotate.Hit]): (Annotate.State, Option[String]) \ (Platform.Draw2d + efTools) =
         // saveAnnotation は直前に塗ったコマを撮るので、等倍・重ね物無しのコマを先に塗る。
         let saved = match emitted {
             case Some(rect) =>
                 Platform.Draw2d.renderCommands(channels#drawables, channels#tileMaps, channels#polygons, None);
-                writeAnnotation(ctx#design, rect, ctx#shownFrame, dump, hitList)
+                saveAnnotation(buildAnnotationRequest(ctx#design, rect, ctx#shownFrame, dump, hitList))
             case None => None
         };
         let shown = toastAfter(emitted, saved, anno);
         renderPaused(ctx, shown, channels);
         (shown, saved)
 
-    /// 確定した矩形の注釈一式（JSON・README の要約・等倍の描画命令）を組んでエンジンへ渡す。
-    /// ファイルへの書き出しとスクリーンショット撮影・シャッター音はエンジンの saveAnnotation が
-    /// 引き受ける。戻り値は保存先のディレクトリパス（失敗時 None）。
-    def writeAnnotation(design: Vec2.Vec2, rect: Rect2.Rect2, frameNo: Int64,
-                        dump: { text = String, context = Annotate.Table },
-                        hitList: List[Annotate.Hit]): Option[String] \ Platform.Annotation =
+    /// 確定した矩形の注釈一式（JSON・README の要約）を、開発の道具の saveAnnotation へ渡す依頼に組む。
+    /// ファイルへの書き出しとスクリーンショット撮影・シャッター音は道具（デスクトップは Platform.Annotation の handler）が引き受ける。
+    def buildAnnotationRequest(design: Vec2.Vec2, rect: Rect2.Rect2, frameNo: Int64,
+                               dump: { text = String, context = Annotate.Table },
+                               hitList: List[Annotate.Hit]): GameEngine.AnnotationRequest =
         let dumpText = dump#text;
         let body = Annotate.readmeBodyWith(dump#context, { frame = frameNo, rect = rect }, hitList);
-        Platform.Annotation.saveAnnotation({
+        {
             frame = frameNo, rect = rect,
             json = Annotate.annotationJsonWith(dump#context, { frame = frameNo, design = design, rect = rect }, hitList),
             readmeBody = if (dumpText == "") body else body + "\n- シム状態のダンプ: world.json",
-            worldDump = dumpText })
+            worldDump = dumpText }
 
     /// debugView のゲームの凍結中の絵を描く: ドラッグ中の矩形を重ね、ズーム・パンを適用して描画命令にする。
     /// 保存完了メッセージとスクラブ位置は見え方の適用後に重ねるので、ズーム中も画面に固定される。

@@ -56,7 +56,7 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | 一人称で見ている物を調べる（照準の先の物の名前・E で調べる・E で扉） | `Camera3d.forwardRay(cam)` → `Ray3d.pickNearest(ray, 距離, 的)`（的は `Ray3d.boxTargetsOf(n -> 鍵, nodes)`。壁も「壁」の鍵で入れて遮る。距離と向きの内積で代わりにしない） |
 | 3D の場面の背景を空のグラデーション（天頂・地平・地面）にする | `{ sky = Some(Scene3d.gradientSky(天頂, 地平, 地面)) \| Scene3d.scene(..) }`（寄り方は `Scene3d.withSkyCurve`。2D の面を下に敷いて地平の高さを手で計算しない・地平の色をかすみの色にそろえると継ぎ目が消える） |
 | 3D の窓ガラス・網・水面（向こうが透ける物） | 材質に `Scene3d.withAlphaBlend(true, m)`（裏から見えるなら `withDoubleSided(true, ..)`）・glb の `alphaMode: BLEND` / `MASK` は `Gltf.loadTexturedUsing` がそのまま当てる（cutout で代わりにしない・doubleSided は当てないので `part#gltfMaterial#doubleSided` を見てゲームが当てる） |
-| 0.79 にしたら 3D の部屋の色・明るさが変わった（前の見え方に一時的に戻す） | ゲームの project.json に `"scene3dLinearColor": false`（0.79 の 1 版だけ・0.80.0 で消える・変えたら起動し直す）。合わせ直すなら ambient・光の intensity と range を線形の目盛りで（engine の `docs/migrations/0.79.0.md`・`docs/scene3d.md` の「3D の色」。2D の絵は変わらないので 2D を直さない） |
+| 0.79 にしたら 3D の部屋の色・明るさが変わった（前の見え方に一時的に戻す） | ゲームの project.json に `"scene3dLinearColor": false`（0.83 まで・0.84.0 で消える・変えたら起動し直す）。合わせ直すなら ambient・光の intensity と range を線形の目盛りで（engine の `docs/migrations/0.79.0.md`・`docs/scene3d.md` の「3D の色」。2D の絵は変わらないので 2D を直さない） |
 | 3D の看板・溶岩・glb の emissive を強く光らせる（1 を超える明るさ） | `Scene3d.withEmissionIntensity(k, 材質)`（線形の倍率。Spec の emission に 1 を超える色を書かない・glb の emissive_strength は `Gltf.loadTexturedUsing` がここへ入れる） |
 | 3D の手すり・金網・電線のような細い物が欠ける・ちらつく | 場面の Pass を `RenderTarget.withMsaa(4, RenderTarget.windowDescriptor() \|> RenderTarget.withHdr)`（cutout の縁も alpha to coverage でなめらかになる・画面なしの描き出しには掛からない）・それでも残る縁は `PostProcess.fxaaSpec` |
 | 灯りの反対の地面へ倒した影（ドット絵の走りから） | `Shadow.projectedRuns`（`PxSprite.runs` を渡す） |
@@ -71,6 +71,7 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | 好きな場面から起動・テスト・遊んだ通りに再生 | `App.withStarts`（`START=`・`startOrBug`）・記録は `make flow` で再生 |
 | 実機の GL の絵が同じ起動で毎回同じかを、頭の数コマを撮って確かめる（2 コマ目以降も） | `FLIX_GE_FIXED_DT=1/60`（dt を固定）+ `FLIX_GE_HIDDEN=1` + `FLIX_GE_FRAME_SHOT=<フォルダ>` + `START=<場面>` で `make run RUN_SECONDS=30` を 2 回（撮る口は 64 枚で止まるだけで窓は閉じない）し、`frame-N.png` を比べる |
 | 起動の読み込みが数秒かかる・起動画面でカーソルが応答なしのくるくるになる | 読み込みを `LoadProgress.mapWithProgress` / `parMapWithProgress` で区切る（実機は起動画面が進みウィンドウが応答する）・並列の仕事で絵を解くなら頭で `let dec = LoadProgress.imageDecoder()` を受け取り仕事へ渡す（`Gltf.fromGlbTexturedUsing(dec, ..)`・`Texture3d.decodeUsing(dec, ..)`。仕事の中から op は呼べない）・描き出しとテストの入口は `HeadlessLoad.handle`（絵を解かないなら `LoadProgress.runNoop` でもよい）・main は `App.loadAndLaunch(() -> 組む式)`（`make debug` でも Doc を読み直さない。engine の `docs/startup.md`） |
+| 開発の道具（リモートデバッグ・flow の記録・ゲームの名簿・ヒッチの見張り・Doc の保存検知・F8 の注釈）を持たずに走らせる（ブラウザ版の入口など） | `App.launchWithDevTools(App.DevTools.none(), app)`（`App.debugFromEnv()` は呼ばず `withDebug` は値で・`App.launch` / `loadAndLaunch` はデスクトップの道具 `App.DevTools.desktop(env)` のまま）・`App.onRenderRequest` / `onShotRequest` は `Game.app` でなく `Main` で繋ぐ（lint `dev-request-outside-main`） |
 | macOS で窓を開くゲームの main の頭（`-XstartOnFirstThread` で起動し直す） | `if (LwjglLayer.ensureMainThread()) () else …`（`GameEngine.ensureMainThread` は 0.84.0 で消える） |
 | 曲の拍・小節に乗せる | `Duration.Bars` / `ToNextBar` / `ToPickup` + `Timeline.tempo` |
 | 演出の長さ・待ち・溜めの目安 | engine の `docs/pacing.md` |

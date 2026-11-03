@@ -538,13 +538,13 @@ mod TestApp {
     def testChangedPathsNoChangeIsEmpty(): Unit \ Assert =
         let times = Map#{"a.json" => 100i64, "b.json" => 200i64};
         Assert.assertEq(expected = Nil,
-            App.Internal.Runner.changedPaths("a.json" :: "b.json" :: Nil, times, times))
+            App.Internal.DevTools.changedPaths("a.json" :: "b.json" :: Nil, times, times))
 
     // 更新時刻の変化: 変わったパスだけが返る。
     @Test
     def testChangedPathsMtimeChangeFires(): Unit \ Assert =
         Assert.assertEq(expected = "a.json" :: Nil,
-            App.Internal.Runner.changedPaths("a.json" :: "b.json" :: Nil,
+            App.Internal.DevTools.changedPaths("a.json" :: "b.json" :: Nil,
                 Map#{"a.json" => 100i64, "b.json" => 200i64},
                 Map#{"a.json" => 150i64, "b.json" => 200i64}))
 
@@ -552,19 +552,19 @@ mod TestApp {
     @Test
     def testChangedPathsNewFileFires(): Unit \ Assert =
         Assert.assertEq(expected = "a.json" :: Nil,
-            App.Internal.Runner.changedPaths("a.json" :: Nil, Map#{}, Map#{"a.json" => 100i64}))
+            App.Internal.DevTools.changedPaths("a.json" :: Nil, Map#{}, Map#{"a.json" => 100i64}))
 
     // 消失: 今回見えないパス（消えた・読めない）は発火しない。
     @Test
     def testChangedPathsMissingFileIsSilent(): Unit \ Assert =
         Assert.assertEq(expected = Nil,
-            App.Internal.Runner.changedPaths("a.json" :: Nil, Map#{"a.json" => 100i64}, Map#{}))
+            App.Internal.DevTools.changedPaths("a.json" :: Nil, Map#{"a.json" => 100i64}, Map#{}))
 
     // 登録順: 複数のパスが同時に変わっても、返る順は watch の登録順のまま。
     @Test
     def testChangedPathsKeepsRegistrationOrder(): Unit \ Assert =
         Assert.assertEq(expected = "b.json" :: "a.json" :: Nil,
-            App.Internal.Runner.changedPaths("b.json" :: "a.json" :: Nil,
+            App.Internal.DevTools.changedPaths("b.json" :: "a.json" :: Nil,
                 Map#{"a.json" => 100i64, "b.json" => 200i64},
                 Map#{"a.json" => 101i64, "b.json" => 201i64}))
 

@@ -9,7 +9,7 @@
 // WhyNot: 描き先を GL_SRGB8_ALPHA8 にして GL_FRAMEBUFFER_SRGB で戻さない — 2D の Pass が描き先を sRGB の絵として線形へ戻して読み、2D の絵が変わる。
 // WhyNot: 3D を別の float の描き先へ描いて貼る時に戻さない — 背景の無い場面の縁は 2D の上で結局画面の値で混ざり、場面ごとに描き先と貼り直しが増える。
 //   半透明の混ぜと MSAA の平均は戻した後の画面の値どうし。
-// WhyNot: 偽（uLinearColor = 0）でプログラムを分けない — 1 版だけ残す道でプログラムの数を倍にしない。
+// WhyNot: 偽（uLinearColor = 0）でプログラムを分けない — 0.84.0 で消す旗のためにプログラムの数を倍にしない。
 pub mod Render3dGlsl {
     use LightModel3d.Vec3Input
 

@@ -33,6 +33,4 @@ mod Game {
             |> App.withFlow(E2e.table())
             |> App.withFingerprint(Resources.read(E2e.fingerprint))
             |> App.withStatusLine(Resources.read((r, w) -> "phase=${World.sceneName(w)} panel=${World.panelName(w)} talk=${World.talkNodeOf(w)} line=${World.talkLineOf(w)} mode=${World.stageOf(r, w)#mode} playback=${World.playbackOf(w)} ask=${World.askOf(w)}"))
-            |> App.onRenderRequest(SceneRender.allShots)
-            |> App.onShotRequest(Resources.read(SceneRender.shotOf))
 }

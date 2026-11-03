@@ -28,7 +28,7 @@ Scene3d.meshInstance(part#mesh, world)
   `Srgb`・`intensity = 1` の lightmap を白い材質に貼れば、画面の値は読んだ値のまま。
 - 露出の置き場所: 書き出しの「lightmap × 0.5 を sRGB で書いた PNG（読んだ後に 2 を掛ける）」と「exposure 2^0.6」は、両方とも `intensity` に入れる（2.0 × 2^0.6 ≒ 3.03）。
   `intensity` は線形の倍率なので、そのまま入れて正しい。`PostProcess.tonemappedWith` の exposureStops は画面の値に掛かるので、ここへは写さない。
-- 0.79 の 1 版だけ、project.json の `"scene3dLinearColor": false` で画素の値のまま計算する式（0.78 まで。ベイクした光を画面の値へ戻してから足す）に戻せる（0.80.0 で消える）。
+- 0.83 までは、project.json の `"scene3dLinearColor": false` で画素の値のまま計算する式（0.78 まで。ベイクした光を画面の値へ戻してから足す）に戻せる（0.84.0 で消える）。
 
 ## ベイクの時の注意（Blender）
 
