@@ -40,6 +40,7 @@ var (
 	nudgeType      = regexp.MustCompile(`\b[A-Z][A-Za-z0-9]*\.[A-Z][A-Za-z0-9_]*\b`)
 	nudgeRecursive = regexp.MustCompile(`\s-[a-zA-Z]*[rR]|\s--recursive`)
 	nudgeUpper     = regexp.MustCompile(`^\\?b?[A-Z][a-z0-9]+(?:[A-Z][A-Za-z0-9]*)?(\\b)?$`)
+	nudgeLower     = regexp.MustCompile(`^\\?b?([a-z_][a-z0-9_]{3,})(\\b)?$`)
 	nudgeTool      = regexp.MustCompile(`^(sudo\s+)?(grep|egrep|rg|git\s+grep)\b`)
 )
 
@@ -108,7 +109,7 @@ func nameSearchOf(p Payload, suffix string) (pat, dir string, ok bool) {
 	if pat := ti.str("pattern"); pat != "" && ti.str("command") == "" {
 		target := ti.str("glob") + " " + ti.str("path") + " " + ti.str("type")
 		at := resolveDir(cwd, ti.str("path"))
-		if !nameLike(pat) {
+		if !nameLike(pat) && !(lowerNameLike(pat) && namesFlixFile([]string{ti.str("path")}, suffix)) {
 			return "", "", false
 		}
 		if flixTarget(target, suffix) || ti.str("type") == "flix" {
@@ -143,7 +144,7 @@ func nameSearchOf(p Payload, suffix string) (pat, dir string, ok bool) {
 			}
 			rest = append(rest, w)
 		}
-		if pat == "" || !nameLike(pat) {
+		if pat == "" || !nameLike(pat) && !(lowerNameLike(pat) && namesFlixFile(rest, suffix)) {
 			continue
 		}
 		if flixTarget(strings.Join(rest, " ")+" "+seg, suffix) || searchesFlixProject(seg, rest, dir) {
@@ -161,9 +162,53 @@ func nameSearchOf(p Payload, suffix string) (pat, dir string, ok bool) {
 }
 
 // nameLike は探す字が Flix の名前を探す形か（def の行・Mod.名前・Mod.Type・camelCase か大文字で始まる 1 語）。
+// `a\|b`・`a|b` の並びは、どれか 1 つが名前の形なら名前を探す字と見る。並びに文言らしい物（TODO のような大文字だけの語・
+// def を含まない空白入りの字）があれば、コメントや文言を探す grep と見て当てない。
 func nameLike(pat string) bool {
-	return nudgeDef.MatchString(pat) || nudgeQual.MatchString(pat) || nudgeType.MatchString(pat) ||
-		nudgeCamel.MatchString(pat) || nudgeUpper.MatchString(pat)
+	alts := strings.Split(strings.ReplaceAll(pat, `\|`, "|"), "|")
+	if len(alts) > 1 {
+		for _, alt := range alts {
+			if proseLike(alt) {
+				return false
+			}
+		}
+	}
+	for _, alt := range alts {
+		if nudgeDef.MatchString(alt) || nudgeQual.MatchString(alt) || nudgeType.MatchString(alt) ||
+			nudgeCamel.MatchString(alt) || nudgeUpper.MatchString(alt) {
+			return true
+		}
+	}
+	return false
+}
+
+var allCaps = regexp.MustCompile(`^[A-Z][A-Z0-9_]+$`)
+
+func proseLike(alt string) bool {
+	alt = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(strings.Trim(alt, "^$"), `\b`), `\b`))
+	return allCaps.MatchString(alt) || strings.Contains(alt, " ") && !nudgeDef.MatchString(alt)
+}
+
+// lowerNameLike は小文字だけの 1 語（step・render）が名前を探す字か。探す先が .flix のファイルを名指す時だけ見る。
+// WhyNot: 探す先を問わずに当てない。小文字の 1 語は文書の言葉やコメントの語と区別できず、src/ を広く探す grep まで拾う。
+func lowerNameLike(pat string) bool {
+	for _, alt := range strings.Split(strings.ReplaceAll(pat, `\|`, "|"), "|") {
+		if m := nudgeLower.FindStringSubmatch(alt); m != nil && !flixKeyword[m[1]] {
+			return true
+		}
+	}
+	return false
+}
+
+// namesFlixFile は探す先の語のどれかが suffix のファイルを直に名指すか（*.flix の glob は数えない）。
+func namesFlixFile(words []string, suffix string) bool {
+	for _, w := range words {
+		w = strings.Trim(w, `"'`)
+		if suffix != "" && strings.HasSuffix(w, suffix) && !strings.ContainsAny(w, "*?=") {
+			return true
+		}
+	}
+	return false
 }
 
 // searchesFlixProject は grep・rg が Flix のプロジェクトの根か .flix を直に持つフォルダを、中まで探したか。
@@ -238,4 +283,15 @@ func nudgeMark(p Payload) string {
 	}
 	h := sha1.Sum([]byte(who))
 	return filepath.Join(dir, "fge", "search-nudge", hex.EncodeToString(h[:8]))
+}
+
+// flixKeyword は小文字の 1 語のうち、Flix の予約語（名前でない）。
+var flixKeyword = map[string]bool{
+	"case": true, "match": true, "else": true, "true": true, "false": true, "with": true, "handler": true,
+	"enum": true, "type": true, "alias": true, "import": true, "instance": true, "trait": true, "region": true,
+	"unsafe": true, "spawn": true, "lazy": true, "force": true, "foreach": true, "yield": true, "project": true,
+	"select": true, "solve": true, "query": true, "inject": true, "without": true, "where": true, "discard": true,
+	"checked_cast": true, "unchecked_cast": true, "inline": true, "mod": true, "use": true, "eff": true, "def": true,
+	"null": true, "throw": true, "try": true, "catch": true, "resume": true, "struct": true, "static": true,
+	"law": true, "pure": true, "impure": true, "override": true, "public": true, "redef": true,
 }

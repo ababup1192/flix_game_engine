@@ -119,7 +119,7 @@ for game in "${games[@]}"; do
 	done
 	cp "$fpkg" "$lib/flix_game_engine-$version.fpkg"
 	cp "$engine/engine_full/flix.toml" "$lib/flix_game_engine-$version.toml"
-	echo "[check-external] $name（engine $version）"
+	echo "[check-external] ${name}（engine ${version}）"
 	log="$work/$name.log"
 	if (cd "$copy" && nice "$engine/bin/flix" check) > "$log" 2>&1; then
 		printf '%s\tok\n' "$name" >> "$out.tmp"

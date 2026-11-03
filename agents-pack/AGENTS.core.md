@@ -104,9 +104,13 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | 直す前に周り（本文・呼び手・呼ぶ先・型）を 1 回で見る | `bin/fge refactor context <名前>`・呼ぶ先の木は `trace` |
 | 名前の使われ所・呼び手を探す（grep より先に・読むのは道具が出した行だけ） | `bin/fge refactor usages <名前>`・欄を書く所だけは `--write` |
 | 使われない pub・use を探して消す・pub を外す | `bin/fge refactor usages --unused` → `remove-dead`・`make-private`・`remove-use` |
+| fpkg で配るライブラリの pub を替える・消す（「索引の外にもいる」と断られた時。外の使い手は直らない） | 同じ操作に `--allow-external` |
 | record の欄の直の読み書きを口の関数へ替える（口が無ければ作る） | `bin/fge refactor field-to-accessor` |
 | 欄の読みを別の引数の同じ欄へ（`w#x` → `res#x`） | `bin/fge refactor retarget-field` |
-| 関数・型 alias を別の mod へ移す（呼ぶ所の修飾名と use も） | `bin/fge refactor move --def Mod.f --to Mod2` |
+| 関数・型 alias・enum を別の mod へ移す（呼ぶ所・case の修飾名と use も） | `bin/fge refactor move --def Mod.f --to Mod2` |
+| 関数・型 alias・record の欄の名前を替える（sed で替えない） | `bin/fge refactor rename Mod.f --to g`・欄は `rename --label x --receiver T --to y` |
+| 宣言の effect の列（`\ A + B`）を足す・外す | `bin/fge refactor change-signature --def Mod.f --add-effect E`・`--remove-effect E` |
+| 手で直した後に、書き換えの後と同じ確かめを流す | `bin/fge refactor verify`（`--with-tests` で verifyTests） |
 | record の型に欄を足し、組み立てる所すべてに値を入れる | `bin/fge refactor add-field` |
 | 同じ形の式をまとめて書き替える（lint の規則の直しなど） | `bin/fge refactor rewrite --from --to`・`--rule <規則>` |
 | 式を関数に出す・同じ形の写しも呼び出しへ | `bin/fge refactor extract-function <範囲> --name Mod.f --all` |

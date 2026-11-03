@@ -43,6 +43,9 @@ make check ──> bin/fge checkd ──> Unix ソケット (~/Library/Caches/fl
 - `bin/fge refactor` の索引（flixlint --spans）も同じ常駐で作る（同じ shim の jar・ヒープ・寿命を渡すので socket は 1 本）。
   常駐で作る索引は heavy の枠を取らず、書き換えの後の確かめの `make check` は heavy の外で流す（heavy は既定で `CHECKD=0` を
   入れるため、枠の中では素の flix check になる）。
+- engine の根にも `make check` がある（ルートの `src/` の symlink 集に足りない物だけを `sync-root-src-missing` で張ってから、全パッケージを 1 つの木として
+  checkd で検査する）。`bin/fge refactor` の `--apply` の後の確かめ（refactor.json の verify）は、engine の根でもこれを流す。
+  手で直した後に同じ口で確かめるのは `bin/fge refactor verify`。
 
 ## test は素の CLI
 

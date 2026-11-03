@@ -129,6 +129,31 @@ func TestViewGetsEveryFlixFile(t *testing.T) {
 	}
 }
 
+func TestFilesFlagSplitsCommaAndSpace(t *testing.T) {
+	for _, files := range [][]string{
+		{"--files", "a.flix,b.md,c.flix"},
+		{"--files", "a.flix b.md c.flix"},
+		{"--files", "a.flix,", "b.md", "c.flix"},
+	} {
+		root := fakeRepo(t)
+		for _, f := range []string{"a.flix", "b.md", "c.flix"} {
+			if err := os.WriteFile(filepath.Join(root, f), nil, 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		var got []string
+		lints := okLints(t)
+		lints["view"] = func(out, errOut *strings.Builder, args []string) int {
+			got = args
+			return 0
+		}
+		gateRun(t, root, files, lints, nil)
+		if strings.Join(got, " ") != "a.flix c.flix" {
+			t.Errorf("%q: 引数が違う: %q", files, got)
+		}
+	}
+}
+
 func TestF32OnlyForEngineSources(t *testing.T) {
 	root := fakeRepo(t)
 	called := 0
