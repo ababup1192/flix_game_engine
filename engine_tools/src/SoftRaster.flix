@@ -363,7 +363,6 @@ pub mod SoftRaster {
         fonts = FontTable,
         texEnv = Map[String, ShaderEval.TexImage],
         sceneTextures = Map[(String, Texture3d.ColorSpace), Vector[ShaderEval.TexData]],
-        scene3dLinearColor = Bool,
         items = List[RItem]
     }
 
@@ -405,10 +404,8 @@ pub mod SoftRaster {
                     acc
             }
         }, (Map.empty(): Map[String, ShaderEval.TexImage]));
-        // WhyNot: 3D の場面の無い絵で project.json を読まない — 2D だけの描き出しに要らない読み込みを足さない（読んだ値は JVM で控える）。
-        let linear = not List.isEmpty(req#scenes) and GameEngine.loadScene3dLinearColor(".");
         let sceneTextures = sceneTexturesOf(textures, { paths = req#texturePath, rendered = Map.keysOf(extraImages), cache = cache },
-                                            warnLog, linear, req#scenes);
+                                            warnLog, req#scenes);
         // Drawable / Polygon / シェーダー面を 1 列にまとめ、(z, 追加順) で安定ソートする。
         // Drawable は入口で 1 回だけ名前付きレコードへ展開する（描き出しは 1 枚きりの経路
         // なので、以降の細かな読み出しをフィールド名のまま書けるほうを取る）。
@@ -423,7 +420,7 @@ pub mod SoftRaster {
             |> List.zipWithIndex
             |> List.sortBy(ix -> let (idx, item) = ix; (zOf(item), idx))
             |> List.map(ix -> let (_, item) = ix; item);
-        { textures = textures, fonts = fctx, texEnv = texEnv, sceneTextures = sceneTextures, scene3dLinearColor = linear, items = sorted }
+        { textures = textures, fonts = fctx, texEnv = texEnv, sceneTextures = sceneTextures, items = sorted }
 
     /// 面の tex / blur の読み先 name の絵。縮んだ Pass のテクセルの絵（texelsName）→ Pass の絵 → ファイルの絵の順に探す。
     def texImageOf(fileTextures: Map[String, BufferedImage], extraImages: Map[String, PassImage], name: String): Option[ShaderEval.TexImage] \ IO =
@@ -482,7 +479,7 @@ pub mod SoftRaster {
                     blendedDraw(image, sf, hintsOf(req), p#blend, p#clip, polygonAabb(req#design, p),
                                 gs -> drawPolygon(rc, gs, sf, p))
             case RItem.RSurf(s) => drawSurface(image, sf, plan#texEnv, texels, s)
-            case RItem.RScene(c) => SoftRaster3d.drawScene(image, sf, plan#sceneTextures, plan#scene3dLinearColor, c#scene#time, c)
+            case RItem.RScene(c) => SoftRaster3d.drawScene(image, sf, plan#sceneTextures, c#scene#time, c)
         }, plan#items);
         g.dispose()
     }
@@ -510,17 +507,17 @@ pub mod SoftRaster {
                     blendedDrawHdr(canvas, sf, hints, p#blend, p#clip, polygonAabb(req#design, p),
                                    gs -> drawPolygon(rc, gs, sf, p))
             case RItem.RSurf(s) => drawSurfaceHdr(canvas, sf, plan#texEnv, texels, s)
-            case RItem.RScene(c) => SoftRaster3d.drawSceneHdr(canvas#rgba, (canvas#width, canvas#height), sf, plan#sceneTextures, plan#scene3dLinearColor, c#scene#time, c)
+            case RItem.RScene(c) => SoftRaster3d.drawSceneHdr(canvas#rgba, (canvas#width, canvas#height), sf, plan#sceneTextures, c#scene#time, c)
         }, plan#items)
     }
 
     /// 3D の場面のビルボードと材質が引く絵（(名前, 段の平均の色空間) → 段の列。段 0 が元の絵）。無い名前は Drawable と同じ文面で 1 度だけ知らせ、
     /// そのビルボードは描かない（材質の Tex は 0 で読む）。"tex3d:" の名前は場面の textures から引く。
     /// 材質・法線マップ・lightmap の絵は Mip.build の段まで作る（描き出したばかりの絵 = レンダーターゲットは段を作らない。GL と同じ）。
-    /// 色空間は使い方から mipKeySpace(linear, …) で決める（同じ名前を色の絵と法線マップに使うと 2 本の段になる）。
+    /// 色空間は使い方から Texture3d.mipSpaceOf で決める（同じ名前を色の絵と法線マップに使うと 2 本の段になる）。
     /// ビルボードだけが読む絵は段 0 だけ（材質の絵の鍵に入れる）。材質の絵の組が Scene3d.maxMaterialTextures() を超えたら、材質の名前ごとに 1 度だけ知らせる。
     // WhyNot: 画素の Vector を場面ごとに作り直さない — 同じ絵を何枚ものビルボードと場面が引くので、名前ごとに 1 回だけ写す。
-    def sceneTexturesOf(textures: Map[String, BufferedImage], mipSource: MipSource, warnLog: TexWarnLog, linear: Bool,
+    def sceneTexturesOf(textures: Map[String, BufferedImage], mipSource: MipSource, warnLog: TexWarnLog,
                         scenes: List[Scene3d.RenderCmd]): Map[(String, Texture3d.ColorSpace), Vector[ShaderEval.TexData]] \ IO =
         let ownTextures = scenes |> List.flatMap(c -> c#scene#textures) |> List.map(t -> (Texture3d.name(t), t)) |> List.toMap;
         let materials = scenes
@@ -529,7 +526,7 @@ pub mod SoftRaster {
         scenes |> List.flatMap(c -> c#scene#instances) |> List.map(Scene3d.instanceFieldsOf) |> List.forEach(warnNormalMapWithoutUv(warnLog));
         scenes |> List.flatMap(c -> c#scene#instances) |> List.forEach(warnUnusedLightmap(warnLog));
         scenes |> List.flatMap(c -> Scene3d.droppedLightsWarnings(c#scene)) |> List.forEach(kl -> warnSceneOnce(warnLog, fst(kl), snd(kl)));
-        let keyOf = (name: String, textureUse: Texture3d.TextureUse) -> (name, mipKeySpace(linear, textureUse));
+        let keyOf = (name: String, textureUse: Texture3d.TextureUse) -> (name, Texture3d.mipSpaceOf(textureUse));
         let lightmapKeys = scenes |> List.flatMap(c -> c#scene#instances |> List.filterMap(Scene3d.lightmapOf))
             |> List.map(lm -> keyOf(lm#texture, Texture3d.TextureUse.Lightmap(lm#colorSpace)));
         let materialKeys = materials |> List.flatMap(f -> {
@@ -558,11 +555,6 @@ pub mod SoftRaster {
             case Some((td, _)) => Map.insert(key, Vector#{ td }, acc)
             case None          => warnMissingTexture(warnLog, fst(key)); acc
         }, withMaterials)
-
-    /// 3D の描き手が、使い方 textureUse の絵の段を引く鍵の色空間（入れる側と引く側の全部がこれを通る）。
-    /// linear が偽（画素の値のまま計算する描き手）なら全部 Linear（段も 8bit の値のまま平均する）。
-    pub def mipKeySpace(linear: Bool, textureUse: Texture3d.TextureUse): Texture3d.ColorSpace =
-        if (linear) Texture3d.mipSpaceOf(textureUse) else Texture3d.ColorSpace.Linear
 
     /// 段を作る元の絵の出どころ。paths = 名前 → ファイル・rendered = 描き出したばかりの絵の名前（段を作らない）・cache = 書き出し 1 回の間の控え。
     type alias MipSource = { paths = Map[String, String], rendered = Set[String], cache = Option[TextureCache] }

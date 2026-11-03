@@ -165,7 +165,8 @@
           },
           {
             "basenames": [
-              "Makefile"
+              "Makefile",
+              "project.json"
             ]
           }
         ]

@@ -479,7 +479,6 @@
   `pub type alias TextureRegistry = Map[String, TextureInfo]`
 - エンジン初期化に必要な設定
   `pub type alias EngineConfig = { rootDir = String, glyphs = String, designWidth = Int32, designHeight = Int32, windowWidth = Int32, windowHeight = Int32, title = String, textureManifest = List[TextureEntry], fontManifest = List[FontEntry], soundManifest = List[AudioEntry], clearColor = Color, maxDeltaTime = Float64, scene3dTextureBudgetMB = Int32, scene3dTextureBudgetCount = Int32 }`
-- `pub def loadScene3dLinearColor(root: String): Bool \ IO`
 - 3D の場面の絵を GPU に持つ量の上限の既定（MB）。
   `pub def defaultScene3dTextureBudgetMB(): Int32`
 - 3D の場面の絵を GPU に持つ枚数の上限の既定。
@@ -531,8 +530,6 @@
   `pub eff Audio { def setLowpass(name: String, gainHF: Float64): Unit }`
 - 指定した名前のサウンドの長さ（秒）。知らない名前は 0.0。
   `pub eff Audio { def audioSeconds(name: String): Float64 }`
-- 0.84.0 で消える: LwjglLayer.ensureMainThread() に替える（窓を開く GLFW の都合なので GL の層が持つ）。
-  `pub def ensureMainThread(): Bool \ IO`
 
 ## GamepadMap — `engine/src/GamepadMap.flix`
 - パッドの入力 1 つ。ボタンは Xbox 配置の名前（Back は Select / View、Start は Menu の物）。
@@ -553,19 +550,11 @@
   `pub def load(path: String): Result[String, Model3d.Model3d] \ Fs.FileRead`
 - .glb のバイトから作る。壊れている・読まない物を含む時は Err。parts は primitive ごと（材質 None・gltfMaterial の絵の名前は None）・textures は空。
   `pub def fromGlb(bytes: Vector[Int8]): Result[String, Model3d.Model3d]`
-- path の .glb を、絵と材質つきで読む。parts に材質（baseColorTexture → Scene3d.texturedMaterial・normalTexture → 法線マップ・
-  `pub def loadTextured(path: String): Result[String, Model3d.Model3d] \ Fs.FileRead + IO`
 - 材質の絵の長い辺の上限（px）。baseColor = baseColorTexture と emissiveTexture（同じ色の絵）・normal = normalTexture。
   `pub type alias TextureLimits = { baseColor = Int32, normal = Int32 }`
-- 上限なし（loadTextured と同じ）。ほかの値は { normal = 1024 | Gltf.noTextureLimits() } の形で替える。
+- 上限なし。ほかの値は { normal = 1024 | Gltf.noTextureLimits() } の形で替える。
   `pub def noTextureLimits(): TextureLimits`
-- loadTextured の、材質の絵の大きさに上限を掛ける版（場面の絵の上限に収める・近くで見ない法線マップを小さくする）。
-  `pub def loadTexturedWith(limits: TextureLimits, path: String): Result[String, Model3d.Model3d] \ Fs.FileRead + IO`
-- loadTextured のバイトの版。
-  `pub def fromGlbTextured(bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO`
-- loadTexturedWith のバイトの版。
-  `pub def fromGlbTexturedWith(limits: TextureLimits, bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO`
-- loadTexturedWith の、絵を decoder で解く版（読み込みの頭で LoadProgress.imageDecoder() で受け取り、並列の仕事へ渡す）。
+- path の .glb を、絵と材質つきで読む。parts に材質（baseColorTexture → Scene3d.texturedMaterial・normalTexture → 法線マップ・
   `pub def loadTexturedUsing(decoder: ImageData.ImageDecoder, limits: TextureLimits, path: String): Result[String, Model3d.Model3d] \ Fs.FileRead + IO`
 - loadTexturedUsing のバイトの版。
   `pub def fromGlbTexturedUsing(decoder: ImageData.ImageDecoder, limits: TextureLimits, bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO`
@@ -622,7 +611,7 @@
 - Select の条件。
   `pub enum Cond with Eq { case Greater(ScalarExpr, ScalarExpr) case AtLeast(ScalarExpr, ScalarExpr) case And(Cond, Cond) }`
 - 画素ごと・場面ごとのスカラーの入力。
-  `pub enum ScalarInput with Eq, Order { case Hemisphere case ShadowLit case FogNear case FogFar case SkyCurve case LightmapSrgb case LightmapIntensity case LinearColor }`
+  `pub enum ScalarInput with Eq, Order { case Hemisphere case ShadowLit case FogNear case FogFar case SkyCurve case LightmapSrgb case LightmapIntensity }`
 - 画素ごと・場面ごとの vec3 の入力。
   `pub enum Vec3Input with Eq, Order { case Position case Normal case Eye case Ambient case LightmapColor case Color case FogColor case SkyDirection case SkyZenith case SkyHorizon case SkyGround }`
 - 光のループの中で読めるスカラーの欄。
@@ -990,7 +979,6 @@
   `pub def loadProject(rootDir: String): Result[String, Project] \ {Fs.FileRead}`
 - プロジェクトディレクトリを再帰的に走査して *.scene.json を列挙する。
   `pub def findSceneFiles(rootDir: String): Result[String, List[String]] \ Fs.Glob`
-- `pub def scene3dLinearColorOf(rootDir: String): Bool \ {Fs.FileRead}`
 - flix.toml の依存の行 `"github:ababup1192/flix_game_engine" = { version = "x.y.z", … }` の版。
   `pub def engineVersionOf(toml: String): Option[String]`
 
@@ -1407,10 +1395,6 @@
 - 材質の tex / blur のうち、materialTexReads の limit 組目より後ろの組を読む物を 0 の Const に置き換える
   `pub def limitMaterialTexReads(limit: Int32, spec: Spec, emission: Option[Shade]): (Spec, Option[Shade])`
 
-## ShaderEffect — `engine/src/ShaderEffect.flix`
-- DrawCmd.SurfaceRenderCmd の古い名前。0.84.0 で消える。
-  `pub type alias ShaderRenderCmd = DrawCmd.SurfaceRenderCmd`
-
 ## ShaderEval — `engine/src/ShaderEval.flix`
 - テクスチャ 1 枚ぶんの画素（ARGB・正立・行優先）。Tex ノードが CPU 側で標本する素材。
   `pub type alias TexData = { width = Int32, height = Int32, pixels = Vector[Int32] }`
@@ -1642,8 +1626,6 @@
   `pub def fromImage(image: ImageData.ImageData): Result[String, Texture3d]`
 - PNG / JPEG のバイトを decoder で画素に戻して作る（decoder は LoadProgress.imageDecoder() で受け取る）。
   `pub def decodeUsing(decoder: ImageData.ImageDecoder, bytes: Vector[Int8]): Result[String, Texture3d] \ IO`
-- PNG / JPEG のバイトを画素に戻す（javax.imageio）。読めない・辺が fromArgb の決まりの外、は Err。
-  `pub def decode(bytes: Vector[Int8]): Result[String, Texture3d] \ IO`
 - `pub def width(t: Texture3d): Int32`
 - `pub def height(t: Texture3d): Int32`
 - ARGB（行優先・行 0 が絵の上）。
@@ -1769,18 +1751,6 @@
 
 ## Vec2 — `engine/src/core/Vec2.flix`
 - `pub type alias Vec2 = {x = Float64, y = Float64}`
-- 旧い名前。Num.sqrt を使う（0.84.0 で消す）。
-  `pub def sqrt(v: Float64): Float64`
-- 旧い名前。Num.pi を使う（0.84.0 で消す）。
-  `pub def pi(): Float64`
-- 旧い名前。Num.tau を使う（0.84.0 で消す）。
-  `pub def tau(): Float64`
-- 旧い名前。Num.sin を使う（0.84.0 で消す）。
-  `pub def sin(x: Float64): Float64`
-- 旧い名前。Num.cos を使う（0.84.0 で消す）。
-  `pub def cos(x: Float64): Float64`
-- 旧い名前。Num.atan2 を使う（0.84.0 で消す）。
-  `pub def atan2(y: Float64, x: Float64): Float64`
 - (x, y) から Vec2 を作るリテラル短縮。`{x = …, y = …}` と同じ値だが、リスト内などで
   `pub def v2(x: Float64, y: Float64): Vec2`
 - `pub def zero(): Vec2`

@@ -171,7 +171,6 @@ mod TestSoftRaster3dLook {
     // ════════════════════════════════════════════════════════
 
     // 半透明も両面も空も使わない場面（不透明の材質の板・cutout の板・頂点の色の板・点光源）の 8×8 の画素を畳んだ値は固定
-    // （画素の値のまま計算する式 = linear = false で描く）
     @Test
     def testSceneWithoutNewLooksIsPinned(): Unit \ {Assert, IO} =
         let opaque = solid(quad(red(), 3.0, 1.5, true) :: Nil) |> Scene3d.withMaterial(tinted(green(), 1.0));
@@ -180,7 +179,7 @@ mod TestSoftRaster3dLook {
         let base = sceneOf(cut :: opaque :: plain :: Nil);
         let scene = { environment = { ambient = { r = 0.3, g = 0.3, b = 0.3 } | base#environment },
                       pointLights = { position = Vec3.v3(1.0, 1.0, 0.0), color = { r = 1.0, g = 0.9, b = 0.8 }, intensity = 1.0, range = 9.0 } :: Nil | base };
-        let img = TestSoftRaster3dSupport.renderUnconvertedOn(8, scene);
+        let img = TestSoftRaster3dSupport.renderOn(8, scene);
         let folded = List.range(0, 64) |> List.foldLeft((acc, k) -> acc * 31i64 + Int32.toInt64(img.getRGB(Int32.remainder(k, 8), k / 8)), 7i64);
-        Assert.assertEq(expected = -4902218035612003577i64, folded)
+        Assert.assertEq(expected = -189061523360340985i64, folded)
 }

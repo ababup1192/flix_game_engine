@@ -50,15 +50,9 @@ def testToGlslOtherModelsReadTheirUniforms(): Unit \ Assert =
                       String.contains(substr = "uFogRange.x", fog) and String.contains(substr = "uFogColor.x", fog) and
                       String.contains(substr = "uCurve", sky) and String.contains(substr = "uZenith.x", sky))
 
-/// lightmap の光は uLinearColor で分かれる（線形の描き手は linearToSrgb を通さない）。
+/// lightmap の光はベイクした光を線形の量のまま足す（r3d_linearToSrgb で画面の値へ戻さない）。
 @Test
-def testLightmapGlslSelectsOnLinearColor(): Unit \ Assert =
+def testLightmapGlslKeepsBakedLinear(): Unit \ Assert =
     let lightmap = LightModel3d.Codegen.toGlsl("lightmapLightAt", LightModel3d.Vec3Input.Position :: LightModel3d.Vec3Input.Normal :: LightModel3d.Vec3Input.LightmapColor :: Nil,
                                                 LightModel3d.lightmapLightingModel());
-    Assert.assertTrue(String.contains(substr = "float(uLinearColor)", lightmap))
-
-/// lightAt（lightmap の無い光）は uLinearColor を読まない（ambient も光の color も呼ぶ側が線形へ戻して渡す）。
-@Test
-def testLightingGlslDoesNotReadLinearColor(): Unit \ Assert =
-    let light = LightModel3d.Codegen.toGlsl("lightAt", LightModel3d.Vec3Input.Position :: LightModel3d.Vec3Input.Normal :: Nil, LightModel3d.lightingModel());
-    Assert.assertFalse(String.contains(substr = "uLinearColor", light))
+    Assert.assertFalse(String.contains(substr = "r3d_linearToSrgb", lightmap))

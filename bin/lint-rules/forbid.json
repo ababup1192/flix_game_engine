@@ -1,5 +1,5 @@
 {
-  "note": "lint-forbid（古い書き方を 1 行の正規表現で止め、代わりに使う物を出す）の規約データ。この JSON が source of truth で、bin/fge forbid はこれとゲームの bin/lint-rules/forbid.local.json（ゲーム固有の規則と除外。配り直しでも残る）を足して読む。1 件 = {id, suffixes / basenames / prefixes（見るファイル）, skip, skipDirs（パスのどの段にあっても見ないフォルダ名）, whenProject（そのファイルのプロジェクトの .flix に当たるときだけ効く）, notice（true なら当たりを知らせるだけで止めない。旧い名前を消すまでの数版に使う）, pattern, unlessLine（この行なら見逃す）, rawLine（true なら .flix でも文字列の中身を消さずに見る。コメントは落とす）, hint（代わりに何を使うか。必須）}。.flix は文字列とコメントを除いてから当てる。文脈の要る物（z の表 = z-table・let _ = = value-discard）は専用の lint が持つ。除外は exempt に \"パス::id\" と理由 1 行。コミット時に見るのは .flix と Makefile だけ（precommit.json の forbid の when）。ほかの種類のファイルに規則を足すなら、そちらも足す。",
+  "note": "lint-forbid（古い書き方を 1 行の正規表現で止め、代わりに使う物を出す）の規約データ。この JSON が source of truth で、bin/fge forbid はこれとゲームの bin/lint-rules/forbid.local.json（ゲーム固有の規則と除外。配り直しでも残る）を足して読む。1 件 = {id, suffixes / basenames / prefixes（見るファイル）, skip, skipDirs（パスのどの段にあっても見ないフォルダ名）, whenProject（そのファイルのプロジェクトの .flix に当たるときだけ効く）, notice（true なら当たりを知らせるだけで止めない。旧い名前を消すまでの数版に使う）, pattern, unlessLine（この行なら見逃す）, rawLine（true なら .flix でも文字列の中身を消さずに見る。コメントは落とす）, hint（代わりに何を使うか。必須）}。.flix は文字列とコメントを除いてから当てる。文脈の要る物（z の表 = z-table・let _ = = value-discard）は専用の lint が持つ。除外は exempt に \"パス::id\" と理由 1 行。コミット時に見るのは .flix と Makefile と project.json だけ（precommit.json の forbid の when）。ほかの種類のファイルに規則を足すなら、そちらも足す。",
   "rules": [
     {
       "id": "pass-spec-of-map",
@@ -334,14 +334,18 @@
       "skip": ["render_gl/src/Render3dGlsl.flix", "src/render_gl/Render3dGlsl.flix", "engine/src/scene3d/LightModel3d/Codegen.flix", "src/engine/scene3d/LightModel3d/Codegen.flix", "engine_full/", "lib/", "build/"],
       "pattern": "\"[^\"]*\\bu(?:Point|Spot)(?:Pos|Color|Range|Dir|Cone)\\[[A-Za-z_]\\w*\\]",
       "hint": "光の式を GLSL の字で手で書かない（CPU の描き手と式が分かれる）。式は engine の LightModel3d の木に書き、GLSL は LightModel3d.Codegen.toGlsl で作る（3D の描き手の字は Render3dGlsl。uniform の位置を引く loc(program, \"uPointPos\") は止めない）"
+    },
+    {
+      "id": "scene3d-linear-color-flag",
+      "suffixes": ["project.json"],
+      "skip": ["lib/", "build/"],
+      "pattern": "\"scene3dLinearColor\"\\s*:",
+      "hint": "scene3dLinearColor は 0.84.0 で消えた（3D の色は線形の計算だけ・書いても効かない）。キーを消し、0.78 の見え方に合わせるなら ambient・光の intensity と range を線形の目盛りで合わせ直す（engine の docs/migrations/0.79.0.md）"
     }
   ],
   "exempt": {
     "src/AssistShow.flix::game-unchecked-pure": "internet_dungeon の Math.sin・cos の包み。Num.sin・Num.cos へ寄せるまで",
     "src/CardPile.flix::game-unchecked-pure": "internet_dungeon の Math.sin の包み。Num.sin へ寄せるまで",
-    "src/EndScreen.flix::game-unchecked-pure": "internet_dungeon の Math.sin・cos の包み。Num.sin・Num.cos へ寄せるまで",
-    "engine/src/GameEngine.flix::engine-contract-import": "古い GameEngine.ensureMainThread（ProcessBuilder・ProcessHandle・ArrayList）と loadScene3dLinearColor（java.io.File）。どちらも 0.84.0 で消える（LwjglLayer.ensureMainThread へ・旗はほかの古い口と一緒に）",
-    "engine/src/GameEngine.flix::engine-contract-jvm-call": "古い GameEngine.ensureMainThread（ProcessBuilder・ProcessHandle・Sys.Env）と loadScene3dLinearColor（Fs.FileRead.runWithIO）。どちらも 0.84.0 で消える（LwjglLayer.ensureMainThread へ・旗はほかの古い口と一緒に）",
-    "engine/src/GameEngine.flix::engine-contract-system": "古い GameEngine.ensureMainThread（System.getProperty・System.exit）と loadScene3dLinearColor（System.getProperty・System.setProperty）。どちらも 0.84.0 で消える"
+    "src/EndScreen.flix::game-unchecked-pure": "internet_dungeon の Math.sin・cos の包み。Num.sin・Num.cos へ寄せるまで"
   }
 }

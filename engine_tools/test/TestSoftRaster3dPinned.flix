@@ -1,7 +1,6 @@
 // 3D の場面を CPU（SoftRaster3d）で描いた画素の SHA-256 を固定する（光の式・影・深度・裏の面を 1 枚にまとめた場面と、
 // 同じ形に半球の光・霧・トゥーンの段・地の色を足した場面）。
-// 光の式を書き換えても「CPU の絵が 1 bit も変わらない」を毎回のテストで守る。画素の値のまま計算する式（linear = false・0.78 の式）で描く
-// — 3D の色を線形で計算する式に替えた後も、旗を偽にすれば同じ絵に戻ることを守る。
+// 光の式を書き換えても「CPU の絵が 1 bit も変わらない」を毎回のテストで守る。
 // 違ったら、足す順まで今の式に揃えるか、場面ごとの違う画素の数を人に見せてから撮り直す（値だけ貼り替えない）。
 mod TestSoftRaster3dPinned {
     import java.awt.image.BufferedImage
@@ -51,15 +50,15 @@ mod TestSoftRaster3dPinned {
 
     def renderScene(cmd: Scene3d.Scene3dCmd): BufferedImage \ IO =
         let side = Float64.round(size()) |> Float64.tryToInt32 |> Option.getWithDefault(0);
-        TestSoftRaster3dSupport.renderUnconvertedOn(side, cmd)
+        TestSoftRaster3dSupport.renderOn(side, cmd)
 
-    /// 32×32 の場面の画素が 0.76.0 の CPU の描き手と同じ。
+    /// 32×32 の場面の画素が 0.84.0 の CPU の描き手と同じ。
     @Test
     def testLitShadowedScenePixelsAreUnchanged(): Unit \ {Assert, IO} =
-        Assert.assertEq(expected = "0ef69f403e2ae42a5c5872f3fe7b602413eb61c7d5c4af03347422106a86f978", pixelHash(render()))
+        Assert.assertEq(expected = "68ec928f6d0460b14eb2b12329fe1ff6ab655e5055bcccfa7191a47abc23b020", pixelHash(render()))
 
-    /// 半球の光・霧・トゥーンの段・地の色を足した同じ大きさの場面の画素が 0.76.0 の CPU の描き手と同じ。
+    /// 半球の光・霧・トゥーンの段・地の色を足した同じ大きさの場面の画素が 0.84.0 の CPU の描き手と同じ。
     @Test
     def testHazyToonScenePixelsAreUnchanged(): Unit \ {Assert, IO} =
-        Assert.assertEq(expected = "98b457bb8d13e80bad747b5a8b9074bb742dd122ed2a54e14dcfbac2cff49ee2", pixelHash(renderScene(hazyToonScene())))
+        Assert.assertEq(expected = "9bb86bc392ed2ea13ac90b41fcd4522b5149d8a279323f5fe1fa116ba1d9b763", pixelHash(renderScene(hazyToonScene())))
 }

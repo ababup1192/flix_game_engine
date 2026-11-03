@@ -1,7 +1,6 @@
 // SoftRaster3d の 3D の色（線形の量で計算し、色を作った直後に画面の値へ戻す）を、Scene3d の頭の「3D の色」の表の行ごとに式から導いた値で確かめる。
 //   値は 0 と 1 を避けて 0.5 などで置く（0 と 1 は sRGB の曲線で動かない点で、変換の抜けや 2 回がけが見えない）。
-//   入口（SoftRaster.renderToImageFull）を通す場面は作業場に project.json が無いので線形で描かれる。
-//   偽の道（0.78 の式）は drawScene を linear = false で直に呼ぶ場面で確かめる。
+//   場面は入口（SoftRaster.renderToImageFull）を通して描く。
 // 場面はどれも 8×8（倍率 1）。カメラは原点で +Z を向き、縦の画角 90 度。板は z = 2 で画面いっぱい（x y −2..2）。
 mod TestSoftRaster3dLinear {
     import java.awt.image.BufferedImage
@@ -56,8 +55,6 @@ mod TestSoftRaster3dLinear {
               scenes = { at = Vec2.zero(), clip = None, scene = scene } :: Nil };
         SoftRaster.renderToImageFull(req, Nil, Map.empty(), Map.empty())
 
-    def renderUnconverted(scene: Scene3d.Scene3dCmd): BufferedImage \ IO = TestSoftRaster3dSupport.renderUnconvertedOn(8, scene)
-
     def redAt(img: BufferedImage, x: Int32, y: Int32): Int32 \ IO = Int32.bitwiseAnd(Int32.logicalRightShift(dist = 16, img.getRGB(x, y)), 255)
 
     /// 0..1 の値 v を 8bit にした値（書き出しと同じ丸め）。
@@ -104,19 +101,6 @@ mod TestSoftRaster3dLinear {
         let m = solid(gray(0.0), 1.0) |> Scene3d.withEmission(ShaderDoc.Shade.Solid(gray(0.5))) |> Scene3d.withEmissionIntensity(2.0);
         let img = render(sceneOf(gray(1.0), Nil, (plate(gray(1.0)) |> Scene3d.withMaterial(m)) :: Nil));
         Assert.assertTrue(isNear(screen(lin(0.5) * 2.0), redAt(img, 4, 4)))
-
-    /// 偽の道: emission 0.5 × emissionIntensity 2 は値のまま 1.0。
-    @Test
-    def testUnconvertedEmissionIntensityScalesValue(): Unit \ {Assert, IO} =
-        let m = solid(gray(0.0), 1.0) |> Scene3d.withEmission(ShaderDoc.Shade.Solid(gray(0.25))) |> Scene3d.withEmissionIntensity(2.0);
-        let img = renderUnconverted(sceneOf(gray(1.0), Nil, (plate(gray(1.0)) |> Scene3d.withMaterial(m)) :: Nil));
-        Assert.assertEq(expected = byteOf(0.5), redAt(img, 4, 4))
-
-    /// 偽の道: 頂点の色 0.5・環境光 0.5 は値のまま掛けた 0.25。
-    @Test
-    def testUnconvertedVertexColorMultipliesValues(): Unit \ {Assert, IO} =
-        let img = renderUnconverted(sceneOf(gray(0.5), Nil, plate(gray(0.5)) :: Nil));
-        Assert.assertEq(expected = byteOf(0.25), redAt(img, 4, 4))
 
     // ── ビルボード ──
 
@@ -234,7 +218,7 @@ mod TestSoftRaster3dLinear {
         let scene = { environment = { fog = Some({ color = gray(0.5), near = 0.0, far = 4.0 }) | base#environment } | base };
         let p = Vec3.v3(0.25, -0.25, 2.0);
         let light = SoftRaster3d.lightAt({ ambient = gray(lin(0.5)) | scene#environment }, Nil, Nil, p, Vec3.v3(0.0, 0.0, -1.0));
-        let c = SoftRaster3d.surfaceOutAt(scene#environment, true, Vec3.zero(), p, gray(lin(0.5)), gray(1.0), light, gray(0.25), 2.0, true);
+        let c = SoftRaster3d.surfaceOutAt(scene#environment, Vec3.zero(), p, gray(lin(0.5)), gray(1.0), light, gray(0.25), 2.0, true);
         Assert.assertTrue(isNear(c#r, redAt(render(scene), 4, 4)))
 
     /// 材質の Spec の VertexColor（頂点の色 0.5）は頂点で戻さず、Spec の出口で 1 回だけ戻す（環境光は白なので画面の値は 0.5 のまま）。
@@ -247,27 +231,4 @@ mod TestSoftRaster3dLinear {
         let img = render(sceneOf(gray(1.0), Nil, (plate(gray(0.5)) |> Scene3d.withMaterial(m)) :: Nil));
         Assert.assertTrue(isNear(screen(lin(0.5)), redAt(img, 4, 4)))
 
-    // ── 偽の道の絵 ──
-
-    /// 偽の道: 材質の絵（灰 128）は Linear の鍵の段から読み、環境光 0.5 と値のまま掛ける。
-    @Test
-    def testUnconvertedMaterialTextureReadsLinearKey(): Unit \ {Assert, IO} =
-        let t = grayTexture(128);
-        let inst = plateWithUv2() |> Scene3d.withMaterial(Scene3d.texturedMaterial(Texture3d.name(t), ShaderDoc.FilterMode.Nearest));
-        let img = TestSoftRaster3dSupport.renderUnconvertedWith(8, Map#{ (Texture3d.name(t), Texture3d.ColorSpace.Linear) => texLevels(t) },
-                                                                sceneOf(gray(0.5), t :: Nil, inst :: Nil));
-        Assert.assertTrue(isNear(128.0 / 255.0 * 0.5, redAt(img, 4, 4)))
-
-    /// 偽の道: Srgb の lightmap（灰 128・intensity 1）は Linear の鍵の段から読み、画面の値へ戻してから albedo 0.5 と掛ける。
-    @Test
-    def testUnconvertedLightmapReadsLinearKey(): Unit \ {Assert, IO} =
-        let t = grayTexture(128);
-        let inst = plateWithUv2() |> Scene3d.withMaterial(solid(gray(0.5), 1.0)) |> Scene3d.withLightmap(Scene3d.lightmap(Texture3d.name(t)));
-        let img = TestSoftRaster3dSupport.renderUnconvertedWith(8, Map#{ (Texture3d.name(t), Texture3d.ColorSpace.Linear) => texLevels(t) },
-                                                                sceneOf(gray(1.0), t :: Nil, inst :: Nil));
-        Assert.assertTrue(isNear(0.5 * screen(lin(128.0 / 255.0)), redAt(img, 4, 4)))
-
-    /// 絵 t の Raw の段の列（偽の描き手が作る段と同じ）。
-    def texLevels(t: Texture3d.Texture3d): Vector[ShaderEval.TexData] =
-        List.toVector(Mip.build(Mip.Average.Raw, { width = Texture3d.width(t), height = Texture3d.height(t), pixels = Texture3d.argb(t) }))
 }

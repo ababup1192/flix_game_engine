@@ -933,8 +933,7 @@ pub mod Gltf {
 
     /// baseColorFactor をそのまま頂点の色にする。材質や baseColorFactor が無ければ白。
     // WhyNot: glTF の決まりどおり線形の値として読まない — OBJ の Kd も Blender の値を画面の値（sRGB の値）として読む。
-    //   片方だけ直すと同じ Blender の色が形式で違って見え、3D の描き手を画素の値のまま計算する式（project.json の
-    //   scene3dLinearColor: false）に戻しても 0.78 の絵に戻らない。COLOR_0 と emissiveFactor も同じく画面の値として読む。
+    //   片方だけ直すと同じ Blender の色が形式で違って見える。COLOR_0 と emissiveFactor も同じく画面の値として読む。
     def baseColorOf(glb: Glb, prim: Obj): Result[String, Vector[Float64]] =
         let white = Vector#{ 1.0, 1.0, 1.0 };
         match intOf("material", prim) {

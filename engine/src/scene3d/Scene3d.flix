@@ -12,7 +12,6 @@
 // 描き手は 3D の中だけそれを線形の量へ戻してから光を足し掛けし、3D の色を作った直後に 1 回だけ画面の値へ戻す
 // （半透明の混ぜ・MSAA・後処理・2D は画面の値のまま）。光の intensity・range・hemisphere・lightmap の intensity・
 // emissionIntensity は線形の量。法線マップ・影の地図・Output.Depth の灰色・background は変換しない。
-// 0.83 までは、作業場の project.json の "scene3dLinearColor": false で画素の値のまま計算する式に戻せる（0.84.0 で消える）。
 
 /// 3D の場面 1 つの中身（光・環境・置いた物・ビルボード）と、Shader 効果へ渡す命令。
 pub mod Scene3d {

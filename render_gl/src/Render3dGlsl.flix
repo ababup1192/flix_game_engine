@@ -4,12 +4,11 @@
 // 光の uniform を光ごとに引く式（点光源・スポットの配列の [i]）は、このファイルと字を作る LightModel3d.Codegen の外に書かない（bin/lint-rules/forbid.json が止める）。
 // 木の外に残る GLSL（影の地図の PCF・法線マップの TBN・lightmap の段つきの読み・色を作る最後の組み立て r3d_surfaceOut）は、
 // gl-parity の式の行が CPU の描き手と同じ値になることを確かめる。
-// 3D の色（Scene3d の頭の「3D の色」）: uLinearColor = 1 の時、光の color・ambient・かすみ・空・tint は描き手が線形の量へ戻して uniform に入れ、
+// 3D の色（Scene3d の頭の「3D の色」）: 光の color・ambient・かすみ・空・tint は描き手が線形の量へ戻して uniform に入れ、
 // 頂点の色は lit の頂点シェーダーで、材質の albedo.rgb・emission とビルボードの絵は frag で線形へ戻し、色を作った直後に 1 回だけ画面の値へ戻す。
 // WhyNot: 描き先を GL_SRGB8_ALPHA8 にして GL_FRAMEBUFFER_SRGB で戻さない — 2D の Pass が描き先を sRGB の絵として線形へ戻して読み、2D の絵が変わる。
 // WhyNot: 3D を別の float の描き先へ描いて貼る時に戻さない — 背景の無い場面の縁は 2D の上で結局画面の値で混ざり、場面ごとに描き先と貼り直しが増える。
 //   半透明の混ぜと MSAA の平均は戻した後の画面の値どうし。
-// WhyNot: 偽（uLinearColor = 0）でプログラムを分けない — 0.84.0 で消す旗のためにプログラムの数を倍にしない。
 pub mod Render3dGlsl {
     use LightModel3d.Vec3Input
 
@@ -18,7 +17,7 @@ pub mod Render3dGlsl {
         meshVertexSourceOf({ declarations = "", prelude = "", position = "vec4(aPos, 1.0)", normal = "aNormal", tangent = None, uv2 = false,
                              vertexColorToLinear = false })
 
-    /// 頂点の色のプログラム（lit）の頂点シェーダー。頂点の色を uLinearColor に従って線形の量へ戻してから渡す（三角形の中は線形の量でつなぐ）。
+    /// 頂点の色のプログラム（lit）の頂点シェーダー。頂点の色を線形の量へ戻してから渡す（三角形の中は線形の量でつなぐ）。
     /// skinned なら骨つきの版。
     // WhyNot: meshVertexSource と共有しない — uv の無い材質の Spec の VertexColor まで線形の値になり、出口でもう一度戻して暗くなる。
     pub def litVertexSource(skinned: Bool): String =
@@ -162,18 +161,15 @@ pub mod Render3dGlsl {
         "    return r3d_linearToSrgb3(c + r3d_srgbToLinear3(emission) * intensity);\n" +
         "}\n"
 
-    /// 色の空間の変換: uLinearColor（1 = 3D の色を線形の量で計算する）と、Texture3d の式のスカラーの r3d_srgbToLinear / r3d_linearToSrgb、
-    /// その vec3 の版 r3d_srgbToLinear3 / r3d_linearToSrgb3（uLinearColor が 0 なら c のまま）。frag と lit の頂点シェーダーが 1 回ずつ含める。
+    /// 色の空間の変換: Texture3d の式のスカラーの r3d_srgbToLinear / r3d_linearToSrgb と、
+    /// その vec3 の版 r3d_srgbToLinear3 / r3d_linearToSrgb3。frag と lit の頂点シェーダーが 1 回ずつ含める。
     pub def colorSpaceSource(): String =
-        "uniform int uLinearColor;\n" +
         Texture3d.srgbToLinearGlsl("r3d_srgbToLinear") +
         Texture3d.linearToSrgbGlsl("r3d_linearToSrgb") +
         "vec3 r3d_srgbToLinear3(vec3 c) {\n" +
-        "    if (uLinearColor == 0) return c;\n" +
         "    return vec3(r3d_srgbToLinear(c.r), r3d_srgbToLinear(c.g), r3d_srgbToLinear(c.b));\n" +
         "}\n" +
         "vec3 r3d_linearToSrgb3(vec3 c) {\n" +
-        "    if (uLinearColor == 0) return c;\n" +
         "    return vec3(r3d_linearToSrgb(c.r), r3d_linearToSrgb(c.g), r3d_linearToSrgb(c.b));\n" +
         "}\n"
 
@@ -304,7 +300,7 @@ pub mod Render3dGlsl {
         lightmapLightSource()
 
     /// lightmap のある面の光の式 lightmapLightAt(p, n, lightmap の色)（LightModel3d の木から作る）と、それが読む uniform。
-    /// colorSpaceSource()（色の空間の関数と uLinearColor）と lightSource の後に置く（光の uniform と spotShadow を読む）。
+    /// colorSpaceSource()（色の空間の関数）と lightSource の後に置く（光の uniform と spotShadow を読む）。
     pub def lightmapLightSource(): String =
         "uniform int uLightmapSrgb;\n" +
         "uniform float uLightmapIntensity;\n" +

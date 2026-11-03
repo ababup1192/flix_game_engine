@@ -4,9 +4,6 @@
 // 利用例: 1フレームぶんの描画コマンドを渡す / キー押下を問い合わせる / 経過時間を取る。
 
 pub mod GameEngine {
-    import java.io.File
-    import java.lang.System
-
     /// テクスチャアセットのマニフェストエントリ
     pub type alias TextureEntry = { name = String, path = String, hasAlpha = Bool }
 
@@ -67,23 +64,6 @@ pub mod GameEngine {
         scene3dTextureBudgetMB = Int32,
         scene3dTextureBudgetCount = Int32
     }
-
-    /// root の project.json の scene3dLinearColor（ProjectLoader.scene3dLinearColorOf）を、root ごとに JVM の中で 1 回だけ読んだ値。
-    /// GL の描き手（窓を開く時）と CPU の描き手・描き出しの鍵（描くたび）が同じ値を見る。旗を変えたら起動し直す（常駐も）。
-    /// engine の中だけで使う（GL は config#rootDir・CPU は "." を渡すので、両方がゲームのフォルダを指す前提）。
-    /// 消すまで engine/src の import の lint（engine-contract-*）はこのファイルを例外にする（0.84.0 でほかの古い口と一緒に消す）。
-    // WhyNot: 呼ぶたびに読み直さない — 起動したままの JVM で project.json を書き換えると、GL の文脈を作った時の値と CPU の絵・鍵が食い違う。
-    // WhyNot: 読んで控える間を lock で守らない — 2 本の糸が同時に初めて読むと偽の知らせが 2 行出うるだけで、読む値は同じ。
-    pub def loadScene3dLinearColor(root: String): Bool \ IO =
-        let memoKey = "fge.scene3dLinearColor:" + new File(root).getAbsoluteFile().toPath().normalize().toString();
-        let memo = System.getProperty(memoKey);
-        if (not Object.isNull(memo)) memo == "true"
-        else {
-            let linear = run { ProjectLoader.scene3dLinearColorOf(root) } with Fs.FileRead.runWithIO;
-            discard System.setProperty(memoKey, if (linear) "true" else "false");
-            if (linear) linear
-            else Log.warnThen("[scene3d] ${root}/project.json の scene3dLinearColor が false: 3D の色を画素の値のまま計算する（0.78 の式・0.84.0 で消える）", linear)
-        }
 
     /// 3D の場面の絵を GPU に持つ量の上限の既定（MB）。
     pub def defaultScene3dTextureBudgetMB(): Int32 = 256

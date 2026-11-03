@@ -17,11 +17,9 @@
 //   lightmap の段つきの読み: 測った最大 9.7e−3（約 2.5 / 255）→ 上限 limitTexture() = 3 / 255（GPU は画素と段の間の重みを 8 bit ほどの細かさで持つ）。
 //     段の境目の近くの組は外さない（GL の LINEAR_MIPMAP_LINEAR は段の間もなめらかにつなぐので、境目で値が跳ねない）。lod は入力で渡すので、
 //     sg_texMip の lod の決め方（dFdx・dFdy と Mip.lodOf）はこの行では確かめない（絵の行の mipFloor などが見る）。
-//   LinearColor = 1 の lightmapLightAt（exprLightmapLinear）: 測った最大 3.2e−6 → 上限 limitTree()。外す組は光の行と同じ。LinearColor を 1 にして
-//     CPU の値が変わる組が 1 つも無ければ落とす（線形の側の分かれ道を通っていない）。
-//   色の空間の変換（exprColorSpace）: r3d_srgbToLinear3 と r3d_linearToSrgb3 を uLinearColor = 1 で Texture3d の式と比べる。入力は 0〜1.5
-//     （uLinearColor = 0 は c のまま返るので比べない）。測った最大 2.0e−7 → 上限 limitTree()。
-//   色を作る最後の組み立て（exprSurfaceOut）: r3d_surfaceOut を uLinearColor = 1・かすみありで SoftRaster3d.surfaceOutAt と比べる。
+//   色の空間の変換（exprColorSpace）: r3d_srgbToLinear3 と r3d_linearToSrgb3 を Texture3d の式と比べる。入力は 0〜1.5。
+//     測った最大 2.0e−7 → 上限 limitTree()。
+//   色を作る最後の組み立て（exprSurfaceOut）: r3d_surfaceOut をかすみありで SoftRaster3d.surfaceOutAt と比べる。
 //     測った最大 3.3e−7 → 上限 limitTree()。かすみの色は surfaceOutAt が中で線形へ戻すので、GL の uFogColor には戻した値を入れる。
 //   わざと壊した式（減衰の 2 乗を外す → 差 0.31・cone の内と外を入れ替える → 差 1.08）は、光の行の差が brokenAtLeast() = 1e−2 を
 //   超えることを毎回確かめる（上限が緩すぎて式の食い違いを見逃していないことの確かめ）。
@@ -98,7 +96,7 @@ mod ExprRows {
     pub type alias GlRows = {
         tree = List[Vector[Float32]], toon = List[Vector[Float32]], shadowedLight = Vector[Float32], brokenFalloff = Vector[Float32], brokenCone = Vector[Float32],
         shadow = List[Vector[Float32]], tbn = Vector[Float32], lightmap = Vector[Float32],
-        lightmapLinear = List[Vector[Float32]], colorSpace = List[Vector[Float32]], surface = List[Vector[Float32]]
+        colorSpace = List[Vector[Float32]], surface = List[Vector[Float32]]
     }
 
     def f32(x: Float64): Float64 = Float32.toFloat64(Float64.truncateToFloat32(x))
@@ -294,12 +292,11 @@ mod ExprRows {
     def colorSpaceModes(): List[Int32] = 0 :: 1 :: Nil
 
     def colorSpaceSets(): List[List[(String, RowUniform)]] =
-        colorSpaceModes() |> List.map(m -> ("uLinearColor", RowUniform.IntValue(1)) :: ("uMode", RowUniform.IntValue(m)) :: Nil)
+        colorSpaceModes() |> List.map(m -> ("uMode", RowUniform.IntValue(m)) :: Nil)
 
     /// 色を作る最後の組み立ての行の uniform。かすみの色は CPU の surfaceOutAt が中で線形へ戻すのと同じ値を、外で戻してから渡す。
     def surfaceUniforms(s: LightSet, d: SurfaceDraw): List[(String, RowUniform)] =
         let fog = Texture3d.srgbToLinearColor(colorOf(s#fogColor));
-        ("uLinearColor", RowUniform.IntValue(1)) ::
         ("uFogOn", RowUniform.IntValue(1)) :: ("uFogColor", RowUniform.Vec3Value(fog#r, fog#g, fog#b)) ::
         ("uFogRange", RowUniform.Vec2Value(s#fogNear, s#fogFar)) :: ("uEye", vec3U(s#eye)) ::
         ("uTint", vec3U(d#tint)) :: ("uEmissionIntensity", RowUniform.FloatValue(d#intensity)) :: Nil
@@ -327,11 +324,11 @@ mod ExprRows {
     def lightColor(c: Color, intensity: Float64): Vec3.Vec3 = Vec3.v3(c#r * intensity, c#g * intensity, c#b * intensity)
 
     /// 3D の描き手が光を uniform へ渡す形（Render3d の lightDataOf と同じ値）。
-    def lightUniforms(s: LightSet, steps: Int32, row: TreeRow, linear: Int32): List[(String, RowUniform)] =
+    def lightUniforms(s: LightSet, steps: Int32, row: TreeRow): List[(String, RowUniform)] =
         let np = Scene3d.maxPointLights();
         let ns = Scene3d.maxSpotLights();
         let cones = s#spots |> List.flatMap(l -> { let e = Scene3d.spotConeOf(l); e#outerCos :: e#innerCos :: Nil });
-        ("uMode", RowUniform.IntValue(modeOf(row))) :: ("uLinearColor", RowUniform.IntValue(linear)) ::
+        ("uMode", RowUniform.IntValue(modeOf(row))) ::
         ("uAmbient", vec3U(s#ambient)) :: ("uHemisphere", RowUniform.FloatValue(s#hemisphere)) :: ("uToonSteps", RowUniform.IntValue(steps)) ::
         ("uPointCount", RowUniform.IntValue(List.length(s#points))) ::
         ("uPointPos", RowUniform.Vec3Array(flatten(s#points |> List.map(l -> l#position), np))) ::
@@ -350,7 +347,7 @@ mod ExprRows {
         ("uZenith", vec3U(s#zenith)) :: ("uHorizon", vec3U(s#horizon)) :: ("uGround", vec3U(s#ground)) :: ("uCurve", RowUniform.FloatValue(s#curve)) :: Nil
 
     def treeSets(sets: List[LightSet]): List[List[(String, RowUniform)]] =
-        sets |> List.flatMap(s -> treeRows() |> List.map(row -> lightUniforms(s, 0, row, 0)))
+        sets |> List.flatMap(s -> treeRows() |> List.map(row -> lightUniforms(s, 0, row)))
 
     def shadowUniforms(sc: ShadowCase, radius: Int32): List[(String, RowUniform)] =
         ("uShadowMatrix", RowUniform.Matrix(sc#matrix)) :: ("uShadowBias", RowUniform.FloatValue(sc#bias)) ::
@@ -394,13 +391,13 @@ mod ExprRows {
     /// GPU の値を全部読み返す（今の糸に GL の文脈がある所で呼ぶ）。
     pub def drawGl(inputs: Inputs): Result[String, GlRows] \ IO =
         let texs = probeTextures(inputs#light);
-        let brokenSet = setWithSpotsAndPoints(inputs) |> Option.map(s -> lightUniforms(s, 0, TreeRow.Light, 0) :: Nil) |> Option.getWithDefault(Nil);
-        let shadowedSet = setWithSpotsAndPoints(inputs) |> Option.map(s -> (lightUniforms(s, 0, TreeRow.Light, 0) ::: shadowedSpotUniforms(inputs#shadow, s)) :: Nil)
+        let brokenSet = setWithSpotsAndPoints(inputs) |> Option.map(s -> lightUniforms(s, 0, TreeRow.Light) :: Nil) |> Option.getWithDefault(Nil);
+        let shadowedSet = setWithSpotsAndPoints(inputs) |> Option.map(s -> (lightUniforms(s, 0, TreeRow.Light) ::: shadowedSpotUniforms(inputs#shadow, s)) :: Nil)
                                           |> Option.getWithDefault(Nil);
         forM (
             tree <- GlOffscreen.drawFloatRows(treeFragment(x -> x), count(), texs, treeSets(inputs#sets));
             shadowedLight <- GlOffscreen.drawFloatRows(treeFragment(x -> x), count(), texs ::: shadowMapTexture(inputs#shadow) :: Nil, shadowedSet);
-            toon <- GlOffscreen.drawFloatRows(treeFragment(x -> x), count(), texs, inputs#sets |> List.map(s -> lightUniforms(s, toonSteps(), TreeRow.Light, 0)));
+            toon <- GlOffscreen.drawFloatRows(treeFragment(x -> x), count(), texs, inputs#sets |> List.map(s -> lightUniforms(s, toonSteps(), TreeRow.Light)));
             brokenFalloff <- GlOffscreen.drawFloatRows(treeFragment(breakFalloff), count(), texs, brokenSet);
             brokenCone <- GlOffscreen.drawFloatRows(treeFragment(breakCone), count(), texs, brokenSet);
             shadow <- GlOffscreen.drawFloatRows(shadowFragment(), count(),
@@ -409,14 +406,12 @@ mod ExprRows {
             tbn <- GlOffscreen.drawFloatRows(tbnFragment(), count(), probeTextures(inputs#tbn), (("uStrength", RowUniform.FloatValue(inputs#strength)) :: Nil) :: Nil);
             lightmap <- GlOffscreen.drawFloatRows(lightmapFragment(), count(),
                             rowTexture("uIn0", inputs#lightmapUv, pr -> pr#a) :: chainTexture(inputs#chain) :: Nil, Nil :: Nil);
-            lightmapLinear <- GlOffscreen.drawFloatRows(treeFragment(x -> x), count(), texs,
-                                  inputs#sets |> List.map(s -> lightUniforms(s, 0, TreeRow.LightmapLight, 1)));
             colorSpace <- GlOffscreen.drawFloatRows(colorSpaceFragment(), count(), rowTexture("uIn0", inputs#colorSpace, pr -> pr#a) :: Nil, colorSpaceSets());
             surface <- GlOffscreen.drawFloatRows(surfaceFragment(), count(), probeTextures(inputs#surface), surfaceSets(inputs))
         ) yield {
             tree = tree, toon = toon, shadowedLight = firstOf(shadowedLight), brokenFalloff = firstOf(brokenFalloff), brokenCone = firstOf(brokenCone),
             shadow = shadow, tbn = firstOf(tbn), lightmap = firstOf(lightmap),
-            lightmapLinear = lightmapLinear, colorSpace = colorSpace, surface = surface
+            colorSpace = colorSpace, surface = surface
         }
 
     /// 点光源とスポットを共に持つ最初の光の組（壊した式と影の行が使う）。
@@ -439,9 +434,9 @@ mod ExprRows {
     def xyz(t: (Float64, Float64, Float64, Float64)): Vec3.Vec3 = { let (x, y, z, _) = t; Vec3.v3(x, y, z) }
 
     /// 光の式の CPU の値（3D の CPU の描き手が回す SoftRaster3dLight の関数そのもの）。
-    def cpuTree(s: LightSet, steps: Int32, row: TreeRow, pr: Probe): (Float64, Float64, Float64) = cpuTreeWith(None, 0.0, s, steps, row, pr)
+    def cpuTree(s: LightSet, steps: Int32, row: TreeRow, pr: Probe): (Float64, Float64, Float64) = cpuTreeWith(None, s, steps, row, pr)
 
-    def cpuTreeWith(shadow: SoftRaster3d.SpotShadow, linear: Float64, s: LightSet, steps: Int32, row: TreeRow, pr: Probe): (Float64, Float64, Float64) =
+    def cpuTreeWith(shadow: SoftRaster3d.SpotShadow, s: LightSet, steps: Int32, row: TreeRow, pr: Probe): (Float64, Float64, Float64) =
         let p = xyz(pr#a);
         let n = xyz(pr#b);
         let e = xyz(pr#c);
@@ -450,7 +445,7 @@ mod ExprRows {
         match row {
             case TreeRow.Light => SoftRaster3dLight.lightAt(steps, points, spots, shadow, p#x, p#y, p#z, n#x, n#y, n#z, s#ambient#x, s#ambient#y, s#ambient#z, s#hemisphere)
             case TreeRow.LightmapLight => SoftRaster3dLight.lightmapLightAt(steps, points, spots, shadow, p#x, p#y, p#z, n#x, n#y, n#z, e#x, e#y, e#z,
-                                                        if (s#lightmapSrgb) 1.0 else 0.0, s#lightmapIntensity, linear)
+                                                        if (s#lightmapSrgb) 1.0 else 0.0, s#lightmapIntensity)
             case TreeRow.Fog => SoftRaster3dLight.fogAt(p#x, p#y, p#z, s#eye#x, s#eye#y, s#eye#z, e#x, e#y, e#z, s#fogColor#x, s#fogColor#y, s#fogColor#z, s#fogNear, s#fogFar)
             case TreeRow.Sky => SoftRaster3dLight.skyAt(e#x, e#y, e#z, s#zenith#x, s#zenith#y, s#zenith#z, s#horizon#x, s#horizon#y, s#horizon#z,
                                               s#ground#x, s#ground#y, s#ground#z, s#curve)
@@ -494,7 +489,7 @@ mod ExprRows {
             case Some(s) =>
                 let shadow = cpuShadowOf(inputs#shadow, s);
                 outcomeOf(inputs#light |> List.mapWithIndex((i, pr) ->
-                    if (nearEdge(s, xyz(pr#a))) None else Some(relDiff(rgbAt(rows#shadowedLight, i), cpuTreeWith(shadow, 0.0, s, 0, TreeRow.Light, pr)))))
+                    if (nearEdge(s, xyz(pr#a))) None else Some(relDiff(rgbAt(rows#shadowedLight, i), cpuTreeWith(shadow, s, 0, TreeRow.Light, pr)))))
         }
 
     /// 影の掛かった組（影を外した CPU の値と違う組）が 1 つも無ければ、地図を引く道を通っていないので落とす。
@@ -503,7 +498,7 @@ mod ExprRows {
             case None    => 0
             case Some(s) =>
                 let shadow = cpuShadowOf(inputs#shadow, s);
-                inputs#light |> List.count(pr -> relDiff(cpuTreeWith(shadow, 0.0, s, 0, TreeRow.Light, pr), cpuTree(s, 0, TreeRow.Light, pr)) > 1.0e-6)
+                inputs#light |> List.count(pr -> relDiff(cpuTreeWith(shadow, s, 0, TreeRow.Light, pr), cpuTree(s, 0, TreeRow.Light, pr)) > 1.0e-6)
         };
         let o = shadowedOutcome(inputs, rows);
         let ok = o#worst <= limitTree() and shaded > 0;
@@ -573,28 +568,7 @@ mod ExprRows {
             Some(relDiff(rgbAt(rows#lightmap, i), ShaderEval.sampleMipRgb(inputs#chain, { linear = true, repeat = false }, lod, u, v)))
         }))
 
-    /// LinearColor = 1 の lightmapLightAt の差。
-    def lightmapLinearOutcome(inputs: Inputs, rows: GlRows): Outcome =
-        outcomeOf(List.zip(inputs#sets, rows#lightmapLinear) |> List.flatMap(d -> {
-            let (s, values) = d;
-            inputs#light |> List.mapWithIndex((i, pr) ->
-                if (nearEdge(s, xyz(pr#a))) None
-                else Some(relDiff(rgbAt(values, i), cpuTreeWith(None, 1.0, s, 0, TreeRow.LightmapLight, pr))))
-        }))
-
-    /// LinearColor を 1 にして CPU の値が変わった組の数（0 なら分かれ道の線形の側を通っていないので落とす）。
-    def lightmapLinearChanged(inputs: Inputs): Int32 =
-        inputs#sets |> List.map(s -> inputs#light |> List.count(pr ->
-            relDiff(cpuTreeWith(None, 1.0, s, 0, TreeRow.LightmapLight, pr), cpuTree(s, 0, TreeRow.LightmapLight, pr)) > 1.0e-6)) |> List.sum
-
-    def lightmapLinearLine(inputs: Inputs, rows: GlRows): (String, Bool) =
-        let o = lightmapLinearOutcome(inputs, rows);
-        let changed = lightmapLinearChanged(inputs);
-        let ok = o#worst <= limitTree() and changed > 0;
-        let skipped = if (o#skipped == 0) "" else "・外した組 ${o#skipped}/${o#total}";
-        ("[parity] ${pad("exprLightmapLinear")} E  ${verdict(ok)} (最大の差 ${sci(o#worst)}・上限 ${sci(limitTree())}${skipped}・線形で値の変わった組 ${changed}/${o#total})", ok)
-
-    /// r3d_srgbToLinear3（uMode 0）と r3d_linearToSrgb3（uMode 1）の、uLinearColor = 1 の値と Texture3d の式の差。
+    /// r3d_srgbToLinear3（uMode 0）と r3d_linearToSrgb3（uMode 1）の値と Texture3d の式の差。
     def colorSpaceOutcome(inputs: Inputs, rows: GlRows): Outcome =
         let convert = (mode: Int32, x: Float64) -> if (mode == 0) Texture3d.srgbToLinear(x) else Texture3d.linearToSrgb(x);
         outcomeOf(List.zip(colorSpaceModes(), rows#colorSpace) |> List.flatMap(d -> {
@@ -605,7 +579,7 @@ mod ExprRows {
             })
         }))
 
-    /// r3d_surfaceOut と SoftRaster3d.surfaceOutAt（linear = true・かすみあり）の差。
+    /// r3d_surfaceOut と SoftRaster3d.surfaceOutAt（かすみあり）の差。
     def surfaceOutcome(inputs: Inputs, rows: GlRows): Outcome =
         let draws = List.zip(List.zip(inputs#sets, inputs#surfaceDraws), rows#surface);
         outcomeOf(draws |> List.flatMap(d -> {
@@ -616,7 +590,7 @@ mod ExprRows {
                 let (px, py, pz, lr) = pr#a;
                 let (ar, ag, ab, lg) = pr#b;
                 let (er, eg, eb, lb) = pr#c;
-                let c = SoftRaster3d.surfaceOutAt(env, true, s#eye, Vec3.v3(px, py, pz), Color.rgb(ar, ag, ab), colorOf(sd#tint),
+                let c = SoftRaster3d.surfaceOutAt(env, s#eye, Vec3.v3(px, py, pz), Color.rgb(ar, ag, ab), colorOf(sd#tint),
                                                   Color.rgb(lr, lg, lb), Color.rgb(er, eg, eb), sd#intensity, true);
                 Some(relDiff(rgbAt(values, i), (c#r, c#g, c#b)))
             })
@@ -666,7 +640,6 @@ mod ExprRows {
                     ("[parity] ${pad("exprPcf")} E  ${verdict(shadowOk)} (最大の差 ${sci(shadowWorst)} 段・上限 1 段・一部だけ影の組 ${partial})", shadowOk) ::
                     lineOf("exprTbn", tbnOutcome(inputs, rows), limitTree()) ::
                     lineOf("exprLightmapLod", lightmapOutcome(inputs, rows), limitTexture()) ::
-                    lightmapLinearLine(inputs, rows) ::
                     lineOf("exprColorSpace", colorSpaceOutcome(inputs, rows), limitTree()) ::
                     lineOf("exprSurfaceOut", surfaceOutcome(inputs, rows), limitTree()) :: Nil;
                 List.forEach(l -> println(fst(l)), lines);

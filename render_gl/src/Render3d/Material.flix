@@ -103,7 +103,7 @@ mod Render3d.Material {
     /// （出す α を標本の数に使い、書く α は 1。GL_SAMPLE_ALPHA_TO_ONE）。
     def drawMaterialInstance(state: State, gen: Int64, source: TextureSource, coverage: Bool, d: MaterialDraw): Int32 \ IO =
         let locs = d#entry#locs;
-        putLinearizedColor(state, locs#tint, d#draw#fields#tint);
+        putLinearizedColor(locs#tint, d#draw#fields#tint);
         GL20.glUniform1f(locs#emissionIntensity, RenderUtil.f32(d#material#emissionIntensity));
         GL20.glUniform1i(locs#cutout, if (d#material#cutout) 1 else 0);
         // WhyNot: ShaderDoc.materialParamValues で並べない — あちらは上限を超えた tex を 0 にする前の Spec から名前を拾い、
@@ -187,12 +187,12 @@ mod Render3d.Material {
         resolveTextureAs(state, gen, source, "材質の絵", name, textureUse)
 
     /// resolveMaterialTexture の、見つからない時の知らせで何の絵かを label で言う版（知らせの鍵は名前ごとに共有）。
-    /// textureUse = 貼る使い方（段の平均の仕方を決める。3D の色を線形の量で計算しない描き手では全部 8bit の値のまま平均する）。
+    /// textureUse = 貼る使い方（段の平均の仕方を決める）。
     // WhyNot: 同じ絵を色と法線の両方に貼った時に 1 枚にまとめない — 段の平均の仕方が違うので 2 枚上がり、置き場の上限にも 2 回数える。
     //   その使い方は今の使い手に無い。
     pub def resolveTextureAs(state: State, gen: Int64, source: TextureSource, label: String, name: String,
                              textureUse: Texture3d.TextureUse): BoundTexture \ IO =
-        let average = if (state#linearColor) Texture3d.mipAverageOf(Texture3d.mipSpaceOf(textureUse)) else Mip.Average.Raw;
+        let average = Texture3d.mipAverageOf(Texture3d.mipSpaceOf(textureUse));
         let found = if (String.startsWith(prefix = Texture3d.namePrefix(), name))
             Map.get(name, source#own) |> Option.map(t -> texture3dBound(state, gen, average, t))
         else (source#textureOf)(name) |> Option.map(t ->
