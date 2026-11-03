@@ -285,6 +285,27 @@ mod TestDrawHash {
     def testSceneKeyWithSpotWithoutInnerIsPinned(): Unit \ Assert =
         Assert.assertEq(expected = "079522657a2743ff47948197f16ba251df139c50f19ce24b3a738a6f510c8402", keyWithSpot(None))
 
+    /// engine のテストの資材 textured_two_materials.glb（emissive の無い 2 つの材質）を loadTextured で読んで並べた場面の鍵。
+    /// テストは .layers/engine_tools で流れる。
+    def keyWithTexturedGlb(): String \ IO =
+        let loaded = run Gltf.loadTextured("../../engine/test/data/textured_two_materials.glb") with Fs.FileRead.runWithIO;
+        let model = match loaded {
+            case Ok(m)  => m
+            case Err(e) => bug!(e)
+        };
+        let instances = model#parts |> List.map(part -> {
+            let placed = Scene3d.meshInstance(part#mesh, Mat4.translate(Vec3.v3(0.0, 0.0, 3.0)));
+            part#material |> Option.map(m -> Scene3d.withMaterial(m, placed)) |> Option.getWithDefault(placed)
+        });
+        let base = sceneAt(Mat4.identity());
+        let f = frame();
+        keyOf(inputs(), { req = { scenes = { scene = { instances = instances, textures = model#textures | base#scene } | base } :: Nil | f#req } | f })
+
+    // emissive の無い glb を loadTextured で読んだ場面の鍵は、glb の emissive を読む前の字のまま（材質と spec 名が変わらない）。
+    @Test
+    def testSceneKeyWithGlbWithoutEmissiveIsPinned(): Unit \ IO + Assert =
+        Assert.assertEq(expected = "7526b5c5a18093650c60055b2853cf65241680a9253f3465571a88a6e8204ef1", keyWithTexturedGlb())
+
     // innerFovY を付けると鍵が変わる（縁のぼけ方が絵に出る）。
     @Test
     def testSpotInnerFovYChangesKey(): Unit \ Assert =

@@ -29,6 +29,11 @@ pub mod Camera3d {
         let focal = Vec2.cos(half) / Vec2.sin(half);
         Mat4.perspective({ xScale = focal / aspect, yScale = focal, near = c#near, far = c#far })
 
+    /// このカメラに写る範囲（視錐台）。aspect = 幅 / 高さ。光や羽虫をゲームの側で間引く・数える時に使う
+    /// （置いた物とビルボードは描き手が同じ判定で間引くので、ゲームが間引かなくてよい）。
+    pub def frustum(c: Camera3d, aspect: Float64): Frustum.Frustum =
+        Frustum.ofClipMatrix(Mat4.mul(projectionMatrix(c, aspect), viewMatrix(c)))
+
     /// 3D の点が描き物の中のどこに写るか（左上が 0・y は下へ増える px）。near より手前と目の後ろは None。
     pub def worldToScreen(c: Camera3d, size: Vec2.Vec2, p: Vec3.Vec3): Option[Vec2.Vec2] =
         let depth = Vec3.dot(Vec3.sub(p, c#eye), forward(c));

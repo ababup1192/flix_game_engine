@@ -164,6 +164,8 @@
   `pub def viewMatrix(c: Camera3d): Mat4.Mat4`
 - GL の透視の行列（右手系の目の座標 → clip。奥行きは near で −1・far で +1）。aspect = 幅 / 高さ。
   `pub def projectionMatrix(c: Camera3d, aspect: Float64): Mat4.Mat4`
+- このカメラに写る範囲（視錐台）。aspect = 幅 / 高さ。光や羽虫をゲームの側で間引く・数える時に使う
+  `pub def frustum(c: Camera3d, aspect: Float64): Frustum.Frustum`
 - 3D の点が描き物の中のどこに写るか（左上が 0・y は下へ増える px）。near より手前と目の後ろは None。
   `pub def worldToScreen(c: Camera3d, size: Vec2.Vec2, p: Vec3.Vec3): Option[Vec2.Vec2]`
 
@@ -400,6 +402,17 @@
 - 画面の隅に出す数行（ms は小数 2 桁）。描くのはゲームの字の部品（出す所と見た目はゲームが決める）。
   `pub def summaryLines(d: Diagnostics): List[String]`
 
+## Frustum — `engine/src/scene3d/Frustum.flix`
+- `pub type alias Frustum = FrustumData`
+- clip の行列（projectionMatrix × viewMatrix）の行から 6 つの面を取り出す（左・右・下・上・near・far）。
+  `pub def ofClipMatrix(clip: Mat4.Mat4): Frustum`
+- 形の座標の箱（min・max）を world で写した物が、視錐台に掛かりうるか。8 つの角が 1 つの面の外に全部あれば偽。
+  `pub def intersectsBox(f: Frustum, min: Vec3.Vec3, max: Vec3.Vec3, world: Mat4.Mat4): Bool`
+- 中心 center・半径 radius の球が、視錐台に掛かりうるか。
+  `pub def intersectsSphere(f: Frustum, center: Vec3.Vec3, radius: Float64): Bool`
+- 点 p が視錐台の中か（面の上は中）。
+  `pub def containsPoint(f: Frustum, p: Vec3.Vec3): Bool`
+
 ## GameEngine — `engine/src/GameEngine.flix`
 - テクスチャアセットのマニフェストエントリ
   `pub type alias TextureEntry = { name = String, path = String, hasAlpha = Bool }`
@@ -538,11 +551,11 @@
 ## Gltf — `engine/src/scene3d/Gltf.flix`
 - path の .glb を読む（Fs.FileRead.readBytes）。読めない・壊れている時は Err（パスつき）。
   `pub def load(path: String): Result[String, Model3d.Model3d] \ Fs.FileRead`
-- .glb のバイトから作る。壊れている・読まない物を含む時は Err。parts は primitive ごと（材質 None）・textures は空。
+- .glb のバイトから作る。壊れている・読まない物を含む時は Err。parts は primitive ごと（材質 None・gltfMaterial の絵の名前は None）・textures は空。
   `pub def fromGlb(bytes: Vector[Int8]): Result[String, Model3d.Model3d]`
 - path の .glb を、絵と材質つきで読む。parts に材質（baseColorTexture → Scene3d.texturedMaterial・normalTexture → 法線マップ・
   `pub def loadTextured(path: String): Result[String, Model3d.Model3d] \ Fs.FileRead + IO`
-- 材質の絵の長い辺の上限（px）。baseColor = baseColorTexture・normal = normalTexture。上限を超える絵は mip と同じ縮め方で半分にしていく。
+- 材質の絵の長い辺の上限（px）。baseColor = baseColorTexture と emissiveTexture（同じ色の絵）・normal = normalTexture。
   `pub type alias TextureLimits = { baseColor = Int32, normal = Int32 }`
 - 上限なし（loadTextured と同じ）。ほかの値は { normal = 1024 | Gltf.noTextureLimits() } の形で替える。
   `pub def noTextureLimits(): TextureLimits`
@@ -671,8 +684,12 @@
 - `pub def fromObj(objText: String, mtlText: String): Result[String, Mesh3d]`
 - 中身の鍵（位置・色・番号の SHA-256 の 16 進。uv つきは uv とタンジェントも）。同じ中身なら同じ字になる。GL はこれで頂点バッファを引く。
   `pub def contentHash(m: Mesh3d): String`
+- 軸にそろった箱（AABB）の最小と最大の角。
+  `pub type alias Bounds = { min = Vec3.Vec3, max = Vec3.Vec3 }`
 - 頂点の最小と最大（形の座標）。頂点の無い形は 0。
-  `pub def bounds(m: Mesh3d): { min = Vec3.Vec3, max = Vec3.Vec3 }`
+  `pub def bounds(m: Mesh3d): Bounds`
+- 箱 b の 8 つの角。
+  `pub def cornersOf(b: Bounds): List[Vec3.Vec3]`
 - `pub def triangleCount(m: Mesh3d): Int32`
 - `pub def vertexCount(m: Mesh3d): Int32`
 - 頂点の位置（形の座標。頂点ごとに x・y・z の 3 つ）。
@@ -704,9 +721,28 @@
 - `pub def lodOf(d: Derivatives, width: Int32, height: Int32, levels: Int32): Float64`
 
 ## Model3d — `engine/src/scene3d/Model3d.flix`
-- primitive 1 つ。mesh = 形（uv を持つ primitive だけ uv つき）・material = 材質（絵の無い材質は None で、頂点の色で描く）。
-  `pub type alias ModelPart = { mesh = Mesh3d.Mesh3d, material = Option[Scene3d.Material3d] }`
-- `pub type alias Model3d = { mesh = Mesh3d.Mesh3d, skin = Option[Skin3d.Skin3d], clips = Map[String, AnimationClip3d.AnimationClip3d], parts = List[ModelPart], textures = List[Texture3d.Texture3d] }`
+- primitive 1 つ。mesh = 形（uv を持つ primitive だけ uv つき。ノードの world の行列は焼き込んである）・
+  `pub type alias ModelPart = { mesh = Mesh3d.Mesh3d, material = Option[Scene3d.Material3d], node = Option[Int32], gltfMaterial = Option[GltfMaterial] }`
+- `pub type alias Model3d = { mesh = Mesh3d.Mesh3d, skin = Option[Skin3d.Skin3d], clips = Map[String, AnimationClip3d.AnimationClip3d], parts = List[ModelPart], textures = List[Texture3d.Texture3d], nodes = List[ModelNode] }`
+- glTF のノード 1 つ。座標は engine の座標（左手系。Gltf の頭の X の反転を済ませた物）。
+  `pub type alias ModelNode = { name = String, parent = Option[Int32], local = Mat4.Mat4, world = Mat4.Mat4, localBounds = Option[Mesh3d.Bounds], parts = List[Int32] }`
+- glTF の材質の alphaMode。Opaque = 不透明・Mask = alphaCutoff で抜く・Blend = 半透明。
+  `pub enum AlphaMode with Eq, ToString { case Opaque case Mask case Blend }`
+- glTF の材質の情報（読むだけ。描き方を決めるのは part#material）。
+  `pub type alias GltfMaterial = { name = String, alphaMode = AlphaMode, alphaCutoff = Float64, doubleSided = Bool, baseColorTexture = Option[String], normalTexture = Option[String], emissiveTexture = Option[String], emissive = { r = Float64, g = Float64, b = Float64 } }`
+- 名前が name のノード（同じ名前が複数あれば nodes の並びの前）。たくさん引く時は nodesByName を 1 回作って引く。
+  `pub def findNode(name: String, model: Model3d): Option[ModelNode]`
+- 名前 → ノード（同じ名前が複数あれば nodes の並びの前）。
+  `pub def nodesByName(model: Model3d): Map[String, ModelNode]`
+- 名前が prefix で始まるノード（nodes の並びの順）。Blender の書き出しの名前の決まり（"COL_" など）で集める。
+  `pub def nodesWithPrefix(prefix: String, model: Model3d): List[ModelNode]`
+- ノード node から出た parts（node#parts の順）。1 回ごとに parts を並べ直すので、たくさんのノードに回す時は partsByNode を 1 回作って引く。
+  `pub def partsOfNode(node: ModelNode, model: Model3d): List[ModelPart]`
+- ノードの番号（nodes の何番目か）→ そのノードから出た parts（parts の並びの順）。
+  `pub def partsByNode(model: Model3d): Map[Int32, List[ModelPart]]`
+- ノードの world の原点（world の行列の平行移動の列）。
+  `pub def nodeOrigin(node: ModelNode): Vec3.Vec3`
+- `pub def partLocalToNode(node: ModelNode, model: Model3d): Option[Mat4.Mat4]`
 
 ## Num — `engine/src/core/Num.flix`
 - 0 以上 1 以下に収める。濃さ・進み具合・混ぜ具合など「0〜1 のはずの値」を
@@ -947,6 +983,10 @@
   `pub def withCutout(on: Bool, m: Material3d): Material3d`
 - 光の計算の後に足す、自分で光る色（かすみに沈まない）。
   `pub def withEmission(s: ShaderDoc.Shade, m: Material3d): Material3d`
+- emission を外す（glb の emissive で光らせたくない時）。
+  `pub def withoutEmission(m: Material3d): Material3d`
+- spec の名前だけを替える。spec の木か emission の木を差し替えた材質に、木ごとに違う名前を付ける
+  `pub def withSpecName(name: String, m: Material3d): Material3d`
 - `pub def withNormalMap(n: NormalMap, m: Material3d): Material3d`
 - `pub def withWrap(w: Wrap, m: Material3d): Material3d`
 - 材質の中身を読む（GL・CPU・鍵が使う）。
@@ -972,6 +1012,20 @@
 - `pub def skinningWarning(i: Instance3d): Option[String]`
 - 置いた物の中身を読む（GL・CPU・鍵が使う）。
   `pub def instanceFieldsOf(i: Instance3d): InstanceFields`
+- 置いた物の world の境界（形の境界の 8 つの角を world で写した物を囲む AABB）。
+  `pub def worldBoundsOf(i: Instance3d): Option[Mesh3d.Bounds]`
+- 描き手が視錐台 f の外として描かなくてよい物か（迷ったら偽 = 描く）。GL と CPU と影の地図が同じ判定を使う。
+  `pub def isOutsideFrustum(f: Frustum.Frustum, i: Instance3d): Bool`
+- isOutsideFrustum の本体（置いた物の中身から。CPU の描き手が使う）。
+  `pub def isOutsideFrustumFields(f: Frustum.Frustum, r: InstanceFields): Bool`
+- ビルボードが視錐台 f の外か（外接球で見る。半径 = (size.x × max(|anchor.x|, |1 − anchor.x|), size.y × 同じ y) の長さ）。
+  `pub def isBillboardOutsideFrustum(f: Frustum.Frustum, b: Billboard3d): Bool`
+- 場面の縦横の比（幅 / 高さ。高さは 1e-6 未満にしない）。GL と CPU の射影の行列と視錐台が同じ値を使う。
+  `pub def aspectOf(scene: Scene3dCmd): Float64`
+- 場面のカメラで見る視錐台（縦横の比は aspectOf。GL と CPU が同じ物を使う）。
+  `pub def frustumOf(scene: Scene3dCmd): Frustum.Frustum`
+- スポットの影の地図を描く目の視錐台（縦横の比は 1）。目に見えない物も影は落とすので、影の地図はこちらで間引く。
+  `pub def shadowFrustumOf(spot: SpotLight): Frustum.Frustum`
 - `pub def lightmapMaxLevels(): Int32`
 - UV の島の間の px（読み込んだ lightmap の絵の上で）から、読む mip のレベルの数の上限を決める（1 以上）。
   `pub def lightmapLevelsForGap(gapPx: Int32): Int32`

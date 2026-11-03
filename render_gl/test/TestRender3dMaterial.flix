@@ -179,4 +179,16 @@ mod TestRender3dMaterial {
     def testLightmapVertexPassesUv2(): Unit \ Assert =
         let source = Render3d.materialVertexSource({ skinned = false, uv = true, lightmap = true });
         Assert.assertTrue(indexOf("layout (location = 7) in vec2 aUv2;", source) >= 0 and indexOf("vUv2 = aUv2;", source) >= 0)
+
+    // ── 材質のプログラムの鍵 ──
+
+    def plainKind(): Render3d.VertexKind = { skinned = false, uv = true, normalMap = false, lightmap = false }
+
+    /// 同じ spec の名前でも、emission の有る材質と無い材質は別の鍵（+em）で、同じプログラムを取り合わない。
+    @Test
+    def testMaterialKeyTellsEmissionApart(): Unit \ Assert =
+        let plain = Scene3d.texturedMaterial("tex3d:a", ShaderDoc.FilterMode.Linear);
+        let glowing = plain |> Scene3d.withEmission(ShaderDoc.Shade.Solid(Color.rgb(1.0, 1.0, 1.0)));
+        Assert.assertEq(expected = ("3d+uv:scene3d:textured:Linear", "3d+uv+em:scene3d:textured:Linear"),
+            (Render3d.materialKey(Scene3d.materialFieldsOf(plain), plainKind()), Render3d.materialKey(Scene3d.materialFieldsOf(glowing), plainKind())))
 }

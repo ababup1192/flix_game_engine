@@ -2,8 +2,10 @@
 // accessor の読み方（byteStride・normalized・UNSIGNED_SHORT）・CUBICSPLINE・読まない物の Err・
 // 右手系 → 左手系の写し方（X の反転・巡りの裏返し）を確かめ、Blender で書き出した two_joints.glb で向きを確かめる。
 mod TestGltf {
+    import java.awt.image.BufferedImage
     import java.io.ByteArrayOutputStream
     import java.io.PrintStream
+    import javax.imageio.ImageIO
     import java.lang.Float
     import java.lang.System
 
@@ -26,6 +28,17 @@ mod TestGltf {
     /// 4 の倍数の長さへ fill で詰める。
     def padded(fill: Int8, bytes: List[Int8]): List[Int8] =
         List.append(bytes, List.repeat(Int32.remainder(4 - Int32.remainder(List.length(bytes), 4), 4), fill))
+
+    /// 1 × 1 の PNG のバイト（argb の色。-65536 = 不透明の赤・-16711936 = 不透明の緑）。
+    def onePixelPng(argb: Int32): List[Int8] \ IO = squarePng(1, argb)
+
+    /// side × side の一色の PNG のバイト。
+    def squarePng(side: Int32, argb: Int32): List[Int8] \ IO =
+        let image = new BufferedImage(side, side, BufferedImage.TYPE_INT_ARGB);
+        List.range(0, side * side) |> List.forEach(k -> image.setRGB(Int32.remainder(k, side), k / side, argb));
+        let out = new ByteArrayOutputStream();
+        discard ImageIO.write(image, "png", out);
+        Array.toList(out.toByteArray())
 
     /// JSON の字と BIN のバイトから .glb を組む（JSON は空白・BIN は 0 で 4 の倍数へ詰める）。
     def glb(json: String, bin: List[Int8]): Vector[Int8] =

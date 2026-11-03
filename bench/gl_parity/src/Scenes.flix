@@ -48,7 +48,7 @@ mod Scenes {
             :: texturedBox() :: normalBump() :: skinNormal()
             :: mipFloor() :: mipFloorScaled() :: mipFloorWorld() :: gltfTextured() :: windowPass3d()
             :: hdrPass() :: hdrWindowHalf() :: hdrMultiply() :: texSizeScaled() :: tonemap() :: fxaa()
-            :: lightmapBaked3d() :: lightmapNormal3d() :: spotSoftEdge3d() :: Nil
+            :: lightmapBaked3d() :: lightmapNormal3d() :: spotSoftEdge3d() :: gltfEmissive3d() :: cullOffscreen3d() :: Nil
 
     /// B 段階の scene のうち、違う画素の数に上限を置く物（名前 → 許す画素数）。3D の場面は GL と CPU で三角形の縁の
     /// 画素の取り方と浮動小数の丸めが違い、バイトでは一致しない（docs/backend-parity.md の Shader 面と同じ扱い）。
@@ -83,6 +83,15 @@ mod Scenes {
         case "lightmapBaked3d" => Some(600)
         case "lightmapNormal3d" => Some(400)
         case "spotSoftEdge3d"  => Some(100)
+        case "gltfEmissive3d"  => Some(200)
+        case "cullOffscreen3d" => Some(100)
+        case _                 => None
+    }
+
+    /// GL の描き手が描いた置いた物の数（FrameDiagnostics の scene3dCounts#drawn）の期待値を持つ scene（名前 → 数）。
+    /// 視錐台の外の物を間引けていなければ数が増え、中の物まで間引くと減る（絵の差では間引きの効き目が見えない）。
+    pub def expectedDrawnOf(name: String): Option[Int32] = match name {
+        case "cullOffscreen3d" => Some(2)
         case _                 => None
     }
 
@@ -799,26 +808,30 @@ mod Scenes {
     // 板 A（4 × 4 の絵・左上が赤・NEAREST・法線マップ）と板 B（baseColorFactor の水色・材質なし）。glb の板の表は engine の +Z を向くので、
     // Y 軸まわりに半周させて目へ向ける。絵の左上の赤が画面の左上に来れば、uv の向きと X の反転がそろっている。
 
-    /// assets の textured_two_materials.glb（engine/test/data と同じ物）。
+    /// assets の glb（engine/test/data と同じ物）を loadTextured で読む。
     // WhyNot: Scenes.all を IO にしない — 場面の宣言は GL と SoftRaster と名前の付け替えの 3 か所から何度も引く純粋な列で、
     //   1 枚の資材を読むために全部の呼び手の効果を広げることになる。読むのは小さな glb 1 つで、何度読んでも同じ物になる。
-    def texturedModel(): Model3d.Model3d =
-        let loaded = unsafe IO { run Gltf.loadTextured("assets/textured_two_materials.glb") with Fs.FileRead.runWithIO };
+    def texturedModel(path: String): Model3d.Model3d =
+        let loaded = unsafe IO { run Gltf.loadTextured(path) with Fs.FileRead.runWithIO };
         match loaded {
             case Ok(m)  => m
             case Err(e) => bug!(e)
         }
 
-    def gltfTextured(): Scene =
-        let model = texturedModel();
-        let world = Mat4.mul(Mat4.translate(Vec3.v3(0.0, -0.5, 4.0)), Mat4.rotateY(Vec2.pi()));
-        let instances = model#parts |> List.map(part -> {
+    /// model の parts を world で置き、材質のある part に材質を付ける。
+    def placedParts(model: Model3d.Model3d, world: Mat4.Mat4): List[Scene3d.Instance3d] =
+        model#parts |> List.map(part -> {
             let placed = Scene3d.meshInstance(part#mesh, world);
             match part#material {
                 case Some(m) => Scene3d.withMaterial(m, placed)
                 case None    => placed
             }
-        });
+        })
+
+    def gltfTextured(): Scene =
+        let model = texturedModel("assets/textured_two_materials.glb");
+        let world = Mat4.mul(Mat4.translate(Vec3.v3(0.0, -0.5, 4.0)), Mat4.rotateY(Vec2.pi()));
+        let instances = placedParts(model, world);
         let light = { position = Vec3.v3(0.0, 2.0, 1.0), color = c8(255, 255, 255), intensity = 0.6, range = 10.0 };
         let base = flatScene({ x = 240.0, y = 140.0 }, 1, instances, Nil);
         let scene = { textures = model#textures, pointLights = light :: Nil,
@@ -1020,4 +1033,43 @@ mod Scenes {
                       | Scene3d.scene(camera, { x = 320.0, y = 180.0 }) };
         { name = "spotSoftEdge3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
             Render.scene3d({ x = 0.0, y = 0.0 }, scene) :: Nil }
+
+    // ── scene 38: glb の emissive（loadTextured が emissive を emission にする）。B 段階 ──
+    // assets の emissive_plates.glb（engine/test/data/testdata と同じ物）: 左は灰色の絵 × emissiveTexture（上の行が橙）× 強さ 2・
+    // 右は uv の無い emissive だけの材質（頂点の色の材質 + 定数の emission）。環境光を暗くして、光るのが emission だけで見えるようにする。
+    // emissive を読み落とすと、左の上の行と右の板が暗い灰色の面になる。
+    def gltfEmissive3d(): Scene =
+        let model = texturedModel("assets/emissive_plates.glb");
+        let world = Mat4.mul(Mat4.translate(Vec3.v3(0.0, 0.0, 4.0)), Mat4.rotateY(Vec2.pi()));
+        let base = flatScene({ x = 240.0, y = 140.0 }, 1, placedParts(model, world), Nil);
+        let scene = { textures = model#textures, environment = { ambient = c8(40, 40, 40) | base#environment } | base };
+        { name = "gltfEmissive3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil }
+
+    // ── scene 39: 視錐台の外の置いた物を間引く（Scene3d.isOutsideFrustum）。B 段階 ──
+    // 画面の中に同じ材質（同じプログラム）・同じ形の板 2 枚をぴったり重ねる（赤が先・青が後。深度が同じなので先に描いた赤が勝ち、青は見えない）。
+    // 外（後ろ・左右・上・far の向こう）に同じ材質の板 200 枚を、中の 2 枚の前・間・後ろに挟む。GL が描いた数は 2（expectedDrawnOf）。
+    // GL は材質の物をプログラムで並べ替えてから描く（安定でない並べ替え）。間引く物を並べる前に除くと、赤と青の順が入れ替わりうり、板が青くなる。
+    def cullOffscreen3d(): Scene =
+        let spec: ShaderDoc.Spec = { name = "parity:cull", cycleRate = 0.0, bindings = Nil, out = ShaderDoc.Out.Fill({
+            shade = ShaderDoc.Shade.Rgb({ r = ShaderDoc.Field.VertexColor({ chan = ShaderDoc.TexChan.R }),
+                                          g = ShaderDoc.Field.VertexColor({ chan = ShaderDoc.TexChan.G }),
+                                          b = ShaderDoc.Field.VertexColor({ chan = ShaderDoc.TexChan.B }) }),
+            alpha = ShaderDoc.Field.Const(1.0) }) };
+        let painted = (quad: Mesh3d.Polygon) -> shape(quad :: Nil) |> Scene3d.withMaterial(Scene3d.material(spec));
+        let red = painted(facingQuad(-3.0, 1.0, -1.5, 1.5, 10.0, c8(220, 30, 30)));
+        let blue = painted(facingQuad(-3.0, 1.0, -1.5, 1.5, 10.0, c8(30, 60, 220)));
+        let outside = List.range(0, 200) |> List.map(k -> {
+            let offset = Int32.toFloat64(k);
+            painted(match Int32.remainder(k, 5) {
+                case 0 => facingQuad(-1.0, 1.0, -1.0, 1.0, -5.0 - offset, c8(30, 200, 30))
+                case 1 => facingQuad(40.0 + offset, 42.0 + offset, -1.0, 1.0, 10.0, c8(30, 200, 30))
+                case 2 => facingQuad(-42.0 - offset, -40.0 - offset, -1.0, 1.0, 10.0, c8(30, 200, 30))
+                case 3 => facingQuad(-1.0, 1.0, 30.0 + offset, 32.0 + offset, 10.0, c8(30, 200, 30))
+                case _ => facingQuad(-1.0, 1.0, -1.0, 1.0, 150.0 + offset, c8(30, 200, 30))
+            })
+        });
+        let instances = List.flatten(List.take(70, outside) :: (red :: Nil) :: List.take(60, List.drop(70, outside)) :: (blue :: Nil) :: List.drop(130, outside) :: Nil);
+        { name = "cullOffscreen3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            Render.scene3d({ x = 40.0, y = 20.0 }, flatScene({ x = 240.0, y = 140.0 }, 1, instances, Nil)) :: Nil }
 }

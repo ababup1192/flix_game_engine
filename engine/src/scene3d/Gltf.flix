@@ -1,7 +1,8 @@
 // Gltf — 3D の場面（Scene3d）の部品。座標の約束は scene3d/Scene3d.flix の頭。
 
 /// glTF 2.0 のバイナリ（.glb）を読む: メッシュ・スキン・頂点のジョイントの重み・アニメーション・uv（TEXCOORD_0）とタンジェント（TANGENT）。
-/// loadTextured はさらに、BIN に埋めた画像（PNG / JPEG）と材質（baseColorTexture・normalTexture・sampler）も読む。
+/// loadTextured はさらに、BIN に埋めた画像（PNG / JPEG）と材質（baseColorTexture・normalTexture・emissive・sampler）も読む。
+/// ノードは全部（mesh の無いノードも）名前・行列・局所の境界つきで Model3d の nodes に入る（Model3d.findNode で引く）。
 /// 右手系の glTF を左手系の engine へ X の反転（S = diag(−1, 1, 1)）で写す。glTF の正面 +Z は engine でも +Z のまま、
 /// キャラの右手（glTF の −X）は engine の +X に来る。位置と法線は x を反転し、三角形の巡りを逆にする。
 /// 回転は (x, −y, −z, w)、倍率はそのまま、行列（逆バインド行列・matrix のノード・rootTransform）は S·M·S。
@@ -43,28 +44,30 @@ pub mod Gltf {
 
     /// path の .glb を読む（Fs.FileRead.readBytes）。読めない・壊れている時は Err（パスつき）。
     pub def load(path: String): Result[String, Model3d.Model3d] \ Fs.FileRead =
-        Fs.FileRead.readBytes(path)
-            |> Result.mapErr(e -> "${path}: 読めない（${e}）")
-            |> Result.flatMap(bytes -> fromGlb(bytes) |> Result.mapErr(e -> "${path}: ${e}"))
+        loadWith(fromGlb, path)
 
-    /// .glb のバイトから作る。壊れている・読まない物を含む時は Err。parts は primitive ごと（材質 None）・textures は空。
+    /// .glb のバイトから作る。壊れている・読まない物を含む時は Err。parts は primitive ごと（材質 None・gltfMaterial の絵の名前は None）・textures は空。
     /// TEXCOORD_0・TANGENT が読めない（数が頂点の数と違う・NaN か無限）時は、その欄を使わずに読んで 1 行知らせる。
     pub def fromGlb(bytes: Vector[Int8]): Result[String, Model3d.Model3d] =
-        forM (
-            glb <- parseGlb(bytes);
-            _ <- checkBuffers(glb#json);
-            built <- buildModel(glb)
-        ) yield Log.warnAllThen(warningsOf(glb#json, built#jointOfNode), built#model)
+        parseAndBuild(bytes) |> Result.map(gb -> {
+            let (glb, built) = gb;
+            let infoOnly = (material: Obj) -> { withUv = None, withoutUv = None, info = gltfMaterialOf(noTextureNames(), material), lines = Nil, noUvLine = None };
+            let (parts, lines) = attachMaterials(built, objectsOf("materials", glb#json) |> Vector.map(infoOnly));
+            Log.warnAllThen(List.append(warningsOf(glb#json, built#jointOfNode), lines), { parts = parts | built#model })
+        })
 
     /// path の .glb を、絵と材質つきで読む。parts に材質（baseColorTexture → Scene3d.texturedMaterial・normalTexture → 法線マップ・
-    /// sampler の wrap）、textures に BIN に埋めた画像（Texture3d.decode）。baseColorFactor は頂点の色に書き込んであり、VertexColor で掛かる。
-    /// 絵の無い材質の primitive は材質 None（頂点の色で描く）。読めない・壊れている時は Err（パスつき）。
+    /// emissive → emission・sampler の wrap）、textures に BIN に埋めた画像（Texture3d.decode）。baseColorFactor は頂点の色に書き込んであり、VertexColor で掛かる。
+    /// 絵も emissive も無い材質の primitive は材質 None（頂点の色で描く）。読めない・壊れている時は Err（パスつき）。
+    /// emissive（emissiveFactor × KHR_materials_emissive_strength。emissiveTexture があれば絵 × それ）の付く材質は光る
+    /// （glTF の決まりどおり。止めるなら Scene3d.withoutEmission）。emissive の付く材質の spec の名前は "gltf:" で始まり、
+    /// 木の形を変える物（絵の読み方・emissive の値・絵の有無）を全部名前に入れる。emissive の無い材質は Scene3d.texturedMaterial のまま。
+    /// emissiveTexture を指しているのに読めない時（texCoord ≠ 0・画像が読めない・形に TEXCOORD_0 が無い）は光らせず、材質ごとに 1 行知らせる。
     pub def loadTextured(path: String): Result[String, Model3d.Model3d] \ Fs.FileRead + IO =
-        Fs.FileRead.readBytes(path)
-            |> Result.mapErr(e -> "${path}: 読めない（${e}）")
-            |> Result.flatMap(bytes -> fromGlbTextured(bytes) |> Result.mapErr(e -> "${path}: ${e}"))
+        loadWith(fromGlbTextured, path)
 
-    /// 材質の絵の長い辺の上限（px）。baseColor = baseColorTexture・normal = normalTexture。上限を超える絵は mip と同じ縮め方で半分にしていく。
+    /// 材質の絵の長い辺の上限（px）。baseColor = baseColorTexture と emissiveTexture（同じ色の絵）・normal = normalTexture。
+    /// 上限を超える絵は mip と同じ縮め方で半分にしていく。
     pub type alias TextureLimits = { baseColor = Int32, normal = Int32 }
 
     /// 上限なし（loadTextured と同じ）。ほかの値は { normal = 1024 | Gltf.noTextureLimits() } の形で替える。
@@ -72,21 +75,14 @@ pub mod Gltf {
 
     /// loadTextured の、材質の絵の大きさに上限を掛ける版（場面の絵の上限に収める・近くで見ない法線マップを小さくする）。
     pub def loadTexturedWith(limits: TextureLimits, path: String): Result[String, Model3d.Model3d] \ Fs.FileRead + IO =
-        Fs.FileRead.readBytes(path)
-            |> Result.mapErr(e -> "${path}: 読めない（${e}）")
-            |> Result.flatMap(bytes -> fromGlbTexturedWith(limits, bytes) |> Result.mapErr(e -> "${path}: ${e}"))
+        loadWith(fromGlbTexturedWith(limits), path)
 
     /// loadTextured のバイトの版。
     pub def fromGlbTextured(bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO = fromGlbTexturedWith(noTextureLimits(), bytes)
 
     /// loadTexturedWith のバイトの版。
     pub def fromGlbTexturedWith(limits: TextureLimits, bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO =
-        let builtR = forM (
-            glb <- parseGlb(bytes);
-            _ <- checkBuffers(glb#json);
-            built <- buildModel(glb)
-        ) yield (glb, built);
-        match builtR {
+        match parseAndBuild(bytes) {
             case Err(e) => Err(e)
             case Ok((glb, built)) =>
                 let used = usedImages(limits, glb#json);
@@ -95,23 +91,61 @@ pub mod Gltf {
                     case None          => (None, Nil)
                 });
                 let decoded = images |> Vector.map(fst);
-                let materials = objectsOf("materials", glb#json) |> Vector.map(materialOf(glb, decoded));
-                let parts = List.zip(built#model#parts, built#partMaterials) |> List.map(pm -> {
-                    let (part, index) = pm;
-                    { material = index |> Option.flatMap(k -> Vector.nth(k, materials)) |> Option.flatMap(fst) | part }
-                });
-                let lines = List.append(Vector.toList(images) |> List.flatMap(snd), Vector.toList(materials) |> List.flatMap(snd)) |> List.distinct;
+                let materials = objectsOf("materials", glb#json) |> Vector.mapWithIndex(materialOf(glb, decoded));
+                let (parts, attachLines) = attachMaterials(built, materials);
+                let lines = List.flatten((Vector.toList(images) |> List.flatMap(snd)) :: attachLines :: Nil) |> List.distinct;
                 Ok(Log.warnAllThen(List.append(warningsOf(glb#json, built#jointOfNode), lines),
                                    { parts = parts, textures = Vector.toList(decoded) |> List.filterMap(identity) | built#model }))
         }
 
-    /// 材質の baseColorTexture と normalTexture が指す画像の番号 → その絵の長い辺の上限（両方から指されたら大きい方）。
-    // WhyNot: 全部の画像を decode しない — metallicRoughness・occlusion・emissive の絵は描くのに使わず、2048² なら 1 枚 16 MB をヒープに持つ。
+    /// path を読んでバイトの版 fromBytes へ渡す（読めない時と Err にパスを付ける）。
+    def loadWith(fromBytes: Vector[Int8] -> Result[String, Model3d.Model3d] \ ef, path: String): Result[String, Model3d.Model3d] \ ef + Fs.FileRead =
+        Fs.FileRead.readBytes(path)
+            |> Result.mapErr(e -> "${path}: 読めない（${e}）")
+            |> Result.flatMap(bytes -> fromBytes(bytes) |> Result.mapErr(e -> "${path}: ${e}"))
+
+    def parseAndBuild(bytes: Vector[Int8]): Result[String, (Glb, Built)] =
+        forM (
+            glb <- parseGlb(bytes);
+            _ <- checkBuffers(glb#json);
+            built <- buildModel(glb)
+        ) yield (glb, built)
+
+    /// 材質の番号ごとに 1 回作った物。withUv = TEXCOORD_0 のある primitive に付ける材質・withoutUv = 無い primitive に付ける材質
+    /// （emissiveTexture は uv で読むので、無い primitive には emission を外した材質）・noUvLine = withoutUv を使った時の知らせ。
+    type alias MaterialBuild = { withUv = Option[Scene3d.Material3d], withoutUv = Option[Scene3d.Material3d], info = Model3d.GltfMaterial,
+                                 lines = List[String], noUvLine = Option[String] }
+
+    /// built の parts に、材質の番号ごとの materials を付ける。材質の知らせと、uv の無い part に withoutUv を付けた知らせも返す。
+    def attachMaterials(built: Built, materials: Vector[MaterialBuild]): (List[Model3d.ModelPart], List[String]) =
+        let assigned = List.zip(built#model#parts, built#partMaterials) |> List.map(pm -> {
+            let (part, index) = pm;
+            assignMaterial(part, index |> Option.flatMap(k -> Vector.nth(k, materials)))
+        });
+        (List.map(fst, assigned), List.append(Vector.toList(materials) |> List.flatMap(m -> m#lines), assigned |> List.flatMap(snd)))
+
+    /// part に材質を付ける（part の形の uv の有無で withUv か withoutUv を選ぶ）。withoutUv を選んだ時の知らせも返す。
+    def assignMaterial(part: Model3d.ModelPart, build: Option[MaterialBuild]): (Model3d.ModelPart, List[String]) =
+        let hasUv = Option.nonEmpty(Mesh3d.uvs(part#mesh));
+        let material = build |> Option.flatMap(b -> if (hasUv) b#withUv else b#withoutUv);
+        let line = if (hasUv) Nil else build |> Option.flatMap(b -> b#noUvLine) |> Option.toList;
+        ({ material = material, gltfMaterial = Option.map(b -> b#info, build) | part }, line)
+
+    /// emissive が 0 でなく texCoord が 0 の emissiveTexture（光らせるのに読む絵）と、その上限。
+    def emissiveImageOf(limits: TextureLimits, material: Obj): List[(Obj, Int32)] =
+        let info = objectOf("emissiveTexture", material);
+        if (isZeroColor(emissiveOf(material)) or Option.getWithDefault(0, intOf("texCoord", info)) != 0) Nil
+        else (info, limits#baseColor) :: Nil
+
+    /// 材質の baseColorTexture・normalTexture・emissiveTexture（emissive が 0 でない材質だけ）が指す画像の番号 → その絵の長い辺の上限
+    /// （2 つ以上から指されたら大きい方）。
+    // WhyNot: 全部の画像を decode しない — metallicRoughness・occlusion の絵は描くのに使わず、2048² なら 1 枚 16 MB をヒープに持つ。
     def usedImages(limits: TextureLimits, json: Obj): Map[Int32, Int32] =
         let textures = objectsOf("textures", json);
         objectsOf("materials", json) |> Vector.toList
             |> List.flatMap(material -> (objectOf("baseColorTexture", objectOf("pbrMetallicRoughness", material)), limits#baseColor)
-                                        :: (objectOf("normalTexture", material), limits#normal) :: Nil)
+                                        :: (objectOf("normalTexture", material), limits#normal)
+                                        :: emissiveImageOf(limits, material))
             |> List.filterMap(entry -> { let (info, maxSide) = entry; intOf("index", info) |> Option.map(k -> (k, maxSide)) })
             |> List.filterMap(entry -> { let (k, maxSide) = entry; Vector.nth(k, textures) |> Option.flatMap(texture -> intOf("source", texture)) |> Option.map(src -> (src, maxSide)) })
             |> List.foldLeft((acc, entry) -> { let (src, maxSide) = entry; Map.insertWith((a, b) -> Int32.max(a, b), src, maxSide, acc) }, Map.empty())
@@ -138,15 +172,26 @@ pub mod Gltf {
             _ <- require(offset >= 0 and length >= 0 and offset + length <= bin#length, "glTF: bufferViews[${viewIndex}] が BIN の外を指す")
         ) yield Vector.slice(start = bin#start + offset, end = bin#start + offset + length, glb#bytes)
 
-    /// 材質 1 つ。baseColorTexture の絵が読めれば Scene3d.texturedMaterial（sampler の magFilter が NEAREST なら Nearest・ほかは Linear・
-    /// wrapS か wrapT が CLAMP_TO_EDGE なら Clamp）に、normalTexture があれば法線マップ（strength = scale・既定 1）を足す。
-    /// 絵が無い・読めない材質は None（頂点の色）。読み飛ばした物の知らせも返す。
-    def materialOf(glb: Glb, images: Vector[Option[Texture3d.Texture3d]], material: Obj): (Option[Scene3d.Material3d], List[String]) =
+    /// 材質 index 1 つ（材質の番号ごとに 1 回）:
+    ///
+    /// | baseColorTexture | emissive | 材質 |
+    /// |---|---|---|
+    /// | 読めた | 0 | Scene3d.texturedMaterial（spec の名前もそのまま） |
+    /// | 読めた | 0 でない | texturedMaterial + emission・spec の名前は "gltf:tex:<絵の読み方>:<emissive>" |
+    /// | 無い | 0 でない | 頂点の色の材質 + emission・spec の名前は "gltf:vc:<emissive>" |
+    /// | 無い | 0 | None（頂点の色で描く） |
+    ///
+    /// texturedMaterial の絵の読み方は sampler の magFilter（NEAREST なら Nearest・ほかは Linear）、wrapS か wrapT が CLAMP_TO_EDGE なら Clamp。
+    /// 法線マップは baseColorTexture のある材質にだけ足す（strength = scale・既定 1）。読み飛ばした物の知らせも返す。
+    def materialOf(glb: Glb, images: Vector[Option[Texture3d.Texture3d]], index: Int32, material: Obj): MaterialBuild =
         let pbr = objectOf("pbrMetallicRoughness", material);
         let base = textureRefOf(glb, images, objectOf("baseColorTexture", pbr));
         let normal = textureRefOf(glb, images, objectOf("normalTexture", material));
-        let lines = List.append(snd(base), snd(normal));
-        let built = fst(base) |> Option.map(ref -> {
+        let emission = emissionOf(glb, images, index, material);
+        let names = { base = fst(base) |> Option.map(r -> Texture3d.name(r#texture)),
+                      normal = fst(normal) |> Option.map(r -> Texture3d.name(r#texture)),
+                      emissive = emission#texture |> Option.map(r -> Texture3d.name(r#texture)) };
+        let surface = fst(base) |> Option.map(ref -> {
             let textured = Scene3d.texturedMaterial(Texture3d.name(ref#texture), ref#filter) |> Scene3d.withWrap(ref#wrap);
             match fst(normal) {
                 case Some(n) =>
@@ -155,7 +200,94 @@ pub mod Gltf {
                 case None => textured
             }
         });
-        (built, lines)
+        let baseName = fst(base) |> Option.map(r -> "tex:${ToString.toString(r#filter)}") |> Option.getWithDefault("vc");
+        let lit = (e: Option[EmissionBuild]) -> match (surface, e) {
+            case (_, None)          => surface
+            case (Some(m), Some(b)) => Some(m |> Scene3d.withEmission(b#shade) |> Scene3d.withSpecName("gltf:${baseName}:${b#name}"))
+            case (None, Some(b))    => Some(vertexColorMaterial("gltf:${baseName}:${b#name}") |> Scene3d.withEmission(b#shade) |> Scene3d.withWrap(b#wrap))
+        };
+        let usesTexture = Option.nonEmpty(emission#texture);
+        { withUv = lit(emission#build), withoutUv = lit(if (usesTexture) None else emission#build),
+          info = gltfMaterialOf(names, material),
+          lines = List.flatten(snd(base) :: snd(normal) :: emission#lines :: emissiveFactorLine(index, material) :: Nil),
+          noUvLine = if (usesTexture) Some("glTF: 材質 ${materialLabel(index, material)} の emissiveTexture を、TEXCOORD_0 の無い形では光らせない（uv で読む絵）") else None }
+
+    /// 材質を知らせの中で名指す字（name があれば name・無ければ番号）。
+    def materialLabel(index: Int32, material: Obj): String =
+        stringOf("name", material) |> Option.map(n -> "'${n}'") |> Option.getWithDefault("materials[${index}]")
+
+    /// 頂点の色をそのまま光を当てる前の色にする材質（α 1）。emissive だけの材質の土台。
+    def vertexColorMaterial(name: String): Scene3d.Material3d =
+        let vc = (chan: ShaderDoc.TexChan) -> ShaderDoc.Field.VertexColor({ chan = chan });
+        Scene3d.material({ name = name, cycleRate = 0.0, bindings = Nil,
+                           out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Rgb({ r = vc(ShaderDoc.TexChan.R), g = vc(ShaderDoc.TexChan.G),
+                                                                                    b = vc(ShaderDoc.TexChan.B) }),
+                                                      alpha = ShaderDoc.Field.Const(1.0) }) })
+
+    /// 材質の emission。shade = 足す色・name = spec の名前に入れる字（"et<絵の読み方>(r,g,b)" = 絵 × 定数・"ec(r,g,b)" = 定数だけ）・
+    /// wrap = emissive の絵の sampler の wrap（baseColorTexture の無い材質の wrap にする。ある材質は baseColorTexture の wrap のまま）。
+    type alias EmissionBuild = { shade = ShaderDoc.Shade, name = String, wrap = Scene3d.Wrap }
+
+    /// build = 付ける emission（emissive が 0・絵を指しているのに読めない時は None）・texture = 読めた emissiveTexture・lines = 知らせ。
+    type alias EmissionOf = { build = Option[EmissionBuild], texture = Option[TextureRef], lines = List[String] }
+
+    /// emissive の値 c = emissiveFactor × strength。emissiveTexture を指していなければ Solid(c)、指していて読めれば 絵の rgb × c。
+    /// 指しているのに読めない時は付けない（Solid へ倒すと、Blender の書き出しの factor (1, 1, 1) × 強さで物全体が真っ白に光る）。
+    def emissionOf(glb: Glb, images: Vector[Option[Texture3d.Texture3d]], index: Int32, material: Obj): EmissionOf =
+        let c = emissiveOf(material);
+        let info = objectOf("emissiveTexture", material);
+        let digits = "(${Float64.toString(c#r)},${Float64.toString(c#g)},${Float64.toString(c#b)})";
+        if (isZeroColor(c)) { build = None, texture = None, lines = Nil }
+        else if (Option.isEmpty(intOf("index", info)))
+            { build = Some({ shade = ShaderDoc.Shade.Solid(Color.rgb(c#r, c#g, c#b)), name = "ec${digits}", wrap = Scene3d.Wrap.Repeat }), texture = None, lines = Nil }
+        else match textureRefOf(glb, images, info) {
+            case (Some(ref), lines) =>
+                let read = (chan: ShaderDoc.TexChan, k: Float64) ->
+                    ShaderDoc.Field.Bin({ op = ShaderDoc.BinOp.Mul, b = ShaderDoc.Field.Const(k),
+                                          a = ShaderDoc.Field.Sampler({ filter = ref#filter, of = ShaderDoc.Field.Tex({ name = Texture3d.name(ref#texture), chan = chan }) }) });
+                { build = Some({ shade = ShaderDoc.Shade.Rgb({ r = read(ShaderDoc.TexChan.R, c#r), g = read(ShaderDoc.TexChan.G, c#g), b = read(ShaderDoc.TexChan.B, c#b) }),
+                                 name = "et${ToString.toString(ref#filter)}${digits}", wrap = ref#wrap }),
+                  texture = Some(ref), lines = lines }
+            case (None, lines) =>
+                { build = None, texture = None,
+                  lines = "glTF: 材質 ${materialLabel(index, material)} の emissiveTexture が読めないので光らせない" :: lines }
+        }
+
+    /// emissiveFactor（既定 (0, 0, 0)）× KHR_materials_emissive_strength の emissiveStrength（既定 1）。負と NaN は 0。
+    /// emissiveFactor が 3 つの数でない材質は (0, 0, 0)（知らせは emissiveFactorLine が材質ごとに 1 行）。
+    def emissiveOf(material: Obj): { r = Float64, g = Float64, b = Float64 } =
+        let factor = numbersOf("emissiveFactor", 3, material) |> Result.toOption |> Option.flatMap(identity)
+            |> Option.getWithDefault(Vector#{ 0.0, 0.0, 0.0 });
+        let strength = numberAt("emissiveStrength", objectOf("KHR_materials_emissive_strength", objectOf("extensions", material)))
+            |> Option.getWithDefault(1.0);
+        let at = (k: Int32) -> { let v = Vector.get(k, factor) * strength; if (v > 0.0) v else 0.0 };
+        { r = at(0), g = at(1), b = at(2) }
+
+    /// emissiveFactor が 3 つの数でない時の知らせ（emissiveOf が (0, 0, 0) にした事）。
+    def emissiveFactorLine(index: Int32, material: Obj): List[String] = match numbersOf("emissiveFactor", 3, material) {
+        case Err(e) => "${e}（材質 ${materialLabel(index, material)}）— emissive を (0, 0, 0) として読む" :: Nil
+        case Ok(_)  => Nil
+    }
+
+    def isZeroColor(c: { r = Float64, g = Float64, b = Float64 }): Bool = c#r <= 0.0 and c#g <= 0.0 and c#b <= 0.0
+
+    /// GltfMaterial の絵の名前の欄（読めた絵の Texture3d.name）。
+    type alias TextureNames = { base = Option[String], normal = Option[String], emissive = Option[String] }
+
+    def noTextureNames(): TextureNames = { base = None, normal = None, emissive = None }
+
+    /// glTF の材質の欄を読む（alphaMode は MASK・BLEND の他は Opaque・alphaCutoff 既定 0.5・doubleSided 既定 偽）。
+    def gltfMaterialOf(names: TextureNames, material: Obj): Model3d.GltfMaterial =
+        let alphaMode = match stringOf("alphaMode", material) {
+            case Some("MASK")  => Model3d.AlphaMode.Mask
+            case Some("BLEND") => Model3d.AlphaMode.Blend
+            case _             => Model3d.AlphaMode.Opaque
+        };
+        { name = stringOf("name", material) |> Option.getWithDefault(""), alphaMode = alphaMode,
+          alphaCutoff = numberAt("alphaCutoff", material) |> Option.getWithDefault(0.5),
+          doubleSided = Map.get("doubleSided", material) == Some(Util.Json.Json.JBool(true)),
+          baseColorTexture = names#base, normalTexture = names#normal, emissiveTexture = names#emissive,
+          emissive = emissiveOf(material) }
 
     /// textureInfo（{ index, texCoord, extensions }）が指す絵と、sampler の読み方。
     type alias TextureRef = { texture = Texture3d.Texture3d, filter = ShaderDoc.FilterMode, wrap = Scene3d.Wrap }
@@ -554,8 +686,7 @@ pub mod Gltf {
         let parentOf = parentsOfNodes(nodes);
         let meshNodes = Vector.range(0, Vector.length(nodes)) |> Vector.filter(i -> Map.memberOf("mesh", Vector.get(i, nodes)));
         let skinIndices = meshNodes |> Vector.filterMap(i -> intOf("skin", Vector.get(i, nodes))) |> Vector.toList |> List.toSet;
-        if (Vector.isEmpty(meshNodes)) Err("glTF: メッシュを持つノードが無い")
-        else if (Set.size(skinIndices) > 1) Err("glTF: スキンのあるメッシュのノードが、別々のスキンを指す")
+        if (Set.size(skinIndices) > 1) Err("glTF: スキンのあるメッシュのノードが、別々のスキンを指す")
         else {
             let skinR = match Set.toList(skinIndices) {
                 case k :: _ => Result.map(Some, buildSkin(glb, nodes, parentOf, k))
@@ -563,17 +694,92 @@ pub mod Gltf {
             };
             forM (
                 skinBuild <- skinR;
-                nested <- Vector.toList(meshNodes) |> Result.traverse(i -> nodeParts(glb, nodes, parentOf, skinBuild, i));
-                parts <- Ok(List.flatten(nested));
+                nested <- Vector.toList(meshNodes) |> Result.traverse(i -> nodeParts(glb, nodes, parentOf, skinBuild, i) |> Result.map(ps -> (i, ps)));
+                parts <- Ok(nested |> List.flatMap(snd));
                 mesh <- meshOfParts(parts, Option.nonEmpty(skinBuild));
                 partMeshes <- parts |> Result.traverse(part -> partMeshOf(part, Option.nonEmpty(skinBuild)));
                 clips <- readAnimations(glb, Option.map(b -> b#jointOfNode, skinBuild) |> Option.getWithDefault(Map.empty()))
             ) yield {
-                model = { mesh = mesh, skin = Option.map(b -> b#skin, skinBuild), clips = clips,
-                          parts = partMeshes |> List.map(m -> { mesh = m, material = None }), textures = Nil },
-                jointOfNode = Option.map(b -> b#jointOfNode, skinBuild) |> Option.getWithDefault(Map.empty()),
-                partMaterials = parts |> List.map(p -> p#material)
+                let partNodes = nested |> List.flatMap(np -> List.map(_ -> fst(np), snd(np)));
+                { model = { mesh = mesh, skin = Option.map(b -> b#skin, skinBuild), clips = clips,
+                            parts = List.zip(partMeshes, partNodes) |> List.map(mn -> { mesh = fst(mn), material = None, node = Some(snd(mn)), gltfMaterial = None }),
+                            textures = Nil, nodes = modelNodesOf(glb, nodes, parentOf, partNodes) },
+                  jointOfNode = Option.map(b -> b#jointOfNode, skinBuild) |> Option.getWithDefault(Map.empty()),
+                  partMaterials = parts |> List.map(p -> p#material) }
             }
+        }
+
+    // ── ノードの一覧（Model3d.nodes）──
+
+    /// glTF の nodes の全部を ModelNode にする（world は根から親の順に 1 巡で掛ける）。parentOf = parentsOfNodes(nodes)・partNodes = parts の並びの、各 part のノードの番号。
+    /// 行列が読めないノード（matrix が 16 個の数でない等）は単位行列で続けて 1 行知らせる。根から辿れないノード（木が輪になっている）は world = local。
+    // WhyNot: nodeParts の chainOf / productOf で world を出さない — ノードごとに根まで辿るので、ノード n 個・深さ d で n·d 回掛ける。
+    // WhyNot: 部品の形の焼き込み（nodeParts）をこの 1 巡に寄せない — 骨つきの glb の部品の頂点が 1 bit でも変わると、描き出しの鍵が変わる。
+    def modelNodesOf(glb: Glb, nodes: Vector[Obj], parentOf: Map[Int32, Int32], partNodes: List[Int32]): List[Model3d.ModelNode] =
+        let count = Vector.length(nodes);
+        let localsGl = nodes |> Vector.mapWithIndex((i, node) -> match nodeMatrix(node) {
+            case Ok(m)  => m
+            case Err(e) => Log.warnThen("glTF: nodes[${i}] の行列を単位行列として読む（${e}）", Mat4.identity())
+        });
+        let children = nodes |> Vector.map(node -> intsOf("children", node) |> Vector.filter(c -> c >= 0 and c < count));
+        let roots = Vector.range(0, count) |> Vector.filter(i -> not Map.memberOf(i, parentOf)) |> Vector.toList;
+        let worldsGl = roots |> List.foldLeft((acc, root) -> worldsFrom(localsGl, children, root, Mat4.identity(), acc), Map.empty());
+        let partsOf = List.zipWithIndex(partNodes) |> List.foldRight((kn, acc) -> {
+            let (k, n) = kn;
+            Map.insertWith((fresh, old) -> List.append(fresh, old), n, k :: Nil, acc)
+        }, Map.empty());
+        Vector.range(0, count) |> Vector.toList |> List.map(i -> {
+            let node = Vector.get(i, nodes);
+            let local = Vector.get(i, localsGl);
+            { name = stringOf("name", node) |> Option.getWithDefault(""), parent = Map.get(i, parentOf),
+              local = mirrorMat4(local), world = mirrorMat4(Map.getWithDefault(i, local, worldsGl)),
+              localBounds = intOf("mesh", node) |> Option.flatMap(localBoundsOfMesh(glb)),
+              parts = Map.getWithDefault(i, Nil, partsOf) }
+        })
+
+    /// ノード i から下の world（glTF の座標）を acc に足す（parentWorld = 親の world）。一度足したノードは辿らない（輪で止まる）。
+    def worldsFrom(locals: Vector[Mat4.Mat4], children: Vector[Vector[Int32]], i: Int32, parentWorld: Mat4.Mat4,
+                   acc: Map[Int32, Mat4.Mat4]): Map[Int32, Mat4.Mat4] =
+        if (Map.memberOf(i, acc)) acc
+        else {
+            let world = Mat4.mul(parentWorld, Vector.get(i, locals));
+            Vector.get(i, children) |> Vector.foldLeft((m, c) -> worldsFrom(locals, children, c, world, m), Map.insert(i, world, acc))
+        }
+
+    /// mesh の全部の primitive の POSITION の min と max（engine の座標）。accessor の min / max があればそれを、無ければ頂点から求める。
+    /// X の反転で min と max の x が入れ替わるので、反転した後で組み直す。読めない primitive は数えない（全部読めなければ None）。
+    def localBoundsOfMesh(glb: Glb, meshIndex: Int32): Option[Mesh3d.Bounds] =
+        let prims = objectAt("meshes", meshIndex, glb#json) |> Result.toOption |> Option.map(m -> objectsOf("primitives", m))
+            |> Option.getWithDefault(Vector.empty());
+        prims |> Vector.toList
+            |> List.filterMap(prim -> intOf("POSITION", objectOf("attributes", prim)) |> Option.flatMap(positionBoundsOf(glb)))
+            |> List.reduceLeft((a, b) -> { min = Vec3.v3(Float64.min(a#min#x, b#min#x), Float64.min(a#min#y, b#min#y), Float64.min(a#min#z, b#min#z)),
+                                           max = Vec3.v3(Float64.max(a#max#x, b#max#x), Float64.max(a#max#y, b#max#y), Float64.max(a#max#z, b#max#z)) })
+
+    def positionBoundsOf(glb: Glb, accessorIndex: Int32): Option[Mesh3d.Bounds] =
+        let declared = forM (
+            acc <- objectAt("accessors", accessorIndex, glb#json) |> Result.toOption;
+            low <- numbersOf("min", 3, acc) |> Result.toOption |> Option.flatMap(identity);
+            high <- numbersOf("max", 3, acc) |> Result.toOption |> Option.flatMap(identity)
+        ) yield (vec3At(low, 0), vec3At(high, 0));
+        let glBounds = match declared {
+            case Some(b) => Some(b)
+            case None    => readAccessorWidth(glb, accessorIndex, 3, "POSITION") |> Result.toOption |> Option.flatMap(a -> scannedBounds(a#values))
+        };
+        glBounds |> Option.map(b -> {
+            let (low, high) = b;
+            { min = Vec3.v3(0.0 - high#x, low#y, low#z), max = Vec3.v3(0.0 - low#x, high#y, high#z) }
+        })
+
+    /// 頂点ごとに 3 つの並びの min と max（glTF の座標）。頂点が無ければ None。
+    def scannedBounds(values: Vector[Float64]): Option[(Vec3.Vec3, Vec3.Vec3)] =
+        let count = Vector.length(values) / 3;
+        if (count == 0) None
+        else {
+            let axis = (c: Int32, f: (Float64, Float64) -> Float64, start: Float64) ->
+                Vector.range(0, count) |> Vector.foldLeft((acc, v) -> f(acc, Vector.get(v * 3 + c, values)), start);
+            Some((Vec3.v3(axis(0, Float64.min, Float64.maxValue()), axis(1, Float64.min, Float64.maxValue()), axis(2, Float64.min, Float64.maxValue())),
+                  Vec3.v3(axis(0, Float64.max, 0.0 - Float64.maxValue()), axis(1, Float64.max, 0.0 - Float64.maxValue()), axis(2, Float64.max, 0.0 - Float64.maxValue()))))
         }
 
     /// メッシュのノード 1 つの primitive の列。

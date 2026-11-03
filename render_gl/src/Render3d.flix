@@ -86,7 +86,8 @@ mod Render3d {
     type alias LitLocs = { mesh = MeshLocs, tint = Int32, light = LightLocs, shadow = ShadowLocs }
 
     /// 1 つの場面の目と光と影（置いた物を描くプログラムへ渡す物）。
-    type alias CameraData = { view = Array[Float32, Static], proj = Array[Float32, Static], lights = LightData, shadow = Option[ShadowUse] }
+    type alias CameraData = { view = Array[Float32, Static], proj = Array[Float32, Static], lights = LightData, shadow = Option[ShadowUse],
+                              frustum = Frustum.Frustum }
 
     type alias DepthLocs = { mesh = MeshLocs, eye = Int32, depthRange = Int32 }
 
@@ -102,7 +103,8 @@ mod Render3d {
     type alias SkinnedPrograms = { lit = LitLocs, depth = DepthLocs, jointsUbo = Int32, uploadedJoints = Ref[Array[Float32, Static], Static] }
 
     /// 置いた物 1 つと、描く時に曲げる Pose（Scene3d.skinningOf。None なら骨の無い版で曲げずに描く）。
-    type alias MeshDraw = { fields = Scene3d.InstanceFields, pose = Option[Pose3d.Pose3d] }
+    /// culled = 視錐台の外なので描かない（形と絵は今のコマで使った物として数え、GPU から捨てない）。
+    type alias MeshDraw = { fields = Scene3d.InstanceFields, pose = Option[Pose3d.Pose3d], culled = Bool }
 
     /// 材質のプログラムの uniform の location。params = uParamN の location（paramNames の並び）・
     /// texFlips = uTexFlipN の location（texReads の並び）。
@@ -264,11 +266,11 @@ mod Render3d {
         Array.put(0, 2, h);
         counts
 
-    /// 場面の置いた物 n 個を数える。描いた物も同じ数（間引きが無いので、置いた物は全部描く）。
-    def countInstances(state: State, n: Int32): Unit \ IO =
+    /// 場面の置いた物 placed 個と、そのうち視錐台の外で間引かずに描いた drawn 個を数える。
+    def countInstances(state: State, placed: Int32, drawn: Int32): Unit \ IO =
         let h = state#countsHolder;
-        Array.put(Array.get(0, h) + n, 0, h);
-        Array.put(Array.get(1, h) + n, 1, h)
+        Array.put(Array.get(0, h) + placed, 0, h);
+        Array.put(Array.get(1, h) + drawn, 1, h)
 
     /// 3D の draw call を 1 つ数える。
     def countDrawCall(state: State): Unit \ IO =
@@ -504,9 +506,10 @@ mod Render3d {
             // WhyNot: 深度だけのプログラムを影のために別に組まない — 色の出力は描き先が無いので捨てられる。
             let lightView = matrixArray(Scene3d.shadowMatrix(caster#spot));
             let identity = matrixArray(Mat4.identity());
-            let (skinned, plain) = scene#instances |> List.map(meshDrawOf(state)) |> List.partition(isSkinned);
+            let outside = Scene3d.isOutsideFrustum(Scene3d.shadowFrustumOf(caster#spot));
+            let (skinned, plain) = scene#instances |> List.map(meshDrawOf(state, outside)) |> List.partition(isSkinned);
             useMeshProgram(locs#mesh, lightView, identity);
-            plain |> List.forEach(d -> drawMesh(state, gen, locs#mesh, d#fields#mesh, d#fields#world));
+            plain |> List.forEach(drawPosedMesh(state, gen, locs#mesh));
             // 骨つきの物は曲がった形で影を落とす（深度だけの骨つきの版を Output.Depth と共用）。
             if (List.isEmpty(skinned)) ()
             else {
@@ -595,31 +598,55 @@ mod Render3d {
                   area: { viewport = PixelBox, scissor = PixelBox, fillBackground = Bool }, shadow: Option[ShadowUse],
                   scene: Scene3d.Scene3dCmd): Unit \ IO =
         Array.put(scene#time, 0, state#timeHolder);
-        countInstances(state, List.length(scene#instances));
+        let frustum = Scene3d.frustumOf(scene);
+        let outside = Scene3d.isOutsideFrustum(frustum);
         let programs = programsOf(state);
         beginScene(area#viewport, area#scissor, if (area#fillBackground) scene#environment#background else None);
         let picked = Scene3d.pickLights(scene#camera#eye, scene);
         let lights = lightDataOf(picked);
-        let aspect = scene#size#x / Float64.max(0.000001, scene#size#y);
         let view = matrixArray(Camera3d.viewMatrix(scene#camera));
-        let proj = matrixArray(Camera3d.projectionMatrix(scene#camera, aspect));
-        let camera = { view = view, proj = proj, lights = lights, shadow = shadow };
+        let proj = matrixArray(Camera3d.projectionMatrix(scene#camera, Scene3d.aspectOf(scene)));
+        let camera = { view = view, proj = proj, lights = lights, shadow = shadow, frustum = frustum };
         let source = { textureOf = textureOf, own = scene#textures |> List.map(t -> (Texture3d.name(t), t)) |> List.toMap };
         match scene#output {
             case Scene3d.Output.Color =>
-                let (plain, materials) = splitByMaterial(state, gen, _ -> true, scene#instances);
+                let (plain, materials) = splitByMaterial(state, gen, outside, _ -> true, scene#instances);
+                noteCulled(state, gen, source, scene#instances, plain, materials);
                 bindShadowMap(shadow);
                 drawInstancesLit(state, gen, programs#lit, camera, plain);
                 drawMaterials(state, gen, camera, MaterialPass.Color, source, materials);
                 unbindShadowMap(shadow)
             case Scene3d.Output.Depth(dr) =>
                 // WhyNot: cutout でない材質に材質のプログラムを組まない — 奥行きは形だけで決まり、色の計算は捨てられる。
-                let (plain, cutouts) = splitByMaterial(state, gen, m -> m#cutout, scene#instances);
+                let (plain, cutouts) = splitByMaterial(state, gen, outside, m -> m#cutout, scene#instances);
+                noteCulled(state, gen, source, scene#instances, plain, cutouts);
                 drawInstancesDepth(state, gen, programs#depth, camera, scene#camera#eye, dr, plain);
                 drawMaterials(state, gen, camera, MaterialPass.Depth(dr), source, cutouts)
         };
-        drawBillboards(state, textureOf, programs#billboard, view, proj, lights, scene);
+        drawBillboards(state, textureOf, programs#billboard, camera, scene);
         endScene()
+
+    /// 視錐台の外で間引いた材質の物の絵を、今のコマで使った物として置き場に数え（上げていなければ上げる）、置いた物と描いた物の数を足す。
+    /// 描き始める前に済ませ、unit 0 へ戻す（初めての絵を上げる時に今の unit へ貼るので、描いている途中では呼ばない）。
+    /// 間引いた物の形は drawPosedMesh が置き場に数える（描く段で culled の物も通す）。
+    // WhyNot: 間引いた物を置き場で古いままにしない — 振り向くたびに形と絵を上げ直して止まり、毎コマ作り直しの知らせも鳴る。
+    def noteCulled(state: State, gen: Int64, source: TextureSource, instances: List[Scene3d.Instance3d],
+                   plain: List[MeshDraw], materials: List[MaterialDraw]): Unit \ IO =
+        let culledMaterials = List.filter(d -> d#draw#culled, materials);
+        culledMaterials |> List.forEach(d ->
+            materialTextureNames(d) |> List.forEach(lt -> discard resolveTextureAs(state, gen, source, fst(lt), snd(lt))));
+        if (List.isEmpty(culledMaterials)) () else GL13.glActiveTexture(GL13.GL_TEXTURE0);
+        let total = List.length(instances);
+        countInstances(state, total, total - List.count(d -> d#culled, plain) - List.length(culledMaterials))
+
+    /// 材質のある物 d を描く時に貼る絵の (知らせの中の呼び名, 名前)（材質の絵・法線マップ・lightmap。描く時の知らせと同じ呼び名）。
+    def materialTextureNames(d: MaterialDraw): List[(String, String)] =
+        let reads = if (List.isEmpty(d#entry#texReads)) Nil
+                    else ShaderDoc.materialTexReads(d#material#spec, d#material#emission) |> List.take(Scene3d.maxMaterialTextures())
+                        |> List.map(nf -> ("材質の絵", fst(nf)));
+        let normal = if (d#entry#normalMapped) d#material#normalMap |> Option.toList |> List.map(n -> ("材質の絵", n#texture)) else Nil;
+        let baked = if (d#entry#lightmapped) Scene3d.lightmapOfFields(d#draw#fields) |> Option.toList |> List.map(lm -> ("lightmap の絵", lm#texture)) else Nil;
+        List.flatten(reads :: normal :: baked :: Nil)
 
     /// 深度を使い始める: viewport と scissor を合わせ、地の色と深度を scissor の中だけ消し、深度とカリングを有効にする。
     def beginScene(viewport: PixelBox, scissor: PixelBox, background: Option[Color]): Unit \ IO =
@@ -665,7 +692,7 @@ mod Render3d {
             putLights(locs#light, camera#lights);
             putShadow(locs#shadow, camera#shadow);
             instances |> List.forEach(d -> {
-                putColor(locs#tint, d#fields#tint);
+                if (d#culled) () else putColor(locs#tint, d#fields#tint);
                 drawPosedMesh(state, gen, locs#mesh, d)
             })
         }
@@ -699,12 +726,14 @@ mod Render3d {
 
     /// 置いた物を、頂点の色で描く物と材質のプログラムで描く物に分ける。wants が偽の材質と、組めなかった材質は頂点の色の側へ。
     /// 初めての材質はここで組む（3D を使わないゲームと、材質を使わない場面は GLSL のコンパイルを払わない）。
-    def splitByMaterial(state: State, gen: Int64, wants: Scene3d.MaterialFields -> Bool,
+    /// outside = 描かずに済ませる物か（視錐台の外。MeshDraw の culled になる）。間引く物の材質も組む（間引くのは描く段の手前）。
+    // WhyNot: 間引いた物を材質の組み立ての前に除かない — 初めて振り向いたコマで GLSL を組んで止まる（読み込み中に先に組ませる作りが効かない）。
+    def splitByMaterial(state: State, gen: Int64, outside: Scene3d.Instance3d -> Bool, wants: Scene3d.MaterialFields -> Bool,
                         instances: List[Scene3d.Instance3d]): (List[MeshDraw], List[MaterialDraw]) \ IO =
         let classified = instances |> List.map(placed -> {
             Scene3d.lightmapWarning(placed) |> Option.forEach(line ->
                 warnTextureOnce(state, "lightmap:" + line + Mesh3d.contentHash(Scene3d.instanceFieldsOf(placed)#mesh), line));
-            let draw = meshDrawOf(state, placed);
+            let draw = meshDrawOf(state, outside, placed);
             let material = draw#fields#material
                 |> Option.map(Scene3d.materialFieldsOf)
                 |> Option.filter(wants)
@@ -731,7 +760,9 @@ mod Render3d {
     def drawMaterials(state: State, gen: Int64, camera: CameraData, pass: MaterialPass, source: TextureSource,
                       draws: List[MaterialDraw]): Unit \ IO =
         let bound = Array#{0, 0, 0, 0} @ Static;
-        draws |> List.sortBy(d -> d#entry#locs#mesh#program) |> List.forEach(d -> {
+        // WhyNot: 間引いた物を並べる前に除かない — sortBy は安定ソートではなく、減らした列を並べると同じプログラムの物どうしの順が変わり、
+        //   同じ平面に重なった面の画素が入れ替わる。全部で並べてから飛ばす。
+        draws |> List.sortBy(d -> d#entry#locs#mesh#program) |> List.forEach(d -> if (d#draw#culled) drawPosedMesh(state, gen, d#entry#locs#mesh, d#draw) else {
             let locs = d#entry#locs;
             if (locs#mesh#program == Array.get(0, bound)) ()
             else {
@@ -977,12 +1008,14 @@ mod Render3d {
 
     /// 材質のプログラムを分ける形。skinned = 骨つき・uv = uv とタンジェントを持つ・normalMap = 法線マップを当てる（uv つきの時だけ真）・
     /// lightmap = ベイクした光を 2 本目の uv で読む（Scene3d.lightmapOfFields が Some の時だけ真。骨つきには付かない）。
-    type alias VertexKind = { skinned = Bool, uv = Bool, normalMap = Bool, lightmap = Bool }
+    pub type alias VertexKind = { skinned = Bool, uv = Bool, normalMap = Bool, lightmap = Bool }
 
-    /// 材質のプログラムの鍵（2D の Shader 面の鍵 = spec の名前 と重ならない）。骨つき・uv つき・法線マップつきの版は GLSL が違うので別の鍵。
+    /// 材質のプログラムの鍵（2D の Shader 面の鍵 = spec の名前 と重ならない）。骨つき・uv つき・法線マップつき・lightmap つきの版は GLSL が違うので別の鍵。
+    /// emission の有無（+em）も鍵に入れる（同じ名前で emission の有る材質と無い材質が並んでも組み直さない。木の違いは spec の名前で分ける）。
     // WhyNot: 骨つきかどうかの字を "3d:" の後ろへ足さない — "3d:" + 名前 の名前の側が同じ字で始まると、骨の無い版と鍵が重なる。
-    def materialKey(m: Scene3d.MaterialFields, kind: VertexKind): String =
-        "3d" + (if (kind#skinned) "+skin" else "") + (if (kind#uv) "+uv" else "") + (if (kind#normalMap) "+nm" else "") + (if (kind#lightmap) "+lm" else "") + ":" + m#spec#name
+    pub def materialKey(m: Scene3d.MaterialFields, kind: VertexKind): String =
+        "3d" + (if (kind#skinned) "+skin" else "") + (if (kind#uv) "+uv" else "") + (if (kind#normalMap) "+nm" else "") + (if (kind#lightmap) "+lm" else "")
+            + (if (Option.nonEmpty(m#emission)) "+em" else "") + ":" + m#spec#name
 
     /// 材質のプログラムを引く。無いか、同じ名前で中身が違えば組み直す。組めなかった材質は None（頂点の色で描く）。
     def materialEntry(state: State, gen: Int64, m: Scene3d.MaterialFields, kind: VertexKind): Option[MaterialEntry] \ IO =
@@ -1106,19 +1139,24 @@ mod Render3d {
         }
 
     /// 骨つきの物は joint 行列を UBO へ置いてから描く（locs は骨つきの版のプログラム）。pose が None なら drawMesh と同じ。
+    /// 間引いた物（culled）は描かず、形を今のコマで使った物として置き場に数えるだけ。
+    // WhyNot: 間引いた物を meshEntry に通さずに飛ばさない — endFrame は 128 コマ使わなかった形を捨てるので、振り向くたびに頂点を上げ直す。
     def drawPosedMesh(state: State, gen: Int64, locs: MeshLocs, d: MeshDraw): Unit \ IO =
-        d#pose |> Option.forEach(putJoints(skinnedProgramsOf(state)));
-        drawMesh(state, gen, locs, d#fields#mesh, d#fields#world)
+        if (d#culled) discard meshEntry(state, gen, d#fields#mesh)
+        else {
+            d#pose |> Option.forEach(putJoints(skinnedProgramsOf(state)));
+            drawMesh(state, gen, locs, d#fields#mesh, d#fields#world)
+        }
 
     def isSkinned(d: MeshDraw): Bool = Option.nonEmpty(d#pose)
 
     def hasUv(d: MeshDraw): Bool = Option.nonEmpty(Mesh3d.uvs(d#fields#mesh))
 
-    /// 置いた物を描く材料にする。ジョイントの数の食い違いは形ごとに 1 回だけ知らせる（Scene3d.skinningWarning）。
-    def meshDrawOf(state: State, placed: Scene3d.Instance3d): MeshDraw \ IO =
+    /// 置いた物を描く材料にする（outside が真なら間引く）。ジョイントの数の食い違いは形ごとに 1 回だけ知らせる（Scene3d.skinningWarning）。
+    def meshDrawOf(state: State, outside: Scene3d.Instance3d -> Bool, placed: Scene3d.Instance3d): MeshDraw \ IO =
         let fields = Scene3d.instanceFieldsOf(placed);
         Scene3d.skinningWarning(placed) |> Option.forEach(message -> warnSkinOnce(state, Mesh3d.contentHash(fields#mesh), message));
-        { fields = fields, pose = Scene3d.skinningOf(placed) }
+        { fields = fields, pose = Scene3d.skinningOf(placed), culled = outside(placed) }
 
     def warnSkinOnce(state: State, meshKey: String, message: String): Unit \ IO =
         let warned = Ref.get(state#skinWarnedRef);
@@ -1337,24 +1375,25 @@ mod Render3d {
 
     // ── ビルボード ──
 
+    /// 場面のビルボードを描く。視錐台の外のビルボード（外接球で見る）は描かない（見つからない絵の知らせは描く物と同じに出す）。
     def drawBillboards(state: State, textureOf: String -> Option[BillboardTexture] \ IO, locs: BillboardLocs,
-                       view: Array[Float32, Static], proj: Array[Float32, Static], lights: LightData,
-                       scene: Scene3d.Scene3dCmd): Unit \ IO =
+                       camera: CameraData, scene: Scene3d.Scene3dCmd): Unit \ IO =
         if (List.isEmpty(scene#billboards) or locs#program == 0) ()
         else {
-            // WhyNot: ビルボードにカリングを掛けない — 四角はいつもカメラを向くので裏は来ず、頂点の巻き方を合わせる手間だけが増える。
+            // WhyNot: ビルボードに裏の面の間引き（GL_CULL_FACE）を掛けない — 四角はいつもカメラを向くので裏は来ず、頂点の巻き方を合わせる手間だけが増える。
             GL11.glDisable(GL11.GL_CULL_FACE);
             GL20.glUseProgram(locs#program);
-            GL20.glUniformMatrix4fv(locs#view, false, view);
-            GL20.glUniformMatrix4fv(locs#proj, false, proj);
-            putLights(locs#light, lights);
+            GL20.glUniformMatrix4fv(locs#view, false, camera#view);
+            GL20.glUniformMatrix4fv(locs#proj, false, camera#proj);
+            putLights(locs#light, camera#lights);
             putVec3(locs#right, Camera3d.right(scene#camera));
             putVec3(locs#up, Camera3d.up(scene#camera));
             putVec3(locs#facing, Vec3.mul(Camera3d.forward(scene#camera), -1.0));
             putBillboardOutput(locs, scene#output);
             GL13.glActiveTexture(GL13.GL_TEXTURE0);
             GL30.glBindVertexArray(programsOf(state)#quadVao);
-            scene#billboards |> List.forEach(b -> drawBillboard(state, textureOf, locs, Scene3d.billboardFieldsOf(b)));
+            scene#billboards |> List.forEach(b ->
+                drawBillboard(state, textureOf, locs, Scene3d.isBillboardOutsideFrustum(camera#frustum, b), Scene3d.billboardFieldsOf(b)));
             GL30.glBindVertexArray(0);
             GL11.glEnable(GL11.GL_CULL_FACE)
         }
@@ -1368,9 +1407,10 @@ mod Render3d {
         }
 
     def drawBillboard(state: State, textureOf: String -> Option[BillboardTexture] \ IO, locs: BillboardLocs,
-                      b: Scene3d.BillboardFields): Unit \ IO =
+                      culled: Bool, b: Scene3d.BillboardFields): Unit \ IO =
         match textureOf(b#texture) {
             case None          => warnMissingTexture(state, b#texture)
+            case Some(_) if culled => ()
             case Some(texture) =>
                 GL11.glBindTexture(GL11.GL_TEXTURE_2D, texture#texId);
                 putVec3(locs#center, b#position);

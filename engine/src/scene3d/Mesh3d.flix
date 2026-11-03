@@ -502,10 +502,19 @@ pub mod Mesh3d {
     /// 中身の鍵（位置・色・番号の SHA-256 の 16 進。uv つきは uv とタンジェントも）。同じ中身なら同じ字になる。GL はこれで頂点バッファを引く。
     pub def contentHash(m: Mesh3d): String = recOf(m)#hash
 
+    /// 軸にそろった箱（AABB）の最小と最大の角。
+    pub type alias Bounds = { min = Vec3.Vec3, max = Vec3.Vec3 }
+
     /// 頂点の最小と最大（形の座標）。頂点の無い形は 0。
-    pub def bounds(m: Mesh3d): { min = Vec3.Vec3, max = Vec3.Vec3 } =
+    pub def bounds(m: Mesh3d): Bounds =
         let r = recOf(m);
         { min = r#low, max = r#high }
+
+    /// 箱 b の 8 つの角。
+    pub def cornersOf(b: Bounds): List[Vec3.Vec3] =
+        let (lo, hi) = (b#min, b#max);
+        Vec3.v3(lo#x, lo#y, lo#z) :: Vec3.v3(hi#x, lo#y, lo#z) :: Vec3.v3(lo#x, hi#y, lo#z) :: Vec3.v3(hi#x, hi#y, lo#z) ::
+        Vec3.v3(lo#x, lo#y, hi#z) :: Vec3.v3(hi#x, lo#y, hi#z) :: Vec3.v3(lo#x, hi#y, hi#z) :: Vec3.v3(hi#x, hi#y, hi#z) :: Nil
 
     pub def triangleCount(m: Mesh3d): Int32 = Vector.length(recOf(m)#indices) / 3
 

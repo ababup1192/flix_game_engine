@@ -34,6 +34,9 @@
 //
 // ビルボード: 絵の α が billboardCutoff() 未満の画素は捨てる（深度も書かない）。lit が真なら法線をカメラへ向けて同じ光と fog を当てる。
 // 光は Scene3d.pickLights（目に近い順に点光源 8・スポット 2）で選んだ物だけを使う。
+// 間引き（GL の Render3d と同じ判定）: Scene3d.isOutsideFrustum が真の置いた物（場面のカメラの視錐台の外）と、
+//   isBillboardOutsideFrustum が真のビルボードは三角形を作らない。影の地図は Scene3d.shadowFrustumOf の視錐台で同じく間引く。
+//   外れる側に倒した判定（画素を 1 つも出さない物だけを間引く）なので、絵は間引かない時と同じ。
 // ジョイント: Scene3d.skinningOf が Some の置いた物は、頂点を GL の Render3d と同じ式で曲げてから写す（式は placedOf の doc。影の地図も同じ形）。
 //
 // 影（GL の Render3d と同じ約束。本文は Scene3d.shadowMatrix の doc）:
@@ -452,9 +455,10 @@ pub mod SoftRaster3d {
         let cam = scene#camera;
         let picked = Scene3d.pickLights(cam#eye, scene);
         let view = Camera3d.viewMatrix(cam);
-        let proj = Camera3d.projectionMatrix(cam, scene#size#x / scene#size#y);
+        let proj = Camera3d.projectionMatrix(cam, Scene3d.aspectOf(scene));
         let screen = { w = Int32.toFloat64(lw), h = Int32.toFloat64(lh), near = cam#near };
-        let placed = scene#billboards |> List.filterMap(b -> {
+        let frustum = Scene3d.frustumOf(scene);
+        let placed = scene#billboards |> List.filter(b -> not Scene3d.isBillboardOutsideFrustum(frustum, b)) |> List.filterMap(b -> {
             let f = Scene3d.billboardFieldsOf(b);
             Map.get(f#texture, textures) |> Option.flatMap(Vector.head) |> Option.map(tex -> (f, tex))
         });
@@ -470,7 +474,9 @@ pub mod SoftRaster3d {
             let fields = fst(pair)#fields;
             fields#material |> Option.map(_ -> bakedOf(textures, fields))
         }) |> List.toVector);
-        let meshTris = numbered |> List.flatMap(pair -> instanceTris(view, proj, screen, true, fst(pair), snd(pair)));
+        // WhyNot: 間引いた物を numberMaterials の前に除かない — 材質の番号（mats の並び）を置いた物の並びのまま保つ。
+        let meshTris = numbered |> List.flatMap(pair ->
+            if (Scene3d.isOutsideFrustumFields(frustum, fst(pair)#fields)) Nil else instanceTris(view, proj, screen, true, fst(pair), snd(pair)));
         let billboardTris = List.zipWithIndex(placed) |> List.flatMap(entry -> {
             let (index, (f, _)) = entry;
             billboardTris(view, proj, screen, cam, index, f)
@@ -552,7 +558,9 @@ pub mod SoftRaster3d {
         let view = Camera3d.viewMatrix(cam);
         let proj = Camera3d.projectionMatrix(cam, 1.0);
         let screen = { w = Int32.toFloat64(n), h = Int32.toFloat64(n), near = cam#near };
-        let tris = hoist(rc, instances |> List.flatMap(f -> instanceTris(view, proj, screen, false, f, -1)) |> List.toVector);
+        let frustum = Scene3d.shadowFrustumOf(spot);
+        let tris = hoist(rc, instances |> List.filter(f -> not Scene3d.isOutsideFrustumFields(frustum, f#fields))
+            |> List.flatMap(f -> instanceTris(view, proj, screen, false, f, -1)) |> List.toVector);
         let bins = hoist(rc, binRows(rc, n, tris));
         let noInks: Vector[Ink] = Vector.empty();
         let noMats: Vector[Mat] = Vector.empty();

@@ -45,7 +45,8 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | 3D の点光源が 8 本を超える | 光は全部 `pointLights` に入れる（engine が `Scene3d.pickLights` で目に近い 8 本を選ぶ。ゲームで近い順に選び直さない） |
 | 一人称でマウスで視点を回す（カーソルを窓にキャプチャする） | `App.withMouseCapture(w -> ..)` + `frame#mouseDelta`（design px）で yaw・pitch を回す。クリックでキャプチャ・Esc で放す（ドラッグの差で代わりにしない・engine の `docs/modules/input.md` の「一人称の視点」） |
 | GPU と CPU の 1 コマの時間を debug 表示する | `App.withDiagnostics()` → `frame#diagnostics` → `FrameDiagnostics.summaryLines`（自前で nanoTime を測らない。GPU は 1〜2 コマ遅れの値） |
-| 3D の家具・壁に木目や石の絵と凹凸（法線マップ）を貼る | 絵つきの .glb は `Gltf.loadTextured` → 部品は `model#parts`・絵は場面の `{ textures = model#textures | 場面 }` に渡す（渡さないと黒い）・コードの形は `Mesh3d.withBoxUvs` + `Scene3d.texturedMaterial` + `withNormalMap` |
+| 3D の家具・壁に木目や石の絵と凹凸（法線マップ）を貼る | 絵つきの .glb は `Gltf.loadTextured` → 部品は `model#parts`・絵は場面の `{ textures = model#textures | 場面 }` に渡す（渡さないと黒い）・コードの形は `Mesh3d.withBoxUvs` + `Scene3d.texturedMaterial` + `withNormalMap`・glb の emissive（`KHR_materials_emissive_strength` つき）も読んで光る（止めるなら `Scene3d.withoutEmission`・emission を差し替えたら `Scene3d.withSpecName`）・材質の情報は `part#gltfMaterial` |
+| Blender で名前を付けた物（扉・調べる物・当たり判定の箱・印の点）を glb から名前で引く | `Model3d.findNode(name, model)` / `nodesWithPrefix("COL_", model)`（たくさん引くなら `nodesByName`）→ `node#world`・`node#localBounds`・`Model3d.nodeOrigin`（位置や大きさで探さない・座標を手で写さない。engine の `docs/scene3d.md`） |
 | 灯りの反対の地面へ倒した影（ドット絵の走りから） | `Shadow.projectedRuns`（`PxSprite.runs` を渡す） |
 | 演出の待ちが先の拍で変わる（全部が済んでから始める・置き直さない） | `Timeline.afterAll`（基準ごとに間）→ `Timeline.build` |
 | ポーズ・ヒットストップで止める・遅くする（遊びと実時間を分ける） | `App.addClock` + `Clock.Pace`・`frame#realNow` |

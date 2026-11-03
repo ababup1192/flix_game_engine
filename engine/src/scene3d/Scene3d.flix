@@ -106,9 +106,22 @@ pub mod Scene3d {
         MaterialData.MaterialData({ cutout = on | r })
 
     /// 光の計算の後に足す、自分で光る色（かすみに沈まない）。
+    /// 名前の付いた材質（Gltf の読んだ材質など）の emission を別の木に差し替えたら、withSpecName で名前も替える。
+    /// GL は材質のプログラムを spec の名前と emission の有無で引くので、名前が同じで emission の木だけ違う材質が並ぶと毎コマ組み直す。
     pub def withEmission(s: ShaderDoc.Shade, m: Material3d): Material3d =
         let MaterialData.MaterialData(r) = m;
         MaterialData.MaterialData({ emission = Some(s) | r })
+
+    /// emission を外す（glb の emissive で光らせたくない時）。
+    pub def withoutEmission(m: Material3d): Material3d =
+        let MaterialData.MaterialData(r) = m;
+        MaterialData.MaterialData({ emission = None | r })
+
+    /// spec の名前だけを替える。spec の木か emission の木を差し替えた材質に、木ごとに違う名前を付ける
+    /// （部品ごとに emission の mask が違うなら部品ごとの名前）。同じ名前を木の違う 2 つの材質に付けると、GL が毎コマ組み直す。
+    pub def withSpecName(name: String, m: Material3d): Material3d =
+        let MaterialData.MaterialData(r) = m;
+        MaterialData.MaterialData({ spec = { name = name | r#spec } | r })
 
     pub def withNormalMap(n: NormalMap, m: Material3d): Material3d =
         let MaterialData.MaterialData(r) = m;
@@ -197,6 +210,50 @@ pub mod Scene3d {
     pub def instanceFieldsOf(i: Instance3d): InstanceFields =
         let InstanceData.InstanceData(r) = i;
         r
+
+    /// 置いた物の world の境界（形の境界の 8 つの角を world で写した物を囲む AABB）。
+    /// 骨つき（skinningOf が Some。Pose で形が境界の外へ出うる）と頂点の無い形は None。
+    pub def worldBoundsOf(i: Instance3d): Option[Mesh3d.Bounds] =
+        let r = instanceFieldsOf(i);
+        if (Option.nonEmpty(skinningOfFields(r)) or Mesh3d.vertexCount(r#mesh) == 0) None
+        else {
+            let corners = Mesh3d.cornersOf(Mesh3d.bounds(r#mesh)) |> List.map(Mat4.apply(r#world));
+            let pick = (f: (Float64, Float64) -> Float64, axis: Vec3.Vec3 -> Float64) ->
+                corners |> List.map(axis) |> List.reduceLeft(f) |> Option.getWithDefault(0.0);
+            Some({ min = Vec3.v3(pick(Float64.min, v -> v#x), pick(Float64.min, v -> v#y), pick(Float64.min, v -> v#z)),
+                   max = Vec3.v3(pick(Float64.max, v -> v#x), pick(Float64.max, v -> v#y), pick(Float64.max, v -> v#z)) })
+        }
+
+    /// 描き手が視錐台 f の外として描かなくてよい物か（迷ったら偽 = 描く）。GL と CPU と影の地図が同じ判定を使う。
+    /// 骨つきと頂点の無い形はいつも偽。8 つの角が 6 つの面のどれか 1 つの外に全部あれば真。
+    pub def isOutsideFrustum(f: Frustum.Frustum, i: Instance3d): Bool = isOutsideFrustumFields(f, instanceFieldsOf(i))
+
+    /// isOutsideFrustum の本体（置いた物の中身から。CPU の描き手が使う）。
+    pub def isOutsideFrustumFields(f: Frustum.Frustum, r: InstanceFields): Bool =
+        if (Option.nonEmpty(skinningOfFields(r)) or Mesh3d.vertexCount(r#mesh) == 0) false
+        else {
+            let b = Mesh3d.bounds(r#mesh);
+            not Frustum.intersectsBox(f, b#min, b#max, r#world)
+        }
+
+    /// ビルボードが視錐台 f の外か（外接球で見る。半径 = (size.x × max(|anchor.x|, |1 − anchor.x|), size.y × 同じ y) の長さ）。
+    pub def isBillboardOutsideFrustum(f: Frustum.Frustum, b: Billboard3d): Bool =
+        let r = billboardFieldsOf(b);
+        let reach = (a: Float64) -> Float64.max(Float64.abs(a), Float64.abs(1.0 - a));
+        let rx = r#size#x * reach(r#anchor#x);
+        let ry = r#size#y * reach(r#anchor#y);
+        not Frustum.intersectsSphere(f, r#position, Vec2.sqrt(rx * rx + ry * ry))
+
+    /// 場面の縦横の比（幅 / 高さ。高さは 1e-6 未満にしない）。GL と CPU の射影の行列と視錐台が同じ値を使う。
+    pub def aspectOf(scene: Scene3dCmd): Float64 = scene#size#x / Float64.max(0.000001, scene#size#y)
+
+    /// 場面のカメラで見る視錐台（縦横の比は aspectOf。GL と CPU が同じ物を使う）。
+    pub def frustumOf(scene: Scene3dCmd): Frustum.Frustum =
+        Camera3d.frustum(scene#camera, aspectOf(scene))
+
+    /// スポットの影の地図を描く目の視錐台（縦横の比は 1）。目に見えない物も影は落とすので、影の地図はこちらで間引く。
+    pub def shadowFrustumOf(spot: SpotLight): Frustum.Frustum =
+        Camera3d.frustum(shadowCamera(spot), 1.0)
 
     /// lightmap を読む mip のレベルの数の上限の既定（レベル 0〜3。UV の島の間が 16 px の lightmap に合う）。
     // WhyNot: 全部のレベルを読まない — UV のアイランドの間の空き（黒）がレベルが上がるほど混ざり、継ぎ目が暗くなる。

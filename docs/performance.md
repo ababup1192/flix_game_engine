@@ -496,3 +496,11 @@ World に写し、`FrameDiagnostics.summaryLines(d)` をゲームの字の部品
 1〜2 コマ遅れの値・測れない描き手では None）・3D の数（`scene3dCounts` の置いた物・描いた物・draw call）。
 `FLIX_GE_FRAME_STATS=1` の println は窓ごとの平均を標準出力へ書くだけで GPU を含まない。こちらはゲームの画面に出せて、GPU を含む。
 自前で `System.nanoTime` を測って出さない（GPU の仕事は CPU の時計では swap の待ちに混ざって見えない）。
+
+### 3D の場面の描く量（視錐台の外を間引く）
+
+GL と CPU の描き手は、カメラの視錐台の外の置いた物とビルボードを描かない（`Scene3d.isOutsideFrustum`・1 物あたり角 8 つ × 面 6 つの判定）。
+外の物では、1 物あたりの uniform と draw call の仕事を払わなくなる。`scene3dCounts#drawn` が減るのを F3 の表示で見る。
+間引くのは視錐台の外だけで、壁の向こうは間引かない（部屋ごとに描くかはゲームが決める）。
+間引いた物も材質のプログラムを組み、形と絵を今のコマで使った物として GPU に残すので、振り向いた最初のコマで組み直し・上げ直しは起きない。
+口と決まりは [scene3d.md](scene3d.md) の「描く量」。

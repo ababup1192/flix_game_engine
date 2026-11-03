@@ -70,6 +70,7 @@
 | 3D の材質に貼る絵を場面に持たせる（PNG / JPEG を読む・中身のハッシュの名前） | Texture3d（Scene3d.texturedMaterial と組む） |
 | 絵の縮小の段（mip）を作る・3D の絵を読む段を選ぶ（GPU と CPU で同じ式） | Mip（build / lodOf） |
 | 3D の視点（位置・向き・画角）を持ちたい | Camera3d |
+| 3D のカメラに写る範囲（視錐台）で光や物を間引く・数える | Frustum（Camera3d.frustum で作る。置いた物とビルボードは描き手が Scene3d.isOutsideFrustum で間引く・docs/scene3d.md の「描く量」） |
 | 3D の部屋や物を 1 つの描き物（Render.Item.Scene3d）にまとめる・灯り・霧・影 | Scene3d（shadowMatrix の約束は Scene3d.flix の doc・3D の口の案内は docs/scene3d.md） |
 | 懐中電灯のような縁のぼけたスポットライトを置く（内側の角） | Scene3d.spotLight(p, t, fov) に innerFovY = Some(..)（直し方は Scene3d.spotConeOf・docs/scene3d.md） |
 | 3D の点光源が 8 本を超える（遠い灯りまで全部置きたい） | Scene3d の pointLights に全部入れる（描き手が Scene3d.pickLights で目に近い 8 本を選ぶ。ゲームで選び直さない） |
@@ -77,7 +78,8 @@
 | 骨の動き（キーフレームの並び）を持つ・ある時刻の姿勢を取り出す | AnimationClip3d |
 | 骨ごとの姿勢を混ぜる・Scene3d へ渡す | Pose3d（Scene3d.withPose） |
 | Blender などで書き出した .glb を読む（形・骨・動き） | Gltf（load / fromGlb。X を反転して左手系へ） |
-| .glb の絵と材質（baseColorTexture・normalTexture）も読んで primitive ごとに置く | Gltf.loadTextured（Model3d の parts と textures） |
+| .glb の絵と材質（baseColorTexture・normalTexture・emissive）も読んで primitive ごとに置く | Gltf.loadTextured（Model3d の parts と textures・材質の情報は part#gltfMaterial・止めるなら Scene3d.withoutEmission） |
+| Blender で名前を付けたノード（扉・当たり判定の箱・印の点）を .glb から名前で引く | Model3d.findNode / nodesWithPrefix / nodesByName（node#world・node#localBounds・docs/scene3d.md） |
 | Blender でベイクした光（lightmap と 2 本目の uv）を 3D の部屋に貼る | Scene3d.withLightmap（Gltf の TEXCOORD_1 → Mesh3d.uvs2・docs/lightmap.md） |
 | 3D の絵が場面の絵の上限（256 MB・64 枚）を超える・大きすぎる絵を縮める | Gltf.loadTexturedWith・Texture3d.limitSize・project.json の scene3dTextureBudgetMB / scene3dTextureBudgetCount（docs/lightmap.md の「場面の絵の予算」） |
 | 8bit の絵の値の意味（sRGB の曲線か線形か）と変換の式 | Texture3d.ColorSpace・srgbToLinear・linearToSrgb |

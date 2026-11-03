@@ -123,9 +123,21 @@ mod ParityMain {
     def pad(s: String, n: Int32): String =
         if (String.length(s) >= n) s else pad(s + " ", n)
 
+    /// sc を GL で撮り、描いた置いた物の数の期待値（Scenes.expectedDrawnOf）がある scene だけ、その数を確かめた 1 行を返す。
+    def glShootCounted(sc: Scenes.Scene): Option[(String, Bool)] \ IO + GameEngine.Game + ShaderEffect.Shader + RenderTarget.Target =
+        discard GameEngine.Game.consumeDiagnostics();
+        glShoot(sc);
+        Scenes.expectedDrawnOf(sc#name) |> Option.map(expected -> {
+            let drawn = GameEngine.Game.consumeDiagnostics()#scene3dCounts#drawn;
+            let ok = drawn == expected;
+            let verdict = if (ok) "一致" else "違う";
+            ("[parity] ${pad(sc#name, 14)} 描いた数 ${Int32.toString(drawn)}（期待 ${Int32.toString(expected)}）${verdict}", ok)
+        })
+
     pub def go(): Unit \ IO =
-        run {
-            Scenes.all() |> List.forEach(sc -> glShoot(sc))
+        let counted = run {
+            GameEngine.Game.setDiagnosticsEnabled(true);
+            Scenes.all() |> List.filterMap(sc -> glShootCounted(sc))
         } with LwjglLayer.withProject(".")
           with Fs.FileRead.runWithIO;
         renameFrames();
@@ -136,7 +148,8 @@ mod ParityMain {
             (sc#exact, PixelDiff.compare(sc#name, "debug/gl/${sc#name}.png",
                 "debug/soft/${sc#name}.png", "debug/diff/${sc#name}.png")));
         List.forEach(eo -> { let (exact, o) = eo; println(line(exact, o)) }, outcomes);
-        if (List.exists(eo -> { let (exact, o) = eo; failed(exact, o) }, outcomes)) System.exit(1) else ()
+        List.forEach(c -> println(fst(c)), counted);
+        if (List.exists(eo -> { let (exact, o) = eo; failed(exact, o) }, outcomes) or List.exists(c -> not snd(c), counted)) System.exit(1) else ()
 }
 
 def main(): Unit \ IO =
