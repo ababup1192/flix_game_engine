@@ -127,7 +127,11 @@ pub mod RenderCache {
             let images = extraImages
                 |> Map.filterWithKey((name, _) -> Set.memberOf(name, used))
                 |> Map.map(passImageDigest);
-            DrawHash.computeKeyCached(s#atlases, { engine = s#engine, runtime = s#runtime, files = files, images = images }, encoding, frame)
+            // WhyNot: 3D の色の旗を DrawHash.Inputs の欄にしない — 0.80.0 で旗ごと消すので、型の欄を足して消すと鍵を組む所を 2 回直す。
+            //   偽の時だけ字を足すので、真（既定）の鍵は旗を入れる前と同じ字になる。3D の場面の無いコマは旗を読まない（SoftRaster.planDraw と同じ）。
+            let linear = List.isEmpty(frame#req#scenes) or GameEngine.loadScene3dLinearColor(".");
+            let runtime = if (linear) s#runtime else s#runtime + " scene3dLinearColor=false";
+            DrawHash.computeKeyCached(s#atlases, { engine = s#engine, runtime = runtime, files = files, images = images }, encoding, frame)
         } catch {
             case ex: RuntimeException =>
                 warnOnce("key", "鍵を作れない（${ex.getMessage()}）— その絵は塗る");

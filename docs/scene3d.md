@@ -6,6 +6,20 @@ Blender でベイクした光は [lightmap.md](lightmap.md)。
 
 GL（窓）と CPU（画面なしの描き出し・テスト・agent-eval）の 2 つの描き手が、同じ場面を同じ式で描く。
 
+## 3D の色（線形の量で計算する）
+
+- 書く値は 2D と同じ画面の値（sRGB の値）: 材質の Spec（albedo・emission）・`withTint`・頂点の色・光の `color`・`ambient`・かすみの色・空の 3 色・絵。
+  描き手は 3D の中だけそれを線形の量へ戻してから光を足し掛けし、3D の色を作った直後に 1 回だけ画面の値へ戻す（Godot 4 の Compatibility と同じ形）。
+- 線形の量のまま効く数: 光の `intensity`・`range`・`hemisphere`・lightmap の `intensity`・`Scene3d.withEmissionIntensity`。画面では約 1/2.2 乗で効くので、
+  0.78 と同じ数を書くと光の届く端が広く明るくなる。同じ値の `ambient` と `hemisphere` では `hemisphere` の方が明るい。
+- 1 を超える明るさ（光る看板・glb の emissive_strength 40）は Spec の emission に書かず `Scene3d.withEmissionIntensity(k, m)` で渡す
+  （1 を超える画面の値を線形へ戻すと 1 次より強く伸びる: 2.0 → 約 4.95）。
+- 変換しない物: 法線マップ・影の地図・`Output.Depth` の灰色・`background`。
+- 半透明の混ぜと MSAA の平均は、画面の値へ戻した後の値どうし（2D と同じ）。材質の中の Mix などの足し算も画面の値の中で混ぜる。
+- 材質の絵の段（mip）は線形の量で平均する（白と黒の市松の 1 段上が 188）。法線マップは値のまま・lightmap は `colorSpace` のとおり。
+- 0.79 の 1 版だけ、ゲームのフォルダの project.json に `"scene3dLinearColor": false` と書けば 0.78 の式（画素の値のまま計算する）に戻る。
+  JVM の中で 1 回だけ読むので、変えたら起動し直す（窓・常駐・Studio から走らせたゲームも）。0.80.0 で消える。合わせ直しは `docs/migrations/0.79.0.md`。
+
 ## 動く光
 
 ### スポットライト（懐中電灯）
@@ -51,7 +65,7 @@ let byName = Model3d.nodesByName(collision);                     // たくさん
 
 ## glb の emissive
 
-`Gltf.loadTextured` は材質の `emissiveFactor` × `KHR_materials_emissive_strength` と `emissiveTexture` を読み、材質の emission にする
+`Gltf.loadTextured` は材質の `emissiveFactor`・`KHR_materials_emissive_strength`・`emissiveTexture` を読み、材質の emission と emissionIntensity にする
 （glTF の決まりどおり光る。Godot・Unity と同じ）。baseColorTexture の無い emissive だけの材質（炎など）も、頂点の色の材質に emission を付けて光る。
 
 - 止めたい時は `Scene3d.withoutEmission(m)`
@@ -63,8 +77,9 @@ let byName = Model3d.nodesByName(collision);                     // たくさん
 - 材質の情報（alphaMode・alphaCutoff・doubleSided・絵の名前・emissive の値）は `part#gltfMaterial`。alphaMode は材質に当たる
   （下の「半透明と両面」）。Blender の書き出しは全部の材質を `doubleSided: true` にするので、両面で描きたい物はゲームが材質の名前で選ぶ
 - emissiveTexture を指しているのに読めない時（texCoord ≠ 0・画像が読めない・形に TEXCOORD_0 が無い）は光らせず、材質ごとに 1 行知らせる
-- 絵の上限は `TextureLimits#baseColor`（emissive の絵も同じ色の絵）。emissive の値（Blender の強さ 40 など）は線形の量で、
-  今の式（色の値をそのまま足す）では明るすぎることがある（色の線形化で合わせ直す予定）
+- 絵の上限は `TextureLimits#baseColor`（emissive の絵も同じ色の絵）。`emissiveFactor` は emission の色（画面の値として読む）に、
+  `KHR_materials_emissive_strength`（Blender の強さ 40 など）は線形の倍率として `emissionIntensity` に入る。spec の名前には factor だけが入る
+  （強さだけ違う材質は同じプログラムを使う）。`Scene3d.withoutEmission` は `emissionIntensity` も 1 に戻す
 
 ## 描く量（視錐台の外を間引く）
 

@@ -19,11 +19,15 @@
 //              lod は 2 本目の uv の右隣と下隣との差から Mip.lodOf）。名前が場面の textures に無い絵は 0 で読む。
 //              法線マップの n' は点光源とスポットにだけ効く。
 //   fog    = LightModel3d.fogModel（fog が None なら掛けない）
+//   3D の色（Scene3d の頭の「3D の色」・linear が真の時）: 光の color・ambient・かすみ・空の 3 色・tint は場面ごと・物ごとに 1 回、
+//            材質の無い物の頂点の色は頂点ごとに、材質の albedo.rgb・emission とビルボードの絵の rgb は画素ごとに線形の量へ戻し、
+//            emission には戻した後に emissionIntensity を掛ける。色を作った直後（shadePixel の色の枝・blendRow で重ねる前・skyFill）に
+//            1 回だけ画面の値へ戻す。background・Output.Depth の灰色・法線マップは変換しない。linear が偽なら全部値のまま（0.78 の式）。
 //   Output.Depth の灰色 = clamp((|点 − 目| − near) / max(range, 1e-6), 0, 1)（目からの直線の距離。view の z ではない）
 //
 // 半透明（材質の blend）: 不透明の物とビルボードで画素ごとの勝者と深度を決めて色を塗った後（1 段目）、2 段目で半透明の物を
 //   Scene3d.blendOrderOf の順（遠い物から・同じ距離なら並びの前）に、1 つの物の中は三角形の並びのまま、不透明の深度より手前の画素だけに重ねる
-//   （深度は書かない。半透明どうしは並びの順で重なる）。色 = src × α + dst × (1 − α)・α = α + dst の α × (1 − α)
+//   （深度は書かない。半透明どうしは並びの順で重なる）。色 = src × α + dst × (1 − α)・α = α + dst の α × (1 − α)（src も dst も画面の値）
 //   （dst の α が 1 なら GL の glBlendFuncSeparate(SRC_ALPHA, ONE_MINUS_SRC_ALPHA, ONE, ONE_MINUS_SRC_ALPHA) と同じ値。dst が透明でも
 //   下地へ Normal で重ねた時に GL の画面への直の重ねと同じ色になるよう、色は α で割り戻して持つ）。α は材質の α（段つきで読んだ値）。
 //   cutout も真なら α < materialCutoff() の画素は捨てる。半透明の三角形の縁の画素は、2 枚が分け合う縁を片方だけが持つ（左と上の縁）。
@@ -46,6 +50,8 @@
 //   pcf の周りの画素が地図の外に出たら端の画素を読む（GL の CLAMP_TO_EDGE）。
 //   光の w が 0 以下（光の後ろ）の点は、NDC の外と同じく影にしない。
 //   影はスポットの光の量（att × facing × cone）に掛け、環境光・半球・点光源には掛けない。Output.Depth では地図を作らない。
+// WhyNot: 半透明の混ぜを線形の量どうしで行わない — GL は描き先の画面の値の上でハードウェアで混ぜ、MSAA の平均も画面の値どうし。
+//   線形で混ぜるには 3D を別の float の描き先へ描いて貼り直す形が要り、背景の無い場面の縁は 2D の上で結局画面の値で混ざる。
 pub mod SoftRaster3d {
     import java.awt.image.BufferedImage
     import java.lang.System
@@ -66,20 +72,33 @@ pub mod SoftRaster3d {
     // WhyNot: ここで影を見ない — 影の地図は場面の置いた物から作るので、光の並びだけでは作れない。影は drawScene の道でだけ付く。
     pub def lightAt(env: Scene3d.Environment3d, pointLights: List[Scene3d.PointLight], spotLights: List[Scene3d.SpotLight],
                     position: Vec3.Vec3, normal: Vec3.Vec3): Color =
-        let (r, g, b) = evalLight(compileLights(env, pointLights, spotLights, None),
+        let (r, g, b) = evalLight(compileLights(env, pointLights, spotLights, None, false),
                                   position#x, position#y, position#z, normal#x, normal#y, normal#z);
         { r = r, g = g, b = b }
 
     /// 目 eye から見た world の点 position の色 c に、距離のかすみを掛けた色（fog が None なら c のまま）。
     pub def fogAt(env: Scene3d.Environment3d, eye: Vec3.Vec3, position: Vec3.Vec3, c: Color): Color =
-        let (r, g, b) = applyFog(compileFog(env#fog), eye#x, eye#y, eye#z, position#x, position#y, position#z, c#r, c#g, c#b);
+        let (r, g, b) = applyFog(compileFog(env#fog, false), eye#x, eye#y, eye#z, position#x, position#y, position#z, c#r, c#g, c#b);
         { r = r, g = g, b = b }
+
+    /// 3D の色を作る最後の組み立て（GL の r3d_surfaceOut と同じ式。gl-parity の式の行が値をそろえて確かめる）:
+    /// 色 = albedoLinear × tint × light（fogOn なら env#fog のかすみ。かすみの色は linear なら線形の量へ戻す）+ 線形へ戻した emission × intensity を、
+    /// linear なら画面の値へ戻した色。tint と light は呼ぶ側が線形の量にして渡す（GL の uniform と同じ）。linear が偽なら変換しない（0.78 の式）。
+    // WhyNot: 画素ごとの塗り（materialColor・shadePixel）からこの関数を呼ばない — 画素ごとの変換は表（Texture3d.colorLut）で行い、
+    //   場面ごとの値は外で 1 回だけ組む。式の並びは同じで、TestSoftRaster3dLinear が材質の画素をこの関数の値と突き合わせる。
+    pub def surfaceOutAt(env: Scene3d.Environment3d, linear: Bool, eye: Vec3.Vec3, position: Vec3.Vec3,
+                         albedoLinear: Color, tint: Color, light: Color, emission: Color, intensity: Float64, fogOn: Bool): Color =
+        let (r, g, b) = (albedoLinear#r * tint#r * light#r, albedoLinear#g * tint#g * light#g, albedoLinear#b * tint#b * light#b);
+        let (fr, fg, fb) = if (fogOn) applyFog(compileFog(env#fog, linear), eye#x, eye#y, eye#z, position#x, position#y, position#z, r, g, b) else (r, g, b);
+        let toL = (x: Float64) -> if (linear) Texture3d.srgbToLinear(x) else x;
+        let toS = (x: Float64) -> if (linear) Texture3d.linearToSrgb(x) else x;
+        Color.rgb(toS(fr + toL(emission#r) * intensity), toS(fg + toL(emission#g) * intensity), toS(fb + toL(emission#b) * intensity))
 
     // WhyNot: 光をレコードの列のまま画素ごとに読まない — レコードの欄は名前で引くので、画素 × 光の数だけ重くなる。
     //   並べ方は LightModel3d.packPointLights・packSpotLights（生成した SoftRaster3dLight の輪が番号で読む）。
     enum Lights {
-        // ambient r, g, b・hemisphere・toonSteps・点光源の並び・スポットの並び・影
-        case Lights(Float64, Float64, Float64, Float64, Int32, Vector[Float64], Vector[Float64], SpotShadow)
+        // ambient r, g, b・hemisphere・toonSteps・点光源の並び・スポットの並び・影・lightmap の光を線形の量のまま足すか
+        case Lights(Float64, Float64, Float64, Float64, Int32, Vector[Float64], Vector[Float64], SpotShadow, Bool)
     }
 
     /// 影を落とすスポット 1 本の地図と判定に要る値。スポットの並びの中の位置（spots の Vector の先頭からの欄の数）・
@@ -89,23 +108,64 @@ pub mod SoftRaster3d {
     /// 場面の影（影を落とすスポットが無ければ None）。生成した SoftRaster3dLight がスポットごとに shadowFactorAt へ渡す。
     pub type alias SpotShadow = Option[Shadow]
 
+    /// linear が真なら ambient と光の color を線形の量へ戻してから並べる（hemisphere・intensity・range は線形の量のまま）。
     def compileLights(env: Scene3d.Environment3d, pointLights: List[Scene3d.PointLight],
-                      spotLights: List[Scene3d.SpotLight], shadow: SpotShadow): Lights =
-        Lights.Lights(env#ambient#r, env#ambient#g, env#ambient#b, env#hemisphere, env#toonSteps,
-                      LightModel3d.packPointLights(pointLights), LightModel3d.packSpotLights(spotLights), shadow)
+                      spotLights: List[Scene3d.SpotLight], shadow: SpotShadow, linear: Bool): Lights =
+        let ambient = linearColorIf(linear, env#ambient);
+        let points = pointLights |> List.map(l -> { color = linearColorIf(linear, l#color) | l });
+        let spots = spotLights |> List.map(l -> { color = linearColorIf(linear, l#color) | l });
+        Lights.Lights(ambient#r, ambient#g, ambient#b, env#hemisphere, env#toonSteps,
+                      LightModel3d.packPointLights(points), LightModel3d.packSpotLights(spots), shadow, linear)
+
+    /// linear が真なら c を線形の量へ戻した色（偽なら c のまま）。
+    def linearColorIf(linear: Bool, c: Color): Color = if (linear) Texture3d.srgbToLinearColor(c) else c
+
+    /// 頂点ごと・画素ごとの色の変換。Unconverted = 画素の値のまま（0.78 の式）・Linear = 表（Texture3d.colorLut）で線形の量へ戻し、出口で画面の値へ戻す。
+    enum PixelColor {
+        case Unconverted
+        case Linear(Texture3d.ColorLut)
+    }
+
+    def isLinear(pc: PixelColor): Bool = match pc {
+        case PixelColor.Unconverted => false
+        case PixelColor.Linear(_)   => true
+    }
+
+    // WhyNot: 表を場面ごとに作り直すのを JVM で 1 つに控えない — Flix に top-level の値が無く、作るのは 8194 回の pow（場面 1 つに 1 回）で済む。
+    def pixelColorOf(linear: Bool): PixelColor = if (linear) PixelColor.Linear(Texture3d.colorLut()) else PixelColor.Unconverted
+
+    /// 画素の値 x を線形の量へ（Unconverted なら x のまま）。
+    def pixelToLinear(pc: PixelColor, x: Float64): Float64 = match pc {
+        case PixelColor.Unconverted => x
+        case PixelColor.Linear(lut) => Texture3d.srgbToLinearLut(lut, x)
+    }
+
+    /// 不透明の画素の色 (r, g, b, 1)（Linear なら 3 成分を画面の値へ。toSrgbColor と同じ変換で、組を作り直さない）。
+    def toSrgbOpaque(pc: PixelColor, r: Float64, g: Float64, b: Float64): (Float64, Float64, Float64, Float64) = match pc {
+        case PixelColor.Unconverted => (r, g, b, 1.0)
+        case PixelColor.Linear(lut) => (Texture3d.linearToSrgbLut(lut, r), Texture3d.linearToSrgbLut(lut, g), Texture3d.linearToSrgbLut(lut, b), 1.0)
+    }
+
+    /// 3D の色を作った直後の 1 回の変換（Linear なら 3 成分を画面の値へ）。
+    def toSrgbColor(pc: PixelColor, c: (Float64, Float64, Float64)): (Float64, Float64, Float64) = match pc {
+        case PixelColor.Unconverted => c
+        case PixelColor.Linear(lut) =>
+            let (r, g, b) = c;
+            (Texture3d.linearToSrgbLut(lut, r), Texture3d.linearToSrgbLut(lut, g), Texture3d.linearToSrgbLut(lut, b))
+    }
 
     def evalLight(lights: Lights, px: Float64, py: Float64, pz: Float64,
                   nx: Float64, ny: Float64, nz: Float64): (Float64, Float64, Float64) =
-        let Lights.Lights(ar, ag, ab, hemi, steps, points, spots, shadow) = lights;
+        let Lights.Lights(ar, ag, ab, hemi, steps, points, spots, shadow, _) = lights;
         SoftRaster3dLight.lightAt(steps, points, spots, shadow, px, py, pz, nx, ny, nz, ar, ag, ab, hemi)
 
     /// lightmap つきの物に当たる光。sample = lightmap の絵から段つきで読んだ rgb。
     def evalLightBaked(lights: Lights, bake: Baked, sample: (Float64, Float64, Float64), px: Float64, py: Float64, pz: Float64,
                        nx: Float64, ny: Float64, nz: Float64): (Float64, Float64, Float64) =
-        let Lights.Lights(_, _, _, _, steps, points, spots, shadow) = lights;
+        let Lights.Lights(_, _, _, _, steps, points, spots, shadow, linear) = lights;
         let (sr, sg, sb) = sample;
         SoftRaster3dLight.lightmapLightAt(steps, points, spots, shadow, px, py, pz, nx, ny, nz, sr, sg, sb,
-                                    if (bake#srgb) 1.0 else 0.0, bake#intensity)
+                                    if (bake#srgb) 1.0 else 0.0, bake#intensity, if (linear) 1.0 else 0.0)
 
     /// スポットの並びの位置 offset のスポットが、world の点 (px, py, pz) へ届ける光に掛ける割合（影を落とさないスポットは 1）。
     pub def shadowFactorAt(shadow: SpotShadow, offset: Int32, px: Float64, py: Float64, pz: Float64): Float64 = match shadow {
@@ -157,9 +217,9 @@ pub mod SoftRaster3d {
     // fog があるか・色 r, g, b・near・far。
     enum Fog { case Fog(Bool, Float64, Float64, Float64, Float64, Float64) }
 
-    def compileFog(fog: Option[Scene3d.DistanceFog]): Fog = match fog {
+    def compileFog(fog: Option[Scene3d.DistanceFog], linear: Bool): Fog = match fog {
         case None    => Fog.Fog(false, 0.0, 0.0, 0.0, 0.0, 0.0)
-        case Some(f) => Fog.Fog(true, f#color#r, f#color#g, f#color#b, f#near, f#far)
+        case Some(f) => let c = linearColorIf(linear, f#color); Fog.Fog(true, c#r, c#g, c#b, f#near, f#far)
     }
 
     def applyFog(fog: Fog, ex: Float64, ey: Float64, ez: Float64, px: Float64, py: Float64, pz: Float64,
@@ -174,12 +234,13 @@ pub mod SoftRaster3d {
     // 場面 1 つを下地へ
     // ════════════════════════════════════════════════════════
 
-    /// 場面 cmd を image へ重ねる。sf = design px → 出力の画素の倍率。textures = ビルボードと材質が引く絵（名前 → 段の列。段 0 が元の絵）。
+    /// 場面 cmd を image へ重ねる。sf = design px → 出力の画素の倍率。textures = ビルボードと材質が引く絵（(名前, 段の平均の色空間) → 段の列。
+    /// 段 0 が元の絵。鍵の色空間は SoftRaster.mipKeySpace）。linear = 3D の色を線形の量で計算するか（偽なら 0.78 の式。0.80.0 で消える引数）。
     /// time = 材質の Spec に渡す秒（Shader 面の time と同じ物）。
     /// Native は出力の画素で塗り、Design は design の画素で塗ってから最も近い画素で広げる。
     /// 何も描かれない画素は background が Some ならその色、None なら透明（下地が見える）。重ね方は Shader 面と同じ blendPixel。
-    pub def drawScene(image: BufferedImage, sf: Float64, textures: Map[String, Vector[ShaderEval.TexData]],
-                      time: Float64, cmd: Scene3d.RenderCmd): Unit \ IO = region rc {
+    pub def drawScene(image: BufferedImage, sf: Float64, textures: Map[(String, Texture3d.ColorSpace), Vector[ShaderEval.TexData]],
+                      linear: Bool, time: Float64, cmd: Scene3d.RenderCmd): Unit \ IO = region rc {
         let scene = cmd#scene;
         let (rx0, ry0, rx1, ry1) = DrawCmd.clipPixels({ scaleX = sf, scaleY = sf }, { position = cmd#at, size = scene#size });
         let dw = rx1 - rx0;
@@ -202,7 +263,7 @@ pub mod SoftRaster3d {
                     (Int32.max(1, roundInt(scene#size#x)), Int32.max(1, roundInt(scene#size#y)))
             };
             let layer: Array[Int32, Static] = Array.repeat(Static, lw * lh, 0);
-            renderLayer(scene, lw, lh, textures, time, LayerOut.Argb(layer));
+            renderLayer(scene, lw, lh, textures, linear, time, LayerOut.Argb(layer));
             let buf: Array[Int32, rc] = Array.empty(rc, w * h);
             discard image.getRGB(x0, y0, w, h, buf, 0, w);
             List.range(0, h) |> List.forEach(j -> {
@@ -219,8 +280,8 @@ pub mod SoftRaster3d {
 
     /// drawScene の Rgba16Float の描き先版。rgba = 描き先（1 画素に r, g, b, α の 4 つ）・size = その幅と高さ。
     /// 層は色を切らずに塗り（emission が 1 を超えて残る）、SoftRaster.blendPixelF の Normal で重ねる。
-    pub def drawSceneHdr(rgba: Array[Float64, Static], size: (Int32, Int32), sf: Float64, textures: Map[String, Vector[ShaderEval.TexData]],
-                         time: Float64, cmd: Scene3d.RenderCmd): Unit \ IO =
+    pub def drawSceneHdr(rgba: Array[Float64, Static], size: (Int32, Int32), sf: Float64, textures: Map[(String, Texture3d.ColorSpace), Vector[ShaderEval.TexData]],
+                         linear: Bool, time: Float64, cmd: Scene3d.RenderCmd): Unit \ IO =
         let (width, height) = size;
         let scene = cmd#scene;
         let (rx0, ry0, rx1, ry1) = DrawCmd.clipPixels({ scaleX = sf, scaleY = sf }, { position = cmd#at, size = scene#size });
@@ -244,7 +305,7 @@ pub mod SoftRaster3d {
                     (Int32.max(1, roundInt(scene#size#x)), Int32.max(1, roundInt(scene#size#y)))
             };
             let layer: Array[Float64, Static] = Array.repeat(Static, lw * lh * 4, 0.0);
-            renderLayer(scene, lw, lh, textures, time, LayerOut.Rgba(layer));
+            renderLayer(scene, lw, lh, textures, linear, time, LayerOut.Rgba(layer));
             List.range(0, h) |> List.forEach(j -> {
                 let ly = nearestIndex(y0 + j - ry0, dh, lh);
                 List.range(0, w) |> List.forEach(i -> {
@@ -283,7 +344,7 @@ pub mod SoftRaster3d {
 
     // 1 頂点の欄の数。clip の段では (clip x, y, z, w, world x, y, z, 法線 x, y, z, 色 r, g, b, uv u, v, タンジェント x, y, z, w, 2 本目の uv u, v)、
     // 画面へ写した後は先頭 4 つが (画面 x, y, NDC の z, 1 / w) に替わる。
-    // 材質の無い物の色の欄は 頂点の色 × tint・材質のある物は頂点の色だけ（tint は Mat）・ビルボードは白で、uv の欄に絵の px。
+    // 材質の無い物の色の欄は 頂点の色 × tint（linear なら両方を線形の量へ戻してから）・材質のある物は頂点の色だけ（tint は Mat）・ビルボードは白で、uv の欄に絵の px。
     // 2 本目の uv の無い形とビルボードは 2 本目の uv が (0, 0)。
     def stride(): Int32 = 21
 
@@ -299,8 +360,8 @@ pub mod SoftRaster3d {
     /// ビルボードの番号（メッシュは −1）・材質の番号（材質の無い物とビルボードは −1）。
     enum Tri { case Tri(Vector[Float64], Float64, Int32, Int32) }
 
-    /// 置いた物 1 つの材質。組み直した Spec（Param は値に置き換え済み）・cutout・置いた物の tint r, g, b・法線マップ。
-    enum Mat { case Mat(ShaderEval.CompiledSpec, Bool, Float64, Float64, Float64, Option[NormalMapping]) }
+    /// 置いた物 1 つの材質。組み直した Spec（Param は値に置き換え済み）・cutout・置いた物の tint r, g, b（linear なら線形の量）・法線マップ・emissionIntensity。
+    enum Mat { case Mat(ShaderEval.CompiledSpec, Bool, Float64, Float64, Float64, Option[NormalMapping], Float64) }
 
     /// 当てる法線マップ。絵の段の列・strength・0..1 の外の uv を繰り返すか。
     type alias NormalMapping = { texture = Vector[ShaderEval.TexData], strength = Float64, repeat = Bool }
@@ -309,22 +370,33 @@ pub mod SoftRaster3d {
     type alias Baked = { texture = Vector[ShaderEval.TexData], srgb = Bool, intensity = Float64, maxLevels = Int32 }
 
     /// 置いた物 f の lightmap（Scene3d.lightmapOfFields が Some の時だけ）。絵が無ければ透明な黒で読む（GL の代わりの絵と同じ）。
-    def bakedOf(textures: Map[String, Vector[ShaderEval.TexData]], f: Scene3d.InstanceFields): Option[Baked] =
+    def bakedOf(textures: Map[(String, Texture3d.ColorSpace), Vector[ShaderEval.TexData]], linear: Bool, f: Scene3d.InstanceFields): Option[Baked] =
         Scene3d.lightmapOfFields(f) |> Option.map(lm ->
-            { texture = Map.getWithDefault(lm#texture, Vector#{ { width = 1, height = 1, pixels = Vector#{0} } }, textures),
+            { texture = Map.getWithDefault((lm#texture, SoftRaster.mipKeySpace(linear, Texture3d.TextureUse.Lightmap(lm#colorSpace))), blackTexture(), textures),
               srgb = lm#colorSpace == Texture3d.ColorSpace.Srgb, intensity = lm#intensity, maxLevels = lm#maxLevels })
 
     /// hasUv = 形が uv を持つか（uv の無い形には法線マップを当てない。GL と同じ）。法線マップの絵が無ければ透明な黒で読む（GL の代わりの絵と同じ）。
-    def matOf(textures: Map[String, Vector[ShaderEval.TexData]], tint: Color, hasUv: Bool, m: Scene3d.Material3d): Mat =
+    /// materialTextures = 材質の Tex が名前で引く絵（textures の材質の絵の鍵の物）・textures = 法線マップを引く全部の絵。
+    def matOf(textures: Map[(String, Texture3d.ColorSpace), Vector[ShaderEval.TexData]], materialTextures: Map[String, Vector[ShaderEval.TexData]],
+              linear: Bool, tint: Color, hasUv: Bool, m: Scene3d.Material3d): Mat =
         let f = Scene3d.materialFieldsOf(m);
         let (spec, emission) = ShaderDoc.limitMaterialTexReads(Scene3d.maxMaterialTextures(), f#spec, f#emission);
         let repeat = f#wrap == Scene3d.Wrap.Repeat;
-        let compiled = ShaderEval.compileMaterial({ spec = spec, emission = emission, params = f#params, textures = textures,
+        let compiled = ShaderEval.compileMaterial({ spec = spec, emission = emission, params = f#params, textures = materialTextures,
                                                     repeat = repeat });
         let normal = if (not hasUv) None else f#normalMap |> Option.map(n ->
-            { texture = Map.getWithDefault(n#texture, Vector#{ { width = 1, height = 1, pixels = Vector#{0} } }, textures),
+            { texture = Map.getWithDefault((n#texture, SoftRaster.mipKeySpace(linear, Texture3d.TextureUse.NormalMap)), blackTexture(), textures),
               strength = n#strength, repeat = repeat });
-        Mat.Mat(compiled, f#cutout, tint#r, tint#g, tint#b, normal)
+        let t = linearColorIf(linear, tint);
+        Mat.Mat(compiled, f#cutout, t#r, t#g, t#b, normal, f#emissionIntensity)
+
+    /// 無い絵の代わり（透明な黒 1 × 1。GL の代わりの絵と同じ）。
+    def blackTexture(): Vector[ShaderEval.TexData] = Vector#{ { width = 1, height = 1, pixels = Vector#{0} } }
+
+    /// textures のうち材質の絵の鍵（SoftRaster.mipKeySpace(linear, MaterialTexture)）の物を、名前 → 段の列にした物（ShaderEval が名前で引く）。
+    def materialTexturesOf(textures: Map[(String, Texture3d.ColorSpace), Vector[ShaderEval.TexData]], linear: Bool): Map[String, Vector[ShaderEval.TexData]] =
+        let space = SoftRaster.mipKeySpace(linear, Texture3d.TextureUse.MaterialTexture);
+        textures |> Map.foldLeftWithKey((acc, key, levels) -> if (snd(key) == space) Map.insert(fst(key), levels, acc) else acc, Map.empty())
 
     /// 置いた物ごとの材質の番号（材質の無い物は −1）。番号は材質のある物だけを前から数える。
     def numberMaterials(placed: List[Placed]): List[(Placed, Int32)] =
@@ -389,18 +461,20 @@ pub mod SoftRaster3d {
 
     /// 場面を lw × lh（行優先）の out に塗る。
     def renderLayer(scene: Scene3d.Scene3dCmd, lw: Int32, lh: Int32,
-                    textures: Map[String, Vector[ShaderEval.TexData]], time: Float64, out: LayerOut): Unit \ IO = region rc {
+                    textures: Map[(String, Texture3d.ColorSpace), Vector[ShaderEval.TexData]], linear: Bool, time: Float64, out: LayerOut): Unit \ IO = region rc {
         let cam = scene#camera;
         let picked = Scene3d.pickLights(cam#eye, scene);
         let view = Camera3d.viewMatrix(cam);
         let proj = Camera3d.projectionMatrix(cam, Scene3d.aspectOf(scene));
         let screen = { w = Int32.toFloat64(lw), h = Int32.toFloat64(lh), near = cam#near };
         let frustum = Scene3d.frustumOf(scene);
+        let materialTextures = materialTexturesOf(textures, linear);
+        let pixelColor = hoist(rc, pixelColorOf(linear));
         let placed = scene#billboards |> List.filter(b -> not Scene3d.isBillboardOutsideFrustum(frustum, b)) |> List.filterMap(b -> {
             let f = Scene3d.billboardFieldsOf(b);
-            Map.get(f#texture, textures) |> Option.flatMap(Vector.head) |> Option.map(tex -> (f, tex))
+            Map.get(f#texture, materialTextures) |> Option.flatMap(Vector.head) |> Option.map(tex -> (f, tex))
         });
-        let inks = placed |> List.map(pair -> inkOf(snd(pair), fst(pair))) |> List.toVector;
+        let inks = placed |> List.map(pair -> inkOf(linear, snd(pair), fst(pair))) |> List.toVector;
         let numbered = numberMaterials(scene#instances |> List.map(placedOf));
         let isDepth = match scene#output {
             case Scene3d.Output.Color    => false
@@ -411,21 +485,21 @@ pub mod SoftRaster3d {
         // WhyNot: 同じ Spec の材質を 1 つに束ねない — Spec に Eq が無く、束ねる鍵（JSON の字）を作る手間が組み直しと同じくらいかかる。
         let mats = hoist(rc, numbered |> List.filterMap(pair -> {
             let fields = fst(pair)#fields;
-            fields#material |> Option.map(matOf(textures, fields#tint, Option.nonEmpty(Mesh3d.uvs(fields#mesh))))
+            fields#material |> Option.map(matOf(textures, materialTextures, linear, fields#tint, Option.nonEmpty(Mesh3d.uvs(fields#mesh))))
         }) |> List.toVector);
         // WhyNot: lightmap を Mat に入れない — Mat は材質の中身で、lightmap は置いた物ごと（同じ材質を別の光の場所に置く）。
         let bakes = hoist(rc, numbered |> List.filterMap(pair -> {
             let fields = fst(pair)#fields;
-            fields#material |> Option.map(_ -> bakedOf(textures, fields))
+            fields#material |> Option.map(_ -> bakedOf(textures, linear, fields))
         }) |> List.toVector);
         // WhyNot: 間引いた物を numberMaterials の前に除かない — 材質の番号（mats の並び）を置いた物の並びのまま保つ。
         let meshTris = solidNumbered |> List.flatMap(pair ->
             if (Scene3d.isOutsideFrustumFields(frustum, fst(pair)#fields)) Nil
-            else instanceTris(view, proj, screen, not isDoubleSided(fst(pair)), fst(pair), snd(pair)));
+            else instanceTris(view, proj, screen, pixelColor, not isDoubleSided(fst(pair)), fst(pair), snd(pair)));
         let blendedTris = hoist(rc, if (isDepth) Vector.empty()
             else Scene3d.blendOrderOf(cam#eye, pair -> fst(pair)#fields, blendedNumbered)
                 |> List.filter(pair -> not Scene3d.isOutsideFrustumFields(frustum, fst(pair)#fields))
-                |> List.flatMap(pair -> instanceTris(view, proj, screen, not isDoubleSided(fst(pair)), fst(pair), snd(pair)))
+                |> List.flatMap(pair -> instanceTris(view, proj, screen, pixelColor, not isDoubleSided(fst(pair)), fst(pair), snd(pair)))
                 |> List.toVector);
         let blendedBins = hoist(rc, binRows(rc, lh, blendedTris));
         let billboardTris = List.zipWithIndex(placed) |> List.flatMap(entry -> {
@@ -438,16 +512,17 @@ pub mod SoftRaster3d {
             case Scene3d.Output.Color    => shadowOf(solidNumbered |> List.map(fst), picked#spotLights)
             case Scene3d.Output.Depth(_) => None
         };
-        let lights = hoist(rc, compileLights(picked#environment, picked#pointLights, picked#spotLights, shadow));
-        let fog = hoist(rc, compileFog(scene#environment#fog));
+        let lights = hoist(rc, compileLights(picked#environment, picked#pointLights, picked#spotLights, shadow, linear));
+        let fog = hoist(rc, compileFog(scene#environment#fog, linear));
         let inkTable = hoist(rc, inks);
         let eye = hoist(rc, (cam#eye#x, cam#eye#y, cam#eye#z));
         let background = hoist(rc, match scene#environment#background {
             case Some(c) => (c#r, c#g, c#b, 1.0)
             case None    => (0.0, 0.0, 0.0, 0.0)
         });
-        let sky = hoist(rc, scene#sky |> Option.map(sk -> (skyColorsOf(sk), Scene3d.skyBasisOf(scene))));
-        let fillAt = (x: Int32, y: Int32) -> skyFill(sky, isDepth, (lw, lh), (x, y)) |> Option.getWithDefault(background);
+        let sky = hoist(rc, scene#sky |> Option.map(sk -> (skyColorsOf(linear, sk), Scene3d.skyBasisOf(scene))));
+        let shadeEnv = hoist(rc, { time = time, lights = lights, fog = fog, eye = eye, colorConversion = pixelColor });
+        let fillAt = (x: Int32, y: Int32) -> skyFill(sky, pixelColor, isDepth, (lw, lh), (x, y)) |> Option.getWithDefault(background);
         let depthBand = hoist(rc, match scene#output {
             case Scene3d.Output.Color    => None
             case Scene3d.Output.Depth(d) => Some((d#near, d#range))
@@ -463,7 +538,7 @@ pub mod SoftRaster3d {
             let shadeAt = (x: Int32) -> {
                 let ti = Array.get(x, winner);
                 if (ti < 0) fillAt(x, y)
-                else shadePixel(Vector.get(ti, tris), inkTable, mats, bakes, time, lights, fog, eye, depthBand, (x, y),
+                else shadePixel(Vector.get(ti, tris), inkTable, mats, bakes, shadeEnv, lights, fog, eye, pixelColor, depthBand, (x, y),
                                 Array.get(x, w0), Array.get(x, w1))
             };
             if (List.isEmpty(blendedRow))
@@ -480,8 +555,7 @@ pub mod SoftRaster3d {
                     Array.put(b, x * 4 + 2, rgba);
                     Array.put(a, x * 4 + 3, rgba)
                 });
-                let blended = { tris = blendedTris, mats = mats, bakes = bakes,
-                                env = { time = time, lights = lights, fog = fog, eye = eye } };
+                let blended = { tris = blendedTris, mats = mats, bakes = bakes, env = shadeEnv };
                 blendedRow |> List.forEach(ti -> blendRow(lw, y, blended, ti, depth, rgba));
                 List.range(0, lw) |> List.forEach(x ->
                     putLayer(out, y * lw + x, Array.get(x * 4, rgba), Array.get(x * 4 + 1, rgba), Array.get(x * 4 + 2, rgba), Array.get(x * 4 + 3, rgba)))
@@ -494,7 +568,7 @@ pub mod SoftRaster3d {
         p#fields#material |> Option.exists(m -> Scene3d.materialFieldsOf(m)#doubleSided)
 
     /// 層の画素 (x, y) の空の色（sky が None なら None・Output.Depth なら白）。向きは画素の真ん中の NDC を通る向き（Scene3d.skyDirectionOf）。
-    def skyFill(sky: Option[(SkyColors, Scene3d.SkyBasis)], isDepth: Bool, layer: (Int32, Int32), pixel: (Int32, Int32)): Option[(Float64, Float64, Float64, Float64)] =
+    def skyFill(sky: Option[(SkyColors, Scene3d.SkyBasis)], pc: PixelColor, isDepth: Bool, layer: (Int32, Int32), pixel: (Int32, Int32)): Option[(Float64, Float64, Float64, Float64)] =
         let (lw, lh) = layer;
         let (x, y) = pixel;
         sky |> Option.map(sb -> {
@@ -503,7 +577,7 @@ pub mod SoftRaster3d {
             else {
                 let ndc = { x = (Int32.toFloat64(x) + 0.5) / Int32.toFloat64(lw) * 2.0 - 1.0,
                             y = 1.0 - (Int32.toFloat64(y) + 0.5) / Int32.toFloat64(lh) * 2.0 };
-                let (r, g, b) = skyColorWith(colors, Scene3d.skyDirectionOf(basis, ndc));
+                let (r, g, b) = toSrgbColor(pc, skyColorWith(colors, Scene3d.skyDirectionOf(basis, ndc)));
                 (r, g, b, 1.0)
             }
         })
@@ -512,10 +586,12 @@ pub mod SoftRaster3d {
     // WhyNot: 画素ごとに Sky3d のレコードから読まない — レコードの欄は名前で引くので、空の画素の数だけ重くなる。
     enum SkyColors { case SkyColors(Float64, Float64, Float64, Float64, Float64, Float64, Float64, Float64, Float64, Float64) }
 
-    def skyColorsOf(s: Scene3d.Sky3d): SkyColors =
+    /// linear が真なら 3 色を線形の量へ戻す（空は線形の量の中で混ぜる）。
+    def skyColorsOf(linear: Bool, s: Scene3d.Sky3d): SkyColors =
         let f = Scene3d.skyFieldsOf(s);
-        SkyColors.SkyColors(f#zenith#r, f#zenith#g, f#zenith#b, f#horizon#r, f#horizon#g, f#horizon#b,
-                            f#ground#r, f#ground#g, f#ground#b, Scene3d.skyCurveOf(s))
+        let (zenith, horizon, ground) = (linearColorIf(linear, f#zenith), linearColorIf(linear, f#horizon), linearColorIf(linear, f#ground));
+        SkyColors.SkyColors(zenith#r, zenith#g, zenith#b, horizon#r, horizon#g, horizon#b,
+                            ground#r, ground#g, ground#b, Scene3d.skyCurveOf(s))
 
     /// 目から見た向き dir（長さ 1）の空の色（LightModel3d.skyModel）。
     def skyColorWith(colors: SkyColors, dir: Vec3.Vec3): (Float64, Float64, Float64) =
@@ -553,7 +629,8 @@ pub mod SoftRaster3d {
                 let z = l0 * z0 + l1 * z1 + l2 * z2;
                 let covered = inside(l0, own0) and inside(l1, own1) and inside(l2, own2) and z >= -1.0 and z <= 1.0 and z < Array.get(x, depth);
                 if (covered and not isCutAway(material, blended#env#time, v, perspectiveWeights(l0, l1, l2, q0, q1, q2))) {
-                    let (sr, sg, sb, sa) = materialPixel(tri, material, Vector.get(mat, blended#bakes), blended#env, (x, y), l0, l1);
+                    let (lr, lg, lb, sa) = materialPixel(tri, material, Vector.get(mat, blended#bakes), blended#env, (x, y), l0, l1);
+                    let (sr, sg, sb) = toSrgbColor(blended#env#colorConversion, (lr, lg, lb));
                     let a = clamp01(sa);
                     let k = x * 4;
                     let (dr, dg, db, da) = (Array.get(k, rgba), Array.get(k + 1, rgba), Array.get(k + 2, rgba), Array.get(k + 3, rgba));
@@ -617,7 +694,7 @@ pub mod SoftRaster3d {
         let screen = { w = Int32.toFloat64(n), h = Int32.toFloat64(n), near = cam#near };
         let frustum = Scene3d.shadowFrustumOf(spot);
         let tris = hoist(rc, instances |> List.filter(f -> not Scene3d.isOutsideFrustumFields(frustum, f#fields))
-            |> List.flatMap(f -> instanceTris(view, proj, screen, false, f, -1)) |> List.toVector);
+            |> List.flatMap(f -> instanceTris(view, proj, screen, PixelColor.Unconverted, false, f, -1)) |> List.toVector);
         let bins = hoist(rc, binRows(rc, n, tris));
         let noInks: Vector[Ink] = Vector.empty();
         let noMats: Vector[Mat] = Vector.empty();
@@ -638,13 +715,14 @@ pub mod SoftRaster3d {
         Array.toVector(out)
     }
 
-    def inkOf(tex: ShaderEval.TexData, f: Scene3d.BillboardFields): Ink =
+    def inkOf(linear: Bool, tex: ShaderEval.TexData, f: Scene3d.BillboardFields): Ink =
         let r = f#regionRect;
         let x0 = Int32.max(0, Int32.min(tex#width - 1, floorInt(r#position#x)));
         let y0 = Int32.max(0, Int32.min(tex#height - 1, floorInt(r#position#y)));
         let x1 = Int32.max(x0 + 1, Int32.min(tex#width, floorInt(r#position#x + r#size#x)));
         let y1 = Int32.max(y0 + 1, Int32.min(tex#height, floorInt(r#position#y + r#size#y)));
-        Ink.Ink(tex, x0, y0, x1, y1, f#tint#r, f#tint#g, f#tint#b, f#lit)
+        let tint = linearColorIf(linear, f#tint);
+        Ink.Ink(tex, x0, y0, x1, y1, tint#r, tint#g, tint#b, f#lit)
 
     // ── 三角形を組む ─────────────────────────────────────
 
@@ -659,17 +737,21 @@ pub mod SoftRaster3d {
         Vector.append(Vector#{ c#x, c#y, c#z, 0.0 - e#z, p#x, p#y, p#z, n#x, n#y, n#z }, rest)
 
     /// 置いた物 placed の三角形（頂点は placedOf で曲げた後の物）。mat = 材質の番号（−1 なら頂点の色 × tint を色の欄に、それ以外は頂点の色だけを入れる）。
+    /// pc が Linear なら、材質の無い物の頂点の色と tint を線形の量へ戻してから掛ける（材質のある物の頂点の色は戻さない — Spec の出口で戻す）。
     /// タンジェントの xyz は world の左上 3×3 で写し（法線の normalMatrix ではない）、world が裏返す行列なら w の符号も裏返す。
     /// cull が真なら裏の三角形を捨てる。
-    def instanceTris(view: Mat4.Mat4, proj: Mat4.Mat4, screen: Screen, cull: Bool, placed: Placed, mat: Int32): List[Tri] =
+    def instanceTris(view: Mat4.Mat4, proj: Mat4.Mat4, screen: Screen, pc: PixelColor, cull: Bool, placed: Placed, mat: Int32): List[Tri] =
         let f = placed#fields;
         let world = f#world;
         let nm = Mat4.normalMatrix(world);
         let flip = if (linearDeterminant(world) < 0.0) -1.0 else 1.0;
-        let cs = Mesh3d.colors(f#mesh);
+        let cs = match (mat < 0, pc) {
+            case (true, PixelColor.Linear(lut)) => Mesh3d.colors(f#mesh) |> Vector.map(c -> Texture3d.srgbToLinearLut(lut, c))
+            case _                              => Mesh3d.colors(f#mesh)
+        };
         let uvs = Mesh3d.uvs(f#mesh);
         let uvs2 = Mesh3d.uvs2(f#mesh);
-        let tint = if (mat < 0) f#tint else { r = 1.0, g = 1.0, b = 1.0 };
+        let tint = if (mat < 0) linearColorIf(isLinear(pc), f#tint) else { r = 1.0, g = 1.0, b = 1.0 };
         let surfaceAt = (k: Int32) -> {
             let (u, v) = match uvs {
                 case Some(uv) => (Vector.get(k * 2, uv), Vector.get(k * 2 + 1, uv))
@@ -860,7 +942,7 @@ pub mod SoftRaster3d {
         (Vec3.v3(attr(v, t, b0, b1, b2), attr(v, t + 1, b0, b1, b2), attr(v, t + 2, b0, b1, b2)), attr(v, t + 3, b0, b1, b2))
 
     def normalMappingOf(m: Mat): Option[NormalMapping] =
-        let Mat.Mat(_, _, _, _, _, normal) = m;
+        let Mat.Mat(_, _, _, _, _, normal, _) = m;
         normal
 
     /// 奥行きで補正した重み（perspectiveWeights の値）の、横隣と縦隣の画素の組。
@@ -953,7 +1035,7 @@ pub mod SoftRaster3d {
 
     /// cutout の材質 m で、この画素の α が materialCutoff() 未満か（cutout でない材質は捨てない）。
     def isCutAway(m: Mat, time: Float64, v: Vector[Float64], weights: (Float64, Float64, Float64, Float64)): Bool =
-        let Mat.Mat(compiled, cutout, _, _, _, _) = m;
+        let Mat.Mat(compiled, cutout, _, _, _, _, _) = m;
         cutout and ShaderEval.evalMaterial3(compiled, surfaceAt(v, weights), time)#alpha < materialCutoff()
 
     def perspectiveUv(v: Vector[Float64], l0: Float64, l1: Float64, l2: Float64,
@@ -971,9 +1053,12 @@ pub mod SoftRaster3d {
 
     def channel01(shift: Int32, argb: Int32): Float64 = Int32.toFloat64(SoftRaster.channelOf(shift, argb)) / 255.0
 
-    /// 勝った三角形の画素の色（r, g, b, α = 1。0..1 に切らない — 切るのは書く所）。
-    def shadePixel(tri: Tri, inks: Vector[Ink], mats: Vector[Mat], bakes: Vector[Option[Baked]], time: Float64, lights: Lights, fog: Fog,
-                   eye: (Float64, Float64, Float64), depthBand: Option[(Float64, Float64)], pixel: (Int32, Int32),
+    /// 勝った三角形の画素の色（r, g, b, α = 1。画面の値・0..1 に切らない — 切るのは書く所）。
+    /// env = 材質の画素が読む場面の値（lights・fog・eye・pc はその中身と同じ物）。
+    // WhyNot: lights・fog・eye・pc を env から読まない — レコードの欄は名前で引くので、画素ごとに 4 回引くと CPU の 3D が 1 割遅くなる。
+    def shadePixel(tri: Tri, inks: Vector[Ink], mats: Vector[Mat], bakes: Vector[Option[Baked]], env: ShadeEnv,
+                   lights: Lights, fog: Fog, eye: (Float64, Float64, Float64), pc: PixelColor,
+                   depthBand: Option[(Float64, Float64)], pixel: (Int32, Int32),
                    l0: Float64, l1: Float64): (Float64, Float64, Float64, Float64) =
         let Tri.Tri(v, _, ink, mat) = tri;
         let s = stride();
@@ -994,19 +1079,15 @@ pub mod SoftRaster3d {
                     applyFog(fog, ex, ey, ez, px, py, pz, br * lr, bg * lg, bb * lb)
                 };
                 let litFogged = (base: (Float64, Float64, Float64)) -> litWith(point#normal, base);
-                if (ink >= 0) { let (r, g, b) = inkColor(Vector.get(ink, inks), point#uv#x, point#uv#y, litFogged); (r, g, b, 1.0) }
-                else if (mat < 0) { let (r, g, b) = litFogged((point#color#r, point#color#g, point#color#b)); (r, g, b, 1.0) }
-                else {
-                    let (r, g, b, _) = materialPixel(tri, Vector.get(mat, mats), Vector.get(mat, bakes),
-                                                     { time = time, lights = lights, fog = fog, eye = eye }, pixel, l0, l1);
-                    (r, g, b, 1.0)
-                }
+                if (ink >= 0) { let (r, g, b) = inkColor(pc, Vector.get(ink, inks), point#uv#x, point#uv#y, litFogged); toSrgbOpaque(pc, r, g, b) }
+                else if (mat < 0) { let (r, g, b) = litFogged((point#color#r, point#color#g, point#color#b)); toSrgbOpaque(pc, r, g, b) }
+                else { let (r, g, b, _) = materialPixel(tri, Vector.get(mat, mats), Vector.get(mat, bakes), env, pixel, l0, l1); toSrgbOpaque(pc, r, g, b) }
         }
 
-    /// 材質のある物の画素の色を塗る時に場面ごとに決まっている物。
-    type alias ShadeEnv = { time = Float64, lights = Lights, fog = Fog, eye = (Float64, Float64, Float64) }
+    /// 画素の色を塗る時に場面ごとに決まっている物。colorConversion = 頂点ごと・画素ごとの色の変換の仕方。
+    type alias ShadeEnv = { time = Float64, lights = Lights, fog = Fog, eye = (Float64, Float64, Float64), colorConversion = PixelColor }
 
-    /// 材質 material の三角形 tri の画面の重み (l0, l1) の画素の色と α（α は材質の α。不透明の物を塗る呼び手は捨てる）。
+    /// 材質 material の三角形 tri の画面の重み (l0, l1) の画素の色（env#colorConversion が Linear なら線形の量のまま — 呼び手が画面の値へ戻す）と α（α は材質の α。不透明の物を塗る呼び手は捨てる）。
     /// 裏の三角形（画面で反時計回り。両面の材質の物だけが残る）は、光の計算の法線を裏返す（spec の Normal は裏返さない）。
     def materialPixel(tri: Tri, material: Mat, bake: Option[Baked], env: ShadeEnv, pixel: (Int32, Int32),
                       l0: Float64, l1: Float64): (Float64, Float64, Float64, Float64) =
@@ -1021,28 +1102,41 @@ pub mod SoftRaster3d {
         let facingPoint = if (area < 0.0) { normal = Vec3.mul(point#normal, -1.0) | point } else point;
         let lightNormal = mappedNormal(normalMappingOf(material), facingPoint, neighbors, tangentAt(v, weights));
         let (lr, lg, lb) = materialLight(bake, env#lights, v, weights, nextWeights, (px, py, pz), lightNormal);
-        materialColor(material, env#time, point, neighbors, base -> {
+        materialColor(material, env#colorConversion, env#time, point, neighbors, base -> {
             let (br, bg, bb) = base;
             applyFog(env#fog, ex, ey, ez, px, py, pz, br * lr, bg * lg, bb * lb)
         })
 
-    /// ビルボードの絵の (u, v) の色に tint を掛け、lit なら光とかすみを当てる。
-    def inkColor(ink: Ink, u: Float64, v: Float64,
+    /// ビルボードの絵の (u, v) の色（pc が Linear なら線形の量へ戻す）に tint を掛け、lit なら光とかすみを当てる。
+    def inkColor(pc: PixelColor, ink: Ink, u: Float64, v: Float64,
                  litFogged: ((Float64, Float64, Float64)) -> (Float64, Float64, Float64)): (Float64, Float64, Float64) =
         let Ink.Ink(_, _, _, _, _, tr, tg, tb, isLit) = ink;
         let texel = sampleInk(ink, u, v);
-        let base = (channel01(16, texel) * tr, channel01(8, texel) * tg, channel01(0, texel) * tb);
+        let base = (pixelToLinear(pc, channel01(16, texel)) * tr, pixelToLinear(pc, channel01(8, texel)) * tg, pixelToLinear(pc, channel01(0, texel)) * tb);
         if (isLit) litFogged(base) else base
 
-    /// 材質の色と α: albedo × tint に光とかすみを当ててから emission を足す（GL の Render3d と同じ順）。α は材質の α のまま。
+    /// 材質の色と α: albedo × tint に光とかすみを当ててから emission × emissionIntensity を足す（GL の Render3d と同じ順）。α は材質の α のまま。
+    /// pc が Linear なら Spec の出口の albedo.rgb と emission を線形の量へ戻してから計算する（色は線形の量のまま返す）。
     // WhyNot: emission にかすみを掛けない — 自分で光る物（溶岩・目）は遠くでもかすみに沈まずに見えてほしい。
-    def materialColor(m: Mat, time: Float64, point: ShaderEval.SurfacePoint, neighbors: (ShaderEval.SurfacePoint, ShaderEval.SurfacePoint),
+    def materialColor(m: Mat, pc: PixelColor, time: Float64, point: ShaderEval.SurfacePoint, neighbors: (ShaderEval.SurfacePoint, ShaderEval.SurfacePoint),
                       litFogged: ((Float64, Float64, Float64)) -> (Float64, Float64, Float64)): (Float64, Float64, Float64, Float64) =
-        let Mat.Mat(compiled, _, tr, tg, tb, _) = m;
+        let Mat.Mat(compiled, _, tr, tg, tb, _, intensity) = m;
         let (nextX, nextY) = neighbors;
         let sample = ShaderEval.evalMaterial3Mip(compiled, point, nextX, nextY, time);
-        let (r, g, b) = litFogged((sample#albedo#r * tr, sample#albedo#g * tg, sample#albedo#b * tb));
-        (r + sample#emission#r, g + sample#emission#g, b + sample#emission#b, sample#alpha)
+        let a = sample#albedo;
+        let e = sample#emission;
+        // WhyNot: emission の無い材質（0 の色）を変換に通さない — 0 は変換しても 0 で、材質の画素ごとに 3 回の表引きが無駄になる。
+        let glows = not (e#r == 0.0 and e#g == 0.0 and e#b == 0.0);
+        match pc {
+            case PixelColor.Unconverted =>
+                let (r, g, b) = litFogged((a#r * tr, a#g * tg, a#b * tb));
+                if (glows) (r + e#r * intensity, g + e#g * intensity, b + e#b * intensity, sample#alpha) else (r, g, b, sample#alpha)
+            case PixelColor.Linear(lut) =>
+                let (r, g, b) = litFogged((Texture3d.srgbToLinearLut(lut, a#r) * tr, Texture3d.srgbToLinearLut(lut, a#g) * tg, Texture3d.srgbToLinearLut(lut, a#b) * tb));
+                if (glows) (r + Texture3d.srgbToLinearLut(lut, e#r) * intensity, g + Texture3d.srgbToLinearLut(lut, e#g) * intensity,
+                            b + Texture3d.srgbToLinearLut(lut, e#b) * intensity, sample#alpha)
+                else (r, g, b, sample#alpha)
+        }
 
     // ── 数の小物 ─────────────────────────────────────────
 

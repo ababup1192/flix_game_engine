@@ -13,6 +13,7 @@
 //     "maxDeltaTime": Float,
 //     "scene3dTextureBudgetMB": Int,   （任意。3D の場面の絵を GPU に持つ量の上限。既定 256）
 //     "scene3dTextureBudgetCount": Int,（任意。3D の場面の絵を GPU に持つ枚数の上限。既定 64）
+//     "scene3dLinearColor": Bool,      （任意。false で 3D の色を画素の値のまま計算する 0.78 の式に戻す。既定 true。0.80.0 で消える）
 //     "textures": [{"name": String, "path": String, "hasAlpha": Bool}, ...],
 //     "fonts":    [{"name": String, "path": String, "fontSize": Float}, ...],
 //     "sounds":   [{"name": String, "path": String, "looping": Bool}, ...]
@@ -270,6 +271,30 @@ pub mod ProjectLoader {
             case Decode(_, TypeMismatch(msg)) => msg
             case other                        => "${other}"
         }
+
+    /// rootDir の project.json の scene3dLinearColor（3D の色を線形の量で計算するか）。無い・読めない・解けない・真偽でない時は真
+    /// （project.json が有るのに解けない時と、キーが真偽でない時は 1 行知らせる）。
+    /// 描き手はこれを直に呼ばず、GameEngine.loadScene3dLinearColor（JVM の中で 1 回だけ読む）を通す。0.80.0 で消える。
+    // WhyNot: loadProject で読まない — title などが欠けると Err で、旗だけを寛く読めない（bench や Studio の作業場の project.json にも通す）。
+    pub def scene3dLinearColorOf(rootDir: String): Bool \ {Fs.FileRead} =
+        let path = joinPath(rootDir, "project.json");
+        let readResult = run { Fs.ReadFile.read(path) } with Fs.ReadFile.runWithFileRead;
+        let fellBack = (reason: String) -> Log.fellBackThen("project", "${path} の scene3dLinearColor", "true", reason, true);
+        match readResult {
+            case Err(_)      => true
+            case Ok(content) =>
+                match (Util.Json.parse(String.trim(content)) |> Result.toOption |> Option.flatMap(j -> matchObject(j, "root") |> Result.toOption)) {
+                    case None       => fellBack("JSON として解けない")
+                    case Some(root) => linearColorFieldOf(root, fellBack)
+                }
+        }
+
+    /// project.json の root の scene3dLinearColor（無ければ真・真偽でなければ fellBack）。
+    def linearColorFieldOf(root: Map[String, Util.Json.Json], fellBack: String -> Bool): Bool = match Map.get("scene3dLinearColor", root) {
+        case None           => true
+        case Some(JBool(b)) => b
+        case Some(_)        => fellBack("真偽でない")
+    }
 
     /// パスを単純連結する (rootDir + "/" + relative)。
     /// 末尾スラッシュの重複は除去する。絶対パス化は OS の File.toAbsolutePath などに

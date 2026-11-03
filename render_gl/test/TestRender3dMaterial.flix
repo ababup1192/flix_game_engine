@@ -22,15 +22,17 @@ mod TestRender3dMaterial {
         let source = Render3dGlsl.materialFragmentSource(glsl(), { skinned = false, uv = false, normalMap = false, lightmap = false, blend = false, doubleSided = false, coverage = false });
         Assert.assertTrue(indexOf("// UNIFORMS", source) >= 0 and indexOf("// UNIFORMS", source) < indexOf("// FUNCTIONS", source))
 
-    /// fog は emission を足す前の色に掛かる。
+    /// fog は emission を足す前の色に掛かる（r3d_surfaceOut の中でかすみの後に emission × intensity を足す）。
     @Test
     def testEmissionAddedAfterFog(): Unit \ Assert =
-        Assert.assertTrue(indexOf("fogged(c, vWorld) + emission", Render3dGlsl.materialFragmentSource(glsl(), { skinned = false, uv = false, normalMap = false, lightmap = false, blend = false, doubleSided = false, coverage = false })) >= 0)
+        let out = Render3dGlsl.surfaceOutSource();
+        Assert.assertTrue(indexOf("if (fogOn) c = fogged(c, p);", out) >= 0 and
+                          indexOf("if (fogOn) c = fogged(c, p);", out) < indexOf("c + r3d_srgbToLinear3(emission) * intensity", out))
 
-    /// 色は albedo × tint × light（頂点の色は掛けない）。
+    /// 色は線形へ戻した albedo × tint × light（頂点の色は掛けない）。
     @Test
     def testAlbedoReplacesVertexColor(): Unit \ Assert =
-        Assert.assertTrue(indexOf("albedo.rgb * uTint * lightAt(", Render3dGlsl.materialFragmentSource(glsl(), { skinned = false, uv = false, normalMap = false, lightmap = false, blend = false, doubleSided = false, coverage = false })) >= 0)
+        Assert.assertTrue(indexOf("r3d_surfaceOut(r3d_srgbToLinear3(albedo.rgb), uTint, light, emission, uEmissionIntensity, vWorld, true)", Render3dGlsl.materialFragmentSource(glsl(), { skinned = false, uv = false, normalMap = false, lightmap = false, blend = false, doubleSided = false, coverage = false })) >= 0)
 
     /// cutout は α が 0.5 未満を捨てる。
     @Test
@@ -161,7 +163,7 @@ mod TestRender3dMaterial {
     /// lightmap の版は lightmapLightAt に lightmap の絵から読んだ色を渡し、lightAt（環境光と hemisphere を足す方）を main で呼ばない。
     @Test
     def testLightmapUsesBakedLight(): Unit \ Assert =
-        Assert.assertTrue(indexOf("albedo.rgb * uTint * lightmapLightAt(vWorld, normalize(vNormal), lightmapColor())",
+        Assert.assertTrue(indexOf("vec3 light = lightmapLightAt(vWorld, normalize(vNormal), lightmapColor());",
             Render3dGlsl.materialFragmentSource(glsl(), { skinned = false, uv = false, normalMap = false, lightmap = true, blend = false, doubleSided = false, coverage = false })) >= 0)
 
     /// lightmap の版の光の式は LightModel3d の木から作った lightmapLightAt をそのまま持つ。
@@ -214,8 +216,8 @@ mod TestRender3dMaterial {
     @Test
     def testBlendVariantWritesMaterialAlpha(): Unit \ Assert =
         Assert.assertEq(expected = (true, false),
-            (indexOf("+ emission, albedo.a);", sourceOf({ blend = true, doubleSided = false, coverage = false })) >= 0,
-             indexOf("+ emission, albedo.a);", sourceOf({ blend = false, doubleSided = false, coverage = false })) >= 0))
+            (indexOf("vWorld, true), albedo.a);", sourceOf({ blend = true, doubleSided = false, coverage = false })) >= 0,
+             indexOf("vWorld, true), albedo.a);", sourceOf({ blend = false, doubleSided = false, coverage = false })) >= 0))
 
     /// 両面の版は裏の面（!gl_FrontFacing）の法線を裏返して光を計算する。
     @Test

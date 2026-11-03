@@ -49,3 +49,16 @@ def testToGlslOtherModelsReadTheirUniforms(): Unit \ Assert =
     Assert.assertTrue(String.contains(substr = "float(uLightmapSrgb)", lightmap) and String.contains(substr = "uLightmapIntensity", lightmap) and
                       String.contains(substr = "uFogRange.x", fog) and String.contains(substr = "uFogColor.x", fog) and
                       String.contains(substr = "uCurve", sky) and String.contains(substr = "uZenith.x", sky))
+
+/// lightmap の光は uLinearColor で分かれる（線形の描き手は linearToSrgb を通さない）。
+@Test
+def testLightmapGlslSelectsOnLinearColor(): Unit \ Assert =
+    let lightmap = LightModel3d.Codegen.toGlsl("lightmapLightAt", LightModel3d.Vec3Input.Position :: LightModel3d.Vec3Input.Normal :: LightModel3d.Vec3Input.LightmapColor :: Nil,
+                                                LightModel3d.lightmapLightingModel());
+    Assert.assertTrue(String.contains(substr = "float(uLinearColor)", lightmap))
+
+/// lightAt（lightmap の無い光）は uLinearColor を読まない（ambient も光の color も呼ぶ側が線形へ戻して渡す）。
+@Test
+def testLightingGlslDoesNotReadLinearColor(): Unit \ Assert =
+    let light = LightModel3d.Codegen.toGlsl("lightAt", LightModel3d.Vec3Input.Position :: LightModel3d.Vec3Input.Normal :: Nil, LightModel3d.lightingModel());
+    Assert.assertFalse(String.contains(substr = "uLinearColor", light))

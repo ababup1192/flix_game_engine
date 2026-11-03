@@ -2,13 +2,32 @@
 //
 // 光・かすみ・空の式は LightModel3d の木から LightModel3d.Codegen.toGlsl で作る（CPU の描き手は同じ木から生成した SoftRaster3dLight を回す）。
 // 光の uniform を光ごとに引く式（点光源・スポットの配列の [i]）は、このファイルと字を作る LightModel3d.Codegen の外に書かない（bin/lint-rules/forbid.json が止める）。
-// 木の外に残る GLSL（影の地図の PCF・法線マップの TBN・lightmap の段つきの読み）は、gl-parity の式の行が CPU の描き手と同じ値になることを確かめる。
+// 木の外に残る GLSL（影の地図の PCF・法線マップの TBN・lightmap の段つきの読み・色を作る最後の組み立て r3d_surfaceOut）は、
+// gl-parity の式の行が CPU の描き手と同じ値になることを確かめる。
+// 3D の色（Scene3d の頭の「3D の色」）: uLinearColor = 1 の時、光の color・ambient・かすみ・空・tint は描き手が線形の量へ戻して uniform に入れ、
+// 頂点の色は lit の頂点シェーダーで、材質の albedo.rgb・emission とビルボードの絵は frag で線形へ戻し、色を作った直後に 1 回だけ画面の値へ戻す。
+// WhyNot: 描き先を GL_SRGB8_ALPHA8 にして GL_FRAMEBUFFER_SRGB で戻さない — 2D の Pass が描き先を sRGB の絵として線形へ戻して読み、2D の絵が変わる。
+// WhyNot: 3D を別の float の描き先へ描いて貼る時に戻さない — 背景の無い場面の縁は 2D の上で結局画面の値で混ざり、場面ごとに描き先と貼り直しが増える。
+//   半透明の混ぜと MSAA の平均は戻した後の画面の値どうし。
+// WhyNot: 偽（uLinearColor = 0）でプログラムを分けない — 1 版だけ残す道でプログラムの数を倍にしない。
 pub mod Render3dGlsl {
     use LightModel3d.Vec3Input
 
-    /// 置いた物の頂点シェーダー（頂点の色のプログラム・深度だけのプログラム・材質のプログラムで共有）。
+    /// 置いた物の頂点シェーダー（深度だけのプログラム・uv の無い材質のプログラムで共有。頂点の色は値のまま渡す）。
     pub def meshVertexSource(): String =
-        meshVertexSourceOf({ declarations = "", prelude = "", position = "vec4(aPos, 1.0)", normal = "aNormal", tangent = None, uv2 = false })
+        meshVertexSourceOf({ declarations = "", prelude = "", position = "vec4(aPos, 1.0)", normal = "aNormal", tangent = None, uv2 = false,
+                             vertexColorToLinear = false })
+
+    /// 頂点の色のプログラム（lit）の頂点シェーダー。頂点の色を uLinearColor に従って線形の量へ戻してから渡す（三角形の中は線形の量でつなぐ）。
+    /// skinned なら骨つきの版。
+    // WhyNot: meshVertexSource と共有しない — uv の無い材質の Spec の VertexColor まで線形の値になり、出口でもう一度戻して暗くなる。
+    pub def litVertexSource(skinned: Bool): String =
+        if (skinned)
+            meshVertexSourceOf({ declarations = skinDeclarations() + colorSpaceSource(), prelude = skinPrelude(), position = "skin * vec4(aPos, 1.0)",
+                                 normal = "mat3(skin) * aNormal", tangent = None, uv2 = false, vertexColorToLinear = true })
+        else
+            meshVertexSourceOf({ declarations = colorSpaceSource(), prelude = "", position = "vec4(aPos, 1.0)", normal = "aNormal",
+                                 tangent = None, uv2 = false, vertexColorToLinear = true })
 
     /// 骨つきの版: 位置と法線を joint 行列の重みつきの和（Pose3d.jointMatrices の並び）で曲げてから uModel を掛ける。
     // WhyNot: 法線を skin の逆行列の転置で曲げない — 左上 3×3 のままだと倍率が軸ごとに違うジョイントで少し傾くが、
@@ -20,7 +39,8 @@ pub mod Render3dGlsl {
             position = "skin * vec4(aPos, 1.0)",
             normal = "mat3(skin) * aNormal",
             tangent = None,
-            uv2 = false })
+            uv2 = false,
+            vertexColorToLinear = false })
 
     /// 材質のプログラムの頂点シェーダー。uv の無い形は頂点の色のプログラムと同じ物・uv つきは vUv と vTangent も出す・
     /// lightmap つき（骨の無い版だけ）は 2 本目の uv の vUv2 も出す。骨つきの版は lightmap を読まない（Scene3d.lightmapOf が None）。
@@ -30,14 +50,15 @@ pub mod Render3dGlsl {
             case (true, false, _)      => skinnedMeshVertexSource()
             case (false, false, true)  =>
                 meshVertexSourceOf({ declarations = uv2Declarations(), prelude = "", position = "vec4(aPos, 1.0)", normal = "aNormal",
-                                     tangent = None, uv2 = true })
+                                     tangent = None, uv2 = true, vertexColorToLinear = false })
             case (false, true, lm)     =>
                 meshVertexSourceOf({ declarations = surfaceDeclarations() + (if (lm) uv2Declarations() else ""), prelude = "",
-                                     position = "vec4(aPos, 1.0)", normal = "aNormal", tangent = Some("aTangent.xyz"), uv2 = lm })
+                                     position = "vec4(aPos, 1.0)", normal = "aNormal", tangent = Some("aTangent.xyz"), uv2 = lm,
+                                     vertexColorToLinear = false })
             case (true, true, _)       =>
                 meshVertexSourceOf({ declarations = skinDeclarations() + surfaceDeclarations(), prelude = skinPrelude(),
                                      position = "skin * vec4(aPos, 1.0)", normal = "mat3(skin) * aNormal",
-                                     tangent = Some("mat3(skin) * aTangent.xyz"), uv2 = false })
+                                     tangent = Some("mat3(skin) * aTangent.xyz"), uv2 = false, vertexColorToLinear = false })
         }
 
     def uv2Declarations(): String =
@@ -65,9 +86,10 @@ pub mod Render3dGlsl {
     /// position = uModel を掛ける前の形の座標（vec4）・normal = uNormal を掛ける前の法線（vec3）・
     /// tangent = uModel の左上 3×3 を掛ける前のタンジェントの xyz（vec3。uv の無い形は None で vUv・vTangent を出さない）。
     /// タンジェントの w には uModel の左上 3×3 の行列式の符号を掛ける（鏡写しの置き方で絵の上の向きを保つ）。
+    /// vertexColorToLinear = 頂点の色を r3d_srgbToLinear3 に通すか（declarations に colorSpaceSource() を入れる）。
     // WhyNot: タンジェントを uNormal で写さない — 法線の行列は面に垂直な向きを保つための物で、面の上の向きは uModel のまま写る。
     def meshVertexSourceOf(parts: { declarations = String, prelude = String, position = String, normal = String,
-                                    tangent = Option[String], uv2 = Bool }): String =
+                                    tangent = Option[String], uv2 = Bool, vertexColorToLinear = Bool }): String =
         let surfaceBody = match parts#tangent {
             case None    => ""
             case Some(t) =>
@@ -92,7 +114,7 @@ pub mod Render3dGlsl {
         "    vec4 world = uModel * " + parts#position + ";\n" +
         "    vWorld = world.xyz;\n" +
         "    vNormal = (uNormal * vec4(" + parts#normal + ", 0.0)).xyz;\n" +
-        "    vColor = aColor;\n" +
+        (if (parts#vertexColorToLinear) "    vColor = r3d_srgbToLinear3(aColor);\n" else "    vColor = aColor;\n") +
         surfaceBody +
         (if (parts#uv2) "    vUv2 = aUv2;\n" else "") +
         "    gl_Position = uProj * uView * world;\n" +
@@ -123,6 +145,36 @@ pub mod Render3dGlsl {
         "vec3 fogged(vec3 c, vec3 p) {\n" +
         "    if (uFogOn == 0) return c;\n" +
         "    return fogAt(p, c);\n" +
+        "}\n" +
+        surfaceOutSource()
+
+    /// 3D の色を作る最後の組み立て r3d_surfaceOut(albedoLinear, tint, light, emission, intensity, p, fogOn)（CPU の描き手は SoftRaster3d.materialColor と shadePixel）:
+    /// 色 = albedoLinear × tint × light（fogOn ならかすみ）+ 線形へ戻した emission × intensity を、画面の値へ戻した物。
+    /// albedoLinear は線形へ戻し済みの色（材質は r3d_srgbToLinear3(albedo.rgb)・ビルボードは絵・lit は頂点で戻した vColor）。
+    /// lightSource が含め、colorSpaceSource() を先に置く。
+    // WhyNot: albedo をここで戻さない — lit の頂点の色は頂点シェーダーで戻してあり、ここで戻すと 2 回かかる。
+    // WhyNot: emission にかすみを掛けない — 自分で光る物（溶岩・目）は遠くでもかすみに沈まずに見えてほしい。
+    // WhyNot: 光の式の木（LightModel3d）に入れない — かすみの有無・ビルボードの lit・Depth の枝まで木の入力にすることになる。
+    pub def surfaceOutSource(): String =
+        "vec3 r3d_surfaceOut(vec3 albedoLinear, vec3 tint, vec3 light, vec3 emission, float intensity, vec3 p, bool fogOn) {\n" +
+        "    vec3 c = albedoLinear * tint * light;\n" +
+        "    if (fogOn) c = fogged(c, p);\n" +
+        "    return r3d_linearToSrgb3(c + r3d_srgbToLinear3(emission) * intensity);\n" +
+        "}\n"
+
+    /// 色の空間の変換: uLinearColor（1 = 3D の色を線形の量で計算する）と、Texture3d の式のスカラーの r3d_srgbToLinear / r3d_linearToSrgb、
+    /// その vec3 の版 r3d_srgbToLinear3 / r3d_linearToSrgb3（uLinearColor が 0 なら c のまま）。frag と lit の頂点シェーダーが 1 回ずつ含める。
+    pub def colorSpaceSource(): String =
+        "uniform int uLinearColor;\n" +
+        Texture3d.srgbToLinearGlsl("r3d_srgbToLinear") +
+        Texture3d.linearToSrgbGlsl("r3d_linearToSrgb") +
+        "vec3 r3d_srgbToLinear3(vec3 c) {\n" +
+        "    if (uLinearColor == 0) return c;\n" +
+        "    return vec3(r3d_srgbToLinear(c.r), r3d_srgbToLinear(c.g), r3d_srgbToLinear(c.b));\n" +
+        "}\n" +
+        "vec3 r3d_linearToSrgb3(vec3 c) {\n" +
+        "    if (uLinearColor == 0) return c;\n" +
+        "    return vec3(r3d_linearToSrgb(c.r), r3d_linearToSrgb(c.g), r3d_linearToSrgb(c.b));\n" +
         "}\n"
 
     /// 影の uniform と、スポット i の光に掛ける割合（Scene3d.shadowMatrix の doc の約束 1〜5。CPU の描き手と同じ）。
@@ -170,6 +222,7 @@ pub mod Render3dGlsl {
         "    return clamp((distance(p, uEye) - uDepthRange.x) / uDepthRange.y, 0.0, 1.0);\n" +
         "}\n"
 
+    /// 頂点の色のプログラムの frag（vColor は litVertexSource が線形へ戻し済み）。
     pub def litFragmentSource(): String =
         "#version 330 core\n" +
         "in vec3 vWorld;\n" +
@@ -177,11 +230,11 @@ pub mod Render3dGlsl {
         "in vec3 vColor;\n" +
         "out vec4 fragColor;\n" +
         "uniform vec3 uTint;\n" +
+        colorSpaceSource() +
         lightSource() +
         "void main() {\n" +
         "    vec3 n = normalize(vNormal);\n" +
-        "    vec3 c = vColor * uTint * lightAt(vWorld, n);\n" +
-        "    fragColor = vec4(fogged(c, vWorld), 1.0);\n" +
+        "    fragColor = vec4(r3d_surfaceOut(vColor, uTint, lightAt(vWorld, n), vec3(0.0), 1.0, vWorld, true), 1.0);\n" +
         "}\n"
 
     /// 材質の frag。光の式は litFragmentSource と同じで、頂点の色の代わりに materialEval の albedo を使う（頂点の色は
@@ -213,6 +266,8 @@ pub mod Render3dGlsl {
         "uniform vec3 uTint;\n" +
         "uniform int uCutout;\n" +
         "uniform int uDepthOut;\n" +
+        "uniform float uEmissionIntensity;\n" +
+        colorSpaceSource() +
         lightSource() +
         depthGraySource() +
         glsl#uniforms +
@@ -232,10 +287,10 @@ pub mod Render3dGlsl {
         "    }\n" +
         facing +
         (if (surface#lightmap)
-            "    vec3 c = albedo.rgb * uTint * lightmapLightAt(vWorld, " + normal + ", lightmapColor());\n"
+            "    vec3 light = lightmapLightAt(vWorld, " + normal + ", lightmapColor());\n"
          else
-            "    vec3 c = albedo.rgb * uTint * lightAt(vWorld, " + normal + ");\n") +
-        "    fragColor = vec4(fogged(c, vWorld) + emission, " + alpha + ");\n" +
+            "    vec3 light = lightAt(vWorld, " + normal + ");\n") +
+        "    fragColor = vec4(r3d_surfaceOut(r3d_srgbToLinear3(albedo.rgb), uTint, light, emission, uEmissionIntensity, vWorld, true), " + alpha + ");\n" +
         "}\n"
 
     /// ベイクした光の uniform と、lightmap の絵の読み（lightmapColor）と、lightmap のある面の光の式（lightmapLightSource）。
@@ -248,13 +303,11 @@ pub mod Render3dGlsl {
         "}\n" +
         lightmapLightSource()
 
-    /// lightmap のある面の光の式 lightmapLightAt(p, n, lightmap の色)（LightModel3d の木から作る）と、それが読む uniform と色の空間の関数。
-    /// lightSource の後に置く（光の uniform と spotShadow を読む）。
+    /// lightmap のある面の光の式 lightmapLightAt(p, n, lightmap の色)（LightModel3d の木から作る）と、それが読む uniform。
+    /// colorSpaceSource()（色の空間の関数と uLinearColor）と lightSource の後に置く（光の uniform と spotShadow を読む）。
     pub def lightmapLightSource(): String =
         "uniform int uLightmapSrgb;\n" +
         "uniform float uLightmapIntensity;\n" +
-        Texture3d.srgbToLinearGlsl("r3d_srgbToLinear") +
-        Texture3d.linearToSrgbGlsl("r3d_linearToSrgb") +
         LightModel3d.Codegen.toGlsl("lightmapLightAt", Vec3Input.Position :: Vec3Input.Normal :: Vec3Input.LightmapColor :: Nil,
                                     LightModel3d.lightmapLightingModel())
 
@@ -333,6 +386,7 @@ pub mod Render3dGlsl {
         "uniform int uLit;\n" +
         "uniform vec3 uFacing;\n" +
         "uniform int uDepthOut;\n" +
+        colorSpaceSource() +
         lightSource() +
         depthGraySource() +
         "void main() {\n" +
@@ -343,9 +397,8 @@ pub mod Render3dGlsl {
         "        fragColor = vec4(g, g, g, 1.0);\n" +
         "        return;\n" +
         "    }\n" +
-        "    vec3 c = texel.rgb * uTint;\n" +
-        "    if (uLit == 1) c = fogged(c * lightAt(vWorld, normalize(uFacing)), vWorld);\n" +
-        "    fragColor = vec4(c, 1.0);\n" +
+        "    vec3 light = uLit == 1 ? lightAt(vWorld, normalize(uFacing)) : vec3(1.0);\n" +
+        "    fragColor = vec4(r3d_surfaceOut(r3d_srgbToLinear3(texel.rgb), uTint, light, vec3(0.0), 1.0, vWorld, uLit == 1), 1.0);\n" +
         "}\n"
 
     /// 空の frag（式は LightModel3d.skyModel・向きは Scene3d.skyDirectionOf。NDC は画素の真ん中の gl_FragCoord と viewport から）。
@@ -358,6 +411,7 @@ pub mod Render3dGlsl {
         "uniform vec3 uRight;\n" +
         "uniform vec3 uUp;\n" +
         "uniform int uDepthOut;\n" +
+        colorSpaceSource() +
         skyLightSource() +
         "void main() {\n" +
         "    if (uDepthOut == 1) {\n" +
@@ -366,7 +420,7 @@ pub mod Render3dGlsl {
         "    }\n" +
         "    vec2 ndc = (gl_FragCoord.xy - uViewport.xy) / uViewport.zw * 2.0 - 1.0;\n" +
         "    vec3 d = normalize(uForward + uRight * ndc.x + uUp * ndc.y);\n" +
-        "    fragColor = vec4(skyAt(d), 1.0);\n" +
+        "    fragColor = vec4(r3d_linearToSrgb3(skyAt(d)), 1.0);\n" +
         "}\n"
 
     /// 空の色の式 skyAt(向き)（LightModel3d の木から作る）と、それが読む uniform。

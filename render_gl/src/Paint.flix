@@ -87,7 +87,9 @@ mod RenderPaint {
     /// GL の資源を作り、空の登録簿で塗りのコアを始める。GL の文脈が今の糸に付いていること。
     /// design = 描く座標の寸（ゲームの designWidth × designHeight）、clearColor = design の中の地の色、
     /// screenFramebuffer = 画面のフレームバッファ（窓なら 0）。scene3dTextureBudget = 3D の場面の絵を GPU に持つ量と枚数の上限（Render3d.TextureBudget）。
-    pub def create(cfg: { designWidth = Int32, designHeight = Int32, clearColor = Color, screenFramebuffer = Int32, scene3dTextureBudget = Render3d.TextureBudget }): Paint \ IO =
+    /// cfg#scene3dLinearColor = 3D の色を線形の量で計算するか（GameEngine.loadScene3dLinearColor の値。0.80.0 で消える欄）。
+    pub def create(cfg: { designWidth = Int32, designHeight = Int32, clearColor = Color, screenFramebuffer = Int32, scene3dTextureBudget = Render3d.TextureBudget,
+                          scene3dLinearColor = Bool }): Paint \ IO =
         let screenW = Int32.toFloat64(cfg#designWidth);
         let screenH = Int32.toFloat64(cfg#designHeight);
 
@@ -237,7 +239,7 @@ mod RenderPaint {
                                                polyBatchShader, polyBatchVao, polyBatchVbo,
                                                polyBatchUniforms, cmd#mask)
         };
-        let render3d = Render3d.fresh(cfg#scene3dTextureBudget);
+        let render3d = Render3d.fresh(cfg#scene3dTextureBudget, cfg#scene3dLinearColor);
         let drawScene = (vp: Render3d.Viewport, item: Render3d.SceneItem) ->
             Render3d.drawItem(render3d, Array.get(0, frameGenHolder), billboardTexture(registryRef, targetsRef, textureKeyRef), vp, item);
         // renderFrameMixed への FrameArgs は固定値（シェーダ・VAO・buf・uniforms 等）が

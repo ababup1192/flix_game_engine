@@ -10,7 +10,7 @@ mod Render3d.Material {
     use Render3dGlsl.{materialFragmentSource, materialVertexSource}
     use Render3d.{materialKey, ProgramKind, BillboardTexture, BoundTexture, CameraData, MaterialDraw, MaterialEntry, MaterialLocs,
                   MaterialPass, MeshDraw, State, Texture3dEntry, TextureSource, bindJointsBlock, drawPosedMesh, hasUv, isSkinned,
-                  lightLocsOf, lightmapTextureUnit, loc, meshDrawOf, meshIdleFrames, meshLocsOf, normalMapTextureUnit, putColor,
+                  lightLocsOf, lightmapTextureUnit, loc, meshDrawOf, meshIdleFrames, meshLocsOf, normalMapTextureUnit, putColor, putLinearizedColor,
                   putDepthRange, putLights, shadowLocsOf, useMeshProgram, warnSceneOnce}
 
     // ── 材質のある置いた物 ──
@@ -102,7 +102,8 @@ mod Render3d.Material {
     /// （出す α を標本の数に使い、書く α は 1。GL_SAMPLE_ALPHA_TO_ONE）。
     def drawMaterialInstance(state: State, gen: Int64, source: TextureSource, coverage: Bool, d: MaterialDraw): Int32 \ IO =
         let locs = d#entry#locs;
-        putColor(locs#tint, d#draw#fields#tint);
+        putLinearizedColor(state, locs#tint, d#draw#fields#tint);
+        GL20.glUniform1f(locs#emissionIntensity, RenderUtil.f32(d#material#emissionIntensity));
         GL20.glUniform1i(locs#cutout, if (d#material#cutout) 1 else 0);
         // WhyNot: ShaderDoc.materialParamValues で並べない — あちらは上限を超えた tex を 0 にする前の Spec から名前を拾い、
         //   compile3d が uParamN に割り当てた並び（0 にした後）と食い違う余地がある。uniform を宣言した側の並びで引く。
@@ -136,7 +137,7 @@ mod Render3d.Material {
         else Scene3d.lightmapOfFields(d#draw#fields) |> Option.forEach(lm -> {
             let unit = lightmapTextureUnit();
             GL13.glActiveTexture(GL13.GL_TEXTURE0 + unit);
-            let bound = resolveTextureAs(state, gen, source, "lightmap の絵", lm#texture);
+            let bound = resolveTextureAs(state, gen, source, "lightmap の絵", lm#texture, Texture3d.TextureUse.Lightmap(lm#colorSpace));
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, bound#texId);
             GL33.glBindSampler(unit, materialSampler(state, Scene3d.Wrap.Clamp, ShaderDoc.FilterMode.Linear, bound#levels > 1));
             GL20.glUniform1f(d#entry#locs#lightmapLevels, RenderUtil.f32(Int32.toFloat64(Int32.min(bound#levels, lm#maxLevels))));
@@ -150,7 +151,7 @@ mod Render3d.Material {
             case (true, Some(n)) =>
                 let unit = normalMapTextureUnit();
                 GL13.glActiveTexture(GL13.GL_TEXTURE0 + unit);
-                let bound = resolveMaterialTexture(state, gen, source, n#texture);
+                let bound = resolveMaterialTexture(state, gen, source, n#texture, Texture3d.TextureUse.NormalMap);
                 GL11.glBindTexture(GL11.GL_TEXTURE_2D, bound#texId);
                 GL33.glBindSampler(unit, materialSampler(state, d#material#wrap, ShaderDoc.FilterMode.Linear, bound#levels > 1));
                 GL20.glUniform1f(d#entry#locs#normalStrength, RenderUtil.f32(n#strength));
@@ -169,7 +170,7 @@ mod Render3d.Material {
                 let ((name, filter), (flipLoc, levelsLoc)) = pair;
                 // WhyNot: 引いてから unit を選ばない — 初めての絵は引く時に上げて今の unit に貼るので、前の unit に貼った絵を外してしまう。
                 GL13.glActiveTexture(GL13.GL_TEXTURE0 + unit);
-                let bound = resolveMaterialTexture(state, gen, source, name);
+                let bound = resolveMaterialTexture(state, gen, source, name, Texture3d.TextureUse.MaterialTexture);
                 GL11.glBindTexture(GL11.GL_TEXTURE_2D, bound#texId);
                 GL33.glBindSampler(unit, materialSampler(state, d#material#wrap, filter, bound#levels > 1));
                 GL20.glUniform1f(flipLoc, if (bound#flipped) 1.0f32 else 0.0f32);
@@ -181,15 +182,20 @@ mod Render3d.Material {
     /// 材質の Tex の名前を、貼る GPU のテクスチャ・上下を反転して読むか（レンダーターゲット）・段の数へ引く。
     /// "tex3d:" は場面の textures（置き場に無ければ段ごと上げる）・ほかは全体の登録（段つきの写しを作る。レンダーターゲットは
     /// 毎コマ書き換わるので段を作らず、そのまま読む）・どちらにも無ければ透明な黒（名前ごとに 1 回知らせる）。
-    def resolveMaterialTexture(state: State, gen: Int64, source: TextureSource, name: String): BoundTexture \ IO =
-        resolveTextureAs(state, gen, source, "材質の絵", name)
+    def resolveMaterialTexture(state: State, gen: Int64, source: TextureSource, name: String, textureUse: Texture3d.TextureUse): BoundTexture \ IO =
+        resolveTextureAs(state, gen, source, "材質の絵", name, textureUse)
 
-    /// resolveMaterialTexture の、見つからない時の知らせで何の絵かを label で言う版（鍵は名前ごとに共有）。
-    pub def resolveTextureAs(state: State, gen: Int64, source: TextureSource, label: String, name: String): BoundTexture \ IO =
+    /// resolveMaterialTexture の、見つからない時の知らせで何の絵かを label で言う版（知らせの鍵は名前ごとに共有）。
+    /// textureUse = 貼る使い方（段の平均の仕方を決める。3D の色を線形の量で計算しない描き手では全部 8bit の値のまま平均する）。
+    // WhyNot: 同じ絵を色と法線の両方に貼った時に 1 枚にまとめない — 段の平均の仕方が違うので 2 枚上がり、置き場の上限にも 2 回数える。
+    //   その使い方は今の使い手に無い。
+    pub def resolveTextureAs(state: State, gen: Int64, source: TextureSource, label: String, name: String,
+                             textureUse: Texture3d.TextureUse): BoundTexture \ IO =
+        let average = if (state#linearColor) Texture3d.mipAverageOf(Texture3d.mipSpaceOf(textureUse)) else Mip.Average.Raw;
         let found = if (String.startsWith(prefix = Texture3d.namePrefix(), name))
-            Map.get(name, source#own) |> Option.map(t -> texture3dBound(state, gen, t))
+            Map.get(name, source#own) |> Option.map(t -> texture3dBound(state, gen, average, t))
         else (source#textureOf)(name) |> Option.map(t ->
-            if (t#flipped) { texId = t#texId, flipped = true, levels = 1 } else mipCopyOf(state, gen, name, t));
+            if (t#flipped) { texId = t#texId, flipped = true, levels = 1 } else mipCopyOf(state, gen, name, average, t));
         match found {
             case Some(hit) => hit
             case None =>
@@ -198,11 +204,13 @@ mod Render3d.Material {
                 { texId = blankTextureId(state), flipped = false, levels = 1 }
         }
 
-    /// 全体の登録の絵 t の段つきの写し（無いか、元の絵が作り直されていたら、元の段 0 を読み戻して段を作り、上げ直す）。
+    /// 全体の登録の絵 t の段つきの写し（average で平均した段。置き場の鍵は名前と平均の仕方。
+    /// 無いか、元の絵が作り直されていたら、元の段 0 を読み戻して段を作り、上げ直す）。
     // WhyNot: 登録の絵の画素を Java の側に持ち続けない — STB で直に上げているので持っておらず、全部の絵をヒープに二重に持つことになる。
-    def mipCopyOf(state: State, gen: Int64, name: String, t: BillboardTexture): BoundTexture \ IO =
+    def mipCopyOf(state: State, gen: Int64, name: String, average: Mip.Average, t: BillboardTexture): BoundTexture \ IO =
         let copies = Ref.get(state#mipCopiesRef);
-        let copy = match Map.get(name, copies) {
+        let key = name + ":" + ToString.toString(average);
+        let copy = match Map.get(key, copies) {
             case Some(c) if c#sourceId == t#texId and c#version == t#version => { lastUsed = gen | c }
             case old =>
                 old |> Option.forEach(c -> GL11.glDeleteTextures(c#texId));
@@ -211,10 +219,10 @@ mod Render3d.Material {
                 let pixels = Array.repeat(Static, Int32.max(1, w * h), 0);
                 GL11.glBindTexture(GL11.GL_TEXTURE_2D, t#texId);
                 GL11.glGetTexImage(GL11.GL_TEXTURE_2D, 0, GL12.GL_BGRA, GL12.GL_UNSIGNED_INT_8_8_8_8_REV, pixels);
-                let chain = Mip.build({ width = w, height = h, pixels = Array.toVector(pixels) });
+                let chain = Mip.build(average, { width = w, height = h, pixels = Array.toVector(pixels) });
                 { sourceId = t#texId, version = t#version, texId = uploadMipChain(chain), levels = List.length(chain), lastUsed = gen }
         };
-        Ref.put(Map.insert(name, copy, copies), state#mipCopiesRef);
+        Ref.put(Map.insert(key, copy, copies), state#mipCopiesRef);
         { texId = copy#texId, flipped = false, levels = copy#levels }
 
     /// 段の列を 1 枚のテクスチャの段 0〜 に上げる（行 0 が絵の上・ARGB）。
@@ -270,14 +278,14 @@ mod Render3d.Material {
 
     // ── 場面の絵の置き場 ──
 
-    /// 場面の絵を contentHash で引き、無ければ段を作って段ごと上げる。どちらでも lastUsed を今の世代にする。
-    def texture3dBound(state: State, gen: Int64, t: Texture3d.Texture3d): BoundTexture \ IO =
-        let key = Texture3d.contentHash(t);
+    /// 場面の絵を contentHash と段の平均の仕方 average で引き、無ければ段を作って段ごと上げる。どちらでも lastUsed を今の世代にする。
+    def texture3dBound(state: State, gen: Int64, average: Mip.Average, t: Texture3d.Texture3d): BoundTexture \ IO =
+        let key = Texture3d.contentHash(t) + ":" + ToString.toString(average);
         let held = Ref.get(state#textures3dRef);
         let entry = match Map.get(key, held) {
             case Some(found) => { lastUsed = gen | found }
             case None =>
-                let chain = Mip.build({ width = Texture3d.width(t), height = Texture3d.height(t), pixels = Texture3d.argb(t) });
+                let chain = Mip.build(average, { width = Texture3d.width(t), height = Texture3d.height(t), pixels = Texture3d.argb(t) });
                 { texId = uploadMipChain(chain), levels = List.length(chain),
                   bytes = chain |> List.foldLeft((acc, td) -> acc + Int32.toInt64(td#width) * Int32.toInt64(td#height) * 4i64, 0i64),
                   lastUsed = gen }
@@ -301,7 +309,7 @@ mod Render3d.Material {
         Ref.put(trimmed, state#textures3dRef);
         let copies = Ref.get(state#mipCopiesRef);
         let idleCopies = Map.filter(c -> gen - c#lastUsed > meshIdleFrames(), copies);
-        Map.forEach((_name, c) -> GL11.glDeleteTextures(c#texId), idleCopies);
+        Map.forEach((_key, c) -> GL11.glDeleteTextures(c#texId), idleCopies);
         Ref.put(Map.difference(copies, idleCopies), state#mipCopiesRef);
         if (overBudget(trimmed))
             warnSceneOnce(state, "@budget", "scene3d: 場面の絵（Texture3d）が ${state#textureCountBudget} 枚か"
@@ -395,7 +403,7 @@ mod Render3d.Material {
           normalStrength = loc(program, "uNormalStrength"), normalFlip = loc(program, "uNormalFlip"),
           texLevels = List.range(0, texCount) |> List.map(i -> loc(program, "uTexLevels${i}")), normalLevels = loc(program, "uNormalLevels"),
           lightmapLevels = loc(program, "uLightmapLevels"), lightmapSrgb = loc(program, "uLightmapSrgb"),
-          lightmapIntensity = loc(program, "uLightmapIntensity") }
+          lightmapIntensity = loc(program, "uLightmapIntensity"), emissionIntensity = loc(program, "uEmissionIntensity") }
 
     /// 引退した材質のプログラムを消し、使われない材質を LRU で追い出す（画面のコマの終わりに 1 回）。
     /// 今と前のコマで使った材質は捨てない（Pass の場面は画面のコマの 1 つ前の世代で描かれる）。

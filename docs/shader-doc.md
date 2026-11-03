@@ -223,8 +223,8 @@ vignette・熱い溶岩を **JSON の保存だけで即調整できる**形で�
 - 0〜1 の外の uv は材質の `Scene3d.withWrap`（既定は `Repeat`。`Clamp` は端の色を伸ばす）。2D の面の `tex` はいつも端の色を伸ばす。
 - 1 つの材質が読める (名前, 補間) の組は `Scene3d.maxMaterialTextures()`（6）まで。7 組目からは 0 で描き、材質ごとに 1 回知らせる。
 - 絵 1 枚 × 頂点の色なら `Scene3d.texturedMaterial(名前, FilterMode.Nearest)`。頂点の色が灰色の形（Kd の無い OBJ の材質は 0.6）に貼ると、その分だけ暗くなる。
-- 絵の色は sRGB を線形へ戻さずにそのまま光の計算に入れる（頂点の色と同じ）。
-- 3D の材質の `tex` と法線マップは段（mipmap）つきで読む。段は `Mip.build`（2 × 2 の平均）で作り、読む段は読む座標の画面の微分から
+- Spec の色（絵・頂点の色）は画面の値（sRGB の値）で書く。描き手が Spec の出口で線形の量へ戻してから光を掛ける（`docs/scene3d.md` の「3D の色」）。
+- 3D の材質の `tex` と法線マップは段（mipmap）つきで読む。段は `Mip.build`（2 × 2 の平均。色の絵は線形の量で平均し、法線マップは値のまま）で作り、読む段は読む座標の画面の微分から
   `Mip.lodOf` の式で選ぶ（GL と描き出しで同じ）。`blur` と cutout の α は段 0 で読む。レンダーターゲットの名前は段を作らずに読む。
 - 法線マップは `Scene3d.withNormalMap({ texture = 名前, strength = 1.0 })`（タンジェント空間・OpenGL 流＝緑が絵の上・赤が絵の右。
   Blender と glTF と同じ）。uv つきの形にだけ当たり、uv の無い形では形ごとに 1 回知らせて無視する。材質の wrap が掛かり、Linear で読む。

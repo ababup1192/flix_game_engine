@@ -85,11 +85,11 @@ mod TestGltf.Emissive {
         let m = read(glbWith(withBase(""), true, red(), green(), linear()));
         Assert.assertEq(expected = (Some("scene3d:textured:Linear"), Some(false)), (specNameOf(m), emissionPresenceOf(m)))
 
-    /// 絵 + emissiveTexture（factor 1・strength 40）は emission つきで、名前に絵の読み方と値が入る。emissive の絵も textures に入る。
+    /// 絵 + emissiveTexture（factor 1・strength 40）は emission つきで、名前に絵の読み方と factor の値が入る（strength は入らない）。emissive の絵も textures に入る。
     @Test
     def testBaseAndEmissiveTextureGetsEmission(): Unit \ {Assert, IO} =
         let m = read(glbWith(withBase(",\"emissiveFactor\":[1,1,1]" + glowTexture() + strength("40")), true, red(), green(), linear()));
-        Assert.assertEq(expected = (Some("gltf:tex:Linear:etLinear(40.0,40.0,40.0)"), Some(true), 2),
+        Assert.assertEq(expected = (Some("gltf:tex:Linear:etLinear(1.0,1.0,1.0)"), Some(true), 2),
             (specNameOf(m), emissionPresenceOf(m), List.length(m#textures)))
 
     /// baseColorTexture の無い emissive だけの材質は、頂点の色の材質に emission（定数）が付く。
@@ -98,15 +98,33 @@ mod TestGltf.Emissive {
         let m = read(glbWith(withoutBase(",\"emissiveFactor\":[1,0.5,0]"), true, red(), green(), linear()));
         Assert.assertEq(expected = (Some("gltf:vc:ec(1.0,0.5,0.0)"), Some(true)), (specNameOf(m), emissionPresenceOf(m)))
 
-    /// 絵の無い emissive の emission は Solid（factor × strength）。
+    /// 絵の無い emissive の emission は Solid（factor だけ。strength は emissionIntensity）。
     @Test
     def testEmissiveWithoutTextureIsSolid(): Unit \ {Assert, IO} =
         let m = read(glbWith(withoutBase(",\"emissiveFactor\":[0.5,0.5,0.5]" + strength("4")), true, red(), green(), linear()));
         let emission = firstPart(m)#material |> Option.flatMap(mat -> Scene3d.materialFieldsOf(mat)#emission);
-        Assert.assertEq(expected = Some((2.0, 2.0, 2.0)), match emission {
+        Assert.assertEq(expected = Some((0.5, 0.5, 0.5)), match emission {
             case Some(ShaderDoc.Shade.Solid(c)) => Some((c#r, c#g, c#b))
             case _                              => None
         })
+
+    /// KHR_materials_emissive_strength は材質の emissionIntensity に入る。
+    @Test
+    def testEmissiveStrengthIsEmissionIntensity(): Unit \ {Assert, IO} =
+        let m = read(glbWith(withoutBase(",\"emissiveFactor\":[0.5,0.5,0.5]" + strength("4")), true, red(), green(), linear()));
+        Assert.assertEq(expected = Some(4.0), firstPart(m)#material |> Option.map(mat -> Scene3d.materialFieldsOf(mat)#emissionIntensity))
+
+    /// strength の無い emissive の emissionIntensity は 1。
+    @Test
+    def testEmissiveWithoutStrengthHasUnitIntensity(): Unit \ {Assert, IO} =
+        let m = read(glbWith(withoutBase(",\"emissiveFactor\":[0.5,0.5,0.5]"), true, red(), green(), linear()));
+        Assert.assertEq(expected = Some(1.0), firstPart(m)#material |> Option.map(mat -> Scene3d.materialFieldsOf(mat)#emissionIntensity))
+
+    /// withoutEmission は emissionIntensity も 1 に戻す。
+    @Test
+    def testWithoutEmissionResetsIntensity(): Unit \ {Assert, IO} =
+        let m = read(glbWith(withoutBase(",\"emissiveFactor\":[0.5,0.5,0.5]" + strength("4")), true, red(), green(), linear()));
+        Assert.assertEq(expected = Some(1.0), firstPart(m)#material |> Option.map(mat -> Scene3d.materialFieldsOf(Scene3d.withoutEmission(mat))#emissionIntensity))
 
     /// factor が 0 なら emissiveTexture を指していても光らず（絵も無い材質は None）、絵を decode しない。
     @Test
@@ -216,12 +234,12 @@ mod TestGltf.Emissive {
     // 資材（testdata/emissive_plates.glb）
     // ════════════════════════════════════════════════════════════════════
 
-    /// 板 2 枚と印の点: sign は絵 × emissive の名前・flame（uv なし・絵なし）は頂点の色 + 定数の名前・tip は mesh の無いノード。
+    /// 板 2 枚と印の点: sign は絵 × emissiveFactor の名前（strength 2 は名前に入らない）・flame（uv なし・絵なし）は頂点の色 + 定数の名前・tip は mesh の無いノード。
     @Test
     def testEmissivePlatesAsset(): Unit \ {Assert, Fs.FileRead, IO} =
         let m = TestGltf.okOrBug(Gltf.loadTextured("test/data/testdata/emissive_plates.glb"));
         let names = m#parts |> List.map(p -> p#material |> Option.map(mat -> Scene3d.materialFieldsOf(mat)#spec#name));
-        Assert.assertEq(expected = (Some("gltf:tex:Nearest:etNearest(2.0,2.0,2.0)") :: Some("gltf:vc:ec(1.0,0.62,0.18)") :: Nil,
+        Assert.assertEq(expected = (Some("gltf:tex:Nearest:etNearest(1.0,1.0,1.0)") :: Some("gltf:vc:ec(1.0,0.62,0.18)") :: Nil,
                                     "sign" :: "flame" :: "tip" :: Nil, Nil),
             (names, m#nodes |> List.map(n -> n#name), Model3d.findNode("tip", m) |> Option.map(n -> n#parts) |> Option.getWithDefault(0 :: Nil)))
 }

@@ -59,9 +59,9 @@ pub mod Gltf {
     /// path の .glb を、絵と材質つきで読む。parts に材質（baseColorTexture → Scene3d.texturedMaterial・normalTexture → 法線マップ・
     /// emissive → emission・sampler の wrap）、textures に BIN に埋めた画像（Texture3d.decode）。baseColorFactor は頂点の色に書き込んであり、VertexColor で掛かる。
     /// 絵も emissive も無い材質の primitive は材質 None（頂点の色で描く）。読めない・壊れている時は Err（パスつき）。
-    /// emissive（emissiveFactor × KHR_materials_emissive_strength。emissiveTexture があれば絵 × それ）の付く材質は光る
+    /// emissive（emissiveFactor。emissiveTexture があれば絵 × それ。KHR_materials_emissive_strength は Scene3d.withEmissionIntensity）の付く材質は光る
     /// （glTF の決まりどおり。止めるなら Scene3d.withoutEmission）。emissive の付く材質の spec の名前は "gltf:" で始まり、
-    /// 木の形を変える物（絵の読み方・emissive の値・絵の有無）を全部名前に入れる。emissive の無い材質は Scene3d.texturedMaterial のまま。
+    /// 木の形を変える物（絵の読み方・emissiveFactor の値・絵の有無）を全部名前に入れる（strength は木の外の倍率なので入れない）。emissive の無い材質は Scene3d.texturedMaterial のまま。
     /// emissiveTexture を指しているのに読めない時（texCoord ≠ 0・画像が読めない・形に TEXCOORD_0 が無い）は光らせず、材質ごとに 1 行知らせる。
     pub def loadTextured(path: String): Result[String, Model3d.Model3d] \ Fs.FileRead + IO =
         loadWith(fromGlbTextured, path)
@@ -206,8 +206,8 @@ pub mod Gltf {
         let baseName = fst(base) |> Option.map(r -> "tex:${ToString.toString(r#filter)}") |> Option.getWithDefault("vc");
         let lit = (e: Option[EmissionBuild]) -> match (surface, e) {
             case (_, None)          => surface
-            case (Some(m), Some(b)) => Some(m |> Scene3d.withEmission(b#shade) |> Scene3d.withSpecName("gltf:${baseName}:${b#name}"))
-            case (None, Some(b))    => Some(vertexColorMaterial("gltf:${baseName}:${b#name}") |> Scene3d.withEmission(b#shade) |> Scene3d.withWrap(b#wrap))
+            case (Some(m), Some(b)) => Some(m |> Scene3d.withEmission(b#shade) |> Scene3d.withEmissionIntensity(b#strength) |> Scene3d.withSpecName("gltf:${baseName}:${b#name}"))
+            case (None, Some(b))    => Some(vertexColorMaterial("gltf:${baseName}:${b#name}") |> Scene3d.withEmission(b#shade) |> Scene3d.withEmissionIntensity(b#strength) |> Scene3d.withWrap(b#wrap))
         };
         let usesTexture = Option.nonEmpty(emission#texture);
         let info = gltfMaterialOf(names, material);
@@ -246,28 +246,31 @@ pub mod Gltf {
                                                       alpha = ShaderDoc.Field.Const(1.0) }) })
 
     /// 材質の emission。shade = 足す色・name = spec の名前に入れる字（"et<絵の読み方>(r,g,b)" = 絵 × 定数・"ec(r,g,b)" = 定数だけ）・
-    /// wrap = emissive の絵の sampler の wrap（baseColorTexture の無い材質の wrap にする。ある材質は baseColorTexture の wrap のまま）。
-    type alias EmissionBuild = { shade = ShaderDoc.Shade, name = String, wrap = Scene3d.Wrap }
+    /// wrap = emissive の絵の sampler の wrap（baseColorTexture の無い材質の wrap にする。ある材質は baseColorTexture の wrap のまま）・
+    /// strength = KHR_materials_emissive_strength（Scene3d.withEmissionIntensity に渡す）。
+    type alias EmissionBuild = { shade = ShaderDoc.Shade, name = String, wrap = Scene3d.Wrap, strength = Float64 }
 
     /// build = 付ける emission（emissive が 0・絵を指しているのに読めない時は None）・texture = 読めた emissiveTexture・lines = 知らせ。
     type alias EmissionOf = { build = Option[EmissionBuild], texture = Option[TextureRef], lines = List[String] }
 
-    /// emissive の値 c = emissiveFactor × strength。emissiveTexture を指していなければ Solid(c)、指していて読めれば 絵の rgb × c。
+    /// emissive の色 c = emissiveFactor。emissiveTexture を指していなければ Solid(c)、指していて読めれば 絵の rgb × c。strength は木に入れない
+    /// （線形へ戻した後に掛ける倍率。強さだけ違う材質が同じプログラムを使う）。光るかどうかは emissiveFactor × strength が 0 でないかで決める。
     /// 指しているのに読めない時は付けない（Solid へ倒すと、Blender の書き出しの factor (1, 1, 1) × 強さで物全体が真っ白に光る）。
     def emissionOf(glb: Glb, images: Vector[Option[Texture3d.Texture3d]], index: Int32, material: Obj): EmissionOf =
-        let c = emissiveOf(material);
+        let c = emissiveFactorOf(material);
+        let strength = emissiveStrengthOf(material);
         let info = objectOf("emissiveTexture", material);
         let digits = "(${Float64.toString(c#r)},${Float64.toString(c#g)},${Float64.toString(c#b)})";
-        if (isZeroColor(c)) { build = None, texture = None, lines = Nil }
+        if (isZeroColor(emissiveOf(material))) { build = None, texture = None, lines = Nil }
         else if (Option.isEmpty(intOf("index", info)))
-            { build = Some({ shade = ShaderDoc.Shade.Solid(Color.rgb(c#r, c#g, c#b)), name = "ec${digits}", wrap = Scene3d.Wrap.Repeat }), texture = None, lines = Nil }
+            { build = Some({ shade = ShaderDoc.Shade.Solid(Color.rgb(c#r, c#g, c#b)), name = "ec${digits}", wrap = Scene3d.Wrap.Repeat, strength = strength }), texture = None, lines = Nil }
         else match textureRefOf(glb, images, info) {
             case (Some(ref), lines) =>
                 let read = (chan: ShaderDoc.TexChan, k: Float64) ->
                     ShaderDoc.Field.Bin({ op = ShaderDoc.BinOp.Mul, b = ShaderDoc.Field.Const(k),
                                           a = ShaderDoc.Field.Sampler({ filter = ref#filter, of = ShaderDoc.Field.Tex({ name = Texture3d.name(ref#texture), chan = chan }) }) });
                 { build = Some({ shade = ShaderDoc.Shade.Rgb({ r = read(ShaderDoc.TexChan.R, c#r), g = read(ShaderDoc.TexChan.G, c#g), b = read(ShaderDoc.TexChan.B, c#b) }),
-                                 name = "et${ToString.toString(ref#filter)}${digits}", wrap = ref#wrap }),
+                                 name = "et${ToString.toString(ref#filter)}${digits}", wrap = ref#wrap, strength = strength }),
                   texture = Some(ref), lines = lines }
             case (None, lines) =>
                 { build = None, texture = None,
@@ -277,12 +280,23 @@ pub mod Gltf {
     /// emissiveFactor（既定 (0, 0, 0)）× KHR_materials_emissive_strength の emissiveStrength（既定 1）。負と NaN は 0。
     /// emissiveFactor が 3 つの数でない材質は (0, 0, 0)（知らせは emissiveFactorLine が材質ごとに 1 行）。
     def emissiveOf(material: Obj): { r = Float64, g = Float64, b = Float64 } =
+        let c = emissiveFactorOf(material);
+        let strength = emissiveStrengthOf(material);
+        let at = (v: Float64) -> { let x = v * strength; if (x > 0.0) x else 0.0 };
+        { r = at(c#r), g = at(c#g), b = at(c#b) }
+
+    /// emissiveFactor（既定 (0, 0, 0)）。負と NaN は 0。3 つの数でない材質は (0, 0, 0)。
+    def emissiveFactorOf(material: Obj): { r = Float64, g = Float64, b = Float64 } =
         let factor = numbersOf("emissiveFactor", 3, material) |> Result.toOption |> Option.flatMap(identity)
             |> Option.getWithDefault(Vector#{ 0.0, 0.0, 0.0 });
-        let strength = numberAt("emissiveStrength", objectOf("KHR_materials_emissive_strength", objectOf("extensions", material)))
-            |> Option.getWithDefault(1.0);
-        let at = (k: Int32) -> { let v = Vector.get(k, factor) * strength; if (v > 0.0) v else 0.0 };
+        let at = (k: Int32) -> { let v = Vector.get(k, factor); if (v > 0.0) v else 0.0 };
         { r = at(0), g = at(1), b = at(2) }
+
+    /// KHR_materials_emissive_strength の emissiveStrength（既定 1）。負と NaN は 0。
+    def emissiveStrengthOf(material: Obj): Float64 =
+        let s = numberAt("emissiveStrength", objectOf("KHR_materials_emissive_strength", objectOf("extensions", material)))
+            |> Option.getWithDefault(1.0);
+        if (s > 0.0) s else 0.0
 
     /// emissiveFactor が 3 つの数でない時の知らせ（emissiveOf が (0, 0, 0) にした事）。
     def emissiveFactorLine(index: Int32, material: Obj): List[String] = match numbersOf("emissiveFactor", 3, material) {
@@ -919,8 +933,9 @@ pub mod Gltf {
         }
 
     /// baseColorFactor をそのまま頂点の色にする。材質や baseColorFactor が無ければ白。
-    // WhyNot: 1/2.2 乗で直さない — engine の光は色の値をそのまま掛ける式で、OBJ の Kd も Blender の値をそのまま使う。
-    //   直すと同じ Blender の色が glTF だけ明るく白っぽく出る。
+    // WhyNot: glTF の決まりどおり線形の値として読まない — OBJ の Kd も Blender の値を画面の値（sRGB の値）として読む。
+    //   片方だけ直すと同じ Blender の色が形式で違って見え、3D の描き手を画素の値のまま計算する式（project.json の
+    //   scene3dLinearColor: false）に戻しても 0.78 の絵に戻らない。COLOR_0 と emissiveFactor も同じく画面の値として読む。
     def baseColorOf(glb: Glb, prim: Obj): Result[String, Vector[Float64]] =
         let white = Vector#{ 1.0, 1.0, 1.0 };
         match intOf("material", prim) {

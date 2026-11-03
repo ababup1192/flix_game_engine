@@ -1,6 +1,7 @@
 // 入口。同じ scene 宣言（Scenes）を GL と SoftRaster の両方で 1 コマ描き出し、画素を突き合わせて
 // 1 行 1 scene の表を出す。A 段階（バイト一致層）に不一致があるか、許容差のある B 段階（Scenes.toleranceOf）が上限を超えれば exit 1。
 // 続けて 3D の光の式を 8 bit に丸める前の値で比べる式の行（E 段階・ExprRows）を出し、上限を超えても exit 1。
+// 3D の場面を描き物か Pass の中に持つ scene の名前は、別に「[parity3d] <名前>」の行で出す（baseline-check の --only-2d がその名前を 2D の門から除く）。
 //
 // GL の絵はリファレンス画像化しない — 基準は「もう片方の経路」であって過去の絵ではない
 // （過去の絵との突き合わせは templates の reference-check / reference-update の役目）。
@@ -159,6 +160,16 @@ mod ParityMain {
     def pad(s: String, n: Int32): String =
         if (String.length(s) >= n) s else pad(s + " ", n)
 
+    def hasScene3d(item: Render.Item): Bool = match item {
+        case Render.Item.Scene3d(_) => true
+        case Render.Item.Clipped(c) => hasScene3d(c#inner)
+        case _                      => false
+    }
+
+    /// 3D の場面を描き物か Pass の中に持つ scene か（[parity3d] の行に名前を出す物）。
+    def is3d(sc: Scenes.Scene): Bool =
+        List.exists(p -> hasScene3d(p#item), sc#items ::: List.flatMap(p -> p#items, sc#passes))
+
     /// sc を GL で撮り、描いた置いた物の数の期待値（Scenes.expectedDrawnOf）がある scene だけ、その数を確かめた 1 行を返す。
     def glShootCounted(sc: Scenes.Scene): Option[(String, Bool)] \ IO + GameEngine.Game + ShaderEffect.Shader + RenderTarget.Target =
         discard GameEngine.Game.consumeDiagnostics();
@@ -186,6 +197,7 @@ mod ParityMain {
             (sc#exact, PixelDiff.compare(sc#name, "debug/gl/${sc#name}.png",
                 "debug/soft/${sc#name}.png", "debug/diff/${sc#name}.png")));
         List.forEach(eo -> { let (exact, o) = eo; println(line(exact, o)) }, outcomes);
+        Scenes.all() |> List.filter(is3d) |> List.forEach(sc -> println("[parity3d] ${sc#name}"));
         List.forEach(c -> println(fst(c)), counted);
         let exprOk = ExprRows.report(exprInputs, exprGl);
         if (List.exists(eo -> { let (exact, o) = eo; failed(exact, o) }, outcomes) or List.exists(c -> not snd(c), counted) or not exprOk) System.exit(1) else ()

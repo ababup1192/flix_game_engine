@@ -483,6 +483,7 @@
   `pub type alias TextureRegistry = Map[String, TextureInfo]`
 - エンジン初期化に必要な設定
   `pub type alias EngineConfig = { rootDir = String, glyphs = String, designWidth = Int32, designHeight = Int32, windowWidth = Int32, windowHeight = Int32, title = String, textureManifest = List[TextureEntry], fontManifest = List[FontEntry], soundManifest = List[AudioEntry], clearColor = Color, maxDeltaTime = Float64, scene3dTextureBudgetMB = Int32, scene3dTextureBudgetCount = Int32 }`
+- `pub def loadScene3dLinearColor(root: String): Bool \ IO`
 - 3D の場面の絵を GPU に持つ量の上限の既定（MB）。
   `pub def defaultScene3dTextureBudgetMB(): Int32`
 - 3D の場面の絵を GPU に持つ枚数の上限の既定。
@@ -665,7 +666,7 @@
 - Select の条件。
   `pub enum Cond with Eq { case Greater(ScalarExpr, ScalarExpr) case AtLeast(ScalarExpr, ScalarExpr) case And(Cond, Cond) }`
 - 画素ごと・場面ごとのスカラーの入力。
-  `pub enum ScalarInput with Eq, Order { case Hemisphere case ShadowLit case FogNear case FogFar case SkyCurve case LightmapSrgb case LightmapIntensity }`
+  `pub enum ScalarInput with Eq, Order { case Hemisphere case ShadowLit case FogNear case FogFar case SkyCurve case LightmapSrgb case LightmapIntensity case LinearColor }`
 - 画素ごと・場面ごとの vec3 の入力。
   `pub enum Vec3Input with Eq, Order { case Position case Normal case Eye case Ambient case LightmapColor case Color case FogColor case SkyDirection case SkyZenith case SkyHorizon case SkyGround }`
 - 光のループの中で読めるスカラーの欄。
@@ -808,9 +809,10 @@
   `pub def tangents(m: Mesh3d): Option[Vector[Float64]]`
 
 ## Mip — `engine/src/Mip.flix`
-- `pub def build(tex: ShaderEval.TexData): List[ShaderEval.TexData]`
-- tex の長い辺が maxSide 以下になるまで、段を作るのと同じ縮め方で半分にした絵（もう収まっていれば tex のまま）。
-  `pub def shrinkTo(maxSide: Int32, tex: ShaderEval.TexData): ShaderEval.TexData`
+- 段を作る時の、4 つのテクセルの色の平均の仕方。SrgbCurve = 8bit の値を sRGB の曲線の値と見て、線形の量へ戻して平均し、
+  `pub enum Average with Eq, ToString { case SrgbCurve case Raw }`
+- `pub def build(average: Average, tex: ShaderEval.TexData): List[ShaderEval.TexData]`
+- `pub def shrinkTo(maxSide: Int32, tex: ShaderEval.TexData): ShaderEval.TexData`
 - 絵を読む座標の、画面の右隣と下隣の画素との差（uv の単位）。
   `pub type alias Derivatives = { dudx = Float64, dvdx = Float64, dudy = Float64, dvdy = Float64 }`
 - `pub def lodOf(d: Derivatives, width: Int32, height: Int32, levels: Int32): Float64`
@@ -928,6 +930,7 @@
   `pub def loadProject(rootDir: String): Result[String, Project] \ {Fs.FileRead}`
 - プロジェクトディレクトリを再帰的に走査して *.scene.json を列挙する。
   `pub def findSceneFiles(rootDir: String): Result[String, List[String]] \ Fs.Glob`
+- `pub def scene3dLinearColorOf(rootDir: String): Bool \ {Fs.FileRead}`
 
 ## Projection — `engine/src/render/drawable/Projection.flix`
 - ビュー変換: screenPos = worldPos * scale - offset。
@@ -1117,7 +1120,7 @@
 - 法線マップ。texture = 絵の名前（タンジェント空間・緑が絵の上）・strength = でこぼこの強さ（1 で絵のまま）。
   `pub type alias NormalMap = { texture = String, strength = Float64 }`
 - 材質の中身。spec の Out の色 = 光を当てる前の色・params = spec の Param・
-  `pub type alias MaterialFields = { spec = ShaderDoc.Spec, params = Map[String, Float64], cutout = Bool, emission = Option[ShaderDoc.Shade], normalMap = Option[NormalMap], wrap = Wrap, blend = Bool, doubleSided = Bool, shaderHash = Lazy[Int64] }`
+  `pub type alias MaterialFields = { spec = ShaderDoc.Spec, params = Map[String, Float64], cutout = Bool, emission = Option[ShaderDoc.Shade], normalMap = Option[NormalMap], wrap = Wrap, blend = Bool, doubleSided = Bool, emissionIntensity = Float64, shaderHash = Lazy[Int64] }`
 - 材質（閉じた型 — 欄を後から足しても、ゲームの書いた値が壊れない）。material から作り、with… で足す。
   `pub type alias Material3d = MaterialData`
 - spec だけの材質（params 空・cutout なし・emission なし・法線マップなし・Repeat・不透明・表の面だけ）。
@@ -1132,8 +1135,10 @@
   `pub def withDoubleSided(on: Bool, m: Material3d): Material3d`
 - 光の計算の後に足す、自分で光る色（かすみに沈まない）。名前は替えなくてよい（GL は spec と emission の中身の鍵でプログラムを引く）。
   `pub def withEmission(s: ShaderDoc.Shade, m: Material3d): Material3d`
-- emission を外す（glb の emissive で光らせたくない時）。
+- emission を外す（glb の emissive で光らせたくない時）。emissionIntensity も 1 に戻す。
   `pub def withoutEmission(m: Material3d): Material3d`
+- emission を線形の量に戻した後に掛ける倍率 k（既定 1。Godot の emission_energy_multiplier・Unity の Emission Intensity と同じ分け方）。
+  `pub def withEmissionIntensity(k: Float64, m: Material3d): Material3d`
 - spec の名前だけを替える（知らせの文面・GL のプログラムの名前に出る）。木の違う材質に別の名前を付けなくてよい
   `pub def withSpecName(name: String, m: Material3d): Material3d`
 - `pub def withNormalMap(n: NormalMap, m: Material3d): Material3d`
@@ -1590,11 +1595,27 @@
 - 長い辺が maxSide 以下になるまで半分にした絵（mip の段を作るのと同じ縮め方。もう収まっていれば t のまま）。
   `pub def limitSize(maxSide: Int32, t: Texture3d): Texture3d`
 - 8bit の絵の値の意味。Srgb = sRGB の曲線で書いた値（Blender の PNG・色の絵）・Linear = 値がそのまま量（法線マップ・数値の絵）。
-  `pub enum ColorSpace with Eq, ToString { case Srgb case Linear }`
+  `pub enum ColorSpace with Eq, Order, Hash, ToString { case Srgb case Linear }`
+- `pub enum TextureUse with Eq, Order, Hash, ToString { case MaterialTexture case NormalMap case Lightmap(ColorSpace) }`
+- 3D の色を線形の量で計算する描き手が、使い方 textureUse の絵の段を平均する時の色空間（GL と CPU が同じ判定を使う）。
+  `pub def mipSpaceOf(textureUse: TextureUse): ColorSpace`
+- 色空間 space の絵の段の平均の仕方（Mip.build に渡す）。
+  `pub def mipAverageOf(space: ColorSpace): Mip.Average`
 - sRGB の曲線で書いた値 s（0〜1）を線形の量へ戻す（区分の式: s ≦ 0.04045 は s / 12.92、ほかは ((s + 0.055) / 1.055)^2.4）。
   `pub def srgbToLinear(s: Float64): Float64`
 - 線形の量 l を sRGB の曲線の値へ（l ≦ 0.0031308 は 12.92 l、ほかは 1.055 l^(1/2.4) − 0.055）。1 を超えても同じ式で返し、負は 0。
   `pub def linearToSrgb(l: Float64): Float64`
+- 色の 3 成分をそれぞれ srgbToLinear で線形の量へ戻した色（1 を超える成分も同じ式で伸ばす）。
+  `pub def srgbToLinearColor(c: Color): Color`
+- `pub type alias ColorLut = ColorLutData`
+- 表の段の数（表の点は 0 から 1 まで lutSteps() + 1 個）。
+  `pub def lutSteps(): Int32`
+- srgbToLinear と linearToSrgb の表を作る（場面を描く前に 1 回）。
+  `pub def colorLut(): ColorLut`
+- srgbToLinear の表の版（0〜1 の外は式のまま）。
+  `pub def srgbToLinearLut(lut: ColorLut, s: Float64): Float64`
+- linearToSrgb の表の版（0〜1 の外は式のまま。負は 0・1 を超えても切らない）。
+  `pub def linearToSrgbLut(lut: ColorLut, l: Float64): Float64`
 - `pub def srgbToLinearGlsl(name: String): String`
 - linearToSrgb と同じ式の GLSL の関数（float → float。負は 0・1 を超えても切らない）。
   `pub def linearToSrgbGlsl(name: String): String`

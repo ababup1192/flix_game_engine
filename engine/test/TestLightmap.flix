@@ -158,7 +158,7 @@ def lmFourByTwo(): Texture3d.Texture3d =
 @Test
 def testLimitSizeHalvesLikeTheMipChain(): Unit \ Assert =
     let t = lmFourByTwo();
-    let mip = Mip.build({ width = 4, height = 2, pixels = Texture3d.argb(t) }) |> List.drop(1) |> List.head;
+    let mip = Mip.build(Mip.Average.Raw, { width = 4, height = 2, pixels = Texture3d.argb(t) }) |> List.drop(1) |> List.head;
     let small = Texture3d.limitSize(2, t);
     Assert.assertEq(expected = Option.map(m -> (m#width, m#height, m#pixels), mip),
                     Some((Texture3d.width(small), Texture3d.height(small), Texture3d.argb(small))))

@@ -101,6 +101,7 @@ pub mod LightModel3d.Codegen {
         case (Target.Glsl, ScalarInput.SkyCurve)          => "uCurve"
         case (Target.Glsl, ScalarInput.LightmapSrgb)      => "float(uLightmapSrgb)"
         case (Target.Glsl, ScalarInput.LightmapIntensity) => "uLightmapIntensity"
+        case (Target.Glsl, ScalarInput.LinearColor)       => "float(uLinearColor)"
     }
 
     def scalarInputName(input: ScalarInput): String = match input {
@@ -111,6 +112,7 @@ pub mod LightModel3d.Codegen {
         case ScalarInput.SkyCurve          => "skyCurve"
         case ScalarInput.LightmapSrgb      => "lightmapSrgb"
         case ScalarInput.LightmapIntensity => "lightmapIntensity"
+        case ScalarInput.LinearColor       => "linearColor"
     }
 
     def vec3InputName(input: Vec3Input): String = match input {
@@ -585,7 +587,7 @@ pub mod LightModel3d.Codegen {
           params = lights ::: Param.Vec3Param(Vec3Input.Ambient) :: Param.ScalarParam(ScalarInput.Hemisphere) :: Nil } ::
         { name = "lightmapLightAt", model = lightmapLightingModel(), doc = "lightmapLightingModel の光の量（lightmap は段つきで読んだ後の rgb を渡す）。",
           params = lights ::: Param.Vec3Param(Vec3Input.LightmapColor) :: Param.ScalarParam(ScalarInput.LightmapSrgb) ::
-                   Param.ScalarParam(ScalarInput.LightmapIntensity) :: Nil } ::
+                   Param.ScalarParam(ScalarInput.LightmapIntensity) :: Param.ScalarParam(ScalarInput.LinearColor) :: Nil } ::
         { name = "fogAt", model = fogModel(), doc = "fogModel の色（fog が無い場面では呼ばない）。",
           params = p :: Param.Vec3Param(Vec3Input.Eye) :: Param.Vec3Param(Vec3Input.Color) :: Param.Vec3Param(Vec3Input.FogColor) ::
                    Param.ScalarParam(ScalarInput.FogNear) :: Param.ScalarParam(ScalarInput.FogFar) :: Nil } ::

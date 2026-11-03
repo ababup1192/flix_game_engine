@@ -281,7 +281,7 @@ pub mod DrawHash {
     // WhyNot: shaderHash を書かない — spec と emission から導く値で、その 2 つは下で全部書いている。書くと 3D の描き出しのキャッシュが全部描き直しになる。
     def putMaterial(out: DataOutputStream, m: Scene3d.Material3d): Unit \ IO = match Scene3d.materialFieldsOf(m) {
         case { spec = spec, params = params, cutout = cutout, emission = emission, normalMap = normalMap, wrap = wrap,
-               blend = blend, doubleSided = doubleSided, shaderHash = _ } =>
+               blend = blend, doubleSided = doubleSided, emissionIntensity = emissionIntensity, shaderHash = _ } =>
             putStr(out, ToString.toString(ShaderJson.toJson(spec)));
             putSize(out, Map.size(params));
             params |> Map.forEach((name, v) -> { putStr(out, name); putF(out, v) });
@@ -294,7 +294,8 @@ pub mod DrawHash {
             if (wrap == Scene3d.Wrap.Clamp) out.writeByte(0x43) else ();
             // WhyNot: 偽の時に何も書かない — 欄を足す前の材質の鍵の字を保つ（不透明・表だけの材質のキャッシュを塗り直させない）。
             if (blend) out.writeByte(0x42) else ();
-            if (doubleSided) out.writeByte(0x44) else ()
+            if (doubleSided) out.writeByte(0x44) else ();
+            if (emissionIntensity != 1.0) { out.writeByte(0x45); putF(out, emissionIntensity) } else ()
     }
 
     /// Shade を 1 枚の Spec の Out に包む（JSON に書く口が Spec にしか無いため）。

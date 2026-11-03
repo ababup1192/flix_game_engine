@@ -65,4 +65,52 @@ mod TestTexture3d {
     def testNameIsPrefixAndHashHead(): Unit \ Assert =
         let t = quadTexture();
         Assert.assertEq(expected = "tex3d:" + String.takeLeft(16, Texture3d.contentHash(t)), Texture3d.name(t))
+
+    /// srgbToLinearColor は 3 成分をそれぞれ srgbToLinear へ通す（0.5 は約 0.214）。
+    @Test
+    def testSrgbToLinearColorConvertsEachChannel(): Unit \ Assert =
+        let c = Texture3d.srgbToLinearColor(Color.rgb(0.5, 0.25, 1.5));
+        Assert.assertEq(expected = (Texture3d.srgbToLinear(0.5), Texture3d.srgbToLinear(0.25), Texture3d.srgbToLinear(1.5)), (c#r, c#g, c#b))
+
+    /// 段の平均の色空間: 材質の絵は Srgb。
+    @Test
+    def testMipSpaceOfMaterialTextureIsSrgb(): Unit \ Assert =
+        Assert.assertEq(expected = Texture3d.ColorSpace.Srgb, Texture3d.mipSpaceOf(Texture3d.TextureUse.MaterialTexture))
+
+    /// 段の平均の色空間: 法線マップは Linear。
+    @Test
+    def testMipSpaceOfNormalMapIsLinear(): Unit \ Assert =
+        Assert.assertEq(expected = Texture3d.ColorSpace.Linear, Texture3d.mipSpaceOf(Texture3d.TextureUse.NormalMap))
+
+    /// 段の平均の色空間: lightmap はその colorSpace のまま。
+    @Test
+    def testMipSpaceOfLightmapIsItsSpace(): Unit \ Assert =
+        Assert.assertEq(expected = Texture3d.ColorSpace.Linear, Texture3d.mipSpaceOf(Texture3d.TextureUse.Lightmap(Texture3d.ColorSpace.Linear)))
+
+    /// Srgb の絵は SrgbCurve で平均する。
+    @Test
+    def testMipAverageOfSrgbIsSrgbCurve(): Unit \ Assert =
+        Assert.assertEq(expected = Mip.Average.SrgbCurve, Texture3d.mipAverageOf(Texture3d.ColorSpace.Srgb))
+
+    /// 0〜1 を 1/20000 刻みで見た、表の版と式の差の最大（srgbToLinear と linearToSrgb の大きい方）。
+    def maxLutError(): Float64 =
+        let lut = Texture3d.colorLut();
+        List.range(0, 20001) |> List.foldLeft((acc, k) -> {
+            let x = Int32.toFloat64(k) / 20000.0;
+            let a = Float64.abs(Texture3d.srgbToLinearLut(lut, x) - Texture3d.srgbToLinear(x));
+            let b = Float64.abs(Texture3d.linearToSrgbLut(lut, x) - Texture3d.linearToSrgb(x));
+            Float64.max(acc, Float64.max(a, b))
+        }, 0.0)
+
+    /// 表の版と式の差は 8bit の 1 段の 1/100（3.9e-5）未満。
+    @Test
+    def testColorLutStaysWithinHundredthOfAStep(): Unit \ Assert =
+        Assert.assertTrue(maxLutError() < 3.9e-5)
+
+    /// 0〜1 の外は式と同じ値（1 を超える値は伸ばし、負は linearToSrgb で 0）。
+    @Test
+    def testColorLutOutsideRangeIsFormula(): Unit \ Assert =
+        let lut = Texture3d.colorLut();
+        Assert.assertEq(expected = (Texture3d.srgbToLinear(1.5), Texture3d.linearToSrgb(2.0), Texture3d.linearToSrgb(-0.5)),
+            (Texture3d.srgbToLinearLut(lut, 1.5), Texture3d.linearToSrgbLut(lut, 2.0), Texture3d.linearToSrgbLut(lut, -0.5)))
 }

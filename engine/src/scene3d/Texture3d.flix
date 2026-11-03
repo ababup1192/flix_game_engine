@@ -5,6 +5,7 @@
 pub mod Texture3d {
     import java.awt.image.BufferedImage
     import java.io.ByteArrayInputStream
+    import java.lang.Math
     import java.nio.ByteBuffer
     import java.security.MessageDigest
     import javax.imageio.ImageIO
@@ -72,9 +73,33 @@ pub mod Texture3d {
     // ── 色空間（8bit の絵の値の意味）──
 
     /// 8bit の絵の値の意味。Srgb = sRGB の曲線で書いた値（Blender の PNG・色の絵）・Linear = 値がそのまま量（法線マップ・数値の絵）。
-    pub enum ColorSpace with Eq, ToString {
+    pub enum ColorSpace with Eq, Order, Hash, ToString {
         case Srgb
         case Linear
+    }
+
+    /// 3D の描き手が絵を貼る使い方（段の平均の仕方を決める）。MaterialTexture = 材質の色の絵（Srgb として平均する）・
+    /// NormalMap = 法線マップ（Linear）・Lightmap = ベイクした光（その色空間）。
+    // WhyNot: 絵ごとに色空間を持たせない — 材質の色は Spec の出口でまとめて線形へ戻すので、絵ごとの色空間を読むのは段の平均と lightmap だけ。
+    //   数の絵（mask・ノイズ）を材質に貼った時は遠くの段が少し変わる。Linear で平均したい使い手が出たら、ここに使い方を足す。
+    pub enum TextureUse with Eq, Order, Hash, ToString {
+        case MaterialTexture
+        case NormalMap
+        case Lightmap(ColorSpace)
+    }
+
+    /// 3D の色を線形の量で計算する描き手が、使い方 textureUse の絵の段を平均する時の色空間（GL と CPU が同じ判定を使う）。
+    /// 画素の値のまま計算する描き手はこれを呼ばず、全部 Linear で平均する。
+    pub def mipSpaceOf(textureUse: TextureUse): ColorSpace = match textureUse {
+        case TextureUse.MaterialTexture => ColorSpace.Srgb
+        case TextureUse.NormalMap       => ColorSpace.Linear
+        case TextureUse.Lightmap(space) => space
+    }
+
+    /// 色空間 space の絵の段の平均の仕方（Mip.build に渡す）。
+    pub def mipAverageOf(space: ColorSpace): Mip.Average = match space {
+        case ColorSpace.Srgb   => Mip.Average.SrgbCurve
+        case ColorSpace.Linear => Mip.Average.Raw
     }
 
     /// sRGB の曲線で書いた値 s（0〜1）を線形の量へ戻す（区分の式: s ≦ 0.04045 は s / 12.92、ほかは ((s + 0.055) / 1.055)^2.4）。
@@ -88,8 +113,51 @@ pub mod Texture3d {
         if (x <= linearEdge()) x * srgbSlope()
         else (1.0 + srgbOffset()) * Float64.pow({ base = x }, 1.0 / srgbGamma()) - srgbOffset()
 
+    /// 色の 3 成分をそれぞれ srgbToLinear で線形の量へ戻した色（1 を超える成分も同じ式で伸ばす）。
+    /// 3D の描き手が場面ごと・物ごとの色（光の color・ambient・tint・かすみ・空）を線形の量で計算する時に通す。
+    pub def srgbToLinearColor(c: Color): Color =
+        Color.rgb(srgbToLinear(c#r), srgbToLinear(c#g), srgbToLinear(c#b))
+
+    /// srgbToLinear と linearToSrgb を、0〜1 を lutSteps() 段に刻んだ表と隣り合う 2 点の間の直線で近づけた物（閉じた型。colorLut で作る）。
+    /// CPU の描き手が画素ごとに色を変換する時に使う（式との差は 8bit の 1 段の 1/100 未満）。
+    // WhyNot: 画素ごとに式（pow）を呼ばない — 材質の画素は albedo・emission・出口で最大 9 回変換し、CPU の 3D の描き出しが 1 割を超えて遅くなる。
+    enum ColorLutData { case ColorLutData(Vector[Float64], Vector[Float64]) }
+
+    pub type alias ColorLut = ColorLutData
+
+    /// 表の段の数（表の点は 0 から 1 まで lutSteps() + 1 個）。
+    pub def lutSteps(): Int32 = 4096
+
+    /// srgbToLinear と linearToSrgb の表を作る（場面を描く前に 1 回）。
+    pub def colorLut(): ColorLut =
+        let n = lutSteps();
+        let at = (k: Int32) -> Int32.toFloat64(k) / Int32.toFloat64(n);
+        ColorLutData.ColorLutData(Vector.range(0, n + 1) |> Vector.map(k -> srgbToLinear(at(k))),
+                                  Vector.range(0, n + 1) |> Vector.map(k -> linearToSrgb(at(k))))
+
+    /// srgbToLinear の表の版（0〜1 の外は式のまま）。
+    pub def srgbToLinearLut(lut: ColorLut, s: Float64): Float64 =
+        let ColorLutData.ColorLutData(toLinear, _) = lut;
+        if (s >= 0.0 and s <= 1.0) lerpTable(toLinear, s) else srgbToLinear(s)
+
+    /// linearToSrgb の表の版（0〜1 の外は式のまま。負は 0・1 を超えても切らない）。
+    pub def linearToSrgbLut(lut: ColorLut, l: Float64): Float64 =
+        let ColorLutData.ColorLutData(_, toSrgb) = lut;
+        if (l >= 0.0 and l <= 1.0) lerpTable(toSrgb, l) else linearToSrgb(l)
+
+    /// 0〜1 の x の、表 table（lutSteps() + 1 個）の隣り合う 2 点の間の直線の値。
+    def lerpTable(table: Vector[Float64], x: Float64): Float64 =
+        let n = lutSteps();
+        let scaled = x * Int32.toFloat64(n);
+        // WhyNot: Float64.clampToInt32 や tryToInt32 で整数にしない — 画素ごとにレコードか Option を作る。x は 0〜1 なので Java の切り捨てで足りる。
+        let i = Int32.min(n - 1, unchecked_cast(Math.toIntExact(Math.round(Math.floor(scaled))) as _ \ {}));
+        let t = scaled - Int32.toFloat64(i);
+        let a = Vector.get(i, table);
+        a + (Vector.get(i + 1, table) - a) * t
+
     /// srgbToLinear と同じ式の GLSL の関数（float → float）。名前は呼ぶ側が決める（ShaderGen の sg_ と重ねない）。
-    // WhyNot: vec3 の版にしない — 光の式の木（LightModel3d）は成分ごとに書くので、vec3 で呼ぶと 1 成分のために 3 成分を計算する。
+    // WhyNot: この関数を vec3 の版にしない — 光の式の木（LightModel3d）は成分ごとに書くので、vec3 で呼ぶと 1 成分のために 3 成分を計算する。
+    //   木の外の色の変換（材質の出口・頂点の色）は render_gl の Render3dGlsl がこの関数を成分ごとに呼ぶ vec3 の版を持つ。
     pub def srgbToLinearGlsl(name: String): String =
         "float ${name}(float s) {\n" +
         "    return s <= ${glslFloat(srgbEdge())} ? s / ${glslFloat(srgbSlope())}\n" +

@@ -1,4 +1,5 @@
-// lightmap を付けない時の 3D の GLSL の字が 1 字も変わらないことを、今の字の SHA-256 で固定する。
+// lightmap を付けない時の 3D の GLSL の字が 1 字も変わらないことを、今の字の SHA-256 で固定する（3D の色の変換 colorSpaceSource と
+// 色の組み立て r3d_surfaceOut を含む字）。
 // 材質の frag は sg_texMip を持たない材質と持つ材質のそれぞれで、uv と法線マップの 4 通り。
 mod Render3d.TestGlslPinned {
     import java.security.MessageDigest
@@ -22,15 +23,15 @@ mod Render3d.TestGlslPinned {
 
     @Test
     def testLightSourceIsUnchanged(): Unit \ Assert =
-        Assert.assertEq(expected = "714fe617f8e69c695eb405f052beffdf0a5fcd4eaa82ce6d5d4802fd94af26fa", sha256(Render3dGlsl.lightSource()))
+        Assert.assertEq(expected = "98059e3ffbba252adb70fdc80a6d7872f6c8db80618890cf09e9557456e295b5", sha256(Render3dGlsl.lightSource()))
 
     @Test
     def testSolidMaterialFragmentsAreUnchanged(): Unit \ Assert =
-        Assert.assertEq(expected = "881c38c5b3e5680972f2bf2a3d5bee7befe6c9da64b025415603e26e29b6cd86" :: "881c38c5b3e5680972f2bf2a3d5bee7befe6c9da64b025415603e26e29b6cd86" :: "abc5b5bcf9a5da1a5d1397fb0dd79246bd520fd70d10660ef6bf155b2905220e" :: "f474233114fdb80aa08465ed538e96e3053ecae19fe81965e35259627b6a27e9" :: Nil, fragments(solidGlsl()))
+        Assert.assertEq(expected = "d793e364eda5505b658271688a366a858c446e92890a06cf8c97479bcea92860" :: "d793e364eda5505b658271688a366a858c446e92890a06cf8c97479bcea92860" :: "f832761ef538c1875272a04d98677c13e67c90aefdc11ad82064e61be7d1f20e" :: "35aa36dd7a411e78158eb8d445d25f2db76efb5ccdaac759fac149dd8f16faf2" :: Nil, fragments(solidGlsl()))
 
     @Test
     def testMipMaterialFragmentsAreUnchanged(): Unit \ Assert =
-        Assert.assertEq(expected = "0bbe686eee9754c0b37be555ace307fa0e6674bd50f1399ac735ac5c0216a1ad" :: "0bbe686eee9754c0b37be555ace307fa0e6674bd50f1399ac735ac5c0216a1ad" :: "ef299c3af927639aacefecbb9adcbd1a180766c7de95e62fdee72c94c782f371" :: "bb80e57804ca4bf302fc5157e90db87733ae5e98b38c2038beeccccbbac474f1" :: Nil, fragments(mipGlsl()))
+        Assert.assertEq(expected = "550518864fc3ad9788a30997049a54c9df1294f1bb81588bd98983c52573e126" :: "550518864fc3ad9788a30997049a54c9df1294f1bb81588bd98983c52573e126" :: "3e63ed960ca8001549db08d0ce811d008165c98d103042f92e5d9936f625c9e9" :: "ba5e5862235e5dcd5c8b159c1cd5434462fb80ce7fd73b972afd4632effbd4f0" :: Nil, fragments(mipGlsl()))
 
     @Test
     def testMaterialVertexSourcesAreUnchanged(): Unit \ Assert =
@@ -70,4 +71,38 @@ mod Render3d.TestGlslPinned {
         let source = Render3dGlsl.materialFragmentSource(solidGlsl(), { skinned = false, uv = false, normalMap = false, lightmap = true, blend = false, doubleSided = false, coverage = false });
         Assert.assertEq(expected = (1, 1),
             (count(Texture3d.srgbToLinearGlsl("r3d_srgbToLinear"), source), count(Texture3d.linearToSrgbGlsl("r3d_linearToSrgb"), source)))
+
+    // ── 3D の色の変換 ──
+
+    /// lit・材質・ビルボード・空の frag は色の変換の部品（uLinearColor の宣言）を 1 回だけ持つ。
+    @Test
+    def testFragmentsDeclareLinearColorOnce(): Unit \ Assert =
+        let material = Render3dGlsl.materialFragmentSource(mipGlsl(), { skinned = false, uv = true, normalMap = true, lightmap = true, blend = false, doubleSided = false, coverage = false });
+        Assert.assertEq(expected = 1 :: 1 :: 1 :: 1 :: Nil,
+            (Render3dGlsl.litFragmentSource() :: material :: Render3dGlsl.billboardFragmentSource() :: Render3dGlsl.skyFragmentSource() :: Nil)
+                |> List.map(count("uniform int uLinearColor;")))
+
+    /// lightmap の版の材質の frag でも、vec3 の変換の関数は 1 回だけ定義される。
+    @Test
+    def testVec3ConversionDefinedOnce(): Unit \ Assert =
+        let source = Render3dGlsl.materialFragmentSource(mipGlsl(), { skinned = false, uv = true, normalMap = true, lightmap = true, blend = false, doubleSided = false, coverage = false });
+        Assert.assertEq(expected = (1, 1), (count("vec3 r3d_srgbToLinear3(vec3 c)", source), count("vec3 r3d_linearToSrgb3(vec3 c)", source)))
+
+    /// 頂点の色を線形へ戻すのは lit の頂点シェーダー（骨なし・骨つき）だけ。
+    @Test
+    def testOnlyLitVertexSourcesLinearizeVertexColor(): Unit \ Assert =
+        let converts = (source: String) -> count("vColor = r3d_srgbToLinear3(aColor);", source);
+        Assert.assertEq(expected = (1, 1, 0, 0, 0),
+            (converts(Render3dGlsl.litVertexSource(false)), converts(Render3dGlsl.litVertexSource(true)), converts(Render3dGlsl.meshVertexSource()),
+             converts(Render3dGlsl.skinnedMeshVertexSource()), converts(Render3dGlsl.materialVertexSource({ skinned = false, uv = false, lightmap = false }))))
+
+    /// 空の frag は空の色を画面の値へ戻してから書く。
+    @Test
+    def testSkyConvertsToScreenValue(): Unit \ Assert =
+        Assert.assertEq(expected = 1, count("fragColor = vec4(r3d_linearToSrgb3(skyAt(d)), 1.0);", Render3dGlsl.skyFragmentSource()))
+
+    /// ビルボードの frag は絵の rgb を線形へ戻して r3d_surfaceOut に渡す。
+    @Test
+    def testBillboardLinearizesTexel(): Unit \ Assert =
+        Assert.assertEq(expected = 1, count("r3d_surfaceOut(r3d_srgbToLinear3(texel.rgb), uTint, light", Render3dGlsl.billboardFragmentSource()))
 }

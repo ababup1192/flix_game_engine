@@ -120,9 +120,10 @@ help:
 	@echo "  make scene3d-cpu          同じ部屋を CPU で温めてから何回か描き、1 枚の時間の中央値を出す (窓は開かない)"
 	@echo "  make gen-light3d          光の式の木 (LightModel3d) から CPU の光の関数 engine_tools/src/gen/SoftRaster3dLight.flix と確かめ用の test/gen/SoftRaster3dLightCases.flix を作り直す"
 	@echo "  make gl-capture OUT=<dir> テンプレの場面を隠しウィンドウ・dt 固定で頭の 6 コマ撮り、SHA-256 を控える"
-	@echo "  make gl-capture-check [BASE=off]  同じ場面を 2 回撮って 2 コマ目以降までバイトで比べ、基準とも比べる (違えば exit 1)"
+	@echo "  make gl-capture-check [BASE=off] [SKIP=<フォルダ名>]  同じ場面を 2 回撮って 2 コマ目以降までバイトで比べ、基準とも比べる (SKIP の場面は比べない・違えば exit 1)"
 	@echo "  make check-external       外のゲームの写しを今の engine で型検査し、基準 (bench/baseline/) から増えたエラーだけ出す"
-	@echo "  make baseline-check [GALLERY=1]  gl-parity の行と絵・3D の部屋の CPU の絵 (とテンプレの gallery) を基準 (bench/baseline/) と比べる"
+	@echo "  make baseline-check [GALLERY=1]  gl-parity の行と絵・3D の部屋の CPU の絵 (とテンプレの gallery) を基準 (PARITY_BASELINE) と比べる"
+	@echo "                           ONLY_2D=1 で 3D の行と絵を除く・ONLY_KNOWN=1 で基準に無い名前を飛ばす・GALLERY_BASE=<dir> で gallery の基準を別に・COMPARE_MAX=<dir> で 3D の行の max を控えと並べる"
 	@echo "  make sync                 層の作業場を張り、engine_full を build-pkg して templates / bench に配布"
 	@echo "  make sync-layers          render_gl / engine_world / engine_tools の検査用の作業場 (.layers/) を張り直す"
 	@echo "  make sync-root-src        コミュニティビルド用にルート src/ の symlink 集を再生成"
@@ -372,9 +373,13 @@ check-external:
 	@EXTERNAL_UPGRADES=$(BASELINE)/upgrade bin/check-external.sh build/check-external/now.tsv && \
 		bin/check-external.sh --compare $(BASELINE)/external.tsv build/check-external/now.tsv
 
-# 今の描き出しを基準 (BASELINE) と比べる (bin/baseline-check.sh): gl-parity の行と絵の SHA・3D の部屋の CPU の絵。
-# GALLERY=1 でテンプレの render-all も流し、gallery の絵 (前から reference-check が落ちる場面も) を比べる。
+# 今の描き出しを基準 (PARITY_BASELINE) と比べる (bin/baseline-check.sh): gl-parity の行と絵の SHA・3D の部屋の CPU の絵。
+# GALLERY=1 でテンプレの render-all も流し、gallery の絵 (前から reference-check が落ちる場面も) を比べる (基準は GALLERY_BASE か PARITY_BASELINE)。
+# ONLY_2D=1 は 3D の場面の行と絵・式の行・room.png を除いて比べ、ONLY_KNOWN=1 は基準に無い名前の行と絵を飛ばす。
+# COMPARE_MAX=<控えのフォルダ> は 3D の各行の差の数と max を控えの gl-parity.txt と並べて出す (知らせるだけ)。
 # 先に make sync-engine-full。段の終わりと、描き手を触った後に回す。
+# WhyNot: 描き出しの基準を BASELINE と分ける — BASELINE は check-external と upgrade の基準で、3D の絵だけを撮り直す版で動かすと外のゲームの基準まで替わる。
+PARITY_BASELINE ?= bench/baseline/0.79.0
 .PHONY: baseline-check
 baseline-check:
 	@mkdir -p build/baseline
@@ -384,7 +389,8 @@ baseline-check:
 	@FGE_RENDER_CACHE=off $(MAKE) --no-print-directory scene3d-still > build/baseline/scene3d-still.log 2>&1
 	@if [ -n "$(GALLERY)" ]; then for t in rpg-starter sound-novel-starter tidepool-starter; do \
 		$(MAKE) --no-print-directory -C templates/$$t render-all > build/baseline/render-$$t.log 2>&1 || exit 1; done; fi
-	@bin/baseline-check.sh $(BASELINE) build/baseline/gl-parity.log $(if $(GALLERY),--gallery)
+	@bin/baseline-check.sh $(PARITY_BASELINE) build/baseline/gl-parity.log $(if $(GALLERY),--gallery) $(if $(GALLERY_BASE),--gallery-base $(GALLERY_BASE)) \
+		$(if $(ONLY_2D),--only-2d) $(if $(ONLY_KNOWN),--only-known) $(if $(COMPARE_MAX),--compare-max $(COMPARE_MAX))
 
 # 実機の GL の絵をテンプレの場面ごとに撮る (bin/gl-capture.sh)。隠しウィンドウ・FLIX_GE_FIXED_DT で dt を固定し、
 # 頭の 6 コマの SHA-256 を <OUT>/SHA256SUMS に控える。check は 2 回撮ってバイトで比べる (同じ起動で同じ絵になるか)。
@@ -396,13 +402,13 @@ gl-capture:
 	@bin/gl-capture.sh "$(OUT)"
 
 # WhyNot: gl-capture の基準を BASELINE と分ける — 3D の GL の絵は C2 の後で 1 画素変わり、0.78.0 の基準は gl-capture だけを持つ。
-GL_CAPTURE_BASELINE ?= bench/baseline/0.78.0
+GL_CAPTURE_BASELINE ?= bench/baseline/0.79.0
 gl-capture-check:
 	@rm -rf build/gl-capture/a build/gl-capture/b
 	@bin/gl-capture.sh build/gl-capture/a && bin/gl-capture.sh build/gl-capture/b && \
-		bin/gl-capture.sh --compare build/gl-capture/a build/gl-capture/b
+		bin/gl-capture.sh --compare build/gl-capture/a build/gl-capture/b $(if $(SKIP),--skip $(SKIP))
 	@# 基準と同じ機械なら、基準とも比べる (別の機械の基準とは比べられないので BASE=off で止める)。
-	@if [ "$(BASE)" != off ]; then bin/gl-capture.sh --compare $(GL_CAPTURE_BASELINE)/gl-capture.sha256 build/gl-capture/a; fi
+	@if [ "$(BASE)" != off ]; then bin/gl-capture.sh --compare $(GL_CAPTURE_BASELINE)/gl-capture.sha256 build/gl-capture/a $(if $(SKIP),--skip $(SKIP)); fi
 
 # 個別テスト: make test-rpg-starter (templates/ を先に探し、無ければルート直下のパッケージ名)
 # 出力は .test-logs/ に落とし (test-par と同じ命名)、緑なら末尾 5 行だけ見せる。

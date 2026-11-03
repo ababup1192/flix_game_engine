@@ -1,6 +1,7 @@
 // 3D の場面を CPU（SoftRaster3d）で描いた画素の SHA-256 を固定する（光の式・影・深度・裏の面を 1 枚にまとめた場面と、
 // 同じ形に半球の光・霧・トゥーンの段・地の色を足した場面）。
-// 光の式を書き換えても「CPU の絵が 1 bit も変わらない」を毎回のテストで守る。
+// 光の式を書き換えても「CPU の絵が 1 bit も変わらない」を毎回のテストで守る。画素の値のまま計算する式（linear = false・0.78 の式）で描く
+// — 3D の色を線形で計算する式に替えた後も、旗を偽にすれば同じ絵に戻ることを守る。
 // 違ったら、足す順まで今の式に揃えるか、場面ごとの違う画素の数を人に見せてから撮り直す（値だけ貼り替えない）。
 mod TestSoftRaster3dPinned {
     import java.awt.image.BufferedImage
@@ -49,16 +50,8 @@ mod TestSoftRaster3dPinned {
     def render(): BufferedImage \ IO = renderScene(scene())
 
     def renderScene(cmd: Scene3d.Scene3dCmd): BufferedImage \ IO =
-        let req: SoftRaster.RasterReq =
-            { drawables = Nil, polygons = Nil,
-              design = { x = size(), y = size() }, scale = 1, background = { r = 0.0, g = 0.0, b = 0.0 },
-              texturePath = Map.empty(),
-              fontTtf = "../templates/game-starter/assets/Xolonium-Regular.ttf",
-              fontAtlas = { textureName = "font_ui", fontSize = 16.0, textureSize = 256.0,
-                            ascent = 12.0, descent = 4.0, lineGap = 0.0, glyphs = Map.empty() },
-              outPath = "", shapeAntialias = true, textAntialias = true,
-              scenes = { at = Vec2.zero(), clip = None, scene = cmd } :: Nil };
-        SoftRaster.renderToImageFull(req, Nil, Map.empty(), Map.empty())
+        let side = Float64.round(size()) |> Float64.tryToInt32 |> Option.getWithDefault(0);
+        TestSoftRaster3dSupport.renderUnconvertedOn(side, cmd)
 
     /// 32×32 の場面の画素が 0.76.0 の CPU の描き手と同じ。
     @Test

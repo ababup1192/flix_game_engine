@@ -23,10 +23,11 @@ Scene3d.meshInstance(part#mesh, world)
 
 - `Lightmap` は**線形の光の量**として受け取る（Blender・Unity・Bevy と同じ）。`colorSpace` は 8bit の絵の読み方だけを指す: `Srgb`（既定・Blender の PNG）は sRGB の区分の式で線形へ戻し、`Linear` はそのまま。
 - `intensity` は線形に戻した後に掛ける倍率（`PointLight` の intensity と同じ意味。`PostProcess` の露出の stop の数ではない）。
-- 今のエンジンは光の計算をガンマのままの値（画像の画素の値）で行うので、ベイクした光は sRGB の区分の式の逆で画面の値へ戻してから動く光と足す（暗い所が沈まない）。`Srgb`・`intensity = 1` なら読んだ値がそのまま光になる。
+- 3D の色は線形の量で計算する（`docs/scene3d.md` の「3D の色」）。ベイクした光は線形の量のまま動く光と足し、色を作った直後に画面の値へ戻す。
+  `Srgb`・`intensity = 1` の lightmap を白い材質に貼れば、画面の値は読んだ値のまま。
 - 露出の置き場所: 書き出しの「lightmap × 0.5 を sRGB で書いた PNG（読んだ後に 2 を掛ける）」と「exposure 2^0.6」は、両方とも `intensity` に入れる（2.0 × 2^0.6 ≒ 3.03）。
-  `PostProcess.tonemappedWith` の exposureStops へ 0.6 をそのまま写すと、ガンマのままの値に掛かって明るすぎる（写すなら 0.6 / 2.2 ≒ 0.27 が目安）。
-  色の線形化（段階 G）が入ったら、露出は exposureStops へ戻し、`intensity` は 2.0 にする（移行メモで知らせる）。
+  `intensity` は線形の倍率なので、そのまま入れて正しい。`PostProcess.tonemappedWith` の exposureStops は画面の値に掛かるので、ここへは写さない。
+- 0.79 の 1 版だけ、project.json の `"scene3dLinearColor": false` で画素の値のまま計算する式（0.78 まで。ベイクした光を画面の値へ戻してから足す）に戻せる（0.80.0 で消える）。
 
 ## ベイクの時の注意（Blender）
 

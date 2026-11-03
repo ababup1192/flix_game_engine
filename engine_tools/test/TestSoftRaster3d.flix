@@ -426,13 +426,15 @@ mod TestSoftRaster3d {
         Assert.assertEq(expected = pixel(litBy(None), 4, 7), pixel(litBy(Some(shadowMap(1.0))), 4, 7))
 
     // 影の無い場面は光の式のまま: 目の所から +Z を向くスポットで z = 2 の白い板を照らすと、画素 (4, 4) の色は
-    // その画素の world の点 (0.25, −0.25, 2)・法線 (0, 0, −1) での lightAt と同じ。
+    // その画素の world の点 (0.25, −0.25, 2)・法線 (0, 0, −1) での lightAt（環境光を線形の量へ戻した場面）を画面の値へ戻した色。
     @Test
     def testSceneWithoutShadowMatchesLightAt(): Unit \ {Assert, IO} =
         let spot = { color = white(), range = 4.0 | Scene3d.spotLight(Vec3.zero(), Vec3.v3(0.0, 0.0, 2.0), 1.5707963267948966) };
         let scene = spotLit(spot, plate(white(), 2.0, -2.0, 2.0, -2.0, 2.0) :: Nil);
-        let light = SoftRaster3d.lightAt(scene#environment, Nil, spot :: Nil, Vec3.v3(0.25, -0.25, 2.0), Vec3.v3(0.0, 0.0, -1.0));
-        Assert.assertEq(expected = channels(SoftRaster.argbOfRgba(light#r, light#g, light#b, 1.0)), pixel(render(scene), 4, 4))
+        let env = { ambient = Texture3d.srgbToLinearColor(scene#environment#ambient) | scene#environment };
+        let light = SoftRaster3d.lightAt(env, Nil, spot :: Nil, Vec3.v3(0.25, -0.25, 2.0), Vec3.v3(0.0, 0.0, -1.0));
+        let screen = Texture3d.linearToSrgb;
+        Assert.assertEq(expected = channels(SoftRaster.argbOfRgba(screen(light#r), screen(light#g), screen(light#b), 1.0)), pixel(render(scene), 4, 4))
 
     // ── スポットの内側の角（innerFovY）──
     // 原点から +Z を向く縦の画角 1.0（半角 0.5）のスポットで、距離 1・光へ向いた面の点を照らす。環境光は黒。

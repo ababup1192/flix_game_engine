@@ -6,6 +6,7 @@
 mod PixelDiff {
     import java.awt.image.BufferedImage
     import java.io.File
+    import java.lang.System
     import javax.imageio.ImageIO
 
     /// 1 scene ぶんの比較結果。diffPx = RGB が違う画素数（読めない・寸法違いは -1）、
@@ -91,6 +92,46 @@ mod PixelDiff {
             sheet.setRGB(w, 0, gap(), h, bar, 0, gap());
             sheet.setRGB(w * 2 + gap(), 0, gap(), h, bar, 0, gap());
             writePng(sheet, path)
+        }
+
+    /// フォルダ dir の *.png の名前（並べ替え済み・読めなければ空）。
+    def pngNames(dir: String): List[String] \ IO =
+        let names = (new File(dir)).list();
+        if (Object.isNull(names)) Nil
+        else Array.toList(names) |> List.filter(n -> String.endsWith(suffix = ".png", n)) |> List.sort
+
+    /// 2 つのフォルダの同じ名前の PNG を比べた 1 行（寸法が違う・読めない時もその旨の 1 行）。
+    def dirLine(a: String, b: String, name: String): String \ IO =
+        match (readPng("${a}/${name}"), readPng("${b}/${name}")) {
+            case (Some(x), Some(y)) =>
+                let w = x.getWidth();
+                let h = x.getHeight();
+                if (w != y.getWidth() or h != y.getHeight()) "[diff-dirs] ${name}  寸法が違う ${w}x${h} / ${y.getWidth()}x${y.getHeight()}"
+                else {
+                    let (px, mx) = diffStats(x, y, w, h);
+                    if (px == 0) "[diff-dirs] ${name}  一致" else "[diff-dirs] ${name}  max ±${mx}  ${px} px"
+                }
+            case _ => "[diff-dirs] ${name}  読めない"
+        }
+
+    /// 環境変数 DIFF_A と DIFF_B のフォルダの、同じ名前の PNG を RGB で比べ「名前・成分の差の最大・違う画素の数」を 1 行ずつ出す。
+    /// 片方にしか無い名前も 1 行ずつ出す。違いがあっても exit は 0（知らせるだけ）。
+    pub def diffDirs(): Unit \ IO =
+        let a = System.getenv("DIFF_A");
+        let b = System.getenv("DIFF_B");
+        if (Object.isNull(a) or Object.isNull(b)) println("[diff-dirs] DIFF_A と DIFF_B にフォルダを置く")
+        else {
+            let inA = pngNames(a);
+            let inB = pngNames(b);
+            let setB = List.toSet(inB);
+            let setA = List.toSet(inA);
+            let both = inA |> List.filter(n -> Set.memberOf(n, setB));
+            let lines = both |> List.map(n -> dirLine(a, b, n));
+            List.forEach(println, lines);
+            inA |> List.filter(n -> not Set.memberOf(n, setB)) |> List.forEach(n -> println("[diff-dirs] ${n}  A だけにある"));
+            inB |> List.filter(n -> not Set.memberOf(n, setA)) |> List.forEach(n -> println("[diff-dirs] ${n}  B だけにある"));
+            let differ = lines |> List.count(l -> not String.endsWith(suffix = "一致", l));
+            println("[diff-dirs] 比べた ${List.length(both)} 枚・違う ${differ} 枚（A ${a} / B ${b}）")
         }
 
     /// 親フォルダを掘ってから PNG を書く（gl_parity 内の唯一の書き口 — Main も使う）。

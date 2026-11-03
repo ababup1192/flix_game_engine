@@ -319,7 +319,7 @@ mod TestShaderWorld3d {
         let read = Field.Tex({ name = "ramp", chan = ShaderDoc.TexChan.R });
         let field = if (linear) Field.Sampler({ filter = ShaderDoc.FilterMode.Linear, of = read }) else read;
         let compiled = ShaderEval.compileMaterial({ spec = alphaSpec(field), emission = None, params = Map.empty(),
-                                                    textures = Map#{ "ramp" => List.toVector(Mip.build(redRamp())) }, repeat = repeat });
+                                                    textures = Map#{ "ramp" => List.toVector(Mip.build(Mip.Average.Raw, redRamp())) }, repeat = repeat });
         let at = (x: Float64) -> { uv = { x = x, y = 0.5 } | point(v3(0.0, 0.0, 0.0), up()) };
         ShaderEval.evalMaterial3Mip(compiled, at(u), at(u + du), at(u), 0.0)#alpha
 

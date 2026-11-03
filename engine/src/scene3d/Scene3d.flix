@@ -7,6 +7,12 @@
 // 表の面 = 外から見て頂点が時計回り。法線はその巻き方で cross(b − a, c − a) が外を向く。
 // GL の右手系の clip 空間へは viewMatrix で Z を反転して渡す。Z の反転は画面の上の x・y を変えないので、
 // 表の面は画面の上でも時計回りに写る（GL では glFrontFace(GL_CW) で表になる）。
+//
+// 3D の色: 書く値（材質の Spec・tint・頂点の色・光の color・ambient・かすみ・空・絵）は 2D と同じ画面の値（sRGB の値）。
+// 描き手は 3D の中だけそれを線形の量へ戻してから光を足し掛けし、3D の色を作った直後に 1 回だけ画面の値へ戻す
+// （半透明の混ぜ・MSAA・後処理・2D は画面の値のまま）。光の intensity・range・hemisphere・lightmap の intensity・
+// emissionIntensity は線形の量。法線マップ・影の地図・Output.Depth の灰色・background は変換しない。
+// 1 版だけ、作業場の project.json の "scene3dLinearColor": false で画素の値のまま計算する式に戻せる（0.80.0 で消える）。
 
 /// 3D の場面 1 つの中身（光・環境・置いた物・ビルボード）と、Shader 効果へ渡す命令。
 pub mod Scene3d {
@@ -83,11 +89,13 @@ pub mod Scene3d {
     /// normalMap = 法線マップ（None なら頂点の法線のまま）・wrap = spec の Tex が 0..1 の外の uv を読む時の読み方（法線マップにも掛かる）・
     /// blend = 真なら spec の α で下の絵に重ねる半透明（深度は読むが書かない。描く順は blendOrderOf）・
     /// doubleSided = 真なら裏の面も描く（裏の面は光の計算の法線を裏返す）・
+    /// emissionIntensity = emission を線形の量に戻した後に掛ける倍率（PointLight の intensity と同じ意味・既定 1）・
     /// shaderHash = GLSL を決める中身（spec と emission）の鍵（ShaderGen.hashMaterial。params・cutout などは入れない。GL が材質のプログラムを引く。初めて読んだ時に求める）。
     /// spec の Tex の名前は、"tex3d:" で始まれば場面の textures（Texture3d.name）、ほかは全体の登録（project.json の textures・
     /// レンダーターゲット）から引く。無い名前は 0（黒・透明）。1 つの材質が読める (名前, 補間) の組は maxMaterialTextures() まで。
     pub type alias MaterialFields = { spec = ShaderDoc.Spec, params = Map[String, Float64], cutout = Bool, emission = Option[ShaderDoc.Shade],
-                                      normalMap = Option[NormalMap], wrap = Wrap, blend = Bool, doubleSided = Bool, shaderHash = Lazy[Int64] }
+                                      normalMap = Option[NormalMap], wrap = Wrap, blend = Bool, doubleSided = Bool, emissionIntensity = Float64,
+                                      shaderHash = Lazy[Int64] }
 
     enum MaterialData { case MaterialData(MaterialFields) }
 
@@ -97,7 +105,7 @@ pub mod Scene3d {
     /// spec だけの材質（params 空・cutout なし・emission なし・法線マップなし・Repeat・不透明・表の面だけ）。
     pub def material(spec: ShaderDoc.Spec): Material3d =
         MaterialData.MaterialData({ spec = spec, params = Map.empty(), cutout = false, emission = None, normalMap = None, wrap = Wrap.Repeat,
-                                    blend = false, doubleSided = false, shaderHash = shaderHashOf(spec, None) })
+                                    blend = false, doubleSided = false, emissionIntensity = 1.0, shaderHash = shaderHashOf(spec, None) })
 
     /// spec と emission の鍵を、初めて読まれた時に求める形で持つ。
     // WhyNot: 作る時にすぐ求めない — View で毎コマ材質を組み直すゲームでは、CPU の描き出しのように鍵を読まない描き手でも払うことになる。
@@ -131,14 +139,22 @@ pub mod Scene3d {
 
     /// 光の計算の後に足す、自分で光る色（かすみに沈まない）。名前は替えなくてよい（GL は spec と emission の中身の鍵でプログラムを引く）。
     /// 毎コマ変わる数（明滅の強さ）は木の Const に入れず、ShaderDoc の param にして withParams で渡す（木の数が変わると GL がプログラムを組み直す）。
+    /// emissionIntensity はそのまま残る（glb の emissive_strength の付いた材質で差し替えた色も、その倍率で光る。戻すなら withEmissionIntensity(1.0, ..)）。
     pub def withEmission(s: ShaderDoc.Shade, m: Material3d): Material3d =
         let MaterialData.MaterialData(r) = m;
         MaterialData.MaterialData({ emission = Some(s), shaderHash = shaderHashOf(r#spec, Some(s)) | r })
 
-    /// emission を外す（glb の emissive で光らせたくない時）。
+    /// emission を外す（glb の emissive で光らせたくない時）。emissionIntensity も 1 に戻す。
     pub def withoutEmission(m: Material3d): Material3d =
         let MaterialData.MaterialData(r) = m;
-        MaterialData.MaterialData({ emission = None, shaderHash = shaderHashOf(r#spec, None) | r })
+        MaterialData.MaterialData({ emission = None, emissionIntensity = 1.0, shaderHash = shaderHashOf(r#spec, None) | r })
+
+    /// emission を線形の量に戻した後に掛ける倍率 k（既定 1。Godot の emission_energy_multiplier・Unity の Emission Intensity と同じ分け方）。
+    /// 1 を超える明るさ（glTF の emissive_strength など）は emission の Spec に書かずにここで渡す — Spec は画面の値（sRGB の値）で、
+    /// 線形へ戻すと 1 を超える値は 1 次より強く伸びる（2.0 → 約 4.95）。毎コマ変えてもプログラムを組み直さない（描く物ごとの uniform）。
+    pub def withEmissionIntensity(k: Float64, m: Material3d): Material3d =
+        let MaterialData.MaterialData(r) = m;
+        MaterialData.MaterialData({ emissionIntensity = k | r })
 
     /// spec の名前だけを替える（知らせの文面・GL のプログラムの名前に出る）。木の違う材質に別の名前を付けなくてよい
     /// — GL は spec と emission の中身の鍵でプログラムを引くので、同じ名前で木の違う材質が並んでも組み直さない。

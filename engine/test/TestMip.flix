@@ -10,24 +10,50 @@ mod TestMip {
     /// 奇数の辺は floor(n / 2) へ縮み、1 × 1 で止まる（5 × 3 → 2 × 1 → 1 × 1）。
     @Test
     def testBuildHalvesOddSidesDownToOne(): Unit \ Assert =
-        Assert.assertEq(expected = (5, 3) :: (2, 1) :: (1, 1) :: Nil, sizes(Mip.build(flat(5, 3))))
+        Assert.assertEq(expected = (5, 3) :: (2, 1) :: (1, 1) :: Nil, sizes(Mip.build(Mip.Average.Raw, flat(5, 3))))
 
     /// 1 × 1 の絵は段 0 だけ。
     @Test
     def testBuildOfOneTexelIsItself(): Unit \ Assert =
-        Assert.assertEq(expected = 1, List.length(Mip.build(flat(1, 1))))
+        Assert.assertEq(expected = 1, List.length(Mip.build(Mip.Average.Raw, flat(1, 1))))
 
     /// 次の段のテクセルは 2 × 2 の成分ごとの平均（(和 + 2) / 4 の切り捨て）。赤 0・85・170・255 の 2 × 2 → 赤 128。
     @Test
     def testBuildAveragesFourTexels(): Unit \ Assert =
-        let level1 = Mip.build(tex(2, 2, Vector#{ 0x00000000, 0x00550000, 0x00aa0000, 0x00ff0000 })) |> List.drop(1) |> List.head;
+        let level1 = Mip.build(Mip.Average.Raw, tex(2, 2, Vector#{ 0x00000000, 0x00550000, 0x00aa0000, 0x00ff0000 })) |> List.drop(1) |> List.head;
         Assert.assertEq(expected = Some(Vector#{ 0x00800000 }), Option.map(t -> t#pixels, level1))
 
     /// はみ出す行は端の行を繰り返す（高さ 1 の 2 × 1 は、同じ行を 2 回足した平均）。
     @Test
     def testBuildRepeatsEdgeRow(): Unit \ Assert =
-        let level1 = Mip.build(tex(2, 1, Vector#{ 0x00000000, 0x00550000 })) |> List.drop(1) |> List.head;
+        let level1 = Mip.build(Mip.Average.Raw, tex(2, 1, Vector#{ 0x00000000, 0x00550000 })) |> List.drop(1) |> List.head;
         Assert.assertEq(expected = Some(Vector#{ 0x002b0000 }), Option.map(t -> t#pixels, level1))
+
+    /// SrgbCurve: 白と黒の市松（2 × 2）の 1 段上は線形の 0.5 を 8bit の sRGB の値にした 188。
+    @Test
+    def testSrgbCurveAveragesCheckerTo188(): Unit \ Assert =
+        let level1 = Mip.build(Mip.Average.SrgbCurve, tex(2, 2, Vector#{ 0x00ffffff, 0x00000000, 0x00000000, 0x00ffffff })) |> List.drop(1) |> List.head;
+        Assert.assertEq(expected = Some(Vector#{ 0x00bcbcbc }), Option.map(t -> t#pixels, level1))
+
+    /// SrgbCurve の rgb は 4 つの線形の量の平均を linearToSrgb × 255 の四捨五入へ戻した値（赤 0・85・170・255）。
+    @Test
+    def testSrgbCurveMatchesLinearMeanRounded(): Unit \ Assert =
+        let mean = (Texture3d.srgbToLinear(85.0 / 255.0) + Texture3d.srgbToLinear(170.0 / 255.0) + 1.0) / 4.0;
+        let red = Float64.round(Texture3d.linearToSrgb(mean) * 255.0) |> Float64.tryToInt32 |> Option.getWithDefault(-1);
+        let level1 = Mip.build(Mip.Average.SrgbCurve, tex(2, 2, Vector#{ 0x00000000, 0x00550000, 0x00aa0000, 0x00ff0000 })) |> List.drop(1) |> List.head;
+        Assert.assertEq(expected = Some(Vector#{ Int32.leftShift(red, 16) }), Option.map(t -> t#pixels, level1))
+
+    /// SrgbCurve でも α は 8bit の値のまま平均する（α 0 と 64 の市松 → 32）。
+    @Test
+    def testSrgbCurveKeepsRawAlphaMean(): Unit \ Assert =
+        let level1 = Mip.build(Mip.Average.SrgbCurve, tex(2, 2, Vector#{ 0x40000000, 0x00000000, 0x00000000, 0x40000000 })) |> List.drop(1) |> List.head;
+        Assert.assertEq(expected = Some(Vector#{ 0x20000000 }), Option.map(t -> t#pixels, level1))
+
+    /// Raw は同じ市松を 8bit の値のまま平均する（128）。
+    @Test
+    def testRawAveragesCheckerTo128(): Unit \ Assert =
+        let level1 = Mip.build(Mip.Average.Raw, tex(2, 2, Vector#{ 0x00ffffff, 0x00000000, 0x00000000, 0x00ffffff })) |> List.drop(1) |> List.head;
+        Assert.assertEq(expected = Some(Vector#{ 0x00808080 }), Option.map(t -> t#pixels, level1))
 
     def still(): Mip.Derivatives = { dudx = 0.0, dvdx = 0.0, dudy = 0.0, dvdy = 0.0 }
 

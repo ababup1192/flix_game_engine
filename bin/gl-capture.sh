@@ -2,7 +2,8 @@
 # gl-capture.sh — テンプレートの場面を実機の GL（隠しウィンドウ）で起動し、頭の数コマの絵を撮って SHA-256 を控える。
 #
 #   bin/gl-capture.sh <出力のフォルダ> [<フォルダ>:<START の字> ...]   撮る（フォルダは engine の根から。場面を省くと下の既定の場面）
-#   bin/gl-capture.sh --compare <A> <B>                                2 回の SHA を比べる（フォルダか SHA の一覧のファイル。違えば exit 1）
+#   bin/gl-capture.sh --compare <A> <B> [--skip <フォルダ名> ...]       2 回の SHA を比べる（フォルダか SHA の一覧のファイル。違えば exit 1）
+#                                                                      --skip は撮った物のフォルダ名（例 scene3d・rpg-starter__title）と完全に一致する場面を比べない
 #
 # 組む口: FLIX_GE_HIDDEN（framebuffer を design の大きさに固定）・FLIX_GE_FRAME_SHOT（swap の直前の絵を frame-N.png へ）・
 # FLIX_GE_FIXED_DT（dt を固定。2 コマ目以降もバイトで比べられる）・FLIX_GE_MUTE・START（App.withStarts の場面から起動）。
@@ -42,13 +43,26 @@ default_scenes=(
 	"bench/scene3d:"
 )
 
-# 比べる相手はフォルダ（中の SHA256SUMS）か SHA の一覧のファイル（bench/baseline/<版>/gl-capture.sha256）。# の行は読まない。
+# 比べる相手はフォルダ（中の SHA256SUMS）か SHA の一覧のファイル（bench/baseline/<版>/gl-capture.sha256）。# の行と、
+# skipped（空白で区切ったフォルダ名。撮る時に START の空白は _ にしてある）に入る場面の行は読まない。
+skipped=""
 sums_of() {
-	if [ -d "$1" ]; then grep -v '^#' "$1/SHA256SUMS"; else grep -v '^#' "$1"; fi
+	local src
+	if [ -d "$1" ]; then src="$1/SHA256SUMS"; else src="$1"; fi
+	grep -v '^#' "$src" | awk -v skip="$skipped" 'BEGIN { n = split(skip, s, " "); for (i = 1; i <= n; i++) if (s[i] != "") drop[s[i]] = 1 }
+		{ dir = $2; sub(/\/.*$/, "", dir); if (!(dir in drop)) print }'
 }
 
 if [ "${1:-}" = "--compare" ]; then
-	if [ $# -ne 3 ]; then echo "usage: $0 --compare <A> <B>" >&2; exit 2; fi
+	if [ $# -lt 3 ]; then echo "usage: $0 --compare <A> <B> [--skip <フォルダ名> ...]" >&2; exit 2; fi
+	a=$2 b=$3
+	shift 3
+	while [ $# -gt 0 ]; do
+		if [ "$1" = --skip ] && [ $# -ge 2 ]; then skipped="$skipped$2 "; shift 2
+		else echo "usage: $0 --compare <A> <B> [--skip <フォルダ名> ...]" >&2; exit 2; fi
+	done
+	[ -z "$skipped" ] || echo "[gl-capture] 比べない場面: $skipped"
+	set -- --compare "$a" "$b"
 	if diff -u <(sums_of "$2") <(sums_of "$3"); then
 		echo "[gl-capture] 一致: $(sums_of "$2" | wc -l | tr -d ' ') 枚がバイトまで同じ"
 		exit 0

@@ -26,7 +26,7 @@ mod Render3d {
     import org.lwjgl.opengl.GL20
     import org.lwjgl.opengl.GL30
     import org.lwjgl.opengl.GL31
-    use Render3dGlsl.{meshVertexSource, skinnedMeshVertexSource, litFragmentSource,
+    use Render3dGlsl.{meshVertexSource, skinnedMeshVertexSource, litVertexSource, litFragmentSource,
                        depthFragmentSource, billboardVertexSource, billboardFragmentSource, skyFragmentSource, blitVertexSource, blitFragmentSource}
     use Render3d.Shadow.{bindShadowMap, putShadow, renderShadows, sweepShadowTargets, unbindShadowMap}
     use Render3d.Material.{drawMaterials, resolveTextureAs, splitByMaterial, sweepMaterials, sweepTextures3d}
@@ -82,7 +82,7 @@ mod Render3d {
         ambient = Int32, hemisphere = Int32, toonSteps = Int32,
         pointCount = Int32, pointPos = Int32, pointColor = Int32, pointRange = Int32,
         spotCount = Int32, spotPos = Int32, spotDir = Int32, spotColor = Int32, spotRange = Int32, spotCone = Int32,
-        fogOn = Int32, fogColor = Int32, fogRange = Int32, eye = Int32
+        fogOn = Int32, fogColor = Int32, fogRange = Int32, eye = Int32, linearColor = Int32
     }
 
     type alias MeshLocs = { program = Int32, model = Int32, view = Int32, proj = Int32, normal = Int32 }
@@ -108,7 +108,7 @@ mod Render3d {
 
     /// 空のプログラムの uniform の location。
     type alias SkyLocs = { program = Int32, viewport = Int32, forward = Int32, right = Int32, up = Int32,
-                           zenith = Int32, horizon = Int32, ground = Int32, curve = Int32, depthOut = Int32 }
+                           zenith = Int32, horizon = Int32, ground = Int32, curve = Int32, depthOut = Int32, linearColor = Int32 }
 
     /// 骨つきの版のプログラムと、joint 行列の UBO（std140 の mat4 × Skin3d.maxJoints()）と、その UBO へ最後に書いた中身。
     type alias SkinnedPrograms = { lit = LitLocs, depth = DepthLocs, jointsUbo = Int32, uploadedJoints = Ref[Array[Float32, Static], Static] }
@@ -123,7 +123,7 @@ mod Render3d {
         mesh = MeshLocs, tint = Int32, light = LightLocs, shadow = ShadowLocs, time = Int32, cutout = Int32,
         depthOut = Int32, depthRange = Int32, params = List[Int32], texFlips = List[Int32],
         normalStrength = Int32, normalFlip = Int32, texLevels = List[Int32], normalLevels = Int32,
-        lightmapLevels = Int32, lightmapSrgb = Int32, lightmapIntensity = Int32
+        lightmapLevels = Int32, lightmapSrgb = Int32, lightmapIntensity = Int32, emissionIntensity = Int32
     }
 
     /// 組んだ材質のプログラム 1 つ。spec と emission は組んだ時の物（次に来た材質と比べる）。
@@ -181,7 +181,8 @@ mod Render3d {
         pointCount = Int32, pointPos = Array[Float32, Static], pointColor = Array[Float32, Static], pointRange = Array[Float32, Static],
         spotCount = Int32, spotPos = Array[Float32, Static], spotDir = Array[Float32, Static], spotColor = Array[Float32, Static],
         spotRange = Array[Float32, Static], spotCone = Array[Float32, Static],
-        fogOn = Int32, fogColor = Array[Float32, Static], fogRange = Array[Float32, Static], eye = Array[Float32, Static]
+        fogOn = Int32, fogColor = Array[Float32, Static], fogRange = Array[Float32, Static], eye = Array[Float32, Static],
+        linearColor = Int32
     }
 
     /// 3D の描き手の状態（GL の文脈ごとに 1 つ）。meshesRef = contentHash → GPU に置いたメッシュ。
@@ -234,7 +235,9 @@ mod Render3d {
         // 場面について知らせ済みの鍵（見つからない絵・上限を超えた材質と光・場面の絵の置き場あふれ・空・lightmap・uv の無い法線マップ）。
         sceneWarnedRef = Ref[Set[String], Static],
         // 前に takeCounts してからの数（[置いた物, 描いた物, draw call, 落とした点光源, 落としたスポット]。FrameDiagnostics.Diagnostics.scene3dCounts の元）。
-        countsHolder = Array[Int32, Static]
+        countsHolder = Array[Int32, Static],
+        // 3D の色を線形の量で計算するか（project.json の scene3dLinearColor。GL の文脈を作る時に 1 回だけ決める。0.80.0 で消える）。
+        linearColor = Bool
     }
 
     // ── 決まりの数 ──
@@ -273,8 +276,9 @@ mod Render3d {
     pub def textureBudgetOf(config: GameEngine.EngineConfig): TextureBudget =
         { megabytes = config#scene3dTextureBudgetMB, count = config#scene3dTextureBudgetCount }
 
-    /// 3D の描き手を、空の置き場で作る（textureBudget = 場面の絵の置き場の上限）。
-    pub def fresh(textureBudget: TextureBudget): State \ IO =
+    /// 3D の描き手を、空の置き場で作る（textureBudget = 場面の絵の置き場の上限・linearColor = 3D の色を線形の量で計算するか。
+    /// 偽なら 0.78 の式。GameEngine.loadScene3dLinearColor の値を渡す。0.80.0 で消える引数）。
+    pub def fresh(textureBudget: TextureBudget, linearColor: Bool): State \ IO =
         { textureByteBudget = Int32.toInt64(Int32.max(1, textureBudget#megabytes)) * 1048576i64,
           textureCountBudget = Int32.max(1, textureBudget#count), meshesRef = Ref.fresh(Static, Map.empty()), vertexTotal = Array#{0} @ Static,
           uploadStreak = Array#{0, 0, 0} @ Static, materialStreak = Array#{0, 0, 0} @ Static, programsRef = Ref.fresh(Static, None),
@@ -286,7 +290,7 @@ mod Render3d {
           shadowWarnedRef = Ref.fresh(Static, Set.empty()), textures3dRef = Ref.fresh(Static, Map.empty()),
           materialSamplers = Array#{0, 0, 0, 0, 0, 0, 0, 0} @ Static, mipCopiesRef = Ref.fresh(Static, Map.empty()),
           blankTexture = Array#{0} @ Static,
-          sceneWarnedRef = Ref.fresh(Static, Set.empty()), countsHolder = Array#{0, 0, 0, 0, 0} @ Static }
+          sceneWarnedRef = Ref.fresh(Static, Set.empty()), countsHolder = Array#{0, 0, 0, 0, 0} @ Static, linearColor = linearColor }
 
     /// 前に呼んでからの 3D の数（置いた物・描いた物・draw call・落とした点光源とスポット）を返し、0 に戻す。
     pub def takeCounts(state: State): FrameDiagnostics.Scene3dCounts \ IO =
@@ -464,7 +468,7 @@ mod Render3d {
         if (area#fillBackground) drawSky(state, area#viewport, scene) else ();
         let picked = Scene3d.pickLights(scene#camera#eye, scene);
         noteDroppedLights(state, scene);
-        let lights = lightDataOf(picked);
+        let lights = lightDataOf(picked, state#linearColor);
         let view = matrixArray(Camera3d.viewMatrix(scene#camera));
         let proj = matrixArray(Camera3d.projectionMatrix(scene#camera, Scene3d.aspectOf(scene)));
         let camera = { view = view, proj = proj, lights = lights, shadow = shadow, frustum = frustum };
@@ -514,17 +518,18 @@ mod Render3d {
                    plain: List[MeshDraw], materials: List[MaterialDraw]): Unit \ IO =
         let culledMaterials = List.filter(d -> d#draw#culled, materials);
         culledMaterials |> List.forEach(d ->
-            materialTextureNames(d) |> List.forEach(lt -> discard resolveTextureAs(state, gen, source, fst(lt), snd(lt))));
+            materialTextureNames(d) |> List.forEach(lt -> { let (label, name, textureUse) = lt; discard resolveTextureAs(state, gen, source, label, name, textureUse) }));
         if (List.isEmpty(culledMaterials)) () else GL13.glActiveTexture(GL13.GL_TEXTURE0);
         countInstances(state, total, List.count(d -> not d#culled, plain) + List.count(d -> not d#draw#culled, materials))
 
-    /// 材質のある物 d を描く時に貼る絵の (知らせの中の呼び名, 名前)（材質の絵・法線マップ・lightmap。描く時の知らせと同じ呼び名）。
-    def materialTextureNames(d: MaterialDraw): List[(String, String)] =
+    /// 材質のある物 d を描く時に貼る絵の (知らせの中の呼び名, 名前, 使い方)（材質の絵・法線マップ・lightmap。描く時の知らせと同じ呼び名・同じ段の鍵）。
+    def materialTextureNames(d: MaterialDraw): List[(String, String, Texture3d.TextureUse)] =
         let reads = if (List.isEmpty(d#entry#texReads)) Nil
                     else ShaderDoc.materialTexReads(d#material#spec, d#material#emission) |> List.take(Scene3d.maxMaterialTextures())
-                        |> List.map(nf -> ("材質の絵", fst(nf)));
-        let normal = if (d#entry#normalMapped) d#material#normalMap |> Option.toList |> List.map(n -> ("材質の絵", n#texture)) else Nil;
-        let baked = if (d#entry#lightmapped) Scene3d.lightmapOfFields(d#draw#fields) |> Option.toList |> List.map(lm -> ("lightmap の絵", lm#texture)) else Nil;
+                        |> List.map(nf -> ("材質の絵", fst(nf), Texture3d.TextureUse.MaterialTexture));
+        let normal = if (d#entry#normalMapped) d#material#normalMap |> Option.toList |> List.map(n -> ("材質の絵", n#texture, Texture3d.TextureUse.NormalMap)) else Nil;
+        let baked = if (d#entry#lightmapped) Scene3d.lightmapOfFields(d#draw#fields) |> Option.toList
+                        |> List.map(lm -> ("lightmap の絵", lm#texture, Texture3d.TextureUse.Lightmap(lm#colorSpace))) else Nil;
         List.flatten(reads :: normal :: baked :: Nil)
 
     /// 深度を使い始める: viewport と scissor を合わせ、地の色と深度を scissor の中だけ消し、深度とカリングを有効にする。
@@ -564,9 +569,10 @@ mod Render3d {
                 putVec3(locs#forward, basis#forward);
                 putVec3(locs#right, basis#right);
                 putVec3(locs#up, basis#up);
-                putColor(locs#zenith, f#zenith);
-                putColor(locs#horizon, f#horizon);
-                putColor(locs#ground, f#ground);
+                putLinearizedColor(state, locs#zenith, f#zenith);
+                putLinearizedColor(state, locs#horizon, f#horizon);
+                putLinearizedColor(state, locs#ground, f#ground);
+                GL20.glUniform1i(locs#linearColor, if (state#linearColor) 1 else 0);
                 GL20.glUniform1f(locs#curve, RenderUtil.f32(Scene3d.skyCurveOf(sky)));
                 GL20.glUniform1i(locs#depthOut, match scene#output {
                     case Scene3d.Output.Color    => 0
@@ -615,7 +621,7 @@ mod Render3d {
             putLights(locs#light, camera#lights);
             putShadow(locs#shadow, camera#shadow);
             instances |> List.forEach(d -> {
-                if (d#culled) () else putColor(locs#tint, d#fields#tint);
+                if (d#culled) () else putLinearizedColor(state, locs#tint, d#fields#tint);
                 drawPosedMesh(state, gen, locs#mesh, d)
             })
         }
@@ -641,6 +647,10 @@ mod Render3d {
 
     def putColor(loc: Int32, c: Color): Unit \ IO =
         GL20.glUniform3f(loc, RenderUtil.f32(c#r), RenderUtil.f32(c#g), RenderUtil.f32(c#b))
+
+    /// 場面の色（tint・空の色）を、3D の色を線形の量で計算する描き手なら線形へ戻してから入れる（光の色・ambient・かすみは lightDataOf）。
+    def putLinearizedColor(state: State, loc: Int32, c: Color): Unit \ IO =
+        putColor(loc, if (state#linearColor) Texture3d.srgbToLinearColor(c) else c)
 
     def putDepthRange(loc: Int32, depthRange: { near = Float64, range = Float64 }): Unit \ IO =
         GL20.glUniform2f(loc, RenderUtil.f32(depthRange#near), RenderUtil.f32(Float64.max(0.000001, depthRange#range)))
@@ -950,7 +960,7 @@ mod Render3d {
                 GL20.glUniform2f(locs#anchor, RenderUtil.f32(b#anchor#x), RenderUtil.f32(b#anchor#y));
                 GL20.glUniform2f(locs#size, RenderUtil.f32(b#size#x), RenderUtil.f32(b#size#y));
                 putUvRect(locs#uvRect, texture, b#regionRect);
-                GL20.glUniform3f(locs#tint, RenderUtil.f32(b#tint#r), RenderUtil.f32(b#tint#g), RenderUtil.f32(b#tint#b));
+                putLinearizedColor(state, locs#tint, b#tint);
                 GL20.glUniform1i(locs#lit, if (b#lit) 1 else 0);
                 GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 6);
                 countDrawCall(state)
@@ -983,12 +993,15 @@ mod Render3d {
 
     // ── 光 ──
 
-    /// 光を uniform の並びへ詰める（点光源・スポットは選んだ後の物）。
-    def lightDataOf(scene: Scene3d.Scene3dCmd): LightData \ IO =
-        let env = scene#environment;
+    /// 光を uniform の並びへ詰める（点光源・スポットは選んだ後の物）。linear なら光の color・ambient・かすみの色を線形の量へ戻してから詰め、
+    /// uLinearColor を 1 にする（hemisphere・intensity・range は線形の量のまま）。
+    def lightDataOf(scene: Scene3d.Scene3dCmd, linear: Bool): LightData \ IO =
+        let toLinear = (c: Color) -> if (linear) Texture3d.srgbToLinearColor(c) else c;
+        let env = { ambient = toLinear(scene#environment#ambient),
+                    fog = scene#environment#fog |> Option.map(f -> { color = toLinear(f#color) | f }) | scene#environment };
         let eye = scene#camera#eye;
-        let points = scene#pointLights;
-        let spots = scene#spotLights;
+        let points = scene#pointLights |> List.map(l -> { color = toLinear(l#color) | l });
+        let spots = scene#spotLights |> List.map(l -> { color = toLinear(l#color) | l });
         let pointPos = Array.repeat(Static, 3 * Scene3d.maxPointLights(), 0.0f32);
         let pointColor = Array.repeat(Static, 3 * Scene3d.maxPointLights(), 0.0f32);
         let pointRange = Array.repeat(Static, Scene3d.maxPointLights(), 1.0f32);
@@ -1013,7 +1026,8 @@ mod Render3d {
           pointCount = List.length(points), pointPos = pointPos, pointColor = pointColor, pointRange = pointRange,
           spotCount = List.length(spots), spotPos = spot#position, spotDir = spot#direction, spotColor = spot#color,
           spotRange = spot#range, spotCone = spot#cone,
-          fogOn = if (Option.isEmpty(env#fog)) 0 else 1, fogColor = fogColor, fogRange = fogRange, eye = eyeArray }
+          fogOn = if (Option.isEmpty(env#fog)) 0 else 1, fogColor = fogColor, fogRange = fogRange, eye = eyeArray,
+          linearColor = if (linear) 1 else 0 }
 
     def spotArrays(spots: List[Scene3d.SpotLight]): { position = Array[Float32, Static], direction = Array[Float32, Static],
                                                        color = Array[Float32, Static], range = Array[Float32, Static],
@@ -1059,7 +1073,10 @@ mod Render3d {
         GL20.glUniform1i(locs#fogOn, d#fogOn);
         GL20.glUniform3fv(locs#fogColor, d#fogColor);
         GL20.glUniform2fv(locs#fogRange, d#fogRange);
-        GL20.glUniform3fv(locs#eye, d#eye)
+        GL20.glUniform3fv(locs#eye, d#eye);
+        // WhyNot: uLinearColor をプログラムを作った時に 1 回だけ入れない — 後から作る材質のプログラムで入れ忘れると、既定の 0（0.78 の式）で黙って描く。
+        //   光を入れる所はプログラムを使うたびに必ず通るので、ここで一緒に入れる。
+        GL20.glUniform1i(locs#linearColor, d#linearColor)
 
     // ── プログラム ──
 
@@ -1074,7 +1091,7 @@ mod Render3d {
         }
 
     def buildPrograms(): Programs \ IO =
-        let lit = compile(meshVertexSource(), litFragmentSource(), "scene3d:lit");
+        let lit = compile(litVertexSource(false), litFragmentSource(), "scene3d:lit");
         let depth = compile(meshVertexSource(), depthFragmentSource(), "scene3d:depth");
         let billboard = compile(billboardVertexSource(), billboardFragmentSource(), "scene3d:billboard");
         let blit = compile(blitVertexSource(), blitFragmentSource(), "scene3d:blit");
@@ -1091,7 +1108,7 @@ mod Render3d {
                 let made = { program = program, viewport = loc(program, "uViewport"), forward = loc(program, "uForward"),
                              right = loc(program, "uRight"), up = loc(program, "uUp"), zenith = loc(program, "uZenith"),
                              horizon = loc(program, "uHorizon"), ground = loc(program, "uGround"), curve = loc(program, "uCurve"),
-                             depthOut = loc(program, "uDepthOut") };
+                             depthOut = loc(program, "uDepthOut"), linearColor = loc(program, "uLinearColor") };
                 Ref.put(Some(made), state#skyRef);
                 made
         }
@@ -1107,7 +1124,7 @@ mod Render3d {
         }
 
     def buildSkinnedPrograms(): SkinnedPrograms \ IO =
-        let lit = compile(skinnedMeshVertexSource(), litFragmentSource(), "scene3d:lit:skin");
+        let lit = compile(litVertexSource(true), litFragmentSource(), "scene3d:lit:skin");
         let depth = compile(skinnedMeshVertexSource(), depthFragmentSource(), "scene3d:depth:skin");
         bindJointsBlock(lit);
         bindJointsBlock(depth);
@@ -1157,7 +1174,7 @@ mod Render3d {
           spotCount = loc(program, "uSpotCount"), spotPos = loc(program, "uSpotPos"), spotDir = loc(program, "uSpotDir"),
           spotColor = loc(program, "uSpotColor"), spotRange = loc(program, "uSpotRange"), spotCone = loc(program, "uSpotCone"),
           fogOn = loc(program, "uFogOn"), fogColor = loc(program, "uFogColor"), fogRange = loc(program, "uFogRange"),
-          eye = loc(program, "uEye") }
+          eye = loc(program, "uEye"), linearColor = loc(program, "uLinearColor") }
 
     def shadowLocsOf(program: Int32): ShadowLocs \ IO =
         { on = loc(program, "uShadowOn"), spot = loc(program, "uShadowSpot"), matrix = loc(program, "uShadowMatrix"),

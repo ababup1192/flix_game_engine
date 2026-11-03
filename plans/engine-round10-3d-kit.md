@@ -151,7 +151,7 @@ MSAA の FBO と resolve（Pass を読む所の全部・`Target.flix` の histor
 - **MSAA**: 場面の HDR の Pass を `RenderTarget.withMsaa(4, ..)` にし、外階段の手すり・金網の欠けが減るのを見る。F3 で GPU の時間の増え方を見て、`look.json` で切れるようにする。
 
 ### 段 5 の終わりのデモ
-- lightmap の `intensity` を 2.0 に戻し、露出を `exposureStops` 0.6 へ（`docs/lightmap.md` の予告どおり）。
+- lightmap の露出は `intensity` に入れたまま（2.0 × 2^0.6 ≒ 3.03。線形の倍率なのでそのまま正しい。`docs/lightmap.md`）。
 - `look.json`・`lights.json` の光の値を線形の目盛りで合わせ直す。fps3d_lab の look.json 4 本も。
 
 ---
@@ -601,6 +601,7 @@ night_apartment の `Collider`（向きのある箱 × 縦に並べた球・下�
   - MSAA の resolve は線形の値で平均する（Rgba16Float の Pass なら自然にそうなる）
   - スポットの縁の smoothstep は式のまま（光の量に掛かるので、線形でも同じ見え方の意図）
   - lightmap: `Lightmap.colorSpace` を `Texture3d` の側へ移す。露出を `intensity` から `exposureStops` へ戻す（`docs/lightmap.md` の予告）
+  - （round8 rev11 の H1 で、半透明の混ぜ・MSAA の線形・colorSpace の移し・露出を exposureStops へ戻す、の 4 つは落とした。round8 §3）
 - **既定**: 3D を使う全部のゲームの絵が変わる。2D の絵は変えない（round8 の G4）。§10 の Q3 で、1 版だけ project.json `scene3dLinearColor: false` で戻せる口を残すかを聞く。
 - **gl-parity**: round8 の G5 の 3 行に、`skyGradient3d`・`glassPane3d` の線形の版を足す（既存の 3D の行は全部撮り直し＝B 段階の上限の取り直し）。
 
@@ -706,7 +707,7 @@ night_apartment の `Collider`（向きのある箱 × 縦に並べた球・下�
 
 - **Q1. この計画と段 I（2D と 3D を混ぜる・`plans/engine-round10-2d3d-mix.md`）の順** — 推し: **この計画の段 1〜3 を先**。night_apartment を動かしながら進められ、段 I の HD-2D も段 2 の名前つきノード・段 4 の空を使える。番号の重なりは、こちらを `engine-round11-3d-kit.md` にすると直る（名前はこの依頼の指定に従って round10 のままにしてある）。
 - **Q2. リリースの切り方** — 推し: §8（0.75.0 は lightmap だけ、段ごとに 0.76.0〜0.80.0）。
-- **Q3. 段 5 で 3D の絵を一斉に線形へ替えるか** — 推し: **替える。1 版だけ project.json `scene3dLinearColor: false` で戻せる口を残し、次の版で消す**。night_apartment と fps3d_lab は段 5 の中で合わせ直す。
+- **Q3. 段 5 で 3D の絵を一斉に線形へ替えるか** — 推し: **替える。1 版だけ project.json `scene3dLinearColor: false` で戻せる口を残し、次の版で消す**。night_apartment と fps3d_lab は段 5 のデモで合わせ直す（engine の段 5 では直さない。round8 rev11）。
 - **Q4. night_apartment のクロスヘアと名前の 1 行**（`AGENTS.local.md` は「画面に字や HUD を出さない」） — 推し: クロスヘアは 2 px の点を閉じ込めている間だけ。名前と調べた文言は、見ている物を調べた時だけ出す（読む物として必要。終了の確認と同じ例外）。人の注文なので `AGENTS.local.md` を直すかを聞く。
 - **Q5. Studio の中で走らせた時のマウスの閉じ込め** — 推し: 同じ動き（窓は GLFW）。Studio の「止める」で放す。段 1 の実装で 1 回触って確かめ、困るなら Studio から走らせた時は閉じ込めない旗を App に渡す。
 - **Q6. MSAA の掛け方** — 推し: **Pass ごと（`RenderTarget.withMsaa`）だけ**。窓そのもの（`GLFW_SAMPLES`）に掛ける口は 2D の縁も変えるので v1 では作らない（§7）。

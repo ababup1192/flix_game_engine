@@ -108,6 +108,8 @@ pub mod LightModel3d {
         /// lightmap を Srgb で読むなら 1、Linear なら 0。
         case LightmapSrgb
         case LightmapIntensity
+        /// 3D の色を線形の量で計算する描き手なら 1、画素の値（sRGB の値）のまま計算する描き手なら 0（Scene3d の doc の「3D の色」）。
+        case LinearColor
     }
 
     /// 画素ごと・場面ごとの vec3 の入力。
@@ -187,12 +189,14 @@ pub mod LightModel3d {
         let t = ScalarExpr.Pow(ScalarExpr.Max(height, ScalarExpr.Sub(ScalarExpr.Num(0.0), height)), curve);
         Vec3Expr.Mix(Vec3Expr.In(Vec3Input.SkyHorizon), toward, ScalarExpr.Min(ScalarExpr.Num(1.0), t))
 
-    /// lightmap から読んだ値を、光の足し算に入れる画面の値へ。
+    /// lightmap から読んだ値を、光の足し算に入れる値へ（線形の描き手は線形の量のまま・ほかは画面の値へ）。
     def bakedLight(): Vec3Expr =
         let s = Vec3Expr.In(Vec3Input.LightmapColor);
         let linear = Vec3Expr.Select(Cond.Greater(ScalarExpr.In(ScalarInput.LightmapSrgb), ScalarExpr.Num(0.0)), Vec3Expr.SrgbToLinear(s), s);
         let zero = Vec3Expr.Make(ScalarExpr.Num(0.0), ScalarExpr.Num(0.0), ScalarExpr.Num(0.0));
-        Vec3Expr.LinearToSrgb(Vec3Expr.Max(zero, Vec3Expr.Scale(linear, ScalarExpr.In(ScalarInput.LightmapIntensity))))
+        let scaled = Vec3Expr.Max(zero, Vec3Expr.Scale(linear, ScalarExpr.In(ScalarInput.LightmapIntensity)));
+        Vec3Expr.Let("baked", scaled, Vec3Expr.Select(Cond.Greater(ScalarExpr.In(ScalarInput.LinearColor), ScalarExpr.Num(0.0)),
+                                                      Vec3Expr.Ref("baked"), Vec3Expr.LinearToSrgb(Vec3Expr.Ref("baked"))))
 
     def pointLight(): Vec3Expr =
         bindAttenuationAndFacing(Vec3Expr.Scale(Vec3Expr.LightField(Vec3LightField.Color), ScalarExpr.Ref("k")))

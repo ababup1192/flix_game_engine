@@ -26,14 +26,21 @@ pub mod SoftRaster3dLight {
         (toon(steps, (((ambientX + sky_0) + points_1X) + spots_2X)), toon(steps, (((ambientY + sky_0) + points_1Y) + spots_2Y)), toon(steps, (((ambientZ + sky_0) + points_1Z) + spots_2Z)))
 
     /// lightmapLightingModel の光の量（lightmap は段つきで読んだ後の rgb を渡す）。
-    pub def lightmapLightAt(steps: Int32, points: Vector[Float64], spots: Vector[Float64], shadow: SoftRaster3d.SpotShadow, pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, lightmapX: Float64, lightmapY: Float64, lightmapZ: Float64, lightmapSrgb: Float64, lightmapIntensity: Float64): (Float64, Float64, Float64) =
+    pub def lightmapLightAt(steps: Int32, points: Vector[Float64], spots: Vector[Float64], shadow: SoftRaster3d.SpotShadow, pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, lightmapX: Float64, lightmapY: Float64, lightmapZ: Float64, lightmapSrgb: Float64, lightmapIntensity: Float64, linearColor: Float64): (Float64, Float64, Float64) =
         let c_1 = (lightmapSrgb > 0.0);
         let t_0X = (if (c_1) Texture3d.srgbToLinear(lightmapX) else lightmapX);
         let t_0Y = (if (c_1) Texture3d.srgbToLinear(lightmapY) else lightmapY);
         let t_0Z = (if (c_1) Texture3d.srgbToLinear(lightmapZ) else lightmapZ);
-        let (points_2X, points_2Y, points_2Z) = lightAtPoints(points, 0, pX, pY, pZ, nX, nY, nZ, 0.0, 0.0, 0.0);
-        let (spots_3X, spots_3Y, spots_3Z) = lightAtSpots(spots, 0, shadow, pX, pY, pZ, nX, nY, nZ, 0.0, 0.0, 0.0);
-        (toon(steps, ((Texture3d.linearToSrgb(Float64.max(0.0, (t_0X * lightmapIntensity))) + points_2X) + spots_3X)), toon(steps, ((Texture3d.linearToSrgb(Float64.max(0.0, (t_0Y * lightmapIntensity))) + points_2Y) + spots_3Y)), toon(steps, ((Texture3d.linearToSrgb(Float64.max(0.0, (t_0Z * lightmapIntensity))) + points_2Z) + spots_3Z)))
+        let baked_2X = Float64.max(0.0, (t_0X * lightmapIntensity));
+        let baked_2Y = Float64.max(0.0, (t_0Y * lightmapIntensity));
+        let baked_2Z = Float64.max(0.0, (t_0Z * lightmapIntensity));
+        let c_4 = (linearColor > 0.0);
+        let t_3X = (if (c_4) baked_2X else Texture3d.linearToSrgb(baked_2X));
+        let t_3Y = (if (c_4) baked_2Y else Texture3d.linearToSrgb(baked_2Y));
+        let t_3Z = (if (c_4) baked_2Z else Texture3d.linearToSrgb(baked_2Z));
+        let (points_5X, points_5Y, points_5Z) = lightAtPoints(points, 0, pX, pY, pZ, nX, nY, nZ, 0.0, 0.0, 0.0);
+        let (spots_6X, spots_6Y, spots_6Z) = lightAtSpots(spots, 0, shadow, pX, pY, pZ, nX, nY, nZ, 0.0, 0.0, 0.0);
+        (toon(steps, ((t_3X + points_5X) + spots_6X)), toon(steps, ((t_3Y + points_5Y) + spots_6Y)), toon(steps, ((t_3Z + points_5Z) + spots_6Z)))
 
     /// fogModel の色（fog が無い場面では呼ばない）。
     pub def fogAt(pX: Float64, pY: Float64, pZ: Float64, eyeX: Float64, eyeY: Float64, eyeZ: Float64, colorX: Float64, colorY: Float64, colorZ: Float64, fogColorX: Float64, fogColorY: Float64, fogColorZ: Float64, fogNear: Float64, fogFar: Float64): (Float64, Float64, Float64) =

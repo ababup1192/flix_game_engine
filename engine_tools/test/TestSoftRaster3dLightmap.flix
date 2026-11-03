@@ -101,14 +101,18 @@ mod SoftRaster3d.TestLightmap {
         let img = render({ environment = { hemisphere = 1.0 | base#environment } | base });
         Assert.assertEq(expected = (255, 0, 0, 0), pixel(img, 4, 4))
 
-    // 点光源 1 本を足すと、ベイクした光（灰 100）に、同じ光を環境光 0 の板に当てた分がそのまま足される（丸めの ±1 の内）。
+    // 点光源 1 本を足すと、ベイクした光（灰 100）に、同じ光を環境光 0 の板に当てた分が線形の量どうしで足される
+    // （画面の値の 8bit から戻した量どうしの和なので、丸めの ±2 の内）。
     @Test
     def testPointLightAddsOnTopOfBakedLight(): Unit \ {Assert, IO} =
         let t = grayMap(100);
         let baked = render(withPointLight(sceneOf(t :: Nil, bakedPlate(t, Texture3d.ColorSpace.Srgb, 1.0) :: Nil)));
         let dark = sceneOf(Nil, litPlate() :: Nil);
         let dynamicOnly = render(withPointLight({ environment = { ambient = black() | dark#environment } | dark }));
-        Assert.assertTrue(Int32.abs(red(pixel(baked, 4, 4)) - (100 + red(pixel(dynamicOnly, 4, 4)))) <= 1)
+        let lin = (v: Int32) -> Texture3d.srgbToLinear(Int32.toFloat64(v) / 255.0);
+        let sum = Texture3d.linearToSrgb(lin(100) + lin(red(pixel(dynamicOnly, 4, 4))));
+        let (_, expected, _, _) = channels(SoftRaster.argbOfRgba(sum, sum, sum, 1.0));
+        Assert.assertTrue(Int32.abs(red(pixel(baked, 4, 4)) - expected) <= 2)
 
     // ── baked の式 ──
 
@@ -125,10 +129,17 @@ mod SoftRaster3d.TestLightmap {
     def testSrgbHalfWithIntensityTwoIsAbout0686(): Unit \ Assert =
         Assert.assertTrue(Float64.abs(bakedValue(true, 2.0, 0.5) - 0.686) < 0.001)
 
+    // LinearColor = 1 の描き手では、Srgb の baked は線形の量のまま（s = 0.5・intensity 2 → srgbToLinear(0.5) × 2）。
+    @Test
+    def testLinearColorKeepsBakedLinear(): Unit \ Assert =
+        let (r, _, _) = SoftRaster3dLight.lightmapLightAt(0, Vector.empty(), Vector.empty(), None, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+                                                          0.5, 0.5, 0.5, 1.0, 2.0, 1.0);
+        Assert.assertTrue(Float64.abs(r - Texture3d.srgbToLinear(0.5) * 2.0) < 1.0e-12)
+
     /// 光の無い場面で lightmap から読んだ値 s が光の足し算に入る値（toon なし）。
     def bakedValue(srgb: Bool, intensity: Float64, s: Float64): Float64 =
         let (r, _, _) = SoftRaster3dLight.lightmapLightAt(0, Vector.empty(), Vector.empty(), None, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0,
-                                                    s, s, s, if (srgb) 1.0 else 0.0, intensity);
+                                                    s, s, s, if (srgb) 1.0 else 0.0, intensity, 0.0);
         r
 
     // toonSteps 2 で、ベイクした光 0.2 と点光源の分 0.1 × (1 − 1² / 4²)² ≒ 0.088 は、どちらも 1 つなら 0.25 未満で 0 に丸まるが、
@@ -140,7 +151,7 @@ mod SoftRaster3d.TestLightmap {
         // Srgb・intensity 1 なら baked は読んだ値のまま（上のテスト）なので、0.2 を渡すと baked が 0.2 になる。
         Assert.assertEq(expected = (0.5, 0.5, 0.5),
                         SoftRaster3dLight.lightmapLightAt(env#toonSteps, points, Vector.empty(), None, 0.0, 0.0, 2.0, 0.0, 0.0, -1.0,
-                                                    0.2, 0.2, 0.2, 1.0, 1.0))
+                                                    0.2, 0.2, 0.2, 1.0, 1.0, 0.0))
 
     // ── 段（mip）──
     // 256 × 256 の lightmap の左の 20 列だけが明るい（200・ほかは 40）。画面いっぱい（8 px）の板では 1 px が 32 texel で、
@@ -151,11 +162,11 @@ mod SoftRaster3d.TestLightmap {
         let gray = (v: Int32) -> Int32.bitwiseOr(-16777216, v * 65536 + v * 256 + v);
         Vector.range(0, 256 * 256) |> Vector.map(k -> if (Int32.remainder(k, 256) < 20) gray(200) else gray(40))
 
-    /// 左の帯の lightmap を段の上限 maxLevels で板に貼った画素 (0, 4) と、Mip.build の段 lod をその uv で読んだ値から出した画素。
+    /// 左の帯の lightmap（Srgb）を段の上限 maxLevels で板に貼った画素 (0, 4) と、Mip.build（SrgbCurve）の段 lod をその uv で読んだ値から出した画素。
     def bandPixelAndExpected(maxLevels: Int32, lod: Float64): ((Int32, Int32, Int32, Int32), (Int32, Int32, Int32, Int32)) \ IO =
         let argb = leftBandArgb();
         let t = okOf(Texture3d.fromArgb(256, 256, argb));
-        let chain = List.toVector(Mip.build({ width = 256, height = 256, pixels = argb }));
+        let chain = List.toVector(Mip.build(Mip.Average.SrgbCurve, { width = 256, height = 256, pixels = argb }));
         let (r, g, b) = ShaderEval.sampleMipRgb(chain, { linear = true, repeat = false }, lod, 0.0625, 0.5625);
         let baked = (x: Float64) -> bakedValue(true, 1.0, x);
         let plate = litPlate() |> Scene3d.withLightmap({ maxLevels = maxLevels | Scene3d.lightmap(Texture3d.name(t)) });
@@ -177,7 +188,7 @@ mod SoftRaster3d.TestLightmap {
     // 上限の確かめが意味を持つ前提: 段 1・段 3・段 5 は、その画素で 3 つとも違う値。
     @Test
     def testBandLevelsDifferAtSampledPixel(): Unit \ Assert =
-        let chain = List.toVector(Mip.build({ width = 256, height = 256, pixels = leftBandArgb() }));
+        let chain = List.toVector(Mip.build(Mip.Average.SrgbCurve, { width = 256, height = 256, pixels = leftBandArgb() }));
         let at = (lod: Float64) -> { let (r, _, _) = ShaderEval.sampleMipRgb(chain, { linear = true, repeat = false }, lod, 0.0625, 0.5625); r };
         Assert.assertEq(expected = 3, Set.size(List.toSet(at(1.0) :: at(3.0) :: at(5.0) :: Nil)))
 

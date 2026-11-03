@@ -49,7 +49,8 @@ mod Scenes {
             :: mipFloor() :: mipFloorScaled() :: mipFloorWorld() :: gltfTextured() :: windowPass3d()
             :: hdrPass() :: hdrWindowHalf() :: hdrMultiply() :: texSizeScaled() :: tonemap() :: fxaa()
             :: lightmapBaked3d() :: lightmapNormal3d() :: spotSoftEdge3d() :: gltfEmissive3d() :: cullOffscreen3d()
-            :: skyGradient3d() :: glassPane3d() :: doubleSided3d() :: msaaEdges() :: Nil
+            :: skyGradient3d() :: glassPane3d() :: doubleSided3d() :: msaaEdges()
+            :: linearOverlap3d() :: mipSrgbAverage3d() :: emissionIntensity3d() :: Nil
 
     /// B 段階の scene のうち、違う画素の数に上限を置く物（名前 → 許す画素数）。3D の場面は GL と CPU で三角形の縁の
     /// 画素の取り方と浮動小数の丸めが違い、バイトでは一致しない（docs/backend-parity.md の Shader 面と同じ扱い）。
@@ -65,6 +66,10 @@ mod Scenes {
     /// spotSoftEdge3d は床の輪の縁のなめらかな坂で丸めの ±1 が約 20 px 出る。内側の角を取り違えると左の輪の縁の帯（数千 px）が丸ごと違う。
     /// 段 4 の 4 つ（Apple Silicon で skyGradient3d 0 px・glassPane3d 0 px・doubleSided3d 4 px・msaaEdges 652 px）: 空は向きの丸めの ±1 が
     /// 坂に散る。半透明と両面は縁の 1 px 以内。msaaEdges は GL だけが縁を標本で混ぜるので、差は棒と縞の縁の画素の数（minDiffOf も見る）。
+    /// 線形の色の 3 つ（Apple Silicon で linearOverlap3d 23 px・mipSrgbAverage3d 1,591 px・emissionIntensity3d 0 px）: 光の重なりは暗い坂の丸めの ±1 が
+    /// 散る。白黒の市松の床は段の境目の帯で GPU の混ぜる重みの丸めが ±3 まで出る（灰の市松の mipFloor より濃淡が倍なので差も倍）。
+    /// 片方だけ線形へ戻し忘れると、板・ビルボード・遠くの床・光る板の面が丸ごと違い、差は面の画素の数（千 px の桁）になる。
+    /// 3D の色を線形の量で計算すると、mipFloor の 3 つは約 720 px・skinNormal は約 330 px（暗い所の丸めの ±1 が sRGB の曲線の傾きで増える）。
     pub def toleranceOf(name: String): Option[Int32] = match name {
         case "depthRed"        => Some(300)
         case "afterScene3d"    => Some(200)
@@ -73,10 +78,10 @@ mod Scenes {
         case "skinBend"        => Some(400)
         case "texturedBox"     => Some(400)
         case "normalBump"      => Some(400)
-        case "skinNormal"      => Some(400)
-        case "mipFloor"        => Some(800)
-        case "mipFloorScaled"  => Some(800)
-        case "mipFloorWorld"   => Some(800)
+        case "skinNormal"      => Some(450)
+        case "mipFloor"        => Some(950)
+        case "mipFloorScaled"  => Some(950)
+        case "mipFloorWorld"   => Some(950)
         case "gltfTextured"    => Some(400)
         case "windowPass3d"    => Some(300)
         case "hdrWindowHalf"   => Some(3500)
@@ -92,6 +97,9 @@ mod Scenes {
         case "glassPane3d"     => Some(200)
         case "doubleSided3d"   => Some(100)
         case "msaaEdges"       => Some(1200)
+        case "linearOverlap3d" => Some(100)
+        case "mipSrgbAverage3d" => Some(2100)
+        case "emissionIntensity3d" => Some(100)
         case _                 => None
     }
 
@@ -1159,4 +1167,55 @@ mod Scenes {
         { name = "msaaEdges", via = ShotVia.ViaScreen, repeats = 1, targets = Map#{ "msaaP" => RenderTarget.withMsaa(4, RenderTarget.windowDescriptor()) },
           exact = false, passes = p :: Nil, items =
             Render.shaderFill(passthroughSpec("msaaP"), { position = { x = 0.0, y = 0.0 }, size = { x = designW(), y = designH() } }, 0.0, 1) :: Nil }
+
+    // ── scene 44: 線形の光の重なり（色の絵の材質・点光源 2 本・光を当てるビルボード）。B 段階 ──
+    // 象限ごとに色の違う絵（parityTexture）を貼った板を、左右から暖色と寒色の点光源で照らし、真ん中で 2 本の光を重ねる。
+    // 手前に光を当てるビルボード（市松のアトラス）を 1 枚立てる。GL と CPU の片方だけ絵・光・ビルボードの色を線形へ戻し忘れると、
+    // 板かビルボードの面が丸ごと違う（重なりの帯は線形と sRGB で明るさが一番違う所）。
+    def linearOverlap3d(): Scene =
+        let tex = parityTexture();
+        let plate = Scene3d.meshInstance(texturedQuad(-6.0, 6.0, -4.0, 4.0, 14.0, 0.0, 1.0), Mat4.identity())
+            |> Scene3d.withMaterial(Scene3d.texturedMaterial(Texture3d.name(tex), ShaderDoc.FilterMode.Nearest));
+        let board = Scene3d.billboard("atlas", { position = { x = 0.0, y = 0.0 }, size = { x = 16.0, y = 16.0 } },
+                                      Vec3.v3(0.0, -1.5, 11.0), { x = 2.4, y = 2.4 });
+        let warm = { position = Vec3.v3(-1.8, 0.5, 12.2), color = c8(255, 190, 120), intensity = 1.4, range = 6.0 };
+        let cool = { position = Vec3.v3(1.8, 0.5, 12.2), color = c8(120, 170, 255), intensity = 1.4, range = 6.0 };
+        let base = flatScene({ x = 240.0, y = 140.0 }, 1, plate :: Nil, board :: Nil);
+        let scene = { textures = tex :: Nil, pointLights = warm :: cool :: Nil,
+                      environment = { ambient = c8(40, 40, 40) | base#environment } | base };
+        { name = "linearOverlap3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil }
+
+    /// 32 × 32 の、1 テクセルごとの白と黒の市松。
+    def blackWhiteChecker(): Texture3d.Texture3d =
+        let white = Int32.bitwiseOr(Int32.leftShift(255, 24), 255 * 65793);
+        let black = Int32.leftShift(255, 24);
+        let pixels = Vector.range(0, 1024) |> Vector.map(k -> if (Int32.remainder(Int32.remainder(k, 32) + k / 32, 2) == 0) white else black);
+        match Texture3d.fromArgb(32, 32, pixels) {
+            case Ok(t)  => t
+            case Err(e) => bug!(e)
+        }
+
+    // ── scene 45: 白黒の市松の床を遠くまで（色の絵の mip の段を線形で平均する）。B 段階 ──
+    // 遠くの段は白と黒の平均になる。線形で平均すると灰は 188（sRGB で平均すると 128）なので、GL と CPU の片方だけ
+    // 平均の仕方が違うと、遠くの床の帯（数千 px）が ±60 ほど違う。白黒なので段の境目の帯の丸めの差は mipFloor より大きく出る。
+    def mipSrgbAverage3d(): Scene =
+        let tex = blackWhiteChecker();
+        floorScene("mipSrgbAverage3d", floorMesh(Some(4.0)), Scene3d.texturedMaterial(Texture3d.name(tex), ShaderDoc.FilterMode.Nearest), tex)
+
+    // ── scene 46: emission の強さ（Scene3d.withEmissionIntensity）。B 段階 ──
+    // 暗い環境光の中に、同じ暗い橙の emission の板を 2 枚。左は強さ 40（glTF の emissive_strength 40 と同じ）・右は 1。
+    // 線形へ戻した emission に強さを掛けるので、左は明るい橙（1 に切られない）・右はほぼ地の板の色。強さを読み落とすと左右が同じになり、
+    // 線形へ戻す前に掛けると左が白く飛ぶ。
+    def emissionIntensity3d(): Scene =
+        let glow = (k: Float64) -> Scene3d.material({ name = "parity:emission", cycleRate = 0.0, bindings = Nil,
+            out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Solid(c8(60, 60, 60)), alpha = ShaderDoc.Field.Const(1.0) }) })
+            |> Scene3d.withEmission(ShaderDoc.Shade.Solid(c8(30, 12, 4)))
+            |> Scene3d.withEmissionIntensity(k);
+        let left = shape(facingQuad(-5.0, -0.5, -2.5, 2.5, 10.0, c8(255, 255, 255)) :: Nil) |> Scene3d.withMaterial(glow(40.0));
+        let right = shape(facingQuad(0.5, 5.0, -2.5, 2.5, 10.0, c8(255, 255, 255)) :: Nil) |> Scene3d.withMaterial(glow(1.0));
+        let base = flatScene({ x = 240.0, y = 140.0 }, 1, left :: right :: Nil, Nil);
+        let scene = { environment = { ambient = c8(40, 40, 40) | base#environment } | base };
+        { name = "emissionIntensity3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil }
 }

@@ -24,7 +24,7 @@ mod TestMeshArraysFixed {
         ("${label}.bounds", "${b#min#x},${b#min#y},${b#min#z},${b#max#x},${b#max#y},${b#max#z}") :: Nil
 
     def mipPrint(t: ShaderEval.TexData): String =
-        digestOf(Mip.build(t) |> List.map(l -> "${l#width}x${l#height}:${Vector.join(",", l#pixels)}") |> List.join("|"))
+        digestOf(Mip.build(Mip.Average.Raw, t) |> List.map(l -> "${l#width}x${l#height}:${Vector.join(",", l#pixels)}") |> List.join("|"))
 
     // ── 素材 ──────────────────────────────────────────────
 
