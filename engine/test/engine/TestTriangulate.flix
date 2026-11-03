@@ -22,7 +22,7 @@ mod TestTriangulate {
         List.range(0, n * 2) |> List.map(i -> {
             let r = if (Int32.modulo(i, 2) == 0) ro else ri;
             let t = Int32.toFloat64(i) / Int32.toFloat64(n * 2);
-            { x = r * Vec2.cos(tau() * t), y = r * Vec2.sin(tau() * t) }
+            { x = r * Num.cos(tau() * t), y = r * Num.sin(tau() * t) }
         })
 
     // 凸（正方形）: 2枚に割れ、面積 1 がそのまま保存される。

@@ -262,6 +262,8 @@
   `pub def tickClocks(app: App[w, ef], dt: Float64, world: w): w`
 - 前フレームと今フレームのキー集合から Frame を組む。justPressed は差分
   `pub def frameOf(prev: {prev = Set[GameEngine.Key]}, current: {current = Set[GameEngine.Key]}, dt: Float64, viewport: Vec2.Vec2, cursor: {prevCursor = Option[Vec2.Vec2], cursor = Vec2.Vec2}, mouse: {prevDown = Bool, down = Bool, wheel = Float64}): Frame`
+- 何も押していない・動いていない・dt 0 のフレーム（全部の欄が既定の値。viewport と cursor は (0, 0)）。
+  `pub def emptyFrame(): Frame`
 - Frame#cursor に置く位置: キャプチャしている間（applied = Some(true)）は前の位置 prev のまま止め、ほかは読んだ位置 raw。
   `pub def heldCursor(applied: Option[Bool], prev: Option[Vec2.Vec2], raw: Vec2.Vec2): Vec2.Vec2`
 - 前の位置 prev から今の位置 cursor へ動いた量（前の位置が無ければ 0）。

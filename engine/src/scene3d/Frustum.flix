@@ -31,7 +31,7 @@ pub mod Frustum {
 
     // WhyNot: 長さ 0 の面で割らない — 潰れた行列（fovY 0 など）の面は全部の点を内側と見なす（間引かない）。
     def normalized(a: Float64, b: Float64, c: Float64, d: Float64): Plane =
-        let len = Vec2.sqrt(a * a + b * b + c * c);
+        let len = Num.sqrt(a * a + b * b + c * c);
         if (len < 1.0e-12 or Float64.isNan(len)) { nx = 0.0, ny = 0.0, nz = 0.0, d = 1.0 }
         else { nx = a / len, ny = b / len, nz = c / len, d = d / len }
 

@@ -26,7 +26,7 @@ mod TestCharacterBody3d {
 
     def feetMm(b: CharacterBody3d.Body): (Int32, Int32, Int32) = (mm(b#feet#x), mm(b#feet#y), mm(b#feet#z))
 
-    def rad(deg: Float64): Float64 = deg * Vec2.pi() / 180.0
+    def rad(deg: Float64): Float64 = deg * Num.pi() / 180.0
 
     // ════════════════════════════════════════════════════════════════════
     // 壁で止まる
@@ -84,7 +84,7 @@ mod TestCharacterBody3d {
     /// +x へ上がる坂（長さ 6・厚さ 0.2 の板を Z まわりに deg 度傾け、低い端の上面を x = 0・y = 0 に合わせる）。
     def ramp(deg: Float64): CollisionShape3d.Box3d =
         let a = rad(deg);
-        let center = Vec3.v3(3.0 * Vec2.cos(a) + 0.1 * Vec2.sin(a), 3.0 * Vec2.sin(a) - 0.1 * Vec2.cos(a), 0.0);
+        let center = Vec3.v3(3.0 * Num.cos(a) + 0.1 * Num.sin(a), 3.0 * Num.sin(a) - 0.1 * Num.cos(a), 0.0);
         CollisionShape3d.transformBox(Mat4.mul(Mat4.translate(center), Mat4.rotateZ(a)), box(0.0, 0.0, 0.0, 3.0, 0.1, 2.0))
 
     /// 床の傾きの上限 45° で、44° の坂は上がり（2 秒で 1 m より高い所へ）、46° の坂は壁で床の高さのまま。坂に立つ間の床は sloped。
@@ -260,7 +260,7 @@ mod TestCharacterBody3d {
     /// 1 つの場合を歩かせ、どこかのコマで 2 cm より深く食い込んだか、物置に入ったか部屋を出たら、その名前。
     def failure(w: CollisionWorld3d.CollisionWorld3d, c: Case): Option[String] =
         let start = standAt(w, c#x, 0.0, c#z);
-        let path = CharacterBody3d.simulate(w, Nil, s(), Vec3.v3(c#speed * Vec2.sin(c#heading), 0.0, c#speed * Vec2.cos(c#heading)), c#dt, c#frames, start);
+        let path = CharacterBody3d.simulate(w, Nil, s(), Vec3.v3(c#speed * Num.sin(c#heading), 0.0, c#speed * Num.cos(c#heading)), c#dt, c#frames, start);
         let deepest = path |> List.map(b -> CharacterBody3d.overlapDepth(w, Nil, s(), b)) |> List.foldLeft(Float64.max, 0.0);
         if (deepest > 0.02 or List.exists(b -> insideCloset(b) or outsideRoom(b), path)) Some("${c#name} (食い込み ${Float64.toString(deepest)} m)") else None
 
@@ -286,7 +286,7 @@ mod TestCharacterBody3d {
             let z0 = (Hash01.at(i, 12) - 0.5) * 8.6;
             let (x, z) = if (isBlockedStart(x0, z0)) (0.0, 0.0) else (x0, z0);
             let fast = Hash01.at(i, 14) < 0.3;
-            { name = "random-${Int32.toString(i)}", x = x, z = z, heading = Hash01.at(i, 13) * Vec2.tau(),
+            { name = "random-${Int32.toString(i)}", x = x, z = z, heading = Hash01.at(i, 13) * Num.tau(),
               speed = 1.0 + Hash01.at(i, 15) * 5.0, dt = if (fast) 0.05 else 1.0 / 60.0, frames = 60 }
         })
 

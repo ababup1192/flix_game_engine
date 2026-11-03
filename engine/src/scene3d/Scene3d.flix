@@ -44,8 +44,8 @@ pub mod Scene3d {
             case None    => half * spotInnerRatio()
             case Some(a) => (if (Float64.isNan(a) or a < 0.0) 0.0 else Float64.min(a, spot#fovY)) / 2.0
         };
-        let outerCos = Vec2.cos(half);
-        let innerCos = Vec2.cos(innerHalf);
+        let outerCos = Num.cos(half);
+        let innerCos = Num.cos(innerHalf);
         { outerCos = outerCos, innerCos = if (innerCos == outerCos) innerCos + 0.000001 else innerCos }
 
     /// 距離のかすみ。目からの距離が near から far へ向かって color に寄る。
@@ -82,11 +82,12 @@ pub mod Scene3d {
     /// cutout = 真なら α が 0.5 未満の画素を捨てる・emission = 光の計算の後に足す、自分で光る色・
     /// normalMap = 法線マップ（None なら頂点の法線のまま）・wrap = spec の Tex が 0..1 の外の uv を読む時の読み方（法線マップにも掛かる）・
     /// blend = 真なら spec の α で下の絵に重ねる半透明（深度は読むが書かない。描く順は blendOrderOf）・
-    /// doubleSided = 真なら裏の面も描く（裏の面は光の計算の法線を裏返す）。
+    /// doubleSided = 真なら裏の面も描く（裏の面は光の計算の法線を裏返す）・
+    /// shaderHash = GLSL を決める中身（spec と emission）の鍵（ShaderGen.hashMaterial。params・cutout などは入れない。GL が材質のプログラムを引く。初めて読んだ時に求める）。
     /// spec の Tex の名前は、"tex3d:" で始まれば場面の textures（Texture3d.name）、ほかは全体の登録（project.json の textures・
     /// レンダーターゲット）から引く。無い名前は 0（黒・透明）。1 つの材質が読める (名前, 補間) の組は maxMaterialTextures() まで。
     pub type alias MaterialFields = { spec = ShaderDoc.Spec, params = Map[String, Float64], cutout = Bool, emission = Option[ShaderDoc.Shade],
-                                      normalMap = Option[NormalMap], wrap = Wrap, blend = Bool, doubleSided = Bool }
+                                      normalMap = Option[NormalMap], wrap = Wrap, blend = Bool, doubleSided = Bool, shaderHash = Lazy[Int64] }
 
     enum MaterialData { case MaterialData(MaterialFields) }
 
@@ -96,7 +97,14 @@ pub mod Scene3d {
     /// spec だけの材質（params 空・cutout なし・emission なし・法線マップなし・Repeat・不透明・表の面だけ）。
     pub def material(spec: ShaderDoc.Spec): Material3d =
         MaterialData.MaterialData({ spec = spec, params = Map.empty(), cutout = false, emission = None, normalMap = None, wrap = Wrap.Repeat,
-                                    blend = false, doubleSided = false })
+                                    blend = false, doubleSided = false, shaderHash = shaderHashOf(spec, None) })
+
+    /// spec と emission の鍵を、初めて読まれた時に求める形で持つ。
+    // WhyNot: 作る時にすぐ求めない — View で毎コマ材質を組み直すゲームでは、CPU の描き出しのように鍵を読まない描き手でも払うことになる。
+    // WhyNot: 鍵のための lock の表（memo）を置かない — Flix の Lazy は force を lock で守って 1 回だけ求め、鍵は材質の値が持つので、
+    //   別のスレッドから材質を読んでも表の取り合いが起きない。
+    def shaderHashOf(spec: ShaderDoc.Spec, emission: Option[ShaderDoc.Shade]): Lazy[Int64] =
+        lazy ShaderGen.hashMaterial(spec, emission)
 
     /// spec の Param に渡す値（Unity のマテリアルの float の値を渡すのと同じ。渡さない名前は 0）。
     pub def withParams(p: Map[String, Float64], m: Material3d): Material3d =
@@ -121,23 +129,23 @@ pub mod Scene3d {
         let MaterialData.MaterialData(r) = m;
         MaterialData.MaterialData({ doubleSided = on | r })
 
-    /// 光の計算の後に足す、自分で光る色（かすみに沈まない）。
-    /// 名前の付いた材質（Gltf の読んだ材質など）の emission を別の木に差し替えたら、withSpecName で名前も替える。
-    /// GL は材質のプログラムを spec の名前と emission の有無で引くので、名前が同じで emission の木だけ違う材質が並ぶと毎コマ組み直す。
+    /// 光の計算の後に足す、自分で光る色（かすみに沈まない）。名前は替えなくてよい（GL は spec と emission の中身の鍵でプログラムを引く）。
+    /// 毎コマ変わる数（明滅の強さ）は木の Const に入れず、ShaderDoc の param にして withParams で渡す（木の数が変わると GL がプログラムを組み直す）。
     pub def withEmission(s: ShaderDoc.Shade, m: Material3d): Material3d =
         let MaterialData.MaterialData(r) = m;
-        MaterialData.MaterialData({ emission = Some(s) | r })
+        MaterialData.MaterialData({ emission = Some(s), shaderHash = shaderHashOf(r#spec, Some(s)) | r })
 
     /// emission を外す（glb の emissive で光らせたくない時）。
     pub def withoutEmission(m: Material3d): Material3d =
         let MaterialData.MaterialData(r) = m;
-        MaterialData.MaterialData({ emission = None | r })
+        MaterialData.MaterialData({ emission = None, shaderHash = shaderHashOf(r#spec, None) | r })
 
-    /// spec の名前だけを替える。spec の木か emission の木を差し替えた材質に、木ごとに違う名前を付ける
-    /// （部品ごとに emission の mask が違うなら部品ごとの名前）。同じ名前を木の違う 2 つの材質に付けると、GL が毎コマ組み直す。
+    /// spec の名前だけを替える（知らせの文面・GL のプログラムの名前に出る）。木の違う材質に別の名前を付けなくてよい
+    /// — GL は spec と emission の中身の鍵でプログラムを引くので、同じ名前で木の違う材質が並んでも組み直さない。
     pub def withSpecName(name: String, m: Material3d): Material3d =
         let MaterialData.MaterialData(r) = m;
-        MaterialData.MaterialData({ spec = { name = name | r#spec } | r })
+        let spec = { name = name | r#spec };
+        MaterialData.MaterialData({ spec = spec, shaderHash = shaderHashOf(spec, r#emission) | r })
 
     pub def withNormalMap(n: NormalMap, m: Material3d): Material3d =
         let MaterialData.MaterialData(r) = m;
@@ -275,7 +283,7 @@ pub mod Scene3d {
         let reach = (a: Float64) -> Float64.max(Float64.abs(a), Float64.abs(1.0 - a));
         let rx = r#size#x * reach(r#anchor#x);
         let ry = r#size#y * reach(r#anchor#y);
-        not Frustum.intersectsSphere(f, r#position, Vec2.sqrt(rx * rx + ry * ry))
+        not Frustum.intersectsSphere(f, r#position, Num.sqrt(rx * rx + ry * ry))
 
     /// 場面の縦横の比（幅 / 高さ。高さは 1e-6 未満にしない）。GL と CPU の射影の行列と視錐台が同じ値を使う。
     pub def aspectOf(scene: Scene3dCmd): Float64 = scene#size#x / Float64.max(0.000001, scene#size#y)
@@ -438,7 +446,7 @@ pub mod Scene3d {
     pub def skyBasisOf(scene: Scene3dCmd): SkyBasis =
         let c = scene#camera;
         let half = c#fovY / 2.0;
-        let tanHalf = Vec2.sin(half) / Vec2.cos(half);
+        let tanHalf = Num.sin(half) / Num.cos(half);
         { forward = Camera3d.forward(c), right = Vec3.mul(Camera3d.right(c), tanHalf * aspectOf(scene)), up = Vec3.mul(Camera3d.up(c), tanHalf) }
 
     /// NDC の点 ndc（−1..1・y は上へ）を通って目から伸びる向き（長さ 1）。
@@ -469,8 +477,8 @@ pub mod Scene3d {
         let d = Vec3.sub(spot#target, spot#position);
         let len = Vec3.length(d);
         let dir = if (len < 0.000001) { x = 0.0, y = -1.0, z = 0.0 } else Vec3.mul(d, 1.0 / len);
-        let flat = Vec2.sqrt(dir#x * dir#x + dir#z * dir#z);
-        { eye = spot#position, yaw = Vec2.atan2(dir#x, dir#z), pitch = Vec2.atan2(0.0 - dir#y, flat),
+        let flat = Num.sqrt(dir#x * dir#x + dir#z * dir#z);
+        { eye = spot#position, yaw = Num.atan2(dir#x, dir#z), pitch = Num.atan2(0.0 - dir#y, flat),
           fovY = spot#fovY, near = 1.0, far = Float64.max(2.0, spot#range) }
 
     /// 影の地図の行列（world → 光の clip 空間。縦横の比は 1）。GL と CPU が同じ物を使う。
@@ -491,6 +499,19 @@ pub mod Scene3d {
     pub def pickLights(eye: Vec3.Vec3, cmd: Scene3dCmd): Scene3dCmd =
         { pointLights = nearest(maxPointLights(), eye, l -> l#position, cmd#pointLights),
           spotLights = nearest(maxSpotLights(), eye, l -> l#position, cmd#spotLights) | cmd }
+
+    /// pickLights が上限を超えて落とす光の数（points = 点光源・spots = スポット）。落とす物が無ければ 0。
+    pub def droppedLightsOf(cmd: Scene3dCmd): { points = Int32, spots = Int32 } =
+        { points = Int32.max(0, List.length(cmd#pointLights) - maxPointLights()),
+          spots = Int32.max(0, List.length(cmd#spotLights) - maxSpotLights()) }
+
+    /// 落とす光があれば、種類ごとに (鍵, 知らせる 1 行)。毎コマ通るので、呼ぶ側が鍵ごとに初回 1 回だけ出す（GL と CPU で同じ文面）。
+    pub def droppedLightsWarnings(cmd: Scene3dCmd): List[(String, String)] =
+        let d = droppedLightsOf(cmd);
+        let line = (kind: String, given: Int32, limit: Int32) ->
+            "scene3d: ${kind}が ${Int32.toString(given)} 本ある — 上限 ${Int32.toString(limit)} 本を目に近い順に選び、残りは描かない（Scene3d.pickLights）";
+        (if (d#points > 0) ("@lights:point", line("点光源", List.length(cmd#pointLights), maxPointLights())) :: Nil else Nil)
+            ::: (if (d#spots > 0) ("@lights:spot", line("スポットライト", List.length(cmd#spotLights), maxSpotLights())) :: Nil else Nil)
 
     // WhyNot: List.sortBy に距離だけを渡さない — 安定ソートではないので、同じ距離の光の選ばれ方が並びの順にならない。
     def nearest(limit: Int32, eye: Vec3.Vec3, positionOf: a -> Vec3.Vec3, lights: List[a]): List[a] =

@@ -316,7 +316,7 @@ pub mod Material {
             // 間隔を空けないと「粒 k の縦位置 = 粒 k+2 の横位置」になり、粒が対角に並ぶ。
             let ch = fx#channel + k * 4;
             let twinkle = fx#alphaBase + fx#alphaSpan *
-                (0.5 + 0.5 * Vec2.sin(time * fx#twinkleRate
+                (0.5 + 0.5 * Num.sin(time * fx#twinkleRate
                                       + DualGrid.hash(x, y, ch) * 6.28));
             let w = fx#sizeBase
                 + Float64.floor(DualGrid.hash(x, y, ch + 3) * (fx#sizeSpan + 1.0));
@@ -493,7 +493,7 @@ pub mod Material {
                         let a0 = DualGrid.hash(x, y, fx#channel + 6 + k) * 6.283185307179586;
                         let splats = List.range(0, 3) |> List.map(s -> {
                             let ang = a0 + Int32.toFloat64(s) / 3.0 * 6.283185307179586;
-                            let dir = { x = Vec2.cos(ang), y = Vec2.sin(ang) };
+                            let dir = { x = Num.cos(ang), y = Num.sin(ang) };
                             let inner = Vec2.add(center, Vec2.mul(dir, rad));
                             let outer = Vec2.add(center, Vec2.mul(dir, rad + 2.5));
                             let seg = RawDraw.lineSeg(inner, outer, 1.0, fx#color, z);
@@ -516,7 +516,7 @@ pub mod Material {
                     else Int32.max(1, fx#count - 1);
         List.range(0, count) |> List.map(k -> {
             let twinkle = fx#alphaBase + fx#alphaSpan *
-                (0.5 + 0.5 * Vec2.sin(time * fx#twinkleRate
+                (0.5 + 0.5 * Num.sin(time * fx#twinkleRate
                                       + DualGrid.hash(x, y, fx#channel + k) * 6.28));
             let radius = fx#sizeBase + fx#sizeSpan * DualGrid.hash(x, y, fx#channel + 6 + k);
             let (gcx, gcy) = insetToLiquid(cell, tile, edges, radius,

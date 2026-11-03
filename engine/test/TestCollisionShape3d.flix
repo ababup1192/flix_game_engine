@@ -11,7 +11,7 @@ mod TestCollisionShape3d {
 
     def unitBounds(): Mesh3d.Bounds = { min = Vec3.v3(-1.0, -1.0, -1.0), max = Vec3.v3(1.0, 1.0, 1.0) }
 
-    def quarterTurn(): Float64 = Vec2.pi() / 2.0
+    def quarterTurn(): Float64 = Num.pi() / 2.0
 
     // ════════════════════════════════════════════════════════════════════
     // 作る

@@ -295,7 +295,7 @@ pub mod ViewProjection {
     /// 物の world 座標で詰めること。
     pub def yawOf(f: FirstPersonSpec, at: WorldPos): Float64 =
         let c = Persp.toCam(f#camera, { x = at#x, y = at#y });
-        toDegrees(Vec2.atan2(c#lat, c#fwd))
+        toDegrees(Num.atan2(c#lat, c#fwd))
 
     /// カメラからの距離（マス何個ぶんか）。
     pub def distanceOf(f: FirstPersonSpec, at: WorldPos): Float64 =
@@ -337,10 +337,10 @@ pub mod ViewProjection {
     /// 斜めを向く・なめらかに回すカメラは Persp.Camera を直接組む。
     pub def makeCamera(eye: Vec2.Vec2, facing: Dir4.Dir4): Persp.Camera =
         let (dx, dy) = Dir4.delta(facing);
-        { pos = eye, yaw = Vec2.atan2(Int32.toFloat64(dy), Int32.toFloat64(dx)) }
+        { pos = eye, yaw = Num.atan2(Int32.toFloat64(dy), Int32.toFloat64(dx)) }
 
     /// ラジアンを度へ。人が読む向き（yawOf・目録の "facing"）はこの単位でそろえる。
-    pub def toDegrees(radians: Float64): Float64 = radians * 180.0 / Vec2.pi()
+    pub def toDegrees(radians: Float64): Float64 = radians * 180.0 / Num.pi()
 
     /// 0 で割らないための下駄。design やタイルが 0 で来ても落ちない（fail-open）。
     def safe(v: Float64): Float64 =

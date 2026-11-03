@@ -200,7 +200,7 @@ pub mod Fx {
                 let velLen = Vec2.length(vel);
                 // 止まった粒は射出方向を向く（尾は 0 = ただの size 角の箱）。
                 let velTurn = if (velLen < 1.0e-9) pose#turn
-                              else Vec2.atan2(vel#y, vel#x) / Vec2.tau() + 0.25;
+                              else Num.atan2(vel#y, vel#x) / Num.tau() + 0.25;
                 decorate(RawDraw.boxAt(pos, { x = size, y = size + velLen * emitter#stretch },
                                       color, emitter#zIndex)
                     |> (p -> if (Float64.abs(velTurn) < 1.0e-12) p
@@ -230,7 +230,7 @@ pub mod Fx {
                 1.0 - f#amount * Hash01.at(salt, stepOf(u * f#rate))
             case FxDoc.CurveSpec.Pulse(p)   =>
                 // u=0 で 1（生まれた瞬間に暗い粒を出さない）→ minV まで沈んで戻る cos 波。
-                p#minV + (1.0 - p#minV) * (0.5 + 0.5 * Vec2.cos(Vec2.tau() * p#rate * u))
+                p#minV + (1.0 - p#minV) * (0.5 + 0.5 * Num.cos(Num.tau() * p#rate * u))
         }
 
     /// カーブの 0..u の積分（速度 → 移動距離）。flicker はパース（FxDoc）が速度カーブとして
@@ -260,8 +260,8 @@ pub mod Fx {
     /// 1 で 1 周ぶん散る。x と y は別の位相を引くので、両軸に振るとリサージュ型の
     /// 有界運動（蛍・湯気の「その場でゆらゆら」）になる。
     def wobbleOffset(wobble: FxDoc.Wobble, rand: Int32 -> Float64, age: Float64): Vec2.Vec2 =
-        { x = wobble#amp#x * Vec2.sin(Vec2.tau() * (wobble#freq#x * age + wobble#vary * rand(8))),
-          y = wobble#amp#y * Vec2.sin(Vec2.tau() * (wobble#freq#y * age + wobble#vary * rand(9))) }
+        { x = wobble#amp#x * Num.sin(Num.tau() * (wobble#freq#x * age + wobble#vary * rand(8))),
+          y = wobble#amp#y * Num.sin(Num.tau() * (wobble#freq#y * age + wobble#vary * rand(9))) }
 
     // ── 粒ごとの導出 ──
 

@@ -37,7 +37,7 @@ def testMat4IdentityLeavesMatrixUnchanged(): Unit \ Assert =
 /// Y 軸に 90 度回すと +Z が +X へ行く（yaw が増えると北から東へ回る約束）。
 @Test
 def testMat4RotateYQuarterTurnsPlusZToPlusX(): Unit \ Assert =
-    let moved = Mat4.apply(Mat4.rotateY(Vec2.pi() / 2.0), Vec3.v3(0.0, 0.0, 1.0));
+    let moved = Mat4.apply(Mat4.rotateY(Num.pi() / 2.0), Vec3.v3(0.0, 0.0, 1.0));
     Assert.assertTrue(Vec3.distanceSquared(moved, Vec3.v3(1.0, 0.0, 0.0)) < 1.0e-6)
 
 /// 倍率 (2, 1, 1) の後、斜めの面の接線 (1, 1, 0) と法線 (1, −1, 0) を写しても直交のまま。
@@ -94,7 +94,7 @@ def testCamera3dPlusXAppearsOnRightAtYawZero(): Unit \ Assert =
 /// yaw 90 度では +X（東）を向くので、東の点が真ん中 (100, 50) に写る。
 @Test
 def testCamera3dYawQuarterLooksEast(): Unit \ Assert =
-    let camera = cameraAt(Vec3.zero(), Vec2.pi() / 2.0);
+    let camera = cameraAt(Vec3.zero(), Num.pi() / 2.0);
     match Camera3d.worldToScreen(camera, { x = 200.0, y = 100.0 }, Vec3.v3(10.0, 0.0, 0.0)) {
         case Some(p) => Assert.assertTrue(Float64.abs(p#x - 100.0) < 0.001 and Float64.abs(p#y - 50.0) < 0.001)
         case None    => bug!("the point east of the camera was not projected")
@@ -160,6 +160,45 @@ def testScene3dPickLightsKeepsEightNearest(): Unit \ Assert =
     Assert.assertEq(expected = List.drop(1, lights) |> List.map(l -> Vec3.length(l#position)),
                     Scene3d.pickLights(Vec3.zero(), cmd)#pointLights |> List.map(l -> Vec3.length(l#position)))
 
+/// 点光源 9 本・スポット 1 本の場面は、点光源を 1 本落とし（上限 8）、スポットは落とさない。知らせは点光源の 1 行だけ。
+@Test
+def testDroppedLightsCountsOnlyOverTheLimit(): Unit \ Assert =
+    let lights = List.range(1, 10) |> List.map(i -> pointLightAt(Int32.toFloat64(i)));
+    let cmd = { pointLights = lights, spotLights = Scene3d.spotLight(Vec3.zero(), { x = 0.0, y = 0.0, z = 1.0 }, 1.0) :: Nil
+                | Scene3d.scene(cameraAt(Vec3.zero(), 0.0), { x = 200.0, y = 100.0 }) };
+    let d = Scene3d.droppedLightsOf(cmd);
+    Assert.assertEq(expected = (1, 0, "@lights:point" :: Nil), (d#points, d#spots, Scene3d.droppedLightsWarnings(cmd) |> List.map(fst)))
+
+// ════════════════════════════════════════════════════════════════════
+// Scene3d.Material3d の中身の鍵（shaderHash）
+// ════════════════════════════════════════════════════════════════════
+
+def keyOf(m: Scene3d.Material3d): Int64 = force Scene3d.materialFieldsOf(m)#shaderHash
+
+def glowShade(r: Float64): ShaderDoc.Shade = ShaderDoc.Shade.Solid(Color.rgb(r, 0.0, 0.0))
+
+/// 同じ名前の材質でも emission の木が違えば鍵が違う（ゲームは名前を分けなくてよい）。
+@Test
+def testMaterialKeyFollowsEmissionTree(): Unit \ Assert =
+    let base = Scene3d.material(ShaderDoc.demoSurface());
+    Assert.assertEq(expected = false, keyOf(Scene3d.withEmission(glowShade(0.5), base)) == keyOf(Scene3d.withEmission(glowShade(0.9), base)))
+
+/// emission を外す・名前を替えると鍵を求め直す（外した物は emission を付ける前と同じ鍵）。
+@Test
+def testMaterialKeyRecomputedOnEmissionAndName(): Unit \ Assert =
+    let base = Scene3d.material(ShaderDoc.demoSurface());
+    Assert.assertEq(expected = (true, false),
+                    (keyOf(Scene3d.withoutEmission(Scene3d.withEmission(glowShade(0.5), base))) == keyOf(base),
+                     keyOf(Scene3d.withSpecName("other", base)) == keyOf(base)))
+
+/// params・cutout・wrap・blend・両面・法線マップは uniform か kind の側で渡すので、鍵は変わらない。
+@Test
+def testMaterialKeyIgnoresFieldsOutsideTheTree(): Unit \ Assert =
+    let base = Scene3d.material(ShaderDoc.demoSurface());
+    let changed = base |> Scene3d.withParams(Map#{"k" => 1.0}) |> Scene3d.withCutout(true) |> Scene3d.withWrap(Scene3d.Wrap.Clamp)
+        |> Scene3d.withAlphaBlend(true) |> Scene3d.withDoubleSided(true) |> Scene3d.withNormalMap({ texture = "n", strength = 1.0 });
+    Assert.assertEq(expected = keyOf(base), keyOf(changed))
+
 // ════════════════════════════════════════════════════════════════════
 // Scene3d.shadowMatrix
 // ════════════════════════════════════════════════════════════════════
@@ -183,13 +222,13 @@ def coneWith(innerFovY: Option[Float64]): (Float64, Float64) =
 /// None は fovY × 0.8（半角 0.4）・Some(0.6) は半角 0.3。外側はどちらも半角 0.5。
 @Test
 def testSpotConeOfNoneAndSome(): Unit \ Assert =
-    Assert.assertEq(expected = ((Vec2.cos(0.5), Vec2.cos(0.4)), (Vec2.cos(0.5), Vec2.cos(0.3))),
+    Assert.assertEq(expected = ((Num.cos(0.5), Num.cos(0.4)), (Num.cos(0.5), Num.cos(0.3))),
                     (coneWith(None), coneWith(Some(0.6))))
 
 /// fovY を超える角は fovY に直り、内と外が同じ cos になるので内側に 1e-6 を足す（smoothstep の両端を分ける）。
 @Test
 def testSpotConeOfClampsWiderInnerToFovY(): Unit \ Assert =
-    Assert.assertEq(expected = (Vec2.cos(0.5), Vec2.cos(0.5) + 0.000001), coneWith(Some(2.0)))
+    Assert.assertEq(expected = (Num.cos(0.5), Num.cos(0.5) + 0.000001), coneWith(Some(2.0)))
 
 /// 負と NaN は 0 に直る（内側の cos = cos 0 = 1。縁は円錐の真ん中から外まで続く）。
 @Test

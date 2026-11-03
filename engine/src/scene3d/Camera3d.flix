@@ -8,15 +8,15 @@ pub mod Camera3d {
 
     /// 見ている向き（長さ 1）。
     pub def forward(c: Camera3d): Vec3.Vec3 =
-        Vec3.v3(Vec2.sin(c#yaw) * Vec2.cos(c#pitch), 0.0 - Vec2.sin(c#pitch), Vec2.cos(c#yaw) * Vec2.cos(c#pitch))
+        Vec3.v3(Num.sin(c#yaw) * Num.cos(c#pitch), 0.0 - Num.sin(c#pitch), Num.cos(c#yaw) * Num.cos(c#pitch))
 
     /// 画面の右の向き（長さ 1）。
     pub def right(c: Camera3d): Vec3.Vec3 =
-        Vec3.v3(Vec2.cos(c#yaw), 0.0, 0.0 - Vec2.sin(c#yaw))
+        Vec3.v3(Num.cos(c#yaw), 0.0, 0.0 - Num.sin(c#yaw))
 
     /// 画面の上の向き（長さ 1）。
     pub def up(c: Camera3d): Vec3.Vec3 =
-        Vec3.v3(Vec2.sin(c#yaw) * Vec2.sin(c#pitch), Vec2.cos(c#pitch), Vec2.cos(c#yaw) * Vec2.sin(c#pitch))
+        Vec3.v3(Num.sin(c#yaw) * Num.sin(c#pitch), Num.cos(c#pitch), Num.cos(c#yaw) * Num.sin(c#pitch))
 
     /// world → GL の目の座標（右手系・−Z を見る）。左手系の前の向きを −Z へ写すので Z が反転する。
     pub def viewMatrix(c: Camera3d): Mat4.Mat4 =
@@ -26,7 +26,7 @@ pub mod Camera3d {
     /// GL の透視の行列（右手系の目の座標 → clip。奥行きは near で −1・far で +1）。aspect = 幅 / 高さ。
     pub def projectionMatrix(c: Camera3d, aspect: Float64): Mat4.Mat4 =
         let half = c#fovY / 2.0;
-        let focal = Vec2.cos(half) / Vec2.sin(half);
+        let focal = Num.cos(half) / Num.sin(half);
         Mat4.perspective({ xScale = focal / aspect, yScale = focal, near = c#near, far = c#far })
 
     /// このカメラに写る範囲（視錐台）。aspect = 幅 / 高さ。光や羽虫をゲームの側で間引く・数える時に使う
@@ -43,7 +43,7 @@ pub mod Camera3d {
         if (not (size#x > 0.0 and size#y > 0.0)) forwardRay(c)
         else {
             let half = c#fovY / 2.0;
-            let tanHalf = Vec2.sin(half) / Vec2.cos(half);
+            let tanHalf = Num.sin(half) / Num.cos(half);
             let ndcX = p#x / size#x * 2.0 - 1.0;
             let ndcY = 1.0 - p#y / size#y * 2.0;
             let toward = Vec3.add(forward(c), Vec3.add(Vec3.mul(right(c), ndcX * tanHalf * size#x / size#y), Vec3.mul(up(c), ndcY * tanHalf)));

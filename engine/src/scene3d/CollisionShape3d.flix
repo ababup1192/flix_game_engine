@@ -172,12 +172,12 @@ pub mod CollisionShape3d {
         let dist = Vec3.length(d);
         if (not (dist < radius)) None
         else if (dist > 0.000001) {
-            let flat = Vec2.sqrt(d#x * d#x + d#z * d#z);
+            let flat = Num.sqrt(d#x * d#x + d#z * d#z);
             let v2 = Float64.max(0.0, dist * dist - flat * flat);
             // WhyNot: 差の向きの長さ (radius − dist) をそのまま水平へ写さない — 傾いた面（斜めの手すりの端）では押し切れず、割って補うと押し過ぎる。
             // 縦の差はそのままにして、水平の差が sqrt(radius² − 縦の差²) になるまで差の水平の向きへ動かす。
             if (flat > 0.02 * radius) {
-                let k = (Vec2.sqrt(radius * radius - v2) - flat) / flat;
+                let k = (Num.sqrt(radius * radius - v2) - flat) / flat;
                 Some(Vec3.v3(d#x * k, 0.0, d#z * k))
             }
             else insidePush(b, l, radius) |> Option.map(limitLength(radius))
@@ -193,7 +193,7 @@ pub mod CollisionShape3d {
     def insidePush(b: Box3d, local: Local, radius: Float64): Option[Vec3.Vec3] =
         let l = unwrap(local);
         ((b#ax, b#half#x, l#x) :: (b#ay, b#half#y, l#y) :: (b#az, b#half#z, l#z) :: Nil)
-            |> List.filter(e -> { let (a, _, _) = e; Vec2.sqrt(a#x * a#x + a#z * a#z) > 0.5 })
+            |> List.filter(e -> { let (a, _, _) = e; Num.sqrt(a#x * a#x + a#z * a#z) > 0.5 })
             |> List.map(e -> { let (a, h, v) = e; (h - Float64.abs(v), a, if (v >= 0.0) 1.0 else -1.0) })
             |> List.minimumBy((p, q) -> { let (dp, _, _) = p; let (dq, _, _) = q; Order.compare(dp, dq) })
             |> Option.map(e -> {

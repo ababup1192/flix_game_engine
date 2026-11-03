@@ -40,7 +40,7 @@ mod TestRay3d {
     /// Y まわりに 45° 回した一辺 2 の箱は、角が z = −√2 に来るので、(0, 0, −5) からの距離は 5 − √2（≒ 3.586）。
     @Test
     def testHitRotatedBox(): Unit \ Assert =
-        let turned = CollisionShape3d.transformBox(Mat4.rotateY(Vec2.pi() / 4.0), cube());
+        let turned = CollisionShape3d.transformBox(Mat4.rotateY(Num.pi() / 4.0), cube());
         Assert.assertEq(expected = Some(3586),
             Ray3d.hitBox(alongZ(Vec3.v3(0.0, 0.0, -5.0)), 100.0, turned) |> Option.map(h -> r1000(h#distance)))
 

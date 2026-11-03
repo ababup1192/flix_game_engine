@@ -9,7 +9,7 @@
 //   4. 時刻は固定値（アニメ無し — 2 回描き出して同じ絵になることが決定性検証の前提）
 mod Scenes {
 
-    use fge::{Camera3d, Color, DrawCmd, Gltf, Light, Mat4, Mesh3d, Model3d, Pose3d, PostProcess, PxSprite, PxSpriteDoc, RawDraw, Render, RenderTarget, RenderUtil, Scene3d, ShaderDoc, Shadow, Skin3d, Texture3d, Vec2, Vec3}
+    use fge::{Camera3d, Color, DrawCmd, Gltf, Light, Mat4, Mesh3d, Model3d, Pose3d, PostProcess, PxSprite, PxSpriteDoc, RawDraw, Render, RenderTarget, RenderUtil, Scene3d, ShaderDoc, Shadow, Skin3d, Texture3d, Num, Vec2, Vec3}
 
     // 寸法の権威は整数側 — Float 側を権威にすると Int へ戻す丸めが要る。
     pub def designWi(): Int32 = 320
@@ -701,7 +701,7 @@ mod Scenes {
             let fy = 0.0 - ((Int32.toFloat64(k / 32) + 0.5) / 32.0 * 2.0 - 1.0);
             let (px, py) = (fx / 0.8, fy / 0.8);
             let inside = px * px + py * py < 1.0;
-            let (nx, ny, nz) = if (inside) (px, py, Vec2.sqrt(1.0 - px * px - py * py)) else (0.0, 0.0, 1.0);
+            let (nx, ny, nz) = if (inside) (px, py, Num.sqrt(1.0 - px * px - py * py)) else (0.0, 0.0, 1.0);
             Int32.bitwiseOr(Int32.bitwiseOr(Int32.leftShift(255, 24), Int32.leftShift(channel(nx), 16)),
                             Int32.bitwiseOr(Int32.leftShift(channel(ny), 8), channel(nz)))
         };
@@ -844,7 +844,7 @@ mod Scenes {
 
     def gltfTextured(): Scene =
         let model = texturedModel("assets/textured_two_materials.glb");
-        let world = Mat4.mul(Mat4.translate(Vec3.v3(0.0, -0.5, 4.0)), Mat4.rotateY(Vec2.pi()));
+        let world = Mat4.mul(Mat4.translate(Vec3.v3(0.0, -0.5, 4.0)), Mat4.rotateY(Num.pi()));
         let instances = placedParts(model, world);
         let light = { position = Vec3.v3(0.0, 2.0, 1.0), color = c8(255, 255, 255), intensity = 0.6, range = 10.0 };
         let base = flatScene({ x = 240.0, y = 140.0 }, 1, instances, Nil);
@@ -1054,7 +1054,7 @@ mod Scenes {
     // emissive を読み落とすと、左の上の行と右の板が暗い灰色の面になる。
     def gltfEmissive3d(): Scene =
         let model = texturedModel("assets/emissive_plates.glb");
-        let world = Mat4.mul(Mat4.translate(Vec3.v3(0.0, 0.0, 4.0)), Mat4.rotateY(Vec2.pi()));
+        let world = Mat4.mul(Mat4.translate(Vec3.v3(0.0, 0.0, 4.0)), Mat4.rotateY(Num.pi()));
         let base = flatScene({ x = 240.0, y = 140.0 }, 1, placedParts(model, world), Nil);
         let scene = { textures = model#textures, environment = { ambient = c8(40, 40, 40) | base#environment } | base };
         { name = "gltfEmissive3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
@@ -1092,7 +1092,7 @@ mod Scenes {
     // NDC の y = tan(20°) / tan(0.7)（場面の上から約 32 % の行）に来る。画角を広く取り、上の端で天頂の色へ寄る所まで写す。手前に赤い箱を 1 つ置き、空が物の後ろだけに出ることも見る。
     // 空の向きを取り違える（pitch の符号・縦横の比）と地平の行がずれ、天頂と地面の色の帯（数千 px）が丸ごと違う。
     def skyGradient3d(): Scene =
-        let camera = { eye = Vec3.v3(0.0, 2.0, 0.0), yaw = 0.3, pitch = 20.0 * Vec2.pi() / 180.0, fovY = 1.4, near = 0.5, far = 100.0 };
+        let camera = { eye = Vec3.v3(0.0, 2.0, 0.0), yaw = 0.3, pitch = 20.0 * Num.pi() / 180.0, fovY = 1.4, near = 0.5, far = 100.0 };
         let box = shape(facingQuad(-1.0, 1.0, 0.5, 2.5, 8.0, c8(200, 40, 40)) :: Nil);
         let sky = Scene3d.gradientSky(c8(20, 30, 90), c8(240, 180, 120), c8(60, 40, 30)) |> Scene3d.withSkyCurve(0.7);
         let scene = { instances = box :: Nil, sky = Some(sky), zIndex = 1 | Scene3d.scene(camera, { x = 320.0, y = 180.0 }) };

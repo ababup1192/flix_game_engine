@@ -445,7 +445,9 @@
 - 1 コマの診断。時間はナノ秒。
   `pub type alias Diagnostics = { submitNs = Int64, swapNs = Int64, shaderBuilds = List[ShaderBuild], shaderDeletes = Int32, liveShaders = Int32, drawItems = Int32, glyphsAdded = Int32, textureUploads = List[String], gpuNs = Option[Int64], gpuPasses = List[(String, Int64)], scene3dCounts = Scene3dCounts }`
 - 3D の場面の数（Diagnostics#scene3dCounts）。
-  `pub type alias Scene3dCounts = { instances = Int32, drawn = Int32, drawCalls = Int32 }`
+  `pub type alias Scene3dCounts = { instances = Int32, drawn = Int32, drawCalls = Int32, droppedPointLights = Int32, droppedSpotLights = Int32 }`
+- 3D を描かないコマの数（全部 0）。
+  `pub def emptyScene3dCounts(): Scene3dCounts`
 - 作ったシェーダー 1 つ。
   `pub type alias ShaderBuild = { name = String, reason = BuildReason }`
 - 作った理由。Changed は同じ名前で中身が違った時で、違う所の抜き書きを持つ。
@@ -816,6 +818,17 @@
   `pub def floorInt(x: Float64): Int32`
 - 最も近い整数へ丸めて Int32 に落とす（0.5 は上へ）。負でも床基準（-1.5 → -1）。
   `pub def roundInt(x: Float64): Int32`
+- `pub def sqrt(x: Float64): Float64`
+- sin（角はラジアン）。
+  `pub def sin(x: Float64): Float64`
+- cos（角はラジアン）。
+  `pub def cos(x: Float64): Float64`
+- 点 (x, y) の向きの角（ラジアン・−π〜π）。引数は y が先（Java の Math.atan2 と同じ）。
+  `pub def atan2(y: Float64, x: Float64): Float64`
+- 1 周ぶんの角（2π）。円周に点を置く計算の共通の源。
+  `pub def tau(): Float64`
+- 円周率（値の源は tau — 2 で割るのは倍精度で正確）。
+  `pub def pi(): Float64`
 
 ## Polygon — `engine/src/render/Polygon.flix`
 - 任意の頂点列から Polygon を生成する（alpha=1.0 不透明）。
@@ -1066,7 +1079,7 @@
 - 法線マップ。texture = 絵の名前（タンジェント空間・緑が絵の上）・strength = でこぼこの強さ（1 で絵のまま）。
   `pub type alias NormalMap = { texture = String, strength = Float64 }`
 - 材質の中身。spec の Out の色 = 光を当てる前の色・params = spec の Param・
-  `pub type alias MaterialFields = { spec = ShaderDoc.Spec, params = Map[String, Float64], cutout = Bool, emission = Option[ShaderDoc.Shade], normalMap = Option[NormalMap], wrap = Wrap, blend = Bool, doubleSided = Bool }`
+  `pub type alias MaterialFields = { spec = ShaderDoc.Spec, params = Map[String, Float64], cutout = Bool, emission = Option[ShaderDoc.Shade], normalMap = Option[NormalMap], wrap = Wrap, blend = Bool, doubleSided = Bool, shaderHash = Lazy[Int64] }`
 - 材質（閉じた型 — 欄を後から足しても、ゲームの書いた値が壊れない）。material から作り、with… で足す。
   `pub type alias Material3d = MaterialData`
 - spec だけの材質（params 空・cutout なし・emission なし・法線マップなし・Repeat・不透明・表の面だけ）。
@@ -1079,11 +1092,11 @@
   `pub def withAlphaBlend(on: Bool, m: Material3d): Material3d`
 - on が真なら裏の面も描く（ガラスの板・網・葉など、裏から見ても見える物）。裏の面は光の計算の法線を裏返す
   `pub def withDoubleSided(on: Bool, m: Material3d): Material3d`
-- 光の計算の後に足す、自分で光る色（かすみに沈まない）。
+- 光の計算の後に足す、自分で光る色（かすみに沈まない）。名前は替えなくてよい（GL は spec と emission の中身の鍵でプログラムを引く）。
   `pub def withEmission(s: ShaderDoc.Shade, m: Material3d): Material3d`
 - emission を外す（glb の emissive で光らせたくない時）。
   `pub def withoutEmission(m: Material3d): Material3d`
-- spec の名前だけを替える。spec の木か emission の木を差し替えた材質に、木ごとに違う名前を付ける
+- spec の名前だけを替える（知らせの文面・GL のプログラムの名前に出る）。木の違う材質に別の名前を付けなくてよい
   `pub def withSpecName(name: String, m: Material3d): Material3d`
 - `pub def withNormalMap(n: NormalMap, m: Material3d): Material3d`
 - `pub def withWrap(w: Wrap, m: Material3d): Material3d`
@@ -1195,6 +1208,10 @@
   `pub def shadowMatrix(spot: SpotLight): Mat4.Mat4`
 - 上限を超えた光を、目に近い物から選んで残す（同じ距離なら並びの前の物）。残った物は元の並びの順のまま。
   `pub def pickLights(eye: Vec3.Vec3, cmd: Scene3dCmd): Scene3dCmd`
+- pickLights が上限を超えて落とす光の数（points = 点光源・spots = スポット）。落とす物が無ければ 0。
+  `pub def droppedLightsOf(cmd: Scene3dCmd): { points = Int32, spots = Int32 }`
+- 落とす光があれば、種類ごとに (鍵, 知らせる 1 行)。毎コマ通るので、呼ぶ側が鍵ごとに初回 1 回だけ出す（GL と CPU で同じ文面）。
+  `pub def droppedLightsWarnings(cmd: Scene3dCmd): List[(String, String)]`
 - `pub type alias RenderCmd = { at = Vec2.Vec2, clip = Option[Rect2.Rect2], scene = Scene3dCmd }`
 
 ## ShaderDoc — `engine/src/ShaderDoc.flix`
@@ -1357,6 +1374,7 @@
   `pub def eqMaterial(specA: ShaderDoc.Spec, emissionA: Option[ShaderDoc.Shade], specB: ShaderDoc.Spec, emissionB: Option[ShaderDoc.Shade]): Bool`
 - a と b が同じ物か（中身ではなく参照）。
   `pub def isSameSpec(a: ShaderDoc.Spec, b: ShaderDoc.Spec): Bool`
+- `pub def hashMaterial(spec: ShaderDoc.Spec, emission: Option[ShaderDoc.Shade]): Int64`
 - Spec → fragment シェーダー全体（prelude + main）。uTime uniform を前提に持つ。
   `pub def compile(spec: ShaderDoc.Spec): String`
 - 3D の材質を GLSL にした部品。render_gl の 3D の frag が、自分の光の計算の前に差し込む。
@@ -1632,17 +1650,17 @@
 
 ## Vec2 — `engine/src/core/Vec2.flix`
 - `pub type alias Vec2 = {x = Float64, y = Float64}`
-- 平方根（pure キャスト）
+- 旧い名前。Num.sqrt を使う（0.84.0 で消す）。
   `pub def sqrt(v: Float64): Float64`
-- 円周率（値の源は tau に一本化 — 2 で割るのは倍精度で正確）。
+- 旧い名前。Num.pi を使う（0.84.0 で消す）。
   `pub def pi(): Float64`
-- 1 周ぶんの角（2π）。円周に点を置く計算の共通の源（リテラルの散在を防ぐ）。
+- 旧い名前。Num.tau を使う（0.84.0 で消す）。
   `pub def tau(): Float64`
-- sin（pure キャスト）
+- 旧い名前。Num.sin を使う（0.84.0 で消す）。
   `pub def sin(x: Float64): Float64`
-- cos（pure キャスト）
+- 旧い名前。Num.cos を使う（0.84.0 で消す）。
   `pub def cos(x: Float64): Float64`
-- atan2（pure キャスト）
+- 旧い名前。Num.atan2 を使う（0.84.0 で消す）。
   `pub def atan2(y: Float64, x: Float64): Float64`
 - (x, y) から Vec2 を作るリテラル短縮。`{x = …, y = …}` と同じ値だが、リスト内などで
   `pub def v2(x: Float64, y: Float64): Vec2`

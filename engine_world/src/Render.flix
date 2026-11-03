@@ -564,8 +564,8 @@ pub mod Render {
     /// 回転の軸は「頂点をどこを原点に組むか」で決める（他エンジンの pivot と同じ考え方）:
     /// 原点中心の形なら中心回転、lineQuad の根元を原点に置けば時計の針になる。
     pub def rotated(t: Float64, vertices: List[Vec2.Vec2]): List[Vec2.Vec2] =
-        let c = Vec2.cos(Vec2.tau() * t);
-        let s = Vec2.sin(Vec2.tau() * t);
+        let c = Num.cos(Num.tau() * t);
+        let s = Num.sin(Num.tau() * t);
         List.map(v -> { x = v#x * c - v#y * s, y = v#x * s + v#y * c }, vertices)
 
     /// 任意の点 pivot 周りに回す（蝶番・ドア用の近道。pivot へ移して回して戻すのと同じ）。
@@ -1387,7 +1387,7 @@ pub mod Render {
     def flipSign(b: Bool): Float64 = if (b) -1.0 else 1.0
 
     /// 回転数（1 周 = 1.0）→ 描画命令のラジアン。単位の境目はここ 1 か所だけ。
-    def radiansOf(turns: Float64): Float64 = Vec2.tau() * turns
+    def radiansOf(turns: Float64): Float64 = Num.tau() * turns
 
     def textDrawables(content: String, fontAtlas: FontAtlas, fontSize: Float64,
                       tint: Color, alpha: Float64, rotation: Float64, zIndex: Int32,

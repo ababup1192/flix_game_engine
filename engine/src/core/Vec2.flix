@@ -13,27 +13,25 @@ pub mod Vec2 {
     // Math Helpers
     // ========================================================================
 
-    /// 平方根（pure キャスト）
-    pub def sqrt(v: Float64): Float64 =
-        unchecked_cast(Math.sqrt(v) as _ \ {})
+    // WhyNot: すぐ消さない — 外のゲームで約 240 か所が使っていて、2 版は残す決まり（docs/migrations/0.77.0.md）。
 
-    /// 円周率（値の源は tau に一本化 — 2 で割るのは倍精度で正確）。
-    pub def pi(): Float64 = tau() / 2.0
+    /// 旧い名前。Num.sqrt を使う（0.84.0 で消す）。
+    pub def sqrt(v: Float64): Float64 = Num.sqrt(v)
 
-    /// 1 周ぶんの角（2π）。円周に点を置く計算の共通の源（リテラルの散在を防ぐ）。
-    pub def tau(): Float64 = 6.283185307179586
+    /// 旧い名前。Num.pi を使う（0.84.0 で消す）。
+    pub def pi(): Float64 = Num.pi()
 
-    /// sin（pure キャスト）
-    pub def sin(x: Float64): Float64 =
-        unchecked_cast(Math.sin(x) as _ \ {})
+    /// 旧い名前。Num.tau を使う（0.84.0 で消す）。
+    pub def tau(): Float64 = Num.tau()
 
-    /// cos（pure キャスト）
-    pub def cos(x: Float64): Float64 =
-        unchecked_cast(Math.cos(x) as _ \ {})
+    /// 旧い名前。Num.sin を使う（0.84.0 で消す）。
+    pub def sin(x: Float64): Float64 = Num.sin(x)
 
-    /// atan2（pure キャスト）
-    pub def atan2(y: Float64, x: Float64): Float64 =
-        unchecked_cast(Math.atan2(y, x) as _ \ {})
+    /// 旧い名前。Num.cos を使う（0.84.0 で消す）。
+    pub def cos(x: Float64): Float64 = Num.cos(x)
+
+    /// 旧い名前。Num.atan2 を使う（0.84.0 で消す）。
+    pub def atan2(y: Float64, x: Float64): Float64 = Num.atan2(y, x)
 
 
     // ========================================================================
@@ -84,7 +82,7 @@ pub mod Vec2 {
         v#x * v#x + v#y * v#y
 
     pub def length(v: Vec2): Float64 =
-        sqrt(lengthSquared(v))
+        Num.sqrt(lengthSquared(v))
 
     pub def distanceSquaredTo(a: Vec2, b: Vec2): Float64 =
         lengthSquared(sub(a, b))
@@ -124,14 +122,14 @@ pub mod Vec2 {
     // ========================================================================
 
     pub def angle(v: Vec2): Float64 =
-        atan2(v#y, v#x)
+        Num.atan2(v#y, v#x)
 
     pub def angleTo(a: Vec2, b: Vec2): Float64 =
-        atan2(cross(a, b), dot(a, b))
+        Num.atan2(cross(a, b), dot(a, b))
 
     pub def rotated(v: Vec2, phi: Float64): Vec2 =
-        let c = cos(phi);
-        let s = sin(phi);
+        let c = Num.cos(phi);
+        let s = Num.sin(phi);
         {x = v#x * c - v#y * s, y = v#x * s + v#y * c}
 
     pub def directionTo(a: Vec2, b: Vec2): Vec2 =
@@ -213,5 +211,5 @@ pub mod Vec2 {
     /// 新規コードの「円周に点を置く」計算はこれを使う（既存の自前 cos/sin は描き出しの
     /// バイト一致を守るため据え置き — 移行は絵の差分を許容するリリースで行う）。
     pub def onEllipse(radii: Vec2, t: Float64): Vec2 =
-        { x = radii#x * cos(tau() * (t - 0.25)), y = radii#y * sin(tau() * (t - 0.25)) }
+        { x = radii#x * Num.cos(Num.tau() * (t - 0.25)), y = radii#y * Num.sin(Num.tau() * (t - 0.25)) }
 }

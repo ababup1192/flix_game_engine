@@ -331,4 +331,55 @@ mod TestShaderGenEqSpec {
         let spec = specOf(Field.Const(Float64.nan()));
         Assert.assertEq(expected = (true, false),
                         (ShaderGen.eqSpec(spec, spec), ShaderGen.eqSpec(spec, specOf(Field.Const(Float64.nan())))))
+
+    // ── hashMaterial: eqSpec が偽になる組は鍵も違う（1 欄の違いを鍵が落とすと、GL が違う材質に同じプログラムを引きに行く）──
+
+    def hashOf(spec: ShaderDoc.Spec): Int64 = ShaderGen.hashMaterial(spec, None)
+
+    @Test
+    def testFieldChangesChangeHash(): Unit \ Assert =
+        let sameKey = fieldDiffPairs() |> List.filterMap(entry -> {
+            let (label, a, b) = entry;
+            if (hashOf(specOf(a)) == hashOf(specOf(b))) Some(label) else None
+        });
+        Assert.assertEq(expected = (Nil: List[String]), sameKey)
+
+    @Test
+    def testShadeChangesChangeHash(): Unit \ Assert =
+        let sameKey = shadeDiffPairs() |> List.filterMap(entry -> {
+            let (label, a, b) = entry;
+            if (hashOf(specOfShade(a)) == hashOf(specOfShade(b))) Some(label) else None
+        });
+        Assert.assertEq(expected = (Nil: List[String]), sameKey)
+
+    @Test
+    def testSpecChangesChangeHash(): Unit \ Assert =
+        let sameKey = specDiffPairs() |> List.filterMap(entry -> {
+            let (label, variant) = entry;
+            if (hashOf(baseSpec()) == hashOf(variant)) Some(label) else None
+        });
+        Assert.assertEq(expected = (Nil: List[String]), sameKey)
+
+    /// テクスチャの名前だけを別名に替えた Spec は eqSpec が真なので、鍵も同じ。
+    @Test
+    def testRenamedTexKeepsHash(): Unit \ Assert =
+        let spec: ShaderDoc.Spec = { name = "s", cycleRate = 0.0, bindings = Nil,
+            out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Rgb({ r = cTex(), g = Field.Tex({ name = "c", chan = TexChan.G }),
+                                                                     b = cTex() }),
+                                       alpha = Field.Const(1.0) }) };
+        let renamed = ShaderDoc.renameTex(n -> if (n == "a") "a@history" else "@missing:" + n, spec);
+        Assert.assertEq(expected = hashOf(spec), hashOf(renamed))
+
+    /// -0.0 と 0.0 は == で等しい（eqSpec が真）ので、鍵も同じ。
+    @Test
+    def testNegativeZeroKeepsHash(): Unit \ Assert =
+        Assert.assertEq(expected = hashOf(specOf(Field.Const(0.0))), hashOf(specOf(Field.Const(-0.0))))
+
+    /// emission の有無と中身も鍵に入る。
+    @Test
+    def testEmissionChangesHash(): Unit \ Assert =
+        let glow = c -> Some(Shade.Solid(c));
+        Assert.assertEq(expected = (false, false),
+                        (ShaderGen.hashMaterial(baseSpec(), None) == ShaderGen.hashMaterial(baseSpec(), glow(col1())),
+                         ShaderGen.hashMaterial(baseSpec(), glow(col1())) == ShaderGen.hashMaterial(baseSpec(), glow(col2()))))
 }

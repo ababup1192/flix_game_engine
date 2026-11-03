@@ -396,7 +396,7 @@ def testPowProductEdges(): Unit \ Assert =
 @Test
 def testScanlineEval(): Unit \ Assert =
     let got = ShaderEval.evalField(scanlineField(), { x = 0.0, y = 0.3 }, 0.1);
-    Assert.assertEq(expected = 0.5 + 0.5 * Vec2.sin(11.7), got)
+    Assert.assertEq(expected = 0.5 + 0.5 * Num.sin(11.7), got)
 
 // ════════════════════════════════════════════════════════════════════
 // (6) Wave 2a: bindings（shared/use）＋ Tiling — 共有機構と座標のマス目化
@@ -773,7 +773,7 @@ def testEvalRadial(): Unit \ Assert =
     let edge = ShaderEval.evalField(rd, { x = 1.0, y = 0.5 }, 0.0);
     let corner = ShaderEval.evalField(rd, { x = 1.0, y = 1.0 }, 0.0);
     Assert.assertEq(expected = (true, true, true),
-        (center == 0.0, edge == 0.5, Float64.abs(corner - Vec2.sqrt(0.5)) < 0.0000001))
+        (center == 0.0, edge == 0.5, Float64.abs(corner - Num.sqrt(0.5)) < 0.0000001))
 
 /// CPU/GPU 一致: Radial+Smoothstep のビネット式で、CPU 評価（ShaderEval）と
 /// GLSL 側（ShaderGen）が同じ smoothstep(lo, hi, length(...)) の構造を持つことを釘打ちする。

@@ -26,7 +26,7 @@ pub mod Vec3 {
     pub def cross(a: Vec3, b: Vec3): Vec3 =
         v3(a#y * b#z - a#z * b#y, a#z * b#x - a#x * b#z, a#x * b#y - a#y * b#x)
 
-    pub def length(v: Vec3): Float64 = Vec2.sqrt(dot(v, v))
+    pub def length(v: Vec3): Float64 = Num.sqrt(dot(v, v))
 
     pub def distanceSquared(a: Vec3, b: Vec3): Float64 = let d = sub(a, b); dot(d, d)
 

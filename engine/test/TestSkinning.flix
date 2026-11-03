@@ -19,7 +19,7 @@ def vecNear(a: Vec3.Vec3, b: Vec3.Vec3): Bool = Vec3.distanceSquared(a, b) < 1.0
 def poseAt(t: Vec3.Vec3): Skin3d.JointPose = { translation = t, rotation = Quat.identity(), scale = Vec3.one() }
 
 /// Y 軸まわりに 90 度回す四元数（+Z が +X へ回る）。
-def quarterTurnY(): Quat.Quat = { x = 0.0, y = Vec2.sqrt(0.5), z = 0.0, w = Vec2.sqrt(0.5) }
+def quarterTurnY(): Quat.Quat = { x = 0.0, y = Num.sqrt(0.5), z = 0.0, w = Num.sqrt(0.5) }
 
 def okOrBug(r: Result[String, a]): a = match r {
     case Ok(v) => v
@@ -87,12 +87,12 @@ def testQuatSlerpTakesShortArcWhenDotIsNegative(): Unit \ Assert =
     let q = quarterTurnY();
     let flipped = { x = 0.0 - q#x, y = 0.0 - q#y, z = 0.0 - q#z, w = 0.0 - q#w };
     let moved = Mat4.apply(Quat.toMat4(Quat.slerp(Quat.identity(), flipped, 0.5)), Vec3.v3(0.0, 0.0, 1.0));
-    Assert.assertTrue(vecNear(moved, Vec3.v3(Vec2.sqrt(0.5), 0.0, Vec2.sqrt(0.5))))
+    Assert.assertTrue(vecNear(moved, Vec3.v3(Num.sqrt(0.5), 0.0, Num.sqrt(0.5))))
 
 /// Y 軸まわり 90 度の四元数の行列は Mat4.rotateY(π/2) と同じ（+Z が +X へ回る約束）。
 @Test
 def testQuatToMat4MatchesRotateY(): Unit \ Assert =
-    Assert.assertTrue(matNear(Quat.toMat4(quarterTurnY()), Mat4.rotateY(Vec2.pi() / 2.0)))
+    Assert.assertTrue(matNear(Quat.toMat4(quarterTurnY()), Mat4.rotateY(Num.pi() / 2.0)))
 
 // ════════════════════════════════════════════════════════════════════
 // Mat4.inverse・ofColumns

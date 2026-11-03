@@ -147,3 +147,16 @@ func TestWhenProjectSkipsNestedProjects(t *testing.T) {
 		t.Fatalf("without flix.toml the whole repo is one project: %s", msg)
 	}
 }
+
+// notice の規則は当たりを出すが止めない（終わりの値は 0）。数が多ければ 3 行だけ並べて残りを数で出す。
+func TestNoticeRuleReportsWithoutFailing(t *testing.T) {
+	rules := `{"rules":[{"id":"old-num","suffixes":[".flix"],"notice":true,"pattern":"\\bVec2\\.sqrt\\(","hint":"Num.sqrt"}]}`
+	root := writeRepo(t, rules, "", map[string]string{
+		"src/A.flix": "a = Vec2.sqrt(1.0)\nb = Vec2.sqrt(2.0)\nc = Vec2.sqrt(3.0)\nd = Vec2.sqrt(4.0)\n",
+	})
+	code, msg := run(t, root, "src/A.flix")
+	if code != 0 || !strings.Contains(msg, "src/A.flix:1 [old-num]") || strings.Contains(msg, "src/A.flix:4") ||
+		!strings.Contains(msg, "ほか 1 か所") || !strings.Contains(msg, "知らせ（止めない）4 か所。代わりに: Num.sqrt") {
+		t.Fatalf("code=%d msg=%s", code, msg)
+	}
+}

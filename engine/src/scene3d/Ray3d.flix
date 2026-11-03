@@ -92,7 +92,7 @@ pub mod Ray3d {
         let disc = b * b - c;
         if (not (s#radius > 0.0) or c < 0.0 or disc < 0.0) None
         else {
-            let t = 0.0 - b - Vec2.sqrt(disc);
+            let t = 0.0 - b - Num.sqrt(disc);
             if (t >= 0.0 and t <= maxDistance) {
                 let p = pointAt(r, t);
                 Some({ distance = t, point = p, normal = Vec3.mul(Vec3.sub(p, s#center), 1.0 / s#radius) })
@@ -124,7 +124,7 @@ pub mod Ray3d {
         let disc = b * b - a * c;
         if (a < 1.0e-12 or disc < 0.0) None
         else {
-            let t = (0.0 - b - Vec2.sqrt(disc)) / a;
+            let t = (0.0 - b - Num.sqrt(disc)) / a;
             let p = pointAt(r, t);
             if (t >= 0.0 and t <= maxDistance and p#y >= lo and p#y <= hi)
                 Some({ distance = t, point = p, normal = Vec3.v3((p#x - feet#x) / rad, 0.0, (p#z - feet#z) / rad) })

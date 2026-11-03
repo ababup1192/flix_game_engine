@@ -1,9 +1,10 @@
-// Num — 数の小さな道具。0〜1 に収める・小数部だけ残す・周期で折り返す。
+// Num — 数の小さな道具。0〜1 に収める・小数部だけ残す・周期で折り返す・平方根と三角関数。
 //
 // どれも 1 行で書けるが、書き方が少しずつ違うと結果も少しずつ違う
 // （折り返しは負の値の扱いで割れる）。同じ答えを全員が使えるよう 1 箇所に置く。
 // engine（契約層）にあるので、フロント・バックエンド・工具箱・ゲームのどこからでも呼べる。
 pub mod Num {
+    import java.lang.Math
 
     /// 0 以上 1 以下に収める。濃さ・進み具合・混ぜ具合など「0〜1 のはずの値」を
     /// 計算した直後に通す。
@@ -49,4 +50,27 @@ pub mod Num {
     /// 最も近い整数へ丸めて Int32 に落とす（0.5 は上へ）。負でも床基準（-1.5 → -1）。
     pub def roundInt(x: Float64): Int32 =
         floorInt(x + 0.5)
+
+    /// 平方根。負の数は NaN（Java の Math.sqrt と同じ）。
+    // WhyNot: Flix の標準の Float64 に置かない物を自前で包む — 標準に sqrt・sin・cos・atan2 が無い（0.78）。
+    pub def sqrt(x: Float64): Float64 =
+        unchecked_cast(Math.sqrt(x) as _ \ {})
+
+    /// sin（角はラジアン）。
+    pub def sin(x: Float64): Float64 =
+        unchecked_cast(Math.sin(x) as _ \ {})
+
+    /// cos（角はラジアン）。
+    pub def cos(x: Float64): Float64 =
+        unchecked_cast(Math.cos(x) as _ \ {})
+
+    /// 点 (x, y) の向きの角（ラジアン・−π〜π）。引数は y が先（Java の Math.atan2 と同じ）。
+    pub def atan2(y: Float64, x: Float64): Float64 =
+        unchecked_cast(Math.atan2(y, x) as _ \ {})
+
+    /// 1 周ぶんの角（2π）。円周に点を置く計算の共通の源。
+    pub def tau(): Float64 = 6.283185307179586
+
+    /// 円周率（値の源は tau — 2 で割るのは倍精度で正確）。
+    pub def pi(): Float64 = tau() / 2.0
 }

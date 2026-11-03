@@ -55,7 +55,7 @@ pub mod Mip {
     pub def lodOf(d: Derivatives, width: Int32, height: Int32, levels: Int32): Float64 =
         let wrapped = (x: Float64) -> x - Float64.floor(x + 0.5);
         let (w, h) = (Int32.toFloat64(width), Int32.toFloat64(height));
-        let lengthOf = (a: Float64, b: Float64) -> Vec2.sqrt(a * a + b * b);
+        let lengthOf = (a: Float64, b: Float64) -> Num.sqrt(a * a + b * b);
         let rho = Float64.max(lengthOf(wrapped(d#dudx) * w, wrapped(d#dvdx) * h), lengthOf(wrapped(d#dudy) * w, wrapped(d#dvdy) * h));
         if (levels <= 1 or rho <= 1.0) 0.0
         else Float64.min(Int32.toFloat64(levels - 1), log2(rho))

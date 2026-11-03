@@ -110,6 +110,13 @@ for game in "${games[@]}"; do
 	fi
 	lib="$copy/lib/github/ababup1192/flix_game_engine/$version"
 	mkdir -p "$lib"
+	# WhyNot: Maven の依存を毎回取りに行かせない — 7 本続けて取ると repo1.maven.org が 429 を返し、型検査の前に止まる。
+	#   今の engine_full が取った写しを置き、ゲームの写しで足りない物を埋める（古い版のゲームの写しには今の依存が欠ける）。
+	for from in "$game/lib" "$engine/engine_full/lib"; do
+		for dep in cache external; do
+			[ -d "$from/$dep" ] && mkdir -p "$copy/lib/$dep" && cp -R "$from/$dep/." "$copy/lib/$dep/"
+		done
+	done
 	cp "$fpkg" "$lib/flix_game_engine-$version.fpkg"
 	cp "$engine/engine_full/flix.toml" "$lib/flix_game_engine-$version.toml"
 	echo "[check-external] $name（engine $version）"

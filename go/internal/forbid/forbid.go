@@ -7,8 +7,9 @@
 // 規則はエンジンの bin/lint-rules/forbid.json (配られる・上書きされる) と、ゲームの
 // bin/lint-rules/forbid.local.json (ゲーム固有・残る) を足した物。1 件は
 // {id, suffixes / basenames / prefixes で見るファイル, pattern, unlessLine, rawLine, skip, skipDirs,
-// whenProject, hint}。
+// whenProject, notice, hint}。
 // hint には「代わりに何を使うか」を必ず書く (止めるだけの規則は置かない)。
+// notice が true の規則は当たりを出すだけで止めない (旧い名前を残している間に、移る先を知らせる)。
 //
 // WhyNot: 規則ごとに Go のサブコマンドを足さないのは、古い書き方の大半が 1 行の正規表現で
 // 見分けられ、ゲーム固有の書き方 (動画の口の準備など) はエンジンのリリース無しで足したいため。
@@ -49,11 +50,13 @@ type Rule struct {
 	// WhenProject は、そのファイルのプロジェクト（いちばん近い flix.toml のフォルダ）のどこかの .flix に
 	// この正規表現が当たるときだけ規則を効かせる（時計を使い始めたゲームだけ古い口を止める、のように）。
 	WhenProject string `json:"whenProject"`
-	Hint        string `json:"hint"`
-	re          *regexp.Regexp
-	unless      *regexp.Regexp
-	when        *regexp.Regexp
-	from        string
+	// Notice は当たりを知らせるだけで終わりの値を 1 にしない（旧い名前を消すまでの数版、外のゲームの lint とコミットを止めない）。
+	Notice bool   `json:"notice"`
+	Hint   string `json:"hint"`
+	re     *regexp.Regexp
+	unless *regexp.Regexp
+	when   *regexp.Regexp
+	from   string
 }
 
 type rulesFile struct {
@@ -358,13 +361,19 @@ func projectMatches(dir string, re *regexp.Regexp) bool {
 
 func report(out, errOut *strings.Builder, rules *Rules, hits []Hit, all bool, fileCount int) int {
 	live := map[string]bool{}
-	var bad []Hit
+	var bad, notices []Hit
 	for _, h := range hits {
 		live[h.key()] = true
-		if _, ok := rules.Exempt[h.key()]; !ok {
+		if _, ok := rules.Exempt[h.key()]; ok {
+			continue
+		}
+		if h.Rule.Notice {
+			notices = append(notices, h)
+		} else {
 			bad = append(bad, h)
 		}
 	}
+	printNotices(out, notices)
 	code := 0
 	if all {
 		var stale []string
@@ -402,6 +411,30 @@ func report(out, errOut *strings.Builder, rules *Rules, hits []Hit, all bool, fi
 	}
 	fmt.Fprintf(errOut, "[lint-forbid] %d 件。どうしても残すなら bin/lint-rules/forbid.local.json の exempt へ \"パス::規則の id\" と理由 1 行\n", len(bad))
 	return 1
+}
+
+// printNotices は notice の規則の当たりを、規則ごとに数と最初の 3 行と代わりの物で出す（止めない）。
+// WhyNot: 当たりを全部並べない — 旧い名前は 1 つのゲームで数十か所あり、ほかの lint の行が読めなくなる。
+func printNotices(out *strings.Builder, notices []Hit) {
+	byRule := map[string][]Hit{}
+	var order []string
+	for _, h := range notices {
+		if _, seen := byRule[h.Rule.ID]; !seen {
+			order = append(order, h.Rule.ID)
+		}
+		byRule[h.Rule.ID] = append(byRule[h.Rule.ID], h)
+	}
+	for _, id := range order {
+		hs := byRule[id]
+		for i, h := range hs {
+			if i == 3 {
+				fmt.Fprintf(out, "?? …ほか %d か所\n", len(hs)-3)
+				break
+			}
+			fmt.Fprintf(out, "?? %s:%d [%s] %s\n", h.Path, h.Line, id, h.Code)
+		}
+		fmt.Fprintf(out, "   [lint-forbid] 知らせ（止めない）%d か所。代わりに: %s\n", len(hs), hs[0].Rule.Hint)
+	}
 }
 
 func relTo(root, p string) string {

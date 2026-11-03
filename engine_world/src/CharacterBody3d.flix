@@ -68,7 +68,7 @@ pub mod CharacterBody3d {
         let step = if (dt > 0.0) Float64.min(maxStepSeconds(), dt) else 0.0;
         let finite = Float64.isFinite(motion#x) and Float64.isFinite(motion#z);
         let (vx, vz) = if (finite) (motion#x, motion#z) else (0.0, 0.0);
-        let travel = Vec2.sqrt(vx * vx + vz * vz) * step;
+        let travel = Num.sqrt(vx * vx + vz * vz) * step;
         let n = Int32.min(maxSubsteps(), Int32.max(1, Float64.tryToInt32(Float64.ceil(travel / substepLength(s))) |> Option.getWithDefault(maxSubsteps())));
         let near = nearBoxes(world, moving, s, b#feet, travel);
         let sub = step / Int32.toFloat64(n);
@@ -230,7 +230,7 @@ pub mod CharacterBody3d {
     /// 床として乗れる面の向きの y の下限（floorMaxAngleDeg の cos。角は 0〜90 に収め、NaN は 45）。
     def floorMinNormalY(s: Settings): Float64 =
         let deg = if (s#floorMaxAngleDeg >= 0.0) Float64.min(90.0, s#floorMaxAngleDeg) else if (s#floorMaxAngleDeg < 0.0) 0.0 else 45.0;
-        Vec2.cos(deg * Vec2.pi() / 180.0) - 1.0e-9
+        Num.cos(deg * Num.pi() / 180.0) - 1.0e-9
 
     /// 箱が傾いているか（3 本の向きのどれも、ほぼ真上を向いていない）。
     def isTilted(b: CollisionShape3d.Box3d): Bool =

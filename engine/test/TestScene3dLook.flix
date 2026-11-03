@@ -44,7 +44,7 @@ def testSkyStraightDownIsGround(): Unit \ Assert =
 @Test
 def testSkyCurveTwoAtThirtyDegrees(): Unit \ Assert =
     let sky = Scene3d.withSkyCurve(2.0, threeColorSky());
-    Assert.assertEq(expected = (0.75, 0.75, 1.0), rgbOf(Scene3d.skyColorOf(sky, Vec3.v3(0.0, 0.5, Vec2.sqrt(0.75)))))
+    Assert.assertEq(expected = (0.75, 0.75, 1.0), rgbOf(Scene3d.skyColorOf(sky, Vec3.v3(0.0, 0.5, Num.sqrt(0.75)))))
 
 /// 0 以下・NaN の曲がりは 1 として描く。
 @Test
@@ -62,10 +62,10 @@ def testSkyDirectionAtCenterIsForward(): Unit \ Assert =
 /// 見下ろし 20° の場面で、地平（向きの y が 0）は画面の真ん中より上の NDC の y = tan(20°) / tan(fovY / 2) に来る。
 @Test
 def testSkyHorizonRowFollowsPitch(): Unit \ Assert =
-    let pitch = 20.0 * Vec2.pi() / 180.0;
+    let pitch = 20.0 * Num.pi() / 180.0;
     let camera = { eye = Vec3.zero(), yaw = 0.0, pitch = pitch, fovY = 1.0, near = 0.1, far = 100.0 };
     let basis = Scene3d.skyBasisOf(Scene3d.scene(camera, { x = 320.0, y = 180.0 }));
-    let ndcY = (Vec2.sin(pitch) / Vec2.cos(pitch)) / (Vec2.sin(0.5) / Vec2.cos(0.5));
+    let ndcY = (Num.sin(pitch) / Num.cos(pitch)) / (Num.sin(0.5) / Num.cos(0.5));
     Assert.assertTrue(Float64.abs(Scene3d.skyDirectionOf(basis, { x = 0.0, y = ndcY })#y) < 1.0e-9)
 
 /// 空なしの場面は scene の既定。

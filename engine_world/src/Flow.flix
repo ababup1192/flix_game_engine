@@ -487,10 +487,10 @@ pub mod Flow {
                           mouseDown = button,
                           mouseClicked = opt#click |> Option.getWithDefault(button and not hand#prevButton),
                           mouseMoved = opt#moved |> Option.getWithDefault(moved),
-                          wheel = opt#wheel, realNow = Clock.zero(), padTouched = opt#pad,
+                          wheel = opt#wheel, padTouched = opt#pad,
                           padKind = if (opt#pad) GamepadMap.PadKind.Generic else GamepadMap.PadKind.Unknown,
-                          mouseDelta = opt#look |> Option.getWithDefault(App.cursorDelta(hand#prevCursor, cursor)),
-                          windowFocused = true, diagnostics = None };
+                          mouseDelta = opt#look |> Option.getWithDefault(App.cursorDelta(hand#prevCursor, cursor))
+                          | App.emptyFrame() };
             let (step, state) = App.traceFrame(ctx#app, frame, c#state, c#world);
             let nextHand = { cursor = cursor, prevDown = down, prevButton = button, prevCursor = Some(cursor),
                              held = opt#keys |> Option.getWithDefault(hand#held) | hand };

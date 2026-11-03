@@ -140,6 +140,56 @@ World に Doc・アトラス・シェーダーの Spec・音の Mixer を平ら�
   `{ x = v | defaults() }` のような「既定値の上書き」（`Doc.Doc({ x = v | rec(defaults()) })`）に
   集まる。E6794（`Doc` と record の unify）が出たらこの 2 つを疑う
 
+### ゲームが組む型は開いたレコード・エンジンが中身を守る型は閉じた型
+
+エンジンの pub の型に欄を足すと、ゲームが字で全部の欄を書いた所はその版でコンパイルが止まる。
+型の形と作り方を、次の 2 つに分けておく。
+
+- **ゲームが値を組む型は、作る関数 + レコードの更新で書かせる。**
+  `{ intensity = 3.0 | Scene3d.spotLight(p, t, fov) }` の形（`Scene3d.SpotLight` の doc にこの形がある）。
+  作る関数が新しい欄に既定値を入れるので、欄を後から足してもこの書き方は壊れない
+- **エンジンが中身を守る型は、閉じた型 + 作る関数 + `with*`。** 閉じた型は pub mod の中の非 pub の enum と
+  `pub type alias`（`Scene3d.Material3d` = 非 pub の `MaterialData`・`Scene3d.Instance3d`）。
+  中身から導く値（`Mesh3d.withUvs` が作る時に 1 回求めるタンジェント・材質の鍵）を作る時に計算して
+  持っておけるのは閉じた型だけ。開いたレコードはゲームが 1 つの欄だけ書き替えられるので、導いた値と食い違う
+- **どちらにするかは 2 つの問いで決める。**
+  1. ゲームが字で全部の欄を書く理由があるか。無ければ作る関数を必ず通す（開いたレコードのままでよい）
+  2. 中身の食い違いを防ぎたいか（導く値を持つ・欄どうしに守る条件がある）。あれば閉じた型にする
+- **例**: 0.77.0 で `App.emptyFrame()` を足した。`App.Frame` を字で全部の欄を書くテストは
+  `{ down = .. | App.emptyFrame() }` に替える（次の版で `Frame` に欄が増えるため）
+- 非 pub の enum + `pub type alias` の書き方と「取り違えは型で止める」は AGENTS.md の「名前の付け方」の 4。
+  新しく作る型と、直すついでの所から替える
+
+今の主な型の仕分け（engine / engine_world / engine_tools / render_gl）:
+
+| 型 | 今の形 | 作る関数 | 決まりから見て |
+|---|---|---|---|
+| `Scene3d.SpotLight` | 開いたレコード | `Scene3d.spotLight` | そのまま |
+| `Scene3d.Lightmap` | 開いたレコード | `Scene3d.lightmap` | そのまま |
+| `Scene3d.PointLight` | 開いたレコード | 無し | 作る関数を足したい |
+| `Scene3d.ShadowMap` | 開いたレコード | 無し | 作る関数を足したい |
+| `Scene3d.Environment3d` | 開いたレコード | 無し（既定値は `Scene3d.scene` の中） | 作る関数を足したい。今は `{ ambient = .. \| s#environment }` |
+| `Scene3d.Scene3dCmd` | 開いたレコード | `Scene3d.scene` | そのまま |
+| `Camera3d.Camera3d` | 開いたレコード | 無し | 作る関数を足したい |
+| `Transform3d.Transform3d` | 開いたレコード | `Transform3d.of` | そのまま |
+| `CharacterBody3d.Settings` | 開いたレコード | `CharacterBody3d.settings` | そのまま |
+| `Scene3d.Material3d` | 閉じた型 | `Scene3d.material`・`texturedMaterial` + `with*` | そのまま |
+| `Scene3d.Instance3d` | 閉じた型 | `Scene3d.meshInstance` + `with*` | そのまま |
+| `Scene3d.Billboard3d` | 閉じた型 | `Scene3d.billboard` + `with*`・`unlit` | そのまま |
+| `Scene3d.Sky3d` | 閉じた型 | `Scene3d.gradientSky` + `withSkyCurve` | そのまま |
+| `Mesh3d.Mesh3d` | 閉じた型 | `Mesh3d.fromPolygons`・`fromArrays` | そのまま |
+| `Clock.Time` | 閉じた型 | `Clock.zero`・`never`・`after` | そのまま |
+| `App.App` | 1 case の enum（中は `App.Rec`） | `App.make` + ビルダー | そのまま |
+| `App.Frame` | 開いたレコード | `App.frameOf`・`App.emptyFrame` | テストは `App.emptyFrame` を通す |
+| `App.ViewCtx` | 開いたレコード | エンジンが組む | そのまま（ゲームは読むだけ） |
+| `FrameDiagnostics.Diagnostics` | 開いたレコード | エンジンが組む（`empty`） | そのまま（ゲームは読むだけ） |
+| `Model3d.Model3d` | 開いたレコード | 読み込みが組む | そのまま（ゲームは読むだけ） |
+| `Resources.With` | 開いたレコード | `Resources.of` | そのまま |
+| `Light.Light` | 開いたレコード | 無し | 欄が増えるなら作る関数を足す |
+| `Lifetime.Lifetime` | 開いたレコード | `Lifetime.fire` | そのまま |
+| `Vec2`・`Vec3`・`Rect2` | 開いたレコード | 無し | そのまま（欄が増えない値） |
+| render_gl の pub の型（`Render3d.State`・`RenderPaint.Frame` など） | 開いたレコード | render_gl の中 | そのまま（ゲームは触らない） |
+
 ## 二乗を書かない
 
 N はゲームが決める。エンジンは N を知らない（今のテンプレが 9 要素だから軽い、は

@@ -57,8 +57,9 @@ let byName = Model3d.nodesByName(collision);                     // たくさん
 - 止めたい時は `Scene3d.withoutEmission(m)`
 - emissive の付く材質の spec の名前は `gltf:` で始まり、木の形を変える物を全部入れる（`gltf:tex:<絵の読み方>:et<emissive の絵の読み方>(r,g,b)`・
   `gltf:vc:ec(r,g,b)`）。emissive の無い材質は今までどおり `scene3d:textured:<絵の読み方>`
-- emission を差し替えた材質（点滅の mask を掛けるなど）は `Scene3d.withSpecName(名前, m)` で名前も替える。
-  GL は材質のプログラムを spec の名前と emission の有無で引くので、名前が同じで木だけ違う材質が並ぶと毎コマ組み直す。部品ごとに木が違うなら部品ごとの名前
+- emission を差し替えた材質（点滅の mask を掛けるなど）は、名前を替えなくてよい。GL は材質のプログラムを spec と emission の中身の鍵
+  （`ShaderGen.hashMaterial`・読む絵の名前は入れない）で引くので、名前が同じで木だけ違う材質が並んでも組み直さない。名前は知らせの文面と GL のプログラムの名前に
+  出るだけ（替えるなら `Scene3d.withSpecName`）。毎コマ変わる数は木の `Const` に入れず、ShaderDoc の `param` + `Scene3d.withParams` で渡す（木の数が変わると組み直す）
 - 材質の情報（alphaMode・alphaCutoff・doubleSided・絵の名前・emissive の値）は `part#gltfMaterial`。alphaMode は材質に当たる
   （下の「半透明と両面」）。Blender の書き出しは全部の材質を `doubleSided: true` にするので、両面で描きたい物はゲームが材質の名前で選ぶ
 - emissiveTexture を指しているのに読めない時（texCoord ≠ 0・画像が読めない・形に TEXCOORD_0 が無い）は光らせず、材質ごとに 1 行知らせる
@@ -160,7 +161,7 @@ let s = { stepHeight = 0.35 | CharacterBody3d.settings(0.22, 1.7) };            
 let body = CharacterBody3d.snapToFloor(world, Nil, s, CharacterBody3d.bodyAt(start)); // 始まりは床に合わせる
 
 // 毎コマ: 向きはゲームが持ち、水平の速さ（m/秒）だけ渡す。扉の板など動く箱は moving へ毎コマ
-let motion = Vec3.v3(speed * Vec2.sin(yaw), 0.0, speed * Vec2.cos(yaw));
+let motion = Vec3.v3(speed * Num.sin(yaw), 0.0, speed * Num.cos(yaw));
 let next = CharacterBody3d.moveAndSlide(world, doorLeaves, s, motion, Clock.dtOf(clock), body);
 ```
 

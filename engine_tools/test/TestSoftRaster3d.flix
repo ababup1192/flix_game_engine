@@ -440,7 +440,7 @@ mod TestSoftRaster3d {
     /// 原点から角 angle（ラジアン・yz の面で上へ）傾けた距離 1 の点に、innerFovY のスポットが当てる光の赤。
     def spotRedAt(innerFovY: Option[Float64], angle: Float64): Float64 =
         let spot = { innerFovY = innerFovY | Scene3d.spotLight(Vec3.zero(), Vec3.v3(0.0, 0.0, 1.0), 1.0) };
-        let point = Vec3.v3(0.0, Vec2.sin(angle), Vec2.cos(angle));
+        let point = Vec3.v3(0.0, Num.sin(angle), Num.cos(angle));
         let env = { ambient = black() | Scene3d.scene(camera(), { x = 8.0, y = 8.0 })#environment };
         SoftRaster3d.lightAt(env, Nil, spot :: Nil, point, Vec3.mul(point, -1.0))#r
 

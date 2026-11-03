@@ -36,16 +36,17 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | 画面ごとの後処理（ブルーム・ぼかし）を半分の解像度で組む | `App.withPassPlan`（`targets` に `RenderTarget.Descriptor` の scale）+ pass の中の `Render.shaderFill`・なめらかに読むのは ShaderDoc の `sampler`（描き出しは `Render.passSpecsOf`） |
 | 3D の場面を窓の画素で描く・白飛びを HDR とトーンマップで収める・縁を FXAA でならす | `RenderTarget.windowDescriptor()` / `withHdr` の Pass → 本編の面を `PostProcess.tonemappedWith` → 8bit の Pass を `PostProcess.fxaaSpec`（1 で切って白飛びを抑えない） |
 | 面に毎フレーム変わる数（ピント・体力の割合）を渡す | ShaderDoc の `param` + `Render.withShaderParams`（Spec の Const に入れない） |
+| 系・View の中で平方根・sin・cos・角（atan2）・π を使う | `Num.sqrt` / `Num.sin` / `Num.cos` / `Num.atan2` / `Num.pi` / `Num.tau`（`Vec2.sqrt` などは旧い名前で 0.84.0 に消える・`java.lang.Math` を呼ばない） |
 | 面の中で光の向きや距離を計算する（平方根・長さ 1 にそろえる） | ShaderDoc の `math1` の `sqrt`（`UnOp.Sqrt`）・`ShaderDoc.lengthOf` / `normalized`（近い値で代わりにしない） |
 | 3D の部屋・家具（メッシュを深度で前後させる）を 2D の画面に入れる | `Render.scene3d(at, Scene3d.scene(camera, size))`（`Mesh3d.fromObj` / `fromPolygons` → `Scene3d.meshInstance`）・描き出しは `Render.softSceneOf` → `HeadlessRender.renderPngSoft`（三角形を多角形で並べない。手本 `bench/scene3d`） |
 | Blender で骨を入れたキャラ（.glb）を 3D の場面で動かす（歩く・敬礼など） | `Gltf.load` → `AnimationClip3d.sample`（混ぜるなら `Pose3d.blend`）→ `Pose3d.compute` → `Scene3d.withPose`（骨は GPU と SoftRaster の両方で曲がる。曲げを手で頂点に掛けない） |
 | Blender でベイクした光（lightmap と 2 本目の UV）を 3D の部屋に貼る | glb は `Gltf.loadTextured`（TEXCOORD_1 → part の uvs2）→ lightmap の PNG は `Texture3d.decode` で場面の textures へ → `Scene3d.meshInstance(..) \|> Scene3d.withLightmap({ intensity = .. \| Scene3d.lightmap(Texture3d.name(t)) })`（光を材質の絵に混ぜ込まない・ベイクに入れた光は pointLights に入れない・骨つきには付かない・engine の `docs/lightmap.md`） |
 | 3D の絵が多く「場面の絵が 256 MB を超えて使われている」と出る | `Gltf.loadTexturedWith({ normal = 1024 \| Gltf.noTextureLimits() }, path)`・`Texture3d.limitSize(1024)` で縮める → それでも足りなければ project.json の `scene3dTextureBudgetMB`・枚数は `scene3dTextureBudgetCount` |
 | 懐中電灯（縁のぼけたスポット）を目から照らす | `Scene3d.spotLight(p, t, fov)` に `innerFovY = Some(..)`（縁を広くぼかす）を `spotLights` へ（点光源で代わりにしない・円錐を広げて range で縁を消さない・engine の `docs/scene3d.md`） |
-| 3D の点光源が 8 本を超える | 光は全部 `pointLights` に入れる（engine が `Scene3d.pickLights` で目に近い 8 本を選ぶ。ゲームで近い順に選び直さない） |
+| 3D の点光源が 8 本を超える | 光は全部 `pointLights` に入れる（engine が `Scene3d.pickLights` で目に近い 8 本を選ぶ。ゲームで近い順に選び直さない）。落とした数は `frame#diagnostics` の `scene3dCounts#droppedPointLights` / `droppedSpotLights`（初めて落とした時に 1 回知らせる） |
 | 一人称でマウスで視点を回す（カーソルを窓にキャプチャする） | `App.withMouseCapture(w -> ..)` + `frame#mouseDelta`（design px）で yaw・pitch を回す。クリックでキャプチャ・Esc で放す（ドラッグの差で代わりにしない・engine の `docs/modules/input.md` の「一人称の視点」） |
 | GPU と CPU の 1 コマの時間を debug 表示する | `App.withDiagnostics()` → `frame#diagnostics` → `FrameDiagnostics.summaryLines`（自前で nanoTime を測らない。GPU は 1〜2 コマ遅れの値） |
-| 3D の家具・壁に木目や石の絵と凹凸（法線マップ）を貼る | 絵つきの .glb は `Gltf.loadTextured` → 部品は `model#parts`・絵は場面の `{ textures = model#textures | 場面 }` に渡す（渡さないと黒い）・コードの形は `Mesh3d.withBoxUvs` + `Scene3d.texturedMaterial` + `withNormalMap`・glb の emissive（`KHR_materials_emissive_strength` つき）も読んで光る（止めるなら `Scene3d.withoutEmission`・emission を差し替えたら `Scene3d.withSpecName`）・材質の情報は `part#gltfMaterial` |
+| 3D の家具・壁に木目や石の絵と凹凸（法線マップ）を貼る | 絵つきの .glb は `Gltf.loadTextured` → 部品は `model#parts`・絵は場面の `{ textures = model#textures | 場面 }` に渡す（渡さないと黒い）・コードの形は `Mesh3d.withBoxUvs` + `Scene3d.texturedMaterial` + `withNormalMap`・glb の emissive（`KHR_materials_emissive_strength` つき）も読んで光る（止めるなら `Scene3d.withoutEmission`・emission を差し替えても名前は替えなくてよい）・材質の情報は `part#gltfMaterial` |
 | Blender で名前を付けた物（扉・調べる物・当たり判定の箱・印の点）を glb から名前で引く | `Model3d.findNode(name, model)` / `nodesWithPrefix("COL_", model)`（たくさん引くなら `nodesByName`）→ `node#world`・`node#localBounds`・`Model3d.nodeOrigin`（位置や大きさで探さない・座標を手で写さない。engine の `docs/scene3d.md`） |
 | 3D の部屋を一人称で歩く（壁で止まる・段差を上る・坂・落ちる・扉に押される） | 箱は `Model3d.nodesWithPrefix("COL_", m) \|> CollisionShape3d.boxesOfNodes`（glb の `COL_*` のノード）→ `CollisionWorld3d.build(2.0, boxes)` → 毎コマ `CharacterBody3d.moveAndSlide(world, 扉の板, settings, 速さ, dt, body)`（自前で押し出し・床探しを書かない・地面と歩ける範囲も箱で入れる。engine の `docs/scene3d.md`） |
 | 一人称で見ている物を調べる（照準の先の物の名前・E で調べる・E で扉） | `Camera3d.forwardRay(cam)` → `Ray3d.pickNearest(ray, 距離, 的)`（的は `Ray3d.boxTargetsOf(n -> 鍵, nodes)`。壁も「壁」の鍵で入れて遮る。距離と向きの内積で代わりにしない） |
@@ -57,6 +58,7 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | ポーズ・ヒットストップで止める・遅くする（遊びと実時間を分ける） | `App.addClock` + `Clock.Pace`・`frame#realNow` |
 | 規則の奥の出来事で鳴らす（固定刻みでも 1 回） | `Emit.emit` → `Emit.collectInto` で World に溜め `Emit.since` |
 | 粒（花びら・火の粉）に触れたかを規則で取る | `Fx.particlesOfAll(now, bursts)`（絵と同じ式の番号と中心）+ `Fx.touches` |
+| テストで系に渡す 1 コマ（押したキー・dt・カーソル）を組む | `{ down = Set#{Key.Space}, justPressed = Set#{Key.Space}, dt = 0.016 \| App.emptyFrame() }`（字で `App.Frame` の全部の欄を書かない。前のコマとの差から作るなら `App.frameOf`） |
 | どう遊んでも崩れない決まりを確かめる（性質テスト） | `PropertyTest.forAll`（画面なしで `App.trace` と同じ道） |
 | e2e・動画の手順を書いて画面なしで流す（失敗は行番号つき） | `e2e/<名前>.flow` + `App.withFlow`・`bin/fge flow check`・`make flow` |
 | 好きな場面から起動・テスト・遊んだ通りに再生 | `App.withStarts`（`START=`・`startOrBug`）・記録は `make flow` で再生 |

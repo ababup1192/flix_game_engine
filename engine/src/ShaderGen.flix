@@ -9,6 +9,7 @@
 pub mod ShaderGen {
     import java.lang.{Object => JObject}
     import java.lang.ref.WeakReference
+    import java.lang.Double
 
     /// vertex シェーダー（面 quad 1 枚・uv を渡すだけ）。Spec に依存しない固定ソース。
     /// vertex.xy = 0..1 の quad ローカル座標を rect（px）へ写し、vertex.zw を uv として渡す。
@@ -386,6 +387,143 @@ pub mod ShaderGen {
             case (Field.TexSize(ra), Field.TexSize(rb))           =>
                 ix(ra#name, rb#name) and ra#axis == rb#axis
             case _                                                => false
+        }
+
+    // ── 材質の中身の鍵（hashMaterial）──
+
+    /// 材質（spec と自分で光る色 emission）の中身の鍵。eqMaterial が真の 2 つは必ず同じ値になる。
+    /// 違う中身が同じ値になることはありうるので、鍵で引き当てた後は eqMaterial で確かめる（render_gl の材質の program キャッシュ）。
+    /// テクスチャの名前は字を入れず、spec → emission の順に木をたどって初めて出た順の番号を入れる（eqMaterial の名前の対応と同じ決まり）。
+    /// spec の名前・bindings の名前・Param と Ref の名前は字のまま入れる（eqSpec が字のまま比べる）。
+    /// 浮動小数は -0.0 を 0.0 にそろえてからビットを入れる（== で等しい 2 つを同じ値にする）。
+    // WhyNot: SHA-256 の字にしない — 鍵を求めるのはコマごとに材質を作り直すゲームでは描くたびで、64 bit で足りる（衝突は eqMaterial が見つけて組み直すだけ）。
+    // WhyNot: 木を JSON の字にして hash しない — 字を組む確保が木の大きさだけ乗り、テクスチャの名前を番号に替える手間も別に要る。
+    pub def hashMaterial(spec: ShaderDoc.Spec, emission: Option[ShaderDoc.Shade]): Int64 = region rc {
+        let acc = Ref.fresh(rc, -3750763034362895579i64);
+        let names: Ref[Map[String, Int32], rc] = Ref.fresh(rc, Map.empty());
+        let tok = (t: Int64) -> Ref.put(hashStep(Ref.get(acc), t), acc);
+        let tex = (n: String) -> {
+            let seen = Ref.get(names);
+            match Map.get(n, seen) {
+                case Some(i) => tok(Int32.toInt64(i))
+                case None    =>
+                    let i = Map.size(seen);
+                    Ref.put(Map.insert(n, i, seen), names);
+                    tok(Int32.toInt64(i))
+            }
+        };
+        hashSpec(tok, tex, spec);
+        match emission {
+            case None    => tok(0i64)
+            case Some(s) => tok(1i64); hashShade(tok, tex, s)
+        };
+        Ref.get(acc)
+    }
+
+    /// 鍵へ値 t を 1 つ混ぜる。
+    def hashStep(acc: Int64, t: Int64): Int64 =
+        let x0 = Int64.bitwiseXor(acc * 1099511628211i64, t);
+        let x1 = Int64.bitwiseXor(x0, Int64.logicalRightShift(dist = 33, x0)) * -49064778989728563i64;
+        let x2 = Int64.bitwiseXor(x1, Int64.logicalRightShift(dist = 33, x1)) * -4265267296055464877i64;
+        Int64.bitwiseXor(x2, Int64.logicalRightShift(dist = 33, x2))
+
+    def hashFloat(tok: Int64 -> Unit \ ef, x: Float64): Unit \ ef =
+        tok(Double.doubleToLongBits(x + 0.0))
+
+    def hashInt(tok: Int64 -> Unit \ ef, x: Int32): Unit \ ef = tok(Int32.toInt64(x))
+
+    def hashString(tok: Int64 -> Unit \ ef, s: String): Unit \ ef =
+        tok(Int32.toInt64(String.length(s)));
+        tok(String.foldLeft((h, c) -> h * 31i64 + Int32.toInt64(Char.toBmpCodePoint(c)), 7i64, s))
+
+    def hashColor(tok: Int64 -> Unit \ ef, c: Color): Unit \ ef =
+        hashFloat(tok, c#r); hashFloat(tok, c#g); hashFloat(tok, c#b)
+
+    /// 小さな enum（Axis・BinOp など）を、表に出す名前で入れる。
+    def hashShown(tok: Int64 -> Unit \ ef, x: a): Unit \ ef with ToString[a] = hashString(tok, ToString.toString(x))
+
+    def hashVec2(tok: Int64 -> Unit \ ef, v: Vec2.Vec2): Unit \ ef =
+        hashFloat(tok, v#x); hashFloat(tok, v#y)
+
+    /// Spec と Out の欄を閉じたパターンで開く（欄を足したら、ここでコンパイルが止まる）。
+    def hashSpec(tok: Int64 -> Unit \ ef, tex: String -> Unit \ ef, s: ShaderDoc.Spec): Unit \ ef = match s {
+        case { name = name, cycleRate = cycleRate, bindings = bindings, out = out } =>
+            hashString(tok, name);
+            hashFloat(tok, cycleRate);
+            hashInt(tok, List.length(bindings));
+            bindings |> List.forEach(nf -> { hashString(tok, fst(nf)); hashField(tok, tex, snd(nf)) });
+            match out {
+                case ShaderDoc.Out.Fill({ shade = shade, alpha = alpha }) => hashShade(tok, tex, shade); hashField(tok, tex, alpha)
+            }
+    }
+
+    def hashShade(tok: Int64 -> Unit \ ef, tex: String -> Unit \ ef, s: ShaderDoc.Shade): Unit \ ef =
+        use ShaderDoc.Shade;
+        match s {
+            case Shade.Solid(c)    => tok(1i64); hashColor(tok, c)
+            case Shade.Ramp(r)     => tok(2i64); hashColor(tok, r#lo); hashColor(tok, r#hi); hashField(tok, tex, r#field)
+            case Shade.Gradient(g) =>
+                tok(3i64);
+                hashInt(tok, List.length(g#stops));
+                g#stops |> List.forEach(pc -> { hashFloat(tok, fst(pc)); hashColor(tok, snd(pc)) });
+                hashField(tok, tex, g#field)
+            case Shade.Cosine(c)   =>
+                tok(4i64); hashColor(tok, c#a); hashColor(tok, c#b); hashColor(tok, c#c); hashColor(tok, c#d); hashField(tok, tex, c#field)
+            case Shade.Rgb(r)      => tok(5i64); hashField(tok, tex, r#r); hashField(tok, tex, r#g); hashField(tok, tex, r#b)
+        }
+
+    def hashOptField(tok: Int64 -> Unit \ ef, tex: String -> Unit \ ef, f: Option[ShaderDoc.Field]): Unit \ ef =
+        match f {
+            case None    => tok(0i64)
+            case Some(x) => tok(1i64); hashField(tok, tex, x)
+        }
+
+    /// 全部の case を書く（case を足したら、ここで網羅の不足としてコンパイルが止まる）。
+    def hashField(tok: Int64 -> Unit \ ef, tex: String -> Unit \ ef, f: ShaderDoc.Field): Unit \ ef =
+        use ShaderDoc.Field;
+        let fl = x -> hashFloat(tok, x);
+        let i = x -> hashInt(tok, x);
+        let sub = x -> hashField(tok, tex, x);
+        match f {
+            case Field.Const(v)        => tok(1i64); fl(v)
+            case Field.Uv(r)           => tok(2i64); hashShown(tok, r#axis)
+            case Field.Worley(r)       => tok(3i64); fl(r#scale); i(r#seed); hashShown(tok, r#out)
+            case Field.Fbm(r)          => tok(4i64); i(r#octaves); fl(r#scale); i(r#seed)
+            case Field.FbmTile(r)      => tok(5i64); i(r#octaves); fl(r#scale); hashVec2(tok, r#period); i(r#seed)
+            case Field.Smoothstep(r)   => tok(6i64); fl(r#lo); fl(r#hi); sub(r#of)
+            case Field.Scaled(r)       => tok(7i64); fl(r#factor); hashVec2(tok, r#scroll); sub(r#of)
+            case Field.Warp(r)         => tok(8i64); fl(r#amount); fl(r#scale); i(r#seed); sub(r#of)
+            case Field.Mix(r)          => tok(9i64); sub(r#a); sub(r#b); fl(r#t)
+            case Field.Blend(r)        => tok(10i64); sub(r#a); sub(r#b); sub(r#by)
+            case Field.Disk(r)         => tok(11i64); fl(r#cx); fl(r#cy); fl(r#radius); fl(r#feather)
+            case Field.Radial(r)       => tok(12i64); fl(r#cx); fl(r#cy)
+            case Field.RadialAspect(r) => tok(13i64); fl(r#cx); fl(r#cy); fl(r#aspect)
+            case Field.Quantize(r)     => tok(14i64); sub(r#of); i(r#steps)
+            case Field.Scales(r)       => tok(15i64); fl(r#scale); fl(r#stagger)
+            case Field.Glints(r)       => tok(16i64); fl(r#scale); fl(r#rate); fl(r#density); i(r#seed)
+            case Field.Ripples(r)      => tok(17i64); fl(r#freq); fl(r#amp); fl(r#speed); i(r#seed)
+            case Field.Sparkle(r)      => tok(18i64); fl(r#scale); fl(r#rate); fl(r#density); i(r#seed)
+            case Field.Bin(r)          => tok(19i64); hashShown(tok, r#op); sub(r#a); sub(r#b)
+            case Field.Hash1(r)        => tok(20i64); fl(r#scale); i(r#seed); hashOptField(tok, tex, r#bucket)
+            case Field.Hash2(r)        => tok(21i64); fl(r#scale); i(r#seed); hashShown(tok, r#comp); hashOptField(tok, tex, r#bucket)
+            case Field.Un(r)           => tok(22i64); hashShown(tok, r#op); sub(r#of)
+            case Field.Pow(r)          => tok(23i64); sub(r#of); fl(r#p)
+            case Field.Time(r)         => tok(24i64); fl(r#scale); sub(r#offset)
+            case Field.Tiling(r)       => tok(25i64); hashVec2(tok, r#tiles); sub(r#of)
+            case Field.Snap(r)         => tok(26i64); hashVec2(tok, r#cells); sub(r#of)
+            case Field.Swirl(r)        => tok(27i64); fl(r#cx); fl(r#cy); fl(r#strength); fl(r#rate); sub(r#of)
+            case Field.Angle(r)        => tok(28i64); fl(r#cx); fl(r#cy)
+            case Field.Rotate(r)       => tok(29i64); fl(r#cx); fl(r#cy); fl(r#turns); fl(r#rate); sub(r#of)
+            case Field.Ref(n)          => tok(30i64); hashString(tok, n)
+            case Field.Tex(r)          => tok(31i64); tex(r#name); hashShown(tok, r#chan)
+            case Field.Shift(r)        => tok(32i64); sub(r#dx); sub(r#dy); sub(r#of)
+            case Field.TexBlur(r)      => tok(33i64); tex(r#name); hashShown(tok, r#chan); hashVec2(tok, r#radius); i(r#taps); sub(r#amount)
+            case Field.TexSize(r)      => tok(34i64); tex(r#name); hashShown(tok, r#axis)
+            case Field.Sampler(r)      => tok(35i64); hashShown(tok, r#filter); sub(r#of)
+            case Field.Param(r)        => tok(36i64); hashString(tok, r#name)
+            case Field.World(r)        => tok(37i64); hashShown(tok, r#axis)
+            case Field.Normal(r)       => tok(38i64); hashShown(tok, r#axis)
+            case Field.VertexColor(r)  => tok(39i64); hashShown(tok, r#chan)
         }
 
     /// Spec → fragment シェーダー全体（prelude + main）。uTime uniform を前提に持つ。

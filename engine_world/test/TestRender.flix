@@ -217,7 +217,7 @@ mod TestRender {
     def testTurnedBoxIsQuarterTurnInRadians(): Unit \ Assert =
         let item = RawDraw.box({ x = 4.0, y = 2.0 }, red(), 0) |> Render.turned(0.25);
         let (ds, _) = Render.draw({ at = { x = 0.0, y = 0.0 }, item = item } :: Nil);
-        Assert.assertEq(expected = Some(round4(Vec2.tau() / 4.0)),
+        Assert.assertEq(expected = Some(round4(Num.tau() / 4.0)),
             ds |> List.head |> Option.map(d -> round4(DrawCmd.rotationOf(d))))
 
     // 自分の中心を軸にすれば、群回転をかけても置き場所は動かない（その場で回るだけ）。

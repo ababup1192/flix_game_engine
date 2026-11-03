@@ -210,7 +210,7 @@ mod TestViewProjection {
     @Test
     def testCameraCanFaceAnyDirectionNotJustFourWays(): Unit \ Assert =
         // Persp.Camera をそのまま受けるので、四方位に縛られない（斜めを向く・なめらかに回す）。
-        let turned = { camera = ({ pos = { x = 0.5, y = 0.5 }, yaw = Vec2.pi() / 4.0 }: Persp.Camera)
+        let turned = { camera = ({ pos = { x = 0.5, y = 0.5 }, yaw = Num.pi() / 4.0 }: Persp.Camera)
                      | firstPersonSpec() };
         // yaw 45° の正面は (+x, +y) の斜め。そこに置いた点のずれは 0 度。
         Assert.assertEq(expected = true,

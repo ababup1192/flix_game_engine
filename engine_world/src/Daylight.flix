@@ -98,7 +98,7 @@ pub mod Daylight {
         let dayness = Num.clamp01(sun#height * 6.0);
         let up = Num.clamp01(sun#height);
         let dirX = 0.0 - sun#east;                         // 影は太陽の反対側へ
-        let len = Vec2.sqrt(dirX * dirX + spec#tilt * spec#tilt);
+        let len = Num.sqrt(dirX * dirX + spec#tilt * spec#tilt);
         { dir = if (len < 0.0001) { x = 0.0, y = 1.0 }
                 else { x = dirX / len, y = spec#tilt / len },
           scale = spec#shortest + (spec#longest - spec#shortest) * (1.0 - up) * dayness,
@@ -168,7 +168,7 @@ pub mod Daylight {
     pub def sunAt(t: Float64): { height = Float64, east = Float64 } =
         // 6 時を 0、18 時を 1 とした昼の進み（外＝夜は負にも正にも伸びる）。
         let u = (wrap01(t) - 0.25) / 0.5;
-        { height = Vec2.sin(Vec2.pi() * u), east = Vec2.cos(Vec2.pi() * u) }
+        { height = Num.sin(Num.pi() * u), east = Num.cos(Num.pi() * u) }
 
     /// 太陽の向きを、ドット絵の塗りが使う 8 方向のうち 1 つに丸める（-1 / 0 / +1）。
     /// 絵は作り直したときだけ塗りが変わるので、とびとびにしか動かないのが正しい

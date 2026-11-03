@@ -2,7 +2,7 @@
 mod TestFrustum {
 
     /// 原点から +Z を向くカメラ（縦の画角 90°・near 1・far 100・縦横の比 1）。
-    def camera(): Camera3d.Camera3d = { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = Vec2.pi() / 2.0, near = 1.0, far = 100.0 }
+    def camera(): Camera3d.Camera3d = { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = Num.pi() / 2.0, near = 1.0, far = 100.0 }
 
     def frustum(): Frustum.Frustum = Camera3d.frustum(camera(), 1.0)
 
@@ -43,7 +43,7 @@ mod TestFrustum {
     @Test
     def testSphereReachesByRadius(): Unit \ Assert =
         let f = frustum();
-        let center = Vec3.v3(10.0 + 2.0 * Vec2.sqrt(2.0), 0.0, 10.0);
+        let center = Vec3.v3(10.0 + 2.0 * Num.sqrt(2.0), 0.0, 10.0);
         Assert.assertEq(expected = (true, false), (Frustum.intersectsSphere(f, center, 3.0), Frustum.intersectsSphere(f, center, 1.0)))
 
     // ════════════════════════════════════════════════════════════════════

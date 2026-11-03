@@ -100,4 +100,31 @@ mod ShaderGen.TestPairing {
     @Test
     def testEmissionOnOneSideOnlyIsNotEqual(): Unit \ Assert =
         Assert.assertFalse(ShaderGen.eqMaterial(specReading("a"), glow("a"), specReading("a"), None))
+
+    // ── hashMaterial は名前の対応で eqSpec・eqMaterial と同じ答え（真の組は同じ鍵・偽の組は違う鍵）──
+
+    def hashAgrees(names: (String, String)): List[String] =
+        fixtures() |> List.filterMap(entry -> {
+            let (label, make) = entry;
+            let (x, y) = names;
+            let left = make("a", "b");
+            let right = make(x, y);
+            let sameKey = ShaderGen.hashMaterial(left, None) == ShaderGen.hashMaterial(right, None);
+            if (sameKey == ShaderGen.eqSpec(left, right)) None else Some(label)
+        })
+
+    @Test
+    def testHashAgreesWithEqSpecOnRenamedNames(): Unit \ Assert =
+        Assert.assertEq(expected = Nil, hashAgrees(("p", "q")) ::: hashAgrees(("b", "a")) ::: hashAgrees(("z", "z")))
+
+    @Test
+    def testHashAgreesWithEqMaterial(): Unit \ Assert =
+        let pairs = (specReading("a"), glow("a"), specReading("a"), glow("g"))
+            :: (specReading("a"), glow("e"), specReading("p"), glow("q"))
+            :: (specReading("a"), glow("a"), specReading("a"), None) :: Nil;
+        let disagree = pairs |> List.filter(t -> {
+            let (sa, ea, sb, eb) = t;
+            (ShaderGen.hashMaterial(sa, ea) == ShaderGen.hashMaterial(sb, eb)) != ShaderGen.eqMaterial(sa, ea, sb, eb)
+        });
+        Assert.assertEq(expected = 0, List.length(disagree))
 }

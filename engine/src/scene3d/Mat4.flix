@@ -161,8 +161,8 @@ pub mod Mat4 {
 
     /// Y 軸まわり（ラジアン）。増えると +Z が +X へ回る（カメラの yaw と同じ向き）。
     pub def rotateY(angle: Float64): Mat4 =
-        let s = Vec2.sin(angle);
-        let c = Vec2.cos(angle);
+        let s = Num.sin(angle);
+        let c = Num.cos(angle);
         ofRows(Vector#{ c,   0.0, s,   0.0,
                         0.0, 1.0, 0.0, 0.0,
                         0.0 - s, 0.0, c, 0.0,
@@ -170,8 +170,8 @@ pub mod Mat4 {
 
     /// X 軸まわり（ラジアン）。増えると +Z が −Y へ倒れる（カメラの pitch と同じ「正で下を向く」）。
     pub def rotateX(angle: Float64): Mat4 =
-        let s = Vec2.sin(angle);
-        let c = Vec2.cos(angle);
+        let s = Num.sin(angle);
+        let c = Num.cos(angle);
         ofRows(Vector#{ 1.0, 0.0, 0.0,     0.0,
                         0.0, c,   0.0 - s, 0.0,
                         0.0, s,   c,       0.0,
@@ -179,8 +179,8 @@ pub mod Mat4 {
 
     /// Z 軸まわり（ラジアン）。増えると +X が +Y へ回る。
     pub def rotateZ(angle: Float64): Mat4 =
-        let s = Vec2.sin(angle);
-        let c = Vec2.cos(angle);
+        let s = Num.sin(angle);
+        let c = Num.cos(angle);
         ofRows(Vector#{ c,   0.0 - s, 0.0, 0.0,
                         s,   c,       0.0, 0.0,
                         0.0, 0.0,     1.0, 0.0,

@@ -916,6 +916,13 @@ pub mod App {
           windowFocused = true,
           diagnostics = None }
 
+    /// 何も押していない・動いていない・dt 0 のフレーム（全部の欄が既定の値。viewport と cursor は (0, 0)）。
+    /// テストや台本で Frame を組む時は、字で全部の欄を書かず `{ down = Set#{Key.Space}, dt = 0.016 | App.emptyFrame() }` の形で替える
+    /// （Frame に欄が増えても止まらない。押した瞬間を作るなら justPressed も、前のフレームとの差から作るなら frameOf）。
+    pub def emptyFrame(): Frame =
+        frameOf(prev = Set.empty(), current = Set.empty(), 0.0, Vec2.zero(),
+                { prevCursor = None, cursor = Vec2.zero() }, { prevDown = false, down = false, wheel = 0.0 })
+
     /// Frame#cursor に置く位置: キャプチャしている間（applied = Some(true)）は前の位置 prev のまま止め、ほかは読んだ位置 raw。
     /// キャプチャ中の GLFW の位置は窓の外へ流れていく仮の値なので、UI のホバーと mouseMoved に渡さない。
     pub def heldCursor(applied: Option[Bool], prev: Option[Vec2.Vec2], raw: Vec2.Vec2): Vec2.Vec2 =

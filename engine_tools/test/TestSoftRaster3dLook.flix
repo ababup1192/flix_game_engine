@@ -145,7 +145,7 @@ mod TestSoftRaster3dLook {
     // 見下ろし atan(0.5): 地平は NDC の y = 0.5（行 1 と行 2 の境）。行 1 は空の側（赤 0・青 > 0）・行 2 は地面の側（赤 > 0・青 0）。
     @Test
     def testSkyHorizonRowFollowsPitch(): Unit \ {Assert, IO} =
-        let scene = { sky = Some(rgbSky()) | Scene3d.scene(cameraPitched(Vec2.atan2(0.5, 1.0)), { x = 8.0, y = 8.0 }) };
+        let scene = { sky = Some(rgbSky()) | Scene3d.scene(cameraPitched(Num.atan2(0.5, 1.0)), { x = 8.0, y = 8.0 }) };
         let img = render(scene);
         let (_, r1, _, b1) = pixel(img, 4, 1);
         let (_, r2, _, b2) = pixel(img, 4, 2);

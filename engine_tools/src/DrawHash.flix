@@ -278,9 +278,10 @@ pub mod DrawHash {
     }
 
     // WhyNot: 法線マップの無い材質と Repeat にも印を書かない — 欄を足す前の鍵の字を保ち、前からある材質のキャッシュの PNG を塗り直させない。
+    // WhyNot: shaderHash を書かない — spec と emission から導く値で、その 2 つは下で全部書いている。書くと 3D の描き出しのキャッシュが全部描き直しになる。
     def putMaterial(out: DataOutputStream, m: Scene3d.Material3d): Unit \ IO = match Scene3d.materialFieldsOf(m) {
         case { spec = spec, params = params, cutout = cutout, emission = emission, normalMap = normalMap, wrap = wrap,
-               blend = blend, doubleSided = doubleSided } =>
+               blend = blend, doubleSided = doubleSided, shaderHash = _ } =>
             putStr(out, ToString.toString(ShaderJson.toJson(spec)));
             putSize(out, Map.size(params));
             params |> Map.forEach((name, v) -> { putStr(out, name); putF(out, v) });

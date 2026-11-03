@@ -524,6 +524,7 @@ pub mod SoftRaster {
             |> List.map(Scene3d.materialFieldsOf);
         scenes |> List.flatMap(c -> c#scene#instances) |> List.map(Scene3d.instanceFieldsOf) |> List.forEach(warnNormalMapWithoutUv(warnLog));
         scenes |> List.flatMap(c -> c#scene#instances) |> List.forEach(warnUnusedLightmap(warnLog));
+        scenes |> List.flatMap(c -> Scene3d.droppedLightsWarnings(c#scene)) |> List.forEach(kl -> warnSceneOnce(warnLog, fst(kl), snd(kl)));
         let lightmapNames = scenes |> List.flatMap(c -> c#scene#instances |> List.filterMap(Scene3d.lightmapOf)) |> List.map(lm -> lm#texture);
         let materialReads = materials |> List.flatMap(f -> {
             let reads = ShaderDoc.materialTexReads(f#spec, f#emission);
@@ -575,42 +576,33 @@ pub mod SoftRaster {
 
     /// 3D の場面の材質・法線マップ・lightmap の絵 name が無いことを、名前ごとに 1 度だけ知らせる（label = 何の絵か。GL と同じ文面）。
     def warnMissingSceneTexture(warnLog: TexWarnLog, label: String, name: String): Unit \ IO =
-        let key = "@material-texture:" + name;
-        if (Set.memberOf(key, Ref.get(warnLog))) ()
-        else {
-            Ref.put(Set.insert(key, Ref.get(warnLog)), warnLog);
-            Log.warn("scene3d: ${label} '${name}' が見つからない — 0（黒・透明）で読む"
-                + "（tex3d: の名前は場面の textures に、ほかは project.json の textures に同名の宣言があるか確認）")
-        }
+        warnSceneOnce(warnLog, "@material-texture:" + name, "scene3d: ${label} '${name}' が見つからない — 0（黒・透明）で読む"
+            + "（tex3d: の名前は場面の textures に、ほかは project.json の textures に同名の宣言があるか確認）")
 
     /// 付けたのに使わない lightmap（Scene3d.lightmapWarning）を、理由と形ごとに 1 度だけ知らせる（lightmap を使わず今の式で描く。GL と同じ）。
     def warnUnusedLightmap(warnLog: TexWarnLog, i: Scene3d.Instance3d): Unit \ IO =
-        Scene3d.lightmapWarning(i) |> Option.forEach(line -> {
-            let key = "@lightmap:" + line + Mesh3d.contentHash(Scene3d.instanceFieldsOf(i)#mesh);
-            if (Set.memberOf(key, Ref.get(warnLog))) ()
-            else {
-                Ref.put(Set.insert(key, Ref.get(warnLog)), warnLog);
-                Log.warn(line)
-            }
-        })
+        Scene3d.lightmapWarning(i) |> Option.forEach(line ->
+            warnSceneOnce(warnLog, "@lightmap:" + line + Mesh3d.contentHash(Scene3d.instanceFieldsOf(i)#mesh), line))
 
     /// uv の無い形に法線マップの材質が付いていたら、形ごとに 1 度だけ知らせる（法線マップは当てずに描く。GL と同じ）。
     def warnNormalMapWithoutUv(warnLog: TexWarnLog, f: Scene3d.InstanceFields): Unit \ IO =
         let wants = f#material |> Option.exists(m -> Option.nonEmpty(Scene3d.materialFieldsOf(m)#normalMap));
-        let key = "@normal-map-uv:" + Mesh3d.contentHash(f#mesh);
-        if (not wants or Option.nonEmpty(Mesh3d.uvs(f#mesh)) or Set.memberOf(key, Ref.get(warnLog))) ()
+        if (not wants or Option.nonEmpty(Mesh3d.uvs(f#mesh))) ()
+        else warnSceneOnce(warnLog, "@normal-map-uv:" + Mesh3d.contentHash(f#mesh),
+            "scene3d: uv の無い形に法線マップの材質が付いている — 法線マップを当てずに描く（Mesh3d.withUvs か withBoxUvs で uv を付ける）")
+
+    /// 鍵 key の知らせを 1 度だけ出す（文面は GL と同じ物を呼ぶ側が渡す）。3D の場面の知らせはどれもここを通す。
+    def warnSceneOnce(warnLog: TexWarnLog, key: String, line: String): Unit \ IO =
+        if (Set.memberOf(key, Ref.get(warnLog))) ()
         else {
             Ref.put(Set.insert(key, Ref.get(warnLog)), warnLog);
-            Log.warn("scene3d: uv の無い形に法線マップの材質が付いている — 法線マップを当てずに描く（Mesh3d.withUvs か withBoxUvs で uv を付ける）")
+            Log.warn(line)
         }
 
     def warnTooManyMaterialTextures(warnLog: TexWarnLog, specName: String, count: Int32): Unit \ IO =
-        let key = "@material-textures:" + specName;
-        if (count <= Scene3d.maxMaterialTextures() or Set.memberOf(key, Ref.get(warnLog))) ()
-        else {
-            Ref.put(Set.insert(key, Ref.get(warnLog)), warnLog);
-            Log.warn("scene3d: 材質 '${specName}' が読む絵の組が ${count} 組ある — ${Scene3d.maxMaterialTextures()} 組目より後ろは 0 で描く")
-        }
+        if (count <= Scene3d.maxMaterialTextures()) ()
+        else warnSceneOnce(warnLog, "@material-textures:" + specName,
+            "scene3d: 材質 '${specName}' が読む絵の組が ${count} 組ある — ${Scene3d.maxMaterialTextures()} 組目より後ろは 0 で描く")
 
     /// シェーダー面を画素ごとに描き出す。rect を出力ピクセルへ量子化し、各画素の中心を
     /// uv（rect 内 0..1）に写して ShaderEval.compile で組み直した面（色と α を 1 回の shared
@@ -1554,7 +1546,7 @@ pub mod SoftRaster {
                 g.fill(new Rect2D(cx + hv - width / 2.0, cy - bh, width, bh * 2.0)))
         } else {
             // 斜め 45°: hv = p.x − p.y。hv 空間の幅 width は幾何学的には width/√2。
-            g.setStroke(new BasicStroke(f32(width / Vec2.sqrt(2.0))));
+            g.setStroke(new BasicStroke(f32(width / Num.sqrt(2.0))));
             let l = bw + bh;
             forEachStripe(period, (bw + bh) / 2.0, width, hv ->
                 g.draw(new Line2D(cx + hv - l, cy - l, cx + hv + l, cy + l)))

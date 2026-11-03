@@ -345,7 +345,7 @@ pub mod ShaderEval {
 
     def putInputs(point: SurfacePoint, env: Array[Float64, r]): Unit \ r =
         let (world, normal, color) = (point#world, point#normal, point#color);
-        let len = Vec2.sqrt(normal#x * normal#x + normal#y * normal#y + normal#z * normal#z);
+        let len = Num.sqrt(normal#x * normal#x + normal#y * normal#y + normal#z * normal#z);
         let unit = c -> if (len == 0.0) 0.0 else c / len;
         Array.put(world#x, inputIndex(false, ShaderDoc.Axis3.X), env);
         Array.put(world#y, inputIndex(false, ShaderDoc.Axis3.Y), env);
@@ -538,7 +538,7 @@ pub mod ShaderEval {
     /// k は (a,b,c,d) の r → g → b の順に 12 個（colorF64 済み）。
     def cosColor(k: Vector[Float64], t: Float64): (Float64, Float64, Float64) =
         let ch = i -> colorF32(Vector.get(i, k) + Vector.get(i + 1, k) *
-                               Vec2.cos(6.2831853 * (Vector.get(i + 2, k) * t + Vector.get(i + 3, k))));
+                               Num.cos(6.2831853 * (Vector.get(i + 2, k) * t + Vector.get(i + 3, k))));
         (ch(0), ch(4), ch(8))
 
     def colorF64(x: Float64): Float64 = Float32.toFloat64(RenderUtil.f32(x))
@@ -590,18 +590,18 @@ pub mod ShaderEval {
             case Node.Swirl(cx, cy, strength, rate, of) =>
                 let px = x - cx;
                 let py = y - cy;
-                let r = Vec2.sqrt(px * px + py * py);
+                let r = Num.sqrt(px * px + py * py);
                 let a = strength / (r + 0.08) + rate * t;
-                let co = Vec2.cos(a);
-                let s = Vec2.sin(a);
+                let co = Num.cos(a);
+                let s = Num.sin(a);
                 evalNode(of, cx + px * co - py * s, cy + px * s + py * co, t, env)
-            case Node.Angle(cx, cy) => Vec2.atan2(y - cy, x - cx) * 0.15915494 + 0.5
+            case Node.Angle(cx, cy) => Num.atan2(y - cy, x - cx) * 0.15915494 + 0.5
             case Node.Rotate(cx, cy, turns, rate, of) =>
                 let px = x - cx;
                 let py = y - cy;
                 let a = 6.2831853 * (turns + rate * t);
-                let co = Vec2.cos(a);
-                let s = Vec2.sin(a);
+                let co = Num.cos(a);
+                let s = Num.sin(a);
                 evalNode(of, cx + px * co - py * s, cy + px * s + py * co, t, env)
             case Node.Mix(fa, fb, k) => Num.lerp(evalNode(fa, x, y, t, env), evalNode(fb, x, y, t, env), k)
             case Node.Blend(fa, fb, fby) =>
@@ -611,15 +611,15 @@ pub mod ShaderEval {
             case Node.Disk(cx, cy, radius, feather) =>
                 let dx = x - cx;
                 let dy = y - cy;
-                1.0 - smoothstep(radius, radius + feather, Vec2.sqrt(dx * dx + dy * dy))
+                1.0 - smoothstep(radius, radius + feather, Num.sqrt(dx * dx + dy * dy))
             case Node.Radial(cx, cy) =>
                 let dx = x - cx;
                 let dy = y - cy;
-                Vec2.sqrt(dx * dx + dy * dy)
+                Num.sqrt(dx * dx + dy * dy)
             case Node.RadialAspect(cx, cy, aspect) =>
                 let dx = (x - cx) * aspect;
                 let dy = y - cy;
-                Vec2.sqrt(dx * dx + dy * dy)
+                Num.sqrt(dx * dx + dy * dy)
             case Node.Quantize(n, of) => Float64.floor(evalNode(of, x, y, t, env) * n) / n
             case Node.Scales(scale, stagger) => scalesAt(x * scale, y * scale, stagger)
             case Node.Glints(scale, rate, density, sd) =>
@@ -631,15 +631,15 @@ pub mod ShaderEval {
                 let fpy = Num.fract(py);
                 let on = if (hash1(ipx, ipy, sd) >= 1.0 - density) 1.0 else 0.0;
                 let phase = hash1(ipx, ipy, sd + 7.0) * 6.2831853;
-                let tw = Float64.max(0.0, Vec2.sin(t * rate + phase));
+                let tw = Float64.max(0.0, Num.sin(t * rate + phase));
                 let dash = (1.0 - smoothstep(0.04, 0.10, Float64.abs(fpy - 0.5))) *
                            (1.0 - smoothstep(0.28, 0.46, Float64.abs(fpx - 0.5)));
                 on * tw * dash
             case Node.Ripples(freq, amp, speed, sd) =>
-                let wob = Vec2.sin(x * 6.2831853 * freq * 0.5 + sd) * amp
-                        + Vec2.sin(x * 6.2831853 * freq * 1.3 + sd * 2.7) * amp * 0.4;
+                let wob = Num.sin(x * 6.2831853 * freq * 0.5 + sd) * amp
+                        + Num.sin(x * 6.2831853 * freq * 1.3 + sd * 2.7) * amp * 0.4;
                 let band = y * freq + wob + t * speed;
-                0.5 + 0.5 * Vec2.sin(band * 6.2831853)
+                0.5 + 0.5 * Num.sin(band * 6.2831853)
             case Node.Sparkle(scale, rate, density, sd) => sparkleAt(x * scale, y * scale, t, rate, density, sd)
             case Node.Bin(op, fa, fb) =>
                 let a = evalNode(fa, x, y, t, env);
@@ -680,11 +680,11 @@ pub mod ShaderEval {
                     case ShaderDoc.UnOp.Abs      => Float64.abs(v)
                     case ShaderDoc.UnOp.Fract    => Num.fract(v)
                     case ShaderDoc.UnOp.Floor    => Float64.floor(v)
-                    case ShaderDoc.UnOp.Sin      => Vec2.sin(v)
-                    case ShaderDoc.UnOp.Cos      => Vec2.cos(v)
+                    case ShaderDoc.UnOp.Sin      => Num.sin(v)
+                    case ShaderDoc.UnOp.Cos      => Num.cos(v)
                     case ShaderDoc.UnOp.Sat      => Num.clamp01(v)
                     case ShaderDoc.UnOp.OneMinus => 1.0 - v
-                    case ShaderDoc.UnOp.Sqrt     => Vec2.sqrt(Float64.max(v, 0.0))
+                    case ShaderDoc.UnOp.Sqrt     => Num.sqrt(Float64.max(v, 0.0))
                 }
             case Node.Pow(of, p) => powf(evalNode(of, x, y, t, env), p)
             case Node.Time(scale, offset) => t * scale + evalNode(offset, x, y, t, env)
@@ -763,9 +763,9 @@ pub mod ShaderEval {
         if (i >= taps) acc
         else {
             let fi = Int32.toFloat64(i);
-            let r = Vec2.sqrt((fi + 0.5) / Int32.toFloat64(taps));
+            let r = Num.sqrt((fi + 0.5) / Int32.toFloat64(taps));
             let a = fi * 2.39996323;
-            let s = sampleTexAs(tex#sampling, tex#w, tex#h, tex#pixels, tex#shift, u + Vec2.cos(a) * r * rx, v + Vec2.sin(a) * r * ry);
+            let s = sampleTexAs(tex#sampling, tex#w, tex#h, tex#pixels, tex#shift, u + Num.cos(a) * r * rx, v + Num.sin(a) * r * ry);
             blurSum(tex, u, v, rx, ry, taps, i + 1, acc + s)
         }
 
@@ -891,9 +891,9 @@ pub mod ShaderEval {
         if (i >= taps) acc
         else {
             let fi = Int32.toFloat64(i);
-            let r = Vec2.sqrt((fi + 0.5) / Int32.toFloat64(taps));
+            let r = Num.sqrt((fi + 0.5) / Int32.toFloat64(taps));
             let a = fi * 2.39996323;
-            let s = sampleTexFAs(tex#sampling, tex#w, tex#h, tex#values, tex#chan, u + Vec2.cos(a) * r * rx, v + Vec2.sin(a) * r * ry);
+            let s = sampleTexFAs(tex#sampling, tex#w, tex#h, tex#values, tex#chan, u + Num.cos(a) * r * rx, v + Num.sin(a) * r * ry);
             blurSumF(tex, u, v, rx, ry, taps, i + 1, acc + s)
         }
 
@@ -928,7 +928,7 @@ pub mod ShaderEval {
     // 変わると同じ距離のときに選ぶ方が変わりうるので、この順を変えない。
 
     def hash1(px: Float64, py: Float64, seed: Float64): Float64 =
-        Num.fract(Vec2.sin(px * 127.1 + py * 311.7 + seed * 0.017) * 43758.5453123)
+        Num.fract(Num.sin(px * 127.1 + py * 311.7 + seed * 0.017) * 43758.5453123)
 
     def worleyF1F2(px: Float64, py: Float64, seed: Float64): (Float64, Float64) =
         let ipx = Float64.floor(px);
@@ -947,7 +947,7 @@ pub mod ShaderEval {
                 let oy = hash1(cx + 19.19, cy + 7.31, seed);
                 let rx = (gx + ox) - fpx;
                 let ry = (gy + oy) - fpy;
-                let d = Vec2.sqrt(rx * rx + ry * ry);
+                let d = Num.sqrt(rx * rx + ry * ry);
                 if (d < f1) cell(k + 1, d, f1)
                 else if (d < f2) cell(k + 1, f1, d)
                 else cell(k + 1, f1, f2)
@@ -969,7 +969,7 @@ pub mod ShaderEval {
                 let centerY = cy + 0.5;
                 let dx = px - centerX;
                 let dy = py - centerY;
-                cell(k + 1, Float64.min(best, Vec2.sqrt(dx * dx + dy * dy)))
+                cell(k + 1, Float64.min(best, Num.sqrt(dx * dx + dy * dy)))
             };
         Num.clamp01(cell(0, 8.0))
 
@@ -983,7 +983,7 @@ pub mod ShaderEval {
         let icx = ipx + cyc;
         let icy = ipy + cyc;
         let on = if (hash1(icx, icy, sd) >= 1.0 - density) 1.0 else 0.0;
-        let s = Float64.max(0.0, Vec2.sin(tt));
+        let s = Float64.max(0.0, Num.sin(tt));
         let s4 = (s * s) * (s * s);
         let tw = (s4 * s4) * s4;
         let hx = hash1(icx, icy, sd + 11.0);

@@ -46,14 +46,14 @@ pub mod Persp {
     /// 世界の点をカメラ空間へ分解する。fwd = 視線方向の奥行き、lat = 右向きの横ずれ。
     pub def toCam(cam: Camera, p: Vec2.Vec2): CamPoint =
         let d = Vec2.sub(p, cam#pos);
-        let fwdDir = { x = Vec2.cos(cam#yaw), y = Vec2.sin(cam#yaw) };
-        let latDir = { x = -Vec2.sin(cam#yaw), y = Vec2.cos(cam#yaw) };
+        let fwdDir = { x = Num.cos(cam#yaw), y = Num.sin(cam#yaw) };
+        let latDir = { x = -Num.sin(cam#yaw), y = Num.cos(cam#yaw) };
         { fwd = Vec2.dot(d, fwdDir), lat = Vec2.dot(d, latDir) }
 
     /// カメラからの放射距離（陰影・霧・ソートはこれを使う。fwd だけだと
     /// 真横の物が「近いのに遠い」扱いになる）。
     pub def dist(c: CamPoint): Float64 =
-        Vec2.sqrt(c#fwd * c#fwd + c#lat * c#lat)
+        Num.sqrt(c#fwd * c#fwd + c#lat * c#lat)
 
     /// 透視除算（x）。fwd が小さいほど大きく横に開く。
     /// 契約: クリップ済み（fwd > 0）の点にだけ使う — fwd 0 では割れない。
@@ -105,7 +105,7 @@ pub mod Persp {
             let clippedA = camLerp(camA, camB, t0);
             let clippedB = camLerp(camA, camB, t1);
             let mid = camLerp(camA, camB, (t0 + t1) / 2.0);
-            let midDist = Vec2.sqrt(mid#fwd * mid#fwd + mid#lat * mid#lat);
+            let midDist = Num.sqrt(mid#fwd * mid#fwd + mid#lat * mid#lat);
             Some({ camA = clippedA, camB = clippedB, t0 = t0, t1 = t1, dist = midDist })
         }
 

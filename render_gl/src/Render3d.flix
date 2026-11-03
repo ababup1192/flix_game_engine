@@ -183,6 +183,8 @@ mod Render3d {
         vertexTotal = Array[Int32, Static],
         // [新しい鍵を上げたコマが続いた数, 知らせ済みなら 1, このコマで新しい鍵を上げたら 1]。
         uploadStreak = Array[Int32, Static],
+        // uploadStreak と同じ形の、材質のプログラムを新しく組んだコマの続き。
+        materialStreak = Array[Int32, Static],
         // 初めての場面で組む（3D を使わないゲームは GLSL のコンパイルを払わない）。
         programsRef = Ref[Option[Programs], Static],
         // 骨つきの物を初めて描く時に組む（ジョイントを使わない場面は骨つきの版のコンパイルを払わない）。
@@ -217,9 +219,9 @@ mod Render3d {
         mipCopiesRef = Ref[Map[String, MipCopy], Static],
         // 見つからない材質の絵に貼る 1 × 1 の透明な黒（0 は未作成）。
         blankTexture = Array[Int32, Static],
-        // 材質の絵について知らせ済みの鍵（見つからない名前・上限を超えた材質・場面の絵の置き場あふれ）。
-        textureWarnedRef = Ref[Set[String], Static],
-        // 前に takeCounts してからの数（[置いた物, 描いた物, draw call]。FrameDiagnostics.Diagnostics.scene3dCounts の元）。
+        // 場面について知らせ済みの鍵（見つからない絵・上限を超えた材質と光・場面の絵の置き場あふれ・空・lightmap・uv の無い法線マップ）。
+        sceneWarnedRef = Ref[Set[String], Static],
+        // 前に takeCounts してからの数（[置いた物, 描いた物, draw call, 落とした点光源, 落としたスポット]。FrameDiagnostics.Diagnostics.scene3dCounts の元）。
         countsHolder = Array[Int32, Static]
     }
 
@@ -231,7 +233,7 @@ mod Render3d {
     /// 置き場の頂点の合計の上限。超えたら古い物から捨てる。
     def vertexBudget(): Int32 = 4000000
 
-    /// 新しい鍵がこの数のコマ続けて上がったら、形を毎コマ作り直していると知らせる。
+    /// 新しい形か材質のプログラムがこの数のコマ続けて作られたら、毎コマ作り直していると知らせる。
     def rebuildStreakLimit(): Int32 = 30
 
     /// 影の地図を貼るテクスチャの unit（2D の Shader 面は 0 から順に使い、描いた後に unit 0 へ戻す）。
@@ -263,7 +265,7 @@ mod Render3d {
     pub def fresh(textureBudget: TextureBudget): State \ IO =
         { textureByteBudget = Int32.toInt64(Int32.max(1, textureBudget#megabytes)) * 1048576i64,
           textureCountBudget = Int32.max(1, textureBudget#count), meshesRef = Ref.fresh(Static, Map.empty()), vertexTotal = Array#{0} @ Static,
-          uploadStreak = Array#{0, 0, 0} @ Static, programsRef = Ref.fresh(Static, None),
+          uploadStreak = Array#{0, 0, 0} @ Static, materialStreak = Array#{0, 0, 0} @ Static, programsRef = Ref.fresh(Static, None),
           skinnedRef = Ref.fresh(Static, None), skyRef = Ref.fresh(Static, None), skinWarnedRef = Ref.fresh(Static, Set.empty()),
           designTargetsRef = Ref.fresh(Static, Map.empty()), missingTexturesRef = Ref.fresh(Static, Set.empty()),
           materialsRef = Ref.fresh(Static, Map.empty()), retiredMaterialsRef = Ref.fresh(Static, Nil),
@@ -272,15 +274,14 @@ mod Render3d {
           shadowWarnedRef = Ref.fresh(Static, Set.empty()), textures3dRef = Ref.fresh(Static, Map.empty()),
           materialSamplers = Array#{0, 0, 0, 0, 0, 0, 0, 0} @ Static, mipCopiesRef = Ref.fresh(Static, Map.empty()),
           blankTexture = Array#{0} @ Static,
-          textureWarnedRef = Ref.fresh(Static, Set.empty()), countsHolder = Array#{0, 0, 0} @ Static }
+          sceneWarnedRef = Ref.fresh(Static, Set.empty()), countsHolder = Array#{0, 0, 0, 0, 0} @ Static }
 
-    /// 前に呼んでからの 3D の数（置いた物・描いた物・draw call）を返し、0 に戻す。
+    /// 前に呼んでからの 3D の数（置いた物・描いた物・draw call・落とした点光源とスポット）を返し、0 に戻す。
     pub def takeCounts(state: State): FrameDiagnostics.Scene3dCounts \ IO =
         let h = state#countsHolder;
-        let counts = { instances = Array.get(0, h), drawn = Array.get(1, h), drawCalls = Array.get(2, h) };
-        Array.put(0, 0, h);
-        Array.put(0, 1, h);
-        Array.put(0, 2, h);
+        let counts = { instances = Array.get(0, h), drawn = Array.get(1, h), drawCalls = Array.get(2, h),
+                       droppedPointLights = Array.get(3, h), droppedSpotLights = Array.get(4, h) };
+        List.range(0, Array.length(h)) |> List.forEach(i -> Array.put(0, i, h));
         counts
 
     /// 場面の置いた物 placed 個と、そのうち視錐台の外で間引かずに描いた drawn 個を数える。
@@ -288,6 +289,14 @@ mod Render3d {
         let h = state#countsHolder;
         Array.put(Array.get(0, h) + placed, 0, h);
         Array.put(Array.get(1, h) + drawn, 1, h)
+
+    /// 場面 1 つで上限を超えて落とした光を数え、種類ごとに初めての時だけ知らせる。
+    def noteDroppedLights(state: State, scene: Scene3d.Scene3dCmd): Unit \ IO =
+        let d = Scene3d.droppedLightsOf(scene);
+        let h = state#countsHolder;
+        Array.put(Array.get(3, h) + d#points, 3, h);
+        Array.put(Array.get(4, h) + d#spots, 4, h);
+        Scene3d.droppedLightsWarnings(scene) |> List.forEach(kl -> warnSceneOnce(state, fst(kl), snd(kl)))
 
     /// 3D の draw call を 1 つ数える。
     def countDrawCall(state: State): Unit \ IO =
@@ -629,6 +638,7 @@ mod Render3d {
         beginScene(area#viewport, area#scissor, background);
         if (area#fillBackground) drawSky(state, area#viewport, scene) else ();
         let picked = Scene3d.pickLights(scene#camera#eye, scene);
+        noteDroppedLights(state, scene);
         let lights = lightDataOf(picked);
         let view = matrixArray(Camera3d.viewMatrix(scene#camera));
         let proj = matrixArray(Camera3d.projectionMatrix(scene#camera, Scene3d.aspectOf(scene)));
@@ -714,7 +724,7 @@ mod Render3d {
     /// 場面の sky が Some なら、今の scissor の中を空で塗る（深度は書かない・深度の判定もしない）。beginScene の後に呼ぶ。
     /// Output.Depth では白（一番奥）。sky と background が両方 Some なら 1 回だけ知らせる（background は beginScene に渡さない）。
     def drawSky(state: State, viewport: PixelBox, scene: Scene3d.Scene3dCmd): Unit \ IO =
-        Scene3d.skyWarning(scene) |> Option.forEach(line -> warnTextureOnce(state, "@sky+background", line));
+        Scene3d.skyWarning(scene) |> Option.forEach(line -> warnSceneOnce(state, "@sky+background", line));
         scene#sky |> Option.forEach(sky -> {
             let locs = skyProgramOf(state);
             if (locs#program == 0) ()
@@ -813,7 +823,7 @@ mod Render3d {
                         instances: List[Scene3d.Instance3d]): (List[MeshDraw], List[MaterialDraw]) \ IO =
         let classified = instances |> List.map(placed -> {
             Scene3d.lightmapWarning(placed) |> Option.forEach(line ->
-                warnTextureOnce(state, "lightmap:" + line + Mesh3d.contentHash(Scene3d.instanceFieldsOf(placed)#mesh), line));
+                warnSceneOnce(state, "lightmap:" + line + Mesh3d.contentHash(Scene3d.instanceFieldsOf(placed)#mesh), line));
             let draw = meshDrawOf(state, outside, placed);
             let material = draw#fields#material
                 |> Option.map(Scene3d.materialFieldsOf)
@@ -831,7 +841,7 @@ mod Render3d {
         let uv = hasUv(d);
         let wantsNormalMap = Option.nonEmpty(m#normalMap);
         if (wantsNormalMap and not uv)
-            warnTextureOnce(state, "nouv:" + Mesh3d.contentHash(d#fields#mesh),
+            warnSceneOnce(state, "nouv:" + Mesh3d.contentHash(d#fields#mesh),
                 "scene3d: uv の無い形に法線マップの材質 '${m#spec#name}' が付いている — 法線マップを当てずに描く（Mesh3d.withUvs か withBoxUvs で uv を付ける）")
         else ();
         { skinned = isSkinned(d), uv = uv, normalMap = wantsNormalMap and uv, lightmap = Option.nonEmpty(Scene3d.lightmapOfFields(d#fields)),
@@ -982,7 +992,7 @@ mod Render3d {
         match found {
             case Some(hit) => hit
             case None =>
-                warnTextureOnce(state, "missing:" + name, "scene3d: ${label} '${name}' が見つからない — 0（黒・透明）で読む"
+                warnSceneOnce(state, "missing:" + name, "scene3d: ${label} '${name}' が見つからない — 0（黒・透明）で読む"
                     + "（tex3d: の名前は場面の textures に、ほかは project.json の textures に同名の宣言があるか確認）");
                 { texId = blankTextureId(state), flipped = false, levels = 1 }
         }
@@ -1022,11 +1032,11 @@ mod Render3d {
         GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL12.GL_TEXTURE_MAX_LEVEL, Int32.max(0, List.length(chain) - 1));
         texId
 
-    def warnTextureOnce(state: State, key: String, message: String): Unit \ IO =
-        let warned = Ref.get(state#textureWarnedRef);
+    def warnSceneOnce(state: State, key: String, message: String): Unit \ IO =
+        let warned = Ref.get(state#sceneWarnedRef);
         if (Set.memberOf(key, warned)) ()
         else {
-            Ref.put(Set.insert(key, warned), state#textureWarnedRef);
+            Ref.put(Set.insert(key, warned), state#sceneWarnedRef);
             Log.warn(message)
         }
 
@@ -1101,7 +1111,7 @@ mod Render3d {
         Map.forEach((_name, c) -> GL11.glDeleteTextures(c#texId), idleCopies);
         Ref.put(Map.difference(copies, idleCopies), state#mipCopiesRef);
         if (overBudget(trimmed))
-            warnTextureOnce(state, "@budget", "scene3d: 場面の絵（Texture3d）が ${state#textureCountBudget} 枚か"
+            warnSceneOnce(state, "@budget", "scene3d: 場面の絵（Texture3d）が ${state#textureCountBudget} 枚か"
                 + " ${Int64.toString(state#textureByteBudget / 1048576i64)} MB を超えて使われている — 絵を減らすか小さくするか、project.json の scene3dTextureBudgetCount / scene3dTextureBudgetMB を上げる")
         else ()
 
@@ -1116,14 +1126,14 @@ mod Render3d {
     pub type alias ProgramKind = { skinned = Bool, uv = Bool, normalMap = Bool, lightmap = Bool, blend = Bool, doubleSided = Bool, coverage = Bool }
 
     /// 材質のプログラムの鍵（2D の Shader 面の鍵 = spec の名前 と重ならない）。骨つき・uv つき・法線マップつき・lightmap つきの版は GLSL が違うので別の鍵。
-    /// emission の有無（+em）も鍵に入れる（同じ名前で emission の有る材質と無い材質が並んでも組み直さない。木の違いは spec の名前で分ける）。
-    // WhyNot: 骨つきかどうかの字を "3d:" の後ろへ足さない — "3d:" + 名前 の名前の側が同じ字で始まると、骨の無い版と鍵が重なる。
+    /// 材質の側は spec と emission の中身の鍵（MaterialFields#shaderHash）なので、同じ名前で木の違う材質が並んでも組み直さず、ゲームは名前を分けなくてよい。
+    /// cutout・params・wrap は uniform と sampler で渡すので鍵に入れない（blend・doubleSided・法線マップ・coverage は kind の側）。
     pub def materialKey(m: Scene3d.MaterialFields, kind: ProgramKind): String =
         "3d" + (if (kind#skinned) "+skin" else "") + (if (kind#uv) "+uv" else "") + (if (kind#normalMap) "+nm" else "") + (if (kind#lightmap) "+lm" else "")
             + (if (kind#blend) "+bl" else "") + (if (kind#doubleSided) "+ds" else "") + (if (kind#coverage) "+cov" else "")
-            + (if (Option.nonEmpty(m#emission)) "+em" else "") + ":" + m#spec#name
+            + ":" + Int64.toString(force m#shaderHash)
 
-    /// 材質のプログラムを引く。無いか、同じ名前で中身が違えば組み直す。組めなかった材質は None（頂点の色で描く）。
+    /// 材質のプログラムを引く。無いか、同じ鍵で中身が違えば組み直す。組めなかった材質は None（頂点の色で描く）。
     def materialEntry(state: State, gen: Int64, m: Scene3d.MaterialFields, kind: ProgramKind): Option[MaterialEntry] \ IO =
         let key = materialKey(m, kind);
         let cache = Ref.get(state#materialsRef);
@@ -1149,9 +1159,10 @@ mod Render3d {
 
     /// 材質のプログラムを組む。読む絵の組が Scene3d.maxMaterialTextures() を超える材質は、後ろの組を 0 にして組み、1 回知らせる。
     def buildMaterial(state: State, gen: Int64, m: Scene3d.MaterialFields, kind: ProgramKind): MaterialEntry \ IO =
+        Array.put(1, 2, state#materialStreak);
         let readCount = List.length(ShaderDoc.materialTexReads(m#spec, m#emission));
         if (readCount > Scene3d.maxMaterialTextures())
-            warnTextureOnce(state, "limit:" + m#spec#name, "scene3d: 材質 '${m#spec#name}' が読む絵の組が ${readCount} 組ある"
+            warnSceneOnce(state, "limit:" + m#spec#name, "scene3d: 材質 '${m#spec#name}' が読む絵の組が ${readCount} 組ある"
                 + " — ${Scene3d.maxMaterialTextures()} 組目より後ろは 0 で描く")
         else ();
         let (spec, emission) = ShaderDoc.limitMaterialTexReads(Scene3d.maxMaterialTextures(), m#spec, m#emission);
@@ -1193,8 +1204,8 @@ mod Render3d {
         if (Set.memberOf(key, warned)) ()
         else {
             Ref.put(Set.insert(key, warned), state#thrashWarnedRef);
-            Log.warn("scene3d: 中身の違う材質が同じ名前 '${name}' で同じコマに来た"
-                + " — 毎コマ組み直している。材質ごとに spec の name を分ける")
+            Log.warn("scene3d: 中身の違う材質の鍵（ShaderGen.hashMaterial）が同じコマにぶつかった（'${name}'）"
+                + " — 毎コマ組み直している。spec か emission の数に NaN があれば直す（NaN は自分とも等しくない）。無ければ engine の不具合")
         }
 
     def materialLocsOf(program: Int32, paramNames: List[String], texCount: Int32): MaterialLocs \ IO =
@@ -1433,6 +1444,7 @@ mod Render3d {
     /// 画面のコマを描き終えた後に 1 回呼ぶ。使われないメッシュと上限を超えた分を捨て、毎コマの作り直しを知らせる。
     pub def endFrame(state: State, gen: Int64): Unit \ IO =
         noteUploadStreak(state);
+        noteMaterialStreak(state);
         sweepMaterials(state, gen);
         sweepShadowTargets(state, gen);
         sweepTextures3d(state, gen);
@@ -1469,15 +1481,23 @@ mod Render3d {
         }
 
     def noteUploadStreak(state: State): Unit \ IO =
-        let streak = state#uploadStreak;
-        let uploaded = Array.get(2, streak) == 1;
+        noteStreak(state#uploadStreak, "scene3d: 新しい形（Mesh3d）が ${rebuildStreakLimit()} コマ続けて GPU へ上がっている"
+            + " — 形を毎コマ作り直している。動きは形を作り直さず、置いた物の行列か tint で付ける")
+
+    /// 材質のプログラムを rebuildStreakLimit() コマ続けて新しく組んだら 1 回知らせる（鍵は木の中身なので、木の数を毎コマ変えると毎コマ組む）。
+    def noteMaterialStreak(state: State): Unit \ IO =
+        noteStreak(state#materialStreak, "scene3d: 材質のプログラムを ${rebuildStreakLimit()} コマ続けて新しく組んでいる"
+            + " — 材質の木（spec か emission）の数を毎コマ変えている。毎コマ変わる数は ShaderDoc の param にして Scene3d.withParams で渡す（数に NaN があっても毎コマ組む）")
+
+    /// streak = [このことが続いたコマの数, 知らせ済みなら 1, このコマで起きたら 1]。コマの終わりに 1 回呼び、続いた数が上限に届いたら 1 回だけ message を出す。
+    def noteStreak(streak: Array[Int32, Static], message: String): Unit \ IO =
+        let happened = Array.get(2, streak) == 1;
         Array.put(0, 2, streak);
-        let next = if (uploaded) Array.get(0, streak) + 1 else 0;
+        let next = if (happened) Array.get(0, streak) + 1 else 0;
         Array.put(next, 0, streak);
         if (next >= rebuildStreakLimit() and Array.get(1, streak) == 0) {
             Array.put(1, 1, streak);
-            Log.warn("scene3d: 新しい形（Mesh3d）が ${rebuildStreakLimit()} コマ続けて GPU へ上がっている"
-                + " — 形を毎コマ作り直している。動きは形を作り直さず、置いた物の行列か tint で付ける")
+            Log.warn(message)
         } else ()
 
     // ── ビルボード ──

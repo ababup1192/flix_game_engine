@@ -159,7 +159,7 @@ pub mod SoftRaster3d {
         let dSq = dx * dx + dy * dy + dz * dz;
         let fall = Float64.max(0.0, 1.0 - dSq / Float64.max(rangeSq, 1.0e-12));
         let att = fall * fall;
-        let len = Vec2.sqrt(dSq);
+        let len = Num.sqrt(dSq);
         let inv = if (len < 1.0e-12) 0.0 else 1.0 / len;
         let (ux, uy, uz) = (dx * inv, dy * inv, dz * inv);
         let facing = clamp01(wrap() + nx * ux + ny * uy + nz * uz);
@@ -235,7 +235,7 @@ pub mod SoftRaster3d {
         if (not on) (r, g, b)
         else {
             let (dx, dy, dz) = (px - ex, py - ey, pz - ez);
-            let dist = Vec2.sqrt(dx * dx + dy * dy + dz * dz);
+            let dist = Num.sqrt(dx * dx + dy * dy + dz * dz);
             let f = clamp01((dist - near) / Float64.max(far - near, 1.0e-6));
             (r + (fr - r) * f, g + (fg - g) * f, b + (fb - b) * f)
         }
@@ -1040,7 +1040,7 @@ pub mod SoftRaster3d {
         match depthBand {
             case Some((near, range)) =>
                 let (dx, dy, dz) = (px - ex, py - ey, pz - ez);
-                let gray = clamp01((Vec2.sqrt(dx * dx + dy * dy + dz * dz) - near) / Float64.max(range, 1.0e-6));
+                let gray = clamp01((Num.sqrt(dx * dx + dy * dy + dz * dz) - near) / Float64.max(range, 1.0e-6));
                 (gray, gray, gray, 1.0)
             case None =>
                 let point = surfaceAt(v, weights);

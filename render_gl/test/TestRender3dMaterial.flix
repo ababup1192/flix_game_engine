@@ -184,21 +184,30 @@ mod TestRender3dMaterial {
 
     def plainKind(): Render3d.ProgramKind = { skinned = false, uv = true, normalMap = false, lightmap = false, blend = false, doubleSided = false, coverage = false }
 
-    /// 同じ spec の名前でも、emission の有る材質と無い材質は別の鍵（+em）で、同じプログラムを取り合わない。
+    def keyOf(m: Scene3d.Material3d, kind: Render3d.ProgramKind): String = Render3d.materialKey(Scene3d.materialFieldsOf(m), kind)
+
+    /// 同じ spec の名前でも、emission の有る材質と無い材質・emission の木が違う材質は別の鍵で、同じプログラムを取り合わない。
     @Test
     def testMaterialKeyTellsEmissionApart(): Unit \ Assert =
         let plain = Scene3d.texturedMaterial("tex3d:a", ShaderDoc.FilterMode.Linear);
-        let glowing = plain |> Scene3d.withEmission(ShaderDoc.Shade.Solid(Color.rgb(1.0, 1.0, 1.0)));
-        Assert.assertEq(expected = ("3d+uv:scene3d:textured:Linear", "3d+uv+em:scene3d:textured:Linear"),
-            (Render3d.materialKey(Scene3d.materialFieldsOf(plain), plainKind()), Render3d.materialKey(Scene3d.materialFieldsOf(glowing), plainKind())))
+        let white = plain |> Scene3d.withEmission(ShaderDoc.Shade.Solid(Color.rgb(1.0, 1.0, 1.0)));
+        let red = plain |> Scene3d.withEmission(ShaderDoc.Shade.Solid(Color.rgb(1.0, 0.0, 0.0)));
+        Assert.assertEq(expected = 3, List.size(List.distinct(keyOf(plain, plainKind()) :: keyOf(white, plainKind()) :: keyOf(red, plainKind()) :: Nil)))
+
+    /// 読む絵の名前だけが違う材質は同じ鍵（GLSL に出るのは絵の番号だけで、同じプログラムを使い回す）。
+    @Test
+    def testMaterialKeyIgnoresTextureNames(): Unit \ Assert =
+        Assert.assertEq(expected = keyOf(Scene3d.texturedMaterial("tex3d:a", ShaderDoc.FilterMode.Linear), plainKind()),
+                        keyOf(Scene3d.texturedMaterial("tex3d:b", ShaderDoc.FilterMode.Linear), plainKind()))
 
     /// 半透明・両面・alpha to coverage の版は、それぞれ別の鍵（+bl・+ds・+cov）。
     @Test
     def testMaterialKeyTellsLookVariantsApart(): Unit \ Assert =
-        let fields = Scene3d.materialFieldsOf(Scene3d.texturedMaterial("tex3d:a", ShaderDoc.FilterMode.Linear));
-        Assert.assertEq(expected = ("3d+uv+bl:scene3d:textured:Linear", "3d+uv+ds:scene3d:textured:Linear", "3d+uv+cov:scene3d:textured:Linear"),
-            (Render3d.materialKey(fields, { blend = true | plainKind() }), Render3d.materialKey(fields, { doubleSided = true | plainKind() }),
-             Render3d.materialKey(fields, { coverage = true | plainKind() })))
+        let m = Scene3d.texturedMaterial("tex3d:a", ShaderDoc.FilterMode.Linear);
+        let prefix = (k: String) -> String.takeWhile(c -> c != ':', k);
+        Assert.assertEq(expected = ("3d+uv+bl", "3d+uv+ds", "3d+uv+cov"),
+            (prefix(keyOf(m, { blend = true | plainKind() })), prefix(keyOf(m, { doubleSided = true | plainKind() })),
+             prefix(keyOf(m, { coverage = true | plainKind() }))))
 
     def sourceOf(look: { blend = Bool, doubleSided = Bool, coverage = Bool }): String =
         Render3d.materialFragmentSource(glsl(), { skinned = false, uv = false, normalMap = false, lightmap = false,

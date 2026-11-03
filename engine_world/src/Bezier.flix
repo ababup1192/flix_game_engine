@@ -95,7 +95,7 @@ pub mod Bezier {
         let ca = RenderUtil.cosF(angle);
         let sa = RenderUtil.sinF(angle);
         List.range(0, segments) |> List.map(i -> {
-            let a = Vec2.tau() * Int32.toFloat64(i) / Int32.toFloat64(segments);
+            let a = Num.tau() * Int32.toFloat64(i) / Int32.toFloat64(segments);
             let ex = rx * RenderUtil.cosF(a);
             let ey = ry * RenderUtil.sinF(a);
             { x = center#x + ex * ca - ey * sa, y = center#y + ex * sa + ey * ca }
@@ -116,7 +116,7 @@ pub mod Bezier {
         let b = pointAt(pts, Int32.min(n - 1, i + 1));
         let dx = b#x - a#x;
         let dy = b#y - a#y;
-        let len = Vec2.sqrt(dx * dx + dy * dy);
+        let len = Num.sqrt(dx * dx + dy * dy);
         if (len <= 0.000001) { x = 1.0, y = 0.0 } else { x = dx / len, y = dy / len }
 
     /// 輪郭 1 枚ぶんの Poly（頂点は絶対座標で渡し、置き場所は原点にする）。

@@ -13,7 +13,7 @@ pub mod Sway {
     /// 基本の揺れ。sin(time*freq + phase*2π)、範囲 -1..1。phase(0..1)で個体ごとに位相をずらす。
     /// これ 1 本を振幅で掛け・高さで掛け、と使い回すのが芯。
     pub def wave(time: Float64, phase: Float64, freq: Float64): Float64 =
-        Vec2.sin(time * freq + phase * 6.2831853)
+        Num.sin(time * freq + phase * 6.2831853)
 
     /// 円を描くように漂う 2D オフセット(浮かぶ蓮の葉など)。amp = 振幅(x,y)。
     /// 縦横で周期をずらして単調な往復に見せない。phase で個体ごとにずらす。

@@ -11,7 +11,7 @@ pub mod Quat {
     /// 長さ 1 に直した物。長さ 0 の時は identity。
     // WhyNot: 0 で割って NaN にしない — 書き出しの壊れた 0 の四元数が 1 つあるだけで、行列の全部が NaN になる。
     pub def normalized(q: Quat): Quat =
-        let len = Vec2.sqrt(q#x * q#x + q#y * q#y + q#z * q#z + q#w * q#w);
+        let len = Num.sqrt(q#x * q#x + q#y * q#y + q#z * q#z + q#w * q#w);
         if (len < 1.0e-12) identity()
         else { x = q#x / len, y = q#y / len, z = q#z / len, w = q#w / len }
 
@@ -25,9 +25,9 @@ pub mod Quat {
         let (wa, wb) =
             if (d > 0.9995) (1.0 - t, t * sign)
             else {
-                let theta = Vec2.atan2(Vec2.sqrt(1.0 - d * d), d);
-                let s = Vec2.sin(theta);
-                (Vec2.sin((1.0 - t) * theta) / s, Vec2.sin(t * theta) / s * sign)
+                let theta = Num.atan2(Num.sqrt(1.0 - d * d), d);
+                let s = Num.sin(theta);
+                (Num.sin((1.0 - t) * theta) / s, Num.sin(t * theta) / s * sign)
             };
         normalized({ x = a#x * wa + b#x * wb, y = a#y * wa + b#y * wb, z = a#z * wa + b#z * wb, w = a#w * wa + b#w * wb })
 

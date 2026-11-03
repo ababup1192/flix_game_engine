@@ -3,7 +3,7 @@
 use fge::GameEngine
 
 mod SceneBench {
-    use fge::{App, LwjglLayer, RenderUtil, Vec2}
+    use fge::{App, LwjglLayer, RenderUtil, Num, Vec2}
 
     import java.lang.System
     import org.lwjgl.glfw.GLFW
@@ -20,7 +20,7 @@ mod SceneBench {
     def warmup(): Int32 = 60
 
     /// カメラの yaw（ラジアン）。正面（北）を中心に ±0.6 を 16 秒ほどで往復する。
-    pub def yawAt(t: Float64): Float64 = 0.6 * Vec2.sin(t * 0.4)
+    pub def yawAt(t: Float64): Float64 = 0.6 * Num.sin(t * 0.4)
 
     /// エンジンには手を入れない決まりなので、垂直同期はゲーム側から GLFW を直接叩いて切る。
     // WhyNot: 起動直後に 1 回だけ切らない — macOS では描くループの前に呼んでも 60fps に張り付いたままだった。

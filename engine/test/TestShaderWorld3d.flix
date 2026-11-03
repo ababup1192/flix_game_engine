@@ -338,7 +338,7 @@ mod TestShaderWorld3d {
     /// Nearest の lod 0.5 は段 0 と段 1 をそれぞれ NEAREST で読んで半分ずつ混ぜる（赤 0 と 43 の間）。
     @Test
     def testMipNearestBlendsTwoLevels(): Unit \ Assert =
-        Assert.assertEq(expected = round6(0.5 * 43.0 / 255.0), round6(rampMipAlpha(false, true, 0.125, Vec2.sqrt(2.0) / 4.0)))
+        Assert.assertEq(expected = round6(0.5 * 43.0 / 255.0), round6(rampMipAlpha(false, true, 0.125, Num.sqrt(2.0) / 4.0)))
 
     /// 隣の画素と座標が変わらない（拡大）なら段 0 を読む。
     @Test

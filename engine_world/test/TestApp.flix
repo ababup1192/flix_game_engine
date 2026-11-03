@@ -23,8 +23,15 @@ mod TestApp {
         { prevCursor = None, cursor = Vec2.zero() }
 
     /// キー無し・dt 0 の Frame。
-    def emptyFrame(): App.Frame =
-        App.frameOf(prev = Set#{}, current = Set#{}, 0.0, testViewport(), noCursor(), noMouse())
+    def emptyFrame(): App.Frame = { viewport = testViewport() | App.emptyFrame() }
+
+    /// App.emptyFrame は何も押していない・動いていない・dt 0 の Frame（入力の欄がどれも立っていない）。
+    @Test
+    def testEmptyFrameHasNoInput(): Unit \ Assert =
+        let f = App.emptyFrame();
+        Assert.assertEq(expected = (true, true, 0.0, false, false, false, 0.0, false, true),
+                        (Set.isEmpty(f#down), Set.isEmpty(f#justPressed), f#dt, f#mouseDown, f#mouseClicked, f#mouseMoved,
+                         f#wheel, f#padTouched, Option.isEmpty(f#diagnostics)))
 
     // ========================================================================
     // frameOf: エッジ判定
