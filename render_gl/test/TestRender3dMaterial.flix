@@ -13,61 +13,61 @@ mod TestRender3dMaterial {
     /// vNormal の宣言は材質の関数より前にある。
     @Test
     def testVaryingDeclaredBeforeFunctions(): Unit \ Assert =
-        let source = Render3d.materialFragmentSource(glsl(), { uv = false, normalMap = false, lightmap = false });
+        let source = Render3d.materialFragmentSource(glsl(), { skinned = false, uv = false, normalMap = false, lightmap = false, blend = false, doubleSided = false, coverage = false });
         Assert.assertTrue(indexOf("in vec3 vNormal;", source) >= 0 and indexOf("in vec3 vNormal;", source) < indexOf("// FUNCTIONS", source))
 
     /// uniforms は functions より前に置かれる。
     @Test
     def testUniformsBeforeFunctions(): Unit \ Assert =
-        let source = Render3d.materialFragmentSource(glsl(), { uv = false, normalMap = false, lightmap = false });
+        let source = Render3d.materialFragmentSource(glsl(), { skinned = false, uv = false, normalMap = false, lightmap = false, blend = false, doubleSided = false, coverage = false });
         Assert.assertTrue(indexOf("// UNIFORMS", source) >= 0 and indexOf("// UNIFORMS", source) < indexOf("// FUNCTIONS", source))
 
     /// fog は emission を足す前の色に掛かる。
     @Test
     def testEmissionAddedAfterFog(): Unit \ Assert =
-        Assert.assertTrue(indexOf("fogged(c, vWorld) + emission", Render3d.materialFragmentSource(glsl(), { uv = false, normalMap = false, lightmap = false })) >= 0)
+        Assert.assertTrue(indexOf("fogged(c, vWorld) + emission", Render3d.materialFragmentSource(glsl(), { skinned = false, uv = false, normalMap = false, lightmap = false, blend = false, doubleSided = false, coverage = false })) >= 0)
 
     /// 色は albedo × tint × light（頂点の色は掛けない）。
     @Test
     def testAlbedoReplacesVertexColor(): Unit \ Assert =
-        Assert.assertTrue(indexOf("albedo.rgb * uTint * lightAt(", Render3d.materialFragmentSource(glsl(), { uv = false, normalMap = false, lightmap = false })) >= 0)
+        Assert.assertTrue(indexOf("albedo.rgb * uTint * lightAt(", Render3d.materialFragmentSource(glsl(), { skinned = false, uv = false, normalMap = false, lightmap = false, blend = false, doubleSided = false, coverage = false })) >= 0)
 
     /// cutout は α が 0.5 未満を捨てる。
     @Test
     def testCutoutDiscardsBelowHalf(): Unit \ Assert =
-        Assert.assertTrue(indexOf("if (uCutout == 1 && albedo.a < 0.5) discard;", Render3d.materialFragmentSource(glsl(), { uv = false, normalMap = false, lightmap = false })) >= 0)
+        Assert.assertTrue(indexOf("if (uCutout == 1 && albedo.a < 0.5) discard;", Render3d.materialFragmentSource(glsl(), { skinned = false, uv = false, normalMap = false, lightmap = false, blend = false, doubleSided = false, coverage = false })) >= 0)
 
     /// 影はスポットの光だけに掛かる（点光源の項には掛からない）。
     @Test
     def testShadowMultipliesSpotTerm(): Unit \ Assert =
-        Assert.assertTrue(indexOf("* cone * spotShadow(i, p);", Render3d.materialFragmentSource(glsl(), { uv = false, normalMap = false, lightmap = false })) >= 0)
+        Assert.assertTrue(indexOf("* cone * spotShadow(i, p);", Render3d.materialFragmentSource(glsl(), { skinned = false, uv = false, normalMap = false, lightmap = false, blend = false, doubleSided = false, coverage = false })) >= 0)
 
     /// 点光源の項は影を受けない。
     @Test
     def testPointTermHasNoShadow(): Unit \ Assert =
-        Assert.assertTrue(indexOf("attenuation(d2, uPointRange[i]) * clamp(dot(n, l), 0.0, 1.0);", Render3d.materialFragmentSource(glsl(), { uv = false, normalMap = false, lightmap = false })) >= 0)
+        Assert.assertTrue(indexOf("attenuation(d2, uPointRange[i]) * clamp(dot(n, l), 0.0, 1.0);", Render3d.materialFragmentSource(glsl(), { skinned = false, uv = false, normalMap = false, lightmap = false, blend = false, doubleSided = false, coverage = false })) >= 0)
 
     /// 影の無いプログラム（uShadowOn = 0）と、影を落とさないスポットは光を減らさない。
     @Test
     def testShadowOffKeepsFullLight(): Unit \ Assert =
-        Assert.assertTrue(indexOf("if (uShadowOn == 0 || i != uShadowSpot) return 1.0;", Render3d.materialFragmentSource(glsl(), { uv = false, normalMap = false, lightmap = false })) >= 0)
+        Assert.assertTrue(indexOf("if (uShadowOn == 0 || i != uShadowSpot) return 1.0;", Render3d.materialFragmentSource(glsl(), { skinned = false, uv = false, normalMap = false, lightmap = false, blend = false, doubleSided = false, coverage = false })) >= 0)
 
     /// bias を引いた画素の z が地図の値以下なら照らされている。
     @Test
     def testLitWhenBiasedDepthNotBehindMap(): Unit \ Assert =
-        Assert.assertTrue(indexOf("if (z <= texelFetch(uShadowMap, t, 0).r) lit++;", Render3d.materialFragmentSource(glsl(), { uv = false, normalMap = false, lightmap = false })) >= 0)
+        Assert.assertTrue(indexOf("if (z <= texelFetch(uShadowMap, t, 0).r) lit++;", Render3d.materialFragmentSource(glsl(), { skinned = false, uv = false, normalMap = false, lightmap = false, blend = false, doubleSided = false, coverage = false })) >= 0)
 
     /// 地図の外（NDC の x・y が −1..1 の外）は影にしない。
     @Test
     def testOutsideMapIsLit(): Unit \ Assert =
-        Assert.assertTrue(indexOf("if (ndc.x < -1.0 || ndc.x > 1.0 || ndc.y < -1.0 || ndc.y > 1.0) return 1.0;", Render3d.materialFragmentSource(glsl(), { uv = false, normalMap = false, lightmap = false })) >= 0)
+        Assert.assertTrue(indexOf("if (ndc.x < -1.0 || ndc.x > 1.0 || ndc.y < -1.0 || ndc.y > 1.0) return 1.0;", Render3d.materialFragmentSource(glsl(), { skinned = false, uv = false, normalMap = false, lightmap = false, blend = false, doubleSided = false, coverage = false })) >= 0)
 
     // ── 絵つきの材質 ──
 
     /// 絵 1 枚 × 頂点の色の材質（Scene3d.texturedMaterial）の uv つきの frag。
     def texturedSource(): String =
         let fields = Scene3d.materialFieldsOf(Scene3d.texturedMaterial("tex3d:0123456789abcdef", ShaderDoc.FilterMode.Linear));
-        Render3d.materialFragmentSource(ShaderGen.compile3d(fields#spec, fields#emission), { uv = true, normalMap = false, lightmap = false })
+        Render3d.materialFragmentSource(ShaderGen.compile3d(fields#spec, fields#emission), { skinned = false, uv = true, normalMap = false, lightmap = false, blend = false, doubleSided = false, coverage = false })
 
     /// 絵つきの材質の frag は uTex0 を宣言し、vUv（varying）で読む。
     @Test
@@ -93,7 +93,7 @@ mod TestRender3dMaterial {
     /// uv の無い形の frag では vUv は (0, 0) の const。
     @Test
     def testUvlessFragmentUsesConstUv(): Unit \ Assert =
-        Assert.assertTrue(indexOf("const vec2 vUv = vec2(0.0, 0.0);", Render3d.materialFragmentSource(glsl(), { uv = false, normalMap = false, lightmap = false })) >= 0)
+        Assert.assertTrue(indexOf("const vec2 vUv = vec2(0.0, 0.0);", Render3d.materialFragmentSource(glsl(), { skinned = false, uv = false, normalMap = false, lightmap = false, blend = false, doubleSided = false, coverage = false })) >= 0)
 
     /// uv つきの頂点シェーダーは location 5 の uv と 6 のタンジェントを受け、タンジェントは uModel の左上 3×3 で写して w に行列式の符号を掛ける。
     @Test
@@ -118,7 +118,7 @@ mod TestRender3dMaterial {
     /// 法線マップつきの uv つきの frag。
     def normalMappedSource(): String =
         let fields = Scene3d.materialFieldsOf(Scene3d.texturedMaterial("tex3d:0123456789abcdef", ShaderDoc.FilterMode.Nearest));
-        Render3d.materialFragmentSource(ShaderGen.compile3d(fields#spec, fields#emission), { uv = true, normalMap = true, lightmap = false })
+        Render3d.materialFragmentSource(ShaderGen.compile3d(fields#spec, fields#emission), { skinned = false, uv = true, normalMap = true, lightmap = false, blend = false, doubleSided = false, coverage = false })
 
     /// 法線マップつきの frag は uNormalMap と vTangent を宣言し、光の計算に傾けた法線を渡す。
     @Test
@@ -143,7 +143,7 @@ mod TestRender3dMaterial {
     /// uv の無い形では法線マップを当てない（normalMap が真でも uNormalMap を宣言しない）。
     @Test
     def testUvlessIgnoresNormalMap(): Unit \ Assert =
-        Assert.assertEq(expected = -1, indexOf("uNormalMap", Render3d.materialFragmentSource(glsl(), { uv = false, normalMap = true, lightmap = false })))
+        Assert.assertEq(expected = -1, indexOf("uNormalMap", Render3d.materialFragmentSource(glsl(), { skinned = false, uv = false, normalMap = true, lightmap = false, blend = false, doubleSided = false, coverage = false })))
 
     /// 骨つきの uv つきの頂点シェーダーは、法線マップに要る vTangent を出す（タンジェントも skin で曲げる）。
     @Test
@@ -160,19 +160,19 @@ mod TestRender3dMaterial {
     /// 法線マップと lightmap を両方使い、材質が sg_texMip を持たない時も、sg_texMip の定義は 1 回だけ出る。
     @Test
     def testTexMipIsDefinedOnceWithNormalMapAndLightmap(): Unit \ Assert =
-        Assert.assertEq(expected = 1, count("vec4 sg_texMip(", Render3d.materialFragmentSource(glsl(), { uv = true, normalMap = true, lightmap = true })))
+        Assert.assertEq(expected = 1, count("vec4 sg_texMip(", Render3d.materialFragmentSource(glsl(), { skinned = false, uv = true, normalMap = true, lightmap = true, blend = false, doubleSided = false, coverage = false })))
 
     /// lightmap の版は lightBakedAt で光を求め、lightAt（環境光と hemisphere を足す方）を main で呼ばない。
     @Test
     def testLightmapUsesBakedLight(): Unit \ Assert =
         Assert.assertTrue(indexOf("albedo.rgb * uTint * lightBakedAt(vWorld, normalize(vNormal), bakedLight())",
-            Render3d.materialFragmentSource(glsl(), { uv = false, normalMap = false, lightmap = true })) >= 0)
+            Render3d.materialFragmentSource(glsl(), { skinned = false, uv = false, normalMap = false, lightmap = true, blend = false, doubleSided = false, coverage = false })) >= 0)
 
     /// lightBakedAt は環境光と hemisphere を足さずに、ベイクした光から始める。
     @Test
     def testBakedLightStartsWithoutAmbient(): Unit \ Assert =
         Assert.assertTrue(indexOf("vec3 lightBakedAt(vec3 p, vec3 n, vec3 baked) {\n    vec3 light = baked;\n",
-            Render3d.materialFragmentSource(glsl(), { uv = false, normalMap = false, lightmap = true })) >= 0)
+            Render3d.materialFragmentSource(glsl(), { skinned = false, uv = false, normalMap = false, lightmap = true, blend = false, doubleSided = false, coverage = false })) >= 0)
 
     /// lightmap の版の頂点シェーダーは location 7 の 2 本目の uv を vUv2 へ渡す。
     @Test
@@ -182,7 +182,7 @@ mod TestRender3dMaterial {
 
     // ── 材質のプログラムの鍵 ──
 
-    def plainKind(): Render3d.VertexKind = { skinned = false, uv = true, normalMap = false, lightmap = false }
+    def plainKind(): Render3d.ProgramKind = { skinned = false, uv = true, normalMap = false, lightmap = false, blend = false, doubleSided = false, coverage = false }
 
     /// 同じ spec の名前でも、emission の有る材質と無い材質は別の鍵（+em）で、同じプログラムを取り合わない。
     @Test
@@ -191,4 +191,36 @@ mod TestRender3dMaterial {
         let glowing = plain |> Scene3d.withEmission(ShaderDoc.Shade.Solid(Color.rgb(1.0, 1.0, 1.0)));
         Assert.assertEq(expected = ("3d+uv:scene3d:textured:Linear", "3d+uv+em:scene3d:textured:Linear"),
             (Render3d.materialKey(Scene3d.materialFieldsOf(plain), plainKind()), Render3d.materialKey(Scene3d.materialFieldsOf(glowing), plainKind())))
+
+    /// 半透明・両面・alpha to coverage の版は、それぞれ別の鍵（+bl・+ds・+cov）。
+    @Test
+    def testMaterialKeyTellsLookVariantsApart(): Unit \ Assert =
+        let fields = Scene3d.materialFieldsOf(Scene3d.texturedMaterial("tex3d:a", ShaderDoc.FilterMode.Linear));
+        Assert.assertEq(expected = ("3d+uv+bl:scene3d:textured:Linear", "3d+uv+ds:scene3d:textured:Linear", "3d+uv+cov:scene3d:textured:Linear"),
+            (Render3d.materialKey(fields, { blend = true | plainKind() }), Render3d.materialKey(fields, { doubleSided = true | plainKind() }),
+             Render3d.materialKey(fields, { coverage = true | plainKind() })))
+
+    def sourceOf(look: { blend = Bool, doubleSided = Bool, coverage = Bool }): String =
+        Render3d.materialFragmentSource(glsl(), { skinned = false, uv = false, normalMap = false, lightmap = false,
+                                                  blend = look#blend, doubleSided = look#doubleSided, coverage = look#coverage })
+
+    /// 半透明の版は材質の α を出す（ほかの版は 1）。
+    @Test
+    def testBlendVariantWritesMaterialAlpha(): Unit \ Assert =
+        Assert.assertEq(expected = (true, false),
+            (indexOf("+ emission, albedo.a);", sourceOf({ blend = true, doubleSided = false, coverage = false })) >= 0,
+             indexOf("+ emission, albedo.a);", sourceOf({ blend = false, doubleSided = false, coverage = false })) >= 0))
+
+    /// 両面の版は裏の面（!gl_FrontFacing）の法線を裏返して光を計算する。
+    @Test
+    def testDoubleSidedVariantFlipsBackFaceNormal(): Unit \ Assert =
+        let source = sourceOf({ blend = false, doubleSided = true, coverage = false });
+        Assert.assertTrue(indexOf("gl_FrontFacing ? normalize(vNormal) : -normalize(vNormal)", source) >= 0
+                          and indexOf("lightAt(vWorld, facingNormal)", source) >= 0)
+
+    /// alpha to coverage の版は discard せず、α を縁の幅で立ち上げて出す。
+    @Test
+    def testCoverageVariantDoesNotDiscard(): Unit \ Assert =
+        let source = sourceOf({ blend = false, doubleSided = false, coverage = true });
+        Assert.assertEq(expected = (-1, true), (indexOf("discard;", source), indexOf("/ max(fwidth(albedo.a), 1e-4) + 0.5", source) >= 0))
 }

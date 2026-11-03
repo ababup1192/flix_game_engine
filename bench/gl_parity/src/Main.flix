@@ -38,7 +38,7 @@ mod ParityMain {
             case Scenes.ShotVia.ViaTarget =>
                 // target 分岐は swap しないので、endTarget の前に bind 中の FBO を読める。
                 RenderTarget.Target.beginTarget({ name = "parityShot", width = Scenes.designWi(), height = Scenes.designHi(),
-                                                  format = RenderTarget.Format.Rgba8Unorm, clear = RenderTarget.LoadOp.Clear(black()) });
+                                                  format = RenderTarget.Format.Rgba8Unorm, clear = RenderTarget.LoadOp.Clear(black()), samples = 1 });
                 let (ds, ps) = toDraw(texInfoOf, sc#items);
                 GameEngine.Game.renderCommands(ds, Nil, ps, None);
                 GlReadback.readBoundPng(Scenes.designWi(), Scenes.designHi(), "debug/gl/${sc#name}.png");
@@ -108,17 +108,21 @@ mod ParityMain {
     def line(exact: Bool, o: PixelDiff.Outcome): String =
         let padded = pad(o#name, 14);
         let stage = if (exact) "A" else "B";
-        let limit = Scenes.toleranceOf(o#name) |> Option.map(n -> " (許容 ${n} px)") |> Option.getWithDefault("");
+        let atMost = Scenes.toleranceOf(o#name) |> Option.map(n -> " (許容 ${n} px)") |> Option.getWithDefault("");
+        let atLeast = Scenes.minDiffOf(o#name) |> Option.map(n -> " (最小 ${n} px)") |> Option.getWithDefault("");
+        let limit = atMost + atLeast;
         if (o#diffPx == 0) "[parity] ${padded} ${stage}  一致 (0 px)${limit}"
         else if (o#diffPx < 0) "[parity] ${padded} ${stage}  比較不能${limit}"
         else "[parity] ${padded} ${stage}  差 ${o#diffPx} px, max ±${o#maxDelta}${limit}"
 
-    /// 落とす scene か: A 段階は 1 px でも違えば・許容差のある B 段階は上限を超えるか比べられなければ。
+    /// 落とす scene か: A 段階は 1 px でも違えば・許容差のある B 段階は上限を超えるか比べられなければ・
+    /// 最小の差を持つ scene は差がそれに届かなければ（GL の側だけの効き目が出ていない）。
     def failed(exact: Bool, o: PixelDiff.Outcome): Bool =
-        match Scenes.toleranceOf(o#name) {
+        let tooFew = Scenes.minDiffOf(o#name) |> Option.exists(least -> o#diffPx < least);
+        tooFew or (match Scenes.toleranceOf(o#name) {
             case Some(limit) => o#diffPx < 0 or o#diffPx > limit
             case None        => exact and o#diffPx != 0
-        }
+        })
 
     def pad(s: String, n: Int32): String =
         if (String.length(s) >= n) s else pad(s + " ", n)

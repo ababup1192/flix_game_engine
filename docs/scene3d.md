@@ -59,8 +59,8 @@ let byName = Model3d.nodesByName(collision);                     // たくさん
   `gltf:vc:ec(r,g,b)`）。emissive の無い材質は今までどおり `scene3d:textured:<絵の読み方>`
 - emission を差し替えた材質（点滅の mask を掛けるなど）は `Scene3d.withSpecName(名前, m)` で名前も替える。
   GL は材質のプログラムを spec の名前と emission の有無で引くので、名前が同じで木だけ違う材質が並ぶと毎コマ組み直す。部品ごとに木が違うなら部品ごとの名前
-- 材質の情報（alphaMode・alphaCutoff・doubleSided・絵の名前・emissive の値）は `part#gltfMaterial`。描き方はまだ変えない（読むだけ）。
-  Blender の書き出しは全部の材質を `doubleSided: true` にするので、両面で描きたい物はゲームが材質の名前で選ぶ
+- 材質の情報（alphaMode・alphaCutoff・doubleSided・絵の名前・emissive の値）は `part#gltfMaterial`。alphaMode は材質に当たる
+  （下の「半透明と両面」）。Blender の書き出しは全部の材質を `doubleSided: true` にするので、両面で描きたい物はゲームが材質の名前で選ぶ
 - emissiveTexture を指しているのに読めない時（texCoord ≠ 0・画像が読めない・形に TEXCOORD_0 が無い）は光らせず、材質ごとに 1 行知らせる
 - 絵の上限は `TextureLimits#baseColor`（emissive の絵も同じ色の絵）。emissive の値（Blender の強さ 40 など）は線形の量で、
   今の式（色の値をそのまま足す）では明るすぎることがある（色の線形化で合わせ直す予定）
@@ -77,6 +77,64 @@ GL と CPU の描き手は、場面のカメラの視錐台の外の置いた物
 - 効き目は `FrameDiagnostics.Diagnostics.scene3dCounts`（`instances` = 置いた物・`drawn` = そのうち描いた物）で見る
 - 光や羽虫をゲームの側で間引く・数える時は `Camera3d.frustum(camera, aspect)` → `Frustum.intersectsSphere` / `intersectsBox`。
   場面と同じ判定は `Scene3d.frustumOf(scene)` + `Scene3d.isOutsideFrustum`・置いた物の world の境界は `Scene3d.worldBoundsOf`
+
+## 空（グラデーション）
+
+何も描かれない画素に、上下のグラデーションの空を描く（Godot の ProceduralSkyMaterial の空の部分と同じ考え）。
+
+```flix
+let sky = Scene3d.gradientSky(Color.rgb(0.05, 0.07, 0.2), Color.rgb(0.9, 0.6, 0.4), Color.rgb(0.2, 0.15, 0.1)); // 天頂・地平・地面
+{ sky = Some(sky |> Scene3d.withSkyCurve(0.7)) | Scene3d.scene(camera, size) }
+```
+
+- 色は目から見た向き d で決まる: 上を向けば地平から天頂へ `d.y ^ curve` だけ寄せ、下を向けば地平から地面へ `(−d.y) ^ curve`。
+  向きは画素ごとにカメラの pitch・yaw・画角から出すので、**見上げても振り向いても地平は合う**（2D の面を場面の下に敷いて地平の高さを毎コマ手で計算しない）
+- `curve`（既定 1）を小さくすると地平の色の帯が細く、大きくすると広くなる。0 以下・NaN は 1
+- 空にはかすみを掛けない（距離が無い）。**地平の色をかすみの色にそろえると、遠くの物と空の継ぎ目が消える**
+- `sky` が Some なら `environment.background` は使わない（両方 Some なら窓の描き手が 1 回知らせる。`Scene3d.skyWarning`）。Output.Depth では空は白（一番奥）
+- 既定は None（今までどおり background の単色か、下の 2D が見える）
+
+## 半透明と両面（窓ガラス・網・水面）
+
+```flix
+let glass = Scene3d.material(spec) |> Scene3d.withAlphaBlend(true) |> Scene3d.withDoubleSided(true);  // spec の α が透け具合
+```
+
+- `withAlphaBlend(true, m)`: 色 = 材質の色 × α + 下の色 × (1 − α)。深度は読むが書かない（ガラスの向こうのガラスも見える）
+- 描く順: 不透明の物 → ビルボード → 半透明の物を **world の境界の真ん中が目から遠い順**（同じ距離なら並びの前。`Scene3d.blendOrderOf`）。
+  **1 つの物の中の三角形は並べ替えない**（Unity・Godot と同じ）。入り組んだ半透明（水面と網が交わる）は物を分けて置く
+- `withCutout(true)` と両方なら、α が 0.5 未満の画素を捨ててから重ねる
+- 半透明の物は影を落とさない・Output.Depth（ピントの Pass）には描かない（ピントはガラスの奥に合う）。lightmap は付けられる
+- `withDoubleSided(true, m)`: 裏の面も描く。裏の面は光の計算の法線を裏返す（spec の Normal は裏返さない）。網・葉・ガラスの板に
+- glb: `Gltf.loadTextured` は `alphaMode: BLEND` を `withAlphaBlend(true)`・`MASK` を `withCutout(true)`（`alphaCutoff` は 0.5 の固定。
+  ほかの値は 1 回知らせる）にする。**`doubleSided` は当てない**（Blender の書き出しは全部の材質を真にするので、要る物だけゲームが当てる）:
+
+  ```flix
+  let m = part#material |> Option.map(mat ->
+      if (part#gltfMaterial |> Option.exists(g -> g#doubleSided and String.startsWith(prefix = "net_", g#name))) Scene3d.withDoubleSided(true, mat) else mat);
+  ```
+- 色の α は材質の spec の α（絵の α）。baseColorFactor の α は読まない（頂点の色に色だけ焼いている）
+- 半透明の物が 1 つも無い場面は、今までと 1 bit も同じ絵（描く順も GLSL の字も変わらない）
+
+## 細い物の欠けを抑える（MSAA）
+
+手すり・金網・電線のような細い物は、画素の真ん中に掛からないと抜け、歩くとちらつく。場面を描く Pass に標本を持たせる:
+
+```flix
+let plan = { targets = Map#{ "scene" => RenderTarget.withMsaa(4, RenderTarget.windowDescriptor() |> RenderTarget.withHdr) }
+           | Render.passPlan(scenePass :: Nil) };
+```
+
+- `RenderTarget.withMsaa(n, d)`: n は 1・2・4・8（ほかは近い下の値。GPU の上限 `GL_MAX_SAMPLES` でも頭打ち）。Pass を読む前に標本の平均へ
+  まとめる（resolve）ので、読む側は今までどおり Pass の名前で読む。2D と 3D の両方に効く（その Pass に描く物の全部の縁）
+- cutout の材質は、その Pass では discard でなく **alpha to coverage** で抜く（金網・葉の縁が 1 画素の幅でなめらかになる）。
+  Output.Depth（ピントの Pass）と影の地図は今の discard のまま
+- **画面なしの描き出し（CPU）は MSAA をしない**（絵は MSAA の無い絵のまま。agent-eval と render-loop の絵は縁が固い）。FXAA の Pass は CPU でも効く
+- 窓そのもの（Pass を使わない 3D）には掛けない。窓の MSAA は 2D の縁も変えるので口を作っていない
+- Design の解像度の場面（`Resolution.Design`）には掛からない（ドット絵と画素をそろえる場面に縁のならしは要らない）
+- 重さ: 色と深度の置き場が標本の数の倍（1920 × 1080 の Rgba16Float で 4 標本なら色 約 63 MB・深度 約 32 MB）。塗りは縁の分だけ増える。
+  効き目と GPU の時間は `App.withDiagnostics()` の `gpuPasses`（Pass ごと）で見比べ、切れるようにしておく
+- 既定は 1（今までどおり）
 
 ## 場面の絵の予算
 

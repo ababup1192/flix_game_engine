@@ -998,13 +998,19 @@
 - ターゲットの画素の形式（wgpu の TextureFormat と同じ名前）。
   `pub enum Format with Eq, ToString { case Rgba8Unorm case Rgba16Float }`
 - ターゲットの作り方（毎コマの中身 = Render.Pass とは別に、名前ごとに 1 つ）。wgpu / Unity の
-  `pub type alias Descriptor = { scale = Float64, basis = Basis, format = Format }`
-- 既定（design 解像度そのまま・Rgba8Unorm）。
+  `pub type alias Descriptor = { scale = Float64, basis = Basis, format = Format, samples = Int32 }`
+- 既定（design 解像度そのまま・Rgba8Unorm・MSAA なし）。
   `pub def defaultDescriptor(): Descriptor`
-- 描き先の画素そのまま（窓が 1920 × 1080 なら 1920 × 1080 で描く）・Rgba8Unorm。
+- 描き先の画素そのまま（窓が 1920 × 1080 なら 1920 × 1080 で描く）・Rgba8Unorm・MSAA なし。
   `pub def windowDescriptor(): Descriptor`
 - d の形式を Rgba16Float にした作り方（1 を超える明るさを持つ Pass。`RenderTarget.withHdr(RenderTarget.windowDescriptor())`）。
   `pub def withHdr(d: Descriptor): Descriptor`
+- d の 1 画素の標本の数を samples にした作り方（MSAA: 3D の手すり・金網・電線のような細い物の欠けとちらつきを抑える。
+  `pub def withMsaa(samples: Int32, d: Descriptor): Descriptor`
+- 描く時の標本の数（1・2・4・8 のどれか。samples を超えない一番大きい物・1 未満は 1）。GPU の上限は描き手が掛ける。
+  `pub def samplesOf(d: Descriptor): Int32`
+- n を超えない 1・2・4・8 の一番大きい物（1 未満は 1）。
+  `pub def samplesAtMost(n: Int32): Int32`
 - scale が範囲（0 より大きく 1 以下・有限）の中か。外なら scaleOf が 1.0 に直す（Render.resolvePassReads が知らせる）。
   `pub def isScaleInRange(d: Descriptor): Bool`
 - 範囲に収めた倍率。0 以下・1 より大きい・非有限は 1.0（既定値で続ける。知らせるのは呼び手）。
@@ -1014,7 +1020,7 @@
 - 自分の名前を読む Pass が、前のコマの中身（history）を読むための別名。Render.resolvePassReads が書き換え、
   `pub def historyName(name: String): String`
 - ターゲットを開く時の宣言（Target.beginTarget に渡す 1 つ）。
-  `pub type alias TargetSpec = { name = String, width = Int32, height = Int32, format = Format, clear = LoadOp }`
+  `pub type alias TargetSpec = { name = String, width = Int32, height = Int32, format = Format, clear = LoadOp, samples = Int32 }`
 - レンダーターゲットへの描画チャンネル。eff Game とは別に隔離した効果。
   `pub eff Target`
 - ターゲットを開く。以降の renderCommands は画面でなくここに描かれる（swap もしない）。
@@ -1060,15 +1066,19 @@
 - 法線マップ。texture = 絵の名前（タンジェント空間・緑が絵の上）・strength = でこぼこの強さ（1 で絵のまま）。
   `pub type alias NormalMap = { texture = String, strength = Float64 }`
 - 材質の中身。spec の Out の色 = 光を当てる前の色・params = spec の Param・
-  `pub type alias MaterialFields = { spec = ShaderDoc.Spec, params = Map[String, Float64], cutout = Bool, emission = Option[ShaderDoc.Shade], normalMap = Option[NormalMap], wrap = Wrap }`
+  `pub type alias MaterialFields = { spec = ShaderDoc.Spec, params = Map[String, Float64], cutout = Bool, emission = Option[ShaderDoc.Shade], normalMap = Option[NormalMap], wrap = Wrap, blend = Bool, doubleSided = Bool }`
 - 材質（閉じた型 — 欄を後から足しても、ゲームの書いた値が壊れない）。material から作り、with… で足す。
   `pub type alias Material3d = MaterialData`
-- spec だけの材質（params 空・cutout なし・emission なし・法線マップなし・Repeat）。
+- spec だけの材質（params 空・cutout なし・emission なし・法線マップなし・Repeat・不透明・表の面だけ）。
   `pub def material(spec: ShaderDoc.Spec): Material3d`
 - spec の Param に渡す値（Unity のマテリアルの float の値を渡すのと同じ。渡さない名前は 0）。
   `pub def withParams(p: Map[String, Float64], m: Material3d): Material3d`
 - on が真なら α が 0.5 未満の画素を捨てる（深度も書かない）。
   `pub def withCutout(on: Bool, m: Material3d): Material3d`
+- on が真なら半透明（窓ガラス・網・水面）: 色 = spec の色 × α + 下の色 × (1 − α)。深度は読むが書かない（奥の半透明も透けて見える）。
+  `pub def withAlphaBlend(on: Bool, m: Material3d): Material3d`
+- on が真なら裏の面も描く（ガラスの板・網・葉など、裏から見ても見える物）。裏の面は光の計算の法線を裏返す
+  `pub def withDoubleSided(on: Bool, m: Material3d): Material3d`
 - 光の計算の後に足す、自分で光る色（かすみに沈まない）。
   `pub def withEmission(s: ShaderDoc.Shade, m: Material3d): Material3d`
 - emission を外す（glb の emissive で光らせたくない時）。
@@ -1102,6 +1112,11 @@
   `pub def instanceFieldsOf(i: Instance3d): InstanceFields`
 - 置いた物の world の境界（形の境界の 8 つの角を world で写した物を囲む AABB）。
   `pub def worldBoundsOf(i: Instance3d): Option[Mesh3d.Bounds]`
+- 置いた物の、描く順を決める点（world の境界の真ん中。骨つきと頂点の無い形は world の原点）。
+  `pub def drawCenterOf(r: InstanceFields): Vec3.Vec3`
+- `pub def blendOrderOf(eye: Vec3.Vec3, fieldsOf: a -> InstanceFields, xs: List[a]): List[a]`
+- 半透明の材質（withAlphaBlend）が付いた置いた物か。
+  `pub def isBlendedFields(r: InstanceFields): Bool`
 - 描き手が視錐台 f の外として描かなくてよい物か（迷ったら偽 = 描く）。GL と CPU と影の地図が同じ判定を使う。
   `pub def isOutsideFrustum(f: Frustum.Frustum, i: Instance3d): Bool`
 - isOutsideFrustum の本体（置いた物の中身から。CPU の描き手が使う）。
@@ -1142,8 +1157,30 @@
 - ビルボードの中身を読む（GL・CPU・鍵が使う）。
   `pub def billboardFieldsOf(b: Billboard3d): BillboardFields`
 - 場面 1 つ。size = 描き物の大きさ（位置は PlacedItem の at。Shader 面と同じ決まり）・zIndex = 2D の並びの中の重なり順・
-  `pub type alias Scene3dCmd = { size = Vec2.Vec2, camera = Camera3d.Camera3d, instances = List[Instance3d], billboards = List[Billboard3d], pointLights = List[PointLight], spotLights = List[SpotLight], environment = Environment3d, resolution = Resolution, output = Output, zIndex = Int32, time = Float64, textures = List[Texture3d.Texture3d] }`
+  `pub type alias Scene3dCmd = { size = Vec2.Vec2, camera = Camera3d.Camera3d, instances = List[Instance3d], billboards = List[Billboard3d], pointLights = List[PointLight], spotLights = List[SpotLight], environment = Environment3d, resolution = Resolution, output = Output, zIndex = Int32, time = Float64, textures = List[Texture3d.Texture3d], sky = Option[Sky3d] }`
 - `pub def scene(camera: Camera3d.Camera3d, size: Vec2.Vec2): Scene3dCmd`
+- 空の中身。zenith = 真上の色・horizon = 地平の色・ground = 真下の色・curve = 地平から真上（真下）へ向かう色の寄り方
+  `pub type alias SkyFields = { zenith = Color, horizon = Color, ground = Color, curve = Float64 }`
+- 3D の場面の空（閉じた型 — 欄を後から足しても、ゲームの書いた値が壊れない）。gradientSky から作り、with… で替える。
+  `pub type alias Sky3d = SkyData`
+- 上下のグラデーションの空（曲がり 1）。目から見た向き d の色は、d.y ≥ 0 なら horizon と zenith の間を d.y^curve で、
+  `pub def gradientSky(zenith: Color, horizon: Color, ground: Color): Sky3d`
+- 地平から真上・真下へ向かう色の寄り方を替える。0 以下・NaN・無限は 1 として描く（skyCurveOf）。
+  `pub def withSkyCurve(curve: Float64, s: Sky3d): Sky3d`
+- 空の中身を読む（GL・CPU・鍵が使う）。
+  `pub def skyFieldsOf(s: Sky3d): SkyFields`
+- 描く時に使う曲がり（0 以下・NaN・無限は 1）。GL と CPU が同じ値を使う。
+  `pub def skyCurveOf(s: Sky3d): Float64`
+- 目から見た向き dir（長さ 1）の空の色（gradientSky の式。GL の Render3d も同じ式を書く）。
+  `pub def skyColorOf(s: Sky3d, dir: Vec3.Vec3): Color`
+- 画素の向きを組む材料（場面のカメラから 1 回だけ作る）。forward = 見ている向き・right = 画面の右の向き × tan(fovY / 2) × 縦横の比・
+  `pub type alias SkyBasis = { forward = Vec3.Vec3, right = Vec3.Vec3, up = Vec3.Vec3 }`
+- 場面 scene のカメラと縦横の比（aspectOf）で、空の画素の向きを組む材料を作る。GL と CPU が同じ物を使う。
+  `pub def skyBasisOf(scene: Scene3dCmd): SkyBasis`
+- NDC の点 ndc（−1..1・y は上へ）を通って目から伸びる向き（長さ 1）。
+  `pub def skyDirectionOf(b: SkyBasis, ndc: Vec2.Vec2): Vec3.Vec3`
+- sky と environment の background が両方 Some の時の、知らせる 1 行（background は使わない）。毎コマ通るので呼ぶ側が初回 1 回だけ出す。
+  `pub def skyWarning(scene: Scene3dCmd): Option[String]`
 - 1 つの場面で計算する点光源の上限。
   `pub def maxPointLights(): Int32`
 - 1 つの場面で計算するスポットライトの上限。

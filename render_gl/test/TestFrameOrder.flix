@@ -29,7 +29,7 @@ mod TestFrameOrder {
         let camera = { eye = { x = 0.0, y = 0.0, z = 0.0 }, yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 0.1, far = 100.0 };
         { cmd = { at = { x = tag, y = 0.0 }, clip = None,
                   scene = { zIndex = z | Scene3d.scene(camera, { x = 10.0, y = 10.0 }) } },
-          designTarget = None, shadow = None }
+          designTarget = None, shadow = None, multisampled = false }
 
     /// z の小さい物が先に来る（入力の並びは逆でも）。
     @Test

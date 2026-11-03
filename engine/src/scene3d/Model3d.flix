@@ -36,7 +36,7 @@ pub mod Model3d {
 
     /// glTF の材質の情報（読むだけ。描き方を決めるのは part#material）。
     /// - name = glTF の材質の name（無ければ ""）
-    /// - alphaMode・alphaCutoff（既定 0.5）・doubleSided = glTF の欄のまま（描き手はまだ使わない）
+    /// - alphaMode・alphaCutoff（既定 0.5）・doubleSided = glTF の欄のまま（loadTextured は alphaMode を材質に当てる — BLEND は半透明・MASK は 0.5 で抜く。doubleSided は当てない）
     /// - baseColorTexture・normalTexture・emissiveTexture = 読めた絵の名前（Texture3d.name。絵を読まない Gltf.load と、読めなかった絵は None）
     /// - emissive = emissiveFactor × KHR_materials_emissive_strength（線形の量・既定 0）
     pub type alias GltfMaterial = { name = String, alphaMode = AlphaMode, alphaCutoff = Float64, doubleSided = Bool,

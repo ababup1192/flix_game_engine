@@ -59,7 +59,7 @@ mod RenderPaint {
         // ターゲットの名前 → 前のコマの中身の写し（RenderTarget.historyName で読ませる。自分を読む Pass がある時だけ作る）。
         historyRef = Ref[Map[String, RenderTargetGl.Entry], Static],
         // Rgba16Float で作れず Rgba8Unorm で作り直したことを知らせたターゲットの名前（名前ごとに 1 回）。
-        formatFallbackWarnedRef = Ref[Set[String], Static],
+        targetWarnedRef = Ref[Set[String], Static],
         // history に前のコマを写すか（窓で遊ぶ時）、毎回透明で塗るか（1 枚撮り・動画 — 描き出しと同じ「1 コマ目」）。
         keepHistory = Bool,
         // テクスチャの名前 → GL の実体（実行中に増える）。
@@ -268,7 +268,7 @@ mod RenderPaint {
           pendingShaderHolder = pendingShaderHolder, shaderUniformCache = shaderUniformCache,
           pendingScene3dHolder = Array#{(Nil: List[Scene3d.RenderCmd])} @ Static, render3d = render3d,
           targetsRef = targetsRef, activeTargetHolder = activeTargetHolder,
-          historyRef = Ref.fresh(Static, Map.empty()), formatFallbackWarnedRef = Ref.fresh(Static, Set.empty()), keepHistory = true,
+          historyRef = Ref.fresh(Static, Map.empty()), targetWarnedRef = Ref.fresh(Static, Set.empty()), keepHistory = true,
           registryRef = registryRef, textureKeyRef = textureKeyRef,
           staticCacheCell = staticCacheCell, lastFrameHolder = lastFrameHolder,
           diagnosticsRef = Ref.fresh(Static, None), shaderLifeHolder = Array#{0, 0} @ Static,
@@ -284,7 +284,8 @@ mod RenderPaint {
             case None    => Nil
             case Some(l) => RenderStatic.resolve(paint#staticCacheCell, l)
         };
-        let scenes = prepareScenes(paint, paint#screenFramebuffer, RenderTarget.Format.Rgba8Unorm, frame#scenes);
+        // WhyNot: 画面に標本の数を問わない — 窓は GLFW_SAMPLES を頼まずに作る（窓の MSAA は 2D の縁も変える）。
+        let scenes = prepareScenes(paint, { framebuffer = paint#screenFramebuffer, format = RenderTarget.Format.Rgba8Unorm, samples = 1 }, frame#scenes);
         RenderFrame.renderFrameMixed({
             registry = Ref.get(paint#registryRef),
             fbW = fbW, fbH = fbH,
@@ -305,8 +306,10 @@ mod RenderPaint {
             or List.exists(d -> DrawCmd.textureOf(d) == history, sprites)
             or List.exists(cmd -> List.exists(b -> Scene3d.billboardFieldsOf(b)#texture == history, cmd#scene#billboards), scenes);
         if (readsHistory) prepareHistory(paint, target) else ();
-        let framebuffer = Map.get(name, Ref.get(paint#targetsRef)) |> Option.map(e -> e#fbo) |> Option.getWithDefault(paint#screenFramebuffer);
-        let prepared = prepareScenes(paint, framebuffer, target#format, scenes);
+        let entry = Map.get(name, Ref.get(paint#targetsRef));
+        let framebuffer = entry |> Option.map(RenderTargetGl.drawFramebuffer) |> Option.getWithDefault(paint#screenFramebuffer);
+        let samples = entry |> Option.map(RenderTargetGl.drawSamples) |> Option.getWithDefault(1);
+        let prepared = prepareScenes(paint, { framebuffer = framebuffer, format = target#format, samples = samples }, scenes);
         RenderFrame.renderFrameMixed({
             registry = Ref.get(paint#registryRef),
             designW = paint#screenW, designH = paint#screenH,
@@ -322,7 +325,7 @@ mod RenderPaint {
     def prepareHistory(paint: Paint, spec: RenderTarget.TargetSpec): Unit \ IO =
         let name = spec#name;
         let history = RenderTarget.historyName(name);
-        let existing = Map.get(name, Ref.get(paint#historyRef)) |> Option.filter(sameShape(spec));
+        let existing = Map.get(name, Ref.get(paint#historyRef)) |> Option.filter(sameTexture(spec));
         let entry = match existing {
             case Some(e) => e
             case None =>
@@ -404,11 +407,10 @@ mod RenderPaint {
         Array.put(Nil, 0, paint#pendingScene3dHolder);
         scenes
 
-    /// Design の解像度の場面を先に描いておき、2D の並びへ渡す形にする。framebuffer = 描き終えた後に戻す描き先・format = その形式。
-    def prepareScenes(paint: Paint, framebuffer: Int32, format: RenderTarget.Format, scenes: List[Scene3d.RenderCmd]): List[Render3d.SceneItem] \ IO =
+    /// Design の解像度の場面を先に描いておき、2D の並びへ渡す形にする。dest = 描き終えた後に戻す描き先・その形式・標本の数。
+    def prepareScenes(paint: Paint, dest: Render3d.Dest, scenes: List[Scene3d.RenderCmd]): List[Render3d.SceneItem] \ IO =
         Render3d.prepareScenes(paint#render3d, Array.get(0, paint#frameGenHolder),
-                               billboardTexture(paint#registryRef, paint#targetsRef, paint#textureKeyRef),
-                               { framebuffer = framebuffer, format = format }, scenes)
+                               billboardTexture(paint#registryRef, paint#targetsRef, paint#textureKeyRef), dest, scenes)
 
     /// ビルボードと 3D の材質が貼るテクスチャを名前で引く（レンダーターゲットは上下逆に格納されているので flipped）。
     /// version = ensureTexture の key（同じ GL ハンドルのまま画素を差し替えると変わる。key の無い絵は空の字）。
@@ -848,8 +850,9 @@ mod RenderPaint {
         let name = spec#name;
         let targetsRef = paint#targetsRef;
         let freshEntry = () -> {
-            let fresh = RenderTargetGl.create(spec#width, spec#height, spec#format);
+            let fresh = RenderTargetGl.createWithSamples(spec#width, spec#height, spec#format, spec#samples);
             if (RenderTargetGl.isFallback(fresh)) warnFormatFallback(paint, name) else ();
+            if (RenderTargetGl.isMsaaFallback(fresh)) warnMsaaFallback(paint, name) else ();
             Ref.put(Map.insert(name, fresh, Ref.get(targetsRef)), targetsRef);
             fresh
         };
@@ -866,17 +869,29 @@ mod RenderPaint {
         RenderTargetGl.bind(entry);
         Array.put(Some(spec), 0, paint#activeTargetHolder)
 
-    /// 作ってある e が spec と同じ寸法・形式か（作り直しの鍵）。
+    /// 作ってある e が spec と同じ寸法・形式・標本の数か（作り直しの鍵）。
     def sameShape(spec: RenderTarget.TargetSpec, e: RenderTargetGl.Entry): Bool =
+        sameTexture(spec, e) and e#samples == spec#samples
+
+    /// 作ってある e の絵（tex）が spec と同じ寸法・形式か（history の作り直しの鍵。history は標本を持たない）。
+    def sameTexture(spec: RenderTarget.TargetSpec, e: RenderTargetGl.Entry): Bool =
         e#width == spec#width and e#height == spec#height and e#format == spec#format
+
+    /// 標本を持つ描き先を作れずに MSAA なしで描くことを、名前ごとに 1 回だけ知らせる。
+    def warnMsaaFallback(paint: Paint, name: String): Unit \ IO =
+        warnTargetOnce(paint, name + "@msaa", name, "MSAA なし", "この描き先は標本を持つ FBO を作れない（GL_MAX_SAMPLES か FBO の完成）")
 
     /// Rgba16Float で作れずに Rgba8Unorm で作り直したことを、名前ごとに 1 回だけ知らせる。
     def warnFormatFallback(paint: Paint, name: String): Unit \ IO =
-        let warned = Ref.get(paint#formatFallbackWarnedRef);
-        if (Set.memberOf(name, warned)) ()
+        warnTargetOnce(paint, name, name, "Rgba8Unorm", "この描き先は Rgba16Float の FBO を作れない（1 を超える明るさは 1 に切られる）")
+
+    /// ターゲット name の作り方を既定へ落としたことを、鍵 key ごとに 1 回だけ知らせる。
+    def warnTargetOnce(paint: Paint, key: String, name: String, fallback: String, reason: String): Unit \ IO =
+        let warned = Ref.get(paint#targetWarnedRef);
+        if (Set.memberOf(key, warned)) ()
         else {
-            Ref.put(Set.insert(name, warned), paint#formatFallbackWarnedRef);
-            Log.fellBack("render-target", name, "Rgba8Unorm", "この描き先は Rgba16Float の FBO を作れない（1 を超える明るさは 1 に切られる）")
+            Ref.put(Set.insert(key, warned), paint#targetWarnedRef);
+            Log.fellBack("render-target", name, fallback, reason)
         }
 
     /// 描き先 fbW × fbH の画素へ design を収めた時の倍率（Target.pixelScale の答え。黒帯の分は入れない）。
@@ -896,8 +911,12 @@ mod RenderPaint {
                 Ref.put(Map.remove(history, Ref.get(paint#registryRef)), paint#registryRef)
         }
 
-    /// RenderTarget.Target.endTarget の中身。画面のフレームバッファへ戻す。
+    /// RenderTarget.Target.endTarget の中身。標本を持つターゲットは tex へ resolve してから、画面のフレームバッファへ戻す
+    /// （以降の Pass と本編はターゲットを tex で読む）。
     pub def endTarget(paint: Paint): Unit \ IO =
+        Array.get(0, paint#activeTargetHolder)
+            |> Option.flatMap(spec -> Map.get(spec#name, Ref.get(paint#targetsRef)))
+            |> Option.forEach(RenderTargetGl.resolve);
         RenderTargetGl.unbind(paint#screenFramebuffer);
         Array.put(None, 0, paint#activeTargetHolder)
 }

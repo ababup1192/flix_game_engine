@@ -182,6 +182,25 @@ mod TestGltf.Emissive {
         Assert.assertEq(expected = (Some((None, None)), false),
             (firstPart(m)#gltfMaterial |> Option.map(g -> (g#baseColorTexture, g#emissiveTexture)), Option.nonEmpty(firstPart(m)#material)))
 
+    /// loadTextured は alphaMode を材質に当てる: OPAQUE はそのまま・MASK は cutout・BLEND は半透明。doubleSided は当てない。
+    @Test
+    def testAlphaModeShapesTheMaterial(): Unit \ {Assert, IO} =
+        let flags = (rest: String) -> firstPart(read(glbWith(withBase(rest), true, red(), green(), linear())))#material
+            |> Option.map(mat -> { let f = Scene3d.materialFieldsOf(mat); (f#cutout, f#blend, f#doubleSided) });
+        Assert.assertEq(expected = Some((false, false, false)) :: Some((true, false, false)) :: Some((false, true, false)) :: Nil,
+            flags(",\"doubleSided\":true") :: flags(",\"alphaMode\":\"MASK\",\"doubleSided\":true")
+                :: flags(",\"alphaMode\":\"BLEND\",\"doubleSided\":true") :: Nil)
+
+    /// MASK の alphaCutoff が 0.5 でなければ、材質を名指して 1 行知らせる（0.5 で抜く）。
+    @Test
+    def testMaskCutoffOtherThanHalfIsWarned(): Unit \ {Assert, IO} =
+        let old = System.err;
+        let buf = new ByteArrayOutputStream();
+        System.setErr(new PrintStream(buf, true));
+        discard read(Vector.drop(buf.size(), glbWith(withBase(",\"alphaMode\":\"MASK\",\"alphaCutoff\":0.3"), true, red(), green(), linear())));
+        System.setErr(old);
+        Assert.assertTrue(String.contains(substr = "alphaCutoff 0.3", buf.toString()))
+
     // ════════════════════════════════════════════════════════════════════
     // 材質の口
     // ════════════════════════════════════════════════════════════════════

@@ -49,6 +49,9 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | Blender で名前を付けた物（扉・調べる物・当たり判定の箱・印の点）を glb から名前で引く | `Model3d.findNode(name, model)` / `nodesWithPrefix("COL_", model)`（たくさん引くなら `nodesByName`）→ `node#world`・`node#localBounds`・`Model3d.nodeOrigin`（位置や大きさで探さない・座標を手で写さない。engine の `docs/scene3d.md`） |
 | 3D の部屋を一人称で歩く（壁で止まる・段差を上る・坂・落ちる・扉に押される） | 箱は `Model3d.nodesWithPrefix("COL_", m) \|> CollisionShape3d.boxesOfNodes`（glb の `COL_*` のノード）→ `CollisionWorld3d.build(2.0, boxes)` → 毎コマ `CharacterBody3d.moveAndSlide(world, 扉の板, settings, 速さ, dt, body)`（自前で押し出し・床探しを書かない・地面と歩ける範囲も箱で入れる。engine の `docs/scene3d.md`） |
 | 一人称で見ている物を調べる（照準の先の物の名前・E で調べる・E で扉） | `Camera3d.forwardRay(cam)` → `Ray3d.pickNearest(ray, 距離, 的)`（的は `Ray3d.boxTargetsOf(n -> 鍵, nodes)`。壁も「壁」の鍵で入れて遮る。距離と向きの内積で代わりにしない） |
+| 3D の場面の背景を空のグラデーション（天頂・地平・地面）にする | `{ sky = Some(Scene3d.gradientSky(天頂, 地平, 地面)) \| Scene3d.scene(..) }`（寄り方は `Scene3d.withSkyCurve`。2D の面を下に敷いて地平の高さを手で計算しない・地平の色をかすみの色にそろえると継ぎ目が消える） |
+| 3D の窓ガラス・網・水面（向こうが透ける物） | 材質に `Scene3d.withAlphaBlend(true, m)`（裏から見えるなら `withDoubleSided(true, ..)`）・glb の `alphaMode: BLEND` / `MASK` は `Gltf.loadTextured` がそのまま当てる（cutout で代わりにしない・doubleSided は当てないので `part#gltfMaterial#doubleSided` を見てゲームが当てる） |
+| 3D の手すり・金網・電線のような細い物が欠ける・ちらつく | 場面の Pass を `RenderTarget.withMsaa(4, RenderTarget.windowDescriptor() \|> RenderTarget.withHdr)`（cutout の縁も alpha to coverage でなめらかになる・画面なしの描き出しには掛からない）・それでも残る縁は `PostProcess.fxaaSpec` |
 | 灯りの反対の地面へ倒した影（ドット絵の走りから） | `Shadow.projectedRuns`（`PxSprite.runs` を渡す） |
 | 演出の待ちが先の拍で変わる（全部が済んでから始める・置き直さない） | `Timeline.afterAll`（基準ごとに間）→ `Timeline.build` |
 | ポーズ・ヒットストップで止める・遅くする（遊びと実時間を分ける） | `App.addClock` + `Clock.Pace`・`frame#realNow` |

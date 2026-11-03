@@ -18,7 +18,7 @@ mod Render3d.TestGlslPinned {
 
     def fragments(glsl: ShaderGen.MaterialGlsl): List[String] =
         ((false, false) :: (false, true) :: (true, false) :: (true, true) :: Nil)
-            |> List.map(k -> { let (uv, nm) = k; sha256(Render3d.materialFragmentSource(glsl, { uv = uv, normalMap = nm, lightmap = false })) })
+            |> List.map(k -> { let (uv, nm) = k; sha256(Render3d.materialFragmentSource(glsl, { skinned = false, uv = uv, normalMap = nm, lightmap = false, blend = false, doubleSided = false, coverage = false })) })
 
     @Test
     def testLightSourceIsUnchanged(): Unit \ Assert =
@@ -49,7 +49,7 @@ mod Render3d.TestGlslPinned {
     /// 材質が sg_texMip を持つ時も、法線マップと lightmap の版で sg_texMip の定義は 1 回だけ。
     @Test
     def testTexMipOnceWhenTheMaterialHasIt(): Unit \ Assert =
-        Assert.assertEq(expected = 1, count("vec4 sg_texMip(", Render3d.materialFragmentSource(mipGlsl(), { uv = true, normalMap = true, lightmap = true })))
+        Assert.assertEq(expected = 1, count("vec4 sg_texMip(", Render3d.materialFragmentSource(mipGlsl(), { skinned = false, uv = true, normalMap = true, lightmap = true, blend = false, doubleSided = false, coverage = false })))
 
     /// uv の無い形の lightmap の版の頂点シェーダーも、location 7 の 2 本目の uv を vUv2 へ渡す。
     @Test
@@ -61,13 +61,13 @@ mod Render3d.TestGlslPinned {
     @Test
     def testLightmapKeyDiffers(): Unit \ Assert =
         let m = Scene3d.materialFieldsOf(Scene3d.texturedMaterial("t", ShaderDoc.FilterMode.Linear));
-        Assert.assertFalse(Render3d.materialKey(m, { skinned = false, uv = true, normalMap = false, lightmap = false })
-                           == Render3d.materialKey(m, { skinned = false, uv = true, normalMap = false, lightmap = true }))
+        Assert.assertFalse(Render3d.materialKey(m, { skinned = false, uv = true, normalMap = false, lightmap = false, blend = false, doubleSided = false, coverage = false })
+                           == Render3d.materialKey(m, { skinned = false, uv = true, normalMap = false, lightmap = true, blend = false, doubleSided = false, coverage = false }))
 
     /// lightmap の GLSL の sRGB の式は、Texture3d の 1 か所の関数から組まれる。
     @Test
     def testSrgbGlslComesFromTexture3d(): Unit \ Assert =
-        let source = Render3d.materialFragmentSource(solidGlsl(), { uv = false, normalMap = false, lightmap = true });
+        let source = Render3d.materialFragmentSource(solidGlsl(), { skinned = false, uv = false, normalMap = false, lightmap = true, blend = false, doubleSided = false, coverage = false });
         Assert.assertEq(expected = (1, 1),
             (count(Texture3d.srgbToLinearGlsl("r3d_srgbToLinear"), source), count(Texture3d.linearToSrgbGlsl("r3d_linearToSrgb"), source)))
 }

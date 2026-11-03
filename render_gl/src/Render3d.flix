@@ -16,6 +16,11 @@
 //   法線マップ（uv つきの形だけ）: T = normalize(T − N (N·T))・B = cross(N, T) × w・c = 絵の rgb・
 //   m = ((c.x·2 − 1)·s, (c.y·2 − 1)·s, c.z·2 − 1)・n' = normalize(T m.x + B m.y + N m.z)。光の計算は n'、Spec の Normal は当てる前の N。
 //   ビルボードの法線はカメラへ向く向き（−forward）。Output.Depth の灰色は目からの距離で (d − near) / range。
+//   半透明（材質の blend）・両面（doubleSided）・空（sky）の約束は SoftRaster3d の頭と同じ:
+//   描く順は 不透明（頂点の色 → 材質をプログラムごと）→ ビルボード → 半透明（Scene3d.blendOrderOf の順・深度は読むが書かない・
+//   glBlendFuncSeparate(SRC_ALPHA, ONE_MINUS_SRC_ALPHA, ONE, ONE_MINUS_SRC_ALPHA)・出す α は材質の albedo.a）。
+//   両面の材質は GL_CULL_FACE をその物だけ切り、裏の面（!gl_FrontFacing）は光の計算の法線を裏返す。
+//   空は深度を消した後、深度を書かずに場面の矩形いっぱいの四角で塗る（向きは Scene3d.skyBasisOf・式は Scene3d.skyColorOf）。
 mod Render3d {
     import java.lang.System
     import java.lang.{Float => JFloat}
@@ -55,8 +60,14 @@ mod Render3d {
     /// version = 中身の版（実行中に画素を差し替えた絵は字が変わる。3D の材質が段を作り直す合図）。
     pub type alias BillboardTexture = { texId = Int32, width = Float64, height = Float64, flipped = Bool, version = String }
 
-    /// 場面 1 つと、Design の解像度で先に描いておいた描き先（Native なら None）と、先に描いておいた影の地図（無ければ None）。
-    pub type alias SceneItem = { cmd = Scene3d.RenderCmd, designTarget = Option[RenderTargetGl.Entry], shadow = Option[ShadowUse] }
+    /// 場面 1 つと、Design の解像度で先に描いておいた描き先（Native なら None）と、先に描いておいた影の地図（無ければ None）と、
+    /// 描き先が標本を持つか（multisampled = 真なら cutout の材質を alpha to coverage で描く）。
+    pub type alias SceneItem = { cmd = Scene3d.RenderCmd, designTarget = Option[RenderTargetGl.Entry], shadow = Option[ShadowUse],
+                                 multisampled = Bool }
+
+    /// 3D の場面を描く描き先。framebuffer = 描き終えた後に戻す FBO（今開いているレンダーターゲットの描く FBO か画面）・
+    /// format = その形式・samples = その標本の数（1 なら MSAA なし）。
+    pub type alias Dest = { framebuffer = Int32, format = RenderTarget.Format, samples = Int32 }
 
     /// 塗りのシェーダーへ渡す影。tex = 影の地図（深度テクスチャ）・matrix = Scene3d.shadowMatrix（列優先 16 個）・
     /// spotIndex = pickLights の後のスポットの並びの何番目に掛けるか。
@@ -99,6 +110,10 @@ mod Render3d {
 
     type alias Programs = { lit = LitLocs, depth = DepthLocs, billboard = BillboardLocs, blit = Int32, quadVao = Int32, quadVbo = Int32 }
 
+    /// 空のプログラムの uniform の location。
+    type alias SkyLocs = { program = Int32, viewport = Int32, forward = Int32, right = Int32, up = Int32,
+                           zenith = Int32, horizon = Int32, ground = Int32, curve = Int32, depthOut = Int32 }
+
     /// 骨つきの版のプログラムと、joint 行列の UBO（std140 の mat4 × Skin3d.maxJoints()）と、その UBO へ最後に書いた中身。
     type alias SkinnedPrograms = { lit = LitLocs, depth = DepthLocs, jointsUbo = Int32, uploadedJoints = Ref[Array[Float32, Static], Static] }
 
@@ -121,7 +136,7 @@ mod Render3d {
     /// locs#mesh#program が 0 なら組めなかった。
     type alias MaterialEntry = {
         spec = ShaderDoc.Spec, emission = Option[ShaderDoc.Shade], paramNames = List[String],
-        texReads = List[(String, ShaderDoc.FilterMode)], normalMapped = Bool, lightmapped = Bool, locs = MaterialLocs, lastUsed = Int64
+        texReads = List[(String, ShaderDoc.FilterMode)], normalMapped = Bool, lightmapped = Bool, coverage = Bool, locs = MaterialLocs, lastUsed = Int64
     }
 
     /// 材質のある置いた物 1 つを描く材料（プログラムは組めた物だけ）。
@@ -172,6 +187,8 @@ mod Render3d {
         programsRef = Ref[Option[Programs], Static],
         // 骨つきの物を初めて描く時に組む（ジョイントを使わない場面は骨つきの版のコンパイルを払わない）。
         skinnedRef = Ref[Option[SkinnedPrograms], Static],
+        // 空を初めて描く時に組む（空を使わない場面は空のプログラムのコンパイルを払わない）。
+        skyRef = Ref[Option[SkyLocs], Static],
         // ジョイントの数の食い違いを知らせた形（contentHash）。
         skinWarnedRef = Ref[Set[String], Static],
         // Design の解像度の描き先（そのコマの Design の場面の並びの番号 → FBO。大きさが同じなら使い回す）。
@@ -247,7 +264,7 @@ mod Render3d {
         { textureByteBudget = Int32.toInt64(Int32.max(1, textureBudget#megabytes)) * 1048576i64,
           textureCountBudget = Int32.max(1, textureBudget#count), meshesRef = Ref.fresh(Static, Map.empty()), vertexTotal = Array#{0} @ Static,
           uploadStreak = Array#{0, 0, 0} @ Static, programsRef = Ref.fresh(Static, None),
-          skinnedRef = Ref.fresh(Static, None), skinWarnedRef = Ref.fresh(Static, Set.empty()),
+          skinnedRef = Ref.fresh(Static, None), skyRef = Ref.fresh(Static, None), skinWarnedRef = Ref.fresh(Static, Set.empty()),
           designTargetsRef = Ref.fresh(Static, Map.empty()), missingTexturesRef = Ref.fresh(Static, Set.empty()),
           materialsRef = Ref.fresh(Static, Map.empty()), retiredMaterialsRef = Ref.fresh(Static, Nil),
           thrashWarnedRef = Ref.fresh(Static, Set.empty()), timeHolder = Array#{0.0} @ Static,
@@ -287,7 +304,7 @@ mod Render3d {
     /// （Design の中継の描き先も同じ形式で作る — HDR の Pass の中で、中継だけ 0..1 に切られないように）。
     // WhyNot: 2D の並びの途中で FBO を替えて描かない — タイル型の GPU で描き先の出し入れが重く、viewport と scissor の戻し漏れも増える。
     pub def prepareScenes(state: State, gen: Int64, textureOf: String -> Option[BillboardTexture] \ IO,
-                          dest: { framebuffer = Int32, format = RenderTarget.Format }, cmds: List[Scene3d.RenderCmd]): List[SceneItem] \ IO =
+                          dest: Dest, cmds: List[Scene3d.RenderCmd]): List[SceneItem] \ IO =
         if (List.isEmpty(cmds)) Nil
         else {
             // 影の地図は Design の場面より先に描く — Design の場面の塗りがその地図を読む。
@@ -296,11 +313,13 @@ mod Render3d {
             let items = List.zip(cmds, shadows) |> List.map(cs -> {
                 let (cmd, shadow) = cs;
                 match cmd#scene#resolution {
-                    case Scene3d.Resolution.Native => { cmd = cmd, designTarget = None, shadow = shadow }
+                    case Scene3d.Resolution.Native => { cmd = cmd, designTarget = None, shadow = shadow, multisampled = dest#samples > 1 }
                     case Scene3d.Resolution.Design =>
                         let index = Array.get(0, designCount);
                         Array.put(index + 1, 0, designCount);
-                        { cmd = cmd, designTarget = renderDesign(state, gen, textureOf, (index, dest#format), shadow, cmd), shadow = shadow }
+                        // WhyNot: Design の解像度の描き先に標本を持たせない — ドット絵と画素をそろえる場面に縁のならしは要らない。
+                        { cmd = cmd, designTarget = renderDesign(state, gen, textureOf, (index, dest#format), shadow, cmd), shadow = shadow,
+                          multisampled = false }
                 }
             });
             let movedTarget = Array.get(0, designCount) > 0 or List.exists(Option.nonEmpty, shadows);
@@ -316,7 +335,8 @@ mod Render3d {
         let scissor = clipBox(vp, rect, item#cmd#clip);
         if (rect#width <= 0 or rect#height <= 0 or scissor#width <= 0 or scissor#height <= 0) ()
         else match item#designTarget {
-            case None         => drawScene(state, gen, textureOf, { viewport = rect, scissor = scissor, fillBackground = true }, item#shadow, scene)
+            case None         => drawScene(state, gen, textureOf, { viewport = rect, scissor = scissor, fillBackground = true, coverage = item#multisampled },
+                                           item#shadow, scene)
             case Some(target) => blitDesign(state, rect, scissor, target)
         };
         GL11.glViewport(vp#x, vp#y, vp#width, vp#height);
@@ -364,7 +384,7 @@ mod Render3d {
             GL11.glDisable(GL11.GL_SCISSOR_TEST);
             GL11.glClearColor(0.0f32, 0.0f32, 0.0f32, 0.0f32);
             GL11.glClear(GL11.GL_COLOR_BUFFER_BIT);
-            drawScene(state, gen, textureOf, { viewport = full, scissor = full, fillBackground = true }, shadow, cmd#scene);
+            drawScene(state, gen, textureOf, { viewport = full, scissor = full, fillBackground = true, coverage = false }, shadow, cmd#scene);
             GL11.glDisable(GL11.GL_SCISSOR_TEST);
             Some(target)
         }
@@ -385,7 +405,9 @@ mod Render3d {
                 made
         }
 
-    /// Design の FBO のテクスチャを、場面の矩形へ最も近い画素で α で重ねる。
+    /// Design の FBO のテクスチャを、場面の矩形へ最も近い画素で α で重ねる。FBO の色は α を掛けた後の値として重ねる
+    /// （GL_ONE, GL_ONE_MINUS_SRC_ALPHA）: 透明から描いた FBO に半透明を重ねると、色は src × α・α は α になるため。
+    /// 半透明の無い場面の FBO の画素は α が 0（色も 0）か 1 なので、Normal で重ねた時と 1 bit も同じ。
     def blitDesign(state: State, rect: PixelBox, scissor: PixelBox, target: RenderTargetGl.Entry): Unit \ IO =
         let programs = programsOf(state);
         if (programs#blit == 0) ()
@@ -394,7 +416,7 @@ mod Render3d {
             GL11.glEnable(GL11.GL_SCISSOR_TEST);
             GL11.glScissor(scissor#x, scissor#y, scissor#width, scissor#height);
             GL11.glEnable(GL11.GL_BLEND);
-            RenderSprite.applyBlend(DrawCmd.BlendMode.Normal);
+            GL11.glBlendFunc(GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA);
             GL20.glUseProgram(programs#blit);
             GL13.glActiveTexture(GL13.GL_TEXTURE0);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, target#tex);
@@ -507,7 +529,9 @@ mod Render3d {
             let lightView = matrixArray(Scene3d.shadowMatrix(caster#spot));
             let identity = matrixArray(Mat4.identity());
             let outside = Scene3d.isOutsideFrustum(Scene3d.shadowFrustumOf(caster#spot));
-            let (skinned, plain) = scene#instances |> List.map(meshDrawOf(state, outside)) |> List.partition(isSkinned);
+            // WhyNot: 半透明の物に影を落とさせない — 影の地図は 0 か 1 の奥行きで、薄い色ガラスが真っ黒な影を落とす。
+            let (skinned, plain) = scene#instances |> List.filter(i -> not Scene3d.isBlendedFields(Scene3d.instanceFieldsOf(i)))
+                |> List.map(meshDrawOf(state, outside)) |> List.partition(isSkinned);
             useMeshProgram(locs#mesh, lightView, identity);
             plain |> List.forEach(drawPosedMesh(state, gen, locs#mesh));
             // 骨つきの物は曲がった形で影を落とす（深度だけの骨つきの版を Output.Depth と共用）。
@@ -595,13 +619,15 @@ mod Render3d {
     /// 場面 1 つを、今 bind されている描き先の area へ描く。描き終えたら深度・カリングを切り、blend・program・VAO を戻す。
     /// viewport と scissor は呼ぶ側が戻す。stencil には触らない（mask 付きの Shader 面が使う）。
     def drawScene(state: State, gen: Int64, textureOf: String -> Option[BillboardTexture] \ IO,
-                  area: { viewport = PixelBox, scissor = PixelBox, fillBackground = Bool }, shadow: Option[ShadowUse],
+                  area: { viewport = PixelBox, scissor = PixelBox, fillBackground = Bool, coverage = Bool }, shadow: Option[ShadowUse],
                   scene: Scene3d.Scene3dCmd): Unit \ IO =
         Array.put(scene#time, 0, state#timeHolder);
         let frustum = Scene3d.frustumOf(scene);
         let outside = Scene3d.isOutsideFrustum(frustum);
         let programs = programsOf(state);
-        beginScene(area#viewport, area#scissor, if (area#fillBackground) scene#environment#background else None);
+        let background = if (area#fillBackground and Option.isEmpty(scene#sky)) scene#environment#background else None;
+        beginScene(area#viewport, area#scissor, background);
+        if (area#fillBackground) drawSky(state, area#viewport, scene) else ();
         let picked = Scene3d.pickLights(scene#camera#eye, scene);
         let lights = lightDataOf(picked);
         let view = matrixArray(Camera3d.viewMatrix(scene#camera));
@@ -610,34 +636,52 @@ mod Render3d {
         let source = { textureOf = textureOf, own = scene#textures |> List.map(t -> (Texture3d.name(t), t)) |> List.toMap };
         match scene#output {
             case Scene3d.Output.Color =>
-                let (plain, materials) = splitByMaterial(state, gen, outside, _ -> true, scene#instances);
-                noteCulled(state, gen, source, scene#instances, plain, materials);
+                let (plain, materials) = splitByMaterial(state, gen, outside, _ -> true, area#coverage, scene#instances);
+                noteCulled(state, gen, source, List.length(scene#instances), plain, materials);
+                let (blended, solid) = List.partition(d -> d#material#blend, materials);
                 bindShadowMap(shadow);
                 drawInstancesLit(state, gen, programs#lit, camera, plain);
-                drawMaterials(state, gen, camera, MaterialPass.Color, source, materials);
+                // WhyNot: 不透明の材質をプログラムの番号で並べたまま描く順を保つ — 深度で前後が決まるので順は絵を変えない（同じ深さの面だけが並びで決まる）。
+                drawMaterials(state, gen, camera, MaterialPass.Color, source, solid |> List.sortBy(d -> d#entry#locs#mesh#program));
+                drawBillboards(state, textureOf, programs#billboard, camera, scene);
+                drawBlended(state, gen, camera, source, scene#camera#eye, blended);
                 unbindShadowMap(shadow)
             case Scene3d.Output.Depth(dr) =>
-                // WhyNot: cutout でない材質に材質のプログラムを組まない — 奥行きは形だけで決まり、色の計算は捨てられる。
-                let (plain, cutouts) = splitByMaterial(state, gen, outside, m -> m#cutout, scene#instances);
-                noteCulled(state, gen, source, scene#instances, plain, cutouts);
+                // WhyNot: cutout でも両面でもない材質に材質のプログラムを組まない — 奥行きは形だけで決まり、色の計算は捨てられる
+                //   （両面の物は材質の道でカリングを切る。頂点の色の道へ回すと裏の面が捨てられ、CPU の奥行きと食い違う）。
+                // WhyNot: 半透明の物を描かない — 奥行きを書くと、ピントの Pass がガラスの手前に合う。
+                let solidInstances = List.filter(i -> not Scene3d.isBlendedFields(Scene3d.instanceFieldsOf(i)), scene#instances);
+                let (plain, cutouts) = splitByMaterial(state, gen, outside, m -> m#cutout or m#doubleSided, false, solidInstances);
+                noteCulled(state, gen, source, List.length(scene#instances), plain, cutouts);
                 drawInstancesDepth(state, gen, programs#depth, camera, scene#camera#eye, dr, plain);
-                drawMaterials(state, gen, camera, MaterialPass.Depth(dr), source, cutouts)
+                drawMaterials(state, gen, camera, MaterialPass.Depth(dr), source, cutouts |> List.sortBy(d -> d#entry#locs#mesh#program));
+                drawBillboards(state, textureOf, programs#billboard, camera, scene)
         };
-        drawBillboards(state, textureOf, programs#billboard, camera, scene);
         endScene()
+
+    /// 半透明の材質の物を Scene3d.blendOrderOf の順（遠い物から）に、深度を読むが書かずに重ねる。無ければ何もしない。
+    def drawBlended(state: State, gen: Int64, camera: CameraData, source: TextureSource, eye: Vec3.Vec3, draws: List[MaterialDraw]): Unit \ IO =
+        if (List.isEmpty(draws)) ()
+        else {
+            GL11.glDepthMask(false);
+            GL11.glEnable(GL11.GL_BLEND);
+            GL14.glBlendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA, GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA);
+            drawMaterials(state, gen, camera, MaterialPass.Color, source, Scene3d.blendOrderOf(eye, d -> d#draw#fields, draws));
+            GL11.glDisable(GL11.GL_BLEND);
+            GL11.glDepthMask(true)
+        }
 
     /// 視錐台の外で間引いた材質の物の絵を、今のコマで使った物として置き場に数え（上げていなければ上げる）、置いた物と描いた物の数を足す。
     /// 描き始める前に済ませ、unit 0 へ戻す（初めての絵を上げる時に今の unit へ貼るので、描いている途中では呼ばない）。
     /// 間引いた物の形は drawPosedMesh が置き場に数える（描く段で culled の物も通す）。
     // WhyNot: 間引いた物を置き場で古いままにしない — 振り向くたびに形と絵を上げ直して止まり、毎コマ作り直しの知らせも鳴る。
-    def noteCulled(state: State, gen: Int64, source: TextureSource, instances: List[Scene3d.Instance3d],
+    def noteCulled(state: State, gen: Int64, source: TextureSource, total: Int32,
                    plain: List[MeshDraw], materials: List[MaterialDraw]): Unit \ IO =
         let culledMaterials = List.filter(d -> d#draw#culled, materials);
         culledMaterials |> List.forEach(d ->
             materialTextureNames(d) |> List.forEach(lt -> discard resolveTextureAs(state, gen, source, fst(lt), snd(lt))));
         if (List.isEmpty(culledMaterials)) () else GL13.glActiveTexture(GL13.GL_TEXTURE0);
-        let total = List.length(instances);
-        countInstances(state, total, total - List.count(d -> d#culled, plain) - List.length(culledMaterials))
+        countInstances(state, total, List.count(d -> not d#culled, plain) + List.count(d -> not d#draw#culled, materials))
 
     /// 材質のある物 d を描く時に貼る絵の (知らせの中の呼び名, 名前)（材質の絵・法線マップ・lightmap。描く時の知らせと同じ呼び名）。
     def materialTextureNames(d: MaterialDraw): List[(String, String)] =
@@ -666,6 +710,42 @@ mod Render3d {
         GL11.glFrontFace(GL11.GL_CW);
         GL11.glCullFace(GL11.GL_BACK);
         GL11.glDisable(GL11.GL_BLEND)
+
+    /// 場面の sky が Some なら、今の scissor の中を空で塗る（深度は書かない・深度の判定もしない）。beginScene の後に呼ぶ。
+    /// Output.Depth では白（一番奥）。sky と background が両方 Some なら 1 回だけ知らせる（background は beginScene に渡さない）。
+    def drawSky(state: State, viewport: PixelBox, scene: Scene3d.Scene3dCmd): Unit \ IO =
+        Scene3d.skyWarning(scene) |> Option.forEach(line -> warnTextureOnce(state, "@sky+background", line));
+        scene#sky |> Option.forEach(sky -> {
+            let locs = skyProgramOf(state);
+            if (locs#program == 0) ()
+            else {
+                let f = Scene3d.skyFieldsOf(sky);
+                let basis = Scene3d.skyBasisOf(scene);
+                GL11.glDisable(GL11.GL_DEPTH_TEST);
+                GL11.glDisable(GL11.GL_CULL_FACE);
+                GL20.glUseProgram(locs#program);
+                GL20.glUniform4f(locs#viewport, Int32.toFloat32(viewport#x), Int32.toFloat32(viewport#y),
+                                 Int32.toFloat32(viewport#width), Int32.toFloat32(viewport#height));
+                putVec3(locs#forward, basis#forward);
+                putVec3(locs#right, basis#right);
+                putVec3(locs#up, basis#up);
+                putColor(locs#zenith, f#zenith);
+                putColor(locs#horizon, f#horizon);
+                putColor(locs#ground, f#ground);
+                GL20.glUniform1f(locs#curve, RenderUtil.f32(Scene3d.skyCurveOf(sky)));
+                GL20.glUniform1i(locs#depthOut, match scene#output {
+                    case Scene3d.Output.Color    => 0
+                    case Scene3d.Output.Depth(_) => 1
+                });
+                GL30.glBindVertexArray(programsOf(state)#quadVao);
+                GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 6);
+                countDrawCall(state);
+                GL30.glBindVertexArray(0);
+                GL20.glUseProgram(0);
+                GL11.glEnable(GL11.GL_CULL_FACE);
+                GL11.glEnable(GL11.GL_DEPTH_TEST)
+            }
+        })
 
     /// 深度とカリングを切り、blend を 2D の既定（Normal）へ、program と VAO を外す。
     def endScene(): Unit \ IO =
@@ -728,7 +808,8 @@ mod Render3d {
     /// 初めての材質はここで組む（3D を使わないゲームと、材質を使わない場面は GLSL のコンパイルを払わない）。
     /// outside = 描かずに済ませる物か（視錐台の外。MeshDraw の culled になる）。間引く物の材質も組む（間引くのは描く段の手前）。
     // WhyNot: 間引いた物を材質の組み立ての前に除かない — 初めて振り向いたコマで GLSL を組んで止まる（読み込み中に先に組ませる作りが効かない）。
-    def splitByMaterial(state: State, gen: Int64, outside: Scene3d.Instance3d -> Bool, wants: Scene3d.MaterialFields -> Bool,
+    /// coverage = 描き先が標本を持ち、色の段で描く（cutout の材質を alpha to coverage の版で組む）。
+    def splitByMaterial(state: State, gen: Int64, outside: Scene3d.Instance3d -> Bool, wants: Scene3d.MaterialFields -> Bool, coverage: Bool,
                         instances: List[Scene3d.Instance3d]): (List[MeshDraw], List[MaterialDraw]) \ IO =
         let classified = instances |> List.map(placed -> {
             Scene3d.lightmapWarning(placed) |> Option.forEach(line ->
@@ -737,7 +818,7 @@ mod Render3d {
             let material = draw#fields#material
                 |> Option.map(Scene3d.materialFieldsOf)
                 |> Option.filter(wants)
-                |> Option.flatMap(m -> materialEntry(state, gen, m, vertexKindOf(state, draw, m))
+                |> Option.flatMap(m -> materialEntry(state, gen, m, vertexKindOf(state, coverage, draw, m))
                     |> Option.map(e -> { entry = e, material = m, draw = draw }));
             (draw, material)
         });
@@ -746,30 +827,32 @@ mod Render3d {
         (plain, materials)
 
     /// 置いた物 d を材質 m で描くプログラムの頂点の形。法線マップは uv つきの形にだけ当てる（uv の無い形は形ごとに 1 回知らせて無視する）。
-    def vertexKindOf(state: State, d: MeshDraw, m: Scene3d.MaterialFields): VertexKind \ IO =
+    def vertexKindOf(state: State, coverage: Bool, d: MeshDraw, m: Scene3d.MaterialFields): ProgramKind \ IO =
         let uv = hasUv(d);
         let wantsNormalMap = Option.nonEmpty(m#normalMap);
         if (wantsNormalMap and not uv)
             warnTextureOnce(state, "nouv:" + Mesh3d.contentHash(d#fields#mesh),
                 "scene3d: uv の無い形に法線マップの材質 '${m#spec#name}' が付いている — 法線マップを当てずに描く（Mesh3d.withUvs か withBoxUvs で uv を付ける）")
         else ();
-        { skinned = isSkinned(d), uv = uv, normalMap = wantsNormalMap and uv, lightmap = Option.nonEmpty(Scene3d.lightmapOfFields(d#fields)) }
+        { skinned = isSkinned(d), uv = uv, normalMap = wantsNormalMap and uv, lightmap = Option.nonEmpty(Scene3d.lightmapOfFields(d#fields)),
+          blend = m#blend, doubleSided = m#doubleSided, coverage = isCoverageCutout(coverage, m) }
 
-    /// 材質のある物を、プログラムごとにまとめて描く（プログラムの切り替えを減らす。深度で前後が決まるので順は絵を変えない）。
-    /// 描き終えたら、絵を貼った unit（材質の絵と法線マップ）の sampler を外して unit 0 へ戻す。
+    /// 材質のある物を draws の順に描く（呼び手が並べる: 不透明はプログラムの番号で並べて切り替えを減らす・半透明は遠い物から）。
+    /// 続く物が同じプログラムなら組み直さない。描き終えたら、絵を貼った unit（材質の絵と法線マップ）の sampler を外して unit 0 へ戻す。
+    // WhyNot: 間引いた物を並べる前に除かない — sortBy は安定ソートではなく、減らした列を並べると同じプログラムの物どうしの順が変わり、
+    //   同じ平面に重なった面の画素が入れ替わる。呼び手は間引く前の全部で並べ、ここで飛ばす（半透明を外した列は、半透明の無い場面では
+    //   前と同じ列。半透明の有る場面の同じ深さの不透明の面の勝ち方は、CPU と揃うことを約束しない）。
     def drawMaterials(state: State, gen: Int64, camera: CameraData, pass: MaterialPass, source: TextureSource,
                       draws: List[MaterialDraw]): Unit \ IO =
         let bound = Array#{0, 0, 0, 0} @ Static;
-        // WhyNot: 間引いた物を並べる前に除かない — sortBy は安定ソートではなく、減らした列を並べると同じプログラムの物どうしの順が変わり、
-        //   同じ平面に重なった面の画素が入れ替わる。全部で並べてから飛ばす。
-        draws |> List.sortBy(d -> d#entry#locs#mesh#program) |> List.forEach(d -> if (d#draw#culled) drawPosedMesh(state, gen, d#entry#locs#mesh, d#draw) else {
+        draws |> List.forEach(d -> if (d#draw#culled) drawPosedMesh(state, gen, d#entry#locs#mesh, d#draw) else {
             let locs = d#entry#locs;
             if (locs#mesh#program == Array.get(0, bound)) ()
             else {
                 Array.put(locs#mesh#program, 0, bound);
                 useMaterialProgram(state, camera, pass, locs)
             };
-            let units = drawMaterialInstance(state, gen, source, d);
+            let units = drawMaterialInstance(state, gen, source, d#entry#coverage, d);
             Array.put(Int32.max(units, Array.get(1, bound)), 1, bound);
             if (d#entry#normalMapped) Array.put(1, 2, bound) else ();
             if (d#entry#lightmapped) Array.put(1, 3, bound) else ()
@@ -799,8 +882,14 @@ mod Render3d {
                 putDepthRange(locs#depthRange, dr)
         }
 
-    /// 材質のある物 1 つを描き、絵を貼った unit の数を返す。
-    def drawMaterialInstance(state: State, gen: Int64, source: TextureSource, d: MaterialDraw): Int32 \ IO =
+    /// 材質 m の cutout を alpha to coverage で描くか。coverage = 描き先が標本を持ち、色の段で描く（Output.Depth は偽で渡す）。
+    // WhyNot: 深度の段（Output.Depth）と半透明に使わない — 深度の灰色は縁で混ぜると奥行きが嘘になり、半透明の α は重ねる量に使う。
+    def isCoverageCutout(coverage: Bool, m: Scene3d.MaterialFields): Bool =
+        coverage and m#cutout and not m#blend
+
+    /// 材質のある物 1 つを描き、絵を貼った unit の数を返す。coverage = cutout を discard でなく alpha to coverage で抜く
+    /// （出す α を標本の数に使い、書く α は 1。GL_SAMPLE_ALPHA_TO_ONE）。
+    def drawMaterialInstance(state: State, gen: Int64, source: TextureSource, coverage: Bool, d: MaterialDraw): Int32 \ IO =
         let locs = d#entry#locs;
         putColor(locs#tint, d#draw#fields#tint);
         GL20.glUniform1i(locs#cutout, if (d#material#cutout) 1 else 0);
@@ -813,7 +902,19 @@ mod Render3d {
         let units = bindMaterialTextures(state, gen, source, d);
         bindNormalMap(state, gen, source, d);
         bindLightmap(state, gen, source, d);
-        drawPosedMesh(state, gen, locs#mesh, d#draw);
+        if (coverage) {
+            GL11.glEnable(GL13.GL_SAMPLE_ALPHA_TO_COVERAGE);
+            GL11.glEnable(GL13.GL_SAMPLE_ALPHA_TO_ONE)
+        } else ();
+        if (d#material#doubleSided) {
+            GL11.glDisable(GL11.GL_CULL_FACE);
+            drawPosedMesh(state, gen, locs#mesh, d#draw);
+            GL11.glEnable(GL11.GL_CULL_FACE)
+        } else drawPosedMesh(state, gen, locs#mesh, d#draw);
+        if (coverage) {
+            GL11.glDisable(GL13.GL_SAMPLE_ALPHA_TO_COVERAGE);
+            GL11.glDisable(GL13.GL_SAMPLE_ALPHA_TO_ONE)
+        } else ();
         units
 
     /// lightmap を lightmap の unit に貼り、段の数・色空間・強さを入れる（Clamp・段つきの Linear で読む）。lightmap を読まないプログラムは何もしない。
@@ -1007,18 +1108,23 @@ mod Render3d {
     // ── 材質のプログラムの置き場 ──
 
     /// 材質のプログラムを分ける形。skinned = 骨つき・uv = uv とタンジェントを持つ・normalMap = 法線マップを当てる（uv つきの時だけ真）・
-    /// lightmap = ベイクした光を 2 本目の uv で読む（Scene3d.lightmapOfFields が Some の時だけ真。骨つきには付かない）。
-    pub type alias VertexKind = { skinned = Bool, uv = Bool, normalMap = Bool, lightmap = Bool }
+    /// lightmap = ベイクした光を 2 本目の uv で読む（Scene3d.lightmapOfFields が Some の時だけ真。骨つきには付かない）・
+    /// blend = 半透明（出す α を材質の α に）・doubleSided = 裏の面の光の法線を裏返す・
+    /// coverage = cutout を discard でなく alpha to coverage で抜く（isCoverageCutout が真の時だけ）。
+    // WhyNot: blend・doubleSided・coverage を uniform で切り替えない — 使わない材質の GLSL の字が変わり、どの GPU でも同じ絵になる保証が崩れる。
+    //   どれも偽の版は、それらを足す前と 1 字も同じ GLSL を組む。
+    pub type alias ProgramKind = { skinned = Bool, uv = Bool, normalMap = Bool, lightmap = Bool, blend = Bool, doubleSided = Bool, coverage = Bool }
 
     /// 材質のプログラムの鍵（2D の Shader 面の鍵 = spec の名前 と重ならない）。骨つき・uv つき・法線マップつき・lightmap つきの版は GLSL が違うので別の鍵。
     /// emission の有無（+em）も鍵に入れる（同じ名前で emission の有る材質と無い材質が並んでも組み直さない。木の違いは spec の名前で分ける）。
     // WhyNot: 骨つきかどうかの字を "3d:" の後ろへ足さない — "3d:" + 名前 の名前の側が同じ字で始まると、骨の無い版と鍵が重なる。
-    pub def materialKey(m: Scene3d.MaterialFields, kind: VertexKind): String =
+    pub def materialKey(m: Scene3d.MaterialFields, kind: ProgramKind): String =
         "3d" + (if (kind#skinned) "+skin" else "") + (if (kind#uv) "+uv" else "") + (if (kind#normalMap) "+nm" else "") + (if (kind#lightmap) "+lm" else "")
+            + (if (kind#blend) "+bl" else "") + (if (kind#doubleSided) "+ds" else "") + (if (kind#coverage) "+cov" else "")
             + (if (Option.nonEmpty(m#emission)) "+em" else "") + ":" + m#spec#name
 
     /// 材質のプログラムを引く。無いか、同じ名前で中身が違えば組み直す。組めなかった材質は None（頂点の色で描く）。
-    def materialEntry(state: State, gen: Int64, m: Scene3d.MaterialFields, kind: VertexKind): Option[MaterialEntry] \ IO =
+    def materialEntry(state: State, gen: Int64, m: Scene3d.MaterialFields, kind: ProgramKind): Option[MaterialEntry] \ IO =
         let key = materialKey(m, kind);
         let cache = Ref.get(state#materialsRef);
         let entry = match Map.get(key, cache) {
@@ -1033,7 +1139,7 @@ mod Render3d {
         ShaderGen.eqMaterial(entry#spec, entry#emission, m#spec, m#emission)
 
     /// 鍵 key の材質を組み直す。古いプログラムはすぐ消さず引退させる（同じコマの先の物がまだ使う）。
-    def rebuildMaterial(state: State, gen: Int64, slot: { key = String, kind = VertexKind }, old: Option[MaterialEntry],
+    def rebuildMaterial(state: State, gen: Int64, slot: { key = String, kind = ProgramKind }, old: Option[MaterialEntry],
                         m: Scene3d.MaterialFields): MaterialEntry \ IO =
         old |> Option.forEach(e -> {
             if (e#lastUsed == gen) warnMaterialThrash(state, slot#key, m#spec#name) else ();
@@ -1042,7 +1148,7 @@ mod Render3d {
         buildMaterial(state, gen, m, slot#kind)
 
     /// 材質のプログラムを組む。読む絵の組が Scene3d.maxMaterialTextures() を超える材質は、後ろの組を 0 にして組み、1 回知らせる。
-    def buildMaterial(state: State, gen: Int64, m: Scene3d.MaterialFields, kind: VertexKind): MaterialEntry \ IO =
+    def buildMaterial(state: State, gen: Int64, m: Scene3d.MaterialFields, kind: ProgramKind): MaterialEntry \ IO =
         let readCount = List.length(ShaderDoc.materialTexReads(m#spec, m#emission));
         if (readCount > Scene3d.maxMaterialTextures())
             warnTextureOnce(state, "limit:" + m#spec#name, "scene3d: 材質 '${m#spec#name}' が読む絵の組が ${readCount} 組ある"
@@ -1051,9 +1157,10 @@ mod Render3d {
         let (spec, emission) = ShaderDoc.limitMaterialTexReads(Scene3d.maxMaterialTextures(), m#spec, m#emission);
         let glsl = ShaderGen.compile3d(spec, emission);
         let label = "scene3d:material" + (if (kind#skinned) ":skin" else "") + (if (kind#uv) ":uv" else "")
-            + (if (kind#normalMap) ":nm" else "") + (if (kind#lightmap) ":lm" else "") + ":${m#spec#name}";
+            + (if (kind#normalMap) ":nm" else "") + (if (kind#lightmap) ":lm" else "") + (if (kind#blend) ":bl" else "")
+            + (if (kind#doubleSided) ":ds" else "") + (if (kind#coverage) ":cov" else "") + ":${m#spec#name}";
         let vertex = materialVertexSource({ skinned = kind#skinned, uv = kind#uv, lightmap = kind#lightmap });
-        let fragment = materialFragmentSource(glsl, { uv = kind#uv, normalMap = kind#normalMap, lightmap = kind#lightmap });
+        let fragment = materialFragmentSource(glsl, kind);
         let program = match RenderShader.tryCreateProgram(vertex, fragment, label) {
             case Some(p) => p
             case None    =>
@@ -1062,7 +1169,7 @@ mod Render3d {
         if (kind#skinned) bindJointsBlock(program) else ();
         bindTextureUnits(program, List.length(glsl#texReads), kind#normalMap, kind#lightmap);
         { spec = m#spec, emission = m#emission, paramNames = glsl#paramNames, texReads = glsl#texReads, normalMapped = kind#normalMap,
-          lightmapped = kind#lightmap,
+          lightmapped = kind#lightmap, coverage = kind#coverage,
           locs = materialLocsOf(program, glsl#paramNames, List.length(glsl#texReads)), lastUsed = gen }
 
     /// uTexN を unit N へ、uNormalMap を法線マップの unit へ向ける（プログラムごとに 1 回。組めなかったプログラムと、
@@ -1549,6 +1656,20 @@ mod Render3d {
         { lit = litLocsOf(lit), depth = depthLocsOf(depth),
           billboard = billboardLocsOf(billboard), blit = blit, quadVao = quadVao, quadVbo = quadVbo }
 
+    /// 空のプログラムを初めて要る時に組む。組めなかったプログラムは 0（空を描かず、地の色も塗らない）。
+    def skyProgramOf(state: State): SkyLocs \ IO =
+        match Ref.get(state#skyRef) {
+            case Some(p) => p
+            case None =>
+                let program = compile(blitVertexSource(), skyFragmentSource(), "scene3d:sky");
+                let made = { program = program, viewport = loc(program, "uViewport"), forward = loc(program, "uForward"),
+                             right = loc(program, "uRight"), up = loc(program, "uUp"), zenith = loc(program, "uZenith"),
+                             horizon = loc(program, "uHorizon"), ground = loc(program, "uGround"), curve = loc(program, "uCurve"),
+                             depthOut = loc(program, "uDepthOut") };
+                Ref.put(Some(made), state#skyRef);
+                made
+        }
+
     /// 骨つきの版を初めて要る時に組む。組めなかったプログラムは 0（骨つきの物はその種類だけ描かない）。
     def skinnedProgramsOf(state: State): SkinnedPrograms \ IO =
         match Ref.get(state#skinnedRef) {
@@ -1861,11 +1982,20 @@ mod Render3d {
     /// surface#normalMap = 法線マップを当てるか（uv つきの時だけ。光の計算の法線を、法線マップで傾けた n' にする）・
     /// surface#lightmap = ベイクした光を 2 本目の uv で読み、環境光と hemisphere の代わりに足すか。
     /// uDepthOut = 1 なら cutout で抜いた後の奥行きの灰色を書く（Output.Depth の cutout の材質）。
-    pub def materialFragmentSource(glsl: ShaderGen.MaterialGlsl, surface: { uv = Bool, normalMap = Bool, lightmap = Bool }): String =
+    /// surface#blend = 出す α を材質の α に（半透明）・surface#doubleSided = 裏の面（!gl_FrontFacing）は光の計算の法線を裏返す・
+    /// surface#coverage = cutout を discard でなく alpha to coverage の α で抜く。3 つとも偽なら、足す前と同じ字。
+    // WhyNot: 欄を 1 つずつ並べた引数にしない — ProgramKind に欄が増えるたびに、呼び手とテストの字が全部書き換わる。skinned は頂点の側だけが読む。
+    pub def materialFragmentSource(glsl: ShaderGen.MaterialGlsl, surface: ProgramKind): String =
         let normalMapped = surface#uv and surface#normalMap;
         // WhyNot: sg_texMip を足すかを normalMapSource と lightmapSource の中で別々に決めない — 両方を使う版で 2 回定義され、コンパイルが落ちる。
         let needsMip = (normalMapped or surface#lightmap) and not String.contains(substr = "vec4 sg_texMip(", glsl#functions);
-        let normal = if (normalMapped) "normalMapped(normalize(vNormal))" else "normalize(vNormal)";
+        let faceNormal = if (surface#doubleSided) "facingNormal" else "normalize(vNormal)";
+        let normal = if (normalMapped) "normalMapped(${faceNormal})" else faceNormal;
+        let cutout = if (surface#coverage) "" else "    if (uCutout == 1 && " + glsl#cutoutAlpha + " < 0.5) discard;\n";
+        let facing = if (surface#doubleSided) "    vec3 facingNormal = gl_FrontFacing ? normalize(vNormal) : -normalize(vNormal);\n" else "";
+        // WhyNot: alpha to coverage に絵の α をそのまま渡さない — ぼけた α の絵では縁が数画素の幅で透け、cutout の固い縁に見えない。
+        let alpha = if (surface#coverage) "clamp((" + glsl#cutoutAlpha + " - 0.5) / max(fwidth(" + glsl#cutoutAlpha + "), 1e-4) + 0.5, 0.0, 1.0)"
+                    else if (surface#blend) "albedo.a" else "1.0";
         "#version 330 core\n" +
         "in vec3 vWorld;\n" +
         "in vec3 vNormal;\n" +
@@ -1887,17 +2017,18 @@ mod Render3d {
         "    vec4 albedo;\n" +
         "    vec3 emission;\n" +
         "    materialEval(albedo, emission);\n" +
-        "    if (uCutout == 1 && " + glsl#cutoutAlpha + " < 0.5) discard;\n" +
+        cutout +
         "    if (uDepthOut == 1) {\n" +
         "        float g = depthGray(vWorld);\n" +
         "        fragColor = vec4(g, g, g, 1.0);\n" +
         "        return;\n" +
         "    }\n" +
+        facing +
         (if (surface#lightmap)
             "    vec3 c = albedo.rgb * uTint * lightBakedAt(vWorld, " + normal + ", bakedLight());\n"
          else
             "    vec3 c = albedo.rgb * uTint * lightAt(vWorld, " + normal + ");\n") +
-        "    fragColor = vec4(fogged(c, vWorld) + emission, 1.0);\n" +
+        "    fragColor = vec4(fogged(c, vWorld) + emission, " + alpha + ");\n" +
         "}\n"
 
     /// ベイクした光の uniform と式（ファイルの頭の式。CPU の描き手と同じ）。lightmap は線形の光の量として読み（Srgb なら sRGB の区分の式で戻す）、
@@ -1998,6 +2129,32 @@ mod Render3d {
         "    }\n" +
         "    vec3 c = texel.rgb * uTint;\n" +
         "    if (uLit == 1) c = fogged(c * lightAt(vWorld, normalize(uFacing)), vWorld);\n" +
+        "    fragColor = vec4(c, 1.0);\n" +
+        "}\n"
+
+    /// 空の frag（式は Scene3d.skyColorOf・向きは Scene3d.skyDirectionOf。NDC は画素の真ん中の gl_FragCoord と viewport から）。
+    def skyFragmentSource(): String =
+        "#version 330 core\n" +
+        "in vec2 vUv;\n" +
+        "out vec4 fragColor;\n" +
+        "uniform vec4 uViewport;\n" +
+        "uniform vec3 uForward;\n" +
+        "uniform vec3 uRight;\n" +
+        "uniform vec3 uUp;\n" +
+        "uniform vec3 uZenith;\n" +
+        "uniform vec3 uHorizon;\n" +
+        "uniform vec3 uGround;\n" +
+        "uniform float uCurve;\n" +
+        "uniform int uDepthOut;\n" +
+        "void main() {\n" +
+        "    if (uDepthOut == 1) {\n" +
+        "        fragColor = vec4(1.0, 1.0, 1.0, 1.0);\n" +
+        "        return;\n" +
+        "    }\n" +
+        "    vec2 ndc = (gl_FragCoord.xy - uViewport.xy) / uViewport.zw * 2.0 - 1.0;\n" +
+        "    vec3 d = normalize(uForward + uRight * ndc.x + uUp * ndc.y);\n" +
+        "    vec3 c = d.y >= 0.0 ? mix(uHorizon, uZenith, min(1.0, pow(d.y, uCurve)))\n" +
+        "                        : mix(uHorizon, uGround, min(1.0, pow(-d.y, uCurve)));\n" +
         "    fragColor = vec4(c, 1.0);\n" +
         "}\n"
 

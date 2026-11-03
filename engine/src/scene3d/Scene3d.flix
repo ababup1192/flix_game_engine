@@ -80,20 +80,23 @@ pub mod Scene3d {
 
     /// 材質の中身。spec の Out の色 = 光を当てる前の色・params = spec の Param・
     /// cutout = 真なら α が 0.5 未満の画素を捨てる・emission = 光の計算の後に足す、自分で光る色・
-    /// normalMap = 法線マップ（None なら頂点の法線のまま）・wrap = spec の Tex が 0..1 の外の uv を読む時の読み方（法線マップにも掛かる）。
+    /// normalMap = 法線マップ（None なら頂点の法線のまま）・wrap = spec の Tex が 0..1 の外の uv を読む時の読み方（法線マップにも掛かる）・
+    /// blend = 真なら spec の α で下の絵に重ねる半透明（深度は読むが書かない。描く順は blendOrderOf）・
+    /// doubleSided = 真なら裏の面も描く（裏の面は光の計算の法線を裏返す）。
     /// spec の Tex の名前は、"tex3d:" で始まれば場面の textures（Texture3d.name）、ほかは全体の登録（project.json の textures・
     /// レンダーターゲット）から引く。無い名前は 0（黒・透明）。1 つの材質が読める (名前, 補間) の組は maxMaterialTextures() まで。
     pub type alias MaterialFields = { spec = ShaderDoc.Spec, params = Map[String, Float64], cutout = Bool, emission = Option[ShaderDoc.Shade],
-                                      normalMap = Option[NormalMap], wrap = Wrap }
+                                      normalMap = Option[NormalMap], wrap = Wrap, blend = Bool, doubleSided = Bool }
 
     enum MaterialData { case MaterialData(MaterialFields) }
 
     /// 材質（閉じた型 — 欄を後から足しても、ゲームの書いた値が壊れない）。material から作り、with… で足す。
     pub type alias Material3d = MaterialData
 
-    /// spec だけの材質（params 空・cutout なし・emission なし・法線マップなし・Repeat）。
+    /// spec だけの材質（params 空・cutout なし・emission なし・法線マップなし・Repeat・不透明・表の面だけ）。
     pub def material(spec: ShaderDoc.Spec): Material3d =
-        MaterialData.MaterialData({ spec = spec, params = Map.empty(), cutout = false, emission = None, normalMap = None, wrap = Wrap.Repeat })
+        MaterialData.MaterialData({ spec = spec, params = Map.empty(), cutout = false, emission = None, normalMap = None, wrap = Wrap.Repeat,
+                                    blend = false, doubleSided = false })
 
     /// spec の Param に渡す値（Unity のマテリアルの float の値を渡すのと同じ。渡さない名前は 0）。
     pub def withParams(p: Map[String, Float64], m: Material3d): Material3d =
@@ -104,6 +107,19 @@ pub mod Scene3d {
     pub def withCutout(on: Bool, m: Material3d): Material3d =
         let MaterialData.MaterialData(r) = m;
         MaterialData.MaterialData({ cutout = on | r })
+
+    /// on が真なら半透明（窓ガラス・網・水面）: 色 = spec の色 × α + 下の色 × (1 − α)。深度は読むが書かない（奥の半透明も透けて見える）。
+    /// 不透明の物とビルボードの後に、world の境界の真ん中が目から遠い物から描く（blendOrderOf）。1 つの物の中の三角形は並べ替えない。
+    /// cutout と両方真なら、α が 0.5 未満の画素を捨ててから重ねる。影は落とさない・Output.Depth には書かない（奥にピントが合う）。
+    pub def withAlphaBlend(on: Bool, m: Material3d): Material3d =
+        let MaterialData.MaterialData(r) = m;
+        MaterialData.MaterialData({ blend = on | r })
+
+    /// on が真なら裏の面も描く（ガラスの板・網・葉など、裏から見ても見える物）。裏の面は光の計算の法線を裏返す
+    /// （spec の Normal は裏返さない）。
+    pub def withDoubleSided(on: Bool, m: Material3d): Material3d =
+        let MaterialData.MaterialData(r) = m;
+        MaterialData.MaterialData({ doubleSided = on | r })
 
     /// 光の計算の後に足す、自分で光る色（かすみに沈まない）。
     /// 名前の付いた材質（Gltf の読んだ材質など）の emission を別の木に差し替えたら、withSpecName で名前も替える。
@@ -213,10 +229,33 @@ pub mod Scene3d {
 
     /// 置いた物の world の境界（形の境界の 8 つの角を world で写した物を囲む AABB）。
     /// 骨つき（skinningOf が Some。Pose で形が境界の外へ出うる）と頂点の無い形は None。
-    pub def worldBoundsOf(i: Instance3d): Option[Mesh3d.Bounds] =
-        let r = instanceFieldsOf(i);
+    pub def worldBoundsOf(i: Instance3d): Option[Mesh3d.Bounds] = worldBoundsOfFields(instanceFieldsOf(i))
+
+    def worldBoundsOfFields(r: InstanceFields): Option[Mesh3d.Bounds] =
         if (Option.nonEmpty(skinningOfFields(r)) or Mesh3d.vertexCount(r#mesh) == 0) None
         else Some(Mesh3d.boundsOfPoints(Mesh3d.cornersOf(Mesh3d.bounds(r#mesh)) |> List.map(Mat4.apply(r#world))))
+
+    /// 置いた物の、描く順を決める点（world の境界の真ん中。骨つきと頂点の無い形は world の原点）。
+    pub def drawCenterOf(r: InstanceFields): Vec3.Vec3 =
+        worldBoundsOfFields(r)
+            |> Option.map(b -> Vec3.mul(Vec3.add(b#min, b#max), 0.5))
+            |> Option.getWithDefault(Mat4.apply(r#world, Vec3.zero()))
+
+    /// 半透明の物を描く順に並べる（drawCenterOf が目 eye から遠い順・同じ距離なら並びの前）。GL と CPU が同じ物を使う。
+    /// fieldsOf = 要素から置いた物の中身を引く関数。
+    // WhyNot: List.sortBy に距離だけを渡さない — 安定ソートではないので、同じ距離の物の重なり方がコマごと・描き手ごとに入れ替わりうる。
+    pub def blendOrderOf(eye: Vec3.Vec3, fieldsOf: a -> InstanceFields, xs: List[a]): List[a] =
+        List.zipWithIndex(xs)
+            |> List.map(entry -> {
+                let (index, x) = entry;
+                ((0.0 - Vec3.distanceSquared(drawCenterOf(fieldsOf(x)), eye), index), x)
+            })
+            |> List.sortBy(fst)
+            |> List.map(snd)
+
+    /// 半透明の材質（withAlphaBlend）が付いた置いた物か。
+    pub def isBlendedFields(r: InstanceFields): Bool =
+        r#material |> Option.exists(m -> materialFieldsOf(m)#blend)
 
     /// 描き手が視錐台 f の外として描かなくてよい物か（迷ったら偽 = 描く）。GL と CPU と影の地図が同じ判定を使う。
     /// 骨つきと頂点の無い形はいつも偽。8 つの角が 6 つの面のどれか 1 つの外に全部あれば真。
@@ -334,20 +373,83 @@ pub mod Scene3d {
         r
 
     /// 場面 1 つ。size = 描き物の大きさ（位置は PlacedItem の at。Shader 面と同じ決まり）・zIndex = 2D の並びの中の重なり順・
-    /// textures = 材質が "tex3d:" の名前（Texture3d.name）で読む絵。
+    /// textures = 材質が "tex3d:" の名前（Texture3d.name）で読む絵・
+    /// sky = 何も描かれない画素に描く空（gradientSky。Some なら environment の background は使わない）。
     pub type alias Scene3dCmd = { size = Vec2.Vec2, camera = Camera3d.Camera3d, instances = List[Instance3d], billboards = List[Billboard3d],
                                   pointLights = List[PointLight], spotLights = List[SpotLight], environment = Environment3d,
                                   resolution = Resolution, output = Output, zIndex = Int32, time = Float64,
-                                  textures = List[Texture3d.Texture3d] }
+                                  textures = List[Texture3d.Texture3d], sky = Option[Sky3d] }
 
-    /// 空の場面（環境光は白・光なし・かすみなし・地の色なし・Native・色を書き出す・zIndex 0・時刻 0・絵なし）。
+    /// 空の場面（環境光は白・光なし・かすみなし・地の色なし・Native・色を書き出す・zIndex 0・時刻 0・絵なし・空なし）。
     /// time = 材質の ShaderDoc の時刻（秒）（ゲームの遊びの時計を渡すと、ポーズやヒットストップで材質の動きも止まる）。
     /// Scene3dCmd は開いたレコードなので `{ instances = … | s }` で足す。
     // WhyNot: 環境光を黒にしない — 光を置く前の場面が真っ黒になり、形を置いたのに何も出ないように見える。
     pub def scene(camera: Camera3d.Camera3d, size: Vec2.Vec2): Scene3dCmd =
         { size = size, camera = camera, instances = Nil, billboards = Nil, pointLights = Nil, spotLights = Nil,
           environment = { ambient = Color.rgb(1.0, 1.0, 1.0), hemisphere = 0.0, toonSteps = 0, fog = None, background = None },
-          resolution = Resolution.Native, output = Output.Color, zIndex = 0, time = 0.0, textures = Nil }
+          resolution = Resolution.Native, output = Output.Color, zIndex = 0, time = 0.0, textures = Nil, sky = None }
+
+    // ── 空 ──
+
+    /// 空の中身。zenith = 真上の色・horizon = 地平の色・ground = 真下の色・curve = 地平から真上（真下）へ向かう色の寄り方
+    /// （1 で角度の sin にまっすぐ・大きいほど地平の色が広い。Godot の ProceduralSkyMaterial の sky_curve と同じ向き）。
+    pub type alias SkyFields = { zenith = Color, horizon = Color, ground = Color, curve = Float64 }
+
+    enum SkyData { case SkyData(SkyFields) }
+
+    /// 3D の場面の空（閉じた型 — 欄を後から足しても、ゲームの書いた値が壊れない）。gradientSky から作り、with… で替える。
+    pub type alias Sky3d = SkyData
+
+    /// 上下のグラデーションの空（曲がり 1）。目から見た向き d の色は、d.y ≥ 0 なら horizon と zenith の間を d.y^curve で、
+    /// d.y < 0 なら horizon と ground の間を (−d.y)^curve でつなぐ（skyColorOf）。かすみは掛けない
+    /// （地平の色をかすみの色にそろえると、遠くの物と空の継ぎ目が消える）。
+    pub def gradientSky(zenith: Color, horizon: Color, ground: Color): Sky3d =
+        SkyData.SkyData({ zenith = zenith, horizon = horizon, ground = ground, curve = 1.0 })
+
+    /// 地平から真上・真下へ向かう色の寄り方を替える。0 以下・NaN・無限は 1 として描く（skyCurveOf）。
+    pub def withSkyCurve(curve: Float64, s: Sky3d): Sky3d =
+        let SkyData.SkyData(r) = s;
+        SkyData.SkyData({ curve = curve | r })
+
+    /// 空の中身を読む（GL・CPU・鍵が使う）。
+    pub def skyFieldsOf(s: Sky3d): SkyFields =
+        let SkyData.SkyData(r) = s;
+        r
+
+    /// 描く時に使う曲がり（0 以下・NaN・無限は 1）。GL と CPU が同じ値を使う。
+    pub def skyCurveOf(s: Sky3d): Float64 =
+        let c = skyFieldsOf(s)#curve;
+        if (Float64.isFinite(c) and c > 0.0) c else 1.0
+
+    /// 目から見た向き dir（長さ 1）の空の色（gradientSky の式。GL の Render3d も同じ式を書く）。
+    pub def skyColorOf(s: Sky3d, dir: Vec3.Vec3): Color =
+        let r = skyFieldsOf(s);
+        let curve = skyCurveOf(s);
+        let (toward, t) = if (dir#y >= 0.0) (r#zenith, Float64.pow(base = dir#y, curve)) else (r#ground, Float64.pow(base = 0.0 - dir#y, curve));
+        let k = Float64.min(1.0, t);
+        { r = r#horizon#r + (toward#r - r#horizon#r) * k, g = r#horizon#g + (toward#g - r#horizon#g) * k,
+          b = r#horizon#b + (toward#b - r#horizon#b) * k }
+
+    /// 画素の向きを組む材料（場面のカメラから 1 回だけ作る）。forward = 見ている向き・right = 画面の右の向き × tan(fovY / 2) × 縦横の比・
+    /// up = 画面の上の向き × tan(fovY / 2)。NDC の点 (x, y) の向きは skyDirectionOf（Camera3d.screenPointToRay と同じ式）。
+    pub type alias SkyBasis = { forward = Vec3.Vec3, right = Vec3.Vec3, up = Vec3.Vec3 }
+
+    /// 場面 scene のカメラと縦横の比（aspectOf）で、空の画素の向きを組む材料を作る。GL と CPU が同じ物を使う。
+    pub def skyBasisOf(scene: Scene3dCmd): SkyBasis =
+        let c = scene#camera;
+        let half = c#fovY / 2.0;
+        let tanHalf = Vec2.sin(half) / Vec2.cos(half);
+        { forward = Camera3d.forward(c), right = Vec3.mul(Camera3d.right(c), tanHalf * aspectOf(scene)), up = Vec3.mul(Camera3d.up(c), tanHalf) }
+
+    /// NDC の点 ndc（−1..1・y は上へ）を通って目から伸びる向き（長さ 1）。
+    pub def skyDirectionOf(b: SkyBasis, ndc: Vec2.Vec2): Vec3.Vec3 =
+        Vec3.normalized(Vec3.add(b#forward, Vec3.add(Vec3.mul(b#right, ndc#x), Vec3.mul(b#up, ndc#y))))
+
+    /// sky と environment の background が両方 Some の時の、知らせる 1 行（background は使わない）。毎コマ通るので呼ぶ側が初回 1 回だけ出す。
+    pub def skyWarning(scene: Scene3dCmd): Option[String] =
+        if (Option.nonEmpty(scene#sky) and Option.nonEmpty(scene#environment#background))
+            Some("scene3d: sky と environment の background が両方ある — background は使わず空を描く")
+        else None
 
     /// 1 つの場面で計算する点光源の上限。
     pub def maxPointLights(): Int32 = 8

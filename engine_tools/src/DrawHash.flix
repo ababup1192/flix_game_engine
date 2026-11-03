@@ -190,7 +190,7 @@ pub mod DrawHash {
     def putSceneCmd(out: DataOutputStream, scene: Scene3d.Scene3dCmd): Unit \ IO = match scene {
         case { size = size, camera = camera, instances = instances, billboards = billboards,
                pointLights = pointLights, spotLights = spotLights, environment = environment,
-               resolution = resolution, output = output, zIndex = zIndex, time = time, textures = textures } =>
+               resolution = resolution, output = output, zIndex = zIndex, time = time, textures = textures, sky = sky } =>
             out.writeDouble(time);
             putVec2(out, size);
             putCamera(out, camera);
@@ -212,8 +212,18 @@ pub mod DrawHash {
                 case Scene3d.Output.Depth(d) => out.writeByte(1i32); putF(out, d#near); putF(out, d#range)
             };
             out.writeInt(zIndex);
-            putSceneTextures(out, textures)
+            putSceneTextures(out, textures);
+            sky |> Option.forEach(putSky(out))
     }
+
+    // WhyNot: 空の無い場面に印を書かない — sky の欄を足す前の鍵の字を保ち、空の無い場面のキャッシュの PNG を塗り直させない。
+    def putSky(out: DataOutputStream, sky: Scene3d.Sky3d): Unit \ IO =
+        let f = Scene3d.skyFieldsOf(sky);
+        out.writeByte(0x53);
+        putColor(out, f#zenith);
+        putColor(out, f#horizon);
+        putColor(out, f#ground);
+        putF(out, f#curve)
 
     // WhyNot: 絵の無い場面にも数を書かない — textures の欄を足す前の鍵の字を保ち、絵の無い場面のキャッシュの PNG を塗り直させない。
     // WhyNot: 画素を畳まない — 作る時に中身から求めた contentHash が中身の代わりになる（GL が絵を上げる鍵と同じ）。
@@ -269,7 +279,8 @@ pub mod DrawHash {
 
     // WhyNot: 法線マップの無い材質と Repeat にも印を書かない — 欄を足す前の鍵の字を保ち、前からある材質のキャッシュの PNG を塗り直させない。
     def putMaterial(out: DataOutputStream, m: Scene3d.Material3d): Unit \ IO = match Scene3d.materialFieldsOf(m) {
-        case { spec = spec, params = params, cutout = cutout, emission = emission, normalMap = normalMap, wrap = wrap } =>
+        case { spec = spec, params = params, cutout = cutout, emission = emission, normalMap = normalMap, wrap = wrap,
+               blend = blend, doubleSided = doubleSided } =>
             putStr(out, ToString.toString(ShaderJson.toJson(spec)));
             putSize(out, Map.size(params));
             params |> Map.forEach((name, v) -> { putStr(out, name); putF(out, v) });
@@ -279,7 +290,10 @@ pub mod DrawHash {
                 case Some(shade) => out.writeByte(1i32); putStr(out, ToString.toString(ShaderJson.toJson(shadeSpec(shade))))
             };
             normalMap |> Option.forEach(n -> { out.writeByte(0x4e); putStr(out, n#texture); putF(out, n#strength) });
-            if (wrap == Scene3d.Wrap.Clamp) out.writeByte(0x43) else ()
+            if (wrap == Scene3d.Wrap.Clamp) out.writeByte(0x43) else ();
+            // WhyNot: 偽の時に何も書かない — 欄を足す前の材質の鍵の字を保つ（不透明・表だけの材質のキャッシュを塗り直させない）。
+            if (blend) out.writeByte(0x42) else ();
+            if (doubleSided) out.writeByte(0x44) else ()
     }
 
     /// Shade を 1 枚の Spec の Out に包む（JSON に書く口が Spec にしか無いため）。

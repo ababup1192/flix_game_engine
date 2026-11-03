@@ -255,6 +255,29 @@ mod TestDrawHash {
     def testUnusedLightmapKeyEqualsKeyWithoutLightmap(): Unit \ Assert =
         Assert.assertEq(expected = sceneKeyOf(paintedTriangle(false)), sceneKeyOf(bakedTriangle(false, 2.0)))
 
+    // 材質の半透明（blend）と両面（doubleSided）は、それぞれ鍵を変える（偽の時は何も書かない）。
+    @Test
+    def testMaterialBlendAndDoubleSidedChangeKey(): Unit \ Assert =
+        let withMaterial = (f: Scene3d.Material3d -> Scene3d.Material3d) -> {
+            let i = paintedTriangle(false);
+            let m = Scene3d.instanceFieldsOf(i)#material |> Option.map(f);
+            sceneKeyOf(m |> Option.map(mm -> Scene3d.withMaterial(mm, i)) |> Option.getWithDefault(i))
+        };
+        let plain = withMaterial(m -> m);
+        let blended = withMaterial(Scene3d.withAlphaBlend(true));
+        let sided = withMaterial(Scene3d.withDoubleSided(true));
+        Assert.assertTrue(plain != blended and plain != sided and blended != sided
+                          and plain == withMaterial(m -> m |> Scene3d.withAlphaBlend(false) |> Scene3d.withDoubleSided(false)))
+
+    // 空（sky）を付けると鍵が変わり、曲がりだけが違っても鍵が変わる。
+    @Test
+    def testSkyChangesKey(): Unit \ Assert =
+        let f = frame();
+        let base = sceneAt(Mat4.identity());
+        let sky = Scene3d.gradientSky({ r = 0.0, g = 0.0, b = 1.0 }, { r = 1.0, g = 1.0, b = 1.0 }, { r = 0.3, g = 0.2, b = 0.1 });
+        let at = (s: Option[Scene3d.Sky3d]) -> keyOf(inputs(), { req = { scenes = { scene = { sky = s | base#scene } | base } :: Nil | f#req } | f });
+        Assert.assertTrue(at(None) != at(Some(sky)) and at(Some(sky)) != at(Some(Scene3d.withSkyCurve(2.0, sky))))
+
     // pose の無い置いた物の鍵は、pose の欄を足す前の字のまま（3D の場面のキャッシュの PNG を塗り直させない）。
     @Test
     def testSceneKeyWithoutPoseIsPinned(): Unit \ Assert =

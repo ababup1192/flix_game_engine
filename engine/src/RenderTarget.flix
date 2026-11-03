@@ -45,17 +45,32 @@ pub mod RenderTarget {
     /// scale = basis の寸法に掛ける倍率（Unity の renderScale・Godot の scaling_3d_scale と同じ語）。0 より大きく 1 以下。
     /// basis = 寸法の基準（Design なら design × scale・Window なら描き先の画素 × scale）。
     /// format = 画素の形式（既定は Rgba8Unorm。HDR の Pass は withHdr で Rgba16Float に）。
+    /// samples = 1 画素の標本の数（MSAA。1 なら掛けない。withMsaa で書く・描く時の値は samplesOf）。
     /// 組む時は `{ scale = 0.5 | RenderTarget.defaultDescriptor() }` の形で書く（欄を足してもゲームの字が止まらないように）。
-    pub type alias Descriptor = { scale = Float64, basis = Basis, format = Format }
+    pub type alias Descriptor = { scale = Float64, basis = Basis, format = Format, samples = Int32 }
 
-    /// 既定（design 解像度そのまま・Rgba8Unorm）。
-    pub def defaultDescriptor(): Descriptor = { scale = 1.0, basis = Basis.Design, format = Format.Rgba8Unorm }
+    /// 既定（design 解像度そのまま・Rgba8Unorm・MSAA なし）。
+    pub def defaultDescriptor(): Descriptor = { scale = 1.0, basis = Basis.Design, format = Format.Rgba8Unorm, samples = 1 }
 
-    /// 描き先の画素そのまま（窓が 1920 × 1080 なら 1920 × 1080 で描く）・Rgba8Unorm。
-    pub def windowDescriptor(): Descriptor = { scale = 1.0, basis = Basis.Window, format = Format.Rgba8Unorm }
+    /// 描き先の画素そのまま（窓が 1920 × 1080 なら 1920 × 1080 で描く）・Rgba8Unorm・MSAA なし。
+    pub def windowDescriptor(): Descriptor = { scale = 1.0, basis = Basis.Window, format = Format.Rgba8Unorm, samples = 1 }
 
     /// d の形式を Rgba16Float にした作り方（1 を超える明るさを持つ Pass。`RenderTarget.withHdr(RenderTarget.windowDescriptor())`）。
     pub def withHdr(d: Descriptor): Descriptor = { format = Format.Rgba16Float | d }
+
+    /// d の 1 画素の標本の数を samples にした作り方（MSAA: 3D の手すり・金網・電線のような細い物の欠けとちらつきを抑える。
+    /// `RenderTarget.withMsaa(4, RenderTarget.windowDescriptor() |> RenderTarget.withHdr)`）。2D と 3D の両方に効く（その Pass に描く物の全部の縁）。
+    /// 1・2・4・8 のどれか（ほかは近い下の値・1 未満は 1。samplesOf）で、GPU の上限（GL_MAX_SAMPLES）でも頭打ちにする。
+    /// 色と深度の置き場が標本の数の倍になり、塗りは縁の分だけ増える。cutout の材質は α を標本の数に変えて縁をなめらかにする（alpha to coverage）。
+    /// 画面なしの描き出し（CPU）は掛けない（絵は MSAA の無い絵のまま）。
+    pub def withMsaa(samples: Int32, d: Descriptor): Descriptor = { samples = samples | d }
+
+    /// 描く時の標本の数（1・2・4・8 のどれか。samples を超えない一番大きい物・1 未満は 1）。GPU の上限は描き手が掛ける。
+    pub def samplesOf(d: Descriptor): Int32 = samplesAtMost(d#samples)
+
+    /// n を超えない 1・2・4・8 の一番大きい物（1 未満は 1）。
+    pub def samplesAtMost(n: Int32): Int32 =
+        if (n >= 8) 8 else if (n >= 4) 4 else if (n >= 2) 2 else 1
 
     /// scale が範囲（0 より大きく 1 以下・有限）の中か。外なら scaleOf が 1.0 に直す（Render.resolvePassReads が知らせる）。
     pub def isScaleInRange(d: Descriptor): Bool =
@@ -84,8 +99,9 @@ pub mod RenderTarget {
     /// ターゲットを開く時の宣言（Target.beginTarget に渡す 1 つ）。
     /// name = ターゲットの名前（そのままテクスチャ名）。width / height = テクセル寸法（texelSizeOf の答え）。
     /// format = 画素の形式（Descriptor#format）。clear = 前の中身の始末（LoadOp の doc を参照）。
+    /// samples = 1 画素の標本の数（samplesOf の答え。1 なら MSAA なし）。
     /// WhyNot: op の引数に並べない — 欄を足すたびに eff の形が変わり、全部のハンドラが止まる。
-    pub type alias TargetSpec = { name = String, width = Int32, height = Int32, format = Format, clear = LoadOp }
+    pub type alias TargetSpec = { name = String, width = Int32, height = Int32, format = Format, clear = LoadOp, samples = Int32 }
 
     /// レンダーターゲットへの描画チャンネル。eff Game とは別に隔離した効果。
     pub eff Target {

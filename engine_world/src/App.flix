@@ -2460,7 +2460,8 @@ pub mod App {
         List.forEach(p -> {
             let descriptor = Render.targetDescriptorOf(plan, p#name);
             let (tw, th) = RenderTarget.texelSizeOf(design, pixelScale, descriptor);
-            RenderTarget.Target.beginTarget({ name = p#name, width = tw, height = th, format = descriptor#format, clear = p#clear });
+            RenderTarget.Target.beginTarget({ name = p#name, width = tw, height = th, format = descriptor#format, clear = p#clear,
+                                              samples = RenderTarget.samplesOf(descriptor) });
             submitGpuItems(warnOnce, p#items, Nil, None);
             RenderTarget.Target.endTarget()
         }, plan#passes)

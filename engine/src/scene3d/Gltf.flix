@@ -183,6 +183,9 @@ pub mod Gltf {
     ///
     /// texturedMaterial の絵の読み方は sampler の magFilter（NEAREST なら Nearest・ほかは Linear）、wrapS か wrapT が CLAMP_TO_EDGE なら Clamp。
     /// 法線マップは baseColorTexture のある材質にだけ足す（strength = scale・既定 1）。読み飛ばした物の知らせも返す。
+    /// alphaMode（材質のある物だけ）: BLEND → Scene3d.withAlphaBlend(true)・MASK → Scene3d.withCutout(true)（alphaCutoff は 0.5 の固定。
+    /// 0.5 でなければ 1 行知らせる）・OPAQUE → そのまま。doubleSided は当てない（Blender の書き出しは全部の材質を真にするので、
+    /// 両面で描く物はゲームが gltfMaterial を見て Scene3d.withDoubleSided を当てる）。
     def materialOf(glb: Glb, images: Vector[Option[Texture3d.Texture3d]], index: Int32, material: Obj): MaterialBuild =
         let pbr = objectOf("pbrMetallicRoughness", material);
         let base = textureRefOf(glb, images, objectOf("baseColorTexture", pbr));
@@ -207,10 +210,28 @@ pub mod Gltf {
             case (None, Some(b))    => Some(vertexColorMaterial("gltf:${baseName}:${b#name}") |> Scene3d.withEmission(b#shade) |> Scene3d.withWrap(b#wrap))
         };
         let usesTexture = Option.nonEmpty(emission#texture);
-        { withUv = lit(emission#build), withoutUv = lit(if (usesTexture) None else emission#build),
-          info = gltfMaterialOf(names, material),
-          lines = List.flatten(snd(base) :: snd(normal) :: emission#lines :: emissiveFactorLine(index, material) :: Nil),
+        let info = gltfMaterialOf(names, material);
+        let withAlpha = (m: Option[Scene3d.Material3d]) -> m |> Option.map(withAlphaModeOf(info#alphaMode));
+        let withUv = withAlpha(lit(emission#build));
+        // WhyNot: 材質の無い（頂点の色で描く）物の alphaCutoff を知らせない — α を持たないので抜く所が無い。
+        let cutoffLine = if (Option.isEmpty(withUv)) Nil else alphaCutoffLine(index, material, info);
+        { withUv = withUv, withoutUv = withAlpha(lit(if (usesTexture) None else emission#build)),
+          info = info,
+          lines = List.flatten(snd(base) :: snd(normal) :: emission#lines :: emissiveFactorLine(index, material) :: cutoffLine :: Nil),
           noUvLine = if (usesTexture) Some("glTF: 材質 ${materialLabel(index, material)} の emissiveTexture を、TEXCOORD_0 の無い形では光らせない（uv で読む絵）") else None }
+
+    /// glTF の alphaMode を材質に当てる（BLEND は半透明・MASK は α 0.5 で抜く・OPAQUE はそのまま）。
+    def withAlphaModeOf(mode: Model3d.AlphaMode, m: Scene3d.Material3d): Scene3d.Material3d = match mode {
+        case Model3d.AlphaMode.Opaque => m
+        case Model3d.AlphaMode.Mask   => Scene3d.withCutout(true, m)
+        case Model3d.AlphaMode.Blend  => Scene3d.withAlphaBlend(true, m)
+    }
+
+    /// MASK の材質の alphaCutoff が 0.5 でない時の知らせ（0.5 で抜く）。
+    def alphaCutoffLine(index: Int32, material: Obj, info: Model3d.GltfMaterial): List[String] =
+        if (info#alphaMode == Model3d.AlphaMode.Mask and info#alphaCutoff != 0.5)
+            "glTF: 材質 ${materialLabel(index, material)} の alphaCutoff ${Float64.toString(info#alphaCutoff)} は使わず、α 0.5 で抜く" :: Nil
+        else Nil
 
     /// 材質を知らせの中で名指す字（name があれば name・無ければ番号）。
     def materialLabel(index: Int32, material: Obj): String =

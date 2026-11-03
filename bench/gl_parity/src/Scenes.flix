@@ -48,7 +48,8 @@ mod Scenes {
             :: texturedBox() :: normalBump() :: skinNormal()
             :: mipFloor() :: mipFloorScaled() :: mipFloorWorld() :: gltfTextured() :: windowPass3d()
             :: hdrPass() :: hdrWindowHalf() :: hdrMultiply() :: texSizeScaled() :: tonemap() :: fxaa()
-            :: lightmapBaked3d() :: lightmapNormal3d() :: spotSoftEdge3d() :: gltfEmissive3d() :: cullOffscreen3d() :: Nil
+            :: lightmapBaked3d() :: lightmapNormal3d() :: spotSoftEdge3d() :: gltfEmissive3d() :: cullOffscreen3d()
+            :: skyGradient3d() :: glassPane3d() :: doubleSided3d() :: msaaEdges() :: Nil
 
     /// B 段階の scene のうち、違う画素の数に上限を置く物（名前 → 許す画素数）。3D の場面は GL と CPU で三角形の縁の
     /// 画素の取り方と浮動小数の丸めが違い、バイトでは一致しない（docs/backend-parity.md の Shader 面と同じ扱い）。
@@ -62,6 +63,8 @@ mod Scenes {
     /// 材質の絵の texel の境・板のふちの 1 px 以内。lightmapNormal3d は約 260 px で、ほぼ同じ）。環境光か hemisphere を足す・
     /// 色空間や intensity を取り違えると、板（約 4,700 px と 7,700 px）の中が丸ごと違い、差も ±1 を超える。
     /// spotSoftEdge3d は床の輪の縁のなめらかな坂で丸めの ±1 が約 20 px 出る。内側の角を取り違えると左の輪の縁の帯（数千 px）が丸ごと違う。
+    /// 段 4 の 4 つ（Apple Silicon で skyGradient3d 0 px・glassPane3d 0 px・doubleSided3d 4 px・msaaEdges 652 px）: 空は向きの丸めの ±1 が
+    /// 坂に散る。半透明と両面は縁の 1 px 以内。msaaEdges は GL だけが縁を標本で混ぜるので、差は棒と縞の縁の画素の数（minDiffOf も見る）。
     pub def toleranceOf(name: String): Option[Int32] = match name {
         case "depthRed"        => Some(300)
         case "afterScene3d"    => Some(200)
@@ -85,7 +88,18 @@ mod Scenes {
         case "spotSoftEdge3d"  => Some(100)
         case "gltfEmissive3d"  => Some(200)
         case "cullOffscreen3d" => Some(100)
+        case "skyGradient3d"   => Some(300)
+        case "glassPane3d"     => Some(200)
+        case "doubleSided3d"   => Some(100)
+        case "msaaEdges"       => Some(1200)
         case _                 => None
+    }
+
+    /// 差が少なくともこの数の画素に出るはずの scene（名前 → 画素数）。GL の側だけが持つ物（MSAA）が効いているかを、CPU との差で見る。
+    /// msaaEdges は GL だけが縁を標本で混ぜるので、縁の画素が CPU（MSAA なし・既存の 3D の行と同じ絵）と違う。差が 0 なら MSAA が効いていない。
+    pub def minDiffOf(name: String): Option[Int32] = match name {
+        case "msaaEdges" => Some(300)
+        case _           => None
     }
 
     /// GL の描き手が描いた置いた物の数（FrameDiagnostics の scene3dCounts#drawn）の期待値を持つ scene（名前 → 数）。
@@ -1072,4 +1086,77 @@ mod Scenes {
         let instances = List.flatten(List.take(70, outside) :: (red :: Nil) :: List.take(60, List.drop(70, outside)) :: (blue :: Nil) :: List.drop(130, outside) :: Nil);
         { name = "cullOffscreen3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
             Render.scene3d({ x = 40.0, y = 20.0 }, flatScene({ x = 240.0, y = 140.0 }, 1, instances, Nil)) :: Nil }
+
+    // ── scene 40: 空のグラデーション（Scene3dCmd.sky → GL は空のプログラム・CPU は SoftRaster3d の skyFill）。B 段階 ──
+    // 見下ろし 20°・天頂は濃い藍・地平は明るい橙・地面は暗い茶。地平（向きの y = 0）は画面の真ん中より上の
+    // NDC の y = tan(20°) / tan(0.7)（場面の上から約 32 % の行）に来る。画角を広く取り、上の端で天頂の色へ寄る所まで写す。手前に赤い箱を 1 つ置き、空が物の後ろだけに出ることも見る。
+    // 空の向きを取り違える（pitch の符号・縦横の比）と地平の行がずれ、天頂と地面の色の帯（数千 px）が丸ごと違う。
+    def skyGradient3d(): Scene =
+        let camera = { eye = Vec3.v3(0.0, 2.0, 0.0), yaw = 0.3, pitch = 20.0 * Vec2.pi() / 180.0, fovY = 1.4, near = 0.5, far = 100.0 };
+        let box = shape(facingQuad(-1.0, 1.0, 0.5, 2.5, 8.0, c8(200, 40, 40)) :: Nil);
+        let sky = Scene3d.gradientSky(c8(20, 30, 90), c8(240, 180, 120), c8(60, 40, 30)) |> Scene3d.withSkyCurve(0.7);
+        let scene = { instances = box :: Nil, sky = Some(sky), zIndex = 1 | Scene3d.scene(camera, { x = 320.0, y = 180.0 }) };
+        { name = "skyGradient3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            Render.scene3d({ x = 0.0, y = 0.0 }, scene) :: Nil }
+
+    /// 色 c・α a の半透明の材質。
+    def glassMaterial(name: String, c: Color, a: Float64): Scene3d.Material3d =
+        Scene3d.material({ name = name, cycleRate = 0.0, bindings = Nil,
+                           out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Solid(c), alpha = ShaderDoc.Field.Const(a) }) })
+            |> Scene3d.withAlphaBlend(true)
+
+    // ── scene 41: 窓ガラス（Scene3d.withAlphaBlend → GL は深度を書かない混ぜ・CPU は 2 段目）。B 段階 ──
+    // 奥に不透明の緑の箱（の面）・その手前に青いガラス（α 0.5）・さらに手前に一部が重なる赤いガラス（α 0.4）。赤いガラスを先に渡す
+    // （遠い順に並べ替えないと、赤の後に青を重ねて重なりの色が変わる）。左の半分は地の色の上（background）・右の半分は緑の面の上。
+    // 深度を書くと、赤の後ろの青が欠ける。重ね方を取り違えると重なりの帯（数千 px）が丸ごと違う。
+    // 右下の小さな場面は Design の解像度・地の色なしで、半分が 2D の白い箱に、半分が何も無い所に重なる赤いガラス
+    // （GL は透明から描いた FBO を α を掛けた色として重ねる。Normal で重ねると何も無い所の赤が 2 回 α を掛けて暗くなる）。
+    def glassPane3d(): Scene =
+        let back = shape(facingQuad(0.0, 6.0, -3.0, 3.0, 20.0, c8(40, 200, 80)) :: Nil);
+        let blue = shape(facingQuad(-4.0, 3.0, -2.5, 2.0, 14.0, c8(255, 255, 255)) :: Nil)
+            |> Scene3d.withMaterial(glassMaterial("parity:glass:blue", c8(60, 100, 240), 0.5));
+        let red = shape(facingQuad(-2.0, 1.0, -1.5, 2.5, 10.0, c8(255, 255, 255)) :: Nil)
+            |> Scene3d.withMaterial(glassMaterial("parity:glass:red", c8(230, 60, 40), 0.4));
+        let smallRed = shape(facingQuad(-3.0, 3.0, -3.0, 3.0, 10.0, c8(255, 255, 255)) :: Nil)
+            |> Scene3d.withMaterial(glassMaterial("parity:glass:red", c8(230, 60, 40), 0.4));
+        let small = flatScene({ x = 40.0, y = 40.0 }, 2, smallRed :: Nil, Nil);
+        let designScene = { resolution = Scene3d.Resolution.Design, environment = { background = None | small#environment } | small };
+        { name = "glassPane3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            Render.scene3d({ x = 40.0, y = 20.0 }, flatScene({ x = 240.0, y = 140.0 }, 1, red :: back :: blue :: Nil, Nil)) ::
+            at(270.0, 130.0, RawDraw.box({ x = 20.0, y = 40.0 }, c8(240, 240, 240), 1)) ::
+            Render.scene3d({ x = 270.0, y = 130.0 }, designScene) :: Nil }
+
+    // ── scene 42: 両面（Scene3d.withDoubleSided → GL は GL_CULL_FACE を切る・裏の面の法線を裏返す）。B 段階 ──
+    // 裏をカメラへ向けた板 2 枚（左は両面・右は表だけ）。環境光は暗く、目の所に点光源。左の板は裏の面の法線を裏返すので照らされ、
+    // 右の板は捨てられて地の色。裏返さないと左の板が環境光だけの暗い色になる。
+    def doubleSided3d(): Scene =
+        let backQuad = (x0: Float64, x1: Float64) -> { points = Vec3.v3(x1, -2.0, 10.0) :: Vec3.v3(x1, 2.0, 10.0) :: Vec3.v3(x0, 2.0, 10.0) :: Vec3.v3(x0, -2.0, 10.0) :: Nil,
+                                                       color = c8(255, 255, 255) };
+        let plateMaterial = (sides: Bool) -> Scene3d.material({ name = "parity:sides", cycleRate = 0.0, bindings = Nil,
+            out = ShaderDoc.Out.Fill({ shade = ShaderDoc.Shade.Solid(c8(220, 180, 60)), alpha = ShaderDoc.Field.Const(1.0) }) })
+            |> Scene3d.withDoubleSided(sides);
+        let left = shape(backQuad(-5.0, -0.5) :: Nil) |> Scene3d.withMaterial(plateMaterial(true));
+        let right = shape(backQuad(0.5, 5.0) :: Nil) |> Scene3d.withMaterial(plateMaterial(false));
+        let base = flatScene({ x = 240.0, y = 140.0 }, 1, left :: right :: Nil, Nil);
+        let scene = { environment = { ambient = c8(30, 30, 30) | base#environment },
+                      pointLights = { position = Vec3.zero(), color = c8(255, 255, 255), intensity = 1.0, range = 30.0 } :: Nil | base };
+        { name = "doubleSided3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil }
+
+    // ── scene 43: MSAA（RenderTarget.withMsaa(4) の Pass）。B 段階・GL の側だけが縁をならす ──
+    // 窓の画素の Pass に、斜めの細い棒 3 本（手すり）と cutout の縞の板（金網・alpha to coverage）を描き、面で画面へ写す。
+    // CPU は MSAA をしない（既存の 3D の行と同じ固い縁）ので、差は縁の画素だけに出る（minDiffOf と toleranceOf の間）。
+    // withMsaa を外すと差は 0 px（Apple Silicon で測った）なので、下限 300 は MSAA が効いていない時を確実に拾う
+    // （resolve し忘れ・標本の FBO を作れていない）。面の中まで違えば resolve の写し方か alpha to coverage の α が違う。
+    def msaaEdges(): Scene =
+        let bar = (x: Float64, tilt: Float64) -> { points = Vec3.v3(x, -4.0, 12.0) :: Vec3.v3(x + tilt, 4.0, 12.0)
+                                                            :: Vec3.v3(x + tilt + 0.15, 4.0, 12.0) :: Vec3.v3(x + 0.15, -4.0, 12.0) :: Nil,
+                                                   color = c8(230, 230, 230) };
+        let rails = shape(bar(-6.0, 3.0) :: bar(-4.0, 2.0) :: bar(-2.0, 1.2) :: Nil);
+        let net = shape(facingQuad(1.0, 7.0, -3.0, 3.0, 12.0, c8(255, 255, 255)) :: Nil) |> Scene3d.withMaterial(cutoutMaterial());
+        let p: Render.Pass = { name = "msaaP", clear = RenderTarget.LoadOp.Clear(c8(0, 0, 0)), items =
+            Render.scene3d({ x = 0.0, y = 0.0 }, flatScene({ x = 320.0, y = 180.0 }, 1, rails :: net :: Nil, Nil)) :: Nil };
+        { name = "msaaEdges", via = ShotVia.ViaScreen, repeats = 1, targets = Map#{ "msaaP" => RenderTarget.withMsaa(4, RenderTarget.windowDescriptor()) },
+          exact = false, passes = p :: Nil, items =
+            Render.shaderFill(passthroughSpec("msaaP"), { position = { x = 0.0, y = 0.0 }, size = { x = designW(), y = designH() } }, 0.0, 1) :: Nil }
 }
