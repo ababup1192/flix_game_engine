@@ -1,4 +1,4 @@
-// 毎フレーム作ったアトラスを GPU へ上げる経路（App.withSpriteAtlases → GameEngine.Game.ensureTexture
+// 毎フレーム作ったアトラスを GPU へ上げる経路（App.withSpriteAtlases → Platform.GpuResources.ensureTexture
 // → RenderTexture.updateTexturePixels）の費用を測るベンチ。
 //
 // 区間ごとにやり方を切り替えて、1 回の実行の中で背中合わせのペアを取る:

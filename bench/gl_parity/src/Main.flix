@@ -10,7 +10,7 @@ use fge::GameEngine
 mod ParityMain {
     use fge::{
         App, Color, CpuTiming, FontAtlas, GameEngine, GlReadback, GpuHandle, HeadlessFont, HeadlessRender,
-        LwjglLayer, Render, RenderTarget, ShaderEffect, SoftRaster
+        LwjglLayer, Platform, Render, RenderTarget, SoftRaster
     }
 
     import java.io.File
@@ -31,8 +31,8 @@ mod ParityMain {
 
     // ── GL 側（隠しウィンドウの中で 1 scene = 1 コマ）──
 
-    def glShoot(sc: Scenes.Scene): Unit \ IO + GameEngine.Game + ShaderEffect.Shader + RenderTarget.Target =
-        let texInfoOf = name -> GameEngine.Game.getTextureInfo(name);
+    def glShoot(sc: Scenes.Scene): Unit \ IO + Platform.Rendering + RenderTarget.Target =
+        let texInfoOf = name -> Platform.GpuResources.getTextureInfo(name);
         // Pass は実機の毎コマと同じ App.Internal.Paint.drawPassPlan で描く（手順を写すと、実機と違う道を突き合わせることになる）。
         let design = { x = Scenes.designW(), y = Scenes.designH() };
         discard List.range(0, sc#repeats) |> List.foldLeft((known, _) ->
@@ -43,7 +43,7 @@ mod ParityMain {
                 RenderTarget.Target.beginTarget({ name = "parityShot", width = Scenes.designWi(), height = Scenes.designHi(),
                                                   format = RenderTarget.Format.Rgba8Unorm, clear = RenderTarget.LoadOp.Clear(black()), samples = 1 });
                 let (ds, ps) = toDraw(texInfoOf, sc#items);
-                GameEngine.Game.renderCommands(ds, Nil, ps, None);
+                Platform.Draw2d.renderCommands(ds, Nil, ps, None);
                 GlReadback.readBoundPng(Scenes.designWi(), Scenes.designHi(), "debug/gl/${sc#name}.png");
                 RenderTarget.Target.endTarget()
             case Scenes.ShotVia.ViaScreen =>
@@ -171,11 +171,11 @@ mod ParityMain {
         List.exists(p -> hasScene3d(p#item), sc#items ::: List.flatMap(p -> p#items, sc#passes))
 
     /// sc を GL で撮り、描いた置いた物の数の期待値（Scenes.expectedDrawnOf）がある scene だけ、その数を確かめた 1 行を返す。
-    def glShootCounted(sc: Scenes.Scene): Option[(String, Bool)] \ IO + GameEngine.Game + ShaderEffect.Shader + RenderTarget.Target =
-        discard GameEngine.Game.consumeDiagnostics();
+    def glShootCounted(sc: Scenes.Scene): Option[(String, Bool)] \ IO + Platform.Rendering + Platform.Diagnostics + RenderTarget.Target =
+        discard Platform.Diagnostics.consumeDiagnostics();
         glShoot(sc);
         Scenes.expectedDrawnOf(sc#name) |> Option.map(expected -> {
-            let drawn = GameEngine.Game.consumeDiagnostics()#scene3dCounts#drawn;
+            let drawn = Platform.Diagnostics.consumeDiagnostics()#scene3dCounts#drawn;
             let ok = drawn == expected;
             let verdict = if (ok) "一致" else "違う";
             ("[parity] ${pad(sc#name, 14)} 描いた数 ${Int32.toString(drawn)}（期待 ${Int32.toString(expected)}）${verdict}", ok)
@@ -184,7 +184,7 @@ mod ParityMain {
     pub def go(): Unit \ IO =
         let exprInputs = ExprRows.inputs();
         let (counted, exprGl) = run {
-            GameEngine.Game.setDiagnosticsEnabled(true);
+            Platform.Diagnostics.setDiagnosticsEnabled(true);
             let shot = Scenes.all() |> List.filterMap(sc -> glShootCounted(sc));
             (shot, ExprRows.drawGl(exprInputs))
         } with LwjglLayer.withProject(".")

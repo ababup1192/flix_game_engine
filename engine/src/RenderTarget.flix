@@ -1,10 +1,8 @@
 // RenderTarget — レンダーターゲット（描いた結果をテクスチャとして読み返せる描き込み先）の
 // 入口（eff Target）。
 //
-// なぜ eff Game でなく別の効果か: eff Game に描画オペを足すと、その効果を張る全ハンドラ
-// （本番のバックエンド・テストのスタブ）が新オペの実装を義務づけられて波及する。描き込み先の
-// 切り替えは通常の描画終端（renderCommands）の外側の関心なので、別の eff Target に隔離して
-// 既存のハンドラを無傷に保つ（ShaderEffect と同じ理由・同じ形）。
+// WhyNot Platform.Draw2d に入れない: 描き込み先の切り替えは描く op（renderCommands）の外側の関心で、
+// ウィンドウなしの描き出し・テストの偽物はターゲットを持たずに描けるようにしておく。
 //
 // 利用の形: beginTarget({ name, … }) → renderCommands（この間の描画は画面でなくターゲットに
 // 着く）→ endTarget。ターゲットの中身は同じ名前のテクスチャとして登録され、以降
@@ -103,9 +101,9 @@ pub mod RenderTarget {
     /// WhyNot: op の引数に並べない — 欄を足すたびに eff の形が変わり、全部のハンドラが止まる。
     pub type alias TargetSpec = { name = String, width = Int32, height = Int32, format = Format, clear = LoadOp, samples = Int32 }
 
-    /// レンダーターゲットへの描画チャンネル。eff Game とは別に隔離した効果。
+    /// レンダーターゲットへの描き込み先の切り替え。
     pub eff Target {
-        /// ターゲットを開く。以降の renderCommands は画面でなくここに描かれる（swap もしない）。
+        /// ターゲットを開く。以降の Platform.Draw2d.renderCommands は画面でなくここに描かれる（swap もしない）。
         /// 中は design 座標のまま描き、design 全面がテクスチャ全面に写る（投影は差し替えない）。貼るときの大きさは design 寸法のまま。
         def beginTarget(spec: RenderTarget.TargetSpec): Unit
         /// 描き手の design px → 描き先の画素の倍率（窓なら窓の実際の大きさに収めた倍率・動画やスクリーンショットはその書き出しの倍率）。

@@ -47,7 +47,7 @@ pub mod App.Internal.Output {
         })
 
     /// withCursor の宣言を当てる（前に当てた物と同じなら何もしない）。返すのは当てた後の状態。
-    pub def applyCursor(r: App.Rec[w, ef], world: w, state: App.CursorLook.State): App.CursorLook.State \ GameEngine.Game =
+    pub def applyCursor(r: App.Rec[w, ef], world: w, state: App.CursorLook.State): App.CursorLook.State \ Platform.Window =
         match r#cursor {
             case None    => state
             case Some(f) =>
@@ -57,32 +57,32 @@ pub mod App.Internal.Output {
         }
 
     /// withMouseCapture の宣言を当てる（前に当てた値と同じなら何もしない）。返すのは当てた後の値（宣言が無ければ applied のまま）。
-    pub def applyCapture(r: App.Rec[w, ef], world: w, applied: Option[Bool]): Option[Bool] \ GameEngine.Game =
+    pub def applyCapture(r: App.Rec[w, ef], world: w, applied: Option[Bool]): Option[Bool] \ Platform.Window =
         match r#mouseCapture {
             case None    => applied
             case Some(f) =>
                 let want = f(world);
-                Option.forEach(GameEngine.Game.setMouseCaptured, App.CursorLook.captureChange(want, applied));
+                Option.forEach(Platform.Window.setMouseCaptured, App.CursorLook.captureChange(want, applied));
                 Some(want)
         }
 
     /// withFullscreen の宣言を当てる（setFullscreen は今と同じ値なら何もしないので、毎フレーム渡してよい）。
-    pub def applyFullscreen(r: App.Rec[w, ef], world: w): Unit \ GameEngine.Game =
-        Option.forEach(f -> GameEngine.Game.setFullscreen(f(world)), r#fullscreen)
+    pub def applyFullscreen(r: App.Rec[w, ef], world: w): Unit \ Platform.Window =
+        Option.forEach(f -> Platform.Window.setFullscreen(f(world)), r#fullscreen)
 
     /// 止めた画面の出入りの見た目をウィンドウへ当てる。
-    pub def applyHaltLook(look: App.CursorLook.HaltLook): Unit \ GameEngine.Game =
+    pub def applyHaltLook(look: App.CursorLook.HaltLook): Unit \ Platform.Window =
         let App.CursorLook.HaltLook.HaltLook(badge, cursor, capture) = look;
-        GameEngine.Game.setDebugBadge(badge == App.CursorLook.Badge.Shown);
+        Platform.Window.setDebugBadge(badge == App.CursorLook.Badge.Shown);
         applyLook(cursor);
-        if (capture == App.CursorLook.Capture.Release) GameEngine.Game.setMouseCaptured(false) else ()
+        if (capture == App.CursorLook.Capture.Release) Platform.Window.setMouseCaptured(false) else ()
 
-    def applyLook(look: App.CursorLook.Look): Unit \ GameEngine.Game =
+    def applyLook(look: App.CursorLook.Look): Unit \ Platform.Window =
         let App.CursorLook.Look.Look(icon, visibility) = look;
-        GameEngine.Game.setCursor(icon);
+        Platform.Window.setCursor(icon);
         match visibility {
-            case App.CursorLook.Visibility.Show       => GameEngine.Game.setCursorVisible(true)
-            case App.CursorLook.Visibility.Hide       => GameEngine.Game.setCursorVisible(false)
+            case App.CursorLook.Visibility.Show       => Platform.Window.setCursorVisible(true)
+            case App.CursorLook.Visibility.Hide       => Platform.Window.setCursorVisible(false)
             case App.CursorLook.Visibility.LeaveToApp => ()
         }
 

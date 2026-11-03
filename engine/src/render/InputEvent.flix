@@ -5,9 +5,9 @@
 pub mod InputEvent {
 
     /// 現在押されているキーのセットを取得する（GameEngine.allKeys() を全て走査）
-    pub def currentKeys(): Set[GameEngine.Key] \ GameEngine.Game =
+    pub def currentKeys(): Set[GameEngine.Key] \ Platform.Input =
         List.foldLeft((acc, key) ->
-            if (GameEngine.Game.isKeyPressed(key)) Set.insert(key, acc)
+            if (Platform.Input.isKeyPressed(key)) Set.insert(key, acc)
             else acc,
             Set.empty(),
             GameEngine.allKeys())

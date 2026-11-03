@@ -106,14 +106,14 @@ pub mod Sprite {
 
     /// Sprite を Drawable に変換する。
     /// region / hframes / vframes / frame から GPU シェーダ用 uvOffset/uvScale を計算するため
-    /// テクスチャサイズが必要で、Game eff を要求する。
+    /// テクスチャサイズが必要で、Platform.GpuResources を要求する。
     /// テクスチャ未登録時は bug! でクラッシュする。
     /// centered=false かつ region 未指定・分割なしの場合は scale を uvScale にして
     /// タイリング描画する（背景用）。
     pub def toDrawable(sprite: Sprite, globalPos: Vec2.Vec2):
-                        GameEngine.Drawable \ GameEngine.Game =
+                        GameEngine.Drawable \ Platform.GpuResources =
         let Sprite.Sprite(r) = sprite;
-        let texInfo = match GameEngine.Game.getTextureInfo(r#texture) {
+        let texInfo = match Platform.GpuResources.getTextureInfo(r#texture) {
             case Some(info) => info
             case None       => bug!("Sprite.toDrawable: texture '${r#texture}' not registered")
         };
@@ -181,7 +181,7 @@ pub mod Sprite {
 
 instance GameEngine.Renderable[Sprite] {
     pub def toDrawables(sprite: Sprite, globalPos: Vec2.Vec2):
-                         List[GameEngine.Drawable] \ GameEngine.Game =
+                         List[GameEngine.Drawable] \ Platform.GpuResources =
         Sprite.toDrawable(sprite, globalPos) :: Nil
 }
 

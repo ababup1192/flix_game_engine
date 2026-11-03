@@ -1,39 +1,13 @@
-// ShaderEffect — 宣言シェーダー面を GPU で描くための「別チャンネル」の入口（eff Shader）。
-//
-// なぜ eff Game でなく別の効果か: eff Game に描画オペを足すと、その効果を張る全ハンドラ
-// （本番のバックエンド・テストのスタブ）が新オペの実装を義務づけられて波及する。シェーダー面は
-// 通常の描画終端（renderCommands）に乗らない別物なので、別の eff Shader に隔離して既存の
-// ハンドラを無傷に保つ。シェーダーを使わないゲームは runNoop を張れば「描けない」を素直に表せる。
-//
-// 利用例: 起動時に Spec を GPU プログラムへ compile（buildProgram）→ 毎フレーム面 1 枚を描く（drawSurface）。
+// ShaderEffect — 描き手の handler がまだ受けている、宣言シェーダー面と 3D の場面の op（eff Shader）。
+// render_gl の RenderLegacyBridge が Platform.GpuResources・Platform.Draw2d・Platform.Draw3d からここへ回す。
 
 pub mod ShaderEffect {
 
-    /// シェーダー面 1 枚ぶんの描画依頼。
-    /// program = buildProgram が返した GPU ハンドル、rect = 塗る矩形（スクリーン空間 px・uv=0..1 が
-    /// この矩形）、time = uTime uniform に渡す秒、zIndex = 重なり順（骨格では固定 z-index の範囲へそろせる）、
-    /// blend = 重ね方。
-    /// texReads = Spec の tex / blur が読む (テクスチャ名, 補間) の組（ShaderDoc.texReads の正典順 = sampler unit の番号）。
-    /// program は GLSL ソースが鍵のキャッシュで共有され、名前を GLSL に写さないため、
-    /// 「どの名前をどの sampler unit に bind するか」は cmd がここで運ぶ（構造が同じで
-    /// 名前だけ違う 2 面が同じ program を使っても正しい絵になる）。
-    pub type alias ShaderRenderCmd = {
-        program = GpuHandle.ShaderProgram,
-        texReads = List[(String, ShaderDoc.FilterMode)],
-        rect = Rect2.Rect2,
-        // 面を切り抜く多角形の列（スクリーン空間 px の三角形化前の頂点）。空なら矩形そのまま、
-        // 非空なら GL がステンシルへ生成して「多角形の内側だけ」塗る（丸い池形など任意形に抜く）。
-        mask = List[List[Vec2.Vec2]],
-        time = Float64,
-        zIndex = Int32,
-        blend = DrawCmd.BlendMode,
-        // 面全体の濃さ（uniform uAlpha。場の alpha に掛ける）。
-        alpha = Float64,
-        // Spec の Param の値（ShaderDoc.paramNames の正典順 = uniform uParamN の番号）。
-        params = List[Float64]
-    }
+    /// DrawCmd.SurfaceRenderCmd の古い名前。0.84.0 で消える。
+    pub type alias ShaderRenderCmd = DrawCmd.SurfaceRenderCmd
 
-    /// シェーダー面の描画チャンネル。eff Game とは別に隔離した効果。
+    /// WhyNot 呼ぶ側から使わない: 呼ぶ側は Platform.GpuResources.buildProgram・Platform.Draw2d.drawSurface・
+    /// Platform.Draw3d.drawScene3d を使う（App はこの op を出さない）。
     pub eff Shader {
         /// Spec を GLSL プログラムへコンパイルしハンドルを返す（起動時/リロード時に 1 回）。
         /// 失敗時は bug! でなく単色フォールバックプログラムを返す（fail-open）— theme 由来の
@@ -41,13 +15,13 @@ pub mod ShaderEffect {
         def buildProgram(spec: ShaderDoc.Spec): GpuHandle.ShaderProgram
         /// シェーダー面 1 枚を描く。骨格では「床タイルと壁の間の固定 z-index の範囲」へそろえて
         /// renderCommands の下に敷く（暗くするオーバーレイ・ハロが上に正しく乗る）。
-        def drawSurface(cmd: ShaderRenderCmd): Unit
+        def drawSurface(cmd: DrawCmd.SurfaceRenderCmd): Unit
         /// 3D の場面 1 つを、深度で前後を決めて描く（2D の並びの中では cmd#scene#zIndex の 1 点に入る）。
         def drawScene3d(cmd: Scene3d.RenderCmd): Unit
     }
 
-    /// シェーダーを使わないゲーム・GL の無い環境（テスト等）向けの何もしないハンドラ。
-    /// buildProgram は無効ハンドル（0）を返し、drawSurface と drawScene3d は捨てる。面や場面が来ても落ちない。
+    /// この eff の op を直に呼ぶ物向けの何もしないハンドラ。buildProgram は無効ハンドル（0）を返し、drawSurface と drawScene3d は捨てる。
+    /// WhyNot App を包んでも効かない: App は Platform の effect を出すので、ここまで届かない。
     pub def runNoop(f: Unit -> a \ ef + Shader): a \ ef =
         run f() with handler Shader {
             def buildProgram(_spec, k) = k(GpuHandle.wrapShaderProgram(0))

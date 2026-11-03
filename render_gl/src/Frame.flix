@@ -19,7 +19,7 @@ mod RenderFrame {
         case MSprite(RenderType.Drawable)
         case MPoly(RenderType.PolygonCmd)
         case MStatic(RenderStatic.Range)
-        case MSurface(ShaderEffect.ShaderRenderCmd)
+        case MSurface(DrawCmd.SurfaceRenderCmd)
         case MScene3d(Int32)
     }
 
@@ -70,7 +70,7 @@ mod RenderFrame {
                       sprites: List[RenderType.Drawable],
                       polygons: List[RenderType.PolygonCmd],
                        statics: List[RenderStatic.Range],
-                      surfaces: List[ShaderEffect.ShaderRenderCmd],
+                      surfaces: List[DrawCmd.SurfaceRenderCmd],
                       scenes: Vector[Int32]): List[Merged] =
         region rc {
             // 0 = 一番小さい z / 1 = 一番大きい z / 2 = 個数
@@ -112,7 +112,7 @@ mod RenderFrame {
                      sprites: List[RenderType.Drawable],
                      polygons: List[RenderType.PolygonCmd],
                       statics: List[RenderStatic.Range],
-                     surfaces: List[ShaderEffect.ShaderRenderCmd],
+                     surfaces: List[DrawCmd.SurfaceRenderCmd],
                      scenes: Vector[Int32]): Unit \ rc =
         let seat = (z: Int32, m: Merged) -> {
             let i = z - lo;
@@ -141,7 +141,7 @@ mod RenderFrame {
                     sprites: List[RenderType.Drawable],
                     polygons: List[RenderType.PolygonCmd],
                     statics: List[RenderStatic.Range],
-                    surfaces: List[ShaderEffect.ShaderRenderCmd],
+                    surfaces: List[DrawCmd.SurfaceRenderCmd],
                     scenes: Vector[Int32]): List[Merged] \ rc =
         let w = ZBand.width();
         let bLo = lo / w;
@@ -271,10 +271,10 @@ mod RenderFrame {
         instMultiplyBlend = Int32,
         // 宣言シェーダー面の描画依頼列。sprites/polygons/静的レンジと同じ z 安定ソート列に
         // 第 4 の run 種として混ぜ、各面の zIndex の位置で描く（水を床の上・壁の下に置ける）。
-        surfaces = List[ShaderEffect.ShaderRenderCmd],
+        surfaces = List[DrawCmd.SurfaceRenderCmd],
         // シェーダー面 1 枚を実際に GL へ描くクロージャ（program の uniform location を知る
         // バックエンド側が提供する）。renderFrameMixed は z の合流だけを受け持つ。
-        drawSurface = ShaderEffect.ShaderRenderCmd -> Unit \ IO,
+        drawSurface = DrawCmd.SurfaceRenderCmd -> Unit \ IO,
         // 先に準備した 3D の場面の並び。番号ごとの z で 2D の並びに混ぜ、同じ z の中では surfaces の後に描く。
         scenes = Scene3dRenderer.Prepared,
         // None = 画面へのフレーム（黒帯 + design 領域の 2 段階の clear）。Some(op) = レンダー
@@ -731,7 +731,7 @@ mod RenderFrame {
                    warnLog: Ref[Set[String], Static],
                    tileUniforms: RenderShader.TileUniforms,
                    polyBatchUniforms: RenderShader.PolyBatchUniforms,
-                   drawSurface: ShaderEffect.ShaderRenderCmd -> Unit \ IO,
+                   drawSurface: DrawCmd.SurfaceRenderCmd -> Unit \ IO,
                    drawScene: (Scene3dRenderer.Viewport, Int32) -> Unit \ IO,
                    items: List[Merged]): Unit \ IO =
         match items {

@@ -17,9 +17,9 @@ pub mod App.Internal.Halt {
     /// debugView（生チャンネル投影）のゲームは描画命令へ見え方を掛ける（renderPaused）。
     pub def pausedStep(app: App[w, ef], warnOnce: String -> Unit, world: w, history: List[w], frame: App.Frame,
                        anno: Annotate.State, painted: App.Internal.Paint.Painted):
-            (Annotate.State, Option[String], App.Internal.Paint.Painted) \ (ef + GameEngine.Game + ShaderEffect.Shader + RenderTarget.Target + IO) =
+            (Annotate.State, Option[String], App.Internal.Paint.Painted) \ (ef + Platform.Input + Platform.Window + Platform.Rendering + RenderTarget.Target + Platform.Annotation + IO) =
         let r = App.rec(app);
-        let design = GameEngine.Game.getViewportRect()#size;
+        let design = Platform.Window.getViewportRect()#size;
         let historyLen = Int32.max(1, List.length(history));
         let scrubbed = Annotate.scrubStep(
             { back = App.isDown(GameEngine.Key.Left, frame),
@@ -28,9 +28,9 @@ pub mod App.Internal.Halt {
               fwdEdge = App.justPressed(GameEngine.Key.Right, frame) },
             historyLen, anno);
         let displayed = App.worldAt(history, scrubbed#scrub, world);
-        let input = { cursor = GameEngine.Game.getMousePosition(),
-                      leftDown = GameEngine.Game.isMouseButtonPressed(GameEngine.MouseButton.Left),
-                      middleDown = GameEngine.Game.isMouseButtonPressed(GameEngine.MouseButton.Middle),
+        let input = { cursor = Platform.Input.getMousePosition(),
+                      leftDown = Platform.Input.isMouseButtonPressed(GameEngine.MouseButton.Left),
+                      middleDown = Platform.Input.isMouseButtonPressed(GameEngine.MouseButton.Middle),
                       spaceDown = App.isDown(GameEngine.Key.Space, frame),
                       // ホイールは loop が Frame へ埋め込んだ後なので、二度読みせず frame から引く
                       scroll = frame#wheel,
@@ -56,7 +56,7 @@ pub mod App.Internal.Halt {
                 // 止めている間も本編と同じ renderFrame で 1 コマ全部を描く（シェーダー面・レンダーターゲット・
                 // 字の用意も同じ規則）。ズーム・パンは描く前の絵に掛ける（pausedLook）。
                 let paint = (look, p) -> {
-                    let (cache, seen, warned) = App.Internal.Paint.renderFrame(app, warnOnce, displayed, look,
+                    let (cache, seen, warned) = App.Internal.Paint.renderFrame(app, warnOnce, design, displayed, look,
                                                             p#tileCache, p#glyphSeen, p#budgetWarned);
                     { tileCache = cache, glyphSeen = seen, budgetWarned = warned }
                 };
@@ -65,11 +65,11 @@ pub mod App.Internal.Halt {
                 let (saved, afterShot) = match emitted {
                     case Some(rect) =>
                         let shotPainted = paint(App.Internal.Paint.plainLook(Nil), painted);
-                        let atlas = GameEngine.Game.getFontAtlas("default");
+                        let atlas = Platform.GpuResources.getFontAtlas("default");
                         let items = List.append(App.Internal.Paint.tilePausedItems(app, design, displayed),
-                                    List.append(App.sceneItems(app, atlas, warnOnce, displayed, toItems),
+                                    List.append(App.sceneItems(app, design, atlas, warnOnce, displayed, toItems),
                                                 App.Internal.Paint.staticPausedItems(app, design, displayed)));
-                        let hitList = Annotate.hits(name -> GameEngine.Game.getTextureInfo(name), rect, items);
+                        let hitList = Annotate.hits(name -> Platform.GpuResources.getTextureInfo(name), rect, items);
                         (writeAnnotation(design, rect, shownFrame, dump, hitList), shotPainted)
                     case None => (None, painted)
                 };
@@ -77,11 +77,11 @@ pub mod App.Internal.Halt {
                 (shown, saved, paint(pausedLook(design, input#cursor, historyLen, shown), afterShot))
             case None => match r#debugView {
                 case Some((fontName, toChannels)) =>
-                    let atlas = GameEngine.Game.getFontAtlas(fontName);
+                    let atlas = Platform.GpuResources.getFontAtlas(fontName);
                     let (drawables, tileMaps, polygons) = toChannels(displayed);
                     let hitList = match emitted {
                         case Some(rect) =>
-                            Annotate.hitsFromDrawables(name -> GameEngine.Game.getTextureInfo(name), rect, drawables)
+                            Annotate.hitsFromDrawables(name -> Platform.GpuResources.getTextureInfo(name), rect, drawables)
                         case None => Nil
                     };
                     let (shown, saved) = finishPaused({ design = design, cursor = input#cursor, atlas = atlas,
@@ -129,11 +129,11 @@ pub mod App.Internal.Halt {
                             historyLen = Int32, shownFrame = Int64 },
                      anno: Annotate.State, emitted: Option[Rect2.Rect2],
                      dump: { text = String, context = Annotate.Table },
-                     channels: DebugChannels, hitList: List[Annotate.Hit]): (Annotate.State, Option[String]) \ GameEngine.Game =
+                     channels: DebugChannels, hitList: List[Annotate.Hit]): (Annotate.State, Option[String]) \ (Platform.Draw2d + Platform.Annotation) =
         // saveAnnotation は直前に塗ったコマを撮るので、等倍・重ね物無しのコマを先に塗る。
         let saved = match emitted {
             case Some(rect) =>
-                GameEngine.Game.renderCommands(channels#drawables, channels#tileMaps, channels#polygons, None);
+                Platform.Draw2d.renderCommands(channels#drawables, channels#tileMaps, channels#polygons, None);
                 writeAnnotation(ctx#design, rect, ctx#shownFrame, dump, hitList)
             case None => None
         };
@@ -146,10 +146,10 @@ pub mod App.Internal.Halt {
     /// 引き受ける。戻り値は保存先のディレクトリパス（失敗時 None）。
     def writeAnnotation(design: Vec2.Vec2, rect: Rect2.Rect2, frameNo: Int64,
                         dump: { text = String, context = Annotate.Table },
-                        hitList: List[Annotate.Hit]): Option[String] \ GameEngine.Game =
+                        hitList: List[Annotate.Hit]): Option[String] \ Platform.Annotation =
         let dumpText = dump#text;
         let body = Annotate.readmeBodyWith(dump#context, { frame = frameNo, rect = rect }, hitList);
-        GameEngine.Game.saveAnnotation({
+        Platform.Annotation.saveAnnotation({
             frame = frameNo, rect = rect,
             json = Annotate.annotationJsonWith(dump#context, { frame = frameNo, design = design, rect = rect }, hitList),
             readmeBody = if (dumpText == "") body else body + "\n- シム状態のダンプ: world.json",
@@ -160,7 +160,7 @@ pub mod App.Internal.Halt {
     /// 等倍・ずらし無し・表示物無しのときは通常描画と同じ命令列になる。
     def renderPaused(ctx: { design = Vec2.Vec2, cursor = Vec2.Vec2, atlas = FontAtlas,
                             historyLen = Int32, shownFrame = Int64 },
-                     anno: Annotate.State, channels: DebugChannels): Unit \ GameEngine.Game =
+                     anno: Annotate.State, channels: DebugChannels): Unit \ Platform.Draw2d =
         let view = Annotate.viewOf(ctx#design, anno);
         let overlay = match anno#dragStart {
             case Some(start) => Annotate.overlayItems(start, Annotate.toDesign(view, ctx#cursor))
@@ -182,7 +182,7 @@ pub mod App.Internal.Halt {
                           else Nil;
         let (fixedSprites, fixedPolygons) = Render.draw(List.append(toastPlaced, scrubPlaced));
         // debugView のゲームは静的レイヤー（withStaticLayer）を持たないので、retained の静的依頼は無し（None）。
-        GameEngine.Game.renderCommands(
+        Platform.Draw2d.renderCommands(
             List.append(Annotate.applyInspect(view, List.append(channels#drawables, overlaySprites)), fixedSprites),
             Annotate.applyInspectTiles(view, channels#tileMaps),
             List.append(Annotate.applyInspectPoly(view, List.append(channels#polygons, overlayPolygons)), fixedPolygons),

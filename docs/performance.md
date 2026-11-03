@@ -474,7 +474,7 @@ PNG は git 外・一覧は git 内、という既存の非対称と同型なの
 
 - 重いコマ = swap を除いた仕事が予算（60fps）を超えた・swap まで含めて予算の 2 倍を超えた・シェーダーを作った。
   vsync で待つ分は数えない
-- 数は描く側（render_gl）が `GameEngine.Game.setDiagnosticsEnabled` の間だけ集め、App が毎コマ
+- 数は描く側（render_gl）が `Platform.Diagnostics.setDiagnosticsEnabled` の間だけ集め、App が毎コマ
   `consumeDiagnostics` で引き取る（`FrameDiagnostics`）。切っている本番では数えない
 - 起動直後の 120 コマは数えない。1 実行 10 件まで（単発は数えない）。実行の置き場は新しい 5 つだけ残す
 

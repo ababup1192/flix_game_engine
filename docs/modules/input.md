@@ -40,7 +40,7 @@
 
 FPS のようにマウスを動かした量で視点を回すときは、カーソルを窓にキャプチャする（Godot の `MOUSE_MODE_CAPTURED`・Bevy の `CursorGrabMode::Locked`）。
 
-- **宣言**: `App.withMouseCapture(w -> w#looking)` で毎フレーム「キャプチャしたいか」を World から返す。App は値が変わったフレームだけ当てる。系の中で `GameEngine.Game.setMouseCaptured` を呼ばない
+- **宣言**: `App.withMouseCapture(w -> w#looking)` で毎フレーム「キャプチャしたいか」を World から返す。App は値が変わったフレームだけ当てる。系の中で `Platform.Window.setMouseCaptured` を呼ばない
 - **動き**: キャプチャしている間は矢印が消え、窓の端で止まらずに `frame#mouseDelta`（design px・右と下が正）に出る。yaw と pitch はこれに感度を掛けて回す。
   `frame#cursor` はキャプチャした時の位置で止まり、`mouseMoved` は偽になる（UI のホバーを狂わせない）。左ドラッグの差（`cursor#x - 前の x`）で回さない
 - **慣習**: 窓をクリックしたらキャプチャ、Esc で放す。放した状態の Esc で終わる（確かめる）。Esc を放すのに使うなら `App.quitWhen` で既定の「Esc のエッジで終わる」を外す。

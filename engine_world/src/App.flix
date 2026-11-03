@@ -620,7 +620,7 @@ pub mod App {
 
     /// 毎フレーム「窓をボーダーレスのフルスクリーンにしたいか」を World から宣言する（true = フルスクリーン・
     /// false = project.json の大きさのウィンドウ）。App は起動の拍と実機のフレームの後に宣言を当てる
-    /// （GameEngine.Game.setFullscreen は同じ値なら何もしない）。F8 で止めている間・/step・台本・trace は当てない。
+    /// （Platform.Window.setFullscreen は同じ値なら何もしない）。F8 で止めている間・/step・台本・trace は当てない。
     /// 系の中で setFullscreen を呼ばない —— 系は純粋で、呼ぶ口が無い。設定の画面で切り替えたら、その場で窓が替わる。
     pub def withFullscreen(f: w -> Bool, app: App[w, ef]): App[w, ef] =
         App.App({ fullscreen = Some(f) | rec(app) })
@@ -979,20 +979,19 @@ pub mod App {
     /// withFonts で宣言された名前を先に全部引いておき、名前 → アトラスの純粋な引き当てを作る。
     /// view は純粋（ef）なので、その場で getFontAtlas を呼べない — ここで先に解いておく。
     /// 宣言していない名前は既定フォントへ落とす（字が消えるより既定で出るほうがよい）。
-    def fontResolver(r: Rec[w, ef], dflt: FontAtlas): (String -> FontAtlas) \ GameEngine.Game =
+    def fontResolver(r: Rec[w, ef], dflt: FontAtlas): (String -> FontAtlas) \ Platform.GpuResources =
         let table = r#fonts |> List.foldLeft((acc, n) ->
-            Map.insert(n, GameEngine.Game.getFontAtlas(n), acc),
+            Map.insert(n, Platform.GpuResources.getFontAtlas(n), acc),
             (Map.empty(): Map[String, FontAtlas]));
         name -> Map.get(name, table) |> Option.getWithDefault(dflt)
 
     /// world から画面に出す絵一式を組む: view の絵に camera を掛け、hud を合流する（純粋な芯は
     /// composeScene）。F8 スクラブ中は「表示中の瞬間」の World を渡すこと — 現在の world を
     /// 渡すと絵は過去・カメラは現在のズレた画面になり、注釈の当たり判定も全部ずれる。
-    def sceneItems(app: App[w, ef], atlas: FontAtlas, warnOnce: String -> Unit, world: w,
+    def sceneItems(app: App[w, ef], design: Vec2.Vec2, atlas: FontAtlas, warnOnce: String -> Unit, world: w,
                    toItems: (ViewCtx, w) -> List[Render.PlacedItem] \ ef):
-            List[Render.PlacedItem] \ (ef + GameEngine.Game) =
+            List[Render.PlacedItem] \ (ef + Platform.GpuResources) =
         let r = rec(app);
-        let design = GameEngine.Game.getViewportRect()#size;
         let fontOf = fontResolver(r, atlas);
         let (center, z) = resolvedCamera(r, world, design);
         let hud = match r#hudView {
@@ -1031,19 +1030,19 @@ pub mod App {
     /// App を走らせる単一の効果多相ランナー。startup を 1 回だけ畳み込み、いま押されているキーを prev の
     /// 種にしてループへ入る（起動時にすでに押されているキーは、一度離すまでエッジにならない）。
     ///
-    /// ウィンドウ（GameEngine.Game/Audio）・Fs・ゲーム固有の effect（ef）は 隠蔽せず呼び出し側の
+    /// 機種の effect（Platform.Services と Platform.Annotation）・Fs・ゲーム固有の effect（ef）は 隠蔽せず呼び出し側の
     /// Main が `with` で明示的に張る（effect-oriented の素直な形）。効果多相なので純粋なゲーム（ef = {}）も
     /// effect で状態を持つゲームも同じ launch を使う。前者は Main で LwjglLayer + Fs を張り、後者は加えて
     /// 自分の effect ハンドラ束を張った内側で呼ぶ。
     /// デバッグ有効（withDebug）かつ環境変数 DEBUG_HTTP_PORT があれば、リモートデバッグの
     /// HTTP エンドポイントも一緒に立ち上がる（例: `DEBUG=1 DEBUG_HTTP_PORT=7777 flix run`）。
     /// 組み終えた App を渡すこの形では、flow を記録する起動は Doc を読み直して start の行に載せる（App.loadAndLaunch は読み直さない）。
-    pub def launch(app: App[w, ef]): Unit \ (ef + GameEngine.Game + GameEngine.Audio + ShaderEffect.Shader + RenderTarget.Target + Fs.FileRead + Fs.FileWrite + IO) =
+    pub def launch(app: App[w, ef]): Unit \ (ef + Platform.Services + Platform.Annotation + Fs.FileRead + Fs.FileWrite + IO) =
         App.Internal.Runner.launchWith(app, None, ProcessEnv.snapshot())
 
     /// loadApp で App を組んで launch する。flow を記録する起動では、loadApp が Fs.FileRead で読んだ中身を start の行に載せ、
     /// Doc を読み直さない。loadApp の中の効果（LoadProgress など）は、外の handler が受ける。
-    pub def loadAndLaunch(loadApp: Unit -> App[w, ef] \ ef2): Unit \ (ef + ef2 + GameEngine.Game + GameEngine.Audio + ShaderEffect.Shader + RenderTarget.Target + Fs.FileRead + Fs.FileWrite + IO) =
+    pub def loadAndLaunch(loadApp: Unit -> App[w, ef] \ ef2): Unit \ (ef + ef2 + Platform.Services + Platform.Annotation + Fs.FileRead + Fs.FileWrite + IO) =
         let env = ProcessEnv.snapshot();
         // WhyNot: 記録しないと env で分かる起動で中身を控えない — 3D の形などの大きな字を、起動の World が決まるまで抱えることになる。
         if (not debugOf(env) or Option.isEmpty(Flow.Record.pathOf(env))) App.Internal.Runner.launchWith(loadApp(), None, env)

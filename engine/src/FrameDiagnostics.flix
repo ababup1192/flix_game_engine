@@ -1,4 +1,4 @@
-// FrameDiagnostics — 1 コマぶんの、描く側の診断（GameEngine.Game.consumeDiagnostics が返す）。2D と 3D で共通。
+// FrameDiagnostics — 1 コマぶんの、描く側の診断（Platform.Diagnostics.consumeDiagnostics が返す）。2D と 3D で共通。
 // 描く側（render_gl）が集め、App が 1 コマに 1 回引き取って、ヒッチの記録（App.HitchDetector）と
 // ゲーム（App.withDiagnostics → Frame#diagnostics）へ配る。
 // 集めるのは setDiagnosticsEnabled(true) の間だけ。切っている間は数えない（本番の負担を作らない）。

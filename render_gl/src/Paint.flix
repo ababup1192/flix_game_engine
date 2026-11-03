@@ -18,7 +18,7 @@ mod RenderPaint {
         tileMaps = List[GameEngine.TileMapRenderCmd],
         polygons = List[GameEngine.PolygonRenderCmd],
         staticLayer = Option[GameEngine.StaticLayerCmd],
-        surfaces = List[ShaderEffect.ShaderRenderCmd],
+        surfaces = List[DrawCmd.SurfaceRenderCmd],
         scenes = List[Scene3d.RenderCmd]
     }
 
@@ -45,7 +45,7 @@ mod RenderPaint {
         // program 番号 → 最後に使った世代。
         programUsedAtRef = Ref[Map[Int32, Int64], Static],
         // このコマに溜まったシェーダー面（queueSurface が積み、submitFrame が取り出す。新しい順）。
-        pendingShaderHolder = Array[List[ShaderEffect.ShaderRenderCmd], Static],
+        pendingShaderHolder = Array[List[DrawCmd.SurfaceRenderCmd], Static],
         // このコマに溜まった 3D の場面（queueScene3d が積み、submitFrame が取り出す。新しい順）。
         pendingScene3dHolder = Array[List[Scene3d.RenderCmd], Static],
         // 3D の場面の描き手（作る側が渡す）。
@@ -129,7 +129,7 @@ mod RenderPaint {
         let polyBuf = RenderBuf.make(16384 * 6);
         let tileVboRegistry: Ref[Map[Int32, Int32], Static] = Ref.fresh(Static, Map.empty());
 
-        // 宣言シェーダー面（eff Shader）用: codegen が吐いた GLSL のコンパイル失敗時に
+        // 宣言シェーダー面（Platform.Draw2d.drawSurface）用: codegen が吐いた GLSL のコンパイル失敗時に
         // 差し替える単色フォールバックプログラム（起動時に 1 回だけ作る）。
         let fallbackShader = RenderShader.createShaderProgram(
             ShaderGen.vertexSource(), RenderShader.fallbackFragmentSource());
@@ -145,7 +145,7 @@ mod RenderPaint {
         let frameGenHolder = Array#{0i64} @ Static;
         // 鍵ではなく program 番号で持つのは、コンパイルに失敗した Spec が全部同じ fallbackShader を値にして入るため。
         let programUsedAtRef: Ref[Map[Int32, Int64], Static] = Ref.fresh(Static, Map.empty());
-        let pendingShaderHolder = Array#{(Nil: List[ShaderEffect.ShaderRenderCmd])} @ Static;
+        let pendingShaderHolder = Array#{(Nil: List[DrawCmd.SurfaceRenderCmd])} @ Static;
         // texLocs = tex 場の (uTexN, uTexFlipN) の location 列（正典順）。
         let shaderUniformCache: Ref[Map[Int32, (Int32, Int32, Int32, Int32, List[(Int32, Int32)], List[Int32])], Static] = Ref.fresh(Static, Map.empty());
         // tex 場の標本規約（NEAREST + CLAMP）を bind 中の unit へ強制する sampler（起動時に 1 個）。
@@ -176,9 +176,9 @@ mod RenderPaint {
         // コンパイル失敗した複数 Spec が同じ fallback program を鍵に uniform cache を上書きし合い、
         // fallback では texLocs が空（または全 -1）になるため、names 2 本 × locs 0 本は正常系
         //（glUniform の location -1 も無視される）。
-        let drawSurface = (cmd: ShaderEffect.ShaderRenderCmd) -> {
+        let drawSurface = (cmd: DrawCmd.SurfaceRenderCmd) -> {
             let program = GpuHandle.shaderProgramInt(cmd#program);
-            // buildProgram だけで使用を刻むと足りない — ShaderEffect の doc は
+            // buildProgram だけで使用を刻むと足りない — Platform.GpuResources.buildProgram の doc は
             // 「起動時/リロード時に 1 回 compile」と約束していて、その通りに 1 回だけ
             // compile してハンドルを持ち回るゲームの program が「未使用」に見えて
             // 追い出される。追い出された program は下の uniform 逆引きが
@@ -297,7 +297,7 @@ mod RenderPaint {
     /// 中は design 座標のまま描き、viewport がテクセル寸法へ縮める（投影行列は design 前提のまま）。
     def paintTarget(paint: Paint, target: RenderTarget.TargetSpec,
                     sprites: List[GameEngine.Drawable], polygons: List[GameEngine.PolygonRenderCmd],
-                    surfaces: List[ShaderEffect.ShaderRenderCmd], scenes: List[Scene3d.RenderCmd]): Unit \ IO =
+                    surfaces: List[DrawCmd.SurfaceRenderCmd], scenes: List[Scene3d.RenderCmd]): Unit \ IO =
         let (name, tw, th, op) = (target#name, target#width, target#height, target#clear);
         let history = RenderTarget.historyName(name);
         let readsHistory = List.exists(cmd -> List.exists(read -> fst(read) == history, cmd#texReads), surfaces)
@@ -607,7 +607,7 @@ mod RenderPaint {
 
     // ── シェーダー面 ──
 
-    /// ShaderEffect.Shader.buildProgram の中身。name で引き、当たりは eqSpec（Spec の構造比較）で確かめてから返す —
+    /// Platform.GpuResources.buildProgram の中身。name で引き、当たりは eqSpec（Spec の構造比較）で確かめてから返す —
     /// 当たったフレームでは ShaderGen.compile（GLSL 全文の組み立て）を呼ばない。
     /// eqSpec が偽（同名で中身が違う = ホットリロード）なら作り直して差し替える。
     /// コンパイル/リンク失敗時は単色フォールバックプログラムに落ちる（黒画面でなく色は出る）。
@@ -742,11 +742,11 @@ mod RenderPaint {
         noteDiagnostics(paint, d -> { submitNs = d#submitNs + submitNs, swapNs = d#swapNs + swapNs,
                                       drawItems = d#drawItems + drawItems() | d })
 
-    /// ShaderEffect.Shader.drawSurface の中身。実描画はこのフレームの clear 直後（renderFrameMixed 内）で行う。ここでは溜めるだけ。
-    pub def queueSurface(paint: Paint, cmd: ShaderEffect.ShaderRenderCmd): Unit \ IO =
+    /// Platform.Draw2d.drawSurface の中身。実描画はこのフレームの clear 直後（renderFrameMixed 内）で行う。ここでは溜めるだけ。
+    pub def queueSurface(paint: Paint, cmd: DrawCmd.SurfaceRenderCmd): Unit \ IO =
         Array.put(cmd :: Array.get(0, paint#pendingShaderHolder), 0, paint#pendingShaderHolder)
 
-    /// ShaderEffect.Shader.drawScene3d の中身。描くのは submitFrame（renderFrameMixed の中で z の位置に）。ここでは溜めるだけ。
+    /// Platform.Draw3d.drawScene3d の中身。描くのは submitFrame（renderFrameMixed の中で z の位置に）。ここでは溜めるだけ。
     pub def queueScene3d(paint: Paint, cmd: Scene3d.RenderCmd): Unit \ IO =
         Array.put(cmd :: Array.get(0, paint#pendingScene3dHolder), 0, paint#pendingScene3dHolder)
 
@@ -768,7 +768,7 @@ mod RenderPaint {
         let cap = Int32.max(16, Set.size(liveNow) * 2);
         let lastSurfaces = Array.get(0, paint#lastFrameHolder)#surfaces;
         let pinned = lastSurfaces
-            |> List.foldLeft((acc, cmd: ShaderEffect.ShaderRenderCmd) ->
+            |> List.foldLeft((acc, cmd: DrawCmd.SurfaceRenderCmd) ->
                 Set.insert(GpuHandle.shaderProgramInt(cmd#program), acc), liveNow)
             |> Set.insert(paint#fallbackShader);
         let entries = Map.toList(cache0) |> List.map(ke -> {

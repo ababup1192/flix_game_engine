@@ -39,7 +39,7 @@ mod LwjglEnv {
           splashShotPath = filled("FLIX_GE_SPLASH_SHOT"),
           fixedDt = filled("FLIX_GE_FIXED_DT") |> Option.flatMap(text -> Result.toOption(parseFixedDt(text))) }
 
-    /// 1 コマの dt（秒）。fixedDt があれば実時間（elapsedNanos）の代わりにそれを使う。どちらも maxDt で切る（GameEngine.Game.getDeltaTime の約束）。
+    /// 1 コマの dt（秒）。fixedDt があれば実時間（elapsedNanos）の代わりにそれを使う。どちらも maxDt で切る（Platform.FrameClock.getDeltaTime の約束）。
     // WhyNot: dt の計算を LwjglLayer の handler の中に書かない — 固定と実時間の分かれ目をテストで固定したい。
     pub def frameDt(fixedDt: Option[Float64], maxDt: Float64, elapsedNanos: Int64): Float64 =
         let raw = Option.getWithDefault(Int64.toFloat64(elapsedNanos) / 1000000000.0, fixedDt);

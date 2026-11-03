@@ -464,7 +464,7 @@ mod Scenes {
                 :: paramFill(120.0, Map#{ "red" => 0.25, "green" => 0.6 })
                 :: paramFill(220.0, Map.empty()) :: Nil }
 
-    // ── scene 16 / 17: 3D の場面（Render.scene3d → GL は Shader.drawScene3d・CPU は SoftRaster3d）。B 段階（toleranceOf）──
+    // ── scene 16 / 17: 3D の場面（Render.scene3d → GL は Platform.Draw3d.drawScene3d・CPU は SoftRaster3d）。B 段階（toleranceOf）──
     // 光は白の環境光だけ（光の式の差を持ち込まず、前後と状態だけを見る）。目は原点で +Z を向く。
 
     /// z（world）の平面に立つ、目の側（−Z）を向く四角。x0..x1・y0..y1 は world の範囲。

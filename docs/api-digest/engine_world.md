@@ -283,9 +283,9 @@
 - 時間スクラブ用に持ち回す直近の World の数（60fps で約 30 秒）。
   `pub def historyLimit(): Int32`
 - App を走らせる単一の効果多相ランナー。startup を 1 回だけ畳み込み、いま押されているキーを prev の
-  `pub def launch(app: App[w, ef]): Unit \ (ef + GameEngine.Game + GameEngine.Audio + ShaderEffect.Shader + RenderTarget.Target + Fs.FileRead + Fs.FileWrite + IO)`
+  `pub def launch(app: App[w, ef]): Unit \ (ef + Platform.Services + Platform.Annotation + Fs.FileRead + Fs.FileWrite + IO)`
 - loadApp で App を組んで launch する。flow を記録する起動では、loadApp が Fs.FileRead で読んだ中身を start の行に載せ、
-  `pub def loadAndLaunch(loadApp: Unit -> App[w, ef] \ ef2): Unit \ (ef + ef2 + GameEngine.Game + GameEngine.Audio + ShaderEffect.Shader + RenderTarget.Target + Fs.FileRead + Fs.FileWrite + IO)`
+  `pub def loadAndLaunch(loadApp: Unit -> App[w, ef] \ ef2): Unit \ (ef + ef2 + Platform.Services + Platform.Annotation + Fs.FileRead + Fs.FileWrite + IO)`
 
 ## App.CursorLook — `engine_world/src/App/CursorLook.flix`
 - withCursor の宣言を最後にどう当てたか。Stale = まだ当てていない・止めた画面の見た目が上書きした
@@ -527,7 +527,7 @@
 - リモートコマンド処理が次の実フレームへ持ち回す状態。
   `pub type alias RemoteNext[w] = { world = w, anno = Annotate.State, history = List[w], hold = Bool, stepState = App.StepState, record = List[Flow.Record.Item] }`
 - リクエスト 1 件を捌き、応答をブリッジへ書いてから次の状態を返す。
-  `pub def handleRemote(app: App.App[w, ef], bridge: Bridge, raw: String, ctx: RemoteNext[w]): RemoteNext[w] \ (ef + GameEngine.Game + Fs.FileRead + IO)`
+  `pub def handleRemote(app: App.App[w, ef], bridge: Bridge, raw: String, ctx: RemoteNext[w]): RemoteNext[w] \ (ef + Platform.Window + Platform.GpuResources + Fs.FileRead + IO)`
 - GET /starts の本文: 始まりの登録簿（App.withStarts）の名前・既定の引数・説明を 1 行ずつ。
   `pub def startsText(app: App.App[w, ef]): String`
 - view=shot の本文: [shot] と、撮れたら `ok png=<パス>`（/render と同じ形）・撮れなければ `error: 理由`。
@@ -2018,8 +2018,8 @@
   `pub def glyphFingerprint(items: List[PlacedItem]): Int64`
 - 描く物のうち、フォントのアトラスにまだ無い字を「テクスチャ名 → 字」で集める。
   `pub def missingGlyphs(items: List[PlacedItem]): Map[String, Set[Int32]]`
-- Shader 面だけを取り出して eff Shader が食える描画依頼へ変換する（GL 経路専用）。
-  `pub def drawShaders(programOf: ShaderDoc.Spec -> GpuHandle.ShaderProgram \ ef, items: List[PlacedItem]): List[ShaderEffect.ShaderRenderCmd] \ ef`
+- Shader 面だけを取り出して Platform.Draw2d.drawSurface が受ける描画依頼へ変換する（GL 経路専用）。
+  `pub def drawShaders(programOf: ShaderDoc.Spec -> GpuHandle.ShaderProgram \ ef, items: List[PlacedItem]): List[DrawCmd.SurfaceRenderCmd] \ ef`
 - GL の無い経路（描き出し / SoftRaster）が ShaderEval で面を描くための純データ。
   `pub type alias ShaderSurface = { rect = Rect2.Rect2, spec = ShaderDoc.Spec, time = Float64, mask = List[List[Vec2.Vec2]], zIndex = Int32, blend = DrawCmd.BlendMode }`
 - Shader 面を純データ（ShaderSurface）で取り出す（描き出し / SoftRaster 用）。
@@ -2027,7 +2027,7 @@
 - `pub def surfaceZShared(items: List[PlacedItem]): List[Int32]`
 - Shader 面を除いた PlacedItem 列（GL 経路で draw に渡す前に外す — 本物のシェーダーは
   `pub def withoutShaders(items: List[PlacedItem]): List[PlacedItem]`
-- 3D の場面だけを取り出して eff Shader の drawScene3d が食える命令へ（GL 経路専用。Clipped も剥がして拾う）。
+- 3D の場面だけを取り出して Platform.Draw3d.drawScene3d が受ける命令へ（GL 経路専用。Clipped も剥がして拾う）。
   `pub def drawScenes3d(items: List[PlacedItem]): List[Scene3d.RenderCmd]`
 - 3D の場面を除いた PlacedItem 列（GL 経路と CPU の描き出しで drawWith に渡す前に外す — 場面は drawScenes3d が
   `pub def withoutScenes3d(items: List[PlacedItem]): List[PlacedItem]`
@@ -2686,7 +2686,7 @@
 
 ## UiRender — `engine_world/src/UiRender.flix`
 - 渡された `ui` の全 UI root を描画データへ射影する。box/text/sprite は Drawable、poly は
-  `pub def renderUi(ui: UiStore.UiWorld, design: Vec2.Vec2): {drawables = List[GameEngine.Drawable], polygons = List[GameEngine.PolygonRenderCmd]} \ GameEngine.Game`
+  `pub def renderUi(ui: UiStore.UiWorld, design: Vec2.Vec2): {drawables = List[GameEngine.Drawable], polygons = List[GameEngine.PolygonRenderCmd]} \ Platform.GpuResources`
 - `renderUi` の注入版。文字実寸を引く `atlasOf`（font 名→FontAtlas）と、スプライトの
   `pub def renderUiWith(atlasOf: String -> FontAtlas \ ef, textureInfoOf: String -> Option[GameEngine.TextureInfo] \ ef, ui: UiStore.UiWorld, design: Vec2.Vec2): {drawables = List[GameEngine.Drawable], polygons = List[GameEngine.PolygonRenderCmd]} \ ef`
 - UI 全体を PlacedItem（置き場所つきの描画物）の列のまま返す。ゲーム側の絵（View の PlacedItem 列）と

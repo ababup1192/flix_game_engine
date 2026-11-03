@@ -555,6 +555,29 @@ pub mod DrawCmd {
         grad     = Option[List[VertexTint]]
     }
 
+    /// 宣言シェーダーの面 1 枚ぶんの描画依頼（Platform.Draw2d.drawSurface に渡す）。
+    /// program = Platform.GpuResources.buildProgram が返した GPU ハンドル、rect = 塗る矩形（スクリーン空間 px・uv=0..1 が
+    /// この矩形）、time = uTime uniform に渡す秒、zIndex = 重なり順、blend = 重ね方。
+    /// texReads = Spec のテクスチャを読む場の (テクスチャ名, 補間) の組（ShaderDoc.texReads の正典順 = sampler unit の番号）。
+    /// program は GLSL ソースが鍵のキャッシュで共有され、名前を GLSL に写さないため、
+    /// 「どの名前をどの sampler unit に bind するか」は cmd がここで運ぶ（構造が同じで
+    /// 名前だけ違う 2 面が同じ program を使っても正しい絵になる）。
+    pub type alias SurfaceRenderCmd = {
+        program = GpuHandle.ShaderProgram,
+        texReads = List[(String, ShaderDoc.FilterMode)],
+        rect = Rect2.Rect2,
+        // 面を切り抜く多角形の列（スクリーン空間 px の三角形化前の頂点）。空なら矩形そのまま、
+        // 非空なら GL がステンシルへ生成して「多角形の内側だけ」塗る（丸い池形など任意形に抜く）。
+        mask = List[List[Vec2.Vec2]],
+        time = Float64,
+        zIndex = Int32,
+        blend = BlendMode,
+        // 面全体の濃さ（uniform uAlpha。場の alpha に掛ける）。
+        alpha = Float64,
+        // Spec の Param の値（ShaderDoc.paramNames の正典順 = uniform uParamN の番号）。
+        params = List[Float64]
+    }
+
     /// grad つき多角形を「色つき頂点の三角形列」に展開する。GL と SoftRaster が同じ
     /// 割り方・同じ補間の入力を見るための共通式で、grad = None なら空を返す
     /// （単色は従来の耳切り経路のまま — 絵を 1 バイトも変えないため）。

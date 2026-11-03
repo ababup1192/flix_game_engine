@@ -696,7 +696,7 @@ pub mod App.RemoteDebug {
     /// リクエスト 1 件を捌き、応答をブリッジへ書いてから次の状態を返す。
     /// どの経路でも必ず 1 回 respond する（しないと HTTP 側が 10 秒待って 503 になる）。
     pub def handleRemote(app: App.App[w, ef], bridge: Bridge, raw: String,
-                     ctx: RemoteNext[w]): RemoteNext[w] \ (ef + GameEngine.Game + Fs.FileRead + IO) =
+                     ctx: RemoteNext[w]): RemoteNext[w] \ (ef + Platform.Window + Platform.GpuResources + Fs.FileRead + IO) =
         let request = parseRequest(raw);
         match (request#method, request#path) {
             case ("GET", "/help")    => answer(helpText(), bridge, ctx)
@@ -743,12 +743,12 @@ pub mod App.RemoteDebug {
     /// 止めている間ならそこで止まったまま（/resume でその場面から遊べる）。巻き戻しの履歴は捨てる
     /// （差し替える前の World へ巻き戻せると、跳んだ先と前の場面が混ざる）。
     def remoteStart(app: App.App[w, ef], bridge: Bridge, request: Request,
-                    ctx: RemoteNext[w]): RemoteNext[w] \ (ef + GameEngine.Game + Fs.FileRead + IO) =
+                    ctx: RemoteNext[w]): RemoteNext[w] \ (ef + Platform.Window + Fs.FileRead + IO) =
         match Map.get("name", request#params) {
             case None => answer("error: POST /start needs name= (see GET /starts)\n", bridge, ctx)
             case Some(name) =>
                 let args = request#params |> Map.remove("name") |> Map.remove("view");
-                let (built, files) = Flow.Record.captureReads(() -> App.buildStart(app, GameEngine.Game.getViewportRect()#size, name, args));
+                let (built, files) = Flow.Record.captureReads(() -> App.buildStart(app, Platform.Window.getViewportRect()#size, name, args));
                 match built {
                     case Err(why)  => answer("error: ${why}\n", bridge, ctx)
                     case Ok(world) =>
@@ -767,7 +767,7 @@ pub mod App.RemoteDebug {
 
     /// POST /halt: 時間を止めて lockstep モードへ入る。既に停止中でも安全（冪等）。
     def remoteHalt(app: App.App[w, ef], bridge: Bridge,
-                   ctx: RemoteNext[w]): RemoteNext[w] \ (ef + GameEngine.Game + IO) =
+                   ctx: RemoteNext[w]): RemoteNext[w] \ (ef + Platform.Window + IO) =
         if (not ctx#anno#paused) App.Internal.Output.applyHaltLook(App.CursorLook.haltEnterLook()) else ();
         let shownFrame = ctx#anno#frame - Int32.toInt64(ctx#anno#scrub);
         let displayed = App.worldAt(ctx#history, ctx#anno#scrub, ctx#world);
@@ -776,7 +776,7 @@ pub mod App.RemoteDebug {
 
     /// POST /resume: 実時間の進行へ戻す。スクラブで過去を見ていたらそこから再開する。
     def remoteResume(bridge: Bridge,
-                     ctx: RemoteNext[w]): RemoteNext[w] \ (GameEngine.Game + IO) =
+                     ctx: RemoteNext[w]): RemoteNext[w] \ (Platform.Window + IO) =
         if (not ctx#anno#paused)
             answer("ok mode=running frame=${ctx#anno#frame}\n", bridge, { hold = false | ctx })
         else {
@@ -789,7 +789,7 @@ pub mod App.RemoteDebug {
 
     /// GET /state: 進めずに観測だけ返す。停止中はスクラブで表示中の瞬間を見る。
     def remoteState(app: App.App[w, ef], bridge: Bridge, request: Request,
-                    ctx: RemoteNext[w]): RemoteNext[w] \ (ef + GameEngine.Game + IO) =
+                    ctx: RemoteNext[w]): RemoteNext[w] \ (ef + Platform.Window + Platform.GpuResources + IO) =
         match parseParams(request#params) {
             case Err(message) => answer(message + "\n", bridge, ctx)
             case Ok(stepParams) =>
@@ -804,7 +804,7 @@ pub mod App.RemoteDebug {
     /// 実行中に来たら自動で停止してから進める。スクラブで過去を見ていたら
     /// 「表示中の瞬間から再開して進める」（F8 解除と同じ意味論。未来側の履歴は捨てる）。
     def remoteStepCommand(app: App.App[w, ef], bridge: Bridge, request: Request,
-                          ctx: RemoteNext[w]): RemoteNext[w] \ (ef + GameEngine.Game + Fs.FileRead + IO) =
+                          ctx: RemoteNext[w]): RemoteNext[w] \ (ef + Platform.Window + Platform.GpuResources + Fs.FileRead + IO) =
         match parseParams(request#params) {
             case Err(message) => answer(message + "\n", bridge, ctx)
             case Ok(stepParams) =>
@@ -814,7 +814,7 @@ pub mod App.RemoteDebug {
                     case Ok(script) =>
                         if (not ctx#anno#paused) App.Internal.Output.applyHaltLook(App.CursorLook.haltEnterLook()) else ();
                         let (result, files) = Flow.Record.captureReads(() ->
-                            Flow.play(app, { design = GameEngine.Game.getViewportRect()#size, limit = stepParams#maxFrames },
+                            Flow.play(app, { design = Platform.Window.getViewportRect()#size, limit = stepParams#maxFrames },
                                       script, { world = base#world, state = ctx#stepState }));
                         let (played, flowEnd) = playedOf(result);
                         let outcome = stepOutcomeOf(app, played, { world = base#world, state = ctx#stepState, frame = base#anno#frame },
@@ -837,20 +837,20 @@ pub mod App.RemoteDebug {
         }
 
     /// 応答に載せる観測本文（[status] / [full] / [scene] のブロック）。
-    def viewBlock(app: App.App[w, ef], stepParams: StepParams, world: w): String \ (ef + GameEngine.Game + IO) =
+    def viewBlock(app: App.App[w, ef], stepParams: StepParams, world: w): String \ (ef + Platform.Window + Platform.GpuResources + IO) =
         match stepParams#view {
             case View.Silent  => ""
             case View.Shot    => shotBlock(app, world)
             case View.Status  => "[status]\n" + statusText(app, world) + "\n"
             case View.Summary => "[status]\n" + statusText(app, world) + "\n"
             case View.Full    =>
-                let rect = Option.getWithDefault(GameEngine.Game.getViewportRect(), stepParams#rect);
+                let rect = Option.getWithDefault(Platform.Window.getViewportRect(), stepParams#rect);
                 match App.rec(app)#worldDump {
                     case Some(dump) => "[full]\n" + capBody(dump(rect, world)) + "\n"
                     case None       => "[full]\n(no worldDump wired; try view=scene)\n"
                 }
             case View.Scene   =>
-                let rect = Option.getWithDefault(GameEngine.Game.getViewportRect(), stepParams#rect);
+                let rect = Option.getWithDefault(Platform.Window.getViewportRect(), stepParams#rect);
                 sceneText(app, rect, world) + "\n"
         }
 
@@ -875,18 +875,18 @@ pub mod App.RemoteDebug {
 
     /// view=scene の本文。view（PlacedItem 投影）か debugView（生チャンネル投影）から、
     /// 矩形に重なる描画物を列挙する。どちらも無いゲームは観測手段が無い旨を返す。
-    def sceneText(app: App.App[w, ef], rect: Rect2.Rect2, world: w): String \ (ef + GameEngine.Game) =
+    def sceneText(app: App.App[w, ef], rect: Rect2.Rect2, world: w): String \ (ef + Platform.Window + Platform.GpuResources) =
         let r = App.rec(app);
         match (r#view, r#debugView) {
             case (Some(toItems), _) =>
-                let atlas = GameEngine.Game.getFontAtlas("default");
+                let atlas = Platform.GpuResources.getFontAtlas("default");
                 // 画面座標の矩形と突き合わせるので、カメラ適用後（=画面に出ている）items を使う
-                let hitList = Annotate.hits(name -> GameEngine.Game.getTextureInfo(name), rect,
-                                            App.sceneItems(app, atlas, _ -> (), world, toItems));
+                let hitList = Annotate.hits(name -> Platform.GpuResources.getTextureInfo(name), rect,
+                                            App.sceneItems(app, Platform.Window.getViewportRect()#size, atlas, _ -> (), world, toItems));
                 sceneBlock(rect, hitList)
             case (None, Some((_, toChannels))) =>
                 let (drawables, _, _) = toChannels(world);
-                let hitList = Annotate.hitsFromDrawables(name -> GameEngine.Game.getTextureInfo(name),
+                let hitList = Annotate.hitsFromDrawables(name -> Platform.GpuResources.getTextureInfo(name),
                                                          rect, drawables);
                 sceneBlock(rect, hitList)
             case (None, None) => "[scene]\n(no view/debugView wired)"
@@ -970,8 +970,8 @@ pub mod App.RemoteDebug {
     /// ?apply=1 なら流し終えた World へ差し替える（その場面から遊べる・止めている間は止まったまま）。
     /// ?repeat=N は同じ flow を N 回流す（速さを測る。結果の表は最後の 1 回）。ゲームのループの中で流すので上限は flowFrameCap。
     def remoteFlow(app: App.App[w, ef], bridge: Bridge, request: Request,
-                   ctx: RemoteNext[w]): RemoteNext[w] \ (ef + GameEngine.Game + Fs.FileRead + IO) =
-        let design = GameEngine.Game.getViewportRect()#size;
+                   ctx: RemoteNext[w]): RemoteNext[w] \ (ef + Platform.Window + Fs.FileRead + IO) =
+        let design = Platform.Window.getViewportRect()#size;
         let fresh = App.freshWorld(app, design);
         let vocab = Flow.vocabOf(app, fresh);
         let parsed = match Map.get("path", request#params) {
@@ -983,7 +983,7 @@ pub mod App.RemoteDebug {
             case Ok(script) =>
                 let (start, startFiles) = Flow.Record.captureReads(() -> Flow.Cli.startWorld(app, design, fresh, script));
                 let repeat = Map.get("repeat", request#params) |> Option.flatMap(Int32.fromString) |> Option.getWithDefault(1);
-                let began = GameEngine.Game.getViewportRect();
+                let began = Platform.Window.getViewportRect();
                 let results = List.range(0, Int32.max(1, repeat)) |> List.map(_ ->
                     Flow.Record.captureReads(() -> Flow.play(app, { design = began#size, limit = flowFrameCap() }, script,
                                                         { world = start, state = App.freshStepState() })));

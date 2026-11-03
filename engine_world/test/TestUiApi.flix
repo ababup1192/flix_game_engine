@@ -65,12 +65,12 @@ mod TestUiApi {
         let got = spawnFrom(json) |> Option.flatMap(ui -> fontOf("Page/label", ui));
         Assert.assertEq(expected = Some("serif"), got)
 
-    // ── UiRender.renderUiWith: 純粋な resolver で描ける（GameEngine.Game を要求しない）──
+    // ── UiRender.renderUiWith: 純粋な resolver で描ける（Platform.GpuResources を要求しない）──
 
     @Test
     def testRenderUiWithIsPureForTexturelessUi(): Unit \ Assert =
         // 箱だけのページ（text 無し）を、純粋な resolver で射影する。この @Test の
-        // effect が Assert だけで通ること自体が「GameEngine.Game 不要」の証明。
+        // effect が Assert だけで通ること自体が「Platform.GpuResources 不要」の証明。
         let count = spawnFrom(boxJson()) |> Option.map(ui ->
             let out = UiRender.renderUiWith(
                 _ -> bug!("no text nodes in this fixture"),

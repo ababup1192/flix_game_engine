@@ -6,12 +6,12 @@ pub mod App.Internal.Paint {
     /// 生成したアトラスを描画部へ渡しておく（同じ key の間は何も起きない）。
     /// 同じ名前が 2 つ来たら後の方だけを使う — 両方渡すと毎フレーム key が入れ替わり、
     /// 大きさが違えば 1 枚ずつ GPU に置き去りになる。
-    def uploadAtlases(uploads: List[App.AtlasUpload]): Unit \ GameEngine.Game =
+    def uploadAtlases(uploads: List[App.AtlasUpload]): Unit \ Platform.GpuResources =
         uploads
             |> List.foldLeft((acc, a) -> Map.insert(a#texture, a, acc), Map.empty())
             |> Map.forEach((_, a) ->
                 if (a#baked#side > 0)
-                    GameEngine.Game.ensureTexture(a#texture, a#key,
+                    Platform.GpuResources.ensureTexture(a#texture, a#key,
                         a#baked#side, a#baked#side, a#baked#pixels)
                 else ())
 
@@ -20,11 +20,10 @@ pub mod App.Internal.Paint {
     /// renderFrame が App の絵を描かない構成では、ここで組んでも捨てられるだけなので組まない。
     /// 字はゲームのフォントではなく組み込みフォントで出す — ゲームごとにフォント名が違い、
     /// 特定の名前を当てにすると名前が違うゲームで fps 表示が出せなくなる。
-    pub def fpsOverlayOf(r: App.Rec[w, ef], anno: Annotate.State): List[Render.PlacedItem] \ GameEngine.Game =
+    pub def fpsOverlayOf(r: App.Rec[w, ef], design: Vec2.Vec2, anno: Annotate.State): List[Render.PlacedItem] \ Platform.GpuResources =
         if (not r#debug or Option.isEmpty(r#view)) Nil
         else {
-            let atlas = GameEngine.Game.getFontAtlas(BootFont.name());
-            let design = GameEngine.Game.getViewportRect()#size;
+            let atlas = Platform.GpuResources.getFontAtlas(BootFont.name());
             // 組み込みフォントはドット絵なので、作った大きさの等倍で出す。
             Annotate.fpsItems(atlas, atlas#fontSize, design, Annotate.fpsOf(anno))
         }
@@ -46,12 +45,11 @@ pub mod App.Internal.Paint {
     /// viewOffset/viewScale/halfDesign は動的な絵と同じ camera 値（resolvedCamera）から出すので、
     /// 静的な絵と動的な絵の視点は 1px もずれない。カメラ無しなら恒等（world 座標そのまま）。
     /// polys は build（純粋）だけを包むので、キャッシュヒット時に呼ばれても副作用は無い。
-    def staticLayerCmd(app: App[w, ef], world: w): Option[GameEngine.StaticLayerCmd] \ (ef + GameEngine.Game) =
+    def staticLayerCmd(app: App[w, ef], design: Vec2.Vec2, world: w): Option[GameEngine.StaticLayerCmd] \ ef =
         let r = App.rec(app);
         match r#staticLayer {
             case None    => None
             case Some(sl) =>
-                let design = GameEngine.Game.getViewportRect()#size;
                 let (center, z) = App.resolvedCamera(r, world, design);
                 let (viewOffset, viewScale, halfDesign) = match center {
                     case Some(c) => (c, { x = z, y = z }, Vec2.div(design, 2.0))
@@ -113,13 +111,12 @@ pub mod App.Internal.Paint {
     /// 入れ直す（updateTileBuffer）。新しいスロットだけ initTileBuffer で VAO を作る —
     /// key が毎バケツ転がる層でも GPU バッファは 1 層 1 本のまま。
     /// 位置と倍率は動的な絵と同じ camera 値（resolvedCamera）から出すので視点はずれない。
-    def tileLayerCmds(app: App[w, ef], world: w, cache: TileCache):
-            (List[GameEngine.TileMapRenderCmd], TileCache) \ (ef + GameEngine.Game) =
+    def tileLayerCmds(app: App[w, ef], design: Vec2.Vec2, world: w, cache: TileCache):
+            (List[GameEngine.TileMapRenderCmd], TileCache) \ (ef + Platform.GpuResources) =
         let r = App.rec(app);
         match r#tileLayers {
             case None    => (Nil, cache)
             case Some(f) =>
-                let design = GameEngine.Game.getViewportRect()#size;
                 let (center, z) = App.resolvedCamera(r, world, design);
                 let (cmds, nextCache) = List.foldLeft((acc, entry) -> {
                     let (i, spec) = entry;
@@ -132,8 +129,8 @@ pub mod App.Internal.Paint {
                             let tilesOf = spec#tiles;
                             let instances = TileLayer.buildInstances(tilesOf(), spec#tileSet, ts);
                             match tileCacheVaoAt(slot, c) {
-                                case Some(v) => GameEngine.Game.updateTileBuffer(v, instances)
-                                case None    => GameEngine.Game.initTileBuffer(instances)
+                                case Some(v) => Platform.GpuResources.updateTileBuffer(v, instances)
+                                case None    => Platform.GpuResources.initTileBuffer(instances)
                             }
                     };
                     let (pos, scale) = match center {
@@ -193,18 +190,18 @@ pub mod App.Internal.Paint {
     //   drawShaders・drawScenes3d と同じ unwrapClip で見るので、命令が空 = 外す物も無い。
     pub def submitGpuItems(warnOnce: String -> Unit \ ef, items: List[Render.PlacedItem],
                            tiles: List[GameEngine.TileMapRenderCmd], staticLayer: Option[GameEngine.StaticLayerCmd]):
-            Unit \ (ef + GameEngine.Game + ShaderEffect.Shader) =
+            Unit \ (ef + Platform.Rendering) =
         let sceneCmds = Render.drawScenes3d(items);
         let shaderCmds = noteSurfaceZ(warnOnce, items, sceneCmds,
-            Render.drawShaders(spec -> ShaderEffect.Shader.buildProgram(spec), items));
-        List.forEach(cmd -> ShaderEffect.Shader.drawSurface(cmd), shaderCmds);
-        List.forEach(cmd -> ShaderEffect.Shader.drawScene3d(cmd), sceneCmds);
+            Render.drawShaders(spec -> Platform.GpuResources.buildProgram(spec), items));
+        List.forEach(cmd -> Platform.Draw2d.drawSurface(cmd), shaderCmds);
+        List.forEach(cmd -> Platform.Draw3d.drawScene3d(cmd), sceneCmds);
         let withoutSurfaces = if (List.isEmpty(shaderCmds)) items else Render.withoutShaders(items);
         let itemsToDraw = if (List.isEmpty(sceneCmds)) withoutSurfaces else Render.withoutScenes3d(withoutSurfaces);
         // drawWith(getTextureInfo): regionRect 付き Sprite（PxSprite.drawQuad のアトラス 1 クアッド等）の UV を
         // registry の寸法で解決する。regionRect 無しの絵は draw と同一の Drawable になる。
-        let (sprites, polygons) = Render.drawWith(name -> GameEngine.Game.getTextureInfo(name), itemsToDraw);
-        GameEngine.Game.renderCommands(sprites, tiles, polygons, staticLayer)
+        let (sprites, polygons) = Render.drawWith(name -> Platform.GpuResources.getTextureInfo(name), itemsToDraw);
+        Platform.Draw2d.renderCommands(sprites, tiles, polygons, staticLayer)
 
     /// 面か 3D の場面のある画面で、面か場面の後ろに同じ z の描き物を並べた z・面と場面を同じ z に並べた z と、
     /// 値の渡されていない Param を知らせてから shaderCmds を返す（面も場面も無ければ見ない）。
@@ -256,16 +253,15 @@ pub mod App.Internal.Paint {
     /// view = None のゲームは App では描かない（自分のシステム内で renderCommands を呼ぶ。
     /// camera / hudView もこの場合は効かない）。
     /// fps は debug 有効時だけ隅に重ねる（本番は Nil を渡すので描画に一切現れない）。
-    pub def renderFrame(app: App[w, ef], warnOnce: String -> Unit, world: w, look: Look,
+    pub def renderFrame(app: App[w, ef], warnOnce: String -> Unit, design: Vec2.Vec2, world: w, look: Look,
                         tileCache: TileCache, glyphSeen: Option[Int64], budgetWarned: Bool):
-            (TileCache, Option[Int64], Bool) \ (ef + GameEngine.Game + ShaderEffect.Shader + RenderTarget.Target + IO) =
+            (TileCache, Option[Int64], Bool) \ (ef + Platform.Rendering + RenderTarget.Target + IO) =
         let r = App.rec(app);
         match r#view {
             case None          => (tileCache, glyphSeen, budgetWarned)
             case Some(toItems) =>
                 uploadAtlases((r#spriteAtlases)(world));
-                let atlas = GameEngine.Game.getFontAtlas("default");
-                let design = GameEngine.Game.getViewportRect()#size;
+                let atlas = Platform.GpuResources.getFontAtlas("default");
                 let plan = notePassIssues(warnOnce, Render.resolvePassReads(tileCache#passTargets, (r#passes)(world)));
                 let passList = plan#passes;
                 renderPasses(warnOnce, design, plan);
@@ -274,7 +270,7 @@ pub mod App.Internal.Paint {
                 // タイル層と静的層は GPU 側でカメラを掛けるので、見え方（F8 のズーム・パン）を掛けられない。
                 // 見え方が等倍でない間だけ、ほかの絵と同じ PlacedItem に直して一緒に掛ける。
                 let retained = Annotate.isIdentity(look#view);
-                let scene = App.sceneItems(app, atlas, warnOnce, world, toItems);
+                let scene = App.sceneItems(app, design, atlas, warnOnce, world, toItems);
                 let base = if (retained) scene
                            else List.append(tilePausedItems(app, design, world),
                                             List.append(scene, staticPausedItems(app, design, world)));
@@ -294,13 +290,13 @@ pub mod App.Internal.Paint {
                 let fp = Render.glyphFingerprint(itemsForGlyphs);
                 let nextSeen = if (glyphSeen == Some(fp)) glyphSeen else {
                     let missing = Render.missingGlyphs(itemsForGlyphs);
-                    Map.forEach((textureName, cps) -> GameEngine.Game.ensureGlyphs(textureName, cps),
+                    Map.forEach((textureName, cps) -> Platform.GpuResources.ensureGlyphs(textureName, cps),
                                 missing);
                     if (Map.isEmpty(missing)) Some(fp) else None
                 };
-                // 面と 3D の場面は別チャンネル（eff Shader）へ積み、残りの 2D と一緒に描き手が z で合流させる。
-                let (tileCmds, nextCache) = if (retained) tileLayerCmds(app, world, cacheSeen) else (Nil, cacheSeen);
-                submitGpuItems(warnOnce, items, tileCmds, if (retained) staticLayerCmd(app, world) else None);
+                // 面と 3D の場面は別チャンネル（Platform.Draw2d.drawSurface・Platform.Draw3d.drawScene3d）へ積み、残りの 2D と一緒に描き手が z で合流させる。
+                let (tileCmds, nextCache) = if (retained) tileLayerCmds(app, design, world, cacheSeen) else (Nil, cacheSeen);
+                submitGpuItems(warnOnce, items, tileCmds, if (retained) staticLayerCmd(app, design, world) else None);
                 // 数えるのは itemsForGlyphs（本編 + レンダーターゲットの中）— headless の
                 // 検査と同じ量にそろえる。タイル層・静的層は GPU 側で 1 層 1 draw call に
                 // なるので、ここには最初から乗っていない（= 正しく静的化した絵は安いまま）。
@@ -315,9 +311,10 @@ pub mod App.Internal.Paint {
     /// 初めて出る字はこのコマでは欠ける（アトラスを育てるのはこのコマの後）ので、欠けが出たら描き直す（最大 3 回）。
     /// tileCache は同じ GL の文脈の間で持ち回す（最初は freshTileCache()）。
     pub def paintOnce(app: App[w, ef], world: w, tileCache: TileCache):
-            TileCache \ (ef + GameEngine.Game + ShaderEffect.Shader + RenderTarget.Target + IO) =
+            TileCache \ (ef + Platform.Rendering + Platform.Window + RenderTarget.Target + IO) =
+        let design = Platform.Window.getViewportRect()#size;
         def go(cache, left) = {
-            let (next, seen, _) = renderFrame(app, _ -> (), world, plainLook(Nil), cache, None, true);
+            let (next, seen, _) = renderFrame(app, _ -> (), design, world, plainLook(Nil), cache, None, true);
             if (Option.isEmpty(seen) and left > 1) go(next, left - 1) else next
         };
         go(tileCache, 3)
@@ -326,7 +323,7 @@ pub mod App.Internal.Paint {
     /// design 座標そのままで、Shader 面と 3D の場面も本編と同じ道（submitGpuItems）で描く。
     /// テクセル寸法は RenderTarget.texelSizeOf（名前の作り方と、描き手の画素の倍率 Target.pixelScale）。
     def renderPasses(warnOnce: String -> Unit \ ef, design: Vec2.Vec2, plan: Render.PassPlan):
-            Unit \ (ef + GameEngine.Game + ShaderEffect.Shader + RenderTarget.Target) =
+            Unit \ (ef + Platform.Rendering + RenderTarget.Target) =
         let pixelScale = RenderTarget.Target.pixelScale();
         List.forEach(p -> {
             let descriptor = Render.targetDescriptorOf(plan, p#name);
@@ -342,7 +339,7 @@ pub mod App.Internal.Paint {
     /// 実機の外で GL に描く所（VideoOut の GPU の道）が、App を持たずに同じ道を通るための口。
     /// warnOnce = 計画の問題・同じ z の並び・Param の渡し忘れの知らせ（毎コマ呼ばれるので、同じ字を 1 回にまとめるのは渡す側）。
     pub def drawPassPlan(warnOnce: String -> Unit \ ef, design: Vec2.Vec2, known: Set[String], plan: Render.PassPlan):
-            Set[String] \ (ef + GameEngine.Game + ShaderEffect.Shader + RenderTarget.Target) =
+            Set[String] \ (ef + Platform.Rendering + RenderTarget.Target) =
         let resolved = notePassIssues(warnOnce, Render.resolvePassReads(known, plan));
         renderPasses(warnOnce, design, resolved);
         resolved#passes |> List.foldLeft((acc, p) -> Set.insert(p#name, acc), known)

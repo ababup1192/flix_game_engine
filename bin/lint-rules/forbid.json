@@ -121,6 +121,36 @@
       "hint": "トーンマップの曲線（ACES の近似の 2.51 / 2.43）を手で書かない。PostProcess.tonemapped / tonemappedWith を使う（x の式を 1 回だけ評価し、白の点で正規化し、GPU と CPU で同じ木を通る）。場面の Pass は RenderTarget.withHdr にして 1 を超えた明るさを持つ（engine の docs/shader-doc.md「後処理（PostProcess）」）"
     },
     {
+      "id": "shader-render-cmd-alias",
+      "suffixes": [
+        ".flix"
+      ],
+      "skip": [
+        "engine_full/",
+        "lib/",
+        "build/"
+      ],
+      "notice": true,
+      "pattern": "\\bShaderEffect\\.ShaderRenderCmd\\b",
+      "hint": "型は DrawCmd.SurfaceRenderCmd へ移した（中身は同じ）。ShaderEffect.ShaderRenderCmd は 0.84.0 で消える（engine の docs/migrations/0.80.0.md）"
+    },
+    {
+      "id": "game-effect-op",
+      "suffixes": [
+        ".flix"
+      ],
+      "skip": [
+        "render_gl/src/LegacyBridge.flix",
+        "src/render_gl/LegacyBridge.flix",
+        "engine_full/",
+        "lib/",
+        "build/"
+      ],
+      "notice": true,
+      "pattern": "\\bGameEngine\\.Game\\.[a-z]\\w*\\(|\\bShaderEffect\\.Shader\\.[a-z]\\w*\\(",
+      "hint": "op は役割ごとの effect で呼ぶ: Platform.Input・Platform.Window・Platform.FrameClock・Platform.Draw2d・Platform.Draw3d・Platform.GpuResources・Platform.Diagnostics・Platform.Annotation（op の名前と引数は同じ。engine の docs/migrations/0.80.0.md）"
+    },
+    {
       "id": "num-from-vec2",
       "suffixes": [
         ".flix"

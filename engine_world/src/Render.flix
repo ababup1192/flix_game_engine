@@ -41,7 +41,7 @@ pub mod Render {
         /// App + withCamera 経路では中身にはカメラが掛かるが、clip 矩形は常にスクリーン固定 —
         /// PiP やパネル内スクロール用（world に追従する clip 矩形は v1 対象外）。
         case Clipped({ rect = Rect2.Rect2, inner = Item })
-        /// 宣言シェーダーで矩形 rect を塗る面（水面など）。GL 経路では eff Shader が本物の
+        /// 宣言シェーダーで矩形 rect を塗る面（水面など）。GL 経路では Platform.Draw2d.drawSurface が本物の
         /// シェーダーで描き、GL の無い経路（SoftRaster / F8 注釈）では代表色のベタ塗りに落ちる。
         /// rect はスクリーン空間 px（uv=0..1 がこの矩形）、t は world#time（uTime に渡す）。
         /// mask = この面を切り抜く多角形の列（rect 左上からの相対座標）。空なら矩形そのまま。
@@ -53,7 +53,7 @@ pub mod Render {
                       mask = List[List[Vec2.Vec2]], zIndex = Int32, blend = DrawCmd.BlendMode, alpha = Float64,
                       params = Map[String, Float64] })
         /// 3D の場面 1 つ（scene3d で置く）。位置は PlacedItem の at（左上・画面 px）、大きさは cmd#size。
-        /// 2D の並びの中では cmd#zIndex の 1 点に入り、その中だけ深度で前後を決める。GL では eff Shader の
+        /// 2D の並びの中では cmd#zIndex の 1 点に入り、その中だけ深度で前後を決める。GL では Platform.Draw3d.drawScene3d の
         /// drawScene3d が描き、SoftRaster は softSceneOf の scenes で描く。3D を知らない道（drawWith だけの
         /// 描き出し）では場面の大きさの暗い矩形に落ちる。
         /// fade・blended・turned・tinted は効かない — 暗くするなら場面の上に幕を重ねる。
@@ -191,7 +191,7 @@ pub mod Render {
     /// 宣言シェーダーで矩形 rect を塗る面（PlacedItem）。at に rect の左上を入れる —
     /// 描画は at を置き場所に使うので、withCamera 下では at がカメラ変換を受けて面が追従する
     /// （カメラ無しなら at は rect#position のままで画面固定）。t は uTime に渡す秒（world#time など）。
-    /// GL 経路では eff Shader が本物のシェーダーで描き、GL の無い経路では代表色ベタ塗りに落ちる。
+    /// GL 経路では Platform.Draw2d.drawSurface が本物のシェーダーで描き、GL の無い経路では代表色ベタ塗りに落ちる。
     pub def shaderFill(spec: ShaderDoc.Spec, rect: Rect2.Rect2, t: Float64, zIndex: Int32): PlacedItem =
         { at = rect#position,
           item = Item.Shader({ rect = rect, spec = spec, t = t, mask = Nil, zIndex = zIndex, alpha = 1.0,
@@ -964,13 +964,13 @@ pub mod Render {
             }
         }, Map.empty())
 
-    /// Shader 面だけを取り出して eff Shader が食える描画依頼へ変換する（GL 経路専用）。
+    /// Shader 面だけを取り出して Platform.Draw2d.drawSurface が受ける描画依頼へ変換する（GL 経路専用）。
     /// programOf は Spec → コンパイル済みプログラムのハンドル（バックエンドが用意）。
     /// Clipped に包まれた Shader も剥がして拾う。GL の無い経路はこれを呼ばず、SoftRaster は shaderSurfaces、
     /// 命令だけの経路は draw / drawWith に任せる（drawWith はテクスチャ 1 枚を読むだけの面をスプライトにし、
     /// ほかは代表色ベタ塗り。docs/shader-doc.md の「F8 の止めた画面」）。F8 で止めた画面も GL なのでこれを使う。
     pub def drawShaders(programOf: ShaderDoc.Spec -> GpuHandle.ShaderProgram \ ef,
-                        items: List[PlacedItem]): List[ShaderEffect.ShaderRenderCmd] \ ef =
+                        items: List[PlacedItem]): List[DrawCmd.SurfaceRenderCmd] \ ef =
         let surfaces = items |> List.filterMap(placed -> {
             let (leaf, _clip) = unwrapClip(placed#item, None);
             match leaf {
@@ -1056,7 +1056,7 @@ pub mod Render {
         Set.toList(shared)
 
     /// Shader 面を除いた PlacedItem 列（GL 経路で draw に渡す前に外す — 本物のシェーダーは
-    /// drawShaders + eff Shader が別チャンネルで描くので、draw の代表色ベタ塗りと二重にしない）。
+    /// drawShaders + Platform.Draw2d.drawSurface が別チャンネルで描くので、draw の代表色ベタ塗りと二重にしない）。
     pub def withoutShaders(items: List[PlacedItem]): List[PlacedItem] =
         items |> List.filter(placed -> {
             let (leaf, _clip) = unwrapClip(placed#item, None);
@@ -1066,7 +1066,7 @@ pub mod Render {
             }
         })
 
-    /// 3D の場面だけを取り出して eff Shader の drawScene3d が食える命令へ（GL 経路専用。Clipped も剥がして拾う）。
+    /// 3D の場面だけを取り出して Platform.Draw3d.drawScene3d が受ける命令へ（GL 経路専用。Clipped も剥がして拾う）。
     /// 位置は placed#at（カメラの平行移動とズームを済ませた点）、大きさは scaled 済みの cmd#size。
     /// Clipped の矩形（入れ子は交差）は命令の clip に写す — GL はその矩形と場面の矩形の重なりの外を描かない。
     pub def drawScenes3d(items: List[PlacedItem]): List[Scene3d.RenderCmd] =
@@ -1192,7 +1192,7 @@ pub mod Render {
                 bug!("Render.toDrawables: Poly は Drawable にならない（draw が PolygonRenderCmd へ振り分ける）")
             case Item.Shader(s) =>
                 // GL の無い経路（SoftRaster / F8 注釈）向けの代表色ベタ塗り。本物のシェーダーは
-                // eff Shader が別チャンネルで描くので、ここは「面がそこにある」ことだけ残す。
+                // Platform.Draw2d.drawSurface が別チャンネルで描くので、ここは「面がそこにある」ことだけ残す。
                 // 置き場所は drawShaders と同じ pos（scaledAllAround などで動いた後の at）。
                 boxDrawable(s#rect#size, ShaderDoc.representativeColor(s#spec), s#alpha, 0.0, None,
                             s#zIndex, s#blend, pos) :: Nil
@@ -1359,7 +1359,7 @@ pub mod Render {
         if (size#x > 0.0 and size#y > 0.0) Some({ position = lo, size = size }) else None
 
     // flip は base scale に符号を“乗算”（engine spriteToDrawable と同じ）。centered は素通し。
-    // region=Some は textureSize(\Game) が要るので今回未対応＝loud に落とす（部分関数を残さない）。
+    // region=Some は テクスチャの寸法（Platform.GpuResources.getTextureInfo）が要るので今回未対応＝loud に落とす（部分関数を残さない）。
     def spriteDrawable(texture: String, tint: Color, alpha: Float64, scale: Vec2.Vec2,
                        rotation: Float64, centered: Bool, flipH: Bool, flipV: Bool,
                        regionRect: Option[Rect2.Rect2], zIndex: Int32, blend: DrawCmd.BlendMode,

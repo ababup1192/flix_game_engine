@@ -238,8 +238,8 @@ pub mod Text {
 
 instance GameEngine.Renderable[Text] {
     pub def toDrawables(label: Text, globalPos: Vec2.Vec2):
-                         List[GameEngine.Drawable] \ GameEngine.Game =
-        // 本体は純粋だが trait 側が Game eff を要求するため checked_ecast で持ち上げる。
+                         List[GameEngine.Drawable] \ Platform.GpuResources =
+        // 本体は純粋だが trait 側が Platform.GpuResources を要求するため checked_ecast で持ち上げる。
         checked_ecast(Text.toDrawables(label, globalPos))
 }
 

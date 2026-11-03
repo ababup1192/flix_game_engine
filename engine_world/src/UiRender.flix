@@ -11,19 +11,19 @@ pub mod UiRender {
     /// 渡された `ui` の全 UI root を描画データへ射影する。box/text/sprite は Drawable、poly は
     /// PolygonRenderCmd と別チャンネルに出るため、`drawables` と `polygons` の 2 列を一度のレイアウト
     /// 解決でまとめて返す（呼び手が sprite / polygon の各チャンネルへ振り分ける）。
-    /// 文字実寸とスプライトのテクスチャ寸法は `GameEngine.Game` から引く。font の atlas や
+    /// 文字実寸とスプライトのテクスチャ寸法は `Platform.GpuResources` から引く。font の atlas や
     /// テクスチャ寸法を別の経路から与えたい（画面なしのテストやプレビュー）ときは `renderUiWith` を使う。
     pub def renderUi(ui: UiStore.UiWorld, design: Vec2.Vec2):
                     {drawables = List[GameEngine.Drawable], polygons = List[GameEngine.PolygonRenderCmd]}
-                    \ GameEngine.Game =
+                    \ Platform.GpuResources =
         renderUiWith(
-            name -> GameEngine.Game.getFontAtlas(name),
-            name -> GameEngine.Game.getTextureInfo(name),
+            name -> Platform.GpuResources.getFontAtlas(name),
+            name -> Platform.GpuResources.getTextureInfo(name),
             ui, design)
 
     /// `renderUi` の注入版。文字実寸を引く `atlasOf`（font 名→FontAtlas）と、スプライトの
     /// テクスチャ寸法を引く `textureInfoOf`（texture 名→寸法）を呼び側から渡す。両者に副作用が
-    /// なければ描画全体が純粋になり、画面なしのテスト/プレビューは `GameEngine.Game` の
+    /// なければ描画全体が純粋になり、画面なしのテスト/プレビューは `Platform.GpuResources` の
     /// ハンドラを組まずに済む（sprite を使わなければ `textureInfoOf` は `_ -> None` でよい）。
     pub def renderUiWith(atlasOf: String -> FontAtlas \ ef,
                          textureInfoOf: String -> Option[GameEngine.TextureInfo] \ ef,

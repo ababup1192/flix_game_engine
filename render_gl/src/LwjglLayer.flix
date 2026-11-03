@@ -1,5 +1,5 @@
-// LwjglLayer — ウィンドウ表示・入力の読み取り・音の再生を実機で受け持ち、GameEngine.Game / Audio の
-// effect ハンドラを提供する。ゲーム側はこの入口越しに描画や入力を頼むだけで、GL や OpenAL の
+// LwjglLayer — ウィンドウ表示・入力の読み取り・音の再生を実機で受け持ち、Platform の effect と Audio の
+// ハンドラを提供する。ゲーム側はこの入口越しに描画や入力を頼むだけで、GL や OpenAL の
 // 細部を知らずに済む。
 // 利用例: `withLwjgl(config, ...)` でウィンドウを開き、ゲームループを回す。
 // 注意: GL / OpenAL / シェーダ / テクスチャ / フォントベイク / フレーム描画 / 音声デコードは
@@ -363,7 +363,7 @@ pub mod LwjglLayer {
             else Int32.toFloat64(size / bytesPerFrame) / Int32.toFloat64(freq)
         }
 
-    // LWJGL Handler for GameEngine.Game / GameEngine.Audio effects
+    // 実機の handler
     // ========================================================================
 
     /// `rootDir` 直下の project.json を読んで `withLwjgl` を起動する便利ラッパ。
@@ -371,14 +371,14 @@ pub mod LwjglLayer {
     /// 直接 with-chain に並べて使う。loadProject 失敗時は bug! で停止する
     /// (project.json が壊れているのは開発者が直すべき状態)。
     pub def withProject(rootDir: String, f: Unit -> a \ ef):
-            a \ ef - GameEngine.Game - GameEngine.Audio - ShaderEffect.Shader - RenderTarget.Target - LoadProgress + IO + Fs.FileRead =
+            a \ ef - Platform.Services - Platform.Annotation - GameEngine.Game - ShaderEffect.Shader - LoadProgress + IO + Fs.FileRead =
         match ProjectLoader.loadProject(rootDir) {
             case Ok(proj)  => withLwjgl(proj#config, f)
             case Err(msg) => bug!("Failed to load project.json: ${msg}")
         }
 
     /// ゲームの本体 f が最初のコマを描くまでに送る LoadProgress.report は、起動画面を進めてウィンドウのイベントを poll する。
-    pub def withLwjgl(config: GameEngine.EngineConfig, f: Unit -> a \ ef): a \ ef - GameEngine.Game - GameEngine.Audio - ShaderEffect.Shader - RenderTarget.Target - LoadProgress + IO =
+    pub def withLwjgl(config: GameEngine.EngineConfig, f: Unit -> a \ ef): a \ ef - Platform.Services - Platform.Annotation - GameEngine.Game - ShaderEffect.Shader - LoadProgress + IO =
         // GLFW と AWT は macOS で同じメインスレッド・GL を取り合って固まるため、
         // このウィンドウ（GLFW）のプロセスでは AWT を headless に固定する。注釈のスクリーンショット
         // 保存（BufferedImage / Graphics2D / ImageIO）はオフスクリーン描画なので headless でも動く。
@@ -762,7 +762,7 @@ pub mod LwjglLayer {
         };
 
         let result = run {
-            f()
+            RenderLegacyBridge.forward(f)
         } with handler GameEngine.Audio {
             def playAudio(name, k) = {
                 match Map.get(name, audioRegistry) {

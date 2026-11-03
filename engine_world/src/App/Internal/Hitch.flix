@@ -9,8 +9,8 @@ pub mod App.Internal.Hitch {
                               gc = Int32, gcMs = Int64, minors = Map[String, List[String]] }
 
     /// DEBUG の起動で見張りを始める（描く側の診断を入れ、置き場を作る）。
-    pub def startHitchWatch(): HitchWatch \ (GameEngine.Game + IO) =
-        GameEngine.Game.setDiagnosticsEnabled(true);
+    pub def startHitchWatch(): HitchWatch \ (Platform.Diagnostics + IO) =
+        Platform.Diagnostics.setDiagnosticsEnabled(true);
         let config = App.HitchDetector.defaultConfig();
         let (gc, gcMs) = App.HitchDetector.gcNow();
         { config = config, detector = App.HitchDetector.fresh(config), runDir = App.HitchDetector.prepareRunDir(5), gc = gc, gcMs = gcMs,
@@ -84,8 +84,8 @@ pub mod App.Internal.Hitch {
     /// 測るのは塗る側だけ（更新は前もって流し終えている）。last=N なら最後の N コマだけを塗る（長い記録の手前は流すだけ）。
     /// FLIX_GE_HIDDEN=1 なら vsync を待たない。走っている World は変えない。
     pub def perfRun(app: App[w, ef], warnOnce: String -> Unit, bridge: App.RemoteDebug.Bridge, request: App.RemoteDebug.Request,
-                    hitches: Option[HitchWatch], painted: App.Internal.Paint.Painted): App.Internal.Paint.Painted \ (ef + GameEngine.Game + ShaderEffect.Shader + RenderTarget.Target + Fs.FileRead + IO) =
-        let design = GameEngine.Game.getViewportRect()#size;
+                    hitches: Option[HitchWatch], painted: App.Internal.Paint.Painted): App.Internal.Paint.Painted \ (ef + Platform.Window + Platform.Rendering + RenderTarget.Target + Platform.Diagnostics + Fs.FileRead + IO) =
+        let design = Platform.Window.getViewportRect()#size;
         let fresh = App.freshWorld(app, design);
         let vocab = Flow.vocabOf(app, fresh);
         let (name, parsed) = match Map.get("path", request#params) {
@@ -112,7 +112,7 @@ pub mod App.Internal.Hitch {
                         let total = List.length(outcome#frames);
                         let last = Map.get("last", request#params) |> Option.flatMap(Int32.fromString) |> Option.getWithDefault(total);
                         let frames = outcome#frames |> List.zipWithIndex |> List.drop(Int32.max(0, total - last));
-                        let (rows, files, after) = perfPaint(app, warnOnce, { config = config, runDir = runDir | watch }, frames, painted);
+                        let (rows, files, after) = perfPaint(app, warnOnce, design, { config = config, runDir = runDir | watch }, frames, painted);
                         App.RemoteDebug.respond(perfSummary(name, config, rows, files), bridge);
                         after
                 }
@@ -123,18 +123,18 @@ pub mod App.Internal.Hitch {
         if (String.endsWith(suffix = ".flow", base)) String.dropRight(5, base) else base
 
     /// World の列を 1 コマずつ塗り、見張りと同じ判定に通す。返すのは全部の行・書いた報告・描き方の覚え。
-    def perfPaint(app: App[w, ef], warnOnce: String -> Unit, watch0: HitchWatch, frames: List[(Int32, Flow.Played[w])], painted: App.Internal.Paint.Painted):
-            (List[App.HitchDetector.Row], List[String], App.Internal.Paint.Painted) \ (ef + GameEngine.Game + ShaderEffect.Shader + RenderTarget.Target + IO) =
-        discard GameEngine.Game.consumeDiagnostics();
+    def perfPaint(app: App[w, ef], warnOnce: String -> Unit, design: Vec2.Vec2, watch0: HitchWatch, frames: List[(Int32, Flow.Played[w])], painted: App.Internal.Paint.Painted):
+            (List[App.HitchDetector.Row], List[String], App.Internal.Paint.Painted) \ (ef + Platform.Rendering + RenderTarget.Target + Platform.Diagnostics + IO) =
+        discard Platform.Diagnostics.consumeDiagnostics();
         let begin = { detector = App.HitchDetector.fresh(watch0#config) | watch0 };
         let (rowsRev, filesRev, watch, last) = frames |> List.foldLeft((acc, entry) -> {
             let (rows, files, w0, p) = acc;
             let (i, played) = entry;
             let startNs = System.nanoTime();
-            let (cache1, seen1, warned1) = App.Internal.Paint.renderFrame(app, warnOnce, played#step#after, App.Internal.Paint.plainLook(Nil), p#tileCache, p#glyphSeen, p#budgetWarned);
+            let (cache1, seen1, warned1) = App.Internal.Paint.renderFrame(app, warnOnce, design, played#step#after, App.Internal.Paint.plainLook(Nil), p#tileCache, p#glyphSeen, p#budgetWarned);
             let timing = { frame = Int32.toInt64(i), start = startNs, updateNs = 0i64, renderNs = System.nanoTime() - startNs,
                            pressed = played#step#frame#justPressed, reloaded = false };
-            let (row, counted) = hitchRow(app, w0, timing, GameEngine.Game.consumeDiagnostics(), played#step#after);
+            let (row, counted) = hitchRow(app, w0, timing, Platform.Diagnostics.consumeDiagnostics(), played#step#after);
             let (detector, closed) = App.HitchDetector.step(row, counted#detector);
             let written = closed |> Option.map(hitch -> perfWriteHitch(counted, hitch)) |> Option.toList |> List.flatten;
             (row :: rows, List.append(written, files), { detector = detector | counted },

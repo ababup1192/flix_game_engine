@@ -399,6 +399,8 @@
   `pub type alias GradVertex = { pos = Vec2.Vec2, color = Color, alpha = Float64 }`
 - 凸多角形の塗り潰し命令。vertices はスクリーン px に変換済みの頂点列を渡す。
   `pub type alias PolygonRenderCmd = { vertices = List[Vec2.Vec2], color = Color, alpha = Float64, zIndex = Int32, clip = Option[Rect2.Rect2], blend = BlendMode, grad = Option[List[VertexTint]] }`
+- 宣言シェーダーの面 1 枚ぶんの描画依頼（Platform.Draw2d.drawSurface に渡す）。
+  `pub type alias SurfaceRenderCmd = { program = GpuHandle.ShaderProgram, texReads = List[(String, ShaderDoc.FilterMode)], rect = Rect2.Rect2, mask = List[List[Vec2.Vec2]], time = Float64, zIndex = Int32, blend = BlendMode, alpha = Float64, params = List[Float64] }`
 - grad つき多角形を「色つき頂点の三角形列」に展開する。GL と SoftRaster が同じ
   `pub def gradTriangles(p: PolygonRenderCmd): List[(GradVertex, GradVertex, GradVertex)]`
 - 静的多角形バッファのキャッシュキー。ゲームは「静的な中身を決める全入力」
@@ -504,7 +506,7 @@
   `pub type alias AnnotationRequest = { frame = Int64, rect = Rect2.Rect2, json = String, readmeBody = String, worldDump = String }`
 - タイルマップ 1 タイル分のインスタンスデータ。共有型 `DrawCmd.TileInstance`。
   `pub type alias TileInstance = DrawCmd.TileInstance`
-- `pub def toDrawables(item: n, globalPos: Vec2.Vec2): List[Drawable] \ Game } pub enum Key with Eq, Order, ToString { case A case B case C case D case E case F case G case H case I case J case K case L case M case N case O case P case Q case R case S case T case U case V case W case X case Y case Z case Digit0 case Digit1 case Digit2 case Digit3 case Digit4 case Digit5 case Digit6 case Digit7 case Digit8 case Digit9 case Up case Down case Left case Right case Enter case Space case Escape case Tab case Backspace case Insert case Delete case PageUp case PageDown`
+- `pub def toDrawables(item: n, globalPos: Vec2.Vec2): List[Drawable] \ Platform.GpuResources } pub enum Key with Eq, Order, ToString { case A case B case C case D case E case F case G case H case I case J case K case L case M case N case O case P case Q case R case S case T case U case V case W case X case Y case Z case Digit0 case Digit1 case Digit2 case Digit3 case Digit4 case Digit5 case Digit6 case Digit7 case Digit8 case Digit9 case Up case Down case Left case Right case Enter case Space case Escape case Tab case Backspace case Insert case Delete case PageUp case PageDown`
 - キーボードキー。
   `pub enum Key with Eq, Order, ToString { case A case B case C case D case E case F case G case H case I case J case K case L case M case N case O case P case Q case R case S case T case U case V case W case X case Y case Z case Digit0 case Digit1 case Digit2 case Digit3 case Digit4 case Digit5 case Digit6 case Digit7 case Digit8 case Digit9 case Up case Down case Left case Right case Enter case Space case Escape case Tab case Backspace case Insert case Delete case PageUp case PageDown case Home case End case CapsLock case F1 case F2 case F3 case F4 case F5 case F6 case F7 case F8 case F9 case F10 case F11 case F12 case Apostrophe case Comma case Minus case Period case Slash case Semicolon case Equal case LeftBracket case Backslash case RightBracket case GraveAccent case LeftShift case LeftCtrl case LeftAlt case LeftSuper case RightShift case RightCtrl case RightAlt case RightSuper case Menu case Numpad0 case Numpad1 case Numpad2 case Numpad3 case Numpad4 case Numpad5 case Numpad6 case Numpad7 case Numpad8 case Numpad9 case NumpadDecimal case NumpadDivide case NumpadMultiply case NumpadSubtract case NumpadAdd case NumpadEnter case NumpadEqual }`
 - Key の全バリアント。InputEvent などのイベント駆動入力で
@@ -515,7 +517,7 @@
   `pub def allMouseButtons(): List[MouseButton]`
 - マウスカーソル形状（エディタのリサイズハンドルなどで切り替える）。
   `pub enum Cursor with Eq, ToString { case Default case Crosshair case HResize case VResize case AllResize case Rotate case NWResize case NEResize case SWResize case SEResize }`
-- ゲームエフェクト: 描画・ウィンドウ制御・時間取得・キー入力・マウス入力・フォント・
+- 描き手の handler（LwjglLayer・GlOffscreen）がまだ 1 つで受けている op の組。render_gl の RenderLegacyBridge が
   `pub eff Game`
 - zIndex 混合で sprites・tileMaps・polygons を 1 フレーム描画する。
   `pub eff Game { def renderCommands(sprites: List[Drawable], tileMaps: List[TileMapRenderCmd], polygons: List[PolygonRenderCmd], staticLayer: Option[StaticLayerCmd]): Unit }`
@@ -652,7 +654,7 @@
 
 ## InputEvent — `engine/src/render/InputEvent.flix`
 - 現在押されているキーのセットを取得する（GameEngine.allKeys() を全て走査）
-  `pub def currentKeys(): Set[GameEngine.Key] \ GameEngine.Game`
+  `pub def currentKeys(): Set[GameEngine.Key] \ Platform.Input`
 
 ## JoyoKanji — `engine/src/core/JoyoKanji.flix`
 - アトラスにベイクする全コードポイントを 1 行の文字列として返す。
@@ -870,6 +872,86 @@
 - 円周率（値の源は tau — 2 で割るのは倍精度で正確）。
   `pub def pi(): Float64`
 
+## Platform — `engine/src/Platform.flix`
+- キー・マウス・ゲームパッドの今の状態を読む。
+  `pub eff Input`
+- `pub eff Input { def isKeyPressed(key: GameEngine.Key): Bool }`
+- `pub eff Input { def getMousePosition(): Vec2.Vec2 }`
+- `pub eff Input { def isMouseButtonPressed(button: GameEngine.MouseButton): Bool }`
+- 1 台目のゲームパッドのボタン・十字キー・スティックのどれかがいま押されて（倒されて）いるか。
+  `pub eff Input { def isGamepadTouched(): Bool }`
+- 1 台目のゲームパッドの機種（Xbox 配置の一般・Steam Input を通した物・つないでいない）。
+  `pub eff Input { def gamepadKind(): GamepadMap.PadKind }`
+- 前回呼び出し以降に蓄積されたマウスホイールの y 方向 delta を返し、
+  `pub eff Input { def consumeScrollDelta(): Float64 }`
+- 前に呼んでからマウスが動いた量（design px・小数のまま。右と下が正）。キャプチャしている間（Window.setMouseCaptured(true)）も
+  `pub eff Input { def consumeMouseDelta(): Vec2.Vec2 }`
+- ウィンドウがキーとマウスの入力を受け取る状態（フォーカスがある）か。App が Frame#windowFocused に置く。
+  `pub eff Input { def isWindowFocused(): Bool }`
+- ウィンドウの状態と見た目（閉じるフラグ・大きさ・カーソル・全画面・タイトルの表示）。
+  `pub eff Window`
+- ウィンドウの閉じるフラグが立っているか。今は入力の取り込み（poll）も兼ねるので 1 フレームに 1 回だけ呼ぶ。
+  `pub eff Window { def shouldClose(): Bool }`
+- ウィンドウの閉じるフラグを立てる・下ろす（GLFW の glfwSetWindowShouldClose）。false で閉じる要求を取り消す
+  `pub eff Window { def setShouldClose(close: Bool): Unit }`
+- design 座標の描き場の矩形。
+  `pub eff Window { def getViewportRect(): Rect2.Rect2 }`
+- マウスカーソル形状を切り替える。連続して同じ Cursor を渡しても問題ない（冪等）
+  `pub eff Window { def setCursor(cursor: GameEngine.Cursor): Unit }`
+- マウスカーソルの表示/非表示を切り替える。形状(setCursor)は「どんな絵か」、
+  `pub eff Window { def setCursorVisible(visible: Bool): Unit }`
+- マウスをウィンドウにキャプチャする（真）・放す（偽）。キャプチャしている間は矢印が消え、動きは Input.consumeMouseDelta だけに出る
+  `pub eff Window { def setMouseCaptured(captured: Bool): Unit }`
+- ウィンドウ⇄ボーダーレスフルスクリーンを切り替える。フルスクリーンはプライマリ
+  `pub eff Window { def setFullscreen(on: Bool): Unit }`
+- 直近の setFullscreen で今フルスクリーン中かを返す
+  `pub eff Window { def isFullscreen(): Bool }`
+- デバッグモード中であることをウィンドウタイトルで示す。
+  `pub eff Window { def setDebugBadge(enabled: Bool): Unit }`
+- 1 コマの経過時間。WhyNot Time と呼ばない: engine_world の Clock.Time と重なる。
+  `pub eff FrameClock`
+- 前フレームからの経過時間。EngineConfig#maxDeltaTime で上限クランプ済み
+  `pub eff FrameClock { def getDeltaTime(): Duration.Duration }`
+- 2D の描き物の列を出す口。
+  `pub eff Draw2d`
+- zIndex 混合で sprites・tileMaps・polygons を 1 フレーム描画する（積んだ面と 3D の場面も z の位置で合流させる）。
+  `pub eff Draw2d { def renderCommands(sprites: List[GameEngine.Drawable], tileMaps: List[GameEngine.TileMapRenderCmd], polygons: List[GameEngine.PolygonRenderCmd], staticLayer: Option[GameEngine.StaticLayerCmd]): Unit }`
+- 宣言シェーダーの面 1 枚を、次の renderCommands の列へ積む。
+  `pub eff Draw2d { def drawSurface(cmd: DrawCmd.SurfaceRenderCmd): Unit }`
+- 3D の場面を出す口。
+  `pub eff Draw3d`
+- 3D の場面 1 つを、次の Draw2d.renderCommands の列へ積む（深度で前後を決め、2D の並びの中では cmd#scene#zIndex の 1 点に入る）。
+  `pub eff Draw3d { def drawScene3d(cmd: Scene3d.RenderCmd): Unit }`
+- GPU に置く資源（タイルのバッファ・テクスチャ・字・シェーダーのプログラム）を用意し、寸法を引く。
+  `pub eff GpuResources`
+- タイルインスタンスデータを GPU VBO にアップロードし (vaoハンドル, count) を返す
+  `pub eff GpuResources { def initTileBuffer(instances: List[GameEngine.TileInstance]): (GpuHandle.TileVao, Int32) }`
+- 既存のタイル VAO のインスタンス VBO へ中身を入れ直す（VAO は増やさない）。
+  `pub eff GpuResources { def updateTileBuffer(vaoId: GpuHandle.TileVao, instances: List[GameEngine.TileInstance]): (GpuHandle.TileVao, Int32) }`
+- 実行時に生成した画素を、名前付きテクスチャとして使えるようにする。
+  `pub eff GpuResources { def ensureTexture(name: String, key: String, width: Int32, height: Int32, argb: Vector[Int32]): Unit }`
+- アトラスにまだ無い字を、いま生成してアトラスに足す。
+  `pub eff GpuResources { def ensureGlyphs(textureName: String, codepoints: Set[Int32]): Unit }`
+- `pub eff GpuResources { def getFontAtlas(name: String): FontAtlas }`
+- 指定したテクスチャ名の元画像サイズ等を取得する。
+  `pub eff GpuResources { def getTextureInfo(name: String): Option[GameEngine.TextureInfo] }`
+- Spec を GLSL プログラムへコンパイルしハンドルを返す（起動時/リロード時に 1 回）。
+  `pub eff GpuResources { def buildProgram(spec: ShaderDoc.Spec): GpuHandle.ShaderProgram }`
+- 1 コマごとの、描く側の診断（FrameDiagnostics）。
+  `pub eff Diagnostics`
+- 集めるかを切り替える。切っている間は数えない。入れるのは DEBUG の起動だけ（本番で数える負担を作らない）。
+  `pub eff Diagnostics { def setDiagnosticsEnabled(on: Bool): Unit }`
+- 前に取り出してから溜まった診断を返し、空に戻す（Input.consumeScrollDelta と同じ取り出し方）。
+  `pub eff Diagnostics { def consumeDiagnostics(): FrameDiagnostics.Diagnostics }`
+- F8 の注釈を書き出す開発の道具。WhyNot Services に入れない: 開発の道具の入口へ寄せて、持たない handler の組
+  `pub eff Annotation`
+- 注釈一式（screenshot.png / highlighted.png / annotation.json / README.md）を
+  `pub eff Annotation { def saveAnnotation(req: GameEngine.AnnotationRequest): Option[String] }`
+- 描く effect の束（同じ handler の組から張る 3 つ。上の「積む op と出す op」）。
+  `pub type alias Rendering = Draw2d + Draw3d + GpuResources`
+- App.launch が要る機種の effect の束。
+  `pub type alias Services = Input + Window + FrameClock + Rendering + RenderTarget.Target + GameEngine.Audio + Diagnostics`
+
 ## Polygon — `engine/src/render/Polygon.flix`
 - 任意の頂点列から Polygon を生成する（alpha=1.0 不透明）。
   `pub def make(points: List[Vec2.Vec2], color: Color): Polygon`
@@ -1075,9 +1157,9 @@
   `pub def historyName(name: String): String`
 - ターゲットを開く時の宣言（Target.beginTarget に渡す 1 つ）。
   `pub type alias TargetSpec = { name = String, width = Int32, height = Int32, format = Format, clear = LoadOp, samples = Int32 }`
-- レンダーターゲットへの描画チャンネル。eff Game とは別に隔離した効果。
+- レンダーターゲットへの描き込み先の切り替え。
   `pub eff Target`
-- ターゲットを開く。以降の renderCommands は画面でなくここに描かれる（swap もしない）。
+- ターゲットを開く。以降の Platform.Draw2d.renderCommands は画面でなくここに描かれる（swap もしない）。
   `pub eff Target { def beginTarget(spec: RenderTarget.TargetSpec): Unit }`
 - 描き手の design px → 描き先の画素の倍率（窓なら窓の実際の大きさに収めた倍率・動画やスクリーンショットはその書き出しの倍率）。
   `pub eff Target { def pixelScale(): Float64 }`
@@ -1340,17 +1422,17 @@
   `pub def limitMaterialTexReads(limit: Int32, spec: Spec, emission: Option[Shade]): (Spec, Option[Shade])`
 
 ## ShaderEffect — `engine/src/ShaderEffect.flix`
-- シェーダー面 1 枚ぶんの描画依頼。
-  `pub type alias ShaderRenderCmd = { program = GpuHandle.ShaderProgram, texReads = List[(String, ShaderDoc.FilterMode)], rect = Rect2.Rect2, mask = List[List[Vec2.Vec2]], time = Float64, zIndex = Int32, blend = DrawCmd.BlendMode, alpha = Float64, params = List[Float64] }`
-- シェーダー面の描画チャンネル。eff Game とは別に隔離した効果。
+- DrawCmd.SurfaceRenderCmd の古い名前。0.84.0 で消える。
+  `pub type alias ShaderRenderCmd = DrawCmd.SurfaceRenderCmd`
+- WhyNot 呼ぶ側から使わない: 呼ぶ側は Platform.GpuResources.buildProgram・Platform.Draw2d.drawSurface・
   `pub eff Shader`
 - Spec を GLSL プログラムへコンパイルしハンドルを返す（起動時/リロード時に 1 回）。
   `pub eff Shader { def buildProgram(spec: ShaderDoc.Spec): GpuHandle.ShaderProgram }`
 - シェーダー面 1 枚を描く。骨格では「床タイルと壁の間の固定 z-index の範囲」へそろえて
-  `pub eff Shader { def drawSurface(cmd: ShaderRenderCmd): Unit }`
+  `pub eff Shader { def drawSurface(cmd: DrawCmd.SurfaceRenderCmd): Unit }`
 - 3D の場面 1 つを、深度で前後を決めて描く（2D の並びの中では cmd#scene#zIndex の 1 点に入る）。
   `pub eff Shader { def drawScene3d(cmd: Scene3d.RenderCmd): Unit }`
-- シェーダーを使わないゲーム・GL の無い環境（テスト等）向けの何もしないハンドラ。
+- この eff の op を直に呼ぶ物向けの何もしないハンドラ。buildProgram は無効ハンドル（0）を返し、drawSurface と drawScene3d は捨てる。
   `pub def runNoop(f: Unit -> a \ ef + Shader): a \ ef`
 
 ## ShaderEval — `engine/src/ShaderEval.flix`
@@ -1502,7 +1584,7 @@
 - 描画オフセット (centered 基準点からのずれ) を設定する
   `pub def setOffset(offset: Vec2.Vec2, sprite: Sprite): Sprite`
 - Sprite を Drawable に変換する。
-  `pub def toDrawable(sprite: Sprite, globalPos: Vec2.Vec2): GameEngine.Drawable \ GameEngine.Game`
+  `pub def toDrawable(sprite: Sprite, globalPos: Vec2.Vec2): GameEngine.Drawable \ Platform.GpuResources`
 - regionRect / hframes / vframes / frame と元テクスチャサイズから
   `pub def computeUv(sprite: Sprite, textureSize: Vec2.Vec2): {uvOffset = Vec2.Vec2, uvScale = Vec2.Vec2}`
 

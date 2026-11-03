@@ -43,7 +43,8 @@
 | shader.json を読み書きしたい | ShaderJson |
 | 1 を超える明るさの Pass を 0..1 に収めたい（トーンマップ・露出・白の点）・縁のギザギザをならしたい（FXAA）・明るさ（709）を場で作りたい | PostProcess（tonemapped / tonemappedWith / fxaaSpec / luma709。使い方は [shader-doc.md](../shader-doc.md) の「後処理」） |
 | 面の中でテクスチャ（Pass）のテクセルの数を読む・1 テクセルずつずらす | ShaderDoc.Field.TexSize（`Div(Const(1), TexSize)` がずらす量） |
-| シェーダー面を描く GPU 側の効果口を知りたい | ShaderEffect |
+| 入力・ウィンドウ・時計・描く・GPU の資源の effect を知りたい（テストの偽物を役割ごとに張る） | Platform（`Platform.Input`・`Window`・`FrameClock`・`Draw2d`・`Draw3d`・`GpuResources`・`Diagnostics`・`Annotation`、束は `Platform.Services`） |
+| シェーダー面を描く・GPU のプログラムを作る effect を知りたい | Platform.Draw2d.drawSurface・Platform.GpuResources.buildProgram（型は DrawCmd.SurfaceRenderCmd） |
 | 1 コマで作ったシェーダー・足した字・塗りと swap の時間を知りたい（ヒッチの記録の材料） | FrameDiagnostics |
 | GPU と CPU の 1 コマの時間・3D の置いた物と draw call の数を画面の隅に出す（2D と 3D で共通） | engine_world の App.withDiagnostics → frame#diagnostics → FrameDiagnostics.summaryLines（gpuNs・gpuPasses・scene3dCounts） |
 | 位置ベクトルの足し引き・長さ・回転を計算したい | Vec2 |
@@ -122,12 +123,13 @@
 - **ShaderEval** — Spec 木を CPU（Float64）で評価する純関数。GL の描画経路ではないが、SoftRaster（描き出し・動画・スナップショット）はシェーダー面の画素をこれで塗り、テストは式の構造が GLSL 側と揃っているかをこれで確かめる。tex 場つきの評価は `ShaderEval.evalPixelTex` / `ShaderEval.evalAlphaTex`。何万画素も評価する画素ループは `ShaderEval.compile` で面ごとに 1 回だけ組み直し、画素ごとに `ShaderEval.evalCompiled` を呼ぶ（色と α を 1 回の shared 先行評価で返す。SoftRaster はこれを全コアで並べて評価し、`FGE_SOFT_SERIAL=1` で 1 本に戻せる）。
 - **ShaderJson** — シェーダー面の宣言（ShaderDoc.Spec）を JSON と相互変換する codec。engine を触らず `*.shader.json` の保存だけで調整できる（App.watchFile によるホットリロードの受け皿）。
 - **PostProcess** — 画面の仕上げの面を ShaderDoc の Spec で組む部品（Unity URP / Unreal の Post Process と同じ並び）。`PostProcess.tonemapped` / `tonemappedWith`（AcesFitted・Reinhard。既定は `defaultExposure()` = 0.4 stop・`defaultWhitePoint()` = 4.0）・`PostProcess.fxaaSpec`（FXAA 3.11 の PC の簡単な版）・`PostProcess.luma709`。今の場と bindings だけで組むので GPU と CPU が同じ木を評価する。
-- **FrameDiagnostics** — 1 コマぶんの描く側の診断（作ったシェーダーと理由・GPU にあるシェーダーの数・足した字・塗りと swap の時間・GPU の時間と描き先ごとの時間・3D の数）。2D と 3D で共通。`GameEngine.Game.consumeDiagnostics` が返し、App が 1 コマに 1 回引き取ってヒッチの記録とゲーム（`App.withDiagnostics` → `frame#diagnostics`）へ配る。`setDiagnosticsEnabled(true)` の間だけ数える。画面に出す字は `summaryLines`。
-- **ShaderEffect** — 宣言シェーダー面を GPU で描くための別チャンネルの効果口（`eff Shader`）。`eff Game` に描画オペを足すとハンドラ全てが波及するため、シェーダー面だけ別効果に切り出している。
+- **FrameDiagnostics** — 1 コマぶんの描く側の診断（作ったシェーダーと理由・GPU にあるシェーダーの数・足した字・塗りと swap の時間・GPU の時間と描き先ごとの時間・3D の数）。2D と 3D で共通。`Platform.Diagnostics.consumeDiagnostics` が返し、App が 1 コマに 1 回引き取ってヒッチの記録とゲーム（`App.withDiagnostics` → `frame#diagnostics`）へ配る。`setDiagnosticsEnabled(true)` の間だけ数える。画面に出す字は `summaryLines`。
+- **Platform** — 機種（ウィンドウ・入力・GPU・時計）に触る effect を役割ごとに分けた所。関数の型に触る effect だけが出て、op を足しても止まるのはその役割の handler だけ。`Draw2d.drawSurface` と `Draw3d.drawScene3d` は積むだけで `Draw2d.renderCommands` が出すので、`Draw2d`・`Draw3d`・`GpuResources` は同じ handler の組から張る。
+- **ShaderEffect** — 描き手の handler がまだ受けている面と 3D の場面の op（`eff Shader`）。呼ぶ側は `Platform` の effect を使う（render_gl の `RenderLegacyBridge` がここへ回す）。
 
 ## レンダーターゲット（RenderTarget）
 
-- **RenderTarget** — レンダーターゲット（描いた結果を読み返せる描き込み先）に描いてテクスチャとして読み返すための効果口（`eff Target`）。`eff Game` とは別チャンネルに隔離してあるので、レンダーターゲットを使わないゲームやハンドラには波及しない。GL 側の実体は `render_gl` の **Target.flix**（`mod RenderTargetGl`。FBO 1 枚 + カラーテクスチャ 1 枚を作り・切り替え・破棄する）と `LwjglLayer` のハンドラが持つ。ゲーム側は engine 内部の `eff Target` を直接触らず、engine_world の `Render.Pass` + `App.withPasses` を使う（[逆引き](../module-index.md)を参照）。
+- **RenderTarget** — レンダーターゲット（描いた結果を読み返せる描き込み先）に描いてテクスチャとして読み返すための効果口（`eff Target`）。描き込み先の切り替えは描く op の外側の関心なので `Platform.Draw2d` に入れず、ターゲットを持たない描き出し・テストの偽物はこれを張らずに描ける。GL 側の実体は `render_gl` の **Target.flix**（`mod RenderTargetGl`。FBO 1 枚 + カラーテクスチャ 1 枚を作り・切り替え・破棄する）と `LwjglLayer` のハンドラが持つ。ゲーム側は engine 内部の `eff Target` を直接触らず、engine_world の `Render.Pass` + `App.withPasses` を使う（[逆引き](../module-index.md)を参照）。
 
 ## core（基礎の値と計算）
 

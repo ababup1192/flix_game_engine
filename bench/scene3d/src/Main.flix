@@ -1,6 +1,6 @@
 // 入口。実機の窓で毎コマ同じ部屋を描き、カメラを左右へゆっくり振る。300 コマごとに 1 コマの p50 / p95 と GPU の時間の p50
 // （FrameDiagnostics.gpuNs・1〜2 コマ遅れの値）を出し、4 区間で閉じる。
-// 描く道は実機と同じ（App の view → App.Internal.Paint.submitGpuItems → Shader.drawScene3d）。
+// 描く道は実機と同じ（App の view → App.Internal.Paint.submitGpuItems → Platform.Draw3d.drawScene3d）。
 use fge::GameEngine
 
 mod SceneBench {

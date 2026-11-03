@@ -7,7 +7,7 @@
 use fge::GameEngine
 
 mod ShaderCacheSoak {
-    use fge::{DrawCmd, GameEngine, GpuHandle, LwjglLayer, ShaderDoc, ShaderEffect}
+    use fge::{DrawCmd, GameEngine, GpuHandle, LwjglLayer, Platform, ShaderDoc}
 
     import java.io.ByteArrayOutputStream
     import java.io.PrintStream
@@ -26,18 +26,18 @@ mod ShaderCacheSoak {
         let base = ShaderDoc.demoSurface();
         { cycleRate = 0.5 + Int32.toFloat64(i) / 1000.0 | base }
 
-    def surfaceCmd(prog: GpuHandle.ShaderProgram): ShaderEffect.ShaderRenderCmd =
+    def surfaceCmd(prog: GpuHandle.ShaderProgram): DrawCmd.SurfaceRenderCmd =
         { program = prog, texReads = Nil,
           rect = { position = { x = 0.0, y = 0.0 }, size = { x = 32.0, y = 32.0 } },
           mask = Nil, time = 0.0, zIndex = 0, blend = DrawCmd.BlendMode.Normal, alpha = 1.0, params = Nil }
 
     /// 1 本ごとに「作って・積んで・フレームを 1 つ送る」。フレームを送らないと世代が進まず、
     /// 全ての program が「いま描いている物」に見えて 1 個も追い出されない。
-    def soak(): Unit \ GameEngine.Game + ShaderEffect.Shader =
+    def soak(): Unit \ Platform.Draw2d + Platform.GpuResources =
         List.range(0, rounds()) |> List.forEach(i -> {
-            let prog = ShaderEffect.Shader.buildProgram(specAt(i));
-            ShaderEffect.Shader.drawSurface(surfaceCmd(prog));
-            GameEngine.Game.renderCommands(Nil, Nil, Nil, None)
+            let prog = Platform.GpuResources.buildProgram(specAt(i));
+            Platform.Draw2d.drawSurface(surfaceCmd(prog));
+            Platform.Draw2d.renderCommands(Nil, Nil, Nil, None)
         })
 
     // ── 行を読む ──

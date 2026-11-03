@@ -6,7 +6,7 @@
 //   match GlOffscreen.open({ config = 読んだ project.json の config, scale = 2 }) {
 //       case Err(why)   => SoftRaster の道へ（画面の無い所・GL が作れない）
 //       case Ok(session) =>
-//           GlOffscreen.handle(session, () -> App のコマを描く（Game・Shader・Target を使う物）);
+//           GlOffscreen.handle(session, () -> App のコマを描く（Platform の描く effect と Target を使う物）);
 //           let image = GlOffscreen.readImage(session);   // 最後に塗った画面のコマ
 //           GlOffscreen.close(session)
 //   }
@@ -363,9 +363,9 @@ pub mod GlOffscreen {
 
     // ── 塗る ──
 
-    /// f の中の Game・Shader・Target を、このセッションの FBO へ塗る形で受ける（App の 1 コマを描く口をそのまま呼べる）。
+    /// f の中の Platform の effect（RenderLegacyBridge.Bridged）と Target を、このセッションの FBO へ塗る形で受ける（App の 1 コマを描く口をそのまま呼べる）。
     /// 入力・カーソル・窓の問いには「何も起きていない」で答える。画面のコマは最後の 1 枚が FBO に残る（readImage・readRgba で読む）。
-    pub def handle(session: Session, f: Unit -> a \ ef): a \ (ef - GameEngine.Game - ShaderEffect.Shader - RenderTarget.Target) + IO =
+    pub def handle(session: Session, f: Unit -> a \ ef): a \ (ef - RenderLegacyBridge.Bridged - GameEngine.Game - ShaderEffect.Shader - RenderTarget.Target) + IO =
         let SessionData.SessionData(s) = session;
         let paint = s#paint;
         let fonts = s#fonts;
@@ -373,7 +373,7 @@ pub mod GlOffscreen {
         let design = s#design;
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, s#fbo);
         run {
-            f()
+            RenderLegacyBridge.forward(f)
         } with handler GameEngine.Game {
             def renderCommands(sprites, tileMaps, polygons, staticLayer, k) = {
                 let paintFrom = System.nanoTime();

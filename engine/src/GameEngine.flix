@@ -133,9 +133,9 @@ pub mod GameEngine {
     /// 描画物を Drawable のリストに変換する能力を表す trait
     /// Text 等、1 つの描画物から複数 Drawable を生成するケースに対応。
     /// Sprite の region/hframes/vframes/frame から UV を計算するためにテクスチャ
-    /// サイズを参照する必要があり、Game eff を要求する。
+    /// サイズを参照する必要があり、Platform.GpuResources を要求する。
     pub trait Renderable[n] {
-        pub def toDrawables(item: n, globalPos: Vec2.Vec2): List[Drawable] \ Game
+        pub def toDrawables(item: n, globalPos: Vec2.Vec2): List[Drawable] \ Platform.GpuResources
     }
 
     /// キーボードキー。
@@ -329,8 +329,9 @@ pub mod GameEngine {
         case SEResize
     }
 
-    /// ゲームエフェクト: 描画・ウィンドウ制御・時間取得・キー入力・マウス入力・フォント・
-    /// ビューポート・マウスカーソル形状切り替え
+    /// 描き手の handler（LwjglLayer・GlOffscreen）がまだ 1 つで受けている op の組。render_gl の RenderLegacyBridge が
+    /// Platform の役割ごとの effect からここへ回す。WhyNot 呼ぶ側から使わない: 関数の型が「何に触るか」を言えなくなり、
+    /// op を 1 つ足すと全部の handler が止まる（呼ぶ側は Platform.Input・Window・FrameClock・Draw2d・GpuResources・Diagnostics・Annotation）。
     pub eff Game {
         /// zIndex 混合で sprites・tileMaps・polygons を 1 フレーム描画する。
         /// staticLayer は「1 度だけ GPU へ生成して使い回す静的多角形」の依頼（無ければ None）。

@@ -31,8 +31,8 @@ Doc の読み直しは `traceFrame` の手前で同じ関数（watchFile・reloa
 
 | 口 | いつ App が触るか | 例 |
 |---|---|---|
-| `Frame#padTouched` | 毎フレーム読む（`GameEngine.Game.isGamepadTouched`） | 案内のキーの絵をパッドのボタンへ替える |
-| `Frame#padKind` | 毎フレーム読む（`GameEngine.Game.gamepadKind`。つないだ時に 1 回だけ GLFW から決める） | 案内のボタンの絵をパッドの機種で替える（[gamepad.md](gamepad.md)） |
+| `Frame#padTouched` | 毎フレーム読む（`Platform.Input.isGamepadTouched`） | 案内のキーの絵をパッドのボタンへ替える |
+| `Frame#padKind` | 毎フレーム読む（`Platform.Input.gamepadKind`。つないだ時に 1 回だけ GLFW から決める） | 案内のボタンの絵をパッドの機種で替える（[gamepad.md](gamepad.md)） |
 | `App.withCursor(w -> CursorSpec)` | 毎フレームの宣言。変わったフレームだけ当てる。F8 で止めている間は十字に上書き | マウスの矢印を隠す・形を変える |
 | `App.withCloseRequest(f)` | 閉じるボタンを押したフレームで `f(world)` を 1 回。F8 で止めている間は `f` を呼ばずにその場で閉じる（持ち越さない） | 「終了しますか？」を出す |
 | `App.addOutput({ keyOf, write, onJump })` | 実機のフレームの後の鍵が最後に書いた鍵と違えば 1 回 `write` | セーブを書く（`onJump = Skip`） |
