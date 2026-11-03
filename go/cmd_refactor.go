@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -38,16 +39,17 @@ func cmdRefactor(out, errOut *strings.Builder, rest []string, asJSON bool) int {
 }
 
 // useEngineFlixlint は、ゲームが flixlint を名指ししていない時（submodule・--flixlint・FGE_FLIXLINT・FLIXLINT_BIN・
-// refactor.local.json・PATH のどれも無い）に、make lint-flixlint と同じ hooks.json の版の flixlint を使わせる。
+// refactor.local.json の flixlint・PATH のどれも無い）に、make lint-flixlint と同じ hooks.json の版の flixlint を使わせる。
 // WhyNot: テンプレートから作ったゲームは flixlint を submodule で持たないので、これが無いと索引を作れず止まる。
 func useEngineFlixlint(root string, rest []string) {
 	if _, _, given := declValueFlag(rest, "--flixlint"); given || os.Getenv("FGE_FLIXLINT") != "" || os.Getenv("FLIXLINT_BIN") != "" {
 		return
 	}
-	for _, p := range []string{filepath.Join(root, "flixlint", "bin", "flixlint"), filepath.Join(root, "bin", "lint-rules", "refactor.local.json")} {
-		if _, err := os.Stat(p); err == nil {
-			return
-		}
+	if _, err := os.Stat(filepath.Join(root, "flixlint", "bin", "flixlint")); err == nil {
+		return
+	}
+	if localNamesFlixlint(root) {
+		return
 	}
 	if refactor.LookPath("flixlint") != "" {
 		return
@@ -58,6 +60,24 @@ func useEngineFlixlint(root string, rest []string) {
 			os.Setenv("FLIXLINT_SHIM", shim)
 		}
 	}
+}
+
+// localNamesFlixlint は bin/lint-rules/refactor.local.json が flixlint の欄を書いているか。
+// WhyNot: ファイルが在るだけで見ない。verify だけを書いた設定でも、既定の flixlint の探し方が止まっていた。
+func localNamesFlixlint(root string) bool {
+	b, err := os.ReadFile(filepath.Join(root, "bin", "lint-rules", "refactor.local.json"))
+	if err != nil {
+		return false
+	}
+	var c struct {
+		Flixlint string `json:"flixlint"`
+	}
+	// WhyNot: 読めない JSON を「名指し無し」と取らない。flixlint の設定も同じファイルを読んで止まるので、別の flixlint を
+	// 差し込むと止まった理由が見えなくなる。
+	if json.Unmarshal(b, &c) != nil {
+		return true
+	}
+	return strings.TrimSpace(c.Flixlint) != ""
 }
 
 // useEngineJava は、PATH の java が動かない時に engine の devbox の jdk を PATH の先頭へ足す（checkd の javaCmd と同じ順）。

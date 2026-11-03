@@ -97,7 +97,7 @@ func (r *runner) stagedFiles() ([]string, error) {
 	// WhyNot: len(args) > 1 を見るのは、「--files だけ」で中身が空のときに
 	// 「対象なし」と取らず、ステージを読みに行かせるため。
 	if len(args) > 1 && args[0] == "--files" {
-		return args[1:], nil
+		return r.splitFiles(args[1:]), nil
 	}
 	cmd := exec.Command("git", "-C", r.root, "diff", "--cached",
 		"--name-only", "--diff-filter=ACMR", "-z")
@@ -112,6 +112,39 @@ func (r *runner) stagedFiles() ([]string, error) {
 		}
 	}
 	return paths, nil
+}
+
+// splitFiles は --files の後ろを 1 つずつのパスにする（a b・a,b・"a b" のどれでも）。
+// 1 つの引数は、そのままでは在らず、空白とコンマで分けた物が全部在る時だけ分ける。
+// WhyNot: いつも分けないのは、空白や $( を含む名前のファイルもそのまま口へ届けるため（ステージの物は在る）。
+func (r *runner) splitFiles(args []string) []string {
+	var out []string
+	for _, a := range args {
+		parts := strings.FieldsFunc(a, func(c rune) bool { return c == ',' || c == ' ' || c == '\t' || c == '\n' })
+		if len(parts) > 1 && !exists(a) && allExist(parts) {
+			out = append(out, parts...)
+			continue
+		}
+		if len(parts) > 1 && !exists(a) && r.opts.Stderr != nil {
+			fmt.Fprintf(r.opts.Stderr, "[pre-commit] --files の %q は在るパスでも、分けて全部在るパスでもない（1 つの名前として渡す）\n", a)
+		}
+		out = append(out, strings.TrimSuffix(a, ","))
+	}
+	return out
+}
+
+func exists(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
+}
+
+func allExist(ps []string) bool {
+	for _, p := range ps {
+		if !exists(p) {
+			return false
+		}
+	}
+	return true
 }
 
 func (r *runner) gate(staged []string) (int, error) {

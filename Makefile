@@ -129,6 +129,7 @@ help:
 	@echo "  make sync-layers          render_gl / engine_world / engine_tools の検査用の作業場 (.layers/) を張り直す"
 	@echo "  make sync-root-src        コミュニティビルド用にルート src/ の symlink 集を再生成"
 	@echo "  make clean-locks          flix check 中断で残った Maven cache の *.lock を削除"
+	@echo "  make check                engine の全パッケージ (ルートの src/) を型検査 (bin/fge refactor の --apply の後の確かめもこれ)"
 	@echo "  make checkd-stop          flix check 常駐 (bin/fge checkd) を全部止める (詳細は docs/checkd.md)"
 	@echo "  make clean-game-builds    templates/*/build/ と bench/*/build/ を全削除 (IDE の scene.json glob 高速化用)"
 	@echo "  make sync-engine-full     engine_full だけ src 集約 & build-pkg & 配布 (templates / bench へ)"
@@ -146,6 +147,18 @@ help:
 LOCK_DIRS := $(ENGINE_DIR) $(wildcard $(LAYER_DIRS)) $(ENGINE_FULL_DIR) $(wildcard templates/*) $(wildcard bench/*)
 clean-locks:
 	@find $(LOCK_DIRS) -type d -name build -prune -o \( -path "*/lib/cache/*" -name "*.lock" -print -exec rm -f {} + \) 2>/dev/null | awk 'END { print NR " lock(s) removed" }'
+
+# engine の全パッケージ (ルートの src/ の symlink 集) を 1 つの木として型検査する。bin/fge refactor の --apply の後の
+# 確かめ (refactor.json の verify) もこれを流す。CHECKD=0 で素の flix check・QUIET=0 で全文。
+# WhyNot: 足りない symlink を先に張るのは、パッケージに足したファイルが検査から漏れて緑に見えるため。
+.PHONY: check
+check: sync-root-src-missing
+	@mkdir -p .test-logs
+	@if [ "$(CHECKD)" != "0" ]; then bin/fge checkd . > .test-logs/check.log 2>&1; code=$$?; \
+	else "$(FLIX)" check > .test-logs/check.log 2>&1; code=$$?; fi; \
+	if [ "$(QUIET)" = "0" ]; then cat .test-logs/check.log; \
+	else bin/fge explain-error --status $$code --log .test-logs/check.log < .test-logs/check.log; fi; \
+	exit $$code
 
 # flix check の常駐 (bin/fge checkd) を全部止める。挙動が怪しい時・メモリを空けたい時の逃げ道。
 checkd-stop:
@@ -827,18 +840,27 @@ migration-notes:
 ROOT_SRC_PKGS := $(ENGINE_DIR) $(RENDER_GL_DIR) $(ENGINE_WORLD_DIR) $(ENGINE_TOOLS_DIR)
 
 sync-root-src:
-	@for pkg in $(ROOT_SRC_PKGS); do rm -rf "src/$$pkg"; done; \
-	for pkg in $(ROOT_SRC_PKGS); do \
+	@for pkg in $(ROOT_SRC_PKGS); do rm -rf "src/$$pkg"; done
+	@$(MAKE) --no-print-directory sync-root-src-missing
+	@find src -type l | awk 'END { print "[sync-root-src] " NR " symlink(s)" }'
+
+# 足りない symlink だけを張り、先の無い symlink だけを消す (今ある物は触らない)。
+# WhyNot: make check から sync-root-src を流さない。先に src/<pkg> を丸ごと消すので、並べて走る別の確かめが
+# 読んでいる最中のソースが消え、偽の赤で正しい書き換えが戻される。
+.PHONY: sync-root-src-missing
+sync-root-src-missing:
+	@for pkg in $(ROOT_SRC_PKGS); do \
 		(cd "$$pkg/src" && find . -name '*.flix') | sed 's|^\./||' | while read -r f; do \
 			d=$$(dirname "$$f"); \
 			if [ "$$d" = "." ]; then dir="src/$$pkg"; else dir="src/$$pkg/$$d"; fi; \
+			[ -L "$$dir/$$(basename "$$f")" ] && continue; \
 			mkdir -p "$$dir"; \
 			depth=$$(printf '%s' "$$dir" | tr -cd '/' | wc -c | tr -d ' '); \
 			up=$$(printf '../%.0s' $$(seq 0 "$$depth")); \
 			ln -sfn "$$up$$pkg/src/$$f" "$$dir/$$(basename "$$f")"; \
 		done; \
 	done; \
-	find src -type l | awk 'END { print "[sync-root-src] " NR " symlink(s)" }'
+	find src -type l ! -exec test -e {} \; -exec rm -f {} +
 
 # engine の上に載る 3 層 (render_gl / engine_world / engine_tools) の検査用の作業場を張る。
 # .layers/<層>/ に flix.toml (層のものへの symlink) と、src/engine/ (engine のソース)・
