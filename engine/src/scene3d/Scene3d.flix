@@ -409,7 +409,7 @@ pub mod Scene3d {
     pub type alias Sky3d = SkyData
 
     /// 上下のグラデーションの空（曲がり 1）。目から見た向き d の色は、d.y ≥ 0 なら horizon と zenith の間を d.y^curve で、
-    /// d.y < 0 なら horizon と ground の間を (−d.y)^curve でつなぐ（skyColorOf）。かすみは掛けない
+    /// d.y < 0 なら horizon と ground の間を (−d.y)^curve でつなぐ（LightModel3d.skyModel）。かすみは掛けない
     /// （地平の色をかすみの色にそろえると、遠くの物と空の継ぎ目が消える）。
     pub def gradientSky(zenith: Color, horizon: Color, ground: Color): Sky3d =
         SkyData.SkyData({ zenith = zenith, horizon = horizon, ground = ground, curve = 1.0 })
@@ -428,15 +428,6 @@ pub mod Scene3d {
     pub def skyCurveOf(s: Sky3d): Float64 =
         let c = skyFieldsOf(s)#curve;
         if (Float64.isFinite(c) and c > 0.0) c else 1.0
-
-    /// 目から見た向き dir（長さ 1）の空の色（gradientSky の式。GL の Render3d も同じ式を書く）。
-    pub def skyColorOf(s: Sky3d, dir: Vec3.Vec3): Color =
-        let r = skyFieldsOf(s);
-        let curve = skyCurveOf(s);
-        let (toward, t) = if (dir#y >= 0.0) (r#zenith, Float64.pow(base = dir#y, curve)) else (r#ground, Float64.pow(base = 0.0 - dir#y, curve));
-        let k = Float64.min(1.0, t);
-        { r = r#horizon#r + (toward#r - r#horizon#r) * k, g = r#horizon#g + (toward#g - r#horizon#g) * k,
-          b = r#horizon#b + (toward#b - r#horizon#b) * k }
 
     /// 画素の向きを組む材料（場面のカメラから 1 回だけ作る）。forward = 見ている向き・right = 画面の右の向き × tan(fovY / 2) × 縦横の比・
     /// up = 画面の上の向き × tan(fovY / 2)。NDC の点 (x, y) の向きは skyDirectionOf（Camera3d.screenPointToRay と同じ式）。

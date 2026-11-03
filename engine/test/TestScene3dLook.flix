@@ -5,9 +5,6 @@
 def threeColorSky(): Scene3d.Sky3d =
     Scene3d.gradientSky(Color.rgb(0.0, 0.0, 1.0), Color.rgb(1.0, 1.0, 1.0), Color.rgb(0.5, 0.25, 0.0))
 
-/// 色を (r, g, b) にする（比べやすく）。
-def rgbOf(c: Color): (Float64, Float64, Float64) = (c#r, c#g, c#b)
-
 /// 原点の 1 辺 2 の四角を at に置いた物（材質は spec だけ）。
 def quadAt(at: Vec3.Vec3, name: String): Scene3d.Instance3d =
     let quad = { points = Vec3.v3(-1.0, -1.0, 0.0) :: Vec3.v3(-1.0, 1.0, 0.0) :: Vec3.v3(1.0, 1.0, 0.0) :: Vec3.v3(1.0, -1.0, 0.0) :: Nil,
@@ -24,27 +21,6 @@ def nameOf(i: Scene3d.Instance3d): String =
 // ════════════════════════════════════════════════════════════════════
 // 空
 // ════════════════════════════════════════════════════════════════════
-
-/// 真上を向くと zenith の色。
-@Test
-def testSkyStraightUpIsZenith(): Unit \ Assert =
-    Assert.assertEq(expected = (0.0, 0.0, 1.0), rgbOf(Scene3d.skyColorOf(threeColorSky(), Vec3.v3(0.0, 1.0, 0.0))))
-
-/// 真横を向くと horizon の色。
-@Test
-def testSkyHorizontalIsHorizon(): Unit \ Assert =
-    Assert.assertEq(expected = (1.0, 1.0, 1.0), rgbOf(Scene3d.skyColorOf(threeColorSky(), Vec3.v3(0.0, 0.0, 1.0))))
-
-/// 真下を向くと ground の色。
-@Test
-def testSkyStraightDownIsGround(): Unit \ Assert =
-    Assert.assertEq(expected = (0.5, 0.25, 0.0), rgbOf(Scene3d.skyColorOf(threeColorSky(), Vec3.v3(0.0, -1.0, 0.0))))
-
-/// 曲がり 2 で上へ 30°（d.y = 0.5）は、地平と天頂の間を 0.5² = 0.25 だけ寄せた色（白から青へ 1/4）。
-@Test
-def testSkyCurveTwoAtThirtyDegrees(): Unit \ Assert =
-    let sky = Scene3d.withSkyCurve(2.0, threeColorSky());
-    Assert.assertEq(expected = (0.75, 0.75, 1.0), rgbOf(Scene3d.skyColorOf(sky, Vec3.v3(0.0, 0.5, Num.sqrt(0.75)))))
 
 /// 0 以下・NaN の曲がりは 1 として描く。
 @Test

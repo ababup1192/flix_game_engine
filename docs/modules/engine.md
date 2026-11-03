@@ -74,6 +74,7 @@
 | 3D の部屋や物を 1 つの描き物（Render.Item.Scene3d）にまとめる・灯り・霧・影 | Scene3d（shadowMatrix の約束は Scene3d.flix の doc・3D の口の案内は docs/scene3d.md） |
 | 懐中電灯のような縁のぼけたスポットライトを置く（内側の角） | Scene3d.spotLight(p, t, fov) に innerFovY = Some(..)（直し方は Scene3d.spotConeOf・docs/scene3d.md） |
 | 3D の点光源が 8 本を超える（遠い灯りまで全部置きたい） | Scene3d の pointLights に全部入れる（描き手が Scene3d.pickLights で目に近い 8 本を選ぶ。ゲームで選び直さない） |
+| 3D の光・かすみ・空の式を読む・直す（GL と CPU の描き手が同じ木から出す） | LightModel3d（式の木と lightingModel・fogModel・skyModel。コード生成は LightModel3d.Codegen。直したら make gen-light3d で engine_tools の SoftRaster3dLight を作り直す。ゲームは使わない） |
 | 3D の形に骨を入れる（関節の並び・頂点ごとの重み） | Skin3d |
 | 骨の動き（キーフレームの並び）を持つ・ある時刻の姿勢を取り出す | AnimationClip3d |
 | 骨ごとの姿勢を混ぜる・Scene3d へ渡す | Pose3d（Scene3d.withPose） |

@@ -117,21 +117,30 @@ mod SoftRaster3d.TestLightmap {
     def testSrgbIntensityOneKeepsReadValue(): Unit \ Assert =
         Assert.assertTrue(List.range(0, 256) |> List.forAll(k -> {
             let s = Int32.toFloat64(k) / 255.0;
-            Float64.abs(SoftRaster3d.bakedValue(true, 1.0, s) - s) < 1.0e-9
+            Float64.abs(bakedValue(true, 1.0, s) - s) < 1.0e-9
         }))
 
     // Srgb・s = 0.5・intensity 2 の baked は linearToSrgb(0.2140 × 2) ≒ 0.686。
     @Test
     def testSrgbHalfWithIntensityTwoIsAbout0686(): Unit \ Assert =
-        Assert.assertTrue(Float64.abs(SoftRaster3d.bakedValue(true, 2.0, 0.5) - 0.686) < 0.001)
+        Assert.assertTrue(Float64.abs(bakedValue(true, 2.0, 0.5) - 0.686) < 0.001)
+
+    /// 光の無い場面で lightmap から読んだ値 s が光の足し算に入る値（toon なし）。
+    def bakedValue(srgb: Bool, intensity: Float64, s: Float64): Float64 =
+        let (r, _, _) = SoftRaster3dLight.lightmapLightAt(0, Vector.empty(), Vector.empty(), None, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+                                                    s, s, s, if (srgb) 1.0 else 0.0, intensity);
+        r
 
     // toonSteps 2 で、ベイクした光 0.2 と点光源の分 0.1 × (1 − 1² / 4²)² ≒ 0.088 は、どちらも 1 つなら 0.25 未満で 0 に丸まるが、
     // 足してから丸めるので 0.288 → 0.5 になる（点光源は点の 1 手前・法線は光の向き）。
     @Test
     def testToonRoundsBakedPlusPointLightTogether(): Unit \ Assert =
         let env = { toonSteps = 2 | Scene3d.scene(camera(), { x = 8.0, y = 8.0 })#environment };
-        let lights = SoftRaster3d.compileLights(env, { position = Vec3.v3(0.0, 0.0, 1.0), color = white(), intensity = 0.1, range = 4.0 } :: Nil, Nil, None);
-        Assert.assertEq(expected = (0.5, 0.5, 0.5), SoftRaster3d.evalLightBaked(lights, (0.2, 0.2, 0.2), 0.0, 0.0, 2.0, 0.0, 0.0, -1.0))
+        let points = LightModel3d.packPointLights({ position = Vec3.v3(0.0, 0.0, 1.0), color = white(), intensity = 0.1, range = 4.0 } :: Nil);
+        // Srgb・intensity 1 なら baked は読んだ値のまま（上のテスト）なので、0.2 を渡すと baked が 0.2 になる。
+        Assert.assertEq(expected = (0.5, 0.5, 0.5),
+                        SoftRaster3dLight.lightmapLightAt(env#toonSteps, points, Vector.empty(), None, 0.0, 0.0, 2.0, 0.0, 0.0, -1.0,
+                                                    0.2, 0.2, 0.2, 1.0, 1.0))
 
     // ── 段（mip）──
     // 256 × 256 の lightmap の左の 20 列だけが明るい（200・ほかは 40）。画面いっぱい（8 px）の板では 1 px が 32 texel で、
@@ -148,7 +157,7 @@ mod SoftRaster3d.TestLightmap {
         let t = okOf(Texture3d.fromArgb(256, 256, argb));
         let chain = List.toVector(Mip.build({ width = 256, height = 256, pixels = argb }));
         let (r, g, b) = ShaderEval.sampleMipRgb(chain, { linear = true, repeat = false }, lod, 0.0625, 0.5625);
-        let baked = (x: Float64) -> SoftRaster3d.bakedValue(true, 1.0, x);
+        let baked = (x: Float64) -> bakedValue(true, 1.0, x);
         let plate = litPlate() |> Scene3d.withLightmap({ maxLevels = maxLevels | Scene3d.lightmap(Texture3d.name(t)) });
         let img = render(sceneOf(t :: Nil, plate :: Nil));
         (pixel(img, 0, 4), channels(SoftRaster.argbOfRgba(baked(r), baked(g), baked(b), 1.0)))

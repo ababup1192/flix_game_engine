@@ -1,0 +1,1 @@
+../../../engine_tools/src/gen/SoftRaster3dLight.flix

@@ -657,6 +657,44 @@
 - アトラスにベイクする全コードポイントを 1 行の文字列として返す。
   `pub def text(): String`
 
+## LightModel3d — `engine/src/scene3d/LightModel3d.flix`
+- スカラーの値の式。
+  `pub enum ScalarExpr with Eq { case Num(Float64) case In(ScalarInput) case LightField(ScalarLightField) case Add(ScalarExpr, ScalarExpr) case Sub(ScalarExpr, ScalarExpr) case Mul(ScalarExpr, ScalarExpr) case Div(ScalarExpr, ScalarExpr) case Max(ScalarExpr, ScalarExpr) case Min(ScalarExpr, ScalarExpr) case Pow(ScalarExpr, ScalarExpr) case Sqrt(ScalarExpr) case Clamp01(ScalarExpr) case Smoothstep(ScalarExpr, ScalarExpr, ScalarExpr) case Dot(Vec3Expr, Vec3Expr) case Length(Vec3Expr) case X(Vec3Expr) case Y(Vec3Expr) case Z(Vec3Expr) case Select(Cond, ScalarExpr, ScalarExpr) case Let(String, ScalarExpr, ScalarExpr) case LetVec3(String, Vec3Expr, ScalarExpr) case Ref(String) }`
+- vec3 の値の式（色・位置・向き）。成分ごとの計算は x・y・z を同じ式で回す。
+  `pub enum Vec3Expr with Eq { case Make(ScalarExpr, ScalarExpr, ScalarExpr) case In(Vec3Input) case LightField(Vec3LightField) case Add(Vec3Expr, Vec3Expr) case Sub(Vec3Expr, Vec3Expr) case Mul(Vec3Expr, Vec3Expr) case Max(Vec3Expr, Vec3Expr) case Min(Vec3Expr, Vec3Expr) case Scale(Vec3Expr, ScalarExpr) case Mix(Vec3Expr, Vec3Expr, ScalarExpr) case SumPoints(Vec3Expr) case SumSpots(Vec3Expr) case Toon(Vec3Expr) case SrgbToLinear(Vec3Expr) case LinearToSrgb(Vec3Expr) case Select(Cond, Vec3Expr, Vec3Expr) case Let(String, Vec3Expr, Vec3Expr) case LetScalar(String, ScalarExpr, Vec3Expr) case Ref(String) }`
+- Select の条件。
+  `pub enum Cond with Eq { case Greater(ScalarExpr, ScalarExpr) case AtLeast(ScalarExpr, ScalarExpr) case And(Cond, Cond) }`
+- 画素ごと・場面ごとのスカラーの入力。
+  `pub enum ScalarInput with Eq, Order { case Hemisphere case ShadowLit case FogNear case FogFar case SkyCurve case LightmapSrgb case LightmapIntensity }`
+- 画素ごと・場面ごとの vec3 の入力。
+  `pub enum Vec3Input with Eq, Order { case Position case Normal case Eye case Ambient case LightmapColor case Color case FogColor case SkyDirection case SkyZenith case SkyHorizon case SkyGround }`
+- 光のループの中で読めるスカラーの欄。
+  `pub enum ScalarLightField with Eq { case RangeSquared case OuterCos case InnerCos }`
+- 光のループの中で読める vec3 の欄。
+  `pub enum Vec3LightField with Eq { case Position case Color case Direction }`
+- lightmap の無い面に当たる光（ファイルの頭の light）。
+  `pub def lightingModel(): Vec3Expr`
+- lightmap のある面に当たる光（ambient と hemisphere の代わりにベイクした光を足す）。
+  `pub def lightmapLightingModel(): Vec3Expr`
+- 色 Color に距離のかすみを掛けた色。
+  `pub def fogModel(): Vec3Expr`
+- 向き SkyDirection の空の色。
+  `pub def skyModel(): Vec3Expr`
+- 点光源 1 本の欄の数（位置 3・color × intensity 3・range²）。
+  `pub def pointStride(): Int32`
+- スポット 1 本の欄の数（位置 3・向き 3・外の cos・内の cos・color × intensity 3・range²）。
+  `pub def spotStride(): Int32`
+- `pub def packPointLights(lights: List[Scene3d.PointLight]): Vector[Float64]`
+- スポットを 1 本の Vector に並べた物（1 本 = spotStride() 個）。
+  `pub def packSpotLights(lights: List[Scene3d.SpotLight]): Vector[Float64]`
+
+## LightModel3d.Codegen — `engine/src/scene3d/LightModel3d/Codegen.flix`
+- shadowFunction は (shadow, スポットの並びの欄の位置（スポットの番号 × LightModel3d.spotStride()）, px, py, pz) -> Float64 の関数の名前。
+  `pub type alias CpuHooks = { shadowType = String, shadowFunction = String }`
+- `pub def generateFlix(hooks: CpuHooks): String`
+- `pub def generateFlixCases(hooks: CpuHooks): String`
+- `pub def toGlsl(name: String, perPixel: List[Vec3Input], e: Vec3Expr): String`
+
 ## LoadProgress — `engine/src/LoadProgress.flix`
 - 起動の読み込みの進み具合（区切りごとに 1 回）。
   `pub eff LoadProgress`
@@ -1184,8 +1222,6 @@
   `pub def skyFieldsOf(s: Sky3d): SkyFields`
 - 描く時に使う曲がり（0 以下・NaN・無限は 1）。GL と CPU が同じ値を使う。
   `pub def skyCurveOf(s: Sky3d): Float64`
-- 目から見た向き dir（長さ 1）の空の色（gradientSky の式。GL の Render3d も同じ式を書く）。
-  `pub def skyColorOf(s: Sky3d, dir: Vec3.Vec3): Color`
 - 画素の向きを組む材料（場面のカメラから 1 回だけ作る）。forward = 見ている向き・right = 画面の右の向き × tan(fovY / 2) × 縦横の比・
   `pub type alias SkyBasis = { forward = Vec3.Vec3, right = Vec3.Vec3, up = Vec3.Vec3 }`
 - 場面 scene のカメラと縦横の比（aspectOf）で、空の画素の向きを組む材料を作る。GL と CPU が同じ物を使う。

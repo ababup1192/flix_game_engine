@@ -118,6 +118,7 @@ help:
 	@echo "  make scene3d-bench        同じ部屋を実機の窓で毎コマ描き、1 コマの p50 / p95 を出す (窓が開く)"
 	@echo "  make gl-parity-cpu        gl-parity の全部の場面を CPU で温めてから描き、1 枚の時間の中央値を出す (窓は開かない)"
 	@echo "  make scene3d-cpu          同じ部屋を CPU で温めてから何回か描き、1 枚の時間の中央値を出す (窓は開かない)"
+	@echo "  make gen-light3d          光の式の木 (LightModel3d) から CPU の光の関数 engine_tools/src/gen/SoftRaster3dLight.flix と確かめ用の test/gen/SoftRaster3dLightCases.flix を作り直す"
 	@echo "  make gl-capture OUT=<dir> テンプレの場面を隠しウィンドウ・dt 固定で頭の 6 コマ撮り、SHA-256 を控える"
 	@echo "  make gl-capture-check [BASE=off]  同じ場面を 2 回撮って 2 コマ目以降までバイトで比べ、基準とも比べる (違えば exit 1)"
 	@echo "  make check-external       外のゲームの写しを今の engine で型検査し、基準 (bench/baseline/) から増えたエラーだけ出す"
@@ -346,6 +347,20 @@ scene3d-bench:
 
 scene3d-cpu:
 	@$(MAKE) -C bench/scene3d cpu-time
+
+# 光の式の木 (engine の LightModel3d) から CPU の描き手が回す関数 (engine_tools/src/gen/SoftRaster3dLight.flix) を作り直す。
+# 木を直したらこれを流す。入っている物と木が食い違うと engine_tools の TestSoftRaster3dLight が落ちる。
+# WhyNot: engine_tools の作業場で流さない — 木を直して生成する関数の引数が変わると、入っている古い生成物と呼ぶ側
+# (SoftRaster3d) が食い違い、engine_tools 全体は組めない。engine と書き出す口 (SoftRaster3dLightGen) だけを束ねて流す。
+.PHONY: gen-light3d
+gen-light3d:
+	@dir="$(LAYER_ROOT)/light3d-gen"; rm -rf "$$dir/src"; mkdir -p "$$dir/src"; \
+	ln -sfn "$(CURDIR)/engine_tools/flix.toml" "$$dir/flix.toml"; \
+	(cd "$(ENGINE_DIR)/src" && find . -name '*.flix') | sed 's|^\./||' | while read -r f; do \
+		mkdir -p "$$(dirname "$$dir/src/engine/$$f")"; ln -sfn "$(CURDIR)/$(ENGINE_DIR)/src/$$f" "$$dir/src/engine/$$f"; \
+	done; \
+	ln -sfn "$(CURDIR)/engine_tools/test/SoftRaster3dLightGen.flix" "$$dir/src/SoftRaster3dLightGen.flix"
+	cd "$(LAYER_ROOT)/light3d-gen" && "$(FLIX)" run --entrypoint SoftRaster3dLightGen.write
 
 # 外のゲームの写し (bin/check-external.sh の既定の顔ぶれ) に今の engine_full を当てて flix check し、基準
 # (BASELINE の external.tsv) で通っていたのに止まった物と、基準に無かったエラーだけを出す。ゲームのフォルダは汚さない。

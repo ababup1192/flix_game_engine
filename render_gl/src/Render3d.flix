@@ -2,14 +2,10 @@
 // 2D の並び（RenderFrame.emitMerged）からは z の 1 点で呼ばれ、その中だけ深度で前後を決めて、GL の状態を元へ戻して返す。
 // 座標の約束（左手系・表の面は時計回り）は engine の scene3d/Scene3d.flix の頭。
 //
-// 光の式は CPU の描き手（engine_tools の SoftRaster3d）と同じ物にそろえる:
-//   light = ambient + hemisphere × max(0, n.y) + Σ 点光源 color × intensity × att × facing
-//           + Σ スポット color × intensity × att × facing × cone × shadow
-//   att = (max(0, 1 − d² / range²))²・facing = clamp(n·l, 0, 1)
-//   cone = smoothstep(outerCos, innerCos, dot(−l, スポットの向き))（2 つの cos は Scene3d.spotConeOf）
-//   shadow = 影を落とすスポット 1 本だけ 1 − strength × (1 − 照らされている割合)、他は 1（約束は Scene3d.shadowMatrix の doc）
-//   toonSteps > 0 なら light = floor(light × steps + 0.5) / steps（色の成分ごと）
-//   色 = 頂点の色 × tint × light。fog は目からの距離で near〜far の間を fog の色へ近づける。
+// 光・かすみ・空の式の元は engine の LightModel3d の木（CPU の描き手はその木から生成した関数を回す）。下の GLSL はまだ手で書いた写しで、
+// 木と細部が違う: 点から光への向きは inversesqrt(max(d², 1e−12))（木は |d| < 1e−12 で 0・ほかは 1 / |d|）・減衰は range × range で割る
+// （木は max(range², 1e−12)）・影の割合はいつも掛ける（木は届く光が 0 なら引かない）。
+//   色 = 頂点の色 × tint × light。
 //   材質のある物は 色 = fog(albedo × tint × light) + emission（頂点の色は掛けない）。cutout なら α < 0.5 を捨てる。
 //   材質の Tex は unit 0〜5（ShaderDoc.materialTexReads の並び・上限 Scene3d.maxMaterialTextures()）に貼り、材質を描いた後に
 //   その unit の sampler を外して unit 0 へ戻す（ビルボードと 2D の面が unit 0 で読む）。法線マップは unit 6・影の地図は unit 7。
@@ -20,7 +16,7 @@
 //   描く順は 不透明（頂点の色 → 材質をプログラムごと）→ ビルボード → 半透明（Scene3d.blendOrderOf の順・深度は読むが書かない・
 //   glBlendFuncSeparate(SRC_ALPHA, ONE_MINUS_SRC_ALPHA, ONE, ONE_MINUS_SRC_ALPHA)・出す α は材質の albedo.a）。
 //   両面の材質は GL_CULL_FACE をその物だけ切り、裏の面（!gl_FrontFacing）は光の計算の法線を裏返す。
-//   空は深度を消した後、深度を書かずに場面の矩形いっぱいの四角で塗る（向きは Scene3d.skyBasisOf・式は Scene3d.skyColorOf）。
+//   空は深度を消した後、深度を書かずに場面の矩形いっぱいの四角で塗る（向きは Scene3d.skyBasisOf・式は LightModel3d.skyModel）。
 mod Render3d {
     import java.lang.System
     import java.lang.{Float => JFloat}
@@ -2152,7 +2148,7 @@ mod Render3d {
         "    fragColor = vec4(c, 1.0);\n" +
         "}\n"
 
-    /// 空の frag（式は Scene3d.skyColorOf・向きは Scene3d.skyDirectionOf。NDC は画素の真ん中の gl_FragCoord と viewport から）。
+    /// 空の frag（式は LightModel3d.skyModel・向きは Scene3d.skyDirectionOf。NDC は画素の真ん中の gl_FragCoord と viewport から）。
     def skyFragmentSource(): String =
         "#version 330 core\n" +
         "in vec2 vUv;\n" +

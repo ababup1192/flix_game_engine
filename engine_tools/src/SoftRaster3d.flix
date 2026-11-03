@@ -2,18 +2,9 @@
 // GL を使わない描き出し（スナップショット・テスト）で、Render3d（GL）と同じ場面を同じ光の式で描く。
 // GL と画素は一致させない（Shader 面と同じ扱い）。比べは CPU の絵どうしで行う。
 //
-// 光の式（GL の Render3d も同じ式を書く。式を変える時は両方を直す）:
+// 光・かすみ・空の式は LightModel3d の木（光の量 light・fog・空の色）。CPU はその木から生成した SoftRaster3dLight を画素ごとに呼ぶ。
+// ここに書くのは木の外（入力の作り方と、光を色に掛ける所）:
 //
-//   light  = ambient + hemisphere × max(0, n.y)
-//          + Σ 点光源   color × intensity × att × facing
-//          + Σ スポット color × intensity × att × facing × cone
-//   att    = (max(0, 1 − d² / range²))²          d = 光と点の距離
-//   facing = clamp(wrap + n·l, 0, 1)              l = 点から光への向き（長さ 1）・wrap = 0.0
-//   cone   = smoothstep(outerCos, innerCos, dot(−l, spotDir))
-//            outerCos = cos(fovY / 2)・innerCos = cos(innerFovY / 2)（innerFovY が None なら fovY × spotInnerRatio()。
-//            直し方と、内と外が同じ時に innerCos へ 1e-6 を足す所は Scene3d.spotConeOf に一本化）
-//            spotDir = normalize(target − position)・smoothstep(a, b, x) = t² (3 − 2t)、t = clamp((x − a) / (b − a), 0, 1)
-//   toonSteps > 0 なら light の各成分を floor(light × steps + 0.5) / steps に丸める
 //   色     = 頂点の色 × tint × light
 //   材質のある置いた物: 色 = albedo × tint × light（頂点の色は掛けない。材質の Spec が VertexColor で読む）・fog の後に emission を足す
 //            albedo・α・emission = ShaderEval.evalMaterial3(world の点・法線・uv・頂点の色, 時刻)。cutout なら α < materialCutoff() の画素を捨てる（深度も書かない）
@@ -23,13 +14,11 @@
 //            1 つの材質が読む絵の組は Scene3d.maxMaterialTextures() まで（後ろの組は 0。GL と同じ）。
 //            法線マップ（uv つきの形だけ・材質の wrap・Linear）: T = normalize(T − N (N·T))・B = cross(N, T) × w・c = 絵の rgb・
 //            m = ((c.x·2 − 1)·s, (c.y·2 − 1)·s, c.z·2 − 1)・n' = normalize(T m.x + B m.y + N m.z)。光の計算は n'、Spec の Normal は当てる前の N。
-//            lightmap（Scene3d.lightmapOf が Some の物だけ）: light = toon(baked + Σ 点光源 + Σ スポット)（ambient と hemisphere は足さない）
-//              baked = linearToSrgb(max(toLinear(s) × intensity, 0))・toLinear = Srgb なら srgbToLinear、Linear ならそのまま（Texture3d の式）
+//            lightmap（Scene3d.lightmapOf が Some の物だけ）: light = LightModel3d.lightmapLightingModel
 //              s = lightmap の絵を 2 本目の uv で段つきの Linear・Clamp で読んだ rgb（段は min(段の数, その lightmap の maxLevels)。
 //              lod は 2 本目の uv の右隣と下隣との差から Mip.lodOf）。名前が場面の textures に無い絵は 0 で読む。
 //              法線マップの n' は点光源とスポットにだけ効く。
-//   fog    = clamp((|点 − 目| − near) / max(far − near, 1e-6), 0, 1) の割合で fog の色へ寄せる
-//   range は 1e-6 未満にしない（0 割りを避ける）
+//   fog    = LightModel3d.fogModel（fog が None なら掛けない）
 //   Output.Depth の灰色 = clamp((|点 − 目| − near) / max(range, 1e-6), 0, 1)（目からの直線の距離。view の z ではない）
 //
 // 半透明（材質の blend）: 不透明の物とビルボードで画素ごとの勝者と深度を決めて色を塗った後（1 段目）、2 段目で半透明の物を
@@ -40,7 +29,7 @@
 //   cutout も真なら α < materialCutoff() の画素は捨てる。半透明の三角形の縁の画素は、2 枚が分け合う縁を片方だけが持つ（左と上の縁）。
 //   半透明の物は影を落とさず、Output.Depth には描かない。
 // 両面（材質の doubleSided）: その物の裏の三角形も捨てない。裏の三角形（画面で反時計回り）は光の計算の法線（法線マップの前の n）を裏返す。
-// 空（Scene3d.Scene3dCmd の sky が Some）: 何も描かれない画素を、画素の真ん中の NDC の向き（Scene3d.skyDirectionOf）の Scene3d.skyColorOf の色（α 1）で塗る（background は使わない）。
+// 空（Scene3d.Scene3dCmd の sky が Some）: 何も描かれない画素を、画素の真ん中の NDC の向き（Scene3d.skyDirectionOf）の LightModel3d.skyModel の色（α 1）で塗る（background は使わない）。
 //   Output.Depth では白（一番奥）。かすみは掛けない。
 // ビルボード: 絵の α が billboardCutoff() 未満の画素は捨てる（深度も書かない）。lit が真なら法線をカメラへ向けて同じ光と fog を当てる。
 // 光は Scene3d.pickLights（目に近い順に点光源 8・スポット 2）で選んだ物だけを使う。
@@ -62,9 +51,6 @@ pub mod SoftRaster3d {
     import java.lang.System
     import java.util.function.IntConsumer
     import java.util.stream.IntStream
-
-    /// 光が面を回り込む量（facing の wrap）。Environment3d に欄が無いので固定。
-    pub def wrap(): Float64 = 0.0
 
     /// ビルボードの絵の α がこれ未満の画素は捨てる。
     pub def billboardCutoff(): Float64 = 0.5
@@ -89,107 +75,40 @@ pub mod SoftRaster3d {
         let (r, g, b) = applyFog(compileFog(env#fog), eye#x, eye#y, eye#z, position#x, position#y, position#z, c#r, c#g, c#b);
         { r = r, g = g, b = b }
 
-    // 点光源 1 本 = 7 個（位置 3・color × intensity 3・range²）、スポット 1 本 = 12 個（位置 3・向き 3・
-    // 外の cos・内の cos・color × intensity 3・range²）を 1 本の Vector に並べた物。
     // WhyNot: 光をレコードの列のまま画素ごとに読まない — レコードの欄は名前で引くので、画素 × 光の数だけ重くなる。
+    //   並べ方は LightModel3d.packPointLights・packSpotLights（生成した SoftRaster3dLight の輪が番号で読む）。
     enum Lights {
         // ambient r, g, b・hemisphere・toonSteps・点光源の並び・スポットの並び・影
-        case Lights(Float64, Float64, Float64, Float64, Int32, Vector[Float64], Vector[Float64], Option[Shadow])
+        case Lights(Float64, Float64, Float64, Float64, Int32, Vector[Float64], Vector[Float64], SpotShadow)
     }
 
     /// 影を落とすスポット 1 本の地図と判定に要る値。スポットの並びの中の位置（spots の Vector の先頭からの欄の数）・
     /// shadowMatrix の 16 個（行優先）・mapSize・bias・pcfRadius・strength・地図（行 0 が NDC の y = −1 側）。
     enum Shadow { case Shadow(Int32, Vector[Float64], Int32, Float64, Int32, Float64, Vector[Float64]) }
 
+    /// 場面の影（影を落とすスポットが無ければ None）。生成した SoftRaster3dLight がスポットごとに shadowFactorAt へ渡す。
+    pub type alias SpotShadow = Option[Shadow]
+
     def compileLights(env: Scene3d.Environment3d, pointLights: List[Scene3d.PointLight],
-                      spotLights: List[Scene3d.SpotLight], shadow: Option[Shadow]): Lights =
-        let points = pointLights |> List.flatMap(l ->
-            l#position#x :: l#position#y :: l#position#z ::
-            l#color#r * l#intensity :: l#color#g * l#intensity :: l#color#b * l#intensity ::
-            rangeSquared(l#range) :: Nil) |> List.toVector;
-        let spots = spotLights |> List.flatMap(l -> {
-            let dir = Vec3.normalized(Vec3.sub(l#target, l#position));
-            let edge = Scene3d.spotConeOf(l);
-            l#position#x :: l#position#y :: l#position#z :: dir#x :: dir#y :: dir#z ::
-            edge#outerCos :: edge#innerCos ::
-            l#color#r * l#intensity :: l#color#g * l#intensity :: l#color#b * l#intensity ::
-            rangeSquared(l#range) :: Nil
-        }) |> List.toVector;
-        Lights.Lights(env#ambient#r, env#ambient#g, env#ambient#b, env#hemisphere, env#toonSteps, points, spots, shadow)
+                      spotLights: List[Scene3d.SpotLight], shadow: SpotShadow): Lights =
+        Lights.Lights(env#ambient#r, env#ambient#g, env#ambient#b, env#hemisphere, env#toonSteps,
+                      LightModel3d.packPointLights(pointLights), LightModel3d.packSpotLights(spotLights), shadow)
 
     def evalLight(lights: Lights, px: Float64, py: Float64, pz: Float64,
                   nx: Float64, ny: Float64, nz: Float64): (Float64, Float64, Float64) =
         let Lights.Lights(ar, ag, ab, hemi, steps, points, spots, shadow) = lights;
-        let sky = hemi * Float64.max(0.0, ny);
-        let (pr, pg, pb) = sumPoints(points, 0, px, py, pz, nx, ny, nz, 0.0, 0.0, 0.0);
-        let (sr, sg, sb) = sumSpots(spots, shadow, 0, px, py, pz, nx, ny, nz, 0.0, 0.0, 0.0);
-        (toon(steps, ar + sky + pr + sr), toon(steps, ag + sky + pg + sg), toon(steps, ab + sky + pb + sb))
+        SoftRaster3dLight.lightAt(steps, points, spots, shadow, px, py, pz, nx, ny, nz, ar, ag, ab, hemi)
 
-    /// lightmap つきの物に当たる光: evalLight の ambient と hemisphere の代わりに baked（ベイクした光・画面の値）を足す。
-    def evalLightBaked(lights: Lights, baked: (Float64, Float64, Float64), px: Float64, py: Float64, pz: Float64,
+    /// lightmap つきの物に当たる光。sample = lightmap の絵から段つきで読んだ rgb。
+    def evalLightBaked(lights: Lights, bake: Baked, sample: (Float64, Float64, Float64), px: Float64, py: Float64, pz: Float64,
                        nx: Float64, ny: Float64, nz: Float64): (Float64, Float64, Float64) =
         let Lights.Lights(_, _, _, _, steps, points, spots, shadow) = lights;
-        let (kr, kg, kb) = baked;
-        let (pr, pg, pb) = sumPoints(points, 0, px, py, pz, nx, ny, nz, 0.0, 0.0, 0.0);
-        let (sr, sg, sb) = sumSpots(spots, shadow, 0, px, py, pz, nx, ny, nz, 0.0, 0.0, 0.0);
-        (toon(steps, kr + pr + sr), toon(steps, kg + pg + sg), toon(steps, kb + pb + sb))
-
-    /// lightmap の絵から読んだ値 s（0..1）を、光の足し算に入れる画面の値へ（ファイルの頭の baked の式）。
-    def bakedValue(srgb: Bool, intensity: Float64, s: Float64): Float64 =
-        let linear = if (srgb) Texture3d.srgbToLinear(s) else s;
-        Texture3d.linearToSrgb(Float64.max(0.0, linear * intensity))
-
-    def rangeSquared(range: Float64): Float64 =
-        let r = Float64.max(range, 1.0e-6);
-        r * r
-
-    def toon(steps: Int32, x: Float64): Float64 =
-        if (steps <= 0) x
-        else {
-            let s = Int32.toFloat64(steps);
-            Float64.floor(x * s + 0.5) / s
-        }
-
-    /// 光から点までの (att × facing, 点から光への向き x, y, z)。
-    def reach(lx: Float64, ly: Float64, lz: Float64, rangeSq: Float64,
-              px: Float64, py: Float64, pz: Float64, nx: Float64, ny: Float64, nz: Float64): (Float64, Float64, Float64, Float64) =
-        let dx = lx - px;
-        let dy = ly - py;
-        let dz = lz - pz;
-        let dSq = dx * dx + dy * dy + dz * dz;
-        let fall = Float64.max(0.0, 1.0 - dSq / Float64.max(rangeSq, 1.0e-12));
-        let att = fall * fall;
-        let len = Num.sqrt(dSq);
-        let inv = if (len < 1.0e-12) 0.0 else 1.0 / len;
-        let (ux, uy, uz) = (dx * inv, dy * inv, dz * inv);
-        let facing = clamp01(wrap() + nx * ux + ny * uy + nz * uz);
-        (att * facing, ux, uy, uz)
-
-    def sumPoints(points: Vector[Float64], i: Int32, px: Float64, py: Float64, pz: Float64,
-                  nx: Float64, ny: Float64, nz: Float64, r: Float64, g: Float64, b: Float64): (Float64, Float64, Float64) =
-        if (i + 7 > Vector.length(points)) (r, g, b)
-        else {
-            let at = k -> Vector.get(i + k, points);
-            let (k, _, _, _) = reach(at(0), at(1), at(2), at(6), px, py, pz, nx, ny, nz);
-            sumPoints(points, i + 7, px, py, pz, nx, ny, nz, r + at(3) * k, g + at(4) * k, b + at(5) * k)
-        }
-
-    def sumSpots(spots: Vector[Float64], shadow: Option[Shadow], i: Int32, px: Float64, py: Float64, pz: Float64,
-                 nx: Float64, ny: Float64, nz: Float64, r: Float64, g: Float64, b: Float64): (Float64, Float64, Float64) =
-        if (i + 12 > Vector.length(spots)) (r, g, b)
-        else {
-            let at = k -> Vector.get(i + k, spots);
-            let (k, ux, uy, uz) = reach(at(0), at(1), at(2), at(11), px, py, pz, nx, ny, nz);
-            let cd = 0.0 - (ux * at(3) + uy * at(4) + uz * at(5));
-            let cone = smoothstep(at(6), at(7), cd);
-            // WhyNot: 光の届かない点で地図を引かない — 掛ける先が 0 なので結果は同じで、pcf の (2r+1)² 回が無駄になる。
-            let lit = if (k > 0.0 and cone > 0.0) shadowFactorAt(shadow, i, px, py, pz) else 1.0;
-            sumSpots(spots, shadow, i + 12, px, py, pz, nx, ny, nz,
-                     r + at(8) * k * cone * lit, g + at(9) * k * cone * lit, b + at(10) * k * cone * lit)
-        }
+        let (sr, sg, sb) = sample;
+        SoftRaster3dLight.lightmapLightAt(steps, points, spots, shadow, px, py, pz, nx, ny, nz, sr, sg, sb,
+                                    if (bake#srgb) 1.0 else 0.0, bake#intensity)
 
     /// スポットの並びの位置 offset のスポットが、world の点 (px, py, pz) へ届ける光に掛ける割合（影を落とさないスポットは 1）。
-    def shadowFactorAt(shadow: Option[Shadow], offset: Int32, px: Float64, py: Float64, pz: Float64): Float64 = match shadow {
+    pub def shadowFactorAt(shadow: SpotShadow, offset: Int32, px: Float64, py: Float64, pz: Float64): Float64 = match shadow {
         case Some(Shadow.Shadow(at, m, n, bias, radius, strength, map)) if at == offset =>
             let row = k -> Vector.get(k * 4, m) * px + Vector.get(k * 4 + 1, m) * py + Vector.get(k * 4 + 2, m) * pz + Vector.get(k * 4 + 3, m);
             let w = row(3);
@@ -217,10 +136,6 @@ pub mod SoftRaster3d {
             countLit(map, n, x0, y0, side, depth, k + 1, if (depth <= Vector.get(y * n + x, map)) acc + 1 else acc)
         }
 
-    def smoothstep(lo: Float64, hi: Float64, x: Float64): Float64 =
-        let t = if (hi == lo) (if (x >= hi) 1.0 else 0.0) else clamp01((x - lo) / (hi - lo));
-        t * t * (3.0 - 2.0 * t)
-
     // fog があるか・色 r, g, b・near・far。
     enum Fog { case Fog(Bool, Float64, Float64, Float64, Float64, Float64) }
 
@@ -233,12 +148,7 @@ pub mod SoftRaster3d {
                  r: Float64, g: Float64, b: Float64): (Float64, Float64, Float64) =
         let Fog.Fog(on, fr, fg, fb, near, far) = fog;
         if (not on) (r, g, b)
-        else {
-            let (dx, dy, dz) = (px - ex, py - ey, pz - ez);
-            let dist = Num.sqrt(dx * dx + dy * dy + dz * dz);
-            let f = clamp01((dist - near) / Float64.max(far - near, 1.0e-6));
-            (r + (fr - r) * f, g + (fg - g) * f, b + (fb - b) * f)
-        }
+        else SoftRaster3dLight.fogAt(px, py, pz, ex, ey, ez, r, g, b, fr, fg, fb, near, far)
 
     def clamp01(x: Float64): Float64 = Float64.max(0.0, Float64.min(1.0, x))
 
@@ -518,7 +428,7 @@ pub mod SoftRaster3d {
             case Some(c) => (c#r, c#g, c#b, 1.0)
             case None    => (0.0, 0.0, 0.0, 0.0)
         });
-        let sky = hoist(rc, scene#sky |> Option.map(sk -> (sk, Scene3d.skyBasisOf(scene))));
+        let sky = hoist(rc, scene#sky |> Option.map(sk -> (skyColorsOf(sk), Scene3d.skyBasisOf(scene))));
         let fillAt = (x: Int32, y: Int32) -> skyFill(sky, isDepth, (lw, lh), (x, y)) |> Option.getWithDefault(background);
         let depthBand = hoist(rc, match scene#output {
             case Scene3d.Output.Color    => None
@@ -566,19 +476,33 @@ pub mod SoftRaster3d {
         p#fields#material |> Option.exists(m -> Scene3d.materialFieldsOf(m)#doubleSided)
 
     /// 層の画素 (x, y) の空の色（sky が None なら None・Output.Depth なら白）。向きは画素の真ん中の NDC を通る向き（Scene3d.skyDirectionOf）。
-    def skyFill(sky: Option[(Scene3d.Sky3d, Scene3d.SkyBasis)], isDepth: Bool, layer: (Int32, Int32), pixel: (Int32, Int32)): Option[(Float64, Float64, Float64, Float64)] =
+    def skyFill(sky: Option[(SkyColors, Scene3d.SkyBasis)], isDepth: Bool, layer: (Int32, Int32), pixel: (Int32, Int32)): Option[(Float64, Float64, Float64, Float64)] =
         let (lw, lh) = layer;
         let (x, y) = pixel;
         sky |> Option.map(sb -> {
-            let (s, basis) = sb;
+            let (colors, basis) = sb;
             if (isDepth) (1.0, 1.0, 1.0, 1.0)
             else {
                 let ndc = { x = (Int32.toFloat64(x) + 0.5) / Int32.toFloat64(lw) * 2.0 - 1.0,
                             y = 1.0 - (Int32.toFloat64(y) + 0.5) / Int32.toFloat64(lh) * 2.0 };
-                let c = Scene3d.skyColorOf(s, Scene3d.skyDirectionOf(basis, ndc));
-                (c#r, c#g, c#b, 1.0)
+                let (r, g, b) = skyColorWith(colors, Scene3d.skyDirectionOf(basis, ndc));
+                (r, g, b, 1.0)
             }
         })
+
+    /// 空の色の材料（zenith・horizon・ground の r, g, b・曲がり）。
+    // WhyNot: 画素ごとに Sky3d のレコードから読まない — レコードの欄は名前で引くので、空の画素の数だけ重くなる。
+    enum SkyColors { case SkyColors(Float64, Float64, Float64, Float64, Float64, Float64, Float64, Float64, Float64, Float64) }
+
+    def skyColorsOf(s: Scene3d.Sky3d): SkyColors =
+        let f = Scene3d.skyFieldsOf(s);
+        SkyColors.SkyColors(f#zenith#r, f#zenith#g, f#zenith#b, f#horizon#r, f#horizon#g, f#horizon#b,
+                            f#ground#r, f#ground#g, f#ground#b, Scene3d.skyCurveOf(s))
+
+    /// 目から見た向き dir（長さ 1）の空の色（LightModel3d.skyModel）。
+    def skyColorWith(colors: SkyColors, dir: Vec3.Vec3): (Float64, Float64, Float64) =
+        let SkyColors.SkyColors(zr, zg, zb, hr, hg, hb, gr, gg, gb, curve) = colors;
+        SoftRaster3dLight.skyAt(dir#x, dir#y, dir#z, zr, zg, zb, hr, hg, hb, gr, gg, gb, curve)
 
     /// 半透明の物を塗る時に要る、場面ごとに 1 回だけ組んだ物（半透明の三角形・材質・lightmap・塗りの材料）。
     type alias BlendedShading = { tris = Vector[Tri], mats = Vector[Mat], bakes = Vector[Option[Baked]], env = ShadeEnv }
@@ -651,7 +575,7 @@ pub mod SoftRaster3d {
     // ── 影の地図 ─────────────────────────────────────────
 
     /// spots（pickLights の後の並び）のうち shadow が Some の最初の 1 本の地図。mapSize が 0 以下なら影を落とさない。
-    def shadowOf(instances: List[Placed], spots: List[Scene3d.SpotLight]): Option[Shadow] \ IO =
+    def shadowOf(instances: List[Placed], spots: List[Scene3d.SpotLight]): SpotShadow \ IO =
         let caster = List.zipWithIndex(spots) |> List.findMap(entry -> {
             let (index, spot) = entry;
             spot#shadow |> Option.filter(sm -> sm#mapSize > 0) |> Option.map(sm -> (index, spot, sm))
@@ -663,7 +587,7 @@ pub mod SoftRaster3d {
                 let rows = Vector.range(0, 16) |> Vector.map(k -> { let row = k / 4; Vector.get((k - row * 4) * 4 + row, m) });
                 let size = Int32.min(sm#mapSize, Scene3d.maxShadowMapSize());
                 let pcf = Int32.min(sm#pcfRadius, Scene3d.maxShadowPcfRadius());
-                Some(Shadow.Shadow(index * 12, rows, size, sm#bias, pcf, sm#strength,
+                Some(Shadow.Shadow(index * LightModel3d.spotStride(), rows, size, sm#bias, pcf, sm#strength,
                                    buildShadowMap(instances, spot, size)))
         }
 
@@ -954,8 +878,8 @@ pub mod SoftRaster3d {
         let (b0, b1, b2, _) = weights;
         (attr(v, uv2Slot(), b0, b1, b2), attr(v, uv2Slot() + 1, b0, b1, b2))
 
-    /// lightmap bake の、頂点の欄 v の画素（奥行きで補正した重み weights・横隣と縦隣の重み neighbors）でのベイクした光（画面の値）。
-    def bakedAt(bake: Baked, v: Vector[Float64], weights: (Float64, Float64, Float64, Float64), neighbors: NeighborWeights): (Float64, Float64, Float64) =
+    /// lightmap bake の、頂点の欄 v の画素（奥行きで補正した重み weights・横隣と縦隣の重み neighbors）で段つきで読んだ rgb。
+    def lightmapSampleAt(bake: Baked, v: Vector[Float64], weights: (Float64, Float64, Float64, Float64), neighbors: NeighborWeights): (Float64, Float64, Float64) =
         let (u, uvV) = uv2At(v, weights);
         let (nextX, nextY) = neighbors;
         let (xu, xv) = uv2At(v, nextX);
@@ -965,8 +889,7 @@ pub mod SoftRaster3d {
             case Some(base) => Mip.lodOf({ dudx = xu - u, dvdx = xv - uvV, dudy = yu - u, dvdy = yv - uvV }, base#width, base#height, levels)
             case None       => 0.0
         };
-        let (sr, sg, sb) = ShaderEval.sampleMipRgb(bake#texture, { linear = true, repeat = false }, lod, u, uvV);
-        (bakedValue(bake#srgb, bake#intensity, sr), bakedValue(bake#srgb, bake#intensity, sg), bakedValue(bake#srgb, bake#intensity, sb))
+        ShaderEval.sampleMipRgb(bake#texture, { linear = true, repeat = false }, lod, u, uvV)
 
     /// 材質のある物の画素の光（lightmap が無ければ evalLight・あれば evalLightBaked）。n = 光の計算に使う法線。
     def materialLight(bake: Option[Baked], lights: Lights, v: Vector[Float64], weights: (Float64, Float64, Float64, Float64),
@@ -974,7 +897,7 @@ pub mod SoftRaster3d {
         let (px, py, pz) = p;
         match bake {
             case None    => evalLight(lights, px, py, pz, n#x, n#y, n#z)
-            case Some(b) => evalLightBaked(lights, bakedAt(b, v, weights, neighbors), px, py, pz, n#x, n#y, n#z)
+            case Some(b) => evalLightBaked(lights, b, lightmapSampleAt(b, v, weights, neighbors), px, py, pz, n#x, n#y, n#z)
         }
 
     /// 光の計算に使う法線（法線マップが無ければ point の法線のまま。式はファイルの頭）。法線マップは段つきの Linear で読む
