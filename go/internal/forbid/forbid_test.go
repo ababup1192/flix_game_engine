@@ -2,6 +2,7 @@ package forbid
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -157,6 +158,23 @@ func TestNoticeRuleReportsWithoutFailing(t *testing.T) {
 	code, msg := run(t, root, "src/A.flix")
 	if code != 0 || !strings.Contains(msg, "src/A.flix:1 [old-num]") || strings.Contains(msg, "src/A.flix:4") ||
 		!strings.Contains(msg, "ほか 1 か所") || !strings.Contains(msg, "知らせ（止めない）4 か所。代わりに: Num.sqrt") {
+		t.Fatalf("code=%d msg=%s", code, msg)
+	}
+}
+
+// 配られた forbid.json の除外は、そのファイルがこのリポジトリに無ければ裁かない。ある物とゲームの除外は裁く。
+func TestEngineExemptForAbsentFileIsNotStale(t *testing.T) {
+	engine := `{"rules":[{"id":"bands","suffixes":[".flix"],"pattern":"\\bDepth\\.Bands\\b","hint":"ZStack.of に積む"}],
+	  "exempt":{"engine/src/Old.flix::bands":"engine の物","src/Here.flix::bands":"もう直した"}}`
+	root := writeRepo(t, engine, `{"exempt":{"src/Gone.flix::bands":"消えた"}}`, map[string]string{
+		"src/Here.flix": "let a = 1;\n",
+	})
+	if err := exec.Command("git", "-C", root, "init", "-q").Run(); err != nil {
+		t.Fatal(err)
+	}
+	code, msg := run(t, root, "--all")
+	if code != 1 || strings.Contains(msg, "engine/src/Old.flix") ||
+		!strings.Contains(msg, "src/Here.flix::bands は") || !strings.Contains(msg, "src/Gone.flix::bands は") {
 		t.Fatalf("code=%d msg=%s", code, msg)
 	}
 }

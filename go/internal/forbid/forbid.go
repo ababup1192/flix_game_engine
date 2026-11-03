@@ -279,7 +279,7 @@ func Run(out, errOut *strings.Builder, root string, args []string) (int, error) 
 		}
 		hits = append(hits, rules.TextHits(rel, string(data))...)
 	}
-	return report(out, errOut, rules, projectGated(root, hits), all, len(files)), nil
+	return report(out, errOut, root, rules, projectGated(root, hits), all, len(files)), nil
 }
 
 // projectGated は whenProject の規則の当たりを、そのプロジェクトが正規表現に当たるものだけに絞る。
@@ -359,7 +359,7 @@ func projectMatches(dir string, re *regexp.Regexp) bool {
 	return found
 }
 
-func report(out, errOut *strings.Builder, rules *Rules, hits []Hit, all bool, fileCount int) int {
+func report(out, errOut *strings.Builder, root string, rules *Rules, hits []Hit, all bool, fileCount int) int {
 	live := map[string]bool{}
 	var bad, notices []Hit
 	for _, h := range hits {
@@ -378,7 +378,7 @@ func report(out, errOut *strings.Builder, rules *Rules, hits []Hit, all bool, fi
 	if all {
 		var stale []string
 		for k := range rules.Exempt {
-			if !live[k] {
+			if !live[k] && isJudgeable(root, rules, k) {
 				stale = append(stale, k)
 			}
 		}
@@ -435,6 +435,19 @@ func printNotices(out *strings.Builder, notices []Hit) {
 		}
 		fmt.Fprintf(out, "   [lint-forbid] 知らせ（止めない）%d か所。代わりに: %s\n", len(hs), hs[0].Rule.Hint)
 	}
+}
+
+// isJudgeable は除外 k が「もう鳴らない」かをこのリポジトリで裁けるか。
+// WhyNot: forbid.json はゲームへ配られ、engine 自身や別のゲームのファイルの除外も一緒に載っている。
+// その場に無いファイルの除外を古いと言うと、直しようの無い赤がどのゲームにも出る。
+// forbid.local.json はそのリポジトリの持ち物なので、ファイルが消えた除外も古いと言う。
+func isJudgeable(root string, rules *Rules, k string) bool {
+	if rules.ExemptFrom[k] != filepath.ToSlash(RulesPath) {
+		return true
+	}
+	file, _, _ := strings.Cut(k, "::")
+	_, err := os.Stat(filepath.Join(root, file))
+	return err == nil
 }
 
 func relTo(root, p string) string {
