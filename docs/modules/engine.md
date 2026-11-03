@@ -45,6 +45,7 @@
 | 面の中でテクスチャ（Pass）のテクセルの数を読む・1 テクセルずつずらす | ShaderDoc.Field.TexSize（`Div(Const(1), TexSize)` がずらす量） |
 | シェーダー面を描く GPU 側の効果口を知りたい | ShaderEffect |
 | 1 コマで作ったシェーダー・足した字・塗りと swap の時間を知りたい（ヒッチの記録の材料） | FrameDiagnostics |
+| GPU と CPU の 1 コマの時間・3D の置いた物と draw call の数を画面の隅に出す（2D と 3D で共通） | engine_world の App.withDiagnostics → frame#diagnostics → FrameDiagnostics.summaryLines（gpuNs・gpuPasses・scene3dCounts） |
 | 位置ベクトルの足し引き・長さ・回転を計算したい | Vec2 |
 | (x, y) から Vec2 を 1 行で作りたい（リスト内の型注釈を消す） | Vec2.v2 |
 | マス目やピクセルなど整数の (x, y) を計算したい | Vec2i |
@@ -69,14 +70,16 @@
 | 3D の材質に貼る絵を場面に持たせる（PNG / JPEG を読む・中身のハッシュの名前） | Texture3d（Scene3d.texturedMaterial と組む） |
 | 絵の縮小の段（mip）を作る・3D の絵を読む段を選ぶ（GPU と CPU で同じ式） | Mip（build / lodOf） |
 | 3D の視点（位置・向き・画角）を持ちたい | Camera3d |
-| 3D の部屋や物を 1 つの描き物（Render.Item.Scene3d）にまとめる・灯り・霧・影 | Scene3d（shadowMatrix の約束は Scene3d.flix の doc） |
+| 3D の部屋や物を 1 つの描き物（Render.Item.Scene3d）にまとめる・灯り・霧・影 | Scene3d（shadowMatrix の約束は Scene3d.flix の doc・3D の口の案内は docs/scene3d.md） |
+| 懐中電灯のような縁のぼけたスポットライトを置く（内側の角） | Scene3d.spotLight(p, t, fov) に innerFovY = Some(..)（直し方は Scene3d.spotConeOf・docs/scene3d.md） |
+| 3D の点光源が 8 本を超える（遠い灯りまで全部置きたい） | Scene3d の pointLights に全部入れる（描き手が Scene3d.pickLights で目に近い 8 本を選ぶ。ゲームで選び直さない） |
 | 3D の形に骨を入れる（関節の並び・頂点ごとの重み） | Skin3d |
 | 骨の動き（キーフレームの並び）を持つ・ある時刻の姿勢を取り出す | AnimationClip3d |
 | 骨ごとの姿勢を混ぜる・Scene3d へ渡す | Pose3d（Scene3d.withPose） |
 | Blender などで書き出した .glb を読む（形・骨・動き） | Gltf（load / fromGlb。X を反転して左手系へ） |
 | .glb の絵と材質（baseColorTexture・normalTexture）も読んで primitive ごとに置く | Gltf.loadTextured（Model3d の parts と textures） |
 | Blender でベイクした光（lightmap と 2 本目の uv）を 3D の部屋に貼る | Scene3d.withLightmap（Gltf の TEXCOORD_1 → Mesh3d.uvs2・docs/lightmap.md） |
-| 3D の絵が場面の絵の上限（256 MB）を超える・大きすぎる絵を縮める | Gltf.loadTexturedWith・Texture3d.limitSize・project.json の scene3dTextureBudgetMB（docs/lightmap.md の「場面の絵の予算」） |
+| 3D の絵が場面の絵の上限（256 MB・64 枚）を超える・大きすぎる絵を縮める | Gltf.loadTexturedWith・Texture3d.limitSize・project.json の scene3dTextureBudgetMB / scene3dTextureBudgetCount（docs/lightmap.md の「場面の絵の予算」） |
 | 8bit の絵の値の意味（sRGB の曲線か線形か）と変換の式 | Texture3d.ColorSpace・srgbToLinear・linearToSrgb |
 | 起動画面（ロゴ+ゲージ）を組み立てたい | Splash |
 | 起動画面の組み込みフォント・ロゴを使いたい | BootFont（素データは BootFontData。生成物なので手で触らない） |
@@ -113,7 +116,7 @@
 - **ShaderEval** — Spec 木を CPU（Float64）で評価する純関数。GL の描画経路ではないが、SoftRaster（描き出し・動画・スナップショット）はシェーダー面の画素をこれで塗り、テストは式の構造が GLSL 側と揃っているかをこれで確かめる。tex 場つきの評価は `ShaderEval.evalPixelTex` / `ShaderEval.evalAlphaTex`。何万画素も評価する画素ループは `ShaderEval.compile` で面ごとに 1 回だけ組み直し、画素ごとに `ShaderEval.evalCompiled` を呼ぶ（色と α を 1 回の shared 先行評価で返す。SoftRaster はこれを全コアで並べて評価し、`FGE_SOFT_SERIAL=1` で 1 本に戻せる）。
 - **ShaderJson** — シェーダー面の宣言（ShaderDoc.Spec）を JSON と相互変換する codec。engine を触らず `*.shader.json` の保存だけで調整できる（App.watchFile によるホットリロードの受け皿）。
 - **PostProcess** — 画面の仕上げの面を ShaderDoc の Spec で組む部品（Unity URP / Unreal の Post Process と同じ並び）。`PostProcess.tonemapped` / `tonemappedWith`（AcesFitted・Reinhard。既定は `defaultExposure()` = 0.4 stop・`defaultWhitePoint()` = 4.0）・`PostProcess.fxaaSpec`（FXAA 3.11 の PC の簡単な版）・`PostProcess.luma709`。今の場と bindings だけで組むので GPU と CPU が同じ木を評価する。
-- **FrameDiagnostics** — 1 コマぶんの描く側の診断（作ったシェーダーと理由・GPU にあるシェーダーの数・足した字・塗りと swap の時間）。`GameEngine.Game.consumeDiagnostics` が返し、App のヒッチの記録が 1 コマごとに引き取る。`setDiagnosticsEnabled(true)` の間だけ数える。
+- **FrameDiagnostics** — 1 コマぶんの描く側の診断（作ったシェーダーと理由・GPU にあるシェーダーの数・足した字・塗りと swap の時間・GPU の時間と描き先ごとの時間・3D の数）。2D と 3D で共通。`GameEngine.Game.consumeDiagnostics` が返し、App が 1 コマに 1 回引き取ってヒッチの記録とゲーム（`App.withDiagnostics` → `frame#diagnostics`）へ配る。`setDiagnosticsEnabled(true)` の間だけ数える。画面に出す字は `summaryLines`。
 - **ShaderEffect** — 宣言シェーダー面を GPU で描くための別チャンネルの効果口（`eff Shader`）。`eff Game` に描画オペを足すとハンドラ全てが波及するため、シェーダー面だけ別効果に切り出している。
 
 ## レンダーターゲット（RenderTarget）

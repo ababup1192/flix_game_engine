@@ -46,3 +46,4 @@ Scene3d.meshInstance(part#mesh, world)
 - `Gltf.loadTexturedWith(limits, path)` で、材質の絵の長い辺に上限を掛ける（mip を作るのと同じ縮め方で半分にしていく）。lightmap の PNG は `Texture3d.limitSize`。
   lightmap はなめらかなので 1024 に縮めても目立ちにくい。法線マップも近くで見ない物は 1024 で足りる。
 - それでも足りない時は、project.json の `scene3dTextureBudgetMB` で上限を上げる（例 512）。VRAM の少ない機械では重くなる。
+- 小さな絵がたくさんある場面（部品ごとの絵・lightmap を物ごとに分けた場面）で枚数の 64 に先に届くなら、project.json の `scene3dTextureBudgetCount` で枚数の上限を上げる（例 128。texture unit の数ではなく、GPU に持っておく絵の枚数）。

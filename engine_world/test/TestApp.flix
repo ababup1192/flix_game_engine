@@ -389,22 +389,46 @@ mod TestApp {
             { prevCursor = Some({ x = 0.0, y = 0.0 }), cursor = { x = 5.0, y = 5.0 } },
             { prevDown = false, down = true, wheel = 1.5 })
 
-    // 元の Frame は justPressed・mouseClicked・mouseMoved・wheel が全部立っている（前提確認）。
+    // 元の Frame は justPressed・mouseClicked・mouseMoved・wheel・mouseDelta が全部立っている（前提確認。
+    // mouseDelta は (0, 0) → (5, 5) の差）。
     @Test
     def testEdgyFrameHasAllEdgesSet(): Unit \ Assert =
         let frame = edgyFrame();
-        Assert.assertEq(expected = (Set#{GameEngine.Key.Left}, true, true, 1.5),
-            (frame#justPressed, frame#mouseClicked, frame#mouseMoved, frame#wheel))
+        Assert.assertEq(expected = (Set#{GameEngine.Key.Left}, true, true, 1.5, (5.0, 5.0)),
+            (frame#justPressed, frame#mouseClicked, frame#mouseMoved, frame#wheel, (frame#mouseDelta#x, frame#mouseDelta#y)))
 
-    // suppressEdges 後はエッジ 4 種が全部消え、down / mouseDown は生きたまま
-    // （押しっぱなし入力は消えない）。
+    // suppressEdges 後はエッジ 5 種が全部消え、down / mouseDown は生きたまま
+    // （押しっぱなし入力は消えない。動いた量を 2 つ目のサブステップで 2 回回さない）。
     @Test
     def testSuppressEdgesClearsEdgesKeepsHeld(): Unit \ Assert =
         let suppressed = App.suppressEdges(edgyFrame());
         Assert.assertEq(
-            expected = (Set#{}, false, false, 0.0, Set#{GameEngine.Key.Left}, true),
+            expected = (Set#{}, false, false, 0.0, (0.0, 0.0), Set#{GameEngine.Key.Left}, true),
             (suppressed#justPressed, suppressed#mouseClicked, suppressed#mouseMoved, suppressed#wheel,
-             suppressed#down, suppressed#mouseDown))
+             (suppressed#mouseDelta#x, suppressed#mouseDelta#y), suppressed#down, suppressed#mouseDown))
+
+    // 前の位置が無い最初のフレームの mouseDelta は 0（起動した拍に視点が跳ねない）。
+    @Test
+    def testFrameOfFirstFrameHasNoMouseDelta(): Unit \ Assert =
+        let frame = App.frameOf(prev = Set#{}, current = Set#{}, 0.016, testViewport(),
+            { prevCursor = None, cursor = { x = 40.0, y = 30.0 } }, noMouse());
+        Assert.assertEq(expected = (0.0, 0.0), (frame#mouseDelta#x, frame#mouseDelta#y))
+
+    // キャプチャ中（Some(true)）は cursor を前の位置で止め、放している・まだ当てていない時は読んだ位置のまま。
+    @Test
+    def testHeldCursorStopsOnlyWhileCaptured(): Unit \ Assert =
+        let prev = Some({ x = 10.0, y = 10.0 });
+        let raw = { x = 900.0, y = -50.0 };
+        Assert.assertEq(expected = ((10.0, 10.0), (900.0, -50.0), (900.0, -50.0)),
+                        ((App.heldCursor(Some(true), prev, raw)#x, App.heldCursor(Some(true), prev, raw)#y),
+                         (App.heldCursor(Some(false), prev, raw)#x, App.heldCursor(Some(false), prev, raw)#y),
+                         (App.heldCursor(None, prev, raw)#x, App.heldCursor(None, prev, raw)#y)))
+
+    // 0 ステップのフレームで取り置いた動いた量は、次のフレームの量に足される（ホイールと同じ量の扱い）。
+    @Test
+    def testMergeEdgesAddsMouseDelta(): Unit \ Assert =
+        let merged = App.mergeEdges(App.pendingOf(edgyFrame()), edgyFrame());
+        Assert.assertEq(expected = (10.0, 10.0), (merged#mouseDelta#x, merged#mouseDelta#y))
 
     // dt はそのまま素通し（fixedStep の呼び出し側が固定値をセットしてから渡す想定であり、
     // suppressEdges 自体は dt に触れない）。

@@ -48,7 +48,7 @@ mod Scenes {
             :: texturedBox() :: normalBump() :: skinNormal()
             :: mipFloor() :: mipFloorScaled() :: mipFloorWorld() :: gltfTextured() :: windowPass3d()
             :: hdrPass() :: hdrWindowHalf() :: hdrMultiply() :: texSizeScaled() :: tonemap() :: fxaa()
-            :: lightmapBaked3d() :: lightmapNormal3d() :: Nil
+            :: lightmapBaked3d() :: lightmapNormal3d() :: spotSoftEdge3d() :: Nil
 
     /// B 段階の scene のうち、違う画素の数に上限を置く物（名前 → 許す画素数）。3D の場面は GL と CPU で三角形の縁の
     /// 画素の取り方と浮動小数の丸めが違い、バイトでは一致しない（docs/backend-parity.md の Shader 面と同じ扱い）。
@@ -61,6 +61,7 @@ mod Scenes {
     /// lightmap の 2 つは、GPU の補間の重みの丸めの ±1 が段差の縁に出る（lightmapBaked3d は約 400 px で、全部が市松の升の境・
     /// 材質の絵の texel の境・板のふちの 1 px 以内。lightmapNormal3d は約 260 px で、ほぼ同じ）。環境光か hemisphere を足す・
     /// 色空間や intensity を取り違えると、板（約 4,700 px と 7,700 px）の中が丸ごと違い、差も ±1 を超える。
+    /// spotSoftEdge3d は床の輪の縁のなめらかな坂で丸めの ±1 が約 20 px 出る。内側の角を取り違えると左の輪の縁の帯（数千 px）が丸ごと違う。
     pub def toleranceOf(name: String): Option[Int32] = match name {
         case "depthRed"        => Some(300)
         case "afterScene3d"    => Some(200)
@@ -81,6 +82,7 @@ mod Scenes {
         case "fxaa"            => Some(300)
         case "lightmapBaked3d" => Some(600)
         case "lightmapNormal3d" => Some(400)
+        case "spotSoftEdge3d"  => Some(100)
         case _                 => None
     }
 
@@ -530,7 +532,7 @@ mod Scenes {
         { points = Vec3.v3(x0, y, z0) :: Vec3.v3(x0, y, z1) :: Vec3.v3(x1, y, z1) :: Vec3.v3(x1, y, z0) :: Nil, color = color }
 
     def shadowSpot(): Scene3d.SpotLight =
-        { position = Vec3.v3(0.0, 8.0, 10.0), target = Vec3.v3(0.0, -2.0, 10.0), fovY = 1.4, color = c8(255, 255, 255),
+        { position = Vec3.v3(0.0, 8.0, 10.0), target = Vec3.v3(0.0, -2.0, 10.0), fovY = 1.4, innerFovY = None, color = c8(255, 255, 255),
           intensity = 1.0, range = 20.0, shadow = Some({ mapSize = 512, bias = 0.0015, pcfRadius = 1, strength = 0.8 }) }
 
     def shadowScene(withBoard: Bool): Scene3d.Scene3dCmd =
@@ -603,7 +605,7 @@ mod Scenes {
         Pose3d.compute(skin, bent)
 
     def skinBendSpot(): Scene3d.SpotLight =
-        { position = Vec3.v3(0.0, 3.0, 0.0), target = Vec3.v3(0.0, 0.0, 20.0), fovY = 1.2, color = c8(255, 255, 255),
+        { position = Vec3.v3(0.0, 3.0, 0.0), target = Vec3.v3(0.0, 0.0, 20.0), fovY = 1.2, innerFovY = None, color = c8(255, 255, 255),
           intensity = 1.0, range = 40.0, shadow = Some({ mapSize = 512, bias = 0.0015, pcfRadius = 1, strength = 0.8 }) }
 
     def skinBend(): Scene =
@@ -1002,4 +1004,20 @@ mod Scenes {
         let scene = { textures = tex :: checker :: Nil, pointLights = light :: Nil, environment = { ambient = c8(40, 40, 40) | base#environment } | base };
         { name = "lightmapNormal3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
             Render.scene3d({ x = 40.0, y = 20.0 }, scene) :: Nil }
+
+    // ── scene 37: スポットの内側の角（SpotLight.innerFovY → GL は uSpotCone の y・CPU は SoftRaster3d の cone）。B 段階 ──
+    // 真上から床を照らすスポット 2 本。左は innerFovY = fovY × 0.3（輪の縁が広くぼける）・右は None（fovY × 0.8 の今の縁）。
+    // 内側の角を読み落とすと、左の輪が右と同じ狭い縁になる。
+
+    def softEdgeSpot(x: Float64, innerFovY: Option[Float64]): Scene3d.SpotLight =
+        { range = 20.0, innerFovY = innerFovY | Scene3d.spotLight(Vec3.v3(x, 6.0, 10.0), Vec3.v3(x, -2.0, 10.0), 1.0) }
+
+    def spotSoftEdge3d(): Scene =
+        let camera = { eye = Vec3.v3(0.0, 9.0, 1.0), yaw = 0.0, pitch = 0.9, fovY = 1.0, near = 1.0, far = 100.0 };
+        let floor = shape(upQuad(-12.0, 12.0, 0.0, 22.0, -2.0, c8(200, 200, 200)) :: Nil);
+        let scene = { instances = floor :: Nil, spotLights = softEdgeSpot(-4.0, Some(0.3)) :: softEdgeSpot(4.0, None) :: Nil, zIndex = 1,
+                      environment = { ambient = c8(30, 30, 30), hemisphere = 0.0, toonSteps = 0, fog = None, background = Some(c8(10, 10, 30)) }
+                      | Scene3d.scene(camera, { x = 320.0, y = 180.0 }) };
+        { name = "spotSoftEdge3d", via = ShotVia.ViaScreen, repeats = 1, targets = Map.empty(), exact = false, passes = Nil, items =
+            Render.scene3d({ x = 0.0, y = 0.0 }, scene) :: Nil }
 }

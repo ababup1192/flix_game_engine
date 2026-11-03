@@ -14,6 +14,8 @@
 | 複数キーを 1 つの操作にまとめる（WASD と矢印の両対応） | InputMap（実例: `templates/game-starter/src/KeysDoc.flix`） |
 | 素の中心＋幅高の箱どうし・点×箱の重なりを聞く（接するのは外） | Hit.boxBox / pointBox |
 | テスト用の入力フレームを組む | App.frameOf |
+| 一人称でマウスを動かして視点を回す（FPS のように・カーソルを窓にキャプチャする） | App.withMouseCapture + frame#mouseDelta（下の「一人称の視点」） |
+| 窓がフォーカスを失った・取り戻したのを知る | frame#windowFocused |
 | 遊んだ通りに再生して、最初に食い違ったフレームを指す | Flow.Record（DEBUG の起動で自動・`make flow FLOW=debug/flow-record/latest.flow`・指紋は App.withFingerprint） |
 | e2e のテスト・動画の手順を 1 行 1 手で書いて画面なしで流す（待ちは問いが立つまで・失敗は行番号つき） | Flow（App.withFlow の表・`make flow FLOW=e2e/x.flow`・`bin/fge flow check`。実例: `templates/tidepool-starter/e2e/level1.flow`） |
 | でたらめなキー・マウス操作で「どう遊んでも崩れない決まり」を確かめる（性質テスト）・画面なしで実機と同じ経路を流す | PropertyTest（forAll / generate / firstBroken）+ App.trace（実例: `templates/tidepool-starter/test/TestTrace.flix`） |
@@ -31,3 +33,19 @@
 - **Flow.Cli** — flow を画面なしで流す headless の入口の中身（ゲームの E2e.play・E2e.vocab が呼ぶ。make flow / flow-vocab）。
 - **Flow.Record** — 遊んだ記録を flow と同じ文法で書く（DEBUG の起動が debug/flow-record/latest.flow へ。F8 のチケットに record.flow の写し）。
 - **PropertyTest** — 種で決まるでたらめな入力の列（キー・マウス・ホイール）を App.traceFrame で流し、決まりが崩れた最初の種とフレームを探す（property-based testing）。
+
+## 一人称の視点（マウスを窓にキャプチャする）
+
+FPS のようにマウスを動かした量で視点を回すときは、カーソルを窓にキャプチャする（Godot の `MOUSE_MODE_CAPTURED`・Bevy の `CursorGrabMode::Locked`）。
+
+- **宣言**: `App.withMouseCapture(w -> w#looking)` で毎フレーム「キャプチャしたいか」を World から返す。App は値が変わったフレームだけ当てる。系の中で `GameEngine.Game.setMouseCaptured` を呼ばない
+- **動き**: キャプチャしている間は矢印が消え、窓の端で止まらずに `frame#mouseDelta`（design px・右と下が正）に出る。yaw と pitch はこれに感度を掛けて回す。
+  `frame#cursor` はキャプチャした時の位置で止まり、`mouseMoved` は偽になる（UI のホバーを狂わせない）。左ドラッグの差（`cursor#x - 前の x`）で回さない
+- **慣習**: 窓をクリックしたらキャプチャ、Esc で放す。放した状態の Esc で終わる（確かめる）。Esc を放すのに使うなら `App.quitWhen` で既定の「Esc のエッジで終わる」を外す。
+  放すと矢印はキャプチャする前の位置に戻る（GLFW の決まり。止めていた `frame#cursor` と同じ所）
+- **フォーカス**: 窓のフォーカスが外れると OS が放し、戻るとキャプチャし直す（App は触らない）。`frame#windowFocused` で分かる。
+  キャプチャを切り替えた拍・フォーカスが戻った拍の `mouseDelta` は 0（跳んだ量で視点が回らない）
+- **F8**: 止めている間は放し（矩形を囲える）、再開した拍に宣言を当て直す。Studio の「止める」も同じ道を通る
+- **感度と上下反転は Doc へ**（`walk.kind.json` など）。調整のたびにビルドしない
+- **台本とテスト**: flow の `at=` と PropertyTest の cursor の動きは、前のフレームとの差が `mouseDelta` に入る（画面なしでも視点が回る）。CPU の描き出しは 0
+

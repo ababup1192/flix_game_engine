@@ -320,7 +320,7 @@ func keySet(v Vocab, text string) string {
 }
 
 func opts(v Vocab, words []string) string {
-	known := []string{"ns=", "dt=", "at=", "mouse", "wheel=", "pad", "keys=", "new=", "click", "moved"}
+	known := []string{"ns=", "dt=", "at=", "look=", "mouse", "wheel=", "pad", "keys=", "new=", "click", "moved"}
 	for _, word := range words {
 		switch {
 		case word == "mouse", word == "pad", word == "click", word == "noclick", word == "moved", word == "still":
@@ -343,9 +343,13 @@ func opts(v Vocab, words []string) string {
 			if why := keySet(v, value); why != "" {
 				return why
 			}
-		case strings.HasPrefix(word, "at="):
-			xy := strings.Split(strings.TrimPrefix(word, "at="), ",")
+		case strings.HasPrefix(word, "at="), strings.HasPrefix(word, "look="):
+			name := word[:strings.Index(word, "=")]
+			xy := strings.Split(word[len(name)+1:], ",")
 			if len(xy) != 2 {
+				if name == "look" {
+					return "look は look=dx,dy"
+				}
 				return "at は at=x,y"
 			}
 			for _, part := range xy {

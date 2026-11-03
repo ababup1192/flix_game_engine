@@ -125,6 +125,7 @@ ready off
 start title save=@saves/slot1.json +assets/rules.json=b64:eyJ… +saves/slot1.json=b64:eyJ…   始まり（読んだファイルの中身つき）
 wait 37f ns=16612345,16701234,…              同じ入力が続くフレームは 1 行（実際の dt はナノ秒で全部残す）
 tap Z at=120.0,80.0 ns=16666667              最初のフレームはマウスの位置も
+wait 1f look=3.5,-1.0 ns=…                   マウスの動いた量（App.withMouseCapture のキャプチャ中は位置が止まるので、位置の差から出ない時だけ）
 hold Down ns=… / release Down ns=…
 wait 1f keys=Left,Z new=Z ns=…               押している物の丸ごと・押した瞬間が差分から出ない時だけ new=
 expect fp=1a2b3c4d                           60 フレームごとの指紋（App.withFingerprint）。再生で最初の食い違いの行を指す

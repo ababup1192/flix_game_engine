@@ -75,7 +75,9 @@ mod RenderPaint {
         // 起動から作ったシェーダーと消したシェーダーの数（[作った, 消した]。診断の liveShaders の元）。
         shaderLifeHolder = Array[Int32, Static],
         // 同じ名前で作り直して鍵から外れた program（使われなくなったら evictShaderPrograms が消す）。
-        retiredProgramsRef = Ref[Set[Int32], Static]
+        retiredProgramsRef = Ref[Set[Int32], Static],
+        // GPU の時間を測る timestamp の query の輪（診断を集めている間だけ打つ）。
+        gpuTimerRef = Ref[GpuTimer.Ring, Static]
     }
 
     /// 空のコマ。
@@ -84,8 +86,8 @@ mod RenderPaint {
 
     /// GL の資源を作り、空の登録簿で塗りのコアを始める。GL の文脈が今の糸に付いていること。
     /// design = 描く座標の寸（ゲームの designWidth × designHeight）、clearColor = design の中の地の色、
-    /// screenFramebuffer = 画面のフレームバッファ（窓なら 0）。
-    pub def create(cfg: { designWidth = Int32, designHeight = Int32, clearColor = Color, screenFramebuffer = Int32, scene3dTextureBudgetMB = Int32 }): Paint \ IO =
+    /// screenFramebuffer = 画面のフレームバッファ（窓なら 0）。scene3dTextureBudget = 3D の場面の絵を GPU に持つ量と枚数の上限（Render3d.TextureBudget）。
+    pub def create(cfg: { designWidth = Int32, designHeight = Int32, clearColor = Color, screenFramebuffer = Int32, scene3dTextureBudget = Render3d.TextureBudget }): Paint \ IO =
         let screenW = Int32.toFloat64(cfg#designWidth);
         let screenH = Int32.toFloat64(cfg#designHeight);
 
@@ -235,7 +237,7 @@ mod RenderPaint {
                                                polyBatchShader, polyBatchVao, polyBatchVbo,
                                                polyBatchUniforms, cmd#mask)
         };
-        let render3d = Render3d.fresh(cfg#scene3dTextureBudgetMB);
+        let render3d = Render3d.fresh(cfg#scene3dTextureBudget);
         let drawScene = (vp: Render3d.Viewport, item: Render3d.SceneItem) ->
             Render3d.drawItem(render3d, Array.get(0, frameGenHolder), billboardTexture(registryRef, targetsRef, textureKeyRef), vp, item);
         // renderFrameMixed への FrameArgs は固定値（シェーダ・VAO・buf・uniforms 等）が
@@ -270,7 +272,7 @@ mod RenderPaint {
           registryRef = registryRef, textureKeyRef = textureKeyRef,
           staticCacheCell = staticCacheCell, lastFrameHolder = lastFrameHolder,
           diagnosticsRef = Ref.fresh(Static, None), shaderLifeHolder = Array#{0, 0} @ Static,
-          retiredProgramsRef = Ref.fresh(Static, Set.empty()) }
+          retiredProgramsRef = Ref.fresh(Static, Set.empty()), gpuTimerRef = Ref.fresh(Static, GpuTimer.emptyRing()) }
 
     // ── 1 コマ塗る ──
 
@@ -358,7 +360,7 @@ mod RenderPaint {
                 let surfaces = List.reverse(Array.get(0, paint#pendingShaderHolder));
                 Array.put(Nil, 0, paint#pendingShaderHolder);
                 let scenes = takeScenes(paint);
-                paintTarget(paint, target, sprites, polygons, surfaces, scenes);
+                timedSpan(paint, target#name, () -> paintTarget(paint, target, sprites, polygons, surfaces, scenes));
                 false
             case None =>
                 // queueSurface が積んだこのフレームのシェーダー面を取り出して holder を空にする。
@@ -372,9 +374,28 @@ mod RenderPaint {
                 // Pass を N 枚描くゲームでは絵 1 枚あたり N+1 回進み、「現世代 = いま描いて
                 // いる面」という数え方が壊れる。
                 Array.put(Array.get(0, paint#frameGenHolder) + 1i64, 0, paint#frameGenHolder);
-                paintFrame(paint, fbW, fbH, frame);
+                timedSpan(paint, "screen", () -> paintFrame(paint, fbW, fbH, frame));
                 Render3d.endFrame(paint#render3d, Array.get(0, paint#frameGenHolder));
+                noteGpuTime(paint);
                 true
+        }
+
+    /// 診断を集めている時だけ、paint の前後に GPU の timestamp を打って描き先 name の時間として残す。
+    def timedSpan(paint: Paint, name: String, f: Unit -> Unit \ IO): Unit \ IO =
+        if (Option.isEmpty(Ref.get(paint#diagnosticsRef))) f()
+        else {
+            let begin = GpuTimer.stamp(paint#gpuTimerRef);
+            f();
+            GpuTimer.addSpan(paint#gpuTimerRef, name, begin, GpuTimer.stamp(paint#gpuTimerRef))
+        }
+
+    /// 画面のコマの終わりに、結果の出た一番新しいコマの GPU の時間を診断へ入れる。
+    /// 集めていない間は 3D の数を捨てるだけ（誰も引き取らない数を溜め続けない）。
+    def noteGpuTime(paint: Paint): Unit \ IO =
+        if (Option.isEmpty(Ref.get(paint#diagnosticsRef))) discard Render3d.takeCounts(paint#render3d)
+        else match GpuTimer.endFrame(paint#gpuTimerRef) {
+            case Some(t) => noteDiagnostics(paint, d -> { gpuNs = Some(t#gpuNs), gpuPasses = t#passes | d })
+            case None    => ()
         }
 
     /// このコマ（か Pass）に溜まった 3D の場面を、積んだ順で取り出して溜め場を空にする。
@@ -705,14 +726,16 @@ mod RenderPaint {
     pub def setDiagnosticsEnabled(paint: Paint, on: Bool): Unit \ IO =
         Ref.put(if (on) Some(FrameDiagnostics.empty()) else None, paint#diagnosticsRef)
 
-    /// 溜まった診断を取り出して空に戻す。liveShaders は起動からの作った数 − 消した数。
+    /// 溜まった診断を取り出して空に戻す。liveShaders は起動からの作った数 − 消した数・scene3dCounts は前に取り出してからの 3D の数。
     pub def consumeDiagnostics(paint: Paint): FrameDiagnostics.Diagnostics \ IO =
+        let counts = Render3d.takeCounts(paint#render3d);
         match Ref.get(paint#diagnosticsRef) {
             case None    => FrameDiagnostics.empty()
             case Some(d) =>
                 Ref.put(Some(FrameDiagnostics.empty()), paint#diagnosticsRef);
                 let live = Array.get(0, paint#shaderLifeHolder) - Array.get(1, paint#shaderLifeHolder);
-                { shaderBuilds = List.reverse(d#shaderBuilds), textureUploads = List.reverse(d#textureUploads), liveShaders = live | d }
+                { shaderBuilds = List.reverse(d#shaderBuilds), textureUploads = List.reverse(d#textureUploads), liveShaders = live,
+                  scene3dCounts = counts | d }
         }
 
     /// renderCommands 1 回ぶんを測って記録する。submit は命令を出し終えるまで、swap は画面の入れ替えまで。

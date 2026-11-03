@@ -345,8 +345,6 @@
   `pub def writeRadialPng(size: Int32, pixelOf: (Int32, Int32) -> Int32, outPath: String): Unit \ IO`
 
 ## SoftRaster3d — `engine_tools/src/SoftRaster3d.flix`
-- スポットライトの円錐で、明るさが落ち始める角の割合（円錐の半角 × この値の内側は落ちない）。
-  `pub def spotInnerRatio(): Float64`
 - 光が面を回り込む量（facing の wrap）。Environment3d に欄が無いので固定。
   `pub def wrap(): Float64`
 - ビルボードの絵の α がこれ未満の画素は捨てる。

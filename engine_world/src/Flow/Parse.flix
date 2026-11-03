@@ -206,7 +206,11 @@ pub mod Flow.Parse {
                 case x :: y :: Nil => forM (a <- number(x); b <- number(y)) yield { at = Some({ x = a, y = b }) | opt }
                 case _             => Err("at は at=x,y")
             }
-            else Err("付け足し '${word}' は無い${Suggest.hint(word, "ns=" :: "dt=" :: "at=" :: "mouse" :: "wheel=" :: "pad" :: "keys=" :: "new=" :: "click" :: "moved" :: Nil)}")
+            else if (String.startsWith(prefix = "look=", word)) match String.splitOn({substr = ","}, valueOf("look=")) {
+                case x :: y :: Nil => forM (a <- number(x); b <- number(y)) yield { look = Some({ x = a, y = b }) | opt }
+                case _             => Err("look は look=dx,dy")
+            }
+            else Err("付け足し '${word}' は無い${Suggest.hint(word, "ns=" :: "dt=" :: "at=" :: "look=" :: "mouse" :: "wheel=" :: "pad" :: "keys=" :: "new=" :: "click" :: "moved" :: Nil)}")
         }), Ok(Flow.noOpt()))
 
     /// 問いの式: 名前（真偽）・!式・式&式・名前<数（< <= = >= > !=）・名前=文字。

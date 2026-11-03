@@ -381,8 +381,7 @@ mod TestSoftRaster3d {
 
     /// (0, 3, 2.5) から真下を向く白いスポット（縦の画角 90 度・range 8）。shadow は呼ぶ側が入れる。
     def overheadSpot(shadow: Option[Scene3d.ShadowMap]): Scene3d.SpotLight =
-        { position = Vec3.v3(0.0, 3.0, 2.5), target = Vec3.v3(0.0, -1.0, 2.5), fovY = 1.5707963267948966,
-          color = white(), intensity = 1.0, range = 8.0, shadow = shadow }
+        { color = white(), range = 8.0, shadow = shadow | Scene3d.spotLight(Vec3.v3(0.0, 3.0, 2.5), Vec3.v3(0.0, -1.0, 2.5), 1.5707963267948966) }
 
     def shadowMap(strength: Float64): Scene3d.ShadowMap = { mapSize = 64, bias = 0.005, pcfRadius = 1, strength = strength }
 
@@ -430,11 +429,35 @@ mod TestSoftRaster3d {
     // その画素の world の点 (0.25, −0.25, 2)・法線 (0, 0, −1) での lightAt と同じ。
     @Test
     def testSceneWithoutShadowMatchesLightAt(): Unit \ {Assert, IO} =
-        let spot = { position = Vec3.zero(), target = Vec3.v3(0.0, 0.0, 2.0), fovY = 1.5707963267948966,
-                     color = white(), intensity = 1.0, range = 4.0, shadow = None };
+        let spot = { color = white(), range = 4.0 | Scene3d.spotLight(Vec3.zero(), Vec3.v3(0.0, 0.0, 2.0), 1.5707963267948966) };
         let scene = spotLit(spot, plate(white(), 2.0, -2.0, 2.0, -2.0, 2.0) :: Nil);
         let light = SoftRaster3d.lightAt(scene#environment, Nil, spot :: Nil, Vec3.v3(0.25, -0.25, 2.0), Vec3.v3(0.0, 0.0, -1.0));
         Assert.assertEq(expected = channels(SoftRaster.argbOfRgba(light#r, light#g, light#b, 1.0)), pixel(render(scene), 4, 4))
+
+    // ── スポットの内側の角（innerFovY）──
+    // 原点から +Z を向く縦の画角 1.0（半角 0.5）のスポットで、距離 1・光へ向いた面の点を照らす。環境光は黒。
+
+    /// 原点から角 angle（ラジアン・yz の面で上へ）傾けた距離 1 の点に、innerFovY のスポットが当てる光の赤。
+    def spotRedAt(innerFovY: Option[Float64], angle: Float64): Float64 =
+        let spot = { innerFovY = innerFovY | Scene3d.spotLight(Vec3.zero(), Vec3.v3(0.0, 0.0, 1.0), 1.0) };
+        let point = Vec3.v3(0.0, Vec2.sin(angle), Vec2.cos(angle));
+        let env = { ambient = black() | Scene3d.scene(camera(), { x = 8.0, y = 8.0 })#environment };
+        SoftRaster3d.lightAt(env, Nil, spot :: Nil, point, Vec3.mul(point, -1.0))#r
+
+    // 内側の角（Some(0.6) = 半角 0.3）の中の点（0.2）は縁による減りが無い: 縁の無いスポット（innerFovY = fovY）と同じ光。
+    @Test
+    def testSpotInsideInnerAngleHasNoEdgeFalloff(): Unit \ Assert =
+        Assert.assertEq(expected = spotRedAt(Some(1.0), 0.2), spotRedAt(Some(0.6), 0.2))
+
+    // 外側の角（半角 0.5）の外の点（0.6）には、内側の角をどう選んでも光が届かない。
+    @Test
+    def testSpotOutsideOuterAngleIsDark(): Unit \ Assert =
+        Assert.assertEq(expected = (0.0, 0.0), (spotRedAt(Some(0.6), 0.6), spotRedAt(None, 0.6)))
+
+    // 内側の角を狭めると、縁の間の点（0.35。None の内側の半角 0.4 の中・Some(0.3) の内側の半角 0.15 の外）が暗くなる。
+    @Test
+    def testNarrowerInnerAngleDimsEdgePoint(): Unit \ Assert =
+        Assert.assertTrue(spotRedAt(Some(0.3), 0.35) < spotRedAt(None, 0.35))
 
     // ════════════════════════════════════════════════════════
     // ジョイント

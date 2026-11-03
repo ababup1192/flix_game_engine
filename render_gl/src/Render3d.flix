@@ -6,7 +6,7 @@
 //   light = ambient + hemisphere × max(0, n.y) + Σ 点光源 color × intensity × att × facing
 //           + Σ スポット color × intensity × att × facing × cone × shadow
 //   att = (max(0, 1 − d² / range²))²・facing = clamp(n·l, 0, 1)
-//   cone = smoothstep(cos(fovY / 2), cos(fovY / 2 × 0.8), dot(−l, スポットの向き))
+//   cone = smoothstep(outerCos, innerCos, dot(−l, スポットの向き))（2 つの cos は Scene3d.spotConeOf）
 //   shadow = 影を落とすスポット 1 本だけ 1 − strength × (1 − 照らされている割合)、他は 1（約束は Scene3d.shadowMatrix の doc）
 //   toonSteps > 0 なら light = floor(light × steps + 0.5) / steps（色の成分ごと）
 //   色 = 頂点の色 × tint × light。fog は目からの距離で near〜far の間を fog の色へ近づける。
@@ -160,6 +160,8 @@ mod Render3d {
         meshesRef = Ref[Map[String, MeshEntry], Static],
         // 場面の絵を GPU に持つ量の上限（バイト）。
         textureByteBudget = Int64,
+        // 場面の絵の置き場の枚数の上限（project.json の scene3dTextureBudgetCount）。
+        textureCountBudget = Int32,
         // 置き場の頂点の合計。
         vertexTotal = Array[Int32, Static],
         // [新しい鍵を上げたコマが続いた数, 知らせ済みなら 1, このコマで新しい鍵を上げたら 1]。
@@ -197,7 +199,9 @@ mod Render3d {
         // 見つからない材質の絵に貼る 1 × 1 の透明な黒（0 は未作成）。
         blankTexture = Array[Int32, Static],
         // 材質の絵について知らせ済みの鍵（見つからない名前・上限を超えた材質・場面の絵の置き場あふれ）。
-        textureWarnedRef = Ref[Set[String], Static]
+        textureWarnedRef = Ref[Set[String], Static],
+        // 前に takeCounts してからの数（[置いた物, 描いた物, draw call]。FrameDiagnostics.Diagnostics.scene3dCounts の元）。
+        countsHolder = Array[Int32, Static]
     }
 
     // ── 決まりの数 ──
@@ -211,9 +215,6 @@ mod Render3d {
     /// 新しい鍵がこの数のコマ続けて上がったら、形を毎コマ作り直していると知らせる。
     def rebuildStreakLimit(): Int32 = 30
 
-    /// スポットの円錐の内側（ここまでは減らない）の半角を、外側の半角に対する割合で。
-    def spotInnerRatio(): Float64 = 0.8
-
     /// 影の地図を貼るテクスチャの unit（2D の Shader 面は 0 から順に使い、描いた後に unit 0 へ戻す）。
     def shadowTextureUnit(): Int32 = 7
 
@@ -226,17 +227,23 @@ mod Render3d {
     /// joint 行列の UBO を付ける binding の番号（GL の文脈で他に UBO を使う所は無い）。
     def jointsBinding(): Int32 = 1
 
-    /// 場面の絵の置き場の上限（枚数と、合計の大きさ）。超えたら今と前のコマで使っていない古い物から捨てる。
-    def texture3dCountBudget(): Int32 = 64
-
 
     def maxShadowMapSize(): Int32 = Scene3d.maxShadowMapSize()
 
     def maxShadowPcfRadius(): Int32 = Scene3d.maxShadowPcfRadius()
 
-    /// textureBudgetMB = 場面の絵を GPU に持つ量の上限（MB。project.json の scene3dTextureBudgetMB）。
-    pub def fresh(textureBudgetMB: Int32): State \ IO =
-        { textureByteBudget = Int32.toInt64(Int32.max(1, textureBudgetMB)) * 1048576i64, meshesRef = Ref.fresh(Static, Map.empty()), vertexTotal = Array#{0} @ Static,
+    /// 場面の絵の置き場の上限。megabytes = GPU に持つ量（MB。project.json の scene3dTextureBudgetMB）・
+    /// count = 枚数（scene3dTextureBudgetCount）。超えたら今と前のコマで使っていない古い物から捨てる。
+    pub type alias TextureBudget = { megabytes = Int32, count = Int32 }
+
+    /// EngineConfig（project.json）の 2 つのキーから場面の絵の置き場の上限を組む。
+    pub def textureBudgetOf(config: GameEngine.EngineConfig): TextureBudget =
+        { megabytes = config#scene3dTextureBudgetMB, count = config#scene3dTextureBudgetCount }
+
+    /// 3D の描き手を、空の置き場で作る（textureBudget = 場面の絵の置き場の上限）。
+    pub def fresh(textureBudget: TextureBudget): State \ IO =
+        { textureByteBudget = Int32.toInt64(Int32.max(1, textureBudget#megabytes)) * 1048576i64,
+          textureCountBudget = Int32.max(1, textureBudget#count), meshesRef = Ref.fresh(Static, Map.empty()), vertexTotal = Array#{0} @ Static,
           uploadStreak = Array#{0, 0, 0} @ Static, programsRef = Ref.fresh(Static, None),
           skinnedRef = Ref.fresh(Static, None), skinWarnedRef = Ref.fresh(Static, Set.empty()),
           designTargetsRef = Ref.fresh(Static, Map.empty()), missingTexturesRef = Ref.fresh(Static, Set.empty()),
@@ -246,7 +253,26 @@ mod Render3d {
           shadowWarnedRef = Ref.fresh(Static, Set.empty()), textures3dRef = Ref.fresh(Static, Map.empty()),
           materialSamplers = Array#{0, 0, 0, 0, 0, 0, 0, 0} @ Static, mipCopiesRef = Ref.fresh(Static, Map.empty()),
           blankTexture = Array#{0} @ Static,
-          textureWarnedRef = Ref.fresh(Static, Set.empty()) }
+          textureWarnedRef = Ref.fresh(Static, Set.empty()), countsHolder = Array#{0, 0, 0} @ Static }
+
+    /// 前に呼んでからの 3D の数（置いた物・描いた物・draw call）を返し、0 に戻す。
+    pub def takeCounts(state: State): FrameDiagnostics.Scene3dCounts \ IO =
+        let h = state#countsHolder;
+        let counts = { instances = Array.get(0, h), drawn = Array.get(1, h), drawCalls = Array.get(2, h) };
+        Array.put(0, 0, h);
+        Array.put(0, 1, h);
+        Array.put(0, 2, h);
+        counts
+
+    /// 場面の置いた物 n 個を数える。描いた物も同じ数（間引きが無いので、置いた物は全部描く）。
+    def countInstances(state: State, n: Int32): Unit \ IO =
+        let h = state#countsHolder;
+        Array.put(Array.get(0, h) + n, 0, h);
+        Array.put(Array.get(1, h) + n, 1, h)
+
+    /// 3D の draw call を 1 つ数える。
+    def countDrawCall(state: State): Unit \ IO =
+        Array.put(Array.get(2, state#countsHolder) + 1, 2, state#countsHolder)
 
     /// 描き手を作ってからの実時間（秒）。
     pub def elapsedSeconds(state: State): Float64 \ IO =
@@ -569,6 +595,7 @@ mod Render3d {
                   area: { viewport = PixelBox, scissor = PixelBox, fillBackground = Bool }, shadow: Option[ShadowUse],
                   scene: Scene3d.Scene3dCmd): Unit \ IO =
         Array.put(scene#time, 0, state#timeHolder);
+        countInstances(state, List.length(scene#instances));
         let programs = programsOf(state);
         beginScene(area#viewport, area#scissor, if (area#fillBackground) scene#environment#background else None);
         let picked = Scene3d.pickLights(scene#camera#eye, scene);
@@ -930,7 +957,7 @@ mod Render3d {
         let isIdle = (e: Texture3dEntry) -> gen - e#lastUsed > meshIdleFrames();
         let kept = Map.filter(e -> not isIdle(e), held);
         let overBudget = (m: Map[String, Texture3dEntry]) ->
-            Map.size(m) > texture3dCountBudget() or Map.foldLeft((acc, e) -> acc + e#bytes, 0i64, m) > state#textureByteBudget;
+            Map.size(m) > state#textureCountBudget or Map.foldLeft((acc, e) -> acc + e#bytes, 0i64, m) > state#textureByteBudget;
         let oldestFirst = Map.toList(kept) |> List.filter(ke -> snd(ke)#lastUsed < gen - 1i64)
             |> List.map(ke -> (snd(ke)#lastUsed, ke)) |> List.sortBy(fst) |> List.map(snd);
         let trimmed = List.foldLeft((acc, ke) -> if (overBudget(acc)) Map.remove(fst(ke), acc) else acc, kept, oldestFirst);
@@ -942,8 +969,8 @@ mod Render3d {
         Map.forEach((_name, c) -> GL11.glDeleteTextures(c#texId), idleCopies);
         Ref.put(Map.difference(copies, idleCopies), state#mipCopiesRef);
         if (overBudget(trimmed))
-            warnTextureOnce(state, "@budget", "scene3d: 場面の絵（Texture3d）が ${texture3dCountBudget()} 枚か"
-                + " ${Int64.toString(state#textureByteBudget / 1048576i64)} MB を超えて使われている — 絵を減らすか小さくするか、project.json の scene3dTextureBudgetMB を上げる")
+            warnTextureOnce(state, "@budget", "scene3d: 場面の絵（Texture3d）が ${state#textureCountBudget} 枚か"
+                + " ${Int64.toString(state#textureByteBudget / 1048576i64)} MB を超えて使われている — 絵を減らすか小さくするか、project.json の scene3dTextureBudgetCount / scene3dTextureBudgetMB を上げる")
         else ()
 
     // ── 材質のプログラムの置き場 ──
@@ -1074,7 +1101,8 @@ mod Render3d {
             GL20.glUniformMatrix4fv(locs#model, false, matrixArray(world));
             GL20.glUniformMatrix4fv(locs#normal, false, matrixArray(Mat4.normalMatrix(world)));
             GL30.glBindVertexArray(entry#vao);
-            GL11.glDrawElements(GL11.GL_TRIANGLES, entry#indexCount, GL11.GL_UNSIGNED_INT, 0i64)
+            GL11.glDrawElements(GL11.GL_TRIANGLES, entry#indexCount, GL11.GL_UNSIGNED_INT, 0i64);
+            countDrawCall(state)
         }
 
     /// 骨つきの物は joint 行列を UBO へ置いてから描く（locs は骨つきの版のプログラム）。pose が None なら drawMesh と同じ。
@@ -1351,7 +1379,8 @@ mod Render3d {
                 putUvRect(locs#uvRect, texture, b#regionRect);
                 GL20.glUniform3f(locs#tint, RenderUtil.f32(b#tint#r), RenderUtil.f32(b#tint#g), RenderUtil.f32(b#tint#b));
                 GL20.glUniform1i(locs#lit, if (b#lit) 1 else 0);
-                GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 6)
+                GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 6);
+                countDrawCall(state)
         }
 
     /// 貼る範囲の uv（左上 u・v と幅・高さ）。レンダーターゲットは行 0 が下なので v を反転する。
@@ -1427,9 +1456,9 @@ mod Render3d {
             fillVec3(direction, i, Vec3.normalized(Vec3.sub(l#target, l#position)));
             fillVec3(color, i, Vec3.mul(colorVec(l#color), l#intensity));
             Array.put(RenderUtil.f32(Float64.max(0.000001, l#range)), i, range);
-            let half = l#fovY / 2.0;
-            Array.put(RenderUtil.f32(RenderUtil.cosF(half)), 2 * i, cone);
-            Array.put(RenderUtil.f32(RenderUtil.cosF(half * spotInnerRatio())), 2 * i + 1, cone)
+            let edge = Scene3d.spotConeOf(l);
+            Array.put(RenderUtil.f32(edge#outerCos), 2 * i, cone);
+            Array.put(RenderUtil.f32(edge#innerCos), 2 * i + 1, cone)
         });
         { position = position, direction = direction, color = color, range = range, cone = cone }
 

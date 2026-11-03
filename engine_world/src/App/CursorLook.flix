@@ -1,5 +1,5 @@
-// App.CursorLook — マウスの矢印とタイトルのバッジの見た目を、ウィンドウへ当てる前の値で決める（純粋）。
-// 当てるのは App（applyHaltLook と、withCursor の宣言を当てる拍）。ここは何を当てるかだけを返す。
+// App.CursorLook — マウスの矢印・キャプチャとタイトルのバッジを、ウィンドウへ当てる前の値で決める（純粋）。
+// 当てるのは App（applyHaltLook と、withCursor・withMouseCapture の宣言を当てる拍）。ここは何を当てるかだけを返す。
 
 pub mod App.CursorLook {
 
@@ -28,9 +28,15 @@ pub mod App.CursorLook {
         case Hidden
     }
 
-    /// 止めた画面の出入りの見た目（タイトルのバッジ・矢印）。
+    /// マウスのキャプチャをどうするか。Release = 放す・LeaveToApp = 触らない（動き出した拍に宣言を当て直す）。
+    pub enum Capture with Eq, ToString {
+        case Release
+        case LeaveToApp
+    }
+
+    /// 止めた画面の出入りの見た目（タイトルのバッジ・矢印・キャプチャ）。
     pub enum HaltLook with Eq, ToString {
-        case HaltLook(Badge, Look)
+        case HaltLook(Badge, Look, Capture)
     }
 
     /// withCursor の宣言 want を当てるなら、その見た目（前に当てた物と同じなら None）。
@@ -43,13 +49,19 @@ pub mod App.CursorLook {
             case _ => Some(look)
         }
 
-    /// 止めた画面に入る時の見た目: バッジを出し、十字を見せる — withCursor で矢印を隠しているゲームでも、
-    /// 矩形を囲うのに要る（F8 と /halt・/step）。
+    /// withMouseCapture の宣言 want を当てるなら、その値（前に当てた値 applied と同じなら None）。
+    /// applied = None は、まだ当てていない・止めた画面が放した（どちらも次に動く拍で当て直す）。
+    pub def captureChange(want: Bool, applied: Option[Bool]): Option[Bool] =
+        if (applied == Some(want)) None else Some(want)
+
+    /// 止めた画面に入る時の見た目: バッジを出し、十字を見せ、マウスのキャプチャを放す — withCursor で矢印を隠している・
+    /// withMouseCapture でキャプチャしているゲームでも、矩形を囲うのに要る（F8 と /halt・/step）。
     pub def haltEnterLook(): HaltLook =
-        HaltLook.HaltLook(Badge.Shown, Look.Look(GameEngine.Cursor.Crosshair, Visibility.Show))
+        HaltLook.HaltLook(Badge.Shown, Look.Look(GameEngine.Cursor.Crosshair, Visibility.Show), Capture.Release)
 
     /// 止めた画面を抜ける時の見た目: バッジを外し、形だけ戻す。見せるか隠すかは触らない（動き出した拍に
-    /// cursorChange が withCursor の宣言を当て直す。宣言の無いゲームは見せたままが元の姿）（F8 と /resume）。
+    /// cursorChange が withCursor の宣言を、captureChange が withMouseCapture の宣言を当て直す。宣言の無いゲームは
+    /// 見せたまま・放したままが元の姿）（F8 と /resume）。
     pub def haltLeaveLook(): HaltLook =
-        HaltLook.HaltLook(Badge.Hidden, Look.Look(GameEngine.Cursor.Default, Visibility.LeaveToApp))
+        HaltLook.HaltLook(Badge.Hidden, Look.Look(GameEngine.Cursor.Default, Visibility.LeaveToApp), Capture.LeaveToApp)
 }

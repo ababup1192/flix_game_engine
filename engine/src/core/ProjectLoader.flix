@@ -12,6 +12,7 @@
 //     "clearColor": {"r": Float, "g": Float, "b": Float},
 //     "maxDeltaTime": Float,
 //     "scene3dTextureBudgetMB": Int,   （任意。3D の場面の絵を GPU に持つ量の上限。既定 256）
+//     "scene3dTextureBudgetCount": Int,（任意。3D の場面の絵を GPU に持つ枚数の上限。既定 64）
 //     "textures": [{"name": String, "path": String, "hasAlpha": Bool}, ...],
 //     "fonts":    [{"name": String, "path": String, "fontSize": Float}, ...],
 //     "sounds":   [{"name": String, "path": String, "looping": Bool}, ...]
@@ -47,7 +48,8 @@ pub mod ProjectLoader {
         soundManifest   = List[{name = String, path = String, looping = Bool}],
         clearColor      = Color,
         maxDeltaTime    = Float64,
-        scene3dTextureBudgetMB = Int32
+        scene3dTextureBudgetMB = Int32,
+        scene3dTextureBudgetCount = Int32
     }
 
     /// 読み込み結果。シーンは別途 `findSceneFiles` で列挙する。
@@ -104,16 +106,17 @@ pub mod ProjectLoader {
                 soundManifest   = sounds,
                 clearColor      = clearColor,
                 maxDeltaTime    = maxDelta,
-                scene3dTextureBudgetMB = getTextureBudget(root)
+                scene3dTextureBudgetMB = positiveIntOr("scene3dTextureBudgetMB", GameEngine.defaultScene3dTextureBudgetMB(), root),
+                scene3dTextureBudgetCount = positiveIntOr("scene3dTextureBudgetCount", GameEngine.defaultScene3dTextureBudgetCount(), root)
             };
             { rootDir = rootDir, config = config }
         }
 
-    /// scene3dTextureBudgetMB（任意）: 3D の場面の絵を GPU に持つ量の上限（MB）。無い・1 未満は既定。
-    def getTextureBudget(root: Map[String, Util.Json.Json]): Int32 =
-        match Map.get("scene3dTextureBudgetMB", root) {
+    /// 任意の整数のキー key（scene3dTextureBudgetMB・scene3dTextureBudgetCount）。無い・数でない・1 未満は既定 fallback。
+    def positiveIntOr(key: String, fallback: Int32, root: Map[String, Util.Json.Json]): Int32 =
+        match Map.get(key, root) {
             case Some(JNumber(n)) if n.intValue() >= 1 => n.intValue()
-            case _                                     => GameEngine.defaultScene3dTextureBudgetMB()
+            case _                                     => fallback
         }
 
     /// glyphs（任意）: 起動時にどの字を生成するか。

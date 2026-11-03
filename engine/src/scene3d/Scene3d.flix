@@ -18,9 +18,35 @@ pub mod Scene3d {
     /// pcfRadius = 周りを平均する幅（画素）・strength = 影の濃さ（0〜1）。
     pub type alias ShadowMap = { mapSize = Int32, bias = Float64, pcfRadius = Int32, strength = Float64 }
 
-    /// スポットライト。position から target を向き、fovY（ラジアン）の円錐の中だけを照らす。shadow が Some なら影を落とす（段 C）。
-    pub type alias SpotLight = { position = Vec3.Vec3, target = Vec3.Vec3, fovY = Float64, color = Color, intensity = Float64,
-                                 range = Float64, shadow = Option[ShadowMap] }
+    /// スポットライト。position から target を向き、fovY（ラジアン・円錐の全体の角）の円錐の中だけを照らす。shadow が Some なら影を落とす（段 C）。
+    /// innerFovY = 縁で暗くなり始める角（ラジアン・全体の角）。この角の内側は縁による減り無しで、そこから fovY まで暗くなる。
+    /// None なら fovY × spotInnerRatio()。小さくするほど輪の縁が広くぼける（懐中電灯）。直し方は spotConeOf。
+    /// 字で全部の欄を書かず、spotLight(position, target, fovY) を `{ color = .. | Scene3d.spotLight(p, t, fov) }` の形で替える。
+    pub type alias SpotLight = { position = Vec3.Vec3, target = Vec3.Vec3, fovY = Float64, innerFovY = Option[Float64],
+                                 color = Color, intensity = Float64, range = Float64, shadow = Option[ShadowMap] }
+
+    /// 白・intensity 1・range 10・影なし・innerFovY = None のスポットライト。
+    /// ほかの値は `{ intensity = 3.0, innerFovY = Some(0.3) | Scene3d.spotLight(p, t, fov) }` の形で替える。
+    pub def spotLight(position: Vec3.Vec3, target: Vec3.Vec3, fovY: Float64): SpotLight =
+        { position = position, target = target, fovY = fovY, innerFovY = None,
+          color = Color.rgb(1.0, 1.0, 1.0), intensity = 1.0, range = 10.0, shadow = None }
+
+    /// innerFovY が None の時の、縁で暗くなり始める角の割合（fovY に対する）。
+    pub def spotInnerRatio(): Float64 = 0.8
+
+    /// スポットの円錐の縁の cos（GL と CPU が同じ物を使う）。cone = smoothstep(outerCos, innerCos, dot(−l, スポットの向き))。
+    /// outerCos = cos(fovY / 2)・innerCos = cos(innerFovY / 2)。innerFovY は fovY より大きければ fovY に、
+    /// 0 未満と NaN は 0 に直す。None は fovY × spotInnerRatio()。
+    /// 内と外が同じ cos になる時は innerCos に 1e-6 を足す（GLSL の smoothstep は両端が同じだと値が決まらない）。
+    pub def spotConeOf(spot: SpotLight): { outerCos = Float64, innerCos = Float64 } =
+        let half = spot#fovY / 2.0;
+        let innerHalf = match spot#innerFovY {
+            case None    => half * spotInnerRatio()
+            case Some(a) => (if (Float64.isNan(a) or a < 0.0) 0.0 else Float64.min(a, spot#fovY)) / 2.0
+        };
+        let outerCos = Vec2.cos(half);
+        let innerCos = Vec2.cos(innerHalf);
+        { outerCos = outerCos, innerCos = if (innerCos == outerCos) innerCos + 0.000001 else innerCos }
 
     /// 距離のかすみ。目からの距離が near から far へ向かって color に寄る。
     pub type alias DistanceFog = { color = Color, near = Float64, far = Float64 }
@@ -307,7 +333,8 @@ pub mod Scene3d {
 
     /// 上限を超えた光を、目に近い物から選んで残す（同じ距離なら並びの前の物）。残った物は元の並びの順のまま。
     /// 境をまたいだ光がぱっと点いたり消えたりするのは許す（決まった手順で毎回同じなので、気になれば光を減らす）。
-    /// GL と CPU が同じ物を使う。
+    /// GL と CPU が同じ物を使う。ゲームが選ばなくても描き手がこれで選ぶので、pointLights・spotLights には全部の光を渡してよい
+    /// （ゲームの側で近い順に選び直さない）。
     pub def pickLights(eye: Vec3.Vec3, cmd: Scene3dCmd): Scene3dCmd =
         { pointLights = nearest(maxPointLights(), eye, l -> l#position, cmd#pointLights),
           spotLights = nearest(maxSpotLights(), eye, l -> l#position, cmd#spotLights) | cmd }

@@ -167,7 +167,31 @@ def testScene3dPickLightsKeepsEightNearest(): Unit \ Assert =
 /// スポットライトの影の行列は、target の点を光の NDC の真ん中（x・y が 0）へ写す。
 @Test
 def testShadowMatrixCentersTarget(): Unit \ Assert =
-    let spot = { position = { x = 3.0, y = 40.0, z = -7.0 }, target = { x = 10.0, y = 0.0, z = 5.0 }, fovY = 1.2,
-                 color = Color.rgb(1.0, 1.0, 1.0), intensity = 1.0, range = 200.0, shadow = None };
+    let spot = { range = 200.0 | Scene3d.spotLight({ x = 3.0, y = 40.0, z = -7.0 }, { x = 10.0, y = 0.0, z = 5.0 }, 1.2) };
     let ndc = Mat4.applyPerspective(Scene3d.shadowMatrix(spot), spot#target);
     Assert.assertTrue(ndc |> Option.exists(q -> Float64.abs(q#x) < 0.000001 and Float64.abs(q#y) < 0.000001))
+
+// ════════════════════════════════════════════════════════════════════
+// Scene3d.spotConeOf
+// ════════════════════════════════════════════════════════════════════
+
+/// 縦の画角 1.0 のスポットの、innerFovY ごとの円錐の縁の cos。
+def coneWith(innerFovY: Option[Float64]): (Float64, Float64) =
+    let edge = Scene3d.spotConeOf({ innerFovY = innerFovY | Scene3d.spotLight(Vec3.zero(), Vec3.v3(0.0, 0.0, 1.0), 1.0) });
+    (edge#outerCos, edge#innerCos)
+
+/// None は fovY × 0.8（半角 0.4）・Some(0.6) は半角 0.3。外側はどちらも半角 0.5。
+@Test
+def testSpotConeOfNoneAndSome(): Unit \ Assert =
+    Assert.assertEq(expected = ((Vec2.cos(0.5), Vec2.cos(0.4)), (Vec2.cos(0.5), Vec2.cos(0.3))),
+                    (coneWith(None), coneWith(Some(0.6))))
+
+/// fovY を超える角は fovY に直り、内と外が同じ cos になるので内側に 1e-6 を足す（smoothstep の両端を分ける）。
+@Test
+def testSpotConeOfClampsWiderInnerToFovY(): Unit \ Assert =
+    Assert.assertEq(expected = (Vec2.cos(0.5), Vec2.cos(0.5) + 0.000001), coneWith(Some(2.0)))
+
+/// 負と NaN は 0 に直る（内側の cos = cos 0 = 1。縁は円錐の真ん中から外まで続く）。
+@Test
+def testSpotConeOfNegativeAndNanBecomeZero(): Unit \ Assert =
+    Assert.assertEq(expected = (1.0, 1.0), (snd(coneWith(Some(-1.0))), snd(coneWith(Some(Float64.nan())))))

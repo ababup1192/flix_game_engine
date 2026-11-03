@@ -213,4 +213,45 @@ mod TestFlow {
         Assert.assertEq(expected = Ok(15),
                         Flow.Parse.parseText(goVocab(), "clean-passes", input) |> Result.map(script -> List.length(script#lines))
                             |> Result.mapErr(Flow.Parse.problemsText))
+
+    // ========================================================================
+    // マウスの動いた量（キャプチャ中は位置が止まるので look= で残す）
+    // ========================================================================
+
+    /// 位置 (10, 10) のまま mouseDelta だけ (3, 4) のフレーム（キャプチャ中の視点の動き）。
+    def lookFrame(): App.Frame =
+        { mouseDelta = { x = 3.0, y = 4.0 }
+          | App.frameOf(prev = Set#{}, current = Set#{}, 0.02, Vec2.zero(),
+                        { prevCursor = Some({ x = 10.0, y = 10.0 }), cursor = { x = 10.0, y = 10.0 } },
+                        { prevDown = false, down = false, wheel = 0.0 }) }
+
+    // 位置が変わらないのに動いた量があるフレームは look= で書く（位置の差だけでは再生で視点が回らない）。
+    @Test
+    def testRecordWritesLookWhenCursorIsHeld(): Unit \ Assert + Fs.FileRead + IO =
+        let path = "build/flow-test/look.flow";
+        let rec = match Flow.Record.open(path) {
+            case Some(opened) => opened
+            case None         => bug!("記録を開けない")
+        };
+        Flow.Record.frame(rec, lookFrame(), None);
+        Flow.Record.frame(rec, lookFrame(), None);
+        Flow.Record.close(rec);
+        Assert.assertEq(expected = Some("wait 1f look=3.0,4.0 ns=20000000"),
+                        Fs.FileRead.readLines(path) |> Result.getWithDefault(Nil) |> List.drop(3) |> List.head)
+
+    /// フレームごとの mouseDelta を足していく World（視点の向きの代わり）。
+    def lookApp(): App.App[Vec2.Vec2, {}] =
+        App.make(Vec2.zero()) |> App.addSystem((frame, sum) -> Vec2.add(sum, frame#mouseDelta))
+
+    // flow の look= はそのフレームの mouseDelta になる（位置の差より先に使う）。
+    @Test
+    def testFlowLookBecomesMouseDelta(): Unit \ Assert + Fs.FileRead =
+        let looked = match Flow.Parse.parseText(Flow.vocabOf(lookApp(), Vec2.zero()), "look", "wait 1f look=3,4 at=50,50") {
+            case Err(problems) => Err(Flow.Parse.problemsText(problems))
+            case Ok(script) => Flow.play(lookApp(), { design = Vec2.zero(), limit = 10 }, script,
+                                         { world = Vec2.zero(), state = App.freshStepState() })
+                                   |> Result.map(outcome -> (outcome#last#x, outcome#last#y))
+                                   |> Result.mapErr(failure -> failure#why)
+        };
+        Assert.assertEq(expected = Ok((3.0, 4.0)), looked)
 }

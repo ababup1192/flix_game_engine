@@ -41,8 +41,14 @@ pub mod App {
         padTouched = Bool,                 // ゲームパッドのどこかにいま触っているか（案内のキーの絵をパッドの物へ替える判断に。
                                            // パッドの入力そのものはキーへ読み替えて down / justPressed に入っている。
                                            // 読み替えの表は GamepadMap.table）
-        padKind = GamepadMap.PadKind       // つないだパッドの機種（Generic = Xbox 配置の一般・Steam = Steam Input を通した物・
+        padKind = GamepadMap.PadKind,      // つないだパッドの機種（Generic = Xbox 配置の一般・Steam = Steam Input を通した物・
                                            // Unknown = つないでいない）。案内に出すボタンの絵を機種で替える判断に
+        mouseDelta = Vec2.Vec2,            // 前のフレームからマウスが動いた量（design px・小数・右と下が正）。withMouseCapture で
+                                           // キャプチャしている間も窓の端で止まらずに出る（一人称の視点はこれで回す。cursor の差で回さない）。
+                                           // キャプチャを切り替えた拍・フォーカスが戻った拍は 0
+        windowFocused = Bool,              // 窓にフォーカスがあるか（外れている間にキャプチャの宣言を出し続けても OS はキャプチャしない）
+        diagnostics = Option[FrameDiagnostics.Diagnostics] // 前のフレームを描いた診断（CPU・GPU の時間・3D の数）。withDiagnostics の
+                                           // 間だけ Some（F8 で止めていた拍の後は止める前の値）。表示は FrameDiagnostics.summaryLines
     }
 
     /// key がいま押されているか（押しっぱなしも true）。移動などの連続入力に。
@@ -215,6 +221,10 @@ pub mod App {
         cursor = Option[w -> CursorSpec],
         // 毎フレームの「窓をフルスクリーンにしたいか」の宣言（withFullscreen）。None = App は触らない。
         fullscreen = Option[w -> Bool],
+        // 毎フレームの「マウスを窓にキャプチャしたいか」の宣言（withMouseCapture）。None = App は触らない（F8 で放すだけ）。
+        mouseCapture = Option[w -> Bool],
+        // 描く側の診断を集めて Frame#diagnostics へ渡すか（withDiagnostics）。
+        diagnostics = Bool,
         // 鍵が変わったフレームに 1 回書く外への出力（addOutput・withDocTable）の列・追加順。
         outputs = List[Output[w]],
         // 始まりの登録簿（withStarts）。START・/start・flow の start・テストが名前で場面を組む。
@@ -270,6 +280,8 @@ pub mod App {
           clocks = Nil,
           cursor = None,
           fullscreen = None,
+          mouseCapture = None,
+          diagnostics = false,
           outputs = Nil,
           starts = Nil,
           flow = Flow.emptyTable(),
@@ -646,6 +658,22 @@ pub mod App {
     pub def withFullscreen(f: w -> Bool, app: App[w, ef]): App[w, ef] =
         App.App({ fullscreen = Some(f) | rec(app) })
 
+    /// 毎フレーム「マウスを窓にキャプチャしたいか」を World から宣言する（一人称の視点。Godot の MOUSE_MODE_CAPTURED・
+    /// Bevy の CursorGrabMode::Locked）。キャプチャしている間は矢印が消え、動きは Frame#mouseDelta だけに出る
+    /// （Frame#cursor はキャプチャした時の位置で止まり、mouseMoved は偽）。App は宣言が変わったフレームだけ当て、
+    /// F8 で止めている間は放す（再開した拍に宣言を当て直す）。放すと矢印はキャプチャする前の位置（止めていた cursor と同じ所）に戻る。
+    /// 慣習: 窓をクリックしたらキャプチャ、Esc で放す（放した状態の Esc で終わる・確かめる）。Esc で放すなら quitWhen で既定の Esc の終了を外す。
+    /// フォーカスが外れると OS が放し、戻るとキャプチャし直す（Frame#windowFocused で分かる。App は触らない）。
+    /// 系の中で setMouseCaptured を呼ばない —— 呼ぶと /step・台本・F8 の再開でキャプチャが World とずれる。
+    pub def withMouseCapture(f: w -> Bool, app: App[w, ef]): App[w, ef] =
+        App.App({ mouseCapture = Some(f) | rec(app) })
+
+    /// 描く側の診断（CPU・GPU の 1 コマの時間・3D の数）を集め、次のフレームの Frame#diagnostics に渡す。
+    /// 画面に出すなら FrameDiagnostics.summaryLines をゲームの字の部品で描く（出す所と見た目はゲームが決める）。
+    /// GPU の時間は 1〜2 コマ遅れの値で、測れない描き手（窓なしの描き出し）では None。自前で nanoTime を測らない。
+    pub def withDiagnostics(app: App[w, ef]): App[w, ef] =
+        App.App({ diagnostics = true | rec(app) })
+
     /// 跳んだ拍（起動・START・/start・/step・/flow?apply・F8 の巻き戻しからの再開）に、出力をどう扱うか。
     pub enum OnJump with Eq, ToString {
         /// 跳んだ先の鍵を「書いた」ことにする。遊んで変わった時だけ書く（セーブ —— 作り物の場面で上書きしない）
@@ -864,7 +892,9 @@ pub mod App {
     /// マウスも同じ考え方: mouseClicked は「今押されていて前は押されていない」エッジ、
     /// mouseMoved は前フレームとの座標比較（最初のフレームは prevCursor = None で false）。
     /// wheel はバックエンドが貯めた 1 フレームぶんの量を素通しする。
+    /// mouseDelta は前フレームとの座標の差（最初のフレームは 0。実機のループはキャプチャしても出るバックエンドの量で置き直す）。
     /// realNow は 0 秒で組み、advanceFrame が StepState の実時間の時計で置き直す。
+    /// windowFocused は真・diagnostics は None で組む（実機のループが置き直す）。
     pub def frameOf(prev: {prev = Set[GameEngine.Key]},
                     current: {current = Set[GameEngine.Key]}, dt: Float64,
                     viewport: Vec2.Vec2,
@@ -881,7 +911,19 @@ pub mod App {
           wheel = mouse#wheel,
           realNow = Clock.zero(),
           padTouched = false,
-          padKind = GamepadMap.PadKind.Unknown }
+          padKind = GamepadMap.PadKind.Unknown,
+          mouseDelta = cursorDelta(cursor#prevCursor, cursor#cursor),
+          windowFocused = true,
+          diagnostics = None }
+
+    /// Frame#cursor に置く位置: キャプチャしている間（applied = Some(true)）は前の位置 prev のまま止め、ほかは読んだ位置 raw。
+    /// キャプチャ中の GLFW の位置は窓の外へ流れていく仮の値なので、UI のホバーと mouseMoved に渡さない。
+    pub def heldCursor(applied: Option[Bool], prev: Option[Vec2.Vec2], raw: Vec2.Vec2): Vec2.Vec2 =
+        if (applied == Some(true)) Option.getWithDefault(raw, prev) else raw
+
+    /// 前の位置 prev から今の位置 cursor へ動いた量（前の位置が無ければ 0）。
+    pub def cursorDelta(prev: Option[Vec2.Vec2], cursor: Vec2.Vec2): Vec2.Vec2 =
+        prev |> Option.map(p -> Vec2.sub(cursor, p)) |> Option.getWithDefault(Vec2.zero())
 
     /// withFixedStep の accumulator。持ち越し carry と実フレームの経過秒 realDt を足し、
     /// fixedDt の倍数だけサブステップ回数を出し、端数を次フレームへの持ち越しとして返す。
@@ -896,12 +938,12 @@ pub mod App {
         else
             (Float64.tryToInt32(rawSteps) |> Option.getWithDefault(0), total - rawSteps * fixedDt)
 
-    /// withFixedStep の 2 サブステップ目以降に渡す Frame: エッジ 4 種（justPressed /
-    /// mouseClicked / mouseMoved / wheel）だけを「今フレームでは既に消費済み」に潰す。
+    /// withFixedStep の 2 サブステップ目以降に渡す Frame: エッジ 5 種（justPressed /
+    /// mouseClicked / mouseMoved / wheel / mouseDelta）だけを「今フレームでは既に消費済み」に潰す。
     /// down / mouseDown のような押しっぱなし状態はそのまま残すので、複数サブステップに
     /// またがっても連続入力（移動など）は各回とも効く。
     pub def suppressEdges(frame: Frame): Frame =
-        { justPressed = Set.empty(), mouseClicked = false, mouseMoved = false, wheel = 0.0 | frame }
+        withEdges(noPending(), frame)
 
     /// 0 サブステップのフレームで捨てられそうになったエッジのバッファ。エッジは prev との
     /// 差分なので、同じ押下は次の実フレームでは二度と立たない — 消費されるまでここに
@@ -911,7 +953,8 @@ pub mod App {
         justPressed = Set[GameEngine.Key],
         mouseClicked = Bool,
         mouseMoved = Bool,
-        wheel = Float64
+        wheel = Float64,
+        mouseDelta = Vec2.Vec2
     }
 
     /// withFixedStep がフレームをまたいで持ち回す状態（持ち越し秒 + 未消費エッジ）。
@@ -925,21 +968,31 @@ pub mod App {
 
     /// 未消費エッジなし。
     def noPending(): PendingEdges =
-        { justPressed = Set.empty(), mouseClicked = false, mouseMoved = false, wheel = 0.0 }
+        { justPressed = Set.empty(), mouseClicked = false, mouseMoved = false, wheel = 0.0, mouseDelta = Vec2.zero() }
 
     /// バッファしたエッジを今フレームの Frame へ合流させる: justPressed は和集合・
-    /// クリックと移動は「どちらかで起きた」・wheel は量なので加算。
+    /// クリックと移動は「どちらかで起きた」・wheel と mouseDelta は量なので加算。
     /// held 系（down / mouseDown / cursor / dt）は今フレームの値をそのまま使う。
     pub def mergeEdges(pending: PendingEdges, frame: Frame): Frame =
-        { justPressed = Set.union(pending#justPressed, frame#justPressed),
-          mouseClicked = pending#mouseClicked or frame#mouseClicked,
-          mouseMoved = pending#mouseMoved or frame#mouseMoved,
-          wheel = pending#wheel + frame#wheel | frame }
+        withEdges(addEdges(pending, pendingOf(frame)), frame)
 
-    /// Frame からエッジ 4 種を抜き出してバッファの形にする（0 ステップのフレームの持ち越し用）。
+    /// 2 つのエッジを 1 つに: 押した瞬間は和集合・クリックと移動は「どちらかで起きた」・wheel と mouseDelta は量なので足す。
+    def addEdges(a: PendingEdges, b: PendingEdges): PendingEdges =
+        { justPressed = Set.union(a#justPressed, b#justPressed),
+          mouseClicked = a#mouseClicked or b#mouseClicked,
+          mouseMoved = a#mouseMoved or b#mouseMoved,
+          wheel = a#wheel + b#wheel,
+          mouseDelta = Vec2.add(a#mouseDelta, b#mouseDelta) }
+
+    /// frame のエッジの欄を edges で置き換える（held 系はそのまま）。エッジの種類は PendingEdges の欄と同じ並び。
+    def withEdges(edges: PendingEdges, frame: Frame): Frame =
+        { justPressed = edges#justPressed, mouseClicked = edges#mouseClicked, mouseMoved = edges#mouseMoved,
+          wheel = edges#wheel, mouseDelta = edges#mouseDelta | frame }
+
+    /// Frame からエッジ 5 種を抜き出してバッファの形にする（0 ステップのフレームの持ち越し用）。
     pub def pendingOf(frame: Frame): PendingEdges =
         { justPressed = frame#justPressed, mouseClicked = frame#mouseClicked,
-          mouseMoved = frame#mouseMoved, wheel = frame#wheel }
+          mouseMoved = frame#mouseMoved, wheel = frame#wheel, mouseDelta = frame#mouseDelta }
 
     /// システムの列を追加順（左から右）に World へ畳み込む。
     pub def applySystems(frame: Frame, systems: List[(Frame, w) -> w \ ef], world: w): w \ ef =
@@ -1114,6 +1167,7 @@ pub mod App {
         // 全パスを新規出現と見なし、init 直後にもう一度リロードが走ってしまう。
         // 窓の宣言（withFullscreen）は最初のコマを描く前に当てる（起動した拍からその窓で見せる）。
         applyFullscreen(r, world0);
+        if (r#diagnostics) GameEngine.Game.setDiagnosticsEnabled(true) else ();
         let watch0 = if (r#debug and not List.isEmpty(r#watch))
                          { sincePoll = 0.0, mtimes = statMtimes(List.map(fst, r#watch)) }
                      else freshWatchState();
@@ -1129,7 +1183,8 @@ pub mod App {
                     tileCache = freshTileCache(),
                     glyphSeen = None, budgetWarned = false,
                     warnOnce = warnOnceWith(Ref.fresh(Static, Set.empty())),
-                    cursorShown = CursorLook.State.Stale, outputKeys = keysAfterJump(app, world0, Nil), recorder = recorder,
+                    cursorShown = CursorLook.State.Stale, captureShown = None, lastDiagnostics = None,
+                    outputKeys = keysAfterJump(app, world0, Nil), recorder = recorder,
                     hitches = if (canDebug(r)) Some(startHitchWatch()) else None });
         Option.forEach(RemoteDebug.shutdown, bridge)
 
@@ -1157,6 +1212,10 @@ pub mod App {
         warnOnce = String -> Unit,
         // withCursor の宣言を最後にどう当てたか（止めている拍は Stale にして、動き出した拍に当て直させる）。
         cursorShown = CursorLook.State,
+        // withMouseCapture の宣言を最後に当てた値（None = まだ当てていない・止めた画面が放した）。
+        captureShown = Option[Bool],
+        // 前の Running のフレームで引き取った診断（withDiagnostics の間だけ Some。次のフレームの Frame#diagnostics）。
+        lastDiagnostics = Option[FrameDiagnostics.Diagnostics],
         // 出力（addOutput）ごとの最後に書いた鍵（outputs と同じ順）。
         outputKeys = List[String],
         // 遊んだ記録（DEBUG の起動・FLOW_RECORD=0 で止まる）。None = 書かない。
@@ -1241,17 +1300,7 @@ pub mod App {
         let r = rec(app);
         // ヒッチの記録が測る 1 周の始まり（入力の取り込みから。nanoTime は軽いので見張らない時も取る）。
         let iterStart = System.nanoTime();
-        let currentKeys = InputEvent.currentKeys();
-        let mouseDown = GameEngine.Game.isMouseButtonPressed(GameEngine.MouseButton.Left);
-        let cursorNow = GameEngine.Game.getMousePosition();
-        // realNow は前のフレームまでの実時間（quit・リロード・F8 の停止が読む）。系へ渡す前に advanceFrame が進めて置き直す。
-        let frame = { realNow = Clock.nowOf(st0#stepState#real), padTouched = GameEngine.Game.isGamepadTouched(),
-                      padKind = GameEngine.Game.gamepadKind()
-                      | frameOf(prev = st0#prevKeys, current = currentKeys, readDt(),
-                            GameEngine.Game.getViewportRect()#size,
-                            { prevCursor = st0#prevCursor, cursor = cursorNow },
-                            { prevDown = st0#prevMouseDown, down = mouseDown,
-                              wheel = GameEngine.Game.consumeScrollDelta() }) };
+        let frame = readFrame(st0);
         let wantsQuit = r#quit;
         // shouldClose は入力の取り込み（poll）も兼ねるので 1 フレームに 1 回だけ呼ぶ。
         let closing = GameEngine.Game.shouldClose();
@@ -1261,8 +1310,8 @@ pub mod App {
         if (answer == CloseAnswer.Close or wantsQuit(frame, st#world)) ()
         else {
             // 入力の持ち越しはどの分岐でも同じなので、ここで 1 度だけ差し替える。
-            let carried = { prevKeys = currentKeys, prevMouseDown = mouseDown,
-                            prevCursor = Some(cursorNow) | st };
+            let carried = { prevKeys = frame#down, prevMouseDown = frame#mouseDown,
+                            prevCursor = Some(frame#cursor) | st };
             let remoteRaw = match st#bridge {
                 case Some(b) => RemoteDebug.pollRequest(b)
                 case None    => None
@@ -1281,11 +1330,12 @@ pub mod App {
                         { world = st#world, anno = st#anno, history = st#history, hold = st#remoteHold,
                           stepState = st#stepState, record = Nil });
                     // リモートの口が World を差し替えた拍は跳んだ拍（セーブを作り物で上書きしない）。
-                    // /halt・/resume が矢印を上書きするので、宣言は次に動く拍で当て直す。
+                    // /halt・/resume が矢印とキャプチャを上書きするので、宣言は次に動く拍で当て直す。
                     recordItems(app, st#recorder, next#record, next#world);
                     loop(app, { world = next#world, anno = next#anno, history = next#history,
                                 remoteHold = next#hold, stepState = next#stepState,
-                                cursorShown = CursorLook.State.Stale, outputKeys = keysAfterJump(app, next#world, st#outputKeys) | carried })
+                                cursorShown = CursorLook.State.Stale, captureShown = None,
+                                outputKeys = keysAfterJump(app, next#world, st#outputKeys) | carried })
                 case _ => {
                     let decided = decideBranch({ f8Pressed = justPressed(GameEngine.Key.F8, frame),
                                                  canDebug = canDebug(r), remoteHold = st#remoteHold,
@@ -1307,65 +1357,89 @@ pub mod App {
                                 case (Some(dir), Some(recorder)) => discard Flow.Record.copyInto(recorder, dir, nextAnno#scrub)
                                 case _                      => ()
                             };
-                            loop(app, { anno = nextAnno, cursorShown = CursorLook.State.Stale,
+                            loop(app, { anno = nextAnno, cursorShown = CursorLook.State.Stale, captureShown = None,
                                         tileCache = painted#tileCache, glyphSeen = painted#glyphSeen,
                                         budgetWarned = painted#budgetWarned | carried })
-                        case Branch.Resuming =>
-                            // スクラブ位置の World から再開する。巻き戻したぶんの履歴と
-                            // フレーム番号も、そこを現在として数え直す。
-                            let resumed = resumePoint(st#anno, st#history, st#world);
-                            recordJump(app, st#recorder, if (st#anno#scrub > 0) Some("rewind ${Int32.toString(st#anno#scrub)}") else None,
-                                       resumed#world);
-                            let (cache1, seen1, warned1) = renderFrame(app, st#warnOnce, resumed#world, plainLook(fpsOverlayOf(r, resumed#anno)), st#tileCache, st#glyphSeen, st#budgetWarned);
-                            let shown = applyCursor(r, resumed#world, st#cursorShown);
-                            applyFullscreen(r, resumed#world);
-                            loop(app, { world = resumed#world, anno = resumed#anno, history = resumed#history,
-                                        tileCache = cache1, glyphSeen = seen1,
-                                        budgetWarned = warned1, cursorShown = shown,
-                                        outputKeys = keysAfterJump(app, resumed#world, st#outputKeys) | carried })
-                        case Branch.Running =>
-                            let frameStart = iterStart;
-                            // 止めていた間・リモートのコマで塗った分は、このコマの診断に混ぜない。
-                            if (Option.isEmpty(st#hitches)) () else discard GameEngine.Game.consumeDiagnostics();
-                            Option.forEach(recorder -> Flow.Record.checkExternalChange(recorder, fingerprintText(r, st#world)), st#recorder);
-                            let (watched, nextWatchState, watchFired) = applyWatch(r, frame#dt, st#watchState, st#world, st#recorder);
-                            let (reloaded, reloadFired) = applyReload(r, frame, watched, st#recorder);
-                            // 1 フレームの中身は trace・台本・/step と同じ traceFrame の 1 本（音の名前もここで導く）。
-                            let (traced, nextStepState) = traceFrame(app, frame, st#stepState, reloaded);
-                            let updatedAt = System.nanoTime();
-                            let advanced = traced#after;
-                            Option.forEach(recorder -> Flow.Record.frame(recorder, frame, fingerprintText(r, advanced)), st#recorder);
-                            let (nextSustaining, nextMix, nextUses) = applyAudio(r, frame#dt, traced,
-                                                                       st#sustaining, st#mixState, st#soundUses, st#warnOnce);
-                            // fps は debug 有効時だけ計測する（本番ビルドは履歴を積まず無負荷）。
-                            let measuredAnno = if (r#debug) Annotate.recordDt(frame#dt, st#anno) else st#anno;
-                            // Doc の読み直しが起きたフレームはタイル層の世代を進め、同じ key でも作り直す。
-                            let renderStart = System.nanoTime();
-                            let (cache1, seen1, warned1) = renderFrame(app, st#warnOnce, advanced, plainLook(fpsOverlayOf(r, measuredAnno)),
-                                                              bumpTileGen(watchFired or reloadFired, st#tileCache),
-                                                              st#glyphSeen, st#budgetWarned);
-                            let nextHitches = watchHitches(app, st#hitches, st#recorder,
-                                { frame = measuredAnno#frame, start = frameStart, updateNs = updatedAt - frameStart,
-                                  renderNs = System.nanoTime() - renderStart,
-                                  pressed = frame#justPressed, reloaded = watchFired or reloadFired }, advanced);
-                            // 時間スクラブ用の履歴（debug が無効なら一切持たない = 本番ビルドは無負荷）
-                            let nextHistory = if (canDebug(r))
-                                                  List.take(historyLimit(), advanced :: st#history)
-                                              else Nil;
-                            // 外への出力とマウスの矢印は、実機のフレームの後の World からだけ当てる。
-                            let written = writeOutputs(app, advanced, st#outputKeys);
-                            let shown = applyCursor(r, advanced, st#cursorShown);
-                            applyFullscreen(r, advanced);
-                            loop(app, { world = advanced, history = nextHistory,
-                                        outputKeys = written, cursorShown = shown,
-                                        anno = { frame = measuredAnno#frame + 1i64 | measuredAnno },
-                                        stepState = nextStepState, watchState = nextWatchState,
-                                        sustaining = nextSustaining, mixState = nextMix, soundUses = nextUses, tileCache = cache1,
-                                        glyphSeen = seen1, budgetWarned = warned1, hitches = nextHitches | carried })
+                        case Branch.Resuming => loop(app, resumingStep(app, carried))
+                        case Branch.Running  => loop(app, runningStep(app, frame, iterStart, carried))
                     }
                 }
             }
         }
+
+    /// このフレームの入力を読んで Frame を組む（キー・マウス・ホイール・動いた量・パッド・フォーカスと、前のフレームの診断）。
+    /// キャプチャしている間の GLFW の仮の位置は窓の外へ流れるので、cursor はキャプチャした時の位置で止める（UI のホバーと mouseMoved を狂わせない）。
+    /// realNow は前のフレームまでの実時間（quit・リロード・F8 の停止が読む）。系へ渡す前に advanceFrame が進めて置き直す。
+    /// マウスの動いた量は止めている拍も読み切る（溜めると、動き出した拍に一度に入る）。
+    def readFrame(st0: LoopState[w]): Frame \ GameEngine.Game =
+        let cursorNow = heldCursor(st0#captureShown, st0#prevCursor, GameEngine.Game.getMousePosition());
+        { realNow = Clock.nowOf(st0#stepState#real), padTouched = GameEngine.Game.isGamepadTouched(),
+          padKind = GameEngine.Game.gamepadKind(), mouseDelta = GameEngine.Game.consumeMouseDelta(),
+          windowFocused = GameEngine.Game.isWindowFocused(), diagnostics = st0#lastDiagnostics
+          | frameOf(prev = st0#prevKeys, current = InputEvent.currentKeys(), readDt(),
+                    GameEngine.Game.getViewportRect()#size,
+                    { prevCursor = st0#prevCursor, cursor = cursorNow },
+                    { prevDown = st0#prevMouseDown, down = GameEngine.Game.isMouseButtonPressed(GameEngine.MouseButton.Left),
+                      wheel = GameEngine.Game.consumeScrollDelta() }) }
+
+    /// 止めた画面を抜けるフレーム: スクラブ位置の World から再開する。巻き戻したぶんの履歴と
+    /// フレーム番号も、そこを現在として数え直す。World はまだ進めない。
+    def resumingStep(app: App[w, ef], st: LoopState[w]): LoopState[w] \ (ef + GameEngine.Game + ShaderEffect.Shader + RenderTarget.Target + IO) =
+        let r = rec(app);
+        let resumed = resumePoint(st#anno, st#history, st#world);
+        recordJump(app, st#recorder, if (st#anno#scrub > 0) Some("rewind ${Int32.toString(st#anno#scrub)}") else None,
+                   resumed#world);
+        let (cache1, seen1, warned1) = renderFrame(app, st#warnOnce, resumed#world, plainLook(fpsOverlayOf(r, resumed#anno)), st#tileCache, st#glyphSeen, st#budgetWarned);
+        let declared = applyDeclared(r, resumed#world, st);
+        { world = resumed#world, anno = resumed#anno, history = resumed#history,
+          tileCache = cache1, glyphSeen = seen1, budgetWarned = warned1,
+          cursorShown = declared#cursorShown, captureShown = declared#captureShown,
+          outputKeys = keysAfterJump(app, resumed#world, st#outputKeys) | st }
+
+    /// ふつうのフレーム: World を進めて（traceFrame）、音を鳴らし、描き、見張り・履歴・出力・窓の宣言を済ませた次の状態。
+    def runningStep(app: App[w, ef], frame: Frame, frameStart: Int64, st: LoopState[w]): LoopState[w] \ (ef + GameEngine.Game + GameEngine.Audio + ShaderEffect.Shader + RenderTarget.Target + Fs.FileRead + Fs.FileWrite + IO) =
+        let r = rec(app);
+        // 止めていた間・リモートのコマで塗った分は、このコマの診断に混ぜない。
+        let collecting = r#diagnostics or Option.nonEmpty(st#hitches);
+        if (collecting) discard GameEngine.Game.consumeDiagnostics() else ();
+        Option.forEach(recorder -> Flow.Record.checkExternalChange(recorder, fingerprintText(r, st#world)), st#recorder);
+        let (watched, nextWatchState, watchFired) = applyWatch(r, frame#dt, st#watchState, st#world, st#recorder);
+        let (reloaded, reloadFired) = applyReload(r, frame, watched, st#recorder);
+        // 1 フレームの中身は trace・台本・/step と同じ traceFrame の 1 本（音の名前もここで導く）。
+        let (traced, nextStepState) = traceFrame(app, frame, st#stepState, reloaded);
+        let updatedAt = System.nanoTime();
+        let advanced = traced#after;
+        Option.forEach(recorder -> Flow.Record.frame(recorder, frame, fingerprintText(r, advanced)), st#recorder);
+        let (nextSustaining, nextMix, nextUses) = applyAudio(r, frame#dt, traced,
+                                                   st#sustaining, st#mixState, st#soundUses, st#warnOnce);
+        // fps は debug 有効時だけ計測する（本番ビルドは履歴を積まず無負荷）。
+        let measuredAnno = if (r#debug) Annotate.recordDt(frame#dt, st#anno) else st#anno;
+        // Doc の読み直しが起きたフレームはタイル層の世代を進め、同じ key でも作り直す。
+        let renderStart = System.nanoTime();
+        let (cache1, seen1, warned1) = renderFrame(app, st#warnOnce, advanced, plainLook(fpsOverlayOf(r, measuredAnno)),
+                                          bumpTileGen(watchFired or reloadFired, st#tileCache),
+                                          st#glyphSeen, st#budgetWarned);
+        let renderNs = System.nanoTime() - renderStart;
+        // 診断はここで 1 回だけ引き取り、ヒッチの記録と次のフレームの Frame#diagnostics へ配る。
+        let diag = if (collecting) Some(GameEngine.Game.consumeDiagnostics()) else None;
+        let nextHitches = watchHitches(app, st#hitches, st#recorder,
+            { frame = measuredAnno#frame, start = frameStart, updateNs = updatedAt - frameStart,
+              renderNs = renderNs,
+              pressed = frame#justPressed, reloaded = watchFired or reloadFired }, diag, advanced);
+        // 時間スクラブ用の履歴（debug が無効なら一切持たない = 本番ビルドは無負荷）
+        let nextHistory = if (canDebug(r))
+                              List.take(historyLimit(), advanced :: st#history)
+                          else Nil;
+        // 外への出力とマウスの矢印・キャプチャ・窓は、実機のフレームの後の World からだけ当てる。
+        let written = writeOutputs(app, advanced, st#outputKeys);
+        let declared = applyDeclared(r, advanced, st);
+        { world = advanced, history = nextHistory,
+          outputKeys = written, cursorShown = declared#cursorShown, captureShown = declared#captureShown,
+          lastDiagnostics = if (r#diagnostics) diag else None,
+          anno = { frame = measuredAnno#frame + 1i64 | measuredAnno },
+          stepState = nextStepState, watchState = nextWatchState,
+          sustaining = nextSustaining, mixState = nextMix, soundUses = nextUses, tileCache = cache1,
+          glyphSeen = seen1, budgetWarned = warned1, hitches = nextHitches | st }
 
     // ── ヒッチの記録（DEBUG の起動だけ）と POST /perf ──
 
@@ -1389,8 +1463,8 @@ pub mod App {
         Set.toList(keys) |> List.map(k -> "${k}") |> String.intercalate(",")
 
     /// 描き終わったコマを 1 行にする。ゲームの状態の 1 行は、手のあるコマと重いコマだけで作る（毎コマ作ると見張り自身が重くなる）。
-    def hitchRow(app: App[w, ef], watch: HitchWatch, timing: FrameTiming, world: w): (HitchDetector.Row, HitchWatch) \ (ef + GameEngine.Game + IO) =
-        let diag = GameEngine.Game.consumeDiagnostics();
+    /// diag = そのコマの診断（consumeDiagnostics は App が 1 コマに 1 回だけ呼んで配る。2 回呼ぶと片方が空になる）。
+    def hitchRow(app: App[w, ef], watch: HitchWatch, timing: FrameTiming, diag: FrameDiagnostics.Diagnostics, world: w): (HitchDetector.Row, HitchWatch) \ (ef + IO) =
         let (gc, gcMs) = HitchDetector.gcNow();
         let base = { frame = timing#frame, totalNs = System.nanoTime() - timing#start, updateNs = timing#updateNs,
                      renderNs = timing#renderNs, diag = diag,
@@ -1403,11 +1477,11 @@ pub mod App {
 
     /// 実機の 1 コマを見張りへ渡す。ヒッチが閉じたら、遊んだ記録をその最初のコマの手前まで戻す形で写し、報告を書く。
     def watchHitches(app: App[w, ef], hitches: Option[HitchWatch], recorder: Option[Flow.Record.Recorder],
-                     timing: FrameTiming, world: w): Option[HitchWatch] \ (ef + GameEngine.Game + IO) =
+                     timing: FrameTiming, diag: Option[FrameDiagnostics.Diagnostics], world: w): Option[HitchWatch] \ (ef + IO) =
         match hitches {
             case None        => None
             case Some(watch) =>
-                let (row, counted) = hitchRow(app, watch, timing, world);
+                let (row, counted) = hitchRow(app, watch, timing, Option.getWithDefault(FrameDiagnostics.empty(), diag), world);
                 let (detector, closed) = HitchDetector.step(row, counted#detector);
                 let stepped = { detector = detector | counted };
                 Some(closed |> Option.map(hitch -> writeHitch(stepped, recorder, timing#frame, hitch)) |> Option.getWithDefault(stepped))
@@ -1500,7 +1574,7 @@ pub mod App {
             let (cache1, seen1, warned1) = renderFrame(app, warnOnce, played#step#after, plainLook(Nil), p#tileCache, p#glyphSeen, p#budgetWarned);
             let timing = { frame = Int32.toInt64(i), start = startNs, updateNs = 0i64, renderNs = System.nanoTime() - startNs,
                            pressed = played#step#frame#justPressed, reloaded = false };
-            let (row, counted) = hitchRow(app, w0, timing, played#step#after);
+            let (row, counted) = hitchRow(app, w0, timing, GameEngine.Game.consumeDiagnostics(), played#step#after);
             let (detector, closed) = HitchDetector.step(row, counted#detector);
             let written = closed |> Option.map(hitch -> perfWriteHitch(counted, hitch)) |> Option.toList |> List.flatten;
             (row :: rows, List.append(written, files), { detector = detector | counted },
@@ -1579,15 +1653,34 @@ pub mod App {
                 CursorLook.State.Applied(want)
         }
 
+    /// World から宣言された窓の見た目（withCursor の矢印・withMouseCapture のキャプチャ・withFullscreen の窓）をまとめて当てる。
+    /// 返すのは当てた後の矢印とキャプチャの状態（次のフレームの比べる元）。
+    def applyDeclared(r: Rec[w, ef], world: w, st: LoopState[w]): { cursorShown = CursorLook.State, captureShown = Option[Bool] } \ GameEngine.Game =
+        let shown = applyCursor(r, world, st#cursorShown);
+        let captureNow = applyCapture(r, world, st#captureShown);
+        applyFullscreen(r, world);
+        { cursorShown = shown, captureShown = captureNow }
+
+    /// withMouseCapture の宣言を当てる（前に当てた値と同じなら何もしない）。返すのは当てた後の値（宣言が無ければ applied のまま）。
+    def applyCapture(r: Rec[w, ef], world: w, applied: Option[Bool]): Option[Bool] \ GameEngine.Game =
+        match r#mouseCapture {
+            case None    => applied
+            case Some(f) =>
+                let want = f(world);
+                Option.forEach(GameEngine.Game.setMouseCaptured, CursorLook.captureChange(want, applied));
+                Some(want)
+        }
+
     /// withFullscreen の宣言を当てる（setFullscreen は今と同じ値なら何もしないので、毎フレーム渡してよい）。
     def applyFullscreen(r: Rec[w, ef], world: w): Unit \ GameEngine.Game =
         Option.forEach(f -> GameEngine.Game.setFullscreen(f(world)), r#fullscreen)
 
     /// 止めた画面の出入りの見た目をウィンドウへ当てる。ゲームからは呼ばない（RemoteDebug が呼ぶので公開）。
     pub def applyHaltLook(look: CursorLook.HaltLook): Unit \ GameEngine.Game =
-        let CursorLook.HaltLook.HaltLook(badge, cursor) = look;
+        let CursorLook.HaltLook.HaltLook(badge, cursor, capture) = look;
         GameEngine.Game.setDebugBadge(badge == CursorLook.Badge.Shown);
-        applyLook(cursor)
+        applyLook(cursor);
+        if (capture == CursorLook.Capture.Release) GameEngine.Game.setMouseCaptured(false) else ()
 
     def applyLook(look: CursorLook.Look): Unit \ GameEngine.Game =
         let CursorLook.Look.Look(icon, visibility) = look;

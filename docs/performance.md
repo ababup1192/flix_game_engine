@@ -485,5 +485,14 @@ GC か swap が半分以上を占める 1 コマだけの重さ（単発）は 1
 **比べるのは数**: ms は機械と、ドライバのシェーダーのキャッシュ（同じ GLSL なら 2 回目から速い）で変わる。
 直す前と後は「作ったシェーダーの数」「GPU にあるシェーダーの数」で比べる。
 
-**捕まえられない物**: 系ごとの更新の時間（更新は合計だけ）・GPU の塗りの時間そのもの（swap の待ちに混ざる）・
-1 コマあたりの割り当てバイト・スパイクにならない、ゆっくりした悪化。
+**捕まえられない物**: 系ごとの更新の時間（更新は合計だけ）・
+1 コマあたりの割り当てバイト・スパイクにならない、ゆっくりした悪化。GPU の塗りの時間は hitch.md には出ない（swap の待ちに混ざる）ので、下の画面の表示で見る。
+
+### ゲームの画面に出す（App.withDiagnostics）
+
+遊びながら 1 コマの重さを見たい時は、`App.withDiagnostics()` を足して `frame#diagnostics`（前のコマの `FrameDiagnostics`）を
+World に写し、`FrameDiagnostics.summaryLines(d)` をゲームの字の部品で debug の表示として描く（F3 で出すなど。出す所はゲームが決める）。
+出るのは CPU（GL へ送る・swap）・**GPU**（`gpuNs` と描き先ごとの `gpuPasses`。GL_TIMESTAMP の query を GPU を待たずに読むので
+1〜2 コマ遅れの値・測れない描き手では None）・3D の数（`scene3dCounts` の置いた物・描いた物・draw call）。
+`FLIX_GE_FRAME_STATS=1` の println は窓ごとの平均を標準出力へ書くだけで GPU を含まない。こちらはゲームの画面に出せて、GPU を含む。
+自前で `System.nanoTime` を測って出さない（GPU の仕事は CPU の時計では swap の待ちに混ざって見えない）。

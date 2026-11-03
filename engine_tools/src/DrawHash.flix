@@ -308,7 +308,7 @@ pub mod DrawHash {
     }
 
     def putSpotLight(out: DataOutputStream, l: Scene3d.SpotLight): Unit \ IO = match l {
-        case { position = position, target = target, fovY = fovY, color = color, intensity = intensity,
+        case { position = position, target = target, fovY = fovY, innerFovY = innerFovY, color = color, intensity = intensity,
                range = range, shadow = shadow } =>
             putVec3(out, position);
             putVec3(out, target);
@@ -324,7 +324,16 @@ pub mod DrawHash {
                     putF(out, bias);
                     out.writeInt(pcfRadius);
                     putF(out, strength)
-            }
+            };
+            putSpotInner(out, innerFovY)
+    }
+
+    // WhyNot: None にも印のバイトを書かない — innerFovY の欄を足す前の鍵の字を保ち、使わない場面のキャッシュの PNG を塗り直させない。
+    def putSpotInner(out: DataOutputStream, innerFovY: Option[Float64]): Unit \ IO = match innerFovY {
+        case None    => ()
+        case Some(a) =>
+            out.writeByte(0x49);
+            putF(out, a)
     }
 
     def putEnvironment(out: DataOutputStream, e: Scene3d.Environment3d): Unit \ IO = match e {

@@ -174,15 +174,16 @@ pub mod Flow {
     }
 
     /// フレームの手の付け足し（ほとんどは記録が書く）。ns = フレームごとの経過ナノ秒（数がフレーム数）・dt = 経過秒・
-    /// at = マウスの位置・mouse = 左ボタンを押している・wheel = ホイール・pad = パッドに触っている・
+    /// at = マウスの位置・look = マウスの動いた量（App.Frame の mouseDelta。キャプチャ中は at が止まるので位置の差から出ない時だけ）・
+    /// mouse = 左ボタンを押している・wheel = ホイール・pad = パッドに触っている・
     /// keys = 押しているキーの丸ごと・pressed / click / moved = 前のフレームとの差分から出ない押した瞬間・クリック・動き。
     pub type alias Opt = {
-        ns = List[Int64], dt = Option[Float64], at = Option[Vec2.Vec2], mouse = Bool, wheel = Float64, pad = Bool,
+        ns = List[Int64], dt = Option[Float64], at = Option[Vec2.Vec2], look = Option[Vec2.Vec2], mouse = Bool, wheel = Float64, pad = Bool,
         keys = Option[Set[Key]], pressed = Option[Set[Key]], click = Option[Bool], moved = Option[Bool]
     }
 
     pub def noOpt(): Opt =
-        { ns = Nil, dt = None, at = None, mouse = false, wheel = 0.0, pad = false,
+        { ns = Nil, dt = None, at = None, look = None, mouse = false, wheel = 0.0, pad = false,
           keys = None, pressed = None, click = None, moved = None }
 
     pub enum Cmp with Eq, ToString {
@@ -487,7 +488,9 @@ pub mod Flow {
                           mouseClicked = opt#click |> Option.getWithDefault(button and not hand#prevButton),
                           mouseMoved = opt#moved |> Option.getWithDefault(moved),
                           wheel = opt#wheel, realNow = Clock.zero(), padTouched = opt#pad,
-                          padKind = if (opt#pad) GamepadMap.PadKind.Generic else GamepadMap.PadKind.Unknown };
+                          padKind = if (opt#pad) GamepadMap.PadKind.Generic else GamepadMap.PadKind.Unknown,
+                          mouseDelta = opt#look |> Option.getWithDefault(App.cursorDelta(hand#prevCursor, cursor)),
+                          windowFocused = true, diagnostics = None };
             let (step, state) = App.traceFrame(ctx#app, frame, c#state, c#world);
             let nextHand = { cursor = cursor, prevDown = down, prevButton = button, prevCursor = Some(cursor),
                              held = opt#keys |> Option.getWithDefault(hand#held) | hand };

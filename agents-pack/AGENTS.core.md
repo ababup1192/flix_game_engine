@@ -40,7 +40,11 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | 3D の部屋・家具（メッシュを深度で前後させる）を 2D の画面に入れる | `Render.scene3d(at, Scene3d.scene(camera, size))`（`Mesh3d.fromObj` / `fromPolygons` → `Scene3d.meshInstance`）・描き出しは `Render.softSceneOf` → `HeadlessRender.renderPngSoft`（三角形を多角形で並べない。手本 `bench/scene3d`） |
 | Blender で骨を入れたキャラ（.glb）を 3D の場面で動かす（歩く・敬礼など） | `Gltf.load` → `AnimationClip3d.sample`（混ぜるなら `Pose3d.blend`）→ `Pose3d.compute` → `Scene3d.withPose`（骨は GPU と SoftRaster の両方で曲がる。曲げを手で頂点に掛けない） |
 | Blender でベイクした光（lightmap と 2 本目の UV）を 3D の部屋に貼る | glb は `Gltf.loadTextured`（TEXCOORD_1 → part の uvs2）→ lightmap の PNG は `Texture3d.decode` で場面の textures へ → `Scene3d.meshInstance(..) \|> Scene3d.withLightmap({ intensity = .. \| Scene3d.lightmap(Texture3d.name(t)) })`（光を材質の絵に混ぜ込まない・ベイクに入れた光は pointLights に入れない・骨つきには付かない・engine の `docs/lightmap.md`） |
-| 3D の絵が多く「場面の絵が 256 MB を超えて使われている」と出る | `Gltf.loadTexturedWith({ normal = 1024 \| Gltf.noTextureLimits() }, path)`・`Texture3d.limitSize(1024)` で縮める → それでも足りなければ project.json の `scene3dTextureBudgetMB` |
+| 3D の絵が多く「場面の絵が 256 MB を超えて使われている」と出る | `Gltf.loadTexturedWith({ normal = 1024 \| Gltf.noTextureLimits() }, path)`・`Texture3d.limitSize(1024)` で縮める → それでも足りなければ project.json の `scene3dTextureBudgetMB`・枚数は `scene3dTextureBudgetCount` |
+| 懐中電灯（縁のぼけたスポット）を目から照らす | `Scene3d.spotLight(p, t, fov)` に `innerFovY = Some(..)`（縁を広くぼかす）を `spotLights` へ（点光源で代わりにしない・円錐を広げて range で縁を消さない・engine の `docs/scene3d.md`） |
+| 3D の点光源が 8 本を超える | 光は全部 `pointLights` に入れる（engine が `Scene3d.pickLights` で目に近い 8 本を選ぶ。ゲームで近い順に選び直さない） |
+| 一人称でマウスで視点を回す（カーソルを窓にキャプチャする） | `App.withMouseCapture(w -> ..)` + `frame#mouseDelta`（design px）で yaw・pitch を回す。クリックでキャプチャ・Esc で放す（ドラッグの差で代わりにしない・engine の `docs/modules/input.md` の「一人称の視点」） |
+| GPU と CPU の 1 コマの時間を debug 表示する | `App.withDiagnostics()` → `frame#diagnostics` → `FrameDiagnostics.summaryLines`（自前で nanoTime を測らない。GPU は 1〜2 コマ遅れの値） |
 | 3D の家具・壁に木目や石の絵と凹凸（法線マップ）を貼る | 絵つきの .glb は `Gltf.loadTextured` → 部品は `model#parts`・絵は場面の `{ textures = model#textures | 場面 }` に渡す（渡さないと黒い）・コードの形は `Mesh3d.withBoxUvs` + `Scene3d.texturedMaterial` + `withNormalMap` |
 | 灯りの反対の地面へ倒した影（ドット絵の走りから） | `Shadow.projectedRuns`（`PxSprite.runs` を渡す） |
 | 演出の待ちが先の拍で変わる（全部が済んでから始める・置き直さない） | `Timeline.afterAll`（基準ごとに間）→ `Timeline.build` |

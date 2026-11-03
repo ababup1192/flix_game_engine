@@ -117,7 +117,7 @@
 - App の中身。ゲームからは読まない（ビルダーで組む）。エンジンの中の口（Flow・RemoteDebug など）が読む。
   `pub def rec(app: App[w, ef]): Rec[w, ef]`
 - このフレームの入力と時計のスナップショット。キーの生読みはランナーが済ませてあるので、
-  `pub type alias Frame = { down = Set[GameEngine.Key], justPressed = Set[GameEngine.Key], dt = Float64, viewport = Vec2.Vec2, cursor = Vec2.Vec2, mouseDown = Bool, mouseClicked = Bool, mouseMoved = Bool, wheel = Float64, realNow = Clock.Time[Clock.Real], padTouched = Bool, padKind = GamepadMap.PadKind }`
+  `pub type alias Frame = { down = Set[GameEngine.Key], justPressed = Set[GameEngine.Key], dt = Float64, viewport = Vec2.Vec2, cursor = Vec2.Vec2, mouseDown = Bool, mouseClicked = Bool, mouseMoved = Bool, wheel = Float64, realNow = Clock.Time[Clock.Real], padTouched = Bool, padKind = GamepadMap.PadKind, mouseDelta = Vec2.Vec2, windowFocused = Bool, diagnostics = Option[FrameDiagnostics.Diagnostics] }`
 - key がいま押されているか（押しっぱなしも true）。移動などの連続入力に。
   `pub def isDown(key: GameEngine.Key, frame: Frame): Bool`
 - key がこのフレームで新しく押されたか（押しっぱなしは false）。決定・発射などの単発入力に。
@@ -137,7 +137,7 @@
 - 生成したドット絵アトラス 1 枚ぶんの受け渡し。
   `pub type alias AtlasUpload = { texture = String, key = String, baked = PxSpriteAtlas.Baked }`
 - App の中身（欄の意味は右の // コメント）。ゲームからは読まず、ビルダー（addSystem / withView など）で組む。
-  `pub type alias Rec[w: Type, ef: Eff] = { init = Vec2.Vec2 -> w \ ef, startupSystems = List[w -> w \ ef], updateSystems = List[(Frame, w) -> w \ ef], reload = Option[(GameEngine.Key, w -> w \ {Fs.FileRead})], watch = List[(String, w -> w \ {Fs.FileRead})], reloadPaths = Option[List[String]], view = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], passes = w -> Render.PassPlan \ ef, fonts = List[String], camera = Option[w -> Vec2.Vec2 \ ef], zoom = Option[w -> Float64 \ ef], cameraBounds = Option[w -> Rect2.Rect2 \ ef], parallaxLayers = List[(Float64, (ViewCtx, w) -> List[Render.PlacedItem] \ ef)], hudView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], audio = { before = w, after = w } -> List[String] \ ef, sustained = w -> List[Sustain] \ ef, mixer = Option[w -> AudioMixer.Mixer \ ef], quit = (Frame, w) -> Bool \ ef, closeRequest = Option[w -> w \ ef], debug = Bool, debugView = Option[(String, w -> (List[GameEngine.Drawable], List[GameEngine.TileMapRenderCmd], List[GameEngine.PolygonRenderCmd]) \ ef)], worldDump = Option[(Rect2.Rect2, w) -> String \ ef], annotationContext = Option[w -> Annotate.Table \ ef], staticLayer = Option[{ key = w -> GameEngine.StaticKey, build = w -> List[Render.PlacedItem] }], tileLayers = Option[w -> List[TileLayerSpec]], spriteAtlases = w -> List[AtlasUpload], pixelSnap = w -> Float64, statusLine = Option[w -> String \ ef], remoteRender = Option[Unit -> List[String] \ IO], shot = Option[w -> String \ IO], remoteHandlers = List[(String, (Map[String, String], w) -> Result[String, w] \ {Fs.FileRead})], fixedStep = Option[Float64], clocks = List[(Float64, w) -> w], cursor = Option[w -> CursorSpec], fullscreen = Option[w -> Bool], outputs = List[Output[w]], starts = List[Start[w]], flow = Flow.Table[w], fingerprint = Option[w -> String] }`
+  `pub type alias Rec[w: Type, ef: Eff] = { init = Vec2.Vec2 -> w \ ef, startupSystems = List[w -> w \ ef], updateSystems = List[(Frame, w) -> w \ ef], reload = Option[(GameEngine.Key, w -> w \ {Fs.FileRead})], watch = List[(String, w -> w \ {Fs.FileRead})], reloadPaths = Option[List[String]], view = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], passes = w -> Render.PassPlan \ ef, fonts = List[String], camera = Option[w -> Vec2.Vec2 \ ef], zoom = Option[w -> Float64 \ ef], cameraBounds = Option[w -> Rect2.Rect2 \ ef], parallaxLayers = List[(Float64, (ViewCtx, w) -> List[Render.PlacedItem] \ ef)], hudView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], audio = { before = w, after = w } -> List[String] \ ef, sustained = w -> List[Sustain] \ ef, mixer = Option[w -> AudioMixer.Mixer \ ef], quit = (Frame, w) -> Bool \ ef, closeRequest = Option[w -> w \ ef], debug = Bool, debugView = Option[(String, w -> (List[GameEngine.Drawable], List[GameEngine.TileMapRenderCmd], List[GameEngine.PolygonRenderCmd]) \ ef)], worldDump = Option[(Rect2.Rect2, w) -> String \ ef], annotationContext = Option[w -> Annotate.Table \ ef], staticLayer = Option[{ key = w -> GameEngine.StaticKey, build = w -> List[Render.PlacedItem] }], tileLayers = Option[w -> List[TileLayerSpec]], spriteAtlases = w -> List[AtlasUpload], pixelSnap = w -> Float64, statusLine = Option[w -> String \ ef], remoteRender = Option[Unit -> List[String] \ IO], shot = Option[w -> String \ IO], remoteHandlers = List[(String, (Map[String, String], w) -> Result[String, w] \ {Fs.FileRead})], fixedStep = Option[Float64], clocks = List[(Float64, w) -> w], cursor = Option[w -> CursorSpec], fullscreen = Option[w -> Bool], mouseCapture = Option[w -> Bool], diagnostics = Bool, outputs = List[Output[w]], starts = List[Start[w]], flow = Flow.Table[w], fingerprint = Option[w -> String] }`
 - 初期 World だけを持つ空の App。絵はまだ無い（withView で繋ぐまで何も描かない）。
   `pub def make(init: w): App[w, ef]`
 - 初期 World を design 解像度（project.json の designWidth/Height）から組む入口。
@@ -222,6 +222,10 @@
   `pub def withCursor(f: w -> CursorSpec, app: App[w, ef]): App[w, ef]`
 - 毎フレーム「窓をボーダーレスのフルスクリーンにしたいか」を World から宣言する（true = フルスクリーン・
   `pub def withFullscreen(f: w -> Bool, app: App[w, ef]): App[w, ef]`
+- 毎フレーム「マウスを窓にキャプチャしたいか」を World から宣言する（一人称の視点。Godot の MOUSE_MODE_CAPTURED・
+  `pub def withMouseCapture(f: w -> Bool, app: App[w, ef]): App[w, ef]`
+- 描く側の診断（CPU・GPU の 1 コマの時間・3D の数）を集め、次のフレームの Frame#diagnostics に渡す。
+  `pub def withDiagnostics(app: App[w, ef]): App[w, ef]`
 - 跳んだ拍（起動・START・/start・/step・/flow?apply・F8 の巻き戻しからの再開）に、出力をどう扱うか。
   `pub enum OnJump with Eq, ToString { case Skip case Write }`
 - 外への出力 1 本: keyOf = 書く中身を決める鍵（"" = 書く物が無い）・write = 書く・onJump = 跳んだ拍の扱い。
@@ -258,19 +262,23 @@
   `pub def tickClocks(app: App[w, ef], dt: Float64, world: w): w`
 - 前フレームと今フレームのキー集合から Frame を組む。justPressed は差分
   `pub def frameOf(prev: {prev = Set[GameEngine.Key]}, current: {current = Set[GameEngine.Key]}, dt: Float64, viewport: Vec2.Vec2, cursor: {prevCursor = Option[Vec2.Vec2], cursor = Vec2.Vec2}, mouse: {prevDown = Bool, down = Bool, wheel = Float64}): Frame`
+- Frame#cursor に置く位置: キャプチャしている間（applied = Some(true)）は前の位置 prev のまま止め、ほかは読んだ位置 raw。
+  `pub def heldCursor(applied: Option[Bool], prev: Option[Vec2.Vec2], raw: Vec2.Vec2): Vec2.Vec2`
+- 前の位置 prev から今の位置 cursor へ動いた量（前の位置が無ければ 0）。
+  `pub def cursorDelta(prev: Option[Vec2.Vec2], cursor: Vec2.Vec2): Vec2.Vec2`
 - withFixedStep の accumulator。持ち越し carry と実フレームの経過秒 realDt を足し、
   `pub def fixedSteps(carry: Float64, realDt: Float64, fixedDt: Float64): (Int32, Float64)`
-- withFixedStep の 2 サブステップ目以降に渡す Frame: エッジ 4 種（justPressed /
+- withFixedStep の 2 サブステップ目以降に渡す Frame: エッジ 5 種（justPressed /
   `pub def suppressEdges(frame: Frame): Frame`
 - 0 サブステップのフレームで捨てられそうになったエッジのバッファ。エッジは prev との
-  `pub type alias PendingEdges = { justPressed = Set[GameEngine.Key], mouseClicked = Bool, mouseMoved = Bool, wheel = Float64 }`
+  `pub type alias PendingEdges = { justPressed = Set[GameEngine.Key], mouseClicked = Bool, mouseMoved = Bool, wheel = Float64, mouseDelta = Vec2.Vec2 }`
 - withFixedStep がフレームをまたいで持ち回す状態（持ち越し秒 + 未消費エッジ）。
   `pub type alias StepState = { carry = Float64, pending = PendingEdges, real = Clock.Clock[Clock.Real] }`
 - 起動直後の StepState（貯金ゼロ・未消費エッジなし）。
   `pub def freshStepState(): StepState`
 - バッファしたエッジを今フレームの Frame へ合流させる: justPressed は和集合・
   `pub def mergeEdges(pending: PendingEdges, frame: Frame): Frame`
-- Frame からエッジ 4 種を抜き出してバッファの形にする（0 ステップのフレームの持ち越し用）。
+- Frame からエッジ 5 種を抜き出してバッファの形にする（0 ステップのフレームの持ち越し用）。
   `pub def pendingOf(frame: Frame): PendingEdges`
 - システムの列を追加順（左から右）に World へ畳み込む。
   `pub def applySystems(frame: Frame, systems: List[(Frame, w) -> w \ ef], world: w): w \ ef`
@@ -340,11 +348,15 @@
   `pub enum Look with Eq, ToString { case Look(GameEngine.Cursor, Visibility) }`
 - ウィンドウタイトルの「止めている」のバッジ。
   `pub enum Badge with Eq, ToString { case Shown case Hidden }`
-- 止めた画面の出入りの見た目（タイトルのバッジ・矢印）。
-  `pub enum HaltLook with Eq, ToString { case HaltLook(Badge, Look) }`
+- マウスのキャプチャをどうするか。Release = 放す・LeaveToApp = 触らない（動き出した拍に宣言を当て直す）。
+  `pub enum Capture with Eq, ToString { case Release case LeaveToApp }`
+- 止めた画面の出入りの見た目（タイトルのバッジ・矢印・キャプチャ）。
+  `pub enum HaltLook with Eq, ToString { case HaltLook(Badge, Look, Capture) }`
 - withCursor の宣言 want を当てるなら、その見た目（前に当てた物と同じなら None）。
   `pub def cursorChange(want: App.CursorSpec, state: State): Option[Look]`
-- 止めた画面に入る時の見た目: バッジを出し、十字を見せる — withCursor で矢印を隠しているゲームでも、
+- withMouseCapture の宣言 want を当てるなら、その値（前に当てた値 applied と同じなら None）。
+  `pub def captureChange(want: Bool, applied: Option[Bool]): Option[Bool]`
+- 止めた画面に入る時の見た目: バッジを出し、十字を見せ、マウスのキャプチャを放す — withCursor で矢印を隠している・
   `pub def haltEnterLook(): HaltLook`
 - 止めた画面を抜ける時の見た目: バッジを外し、形だけ戻す。見せるか隠すかは触らない（動き出した拍に
   `pub def haltLeaveLook(): HaltLook`
@@ -1124,7 +1136,7 @@
 - 長さ: 秒（fps でフレーム数に丸める）かフレーム数。
   `pub enum Span with Eq, ToString { case Secs(Float64) case Frames(Int32) }`
 - フレームの手の付け足し（ほとんどは記録が書く）。ns = フレームごとの経過ナノ秒（数がフレーム数）・dt = 経過秒・
-  `pub type alias Opt = { ns = List[Int64], dt = Option[Float64], at = Option[Vec2.Vec2], mouse = Bool, wheel = Float64, pad = Bool, keys = Option[Set[Key]], pressed = Option[Set[Key]], click = Option[Bool], moved = Option[Bool] }`
+  `pub type alias Opt = { ns = List[Int64], dt = Option[Float64], at = Option[Vec2.Vec2], look = Option[Vec2.Vec2], mouse = Bool, wheel = Float64, pad = Bool, keys = Option[Set[Key]], pressed = Option[Set[Key]], click = Option[Bool], moved = Option[Bool] }`
 - `pub def noOpt(): Opt`
 - `pub enum Cmp with Eq, ToString { case Lt case Le case Same case Ge case Gt case Differ }`
 - 問いの式。Name は真偽の問い・Compare は (名前, 比べ方, 書いた値の文字)。

@@ -267,11 +267,28 @@ mod TestDrawHash {
         let f = frame();
         let base = sceneAt(Mat4.identity());
         let at = (strength: Float64) -> {
-            let spot = { position = Vec3.v3(0.0, 4.0, 0.0), target = Vec3.zero(), fovY = 1.0, color = { r = 1.0, g = 1.0, b = 1.0 },
-                         intensity = 1.0, range = 8.0, shadow = Some({ mapSize = 64, bias = 0.005, pcfRadius = 1, strength = strength }) };
+            let spot = { range = 8.0, shadow = Some({ mapSize = 64, bias = 0.005, pcfRadius = 1, strength = strength })
+                       | Scene3d.spotLight(Vec3.v3(0.0, 4.0, 0.0), Vec3.zero(), 1.0) };
             keyOf(inputs(), { req = { scenes = { scene = { spotLights = spot :: Nil | base#scene } | base } :: Nil | f#req } | f })
         };
         Assert.assertTrue(at(0.5) != at(1.0))
+
+    /// 影なしのスポット 1 本（innerFovY = None）を置いた場面の鍵。innerFovY の欄を足す前の字のまま（None は何も書かない）。
+    def keyWithSpot(innerFovY: Option[Float64]): String =
+        let f = frame();
+        let base = sceneAt(Mat4.identity());
+        let spot = { range = 8.0, innerFovY = innerFovY | Scene3d.spotLight(Vec3.v3(0.0, 4.0, 0.0), Vec3.zero(), 1.0) };
+        keyOf(inputs(), { req = { scenes = { scene = { spotLights = spot :: Nil | base#scene } | base } :: Nil | f#req } | f })
+
+    // innerFovY が None のスポットの場面の鍵は、欄を足す前の字のまま（使わない場面のキャッシュの PNG を塗り直させない）。
+    @Test
+    def testSceneKeyWithSpotWithoutInnerIsPinned(): Unit \ Assert =
+        Assert.assertEq(expected = "079522657a2743ff47948197f16ba251df139c50f19ce24b3a738a6f510c8402", keyWithSpot(None))
+
+    // innerFovY を付けると鍵が変わる（縁のぼけ方が絵に出る）。
+    @Test
+    def testSpotInnerFovYChangesKey(): Unit \ Assert =
+        Assert.assertTrue(keyWithSpot(None) != keyWithSpot(Some(0.3)))
 
     // ビルボードの絵の中身は鍵に入る（usedTextures にビルボードの名前が入る）。
     @Test

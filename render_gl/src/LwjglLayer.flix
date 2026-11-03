@@ -14,6 +14,7 @@ pub mod LwjglLayer {
     import org.lwjgl.glfw.GLFWFramebufferSizeCallbackI
     import org.lwjgl.glfw.GLFWMouseButtonCallbackI
     import org.lwjgl.glfw.GLFWScrollCallbackI
+    import org.lwjgl.glfw.GLFWWindowFocusCallbackI
     import org.lwjgl.glfw.GLFWVidMode
     import org.lwjgl.opengl.GL
     import org.lwjgl.opengl.GL11
@@ -173,6 +174,37 @@ pub mod LwjglLayer {
         case GameEngine.Cursor.NEResize   => 0x36008  // GLFW_RESIZE_NESW_CURSOR
         case GameEngine.Cursor.SWResize   => 0x36008  // GLFW_RESIZE_NESW_CURSOR
     }
+
+    /// キャプチャしていない時の矢印の見せ方（setCursorVisible の宣言）を GLFW の入力モードへ。
+    def cursorModeOf(visible: Bool): Int32 =
+        if (visible) GLFW.GLFW_CURSOR_NORMAL else GLFW.GLFW_CURSOR_HIDDEN
+
+    /// consumeMouseDelta が返す動いた量（窓の座標）。base = 前に読んだ位置・now = 今の位置。
+    /// rebase（キャプチャを切り替えた直後・フォーカスが戻った直後）と、フォーカスが無い間は 0。
+    // WhyNot: フォーカスが無い間に差を出さない — OS がキャプチャを放した後も位置は読めるので、ほかのアプリの上でマウスを動かすと視点が回る。
+    pub def mouseDeltaInWindow(state: { rebase = Bool, focused = Bool }, base: (Float64, Float64), now: (Float64, Float64)): (Float64, Float64) =
+        if (state#rebase or not state#focused) (0.0, 0.0)
+        else (fst(now) - fst(base), snd(now) - snd(base))
+
+    /// マウスの位置（窓の座標・小数）。キャプチャしている間は窓の外まで続く仮の位置。
+    def cursorInWindow(window: Int64): (Float64, Float64) \ IO =
+        let stack = MemoryStack.stackPush();
+        let xBuf = stack.mallocDouble(1);
+        let yBuf = stack.mallocDouble(1);
+        GLFW.glfwGetCursorPos(window, xBuf, yBuf);
+        let pos = (xBuf.get(0), yBuf.get(0));
+        discard MemoryStack.stackPop();
+        pos
+
+    /// 窓の座標の (x, y) を design px へ（窓の大きさに対する割合 × design の寸）。getMousePosition と consumeMouseDelta が同じ式を使う。
+    def windowToDesign(window: Int64, screenW: Float64, screenH: Float64, x: Float64, y: Float64): Vec2.Vec2 \ IO =
+        let stack = MemoryStack.stackPush();
+        let winW = stack.mallocInt(1);
+        let winH = stack.mallocInt(1);
+        GLFW.glfwGetWindowSize(window, winW, winH);
+        let design = { x = x / Int32.toFloat64(winW.get(0)) * screenW, y = y / Int32.toFloat64(winH.get(0)) * screenH };
+        discard MemoryStack.stackPop();
+        design
 
     // ========================================================================
     // 注釈の書き出し（saveAnnotation ハンドラの下請け）
@@ -454,7 +486,7 @@ pub mod LwjglLayer {
         // 窓なしで動画を塗る GlOffscreen も同じ RenderPaint で塗る（窓・入力・音・swap はここが持つ）。
         let paint = RenderPaint.create({ designWidth = config#designWidth, designHeight = config#designHeight,
                                          clearColor = config#clearColor, screenFramebuffer = 0,
-                                                     scene3dTextureBudgetMB = config#scene3dTextureBudgetMB });
+                                                     scene3dTextureBudget = Render3d.textureBudgetOf(config) });
 
         // macOS ではリサイズ中に glfwPollEvents がブロックされるため、
         // フレームバッファサイズ変更コールバックで再描画を行う。
@@ -621,6 +653,21 @@ pub mod LwjglLayer {
             def invoke(_this: GLFWScrollCallbackI, _w: Int64, _xoffset: Float64, yoffset: Float64): Unit \ IO = {
                 let prev = Array.get(0, scrollDeltaHolder);
                 Array.put(prev + yoffset, 0, scrollDeltaHolder)
+            }
+        });
+
+        // マウスのキャプチャと動いた量。cursorVisibleHolder = setCursorVisible の宣言（キャプチャを放した時に戻す見せ方）・
+        // mouseBaseHolder = consumeMouseDelta が前に読んだ窓の座標・mouseRebaseHolder = 次の 1 回は基準を取り直して 0 を返す印。
+        let mouseCapturedHolder = Array#{false} @ Static;
+        let cursorVisibleHolder = Array#{true} @ Static;
+        let mouseBaseHolder = Array#{(0.0, 0.0)} @ Static;
+        let mouseRebaseHolder = Array#{true} @ Static;
+        let windowFocusedHolder = Array#{true} @ Static;
+        // WhyNot: フォーカスを取り戻した時に基準を取り直さずに差を出さない — 外にいた間の動きが一度に入り、視点が跳ねる。
+        discard GLFW.glfwSetWindowFocusCallback(window, new GLFWWindowFocusCallbackI {
+            def invoke(_this: GLFWWindowFocusCallbackI, _w: Int64, focused: Bool): Unit \ IO = {
+                Array.put(focused, 0, windowFocusedHolder);
+                if (focused) Array.put(true, 0, mouseRebaseHolder) else ()
             }
         });
 
@@ -895,25 +942,35 @@ pub mod LwjglLayer {
                 k(kb or padPressed(key))
             }
             def getMousePosition(k) = {
-                let mStack = MemoryStack.stackPush();
-                let xBuf = mStack.mallocDouble(1);
-                let yBuf = mStack.mallocDouble(1);
-                GLFW.glfwGetCursorPos(window, xBuf, yBuf);
-                let cursorX = xBuf.get(0);
-                let cursorY = yBuf.get(0);
-                discard MemoryStack.stackPop();
-                // ウィンドウサイズからデザイン座標に変換
-                let wStack = MemoryStack.stackPush();
-                let winW = wStack.mallocInt(1);
-                let winH = wStack.mallocInt(1);
-                GLFW.glfwGetWindowSize(window, winW, winH);
-                let windowW = Int32.toFloat64(winW.get(0));
-                let windowH = Int32.toFloat64(winH.get(0));
-                discard MemoryStack.stackPop();
-                let designX = cursorX / windowW * screenW;
-                let designY = cursorY / windowH * screenH;
-                k({x = designX, y = designY})
+                let (cursorX, cursorY) = cursorInWindow(window);
+                k(windowToDesign(window, screenW, screenH, cursorX, cursorY))
             }
+            def consumeMouseDelta(k) = {
+                let now = cursorInWindow(window);
+                let (dx, dy) = mouseDeltaInWindow({ rebase = Array.get(0, mouseRebaseHolder), focused = Array.get(0, windowFocusedHolder) },
+                                                  Array.get(0, mouseBaseHolder), now);
+                Array.put(now, 0, mouseBaseHolder);
+                Array.put(false, 0, mouseRebaseHolder);
+                // WhyNot: 0 の時に窓の大きさで割らない — 最小化した窓は大きさが 0 で、0 / 0 が NaN になる。
+                k(if (dx == 0.0 and dy == 0.0) Vec2.zero() else windowToDesign(window, screenW, screenH, dx, dy))
+            }
+            def setMouseCaptured(captured, k) = {
+                if (captured == Array.get(0, mouseCapturedHolder)) ()
+                else {
+                    Array.put(captured, 0, mouseCapturedHolder);
+                    Array.put(true, 0, mouseRebaseHolder);
+                    let raw = GLFW.glfwRawMouseMotionSupported();
+                    if (captured) {
+                        GLFW.glfwSetInputMode(window, GLFW.GLFW_CURSOR, GLFW.GLFW_CURSOR_DISABLED);
+                        if (raw) GLFW.glfwSetInputMode(window, GLFW.GLFW_RAW_MOUSE_MOTION, GLFW.GLFW_TRUE) else ()
+                    } else {
+                        if (raw) GLFW.glfwSetInputMode(window, GLFW.GLFW_RAW_MOUSE_MOTION, GLFW.GLFW_FALSE) else ();
+                        GLFW.glfwSetInputMode(window, GLFW.GLFW_CURSOR, cursorModeOf(Array.get(0, cursorVisibleHolder)))
+                    }
+                };
+                k(())
+            }
+            def isWindowFocused(k) = k(Array.get(0, windowFocusedHolder))
             def isGamepadTouched(k) =
                 if (not Array.get(0, gamepadConnectedHolder)) k(false)
                 else {
@@ -966,8 +1023,9 @@ pub mod LwjglLayer {
                 k(())
             }
             def setCursorVisible(visible, k) = {
-                let mode = if (visible) GLFW.GLFW_CURSOR_NORMAL else GLFW.GLFW_CURSOR_HIDDEN;
-                GLFW.glfwSetInputMode(window, GLFW.GLFW_CURSOR, mode);
+                Array.put(visible, 0, cursorVisibleHolder);
+                // WhyNot: キャプチャしている間に当てない — GLFW_CURSOR_DISABLED を HIDDEN / NORMAL で上書きするとキャプチャが外れる。
+                if (Array.get(0, mouseCapturedHolder)) () else GLFW.glfwSetInputMode(window, GLFW.GLFW_CURSOR, cursorModeOf(visible));
                 k(())
             }
             def setFullscreen(on, k) = {

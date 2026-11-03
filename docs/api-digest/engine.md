@@ -388,13 +388,17 @@
 
 ## FrameDiagnostics — `engine/src/FrameDiagnostics.flix`
 - 1 コマの診断。時間はナノ秒。
-  `pub type alias Diagnostics = { submitNs = Int64, swapNs = Int64, shaderBuilds = List[ShaderBuild], shaderDeletes = Int32, liveShaders = Int32, drawItems = Int32, glyphsAdded = Int32, textureUploads = List[String] }`
+  `pub type alias Diagnostics = { submitNs = Int64, swapNs = Int64, shaderBuilds = List[ShaderBuild], shaderDeletes = Int32, liveShaders = Int32, drawItems = Int32, glyphsAdded = Int32, textureUploads = List[String], gpuNs = Option[Int64], gpuPasses = List[(String, Int64)], scene3dCounts = Scene3dCounts }`
+- 3D の場面の数（Diagnostics#scene3dCounts）。
+  `pub type alias Scene3dCounts = { instances = Int32, drawn = Int32, drawCalls = Int32 }`
 - 作ったシェーダー 1 つ。
   `pub type alias ShaderBuild = { name = String, reason = BuildReason }`
 - 作った理由。Changed は同じ名前で中身が違った時で、違う所の抜き書きを持つ。
   `pub enum BuildReason with Eq, ToString { case First case Changed(String) }`
 - 何も起きなかったコマ。
   `pub def empty(): Diagnostics`
+- 画面の隅に出す数行（ms は小数 2 桁）。描くのはゲームの字の部品（出す所と見た目はゲームが決める）。
+  `pub def summaryLines(d: Diagnostics): List[String]`
 
 ## GameEngine — `engine/src/GameEngine.flix`
 - テクスチャアセットのマニフェストエントリ
@@ -410,9 +414,11 @@
 - テクスチャの論理名 → TextureInfo
   `pub type alias TextureRegistry = Map[String, TextureInfo]`
 - エンジン初期化に必要な設定
-  `pub type alias EngineConfig = { rootDir = String, glyphs = String, designWidth = Int32, designHeight = Int32, windowWidth = Int32, windowHeight = Int32, title = String, textureManifest = List[TextureEntry], fontManifest = List[FontEntry], soundManifest = List[AudioEntry], clearColor = Color, maxDeltaTime = Float64, scene3dTextureBudgetMB = Int32 }`
+  `pub type alias EngineConfig = { rootDir = String, glyphs = String, designWidth = Int32, designHeight = Int32, windowWidth = Int32, windowHeight = Int32, title = String, textureManifest = List[TextureEntry], fontManifest = List[FontEntry], soundManifest = List[AudioEntry], clearColor = Color, maxDeltaTime = Float64, scene3dTextureBudgetMB = Int32, scene3dTextureBudgetCount = Int32 }`
 - 3D の場面の絵を GPU に持つ量の上限の既定（MB）。
   `pub def defaultScene3dTextureBudgetMB(): Int32`
+- 3D の場面の絵を GPU に持つ枚数の上限の既定。
+  `pub def defaultScene3dTextureBudgetCount(): Int32`
 - 角丸＋枠線スタイル。共有の描画命令型 `DrawCmd.BoxStyle`。
   `pub type alias BoxStyle = DrawCmd.BoxStyle`
 - スプライト 1 つ分の描画命令。renderCommands ハンドラに渡す共有型 `DrawCmd.Drawable`。
@@ -462,6 +468,12 @@
   `pub eff Game { def gamepadKind(): GamepadMap.PadKind }`
 - 前回呼び出し以降に蓄積されたマウスホイールの y 方向 delta を返し、
   `pub eff Game { def consumeScrollDelta(): Float64 }`
+- 前に呼んでからマウスが動いた量（design px・小数のまま。右と下が正）。キャプチャしている間（setMouseCaptured(true)）も
+  `pub eff Game { def consumeMouseDelta(): Vec2.Vec2 }`
+- マウスを窓にキャプチャする（真）・放す（偽）。キャプチャしている間は矢印が消え、動きは consumeMouseDelta だけに出る
+  `pub eff Game { def setMouseCaptured(captured: Bool): Unit }`
+- 窓がキーとマウスの入力を受け取る状態（フォーカスがある）か。App が Frame#windowFocused に置く。
+  `pub eff Game { def isWindowFocused(): Bool }`
 - `pub eff Game { def getFontAtlas(name: String): FontAtlas }`
 - アトラスにまだ無い字を、いま生成してアトラスに足す。
   `pub eff Game { def ensureGlyphs(textureName: String, codepoints: Set[Int32]): Unit }`
@@ -767,7 +779,7 @@
 
 ## ProjectLoader — `engine/src/core/ProjectLoader.flix`
 - project.json から組み立てた、engine 起動に渡すための設定。
-  `pub type alias ProjectConfig = { rootDir = String, glyphs = String, designWidth = Int32, designHeight = Int32, windowWidth = Int32, windowHeight = Int32, title = String, textureManifest = List[{name = String, path = String, hasAlpha = Bool}], fontManifest = List[{name = String, path = String, fontSize = Float64}], soundManifest = List[{name = String, path = String, looping = Bool}], clearColor = Color, maxDeltaTime = Float64, scene3dTextureBudgetMB = Int32 }`
+  `pub type alias ProjectConfig = { rootDir = String, glyphs = String, designWidth = Int32, designHeight = Int32, windowWidth = Int32, windowHeight = Int32, title = String, textureManifest = List[{name = String, path = String, hasAlpha = Bool}], fontManifest = List[{name = String, path = String, fontSize = Float64}], soundManifest = List[{name = String, path = String, looping = Bool}], clearColor = Color, maxDeltaTime = Float64, scene3dTextureBudgetMB = Int32, scene3dTextureBudgetCount = Int32 }`
 - 読み込み結果。シーンは別途 `findSceneFiles` で列挙する。
   `pub type alias Project = { rootDir = String, config = ProjectConfig }`
 - project.json を読んで Project を組み立てる。
@@ -904,8 +916,14 @@
   `pub type alias PointLight = { position = Vec3.Vec3, color = Color, intensity = Float64, range = Float64 }`
 - 影の地図（段 C）。mapSize = 一辺の画素数・bias = 自分の面に影を落とさないための奥行きのずらし・
   `pub type alias ShadowMap = { mapSize = Int32, bias = Float64, pcfRadius = Int32, strength = Float64 }`
-- スポットライト。position から target を向き、fovY（ラジアン）の円錐の中だけを照らす。shadow が Some なら影を落とす（段 C）。
-  `pub type alias SpotLight = { position = Vec3.Vec3, target = Vec3.Vec3, fovY = Float64, color = Color, intensity = Float64, range = Float64, shadow = Option[ShadowMap] }`
+- スポットライト。position から target を向き、fovY（ラジアン・円錐の全体の角）の円錐の中だけを照らす。shadow が Some なら影を落とす（段 C）。
+  `pub type alias SpotLight = { position = Vec3.Vec3, target = Vec3.Vec3, fovY = Float64, innerFovY = Option[Float64], color = Color, intensity = Float64, range = Float64, shadow = Option[ShadowMap] }`
+- 白・intensity 1・range 10・影なし・innerFovY = None のスポットライト。
+  `pub def spotLight(position: Vec3.Vec3, target: Vec3.Vec3, fovY: Float64): SpotLight`
+- innerFovY が None の時の、縁で暗くなり始める角の割合（fovY に対する）。
+  `pub def spotInnerRatio(): Float64`
+- スポットの円錐の縁の cos（GL と CPU が同じ物を使う）。cone = smoothstep(outerCos, innerCos, dot(−l, スポットの向き))。
+  `pub def spotConeOf(spot: SpotLight): { outerCos = Float64, innerCos = Float64 }`
 - 距離のかすみ。目からの距離が near から far へ向かって color に寄る。
   `pub type alias DistanceFog = { color = Color, near = Float64, far = Float64 }`
 - 場面全体の光。ambient = どこにでも当たる光の色・hemisphere = 上を向く面ほど明るくする量（0 で無し）・

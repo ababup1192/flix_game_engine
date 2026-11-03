@@ -9,7 +9,9 @@
 //          + Σ スポット color × intensity × att × facing × cone
 //   att    = (max(0, 1 − d² / range²))²          d = 光と点の距離
 //   facing = clamp(wrap + n·l, 0, 1)              l = 点から光への向き（長さ 1）・wrap = 0.0
-//   cone   = smoothstep(cos(fovY / 2), cos(fovY / 2 × spotInnerRatio()), dot(−l, spotDir))
+//   cone   = smoothstep(outerCos, innerCos, dot(−l, spotDir))
+//            outerCos = cos(fovY / 2)・innerCos = cos(innerFovY / 2)（innerFovY が None なら fovY × spotInnerRatio()。
+//            直し方と、内と外が同じ時に innerCos へ 1e-6 を足す所は Scene3d.spotConeOf に一本化）
 //            spotDir = normalize(target − position)・smoothstep(a, b, x) = t² (3 − 2t)、t = clamp((x − a) / (b − a), 0, 1)
 //   toonSteps > 0 なら light の各成分を floor(light × steps + 0.5) / steps に丸める
 //   色     = 頂点の色 × tint × light
@@ -47,9 +49,6 @@ pub mod SoftRaster3d {
     import java.lang.System
     import java.util.function.IntConsumer
     import java.util.stream.IntStream
-
-    /// スポットライトの円錐で、明るさが落ち始める角の割合（円錐の半角 × この値の内側は落ちない）。
-    pub def spotInnerRatio(): Float64 = 0.8
 
     /// 光が面を回り込む量（facing の wrap）。Environment3d に欄が無いので固定。
     pub def wrap(): Float64 = 0.0
@@ -97,9 +96,9 @@ pub mod SoftRaster3d {
             rangeSquared(l#range) :: Nil) |> List.toVector;
         let spots = spotLights |> List.flatMap(l -> {
             let dir = Vec3.normalized(Vec3.sub(l#target, l#position));
-            let half = l#fovY / 2.0;
+            let edge = Scene3d.spotConeOf(l);
             l#position#x :: l#position#y :: l#position#z :: dir#x :: dir#y :: dir#z ::
-            Vec2.cos(half) :: Vec2.cos(half * spotInnerRatio()) ::
+            edge#outerCos :: edge#innerCos ::
             l#color#r * l#intensity :: l#color#g * l#intensity :: l#color#b * l#intensity ::
             rangeSquared(l#range) :: Nil
         }) |> List.toVector;

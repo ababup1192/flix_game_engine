@@ -50,6 +50,9 @@ pub mod GameEngine {
     /// scene3dTextureBudgetMB:
     ///   3D の場面の絵（Texture3d）を GPU に持つ量の上限（MB）。超えると今と前のコマで使っていない古い絵から捨てる。
     ///   project.json の任意キー `scene3dTextureBudgetMB`（既定 defaultScene3dTextureBudgetMB()）。
+    /// scene3dTextureBudgetCount:
+    ///   3D の場面の絵を GPU に持つ枚数の上限（texture unit の数ではない）。超え方と捨て方は MB と同じ。
+    ///   project.json の任意キー `scene3dTextureBudgetCount`（既定 defaultScene3dTextureBudgetCount()）。
     pub type alias EngineConfig = {
         rootDir         = String,
         glyphs          = String,
@@ -63,11 +66,15 @@ pub mod GameEngine {
         soundManifest = List[AudioEntry],
         clearColor = Color,
         maxDeltaTime = Float64,
-        scene3dTextureBudgetMB = Int32
+        scene3dTextureBudgetMB = Int32,
+        scene3dTextureBudgetCount = Int32
     }
 
     /// 3D の場面の絵を GPU に持つ量の上限の既定（MB）。
     pub def defaultScene3dTextureBudgetMB(): Int32 = 256
+
+    /// 3D の場面の絵を GPU に持つ枚数の上限の既定。
+    pub def defaultScene3dTextureBudgetCount(): Int32 = 64
 
     /// 角丸＋枠線スタイル。共有の描画命令型 `DrawCmd.BoxStyle`。
     pub type alias BoxStyle = DrawCmd.BoxStyle
@@ -342,6 +349,18 @@ pub mod GameEngine {
         /// 内部アキュムレータを 0 にリセットする。1 ティックぶんの値が +1.0 / -1.0 程度
         /// （プラットフォーム依存）。スクロールアップで正、ダウンで負。
         def consumeScrollDelta(): Float64
+        /// 前に呼んでからマウスが動いた量（design px・小数のまま。右と下が正）。キャプチャしている間（setMouseCaptured(true)）も
+        /// 窓の端で止まらずに出る。キャプチャを切り替えた直後と、窓がフォーカスを取り戻した直後の 1 回は 0（跳んだ量を入れない）。
+        /// 窓にフォーカスが無い間も 0（ほかのアプリの上の動きで視点を回さない）。
+        /// App が毎フレーム読み切って Frame#mouseDelta に置くので、ゲームは直接呼ばない。
+        def consumeMouseDelta(): Vec2.Vec2
+        /// マウスを窓にキャプチャする（真）・放す（偽）。キャプチャしている間は矢印が消え、動きは consumeMouseDelta だけに出る
+        /// （GLFW の GLFW_CURSOR_DISABLED。使えれば raw の動きも入れる）。放すと矢印は setCursorVisible の宣言どおりに戻り、
+        /// 位置はキャプチャする前の所に戻る（GLFW の決まり）。フォーカスが外れると OS が放し、戻るとキャプチャし直す。同じ値を続けて渡してよい（冪等）。
+        /// ゲームからは呼ばず、App.withMouseCapture で World から宣言する。
+        def setMouseCaptured(captured: Bool): Unit
+        /// 窓がキーとマウスの入力を受け取る状態（フォーカスがある）か。App が Frame#windowFocused に置く。
+        def isWindowFocused(): Bool
         def getFontAtlas(name: String): FontAtlas
 
         /// アトラスにまだ無い字を、いま生成してアトラスに足す。
