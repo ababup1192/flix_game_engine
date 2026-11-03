@@ -31,8 +31,8 @@ DEBUG=1 FLIX_GE_HIDDEN=1 make run RUN_SECONDS=300 > "$LOG" 2>&1 &
 PID=$!
 PORT=""
 for _ in $(seq 1 240); do PORT=$(portOf); [ -n "$PORT" ] && break; sleep 1; done
-if [ -z "$PORT" ]; then echo "[smoke-devtools] FAIL 名簿に載らない（$LOG）"; stopall $PID; exit 1; fi
-echo "[smoke-devtools] ok   名簿に載った（port $PORT）"
+if [ -z "$PORT" ]; then echo "[smoke-devtools] FAIL 名簿に載らない（${LOG}）"; stopall $PID; exit 1; fi
+echo "[smoke-devtools] ok   名簿に載った（port ${PORT}）"
 U=http://127.0.0.1:$PORT
 expect "/help" "remote debug protocol" "$(curl -s -m 20 $U/help)"
 expect "/halt" "ok mode=halted" "$(curl -s -m 20 -X POST $U/halt)"

@@ -1,5 +1,5 @@
-github.com/ababup1192/flixlint/go v0.0.0-20261103163225-c8164dd4a7fc h1:G+D9YtGMsyzu84iyVo3h/od/Bdz0drwQtBsLl8pvImI=
-github.com/ababup1192/flixlint/go v0.0.0-20261103163225-c8164dd4a7fc/go.mod h1:Q46xYm9oASVlnSWmVsHOQEGfYeOBkRL91uYExCkoyLk=
+github.com/ababup1192/flixlint/go v0.0.0-20261103234301-e13b97c0c856 h1:6SoJ7JiCYht5G0RjtJdl+XswAPu0AxEw6gxDcOH0G14=
+github.com/ababup1192/flixlint/go v0.0.0-20261103234301-e13b97c0c856/go.mod h1:Q46xYm9oASVlnSWmVsHOQEGfYeOBkRL91uYExCkoyLk=
 github.com/google/go-cmp v0.7.0 h1:wk8382ETsv4JYUZwIsn6YpYiWiBsYLSJiTsyBybVuN8=
 github.com/google/go-cmp v0.7.0/go.mod h1:pXiqmnSA92OHEEa9HXL2W4E7lf9JzCmGVUdgjX3N/iU=
 go.starlark.net v0.0.0-20261016124120-4811d7e34ea3 h1:ud4x+QbEBQbM2T6e0C3VuNwyap/+vUU7W9PFhIxmqDM=
