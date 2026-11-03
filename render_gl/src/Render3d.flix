@@ -1,5 +1,5 @@
 // Render3d — 3D の場面（Scene3d.RenderCmd）を GL で深度つきで描く。メッシュの置き場・3D のプログラム・光の uniform を持つ。
-// 2D の並び（RenderFrame.emitMerged）からは z の 1 点で呼ばれ、その中だけ深度で前後を決めて、GL の状態を元へ戻して返す。
+// makeRenderer で Scene3dRenderer.Renderer として 2D の描き手へ渡り、2D の並びの z の 1 点で draw が呼ばれる。その中だけ深度で前後を決めて、GL の状態を元へ戻して返す。
 // 座標の約束（左手系・表の面は時計回り）は engine の scene3d/Scene3d.flix の頭。
 // 影の地図は Render3d.Shadow・材質のある置いた物と場面の絵は Render3d.Material（render_gl/src/Render3d/）・シェーダーの字は Render3dGlsl。
 //
@@ -17,7 +17,6 @@
 //   両面の材質は GL_CULL_FACE をその物だけ切り、裏の面（!gl_FrontFacing）は光の計算の法線を裏返す。
 //   空は深度を消した後、深度を書かずに場面の矩形いっぱいの四角で塗る（向きは Scene3d.skyBasisOf・式は LightModel3d.skyModel）。
 mod Render3d {
-    import java.lang.System
     import java.lang.{Float => JFloat}
     import org.lwjgl.opengl.GL11
     import org.lwjgl.opengl.GL13
@@ -46,24 +45,13 @@ mod Render3d {
     // WhyNot: 位置・法線・色の交互の並びへ混ぜない — 番号は整数の属性で、float の並びに入れると骨の無い形まで stride が伸びる。
     pub type alias SkinBuffers = { joints = Int32, weights = Int32 }
 
-    /// 描き先の中の design 領域（GL の左下原点の画素）と、design px → 画素の倍率。
-    pub type alias Viewport = { x = Int32, y = Int32, width = Int32, height = Int32, scaleX = Float64, scaleY = Float64 }
-
     /// GL の左下原点の画素の矩形。
     pub type alias PixelBox = { x = Int32, y = Int32, width = Int32, height = Int32 }
 
-    /// ビルボードが貼るテクスチャ。flipped = レンダーターゲット（行 0 が下）で、v を上下反転して読む。
-    /// version = 中身の版（実行中に画素を差し替えた絵は字が変わる。3D の材質が段を作り直す合図）。
-    pub type alias BillboardTexture = { texId = Int32, width = Float64, height = Float64, flipped = Bool, version = String }
-
     /// 場面 1 つと、Design の解像度で先に描いておいた描き先（Native なら None）と、先に描いておいた影の地図（無ければ None）と、
     /// 描き先が標本を持つか（multisampled = 真なら cutout の材質を alpha to coverage で描く）。
-    pub type alias SceneItem = { cmd = Scene3d.RenderCmd, designTarget = Option[RenderTargetGl.Entry], shadow = Option[ShadowUse],
+    type alias SceneItem = { cmd = Scene3d.RenderCmd, designTarget = Option[RenderTargetGl.Entry], shadow = Option[ShadowUse],
                                  multisampled = Bool }
-
-    /// 3D の場面を描く描き先。framebuffer = 描き終えた後に戻す FBO（今開いているレンダーターゲットの描く FBO か画面）・
-    /// format = その形式・samples = その標本の数（1 なら MSAA なし）。
-    pub type alias Dest = { framebuffer = Int32, format = RenderTarget.Format, samples = Int32 }
 
     /// 塗りのシェーダーへ渡す影。tex = 影の地図（深度テクスチャ）・matrix = Scene3d.shadowMatrix（列優先 16 個）・
     /// spotIndex = pickLights の後のスポットの並びの何番目に掛けるか。
@@ -140,7 +128,7 @@ mod Render3d {
 
     /// 材質の Tex の名前を絵に引く元。textureOf = 全体の登録（project.json・レンダーターゲット）・
     /// own = 場面の textures（Texture3d.name → 絵）。
-    type alias TextureSource = { textureOf = String -> Option[BillboardTexture] \ IO, own = Map[String, Texture3d.Texture3d] }
+    type alias TextureSource = { textureOf = String -> Option[Scene3dRenderer.RegisteredTexture] \ IO, own = Map[String, Texture3d.Texture3d] }
 
     /// GPU に上げた場面の絵 1 枚（Texture3d の contentHash で引く）。levels = 段の数・bytes = 段を合わせた置き場の大きさ・
     /// lastUsed = 最後に貼ったコマの世代。
@@ -218,8 +206,6 @@ mod Render3d {
         thrashWarnedRef = Ref[Set[String], Static],
         // 材質の uTime（秒）。prepareScenes が毎回置く。
         timeHolder = Array[Float64, Static],
-        // 作った時の System.nanoTime（elapsedSeconds のものさし）。
-        createdAt = Int64,
         // 影の地図の描き先（(mapSize, 同じ prepareScenes の中で同じ mapSize の何枚目か) → FBO）。
         shadowTargetsRef = Ref[Map[(Int32, Int32), ShadowTarget], Static],
         // 影について知らせ済みの種類（同じ知らせを毎コマ出さない）。
@@ -273,12 +259,12 @@ mod Render3d {
     pub type alias TextureBudget = { megabytes = Int32, count = Int32 }
 
     /// EngineConfig（project.json）の 2 つのキーから場面の絵の置き場の上限を組む。
-    pub def textureBudgetOf(config: GameEngine.EngineConfig): TextureBudget =
+    def textureBudgetOf(config: GameEngine.EngineConfig): TextureBudget =
         { megabytes = config#scene3dTextureBudgetMB, count = config#scene3dTextureBudgetCount }
 
     /// 3D の描き手を、空の置き場で作る（textureBudget = 場面の絵の置き場の上限・linearColor = 3D の色を線形の量で計算するか。
-    /// 偽なら 0.78 の式。GameEngine.loadScene3dLinearColor の値を渡す。0.80.0 で消える引数）。
-    pub def fresh(textureBudget: TextureBudget, linearColor: Bool): State \ IO =
+    /// 偽なら 0.78 の式）。
+    def fresh(textureBudget: TextureBudget, linearColor: Bool): State \ IO =
         { textureByteBudget = Int32.toInt64(Int32.max(1, textureBudget#megabytes)) * 1048576i64,
           textureCountBudget = Int32.max(1, textureBudget#count), meshesRef = Ref.fresh(Static, Map.empty()), vertexTotal = Array#{0} @ Static,
           uploadStreak = Array#{0, 0, 0} @ Static, materialStreak = Array#{0, 0, 0} @ Static, programsRef = Ref.fresh(Static, None),
@@ -286,14 +272,36 @@ mod Render3d {
           designTargetsRef = Ref.fresh(Static, Map.empty()), missingTexturesRef = Ref.fresh(Static, Set.empty()),
           materialsRef = Ref.fresh(Static, Map.empty()), retiredMaterialsRef = Ref.fresh(Static, Nil),
           thrashWarnedRef = Ref.fresh(Static, Set.empty()), timeHolder = Array#{0.0} @ Static,
-          createdAt = System.nanoTime(), shadowTargetsRef = Ref.fresh(Static, Map.empty()),
+          shadowTargetsRef = Ref.fresh(Static, Map.empty()),
           shadowWarnedRef = Ref.fresh(Static, Set.empty()), textures3dRef = Ref.fresh(Static, Map.empty()),
           materialSamplers = Array#{0, 0, 0, 0, 0, 0, 0, 0} @ Static, mipCopiesRef = Ref.fresh(Static, Map.empty()),
           blankTexture = Array#{0} @ Static,
           sceneWarnedRef = Ref.fresh(Static, Set.empty()), countsHolder = Array#{0, 0, 0, 0, 0} @ Static, linearColor = linearColor }
 
+    /// 2D の描き手へ渡す 3D の描き手を、空の置き場で作る。場面の絵の置き場の上限と色の計算の旗は config（project.json）から読む。
+    pub def makeRenderer(config: GameEngine.EngineConfig): Scene3dRenderer.Renderer \ IO =
+        let state = fresh(textureBudgetOf(config), GameEngine.loadScene3dLinearColor(config#rootDir));
+        { prepare = (gen, textureOf, dest, cmds) -> prepareNumbered(state, gen, textureOf, dest, cmds),
+          endFrame = gen -> endFrame(state, gen),
+          takeCounts = () -> takeCounts(state),
+          readsTexture = readsTexture }
+
+    /// 場面のどれかのビルボードが name の絵を貼るか（材質の Tex は数えない）。
+    pub def readsTexture(name: String, scenes: List[Scene3d.RenderCmd]): Bool =
+        List.exists(cmd -> List.exists(b -> Scene3d.billboardFieldsOf(b)#texture == name, cmd#scene#billboards), scenes)
+
+    /// 場面を先に描いておき、番号で引いて描く形にする。
+    def prepareNumbered(state: State, gen: Int64, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO,
+                        dest: Scene3dRenderer.Dest, cmds: List[Scene3d.RenderCmd]): Scene3dRenderer.Prepared \ IO =
+        if (List.isEmpty(cmds)) Scene3dRenderer.noScenes()
+        else {
+            let items = List.toVector(prepareScenes(state, gen, textureOf, dest, cmds));
+            { zIndexes = Vector.map(item -> item#cmd#scene#zIndex, items),
+              draw = (vp, index) -> drawItem(state, gen, textureOf, vp, Vector.get(index, items)) }
+        }
+
     /// 前に呼んでからの 3D の数（置いた物・描いた物・draw call・落とした点光源とスポット）を返し、0 に戻す。
-    pub def takeCounts(state: State): FrameDiagnostics.Scene3dCounts \ IO =
+    def takeCounts(state: State): FrameDiagnostics.Scene3dCounts \ IO =
         let h = state#countsHolder;
         let counts = { instances = Array.get(0, h), drawn = Array.get(1, h), drawCalls = Array.get(2, h),
                        droppedPointLights = Array.get(3, h), droppedSpotLights = Array.get(4, h) };
@@ -318,43 +326,36 @@ mod Render3d {
     def countDrawCall(state: State): Unit \ IO =
         Array.put(Array.get(2, state#countsHolder) + 1, 2, state#countsHolder)
 
-    /// 描き手を作ってからの実時間（秒）。
-    pub def elapsedSeconds(state: State): Float64 \ IO =
-        Int64.toFloat64(System.nanoTime() - state#createdAt) / 1.0e9
-
     // ── 場面を描く（2D の並びの中から）──
 
     /// Design の解像度の場面を、そのテクスチャへ先に描いておく（2D の並びを描き始める前に呼ぶ）。
     /// dest#framebuffer = 描き終えた後に戻す描き先（今開いているレンダーターゲットか画面）・dest#format = その形式
     /// （Design の中継の描き先も同じ形式で作る — HDR の Pass の中で、中継だけ 0..1 に切られないように）。
     // WhyNot: 2D の並びの途中で FBO を替えて描かない — タイル型の GPU で描き先の出し入れが重く、viewport と scissor の戻し漏れも増える。
-    pub def prepareScenes(state: State, gen: Int64, textureOf: String -> Option[BillboardTexture] \ IO,
-                          dest: Dest, cmds: List[Scene3d.RenderCmd]): List[SceneItem] \ IO =
-        if (List.isEmpty(cmds)) Nil
-        else {
-            // 影の地図は Design の場面より先に描く — Design の場面の塗りがその地図を読む。
-            let shadows = renderShadows(state, gen, cmds);
-            let designCount = Array#{0} @ Static;
-            let items = List.zip(cmds, shadows) |> List.map(cs -> {
-                let (cmd, shadow) = cs;
-                match cmd#scene#resolution {
-                    case Scene3d.Resolution.Native => { cmd = cmd, designTarget = None, shadow = shadow, multisampled = dest#samples > 1 }
-                    case Scene3d.Resolution.Design =>
-                        let index = Array.get(0, designCount);
-                        Array.put(index + 1, 0, designCount);
-                        // WhyNot: Design の解像度の描き先に標本を持たせない — ドット絵と画素をそろえる場面に縁のならしは要らない。
-                        { cmd = cmd, designTarget = renderDesign(state, gen, textureOf, (index, dest#format), shadow, cmd), shadow = shadow,
-                          multisampled = false }
-                }
-            });
-            let movedTarget = Array.get(0, designCount) > 0 or List.exists(Option.nonEmpty, shadows);
-            if (movedTarget) GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, dest#framebuffer) else ();
-            items
-        }
+    def prepareScenes(state: State, gen: Int64, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO,
+                      dest: Scene3dRenderer.Dest, cmds: List[Scene3d.RenderCmd]): List[SceneItem] \ IO =
+        // 影の地図は Design の場面より先に描く — Design の場面の塗りがその地図を読む。
+        let shadows = renderShadows(state, gen, cmds);
+        let designCount = Array#{0} @ Static;
+        let items = List.zip(cmds, shadows) |> List.map(cs -> {
+            let (cmd, shadow) = cs;
+            match cmd#scene#resolution {
+                case Scene3d.Resolution.Native => { cmd = cmd, designTarget = None, shadow = shadow, multisampled = dest#samples > 1 }
+                case Scene3d.Resolution.Design =>
+                    let index = Array.get(0, designCount);
+                    Array.put(index + 1, 0, designCount);
+                    // WhyNot: Design の解像度の描き先に標本を持たせない — ドット絵と画素をそろえる場面に縁のならしは要らない。
+                    { cmd = cmd, designTarget = renderDesign(state, gen, textureOf, (index, dest#format), shadow, cmd), shadow = shadow,
+                      multisampled = false }
+            }
+        });
+        let movedTarget = Array.get(0, designCount) > 0 or List.exists(Option.nonEmpty, shadows);
+        if (movedTarget) GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, dest#framebuffer) else ();
+        items
 
     /// 場面 1 つを 2D の並びの中で描く。描き終えたら viewport を vp へ、scissor を切り、blend を Normal へ戻す。
-    pub def drawItem(state: State, gen: Int64, textureOf: String -> Option[BillboardTexture] \ IO,
-                     vp: Viewport, item: SceneItem): Unit \ IO =
+    def drawItem(state: State, gen: Int64, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO,
+                 vp: Scene3dRenderer.Viewport, item: SceneItem): Unit \ IO =
         let scene = item#cmd#scene;
         let rect = sceneRect(vp, item#cmd);
         let scissor = clipBox(vp, rect, item#cmd#clip);
@@ -370,13 +371,13 @@ mod Render3d {
         RenderSprite.applyBlend(DrawCmd.BlendMode.Normal)
 
     /// 場面の矩形（at・size）を描き先の画素へ写す（量子化は 2D の clip と同じ DrawCmd.clipPixels）。
-    def sceneRect(vp: Viewport, cmd: Scene3d.RenderCmd): PixelBox =
+    def sceneRect(vp: Scene3dRenderer.Viewport, cmd: Scene3d.RenderCmd): PixelBox =
         let (x0, y0, x1, y1) = DrawCmd.clipPixels({ scaleX = vp#scaleX, scaleY = vp#scaleY },
                                                   { position = cmd#at, size = cmd#scene#size });
         { x = vp#x + x0, y = vp#y + vp#height - y1, width = x1 - x0, height = y1 - y0 }
 
     /// scissor = 場面の矩形 ∩ clip ∩ design 領域（clip が外へはみ出しても黒帯を侵さない）。
-    def clipBox(vp: Viewport, rect: PixelBox, clip: Option[Rect2.Rect2]): PixelBox =
+    def clipBox(vp: Scene3dRenderer.Viewport, rect: PixelBox, clip: Option[Rect2.Rect2]): PixelBox =
         let area = { x = vp#x, y = vp#y, width = vp#width, height = vp#height };
         let base = intersect(rect, area);
         match clip {
@@ -396,7 +397,7 @@ mod Render3d {
     // ── Design の解像度 ──
 
     /// Design の場面を design px の FBO に透明から描く。大きさが 0 なら None。
-    def renderDesign(state: State, gen: Int64, textureOf: String -> Option[BillboardTexture] \ IO,
+    def renderDesign(state: State, gen: Int64, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO,
                      slot: (Int32, RenderTarget.Format), shadow: Option[ShadowUse], cmd: Scene3d.RenderCmd): Option[RenderTargetGl.Entry] \ IO =
         let w = Num.floorInt(cmd#scene#size#x + 0.5);
         let h = Num.floorInt(cmd#scene#size#y + 0.5);
@@ -456,7 +457,7 @@ mod Render3d {
 
     /// 場面 1 つを、今 bind されている描き先の area へ描く。描き終えたら深度・カリングを切り、blend・program・VAO を戻す。
     /// viewport と scissor は呼ぶ側が戻す。stencil には触らない（mask 付きの Shader 面が使う）。
-    def drawScene(state: State, gen: Int64, textureOf: String -> Option[BillboardTexture] \ IO,
+    def drawScene(state: State, gen: Int64, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO,
                   area: { viewport = PixelBox, scissor = PixelBox, fillBackground = Bool, coverage = Bool }, shadow: Option[ShadowUse],
                   scene: Scene3d.Scene3dCmd): Unit \ IO =
         Array.put(scene#time, 0, state#timeHolder);
@@ -858,7 +859,7 @@ mod Render3d {
         entry#uv2 |> Option.forEach(vbo -> GL15.glDeleteBuffers(vbo))
 
     /// 画面のコマを描き終えた後に 1 回呼ぶ。使われないメッシュと上限を超えた分を捨て、毎コマの作り直しを知らせる。
-    pub def endFrame(state: State, gen: Int64): Unit \ IO =
+    def endFrame(state: State, gen: Int64): Unit \ IO =
         noteUploadStreak(state);
         noteMaterialStreak(state);
         sweepMaterials(state, gen);
@@ -919,7 +920,7 @@ mod Render3d {
     // ── ビルボード ──
 
     /// 場面のビルボードを描く。視錐台の外のビルボード（外接球で見る）は描かない（見つからない絵の知らせは描く物と同じに出す）。
-    def drawBillboards(state: State, textureOf: String -> Option[BillboardTexture] \ IO, locs: BillboardLocs,
+    def drawBillboards(state: State, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO, locs: BillboardLocs,
                        camera: CameraData, scene: Scene3d.Scene3dCmd): Unit \ IO =
         if (List.isEmpty(scene#billboards) or locs#program == 0) ()
         else {
@@ -949,7 +950,7 @@ mod Render3d {
                 GL20.glUniform2f(locs#depthRange, RenderUtil.f32(dr#near), RenderUtil.f32(Float64.max(0.000001, dr#range)))
         }
 
-    def drawBillboard(state: State, textureOf: String -> Option[BillboardTexture] \ IO, locs: BillboardLocs,
+    def drawBillboard(state: State, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO, locs: BillboardLocs,
                       culled: Bool, b: Scene3d.BillboardFields): Unit \ IO =
         match textureOf(b#texture) {
             case None          => warnMissingTexture(state, b#texture)
@@ -967,7 +968,7 @@ mod Render3d {
         }
 
     /// 貼る範囲の uv（左上 u・v と幅・高さ）。レンダーターゲットは行 0 が下なので v を反転する。
-    def putUvRect(loc: Int32, texture: BillboardTexture, source: Rect2.Rect2): Unit \ IO =
+    def putUvRect(loc: Int32, texture: Scene3dRenderer.RegisteredTexture, source: Rect2.Rect2): Unit \ IO =
         let w = Float64.max(1.0, texture#width);
         let h = Float64.max(1.0, texture#height);
         let u0 = source#position#x / w;

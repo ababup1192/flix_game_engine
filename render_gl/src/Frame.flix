@@ -12,7 +12,7 @@ mod RenderFrame {
 
     /// z 安定ソート列に混ぜる 6 種の描画物。MTile=タイルマップ 1 層（1 draw call）、
     /// MSprite=スプライト/箱、MPoly=動的多角形、MStatic=永続 VBO のレンジ（頂点は運ばず
-    /// 範囲だけ）、MSurface=宣言シェーダー面、MScene3d=3D の場面 1 つ（中だけ深度で前後を決める）。種類が切り替わる瞬間に
+    /// 範囲だけ）、MSurface=宣言シェーダー面、MScene3d=3D の場面 1 つの番号（Scene3dRenderer.Prepared の番号・中だけ深度で前後を決める）。種類が切り替わる瞬間に
     /// 溜めた run を吐くことで、列順（＝重なり順）を厳密に守る。
     pub enum Merged {
         case MTile(RenderType.TileMapRenderCmd)
@@ -20,7 +20,7 @@ mod RenderFrame {
         case MPoly(RenderType.PolygonCmd)
         case MStatic(RenderStatic.Range)
         case MSurface(ShaderEffect.ShaderRenderCmd)
-        case MScene3d(Render3d.SceneItem)
+        case MScene3d(Int32)
     }
 
     /// デザイン解像度のアスペクト比を維持しつつ、フレームバッファに収まる最大矩形を計算。
@@ -71,7 +71,7 @@ mod RenderFrame {
                       polygons: List[RenderType.PolygonCmd],
                        statics: List[RenderStatic.Range],
                       surfaces: List[ShaderEffect.ShaderRenderCmd],
-                      scenes: List[Render3d.SceneItem]): List[Merged] =
+                      scenes: Vector[Int32]): List[Merged] =
         region rc {
             // 0 = 一番小さい z / 1 = 一番大きい z / 2 = 個数
             let tally: Array[Int32, rc] = Array#{2147483647, -2147483648, 0} @ rc;
@@ -85,7 +85,7 @@ mod RenderFrame {
             List.forEach(x -> scan(x#zIndex), polygons);
             List.forEach(x -> scan(x#zIndex), statics);
             List.forEach(x -> scan(x#zIndex), surfaces);
-            List.forEach(x -> scan(sceneZ(x)), scenes);
+            Vector.forEach(scan, scenes);
             let lo = Array.get(0, tally);
             let hi = Array.get(1, tally);
             let count = Array.get(2, tally);
@@ -113,7 +113,7 @@ mod RenderFrame {
                      polygons: List[RenderType.PolygonCmd],
                       statics: List[RenderStatic.Range],
                      surfaces: List[ShaderEffect.ShaderRenderCmd],
-                     scenes: List[Render3d.SceneItem]): Unit \ rc =
+                     scenes: Vector[Int32]): Unit \ rc =
         let seat = (z: Int32, m: Merged) -> {
             let i = z - lo;
             Array.put(m :: Array.get(i, seats), i, seats)
@@ -123,7 +123,7 @@ mod RenderFrame {
         List.forEach(x -> seat(x#zIndex, Merged.MPoly(x)), polygons);
         List.forEach(x -> seat(x#zIndex, Merged.MStatic(x)), statics);
         List.forEach(x -> seat(x#zIndex, Merged.MSurface(x)), surfaces);
-        List.forEach(x -> seat(sceneZ(x), Merged.MScene3d(x)), scenes)
+        Vector.forEachWithIndex((i, z) -> seat(z, Merged.MScene3d(i)), scenes)
 
     /// スロットの大きい側から acc へ前置し直す（スロット内の逆順が入力順へ戻る）。
     /// acc に後続（より大きい範囲の列）を渡せるので、範囲別ソートの連結にもそのまま使える。
@@ -142,7 +142,7 @@ mod RenderFrame {
                     polygons: List[RenderType.PolygonCmd],
                     statics: List[RenderStatic.Range],
                     surfaces: List[ShaderEffect.ShaderRenderCmd],
-                    scenes: List[Render3d.SceneItem]): List[Merged] \ rc =
+                    scenes: Vector[Int32]): List[Merged] \ rc =
         let w = ZBand.width();
         let bLo = lo / w;
         let nb = hi / w - bLo + 1;
@@ -161,7 +161,7 @@ mod RenderFrame {
         List.forEach(x -> scanB(x#zIndex), polygons);
         List.forEach(x -> scanB(x#zIndex), statics);
         List.forEach(x -> scanB(x#zIndex), surfaces);
-        List.forEach(x -> scanB(sceneZ(x)), scenes);
+        Vector.forEach(scanB, scenes);
         // 範囲ごとにスロットを先に用意する。中間リストへ溜めて反転する形にしないのは、
         // 1 個あたり cons が 2 回増えて、物量シーンでフレーム時間に乗るため。
         // スロットが個数に見合わない（z がまばらな）範囲だけリストへ溜めて木で受ける。
@@ -195,31 +195,28 @@ mod RenderFrame {
         List.forEach(x -> put(x#zIndex, Merged.MPoly(x)), polygons);
         List.forEach(x -> put(x#zIndex, Merged.MStatic(x)), statics);
         List.forEach(x -> put(x#zIndex, Merged.MSurface(x)), surfaces);
-        List.forEach(x -> put(sceneZ(x), Merged.MScene3d(x)), scenes);
+        Vector.forEachWithIndex((i, z) -> put(z, Merged.MScene3d(i)), scenes);
         // 範囲の大きい側から前置で連結する（全体 = 範囲の昇順・範囲内 = z 昇順・同 z は入力順）。
         List.range(0, nb) |> List.foldLeft((acc, i) -> {
             let b = nb - 1 - i;
             if (Array.get(b, rangeCnt) == 0) acc
             else if (Array.get(b, useTree))
                 // 溜めは逆順なので、並べ替えの前に入力順へ戻す（まばらな範囲だけの経路）。
-                List.append(stableByZTree(zOfMerged, List.reverse(Array.get(b, treeRev))), acc)
+                List.append(stableByZTree(m -> zOfMerged(scenes, m), List.reverse(Array.get(b, treeRev))), acc)
             else emitSeats(Array.get(b, rangeSeats),
                            Array.get(b, rangeHiA) - Array.get(b, rangeLoA) + 1, acc)
         }, Nil)
 
-    /// 並べ替え鍵 = zIndex（全 run 種で共有の 1 つの z 空間）。
-    def zOfMerged(item: Merged): Int32 =
+    /// 並べ替え鍵 = zIndex（全 run 種で共有の 1 つの z 空間）。sceneZs = 場面の番号ごとの z。
+    def zOfMerged(sceneZs: Vector[Int32], item: Merged): Int32 =
         match item {
             case Merged.MTile(tm)   => tm#zIndex
             case Merged.MSprite(d)  => DrawCmd.zIndexOf(d)
             case Merged.MPoly(pc)   => pc#zIndex
             case Merged.MStatic(r)  => r#zIndex
             case Merged.MSurface(s) => s#zIndex
-            case Merged.MScene3d(x) => sceneZ(x)
+            case Merged.MScene3d(i) => Vector.get(i, sceneZs)
         }
-
-    /// 3D の場面の並べ替え鍵。
-    def sceneZ(item: Render3d.SceneItem): Int32 = item#cmd#scene#zIndex
 
     /// スロット方式にそろえる鍵の幅の上限。描く物の数に比例させるのは、スロットが疎らでも
     /// 「埋める手間 ≒ 描く物の数」に収まる範囲ならスロットのほうが速いため。
@@ -278,10 +275,8 @@ mod RenderFrame {
         // シェーダー面 1 枚を実際に GL へ描くクロージャ（program の uniform location を知る
         // バックエンド側が提供する）。renderFrameMixed は z の合流だけを受け持つ。
         drawSurface = ShaderEffect.ShaderRenderCmd -> Unit \ IO,
-        // 3D の場面の列。同じ z の中では surfaces の後に描く。Design の解像度の物は描き先を先に描き終えている。
-        scenes = List[Render3d.SceneItem],
-        // 場面 1 つを描く閉包（メッシュの置き場とプログラムを持つ側が出す）。描き終えたら viewport・scissor・blend を戻す。
-        drawScene = (Render3d.Viewport, Render3d.SceneItem) -> Unit \ IO,
+        // 先に準備した 3D の場面の並び。番号ごとの z で 2D の並びに混ぜ、同じ z の中では surfaces の後に描く。
+        scenes = Scene3dRenderer.Prepared,
         // None = 画面へのフレーム（黒帯 + design 領域の 2 段階の clear）。Some(op) = レンダー
         // ターゲット（FBO）へのフレームで、op（RenderTarget.LoadOp）が前の中身の始末を決める —
         // Keep = 残す（残像用）・Clear = その色の不透明・ClearTransparent = 全画素透明。
@@ -737,7 +732,7 @@ mod RenderFrame {
                    tileUniforms: RenderShader.TileUniforms,
                    polyBatchUniforms: RenderShader.PolyBatchUniforms,
                    drawSurface: ShaderEffect.ShaderRenderCmd -> Unit \ IO,
-                   drawScene: (Render3d.Viewport, Render3d.SceneItem) -> Unit \ IO,
+                   drawScene: (Scene3dRenderer.Viewport, Int32) -> Unit \ IO,
                    items: List[Merged]): Unit \ IO =
         match items {
             case Nil => ()
@@ -793,12 +788,12 @@ mod RenderFrame {
                         flushPolys(st, polyData, polyBatchUniforms);
                         setScissorAt(st, 0, 0, 0, 0, 0);
                         drawSurface(s)
-                    case Merged.MScene3d(x) =>
+                    case Merged.MScene3d(i) =>
                         // 場面も両 run を吐いてから描く（深度で前後を決めるのは場面の中だけ）。
                         flushSprites(st, instData);
                         flushPolys(st, polyData, polyBatchUniforms);
                         drawScene({ x = Array.get(7, st), y = Array.get(8, st), width = Array.get(9, st),
-                                    height = Array.get(10, st), scaleX = scaleX, scaleY = scaleY }, x)
+                                    height = Array.get(10, st), scaleX = scaleX, scaleY = scaleY }, i)
                 };
                 emitMerged(st, instData, polyData, scaleX, scaleY, registry, targetNames,
                            warnLog, tileUniforms, polyBatchUniforms, drawSurface, drawScene, rest)
@@ -884,7 +879,7 @@ mod RenderFrame {
             // 同 z 内は入力順 = tiles → sprites → polygons → static → surfaces なので、
             // 「同 z ならタイル層が奥」が安定ソートの規約としてそのまま立つ
             // （タイル層を手前に出すには大きい zIndex）。
-            let sortedMerged = mergedByZ(tileMaps, sprites, polygons, staticRanges, surfaces, args#scenes);
+            let sortedMerged = mergedByZ(tileMaps, sprites, polygons, staticRanges, surfaces, args#scenes#zIndexes);
             // clip 矩形 → framebuffer 座標の整数 scissor 矩形 (x0, y0, x1, y1)（top-left 原点）。
             // record に Eq が無いので、run の分断キーはこの int 組で比較する（fb 画素への
             // 量子化を兼ね、1px 未満の差で run を無駄に割らない）。
@@ -916,7 +911,7 @@ mod RenderFrame {
             Array.put(vpH, 10, st);
             Array.put(tileShader, 26, st);
             emitMerged(st, instData, polyData, scaleX, scaleY, registry, args#targetNames,
-                       args#texWarnLog, tileUniforms, polyBatchUniforms, drawSurface, args#drawScene, sortedMerged);
+                       args#texWarnLog, tileUniforms, polyBatchUniforms, drawSurface, args#scenes#draw, sortedMerged);
             // どちらか片方だけが非空（切替時に相手を吐いているため）。空 flush は no-op。
             flushSprites(st, instData);
             flushPolys(st, polyData, polyBatchUniforms);

@@ -48,8 +48,8 @@ mod RenderPaint {
         pendingShaderHolder = Array[List[ShaderEffect.ShaderRenderCmd], Static],
         // このコマに溜まった 3D の場面（queueScene3d が積み、submitFrame が取り出す。新しい順）。
         pendingScene3dHolder = Array[List[Scene3d.RenderCmd], Static],
-        // 3D の場面の描き手（メッシュの置き場・プログラム・Design の描き先）。
-        render3d = Render3d.State,
+        // 3D の場面の描き手（作る側が渡す）。
+        scene3d = Scene3dRenderer.Renderer,
         // program → (uRectPos, uRectSize, uTime, uAlpha, texLocs, paramLocs)。
         shaderUniformCache = Ref[Map[Int32, (Int32, Int32, Int32, Int32, List[(Int32, Int32)], List[Int32])], Static],
         // レンダーターゲットの名前 → GL 実体。
@@ -86,10 +86,9 @@ mod RenderPaint {
 
     /// GL の資源を作り、空の登録簿で塗りのコアを始める。GL の文脈が今の糸に付いていること。
     /// design = 描く座標の寸（ゲームの designWidth × designHeight）、clearColor = design の中の地の色、
-    /// screenFramebuffer = 画面のフレームバッファ（窓なら 0）。scene3dTextureBudget = 3D の場面の絵を GPU に持つ量と枚数の上限（Render3d.TextureBudget）。
-    /// cfg#scene3dLinearColor = 3D の色を線形の量で計算するか（GameEngine.loadScene3dLinearColor の値。0.80.0 で消える欄）。
-    pub def create(cfg: { designWidth = Int32, designHeight = Int32, clearColor = Color, screenFramebuffer = Int32, scene3dTextureBudget = Render3d.TextureBudget,
-                          scene3dLinearColor = Bool }): Paint \ IO =
+    /// screenFramebuffer = 画面のフレームバッファ（窓なら 0）。scene3d = 3D の場面の描き手（Scene3dRenderer.Renderer）。
+    pub def create(cfg: { designWidth = Int32, designHeight = Int32, clearColor = Color, screenFramebuffer = Int32,
+                          scene3d = Scene3dRenderer.Renderer }): Paint \ IO =
         let screenW = Int32.toFloat64(cfg#designWidth);
         let screenH = Int32.toFloat64(cfg#designHeight);
 
@@ -239,9 +238,6 @@ mod RenderPaint {
                                                polyBatchShader, polyBatchVao, polyBatchVbo,
                                                polyBatchUniforms, cmd#mask)
         };
-        let render3d = Render3d.fresh(cfg#scene3dTextureBudget, cfg#scene3dLinearColor);
-        let drawScene = (vp: Render3d.Viewport, item: Render3d.SceneItem) ->
-            Render3d.drawItem(render3d, Array.get(0, frameGenHolder), billboardTexture(registryRef, targetsRef, textureKeyRef), vp, item);
         // renderFrameMixed への FrameArgs は固定値（シェーダ・VAO・buf・uniforms 等）が
         // 大半なので、共通ベースを 1 つ組み、呼び出し側は変わる所だけ上書きする。
         // registry / targetNames は毎フレーム育つ Ref から読むため、ベースの値は仮
@@ -259,7 +255,7 @@ mod RenderPaint {
             spriteUniforms = spriteUniforms, tileUniforms = tileUniforms,
             instMultiplyBlend = instMultiplyBlend,
             surfaces = Nil, drawSurface = drawSurface,
-            scenes = Nil, drawScene = drawScene,
+            scenes = Scene3dRenderer.noScenes(),
             targetClear = None, targetNames = Set.empty(),
             texWarnLog = missingTextureRef
         };
@@ -268,7 +264,7 @@ mod RenderPaint {
           tileVboRegistry = tileVboRegistry, shaderProgramCache = shaderProgramCache,
           frameGenHolder = frameGenHolder, programUsedAtRef = programUsedAtRef,
           pendingShaderHolder = pendingShaderHolder, shaderUniformCache = shaderUniformCache,
-          pendingScene3dHolder = Array#{(Nil: List[Scene3d.RenderCmd])} @ Static, render3d = render3d,
+          pendingScene3dHolder = Array#{(Nil: List[Scene3d.RenderCmd])} @ Static, scene3d = cfg#scene3d,
           targetsRef = targetsRef, activeTargetHolder = activeTargetHolder,
           historyRef = Ref.fresh(Static, Map.empty()), targetWarnedRef = Ref.fresh(Static, Set.empty()), keepHistory = true,
           registryRef = registryRef, textureKeyRef = textureKeyRef,
@@ -287,13 +283,13 @@ mod RenderPaint {
             case Some(l) => RenderStatic.resolve(paint#staticCacheCell, l)
         };
         // WhyNot: 画面に標本の数を問わない — 窓は GLFW_SAMPLES を頼まずに作る（窓の MSAA は 2D の縁も変える）。
-        let scenes = prepareScenes(paint, { framebuffer = paint#screenFramebuffer, format = RenderTarget.Format.Rgba8Unorm, samples = 1 }, frame#scenes);
+        let prepared = prepareScenes(paint, { framebuffer = paint#screenFramebuffer, format = RenderTarget.Format.Rgba8Unorm, samples = 1 }, frame#scenes);
         RenderFrame.renderFrameMixed({
             registry = Ref.get(paint#registryRef),
             fbW = fbW, fbH = fbH,
             sprites = frame#sprites, tileMaps = frame#tileMaps, polygons = frame#polygons,
             staticRanges = staticRanges,
-            surfaces = frame#surfaces, scenes = scenes,
+            surfaces = frame#surfaces, scenes = prepared,
             targetNames = Map.keysOf(Ref.get(paint#targetsRef)) | paint#frameArgsBase })
 
     /// レンダーターゲットへの 1 フレーム。画面用の paintFrame と違い、黒帯 clear を
@@ -306,7 +302,7 @@ mod RenderPaint {
         let history = RenderTarget.historyName(name);
         let readsHistory = List.exists(cmd -> List.exists(read -> fst(read) == history, cmd#texReads), surfaces)
             or List.exists(d -> DrawCmd.textureOf(d) == history, sprites)
-            or List.exists(cmd -> List.exists(b -> Scene3d.billboardFieldsOf(b)#texture == history, cmd#scene#billboards), scenes);
+            or paint#scene3d#readsTexture(history, scenes);
         if (readsHistory) prepareHistory(paint, target) else ();
         let entry = Map.get(name, Ref.get(paint#targetsRef));
         let framebuffer = entry |> Option.map(RenderTargetGl.drawFramebuffer) |> Option.getWithDefault(paint#screenFramebuffer);
@@ -380,7 +376,7 @@ mod RenderPaint {
                 // いる面」という数え方が壊れる。
                 Array.put(Array.get(0, paint#frameGenHolder) + 1i64, 0, paint#frameGenHolder);
                 timedSpan(paint, "screen", () -> paintFrame(paint, fbW, fbH, frame));
-                Render3d.endFrame(paint#render3d, Array.get(0, paint#frameGenHolder));
+                paint#scene3d#endFrame(Array.get(0, paint#frameGenHolder));
                 noteGpuTime(paint);
                 true
         }
@@ -397,7 +393,7 @@ mod RenderPaint {
     /// 画面のコマの終わりに、結果の出た一番新しいコマの GPU の時間を診断へ入れる。
     /// 集めていない間は 3D の数を捨てるだけ（誰も引き取らない数を溜め続けない）。
     def noteGpuTime(paint: Paint): Unit \ IO =
-        if (Option.isEmpty(Ref.get(paint#diagnosticsRef))) discard Render3d.takeCounts(paint#render3d)
+        if (Option.isEmpty(Ref.get(paint#diagnosticsRef))) discard paint#scene3d#takeCounts()
         else match GpuTimer.endFrame(paint#gpuTimerRef) {
             case Some(t) => noteDiagnostics(paint, d -> { gpuNs = Some(t#gpuNs), gpuPasses = t#passes | d })
             case None    => ()
@@ -409,21 +405,20 @@ mod RenderPaint {
         Array.put(Nil, 0, paint#pendingScene3dHolder);
         scenes
 
-    /// Design の解像度の場面を先に描いておき、2D の並びへ渡す形にする。dest = 描き終えた後に戻す描き先・その形式・標本の数。
-    def prepareScenes(paint: Paint, dest: Render3d.Dest, scenes: List[Scene3d.RenderCmd]): List[Render3d.SceneItem] \ IO =
-        Render3d.prepareScenes(paint#render3d, Array.get(0, paint#frameGenHolder),
-                               billboardTexture(paint#registryRef, paint#targetsRef, paint#textureKeyRef), dest, scenes)
+    /// 溜めた場面を 3D の描き手に準備させ、2D の並びへ混ぜる形を受け取る。dest = 準備の後に戻す描き先・その形式・標本の数。
+    def prepareScenes(paint: Paint, dest: Scene3dRenderer.Dest, scenes: List[Scene3d.RenderCmd]): Scene3dRenderer.Prepared \ IO =
+        paint#scene3d#prepare(Array.get(0, paint#frameGenHolder), registeredTexture(paint#registryRef, paint#targetsRef, paint#textureKeyRef), dest, scenes)
 
     /// ビルボードと 3D の材質が貼るテクスチャを名前で引く（レンダーターゲットは上下逆に格納されているので flipped）。
     /// version = ensureTexture の key（同じ GL ハンドルのまま画素を差し替えると変わる。key の無い絵は空の字）。
-    def billboardTexture(registryRef: Ref[RenderAsset.TextureRegistry, Static],
-                         targetsRef: Ref[Map[String, RenderTargetGl.Entry], Static],
-                         textureKeyRef: Ref[Map[String, String], Static],
-                         name: String): Option[Render3d.BillboardTexture] \ IO =
+    def registeredTexture(registryRef: Ref[RenderAsset.TextureRegistry, Static],
+                          targetsRef: Ref[Map[String, RenderTargetGl.Entry], Static],
+                          textureKeyRef: Ref[Map[String, String], Static],
+                          name: String): Option[Scene3dRenderer.RegisteredTexture] \ IO =
         Map.get(name, Ref.get(registryRef)) |> Option.map(info ->
             ({ texId = GpuHandle.textureIdInt(info#id), width = info#width, height = info#height,
                flipped = Map.memberOf(name, Ref.get(targetsRef)),
-               version = Map.getWithDefault(name, "", Ref.get(textureKeyRef)) }: Render3d.BillboardTexture))
+               version = Map.getWithDefault(name, "", Ref.get(textureKeyRef)) }: Scene3dRenderer.RegisteredTexture))
 
     /// 最後に画面へ塗ったコマの命令。
     pub def lastFrame(paint: Paint): Frame \ IO = Array.get(0, paint#lastFrameHolder)
@@ -732,7 +727,7 @@ mod RenderPaint {
 
     /// 溜まった診断を取り出して空に戻す。liveShaders は起動からの作った数 − 消した数・scene3dCounts は前に取り出してからの 3D の数。
     pub def consumeDiagnostics(paint: Paint): FrameDiagnostics.Diagnostics \ IO =
-        let counts = Render3d.takeCounts(paint#render3d);
+        let counts = paint#scene3d#takeCounts();
         match Ref.get(paint#diagnosticsRef) {
             case None    => FrameDiagnostics.empty()
             case Some(d) =>

@@ -8,10 +8,11 @@ mod Render3d.Material {
     import org.lwjgl.system.MemoryUtil
     use Render3d.Shadow.{putShadow}
     use Render3dGlsl.{materialFragmentSource, materialVertexSource}
-    use Render3d.{materialKey, ProgramKind, BillboardTexture, BoundTexture, CameraData, MaterialDraw, MaterialEntry, MaterialLocs,
+    use Render3d.{materialKey, ProgramKind, BoundTexture, CameraData, MaterialDraw, MaterialEntry, MaterialLocs,
                   MaterialPass, MeshDraw, State, Texture3dEntry, TextureSource, bindJointsBlock, drawPosedMesh, hasUv, isSkinned,
-                  lightLocsOf, lightmapTextureUnit, loc, meshDrawOf, meshIdleFrames, meshLocsOf, normalMapTextureUnit, putColor, putLinearizedColor,
+                  lightLocsOf, lightmapTextureUnit, loc, meshDrawOf, meshIdleFrames, meshLocsOf, normalMapTextureUnit, putLinearizedColor,
                   putDepthRange, putLights, shadowLocsOf, useMeshProgram, warnSceneOnce}
+    use Scene3dRenderer.{RegisteredTexture}
 
     // ── 材質のある置いた物 ──
 
@@ -207,7 +208,7 @@ mod Render3d.Material {
     /// 全体の登録の絵 t の段つきの写し（average で平均した段。置き場の鍵は名前と平均の仕方。
     /// 無いか、元の絵が作り直されていたら、元の段 0 を読み戻して段を作り、上げ直す）。
     // WhyNot: 登録の絵の画素を Java の側に持ち続けない — STB で直に上げているので持っておらず、全部の絵をヒープに二重に持つことになる。
-    def mipCopyOf(state: State, gen: Int64, name: String, average: Mip.Average, t: BillboardTexture): BoundTexture \ IO =
+    def mipCopyOf(state: State, gen: Int64, name: String, average: Mip.Average, t: RegisteredTexture): BoundTexture \ IO =
         let copies = Ref.get(state#mipCopiesRef);
         let key = name + ":" + ToString.toString(average);
         let copy = match Map.get(key, copies) {

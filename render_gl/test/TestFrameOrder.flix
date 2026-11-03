@@ -21,22 +21,16 @@ mod TestFrameOrder {
             case RenderFrame.Merged.MSprite(d)  => "s${Float64.floor(DrawCmd.positionOf(d)#x)}"
             case RenderFrame.Merged.MPoly(p)    =>
                 "p${List.head(p#vertices) |> Option.map(v -> Float64.floor(v#x)) |> Option.getWithDefault(0.0)}"
-            case RenderFrame.Merged.MScene3d(x) => "c${x#cmd#at#x}"
+            case RenderFrame.Merged.MScene3d(i) => "c${i}"
             case _                              => "?"
         }) |> List.join(",")
-
-    def sceneAt(z: Int32, tag: Float64): Render3d.SceneItem =
-        let camera = { eye = { x = 0.0, y = 0.0, z = 0.0 }, yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 0.1, far = 100.0 };
-        { cmd = { at = { x = tag, y = 0.0 }, clip = None,
-                  scene = { zIndex = z | Scene3d.scene(camera, { x = 10.0, y = 10.0 }) } },
-          designTarget = None, shadow = None, multisampled = false }
 
     /// z の小さい物が先に来る（入力の並びは逆でも）。
     @Test
     def testAscendingByZ(): Unit \ Assert =
         let sprites = spriteAt(5, 1.0) :: spriteAt(1, 2.0) :: spriteAt(3, 3.0) :: Nil;
         Assert.assertEq(expected = "s2.0,s3.0,s1.0",
-                  trace(RenderFrame.mergedByZ(Nil, sprites, Nil, Nil, Nil, Nil)))
+                  trace(RenderFrame.mergedByZ(Nil, sprites, Nil, Nil, Nil, Vector.empty())))
 
     /// 同じ z ならスプライトが先・多角形が後（種類の決められた順）。
     @Test
@@ -44,33 +38,33 @@ mod TestFrameOrder {
         let sprites = spriteAt(2, 1.0) :: Nil;
         let polys = polyAt(2, 9.0) :: Nil;
         Assert.assertEq(expected = "s1.0,p9.0",
-                  trace(RenderFrame.mergedByZ(Nil, sprites, polys, Nil, Nil, Nil)))
+                  trace(RenderFrame.mergedByZ(Nil, sprites, polys, Nil, Nil, Vector.empty())))
 
     /// 同じ z・同じ種類なら入力の順のまま（安定）。
     @Test
     def testStableWithinSameZ(): Unit \ Assert =
         let sprites = spriteAt(2, 1.0) :: spriteAt(2, 2.0) :: spriteAt(2, 3.0) :: Nil;
         Assert.assertEq(expected = "s1.0,s2.0,s3.0",
-                  trace(RenderFrame.mergedByZ(Nil, sprites, Nil, Nil, Nil, Nil)))
+                  trace(RenderFrame.mergedByZ(Nil, sprites, Nil, Nil, Nil, Vector.empty())))
 
     /// z がまばらに散っていても（スロット方式に倒さない広さでも）並びは同じ。
     @Test
     def testSparseKeysKeepOrder(): Unit \ Assert =
         let sprites = spriteAt(900000, 1.0) :: spriteAt(0, 2.0) :: spriteAt(0, 3.0) :: Nil;
         Assert.assertEq(expected = "s2.0,s3.0,s1.0",
-                  trace(RenderFrame.mergedByZ(Nil, sprites, Nil, Nil, Nil, Nil)))
+                  trace(RenderFrame.mergedByZ(Nil, sprites, Nil, Nil, Nil, Vector.empty())))
 
     /// 何も無いフレームは空の列（スロットを 1 本も作らない）。
     @Test
     def testEmptyFrame(): Unit \ Assert =
-        Assert.assertEq(expected = "", trace(RenderFrame.mergedByZ(Nil, Nil, Nil, Nil, Nil, Nil)))
+        Assert.assertEq(expected = "", trace(RenderFrame.mergedByZ(Nil, Nil, Nil, Nil, Nil, Vector.empty())))
 
     /// 事故の再現形: world の高 z（爆発 1000）より HUD の範囲（ZBand.liftHud）の絵が手前。
     @Test
     def testHudRangeWinsOverHighWorldZ(): Unit \ Assert =
         let sprites = spriteAt(ZBand.liftHud(10), 1.0) :: spriteAt(1000, 2.0) :: Nil;
         Assert.assertEq(expected = "s2.0,s1.0",
-                  trace(RenderFrame.mergedByZ(Nil, sprites, Nil, Nil, Nil, Nil)))
+                  trace(RenderFrame.mergedByZ(Nil, sprites, Nil, Nil, Nil, Vector.empty())))
 
     /// 範囲をまたぐフレームでも各範囲の中は z 昇順・同 z は入力順のまま（範囲別 2 段階ソートの安定性）。
     @Test
@@ -79,7 +73,7 @@ mod TestFrameOrder {
                spriteAt(ZBand.liftHud(5), 1.0) :: spriteAt(3, 2.0) :: spriteAt(3, 3.0)
             :: spriteAt(ZBand.liftHud(0), 4.0) :: spriteAt(1, 5.0) :: Nil;
         Assert.assertEq(expected = "s5.0,s2.0,s3.0,s4.0,s1.0",
-                  trace(RenderFrame.mergedByZ(Nil, sprites, Nil, Nil, Nil, Nil)))
+                  trace(RenderFrame.mergedByZ(Nil, sprites, Nil, Nil, Nil, Vector.empty())))
 
     /// 範囲をまたいでも同 z の種類の順（スプライトが先・多角形が後）は変わらない。
     @Test
@@ -87,7 +81,7 @@ mod TestFrameOrder {
         let sprites = spriteAt(ZBand.liftHud(7), 1.0) :: spriteAt(0, 2.0) :: Nil;
         let polys = polyAt(ZBand.liftHud(7), 9.0) :: Nil;
         Assert.assertEq(expected = "s2.0,s1.0,p9.0",
-                  trace(RenderFrame.mergedByZ(Nil, sprites, polys, Nil, Nil, Nil)))
+                  trace(RenderFrame.mergedByZ(Nil, sprites, polys, Nil, Nil, Vector.empty())))
 
     /// デバッグの範囲（2e9）と負の z が同居しても Int32 の幅あふれで壊れない。
     @Test
@@ -95,7 +89,7 @@ mod TestFrameOrder {
         let sprites = spriteAt(ZBand.debugBase(), 1.0) :: spriteAt(-200000000, 2.0)
             :: spriteAt(ZBand.liftHud(0), 3.0) :: Nil;
         Assert.assertEq(expected = "s2.0,s3.0,s1.0",
-                  trace(RenderFrame.mergedByZ(Nil, sprites, Nil, Nil, Nil, Nil)))
+                  trace(RenderFrame.mergedByZ(Nil, sprites, Nil, Nil, Nil, Vector.empty())))
 
     /// 範囲の中でも z がまばら（スロットが個数に見合わない）なら木で受け、並びは同じ規約のまま。
     @Test
@@ -103,21 +97,33 @@ mod TestFrameOrder {
         let sprites = spriteAt(ZBand.liftHud(0), 1.0)
             :: spriteAt(90000000, 2.0) :: spriteAt(0, 3.0) :: spriteAt(0, 4.0) :: Nil;
         Assert.assertEq(expected = "s3.0,s4.0,s2.0,s1.0",
-                  trace(RenderFrame.mergedByZ(Nil, sprites, Nil, Nil, Nil, Nil)))
+                  trace(RenderFrame.mergedByZ(Nil, sprites, Nil, Nil, Nil, Vector.empty())))
 
     /// 3D の場面は同じ z の中で 2D の描き物の後（z の 1 点に入り、前後の z とは z の順のまま）。
     @Test
     def testSceneComesAfter2dAtSameZ(): Unit \ Assert =
         let sprites = spriteAt(1, 1.0) :: spriteAt(3, 3.0) :: Nil;
         let polys = polyAt(1, 2.0) :: Nil;
-        Assert.assertEq(expected = "s1.0,p2.0,c7.0,s3.0",
-                  trace(RenderFrame.mergedByZ(Nil, sprites, polys, Nil, Nil, sceneAt(1, 7.0) :: Nil)))
+        Assert.assertEq(expected = "s1.0,p2.0,c0,s3.0",
+                  trace(RenderFrame.mergedByZ(Nil, sprites, polys, Nil, Nil, Vector#{1})))
 
     /// 範囲をまたぐフレームでも、3D の場面は自分の z の位置に入る（HUD の範囲の絵が手前）。
     @Test
     def testSceneKeepsZAcrossRanges(): Unit \ Assert =
         let sprites = spriteAt(ZBand.liftHud(0), 1.0) :: spriteAt(0, 2.0) :: Nil;
-        Assert.assertEq(expected = "s2.0,c7.0,s1.0",
-                  trace(RenderFrame.mergedByZ(Nil, sprites, Nil, Nil, Nil, sceneAt(5, 7.0) :: Nil)))
+        Assert.assertEq(expected = "s2.0,c0,s1.0",
+                  trace(RenderFrame.mergedByZ(Nil, sprites, Nil, Nil, Nil, Vector#{5})))
 
+    /// 場面の番号は zIndexes の位置で、並びは番号ではなく z の順。
+    @Test
+    def testSceneNumbersFollowZNotPosition(): Unit \ Assert =
+        Assert.assertEq(expected = "c1,c2,c0",
+                  trace(RenderFrame.mergedByZ(Nil, Nil, Nil, Nil, Nil, Vector#{9, 1, 4})))
+
+    /// 範囲の中で z がまばらな時も、場面は番号の z の位置に入る。
+    @Test
+    def testSceneKeepsZInSparseRange(): Unit \ Assert =
+        let sprites = spriteAt(ZBand.liftHud(0), 1.0) :: spriteAt(0, 2.0) :: Nil;
+        Assert.assertEq(expected = "s2.0,c1,c0,s1.0",
+                  trace(RenderFrame.mergedByZ(Nil, sprites, Nil, Nil, Nil, Vector#{90000000, 5})))
 }
