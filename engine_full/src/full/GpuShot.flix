@@ -47,7 +47,7 @@ pub mod GpuShot {
     /// SoftRaster の撮り方と同じ物を渡す）、soft = GPU が使えない時の撮り方。返す関数は PNG のパスを返す。
     /// GL は 1 本の糸で: 返す関数は、窓なしのゲームの答える糸（いつも同じ糸）からだけ呼ぶ。入口の頭（AWT を使う前）で作る。
     pub def shotOf(mode: Mode, app: App.App[w, ef], prepare: w -> w, soft: w -> String \ IO):
-            (w -> String \ (ef - RenderLegacyBridge.Bridged - GameEngine.Game - ShaderEffect.Shader - RenderTarget.Target) + IO) \ IO =
+            (w -> String \ (ef - GlOffscreen.HandledEffects) + IO) \ IO =
         // AWT（SoftRaster の撮り方・常駐の /run）より先に窓サーバへ繋いでおく（GlOffscreen.connect の doc）。
         if (mode == Mode.Off) () else GlOffscreen.connect();
         let state = Ref.fresh(Static, (State.NotYet: State));

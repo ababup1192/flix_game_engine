@@ -177,7 +177,7 @@ def main(): Unit \ IO =
                 |> App.addSystem(BenchTextureUpload.step)
                 |> App.withView((ctx, w) -> checked_ecast(BenchTextureUpload.view(ctx, w)))
                 |> App.quitWhen((_frame, w) -> checked_ecast(w#done))
-                |> App.launch
+                |> App.launchForBench
         } with LwjglLayer.withProject(".")
           with Fs.FileRead.runWithIO
           with Fs.FileWrite.runWithIO

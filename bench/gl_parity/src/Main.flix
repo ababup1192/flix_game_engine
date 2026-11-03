@@ -31,7 +31,7 @@ mod ParityMain {
 
     // ── GL 側（隠しウィンドウの中で 1 scene = 1 コマ）──
 
-    def glShoot(sc: Scenes.Scene): Unit \ IO + Platform.Rendering + RenderTarget.Target =
+    def glShoot(sc: Scenes.Scene): Unit \ IO + Platform.Rendering + Platform.Window + RenderTarget.Target =
         let texInfoOf = name -> Platform.GpuResources.getTextureInfo(name);
         // Pass は実機の毎コマと同じ App.Internal.Paint.drawPassPlan で描く（手順を写すと、実機と違う道を突き合わせることになる）。
         let design = { x = Scenes.designW(), y = Scenes.designH() };
@@ -39,7 +39,7 @@ mod ParityMain {
             App.Internal.Paint.drawPassPlan(_ -> (), design, known, planOf(sc)), Set.empty());
         match sc#via {
             case Scenes.ShotVia.ViaTarget =>
-                // target 分岐は swap しないので、endTarget の前に bind 中の FBO を読める。
+                // target へ塗ったコマは presentFrame の対象にならないので、endTarget の前に bind 中の FBO を読める。
                 RenderTarget.Target.beginTarget({ name = "parityShot", width = Scenes.designWi(), height = Scenes.designHi(),
                                                   format = RenderTarget.Format.Rgba8Unorm, clear = RenderTarget.LoadOp.Clear(black()), samples = 1 });
                 let (ds, ps) = toDraw(texInfoOf, sc#items);
@@ -47,9 +47,10 @@ mod ParityMain {
                 GlReadback.readBoundPng(Scenes.designWi(), Scenes.designHi(), "debug/gl/${sc#name}.png");
                 RenderTarget.Target.endTarget()
             case Scenes.ShotVia.ViaScreen =>
-                // 画面の絵は swap 後に読めないため、FLIX_GE_FRAME_SHOT（swap 直前のフック）が
+                // 画面の絵は swap 後に読めないため、FLIX_GE_FRAME_SHOT（presentFrame の swap 直前のフック）が
                 // debug/gl/frame-<n>.png へ落とす。名前への対応は renameFrames が引き受ける。
-                App.Internal.Paint.submitGpuItems(_ -> (), sc#items, Nil, None)
+                App.Internal.Paint.submitGpuItems(_ -> (), sc#items, Nil, None);
+                Platform.Window.presentFrame()
         }
 
     def planOf(sc: Scenes.Scene): Render.PassPlan = { targets = sc#targets | Render.passPlan(sc#passes) }
@@ -171,7 +172,7 @@ mod ParityMain {
         List.exists(p -> hasScene3d(p#item), sc#items ::: List.flatMap(p -> p#items, sc#passes))
 
     /// sc を GL で撮り、描いた置いた物の数の期待値（Scenes.expectedDrawnOf）がある scene だけ、その数を確かめた 1 行を返す。
-    def glShootCounted(sc: Scenes.Scene): Option[(String, Bool)] \ IO + Platform.Rendering + Platform.Diagnostics + RenderTarget.Target =
+    def glShootCounted(sc: Scenes.Scene): Option[(String, Bool)] \ IO + Platform.Rendering + Platform.Window + Platform.Diagnostics + RenderTarget.Target =
         discard Platform.Diagnostics.consumeDiagnostics();
         glShoot(sc);
         Scenes.expectedDrawnOf(sc#name) |> Option.map(expected -> {

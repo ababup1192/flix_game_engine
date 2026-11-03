@@ -15,11 +15,11 @@ pub mod App.Internal.Halt {
     /// World には一切触れない（凍結中の絵は選んだ World から毎フレーム投影し直す）。
     /// view のゲームは走っている間と同じ renderFrame で描く（見え方だけが pausedLook）。
     /// debugView（生チャンネル投影）のゲームは描画命令へ見え方を掛ける（renderPaused）。
-    pub def pausedStep(app: App[w, ef], warnOnce: String -> Unit, world: w, history: List[w], frame: App.Frame,
+    /// 塗ったコマを画面へ出す（presentFrame）のは呼ぶ側。
+    pub def pausedStep(app: App[w, ef], warnOnce: String -> Unit, design: Vec2.Vec2, world: w, history: List[w], frame: App.Frame,
                        anno: Annotate.State, painted: App.Internal.Paint.Painted):
-            (Annotate.State, Option[String], App.Internal.Paint.Painted) \ (ef + Platform.Input + Platform.Window + Platform.Rendering + RenderTarget.Target + Platform.Annotation + IO) =
+            (Annotate.State, Option[String], App.Internal.Paint.Painted) \ (ef + Platform.Input + Platform.Rendering + RenderTarget.Target + Platform.Annotation + IO) =
         let r = App.rec(app);
-        let design = Platform.Window.getViewportRect()#size;
         let historyLen = Int32.max(1, List.length(history));
         let scrubbed = Annotate.scrubStep(
             { back = App.isDown(GameEngine.Key.Left, frame),
@@ -28,6 +28,7 @@ pub mod App.Internal.Halt {
               fwdEdge = App.justPressed(GameEngine.Key.Right, frame) },
             historyLen, anno);
         let displayed = App.worldAt(history, scrubbed#scrub, world);
+        // WhyNot: マウスを frame から取らない — frame は pollEvents の前に組むので 1 コマ古く、止めたコマの frame#cursor はキャプチャした時の位置で止まっている。
         let input = { cursor = Platform.Input.getMousePosition(),
                       leftDown = Platform.Input.isMouseButtonPressed(GameEngine.MouseButton.Left),
                       middleDown = Platform.Input.isMouseButtonPressed(GameEngine.MouseButton.Middle),

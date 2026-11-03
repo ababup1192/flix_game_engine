@@ -81,7 +81,7 @@ mod SceneBench {
                         |> App.withDiagnostics
                         |> App.withView((_ctx, w) -> checked_ecast(Room.items(kit, yawAt(w#t))))
                         |> App.quitWhen((_frame, w) -> checked_ecast(w#done))
-                        |> App.launch
+                        |> App.launchForBench
             }
         } with LwjglLayer.withProject(".")
           with Fs.FileRead.runWithIO

@@ -249,9 +249,8 @@ pub mod App.Internal.Paint {
         }
 
     /// view の投影した絵を描画命令にしてエンジンへ渡す。タイルマップは withTileLayers の
-    /// 宣言があるときだけ生成して添える（持ち回しの TileCache を返す）。
-    /// view = None のゲームは App では描かない（自分のシステム内で renderCommands を呼ぶ。
-    /// camera / hudView もこの場合は効かない）。
+    /// 宣言があるときだけ生成して添える（持ち回しの TileCache を返す）。画面へ出す（presentFrame）のは呼ぶ側。
+    /// view = None のゲームは App では描かない（camera / hudView もこの場合は効かない。系は純粋なので、系から描く手段も無い）。
     /// fps は debug 有効時だけ隅に重ねる（本番は Nil を渡すので描画に一切現れない）。
     pub def renderFrame(app: App[w, ef], warnOnce: String -> Unit, design: Vec2.Vec2, world: w, look: Look,
                         tileCache: TileCache, glyphSeen: Option[Int64], budgetWarned: Bool):
@@ -309,7 +308,7 @@ pub mod App.Internal.Paint {
     /// 1 コマだけ描く（窓なしで GPU に塗る 1 枚撮り・動画。render_gl の GlOffscreen.handle の下で呼ぶ）。
     /// 実機の 1 フレームの描く所（renderFrame）と同じ道で、fps の重ねと予算の知らせは無し。
     /// 初めて出る字はこのコマでは欠ける（アトラスを育てるのはこのコマの後）ので、欠けが出たら描き直す（最大 3 回）。
-    /// tileCache は同じ GL の文脈の間で持ち回す（最初は freshTileCache()）。
+    /// tileCache は同じ GL の文脈の間で持ち回す（最初は freshTileCache()）。画面へは出さない（読み戻すのは呼ぶ側）。
     pub def paintOnce(app: App[w, ef], world: w, tileCache: TileCache):
             TileCache \ (ef + Platform.Rendering + Platform.Window + RenderTarget.Target + IO) =
         let design = Platform.Window.getViewportRect()#size;

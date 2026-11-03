@@ -103,7 +103,7 @@ pub mod RenderTarget {
 
     /// レンダーターゲットへの描き込み先の切り替え。
     pub eff Target {
-        /// ターゲットを開く。以降の Platform.Draw2d.renderCommands は画面でなくここに描かれる（swap もしない）。
+        /// ターゲットを開く。以降の Platform.Draw2d.renderCommands は画面でなくここに描かれる（Platform.Window.presentFrame で画面へ出る物にもならない）。
         /// 中は design 座標のまま描き、design 全面がテクスチャ全面に写る（投影は差し替えない）。貼るときの大きさは design 寸法のまま。
         def beginTarget(spec: RenderTarget.TargetSpec): Unit
         /// 描き手の design px → 描き先の画素の倍率（窓なら窓の実際の大きさに収めた倍率・動画やスクリーンショットはその書き出しの倍率）。

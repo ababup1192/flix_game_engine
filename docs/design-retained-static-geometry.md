@@ -1,5 +1,7 @@
 # 静的ジオメトリの retained 化 設計書（改訂 v2）— 洞窟 B2 を速く、z 順を守って
 
+> 0.80.0 で swap は `renderCommands` から `Platform.Window.presentFrame` へ移った（この設計書の「renderCommands は 1 回で swap する」はその前の形）。
+
 対象: `flix_game_engine`（Flix 製 2D エンジン・LWJGL/GL バックエンド）と、fpkg で使う `flix_ge_dungeon`。
 目的: 洞窟 B2 の描画を 50〜60fps から引き上げる。手段は「毎フレーム作り直している静的な壁・床の頂点を、1 度だけ GPU に載せて使い回す」。ただし **絵を 1px も変えない**（特に同じ z の中の重なり順）。
 
@@ -37,7 +39,7 @@
 
 ### 1 パス z ソートの構造（C1 の核心・別 draw call 分離が壊す理由）
 
-- 通常経路は `App.Internal.Paint.renderFrame` が `sceneItems`（world+hud 全部合成）→ `Render.draw` → **1 回の** `GameEngine.Game.renderCommands(sprites, Nil, polygons)`。
+- 通常経路は `App.Internal.Paint.renderFrame` が `sceneItems`（world+hud 全部合成）→ `Render.draw` → **1 回の** `Platform.Draw2d.renderCommands(sprites, Nil, polygons)`。
 - `renderFrameMixed`(`Frame.flix:167-175`) が **sprites と polygons を 1 本の列にマージ**（`List.append(sprites map Ok, polygons map Err)`）して `stableByZ` で z 安定ソート。
 - `renderFrameMixed`(`Frame.flix:330-338` のコメント原文): 「スプライト run と多角形 run を並行して溜める。種類が切り替わる瞬間にもう一方を吐き出すことで、**sortedMerged の列順（＝重なり順）を厳密に守る**」。同じ z 内は「入力順（sprites→polygons）」を stableByZ が構造的に保証(`Frame.flix:165`)。
 - run を切るのはテクスチャ/scissor/blend の変化と、sprite↔polygon の種別切替のみ(`Frame.flix:200-209` の順序不変条件コメント: 「列順は一切入れ替えない」)。
@@ -197,7 +199,7 @@ engine ソース変更は事前相談が必要（CLAUDE.md 方針）。本書が
 v1 の「drawStaticPolys を別に呼ぶ」は clear/swap 境界を跨いで壊れる（`renderFrameMixed` の `glClear` が先に描いた静的を消す）。v2 は **描画を renderCommands の 1 呼びに束ねる**:
 
 ```
-// GameEngine.Game eff（GameEngine.flix:176-216 に追加）
+// Platform.GpuResources eff（engine/src/Platform.flix に追加）
 def initStaticPolys(cmds: List[PolygonRenderCmd]): { vao = GpuHandle.StaticVao, ranges = List[StaticRangeMeta] }
 def freeStaticPolys(vao: GpuHandle.StaticVao): Unit
 // renderCommands を拡張: 静的レンジ列を同じ呼びに載せる（clear→z混在描画→swap を1回で束ねる）

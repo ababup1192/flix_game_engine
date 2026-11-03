@@ -183,7 +183,15 @@ pub mod Flow.Parse {
             key <- InputMap.keyOf(name) |> Option.toOk("キー '${name}' は無い")
         ) yield Set.insert(key, keys), Ok(Set.empty()))
 
-    /// 付け足し: ns=… dt=秒 at=x,y mouse wheel=量 pad keys=Z,X|- new=Z|- click noclick moved still
+    /// マウスのボタンの名前の列（left,right,middle）。'-' は何も押さない。
+    def mouseButtonSet(text: String): Result[String, Set[GameEngine.MouseButton]] =
+        if (text == "-") Ok(Set.empty())
+        else String.splitOn({substr = ","}, text) |> List.foldLeft((acc, name) -> forM (
+            buttons <- acc;
+            button <- Flow.mouseButtonOf(name) |> Option.toOk("マウスのボタン '${name}' は無い（left・right・middle）")
+        ) yield Set.insert(button, buttons), Ok(Set.empty()))
+
+    /// 付け足し: ns=… dt=秒 at=x,y mouse mouse=left,right wheel=量 pad keys=Z,X|- new=Z|- click noclick click=right|- moved still
     def optsOf(words: List[String]): Result[String, Opt] =
         words |> List.foldLeft((acc, word) -> acc |> Result.flatMap(opt -> {
             let valueOf = prefix -> String.dropLeft(String.length(prefix), word);
@@ -199,6 +207,10 @@ pub mod Flow.Parse {
                     tail <- rest
                 ) yield n :: tail, Ok(Nil)) |> Result.map(ns -> { ns = ns | opt })
             else if (String.startsWith(prefix = "dt=", word)) number(valueOf("dt=")) |> Result.map(v -> { dt = Some(v) | opt })
+            else if (String.startsWith(prefix = "mouse=", word)) mouseButtonSet(valueOf("mouse=")) |> Result.map(held ->
+                { mouse = Set.memberOf(GameEngine.MouseButton.Left, held), otherButtons = Set.remove(GameEngine.MouseButton.Left, held) | opt })
+            else if (String.startsWith(prefix = "click=", word)) mouseButtonSet(valueOf("click=")) |> Result.map(clicked ->
+                { click = Some(Set.memberOf(GameEngine.MouseButton.Left, clicked)), otherClicks = Some(Set.remove(GameEngine.MouseButton.Left, clicked)) | opt })
             else if (String.startsWith(prefix = "wheel=", word)) number(valueOf("wheel=")) |> Result.map(v -> { wheel = v | opt })
             else if (String.startsWith(prefix = "keys=", word)) keySet(valueOf("keys=")) |> Result.map(v -> { keys = Some(v) | opt })
             else if (String.startsWith(prefix = "new=", word)) keySet(valueOf("new=")) |> Result.map(v -> { pressed = Some(v) | opt })
@@ -210,7 +222,7 @@ pub mod Flow.Parse {
                 case x :: y :: Nil => forM (a <- number(x); b <- number(y)) yield { look = Some({ x = a, y = b }) | opt }
                 case _             => Err("look は look=dx,dy")
             }
-            else Err("付け足し '${word}' は無い${Suggest.hint(word, "ns=" :: "dt=" :: "at=" :: "look=" :: "mouse" :: "wheel=" :: "pad" :: "keys=" :: "new=" :: "click" :: "moved" :: Nil)}")
+            else Err("付け足し '${word}' は無い${Suggest.hint(word, "ns=" :: "dt=" :: "at=" :: "look=" :: "mouse" :: "mouse=" :: "wheel=" :: "pad" :: "keys=" :: "new=" :: "click" :: "click=" :: "moved" :: Nil)}")
         }), Ok(Flow.noOpt()))
 
     /// 問いの式: 名前（真偽）・!式・式&式・名前<数（< <= = >= > !=）・名前=文字。

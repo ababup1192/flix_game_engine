@@ -14,9 +14,9 @@ def main(): Unit \ IO =
                 |> App.quitWhen((_frame, w) -> checked_ecast(w#done));
             if (withHud)
                 app |> App.withHudView((ctx, w) -> checked_ecast(Bench.hud(ctx, w)))
-                    |> App.launch
+                    |> App.launchForBench
             else
-                app |> App.launch
+                app |> App.launchForBench
         } with LwjglLayer.withProject(".")
           with Fs.FileRead.runWithIO
           with Fs.FileWrite.runWithIO

@@ -117,7 +117,7 @@
 - App の中身。ゲームからは読まない（ビルダーで組む）。エンジンの中の口（Flow・RemoteDebug など）が読む。
   `pub def rec(app: App[w, ef]): Rec[w, ef]`
 - このフレームの入力と時計のスナップショット。キーの生読みはランナーが済ませてあるので、
-  `pub type alias Frame = { down = Set[GameEngine.Key], justPressed = Set[GameEngine.Key], dt = Float64, viewport = Vec2.Vec2, cursor = Vec2.Vec2, mouseDown = Bool, mouseClicked = Bool, mouseMoved = Bool, wheel = Float64, realNow = Clock.Time[Clock.Real], padTouched = Bool, padKind = GamepadMap.PadKind, mouseDelta = Vec2.Vec2, windowFocused = Bool, diagnostics = Option[FrameDiagnostics.Diagnostics] }`
+  `pub type alias Frame = { down = Set[GameEngine.Key], justPressed = Set[GameEngine.Key], dt = Float64, viewport = Vec2.Vec2, cursor = Vec2.Vec2, mouseDown = Bool, mouseClicked = Bool, mouseButtons = Set[GameEngine.MouseButton], mouseClickedButtons = Set[GameEngine.MouseButton], mouseMoved = Bool, wheel = Float64, realNow = Clock.Time[Clock.Real], padTouched = Bool, padKind = GamepadMap.PadKind, mouseDelta = Vec2.Vec2, windowFocused = Bool, diagnostics = Option[FrameDiagnostics.Diagnostics] }`
 - key がいま押されているか（押しっぱなしも true）。移動などの連続入力に。
   `pub def isDown(key: GameEngine.Key, frame: Frame): Bool`
 - key がこのフレームで新しく押されたか（押しっぱなしは false）。決定・発射などの単発入力に。
@@ -262,8 +262,10 @@
   `pub def frameOf(prev: {prev = Set[GameEngine.Key]}, current: {current = Set[GameEngine.Key]}, dt: Float64, viewport: Vec2.Vec2, cursor: {prevCursor = Option[Vec2.Vec2], cursor = Vec2.Vec2}, mouse: {prevDown = Bool, down = Bool, wheel = Float64}): Frame`
 - 何も押していない・動いていない・dt 0 のフレーム（全部の欄が既定の値。viewport と cursor は (0, 0)）。
   `pub def emptyFrame(): Frame`
+- 押しているボタンの丸ごと（左・右・中）を置く: mouseButtons = held・mouseClickedButtons = 前のフレームに無く今あるボタン。
+  `pub def withMouseButtons(prev: Set[GameEngine.MouseButton], held: Set[GameEngine.MouseButton], frame: Frame): Frame`
 - 0 サブステップのフレームで捨てられそうになったエッジのバッファ。エッジは prev との
-  `pub type alias PendingEdges = { justPressed = Set[GameEngine.Key], mouseClicked = Bool, mouseMoved = Bool, wheel = Float64, mouseDelta = Vec2.Vec2 }`
+  `pub type alias PendingEdges = { justPressed = Set[GameEngine.Key], mouseClicked = Bool, mouseClickedButtons = Set[GameEngine.MouseButton], mouseMoved = Bool, wheel = Float64, mouseDelta = Vec2.Vec2 }`
 - withFixedStep がフレームをまたいで持ち回す状態（持ち越し秒 + 未消費エッジ）。
   `pub type alias StepState = { carry = Float64, pending = PendingEdges, real = Clock.Clock[Clock.Real] }`
 - 起動直後の StepState（貯金ゼロ・未消費エッジなし）。
@@ -282,10 +284,11 @@
   `pub def visibleOf(center: Option[Vec2.Vec2], zoom: Float64, design: Vec2.Vec2): Rect2.Rect2`
 - 時間スクラブ用に持ち回す直近の World の数（60fps で約 30 秒）。
   `pub def historyLimit(): Int32`
-- App を走らせる単一の効果多相ランナー。startup を 1 回だけ畳み込み、いま押されているキーを prev の
-  `pub def launch(app: App[w, ef]): Unit \ (ef + Platform.Services + Platform.Annotation + Fs.FileRead + Fs.FileWrite + IO)`
+- App を実機で走らせる。startup を 1 回だけ畳み込み、いま押されているキーを prev の
+  `pub def launch(app: App[w, {}]): Unit \ (Platform.Services + Platform.Annotation + Fs.FileRead + Fs.FileWrite + IO)`
 - loadApp で App を組んで launch する。flow を記録する起動では、loadApp が Fs.FileRead で読んだ中身を start の行に載せ、
-  `pub def loadAndLaunch(loadApp: Unit -> App[w, ef] \ ef2): Unit \ (ef + ef2 + Platform.Services + Platform.Annotation + Fs.FileRead + Fs.FileWrite + IO)`
+  `pub def loadAndLaunch(loadApp: Unit -> App[w, {}] \ ef2): Unit \ (ef2 + Platform.Services + Platform.Annotation + Fs.FileRead + Fs.FileWrite + IO)`
+- `pub def launchForBench(app: App[w, ef]): Unit \ (ef + Platform.Services + Platform.Annotation + Fs.FileRead + Fs.FileWrite + IO)`
 
 ## App.CursorLook — `engine_world/src/App/CursorLook.flix`
 - withCursor の宣言を最後にどう当てたか。Stale = まだ当てていない・止めた画面の見た目が上書きした
@@ -1110,7 +1113,7 @@
 - 長さ: 秒（fps でフレーム数に丸める）かフレーム数。
   `pub enum Span with Eq, ToString { case Secs(Float64) case Frames(Int32) }`
 - フレームの手の付け足し（ほとんどは記録が書く）。ns = フレームごとの経過ナノ秒（数がフレーム数）・dt = 経過秒・
-  `pub type alias Opt = { ns = List[Int64], dt = Option[Float64], at = Option[Vec2.Vec2], look = Option[Vec2.Vec2], mouse = Bool, wheel = Float64, pad = Bool, keys = Option[Set[Key]], pressed = Option[Set[Key]], click = Option[Bool], moved = Option[Bool] }`
+  `pub type alias Opt = { ns = List[Int64], dt = Option[Float64], at = Option[Vec2.Vec2], look = Option[Vec2.Vec2], mouse = Bool, otherButtons = Set[GameEngine.MouseButton], wheel = Float64, pad = Bool, keys = Option[Set[Key]], pressed = Option[Set[Key]], click = Option[Bool], otherClicks = Option[Set[GameEngine.MouseButton]], moved = Option[Bool] }`
 - `pub def noOpt(): Opt`
 - `pub enum Cmp with Eq, ToString { case Lt case Le case Same case Ge case Gt case Differ }`
 - 問いの式。Name は真偽の問い・Compare は (名前, 比べ方, 書いた値の文字)。
@@ -1135,6 +1138,10 @@
   `pub def worldsOf(outcome: Outcome[w]): List[w]`
 - 手順を流す。start = 最初の手が start でない時に使う World と持ち越し（/step は走っている World、
   `pub def play(app: App.App[w, ef], setup: Setup, script: Script, start: { world = w, state = App.StepState }): Result[Failure[w], Outcome[w]] \ ef + Fs.FileRead`
+- flow のマウスのボタンの名前（left・right・middle）→ ボタン。
+  `pub def mouseButtonOf(name: String): Option[GameEngine.MouseButton]`
+- ボタン → flow の名前（mouseButtonOf の逆）。
+  `pub def mouseButtonName(button: GameEngine.MouseButton): String`
 - 経過秒をナノ秒の整数に丸める。実機の経過秒もナノ秒から来るので、flow で流したフレームを記録して
   `pub def roundToNanos(secs: Float64): Float64`
 - 問いの式が今の World で立っているか。表に無い名前・型の違う比べは立たない（読み手と check が先に止める）。

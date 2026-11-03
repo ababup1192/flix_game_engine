@@ -350,7 +350,7 @@ pub mod GlOffscreen {
         let SessionData.SessionData(s) = session;
         Ref.get(s#fonts#atlases)
 
-    /// textureName のフォントに字を足す（Game.ensureGlyphs と同じ）。
+    /// textureName のフォントに字を足す（Platform.GpuResources.ensureGlyphs と同じ）。
     pub def ensureGlyphs(session: Session, textureName: String, codepoints: Set[Int32]): Unit \ IO =
         let SessionData.SessionData(s) = session;
         RenderPaint.ensureGlyphs(s#fonts, textureName, codepoints)
@@ -363,30 +363,29 @@ pub mod GlOffscreen {
 
     // ── 塗る ──
 
-    /// f の中の Platform の effect（RenderLegacyBridge.Bridged）と Target を、このセッションの FBO へ塗る形で受ける（App の 1 コマを描く口をそのまま呼べる）。
-    /// 入力・カーソル・窓の問いには「何も起きていない」で答える。画面のコマは最後の 1 枚が FBO に残る（readImage・readRgba で読む）。
-    pub def handle(session: Session, f: Unit -> a \ ef): a \ (ef - RenderLegacyBridge.Bridged - GameEngine.Game - ShaderEffect.Shader - RenderTarget.Target) + IO =
+    /// handle が受け持つ effect の束（GpuShot の型の差に使う）。音は持たない。
+    pub type alias HandledEffects = Platform.Input + Platform.Window + Platform.FrameClock + Platform.Rendering
+                             + Platform.Diagnostics + Platform.Annotation + RenderTarget.Target
+
+    /// f の中の Platform の effect と Target を、このセッションの FBO へ塗る形で受ける（App の 1 コマを描く口をそのまま呼べる）。
+    /// 入力・カーソル・窓の問いには「何も起きていない」で答える。画面のコマは最後の 1 枚が FBO に残る（readImage・readRgba で読む）ので、
+    /// presentFrame は何もしない。
+    pub def handle(session: Session, f: Unit -> a \ ef): a \ (ef - HandledEffects) + IO =
         let SessionData.SessionData(s) = session;
         let paint = s#paint;
-        let fonts = s#fonts;
-        let (width, height) = (s#width, s#height);
-        let design = s#design;
+        let size = () -> (s#width, s#height);
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, s#fbo);
-        run {
-            RenderLegacyBridge.forward(f)
-        } with handler GameEngine.Game {
-            def renderCommands(sprites, tileMaps, polygons, staticLayer, k) = {
-                let paintFrom = System.nanoTime();
-                discard RenderPaint.submitFrame(paint, width, height, sprites, tileMaps, polygons, staticLayer);
-                RenderPaint.noteFrame(paint, System.nanoTime() - paintFrom, 0i64,
-                    () -> List.length(sprites) + List.length(polygons) + List.length(tileMaps));
-                k(())
-            }
-            def initTileBuffer(instances, k) = k(RenderPaint.initTileBuffer(paint, instances))
-            def updateTileBuffer(vaoId, instances, k) = k(RenderPaint.updateTileBuffer(paint, vaoId, instances))
-            def shouldClose(k) = k(false)
-            def setShouldClose(_close, k) = k()
-            def getDeltaTime(k) = k(Duration.seconds(1.0 / 60.0))
+        // WhyNot 並びを変えない: op は内側の handler から順にたどるので、sprite ごとに呼ぶ GpuResources を一番内側に置く。
+        RenderPaintHandlers.handleTarget(paint, size, () ->
+        handleWindowless(s#design, () ->
+        RenderPaintHandlers.handleDiagnostics(paint, () ->
+        RenderPaintHandlers.handleDraw3d(paint, () ->
+        RenderPaintHandlers.handleDraw2d(paint, size, (_, _) -> (), () ->
+        RenderPaintHandlers.handleGpuResources(paint, s#fonts, f))))))
+
+    /// 窓の無い所の入力・窓・時計・注釈: 何も押されていない・閉じない・1/60 秒ずつ進む・注釈は書かない。
+    def handleWindowless(design: Vec2.Vec2, f: Unit -> a \ ef): a \ ef - Platform.Input - Platform.Window - Platform.FrameClock - Platform.Annotation =
+        run f() with handler Platform.Input {
             def isKeyPressed(_key, k) = k(false)
             def getMousePosition(k) = k(Vec2.zero())
             def isMouseButtonPressed(_button, k) = k(false)
@@ -394,52 +393,23 @@ pub mod GlOffscreen {
             def gamepadKind(k) = k(GamepadMap.PadKind.Unknown)
             def consumeScrollDelta(k) = k(0.0)
             def consumeMouseDelta(k) = k(Vec2.zero())
-            def setMouseCaptured(_captured, k) = k(())
             def isWindowFocused(k) = k(true)
-            def getFontAtlas(name, k) = k(RenderPaint.fontAtlas(fonts, name))
-            def ensureGlyphs(textureName, codepoints, k) = {
-                RenderPaint.ensureGlyphs(fonts, textureName, codepoints);
-                if (Set.isEmpty(codepoints)) ()
-                else RenderPaint.noteDiagnostics(paint, d -> { glyphsAdded = d#glyphsAdded + Set.size(codepoints) | d });
-                k(())
-            }
-            def setDiagnosticsEnabled(on, k) = {
-                RenderPaint.setDiagnosticsEnabled(paint, on);
-                k(())
-            }
-            def consumeDiagnostics(k) = k(RenderPaint.consumeDiagnostics(paint))
+        } with handler Platform.Window {
+            def pollEvents(k) = k(())
+            def shouldClose(k) = k(false)
+            def setShouldClose(_close, k) = k()
             def getViewportRect(k) = k({ position = Vec2.zero(), size = design })
-            def getTextureInfo(name, k) = k(RenderPaint.textureInfo(paint, name))
-            def ensureTexture(name, key, w, h, argb, k) = {
-                RenderPaint.ensureTexture(paint, name, key, w, h, argb);
-                k(())
-            }
+            def presentFrame(k) = k(())
             def setCursor(_cursor, k) = k(())
             def setCursorVisible(_visible, k) = k(())
+            def setMouseCaptured(_captured, k) = k(())
             def setFullscreen(_on, k) = k(())
             def isFullscreen(k) = k(false)
-            def saveAnnotation(_req, k) = k(None)
             def setDebugBadge(_enabled, k) = k(())
-        } with handler ShaderEffect.Shader {
-            def buildProgram(spec, k) = k(RenderPaint.buildProgram(paint, spec))
-            def drawSurface(cmd, k) = {
-                RenderPaint.queueSurface(paint, cmd);
-                k(())
-            }
-            def drawScene3d(cmd, k) = {
-                RenderPaint.queueScene3d(paint, cmd);
-                k(())
-            }
-        } with handler RenderTarget.Target {
-            def beginTarget(spec, k) = {
-                RenderPaint.beginTarget(paint, spec);
-                k(())
-            }
-            def endTarget(k) = {
-                RenderPaint.endTarget(paint);
-                k(())
-            }
-            def pixelScale(k) = k(RenderPaint.pixelScaleOf(paint, width, height))
+        } with handler Platform.FrameClock {
+            def getDeltaTime(k) = k(Duration.seconds(1.0 / 60.0))
+        } with handler Platform.Annotation {
+            def saveAnnotation(_req, k) = k(None)
         }
 
     // ── 読み戻す ──

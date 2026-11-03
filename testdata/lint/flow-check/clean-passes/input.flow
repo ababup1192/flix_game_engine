@@ -12,6 +12,7 @@ drive masher until n>=8 max 10
 expect phase=Title&fp!=00000000
 mark done
 wait 1f keys=Left,Z new=Z ns=16666667 at=10,20 look=3.5,-1 mouse pad
+wait 1f mouse=left,right click=right
 reload assets/rules.json +assets/rules.json=b64:e30=
 request /cheat q=a=1&b=2
 close

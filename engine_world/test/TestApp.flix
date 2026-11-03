@@ -497,6 +497,25 @@ mod TestApp {
             expected = ((Set#{GameEngine.Key.Z}, false, false, 2.0), (Set#{}, false, false, 0.0)),
             (pendingTuple(s1#pending), pendingTuple(s2#pending)))
 
+    // 0 ステップのフレームで押した右クリックも取り置かれ、次にサブステップが回るフレームで 1 回だけ数えられる。
+    @Test
+    def testAdvanceFrameLatchesRightClickAcrossZeroStepFrame(): Unit \ Assert =
+        let right = Set#{GameEngine.MouseButton.Right};
+        let app = App.make(0)
+            |> App.withFixedStep(0.03)
+            |> App.addSystem((f, n) -> if (Set.memberOf(GameEngine.MouseButton.Right, f#mouseClickedButtons)) n + 1 else n);
+        let (w1, s1) = App.advanceFrame(app, App.withMouseButtons(Set#{}, right, stepFrame(Set#{}, Set#{}, 0.02, 0.0)),
+                                        App.freshStepState(), 0);
+        let (w2, _s2) = App.advanceFrame(app, App.withMouseButtons(right, right, stepFrame(Set#{}, Set#{}, 0.02, 0.0)), s1, w1);
+        Assert.assertEq(expected = (0, 1), (w1, w2))
+
+    // suppressEdges はクリックしたボタンも消し、押しているボタンは残す。
+    @Test
+    def testSuppressEdgesClearsClickedButtonsKeepsHeld(): Unit \ Assert =
+        let right = Set#{GameEngine.MouseButton.Right};
+        let suppressed = App.Internal.Frame.suppressEdges(App.withMouseButtons(Set#{}, right, edgyFrame()));
+        Assert.assertEq(expected = (Set#{}, right), (suppressed#mouseClickedButtons, suppressed#mouseButtons))
+
     // 可変 dt（fixedStep = None）の経路: バッファは合流も更新もされず素通し
     // （既存ゲームの挙動不変の証明。system は今フレームのエッジだけを見る）。
     @Test

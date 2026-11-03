@@ -35,14 +35,14 @@ pub mod Flow.Record {
     pub type alias Recorder = { path = String, out = FileWriter, state = Ref[Writing, Static] }
 
     /// まとめている行（head = ns= の前まで・ns は新しい順・single = hold の 1 フレームだけか）と、
-    /// 前に書いたフレームの手の様子（再生の Flow.play が差分から押した瞬間を出すのと同じ物）。
+    /// 前に書いたフレームの手の様子（再生の Flow.play が差分から押した瞬間を出すのと同じ物。button = 左・otherButtons = 右と中）。
     type alias Writing = {
         pending = Option[{ head = String, wait = Bool, ns = List[Int64] }],
-        down = Set[Key], button = Bool, cursor = Option[Vec2.Vec2], count = Int32, lastFp = String
+        down = Set[Key], button = Bool, otherButtons = Set[GameEngine.MouseButton], cursor = Option[Vec2.Vec2], count = Int32, lastFp = String
     }
 
     def fresh(): Writing =
-        { pending = None, down = Set.empty(), button = false, cursor = None, count = 0, lastFp = "" }
+        { pending = None, down = Set.empty(), button = false, otherButtons = Set.empty(), cursor = None, count = 0, lastFp = "" }
 
     /// 記録を開く。前の回の記録は previous.flow へ残す（既定の置き場の時だけ）。開けなければ None（遊ぶのは止めない）。
     pub def open(path: String): Option[Recorder] \ IO =
@@ -99,7 +99,7 @@ pub mod Flow.Record {
     /// 動かしていないマウスの at= を書かず、再生だけカーソルが -100,-100 のままになる）。
     pub def started(rec: Recorder, text: String): Unit \ IO =
         line(rec, text);
-        Ref.put({ down = Set.empty(), button = false, cursor = None | Ref.get(rec#state) }, rec#state)
+        Ref.put({ down = Set.empty(), button = false, otherButtons = Set.empty(), cursor = None | Ref.get(rec#state) }, rec#state)
 
     /// 外から World が変わった（記録の行で説明の付かない変化）か: 指紋の元が前のフレームの後と違えば # ext を書く。
     pub def checkExternalChange(rec: Recorder, fingerprint: Option[String]): Unit \ IO =
@@ -132,6 +132,9 @@ pub mod Flow.Record {
         let released = Set.difference(st#down, frame#down);
         let derivedNew = pressed;
         let derivedClick = frame#mouseDown and not st#button;
+        let others = Set.remove(GameEngine.MouseButton.Left, frame#mouseButtons);
+        let otherClicks = Set.remove(GameEngine.MouseButton.Left, frame#mouseClickedButtons);
+        let derivedOtherClicks = Set.difference(others, st#otherButtons);
         let lastCursor = st#cursor |> Option.getWithDefault({ x = -100.0, y = -100.0 });
         let derivedMoved = st#cursor |> Option.exists(p -> p#x != frame#cursor#x or p#y != frame#cursor#y);
         // WhyNot: 動いた量をいつも書かない — キャプチャしていなければ位置の差と同じで、行が長くなるだけ。
@@ -143,11 +146,12 @@ pub mod Flow.Record {
                  " at=${Float64.toString(frame#cursor#x)},${Float64.toString(frame#cursor#y)}" else "") +
             (if (lookDiffers)
                  " look=${Float64.toString(frame#mouseDelta#x)},${Float64.toString(frame#mouseDelta#y)}" else "") +
-            (if (frame#mouseDown) " mouse" else "") +
+            (if (not Set.isEmpty(others)) " mouse=${buttonsText(frame#mouseButtons)}" else if (frame#mouseDown) " mouse" else "") +
             (if (frame#wheel != 0.0) " wheel=${Float64.toString(frame#wheel)}" else "") +
             (if (frame#padTouched) " pad" else "") +
             (if (frame#justPressed != derivedNew) " new=${keysText(frame#justPressed)}" else "") +
-            (if (frame#mouseClicked != derivedClick) (if (frame#mouseClicked) " click" else " noclick") else "") +
+            (if (otherClicks != derivedOtherClicks) " click=${buttonsText(frame#mouseClickedButtons)}"
+             else if (frame#mouseClicked != derivedClick) (if (frame#mouseClicked) " click" else " noclick") else "") +
             (if (frame#mouseMoved != derivedMoved) (if (frame#mouseMoved) " moved" else " still") else "");
         let (verb, isWait) =
             if (Set.isEmpty(pressed) and Set.isEmpty(released)) ("", true)
@@ -159,7 +163,7 @@ pub mod Flow.Record {
         push(rec, { head = head, wait = isWait, ns = ns :: Nil });
         let after = Ref.get(rec#state);
         let count = after#count + 1;
-        Ref.put({ down = frame#down, button = frame#mouseDown, cursor = Some(frame#cursor), count = count,
+        Ref.put({ down = frame#down, button = frame#mouseDown, otherButtons = others, cursor = Some(frame#cursor), count = count,
                   lastFp = fingerprint |> Option.getWithDefault(after#lastFp) | after }, rec#state);
         match fingerprint {
             case Some(text) if Int32.modulo(count, 60) == 0 =>
@@ -167,6 +171,11 @@ pub mod Flow.Record {
                 write(rec, "# fp ${text}")
             case _ => ()
         }
+
+    /// マウスのボタンの集合の字（left,right。空は -）。並びは左・右・中で決まる（再生と比べても揺れない）。
+    def buttonsText(buttons: Set[GameEngine.MouseButton]): String =
+        let names = GameEngine.allMouseButtons() |> List.filter(b -> Set.memberOf(b, buttons)) |> List.map(Flow.mouseButtonName);
+        if (List.isEmpty(names)) "-" else String.intercalate(",", names)
 
     /// 1 フレームの行を足す: 前と同じ形の wait は数を足し、1 フレームだけの hold の直後の同じキーの release は tap にまとめる。
     def push(rec: Recorder, next: { head = String, wait = Bool, ns = List[Int64] }): Unit \ IO =

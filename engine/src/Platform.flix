@@ -40,7 +40,11 @@ pub mod Platform {
 
     /// ウィンドウの状態と見た目（閉じるフラグ・大きさ・カーソル・全画面・タイトルの表示）。
     pub eff Window {
-        /// ウィンドウの閉じるフラグが立っているか。今は入力の取り込み（poll）も兼ねるので 1 フレームに 1 回だけ呼ぶ。
+        /// OS からのイベント（キー・マウス・ホイール・窓の大きさ・閉じるボタン）とゲームパッドの状態を取り込む。1 フレームに 1 回だけ呼ぶ
+        /// （入力を読む前でも後でもよい。App はそのコマの入力を読んだ後に呼ぶ）。
+        /// マウスの「このコマで押された」フラグ（Input.isMouseButtonPressed が 1 コマだけ真で返す短い押し）もここで新しいコマへ切り替わる。
+        def pollEvents(): Unit
+        /// ウィンドウの閉じるフラグが立っているか（問うだけ。イベントは pollEvents が取り込む）。
         def shouldClose(): Bool
         /// ウィンドウの閉じるフラグを立てる・下ろす（GLFW の glfwSetWindowShouldClose）。false で閉じる要求を取り消す
         /// （App.withCloseRequest が「終了しますか？」を出す間、ウィンドウを開けておくのに使う）。
@@ -63,6 +67,9 @@ pub mod Platform {
         def setFullscreen(on: Bool): Unit
         /// 直近の setFullscreen で今フルスクリーン中かを返す
         def isFullscreen(): Bool
+        /// Draw2d.renderCommands で塗ったコマを画面へ出す（バッファの入れ替え）。1 フレームの終わりに 1 回だけ呼ぶ。
+        /// 画面へ塗ったコマが無ければ（レンダーターゲットへ塗っただけ・窓の無い描き手）何もしない。レンダーターゲットを閉じてから呼ぶ。
+        def presentFrame(): Unit
         /// デバッグモード中であることをウィンドウタイトルで示す。
         /// true でタイトル末尾に「 (Debug)」を付け、false で元のタイトルへ戻す。
         def setDebugBadge(enabled: Bool): Unit
@@ -77,6 +84,7 @@ pub mod Platform {
     /// 2D の描き物の列を出す口。
     pub eff Draw2d {
         /// zIndex 混合で sprites・tileMaps・polygons を 1 フレーム描画する（積んだ面と 3D の場面も z の位置で合流させる）。
+        /// 画面へは出さない（出すのは Window.presentFrame）。レンダーターゲットが開いていればそこへ描く。
         /// staticLayer は「1 度だけ GPU へ生成して使い回す静的多角形」の依頼（無ければ None）。
         /// エンジンがキーでキャッシュし、動的な polygons と同じ z 安定ソート列にレンジを混ぜて
         /// 描くので重なり順は壊れない。ゲームは GL ハンドルを触らずキーと中身を宣言するだけ。
@@ -92,6 +100,12 @@ pub mod Platform {
         /// 3D の場面 1 つを、次の Draw2d.renderCommands の列へ積む（深度で前後を決め、2D の並びの中では cmd#scene#zIndex の 1 点に入る）。
         def drawScene3d(cmd: Scene3d.RenderCmd): Unit
     }
+
+    /// 3D を描かない handler の組（ブラウザ版・テストの偽物）が張る、3D の場面を捨てる handler。
+    pub def runNoopDraw3d(f: Unit -> a \ ef): a \ ef - Draw3d =
+        run f() with handler Draw3d {
+            def drawScene3d(_cmd, k) = k(())
+        }
 
     /// GPU に置く資源（タイルのバッファ・テクスチャ・字・シェーダーのプログラム）を用意し、寸法を引く。
     pub eff GpuResources {
@@ -134,7 +148,7 @@ pub mod Platform {
     }
 
     /// F8 の注釈を書き出す開発の道具。WhyNot Services に入れない: 開発の道具の入口へ寄せて、持たない handler の組
-    /// （ブラウザ版など）でも App を走らせられるようにする。今の App.launch はまだ Services と一緒に要る。
+    /// （ブラウザ版など）でも App を走らせられるようにする。
     pub eff Annotation {
         /// 注釈一式（screenshot.png / highlighted.png / annotation.json / README.md）を
         /// debug/annotations/ 配下の新しいディレクトリへ書き出し、そのパスを返す。失敗時 None。

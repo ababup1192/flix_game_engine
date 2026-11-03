@@ -23,8 +23,8 @@ pub mod App.Internal.Frame {
         else
             (Float64.tryToInt32(rawSteps) |> Option.getWithDefault(0), total - rawSteps * fixedDt)
 
-    /// withFixedStep の 2 サブステップ目以降に渡す Frame: エッジ 5 種（justPressed /
-    /// mouseClicked / mouseMoved / wheel / mouseDelta）だけを「今フレームでは既に消費済み」に潰す。
+    /// withFixedStep の 2 サブステップ目以降に渡す Frame: エッジ 6 種（justPressed /
+    /// mouseClicked / mouseClickedButtons / mouseMoved / wheel / mouseDelta）だけを「今フレームでは既に消費済み」に潰す。
     /// down / mouseDown のような押しっぱなし状態はそのまま残すので、複数サブステップに
     /// またがっても連続入力（移動など）は各回とも効く。
     pub def suppressEdges(frame: App.Frame): App.Frame =
@@ -32,7 +32,7 @@ pub mod App.Internal.Frame {
 
     /// 未消費エッジなし。
     pub def noPending(): App.PendingEdges =
-        { justPressed = Set.empty(), mouseClicked = false, mouseMoved = false, wheel = 0.0, mouseDelta = Vec2.zero() }
+        { justPressed = Set.empty(), mouseClicked = false, mouseClickedButtons = Set.empty(), mouseMoved = false, wheel = 0.0, mouseDelta = Vec2.zero() }
 
     /// バッファしたエッジを今フレームの Frame へ合流させる: justPressed は和集合・
     /// クリックと移動は「どちらかで起きた」・wheel と mouseDelta は量なので加算。
@@ -40,22 +40,25 @@ pub mod App.Internal.Frame {
     pub def mergeEdges(pending: App.PendingEdges, frame: App.Frame): App.Frame =
         withEdges(addEdges(pending, pendingOf(frame)), frame)
 
-    /// 2 つのエッジを 1 つに: 押した瞬間は和集合・クリックと移動は「どちらかで起きた」・wheel と mouseDelta は量なので足す。
+    /// 2 つのエッジを 1 つに: 押した瞬間とクリックしたボタンは和集合・クリックと移動は「どちらかで起きた」・wheel と mouseDelta は量なので足す。
     def addEdges(a: App.PendingEdges, b: App.PendingEdges): App.PendingEdges =
         { justPressed = Set.union(a#justPressed, b#justPressed),
           mouseClicked = a#mouseClicked or b#mouseClicked,
+          mouseClickedButtons = Set.union(a#mouseClickedButtons, b#mouseClickedButtons),
           mouseMoved = a#mouseMoved or b#mouseMoved,
           wheel = a#wheel + b#wheel,
           mouseDelta = Vec2.add(a#mouseDelta, b#mouseDelta) }
 
     /// frame のエッジの欄を edges で置き換える（held 系はそのまま）。エッジの種類は PendingEdges の欄と同じ並び。
     def withEdges(edges: App.PendingEdges, frame: App.Frame): App.Frame =
-        { justPressed = edges#justPressed, mouseClicked = edges#mouseClicked, mouseMoved = edges#mouseMoved,
+        { justPressed = edges#justPressed, mouseClicked = edges#mouseClicked,
+          mouseClickedButtons = edges#mouseClickedButtons, mouseMoved = edges#mouseMoved,
           wheel = edges#wheel, mouseDelta = edges#mouseDelta | frame }
 
-    /// Frame からエッジ 5 種を抜き出してバッファの形にする（0 ステップのフレームの持ち越し用）。
+    /// Frame からエッジ 6 種を抜き出してバッファの形にする（0 ステップのフレームの持ち越し用）。
     pub def pendingOf(frame: App.Frame): App.PendingEdges =
         { justPressed = frame#justPressed, mouseClicked = frame#mouseClicked,
+          mouseClickedButtons = frame#mouseClickedButtons,
           mouseMoved = frame#mouseMoved, wheel = frame#wheel, mouseDelta = frame#mouseDelta }
 
     /// システムの列を追加順（左から右）に World へ畳み込む。

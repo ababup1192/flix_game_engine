@@ -319,8 +319,23 @@ func keySet(v Vocab, text string) string {
 	return ""
 }
 
+// mouseButtonSet は mouse= と click= の値（left,right,middle の列か -）を確かめる（engine の Flow.Parse.mouseButtonSet と同じ語）。
+func mouseButtonSet(text string) string {
+	if text == "-" {
+		return ""
+	}
+	for _, name := range strings.Split(text, ",") {
+		switch name {
+		case "left", "right", "middle":
+		default:
+			return fmt.Sprintf("マウスのボタン '%s' は無い（left・right・middle）", name)
+		}
+	}
+	return ""
+}
+
 func opts(v Vocab, words []string) string {
-	known := []string{"ns=", "dt=", "at=", "look=", "mouse", "wheel=", "pad", "keys=", "new=", "click", "moved"}
+	known := []string{"ns=", "dt=", "at=", "look=", "mouse", "mouse=", "wheel=", "pad", "keys=", "new=", "click", "click=", "moved"}
 	for _, word := range words {
 		switch {
 		case word == "mouse", word == "pad", word == "click", word == "noclick", word == "moved", word == "still":
@@ -336,6 +351,10 @@ func opts(v Vocab, words []string) string {
 			}
 		case strings.HasPrefix(word, "wheel="):
 			if _, why := number(strings.TrimPrefix(word, "wheel=")); why != "" {
+				return why
+			}
+		case strings.HasPrefix(word, "mouse="), strings.HasPrefix(word, "click="):
+			if why := mouseButtonSet(word[strings.Index(word, "=")+1:]); why != "" {
 				return why
 			}
 		case strings.HasPrefix(word, "keys="), strings.HasPrefix(word, "new="):

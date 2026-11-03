@@ -112,7 +112,7 @@
 ## 土台
 
 - **GameEngine** — ゲームとエンジンの境界に置く共有の型（描画データ・キー・色など）と、副作用の入口（描画・入力・音・時間の取得）をまとめて定義する。各ゲームはここの型とエフェクトだけを見れば、内部実装を知らずに描画や入力を組める。
-- **GamepadMap** — ゲームパッド（Xbox 配置）のボタンとキーの対応表（1 ボタン = 1 キー）と、GUID と名前からパッドの機種（一般・Steam・不明）を決める純関数。GLFW を読むのは render_gl の LwjglLayer。
+- **GamepadMap** — ゲームパッド（Xbox 配置）のボタンとキーの対応表（1 ボタン = 1 キー）と、GUID と名前からパッドの機種（一般・Steam・不明）を決める純関数。GLFW と SDL3 を読むのは render_gl の LwjglInput。
 - **EngineSentinel** — engine fpkg のロードを consumer 側で trigger するためのモジュール。
 - **EngineSentinel.Marker** — EngineSentinel が使う印だけの小さな型。
 
@@ -125,11 +125,11 @@
 - **PostProcess** — 画面の仕上げの面を ShaderDoc の Spec で組む部品（Unity URP / Unreal の Post Process と同じ並び）。`PostProcess.tonemapped` / `tonemappedWith`（AcesFitted・Reinhard。既定は `defaultExposure()` = 0.4 stop・`defaultWhitePoint()` = 4.0）・`PostProcess.fxaaSpec`（FXAA 3.11 の PC の簡単な版）・`PostProcess.luma709`。今の場と bindings だけで組むので GPU と CPU が同じ木を評価する。
 - **FrameDiagnostics** — 1 コマぶんの描く側の診断（作ったシェーダーと理由・GPU にあるシェーダーの数・足した字・塗りと swap の時間・GPU の時間と描き先ごとの時間・3D の数）。2D と 3D で共通。`Platform.Diagnostics.consumeDiagnostics` が返し、App が 1 コマに 1 回引き取ってヒッチの記録とゲーム（`App.withDiagnostics` → `frame#diagnostics`）へ配る。`setDiagnosticsEnabled(true)` の間だけ数える。画面に出す字は `summaryLines`。
 - **Platform** — 機種（ウィンドウ・入力・GPU・時計）に触る effect を役割ごとに分けた所。関数の型に触る effect だけが出て、op を足しても止まるのはその役割の handler だけ。`Draw2d.drawSurface` と `Draw3d.drawScene3d` は積むだけで `Draw2d.renderCommands` が出すので、`Draw2d`・`Draw3d`・`GpuResources` は同じ handler の組から張る。
-- **ShaderEffect** — 描き手の handler がまだ受けている面と 3D の場面の op（`eff Shader`）。呼ぶ側は `Platform` の effect を使う（render_gl の `RenderLegacyBridge` がここへ回す）。
+- **ShaderEffect** — 面の描画命令の古い型の名前 `ShaderEffect.ShaderRenderCmd` だけ（0.84.0 で消える。中身は `DrawCmd.SurfaceRenderCmd`）。
 
 ## レンダーターゲット（RenderTarget）
 
-- **RenderTarget** — レンダーターゲット（描いた結果を読み返せる描き込み先）に描いてテクスチャとして読み返すための効果口（`eff Target`）。描き込み先の切り替えは描く op の外側の関心なので `Platform.Draw2d` に入れず、ターゲットを持たない描き出し・テストの偽物はこれを張らずに描ける。GL 側の実体は `render_gl` の **Target.flix**（`mod RenderTargetGl`。FBO 1 枚 + カラーテクスチャ 1 枚を作り・切り替え・破棄する）と `LwjglLayer` のハンドラが持つ。ゲーム側は engine 内部の `eff Target` を直接触らず、engine_world の `Render.Pass` + `App.withPasses` を使う（[逆引き](../module-index.md)を参照）。
+- **RenderTarget** — レンダーターゲット（描いた結果を読み返せる描き込み先）に描いてテクスチャとして読み返すための効果口（`eff Target`）。描き込み先の切り替えは描く op の外側の関心なので `Platform.Draw2d` に入れず、ターゲットを持たない描き出し・テストの偽物はこれを張らずに描ける。GL 側の実体は `render_gl` の **Target.flix**（`mod RenderTargetGl`。FBO 1 枚 + カラーテクスチャ 1 枚を作り・切り替え・破棄する）と `render_gl` の `RenderPaintHandlers.handleTarget`（窓ありと窓なしの描き手が重ねる）が持つ。ゲーム側は engine 内部の `eff Target` を直接触らず、engine_world の `Render.Pass` + `App.withPasses` を使う（[逆引き](../module-index.md)を参照）。
 
 ## core（基礎の値と計算）
 

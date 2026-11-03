@@ -52,7 +52,7 @@ pub mod Num {
         floorInt(x + 0.5)
 
     /// 平方根。負の数は NaN（Java の Math.sqrt と同じ）。
-    // WhyNot: Flix の標準の Float64 に置かない物を自前で包む — 標準に sqrt・sin・cos・atan2 が無い（0.78）。
+    // WhyNot: Flix の標準の Float64 に置かない物を自前で包む — 標準に sqrt・sin・cos・atan2・asin・log が無い（0.78。pow と exp は Float64 にある）。
     pub def sqrt(x: Float64): Float64 =
         unchecked_cast(Math.sqrt(x) as _ \ {})
 
@@ -67,6 +67,14 @@ pub mod Num {
     /// 点 (x, y) の向きの角（ラジアン・−π〜π）。引数は y が先（Java の Math.atan2 と同じ）。
     pub def atan2(y: Float64, x: Float64): Float64 =
         unchecked_cast(Math.atan2(y, x) as _ \ {})
+
+    /// asin（答えはラジアン・−π/2〜π/2。−1〜1 の外は NaN）。
+    pub def asin(x: Float64): Float64 =
+        unchecked_cast(Math.asin(x) as _ \ {})
+
+    /// 自然対数。0 は −∞・負の数は NaN（Java の Math.log と同じ）。
+    pub def log(x: Float64): Float64 =
+        unchecked_cast(Math.log(x) as _ \ {})
 
     /// 1 周ぶんの角（2π）。円周に点を置く計算の共通の源。
     pub def tau(): Float64 = 6.283185307179586

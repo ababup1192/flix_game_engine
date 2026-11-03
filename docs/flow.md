@@ -126,6 +126,7 @@ start title save=@saves/slot1.json +assets/rules.json=b64:eyJ… +saves/slot1.js
 wait 37f ns=16612345,16701234,…              同じ入力が続くフレームは 1 行（実際の dt はナノ秒で全部残す）
 tap Z at=120.0,80.0 ns=16666667              最初のフレームはマウスの位置も
 wait 1f look=3.5,-1.0 ns=…                   マウスの動いた量（App.withMouseCapture のキャプチャ中は位置が止まるので、位置の差から出ない時だけ）
+wait 3f mouse=right ns=…                     右と中のボタンを押している（左だけなら mouse。Frame#mouseButtons に入る・左右同時は mouse=left,right）
 hold Down ns=… / release Down ns=…
 wait 1f keys=Left,Z new=Z ns=…               押している物の丸ごと・押した瞬間が差分から出ない時だけ new=
 expect fp=1a2b3c4d                           60 フレームごとの指紋（App.withFingerprint）。再生で最初の食い違いの行を指す
@@ -141,7 +142,7 @@ rewind 30                                    F8 の巻き戻しから再開し�
 - World は書き出さない。再生は「始まり + 読んだファイルの中身 + 全部のフレーム」から作り直す（World の直列化を各ゲームに書かせない）。
 - 読んだファイルは `Fs.FileRead`（read・readLines。readBytes は拾わない）をハンドラで包んで拾う（`Flow.Record.captureReads`）（新しく作った World の読み直し・監視の読み直し・F1・
   `onRequest`）。再生は同じ中身を返すハンドラで流す。始まりの `@パス` の引数はそのまま書き、読んだ中身は `+パス=b64:…` で同じ行に載せる。
-- 押した瞬間・クリック・マウスの動きは、記録した前のフレームとの差分から出ない時（F8 で止めていた間に押した・離した）だけ `new=`・`click`・`moved` で残す。
+- 押した瞬間・クリック・マウスの動きは、記録した前のフレームとの差分から出ない時（F8 で止めていた間に押した・離した）だけ `new=`・`click`・`moved` で残す（右と中のボタンが絡むクリックは `click=right` のようにクリックしたボタンの丸ごと・無ければ `click=-`）。
 - 指紋の欄はゲームが選ぶ（`withFingerprint(w -> 文字)`）。Doc の中身や絵のアトラスは入れない（4 万フレームで遅くなる）。
 - F8 のチケットの写しの末尾は `rewind <表示中までの戻り>` と `mark ticket`（再生するとチケットの瞬間に着く）。
 

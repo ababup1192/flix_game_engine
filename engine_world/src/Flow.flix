@@ -175,16 +175,17 @@ pub mod Flow {
 
     /// フレームの手の付け足し（ほとんどは記録が書く）。ns = フレームごとの経過ナノ秒（数がフレーム数）・dt = 経過秒・
     /// at = マウスの位置・look = マウスの動いた量（App.Frame の mouseDelta。キャプチャ中は at が止まるので位置の差から出ない時だけ）・
-    /// mouse = 左ボタンを押している・wheel = ホイール・pad = パッドに触っている・
-    /// keys = 押しているキーの丸ごと・pressed / click / moved = 前のフレームとの差分から出ない押した瞬間・クリック・動き。
+    /// mouse = 左ボタンを押している・otherButtons = 押している右と中のボタン・wheel = ホイール・pad = パッドに触っている・
+    /// keys = 押しているキーの丸ごと・pressed / click / moved = 前のフレームとの差分から出ない押した瞬間・左のクリック・動き・
+    /// otherClicks = 同じく右と中のクリック。
     pub type alias Opt = {
-        ns = List[Int64], dt = Option[Float64], at = Option[Vec2.Vec2], look = Option[Vec2.Vec2], mouse = Bool, wheel = Float64, pad = Bool,
-        keys = Option[Set[Key]], pressed = Option[Set[Key]], click = Option[Bool], moved = Option[Bool]
+        ns = List[Int64], dt = Option[Float64], at = Option[Vec2.Vec2], look = Option[Vec2.Vec2], mouse = Bool, otherButtons = Set[GameEngine.MouseButton], wheel = Float64, pad = Bool,
+        keys = Option[Set[Key]], pressed = Option[Set[Key]], click = Option[Bool], otherClicks = Option[Set[GameEngine.MouseButton]], moved = Option[Bool]
     }
 
     pub def noOpt(): Opt =
-        { ns = Nil, dt = None, at = None, look = None, mouse = false, wheel = 0.0, pad = false,
-          keys = None, pressed = None, click = None, moved = None }
+        { ns = Nil, dt = None, at = None, look = None, mouse = false, otherButtons = Set.empty(), wheel = 0.0, pad = false,
+          keys = None, pressed = None, click = None, otherClicks = None, moved = None }
 
     pub enum Cmp with Eq, ToString {
         case Lt
@@ -253,13 +254,13 @@ pub mod Flow {
     // ── 実行器 ──
 
     /// フレームをまたいで持つ手の様子。held = 押しっぱなしのキー・button = 左ボタンを押しっぱなし・cursor = マウスの位置・
-    /// prev* = 前のフレームで実際に押していた物（押した瞬間・クリック・動きを出す）。
+    /// prev* = 前のフレームで実際に押していた物（押した瞬間・クリック・動きを出す。prevOtherButtons は右と中）。
     type alias Hand = { held = Set[Key], button = Bool, cursor = Vec2.Vec2,
-                        prevDown = Set[Key], prevButton = Bool, prevCursor = Option[Vec2.Vec2] }
+                        prevDown = Set[Key], prevButton = Bool, prevOtherButtons = Set[GameEngine.MouseButton], prevCursor = Option[Vec2.Vec2] }
 
     def freshHand(): Hand =
         { held = Set.empty(), button = false, cursor = { x = -100.0, y = -100.0 },
-          prevDown = Set.empty(), prevButton = false, prevCursor = None }
+          prevDown = Set.empty(), prevButton = false, prevOtherButtons = Set.empty(), prevCursor = None }
 
     /// 流している途中の物。frames と history は新しい順。awaiting = 返事を待っている tap（行と押す前の番号）。
     type alias PlayState[w] = {
@@ -480,19 +481,24 @@ pub mod Flow {
             let down = opt#keys |> Option.getWithDefault(Set.union(hand#held, extra));
             let cursor = opt#at |> Option.getWithDefault(hand#cursor);
             let button = opt#mouse or hand#button;
+            let derivedClicks = Set.difference(opt#otherButtons, hand#prevOtherButtons);
+            let leftClicked = opt#click |> Option.getWithDefault(button and not hand#prevButton);
+            let otherClicks = opt#otherClicks |> Option.getWithDefault(derivedClicks);
             let moved = hand#prevCursor |> Option.exists(p -> p#x != cursor#x or p#y != cursor#y);
             let frame = { down = down,
                           justPressed = opt#pressed |> Option.getWithDefault(Set.difference(down, hand#prevDown)),
                           dt = dt, viewport = ctx#setup#design, cursor = cursor,
                           mouseDown = button,
-                          mouseClicked = opt#click |> Option.getWithDefault(button and not hand#prevButton),
+                          mouseClicked = leftClicked,
+                          mouseButtons = withLeft(button, opt#otherButtons),
+                          mouseClickedButtons = withLeft(leftClicked, otherClicks),
                           mouseMoved = opt#moved |> Option.getWithDefault(moved),
                           wheel = opt#wheel, padTouched = opt#pad,
                           padKind = if (opt#pad) GamepadMap.PadKind.Generic else GamepadMap.PadKind.Unknown,
                           mouseDelta = opt#look |> Option.getWithDefault(App.Internal.Frame.cursorDelta(hand#prevCursor, cursor))
                           | App.emptyFrame() };
             let (step, state) = App.traceFrame(ctx#app, frame, c#state, c#world);
-            let nextHand = { cursor = cursor, prevDown = down, prevButton = button, prevCursor = Some(cursor),
+            let nextHand = { cursor = cursor, prevDown = down, prevButton = button, prevOtherButtons = opt#otherButtons, prevCursor = Some(cursor),
                              held = opt#keys |> Option.getWithDefault(hand#held) | hand };
             let next = { world = step#after, state = state, hand = nextHand, count = c#count + 1,
                          frames = { step = step, state = state } :: c#frames,
@@ -506,6 +512,25 @@ pub mod Flow {
                 case None => Ok(next)
             }
         }
+
+    /// others（右と中）に、left が真なら左を足した集合。
+    def withLeft(left: Bool, others: Set[GameEngine.MouseButton]): Set[GameEngine.MouseButton] =
+        if (left) Set.insert(GameEngine.MouseButton.Left, others) else others
+
+    /// flow のマウスのボタンの名前（left・right・middle）→ ボタン。
+    pub def mouseButtonOf(name: String): Option[GameEngine.MouseButton] = match name {
+        case "left"   => Some(GameEngine.MouseButton.Left)
+        case "right"  => Some(GameEngine.MouseButton.Right)
+        case "middle" => Some(GameEngine.MouseButton.Middle)
+        case _        => None
+    }
+
+    /// ボタン → flow の名前（mouseButtonOf の逆）。
+    pub def mouseButtonName(button: GameEngine.MouseButton): String = match button {
+        case GameEngine.MouseButton.Left   => "left"
+        case GameEngine.MouseButton.Right  => "right"
+        case GameEngine.MouseButton.Middle => "middle"
+    }
 
     /// 経過秒をナノ秒の整数に丸める。実機の経過秒もナノ秒から来るので、flow で流したフレームを記録して
     /// 再生しても同じ秒になる（1/60 秒のまま流すと、記録のナノ秒と時計が少しずつずれて指紋が合わない）。
@@ -521,7 +546,7 @@ pub mod Flow {
 
     /// 固定刻みで取り置いた押した瞬間が残っていないか（残っている間は、次のフレームで系に届く）。
     def isSettled(state: App.StepState): Bool =
-        Set.isEmpty(state#pending#justPressed) and not state#pending#mouseClicked
+        Set.isEmpty(state#pending#justPressed) and not state#pending#mouseClicked and Set.isEmpty(state#pending#mouseClickedButtons)
 
     def countOf(ctx: Ctx[w, ef], span: Span, opt: Opt): Int32 =
         if (not List.isEmpty(opt#ns)) List.length(opt#ns)

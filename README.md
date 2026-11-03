@@ -159,7 +159,7 @@ the dual-grid renderer (`Terrain` / `TerrainDoc`) auto-generates the corner shap
 ## Project layout (monorepo)
 
 ```
-engine/        contract layer (GL-free, no native deps): the GameEngine.Game/Audio effect contract, shared render types, foundational types (math, color, text layout, project loading), scene-graph draw vocabulary
+engine/        contract layer (GL-free, no native deps): the role-split Platform effects (Input, Window, Draw2d, GpuResources, ...) and the GameEngine.Audio effect, shared render types, foundational types (math, color, text layout, project loading), scene-graph draw vocabulary
 render_gl/     OpenGL/OpenAL backend implementing engine's contract: LWJGL window/input/audio, shaders, textures, SDF fonts (depends on engine)
 engine_world/  value-based game framework: Bevy-style App run-loop, ECS queries, physics, UI widgets, camera rig, Worldline undo/replay, and frontend services (asset loading, save data, JSON, logging) (depends on engine)
 engine_tools/  dev & test tooling: headless software rasterizer, filmstrip/GIF rendering, reference viewer, render lint, SFX synth (depends on engine)
@@ -388,7 +388,7 @@ Doc は手書きでも、**flix_ge_studio**（別リポの Elm + Tauri エディ
 ## プロジェクト構成（monorepo）
 
 ```
-engine/        契約層（GL 非依存・ネイティブ無し）: GameEngine.Game/Audio effect 契約・共有描画型・土台型（数学・色・テキストレイアウト・プロジェクト読み込み）・シーングラフ描画語彙
+engine/        契約層（GL 非依存・ネイティブ無し）: 役割ごとの Platform の effect（Input・Window・Draw2d・GpuResources など）と GameEngine.Audio の effect・共有描画型・土台型（数学・色・テキストレイアウト・プロジェクト読み込み）・シーングラフ描画語彙
 render_gl/     engine の契約を実装する OpenGL/OpenAL バックエンド: LWJGL の窓/入力/音声・シェーダ・テクスチャ・SDF フォント（engine 依存）
 engine_world/  値ベースのゲームフレームワーク: Bevy 風 App ループ・ECS クエリ・物理・UI 部品・カメラリグ・Worldline undo/リプレイ・frontend サービス（アセット読み込み・セーブ・JSON・ログ）（engine 依存）
 engine_tools/  開発・テスト用ツール: headless ソフトラスタライザ・コマ撮り/GIF の描き出し・スナップショットビューア・RenderLint・効果音合成（engine 依存）

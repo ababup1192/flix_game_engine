@@ -29,6 +29,8 @@ pub mod App {
         cursor = Vec2.Vec2,                // マウス位置（design 座標。バックエンドがウィンドウ座標→design に変換済み）
         mouseDown = Bool,                  // 左ボタンがいま押されているか
         mouseClicked = Bool,               // 左ボタンがこのフレームで新しく押されたか（エッジ）
+        mouseButtons = Set[GameEngine.MouseButton],        // いま押されているボタン（左・右・中。左は mouseDown と同じ）
+        mouseClickedButtons = Set[GameEngine.MouseButton], // このフレームで新しく押されたボタン（エッジ。左は mouseClicked と同じ）
         mouseMoved = Bool,                 // このフレームでマウスが動いたか（前フレームとの座標比較）
         wheel = Float64,                   // このフレームのホイール量（上が正・下が負。無ければ 0。
                                            // ランナーが毎フレーム consumeScrollDelta を読み切るので、
@@ -793,11 +795,16 @@ pub mod App {
 
     // ── 純粋な芯（テストはここを直接叩く）──
 
+    /// 左ボタンだけの集合（押していなければ空）。frameOf が mouseDown・mouseClicked から mouseButtons・mouseClickedButtons を組む。
+    def leftOnly(on: Bool): Set[GameEngine.MouseButton] =
+        if (on) Set#{GameEngine.MouseButton.Left} else Set.empty()
+
     /// 前フレームと今フレームのキー集合から Frame を組む。justPressed は差分
     /// （今あって前に無いキー）なので、押しっぱなしはエッジにならない。
     /// マウスも同じ考え方: mouseClicked は「今押されていて前は押されていない」エッジ、
     /// mouseMoved は前フレームとの座標比較（最初のフレームは prevCursor = None で false）。
     /// wheel はバックエンドが貯めた 1 フレームぶんの量を素通しする。
+    /// mouseButtons・mouseClickedButtons は左だけで組む（右と中も読むなら withMouseButtons で置き直す）。
     /// mouseDelta は前フレームとの座標の差（最初のフレームは 0。実機のループはキャプチャしても出るバックエンドの量で置き直す）。
     /// realNow は 0 秒で組み、advanceFrame が StepState の実時間の時計で置き直す。
     /// windowFocused は真・diagnostics は None で組む（実機のループが置き直す）。
@@ -813,6 +820,8 @@ pub mod App {
           cursor = cursor#cursor,
           mouseDown = mouse#down,
           mouseClicked = mouse#down and not mouse#prevDown,
+          mouseButtons = leftOnly(mouse#down),
+          mouseClickedButtons = leftOnly(mouse#down and not mouse#prevDown),
           mouseMoved = Option.exists(p -> p#x != cursor#cursor#x or p#y != cursor#cursor#y, cursor#prevCursor),
           wheel = mouse#wheel,
           realNow = Clock.zero(),
@@ -829,6 +838,14 @@ pub mod App {
         frameOf(prev = Set.empty(), current = Set.empty(), 0.0, Vec2.zero(),
                 { prevCursor = None, cursor = Vec2.zero() }, { prevDown = false, down = false, wheel = 0.0 })
 
+    /// 押しているボタンの丸ごと（左・右・中）を置く: mouseButtons = held・mouseClickedButtons = 前のフレームに無く今あるボタン。
+    /// mouseDown・mouseClicked は左の分に合わせて置き直す（どちらで読んでも食い違わない）。
+    pub def withMouseButtons(prev: Set[GameEngine.MouseButton], held: Set[GameEngine.MouseButton], frame: Frame): Frame =
+        let clicked = Set.difference(held, prev);
+        { mouseButtons = held, mouseClickedButtons = clicked,
+          mouseDown = Set.memberOf(GameEngine.MouseButton.Left, held),
+          mouseClicked = Set.memberOf(GameEngine.MouseButton.Left, clicked) | frame }
+
     /// 0 サブステップのフレームで捨てられそうになったエッジのバッファ。エッジは prev との
     /// 差分なので、同じ押下は次の実フレームでは二度と立たない — 消費されるまでここに
     /// 残し、最初のサブステップが来た瞬間に合流させる（fixedDt がフレーム間隔より
@@ -836,6 +853,7 @@ pub mod App {
     pub type alias PendingEdges = {
         justPressed = Set[GameEngine.Key],
         mouseClicked = Bool,
+        mouseClickedButtons = Set[GameEngine.MouseButton],
         mouseMoved = Bool,
         wheel = Float64,
         mouseDelta = Vec2.Vec2
@@ -1027,22 +1045,22 @@ pub mod App {
 
     // ── ランナー: 起動して、閉じるまで回す ──
 
-    /// App を走らせる単一の効果多相ランナー。startup を 1 回だけ畳み込み、いま押されているキーを prev の
+    /// App を実機で走らせる。startup を 1 回だけ畳み込み、いま押されているキーを prev の
     /// 種にしてループへ入る（起動時にすでに押されているキーは、一度離すまでエッジにならない）。
     ///
-    /// 機種の effect（Platform.Services と Platform.Annotation）・Fs・ゲーム固有の effect（ef）は 隠蔽せず呼び出し側の
-    /// Main が `with` で明示的に張る（effect-oriented の素直な形）。効果多相なので純粋なゲーム（ef = {}）も
-    /// effect で状態を持つゲームも同じ launch を使う。前者は Main で LwjglLayer + Fs を張り、後者は加えて
-    /// 自分の effect ハンドラ束を張った内側で呼ぶ。
+    /// 受けるのは系と View が純粋な App（App[w, {}]）だけ。系が外の世界に触れないことを型で守る
+    /// （ゲームの src の unsafe と、effect を消す unchecked_cast は lint-forbid が止める）。
+    /// effect を持つ App は画面なしの道（App.trace・App.traceFrame・flow）とテストで流す。
+    /// 機種の effect（Platform.Services と Platform.Annotation）と Fs は Main が `with` で明示的に張る。
     /// デバッグ有効（withDebug）かつ環境変数 DEBUG_HTTP_PORT があれば、リモートデバッグの
     /// HTTP エンドポイントも一緒に立ち上がる（例: `DEBUG=1 DEBUG_HTTP_PORT=7777 flix run`）。
     /// 組み終えた App を渡すこの形では、flow を記録する起動は Doc を読み直して start の行に載せる（App.loadAndLaunch は読み直さない）。
-    pub def launch(app: App[w, ef]): Unit \ (ef + Platform.Services + Platform.Annotation + Fs.FileRead + Fs.FileWrite + IO) =
+    pub def launch(app: App[w, {}]): Unit \ (Platform.Services + Platform.Annotation + Fs.FileRead + Fs.FileWrite + IO) =
         App.Internal.Runner.launchWith(app, None, ProcessEnv.snapshot())
 
     /// loadApp で App を組んで launch する。flow を記録する起動では、loadApp が Fs.FileRead で読んだ中身を start の行に載せ、
-    /// Doc を読み直さない。loadApp の中の効果（LoadProgress など）は、外の handler が受ける。
-    pub def loadAndLaunch(loadApp: Unit -> App[w, ef] \ ef2): Unit \ (ef + ef2 + Platform.Services + Platform.Annotation + Fs.FileRead + Fs.FileWrite + IO) =
+    /// Doc を読み直さない。loadApp の中の効果（LoadProgress など）は、外の handler が受ける。組んだ App は launch と同じく純粋な物だけ。
+    pub def loadAndLaunch(loadApp: Unit -> App[w, {}] \ ef2): Unit \ (ef2 + Platform.Services + Platform.Annotation + Fs.FileRead + Fs.FileWrite + IO) =
         let env = ProcessEnv.snapshot();
         // WhyNot: 記録しないと env で分かる起動で中身を控えない — 3D の形などの大きな字を、起動の World が決まるまで抱えることになる。
         if (not debugOf(env) or Option.isEmpty(Flow.Record.pathOf(env))) App.Internal.Runner.launchWith(loadApp(), None, env)
@@ -1050,6 +1068,12 @@ pub mod App {
             let (app, read) = Flow.Record.captureReads(loadApp);
             App.Internal.Runner.launchWith(app, Some(read), env)
         }
+
+    /// 系の中で IO を測る bench のための launch（effect を持つ App も受ける）。ゲームからは呼ばない
+    /// （ゲームの src で書くと lint-forbid の launch-for-bench が止める）。
+    // WhyNot: launch を効果多相に戻さない — 実機の入口が effect を持つ App を受けると、系が IO に触らないことを型で言えなくなる。
+    pub def launchForBench(app: App[w, ef]): Unit \ (ef + Platform.Services + Platform.Annotation + Fs.FileRead + Fs.FileWrite + IO) =
+        App.Internal.Runner.launchWith(app, None, ProcessEnv.snapshot())
 
     // WhyNot: 同じ 10 行を UiRender・SortingLayer・App に 1 つずつ置く。pub にするとゲームから z を書き換えられ、
     //   どの層に入るかが表から読めなくなる（Flix 0.77 にはパッケージの中だけで見える pub が無い）。

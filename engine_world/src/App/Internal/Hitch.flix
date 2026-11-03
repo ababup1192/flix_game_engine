@@ -83,9 +83,8 @@ pub mod App.Internal.Hitch {
     /// 何度流しても同じ絵を同じ順に塗る（直す前と後を、作ったシェーダーの数で比べられる）。
     /// 測るのは塗る側だけ（更新は前もって流し終えている）。last=N なら最後の N コマだけを塗る（長い記録の手前は流すだけ）。
     /// FLIX_GE_HIDDEN=1 なら vsync を待たない。走っている World は変えない。
-    pub def perfRun(app: App[w, ef], warnOnce: String -> Unit, bridge: App.RemoteDebug.Bridge, request: App.RemoteDebug.Request,
+    pub def perfRun(app: App[w, ef], warnOnce: String -> Unit, design: Vec2.Vec2, bridge: App.RemoteDebug.Bridge, request: App.RemoteDebug.Request,
                     hitches: Option[HitchWatch], painted: App.Internal.Paint.Painted): App.Internal.Paint.Painted \ (ef + Platform.Window + Platform.Rendering + RenderTarget.Target + Platform.Diagnostics + Fs.FileRead + IO) =
-        let design = Platform.Window.getViewportRect()#size;
         let fresh = App.freshWorld(app, design);
         let vocab = Flow.vocabOf(app, fresh);
         let (name, parsed) = match Map.get("path", request#params) {
@@ -124,7 +123,7 @@ pub mod App.Internal.Hitch {
 
     /// World の列を 1 コマずつ塗り、見張りと同じ判定に通す。返すのは全部の行・書いた報告・描き方の覚え。
     def perfPaint(app: App[w, ef], warnOnce: String -> Unit, design: Vec2.Vec2, watch0: HitchWatch, frames: List[(Int32, Flow.Played[w])], painted: App.Internal.Paint.Painted):
-            (List[App.HitchDetector.Row], List[String], App.Internal.Paint.Painted) \ (ef + Platform.Rendering + RenderTarget.Target + Platform.Diagnostics + IO) =
+            (List[App.HitchDetector.Row], List[String], App.Internal.Paint.Painted) \ (ef + Platform.Window + Platform.Rendering + RenderTarget.Target + Platform.Diagnostics + IO) =
         discard Platform.Diagnostics.consumeDiagnostics();
         let begin = { detector = App.HitchDetector.fresh(watch0#config) | watch0 };
         let (rowsRev, filesRev, watch, last) = frames |> List.foldLeft((acc, entry) -> {
@@ -132,6 +131,7 @@ pub mod App.Internal.Hitch {
             let (i, played) = entry;
             let startNs = System.nanoTime();
             let (cache1, seen1, warned1) = App.Internal.Paint.renderFrame(app, warnOnce, design, played#step#after, App.Internal.Paint.plainLook(Nil), p#tileCache, p#glyphSeen, p#budgetWarned);
+            Platform.Window.presentFrame();
             let timing = { frame = Int32.toInt64(i), start = startNs, updateNs = 0i64, renderNs = System.nanoTime() - startNs,
                            pressed = played#step#frame#justPressed, reloaded = false };
             let (row, counted) = hitchRow(app, w0, timing, Platform.Diagnostics.consumeDiagnostics(), played#step#after);

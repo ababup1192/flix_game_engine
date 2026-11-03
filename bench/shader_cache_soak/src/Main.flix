@@ -33,11 +33,12 @@ mod ShaderCacheSoak {
 
     /// 1 本ごとに「作って・積んで・フレームを 1 つ送る」。フレームを送らないと世代が進まず、
     /// 全ての program が「いま描いている物」に見えて 1 個も追い出されない。
-    def soak(): Unit \ Platform.Draw2d + Platform.GpuResources =
+    def soak(): Unit \ Platform.Draw2d + Platform.GpuResources + Platform.Window =
         List.range(0, rounds()) |> List.forEach(i -> {
             let prog = Platform.GpuResources.buildProgram(specAt(i));
             Platform.Draw2d.drawSurface(surfaceCmd(prog));
-            Platform.Draw2d.renderCommands(Nil, Nil, Nil, None)
+            Platform.Draw2d.renderCommands(Nil, Nil, Nil, None);
+            Platform.Window.presentFrame()
         })
 
     // ── 行を読む ──

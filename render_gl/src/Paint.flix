@@ -346,7 +346,7 @@ mod RenderPaint {
         putTexture(history, ({ id = GpuHandle.wrapTextureId(entry#tex),
                                width = paint#screenW, height = paint#screenH }: RenderAsset.TextureInfo), paint)
 
-    /// Game.renderCommands の中身（swap の手前まで）。レンダーターゲットが開いていればそこへ塗って false。
+    /// Platform.Draw2d.renderCommands の中身（swap は Platform.Window.presentFrame）。レンダーターゲットが開いていればそこへ塗って false。
     /// 開いていなければ、溜めたシェーダー面を取り出して画面（今 bind されている fbW × fbH）へ塗り、
     /// 控えと世代を進めて true（呼ぶ側が swap か読み戻しをする）。
     pub def submitFrame(paint: Paint, fbW: Int32, fbH: Int32,
@@ -737,7 +737,7 @@ mod RenderPaint {
                   scene3dCounts = counts | d }
         }
 
-    /// renderCommands 1 回ぶんを測って記録する。submit は命令を出し終えるまで、swap は画面の入れ替えまで。
+    /// 塗り（submit = 命令を出し終えるまで）と入れ替え（swap）の時間を診断に足す。呼ぶのは renderCommands（塗り）と presentFrame（swap）。
     pub def noteFrame(paint: Paint, submitNs: Int64, swapNs: Int64, drawItems: Unit -> Int32): Unit \ IO =
         noteDiagnostics(paint, d -> { submitNs = d#submitNs + submitNs, swapNs = d#swapNs + swapNs,
                                       drawItems = d#drawItems + drawItems() | d })

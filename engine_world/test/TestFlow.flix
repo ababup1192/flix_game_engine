@@ -210,7 +210,7 @@ mod TestFlow {
     @Test
     def testRecordedFormsParseLikeTheGoCheck(): Unit \ Assert + Fs.FileRead =
         let input = Fs.FileRead.read("../../testdata/lint/flow-check/clean-passes/input.flow") |> Result.getWithDefault("");
-        Assert.assertEq(expected = Ok(15),
+        Assert.assertEq(expected = Ok(16),
                         Flow.Parse.parseText(goVocab(), "clean-passes", input) |> Result.map(script -> List.length(script#lines))
                             |> Result.mapErr(Flow.Parse.problemsText))
 
@@ -254,4 +254,78 @@ mod TestFlow {
                                    |> Result.mapErr(failure -> failure#why)
         };
         Assert.assertEq(expected = Ok((3.0, 4.0)), looked)
+
+    // ========================================================================
+    // マウスの右と中のボタン（Frame#mouseButtons・mouseClickedButtons）
+    // ========================================================================
+
+    /// 押した瞬間の右ボタンの数を足していく World。
+    def rightClickApp(): App.App[Int32, {}] =
+        App.make(0) |> App.addSystem((frame, n) -> if (Set.memberOf(GameEngine.MouseButton.Right, frame#mouseClickedButtons)) n + 1 else n)
+
+    // flow の mouse=right を 3 フレーム続けると、右のクリックは最初の 1 フレームだけ立つ。
+    @Test
+    def testFlowMouseRightClicksOnce(): Unit \ Assert + Fs.FileRead =
+        let clicked = match Flow.Parse.parseText(Flow.vocabOf(rightClickApp(), 0), "right", "wait 3f mouse=right") {
+            case Err(problems) => Err(Flow.Parse.problemsText(problems))
+            case Ok(script) => Flow.play(rightClickApp(), { design = Vec2.zero(), limit = 10 }, script,
+                                         { world = 0, state = App.freshStepState() })
+                                   |> Result.map(outcome -> outcome#last)
+                                   |> Result.mapErr(failure -> failure#why)
+        };
+        Assert.assertEq(expected = Ok(1), clicked)
+
+    // 右を押したまま左も押したフレームは、記録に mouse=left,right と書く（左のクリックは差分から出るので click は書かない）。
+    @Test
+    def testRecordWritesHeldButtons(): Unit \ Assert + Fs.FileRead + IO =
+        let path = "build/flow-test/buttons.flow";
+        let rec = match Flow.Record.open(path) {
+            case Some(opened) => opened
+            case None         => bug!("記録を開けない")
+        };
+        let right = App.withMouseButtons(Set#{}, Set#{GameEngine.MouseButton.Right}, lookFrame());
+        let both = App.withMouseButtons(Set#{GameEngine.MouseButton.Right},
+                                        Set#{GameEngine.MouseButton.Left, GameEngine.MouseButton.Right}, lookFrame());
+        Flow.Record.frame(rec, right, None);
+        Flow.Record.frame(rec, both, None);
+        Flow.Record.close(rec);
+        Assert.assertEq(expected = Some("wait 1f look=3.0,4.0 mouse=left,right ns=20000000"),
+                        Fs.FileRead.readLines(path) |> Result.getWithDefault(Nil) |> List.drop(3) |> List.head)
+
+    // F8 で止めている間に右を押した時のように、右を押しているのにクリックが差分から出ないフレームは click=- と書く。
+    @Test
+    def testRecordWritesClickNoneWhenRightClickIsMissing(): Unit \ Assert + Fs.FileRead + IO =
+        let path = "build/flow-test/click-none.flow";
+        let rec = match Flow.Record.open(path) {
+            case Some(opened) => opened
+            case None         => bug!("記録を開けない")
+        };
+        let held = { mouseClickedButtons = Set#{} | App.withMouseButtons(Set#{}, Set#{GameEngine.MouseButton.Right}, lookFrame()) };
+        Flow.Record.frame(rec, held, None);
+        Flow.Record.close(rec);
+        Assert.assertEq(expected = Some("wait 1f at=10.0,10.0 look=3.0,4.0 mouse=right click=- ns=20000000"),
+                        Fs.FileRead.readLines(path) |> Result.getWithDefault(Nil) |> List.drop(2) |> List.head)
+
+    // flow の click=- は右のクリックを消す（押しているだけで、押した瞬間にならない）。
+    @Test
+    def testFlowClickNoneSuppressesRightClick(): Unit \ Assert + Fs.FileRead =
+        let clicked = match Flow.Parse.parseText(Flow.vocabOf(rightClickApp(), 0), "right", "wait 1f mouse=right click=-") {
+            case Err(problems) => Err(Flow.Parse.problemsText(problems))
+            case Ok(script) => Flow.play(rightClickApp(), { design = Vec2.zero(), limit = 10 }, script,
+                                         { world = 0, state = App.freshStepState() })
+                                   |> Result.map(outcome -> outcome#last)
+                                   |> Result.mapErr(failure -> failure#why)
+        };
+        Assert.assertEq(expected = Ok(0), clicked)
+
+    // 知らないボタンの名前は、その行で断る（Go の check と同じ語）。
+    @Test
+    def testUnknownMouseButtonIsAProblem(): Unit \ Assert =
+        Assert.assertTrue(String.contains(substr = "マウスのボタン 'back' は無い", problemOf("wait 1f mouse=back")))
+
+    // withMouseButtons は左の分を mouseDown・mouseClicked にもそろえる。
+    @Test
+    def testWithMouseButtonsKeepsLeftInStep(): Unit \ Assert =
+        let frame = App.withMouseButtons(Set#{}, Set#{GameEngine.MouseButton.Left}, App.emptyFrame());
+        Assert.assertEq(expected = (true, true), (frame#mouseDown, frame#mouseClicked))
 }

@@ -1,5 +1,5 @@
 // LwjglLayer — ウィンドウ表示・入力の読み取り・音の再生を実機で受け持ち、Platform の effect と Audio の
-// ハンドラを提供する。ゲーム側はこの入口越しに描画や入力を頼むだけで、GL や OpenAL の
+// ハンドラを effect ごとの関数に分けて重ねる（入力は LwjglInput・塗りは RenderPaintHandlers）。ゲーム側はこの入口越しに描画や入力を頼むだけで、GL や OpenAL の
 // 細部を知らずに済む。
 // 利用例: `withLwjgl(config, ...)` でウィンドウを開き、ゲームループを回す。
 // 注意: GL / OpenAL / シェーダ / テクスチャ / フォントベイク / フレーム描画 / 音声デコードは
@@ -9,12 +9,8 @@
 
 pub mod LwjglLayer {
     import org.lwjgl.glfw.GLFW
-    import org.lwjgl.glfw.GLFWGamepadState
     import org.lwjgl.glfw.Callbacks
     import org.lwjgl.glfw.GLFWFramebufferSizeCallbackI
-    import org.lwjgl.glfw.GLFWMouseButtonCallbackI
-    import org.lwjgl.glfw.GLFWScrollCallbackI
-    import org.lwjgl.glfw.GLFWWindowFocusCallbackI
     import org.lwjgl.glfw.GLFWVidMode
     import org.lwjgl.opengl.GL
     import org.lwjgl.opengl.GL11
@@ -37,128 +33,6 @@ pub mod LwjglLayer {
     import java.time.format.DateTimeFormatter
     import javax.imageio.ImageIO
 
-    // ========================================================================
-    // GLFW Code Mapping (engine の論理キー → GLFW 数値コード)
-    // ========================================================================
-
-    def keyToGlfw(key: GameEngine.Key): Int32 = match key {
-        // 英字
-        case GameEngine.Key.A              => 65
-        case GameEngine.Key.B              => 66
-        case GameEngine.Key.C              => 67
-        case GameEngine.Key.D              => 68
-        case GameEngine.Key.E              => 69
-        case GameEngine.Key.F              => 70
-        case GameEngine.Key.G              => 71
-        case GameEngine.Key.H              => 72
-        case GameEngine.Key.I              => 73
-        case GameEngine.Key.J              => 74
-        case GameEngine.Key.K              => 75
-        case GameEngine.Key.L              => 76
-        case GameEngine.Key.M              => 77
-        case GameEngine.Key.N              => 78
-        case GameEngine.Key.O              => 79
-        case GameEngine.Key.P              => 80
-        case GameEngine.Key.Q              => 81
-        case GameEngine.Key.R              => 82
-        case GameEngine.Key.S              => 83
-        case GameEngine.Key.T              => 84
-        case GameEngine.Key.U              => 85
-        case GameEngine.Key.V              => 86
-        case GameEngine.Key.W              => 87
-        case GameEngine.Key.X              => 88
-        case GameEngine.Key.Y              => 89
-        case GameEngine.Key.Z              => 90
-        // 数字(キーボード上段)
-        case GameEngine.Key.Digit0         => 48
-        case GameEngine.Key.Digit1         => 49
-        case GameEngine.Key.Digit2         => 50
-        case GameEngine.Key.Digit3         => 51
-        case GameEngine.Key.Digit4         => 52
-        case GameEngine.Key.Digit5         => 53
-        case GameEngine.Key.Digit6         => 54
-        case GameEngine.Key.Digit7         => 55
-        case GameEngine.Key.Digit8         => 56
-        case GameEngine.Key.Digit9         => 57
-        // 矢印
-        case GameEngine.Key.Up             => 265
-        case GameEngine.Key.Down           => 264
-        case GameEngine.Key.Left           => 263
-        case GameEngine.Key.Right          => 262
-        // 制御・編集
-        case GameEngine.Key.Enter          => 257
-        case GameEngine.Key.Space          => 32
-        case GameEngine.Key.Escape         => 256
-        case GameEngine.Key.Tab            => 258
-        case GameEngine.Key.Backspace      => 259
-        case GameEngine.Key.Insert         => 260
-        case GameEngine.Key.Delete         => 261
-        case GameEngine.Key.PageUp         => 266
-        case GameEngine.Key.PageDown       => 267
-        case GameEngine.Key.Home           => 268
-        case GameEngine.Key.End            => 269
-        case GameEngine.Key.CapsLock       => 280
-        // ファンクション
-        case GameEngine.Key.F1             => 290
-        case GameEngine.Key.F2             => 291
-        case GameEngine.Key.F3             => 292
-        case GameEngine.Key.F4             => 293
-        case GameEngine.Key.F5             => 294
-        case GameEngine.Key.F6             => 295
-        case GameEngine.Key.F7             => 296
-        case GameEngine.Key.F8             => 297
-        case GameEngine.Key.F9             => 298
-        case GameEngine.Key.F10            => 299
-        case GameEngine.Key.F11            => 300
-        case GameEngine.Key.F12            => 301
-        // 記号(US 配列の刻印)
-        case GameEngine.Key.Apostrophe     => 39
-        case GameEngine.Key.Comma          => 44
-        case GameEngine.Key.Minus          => 45
-        case GameEngine.Key.Period         => 46
-        case GameEngine.Key.Slash          => 47
-        case GameEngine.Key.Semicolon      => 59
-        case GameEngine.Key.Equal          => 61
-        case GameEngine.Key.LeftBracket    => 91
-        case GameEngine.Key.Backslash      => 92
-        case GameEngine.Key.RightBracket   => 93
-        case GameEngine.Key.GraveAccent    => 96
-        // 修飾
-        case GameEngine.Key.LeftShift      => 340
-        case GameEngine.Key.LeftCtrl       => 341
-        case GameEngine.Key.LeftAlt        => 342
-        case GameEngine.Key.LeftSuper      => 343
-        case GameEngine.Key.RightShift     => 344
-        case GameEngine.Key.RightCtrl      => 345
-        case GameEngine.Key.RightAlt       => 346
-        case GameEngine.Key.RightSuper     => 347
-        case GameEngine.Key.Menu           => 348
-        // テンキー
-        case GameEngine.Key.Numpad0        => 320
-        case GameEngine.Key.Numpad1        => 321
-        case GameEngine.Key.Numpad2        => 322
-        case GameEngine.Key.Numpad3        => 323
-        case GameEngine.Key.Numpad4        => 324
-        case GameEngine.Key.Numpad5        => 325
-        case GameEngine.Key.Numpad6        => 326
-        case GameEngine.Key.Numpad7        => 327
-        case GameEngine.Key.Numpad8        => 328
-        case GameEngine.Key.Numpad9        => 329
-        case GameEngine.Key.NumpadDecimal  => 330
-        case GameEngine.Key.NumpadDivide   => 331
-        case GameEngine.Key.NumpadMultiply => 332
-        case GameEngine.Key.NumpadSubtract => 333
-        case GameEngine.Key.NumpadAdd      => 334
-        case GameEngine.Key.NumpadEnter    => 335
-        case GameEngine.Key.NumpadEqual    => 336
-    }
-
-    def mouseButtonToGlfw(button: GameEngine.MouseButton): Int32 = match button {
-        case GameEngine.MouseButton.Left   => 0
-        case GameEngine.MouseButton.Right  => 1
-        case GameEngine.MouseButton.Middle => 2
-    }
-
     /// GLFW 3.4 (LWJGL 3.4.1 同梱) の cursor shape 定数。
     /// 4 隅は GLFW では対角単位 (NWSE / NESW) の 2 種しか無いので、
     /// NW + SE → GLFW_RESIZE_NWSE_CURSOR、NE + SW → GLFW_RESIZE_NESW_CURSOR にエイリアス。
@@ -178,33 +52,6 @@ pub mod LwjglLayer {
     /// キャプチャしていない時の矢印の見せ方（setCursorVisible の宣言）を GLFW の入力モードへ。
     def cursorModeOf(visible: Bool): Int32 =
         if (visible) GLFW.GLFW_CURSOR_NORMAL else GLFW.GLFW_CURSOR_HIDDEN
-
-    /// consumeMouseDelta が返す動いた量（窓の座標）。base = 前に読んだ位置・now = 今の位置。
-    /// rebase（キャプチャを切り替えた直後・フォーカスが戻った直後）と、フォーカスが無い間は 0。
-    // WhyNot: フォーカスが無い間に差を出さない — OS がキャプチャを放した後も位置は読めるので、ほかのアプリの上でマウスを動かすと視点が回る。
-    pub def mouseDeltaInWindow(state: { rebase = Bool, focused = Bool }, base: (Float64, Float64), now: (Float64, Float64)): (Float64, Float64) =
-        if (state#rebase or not state#focused) (0.0, 0.0)
-        else (fst(now) - fst(base), snd(now) - snd(base))
-
-    /// マウスの位置（窓の座標・小数）。キャプチャしている間は窓の外まで続く仮の位置。
-    def cursorInWindow(window: Int64): (Float64, Float64) \ IO =
-        let stack = MemoryStack.stackPush();
-        let xBuf = stack.mallocDouble(1);
-        let yBuf = stack.mallocDouble(1);
-        GLFW.glfwGetCursorPos(window, xBuf, yBuf);
-        let pos = (xBuf.get(0), yBuf.get(0));
-        discard MemoryStack.stackPop();
-        pos
-
-    /// 窓の座標の (x, y) を design px へ（窓の大きさに対する割合 × design の寸）。getMousePosition と consumeMouseDelta が同じ式を使う。
-    def windowToDesign(window: Int64, screenW: Float64, screenH: Float64, x: Float64, y: Float64): Vec2.Vec2 \ IO =
-        let stack = MemoryStack.stackPush();
-        let winW = stack.mallocInt(1);
-        let winH = stack.mallocInt(1);
-        GLFW.glfwGetWindowSize(window, winW, winH);
-        let design = { x = x / Int32.toFloat64(winW.get(0)) * screenW, y = y / Int32.toFloat64(winH.get(0)) * screenH };
-        discard MemoryStack.stackPop();
-        design
 
     // ========================================================================
     // 注釈の書き出し（saveAnnotation ハンドラの下請け）
@@ -371,14 +218,14 @@ pub mod LwjglLayer {
     /// 直接 with-chain に並べて使う。loadProject 失敗時は bug! で停止する
     /// (project.json が壊れているのは開発者が直すべき状態)。
     pub def withProject(rootDir: String, f: Unit -> a \ ef):
-            a \ ef - Platform.Services - Platform.Annotation - GameEngine.Game - ShaderEffect.Shader - LoadProgress + IO + Fs.FileRead =
+            a \ ef - Platform.Services - Platform.Annotation - LoadProgress + IO + Fs.FileRead =
         match ProjectLoader.loadProject(rootDir) {
             case Ok(proj)  => withLwjgl(proj#config, f)
             case Err(msg) => bug!("Failed to load project.json: ${msg}")
         }
 
     /// ゲームの本体 f が最初のコマを描くまでに送る LoadProgress.report は、起動画面を進めてウィンドウのイベントを poll する。
-    pub def withLwjgl(config: GameEngine.EngineConfig, f: Unit -> a \ ef): a \ ef - Platform.Services - Platform.Annotation - GameEngine.Game - ShaderEffect.Shader - LoadProgress + IO =
+    pub def withLwjgl(config: GameEngine.EngineConfig, f: Unit -> a \ ef): a \ ef - Platform.Services - Platform.Annotation - LoadProgress + IO =
         // GLFW と AWT は macOS で同じメインスレッド・GL を取り合って固まるため、
         // このウィンドウ（GLFW）のプロセスでは AWT を headless に固定する。注釈のスクリーンショット
         // 保存（BufferedImage / Graphics2D / ImageIO）はオフスクリーン描画なので headless でも動く。
@@ -522,7 +369,7 @@ pub mod LwjglLayer {
         let splashShotTaken = Array#{0} @ Static;
         let splashShotAt = Array#{0i64} @ Static;
         let frameShotTaken = Array#{0} @ Static;
-        let splashDesign = { x = screenW, y = screenH };
+        let design = { x = screenW, y = screenH };
         // 最後にイベントを poll した時刻（LoadProgress の知らせが、描かない回にも poll するかを決める）。
         let polledAt = Array#{0i64} @ Static;
         // 起動画面も塗りのコアの控えへ入れる。読み込み中にウィンドウの大きさを変えると
@@ -539,17 +386,336 @@ pub mod LwjglLayer {
             Array.put(System.nanoTime(), 0, polledAt)
         };
         let splash = (phase: String, done: Int32, total: Int32) ->
-            RenderSplash.tick(splashState, drawSplash, splashDesign, phase, done, total);
+            RenderSplash.tick(splashState, drawSplash, design, phase, done, total);
         // 読み込み中は画面の垂直同期を待たない（1 枚 16ms の待ちが読み込みそのものを遅くする）。
         GLFW.glfwSwapInterval(0);
-        RenderSplash.show(splashState, drawSplash, splashDesign, "starting up...", 0, 0);
+        RenderSplash.show(splashState, drawSplash, design, "starting up...", 0, 0);
 
         // テクスチャ・フォント・組み込みの放射テクスチャを読み、塗りのコアの登録簿へ載せる（起動画面に進み具合を出しながら）。
         let fonts = RenderPaint.loadAssets(paint, config, splash);
 
-        // ===== OpenAL audio init =====
+        RenderSplash.show(splashState, drawSplash, design, "starting audio...", 0, 0);
+        let audio = openAudio(config, muted, splash);
+        // ゲームの本体は LoadProgress で知らせるまで（知らせないゲームは最初のコマまで）描き直さないので、残る字をここで合わせる。
+        RenderSplash.show(splashState, drawSplash, design, "preparing game...", 0, 0);
+
+        // 本体が初めて pollEvents を呼んだか（ゲームのループが回り始めたか）。垂直同期はそこで戻す。
+        // WhyNot: f() の前に垂直同期を戻さない — 最初のコマまでの LoadProgress の 1 枚ごとに 1 コマ分待つ。
+        let looping = Array#{false} @ Static;
+
+        // Windows だけ、毎フレームの受け渡し後に GPU の完了を待つ。ドライバが 2〜3 フレーム
+        // 先まで絵を貯め込むことがあり、60fps のままでも入力から表示までがその分遅れて
+        // 重く感じるため。vsync 待ちでどのみち止まる場所なので、待つ相手が変わるだけで
+        // フレームレートは落ちない。他の OS には貯め込みの癖が無いので付けない。
+        let finishAfterSwap = {
+            let osName = System.getProperty("os.name");
+            not Object.isNull(osName) and String.contains({substr = "Windows"}, osName)
+        };
+
+        let timeHolder = Array#{System.nanoTime()} @ Static;
+
+        // フルスクリーンからウィンドウへ戻すとき、起動時のウィンドウ位置・サイズへ復元する
+        // （フルスクリーン中に glfwSetWindowMonitor(NULL) で消える情報なので事前に確保しておく）。
+        let originalWindowRectHolder = {
+            let posStack = MemoryStack.stackPush();
+            let xBuf = posStack.mallocInt(1);
+            let yBuf = posStack.mallocInt(1);
+            GLFW.glfwGetWindowPos(window, xBuf, yBuf);
+            let x = xBuf.get(0);
+            let y = yBuf.get(0);
+            discard MemoryStack.stackPop();
+            Array#{(x, y, config#windowWidth, config#windowHeight)} @ Static
+        };
+        let fullscreenHolder = Array#{false} @ Static;
+
+        let cursors = openCursors();
+        // 同じ Cursor を毎フレーム渡されたときに glfwSetCursor を抑制するためのキャッシュ
+        let lastCursorHolder = Array#{(GameEngine.Cursor.Default: GameEngine.Cursor)} @ Static;
+
+        // 入力の読む物（ホイール・フォーカス・マウスのボタンの callback とゲームパッド）。
+        let devices = LwjglInput.open(window, design);
+        let present = { window = window, paint = paint, framebufferSize = framebufferSizeHolder, frameStats = frameStats,
+                        frameShotDir = env#frameShotDir, frameShotTaken = frameShotTaken, finishAfterSwap = finishAfterSwap,
+                        screenPainted = Ref.fresh(Static, None) };
+        let windowState = {
+            window = window, config = config, hidden = hidden, looping = looping, devices = devices,
+            design = design, cursors = cursors#lookup, lastCursor = lastCursorHolder,
+            mouseCaptured = Array#{false} @ Static, cursorVisible = Array#{true} @ Static,
+            fullscreen = fullscreenHolder, originalWindowRect = originalWindowRectHolder, present = present
+        };
+        let framebufferSize = () -> Array.get(0, framebufferSizeHolder);
+        let annotation = { window = window, config = config, paint = paint, design = design,
+                           shutterSource = audio#shutterSource };
+
+        // WhyNot 並びを変えない: op は内側の handler から順にたどるので、sprite ごとに呼ぶ GpuResources と
+        // 毎コマ読む Input を内側に置く。
+        let result =
+            handleLoadProgress({ looping = looping, splash = splash, polledAt = polledAt, devices = devices }, () ->
+            handleAudio(audio#state, () ->
+            RenderPaintHandlers.handleTarget(paint, framebufferSize, () ->
+            handleAnnotation(annotation, () ->
+            RenderPaintHandlers.handleDiagnostics(paint, () ->
+            RenderPaintHandlers.handleDraw3d(paint, () ->
+            handleFrameClock({ fixedDt = env#fixedDt, maxDeltaTime = config#maxDeltaTime, last = timeHolder }, () ->
+            handleWindow(windowState, () ->
+            RenderPaintHandlers.handleDraw2d(paint, framebufferSize, (paintFrom, paintTo) -> Ref.put(Some((paintFrom, paintTo)), present#screenPainted), () ->
+            LwjglInput.handleInput(devices, () ->
+            RenderPaintHandlers.handleGpuResources(paint, fonts, f)))))))))));
+
+        List.forEach(c -> GLFW.glfwDestroyCursor(c), cursors#handles);
+        closeAudio(audio);
+
+        LwjglInput.close(devices);
+        Callbacks.glfwFreeCallbacks(window);
+        GLFW.glfwDestroyWindow(window);
+        GLFW.glfwTerminate();
+        result
+
+
+    // ========================================================================
+    // effect ごとの handler（withLwjgl が重ねる）
+    // ========================================================================
+
+    /// Platform.Window の handler の状態。mouseCaptured = キャプチャしているか・cursorVisible = キャプチャを放した時に戻す矢印の見せ方（setCursorVisible の宣言）。
+    type alias WindowState = {
+        window = Int64, config = GameEngine.EngineConfig, hidden = Bool, looping = Array[Bool, Static],
+        devices = LwjglInput.Devices, design = Vec2.Vec2,
+        cursors = GameEngine.Cursor -> Int64, lastCursor = Array[GameEngine.Cursor, Static],
+        mouseCaptured = Array[Bool, Static], cursorVisible = Array[Bool, Static],
+        fullscreen = Array[Bool, Static], originalWindowRect = Array[(Int32, Int32, Int32, Int32), Static],
+        present = PresentState
+    }
+
+    /// 塗ったコマを画面へ出す（swap・FrameStats・撮る口）ための状態。screenPainted = 前の presentFrame の後に画面へ塗ったコマの塗りの始まりと終わり（無ければ None）。
+    /// finishAfterSwap = swap の後に GPU の完了を待つか（Windows だけ。withLwjgl の finishAfterSwap の所）。
+    type alias PresentState = {
+        window = Int64, paint = RenderPaint.Paint, framebufferSize = Array[(Int32, Int32), Static],
+        frameStats = Option[RenderFrameStats.Stats], frameShotDir = Option[String], frameShotTaken = Array[Int32, Static],
+        finishAfterSwap = Bool, screenPainted = Ref[Option[(Int64, Int64)], Static]
+    }
+
+    /// Platform.Window を GLFW の窓で受ける。
+    def handleWindow(ws: WindowState, f: Unit -> a \ ef): a \ (ef - Platform.Window) + IO =
+        let window = ws#window;
+        let config = ws#config;
+        let fullscreenHolder = ws#fullscreen;
+        let originalWindowRectHolder = ws#originalWindowRect;
+        run f() with handler Platform.Window {
+            def pollEvents(k) = {
+                // WhyNot: 隠しウィンドウでは 1 に戻さない — 見えないウィンドウの swap は 1 回が 1 秒級に落ちる（ウィンドウを作る所と同じ理由）。
+                if (not Array.get(0, ws#looping)) {
+                    Array.put(true, 0, ws#looping);
+                    GLFW.glfwSwapInterval(if (ws#hidden) 0 else 1)
+                } else ();
+                LwjglInput.poll(ws#devices);
+                k(())
+            }
+            def shouldClose(k) = k(GLFW.glfwWindowShouldClose(window))
+            def setShouldClose(close, k) = {
+                GLFW.glfwSetWindowShouldClose(window, close);
+                k()
+            }
+            def getViewportRect(k) = k({ position = Vec2.zero(), size = ws#design })
+            def presentFrame(k) = {
+                presentScreen(ws#present);
+                k(())
+            }
+            def setCursor(cursor, k) = {
+                if (Array.get(0, ws#lastCursor) != cursor) {
+                    GLFW.glfwSetCursor(window, (ws#cursors)(cursor));
+                    Array.put(cursor, 0, ws#lastCursor)
+                } else ();
+                k(())
+            }
+            def setCursorVisible(visible, k) = {
+                Array.put(visible, 0, ws#cursorVisible);
+                // WhyNot: キャプチャしている間に当てない — GLFW_CURSOR_DISABLED を HIDDEN / NORMAL で上書きするとキャプチャが外れる。
+                if (Array.get(0, ws#mouseCaptured)) () else GLFW.glfwSetInputMode(window, GLFW.GLFW_CURSOR, cursorModeOf(visible));
+                k(())
+            }
+            def setMouseCaptured(captured, k) = {
+                if (captured == Array.get(0, ws#mouseCaptured)) ()
+                else {
+                    Array.put(captured, 0, ws#mouseCaptured);
+                    LwjglInput.rebaseMouse(ws#devices);
+                    let raw = GLFW.glfwRawMouseMotionSupported();
+                    if (captured) {
+                        GLFW.glfwSetInputMode(window, GLFW.GLFW_CURSOR, GLFW.GLFW_CURSOR_DISABLED);
+                        if (raw) GLFW.glfwSetInputMode(window, GLFW.GLFW_RAW_MOUSE_MOTION, GLFW.GLFW_TRUE) else ()
+                    } else {
+                        if (raw) GLFW.glfwSetInputMode(window, GLFW.GLFW_RAW_MOUSE_MOTION, GLFW.GLFW_FALSE) else ();
+                        GLFW.glfwSetInputMode(window, GLFW.GLFW_CURSOR, cursorModeOf(Array.get(0, ws#cursorVisible)))
+                    }
+                };
+                k(())
+            }
+            def setFullscreen(on, k) = {
+                let wasFullscreen = Array.get(0, fullscreenHolder);
+                if (on == wasFullscreen) ()
+                else if (on) {
+                    // 現在のウィンドウ位置・サイズを復元用に確保してから、プライマリモニタの
+                    // 現在の解像度でボーダーレス化する（解像度そのものは変えないので、
+                    // 既存の letterbox/pillarbox な calcViewport がそのまま吸収できる）。
+                    let posStack = MemoryStack.stackPush();
+                    let xBuf = posStack.mallocInt(1);
+                    let yBuf = posStack.mallocInt(1);
+                    GLFW.glfwGetWindowPos(window, xBuf, yBuf);
+                    let sizeStack = MemoryStack.stackPush();
+                    let wBuf = sizeStack.mallocInt(1);
+                    let hBuf = sizeStack.mallocInt(1);
+                    GLFW.glfwGetWindowSize(window, wBuf, hBuf);
+                    Array.put((xBuf.get(0), yBuf.get(0), wBuf.get(0), hBuf.get(0)), 0, originalWindowRectHolder);
+                    discard MemoryStack.stackPop();
+                    discard MemoryStack.stackPop();
+                    // glfwSetWindowMonitor はモード切替のたびに glfwSetFramebufferSizeCallback を
+                    // 発火させる（GLFW の仕様）ので、framebufferSizeHolder は既存の callback が
+                    // 自然に拾って更新する。calcViewport はここを明示的に叩き直す必要はない。
+                    let monitor = GLFW.glfwGetPrimaryMonitor();
+                    let vidMode = GLFW.glfwGetVideoMode(monitor);
+                    GLFW.glfwSetWindowMonitor(window, monitor, 0, 0,
+                        vidMode.width(), vidMode.height(), vidMode.refreshRate())
+                } else {
+                    // 保存値を検証してから戻す — 壊れた保存値でウィンドウが見えない場所に
+                    // 行くと、ユーザーはフルスクリーンから二度と戻れなくなる。
+                    let (x, y, w, h) = Array.get(0, originalWindowRectHolder);
+                    let width = if (w < 1) config#windowWidth else w;
+                    let height = if (h < 1) config#windowHeight else h;
+                    let monitor = GLFW.glfwGetPrimaryMonitor();
+                    let vidMode = GLFW.glfwGetVideoMode(monitor);
+                    let clampedX = Int32.max(0, Int32.min(x, Int32.max(0, vidMode.width() - width)));
+                    let clampedY = Int32.max(0, Int32.min(y, Int32.max(0, vidMode.height() - height)));
+                    GLFW.glfwSetWindowMonitor(window, MemoryUtil.NULL, clampedX, clampedY,
+                        width, height, GLFW.GLFW_DONT_CARE)
+                };
+                Array.put(on, 0, fullscreenHolder);
+                k(())
+            }
+            def isFullscreen(k) = k(Array.get(0, fullscreenHolder))
+            def setDebugBadge(enabled, k) = {
+                let title = if (enabled) "${config#title} (Debug)" else config#title;
+                GLFW.glfwSetWindowTitle(window, title);
+                k(())
+            }
+        }
+
+    /// 前の presentFrame の後に画面へ塗ったコマがあれば、FrameStats と撮る口に渡してから swap する（無ければ何もしない）。
+    // WhyNot: 撮る前に既定のフレームバッファを bind し直さない — presentFrame はレンダーターゲットを閉じてから呼ぶ決まり（Platform.Window の doc）で、
+    //   App のループもそう呼ぶ。開いたまま呼ぶ誤りを隠すと、撮る口が別の絵を撮っても気づけない。
+    def presentScreen(ws: PresentState): Unit \ IO =
+        match Ref.get(ws#screenPainted) {
+            case None => ()
+            case Some((paintFrom, paintTo)) =>
+                Ref.put(None, ws#screenPainted);
+                let swapFrom = System.nanoTime();
+                let (fbW, fbH) = Array.get(0, ws#framebufferSize);
+                Option.forEach(stats -> RenderFrameStats.record(stats, paintFrom, paintTo), ws#frameStats);
+                frameShot(ws#frameShotDir, fbW, fbH, ws#frameShotTaken);
+                GLFW.glfwSwapBuffers(ws#window);
+                if (ws#finishAfterSwap) GL11.glFinish() else ();
+                RenderPaint.noteFrame(ws#paint, 0i64, System.nanoTime() - swapFrom, () -> 0)
+        }
+
+    /// Platform.FrameClock を実時間（FLIX_GE_FIXED_DT があればその値）で受ける。last = 前に読んだ時刻（System.nanoTime）。
+    def handleFrameClock(clock: { fixedDt = Option[Float64], maxDeltaTime = Float64, last = Array[Int64, Static] },
+                         f: Unit -> a \ ef): a \ (ef - Platform.FrameClock) + IO =
+        run f() with handler Platform.FrameClock {
+            def getDeltaTime(k) = {
+                let currentTime = System.nanoTime();
+                let prev = Array.get(0, clock#last);
+                Array.put(currentTime, 0, clock#last);
+                k(LwjglEnv.frameDt(clock#fixedDt, clock#maxDeltaTime, currentTime - prev) |> Duration.seconds)
+            }
+        }
+
+    /// Platform.Annotation の handler の状態。
+    type alias AnnotationState = {
+        window = Int64, config = GameEngine.EngineConfig, paint = RenderPaint.Paint, design = Vec2.Vec2, shutterSource = Int32
+    }
+
+    /// Platform.Annotation を、直前に塗ったコマの読み戻しとファイルへの書き出しで受ける。
+    def handleAnnotation(anno: AnnotationState, f: Unit -> a \ ef): a \ (ef - Platform.Annotation) + IO =
+        let window = anno#window;
+        let config = anno#config;
+        let paint = anno#paint;
+        let (screenW, screenH) = (anno#design#x, anno#design#y);
+        let shutterSource = anno#shutterSource;
+        run f() with handler Platform.Annotation {
+            def saveAnnotation(req, k) = {
+                let saved = try {
+                    let now = LocalDateTime.now();
+                    let dirStamp = now.format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"));
+                    let readableStamp = now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+                    let dirPath = "debug/annotations/${dirStamp}_${sanitizeName(config#title)}_f${req#frame}";
+                    discard (new File(dirPath)).mkdirs();
+                    // 直前に画面へ塗ったコマ（App が等倍で塗った物）を back buffer に塗り直して読む。
+                    // swap しないので画面には映らず、次のフレーム描画がそのまま上書きする。
+                    let stack = MemoryStack.stackPush();
+                    let wBuf = stack.mallocInt(1);
+                    let hBuf = stack.mallocInt(1);
+                    GLFW.glfwGetFramebufferSize(window, wBuf, hBuf);
+                    let fbW = wBuf.get(0);
+                    let fbH = hBuf.get(0);
+                    discard MemoryStack.stackPop();
+                    // WhyNot: 依頼に入れた描画命令から組み直さない — シェーダー面・レンダーターゲット・静的層を
+                    // 運べず、スクリーンショットだけが画面と違う規則で描かれる。塗ったコマをそのまま塗り直す。
+                    RenderPaint.paintFrame(paint, fbW, fbH, RenderPaint.lastFrame(paint));
+                    let image = framebufferImage(fbW, fbH);
+                    writePngFile(image, "${dirPath}/screenshot.png");
+                    burnHighlight(image, designRectToImage(req#rect, fbW, fbH, screenW, screenH));
+                    writePngFile(image, "${dirPath}/highlighted.png");
+                    writeTextFile("${dirPath}/annotation.json", req#json);
+                    if (req#worldDump != "")
+                        writeTextFile("${dirPath}/world.json", req#worldDump)
+                    else ();
+                    writeTextFile("${dirPath}/README.md",
+                        readmeText({title = config#title, stamp = readableStamp,
+                                    frame = req#frame, body = req#readmeBody}));
+                    println("annotation saved: ${dirPath}");
+                    AL10.alSourceStop(shutterSource);
+                    AL10.alSourcePlay(shutterSource);
+                    Some(dirPath)
+                } catch {
+                    case ex: Exception =>
+                        println("annotation save failed: ${ex.getMessage()}");
+                        None
+                };
+                k(saved)
+            }
+        }
+
+    /// 標準のカーソルを起動時に 1 回だけ作る（setCursor のたびに作って捨てると重く、漏れの元にもなる）。
+    /// lookup = 形 → ハンドル・handles = 閉じる時に捨てる全部。
+    // WhyNot: 4 隅を 4 つ作らない — GLFW には対角の 2 種（NWSE・NESW）しか無い。
+    def openCursors(): { lookup = GameEngine.Cursor -> Int64, handles = List[Int64] } \ IO =
+        let make = (c: GameEngine.Cursor) -> GLFW.glfwCreateStandardCursor(cursorShapeToGlfw(c));
+        let arrow = make(GameEngine.Cursor.Default);
+        let crosshair = make(GameEngine.Cursor.Crosshair);
+        let hResize = make(GameEngine.Cursor.HResize);
+        let vResize = make(GameEngine.Cursor.VResize);
+        let allResize = make(GameEngine.Cursor.AllResize);
+        let rotate = make(GameEngine.Cursor.Rotate);
+        let nwse = make(GameEngine.Cursor.NWResize);
+        let nesw = make(GameEngine.Cursor.NEResize);
+        let lookup = (cursor: GameEngine.Cursor) -> match cursor {
+            case GameEngine.Cursor.Default    => arrow
+            case GameEngine.Cursor.Crosshair  => crosshair
+            case GameEngine.Cursor.HResize    => hResize
+            case GameEngine.Cursor.VResize    => vResize
+            case GameEngine.Cursor.AllResize  => allResize
+            case GameEngine.Cursor.Rotate     => rotate
+            case GameEngine.Cursor.NWResize   => nwse
+            case GameEngine.Cursor.SEResize   => nwse
+            case GameEngine.Cursor.NEResize   => nesw
+            case GameEngine.Cursor.SWResize   => nesw
+        };
+        { lookup = lookup, handles = arrow :: crosshair :: hResize :: vResize :: allResize :: rotate :: nwse :: nesw :: Nil }
+
+    /// OpenAL の装置と文脈・音の登録簿・注釈のシャッター音。openAudio が作り、closeAudio が捨てる。
+    type alias AudioSession = { device = Int64, context = Int64, state = AudioState, shutterSource = Int32 }
+
+    /// OpenAL を開き、project.json の音を読む（起動画面に進み具合を出しながら）。開けなければ bug!（起動時に音の実体が要る）。
+    def openAudio(config: GameEngine.EngineConfig, muted: Bool, splash: (String, Int32, Int32) -> Unit \ IO): AudioSession \ IO =
         println("Initializing audio...");
-        RenderSplash.show(splashState, drawSplash, splashDesign, "starting audio...", 0, 0);
         let alDevice = ALC10.nalcOpenDevice(MemoryUtil.NULL);
         if (alDevice == 0i64) {
             println("Failed to open OpenAL device");
@@ -595,175 +761,35 @@ pub mod LwjglLayer {
         // 注釈保存時のシャッター音（合成なのでゲーム側の音声マニフェストに依存しない）
         let shutterSource = buildShutterSource();
         println("  Audio ready");
-        // ゲームの本体は LoadProgress で知らせるまで（知らせないゲームは最初のコマまで）描き直さないので、残る字をここで合わせる。
-        RenderSplash.show(splashState, drawSplash, splashDesign, "preparing game...", 0, 0);
+        { device = alDevice, context = alContext, shutterSource = shutterSource,
+          state = { registry = audioRegistry, muted = muted, warnMissing = warnMissingSound, hasEfx = hasEfx,
+                    lowpass = lowpassRef, lastGainHF = lastGainHFRef, seconds = audioSecondsRef } }
 
-        // 本体が初めて shouldClose を呼んだか（ゲームのループが回り始めたか）。垂直同期はそこで戻す。
-        // WhyNot: f() の前に垂直同期を戻さない — 最初のコマまでの LoadProgress の 1 枚ごとに 1 コマ分待つ。
-        let looping = Array#{false} @ Static;
+    /// openAudio で開いた物を捨てる。
+    def closeAudio(audio: AudioSession): Unit \ IO =
+        AL10.alDeleteSources(audio#shutterSource);
+        Map.forEach((_, src) -> AL10.alDeleteSources(src), audio#state#registry);
+        Map.forEach((_, filter) -> EXTEfx.alDeleteFilters(filter), Ref.get(audio#state#lowpass));
+        ALC10.alcDestroyContext(audio#context);
+        discard ALC10.alcCloseDevice(audio#device)
 
-        // Windows だけ、毎フレームの受け渡し後に GPU の完了を待つ。ドライバが 2〜3 フレーム
-        // 先まで絵を貯め込むことがあり、60fps のままでも入力から表示までがその分遅れて
-        // 重く感じるため。vsync 待ちでどのみち止まる場所なので、待つ相手が変わるだけで
-        // フレームレートは落ちない。他の OS には貯め込みの癖が無いので付けない。
-        let finishAfterSwap = {
-            let osName = System.getProperty("os.name");
-            not Object.isNull(osName) and String.contains({substr = "Windows"}, osName)
-        };
+    /// GameEngine.Audio の handler の状態。lowpass = 音源ごとの EFX のフィルタ・lastGainHF = 最後に送った gainHF・seconds = 音の長さの控え。
+    type alias AudioState = {
+        registry = Map[String, Int32], muted = Bool, warnMissing = (String, String) -> Unit \ IO, hasEfx = Bool,
+        lowpass = Ref[Map[String, Int32], Static], lastGainHF = Ref[Map[String, Float64], Static],
+        seconds = Ref[Map[String, Float64], Static]
+    }
 
-        let timeHolder = Array#{System.nanoTime()} @ Static;
-
-        // フルスクリーンからウィンドウへ戻すとき、起動時のウィンドウ位置・サイズへ復元する
-        // （フルスクリーン中に glfwSetWindowMonitor(NULL) で消える情報なので事前に確保しておく）。
-        let originalWindowRectHolder = {
-            let posStack = MemoryStack.stackPush();
-            let xBuf = posStack.mallocInt(1);
-            let yBuf = posStack.mallocInt(1);
-            GLFW.glfwGetWindowPos(window, xBuf, yBuf);
-            let x = xBuf.get(0);
-            let y = yBuf.get(0);
-            discard MemoryStack.stackPop();
-            Array#{(x, y, config#windowWidth, config#windowHeight)} @ Static
-        };
-        let fullscreenHolder = Array#{false} @ Static;
-
-        // 6 種のスタンダードカーソルを起動時に作成して再利用する。
-        // setCursor 呼び出しの度に都度作成 / 破棄すると重く、リーク源にもなる
-        let arrowCursor = GLFW.glfwCreateStandardCursor(cursorShapeToGlfw(GameEngine.Cursor.Default));
-        let crosshairCursor = GLFW.glfwCreateStandardCursor(cursorShapeToGlfw(GameEngine.Cursor.Crosshair));
-        let hResizeCursor = GLFW.glfwCreateStandardCursor(cursorShapeToGlfw(GameEngine.Cursor.HResize));
-        let vResizeCursor = GLFW.glfwCreateStandardCursor(cursorShapeToGlfw(GameEngine.Cursor.VResize));
-        let allResizeCursor = GLFW.glfwCreateStandardCursor(cursorShapeToGlfw(GameEngine.Cursor.AllResize));
-        let rotateCursor = GLFW.glfwCreateStandardCursor(cursorShapeToGlfw(GameEngine.Cursor.Rotate));
-        // 4 隅: GLFW では対角単位 (NWSE/NESW) しか無いので、NW+SE と NE+SW は同じ
-        // ハンドルを共有する。AWT 側は方向別の 4 種を持っており、IDE では AWT 経路の方が
-        // ホバー時に表示されるためここの集約は問題にならない。
-        let nwseResizeCursor = GLFW.glfwCreateStandardCursor(cursorShapeToGlfw(GameEngine.Cursor.NWResize));
-        let neswResizeCursor = GLFW.glfwCreateStandardCursor(cursorShapeToGlfw(GameEngine.Cursor.NEResize));
-        // 同じ Cursor を毎フレーム渡されたときに glfwSetCursor を抑制するためのキャッシュ
-        let lastCursorHolder = Array#{(GameEngine.Cursor.Default: GameEngine.Cursor)} @ Static;
-        let cursorOf = cursor -> match cursor {
-            case GameEngine.Cursor.Default    => arrowCursor
-            case GameEngine.Cursor.Crosshair  => crosshairCursor
-            case GameEngine.Cursor.HResize    => hResizeCursor
-            case GameEngine.Cursor.VResize    => vResizeCursor
-            case GameEngine.Cursor.AllResize  => allResizeCursor
-            case GameEngine.Cursor.Rotate     => rotateCursor
-            case GameEngine.Cursor.NWResize   => nwseResizeCursor
-            case GameEngine.Cursor.SEResize   => nwseResizeCursor
-            case GameEngine.Cursor.NEResize   => neswResizeCursor
-            case GameEngine.Cursor.SWResize   => neswResizeCursor
-        };
-
-        // マウスホイールの y 方向 delta を 1 フレームぶん蓄積する。
-        // consumeScrollDelta ハンドラが値を読み出して 0 に戻す。
-        let scrollDeltaHolder = Array#{0.0} @ Static;
-        discard GLFW.glfwSetScrollCallback(window, new GLFWScrollCallbackI {
-            def invoke(_this: GLFWScrollCallbackI, _w: Int64, _xoffset: Float64, yoffset: Float64): Unit \ IO = {
-                let prev = Array.get(0, scrollDeltaHolder);
-                Array.put(prev + yoffset, 0, scrollDeltaHolder)
-            }
-        });
-
-        // マウスのキャプチャと動いた量。cursorVisibleHolder = setCursorVisible の宣言（キャプチャを放した時に戻す見せ方）・
-        // mouseBaseHolder = consumeMouseDelta が前に読んだ窓の座標・mouseRebaseHolder = 次の 1 回は基準を取り直して 0 を返す印。
-        let mouseCapturedHolder = Array#{false} @ Static;
-        let cursorVisibleHolder = Array#{true} @ Static;
-        let mouseBaseHolder = Array#{(0.0, 0.0)} @ Static;
-        let mouseRebaseHolder = Array#{true} @ Static;
-        let windowFocusedHolder = Array#{true} @ Static;
-        // WhyNot: フォーカスを取り戻した時に基準を取り直さずに差を出さない — 外にいた間の動きが一度に入り、視点が跳ねる。
-        discard GLFW.glfwSetWindowFocusCallback(window, new GLFWWindowFocusCallbackI {
-            def invoke(_this: GLFWWindowFocusCallbackI, _w: Int64, focused: Bool): Unit \ IO = {
-                Array.put(focused, 0, windowFocusedHolder);
-                if (focused) Array.put(true, 0, mouseRebaseHolder) else ()
-            }
-        });
-
-        // マウスボタンの「PRESS が来た」フラグを 1 フレームぶん保持する。
-        // [0]=Left, [1]=Right, [2]=Middle. `shouldClose` が glfwPollEvents の **直前**
-        // にリセットし、polling 中に来た callback が立てる。
-        let mouseButtonPressedHolder = Array#{false, false, false} @ Static;
-        discard GLFW.glfwSetMouseButtonCallback(window, new GLFWMouseButtonCallbackI {
-            def invoke(_this: GLFWMouseButtonCallbackI, _w: Int64,
-                        button: Int32, action: Int32, _mods: Int32): Unit \ IO = {
-                // GLFW_PRESS = 1。0..2 範囲外は無視。
-                if (action == 1 and button >= 0 and button <= 2)
-                    Array.put(true, button, mouseButtonPressedHolder)
-                else ()
-            }
-        });
-
-        // ===== Gamepad (Xbox レイアウト) =====
-        // GLFW gamepad API でコントローラ入力を読み、isKeyPressed に OR する。
-        // これにより Key を参照する全 Scene を無改修でコントローラ対応にできる
-        // (currentKeys() も isKeyPressed 経由なので onKeyPressed のエッジ検出も反映される)。
-        // GLFWGamepadState.create() は GC 管理のダイレクトバッファ上に確保されるため明示解放は不要。
-        // 状態は shouldClose で 1 フレーム 1 回更新し、padPressed が読み出す。
-        let gamepadState = GLFWGamepadState.create();
-        let gamepadConnectedHolder = Array#{false} @ Static;
-        // SDL3 が始められれば SDL3 で、だめなら GLFW で読む（SdlPad の冒頭）。読む元は起動の時に 1 回だけ決める。
-        let sdlReady = SdlPad.start();
-        // SDL3 で開いているパッド。0 は開いていない。
-        let sdlPadHolder = Array#{0i64} @ Static;
-        let padBtn = (idx: Int32) ->
-            if (sdlReady) SdlPad.button(Array.get(0, sdlPadHolder), idx)
-            else gamepadState.buttons(idx) != 0i8;
-        let padAxis = (idx: Int32) ->
-            if (sdlReady) SdlPad.axis(Array.get(0, sdlPadHolder), idx)
-            else gamepadState.axes(idx);
-        // 方向は D-pad と左スティック（デッドゾーン 0.5）の両方で受ける。
-        // GLFW のスティック Y 軸は上が負。
-        let padUp    = () -> padBtn(GLFW.GLFW_GAMEPAD_BUTTON_DPAD_UP)    or (padAxis(GLFW.GLFW_GAMEPAD_AXIS_LEFT_Y) < -0.5f32);
-        let padDown  = () -> padBtn(GLFW.GLFW_GAMEPAD_BUTTON_DPAD_DOWN)  or (padAxis(GLFW.GLFW_GAMEPAD_AXIS_LEFT_Y) >  0.5f32);
-        let padLeft  = () -> padBtn(GLFW.GLFW_GAMEPAD_BUTTON_DPAD_LEFT)  or (padAxis(GLFW.GLFW_GAMEPAD_AXIS_LEFT_X) < -0.5f32);
-        let padRight = () -> padBtn(GLFW.GLFW_GAMEPAD_BUTTON_DPAD_RIGHT) or (padAxis(GLFW.GLFW_GAMEPAD_AXIS_LEFT_X) >  0.5f32);
-        // 物理キー → ゲームパッド入力の対応は GamepadMap.table（1 ボタン = 1 キー）。
-        let padTable = GamepadMap.byKey();
-        let padInputDown = (input: GamepadMap.PadInput) -> match input {
-            case GamepadMap.PadInput.DirUp      => padUp()
-            case GamepadMap.PadInput.DirDown    => padDown()
-            case GamepadMap.PadInput.DirLeft    => padLeft()
-            case GamepadMap.PadInput.DirRight   => padRight()
-            case GamepadMap.PadInput.A          => padBtn(GLFW.GLFW_GAMEPAD_BUTTON_A)
-            case GamepadMap.PadInput.B          => padBtn(GLFW.GLFW_GAMEPAD_BUTTON_B)
-            case GamepadMap.PadInput.X          => padBtn(GLFW.GLFW_GAMEPAD_BUTTON_X)
-            case GamepadMap.PadInput.Y          => padBtn(GLFW.GLFW_GAMEPAD_BUTTON_Y)
-            case GamepadMap.PadInput.LeftBumper => padBtn(GLFW.GLFW_GAMEPAD_BUTTON_LEFT_BUMPER)
-            case GamepadMap.PadInput.Back       => padBtn(GLFW.GLFW_GAMEPAD_BUTTON_BACK)
-            case GamepadMap.PadInput.Start      => padBtn(GLFW.GLFW_GAMEPAD_BUTTON_START)
-        };
-        let padPressed = (key: GameEngine.Key) ->
-            Array.get(0, gamepadConnectedHolder) and
-                (Map.get(key, padTable) |> Option.exists(padInputDown));
-        // 機種はつないだ時に 1 回だけ読む（GUID と名前は毎フレーム字を作るので）。
-        let padKindHolder = Array#{GamepadMap.PadKind.Unknown} @ Static;
-        // 読んでいる joystick の番号。-1 はつないでいない。
-        let padJidHolder = Array#{-1} @ Static;
-        let orEmpty = (s: String) -> if (Object.isNull(s)) "" else s;
-        let readPadKind = (jid: Int32) ->
-            GamepadMap.kindOf(orEmpty(GLFW.glfwGetJoystickGUID(jid)), orEmpty(GLFW.glfwGetGamepadName(jid)));
-        // WhyNot: 1 番だけを見ない — Mac の Steam Controller のように、対応表の無い本体が 1 番に、
-        // Steam が作った仮想パッドが 2 番以降に並ぶことがある。
-        let findPad = () ->
-            List.range(GLFW.GLFW_JOYSTICK_1, GLFW.GLFW_JOYSTICK_LAST + 1)
-                |> List.find(jid -> GLFW.glfwJoystickIsGamepad(jid))
-                |> Option.getWithDefault(-1);
-        // 読めるパッドが変わった時に、つながっている joystick を全部 stderr へ出してから機種を返す。
-        // gamepad=false の行は GLFW の対応表に無い機械で、ボタンはキーにならない（docs/gamepad.md）。
-        let kindLogged = (jid: Int32) -> {
-            let present = List.range(GLFW.GLFW_JOYSTICK_1, GLFW.GLFW_JOYSTICK_LAST + 1)
-                |> List.filter(j -> GLFW.glfwJoystickPresent(j));
-            let line = (j: Int32) ->
-                "[gamepad] joystick ${j}: name=\"${orEmpty(GLFW.glfwGetJoystickName(j))}\" guid=${orEmpty(GLFW.glfwGetJoystickGUID(j))} gamepad=${GLFW.glfwJoystickIsGamepad(j)}" +
-                    (if (j == jid) " <- 使う" else "");
-            let lines = if (List.isEmpty(present)) "[gamepad] つながっている joystick は無い" :: Nil else List.map(line, present);
-            Log.warnAllThen(lines, if (jid >= 0) readPadKind(jid) else GamepadMap.PadKind.Unknown)
-        };
-
-        let result = run {
-            RenderLegacyBridge.forward(f)
-        } with handler GameEngine.Audio {
+    /// GameEngine.Audio を OpenAL の音源で受ける。
+    def handleAudio(audio: AudioState, f: Unit -> a \ ef): a \ (ef - GameEngine.Audio) + IO =
+        let audioRegistry = audio#registry;
+        let muted = audio#muted;
+        let warnMissingSound = audio#warnMissing;
+        let hasEfx = audio#hasEfx;
+        let lowpassRef = audio#lowpass;
+        let lastGainHFRef = audio#lastGainHF;
+        let audioSecondsRef = audio#seconds;
+        run f() with handler GameEngine.Audio {
             def playAudio(name, k) = {
                 match Map.get(name, audioRegistry) {
                     case Some(src) => AL10.alSourceStop(src); AL10.alSourcePlay(src)
@@ -873,319 +899,30 @@ pub mod LwjglLayer {
                 };
                 k(())
             }
-        } with handler GameEngine.Game {
-            def renderCommands(sprites, tileMaps, polygons, staticLayer, k) = {
-                // レンダーターゲットが開いている間は submitFrame がそこへ塗って false を返す。swap は画面のコマだけ。
-                let (fbW, fbH) = Array.get(0, framebufferSizeHolder);
-                // 送る・入れ替えるの時刻は 1 度だけ取り、FrameStats（窓ごとの平均）と診断（コマごと）の両方へ渡す。
-                let paintFrom = System.nanoTime();
-                let toScreen = RenderPaint.submitFrame(paint, fbW, fbH, sprites, tileMaps, polygons, staticLayer);
-                let paintTo = System.nanoTime();
-                if (toScreen) {
-                    Option.forEach(stats -> RenderFrameStats.record(stats, paintFrom, paintTo), frameStats);
-                    frameShot(env#frameShotDir, fbW, fbH, frameShotTaken);
-                    GLFW.glfwSwapBuffers(window);
-                    if (finishAfterSwap) GL11.glFinish() else ()
-                } else ();
-                let swapTo = System.nanoTime();
-                RenderPaint.noteFrame(paint, paintTo - paintFrom, swapTo - paintTo,
-                    () -> List.length(sprites) + List.length(polygons) + List.length(tileMaps));
-                k(())
-            }
-            def initTileBuffer(instances, k) = k(RenderPaint.initTileBuffer(paint, instances))
-            def updateTileBuffer(vaoId, instances, k) = k(RenderPaint.updateTileBuffer(paint, vaoId, instances))
-            def shouldClose(k) = {
-                // WhyNot: 隠しウィンドウでは 1 に戻さない — 見えないウィンドウの swap は 1 回が 1 秒級に落ちる（ウィンドウを作る所と同じ理由）。
-                if (not Array.get(0, looping)) {
-                    Array.put(true, 0, looping);
-                    GLFW.glfwSwapInterval(if (hidden) 0 else 1)
-                } else ();
-                // glfwPollEvents の **直前** に PRESS フラグをリセット。
-                // poll 中に発火した callback が立てたフラグが、その後の
-                // `isMouseButtonPressed` 経路で 1 フレーム間だけ true として読まれ、
-                // 次フレーム冒頭でクリアされる。
-                Array.put(false, 0, mouseButtonPressedHolder);
-                Array.put(false, 1, mouseButtonPressedHolder);
-                Array.put(false, 2, mouseButtonPressedHolder);
-                GLFW.glfwPollEvents();
-                // ゲームパッド状態を 1 フレーム 1 回更新（接続かつ gamepad マッピング有効時のみ）。
-                let padConnected = if (sdlReady) {
-                    let held = Array.get(0, sdlPadHolder);
-                    let pad = SdlPad.poll(held);
-                    if (pad != held) {
-                        let kind = if (pad != 0i64) Log.warnThen(SdlPad.describe(pad), SdlPad.kindOf(pad))
-                            else Log.warnThen("[gamepad] SDL3: つながっているパッドは無い", GamepadMap.PadKind.Unknown);
-                        Array.put(kind, 0, padKindHolder)
-                    } else ();
-                    Array.put(pad, 0, sdlPadHolder);
-                    pad != 0i64
-                } else {
-                    let held = Array.get(0, padJidHolder);
-                    let jid = if (held >= 0 and GLFW.glfwJoystickIsGamepad(held)) held else findPad();
-                    if (jid >= 0) discard GLFW.glfwGetGamepadState(jid, gamepadState) else ();
-                    if (jid != held) Array.put(kindLogged(jid), 0, padKindHolder) else ();
-                    Array.put(jid, 0, padJidHolder);
-                    jid >= 0
-                };
-                Array.put(padConnected, 0, gamepadConnectedHolder);
-                k(GLFW.glfwWindowShouldClose(window))
-            }
-            def setShouldClose(close, k) = {
-                GLFW.glfwSetWindowShouldClose(window, close);
-                k()
-            }
-            def getDeltaTime(k) = {
-                let currentTime = System.nanoTime();
-                let prev = Array.get(0, timeHolder);
-                Array.put(currentTime, 0, timeHolder);
-                k(LwjglEnv.frameDt(env#fixedDt, config#maxDeltaTime, currentTime - prev) |> Duration.seconds)
-            }
-            def isKeyPressed(key, k) = {
-                let code = keyToGlfw(key);
-                let kb = GLFW.glfwGetKey(window, code) == 1;
-                // キーボード OR ゲームパッド。エッジ検出は Scene 側 (prevKeyState) が行うため
-                // ここでは押下状態を返すだけでよい。
-                k(kb or padPressed(key))
-            }
-            def getMousePosition(k) = {
-                let (cursorX, cursorY) = cursorInWindow(window);
-                k(windowToDesign(window, screenW, screenH, cursorX, cursorY))
-            }
-            def consumeMouseDelta(k) = {
-                let now = cursorInWindow(window);
-                let (dx, dy) = mouseDeltaInWindow({ rebase = Array.get(0, mouseRebaseHolder), focused = Array.get(0, windowFocusedHolder) },
-                                                  Array.get(0, mouseBaseHolder), now);
-                Array.put(now, 0, mouseBaseHolder);
-                Array.put(false, 0, mouseRebaseHolder);
-                // WhyNot: 0 の時に窓の大きさで割らない — 最小化した窓は大きさが 0 で、0 / 0 が NaN になる。
-                k(if (dx == 0.0 and dy == 0.0) Vec2.zero() else windowToDesign(window, screenW, screenH, dx, dy))
-            }
-            def setMouseCaptured(captured, k) = {
-                if (captured == Array.get(0, mouseCapturedHolder)) ()
-                else {
-                    Array.put(captured, 0, mouseCapturedHolder);
-                    Array.put(true, 0, mouseRebaseHolder);
-                    let raw = GLFW.glfwRawMouseMotionSupported();
-                    if (captured) {
-                        GLFW.glfwSetInputMode(window, GLFW.GLFW_CURSOR, GLFW.GLFW_CURSOR_DISABLED);
-                        if (raw) GLFW.glfwSetInputMode(window, GLFW.GLFW_RAW_MOUSE_MOTION, GLFW.GLFW_TRUE) else ()
-                    } else {
-                        if (raw) GLFW.glfwSetInputMode(window, GLFW.GLFW_RAW_MOUSE_MOTION, GLFW.GLFW_FALSE) else ();
-                        GLFW.glfwSetInputMode(window, GLFW.GLFW_CURSOR, cursorModeOf(Array.get(0, cursorVisibleHolder)))
-                    }
-                };
-                k(())
-            }
-            def isWindowFocused(k) = k(Array.get(0, windowFocusedHolder))
-            def isGamepadTouched(k) =
-                if (not Array.get(0, gamepadConnectedHolder)) k(false)
-                else {
-                    let pressed = List.range(0, GLFW.GLFW_GAMEPAD_BUTTON_LAST + 1) |> List.exists(padBtn);
-                    // 左右のスティック（軸 0..3）だけ。トリガー（軸 4・5）は離した位置が -1 なので入れない。
-                    let tilted = List.range(0, 4) |> List.exists(axis -> Float32.abs(padAxis(axis)) > 0.5f32);
-                    k(pressed or tilted)
-                }
-            def gamepadKind(k) = k(Array.get(0, padKindHolder))
-            def isMouseButtonPressed(button, k) = {
-                let code = mouseButtonToGlfw(button);
-                // 物理状態 OR 当フレーム内に callback が観測した PRESS。
-                let polled = GLFW.glfwGetMouseButton(window, code) == 1;
-                let buffered = Array.get(code, mouseButtonPressedHolder);
-                k(polled or buffered)
-            }
-            def consumeScrollDelta(k) = {
-                let v = Array.get(0, scrollDeltaHolder);
-                Array.put(0.0, 0, scrollDeltaHolder);
-                k(v)
-            }
-            def ensureGlyphs(textureName, codepoints, k) = {
-                RenderPaint.ensureGlyphs(fonts, textureName, codepoints);
-                if (Set.isEmpty(codepoints)) ()
-                else RenderPaint.noteDiagnostics(paint, d -> { glyphsAdded = d#glyphsAdded + Set.size(codepoints) | d });
-                k(())
-            }
-            def setDiagnosticsEnabled(on, k) = {
-                RenderPaint.setDiagnosticsEnabled(paint, on);
-                k(())
-            }
-            def consumeDiagnostics(k) = k(RenderPaint.consumeDiagnostics(paint))
-            def getFontAtlas(name, k) = k(RenderPaint.fontAtlas(fonts, name))
-            def getViewportRect(k) = {
-                k({position = Vec2.zero(), size = {x = screenW, y = screenH}})
-            }
-            def getTextureInfo(name, k) = {
-                k(RenderPaint.textureInfo(paint, name))
-            }
-            def ensureTexture(name, key, width, height, argb, k) = {
-                RenderPaint.ensureTexture(paint, name, key, width, height, argb);
-                k(())
-            }
-            def setCursor(cursor, k) = {
-                let prev = Array.get(0, lastCursorHolder);
-                if (prev != cursor) {
-                    GLFW.glfwSetCursor(window, cursorOf(cursor));
-                    Array.put(cursor, 0, lastCursorHolder)
-                } else ();
-                k(())
-            }
-            def setCursorVisible(visible, k) = {
-                Array.put(visible, 0, cursorVisibleHolder);
-                // WhyNot: キャプチャしている間に当てない — GLFW_CURSOR_DISABLED を HIDDEN / NORMAL で上書きするとキャプチャが外れる。
-                if (Array.get(0, mouseCapturedHolder)) () else GLFW.glfwSetInputMode(window, GLFW.GLFW_CURSOR, cursorModeOf(visible));
-                k(())
-            }
-            def setFullscreen(on, k) = {
-                let wasFullscreen = Array.get(0, fullscreenHolder);
-                if (on == wasFullscreen) ()
-                else if (on) {
-                    // 現在のウィンドウ位置・サイズを復元用に確保してから、プライマリモニタの
-                    // 現在の解像度でボーダーレス化する（解像度そのものは変えないので、
-                    // 既存の letterbox/pillarbox な calcViewport がそのまま吸収できる）。
-                    let posStack = MemoryStack.stackPush();
-                    let xBuf = posStack.mallocInt(1);
-                    let yBuf = posStack.mallocInt(1);
-                    GLFW.glfwGetWindowPos(window, xBuf, yBuf);
-                    let sizeStack = MemoryStack.stackPush();
-                    let wBuf = sizeStack.mallocInt(1);
-                    let hBuf = sizeStack.mallocInt(1);
-                    GLFW.glfwGetWindowSize(window, wBuf, hBuf);
-                    Array.put((xBuf.get(0), yBuf.get(0), wBuf.get(0), hBuf.get(0)), 0, originalWindowRectHolder);
-                    discard MemoryStack.stackPop();
-                    discard MemoryStack.stackPop();
-                    // glfwSetWindowMonitor はモード切替のたびに glfwSetFramebufferSizeCallback を
-                    // 発火させる（GLFW の仕様）ので、framebufferSizeHolder は既存の callback が
-                    // 自然に拾って更新する。calcViewport はここを明示的に叩き直す必要はない。
-                    let monitor = GLFW.glfwGetPrimaryMonitor();
-                    let vidMode = GLFW.glfwGetVideoMode(monitor);
-                    GLFW.glfwSetWindowMonitor(window, monitor, 0, 0,
-                        vidMode.width(), vidMode.height(), vidMode.refreshRate())
-                } else {
-                    // 保存値を検証してから戻す — 壊れた保存値でウィンドウが見えない場所に
-                    // 行くと、ユーザーはフルスクリーンから二度と戻れなくなる。
-                    let (x, y, w, h) = Array.get(0, originalWindowRectHolder);
-                    let width = if (w < 1) config#windowWidth else w;
-                    let height = if (h < 1) config#windowHeight else h;
-                    let monitor = GLFW.glfwGetPrimaryMonitor();
-                    let vidMode = GLFW.glfwGetVideoMode(monitor);
-                    let clampedX = Int32.max(0, Int32.min(x, Int32.max(0, vidMode.width() - width)));
-                    let clampedY = Int32.max(0, Int32.min(y, Int32.max(0, vidMode.height() - height)));
-                    GLFW.glfwSetWindowMonitor(window, MemoryUtil.NULL, clampedX, clampedY,
-                        width, height, GLFW.GLFW_DONT_CARE)
-                };
-                Array.put(on, 0, fullscreenHolder);
-                k(())
-            }
-            def isFullscreen(k) = {
-                k(Array.get(0, fullscreenHolder))
-            }
-            def saveAnnotation(req, k) = {
-                let saved = try {
-                    let now = LocalDateTime.now();
-                    let dirStamp = now.format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"));
-                    let readableStamp = now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
-                    let dirPath = "debug/annotations/${dirStamp}_${sanitizeName(config#title)}_f${req#frame}";
-                    discard (new File(dirPath)).mkdirs();
-                    // 直前に画面へ塗ったコマ（App が等倍で塗った物）を back buffer に塗り直して読む。
-                    // swap しないので画面には映らず、次のフレーム描画がそのまま上書きする。
-                    let stack = MemoryStack.stackPush();
-                    let wBuf = stack.mallocInt(1);
-                    let hBuf = stack.mallocInt(1);
-                    GLFW.glfwGetFramebufferSize(window, wBuf, hBuf);
-                    let fbW = wBuf.get(0);
-                    let fbH = hBuf.get(0);
-                    discard MemoryStack.stackPop();
-                    // WhyNot: 依頼に入れた描画命令から組み直さない — シェーダー面・レンダーターゲット・静的層を
-                    // 運べず、スクリーンショットだけが画面と違う規則で描かれる。塗ったコマをそのまま塗り直す。
-                    RenderPaint.paintFrame(paint, fbW, fbH, RenderPaint.lastFrame(paint));
-                    let image = framebufferImage(fbW, fbH);
-                    writePngFile(image, "${dirPath}/screenshot.png");
-                    burnHighlight(image, designRectToImage(req#rect, fbW, fbH, screenW, screenH));
-                    writePngFile(image, "${dirPath}/highlighted.png");
-                    writeTextFile("${dirPath}/annotation.json", req#json);
-                    if (req#worldDump != "")
-                        writeTextFile("${dirPath}/world.json", req#worldDump)
-                    else ();
-                    writeTextFile("${dirPath}/README.md",
-                        readmeText({title = config#title, stamp = readableStamp,
-                                    frame = req#frame, body = req#readmeBody}));
-                    println("annotation saved: ${dirPath}");
-                    AL10.alSourceStop(shutterSource);
-                    AL10.alSourcePlay(shutterSource);
-                    Some(dirPath)
-                } catch {
-                    case ex: Exception =>
-                        println("annotation save failed: ${ex.getMessage()}");
-                        None
-                };
-                k(saved)
-            }
-            def setDebugBadge(enabled, k) = {
-                let title = if (enabled) "${config#title} (Debug)" else config#title;
-                GLFW.glfwSetWindowTitle(window, title);
-                k(())
-            }
-        } with handler ShaderEffect.Shader {
-            def buildProgram(spec, k) = k(RenderPaint.buildProgram(paint, spec))
-            def drawSurface(cmd, k) = {
-                RenderPaint.queueSurface(paint, cmd);
-                k(())
-            }
-            def drawScene3d(cmd, k) = {
-                RenderPaint.queueScene3d(paint, cmd);
-                k(())
-            }
-        } with handler RenderTarget.Target {
-            def beginTarget(spec, k) = {
-                RenderPaint.beginTarget(paint, spec);
-                k(())
-            }
-            def endTarget(k) = {
-                RenderPaint.endTarget(paint);
-                k(())
-            }
-            def pixelScale(k) = {
-                let (fbW, fbH) = Array.get(0, framebufferSizeHolder);
-                k(RenderPaint.pixelScaleOf(paint, fbW, fbH))
-            }
-        } with handler LoadProgress {
+        }
+
+    /// LoadProgress の知らせで起動画面を進める（ループが回り始めた後＝最初の pollEvents の後は何もしない）。
+    /// polledAt = 最後にイベントを poll した時刻。
+    def handleLoadProgress(load: { looping = Array[Bool, Static], splash = (String, Int32, Int32) -> Unit \ IO,
+                                   polledAt = Array[Int64, Static], devices = LwjglInput.Devices },
+                           f: Unit -> a \ ef): a \ (ef - LoadProgress) + IO =
+        run f() with handler LoadProgress {
             // WhyNot: ループが回り始めた後は何もしない — コマの途中で poll すると、リサイズの callback が
             // 描いている途中の RenderTarget を開いたまま描き直しと swap をしうる。
             def report(phase, done, total, k) = {
-                if (not Array.get(0, looping)) {
-                    splash(phase, done, total);
+                if (not Array.get(0, load#looping)) {
+                    (load#splash)(phase, done, total);
                     // tick は間引いた回と FLIX_GE_NO_SPLASH の時に poll しないので、描かなくても poll だけはする。
                     let now = System.nanoTime();
-                    if ((now - Array.get(0, polledAt)) / 1000000i64 >= RenderSplash.intervalMillis()) {
+                    if ((now - Array.get(0, load#polledAt)) / 1000000i64 >= RenderSplash.intervalMillis()) {
                         GLFW.glfwPollEvents();
-                        Array.put(now, 0, polledAt)
+                        Array.put(now, 0, load#polledAt)
                     } else ();
                     // 読み込み中のホイールは捨てる（最初のコマで一度に出さない）。
-                    // WhyNot: 最初の shouldClose で 0 に戻さない — ループは shouldClose より前にホイールを読む。
-                    Array.put(0.0, 0, scrollDeltaHolder)
+                    // WhyNot: 最初の pollEvents で 0 に戻さない — ループは pollEvents より前にホイールを読む。
+                    LwjglInput.dropScroll(load#devices)
                 } else ();
                 k(())
             }
-        };
-
-        // セッション終了時にカーソルハンドルを開放
-        GLFW.glfwDestroyCursor(arrowCursor);
-        GLFW.glfwDestroyCursor(crosshairCursor);
-        GLFW.glfwDestroyCursor(hResizeCursor);
-        GLFW.glfwDestroyCursor(vResizeCursor);
-        GLFW.glfwDestroyCursor(allResizeCursor);
-        GLFW.glfwDestroyCursor(nwseResizeCursor);
-        GLFW.glfwDestroyCursor(neswResizeCursor);
-
-        // OpenAL cleanup
-        AL10.alDeleteSources(shutterSource);
-        Map.forEach((_, src) -> AL10.alDeleteSources(src), audioRegistry);
-        Map.forEach((_, filter) -> EXTEfx.alDeleteFilters(filter), Ref.get(lowpassRef));
-        ALC10.alcDestroyContext(alContext);
-        discard ALC10.alcCloseDevice(alDevice);
-
-        if (sdlReady) SdlPad.stop(Array.get(0, sdlPadHolder)) else ();
-        Callbacks.glfwFreeCallbacks(window);
-        GLFW.glfwDestroyWindow(window);
-        GLFW.glfwTerminate();
-        result
+        }
 }

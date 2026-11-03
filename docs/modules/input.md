@@ -16,6 +16,7 @@
 | 素の中心＋幅高の箱どうし・点×箱の重なりを聞く（接するのは外） | Hit.boxBox / pointBox |
 | テスト用の入力フレームを組む | App.frameOf |
 | 一人称でマウスを動かして視点を回す（FPS のように・カーソルを窓にキャプチャする） | App.withMouseCapture + frame#mouseDelta（下の「一人称の視点」） |
+| 右クリック・中ボタンを読む | frame#mouseClickedButtons（押した瞬間）・frame#mouseButtons（押している間）。mouseDown・mouseClicked は左だけ・flow は `mouse=right` |
 | 窓がフォーカスを失った・取り戻したのを知る | frame#windowFocused |
 | 遊んだ通りに再生して、最初に食い違ったフレームを指す | Flow.Record（DEBUG の起動で自動・`make flow FLOW=debug/flow-record/latest.flow`・指紋は App.withFingerprint） |
 | e2e のテスト・動画の手順を 1 行 1 手で書いて画面なしで流す（待ちは問いが立つまで・失敗は行番号つき） | Flow（App.withFlow の表・`make flow FLOW=e2e/x.flow`・`bin/fge flow check`。実例: `templates/tidepool-starter/e2e/level1.flow`） |

@@ -100,12 +100,12 @@ pub mod App.Internal.Runner {
                     };
                     Flow.Record.resetFingerprint(recording, fingerprintText(r, world0))
                 }, recorder);
-                launchFrom(app, world0, recorder, env);
+                launchFrom(app, design, world0, recorder, env);
                 Option.forEach(Flow.Record.close, recorder)
         }
 
     /// 起動の World が決まった後の launch（リモートデバッグ・監視・ループ）。
-    def launchFrom(app: App[w, ef], world0: w, recorder: Option[Flow.Record.Recorder], env: Map[String, String]): Unit \ (ef + Platform.Services + Platform.Annotation + Fs.FileRead + Fs.FileWrite + IO) =
+    def launchFrom(app: App[w, ef], design: Vec2.Vec2, world0: w, recorder: Option[Flow.Record.Recorder], env: Map[String, String]): Unit \ (ef + Platform.Services + Platform.Annotation + Fs.FileRead + Fs.FileWrite + IO) =
         let r = App.rec(app);
         let bridge = if (canDebug(r)) Option.map(port -> App.RemoteDebug.start(port, r#remoteRender),
                                                    App.RemoteDebug.portToOpenOf(env))
@@ -121,8 +121,8 @@ pub mod App.Internal.Runner {
         // キーと同じく、起動時にすでに押されているボタンは一度離すまでエッジにならない。
         // カーソルの「前の位置」はまだ無い（None）ので、最初のフレームの mouseMoved は false。
         // 固定ステップの状態（持ち越し秒と未消費エッジ）は空から始める。
-        loop(app, { world = world0, prevKeys = InputEvent.currentKeys(),
-                    prevMouseDown = Platform.Input.isMouseButtonPressed(GameEngine.MouseButton.Left),
+        loop(app, { design = design, world = world0, prevKeys = InputEvent.currentKeys(),
+                    prevMouseButtons = mouseButtonsHeld(),
                     prevCursor = None, anno = Annotate.initial(), history = Nil,
                     bridge = bridge, remoteHold = false, stepState = App.freshStepState(),
                     watchState = watch0, sustaining = Nil, mixState = AudioMixer.initial(),
@@ -141,7 +141,11 @@ pub mod App.Internal.Runner {
     // { debug = { hold = x | st#debug } | st } になって呼ぶ側が短くならない。
     type alias LoopState[w] = {
         world = w,
-        prevKeys = Set[GameEngine.Key], prevMouseDown = Bool, prevCursor = Option[Vec2.Vec2],
+        // design px の描き場の寸。起動の時に 1 回だけ読む（Frame#viewport・描く所・止めた画面・/perf が同じ値を使う）。
+        // WhyNot: コマごとに Window.getViewportRect を読み直さない — 窓の大きさが変わっても design は変わらず、
+        //   読む所ごとに読み方が分かれると、止めた画面だけ違う寸で描く余地が生まれる。
+        design = Vec2.Vec2,
+        prevKeys = Set[GameEngine.Key], prevMouseButtons = Set[GameEngine.MouseButton], prevCursor = Option[Vec2.Vec2],
         anno = Annotate.State, history = List[w],
         bridge = Option[App.RemoteDebug.Bridge], remoteHold = Bool,
         stepState = App.StepState, watchState = WatchState, sustaining = List[String],
@@ -239,7 +243,8 @@ pub mod App.Internal.Runner {
         let iterStart = System.nanoTime();
         let frame = readFrame(st0);
         let wantsQuit = r#quit;
-        // shouldClose は入力の取り込み（poll）も兼ねるので 1 フレームに 1 回だけ呼ぶ。
+        // WhyNot: poll を readFrame の前に動かさない — 押したキーが効くコマが 1 つ前へずれ、実機の手触りと F8 で止まるコマが変わる。
+        Platform.Window.pollEvents();
         let closing = Platform.Window.shouldClose();
         let answer = decideClose({ closing = closing, hasCloseRequest = Option.nonEmpty(r#closeRequest),
                                    paused = st0#anno#paused });
@@ -247,7 +252,7 @@ pub mod App.Internal.Runner {
         if (answer == CloseAnswer.Close or wantsQuit(frame, st#world)) ()
         else {
             // 入力の持ち越しはどの分岐でも同じなので、ここで 1 度だけ差し替える。
-            let carried = { prevKeys = frame#down, prevMouseDown = frame#mouseDown,
+            let carried = { prevKeys = frame#down, prevMouseButtons = frame#mouseButtons,
                             prevCursor = Some(frame#cursor) | st };
             let remoteRaw = match st#bridge {
                 case Some(b) => App.RemoteDebug.pollRequest(b)
@@ -256,7 +261,7 @@ pub mod App.Internal.Runner {
             match (remoteRaw, st#bridge) {
                 case (Some(raw), Some(b)) if String.startsWith(prefix = "POST /perf", raw) =>
                     // /perf はウィンドウへ塗る（renderFrame）ので、塗れない handleRemote ではなくここで受ける。World は変えない。
-                    let painted = App.Internal.Hitch.perfRun(app, st#warnOnce, b, App.RemoteDebug.parseRequest(raw), st#hitches,
+                    let painted = App.Internal.Hitch.perfRun(app, st#warnOnce, st#design, b, App.RemoteDebug.parseRequest(raw), st#hitches,
                         { tileCache = st#tileCache, glyphSeen = st#glyphSeen, budgetWarned = st#budgetWarned });
                     loop(app, { tileCache = painted#tileCache, glyphSeen = painted#glyphSeen,
                                 budgetWarned = painted#budgetWarned | carried })
@@ -286,9 +291,10 @@ pub mod App.Internal.Runner {
                     } else ();
                     match decided#branch {
                         case Branch.Paused =>
-                            let (nextAnno, ticket, painted) = App.Internal.Halt.pausedStep(app, st#warnOnce, st#world, st#history, frame,
+                            let (nextAnno, ticket, painted) = App.Internal.Halt.pausedStep(app, st#warnOnce, st#design, st#world, st#history, frame,
                                 { paused = true | st#anno },
                                 { tileCache = st#tileCache, glyphSeen = st#glyphSeen, budgetWarned = st#budgetWarned });
+                            Platform.Window.presentFrame();
                             // チケットに、ここまでの遊んだ記録の写し（再生すると表示中の瞬間で止まる）を入れる。
                             match (ticket, st#recorder) {
                                 case (Some(dir), Some(recorder)) => discard Flow.Record.copyInto(recorder, dir, nextAnno#scrub)
@@ -297,7 +303,11 @@ pub mod App.Internal.Runner {
                             loop(app, { anno = nextAnno, cursorShown = App.CursorLook.State.Stale, captureShown = None,
                                         tileCache = painted#tileCache, glyphSeen = painted#glyphSeen,
                                         budgetWarned = painted#budgetWarned | carried })
-                        case Branch.Resuming => loop(app, resumingStep(app, carried))
+                        case Branch.Resuming =>
+                            let resumed = resumingStep(app, carried);
+                            Platform.Window.presentFrame();
+                            let declared = applyDeclared(r, resumed#world, resumed);
+                            loop(app, { cursorShown = declared#cursorShown, captureShown = declared#captureShown | resumed })
                         case Branch.Running  => loop(app, runningStep(app, frame, iterStart, carried))
                     }
                 }
@@ -308,30 +318,33 @@ pub mod App.Internal.Runner {
     /// キャプチャしている間の GLFW の仮の位置は窓の外へ流れるので、cursor はキャプチャした時の位置で止める（UI のホバーと mouseMoved を狂わせない）。
     /// realNow は前のフレームまでの実時間（quit・リロード・F8 の停止が読む）。系へ渡す前に advanceFrame が進めて置き直す。
     /// マウスの動いた量は止めている拍も読み切る（溜めると、動き出した拍に一度に入る）。
-    def readFrame(st0: LoopState[w]): App.Frame \ (Platform.Input + Platform.Window + Platform.FrameClock) =
+    def readFrame(st0: LoopState[w]): App.Frame \ (Platform.Input + Platform.FrameClock) =
         let cursorNow = App.Internal.Frame.heldCursor(st0#captureShown, st0#prevCursor, Platform.Input.getMousePosition());
-        { realNow = Clock.nowOf(st0#stepState#real), padTouched = Platform.Input.isGamepadTouched(),
+        let held = mouseButtonsHeld();
+        App.withMouseButtons(st0#prevMouseButtons, held, { realNow = Clock.nowOf(st0#stepState#real), padTouched = Platform.Input.isGamepadTouched(),
           padKind = Platform.Input.gamepadKind(), mouseDelta = Platform.Input.consumeMouseDelta(),
           windowFocused = Platform.Input.isWindowFocused(), diagnostics = st0#lastDiagnostics
           | App.frameOf(prev = st0#prevKeys, current = InputEvent.currentKeys(), readDt(),
-                    Platform.Window.getViewportRect()#size,
+                    st0#design,
                     { prevCursor = st0#prevCursor, cursor = cursorNow },
-                    { prevDown = st0#prevMouseDown, down = Platform.Input.isMouseButtonPressed(GameEngine.MouseButton.Left),
-                      wheel = Platform.Input.consumeScrollDelta() }) }
+                    { prevDown = Set.memberOf(GameEngine.MouseButton.Left, st0#prevMouseButtons),
+                      down = Set.memberOf(GameEngine.MouseButton.Left, held),
+                      wheel = Platform.Input.consumeScrollDelta() }) })
+
+    /// いま押しているマウスのボタン（左・右・中）。
+    def mouseButtonsHeld(): Set[GameEngine.MouseButton] \ Platform.Input =
+        GameEngine.allMouseButtons() |> List.filter(b -> Platform.Input.isMouseButtonPressed(b)) |> List.toSet
 
     /// 止めた画面を抜けるフレーム: スクラブ位置の World から再開する。巻き戻したぶんの履歴と
-    /// フレーム番号も、そこを現在として数え直す。World はまだ進めない。
-    def resumingStep(app: App[w, ef], st: LoopState[w]): LoopState[w] \ (ef + Platform.Window + Platform.Rendering + RenderTarget.Target + IO) =
+    /// フレーム番号も、そこを現在として数え直す。World はまだ進めない。塗ったコマを画面へ出す・窓の宣言を当て直すのは呼ぶ側。
+    def resumingStep(app: App[w, ef], st: LoopState[w]): LoopState[w] \ (ef + Platform.Rendering + RenderTarget.Target + IO) =
         let r = App.rec(app);
         let resumed = App.resumePoint(st#anno, st#history, st#world);
         recordJump(app, st#recorder, if (st#anno#scrub > 0) Some("rewind ${Int32.toString(st#anno#scrub)}") else None,
                    resumed#world);
-        let design = Platform.Window.getViewportRect()#size;
-        let (cache1, seen1, warned1) = App.Internal.Paint.renderFrame(app, st#warnOnce, design, resumed#world, App.Internal.Paint.plainLook(App.Internal.Paint.fpsOverlayOf(r, design, resumed#anno)), st#tileCache, st#glyphSeen, st#budgetWarned);
-        let declared = applyDeclared(r, resumed#world, st);
+        let (cache1, seen1, warned1) = App.Internal.Paint.renderFrame(app, st#warnOnce, st#design, resumed#world, App.Internal.Paint.plainLook(App.Internal.Paint.fpsOverlayOf(r, st#design, resumed#anno)), st#tileCache, st#glyphSeen, st#budgetWarned);
         { world = resumed#world, anno = resumed#anno, history = resumed#history,
           tileCache = cache1, glyphSeen = seen1, budgetWarned = warned1,
-          cursorShown = declared#cursorShown, captureShown = declared#captureShown,
           outputKeys = App.Internal.Output.keysAfterJump(app, resumed#world, st#outputKeys) | st }
 
     /// ふつうのフレーム: World を進めて（traceFrame）、音を鳴らし、描き、見張り・履歴・出力・窓の宣言を済ませた次の状態。
@@ -354,9 +367,11 @@ pub mod App.Internal.Runner {
         let measuredAnno = if (r#debug) Annotate.recordDt(frame#dt, st#anno) else st#anno;
         // Doc の読み直しが起きたフレームはタイル層の世代を進め、同じ key でも作り直す。
         let renderStart = System.nanoTime();
-        let (cache1, seen1, warned1) = App.Internal.Paint.renderFrame(app, st#warnOnce, frame#viewport, advanced, App.Internal.Paint.plainLook(App.Internal.Paint.fpsOverlayOf(r, frame#viewport, measuredAnno)),
+        let (cache1, seen1, warned1) = App.Internal.Paint.renderFrame(app, st#warnOnce, st#design, advanced, App.Internal.Paint.plainLook(App.Internal.Paint.fpsOverlayOf(r, st#design, measuredAnno)),
                                           App.Internal.Paint.bumpTileGen(watchFired or reloadFired, st#tileCache),
                                           st#glyphSeen, st#budgetWarned);
+        // WhyNot: 画面へ出すのをループ（止めた画面・再開のコマと同じ所）へ回さない — ヒッチの記録の描く時間は swap まで含めて測ってきた。
+        Platform.Window.presentFrame();
         let renderNs = System.nanoTime() - renderStart;
         // 診断はここで 1 回だけ引き取り、ヒッチの記録と次のフレームの Frame#diagnostics へ配る。
         let diag = if (collecting) Some(Platform.Diagnostics.consumeDiagnostics()) else None;

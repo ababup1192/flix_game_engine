@@ -517,58 +517,6 @@
   `pub def allMouseButtons(): List[MouseButton]`
 - マウスカーソル形状（エディタのリサイズハンドルなどで切り替える）。
   `pub enum Cursor with Eq, ToString { case Default case Crosshair case HResize case VResize case AllResize case Rotate case NWResize case NEResize case SWResize case SEResize }`
-- 描き手の handler（LwjglLayer・GlOffscreen）がまだ 1 つで受けている op の組。render_gl の RenderLegacyBridge が
-  `pub eff Game`
-- zIndex 混合で sprites・tileMaps・polygons を 1 フレーム描画する。
-  `pub eff Game { def renderCommands(sprites: List[Drawable], tileMaps: List[TileMapRenderCmd], polygons: List[PolygonRenderCmd], staticLayer: Option[StaticLayerCmd]): Unit }`
-- タイルインスタンスデータを GPU VBO にアップロードし (vaoハンドル, count) を返す
-  `pub eff Game { def initTileBuffer(instances: List[TileInstance]): (GpuHandle.TileVao, Int32) }`
-- 既存のタイル VAO のインスタンス VBO へ中身を入れ直す（VAO は増やさない）。
-  `pub eff Game { def updateTileBuffer(vaoId: GpuHandle.TileVao, instances: List[TileInstance]): (GpuHandle.TileVao, Int32) }`
-- `pub eff Game { def shouldClose(): Bool }`
-- 窓の閉じる印を立てる・下ろす（GLFW の glfwSetWindowShouldClose）。false で閉じる要求を取り消す
-  `pub eff Game { def setShouldClose(close: Bool): Unit }`
-- 前フレームからの経過時間。EngineConfig#maxDeltaTime で上限クランプ済み
-  `pub eff Game { def getDeltaTime(): Duration.Duration }`
-- `pub eff Game { def isKeyPressed(key: Key): Bool }`
-- `pub eff Game { def getMousePosition(): Vec2.Vec2 }`
-- `pub eff Game { def isMouseButtonPressed(button: MouseButton): Bool }`
-- 1 台目のゲームパッドのボタン・十字キー・スティックのどれかがいま押されて（倒されて）いるか。
-  `pub eff Game { def isGamepadTouched(): Bool }`
-- 1 台目のゲームパッドの機種（Xbox 配置の一般・Steam Input を通した物・つないでいない）。
-  `pub eff Game { def gamepadKind(): GamepadMap.PadKind }`
-- 前回呼び出し以降に蓄積されたマウスホイールの y 方向 delta を返し、
-  `pub eff Game { def consumeScrollDelta(): Float64 }`
-- 前に呼んでからマウスが動いた量（design px・小数のまま。右と下が正）。キャプチャしている間（setMouseCaptured(true)）も
-  `pub eff Game { def consumeMouseDelta(): Vec2.Vec2 }`
-- マウスを窓にキャプチャする（真）・放す（偽）。キャプチャしている間は矢印が消え、動きは consumeMouseDelta だけに出る
-  `pub eff Game { def setMouseCaptured(captured: Bool): Unit }`
-- 窓がキーとマウスの入力を受け取る状態（フォーカスがある）か。App が Frame#windowFocused に置く。
-  `pub eff Game { def isWindowFocused(): Bool }`
-- `pub eff Game { def getFontAtlas(name: String): FontAtlas }`
-- アトラスにまだ無い字を、いま生成してアトラスに足す。
-  `pub eff Game { def ensureGlyphs(textureName: String, codepoints: Set[Int32]): Unit }`
-- `pub eff Game { def getViewportRect(): Rect2.Rect2 }`
-- 指定したテクスチャ名の元画像サイズ等を取得する。
-  `pub eff Game { def getTextureInfo(name: String): Option[TextureInfo] }`
-- 実行時に生成した画素を、名前付きテクスチャとして使えるようにする。
-  `pub eff Game { def ensureTexture(name: String, key: String, width: Int32, height: Int32, argb: Vector[Int32]): Unit }`
-- 1 コマごとの診断（FrameDiagnostics）を集めるかを切り替える。切っている間は数えない。
-  `pub eff Game { def setDiagnosticsEnabled(on: Bool): Unit }`
-- 前に取り出してから溜まった診断を返し、空に戻す（consumeScrollDelta と同じ取り出し方）。
-  `pub eff Game { def consumeDiagnostics(): FrameDiagnostics.Diagnostics }`
-- マウスカーソル形状を切り替える。連続して同じ Cursor を渡しても問題ない（冪等）
-  `pub eff Game { def setCursor(cursor: Cursor): Unit }`
-- マウスカーソルの表示/非表示を切り替える。形状(setCursor)は「どんな絵か」、
-  `pub eff Game { def setCursorVisible(visible: Bool): Unit }`
-- ウィンドウ⇄ボーダーレスフルスクリーンを切り替える。フルスクリーンはプライマリ
-  `pub eff Game { def setFullscreen(on: Bool): Unit }`
-- 直近の setFullscreen で今フルスクリーン中かを返す
-  `pub eff Game { def isFullscreen(): Bool }`
-- 注釈一式（screenshot.png / highlighted.png / annotation.json / README.md）を
-  `pub eff Game { def saveAnnotation(req: AnnotationRequest): Option[String] }`
-- デバッグモード中であることをウィンドウタイトルで示す。
-  `pub eff Game { def setDebugBadge(enabled: Bool): Unit }`
 - オーディオエフェクト: サウンドの再生・停止・音量・ループ
   `pub eff Audio`
 - 指定した名前のサウンドを先頭から再生する
@@ -867,6 +815,10 @@
   `pub def cos(x: Float64): Float64`
 - 点 (x, y) の向きの角（ラジアン・−π〜π）。引数は y が先（Java の Math.atan2 と同じ）。
   `pub def atan2(y: Float64, x: Float64): Float64`
+- asin（答えはラジアン・−π/2〜π/2。−1〜1 の外は NaN）。
+  `pub def asin(x: Float64): Float64`
+- 自然対数。0 は −∞・負の数は NaN（Java の Math.log と同じ）。
+  `pub def log(x: Float64): Float64`
 - 1 周ぶんの角（2π）。円周に点を置く計算の共通の源。
   `pub def tau(): Float64`
 - 円周率（値の源は tau — 2 で割るのは倍精度で正確）。
@@ -890,7 +842,9 @@
   `pub eff Input { def isWindowFocused(): Bool }`
 - ウィンドウの状態と見た目（閉じるフラグ・大きさ・カーソル・全画面・タイトルの表示）。
   `pub eff Window`
-- ウィンドウの閉じるフラグが立っているか。今は入力の取り込み（poll）も兼ねるので 1 フレームに 1 回だけ呼ぶ。
+- OS からのイベント（キー・マウス・ホイール・窓の大きさ・閉じるボタン）とゲームパッドの状態を取り込む。1 フレームに 1 回だけ呼ぶ
+  `pub eff Window { def pollEvents(): Unit }`
+- ウィンドウの閉じるフラグが立っているか（問うだけ。イベントは pollEvents が取り込む）。
   `pub eff Window { def shouldClose(): Bool }`
 - ウィンドウの閉じるフラグを立てる・下ろす（GLFW の glfwSetWindowShouldClose）。false で閉じる要求を取り消す
   `pub eff Window { def setShouldClose(close: Bool): Unit }`
@@ -906,6 +860,8 @@
   `pub eff Window { def setFullscreen(on: Bool): Unit }`
 - 直近の setFullscreen で今フルスクリーン中かを返す
   `pub eff Window { def isFullscreen(): Bool }`
+- Draw2d.renderCommands で塗ったコマを画面へ出す（バッファの入れ替え）。1 フレームの終わりに 1 回だけ呼ぶ。
+  `pub eff Window { def presentFrame(): Unit }`
 - デバッグモード中であることをウィンドウタイトルで示す。
   `pub eff Window { def setDebugBadge(enabled: Bool): Unit }`
 - 1 コマの経過時間。WhyNot Time と呼ばない: engine_world の Clock.Time と重なる。
@@ -922,6 +878,8 @@
   `pub eff Draw3d`
 - 3D の場面 1 つを、次の Draw2d.renderCommands の列へ積む（深度で前後を決め、2D の並びの中では cmd#scene#zIndex の 1 点に入る）。
   `pub eff Draw3d { def drawScene3d(cmd: Scene3d.RenderCmd): Unit }`
+- 3D を描かない handler の組（ブラウザ版・テストの偽物）が張る、3D の場面を捨てる handler。
+  `pub def runNoopDraw3d(f: Unit -> a \ ef): a \ ef - Draw3d`
 - GPU に置く資源（タイルのバッファ・テクスチャ・字・シェーダーのプログラム）を用意し、寸法を引く。
   `pub eff GpuResources`
 - タイルインスタンスデータを GPU VBO にアップロードし (vaoハンドル, count) を返す
@@ -1159,7 +1117,7 @@
   `pub type alias TargetSpec = { name = String, width = Int32, height = Int32, format = Format, clear = LoadOp, samples = Int32 }`
 - レンダーターゲットへの描き込み先の切り替え。
   `pub eff Target`
-- ターゲットを開く。以降の Platform.Draw2d.renderCommands は画面でなくここに描かれる（swap もしない）。
+- ターゲットを開く。以降の Platform.Draw2d.renderCommands は画面でなくここに描かれる（Platform.Window.presentFrame で画面へ出る物にもならない）。
   `pub eff Target { def beginTarget(spec: RenderTarget.TargetSpec): Unit }`
 - 描き手の design px → 描き先の画素の倍率（窓なら窓の実際の大きさに収めた倍率・動画やスクリーンショットはその書き出しの倍率）。
   `pub eff Target { def pixelScale(): Float64 }`
@@ -1424,16 +1382,6 @@
 ## ShaderEffect — `engine/src/ShaderEffect.flix`
 - DrawCmd.SurfaceRenderCmd の古い名前。0.84.0 で消える。
   `pub type alias ShaderRenderCmd = DrawCmd.SurfaceRenderCmd`
-- WhyNot 呼ぶ側から使わない: 呼ぶ側は Platform.GpuResources.buildProgram・Platform.Draw2d.drawSurface・
-  `pub eff Shader`
-- Spec を GLSL プログラムへコンパイルしハンドルを返す（起動時/リロード時に 1 回）。
-  `pub eff Shader { def buildProgram(spec: ShaderDoc.Spec): GpuHandle.ShaderProgram }`
-- シェーダー面 1 枚を描く。骨格では「床タイルと壁の間の固定 z-index の範囲」へそろえて
-  `pub eff Shader { def drawSurface(cmd: DrawCmd.SurfaceRenderCmd): Unit }`
-- 3D の場面 1 つを、深度で前後を決めて描く（2D の並びの中では cmd#scene#zIndex の 1 点に入る）。
-  `pub eff Shader { def drawScene3d(cmd: Scene3d.RenderCmd): Unit }`
-- この eff の op を直に呼ぶ物向けの何もしないハンドラ。buildProgram は無効ハンドル（0）を返し、drawSurface と drawScene3d は捨てる。
-  `pub def runNoop(f: Unit -> a \ ef + Shader): a \ ef`
 
 ## ShaderEval — `engine/src/ShaderEval.flix`
 - テクスチャ 1 枚ぶんの画素（ARGB・正立・行優先）。Tex ノードが CPU 側で標本する素材。
