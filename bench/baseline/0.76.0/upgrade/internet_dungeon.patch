@@ -1,6 +1,6 @@
 diff -ru a/src/render/BoardGifRender.flix b/src/render/BoardGifRender.flix
---- a/src/render/BoardGifRender.flix	2026-11-03 13:17:49
-+++ b/src/render/BoardGifRender.flix	2026-11-03 13:17:49
+--- a/src/render/BoardGifRender.flix	2026-11-03 23:53:44
++++ b/src/render/BoardGifRender.flix	2026-11-03 23:53:44
 @@ -152,7 +152,7 @@
                      design = cfg#design, scale = cfg#scale, background = cfg#background,
                      texturePath = cfg#texturePath, fontTtf = cfg#fontTtf,
@@ -11,8 +11,8 @@ diff -ru a/src/render/BoardGifRender.flix b/src/render/BoardGifRender.flix
          SoftRaster.renderToImageFonts(req, surfaces, extraFonts)
  }
 diff -ru a/src/render/SceneRender.flix b/src/render/SceneRender.flix
---- a/src/render/SceneRender.flix	2026-11-03 13:17:49
-+++ b/src/render/SceneRender.flix	2026-11-03 13:17:49
+--- a/src/render/SceneRender.flix	2026-11-03 23:53:44
++++ b/src/render/SceneRender.flix	2026-11-03 23:53:44
 @@ -1593,7 +1593,7 @@
                      design = cfg#design, scale = cfg#scale, background = cfg#background,
                      texturePath = cfg#texturePath, fontTtf = cfg#fontTtf,
@@ -23,8 +23,8 @@ diff -ru a/src/render/SceneRender.flix b/src/render/SceneRender.flix
          RenderCache.writeFramePng(paint#session, req, surfaces, extraFonts, Map.empty(),
                                    SoftRaster.freshTexWarnLog(), paint#textures);
 diff -ru a/src/render/VideoAudit.flix b/src/render/VideoAudit.flix
---- a/src/render/VideoAudit.flix	2026-11-03 13:17:49
-+++ b/src/render/VideoAudit.flix	2026-11-03 13:17:49
+--- a/src/render/VideoAudit.flix	2026-11-03 23:53:44
++++ b/src/render/VideoAudit.flix	2026-11-03 23:53:44
 @@ -157,6 +157,7 @@
                  "P${at};${points(q#vertices)};${Color.toHex(q#color)};${q#alpha};${q#blend};${tints}"
              case Render.Item.Clipped(c) => "C${rect(c#rect)};${itemKey({ at = p#at, item = c#inner })}"
@@ -34,8 +34,8 @@ diff -ru a/src/render/VideoAudit.flix b/src/render/VideoAudit.flix
  
      /// 同じ絵が stallSeconds より長く続いた所（続いた頭のコマに 1 行）。
 diff -ru a/src/render/ZAudit.flix b/src/render/ZAudit.flix
---- a/src/render/ZAudit.flix	2026-11-03 13:17:49
-+++ b/src/render/ZAudit.flix	2026-11-03 13:17:49
+--- a/src/render/ZAudit.flix	2026-11-03 23:53:44
++++ b/src/render/ZAudit.flix	2026-11-03 23:53:44
 @@ -67,6 +67,7 @@
              case Render.Item.Box(b)     => (b#zIndex, "box") :: Nil
              case Render.Item.Poly(p)    => (p#zIndex, "poly") :: Nil
@@ -45,44 +45,44 @@ diff -ru a/src/render/ZAudit.flix b/src/render/ZAudit.flix
          }
  }
 diff -ru a/test/PropInput.flix b/test/PropInput.flix
---- a/test/PropInput.flix	2026-11-03 13:17:49
-+++ b/test/PropInput.flix	2026-11-03 13:17:49
+--- a/test/PropInput.flix	2026-11-03 23:53:44
++++ b/test/PropInput.flix	2026-11-03 23:53:57
 @@ -36,7 +36,7 @@
      pub def mouseFrame(pointer: Vec2.Vec2): App.Frame =
          { down = Set.empty(), justPressed = Set.empty(), dt = 0.016,
            viewport = { x = World.width(), y = World.height() },
 -          cursor = pointer, mouseDown = false, mouseClicked = false, mouseMoved = true, wheel = 0.0, realNow = Clock.zero(), padTouched = false, padKind = GamepadMap.PadKind.Unknown }
-+          cursor = pointer, mouseDown = false, mouseClicked = false, mouseMoved = true, wheel = 0.0, realNow = Clock.zero(), padTouched = false, padKind = GamepadMap.PadKind.Unknown, mouseDelta = { x = 0.0, y = 0.0 }, windowFocused = true, diagnostics = None }
++          cursor = pointer, mouseDown = false, mouseClicked = false, mouseMoved = true, wheel = 0.0, realNow = Clock.zero(), padTouched = false, padKind = GamepadMap.PadKind.Unknown | App.emptyFrame() }
  
      /// 役 → いまのキー（KeysDoc は World の Doc から引く）。
      def setup(): PropertyTest.Setup[Role, Resources.With[Res.Res, World.World]] =
 diff -ru a/test/TestInput.flix b/test/TestInput.flix
---- a/test/TestInput.flix	2026-11-03 13:17:49
-+++ b/test/TestInput.flix	2026-11-03 13:17:49
+--- a/test/TestInput.flix	2026-11-03 23:53:44
++++ b/test/TestInput.flix	2026-11-03 23:53:57
 @@ -17,7 +17,7 @@
          { down = List.toSet(keys), justPressed = List.toSet(pressed), dt = dt,
            viewport = { x = World.width(), y = World.height() },
            cursor = { x = -100.0, y = -100.0 },
 -          mouseDown = false, mouseClicked = false, mouseMoved = false, wheel = 0.0, realNow = Clock.zero(), padTouched = false, padKind = GamepadMap.PadKind.Unknown }
-+          mouseDown = false, mouseClicked = false, mouseMoved = false, wheel = 0.0, realNow = Clock.zero(), padTouched = false, padKind = GamepadMap.PadKind.Unknown, mouseDelta = { x = 0.0, y = 0.0 }, windowFocused = true, diagnostics = None }
++          mouseDown = false, mouseClicked = false, mouseMoved = false, wheel = 0.0, realNow = Clock.zero(), padTouched = false, padKind = GamepadMap.PadKind.Unknown | App.emptyFrame() }
  
      /// パッドに触っている（padTouched）1 フレーム。
      def padFrame(frame: App.Frame): App.Frame = { padTouched = true | frame }
 diff -ru a/test/TestPointer.flix b/test/TestPointer.flix
---- a/test/TestPointer.flix	2026-11-03 13:17:49
-+++ b/test/TestPointer.flix	2026-11-03 13:17:49
+--- a/test/TestPointer.flix	2026-11-03 23:53:44
++++ b/test/TestPointer.flix	2026-11-03 23:53:57
 @@ -385,7 +385,7 @@
          { down = Set.empty(), justPressed = Set.empty(), dt = 0.016,
            viewport = { x = World.width(), y = World.height() },
            cursor = cursor,
 -          mouseDown = false, mouseClicked = false, mouseMoved = moved, wheel = 0.0, realNow = Clock.zero(), padTouched = false, padKind = GamepadMap.PadKind.Unknown }
-+          mouseDown = false, mouseClicked = false, mouseMoved = moved, wheel = 0.0, realNow = Clock.zero(), padTouched = false, padKind = GamepadMap.PadKind.Unknown, mouseDelta = { x = 0.0, y = 0.0 }, windowFocused = true, diagnostics = None }
++          mouseDown = false, mouseClicked = false, mouseMoved = moved, wheel = 0.0, realNow = Clock.zero(), padTouched = false, padKind = GamepadMap.PadKind.Unknown | App.emptyFrame() }
  
      /// →（選び替えのキー）だけを押した 1 フレーム。キーの束は Doc（keys）から導く。
      def rightTapFrame(w: World.World): App.Frame =
 diff -ru a/test/TestProps.flix b/test/TestProps.flix
---- a/test/TestProps.flix	2026-11-03 13:17:49
-+++ b/test/TestProps.flix	2026-11-03 13:17:49
+--- a/test/TestProps.flix	2026-11-03 23:53:44
++++ b/test/TestProps.flix	2026-11-03 23:53:44
 @@ -457,6 +457,7 @@
          case Render.Item.Poly(p)    => "P ${List.length(p#vertices)} c${p#color#r},${p#color#g},${p#color#b} a${p#alpha} z${p#zIndex}"
          case Render.Item.Clipped(c) => "C ${itemPrint(c#inner)}"
@@ -92,14 +92,23 @@ diff -ru a/test/TestProps.flix b/test/TestProps.flix
  
      // ========================================================================
 diff -ru a/test/TestRules.flix b/test/TestRules.flix
---- a/test/TestRules.flix	2026-11-03 13:17:49
-+++ b/test/TestRules.flix	2026-11-03 13:18:15
+--- a/test/TestRules.flix	2026-11-03 23:53:44
++++ b/test/TestRules.flix	2026-11-03 23:56:38
+@@ -3,7 +3,7 @@
+ // 期待値は Doc の既定値から導く（数値リテラルを貼らない）。
+ mod TestRules {
+ 
+-    use fge::{Clock, Emit, GamepadMap, Num, SortingLayer, Timeline, UiDialog, Yarn, YarnRunner}
++    use fge::{App, Clock, Emit, GamepadMap, Num, SortingLayer, Timeline, UiDialog, Yarn, YarnRunner}
+ 
+     /// 演出を見届けてから決定する（演出の途中の決定は演出を済ませるだけなので、
+     /// その先の場面を見るテストは、見届けた後の 1 回を押す）。
 @@ -902,7 +902,7 @@
                       y = Layout.cardSlotFor(WorldPuzzle.offerCount(laid), 2)#at#y + Geometry.cardSize()#y / 2.0 };
          let still = { down = Set.empty(), justPressed = Set.empty(), dt = PuzzleDoc.stepSecondsOf(PuzzleDoc.defaults()) + 0.01,
                        viewport = { x = World.width(), y = World.height() }, cursor = spot,
 -                      mouseDown = false, mouseClicked = false, mouseMoved = false, wheel = 0.0, realNow = Clock.zero(), padTouched = false, padKind = GamepadMap.PadKind.Unknown };
-+                      mouseDown = false, mouseClicked = false, mouseMoved = false, wheel = 0.0, realNow = Clock.zero(), padTouched = false, padKind = GamepadMap.PadKind.Unknown, mouseDelta = { x = 0.0, y = 0.0 }, windowFocused = true, diagnostics = None };
++                      mouseDown = false, mouseClicked = false, mouseMoved = false, wheel = 0.0, realNow = Clock.zero(), padTouched = false, padKind = GamepadMap.PadKind.Unknown | App.emptyFrame() };
          let pointing = { pointer = spot, pointerShown = true, hover = World.HoverGate.Armed | board };
          let swapped = match workingSwap(pointing) {
              case None => pointing
@@ -108,7 +117,7 @@ diff -ru a/test/TestRules.flix b/test/TestRules.flix
          let frame = (down, just) -> { down = down, justPressed = just, dt = 0.0,
              viewport = { x = World.width(), y = World.height() }, cursor = fighting#pointer,
 -            mouseDown = false, mouseClicked = false, mouseMoved = false, wheel = 0.0, realNow = Clock.zero(), padTouched = false, padKind = GamepadMap.PadKind.Unknown };
-+            mouseDown = false, mouseClicked = false, mouseMoved = false, wheel = 0.0, realNow = Clock.zero(), padTouched = false, padKind = GamepadMap.PadKind.Unknown, mouseDelta = { x = 0.0, y = 0.0 }, windowFocused = true, diagnostics = None };
++            mouseDown = false, mouseClicked = false, mouseMoved = false, wheel = 0.0, realNow = Clock.zero(), padTouched = false, padKind = GamepadMap.PadKind.Unknown | App.emptyFrame() };
          let detail = List.toSet(keys#detail);
          let right = List.toSet(keys#right);
          let once = PropInput.step(frame(right, right), fighting);
