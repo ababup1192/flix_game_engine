@@ -69,6 +69,8 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | テストで実機と同じ 1 コマ（時計・固定刻み・押した瞬間の持ち越し・系・音）を進める | `App.traceFrame`（`App.freshStepState()` から持ち回す）か列ごと `App.trace`（`App.Internal.*` は App の中身で、ゲームの src と test に書くと lint-forbid の app-internal が止める） |
 | e2e・動画の手順を書いて画面なしで流す（失敗は行番号つき） | `e2e/<名前>.flow` + `App.withFlow`・`bin/fge flow check`・`make flow` |
 | 好きな場面から起動・テスト・遊んだ通りに再生 | `App.withStarts`（`START=`・`startOrBug`）・記録は `make flow` で再生 |
+| ギャラリーの 1 枚の World から実機で開く・実機の記録が再生と同じか | `App.withShots`（`<ゲーム>/src/Shots.flix`）+ `SHOT=<場面> make run`・engine で `make determinism`（台本 `FLIX_GE_INPUT_SCRIPT`） |
+| 記録の再生が起動した時刻などの外の値で `expect world=` に止まる | `App.withWorldSummaryMask`（その欄だけ決まった値へ） |
 | 実機の GL の絵が同じ起動で毎回同じかを、頭の数コマを撮って確かめる（2 コマ目以降も） | `FLIX_GE_FIXED_DT=1/60`（dt を固定）+ `FLIX_GE_HIDDEN=1` + `FLIX_GE_FRAME_SHOT=<フォルダ>` + `START=<場面>` で `make run RUN_SECONDS=30` を 2 回（撮る口は 64 枚で止まるだけで窓は閉じない）し、`frame-N.png` を比べる |
 | 起動の読み込みが数秒かかる・起動画面でカーソルが応答なしのくるくるになる | 読み込みを `LoadProgress.mapWithProgress` / `parMapWithProgress` で区切る（実機は起動画面が進みウィンドウが応答する）・並列の仕事で絵を解くなら頭で `let dec = LoadProgress.imageDecoder()` を受け取り仕事へ渡す（`Gltf.fromGlbTexturedUsing(dec, ..)`・`Texture3d.decodeUsing(dec, ..)`。仕事の中から op は呼べない）・描き出しとテストの入口は `HeadlessLoad.handle`（絵を解かないなら `LoadProgress.runNoop` でもよい）・main は `App.loadAndLaunch(() -> 組む式)`（`make debug` でも Doc を読み直さない。engine の `docs/startup.md`） |
 | 開発の道具（リモートデバッグ・flow の記録・ゲームの名簿・ヒッチの見張り・Doc の保存検知・F8 の注釈）を持たずに走らせる（ブラウザ版の入口など） | `App.launchWithDevTools(App.DevTools.none(), app)`（`App.debugFromEnv()` は呼ばず `withDebug` は値で・`App.launch` / `loadAndLaunch` はデスクトップの道具 `App.DevTools.desktop(env)` のまま）・`App.onRenderRequest` / `onShotRequest` は `Game.app` でなく `Main` で繋ぐ（lint `dev-request-outside-main`） |

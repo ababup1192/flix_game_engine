@@ -20,6 +20,7 @@ mod Game {
             |> App.withMixer(Resources.read((r, _) -> r#mixer))
             // 好きな場面から起動する・テストと flow が場面を名前で組む（START="level n=2" など）。
             |> App.withStarts(Starts.all() |> List.map(Resources.liftStart))
+            |> App.withShots(Resources.shotsOf(Shots.names(), Shots.worldOf))
             // e2e/<名前>.flow の語彙（役・問い）と、記録の再生が比べる指紋。
             |> App.withFlow(E2e.table())
             |> App.withFingerprint(Resources.read(E2e.fingerprint))

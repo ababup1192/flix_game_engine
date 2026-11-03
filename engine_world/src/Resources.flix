@@ -55,6 +55,14 @@ pub mod Resources {
     pub type alias Start[res, w] = { name = String, doc = String, args = Map[String, String],
                                      build = (res, w, Map[String, String]) -> Result[String, w] }
 
+    /// ギャラリーの場面の始まり（App.withShots へ渡す）。names = 場面の名前（gallery/<名前>.png と同じ字）・
+    /// worldOf = 名前と描く元から、描き出しと同じ初めの World で場面を組む関数（描き出しも同じ関数を呼ぶ）。新しく作った初期の World は使わない。
+    /// 例: `App.withShots(Resources.shotsOf(Shots.names(), Shots.worldOf))`
+    pub def shotsOf(names: List[String], worldOf: (String, res) -> Option[w]): List[App.Start[With[res, w]]] =
+        names |> List.map(name ->
+            { name = name, doc = "ギャラリーの場面（gallery/${name}.png）", args = Map.empty(),
+              build = (h, _) -> mapWorldResult((res, _) -> worldOf(name, res) |> Option.toOk("場面 '${name}' を組めない（worldOf が None）"), h) })
+
     /// 始まりの登録簿の 1 行を組の行へ持ち上げる（build は World を組み、描く元はそのまま）。
     pub def liftStart(start: Start[res, w]): App.Start[With[res, w]] =
         { name = start#name, doc = start#doc, args = start#args,

@@ -7,19 +7,24 @@ pub mod App.Internal.Runner {
     /// 始まりの下地は、reread なら freshWorld（Doc を全部読み直す）、そうでなければ init + 起動時の系。
     /// 返すのは起動の World と、通った始まり（名前と書いた引数。登録簿が無ければ None）。
     // WhyNot: 記録しない起動で Doc を読み直さない — main が読んだばかりの物をもう一度読むだけで、重い Doc（3D の形）では起動が秒単位で延びる。
+    /// START がギャラリーの場面（shot:）なら、DEBUG の起動の時だけ通す。
     def bootWorld(app: App[w, ef], design: Vec2.Vec2, env: Map[String, String], reread: Bool): App.Internal.DevTools.Booted[w] \ ef + Fs.FileRead =
         let r = App.rec(app);
         let base = () -> if (reread) App.freshWorld(app, design) else App.initialWorld(app, design);
-        match List.head(r#starts) {
-            case None => Ok((App.initialWorld(app, design), None))
-            case Some(first) =>
-                let line = Map.getWithDefault("START", "", env);
-                let wanted = if (String.isEmpty(String.trim(line))) Ok((first#name, Map.empty()))
-                             else App.parseStartLine(line) |> Result.mapErr(why -> "START: ${why}");
-                forM (
-                    chosen <- wanted;
-                    world <- { let (name, args) = chosen; App.buildStartOn(app, base(), name, args) |> Result.mapErr(why -> "START: ${why}") }
-                ) yield (world, Some(chosen))
+        let line = String.trim(Map.getWithDefault("START", "", env));
+        let wanted = if (String.isEmpty(line) or (List.isEmpty(r#starts) and List.isEmpty(r#shots))) Ok(List.head(r#starts) |> Option.map(first -> (first#name, Map.empty())))
+                     else App.parseStartLine(line) |> Result.mapErr(why -> "START: ${why}") |> Result.map(chosen -> {
+                         // 登録簿の無いゲームが START を置いても、今までどおり init から始める（ギャラリーの場面だけは引く）。
+                         let (name, _) = chosen;
+                         if (List.isEmpty(r#starts) and not App.isShotName(name)) None else Some(chosen)
+                     });
+        match wanted {
+            case Err(why)    => Err(why)
+            case Ok(None)    => Ok((App.initialWorld(app, design), None))
+            case Ok(Some((name, args))) =>
+                if (App.isShotName(name) and not r#debug) Err("START=${name}: ギャラリーの場面は DEBUG の起動だけで開ける（make debug・SHOT=<名前> make run）")
+                else App.buildStartOn(app, base(), name, args) |> Result.mapErr(why -> "START: ${why}")
+                    |> Result.map(world -> (world, Some((name, args))))
         }
 
     /// 開発の道具（hooks）を開いて起動の World を組み、閉じるまでループを回し、道具を閉じる。
@@ -29,27 +34,41 @@ pub mod App.Internal.Runner {
         // WhyNot: ここで起動画面を出し直さない — 間引きも中止スイッチも持たない 2 つ目の経路が生まれる。
         let design = Platform.Window.getViewportRect()#size;
         let (booted, opened) = hooks#open((env, reread) -> bootWorld(app, design, env, reread));
-        let closing = match booted {
+        let (closing, last) = match booted {
             // 知らない始まりの名前で黙って先頭の場面から始めると、別の場面を見て直していることに気づけない。
-            case Err(why)  => System.err.println("[App] ${why}"); opened
-            case Ok((world0, _)) => launchFrom(app, hooks, design, world0, opened)
+            case Err(why)  => System.err.println("[App] ${why}"); (opened, None)
+            case Ok((world0, started)) =>
+                let play = () -> launchFrom(app, hooks, design, world0, isShotStart(started), opened);
+                let (tools, world) = match opened#script {
+                    case None         => play()
+                    case Some(script) => App.Internal.InputScript.drive(script, play)
+                };
+                (tools, Some(world))
         };
-        hooks#close(closing)
+        hooks#close(closing, last)
 
-    /// 起動の World が決まった後の launch（ウィンドウの宣言・診断・ループ）。返すのはループを抜けた時の道具の状態。
-    def launchFrom(app: App[w, ef], hooks: App.Internal.DevTools.Hooks[w, ef, efTools], design: Vec2.Vec2, world0: w,
-                   tools: App.Internal.DevTools.State): App.Internal.DevTools.State \ (ef + efTools + Platform.Services + Fs.FileRead + Fs.FileWrite + IO) =
+    /// ギャラリーの場面の始まり（App.withShots・START=shot:<名前>）から起動したか。F8 で止めた状態で窓を開ける。
+    def isShotStart(started: Option[(String, Map[String, String])]): Bool =
+        started |> Option.exists(match (name, _) -> App.isShotName(name))
+
+    /// 起動の World が決まった後の launch（ウィンドウの宣言・診断・ループ）。返すのはループを抜けた時の道具の状態と最後の World。
+    /// halted なら F8 で止めた状態から始める（止められる構成の時だけ。canDebug が偽ならふつうに動く）。
+    def launchFrom(app: App[w, ef], hooks: App.Internal.DevTools.Hooks[w, ef, efTools], design: Vec2.Vec2, world0: w, halted: Bool,
+                   tools: App.Internal.DevTools.State): (App.Internal.DevTools.State, w) \ (ef + efTools + Platform.Services + Fs.FileRead + Fs.FileWrite + IO) =
         let r = App.rec(app);
         // 窓の宣言（withFullscreen）は最初のコマを描く前に当てる（起動した拍からその窓で見せる）。
         App.Internal.Output.applyFullscreen(r, world0);
         if (r#diagnostics) Platform.Diagnostics.setDiagnosticsEnabled(true) else ();
         let started = hooks#start(tools);
+        let haltedNow = halted and App.canDebug(r);
+        // F8 を押した時と同じ見た目（タイトルの印と十字のカーソル）を、止めた状態で始める時にも最初のコマの前に当てる。
+        if (haltedNow) App.Internal.Output.applyHaltLook(App.CursorLook.haltEnterLook()) else ();
         // キーと同じく、起動時にすでに押されているボタンは一度離すまでエッジにならない。
         // カーソルの「前の位置」はまだ無い（None）ので、最初のフレームの mouseMoved は false。
         // 固定ステップの状態（持ち越し秒と未消費エッジ）は空から始める。
         loop(app, hooks, { design = design, world = world0, prevKeys = InputEvent.currentKeys(),
                     prevMouseButtons = mouseButtonsHeld(),
-                    prevCursor = None, anno = Annotate.initial(), history = Nil,
+                    prevCursor = None, anno = { paused = haltedNow | Annotate.initial() }, history = Nil,
                     stepState = App.freshStepState(),
                     sustaining = Nil, mixState = AudioMixer.initial(),
                     soundUses = { oneShot = Set.empty(), looped = Set.empty() },
@@ -158,7 +177,7 @@ pub mod App.Internal.Runner {
     /// stepState も動かさず素通しする（巻き戻すのは World の見た目であって、貯まっていた
     /// 実時間の端数や取り置いたエッジではない）。保存検知（watchFile）も同じ扱い —
     /// World に触れない分岐では監視も動かさず素通しする。
-    def loop(app: App[w, ef], hooks: App.Internal.DevTools.Hooks[w, ef, efTools], st0: LoopState[w]): App.Internal.DevTools.State \ (ef + efTools + Platform.Services + Fs.FileRead + Fs.FileWrite + IO) =
+    def loop(app: App[w, ef], hooks: App.Internal.DevTools.Hooks[w, ef, efTools], st0: LoopState[w]): (App.Internal.DevTools.State, w) \ (ef + efTools + Platform.Services + Fs.FileRead + Fs.FileWrite + IO) =
         let r = App.rec(app);
         // ヒッチの記録が測る 1 周の始まり（入力の取り込みから。nanoTime は軽いので見張らない時も取る）。
         let iterStart = System.nanoTime();
@@ -166,11 +185,14 @@ pub mod App.Internal.Runner {
         let wantsQuit = r#quit;
         // WhyNot: poll を readFrame の前に動かさない — 押したキーが効くコマが 1 つ前へずれ、実機の手触りと F8 で止まるコマが変わる。
         Platform.Window.pollEvents();
+        // 台本を流し終えた周は、閉じるボタンと同じにその場で抜ける（withCloseRequest の確認を出さない）。
+        let scriptDone = st0#tools#script |> Option.exists(App.Internal.InputScript.isFinished);
         let closing = Platform.Window.shouldClose();
-        let answer = decideClose({ closing = closing, hasCloseRequest = Option.nonEmpty(r#closeRequest),
-                                   paused = st0#anno#paused });
+        let answer = if (scriptDone) CloseAnswer.Close
+                     else decideClose({ closing = closing, hasCloseRequest = Option.nonEmpty(r#closeRequest),
+                                        paused = st0#anno#paused });
         let st = if (answer == CloseAnswer.AskGame) noticeCloseRequest(app, hooks, st0) else st0;
-        if (answer == CloseAnswer.Close or wantsQuit(frame, st#world)) st#tools
+        if (answer == CloseAnswer.Close or wantsQuit(frame, st#world)) (st#tools, st#world)
         else {
             // 入力の持ち越しはどの分岐でも同じなので、ここで 1 度だけ差し替える。
             let carried = { prevKeys = frame#down, prevMouseButtons = frame#mouseButtons,
@@ -198,7 +220,7 @@ pub mod App.Internal.Runner {
 
     /// 命令口が何も捌かなかったフレーム: F8 と停止状態から進み方を決め、止めた画面・再開・ふつうのフレームのどれかを流す。
     def localStep(app: App[w, ef], hooks: App.Internal.DevTools.Hooks[w, ef, efTools], frame: App.Frame, iterStart: Int64,
-                  st: LoopState[w]): App.Internal.DevTools.State \ (ef + efTools + Platform.Services + Fs.FileRead + Fs.FileWrite + IO) =
+                  st: LoopState[w]): (App.Internal.DevTools.State, w) \ (ef + efTools + Platform.Services + Fs.FileRead + Fs.FileWrite + IO) =
         let r = App.rec(app);
         let decided = decideBranch({ f8Pressed = App.justPressed(GameEngine.Key.F8, frame),
                                      canDebug = App.canDebug(r), remoteHold = hooks#holdsControl(st#tools),
@@ -230,16 +252,18 @@ pub mod App.Internal.Runner {
         }
 
     /// このフレームの入力を読んで Frame を組む（キー・マウス・ホイール・動いた量・パッド・フォーカスと、前のフレームの診断）。
+    /// dt は入力より先に 1 回だけ読む — 1 周に 1 回・入力の前、が Platform.FrameClock を数えてコマを区切る handler（入力の台本）の約束。
     /// キャプチャしている間の GLFW の仮の位置は窓の外へ流れるので、cursor はキャプチャした時の位置で止める（UI のホバーと mouseMoved を狂わせない）。
     /// realNow は前のフレームまでの実時間（quit・リロード・F8 の停止が読む）。系へ渡す前に advanceFrame が進めて置き直す。
     /// マウスの動いた量は止めている拍も読み切る（溜めると、動き出した拍に一度に入る）。
     def readFrame(st0: LoopState[w]): App.Frame \ (Platform.Input + Platform.FrameClock) =
+        let dt = readDt();
         let cursorNow = App.Internal.Frame.heldCursor(st0#captureShown, st0#prevCursor, Platform.Input.getMousePosition());
         let held = mouseButtonsHeld();
         App.withMouseButtons(st0#prevMouseButtons, held, { realNow = Clock.nowOf(st0#stepState#real), padTouched = Platform.Input.isGamepadTouched(),
           padKind = Platform.Input.gamepadKind(), mouseDelta = Platform.Input.consumeMouseDelta(),
           windowFocused = Platform.Input.isWindowFocused(), diagnostics = st0#lastDiagnostics
-          | App.frameOf(prev = st0#prevKeys, current = InputEvent.currentKeys(), readDt(),
+          | App.frameOf(prev = st0#prevKeys, current = InputEvent.currentKeys(), dt,
                     st0#design,
                     { prevCursor = st0#prevCursor, cursor = cursorNow },
                     { prevDown = Set.memberOf(GameEngine.MouseButton.Left, st0#prevMouseButtons),

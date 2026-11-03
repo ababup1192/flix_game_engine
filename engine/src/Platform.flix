@@ -77,7 +77,8 @@ pub mod Platform {
 
     /// 1 コマの経過時間。WhyNot Time と呼ばない: engine_world の Clock.Time と重なる。
     pub eff FrameClock {
-        /// 前フレームからの経過時間。EngineConfig#maxDeltaTime で上限クランプ済み
+        /// 前フレームからの経過時間。EngineConfig#maxDeltaTime で上限クランプ済み。
+        /// App のループは 1 周に 1 回だけ、その周の入力を読む前に呼ぶ（呼んだ数でコマを数える handler がある: 入力の台本 FLIX_GE_INPUT_SCRIPT）。
         def getDeltaTime(): Duration.Duration
     }
 

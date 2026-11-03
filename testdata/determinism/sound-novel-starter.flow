@@ -1,0 +1,14 @@
+# 決定性の門（bin/determinism.sh）の台本: 題名から読み始め、送り・クリック・フォーカスの出入りを混ぜる。
+# 台本は実機のキー・マウスの代わり（FLIX_GE_INPUT_SCRIPT）。役の名前・start・until・expect は書けない（World が要る）。
+ready off
+wait 240f
+tap Z
+wait 180f
+tap Z
+wait 90f at=400,300
+tap 400,300
+wait 90f focus=0
+tap Z
+wait 60f focus=1
+tap Enter
+wait 120f

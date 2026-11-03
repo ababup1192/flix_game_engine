@@ -6,6 +6,7 @@
 // ゲームからは呼ばない（App の中身。ゲームの src・test で App.Internal. を書くと lint が止める）。
 pub mod App.Internal.DevTools {
     import java.lang.System
+    import java.lang.Throwable
 
     /// 道具がコマをまたいで持ち回す状態（ループの LoopState#tools の 1 つの欄）。
     pub type alias State = {
@@ -13,7 +14,8 @@ pub mod App.Internal.DevTools {
         remoteHold = Bool,                                 // 命令口が止める主導権を持っているか（真の間 F8 は効かない。/resume で戻す）
         recorder = Option[Flow.Record.Recorder],           // 遊んだ記録（DEBUG の起動・FLOW_RECORD=0 で止まる）。None = 書かない
         hitches = Option[App.Internal.Hitch.HitchWatch],   // ヒッチの記録（DEBUG の起動だけ）。None = 見張らない
-        watch = WatchState                                 // watchFile の保存検知（前のポーリングからの秒と、前に見えた更新時刻）
+        watch = WatchState,                                // watchFile の保存検知（前のポーリングからの秒と、前に見えた更新時刻）
+        script = Option[App.Internal.InputScript.Playback]  // 入力の台本（FLIX_GE_INPUT_SCRIPT）。None = 実機の入力のまま
     }
 
     /// 起動の World と、通った始まり（名前と書いた引数。登録簿が無ければ None）。
@@ -38,7 +40,7 @@ pub mod App.Internal.DevTools {
     pub type alias Hooks[w: Type, ef: Eff, efTools: Eff] = {
         open = ((Map[String, String], Bool) -> Booted[w] \ ef + Fs.FileRead) -> (Booted[w], State) \ ef + Fs.FileRead + IO,  // 起動の World を組み、記録と命令口を開く
         start = State -> State \ Platform.Diagnostics + IO,                          // 最初のコマの前（窓の宣言を当てた後）: 保存検知とヒッチの見張りを始める
-        close = State -> Unit \ IO,                                                  // ループを抜けた後: 命令口を止め、記録を閉じる
+        close = (State, Option[w]) -> Unit \ IO,                                     // ループを抜けた後: 命令口を止め、最後の World（起動できなければ None）の確かめを書いて記録を閉じる
         holdsControl = State -> Bool,                                                // 命令口が止める主導権を持っているか（真の間 F8 は効かない）
         wantsDiagnostics = State -> Bool,                                            // 描く側の診断をコマごとに引き取るか（ヒッチの見張り）
         pollRemote = (RemoteInput[w], State) -> Option[RemoteOutcome[w]] \ Platform.Window + Platform.Rendering + RenderTarget.Target + Platform.Diagnostics + Fs.FileRead + IO,  // 命令口に届いた 1 件を捌く（無ければ None）
@@ -57,7 +59,7 @@ pub mod App.Internal.DevTools {
 
     /// 何も開いていない道具の状態。
     def emptyState(): State =
-        { bridge = None, remoteHold = false, recorder = None, hitches = None, watch = freshWatchState() }
+        { bridge = None, remoteHold = false, recorder = None, hitches = None, watch = freshWatchState(), script = None }
 
     // ── 道具なし ──
 
@@ -65,7 +67,7 @@ pub mod App.Internal.DevTools {
     pub def none(): Hooks[w, ef, {}] = {
         open           = openNone,
         start          = st -> checked_ecast(st),
-        close          = _ -> checked_ecast(()),
+        close          = (_, _) -> checked_ecast(()),
         holdsControl   = _ -> false,
         wantsDiagnostics = _ -> false,
         pollRemote     = (_, _) -> checked_ecast(None),
@@ -88,7 +90,7 @@ pub mod App.Internal.DevTools {
     pub def desktopOf(env: Map[String, String], captured: Option[Map[String, Flow.File]], app: App[w, {}]): Hooks[w, {}, Platform.Annotation] = {
         open           = boot -> openDesktop(env, captured, app, boot),
         start          = st -> startDesktop(app, st),
-        close          = closeDesktop,
+        close          = (st, last) -> closeDesktop(app, st, last),
         holdsControl   = st -> st#remoteHold,
         wantsDiagnostics = st -> Option.nonEmpty(st#hitches),
         pollRemote     = (input, st) -> pollRemote(app, input, st),
@@ -102,8 +104,25 @@ pub mod App.Internal.DevTools {
     }
 
     /// 記録を開き（DEBUG で FLOW_RECORD が 0 でない時）、起動の World を組み、通ったら記録の頭を書いて命令口を開く。
+    /// FLIX_GE_INPUT_SCRIPT があれば台本を読む（読めなければ起動の誤りにする — 台本のつもりで実機の入力のまま走ると、門が何も確かめずに通る）。
     def openDesktop(env: Map[String, String], captured: Option[Map[String, Flow.File]], app: App[w, {}],
                     boot: (Map[String, String], Bool) -> Booted[w] \ Fs.FileRead): (Booted[w], State) \ Fs.FileRead + IO =
+        match scriptOf(env) {
+            case Err(why)   => (Err("FLIX_GE_INPUT_SCRIPT: ${why}"), emptyState())
+            case Ok(script) =>
+                let (booted, opened) = openRecorded(env, captured, app, boot);
+                (booted, { script = script | opened })
+        }
+
+    /// 入力の台本（FLIX_GE_INPUT_SCRIPT が空なら None）。
+    def scriptOf(env: Map[String, String]): Result[String, Option[App.Internal.InputScript.Playback]] \ Fs.FileRead + IO =
+        match Flow.Cli.getEnvOr(env, "FLIX_GE_INPUT_SCRIPT", "") {
+            case ""   => Ok(None)
+            case path => App.Internal.InputScript.load(path) |> Result.map(Some)
+        }
+
+    def openRecorded(env: Map[String, String], captured: Option[Map[String, Flow.File]], app: App[w, {}],
+                     boot: (Map[String, String], Bool) -> Booted[w] \ Fs.FileRead): (Booted[w], State) \ Fs.FileRead + IO =
         let r = App.rec(app);
         let recorder = if (r#debug) Flow.Record.pathOf(env) |> Option.flatMap(Flow.Record.open) else None;
         // 記録するなら、起動の World を組む間に読んだ中身も拾い、start の行に載せる（再生が同じ Doc で始まる）。
@@ -145,10 +164,22 @@ pub mod App.Internal.DevTools {
         };
         Flow.Record.resetFingerprint(recording, fingerprint)
 
-    /// 命令口を止め、記録を閉じる。
-    def closeDesktop(st: State): Unit \ IO =
+    /// 命令口を止め、最後の World の確かめ（指紋と World 全体の要約）を書いて記録を閉じる。
+    def closeDesktop(app: App[w, {}], st: State, last: Option[w]): Unit \ IO =
         Option.forEach(App.RemoteDebug.shutdown, st#bridge);
-        Option.forEach(Flow.Record.close, st#recorder)
+        Option.forEach(recorder -> {
+            Option.forEach(world -> {
+                let started = System.nanoTime();
+                // WhyNot: 要約で落ちても記録を閉じずに抜けない — 書きためた記録の最後（最後のフレームの行）まで消える。
+                try {
+                    Flow.Record.finish(recorder, fingerprintText(App.rec(app), world), App.summaryWorldOf(app, world));
+                    System.err.println("[App] 記録の最後に World 全体の要約を書いた（${Int64.toString((System.nanoTime() - started) / 1000000i64)} ms）")
+                } catch {
+                    case e: Throwable => Flow.Record.line(recorder, "# world 全体の要約を取れなかった: ${e.getClass().getName()}")
+                }
+            }, last);
+            Flow.Record.close(recorder)
+        }, st#recorder)
 
     /// 記録する起動の World と、start の行に載せるファイルの中身。
     /// captured（App を組む間に読んだ物）があり、読み直しが読むパスも分かる時は Doc を読み直さず、

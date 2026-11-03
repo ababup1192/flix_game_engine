@@ -810,6 +810,8 @@
   `pub def partsOfNode(node: ModelNode, model: Model3d): List[ModelPart]`
 - ノードの番号（nodes の何番目か）→ そのノードから出た parts（parts の並びの順）。
   `pub def partsByNode(model: Model3d): Map[Int32, List[ModelPart]]`
+- parts を 1 つずつ置いた物（parts の並びの順）。world = 模型全体を置く行列・材質は part の物・名前は part を持つノードの名前
+  `pub def partInstances(world: Mat4.Mat4, model: Model3d): List[Scene3d.Instance3d]`
 - ノードの world の原点（world の行列の平行移動の列）。
   `pub def nodeOrigin(node: ModelNode): Vec3.Vec3`
 - `pub def partLocalToNode(node: ModelNode, model: Model3d): Option[Mat4.Mat4]`
@@ -889,7 +891,7 @@
   `pub eff Window { def setDebugBadge(enabled: Bool): Unit }`
 - 1 コマの経過時間。WhyNot Time と呼ばない: engine_world の Clock.Time と重なる。
   `pub eff FrameClock`
-- 前フレームからの経過時間。EngineConfig#maxDeltaTime で上限クランプ済み
+- 前フレームからの経過時間。EngineConfig#maxDeltaTime で上限クランプ済み。
   `pub eff FrameClock { def getDeltaTime(): Duration.Duration }`
 - 2D の描き物の列を出す口。
   `pub eff Draw2d`
@@ -989,6 +991,8 @@
 - プロジェクトディレクトリを再帰的に走査して *.scene.json を列挙する。
   `pub def findSceneFiles(rootDir: String): Result[String, List[String]] \ Fs.Glob`
 - `pub def scene3dLinearColorOf(rootDir: String): Bool \ {Fs.FileRead}`
+- flix.toml の依存の行 `"github:ababup1192/flix_game_engine" = { version = "x.y.z", … }` の版。
+  `pub def engineVersionOf(toml: String): Option[String]`
 
 ## Projection — `engine/src/render/drawable/Projection.flix`
 - ビュー変換: screenPos = worldPos * scale - offset。
@@ -1043,6 +1047,8 @@
   `pub def hitTriangle(r: Ray3d, maxDistance: Float64, a: Vec3.Vec3, b: Vec3.Vec3, c: Vec3.Vec3): Option[RayHit]`
 - 形 mesh（形の座標）を world で置いた物に当たる所（三角形の表裏とも）。境界の箱に触れない時は三角形を見ない。
   `pub def hitMesh(r: Ray3d, maxDistance: Float64, mesh: Mesh3d.Mesh3d, world: Mat4.Mat4): Option[RayHit]`
+- 置いた物の列のうち、レイが一番近くで当たる物とその所（当たらなければ None。同じ距離なら列の前）。
+  `pub def nearestInstance(r: Ray3d, maxDistance: Float64, instances: List[Scene3d.Instance3d]): Option[(Scene3d.Instance3d, RayHit)]`
 - 置いた物 i に当たる所。骨つきの物（Scene3d.skinningOf が Some）は形の境界の箱だけで見る
   `pub def hitInstance(r: Ray3d, maxDistance: Float64, i: Scene3d.Instance3d): Option[RayHit]`
 - 形 1 つに当たる所。
@@ -1208,7 +1214,7 @@
 - 1 つの材質が読める (テクスチャ名, 補間) の組の上限（ShaderDoc.materialTexReads の並びの前から。法線マップは別枠）。
   `pub def maxMaterialTextures(): Int32`
 - 置いた物の中身。mesh = 形・world = 形の座標 → world の行列・tint = 頂点の色に掛ける色・material = 材質（None なら頂点の色）・
-  `pub type alias InstanceFields = { mesh = Mesh3d.Mesh3d, world = Mat4.Mat4, tint = Color, material = Option[Material3d], pose = Option[Pose3d.Pose3d], lightmap = Option[Lightmap] }`
+  `pub type alias InstanceFields = { mesh = Mesh3d.Mesh3d, world = Mat4.Mat4, tint = Color, material = Option[Material3d], pose = Option[Pose3d.Pose3d], lightmap = Option[Lightmap], name = String }`
 - 3D のベイクした光（Blender などで前もって計算した光の絵。2D の Light.lightMapPass とは別）。
   `pub type alias Lightmap = { texture = String, colorSpace = Texture3d.ColorSpace, intensity = Float64, maxLevels = Int32 }`
 - 置いた物（閉じた型 — 欄を後から足しても、ゲームの書いた値が壊れない）。
@@ -1217,6 +1223,10 @@
   `pub def meshInstance(mesh: Mesh3d.Mesh3d, world: Mat4.Mat4): Instance3d`
 - `pub def withTint(c: Color, i: Instance3d): Instance3d`
 - `pub def withMaterial(m: Material3d, i: Instance3d): Instance3d`
+- 置いた物に名前を付ける（F8 で 3D の場面の中を囲むと、注釈のチケットにこの名前が出る。絵は変わらない）。
+  `pub def withName(name: String, i: Instance3d): Instance3d`
+- 置いた物の名前（付けていなければ空）。
+  `pub def nameOf(i: Instance3d): String`
 - ジョイントの行列で曲げる（mesh にジョイントの重みが無ければ描く時に無視される）。
   `pub def withPose(p: Pose3d.Pose3d, i: Instance3d): Instance3d`
 - 描く時に曲げる Pose（GL と CPU が同じ判定に使う）。None ならバインドポーズのまま描く:

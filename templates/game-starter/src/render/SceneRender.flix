@@ -26,10 +26,6 @@ mod SceneRender {
     def loadRes(): Res.Res \ IO =
         Res.build(run { Controls.loadDocs() } with Fs.FileRead.runWithIO)
 
-    /// 生成するときの時刻（秒）。実時間でなく固定値を使う — 空の流れも塵の位置もこの t
-    /// だけで決まるので、何度生成しても同じ PNG が出る（スナップショットのバイト比較が成り立つ）。
-    def renderTime(): Float64 = 3.0
-
     // ── 決定的な場面（スナップショット） ──
 
     pub def all(): Unit \ IO = App.Headless.exitWith(allJob(App.Headless.requestFromProcess()))
@@ -44,22 +40,6 @@ mod SceneRender {
         App.Headless.job("SceneRender", "one", req -> oneJob(req)) ::
         App.Headless.job("SceneRender", "all", req -> allJob(req)) :: Nil
 
-    /// 描き出せる場面の名前。make render の使い方も SHOT の当たり判定も、この並びが source of truth。
-    /// 場面の題と一言（Studio のギャラリーに出るラベル）は assets/*.scenes.json 側で、
-    /// name をここの名前とそろえる。ラベルを足しても描き出す場面は増えない。
-    /// 場面を足したら、ここと sceneOf と Makefile の SHOTS を一緒に足す。
-    def shotNames(): List[String] =
-        "main" :: "quit" :: Nil
-
-    /// 名前 → その場面の World。shotNames と対で保つ。名前で引く形にしてあるので、
-    /// SHOT で 1 枚だけ生成するときに残りの場面は組まない。
-    def sceneOf(name: String, w0: World.World): Option[World.World] =
-        match name {
-            case "main" => Some(w0)
-            case "quit" => Some(World.askQuit(w0))   // Esc・閉じるボタンで出る終了の確認（Layer.Prompt）
-            case _      => None
-        }
-
     /// SceneRender.all の中身。生成した PNG のパス列を返す — 走行中のゲームへの POST /render
     /// （Main の App.onRenderRequest）もこれを呼ぶ。プレイ状態には触れず Docs から組み立てる。
     pub def allShots(): List[String] \ IO =
@@ -73,11 +53,11 @@ mod SceneRender {
     def oneJob(req: App.Headless.Request): Int32 \ IO =
         let wanted = Map.getWithDefault("SHOT", "", App.Headless.envOf(req)) |> String.splitOn(substr = " ")
             |> List.map(String.trim) |> List.filter(n -> not String.isEmpty(n));
-        let known = List.toSet(shotNames());
+        let known = List.toSet(Shots.names());
         let unknown = wanted |> List.filter(n -> not Set.memberOf(n, known));
         if (List.isEmpty(wanted) or not List.isEmpty(unknown)) {
             println("[render] 描けない名前です: ${List.join(" ", unknown)}");
-            println("[render] SHOT=<場面> に使えるのは: ${List.join(" ", shotNames())}");
+            println("[render] SHOT=<場面> に使えるのは: ${List.join(" ", Shots.names())}");
             1
         } else {
             let picked = List.toSet(wanted);
@@ -92,8 +72,12 @@ mod SceneRender {
         let res = loadRes();
         let (cfg, texInfo) = withAtlasOf(cfgOf(outDir, atlas, ThemeDoc.rec(res#theme)#bg), res);
         let ctx = App.viewCtxOf(atlas, design());
-        shotNames() |> List.filter(keep) |> List.filterMap(name ->
-            sceneOf(name, World.initial()) |> Option.map(w -> shoot(cfg, texInfo, ctx, res, w, name)))
+        Shots.names() |> List.filter(keep) |> List.filterMap(name ->
+            Shots.worldOf(name, res) |> Option.map(w -> {
+                let path = shoot(cfg, texInfo, ctx, res, w, name);
+                App.Headless.writeShotRecord(outDir, name, Some(E2e.fingerprint(res, w)));
+                path
+            }))
 
     /// 実機が GPU へ上げるのと同じアトラスの画素を PNG に落とし、「そこから貼れる cfg」と
     /// texInfo を返す（描き出しは PNG からしか絵を読めない）。View が drawQuad で貼るので、
@@ -115,7 +99,7 @@ mod SceneRender {
     def shoot(cfg: HeadlessRender.RenderConfig, texInfo: String -> Option[GameEngine.TextureInfo],
               ctx: App.ViewCtx, res: Res.Res, w: World.World, name: String): String \ IO =
         // 実機は静的な層（View.frameBorder）を別に敷くので、描き出しでは同じ物を足して並べる。
-        let items = List.append(View.frame(ctx, res, { t = renderTime() | w }), View.frameBorder(res#theme));
+        let items = List.append(View.frame(ctx, res, w), View.frameBorder(res#theme));
         let surfaces = Render.shaderSurfaces(items);
         let (drawables, polygons) = Render.drawWith(texInfo, Render.withoutShaders(items));
         HeadlessRender.renderPngWith(cfg, drawables, polygons, surfaces, name);
@@ -160,7 +144,7 @@ mod SceneRender {
                     // 候補テーマは配色ごと変わる = アトラスの画素も変わるので、候補ごとに作り直す。
                     let candRes = Res.withTheme(cand, sprites, loadRes());
                     let (candCfg, candTex) = withAtlasOf({ background = ThemeDoc.rec(cand)#bg | cfg }, candRes);
-                    discard shoot(candCfg, candTex, ctx, candRes, World.initial(), stripJson(f))
+                    discard shoot(candCfg, candTex, ctx, candRes, Shots.initialWorld(), stripJson(f))
                 }
             }
         })

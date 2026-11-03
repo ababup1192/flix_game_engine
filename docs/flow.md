@@ -129,8 +129,12 @@ wait 1f look=3.5,-1.0 ns=…                   マウスの動いた量（App.wi
 wait 3f mouse=right ns=…                     右と中のボタンを押している（左だけなら mouse。Frame#mouseButtons に入る・左右同時は mouse=left,right）
 hold Down ns=… / release Down ns=…
 wait 1f keys=Left,Z new=Z ns=…               押している物の丸ごと・押した瞬間が差分から出ない時だけ new=
-expect fp=1a2b3c4d                           60 フレームごとの指紋（App.withFingerprint）。再生で最初の食い違いの行を指す
+wait 30f focus=0 ns=…                        窓のフォーカス（Frame#windowFocused）は変わったフレームにだけ focus=0|1
+wait 5f pad padkind=steam ns=…               パッドの機種（Frame#padKind）は pad から出せない時だけ padkind=generic|steam|unknown（書いた後は続く）
+expect fp=1a2b3c4d                           60 フレームごとの指紋（App.withFingerprint）。再生で最初の食い違いの行を指す。閉じる時にも 1 つ
 # fp phase=Playing|lines=3|…                 指紋の元の文字
+expect world=0123456789abcdef                閉じる時の World 全体の要約（WorldHash。どのゲームにもある）
+# world .world.clockBase 553370aaaeefa8d6    要約の部分ごとの字（食い違った時に再生の FAIL の下の行と並べる）
 reload assets/rules.json +assets/rules.json=b64:…   保存で読み直した（F1 は reload key）
 request /cheat q=b64:…                       onRequest のルートが World を変えた
 close                                        窓の閉じるボタン（withCloseRequest）
@@ -145,6 +149,38 @@ rewind 30                                    F8 の巻き戻しから再開し�
 - 押した瞬間・クリック・マウスの動きは、記録した前のフレームとの差分から出ない時（F8 で止めていた間に押した・離した）だけ `new=`・`click`・`moved` で残す（右と中のボタンが絡むクリックは `click=right` のようにクリックしたボタンの丸ごと・無ければ `click=-`）。
 - 指紋の欄はゲームが選ぶ（`withFingerprint(w -> 文字)`）。Doc の中身や絵のアトラスは入れない（4 万フレームで遅くなる）。
 - F8 のチケットの写しの末尾は `rewind <表示中までの戻り>` と `mark ticket`（再生するとチケットの瞬間に着く）。
+- `frame#diagnostics`（前のコマを描いた時間）は記録しない。再生では None なので、系で読んで World を変えない（lint-forbid の frame-diagnostics-in-system）。
+- World 全体の要約（`expect world=`）は World の中身を丸ごと辿る SHA-256（record は欄の名前の順・Lazy の中身と JDK の物は見ない）。
+  ゲームは何も足さなくてよい。App を組む時に Main だけが読む外の値（起動した時刻など）は記録に残らないので、
+  その欄だけ `App.withWorldSummaryMask` で決まった値へ置き換える（手本は templates/sound-novel-starter の Game.app）。
+
+### 決定性の門（make determinism）
+
+記録の再生が「実機と同じ World になる」ことを、リリースの前に確かめる（`bin/determinism.sh`・engine の作業場で。先に `make sync-engine-full`）。
+
+1. テンプレを隠しウィンドウ（`FLIX_GE_HIDDEN=1`）の DEBUG で起こし、台本（`FLIX_GE_INPUT_SCRIPT=<flow>`・`testdata/determinism/<テンプレ>.flow`）を流す。
+   台本は `Platform.Input`（キー・マウス・パッド・フォーカス）の handler を 1 枚重ねて実機の入力の代わりに答え、`Platform.FrameClock` を数えてコマを区切る
+   （ループは 1 周に 1 回、入力の前に `getDeltaTime` を呼ぶ）。dt は実時間のまま。流し終えた周で App は自分で閉じ、記録の最後に `expect world=` を書く。
+2. 書いた記録を画面なしで再生し（`E2e.play`）、全部の `expect`（60 コマごとの指紋と World 全体の要約）が立てば一致。
+3. 再生の仕方は `bin/determinism.sh` の `replays` の行ごとに別の JVM で流す（並列の度合いを変えた行は `Par` が入った後に 1 行足す）。
+
+台本に書けるのは World を読まない手だけ（tap・hold・release・wait とキー・点の的、付け足し）。役の名前・start・until・expect は書けない。
+**拾う物**: 実機のループが記録に無い形で World を変えた所（記録し忘れた読み直し・request・F8・固定刻みの持ち越し・窓の閉じる要求・記録に無い Frame の欄・App を組む時の外の値）。
+**拾わない物**: App を組む時の外の値から作った値（例: sound-novel のセーブの枠の日時は起動した時刻から作るので、セーブした回の記録は `expect world=` で食い違う）。
+記録は frameOf を通した後の Frame なので、frameOf と押した瞬間の検出の誤り（App の純粋な関数のテスト）・GLFW のキーの読み替え（LwjglInput のテスト）。
+画面なしで同じ flow を 2 回流して同じになる軽い方は engine_world のテスト（TestDeterminism）が見る。GL の絵の側は `make gl-capture-check`（`FLIX_GE_FIXED_DT` で 2 回撮ってバイトで比べる）。
+起動の時に読むセーブ（`saves/`）は App を組む外の値なので、門は記録と再生の間だけ外して戻す。
+
+今はやらない事: game-starter（src に make new-game が埋める字が残り、その場で組めない）と、リポジトリの外のゲーム（night_apartment など。
+その版の engine に追随した後に `make determinism TARGETS="<フォルダ>:<台本>"` で流す）は既定の対象に入れない。再生の最後の World を CPU で描いた絵の hash は控えない
+（View は World から純粋に作るので、World 全体の要約が同じなら絵も同じ）。並列の度合いを変えた再生の行は `Par` が入った後に足す。
+
+### ギャラリーの 1 枚から実機で開く（App.withShots・SHOT）
+
+ギャラリーの場面（`make render-all` が描く 1 枚）を組む関数は、ゲームの `<ゲーム>/src/Shots.flix`（描き出しの物を引かない純粋なモジュール）に置き、
+`App.withShots(Resources.shotsOf(Shots.names(), Shots.worldOf))` で始まりとして繋ぐ（命令口の `GET /shots` が一覧を返す）。引く名前は `shot:<場面>`（`START=shot:quit`・flow の `start shot:quit`）。描き出しと実機が同じ関数で World を組む。
+`SHOT=<場面> make run` は DEBUG の起動でその World から開き、F8 で止めた状態で窓が出る（F8 で動き出す）。配る版の起動（DEBUG でない）では開かない。
+描き出しは 1 枚ごとに `gallery/<場面>.json`（`App.Headless.writeShotRecord`: 始まり・引数・flow・コマ数・指紋・engine の版）を書く。
 
 ### 実機の dt を固定する（FLIX_GE_FIXED_DT）
 

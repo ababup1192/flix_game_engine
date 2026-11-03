@@ -151,4 +151,28 @@ mod TestRay3d {
         let targets = Ray3d.boxTargetsOf(n -> n#name, node("COL_PRP_box", Some({ min = Vec3.v3(-1.0, -1.0, -1.0), max = Vec3.v3(1.0, 1.0, 1.0) })) :: node("marker", None) :: Nil);
         Assert.assertEq(expected = (1, Some(("COL_PRP_box", 3000))),
             (List.length(targets), Ray3d.pickNearest(alongZ(Vec3.zero()), 10.0, targets) |> Option.map(p -> (fst(p), r1000(snd(p)#distance)))))
+
+    /// 正方形 1 枚（一辺 2・z = 0 の面）を z に置いて、名前を付けた物。
+    def namedQuad(name: String, z: Float64): Scene3d.Instance3d =
+        let quad = Mesh3d.fromPolygons({ points = Vec3.v3(-1.0, -1.0, 0.0) :: Vec3.v3(-1.0, 1.0, 0.0) :: Vec3.v3(1.0, 1.0, 0.0) :: Vec3.v3(1.0, -1.0, 0.0) :: Nil,
+                                         color = Color.rgb(1.0, 1.0, 1.0) } :: Nil);
+        Scene3d.meshInstance(quad, Mat4.translate(Vec3.v3(0.0, 0.0, z))) |> Scene3d.withName(name)
+
+    /// 並びの後ろでも、レイに一番近い物を選ぶ（z = 5 の奥と z = 3 の手前なら手前）。
+    @Test
+    def testNearestInstancePicksTheCloser(): Unit \ Assert =
+        Assert.assertEq(expected = Some(("near", 3000)),
+            Ray3d.nearestInstance(alongZ(Vec3.zero()), 100.0, namedQuad("far", 5.0) :: namedQuad("near", 3.0) :: Nil)
+                |> Option.map(match (i, hit) -> (Scene3d.nameOf(i), r1000(hit#distance))))
+
+    /// parts を置いた物の名前は、part を持つノードの名前（ノードの無い part は空）。
+    @Test
+    def testPartInstancesAreNamedByNode(): Unit \ Assert =
+        let quad = Mesh3d.fromPolygons({ points = Vec3.v3(-1.0, -1.0, 0.0) :: Vec3.v3(-1.0, 1.0, 0.0) :: Vec3.v3(1.0, 1.0, 0.0) :: Nil,
+                                         color = Color.rgb(1.0, 1.0, 1.0) } :: Nil);
+        let part = (node: Option[Int32]) -> { mesh = quad, material = None, node = node, gltfMaterial = None };
+        let model = { mesh = quad, skin = None, clips = Map.empty(), textures = Nil,
+                      parts = part(Some(0)) :: part(None) :: Nil,
+                      nodes = { name = "door", parent = None, local = Mat4.identity(), world = Mat4.identity(), localBounds = None, parts = 0 :: Nil } :: Nil };
+        Assert.assertEq(expected = "door" :: "" :: Nil, Model3d.partInstances(Mat4.identity(), model) |> List.map(Scene3d.nameOf))
 }

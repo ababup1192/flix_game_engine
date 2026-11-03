@@ -41,7 +41,8 @@ mod GameLint {
                 |> allowIn(Fn.Palette_write, "Makefile の口（make palette）が flix run --entrypoint で呼ぶ入口")
                 |> allowIn(Fn.Solve_main, "Makefile の口（make solve）が名前で呼ぶ入口")
                 |> allowIn(Fn.VideoAuditEntries_runAll, "動画の見回りが名前で呼ぶ入口の束（make video-entries の生成物）"),
-            customRule({ id = "test-calc", check = testCalc }),
+            customRule({ id = "test-calc", check = testCalc })
+                |> allowIn(Fn.TestStarts_testEveryShotBuildsFromTheApp, "性質テストの決まり（どの場面も shot:<名前> の始まりで組める）。組めない場面の名前だけを集める"),
             customRule({ id = "test-branch", check = testBranch })
                 |> allowIn(Fn.Fixtures_board, "テストの盤の格子の書き誤りは bug! で止める（値で分けない）")
                 |> allowIn(Fn.TestTrace_testForecastMatchesWhatWaitingDoes, "性質テストの決まり（待ったフレームならどの拍でも崩れない式）。崩れた拍だけ説明を返す")

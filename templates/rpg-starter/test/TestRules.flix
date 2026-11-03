@@ -54,6 +54,13 @@ mod TestRules {
         Assert.assertEq(expected = Err("始まり 'field': (1, 3) には立てない"),
             App.buildStart(Fixtures.app(), Vec2.zero(), "field", Map#{"map" => "village", "x" => "1", "y" => "3"}) |> Result.map(_ -> ()))
 
+    /// ギャラリーの場面は全部、実機と同じ App から shot:<名前> の始まりで組める。
+    @Test
+    def testEveryShotBuildsFromTheApp(): Unit \ Assert + Fs.FileRead =
+        let app = Fixtures.app();
+        Assert.assertEq(expected = Nil,
+            Shots.names() |> List.filter(name -> Result.isErr(App.buildStart(app, Vec2.zero(), App.shotStartName(name), Map.empty()))))
+
     /// talk は field の所に立ち、ノードの会話を開いた所。
     @Test
     def testTalkStartsWithTheNodeOpen(): Unit \ Assert + Fs.FileRead =

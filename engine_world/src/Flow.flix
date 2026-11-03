@@ -108,6 +108,10 @@ pub mod Flow {
     /// 指紋の問いの名前（App.withFingerprint を繋いだゲームだけ）。
     pub def fingerprintProbe(): String = "fp"
 
+    /// World 全体の要約の問いの名前（WorldHash.sha256Of。どのゲームにもある）。遊んだ記録の最後の expect world= が使う。
+    /// fp と同じく予約の名前: ゲームの問い（Table#probes）に world と付けると、こちらが先に引かれて隠れる。
+    pub def worldProbe(): String = "world"
+
     pub def vocabOf(app: App.App[w, ef], world: w): Vocab =
         let r = App.rec(app);
         let table = r#flow;
@@ -115,7 +119,8 @@ pub mod Flow {
         { roles = roles(world) |> List.map(snd) |> List.distinct,
           probes = table#probes |> List.map(row -> (row#name, kindOf(row#read), row#doc)),
           drives = table#drives |> List.map(row -> (row#name, row#doc)),
-          starts = r#starts |> List.map(start -> (start#name, start#doc, start#args)),
+          starts = List.append(r#starts |> List.map(start -> (start#name, start#doc, start#args)),
+                               r#shots |> List.map(shot -> (App.shotStartName(shot#name), shot#doc, shot#args))),
           options = table#options,
           keys = GameEngine.allKeys() |> List.map(key -> "${key}"),
           ready = Option.nonEmpty(table#ready),
@@ -177,15 +182,36 @@ pub mod Flow {
     /// at = マウスの位置・look = マウスの動いた量（App.Frame の mouseDelta。キャプチャ中は at が止まるので位置の差から出ない時だけ）・
     /// mouse = 左ボタンを押している・otherButtons = 押している右と中のボタン・wheel = ホイール・pad = パッドに触っている・
     /// keys = 押しているキーの丸ごと・pressed / click / moved = 前のフレームとの差分から出ない押した瞬間・左のクリック・動き・
-    /// otherClicks = 同じく右と中のクリック。
+    /// otherClicks = 同じく右と中のクリック。focus = 窓のフォーカス（Frame#windowFocused）・padKind = パッドの機種（Frame#padKind）は、
+    /// 変わった行にだけ書き、次に書くまで続く（書かなければ focus は真・機種は pad から出す: pad なら Generic、無ければ Unknown）。
     pub type alias Opt = {
         ns = List[Int64], dt = Option[Float64], at = Option[Vec2.Vec2], look = Option[Vec2.Vec2], mouse = Bool, otherButtons = Set[GameEngine.MouseButton], wheel = Float64, pad = Bool,
-        keys = Option[Set[Key]], pressed = Option[Set[Key]], click = Option[Bool], otherClicks = Option[Set[GameEngine.MouseButton]], moved = Option[Bool]
+        keys = Option[Set[Key]], pressed = Option[Set[Key]], click = Option[Bool], otherClicks = Option[Set[GameEngine.MouseButton]], moved = Option[Bool],
+        focus = Option[Bool], padKind = Option[GamepadMap.PadKind]
     }
 
     pub def noOpt(): Opt =
         { ns = Nil, dt = None, at = None, look = None, mouse = false, otherButtons = Set.empty(), wheel = 0.0, pad = false,
-          keys = None, pressed = None, click = None, otherClicks = None, moved = None }
+          keys = None, pressed = None, click = None, otherClicks = None, moved = None, focus = None, padKind = None }
+
+    /// 書いていない間のパッドの機種（pad の付け足しから出す。記録の Flow.Record も同じ物で書くかを決める）。
+    pub def padKindOf(touched: Bool): GamepadMap.PadKind =
+        if (touched) GamepadMap.PadKind.Generic else GamepadMap.PadKind.Unknown
+
+    /// padkind= の字（generic・steam・unknown）→ 機種。
+    pub def padKindNamed(name: String): Option[GamepadMap.PadKind] = match name {
+        case "generic" => Some(GamepadMap.PadKind.Generic)
+        case "steam"   => Some(GamepadMap.PadKind.Steam)
+        case "unknown" => Some(GamepadMap.PadKind.Unknown)
+        case _         => None
+    }
+
+    /// 機種 → padkind= の字。
+    pub def padKindName(kind: GamepadMap.PadKind): String = match kind {
+        case GamepadMap.PadKind.Generic => "generic"
+        case GamepadMap.PadKind.Steam   => "steam"
+        case GamepadMap.PadKind.Unknown => "unknown"
+    }
 
     pub enum Cmp with Eq, ToString {
         case Lt
@@ -255,12 +281,15 @@ pub mod Flow {
 
     /// フレームをまたいで持つ手の様子。held = 押しっぱなしのキー・button = 左ボタンを押しっぱなし・cursor = マウスの位置・
     /// prev* = 前のフレームで実際に押していた物（押した瞬間・クリック・動きを出す。prevOtherButtons は右と中）。
+    /// focused・padKind = 最後に書いた focus= と padkind=（padKind が None の間は pad から出す）。
     type alias Hand = { held = Set[Key], button = Bool, cursor = Vec2.Vec2,
-                        prevDown = Set[Key], prevButton = Bool, prevOtherButtons = Set[GameEngine.MouseButton], prevCursor = Option[Vec2.Vec2] }
+                        prevDown = Set[Key], prevButton = Bool, prevOtherButtons = Set[GameEngine.MouseButton], prevCursor = Option[Vec2.Vec2],
+                        focused = Bool, padKind = Option[GamepadMap.PadKind] }
 
     def freshHand(): Hand =
         { held = Set.empty(), button = false, cursor = { x = -100.0, y = -100.0 },
-          prevDown = Set.empty(), prevButton = false, prevOtherButtons = Set.empty(), prevCursor = None }
+          prevDown = Set.empty(), prevButton = false, prevOtherButtons = Set.empty(), prevCursor = None,
+          focused = true, padKind = None }
 
     /// 流している途中の物。frames と history は新しい順。awaiting = 返事を待っている tap（行と押す前の番号）。
     type alias PlayState[w] = {
@@ -485,6 +514,8 @@ pub mod Flow {
             let leftClicked = opt#click |> Option.getWithDefault(button and not hand#prevButton);
             let otherClicks = opt#otherClicks |> Option.getWithDefault(derivedClicks);
             let moved = hand#prevCursor |> Option.exists(p -> p#x != cursor#x or p#y != cursor#y);
+            let focused = opt#focus |> Option.getWithDefault(hand#focused);
+            let padKind = if (Option.nonEmpty(opt#padKind)) opt#padKind else hand#padKind;
             let frame = { down = down,
                           justPressed = opt#pressed |> Option.getWithDefault(Set.difference(down, hand#prevDown)),
                           dt = dt, viewport = ctx#setup#design, cursor = cursor,
@@ -494,12 +525,13 @@ pub mod Flow {
                           mouseClickedButtons = withLeft(leftClicked, otherClicks),
                           mouseMoved = opt#moved |> Option.getWithDefault(moved),
                           wheel = opt#wheel, padTouched = opt#pad,
-                          padKind = if (opt#pad) GamepadMap.PadKind.Generic else GamepadMap.PadKind.Unknown,
+                          padKind = padKind |> Option.getWithDefault(padKindOf(opt#pad)),
+                          windowFocused = focused,
                           mouseDelta = opt#look |> Option.getWithDefault(App.Internal.Frame.cursorDelta(hand#prevCursor, cursor))
                           | App.emptyFrame() };
             let (step, state) = App.traceFrame(ctx#app, frame, c#state, c#world);
             let nextHand = { cursor = cursor, prevDown = down, prevButton = button, prevOtherButtons = opt#otherButtons, prevCursor = Some(cursor),
-                             held = opt#keys |> Option.getWithDefault(hand#held) | hand };
+                             held = opt#keys |> Option.getWithDefault(hand#held), focused = focused, padKind = padKind | hand };
             let next = { world = step#after, state = state, hand = nextHand, count = c#count + 1,
                          frames = { step = step, state = state } :: c#frames,
                          history = List.take(App.historyLimit(), step#after :: c#history) | c };
@@ -639,6 +671,7 @@ pub mod Flow {
     pub def valueOf(app: App.App[w, ef], name: String, world: w): Option[Value] =
         let r = App.rec(app);
         if (name == fingerprintProbe()) r#fingerprint |> Option.map(f -> Value.Text(fingerprintOf(f(world))))
+        else if (name == worldProbe()) Some(Value.Text(WorldHash.sha256Of(App.summaryWorldOf(app, world))))
         else r#flow#probes |> List.find(row -> row#name == name) |> Option.map(row -> match row#read {
             case Probe.Num(f)  => Value.Num(f(world))
             case Probe.Text(f) => Value.Text(f(world))

@@ -1,0 +1,18 @@
+# 決定性の門（bin/determinism.sh）の台本: 題名から面 1 へ入り、歩き・待ち・取り消しを混ぜる。
+# 台本は実機のキー・マウスの代わり（FLIX_GE_INPUT_SCRIPT）。役の名前・start・until・expect は書けない（World が要る）。
+ready off
+wait 240f
+tap Enter
+wait 120f at=320,180
+tap Right
+wait 30f
+tap Right
+wait 30f focus=0
+tap Down
+wait 30f focus=1
+tap Z
+wait 30f pad padkind=steam
+tap Space
+wait 60f
+tap R
+wait 120f

@@ -76,6 +76,10 @@ pub mod Flow.Cli {
                 println("    ${failure#at#text}");
                 println("    ${Int32.toString(failure#frame)} フレーム目（${seconds(failure#frame)} 秒）" +
                         (if (failure#seen == "") "" else " / ${failure#seen}"));
+                // World 全体の要約が違う時は、記録の末尾の「# world」の行と同じ形で部分ごとの要約を出す（並べて違う欄を探す）。
+                if (String.startsWith(prefix = "expect ${Flow.worldProbe()}=", String.trim(failure#at#text)))
+                    WorldHash.partsOf(App.summaryWorldOf(app, failure#upTo#last), 3) |> List.forEach(part -> println("# world ${part}"))
+                else ();
                 1
         }
 

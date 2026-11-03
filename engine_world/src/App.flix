@@ -48,7 +48,8 @@ pub mod App {
                                            // キャプチャを切り替えた拍・フォーカスが戻った拍は 0
         windowFocused = Bool,              // 窓にフォーカスがあるか（外れている間にキャプチャの宣言を出し続けても OS はキャプチャしない）
         diagnostics = Option[FrameDiagnostics.Diagnostics] // 前のフレームを描いた診断（CPU・GPU の時間・3D の数）。withDiagnostics の
-                                           // 間だけ Some（F8 で止めていた拍の後は止める前の値）。表示は FrameDiagnostics.summaryLines
+                                           // 間だけ Some（F8 で止めていた拍の後は止める前の値）。表示は FrameDiagnostics.summaryLines。
+                                           // 系で読んで World を変えない（遊んだ記録に残らず、再生では None。lint-forbid の frame-diagnostics-in-system）
     }
 
     /// key がいま押されているか（押しっぱなしも true）。移動などの連続入力に。
@@ -229,10 +230,14 @@ pub mod App {
         outputs = List[Output[w]],
         // 始まりの登録簿（withStarts）。START・/start・flow の start・テストが名前で場面を組む。
         starts = List[Start[w]],
+        // ギャラリーの場面の始まり（withShots）。名前は shot:<場面> で引く（starts の一覧と先頭には混ぜない）。
+        shots = List[Start[w]],
         // flow（e2e/<名前>.flow）の語彙の表: 役・問い・名前付きの操作・入力を受けられるか・返事の通し番号（withFlow）。
         flow = Flow.Table[w],
         // World の指紋の元の文字（withFingerprint）。記録の 60 フレームごとの expect fp= と、再生の食い違いの指し示し。
-        fingerprint = Option[w -> String]
+        fingerprint = Option[w -> String],
+        // World 全体の要約（expect world=）を取る前に、記録の外から来る値を決まった値へ置き換える（withWorldSummaryMask）。
+        summaryMask = w -> w
     }
 
     /// 初期 World だけを持つ空の App。絵はまだ無い（withView で繋ぐまで何も描かない）。
@@ -284,8 +289,10 @@ pub mod App {
           diagnostics = false,
           outputs = Nil,
           starts = Nil,
+          shots = Nil,
           flow = Flow.emptyTable(),
-          fingerprint = None })
+          fingerprint = None,
+          summaryMask = w -> w })
 
     /// 起動時に 1 回だけ走るシステムを末尾へ繋ぐ（追加順に適用される）。
     pub def addStartup(sys: w -> w \ ef, app: App[w, ef]): App[w, ef] =
@@ -696,6 +703,38 @@ pub mod App {
     pub def withStarts(starts: List[Start[w]], app: App[w, ef]): App[w, ef] =
         App.App({ starts = starts | rec(app) })
 
+    /// ギャラリーの場面（make render-all が描く 1 枚）を組む関数を、始まりとして繋ぐ。name は場面の名前（gallery/<名前>.png と同じ字）で、
+    /// 引くときは `shot:<名前>`（START・flow の start・POST /start・`SHOT=<名前> make run`）。描き出しと実機が同じ関数で World を組むので、
+    /// 実機で開いた場面はギャラリーの絵と同じ World から始まる（実機の起動では F8 で止めた状態で窓が開く）。
+    /// 実機の START で引けるのは DEBUG の起動だけ（配る版の起動で場面の作り物を開かない）。画面なしの道（flow・テスト）はいつも引ける。
+    /// withStarts の一覧（GET /starts・起動の既定の先頭）には混ぜない。build は withStarts と同じく純粋に書く
+    /// （新しく作った初期の World を受けるが、ギャラリーと同じ World にするには、描き出しと同じ初めの World から組む）。
+    pub def withShots(shots: List[Start[w]], app: App[w, ef]): App[w, ef] =
+        App.App({ shots = shots | rec(app) })
+
+    /// ギャラリーの場面の始まりの名前（`shot:<場面>`）。
+    pub def shotStartName(scene: String): String = "${shotPrefix()}${scene}"
+
+    /// 始まりの名前がギャラリーの場面（`shot:` で始まる）か。
+    pub def isShotName(name: String): Bool = String.startsWith(prefix = shotPrefix(), name)
+
+    def shotPrefix(): String = "shot:"
+
+    /// withShots で繋いだ場面の名前（登録順・shot: を付けない字）。
+    pub def shotNames(app: App[w, ef]): List[String] =
+        rec(app)#shots |> List.map(shot -> shot#name)
+
+    /// 名前の始まり（shot: で始まればギャラリーの場面）。無ければ、近い名前の案つきの理由。
+    def findStart(app: App[w, ef], name: String): Result[String, Start[w]] =
+        let r = rec(app);
+        if (isShotName(name)) {
+            let scene = String.dropLeft(String.length(shotPrefix()), name);
+            r#shots |> List.find(shot -> shot#name == scene)
+                |> Option.toOk("ギャラリーの場面 '${scene}' は App.withShots に無い${Suggest.hint(scene, shotNames(app))}")
+        } else
+            r#starts |> List.find(start -> start#name == name)
+                |> Option.toOk("始まり '${name}' は登録簿に無い${Suggest.hint(name, startNames(app))}")
+
     /// 新しく作った初期の World: init（design 解像度から）+ 起動時の系 + Doc を全部読み直した物
     /// （F1 の reloadOn の関数 = DocTable.reloadAll、無ければ監視の関数を登録順に）。
     /// 読み直すのは、main が起動の時に読んだ Doc ではなく今のファイルで場面を組むため（/start・記録の再生）。
@@ -714,9 +753,9 @@ pub mod App {
     /// 名前の始まりを、新しく作った初期の World から組む。args は既定の引数を上書きし、値が `@パス` の
     /// 引数はそのファイルの中身にする（無いファイルの引数は外す）。知らない名前・組めない引数は理由つきの Err。
     pub def buildStart(app: App[w, ef], design: Vec2.Vec2, name: String, args: Map[String, String]): Result[String, w] \ ef + Fs.FileRead =
-        match rec(app)#starts |> List.find(start -> start#name == name) {
-            case None => Err("始まり '${name}' は登録簿に無い${Suggest.hint(name, startNames(app))}")
-            case Some(start) => buildStartFrom(start, freshWorld(app, design), name, args)
+        match findStart(app, name) {
+            case Err(why)    => Err(why)
+            case Ok(start)   => buildStartFrom(start, freshWorld(app, design), name, args)
         }
 
     /// init（design 解像度から）+ 起動時の系。Doc は読み直さない。
@@ -728,10 +767,7 @@ pub mod App {
     /// buildStart の、初期の World を渡す形（窓なしのゲームが Doc の読み直しを取り置いた World から組む）。
     /// fresh は freshWorld(app, design) か、同じ Doc で組んだ init + 起動時の系であること。
     pub def buildStartOn(app: App[w, ef], fresh: w, name: String, args: Map[String, String]): Result[String, w] \ Fs.FileRead =
-        match rec(app)#starts |> List.find(start -> start#name == name) {
-            case None        => Err("始まり '${name}' は登録簿に無い${Suggest.hint(name, startNames(app))}")
-            case Some(start) => buildStartFrom(start, fresh, name, args)
-        }
+        findStart(app, name) |> Result.flatMap(start -> buildStartFrom(start, fresh, name, args))
 
     def buildStartFrom(start: Start[w], fresh: w, name: String, args: Map[String, String]): Result[String, w] \ Fs.FileRead =
         let resolved = loadArgs(Map.unionWith((given, _) -> given, args, start#args));
@@ -790,6 +826,17 @@ pub mod App {
     /// 盤・カーソル・種）だけを短く並べ、Doc の中身や絵のアトラスは入れない（長い文字を毎フレーム作ると遅い）。
     pub def withFingerprint(f: w -> String, app: App[w, ef]): App[w, ef] =
         App.App({ fingerprint = Some(f) | rec(app) })
+
+    /// World 全体の要約（遊んだ記録の最後の `expect world=`・決定性の門）を取る前に、World を f で写す。
+    /// App を組む時にだけ読む外の値（起動した時のその土地の時刻など）は記録に残らず、画面なしの再生は別の値で組むので、
+    /// その欄だけを決まった値へ置き換える。進行に効く欄は置き換えない（置き換えた欄の食い違いは門が拾わなくなる）。
+    pub def withWorldSummaryMask(f: w -> w, app: App[w, ef]): App[w, ef] =
+        App.App({ summaryMask = f | rec(app) })
+
+    /// World 全体の要約を取る World（withWorldSummaryMask で写した物）。
+    pub def summaryWorldOf(app: App[w, ef], world: w): w =
+        let mask = rec(app)#summaryMask;
+        mask(world)
 
     /// addClock で宣言した時計を、実時間 dt で 1 回ずつ進める（advanceFrame が系の前に呼ぶ）。
     /// ゲームのコードからは呼ばない（2 回進めると 1 回目の区間の音が消える。lint-forbid の clock-advance）。

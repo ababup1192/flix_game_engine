@@ -210,7 +210,7 @@ mod TestFlow {
     @Test
     def testRecordedFormsParseLikeTheGoCheck(): Unit \ Assert + Fs.FileRead =
         let input = Fs.FileRead.read("../../testdata/lint/flow-check/clean-passes/input.flow") |> Result.getWithDefault("");
-        Assert.assertEq(expected = Ok(16),
+        Assert.assertEq(expected = Ok(18),
                         Flow.Parse.parseText(goVocab(), "clean-passes", input) |> Result.map(script -> List.length(script#lines))
                             |> Result.mapErr(Flow.Parse.problemsText))
 

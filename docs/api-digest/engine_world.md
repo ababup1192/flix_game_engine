@@ -143,7 +143,7 @@
 - 生成したドット絵アトラス 1 枚ぶんの受け渡し。
   `pub type alias AtlasUpload = { texture = String, key = String, baked = PxSpriteAtlas.Baked }`
 - App の中身（欄の意味は右の // コメント）。ゲームからは読まず、ビルダー（addSystem / withView など）で組む。
-  `pub type alias Rec[w: Type, ef: Eff] = { init = Vec2.Vec2 -> w \ ef, startupSystems = List[w -> w \ ef], updateSystems = List[(Frame, w) -> w \ ef], reload = Option[(GameEngine.Key, w -> w \ {Fs.FileRead})], watch = List[(String, w -> w \ {Fs.FileRead})], reloadPaths = Option[List[String]], view = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], passes = w -> Render.PassPlan \ ef, fonts = List[String], camera = Option[w -> Vec2.Vec2 \ ef], zoom = Option[w -> Float64 \ ef], cameraBounds = Option[w -> Rect2.Rect2 \ ef], parallaxLayers = List[(Float64, (ViewCtx, w) -> List[Render.PlacedItem] \ ef)], hudView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], audio = { before = w, after = w } -> List[String] \ ef, sustained = w -> List[Sustain] \ ef, mixer = Option[w -> AudioMixer.Mixer \ ef], quit = (Frame, w) -> Bool \ ef, closeRequest = Option[w -> w \ ef], debug = Bool, debugView = Option[(String, w -> (List[GameEngine.Drawable], List[GameEngine.TileMapRenderCmd], List[GameEngine.PolygonRenderCmd]) \ ef)], worldDump = Option[(Rect2.Rect2, w) -> String \ ef], annotationContext = Option[w -> Annotate.Table \ ef], staticLayer = Option[{ key = w -> GameEngine.StaticKey, build = w -> List[Render.PlacedItem] }], tileLayers = Option[w -> List[TileLayerSpec]], spriteAtlases = w -> List[AtlasUpload], pixelSnap = w -> Float64, statusLine = Option[w -> String \ ef], remoteRender = Option[Unit -> List[String] \ IO], shot = Option[w -> String \ IO], remoteHandlers = List[(String, (Map[String, String], w) -> Result[String, w] \ {Fs.FileRead})], fixedStep = Option[Float64], clocks = List[(Float64, w) -> w], cursor = Option[w -> CursorSpec], fullscreen = Option[w -> Bool], mouseCapture = Option[w -> Bool], diagnostics = Bool, outputs = List[Output[w]], starts = List[Start[w]], flow = Flow.Table[w], fingerprint = Option[w -> String] }`
+  `pub type alias Rec[w: Type, ef: Eff] = { init = Vec2.Vec2 -> w \ ef, startupSystems = List[w -> w \ ef], updateSystems = List[(Frame, w) -> w \ ef], reload = Option[(GameEngine.Key, w -> w \ {Fs.FileRead})], watch = List[(String, w -> w \ {Fs.FileRead})], reloadPaths = Option[List[String]], view = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], passes = w -> Render.PassPlan \ ef, fonts = List[String], camera = Option[w -> Vec2.Vec2 \ ef], zoom = Option[w -> Float64 \ ef], cameraBounds = Option[w -> Rect2.Rect2 \ ef], parallaxLayers = List[(Float64, (ViewCtx, w) -> List[Render.PlacedItem] \ ef)], hudView = Option[(ViewCtx, w) -> List[Render.PlacedItem] \ ef], audio = { before = w, after = w } -> List[String] \ ef, sustained = w -> List[Sustain] \ ef, mixer = Option[w -> AudioMixer.Mixer \ ef], quit = (Frame, w) -> Bool \ ef, closeRequest = Option[w -> w \ ef], debug = Bool, debugView = Option[(String, w -> (List[GameEngine.Drawable], List[GameEngine.TileMapRenderCmd], List[GameEngine.PolygonRenderCmd]) \ ef)], worldDump = Option[(Rect2.Rect2, w) -> String \ ef], annotationContext = Option[w -> Annotate.Table \ ef], staticLayer = Option[{ key = w -> GameEngine.StaticKey, build = w -> List[Render.PlacedItem] }], tileLayers = Option[w -> List[TileLayerSpec]], spriteAtlases = w -> List[AtlasUpload], pixelSnap = w -> Float64, statusLine = Option[w -> String \ ef], remoteRender = Option[Unit -> List[String] \ IO], shot = Option[w -> String \ IO], remoteHandlers = List[(String, (Map[String, String], w) -> Result[String, w] \ {Fs.FileRead})], fixedStep = Option[Float64], clocks = List[(Float64, w) -> w], cursor = Option[w -> CursorSpec], fullscreen = Option[w -> Bool], mouseCapture = Option[w -> Bool], diagnostics = Bool, outputs = List[Output[w]], starts = List[Start[w]], shots = List[Start[w]], flow = Flow.Table[w], fingerprint = Option[w -> String], summaryMask = w -> w }`
 - 初期 World だけを持つ空の App。絵はまだ無い（withView で繋ぐまで何も描かない）。
   `pub def make(init: w): App[w, ef]`
 - 初期 World を design 解像度（project.json の designWidth/Height）から組む入口。
@@ -242,6 +242,14 @@
   `pub type alias Start[w] = { name = String, doc = String, args = Map[String, String], build = (w, Map[String, String]) -> Result[String, w] }`
 - 始まりの登録簿を繋ぐ。繋いだゲームは起動もここを通る（環境変数 START が無ければ先頭の始まり）。
   `pub def withStarts(starts: List[Start[w]], app: App[w, ef]): App[w, ef]`
+- ギャラリーの場面（make render-all が描く 1 枚）を組む関数を、始まりとして繋ぐ。name は場面の名前（gallery/<名前>.png と同じ字）で、
+  `pub def withShots(shots: List[Start[w]], app: App[w, ef]): App[w, ef]`
+- ギャラリーの場面の始まりの名前（`shot:<場面>`）。
+  `pub def shotStartName(scene: String): String`
+- 始まりの名前がギャラリーの場面（`shot:` で始まる）か。
+  `pub def isShotName(name: String): Bool`
+- withShots で繋いだ場面の名前（登録順・shot: を付けない字）。
+  `pub def shotNames(app: App[w, ef]): List[String]`
 - 新しく作った初期の World: init（design 解像度から）+ 起動時の系 + Doc を全部読み直した物
   `pub def freshWorld(app: App[w, ef], design: Vec2.Vec2): w \ ef + Fs.FileRead`
 - 登録簿の名前の列（登録順）。
@@ -262,6 +270,10 @@
   `pub def withFlow(table: Flow.Table[w], app: App[w, ef]): App[w, ef]`
 - World の指紋の元の文字を選ぶ関数を繋ぐ。遊んだ記録が 60 フレームごとに `expect fp=…` を書き、
   `pub def withFingerprint(f: w -> String, app: App[w, ef]): App[w, ef]`
+- World 全体の要約（遊んだ記録の最後の `expect world=`・決定性の門）を取る前に、World を f で写す。
+  `pub def withWorldSummaryMask(f: w -> w, app: App[w, ef]): App[w, ef]`
+- World 全体の要約を取る World（withWorldSummaryMask で写した物）。
+  `pub def summaryWorldOf(app: App[w, ef], world: w): w`
 - addClock で宣言した時計を、実時間 dt で 1 回ずつ進める（advanceFrame が系の前に呼ぶ）。
   `pub def tickClocks(app: App[w, ef], dt: Float64, world: w): w`
 - 前フレームと今フレームのキー集合から Frame を組む。justPressed は差分
@@ -411,6 +423,10 @@
   `pub def pngPathOf(block: String): Option[String]`
 - [shot] の答えが書いたファイル: PNG と、隣の描き物の表（<名前>.items.tsv）。撮れていなければ空。
   `pub def shotFilesOf(block: String): List[String]`
+- 描き出した 1 枚（gallery/<名前>.png）の隣に置く記録 gallery/<名前>.json の中身: その絵の World を組む始まり（shot:<名前>）・
+  `pub def shotRecordText(name: String, fingerprint: Option[String], engineVersion: String): String`
+- gallery/<名前>.json を書く（shotRecordText）。fingerprint は指紋の元の字（ゲームの withFingerprint と同じ関数で作る）。
+  `pub def writeShotRecord(outDir: String, name: String, fingerprint: Option[String]): Unit \ IO`
 - 入口の中身。FGE_SHOT があれば 1 枚撮って終わり、無ければ待ち受ける（/run は無し）。
   `pub def serve(app: App.App[w, ef]): Unit \ ef + Fs.FileRead + IO`
 - 窓なしのゲーム（/start・/step・view=shot）+ 入口の束（/run）で待ち受ける。FGE_SHOT があれば 1 枚撮って終わる。
@@ -547,6 +563,8 @@
   `pub type alias RemoteNext[w] = { world = w, anno = Annotate.State, history = List[w], hold = Bool, stepState = App.StepState, record = List[Flow.Record.Item] }`
 - リクエスト 1 件を捌き、応答をブリッジへ書いてから次の状態を返す。
   `pub def handleRemote(app: App.App[w, ef], bridge: Bridge, raw: String, ctx: RemoteNext[w]): RemoteNext[w] \ (ef + Platform.Window + Platform.GpuResources + Fs.FileRead + IO)`
+- GET /shots の本文: ギャラリーの場面（App.withShots）の始まりの名前（shot:<場面>）と説明を 1 行ずつ。
+  `pub def shotsText(app: App.App[w, ef]): String`
 - GET /starts の本文: 始まりの登録簿（App.withStarts）の名前・既定の引数・説明を 1 行ずつ。
   `pub def startsText(app: App.App[w, ef]): String`
 - view=shot の本文: [shot] と、撮れたら `ok png=<パス>`（/render と同じ形）・撮れなければ `error: 理由`。
@@ -1121,6 +1139,8 @@
   `pub def settings(): List[String]`
 - 指紋の問いの名前（App.withFingerprint を繋いだゲームだけ）。
   `pub def fingerprintProbe(): String`
+- World 全体の要約の問いの名前（WorldHash.sha256Of。どのゲームにもある）。遊んだ記録の最後の expect world= が使う。
+  `pub def worldProbe(): String`
 - `pub def vocabOf(app: App.App[w, ef], world: w): Vocab`
 - 語彙を e2e/vocab.json の形にする（bin/fge flow check が読む。キーの順は固定）。
   `pub def vocabJson(vocab: Vocab): String`
@@ -1129,8 +1149,14 @@
 - 長さ: 秒（fps でフレーム数に丸める）かフレーム数。
   `pub enum Span with Eq, ToString { case Secs(Float64) case Frames(Int32) }`
 - フレームの手の付け足し（ほとんどは記録が書く）。ns = フレームごとの経過ナノ秒（数がフレーム数）・dt = 経過秒・
-  `pub type alias Opt = { ns = List[Int64], dt = Option[Float64], at = Option[Vec2.Vec2], look = Option[Vec2.Vec2], mouse = Bool, otherButtons = Set[GameEngine.MouseButton], wheel = Float64, pad = Bool, keys = Option[Set[Key]], pressed = Option[Set[Key]], click = Option[Bool], otherClicks = Option[Set[GameEngine.MouseButton]], moved = Option[Bool] }`
+  `pub type alias Opt = { ns = List[Int64], dt = Option[Float64], at = Option[Vec2.Vec2], look = Option[Vec2.Vec2], mouse = Bool, otherButtons = Set[GameEngine.MouseButton], wheel = Float64, pad = Bool, keys = Option[Set[Key]], pressed = Option[Set[Key]], click = Option[Bool], otherClicks = Option[Set[GameEngine.MouseButton]], moved = Option[Bool], focus = Option[Bool], padKind = Option[GamepadMap.PadKind] }`
 - `pub def noOpt(): Opt`
+- 書いていない間のパッドの機種（pad の付け足しから出す。記録の Flow.Record も同じ物で書くかを決める）。
+  `pub def padKindOf(touched: Bool): GamepadMap.PadKind`
+- padkind= の字（generic・steam・unknown）→ 機種。
+  `pub def padKindNamed(name: String): Option[GamepadMap.PadKind]`
+- 機種 → padkind= の字。
+  `pub def padKindName(kind: GamepadMap.PadKind): String`
 - `pub enum Cmp with Eq, ToString { case Lt case Le case Same case Ge case Gt case Differ }`
 - 問いの式。Name は真偽の問い・Compare は (名前, 比べ方, 書いた値の文字)。
   `pub enum Expr with Eq, ToString { case Name(String) case Not(Expr) case Both(Expr, Expr) case Compare(String, Cmp, String) }`
@@ -1236,6 +1262,8 @@
   `pub def resetFingerprint(rec: Recorder, fingerprint: Option[String]): Unit \ IO`
 - 実機のフレーム 1 つ（App.traceFrame に渡した Frame そのもの）と、そのフレームの後の指紋の元。
   `pub def frame(rec: Recorder, frame: App.Frame, fingerprint: Option[String]): Unit \ IO`
+- 閉じる時の最後の確かめ: 最後の expect fp= の後に流したフレームがあれば指紋を 1 つ足し、World 全体の要約（expect world=）を書く。
+  `pub def finish(rec: Recorder, fingerprint: Option[String], world: w): Unit \ IO`
 - 始まりの行（引数の値が空白や # を含むか b64: で始まるなら b64: にする）と、読んだファイル。
   `pub def startLine(name: String, args: Map[String, String], files: Map[String, Flow.File]): String`
 - 保存・F1 で読み直した行（target = 監視のパスか key）。
@@ -2108,6 +2136,8 @@
   `pub def addClock(spec: { clockOf = w -> Clock.Clock[c], withClock = (Clock.Clock[c], w) -> w, paceOf = (res, w) -> Clock.Pace[c, why] }, app: App.App[With[res, w], ef]): App.App[With[res, w], ef]`
 - 始まりの登録簿の 1 行（App.Start の、build が描く元も受ける形）。build は描く元を読んで World を組む。
   `pub type alias Start[res, w] = { name = String, doc = String, args = Map[String, String], build = (res, w, Map[String, String]) -> Result[String, w] }`
+- ギャラリーの場面の始まり（App.withShots へ渡す）。names = 場面の名前（gallery/<名前>.png と同じ字）・
+  `pub def shotsOf(names: List[String], worldOf: (String, res) -> Option[w]): List[App.Start[With[res, w]]]`
 - 始まりの登録簿の 1 行を組の行へ持ち上げる（build は World を組み、描く元はそのまま）。
   `pub def liftStart(start: Start[res, w]): App.Start[With[res, w]]`
 - 外へ書く出力を組の出力へ持ち上げる（鍵と書く物は World から）。
@@ -3009,6 +3039,13 @@
   `pub def pointAt(face: Face, t: Float64): Vec2.Vec2`
 - 面の足元の中点（裏面カリングと「面のわずかに手前」の基準点）。
   `pub def centerOf(face: Face): Vec2.Vec2`
+
+## WorldHash — `engine_world/src/WorldHash.flix`
+- `pub def sha256Of(x: a): String`
+- x の中を depth 段まで開いた部分ごとの要約（"欄の道 16 字" の行。record の欄は名前・enum と Flix の物は v0 などの欄の名前）。
+  `pub def partsOf(x: a, depth: Int32): List[String]`
+- sha256Of と partsOf を、x を 1 回だけ辿って両方返す（大きな World を閉じる時に 2 回辿らない）。
+  `pub def summaryOf(x: a, depth: Int32): (String, List[String])`
 
 ## Worldline — `engine_world/src/Worldline.flix`
 - `pub enum Worldline[a] { case Worldline({ past = List[a], current = a, future = List[a], cap = Int32 }) }`

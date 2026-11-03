@@ -67,6 +67,21 @@ pub mod Model3d {
             case None    => acc
         }, Map.empty())
 
+    /// parts を 1 つずつ置いた物（parts の並びの順）。world = 模型全体を置く行列・材質は part の物・名前は part を持つノードの名前
+    /// （Scene3d.withName。F8 の注釈が場面の中の物をこの名前で指す。ノードの無い part は空）。
+    /// 置き方を部品ごとに変える時（回す扉など）は partsOfNode と partLocalToNode で組み、名前は Scene3d.withName で付ける。
+    pub def partInstances(world: Mat4.Mat4, model: Model3d): List[Scene3d.Instance3d] =
+        let nodes = List.toVector(model#nodes);
+        model#parts |> List.map(part -> {
+            let placed = Scene3d.meshInstance(part#mesh, world);
+            let lit = match part#material {
+                case Some(m) => Scene3d.withMaterial(m, placed)
+                case None    => placed
+            };
+            let name = part#node |> Option.flatMap(k -> Vector.nth(k, nodes)) |> Option.map(n -> n#name) |> Option.getWithDefault("");
+            Scene3d.withName(name, lit)
+        })
+
     /// ノードの world の原点（world の行列の平行移動の列）。
     pub def nodeOrigin(node: ModelNode): Vec3.Vec3 = Mat4.apply(node#world, Vec3.zero())
 

@@ -24,7 +24,21 @@
   ],
   "starts": [
     {"name": "title", "doc": "タイトル画面（起動の既定）", "args": {}},
-    {"name": "talk", "doc": "シナリオのノード（node。既定は最初の Station）の頭から読む所。line = .yarn の行番号を渡すとその行まで進めて出した所（Studio の会話のプレビュー・bin/fge talk goto）。$名前=値 でシナリオの変数をその値にして流す", "args": {}}
+    {"name": "talk", "doc": "シナリオのノード（node。既定は最初の Station）の頭から読む所。line = .yarn の行番号を渡すとその行まで進めて出した所（Studio の会話のプレビュー・bin/fge talk goto）。$名前=値 でシナリオの変数をその値にして流す", "args": {}},
+    {"name": "shot:title", "doc": "ギャラリーの場面（gallery/title.png）", "args": {}},
+    {"name": "shot:nvl", "doc": "ギャラリーの場面（gallery/nvl.png）", "args": {}},
+    {"name": "shot:adv", "doc": "ギャラリーの場面（gallery/adv.png）", "args": {}},
+    {"name": "shot:choice", "doc": "ギャラリーの場面（gallery/choice.png）", "args": {}},
+    {"name": "shot:lane", "doc": "ギャラリーの場面（gallery/lane.png）", "args": {}},
+    {"name": "shot:engawa", "doc": "ギャラリーの場面（gallery/engawa.png）", "args": {}},
+    {"name": "shot:night", "doc": "ギャラリーの場面（gallery/night.png）", "args": {}},
+    {"name": "shot:morning", "doc": "ギャラリーの場面（gallery/morning.png）", "args": {}},
+    {"name": "shot:log", "doc": "ギャラリーの場面（gallery/log.png）", "args": {}},
+    {"name": "shot:save", "doc": "ギャラリーの場面（gallery/save.png）", "args": {}},
+    {"name": "shot:load", "doc": "ギャラリーの場面（gallery/load.png）", "args": {}},
+    {"name": "shot:settings", "doc": "ギャラリーの場面（gallery/settings.png）", "args": {}},
+    {"name": "shot:ask", "doc": "ギャラリーの場面（gallery/ask.png）", "args": {}},
+    {"name": "shot:credits", "doc": "ギャラリーの場面（gallery/credits.png）", "args": {}}
   ],
   "keys": ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", "Digit0", "Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6", "Digit7", "Digit8", "Digit9", "Up", "Down", "Left", "Right", "Enter", "Space", "Escape", "Tab", "Backspace", "Insert", "Delete", "PageUp", "PageDown", "Home", "End", "CapsLock", "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12", "Apostrophe", "Comma", "Minus", "Period", "Slash", "Semicolon", "Equal", "LeftBracket", "Backslash", "RightBracket", "GraveAccent", "LeftShift", "LeftCtrl", "LeftAlt", "LeftSuper", "RightShift", "RightCtrl", "RightAlt", "RightSuper", "Menu", "Numpad0", "Numpad1", "Numpad2", "Numpad3", "Numpad4", "Numpad5", "Numpad6", "Numpad7", "Numpad8", "Numpad9", "NumpadDecimal", "NumpadDivide", "NumpadMultiply", "NumpadSubtract", "NumpadAdd", "NumpadEnter", "NumpadEqual"],
   "ready": true,

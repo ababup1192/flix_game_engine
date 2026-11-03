@@ -193,9 +193,10 @@ pub mod Scene3d {
 
     /// 置いた物の中身。mesh = 形・world = 形の座標 → world の行列・tint = 頂点の色に掛ける色・material = 材質（None なら頂点の色）・
     /// pose = ジョイントの行列（None ならバインドポーズのまま。曲げるかどうかは skinningOf で決める）・
-    /// lightmap = ベイクした光（None なら無し。使うかどうかは lightmapOf で決める）。
+    /// lightmap = ベイクした光（None なら無し。使うかどうかは lightmapOf で決める）・
+    /// name = 置いた物の名前（withName。空なら無し。F8 の注釈が 3D の場面の中の物を名前で指す。絵には出ない）。
     pub type alias InstanceFields = { mesh = Mesh3d.Mesh3d, world = Mat4.Mat4, tint = Color, material = Option[Material3d],
-                                      pose = Option[Pose3d.Pose3d], lightmap = Option[Lightmap] }
+                                      pose = Option[Pose3d.Pose3d], lightmap = Option[Lightmap], name = String }
 
     /// 3D のベイクした光（Blender などで前もって計算した光の絵。2D の Light.lightMapPass とは別）。
     /// texture = 絵の名前（Texture3d.name。場面の textures から引く）・colorSpace = 8bit の絵の値の意味・
@@ -211,7 +212,7 @@ pub mod Scene3d {
 
     /// 形を world の行列で置く（tint 白・材質なし）。
     pub def meshInstance(mesh: Mesh3d.Mesh3d, world: Mat4.Mat4): Instance3d =
-        InstanceData.InstanceData({ mesh = mesh, world = world, tint = Color.rgb(1.0, 1.0, 1.0), material = None, pose = None, lightmap = None })
+        InstanceData.InstanceData({ mesh = mesh, world = world, tint = Color.rgb(1.0, 1.0, 1.0), material = None, pose = None, lightmap = None, name = "" })
 
     pub def withTint(c: Color, i: Instance3d): Instance3d =
         let InstanceData.InstanceData(r) = i;
@@ -220,6 +221,15 @@ pub mod Scene3d {
     pub def withMaterial(m: Material3d, i: Instance3d): Instance3d =
         let InstanceData.InstanceData(r) = i;
         InstanceData.InstanceData({ material = Some(m) | r })
+
+    /// 置いた物に名前を付ける（F8 で 3D の場面の中を囲むと、注釈のチケットにこの名前が出る。絵は変わらない）。
+    /// glb から組んだ物は Model3d がノードの名前を入れる。後から付けた名前が勝つ。
+    pub def withName(name: String, i: Instance3d): Instance3d =
+        let InstanceData.InstanceData(r) = i;
+        InstanceData.InstanceData({ name = name | r })
+
+    /// 置いた物の名前（付けていなければ空）。
+    pub def nameOf(i: Instance3d): String = instanceFieldsOf(i)#name
 
     /// ジョイントの行列で曲げる（mesh にジョイントの重みが無ければ描く時に無視される）。
     pub def withPose(p: Pose3d.Pose3d, i: Instance3d): Instance3d =

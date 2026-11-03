@@ -20,8 +20,8 @@ ENGINE ?= ../..
 PALETTE      := assets/tidepool.palette.json
 PALETTE_DEPS := assets/tidepool.theme.json assets/tidepool.sprite.json \
                 src/Palette.flix src/ThemeDoc.flix
-# 描き出せる場面の名前（source of truth は SceneRender.shotNames。ここは使い方に出す写し）。
-# 場面を足したら SceneRender.shotNames と一緒にここも足す。
+# 描き出せる場面の名前（source of truth は Shots.names。ここは使い方に出す写し）。
+# 場面を足したら Shots.names と一緒にここも足す。
 SHOTS := title play flood dam clear washed ending quit
 
 # ENGINE の場所が違うと include ごと落ち、make は「そんなファイルは無い」としか言わない。

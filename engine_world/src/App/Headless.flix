@@ -255,6 +255,30 @@ pub mod App.Headless {
                 png :: "${stem}.items.tsv" :: Nil
         }
 
+    // ── ギャラリーの 1 枚の記録 ──
+
+    /// 描き出した 1 枚（gallery/<名前>.png）の隣に置く記録 gallery/<名前>.json の中身: その絵の World を組む始まり（shot:<名前>）・
+    /// 引数・flow（今の場面は始まりだけで組むので null）・流したコマ数・World の指紋（withFingerprint の字の 8 字の指紋）・組んだ engine の版。
+    /// 後でその 1 枚から実機で遊び始める道具（F8 の強化とギャラリージャンプ）が読む。`SHOT=<名前> make run` は名前から同じ始まりを開く。
+    pub def shotRecordText(name: String, fingerprint: Option[String], engineVersion: String): String =
+        let quoted = (text: String) -> "\"" + String.replace(src = "\"", dst = "\\\"", String.replace(src = "\\", dst = "\\\\", text)) + "\"";
+        "{\n" +
+        "  \"start\": ${quoted(App.shotStartName(name))},\n" +
+        "  \"args\": {},\n" +
+        "  \"flow\": null,\n" +
+        "  \"frames\": 0,\n" +
+        "  \"fingerprint\": ${fingerprint |> Option.map(text -> quoted(Flow.fingerprintOf(text))) |> Option.getWithDefault("null")},\n" +
+        "  \"engineVersion\": ${quoted(engineVersion)}\n" +
+        "}\n"
+
+    /// gallery/<名前>.json を書く（shotRecordText）。fingerprint は指紋の元の字（ゲームの withFingerprint と同じ関数で作る）。
+    /// engine の版は作業場の flix.toml の flix_game_engine の version（読めなければ空）。書けなくても描き出しは止めない。
+    pub def writeShotRecord(outDir: String, name: String, fingerprint: Option[String]): Unit \ IO =
+        let toml = run { Fs.FileRead.read("flix.toml") } with Fs.FileRead.runWithIO;
+        let version = toml |> Result.toOption |> Option.flatMap(ProjectLoader.engineVersionOf) |> Option.getWithDefault("");
+        discard run { Fs.WriteFile.write({str = shotRecordText(name, fingerprint, version)}, "${outDir}/${name}.json") }
+            with Fs.WriteFile.runWithFileWrite with Fs.FileWrite.runWithIO
+
     // ── 常駐の持ち物 ──
 
     /// 糸ごとの出力の行き先。行き先の無い糸は log へ。

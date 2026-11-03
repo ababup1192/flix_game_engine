@@ -242,8 +242,9 @@ pub mod DrawHash {
     }
 
     // WhyNot: メッシュの頂点を畳まない — 作る時に中身から求めた contentHash が中身の代わりになる（GL が頂点バッファを引く鍵と同じ）。
+    // WhyNot: 置いた物の名前（Scene3d.withName）を鍵に書かない — 絵に出ず、名前を付けただけで 3D の描き出しのキャッシュが全部描き直しになる。
     def putInstance(out: DataOutputStream, i: Scene3d.InstanceFields): Unit \ IO = match i {
-        case { mesh = mesh, world = world, tint = tint, material = material, pose = pose, lightmap = _ } =>
+        case { mesh = mesh, world = world, tint = tint, material = material, pose = pose, lightmap = _, name = _ } =>
             putStr(out, Mesh3d.contentHash(mesh));
             Mat4.toColumns(world) |> Vector.forEach(putF(out));
             putColor(out, tint);

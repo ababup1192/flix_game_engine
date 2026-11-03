@@ -127,9 +127,9 @@ case を足して `make check` を流すと、触る所をコンパイラが並�
 | 始まりの場面を足す | `Starts.all` に 1 行足す（`make run`・flow・テスト・描き出しが同じ表を引く） |
 | 仕掛けの途中から始める | Starts の field に `flags=`（旗）・`opened=`（立つマップの開けた物・点けた水晶）・`rocks=id:x:y`（動かした岩）・`light=`（たいまつの残り） |
 | e2e を足す | `e2e/<名前>.flow` を書いて `make flow FLOW=e2e/<名前>.flow`（戦いの問いは `foes`・`mp`（仲間の MP の合計）・`page`（コマンドのページ）。手本 `e2e/battle_magic.flow`） |
-| 描き出す場面を足す | `SceneRender.shotNames` / `worldOf` と Makefile の `SHOTS` に足す（場面を進めるのは `Drive.play` でキーを流す） |
+| 描き出す場面を足す | `Shots.names` / `Shots.worldOf` と Makefile の `SHOTS` に足す（場面を進めるのは `Drive.play` でキーを流す）。足した場面は実機でも `START=shot:<場面>` で開ける（`Shots.all` を `Game` が `App.withShots` で繋ぐ） |
 | テストプレイ（bot・つり合い） | `make bot`（`Bot.goalOf` の表）・`make balance`（`BalanceSim.sectionTable`。区間のふくろも書く）。道筋の表は `Bot`・道の計算は `BotRoute`・戦いの方針は `BotBattle.battlePlans` の 1 か所（BalanceSim も同じ物を回す。ボスの行の見比べは `BotBattle.attackOnlyPlans`）。依存は Bot → BotRoute・BotBattle の一方通行。流れを変えたら `Bot.goalOf` も直す。最終の数は `docs/balance.md` に写す（debug/ は git に入らない）。岩の部屋は押す手を `Bot.rockPlanOf` に、トロッコとレバーは歩いて着けない時に `BotRoute.detourOf` が自分で選ぶ。1 周の人の目安はレポートの「人の目安」（歩き + 戦い × 33 秒 + ウィンドウ × 3 秒） |
-| 描き出しの場面の作り方 | どの場面も `SceneRender.worldOf` で Starts から組んで決まった手（`Drive.play`・`confirmTimes`・`playSeconds`）を進めた World を、実機と同じ `View.frame` / `hud` で描く（直に組んだ絵の場面は無い） |
+| 描き出しの場面の作り方 | どの場面も `Shots.worldOf` で Starts から組んで決まった手（`Drive.play`・`confirmTimes`・`playSeconds`）を進めた World を、実機と同じ `View.frame` / `hud` で描く（直に組んだ絵の場面は無い） |
 | 紹介の動画（`make video`） | 手は `e2e/video.flow`（区間ごとに `start` で始め直し、撮るのは `mark in_<名前>` から `mark out_<名前>` の間だけ）。区間を足す・替えるのはこの flow だけ（`make flow FLOW=e2e/video.flow` で手が通るかを先に見る）。描くのは `VideoRender`（`SceneRender.worldItems` と同じ絵）・出力は `debug/video/rune.mp4` |
 | 通しの手を流し直す | `make bot` の 1 本目が `debug/bot/playthrough.flow` を書く（区間の頭ごとに `mark` と `expect`）。`make flow FLOW=debug/bot/playthrough.flow` でタイトルからエンディングまで同じ指紋で流れる（bot の 1 フレームはナノ秒に丸めた 1/60 秒 = `BotRun.dt`） |
 | 古い書き方を止める | 1 行の正規表現は `bin/lint-rules/forbid.local.json`、型と呼び出しの向きは `lint/rules.flix`（`make lint-flixlint`） |

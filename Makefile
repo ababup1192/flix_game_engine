@@ -122,6 +122,7 @@ help:
 	@echo "  make gen-light3d          光の式の木 (LightModel3d) から CPU の光の関数 engine_tools/src/gen/SoftRaster3dLight.flix と確かめ用の test/gen/SoftRaster3dLightCases.flix を作り直す"
 	@echo "  make gl-capture OUT=<dir> テンプレの場面を隠しウィンドウ・dt 固定で頭の 6 コマ撮り、SHA-256 を控える"
 	@echo "  make smoke-devtools [SMOKE_TEMPLATE=<テンプレ>]  隠しウィンドウの DEBUG 起動で、名簿・命令口（/help・/halt・/step・/resume・/perf）・flow の記録・閉じた後の名簿を確かめる"
+	@echo "  make determinism [TARGETS=\"<フォルダ>:<台本> …\"]  隠しウィンドウのテンプレに台本を流して遊んだ記録を書き、画面なしの再生が同じ World になるか (リリースの前)"
 	@echo "  make gl-capture-check [BASE=off] [SKIP=<フォルダ名>]  同じ場面を 2 回撮って 2 コマ目以降までバイトで比べ、基準とも比べる (SKIP の場面は比べない・違えば exit 1)"
 	@echo "  make check-external       外のゲームの写しを今の engine で型検査し、基準 (bench/baseline/) から増えたエラーだけ出す"
 	@echo "  make baseline-check [GALLERY=1]  gl-parity の行と絵・3D の部屋の CPU の絵 (とテンプレの gallery) を基準 (PARITY_BASELINE) と比べる"
@@ -413,6 +414,12 @@ baseline-check:
 .PHONY: smoke-devtools
 smoke-devtools:
 	@bin/smoke-devtools.sh $(SMOKE_TEMPLATE)
+
+# 決定性の門 (bin/determinism.sh): テンプレを隠しウィンドウの DEBUG で起こして台本 (testdata/determinism/*.flow) を流し、
+# 書いた記録を画面なしで再生して指紋と World 全体の要約が同じかを見る。窓を開くので CI には載せない。先に make sync-engine-full。
+.PHONY: determinism
+determinism:
+	@bin/determinism.sh $(TARGETS)
 
 # 実機の GL の絵をテンプレの場面ごとに撮る (bin/gl-capture.sh)。隠しウィンドウ・FLIX_GE_FIXED_DT で dt を固定し、
 # 頭の 6 コマの SHA-256 を <OUT>/SHA256SUMS に控える。check は 2 回撮ってバイトで比べる (同じ起動で同じ絵になるか)。

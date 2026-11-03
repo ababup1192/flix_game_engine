@@ -248,8 +248,8 @@ pub mod Annotate {
 
     /// 矩形に重なっていた描画物 1 件の記述。注釈 JSON にそのまま載る。
     pub type alias Hit = {
-        kind = String,           // "sprite" | "text" | "box" | "poly"
-        name = String,           // テクスチャ名 / テキスト内容（box・poly は空）
+        kind = String,           // "sprite" | "text" | "box" | "poly" | "shader" | "scene3d"
+        name = String,           // テクスチャ名 / テキスト内容 / 3D の場面は矩形の真ん中に見える置いた物の名前（box・poly と名前の無い物は空）
         position = Vec2.Vec2,    // 位置（デザイン座標）
         zIndex = Int32,          // 重なり順
         aabb = Rect2.Rect2       // この描画物を覆う矩形（デザイン座標）
@@ -261,8 +261,23 @@ pub mod Annotate {
                  rect: Rect2.Rect2, items: List[Render.PlacedItem]): List[Hit] \ ef =
         items |> List.filterMap(placed -> {
             let aabb = itemAabb(sizeOf, placed);
-            if (rectIntersects(rect, aabb)) Some(hitOf(placed, aabb)) else None
+            if (rectIntersects(rect, aabb)) Some(named3d(rect, placed, hitOf(placed, aabb))) else None
         })
+
+    /// 3D の場面の Hit に、矩形と場面の重なりの真ん中の点に見えている置いた物の名前（Scene3d.withName）を入れる。ほかの Hit はそのまま。
+    /// 物に当たらない・名前の無い物なら名前は空のまま。
+    // WhyNot: 矩形に入る物を全部並べない — 置いた物の数だけ三角形を全部見るのは止めた画面でも重く、囲んだ人が指したい物は真ん中の 1 つ。
+    def named3d(rect: Rect2.Rect2, placed: Render.PlacedItem, hit: Hit): Hit =
+        match placed#item {
+            case Render.Item.Scene3d(sc) =>
+                let area = Rect2.intersect(rect, hit#aabb);
+                let center = Vec2.add(area#position, Vec2.div(area#size, 2.0));
+                let ray = Camera3d.screenPointToRay(sc#camera, sc#size, Vec2.sub(center, placed#at));
+                let name = Ray3d.nearestInstance(ray, sc#camera#far, sc#instances)
+                    |> Option.map(match (i, _) -> Scene3d.nameOf(i)) |> Option.getWithDefault("");
+                { name = name | hit }
+            case _ => hit
+        }
 
     /// 描画物 1 件を覆う矩形（デザイン座標）。回転は無視した外形の近似。
     /// 寸法の分からない Sprite は位置だけの点（サイズ 0）として扱う。

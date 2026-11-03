@@ -14,8 +14,8 @@
 -include local.mk
 ENGINE ?= ../..
 
-# 描き出せる場面の名前（source of truth は SceneRender.shotNames。ここは使い方に出す写し）。
-# 場面を足したら SceneRender.shotNames と一緒にここも足す。
+# 描き出せる場面の名前（source of truth は Shots.names。ここは使い方に出す写し）。
+# 場面を足したら Shots.names と一緒にここも足す。
 SHOTS := title village quest join world cave dungeon1 dungeon2 dungeon3 battle magic item equip boss clear ending
 
 # WhyNot: 色票（assets/rpg.palette.json）は FC の色をそのまま並べた原本で、生成物ではない。

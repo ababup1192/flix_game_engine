@@ -397,4 +397,34 @@ mod TestAnnotate {
     def testLayerOfLooksUpHudTableForLiftedZ(): Unit \ Assert =
         let table = Annotate.toTable({ facts = Nil, layers = Band.Scene :: Nil, hudLayers = Band.Mouse :: Nil });
         Assert.assertEq(expected = Some("Hud.Mouse"), Annotate.layerOf(table, ZBand.liftHud(1005)))
+
+    // ========================================================================
+    // 3D の場面の中の物（Scene3d.withName）
+    // ========================================================================
+
+    /// 一辺 2 の正方形を z に置き、名前を付けた物。
+    def quadAt(name: String, x: Float64, z: Float64): Scene3d.Instance3d =
+        let quad = Mesh3d.fromPolygons({ points = Vec3.v3(-1.0, -1.0, 0.0) :: Vec3.v3(-1.0, 1.0, 0.0) :: Vec3.v3(1.0, 1.0, 0.0) :: Vec3.v3(1.0, -1.0, 0.0) :: Nil,
+                                         color = Color.rgb(1.0, 1.0, 1.0) } :: Nil);
+        Scene3d.meshInstance(quad, Mat4.translate(Vec3.v3(x, 0.0, z))) |> Scene3d.withName(name)
+
+    /// (20, 10) に置いた 100×80 の場面。目は原点で +Z を見る。真ん中の奥に「door」・右に外れて「lamp」。
+    def roomScene(): Render.PlacedItem =
+        let camera = { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 0.1, far = 50.0 };
+        Render.scene3d({ x = 20.0, y = 10.0 }, { instances = quadAt("lamp", 6.0, 4.0) :: quadAt("door", 0.0, 5.0) :: Nil
+                                                 | Scene3d.scene(camera, { x = 100.0, y = 80.0 }) })
+
+    /// 場面の真ん中（70, 50）を囲むと、Hit の名前はそこに見えている置いた物の名前。
+    @Test
+    def testScene3dHitNamesTheInstanceAtTheCenter(): Unit \ Assert =
+        Assert.assertEq(expected = ("scene3d", "door") :: Nil,
+            Annotate.hits(_ -> None, { position = { x = 65.0, y = 45.0 }, size = { x = 10.0, y = 10.0 } }, roomScene() :: Nil)
+                |> List.map(hit -> (hit#kind, hit#name)))
+
+    /// 何にも当たらない所を囲むと、名前は空。
+    @Test
+    def testScene3dHitWithoutInstanceIsUnnamed(): Unit \ Assert =
+        Assert.assertEq(expected = ("scene3d", "") :: Nil,
+            Annotate.hits(_ -> None, { position = { x = 20.0, y = 10.0 }, size = { x = 4.0, y = 4.0 } }, roomScene() :: Nil)
+                |> List.map(hit -> (hit#kind, hit#name)))
 }

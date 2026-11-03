@@ -8,7 +8,9 @@
 //   wait 37f ns=16612345,…                      同じ入力が続くフレームは 1 行（実際の経過はナノ秒で全部）
 //   tap Z ns=… / hold Down ns=… / release Down ns=…
 //   wait 1f keys=Left,Z new=Z ns=…              押している物の丸ごと・前のフレームとの差分から出ない押した瞬間だけ new=
-//   expect fp=1a2b3c4d                          60 フレームごとの指紋（App.withFingerprint）
+//   wait 30f focus=0 ns=…                       窓のフォーカスとパッドの機種（padkind=）は変わったフレームにだけ書く
+//   expect fp=1a2b3c4d                          60 フレームごとの指紋（App.withFingerprint）と、閉じる時の最後の 1 つ
+//   expect world=0123456789abcdef               閉じる時の World 全体の要約（WorldHash。決定性の門が比べる）
 //   reload assets/rules.json +assets/rules.json=b64:…   保存で読み直した（F1 は reload key）
 //   request /cheat q=b64:…                      onRequest のルートが World を変えた
 //   close / rewind 30                           窓の閉じるボタン・F8 の巻き戻しから再開
@@ -35,14 +37,18 @@ pub mod Flow.Record {
     pub type alias Recorder = { path = String, out = FileWriter, state = Ref[Writing, Static] }
 
     /// まとめている行（head = ns= の前まで・ns は新しい順・single = hold の 1 フレームだけか）と、
-    /// 前に書いたフレームの手の様子（再生の Flow.play が差分から押した瞬間を出すのと同じ物。button = 左・otherButtons = 右と中）。
+    /// 前に書いたフレームの手の様子（再生の Flow.play が差分から押した瞬間を出すのと同じ物。button = 左・otherButtons = 右と中・
+    /// focused と padKind = 最後に書いた focus= と padkind=（padKind が None の間は再生が pad から出す）。
+    /// fpAt = 最後に expect fp= を書いたフレームの数（閉じる時に、その後のフレームがあれば 1 つ足す）。
     type alias Writing = {
         pending = Option[{ head = String, wait = Bool, ns = List[Int64] }],
-        down = Set[Key], button = Bool, otherButtons = Set[GameEngine.MouseButton], cursor = Option[Vec2.Vec2], count = Int32, lastFp = String
+        down = Set[Key], button = Bool, otherButtons = Set[GameEngine.MouseButton], cursor = Option[Vec2.Vec2], count = Int32, lastFp = String,
+        focused = Bool, padKind = Option[GamepadMap.PadKind], fpAt = Int32
     }
 
     def fresh(): Writing =
-        { pending = None, down = Set.empty(), button = false, otherButtons = Set.empty(), cursor = None, count = 0, lastFp = "" }
+        { pending = None, down = Set.empty(), button = false, otherButtons = Set.empty(), cursor = None, count = 0, lastFp = "",
+          focused = true, padKind = None, fpAt = 0 }
 
     /// 記録を開く。前の回の記録は previous.flow へ残す（既定の置き場の時だけ）。開けなければ None（遊ぶのは止めない）。
     pub def open(path: String): Option[Recorder] \ IO =
@@ -99,7 +105,7 @@ pub mod Flow.Record {
     /// 動かしていないマウスの at= を書かず、再生だけカーソルが -100,-100 のままになる）。
     pub def started(rec: Recorder, text: String): Unit \ IO =
         line(rec, text);
-        Ref.put({ down = Set.empty(), button = false, otherButtons = Set.empty(), cursor = None | Ref.get(rec#state) }, rec#state)
+        Ref.put({ down = Set.empty(), button = false, otherButtons = Set.empty(), cursor = None, focused = true, padKind = None | Ref.get(rec#state) }, rec#state)
 
     /// 外から World が変わった（記録の行で説明の付かない変化）か: 指紋の元が前のフレームの後と違えば # ext を書く。
     pub def checkExternalChange(rec: Recorder, fingerprint: Option[String]): Unit \ IO =
@@ -141,6 +147,7 @@ pub mod Flow.Record {
         // WhyNot: != で比べない — 実機の量は引いてから窓の大きさで割るので、位置の差と最後の桁がずれる（そのずれでは書かない）。
         let derivedLook = App.Internal.Frame.cursorDelta(st#cursor, frame#cursor);
         let lookDiffers = Float64.abs(frame#mouseDelta#x - derivedLook#x) > 0.000001 or Float64.abs(frame#mouseDelta#y - derivedLook#y) > 0.000001;
+        let kindDiffers = frame#padKind != (st#padKind |> Option.getWithDefault(Flow.padKindOf(frame#padTouched)));
         let opts =
             (if (frame#cursor#x != lastCursor#x or frame#cursor#y != lastCursor#y)
                  " at=${Float64.toString(frame#cursor#x)},${Float64.toString(frame#cursor#y)}" else "") +
@@ -149,6 +156,8 @@ pub mod Flow.Record {
             (if (not Set.isEmpty(others)) " mouse=${buttonsText(frame#mouseButtons)}" else if (frame#mouseDown) " mouse" else "") +
             (if (frame#wheel != 0.0) " wheel=${Float64.toString(frame#wheel)}" else "") +
             (if (frame#padTouched) " pad" else "") +
+            (if (kindDiffers) " padkind=${Flow.padKindName(frame#padKind)}" else "") +
+            (if (frame#windowFocused != st#focused) (if (frame#windowFocused) " focus=1" else " focus=0") else "") +
             (if (frame#justPressed != derivedNew) " new=${keysText(frame#justPressed)}" else "") +
             (if (otherClicks != derivedOtherClicks) " click=${buttonsText(frame#mouseClickedButtons)}"
              else if (frame#mouseClicked != derivedClick) (if (frame#mouseClicked) " click" else " noclick") else "") +
@@ -164,13 +173,31 @@ pub mod Flow.Record {
         let after = Ref.get(rec#state);
         let count = after#count + 1;
         Ref.put({ down = frame#down, button = frame#mouseDown, otherButtons = others, cursor = Some(frame#cursor), count = count,
-                  lastFp = fingerprint |> Option.getWithDefault(after#lastFp) | after }, rec#state);
+                  lastFp = fingerprint |> Option.getWithDefault(after#lastFp),
+                  focused = frame#windowFocused, padKind = if (kindDiffers) Some(frame#padKind) else after#padKind | after }, rec#state);
         match fingerprint {
-            case Some(text) if Int32.modulo(count, 60) == 0 =>
-                line(rec, "expect fp=${Flow.fingerprintOf(text)}");
-                write(rec, "# fp ${text}")
+            case Some(text) if Int32.modulo(count, 60) == 0 => expectFingerprint(rec, text)
             case _ => ()
         }
+
+    /// expect fp= と、指紋の元の文字のコメントを書く。
+    def expectFingerprint(rec: Recorder, text: String): Unit \ IO =
+        line(rec, "expect fp=${Flow.fingerprintOf(text)}");
+        write(rec, "# fp ${text}");
+        Ref.put({ fpAt = Ref.get(rec#state)#count | Ref.get(rec#state) }, rec#state)
+
+    /// 閉じる時の最後の確かめ: 最後の expect fp= の後に流したフレームがあれば指紋を 1 つ足し、World 全体の要約（expect world=）を書く。
+    /// 再生がここまで同じなら、最後の World が丸ごと同じだったと言える（決定性の門が比べる）。world は App.summaryWorldOf で写した物。
+    pub def finish(rec: Recorder, fingerprint: Option[String], world: w): Unit \ IO =
+        let st = Ref.get(rec#state);
+        match fingerprint {
+            case Some(text) if st#count > st#fpAt => expectFingerprint(rec, text)
+            case _ => ()
+        };
+        let (whole, parts) = WorldHash.summaryOf(world, 3);
+        line(rec, "expect ${Flow.worldProbe()}=${whole}");
+        // 食い違った時に再生の FAIL の下の行と並べて、どの欄が違うかを読む。
+        parts |> List.forEach(part -> write(rec, "# world ${part}"))
 
     /// マウスのボタンの集合の字（left,right。空は -）。並びは左・右・中で決まる（再生と比べても揺れない）。
     def buttonsText(buttons: Set[GameEngine.MouseButton]): String =

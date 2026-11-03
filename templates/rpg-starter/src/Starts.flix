@@ -1,6 +1,6 @@
 // Starts — 始まりの登録簿（App.withStarts。Game が Resources.liftStart で組の行にする）。名前と引数から、新しく作った初期の World を場面へ組む。
 // 起動（START="field map=chief_house x=7 y=7"）・リモートの POST /start・flow の `start field`・テストの App.startOrBug・
-// 描き出し（SceneRender）が同じ表を引く。
+// ギャラリーの場面（Shots）が同じ表を引く。
 mod Starts {
     use fge::{Dir4, Grid, Resources, Suggest, Yarn}
 

@@ -66,6 +66,7 @@ RESIDENT_STOP = if [ -x "$(ENGINE)/bin/fge-go" ]; then "$(ENGINE)/bin/fge-go" re
 help:
 	@echo "共通の口 ($(ENGINE)/mk/game.mk):"
 	@echo "  make run                ゲームを起動する（ウィンドウが開く）"
+	@echo "  SHOT=<場面> make run    ギャラリーの 1 枚と同じ World から DEBUG で開く（F8 で止めた状態。F8 で動き出す）"
 	@echo "  make debug              保存即反映(watchFile)と F8 を有効にして起動"
 	@echo "  make check              型検査だけ（一番速い確認。常駐が居れば 2 回目からサブ秒）"
 	@echo "  make test               テストを headless で実行（記録は .test-logs/）"
@@ -122,12 +123,15 @@ PLAY_RUN ?= FGE_HEADLESS_FALLBACK=1 FLIX_CMD=$(FLIX) "$(ENGINE)/bin/headless-run
 endif
 
 # RUN_SECONDS=N を付けると N 秒でゲームを止める（起動して確かめるだけの時。止め忘れでウィンドウが残らない）。
+# SHOT=<場面> を付けると、ギャラリーの 1 枚（gallery/<場面>.png）と同じ World から DEBUG の起動で開き、F8 で止めた状態で窓が出る
+# （START=shot:<場面>。場面の名前は make render の SHOTS と同じ・App.withShots）。F8 で動き出す。
 # WhyNot: kill でゲームの pid だけを止めない — headless-run が java を子として起こすので、子が残る。プロセスの組ごと止める。
+SHOT_ENV = $(if $(SHOT),START="shot:$(SHOT)" DEBUG=1)
 run:
 ifeq ($(RUN_SECONDS),)
-	$(PLAY_RUN)
+	$(SHOT_ENV) $(PLAY_RUN)
 else
-	@perl -e '$$t = shift; $$p = fork; if (!$$p) { setpgrp(0, 0); exec @ARGV } $$timed = 0; $$SIG{ALRM} = sub { $$timed = 1; kill "TERM", -$$p; sleep 2; kill "KILL", -$$p }; alarm $$t; waitpid($$p, 0); exit($$timed ? 0 : $$? >> 8)' $(RUN_SECONDS) sh -c '$(PLAY_RUN)'
+	@$(SHOT_ENV) perl -e '$$t = shift; $$p = fork; if (!$$p) { setpgrp(0, 0); exec @ARGV } $$timed = 0; $$SIG{ALRM} = sub { $$timed = 1; kill "TERM", -$$p; sleep 2; kill "KILL", -$$p }; alarm $$t; waitpid($$p, 0); exit($$timed ? 0 : $$? >> 8)' $(RUN_SECONDS) sh -c '$(PLAY_RUN)'
 endif
 
 debug:

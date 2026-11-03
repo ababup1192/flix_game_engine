@@ -439,7 +439,7 @@ pub mod RenderCache {
         let toml = new File("flix.toml");
         if (not toml.isFile()) ""
         else try {
-            match engineVersionOf(Files.readString(toml.toPath())) {
+            match ProjectLoader.engineVersionOf(Files.readString(toml.toPath())) {
                 case None          => ""
                 case Some(version) => match lockedDigest(version) {
                     case Some(digest) => digest
@@ -495,14 +495,6 @@ pub mod RenderCache {
                         |> Option.filter(v -> not String.isEmpty(v))
                 else None
             })
-
-    /// flix.toml の依存の行 `"github:ababup1192/flix_game_engine" = { version = "x.y.z", … }` の版。
-    def engineVersionOf(toml: String): Option[String] =
-        String.lines(toml)
-            |> List.find(line -> String.contains(substr = "\"github:ababup1192/flix_game_engine\"", line))
-            |> Option.flatMap(line -> String.splitOn(substr = "version", line) |> List.drop(1) |> List.head)
-            |> Option.flatMap(rest -> String.splitOn(substr = "\"", rest) |> List.drop(1) |> List.head)
-            |> Option.filter(v -> not String.isEmpty(v))
 
     /// JVM と OS と起動旗（Java2D の文字と縁の塗りは JDK・OS・旗で変わりうる）。
     def runtimeId(): String \ IO =

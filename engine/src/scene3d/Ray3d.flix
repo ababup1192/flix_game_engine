@@ -185,6 +185,18 @@ pub mod Ray3d {
             }, None)
         }
 
+    /// 置いた物の列のうち、レイが一番近くで当たる物とその所（当たらなければ None。同じ距離なら列の前）。
+    /// F8 の注釈が 3D の場面の中の物を指すのに使う。物ごとに三角形を全部見るので、コマごとの当たり判定には pickNearest の形を使う。
+    pub def nearestInstance(r: Ray3d, maxDistance: Float64, instances: List[Scene3d.Instance3d]): Option[(Scene3d.Instance3d, RayHit)] =
+        instances |> List.foldLeft((best, i) -> {
+            // 見つけた距離より奥は調べない（pickNearest と同じく、上限を縮めて三角形の検査を減らす）。
+            let limit = best |> Option.map(match (_, near) -> near#distance) |> Option.getWithDefault(maxDistance);
+            match hitInstance(r, limit, i) {
+                case Some(hit) if best |> Option.forAll(match (_, near) -> hit#distance < near#distance) => Some((i, hit))
+                case _ => best
+            }
+        }, None)
+
     /// 置いた物 i に当たる所。骨つきの物（Scene3d.skinningOf が Some）は形の境界の箱だけで見る
     /// （曲げた形は CPU に無い。曲げで境界の外へ出た所には当たらない）。
     pub def hitInstance(r: Ray3d, maxDistance: Float64, i: Scene3d.Instance3d): Option[RayHit] =

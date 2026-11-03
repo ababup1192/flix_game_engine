@@ -10,7 +10,7 @@
 -include local.mk
 ENGINE ?= ../..
 
-# 描き出せる場面の名前（source of truth は SceneRender.shotNames。ここは使い方に出す写し）。
+# 描き出せる場面の名前（source of truth は Shots.names。ここは使い方に出す写し）。
 SHOTS := title nvl adv choice lane engawa night morning log load settings credits
 
 # ENGINE の場所が違うと include ごと落ち、make は「そんなファイルは無い」としか言わない。

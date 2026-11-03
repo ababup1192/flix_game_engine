@@ -58,7 +58,7 @@ mod FlowVideo {
     /// e2e と同じ App で、セーブの日時だけ描き出しと同じ「起動した時刻」に据える（e2e の 0 のままだと 1970/01/01 と出る）。
     def appOf(): App.App[AppState, {}] \ Fs.FileRead =
         let res = Controls.loadRes();
-        Game.app(res, Saves.fresh(res#kind), SceneRender.clockBase())
+        Game.app(res, Saves.fresh(res#kind), Shots.clockBase())
 
     /// 撮るコマの上限（30fps で 5 分。flow の until の max が先に当たる）。
     def frameCap(): Int32 = 9000

@@ -28,6 +28,8 @@ mod Game {
             |> App.withDocTable(Controls.docTable())
             // 好きな場面から起動する・テストと flow が場面を名前で組む（START="at x=40 y=40" など）。
             |> App.withStarts(Starts.all() |> List.map(Resources.liftStart))
+            // ギャラリーの場面を実機でも開く（START=shot:main。描き出しと同じ World から始まる）。
+            |> App.withShots(Resources.shotsOf(Shots.names(), Shots.worldOf))
             // e2e/<名前>.flow の語彙（役・問い）と、記録の再生が比べる指紋。
             |> App.withFlow(E2e.table())
             |> App.withFingerprint(Resources.read(E2e.fingerprint))

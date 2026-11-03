@@ -30,7 +30,13 @@ mod Game {
             |> App.withSustained(Resources.read(Controls.ambience))
             |> App.withMixer(Resources.read(Controls.mixerOf))
             |> App.withStarts(Starts.all() |> List.map(Resources.liftStart))
+            |> App.withShots(Resources.shotsOf(Shots.names(), Shots.worldOf))
             |> App.withFlow(E2e.table())
             |> App.withFingerprint(Resources.read(E2e.fingerprint))
+            // WhyNot: 起動した時刻を World 全体の要約に入れない — Main だけが読む外の値で遊んだ記録に残らず、
+            //   画面なしの再生（E2e）は 0 で組むので、決定性の門（make determinism）が毎回食い違う。
+            //   セーブは置き換えない（遊ぶ間に書く進行の値）。起動の時に読むセーブも外の値なので、門は saves/ を外して流す。
+            //   セーブの枠の日時は clockBase から作るので、セーブした回の記録は最後の expect world= で食い違う（門の台本はセーブしない）。
+            |> App.withWorldSummaryMask(Resources.mapWorld((_, w) -> { clockBase = 0i64 | w }))
             |> App.withStatusLine(Resources.read((r, w) -> "phase=${World.sceneName(w)} panel=${World.panelName(w)} talk=${World.talkNodeOf(w)} line=${World.talkLineOf(w)} mode=${World.stageOf(r, w)#mode} playback=${World.playbackOf(w)} ask=${World.askOf(w)}"))
 }

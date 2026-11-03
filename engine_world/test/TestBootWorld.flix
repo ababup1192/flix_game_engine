@@ -182,6 +182,25 @@ mod App.Internal.Runner.TestBoot {
         let app: App.App[Int32, {}] = App.make(0);
         let hooks = App.Internal.DevTools.desktopOf(Map#{"START" => "here"}, None, app);
         let (booted, tools) = run { hooks#open((env, reread) -> checked_ecast(envSizeBoot(env, reread))) } with Fs.FileRead.runWithIO;
-        hooks#close(tools);
+        hooks#close(tools, None);
         Assert.assertEq(expected = Ok((1, None)), booted)
+
+    /// ギャラリーの場面 ten（10）と、始まり play（0）を持つ App。
+    def shotApp(debug: Bool): App.App[Int32, {}] =
+        App.make(0)
+            |> App.withStarts({ name = "play", doc = "", args = Map.empty(), build = (w, _) -> Ok(w) } :: Nil)
+            |> App.withShots({ name = "ten", doc = "", args = Map.empty(), build = (_, _) -> Ok(10) } :: Nil)
+            |> App.withDebug(debug)
+
+    /// DEBUG の起動なら START=shot:<場面> でギャラリーの場面から始まる。
+    @Test
+    def testShotStartOpensInDebug(): Unit \ {Assert, IO} =
+        let booted = run { App.Internal.Runner.bootWorld(shotApp(true), Vec2.zero(), Map#{"START" => "shot:ten"}, false) } with Fs.FileRead.runWithIO;
+        Assert.assertEq(expected = Ok((10, Some(("shot:ten", Map.empty())))), booted)
+
+    /// 配る版の起動（DEBUG でない）では、ギャラリーの場面を開かない。
+    @Test
+    def testShotStartNeedsDebug(): Unit \ {Assert, IO} =
+        let booted = run { App.Internal.Runner.bootWorld(shotApp(false), Vec2.zero(), Map#{"START" => "shot:ten"}, false) } with Fs.FileRead.runWithIO;
+        Assert.assertTrue(Result.isErr(booted))
 }

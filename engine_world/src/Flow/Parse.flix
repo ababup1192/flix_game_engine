@@ -222,7 +222,15 @@ pub mod Flow.Parse {
                 case x :: y :: Nil => forM (a <- number(x); b <- number(y)) yield { look = Some({ x = a, y = b }) | opt }
                 case _             => Err("look は look=dx,dy")
             }
-            else Err("付け足し '${word}' は無い${Suggest.hint(word, "ns=" :: "dt=" :: "at=" :: "look=" :: "mouse" :: "mouse=" :: "wheel=" :: "pad" :: "keys=" :: "new=" :: "click" :: "click=" :: "moved" :: Nil)}")
+            else if (String.startsWith(prefix = "focus=", word)) match valueOf("focus=") {
+                case "1" => Ok({ focus = Some(true) | opt })
+                case "0" => Ok({ focus = Some(false) | opt })
+                case other => Err("focus は focus=1（フォーカスあり）か focus=0（'${other}'）")
+            }
+            else if (String.startsWith(prefix = "padkind=", word))
+                Flow.padKindNamed(valueOf("padkind=")) |> Option.toOk("padkind は generic・steam・unknown（'${valueOf("padkind=")}'）")
+                    |> Result.map(kind -> { padKind = Some(kind) | opt })
+            else Err("付け足し '${word}' は無い${Suggest.hint(word, "ns=" :: "dt=" :: "at=" :: "look=" :: "mouse" :: "mouse=" :: "wheel=" :: "pad" :: "keys=" :: "new=" :: "click" :: "click=" :: "moved" :: "focus=" :: "padkind=" :: Nil)}")
         }), Ok(Flow.noOpt()))
 
     /// 問いの式: 名前（真偽）・!式・式&式・名前<数（< <= = >= > !=）・名前=文字。
@@ -250,14 +258,16 @@ pub mod Flow.Parse {
                 }
         }
 
-    /// 問いの名前の型（指紋 fp は文字。withFingerprint を繋いだゲームだけ）。
+    /// 問いの名前の型（指紋 fp は文字。withFingerprint を繋いだゲームだけ。World 全体の要約 world は文字でどのゲームにもある）。
     def kindOf(vocab: Vocab, name: String): Result[String, Flow.Kind] =
         if (name == Flow.fingerprintProbe() and vocab#fingerprint) Ok(Flow.Kind.Text)
+        else if (name == Flow.worldProbe()) Ok(Flow.Kind.Text)
         else match vocab#probes |> List.find(match (n, _, _) -> n == name) {
             case Some((_, kind, _)) => Ok(kind)
             case None =>
                 let known = vocab#probes |> List.map(match (n, _, _) -> n);
-                Err("問い '${name}' は無い${Suggest.hint(name, if (vocab#fingerprint) List.append(known, Flow.fingerprintProbe() :: Nil) else known)}")
+                let builtin = if (vocab#fingerprint) Flow.fingerprintProbe() :: Flow.worldProbe() :: Nil else Flow.worldProbe() :: Nil;
+                Err("問い '${name}' は無い${Suggest.hint(name, List.append(known, builtin))}")
         }
 
     /// key=value の引数と +パス=中身 のファイル。値の b64: は中身に戻す（記録が書く）。

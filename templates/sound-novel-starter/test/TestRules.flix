@@ -2,7 +2,7 @@
 // シナリオは本物（natsukusa.yarn を build した木）。行の文字は写さず、ノードの名前・変数・台本の木から期待値を導く。
 mod TestRules {
 
-    use fge::{AudioMixer, Clock, Emit, Yarn, YarnRunner}
+    use fge::{App, AudioMixer, Clock, Emit, Vec2, Yarn, YarnRunner}
     use TestKit.{advance, begun, pick, placeOf, readTo, settle, quiet, w0}
 
     def kind(res: Res.Res): KindDoc.Rec = KindDoc.rec(res#kind)
@@ -28,6 +28,14 @@ mod TestRules {
         let opening = Talk.nodeName(Talk.Node.Opening);
         Assert.assertEq(expected = ("Reading", opening, List.head(sayLines(res, opening)), Stage.Mode.Nvl),
                         (World.sceneName(w), World.talkNodeOf(w), Some(lineNo(w)), World.stageOf(res, w)#mode))
+
+    /// ギャラリーの場面は全部、実機と同じ App から shot:<名前> の始まりで組める。
+    @Test
+    def testEveryShotBuildsFromTheApp(): Unit \ {Assert, Fs.FileRead} =
+        let res = TestKit.res();
+        let app = TestKit.app(res, w0(res));
+        Assert.assertEq(expected = Nil,
+            Shots.names() |> List.filter(name -> Result.isErr(App.buildStart(app, Vec2.zero(), App.shotStartName(name), Map.empty()))))
 
     // ══ 読み進める ══
 

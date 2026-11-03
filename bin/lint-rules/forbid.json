@@ -78,10 +78,12 @@
     {
       "id": "clock-made-time",
       "suffixes": [".flix"],
-      "skip": ["engine/", "engine_world/", "engine_tools/", "engine_full/", "src/engine/", "src/engine_world/", "src/engine_tools/", "render_gl/", "src/render_gl/", "lib/", "build/"],
+      "skip": ["engine/", "engine_world/", "engine_tools/", "engine_full/", "src/engine/", "src/engine_world/", "src/engine_tools/", "render_gl/", "src/render_gl/", "lib/", "build/",
+                 "src/Shots.flix", "templates/rpg-starter/src/Shots.flix", "templates/sound-novel-starter/src/Shots.flix",
+                 "templates/tidepool-starter/src/Shots.flix", "templates/game-starter/src/Shots.flix"],
       "skipDirs": ["test", "render"],
       "pattern": "\\bClock\\.after\\([^;]*\\bClock\\.zero\\(\\)|\\bClock\\.since\\(\\s*Clock\\.zero\\(\\)|\\bClock\\.startAt\\(",
-      "hint": "遊びの中で時刻や時計を数から作らない（Clock.after(秒, Clock.zero())・Clock.since(Clock.zero(), 時刻)・Clock.startAt は、別の時計の時刻へ付け替える・時計を手で進める抜け道になる）。今は Clock.nowOf(時計) か frame#realNow から読み、ずらすのは Clock.after(秒, 今)。決まった瞬間を撮る描き出し（render/）とテスト（test/）だけで使う（engine の docs/clock.md）"
+      "hint": "遊びの中で時刻や時計を数から作らない（Clock.after(秒, Clock.zero())・Clock.since(Clock.zero(), 時刻)・Clock.startAt は、別の時計の時刻へ付け替える・時計を手で進める抜け道になる）。今は Clock.nowOf(時計) か frame#realNow から読み、ずらすのは Clock.after(秒, 今)。決まった瞬間を撮る描き出し（render/）・ギャラリーの場面（src/Shots.flix・App.withShots）とテスト（test/）だけで使う（engine の docs/clock.md）"
     },
     {
       "id": "process-env-entry",
@@ -209,6 +211,34 @@
       ],
       "pattern": "\\bunsafe\\b",
       "hint": "ゲームの系と View では unsafe を書かない（App.launch は純粋な App[w, {}] だけを受け、系が外の世界に触れないことを型で守っている）。状態は World に・乱数は Rng の種を World に・知らせは ViewCtx#warnOnce へ。描き出し（src/render/）とテストは見ない（engine の docs/migrations/0.80.0.md）"
+    },
+    {
+      "id": "frame-diagnostics-in-system",
+      "suffixes": [
+        ".flix"
+      ],
+      "skip": [
+        "engine/",
+        "engine_world/",
+        "engine_tools/",
+        "engine_full/",
+        "render_gl/",
+        "bench/",
+        "src/engine/",
+        "src/engine_world/",
+        "src/engine_tools/",
+        "src/render_gl/",
+        "lib/",
+        "build/"
+      ],
+      "skipDirs": [
+        "build",
+        "lib",
+        "test",
+        "render"
+      ],
+      "pattern": "#diagnostics\\b",
+      "hint": "Frame#diagnostics（前のフレームを描いた時間）を系で読んで World を変えない。遊んだ記録に残らないので、再生（make flow・make determinism）と食い違う。1 コマの時間を見るなら F8・POST /perf・FLIX_GE_FRAME_STATS で外から見る（engine の docs/migrations/0.83.0.md）"
     },
     {
       "id": "game-unchecked-pure",

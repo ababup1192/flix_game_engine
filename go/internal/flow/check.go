@@ -335,7 +335,7 @@ func mouseButtonSet(text string) string {
 }
 
 func opts(v Vocab, words []string) string {
-	known := []string{"ns=", "dt=", "at=", "look=", "mouse", "mouse=", "wheel=", "pad", "keys=", "new=", "click", "click=", "moved"}
+	known := []string{"ns=", "dt=", "at=", "look=", "mouse", "mouse=", "wheel=", "pad", "keys=", "new=", "click", "click=", "moved", "focus=", "padkind="}
 	for _, word := range words {
 		switch {
 		case word == "mouse", word == "pad", word == "click", word == "noclick", word == "moved", word == "still":
@@ -361,6 +361,16 @@ func opts(v Vocab, words []string) string {
 			value := word[strings.Index(word, "=")+1:]
 			if why := keySet(v, value); why != "" {
 				return why
+			}
+		case strings.HasPrefix(word, "focus="):
+			if value := strings.TrimPrefix(word, "focus="); value != "0" && value != "1" {
+				return fmt.Sprintf("focus は focus=1（フォーカスあり）か focus=0（'%s'）", value)
+			}
+		case strings.HasPrefix(word, "padkind="):
+			switch value := strings.TrimPrefix(word, "padkind="); value {
+			case "generic", "steam", "unknown":
+			default:
+				return fmt.Sprintf("padkind は generic・steam・unknown（'%s'）", value)
 			}
 		case strings.HasPrefix(word, "at="), strings.HasPrefix(word, "look="):
 			name := word[:strings.Index(word, "=")]
@@ -428,6 +438,9 @@ func (c *checker) kind(name string) (string, string) {
 	if name == "fp" && v.Fingerprint {
 		return "text", ""
 	}
+	if name == "world" {
+		return "text", ""
+	}
 	var known []string
 	for _, p := range v.Probes {
 		if p.Name == name {
@@ -438,6 +451,7 @@ func (c *checker) kind(name string) (string, string) {
 	if v.Fingerprint {
 		known = append(known, "fp")
 	}
+	known = append(known, "world")
 	return "", fmt.Sprintf("問い '%s' は無い%s", name, suggest.Hint(name, known))
 }
 

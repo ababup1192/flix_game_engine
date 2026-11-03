@@ -16,4 +16,11 @@ mod TestStarts {
     def testLevelRefusesAMissingLevel(): Unit \ Assert + Fs.FileRead =
         Assert.assertEq(expected = Err("始まり 'level': n は 1..6 の面（'9'）"),
             App.buildStart(app(), Vec2.zero(), "level", Map#{"n" => "9"}) |> Result.map(Resources.read((_, w) -> World.levelOf(w))))
+
+    /// ギャラリーの場面は全部、実機と同じ App から shot:<名前> の始まりで組める。
+    @Test
+    def testEveryShotBuildsFromTheApp(): Unit \ Assert + Fs.FileRead =
+        let a = app();
+        Assert.assertEq(expected = Nil,
+            Shots.names() |> List.filter(name -> Result.isErr(App.buildStart(a, Vec2.zero(), App.shotStartName(name), Map.empty()))))
 }

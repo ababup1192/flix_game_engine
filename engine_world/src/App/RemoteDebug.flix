@@ -648,6 +648,7 @@ pub mod App.RemoteDebug {
         + "GET  /render                  requested= done= running= job numbers, then [last] result.\n"
         + "     job N is finished once done >= N (requests during a render fold into one rerun)\n"
         + "GET  /starts                  the start registry (App.withStarts): name, default args, doc\n"
+        + "GET  /shots                   the gallery scenes (App.withShots): shot:NAME and doc (POST /start?name=shot:NAME)\n"
         + "POST /start?name=N&k=v[&view=shot]  rebuild a fresh world from start N and swap it in (view=shot: also one PNG)\n"
         + "POST /step?view=&rect=&until=&max=&trace=&dt=\n"
         + "     body = flow (same grammar as e2e/<name>.flow); runs it frame by frame, then answers.\n"
@@ -705,6 +706,7 @@ pub mod App.RemoteDebug {
             case ("GET", "/state")   => remoteState(app, bridge, request, ctx)
             case ("POST", "/step")   => remoteStepCommand(app, bridge, request, ctx)
             case ("GET", "/starts")  => answer(startsText(app), bridge, ctx)
+            case ("GET", "/shots")   => answer(shotsText(app), bridge, ctx)
             case ("POST", "/start")  => remoteStart(app, bridge, request, ctx)
             case ("POST", "/flow")   => remoteFlow(app, bridge, request, ctx)
             case (m, p)              =>
@@ -729,6 +731,12 @@ pub mod App.RemoteDebug {
                                          record = Flow.Record.Item.Line(Flow.Record.requestLine(request#path, request#params, files)) :: Nil | ctx })
             case Err(message) => answer("error: ${message}\n", bridge, ctx)
         }
+
+    /// GET /shots の本文: ギャラリーの場面（App.withShots）の始まりの名前（shot:<場面>）と説明を 1 行ずつ。
+    pub def shotsText(app: App.App[w, ef]): String =
+        let shots = App.rec(app)#shots;
+        if (List.isEmpty(shots)) "(no shots wired; use App.withShots)\n"
+        else shots |> List.map(shot -> "${App.shotStartName(shot#name)}\t${shot#doc}\n") |> String.intercalate("")
 
     /// GET /starts の本文: 始まりの登録簿（App.withStarts）の名前・既定の引数・説明を 1 行ずつ。
     pub def startsText(app: App.App[w, ef]): String =

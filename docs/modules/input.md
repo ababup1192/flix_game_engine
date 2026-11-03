@@ -19,6 +19,8 @@
 | 右クリック・中ボタンを読む | frame#mouseClickedButtons（押した瞬間）・frame#mouseButtons（押している間）。mouseDown・mouseClicked は左だけ・flow は `mouse=right` |
 | 窓がフォーカスを失った・取り戻したのを知る | frame#windowFocused |
 | 遊んだ通りに再生して、最初に食い違ったフレームを指す | Flow.Record（DEBUG の起動で自動・`make flow FLOW=debug/flow-record/latest.flow`・指紋は App.withFingerprint） |
+| 実機の記録が画面なしの再生と同じ World になるか（決定性の門） | engine の `make determinism`・World 全体の要約は WorldHash（`expect world=`）・外の値は App.withWorldSummaryMask（docs/flow.md） |
+| ギャラリーの 1 枚と同じ World から実機で開く | App.withShots（`<ゲーム>/src/Shots.flix`）+ `SHOT=<場面> make run`（docs/flow.md） |
 | e2e のテスト・動画の手順を 1 行 1 手で書いて画面なしで流す（待ちは問いが立つまで・失敗は行番号つき） | Flow（App.withFlow の表・`make flow FLOW=e2e/x.flow`・`bin/fge flow check`。実例: `templates/tidepool-starter/e2e/level1.flow`） |
 | でたらめなキー・マウス操作で「どう遊んでも崩れない決まり」を確かめる（性質テスト）・画面なしで実機と同じ経路を流す | PropertyTest（forAll / generate / firstBroken）+ App.trace（実例: `templates/tidepool-starter/test/TestTrace.flix`） |
 
@@ -35,6 +37,7 @@
 - **Flow.Parse** — flow の読み手。全部の行を読み、読めない行を行番号と近い名前の案つきで全部返す（Go の bin/fge flow check と同じ文面）。
 - **Flow.Cli** — flow を画面なしで流す headless の入口の中身（ゲームの E2e.play・E2e.vocab が呼ぶ。make flow / flow-vocab）。
 - **Flow.Record** — 遊んだ記録を flow と同じ文法で書く（DEBUG の起動が debug/flow-record/latest.flow へ。F8 のチケットに record.flow の写し）。
+- **WorldHash** — 値（World）の中身を丸ごと辿る SHA-256（record は欄の名前の順・Lazy と JDK の物は見ない）。記録の最後の `expect world=` と、食い違った時の部分ごとの字（partsOf）。
 - **PropertyTest** — 種で決まるでたらめな入力の列（キー・マウス・ホイール）を App.traceFrame で流し、決まりが崩れた最初の種とフレームを探す（property-based testing）。
 
 ## 一人称の視点（マウスを窓にキャプチャする）

@@ -64,7 +64,7 @@ mod Room {
             let s = meter() * p#scale;
             let place = { yaw = p#turn * pi() / 180.0, scale = Vec3.v3(s, s, s)
                           | Transform3d.of(Vec3.v3(p#x * meter(), 0.0, p#z * meter())) };
-            Scene3d.meshInstance(mesh, Transform3d.toMat4(place))
+            Scene3d.meshInstance(mesh, Transform3d.toMat4(place)) |> Scene3d.withName(p#model)
         })
 
     // ── 部屋の殻（床・壁・天井）──
@@ -158,7 +158,7 @@ mod Room {
             cube(v(-0.07, -0.08, -0.07), v(0.07, 0.12, 0.07), rgb(1.0, 0.78, 0.35))))
 
     def torchInstance(mesh: Mesh3d.Mesh3d, torch: Torch): Scene3d.Instance3d =
-        Scene3d.meshInstance(mesh, Mat4.translate(Vec3.mul(torch#at, meter())))
+        Scene3d.meshInstance(mesh, Mat4.translate(Vec3.mul(torch#at, meter()))) |> Scene3d.withName("torch")
 
     /// 炎から少し部屋の側へ出した点光源（壁に貼り付けると壁の面が光の真後ろになり、照らされない）。
     def torchLight(torch: Torch): Scene3d.PointLight =
@@ -179,7 +179,7 @@ mod Room {
           fovY = 1.05, near = 1.0, far = 400.0 }
 
     pub def scene(kit: Kit, yaw: Float64): Scene3d.Scene3dCmd =
-        { instances = Scene3d.meshInstance(kit#shell, Mat4.identity()) ::
+        { instances = (Scene3d.meshInstance(kit#shell, Mat4.identity()) |> Scene3d.withName("shell")) ::
                       List.append(kit#furniture, torches() |> List.map(torchInstance(kit#torch))),
           pointLights = torches() |> List.map(torchLight),
           environment = { ambient = rgb(0.16, 0.13, 0.15), hemisphere = 0.25, toonSteps = 0,

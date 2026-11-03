@@ -14,7 +14,15 @@
   "drives": [],
   "starts": [
     {"name": "title", "doc": "題名の画面（起動の既定）", "args": {}},
-    {"name": "level", "doc": "面 n（1 から数える）の初め", "args": {"n": "1"}}
+    {"name": "level", "doc": "面 n（1 から数える）の初め", "args": {"n": "1"}},
+    {"name": "shot:title", "doc": "ギャラリーの場面（gallery/title.png）", "args": {}},
+    {"name": "shot:play", "doc": "ギャラリーの場面（gallery/play.png）", "args": {}},
+    {"name": "shot:flood", "doc": "ギャラリーの場面（gallery/flood.png）", "args": {}},
+    {"name": "shot:dam", "doc": "ギャラリーの場面（gallery/dam.png）", "args": {}},
+    {"name": "shot:clear", "doc": "ギャラリーの場面（gallery/clear.png）", "args": {}},
+    {"name": "shot:washed", "doc": "ギャラリーの場面（gallery/washed.png）", "args": {}},
+    {"name": "shot:ending", "doc": "ギャラリーの場面（gallery/ending.png）", "args": {}},
+    {"name": "shot:quit", "doc": "ギャラリーの場面（gallery/quit.png）", "args": {}}
   ],
   "keys": ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", "Digit0", "Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6", "Digit7", "Digit8", "Digit9", "Up", "Down", "Left", "Right", "Enter", "Space", "Escape", "Tab", "Backspace", "Insert", "Delete", "PageUp", "PageDown", "Home", "End", "CapsLock", "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12", "Apostrophe", "Comma", "Minus", "Period", "Slash", "Semicolon", "Equal", "LeftBracket", "Backslash", "RightBracket", "GraveAccent", "LeftShift", "LeftCtrl", "LeftAlt", "LeftSuper", "RightShift", "RightCtrl", "RightAlt", "RightSuper", "Menu", "Numpad0", "Numpad1", "Numpad2", "Numpad3", "Numpad4", "Numpad5", "Numpad6", "Numpad7", "Numpad8", "Numpad9", "NumpadDecimal", "NumpadDivide", "NumpadMultiply", "NumpadSubtract", "NumpadAdd", "NumpadEnter", "NumpadEqual"],
   "ready": false,

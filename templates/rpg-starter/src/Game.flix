@@ -38,6 +38,7 @@ mod Game {
             |> App.quitWhen((f, h) -> Resources.read((r, w) -> Controls.isQuit(f, r, w), h))
             |> App.withCloseRequest(Resources.mapWorld((_, w) -> World.askQuit(w)))
             |> App.withStarts(Starts.all() |> List.map(Resources.liftStart))
+            |> App.withShots(Resources.shotsOf(Shots.names(), Shots.worldOf))
             |> App.withFlow(E2e.table())
             |> App.withFingerprint(Resources.read((_, w) -> E2e.fingerprint(w)))
             |> App.withStatusLine(Resources.read((_, w) -> E2e.fingerprint(w)))
