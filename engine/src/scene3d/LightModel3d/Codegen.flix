@@ -236,8 +236,8 @@ pub mod LightModel3d.Codegen {
     def srgbCode(t: Target, toLinear: Bool, a: String): String = match (t, toLinear) {
         case (Target.Flix, true)  => "Texture3d.srgbToLinear(${a})"
         case (Target.Flix, false) => "Texture3d.linearToSrgb(${a})"
-        case (Target.Glsl, true)  => "r3d_srgbToLinear(vec3(${a})).x"
-        case (Target.Glsl, false) => "r3d_linearToSrgb(vec3(${a})).x"
+        case (Target.Glsl, true)  => "r3d_srgbToLinear(${a})"
+        case (Target.Glsl, false) => "r3d_linearToSrgb(${a})"
     }
 
     def selectCode(t: Target, c: String, a: String, b: String): String = match t {
@@ -308,6 +308,12 @@ pub mod LightModel3d.Codegen {
         case ScalarExpr.Sqrt(a) =>
             let (sa, ca) = scalarCode(t, fresh, env, a);
             (sa, call1(t, "Num.sqrt", "sqrt", ca))
+        case ScalarExpr.InverseSqrt(a) =>
+            let (sa, ca) = scalarCode(t, fresh, env, a);
+            (sa, match t {
+                case Target.Flix => "(1.0 / Num.sqrt(${ca}))"
+                case Target.Glsl => "inversesqrt(${ca})"
+            })
         case ScalarExpr.Clamp01(a) =>
             let (sa, ca) = scalarCode(t, fresh, env, a);
             (sa, match t {
@@ -459,6 +465,7 @@ pub mod LightModel3d.Codegen {
         case ScalarExpr.Min(a, b)             => Set.union(paramsOfScalar(a), paramsOfScalar(b))
         case ScalarExpr.Pow(a, b)             => Set.union(paramsOfScalar(a), paramsOfScalar(b))
         case ScalarExpr.Sqrt(a)               => paramsOfScalar(a)
+        case ScalarExpr.InverseSqrt(a)        => paramsOfScalar(a)
         case ScalarExpr.Clamp01(a)            => paramsOfScalar(a)
         case ScalarExpr.Smoothstep(a, b, c)   => Set.union(paramsOfScalar(a), Set.union(paramsOfScalar(b), paramsOfScalar(c)))
         case ScalarExpr.Dot(a, b)             => Set.union(paramsOfVec3(a), paramsOfVec3(b))
@@ -803,9 +810,9 @@ pub mod LightModel3d.Codegen {
     // ════════════════════════════════════════════════════════
 
     /// 式 e を GLSL の関数 `vec3 name(…)` に生成した字。画素ごとの入力（点・法線・lightmap の色・かすみの前の色・空の向き）は
-    /// 引数（p・n・lightmap・color・dir）で受け、ほかは今の Render3d の uniform の名前（uAmbient・uPointPos[i] など）で読む。
+    /// 引数（p・n・lightmap・color・dir）で受け、ほかは Render3dGlsl が宣言する uniform の名前（uAmbient・uPointPos の i 番目など）で読む。
     /// 光のループは Scene3d.maxPointLights()・maxSpotLights() 回の for で、uPointCount・uSpotCount で抜ける。
-    /// 影は spotShadow(i, p)、lightmap の色の空間は r3d_srgbToLinear・r3d_linearToSrgb（vec3 の関数）を呼ぶ。engine の開発用（ゲームは使わない）。
+    /// 影は spotShadow(i, p)、lightmap の色の空間は r3d_srgbToLinear・r3d_linearToSrgb（float → float の関数。Texture3d.srgbToLinearGlsl・linearToSrgbGlsl で作る）を呼ぶ。engine の開発用（ゲームは使わない）。
     /// perPixel = 関数の引数の並び（引数の順はこの並びで決まり、enum の宣言の順に頼らない。木が読む画素ごとの入力が無ければ止める）。
     // WhyNot: 画素ごとの入力の読み方（varying か、確かめ用の絵の texelFetch か）を引数で選ばせない — 画素ごとの入力は関数の引数なので、
     //   呼ぶ側の main が varying でも texelFetch した値でも渡せる。

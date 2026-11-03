@@ -88,22 +88,20 @@ pub mod Texture3d {
         if (x <= linearEdge()) x * srgbSlope()
         else (1.0 + srgbOffset()) * Float64.pow({ base = x }, 1.0 / srgbGamma()) - srgbOffset()
 
-    /// srgbToLinear と同じ式の GLSL の関数（vec3 → vec3）。名前は呼ぶ側が決める（ShaderGen の sg_ と重ねない）。
-    // WhyNot: float の重みの mix で区分を選ばない — 選ばない側の NaN・無限が 0 倍でも NaN として漏れる。bvec の mix はそのまま選ぶ。
+    /// srgbToLinear と同じ式の GLSL の関数（float → float）。名前は呼ぶ側が決める（ShaderGen の sg_ と重ねない）。
+    // WhyNot: vec3 の版にしない — 光の式の木（LightModel3d）は成分ごとに書くので、vec3 で呼ぶと 1 成分のために 3 成分を計算する。
     pub def srgbToLinearGlsl(name: String): String =
-        "vec3 ${name}(vec3 s) {\n" +
-        "    vec3 lo = s / ${glslFloat(srgbSlope())};\n" +
-        "    vec3 hi = pow((s + ${glslFloat(srgbOffset())}) / ${glslFloat(1.0 + srgbOffset())}, vec3(${glslFloat(srgbGamma())}));\n" +
-        "    return mix(hi, lo, lessThanEqual(s, vec3(${glslFloat(srgbEdge())})));\n" +
+        "float ${name}(float s) {\n" +
+        "    return s <= ${glslFloat(srgbEdge())} ? s / ${glslFloat(srgbSlope())}\n" +
+        "                                   : pow((s + ${glslFloat(srgbOffset())}) / ${glslFloat(1.0 + srgbOffset())}, ${glslFloat(srgbGamma())});\n" +
         "}\n"
 
-    /// linearToSrgb と同じ式の GLSL の関数（vec3 → vec3。負は 0・1 を超えても切らない）。
+    /// linearToSrgb と同じ式の GLSL の関数（float → float。負は 0・1 を超えても切らない）。
     pub def linearToSrgbGlsl(name: String): String =
-        "vec3 ${name}(vec3 l) {\n" +
-        "    vec3 x = max(l, vec3(0.0));\n" +
-        "    vec3 lo = x * ${glslFloat(srgbSlope())};\n" +
-        "    vec3 hi = ${glslFloat(1.0 + srgbOffset())} * pow(x, vec3(1.0 / ${glslFloat(srgbGamma())})) - ${glslFloat(srgbOffset())};\n" +
-        "    return mix(hi, lo, lessThanEqual(x, vec3(${glslFloat(linearEdge())})));\n" +
+        "float ${name}(float l) {\n" +
+        "    float x = max(l, 0.0);\n" +
+        "    return x <= ${glslFloat(linearEdge())} ? x * ${glslFloat(srgbSlope())}\n" +
+        "                                   : ${glslFloat(1.0 + srgbOffset())} * pow(x, 1.0 / ${glslFloat(srgbGamma())}) - ${glslFloat(srgbOffset())};\n" +
         "}\n"
 
     def srgbEdge(): Float64 = 0.04045

@@ -151,6 +151,14 @@
       "pattern": "\\bpadKind\\s*=\\s*(?:GamepadMap\\.)?PadKind\\.Unknown\\b",
       "unlessLine": "\\|",
       "hint": "App.Frame を字で全部の欄を書かず、{ down = …, dt = … | App.emptyFrame() } の形で替える（次の版で Frame に欄が増えても止まらない。前のフレームとの差から作るなら App.frameOf）。engine の docs/migrations/0.77.0.md"
+    },
+    {
+      "id": "light-uniform-in-glsl",
+      "suffixes": [".flix"],
+      "rawLine": true,
+      "skip": ["render_gl/src/Render3dGlsl.flix", "src/render_gl/Render3dGlsl.flix", "engine/src/scene3d/LightModel3d/Codegen.flix", "src/engine/scene3d/LightModel3d/Codegen.flix", "engine_full/", "lib/", "build/"],
+      "pattern": "\"[^\"]*\\bu(?:Point|Spot)(?:Pos|Color|Range|Dir|Cone)\\[[A-Za-z_]\\w*\\]",
+      "hint": "光の式を GLSL の字で手で書かない（CPU の描き手と式が分かれる）。式は engine の LightModel3d の木に書き、GLSL は LightModel3d.Codegen.toGlsl で作る（3D の描き手の字は Render3dGlsl。uniform の位置を引く loc(program, \"uPointPos\") は止めない）"
     }
   ],
   "exempt": {}

@@ -659,7 +659,7 @@
 
 ## LightModel3d — `engine/src/scene3d/LightModel3d.flix`
 - スカラーの値の式。
-  `pub enum ScalarExpr with Eq { case Num(Float64) case In(ScalarInput) case LightField(ScalarLightField) case Add(ScalarExpr, ScalarExpr) case Sub(ScalarExpr, ScalarExpr) case Mul(ScalarExpr, ScalarExpr) case Div(ScalarExpr, ScalarExpr) case Max(ScalarExpr, ScalarExpr) case Min(ScalarExpr, ScalarExpr) case Pow(ScalarExpr, ScalarExpr) case Sqrt(ScalarExpr) case Clamp01(ScalarExpr) case Smoothstep(ScalarExpr, ScalarExpr, ScalarExpr) case Dot(Vec3Expr, Vec3Expr) case Length(Vec3Expr) case X(Vec3Expr) case Y(Vec3Expr) case Z(Vec3Expr) case Select(Cond, ScalarExpr, ScalarExpr) case Let(String, ScalarExpr, ScalarExpr) case LetVec3(String, Vec3Expr, ScalarExpr) case Ref(String) }`
+  `pub enum ScalarExpr with Eq { case Num(Float64) case In(ScalarInput) case LightField(ScalarLightField) case Add(ScalarExpr, ScalarExpr) case Sub(ScalarExpr, ScalarExpr) case Mul(ScalarExpr, ScalarExpr) case Div(ScalarExpr, ScalarExpr) case Max(ScalarExpr, ScalarExpr) case Min(ScalarExpr, ScalarExpr) case Pow(ScalarExpr, ScalarExpr) case Sqrt(ScalarExpr) case InverseSqrt(ScalarExpr) case Clamp01(ScalarExpr) case Smoothstep(ScalarExpr, ScalarExpr, ScalarExpr) case Dot(Vec3Expr, Vec3Expr) case Length(Vec3Expr) case X(Vec3Expr) case Y(Vec3Expr) case Z(Vec3Expr) case Select(Cond, ScalarExpr, ScalarExpr) case Let(String, ScalarExpr, ScalarExpr) case LetVec3(String, Vec3Expr, ScalarExpr) case Ref(String) }`
 - vec3 の値の式（色・位置・向き）。成分ごとの計算は x・y・z を同じ式で回す。
   `pub enum Vec3Expr with Eq { case Make(ScalarExpr, ScalarExpr, ScalarExpr) case In(Vec3Input) case LightField(Vec3LightField) case Add(Vec3Expr, Vec3Expr) case Sub(Vec3Expr, Vec3Expr) case Mul(Vec3Expr, Vec3Expr) case Max(Vec3Expr, Vec3Expr) case Min(Vec3Expr, Vec3Expr) case Scale(Vec3Expr, ScalarExpr) case Mix(Vec3Expr, Vec3Expr, ScalarExpr) case SumPoints(Vec3Expr) case SumSpots(Vec3Expr) case Toon(Vec3Expr) case SrgbToLinear(Vec3Expr) case LinearToSrgb(Vec3Expr) case Select(Cond, Vec3Expr, Vec3Expr) case Let(String, Vec3Expr, Vec3Expr) case LetScalar(String, ScalarExpr, Vec3Expr) case Ref(String) }`
 - Select の条件。
@@ -1596,7 +1596,7 @@
 - 線形の量 l を sRGB の曲線の値へ（l ≦ 0.0031308 は 12.92 l、ほかは 1.055 l^(1/2.4) − 0.055）。1 を超えても同じ式で返し、負は 0。
   `pub def linearToSrgb(l: Float64): Float64`
 - `pub def srgbToLinearGlsl(name: String): String`
-- linearToSrgb と同じ式の GLSL の関数（vec3 → vec3。負は 0・1 を超えても切らない）。
+- linearToSrgb と同じ式の GLSL の関数（float → float。負は 0・1 を超えても切らない）。
   `pub def linearToSrgbGlsl(name: String): String`
 
 ## TileLayer — `engine/src/render/TileLayer.flix`

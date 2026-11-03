@@ -8,7 +8,7 @@
 ///   点光源 = color × intensity × att × facing
 ///   スポット = color × intensity × att × facing × cone × shadowLit
 ///   att    = (max(0, 1 − d² / max(range², 1e−12)))²            d = 光の位置 − 点・range² = max(range, 1e−6)²
-///   facing = clamp01(wrap + n·l)                               l = d / |d|（|d| < 1e−12 なら 0）
+///   facing = clamp01(wrap + n·l)                               l = d / |d|（|d|² < 1e−24 なら 0）
 ///   cone   = smoothstep(outerCos, innerCos, −(l·spotDir))        縁の cos は Scene3d.spotConeOf
 ///   shadowLit = att × facing と cone が共に正の時だけ地図を引く（ほかは 1）
 ///   toon   = toonSteps > 0 なら各成分を floor(x × steps + 0.5) / steps
@@ -38,6 +38,8 @@ pub mod LightModel3d {
         /// 底・指数。
         case Pow(ScalarExpr, ScalarExpr)
         case Sqrt(ScalarExpr)
+        /// 1 / sqrt(x)。
+        case InverseSqrt(ScalarExpr)
         case Clamp01(ScalarExpr)
         /// 下の端・上の端・x。両端が同じなら x ≥ 上の端で 1、ほかは 0（GLSL の smoothstep は値が決まらないので、端は Scene3d.spotConeOf が離す）。
         case Smoothstep(ScalarExpr, ScalarExpr, ScalarExpr)
@@ -181,7 +183,8 @@ pub mod LightModel3d {
         let curve = ScalarExpr.In(ScalarInput.SkyCurve);
         let up = Cond.AtLeast(height, ScalarExpr.Num(0.0));
         let toward = Vec3Expr.Select(up, Vec3Expr.In(Vec3Input.SkyZenith), Vec3Expr.In(Vec3Input.SkyGround));
-        let t = ScalarExpr.Select(up, ScalarExpr.Pow(height, curve), ScalarExpr.Pow(ScalarExpr.Sub(ScalarExpr.Num(0.0), height), curve));
+        // WhyNot: 上下で別の Pow を Select で選ばない — 条件の比べが up と t で 2 回になる（生成した字に同じ比べが 2 つ出る）。
+        let t = ScalarExpr.Pow(ScalarExpr.Max(height, ScalarExpr.Sub(ScalarExpr.Num(0.0), height)), curve);
         Vec3Expr.Mix(Vec3Expr.In(Vec3Input.SkyHorizon), toward, ScalarExpr.Min(ScalarExpr.Num(1.0), t))
 
     /// lightmap から読んだ値を、光の足し算に入れる画面の値へ。
@@ -205,20 +208,20 @@ pub mod LightModel3d {
                            ScalarExpr.Ref("lit")))))
 
     /// 今の光から点へ届く量 k = att × facing と、点から光への向き l（長さ 1）を body の中で使えるようにする。
+    // WhyNot: 向きを Sqrt で長さを出してから 1 / 長さ で求めない — GL で sqrt と割り算の 2 つになり、光 1 本ごとに重い演算が 1 つ増える
+    //   （fragment の重い部屋の窓で 1 コマの時間が約 7% 増えた）。InverseSqrt は GL の inversesqrt 1 つ。
     def bindAttenuationAndFacing(body: Vec3Expr): Vec3Expr =
         let dSq = ScalarExpr.Ref("dSq");
         let falloff = ScalarExpr.Max(ScalarExpr.Num(0.0), ScalarExpr.Sub(ScalarExpr.Num(1.0),
                        ScalarExpr.Div(dSq, ScalarExpr.Max(ScalarExpr.LightField(ScalarLightField.RangeSquared), ScalarExpr.Num(1.0e-12)))));
-        let len = ScalarExpr.Ref("len");
         Vec3Expr.Let("d", Vec3Expr.Sub(Vec3Expr.LightField(Vec3LightField.Position), Vec3Expr.In(Vec3Input.Position)),
         Vec3Expr.LetScalar("dSq", ScalarExpr.Dot(Vec3Expr.Ref("d"), Vec3Expr.Ref("d")),
         Vec3Expr.LetScalar("falloff", falloff,
         Vec3Expr.LetScalar("att", ScalarExpr.Mul(ScalarExpr.Ref("falloff"), ScalarExpr.Ref("falloff")),
-        Vec3Expr.LetScalar("len", ScalarExpr.Sqrt(dSq),
-        Vec3Expr.LetScalar("inv", ScalarExpr.Select(Cond.Greater(ScalarExpr.Num(1.0e-12), len), ScalarExpr.Num(0.0), ScalarExpr.Div(ScalarExpr.Num(1.0), len)),
+        Vec3Expr.LetScalar("inv", ScalarExpr.Select(Cond.Greater(ScalarExpr.Num(1.0e-24), dSq), ScalarExpr.Num(0.0), ScalarExpr.InverseSqrt(dSq)),
         Vec3Expr.Let("l", Vec3Expr.Scale(Vec3Expr.Ref("d"), ScalarExpr.Ref("inv")),
         Vec3Expr.LetScalar("facing", ScalarExpr.Clamp01(ScalarExpr.Add(ScalarExpr.Num(wrap()), ScalarExpr.Dot(Vec3Expr.In(Vec3Input.Normal), Vec3Expr.Ref("l")))),
-        Vec3Expr.LetScalar("k", ScalarExpr.Mul(ScalarExpr.Ref("att"), ScalarExpr.Ref("facing")), body)))))))))
+        Vec3Expr.LetScalar("k", ScalarExpr.Mul(ScalarExpr.Ref("att"), ScalarExpr.Ref("facing")), body))))))))
 
     // ════════════════════════════════════════════════════════
     // CPU の描き手へ渡す光の並び

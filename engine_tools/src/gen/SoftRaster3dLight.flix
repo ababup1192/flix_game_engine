@@ -49,7 +49,7 @@ pub mod SoftRaster3dLight {
         let t_0X = (if (c_1) zenithX else groundX);
         let t_0Y = (if (c_1) zenithY else groundY);
         let t_0Z = (if (c_1) zenithZ else groundZ);
-        let t_2 = Float64.min(1.0, (if ((dirY >= 0.0)) Float64.pow(base = dirY, skyCurve) else Float64.pow(base = (0.0 - dirY), skyCurve)));
+        let t_2 = Float64.min(1.0, Float64.pow(base = Float64.max(dirY, (0.0 - dirY)), skyCurve));
         ((horizonX + ((t_0X - horizonX) * t_2)), (horizonY + ((t_0Y - horizonY) * t_2)), (horizonZ + ((t_0Z - horizonZ) * t_2)))
 
     def lightAtPoints(lights: Vector[Float64], i: Int32, pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, accX: Float64, accY: Float64, accZ: Float64): (Float64, Float64, Float64) =
@@ -61,14 +61,13 @@ pub mod SoftRaster3dLight {
             let dSq_l1 = (((d_l0X * d_l0X) + (d_l0Y * d_l0Y)) + (d_l0Z * d_l0Z));
             let falloff_l2 = Float64.max(0.0, (1.0 - (dSq_l1 / Float64.max(Vector.get(i + 6, lights), 1.0e-12))));
             let att_l3 = (falloff_l2 * falloff_l2);
-            let len_l4 = Num.sqrt(dSq_l1);
-            let inv_l5 = (if ((1.0e-12 > len_l4)) 0.0 else (1.0 / len_l4));
-            let l_l6X = (d_l0X * inv_l5);
-            let l_l6Y = (d_l0Y * inv_l5);
-            let l_l6Z = (d_l0Z * inv_l5);
-            let facing_l7 = clamp01((0.0 + (((nX * l_l6X) + (nY * l_l6Y)) + (nZ * l_l6Z))));
-            let k_l8 = (att_l3 * facing_l7);
-            lightAtPoints(lights, i + 7, pX, pY, pZ, nX, nY, nZ, (accX + (Vector.get(i + 3, lights) * k_l8)), (accY + (Vector.get(i + 4, lights) * k_l8)), (accZ + (Vector.get(i + 5, lights) * k_l8)))
+            let inv_l4 = (if ((1.0e-24 > dSq_l1)) 0.0 else (1.0 / Num.sqrt(dSq_l1)));
+            let l_l5X = (d_l0X * inv_l4);
+            let l_l5Y = (d_l0Y * inv_l4);
+            let l_l5Z = (d_l0Z * inv_l4);
+            let facing_l6 = clamp01((0.0 + (((nX * l_l5X) + (nY * l_l5Y)) + (nZ * l_l5Z))));
+            let k_l7 = (att_l3 * facing_l6);
+            lightAtPoints(lights, i + 7, pX, pY, pZ, nX, nY, nZ, (accX + (Vector.get(i + 3, lights) * k_l7)), (accY + (Vector.get(i + 4, lights) * k_l7)), (accZ + (Vector.get(i + 5, lights) * k_l7)))
         }
 
     def lightAtSpots(lights: Vector[Float64], i: Int32, shadow: SoftRaster3d.SpotShadow, pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, accX: Float64, accY: Float64, accZ: Float64): (Float64, Float64, Float64) =
@@ -80,15 +79,14 @@ pub mod SoftRaster3dLight {
             let dSq_l1 = (((d_l0X * d_l0X) + (d_l0Y * d_l0Y)) + (d_l0Z * d_l0Z));
             let falloff_l2 = Float64.max(0.0, (1.0 - (dSq_l1 / Float64.max(Vector.get(i + 11, lights), 1.0e-12))));
             let att_l3 = (falloff_l2 * falloff_l2);
-            let len_l4 = Num.sqrt(dSq_l1);
-            let inv_l5 = (if ((1.0e-12 > len_l4)) 0.0 else (1.0 / len_l4));
-            let l_l6X = (d_l0X * inv_l5);
-            let l_l6Y = (d_l0Y * inv_l5);
-            let l_l6Z = (d_l0Z * inv_l5);
-            let facing_l7 = clamp01((0.0 + (((nX * l_l6X) + (nY * l_l6Y)) + (nZ * l_l6Z))));
-            let k_l8 = (att_l3 * facing_l7);
-            let cone_l9 = smoothstep(Vector.get(i + 6, lights), Vector.get(i + 7, lights), (0.0 - (((l_l6X * Vector.get(i + 3, lights)) + (l_l6Y * Vector.get(i + 4, lights))) + (l_l6Z * Vector.get(i + 5, lights)))));
-            let lit_l10 = (if (((k_l8 > 0.0) and (cone_l9 > 0.0))) SoftRaster3d.shadowFactorAt(shadow, i, pX, pY, pZ) else 1.0);
-            lightAtSpots(lights, i + 12, shadow, pX, pY, pZ, nX, nY, nZ, (accX + (((Vector.get(i + 8, lights) * k_l8) * cone_l9) * lit_l10)), (accY + (((Vector.get(i + 9, lights) * k_l8) * cone_l9) * lit_l10)), (accZ + (((Vector.get(i + 10, lights) * k_l8) * cone_l9) * lit_l10)))
+            let inv_l4 = (if ((1.0e-24 > dSq_l1)) 0.0 else (1.0 / Num.sqrt(dSq_l1)));
+            let l_l5X = (d_l0X * inv_l4);
+            let l_l5Y = (d_l0Y * inv_l4);
+            let l_l5Z = (d_l0Z * inv_l4);
+            let facing_l6 = clamp01((0.0 + (((nX * l_l5X) + (nY * l_l5Y)) + (nZ * l_l5Z))));
+            let k_l7 = (att_l3 * facing_l6);
+            let cone_l8 = smoothstep(Vector.get(i + 6, lights), Vector.get(i + 7, lights), (0.0 - (((l_l5X * Vector.get(i + 3, lights)) + (l_l5Y * Vector.get(i + 4, lights))) + (l_l5Z * Vector.get(i + 5, lights)))));
+            let lit_l9 = (if (((k_l7 > 0.0) and (cone_l8 > 0.0))) SoftRaster3d.shadowFactorAt(shadow, i, pX, pY, pZ) else 1.0);
+            lightAtSpots(lights, i + 12, shadow, pX, pY, pZ, nX, nY, nZ, (accX + (((Vector.get(i + 8, lights) * k_l7) * cone_l8) * lit_l9)), (accY + (((Vector.get(i + 9, lights) * k_l7) * cone_l8) * lit_l9)), (accZ + (((Vector.get(i + 10, lights) * k_l7) * cone_l8) * lit_l9)))
         }
 }

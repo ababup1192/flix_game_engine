@@ -21,7 +21,10 @@ pub mod GlOffscreen {
     import org.lwjgl.opengl.GLCapabilities
     import org.lwjgl.opengl.GL11
     import org.lwjgl.opengl.GL12
+    import org.lwjgl.opengl.GL13
+    import org.lwjgl.opengl.GL20
     import org.lwjgl.opengl.GL30
+    import org.lwjgl.opengl.GL33
     import org.lwjgl.PointerBuffer
     import org.lwjgl.system.MemoryUtil
     import java.awt.image.BufferedImage
@@ -475,4 +478,166 @@ pub mod GlOffscreen {
         image.setRGB(0, 0, w, h, pixels, 0, w);
         image
     }
+
+    // ── 1 行を float で塗って読む（gl-parity の式の行）──
+
+    /// drawFloatRows の uniform の値（配列は成分を並べた物。vec3 の配列なら 3 個ずつ）。
+    pub enum RowUniform {
+        case IntValue(Int32)
+        case FloatValue(Float64)
+        case Vec2Value(Float64, Float64)
+        case Vec3Value(Float64, Float64, Float64)
+        case FloatArray(Vector[Float64])
+        case Vec2Array(Vector[Float64])
+        case Vec3Array(Vector[Float64])
+        case Matrix(Mat4.Mat4)
+    }
+
+    /// 入力の絵の 1 段の画素。Float32Rgba = 行 0 から rgba を 4 個ずつ（RGBA32F で上げる）・Argb8 = 行 0 から ARGB（RGBA8 で上げる。
+    /// 3D の描き手が場面の絵を上げる形と同じ）。
+    pub enum RowTexels {
+        case Float32Rgba(Vector[Float32])
+        case Argb8(Vector[Int32])
+    }
+
+    /// 入力の絵の 1 段。
+    pub type alias RowLevel = { width = Int32, height = Int32, texels = RowTexels }
+
+    /// 入力の絵 1 枚。sampler = 読む sampler2D の名前・levels = 段 0 から・linear = 画素の間と段の間をなめらかにつなぐか
+    /// （偽なら一番近い画素と段 0。読み方は 3D の描き手の材質の sampler と同じ。端は端の画素を読む）。
+    pub type alias RowTexture = { sampler = String, levels = List[RowLevel], linear = Bool }
+
+    /// 今の糸の GL の文脈で、frag（#version 330 core・`out vec4 fragColor`）を width × 1 の RGBA32F の描き先へ uniform の組ごとに 1 回ずつ塗り、
+    /// 組ごとに画素の rgba を左から width × 4 個の Float32 で読み返す（GPU の式を 8 bit に丸めずに CPU の式と比べる口）。
+    /// textures は unit 0 から順に貼る。frag の画素の位置は gl_FragCoord.x（画素の真ん中・0.5 から）。組めなければ Err(理由)。
+    /// 塗った後は描き先を 0（既定の FBO）・選ぶ unit を 0・program と VAO を 0 にし、使った unit の sampler オブジェクトを外したままにする。
+    /// viewport（width × 1）と、切った blend・深度の判定・scissor・面の裏の間引きは塗る前の物へ戻さない（呼ぶ側が置き直す）。
+    pub def drawFloatRows(fragment: String, width: Int32, textures: List[RowTexture],
+                          uniformSets: List[List[(String, RowUniform)]]): Result[String, List[Vector[Float32]]] \ IO =
+        match RenderShader.tryCreateProgram(rowVertexSource(), fragment, "gl-parity:row") {
+            case None          => Err("1 行の塗りのプログラムが組めない（GLSL のエラーは上の行）")
+            case Some(program) =>
+                let target = createRowTarget(width);
+                if (GL30.glCheckFramebufferStatus(GL30.GL_FRAMEBUFFER) == GL30.GL_FRAMEBUFFER_COMPLETE)
+                    drawRowsInto(program, target, width, textures, uniformSets)
+                else {
+                    deleteRowTarget(target);
+                    GL20.glDeleteProgram(program);
+                    Err("RGBA32F の描き先を作れない GL")
+                }
+        }
+
+    def drawRowsInto(program: Int32, target: (Int32, Int32), width: Int32, textures: List[RowTexture],
+                     uniformSets: List[List[(String, RowUniform)]]): Result[String, List[Vector[Float32]]] \ IO =
+        let vao = GL30.glGenVertexArrays();
+        let texIds = textures |> List.mapWithIndex((unit, t) -> uploadRowTexture(unit, t));
+        GL11.glDisable(GL11.GL_BLEND);
+        GL11.glDisable(GL11.GL_DEPTH_TEST);
+        GL11.glDisable(GL11.GL_SCISSOR_TEST);
+        GL11.glDisable(GL11.GL_CULL_FACE);
+        GL11.glViewport(0, 0, width, 1);
+        GL20.glUseProgram(program);
+        GL30.glBindVertexArray(vao);
+        textures |> List.forEachWithIndex((unit, t) -> GL20.glUniform1i(GL20.glGetUniformLocation(program, t#sampler), unit));
+        let rows = uniformSets |> List.map(set -> {
+            set |> List.forEach(nu -> { let (name, u) = nu; putRowUniform(GL20.glGetUniformLocation(program, name), u) });
+            GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 3);
+            readRowFloats(width)
+        });
+        GL30.glBindVertexArray(0);
+        GL20.glUseProgram(0);
+        GL30.glDeleteVertexArrays(vao);
+        texIds |> List.forEach(id -> GL11.glDeleteTextures(id));
+        GL13.glActiveTexture(GL13.GL_TEXTURE0);
+        deleteRowTarget(target);
+        GL20.glDeleteProgram(program);
+        Ok(rows)
+
+    /// 描き先を 0（既定の FBO）へ戻し、1 行の描き先を消す。
+    def deleteRowTarget(target: (Int32, Int32)): Unit \ IO =
+        let (fbo, tex) = target;
+        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, 0);
+        GL30.glDeleteFramebuffers(fbo);
+        GL11.glDeleteTextures(tex)
+
+    /// 画面いっぱいの三角形 1 枚（頂点の属性は読まない）。
+    def rowVertexSource(): String =
+        "#version 330 core\n" +
+        "void main() {\n" +
+        "    vec2 corner = vec2(float((gl_VertexID & 1) * 4 - 1), float((gl_VertexID & 2) * 2 - 1));\n" +
+        "    gl_Position = vec4(corner, 0.0, 1.0);\n" +
+        "}\n"
+
+    /// width × 1 の RGBA32F の FBO（bind したまま返す）。
+    def createRowTarget(width: Int32): (Int32, Int32) \ IO =
+        let tex = GL11.glGenTextures();
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, tex);
+        GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL30.GL_RGBA32F, width, 1, 0, GL11.GL_RGBA, GL11.GL_FLOAT, 0i64);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_NEAREST);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_NEAREST);
+        let fbo = GL30.glGenFramebuffers();
+        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, fbo);
+        GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0, GL11.GL_TEXTURE_2D, tex, 0);
+        (fbo, tex)
+
+    /// 入力の絵を unit に上げて貼る。
+    // WhyNot: sampler オブジェクトを unit に残したまま貼らない — 3D の描き手が unit に貼った sampler が、テクスチャの読み方の設定より勝つ。
+    def uploadRowTexture(unit: Int32, t: RowTexture): Int32 \ IO =
+        let id = GL11.glGenTextures();
+        GL13.glActiveTexture(GL13.GL_TEXTURE0 + unit);
+        GL33.glBindSampler(unit, 0);
+        GL11.glBindTexture(GL11.GL_TEXTURE_2D, id);
+        t#levels |> List.forEachWithIndex((level, l) -> uploadRowLevel(level, l));
+        let mipped = List.length(t#levels) > 1;
+        let minFilter = match (t#linear, mipped) {
+            case (true, true)   => GL11.GL_LINEAR_MIPMAP_LINEAR
+            case (true, false)  => GL11.GL_LINEAR
+            case (false, _)     => GL11.GL_NEAREST
+        };
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, minFilter);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, if (t#linear) GL11.GL_LINEAR else GL11.GL_NEAREST);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL12.GL_TEXTURE_BASE_LEVEL, 0);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL12.GL_TEXTURE_MAX_LEVEL, Int32.max(0, List.length(t#levels) - 1));
+        id
+
+    def uploadRowLevel(level: Int32, l: RowLevel): Unit \ IO = match l#texels {
+        case RowTexels.Float32Rgba(values) =>
+            let buf = MemoryUtil.memAllocFloat(Int32.max(1, Vector.length(values)));
+            Vector.forEach(v -> discard buf.put(v), values);
+            discard buf.flip();
+            GL11.glTexImage2D(GL11.GL_TEXTURE_2D, level, GL30.GL_RGBA32F, l#width, l#height, 0, GL11.GL_RGBA, GL11.GL_FLOAT, buf);
+            MemoryUtil.memFree(buf)
+        case RowTexels.Argb8(pixels) =>
+            let buf = MemoryUtil.memAllocInt(Int32.max(1, Vector.length(pixels)));
+            Vector.forEach(v -> discard buf.put(v), pixels);
+            discard buf.flip();
+            GL11.glTexImage2D(GL11.GL_TEXTURE_2D, level, GL11.GL_RGBA, l#width, l#height, 0, GL12.GL_BGRA, GL12.GL_UNSIGNED_INT_8_8_8_8_REV, buf);
+            MemoryUtil.memFree(buf)
+    }
+
+    def putRowUniform(loc: Int32, u: RowUniform): Unit \ IO = match u {
+        case RowUniform.IntValue(i)         => GL20.glUniform1i(loc, i)
+        case RowUniform.FloatValue(x)       => GL20.glUniform1f(loc, RenderUtil.f32(x))
+        case RowUniform.Vec2Value(x, y)     => GL20.glUniform2f(loc, RenderUtil.f32(x), RenderUtil.f32(y))
+        case RowUniform.Vec3Value(x, y, z)  => GL20.glUniform3f(loc, RenderUtil.f32(x), RenderUtil.f32(y), RenderUtil.f32(z))
+        case RowUniform.FloatArray(values)  => GL20.glUniform1fv(loc, floatArrayOf(values))
+        case RowUniform.Vec2Array(values)   => GL20.glUniform2fv(loc, floatArrayOf(values))
+        case RowUniform.Vec3Array(values)   => GL20.glUniform3fv(loc, floatArrayOf(values))
+        case RowUniform.Matrix(m)           => GL20.glUniformMatrix4fv(loc, false, floatArrayOf(Mat4.toColumns(m)))
+    }
+
+    def floatArrayOf(values: Vector[Float64]): Array[Float32, Static] \ IO =
+        let out = Array.repeat(Static, Int32.max(1, Vector.length(values)), 0.0f32);
+        Vector.forEachWithIndex((i, v) -> Array.put(RenderUtil.f32(v), i, out), values);
+        out
+
+    def readRowFloats(width: Int32): Vector[Float32] \ IO =
+        let buf = MemoryUtil.memAllocFloat(width * 4);
+        GL11.glPixelStorei(GL11.GL_PACK_ALIGNMENT, 4);
+        GL11.glReadPixels(0, 0, width, 1, GL11.GL_RGBA, GL11.GL_FLOAT, buf);
+        let values = Vector.range(0, width * 4) |> Vector.map(i -> buf.get(i));
+        MemoryUtil.memFree(buf);
+        values
 }

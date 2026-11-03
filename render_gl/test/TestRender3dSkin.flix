@@ -9,36 +9,36 @@ mod TestRender3dSkin {
     /// 骨の無い版は Joints の block を宣言しない。
     @Test
     def testPlainSourceHasNoJointsBlock(): Unit \ Assert =
-        Assert.assertEq(expected = -1, indexOf("uniform Joints", Render3d.meshVertexSource()))
+        Assert.assertEq(expected = -1, indexOf("uniform Joints", Render3dGlsl.meshVertexSource()))
 
     /// 骨の無い版の位置は形の座標にそのまま uModel を掛ける。
     @Test
     def testPlainPositionIsModelTimesPos(): Unit \ Assert =
-        Assert.assertTrue(indexOf("vec4 world = uModel * vec4(aPos, 1.0);", Render3d.meshVertexSource()) >= 0)
+        Assert.assertTrue(indexOf("vec4 world = uModel * vec4(aPos, 1.0);", Render3dGlsl.meshVertexSource()) >= 0)
 
     /// 骨つきの版は joint 行列を Skin3d.maxJoints() 本の std140 の block で受ける。
     @Test
     def testSkinnedDeclaresMaxJointsBlock(): Unit \ Assert =
-        Assert.assertTrue(indexOf("mat4 uJoints[${Skin3d.maxJoints()}];", Render3d.skinnedMeshVertexSource()) >= 0)
+        Assert.assertTrue(indexOf("mat4 uJoints[${Skin3d.maxJoints()}];", Render3dGlsl.skinnedMeshVertexSource()) >= 0)
 
     /// ジョイントの番号は整数の属性（location 3）。
     @Test
     def testJointIndicesAreIntegerAttribute(): Unit \ Assert =
-        Assert.assertTrue(indexOf("layout (location = 3) in ivec4 aJoints;", Render3d.skinnedMeshVertexSource()) >= 0)
+        Assert.assertTrue(indexOf("layout (location = 3) in ivec4 aJoints;", Render3dGlsl.skinnedMeshVertexSource()) >= 0)
 
     /// 骨つきの位置は skin で曲げてから uModel を掛ける。
     @Test
     def testSkinnedPositionBentBeforeModel(): Unit \ Assert =
-        Assert.assertTrue(indexOf("vec4 world = uModel * skin * vec4(aPos, 1.0);", Render3d.skinnedMeshVertexSource()) >= 0)
+        Assert.assertTrue(indexOf("vec4 world = uModel * skin * vec4(aPos, 1.0);", Render3dGlsl.skinnedMeshVertexSource()) >= 0)
 
     /// 骨つきの法線は skin の左上 3×3 で曲げてから uNormal を掛ける。
     @Test
     def testSkinnedNormalBentBeforeNormalMatrix(): Unit \ Assert =
-        Assert.assertTrue(indexOf("vNormal = (uNormal * vec4(mat3(skin) * aNormal, 0.0)).xyz;", Render3d.skinnedMeshVertexSource()) >= 0)
+        Assert.assertTrue(indexOf("vNormal = (uNormal * vec4(mat3(skin) * aNormal, 0.0)).xyz;", Render3dGlsl.skinnedMeshVertexSource()) >= 0)
 
     /// skin は 4 つの重みと 4 つのジョイントの番号の組の和。
     @Test
     def testSkinSumsFourWeightedJoints(): Unit \ Assert =
-        Assert.assertTrue(indexOf("aWeights.w * uJoints[aJoints.w]", Render3d.skinnedMeshVertexSource()) >= 0)
+        Assert.assertTrue(indexOf("aWeights.w * uJoints[aJoints.w]", Render3dGlsl.skinnedMeshVertexSource()) >= 0)
 
 }

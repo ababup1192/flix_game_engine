@@ -8,6 +8,7 @@
 #
 # 比べる物と強さ:
 #   gl-parity の行      … 場面ごとの「一致 / 差 N px」が基準と同じか（減った行も違いとして落とす。良くなったなら基準と上限を取り直す合図）
+#                         式の行（E 段階）は基準と比べず並べて見せ、上限を超えた行があれば落とす（測った差の値は GPU ごとに違う）
 #   CPU の絵の SHA-256  … gl-parity の soft/・3D の部屋の room.png・テンプレの gallery は GPU に依らないので、同じ JDK・同じ CPU の種類なら違えば退行
 #                         （Math.sin などは JIT の組み込みで 1 ulp ずれてよいので、JDK や CPU の種類を替えた時は取り直す）
 #   GL の絵の SHA-256   … gl-parity の gl/ は同じ機械でだけ比べられるので、違いは数えて知らせるだけ（exit を変えない）
@@ -23,7 +24,8 @@ failed=0
 "$engine/bin/check-fpkg-fresh.sh"
 
 grep -v '^#' "$base/gl-parity.txt" > "$tmp/parity-base"
-grep '\[parity\]' "$parity_log" | awk '!seen[$0]++' > "$tmp/parity-now" || true
+grep '\[parity\]' "$parity_log" | awk '!seen[$0]++' > "$tmp/parity-all" || true
+grep -v '^\[parity\] [^ ]* *E  ' "$tmp/parity-all" > "$tmp/parity-now" || true
 if [ ! -s "$tmp/parity-now" ]; then
 	echo "[baseline] gl-parity のログに [parity] の行が無い（組めずに止まった？ ${parity_log} を見る）。ほかの比べもしない" >&2
 	exit 1
@@ -32,6 +34,10 @@ if diff -u "$tmp/parity-base" "$tmp/parity-now" > "$tmp/parity-diff"; then
 	echo "[baseline] gl-parity の行: 基準と同じ（$(wc -l < "$tmp/parity-now" | tr -d ' ') 行）"
 else
 	echo "[baseline] gl-parity の行が基準と違う（- が基準・+ が今）:"; grep '^[-+]\[' "$tmp/parity-diff"; failed=1
+fi
+grep '^\[parity\] [^ ]* *E  ' "$tmp/parity-all" | sed 's/^/[baseline] 式の行（比べない）: /' || true
+if grep -qE '^\[parity\] [^ ]* *E  (違う|比較不能)' "$tmp/parity-all"; then
+	echo "[baseline] 式の行に上限を超えた行がある"; failed=1
 fi
 
 grep -v '^#' "$base/gl-parity.sha256" > "$tmp/sha-base"

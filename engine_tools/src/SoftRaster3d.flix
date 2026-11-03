@@ -110,18 +110,36 @@ pub mod SoftRaster3d {
     /// スポットの並びの位置 offset のスポットが、world の点 (px, py, pz) へ届ける光に掛ける割合（影を落とさないスポットは 1）。
     pub def shadowFactorAt(shadow: SpotShadow, offset: Int32, px: Float64, py: Float64, pz: Float64): Float64 = match shadow {
         case Some(Shadow.Shadow(at, m, n, bias, radius, strength, map)) if at == offset =>
-            let row = k -> Vector.get(k * 4, m) * px + Vector.get(k * 4 + 1, m) * py + Vector.get(k * 4 + 2, m) * pz + Vector.get(k * 4 + 3, m);
-            let w = row(3);
-            let (sx, sy, sz) = if (w <= 0.0) (2.0, 2.0, 0.0) else (row(0) / w, row(1) / w, row(2) / w);
-            if (sx < -1.0 or sx > 1.0 or sy < -1.0 or sy > 1.0) 1.0
-            else {
-                let r = Int32.max(0, radius);
-                let side = 2 * r + 1;
-                let lit = countLit(map, n, mapTexel(n, sx) - r, mapTexel(n, sy) - r, side, sz * 0.5 + 0.5 - bias, 0, 0);
-                1.0 - strength * (1.0 - Int32.toFloat64(lit) / Int32.toFloat64(side * side))
-            }
+            1.0 - strength * (1.0 - shadowLitFractionAt(m, n, bias, radius, map, px, py, pz))
         case _ => 1.0
     }
+
+    /// world の点 (px, py, pz) が影の地図で照らされている割合（pcf の (2r+1)² 画素のうち照らされている数の割合。地図の外と光の後ろは 1）。
+    /// m = shadowMatrix の 16 個（行優先・rowMajorOf）・地図 map は n × n（行 0 が NDC の y = −1 側）・r = pcfRadius。
+    /// GL の shadowLitFraction（Render3dGlsl）と同じ数え方で、gl-parity の式の行が値をそろえて確かめる。
+    // WhyNot: 地図と値をレコードにまとめて渡さない — 画素 × スポットの数だけレコードを作ることになる。
+    pub def shadowLitFractionAt(m: Vector[Float64], n: Int32, bias: Float64, pcfRadius: Int32, map: Vector[Float64],
+                                px: Float64, py: Float64, pz: Float64): Float64 =
+        let row = k -> Vector.get(k * 4, m) * px + Vector.get(k * 4 + 1, m) * py + Vector.get(k * 4 + 2, m) * pz + Vector.get(k * 4 + 3, m);
+        let w = row(3);
+        let (sx, sy, sz) = if (w <= 0.0) (2.0, 2.0, 0.0) else (row(0) / w, row(1) / w, row(2) / w);
+        if (sx < -1.0 or sx > 1.0 or sy < -1.0 or sy > 1.0) 1.0
+        else {
+            let r = Int32.max(0, pcfRadius);
+            let side = 2 * r + 1;
+            let lit = countLit(map, n, mapTexel(n, sx) - r, mapTexel(n, sy) - r, side, sz * 0.5 + 0.5 - bias, 0, 0);
+            Int32.toFloat64(lit) / Int32.toFloat64(side * side)
+        }
+
+    /// スポットの並びの位置 offset のスポットが落とす影（引数は shadowLitFractionAt と同じ・strength = 影の濃さ）。
+    pub def spotShadowOf(offset: Int32, m: Vector[Float64], n: Int32, bias: Float64, pcfRadius: Int32, strength: Float64,
+                         map: Vector[Float64]): SpotShadow =
+        Some(Shadow.Shadow(offset, m, n, bias, pcfRadius, strength, map))
+
+    /// 行列 m の 16 個（行優先）。shadowLitFractionAt の rows の形。
+    pub def rowMajorOf(m: Mat4.Mat4): Vector[Float64] =
+        let c = Mat4.toColumns(m);
+        Vector.range(0, 16) |> Vector.map(k -> { let row = k / 4; Vector.get((k - row * 4) * 4 + row, c) })
 
     /// NDC の x か y（−1..1）が落ちる地図の画素（0..n−1）。
     def mapTexel(n: Int32, ndc: Float64): Int32 =
@@ -583,12 +601,10 @@ pub mod SoftRaster3d {
         match caster {
             case None => None
             case Some((index, spot, sm)) =>
-                let m = Mat4.toColumns(Scene3d.shadowMatrix(spot));
-                let rows = Vector.range(0, 16) |> Vector.map(k -> { let row = k / 4; Vector.get((k - row * 4) * 4 + row, m) });
+                let rows = rowMajorOf(Scene3d.shadowMatrix(spot));
                 let size = Int32.min(sm#mapSize, Scene3d.maxShadowMapSize());
                 let pcf = Int32.min(sm#pcfRadius, Scene3d.maxShadowPcfRadius());
-                Some(Shadow.Shadow(index * LightModel3d.spotStride(), rows, size, sm#bias, pcf, sm#strength,
-                                   buildShadowMap(instances, spot, size)))
+                spotShadowOf(index * LightModel3d.spotStride(), rows, size, sm#bias, pcf, sm#strength, buildShadowMap(instances, spot, size))
         }
 
     /// 光から見た n × n の地図（一番近い面の NDC の z × 0.5 + 0.5。何も無い画素は 1。行 0 が NDC の y = −1 側）。
@@ -902,7 +918,6 @@ pub mod SoftRaster3d {
 
     /// 光の計算に使う法線（法線マップが無ければ point の法線のまま。式はファイルの頭）。法線マップは段つきの Linear で読む
     /// （lod は uv の右隣と下隣との差から Mip.lodOf）。
-    // WhyNot: 長さ 0 のタンジェントで傾けない — 長さ 1 にそろえられず、画素の法線が 0 になる。GL も同じ画素は n のまま。
     def mappedNormal(normal: Option[NormalMapping], point: ShaderEval.SurfacePoint, neighbors: (ShaderEval.SurfacePoint, ShaderEval.SurfacePoint),
                      tangent: (Vec3.Vec3, Float64)): Vec3.Vec3 =
         let n = point#normal;
@@ -910,24 +925,30 @@ pub mod SoftRaster3d {
             case None => n
             case Some(nm) =>
                 let (raw, w) = tangent;
-                let ortho = Vec3.sub(raw, Vec3.mul(n, Vec3.dot(n, raw)));
-                if (Vec3.dot(ortho, ortho) < 1.0e-12) n
-                else {
-                    let t = Vec3.normalized(ortho);
-                    let b = Vec3.mul(Vec3.cross(n, t), w);
-                    let (nextX, nextY) = neighbors;
-                    let (u, uvV) = (point#uv#x, point#uv#y);
-                    let lod = match Vector.head(nm#texture) {
-                        case Some(base) =>
-                            Mip.lodOf({ dudx = nextX#uv#x - u, dvdx = nextX#uv#y - uvV, dudy = nextY#uv#x - u, dvdy = nextY#uv#y - uvV },
-                                      base#width, base#height, Vector.length(nm#texture))
-                        case None => 0.0
-                    };
-                    let (cr, cg, cb) = ShaderEval.sampleMipRgb(nm#texture, { linear = true, repeat = nm#repeat }, lod, u, uvV);
-                    let (mx, my, mz) = ((cr * 2.0 - 1.0) * nm#strength, (cg * 2.0 - 1.0) * nm#strength, cb * 2.0 - 1.0);
-                    let p = Vec3.add(Vec3.add(Vec3.mul(t, mx), Vec3.mul(b, my)), Vec3.mul(n, mz));
-                    if (Vec3.dot(p, p) < 1.0e-12) n else Vec3.normalized(p)
-                }
+                let (nextX, nextY) = neighbors;
+                let (u, uvV) = (point#uv#x, point#uv#y);
+                let lod = match Vector.head(nm#texture) {
+                    case Some(base) =>
+                        Mip.lodOf({ dudx = nextX#uv#x - u, dvdx = nextX#uv#y - uvV, dudy = nextY#uv#x - u, dvdy = nextY#uv#y - uvV },
+                                  base#width, base#height, Vector.length(nm#texture))
+                    case None => 0.0
+                };
+                applyNormalMap(n, raw, w, nm#strength, ShaderEval.sampleMipRgb(nm#texture, { linear = true, repeat = nm#repeat }, lod, u, uvV))
+        }
+
+    /// 外向きの法線 n（長さ 1）を、タンジェント raw（長さはそろえない）・w（±1）と法線マップの rgb c で傾けた法線（式はファイルの頭）。
+    /// GL の applyNormalMap（Render3dGlsl）と同じ式で、gl-parity の式の行が値をそろえて確かめる。
+    // WhyNot: 長さ 0 のタンジェントで傾けない — 長さ 1 にそろえられず、画素の法線が 0 になる。GL も同じ画素は n のまま。
+    pub def applyNormalMap(n: Vec3.Vec3, raw: Vec3.Vec3, w: Float64, strength: Float64, c: (Float64, Float64, Float64)): Vec3.Vec3 =
+        let ortho = Vec3.sub(raw, Vec3.mul(n, Vec3.dot(n, raw)));
+        if (Vec3.dot(ortho, ortho) < 1.0e-12) n
+        else {
+            let t = Vec3.normalized(ortho);
+            let b = Vec3.mul(Vec3.cross(n, t), w);
+            let (cr, cg, cb) = c;
+            let (mx, my, mz) = ((cr * 2.0 - 1.0) * strength, (cg * 2.0 - 1.0) * strength, cb * 2.0 - 1.0);
+            let p = Vec3.add(Vec3.add(Vec3.mul(t, mx), Vec3.mul(b, my)), Vec3.mul(n, mz));
+            if (Vec3.dot(p, p) < 1.0e-12) n else Vec3.normalized(p)
         }
 
     /// cutout の材質 m で、この画素の α が materialCutoff() 未満か（cutout でない材質は捨てない）。

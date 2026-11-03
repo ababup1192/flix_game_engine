@@ -395,12 +395,14 @@ gl-capture:
 	@if [ -z "$(OUT)" ]; then echo "usage: make gl-capture OUT=<出力のフォルダ>"; exit 2; fi
 	@bin/gl-capture.sh "$(OUT)"
 
+# WhyNot: gl-capture の基準を BASELINE と分ける — 3D の GL の絵は C2 の後で 1 画素変わり、0.78.0 の基準は gl-capture だけを持つ。
+GL_CAPTURE_BASELINE ?= bench/baseline/0.78.0
 gl-capture-check:
 	@rm -rf build/gl-capture/a build/gl-capture/b
 	@bin/gl-capture.sh build/gl-capture/a && bin/gl-capture.sh build/gl-capture/b && \
 		bin/gl-capture.sh --compare build/gl-capture/a build/gl-capture/b
 	@# 基準と同じ機械なら、基準とも比べる (別の機械の基準とは比べられないので BASE=off で止める)。
-	@if [ "$(BASE)" != off ]; then bin/gl-capture.sh --compare $(BASELINE)/gl-capture.sha256 build/gl-capture/a; fi
+	@if [ "$(BASE)" != off ]; then bin/gl-capture.sh --compare $(GL_CAPTURE_BASELINE)/gl-capture.sha256 build/gl-capture/a; fi
 
 # 個別テスト: make test-rpg-starter (templates/ を先に探し、無ければルート直下のパッケージ名)
 # 出力は .test-logs/ に落とし (test-par と同じ命名)、緑なら末尾 5 行だけ見せる。

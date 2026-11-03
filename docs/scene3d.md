@@ -1,7 +1,7 @@
 # 3D の場面（Scene3d）の口の案内
 
 3D の部屋や物を 1 つの描き物（`Render.scene3d`）にまとめる時に、どの口を使うかを引く所。型と引数は `make api Q=<名前>`、
-座標の約束（左手系・表の面は時計回り）は `engine/src/scene3d/Scene3d.flix` の頭の doc。光・かすみ・空の式は `engine/src/scene3d/LightModel3d.flix` の木（CPU の描き手はその木から生成した `engine_tools/src/gen/SoftRaster3dLight.flix` を回す。木の外の入力の作り方は `engine_tools/src/SoftRaster3d.flix` の頭）。
+座標の約束（左手系・表の面は時計回り）は `engine/src/scene3d/Scene3d.flix` の頭の doc。光・かすみ・空の式は `engine/src/scene3d/LightModel3d.flix` の木（GL のシェーダーは走る時に木から作り（`render_gl/src/Render3dGlsl.flix`）、CPU の描き手はその木から生成した `engine_tools/src/gen/SoftRaster3dLight.flix` を回す。木の外に残る影の地図の PCF・法線マップの TBN・lightmap の段つきの読みは、2 つの描き手が別々に書き、`make gl-parity` の式の行が値をそろえて確かめる。木の外の入力の作り方は `engine_tools/src/SoftRaster3d.flix` の頭）。
 Blender でベイクした光は [lightmap.md](lightmap.md)。
 
 GL（窓）と CPU（画面なしの描き出し・テスト・agent-eval）の 2 つの描き手が、同じ場面を同じ式で描く。

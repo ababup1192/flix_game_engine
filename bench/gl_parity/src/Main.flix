@@ -1,5 +1,6 @@
 // 入口。同じ scene 宣言（Scenes）を GL と SoftRaster の両方で 1 コマ描き出し、画素を突き合わせて
 // 1 行 1 scene の表を出す。A 段階（バイト一致層）に不一致があるか、許容差のある B 段階（Scenes.toleranceOf）が上限を超えれば exit 1。
+// 続けて 3D の光の式を 8 bit に丸める前の値で比べる式の行（E 段階・ExprRows）を出し、上限を超えても exit 1。
 //
 // GL の絵はリファレンス画像化しない — 基準は「もう片方の経路」であって過去の絵ではない
 // （過去の絵との突き合わせは templates の reference-check / reference-update の役目）。
@@ -170,9 +171,11 @@ mod ParityMain {
         })
 
     pub def go(): Unit \ IO =
-        let counted = run {
+        let exprInputs = ExprRows.inputs();
+        let (counted, exprGl) = run {
             GameEngine.Game.setDiagnosticsEnabled(true);
-            Scenes.all() |> List.filterMap(sc -> glShootCounted(sc))
+            let shot = Scenes.all() |> List.filterMap(sc -> glShootCounted(sc));
+            (shot, ExprRows.drawGl(exprInputs))
         } with LwjglLayer.withProject(".")
           with Fs.FileRead.runWithIO;
         renameFrames();
@@ -184,7 +187,8 @@ mod ParityMain {
                 "debug/soft/${sc#name}.png", "debug/diff/${sc#name}.png")));
         List.forEach(eo -> { let (exact, o) = eo; println(line(exact, o)) }, outcomes);
         List.forEach(c -> println(fst(c)), counted);
-        if (List.exists(eo -> { let (exact, o) = eo; failed(exact, o) }, outcomes) or List.exists(c -> not snd(c), counted)) System.exit(1) else ()
+        let exprOk = ExprRows.report(exprInputs, exprGl);
+        if (List.exists(eo -> { let (exact, o) = eo; failed(exact, o) }, outcomes) or List.exists(c -> not snd(c), counted) or not exprOk) System.exit(1) else ()
 }
 
 def main(): Unit \ IO =
