@@ -7,12 +7,13 @@ use fge::GameEngine
 
 mod ParityMain {
     use fge::{
-        App, Color, FontAtlas, GameEngine, GlReadback, GpuHandle, HeadlessFont, HeadlessRender,
+        App, Color, CpuTiming, FontAtlas, GameEngine, GlReadback, GpuHandle, HeadlessFont, HeadlessRender,
         LwjglLayer, Render, RenderTarget, ShaderEffect, SoftRaster
     }
 
     import java.io.File
     import java.lang.System
+    import java.io.FileWriter
 
     def ttf(): String = "assets/Xolonium-Regular.ttf"
 
@@ -86,21 +87,51 @@ mod ParityMain {
           fontTtf = ttf(), fontAtlas = atlas, outDir = "debug/soft",
           frameW = Scenes.designWi(), frameH = Scenes.designHi() | HeadlessRender.defaults() }
 
+    /// ターゲット口の scene を 1 枚の pass として描く指定。
+    def targetSpecOf(sc: Scenes.Scene): HeadlessRender.PassSpec =
+        let (ds, ps) = toDraw(softTexInfo, sc#items);
+        { name = sc#name, clear = RenderTarget.LoadOp.Clear(black()),
+          drawables = ds, polygons = ps, surfaces = Nil, scenes = Nil, target = RenderTarget.defaultDescriptor() }
+
+    /// 画面口の scene を、pass と 3D の場面ごと描き出しの 1 枚にした物。
+    def screenSceneOf(sc: Scenes.Scene): HeadlessRender.Scene =
+        let passSpecs = Render.passSpecsOf(softTexInfo, planOf(sc))#specs;
+        let soft = Render.softSceneOf(softTexInfo, sc#items);
+        { passes = passSpecs, drawables = soft#drawables, polygons = soft#polygons,
+          surfaces = soft#surfaces, scenes = soft#scenes, fonts = Map.empty(), fontAntialias = Map.empty() }
+
     def softShoot(cfg: HeadlessRender.RenderConfig, sc: Scenes.Scene): Unit \ IO =
         match sc#via {
             case Scenes.ShotVia.ViaTarget =>
-                let (ds, ps) = toDraw(softTexInfo, sc#items);
-                let spec: HeadlessRender.PassSpec =
-                    { name = sc#name, clear = RenderTarget.LoadOp.Clear(black()),
-                      drawables = ds, polygons = ps, surfaces = Nil, scenes = Nil, target = RenderTarget.defaultDescriptor() };
-                PixelDiff.writePng(SoftRaster.toArgbImage(HeadlessRender.renderPassImage(cfg, spec, None)), "debug/soft/${sc#name}.png")
+                PixelDiff.writePng(SoftRaster.toArgbImage(HeadlessRender.renderPassImage(cfg, targetSpecOf(sc), None)), "debug/soft/${sc#name}.png")
             case Scenes.ShotVia.ViaScreen =>
-                let passSpecs = Render.passSpecsOf(softTexInfo, planOf(sc))#specs;
-                let soft = Render.softSceneOf(softTexInfo, sc#items);
-                HeadlessRender.renderPngFull(cfg, { passes = passSpecs, drawables = soft#drawables, polygons = soft#polygons,
-                                                    surfaces = soft#surfaces, scenes = soft#scenes,
-                                                    fonts = Map.empty(), fontAntialias = Map.empty() }, sc#name)
+                HeadlessRender.renderPngFull(cfg, screenSceneOf(sc), sc#name)
         }
+
+    /// scene を CPU で 1 枚描く（書き出さない・描き出しのキャッシュを通さない）。返すのは描いた絵の幅（測った仕事を捨てないため）。
+    def softPaint(cfg: HeadlessRender.RenderConfig, sc: Scenes.Scene): Int32 \ IO =
+        match sc#via {
+            case Scenes.ShotVia.ViaTarget => fst(SoftRaster.passImageSize(HeadlessRender.renderPassImage(cfg, targetSpecOf(sc), None)))
+            case Scenes.ShotVia.ViaScreen => HeadlessRender.renderImageFull(cfg, screenSceneOf(sc)).getWidth()
+        }
+
+    /// 速さの測り方。温めの 3 回で JIT を温め、9 回の中央値を取る（1 回ごとに絵の読み込みも入る。描き出しの 1 枚と同じ仕事）。
+    def timingPlan(): CpuTiming.Plan = { warmup = 3, runs = 9 }
+
+    /// 全部の scene の CPU の描く時間（中央値・最小・最大のミリ秒）を 1 行ずつ出し、build/cpu-time.tsv にも書く（build/ は git に入れない）。窓は開かない。
+    pub def timeSoft(): Unit \ IO =
+        let cfg = cfgOf(HeadlessFont.buildUiAtlas(ttf(), ttf()));
+        let rows = Scenes.all() |> List.map(sc -> {
+            let (summary, _) = CpuTiming.measure(timingPlan(), () -> softPaint(cfg, sc));
+            "${sc#name}\t${ms(summary#median)}\t${ms(summary#min)}\t${ms(summary#max)}"
+        });
+        List.forEach(row -> println("[cpu] ${row}"), rows);
+        let out = new FileWriter("build/cpu-time.tsv");
+        out.write(String.intercalate("\n", "# scene\t中央値 ms\t最小\t最大" :: rows) + "\n");
+        out.close()
+
+    /// ミリ秒を小数 2 桁の字にする（そのまま文字列に埋めると桁が長すぎて読めない）。
+    def ms(v: Float64): String = Float64.toString(Float64.round(v * 100.0) / 100.0)
 
     // ── 表と exit code ──
 

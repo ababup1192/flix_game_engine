@@ -1,0 +1,48 @@
+diff -ru a/src/PreviewFx.flix b/src/PreviewFx.flix
+--- a/src/PreviewFx.flix	2026-11-03 13:17:49
++++ b/src/PreviewFx.flix	2026-11-03 13:17:49
+@@ -126,7 +126,7 @@
+                             design = design, scale = req#scale, background = ctx#clearColor,
+                             texturePath = Map.empty(),
+                             fontTtf = primary#path, fontAtlas = primary#atlas,
+-                            outPath = "", shapeAntialias = true, textAntialias = true });
++                            outPath = "", shapeAntialias = true, textAntialias = true, scenes = Nil });
+                         (200, JObject(Map#{
+                             "ok"       => JBool(true),
+                             "png"      => JString(PngBase64.encode(image)),
+diff -ru a/src/PreviewHitbox.flix b/src/PreviewHitbox.flix
+--- a/src/PreviewHitbox.flix	2026-11-03 13:17:49
++++ b/src/PreviewHitbox.flix	2026-11-03 13:17:49
+@@ -67,7 +67,7 @@
+             design = design, scale = scale, background = ctx#clearColor,
+             texturePath = Map.empty(),
+             fontTtf = primary#path, fontAtlas = primary#atlas,
+-            outPath = "", shapeAntialias = true, textAntialias = true });
++            outPath = "", shapeAntialias = true, textAntialias = true, scenes = Nil });
+         JObject(Map#{
+             "ok"       => JBool(true),
+             "png"      => JString(PngBase64.encode(image)),
+diff -ru a/src/PreviewItems.flix b/src/PreviewItems.flix
+--- a/src/PreviewItems.flix	2026-11-03 13:17:49
++++ b/src/PreviewItems.flix	2026-11-03 13:17:49
+@@ -256,7 +256,7 @@
+             design = designVec, scale = scale, background = ctx#clearColor,
+             texturePath = ProjectCtx.texturePaths(ctx),
+             fontTtf = primary#path, fontAtlas = primary#atlas,
+-            outPath = "", shapeAntialias = true, textAntialias = true });
++            outPath = "", shapeAntialias = true, textAntialias = true, scenes = Nil });
+         JObject(Map#{
+             "ok"       => JBool(true),
+             "png"      => JString(PngBase64.encode(image)),
+diff -ru a/src/PreviewUi.flix b/src/PreviewUi.flix
+--- a/src/PreviewUi.flix	2026-11-03 13:17:49
++++ b/src/PreviewUi.flix	2026-11-03 13:17:49
+@@ -479,7 +479,7 @@
+                     design = design, scale = job#scale, background = ctx#clearColor,
+                     texturePath = ProjectCtx.texturePaths(ctx),
+                     fontTtf = primary#path, fontAtlas = primary#atlas,
+-                    outPath = "", shapeAntialias = true, textAntialias = true });
++                    outPath = "", shapeAntialias = true, textAntialias = true, scenes = Nil });
+                 let pathWarnings = match (job#drawPath, job#hovered) {
+                     case (DrawPath.FlexPath, Some(_)) =>
+                         "hover is not applied — documents using poly rotation render via the static path" :: Nil

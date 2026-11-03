@@ -1,0 +1,6 @@
+# bench/scene3d の部屋（Room.items(kit, 0.0)・960×540）の CPU の絵と描く時間（0.76.0・Apple M4 Pro・macOS 27.0.1・12 コア）。
+# 絵: FGE_RENDER_CACHE=off make scene3d-still が書いた debug/room.png の SHA-256（CPU の固定値。GPU に依らない。JDK と CPU の種類が同じ時に比べる）
+room.png	834bc892a5d36c111639f8087574d9b4119d51db07b5cdddb04c051bb3f21e4a
+# 時間: make scene3d-cpu の中央値（温め 5 回・15 回）。同じ機械の負荷で 5〜10% ほど揺れる。3 回流した値を並べる。
+cpu-parallel-ms	40.2	37.2	38.6
+cpu-serial-ms	141.0	(FGE_SOFT_SERIAL=1・1 回)

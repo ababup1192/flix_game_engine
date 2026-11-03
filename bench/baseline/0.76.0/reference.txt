@@ -1,0 +1,6 @@
+# テンプレの make reference-check（0.76.0）。前から落ちる場面も並べる（落ちる顔ぶれが同じなら退行ではない）。
+# game-starter は src に make new-game が埋める字（__WW__）が残っていて、その場では組めない。
+game-starter	組めない	(__WW__)
+rpg-starter	ok	16 枚
+sound-novel-starter	落ちる	credits.png load.png log.png save.png settings.png title.png 
+tidepool-starter	落ちる	clear.png dam.png ending.png flood.png play.png quit.png title.png washed.png 

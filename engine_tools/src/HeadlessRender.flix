@@ -388,6 +388,20 @@ pub mod HeadlessRender {
         renderPngFull(cfg, { passes = Nil, drawables = soft#drawables, polygons = soft#polygons, surfaces = soft#surfaces,
                              scenes = soft#scenes, fonts = Map.empty(), fontAntialias = Map.empty() }, name)
 
+    // WhyNot: renderPng* で測らない — 描き出しのキャッシュ（RenderCache）が同じ絵を写すだけで返すので、2 回目から描く時間が測れない。
+    /// renderPngFull と同じ塗り（pass を先に描いて混ぜる・字の縁は本ごと）で 1 枚描いた画像を返す
+    /// （PNG に書かない・描き出しのキャッシュを通さない・知らせと値段の記録を残さない）。CPU の描く速さを測る口が使う。
+    /// 絵の読み込みも 1 回ごとにやり直す（renderPngFull の 1 枚と同じ仕事を測る）。
+    pub def renderImageFull(cfg: RenderConfig, scene: Scene): BufferedImage \ IO =
+        let images = passImagesOf(cfg, scene#fonts, scene#fontAntialias, scene#passes);
+        SoftRaster.renderToImageCachedAntialias({ scenes = scene#scenes | reqOf(cfg, scene#drawables, scene#polygons, "") },
+            scene#surfaces, scene#fonts, scene#fontAntialias, images, SoftRaster.freshTexWarnLog(), SoftRaster.freshTextureCache())
+
+    /// renderImageFull の SoftScene 版（pass も追加の字も無い 1 枚。3D のゲームの場面）。
+    pub def renderImageSoft(cfg: RenderConfig, soft: SoftScene): BufferedImage \ IO =
+        renderImageFull(cfg, { passes = Nil, drawables = soft#drawables, polygons = soft#polygons, surfaces = soft#surfaces,
+                               scenes = soft#scenes, fonts = Map.empty(), fontAntialias = Map.empty() })
+
     /// SoftScene のシルエット PNG（silhouettePngWith の 3D 込みの版）。3D の場面は silhouetteScenes で黒にする。
     pub def silhouettePngSoft(cfg: RenderConfig, scope: SilhouetteScope, soft: SoftScene, name: String): Unit \ IO =
         let (blackDrawables, blackPolygons, blackSurfaces) =

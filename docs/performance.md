@@ -187,6 +187,10 @@ O(N²)=2.00）。1 計測の内側で固定回数だけ呼んで合計を測る�
 分母だけ底上げされて二乗を見逃す）。5 回回して min を採り、測る順は交互・背中合わせ。
 戻り値は必ず消費する（JIT が計算ごと消す）。
 
+CPU の描く時間（SoftRaster・SoftRaster3d）は `CpuTiming.measure({ warmup, runs }, 仕事)` で温めてから何回か測り、中央値で比べる（最後の回の値を返すので、使って捨てない）
+（3D の部屋は `make scene3d-cpu`・gl-parity の場面ごとは `make gl-parity-cpu`。描き出しの `renderPng*` はキャッシュが写すだけの回があるので、
+時間を測るのは同じ塗りの `HeadlessRender.renderImageFull` / `renderImageSoft`）。同じ機械でも負荷で 5〜10% ほど揺れる（`bench/baseline/0.76.0/scene3d.txt`）。
+
 **時間で測る物はゲートに乗せない。** `make release` は `test-par` の直後で熱と CPU の
 取り合いのピークなので、偽陽性を出しうる検査をリリースの経路へ置かない。
 

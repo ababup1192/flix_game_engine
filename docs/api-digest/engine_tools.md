@@ -8,6 +8,16 @@
 ## AtomicFile — `engine_tools/src/AtomicFile.flix`
 - `pub def write(path: String, fill: File -> Unit \ IO): Unit \ IO`
 
+## CpuTiming — `engine_tools/src/CpuTiming.flix`
+- 測り方: warmup は捨てる回数、runs は測る回数。
+  `pub type alias Plan = { warmup = Int32, runs = Int32 }`
+- 測った結果（ミリ秒）。samples は小さい順。
+  `pub type alias Summary = { median = Float64, min = Float64, max = Float64, samples = Vector[Float64] }`
+- work を warmup 回流して捨て、runs 回流して 1 回ずつの時間を測る（runs が 0 以下なら 1 回）。
+  `pub def measure(plan: Plan, work: Unit -> a \ IO): (Summary, a) \ IO`
+- 時間の列（ミリ秒）を中央値と幅にまとめる。偶数個の中央値は真ん中の 2 つの平均。
+  `pub def summarize(samples: Nel[Float64]): Summary`
+
 ## DrawHash — `engine_tools/src/DrawHash.flix`
 - 1 コマの鍵。比べるときは `toHex` の字で比べる。
   `pub type alias Key = Digest`
@@ -98,6 +108,10 @@
   `pub type alias SoftScene = { drawables = List[GameEngine.Drawable], polygons = List[GameEngine.PolygonRenderCmd], surfaces = List[SoftRaster.SurfaceCmd], scenes = List[Scene3d.RenderCmd] }`
 - SoftScene を 1 枚の PNG に生成する（3D のゲームはこれを 1 回呼べば済む）。知らせと値段の記録は renderPngFull と同じ。
   `pub def renderPngSoft(cfg: RenderConfig, soft: SoftScene, name: String): Unit \ IO`
+- renderPngFull と同じ塗り（pass を先に描いて混ぜる・字の縁は本ごと）で 1 枚描いた画像を返す
+  `pub def renderImageFull(cfg: RenderConfig, scene: Scene): BufferedImage \ IO`
+- renderImageFull の SoftScene 版（pass も追加の字も無い 1 枚。3D のゲームの場面）。
+  `pub def renderImageSoft(cfg: RenderConfig, soft: SoftScene): BufferedImage \ IO`
 - SoftScene のシルエット PNG（silhouettePngWith の 3D 込みの版）。3D の場面は silhouetteScenes で黒にする。
   `pub def silhouettePngSoft(cfg: RenderConfig, scope: SilhouetteScope, soft: SoftScene, name: String): Unit \ IO`
 - passes を宣言順に生成した画像（毎回透明から。後の pass は前の pass の名前を貼れる）。

@@ -63,7 +63,7 @@ ENGINE_FULL_TOML_NAME := flix_game_engine-$(VERSION).toml
 # 全体の up 階層数を求め、symlink の相対パスを動的に組み立てる。
 SUBPATH_DEPTH := 5
 
-.PHONY: help status sync sync-layers sync-engine-full sync-root-src clean-locks clean-game-builds test test-par render render-all render-par render-changed diff gl-parity release release-guard studio-parity release-assets release-verify release-marker-check release-publish bump lint-palette lint-view lint-loop lint-audio rules check-docs-sync checkd-stop shader-cache-soak
+.PHONY: help status sync sync-layers sync-engine-full sync-root-src clean-locks clean-game-builds test test-par render render-all render-par render-changed diff gl-parity gl-parity-cpu release release-guard studio-parity release-assets release-verify release-marker-check release-publish bump lint-palette lint-view lint-loop lint-audio rules check-docs-sync checkd-stop shader-cache-soak
 
 # セッション立ち上げの固定費を数百トークンに抑える口。SessionStart フックが毎回呼ぶので
 # 実行や変更は一切せず、残っている記録 (.test-logs/ スナップショット チケット git) を集めるだけ。
@@ -116,6 +116,12 @@ help:
 	@echo "  make shader-cache-soak    シェーダープログラムのキャッシュが上限で頭打ちになるかを隠しウィンドウで確認 (増え続ければ exit 1)"
 	@echo "  make scene3d-still        3D の場面の固定の部屋を CPU で 1 枚描く (bench/scene3d/debug/room.png・窓は開かない)"
 	@echo "  make scene3d-bench        同じ部屋を実機の窓で毎コマ描き、1 コマの p50 / p95 を出す (窓が開く)"
+	@echo "  make gl-parity-cpu        gl-parity の全部の場面を CPU で温めてから描き、1 枚の時間の中央値を出す (窓は開かない)"
+	@echo "  make scene3d-cpu          同じ部屋を CPU で温めてから何回か描き、1 枚の時間の中央値を出す (窓は開かない)"
+	@echo "  make gl-capture OUT=<dir> テンプレの場面を隠しウィンドウ・dt 固定で頭の 6 コマ撮り、SHA-256 を控える"
+	@echo "  make gl-capture-check [BASE=off]  同じ場面を 2 回撮って 2 コマ目以降までバイトで比べ、基準とも比べる (違えば exit 1)"
+	@echo "  make check-external       外のゲームの写しを今の engine で型検査し、基準 (bench/baseline/) から増えたエラーだけ出す"
+	@echo "  make baseline-check [GALLERY=1]  gl-parity の行と絵・3D の部屋の CPU の絵 (とテンプレの gallery) を基準 (bench/baseline/) と比べる"
 	@echo "  make sync                 層の作業場を張り、engine_full を build-pkg して templates / bench に配布"
 	@echo "  make sync-layers          render_gl / engine_world / engine_tools の検査用の作業場 (.layers/) を張り直す"
 	@echo "  make sync-root-src        コミュニティビルド用にルート src/ の symlink 集を再生成"
@@ -315,6 +321,11 @@ diff: sync-layers
 gl-parity:
 	@$(MAKE) -C bench/gl_parity run
 
+# gl-parity の全部の場面を CPU で温めてから描き、1 枚の時間の中央値を bench/gl_parity/build/cpu-time.tsv へ (窓は開かない)。
+# 基準は bench/baseline/<版>/gl-parity-cpu.tsv。時間は機械と負荷で揺れるので門にはせず、同じ機械で前後を並べて見る。
+gl-parity-cpu:
+	@$(MAKE) -C bench/gl_parity cpu-time
+
 # シェーダープログラムのキャッシュの上限 (bench/shader_cache_soak)。隠しウィンドウで
 # 数値だけが違う Spec を 200 本投げ、LRU の追い出しでキャッシュが上限に留まるかを見る。
 # 頭打ちにならなければ exit 1。ShaderCache / buildProgram / ShaderGen を触ったら回す。
@@ -323,13 +334,58 @@ shader-cache-soak:
 
 # 3D の描き物 (Render.scene3d) の固定の部屋 (bench/scene3d)。still は CPU (SoftRaster) で静止画を
 # bench/scene3d/debug/room.png に描く (窓を開かない)。bench は実機の窓で同じ部屋を毎コマ描き、
-# 1 コマの p50 / p95 を出して閉じる (窓が開く)。Render3d / SoftRaster3d / submitGpuItems を触ったら回す。
-.PHONY: scene3d-still scene3d-bench
+# 1 コマの p50 / p95 を出して閉じる (窓が開く)。cpu は CPU で温めてから描き、1 枚の時間の中央値を出す
+# (still の時間は描き出しのキャッシュが写すだけの回を含むので速さの比べに使わない)。
+# Render3d / SoftRaster3d / submitGpuItems を触ったら回す。
+.PHONY: scene3d-still scene3d-bench scene3d-cpu
 scene3d-still:
 	@$(MAKE) -C bench/scene3d still
 
 scene3d-bench:
 	@$(MAKE) -C bench/scene3d run
+
+scene3d-cpu:
+	@$(MAKE) -C bench/scene3d cpu-time
+
+# 外のゲームの写し (bin/check-external.sh の既定の顔ぶれ) に今の engine_full を当てて flix check し、基準
+# (BASELINE の external.tsv) で通っていたのに止まった物と、基準に無かったエラーだけを出す。ゲームのフォルダは汚さない。
+# 先に make sync-engine-full。版を上げる段の終わりに回し、増えた物を移行メモで説明できるかを見る。
+BASELINE ?= bench/baseline/0.76.0
+.PHONY: check-external
+check-external:
+	@mkdir -p build/check-external
+	@EXTERNAL_UPGRADES=$(BASELINE)/upgrade bin/check-external.sh build/check-external/now.tsv && \
+		bin/check-external.sh --compare $(BASELINE)/external.tsv build/check-external/now.tsv
+
+# 今の描き出しを基準 (BASELINE) と比べる (bin/baseline-check.sh): gl-parity の行と絵の SHA・3D の部屋の CPU の絵。
+# GALLERY=1 でテンプレの render-all も流し、gallery の絵 (前から reference-check が落ちる場面も) を比べる。
+# 先に make sync-engine-full。段の終わりと、描き手を触った後に回す。
+.PHONY: baseline-check
+baseline-check:
+	@mkdir -p build/baseline
+	@bin/check-fpkg-fresh.sh
+	@# WhyNot: gl-parity が exit 1 でも止めない — 差の数が許容を超えた行も、基準との違いとして下で並べて見せる。組めずに止まった時は行が無いので下が落とす。
+	@$(MAKE) --no-print-directory gl-parity > build/baseline/gl-parity.log 2>&1; echo "[baseline] make gl-parity の終わり: $$?"
+	@FGE_RENDER_CACHE=off $(MAKE) --no-print-directory scene3d-still > build/baseline/scene3d-still.log 2>&1
+	@if [ -n "$(GALLERY)" ]; then for t in rpg-starter sound-novel-starter tidepool-starter; do \
+		$(MAKE) --no-print-directory -C templates/$$t render-all > build/baseline/render-$$t.log 2>&1 || exit 1; done; fi
+	@bin/baseline-check.sh $(BASELINE) build/baseline/gl-parity.log $(if $(GALLERY),--gallery)
+
+# 実機の GL の絵をテンプレの場面ごとに撮る (bin/gl-capture.sh)。隠しウィンドウ・FLIX_GE_FIXED_DT で dt を固定し、
+# 頭の 6 コマの SHA-256 を <OUT>/SHA256SUMS に控える。check は 2 回撮ってバイトで比べる (同じ起動で同じ絵になるか)。
+# 撮るのはテンプレと bench の lib の engine なので、先に make sync-engine-full (engine のソースが fpkg より新しければ止まる)。
+# GL の絵は機械とドライバで変わるので、比べるのは同じ機械で撮った物どうし。render_gl を触ったら check を回す。
+.PHONY: gl-capture gl-capture-check
+gl-capture:
+	@if [ -z "$(OUT)" ]; then echo "usage: make gl-capture OUT=<出力のフォルダ>"; exit 2; fi
+	@bin/gl-capture.sh "$(OUT)"
+
+gl-capture-check:
+	@rm -rf build/gl-capture/a build/gl-capture/b
+	@bin/gl-capture.sh build/gl-capture/a && bin/gl-capture.sh build/gl-capture/b && \
+		bin/gl-capture.sh --compare build/gl-capture/a build/gl-capture/b
+	@# 基準と同じ機械なら、基準とも比べる (別の機械の基準とは比べられないので BASE=off で止める)。
+	@if [ "$(BASE)" != off ]; then bin/gl-capture.sh --compare $(BASELINE)/gl-capture.sha256 build/gl-capture/a; fi
 
 # 個別テスト: make test-rpg-starter (templates/ を先に探し、無ければルート直下のパッケージ名)
 # 出力は .test-logs/ に落とし (test-par と同じ命名)、緑なら末尾 5 行だけ見せる。

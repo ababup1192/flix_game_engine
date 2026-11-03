@@ -226,13 +226,12 @@ pub mod LwjglLayer {
     def splashShotLimit(): Int32 = 4
     def splashShotGapMillis(): Int64 = 700i64
 
-    def splashShot(fbW: Int32, fbH: Int32, taken: Array[Int32, Static],
+    def splashShot(path: String, fbW: Int32, fbH: Int32, taken: Array[Int32, Static],
                    lastNanos: Array[Int64, Static]): Unit \ IO =
-        let path = System.getenv("FLIX_GE_SPLASH_SHOT");
         let count = Array.get(0, taken);
         let now = System.nanoTime();
         let gap = (now - Array.get(0, lastNanos)) / 1000000i64;
-        if (Object.isNull(path) or count >= splashShotLimit() or gap < splashShotGapMillis()) ()
+        if (count >= splashShotLimit() or gap < splashShotGapMillis()) ()
         else {
             Array.put(count + 1, 0, taken);
             Array.put(now, 0, lastNanos);
@@ -251,14 +250,24 @@ pub mod LwjglLayer {
     /// PNG 圧縮が挟まり、ゲームが止まったように見えるほど遅くなる。
     def frameShotLimit(): Int32 = 64
 
-    def frameShot(fbW: Int32, fbH: Int32, taken: Array[Int32, Static]): Unit \ IO =
-        let dir = System.getenv("FLIX_GE_FRAME_SHOT");
+    def frameShot(dirOpt: Option[String], fbW: Int32, fbH: Int32, taken: Array[Int32, Static]): Unit \ IO =
         let count = Array.get(0, taken);
-        if (Object.isNull(dir) or count >= frameShotLimit()) ()
-        else {
-            Array.put(count + 1, 0, taken);
-            GlReadback.readBoundPng(fbW, fbH, "${dir}/frame-${count + 1}.png")
+        match dirOpt {
+            case Some(dir) if count < frameShotLimit() =>
+                Array.put(count + 1, 0, taken);
+                GlReadback.readBoundPng(fbW, fbH, "${dir}/frame-${count + 1}.png")
+            case _ => ()
         }
+
+    // WhyNot: withLwjgl の中に match を直に置かない — Log.warn は純粋な Unit で、`;` で捨てると呼び出しごと消える。
+    /// dt を固定して起動したことを 1 行言う（実機に残し忘れると、遅い機械で遊びがゆっくりになる）。maxDeltaTime で切った時はそれも言う。
+    def announceFixedDt(fixedDt: Option[Float64], maxDt: Float64): Unit \ IO = match fixedDt {
+        case Some(dt) =>
+            let used = LwjglEnv.frameDt(Some(dt), maxDt, 0i64);
+            let capped = if (used < dt) "（${Float64.toString(dt)} は maxDeltaTime で切った）" else "";
+            checked_ecast(Log.warn("[lwjgl] FLIX_GE_FIXED_DT: 毎コマの dt を ${Float64.toString(used)} 秒に固定する（実時間を使わない）${capped}"))
+        case None     => ()
+    }
 
     /// 現在のフレームバッファを読み出して画像にする（読み出しの核は GlReadback）。
     /// RGB に落とすのは、splashShot・注釈スクショの出力 PNG のバイト列を変えないため。
@@ -393,12 +402,12 @@ pub mod LwjglLayer {
         // 隠しウィンドウモード（GL 突き合わせ harness 用）。Retina の 2 倍化を切るのは、
         // フレームバッファ = design 寸に固定しないと letterbox 補間が乗り、
         // 画素の突き合わせが成立しないため。
-        let hidden = not Object.isNull(System.getenv("FLIX_GE_HIDDEN"));
+        let env = LwjglEnv.load();
+        let hidden = env#hidden;
         // 音を消して起動するか（計測や見回りで隠し窓を流す時）。音の処理は動かしたまま、全体の音量だけ 0 に止める。
-        let muteValue = System.getenv("FLIX_GE_MUTE");
-        let muted = not Object.isNull(muteValue) and muteValue != "" and muteValue != "0";
-        // 1 コマの時間を測るか（FLIX_GE_FRAME_STATS。RenderFrameStats の doc）。
-        let frameStats = if (RenderFrameStats.enabled()) Some(RenderFrameStats.fresh()) else None;
+        let muted = env#muted;
+        let frameStats = if (env#frameStats) Some(RenderFrameStats.fresh()) else None;
+        announceFixedDt(env#fixedDt, config#maxDeltaTime);
         if (hidden) {
             GLFW.glfwWindowHint(GLFW.GLFW_VISIBLE, GL11.GL_FALSE);
             GLFW.glfwWindowHint(GLFW.GLFW_COCOA_RETINA_FRAMEBUFFER, GL11.GL_FALSE)
@@ -524,7 +533,7 @@ pub mod LwjglLayer {
             RenderPaint.rememberFrame(paint, splashFrame);
             let (splashW, splashH) = Array.get(0, framebufferSizeHolder);
             RenderPaint.paintFrame(paint, splashW, splashH, splashFrame);
-            splashShot(splashW, splashH, splashShotTaken, splashShotAt);
+            Option.forEach(path -> splashShot(path, splashW, splashH, splashShotTaken, splashShotAt), env#splashShotPath);
             GLFW.glfwSwapBuffers(window);
             GLFW.glfwPollEvents();
             Array.put(System.nanoTime(), 0, polledAt)
@@ -874,7 +883,7 @@ pub mod LwjglLayer {
                 let paintTo = System.nanoTime();
                 if (toScreen) {
                     Option.forEach(stats -> RenderFrameStats.record(stats, paintFrom, paintTo), frameStats);
-                    frameShot(fbW, fbH, frameShotTaken);
+                    frameShot(env#frameShotDir, fbW, fbH, frameShotTaken);
                     GLFW.glfwSwapBuffers(window);
                     if (finishAfterSwap) GL11.glFinish() else ()
                 } else ();
@@ -929,10 +938,7 @@ pub mod LwjglLayer {
                 let currentTime = System.nanoTime();
                 let prev = Array.get(0, timeHolder);
                 Array.put(currentTime, 0, timeHolder);
-                let dtNanos = currentTime - prev;
-                let dtSec = Int64.toFloat64(dtNanos) / 1000000000.0;
-                let clamped = Float64.min(dtSec, config#maxDeltaTime);
-                k(clamped |> Duration.seconds)
+                k(LwjglEnv.frameDt(env#fixedDt, config#maxDeltaTime, currentTime - prev) |> Duration.seconds)
             }
             def isKeyPressed(key, k) = {
                 let code = keyToGlfw(key);

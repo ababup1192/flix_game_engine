@@ -1,10 +1,9 @@
-// FrameStats — 実機の道（窓ありで遊ぶ時）の 1 コマの時間を測る。FLIX_GE_FRAME_STATS=1 で起動した時だけ数える。
+// FrameStats — 実機の道（窓ありで遊ぶ時）の 1 コマの時間を測る。FLIX_GE_FRAME_STATS=1 で起動した時だけ数える（読むのは LwjglEnv）。
 // 塗る（renderFrame が GL へ命令を出し終えるまで）と、コマの間隔（前のコマの renderCommands からこのコマまで。
 // 状態更新・View・塗り・swap の全部）の 2 つを、WINDOW コマごとに平均と p99 で 1 行に出す。
 // 塗りのコアを触る前と後で、同じ場面・同じ機械のこの 1 行を比べる（docs/design/render-speed.md の段 4a）。
 // 垂直同期で間隔が 16.7ms に張り付くので、間隔を比べる時は FLIX_GE_HIDDEN=1（隠し窓は vsync を待たない）で流す。
 mod RenderFrameStats {
-    import java.lang.System
 
     /// 数えている途中の値（外からは start と record だけで触る）。
     /// paint・gap はナノ秒の控え。filled は今の窓に溜まったコマ数、lastAt は前のコマの時刻（0 = まだ無い）。
@@ -45,9 +44,4 @@ mod RenderFrameStats {
         "avg ${fmt(ms(total) / Int32.toFloat64(window()))}ms / p99 ${fmt(ms(p99))}ms"
 
     def fmt(v: Float64): String = Float64.toString(Float64.round(v * 100.0) / 100.0)
-
-    /// FLIX_GE_FRAME_STATS が空でない値なら数える（withLwjgl の頭で 1 回だけ読む）。
-    pub def enabled(): Bool \ IO =
-        let value = System.getenv("FLIX_GE_FRAME_STATS");
-        not Object.isNull(value) and value != ""
 }

@@ -1,0 +1,30 @@
+diff -ru a/src/RoomView.flix b/src/RoomView.flix
+--- a/src/RoomView.flix	2026-11-03 13:17:49
++++ b/src/RoomView.flix	2026-11-03 13:17:49
+@@ -219,7 +219,7 @@
+             case None    => (w#eye#x, w#eye#y, w#eye#x)
+         };
+         { position = { x = east - 6.0, y = 64.0, z = 0.0 - (cy - 0.5 * t) }, target = { x = cx - 2.0 * t, y = 0.0, z = 0.0 - (cy + 0.5 * t) },
+-          fovY = 2.5, color = Color.mix(Color.rgb(1.0, 0.95, 0.86), Color.rgb(0.78, 0.86, 1.0), look(w)#windowTintMix), intensity = 0.9, range = 520.0,
++          fovY = 2.5, innerFovY = None, color = Color.mix(Color.rgb(1.0, 0.95, 0.86), Color.rgb(0.78, 0.86, 1.0), look(w)#windowTintMix), intensity = 0.9, range = 520.0,
+           shadow = Some({ mapSize = 1024, bias = 0.002, pcfRadius = 1, strength = 0.85 }) }
+ 
+     /// 礼拝堂の窓の前の床に落ちるステンドグラスの色の光: 真ん中の窓の高い所から、窓の前の床へ向けた影なしのスポットライト。
+@@ -232,7 +232,7 @@
+                 let east = Int32.toFloat64(r#x + r#w) * t;
+                 let cy = (Int32.toFloat64(r#y) + Int32.toFloat64(r#h) / 2.0) * t;
+                 { position = { x = east - 2.0, y = 44.0, z = 0.0 - cy }, target = { x = east - 3.0 * t, y = 0.0, z = 0.0 - cy },
+-                  fovY = 2.9, color = lk#windowTint, intensity = lk#windowPool, range = 5.0 * t, shadow = None } :: Nil
++                  fovY = 2.9, innerFovY = None, color = lk#windowTint, intensity = lk#windowPool, range = 5.0 * t, shadow = None } :: Nil
+             case _ => Nil
+         }
+ 
+@@ -247,7 +247,7 @@
+         };
+         let flick = 1.0 + torch#flicker * 0.5 * Sway.wave(w#t, 1.3, torch#flickerSpeed);
+         { position = { x = cx, y = 40.0, z = 0.0 - (y0 + 4.0) }, target = { x = cx, y = 0.0, z = 0.0 - (cy + t) },
+-          fovY = 1.9, color = torch#color, intensity = 1.8 * flick, range = 420.0,
++          fovY = 1.9, innerFovY = None, color = torch#color, intensity = 1.8 * flick, range = 420.0,
+           shadow = Some({ mapSize = 1024, bias = 0.002, pcfRadius = 1, strength = 0.9 }) }
+ 
+     /// 部屋全体（床・壁・天井・家具・松明）を engine の Scene3d 1 つで描く（GPU に置いたメッシュを深度で描く。光は engine が画素ごとに計算する）。
