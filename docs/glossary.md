@@ -91,3 +91,5 @@ Studio の UI にも出るが、Studio の概念ではなくゲーム業界・�
 | フォーム | Form | Doc を項目ごとに編集する入力欄の並び |
 | プレビュー | Preview | 保存した中身を映して見せる表示 |
 | 実機 | Live game | 別のウィンドウで走っている本物のゲーム(Studio 内の映しではない方) |
+| 当たり判定の箱 | Box3d / Collision box | 3D の当たり判定の向きのある箱(OBB)。Blender の `COL_*` のノードから作る(`CollisionShape3d.Box3d`) |
+| カプセル | Capsule | 両端が半球の縦長の形。3D の歩く体の当たり判定(`CollisionShape3d.CapsuleShape3d`)。2D は `CapsuleShape2D` |

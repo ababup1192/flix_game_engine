@@ -80,6 +80,9 @@
 | Blender などで書き出した .glb を読む（形・骨・動き） | Gltf（load / fromGlb。X を反転して左手系へ） |
 | .glb の絵と材質（baseColorTexture・normalTexture・emissive）も読んで primitive ごとに置く | Gltf.loadTextured（Model3d の parts と textures・材質の情報は part#gltfMaterial・止めるなら Scene3d.withoutEmission） |
 | Blender で名前を付けたノード（扉・当たり判定の箱・印の点）を .glb から名前で引く | Model3d.findNode / nodesWithPrefix / nodesByName（node#world・node#localBounds・docs/scene3d.md） |
+| 3D の当たり判定の形（向きのある箱・球・縦のカプセル）を作る・glb のノードから箱を作る・回す扉の箱 | CollisionShape3d（boxOfNode / boxesOfNodes・transformBox・debugMesh。2D は CollisionShape2D） |
+| 動かない 3D の箱をたくさん持ち、足元の近くの箱だけを引く | CollisionWorld3d（build / boxesNear。歩くのは engine_world の CharacterBody3d） |
+| 一人称で見ている物を調べる（クロスヘアの先の物の名前・壁で遮る）・画面の点から 3D のレイを伸ばす | Ray3d.pickNearest（Camera3d.forwardRay / screenPointToRay・的は Ray3d.boxTargetsOf・docs/scene3d.md の「見ている物を調べる」） |
 | Blender でベイクした光（lightmap と 2 本目の uv）を 3D の部屋に貼る | Scene3d.withLightmap（Gltf の TEXCOORD_1 → Mesh3d.uvs2・docs/lightmap.md） |
 | 3D の絵が場面の絵の上限（256 MB・64 枚）を超える・大きすぎる絵を縮める | Gltf.loadTexturedWith・Texture3d.limitSize・project.json の scene3dTextureBudgetMB / scene3dTextureBudgetCount（docs/lightmap.md の「場面の絵の予算」） |
 | 8bit の絵の値の意味（sRGB の曲線か線形か）と変換の式 | Texture3d.ColorSpace・srgbToLinear・linearToSrgb |

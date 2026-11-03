@@ -34,6 +34,22 @@ pub mod Camera3d {
     pub def frustum(c: Camera3d, aspect: Float64): Frustum.Frustum =
         Frustum.ofClipMatrix(Mat4.mul(projectionMatrix(c, aspect), viewMatrix(c)))
 
+    /// 目から見ている向きへ伸びるレイ（画面の真ん中・クロスヘアの先）。`Ray3d.pickNearest` で見ている物を引く。
+    pub def forwardRay(c: Camera3d): Ray3d.Ray3d = Ray3d.ray3d(c#eye, forward(c))
+
+    /// 描き物の中の点 p（左上が 0・y は下へ増える px。size = 描き物の大きさ）を通って目から伸びるレイ（worldToScreen の逆）。
+    /// 始まりは目（near の面ではない）。size の幅か高さが 0 以下の時は forwardRay。
+    pub def screenPointToRay(c: Camera3d, size: Vec2.Vec2, p: Vec2.Vec2): Ray3d.Ray3d =
+        if (not (size#x > 0.0 and size#y > 0.0)) forwardRay(c)
+        else {
+            let half = c#fovY / 2.0;
+            let tanHalf = Vec2.sin(half) / Vec2.cos(half);
+            let ndcX = p#x / size#x * 2.0 - 1.0;
+            let ndcY = 1.0 - p#y / size#y * 2.0;
+            let toward = Vec3.add(forward(c), Vec3.add(Vec3.mul(right(c), ndcX * tanHalf * size#x / size#y), Vec3.mul(up(c), ndcY * tanHalf)));
+            Ray3d.ray3d(c#eye, toward)
+        }
+
     /// 3D の点が描き物の中のどこに写るか（左上が 0・y は下へ増える px）。near より手前と目の後ろは None。
     pub def worldToScreen(c: Camera3d, size: Vec2.Vec2, p: Vec3.Vec3): Option[Vec2.Vec2] =
         let depth = Vec3.dot(Vec3.sub(p, c#eye), forward(c));

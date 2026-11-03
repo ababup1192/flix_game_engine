@@ -166,6 +166,10 @@
   `pub def projectionMatrix(c: Camera3d, aspect: Float64): Mat4.Mat4`
 - このカメラに写る範囲（視錐台）。aspect = 幅 / 高さ。光や羽虫をゲームの側で間引く・数える時に使う
   `pub def frustum(c: Camera3d, aspect: Float64): Frustum.Frustum`
+- 目から見ている向きへ伸びるレイ（画面の真ん中・クロスヘアの先）。`Ray3d.pickNearest` で見ている物を引く。
+  `pub def forwardRay(c: Camera3d): Ray3d.Ray3d`
+- 描き物の中の点 p（左上が 0・y は下へ増える px。size = 描き物の大きさ）を通って目から伸びるレイ（worldToScreen の逆）。
+  `pub def screenPointToRay(c: Camera3d, size: Vec2.Vec2, p: Vec2.Vec2): Ray3d.Ray3d`
 - 3D の点が描き物の中のどこに写るか（左上が 0・y は下へ増える px）。near より手前と目の後ろは None。
   `pub def worldToScreen(c: Camera3d, size: Vec2.Vec2, p: Vec3.Vec3): Option[Vec2.Vec2]`
 
@@ -234,6 +238,55 @@
   `pub def resolveCapsulePolygon(capsulePos: Vec2.Vec2, radius: Float64, height: Float64, vertical: Bool, polyPos: Vec2.Vec2, points: List[Vec2.Vec2]): Option[Vec2.Vec2]`
 - 頂点列が多角形として成立するか検証する。壊れていれば平易な日本語の理由を返す。
   `pub def validatePolygonPoints(points: List[Vec2.Vec2]): Result[String, Unit]`
+
+## CollisionShape3d — `engine/src/scene3d/CollisionShape3d.flix`
+- 向きのある箱。center = 真ん中・ax / ay / az = 3 本の向き（長さ 1・互いに直角）・half = 各向きの半分の長さ（0 以上）。
+  `pub type alias Box3d = { center = Vec3.Vec3, ax = Vec3.Vec3, ay = Vec3.Vec3, az = Vec3.Vec3, half = Vec3.Vec3 }`
+- 球。center = 真ん中・radius = 半径。
+  `pub type alias Sphere3d = { center = Vec3.Vec3, radius = Float64 }`
+- 縦に立てたカプセル。feet = 下の端の点・radius = 半径・height = 全体の高さ（両端の半球を含む。2 × radius より低い時は球 1 つ）。
+  `pub type alias Capsule3d = { feet = Vec3.Vec3, radius = Float64, height = Float64 }`
+- 軸にそろった箱（真ん中 center・各向きの半分の長さ half。負の値は正に直す）。
+  `pub def box3d(center: Vec3.Vec3, half: Vec3.Vec3): Box3d`
+- 形の座標の箱 bounds を world で写した向きのある箱。軸ごとの倍率は half に入れる。
+  `pub def boxOfBounds(world: Mat4.Mat4, bounds: Mesh3d.Bounds): Box3d`
+- glTF のノード 1 つの当たり判定の箱（node#localBounds を node#world で写す）。
+  `pub def boxOfNode(node: Model3d.ModelNode): Option[Box3d]`
+- ノードの列の箱（mesh の無いノードは飛ばす・並びはノードの順）。
+  `pub def boxesOfNodes(nodes: List[Model3d.ModelNode]): List[Box3d]`
+- 形 mesh（形の座標）の軸にそろった境界を world で写した箱。頂点の無い形と NaN・無限大は None。
+  `pub def boxOfMesh(mesh: Mesh3d.Mesh3d, world: Mat4.Mat4): Option[Box3d]`
+- 箱 b を行列 m で写した箱（蝶番のまわりに回す扉の板）。倍率とせん断の扱いは boxOfBounds と同じ。
+  `pub def transformBox(m: Mat4.Mat4, b: Box3d): Box3d`
+- 箱の全部の数が有限か。
+  `pub def isFinite(b: Box3d): Bool`
+- 箱の 8 つの角（world）。
+  `pub def cornersOfBox(b: Box3d): List[Vec3.Vec3]`
+- 箱 b の中で点 p に一番近い点（p が中なら p）。
+  `pub def closestPoint(b: Box3d, p: Vec3.Vec3): Vec3.Vec3`
+- 球（真ん中 center・半径 radius）が箱 b に食い込んでいる深さ（m。食い込んでいなければ 0）。
+  `pub def sphereDepth(b: Box3d, center: Vec3.Vec3, radius: Float64): Float64`
+- カプセルを近似する球の真ん中（下から上へ）。間は radius 以下で、両端は半球の真ん中。
+  `pub def sphereCentersOf(c: Capsule3d): List[Vec3.Vec3]`
+- カプセル capsule が箱 b に食い込んでいる深さ（m。0 なら触れていない）。
+  `pub def penetration(b: Box3d, capsule: Capsule3d): Float64`
+- 球（真ん中 center・半径 radius）を箱 b の外へ出す水平のずれ（y は 0）。重なっていなければ None。
+  `pub def pushOutHorizontal(b: Box3d, center: Vec3.Vec3, radius: Float64): Option[Vec3.Vec3]`
+- 箱の列の 12 本の辺を細い角柱にした線の形（場面に重ねても中が見える）。`Scene3d.meshInstance(m, Mat4.identity())` で置く。
+  `pub def debugMesh(boxes: List[Box3d], color: Color): Mesh3d.Mesh3d`
+
+## CollisionWorld3d — `engine/src/scene3d/CollisionWorld3d.flix`
+- `pub type alias CollisionWorld3d = WorldData`
+- cellSize が 0 以下・NaN・無限大の時に使う 1 マスの幅（m）。
+  `pub def defaultCellSize(): Float64`
+- 箱の無い集まり（扉など動く箱だけで歩かせる時）。
+  `pub def empty(): CollisionWorld3d`
+- 箱の列を xz の格子（1 マスの幅 cellSize m）に入れた集まり。並びはそのまま保つ（押し出しは並びの順に足すので答えが並びで決まる）。
+  `pub def build(cellSize: Float64, boxes: List[CollisionShape3d.Box3d]): CollisionWorld3d`
+- 集まりの全部の箱（build の並び）。
+  `pub def boxes(w: CollisionWorld3d): List[CollisionShape3d.Box3d]`
+- 点 point（y は使わない）から水平に reach m の四角の範囲に、水平の広がりが掛かる箱（build の並びの順・重複なし）。
+  `pub def boxesNear(w: CollisionWorld3d, point: Vec3.Vec3, reach: Float64): List[CollisionShape3d.Box3d]`
 
 ## Color — `engine/src/core/Color.flix`
 - 0〜1 の 3 つ組から色を作る。
@@ -688,6 +741,8 @@
   `pub type alias Bounds = { min = Vec3.Vec3, max = Vec3.Vec3 }`
 - 頂点の最小と最大（形の座標）。頂点の無い形は 0。
   `pub def bounds(m: Mesh3d): Bounds`
+- 点の列を囲む軸にそろった箱（点が無ければ原点の大きさ 0 の箱）。
+  `pub def boundsOfPoints(points: List[Vec3.Vec3]): Bounds`
 - 箱 b の 8 つの角。
   `pub def cornersOf(b: Bounds): List[Vec3.Vec3]`
 - `pub def triangleCount(m: Mesh3d): Int32`
@@ -851,6 +906,39 @@
   `pub def lightPixels(): Vector[Int32]`
 - 翳りの画素列（ARGB・行優先）。中心が黒・縁で白、alpha は常に不透明。
   `pub def darkPixels(): Vector[Int32]`
+
+## Ray3d — `engine/src/scene3d/Ray3d.flix`
+- `pub type alias Ray3d = RayData`
+- 当たった所。distance = 始まりからの距離（m）・point = 当たった点・normal = 当たった面の向き（長さ 1・レイの来た側を向く）。
+  `pub type alias RayHit = { distance = Float64, point = Vec3.Vec3, normal = Vec3.Vec3 }`
+- pickNearest の的。Shape = 当たり判定の形・Mesh = 形と、形の座標 → world の行列（三角形を全部見る）。
+  `pub enum RayTarget { case Shape(CollisionShape3d) case Mesh(Mesh3d.Mesh3d, Mat4.Mat4) }`
+- origin から toward の向きへ伸びるレイ。toward の長さが 0 か NaN・無限大を含む時は、何にも当たらないレイ。
+  `pub def ray3d(origin: Vec3.Vec3, toward: Vec3.Vec3): Ray3d`
+- 始まりの点。
+  `pub def origin(r: Ray3d): Vec3.Vec3`
+- 向き（長さ 1。何にも当たらないレイは 0）。
+  `pub def direction(r: Ray3d): Vec3.Vec3`
+- 始まりから distance だけ進んだ点。
+  `pub def pointAt(r: Ray3d, distance: Float64): Vec3.Vec3`
+- 箱 b に外から当たる所（maxDistance まで）。始まりが箱の中（面の上を含まない）なら None（Unity の Raycast・Godot の intersect_ray と同じ）。
+  `pub def hitBox(r: Ray3d, maxDistance: Float64, b: CollisionShape3d.Box3d): Option[RayHit]`
+- 球 s に外から当たる所（maxDistance まで）。始まりが球の中（面の上を含まない）・半径が 0 以下なら None。
+  `pub def hitSphere(r: Ray3d, maxDistance: Float64, s: CollisionShape3d.Sphere3d): Option[RayHit]`
+- 縦のカプセル c に外から当たる所（maxDistance まで）。始まりがカプセルの中（面の上を含まない）・半径が 0 以下なら None。
+  `pub def hitCapsule(r: Ray3d, maxDistance: Float64, c: CollisionShape3d.Capsule3d): Option[RayHit]`
+- 三角形 (a, b, c) に当たる所（表裏とも・縁を含む・maxDistance まで）。面積 0 の三角形とレイが面に平行な時は None。
+  `pub def hitTriangle(r: Ray3d, maxDistance: Float64, a: Vec3.Vec3, b: Vec3.Vec3, c: Vec3.Vec3): Option[RayHit]`
+- 形 mesh（形の座標）を world で置いた物に当たる所（三角形の表裏とも）。境界の箱に触れない時は三角形を見ない。
+  `pub def hitMesh(r: Ray3d, maxDistance: Float64, mesh: Mesh3d.Mesh3d, world: Mat4.Mat4): Option[RayHit]`
+- 置いた物 i に当たる所。骨つきの物（Scene3d.skinningOf が Some）は形の境界の箱だけで見る
+  `pub def hitInstance(r: Ray3d, maxDistance: Float64, i: Scene3d.Instance3d): Option[RayHit]`
+- 形 1 つに当たる所。
+  `pub def hitShape(r: Ray3d, maxDistance: Float64, shape: CollisionShape3d): Option[RayHit]`
+- 的の列のうち、レイが最初に当たる物と当たった所（maxDistance まで。同じ距離なら並びの前）。
+  `pub def pickNearest(r: Ray3d, maxDistance: Float64, targets: List[(a, RayTarget)]): Option[(a, RayHit)]`
+- glTF のノードの列から、当たり判定の箱の的の列を作る（mesh の無いノードは飛ばす）。鍵は keyOf がノードから決める。
+  `pub def boxTargetsOf(keyOf: Model3d.ModelNode -> a, nodes: List[Model3d.ModelNode]): List[(a, RayTarget)]`
 
 ## Rect — `engine/src/render/Rect.flix`
 - デフォルト値で Rect を生成する（alpha は 1.0 = 不透明）

@@ -510,6 +510,13 @@ pub mod Mesh3d {
         let r = recOf(m);
         { min = r#low, max = r#high }
 
+    /// 点の列を囲む軸にそろった箱（点が無ければ原点の大きさ 0 の箱）。
+    pub def boundsOfPoints(points: List[Vec3.Vec3]): Bounds =
+        let pick = (f: (Float64, Float64) -> Float64, axis: Vec3.Vec3 -> Float64) ->
+            points |> List.map(axis) |> List.reduceLeft(f) |> Option.getWithDefault(0.0);
+        { min = Vec3.v3(pick(Float64.min, v -> v#x), pick(Float64.min, v -> v#y), pick(Float64.min, v -> v#z)),
+          max = Vec3.v3(pick(Float64.max, v -> v#x), pick(Float64.max, v -> v#y), pick(Float64.max, v -> v#z)) }
+
     /// 箱 b の 8 つの角。
     pub def cornersOf(b: Bounds): List[Vec3.Vec3] =
         let (lo, hi) = (b#min, b#max);

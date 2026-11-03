@@ -216,13 +216,7 @@ pub mod Scene3d {
     pub def worldBoundsOf(i: Instance3d): Option[Mesh3d.Bounds] =
         let r = instanceFieldsOf(i);
         if (Option.nonEmpty(skinningOfFields(r)) or Mesh3d.vertexCount(r#mesh) == 0) None
-        else {
-            let corners = Mesh3d.cornersOf(Mesh3d.bounds(r#mesh)) |> List.map(Mat4.apply(r#world));
-            let pick = (f: (Float64, Float64) -> Float64, axis: Vec3.Vec3 -> Float64) ->
-                corners |> List.map(axis) |> List.reduceLeft(f) |> Option.getWithDefault(0.0);
-            Some({ min = Vec3.v3(pick(Float64.min, v -> v#x), pick(Float64.min, v -> v#y), pick(Float64.min, v -> v#z)),
-                   max = Vec3.v3(pick(Float64.max, v -> v#x), pick(Float64.max, v -> v#y), pick(Float64.max, v -> v#z)) })
-        }
+        else Some(Mesh3d.boundsOfPoints(Mesh3d.cornersOf(Mesh3d.bounds(r#mesh)) |> List.map(Mat4.apply(r#world))))
 
     /// 描き手が視錐台 f の外として描かなくてよい物か（迷ったら偽 = 描く）。GL と CPU と影の地図が同じ判定を使う。
     /// 骨つきと頂点の無い形はいつも偽。8 つの角が 6 つの面のどれか 1 つの外に全部あれば真。

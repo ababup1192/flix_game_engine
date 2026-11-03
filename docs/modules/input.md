@@ -8,7 +8,8 @@
 | やりたいこと | モジュール |
 |---|---|
 | ホイールの生 delta を目盛りにまとめる | InputMap（wheelSteps） |
-| 重なり判定・物理 | Collision / Physics2D |
+| 重なり判定・物理（2D） | Collision / Physics2D |
+| 3D の部屋を一人称で歩く（壁で止まる・段差を上る・坂・落ちる・扉に押される） | CharacterBody3d.moveAndSlide（箱は engine の CollisionShape3d.boxOfNode → CollisionWorld3d.build・docs/scene3d.md の「一人称で歩く」） |
 | 当たり判定を JSON で宣言する | HitDoc + Hit |
 | キーが押された瞬間を取る | InputEdge |
 | 複数キーを 1 つの操作にまとめる（WASD と矢印の両対応） | InputMap（実例: `templates/game-starter/src/KeysDoc.flix`） |
@@ -22,6 +23,7 @@
 
 ## モジュール 1 行紹介
 
+- **CharacterBody3d** — 3D の部屋を一人称で歩く体（Godot の CharacterBody3D・Unity の CharacterController）。足元の点と足の着き方だけを持ち、向き・足音はゲームが持つ。壁は向きのある箱。
 - **Physics2D** — 物理を「積分・検出・反射・分離」の 4 つの純関数に切り出して合成する。
 - **Collision** — たくさんの物体の中から、実際に重なっている組を見つけて返す。
 - **Hit** — JSON で宣言した形（円・箱の列）で「触れているか」だけを聞く照会専用の判定。

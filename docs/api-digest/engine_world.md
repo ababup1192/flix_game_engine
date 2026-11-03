@@ -797,6 +797,32 @@
 - JSON object から containerKey 配下を entries、残りを meta として decode する。
   `pub def decode(containerKey: String, decodeEntry: Json -> Option[t], element: Json): Option[CatalogContainer[t]]`
 
+## CharacterBody3d — `engine_world/src/CharacterBody3d.flix`
+- 体の寸法と動き方。radius = 体の半径（m）・height = 体の高さ・stepHeight = そのまま上がれる段の高さ・
+  `pub type alias Settings = { radius = Float64, height = Float64, stepHeight = Float64, floorMaxAngleDeg = Float64, snapLength = Float64, gravity = Float64, maxSubstep = Float64 }`
+- 半径 radius・高さ height の体の既定の動き方: 段 0.3 m・床の傾き 45°（Godot の既定）・吸い付き 0.45 m・重力 9.8・
+  `pub def settings(radius: Float64, height: Float64): Settings`
+- 立っている床。y = 床の高さ・normal = 床の面の向き（長さ 1）・sloped = 床の箱が傾いている（箱のどの軸も真上から 11.5° より離れている。
+  `pub type alias Floor = { y = Float64, normal = Vec3.Vec3, sloped = Bool }`
+- 足の着き方。OnFloor = 床に立っている・Airborne = 落ちている（縦の速さ m/秒・上が正）。
+  `pub enum Footing { case OnFloor(Floor) case Airborne(Float64) }`
+- 体の状態。feet = 足元の点（体の真ん中の真下）・footing = 足の着き方。
+  `pub type alias Body = { feet = Vec3.Vec3, footing = Footing }`
+- 足元 feet に置いた、まだ床に着いていない体（縦の速さ 0）。始まりは `snapToFloor` で床に合わせる（合わせなければ次の moveAndSlide から落ちる）。
+  `pub def bodyAt(feet: Vec3.Vec3): Body`
+- 床に立っているか。
+  `pub def isOnFloor(b: Body): Bool`
+- 体を dt 秒進める。motion = 水平の速さ（m/秒。y は使わない — 縦の速さは footing が持ち、跳ぶ口は無い）・
+  `pub def moveAndSlide(world: CollisionWorld3d.CollisionWorld3d, moving: List[CollisionShape3d.Box3d], s: Settings, motion: Vec3.Vec3, dt: Float64, b: Body): Body`
+- 同じ速さと同じ秒で n コマ moveAndSlide した体の列（1 コマ目の後から n コマ目の後まで）。
+  `pub def simulate(world: CollisionWorld3d.CollisionWorld3d, moving: List[CollisionShape3d.Box3d], s: Settings, motion: Vec3.Vec3, dt: Float64, n: Int32, b: Body): List[Body]`
+- 足元を下の床に合わせた体（足元から段の高さより上を探し始め、下へ 20 m まで。床が無ければそのまま）。
+  `pub def snapToFloor(world: CollisionWorld3d.CollisionWorld3d, moving: List[CollisionShape3d.Box3d], s: Settings, b: Body): Body`
+- 体が箱に食い込んでいる一番深い所（m。0 なら食い込んでいない）。段の高さより下は見ない（乗る物なので）。
+  `pub def overlapDepth(world: CollisionWorld3d.CollisionWorld3d, moving: List[CollisionShape3d.Box3d], s: Settings, b: Body): Float64`
+- 押し出しに使う体の形（足元の段の高さより上の、縦のカプセル）。扉を回す前と後で `CollisionShape3d.penetration` を比べる時に使う。
+  `pub def capsuleOf(s: Settings, b: Body): CollisionShape3d.Capsule3d`
+
 ## Clock — `engine_world/src/Clock.flix`
 - 反復タイマー: acc に dt を足し、interval に達したら（== も含む）1回 fire（rest に余りを残す）。
   `pub def tick(acc: Float64, dt: Float64, interval: Float64): {fired = Bool, rest = Float64}`

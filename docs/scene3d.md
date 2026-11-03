@@ -88,6 +88,66 @@ GL と CPU の描き手は、場面のカメラの視錐台の外の置いた物
 マウスで視点を回す（カーソルを窓にキャプチャする）のは 2D と 3D で共通の入力の口: `App.withMouseCapture` + `frame#mouseDelta`。
 慣習（クリックでキャプチャ・Esc で放す）とフォーカスの扱いは [modules/input.md](modules/input.md) の「一人称の視点」。
 
+## 一人称で歩く（当たり判定の箱・段差・坂・落ちる）
+
+壁で止まる・段差を上る・坂を上る・床が無ければ落ちる、は engine_world の `CharacterBody3d.moveAndSlide` が受け持つ
+（Godot の `CharacterBody3D.move_and_slide`・Unity の `CharacterController.Move`）。押し出しや床探しをゲームで書かない。
+描き手とは独立した純粋な計算（場面に何を描いたかに関わらず、箱の並びだけで決まる）。
+
+```flix
+// 読み込み: Blender で "COL_" の名前を付けた箱を集める（向きと大きさはノードの行列と局所の境界からそのまま）
+let statics = Model3d.nodesWithPrefix("COL_", collision) |> CollisionShape3d.boxesOfNodes;
+let world = CollisionWorld3d.build(2.0, List.append(statics, groundAndBounds));  // 1 マス 2 m の xz の格子
+let s = { stepHeight = 0.35 | CharacterBody3d.settings(0.22, 1.7) };              // 半径・高さ
+let body = CharacterBody3d.snapToFloor(world, Nil, s, CharacterBody3d.bodyAt(start)); // 始まりは床に合わせる
+
+// 毎コマ: 向きはゲームが持ち、水平の速さ（m/秒）だけ渡す。扉の板など動く箱は moving へ毎コマ
+let motion = Vec3.v3(speed * Vec2.sin(yaw), 0.0, speed * Vec2.cos(yaw));
+let next = CharacterBody3d.moveAndSlide(world, doorLeaves, s, motion, Clock.dtOf(clock), body);
+```
+
+- 体は足元の点（`body#feet`）と足の着き方（`Footing.OnFloor(floor)` / `Airborne(縦の速さ)`）だけ。目の高さ・向き・足音・頭の上下はゲームが持つ。
+  足音の種類は `floor#sloped`（床の箱が傾いている）で分けられる
+- 体は縦に並べた球（間は半径以下）で、足元から `stepHeight` より上だけを壁として扱う。`stepHeight` より低い箱は上に乗る
+- **坂**: 床の面の向きと真上の角が `floorMaxAngleDeg`（既定 45°・Godot と同じ）以下なら床、超えたら壁。
+  傾いた箱を全部床として扱いたい（Blender の階段の段板が 45° を少し超える）時は 90
+- 立っている間は `snapLength`（0.45 m）の中で下の床に吸い付く（階段を下りても浮かない）。床が消えたら落ち、下の床で止まる
+- 1 回に進む水平の距離が `maxSubstep`（半径の半分・5 cm まで）を超えないよう区切って押し出す。速く走っても薄い壁を抜けない。
+  1 回の `moveAndSlide` で進める秒は 0.25 まで（ヒッチの時に区切りの数が膨らまない）
+- 立っていて速さが 0 なら体は 1 bit も動かない（動く箱が食い込んだ時だけ押し出す）。足元の床が消えた時（箱を外した・動く箱に縁の外へ押し出された）は止まっていても落ち始める。
+  動く床に乗っても体は床を追わない
+- 押し出しは `world` の箱を `build` に渡した並びの順に、その後に `moving` の並びの順に足し込む。角で 2 枚に挟まれた時の答えは並びで決まる
+- **地面と歩ける範囲は箱で入れる**: 当たり判定の箱の無い所の地面は大きな薄い箱、歩ける範囲は外側の厚い箱（1 m 以上・頭より高く）。
+  範囲の箱の上面が「足元 + stepHeight」より低いと床として拾って乗り上げる
+- **扉**: 閉じた時の板の箱を `CollisionShape3d.transformBox(蝶番のまわりの回転, 板)` で毎コマ回し、`moving` に渡す。
+  回している扉が体を押し込まないよう、回す前と後で `CollisionShape3d.penetration(板, CharacterBody3d.capsuleOf(s, body))` を比べ、深くなるならそのコマは回さない
+- 1 マスの幅は体の直径から部屋の幅くらい（1〜4 m）。64 マスより多くに掛かる大きな箱（地面）は格子に入れず毎回見る
+- 当たり判定の箱を場面に重ねて見る時は `CollisionShape3d.debugMesh(boxes, color)` を `Scene3d.meshInstance(m, Mat4.identity())` で置く
+- 形は箱だけで歩く（三角形の壁・正確なカプセル × 箱は無い）。跳ぶ口も無い（`motion` の y は使わない）
+
+## 見ている物を調べる（レイ）
+
+クロスヘアの先の物は `Camera3d.forwardRay(camera)` → `Ray3d.pickNearest(ray, 届く距離, 的の列)` で引く。
+的の鍵はゲームが決める（調べる物の enum・ノードの名前）。**壁も「壁」の鍵で同じ列に入れる** — 一番近い物が壁なら、その向こうの物は選ばれない。
+
+```flix
+// 読み込みで 1 回作って描く元（Resources）に持つ
+let props = Ray3d.boxTargetsOf(n -> Look.Prop(n#name), Model3d.nodesWithPrefix("COL_PRP_", collision));
+let walls = statics |> List.map(b -> (Look.Wall, Ray3d.RayTarget.Shape(CollisionShape3d.BoxShape3d(b))));
+// 毎コマ: 持っている的の列にレイを当てる（扉の板の的だけ今の角で作り直して足す）
+match Ray3d.pickNearest(Camera3d.forwardRay(camera), 2.5, List.append(props, walls)) {
+    case Some((Look.Prop(name), _)) => // 照準を明るくして名前を出す・E で調べた文言（文言は Doc へ）
+    case _                          => // 何も見ていない（壁を見ている）
+}
+```
+
+- 同じ距離なら並びの前。始まりが形の中なら、その形には当たらない（Unity の Raycast・Godot の intersect_ray と同じ）
+- 距離と向きの内積（「近くて前にある物」）で代わりにしない — 壁の向こうの物を選び、細長い物の端を外す
+- 画面の点（マウスの位置）からは `Camera3d.screenPointToRay(camera, 描き物の大きさ, 点)`（`worldToScreen` の逆。始まりは目）
+- 形ごとの問い: `Ray3d.hitBox` / `hitSphere` / `hitCapsule` / `hitTriangle`（表裏とも）/ `hitMesh`（境界の箱で先に外す）/ `hitInstance`
+  （骨つきの物は境界の箱だけ）。`RayHit` は距離・点・面の向き（レイの来た側）
+- 扉を E で動かすのも、足元からの距離と向きではなく、レイが当たった扉の板にする（扉の板の箱を的に入れる）
+
 ## 重さを測る
 
 GPU と CPU の 1 コマの時間・3D の置いた物と draw call の数は、2D と 3D で共通の診断で見る:
