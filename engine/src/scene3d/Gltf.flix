@@ -56,40 +56,22 @@ pub mod Gltf {
             Log.warnAllThen(List.append(warningsOf(glb#json, built#jointOfNode), lines), { parts = parts | built#model })
         })
 
+    /// 材質の絵の長い辺の上限（px）。baseColor = baseColorTexture と emissiveTexture（同じ色の絵）・normal = normalTexture。
+    /// 上限を超える絵は mip と同じ縮め方で半分にしていく。
+    pub type alias TextureLimits = { baseColor = Int32, normal = Int32 }
+
+    /// 上限なし。ほかの値は { normal = 1024 | Gltf.noTextureLimits() } の形で替える。
+    pub def noTextureLimits(): TextureLimits = { baseColor = Texture3d.maxSide(), normal = Texture3d.maxSide() }
+
     /// path の .glb を、絵と材質つきで読む。parts に材質（baseColorTexture → Scene3d.texturedMaterial・normalTexture → 法線マップ・
-    /// emissive → emission・sampler の wrap）、textures に BIN に埋めた画像（Texture3d.decode）。baseColorFactor は頂点の色に書き込んであり、VertexColor で掛かる。
+    /// emissive → emission・sampler の wrap）、textures に BIN に埋めた画像（decoder で解く）。baseColorFactor は頂点の色に書き込んであり、VertexColor で掛かる。
     /// 絵も emissive も無い材質の primitive は材質 None（頂点の色で描く）。読めない・壊れている時は Err（パスつき）。
     /// emissive（emissiveFactor。emissiveTexture があれば絵 × それ。KHR_materials_emissive_strength は Scene3d.withEmissionIntensity）の付く材質は光る
     /// （glTF の決まりどおり。止めるなら Scene3d.withoutEmission）。emissive の付く材質の spec の名前は "gltf:" で始まり、
     /// 木の形を変える物（絵の読み方・emissiveFactor の値・絵の有無）を全部名前に入れる（strength は木の外の倍率なので入れない）。emissive の無い材質は Scene3d.texturedMaterial のまま。
     /// emissiveTexture を指しているのに読めない時（texCoord ≠ 0・画像が読めない・形に TEXCOORD_0 が無い）は光らせず、材質ごとに 1 行知らせる。
-    /// 0.84.0 で消える: loadTexturedUsing(decoder, noTextureLimits(), path) に替える（絵のデコードを handler から受け取る）。
-    pub def loadTextured(path: String): Result[String, Model3d.Model3d] \ Fs.FileRead + IO =
-        loadWith(fromGlbTextured, path)
-
-    /// 材質の絵の長い辺の上限（px）。baseColor = baseColorTexture と emissiveTexture（同じ色の絵）・normal = normalTexture。
-    /// 上限を超える絵は mip と同じ縮め方で半分にしていく。
-    pub type alias TextureLimits = { baseColor = Int32, normal = Int32 }
-
-    /// 上限なし（loadTextured と同じ）。ほかの値は { normal = 1024 | Gltf.noTextureLimits() } の形で替える。
-    pub def noTextureLimits(): TextureLimits = { baseColor = Texture3d.maxSide(), normal = Texture3d.maxSide() }
-
-    /// loadTextured の、材質の絵の大きさに上限を掛ける版（場面の絵の上限に収める・近くで見ない法線マップを小さくする）。
-    /// 0.84.0 で消える: loadTexturedUsing(decoder, limits, path) に替える。
-    pub def loadTexturedWith(limits: TextureLimits, path: String): Result[String, Model3d.Model3d] \ Fs.FileRead + IO =
-        loadWith(fromGlbTexturedWith(limits), path)
-
-    /// loadTextured のバイトの版。
-    /// 0.84.0 で消える: fromGlbTexturedUsing(decoder, noTextureLimits(), bytes) に替える。
-    pub def fromGlbTextured(bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO = fromGlbTexturedWith(noTextureLimits(), bytes)
-
-    /// loadTexturedWith のバイトの版。
-    /// 0.84.0 で消える: fromGlbTexturedUsing(decoder, limits, bytes) に替える。
-    pub def fromGlbTexturedWith(limits: TextureLimits, bytes: Vector[Int8]): Result[String, Model3d.Model3d] \ IO =
-        fromGlbTexturedBy(Texture3d.decode, limits, bytes)
-
-    /// loadTexturedWith の、絵を decoder で解く版（読み込みの頭で LoadProgress.imageDecoder() で受け取り、並列の仕事へ渡す）。
-    /// 上限を掛けないなら limits に noTextureLimits()。
+    /// decoder は読み込みの頭で LoadProgress.imageDecoder() で受け取り、並列の仕事へ渡す。
+    /// limits は材質の絵の大きさの上限（場面の絵の上限に収める・近くで見ない法線マップを小さくする）。上限を掛けないなら noTextureLimits()。
     pub def loadTexturedUsing(decoder: ImageData.ImageDecoder, limits: TextureLimits, path: String): Result[String, Model3d.Model3d] \ Fs.FileRead + IO =
         loadWith(fromGlbTexturedUsing(decoder, limits), path)
 

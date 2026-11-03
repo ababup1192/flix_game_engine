@@ -5,10 +5,7 @@
 
 pub mod GameEngine {
     import java.io.File
-    import java.lang.ProcessBuilder
-    import java.lang.ProcessHandle
     import java.lang.System
-    import java.util.ArrayList
 
     /// テクスチャアセットのマニフェストエントリ
     pub type alias TextureEntry = { name = String, path = String, hasAlpha = Bool }
@@ -363,54 +360,4 @@ pub mod GameEngine {
         def audioSeconds(name: String): Float64
     }
 
-    // ========================================================================
-    // プラットフォーム
-    // ========================================================================
-
-    /// 0.84.0 で消える: LwjglLayer.ensureMainThread() に替える（窓を開く GLFW の都合なので GL の層が持つ）。
-    /// macOS では -XstartOnFirstThread 付きでプロセスを再起動する。
-    /// すでに -XstartOnFirstThread 付きで動いている場合は何もせず false を返す。
-    /// 再起動した場合は true を返す（呼び出し元は終了すべき）。
-    pub def ensureMainThread(): Bool \ IO =
-        let osName = System.getProperty("os.name");
-        if (Object.isNull(osName) or not String.contains({substr = "Mac"}, osName))
-            false
-        else if (not Object.isNull(System.getProperty("game.relaunched")))
-            false
-        else if (isStartedOnFirstThread())
-            false
-        else {
-            println("Relaunching with -XstartOnFirstThread...");
-            let javaHome = System.getProperty("java.home");
-            let javaBin = "${javaHome}/bin/java";
-            let args = new ArrayList();
-            discard args.add(javaBin);
-            discard args.add("-XstartOnFirstThread");
-            discard args.add("-Dgame.relaunched=true");
-            let projectPath = System.getProperty("projectPath");
-            if (not Object.isNull(projectPath))
-                discard args.add("-DprojectPath=${projectPath}")
-            else ();
-            discard args.add("-jar");
-            discard args.add(System.getProperty("java.class.path"));
-            discard args.add("run");
-            let pb = new ProcessBuilder(args);
-            discard pb.inheritIO();
-            let proc = pb.start();
-            let code = proc.waitFor();
-            // WhyNot: ProcessEnv.exitWith に委ねない — 子が 0 で終わっても親はここで必ず終わる（戻ると呼び元が
-            // 窓を開きにいく）。終了コードを返す形にすると pub の ensureMainThread の型が変わる。
-            System.exit(code);
-            true
-        }
-
-    /// 今のプロセスがすでに -XstartOnFirstThread 付きで起動しているかを調べる。
-    /// java ランチャはそのフラグ付き起動時、環境変数
-    /// `JAVA_STARTED_ON_FIRST_THREAD_<pid>` を "1" にセットする
-    /// （LWJGL/GLFW が「thread0 で動いているか」の判定に使うのと同じ変数）。
-    /// これを見れば、game.relaunched が付いていない起動（bin/flix ラッパー経由の
-    /// 通常起動など）でも二重に再起動せずに済む。
-    def isStartedOnFirstThread(): Bool \ IO =
-        let pid = ProcessHandle.current().pid();
-        Map.get("JAVA_STARTED_ON_FIRST_THREAD_${pid}", run { Sys.Env.getEnv() } with Sys.Env.runWithIO) == Some("1")
 }

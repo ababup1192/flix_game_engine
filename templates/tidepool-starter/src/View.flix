@@ -252,7 +252,7 @@ mod View {
             List.append(lines, if (count == 0) Nil else Fx.derive(36, w#t, (_i, rand, t) -> {
                 let (a, b) = Vector.get(Int32.min(count - 1, toCell(rand(0) * Int32.toFloat64(count))), edges);
                 let base = Vec2.add(Vec2.add(a, Vec2.mul(Vec2.sub(b, a), rand(1))), Sway.drift(t, rand(2), { x = 2.5, y = 1.8 }));
-                let life = Vec2.sin((t * (0.3 + rand(3) * 0.4) + rand(4)) * Vec2.pi());
+                let life = Num.sin((t * (0.3 + rand(3) * 0.4) + rand(4)) * Num.pi());
                 RawDraw.circleAt(base, 0.8 + rand(5) * 1.4, theme#foam, 0) |> Render.overItem(Render.fade(Float64.abs(life) * 0.55 * k))
             }))
         })
@@ -335,8 +335,8 @@ mod View {
             let c = Vec2.add(Layout.centerOf(w#now#crab), { x = 2.0, y = 1.0 });
             let r = 23.0 + 1.2 * Sway.wave(w#t, 0.0, 2.0);
             let n = 16;
-            let at = k -> { let a = Int32.toFloat64(k) / Int32.toFloat64(n) * Vec2.tau() + w#t * 0.4;
-                            { x = c#x + Vec2.cos(a) * r, y = c#y + Vec2.sin(a) * r * 0.8 } };
+            let at = k -> { let a = Int32.toFloat64(k) / Int32.toFloat64(n) * Num.tau() + w#t * 0.4;
+                            { x = c#x + Num.cos(a) * r, y = c#y + Num.sin(a) * r * 0.8 } };
             List.range(0, n) |> List.map(k ->
                 RawDraw.lineSeg(at(k), Vec2.add(at(k), Vec2.mul(Vec2.sub(at(k + 1), at(k)), 0.55)), 2.0,
                                 ThemeDoc.rec(w#theme)#accent, 0) |> Render.overItem(Render.fade(0.85 * w#blend)))

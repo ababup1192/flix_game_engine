@@ -167,7 +167,7 @@ mod HudView {
         let at = k -> {
             let u = Int32.toFloat64(k) / Int32.toFloat64(n);
             { x = start#x + (goal#x - start#x) * u,
-              y = start#y + (goal#y - start#y) * u - Vec2.sin(u * Vec2.pi()) * lift }
+              y = start#y + (goal#y - start#y) * u - Num.sin(u * Num.pi()) * lift }
         };
         let arc = List.range(0, n) |> List.map(k -> line(at(k), at(k + 1), 1.1, ink(w), 0.5));
         let tip = at(n);

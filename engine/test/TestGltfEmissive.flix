@@ -50,7 +50,7 @@ mod TestGltf.Emissive {
 
     def strength(s: String): String = ",\"extensions\":{\"KHR_materials_emissive_strength\":{\"emissiveStrength\":${s}}}"
 
-    def read(bytes: Vector[Int8]): Model3d.Model3d \ IO = TestGltf.okOrBug(Gltf.fromGlbTextured(bytes))
+    def read(bytes: Vector[Int8]): Model3d.Model3d \ IO = TestGltf.okOrBug(Gltf.fromGlbTexturedUsing(TestDecoder.imageIo(), Gltf.noTextureLimits(), bytes))
 
     def firstPart(m: Model3d.Model3d): Model3d.ModelPart = match List.head(m#parts) {
         case Some(p) => p
@@ -237,7 +237,7 @@ mod TestGltf.Emissive {
     /// 板 2 枚と印の点: sign は絵 × emissiveFactor の名前（strength 2 は名前に入らない）・flame（uv なし・絵なし）は頂点の色 + 定数の名前・tip は mesh の無いノード。
     @Test
     def testEmissivePlatesAsset(): Unit \ {Assert, Fs.FileRead, IO} =
-        let m = TestGltf.okOrBug(Gltf.loadTextured("test/data/testdata/emissive_plates.glb"));
+        let m = TestGltf.okOrBug(Gltf.loadTexturedUsing(TestDecoder.imageIo(), Gltf.noTextureLimits(), "test/data/testdata/emissive_plates.glb"));
         let names = m#parts |> List.map(p -> p#material |> Option.map(mat -> Scene3d.materialFieldsOf(mat)#spec#name));
         Assert.assertEq(expected = (Some("gltf:tex:Nearest:etNearest(1.0,1.0,1.0)") :: Some("gltf:vc:ec(1.0,0.62,0.18)") :: Nil,
                                     "sign" :: "flame" :: "tip" :: Nil, Nil),

@@ -39,12 +39,12 @@ mod TestTexture3d {
     /// 2 × 2 の PNG を読むと、行 0 が絵の上の ARGB に戻る。
     @Test
     def testDecodeReadsPngRows(): Unit \ {Assert, IO} =
-        Assert.assertEq(expected = Ok(quad()), Texture3d.decode(pngOf(quad())) |> Result.map(Texture3d.argb))
+        Assert.assertEq(expected = Ok(quad()), Texture3d.decodeUsing(TestDecoder.imageIo(), pngOf(quad())) |> Result.map(Texture3d.argb))
 
     /// PNG でも JPEG でもないバイトは Err。
     @Test
     def testDecodeRejectsGarbage(): Unit \ {Assert, IO} =
-        Assert.assertTrue(Result.isErr(Texture3d.decode(Vector#{ 1i8, 2i8, 3i8 })))
+        Assert.assertTrue(Result.isErr(Texture3d.decodeUsing(TestDecoder.imageIo(), Vector#{ 1i8, 2i8, 3i8 })))
 
     /// decoder が返す画素から作る（バイトは decoder だけが読む）。
     @Test

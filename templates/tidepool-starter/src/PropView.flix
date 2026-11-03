@@ -4,7 +4,7 @@
 // 座標は盤の座標（Layout.centerOf）。海藻・イソギンチャク・魚・カサガイは遊びに効かない飾りで、置き場所はマスのハッシュで決める。
 mod PropView {
 
-    use fge::{Color, DrawCmd, DualGrid, RawDraw, Render, Sway, Vec2}
+    use fge::{Color, DrawCmd, DualGrid, Num, RawDraw, Render, Sway, Vec2}
 
     /// 動く物 1 つ: 規則の上のマスと、今描く置き場所（1 手の動きの間は 2 マスの間）。
     pub type alias Piece = { cell = Board.Cell, at = Vec2.Vec2 }
@@ -44,8 +44,8 @@ mod PropView {
     /// 楕円の輪（細い線を周に並べる）。
     def ring(center: Vec2.Vec2, radii: Vec2.Vec2, width: Float64, color: Color, alpha: Float64): List[Render.PlacedItem] =
         let n = 32;
-        let at = k -> { let a = Int32.toFloat64(k) / Int32.toFloat64(n) * Vec2.tau();
-                        { x = center#x + Vec2.cos(a) * radii#x, y = center#y + Vec2.sin(a) * radii#y } };
+        let at = k -> { let a = Int32.toFloat64(k) / Int32.toFloat64(n) * Num.tau();
+                        { x = center#x + Num.cos(a) * radii#x, y = center#y + Num.sin(a) * radii#y } };
         List.range(0, n) |> List.map(k -> line(at(k), at(k + 1), width, color, alpha))
 
     // ── 高さごとに乗っている物 ──
@@ -102,7 +102,7 @@ mod PropView {
         let root = spotOf(c, 16.0);
         List.range(0, 4) |> List.flatMap(k -> {
             let seed = hashOf(c, 10 + k);
-            let heading0 = seed * Vec2.tau();
+            let heading0 = seed * Num.tau();
             let segs = 6;
             let segLen = (if (wet) 4.2 else 2.6) + hashOf(c, 20 + k) * 1.6;
             let base = Color.mix(theme#weed, theme#shadow, if (wet) 0.1 else 0.4);
@@ -110,7 +110,7 @@ mod PropView {
                 let (p, heading, out) = acc;
                 let bend = if (wet) Sway.wave(w#t, seed + Int32.toFloat64(s) * 0.12, 0.7) * 0.32 else 0.04;
                 let h = heading + bend;
-                let q = { x = p#x + Vec2.cos(h) * segLen, y = p#y + Vec2.sin(h) * segLen };
+                let q = { x = p#x + Num.cos(h) * segLen, y = p#y + Num.sin(h) * segLen };
                 let u = Int32.toFloat64(s) / Int32.toFloat64(segs);
                 let color = Color.mix(base, theme#light, u * 0.28);
                 (q, h, line(p, q, 3.4 - u * 2.2, color, 0.95) :: out)
@@ -126,10 +126,10 @@ mod PropView {
         if (isWet(w, c)) {
             let n = 14;
             let tentacles = List.range(0, n) |> List.flatMap(k -> {
-                let a = Int32.toFloat64(k) / Int32.toFloat64(n) * Vec2.tau() + Sway.wave(w#t, hashOf(c, k), 0.8) * 0.12;
+                let a = Int32.toFloat64(k) / Int32.toFloat64(n) * Num.tau() + Sway.wave(w#t, hashOf(c, k), 0.8) * 0.12;
                 let len = 8.0 + Sway.wave(w#t, hashOf(c, 30 + k), 0.5) * 1.6;
-                let a1 = { x = at#x + Vec2.cos(a) * 3.5, y = at#y + Vec2.sin(a) * 3.5 };
-                let tip = { x = at#x + Vec2.cos(a) * len, y = at#y + Vec2.sin(a) * len };
+                let a1 = { x = at#x + Num.cos(a) * 3.5, y = at#y + Num.sin(a) * 3.5 };
+                let tip = { x = at#x + Num.cos(a) * len, y = at#y + Num.sin(a) * len };
                 line(a1, tip, 2.0, Color.mix(body, theme#light, 0.25), 0.95)
                     :: RawDraw.circleAt(tip, 1.1, Color.mix(body, theme#light, 0.5), 0) :: Nil
             });
@@ -180,7 +180,7 @@ mod PropView {
     def driftwoodShape(center: Vec2.Vec2, angle: Float64, c: Board.Cell): List[Vec2.Vec2] =
         let n = 9;
         let half = 31.0;
-        let axis = { x = Vec2.cos(angle), y = Vec2.sin(angle) };
+        let axis = { x = Num.cos(angle), y = Num.sin(angle) };
         let side = { x = -axis#y, y = axis#x };
         let pointAt = (k, sign) -> {
             let s = Int32.toFloat64(k) / Int32.toFloat64(n - 1) * 2.0 - 1.0;
@@ -202,7 +202,7 @@ mod PropView {
         let shadowShift = if (afloat) { x = 11.0, y = 13.0 } else { x = 3.5, y = 4.5 };
         let shadow = { at = Vec2.zero(), item = RawDraw.polygon(shape |> List.map(v -> Vec2.add(v, shadowShift)), theme#shadow, 0)
             |> Render.fade(if (afloat) 0.28 else 0.5) |> Render.blended(DrawCmd.BlendMode.Multiply) };
-        let axis = { x = Vec2.cos(angle), y = Vec2.sin(angle) };
+        let axis = { x = Num.cos(angle), y = Num.sin(angle) };
         let side = { x = -axis#y, y = axis#x };
         let along = (s, off) -> Vec2.add(Vec2.add(center, Vec2.mul(axis, s * 31.0)), Vec2.mul(side, off));
         let lit = { at = Vec2.zero(), item = RawDraw.polygon(
@@ -230,12 +230,12 @@ mod PropView {
         let theme = ThemeDoc.rec(w#theme);
         decorCells(w, 220, 2) |> List.filter(c -> isWet(w, c)) |> List.flatMap(c ->
             List.range(0, 2) |> List.flatMap(k -> {
-                let phase = hashOf(c, 60 + k) * Vec2.tau();
+                let phase = hashOf(c, 60 + k) * Num.tau();
                 let speed = 0.5 + hashOf(c, 70 + k) * 0.3;
                 let a = w#t * speed + phase;
                 let home = Layout.centerOf(c);
-                let at = { x = home#x + Vec2.cos(a) * 15.0, y = home#y + Vec2.sin(a) * 10.0 };
-                let heading = { x = -Vec2.sin(a) * 15.0, y = Vec2.cos(a) * 10.0 } |> Vec2.normalized;
+                let at = { x = home#x + Num.cos(a) * 15.0, y = home#y + Num.sin(a) * 10.0 };
+                let heading = { x = -Num.sin(a) * 15.0, y = Num.cos(a) * 10.0 } |> Vec2.normalized;
                 let side = { x = -heading#y, y = heading#x };
                 let wag = Sway.wave(w#t, hashOf(c, 80 + k), 3.0) * 1.4;
                 let p = (fwd, sd) -> Vec2.add(Vec2.add(at, Vec2.mul(heading, fwd)), Vec2.mul(side, sd));

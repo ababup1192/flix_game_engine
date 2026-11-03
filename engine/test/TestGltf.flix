@@ -295,11 +295,11 @@ mod TestGltf {
         Assert.assertTrue(Vec3.distanceSquared(moved, Vec3.v3(-0.1, 0.5, 0.5)) < 1.0e-9)
 
     // ════════════════════════════════════════════════════════════════════
-    // 絵と材質（loadTextured・textured_two_materials.glb）
+    // 絵と材質（loadTexturedUsing・textured_two_materials.glb）
     // ════════════════════════════════════════════════════════════════════
     // 板 A は材質 A（4 × 4 の絵・左上が赤・NEAREST と、(128, 255, 128) の法線マップ・scale 0.5）、板 B は材質 B（baseColorFactor だけ）。
 
-    def textured(): Model3d.Model3d \ {Fs.FileRead, IO} = okOrBug(Gltf.loadTextured("test/data/textured_two_materials.glb"))
+    def textured(): Model3d.Model3d \ {Fs.FileRead, IO} = okOrBug(Gltf.loadTexturedUsing(TestDecoder.imageIo(), Gltf.noTextureLimits(), "test/data/textured_two_materials.glb"))
 
     def partAt(m: Model3d.Model3d, k: Int32): Model3d.ModelPart = match List.nth(k, m#parts) {
         case Some(p) => p

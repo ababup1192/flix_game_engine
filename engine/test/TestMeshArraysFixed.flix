@@ -95,7 +95,7 @@ mod TestMeshArraysFixed {
     /// glb の形の並びの指紋（mesh と parts）。
     def gltfCases(): List[(String, String)] \ Fs.FileRead + IO =
         let joints = okOrBug(Gltf.load("test/data/two_joints.glb"));
-        let textured = okOrBug(Gltf.loadTextured("test/data/textured_two_materials.glb"));
+        let textured = okOrBug(Gltf.loadTexturedUsing(TestDecoder.imageIo(), Gltf.noTextureLimits(), "test/data/textured_two_materials.glb"));
         let partPrints = (label: String, m: Model3d.Model3d) ->
             m#parts |> List.zipWithIndex |> List.flatMap(pi -> { let (i, part) = pi; meshPrints("${label}.part${i}", part#mesh) });
         List.flatten(

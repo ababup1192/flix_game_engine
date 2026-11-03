@@ -31,18 +31,18 @@ mod TestGltf.UsedImages {
     def testOnlyTheBaseColorImageIsDecoded(): Unit \ {Assert, IO} =
         let red = -65536;
         Assert.assertEq(expected = Ok(Vector#{red} :: Nil),
-            Gltf.fromGlbTextured(baseAndOrmGlb()) |> Result.map(m -> m#textures |> List.map(Texture3d.argb)))
+            Gltf.fromGlbTexturedUsing(TestDecoder.imageIo(), Gltf.noTextureLimits(), baseAndOrmGlb()) |> Result.map(m -> m#textures |> List.map(Texture3d.argb)))
 
     @Test
     def testBaseColorLimitShrinksTheTexture(): Unit \ {Assert, IO} =
         Assert.assertEq(expected = Ok((2, 2) :: Nil),
-            Gltf.fromGlbTexturedWith({ baseColor = 2 | Gltf.noTextureLimits() }, baseAndOrmGlbOfSide(4))
+            Gltf.fromGlbTexturedUsing(TestDecoder.imageIo(), { baseColor = 2 | Gltf.noTextureLimits() }, baseAndOrmGlbOfSide(4))
                 |> Result.map(m -> m#textures |> List.map(t -> (Texture3d.width(t), Texture3d.height(t)))))
 
     @Test
     def testNormalLimitDoesNotTouchTheBaseColor(): Unit \ {Assert, IO} =
         Assert.assertEq(expected = Ok((4, 4) :: Nil),
-            Gltf.fromGlbTexturedWith({ normal = 2 | Gltf.noTextureLimits() }, baseAndOrmGlbOfSide(4))
+            Gltf.fromGlbTexturedUsing(TestDecoder.imageIo(), { normal = 2 | Gltf.noTextureLimits() }, baseAndOrmGlbOfSide(4))
                 |> Result.map(m -> m#textures |> List.map(t -> (Texture3d.width(t), Texture3d.height(t)))))
 
     @Test

@@ -98,10 +98,10 @@
       "id": "process-exit-entry",
       "suffixes": [".flix"],
       "prefixes": ["engine/src/", "engine_world/src/", "engine_tools/src/", "templates/"],
-      "skip": ["engine_world/src/ProcessEnv.flix", "engine/src/GameEngine.flix"],
+      "skip": ["engine_world/src/ProcessEnv.flix"],
       "skipDirs": ["test", "build", "lib"],
       "pattern": "\\bSystem\\.exit\\b",
-      "hint": "奥でプロセスを終えない（常駐の /run から呼ばれると常駐ごと落ちる）。奥は終了コード（Int32）を返し、入口の頭の 1 行で App.Headless.exitWith(xJob(App.Headless.requestFromProcess())) か ProcessEnv.exitWith(コード) に渡す。例外は skip に並べたファイルだけ（ProcessEnv が終える 1 か所と、子の終了コードで必ず終わる macOS の起動し直し GameEngine.ensureMainThread。理由はその行の WhyNot）（engine の docs/design/render-speed.md 2.5 節）"
+      "hint": "奥でプロセスを終えない（常駐の /run から呼ばれると常駐ごと落ちる）。奥は終了コード（Int32）を返し、入口の頭の 1 行で App.Headless.exitWith(xJob(App.Headless.requestFromProcess())) か ProcessEnv.exitWith(コード) に渡す。例外は skip に並べたファイルだけ（ProcessEnv が終える 1 か所。理由はその行の WhyNot）（engine の docs/design/render-speed.md 2.5 節）"
     },
     {
       "id": "engine-contract-import",
@@ -135,9 +135,8 @@
       "id": "engine-jvm-old-calls",
       "suffixes": [".flix"],
       "skip": ["engine/", "engine_world/", "engine_tools/", "engine_full/", "render_gl/", "src/engine/", "src/engine_world/", "src/engine_tools/", "src/render_gl/", "lib/", "build/"],
-      "notice": true,
       "pattern": "\\bGltf\\.(?:fromGlbTextured|loadTextured)(?:With)?\\(|\\bTexture3d\\.decode\\(|\\bGameEngine\\.ensureMainThread\\b",
-      "hint": "中で javax.imageio・ProcessBuilder を呼ぶ古い口は 0.84.0 で消える: 読み込みの頭で let dec = LoadProgress.imageDecoder() を受け取り Gltf.fromGlbTexturedUsing(dec, limits, bytes)・Gltf.loadTexturedUsing(dec, limits, path)・Texture3d.decodeUsing(dec, bytes)（上限なしは Gltf.noTextureLimits()）。main の頭は LwjglLayer.ensureMainThread()。画面なしとテストの入口は HeadlessLoad.handle（engine の docs/migrations/0.81.0.md）"
+      "hint": "中で javax.imageio・ProcessBuilder を呼ぶ古い口は 0.84.0 で消えた: 読み込みの頭で let dec = LoadProgress.imageDecoder() を受け取り Gltf.fromGlbTexturedUsing(dec, limits, bytes)・Gltf.loadTexturedUsing(dec, limits, path)・Texture3d.decodeUsing(dec, bytes)（上限なしは Gltf.noTextureLimits()）。main の頭は LwjglLayer.ensureMainThread()。画面なしとテストの入口は HeadlessLoad.handle（engine の docs/migrations/0.81.0.md）"
     },
     {
       "id": "hand-tonemap",
@@ -278,9 +277,8 @@
         "lib/",
         "build/"
       ],
-      "notice": true,
       "pattern": "\\bShaderEffect\\.ShaderRenderCmd\\b",
-      "hint": "型は DrawCmd.SurfaceRenderCmd へ移した（中身は同じ）。ShaderEffect.ShaderRenderCmd は 0.84.0 で消える（engine の docs/migrations/0.80.0.md）"
+      "hint": "型は DrawCmd.SurfaceRenderCmd へ移した（中身は同じ）。ShaderEffect.ShaderRenderCmd は 0.84.0 で消えた（engine の docs/migrations/0.80.0.md）"
     },
     {
       "id": "num-from-vec2",
@@ -293,9 +291,8 @@
         "lib/",
         "build/"
       ],
-      "notice": true,
       "pattern": "\\bVec2\\.(?:sqrt|sin|cos|atan2|pi|tau)\\(|\\buse\\s+(?:fge::)?Vec2\\.\\{[^}]*\\b(?:sqrt|sin|cos|atan2|pi|tau)\\b",
-      "hint": "数の関数は Num へ移した: Num.sqrt・Num.sin・Num.cos・Num.atan2・Num.pi・Num.tau（引数と値は同じ。mount = \"fge\" のゲームは use fge::{…} に Num も足す）。Vec2 の旧い名前は 0.84.0 で消える（engine の docs/migrations/0.77.0.md）"
+      "hint": "数の関数は Num へ移した: Num.sqrt・Num.sin・Num.cos・Num.atan2・Num.pi・Num.tau（引数と値は同じ。mount = \"fge\" のゲームは use fge::{…} に Num も足す）。Vec2 の旧い名前は 0.84.0 で消えた（engine の docs/migrations/0.77.0.md）"
     },
     {
       "id": "frame-literal",
@@ -327,9 +324,8 @@
       "suffixes": [".flix"],
       "skip": ["src/Main.flix", "src/E2e.flix", "templates/game-starter/src/Main.flix", "templates/game-starter/src/E2e.flix", "templates/rpg-starter/src/Main.flix", "templates/rpg-starter/src/E2e.flix", "templates/sound-novel-starter/src/Main.flix", "templates/sound-novel-starter/src/E2e.flix", "templates/tidepool-starter/src/Main.flix", "templates/tidepool-starter/src/E2e.flix", "engine/", "engine_world/", "engine_tools/", "engine_full/", "render_gl/", "bench/", "src/engine/", "src/engine_world/", "src/engine_tools/", "src/render_gl/", "lib/", "build/"],
       "skipDirs": ["build", "lib", "test", "render"],
-      "notice": true,
       "pattern": "\\bApp\\.on(?:Render|Shot)Request\\b",
-      "hint": "App.onRenderRequest・App.onShotRequest は開発の道具（リモートデバッグの /render と view=shot）の API なので、Game.app（テスト・flow・ブラウザ版と共有）では繋がず、Main（デスクトップの入口）と E2e（画面なしの入口）で繋ぐ。0.84.0 から止める（engine の docs/migrations/0.81.0.md）"
+      "hint": "App.onRenderRequest・App.onShotRequest は開発の道具（リモートデバッグの /render と view=shot）の API なので、Game.app（テスト・flow・ブラウザ版と共有）では繋がず、Main（デスクトップの入口）と E2e（画面なしの入口）で繋ぐ（engine の docs/migrations/0.81.0.md）"
     },
     {
       "id": "light-uniform-in-glsl",
@@ -346,8 +342,6 @@
     "src/EndScreen.flix::game-unchecked-pure": "internet_dungeon の Math.sin・cos の包み。Num.sin・Num.cos へ寄せるまで",
     "engine/src/GameEngine.flix::engine-contract-import": "古い GameEngine.ensureMainThread（ProcessBuilder・ProcessHandle・ArrayList）と loadScene3dLinearColor（java.io.File）。どちらも 0.84.0 で消える（LwjglLayer.ensureMainThread へ・旗はほかの古い口と一緒に）",
     "engine/src/GameEngine.flix::engine-contract-jvm-call": "古い GameEngine.ensureMainThread（ProcessBuilder・ProcessHandle・Sys.Env）と loadScene3dLinearColor（Fs.FileRead.runWithIO）。どちらも 0.84.0 で消える（LwjglLayer.ensureMainThread へ・旗はほかの古い口と一緒に）",
-    "engine/src/scene3d/Texture3d.flix::engine-contract-import": "古い Texture3d.decode（javax.imageio・java.awt・ByteArrayInputStream）。0.84.0 で消える（decodeUsing へ）",
-    "engine/src/GameEngine.flix::engine-contract-system": "古い GameEngine.ensureMainThread（System.getProperty・System.exit）と loadScene3dLinearColor（System.getProperty・System.setProperty）。どちらも 0.84.0 で消える",
-    "engine/src/GameEngine.flix::process-env-entry": "古い GameEngine.ensureMainThread が起動し直しのフラグ（JAVA_STARTED_ON_FIRST_THREAD_<pid>）を読む。ProcessEnv は engine_world へ移り engine から見えない。0.84.0 で消える"
+    "engine/src/GameEngine.flix::engine-contract-system": "古い GameEngine.ensureMainThread（System.getProperty・System.exit）と loadScene3dLinearColor（System.getProperty・System.setProperty）。どちらも 0.84.0 で消える"
   }
 }

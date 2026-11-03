@@ -28,14 +28,14 @@ pub eff LoadProgress {
 pub mod LoadProgress {
 
     /// 知らせを捨て、仕事を順に回す handler（headless の描き出し・動画・テスト・flow の再生）。
-    /// imageDecoder は 0.84.0 まで javax.imageio の物を返して 1 行知らせる（絵を解くなら HeadlessLoad.handle）。
+    /// imageDecoder を受け取ると止まる（絵を解くなら HeadlessLoad.handle）。
     // WhyNot: runNoop のデコーダーを Err にしない — ゲームの読み込みは絵が読めないと既定値で続けるので、
     // コンパイルは通ったまま e2e・動画・gallery から部品が黙って消える。
     pub def runNoop(f: Unit -> a \ ef): a \ (ef - LoadProgress) + IO =
         run f() with handler LoadProgress {
             def report(_phase, _done, _total, k) = k(())
             def runTasks(phase, tasks, k) = { runTasksInOrder((_, _, _) -> (), phase, tasks); k(()) }
-            def imageDecoder(k) = k(Log.warnThen("[LoadProgress] runNoop の下で imageDecoder を受け取った（0.84.0 からは止まる）。画面なしで絵を解くなら HeadlessLoad.handle で包む（docs/migrations/0.81.0.md）", legacyDecoder()))
+            def imageDecoder(_k) = bug!("[LoadProgress] runNoop の下で imageDecoder を受け取った。画面なしで絵を解くなら HeadlessLoad.handle で包む（docs/migrations/0.81.0.md）")
         }
 
     /// tasks を 1 つずつ回し、最初に (phase, 0, n)・1 つ終わるたびに (phase, 終わった数, n) を report へ渡す（空なら何も渡さない）。
@@ -51,10 +51,6 @@ pub mod LoadProgress {
                 report(phase, i + 1, n)
             })
         }
-
-    /// 0.84.0 で消える: Texture3d.decode（javax.imageio）を画素に戻す。
-    def legacyDecoder(): ImageData.ImageDecoder =
-        { decode = bytes -> Texture3d.decode(bytes) |> Result.map(t -> { width = Texture3d.width(t), height = Texture3d.height(t), argb = Texture3d.argb(t) }) }
 
     /// xs を f で 1 つずつ作り、作るたびに (phase, 作った数, 全部の数) を知らせる（最初に (phase, 0, n)）。
     /// 空の並びは何も知らせない — (phase, 0, 0) は本数不明の知らせと見分けがつかない。

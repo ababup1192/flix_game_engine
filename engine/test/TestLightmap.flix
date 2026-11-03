@@ -177,7 +177,7 @@ def expectedArgb(x: Int32, y: Int32): Int32 =
 @Test
 def testBlenderPngChunksAreNotApplied(): Unit \ {Assert, Fs.FileRead, IO} =
     let decoded = Fs.FileRead.readBytes("test/data/testdata/lightmap_srgb_chunks.png")
-        |> Result.mapErr(e -> "${e}") |> Result.flatMap(bytes -> Texture3d.decode(bytes));
+        |> Result.mapErr(e -> "${e}") |> Result.flatMap(bytes -> Texture3d.decodeUsing(TestDecoder.imageIo(), bytes));
     let expected = Vector.range(0, 16) |> Vector.map(k -> expectedArgb(Int32.remainder(k, 4), k / 4));
     Assert.assertEq(expected = Ok(expected), decoded |> Result.map(Texture3d.argb))
 

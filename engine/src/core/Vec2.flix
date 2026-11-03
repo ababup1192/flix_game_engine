@@ -9,30 +9,6 @@ pub mod Vec2 {
 
     // Vec2i 関連は別 mod Vec2i に分離
 
-    // ========================================================================
-    // Math Helpers
-    // ========================================================================
-
-    // WhyNot: すぐ消さない — 外のゲームで約 240 か所が使っていて、2 版は残す決まり（docs/migrations/0.77.0.md）。
-
-    /// 旧い名前。Num.sqrt を使う（0.84.0 で消す）。
-    pub def sqrt(v: Float64): Float64 = Num.sqrt(v)
-
-    /// 旧い名前。Num.pi を使う（0.84.0 で消す）。
-    pub def pi(): Float64 = Num.pi()
-
-    /// 旧い名前。Num.tau を使う（0.84.0 で消す）。
-    pub def tau(): Float64 = Num.tau()
-
-    /// 旧い名前。Num.sin を使う（0.84.0 で消す）。
-    pub def sin(x: Float64): Float64 = Num.sin(x)
-
-    /// 旧い名前。Num.cos を使う（0.84.0 で消す）。
-    pub def cos(x: Float64): Float64 = Num.cos(x)
-
-    /// 旧い名前。Num.atan2 を使う（0.84.0 で消す）。
-    pub def atan2(y: Float64, x: Float64): Float64 = Num.atan2(y, x)
-
 
     // ========================================================================
     // Constants
