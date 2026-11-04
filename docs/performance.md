@@ -496,8 +496,8 @@ GC か swap が半分以上を占める 1 コマだけの重さ（単発）は 1
 
 遊びながら 1 コマの重さを見たい時は、`App.withDiagnostics()` を足して `frame#diagnostics`（前のコマの `FrameDiagnostics`）を
 World に写し、`FrameDiagnostics.summaryLines(d)` をゲームの字の部品で debug の表示として描く（F3 で出すなど。出す所はゲームが決める）。
-出るのは CPU（GL へ送る・swap）・**GPU**（`gpuNs` と描き先ごとの `gpuPasses`。GL_TIMESTAMP の query を GPU を待たずに読むので
-1〜2 コマ遅れの値・測れない描き手では None）・3D の数（`scene3dCounts` の置いた物・描いた物・draw call）。
+出るのは CPU（GL へ送る・swap）・**GPU**（`gpuNs` = 描き先ごとの `GL_TIME_ELAPSED` の query の合計（描き先の間の GPU の空きは入らない）と描き先ごとの `gpuPasses`。
+結果が出た query だけを GPU を待たずに読むので 1〜2 コマ遅れの値・query を作れない GL と測れない描き手では None）・3D の数（`scene3dCounts` の置いた物・描いた物・draw call）。
 `FLIX_GE_FRAME_STATS=1` の println は窓ごとの平均を標準出力へ書くだけで GPU を含まない。こちらはゲームの画面に出せて、GPU を含む。
 自前で `System.nanoTime` を測って出さない（GPU の仕事は CPU の時計では swap の待ちに混ざって見えない）。
 
