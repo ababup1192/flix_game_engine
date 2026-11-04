@@ -5,17 +5,21 @@ pub mod WebFs {
     import fge.web.AssetTable
     import fge.web.Browser
     import fge.web.LocalStorage
+    import java.lang.System
 
     /// Fs.FileRead を素材の表と localStorage で受ける。
     pub def runFileRead(f: Unit -> a \ ef): a \ (ef - Fs.FileRead) + IO =
         run f() with handler Fs.FileRead {
             def read(path, k)      = k(readText(path))
-            def readLines(path, k) = k(Result.map(linesOf, readText(path)))
+            def readLines(path, k) = k(Result.map(String.lines, readText(path)))
             def readBytes(path, k) = k(readBytes(path))
         }
 
     /// Fs.FileWrite を受ける。saves/ の下は localStorage へ書き、ほかは何もせず Ok。
     pub def runFileWrite(f: Unit -> a \ ef): a \ (ef - Fs.FileWrite) + IO =
+        let warned: Ref[Set[String], Static] = Ref.fresh(Static, Set.empty());
+        let writeText = (path, text) -> if (isSave(path)) writeSave(path, text) else skipped(warned, path);
+        let appendText = (path, text) -> if (isSave(path)) appendSave(path, text) else skipped(warned, path);
         run f() with handler Fs.FileWrite {
             def write(data, path, k)       = k(writeText(path, data#str))
             def writeLines(data, path, k)  = k(writeText(path, String.intercalate("\n", data#lines) + "\n"))
@@ -53,26 +57,26 @@ pub mod WebFs {
         let bytes = AssetTable.bytes(normalize(path));
         if (Object.isNull(bytes)) Err(notFound(path)) else Ok(Array.toVector(bytes))
 
-    // WhyNot: String.lines を使わない — 正規表現の \R を使い、TeaVM の正規表現には無い。
-    /// 行に分ける（\r\n と \n。最後の改行の後の空の行は数えない）。
-    def linesOf(text: String): List[String] =
-        let rows = String.split({regex = "\n"}, text) |> List.map(row -> if (String.endsWith({suffix = "\r"}, row)) String.dropRight(1, row) else row);
-        if (String.endsWith({suffix = "\n"}, text)) List.take(List.length(rows) - 1, rows) else rows
-
-    def writeText(path: String, text: String): Result[IoError, Unit] \ IO =
-        if (not isSave(path)) Ok(())
-        else if (LocalStorage.set(keyOf(path), text)) Ok(())
-        else Err(IoError.IoError(IoError.ErrorKind.PermissionDenied, "localStorage に書けない（${path}）"))
-
-    def appendText(path: String, text: String): Result[IoError, Unit] \ IO =
-        if (not isSave(path)) Ok(())
+    // WhyNot: saves/ の外への書き込みを黙って捨てない — 「書いたのに残らない」の元が追えない。
+    /// saves/ の外への書き込みは何もせず Ok。道ごとに初回 1 回だけ言う。
+    def skipped(warned: Ref[Set[String], Static], path: String): Result[IoError, Unit] \ IO =
+        if (Set.memberOf(normalize(path), Ref.get(warned))) Ok(())
         else {
-            let before = LocalStorage.get(keyOf(path));
-            writeText(path, (if (Object.isNull(before)) "" else before) + text)
+            Ref.put(Set.insert(normalize(path), Ref.get(warned)), warned);
+            System.err.println("[WebFs] ${path} は saves/ の外なのでブラウザ版では書かない");
+            Ok(())
         }
 
+    def writeSave(path: String, text: String): Result[IoError, Unit] \ IO =
+        if (LocalStorage.set(keyOf(path), text)) Ok(())
+        else Err(IoError.IoError(IoError.ErrorKind.PermissionDenied, "localStorage に書けない（${path}）"))
+
+    def appendSave(path: String, text: String): Result[IoError, Unit] \ IO =
+        let before = LocalStorage.get(keyOf(path));
+        writeSave(path, (if (Object.isNull(before)) "" else before) + text)
+
     def copySave(src: String, dst: String): Result[IoError, Unit] \ IO =
-        Result.flatMap(text -> writeText(dst, text), readText(src))
+        if (not isSave(dst)) Ok(()) else Result.flatMap(text -> writeSave(dst, text), readText(src))
 
     def deleteSave(path: String): Result[IoError, Unit] \ IO =
         if (not isSave(path)) Ok(())

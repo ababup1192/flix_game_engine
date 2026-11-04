@@ -12,7 +12,7 @@ public final class Pointer {
     @JSBody(script = "return fgePointer.y;")
     public static native double y();
 
-    /** button（0 = 左・1 = 中・2 = 右）が今押されているか、前に読んでから押されたか。 */
+    /** button（0 = 左・1 = 中・2 = 右）が今押されているか、このコマの前に押されたか。読んでも表は変えない。 */
     @JSBody(params = {"button"}, script = "return fgePointerDown(button);")
     public static native boolean isDown(int button);
 
@@ -20,7 +20,7 @@ public final class Pointer {
     @JSBody(script = "var v = fgePointer.wheel; fgePointer.wheel = 0; return v;")
     public static native double consumeWheel();
 
-    /** 前に読んでからの横の動き（描き先の画素）を返して 0 に戻す。 */
+    /** 前に読んでからの横の動き（描き先の画素）を返して 0 に戻す。頁にフォーカスが無い間と戻った直後は 0。 */
     @JSBody(script = "var v = fgePointer.dx; fgePointer.dx = 0; return v;")
     public static native double consumeDx();
 

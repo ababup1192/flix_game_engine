@@ -80,6 +80,8 @@ public final class WebGl2 implements GlContext {
 
     @JSBody(params = {"t", "data", "usage"}, script = "fgeGl.bufferData(t, data, usage);")
     private static native void bufferDataView(int target, JSObject data, int usage);
+    @JSBody(params = {"t", "size", "usage"}, script = "fgeGl.bufferData(t, size, usage);")
+    private static native void bufferDataSize(int target, int size, int usage);
     @JSBody(params = {"t", "data", "usage", "from", "count"}, script = "fgeGl.bufferData(t, data, usage, from, count);")
     private static native void bufferDataRange(int target, JSObject data, int usage, int from, int count);
 
@@ -91,6 +93,8 @@ public final class WebGl2 implements GlContext {
         FloatBuffer direct = data.isDirect() ? data : copyFloats(data);
         int from = direct.position();
         int count = direct.remaining();
+        // WhyNot: 0 個を範囲つきで渡さない — WebGL2 は length 0 を「最後まで」と読む。
+        if (count == 0) { bufferDataSize(target, 0, usage); return; }
         // WhyNot: 送る範囲を view の作り方に任せない — fromJavaBuffer が position を見るかは版で揺れうるので、頭から終わりの view を作って範囲を渡す。
         bufferDataRange(target, Float32Array.fromJavaBuffer(whole(direct)), usage, from, count);
     }

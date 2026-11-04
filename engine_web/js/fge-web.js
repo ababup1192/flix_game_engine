@@ -1,51 +1,42 @@
 // fge-web.js — ブラウザ版の頁の中身。素材を取ってきて表にし、「押して始める」で音を起こしてから wasm の main を呼ぶ。
 // wasm（fge.web の Java）は下の fge* の名前だけを呼ぶ。GL の物・音・キーの表はここに置き、wasm には int と字と数だけを渡す。
-// bundle.json（書き出しの道具が作る）: { id, title, files: [道], images: [道], sounds: [{name, path, looping}] }。道は project.json から相対で、中身は assets/ の下に同じ道で置く。
+// 束の形（bundle.json）は書き出しの道具（bin/fge export-web）が決める。
 "use strict";
 
 // ── GL の物の表（0 は null）──
+// WhyNot: 消した id を使い回さない — 古い id のまま別の種類の物（テクスチャの所にバッファ）が渡り、WebGL が TypeError で落ちる。
+//   デスクトップの GL は種類ごとに名前が分かれているのでそうならない。
 var fgeGl = null;
 var fgeH = [null];
-var fgeFreeIds = [];
-function fgeNew(obj) {
-  var id = fgeFreeIds.length > 0 ? fgeFreeIds.pop() : fgeH.length;
-  fgeH[id] = obj;
-  return id;
-}
-function fgeFree(id) {
-  if (id > 0 && fgeH[id] !== null) { fgeH[id] = null; fgeFreeIds.push(id); }
-}
+function fgeNew(obj) { fgeH.push(obj); return fgeH.length - 1; }
+function fgeFree(id) { if (id > 0) fgeH[id] = null; }
 
-// uniform の location: program と名前の組ごとに 1 つの int。-1 は無い名前。
 var fgeU = [];
-var fgeUByKey = new Map();
+var fgeUByProgram = new Map();
 function fgeUniformLocation(program, name) {
-  var key = program + ":" + name;
-  var known = fgeUByKey.get(key);
+  var names = fgeUByProgram.get(program);
+  if (names === undefined) { names = new Map(); fgeUByProgram.set(program, names); }
+  var known = names.get(name);
   if (known !== undefined) return known;
   var loc = fgeGl.getUniformLocation(fgeH[program], name);
   var id = -1;
   if (loc !== null) { id = fgeU.length; fgeU.push(loc); }
-  fgeUByKey.set(key, id);
+  names.set(name, id);
   return id;
 }
 function fgeDeleteProgram(program) {
   fgeGl.deleteProgram(fgeH[program]);
   fgeFree(program);
-  var prefix = program + ":";
-  fgeUByKey.forEach(function (id, key) {
-    if (key.startsWith(prefix)) { if (id >= 0) fgeU[id] = null; fgeUByKey.delete(key); }
-  });
+  var names = fgeUByProgram.get(program);
+  if (names !== undefined) { names.forEach(function (id) { if (id >= 0) fgeU[id] = null; }); fgeUByProgram.delete(program); }
 }
 
-// デスクトップの GLSL（#version 330 core）を GLSL ES 3.00 の頭へ。
 function fgeEsSource(src) {
   var head = "#version 300 es\nprecision highp float;\nprecision highp int;\nprecision highp sampler2D;\n";
   var m = /^\s*#version[^\n]*\n/.exec(src);
   return m ? head + src.slice(m[0].length) : head + src;
 }
 
-// ARGB の int 列（Int32Array の view・from から w*h 個）を RGBA のバイトへ並べ替えて上げる。
 var fgeArgbScratch = new Uint8Array(0);
 function fgeTexImageArgb(w, h, argb, from) {
   var n = w * h;
@@ -75,11 +66,12 @@ function fgeCanvasWidth() { return fgeCanvas.width; }
 function fgeCanvasHeight() { return fgeCanvas.height; }
 function fgeSetCursor(css) { fgeCanvas.style.cursor = css; }
 
-// 全画面はユーザーの操作の中でしか通らないので、頼まれた事を覚えて次のキーか pointer のイベントで行う。
+// WhyNot: いつも次のイベントまで待たない — メニューの Enter で選んだ時、もう 1 回押すまで入らない。操作の直後（userActivation）ならその場で行う。
 var fgeFullscreenWanted = null;
 function fgeRequestFullscreen(on) {
   if (on === !!document.fullscreenElement) { fgeFullscreenWanted = null; return; }
   fgeFullscreenWanted = on;
+  if (navigator.userActivation && navigator.userActivation.isActive) fgeApplyFullscreen();
 }
 function fgeApplyFullscreen() {
   if (fgeFullscreenWanted === null) return;
@@ -88,29 +80,31 @@ function fgeApplyFullscreen() {
   try {
     if (on && document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(function () {});
     if (!on && document.exitFullscreen && document.fullscreenElement) document.exitFullscreen().catch(function () {});
-  } catch (e) { /* 断られたら窓のまま */ }
+  } catch (e) { /* 断られたらウィンドウのまま */ }
 }
 
 // ── キーと pointer ──
 var fgeKeys = Object.create(null);
 var fgeLatch = Object.create(null);
-function fgeKeyDown(code) {
-  var v = !!(fgeKeys[code] || fgeLatch[code]);
-  fgeLatch[code] = false;
-  return v;
-}
-var fgePointer = { x: 0, y: 0, dx: 0, dy: 0, wheel: 0, buttons: [false, false, false], latch: [false, false, false] };
-function fgePointerDown(button) {
-  var v = !!(fgePointer.buttons[button] || fgePointer.latch[button]);
-  fgePointer.latch[button] = false;
-  return v;
+var fgeFrameLatch = Object.create(null);
+var fgePointer = { x: 0, y: 0, dx: 0, dy: 0, wheel: 0, buttons: [false, false, false], latch: [false, false, false], frameLatch: [false, false, false] };
+function fgeKeyDown(code) { return !!(fgeKeys[code] || fgeFrameLatch[code]); }
+function fgePointerDown(button) { return !!(fgePointer.buttons[button] || fgePointer.frameLatch[button]); }
+function fgeBeginFrame() {
+  fgeFrameLatch = fgeLatch;
+  fgeLatch = Object.create(null);
+  fgePointer.frameLatch = fgePointer.latch;
+  fgePointer.latch = [false, false, false];
 }
 function fgeReleaseAll() {
   fgeKeys = Object.create(null);
   fgePointer.buttons = [false, false, false];
+  fgePointer.dx = 0;
+  fgePointer.dy = 0;
 }
-// ページがスクロールしたり、ブラウザの機能（Tab の移動・空白で下へ）が動いたりするキー。
-var fgeSwallow = { ArrowUp: 1, ArrowDown: 1, ArrowLeft: 1, ArrowRight: 1, Space: 1, Tab: 1, Backspace: 1, PageUp: 1, PageDown: 1, Home: 1, End: 1 };
+// ページがスクロールする・ブラウザの機能（Tab の移動・Firefox のクイック検索・ヘルプ・読み直し）が動くキー。F11 と F12 は残す。
+var fgeSwallow = { ArrowUp: 1, ArrowDown: 1, ArrowLeft: 1, ArrowRight: 1, Space: 1, Tab: 1, Backspace: 1, PageUp: 1, PageDown: 1,
+                   Home: 1, End: 1, Slash: 1, Quote: 1, F1: 1, F3: 1, F5: 1, F7: 1 };
 function fgeWireInput() {
   window.addEventListener("keydown", function (e) {
     if (fgeSwallow[e.code]) e.preventDefault();
@@ -120,21 +114,26 @@ function fgeWireInput() {
   });
   window.addEventListener("keyup", function (e) { fgeKeys[e.code] = false; });
   window.addEventListener("blur", fgeReleaseAll);
+  window.addEventListener("focus", fgeReleaseAll);
   document.addEventListener("visibilitychange", function () { if (document.hidden) fgeReleaseAll(); fgeAudio.onVisibility(); });
-  var toCanvas = function (e) {
+  var scale = function () {
     var rect = fgeCanvas.getBoundingClientRect();
-    var sx = fgeCanvas.width / Math.max(1, rect.width);
-    var sy = fgeCanvas.height / Math.max(1, rect.height);
-    var x = (e.clientX - rect.left) * sx;
-    var y = (e.clientY - rect.top) * sy;
-    fgePointer.dx += x - fgePointer.x;
-    fgePointer.dy += y - fgePointer.y;
-    fgePointer.x = x;
-    fgePointer.y = y;
+    return { rect: rect, sx: fgeCanvas.width / Math.max(1, rect.width), sy: fgeCanvas.height / Math.max(1, rect.height) };
   };
-  fgeCanvas.addEventListener("pointermove", toCanvas);
+  var place = function (e) {
+    var s = scale();
+    fgePointer.x = (e.clientX - s.rect.left) * s.sx;
+    fgePointer.y = (e.clientY - s.rect.top) * s.sy;
+    return s;
+  };
+  fgeCanvas.addEventListener("pointermove", function (e) {
+    var s = place(e);
+    // WhyNot: 位置の差で動きを出さない — 初めの 1 回と、canvas の外から戻った時に跳ぶ。
+    if (document.hasFocus()) { fgePointer.dx += (e.movementX || 0) * s.sx; fgePointer.dy += (e.movementY || 0) * s.sy; }
+  });
+  fgeCanvas.addEventListener("pointerenter", place);
   fgeCanvas.addEventListener("pointerdown", function (e) {
-    toCanvas(e);
+    place(e);
     if (e.button >= 0 && e.button < 3) { fgePointer.buttons[e.button] = true; fgePointer.latch[e.button] = true; }
     fgeApplyFullscreen();
   });
@@ -145,6 +144,11 @@ function fgeWireInput() {
     fgePointer.wheel -= e.deltaY * unit;
   }, { passive: false });
   fgeCanvas.addEventListener("contextmenu", function (e) { e.preventDefault(); });
+  // 人の決定（コンテキストロスト）: 戻すのは頁の読み直しとセーブから。
+  fgeCanvas.addEventListener("webglcontextlost", function (e) {
+    e.preventDefault();
+    fgeError("画面の描き先（WebGL）が失われました。頁を読み直すと、最後のセーブから続けられます。");
+  });
 }
 
 // ── 素材の表 ──
@@ -167,11 +171,12 @@ function fgeAssetBytes(path) {
 
 // ── 画像（createImageBitmap で解いた物）──
 var fgeImages = new Map();
-function fgeTexImageBitmap(path) {
+function fgeTexImageBitmap(path, alpha) {
   var bmp = fgeImages.get(path);
   if (!bmp) return;
   fgeGl.pixelStorei(fgeGl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
-  fgeGl.texImage2D(fgeGl.TEXTURE_2D, 0, fgeGl.RGBA8, fgeGl.RGBA, fgeGl.UNSIGNED_BYTE, bmp);
+  if (alpha) fgeGl.texImage2D(fgeGl.TEXTURE_2D, 0, fgeGl.RGBA8, fgeGl.RGBA, fgeGl.UNSIGNED_BYTE, bmp);
+  else fgeGl.texImage2D(fgeGl.TEXTURE_2D, 0, fgeGl.RGB8, fgeGl.RGB, fgeGl.UNSIGNED_BYTE, bmp);
 }
 
 // ── 音 ──
@@ -213,7 +218,7 @@ var fgeAudio = {
   },
   setMaster: function (g) { if (this.master) this.master.gain.value = Math.max(0, Math.min(1, g)); },
   seconds: function (name) { var s = this.sounds.get(name); return s ? s.buffer.duration : 0; },
-  // タブが裏に回ったら止め、戻ったら続ける（ループの曲だけ先へ進むのを防ぐ）。
+  // WhyNot: タブが裏の間も鳴らし続けない — ゲームのループは止まるのに、ループの曲だけ先へ進む。
   onVisibility: function () {
     if (!this.ctx) return;
     if (document.hidden) { this.wasRunning = this.ctx.state === "running"; this.ctx.suspend(); }
@@ -221,20 +226,31 @@ var fgeAudio = {
   }
 };
 
-// ── 1 コマの CPU の控え（AnimationFrame が毎コマ ms を渡す）──
+// ── 1 コマの CPU と、描き替えから wasm が戻るまでの遅れの控え ──
+function fgeRing(size) {
+  return {
+    values: new Float64Array(size), count: 0,
+    push: function (v) { this.values[this.count % this.values.length] = v; this.count++; },
+    summary: function () {
+      var n = Math.min(this.count, this.values.length);
+      if (n === 0) return { frames: 0 };
+      var s = Array.prototype.slice.call(this.values, 0, n).sort(function (a, b) { return a - b; });
+      var at = function (q) { return s[Math.min(n - 1, Math.floor(q * n))]; };
+      var sum = s.reduce(function (a, b) { return a + b; }, 0);
+      return { frames: n, mean: +(sum / n).toFixed(3), median: +at(0.5).toFixed(3), p95: +at(0.95).toFixed(3), max: +s[n - 1].toFixed(3) };
+    },
+    reset: function () { this.count = 0; }
+  };
+}
 var fgeStats = {
-  samples: [], max: 600,
-  cpu: function (ms) { this.samples.push(ms); if (this.samples.length > this.max) this.samples.shift(); },
-  summary: function () {
-    var s = this.samples.slice().sort(function (a, b) { return a - b; });
-    if (s.length === 0) return { frames: 0 };
-    var at = function (q) { return s[Math.min(s.length - 1, Math.floor(q * s.length))]; };
-    var sum = s.reduce(function (a, b) { return a + b; }, 0);
-    return { frames: s.length, mean: +(sum / s.length).toFixed(3), median: +at(0.5).toFixed(3), p95: +at(0.95).toFixed(3), max: +s[s.length - 1].toFixed(3) };
-  }
+  cpuRing: fgeRing(600), lagRing: fgeRing(600),
+  cpu: function (ms) { this.cpuRing.push(ms); },
+  lag: function (ms) { this.lagRing.push(ms); },
+  summary: function () { return { cpu: this.cpuRing.summary(), lag: this.lagRing.summary() }; },
+  reset: function () { this.cpuRing.reset(); this.lagRing.reset(); }
 };
 
-// ── 起動の帯と終わりの画面 ──
+// ── 起動の進み具合と終わりの画面 ──
 function fgeProgress(phase, done, total) {
   var bar = document.getElementById("fge-bar");
   var text = document.getElementById("fge-phase");
@@ -270,7 +286,11 @@ async function fgeBoot() {
   var images = bundle.images || [];
   var total = files.length + sounds.length + images.length;
   var done = 0;
-  var soundBytes = new Map();
+  // WhyNot: 押した後に音を解かない — 止まったままの AudioContext でも decodeAudioData は使えるので、素材を取る間に解き終えておく。
+  var Ctx = window.AudioContext || window.webkitAudioContext;
+  fgeAudio.ctx = new Ctx();
+  fgeAudio.master = fgeAudio.ctx.createGain();
+  fgeAudio.master.connect(fgeAudio.ctx.destination);
   fgeProgress("loading", 0, total);
   await Promise.all(files.map(async function (path) {
     fgeAssets.set(fgeNormPath(path), await fgeFetchBytes("assets/" + path));
@@ -280,34 +300,27 @@ async function fgeBoot() {
     fgeImages.set(fgeNormPath(path), await createImageBitmap(blob, { premultiplyAlpha: "none", colorSpaceConversion: "none" }));
     fgeProgress("loading", ++done, total);
   })).concat(sounds.map(async function (s) {
-    soundBytes.set(s.name, await fgeFetchBytes("assets/" + s.path));
+    var bytes = await fgeFetchBytes("assets/" + s.path);
+    var buffer = await fgeAudio.ctx.decodeAudioData(bytes.buffer);
+    var gain = fgeAudio.ctx.createGain();
+    gain.connect(fgeAudio.master);
+    fgeAudio.sounds.set(s.name, { buffer: buffer, gain: gain, loop: !!s.looping, pitch: 1, source: null });
     fgeProgress("loading", ++done, total);
   })));
   fgeShow("fge-start", true);
   fgeProgress("click / tap to start", total, total);
+  // WhyNot: 音を起こすのを await の後にしない — Safari は押した操作の処理の中で resume しないと断る版がある。
   await new Promise(function (resolve) {
-    var go = function () { window.removeEventListener("keydown", go); window.removeEventListener("pointerdown", go); resolve(); };
+    var go = function () {
+      fgeAudio.ctx.resume();
+      window.removeEventListener("keydown", go);
+      window.removeEventListener("pointerdown", go);
+      resolve();
+    };
     window.addEventListener("keydown", go);
     window.addEventListener("pointerdown", go);
   });
   fgeShow("fge-start", false);
-  // 押した操作の中で音を起こす（自動再生の決まり）。鳴らす前に全部デコードし終える（終わる前の 1 回目が落ちるため）。
-  var Ctx = window.AudioContext || window.webkitAudioContext;
-  fgeAudio.ctx = new Ctx();
-  fgeAudio.master = fgeAudio.ctx.createGain();
-  fgeAudio.master.connect(fgeAudio.ctx.destination);
-  var resumed = fgeAudio.ctx.resume();
-  fgeProgress("decoding sounds", 0, sounds.length);
-  var decoded = 0;
-  await Promise.all(sounds.map(async function (s) {
-    var bytes = soundBytes.get(s.name);
-    var buffer = await fgeAudio.ctx.decodeAudioData(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
-    var gain = fgeAudio.ctx.createGain();
-    gain.connect(fgeAudio.master);
-    fgeAudio.sounds.set(s.name, { buffer: buffer, gain: gain, loop: !!s.looping, pitch: 1, source: null });
-    fgeProgress("decoding sounds", ++decoded, sounds.length);
-  }));
-  await resumed;
 
   fgeResizeCanvas();
   new ResizeObserver(fgeResizeCanvas).observe(fgeCanvas);

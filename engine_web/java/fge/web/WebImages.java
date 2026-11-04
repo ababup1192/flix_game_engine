@@ -19,7 +19,10 @@ public final class WebImages {
     @JSBody(params = {"path"}, script = "var b = fgeImages.get(fgeNormPath(path)); return b ? b.height : 0;")
     public static native int height(String path);
 
-    /** 今 bind している TEXTURE_2D へ道の画像を RGBA8 で上げる（無ければ何もしない）。 */
-    @JSBody(params = {"path"}, script = "fgeTexImageBitmap(fgeNormPath(path));")
-    public static native void texImage(String path);
+    /**
+     * 今 bind している TEXTURE_2D へ道の画像を上げる（無ければ何もしない）。alpha が偽なら RGB で上げてアルファを捨てる
+     * （デスクトップが stb で 3 チャンネルに読むのと同じ。透明な所を不透明にする）。
+     */
+    @JSBody(params = {"path", "alpha"}, script = "fgeTexImageBitmap(fgeNormPath(path), alpha);")
+    public static native void texImage(String path, boolean alpha);
 }

@@ -88,7 +88,7 @@ public final class Rewrite {
             if (owner.equals("java/lang/Thread") && name.equals("startVirtualThread")) {
                 note("startVirtualThread");
                 super.visitMethodInsn(Opcodes.INVOKESTATIC, FIX + "VirtualThreads", name, desc, false);
-            } else if (owner.equals("java/util/Arrays") && name.equals("copyOfRange")) {
+            } else if (owner.equals("java/util/Arrays") && name.equals("copyOfRange") && desc.contains("II)")) {
                 note("copyOfRange");
                 super.visitMethodInsn(Opcodes.INVOKESTATIC, FIX + "CopyOfRange", name, desc, false);
             } else if (owner.equals("java/util/zip/Checksum") && name.equals("update") && desc.equals("([B)V")) {

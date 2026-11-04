@@ -12,6 +12,8 @@ pub mod WebLayer {
     import fge.web.Pointer
     import fge.web.WebAudio
     import fge.web.WebGl2
+    import java.lang.System
+    import java.lang.Throwable
 
     /// 1 秒に進めるコマの上限。速い画面（120Hz・165Hz）では描き替えを間引いてこの数に近づける（遊びの速さは dt で同じ・電池のため）。
     pub def tickRate(): Float64 = 60.0
@@ -35,17 +37,17 @@ pub mod WebLayer {
                                              scene3d = Scene3dRenderer.none(), gpuTimer = RenderPaint.noFrameTimer() });
         // 組み込みフォント（fps の表示・名前が合わないフォントの受け皿）とロゴも登録簿へ。
         RenderPaint.addTextures(RenderSplash.install(gl), paint);
-        let fonts = RenderPaint.loadAssets(gl, paint, WebAssets.loader(), config, (phase, done, total) -> Browser.progress(phase, done, total));
         let design = { x = Int32.toFloat64(config#designWidth), y = Int32.toFloat64(config#designHeight) };
         let framebufferSize = () -> (Browser.canvasWidth(), Browser.canvasHeight());
         let state = {
             design = design, maxDeltaTime = config#maxDeltaTime,
             looping = Ref.fresh(Static, false), closeRequested = Ref.fresh(Static, false),
             lastDt = Ref.fresh(Static, 1.0 / tickRate()), fullscreenAsked = Ref.fresh(Static, None),
-            cursor = Ref.fresh(Static, "default"), cursorVisible = Ref.fresh(Static, true),
+            cursor = Ref.fresh(Static, GameEngine.Cursor.Default), cursorVisible = Ref.fresh(Static, true),
             yieldedAt = Ref.fresh(Static, Browser.now()), warnedSounds = Ref.fresh(Static, Set.empty())
         };
-        let result =
+        let fonts = RenderPaint.loadAssets(gl, paint, WebAssets.loader(), config, showProgress(state));
+        let result = reportCrash(() ->
             handleLoadProgress(state, () ->
             handleAudio(state, () ->
             RenderPaintHandlers.handleTarget(gl, paint, framebufferSize, () ->
@@ -55,9 +57,18 @@ pub mod WebLayer {
             handleWindow(state, () ->
             RenderPaintHandlers.handleDraw2d(gl, paint, framebufferSize, (_, _) -> checked_ecast(()), () ->
             handleInput(state, () ->
-            RenderPaintHandlers.handleGpuResources(gl, paint, fonts, f))))))))));
+            RenderPaintHandlers.handleGpuResources(gl, paint, fonts, f)))))))))));
         Browser.ended();
         result
+
+    // WhyNot: 例外を JS の外へ投げたままにしない — 描き替えから戻った後の例外は頁のどこにも出ず、絵が止まったまま黒い画面に見える。
+    /// f の中で投げられた例外を頁に出してから投げ直す。
+    def reportCrash(f: Unit -> a \ ef): a \ ef + IO =
+        try { f() } catch {
+            case e: Throwable =>
+                Browser.error("止まりました: ${e.toString()}");
+                throw e
+        }
 
     /// handler が分け合う状態。looping = ループが回り始めたか（最初の pollEvents の後）・lastDt = 前のコマからの経過（秒）・
     /// fullscreenAsked = 前に頼んだ全画面（同じ値を毎コマ頼み直さない）・yieldedAt = 起動中に最後にブラウザへ手を返した時刻（ms）。
@@ -65,7 +76,7 @@ pub mod WebLayer {
         design = Vec2.Vec2, maxDeltaTime = Float64,
         looping = Ref[Bool, Static], closeRequested = Ref[Bool, Static],
         lastDt = Ref[Float64, Static], fullscreenAsked = Ref[Option[Bool], Static],
-        cursor = Ref[String, Static], cursorVisible = Ref[Bool, Static],
+        cursor = Ref[GameEngine.Cursor, Static], cursorVisible = Ref[Bool, Static],
         yieldedAt = Ref[Float64, Static], warnedSounds = Ref[Set[String], Static]
     }
 
@@ -74,6 +85,7 @@ pub mod WebLayer {
         run f() with handler Platform.Window {
             def pollEvents(k) = {
                 if (not Ref.get(st#looping)) { Ref.put(true, st#looping); Browser.started() } else ();
+                Browser.beginFrame();
                 k(())
             }
             def shouldClose(k) = k(Ref.get(st#closeRequested))
@@ -83,7 +95,7 @@ pub mod WebLayer {
                 Ref.put(AnimationFrame.waitTick(tickRate()), st#lastDt);
                 k(())
             }
-            def setCursor(cursor, k) = { Ref.put(cursorCss(cursor), st#cursor); applyCursor(st); k(()) }
+            def setCursor(cursor, k) = { Ref.put(cursor, st#cursor); applyCursor(st); k(()) }
             def setCursorVisible(visible, k) = { Ref.put(visible, st#cursorVisible); applyCursor(st); k(()) }
             def setMouseCaptured(_captured, k) = k(())
             def setFullscreen(on, k) = {
@@ -96,7 +108,7 @@ pub mod WebLayer {
         }
 
     def applyCursor(st: State): Unit \ IO =
-        Browser.setCursor(if (Ref.get(st#cursorVisible)) Ref.get(st#cursor) else "none")
+        Browser.setCursor(if (Ref.get(st#cursorVisible)) cursorCss(Ref.get(st#cursor)) else "none")
 
     /// GameEngine.Cursor を CSS の cursor の値へ。
     def cursorCss(cursor: GameEngine.Cursor): String = match cursor {
@@ -119,7 +131,7 @@ pub mod WebLayer {
             def getDeltaTime(k) = k(Duration.seconds(Float64.min(Ref.get(st#lastDt), st#maxDeltaTime)))
         }
 
-    /// Platform.Input を fge.web のキーとマウスの表で受ける。マウスの位置は canvas の画素から design の座標へ（黒帯を引く）。
+    /// Platform.Input を fge.web のキーとマウスの表で受ける。
     def handleInput(st: State, f: Unit -> a \ ef): a \ (ef - Platform.Input) + IO =
         run f() with handler Platform.Input {
             def isKeyPressed(key, k) = k(Keys.isDown(keyCode(key)))
@@ -136,12 +148,12 @@ pub mod WebLayer {
             def isWindowFocused(k) = k(Browser.hasFocus())
         }
 
-    /// canvas の描き先の画素（左上原点）を design の座標へ。
+    // WhyNot: デスクトップの LwjglInput.windowToDesign の式（ウィンドウの大きさで割るだけ）にそろえない — 黒帯が出る大きさで指した所とずれる。
+    /// canvas の描き先の画素（左上原点）を design の座標へ（黒帯を引く）。
     def canvasToDesign(design: Vec2.Vec2, px: Float64, py: Float64): Vec2.Vec2 \ IO =
         let fbW = Browser.canvasWidth();
         let fbH = Browser.canvasHeight();
         let (vpX, vpY, vpW, vpH) = RenderFrame.calcViewport(fbW, fbH, design#x, design#y);
-        // viewport の vpY は下端からなので、上端からの黒帯の幅に直す。
         let top = fbH - vpY - vpH;
         { x = (px - Int32.toFloat64(vpX)) * design#x / Int32.toFloat64(Int32.max(1, vpW)),
           y = (py - Int32.toFloat64(top)) * design#y / Int32.toFloat64(Int32.max(1, vpH)) }
@@ -224,7 +236,7 @@ pub mod WebLayer {
                 if (Set.memberOf(name, warned)) ()
                 else {
                     Ref.put(Set.insert(name, warned), st#warnedSounds);
-                    println("audio: 知らない音 '${name}' — ${op} は何もしない（project.json の sounds に同名の宣言があるか確認）")
+                    System.err.println("audio: 知らない音 '${name}' — ${op} は何もしない（project.json の sounds に同名の宣言があるか確認）")
                 };
                 false
             }
@@ -241,23 +253,25 @@ pub mod WebLayer {
             def reloadAudio(_name, _path, k) = k(())
         }
 
-    /// 起動中に、手を返さずに続けてよい長さ（ms）。これを超えたら次の描き替えまで待ち、頁の帯を進めてタブを固まらせない。
+    /// 起動中に、手を返さずに続けてよい長さ（ms）。
     def yieldMillis(): Float64 = 50.0
 
-    /// LoadProgress を頁の帯で受ける。ループが回り始めた後は何もしない。仕事は順に流す（ブラウザの wasm は 1 本の糸）。
-    /// 画像は起動の前に fge-web.js が解いておくので、ここで解く口は持たない。
+    // WhyNot: 起動中に手を返さずに読み続けない — 頁の進み具合のバーが描き替わらず、タブも固まって見える。
+    /// 起動の進み具合を頁のバーに出し、前に手を返してから yieldMillis が経っていれば次の描き替えまでブラウザへ手を返す。ループが回り始めた後は何もしない。
+    def showProgress(st: State): (String, Int32, Int32) -> Unit \ IO = (phase, done, total) ->
+        if (Ref.get(st#looping)) ()
+        else {
+            Browser.progress(phase, done, total);
+            if (Browser.now() - Ref.get(st#yieldedAt) >= yieldMillis()) {
+                discard AnimationFrame.waitFrame();
+                Ref.put(Browser.now(), st#yieldedAt)
+            } else ()
+        }
+
+    /// LoadProgress を頁の進み具合のバーで受ける。仕事は順に流す（ブラウザの wasm は 1 本の糸）。
+    /// 画像は起動の前に fge-web.js が解いておくので、ここで解く API は持たない（project.json の textures に載せる）。
     def handleLoadProgress(st: State, f: Unit -> a \ ef): a \ (ef - LoadProgress) + IO =
-        let report = (phase: String, done: Int32, total: Int32) -> {
-            if (Ref.get(st#looping)) ()
-            else {
-                Browser.progress(phase, done, total);
-                let now = Browser.now();
-                if (now - Ref.get(st#yieldedAt) >= yieldMillis()) {
-                    discard AnimationFrame.waitFrame();
-                    Ref.put(Browser.now(), st#yieldedAt)
-                } else ()
-            }
-        };
+        let report = showProgress(st);
         run f() with handler LoadProgress {
             def report(phase, done, total, k) = { report(phase, done, total); k(()) }
             def runTasks(phase, tasks, k) = { LoadProgress.runTasksInOrder(report, phase, tasks); k(()) }

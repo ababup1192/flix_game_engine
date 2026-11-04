@@ -96,8 +96,21 @@ public class TReentrantLock {
             }
 
             public long awaitNanos(long nanos) throws InterruptedException {
-                await();
-                return 0;
+                long deadline = System.nanoTime() + nanos;
+                int seen;
+                synchronized (conditionMonitor) {
+                    seen = generation;
+                }
+                int held = lock.releaseAll();
+                synchronized (conditionMonitor) {
+                    long left = deadline - System.nanoTime();
+                    while (seen == generation && left > 0) {
+                        conditionMonitor.wait(Math.max(1, left / 1_000_000));
+                        left = deadline - System.nanoTime();
+                    }
+                }
+                lock.reacquire(held);
+                return deadline - System.nanoTime();
             }
 
             public void signal() {
