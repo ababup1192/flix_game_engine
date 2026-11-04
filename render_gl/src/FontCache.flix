@@ -6,7 +6,6 @@
 // **読めないときは黙って作り直す。** 取っておいた物が壊れていても・古くても・書き込めなくても、
 // 起動が止まることは無い（遅くなるだけ）。
 mod RenderFontCache {
-    import org.lwjgl.BufferUtils
     import java.io.File
     import java.io.FileInputStream
     import java.io.RandomAccessFile
@@ -17,6 +16,7 @@ mod RenderFontCache {
     import java.lang.System
     import java.lang.Exception
     import java.nio.ByteBuffer
+    import java.nio.ByteOrder
     import java.nio.channels.FileChannel
     import java.security.MessageDigest
     import java.util.zip.CRC32
@@ -94,57 +94,56 @@ mod RenderFontCache {
         try {
             let path = pathOf(key);
             if (not new File(path).exists()) None
-            else {
-                let raf = new RandomAccessFile(path, "r");
-                let ok = raf.readLong() == magic() and raf.readInt() == RenderFont.bakeVersion();
-                if (not ok) { raf.close(); None }
-                else {
-                    let side = raf.readInt();
-                    let fontSize = raf.readDouble();
-                    let ascent = raf.readDouble();
-                    let descent = raf.readDouble();
-                    let lineGap = raf.readDouble();
-                    let glyphCount = raf.readInt();
-                    // 壊れたファイルの出鱈目な数でいきなり大きな置き場を取らないよう、
-                    // ありえる範囲かどうかを先に見る。
-                    if (side <= 0 or side > 8192 or glyphCount < 0 or glyphCount > 200000) {
-                        raf.close();
-                        None
-                    } else {
-                    let pixelBytes = side * side;
-                    // 1 字ずつ読むと読み出しの回数が字数ぶん積み上がるので、字の表は一度に取る。
-                    let table: Array[Int8, Static] = Array.empty(Static, glyphCount * glyphBytes());
-                    raf.readFully(table);
-                    let tableSum = checksumOf(table);
-                    let glyphs = decodeGlyphs(table, glyphCount);
-                    let pixels = BufferUtils.createByteBuffer(pixelBytes);
-                    let channel = raf.getChannel();
-                    readFully(channel, pixels);
-                    discard pixels.position(0);
-                    let storedTable = raf.readLong();
-                    let storedPixels = raf.readLong();
-                    raf.close();
-                    discard pixels.position(0);
-                    let crc = new CRC32();
-                    crc.update(pixels);
-                    discard pixels.position(0);
-                    // 字の表の検算も見るのが肝。ここが壊れた物を通すと、絵は出るのに
-                    // 字の置き場所だけがずれる — 2 回目の起動でだけ字が乱れる形になり、
-                    // 一番気付きにくい。
-                    if (tableSum != storedTable or crc.getValue() != storedPixels) None
-                    else Some({
-                        atlas = { textureName = "font_${entry#name}",
-                                  fontSize = fontSize,
-                                  textureSize = Int32.toFloat64(side),
-                                  ascent = ascent, descent = descent, lineGap = lineGap,
-                                  glyphs = glyphs },
-                        side = side, pixels = pixels })
-                    }
-                }
-            }
+            else decode(readAllBytes(path), "font_${entry#name}")
         } catch {
             case _: Exception => None
         }
+
+    /// アトラスのファイルの中身（store が書く形）を読む。壊れている・版が違う・検算が合わないときは None。
+    /// ファイルを開かないので、ファイルの無い機種（アセットバンドルの byte 列）からも同じ物で読める。
+    /// pixels は GC に任せる直接バッファ（起動の間ずっと持つ）。
+    pub def decode(bytes: Array[Int8, Static], textureName: String): Option[RenderFont.BakedFont] \ IO =
+        let input = ByteBuffer.wrap(bytes);
+        if (Array.length(bytes) < headerSize() or input.getLong() != magic() or input.getInt() != RenderFont.bakeVersion()) None
+        else {
+            let side = input.getInt();
+            let fontSize = input.getDouble();
+            let ascent = input.getDouble();
+            let descent = input.getDouble();
+            let lineGap = input.getDouble();
+            let glyphCount = input.getInt();
+            // 壊れたファイルの出鱈目な数でいきなり大きな置き場を取らないよう、ありえる範囲かどうかを先に見る。
+            let tableBytes = glyphCount * glyphBytes();
+            let pixelBytes = side * side;
+            if (side <= 0 or side > 8192 or glyphCount < 0 or glyphCount > 200000
+                or Array.length(bytes) != headerSize() + tableBytes + pixelBytes + 16) None
+            else {
+                let table: Array[Int8, Static] = Array.empty(Static, tableBytes);
+                discard input.get(table);
+                let pixelStart = headerSize() + tableBytes;
+                let pixels = ByteBuffer.allocateDirect(pixelBytes).order(ByteOrder.nativeOrder());
+                discard pixels.put(bytes, pixelStart, pixelBytes);
+                discard pixels.position(0);
+                discard input.position(pixelStart + pixelBytes);
+                let storedTable = input.getLong();
+                let storedPixels = input.getLong();
+                let crc = new CRC32();
+                crc.update(bytes, pixelStart, pixelBytes);
+                // 字の表の検算も見るのが肝。ここが壊れた物を通すと、絵は出るのに
+                // 字の置き場所だけがずれる — 2 回目の起動でだけ字が乱れる形になり、一番気付きにくい。
+                if (checksumOf(table) != storedTable or crc.getValue() != storedPixels) None
+                else Some({
+                    atlas = { textureName = textureName,
+                              fontSize = fontSize,
+                              textureSize = Int32.toFloat64(side),
+                              ascent = ascent, descent = descent, lineGap = lineGap,
+                              glyphs = decodeGlyphs(table, glyphCount) },
+                    side = side, pixels = pixels })
+            }
+        }
+
+    /// 頭の決まった大きさ（magic・版・side・fontSize・ascent・descent・lineGap・字の数）。
+    def headerSize(): Int32 = 8 + 4 + 4 + 8 * 4 + 4
 
     /// 焼き上がりを取っておく。書けなくても黙って諦める（次の起動が遅いだけ）。
     /// 途中まで書いたファイルが残らないよう、別名で書いてから置き換える。
@@ -265,12 +264,7 @@ mod RenderFontCache {
             Map.insert(cp, gm, acc)
         }, Map.empty())
 
-    /// 1 回の read/write では全部運びきれないことがあるので、残りが無くなるまで繰り返す。
-    def readFully(channel: FileChannel, buf: ByteBuffer): Unit \ IO =
-        if (not buf.hasRemaining()) ()
-        else if (channel.read(buf) < 0) ()
-        else readFully(channel, buf)
-
+    /// 1 回の write では全部運びきれないことがあるので、残りが無くなるまで繰り返す。
     def writeFully(channel: FileChannel, buf: ByteBuffer): Unit \ IO =
         if (not buf.hasRemaining()) ()
         else { discard channel.write(buf); writeFully(channel, buf) }

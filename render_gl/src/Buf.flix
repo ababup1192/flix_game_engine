@@ -4,8 +4,6 @@
 
 mod RenderBuf {
     import fge.gl.GlContext
-    import fge.gl.GlContext
-    import fge.gl.GlContext
     import java.nio.FloatBuffer
 
     /// 書き込み先の入れ物。中身を差し替えられるように 1 スロットの配列で持つ。

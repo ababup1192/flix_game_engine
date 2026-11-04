@@ -435,7 +435,7 @@ pub mod LwjglLayer {
         RenderSplash.show(splashState, drawSplash, design, "starting up...", 0, 0);
 
         // テクスチャ・フォント・組み込みの放射テクスチャを読み、塗りのコアの登録簿へ載せる（起動画面に進み具合を出しながら）。
-        let fonts = RenderPaint.loadAssets(gl, paint, config, splash);
+        let fonts = RenderPaint.loadAssets(gl, paint, LwjglAssets.loader(), config, splash);
 
         RenderSplash.show(splashState, drawSplash, design, "starting audio...", 0, 0);
         let audio = openAudio(config, muted, splash);

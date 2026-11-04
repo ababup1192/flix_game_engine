@@ -153,6 +153,23 @@ mod TestFontCache {
         discard new File(root).mkdirs();
         Assert.assertEq(expected = true, Option.isEmpty(RenderFont.loadUsedGlyphs(root)))
 
+    /// ファイルを開かずに、取っておいた中身の byte 列から同じ焼き上がりが読める（ファイルの無い機種の読み口）。
+    @Test
+    def testDecodeReadsStoredBytes(): Unit \ IO + Assert =
+        useScratchDir();
+        let key = keyFor("decode");
+        let src = sample();
+        RenderFontCache.store(key, src);
+        let bytes = Files.readAllBytes(Paths.get("${RenderFontCache.dir()}/${key}.fontatlas"));
+        let sides = RenderFontCache.decode(bytes, "font_t") |> Option.map(b -> (b#side, b#atlas#textureName));
+        Assert.assertEq(expected = Some((src#side, "font_t")), sides)
+
+    /// 途中で切れた byte 列は「無かったこと」にする（読み出しの途中で例外にしない）。
+    @Test
+    def testDecodeRejectsTruncatedBytes(): Unit \ IO + Assert =
+        let bytes: Array[Int8, Static] = Array#{0x46i8, 0x47i8, 0x45i8} @ Static;
+        Assert.assertEq(expected = true, Option.isEmpty(RenderFontCache.decode(bytes, "font_t")))
+
     /// 取ってない印は素直に「無い」。
     @Test
     def testMissingKeyIsNone(): Unit \ IO + Assert =

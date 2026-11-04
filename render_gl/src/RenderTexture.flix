@@ -1,44 +1,36 @@
-// RenderTexture — テクスチャ読み込み (STBImage + OpenGL アップロード)
-//
-// LwjglLayer.flix の loadTexture / loadTextureRegistry を移植。
+// RenderTexture — 画素を GPU のテクスチャへ上げる所（ARGB の int 列・画像のバイト列・字の距離場）。
+// 画像のデコードと字の生成は機種ごとの読み込み（RenderPaint.AssetLoader）が受け持つ。
 
 pub mod RenderTexture {
     import fge.gl.GlContext
-    import fge.gl.GlContext
     import fge.gl.GlConst
-    import fge.gl.GlContext
-    import org.lwjgl.stb.STBImage
-    import org.lwjgl.system.MemoryStack
+    import java.nio.ByteBuffer
     import java.nio.IntBuffer
 
-    /// PNG/JPG など STBImage がサポートする画像をロードし、OpenGL テクスチャとして
-    /// アップロードする。NEAREST フィルタ + REPEAT ラップ (ピクセルアート前提)。
-    pub def loadTexture(gl: GlContext, path: String, alpha: Bool): RenderAsset.TextureInfo \ IO =
-        let stack = MemoryStack.stackPush();
-        let w = stack.mallocInt(1);
-        let h = stack.mallocInt(1);
-        let c = stack.mallocInt(1);
-        STBImage.stbi_set_flip_vertically_on_load(false);
-        let channels = if (alpha) 4 else 3;
-        let data = STBImage.stbi_load(path, w, h, c, channels);
-        if (Object.isNull(data)) {
-            discard MemoryStack.stackPop();
-            bug!("Failed to load texture: ${path}")
-        } else {
-            let texWidth = w.get(0);
-            let texHeight = h.get(0);
-            let textureID = gl.createTexture();
-            gl.bindTexture(GlConst.TEXTURE_2D, textureID);
-            let format = if (alpha) GlConst.RGBA else GlConst.RGB;
-            gl.texImageBytes(format, texWidth, texHeight, data);
-            gl.texParameteri(GlConst.TEXTURE_2D, GlConst.TEXTURE_WRAP_S, GlConst.REPEAT);
-            gl.texParameteri(GlConst.TEXTURE_2D, GlConst.TEXTURE_WRAP_T, GlConst.REPEAT);
-            gl.texParameteri(GlConst.TEXTURE_2D, GlConst.TEXTURE_MIN_FILTER, GlConst.NEAREST);
-            gl.texParameteri(GlConst.TEXTURE_2D, GlConst.TEXTURE_MAG_FILTER, GlConst.NEAREST);
-            STBImage.stbi_image_free(data);
-            discard MemoryStack.stackPop();
-            { id = GpuHandle.wrapTextureId(textureID), width = Int32.toFloat64(texWidth), height = Int32.toFloat64(texHeight) }
-        }
+    /// 画像のバイト列（1 画素 4 バイトの RGBA か、alpha が偽なら 3 バイトの RGB・行優先・上の行から）を GPU へ上げる。
+    /// NEAREST フィルタ + REPEAT ラップ (ピクセルアート前提)。
+    pub def uploadBytes(gl: GlContext, image: { width = Int32, height = Int32, alpha = Bool }, data: ByteBuffer): RenderAsset.TextureInfo \ IO =
+        let textureID = gl.createTexture();
+        gl.bindTexture(GlConst.TEXTURE_2D, textureID);
+        let format = if (image#alpha) GlConst.RGBA else GlConst.RGB;
+        gl.texImageBytes(format, image#width, image#height, data);
+        gl.texParameteri(GlConst.TEXTURE_2D, GlConst.TEXTURE_WRAP_S, GlConst.REPEAT);
+        gl.texParameteri(GlConst.TEXTURE_2D, GlConst.TEXTURE_WRAP_T, GlConst.REPEAT);
+        gl.texParameteri(GlConst.TEXTURE_2D, GlConst.TEXTURE_MIN_FILTER, GlConst.NEAREST);
+        gl.texParameteri(GlConst.TEXTURE_2D, GlConst.TEXTURE_MAG_FILTER, GlConst.NEAREST);
+        { id = GpuHandle.wrapTextureId(textureID), width = Int32.toFloat64(image#width), height = Int32.toFloat64(image#height) }
+
+    /// 字の距離場（side × side・1 画素 1 バイト）を GPU へ上げる。距離場は滑らかに補間して読ませる — 拡大しても輪郭が
+    /// 階段にならず、1 枚のアトラスからどの大きさの字もくっきり出せる。pixels は頭から読む。
+    pub def uploadAlphaMask(gl: GlContext, side: Int32, pixels: ByteBuffer): RenderAsset.TextureInfo \ IO =
+        discard pixels.position(0);
+        let texId = gl.createTexture();
+        gl.bindTexture(GlConst.TEXTURE_2D, texId);
+        gl.texImageAlphaMask(side, side, pixels);
+        gl.texParameteri(GlConst.TEXTURE_2D, GlConst.TEXTURE_MIN_FILTER, GlConst.LINEAR);
+        gl.texParameteri(GlConst.TEXTURE_2D, GlConst.TEXTURE_MAG_FILTER, GlConst.LINEAR);
+        let sideF = Int32.toFloat64(side);
+        { id = GpuHandle.wrapTextureId(texId), width = sideF, height = sideF }
 
     /// メモリ上の ARGB 画素(行優先 width×height — PxSpriteAtlas.bake の出力そのまま)を
     /// OpenGL テクスチャとしてアップロードする(実行時アトラス焼きの GL 側出口)。
@@ -95,19 +87,5 @@ pub mod RenderTexture {
         f(buf);
         gl.freeInts(buf)
 
-    /// テクスチャマニフェストから全テクスチャを読み込み、論理名 → TextureInfo の
-    /// マップを返す。onProgress には「読み終えた枚数 / 全枚数」を渡す（起動画面が進み具合を出す）。
-    pub def loadTextureRegistry(gl: GlContext, manifest: List[RenderAsset.TextureEntry],
-                                onProgress: (Int32, Int32) -> Unit \ IO): RenderAsset.TextureRegistry \ IO =
-        let total = List.length(manifest);
-        onProgress(0, total);
-        let result = List.foldLeft((acc, entry) -> {
-            let (registry, done) = acc;
-            let texInfo = loadTexture(gl, entry#path, entry#hasAlpha);
-            println("  ${entry#path} loaded (${texInfo#width}x${texInfo#height})");
-            onProgress(done + 1, total);
-            (Map.insert(entry#name, texInfo, registry), done + 1)
-        }, (Map.empty(), 0), manifest);
-        fst(result)
 
 }

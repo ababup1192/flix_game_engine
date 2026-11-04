@@ -11,9 +11,7 @@
 // 作るのは 1 字 1 ミリ秒弱。漏れるのは多くて数字なので、1 コマの中で片付く。
 mod RenderGlyphGrow {
     import fge.gl.GlContext
-    import fge.gl.GlContext
     import fge.gl.GlConst
-    import fge.gl.GlContext
     import org.lwjgl.stb.STBTruetype
     import org.lwjgl.stb.STBTTFontinfo
     import org.lwjgl.BufferUtils

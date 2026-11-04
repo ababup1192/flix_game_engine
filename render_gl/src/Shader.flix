@@ -4,9 +4,7 @@
 
 mod RenderShader {
     import fge.gl.GlContext
-    import fge.gl.GlContext
     import fge.gl.GlConst
-    import fge.gl.GlContext
 
     // ========================================================================
     // Shader Sources

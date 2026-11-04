@@ -11,9 +11,6 @@
 
 mod RenderFont {
     import fge.gl.GlContext
-    import fge.gl.GlContext
-    import fge.gl.GlConst
-    import fge.gl.GlContext
     import org.lwjgl.stb.STBTruetype
     import org.lwjgl.stb.STBTTFontinfo
     import org.lwjgl.BufferUtils
@@ -282,20 +279,7 @@ mod RenderFont {
     pub def bakeFontAtlas(gl: GlContext, entry: RenderAsset.FontEntry, wanted: Option[Set[Int32]],
                           onGlyph: (Int32, Int32) -> Unit \ IO): (FontAtlas, RenderAsset.TextureInfo) \ IO =
         let baked = RenderFontCache.loadOrBake(entry, wanted, onGlyph);
-        (baked#atlas, uploadFont(gl, baked))
-
-    /// 焼き上がりを GPU へ載せる。距離場は滑らかに補間して読ませる — 拡大しても輪郭が
-    /// 階段にならず、1 枚のアトラスからどの大きさの字もくっきり出せる。
-    pub def uploadFont(gl: GlContext, baked: BakedFont): RenderAsset.TextureInfo \ IO =
-        let side = baked#side;
-        discard baked#pixels.position(0);
-        let texId = gl.createTexture();
-        gl.bindTexture(GlConst.TEXTURE_2D, texId);
-        gl.texImageAlphaMask(side, side, baked#pixels);
-        gl.texParameteri(GlConst.TEXTURE_2D, GlConst.TEXTURE_MIN_FILTER, GlConst.LINEAR);
-        gl.texParameteri(GlConst.TEXTURE_2D, GlConst.TEXTURE_MAG_FILTER, GlConst.LINEAR);
-        let sideF = Int32.toFloat64(side);
-        { id = GpuHandle.wrapTextureId(texId), width = sideF, height = sideF }
+        (baked#atlas, RenderTexture.uploadAlphaMask(gl, baked#side, baked#pixels))
 
     /// 全グリフを SDF にして 1 枚へ敷き詰める（GL には一切触らない）。
     /// fontBytes は TTF の中身 — 呼び手が既に読んでいる物を渡す（見分けの印を作るのに要るので二度読みしない）。

@@ -9,9 +9,7 @@
 // レンダーターゲットが開いていればそこへ）→ 画面なら swap（窓）か読み戻し（GlOffscreen）。
 mod RenderPaint {
     import fge.gl.GlContext
-    import fge.gl.GlContext
     import fge.gl.GlConst
-    import fge.gl.GlContext
     import java.lang.System
 
     /// 1 コマの描く命令（画面へのコマ。リサイズで描き直す時・注釈のスクショも同じ物を使う）。
@@ -446,57 +444,40 @@ mod RenderPaint {
         missing = Ref[Set[String], Static]
     }
 
+    /// 機種ごとの素材の読み込み（デスクトップは LwjglAssets.loader）。画像のデコードと字の生成は機種で違うので、本体は上げる所だけを持つ。
+    /// loadTextures(gl, manifest, onProgress) = 画像を全部読んで上げ、名前 → TextureInfo（onProgress は済んだ枚数・全部の枚数）。
+    /// loadFonts(gl, request, progress) = ゲームのフォントのアトラスを用意して上げる（progress は文言・済んだ数・全部の数）。
+    pub type alias AssetLoader = {
+        loadTextures = (GlContext, List[RenderAsset.TextureEntry], (Int32, Int32) -> Unit \ IO) -> RenderAsset.TextureRegistry \ IO,
+        loadFonts = (GlContext, FontRequest, (String, Int32, Int32) -> Unit \ IO) -> FontsLoaded \ IO
+    }
+
+    /// フォントの読み込みに渡す物。registry = 足す先の登録簿（アトラスの画像を足して返す）・rootDir と glyphs = 出しうる字を集める元。
+    pub type alias FontRequest = { manifest = List[RenderAsset.FontEntry], registry = RenderAsset.TextureRegistry, rootDir = String, glyphs = String }
+
+    /// 用意したフォント。atlases = 名前 → アトラス・registry = アトラスの画像を足した登録簿・grow = 起動時に用意しなかった字を足す。
+    pub type alias FontsLoaded = { atlases = Map[String, FontAtlas], registry = RenderAsset.TextureRegistry,
+                                   grow = (GlContext, FontAtlas, Set[Int32]) -> FontAtlas \ IO }
+
     /// project.json の textures・fonts を読み、組み込みの放射テクスチャと一緒に登録簿へ載せる。
     /// progress = 進み具合（文言・済んだ数・全部の数。窓では起動画面に出す。出さないなら何もしない関数）。
-    pub def loadAssets(gl: GlContext, paint: Paint,
+    pub def loadAssets(gl: GlContext, paint: Paint, loader: AssetLoader,
                        config: { textureManifest = List[RenderAsset.TextureEntry], fontManifest = List[RenderAsset.FontEntry],
                                  rootDir = String, glyphs = String | r },
                        progress: (String, Int32, Int32) -> Unit \ IO): Fonts \ IO =
         let splash = progress;
         println("Loading textures...");
-        let registry0 = RenderTexture.loadTextureRegistry(gl, config#textureManifest,
+        let registry0 = loader#loadTextures(gl, config#textureManifest,
             (done, total) -> splash("loading images...", done, total));
 
-        // このゲームが出しうる字を先に集める（数十ミリ秒）。フォントが持つ字を全部用意すると
-        // 日本語 1 本で数千〜2万字になり、起動が数十秒止まる。
-        let wantedGlyphs = RenderFont.startupGlyphs(config#rootDir, config#glyphs);
-        Option.forEach(cps -> println("[RenderFont] このゲームが出しうる字: ${Set.size(cps)} 字"),
-                       wantedGlyphs);
-
-        println("Baking font atlases...");
-        // 文言はフォントごとに 1 回だけ組み立てる（進捗は字ごとに数千回来る）。
-        let fontPhases: Ref[Map[String, String], Static] = Ref.fresh(Static, Map.empty());
-        let fontPhaseOf = (name: String) -> match Map.get(name, Ref.get(fontPhases)) {
-            case Some(text) => text
-            case None =>
-                let text = "loading font ${name}...";
-                Ref.put(Map.insert(name, text, Ref.get(fontPhases)), fontPhases);
-                text
-        };
-        let (gameAtlases, registry) = RenderFont.bakeFontAtlases(gl, config#fontManifest, registry0,
-            wantedGlyphs, (name, done, total) -> splash(fontPhaseOf(name), done, total));
+        let loaded = loader#loadFonts(gl, { manifest = config#fontManifest, registry = registry0, rootDir = config#rootDir, glyphs = config#glyphs },
+            splash);
+        let gameAtlases = loaded#atlases;
+        let registry = loaded#registry;
         // 組み込みフォントも名前で引けるようにする（fps 表示・フォント名が合わないときの受け皿）。
         // アトラスは実行中に育つ（起動時に用意しなかった字を後から足す）ので可変で持つ。
         let fontAtlasesRef = Ref.fresh(Static,
             Map.insert(BootFont.name(), BootFont.atlas(), gameAtlases));
-        let growTable = RenderGlyphGrow.newTable();
-        List.forEach(entry -> {
-            match Map.get(entry#name, gameAtlases) {
-                case None =>
-                    Log.warn("font: フォント '${entry#name}' のアトラスが用意できていない"
-                        + " — 起動時に用意しなかった字は後から足せない（project.json の fonts の path を確認）")
-                case Some(atlas) =>
-                    match Map.get(atlas#textureName, registry) {
-                        case None =>
-                            Log.warn("font: フォント '${entry#name}' のアトラス画像"
-                                + " '${atlas#textureName}' が registry に無い"
-                                + " — 起動時に用意しなかった字は後から足せない")
-                        case Some(texInfo) =>
-                            RenderGlyphGrow.register(growTable, atlas,
-                                { path = entry#path, texId = GpuHandle.textureIdInt(texInfo#id) })
-                    }
-            }
-        }, config#fontManifest);
         // 起動画面の分（組み込みフォント・ロゴ）を残したままゲームのテクスチャを足す。
         addTextures(registry, paint);
 
@@ -511,7 +492,7 @@ mod RenderPaint {
         putTexture(RadialBuiltin.lightName(), radialLight, paint);
         putTexture(RadialBuiltin.darkName(), radialDark, paint);
 
-        { atlases = fontAtlasesRef, grow = (g, atlas, cps) -> RenderGlyphGrow.ensure(g, growTable, atlas, cps),
+        { atlases = fontAtlasesRef, grow = loaded#grow,
           missing = Ref.fresh(Static, Set.empty()) }
 
     /// Game.getFontAtlas の中身。名前が合わないだけでゲームが落ちるより、組み込みフォントで出す方がまし。

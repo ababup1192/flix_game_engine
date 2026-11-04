@@ -4,8 +4,6 @@
 // 間引き・画面交換の待ち・イベントの汲み上げ。
 mod RenderSplash {
     import fge.gl.GlContext
-    import fge.gl.GlContext
-    import fge.gl.GlContext
     import org.lwjgl.glfw.GLFW
     import java.lang.System
 

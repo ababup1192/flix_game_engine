@@ -4,10 +4,8 @@
 
 mod RenderSprite {
     import fge.gl.GlContext
-    import fge.gl.GlContext
     import fge.gl.GlConst
     import java.nio.FloatBuffer
-    import fge.gl.GlContext
 
     /// 共有 quad の VAO/VBO を生成する。
     /// vertex layout: (x, y, u, v) の 4 floats。

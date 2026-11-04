@@ -4,9 +4,7 @@
 // 反転は貼るとき（RenderFrame.emitSprite の uv 反転）に吸収し、ここでは何もしない。
 mod RenderTargetGl {
     import fge.gl.GlContext
-    import fge.gl.GlContext
     import fge.gl.GlConst
-    import fge.gl.GlContext
 
     /// レンダーターゲット 1 枚の GL 実体。tex が registry へ TextureInfo として渡る。
     /// depthStencil = mask 付きの面・sprite を抜くためのステンシル（テクセル寸法の renderbuffer）。

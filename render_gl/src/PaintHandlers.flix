@@ -7,7 +7,6 @@
 
 mod RenderPaintHandlers {
     import fge.gl.GlContext
-    import fge.gl.GlContext
     import java.lang.System
 
     /// GPU の資源（タイルのバッファ・テクスチャ・字・シェーダーのプログラム）を paint の登録簿で受ける。

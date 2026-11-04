@@ -8,10 +8,8 @@
 
 mod RenderFrame {
     import fge.gl.GlContext
-    import fge.gl.GlContext
     import fge.gl.GlConst
     import java.nio.FloatBuffer
-    import fge.gl.GlContext
 
     /// z 安定ソート列に混ぜる 6 種の描画物。MTile=タイルマップ 1 層（1 draw call）、
     /// MSprite=スプライト/箱、MPoly=動的多角形、MStatic=永続 VBO のレンジ（頂点は運ばず

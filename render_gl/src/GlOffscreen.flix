@@ -110,7 +110,7 @@ pub mod GlOffscreen {
                                                      scene3d = Render3d.makeRenderer(gl, config), gpuTimer = GpuTimer.frameTimer() });
                     // 組み込みのフォント（受け皿）とロゴを先に載せる（窓の起動画面と同じ並び）。
                     RenderPaint.addTextures(RenderSplash.install(gl), paint);
-                    let fonts = RenderPaint.loadAssets(gl, paint, config, (_, _, _) -> checked_ecast(()));
+                    let fonts = RenderPaint.loadAssets(gl, paint, LwjglAssets.loader(), config, (_, _, _) -> checked_ecast(()));
                     let stamps = config#textureManifest
                         |> List.foldLeft((acc, entry) -> Map.insert(entry#name, stampOf(entry#path), acc), Map.empty());
                     Ok(PreparedData.PreparedData({ context = context, caps = caps, gl = opened, paint = paint, fonts = fonts,
@@ -342,7 +342,7 @@ pub mod GlOffscreen {
                 if (size < 0i64) count
                 else {
                     Option.forEach(info -> RenderTexture.deleteTexture(s#gl#gl, info), RenderPaint.textureInfo(s#paint, entry#name));
-                    RenderPaint.putTexture(entry#name, RenderTexture.loadTexture(s#gl#gl, entry#path, entry#hasAlpha), s#paint);
+                    RenderPaint.putTexture(entry#name, LwjglAssets.loadTexture(s#gl#gl, entry#path, entry#hasAlpha), s#paint);
                     count + 1
                 }
             }
