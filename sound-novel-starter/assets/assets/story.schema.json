@@ -101,6 +101,9 @@
         "toTitle": {
           "type": "string"
         },
+        "menu": {
+          "type": "string"
+        },
         "saveTitle": {
           "type": "string"
         },
