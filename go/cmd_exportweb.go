@@ -198,7 +198,7 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 		return 2
 	}
 	cp := strings.Join(append(append([]string{p.WebToolsJar}, jars...), rewritten), string(os.PathListSeparator))
-	teavmCode := runLogged(p.Work, teavmLog, false, java, "-Xmx6g", "-cp", cp, "org.teavm.cli.TeaVMRunner",
+	teavmCode := runLogged(p.Work, teavmLog, false, java, "-Xmx"+teavmHeap(), "-cp", cp, "org.teavm.cli.TeaVMRunner",
 		"-t", "wasm-gc", "-O", "2", "-d", wasmDir, "-f", "classes.wasm", "Main")
 	logText, _ := os.ReadFile(teavmLog)
 	if errs, shown := teavmErrors(string(logText), 5); errs > 0 {
@@ -208,7 +208,7 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 	}
 	wasm := filepath.Join(wasmDir, "classes.wasm")
 	if teavmCode != 0 || !fileExists(wasm) {
-		fmt.Fprintf(errOut, "%s\nfge export-web: TeaVM が classes.wasm を出さなかった（終わりの番号 %d・ログ %s）。\n  次: ログの最後を読む（メモリ不足なら -Xmx6g が足りない）\n",
+		fmt.Fprintf(errOut, "%s\nfge export-web: TeaVM が classes.wasm を出さなかった（終わりの番号 %d・ログ %s）。\n  次: ログの最後を読む（メモリ不足なら FLIX_GE_TEAVM_XMX で TeaVM の上限を上げる・今は "+teavmHeap()+"）\n",
 			tailFile(teavmLog, 20), teavmCode, teavmLog)
 		return 1
 	}
@@ -710,7 +710,7 @@ func exportAssetPath(out, rel string) string {
 }
 
 // placeFontAtlases は project.json の fonts ごとに <out>/assets/font-atlas/<name>.fontatlas を置き、files に足す道を返す。
-// WhyNot: アトラスの出どころ（--font-atlas-dir か font-bake か）の分岐を呼び手に出さないのは、仮の口の
+// WhyNot: アトラスの出どころ（--font-atlas-dir か font-bake か）の分岐を呼び手に出さないのは、仮の入口の
 // --font-atlas-dir を外す時にここだけ直せば済むようにするため。
 func placeFontAtlases(p exportWebPaths, o exportWebOptions, names []string) ([]string, int, error) {
 	if len(names) == 0 {
@@ -788,11 +788,10 @@ func writeWebPage(p exportWebPaths, b webBundle, wasm, teavmCore string) (string
 	if err := os.WriteFile(filepath.Join(p.Out, "wasm-gc-runtime.js"), runtime, 0o644); err != nil {
 		return "", err
 	}
-	wasmBytes, err := os.ReadFile(wasm)
+	hash, err := webVersionHash(p.Out)
 	if err != nil {
 		return "", err
 	}
-	hash := webVersionHash(wasmBytes, bundle)
 	index, err := os.ReadFile(p.IndexHTML)
 	if err != nil {
 		return "", err
@@ -818,12 +817,39 @@ func marshalWebBundle(b webBundle) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// webVersionHash は classes.wasm と bundle.json から作る短いハッシュ（頁の js の参照に付けてキャッシュを外す）。
-func webVersionHash(wasm, bundle []byte) string {
+// webVersionHash は出力の木（index.html と version.txt を除く全部）を道の順に名前と中身ごと読んで作る短いハッシュ
+// （頁の js の参照に付けてキャッシュを外す）。
+// WhyNot: wasm と bundle.json だけから作らない — Doc や fge-web.js だけを直した書き出しで版が変わらず、置き先のキャッシュが古い物を配る。
+func webVersionHash(out string) (string, error) {
+	var rels []string
+	err := filepath.WalkDir(out, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		rel, err := filepath.Rel(out, path)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		if rel != "index.html" && rel != "version.txt" {
+			rels = append(rels, rel)
+		}
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	sort.Strings(rels)
 	h := sha256.New()
-	h.Write(wasm)
-	h.Write(bundle)
-	return hex.EncodeToString(h.Sum(nil))[:12]
+	for _, rel := range rels {
+		data, err := os.ReadFile(filepath.Join(out, filepath.FromSlash(rel)))
+		if err != nil {
+			return "", err
+		}
+		fmt.Fprintf(h, "%s\x00%d\x00", rel, len(data))
+		h.Write(data)
+	}
+	return hex.EncodeToString(h.Sum(nil))[:12], nil
 }
 
 // stampWebIndex は index.html の fge-web.js と wasm-gc-runtime.js の <script src> に ?v=<hash> を付ける。
@@ -898,6 +924,8 @@ func writeExportSizes(out *strings.Builder, dir string, b webBundle, atlases []s
 		fmt.Fprintf(w, "  %-8s %10s  %s\n", r.name, humanBytes(r.n), r.note)
 	}
 	fmt.Fprintf(w, "  %-8s %10s\n", "合計", humanBytes(wasm+docs+images+atlasSum+sounds+page))
+	// WhyNot: 運ばない物を言わずに終えない — assets/ の外の Doc や readBytes で読む素材は束に入らず、ブラウザで初めて「無い」になる。
+	fmt.Fprintln(w, "  束に入れたのは project.json と assets/ の下だけ（assets/ の外を読むゲームはブラウザで読めない）")
 	w.Flush()
 }
 
@@ -919,4 +947,12 @@ func fileExists(p string) bool {
 func dirExists(p string) bool {
 	info, err := os.Stat(p)
 	return err == nil && info.IsDir()
+}
+
+// teavmHeap は TeaVM の JVM のメモリの上限（-Xmx の値）。既定 6g、FLIX_GE_TEAVM_XMX で替える（メモリの小さい機械向け）。
+func teavmHeap() string {
+	if v := strings.TrimSpace(os.Getenv("FLIX_GE_TEAVM_XMX")); v != "" {
+		return v
+	}
+	return "6g"
 }

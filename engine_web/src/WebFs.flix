@@ -5,7 +5,6 @@ pub mod WebFs {
     import fge.web.AssetTable
     import fge.web.Browser
     import fge.web.LocalStorage
-    import java.lang.System
 
     /// Fs.FileRead を素材の表と localStorage で受ける。
     pub def runFileRead(f: Unit -> a \ ef): a \ (ef - Fs.FileRead) + IO =
@@ -28,8 +27,8 @@ pub mod WebFs {
             def appendLines(data, path, k) = k(appendText(path, String.intercalate("\n", data#lines) + "\n"))
             def appendBytes(_data, path, k) = k(unsupportedIn(path, "appendBytes"))
             def truncate(path, k)          = k(writeText(path, ""))
-            def copyWith(src, dst, _opts, k) = k(copySave(src#src, dst))
-            def moveWith(src, dst, _opts, k) = k(Result.flatMap(_ -> deleteSave(src#src), copySave(src#src, dst)))
+            def copyWith(src, dst, _opts, k) = k(if (isSave(dst)) copySave(src#src, dst) else skipped(warned, dst))
+            def moveWith(src, dst, _opts, k) = k(moveSave(src#src, dst))
             def delete(path, k)            = k(deleteSave(path))
             def mkDir(_dir, k)             = k(Ok(()))
             def mkDirs(_dir, k)            = k(Ok(()))
@@ -57,14 +56,13 @@ pub mod WebFs {
         let bytes = AssetTable.bytes(normalize(path));
         if (Object.isNull(bytes)) Err(notFound(path)) else Ok(Array.toVector(bytes))
 
-    // WhyNot: saves/ の外への書き込みを黙って捨てない — 「書いたのに残らない」の元が追えない。
+    // WhyNot: saves/ の外への書き込みを何も知らせずに捨てない — 「書いたのに残らない」の元が追えない。
     /// saves/ の外への書き込みは何もせず Ok。道ごとに初回 1 回だけ言う。
     def skipped(warned: Ref[Set[String], Static], path: String): Result[IoError, Unit] \ IO =
         if (Set.memberOf(normalize(path), Ref.get(warned))) Ok(())
         else {
             Ref.put(Set.insert(normalize(path), Ref.get(warned)), warned);
-            System.err.println("[WebFs] ${path} は saves/ の外なのでブラウザ版では書かない");
-            Ok(())
+            Log.fellBackThen("WebFs", path, "書かない", "saves/ の外はブラウザ版に行き先が無い", Ok(()))
         }
 
     def writeSave(path: String, text: String): Result[IoError, Unit] \ IO =
@@ -76,7 +74,12 @@ pub mod WebFs {
         writeSave(path, (if (Object.isNull(before)) "" else before) + text)
 
     def copySave(src: String, dst: String): Result[IoError, Unit] \ IO =
-        if (not isSave(dst)) Ok(()) else Result.flatMap(text -> writeSave(dst, text), readText(src))
+        Result.flatMap(text -> writeSave(dst, text), readText(src))
+
+    // WhyNot: saves/ の外へ移す時に元を消さない — 行き先へは書けないので、セーブが消えるだけになる。
+    def moveSave(src: String, dst: String): Result[IoError, Unit] \ IO =
+        if (not isSave(dst)) Err(IoError.IoError(IoError.ErrorKind.Unsupported, "ブラウザ版は saves/ の外へ移せない（${src} → ${dst}）"))
+        else Result.flatMap(_ -> deleteSave(src), copySave(src, dst))
 
     def deleteSave(path: String): Result[IoError, Unit] \ IO =
         if (not isSave(path)) Ok(())

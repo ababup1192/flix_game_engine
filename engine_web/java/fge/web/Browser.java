@@ -14,9 +14,9 @@ public final class Browser {
     @JSBody(params = {"line"}, script = "console.log(line);")
     public static native void log(String line);
 
-    /** 止まった理由を頁に出す（黒い画面のまま止めない）。 */
-    @JSBody(params = {"message"}, script = "fgeError(message);")
-    public static native void error(String message);
+    /** 今のその土地の時刻（1970-01-01 00:00 からの秒・小数を切り捨てた物）。時差はブラウザの Date から。 */
+    @JSBody(script = "var now = Date.now(); return Math.floor((now - new Date(now).getTimezoneOffset() * 60000) / 1000);")
+    public static native double localEpochSeconds();
 
     /** canvas の描き先の幅（画素）。CSS の大きさ × devicePixelRatio に合わせて fge-web.js が作り直す。 */
     @JSBody(script = "return fgeCanvasWidth();")

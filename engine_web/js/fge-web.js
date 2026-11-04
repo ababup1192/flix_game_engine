@@ -78,9 +78,11 @@ function fgeApplyFullscreen() {
   var on = fgeFullscreenWanted;
   fgeFullscreenWanted = null;
   try {
-    if (on && document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(function () {});
-    if (!on && document.exitFullscreen && document.fullscreenElement) document.exitFullscreen().catch(function () {});
-  } catch (e) { /* 断られたらウィンドウのまま */ }
+    // WhyNot: 断られた要求を捨てない — WebLayer は同じ値を頼み直さないので、次のキーか pointer で試し直す。
+    var retry = function () { if (fgeFullscreenWanted === null) fgeFullscreenWanted = on; };
+    if (on && document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(retry);
+    if (!on && document.exitFullscreen && document.fullscreenElement) document.exitFullscreen().catch(retry);
+  } catch (e) { fgeFullscreenWanted = on; }
 }
 
 // ── キーと pointer ──
@@ -265,7 +267,10 @@ function fgeError(message) {
   if (el) { el.textContent = message; el.style.display = ""; }
   console.error(message);
 }
-window.addEventListener("error", function (e) { fgeError("止まりました: " + (e.message || e)); });
+window.addEventListener("error", function (e) {
+  var err = e.error;
+  fgeError("止まりました: " + (err && (err.message || String(err)) || e.message || e) + "（詳しくは開発者の道具の console）");
+});
 window.addEventListener("unhandledrejection", function (e) { fgeError("止まりました: " + (e.reason && e.reason.stack || e.reason)); });
 
 // ── 起動 ──

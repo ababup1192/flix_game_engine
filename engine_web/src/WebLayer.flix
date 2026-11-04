@@ -12,8 +12,6 @@ pub mod WebLayer {
     import fge.web.Pointer
     import fge.web.WebAudio
     import fge.web.WebGl2
-    import java.lang.System
-    import java.lang.Throwable
 
     /// 1 秒に進めるコマの上限。速い画面（120Hz・165Hz）では描き替えを間引いてこの数に近づける（遊びの速さは dt で同じ・電池のため）。
     pub def tickRate(): Float64 = 60.0
@@ -47,7 +45,7 @@ pub mod WebLayer {
             yieldedAt = Ref.fresh(Static, Browser.now()), warnedSounds = Ref.fresh(Static, Set.empty())
         };
         let fonts = RenderPaint.loadAssets(gl, paint, WebAssets.loader(), config, showProgress(state));
-        let result = reportCrash(() ->
+        let result =
             handleLoadProgress(state, () ->
             handleAudio(state, () ->
             RenderPaintHandlers.handleTarget(gl, paint, framebufferSize, () ->
@@ -57,18 +55,12 @@ pub mod WebLayer {
             handleWindow(state, () ->
             RenderPaintHandlers.handleDraw2d(gl, paint, framebufferSize, (_, _) -> checked_ecast(()), () ->
             handleInput(state, () ->
-            RenderPaintHandlers.handleGpuResources(gl, paint, fonts, f)))))))))));
+            RenderPaintHandlers.handleGpuResources(gl, paint, fonts, f))))))))));
         Browser.ended();
         result
 
-    // WhyNot: 例外を JS の外へ投げたままにしない — 描き替えから戻った後の例外は頁のどこにも出ず、絵が止まったまま黒い画面に見える。
-    /// f の中で投げられた例外を頁に出してから投げ直す。
-    def reportCrash(f: Unit -> a \ ef): a \ ef + IO =
-        try { f() } catch {
-            case e: Throwable =>
-                Browser.error("止まりました: ${e.toString()}");
-                throw e
-        }
+    // WhyNot: 例外を Flix の try で受けて頁に出さない — effect の続きで再開した後の例外はその try の外で投げられる（bug! で確かめた）。
+    //   頁に出すのは fge-web.js の window の error（wasm の外へ抜けた例外を全部受ける）。
 
     /// handler が分け合う状態。looping = ループが回り始めたか（最初の pollEvents の後）・lastDt = 前のコマからの経過（秒）・
     /// fullscreenAsked = 前に頼んだ全画面（同じ値を毎コマ頼み直さない）・yieldedAt = 起動中に最後にブラウザへ手を返した時刻（ms）。
@@ -229,18 +221,13 @@ pub mod WebLayer {
     /// GameEngine.Audio を fge.web.WebAudio で受ける。知らない名前は名前ごとに 1 度だけ言って何もしない。
     // WhyNot: setLowpass で高い音を削らない — 今は OpenAL の EFX と同じ聞こえ方にする対応の式が決まっていない（素通しのまま）。
     def handleAudio(st: State, f: Unit -> a \ ef): a \ (ef - GameEngine.Audio) + IO =
-        let known = (op: String, name: String) -> {
+        let known = (op: String, name: String) ->
             if (WebAudio.has(name)) true
+            else if (Set.memberOf(name, Ref.get(st#warnedSounds))) false
             else {
-                let warned = Ref.get(st#warnedSounds);
-                if (Set.memberOf(name, warned)) ()
-                else {
-                    Ref.put(Set.insert(name, warned), st#warnedSounds);
-                    System.err.println("audio: 知らない音 '${name}' — ${op} は何もしない（project.json の sounds に同名の宣言があるか確認）")
-                };
-                false
-            }
-        };
+                Ref.put(Set.insert(name, Ref.get(st#warnedSounds)), st#warnedSounds);
+                Log.warnThen("audio: 知らない音 '${name}' — ${op} は何もしない（project.json の sounds に同名の宣言があるか確認）", false)
+            };
         run f() with handler GameEngine.Audio {
             def playAudio(name, k) = { if (known("playAudio", name)) WebAudio.play(name) else (); k(()) }
             def stopAudio(name, k) = { if (known("stopAudio", name)) WebAudio.stop(name) else (); k(()) }
