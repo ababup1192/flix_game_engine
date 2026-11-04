@@ -282,9 +282,13 @@ pub mod LwjglLayer {
                 println("[lwjgl] 縦の design ${Int32.toString(config#designWidth)}x${Int32.toString(config#designHeight)} で起動（FLIX_GE_PORTRAIT）。この起動で録った flow は横の design で再生されて食い違う");
                 config
             case None =>
-                checked_ecast(Log.fellBack("lwjgl", "FLIX_GE_PORTRAIT", "横の design", "project.json に web.portraitDesign が無い"));
+                warnNoPortraitDesign();
                 proj#config
         }
+
+    // WhyNot: portraitBootConfig の中で Log.fellBack を文として置かない — 純粋な式の結果を捨てる形になり、新しい Flix が E8956 で止める。
+    def warnNoPortraitDesign(): Unit \ IO =
+        checked_ecast(Log.fellBack("lwjgl", "FLIX_GE_PORTRAIT", "横の design", "project.json に web.portraitDesign が無い"))
 
     /// ゲームの本体 f が最初のコマを描くまでに送る LoadProgress.report は、起動画面を進めてウィンドウのイベントを poll する。
     pub def withLwjgl(config: GameEngine.EngineConfig, f: Unit -> a \ ef): a \ ef - Platform.Services - Platform.Annotation - LoadProgress + IO =
