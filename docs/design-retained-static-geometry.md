@@ -199,7 +199,7 @@ engine ソース変更は事前相談が必要（CLAUDE.md 方針）。本書が
 v1 の「drawStaticPolys を別に呼ぶ」は clear/swap 境界を跨いで壊れる（`renderFrameMixed` の `glClear` が先に描いた静的を消す）。v2 は **描画を renderCommands の 1 呼びに束ねる**:
 
 ```
-// Platform.GpuResources eff（engine/src/Platform.flix に追加）
+// Platform.GpuResources eff（engine/src/platform/Platform.flix に追加）
 def initStaticPolys(cmds: List[PolygonRenderCmd]): { vao = GpuHandle.StaticVao, ranges = List[StaticRangeMeta] }
 def freeStaticPolys(vao: GpuHandle.StaticVao): Unit
 // renderCommands を拡張: 静的レンジ列を同じ呼びに載せる（clear→z混在描画→swap を1回で束ねる）

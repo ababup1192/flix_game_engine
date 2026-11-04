@@ -108,7 +108,7 @@ pub mod SoftRaster3d {
     /// 場面の影（影を落とすスポットが無ければ None）。生成した SoftRaster3dLight がスポットごとに shadowFactorAt へ渡す。
     pub type alias SpotShadow = Option[Shadow]
 
-    /// ambient と光の color を書いた値のまま並べる（pub の光の式の口が使う）。
+    /// ambient と光の color を書いた値のまま並べる（pub の光の式の口のため）。
     def compileLights(env: Scene3d.Environment3d, pointLights: List[Scene3d.PointLight],
                       spotLights: List[Scene3d.SpotLight], shadow: SpotShadow): Lights =
         Lights.Lights(env#ambient#r, env#ambient#g, env#ambient#b, env#hemisphere, env#toonSteps,
@@ -193,7 +193,7 @@ pub mod SoftRaster3d {
     // fog があるか・色 r, g, b・near・far。
     enum Fog { case Fog(Bool, Float64, Float64, Float64, Float64, Float64) }
 
-    /// かすみの色を書いた値のまま（pub の光の式の口が使う）。
+    /// かすみの色を書いた値のまま（pub の光の式の口のため）。
     def compileFog(fog: Option[Scene3d.DistanceFog]): Fog = match fog {
         case None    => Fog.Fog(false, 0.0, 0.0, 0.0, 0.0, 0.0)
         case Some(f) => Fog.Fog(true, f#color#r, f#color#g, f#color#b, f#near, f#far)

@@ -1,6 +1,6 @@
 // SoftRaster.Internal.Blend — Add / Multiply の重ね方（下書きへ描いてから合成式で混ぜる）と、
 // 合成で往復する範囲を絞る外形（AABB）。SoftRaster の中身。
-// ゲームからは呼ばない（SoftRaster の中身。ゲームが使う関数は SoftRaster にある）。
+// ゲームからは呼ばない（SoftRaster の中身。ゲーム向けの関数は SoftRaster にある）。
 pub mod SoftRaster.Internal.Blend {
     import java.awt.image.BufferedImage
     import java.awt.Graphics2D

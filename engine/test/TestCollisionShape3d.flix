@@ -47,16 +47,6 @@ mod TestCollisionShape3d {
         Assert.assertEq(expected = (Some((0, 1000, 0) :: (1000, 0, 0) :: (0, 1000, 0) :: (0, 0, 1000) :: (500, 500, 500) :: Nil), 0),
             (CollisionShape3d.boxOfNode(node(half)) |> Option.map(boxMm), List.length(CollisionShape3d.boxesOfNodes(node(None) :: Nil))))
 
-    /// せん断のある world のノードは外接箱に倒し、ノードの名前を入れた 1 行を知らせる。
-    @Test
-    def testBoxOfNodeOnShearWarnsWithNodeName(): Unit \ {Assert, IO} =
-        let shear = Mat4.ofLinearRows(Vec3.v3(1.0, 1.0, 0.0), Vec3.v3(0.0, 1.0, 0.0), Vec3.v3(0.0, 0.0, 1.0));
-        let node = { name = "COL_bent", parent = None, local = shear, world = shear, localBounds = Some(unitBounds()), parts = Nil };
-        let (box, lines) = Log.capture(() -> CollisionShape3d.boxOfNode(node));
-        Assert.assertEq(expected = (Some((2000, 1000, 1000)), 1, true),
-            (box |> Option.map(b -> (Num.roundInt(b#half#x * 1000.0), Num.roundInt(b#half#y * 1000.0), Num.roundInt(b#half#z * 1000.0))),
-             List.length(lines), List.exists(String.contains(substr = "COL_bent"), lines)))
-
     /// 原点の蝶番のまわりに 90° 回すと、x = 1 にあった扉の板は z = −1 へ移り、向きも同じだけ回る（大きさはそのまま）。
     @Test
     def testTransformBoxRotatesAroundOrigin(): Unit \ Assert =

@@ -1,6 +1,6 @@
 // SoftRaster.Internal.Sprite — Graphics2D で描く 2D の描き物: box（角丸・枠・縞・市松）・テクスチャの sprite・単色の多角形と、
 // その周りの回転・mask・clip・描画品質ヒント。SoftRaster の中身。
-// ゲームからは呼ばない（SoftRaster の中身。ゲームが使う関数は SoftRaster にある）。
+// ゲームからは呼ばない（SoftRaster の中身。ゲーム向けの関数は SoftRaster にある）。
 pub mod SoftRaster.Internal.Sprite {
     import java.awt.image.BufferedImage
     import java.awt.image.RescaleOp

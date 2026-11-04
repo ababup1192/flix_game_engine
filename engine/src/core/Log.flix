@@ -8,7 +8,6 @@
 // *Then の口は返す値が unsafe IO の中を通るので、消すと値が無くなり、消されない。
 pub mod Log {
     import java.lang.System
-    import java.io.{ByteArrayOutputStream, PrintStream}
 
     /// stderr へ 1 行。効果は `unsafe IO` で隠す
     /// （知らせるためだけに呼び側の効果行を広げない）。
@@ -46,28 +45,6 @@ pub mod Log {
             List.forEach(line -> System.err.println(line), lines);
             value
         }
-
-    /// f を呼ぶ間に知らせた行を stderr へ出さずに集め、f の値と、知らせた行（出た順）を返す。
-    /// テストで知らせを出す経路を通す時と、知らせが出たことを確かめる時に使う
-    /// （Flix のテストの実行器は stderr に 1 字でも出たテストを FAIL にする）。
-    /// `let (box, lines) = Log.capture(() -> CollisionShape3d.boxOfNode(node));`
-    // WhyNot: ゲームや描き出しの中で使わない — System.err をまるごと差し替えるので、その間に他の糸が出した行も集めてしまう
-    // （テストの実行器はテストを 1 本ずつ同じ糸で回すので、テストの中では混ざらない）。
-    pub def capture(f: Unit -> a \ ef): (a, List[String]) \ ef + IO = region rc {
-        let saved = System.err;
-        let buffer = new ByteArrayOutputStream();
-        let result = Ref.fresh(rc, None);
-        System.setErr(new PrintStream(buffer, true, "UTF-8"));
-        // WhyNot: `let value = f();` と置いて後で使わない — f が純粋に見えると、Flix は値を使う所（stderr を戻した後）まで呼び出しを遅らせうる。
-        // Ref へ入れる所は効果があるので、そこで呼び終わる。
-        Ref.put(Some(f()), result);
-        System.setErr(saved);
-        let lines = String.lines(buffer.toString("UTF-8")) |> List.filter(line -> not String.isEmpty(line));
-        match Ref.get(result) {
-            case Some(value) => (value, lines)
-            case None        => bug!("Log.capture: f の値を受け取る前に Ref を読んだ")
-        }
-    }
 
     /// fellBack の定型文の 1 行（出さない）。行を集めて warnAllThen へ渡すときに使う。
     pub def fellBackLine(domain: String, subject: String, fallback: String, reason: String): String =

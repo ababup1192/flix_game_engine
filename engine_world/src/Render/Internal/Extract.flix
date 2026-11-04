@@ -46,7 +46,7 @@ pub mod Render.Internal.Extract {
             case Some(r) => Some(Rect2.intersect(rect, r))
         }
 
-    /// region atlas 対応の射影（drawWith が使う）。textureSize を引いて UV を計算する
+    /// region atlas 対応の射影（drawWith のため）。textureSize を引いて UV を計算する
     /// （uvOffset = regionPos/texSize, uvScale = regionSize/texSize）。
     /// 非 region スプライト・text・box は pure 経路と同一。
     pub def toDrawablesAtlas(textureInfoOf: String -> Option[GameEngine.TextureInfo] \ ef,

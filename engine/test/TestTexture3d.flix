@@ -46,7 +46,7 @@ mod TestTexture3d {
     def testDecodeRejectsGarbage(): Unit \ {Assert, IO} =
         Assert.assertTrue(Result.isErr(Texture3d.decodeUsing(TestDecoder.imageIo(), Vector#{ 1i8, 2i8, 3i8 })))
 
-    /// decoder が返す画素から作る（バイトは decoder だけが読む）。
+    /// decoder が返す画素から作る（バイトを解くのは decoder だけ）。
     @Test
     def testDecodeUsingBuildsFromTheDecodedImage(): Unit \ {Assert, IO} =
         let decoder = { decode = _ -> checked_ecast(Ok({ width = 2, height = 2, argb = quad() })) };

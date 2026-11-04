@@ -36,7 +36,7 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | 画面ごとの後処理（ブルーム・ぼかし）を半分の解像度で組む | `App.withPassPlan`（`targets` に `RenderTarget.Descriptor` の scale）+ pass の中の `Render.shaderFill`・なめらかに読むのは ShaderDoc の `sampler`（描き出しは `Render.passSpecsOf`） |
 | 3D の場面を窓の画素で描く・白飛びを HDR とトーンマップで収める・縁を FXAA でならす | `RenderTarget.windowDescriptor()` / `withHdr` の Pass → 本編の面を `PostProcess.tonemappedWith` → 8bit の Pass を `PostProcess.fxaaSpec`（1 で切って白飛びを抑えない） |
 | 面に毎フレーム変わる数（ピント・体力の割合）を渡す | ShaderDoc の `param` + `Render.withShaderParams`（Spec の Const に入れない） |
-| 系・View の中で平方根・sin・cos・角（atan2）・π を使う | `Num.sqrt` / `Num.sin` / `Num.cos` / `Num.atan2` / `Num.pi` / `Num.tau`（`Vec2.sqrt` などは旧い名前で 0.84.0 に消える・`java.lang.Math` を呼ばない） |
+| 系・View の中で平方根・sin・cos・角（atan2）・π を使う | `Num.sqrt` / `Num.sin` / `Num.cos` / `Num.atan2` / `Num.pi` / `Num.tau`（`java.lang.Math` を呼ばない。Vec2 の旧い数の関数は 0.84.0 で消えた） |
 | 面の中で光の向きや距離を計算する（平方根・長さ 1 にそろえる） | ShaderDoc の `math1` の `sqrt`（`UnOp.Sqrt`）・`ShaderDoc.lengthOf` / `normalized`（近い値で代わりにしない） |
 | 3D の部屋・家具（メッシュを深度で前後させる）を 2D の画面に入れる | `Render.scene3d(at, Scene3d.scene(camera, size))`（`Mesh3d.fromObj` / `fromPolygons` → `Scene3d.meshInstance`）・描き出しは `Render.softSceneOf` → `HeadlessRender.renderPngSoft`（三角形を多角形で並べない。手本 `bench/scene3d`） |
 | Blender で骨を入れたキャラ（.glb）を 3D の場面で動かす（歩く・敬礼など） | `Gltf.load` → `AnimationClip3d.sample`（混ぜるなら `Pose3d.blend`）→ `Pose3d.compute` → `Scene3d.withPose`（骨は GPU と SoftRaster の両方で曲がる。曲げを手で頂点に掛けない） |
@@ -75,7 +75,7 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | 実機の GL の絵が同じ起動で毎回同じかを、頭の数コマを撮って確かめる（2 コマ目以降も） | `FLIX_GE_FIXED_DT=1/60`（dt を固定）+ `FLIX_GE_HIDDEN=1` + `FLIX_GE_FRAME_SHOT=<フォルダ>` + `START=<場面>` で `make run RUN_SECONDS=30` を 2 回（撮る口は 64 枚で止まるだけで窓は閉じない）し、`frame-N.png` を比べる |
 | 起動の読み込みが数秒かかる・起動画面でカーソルが応答なしのくるくるになる | 読み込みを `LoadProgress.mapWithProgress` / `parMapWithProgress` で区切る（実機は起動画面が進みウィンドウが応答する）・並列の仕事で絵を解くなら頭で `let dec = LoadProgress.imageDecoder()` を受け取り仕事へ渡す（`Gltf.fromGlbTexturedUsing(dec, ..)`・`Texture3d.decodeUsing(dec, ..)`。仕事の中から op は呼べない）・描き出しとテストの入口は `HeadlessLoad.handle`（絵を解かないなら `LoadProgress.runNoop` でもよい）・main は `App.loadAndLaunch(() -> 組む式)`（`make debug` でも Doc を読み直さない。engine の `docs/startup.md`） |
 | 開発の道具（リモートデバッグ・flow の記録・ゲームの名簿・ヒッチの見張り・Doc の保存検知・F8 の注釈）を持たずに走らせる（ブラウザ版の入口など） | `App.launchWithDevTools(App.DevTools.none(), app)`（`App.debugFromEnv()` は呼ばず `withDebug` は値で・`App.launch` / `loadAndLaunch` はデスクトップの道具 `App.DevTools.desktop(env)` のまま）・`App.onRenderRequest` / `onShotRequest` は `Game.app` でなく `Main` で繋ぐ（lint `dev-request-outside-main`） |
-| macOS で窓を開くゲームの main の頭（`-XstartOnFirstThread` で起動し直す） | `if (LwjglLayer.ensureMainThread()) () else …`（`GameEngine.ensureMainThread` は 0.84.0 で消える） |
+| macOS で窓を開くゲームの main の頭（`-XstartOnFirstThread` で起動し直す） | `if (LwjglLayer.ensureMainThread()) () else …`（GameEngine の同じ名前の関数は 0.84.0 で消えた） |
 | 曲の拍・小節に乗せる | `Duration.Bars` / `ToNextBar` / `ToPickup` + `Timeline.tempo` |
 | 演出の長さ・待ち・溜めの目安 | engine の `docs/pacing.md` |
 | 音の名前を型で止める（一発と鳴り続ける音を取り違えない） | `Sfx[s]` / `Loop[s]` + `Sfx.collect` / `Loop.collect` |
@@ -87,7 +87,7 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | 画面（表紙・遊ぶ・クリア）を足す・その画面だけの値を持つ | World の `screen` の enum に case と payload（手本 game-starter・tidepool-starter） |
 | Doc・アトラス・シェーダーを World に平らに持たず外に出す | App の w を `Resources.With[res, w]`・`Resources.system` / `view` / `read`・読み直しは `Resources.reloadRow` |
 | Doc が壊れたら既定値で続けて知らせる | `DocJson.loadOr` + `Log.fellBackThen` / `warnThen` |
-| 知らせ（`Log.warnThen` など）を出す経路をテストで通す・知らせの文面を確かめる | `let (value, lines) = Log.capture(() -> 式)`（stderr に出るとテストの実行器が FAIL にする。テストで System.setErr を自分で差し替えない） |
+| 知らせ（`Log.warnThen` など）を出す経路をテストで通す・知らせの文面を確かめる | `let (value, lines) = LogCapture.capture(() -> 式)`（stderr に出るとテストの実行器が FAIL にする。テストで System.setErr を自分で差し替えない） |
 | 直した後に絵を確かめる | `make render SHOT=<場面>` → 仕上げ `make reference-check` |
 | 描き出しの字の被り・z の外れを止める | `make render-lint`（許す物は `text-audit.local.json`） |
 | 依存の向き（規則 → View → 入力の逆を呼ばない・ファイルの輪）・View に World を渡さない・テストの分岐を止める | `make lint-flixlint`（決まりは <ゲーム>/lint/rules.flix の冒頭。View の入口が World から In を組み、部品は In を受ける） |

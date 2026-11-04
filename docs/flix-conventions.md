@@ -190,6 +190,29 @@ World に Doc・アトラス・シェーダーの Spec・音の Mixer を平ら�
 | `Vec2`・`Vec3`・`Rect2` | 開いたレコード | 無し | そのまま（欄が増えない値） |
 | render_gl の pub の型（`Render3d.State`・`RenderPaint.Frame` など） | 開いたレコード | render_gl の中 | そのまま（ゲームは触らない） |
 
+## 層を置く物差し（抽象の境目は実装が 2 つある所にだけ）
+
+抽象の層は、同じ API に**実装が 2 つ以上ある時だけ**置く。1 つしか無い所に「いつか替えるかもしれない」で層を置かない
+（読む所が増え、呼び出しの代金が乗り、2 つ目が来た時には形が合わないことが多い）。
+
+| 境目 | 何と何を分けるか | 今ある実装 |
+|---|---|---|
+| 機種の handler 一式: `Platform.Services`（`Input`・`Window`・`FrameClock`・`Draw2d`・`Draw3d`・`GpuResources`・`Diagnostics`・`RenderTarget.Target`・`GameEngine.Audio`）と `Fs.FileRead`・`Fs.FileWrite`・`LoadProgress` | ゲームとエンジンの論理 ／ 機種 | 実機（`LwjglLayer`）・画面なしとテスト（`GlOffscreen`・`HeadlessLoad`・偽物の handler）。後でブラウザとコンシューマ |
+| `Scene3dRenderer.Renderer`（値） | 2D の描き手 ／ 3D の描き手 | `Render3d.makeRenderer`・`Scene3dRenderer.none()` |
+| `GlContext`（値・C8 と C9 で作る予定） | GL を使う描き手の本体 ／ GL の API | LWJGL の GL 3.3（デスクトップ）・WebGL2（ブラウザ）。この 2 つのためだけの層 |
+
+- **新しい機種（コンシューマなど）の切れ目は、上の 1 行目の handler 一式の高さ**。その機種は `Platform.Services` と Fs と `LoadProgress` の
+  handler を自分の描き手と自分のファイルの読み書きで書き、render_gl も `GlContext` も使わない。GL の無い機種のために `GlContext` を広げない。
+- 機種の差を、ビルドの時に同じ名前の **Flix のモジュール**を束ごとに差し替えて吸収しない（束ごとに別のファイルを組む手間が増え、片方の版は普段の型検査を通らない）。
+  JVM のバイトコードを訳して動かす機種（ブラウザの TeaVM など）で足りない Java の部品は、訳す前の付け替えの道具で手当てする。
+- 層を足す前に、2 つ目の実装がいつ・どこで要るかを 1 行で書く（エンジン拡張の相談の時に添える）。書けなければ足さない。
+- 2 つ目が無くなった層は外す（中身を呼ぶ所へ戻す）。
+- 名前は 2D 専用に `2d`・3D 専用に `3d`・共通は付けない（`Draw2d`・`Draw3d`・`Scene3d`・`Input`・`Window`）。Bevy と同じ小文字の `d`。
+  今ある `CollisionShape2D`・`Physics2D` は改名しない（ゲームが使う pub が多く、改名の得が小さい）。新しく作る物から従う。
+- 大きくなったモジュールは、ゲームが呼ぶ pub を元のモジュールに残し、中身を `<元>.Internal.<役>` へ移す（`App.Internal.*`・`Render.Internal.*`・
+  `SoftRaster.Internal.*`）。Flix には pub の名前を別の mod の名前で見せ直す口が無いため。ゲームから `<元>.Internal` を書くと lint-forbid の
+  `app-internal` が止める。engine の 4 パッケージの src の 1 ファイルは 1,200 行まで（`make lint-max-lines`・例外は `bin/lint-rules/max-lines.json`）。
+
 ## 二乗を書かない
 
 N はゲームが決める。エンジンは N を知らない（今のテンプレが 9 要素だから軽い、は
@@ -228,6 +251,8 @@ N はゲームが決める。エンジンは N を知らない（今のテンプ
 - 小数は Float64 で書く（`1.0` は Float64。Float32 のリテラルには `f32` サフィックスが要る）。
   engine の pub 面に Float32 は出さない決まりで、Float32 は GL / OpenAL / STB を呼ぶ
   境界の内側だけ（engine のリポジトリでは `make lint-f32` が検査する）
+- ゲームのモジュールの名前が engine のモジュールと同じ（ゲームの `Camera3d` と engine の `Camera3d` など）でも、engine は `mount = "fge"` で
+  `fge::` の下にあるので重ならない。同じファイルで両方を使う時だけ、engine の方を別の名前で入れる（`use fge::{Camera3d => EngineCamera}`）
 
 ## 迷ったら引く
 

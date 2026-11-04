@@ -1,6 +1,6 @@
 // SoftRaster.Internal.Hdr — Rgba16Float の描き先（1 を超える値を持つ Pass）を作る・塗る・凍らせる・
 // 1 つの描き物を下書きから混ぜる。SoftRaster の中身。
-// ゲームからは呼ばない（SoftRaster の中身。ゲームが使う関数は SoftRaster にある）。
+// ゲームからは呼ばない（SoftRaster の中身。ゲーム向けの関数は SoftRaster にある）。
 pub mod SoftRaster.Internal.Hdr {
     import java.awt.image.BufferedImage
     import java.awt.Graphics2D

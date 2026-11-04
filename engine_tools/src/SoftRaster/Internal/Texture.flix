@@ -1,6 +1,6 @@
 // SoftRaster.Internal.Texture — 描き物が読む絵を集める: ファイルのテクスチャ・組み込みの放射テクスチャ・
 // 3D の場面の材質と lightmap の絵の段（Mip）と、その欠けの知らせ。SoftRaster の中身。
-// ゲームからは呼ばない（SoftRaster の中身。ゲームが使う関数は SoftRaster にある）。
+// ゲームからは呼ばない（SoftRaster の中身。ゲーム向けの関数は SoftRaster にある）。
 pub mod SoftRaster.Internal.Texture {
     import java.awt.image.BufferedImage
     import java.io.File

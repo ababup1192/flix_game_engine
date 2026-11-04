@@ -1,4 +1,4 @@
-// Render.Internal.PassReads — Pass の items が読む名前（面の tex / blur・sprite と billboard の texture）を集めて書き換える所。resolvePassReads の中身。
+// Render.Internal.PassReads — Pass の items の読み先の名前（面の tex / blur・sprite と billboard の texture）を集めて書き換える所。resolvePassReads の中身。
 // ゲームからは呼ばない（Render の中身）。
 pub mod Render.Internal.PassReads {
     import java.lang.{Object => JObject}
@@ -7,7 +7,7 @@ pub mod Render.Internal.PassReads {
     /// 読んではいけない名前の置き換え先（必ず存在しない名前 — 面は黒・sprite は貼らない）。
     pub def missingName(name: String): String = "@missing:" + name
 
-    /// items が読む名前（面の tex / blur と sprite の texture）を初出順・重複なしで。面の名前は texNamesOf に覚える。
+    /// items の読み先の名前（面の tex / blur と sprite の texture）を初出順・重複なしで。面の名前は texNamesOf に覚える。
     pub def passReadNames(texNamesOf: IdentityHashMap[JObject, JObject], items: List[Render.PlacedItem]): List[String] \ IO =
         items |> List.flatMap(placed -> {
             let (leaf, _clip) = Render.unwrapClip(placed#item, None);

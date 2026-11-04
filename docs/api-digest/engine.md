@@ -27,7 +27,7 @@
 - 時刻 t（秒）の局所の姿勢（ジョイントの数だけ）。loop が真なら t を duration で回し（duration が 0 なら 0）、偽なら最後のキーフレームで止める。
   `pub def sample(skin: Skin3d.Skin3d, clip: AnimationClip3d, t: Float64, loop: Bool): Vector[Skin3d.JointPose]`
 
-## Arc — `engine/src/render/Arc.flix`
+## Arc — `engine/src/render2d/Arc.flix`
 - 全周 = 2π（ラジアン）。全周リングの endAngle 既定や、比率→角度の換算に使う。
   `pub def tau(): Float64`
 - 半径・太さ・開始/終了角を指定して円弧を生成する（alpha=1.0 不透明、segments 既定）。
@@ -57,7 +57,7 @@
 - スクリーン px の塗り潰しコマンド列に変換する。`screenPos` は描画原点
   `pub def toRenderCmds(screenPos: Vec2.Vec2, scaleVec: Vec2.Vec2, arc: Arc): List[GameEngine.PolygonRenderCmd]`
 
-## AudioStreamPlayer — `engine/src/render/AudioStreamPlayer.flix`
+## AudioStreamPlayer — `engine/src/render2d/AudioStreamPlayer.flix`
 - デフォルト値で AudioStreamPlayer を生成する
   `pub def make(stream: String): AudioStreamPlayer`
 - 指定した名前のオーディオを再生する（先頭から再生し直す）
@@ -91,7 +91,7 @@
 - WAV のループ点（"smpl" チャンクの最初のループ）。返すのは (頭, 終わり) のサンプル番号で、
   `pub def loopPointsOf(getByte: Int32 -> Int8 \ ef, getInt32LE: Int32 -> Int32 \ ef, limit: Int32): Option[(Int32, Int32)] \ ef`
 
-## BootFont — `engine/src/render/BootFont.flix`
+## BootFont — `engine/src/render2d/BootFont.flix`
 - フォントの登録名。ゲームが project.json で付ける名前と衝突しない綴りにしてある。
   `pub def name(): String`
 - テクスチャ名は "font_" で始めない。始めると描画側が SDF 距離場として塗ってしまうが、
@@ -108,7 +108,7 @@
 - ロゴの画素（ARGB・行優先）。色票の番号を 4bit で 1 画素持っている。
   `pub def logoArgb(): Vector[Int32]`
 
-## BootFontData — `engine/src/render/BootFontData.flix`
+## BootFontData — `engine/src/render2d/BootFontData.flix`
 - 素材の出どころ（ライセンス表記のため実行時にも名乗れるようにしてある）。
   `pub def source(): String`
 - アトラスの一辺。Text の表示サイズ計算がアトラスを正方と決め打つので正方。
@@ -131,7 +131,7 @@
 - ロゴの画素。色票の番号を 4bit で 1 画素、上位が左。
   `pub def logoHex(): List[String]`
 
-## Camera — `engine/src/render/drawable/Camera.flix`
+## Camera — `engine/src/render2d/drawable/Camera.flix`
 - 指定位置を画面中央に映すカメラを作る（zoom = (1, 1) 等倍）。
   `pub def make(position: Vec2.Vec2): Camera`
 - 埋め込んだ Transform 部品を取り出す
@@ -167,11 +167,11 @@
 - 3D の点が描き物の中のどこに写るか（左上が 0・y は下へ増える px）。near より手前と目の後ろは None。
   `pub def worldToScreen(c: Camera3d, size: Vec2.Vec2, p: Vec3.Vec3): Option[Vec2.Vec2]`
 
-## CanvasLayer — `engine/src/render/CanvasLayer.flix`
+## CanvasLayer — `engine/src/render2d/CanvasLayer.flix`
 - レイヤー間の z-index ストライド。
   `pub def layerStride(): Int32`
 
-## CollisionShape2D — `engine/src/render/CollisionShape2D.flix`
+## CollisionShape2D — `engine/src/physics2d/CollisionShape2D.flix`
 - 2 つの形状が重なっているか判定する。
   `pub def checkOverlap(posA: Vec2.Vec2, shapeA: CollisionShape2D, posB: Vec2.Vec2, shapeB: CollisionShape2D): Bool`
 - AABB 矩形同士の重なり判定。
@@ -308,7 +308,7 @@
 - HSV から色を作る。h は色相（1 周 = 1.0・0 = 赤・範囲外は折り返し）、s は鮮やかさ、
   `pub def hsv(spec: {h = Float64, s = Float64, v = Float64}): Color`
 
-## ContentCache — `engine/src/ContentCache.flix`
+## ContentCache — `engine/src/core/ContentCache.flix`
 - キャッシュの置き場。外からは fresh で作り、loadOrBuild に渡すだけ。
   `pub type alias Cache[a] = CacheData[a]`
 - 空の置き場を作る。
@@ -434,10 +434,10 @@
 - 正の長さを持つか（> 0）。「まだ動いている tween か」等の判定に使う。
   `pub def isPositive(duration: Duration): Bool`
 
-## EngineSentinel.Marker — `engine/src/EngineSentinel/Marker.flix`
+## EngineSentinel.Marker — `engine/src/core/EngineSentinel/Marker.flix`
 - `pub enum Marker { case M }`
 
-## FrameDiagnostics — `engine/src/FrameDiagnostics.flix`
+## FrameDiagnostics — `engine/src/core/FrameDiagnostics.flix`
 - 1 コマの診断。時間はナノ秒。
   `pub type alias Diagnostics = { submitNs = Int64, swapNs = Int64, shaderBuilds = List[ShaderBuild], shaderDeletes = Int32, liveShaders = Int32, drawItems = Int32, glyphsAdded = Int32, textureUploads = List[String], gpuNs = Option[Int64], gpuPasses = List[(String, Int64)], scene3dCounts = Scene3dCounts }`
 - 3D の場面の数（Diagnostics#scene3dCounts）。
@@ -464,7 +464,7 @@
 - 点 p が視錐台の中か（面の上は中）。
   `pub def containsPoint(f: Frustum, p: Vec3.Vec3): Bool`
 
-## GameEngine — `engine/src/GameEngine.flix`
+## GameEngine — `engine/src/platform/GameEngine.flix`
 - テクスチャアセットのマニフェストエントリ
   `pub type alias TextureEntry = { name = String, path = String, hasAlpha = Bool }`
 - フォントアセットのマニフェストエントリ
@@ -531,7 +531,7 @@
 - 指定した名前のサウンドの長さ（秒）。知らない名前は 0.0。
   `pub eff Audio { def audioSeconds(name: String): Float64 }`
 
-## GamepadMap — `engine/src/GamepadMap.flix`
+## GamepadMap — `engine/src/platform/GamepadMap.flix`
 - パッドの入力 1 つ。ボタンは Xbox 配置の名前（Back は Select / View、Start は Menu の物）。
   `pub enum PadInput with Eq, Order, ToString { case DirUp case DirDown case DirLeft case DirRight case A case B case X case Y case LeftBumper case Back case Start }`
 - つないだパッドの機種。案内に出すボタンの絵や、Steam Input を通っているかの判断に使う。
@@ -595,7 +595,7 @@
 - 何も解かず、いつも Err を返すデコーダー（絵を読まないテストの handler 用）。
   `pub def failingDecoder(reason: String): ImageDecoder`
 
-## InputEvent — `engine/src/render/InputEvent.flix`
+## InputEvent — `engine/src/render2d/InputEvent.flix`
 - 現在押されているキーのセットを取得する（GameEngine.allKeys() を全て走査）
   `pub def currentKeys(): Set[GameEngine.Key] \ Platform.Input`
 
@@ -641,7 +641,7 @@
 - `pub def generateFlixCases(hooks: CpuHooks): String`
 - `pub def toGlsl(name: String, perPixel: List[Vec3Input], e: Vec3Expr): String`
 
-## LoadProgress — `engine/src/LoadProgress.flix`
+## LoadProgress — `engine/src/platform/LoadProgress.flix`
 - 起動の読み込みの進み具合（区切りごとに 1 回）と、読み込みの仕事を回す口。
   `pub eff LoadProgress`
 - phase = 今やっていること（起動画面の字）・done / total = その中の何本目 / 全何本（total 0 以下は本数不明）。
@@ -658,7 +658,7 @@
 - xs を f で作る（handler が並列に回す・結果の並びは xs のまま）。知らせと例外の決まりは runTasks のとおり
   `pub def parMapWithProgress(phase: String, f: a -> b \ IO, xs: List[a]): List[b] \ IO + LoadProgress`
 
-## LoadProgress.Conformance — `engine/src/LoadProgress/Conformance.flix`
+## LoadProgress.Conformance — `engine/src/platform/LoadProgress/Conformance.flix`
 - 確かめる handler と、テストの側が用意する道具。
   `pub type alias Harness = { handle = (Unit -> List[Int32] \ IO + LoadProgress) -> (List[Int32], List[(String, Int32, Int32)]) \ IO, sleepMs = Int64 -> Unit \ IO, fail = String -> Unit \ IO, nowMs = Unit -> Int64 \ IO, newFlag = Unit -> Flag \ IO }`
 - スレッドをまたいで立てて読むフラグ。
@@ -681,7 +681,6 @@
   `pub def fellBackThen(domain: String, subject: String, fallback: String, reason: String, value: a): a`
 - lines を 1 行ずつ知らせてから value を返す（空なら何も出さない）。
   `pub def warnAllThen(lines: List[String], value: a): a`
-- `pub def capture(f: Unit -> a \ ef): (a, List[String]) \ ef + IO`
 - fellBack の定型文の 1 行（出さない）。行を集めて warnAllThen へ渡すときに使う。
   `pub def fellBackLine(domain: String, subject: String, fallback: String, reason: String): String`
 
@@ -771,7 +770,7 @@
 - 頂点のタンジェント（頂点ごとに x・y・z・w の 4 つ。cross(法線, xyz) × w が絵の上を向く）。uv の無い形は None。
   `pub def tangents(m: Mesh3d): Option[Vector[Float64]]`
 
-## Mip — `engine/src/Mip.flix`
+## Mip — `engine/src/scene3d/Mip.flix`
 - 段を作る時の、4 つのテクセルの色の平均の仕方。SrgbCurve = 8bit の値を sRGB の曲線の値と見て、線形の量へ戻して平均し、
   `pub enum Average with Eq, ToString { case SrgbCurve case Raw }`
 - `pub def build(average: Average, tex: ShaderEval.TexData): List[ShaderEval.TexData]`
@@ -839,7 +838,7 @@
 - 円周率（値の源は tau — 2 で割るのは倍精度で正確）。
   `pub def pi(): Float64`
 
-## Platform — `engine/src/Platform.flix`
+## Platform — `engine/src/platform/Platform.flix`
 - キー・マウス・ゲームパッドの今の状態を読む。
   `pub eff Input`
 - `pub eff Input { def isKeyPressed(key: GameEngine.Key): Bool }`
@@ -925,7 +924,7 @@
 - App.launch が要る機種の effect の束。
   `pub type alias Services = Input + Window + FrameClock + Rendering + RenderTarget.Target + GameEngine.Audio + Diagnostics`
 
-## Polygon — `engine/src/render/Polygon.flix`
+## Polygon — `engine/src/render2d/Polygon.flix`
 - 任意の頂点列から Polygon を生成する（alpha=1.0 不透明）。
   `pub def make(points: List[Vec2.Vec2], color: Color): Polygon`
 - 半径 `radius`（px）の円を 12 角形として生成する。小さなマーカーには十分滑らか。
@@ -955,7 +954,7 @@
 - ジョイントの変換（rootTransform × world。形の座標で、インスタンスの world 行列はまだ掛かっていない）。
   `pub def jointTransform(p: Pose3d, joint: Int32): Mat4.Mat4`
 
-## PostProcess — `engine/src/PostProcess.flix`
+## PostProcess — `engine/src/shader/PostProcess.flix`
 - トーンマップの曲線（Unity の Tonemapping Mode・Unreal の Filmic と同じ役目）。
   `pub enum Tonemap with Eq, ToString { case AcesFitted case Reinhard }`
 - 既定の露出（stop の数。2^stops 倍してから曲線に掛ける）。曲線の正規化で落ちる白を持ち上げる値で、
@@ -983,7 +982,7 @@
 - flix.toml の依存の行 `"github:ababup1192/flix_game_engine" = { version = "x.y.z", … }` の版。
   `pub def engineVersionOf(toml: String): Option[String]`
 
-## Projection — `engine/src/render/drawable/Projection.flix`
+## Projection — `engine/src/render2d/drawable/Projection.flix`
 - ビュー変換: screenPos = worldPos * scale - offset。
   `pub type alias ViewTransform = { offset = Vec2.Vec2, scale = Vec2.Vec2 }`
 - world 座標を screen 座標に変換する: screen = world * scale - offset
@@ -1000,7 +999,7 @@
 - 回転の行列（平行移動なし）。q は長さ 1 として読む。
   `pub def toMat4(q: Quat): Mat4.Mat4`
 
-## RadialBuiltin — `engine/src/render/RadialBuiltin.flix`
+## RadialBuiltin — `engine/src/render2d/RadialBuiltin.flix`
 - テクスチャの 1 辺の px 数（正方形）。Render.lightAt / darkAt が
   `pub def size(): Int32`
 - 明かり（Add 用）のテクスチャ名。`__` で始めるのはゲームのアセット名と
@@ -1047,7 +1046,7 @@
 - glTF のノードの列から、当たり判定の箱の的の列を作る（mesh の無いノードは飛ばす）。鍵は keyOf がノードから決める。
   `pub def boxTargetsOf(keyOf: Model3d.ModelNode -> a, nodes: List[Model3d.ModelNode]): List[(a, RayTarget)]`
 
-## Rect — `engine/src/render/Rect.flix`
+## Rect — `engine/src/render2d/Rect.flix`
 - デフォルト値で Rect を生成する（alpha は 1.0 = 不透明）
   `pub def make(size: Vec2.Vec2, color: Color): Rect`
 - 埋め込んだ Transform 部品を取り出す
@@ -1097,7 +1096,7 @@
 - 全方向に amount 分だけ広げた矩形を返す。負の値なら縮む（内側の余白）。
   `pub def grow(amount: Float64, rect: Rect2): Rect2`
 
-## RenderTarget — `engine/src/RenderTarget.flix`
+## RenderTarget — `engine/src/platform/RenderTarget.flix`
 - ターゲットを開くたびに前の中身をどう始末するかの 3 択（wgpu / Vulkan の LoadOp と同じ語彙）。
   `pub enum LoadOp { case Keep case Clear(Color) case ClearTransparent }`
 - ターゲットの寸法の基準。Design = design 解像度（ドット絵の画素の大きさにそろえる）・
@@ -1314,7 +1313,7 @@
   `pub def droppedLightsWarnings(cmd: Scene3dCmd): List[(String, String)]`
 - `pub type alias RenderCmd = { at = Vec2.Vec2, clip = Option[Rect2.Rect2], scene = Scene3dCmd }`
 
-## ShaderDoc — `engine/src/ShaderDoc.flix`
+## ShaderDoc — `engine/src/shader/ShaderDoc.flix`
 - 位置 (u,v) のどちらの軸を読むか。
   `pub enum Axis with Eq, ToString { case U case V }`
 - 3D の world の軸（左手系。X = 東・Y = 上・Z = 北。Scene3d と同じ約束）。World / Normal の成分。
@@ -1398,7 +1397,7 @@
 - 材質の tex / blur のうち、materialTexReads の limit 組目より後ろの組を読む物を 0 の Const に置き換える
   `pub def limitMaterialTexReads(limit: Int32, spec: Spec, emission: Option[Shade]): (Spec, Option[Shade])`
 
-## ShaderEval — `engine/src/ShaderEval.flix`
+## ShaderEval — `engine/src/shader/ShaderEval.flix`
 - テクスチャ 1 枚ぶんの画素（ARGB・正立・行優先）。Tex ノードが CPU 側で標本する素材。
   `pub type alias TexData = { width = Int32, height = Int32, pixels = Vector[Int32] }`
 - Rgba16Float の Pass の画素（wgpu の TextureFormat::Rgba16Float の絵を CPU で持つ形）。
@@ -1449,7 +1448,7 @@
 - 段の列 chain の uv (u, v) の r・g・b を lod で読む（sampleMip と同じ読み方。3D の法線マップが読む）。
   `pub def sampleMipRgb(chain: Vector[TexData], sampling: { linear = Bool, repeat = Bool }, lod: Float64, u: Float64, v: Float64): (Float64, Float64, Float64)`
 
-## ShaderGen — `engine/src/ShaderGen.flix`
+## ShaderGen — `engine/src/shader/ShaderGen.flix`
 - vertex シェーダー（面 quad 1 枚・uv を渡すだけ）。Spec に依存しない固定ソース。
   `pub def vertexSource(): String`
 - ノイズ関数の固定テンプレ（hash2 / worley / fbm）。Spec に依存しないので 1 度だけ pin し、
@@ -1470,7 +1469,7 @@
 - `pub def texMipSource(): String`
 - `pub def compileBody(spec: ShaderDoc.Spec): String`
 
-## ShaderJson — `engine/src/ShaderJson.flix`
+## ShaderJson — `engine/src/shader/ShaderJson.flix`
 - JSON をトップレベルの Spec へ読み取る。壊れていれば Err（パス付きの説明）。
   `pub def parse(json: Json): Result[JsonError, ShaderDoc.Spec]`
 - parse の「色を名前で書ける」版。palette は色票の名前 → 実色で、JSON 側は
@@ -1509,7 +1508,7 @@
   `pub def inverseBinds(s: Skin3d): Vector[Mat4.Mat4]`
 - `pub def rootTransform(s: Skin3d): Mat4.Mat4`
 
-## Splash — `engine/src/render/Splash.flix`
+## Splash — `engine/src/render2d/Splash.flix`
 - 起動画面 1 枚の見え方。
   `pub type alias View = { design = Vec2.Vec2, atlas = FontAtlas, logoSize = Vec2.Vec2, phase = String, ratio = Option[Float64], turns = Float64 }`
 - 組み込みの素材で埋めた見え方。フォントもロゴも決まっているので、
@@ -1521,7 +1520,7 @@
 - 流れるバーの位置。1 秒で 1 周する。
   `pub def turnsOf(elapsedSec: Float64): Float64`
 
-## Sprite — `engine/src/render/drawable/Sprite.flix`
+## Sprite — `engine/src/render2d/drawable/Sprite.flix`
 - デフォルト値で Sprite を生成する（テクスチャ全体を表示）
   `pub def make(texture: String, position: Vec2.Vec2, scale: Vec2.Vec2): Sprite`
 - 埋め込んだ Transform 部品を取り出す
@@ -1551,7 +1550,7 @@
 - regionRect / hframes / vframes / frame と元テクスチャサイズから
   `pub def computeUv(sprite: Sprite, textureSize: Vec2.Vec2): {uvOffset = Vec2.Vec2, uvScale = Vec2.Vec2}`
 
-## SpriteFrames — `engine/src/render/drawable/SpriteFrames.flix`
+## SpriteFrames — `engine/src/render2d/drawable/SpriteFrames.flix`
 - 1 フレームの定義
   `pub type alias Frame = { texture = String, regionRect = Option[Rect2.Rect2], duration = Float64 }`
 - 1 アニメーションの定義
@@ -1569,7 +1568,7 @@
 - 指定アニメ・フレーム index の regionRect（切り出し矩形）を返す。
   `pub def frameRegion(name: String, frame: Int32, spriteFrames: SpriteFrames): Option[Rect2.Rect2]`
 
-## Text — `engine/src/render/Text.flix`
+## Text — `engine/src/render2d/Text.flix`
 - テキストとフォントアトラスから Text を生成する。
   `pub def make(text: String, fontAtlas: FontAtlas, fontSize: Float64): Text`
 - 折り返し幅（表示 px）を設定する。この幅を超える字は次の行へ送られる。
@@ -1667,7 +1666,7 @@
 - linearToSrgb と同じ式の GLSL の関数（float → float。負は 0・1 を超えても切らない）。
   `pub def linearToSrgbGlsl(name: String): String`
 
-## TileLayer — `engine/src/render/TileLayer.flix`
+## TileLayer — `engine/src/render2d/TileLayer.flix`
 - 色変調なし（白 = テクスチャの色のまま）。tint の既定値として使う。
   `pub def noTint(): Color`
 - TileLayer を TileMapRenderCmd に変換する（GameEngine.render 内で使用）。
@@ -1701,16 +1700,16 @@
 - TileData のリストを GPU インスタンス (TileInstance) のリストに変換する。
   `pub def buildInstances(tiles: List[TileData], tileSet: Tileset, tileSize: Float64): List[GameEngine.TileInstance]`
 
-## TileSetAtlasSource — `engine/src/render/Tileset.flix`
+## TileSetAtlasSource — `engine/src/render2d/Tileset.flix`
 - margin/spacing のデフォルトを 0 として生成する。
   `pub def make(config: { textureName = String, marginX = Float64, marginY = Float64, spacingX = Float64, spacingY = Float64 }): TileSetAtlasSource`
 
-## Tileset — `engine/src/render/Tileset.flix`
+## Tileset — `engine/src/render2d/Tileset.flix`
 - `pub def make(source: TileSetAtlasSource): Tileset`
 - タイル 1 マスの一辺（ピクセル）。本プロジェクトはタイル正方形なので Float64 単一値
   `pub def tileSize(tileSet: Tileset): Float64`
 
-## Transform — `engine/src/render/Transform.flix`
+## Transform — `engine/src/render2d/Transform.flix`
 - 変換なしの初期値（原点・無回転・等倍・せん断なし）。
   `pub def identity(): Transform`
 - 位置を取得する
@@ -1836,7 +1835,7 @@
 - `pub def distanceSquared(a: Vec3, b: Vec3): Float64`
 - `pub def normalized(v: Vec3): Vec3`
 
-## Visual — `engine/src/render/Visual.flix`
+## Visual — `engine/src/render2d/Visual.flix`
 - 既定の見た目（白で色変調なし・表示・重なり順 0）。
   `pub def default(): Visual`
 - 色変調を取得する

@@ -1,6 +1,6 @@
 // SoftRaster.Internal.Surface — 宣言シェーダーの面を画素ごとに評価して描く（mask・縮んだターゲットの評価点つき）。
 // SoftRaster の中身。
-// ゲームからは呼ばない（SoftRaster の中身。ゲームが使う関数は SoftRaster にある）。
+// ゲームからは呼ばない（SoftRaster の中身。ゲーム向けの関数は SoftRaster にある）。
 pub mod SoftRaster.Internal.Surface {
     import java.awt.image.BufferedImage
     use SoftRaster.{HdrCanvas, SurfaceCmd, argbOfRgba, blendPixel, blendPixelF, forEachPixel, onceOutsideLoop, pickedPixel, shadeAll}

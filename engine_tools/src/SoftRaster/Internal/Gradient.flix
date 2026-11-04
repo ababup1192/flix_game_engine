@@ -1,6 +1,6 @@
 // SoftRaster.Internal.Gradient — 頂点色つき多角形を画素ごとに描く（三角形の中の色を頂点の色からなめらかにつなぐ）。
 // SoftRaster の中身。
-// ゲームからは呼ばない（SoftRaster の中身。ゲームが使う関数は SoftRaster にある）。
+// ゲームからは呼ばない（SoftRaster の中身。ゲーム向けの関数は SoftRaster にある）。
 pub mod SoftRaster.Internal.Gradient {
     import java.awt.image.BufferedImage
     use SoftRaster.{HdrCanvas, argbOfRgba, blendPixel, blendPixelF, f32, forEachPixel, onceOutsideLoop, shadeAll}

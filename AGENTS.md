@@ -82,6 +82,7 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 
 - **絵の下限（矩形だけの画面から脱する 5 性質）**: [docs/drawing-floor.md](docs/drawing-floor.md)
 - **Flix の決まり（予約語・コメントの流儀）**: [docs/flix-conventions.md](docs/flix-conventions.md)
+- **層を置く物差し（抽象の境目は実装が 2 つある所にだけ・新しい機種の切れ目は `Platform.Services` と Fs と LoadProgress の handler）**: [docs/flix-conventions.md](docs/flix-conventions.md) の「層を置く物差し」
 - **エラー処理（既定値で続ける / `Err` を返す / `bug!` で止める の使い分け）**: [docs/error-handling.md](docs/error-handling.md)
 - **z-index の範囲の地図（world / UI / Transition / HUD / デバッグの重なり順の仕切り）**: [docs/z-bands.md](docs/z-bands.md)
 - **性能（3 つの門・どこまで直すか・残っている二乗の一覧）**: [docs/performance.md](docs/performance.md)

@@ -98,6 +98,7 @@ help:
 	@echo "  make lint-f32             engine の pub 面に Float32 が出ていないか検査 (Float32 は GL / OpenAL / STB の内側だけ)"
 	@echo "  make lint-z-table         重なり順の z を数で決める所がパッケージに 1 か所か検査 (借用は警告だけ)"
 	@echo "  make lint-value-discard   値を let _ = で捨てていないか検査 (純粋な式だと Flix が呼び出しごと消す)"
+	@echo "  make lint                 engine の lint のうち 0 件の物をまとめて (forbid・max-lines・value-discard・hoist・record-wrap・state-shape・doc-refs・z-table・f32)"
 	@echo "  make lint-forbid          古い書き方を止める (bin/lint-rules/forbid.json。代わりの物を出す)"
 	@echo "  make lint-max-lines       engine の src の .flix の行数の上限 (bin/lint-rules/max-lines.json。超えた物は除外の一覧)"
 	@echo "  make lint-quadratic       fold の中で蓄積を作り直す二乗の形が無いか検査 (全量)"
@@ -544,6 +545,16 @@ lint-z-table:
 	@bin/fge z-table --all
 
 # ── ゲート: 古い書き方 (1 行の正規表現 + 代わりの物) ─────────────
+# ── lint をまとめて流す ─────────────────────────────────────
+# engine の作業場の lint のうち、今 0 件の物を 1 回で流す（コミット時のフックは触ったファイルだけを見るので、全量はここで見る）。
+# WhyNot: lint-quadratic・lint-fallback・lint-jargon をまだ入れない — 全量では前からの当たりが残っていて、ここが毎回赤になる。
+# WhyNot: 依存に並べず順に make を呼ぶ — make -j で並べると出力が混ざり、どの lint が落ちたか読めない。
+.PHONY: lint
+lint:
+	@for t in lint-forbid lint-max-lines lint-value-discard lint-hoist lint-record-wrap lint-state-shape lint-doc-refs lint-z-table lint-f32; do \
+		$(MAKE) --no-print-directory $$t || exit 1; \
+	done
+
 .PHONY: lint-forbid
 lint-forbid:
 	@bin/fge forbid --all
@@ -598,7 +609,7 @@ lint-doc-refs:
 	@bin/fge doc-refs
 
 # ── 起動画面の素材 ────────────────────────────────────────
-# 組み込みフォント (ASCII の 1bit ビットマップ) とロゴを engine/src/render/BootFontData.flix へ
+# 組み込みフォント (ASCII の 1bit ビットマップ) とロゴを engine/src/render2d/BootFontData.flix へ
 # 作り直す。fpkg は .flix しか運べないので、生成物はコミットする。
 # 起動画面の文言に新しい字を足したとき・ロゴを差し替えたときだけ回す。
 # PREVIEW=<dir> を付けると、作った結果を目視用の PNG でも書き出す。

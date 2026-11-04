@@ -141,6 +141,9 @@
 - stride 枚ごとに 1 枚を残す（0 番から）。
   `pub def every(stride: Int32, xs: List[a]): List[a]`
 
+## LogCapture — `engine_tools/src/LogCapture.flix`
+- `pub def capture(f: Unit -> a \ ef): (a, List[String]) \ ef + IO`
+
 ## RadialGlow — `engine_tools/src/RadialGlow.flix`
 - Addハロ用の1画素: rgb=白固定、alpha=中心で高く縁で0（straight alpha）。
   `pub def haloPixel(curve: Float64 -> Float64, t: Float64): Int32`

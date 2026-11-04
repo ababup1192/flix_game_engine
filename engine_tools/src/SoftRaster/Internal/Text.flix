@@ -1,6 +1,6 @@
 // SoftRaster.Internal.Text — フォント（グリフ Drawable を出力解像度の TTF で直接描く）。フォントの表を組み、
 // グリフ 1 つを描き、字の縁の設定を本ごとに切り替える。SoftRaster の中身。
-// ゲームからは呼ばない（SoftRaster の中身。ゲームが使う関数は SoftRaster にある）。
+// ゲームからは呼ばない（SoftRaster の中身。ゲーム向けの関数は SoftRaster にある）。
 pub mod SoftRaster.Internal.Text {
     import java.awt.Graphics2D
     import java.awt.RenderingHints

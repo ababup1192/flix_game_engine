@@ -1,6 +1,6 @@
 // SoftRaster.Internal.DrawList — 1 枚に描く物（Drawable・多角形・シェーダー面・3D の場面）を (z, 追加順) の 1 列に並べ、
 // 読む絵とフォントを引いてから、種類ごとの描き手へ順に渡す（Rgba8Unorm と Rgba16Float の描き先の 2 本）。SoftRaster の中身。
-// ゲームからは呼ばない（SoftRaster の中身。ゲームが使う関数は SoftRaster にある）。
+// ゲームからは呼ばない（SoftRaster の中身。ゲーム向けの関数は SoftRaster にある）。
 pub mod SoftRaster.Internal.DrawList {
     import java.awt.image.BufferedImage
     import java.awt.Graphics2D
@@ -42,7 +42,7 @@ pub mod SoftRaster.Internal.DrawList {
         let textures = Map.foldLeftWithKey((acc, name, img) -> Map.insert(name, img, acc),
             fileTextures, argbPassImages(argbReadNames(req), extraImages));
         let fctx = buildFontTable(cache, req, extraFonts, fontAntialias);
-        // tex 場（Field.Tex）が読む画素表。surfaces が実際に使う名前だけ 1 回で Vector 化する —
+        // tex 場（Field.Tex）の読み先の画素表。surfaces が実際に使う名前だけ 1 回で Vector 化する —
         // 画素ループの中で BufferedImage を触らない（getRGB を毎画素呼ぶと桁で遅い）。
         // 無い名前は warnLog に控えて一度だけ知らせる（eval は純関数のまま黒 0.0 を返す）。
         let usedTexNames = surfaces

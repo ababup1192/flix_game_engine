@@ -198,7 +198,7 @@ CPU の描く時間（SoftRaster・SoftRaster3d）は `CpuTiming.measure({ warmu
 
 ## 6. 手本と壊れ方 — 同じファイルの中で流儀が割れていた
 
-`engine/src/render/Text.flix` には、同じ形の `List.foldLeft` が 2 つある。
+`engine/src/render2d/Text.flix` には、同じ形の `List.foldLeft` が 2 つある。
 **片方は正しく、もう片方は 2026-08-13 まで二乗だった。**
 
 **手本**（`groupRows:144`）— 新しい要素を `::` で先頭へ積み、最後に `List.reverse` で並べ直す:
@@ -365,7 +365,7 @@ N が定数なので実害は無いと判断している。**N を決めるの�
 （比例なら 8 倍）で、二乗であることが数字で出た。`preludeSource` の 119 個の `+` 連鎖も
 同じ回で 1 回組みに替えている（項数は固定なので二乗ではないが、`compile` の割り当ての
 7 割を占めていた）。`compile` 1 回の割り当ては 314,848 → **121,608 バイト（−61%）**。
-検査は `engine/test/TestShaderGrowth.flix` に常設した。
+検査は `engine_world/test/TestShaderGrowth.flix` に常設した。
 
 ### 要相談として残した物（2026-08-17 に調べて、手を付けなかった）
 

@@ -1,7 +1,7 @@
 // BootFontGen — 起動画面が使う「組み込みフォント」と「ロゴ」を Flix ソースへ焼き込む生成器。
 //
 // 走らせ方: make boot-font   （中身は java bin/BootFontGen.java）
-// 出力先:   engine/src/render/BootFontData.flix
+// 出力先:   engine/src/render2d/BootFontData.flix
 //
 // なぜ Flix ソースに焼くのか: 配布パッケージ (fpkg) は .flix しか運べないので、PNG や TTF を
 // アセットとして同梱できない。数十 KB のビットマップならソースの文字列リテラルで運べる。
@@ -29,7 +29,7 @@ public class BootFontGen {
 
     static final String TTF = "templates/rpg-starter/assets/PixelMplus10-Regular.ttf";
     static final String LOGO = "docs/brand/flix_ge_icon.png";
-    static final String OUT = "engine/src/render/BootFontData.flix";
+    static final String OUT = "engine/src/render2d/BootFontData.flix";
     static final String SOURCE_NOTE = "PixelMplus10-Regular.ttf / 10px / M+ FONT LICENSE";
 
     /** 焼き込みピクセル高さ。PixelMplus10 は 10px 設計なので等倍でドットが揃う。 */
