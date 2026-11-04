@@ -779,6 +779,8 @@ RELEASE_GATES := release-guard studio-parity sync $(TEST) gl-parity
 release: release-verify
 
 # release-publish の後半 (配る物を組んで Release に付ける)。CI だけが流す。
+# WhyNot: GL の層の jar を Release に添えずに出さない — flix.toml の [jar-dependencies] がこの Release から取りに行き、
+# lib/ の無いゲームが組めなくなる。
 release-assets:
 	cd $(ENGINE_FULL_DIR) && "$(FLIX)" build-pkg
 	@# WhyNot: build-pkg の後に置くのは、zip の中身に engine_full.fpkg が入るため。
@@ -788,6 +790,7 @@ release-assets:
 	  --title "v$(VERSION)" --generate-notes \
 	  "$(ENGINE_FULL_FPKG_SRC)#$(ENGINE_FULL_FPKG_NAME)" \
 	  "$(ENGINE_FULL_TOML_SRC)#$(ENGINE_FULL_TOML_NAME)" \
+  "$(GL_JAR)#$(GL_JAR_NAME)" \
 	  "$(BUNDLE_ZIP)" "$(BUNDLE_SUMS)"
 
 # 手元で門を通し、通した commit を印に書く。公開は CI の release-publish がする。

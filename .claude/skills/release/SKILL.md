@@ -42,7 +42,7 @@ allowed-tools: Read, Grep, Glob, Bash
 - [ ] 2. 手元で make release（= make release-verify。通した commit を release/verified.txt に書く）
 - [ ] 3. release/verified.txt をコミット / main へ push（2 と 3 の間に main へほかを入れない）
 - [ ] 4. Actions の release を main で起動（CI が make release-publish）
-- [ ] 5. lib/ を消したコピーで外部 fetch 検証
+- [ ] 5. lib/ を消したコピーで外部 fetch 検証（fpkg と toml に加え、GL の層の jar `fge-gl-<版>.jar` も Release から取れて build と run が通るか）
 ```
 
 手元の `make release` は release-guard → studio-parity → `sync` → `test-par-all`（全量ゲート）→ `gl-parity` を通して

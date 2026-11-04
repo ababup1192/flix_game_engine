@@ -1,6 +1,6 @@
 // GlCallLog — デスクトップの描き手（LwjglLayer・GlOffscreen）が GL の値（GlContext の LWJGL 版）を作る所。
 // 環境変数 FLIX_GE_GL_LOG=<ファイル> がある時だけ、呼び出しを 1 行ずつ控える版（RecordingGl）で包み、画面のコマを出すたびに
-// 控えをファイルへ足す（描く手順を替える前と後で、呼び出しの並びを比べる用）。控えるのは起動の分と、頭の FLIX_GE_GL_LOG_FRAMES コマ（既定 6）。
+// 控えをファイルへ足す（描く手順を替える前と後で、呼び出しの並びを比べる用。控える間は起動画面を描かない — RenderSplash.disabled）。控えるのは起動の分と、頭の FLIX_GE_GL_LOG_FRAMES コマ（既定 6）。
 mod GlCallLog {
     import fge.gl.GlContext
     import fge.gl.LwjglGl
@@ -44,7 +44,7 @@ mod GlCallLog {
 
     def framesOf(): Int32 \ IO =
         let v = System.getenv("FLIX_GE_GL_LOG_FRAMES");
-        if (Object.isNull(v)) 6 else Int32.fromString(v) |> Option.getWithDefault(6)
+        if (Object.isNull(v)) 6 else Int32.fromString(v) |> Option.getWithDefault(6) |> Int32.max(1)
 
     def writeText(path: String, text: String, append: Bool): Unit \ IO =
         let writer = new FileWriter(path, append);

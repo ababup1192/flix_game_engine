@@ -35,7 +35,7 @@ pub mod RenderTexture {
     /// メモリ上の ARGB 画素(行優先 width×height — PxSpriteAtlas.bake の出力そのまま)を
     /// OpenGL テクスチャとしてアップロードする(実行時アトラス焼きの GL 側出口)。
     /// GL_BGRA + UNSIGNED_INT_8_8_8_8_REV は ARGB int 列をそのまま食う組み合わせ。
-    /// フィルタは loadTexture と同じ NEAREST(ドット絵前提)。
+    /// フィルタは uploadBytes と同じ NEAREST(ドット絵前提)。
     pub def loadTextureFromPixels(gl: GlContext, width: Int32, height: Int32, argb: Vector[Int32]): RenderAsset.TextureInfo \ IO =
         let textureID = gl.createTexture();
         gl.bindTexture(GlConst.TEXTURE_2D, textureID);

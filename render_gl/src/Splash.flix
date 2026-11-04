@@ -46,10 +46,13 @@ mod RenderSplash {
         if (disabled() or not pastGrace(st, now)) ()
         else render(st, draw, design, phase, done, total, now)
 
-    /// FLIX_GE_NO_SPLASH=1 で起動画面を丸ごと止める（従来どおりの起動と見比べる用）。
+    /// FLIX_GE_NO_SPLASH=1 で起動画面を丸ごと止める（従来どおりの起動と見比べる用）。FLIX_GE_GL_LOG を置いた時も止める。
+    // WhyNot: GL の呼び出しを控える時に起動画面を描かない — 起動画面は時刻で間引いて描くので、読み込みの速さで
+    // 控えの行の数が変わり、前後の並びを比べられない。
     pub def disabled(): Bool \ IO =
         let value = System.getenv("FLIX_GE_NO_SPLASH");
-        not Object.isNull(value) and value != "0"
+        let glLog = System.getenv("FLIX_GE_GL_LOG");
+        (not Object.isNull(value) and value != "0") or not (Object.isNull(glLog) or String.isEmpty(glLog))
 
     // ── 内部 ──────────────────────────────────────────────────
 

@@ -56,7 +56,7 @@ pub mod GlOffscreen {
             depthStencil = Int32,
             width = Int32,
             height = Int32,
-            gl = GlCallLog.Opened,
+            glLog = GlCallLog.Opened,
             paint = RenderPaint.Paint,
             fonts = RenderPaint.Fonts,
             design = Vec2.Vec2,
@@ -77,7 +77,7 @@ pub mod GlOffscreen {
         case PreparedData({
             context = Context,
             caps = GLCapabilities,
-            gl = GlCallLog.Opened,
+            glLog = GlCallLog.Opened,
             paint = RenderPaint.Paint,
             fonts = RenderPaint.Fonts,
             config = GameEngine.EngineConfig,
@@ -113,7 +113,7 @@ pub mod GlOffscreen {
                     let fonts = RenderPaint.loadAssets(gl, paint, LwjglAssets.loader(), config, (_, _, _) -> checked_ecast(()));
                     let stamps = config#textureManifest
                         |> List.foldLeft((acc, entry) -> Map.insert(entry#name, stampOf(entry#path), acc), Map.empty());
-                    Ok(PreparedData.PreparedData({ context = context, caps = caps, gl = opened, paint = paint, fonts = fonts,
+                    Ok(PreparedData.PreparedData({ context = context, caps = caps, glLog = opened, paint = paint, fonts = fonts,
                                                    config = config, stamps = stamps }))
                 } catch {
                     case e: Throwable =>
@@ -142,7 +142,7 @@ pub mod GlOffscreen {
                 let paint = { screenFramebuffer = fbo, keepHistory = false,
                               frameArgsBase = { clearColor = cfg#background | paint0#frameArgsBase } | paint0 };
                 Ok(SessionData.SessionData({
-                    context = p#context, gl = p#gl, fbo = fbo, colorTex = colorTex, depthStencil = depthStencil,
+                    context = p#context, glLog = p#glLog, fbo = fbo, colorTex = colorTex, depthStencil = depthStencil,
                     width = width, height = height, paint = paint, fonts = p#fonts,
                     design = { x = Int32.toFloat64(config#designWidth), y = Int32.toFloat64(config#designHeight) },
                     stamps = Ref.fresh(Static, p#stamps)
@@ -341,8 +341,8 @@ pub mod GlOffscreen {
                 let (_, size, _) = now;
                 if (size < 0i64) count
                 else {
-                    Option.forEach(info -> RenderTexture.deleteTexture(s#gl#gl, info), RenderPaint.textureInfo(s#paint, entry#name));
-                    RenderPaint.putTexture(entry#name, LwjglAssets.loadTexture(s#gl#gl, entry#path, entry#hasAlpha), s#paint);
+                    Option.forEach(info -> RenderTexture.deleteTexture(s#glLog#gl, info), RenderPaint.textureInfo(s#paint, entry#name));
+                    RenderPaint.putTexture(entry#name, LwjglAssets.loadTexture(s#glLog#gl, entry#path, entry#hasAlpha), s#paint);
                     count + 1
                 }
             }
@@ -358,13 +358,13 @@ pub mod GlOffscreen {
     /// textureName のフォントに字を足す（Platform.GpuResources.ensureGlyphs と同じ）。
     pub def ensureGlyphs(session: Session, textureName: String, codepoints: Set[Int32]): Unit \ IO =
         let SessionData.SessionData(s) = session;
-        RenderPaint.ensureGlyphs(s#gl#gl, s#fonts, textureName, codepoints)
+        RenderPaint.ensureGlyphs(s#glLog#gl, s#fonts, textureName, codepoints)
 
     /// ファイルの無い絵（ドット絵のアトラスなど）を名前で載せる。同じ名前・同じ key なら何もしない。
     /// argb = width × height の行優先の ARGB。
     pub def uploadImage(session: Session, name: String, key: String, width: Int32, height: Int32, argb: Vector[Int32]): Unit \ IO =
         let SessionData.SessionData(s) = session;
-        RenderPaint.ensureTexture(s#gl#gl, s#paint, name, key, width, height, argb)
+        RenderPaint.ensureTexture(s#glLog#gl, s#paint, name, key, width, height, argb)
 
     // ── 塗る ──
 
@@ -378,7 +378,7 @@ pub mod GlOffscreen {
     pub def handle(session: Session, f: Unit -> a \ ef): a \ (ef - HandledEffects) + IO =
         let SessionData.SessionData(s) = session;
         let paint = s#paint;
-        let gl = s#gl#gl;
+        let gl = s#glLog#gl;
         let size = () -> checked_ecast((s#width, s#height));
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, s#fbo);
         // WhyNot 並びを変えない: op は内側の handler から順にたどるので、sprite ごとに呼ぶ GpuResources を一番内側に置く。
@@ -386,7 +386,7 @@ pub mod GlOffscreen {
         handleWindowless(s#design, () ->
         RenderPaintHandlers.handleDiagnostics(paint, () ->
         RenderPaintHandlers.handleDraw3d(paint, () ->
-        RenderPaintHandlers.handleDraw2d(gl, paint, size, (_, _) -> s#gl#onScreenFrame(), () ->
+        RenderPaintHandlers.handleDraw2d(gl, paint, size, (_, _) -> s#glLog#onScreenFrame(), () ->
         RenderPaintHandlers.handleGpuResources(gl, paint, s#fonts, f))))))
 
     /// 窓の無い所の入力・窓・時計・注釈: 何も押されていない・閉じない・1/60 秒ずつ進む・注釈は書かない。
