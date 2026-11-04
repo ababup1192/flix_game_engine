@@ -27,6 +27,21 @@ mod TestDocs {
         Assert.assertEq(expected = Ok(()), loaded)
 
     @Test
+    def testProjectJsonHasPortraitDesign(): Unit \ {Assert, Fs.FileRead} =
+        // project.json は縦の design の決め方（web.portraitDesign）を持つ（縦に持って開くと縦の画面で起動する）。
+        let spec = ProjectLoader.loadProject(".") |> Result.toOption |> Option.flatMap(p -> p#portraitDesign)
+            |> Option.map(s -> (s#width, s#minHeight));
+        Assert.assertEq(expected = Some((540, 960)), spec)
+
+    @Test
+    def testPortraitDocMatchesCodeDefaults(): Unit \ {Assert, Fs.FileRead} =
+        // novel.portrait.json は読めて、コードの既定値と同じ値から出発している。
+        let read = DocJson.readJson(PortraitDoc.path()) |> Result.toOption |> Option.map(_ -> PortraitDoc.rec(PortraitDoc.load(PortraitDoc.path())));
+        let d = PortraitDoc.rec(PortraitDoc.defaults());
+        let shape = (r: PortraitDoc.Rec) -> (r#bodySize, r#buttonHeight, r#choiceHeight, r#settingRowHeight, r#tabHeight, r#backHeight);
+        Assert.assertEq(expected = Some(shape(d)), read |> Option.map(shape))
+
+    @Test
     def testEveryPhotoHasATexture(): Unit \ {Assert, Fs.FileRead} =
         // novel.backdrops.json の写真は、どれも project.json の textures に名前がある（描き出しと実機が同じ名前で読む）。
         let res = TestKit.res();

@@ -17,6 +17,36 @@ type exportWebSettings struct {
 	VirtualPad    *exportVirtualPad `json:"virtualPad"`
 	TouchGestures map[string]string `json:"touchGestures"`
 	Orientation   string            `json:"orientation"`
+	// 縦に持って開いた時の design（読むのは WebLayer。ここは形だけ検査する。決まりは ProjectLoader の readPortraitDesign と同じ）。
+	PortraitDesign *exportPortraitDesign `json:"portraitDesign"`
+}
+
+type exportPortraitDesign struct {
+	Width     *int `json:"width"`
+	MinHeight *int `json:"minHeight"`
+	MaxHeight *int `json:"maxHeight"`
+}
+
+// checkPortraitDesign は web.portraitDesign の形を見る（width・minHeight は 1 以上、minHeight は width より大きい、
+// maxHeight は書いたなら minHeight 以上、横だけの orientation と一緒に書かない）。maxHeight を書かない時の既定は
+// ProjectLoader が width × 2.4 と minHeight の大きい方にするので、ここでは比べない。
+func checkPortraitDesign(p *exportPortraitDesign, orientation string) error {
+	if p == nil {
+		return nil
+	}
+	if p.Width == nil || p.MinHeight == nil || *p.Width < 1 || *p.MinHeight < 1 {
+		return fmt.Errorf("project.json の web.portraitDesign の width と minHeight は 1 以上の数。\n  次: { \"width\": 540, \"minHeight\": 960 } の形にする")
+	}
+	if *p.MinHeight <= *p.Width {
+		return fmt.Errorf("project.json の web.portraitDesign の minHeight（%d）が width（%d）以下（縦長の design にならない）。\n  次: minHeight を width より大きくする", *p.MinHeight, *p.Width)
+	}
+	if p.MaxHeight != nil && *p.MaxHeight < *p.MinHeight {
+		return fmt.Errorf("project.json の web.portraitDesign の maxHeight（%d）が minHeight（%d）より小さい。\n  次: maxHeight を minHeight 以上にするか消す", *p.MaxHeight, *p.MinHeight)
+	}
+	if orientation == "landscape" {
+		return fmt.Errorf("project.json の web.portraitDesign と web.orientation \"landscape\" が一緒にある（縦で起動しても「横にしてください」が出る）。\n  次: orientation を any にする")
+	}
+	return nil
 }
 
 type exportVirtualPad struct {
@@ -94,10 +124,13 @@ func resolveWebTouch(game string, raw json.RawMessage) (webTouch, error) {
 	}
 	var s exportWebSettings
 	if err := json.Unmarshal(raw, &s); err != nil {
-		return t, fmt.Errorf("project.json の web を読めない: %v\n  次: web の形を直す（keysDoc・virtualPad・touchGestures・orientation）", err)
+		return t, fmt.Errorf("project.json の web を読めない: %v\n  次: web の形を直す（keysDoc・virtualPad・touchGestures・orientation・portraitDesign）", err)
 	}
 	if !webOrientations[s.Orientation] {
 		return t, fmt.Errorf("project.json の web.orientation が %q。\n  次: landscape・portrait・any のどれかにする", s.Orientation)
+	}
+	if err := checkPortraitDesign(s.PortraitDesign, s.Orientation); err != nil {
+		return t, err
 	}
 	t.Orientation = s.Orientation
 	if s.VirtualPad == nil && len(s.TouchGestures) == 0 {

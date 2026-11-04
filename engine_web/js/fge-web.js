@@ -140,6 +140,41 @@ var fgeSizeOverride = (function () {
   return m ? m[1] : "";
 })();
 
+// 縦の design を選ぶか（WebLayer が起動の時に 1 回だけ聞く）。?orientation=portrait|landscape があればそれ（PC で縦を確かめる時）、
+// 無ければスマホ（区分 Small と同じ: 指の端末で短い辺が 600 CSS px 未満・?size=small）で、今の画面が縦長か。
+// WhyNot: マウスの端末で窓が縦長なだけでは縦にしない — PC で開発者の道具を横に付けた窓や縦置きのモニタで、横の画面が変わってしまう。
+// WhyNot: タブレットを縦に持った時は縦にしない — 縦の design の下限（9:16）より太い 3:4 の画面で左右に帯が出て、横の design の時と見た目が大きく変わる。
+var fgeOrientationOverride = (function () {
+  var m = /[?&]orientation=(portrait|landscape)\b/.exec(location.search);
+  return m ? m[1] : "";
+})();
+function fgeWantsPortrait() {
+  if (fgeOrientationOverride) return fgeOrientationOverride === "portrait";
+  var phone = fgeSizeOverride ? fgeSizeOverride === "small" : (fgeCoarseAtBoot && fgeScreenShortSide < 600);
+  return phone && innerHeight > innerWidth;
+}
+// 縦の design の時の描き先の大きさ（CSS px）。class を付けて切り欠きの内側へ寄せてから測る（測った比と描き先の比をそろえる）。
+// WhyNot: パッドの時に canvas を測らない — 縦持ちのパッドの canvas は design の比から高さが決まるので、比を決める前の大きさにならない。
+var fgePortraitBox = { w: 0, h: 0 };
+function fgePreparePortraitView() {
+  document.body.classList.add("fge-portrait-design");
+  var r = fgeCanvas.getBoundingClientRect();
+  var w = r.width > 0 ? r.width : innerWidth;
+  var h = r.height > 0 ? r.height : innerHeight;
+  if (document.body.classList.contains("fge-pad-on")) {
+    var pad = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--fge-pad-min")) || 0;
+    h = Math.max(1, innerHeight - pad);
+  }
+  fgePortraitBox = { w: w, h: h };
+}
+// 縦の design で起動すると決めた後: 描き先の比を縦の design にし、回した時は「縦にしてください」を出す。
+function fgeUsePortraitDesign(aspect) {
+  document.documentElement.style.setProperty("--fge-aspect", String(aspect));
+  fgeWeb.orientation = "portrait";
+  fgeApplyLayout();
+  fgeResizeCanvas();
+}
+
 fgePointer.touch = fgeCoarseAtBoot;
 var fgePad = { fingers: new Map(), targets: [], dpad: null };
 function fgePadSync() {

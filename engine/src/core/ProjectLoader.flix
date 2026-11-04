@@ -15,7 +15,9 @@
 //     "scene3dTextureBudgetCount": Int,（任意。3D の場面の絵を GPU に持つ枚数の上限。既定 64）
 //     "textures": [{"name": String, "path": String, "hasAlpha": Bool}, ...],
 //     "fonts":    [{"name": String, "path": String, "fontSize": Float}, ...],
-//     "sounds":   [{"name": String, "path": String, "looping": Bool}, ...]
+//     "sounds":   [{"name": String, "path": String, "looping": Bool}, ...],
+//     "web": { "portraitDesign": {"width": Int, "minHeight": Int, "maxHeight": Int} }
+//                                      （任意。縦に持って開いた時の design。Project#portraitDesign へ。ほかの web の欄は書き出しの道具が読む）
 //   }
 //
 // 画像・フォント・サウンドのパスは project root からの相対で記述する。
@@ -53,10 +55,34 @@ pub mod ProjectLoader {
     }
 
     /// 読み込み結果。シーンは別途 `findSceneFiles` で列挙する。
+    /// portraitDesign = web.portraitDesign（縦に持って開いた時の design の決め方。書いていなければ None = いつも横の design）。
     pub type alias Project = {
         rootDir = String,
-        config  = ProjectConfig
+        config  = ProjectConfig,
+        portraitDesign = Option[PortraitDesign]
     }
+
+    /// 縦の design の決め方（project.json の web.portraitDesign）。幅は width に固定し、高さは開いた画面の縦横の比から決めて
+    /// minHeight と maxHeight の間に切る（maxHeight は任意・既定は width × 2.4 と minHeight の大きい方）。minHeight は width より大きい。
+    // WhyNot: 高さも固定しない — 縦長の比は端末ごとに 16:9〜21:9 と違い、固定すると上下に帯が出る。
+    // WhyNot: 幅を画面の比で動かさない — 1 行の字数と字の実際の大きさが端末ごとに変わり、読み物の行の長さが揺れる。
+    pub type alias PortraitDesign = { width = Int32, minHeight = Int32, maxHeight = Int32 }
+
+    /// 縦の design の大きさ（幅, 高さ）。view = 描き先の大きさ（CSS px など。比だけを使う）。view が 0 以下なら高さは minHeight。
+    pub def portraitDesignOf(spec: PortraitDesign, view: Vec2.Vec2): (Int32, Int32) =
+        let fromView = if (view#x > 0.0 and view#y > 0.0)
+            Float64.tryToInt32(Float64.round(Int32.toFloat64(spec#width) * view#y / view#x)) |> Option.getWithDefault(spec#minHeight)
+            else spec#minHeight;
+        (spec#width, Int32.min(spec#maxHeight, Int32.max(spec#minHeight, fromView)))
+
+    /// 縦で起動する時の設定: design を portraitDesignOf に替え、窓の大きさを view にした config。縦の指定が無ければ None（横のまま起動する）。
+    pub def portraitConfigOf(proj: Project, view: Vec2.Vec2): Option[ProjectConfig] =
+        proj#portraitDesign |> Option.map(spec -> {
+            let (w, h) = portraitDesignOf(spec, view);
+            let winW = Float64.tryToInt32(Float64.round(view#x)) |> Option.filter(v -> v > 0) |> Option.getWithDefault(w);
+            let winH = Float64.tryToInt32(Float64.round(view#y)) |> Option.filter(v -> v > 0) |> Option.getWithDefault(h);
+            { designWidth = w, designHeight = h, windowWidth = winW, windowHeight = winH | proj#config }
+        })
 
     /// project.json を読んで Project を組み立てる。
     /// 読めない・JSON が崩れている・欄の型が違うときは Err(message) を返す
@@ -91,7 +117,8 @@ pub mod ProjectLoader {
             fontJson   <- getField(root, "fonts");
             fonts      <- readFonts(rootDir, fontJson);
             soundJson  <- getField(root, "sounds");
-            sounds     <- readSounds(rootDir, soundJson)
+            sounds     <- readSounds(rootDir, soundJson);
+            portrait   <- readPortraitDesign(root)
         ) yield {
             let config: ProjectConfig = {
                 rootDir         = rootDir,
@@ -109,7 +136,7 @@ pub mod ProjectLoader {
                 scene3dTextureBudgetMB = positiveIntOr("scene3dTextureBudgetMB", GameEngine.defaultScene3dTextureBudgetMB(), root),
                 scene3dTextureBudgetCount = positiveIntOr("scene3dTextureBudgetCount", GameEngine.defaultScene3dTextureBudgetCount(), root)
             };
-            { rootDir = rootDir, config = config }
+            { rootDir = rootDir, config = config, portraitDesign = portrait }
         }
 
     /// 任意の整数のキー key（scene3dTextureBudgetMB・scene3dTextureBudgetCount）。無い・数でない・1 未満は既定 fallback。
@@ -260,6 +287,35 @@ pub mod ProjectLoader {
                 )
             case _ => Err(err("'sounds' is not an array"))
         }
+
+    /// web.portraitDesign（任意）。web か portraitDesign が無ければ None。有るのに形が違えば Err（ゲームの作者が直す物で、起動の時に止める）。
+    def readPortraitDesign(root: Map[String, Util.Json.Json]): Result[JsonError, Option[PortraitDesign]] =
+        let spec = Map.get("web", root) |> Option.flatMap(web -> match web {
+            case JObject(m) => Map.get("portraitDesign", m)
+            case _          => None
+        });
+        match spec {
+            case None       => Ok(None)
+            case Some(json) => readPortraitSpec(json) |> Result.map(Some)
+        }
+
+    def readPortraitSpec(json: Util.Json.Json): Result[JsonError, PortraitDesign] =
+        forM (
+            m      <- matchObject(json, "web.portraitDesign");
+            width  <- getInt(m, "width");
+            minH   <- getInt(m, "minHeight");
+            maxH   <- optionalInt(m, "maxHeight", Int32.max(minH, width * 12 / 5));
+            spec   <- checkPortraitSpec({ width = width, minHeight = minH, maxHeight = maxH })
+        ) yield spec
+
+    def optionalInt(map: Map[String, Util.Json.Json], key: String, fallback: Int32): Result[JsonError, Int32] =
+        if (Map.memberOf(key, map)) getInt(map, key) else Ok(fallback)
+
+    def checkPortraitSpec(spec: PortraitDesign): Result[JsonError, PortraitDesign] =
+        if (spec#width < 1 or spec#minHeight < 1) Err(err("web.portraitDesign の width と minHeight は 1 以上"))
+        else if (spec#minHeight <= spec#width) Err(err("web.portraitDesign の minHeight は width より大きい（縦長の design にする）"))
+        else if (spec#maxHeight < spec#minHeight) Err(err("web.portraitDesign の maxHeight は minHeight 以上"))
+        else Ok(spec)
 
     def err(msg: String): JsonError =
         Decode(JsonPath.empty(), TypeMismatch(msg))

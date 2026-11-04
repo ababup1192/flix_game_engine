@@ -186,6 +186,32 @@ func schemaKeyNames(t *testing.T, path string) []string {
 	return sortedKeys(seen)
 }
 
+func TestResolveWebTouchAcceptsPortraitDesign(t *testing.T) {
+	for _, c := range []string{
+		`{"orientation": "any", "portraitDesign": {"width": 540, "minHeight": 960}}`,
+		`{"portraitDesign": {"width": 300, "minHeight": 800}}`,
+	} {
+		if _, err := resolveWebTouch(t.TempDir(), json.RawMessage(c)); err != nil {
+			t.Errorf("通るはず（maxHeight の既定は minHeight 以上になる）: %s %v", c, err)
+		}
+	}
+}
+
+func TestResolveWebTouchRejectsBadPortraitDesign(t *testing.T) {
+	cases := []string{
+		`{"portraitDesign": {"width": 0, "minHeight": 960}}`,
+		`{"portraitDesign": {"width": 540}}`,
+		`{"portraitDesign": {"width": 540, "minHeight": 960, "maxHeight": 959}}`,
+		`{"portraitDesign": {"width": 540, "minHeight": 540}}`,
+		`{"orientation": "landscape", "portraitDesign": {"width": 540, "minHeight": 960}}`,
+	}
+	for _, c := range cases {
+		if _, err := resolveWebTouch(t.TempDir(), json.RawMessage(c)); err == nil {
+			t.Errorf("止めるはず: %s", c)
+		}
+	}
+}
+
 func mapsEqual(a, b map[string]string) bool {
 	if len(a) != len(b) {
 		return false

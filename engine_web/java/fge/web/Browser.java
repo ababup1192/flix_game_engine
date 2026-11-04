@@ -38,6 +38,26 @@ public final class Browser {
     @JSBody(script = "return fgeSizeOverride;")
     public static native String sizeOverride();
 
+    /** 縦の design を選ぶか（頁の ?orientation=portrait|landscape、無ければスマホ（区分 Small）で今の画面が縦長か）。起動の時に 1 回だけ聞く。 */
+    @JSBody(script = "return fgeWantsPortrait();")
+    public static native boolean wantsPortrait();
+
+    /** 縦の design の時の描き先を切り欠きの内側へ寄せて、その大きさを測る（portraitViewWidth / portraitViewHeight で読む）。 */
+    @JSBody(script = "fgePreparePortraitView();")
+    public static native void preparePortraitView();
+
+    /** preparePortraitView で測った描き先の幅（CSS px）。 */
+    @JSBody(script = "return fgePortraitBox.w;")
+    public static native double portraitViewWidth();
+
+    /** preparePortraitView で測った描き先の高さ（CSS px）。 */
+    @JSBody(script = "return fgePortraitBox.h;")
+    public static native double portraitViewHeight();
+
+    /** 縦の design で起動する: 描き先の比（幅 ÷ 高さ）を替え、回した時に「縦にしてください」を出す。 */
+    @JSBody(params = {"aspect"}, script = "fgeUsePortraitDesign(aspect);")
+    public static native void usePortraitDesign(double aspect);
+
     /** canvas の描き先の高さ（画素）。 */
     @JSBody(script = "return fgeCanvasHeight();")
     public static native int canvasHeight();

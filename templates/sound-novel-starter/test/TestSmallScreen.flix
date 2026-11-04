@@ -5,7 +5,7 @@ mod TestSmallScreen {
     use fge::{App, Display}
     use TestKit.{begun, settle, w0}
 
-    def small(res: Res.Res): Layout.Fit = Layout.fitOf(Display.SizeClass.Small, res#smallScreen)
+    def small(res: Res.Res): Layout.Fit = Layout.fitOf(Display.SizeClass.Small, Display.Orientation.Landscape, Layout.size(Layout.Fit.Regular), res#smallScreen, res#portrait)
 
     def center(r: { position = { x = Float64, y = Float64 }, size = { x = Float64, y = Float64 } }): { x = Float64, y = Float64 } =
         { x = r#position#x + r#size#x / 2.0, y = r#position#y + r#size#y / 2.0 }

@@ -11,13 +11,16 @@ mod LwjglEnv {
     /// frameShotDir: FLIX_GE_FRAME_SHOT のフォルダ（空なら無し）。swap の直前の絵を frame-N.png へ書く。
     /// splashShotPath: FLIX_GE_SPLASH_SHOT のパス（空なら無し）。起動画面を数枚書く。
     /// fixedDt: FLIX_GE_FIXED_DT の秒（空なら無し）。毎コマの dt を実時間の代わりにこの値にする（同じ操作で同じ絵になるかを確かめる用）。
+    /// portraitView: FLIX_GE_PORTRAIT の画面の大きさ（空・"0" なら無し。"1" は Display.defaultPortraitView・"390x844" はその大きさ）。
+    /// 縦の指定（web.portraitDesign）を持つゲームを、縦に持ったスマホの design で起動する（LwjglLayer.withProject）。
     pub type alias Settings = {
         hidden = Bool,
         muted = Bool,
         frameStats = Bool,
         frameShotDir = Option[String],
         splashShotPath = Option[String],
-        fixedDt = Option[Float64]
+        fixedDt = Option[Float64],
+        portraitView = Option[Vec2.Vec2]
     }
 
     /// 今のプロセスの環境変数から読む。FLIX_GE_FIXED_DT が読めない値なら実時間のまま続け、1 行言う。
@@ -27,6 +30,7 @@ mod LwjglEnv {
         let env = snapshot();
         let settings = fromMap(env);
         warnUnreadableFixedDt(env, settings);
+        warnUnreadablePortrait(env, settings);
         settings
 
     /// 今のプロセスの環境変数を丸ごと表にする（render_gl の中で環境変数を読むのはここだけ）。
@@ -43,7 +47,23 @@ mod LwjglEnv {
           frameStats = Option.nonEmpty(filled("FLIX_GE_FRAME_STATS")),
           frameShotDir = filled("FLIX_GE_FRAME_SHOT"),
           splashShotPath = filled("FLIX_GE_SPLASH_SHOT"),
-          fixedDt = filled("FLIX_GE_FIXED_DT") |> Option.flatMap(text -> Result.toOption(parseFixedDt(text))) }
+          fixedDt = filled("FLIX_GE_FIXED_DT") |> Option.flatMap(text -> Result.toOption(parseFixedDt(text))),
+          portraitView = filled("FLIX_GE_PORTRAIT") |> Option.filter(text -> text != "0") |> Option.flatMap(text -> Result.toOption(parsePortraitView(text))) }
+
+    /// FLIX_GE_PORTRAIT の字を画面の大きさにする。"1" は Display.defaultPortraitView、"<幅>x<高さ>" は縦長（高さ > 幅 > 0）の時だけ受ける。
+    pub def parsePortraitView(text: String): Result[String, Vec2.Vec2] =
+        let trimmed = String.trim(text);
+        if (trimmed == "1") Ok(Display.defaultPortraitView())
+        else match String.splitOn({ substr = "x" }, trimmed) {
+            case w :: h :: Nil => portraitSizeOf(Float64.fromString(String.trim(w)), Float64.fromString(String.trim(h)))
+            case _             => Err("1 か <幅>x<高さ>（例 390x844）を書く")
+        }
+
+    def portraitSizeOf(w: Option[Float64], h: Option[Float64]): Result[String, Vec2.Vec2] = match (w, h) {
+        case (Some(x), Some(y)) if x > 0.0 and y > x => Ok({ x = x, y = y })
+        case (Some(_), Some(_))                       => Err("縦長の大きさを書く（高さ > 幅 > 0）")
+        case _                                        => Err("<幅>x<高さ> の数として読めない（例 390x844）")
+    }
 
     /// 1 コマの dt（秒）。fixedDt があれば実時間（elapsedNanos）の代わりにそれを使う。どちらも maxDt で切る（Platform.FrameClock.getDeltaTime の約束）。
     // WhyNot: dt の計算を LwjglLayer の handler の中に書かない — 固定と実時間の分かれ目をテストで固定したい。
@@ -72,6 +92,18 @@ mod LwjglEnv {
                 checked_ecast(Log.fellBack("lwjgl", "FLIX_GE_FIXED_DT=${text}", "実時間の dt", parseFailureOf(text)))
             case _ => ()
         }
+
+    def warnUnreadablePortrait(env: Map[String, String], settings: Settings): Unit \ IO =
+        match (Map.get("FLIX_GE_PORTRAIT", env) |> Option.filter(text -> text != "" and text != "0"), settings#portraitView) {
+            case (Some(text), None) => checked_ecast(Log.fellBack("lwjgl", "FLIX_GE_PORTRAIT=${text}", "横の design", portraitFailureOf(text)))
+            case _ => ()
+        }
+
+    /// parsePortraitView が受けなかった理由（受けた字なら空）。
+    def portraitFailureOf(text: String): String = match parsePortraitView(text) {
+        case Err(why) => why
+        case Ok(_)    => ""
+    }
 
     /// parseFixedDt が受けなかった理由（受けた字なら空）。
     def parseFailureOf(text: String): String = match parseFixedDt(text) {

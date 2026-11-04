@@ -319,10 +319,10 @@ mod World {
     pub def toCredits(res: Res.Res, w: World): World =
         { scene = Scene.Credits(w#realNow, stageOf(res, w)), panel = Panel.Closed, ask = None | w }
 
-    /// クレジットが流れ切ったか（行の高さの合計 + 画面の高さを流れたら）。
-    pub def creditsOver(res: Res.Res, w: World): Bool = match w#scene {
+    /// クレジットが流れ切ったか（行の高さの合計 + 画面の高さ screenHeight を流れたら）。縦の画面は高いぶん長く流れる。
+    pub def creditsOver(res: Res.Res, screenHeight: Float64, w: World): Bool = match w#scene {
         case Scene.Credits(startedAt, _) =>
-            Clock.since(startedAt, w#realNow) * KindDoc.rec(res#kind)#creditsSpeed >= creditsLength(res) + Layout.height()
+            Clock.since(startedAt, w#realNow) * KindDoc.rec(res#kind)#creditsSpeed >= creditsLength(res) + screenHeight
         case _ => false
     }
 

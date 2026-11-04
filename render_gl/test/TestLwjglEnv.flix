@@ -68,4 +68,27 @@ mod TestLwjglEnv {
         Assert.assertEq(expected = (0.1, 0.1),
                         (LwjglEnv.frameDt(None, 0.1, 500_000_000i64),
                          LwjglEnv.frameDt(Some(0.5), 0.1, 0i64)))
+
+    // ── 縦の起動（FLIX_GE_PORTRAIT）──────────────────────────────
+
+    /// "1" は既定の縦のスマホの大きさ、"<幅>x<高さ>" はその大きさ。
+    @Test
+    def testParsePortraitViewAcceptsOneAndSize(): Unit \ Assert =
+        let xy = (v: Vec2.Vec2) -> (v#x, v#y);
+        Assert.assertEq(expected = (Ok((390.0, 844.0)), Ok((360.0, 800.0))),
+                        (LwjglEnv.parsePortraitView("1") |> Result.map(xy), LwjglEnv.parsePortraitView(" 360x800 ") |> Result.map(xy)))
+
+    /// 横長・0・字は受けない。
+    @Test
+    def testParsePortraitViewRejectsLandscapeAndText(): Unit \ Assert =
+        Assert.assertEq(expected = (true, true, true),
+                        (Result.isErr(LwjglEnv.parsePortraitView("844x390")), Result.isErr(LwjglEnv.parsePortraitView("0x800")),
+                         Result.isErr(LwjglEnv.parsePortraitView("tall"))))
+
+    /// 置いていない・"0" なら縦にしない。
+    @Test
+    def testPortraitViewAbsentOrZeroIsNone(): Unit \ Assert =
+        Assert.assertEq(expected = (true, true),
+                        (Option.isEmpty(LwjglEnv.fromMap(Map.empty())#portraitView),
+                         Option.isEmpty(LwjglEnv.fromMap(Map#{ "FLIX_GE_PORTRAIT" => "0" })#portraitView)))
 }

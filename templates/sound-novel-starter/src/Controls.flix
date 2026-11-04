@@ -2,7 +2,7 @@
 // キーは KeysDoc（novel.keys.json）の割り当て、クリックは Layout の矩形（View が描く所と同じ）で当てる。
 // 入力の効き先は「いちばん手前の物」1 つ: 確認のウィンドウ → 開いている画面 → 選択肢 → クイックメニュー → 本文（送る）。
 mod Controls {
-    use fge::{App, AudioMixer, AudioMixerDoc, DocTable, Emit, Rect2, Resources}
+    use fge::{App, AudioMixer, AudioMixerDoc, Display, DocTable, Emit, Rect2, Resources}
     use fge::GameEngine.Key
 
     // ── 毎フレームの系 ──
@@ -27,8 +27,9 @@ mod Controls {
 
     def keysOf(res: Res.Res): KeysDoc.Rec = KeysDoc.rec(res#keys)
 
-    /// このフレームの並べ方の組（View が ViewCtx#display#sizeClass から引く組と同じ）。
-    def fitOf(res: Res.Res, frame: App.Frame): Layout.Fit = Layout.fitOf(frame#sizeClass, res#smallScreen)
+    /// このフレームの並べ方の組（View が ViewCtx#display から引く組と同じ。design の向きは design の形から決まる）。
+    def fitOf(res: Res.Res, frame: App.Frame): Layout.Fit =
+        Layout.fitOf(frame#sizeClass, Display.orientationOf(frame#viewport), frame#viewport, res#smallScreen, res#portrait)
 
     def interpret(res: Res.Res, frame: App.Frame, w: World.World): World.World \ Emit[World.Event] =
         if (Option.nonEmpty(w#ask)) askInput(res, frame, w)
@@ -38,7 +39,7 @@ mod Controls {
             case World.Scene.Reading(_)    => readingInput(res, frame, w)
             case World.Scene.Credits(_, _) =>
                 let k = keysOf(res);
-                if (World.creditsOver(res, w) or frame#mouseClicked or tapped(k#confirm, frame) or tapped(k#back, frame)) World.toTitle(w)
+                if (World.creditsOver(res, Layout.height(fitOf(res, frame)), w) or frame#mouseClicked or tapped(k#confirm, frame) or tapped(k#back, frame)) World.toTitle(w)
                 else w
         }
 
@@ -81,7 +82,7 @@ mod Controls {
 
     def readingInput(res: Res.Res, frame: App.Frame, w: World.World): World.World \ Emit[World.Event] =
         let k = keysOf(res);
-        let buttons = WorldMenu.buttons();
+        let buttons = WorldMenu.buttonsOf(fitOf(res, frame));
         let pressed = Layout.hitOf(List.length(buttons), i -> Layout.button(fitOf(res, frame), i, List.length(buttons)), frame#cursor)
             |> Option.filter(_ -> frame#mouseClicked) |> Option.flatMap(i -> List.nth(i, buttons));
         match pressed {
@@ -155,7 +156,7 @@ mod Controls {
         let fit = fitOf(res, frame);
         let count = Saves.perPage();
         let tabs = WorldSaves.tabsOf(w);
-        let tabHit = if (frame#mouseClicked) Layout.hitOf(List.length(tabs), Layout.tab(fit), frame#cursor) |> Option.flatMap(j -> List.nth(j, tabs)) else None;
+        let tabHit = if (frame#mouseClicked) Layout.hitOf(List.length(tabs), Layout.tab(fit, List.length(tabs)), frame#cursor) |> Option.flatMap(j -> List.nth(j, tabs)) else None;
         let removeHit = if (frame#mouseClicked) Layout.hitOf(count, Layout.remove(fit), frame#cursor) else None;
         let slotHit = Layout.hitOf(count, Layout.slot(fit), frame#cursor);
         match (tabHit, removeHit, slotHit) {
@@ -168,8 +169,8 @@ mod Controls {
                 else if (tapped(k#tabPrev, frame)) WorldSaves.moveTab(-1, w)
                 else if (tapped(k#tabNext, frame)) WorldSaves.moveTab(1, w)
                 else if (tapped(k#remove, frame)) WorldSaves.deleteHere(w)
-                else if (tapped(k#prev, frame)) WorldSaves.moveSlotCursor(-2, w)
-                else if (tapped(k#next, frame)) WorldSaves.moveSlotCursor(2, w)
+                else if (tapped(k#prev, frame)) WorldSaves.moveSlotCursor(-Layout.slotColumns(fitOf(res, frame)), w)
+                else if (tapped(k#next, frame)) WorldSaves.moveSlotCursor(Layout.slotColumns(fitOf(res, frame)), w)
                 else if (tapped(k#left, frame)) WorldSaves.moveSlotCursor(-1, w)
                 else if (tapped(k#right, frame)) WorldSaves.moveSlotCursor(1, w)
                 else if (tapped(k#confirm, frame)) WorldSaves.chooseHere(res, w)
@@ -265,6 +266,7 @@ mod Controls {
           credits = CreditsDoc.load(CreditsDoc.path()),
           keys = KeysDoc.load(KeysDoc.path()),
           smallScreen = SmallScreenDoc.load(SmallScreenDoc.path()),
+          portrait = PortraitDoc.load(PortraitDoc.path()),
           mixer = AudioMixerDoc.load(AudioMixer.defaults(), mixerPath()),
           dialogue = Talk.load() }
 
@@ -283,6 +285,7 @@ mod Controls {
                 |> DocTable.withActiveWhen(Resources.read((_, w) -> World.isCredits(w))))
             :: Resources.reloadRow("keys", KeysDoc.path(), res -> Res.withKeys(KeysDoc.load(KeysDoc.path()), res), unchanged)
             :: Resources.reloadRow("small", SmallScreenDoc.path(), res -> Res.withSmallScreen(SmallScreenDoc.load(SmallScreenDoc.path()), res), unchanged)
+            :: Resources.reloadRow("portrait", PortraitDoc.path(), res -> Res.withPortrait(PortraitDoc.load(PortraitDoc.path()), res), unchanged)
             :: Resources.reloadRow("mixer", mixerPath(), res -> Res.withMixer(AudioMixerDoc.load(AudioMixer.defaults(), mixerPath()), res), unchanged)
             :: Nil
 }

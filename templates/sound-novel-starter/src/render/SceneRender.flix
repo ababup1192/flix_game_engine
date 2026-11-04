@@ -1,15 +1,30 @@
 // SceneRender — ゲーム画面を画面なしで PNG に描き出す（スナップショット比較用）。
 // 実行: make render-all → gallery/*.png と gallery/<場面>.json（場面と World は Shots）
-//       make render SHOT=nvl → debug/nvl.png（1 枚だけ）。small-<場面> は同じ場面を小さい画面（スマホ）の並べ方で描く
+//       make render SHOT=nvl → debug/nvl.png（1 枚だけ）。small-<場面> は同じ場面を小さい画面（スマホ）の並べ方で描く。
+//       portrait-<場面> は縦に持ったスマホ（390×844 → 縦の design 540×1169）、portrait-short-<場面> は太い縦の画面（360×640 → 540×960）で描く
 // 背景のぼかしは宣言シェーダーの面なので、draw には渡さず ShaderEval が画素ごとに塗る（Render.shaderSurfaces）。
 // 写真は project.json の textures をそのまま読む（実機と同じ名前 → 同じファイル）。
 mod SceneRender {
-    use fge::{App, DocJson, Display, HeadlessFont, HeadlessRender, JsonCodec, Render, Vec2}
+    use fge::{App, DocJson, Display, HeadlessFont, HeadlessRender, JsonCodec, ProjectLoader, Render, Vec2}
 
     import java.io.File
     import java.lang.ProcessHandle
 
-    pub def design(): Vec2.Vec2 = { x = Layout.width(), y = Layout.height() }
+    pub def design(): Vec2.Vec2 = Layout.size(Layout.Fit.Regular)
+
+    /// 描き出す画面の形: 横（区分 Large か Small）か、画面の大きさ view の縦のスマホ。
+    enum Look {
+        case Landscape(Display.SizeClass)
+        case Portrait(Vec2.Vec2)
+    }
+
+    /// 縦の画面の design（project.json の web.portraitDesign と画面の大きさ view から。実機のブラウザと同じ決め方）。
+    /// 縦の指定が読めなければ 540×960。
+    def portraitDesignOf(view: Vec2.Vec2): Vec2.Vec2 \ IO =
+        let loaded = run { ProjectLoader.loadProject(".") } with Fs.FileRead.runWithIO;
+        loaded |> Result.toOption |> Option.flatMap(proj -> ProjectLoader.portraitConfigOf(proj, view))
+               |> Option.map(c -> { x = Int32.toFloat64(c#designWidth), y = Int32.toFloat64(c#designHeight) })
+               |> Option.getWithDefault({ x = 540.0, y = 960.0 })
 
     def ttf(): String = "assets/ShipporiMincho-Regular.subset.ttf"
 
@@ -73,30 +88,51 @@ mod SceneRender {
         ("small-title", "title") :: ("small-nvl", "nvl") :: ("small-adv", "adv") :: ("small-choice", "choice")
             :: ("small-save", "save") :: ("small-settings", "settings") :: ("small-ask", "ask") :: Nil
 
-    /// 描き出せる名前の全部（Shots の場面と、小さい画面の場面）。
-    def allNames(): List[String] = List.append(Shots.names(), smallShots() |> List.map(fst))
+    /// 縦の画面で描く場面: (描き出しの名前, Shots の場面の名前, 画面の大きさ)。World は同じ場面の物をそのまま使う。
+    /// 太い縦の画面（360×640）は縦の design の下限の高さで、並べ方がいちばん窮屈になる所を見る。
+    def portraitShots(): List[(String, String, Vec2.Vec2)] =
+        let tall = Display.defaultPortraitView();
+        let short = { x = 360.0, y = 640.0 };
+        ("portrait-title", "title", tall) :: ("portrait-nvl", "nvl", tall) :: ("portrait-adv", "adv", tall)
+            :: ("portrait-choice", "choice", tall) :: ("portrait-log", "log", tall) :: ("portrait-save", "save", tall)
+            :: ("portrait-settings", "settings", tall) :: ("portrait-ask", "ask", tall)
+            :: ("portrait-short-nvl", "nvl", short) :: ("portrait-short-save", "save", short)
+            :: ("portrait-short-settings", "settings", short) :: Nil
+
+    /// 描き出せる名前の全部（Shots の場面と、小さい画面と縦の画面の場面）。
+    def allNames(): List[String] =
+        List.flatten(Shots.names() :: (smallShots() |> List.map(fst)) :: (portraitShots() |> List.map(match (name, _, _) -> name)) :: Nil)
 
     def shotsInto(outDir: String, keep: String -> Bool): List[String] \ IO =
         discard (new File(outDir)).mkdirs();
         let cfg = cfgOf(outDir, texturesOf());
         let res = loadRes();
-        let regular = Shots.names() |> List.map(name -> (name, name, Display.SizeClass.Large));
-        let small = smallShots() |> List.map(match (name, scene) -> (name, scene, Display.SizeClass.Small));
-        List.append(regular, small) |> List.filter(match (name, _, _) -> keep(name)) |> List.filterMap(match (name, scene, sizeClass) ->
+        let regular = Shots.names() |> List.map(name -> (name, name, Look.Landscape(Display.SizeClass.Large)));
+        let small = smallShots() |> List.map(match (name, scene) -> (name, scene, Look.Landscape(Display.SizeClass.Small)));
+        let portrait = portraitShots() |> List.map(match (name, scene, view) -> (name, scene, Look.Portrait(view)));
+        List.flatten(regular :: small :: portrait :: Nil) |> List.filter(match (name, _, _) -> keep(name)) |> List.filterMap(match (name, scene, look) ->
             Shots.worldOf(scene, res) |> Option.map(w -> {
-                let path = shootAs(sizeClass, res, cfg, w, name);
+                let path = shootAs(look, res, cfg, w, name);
                 App.Headless.writeShotRecord(outDir, name, Some(E2e.fingerprint(res, w)));
                 path
             }))
 
     def shoot(res: Res.Res, cfg: HeadlessRender.RenderConfig, w: World.World, name: String): String \ IO =
-        shootAs(Display.SizeClass.Large, res, cfg, w, name)
+        shootAs(Look.Landscape(Display.SizeClass.Large), res, cfg, w, name)
 
-    /// 1 場面を端末の sizeClass の画面として PNG に描き出し、そのファイルパスを返す。hud の合流は実機と同じ App.composeScene を通し、
+    /// 1 場面を look の画面として PNG に描き出し、そのファイルパスを返す。hud の合流は実機と同じ App.composeScene を通し、
     /// 背景の面は surfaces として別に取り出して画素ごとに評価させる（draw に渡すと代表色のベタ塗りになる）。
-    def shootAs(sizeClass: Display.SizeClass, res: Res.Res, cfg: HeadlessRender.RenderConfig, w: World.World, name: String): String \ IO =
-        let desktop = App.viewCtxOf(cfg#fontAtlas, design());
-        let ctx = { display = { sizeClass = sizeClass | desktop#display } | desktop };
+    /// 縦の画面は design と描き出しの大きさを縦の design にし、画面の情報を Display.phonePortrait にする（実機のブラウザの縦と同じ組）。
+    def shootAs(look: Look, res: Res.Res, landscape: HeadlessRender.RenderConfig, w: World.World, name: String): String \ IO =
+        let (cfg, display) = match look {
+            case Look.Landscape(sizeClass) => (landscape, { sizeClass = sizeClass | Display.desktop(design()) })
+            case Look.Portrait(view) =>
+                let d = portraitDesignOf(view);
+                ({ design = d, frameW = Float64.round(d#x) |> Float64.tryToInt32 |> Option.getWithDefault(540),
+                   frameH = Float64.round(d#y) |> Float64.tryToInt32 |> Option.getWithDefault(960) | landscape },
+                 Display.phonePortrait(view, d))
+        };
+        let ctx = { display = display | App.viewCtxOf(cfg#fontAtlas, cfg#design) };
         let items = App.composeScene(None, 1.0, cfg#design, { world = View.frame(ctx, res, w), hud = View.hud(ctx, res, w) });
         let (drawables, polygons) = Render.draw(Render.withoutShaders(items));
         HeadlessRender.renderPngWith(cfg, drawables, polygons, Render.shaderSurfaces(items), name);

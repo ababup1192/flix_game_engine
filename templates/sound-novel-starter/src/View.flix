@@ -37,8 +37,10 @@ mod View {
     pub def envOf(fit: Layout.Fit, res: Res.Res, w: World.World): Env =
         { res = res, saves = w#saves, pointer = w#pointer, realNow = w#realNow, storyNow = World.now(w), fit = fit }
 
-    /// 描く画面の sizeClass から並べ方の組を選ぶ。
-    def fitOfCtx(ctx: App.ViewCtx, res: Res.Res): Layout.Fit = Layout.fitOf(ctx#display#sizeClass, res#smallScreen)
+    /// 描く画面の区分と design の向き・大きさから並べ方の組を選ぶ（Controls が Frame から引く組と同じ）。
+    // WhyNot: ctx#visible#size を design の大きさとして読んでよいのは、このゲームが camera を使わないから（HUD は常に design 全体）。
+    def fitOfCtx(ctx: App.ViewCtx, res: Res.Res): Layout.Fit =
+        Layout.fitOf(ctx#display#sizeClass, ctx#display#orientation, ctx#visible#size, res#smallScreen, res#portrait)
 
     // ── hud の中の z（小さいほど奥） ──
     def zVeil(): Int32 = 10
@@ -88,6 +90,10 @@ mod View {
 
     def isOver(r: Rect2.Rect2, env: Env): Bool = Layout.contains(r, env#pointer)
 
+    /// 添え書きの字（案内・日時・番号・群の見出し）の大きさ。縦の画面は 1 design px が CSS px で小さいので 1.25 倍。
+    // WhyNot: 添え書きの字まで novel.portrait.json に出さない — 押す物と本文の字だけが手触りで、添え書きはそれらに付いて決まる。
+    def captionSize(env: Env, size: Float64): Float64 = if (Layout.isPortrait(env#fit)) size * 1.25 else size
+
     /// 字の薄い色（選べない物・空き）。
     def dim(env: Env): Color = Color.mix(theme(env)#ink, theme(env)#panel, 0.55)
 
@@ -116,10 +122,19 @@ mod View {
 
     // ── 背景（写真をぼかして時間帯の色に） ──
 
-    /// 揺れても画面の端が覗かないよう、背景は画面より一回り大きく敷く。
-    def backdropRect(): Rect2.Rect2 = { position = { x = -12.0, y = -12.0 }, size = { x = Layout.width() + 24.0, y = Layout.height() + 24.0 } }
+    /// 揺れても画面の端が覗かないよう、背景は画面より一回り大きく敷く。縦の画面は写真の横長の比のまま高さに合わせ、
+    /// 左右のはみ出しを捨てる（真ん中を見せる）。
+    // WhyNot: 縦の画面で写真を画面の比に縮めない — 横長の写真が縦に潰れる。
+    def backdropRect(fit: Layout.Fit): Rect2.Rect2 =
+        let w = Layout.width(fit);
+        let h = Layout.height(fit);
+        if (Layout.isPortrait(fit)) {
+            let tall = h + 24.0;
+            let wide = tall * 16.0 / 9.0;
+            { position = { x = (w - wide) / 2.0, y = -12.0 }, size = { x = wide, y = tall } }
+        } else { position = { x = -12.0, y = -12.0 }, size = { x = w + 24.0, y = h + 24.0 } }
 
-    def backdrops(env: Env, stage: Stage.Stage): List[Render.PlacedItem] = backdropsIn(backdropRect(), env, stage)
+    def backdrops(env: Env, stage: Stage.Stage): List[Render.PlacedItem] = backdropsIn(backdropRect(env#fit), env, stage)
 
     /// 背景を矩形 area に塗る（実際の画面は揺れの分だけはみ出す backdropRect、サムネは画面ちょうど）。
     def backdropsIn(area: Rect2.Rect2, env: Env, stage: Stage.Stage): List[Render.PlacedItem] =
@@ -145,8 +160,8 @@ mod View {
             case Some("fireflies") =>
                 let color = theme(env)#firefly;
                 Fx.derive(kindOf(env)#fireflies, realSeconds(env), (_i, rand, t) -> {
-                    let x = rand(0) * Layout.width() + Num.sin(t * (0.15 + rand(2) * 0.2) + rand(3) * 6.28) * 40.0;
-                    let y = Layout.height() * (0.42 + rand(1) * 0.5) + Num.sin(t * (0.3 + rand(4) * 0.3) + rand(5) * 6.28) * 18.0;
+                    let x = rand(0) * Layout.width(env#fit) + Num.sin(t * (0.15 + rand(2) * 0.2) + rand(3) * 6.28) * 40.0;
+                    let y = Layout.height(env#fit) * (0.42 + rand(1) * 0.5) + Num.sin(t * (0.3 + rand(4) * 0.3) + rand(5) * 6.28) * 18.0;
                     let pulse = 0.5 + 0.5 * Num.sin(t * (1.2 + rand(6) * 1.6) + rand(7) * 6.28);
                     let a = pulse * pulse;
                     { x = x, y = y, a = a, r = 2.0 + rand(8) * 1.6 }
@@ -163,7 +178,9 @@ mod View {
 
     /// 読んでいる間の 1 画面。サムネも同じ関数で描く。
     def reading(atlas: FontAtlas, env: Env, r: World.Read): List[Render.PlacedItem] =
-        List.flatten(textLayer(atlas, env, r) :: choices(atlas, env, r) :: quickMenu(atlas, env, r) :: Nil)
+        if (Layout.isPortrait(env#fit))
+            List.flatten(portraitPage(atlas, env, r) :: choices(atlas, env, r) :: portraitButtons(atlas, env, r) :: Nil)
+        else List.flatten(textLayer(atlas, env, r) :: choices(atlas, env, r) :: quickMenu(atlas, env, r) :: Nil)
 
     def textLayer(atlas: FontAtlas, env: Env, r: World.Read): List[Render.PlacedItem] =
         match r#stage#mode {
@@ -192,17 +209,17 @@ mod View {
         let isCurrent = Option.exists(c -> c#source == line#source, r#page#current);
         if (isCurrent and Saves.isSeen(line#source, env#saves)) theme(env)#inkSeen else theme(env)#ink
 
-    /// 1 行が頁に占める高さ（行の数 × (字 + 行の間)）。
-    def lineHeight(env: Env, width: Float64, line: Page.Line): Float64 =
+    /// 1 行が頁に占める高さ（行の数 × (字 + 行の間)）。行の間は本文の字に比べて novel.kind.json の lineGap の割合（placeLine と同じ）。
+    def lineHeight(env: Env, sizes: { body = Float64, ruby = Float64 }, width: Float64, line: Page.Line): Float64 =
         let k = kindOf(env);
-        Int32.toFloat64(Page.rowsOf(k#bodySize, k#rubySize, width, line)) * (k#bodySize + k#lineGap)
+        Int32.toFloat64(Page.rowsOf(sizes#body, sizes#ruby, width, line)) * (sizes#body + k#lineGap * sizes#body / k#bodySize)
 
     /// NVL: 画面いっぱいに幕を敷き、頁に積んだ行と今の行を上から並べる（行の間に少し空きを入れて段落にする）。
     def nvl(atlas: FontAtlas, env: Env, r: World.Read): List[Render.PlacedItem] =
         let t = theme(env);
         let k = kindOf(env);
         let area = Layout.nvlText();
-        let veil = at(0.0, 0.0, RawDraw.box({ x = Layout.width(), y = Layout.height() }, t#panel, zVeil())
+        let veil = at(0.0, 0.0, RawDraw.box(Layout.size(env#fit), t#panel, zVeil())
                                     |> Render.fade(Float64.min(0.95, windowAlpha(env) * t#veil)));
         let current = r#page#current |> Option.map(line -> (line, Page.visibleCount(r#page)) :: Nil) |> Option.getWithDefault(Nil);
         let rows = List.append(r#page#lines |> List.map(line -> (line, String.length(line#text))), current);
@@ -210,7 +227,7 @@ mod View {
             let (done, y) = acc;
             let (line, visible) = row;
             let placed = placeLine(atlas, { x = area#x, y = y }, area#width, { body = k#bodySize, ruby = k#rubySize }, inkOf(line, env, r), visible, line, env);
-            (placed :: done, y + lineHeight(env, area#width, line) + 6.0)
+            (placed :: done, y + lineHeight(env, { body = k#bodySize, ruby = k#rubySize }, area#width, line) + 6.0)
         }, (Nil, area#y));
         veil :: List.append(List.flatten(List.reverse(items)), waitMark(atlas, { x = area#x + area#width - 10.0, y = endY - 4.0 }, env, r))
 
@@ -242,14 +259,114 @@ mod View {
             { at = pos, item = Render.textTinted("▼", atlas, 14.0, theme(env)#accent, zText() + 2) |> Render.fade(alpha) } :: Nil
         }
 
+    // ── 縦の画面の頁 ──
+
+    /// 縦の画面: 写真を上から下へ濃くなる覆いで沈め、画面いっぱいの頁に文を上から積む（NVL）。前の行は少し薄く、今の行ははっきり。
+    /// ADV は World の頁が今の 1 行だけなので、写真を上に見せたまま頁の下へ寄せて置く。
+    /// 頁の切れ目は World のまま（横の幅で数える）。縦の頁に入り切らない時は、古い行から行ごと上へ流して今の行を必ず見せる。
+    def portraitPage(atlas: FontAtlas, env: Env, r: World.Read): List[Render.PlacedItem] =
+        let t = theme(env);
+        let sizes = Layout.advTextSizes(env#fit, kindOf(env));
+        let area = Layout.page(env#fit, List.length(r#choices));
+        let adv = r#stage#mode == Stage.Mode.Adv;
+        let blockOf = (line, visible, isCurrent) ->
+            { line = line, visible = visible, isCurrent = isCurrent, height = blockHeight(env, sizes, area#size#x, line) };
+        let older = r#page#lines |> List.map(line -> blockOf(line, String.length(line#text), false));
+        let current = r#page#current |> Option.map(line -> blockOf(line, Page.visibleCount(r#page), true)) |> Option.toList;
+        let shown = keepLatest(area#size#y, List.append(older, current));
+        let total = shown |> List.foldLeft((sum, b) -> sum + b#height + Layout.paragraphGap(), 0.0);
+        let top = if (adv) area#position#y + area#size#y - Float64.max(0.0, total - Layout.paragraphGap()) else area#position#y;
+        let (items, endY) = shown |> List.foldLeft((acc, b) -> {
+            let (done, y) = acc;
+            let ink = if (b#isCurrent) inkOf(b#line, env, r) else Color.mix(t#ink, t#panel, 0.28);
+            (portraitBlock(atlas, env, sizes, { x = area#position#x, y = y }, area#size#x, ink, b#visible, b#line) :: done,
+             y + b#height + Layout.paragraphGap())
+        }, (Nil, top));
+        let mark = waitMark(atlas, { x = area#position#x + area#size#x - 12.0, y = endY - Layout.paragraphGap() - 4.0 }, env, r);
+        List.flatten(portraitVeil(env, adv) :: List.flatten(List.reverse(items)) :: mark :: Nil)
+
+    /// 縦の頁の覆い（上から下へ濃くなる）。NVL は全体を沈め、ADV は上の写真を見せて下だけを沈める。
+    /// 濃さは設定の「ウィンドウの濃さ」に比べる。
+    def portraitVeil(env: Env, adv: Bool): List[Render.PlacedItem] =
+        let t = theme(env);
+        let a = windowAlpha(env);
+        let stops = if (adv) (0.0, 0.1) :: (0.4, 0.3) :: (0.72, 1.1 * a) :: (1.0, 1.2 * a) :: Nil
+                    else (0.0, 0.6 * a) :: (0.3, 1.1 * a) :: (1.0, 1.2 * a) :: Nil;
+        let size = Layout.size(env#fit);
+        List.zip(stops, List.drop(1, stops)) |> List.map(match ((y0, a0), (y1, a1)) -> {
+            let top = size#y * y0;
+            let bottom = size#y * y1;
+            let alpha0 = Float64.min(0.95, a0);
+            let alpha1 = Float64.min(0.95, a1);
+            at(0.0, top, Render.gradPolygon(
+                { pos = { x = 0.0, y = 0.0 },              color = t#panel, alpha = alpha0 } ::
+                { pos = { x = size#x, y = 0.0 },           color = t#panel, alpha = alpha0 } ::
+                { pos = { x = size#x, y = bottom - top },  color = Color.darken(t#panel, 0.2), alpha = alpha1 } ::
+                { pos = { x = 0.0, y = bottom - top },     color = Color.darken(t#panel, 0.2), alpha = alpha1 } :: Nil,
+                zVeil()))
+        })
+
+    /// 縦の頁の 1 行が占める高さ（台詞なら上に添える名前の行 + 本文の行の数 × (字 + 行の間)）。
+    def blockHeight(env: Env, sizes: { body = Float64, ruby = Float64, name = Float64 }, width: Float64, line: Page.Line): Float64 =
+        nameRowOf(sizes, line) + lineHeight(env, { body = sizes#body, ruby = sizes#ruby }, width, line)
+
+    // WhyNot: 名前の行を名前の字の高さだけにしない — 本文の 1 行目のルビが名前の行の下へはみ出して重なる。
+    def nameRowOf(sizes: { body = Float64, ruby = Float64, name = Float64 }, line: Page.Line): Float64 =
+        if (String.isEmpty(line#speaker)) 0.0 else sizes#name + 8.0 + sizes#ruby * 0.5
+
+    /// 縦の頁に置く 1 行: 行・見えている字の数・今の行か・占める高さ。
+    pub type alias Block = { line = Page.Line, visible = Int32, isCurrent = Bool, height = Float64 }
+
+    /// 新しい方から、高さ room に入るだけの行（古い順に戻して返す）。行の途中では切らず行ごと落とす。今の行（最後）は入らなくても必ず残す。
+    pub def keepLatest(room: Float64, blocks: List[Block]): List[Block] =
+        let (kept, _, _) = List.reverse(blocks) |> List.foldLeft((acc, b) -> {
+            let (taken, used, open) = acc;
+            let next = used + b#height + (if (List.isEmpty(taken)) 0.0 else Layout.paragraphGap());
+            if (open and (List.isEmpty(taken) or next <= room)) (b :: taken, next, true) else (taken, used, false)
+        }, (Nil, 0.0, true));
+        kept
+
+    /// 縦の頁の 1 行（台詞は名前を小さく上に添える）。
+    def portraitBlock(atlas: FontAtlas, env: Env, sizes: { body = Float64, ruby = Float64, name = Float64 }, pos: Vec2.Vec2, width: Float64,
+                      ink: Color, visible: Int32, line: Page.Line): List[Render.PlacedItem] =
+        let nameRow = nameRowOf(sizes, line);
+        let name = if (nameRow > 0.0) textAt(pos#x, pos#y, line#speaker, atlas, sizes#name, theme(env)#name, zText() + 1) :: Nil else Nil;
+        let body = placeLine(atlas, { x = pos#x, y = pos#y + nameRow }, width,
+                             { body = sizes#body, ruby = sizes#ruby }, ink, visible, line, env);
+        List.append(name, body)
+
+    /// 縦の画面の操作の列: 頁の下に横一列の小さなボタン。押せる所は Layout.button の矩形（44 CSS px 以上）で、見た目のボタンはその内側に小さく置く。
+    def portraitButtons(atlas: FontAtlas, env: Env, r: World.Read): List[Render.PlacedItem] =
+        let t = theme(env);
+        let all = WorldMenu.buttonsOf(env#fit);
+        let n = List.length(all);
+        all |> List.zipWithIndex |> List.flatMap(match (i, button) -> {
+            let hit = Layout.button(env#fit, i, n);
+            let chip = { position = { x = hit#position#x + 2.0, y = hit#position#y + 12.0 },
+                         size = { x = hit#size#x - 4.0, y = hit#size#y - 24.0 } };
+            let lit = (button == World.Button.Auto and r#playback == World.Playback.Auto) or (button == World.Button.Skip and r#playback == World.Playback.Skip);
+            let over = isOver(hit, env);
+            let fill = if (lit) Color.mix(t#panel, t#accent, 0.35) else Color.lighten(t#panel, 0.04);
+            let color = if (not isButtonOpen(button, env, r)) Color.mix(t#ink, t#panel, 0.7)
+                        else if (lit) t#accent
+                        else if (over) t#ink
+                        else Color.mix(t#ink, t#panel, 0.2);
+            at(chip#position#x, chip#position#y,
+               RawDraw.box(chip#size, fill, zButtons() - 1) |> Render.fade(0.7)
+                   |> Render.outlineA({ color = if (lit or over) t#accent else Color.mix(t#ink, t#panel, 0.6), alpha = if (lit) 0.8 else 0.45, width = 1.0 })
+                   |> Render.rounded(chip#size#y / 2.0))
+            :: textIn(chip, label(buttonLabel(button), env), atlas, Layout.buttonTextSize(env#fit), color, zButtons()) :: Nil
+        })
+
     // ── 選択肢 ──
 
     def choices(atlas: FontAtlas, env: Env, r: World.Read): List[Render.PlacedItem] =
         let t = theme(env);
         let count = List.length(r#choices);
         // NVL は字が画面いっぱいにあるので、選ぶ間は幕を 1 枚足して頁を沈める。
-        let sink = if (count > 0 and r#stage#mode == Stage.Mode.Nvl)
-            at(0.0, 0.0, RawDraw.box({ x = Layout.width(), y = Layout.height() }, t#panel, zChoice() - 1) |> Render.fade(0.7)) :: Nil
+        // 縦の画面は頁を選択肢の上までに縮めるので、頁を沈める幕は要らない。
+        let sink = if (count > 0 and r#stage#mode == Stage.Mode.Nvl and not Layout.isPortrait(env#fit))
+            at(0.0, 0.0, RawDraw.box(Layout.size(env#fit), t#panel, zChoice() - 1) |> Render.fade(0.7)) :: Nil
             else Nil;
         sink ::: (r#choices |> List.zipWithIndex |> List.flatMap(match (i, option) -> {
             let rect = Layout.choice(env#fit, i, count);
@@ -262,12 +379,12 @@ mod View {
 
     def quickMenu(atlas: FontAtlas, env: Env, r: World.Read): List[Render.PlacedItem] =
         let t = theme(env);
-        let all = WorldMenu.buttons();
+        let all = WorldMenu.buttonsOf(env#fit);
         let n = List.length(all);
         let first = Layout.button(env#fit, 0, n);
         // ADV のウィンドウの下は写真の上なので、帯に薄い地を敷いてから字を置く。
         let strip = at(0.0, first#position#y - 4.0,
-                       Render.vgrad({ x = Layout.width(), y = Layout.height() - first#position#y + 4.0 },
+                       Render.vgrad({ x = Layout.width(env#fit), y = Layout.height(env#fit) - first#position#y + 4.0 },
                                     { top = t#panel, bottom = Color.darken(t#panel, 0.4) }, zButtons() - 1) |> Render.fade(0.55 * windowAlpha(env)));
         strip :: (all |> List.zipWithIndex |> List.map(match (i, button) -> {
             let rect = Layout.button(env#fit, i, n);
@@ -305,8 +422,8 @@ mod View {
     def title(atlas: FontAtlas, env: Env, cursor: World.TitleItem): List[Render.PlacedItem] =
         let t = theme(env);
         let s = StoryDoc.rec(env#res#story);
-        let center = Layout.width() / 2.0;
-        let shade = at(0.0, 0.0, Render.vgrad({ x = Layout.width(), y = Layout.height() },
+        let center = Layout.width(env#fit) / 2.0;
+        let shade = at(0.0, 0.0, Render.vgrad(Layout.size(env#fit),
                                               { top = t#panel, bottom = Color.darken(t#panel, 0.4) }, zVeil()) |> Render.fade(0.35));
         let fit = env#fit;
         let heading = TextDraw.centered({ text = s#title, atlas = atlas, size = 64.0, color = t#ink, z = zText(), centerX = center, y = Layout.titleHeadingY(fit) });
@@ -322,8 +439,8 @@ mod View {
             let r = Layout.titleItem(fit, i, count);
             at(r#position#x + 50.0, r#position#y + r#size#y - 3.0, RawDraw.box({ x = r#size#x - 100.0, y = 1.0 }, t#accent, zText()) |> Render.fade(0.6))
         }) |> Option.toList;
-        let hint = TextDraw.centered({ text = s#hint, atlas = atlas, size = 13.0, color = Color.mix(t#ink, t#panel, 0.4), z = zText(),
-                                       centerX = center, y = 512.0 });
+        let hint = TextDraw.centered({ text = s#hint, atlas = atlas, size = captionSize(env, 13.0), color = Color.mix(t#ink, t#panel, 0.4), z = zText(),
+                                       centerX = center, y = Layout.titleHintY(fit) });
         List.flatten((shade :: heading :: sub :: Nil) :: marker :: (hint :: items) :: Nil)
 
     pub def titleLabel(item: World.TitleItem): StoryDoc.Label = match item {
@@ -340,7 +457,8 @@ mod View {
     def credits(atlas: FontAtlas, env: Env, startedAt: Clock.Time[Clock.Real]): List[Render.PlacedItem] =
         let t = theme(env);
         let scrolled = Clock.since(startedAt, env#realNow) * kindOf(env)#creditsSpeed;
-        let veil = at(0.0, 0.0, RawDraw.box({ x = Layout.width(), y = Layout.height() }, t#panel, zVeil()) |> Render.fade(0.7));
+        let screenH = Layout.height(env#fit);
+        let veil = at(0.0, 0.0, RawDraw.box(Layout.size(env#fit), t#panel, zVeil()) |> Render.fade(0.7));
         let (items, _) = CreditsDoc.rec(env#res#credits)#rows |> List.foldLeft((acc, row) -> {
             let (done, y) = acc;
             let (size, color) = match row#style {
@@ -349,13 +467,13 @@ mod View {
                 case CreditsDoc.Style.Small   => (13.0, t#inkSeen)
                 case CreditsDoc.Style.Gap     => (0.0, t#ink)
             };
-            let visible = y > -60.0 and y < Layout.height() + 10.0 and size > 0.0;
+            let visible = y > -60.0 and y < screenH + 10.0 and size > 0.0;
             let placed = if (visible)
                 TextDraw.centered({ text = row#text, atlas = atlas, size = size, color = color, z = zText(),
-                                    centerX = Layout.width() / 2.0, y = y }) :: done
+                                    centerX = Layout.width(env#fit) / 2.0, y = y }) :: done
                 else done;
             (placed, y + World.creditsRowHeight(row#style))
-        }, (Nil, Layout.height() - scrolled));
+        }, (Nil, screenH - scrolled));
         veil :: items
 
     // ── 画面（バックログ・セーブ・ロード・設定・隠す） ──
@@ -378,12 +496,12 @@ mod View {
     def panelFrame(atlas: FontAtlas, heading: String, hint: String, env: Env): List[Render.PlacedItem] =
         let t = theme(env);
         let back = Layout.back(env#fit);
-        let h = Layout.heading();
-        let ground = at(0.0, 0.0, Render.vgrad({ x = Layout.width(), y = Layout.height() },
+        let h = Layout.heading(env#fit);
+        let ground = at(0.0, 0.0, Render.vgrad(Layout.size(env#fit),
                                                { top = Color.darken(t#panel, 0.1), bottom = t#panel }, zPanel()) |> Render.fade(0.9));
-        let rule = at(h#x, Layout.rule(), RawDraw.box({ x = Layout.width() - 2.0 * h#x, y = 1.0 }, t#accent, zPanelText()) |> Render.fade(0.35));
+        let rule = at(h#x, Layout.rule(env#fit), RawDraw.box({ x = Layout.width(env#fit) - 2.0 * h#x, y = 1.0 }, t#accent, zPanelText()) |> Render.fade(0.35));
         let hintRow = if (String.isEmpty(hint)) Nil
-            else textAt(h#x, Layout.hintY() + 6.0, hint, atlas, 12.0, Color.mix(t#ink, t#panel, 0.45), zPanelText()) :: Nil;
+            else textAt(h#x, Layout.hintY(env#fit) + 6.0, hint, atlas, captionSize(env, 12.0), Color.mix(t#ink, t#panel, 0.45), zPanelText()) :: Nil;
         ground :: rule :: textAt(h#x, h#y, heading, atlas, 28.0, t#accent, zPanelText())
             :: plate(back, isOver(back, env), env, zPanelText())
             :: textIn(back, label(StoryDoc.Label.Back, env), atlas, Layout.backTextSize(env#fit), if (isOver(back, env)) t#accent else t#ink, zPanelText() + 1)
@@ -398,7 +516,18 @@ mod View {
         let k = kindOf(env);
         logSize(env) + k#lineGap * logSize(env) / k#bodySize
 
-    def logSize(env: Env): Float64 = kindOf(env)#bodySize * 0.8
+    def logSize(env: Env): Float64 = match env#fit {
+        case Layout.Fit.Portrait(p, _) => p#logTextSize
+        case _                         => kindOf(env)#bodySize * 0.8
+    }
+
+    /// 縦の画面で、項目の上に置く名前の行の高さ（名前の無い項目は 0）。横は名前を左の列に置くので 0。
+    def logNameRow(env: Env, entry: World.Entry): Float64 =
+        let named = match entry {
+            case World.Entry.Said(line, _) => not String.isEmpty(line#speaker)
+            case World.Entry.Chose(_)      => false
+        };
+        if (named and Layout.isPortrait(env#fit)) logSize(env) * 0.75 + 6.0 else 0.0
 
     /// 項目の本文（選択肢は選んだ字そのまま）。
     def entryText(entry: World.Entry): String = match entry {
@@ -414,12 +543,12 @@ mod View {
     /// 1 項目の高さ（本文の行の数 + 項目の間）。
     def logEntryHeight(env: Env, entry: World.Entry): Float64 =
         let k = kindOf(env);
-        let rows = Page.rowsOf(logSize(env), k#rubySize * logSize(env) / k#bodySize, Layout.logText()#width, entryLine(entry));
-        Int32.toFloat64(rows) * rowHeightOf(env) + 14.0
+        let rows = Page.rowsOf(logSize(env), k#rubySize * logSize(env) / k#bodySize, Layout.logText(env#fit)#width, entryLine(entry));
+        Int32.toFloat64(rows) * rowHeightOf(env) + 14.0 + logNameRow(env, entry)
 
     /// 項目ごとの (番号, 項目, 上端, 高さ)。新しい項目を下に、遡るほど上（offset 0 = 一番新しい所が一番下に見える）。
     def logPlaced(env: Env, log: List[World.Entry], offset: Float64): List[(Int32, World.Entry, Float64, Float64)] =
-        let view = Layout.logView();
+        let view = Layout.logView(env#fit);
         let bottom = view#position#y + view#size#y + offset;
         let (rows, _) = log |> List.zipWithIndex |> List.foldLeft((acc, pair) -> {
             let (done, below) = acc;
@@ -434,14 +563,14 @@ mod View {
 
     def scrollSizeOf(env: Env, log: List[World.Entry]): { contentPx = Float64, viewportPx = Float64 } =
         { contentPx = log |> List.foldLeft((sum, entry) -> sum + logEntryHeight(env, entry), 0.0),
-          viewportPx = Layout.logView()#size#y }
+          viewportPx = Layout.logView(env#fit)#size#y }
 
     /// p の下にある項目の番号（読む範囲の外・戻れない項目は None）。
     pub def logEntryAt(fit: Layout.Fit, res: Res.Res, p: { x = Float64, y = Float64 }, w: World.World): Option[Int32] =
         entryAtOf(p, envOf(fit, res, w), World.logOf(w), WorldLog.offsetOf(w))
 
     def entryAtOf(p: { x = Float64, y = Float64 }, env: Env, log: List[World.Entry], offset: Float64): Option[Int32] =
-        if (not Layout.contains(Layout.logView(), p)) None
+        if (not Layout.contains(Layout.logView(env#fit), p)) None
         else logPlaced(env, log, offset) |> List.find(match (_, entry, top, h) -> p#y >= top and p#y < top + h and WorldLog.isJumpable(entry))
                                          |> Option.map(match (i, _, _, _) -> i)
 
@@ -449,8 +578,8 @@ mod View {
     def logPanel(atlas: FontAtlas, env: Env, log: List[World.Entry], offset: Float64): List[Render.PlacedItem] =
         let t = theme(env);
         let k = kindOf(env);
-        let view = Layout.logView();
-        let text = Layout.logText();
+        let view = Layout.logView(env#fit);
+        let text = Layout.logText(env#fit);
         let size = logSize(env);
         let rowHeight = rowHeightOf(env);
         let hovered = entryAtOf(env#pointer, env, log, offset);
@@ -461,13 +590,16 @@ mod View {
                 let glow = if (lit) at(view#position#x, top + 2.0,
                                        RawDraw.box({ x = view#size#x, y = h - 6.0 }, Color.lighten(t#panel, 0.12), zCard()) |> Render.fade(0.7) |> Render.rounded(3.0)) :: Nil
                            else Nil;
-                let baseY = top + 6.0;
+                let nameRow = logNameRow(env, entry);
+                let baseY = top + 6.0 + nameRow;
                 let (name, ink) = match entry {
                     case World.Entry.Said(line, _) =>
-                        let n = if (String.isEmpty(line#speaker)) Nil else textRight(Layout.logNameRight(), baseY + rowHeight - size, line#speaker, atlas, size * 0.9, t#name, zPanelText()) :: Nil;
+                        let n = if (String.isEmpty(line#speaker)) Nil
+                                else if (nameRow > 0.0) textAt(text#x, top + 6.0, line#speaker, atlas, size * 0.75, t#name, zPanelText()) :: Nil
+                                else textRight(Layout.logNameRight(), baseY + rowHeight - size, line#speaker, atlas, size * 0.9, t#name, zPanelText()) :: Nil;
                         (n, if (lit) Color.lighten(t#ink, 0.1) else t#ink)
                     case World.Entry.Chose(_) =>
-                        (at(text#x - 12.0, baseY + 4.0, RawDraw.box({ x = 2.0, y = h - 22.0 }, t#accent, zPanelText())) :: Nil, t#accent)
+                        (at(text#x - 12.0, baseY + 4.0, RawDraw.box({ x = 2.0, y = h - 22.0 - nameRow }, t#accent, zPanelText())) :: Nil, t#accent)
                 };
                 let body = RichText.placeRuby({ atlas = atlas, size = size, baseTint = ink, z = zPanelText(),
                                                 pos = { x = text#x, y = baseY + rowHeight - size },
@@ -482,7 +614,7 @@ mod View {
     /// スクロールバー（中身が読む範囲より長い時だけ）。つまみの長さは見えている割合、位置は遡った量。
     def scrollbar(env: Env, log: List[World.Entry], offset: Float64): List[Render.PlacedItem] =
         let t = theme(env);
-        let track = Layout.logTrack();
+        let track = Layout.logTrack(env#fit);
         let size = scrollSizeOf(env, log);
         if (size#contentPx <= size#viewportPx) Nil
         else {
@@ -516,7 +648,7 @@ mod View {
                    screenOf: Saves.Mark -> Option[World.Read]): List[Render.PlacedItem] =
         let t = theme(env);
         let tabs = pages#tabs |> List.zipWithIndex |> List.flatMap(match (j, tab) -> {
-            let r = Layout.tab(env#fit, j);
+            let r = Layout.tab(env#fit, List.length(pages#tabs), j);
             let on = tab == pages#tab;
             let lit = on or isOver(r, env);
             let bar = if (on) at(r#position#x, r#position#y + r#size#y - 2.0, RawDraw.box({ x = r#size#x, y = 2.0 }, t#accent, zPanelText() + 1)) :: Nil else Nil;
@@ -535,23 +667,28 @@ mod View {
         let tx = thumb#position#x + thumb#size#x + 14.0;
         let textWidth = r#position#x + r#size#x - 12.0 - tx;
         let y = r#position#y;
-        let number = textAt(tx, y + 10.0, slotNumber(tab, i, env), atlas, 13.0, if (lit) t#accent else t#inkSeen, zPanelText());
+        let small = captionSize(env, 13.0);
+        let number = textAt(tx, y + 10.0, slotNumber(tab, i, env), atlas, small, if (lit) t#accent else t#inkSeen, zPanelText());
         let card = plate(r, lit, env, zCard());
         match Saves.slotOf(tab, i, env#saves) {
             case Some(slot) =>
                 let rm = Layout.remove(env#fit, i);
-                let removeMark = textIn(rm, "×", atlas, 16.0, if (isOver(rm, env)) t#accent else dim(env), zPanelText());
-                let date = textRight(rm#position#x - 6.0, y + 10.0, Saves.dateText(slot#savedAt), atlas, 13.0, t#inkSeen, zPanelText());
-                let place = textAt(tx, y + 32.0, clipTo(textWidth, 17.0, atlas, slot#place), atlas, 17.0, t#ink, zPanelText());
+                let removeMark = textIn(rm, "×", atlas, captionSize(env, 16.0), if (isOver(rm, env)) t#accent else dim(env), zPanelText());
+                let date = textRight(rm#position#x - 6.0, y + 10.0, Saves.dateText(slot#savedAt), atlas, small, t#inkSeen, zPanelText());
+                let placeSize = captionSize(env, 17.0);
+                let place = textAt(tx, y + captionSize(env, 32.0), clipTo(textWidth, placeSize, atlas, slot#place), atlas, placeSize, t#ink, zPanelText());
                 let said = if (String.isEmpty(slot#speaker)) slot#excerpt else "${slot#speaker}${slot#excerpt}";
-                let excerpt = linesWithin(textWidth, 13.0, 2, atlas, said) |> List.zipWithIndex
-                    |> List.map(match (n, row) -> textAt(tx, y + 62.0 + Int32.toFloat64(n) * 19.0, row, atlas, 13.0, Color.mix(t#ink, t#panel, 0.2), zPanelText()));
+                let excerpt = linesWithin(textWidth, small, 2, atlas, said) |> List.zipWithIndex
+                    |> List.map(match (n, row) -> textAt(tx, y + captionSize(env, 62.0) + Int32.toFloat64(n) * captionSize(env, 19.0), row, atlas, small, Color.mix(t#ink, t#panel, 0.2), zPanelText()));
                 let badge = if (newest == Some((tab, i))) newBadge(atlas, thumb, env) else Nil;
                 List.flatten((card :: number :: removeMark :: date :: place :: excerpt) :: thumbnail(atlas, env, screenOf(slot#mark), thumb) :: badge :: Nil)
             case None =>
                 let empty = at(thumb#position#x, thumb#position#y, RawDraw.box(thumb#size, Color.darken(t#panel, 0.3), zThumb())
                                    |> Render.outlineA({ color = Color.mix(t#ink, t#panel, 0.75), alpha = 0.6, width = 1.0 }));
-                card :: number :: empty :: textIn(thumb, label(StoryDoc.Label.EmptySlot, env), atlas, 13.0, dim(env), zPanelText()) :: Nil
+                // 縦の画面のサムネは細いので、空きの字は右の字の列に置く。
+                let emptyAt = if (Layout.isPortrait(env#fit)) textAt(tx, y + captionSize(env, 32.0), label(StoryDoc.Label.EmptySlot, env), atlas, small, dim(env), zPanelText())
+                              else textIn(thumb, label(StoryDoc.Label.EmptySlot, env), atlas, small, dim(env), zPanelText());
+                card :: number :: empty :: emptyAt :: Nil
         }
 
     /// サムネ: その枠の戻れる所へ戻した画面（WorldRead.screenOf）を、実際の画面と同じ関数で描いて枠の大きさへ縮める（字は読めなくてよい）。
@@ -560,11 +697,11 @@ mod View {
         let t = theme(env);
         let away = { pointer = { x = -1.0, y = -1.0 } | env };
         // WhyNot: 背景を揺れの分はみ出す backdropRect で塗らない —— 写真の面（Shader）は切り抜き（clippedAll）が効かず、枠の外へはみ出す。
-        let whole = { position = { x = 0.0, y = 0.0 }, size = { x = Layout.width(), y = Layout.height() } };
+        let whole = Layout.screen(env#fit);
         let shown = screen |> Option.map(read ->
             List.flatten(backdropsIn(whole, away, read#stage) :: particles(away, read#stage) :: reading(atlas, away, read) :: Nil))
             |> Option.getWithDefault(Nil);
-        let k = Float64.min(r#size#x / Layout.width(), r#size#y / Layout.height());
+        let k = Float64.min(r#size#x / Layout.width(env#fit), r#size#y / Layout.height(env#fit));
         let small = shown |> Render.scaledAllAround(k, { x = 0.0, y = 0.0 }) |> Render.movedAll(r#position)
             |> List.map(Render.overItem(liftedZ(zThumb()))) |> Render.clippedAll(r);
         List.append(small, frameOf(r, Color.mix(t#ink, t#panel, 0.6), zThumbTop()))
@@ -633,10 +770,10 @@ mod View {
     def settingsPanel(atlas: FontAtlas, env: Env, cursor: World.Setting): List[Render.PlacedItem] =
         let t = theme(env);
         let groups = (0 :: 1 :: Nil) |> List.flatMap(col -> {
-            let g = Layout.group(col);
+            let g = Layout.group(env#fit, col);
             let name = if (col == 0) StoryDoc.Label.GroupText else StoryDoc.Label.GroupSound;
-            textAt(g#x, g#y, label(name, env), atlas, 14.0, t#accent, zPanelText())
-            :: at(g#x, g#y + 22.0, RawDraw.box({ x = 400.0, y = 1.0 }, Color.mix(t#ink, t#panel, 0.7), zPanelText()) |> Render.fade(0.6)) :: Nil
+            textAt(g#x, g#y, label(name, env), atlas, captionSize(env, 14.0), t#accent, zPanelText())
+            :: at(g#x, g#y + 22.0, RawDraw.box({ x = Layout.groupRuleWidth(env#fit), y = 1.0 }, Color.mix(t#ink, t#panel, 0.7), zPanelText()) |> Render.fade(0.6)) :: Nil
         });
         let rows = WorldSettings.settings() |> List.zipWithIndex
             |> List.flatMap(match (i, setting) -> settingRow(atlas, env, i, setting, setting == cursor));
@@ -681,8 +818,10 @@ mod View {
 
     /// 見本: ウィンドウの濃さで地を敷き、文字の速さで見本の文を流し続ける（実時間。読み終えて少し置いてから頭へ戻る）。
     def preview(atlas: FontAtlas, env: Env): List[Render.PlacedItem] =
+        Layout.preview(env#fit) |> Option.map(r -> previewIn(atlas, env, r)) |> Option.getWithDefault(Nil)
+
+    def previewIn(atlas: FontAtlas, env: Env, r: Rect2.Rect2): List[Render.PlacedItem] =
         let t = theme(env);
-        let r = Layout.preview(env#fit);
         let k = kindOf(env);
         let sample = label(StoryDoc.Label.Preview, env);
         let cps = Saves.configOf(env#saves)#cps;
@@ -727,16 +866,16 @@ mod View {
             case None => Nil
             case Some((asked, cursor)) =>
                 let t = theme(env);
-                let box = Layout.askBox();
+                let box = Layout.askBox(env#fit);
                 let center = box#position#x + box#size#x / 2.0;
                 let (question, note) = askText(asked);
-                let shade = at(0.0, 0.0, RawDraw.box({ x = Layout.width(), y = Layout.height() }, Color.darken(t#panel, 0.4), zAsk()) |> Render.fade(0.6));
+                let shade = at(0.0, 0.0, RawDraw.box(Layout.size(env#fit), Color.darken(t#panel, 0.4), zAsk()) |> Render.fade(0.6));
                 let ground = at(box#position#x, box#position#y,
                                 Render.vgrad(box#size, { top = Color.lighten(t#panel, 0.05), bottom = t#panel }, zAsk() + 1)
                                     |> Render.outlineA({ color = t#accent, alpha = 0.6, width = 1.0 }) |> Render.rounded(4.0));
                 let line = TextDraw.centered({ text = label(question, env), atlas = atlas, size = 19.0, color = t#ink, z = zAsk() + 2,
                                                centerX = center, y = box#position#y + 40.0 });
-                let sub = note |> Option.map(n -> TextDraw.centered({ text = label(n, env), atlas = atlas, size = 13.0, color = t#inkSeen,
+                let sub = note |> Option.map(n -> TextDraw.centered({ text = label(n, env), atlas = atlas, size = captionSize(env, 13.0), color = t#inkSeen,
                                                                        z = zAsk() + 2, centerX = center, y = box#position#y + 74.0 }) :: Nil)
                               |> Option.getWithDefault(Nil);
                 let answers = (World.Answer.Yes :: World.Answer.No :: Nil) |> List.flatMap(answer -> {
@@ -768,7 +907,7 @@ mod View {
             case Some(text) =>
                 let t = theme(env);
                 let width = TextDraw.width(text, atlas, 14.0) + 32.0;
-                let r = { position = { x = Layout.width() - 32.0 - width, y = 20.0 }, size = { x = width, y = 32.0 } };
+                let r = { position = { x = Layout.width(env#fit) - 32.0 - width, y = if (Layout.isPortrait(env#fit)) Layout.rule(env#fit) + 12.0 else 20.0 }, size = { x = width, y = 32.0 } };
                 at(r#position#x, r#position#y, RawDraw.box(r#size, t#panel, zToast()) |> Render.fade(0.88)
                                                    |> Render.outlineA({ color = t#accent, alpha = 0.5, width = 1.0 }) |> Render.rounded(4.0))
                 :: textIn(r, text, atlas, 14.0, t#accent, zToast() + 1) :: Nil

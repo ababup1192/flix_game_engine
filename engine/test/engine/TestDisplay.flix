@@ -25,4 +25,18 @@ mod TestDisplay {
     @Test
     def testDesktopPointerIsMouse(): Unit \ Assert =
         Assert.assertEq(expected = Display.PointerKind.Mouse, Display.desktop({ x = 960.0, y = 540.0 })#pointer)
+
+    /// 向きは design の形から: 縦長だけ Portrait・正方形は Landscape
+    @Test
+    def testOrientationFollowsDesignShape(): Unit \ Assert =
+        Assert.assertEq(expected = (Display.Orientation.Landscape, Display.Orientation.Portrait, Display.Orientation.Landscape),
+                        (Display.desktop({ x = 960.0, y = 540.0 })#orientation, Display.desktop({ x = 540.0, y = 1169.0 })#orientation,
+                         Display.orientationOf({ x = 600.0, y = 600.0 })))
+
+    /// 縦のスマホの既定は Small・Touch・Portrait で、design の 1px は画面の幅 ÷ design の幅
+    @Test
+    def testPhonePortraitIsSmallTouchPortrait(): Unit \ Assert =
+        let d = Display.phonePortrait(Display.defaultPortraitView(), { x = 540.0, y = 1169.0 });
+        Assert.assertEq(expected = (Display.SizeClass.Small, Display.PointerKind.Touch, Display.Orientation.Portrait, 390.0 / 540.0),
+                        (d#sizeClass, d#pointer, d#orientation, d#designScale))
 }

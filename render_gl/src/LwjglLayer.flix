@@ -258,11 +258,32 @@ pub mod LwjglLayer {
     /// examples の Main.flix からは `with LwjglLayer.withProject(".")` の形で
     /// 直接 with-chain に並べて使う。loadProject 失敗時は bug! で停止する
     /// (project.json が壊れているのは開発者が直すべき状態)。
+    /// 環境変数 FLIX_GE_PORTRAIT（LwjglEnv）があり、project.json に web.portraitDesign があれば、縦に持ったスマホの design と
+    /// 窓の大きさで起動する（Display#orientation が Portrait になる。デスクトップで縦の並べ方を確かめる口）。
     pub def withProject(rootDir: String, f: Unit -> a \ ef):
             a \ ef - Platform.Services - Platform.Annotation - LoadProgress + IO + Fs.FileRead =
         match ProjectLoader.loadProject(rootDir) {
-            case Ok(proj)  => withLwjgl(proj#config, f)
+            case Ok(proj)  => withLwjgl(bootConfigOf(proj, LwjglEnv.fromMap(LwjglEnv.snapshot())#portraitView), f)
             case Err(msg) => bug!("Failed to load project.json: ${msg}")
+        }
+
+    // WhyNot: 縦の起動で録った flow を止めない — 録る・流すの入口（App.loadProjectDesign）は横の design で再生するので食い違うが、
+    //   縦の起動は並べ方を目で見る口で、録らないのは使う人の側で選べる。起動の時に 1 行言うだけにする。
+    /// FLIX_GE_PORTRAIT の大きさと project の縦の指定から、起動に使う設定。
+    def bootConfigOf(proj: ProjectLoader.Project, portraitView: Option[Vec2.Vec2]): GameEngine.EngineConfig \ IO =
+        match portraitView {
+            case None       => proj#config
+            case Some(view) => portraitBootConfig(proj, ProjectLoader.portraitConfigOf(proj, view))
+        }
+
+    def portraitBootConfig(proj: ProjectLoader.Project, portrait: Option[GameEngine.EngineConfig]): GameEngine.EngineConfig \ IO =
+        match portrait {
+            case Some(config) =>
+                println("[lwjgl] 縦の design ${Int32.toString(config#designWidth)}x${Int32.toString(config#designHeight)} で起動（FLIX_GE_PORTRAIT）。この起動で録った flow は横の design で再生されて食い違う");
+                config
+            case None =>
+                checked_ecast(Log.fellBack("lwjgl", "FLIX_GE_PORTRAIT", "横の design", "project.json に web.portraitDesign が無い"));
+                proj#config
         }
 
     /// ゲームの本体 f が最初のコマを描くまでに送る LoadProgress.report は、起動画面を進めてウィンドウのイベントを poll する。

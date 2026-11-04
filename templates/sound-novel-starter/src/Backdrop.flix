@@ -49,8 +49,8 @@ mod Backdrop {
     pub def surface(spec: ShaderDoc.Spec, rect: Rect2.Rect2, progress: Float64, z: Int32): Render.PlacedItem =
         Render.shaderFill(spec, rect, Float64.max(0.0, Float64.min(1.0, progress)), z)
 
-    /// 画面の横÷縦（ぼかしの縦の半径を横とそろえ、四隅の落ち方を丸くする）。
-    def aspect(): Float64 = Layout.width() / Layout.height()
+    /// 背景を敷く矩形の横÷縦（ぼかしの縦の半径を横とそろえ、四隅の落ち方を丸くする）。縦の画面でも写真の比 16:9 のまま敷く（View.backdropRect）。
+    def aspect(): Float64 = 16.0 / 9.0
 
     def k(v: Float64): Field = Field.Const(v)
 

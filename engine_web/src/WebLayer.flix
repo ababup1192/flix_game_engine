@@ -19,9 +19,27 @@ pub mod WebLayer {
     /// `rootDir` 直下の project.json を読んで withWeb を起動する。読めなければ止める（LwjglLayer.withProject と同じ）。
     pub def withProject(rootDir: String, f: Unit -> a \ ef): a \ ef - Platform.Services - LoadProgress + IO + Fs.FileRead =
         match ProjectLoader.loadProject(rootDir) {
-            case Ok(proj) => withWeb(proj#config, f)
+            case Ok(proj) => withWeb(bootConfigOf(proj), f)
             case Err(msg) => bug!("Failed to load project.json: ${msg}")
         }
+
+    // WhyNot: 頁を開いた時（素材を取る前）に測らない — 読み込みの間に回した端末で、古い向きのまま起動する。押して始めた後の main で測る。
+    /// 起動に使う設定。縦の design を選ぶ時（スマホを縦に持って開いた・頁の ?orientation=portrait）で、project.json に
+    /// web.portraitDesign があれば、その時の描き先の比から決めた縦の design に替える（Display#orientation が Portrait になる）。
+    def bootConfigOf(proj: ProjectLoader.Project): GameEngine.EngineConfig \ IO =
+        let wanted = Browser.wantsPortrait();
+        match proj#portraitDesign {
+            case Some(spec) if wanted => applyPortraitDesign(proj, spec)
+            case _                    => proj#config
+        }
+
+    /// 描き先を切り欠きの内側へ寄せて測り、その比から縦の design を決めて、描き先の比を縦の design に替える。
+    def applyPortraitDesign(proj: ProjectLoader.Project, spec: ProjectLoader.PortraitDesign): GameEngine.EngineConfig \ IO =
+        Browser.preparePortraitView();
+        let view = { x = Browser.portraitViewWidth(), y = Browser.portraitViewHeight() };
+        let (w, h) = ProjectLoader.portraitDesignOf(spec, view);
+        Browser.usePortraitDesign(Int32.toFloat64(w) / Int32.toFloat64(Int32.max(1, h)));
+        { designWidth = w, designHeight = h | proj#config }
 
     /// canvas の WebGL2 で塗りのコアを作り、素材を上げ、handler を重ねて f を流す。f を抜けたら頁に「おわり」を出す。
     pub def withWeb(config: GameEngine.EngineConfig, f: Unit -> a \ ef): a \ ef - Platform.Services - LoadProgress + IO =
@@ -40,7 +58,7 @@ pub mod WebLayer {
         let state = {
             design = design, maxDeltaTime = config#maxDeltaTime,
             looping = Ref.fresh(Static, false), closeRequested = Ref.fresh(Static, false),
-            lastDt = Ref.fresh(Static, 1.0 / tickRate()), fullscreenAsked = Ref.fresh(Static, None),
+            lastDt = Ref.fresh(Static, 1.0 / tickRate()), fullscreenAsked = Ref.fresh(Static, FullscreenAsk.NotAsked),
             cursor = Ref.fresh(Static, GameEngine.Cursor.Default), cursorVisible = Ref.fresh(Static, true),
             yieldedAt = Ref.fresh(Static, Browser.now()), warnedSounds = Ref.fresh(Static, Set.empty())
         };
@@ -62,12 +80,19 @@ pub mod WebLayer {
     // WhyNot: 例外を Flix の try で受けて頁に出さない — effect の続きで再開した後の例外はその try の外で投げられる（bug! で確かめた）。
     //   頁に出すのは fge-web.js の window の error（wasm の外へ抜けた例外を全部受ける）。
 
+    /// 前に頼んだ全画面（まだ頼んでいない・窓・全画面）。
+    enum FullscreenAsk with Eq {
+        case NotAsked
+        case Windowed
+        case Fullscreen
+    }
+
     /// handler が分け合う状態。looping = ループが回り始めたか（最初の pollEvents の後）・lastDt = 前のコマからの経過（秒）・
     /// fullscreenAsked = 前に頼んだ全画面（同じ値を毎コマ頼み直さない）・yieldedAt = 起動中に最後にブラウザへ手を返した時刻（ms）。
     type alias State = {
         design = Vec2.Vec2, maxDeltaTime = Float64,
         looping = Ref[Bool, Static], closeRequested = Ref[Bool, Static],
-        lastDt = Ref[Float64, Static], fullscreenAsked = Ref[Option[Bool], Static],
+        lastDt = Ref[Float64, Static], fullscreenAsked = Ref[FullscreenAsk, Static],
         cursor = Ref[GameEngine.Cursor, Static], cursorVisible = Ref[Bool, Static],
         yieldedAt = Ref[Float64, Static], warnedSounds = Ref[Set[String], Static]
     }
@@ -93,7 +118,8 @@ pub mod WebLayer {
             def setMouseCaptured(_captured, k) = k(())
             def setFullscreen(on, k) = {
                 // WhyNot: 同じ値を毎コマ頼み直さない — Esc でブラウザが全画面を抜けた後、次のキーでまた入ってしまう。
-                if (Ref.get(st#fullscreenAsked) != Some(on)) { Ref.put(Some(on), st#fullscreenAsked); Browser.requestFullscreen(on) } else ();
+                let asked = if (on) FullscreenAsk.Fullscreen else FullscreenAsk.Windowed;
+                if (Ref.get(st#fullscreenAsked) != asked) { Ref.put(asked, st#fullscreenAsked); Browser.requestFullscreen(on) } else ();
                 k(())
             }
             def isFullscreen(k) = k(Browser.isFullscreen())
@@ -150,7 +176,7 @@ pub mod WebLayer {
         { size = { x = Int32.toFloat64(fbW) / dpr, y = Int32.toFloat64(fbH) / dpr }, scaleFactor = dpr,
           designScale = if (scale > 0.0) scale else 1.0,
           pointer = if (Pointer.isTouch()) Display.PointerKind.Touch else Display.PointerKind.Mouse,
-          sizeClass = sizeClass() }
+          sizeClass = sizeClass(), orientation = Display.orientationOf(design) }
 
     /// 端末の区分。頁の URL の ?size=small|medium|large があればそれ（PC で小さい画面の並べ方を確かめる時）、
     /// 無ければ主な pointer が指か（?input= で上書きできる）と、起動の時に測った画面の短い辺から決める。

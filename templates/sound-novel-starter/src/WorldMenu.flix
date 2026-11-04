@@ -68,6 +68,16 @@ mod WorldMenu {
         World.Button.QuickLoad :: World.Button.Save :: World.Button.Load :: World.Button.Settings :: World.Button.Hide ::
         World.Button.ToTitle :: Nil
 
+    /// 並べ方の組で出すボタン（View が描く列と Controls が当てる列は同じこの並び）。
+    /// 縦の画面は 7 つ: 戻る（Rollback）は払う（swipeLeft）とキー、隠すは長押し（back）とキーで届く。
+    // WhyNot: 縦で Qセーブ・Qロードを出さない — 540 の幅に 11 個を 44 CSS px で並べると 1 つが 32 CSS px を割る。
+    //   セーブ・ロードの画面に同じ枠（クイックのタブ）がある。
+    pub def buttonsOf(fit: Layout.Fit): List[World.Button] =
+        if (Layout.isPortrait(fit))
+            World.Button.Log :: World.Button.Auto :: World.Button.Skip :: World.Button.Save :: World.Button.Load ::
+            World.Button.Settings :: World.Button.ToTitle :: Nil
+        else buttons()
+
     /// クイックメニューを押す（読んでいて、画面も確認のウィンドウも開いていない時だけ）。[遷移: Reading→各 Panel / 確認のウィンドウ]
     pub def press(res: Res.Res, button: World.Button, w: World.World): World.World \ Emit[World.Event] =
         if (not World.isReading(w) or not World.isFree(w)) w

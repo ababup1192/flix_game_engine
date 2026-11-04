@@ -36,7 +36,7 @@ mod TestTrace {
         List.head(keys) |> Option.getWithDefault(Key.F12)
 
     def setup(): PropertyTest.Setup[Role, Run] =
-        { keyOf = (role, h) -> keyOf(role, h#resources), viewport = { x = Layout.width(), y = Layout.height() }, dt = 1.0 / 60.0 }
+        { keyOf = (role, h) -> keyOf(role, h#resources), viewport = Layout.size(Layout.Fit.Regular), dt = 1.0 / 60.0 }
 
     /// 種 16 個 × 400 入力。キー 15 個・画面のあちこちのクリック（本文・選択肢・クイックメニュー・確認のウィンドウのはい / いいえ・
     /// セーブの枠とタブと削除・設定の行・バックログの行・戻る）・待ちを明かす長めの間。
@@ -48,11 +48,11 @@ mod TestTrace {
           spec = { taps = List#{Role.Confirm, Role.Confirm, Role.Confirm, Role.Back, Role.Prev, Role.Next, Role.Left, Role.Right,
                                 Role.Log, Role.Auto, Role.Skip, Role.Hide, Role.Rollback, Role.QuickSave, Role.QuickLoad, Role.TabNext, Role.Remove},
                    idle = 3, dts = List#{1.0 / 60.0, 0.5, 2.0},
-                   points = List#{{ x = Layout.width() / 2.0, y = 200.0 }, { x = Layout.width() / 2.0, y = 150.0 },
+                   points = List#{{ x = Layout.width(fit) / 2.0, y = 200.0 }, { x = Layout.width(fit) / 2.0, y = 150.0 },
                                   { x = 470.0, y = 330.0 }, { x = 480.0, y = 488.0 },
                                   button(0), button(4), button(5), button(6), button(7), button(10),
                                   center(Layout.askButton(fit, Layout.Side.Left)), center(Layout.askButton(fit, Layout.Side.Right)),
-                                  center(Layout.slot(fit, 0)), center(Layout.slot(fit, 3)), center(Layout.remove(fit, 0)), center(Layout.tab(fit, 1)),
+                                  center(Layout.slot(fit, 0)), center(Layout.slot(fit, 3)), center(Layout.remove(fit, 0)), center(Layout.tab(fit, 5, 1)),
                                   center(Layout.settingSide(fit, 2, Layout.Side.Right)), center(Layout.settingBar(fit, 5)), center(Layout.back(fit)), { x = 500.0, y = 300.0 }}
                    | PropertyTest.emptySpec() } }
 

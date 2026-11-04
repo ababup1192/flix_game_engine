@@ -322,10 +322,17 @@
   `pub enum SizeClass with Eq, Order, ToString { case Small case Medium case Large }`
 - pointer の種類（ブラウザの PointerEvent.pointerType と同じ分け方。ペンは Mouse に入れる）。
   `pub enum PointerKind with Eq, ToString { case Mouse case Touch }`
+- `pub enum Orientation with Eq, ToString { case Landscape case Portrait }`
+- design の大きさの形から向きを決める（高さが幅より大きい時だけ Portrait）。
+  `pub def orientationOf(design: Vec2.Vec2): Orientation`
 - size = 描き先（ウィンドウ・canvas）の大きさ（論理 px。ブラウザは CSS px・mac は point）。
-  `pub type alias Display = { size = Vec2.Vec2, scaleFactor = Float64, designScale = Float64, pointer = PointerKind, sizeClass = SizeClass }`
+  `pub type alias Display = { size = Vec2.Vec2, scaleFactor = Float64, designScale = Float64, pointer = PointerKind, sizeClass = SizeClass, orientation = Orientation }`
 - 窓の無い所（ヘッドレスの描き出し・当たりを取る View の木・テスト）とデスクトップ版の既定:
   `pub def desktop(design: Vec2.Vec2): Display`
+- 縦に持ったスマホの画面の大きさ（CSS px）の既定。デスクトップで縦を確かめる起動（FLIX_GE_PORTRAIT=1）と、
+  `pub def defaultPortraitView(): Vec2.Vec2`
+- 窓の無い所で「縦に持ったスマホ」を表す既定（縦の画面の描き出し・テスト）: Small・Touch・大きさは view（CSS px）・
+  `pub def phonePortrait(view: Vec2.Vec2, design: Vec2.Vec2): Display`
 - 区分の決め方。主な pointer が指でなければ Large。指なら、画面の短い辺（論理 px）が 600 未満で Small・それ以上で Medium
   `pub def sizeClassOf(coarsePointer: Bool, shortSide: Float64): SizeClass`
 
@@ -988,7 +995,12 @@
 - project.json から組み立てた、engine 起動に渡すための設定。
   `pub type alias ProjectConfig = { rootDir = String, glyphs = String, designWidth = Int32, designHeight = Int32, windowWidth = Int32, windowHeight = Int32, title = String, textureManifest = List[{name = String, path = String, hasAlpha = Bool}], fontManifest = List[{name = String, path = String, fontSize = Float64}], soundManifest = List[{name = String, path = String, looping = Bool}], clearColor = Color, maxDeltaTime = Float64, scene3dTextureBudgetMB = Int32, scene3dTextureBudgetCount = Int32 }`
 - 読み込み結果。シーンは別途 `findSceneFiles` で列挙する。
-  `pub type alias Project = { rootDir = String, config = ProjectConfig }`
+  `pub type alias Project = { rootDir = String, config = ProjectConfig, portraitDesign = Option[PortraitDesign] }`
+- `pub type alias PortraitDesign = { width = Int32, minHeight = Int32, maxHeight = Int32 }`
+- 縦の design の大きさ（幅, 高さ）。view = 描き先の大きさ（CSS px など。比だけを使う）。view が 0 以下なら高さは minHeight。
+  `pub def portraitDesignOf(spec: PortraitDesign, view: Vec2.Vec2): (Int32, Int32)`
+- 縦で起動する時の設定: design を portraitDesignOf に替え、窓の大きさを view にした config。縦の指定が無ければ None（横のまま起動する）。
+  `pub def portraitConfigOf(proj: Project, view: Vec2.Vec2): Option[ProjectConfig]`
 - project.json を読んで Project を組み立てる。
   `pub def loadProject(rootDir: String): Result[String, Project] \ {Fs.FileRead}`
 - プロジェクトディレクトリを再帰的に走査して *.scene.json を列挙する。
