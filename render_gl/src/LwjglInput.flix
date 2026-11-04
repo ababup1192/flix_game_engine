@@ -382,4 +382,22 @@ mod LwjglInput {
             }
             def isWindowFocused(k) = k(Array.get(0, d#focused))
         }
+
+    /// デスクトップ版の画面の情報: 大きさはウィンドウの座標（GLFW の画面の座標・mac は point）・倍率は描き先の画素 ÷ ウィンドウの座標。
+    /// 区分は Large・pointer は Mouse に決めてある（デスクトップの絵と遊びを区分で変えない）。
+    pub def displayOf(window: Int64, design: Vec2.Vec2): Display.Display \ IO =
+        let stack = MemoryStack.stackPush();
+        let winW = stack.mallocInt(1);
+        let winH = stack.mallocInt(1);
+        let fbW = stack.mallocInt(1);
+        let fbH = stack.mallocInt(1);
+        GLFW.glfwGetWindowSize(window, winW, winH);
+        GLFW.glfwGetFramebufferSize(window, fbW, fbH);
+        let (w, h) = (Int32.toFloat64(winW.get(0)), Int32.toFloat64(winH.get(0)));
+        let fw = Int32.toFloat64(fbW.get(0));
+        discard MemoryStack.stackPop();
+        // WhyNot: 最小化した 0 をそのまま入れない — 0 で割って字の大きさを決める所が無限大になる。
+        if (w <= 0.0 or h <= 0.0) Display.desktop(design)
+        else { size = { x = w, y = h }, scaleFactor = if (fw > 0.0) fw / w else 1.0,
+               designScale = Float64.min(w / design#x, h / design#y) | Display.desktop(design) }
 }

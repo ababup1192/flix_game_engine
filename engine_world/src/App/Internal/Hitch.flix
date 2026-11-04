@@ -130,7 +130,7 @@ pub mod App.Internal.Hitch {
             let (rows, files, w0, p) = acc;
             let (i, played) = entry;
             let startNs = System.nanoTime();
-            let (cache1, seen1, warned1) = App.Internal.Paint.renderFrame(app, warnOnce, None, design, played#step#after, App.Internal.Paint.plainLook(Nil), p#tileCache, p#glyphSeen, p#budgetWarned);
+            let (cache1, seen1, warned1) = App.Internal.Paint.renderFrame(app, warnOnce, None, design, Platform.Window.getDisplay(), played#step#after, App.Internal.Paint.plainLook(Nil), p#tileCache, p#glyphSeen, p#budgetWarned);
             Platform.Window.presentFrame();
             let timing = { frame = Int32.toInt64(i), start = startNs, updateNs = 0i64, renderNs = System.nanoTime() - startNs,
                            pressed = played#step#frame#justPressed, reloaded = false };

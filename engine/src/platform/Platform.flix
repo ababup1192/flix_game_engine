@@ -51,6 +51,9 @@ pub mod Platform {
         def setShouldClose(close: Bool): Unit
         /// design 座標の描き場の矩形。
         def getViewportRect(): Rect2.Rect2
+        /// 今の画面の情報（大きさ・画素の細かさ・最後の pointer の種類・端末の区分）。App が毎コマ読んで
+        /// ViewCtx#display（全部）と Frame#sizeClass（区分だけ）に置く。デスクトップは区分 Large・pointer Mouse。
+        def getDisplay(): Display.Display
         /// マウスカーソル形状を切り替える。連続して同じ Cursor を渡しても問題ない（冪等）
         def setCursor(cursor: GameEngine.Cursor): Unit
         /// マウスカーソルの表示/非表示を切り替える。形状(setCursor)は「どんな絵か」、

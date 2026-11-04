@@ -317,6 +317,18 @@
 - loadOrBuild に加えて、build の中の Fs.FileTest（exists 系）と Fs.DirList（一覧）も記録する。
   `pub def loadOrBuildWithDirs(cache: Cache[a], params: String, extraFiles: List[String], build: Unit -> a \ ef): a \ (ef - Fs.FileRead - Fs.FileTest - Fs.DirList) + Fs.FileRead + Fs.FileTest + Fs.DirList + IO`
 
+## Display — `engine/src/platform/Display.flix`
+- 端末の区分。Ren'Py の screen variant（small / medium / large）に合わせた 3 つ
+  `pub enum SizeClass with Eq, Order, ToString { case Small case Medium case Large }`
+- pointer の種類（ブラウザの PointerEvent.pointerType と同じ分け方。ペンは Mouse に入れる）。
+  `pub enum PointerKind with Eq, ToString { case Mouse case Touch }`
+- size = 描き先（ウィンドウ・canvas）の大きさ（論理 px。ブラウザは CSS px・mac は point）。
+  `pub type alias Display = { size = Vec2.Vec2, scaleFactor = Float64, designScale = Float64, pointer = PointerKind, sizeClass = SizeClass }`
+- 窓の無い所（ヘッドレスの描き出し・当たりを取る View の木・テスト）とデスクトップ版の既定:
+  `pub def desktop(design: Vec2.Vec2): Display`
+- 区分の決め方。主な pointer が指でなければ Large。指なら、画面の短い辺（論理 px）が 600 未満で Small・それ以上で Medium
+  `pub def sizeClassOf(coarsePointer: Bool, shortSide: Float64): SizeClass`
+
 ## DrawCmd — `engine/src/core/DrawCmd.flix`
 - ピクセルの重ね方（ブレンドモード）。
   `pub enum BlendMode with Eq, Order, ToString { case Normal case Add case Multiply }`
@@ -864,6 +876,8 @@
   `pub eff Window { def setShouldClose(close: Bool): Unit }`
 - design 座標の描き場の矩形。
   `pub eff Window { def getViewportRect(): Rect2.Rect2 }`
+- 今の画面の情報（大きさ・画素の細かさ・最後の pointer の種類・端末の区分）。App が毎コマ読んで
+  `pub eff Window { def getDisplay(): Display.Display }`
 - マウスカーソル形状を切り替える。連続して同じ Cursor を渡しても問題ない（冪等）
   `pub eff Window { def setCursor(cursor: GameEngine.Cursor): Unit }`
 - マウスカーソルの表示/非表示を切り替える。形状(setCursor)は「どんな絵か」、

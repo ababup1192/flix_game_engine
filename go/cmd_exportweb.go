@@ -134,6 +134,17 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 		return code
 	}
 	java := exportWebJava(p.Engine)
+	// WhyNot: web 欄の誤りを束を作る所まで待って言わない — 組み立てと TeaVM に数分かかった後に止まる。
+	proj, err := loadExportProject(p.Game)
+	if err != nil {
+		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
+		return 1
+	}
+	touch, err := resolveWebTouch(p.Game, proj.Web)
+	if err != nil {
+		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
+		return 1
+	}
 
 	ewLogf("① ゲームを %s へ写す（engine_full_web %s）", p.Project, p.Version)
 	if err := prepareExportProject(p); err != nil {
@@ -218,11 +229,6 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
 		return 2
 	}
-	proj, err := loadExportProject(p.Game)
-	if err != nil {
-		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
-		return 1
-	}
 	id := o.ID
 	if id == "" {
 		id = filepath.Base(p.Game)
@@ -232,6 +238,7 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
 		return 1
 	}
+	b.withTouch(proj, touch)
 	for _, rel := range b.copyList() {
 		if err := copyFile(filepath.Join(p.Game, filepath.FromSlash(rel)), exportAssetPath(p.Out, rel)); err != nil {
 			fmt.Fprintf(errOut, "fge export-web: 素材を写せない: %v\n", err)
@@ -580,7 +587,10 @@ func resetExportOut(out string) error {
 
 // exportProject は project.json のうち書き出しが読む欄。
 type exportProject struct {
-	Title    string `json:"title"`
+	Title        string          `json:"title"`
+	DesignWidth  int             `json:"designWidth"`
+	DesignHeight int             `json:"designHeight"`
+	Web          json.RawMessage `json:"web"`
 	Textures []struct {
 		Path string `json:"path"`
 	} `json:"textures"`
@@ -620,11 +630,27 @@ type webSound struct {
 
 // webBundle は bundle.json の形。道は全部ゲームの根から見た `/` 区切り。
 type webBundle struct {
-	ID     string     `json:"id"`
-	Title  string     `json:"title"`
-	Files  []string   `json:"files"`
-	Images []string   `json:"images"`
-	Sounds []webSound `json:"sounds"`
+	ID            string            `json:"id"`
+	Title         string            `json:"title"`
+	Files         []string          `json:"files"`
+	Images        []string          `json:"images"`
+	Sounds        []webSound        `json:"sounds"`
+	Design        *webDesign        `json:"design,omitempty"`
+	VirtualPad    *webVirtualPad    `json:"virtualPad,omitempty"`
+	TouchGestures map[string]string `json:"touchGestures,omitempty"`
+	Orientation   string            `json:"orientation,omitempty"`
+}
+
+// withTouch は頁が起動の前に要る物（design の縦横比・パッド・ジェスチャー・向き）を束に足す。
+func (b *webBundle) withTouch(pr exportProject, t webTouch) {
+	if pr.DesignWidth > 0 && pr.DesignHeight > 0 {
+		b.Design = &webDesign{W: pr.DesignWidth, H: pr.DesignHeight}
+	}
+	b.VirtualPad = t.VirtualPad
+	b.TouchGestures = t.TouchGestures
+	if t.Orientation != "any" {
+		b.Orientation = t.Orientation
+	}
 }
 
 func (b webBundle) copyList() []string {

@@ -6,7 +6,7 @@ mod Res {
 
     /// 描く元の束（Main・描き出し・テストが Controls.loadRes で同じ形に読む）。
     /// story = 字と名前・kind = 遊びの数・theme = 色・backdrops = 背景の写真・credits = クレジットの行・
-    /// keys = キーの割り当て・mixer = 音のバス・dialogue = シナリオの木。
+    /// keys = キーの割り当て・smallScreen = 小さい画面（スマホ）の時の字と押せる物の大きさ・mixer = 音のバス・dialogue = シナリオの木。
     pub type alias Res = {
         story = StoryDoc.Doc,
         kind = KindDoc.Doc,
@@ -14,6 +14,7 @@ mod Res {
         backdrops = BackdropDoc.Doc,
         credits = CreditsDoc.Doc,
         keys = KeysDoc.Doc,
+        smallScreen = SmallScreenDoc.Doc,
         mixer = AudioMixer.Mixer,
         dialogue = Yarn.Program
     }
@@ -31,6 +32,8 @@ mod Res {
     pub def withCredits(credits: CreditsDoc.Doc, res: Res): Res = { credits = credits | res }
 
     pub def withKeys(keys: KeysDoc.Doc, res: Res): Res = { keys = keys | res }
+
+    pub def withSmallScreen(smallScreen: SmallScreenDoc.Doc, res: Res): Res = { smallScreen = smallScreen | res }
 
     pub def withMixer(mixer: AudioMixer.Mixer, res: Res): Res = { mixer = mixer | res }
 

@@ -254,7 +254,7 @@ pub mod App.Internal.Paint {
     /// fps は debug 有効時だけ隅に重ねる（本番は Nil を渡すので描画に一切現れない）。
     /// diagnostics は view・hudView の ViewCtx#diagnostics へ渡す前のフレームの診断（実機の道だけ Some になりうる）。
     pub def renderFrame(app: App[w, ef], warnOnce: String -> Unit, diagnostics: Option[FrameDiagnostics.Diagnostics],
-                        design: Vec2.Vec2, world: w, look: Look,
+                        design: Vec2.Vec2, display: Display.Display, world: w, look: Look,
                         tileCache: TileCache, glyphSeen: Option[Int64], budgetWarned: Bool):
             (TileCache, Option[Int64], Bool) \ (ef + Platform.Rendering + RenderTarget.Target + IO) =
         let r = App.rec(app);
@@ -271,7 +271,7 @@ pub mod App.Internal.Paint {
                 // タイル層と静的層は GPU 側でカメラを掛けるので、見え方（F8 のズーム・パン）を掛けられない。
                 // 見え方が等倍でない間だけ、ほかの絵と同じ PlacedItem に直して一緒に掛ける。
                 let retained = Annotate.isIdentity(look#view);
-                let scene = App.sceneItems(app, design, atlas, warnOnce, diagnostics, world, toItems);
+                let scene = App.sceneItems(app, design, display, atlas, warnOnce, diagnostics, world, toItems);
                 let base = if (retained) scene
                            else List.append(tilePausedItems(app, design, world),
                                             List.append(scene, staticPausedItems(app, design, world)));
@@ -314,8 +314,9 @@ pub mod App.Internal.Paint {
     pub def paintOnce(app: App[w, ef], world: w, tileCache: TileCache):
             TileCache \ (ef + Platform.Rendering + Platform.Window + RenderTarget.Target + IO) =
         let design = Platform.Window.getViewportRect()#size;
+        let display = Platform.Window.getDisplay();
         def go(cache, left) = {
-            let (next, seen, _) = renderFrame(app, _ -> (), None, design, world, plainLook(Nil), cache, None, true);
+            let (next, seen, _) = renderFrame(app, _ -> (), None, design, display, world, plainLook(Nil), cache, None, true);
             if (Option.isEmpty(seen) and left > 1) go(next, left - 1) else next
         };
         go(tileCache, 3)

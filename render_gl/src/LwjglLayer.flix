@@ -559,6 +559,7 @@ pub mod LwjglLayer {
                 k()
             }
             def getViewportRect(k) = k({ position = Vec2.zero(), size = ws#design })
+            def getDisplay(k) = k(LwjglInput.displayOf(window, ws#design))
             def presentFrame(k) = {
                 presentScreen(ws#present);
                 k(())

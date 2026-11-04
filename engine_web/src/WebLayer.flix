@@ -83,6 +83,7 @@ pub mod WebLayer {
             def shouldClose(k) = k(Ref.get(st#closeRequested))
             def setShouldClose(close, k) = { Ref.put(close, st#closeRequested); k(()) }
             def getViewportRect(k) = k({ position = Vec2.zero(), size = st#design })
+            def getDisplay(k) = k(display(st#design))
             def presentFrame(k) = {
                 Ref.put(AnimationFrame.waitTick(tickRate()), st#lastDt);
                 k(())
@@ -139,6 +140,26 @@ pub mod WebLayer {
             }
             def isWindowFocused(k) = k(Browser.hasFocus())
         }
+
+    /// 頁の画面の情報。canvas の画素は CSS px × devicePixelRatio。区分は fge-web.js が起動の時に決めた物。
+    def display(design: Vec2.Vec2): Display.Display \ IO =
+        let (fbW, fbH) = (Browser.canvasWidth(), Browser.canvasHeight());
+        let (_, _, vpW, vpH) = RenderFrame.calcViewport(fbW, fbH, design#x, design#y);
+        let dpr = Float64.max(0.01, Browser.devicePixelRatio());
+        let scale = Float64.min(Int32.toFloat64(vpW) / design#x, Int32.toFloat64(vpH) / design#y) / dpr;
+        { size = { x = Int32.toFloat64(fbW) / dpr, y = Int32.toFloat64(fbH) / dpr }, scaleFactor = dpr,
+          designScale = if (scale > 0.0) scale else 1.0,
+          pointer = if (Pointer.isTouch()) Display.PointerKind.Touch else Display.PointerKind.Mouse,
+          sizeClass = sizeClass() }
+
+    /// 端末の区分。頁の URL の ?size=small|medium|large があればそれ（PC で小さい画面の並べ方を確かめる時）、
+    /// 無ければ主な pointer が指か（?input= で上書きできる）と、起動の時に測った画面の短い辺から決める。
+    def sizeClass(): Display.SizeClass \ IO = match Browser.sizeOverride() {
+        case "small"  => Display.SizeClass.Small
+        case "medium" => Display.SizeClass.Medium
+        case "large"  => Display.SizeClass.Large
+        case _        => Display.sizeClassOf(Browser.isCoarsePointer(), Browser.screenShortSide())
+    }
 
     // WhyNot: デスクトップの LwjglInput.windowToDesign の式（ウィンドウの大きさで割るだけ）にそろえない — 黒帯が出る大きさで指した所とずれる。
     /// canvas の描き先の画素（左上原点）を design の座標へ（黒帯を引く）。

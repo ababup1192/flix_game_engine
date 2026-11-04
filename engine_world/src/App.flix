@@ -47,6 +47,11 @@ pub mod App {
                                            // キャプチャしている間も窓の端で止まらずに出る（一人称の視点はこれで回す。cursor の差で回さない）。
                                            // キャプチャを切り替えた拍・フォーカスが戻った拍は 0
         windowFocused = Bool,              // 窓にフォーカスがあるか（外れている間にキャプチャの宣言を出し続けても OS はキャプチャしない）
+        sizeClass = Display.SizeClass,     // 端末の区分（Small = スマホ・Medium = タブレット・Large = PC とデスクトップ版）。起動の時に決まり、
+                                           // 遊んでいる間は変わらない。View で並べ方を替えたら、当たりを取る所もこれで同じ並べ方を引く。
+                                           // WhyNot: 画面の大きさ・倍率・最後の pointer をここに置かない — 窓の大きさや入力で
+                                           // 同じ遊びの中でも変わり、World に入ると録って再生した結果が食い違う（View は ViewCtx#display で読む）。
+                                           // ブラウザ版で遊んだ記録は Flow に載らない（録る・流すはデスクトップだけ・いつも Large）
         diagnostics = Option[FrameDiagnostics.Diagnostics] // 前のフレームを描いた診断（CPU・GPU の時間・3D の数）。withDiagnostics の
                                            // 間だけ Some（F8 で止めていた拍の後は止める前の値）。画面に出すなら View・HUD で ViewCtx#diagnostics から。
                                            // 系で読んで World を変えない（遊んだ記録に残らず、再生では None。lint-forbid の frame-diagnostics-in-system）
@@ -84,8 +89,13 @@ pub mod App {
     /// diagnostics は前のフレームを描いた診断（CPU・GPU の時間・3D の数）。実機で withDiagnostics を宣言した間だけ Some で、
     /// 画面なしの描き出し（viewCtxOf / viewCtxOfFonts）と pickCtx では None。F3 の行は FrameDiagnostics.summaryLines(d) を
     /// ゲームの字の部品で描く。View の中で読むだけなので、遊んだ記録と再生は食い違わない。
+    /// display は今の画面の情報（大きさ・倍率・最後の pointer・端末の区分）。小さい画面（sizeClass が Small）だけ字とボタンを
+    /// 大きくする・指の時だけ案内を「タップ」にする、のように View が読む。当たりの並べ方を替えるなら、入力の側は Frame#sizeClass で
+    /// 同じ並べ方を引く。画面なしの描き出しと pickCtx では Display.desktop(design)（Large・Mouse）で、小さい画面を描き出すなら
+    /// `{ display = { sizeClass = Display.SizeClass.Small | ctx#display } | ctx }` で差し替える。
     pub type alias ViewCtx = { atlas = FontAtlas, fontOf = String -> FontAtlas, visible = Rect2.Rect2,
-                               warnOnce = String -> Unit, diagnostics = Option[FrameDiagnostics.Diagnostics] }
+                               warnOnce = String -> Unit, diagnostics = Option[FrameDiagnostics.Diagnostics],
+                               display = Display.Display }
 
     /// ヘッドレス描き出しから view を呼ぶときの ViewCtx。画面全体が見えている扱いにする。
     /// フォント 1 本だけの版 — どの名前で引いても同じ本が返る。
@@ -99,7 +109,7 @@ pub mod App {
     pub def viewCtxOfFonts(atlas: FontAtlas, fontOf: String -> FontAtlas, design: Vec2.Vec2): ViewCtx =
         { atlas = atlas, fontOf = fontOf,
           visible = { position = { x = 0.0, y = 0.0 }, size = design },
-          warnOnce = Log.warn, diagnostics = None }
+          warnOnce = Log.warn, diagnostics = None, display = Display.desktop(design) }
 
     /// 入力の側（update・テスト）で、押せる物の当たりを出すために View の木を組むときの ViewCtx
     /// （`SortingLayer.pickFrom(点, View.layers(App.pickCtx(design), w))`）。字の形を持たないフォントで、
@@ -109,7 +119,7 @@ pub mod App {
                       lineGap = 0.0, glyphs = Map.empty() };
         { atlas = blank, fontOf = _ -> blank,
           visible = { position = { x = 0.0, y = 0.0 }, size = design },
-          warnOnce = _ -> (), diagnostics = None }
+          warnOnce = _ -> (), diagnostics = None, display = Display.desktop(design) }
 
     /// 見た文面を seen に覚え、初めての文面だけ Log.warn する口（ViewCtx#warnOnce の実機の形）。
     /// View は純粋なので、効果は Log.warn と同じく `unsafe IO` で隠す。
@@ -863,7 +873,7 @@ pub mod App {
     /// mouseButtons・mouseClickedButtons は左だけで組む（右と中も読むなら withMouseButtons で置き直す）。
     /// mouseDelta は前フレームとの座標の差（最初のフレームは 0。実機のループはキャプチャしても出るバックエンドの量で置き直す）。
     /// realNow は 0 秒で組み、advanceFrame が StepState の実時間の時計で置き直す。
-    /// windowFocused は真・diagnostics は None で組む（実機のループが置き直す）。
+    /// windowFocused は真・sizeClass は Large・diagnostics は None で組む（実機のループが置き直す）。
     pub def frameOf(prev: {prev = Set[GameEngine.Key]},
                     current: {current = Set[GameEngine.Key]}, dt: Float64,
                     viewport: Vec2.Vec2,
@@ -885,6 +895,7 @@ pub mod App {
           padKind = GamepadMap.PadKind.Unknown,
           mouseDelta = App.Internal.Frame.cursorDelta(cursor#prevCursor, cursor#cursor),
           windowFocused = true,
+          sizeClass = Display.SizeClass.Large,
           diagnostics = None }
 
     /// 何も押していない・動いていない・dt 0 のフレーム（全部の欄が既定の値。viewport と cursor は (0, 0)）。
@@ -1062,12 +1073,12 @@ pub mod App {
     /// world から画面に出す絵一式を組む（実機の字のフォントで buildSceneItems）。diagnostics は前のフレームの診断で、
     /// view・hudView・視差レイヤの ViewCtx#diagnostics に入る。F8 スクラブ中は「表示中の瞬間」の World を渡すこと — 現在の world を
     /// 渡すと絵は過去・カメラは現在のズレた画面になり、注釈の当たり判定も全部ずれる。
-    def sceneItems(app: App[w, ef], design: Vec2.Vec2, atlas: FontAtlas, warnOnce: String -> Unit,
+    def sceneItems(app: App[w, ef], design: Vec2.Vec2, display: Display.Display, atlas: FontAtlas, warnOnce: String -> Unit,
                    diagnostics: Option[FrameDiagnostics.Diagnostics], world: w,
                    toItems: (ViewCtx, w) -> List[Render.PlacedItem] \ ef):
             List[Render.PlacedItem] \ (ef + Platform.GpuResources) =
         let base = { atlas = atlas, fontOf = fontResolver(rec(app), atlas),
-                     visible = visibleOf(None, 1.0, design), warnOnce = warnOnce, diagnostics = diagnostics };
+                     visible = visibleOf(None, 1.0, design), warnOnce = warnOnce, diagnostics = diagnostics, display = display };
         buildSceneItems(app, design, base, world, toItems)
 
     /// ViewCtx を 1 つ受けて、view・hudView・視差レイヤの絵に camera を掛けて 1 コマぶん並べる（窓なしで呼べる）。

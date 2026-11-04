@@ -27,4 +27,8 @@ public final class Pointer {
     /** 前に読んでからの縦の動き（描き先の画素）を返して 0 に戻す。 */
     @JSBody(script = "var v = fgePointer.dy; fgePointer.dy = 0; return v;")
     public static native double consumeDy();
+
+    /** 最後に来た pointer の入力が指（pointerType が touch）か。マウス・ペンが来たら偽。 */
+    @JSBody(script = "return fgePointer.touch;")
+    public static native boolean isTouch();
 }

@@ -16,7 +16,7 @@ pub mod App.Internal.Halt {
     /// view のゲームは走っている間と同じ renderFrame で描く（見え方だけが pausedLook）。
     /// debugView（生チャンネル投影）のゲームは描画命令へ見え方を掛ける（renderPaused）。
     /// 塗ったコマを画面へ出す（presentFrame）のは呼ぶ側。saveAnnotation は注釈を書き出す開発の道具（書いたフォルダ。持たなければ None）。
-    pub def pausedStep(app: App[w, ef], saveAnnotation: GameEngine.AnnotationRequest -> Option[String] \ efTools, warnOnce: String -> Unit, design: Vec2.Vec2, world: w, history: List[w], frame: App.Frame,
+    pub def pausedStep(app: App[w, ef], saveAnnotation: GameEngine.AnnotationRequest -> Option[String] \ efTools, warnOnce: String -> Unit, design: Vec2.Vec2, display: Display.Display, world: w, history: List[w], frame: App.Frame,
                        anno: Annotate.State, painted: App.Internal.Paint.Painted):
             (Annotate.State, Option[String], App.Internal.Paint.Painted) \ (ef + Platform.Input + Platform.Rendering + RenderTarget.Target + efTools + IO) =
         let r = App.rec(app);
@@ -57,7 +57,7 @@ pub mod App.Internal.Halt {
                 // 止めている間も本編と同じ renderFrame で 1 コマ全部を描く（シェーダー面・レンダーターゲット・
                 // 字の用意も同じ規則）。ズーム・パンは描く前の絵に掛ける（pausedLook）。
                 let paint = (look, p) -> {
-                    let (cache, seen, warned) = App.Internal.Paint.renderFrame(app, warnOnce, frame#diagnostics, design, displayed, look,
+                    let (cache, seen, warned) = App.Internal.Paint.renderFrame(app, warnOnce, frame#diagnostics, design, display, displayed, look,
                                                             p#tileCache, p#glyphSeen, p#budgetWarned);
                     { tileCache = cache, glyphSeen = seen, budgetWarned = warned }
                 };
@@ -68,7 +68,7 @@ pub mod App.Internal.Halt {
                         let shotPainted = paint(App.Internal.Paint.plainLook(Nil), painted);
                         let atlas = Platform.GpuResources.getFontAtlas("default");
                         let items = List.append(App.Internal.Paint.tilePausedItems(app, design, displayed),
-                                    List.append(App.sceneItems(app, design, atlas, warnOnce, frame#diagnostics, displayed, toItems),
+                                    List.append(App.sceneItems(app, design, display, atlas, warnOnce, frame#diagnostics, displayed, toItems),
                                                 App.Internal.Paint.staticPausedItems(app, design, displayed)));
                         let hitList = Annotate.hits(name -> Platform.GpuResources.getTextureInfo(name), rect, items);
                         (saveAnnotation(buildAnnotationRequest(design, rect, shownFrame, dump, hitList)), shotPainted)

@@ -41,7 +41,8 @@ mod TestTrace {
     /// 種 16 個 × 400 入力。キー 15 個・画面のあちこちのクリック（本文・選択肢・クイックメニュー・確認のウィンドウのはい / いいえ・
     /// セーブの枠とタブと削除・設定の行・バックログの行・戻る）・待ちを明かす長めの間。
     def cases(): PropertyTest.Cases[Role] =
-        let button = i -> { x = Layout.button(i, List.length(WorldMenu.buttons()))#position#x + 30.0, y = 524.0 };
+        let fit = Layout.Fit.Regular;
+        let button = i -> { x = Layout.button(fit, i, List.length(WorldMenu.buttons()))#position#x + 30.0, y = 524.0 };
         let center = r -> { x = r#position#x + r#size#x / 2.0, y = r#position#y + r#size#y / 2.0 };
         { seeds = 16, length = 400,
           spec = { taps = List#{Role.Confirm, Role.Confirm, Role.Confirm, Role.Back, Role.Prev, Role.Next, Role.Left, Role.Right,
@@ -50,9 +51,9 @@ mod TestTrace {
                    points = List#{{ x = Layout.width() / 2.0, y = 200.0 }, { x = Layout.width() / 2.0, y = 150.0 },
                                   { x = 470.0, y = 330.0 }, { x = 480.0, y = 488.0 },
                                   button(0), button(4), button(5), button(6), button(7), button(10),
-                                  center(Layout.askButton(Layout.Side.Left)), center(Layout.askButton(Layout.Side.Right)),
-                                  center(Layout.slot(0)), center(Layout.slot(3)), center(Layout.remove(0)), center(Layout.tab(1)),
-                                  center(Layout.settingSide(2, Layout.Side.Right)), center(Layout.settingBar(5)), center(Layout.back()), { x = 500.0, y = 300.0 }}
+                                  center(Layout.askButton(fit, Layout.Side.Left)), center(Layout.askButton(fit, Layout.Side.Right)),
+                                  center(Layout.slot(fit, 0)), center(Layout.slot(fit, 3)), center(Layout.remove(fit, 0)), center(Layout.tab(fit, 1)),
+                                  center(Layout.settingSide(fit, 2, Layout.Side.Right)), center(Layout.settingBar(fit, 5)), center(Layout.back(fit)), { x = 500.0, y = 300.0 }}
                    | PropertyTest.emptySpec() } }
 
     /// rule は World の前後で決まりを見る（描く元は遊んでいる間は替わらない）。

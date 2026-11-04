@@ -23,17 +23,22 @@
 mod View {
     use fge::{App, Clock, Color, DrawCmd, FontAtlas, Fx, Num, RawDraw, Rect2, Render, RichText, ShaderDoc, TextDraw, UiScroll, Vec2}
 
-    /// どの場面でも使う描く元: Doc とシナリオ（res）・セーブデータ（既読と設定と枠）・マウスの位置・2 本の時計の今。
+    /// どの場面でも使う描く元: Doc とシナリオ（res）・セーブデータ（既読と設定と枠）・マウスの位置・2 本の時計の今・
+    /// 並べ方の組（fit。Controls が当たりを取る時と同じ組）。
     pub type alias Env = {
         res = Res.Res,
         saves = Saves.Saves,
         pointer = { x = Float64, y = Float64 },
         realNow = Clock.Time[Clock.Real],
-        storyNow = Clock.Time[Stage.Story]
+        storyNow = Clock.Time[Stage.Story],
+        fit = Layout.Fit
     }
 
-    pub def envOf(res: Res.Res, w: World.World): Env =
-        { res = res, saves = w#saves, pointer = w#pointer, realNow = w#realNow, storyNow = World.now(w) }
+    pub def envOf(fit: Layout.Fit, res: Res.Res, w: World.World): Env =
+        { res = res, saves = w#saves, pointer = w#pointer, realNow = w#realNow, storyNow = World.now(w), fit = fit }
+
+    /// 描く画面の sizeClass から並べ方の組を選ぶ。
+    def fitOfCtx(ctx: App.ViewCtx, res: Res.Res): Layout.Fit = Layout.fitOf(ctx#display#sizeClass, res#smallScreen)
 
     // ── hud の中の z（小さいほど奥） ──
     def zVeil(): Int32 = 10
@@ -49,8 +54,8 @@ mod View {
     def zAsk(): Int32 = 140
     def zToast(): Int32 = 160
 
-    pub def frame(_ctx: App.ViewCtx, res: Res.Res, w: World.World): List[Render.PlacedItem] =
-        let env = envOf(res, w);
+    pub def frame(ctx: App.ViewCtx, res: Res.Res, w: World.World): List[Render.PlacedItem] =
+        let env = envOf(fitOfCtx(ctx, res), res, w);
         let stage = World.stageOf(res, w);
         let k = KindDoc.rec(env#res#kind);
         let (dx, dy) = Stage.shakeOffset(env#storyNow, k#shakeSeconds, k#shakePx, stage);
@@ -59,7 +64,7 @@ mod View {
 
     pub def hud(ctx: App.ViewCtx, res: Res.Res, w: World.World): List[Render.PlacedItem] =
         let atlas = ctx#atlas;
-        let env = envOf(res, w);
+        let env = envOf(fitOfCtx(ctx, res), res, w);
         // 画面（バックログ・セーブ・設定）の間は下の画面を描かない（幕越しに字が二重に透けて読みにくい）。背景の写真は frame が描き続ける。
         let covered = match w#panel {
             case World.Panel.Closed => false
@@ -170,12 +175,13 @@ mod View {
     def windowAlpha(env: Env): Float64 = Saves.configOf(env#saves)#windowAlpha
 
     /// 1 行を置く（字の下に 1px ずらした影を敷き、写真の明るい所でも字の縁が立つようにする）。
-    def placeLine(atlas: FontAtlas, pos: Vec2.Vec2, width: Float64, size: Float64, ink: Color, visible: Int32,
+    /// sizes = 本文とルビの字の大きさ（行の間は本文の字に比べて novel.kind.json の lineGap の割合）。
+    def placeLine(atlas: FontAtlas, pos: Vec2.Vec2, width: Float64, sizes: { body = Float64, ruby = Float64 }, ink: Color, visible: Int32,
                   line: Page.Line, env: Env): List[Render.PlacedItem] =
         let k = kindOf(env);
         let place = (tint, p, z) -> RichText.placeRuby(
-            { atlas = atlas, size = size, baseTint = tint, z = z, pos = p, maxWidth = width, lineGap = k#lineGap * size / k#bodySize },
-            k#rubySize * size / k#bodySize, line#rubies, visible, RichText.plain(line#text) :: Nil);
+            { atlas = atlas, size = sizes#body, baseTint = tint, z = z, pos = p, maxWidth = width, lineGap = k#lineGap * sizes#body / k#bodySize },
+            sizes#ruby, line#rubies, visible, RichText.plain(line#text) :: Nil);
         List.append(place({ r = 0.0, g = 0.0, b = 0.0 }, { x = pos#x + 1.0, y = pos#y + 1.5 }, zText()) |> List.map(fadeTo(0.55)),
                     place(ink, pos, zText() + 1))
 
@@ -203,7 +209,7 @@ mod View {
         let (items, endY) = rows |> List.foldLeft((acc, row) -> {
             let (done, y) = acc;
             let (line, visible) = row;
-            let placed = placeLine(atlas, { x = area#x, y = y }, area#width, k#bodySize, inkOf(line, env, r), visible, line, env);
+            let placed = placeLine(atlas, { x = area#x, y = y }, area#width, { body = k#bodySize, ruby = k#rubySize }, inkOf(line, env, r), visible, line, env);
             (placed :: done, y + lineHeight(env, area#width, line) + 6.0)
         }, (Nil, area#y));
         veil :: List.append(List.flatten(List.reverse(items)), waitMark(atlas, { x = area#x + area#width - 10.0, y = endY - 4.0 }, env, r))
@@ -211,18 +217,18 @@ mod View {
     /// ADV: 下のウィンドウ（上から下へ濃くなる地と、金の細い縁）に、名前と今の 1 行。
     def adv(atlas: FontAtlas, env: Env, r: World.Read): List[Render.PlacedItem] =
         let t = theme(env);
-        let k = kindOf(env);
-        let p = Layout.advPanel();
+        let sizes = Layout.advTextSizes(env#fit, kindOf(env));
+        let p = Layout.advPanel(env#fit);
         let ground = { at = p#position,
                        item = Render.vgrad(p#size, { top = t#panel, bottom = Color.darken(t#panel, 0.3) }, zVeil()) |> Render.fade(windowAlpha(env)) };
         let rim = { at = p#position, item = RawDraw.box({ x = p#size#x, y = 1.0 }, t#accent, zVeil() + 1) |> Render.fade(0.45) };
-        let text = Layout.advText();
+        let text = Layout.advText(env#fit);
         match r#page#current {
             case None => ground :: rim :: Nil
             case Some(line) =>
                 let name = if (String.isEmpty(line#speaker)) Nil
-                    else { at = Layout.advName(), item = Render.textTinted(line#speaker, atlas, k#nameSize, t#name, zText() + 1) } :: Nil;
-                let body = placeLine(atlas, { x = text#x, y = text#y }, text#width, k#bodySize, inkOf(line, env, r),
+                    else { at = Layout.advName(env#fit), item = Render.textTinted(line#speaker, atlas, sizes#name, t#name, zText() + 1) } :: Nil;
+                let body = placeLine(atlas, { x = text#x, y = text#y }, text#width, { body = sizes#body, ruby = sizes#ruby }, inkOf(line, env, r),
                                      Page.visibleCount(r#page), line, env);
                 List.flatten((ground :: rim :: name) :: body ::
                     waitMark(atlas, { x = p#position#x + p#size#x - 30.0, y = p#position#y + p#size#y - 30.0 }, env, r) :: Nil)
@@ -246,10 +252,10 @@ mod View {
             at(0.0, 0.0, RawDraw.box({ x = Layout.width(), y = Layout.height() }, t#panel, zChoice() - 1) |> Render.fade(0.7)) :: Nil
             else Nil;
         sink ::: (r#choices |> List.zipWithIndex |> List.flatMap(match (i, option) -> {
-            let rect = Layout.choice(i, count);
+            let rect = Layout.choice(env#fit, i, count);
             let picked = i == r#choiceCursor and option#available;
             let ink = if (not option#available) dim(env) else if (picked) t#accent else t#ink;
-            plate(rect, picked, env, zChoice()) :: textIn(rect, option#line#text, atlas, 20.0, ink, zChoice() + 2) :: Nil
+            plate(rect, picked, env, zChoice()) :: textIn(rect, option#line#text, atlas, Layout.choiceTextSize(env#fit), ink, zChoice() + 2) :: Nil
         }))
 
     // ── クイックメニュー（下の帯） ──
@@ -258,19 +264,19 @@ mod View {
         let t = theme(env);
         let all = WorldMenu.buttons();
         let n = List.length(all);
-        let first = Layout.button(0, n);
+        let first = Layout.button(env#fit, 0, n);
         // ADV のウィンドウの下は写真の上なので、帯に薄い地を敷いてから字を置く。
         let strip = at(0.0, first#position#y - 4.0,
                        Render.vgrad({ x = Layout.width(), y = Layout.height() - first#position#y + 4.0 },
                                     { top = t#panel, bottom = Color.darken(t#panel, 0.4) }, zButtons() - 1) |> Render.fade(0.55 * windowAlpha(env)));
         strip :: (all |> List.zipWithIndex |> List.map(match (i, button) -> {
-            let rect = Layout.button(i, n);
+            let rect = Layout.button(env#fit, i, n);
             let lit = (button == World.Button.Auto and r#playback == World.Playback.Auto) or (button == World.Button.Skip and r#playback == World.Playback.Skip);
             let color = if (not isButtonOpen(button, env, r)) Color.mix(t#ink, t#panel, 0.7)
                         else if (lit) t#accent
                         else if (isOver(rect, env)) t#ink
                         else Color.mix(t#ink, t#panel, 0.3);
-            textIn(rect, label(buttonLabel(button), env), atlas, 13.0, color, zButtons())
+            textIn(rect, label(buttonLabel(button), env), atlas, Layout.buttonTextSize(env#fit), color, zButtons())
         }))
 
     /// 押して何か起きるボタンか（戻れない時の「戻る」・クイックセーブが無い時の「Qロード」は薄く出す）。
@@ -302,16 +308,18 @@ mod View {
         let center = Layout.width() / 2.0;
         let shade = at(0.0, 0.0, Render.vgrad({ x = Layout.width(), y = Layout.height() },
                                               { top = t#panel, bottom = Color.darken(t#panel, 0.4) }, zVeil()) |> Render.fade(0.35));
-        let heading = TextDraw.centered({ text = s#title, atlas = atlas, size = 64.0, color = t#ink, z = zText(), centerX = center, y = 130.0 });
-        let sub = TextDraw.centered({ text = s#subtitle, atlas = atlas, size = 18.0, color = t#inkSeen, z = zText(), centerX = center, y = 222.0 });
+        let fit = env#fit;
+        let heading = TextDraw.centered({ text = s#title, atlas = atlas, size = 64.0, color = t#ink, z = zText(), centerX = center, y = Layout.titleHeadingY(fit) });
+        let sub = TextDraw.centered({ text = s#subtitle, atlas = atlas, size = 18.0, color = t#inkSeen, z = zText(), centerX = center, y = Layout.titleSubtitleY(fit) });
         let placed = WorldMenu.titleItems() |> List.zipWithIndex;
+        let count = List.length(placed);
         let items = placed |> List.map(match (i, item) -> {
-            let r = Layout.titleItem(i);
+            let r = Layout.titleItem(fit, i, count);
             let color = if (not WorldMenu.isTitleItemOpen(item, env#saves)) dim(env) else if (item == cursor) t#accent else t#ink;
-            textIn(r, label(titleLabel(item), env), atlas, 21.0, color, zText())
+            textIn(r, label(titleLabel(item), env), atlas, Layout.titleItemTextSize(fit), color, zText())
         });
         let marker = placed |> List.find(match (_, item) -> item == cursor) |> Option.map(match (i, _) -> {
-            let r = Layout.titleItem(i);
+            let r = Layout.titleItem(fit, i, count);
             at(r#position#x + 50.0, r#position#y + r#size#y - 3.0, RawDraw.box({ x = r#size#x - 100.0, y = 1.0 }, t#accent, zText()) |> Render.fade(0.6))
         }) |> Option.toList;
         let hint = TextDraw.centered({ text = s#hint, atlas = atlas, size = 13.0, color = Color.mix(t#ink, t#panel, 0.4), z = zText(),
@@ -369,7 +377,7 @@ mod View {
     /// 画面の地・左上の見出しと下の線・右上の「戻る」・下の案内（空なら出さない）。
     def panelFrame(atlas: FontAtlas, heading: String, hint: String, env: Env): List[Render.PlacedItem] =
         let t = theme(env);
-        let back = Layout.back();
+        let back = Layout.back(env#fit);
         let h = Layout.heading();
         let ground = at(0.0, 0.0, Render.vgrad({ x = Layout.width(), y = Layout.height() },
                                                { top = Color.darken(t#panel, 0.1), bottom = t#panel }, zPanel()) |> Render.fade(0.9));
@@ -378,13 +386,13 @@ mod View {
             else textAt(h#x, Layout.hintY() + 6.0, hint, atlas, 12.0, Color.mix(t#ink, t#panel, 0.45), zPanelText()) :: Nil;
         ground :: rule :: textAt(h#x, h#y, heading, atlas, 28.0, t#accent, zPanelText())
             :: plate(back, isOver(back, env), env, zPanelText())
-            :: textIn(back, label(StoryDoc.Label.Back, env), atlas, 15.0, if (isOver(back, env)) t#accent else t#ink, zPanelText() + 1)
+            :: textIn(back, label(StoryDoc.Label.Back, env), atlas, Layout.backTextSize(env#fit), if (isOver(back, env)) t#accent else t#ink, zPanelText() + 1)
             :: hintRow
 
     // ── バックログ ──
 
     /// バックログの 1 行の高さ（字の大きさはバックログ用に本文より小さく）。Controls がスクロールの量に使う。
-    pub def logRowHeight(res: Res.Res, w: World.World): Float64 = rowHeightOf(envOf(res, w))
+    pub def logRowHeight(fit: Layout.Fit, res: Res.Res, w: World.World): Float64 = rowHeightOf(envOf(fit, res, w))
 
     def rowHeightOf(env: Env): Float64 =
         let k = kindOf(env);
@@ -422,15 +430,15 @@ mod View {
         rows
 
     /// バックログの長さと読む範囲の高さ（UiScroll の勘定へ）。
-    pub def logScrollSize(res: Res.Res, w: World.World): { contentPx = Float64, viewportPx = Float64 } = scrollSizeOf(envOf(res, w), World.logOf(w))
+    pub def logScrollSize(fit: Layout.Fit, res: Res.Res, w: World.World): { contentPx = Float64, viewportPx = Float64 } = scrollSizeOf(envOf(fit, res, w), World.logOf(w))
 
     def scrollSizeOf(env: Env, log: List[World.Entry]): { contentPx = Float64, viewportPx = Float64 } =
         { contentPx = log |> List.foldLeft((sum, entry) -> sum + logEntryHeight(env, entry), 0.0),
           viewportPx = Layout.logView()#size#y }
 
     /// p の下にある項目の番号（読む範囲の外・戻れない項目は None）。
-    pub def logEntryAt(res: Res.Res, p: { x = Float64, y = Float64 }, w: World.World): Option[Int32] =
-        entryAtOf(p, envOf(res, w), World.logOf(w), WorldLog.offsetOf(w))
+    pub def logEntryAt(fit: Layout.Fit, res: Res.Res, p: { x = Float64, y = Float64 }, w: World.World): Option[Int32] =
+        entryAtOf(p, envOf(fit, res, w), World.logOf(w), WorldLog.offsetOf(w))
 
     def entryAtOf(p: { x = Float64, y = Float64 }, env: Env, log: List[World.Entry], offset: Float64): Option[Int32] =
         if (not Layout.contains(Layout.logView(), p)) None
@@ -508,11 +516,11 @@ mod View {
                    screenOf: Saves.Mark -> Option[World.Read]): List[Render.PlacedItem] =
         let t = theme(env);
         let tabs = pages#tabs |> List.zipWithIndex |> List.flatMap(match (j, tab) -> {
-            let r = Layout.tab(j);
+            let r = Layout.tab(env#fit, j);
             let on = tab == pages#tab;
             let lit = on or isOver(r, env);
             let bar = if (on) at(r#position#x, r#position#y + r#size#y - 2.0, RawDraw.box({ x = r#size#x, y = 2.0 }, t#accent, zPanelText() + 1)) :: Nil else Nil;
-            plate(r, lit, env, zPanelText()) :: textIn(r, tabLabel(tab, env), atlas, 15.0, if (on) t#accent else if (lit) t#ink else t#inkSeen, zPanelText() + 1) :: bar
+            plate(r, lit, env, zPanelText()) :: textIn(r, tabLabel(tab, env), atlas, Layout.tabTextSize(env#fit), if (on) t#accent else if (lit) t#ink else t#inkSeen, zPanelText() + 1) :: bar
         });
         let newest = Saves.latest(env#saves);
         let cards = List.range(0, Saves.perPage()) |> List.flatMap(i -> slotCard(atlas, env, pages#tab, i, i == pages#cursor, newest, screenOf));
@@ -521,9 +529,9 @@ mod View {
     def slotCard(atlas: FontAtlas, env: Env, tab: Saves.Tab, i: Int32, picked: Bool, newest: Option[(Saves.Tab, Int32)],
                  screenOf: Saves.Mark -> Option[World.Read]): List[Render.PlacedItem] =
         let t = theme(env);
-        let r = Layout.slot(i);
+        let r = Layout.slot(env#fit, i);
         let lit = picked or isOver(r, env);
-        let thumb = Layout.thumb(i);
+        let thumb = Layout.thumb(env#fit, i);
         let tx = thumb#position#x + thumb#size#x + 14.0;
         let textWidth = r#position#x + r#size#x - 12.0 - tx;
         let y = r#position#y;
@@ -531,7 +539,7 @@ mod View {
         let card = plate(r, lit, env, zCard());
         match Saves.slotOf(tab, i, env#saves) {
             case Some(slot) =>
-                let rm = Layout.remove(i);
+                let rm = Layout.remove(env#fit, i);
                 let removeMark = textIn(rm, "×", atlas, 16.0, if (isOver(rm, env)) t#accent else dim(env), zPanelText());
                 let date = textRight(rm#position#x - 6.0, y + 10.0, Saves.dateText(slot#savedAt), atlas, 13.0, t#inkSeen, zPanelText());
                 let place = textAt(tx, y + 32.0, clipTo(textWidth, 17.0, atlas, slot#place), atlas, 17.0, t#ink, zPanelText());
@@ -637,14 +645,16 @@ mod View {
     def settingRow(atlas: FontAtlas, env: Env, i: Int32, setting: World.Setting, picked: Bool): List[Render.PlacedItem] =
         let t = theme(env);
         let config = Saves.configOf(env#saves);
-        let row = Layout.settingRow(i);
+        let fit = env#fit;
+        let text = Layout.settingText(fit);
+        let row = Layout.settingRow(fit, i);
         let focus = if (picked) at(row#position#x - 8.0, row#position#y, RawDraw.box({ x = 2.0, y = row#size#y }, t#accent, zPanelText())) :: Nil else Nil;
-        let name = textAt(row#position#x + 4.0, row#position#y + 12.0, label(settingLabel(setting), env), atlas, 16.0,
+        let name = textAt(row#position#x + 4.0, row#position#y + text#nameTop, label(settingLabel(setting), env), atlas, text#name,
                           if (picked) t#accent else t#ink, zPanelText());
         match setting {
             case World.Setting.Slider(slider) =>
                 let range = WorldSettings.rangeOf(slider, env#res#kind);
-                let bar = Layout.settingBar(i);
+                let bar = Layout.settingBar(fit, i);
                 let v = WorldSettings.levelOf(slider, config);
                 let filled = if (range#max > range#min) (v - range#min) / (range#max - range#min) else 0.0;
                 let knobX = bar#position#x + bar#size#x * filled;
@@ -652,27 +662,27 @@ mod View {
                     at(bar#position#x, bar#position#y, RawDraw.box(bar#size, Color.lighten(t#panel, 0.18), zPanelText()) |> Render.rounded(3.0))
                     :: at(bar#position#x, bar#position#y, RawDraw.box({ x = bar#size#x * filled, y = bar#size#y }, t#accent, zPanelText() + 1) |> Render.rounded(3.0))
                     :: RawDraw.circleAt({ x = knobX, y = bar#position#y + bar#size#y / 2.0 }, if (picked) 8.0 else 7.0, if (picked) t#accent else t#ink, zPanelText() + 2)
-                    :: textRight(row#position#x + row#size#x, row#position#y + 13.0, valueText(slider, v), atlas, 14.0, t#inkSeen, zPanelText())
+                    :: textRight(row#position#x + row#size#x, row#position#y + text#valueTop, valueText(slider, v), atlas, text#value, t#inkSeen, zPanelText())
                     :: Nil) :: Nil)
             case World.Setting.Pair(pair) =>
                 let chosen = WorldSettings.sideOf(pair, config);
                 let (left, right) = WorldSettings.pairLabels(pair);
                 let buttons = Layout.sides() |> List.flatMap(side -> {
-                    let r = Layout.settingSide(i, side);
+                    let r = Layout.settingSide(fit, i, side);
                     let on = side == chosen;
                     plate(r, on or isOver(r, env), env, zPanelText())
-                    :: textIn(r, label(if (side == Layout.Side.Left) left else right, env), atlas, 14.0, if (on) t#accent else t#inkSeen, zPanelText() + 1) :: Nil
+                    :: textIn(r, label(if (side == Layout.Side.Left) left else right, env), atlas, text#pair, if (on) t#accent else t#inkSeen, zPanelText() + 1) :: Nil
                 });
                 List.flatten(focus :: (name :: Nil) :: buttons :: Nil)
             case World.Setting.Reset =>
-                let r = Layout.settingAction(i);
-                List.append(focus, plate(r, picked or isOver(r, env), env, zPanelText()) :: textIn(r, label(StoryDoc.Label.Reset, env), atlas, 15.0, t#ink, zPanelText() + 1) :: Nil)
+                let r = Layout.settingAction(fit, i);
+                List.append(focus, plate(r, picked or isOver(r, env), env, zPanelText()) :: textIn(r, label(StoryDoc.Label.Reset, env), atlas, text#action, t#ink, zPanelText() + 1) :: Nil)
         }
 
     /// 見本: ウィンドウの濃さで地を敷き、文字の速さで見本の文を流し続ける（実時間。読み終えて少し置いてから頭へ戻る）。
     def preview(atlas: FontAtlas, env: Env): List[Render.PlacedItem] =
         let t = theme(env);
-        let r = Layout.preview();
+        let r = Layout.preview(env#fit);
         let k = kindOf(env);
         let sample = label(StoryDoc.Label.Preview, env);
         let cps = Saves.configOf(env#saves)#cps;
@@ -685,7 +695,7 @@ mod View {
            Render.vgrad(r#size, { top = t#panel, bottom = Color.darken(t#panel, 0.3) }, zCard()) |> Render.fade(windowAlpha(env))
                |> Render.outlineA({ color = t#accent, alpha = 0.35, width = 1.0 }) |> Render.rounded(3.0))
         :: RichText.placeRuby({ atlas = atlas, size = size, baseTint = t#ink, z = zPanelText(),
-                                pos = { x = r#position#x + 16.0, y = r#position#y + 18.0 },
+                                pos = { x = r#position#x + 16.0, y = r#position#y + Layout.previewTextInset(env#fit) },
                                 maxWidth = r#size#x - 32.0, lineGap = k#lineGap * size / k#bodySize },
                               k#rubySize * size / k#bodySize, Nil, visible, RichText.plain(sample) :: Nil)
 
@@ -730,10 +740,10 @@ mod View {
                                                                        z = zAsk() + 2, centerX = center, y = box#position#y + 74.0 }) :: Nil)
                               |> Option.getWithDefault(Nil);
                 let answers = (World.Answer.Yes :: World.Answer.No :: Nil) |> List.flatMap(answer -> {
-                    let r = Layout.askButton(WorldMenu.sideOf(answer));
+                    let r = Layout.askButton(env#fit, WorldMenu.sideOf(answer));
                     let on = answer == cursor;
                     plate(r, on, env, zAsk() + 2)
-                    :: textIn(r, label(if (answer == World.Answer.Yes) StoryDoc.Label.Yes else StoryDoc.Label.No, env), atlas, 17.0,
+                    :: textIn(r, label(if (answer == World.Answer.Yes) StoryDoc.Label.Yes else StoryDoc.Label.No, env), atlas, Layout.askButtonTextSize(env#fit),
                               if (on) t#accent else t#ink, zAsk() + 3) :: Nil
                 });
                 List.flatten((shade :: ground :: line :: Nil) :: sub :: answers :: Nil)

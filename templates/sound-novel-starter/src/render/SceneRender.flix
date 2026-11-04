@@ -1,10 +1,10 @@
 // SceneRender — ゲーム画面を画面なしで PNG に描き出す（スナップショット比較用）。
 // 実行: make render-all → gallery/*.png と gallery/<場面>.json（場面と World は Shots）
-//       make render SHOT=nvl → debug/nvl.png（1 枚だけ）
+//       make render SHOT=nvl → debug/nvl.png（1 枚だけ）。small-<場面> は同じ場面を小さい画面（スマホ）の並べ方で描く
 // 背景のぼかしは宣言シェーダーの面なので、draw には渡さず ShaderEval が画素ごとに塗る（Render.shaderSurfaces）。
 // 写真は project.json の textures をそのまま読む（実機と同じ名前 → 同じファイル）。
 mod SceneRender {
-    use fge::{App, DocJson, HeadlessFont, HeadlessRender, JsonCodec, Render, Vec2}
+    use fge::{App, DocJson, Display, HeadlessFont, HeadlessRender, JsonCodec, Render, Vec2}
 
     import java.io.File
     import java.lang.ProcessHandle
@@ -55,11 +55,11 @@ mod SceneRender {
     pub def oneJob(req: App.Headless.Request): Int32 \ IO =
         let wanted = Map.getWithDefault("SHOT", "", App.Headless.envOf(req)) |> String.splitOn(substr = " ")
             |> List.map(String.trim) |> List.filter(n -> not String.isEmpty(n));
-        let known = List.toSet(Shots.names());
+        let known = List.toSet(allNames());
         let unknown = wanted |> List.filter(n -> not Set.memberOf(n, known));
         if (List.isEmpty(wanted) or not List.isEmpty(unknown)) {
             println("[render] 描けない名前です: ${List.join(" ", unknown)}");
-            println("[render] SHOT=<場面> に使えるのは: ${List.join(" ", Shots.names())}");
+            println("[render] SHOT=<場面> に使えるのは: ${List.join(" ", allNames())}");
             1
         } else {
             let picked = List.toSet(wanted);
@@ -67,21 +67,36 @@ mod SceneRender {
             0
         }
 
+    /// 小さい画面（スマホ）の並べ方で描く場面: (描き出しの名前, Shots の場面の名前)。World は同じ場面の物をそのまま使う。
+    /// WhyNot: Shots.names に入れない — Shots.names は実機の START=shot: の口でもあり、デスクトップ版の実機はいつも Large で描く。
+    def smallShots(): List[(String, String)] =
+        ("small-title", "title") :: ("small-nvl", "nvl") :: ("small-adv", "adv") :: ("small-choice", "choice")
+            :: ("small-save", "save") :: ("small-settings", "settings") :: ("small-ask", "ask") :: Nil
+
+    /// 描き出せる名前の全部（Shots の場面と、小さい画面の場面）。
+    def allNames(): List[String] = List.append(Shots.names(), smallShots() |> List.map(fst))
+
     def shotsInto(outDir: String, keep: String -> Bool): List[String] \ IO =
         discard (new File(outDir)).mkdirs();
         let cfg = cfgOf(outDir, texturesOf());
         let res = loadRes();
-        Shots.names() |> List.filter(keep) |> List.filterMap(name ->
-            Shots.worldOf(name, res) |> Option.map(w -> {
-                let path = shoot(res, cfg, w, name);
+        let regular = Shots.names() |> List.map(name -> (name, name, Display.SizeClass.Large));
+        let small = smallShots() |> List.map(match (name, scene) -> (name, scene, Display.SizeClass.Small));
+        List.append(regular, small) |> List.filter(match (name, _, _) -> keep(name)) |> List.filterMap(match (name, scene, sizeClass) ->
+            Shots.worldOf(scene, res) |> Option.map(w -> {
+                let path = shootAs(sizeClass, res, cfg, w, name);
                 App.Headless.writeShotRecord(outDir, name, Some(E2e.fingerprint(res, w)));
                 path
             }))
 
-    /// 1 場面を PNG に描き出し、そのファイルパスを返す。hud の合流は実機と同じ App.composeScene を通し、
-    /// 背景の面は surfaces として別に取り出して画素ごとに評価させる（draw に渡すと代表色のベタ塗りになる）。
     def shoot(res: Res.Res, cfg: HeadlessRender.RenderConfig, w: World.World, name: String): String \ IO =
-        let ctx = App.viewCtxOf(cfg#fontAtlas, design());
+        shootAs(Display.SizeClass.Large, res, cfg, w, name)
+
+    /// 1 場面を端末の sizeClass の画面として PNG に描き出し、そのファイルパスを返す。hud の合流は実機と同じ App.composeScene を通し、
+    /// 背景の面は surfaces として別に取り出して画素ごとに評価させる（draw に渡すと代表色のベタ塗りになる）。
+    def shootAs(sizeClass: Display.SizeClass, res: Res.Res, cfg: HeadlessRender.RenderConfig, w: World.World, name: String): String \ IO =
+        let desktop = App.viewCtxOf(cfg#fontAtlas, design());
+        let ctx = { display = { sizeClass = sizeClass | desktop#display } | desktop };
         let items = App.composeScene(None, 1.0, cfg#design, { world = View.frame(ctx, res, w), hud = View.hud(ctx, res, w) });
         let (drawables, polygons) = Render.draw(Render.withoutShaders(items));
         HeadlessRender.renderPngWith(cfg, drawables, polygons, Render.shaderSurfaces(items), name);

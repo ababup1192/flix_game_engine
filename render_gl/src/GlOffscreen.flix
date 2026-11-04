@@ -405,6 +405,7 @@ pub mod GlOffscreen {
             def shouldClose(k) = k(false)
             def setShouldClose(_close, k) = k()
             def getViewportRect(k) = k({ position = Vec2.zero(), size = design })
+            def getDisplay(k) = k(Display.desktop(design))
             def presentFrame(k) = k(())
             def setCursor(_cursor, k) = k(())
             def setCursorVisible(_visible, k) = k(())

@@ -11,4 +11,11 @@ night	dynamic=783	static=0
 nvl	dynamic=255	static=0
 save	dynamic=1200	static=0
 settings	dynamic=172	static=0
+small-adv	dynamic=86	static=0
+small-ask	dynamic=239	static=0
+small-choice	dynamic=125	static=0
+small-nvl	dynamic=255	static=0
+small-save	dynamic=1200	static=0
+small-settings	dynamic=172	static=0
+small-title	dynamic=58	static=0
 title	dynamic=58	static=0

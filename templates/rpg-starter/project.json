@@ -324,5 +324,21 @@
         "role": "tuning"
       }
     ]
+  },
+  "web": {
+    "keysDoc": "assets/rpg.keys.json",
+    "virtualPad": {
+      "dpad": true,
+      "buttons": [
+        {
+          "label": "A",
+          "action": "confirm"
+        },
+        {
+          "label": "B",
+          "action": "cancel"
+        }
+      ]
+    }
   }
 }

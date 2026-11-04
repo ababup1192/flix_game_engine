@@ -123,7 +123,7 @@
 - App の中身。ゲームからは読まない（ビルダーで組む）。エンジンの中の口（Flow・RemoteDebug など）が読む。
   `pub def rec(app: App[w, ef]): Rec[w, ef]`
 - このフレームの入力と時計のスナップショット。キーの生読みはランナーが済ませてあるので、
-  `pub type alias Frame = { down = Set[GameEngine.Key], justPressed = Set[GameEngine.Key], dt = Float64, viewport = Vec2.Vec2, cursor = Vec2.Vec2, mouseDown = Bool, mouseClicked = Bool, mouseButtons = Set[GameEngine.MouseButton], mouseClickedButtons = Set[GameEngine.MouseButton], mouseMoved = Bool, wheel = Float64, realNow = Clock.Time[Clock.Real], padTouched = Bool, padKind = GamepadMap.PadKind, mouseDelta = Vec2.Vec2, windowFocused = Bool, diagnostics = Option[FrameDiagnostics.Diagnostics] }`
+  `pub type alias Frame = { down = Set[GameEngine.Key], justPressed = Set[GameEngine.Key], dt = Float64, viewport = Vec2.Vec2, cursor = Vec2.Vec2, mouseDown = Bool, mouseClicked = Bool, mouseButtons = Set[GameEngine.MouseButton], mouseClickedButtons = Set[GameEngine.MouseButton], mouseMoved = Bool, wheel = Float64, realNow = Clock.Time[Clock.Real], padTouched = Bool, padKind = GamepadMap.PadKind, mouseDelta = Vec2.Vec2, windowFocused = Bool, sizeClass = Display.SizeClass, diagnostics = Option[FrameDiagnostics.Diagnostics] }`
 - key がいま押されているか（押しっぱなしも true）。移動などの連続入力に。
   `pub def isDown(key: GameEngine.Key, frame: Frame): Bool`
 - key がこのフレームで新しく押されたか（押しっぱなしは false）。決定・発射などの単発入力に。
@@ -131,7 +131,7 @@
 - 負方向・正方向のキーの押し下げを -1 / 0 / +1 にまとめる（両押しは打ち消して 0）。
   `pub def axis(negative: {negative = GameEngine.Key}, positive: {positive = GameEngine.Key}, frame: Frame): Float64`
 - view / hudView が受け取る「この 1 フレームの見え方」。atlas は文字描画用の既定フォント、
-  `pub type alias ViewCtx = { atlas = FontAtlas, fontOf = String -> FontAtlas, visible = Rect2.Rect2, warnOnce = String -> Unit, diagnostics = Option[FrameDiagnostics.Diagnostics] }`
+  `pub type alias ViewCtx = { atlas = FontAtlas, fontOf = String -> FontAtlas, visible = Rect2.Rect2, warnOnce = String -> Unit, diagnostics = Option[FrameDiagnostics.Diagnostics], display = Display.Display }`
 - ヘッドレス描き出しから view を呼ぶときの ViewCtx。画面全体が見えている扱いにする。
   `pub def viewCtxOf(atlas: FontAtlas, design: Vec2.Vec2): ViewCtx`
 - viewCtxOf の複数フォント版。fontOf には実機と同じ名前で引ける関数を渡す

@@ -22,6 +22,22 @@ public final class Browser {
     @JSBody(script = "return fgeCanvasWidth();")
     public static native int canvasWidth();
 
+    /** CSS px 1 つが canvas の画素の何個か（window.devicePixelRatio）。 */
+    @JSBody(script = "return window.devicePixelRatio || 1;")
+    public static native double devicePixelRatio();
+
+    /** 主な pointer が指の端末か（matchMedia の pointer: coarse。頁の ?input=touch|mouse で上書き）。 */
+    @JSBody(script = "return fgeIsCoarse();")
+    public static native boolean isCoarsePointer();
+
+    /** 起動の時に測った画面の短い辺（CSS px）。端末の画面と窓の短い方（分割画面・折りたたみを開いた時は窓に合わせる）。 */
+    @JSBody(script = "return fgeScreenShortSide;")
+    public static native double screenShortSide();
+
+    /** 頁の ?size=small|medium|large の値（無ければ空）。 */
+    @JSBody(script = "return fgeSizeOverride;")
+    public static native String sizeOverride();
+
     /** canvas の描き先の高さ（画素）。 */
     @JSBody(script = "return fgeCanvasHeight();")
     public static native int canvasHeight();

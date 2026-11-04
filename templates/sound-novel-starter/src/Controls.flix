@@ -27,6 +27,9 @@ mod Controls {
 
     def keysOf(res: Res.Res): KeysDoc.Rec = KeysDoc.rec(res#keys)
 
+    /// このフレームの並べ方の組（View が ViewCtx#display#sizeClass から引く組と同じ）。
+    def fitOf(res: Res.Res, frame: App.Frame): Layout.Fit = Layout.fitOf(frame#sizeClass, res#smallScreen)
+
     def interpret(res: Res.Res, frame: App.Frame, w: World.World): World.World \ Emit[World.Event] =
         if (Option.nonEmpty(w#ask)) askInput(res, frame, w)
         else if (w#panel != World.Panel.Closed) panelInput(res, frame, w)
@@ -44,7 +47,7 @@ mod Controls {
     /// はい / いいえ: ←→↑↓ でカーソル、決定で答える、戻るは「いいえ」。マウスは乗った方へカーソルを寄せ、押した方で答える。
     def askInput(res: Res.Res, frame: App.Frame, w: World.World): World.World \ Emit[World.Event] =
         let k = keysOf(res);
-        let hovered = Layout.sideAt(Layout.askButton, frame#cursor) |> Option.map(WorldMenu.answerOn);
+        let hovered = Layout.sideAt(Layout.askButton(fitOf(res, frame)), frame#cursor) |> Option.map(WorldMenu.answerOn);
         match hovered {
             case Some(a) if frame#mouseClicked => WorldMenu.answer(res, a, w)
             case Some(a) if frame#mouseMoved   => World.moveAsk(a, w)
@@ -61,7 +64,7 @@ mod Controls {
     def titleInput(res: Res.Res, frame: App.Frame, w: World.World): World.World \ Emit[World.Event] =
         let k = keysOf(res);
         let items = WorldMenu.titleItems();
-        let hovered = Layout.hitOf(List.length(items), Layout.titleItem, frame#cursor)
+        let hovered = Layout.hitOf(List.length(items), i -> Layout.titleItem(fitOf(res, frame), i, List.length(items)), frame#cursor)
             |> Option.flatMap(i -> List.nth(i, items)) |> Option.filter(item -> WorldMenu.isTitleItemOpen(item, w#saves));
         match hovered {
             case Some(item) if frame#mouseClicked => WorldMenu.chooseTitle(res, item, w)
@@ -79,7 +82,7 @@ mod Controls {
     def readingInput(res: Res.Res, frame: App.Frame, w: World.World): World.World \ Emit[World.Event] =
         let k = keysOf(res);
         let buttons = WorldMenu.buttons();
-        let pressed = Layout.hitOf(List.length(buttons), i -> Layout.button(i, List.length(buttons)), frame#cursor)
+        let pressed = Layout.hitOf(List.length(buttons), i -> Layout.button(fitOf(res, frame), i, List.length(buttons)), frame#cursor)
             |> Option.filter(_ -> frame#mouseClicked) |> Option.flatMap(i -> List.nth(i, buttons));
         match pressed {
             case Some(button) => WorldMenu.press(res, button, w)
@@ -100,7 +103,7 @@ mod Controls {
     def choiceInput(res: Res.Res, frame: App.Frame, w: World.World): World.World \ Emit[World.Event] =
         let k = keysOf(res);
         let count = List.length(World.choicesOf(w));
-        let hovered = Layout.hitOf(count, i -> Layout.choice(i, count), frame#cursor);
+        let hovered = Layout.hitOf(count, i -> Layout.choice(fitOf(res, frame), i, count), frame#cursor);
         match hovered {
             case Some(i) if frame#mouseClicked => WorldRead.pick(res, i, w)
             case Some(i) if frame#mouseMoved   => WorldRead.pointChoice(i, w)
@@ -115,7 +118,7 @@ mod Controls {
 
     def panelInput(res: Res.Res, frame: App.Frame, w: World.World): World.World \ Emit[World.Event] =
         let k = keysOf(res);
-        let back = tapped(k#back, frame) or clickedOn(Layout.back(), frame);
+        let back = tapped(k#back, frame) or clickedOn(Layout.back(fitOf(res, frame)), frame);
         match w#panel {
             case World.Panel.Closed => w
             case World.Panel.Hidden =>
@@ -130,9 +133,10 @@ mod Controls {
     /// バックログ: ホイールと ↑↓ で遡る（一番下でホイールを下へ回すと閉じる）。戻れる行をクリックすると、その場面へ戻るか尋ねる。
     def logInput(res: Res.Res, frame: App.Frame, back: Bool, offset: Float64, w: World.World): World.World \ Emit[World.Event] =
         let k = keysOf(res);
-        let size = View.logScrollSize(res, w);
-        let row = View.logRowHeight(res, w);
-        let clicked = if (frame#mouseClicked) View.logEntryAt(res, frame#cursor, w) else None;
+        let fit = fitOf(res, frame);
+        let size = View.logScrollSize(fit, res, w);
+        let row = View.logRowHeight(fit, res, w);
+        let clicked = if (frame#mouseClicked) View.logEntryAt(fit, res, frame#cursor, w) else None;
         match clicked {
             case Some(i) => WorldLog.askJump(i, w)
             case None =>
@@ -148,11 +152,12 @@ mod Controls {
     /// ↑↓ は 1 行（2 枠）、←→ は 1 枠動く。Q / E（tabPrev / tabNext）でページを替える。
     def slotsInput(res: Res.Res, frame: App.Frame, back: Bool, w: World.World): World.World \ Emit[World.Event] =
         let k = keysOf(res);
+        let fit = fitOf(res, frame);
         let count = Saves.perPage();
         let tabs = WorldSaves.tabsOf(w);
-        let tabHit = if (frame#mouseClicked) Layout.hitOf(List.length(tabs), Layout.tab, frame#cursor) |> Option.flatMap(j -> List.nth(j, tabs)) else None;
-        let removeHit = if (frame#mouseClicked) Layout.hitOf(count, Layout.remove, frame#cursor) else None;
-        let slotHit = Layout.hitOf(count, Layout.slot, frame#cursor);
+        let tabHit = if (frame#mouseClicked) Layout.hitOf(List.length(tabs), Layout.tab(fit), frame#cursor) |> Option.flatMap(j -> List.nth(j, tabs)) else None;
+        let removeHit = if (frame#mouseClicked) Layout.hitOf(count, Layout.remove(fit), frame#cursor) else None;
+        let slotHit = Layout.hitOf(count, Layout.slot(fit), frame#cursor);
         match (tabHit, removeHit, slotHit) {
             case (Some(tab), _, _)      => WorldSaves.withTab(tab, w)
             case (None, Some(i), _)     => WorldSaves.deleteSlot(i, w)
@@ -176,7 +181,7 @@ mod Controls {
     def settingsInput(res: Res.Res, frame: App.Frame, back: Bool, current: World.Setting, w: World.World): World.World \ Emit[World.Event] =
         let k = keysOf(res);
         let rows = WorldSettings.settings();
-        let hovered = Layout.hitOf(List.length(rows), Layout.settingRow, frame#cursor)
+        let hovered = Layout.hitOf(List.length(rows), Layout.settingRow(fitOf(res, frame)), frame#cursor)
             |> Option.flatMap(i -> List.nth(i, rows) |> Option.map(s -> (i, s)));
         match hovered {
             case Some((i, setting)) if frame#mouseClicked => clickSetting(res, i, setting, frame, WorldSettings.pointSetting(setting, w))
@@ -196,20 +201,21 @@ mod Controls {
         match setting {
             case World.Setting.Slider(slider) =>
                 let range = WorldSettings.rangeOf(slider, res#kind);
-                let bar = Layout.settingBar(i);
-                let reach = { position = { x = bar#position#x - 10.0, y = bar#position#y - 16.0 }, size = { x = bar#size#x + 20.0, y = bar#size#y + 32.0 } };
+                let fit = fitOf(res, frame);
+                let bar = Layout.settingBar(fit, i);
+                let reach = Layout.settingBarReach(fit, i);
                 if (not Layout.contains(reach, frame#cursor)) w
                 else {
                     let t = Float64.max(0.0, Float64.min(1.0, (frame#cursor#x - bar#position#x) / bar#size#x));
                     WorldSettings.withLevel(res, slider, range#min + Float64.round((t * (range#max - range#min)) / range#step) * range#step, w)
                 }
             case World.Setting.Pair(pair) =>
-                match Layout.sideAt(side -> Layout.settingSide(i, side), frame#cursor) {
+                match Layout.sideAt(side -> Layout.settingSide(fitOf(res, frame), i, side), frame#cursor) {
                     case Some(side) => WorldSettings.withSide(pair, side, w)
                     case None       => w
                 }
             case World.Setting.Reset =>
-                if (Layout.contains(Layout.settingAction(i), frame#cursor)) WorldSettings.activate(setting, w) else w
+                if (Layout.contains(Layout.settingAction(fitOf(res, frame), i), frame#cursor)) WorldSettings.activate(setting, w) else w
         }
 
     // ── 音 ──
@@ -258,6 +264,7 @@ mod Controls {
           backdrops = BackdropDoc.load(BackdropDoc.path()),
           credits = CreditsDoc.load(CreditsDoc.path()),
           keys = KeysDoc.load(KeysDoc.path()),
+          smallScreen = SmallScreenDoc.load(SmallScreenDoc.path()),
           mixer = AudioMixerDoc.load(AudioMixer.defaults(), mixerPath()),
           dialogue = Talk.load() }
 
@@ -275,6 +282,7 @@ mod Controls {
             :: (Resources.reloadRow("credits", CreditsDoc.path(), res -> Res.withCredits(CreditsDoc.load(CreditsDoc.path()), res), unchanged)
                 |> DocTable.withActiveWhen(Resources.read((_, w) -> World.isCredits(w))))
             :: Resources.reloadRow("keys", KeysDoc.path(), res -> Res.withKeys(KeysDoc.load(KeysDoc.path()), res), unchanged)
+            :: Resources.reloadRow("small", SmallScreenDoc.path(), res -> Res.withSmallScreen(SmallScreenDoc.load(SmallScreenDoc.path()), res), unchanged)
             :: Resources.reloadRow("mixer", mixerPath(), res -> Res.withMixer(AudioMixerDoc.load(AudioMixer.defaults(), mixerPath()), res), unchanged)
             :: Nil
 }
