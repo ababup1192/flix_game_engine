@@ -123,5 +123,5 @@ mod TestGltf.Uvs2 {
     @Test
     def testTexcoord1IsReadByLoadTexturedToo(): Unit \ {Assert, IO} =
         Assert.assertEq(expected = Ok(Some(List.toVector(threeUvs()))),
-            Gltf.fromGlbTextured(triangleWithUvs2Glb(true, threeUvs())) |> Result.map(m -> List.head(m#parts) |> Option.flatMap(p -> Mesh3d.uvs2(p#mesh))))
+            Gltf.fromGlbTexturedUsing(TestDecoder.imageIo(), Gltf.noTextureLimits(), triangleWithUvs2Glb(true, threeUvs())) |> Result.map(m -> List.head(m#parts) |> Option.flatMap(p -> Mesh3d.uvs2(p#mesh))))
 }

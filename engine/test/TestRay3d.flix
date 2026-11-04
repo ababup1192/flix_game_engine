@@ -37,6 +37,21 @@ mod TestRay3d {
              Option.isEmpty(Ray3d.hitBox(alongZ(Vec3.v3(0.0, 0.0, -5.0)), 3.0, cube())),
              Option.isEmpty(Ray3d.hitBox(Ray3d.ray3d(Vec3.v3(0.0, 0.0, -5.0), Vec3.zero()), 100.0, cube()))))
 
+    /// 厚さ 0 の床の板（y = 0.1）: 上からの下向きのレイは板までの距離で当たり、板の上に合わせた足元（丸めで 1e-16 m 下）からのレイは距離 0 で当たる。
+    @Test
+    def testHitFlatBoardFromAboveAndFromFeet(): Unit \ Assert =
+        let board = CollisionShape3d.box3d(Vec3.v3(0.0, 0.1, 0.0), Vec3.v3(2.0, 0.0, 2.0));
+        let down = (y: Float64) -> Ray3d.ray3d(Vec3.v3(0.3, y, 0.2), Vec3.v3(0.0, -1.0, 0.0));
+        let feet = 1.3 - 1.2000000000000002;
+        Assert.assertEq(expected = (Some((1500, (300, 100, 200), (0, 1000, 0))), Some(0)),
+            (Ray3d.hitBox(down(1.6), 10.0, board) |> Option.map(hitMm), Ray3d.hitBox(down(feet), 10.0, board) |> Option.map(h -> r1000(h#distance))))
+
+    /// 厚さ 0 の床の板（y = 0.1）の面の上から、板と平行に打つ横向きのレイは当たらない（板を横切らない）。
+    @Test
+    def testFlatBoardIgnoresRayParallelOnItsSurface(): Unit \ Assert =
+        let board = CollisionShape3d.box3d(Vec3.v3(0.0, 0.1, 0.0), Vec3.v3(2.0, 0.0, 2.0));
+        Assert.assertTrue(Option.isEmpty(Ray3d.hitBox(Ray3d.ray3d(Vec3.v3(0.3, 0.1, 0.2), Vec3.v3(1.0, 0.0, 0.0)), 10.0, board)))
+
     /// Y まわりに 45° 回した一辺 2 の箱は、角が z = −√2 に来るので、(0, 0, −5) からの距離は 5 − √2（≒ 3.586）。
     @Test
     def testHitRotatedBox(): Unit \ Assert =

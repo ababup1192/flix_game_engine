@@ -198,7 +198,7 @@ CPU の描く時間（SoftRaster・SoftRaster3d）は `CpuTiming.measure({ warmu
 
 ## 6. 手本と壊れ方 — 同じファイルの中で流儀が割れていた
 
-`engine/src/render/Text.flix` には、同じ形の `List.foldLeft` が 2 つある。
+`engine/src/render2d/Text.flix` には、同じ形の `List.foldLeft` が 2 つある。
 **片方は正しく、もう片方は 2026-08-13 まで二乗だった。**
 
 **手本**（`groupRows:144`）— 新しい要素を `::` で先頭へ積み、最後に `List.reverse` で並べ直す:
@@ -251,7 +251,7 @@ List.reverse(List.reverse(folded#current) :: folded#rows)
 let eval = ShaderEval.compileSpec(s#spec);
 shadeAll(n, i -> eval(uvOf(i), time))
 
-// 手本（SoftRaster.drawSurface）: 組み立てはデータで返し、Ref を通してループの外に留める
+// 手本（SoftRaster.Internal.Surface.drawSurface）: 組み立てはデータで返し、Ref を通してループの外に留める
 let compiled = onceOutsideLoop(rc, ShaderEval.compile(s#spec, texEnv));
 shadeAll(n, i -> ShaderEval.evalCompiled(compiled, u, v, time))
 ```
@@ -365,7 +365,7 @@ N が定数なので実害は無いと判断している。**N を決めるの�
 （比例なら 8 倍）で、二乗であることが数字で出た。`preludeSource` の 119 個の `+` 連鎖も
 同じ回で 1 回組みに替えている（項数は固定なので二乗ではないが、`compile` の割り当ての
 7 割を占めていた）。`compile` 1 回の割り当ては 314,848 → **121,608 バイト（−61%）**。
-検査は `engine/test/TestShaderGrowth.flix` に常設した。
+検査は `engine_world/test/TestShaderGrowth.flix` に常設した。
 
 ### 要相談として残した物（2026-08-17 に調べて、手を付けなかった）
 
@@ -388,7 +388,7 @@ N が定数なので実害は無いと判断している。**N を決めるの�
   **計算そのものが違う**ので、`UiRender` と共有すると絵が変わる
 - `Terrain.surfaceItems:75` — 二乗ではなく線形。カリングは呼び側の仕事
 - `ShaderEval.neighborCells:368` — `envOf` と同じ経路・同じ性質・同じ分母で、そちらは打ち切り済み
-- `SoftRaster.drawGlyph` の `deriveFont` — JDK が font strike をキャッシュしている
+- `SoftRaster.Internal.Text.drawGlyph` の `deriveFont` — JDK が font strike をキャッシュしている
 - `RenderLint.pairsOf:193` — 全ペアが仕様で、出力自体が N²/2 要素ある
 - `TileLayer.sourceIdAt:117` — 形は正しいが**呼び出し元がゼロ**（`isWall` / `isFloor` にも無い）。
   生死の門により、直す前に「消すか」を問う対象
@@ -496,8 +496,8 @@ GC か swap が半分以上を占める 1 コマだけの重さ（単発）は 1
 
 遊びながら 1 コマの重さを見たい時は、`App.withDiagnostics()` を足して `frame#diagnostics`（前のコマの `FrameDiagnostics`）を
 World に写し、`FrameDiagnostics.summaryLines(d)` をゲームの字の部品で debug の表示として描く（F3 で出すなど。出す所はゲームが決める）。
-出るのは CPU（GL へ送る・swap）・**GPU**（`gpuNs` と描き先ごとの `gpuPasses`。GL_TIMESTAMP の query を GPU を待たずに読むので
-1〜2 コマ遅れの値・測れない描き手では None）・3D の数（`scene3dCounts` の置いた物・描いた物・draw call）。
+出るのは CPU（GL へ送る・swap）・**GPU**（`gpuNs` = 描き先ごとの `GL_TIME_ELAPSED` の query の合計（描き先の間の GPU の空きは入らない）と描き先ごとの `gpuPasses`。
+結果が出た query だけを GPU を待たずに読むので 1〜2 コマ遅れの値・query を作れない GL と測れない描き手では None）・3D の数（`scene3dCounts` の置いた物・描いた物・draw call）。
 `FLIX_GE_FRAME_STATS=1` の println は窓ごとの平均を標準出力へ書くだけで GPU を含まない。こちらはゲームの画面に出せて、GPU を含む。
 自前で `System.nanoTime` を測って出さない（GPU の仕事は CPU の時計では swap の待ちに混ざって見えない）。
 

@@ -141,6 +141,9 @@
 - stride 枚ごとに 1 枚を残す（0 番から）。
   `pub def every(stride: Int32, xs: List[a]): List[a]`
 
+## LogCapture — `engine_tools/src/LogCapture.flix`
+- `pub def capture(f: Unit -> a \ ef): (a, List[String]) \ ef + IO`
+
 ## RadialGlow — `engine_tools/src/RadialGlow.flix`
 - Addハロ用の1画素: rgb=白固定、alpha=中心で高く縁で0（straight alpha）。
   `pub def haloPixel(curve: Float64 -> Float64, t: Float64): Int32`
@@ -343,8 +346,6 @@
   `pub def renderPass(how: PassDraw, req: RasterReq, surfaces: List[SurfaceCmd], extraFonts: Map[String, FontEntry], fontAntialias: FontAntialias, extraImages: Map[String, PassImage]): PassImage \ IO`
 - 出力ピクセル寸法（design × scale、最低 1px）。
   `pub def outSize(req: RasterReq): (Int32, Int32)`
-- 3D の描き手が、使い方 textureUse の絵の段を引く鍵の色空間（入れる側と引く側の全部がこれを通る）。
-  `pub def mipKeySpace(linear: Bool, textureUse: Texture3d.TextureUse): Texture3d.ColorSpace`
 - tex 場が読む縮んだターゲットのテクセルの絵の名前（sprite で貼る design 寸法の絵と並べて images に入れる）。
   `pub def texelsName(name: String): String`
 - img を w × h へ最近傍で写す。広げるとき（GL が Nearest で貼る式）は元の (floor((x+0.5)·元幅/w), floor((y+0.5)·元高/h))。
@@ -376,7 +377,7 @@
 - `pub def lightAt(env: Scene3d.Environment3d, pointLights: List[Scene3d.PointLight], spotLights: List[Scene3d.SpotLight], position: Vec3.Vec3, normal: Vec3.Vec3): Color`
 - 目 eye から見た world の点 position の色 c に、距離のかすみを掛けた色（fog が None なら c のまま）。
   `pub def fogAt(env: Scene3d.Environment3d, eye: Vec3.Vec3, position: Vec3.Vec3, c: Color): Color`
-- `pub def surfaceOutAt(env: Scene3d.Environment3d, linear: Bool, eye: Vec3.Vec3, position: Vec3.Vec3, albedoLinear: Color, tint: Color, light: Color, emission: Color, intensity: Float64, fogOn: Bool): Color`
+- `pub def surfaceOutAt(env: Scene3d.Environment3d, eye: Vec3.Vec3, position: Vec3.Vec3, albedoLinear: Color, tint: Color, light: Color, emission: Color, intensity: Float64, fogOn: Bool): Color`
 - 場面の影（影を落とすスポットが無ければ None）。生成した SoftRaster3dLight がスポットごとに shadowFactorAt へ渡す。
   `pub type alias SpotShadow = Option[Shadow]`
 - スポットの並びの位置 offset のスポットが、world の点 (px, py, pz) へ届ける光に掛ける割合（影を落とさないスポットは 1）。
@@ -387,16 +388,16 @@
 - 行列 m の 16 個（行優先）。shadowLitFractionAt の rows の形。
   `pub def rowMajorOf(m: Mat4.Mat4): Vector[Float64]`
 - 場面 cmd を image へ重ねる。sf = design px → 出力の画素の倍率。textures = ビルボードと材質が引く絵（(名前, 段の平均の色空間) → 段の列。
-  `pub def drawScene(image: BufferedImage, sf: Float64, textures: Map[(String, Texture3d.ColorSpace), Vector[ShaderEval.TexData]], linear: Bool, time: Float64, cmd: Scene3d.RenderCmd): Unit \ IO`
+  `pub def drawScene(image: BufferedImage, sf: Float64, textures: Map[(String, Texture3d.ColorSpace), Vector[ShaderEval.TexData]], time: Float64, cmd: Scene3d.RenderCmd): Unit \ IO`
 - drawScene の Rgba16Float の描き先版。rgba = 描き先（1 画素に r, g, b, α の 4 つ）・size = その幅と高さ。
-  `pub def drawSceneHdr(rgba: Array[Float64, Static], size: (Int32, Int32), sf: Float64, textures: Map[(String, Texture3d.ColorSpace), Vector[ShaderEval.TexData]], linear: Bool, time: Float64, cmd: Scene3d.RenderCmd): Unit \ IO`
+  `pub def drawSceneHdr(rgba: Array[Float64, Static], size: (Int32, Int32), sf: Float64, textures: Map[(String, Texture3d.ColorSpace), Vector[ShaderEval.TexData]], time: Float64, cmd: Scene3d.RenderCmd): Unit \ IO`
 - `pub def applyNormalMap(n: Vec3.Vec3, raw: Vec3.Vec3, w: Float64, strength: Float64, c: (Float64, Float64, Float64)): Vec3.Vec3`
 
 ## SoftRaster3dLight — `engine_tools/src/gen/SoftRaster3dLight.flix`
 - lightingModel の光の量（toon の丸めまで済ませた値）。
   `pub def lightAt(steps: Int32, points: Vector[Float64], spots: Vector[Float64], shadow: SoftRaster3d.SpotShadow, pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, ambientX: Float64, ambientY: Float64, ambientZ: Float64, hemisphere: Float64): (Float64, Float64, Float64)`
 - lightmapLightingModel の光の量（lightmap は段つきで読んだ後の rgb を渡す）。
-  `pub def lightmapLightAt(steps: Int32, points: Vector[Float64], spots: Vector[Float64], shadow: SoftRaster3d.SpotShadow, pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, lightmapX: Float64, lightmapY: Float64, lightmapZ: Float64, lightmapSrgb: Float64, lightmapIntensity: Float64, linearColor: Float64): (Float64, Float64, Float64)`
+  `pub def lightmapLightAt(steps: Int32, points: Vector[Float64], spots: Vector[Float64], shadow: SoftRaster3d.SpotShadow, pX: Float64, pY: Float64, pZ: Float64, nX: Float64, nY: Float64, nZ: Float64, lightmapX: Float64, lightmapY: Float64, lightmapZ: Float64, lightmapSrgb: Float64, lightmapIntensity: Float64): (Float64, Float64, Float64)`
 - fogModel の色（fog が無い場面では呼ばない）。
   `pub def fogAt(pX: Float64, pY: Float64, pZ: Float64, eyeX: Float64, eyeY: Float64, eyeZ: Float64, colorX: Float64, colorY: Float64, colorZ: Float64, fogColorX: Float64, fogColorY: Float64, fogColorZ: Float64, fogNear: Float64, fogFar: Float64): (Float64, Float64, Float64)`
 - skyModel の空の色。

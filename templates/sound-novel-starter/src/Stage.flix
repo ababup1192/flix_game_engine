@@ -13,7 +13,7 @@
 // セーブから戻る時は YarnRunner.resume が通ったコマンドを全部返すので、同じ applyCue で反映してから settle で
 // 演出の途中を終わりの形にする（背景は重ね終わり・揺れは止まる）。
 mod Stage {
-    use fge::{Clock, Vec2, Yarn}
+    use fge::{Clock, Num, Vec2, Yarn}
 
     /// 物語の時計の名前（中身は要らない）。文字送り・<<wait>>・背景の重ね・揺れが使い、画面や確認のウィンドウを開くと止まる。
     pub enum Story
@@ -123,7 +123,7 @@ mod Stage {
                 if (t < 0.0 or t >= seconds or seconds <= 0.0) (0.0, 0.0)
                 else {
                     let left = 1.0 - t / seconds;
-                    (Vec2.sin(t * 71.0) * px * left, Vec2.cos(t * 53.0) * px * 0.5 * left)
+                    (Num.sin(t * 71.0) * px * left, Num.cos(t * 53.0) * px * 0.5 * left)
                 }
         }
 }

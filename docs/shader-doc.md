@@ -3,7 +3,7 @@
 面（矩形）を「画素ごとの計算」で塗るための宣言。単色の box をやめて、動く霧・水面・
 vignette・熱い溶岩を **JSON の保存だけで即調整できる**形で置ける。
 
-- 実体: `engine/src/ShaderDoc.flix`（型）・`ShaderJson.flix`（読み書き）・
+- 実体: `engine/src/shader/ShaderDoc.flix`（型）・`ShaderJson.flix`（読み書き）・
   `ShaderEval.flix`（CPU 評価 = 生成）・`ShaderGen.flix`（GLSL 生成 = 実機）
 - **使える語彙は engine のバージョンで決まる**。知らない `kind` が 1 つでもあると Doc 全体が
   読めず、丸ごと既定値へ落ちる（絵が別物になるだけでエラーは出ないので気付きにくい）。

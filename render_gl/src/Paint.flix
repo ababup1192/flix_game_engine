@@ -381,14 +381,10 @@ mod RenderPaint {
                 true
         }
 
-    /// 診断を集めている時だけ、paint の前後に GPU の timestamp を打って描き先 name の時間として残す。
+    /// 診断を集めている時だけ、paint を GPU の時間の query で囲んで描き先 name の時間として残す。
     def timedSpan(paint: Paint, name: String, f: Unit -> Unit \ IO): Unit \ IO =
         if (Option.isEmpty(Ref.get(paint#diagnosticsRef))) f()
-        else {
-            let begin = GpuTimer.stamp(paint#gpuTimerRef);
-            f();
-            GpuTimer.addSpan(paint#gpuTimerRef, name, begin, GpuTimer.stamp(paint#gpuTimerRef))
-        }
+        else GpuTimer.measure(paint#gpuTimerRef, name, f)
 
     /// 画面のコマの終わりに、結果の出た一番新しいコマの GPU の時間を診断へ入れる。
     /// 集めていない間は 3D の数を捨てるだけ（誰も引き取らない数を溜め続けない）。

@@ -5,22 +5,17 @@
 // 描画規約（box/textured/font/polygon の扱い、z 順）は render_gl/Frame.drawSprite と
 // 一致させてある — 各関数のコメントに規約を記す。design を `scale` 倍に拡大して出力する。
 pub mod SoftRaster {
+    import java.awt.RenderingHints
     import java.awt.image.BufferedImage
-    import java.awt.image.RescaleOp
     import java.awt.image.ImageObserver
     import java.awt.Graphics2D
     import java.awt.{Color => AwtColor}
-    import java.awt.RenderingHints
-    import java.awt.BasicStroke
     import java.awt.Font
-    import java.awt.Shape
-    import java.awt.font.GlyphVector
     import java.awt.geom.{Path2D$Double => Path2D}
     import java.awt.geom.{RoundRectangle2D$Double => RoundRect}
     import java.awt.geom.{Line2D$Double => Line2D}
     import java.awt.geom.{Rectangle2D$Double => Rect2D}
     import java.io.File
-    import java.io.FileInputStream
     import java.lang.System
     import java.lang.{Character => JChar}
     import java.lang.{Object => JObject}
@@ -93,9 +88,6 @@ pub mod SoftRaster {
     /// 知らないテクスチャ名は primary を使う（fail-open — 字が消えるより既定で出るほうがよい）。
     /// `antialiasByTexture` は字の縁を本ごとに決めた物だけ（FontAntialias の表）。
     type alias FontTable = { primary = FontCtx, byTexture = Map[String, FontCtx], antialiasByTexture = Map[String, Bool] }
-
-    def fontFor(fonts: FontTable, d: DrawCmd.DrawableSpec): FontCtx =
-        Map.get(d#texture, fonts#byTexture) |> Option.getWithDefault(fonts#primary)
 
     /// 宣言シェーダー面 1 枚の headless ラスタライズ要求（Render.ShaderSurface と同形の
     /// 構造レコード — GL の program ハンドルを持たない純データ）。ShaderEval で画素ごとに
@@ -284,7 +276,7 @@ pub mod SoftRaster {
         let (w, h) = outSize(req);
         let image = new BufferedImage(w, h, 2i32);
         fillClear(image, req#background);
-        drawAllInto(image, req, surfaces, extraFonts, fontAntialias, extraImages, warnLog, cache, None);
+        SoftRaster.Internal.DrawList.drawAllInto(image, req, surfaces, extraFonts, fontAntialias, extraImages, warnLog, cache, None);
         image
 
     /// image 全面を c の不透明で塗る（画面の clearColor と LoadOp.Clear の塗りはどれもこれを通す）。
@@ -335,16 +327,16 @@ pub mod SoftRaster {
                     case None    => new BufferedImage(w, h, 2i32)
                 };
                 how#clear |> Option.forEach(fillClear(image));
-                drawAllInto(image, req, surfaces, extraFonts, fontAntialias, extraImages, warnLog, None, how#texels);
+                SoftRaster.Internal.DrawList.drawAllInto(image, req, surfaces, extraFonts, fontAntialias, extraImages, warnLog, None, how#texels);
                 PassImage.Rgba8Unorm(image)
             case RenderTarget.Format.Rgba16Float =>
                 let canvas = match start {
-                    case Some(b) => hdrCanvasOf(b)
-                    case None    => blankHdrCanvas(w, h)
+                    case Some(b) => SoftRaster.Internal.Hdr.hdrCanvasOf(b)
+                    case None    => SoftRaster.Internal.Hdr.blankHdrCanvas(w, h)
                 };
-                how#clear |> Option.forEach(fillClearHdr(canvas));
-                drawAllIntoHdr(canvas, req, surfaces, extraFonts, fontAntialias, extraImages, warnLog, how#texels);
-                PassImage.Rgba16Float(freezeHdr(canvas))
+                how#clear |> Option.forEach(SoftRaster.Internal.Hdr.fillClearHdr(canvas));
+                SoftRaster.Internal.DrawList.drawAllIntoHdr(canvas, req, surfaces, extraFonts, fontAntialias, extraImages, warnLog, how#texels);
+                PassImage.Rgba16Float(SoftRaster.Internal.Hdr.freezeHdr(canvas))
         };
         match how#texels {
             case Some((tw, th)) => resampleNearestPass(drawn, tw, th)
@@ -355,334 +347,6 @@ pub mod SoftRaster {
     pub def outSize(req: RasterReq): (Int32, Int32) =
         let sf = Int32.toFloat64(req#scale);
         (Int32.max(1i32, ri(req#design#x * sf)), Int32.max(1i32, ri(req#design#y * sf)))
-
-    /// 1 枚を描くのに要る物（描き先の形式によらない）。textures = sprite・ビルボード・材質が読む 8bit の絵（Rgba16Float の Pass は 0..1 に切った物）・
-    /// texEnv = 面の tex / blur の読み先の絵（Rgba16Float の Pass は切らない）・items = (z, 追加順) に並べた描き物。
-    type alias DrawPlan = {
-        textures = Map[String, BufferedImage],
-        fonts = FontTable,
-        texEnv = Map[String, ShaderEval.TexImage],
-        sceneTextures = Map[(String, Texture3d.ColorSpace), Vector[ShaderEval.TexData]],
-        scene3dLinearColor = Bool,
-        items = List[RItem]
-    }
-
-    /// 描く物を 1 列に並べ、読む絵を引いておく（drawAllInto と drawAllIntoHdr が同じこれを使う）。
-    def planDraw(req: RasterReq, surfaces: List[SurfaceCmd],
-                 extraFonts: Map[String, FontEntry], fontAntialias: FontAntialias,
-                 extraImages: Map[String, PassImage],
-                 warnLog: TexWarnLog, cache: Option[TextureCache]): DrawPlan \ IO =
-        // 組み込みの放射テクスチャを土台に、ゲームのテクスチャ → extraImages の順で重ねる
-        //（後から入れた方が勝つ。名前は `__` 予約なので実際に潰し合うことはない）。
-        // GL 側は起動時に必ず GPU へ上げるため、描き出し側も配線ゼロで同じ名前が引けないと
-        // 実機と描き出しの絵がずれる。
-        let fileTextures = Map.foldLeftWithKey((acc, name, img) -> Map.insert(name, img, acc),
-            builtinRadialImages(req#drawables),
-            match cache {
-                case Some(c) => loadTexturesCached(c, req#texturePath)
-                case None    => loadTextures(req#texturePath)
-            });
-        let textures = Map.foldLeftWithKey((acc, name, img) -> Map.insert(name, img, acc),
-            fileTextures, argbPassImages(argbReadNames(req), extraImages));
-        let fctx = buildFontTable(cache, req, extraFonts, fontAntialias);
-        // tex 場（Field.Tex）が読む画素表。surfaces が実際に使う名前だけ 1 回で Vector 化する —
-        // 画素ループの中で BufferedImage を触らない（getRGB を毎画素呼ぶと桁で遅い）。
-        // 無い名前は warnLog に控えて一度だけ知らせる（eval は純関数のまま黒 0.0 を返す）。
-        let usedTexNames = surfaces
-            |> List.flatMap(sc -> ShaderDoc.texNames(sc#spec))
-            |> List.distinct;
-        let texEnv = usedTexNames |> List.foldLeft((acc, name) -> {
-            match texImageOf(fileTextures, extraImages, name) {
-                case Some(img) => Map.insert(name, img, acc)
-                case None =>
-                    let warned = Ref.get(warnLog);
-                    if (Set.memberOf(name, warned)) ()
-                    else {
-                        System.err.println("shader tex '${name}' が見つからない — 黒(0)で描く"
-                            + "（pass なら passes に同名の宣言があるか確認）");
-                        Ref.put(Set.insert(name, warned), warnLog)
-                    };
-                    acc
-            }
-        }, (Map.empty(): Map[String, ShaderEval.TexImage]));
-        // WhyNot: 3D の場面の無い絵で project.json を読まない — 2D だけの描き出しに要らない読み込みを足さない（読んだ値は JVM で控える）。
-        let linear = not List.isEmpty(req#scenes) and GameEngine.loadScene3dLinearColor(".");
-        let sceneTextures = sceneTexturesOf(textures, { paths = req#texturePath, rendered = Map.keysOf(extraImages), cache = cache },
-                                            warnLog, linear, req#scenes);
-        // Drawable / Polygon / シェーダー面を 1 列にまとめ、(z, 追加順) で安定ソートする。
-        // Drawable は入口で 1 回だけ名前付きレコードへ展開する（描き出しは 1 枚きりの経路
-        // なので、以降の細かな読み出しをフィールド名のまま書けるほうを取る）。
-        let tagged = List.append(
-            List.map(d -> RItem.RDraw(DrawCmd.toSpec(d)), req#drawables),
-            List.append(
-                List.map(p -> RItem.RPoly(p), req#polygons),
-                List.append(
-                    List.map(s -> RItem.RSurf(s), surfaces),
-                    List.map(c -> RItem.RScene(c), req#scenes))));
-        let sorted = tagged
-            |> List.zipWithIndex
-            |> List.sortBy(ix -> let (idx, item) = ix; (zOf(item), idx))
-            |> List.map(ix -> let (_, item) = ix; item);
-        { textures = textures, fonts = fctx, texEnv = texEnv, sceneTextures = sceneTextures, scene3dLinearColor = linear, items = sorted }
-
-    /// 面の tex / blur の読み先 name の絵。縮んだ Pass のテクセルの絵（texelsName）→ Pass の絵 → ファイルの絵の順に探す。
-    def texImageOf(fileTextures: Map[String, BufferedImage], extraImages: Map[String, PassImage], name: String): Option[ShaderEval.TexImage] \ IO =
-        let fromPass = Map.get(texelsName(name), extraImages) |> Option.withDefault(default = Map.get(name, extraImages));
-        match fromPass {
-            case Some(PassImage.Rgba8Unorm(img))  => Some(ShaderEval.TexImage.Rgba8Unorm(texDataOf(img)))
-            case Some(PassImage.Rgba16Float(hdr)) => Some(ShaderEval.TexImage.Rgba16Float(hdr))
-            case None => Map.get(name, fileTextures) |> Option.map(img -> ShaderEval.TexImage.Rgba8Unorm(texDataOf(img)))
-        }
-
-    /// 8bit の絵として読まれる名前（Drawable のテクスチャ・3D の場面のビルボードと材質の tex 場・法線マップ）。
-    def argbReadNames(req: RasterReq): Set[String] =
-        let fromDrawables = req#drawables |> List.map(DrawCmd.textureOf);
-        let fromBillboards = req#scenes |> List.flatMap(c -> c#scene#billboards |> List.map(b -> Scene3d.billboardFieldsOf(b)#texture));
-        let fromMaterials = req#scenes |> List.flatMap(c -> c#scene#instances |> List.flatMap(Scene3d.textureNamesOf));
-        List.toSet(List.append(fromDrawables, List.append(fromBillboards, fromMaterials)))
-
-    /// Pass の絵の 8bit の形（Rgba8Unorm はそのまま・Rgba16Float は names にある物だけ 0..1 に切って写す）。
-    /// WhyNot: Rgba16Float の Pass を全部写さない — 1 枚の写しは全画素ぶんで、sprite で貼らない Pass（面だけが読む）にまで払うと桁で遅い。
-    def argbPassImages(names: Set[String], extraImages: Map[String, PassImage]): Map[String, BufferedImage] \ IO =
-        Map.foldLeftWithKey((acc, name, img) -> match img {
-            case PassImage.Rgba8Unorm(argb) => Map.insert(name, argb, acc)
-            case PassImage.Rgba16Float(_)  => if (Set.memberOf(name, names)) Map.insert(name, toArgbImage(img), acc) else acc
-        }, Map.empty(), extraImages)
-
-    /// 描画本体（z 合流 + 種類ごとの分岐）。背景を塗る/塗らないの違いは入口関数側に置き、
-    /// ここを二重実装しない — 分岐の式が 2 か所に割れると、片方だけ直して絵が食い違う。
-    /// texels = 縮んだターゲットへ拾う時のテクセル寸法（Some なら面は「その画素を拾うテクセルの点」で評価し、拾われない画素は飛ばす）。
-    def drawAllInto(image: BufferedImage, req: RasterReq, surfaces: List[SurfaceCmd],
-                    extraFonts: Map[String, FontEntry], fontAntialias: FontAntialias,
-                    extraImages: Map[String, PassImage],
-                    warnLog: TexWarnLog, cache: Option[TextureCache],
-                    texels: Option[(Int32, Int32)]): Unit \ IO = region rc {
-        let sf = Int32.toFloat64(req#scale);
-        let plan = planDraw(req, surfaces, extraFonts, fontAntialias, extraImages, warnLog, cache);
-        let textures = plan#textures;
-        let fctx = plan#fonts;
-        let g: Graphics2D = image.createGraphics();
-        applyQualityHints(g, hintsOf(req));
-        // blend=Normal は従来どおり Graphics2D（SrcOver）で直接描く。Add / Multiply は
-        // Java2D の標準 Composite に無い重ね方なので、下書きへ描いてから自前の式で合成する。
-        // シェーダー面は Graphics2D を使わず、ShaderEval の画素評価 + blendPixel で直接混ぜる。
-        List.forEach(item -> match item {
-            case RItem.RDraw(d)  =>
-                if (d#blend == DrawCmd.BlendMode.Normal)
-                    withClip(g, sf, d#clip, () -> drawDrawable(g, sf, textures, fctx, d, warnLog))
-                else
-                    blendedDraw(image, sf, hintsOf(req), d#blend, d#clip, drawableAabb(req#design, textures, d),
-                                gs -> drawDrawable(gs, sf, textures, fctx, d, warnLog))
-            case RItem.RPoly(p) =>
-                if (not Option.isEmpty(p#grad))
-                    drawGradPolygon(image, sf, req#design, p)
-                else if (p#blend == DrawCmd.BlendMode.Normal)
-                    withClip(g, sf, p#clip, () -> drawPolygon(rc, g, sf, p))
-                else
-                    blendedDraw(image, sf, hintsOf(req), p#blend, p#clip, polygonAabb(req#design, p),
-                                gs -> drawPolygon(rc, gs, sf, p))
-            case RItem.RSurf(s) => drawSurface(image, sf, plan#texEnv, texels, s)
-            case RItem.RScene(c) => SoftRaster3d.drawScene(image, sf, plan#sceneTextures, plan#scene3dLinearColor, c#scene#time, c)
-        }, plan#items);
-        g.dispose()
-    }
-
-    /// drawAllInto の Rgba16Float の描き先版。字・箱・多角形・sprite は Normal も含めて 1 つずつ 8bit の下書きに描き、
-    /// blendPixelF で混ぜる（Graphics2D は描き先の float の値を触らない）。面と 3D は値を切らずに書き込みの決まり（writeRule）で混ぜる。
-    /// 下書きは 0..1 なので、色が 1 を超える sprite は切られ、1 つの描き物の中の重なりは 8bit に丸めてから混ぜる（GL との近似）。
-    def drawAllIntoHdr(canvas: HdrCanvas, req: RasterReq, surfaces: List[SurfaceCmd],
-                       extraFonts: Map[String, FontEntry], fontAntialias: FontAntialias,
-                       extraImages: Map[String, PassImage],
-                       warnLog: TexWarnLog, texels: Option[(Int32, Int32)]): Unit \ IO = region rc {
-        let sf = Int32.toFloat64(req#scale);
-        let plan = planDraw(req, surfaces, extraFonts, fontAntialias, extraImages, warnLog, None);
-        let textures = plan#textures;
-        let fctx = plan#fonts;
-        let hints = hintsOf(req);
-        List.forEach(item -> match item {
-            case RItem.RDraw(d)  =>
-                blendedDrawHdr(canvas, sf, hints, d#blend, d#clip, drawableAabb(req#design, textures, d),
-                               gs -> drawDrawable(gs, sf, textures, fctx, d, warnLog))
-            case RItem.RPoly(p) =>
-                if (not Option.isEmpty(p#grad))
-                    drawGradPolygonHdr(canvas, sf, req#design, p)
-                else
-                    blendedDrawHdr(canvas, sf, hints, p#blend, p#clip, polygonAabb(req#design, p),
-                                   gs -> drawPolygon(rc, gs, sf, p))
-            case RItem.RSurf(s) => drawSurfaceHdr(canvas, sf, plan#texEnv, texels, s)
-            case RItem.RScene(c) => SoftRaster3d.drawSceneHdr(canvas#rgba, (canvas#width, canvas#height), sf, plan#sceneTextures, plan#scene3dLinearColor, c#scene#time, c)
-        }, plan#items)
-    }
-
-    /// 3D の場面のビルボードと材質が引く絵（(名前, 段の平均の色空間) → 段の列。段 0 が元の絵）。無い名前は Drawable と同じ文面で 1 度だけ知らせ、
-    /// そのビルボードは描かない（材質の Tex は 0 で読む）。"tex3d:" の名前は場面の textures から引く。
-    /// 材質・法線マップ・lightmap の絵は Mip.build の段まで作る（描き出したばかりの絵 = レンダーターゲットは段を作らない。GL と同じ）。
-    /// 色空間は使い方から mipKeySpace(linear, …) で決める（同じ名前を色の絵と法線マップに使うと 2 本の段になる）。
-    /// ビルボードだけが読む絵は段 0 だけ（材質の絵の鍵に入れる）。材質の絵の組が Scene3d.maxMaterialTextures() を超えたら、材質の名前ごとに 1 度だけ知らせる。
-    // WhyNot: 画素の Vector を場面ごとに作り直さない — 同じ絵を何枚ものビルボードと場面が引くので、名前ごとに 1 回だけ写す。
-    def sceneTexturesOf(textures: Map[String, BufferedImage], mipSource: MipSource, warnLog: TexWarnLog, linear: Bool,
-                        scenes: List[Scene3d.RenderCmd]): Map[(String, Texture3d.ColorSpace), Vector[ShaderEval.TexData]] \ IO =
-        let ownTextures = scenes |> List.flatMap(c -> c#scene#textures) |> List.map(t -> (Texture3d.name(t), t)) |> List.toMap;
-        let materials = scenes
-            |> List.flatMap(c -> c#scene#instances |> List.filterMap(i -> Scene3d.instanceFieldsOf(i)#material))
-            |> List.map(Scene3d.materialFieldsOf);
-        scenes |> List.flatMap(c -> c#scene#instances) |> List.map(Scene3d.instanceFieldsOf) |> List.forEach(warnNormalMapWithoutUv(warnLog));
-        scenes |> List.flatMap(c -> c#scene#instances) |> List.forEach(warnUnusedLightmap(warnLog));
-        scenes |> List.flatMap(c -> Scene3d.droppedLightsWarnings(c#scene)) |> List.forEach(kl -> warnSceneOnce(warnLog, fst(kl), snd(kl)));
-        let keyOf = (name: String, textureUse: Texture3d.TextureUse) -> (name, mipKeySpace(linear, textureUse));
-        let lightmapKeys = scenes |> List.flatMap(c -> c#scene#instances |> List.filterMap(Scene3d.lightmapOf))
-            |> List.map(lm -> keyOf(lm#texture, Texture3d.TextureUse.Lightmap(lm#colorSpace)));
-        let materialKeys = materials |> List.flatMap(f -> {
-            let reads = ShaderDoc.materialTexReads(f#spec, f#emission);
-            warnTooManyMaterialTextures(warnLog, f#spec#name, List.length(reads));
-            List.append(List.take(Scene3d.maxMaterialTextures(), reads) |> List.map(r -> keyOf(fst(r), Texture3d.TextureUse.MaterialTexture)),
-                        f#normalMap |> Option.toList |> List.map(n -> keyOf(n#texture, Texture3d.TextureUse.NormalMap)))
-        });
-        let mippedKeys = List.append(materialKeys, lightmapKeys) |> List.distinct;
-        // WhyNot: 材質も読む名前を lightmap の絵と呼ばない — GL は名前ごとに 1 回だけ知らせ、材質の絵として先に引く。
-        let lightmapOnly = Set.difference(List.toSet(List.map(fst, lightmapKeys)), List.toSet(List.map(fst, materialKeys)));
-        let billboardKeys = scenes |> List.flatMap(c -> c#scene#billboards |> List.map(b -> keyOf(Scene3d.billboardFieldsOf(b)#texture, Texture3d.TextureUse.MaterialTexture)));
-        let lookup = (name: String) ->
-            if (String.startsWith(prefix = Texture3d.namePrefix(), name))
-                Map.get(name, ownTextures) |> Option.map(t ->
-                    ({ width = Texture3d.width(t), height = Texture3d.height(t), pixels = Texture3d.argb(t) }, Some("tex3d:" + Texture3d.contentHash(t))))
-            else Map.get(name, textures) |> Option.map(img -> (texDataOf(img), fileMipKey(mipSource, name)));
-        let mippedSet = List.toSet(mippedKeys);
-        let withMaterials = mippedKeys |> List.foldLeft((acc, key) -> match lookup(fst(key)) {
-            case Some((td, cacheKey)) =>
-                let rendered = Set.memberOf(fst(key), mipSource#rendered);
-                Map.insert(key, if (rendered) Vector#{ td } else mipChainOf(mipSource#cache, cacheKey, Texture3d.mipAverageOf(snd(key)), td), acc)
-            case None => warnMissingSceneTexture(warnLog, if (Set.memberOf(fst(key), lightmapOnly)) "lightmap の絵" else "材質の絵", fst(key)); acc
-        }, Map.empty());
-        billboardKeys |> List.distinct |> List.filter(key -> not Set.memberOf(key, mippedSet)) |> List.foldLeft((acc, key) -> match lookup(fst(key)) {
-            case Some((td, _)) => Map.insert(key, Vector#{ td }, acc)
-            case None          => warnMissingTexture(warnLog, fst(key)); acc
-        }, withMaterials)
-
-    /// 3D の描き手が、使い方 textureUse の絵の段を引く鍵の色空間（入れる側と引く側の全部がこれを通る）。
-    /// linear が偽（画素の値のまま計算する描き手）なら全部 Linear（段も 8bit の値のまま平均する）。
-    pub def mipKeySpace(linear: Bool, textureUse: Texture3d.TextureUse): Texture3d.ColorSpace =
-        if (linear) Texture3d.mipSpaceOf(textureUse) else Texture3d.ColorSpace.Linear
-
-    /// 段を作る元の絵の出どころ。paths = 名前 → ファイル・rendered = 描き出したばかりの絵の名前（段を作らない）・cache = 書き出し 1 回の間の控え。
-    type alias MipSource = { paths = Map[String, String], rendered = Set[String], cache = Option[TextureCache] }
-
-    /// ファイルの絵の段の控えの鍵（パスと更新時刻。保存し直した絵は別の鍵になる）。ファイルでない絵は None（控えない）。
-    def fileMipKey(mipSource: MipSource, name: String): Option[String] \ IO =
-        Map.get(name, mipSource#paths) |> Option.map(path -> "file:" + path + ":" + Int64.toString(new File(path).lastModified()))
-
-    /// td の段の列（average で平均する。cache と key があれば控えから引き、無ければ作って控える）。
-    def mipChainOf(cache: Option[TextureCache], key: Option[String], average: Mip.Average, td: ShaderEval.TexData): Vector[ShaderEval.TexData] \ IO =
-        match (cache, key) {
-            case (Some(TextureCache.TextureCache(_, _, _, mips)), Some(k)) =>
-                let averagedKey = k + ":" + ToString.toString(average);
-                let hit: Vector[ShaderEval.TexData] = mips.get(averagedKey);
-                if (not Object.isNull(hit)) hit
-                else {
-                    let chain = List.toVector(Mip.build(average, td));
-                    discard mips.putIfAbsent(averagedKey, chain);
-                    chain
-                }
-            case _ => List.toVector(Mip.build(average, td))
-        }
-
-    /// 3D の場面の材質・法線マップ・lightmap の絵 name が無いことを、名前ごとに 1 度だけ知らせる（label = 何の絵か。GL と同じ文面）。
-    def warnMissingSceneTexture(warnLog: TexWarnLog, label: String, name: String): Unit \ IO =
-        warnSceneOnce(warnLog, "@material-texture:" + name, "scene3d: ${label} '${name}' が見つからない — 0（黒・透明）で読む"
-            + "（tex3d: の名前は場面の textures に、ほかは project.json の textures に同名の宣言があるか確認）")
-
-    /// 付けたのに使わない lightmap（Scene3d.lightmapWarning）を、理由と形ごとに 1 度だけ知らせる（lightmap を使わず今の式で描く。GL と同じ）。
-    def warnUnusedLightmap(warnLog: TexWarnLog, i: Scene3d.Instance3d): Unit \ IO =
-        Scene3d.lightmapWarning(i) |> Option.forEach(line ->
-            warnSceneOnce(warnLog, "@lightmap:" + line + Mesh3d.contentHash(Scene3d.instanceFieldsOf(i)#mesh), line))
-
-    /// uv の無い形に法線マップの材質が付いていたら、形ごとに 1 度だけ知らせる（法線マップは当てずに描く。GL と同じ）。
-    def warnNormalMapWithoutUv(warnLog: TexWarnLog, f: Scene3d.InstanceFields): Unit \ IO =
-        let wants = f#material |> Option.exists(m -> Option.nonEmpty(Scene3d.materialFieldsOf(m)#normalMap));
-        if (not wants or Option.nonEmpty(Mesh3d.uvs(f#mesh))) ()
-        else warnSceneOnce(warnLog, "@normal-map-uv:" + Mesh3d.contentHash(f#mesh),
-            "scene3d: uv の無い形に法線マップの材質が付いている — 法線マップを当てずに描く（Mesh3d.withUvs か withBoxUvs で uv を付ける）")
-
-    /// 鍵 key の知らせを 1 度だけ出す（文面は GL と同じ物を呼ぶ側が渡す）。3D の場面の知らせはどれもここを通す。
-    def warnSceneOnce(warnLog: TexWarnLog, key: String, line: String): Unit \ IO =
-        if (Set.memberOf(key, Ref.get(warnLog))) ()
-        else {
-            Ref.put(Set.insert(key, Ref.get(warnLog)), warnLog);
-            Log.warn(line)
-        }
-
-    def warnTooManyMaterialTextures(warnLog: TexWarnLog, specName: String, count: Int32): Unit \ IO =
-        if (count <= Scene3d.maxMaterialTextures()) ()
-        else warnSceneOnce(warnLog, "@material-textures:" + specName,
-            "scene3d: 材質 '${specName}' が読む絵の組が ${count} 組ある — ${Scene3d.maxMaterialTextures()} 組目より後ろは 0 で描く")
-
-    /// シェーダー面を画素ごとに描き出す。rect を出力ピクセルへ量子化し、各画素の中心を
-    /// uv（rect 内 0..1）に写して ShaderEval.compile で組み直した面（色と α を 1 回の shared
-    /// 先行評価で一緒に返す）を evalCompiled で評価、blendPixel で本体へ混ぜる
-    /// （Normal / Add / Multiply とも GL 側と同じ合成式）。
-    /// 描き出しの時間のほとんどはここなので、Spec は面ごとに 1 回だけ組み直し、
-    /// 画素は shadeAll でコアの数だけ並べて評価する。
-    /// mask が非空なら「どれかの多角形の内側」の画素だけ塗る（GL のステンシル抜きと同じ意図）。
-    def drawSurface(image: BufferedImage, sf: Float64, texEnv: Map[String, ShaderEval.TexImage],
-                    texels: Option[(Int32, Int32)], s: SurfaceCmd): Unit \ IO = region rc {
-        let dw = image.getWidth();
-        let dh = image.getHeight();
-        let (rx0, ry0, rx1, ry1) = DrawCmd.clipPixels({ scaleX = sf, scaleY = sf }, s#rect);
-        let x0 = Int32.max(0i32, rx0);
-        let y0 = Int32.max(0i32, ry0);
-        let x1 = Int32.min(dw, rx1);
-        let y1 = Int32.min(dh, ry1);
-        let w = x1 - x0;
-        let h = y1 - y0;
-        if (w <= 0i32 or h <= 0i32 or s#rect#size#x <= 0.0 or s#rect#size#y <= 0.0) ()
-        else {
-            let n = w * h;
-            let buf: Array[Int32, rc] = Array.empty(rc, n);
-            discard image.getRGB(x0, y0, w, h, buf, 0i32, w);
-            let compiled = onceOutsideLoop(rc, ShaderEval.compile(s#spec, texEnv));
-            let maskPolys = onceOutsideLoop(rc, List.map(List.toVector, s#mask));
-            let (ox, oy, sw, sh, time) = onceOutsideLoop(rc,
-                (s#rect#position#x, s#rect#position#y, s#rect#size#x, s#rect#size#y, s#time));
-            let blend = onceOutsideLoop(rc, s#blend);
-            let sample = onceOutsideLoop(rc, sampleRatios(texels, dw, dh));
-            // 下地の画素（読むだけ）。1 画素の答えは下地と面の式だけで決まる純関数なので、
-            // どの順・どのスレッドで評価しても同じ画素になる。
-            let dstPixels = Array.toVector(buf);
-            let pixelOf = i -> {
-                let px = Int32.remainder(i, w) + x0;
-                let py = i / w + y0;
-                // 出力ピクセル中心 → design px → rect 内 uv（0..1）。縮んだターゲットへ拾う時は、この画素を拾う
-                // テクセルの中心（GL がそのテクセルを塗る点）で評価する。
-                let (pickedX, sampleX) = samplePoint(px, sample |> Option.map(fst), false);
-                let (pickedY, sampleY) = samplePoint(py, sample |> Option.map(snd), true);
-                let dx = sampleX / sf;
-                let dy = sampleY / sf;
-                let dst = Vector.get(i, dstPixels);
-                let inside = match maskPolys {
-                    case Nil => true
-                    case _   => insideMask(maskPolys, { x = dx, y = dy })
-                };
-                if (not inside or not pickedX or not pickedY) dst
-                else {
-                    let (r, g, b, a0) = ShaderEval.evalCompiled(compiled, (dx - ox) / sw, (dy - oy) / sh, time);
-                    let a = Float64.max(0.0, Float64.min(1.0, a0));
-                    blendPixel(blend, argbOfRgba(r, g, b, a), dst)
-                }
-            };
-            image.setRGB(x0, y0, w, h, shadeAll(n, pixelOf), 0i32, w)
-        }
-    }
-
-    /// 画素 p（1 軸）の評価点と、その画素が縮んだターゲットへ拾われるか。ratio = テクセル / 画素（None は縮めない）。
-    /// p を拾うテクセル（pickedPixel の式）があれば、そのテクセルの中心で評価する。
-    def samplePoint(p: Int32, ratio: Option[Float64], vertical: Bool): (Bool, Float64) =
-        match ratio {
-            case None => (true, Int32.toFloat64(p) + 0.5)
-            case Some(k) =>
-                let i = Float64.floor((Int32.toFloat64(p) + 0.5) * k);
-                let center = (i + 0.5) / k;
-                (pickedPixel(center, vertical) == Int32.toFloat64(p), center)
-        }
 
     /// テクセルの中心 center（design px）を塗る画素。横は floor・縦は「ちょうど画素の境目なら上の画素」。
     /// WhyNot: 縦も floor にしない — GL のターゲットは上下逆に格納されるので、標本点がちょうど縁に乗った時に
@@ -766,36 +430,6 @@ pub mod SoftRaster {
                 image
         }
 
-    def blankHdrCanvas(w: Int32, h: Int32): HdrCanvas \ IO =
-        { width = w, height = h, rgba = Array.repeat(Static, Int32.max(1, w * h) * 4, 0.0) }
-
-    /// img の写しの描き先（Rgba8Unorm は 8bit の値を 0..1 にして写す）。
-    def hdrCanvasOf(img: PassImage): HdrCanvas \ IO =
-        let (w, h) = passImageSize(img);
-        let canvas = blankHdrCanvas(w, h);
-        match img {
-            case PassImage.Rgba16Float(hdr) =>
-                forEachPixel(w * h * 4, i -> Array.put(ShaderEval.hdrChannelOf(hdr, i), i, canvas#rgba))
-            case PassImage.Rgba8Unorm(argb) =>
-                let pixels: Array[Int32, Static] = Array.repeat(Static, w * h, 0);
-                discard argb.getRGB(0i32, 0i32, w, h, pixels, 0i32, w);
-                forEachPixel(w * h, i -> {
-                    let p = Array.get(i, pixels);
-                    let ch = (shift: Int32) -> Int32.toFloat64(channelOf(shift, p)) / 255.0;
-                    putHdr(canvas#rgba, i, (ShaderEval.roundToHalf(ch(16)), ShaderEval.roundToHalf(ch(8)), ShaderEval.roundToHalf(ch(0)), ShaderEval.roundToHalf(ch(24))))
-                })
-        };
-        canvas
-
-    /// 描き終えた描き先を凍らせる（以降は PassImage として読むだけ）。
-    def freezeHdr(canvas: HdrCanvas): ShaderEval.HdrTexture \ IO =
-        ShaderEval.hdrTextureOf(canvas#width, canvas#height, Array.toVector(canvas#rgba))
-
-    /// 描き先の全面を c の不透明で塗る（fillClear の Rgba16Float 版。c は 0..1 に切らない）。
-    def fillClearHdr(canvas: HdrCanvas, c: Color): Unit \ IO =
-        let px = (ShaderEval.roundToHalf(c#r), ShaderEval.roundToHalf(c#g), ShaderEval.roundToHalf(c#b), 1.0);
-        forEachPixel(canvas#width * canvas#height, i -> putHdr(canvas#rgba, i, px))
-
     /// 画素 i の 4 つを書く。
     def putHdr(rgba: Array[Float64, r], i: Int32, px: (Float64, Float64, Float64, Float64)): Unit \ r =
         let (pr, pg, pb, pa) = px;
@@ -804,11 +438,6 @@ pub mod SoftRaster {
         Array.put(pg, k + 1, rgba);
         Array.put(pb, k + 2, rgba);
         Array.put(pa, k + 3, rgba)
-
-    /// 面の出力の書き込みの決まり（ShaderGen の GLSL の最後の行と同じ）: rgb は [0, 65504]・α は [0, 1]。
-    def writeRule(r: Float64, g: Float64, b: Float64, a: Float64): (Float64, Float64, Float64, Float64) =
-        let rgb = (x: Float64) -> if (x < 0.0) 0.0 else if (x > 65504.0) 65504.0 else x;
-        (rgb(r), rgb(g), rgb(b), Num.clamp01(a))
 
     /// Rgba16Float の描き先の画素 i へ src (sr, sg, sb, sa) を blend で混ぜ、half に丸めて書く。sa は 0..1。
     /// 式は GL の glBlendFunc と同じで、rgb は切らずに混ぜ、α にも同じ 2 つの因子を掛ける（α の 1 つ目の因子は rgb と同じ — Multiply の DST_COLOR は dst の α）:
@@ -842,102 +471,9 @@ pub mod SoftRaster {
             def accept(_this: IntConsumer, i: Int32): Unit \ IO = pixelFn(i)
         })
 
-    /// Normal も含め、1 つの描き物を 8bit の下書きに描いて blendPixelF で混ぜる（blendedDraw の Rgba16Float 版）。
-    def blendedDrawHdr(canvas: HdrCanvas, sf: Float64, hints: QualityHints, blend: DrawCmd.BlendMode,
-                       clip: Option[Rect2.Rect2], aabb: Rect2.Rect2,
-                       draw: Graphics2D -> Unit \ ef): Unit \ IO + ef = region rc {
-        let w = Int32.max(1i32, canvas#width);
-        let h = Int32.max(1i32, canvas#height);
-        let scratch = new BufferedImage(w, h, 2i32);
-        let gs: Graphics2D = scratch.createGraphics();
-        applyQualityHints(gs, hints);
-        withClip(gs, sf, clip, () -> draw(gs));
-        gs.dispose();
-        let (rx0, ry0, rx1, ry1) = DrawCmd.clipPixels({ scaleX = sf, scaleY = sf }, aabb);
-        let x0 = Int32.max(0i32, rx0);
-        let y0 = Int32.max(0i32, ry0);
-        let bw = Int32.min(w, rx1) - x0;
-        let bh = Int32.min(h, ry1) - y0;
-        if (bw <= 0i32 or bh <= 0i32) ()
-        else {
-            let srcBuf: Array[Int32, rc] = Array.empty(rc, bw * bh);
-            discard scratch.getRGB(x0, y0, bw, bh, srcBuf, 0i32, bw);
-            Array.forEachWithIndex((j, sp) -> {
-                if (channelOf(24, sp) == 0) ()
-                else {
-                    let unit = (shift: Int32) -> Int32.toFloat64(channelOf(shift, sp)) / 255.0;
-                    let i = (y0 + j / bw) * canvas#width + x0 + Int32.remainder(j, bw);
-                    blendPixelF(blend, unit(16), unit(8), unit(0), unit(24), canvas#rgba, i)
-                }
-            }, srcBuf)
-        }
-    }
-
-    /// 頂点色つき多角形の Rgba16Float 版（drawGradPolygon と同じ内外判定・補間。色は 8bit に丸めずに混ぜる）。
-    def drawGradPolygonHdr(canvas: HdrCanvas, sf: Float64, design: Vec2.Vec2,
-                           p: GameEngine.PolygonRenderCmd): Unit \ IO = region rc {
-        let tris = DrawCmd.gradTriangles(p);
-        let (rx0, ry0, rx1, ry1) = DrawCmd.clipPixels({ scaleX = sf, scaleY = sf }, polygonAabb(design, p));
-        let x0 = Int32.max(0i32, rx0);
-        let y0 = Int32.max(0i32, ry0);
-        let w = Int32.min(canvas#width, rx1) - x0;
-        let h = Int32.min(canvas#height, ry1) - y0;
-        if (List.isEmpty(tris) or w <= 0i32 or h <= 0i32) ()
-        else {
-            let compiled = onceOutsideLoop(rc, compileGradTris(tris));
-            let blend = onceOutsideLoop(rc, p#blend);
-            forEachPixel(w * h, j -> {
-                let px = Int32.remainder(j, w) + x0;
-                let py = j / w + y0;
-                match firstGradHit(compiled, (Int32.toFloat64(px) + 0.5) / sf, (Int32.toFloat64(py) + 0.5) / sf) {
-                    case None               => ()
-                    case Some((r, g, b, a)) => blendPixelF(blend, r, g, b, Num.clamp01(a), canvas#rgba, py * canvas#width + px)
-                }
-            })
-        }
-    }
-
-    /// シェーダー面の Rgba16Float 版（drawSurface と同じ画素・同じ評価点。値は切らずに writeRule で切って blendPixelF で混ぜる）。
-    def drawSurfaceHdr(canvas: HdrCanvas, sf: Float64, texEnv: Map[String, ShaderEval.TexImage],
-                       texels: Option[(Int32, Int32)], s: SurfaceCmd): Unit \ IO = region rc {
-        let dw = canvas#width;
-        let dh = canvas#height;
-        let (rx0, ry0, rx1, ry1) = DrawCmd.clipPixels({ scaleX = sf, scaleY = sf }, s#rect);
-        let x0 = Int32.max(0i32, rx0);
-        let y0 = Int32.max(0i32, ry0);
-        let w = Int32.min(dw, rx1) - x0;
-        let h = Int32.min(dh, ry1) - y0;
-        if (w <= 0i32 or h <= 0i32 or s#rect#size#x <= 0.0 or s#rect#size#y <= 0.0) ()
-        else {
-            let compiled = onceOutsideLoop(rc, ShaderEval.compile(s#spec, texEnv));
-            let maskPolys = onceOutsideLoop(rc, List.map(List.toVector, s#mask));
-            let (ox, oy, sw, sh, time) = onceOutsideLoop(rc,
-                (s#rect#position#x, s#rect#position#y, s#rect#size#x, s#rect#size#y, s#time));
-            let blend = onceOutsideLoop(rc, s#blend);
-            let sample = onceOutsideLoop(rc, sampleRatios(texels, dw, dh));
-            forEachPixel(w * h, j -> {
-                let px = Int32.remainder(j, w) + x0;
-                let py = j / w + y0;
-                let (pickedX, sampleX) = samplePoint(px, sample |> Option.map(fst), false);
-                let (pickedY, sampleY) = samplePoint(py, sample |> Option.map(snd), true);
-                let dx = sampleX / sf;
-                let dy = sampleY / sf;
-                if (not pickedX or not pickedY or not insideMask(maskPolys, { x = dx, y = dy })) ()
-                else {
-                    let (r0, g0, b0, a0) = ShaderEval.evalCompiled(compiled, (dx - ox) / sw, (dy - oy) / sh, time);
-                    let (r, g, b, a) = writeRule(r0, g0, b0, a0);
-                    blendPixelF(blend, r, g, b, a, canvas#rgba, py * dw + px)
-                }
-            })
-        }
-    }
-
-    /// 縮んだターゲットへ拾う時の、テクセル / 画素の比（横・縦）。None は縮めない。
-    def sampleRatios(texels: Option[(Int32, Int32)], dw: Int32, dh: Int32): Option[(Float64, Float64)] =
-        texels |> Option.map(t -> {
-            let (tw, th) = t;
-            (Int32.toFloat64(tw) / Int32.toFloat64(dw), Int32.toFloat64(th) / Int32.toFloat64(dh))
-        })
+    // ════════════════════════════════════════════════════════
+    // 画素の道具（SoftRaster.Internal.* の描き手も使う）
+    // ════════════════════════════════════════════════════════
 
     /// 画素ループの外で 1 回だけ計算した値を、そのまま返す。
     /// WhyNot: 面ごとの値を `let x = 式` で直に置かない。Flix 0.78 の最適化は、純粋な let の値が
@@ -969,30 +505,6 @@ pub mod SoftRaster {
         { width = w, height = h, pixels = Array.toVector(buf) }
     }
 
-    /// mask が空なら常に真。非空なら「どれかの多角形の内側」（偶奇の交差数判定）。
-    def insideMask(mask: List[Vector[Vec2.Vec2]], p: Vec2.Vec2): Bool =
-        match mask {
-            case Nil => true
-            case _   => List.exists(vs -> pointInPoly(vs, p), mask)
-        }
-
-    /// 偶奇規則の point-in-polygon（水平レイキャスト）。
-    def pointInPoly(vs: Vector[Vec2.Vec2], p: Vec2.Vec2): Bool =
-        let n = Vector.length(vs);
-        if (n == 0) false
-        else Int32.modulo(countCrossings(vs, n, p, 0, 0), 2) == 1
-
-    /// 辺 i→i+1 が p から右へ伸びる水平線を跨ぐ回数を、添字 i から末尾まで数え上げる。
-    def countCrossings(vs: Vector[Vec2.Vec2], n: Int32, p: Vec2.Vec2, i: Int32, hits: Int32): Int32 =
-        if (i >= n) hits
-        else {
-            let a = Vector.get(i, vs);
-            let b = Vector.get(Int32.modulo(i + 1, n), vs);
-            let crosses = ((a#y > p#y) != (b#y > p#y))
-                and (p#x < (b#x - a#x) * (p#y - a#y) / (b#y - a#y) + a#x);
-            countCrossings(vs, n, p, i + 1, if (crosses) hits + 1 else hits)
-        }
-
     /// 色の成分 r, g, b（0..1）と alpha（0..1）を ARGB int へ。画素ごとに呼ぶ所（シェーダー面・
     /// 頂点色の多角形・3D の層）で使うので、Color の record ではなく成分で受ける。
     /// 1 を超える値・無限大は 255、0 未満と NaN は 0（byteOf）。
@@ -1001,86 +513,6 @@ pub mod SoftRaster {
             |> Int32.bitwiseOr(Int32.leftShift(byteOf(f32(r)), 16))
             |> Int32.bitwiseOr(Int32.leftShift(byteOf(f32(g)), 8))
             |> Int32.bitwiseOr(byteOf(f32(b)))
-
-    /// 本体と下書き（blendedDraw）が同じ見た目で描くための描画品質ヒント一式。
-    ///
-    /// 面と文字を別のつまみにしてあるのは、**2 つが別の理由で効く**から。
-    /// 面の縁は「宣言していない中間色を画素に湧かせない」ため（色の予算）、
-    /// 文字の縁は「小さい字を読めるようにする」ため（可読性）。
-    /// ドット絵のキャラと 7px の TTF が同居する画面では、この 2 つは逆を向く。
-    ///
-    /// 送り幅（FRACTIONALMETRICS）は文字の側に付ける。効くのは字の置き場所と進み幅だけで、
-    /// 面には一切触らない — 面の縁を画素の格子に乗せたいという要求とは関係が無い。
-    /// 文字の縁をならさない（text = false）と決めた画面では、字も整数の画素位置に
-    /// 揃ってほしいので、2 つが同じつまみで動くのが正しい。
-    ///
-    /// スプライト拡大の補間だけはどちらにも載せない。あれは実機（GPU）の見え方に
-    /// そろえるための固定で、選ぶ余地が無い。
-    def applyQualityHints(g: Graphics2D, hints: QualityHints): Unit \ IO =
-        // 面の縁（fillRoundRect/fillPolygon）。切ると縁が画素の格子に乗る。
-        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
-            if (hints#shapes) RenderingHints.VALUE_ANTIALIAS_ON else RenderingHints.VALUE_ANTIALIAS_OFF);
-        // スプライト拡大（drawTextured の drawImage）は最近傍固定。実機の GPU 描画はドット絵を
-        // 補間せず拡大するため、ここで補間すると実機と見え方がずれる（にじみ・輪郭ボケ）。
-        g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
-        // 出力解像度で小サイズ文字をくっきり描くためのテキスト品質ヒント（drawString は INTERPOLATION の対象外）。
-        g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
-            if (hints#text) RenderingHints.VALUE_TEXT_ANTIALIAS_ON
-            else RenderingHints.VALUE_TEXT_ANTIALIAS_OFF);
-        // 字の送り幅。ON だと字が小数の位置に置ける（詰めが揃う）。OFF だと整数の画素に丸まる。
-        g.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS,
-            if (hints#text) RenderingHints.VALUE_FRACTIONALMETRICS_ON
-            else RenderingHints.VALUE_FRACTIONALMETRICS_OFF)
-
-    // ════════════════════════════════════════════════════════
-    // ブレンド合成（Add / Multiply — Java2D 標準 Composite に無い重ね方）
-    // ════════════════════════════════════════════════════════
-
-    /// Normal 以外の描画: いったん透明な下書き画像へ普通に描き、その画素を合成式で本体に混ぜる。
-    /// clip は下書きへの描画に掛ける — 透明のまま残った画素は合成しないので、切り抜きの外は本体に触れない。
-    /// 下書き自体は本体と同じ全面サイズで確保するが（Graphics2D の clip 計算を素直に保つため）、
-    /// getRGB/setRGB で往復する範囲は `aabb`（drawable/polygon の外形、画面クランプ・design px）
-    /// だけに絞る — 全面走査だと 1 個の光源・炎エフェクトのために毎フレーム画面全体を
-    /// 読み書きすることになり、drawable 数に対して不釣り合いに重くなるため。
-    def blendedDraw(image: BufferedImage, sf: Float64, hints: QualityHints, blend: DrawCmd.BlendMode,
-                    clip: Option[Rect2.Rect2], aabb: Rect2.Rect2,
-                    draw: Graphics2D -> Unit \ ef): Unit \ IO + ef =
-        let w = Int32.max(1i32, image.getWidth());
-        let h = Int32.max(1i32, image.getHeight());
-        let scratch = new BufferedImage(w, h, 2i32);
-        let gs: Graphics2D = scratch.createGraphics();
-        applyQualityHints(gs, hints);
-        withClip(gs, sf, clip, () -> draw(gs));
-        gs.dispose();
-        composeInto(image, scratch, blend, sf, aabb)
-
-    /// 下書きの不透明画素だけを合成式で本体に書き戻す（getRGB/setRGB の行列一括転送）。
-    /// 転送範囲は aabb を出力ピクセルへ量子化した矩形（画像境界にクランプ済み）だけに絞る。
-    def composeInto(dst: BufferedImage, src: BufferedImage, blend: DrawCmd.BlendMode,
-                    sf: Float64, aabb: Rect2.Rect2): Unit \ IO = region rc {
-        let dw = dst.getWidth();
-        let dh = dst.getHeight();
-        let (rx0, ry0, rx1, ry1) = DrawCmd.clipPixels({ scaleX = sf, scaleY = sf }, aabb);
-        let x0 = Int32.max(0i32, rx0);
-        let y0 = Int32.max(0i32, ry0);
-        let x1 = Int32.min(dw, rx1);
-        let y1 = Int32.min(dh, ry1);
-        let w = x1 - x0;
-        let h = y1 - y0;
-        if (w <= 0i32 or h <= 0i32) ()
-        else {
-            let n = w * h;
-            let dstBuf: Array[Int32, rc] = Array.empty(rc, n);
-            let srcBuf: Array[Int32, rc] = Array.empty(rc, n);
-            discard dst.getRGB(x0, y0, w, h, dstBuf, 0i32, w);
-            discard src.getRGB(x0, y0, w, h, srcBuf, 0i32, w);
-            Array.forEachWithIndex((i, sp) -> {
-                if (channelOf(24, sp) == 0) ()
-                else Array.put(blendPixel(blend, sp, Array.get(i, dstBuf)), i, dstBuf)
-            }, srcBuf);
-            dst.setRGB(x0, y0, w, h, dstBuf, 0i32, w)
-        }
-    }
 
     /// ARGB 1 画素の合成（src を dst に重ねた結果。out の alpha は dst のまま —
     /// 描き出しの出力は背景が不透明で埋まっているため）。式は DrawCmd.BlendMode の doc と
@@ -1127,121 +559,6 @@ pub mod SoftRaster {
     pub def channelOf(shift: Int32, argb: Int32): Int32 =
         Int32.bitwiseAnd(Int32.logicalRightShift(dist = shift, argb), 255)
 
-    /// z 値取り出し（Drawable / Polygon / シェーダー面 / 3D の場面）。
-    def zOf(item: RItem): Int32 =
-        match item {
-            case RItem.RDraw(d) => d#zIndex
-            case RItem.RPoly(p) => p#zIndex
-            case RItem.RSurf(s) => s#zIndex
-            case RItem.RScene(c) => c#scene#zIndex
-        }
-
-    // ════════════════════════════════════════════════════════
-    // AABB（dirty-rect 化: blendedDraw が getRGB/setRGB を絞り込む範囲を出す）
-    // ════════════════════════════════════════════════════════
-
-    /// design 全体を覆う矩形（フォールバック用 — 外形が正確に分からない/計算コストに
-    /// 見合わない場合に安全側を選ぶ。全面走査になるだけで結果は従来どおり正しい）。
-    def fullDesignRect(design: Vec2.Vec2): Rect2.Rect2 =
-        { position = Vec2.zero(), size = design }
-
-    /// clip があれば交差、design 全体にもクランプする（画面外へ広がった外形を切り詰める）。
-    def clampAabb(design: Vec2.Vec2, clip: Option[Rect2.Rect2], aabb: Rect2.Rect2): Rect2.Rect2 =
-        let withClip = match clip {
-            case None    => aabb
-            case Some(r) => Rect2.intersect(r, aabb)
-        };
-        Rect2.intersect(fullDesignRect(design), withClip)
-
-    /// Drawable 1 件の外形（design px）。box（texture=""）は scale がそのまま px サイズ、
-    /// テクスチャ物は実サイズ（textures から引く）× uvScale × |scale|、font_ は
-    /// グリフごとの実寸計算が煩雑なので design 全体へ安全側フォールバックする
-    /// （HUD 文字は毎フレーム変わり得るため、狭く絞って文字の一部を取りこぼす方が危険）。
-    def drawableAabb(design: Vec2.Vec2, textures: Map[String, BufferedImage],
-                     d: DrawCmd.DrawableSpec): Rect2.Rect2 \ IO =
-        if (String.startsWith({prefix = "font_"}, d#texture))
-            fullDesignRect(design)
-        else {
-            let base = if (String.isEmpty(d#texture)) { x = 1.0, y = 1.0 }
-                       else match Map.get(d#texture, textures) {
-                           // 表示の大きさは drawTextured と同じ「テクスチャ全寸 × scale」。
-                           // WhyNot: uvScale を掛けない — regionRect 付きの sprite（アトラスの 1 コマ）は scale の側で
-                           //   既に region の割合を掛けてあるので、二重に掛けると外形が小さくなり、Add / Multiply の合成が欠ける。
-                           case Some(img) =>
-                               { x = Int32.toFloat64(img.getWidth()),
-                                 y = Int32.toFloat64(img.getHeight()) }
-                           case None      => Vec2.zero()
-                       };
-            let size = { x = base#x * Float64.abs(d#scale#x), y = base#y * Float64.abs(d#scale#y) };
-            let topLeft = if (d#centered) Vec2.sub(d#position, Vec2.div(size, 2.0)) else d#position;
-            // AA のにじみで縁の画素が塗り範囲よりわずかに外へ出るため 1px 分の余裕を足す。
-            // BasicStroke の枠線は中心線基準でさらに半分だけ外へはみ出すのでその分も足す。
-            let borderPad = 1.0 + match d#style {
-                case Some(st) => DrawCmd.borderWidthOf(st) / 2.0
-                case None     => 0.0
-            };
-            let quad = turnedBounds(d#rotation, { position = topLeft, size = size });
-            clampAabb(design, d#clip, Rect2.grow(borderPad, quad))
-        }
-
-    /// 傾けた四角を覆う矩形（中心はそのまま・半径だけ広がる）。傾けた物の外形を
-    /// 回転前のまま見積もると、Add / Multiply の合成で角がはみ出して欠ける。
-    def turnedBounds(rot: Float64, r: Rect2.Rect2): Rect2.Rect2 =
-        if (rot == 0.0) r
-        else {
-            let c = Float64.abs(RenderUtil.cosF(rot));
-            let s = Float64.abs(RenderUtil.sinF(rot));
-            let hw = Float64.abs(r#size#x) / 2.0;
-            let hh = Float64.abs(r#size#y) / 2.0;
-            let w = c * hw + s * hh;
-            let h = s * hw + c * hh;
-            let center = Vec2.add(r#position, Vec2.div(r#size, 2.0));
-            { position = { x = center#x - w, y = center#y - h }, size = { x = w * 2.0, y = h * 2.0 } }
-        }
-
-    /// PolygonRenderCmd 1 件の外形（design px、頂点は既にスクリーン座標に変換済み）。
-    /// AA のにじみで縁の画素が塗り範囲よりわずかに外へ出ることがあるため 1px 分の余裕を足す。
-    def polygonAabb(design: Vec2.Vec2, p: GameEngine.PolygonRenderCmd): Rect2.Rect2 =
-        let aabb = match p#vertices {
-            case Nil       => { position = Vec2.zero(), size = Vec2.zero() }
-            case v :: rest =>
-                let lo = List.foldLeft((acc, q) -> { x = Float64.min(acc#x, q#x), y = Float64.min(acc#y, q#y) }, v, rest);
-                let hi = List.foldLeft((acc, q) -> { x = Float64.max(acc#x, q#x), y = Float64.max(acc#y, q#y) }, v, rest);
-                { position = lo, size = Vec2.sub(hi, lo) }
-        };
-        clampAabb(design, p#clip, Rect2.grow(1.0, aabb))
-
-    /// 組み込みの放射テクスチャ（Render.lightAt / darkAt が引く）の表。作るのは
-    /// drawables がその名前を実際に使うときだけ — 256×256 の画素計算を毎フレームの
-    /// 描き出しに無条件で払わせない（描き出しの画素ループは既知の性能の池）。
-    def builtinRadialImages(drawables: List[GameEngine.Drawable]): Map[String, BufferedImage] \ IO =
-        let usedOf = name -> List.exists(d -> DrawCmd.textureOf(d) == name, drawables);
-        let withEntry = (name: String, pixelsOf: Unit -> Vector[Int32],
-                         acc: Map[String, BufferedImage]) ->
-            if (usedOf(name)) Map.insert(name, imageOfArgb(RadialBuiltin.size(), pixelsOf()), acc)
-            else acc;
-        withEntry(RadialBuiltin.darkName(), _ -> RadialBuiltin.darkPixels(),
-            withEntry(RadialBuiltin.lightName(), _ -> RadialBuiltin.lightPixels(), Map.empty()))
-
-    /// ARGB 画素列（行優先・size×size）を BufferedImage へ敷き詰める。
-    def imageOfArgb(size: Int32, pixels: Vector[Int32]): BufferedImage \ IO = region rc {
-        let s = Int32.max(1i32, size);
-        let image = new BufferedImage(s, s, 2i32);
-        let buf: Array[Int32, rc] = Array.empty(rc, s * s);
-        Array.forEachWithIndex((i, _) -> Array.put(Vector.get(i, pixels), i, buf), buf);
-        image.setRGB(0i32, 0i32, s, s, buf, 0i32, s);
-        image
-    }
-
-    /// texturePath の各エントリを ImageIO で読み込む。読めないものは飛ばす。
-    /// indexed / grayscale 等の色モデルは RescaleOp（drawTextured の tint）が扱えないため、
-    /// 一律 ARGB へ正規化する。
-    def loadTextures(paths: Map[String, String]): Map[String, BufferedImage] \ IO =
-        Map.foldLeftWithKey((acc, name, path) -> match loadTexture(path) {
-            case Some(img) => Map.insert(name, img, acc)
-            case None      => acc
-        }, (Map.empty(): Map[String, BufferedImage]), paths)
-
     /// 1 枚読んで ARGB にそろえる。無いファイル・読めないファイルは None。
     def loadTexture(path: String): Option[BufferedImage] \ IO =
         let file = new File(path);
@@ -1249,13 +566,6 @@ pub mod SoftRaster {
             let img = ImageIO.read(file);
             if (Object.isNull(img)) None else Some(toArgb(img))
         } else None
-
-    /// loadTextures のキャッシュ版。同じパスは 1 回だけ読む（読み方は loadTextures と同じ）。
-    def loadTexturesCached(cache: TextureCache, paths: Map[String, String]): Map[String, BufferedImage] \ IO =
-        Map.foldLeftWithKey((acc, name, path) -> match cachedTexture(cache, path) {
-            case Some(img) => Map.insert(name, img, acc)
-            case None      => acc
-        }, (Map.empty(): Map[String, BufferedImage]), paths)
 
     /// BufferedImage を TYPE_INT_ARGB(2) にコピーする（indexed / grayscale を RescaleOp 可能にする）。
     def toArgb(src: BufferedImage): BufferedImage \ IO =
@@ -1267,502 +577,14 @@ pub mod SoftRaster {
         g.dispose();
         dst
 
-    /// 1 つの Drawable を描く。texture が空なら box、`font_` ならグリフを直接 drawString、
-    /// それ以外はテクスチャ画像。
-    def drawDrawable(g: Graphics2D, sf: Float64,
-                     textures: Map[String, BufferedImage], fctx: FontTable, d: DrawCmd.DrawableSpec,
-                     warnLog: TexWarnLog): Unit \ IO =
-        withRotation(g, sf, d#rotation, quadCenter(textures, fctx, d), () ->
-            if (String.isEmpty(d#texture))
-                withMask(g, sf, d#position, d#scale, d#mask, () -> drawBox(g, sf, d))
-            else if (String.startsWith({prefix = "font_"}, d#texture))
-                // グリフは mask の対象外（文字の可読性が第一 — docs/backend-parity.md）。
-                match Map.get(d#texture, fctx#antialiasByTexture) {
-                    case None         => drawGlyph(g, sf, fontFor(fctx, d), d)
-                    case Some(smooth) => withTextHints(g, smooth, () -> drawGlyph(g, sf, fontFor(fctx, d), d))
-                }
-            else
-                match Map.get(d#texture, textures) {
-                    case None      => warnMissingTexture(warnLog, d#texture)
-                    case Some(img) =>
-                        let size = { x = Int32.toFloat64(img.getWidth()) * d#scale#x,
-                                     y = Int32.toFloat64(img.getHeight()) * d#scale#y };
-                        let origin = { x = originAxis(d#centered, d#position#x, size#x),
-                                       y = originAxis(d#centered, d#position#y, size#y) };
-                        withMask(g, sf, origin, size, d#mask, () -> drawTextured(g, sf, img, d))
-                })
-
-    /// mask（表示クアッドのローカル design px・原点 = 反転していない側の角・回転前）を Path2D に組み、
-    /// g.clip（交差）してから draw する。withRotation の内側で呼ぶのが肝 — Java2D の clip は
-    /// 現在の変換で形が写るので、クアッドの回転がそのまま mask にも掛かる。
-    /// 頂点を size の符号で掛け直すのは、反転（負の scale）をクアッドと同じ向きに掛けるため。
-    /// 縁は AA なしの硬い縁（GL のステンシルと同じ近似 — docs/backend-parity.md）。
-    /// クアッドが退化（辺長ほぼ 0）なら mask を張らずに描く（どのみち絵は出ない）。
-    def withMask(g: Graphics2D, sf: Float64, origin: Vec2.Vec2, size: Vec2.Vec2,
-                 mask: List[List[Vec2.Vec2]], draw: Unit -> Unit \ ef): Unit \ IO + ef =
-        let aw = Float64.abs(size#x);
-        let ah = Float64.abs(size#y);
-        if (List.isEmpty(mask) or aw < 0.000001 or ah < 0.000001) draw()
-        else {
-            let saved = g.getClip();
-            let path = new Path2D();
-            List.forEach(poly -> match poly {
-                case first :: rest =>
-                    let pt = (v: Vec2.Vec2) -> ({ x = (origin#x + v#x / aw * size#x) * sf,
-                                                  y = (origin#y + v#y / ah * size#y) * sf }: Vec2.Vec2);
-                    let p0 = pt(first);
-                    path.moveTo(p0#x, p0#y);
-                    List.forEach(v -> { let p = pt(v); path.lineTo(p#x, p#y) }, rest);
-                    path.closePath()
-                case Nil => ()
-            }, mask);
-            g.clip(path);
-            draw();
-            g.setClip(saved)
-        }
-
-    /// 傾き（ラジアン）を掛けてから描き、終わったら座標系を戻す。回す軸は四角の中心で、
-    /// render_gl/Frame の model 行列（pos + size/2 まわり）と同じ点にしてある — ここがズレると
-    /// 描き出した絵と実機の絵が食い違う。
-    /// 切り抜き矩形（clip）は device 空間で保たれるので、傾けても切り抜きは画面に平行なまま（Render の決まりどおり）。
-    def withRotation(g: Graphics2D, sf: Float64, rot: Float64, center: Vec2.Vec2,
-                     draw: Unit -> Unit \ ef): Unit \ IO + ef =
-        if (rot == 0.0) draw()
-        else {
-            let saved = g.getTransform();
-            g.rotate(rot, center#x * sf, center#y * sf);
-            draw();
-            g.setTransform(saved)
-        }
-
-    /// Drawable の四角の中心（design px）。表示サイズの出し方は種類ごとに drawBox /
-    /// drawGlyph / drawTextured と同じ式を使う。
-    def quadCenter(textures: Map[String, BufferedImage], fctx: FontTable,
-                   d: DrawCmd.DrawableSpec): Vec2.Vec2 \ IO =
-        let size = displaySize(textures, fctx, d);
-        if (d#centered) d#position
-        else {
-            let origin = { x = originAxis(false, d#position#x, size#x),
-                           y = originAxis(false, d#position#y, size#y) };
-            Vec2.add(origin, Vec2.div(size, 2.0))
-        }
-
-    /// Drawable の表示サイズ（design px・反転の符号は残す）。box は scale がそのまま px、
-    /// font_ はアトラス辺長との積、その他はテクスチャ実寸との積。
-    def displaySize(textures: Map[String, BufferedImage], fctx: FontTable,
-                    d: DrawCmd.DrawableSpec): Vec2.Vec2 \ IO =
-        if (String.isEmpty(d#texture)) d#scale
-        else if (String.startsWith({prefix = "font_"}, d#texture))
-            // アトラス辺長は本ごとに違うので、回す軸がずれないよう同じ本から取る。
-            let ts = fontFor(fctx, d)#atlas#textureSize;
-            { x = d#scale#x * ts, y = d#scale#y * ts }
-        else match Map.get(d#texture, textures) {
-            case Some(img) => { x = Int32.toFloat64(img.getWidth()) * d#scale#x,
-                                y = Int32.toFloat64(img.getHeight()) * d#scale#y }
-            case None      => Vec2.zero()
-        }
-
-    // ════════════════════════════════════════════════════════
-    // フォント（グリフ Drawable を出力解像度で直接 drawString）
-    // ════════════════════════════════════════════════════════
-
-    /// 既定フォントと追加フォントを読み、テクスチャ名で引ける一式にする。
-    /// 既定フォントも自分のテクスチャ名（fontAtlas#textureName）で引けるように入れておく —
-    /// そうしないと既定と同じ名前の追加を渡されたときに二重に持つことになる。
-    /// cache があれば、同じ TTF とアトラスの一式を 2 枚目からは組み直さない。
-    def buildFontTable(cache: Option[TextureCache], req: RasterReq, extraFonts: Map[String, FontEntry],
-                       fontAntialias: FontAntialias): FontTable \ IO =
-        let primary = fontCtxOf(cache, req#fontTtf, req#fontAtlas);
-        let table = Map.foldLeftWithKey((acc, texName, e) ->
-            Map.insert(texName, fontCtxOf(cache, e#ttf, e#atlas), acc),
-            Map#{ req#fontAtlas#textureName => primary }, extraFonts);
-        { primary = primary, byTexture = table,
-          antialiasByTexture = fontAntialias }
-
-    /// TTF とアトラスの一式。cache に同じ TTF・同じアトラス（中身で比べる）の物があればそれを使い、
-    /// 同じ TTF で別のアトラスなら読んだ Font だけ使い回す。比べるのは表を組むより安い
-    /// （名前・大きさ・グリフの数が違えば中身を見ずに外れ）。
-    def fontCtxOf(cache: Option[TextureCache], ttfPath: String, atlas: FontAtlas): FontCtx \ IO =
-        match cache {
-            case None => buildFontCtx(loadFont(ttfPath), atlas)
-            case Some(TextureCache.TextureCache(_, _, fonts, _)) =>
-                let known: List[FontCtx] = fonts.get(ttfPath);
-                let ctxs = if (Object.isNull(known)) Nil else known;
-                match List.find(c -> sameAtlas(c#atlas, atlas), ctxs) {
-                    case Some(hit) => hit
-                    case None =>
-                        let base = match ctxs {
-                            case c :: _ => c#baseFont
-                            case Nil    => loadFont(ttfPath)
-                        };
-                        let made = buildFontCtx(base, atlas);
-                        // 別のスレッドと同時に足しても、外れるのは組み直す回数だけ（どれも同じ中身）。
-                        discard fonts.put(ttfPath, made :: ctxs);
-                        made
-                }
-        }
-
-    /// 2 つのアトラスが同じ中身か。安い欄から比べ、最後にグリフの表を 1 字ずつ比べる
-    /// （record には == が無いので欄ごとに比べる）。
-    def sameAtlas(a: FontAtlas, b: FontAtlas): Bool =
-        a#textureName == b#textureName and a#textureSize == b#textureSize and a#fontSize == b#fontSize
-            and a#ascent == b#ascent and a#descent == b#descent and a#lineGap == b#lineGap
-            and Map.size(a#glyphs) == Map.size(b#glyphs)
-            and Map.forAll((cp, g) -> match Map.get(cp, b#glyphs) {
-                case Some(h) => sameGlyph(g, h)
-                case None    => false
-            }, a#glyphs)
-
-    /// 2 つのグリフのメトリクスが同じか。
-    def sameGlyph(g: TextLayout.GlyphMetrics, h: TextLayout.GlyphMetrics): Bool =
-        g#xOff == h#xOff and g#yOff == h#yOff and g#glyphW == h#glyphW and g#glyphH == h#glyphH
-            and g#advance == h#advance and g#s0 == h#s0 and g#t0 == h#t0 and g#s1 == h#s1 and g#t1 == h#t1
-
-    /// TTF を Font として読む（サイズは描く時に deriveFont で決める）。
-    def loadFont(ttfPath: String): Font \ IO =
-        let fis = new FileInputStream(ttfPath);
-        let base = Font.createFont(0i32, fis);
-        fis.close();
-        base
-
-    /// アトラスの各グリフの s0/t0 からセル左上 px を逆算した codepoint 表を組む。
-    def buildFontCtx(base: Font, atlas: FontAtlas): FontCtx =
-        let ts = atlas#textureSize;
-        let table = Map.foldLeftWithKey((acc, cp, gm) ->
-            Map.insert((ri(gm#s0 * ts), ri(gm#t0 * ts)), cp, acc),
-            (Map.empty(): Map[(Int32, Int32), Int32]), atlas#glyphs);
-        { baseFont = base, atlas = atlas, codepointByCell = table }
-
-    /// 1 グリフ Drawable を出力解像度の Font で直接描く。
-    /// グリフのセル高さ（drawable#scale#y × textureSize）とアトラスの行高 (ascent+descent+2) の比が
-    /// bake スケール = display fontSize / bake fontSize なので、そこから display fontSize を復元する。
-    /// ベースラインはセル上端（drawable#position#y）から ascent × bakeScale 下。
-    /// uvOffset をセル px へ戻して codepoint を逆引きし、その 1 文字を drawString する。
-    def drawGlyph(g: Graphics2D, sf: Float64, fctx: FontCtx, d: DrawCmd.DrawableSpec): Unit \ IO =
-        let atlas = fctx#atlas;
-        let ts = atlas#textureSize;
-        let rowH = atlas#ascent + atlas#descent + 2.0;
-        let cellH = d#scale#y * ts;
-        let bakeScale = if (rowH > 0.0) cellH / rowH else 0.0;
-        let displayFontSize = bakeScale * atlas#fontSize;
-        let outFontSize = displayFontSize * sf;
-        let cellKey = (ri(d#uvOffset#x * ts), ri(d#uvOffset#y * ts));
-        match Map.get(cellKey, fctx#codepointByCell) {
-            case None     => ()
-            case Some(cp) =>
-                let str = JChar.toString(cp);
-                let baselineX = d#position#x * sf;
-                let baselineY = (d#position#y + atlas#ascent * bakeScale) * sf;
-                let font = fctx#baseFont.deriveFont(f32(outFontSize));
-                g.setFont(font);
-                g.setColor(awtColor(d#color, f32(d#alpha)));
-                let off: JObject = RenderingHints.VALUE_TEXT_ANTIALIAS_OFF;
-                if (off.equals(g.getRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING)))
-                    fillGlyphOutline(g, font, str, f32(baselineX), f32(baselineY))
-                else
-                    g.drawString(str, f32(baselineX), f32(baselineY))
-        }
-
-    /// 字の縁をならさない字は、字の輪郭を面として縁を切って塗る（字の色と背景の色だけになる）。
-    /// WhyNot: drawString に任せない — この JVM の字の描き手は TEXT_ANTIALIAS_OFF でも縁に中間色を出す
-    /// （Xolonium の 12px で 37 色・輪郭を塗ると 2 色。FontRenderContext は「ならさない」と言うのに出る）。
-    /// ならす字は drawString のまま（今の絵を 1 画素も変えない）。
-    def fillGlyphOutline(g: Graphics2D, font: Font, str: String, x: Float32, y: Float32): Unit \ IO =
-        let glyphs: GlyphVector = font.createGlyphVector(g.getFontRenderContext(), str);
-        let shapes = g.getRenderingHint(RenderingHints.KEY_ANTIALIASING);
-        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
-        g.fill(glyphs.getOutline(x, y));
-        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, shapes)
-
-    /// 字の縁と送り幅を smooth にして draw し、元の設定へ戻す（本ごとに決めた字だけ絵全体の設定と違えるため）。
-    def withTextHints(g: Graphics2D, smooth: Bool, draw: Unit -> Unit \ IO): Unit \ IO =
-        let antialias = g.getRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING);
-        let metrics = g.getRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS);
-        g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
-            if (smooth) RenderingHints.VALUE_TEXT_ANTIALIAS_ON else RenderingHints.VALUE_TEXT_ANTIALIAS_OFF);
-        g.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS,
-            if (smooth) RenderingHints.VALUE_FRACTIONALMETRICS_ON else RenderingHints.VALUE_FRACTIONALMETRICS_OFF);
-        draw();
-        g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, antialias);
-        g.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS, metrics)
-
-    /// 単色矩形（角丸＋枠）。scale が design px サイズ、position が左上。
-    /// 重ねる順は GL シェーダと同じ 塗り → 縞 → 市松 → 枠。
-    def drawBox(g: Graphics2D, sf: Float64, d: DrawCmd.DrawableSpec): Unit \ IO =
-        let x = ri(d#position#x * sf);
-        let y = ri(d#position#y * sf);
-        let bw = ri(d#scale#x * sf);
-        let bh = ri(d#scale#y * sf);
-        // headless の 1 箱ごとの経路なので、レコードへ 1 回展開して読みやすさを取る。
-        let styleSpec = Option.map(DrawCmd.styleToSpec, d#style);
-        let (corner, borderW, borderCol, borderA) = match styleSpec {
-            case Some(st) => (st#cornerRadius, st#borderWidth, st#borderColor, st#borderAlpha)
-            case None     => (0.0, 0.0, ({r = 1.0, g = 1.0, b = 1.0}: Color), 0.0)
-        };
-        let arc = ri(corner * 2.0 * sf);
-        g.setColor(awtColor(d#color, f32(d#alpha)));
-        g.fillRoundRect(x, y, bw, bh, arc, arc);
-        match styleSpec {
-            case Some(st) => drawBoxOverlays(g, sf, d, st)
-            case None     => ()
-        };
-        if (borderW > 0.0 and borderA > 0.0) {
-            g.setStroke(new BasicStroke(f32(borderW * sf)));
-            g.setColor(awtColor(borderCol, f32(borderA)));
-            g.drawRoundRect(x, y, bw, bh, arc, arc)
-        } else ()
-
-    /// 塗りの上に縞と市松を重ねる。box の角丸矩形にクリップして描き、終わったら解除する。
-    def drawBoxOverlays(g: Graphics2D, sf: Float64, d: DrawCmd.DrawableSpec,
-                        st: DrawCmd.BoxStyleSpec): Unit \ IO =
-        let hasStripe = st#stripeWidth > 0.0 and st#stripeAlpha > 0.0 and st#stripePeriod > 0.0;
-        let hasChecker = st#checkerCell > 0.0 and st#checkerAlpha > 0.0;
-        if (hasStripe or hasChecker) {
-            // fillRoundRect と同じ丸め済みの値でクリップ形を作り、塗りとぴったり重ねる。
-            let x = ri(d#position#x * sf);
-            let y = ri(d#position#y * sf);
-            let bw = ri(d#scale#x * sf);
-            let bh = ri(d#scale#y * sf);
-            let arc = ri(st#cornerRadius * 2.0 * sf);
-            let shape = new RoundRect(Int32.toFloat64(x), Int32.toFloat64(y),
-                                      Int32.toFloat64(bw), Int32.toFloat64(bh),
-                                      Int32.toFloat64(arc), Int32.toFloat64(arc));
-            // setClip(置き換え)ではなく clip(交差)で重ねる — drawable の clip 矩形(withClip)が
-            // 外側に張られているとき、縞・市松がその矩形を破って漏れないため。終わったら退避値へ
-            // 戻す(setClip(null) の全解除だと、この後に描く枠線まで矩形の外へ漏れる)。
-            let saved = g.getClip();
-            g.clip(shape);
-            if (hasStripe) drawStripes(g, sf, d, st) else ();
-            if (hasChecker) drawChecker(g, sf, d, st) else ();
-            g.setClip(saved)
-        } else ()
-
-    /// 縞を描く。GL シェーダと同じ box 中心原点のローカル座標 p を使い、
-    /// mod(hv, period) が [0, width] に入る範囲を線分で塗る（dir 0: p.x−p.y / 1: p.y / 2: p.x）。
-    def drawStripes(g: Graphics2D, sf: Float64, d: DrawCmd.DrawableSpec,
-                    st: DrawCmd.BoxStyleSpec): Unit \ IO =
-        let bw = d#scale#x * sf;
-        let bh = d#scale#y * sf;
-        let cx = d#position#x * sf + bw / 2.0;
-        let cy = d#position#y * sf + bh / 2.0;
-        let period = st#stripePeriod * sf;
-        let width = st#stripeWidth * sf;
-        g.setColor(awtColor(st#stripeColor, f32(st#stripeAlpha)));
-        if (st#stripeDir == 1) {
-            // 横縞: 範囲 [hv-width/2, hv+width/2] を塗り矩形で(AA が掛からずくっきり — 走査線用)。
-            forEachStripe(period, bh / 2.0, width, hv ->
-                g.fill(new Rect2D(cx - bw, cy + hv - width / 2.0, bw * 2.0, width)))
-        } else if (st#stripeDir == 2) {
-            // 縦縞: 同じく塗り矩形でくっきり。
-            forEachStripe(period, bw / 2.0, width, hv ->
-                g.fill(new Rect2D(cx + hv - width / 2.0, cy - bh, width, bh * 2.0)))
-        } else {
-            // 斜め 45°: hv = p.x − p.y。hv 空間の幅 width は幾何学的には width/√2。
-            g.setStroke(new BasicStroke(f32(width / Num.sqrt(2.0))));
-            let l = bw + bh;
-            forEachStripe(period, (bw + bh) / 2.0, width, hv ->
-                g.draw(new Line2D(cx + hv - l, cy - l, cx + hv + l, cy + l)))
-        }
-
-    /// mod(hv, period) が [0, width] の範囲の中心 hv を、[-halfRange, halfRange] に
-    /// かかる分だけ列挙して f を呼ぶ（k*period + width/2 の等差列）。
-    def forEachStripe(period: Float64, halfRange: Float64, width: Float64,
-                      f: Float64 -> Unit \ ef): Unit \ ef =
-        let kMin = floorI((-1.0 * halfRange - width) / period);
-        let kMax = floorI(halfRange / period);
-        List.range(kMin, kMax + 1) |> List.forEach(k ->
-            f(Int32.toFloat64(k) * period + width / 2.0))
-
-    /// 市松を描く。GL シェーダと同じ box 中心原点でセルを刻み、
-    /// floor(p.x/cell) + floor(p.y/cell) が偶数のセルだけ塗る。
-    def drawChecker(g: Graphics2D, sf: Float64, d: DrawCmd.DrawableSpec,
-                    st: DrawCmd.BoxStyleSpec): Unit \ IO =
-        let bw = d#scale#x * sf;
-        let bh = d#scale#y * sf;
-        let cx = d#position#x * sf + bw / 2.0;
-        let cy = d#position#y * sf + bh / 2.0;
-        let cell = st#checkerCell * sf;
-        g.setColor(awtColor(st#checkerColor, f32(st#checkerAlpha)));
-        let iMin = floorI(-1.0 * bw / 2.0 / cell);
-        let iMax = floorI(bw / 2.0 / cell);
-        let jMin = floorI(-1.0 * bh / 2.0 / cell);
-        let jMax = floorI(bh / 2.0 / cell);
-        List.range(iMin, iMax + 1) |> List.forEach(i ->
-            List.range(jMin, jMax + 1) |> List.forEach(j ->
-                if (Int32.modulo(i + j, 2) == 0)
-                    g.fill(new Rect2D(cx + Int32.toFloat64(i) * cell,
-                                      cy + Int32.toFloat64(j) * cell, cell, cell))
-                else ()))
-
-    /// Float64 の床を Int32 に（縞・市松の格子番号用。負値も床側へ丸める）。
-    def floorI(x: Float64): Int32 =
-        Num.floorInt(x)
-
-    /// 表示矩形の起点（1 軸ぶん）。規約は GL の RenderFrame.originAxis と同一 — flipH / flipV で
-    /// display が負になっても、覆う範囲は position から正の向きへ伸ばす。
-    /// dx1 > dx2 の向きが Java2D の drawImage に鏡像を描かせるので、display は負のまま使う。
-    def originAxis(centered: Bool, position: Float64, display: Float64): Float64 =
-        if (centered) position - display / 2.0
-        else if (display < 0.0) position - display
-        else position
-
-    /// 画像 Drawable。元テクスチャの uv 部分矩形を切り出し、color で tint・alpha を乗算して
-    /// design px の表示矩形へ拡大転写する。font_ アトラス（白グリフ）もこの経路で色が付く。
-    def drawTextured(g: Graphics2D, sf: Float64, img: BufferedImage, d: DrawCmd.DrawableSpec): Unit \ IO =
-        let texW = Int32.toFloat64(img.getWidth());
-        let texH = Int32.toFloat64(img.getHeight());
-        let displayW = texW * d#scale#x;
-        let displayH = texH * d#scale#y;
-        let posX = originAxis(d#centered, d#position#x, displayW);
-        let posY = originAxis(d#centered, d#position#y, displayH);
-        // 元テクスチャ内の部分矩形（uv → px）。画像範囲へクランプする。
-        let sx = clampI(ri(d#uvOffset#x * texW), 0i32, img.getWidth());
-        let sy = clampI(ri(d#uvOffset#y * texH), 0i32, img.getHeight());
-        let sw = clampI(ri(d#uvScale#x * texW), 1i32, img.getWidth() - sx);
-        let sh = clampI(ri(d#uvScale#y * texH), 1i32, img.getHeight() - sy);
-        let sub = img.getSubimage(sx, sy, sw, sh);
-        // color tint と alpha を各バンドに乗算（白グリフ×tint=文字色、スプライトは概ね白×1）。
-        let scales = Array#{f32(d#color#r), f32(d#color#g), f32(d#color#b), f32(d#alpha)} @ Static;
-        let offsets = Array#{0.0f32, 0.0f32, 0.0f32, 0.0f32} @ Static;
-        let op = new RescaleOp(scales, offsets, unchecked_cast(null as RenderingHints));
-        let tinted = op.filter(sub, unchecked_cast(null as BufferedImage));
-        let dx1 = ri(posX * sf);
-        let dy1 = ri(posY * sf);
-        let dx2 = ri((posX + displayW) * sf);
-        let dy2 = ri((posY + displayH) * sf);
-        discard g.drawImage(tinted, dx1, dy1, dx2, dy2, 0i32, 0i32, sw, sh,
-                            unchecked_cast(null as ImageObserver))
-
-    /// clip 矩形(design px)を出力ピクセルへ floor 量子化して張り、draw を実行してから元へ戻す。
-    /// 量子化は GL の glScissor と同じ DrawCmd.clipPixels — 同じ画素集合になるのがスナップショットの前提。
-    /// 退避・復元で行うので、draw の内側の g.clip(交差)とも安全に入れ子になる。
-    def withClip(g: Graphics2D, sf: Float64, clip: Option[Rect2.Rect2], draw: Unit -> Unit \ ef): Unit \ IO + ef =
-        match clip {
-            case None    => draw()
-            case Some(r) => {
-                let saved = g.getClip();
-                let (x0, y0, x1, y1) = DrawCmd.clipPixels({ scaleX = sf, scaleY = sf }, r);
-                g.setClip(x0, y0, Int32.max(0, x1 - x0), Int32.max(0, y1 - y0));
-                draw();
-                g.setClip(saved)
-            }
-        }
-
-    /// 頂点色つき多角形を画素ごとに描き出す（面の中の線形補間）。Graphics2D を通さないのは、
-    /// Java2D に三角形内の頂点色補間が無いため。内外は画素中心で判定する（AA なし）—
-    /// GL の三角形ラスタライズと同じ硬い縁で、単色多角形（Java2D の AA 塗り）とは縁の写りが違う
-    /// （対応表 docs/backend-parity.md に記載）。clip・blend は drawSurface と同じ扱いで
-    /// この関数の中で済ませる（polygonAabb が clip と画面に切り詰め、blendPixel で混ぜる）。
-    def drawGradPolygon(image: BufferedImage, sf: Float64, design: Vec2.Vec2,
-                        p: GameEngine.PolygonRenderCmd): Unit \ IO = region rc {
-        let tris = DrawCmd.gradTriangles(p);
-        let dw = image.getWidth();
-        let dh = image.getHeight();
-        let (rx0, ry0, rx1, ry1) = DrawCmd.clipPixels({ scaleX = sf, scaleY = sf },
-                                                      polygonAabb(design, p));
-        let x0 = Int32.max(0i32, rx0);
-        let y0 = Int32.max(0i32, ry0);
-        let x1 = Int32.min(dw, rx1);
-        let y1 = Int32.min(dh, ry1);
-        let w = x1 - x0;
-        let h = y1 - y0;
-        if (List.isEmpty(tris) or w <= 0i32 or h <= 0i32) ()
-        else {
-            let n = w * h;
-            let buf: Array[Int32, rc] = Array.empty(rc, n);
-            discard image.getRGB(x0, y0, w, h, buf, 0i32, w);
-            // 三角形は多角形ごとに 1 回だけ位置で持つ形へ組み直す（onceOutsideLoop の WhyNot）。
-            let compiled = onceOutsideLoop(rc, compileGradTris(tris));
-            let blend = onceOutsideLoop(rc, p#blend);
-            // 下地の画素（読むだけ）。1 画素の答えは下地と三角形だけで決まるので、drawSurface と
-            // 同じく shadeAll でコアの数だけ並べても 1 本で回しても同じ列になる。
-            let dstPixels = Array.toVector(buf);
-            let pixelOf = i -> {
-                let px = Int32.remainder(i, w) + x0;
-                let py = i / w + y0;
-                let x = (Int32.toFloat64(px) + 0.5) / sf;
-                let y = (Int32.toFloat64(py) + 0.5) / sf;
-                let dst = Vector.get(i, dstPixels);
-                match firstGradHit(compiled, x, y) {
-                    case None               => dst
-                    case Some((r, g, b, a)) => blendPixel(blend, argbOfRgba(r, g, b, a), dst)
-                }
-            };
-            image.setRGB(x0, y0, w, h, shadeAll(n, pixelOf), 0i32, w)
-        }
-    }
-
     /// 扇割り三角形列から、点 at を含む三角形の補間色を引く（どの三角形にも入らなければ None）。
     /// 式は面積比の重み（バリセントリック）— GL が頂点色を画素へ補間するのと同じ線形補間。
     /// 隣り合う三角形の共有辺の上では両者の補間が一致するので、どちらが拾っても同じ色になる。
     /// 1 点だけ引く入口で、呼ぶたびに組み直す（画素ループは compileGradTris + firstGradHit）。
     pub def gradSample(tris: List[(DrawCmd.GradVertex, DrawCmd.GradVertex, DrawCmd.GradVertex)],
                        at: Vec2.Vec2): Option[DrawCmd.VertexTint] =
-        firstGradHit(compileGradTris(tris), at#x, at#y)
+        SoftRaster.Internal.Gradient.firstGradHit(SoftRaster.Internal.Gradient.compileGradTris(tris), at#x, at#y)
             |> Option.map(rgba -> { let (r, g, b, a) = rgba; { color = { r = r, g = g, b = b }, alpha = a } })
-
-    /// つぶれた三角形（面積 ≈ 0）とみなす行列式の下限。0 割りを避けるためだけの値で、
-    /// design px の座標では 1e-9 より小さい面積の三角形は 1 画素にも満たない。
-    def degenerateEps(): Float64 = 0.000000001
-
-    /// 扇の三角形 1 つを、画素ごとの計算に要る数だけ位置で持つ形。GradVertex の record の欄は
-    /// 組み直しで 1 回だけ読み、画素ごとには読まない（record の欄は名前で引くので画素ごとには重い）。
-    enum GradTri {
-        // c の x, y・重みの係数 (b.y−c.y), (c.x−b.x), (c.y−a.y), (a.x−c.x)・行列式・
-        // 頂点 a, b, c の色と濃さ（r, g, b, α を a, b, c の順に 12 個。色は Float32 に落として戻した値）
-        case GradTri(Float64, Float64, Float64, Float64, Float64, Float64, Float64, Vector[Float64])
-    }
-
-    /// 三角形列を GradTri の列へ組み直す（多角形ごとに 1 回）。つぶれた三角形（面積 0）はどの点も
-    /// 含まないので、ここで落とす。
-    def compileGradTris(tris: List[(DrawCmd.GradVertex, DrawCmd.GradVertex, DrawCmd.GradVertex)]): List[GradTri] =
-        tris |> List.filterMap(tri -> {
-            let (a, b, c) = tri;
-            let byCy = b#pos#y - c#pos#y;
-            let cxBx = c#pos#x - b#pos#x;
-            let cyAy = c#pos#y - a#pos#y;
-            let axCx = a#pos#x - c#pos#x;
-            let det = byCy * axCx + cxBx * (a#pos#y - c#pos#y);
-            let rounded = x -> Float32.toFloat64(f32(x));
-            let tints = Vector#{rounded(a#color#r), rounded(a#color#g), rounded(a#color#b), a#alpha,
-                                rounded(b#color#r), rounded(b#color#g), rounded(b#color#b), b#alpha,
-                                rounded(c#color#r), rounded(c#color#g), rounded(c#color#b), c#alpha};
-            if (Float64.abs(det) < degenerateEps()) None
-            else Some(GradTri.GradTri(c#pos#x, c#pos#y, byCy, cxBx, cyAy, axCx, det, tints))
-        })
-
-    /// 点 (x, y) を含む最初の三角形の補間 (r, g, b, α)。どれにも入らなければ None。
-    def firstGradHit(tris: List[GradTri], x: Float64, y: Float64): Option[(Float64, Float64, Float64, Float64)] =
-        match tris {
-            case Nil          => None
-            case tri :: rest  => match gradTriSample(tri, x, y) {
-                case Some(rgba) => Some(rgba)
-                case None       => firstGradHit(rest, x, y)
-            }
-        }
-
-    /// 1 三角形の中なら重み付き平均の (r, g, b, α)、外なら None。各成分は Float32 に落として返す
-    /// （GL が頂点色を Float32 で補間するのと同じ丸め）。
-    def gradTriSample(tri: GradTri, x: Float64, y: Float64): Option[(Float64, Float64, Float64, Float64)] =
-        let GradTri.GradTri(cx, cy, byCy, cxBx, cyAy, axCx, det, tints) = tri;
-        let w0 = (byCy * (x - cx) + cxBx * (y - cy)) / det;
-        let w1 = (cyAy * (x - cx) + axCx * (y - cy)) / det;
-        let w2 = 1.0 - w0 - w1;
-        if (w0 < 0.0 or w1 < 0.0 or w2 < 0.0) None
-        else {
-            let lerp = k -> Float32.toFloat64(f32(w0 * Vector.get(k, tints)
-                                                 + w1 * Vector.get(k + 4, tints)
-                                                 + w2 * Vector.get(k + 8, tints)));
-            Some((lerp(0), lerp(1), lerp(2), lerp(3)))
-        }
-
-    /// 多角形塗り。頂点は design px。
-    def drawPolygon(rc: Region[r], g: Graphics2D, sf: Float64, p: GameEngine.PolygonRenderCmd): Unit \ IO + r =
-        let xs = List.toArray(rc, List.map(v -> ri(v#x * sf), p#vertices));
-        let ys = List.toArray(rc, List.map(v -> ri(v#y * sf), p#vertices));
-        let n = List.length(p#vertices);
-        g.setColor(awtColor(p#color, f32(p#alpha)));
-        g.fillPolygon(xs, ys, n)
 
     /// Flix Color(0..1) + alpha を AWT Color(0..255) へ。
     def awtColor(c: Color, alpha: Float32): AwtColor \ IO =
@@ -1816,4 +638,49 @@ pub mod SoftRaster {
         image.setRGB(0i32, 0i32, s, s, buf, 0i32, s);
         writePng(image, outPath)
     }
+
+    /// 本体と下書き（blendedDraw）が同じ見た目で描くための描画品質ヒント一式。
+    ///
+    /// 面と文字を別のつまみにしてあるのは、**2 つが別の理由で効く**から。
+    /// 面の縁は「宣言していない中間色を画素に湧かせない」ため（色の予算）、
+    /// 文字の縁は「小さい字を読めるようにする」ため（可読性）。
+    /// ドット絵のキャラと 7px の TTF が同居する画面では、この 2 つは逆を向く。
+    ///
+    /// 送り幅（FRACTIONALMETRICS）は文字の側に付ける。効くのは字の置き場所と進み幅だけで、
+    /// 面には一切触らない — 面の縁を画素の格子に乗せたいという要求とは関係が無い。
+    /// 文字の縁をならさない（text = false）と決めた画面では、字も整数の画素位置に
+    /// 揃ってほしいので、2 つが同じつまみで動くのが正しい。
+    ///
+    /// スプライト拡大の補間だけはどちらにも載せない。あれは実機（GPU）の見え方に
+    /// そろえるための固定で、選ぶ余地が無い。
+    def applyQualityHints(g: Graphics2D, hints: QualityHints): Unit \ IO =
+        // 面の縁（fillRoundRect/fillPolygon）。切ると縁が画素の格子に乗る。
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+            if (hints#shapes) RenderingHints.VALUE_ANTIALIAS_ON else RenderingHints.VALUE_ANTIALIAS_OFF);
+        // スプライト拡大（drawTextured の drawImage）は最近傍固定。実機の GPU 描画はドット絵を
+        // 補間せず拡大するため、ここで補間すると実機と見え方がずれる（にじみ・輪郭ボケ）。
+        g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
+        // 出力解像度で小サイズ文字をくっきり描くためのテキスト品質ヒント（drawString は INTERPOLATION の対象外）。
+        g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
+            if (hints#text) RenderingHints.VALUE_TEXT_ANTIALIAS_ON
+            else RenderingHints.VALUE_TEXT_ANTIALIAS_OFF);
+        // 字の送り幅。ON だと字が小数の位置に置ける（詰めが揃う）。OFF だと整数の画素に丸まる。
+        g.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS,
+            if (hints#text) RenderingHints.VALUE_FRACTIONALMETRICS_ON
+            else RenderingHints.VALUE_FRACTIONALMETRICS_OFF)
+
+    /// clip 矩形(design px)を出力ピクセルへ floor 量子化して張り、draw を実行してから元へ戻す。
+    /// 量子化は GL の glScissor と同じ DrawCmd.clipPixels — 同じ画素集合になるのがスナップショットの前提。
+    /// 退避・復元で行うので、draw の内側の g.clip(交差)とも安全に入れ子になる。
+    def withClip(g: Graphics2D, sf: Float64, clip: Option[Rect2.Rect2], draw: Unit -> Unit \ ef): Unit \ IO + ef =
+        match clip {
+            case None    => draw()
+            case Some(r) => {
+                let saved = g.getClip();
+                let (x0, y0, x1, y1) = DrawCmd.clipPixels({ scaleX = sf, scaleY = sf }, r);
+                g.setClip(x0, y0, Int32.max(0, x1 - x0), Int32.max(0, y1 - y0));
+                draw();
+                g.setClip(saved)
+            }
+        }
 }

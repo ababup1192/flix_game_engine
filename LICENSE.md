@@ -24,7 +24,7 @@ SOFTWARE.
 
 ## 同梱物 / Bundled assets
 
-`engine/src/render/BootFontData.flix` は起動画面のためにソースへ埋め込んだ生成物で、
+`engine/src/render2d/BootFontData.flix` は起動画面のためにソースへ埋め込んだ生成物で、
 次の 2 つを素にしています（`make boot-font` で作り直せます）。
 
 - **起動用フォント**: PixelMplus（PixelMplus10-Regular.ttf）の ASCII を 10px の

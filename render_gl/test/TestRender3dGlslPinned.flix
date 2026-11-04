@@ -27,11 +27,11 @@ mod Render3d.TestGlslPinned {
 
     @Test
     def testSolidMaterialFragmentsAreUnchanged(): Unit \ Assert =
-        Assert.assertEq(expected = "d793e364eda5505b658271688a366a858c446e92890a06cf8c97479bcea92860" :: "d793e364eda5505b658271688a366a858c446e92890a06cf8c97479bcea92860" :: "f832761ef538c1875272a04d98677c13e67c90aefdc11ad82064e61be7d1f20e" :: "35aa36dd7a411e78158eb8d445d25f2db76efb5ccdaac759fac149dd8f16faf2" :: Nil, fragments(solidGlsl()))
+        Assert.assertEq(expected = "6315b400ea9929b4efa1020ba8dcdb8b5c273682666a78c4f02c2a44bf2061f4" :: "6315b400ea9929b4efa1020ba8dcdb8b5c273682666a78c4f02c2a44bf2061f4" :: "d06115540306e4257a1ded2f50dd672fbcfa3302a0f40efebc3b5f8de128bcba" :: "d78d5532f473b2578aa81e7df276f94cfb0e62b138e3ff02ef303c9b864bdaaa" :: Nil, fragments(solidGlsl()))
 
     @Test
     def testMipMaterialFragmentsAreUnchanged(): Unit \ Assert =
-        Assert.assertEq(expected = "550518864fc3ad9788a30997049a54c9df1294f1bb81588bd98983c52573e126" :: "550518864fc3ad9788a30997049a54c9df1294f1bb81588bd98983c52573e126" :: "3e63ed960ca8001549db08d0ce811d008165c98d103042f92e5d9936f625c9e9" :: "ba5e5862235e5dcd5c8b159c1cd5434462fb80ce7fd73b972afd4632effbd4f0" :: Nil, fragments(mipGlsl()))
+        Assert.assertEq(expected = "bbcc9b750b7e2823b60fa24f51b293618f5e6258ad9d97ef57b5c766243ee812" :: "bbcc9b750b7e2823b60fa24f51b293618f5e6258ad9d97ef57b5c766243ee812" :: "744eaccfe5ec85daf0be472d6222ae85f2933529f72db432ba4af4bd209c6f5e" :: "5c32ed4dfb67e6570f30193af67e20fce8d90d753660993ad97263d1a81072d4" :: Nil, fragments(mipGlsl()))
 
     @Test
     def testMaterialVertexSourcesAreUnchanged(): Unit \ Assert =
@@ -74,13 +74,13 @@ mod Render3d.TestGlslPinned {
 
     // ── 3D の色の変換 ──
 
-    /// lit・材質・ビルボード・空の frag は色の変換の部品（uLinearColor の宣言）を 1 回だけ持つ。
+    /// lit・材質・ビルボード・空の frag は色の変換の部品（r3d_srgbToLinear3 の定義）を 1 回だけ持つ。
     @Test
-    def testFragmentsDeclareLinearColorOnce(): Unit \ Assert =
+    def testFragmentsDeclareColorSpaceOnce(): Unit \ Assert =
         let material = Render3dGlsl.materialFragmentSource(mipGlsl(), { skinned = false, uv = true, normalMap = true, lightmap = true, blend = false, doubleSided = false, coverage = false });
         Assert.assertEq(expected = 1 :: 1 :: 1 :: 1 :: Nil,
             (Render3dGlsl.litFragmentSource() :: material :: Render3dGlsl.billboardFragmentSource() :: Render3dGlsl.skyFragmentSource() :: Nil)
-                |> List.map(count("uniform int uLinearColor;")))
+                |> List.map(count("vec3 r3d_srgbToLinear3(vec3 c)")))
 
     /// lightmap の版の材質の frag でも、vec3 の変換の関数は 1 回だけ定義される。
     @Test

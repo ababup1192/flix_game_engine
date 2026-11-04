@@ -812,9 +812,6 @@ pub mod Render {
     pub def targetDescriptorOf(plan: PassPlan, name: String): RenderTarget.Descriptor =
         Map.getWithDefault(name, RenderTarget.defaultDescriptor(), plan#targets)
 
-    /// 読んではいけない名前の置き換え先（必ず存在しない名前 — 面は黒・sprite は貼らない）。
-    def missingName(name: String): String = "@missing:" + name
-
     /// Pass の items の読みを書き換えた計画と、問題の一覧。
     /// 前に宣言した Pass と普通のテクスチャはそのまま・自分の名前は RenderTarget.historyName・後ろの Pass と、knownTargets にあって
     /// このコマで宣言していない名前は missingName へ。同名の 2 回目以降と '@' を含む名前の Pass は列から外す。
@@ -832,17 +829,17 @@ pub mod Render {
                     else if (Set.memberOf(name, declared)) Some(PassPlanIssue.ReadsLaterPass(p#name, name))
                     else if (Set.memberOf(name, knownTargets)) Some(PassPlanIssue.ReadsUndeclaredTarget(p#name, name))
                     else None;
-                let found = passReadNames(texNamesOf, p#items) |> List.filterMap(issueOf);
+                let found = Render.Internal.PassReads.passReadNames(texNamesOf, p#items) |> List.filterMap(issueOf);
                 let rename = name ->
                     if (name == p#name) RenderTarget.historyName(name)
                     else if (Option.isEmpty(issueOf(name))) name
-                    else missingName(name);
+                    else Render.Internal.PassReads.missingName(name);
                 let renamedOf = specTable();
                 let renameSpec = spec -> {
                     let names = cachedBySpec(texNamesOf, ShaderDoc.texNames, spec);
-                    cachedBySpec(renamedOf, sp -> renameKeepingSame(rename, names, sp), spec)
+                    cachedBySpec(renamedOf, sp -> Render.Internal.PassReads.renameKeepingSame(rename, names, sp), spec)
                 };
-                let p1 = { items = p#items |> List.map(placed -> { item = renameReads(rename, renameSpec, placed#item) | placed }) | p };
+                let p1 = { items = p#items |> List.map(placed -> { item = Render.Internal.PassReads.renameReads(rename, renameSpec, placed#item) | placed }) | p };
                 (p1 :: kept, Set.insert(p#name, seen), List.append(List.reverse(found), issues))
             }
         }, (Nil, Set.empty(), Nil));
@@ -857,68 +854,20 @@ pub mod Render {
           issues = List.append(List.reverse(issuesRev), List.append(unknown, outOfRange)) }
     }
 
-    /// items が読む名前（面の tex / blur と sprite の texture）を初出順・重複なしで。面の名前は texNamesOf に覚える。
-    def passReadNames(texNamesOf: IdentityHashMap[JObject, JObject], items: List[PlacedItem]): List[String] \ IO =
-        items |> List.flatMap(placed -> {
-            let (leaf, _clip) = unwrapClip(placed#item, None);
-            match leaf {
-                case Item.Sprite(sp)  => sp#texture :: Nil
-                case Item.Shader(sh)  => cachedBySpec(texNamesOf, ShaderDoc.texNames, sh#spec)
-                case Item.Scene3d(sc) => sc#billboards |> List.map(b -> Scene3d.billboardFieldsOf(b)#texture)
-                case _                => Nil
-            }
-        }) |> List.distinct
-
-    /// 読む名前 names が f で 1 つも変わらないなら spec そのもの（同じ物）を、変わるなら書き換えた Spec を返す。
-    /// WhyNot: 変わらない時も renameTex を通さない — 木を丸ごと作り直すので、毎コマ別の物になって
-    /// program の当たり（ShaderGen.eqSpec の参照の早抜け）が外れ、構造の比べに戻る。
-    def renameKeepingSame(f: String -> String, names: List[String], spec: ShaderDoc.Spec): ShaderDoc.Spec =
-        if (List.forAll(name -> f(name) == name, names)) spec
-        else ShaderDoc.renameTex(f, spec)
-
-    /// 面の tex / blur（renameSpec）と sprite の texture（f）の名前を替える（Clipped の中まで）。
-    def renameReads(f: String -> String, renameSpec: ShaderDoc.Spec -> ShaderDoc.Spec \ IO, item: Item): Item \ IO =
-        onLeafIO(leaf -> match leaf {
-            case Item.Sprite(sp)  => Item.Sprite({ texture = f(sp#texture) | sp })
-            case Item.Shader(sh)  => Item.Shader({ spec = renameSpec(sh#spec) | sh })
-            case Item.Scene3d(sc) => Item.Scene3d({ billboards = List.map(renameBillboard(f), sc#billboards) | sc })
-            case other            => other
-        }, item)
-
-    /// ビルボードの貼る絵の名前だけを f で替える（ほかの欄はそのまま）。
-    // WhyNot: Scene3d に名前を替える口を足さない — engine の閉じた型を増やさずに、公開の作る関数で組み直せる。
-    def renameBillboard(f: String -> String, b: Scene3d.Billboard3d): Scene3d.Billboard3d =
-        let r = Scene3d.billboardFieldsOf(b);
-        let renamed = f(r#texture);
-        if (renamed == r#texture) b
-        else {
-            let base = Scene3d.billboard(renamed, r#regionRect, r#position, r#size)
-                |> Scene3d.withAnchor(r#anchor)
-                |> Scene3d.withBillboardTint(r#tint);
-            if (r#lit) base else Scene3d.unlit(base)
-        }
-
-    /// onLeaf の、葉の書き換えに効果のある形。
-    def onLeafIO(f: Item -> Item \ IO, item: Item): Item \ IO =
-        match item {
-            case Item.Clipped(c) => Item.Clipped({ inner = onLeafIO(f, c#inner) | c })
-            case leaf            => f(leaf)
-        }
-
     // ── extract / 射影（lib が Drawable を1回だけ組む）──
 
     /// draw list 全体を描画命令へ（zIndex 順は render_gl が stable sort する）。
     /// Sprite / Text / Box は Drawable、Poly は置き場所を頂点に織り込んだ PolygonRenderCmd になる —
     /// 呼び側は 1 本のリストを組むだけで、2 系統への振り分けはここで終わる。
     pub def draw(items: List[PlacedItem]): (List[GameEngine.Drawable], List[GameEngine.PolygonRenderCmd]) =
-        drawInto((item, pos) -> toDrawables(item, pos), items)
+        Render.Internal.Extract.drawInto((item, pos) -> toDrawables(item, pos), items)
 
     /// `draw` の atlas 注入版。Sprite の region UV を textureInfoOf で解決しつつ、
     /// Poly も PolygonRenderCmd へ振り分ける（draw と同じ 2 列を返す）。
     /// region 付き sprite と Poly が同じ列に混ざる UI（UiRender）の描画口。
     pub def drawWith(textureInfoOf: String -> Option[GameEngine.TextureInfo] \ ef,
                      items: List[PlacedItem]): (List[GameEngine.Drawable], List[GameEngine.PolygonRenderCmd]) \ ef =
-        drawInto((item, pos) -> toDrawablesAtlas(textureInfoOf, item, pos), items)
+        Render.Internal.Extract.drawInto((item, pos) -> Render.Internal.Extract.toDrawablesAtlas(textureInfoOf, item, pos), items)
 
     /// そのフレームに描く字の集合の指紋（テクスチャ名と文の codepoint を織り込んだ Int64）。
     /// 「前フレームと同じ字を描くか」を安く見分ける鍵。文字列の集合そのものを組んで
@@ -1107,33 +1056,6 @@ pub mod Render {
         let (ds, ps) = drawWith(textureInfoOf, withoutScenes3d(withoutShaders(items)));
         { drawables = ds, polygons = ps, surfaces = shaderSurfaces(items), scenes = drawScenes3d(items) }
 
-    /// draw / drawWith の共通トラバーサル。Clipped を剥がして有効な clip 矩形（入れ子は交差）を決め、
-    /// 葉を Drawable / PolygonRenderCmd へ振り分けてから clip 矩形を刻む。振り分けの分岐を 1 本に
-    /// しておかないと、Clipped の扱いが 2 経路で割れる。
-    /// 2 列は 1 回の走査で同時に積む。列ごとに走査を分けると、描く物 1 個につき
-    /// Clipped の剥がしと葉の振り分けが 2 度ずつ走る（物量の多い画面では、その 2 度目が
-    /// そのままフレーム時間に乗る）。積むのは逆順の cons で、最後に一度ずつ戻す。
-    def drawInto(toDs: (Item, Vec2.Vec2) -> List[GameEngine.Drawable] \ ef,
-                 items: List[PlacedItem]): (List[GameEngine.Drawable], List[GameEngine.PolygonRenderCmd]) \ ef =
-        let (dsRev, psRev) = items |> List.foldLeft((acc, placed) -> {
-            let (ds, ps) = acc;
-            let (leaf, clip) = unwrapClip(placed#item, None);
-            // clip 矩形が無いときは刻まない。作りたての Drawable / 描画命令は clip = None なので、
-            // ここで None を書き直すと、同じ値を入れ直すためだけにフィールドの
-            // 抜き差しが描く物の数だけ走る（clip 矩形を使う画面はごく一部）。
-            match (leaf, clip) {
-                case (Item.Poly(p), None)    => (ds, polyCmd(placed#at, p) :: ps)
-                case (Item.Poly(p), Some(_)) => (ds, { clip = clip | polyCmd(placed#at, p) } :: ps)
-                case (other, None)           =>
-                    (toDs(other, placed#at)
-                        |> List.foldLeft((rest, d) -> d :: rest, ds), ps)
-                case (other, Some(_))        =>
-                    (toDs(other, placed#at)
-                        |> List.foldLeft((rest, d) -> DrawCmd.withClip(clip, d) :: rest, ds), ps)
-            }
-        }, ((Nil, Nil): (List[GameEngine.Drawable], List[GameEngine.PolygonRenderCmd])));
-        (List.reverse(dsRev), List.reverse(psRev))
-
     /// Clipped を剥がし、(芯の item, 有効な clip 矩形) を返す。入れ子の clip 矩形は交差する。
     def unwrapClip(item: Item, clip: Option[Rect2.Rect2]): (Item, Option[Rect2.Rect2]) =
         match item {
@@ -1145,14 +1067,6 @@ pub mod Render {
                 unwrapClip(c#inner, merged)
             case leaf => (leaf, clip)
         }
-
-    /// Poly を置き場所 pos の描画命令へ（全頂点に pos を加算）。
-    def polyCmd(pos: Vec2.Vec2,
-                p: { vertices = List[Vec2.Vec2], color = Color, alpha = Float64, zIndex = Int32,
-                     blend = DrawCmd.BlendMode, grad = Option[List[DrawCmd.VertexTint]] }): GameEngine.PolygonRenderCmd =
-        { vertices = List.map(v -> Vec2.add(v, pos), p#vertices),
-          color = p#color, alpha = p#alpha, zIndex = p#zIndex, clip = None, blend = p#blend,
-          grad = p#grad }
 
     /// World 由来 Drawable 群に camera のズーム倍率を適用する（位置は `Projection.applyToWorldPos` で
     /// screenPos を出した後の共通後処理）。render-from-World の各オーバーレイ（ユニット / 背景 / 範囲表示 /
@@ -1181,262 +1095,33 @@ pub mod Render {
     pub def toDrawables(item: Item, pos: Vec2.Vec2): List[GameEngine.Drawable] =
         match item {
             case Item.Sprite(s) =>
-                spriteDrawable(s#texture, s#tint, s#alpha, s#scale, s#rotation,
+                Render.Internal.Extract.spriteDrawable(s#texture, s#tint, s#alpha, s#scale, s#rotation,
                                s#centered, s#flipH, s#flipV, s#regionRect, s#zIndex, s#blend,
                                s#maskPolys, pos) :: Nil
             case Item.Text(t) =>
-                textDrawables(t#text, t#fontAtlas, t#fontSize, t#tint, t#alpha, t#rotation, t#zIndex, t#wrapWidth, pos)
+                Render.Internal.Extract.textDrawables(t#text, t#fontAtlas, t#fontSize, t#tint, t#alpha, t#rotation, t#zIndex, t#wrapWidth, pos)
             case Item.Box(b) =>
-                boxDrawable(b#size, b#color, b#alpha, b#rotation, b#style, b#zIndex, b#blend, pos) :: Nil
+                Render.Internal.Extract.boxDrawable(b#size, b#color, b#alpha, b#rotation, b#style, b#zIndex, b#blend, pos) :: Nil
             case Item.Poly(_) =>
                 bug!("Render.toDrawables: Poly は Drawable にならない（draw が PolygonRenderCmd へ振り分ける）")
             case Item.Shader(s) =>
                 // GL の無い経路（SoftRaster / F8 注釈）向けの代表色ベタ塗り。本物のシェーダーは
                 // Platform.Draw2d.drawSurface が別チャンネルで描くので、ここは「面がそこにある」ことだけ残す。
                 // 置き場所は drawShaders と同じ pos（scaledAllAround などで動いた後の at）。
-                boxDrawable(s#rect#size, ShaderDoc.representativeColor(s#spec), s#alpha, 0.0, None,
+                Render.Internal.Extract.boxDrawable(s#rect#size, ShaderDoc.representativeColor(s#spec), s#alpha, 0.0, None,
                             s#zIndex, s#blend, pos) :: Nil
             case Item.Scene3d(sc) =>
                 // 3D を知らない道（drawWith だけの描き出し）向け。場面の何も描かれない所に下の 2D が
                 // 透けて見えるより、「ここに場面がある」と分かる暗い矩形の方が取り違えない。
-                boxDrawable(sc#size, scene3dStandIn(), 1.0, 0.0, None, sc#zIndex, DrawCmd.BlendMode.Normal, pos) :: Nil
+                Render.Internal.Extract.boxDrawable(sc#size, Render.Internal.Extract.scene3dStandIn(), 1.0, 0.0, None, sc#zIndex, DrawCmd.BlendMode.Normal, pos) :: Nil
             case Item.Clipped(c) =>
                 toDrawables(c#inner, pos)
-                    |> List.map(d -> DrawCmd.withClip(mergeClip(c#rect, DrawCmd.clipOf(d)), d))
+                    |> List.map(d -> DrawCmd.withClip(Render.Internal.Extract.mergeClip(c#rect, DrawCmd.clipOf(d)), d))
         }
-
-    /// 3D を描けない道で場面の代わりに塗る色。
-    def scene3dStandIn(): Color = { r = 0.08, g = 0.08, b = 0.1 }
-
-    /// clip 矩形 rect を既存の clip と重ねる（両方あれば交差）。
-    def mergeClip(rect: Rect2.Rect2, existing: Option[Rect2.Rect2]): Option[Rect2.Rect2] =
-        match existing {
-            case None    => Some(rect)
-            case Some(r) => Some(Rect2.intersect(rect, r))
-        }
-
-    /// region atlas 対応の射影（drawWith が使う）。textureSize を引いて UV を計算する
-    /// （uvOffset = regionPos/texSize, uvScale = regionSize/texSize）。
-    /// 非 region スプライト・text・box は pure 経路と同一。
-    def toDrawablesAtlas(textureInfoOf: String -> Option[GameEngine.TextureInfo] \ ef,
-                         item: Item, pos: Vec2.Vec2): List[GameEngine.Drawable] \ ef =
-        match item {
-            case Item.Sprite(s) =>
-                let (uvOff, uvScl) = match s#regionRect {
-                    case None       => ({x = 0.0, y = 0.0}, {x = 1.0, y = 1.0})
-                    case Some(rect) => match textureInfoOf(s#texture) {
-                        case Some(ti) => ({x = rect#position#x / ti#width, y = rect#position#y / ti#height},
-                                          {x = rect#size#x / ti#width, y = rect#size#y / ti#height})
-                        case None     => ({x = 0.0, y = 0.0}, {x = 1.0, y = 1.0})
-                    }
-                };
-                DrawCmd.fromParts(
-                   s#texture, pos,
-                   {x = s#scale#x * flipSign(s#flipH), y = s#scale#y * flipSign(s#flipV)},
-                   radiansOf(s#rotation), s#tint, s#alpha, s#centered,
-                   uvOff, uvScl, s#zIndex, None,
-                   None, s#blend, s#maskPolys) :: Nil
-            // テクスチャ 1 枚を読むだけの面は、代表色の中間の灰より元の絵の方が近い（GL も ShaderEval も使わない命令だけの経路）。
-            // 色の計算（灰色化・明るさ）は落とす — 場を画素ごとに評価するのは GL か ShaderEval の仕事。
-            case Item.Shader(s) => match textureReadOf(s#spec, s#t) {
-                case Some((name, area)) => match textureInfoOf(name) {
-                    case Some(ti) if ti#width > 0.0 and ti#height > 0.0 =>
-                        DrawCmd.fromParts(
-                           name, pos,
-                           { x = s#rect#size#x / (ti#width * area#size#x),
-                             y = s#rect#size#y / (ti#height * area#size#y) },
-                           0.0, white(), s#alpha, false,
-                           area#position, area#size, s#zIndex, None,
-                           None, s#blend, s#mask) :: Nil
-                    case _ => toDrawables(item, pos)
-                }
-                case None => toDrawables(item, pos)
-            }
-            case other => toDrawables(other, pos)
-        }
-
-    /// 面の式がテクスチャ 1 枚だけを読み、読む位置が shift（u・v それぞれの 1 次式で決まる平行移動と伸び縮み）だけで
-    /// 決まるなら、そのテクスチャの名前と読む範囲（uv 0〜1 の矩形）。範囲は面の左上・右下で shift を評価して出す。
-    /// None（矩形 1 枚に写せない）: uv を変えて読む節（ShaderDoc.remappedChild）の下に tex か ref がある
-    /// （ref は bindings の値で、どの uv で読んだ物かをここでは辿らない）・shift のずらし量が 1 次式でない
-    /// （isAffineIn）・読む所ごとに範囲が食い違う。
-    /// Linear で読む Spec も None（sprite に落とすと Nearest で貼られて実機と変わる）。
-    def textureReadOf(spec: ShaderDoc.Spec, t: Float64): Option[(String, Rect2.Rect2)] =
-        if (ShaderDoc.texReads(spec) |> List.exists(read -> snd(read) == ShaderDoc.FilterMode.Linear)) None
-        else match ShaderDoc.texNames(spec) {
-            case name :: Nil =>
-                let nodes = ShaderDoc.fieldsOf(spec)
-                    |> List.flatMap(field -> ShaderDoc.foldField((acc, node) -> node :: acc, Nil, field));
-                let shifts = List.filterMap(plainShiftRead, nodes);
-                let bends = nodes |> List.exists(node -> match (ShaderDoc.remappedChild(node), plainShiftRead(node)) {
-                    case (Some(child), None) => countNodes(isTexOrRef, child :: Nil) > 0
-                    case _                   => false
-                });
-                let bare = if (List.count(isTex, nodes) > List.length(shifts)) Some(wholeArea()) :: Nil else Nil;
-                let areas = List.append(bare, shifts |> List.map(sh -> shiftedArea(sh#dx, sh#dy, t)));
-                if (bends) None
-                else match areas {
-                    case Some(first) :: rest if List.forAll(a -> Option.exists(sameArea(first), a), rest) => Some((name, first))
-                    case _ => None
-                }
-            case _ => None
-        }
-
-    /// tex をそのまま shift で読む節で、dx が u だけの 1 次式・dy が v だけの 1 次式なら、そのずらし量。
-    def plainShiftRead(node: ShaderDoc.Field): Option[{ dx = ShaderDoc.Field, dy = ShaderDoc.Field }] =
-        match node {
-            case ShaderDoc.Field.Shift(sh) => match sh#of {
-                case ShaderDoc.Field.Tex(_) if isAffineIn(ShaderDoc.Axis.U, sh#dx) and isAffineIn(ShaderDoc.Axis.V, sh#dy) => Some({ dx = sh#dx, dy = sh#dy })
-                case _ => None
-            }
-            case _ => None
-        }
-
-    /// field が uv の axis の側だけの 1 次式（a × uv + b。a・b は uv を含まない）か。1 次式なら左上・右下の 2 点で
-    /// 写す先の矩形が決まる。もう片方の軸の uv（斜めの歪み）・掛け算の両側の uv（曲線）・min / max / step の uv（折れ線）は偽。
-    // 許す場を並べる側にするのは、場を足した時に「曲がらない」と黙って扱わないため。
-    def isAffineIn(axis: ShaderDoc.Axis, field: ShaderDoc.Field): Bool =
-        match field {
-            case ShaderDoc.Field.Uv(uv)  => uv#axis == axis
-            case ShaderDoc.Field.Bin(bn) => match bn#op {
-                case ShaderDoc.BinOp.Add  => isAffineIn(axis, bn#a) and isAffineIn(axis, bn#b)
-                case ShaderDoc.BinOp.Sub  => isAffineIn(axis, bn#a) and isAffineIn(axis, bn#b)
-                case ShaderDoc.BinOp.Mul  => (isUvFree(bn#a) and isAffineIn(axis, bn#b)) or (isAffineIn(axis, bn#a) and isUvFree(bn#b))
-                case ShaderDoc.BinOp.Min  => isUvFree(field)
-                case ShaderDoc.BinOp.Max  => isUvFree(field)
-                case ShaderDoc.BinOp.Step => isUvFree(field)
-                case ShaderDoc.BinOp.Div  => isAffineIn(axis, bn#a) and isUvFree(bn#b)
-            }
-            case _ => isUvFree(field)
-        }
-
-    /// field が uv に依らない（面のどこでも同じ値）か。定数・時間と、その計算だけ。
-    def isUvFree(field: ShaderDoc.Field): Bool =
-        match field {
-            case ShaderDoc.Field.Const(_) => true
-            case ShaderDoc.Field.Time(tm) => isUvFree(tm#offset)
-            case ShaderDoc.Field.Param(_) => true
-            case ShaderDoc.Field.Bin(bn)  => isUvFree(bn#a) and isUvFree(bn#b)
-            case ShaderDoc.Field.Un(un)   => isUvFree(un#of)
-            case ShaderDoc.Field.Pow(pw)  => isUvFree(pw#of)
-            case _                        => false
-        }
-
-    def isTex(node: ShaderDoc.Field): Bool = match node {
-        case ShaderDoc.Field.Tex(_) => true
-        case _                      => false
-    }
-
-    def isTexOrRef(node: ShaderDoc.Field): Bool = match node {
-        case ShaderDoc.Field.Tex(_) => true
-        case ShaderDoc.Field.Ref(_) => true
-        case _                      => false
-    }
-
-    /// fields の木の節のうち p を満たす物の数。
-    def countNodes(p: ShaderDoc.Field -> Bool, fields: List[ShaderDoc.Field]): Int32 =
-        fields |> List.foldLeft((acc, field) -> ShaderDoc.foldField((n, node) -> if (p(node)) n + 1 else n, acc, field), 0)
 
     // 読む所ごとに式が違っても、同じ範囲なら 1 枚に写せる。
-    def sameArea(a: Rect2.Rect2, b: Rect2.Rect2): Bool =
-        let near = (x, y) -> Float64.abs(x - y) < areaTolerance();
-        near(a#position#x, b#position#x) and near(a#position#y, b#position#y) and
-        near(a#size#x, b#size#x) and near(a#size#y, b#size#y)
-
-    /// 2 つの uv を同じと見る差（浮動小数の評価のずれを吸う。4096 px のテクスチャの 1 px より小さい）。
-    def areaTolerance(): Float64 = 1.0 / 4096.0
-
-    def wholeArea(): Rect2.Rect2 = { position = { x = 0.0, y = 0.0 }, size = { x = 1.0, y = 1.0 } }
-
-    /// shift が面の左上 (0, 0) と右下 (1, 1) を写す先から作る読む範囲（ずらし量は isAffineIn の 1 次式なので 2 点で決まる）。
-    /// 大きさが 0 以下（裏返し・潰れ）は None。
-    def shiftedArea(dx: ShaderDoc.Field, dy: ShaderDoc.Field, t: Float64): Option[Rect2.Rect2] =
-        let at = (u, v) -> { x = u + ShaderEval.evalField(dx, { x = u, y = v }, t),
-                             y = v + ShaderEval.evalField(dy, { x = u, y = v }, t) };
-        let lo = at(0.0, 0.0);
-        let hi = at(1.0, 1.0);
-        let size = { x = hi#x - lo#x, y = hi#y - lo#y };
-        if (size#x > 0.0 and size#y > 0.0) Some({ position = lo, size = size }) else None
 
     // flip は base scale に符号を“乗算”（engine spriteToDrawable と同じ）。centered は素通し。
     // region=Some は テクスチャの寸法（Platform.GpuResources.getTextureInfo）が要るので今回未対応＝loud に落とす（部分関数を残さない）。
-    def spriteDrawable(texture: String, tint: Color, alpha: Float64, scale: Vec2.Vec2,
-                       rotation: Float64, centered: Bool, flipH: Bool, flipV: Bool,
-                       regionRect: Option[Rect2.Rect2], zIndex: Int32, blend: DrawCmd.BlendMode,
-                       maskPolys: List[List[Vec2.Vec2]], pos: Vec2.Vec2): GameEngine.Drawable =
-        match regionRect {
-            case Some(_) => bug!("Render: region atlas not supported yet (pass regionRect=None)")
-            case None    =>
-                DrawCmd.fromParts(
-                  texture,
-                  pos,
-                  {x = scale#x * flipSign(flipH), y = scale#y * flipSign(flipV)},
-                  radiansOf(rotation),
-                  tint,
-                  alpha,
-                  centered,
-                  {x = 0.0, y = 0.0},
-                  {x = 1.0, y = 1.0},
-                  zIndex,
-                  None,
-                  None,
-                  blend,
-                  maskPolys)
-        }
 
-    def flipSign(b: Bool): Float64 = if (b) -1.0 else 1.0
-
-    /// 回転数（1 周 = 1.0）→ 描画命令のラジアン。単位の境目はここ 1 か所だけ。
-    def radiansOf(turns: Float64): Float64 = Num.tau() * turns
-
-    def textDrawables(content: String, fontAtlas: FontAtlas, fontSize: Float64,
-                      tint: Color, alpha: Float64, rotation: Float64, zIndex: Int32,
-                      wrapWidth: Option[Float64], pos: Vec2.Vec2): List[GameEngine.Drawable] =
-        // engine の public 純粋射影に委譲。文字色（SDF 描画では color がそのまま文字色）と
-        // zIndex は Text の visual に 1 回だけ書き込む — 出来上がった列を withTintAndZIndex で
-        // map し直すと、文字 1 字につき捨てる Drawable が 1 個ずつ増えるため。
-        let ds = Text.toDrawables(
-            Text.make(content, fontAtlas, fontSize)
-                |> Text.setWrapWidth(wrapWidth)
-                |> Text.mapVisual(v -> v |> Visual.setColor(tint) |> Visual.setZIndex(zIndex)),
-            pos);
-        // 濃さは薄めた時だけ字ごとに書き直す（不透明の字は作り直さない）。
-        let faded = if (alpha >= 1.0) ds else ds |> List.map(DrawCmd.withAlpha(alpha));
-        if (rotation == 0.0) faded
-        else faded |> List.map(turnGlyph(rotation, fontAtlas#textureSize, pos))
-
-    /// 文字 1 つぶんの四角を、文字列の置き場所 pivot のまわりに回して置き直す。
-    /// 描画側は四角を自分の中心で回すので、中心を公転させたうえで同じ角度を持たせると
-    /// 文字列全体が 1 枚の板のように回る。グリフの四角の大きさは
-    /// scale × アトラス辺長（Text.toDrawables がそう組んでいる）。
-    def turnGlyph(t: Float64, textureSize: Float64, pivot: Vec2.Vec2,
-                  d: GameEngine.Drawable): GameEngine.Drawable =
-        let DrawCmd.Drawable.Drawable(_tex, px, py, sx, sy, _rot,
-                                      _cr, _cg, _cb, _a, _cen,
-                                      _uox, _uoy, _usx, _usy, _z,
-                                      _style, _clip, _blend, _mask) = d;
-        let size = { x = sx * textureSize, y = sy * textureSize };
-        let half = Vec2.div(size, 2.0);
-        let moved = rotAbout(t, pivot, Vec2.add({x = px, y = py}, half));
-        DrawCmd.withPositionAndRotation(Vec2.sub(moved, half), radiansOf(t), d)
-
-    def boxDrawable(size: Vec2.Vec2, color: Color, alpha: Float64, rotation: Float64,
-                    style: Option[GameEngine.BoxStyle], zIndex: Int32, blend: DrawCmd.BlendMode,
-                    pos: Vec2.Vec2): GameEngine.Drawable =
-        // texture=""・centered=false・position=左上・scale=ピクセルサイズ・style=Some で単色塗り。
-        DrawCmd.fromParts(
-          "",
-          pos,
-          size,
-          radiansOf(rotation),
-          color,
-          alpha,
-          false,
-          {x = 0.0, y = 0.0},
-          {x = 1.0, y = 1.0},
-          zIndex,
-          style,
-          None,
-          blend,
-          Nil)
 }

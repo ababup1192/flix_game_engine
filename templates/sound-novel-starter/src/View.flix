@@ -21,7 +21,7 @@
 // ── 時計 ── 背景の重ね・揺れは物語の時計（画面を開くと止まる）、蛍・送りの印の明滅・クレジット・設定の見本は実時間（env#realNow）。
 // ── 触れている物 ── マウスの位置 env#pointer に乗っている物（ボタン・枠・行）を明るくする。押せる所は Layout の同じ矩形。
 mod View {
-    use fge::{App, Clock, Color, DrawCmd, FontAtlas, Fx, RawDraw, Rect2, Render, RichText, ShaderDoc, TextDraw, UiScroll, Vec2}
+    use fge::{App, Clock, Color, DrawCmd, FontAtlas, Fx, Num, RawDraw, Rect2, Render, RichText, ShaderDoc, TextDraw, UiScroll, Vec2}
 
     /// どの場面でも使う描く元: Doc とシナリオ（res）・セーブデータ（既読と設定と枠）・マウスの位置・2 本の時計の今。
     pub type alias Env = {
@@ -140,9 +140,9 @@ mod View {
             case Some("fireflies") =>
                 let color = theme(env)#firefly;
                 Fx.derive(kindOf(env)#fireflies, realSeconds(env), (_i, rand, t) -> {
-                    let x = rand(0) * Layout.width() + Vec2.sin(t * (0.15 + rand(2) * 0.2) + rand(3) * 6.28) * 40.0;
-                    let y = Layout.height() * (0.42 + rand(1) * 0.5) + Vec2.sin(t * (0.3 + rand(4) * 0.3) + rand(5) * 6.28) * 18.0;
-                    let pulse = 0.5 + 0.5 * Vec2.sin(t * (1.2 + rand(6) * 1.6) + rand(7) * 6.28);
+                    let x = rand(0) * Layout.width() + Num.sin(t * (0.15 + rand(2) * 0.2) + rand(3) * 6.28) * 40.0;
+                    let y = Layout.height() * (0.42 + rand(1) * 0.5) + Num.sin(t * (0.3 + rand(4) * 0.3) + rand(5) * 6.28) * 18.0;
+                    let pulse = 0.5 + 0.5 * Num.sin(t * (1.2 + rand(6) * 1.6) + rand(7) * 6.28);
                     let a = pulse * pulse;
                     { x = x, y = y, a = a, r = 2.0 + rand(8) * 1.6 }
                 }) |> List.flatMap(fly ->
@@ -232,7 +232,7 @@ mod View {
     def waitMark(atlas: FontAtlas, pos: Vec2.Vec2, env: Env, r: World.Read): List[Render.PlacedItem] =
         if (not Page.isDone(r#page) or not List.isEmpty(r#choices) or Option.isEmpty(r#page#current)) Nil
         else {
-            let alpha = if (r#playback == World.Playback.Auto) 0.9 else 0.35 + 0.55 * (0.5 + 0.5 * Vec2.sin(realSeconds(env) * 4.0));
+            let alpha = if (r#playback == World.Playback.Auto) 0.9 else 0.35 + 0.55 * (0.5 + 0.5 * Num.sin(realSeconds(env) * 4.0));
             { at = pos, item = Render.textTinted("▼", atlas, 14.0, theme(env)#accent, zText() + 2) |> Render.fade(alpha) } :: Nil
         }
 

@@ -83,6 +83,23 @@
 `let _ = Log.warn(..);` は `bin/fge value-discard` が保存時とコミット時に止める
 （`let _ =` は全部止まる。効果のある式を捨てるのは `discard 式;` で、こちらは純粋な式に使うと Flix が止める）。
 
+### テストの中で知らせる経路を通す
+
+Flix のテストの実行器（`flix test`。`make test-*` はこれを呼ぶだけ）は、テストの間に stderr へ 1 字でも出ると
+そのテストを FAIL（`Std Err Output`）にする。`Log` は stderr へ出すので、知らせる経路を通すテストは
+`LogCapture.capture` で包む。知らせた行は stderr に出ず、値と一緒に返る（文面も確かめられる）。
+
+```flix
+let (box, lines) = LogCapture.capture(() -> CollisionShape3d.boxOfNode(node));
+Assert.assertEq(expected = 1, List.length(lines))
+```
+
+`Log` に出し先を差し替える口や黙らせる旗を足していないのは、知らせが純粋な関数の中から出る（`warnThen` は値を返す）
+ので effect のハンドラで受けられず、旗にするとゲームを走らせる時の知らせまで消しうるから。直すのは実行器の側ではなく
+（Flix の物で、stderr を見て FAIL にするのはむしろ正しい）、テストの側で包む。
+テストで `System.setErr` を自分で差し替えない（純粋な式の呼び出しが差し替えの外へずれうる。`LogCapture.capture` はそれを防いである）。
+`LogCapture.capture` はゲームや描き出しの中では使わない（stderr をまるごと差し替えるので、他の糸の行も集めてしまう）。
+
 ## 決まり 4 — `Err` の中身の型
 
 - JSON / Doc 由来 → `Util.Json.JsonError`

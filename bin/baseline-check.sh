@@ -22,7 +22,7 @@
 #
 # WhyNot: --only-2d で、3D と 2D を同じ絵に重ねた scene（afterScene3d・windowPass3d・glassPane3d など）の 2D の側を切り出して比べない —
 #   比べるのは 1 枚の絵の SHA と 1 行の差の数なので、3D の側が変わると 2D の側だけを取り出せない。その 2D の側は、
-#   作業場の project.json の scene3dLinearColor を偽にして 3D の色を前の式に戻し、--only-known で絵ごと基準と比べる確かめで見る。
+#   3D の側が変わらない変更の時に --only-known で絵ごと基準と比べる確かめで見る。
 set -euo pipefail
 
 engine=$(cd "$(dirname "$0")/.." && pwd)

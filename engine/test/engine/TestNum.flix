@@ -44,12 +44,6 @@ mod TestNum {
         // 範囲外は伸ばしたまま（外挿）。収めたいなら呼ぶ側が clamp01 を通す決まり。
         Assert.assertEq(expected = (5.0, 20.0), (Num.lerp(0.0, 10.0, 0.5), Num.lerp(0.0, 10.0, 2.0)))
 
-    // Vec2 の旧い名前は Num と同じ値を返す（0.84.0 で消すまで、外のゲームの絵が変わらない）。
-    @Test
-    def testOldVec2NamesMatchNum(): Unit \ Assert =
-        Assert.assertEq(expected = (Num.sqrt(2.0), Num.sin(0.7), Num.cos(0.7), Num.atan2(1.0, -2.0), Num.pi(), Num.tau()),
-                        (Vec2.sqrt(2.0), Vec2.sin(0.7), Vec2.cos(0.7), Vec2.atan2(1.0, -2.0), Vec2.pi(), Vec2.tau()))
-
     @Test
     def testPiIsHalfOfTau(): Unit \ Assert =
         Assert.assertEq(expected = Num.tau(), Num.pi() * 2.0)

@@ -169,6 +169,21 @@ def testDroppedLightsCountsOnlyOverTheLimit(): Unit \ Assert =
     let d = Scene3d.droppedLightsOf(cmd);
     Assert.assertEq(expected = (1, 0, "@lights:point" :: Nil), (d#points, d#spots, Scene3d.droppedLightsWarnings(cmd) |> List.map(fst)))
 
+/// 点光源 10 本の場面と、スポットを上限より 2 本多く持つ場面の列: 落とす数の合計は点 2・スポット 2 で、
+/// pickLights が実際に外した本数（描き手が描かない光）と同じ。
+@Test
+def testDroppedLightsOfScenesSumsWhatPickLightsDrops(): Unit \ Assert =
+    let base = Scene3d.scene(cameraAt(Vec3.zero(), 0.0), { x = 200.0, y = 100.0 });
+    let spot = Scene3d.spotLight(Vec3.zero(), { x = 0.0, y = 0.0, z = 1.0 }, 1.0);
+    let points = { pointLights = List.range(1, 11) |> List.map(i -> pointLightAt(Int32.toFloat64(i))) | base };
+    let spots = { spotLights = List.repeat(Scene3d.maxSpotLights() + 2, spot) | base };
+    let cmds = (points :: spots :: Nil) |> List.map(c -> { at = Vec2.zero(), clip = None, scene = c });
+    let removed = (pick: Scene3d.Scene3dCmd -> Int32) -> cmds |> List.foldLeft((acc, c) -> acc + pick(c#scene), 0);
+    let removedPoints = removed(c -> List.length(c#pointLights) - List.length(Scene3d.pickLights(Vec3.zero(), c)#pointLights));
+    let removedSpots = removed(c -> List.length(c#spotLights) - List.length(Scene3d.pickLights(Vec3.zero(), c)#spotLights));
+    let d = Scene3d.droppedLightsOfScenes(cmds);
+    Assert.assertEq(expected = ((2, 2), (2, 2)), ((d#points, d#spots), (removedPoints, removedSpots)))
+
 // ════════════════════════════════════════════════════════════════════
 // Scene3d.Material3d の中身の鍵（shaderHash）
 // ════════════════════════════════════════════════════════════════════

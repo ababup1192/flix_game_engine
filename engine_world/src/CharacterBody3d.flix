@@ -101,6 +101,13 @@ pub mod CharacterBody3d {
     /// 押し出しに使う体の形（足元の段の高さより上の、縦のカプセル）。扉を回す前と後で `CollisionShape3d.penetration` を比べる時に使う。
     pub def capsuleOf(s: Settings, b: Body): CollisionShape3d.Capsule3d = capsuleAt(s, b#feet#x, b#feet#y, b#feet#z)
 
+    /// 体の範囲を囲む軸にそろった箱（足元から height まで・水平は ±radius。Bevy の Collider の aabb・Godot の get_aabb に当たる）。
+    /// 段の高さより下も含む体全体（押し出しに使う形は capsuleOf）。`CollisionShape3d.boxOfBounds(Mat4.identity(), ..)` で箱にでき、`debugMesh` で描ける。
+    pub def aabbOf(s: Settings, b: Body): Mesh3d.Bounds =
+        let r = Float64.max(0.0, s#radius);
+        let h = Float64.max(0.0, s#height);
+        { min = Vec3.v3(b#feet#x - r, b#feet#y, b#feet#z - r), max = Vec3.v3(b#feet#x + r, b#feet#y + h, b#feet#z + r) }
+
     def capsuleAt(s: Settings, x: Float64, feet: Float64, z: Float64): CollisionShape3d.Capsule3d =
         { feet = Vec3.v3(x, feet + s#stepHeight, z), radius = s#radius, height = Float64.max(2.0 * s#radius, s#height - s#stepHeight) }
 
@@ -232,7 +239,8 @@ pub mod CharacterBody3d {
         let deg = if (s#floorMaxAngleDeg >= 0.0) Float64.min(90.0, s#floorMaxAngleDeg) else if (s#floorMaxAngleDeg < 0.0) 0.0 else 45.0;
         Num.cos(deg * Num.pi() / 180.0) - 1.0e-9
 
-    /// 箱が傾いているか（3 本の向きのどれも、ほぼ真上を向いていない）。
-    def isTilted(b: CollisionShape3d.Box3d): Bool =
+    /// 箱が傾いているか（3 本の向きのどれも、真上から 11.5° より離れている）。Floor の sloped と同じ判定。
+    /// 床の箱を坂と平らな床に分ける時（足音の種類・滑る床）に、立っていない箱にも使える。
+    pub def isTilted(b: CollisionShape3d.Box3d): Bool =
         Float64.abs(b#ax#y) < 0.98 and Float64.abs(b#ay#y) < 0.98 and Float64.abs(b#az#y) < 0.98
 }

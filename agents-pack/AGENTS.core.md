@@ -36,14 +36,14 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | 画面ごとの後処理（ブルーム・ぼかし）を半分の解像度で組む | `App.withPassPlan`（`targets` に `RenderTarget.Descriptor` の scale）+ pass の中の `Render.shaderFill`・なめらかに読むのは ShaderDoc の `sampler`（描き出しは `Render.passSpecsOf`） |
 | 3D の場面を窓の画素で描く・白飛びを HDR とトーンマップで収める・縁を FXAA でならす | `RenderTarget.windowDescriptor()` / `withHdr` の Pass → 本編の面を `PostProcess.tonemappedWith` → 8bit の Pass を `PostProcess.fxaaSpec`（1 で切って白飛びを抑えない） |
 | 面に毎フレーム変わる数（ピント・体力の割合）を渡す | ShaderDoc の `param` + `Render.withShaderParams`（Spec の Const に入れない） |
-| 系・View の中で平方根・sin・cos・角（atan2）・π を使う | `Num.sqrt` / `Num.sin` / `Num.cos` / `Num.atan2` / `Num.pi` / `Num.tau`（`Vec2.sqrt` などは旧い名前で 0.84.0 に消える・`java.lang.Math` を呼ばない） |
+| 系・View の中で平方根・sin・cos・角（atan2）・π を使う | `Num.sqrt` / `Num.sin` / `Num.cos` / `Num.atan2` / `Num.pi` / `Num.tau`（`java.lang.Math` を呼ばない。Vec2 の旧い数の関数は 0.84.0 で消えた） |
 | 面の中で光の向きや距離を計算する（平方根・長さ 1 にそろえる） | ShaderDoc の `math1` の `sqrt`（`UnOp.Sqrt`）・`ShaderDoc.lengthOf` / `normalized`（近い値で代わりにしない） |
 | 3D の部屋・家具（メッシュを深度で前後させる）を 2D の画面に入れる | `Render.scene3d(at, Scene3d.scene(camera, size))`（`Mesh3d.fromObj` / `fromPolygons` → `Scene3d.meshInstance`）・描き出しは `Render.softSceneOf` → `HeadlessRender.renderPngSoft`（三角形を多角形で並べない。手本 `bench/scene3d`） |
 | Blender で骨を入れたキャラ（.glb）を 3D の場面で動かす（歩く・敬礼など） | `Gltf.load` → `AnimationClip3d.sample`（混ぜるなら `Pose3d.blend`）→ `Pose3d.compute` → `Scene3d.withPose`（骨は GPU と SoftRaster の両方で曲がる。曲げを手で頂点に掛けない） |
 | Blender でベイクした光（lightmap と 2 本目の UV）を 3D の部屋に貼る | glb は `Gltf.loadTexturedUsing(dec, Gltf.noTextureLimits(), path)`（TEXCOORD_1 → part の uvs2・`dec` は読み込みの頭で `LoadProgress.imageDecoder()`）→ lightmap の PNG は `Texture3d.decodeUsing(dec, bytes)` で場面の textures へ → `Scene3d.meshInstance(..) \|> Scene3d.withLightmap({ intensity = .. \| Scene3d.lightmap(Texture3d.name(t)) })`（光を材質の絵に混ぜ込まない・ベイクに入れた光は pointLights に入れない・骨つきには付かない・engine の `docs/lightmap.md`） |
 | 3D の絵が多く「場面の絵が 256 MB を超えて使われている」と出る | `Gltf.loadTexturedUsing(dec, { normal = 1024 \| Gltf.noTextureLimits() }, path)`・`Texture3d.limitSize(1024)` で縮める → それでも足りなければ project.json の `scene3dTextureBudgetMB`・枚数は `scene3dTextureBudgetCount` |
 | 懐中電灯（縁のぼけたスポット）を目から照らす | `Scene3d.spotLight(p, t, fov)` に `innerFovY = Some(..)`（縁を広くぼかす）を `spotLights` へ（点光源で代わりにしない・円錐を広げて range で縁を消さない・engine の `docs/scene3d.md`） |
-| 3D の点光源が 8 本を超える | 光は全部 `pointLights` に入れる（engine が `Scene3d.pickLights` で目に近い 8 本を選ぶ。ゲームで近い順に選び直さない）。落とした数は `frame#diagnostics` の `scene3dCounts#droppedPointLights` / `droppedSpotLights`（初めて落とした時に 1 回知らせる） |
+| 3D の点光源が 8 本を超える | 光は全部 `pointLights` に入れる（engine が `Scene3d.pickLights` で目に近い 8 本を選ぶ。ゲームで近い順に選び直さない）。落とした数は `frame#diagnostics` の `scene3dCounts#droppedPointLights` / `droppedSpotLights`（初めて落とした時に 1 回知らせる）・画面なしのテストでは `Scene3d.droppedLightsOfScenes(Render.drawScenes3d(items))`（GL と CPU で同じ数） |
 | 一人称でマウスで視点を回す（カーソルを窓にキャプチャする） | `App.withMouseCapture(w -> ..)` + `frame#mouseDelta`（design px）で yaw・pitch を回す。クリックでキャプチャ・Esc で放す（ドラッグの差で代わりにしない・engine の `docs/modules/input.md` の「一人称の視点」） |
 | テストで入力・窓・描く op を偽物にする・機種の handler を自分で書く | 触る役の effect だけを張る: `Platform.Input`・`Platform.Window`・`Platform.FrameClock`・`Platform.Draw2d`・`Platform.Draw3d`・`Platform.GpuResources`・`Platform.Diagnostics`・`Platform.Annotation`（handler は effect ごとに 1 つずつ書く・`Input` は必ず `Platform.Input` と書く） |
 | 自分で `renderCommands` を呼んで窓へ出す（bench・自前のループ） | `Platform.Draw2d.renderCommands` の後に `Platform.Window.presentFrame()`（1 フレームの終わりに 1 回・`renderCommands` は swap しない）。イベントの取り込みは 1 フレームに 1 回 `Platform.Window.pollEvents()`（`shouldClose` は問うだけ） |
@@ -53,10 +53,11 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | 3D の家具・壁に木目や石の絵と凹凸（法線マップ）を貼る | 絵つきの .glb は `Gltf.loadTexturedUsing(dec, Gltf.noTextureLimits(), path)`（`dec` は読み込みの頭で `LoadProgress.imageDecoder()`）→ 部品は `model#parts`・絵は場面の `{ textures = model#textures | 場面 }` に渡す（渡さないと黒い）・コードの形は `Mesh3d.withBoxUvs` + `Scene3d.texturedMaterial` + `withNormalMap`・glb の emissive（`KHR_materials_emissive_strength` つき）も読んで光る（止めるなら `Scene3d.withoutEmission`・emission を差し替えても名前は替えなくてよい・差し替えても glb の強さ `emissionIntensity` は残る）・材質の情報は `part#gltfMaterial` |
 | Blender で名前を付けた物（扉・調べる物・当たり判定の箱・印の点）を glb から名前で引く | `Model3d.findNode(name, model)` / `nodesWithPrefix("COL_", model)`（たくさん引くなら `nodesByName`）→ `node#world`・`node#localBounds`・`Model3d.nodeOrigin`（位置や大きさで探さない・座標を手で写さない。engine の `docs/scene3d.md`） |
 | 3D の部屋を一人称で歩く（壁で止まる・段差を上る・坂・落ちる・扉に押される） | 箱は `Model3d.nodesWithPrefix("COL_", m) \|> CollisionShape3d.boxesOfNodes`（glb の `COL_*` のノード）→ `CollisionWorld3d.build(2.0, boxes)` → 毎コマ `CharacterBody3d.moveAndSlide(world, 扉の板, settings, 速さ, dt, body)`（自前で押し出し・床探しを書かない・地面と歩ける範囲も箱で入れる。engine の `docs/scene3d.md`） |
+| 一人称で歩く体の範囲を見る・描く（体の箱・床の箱が坂か） | `CharacterBody3d.aabbOf(settings, body)`（`Mesh3d.Bounds`。箱にするなら `CollisionShape3d.boxOfBounds(Mat4.identity(), ..)` → `debugMesh`）・床の箱が坂かは `CharacterBody3d.isTilted(box)`（半径と高さから手で箱を組まない） |
 | 一人称で見ている物を調べる（照準の先の物の名前・E で調べる・E で扉） | `Camera3d.forwardRay(cam)` → `Ray3d.pickNearest(ray, 距離, 的)`（的は `Ray3d.boxTargetsOf(n -> 鍵, nodes)`。壁も「壁」の鍵で入れて遮る。距離と向きの内積で代わりにしない） |
 | 3D の場面の背景を空のグラデーション（天頂・地平・地面）にする | `{ sky = Some(Scene3d.gradientSky(天頂, 地平, 地面)) \| Scene3d.scene(..) }`（寄り方は `Scene3d.withSkyCurve`。2D の面を下に敷いて地平の高さを手で計算しない・地平の色をかすみの色にそろえると継ぎ目が消える） |
 | 3D の窓ガラス・網・水面（向こうが透ける物） | 材質に `Scene3d.withAlphaBlend(true, m)`（裏から見えるなら `withDoubleSided(true, ..)`）・glb の `alphaMode: BLEND` / `MASK` は `Gltf.loadTexturedUsing` がそのまま当てる（cutout で代わりにしない・doubleSided は当てないので `part#gltfMaterial#doubleSided` を見てゲームが当てる） |
-| 0.79 にしたら 3D の部屋の色・明るさが変わった（前の見え方に一時的に戻す） | ゲームの project.json に `"scene3dLinearColor": false`（0.83 まで・0.84.0 で消える・変えたら起動し直す）。合わせ直すなら ambient・光の intensity と range を線形の目盛りで（engine の `docs/migrations/0.79.0.md`・`docs/scene3d.md` の「3D の色」。2D の絵は変わらないので 2D を直さない） |
+| 古い版から上げたら 3D の部屋の色・明るさが変わった（前の見え方に戻したい） | 戻す旗は無い（`scene3dLinearColor` は 0.84.0 で消えた・project.json に残すと lint-forbid が止める）。ambient・光の intensity と range を線形の目盛りで合わせ直す（engine の `docs/migrations/0.79.0.md`・`docs/scene3d.md` の「3D の色」。2D の絵は変わらないので 2D を直さない・色を自前で変換し直さない） |
 | 3D の看板・溶岩・glb の emissive を強く光らせる（1 を超える明るさ） | `Scene3d.withEmissionIntensity(k, 材質)`（線形の倍率。Spec の emission に 1 を超える色を書かない・glb の emissive_strength は `Gltf.loadTexturedUsing` がここへ入れる） |
 | 3D の手すり・金網・電線のような細い物が欠ける・ちらつく | 場面の Pass を `RenderTarget.withMsaa(4, RenderTarget.windowDescriptor() \|> RenderTarget.withHdr)`（cutout の縁も alpha to coverage でなめらかになる・画面なしの描き出しには掛からない）・それでも残る縁は `PostProcess.fxaaSpec` |
 | 灯りの反対の地面へ倒した影（ドット絵の走りから） | `Shadow.projectedRuns`（`PxSprite.runs` を渡す） |
@@ -67,6 +68,7 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | テストで系に渡す 1 コマ（押したキー・dt・カーソル）を組む | `{ down = Set#{Key.Space}, justPressed = Set#{Key.Space}, dt = 0.016 \| App.emptyFrame() }`（字で `App.Frame` の全部の欄を書かない。前のコマとの差から作るなら `App.frameOf`） |
 | どう遊んでも崩れない決まりを確かめる（性質テスト） | `PropertyTest.forAll`（画面なしで `App.trace` と同じ道） |
 | テストで実機と同じ 1 コマ（時計・固定刻み・押した瞬間の持ち越し・系・音）を進める | `App.traceFrame`（`App.freshStepState()` から持ち回す）か列ごと `App.trace`（`App.Internal.*` は App の中身で、ゲームの src と test に書くと lint-forbid の app-internal が止める） |
+| 画面なしで描く物を作る・Item を描く命令にする所を自分で呼びたい（`SoftRaster` や `Render` の中の関数） | 親のモジュールの関数（`SoftRaster.renderToImage`・`Render.toDrawables`・`Render.softSceneOf` など。`make api Q=Render.`）。`<モジュール>.Internal.*`（`Render.Internal`・`SoftRaster.Internal`）は中身で、ゲームの src と test に書くと lint-forbid の app-internal が止める。足りなければ engine に足すよう相談する |
 | e2e・動画の手順を書いて画面なしで流す（失敗は行番号つき） | `e2e/<名前>.flow` + `App.withFlow`・`bin/fge flow check`・`make flow` |
 | 好きな場面から起動・テスト・遊んだ通りに再生 | `App.withStarts`（`START=`・`startOrBug`）・記録は `make flow` で再生 |
 | ギャラリーの 1 枚の World から実機で開く・実機の記録が再生と同じか | `App.withShots`（`<ゲーム>/src/Shots.flix`）+ `SHOT=<場面> make run`・engine で `make determinism`（台本 `FLIX_GE_INPUT_SCRIPT`） |
@@ -74,7 +76,7 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | 実機の GL の絵が同じ起動で毎回同じかを、頭の数コマを撮って確かめる（2 コマ目以降も） | `FLIX_GE_FIXED_DT=1/60`（dt を固定）+ `FLIX_GE_HIDDEN=1` + `FLIX_GE_FRAME_SHOT=<フォルダ>` + `START=<場面>` で `make run RUN_SECONDS=30` を 2 回（撮る口は 64 枚で止まるだけで窓は閉じない）し、`frame-N.png` を比べる |
 | 起動の読み込みが数秒かかる・起動画面でカーソルが応答なしのくるくるになる | 読み込みを `LoadProgress.mapWithProgress` / `parMapWithProgress` で区切る（実機は起動画面が進みウィンドウが応答する）・並列の仕事で絵を解くなら頭で `let dec = LoadProgress.imageDecoder()` を受け取り仕事へ渡す（`Gltf.fromGlbTexturedUsing(dec, ..)`・`Texture3d.decodeUsing(dec, ..)`。仕事の中から op は呼べない）・描き出しとテストの入口は `HeadlessLoad.handle`（絵を解かないなら `LoadProgress.runNoop` でもよい）・main は `App.loadAndLaunch(() -> 組む式)`（`make debug` でも Doc を読み直さない。engine の `docs/startup.md`） |
 | 開発の道具（リモートデバッグ・flow の記録・ゲームの名簿・ヒッチの見張り・Doc の保存検知・F8 の注釈）を持たずに走らせる（ブラウザ版の入口など） | `App.launchWithDevTools(App.DevTools.none(), app)`（`App.debugFromEnv()` は呼ばず `withDebug` は値で・`App.launch` / `loadAndLaunch` はデスクトップの道具 `App.DevTools.desktop(env)` のまま）・`App.onRenderRequest` / `onShotRequest` は `Game.app` でなく `Main` で繋ぐ（lint `dev-request-outside-main`） |
-| macOS で窓を開くゲームの main の頭（`-XstartOnFirstThread` で起動し直す） | `if (LwjglLayer.ensureMainThread()) () else …`（`GameEngine.ensureMainThread` は 0.84.0 で消える） |
+| macOS で窓を開くゲームの main の頭（`-XstartOnFirstThread` で起動し直す） | `if (LwjglLayer.ensureMainThread()) () else …`（GameEngine の同じ名前の関数は 0.84.0 で消えた） |
 | 曲の拍・小節に乗せる | `Duration.Bars` / `ToNextBar` / `ToPickup` + `Timeline.tempo` |
 | 演出の長さ・待ち・溜めの目安 | engine の `docs/pacing.md` |
 | 音の名前を型で止める（一発と鳴り続ける音を取り違えない） | `Sfx[s]` / `Loop[s]` + `Sfx.collect` / `Loop.collect` |
@@ -86,6 +88,7 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | 画面（表紙・遊ぶ・クリア）を足す・その画面だけの値を持つ | World の `screen` の enum に case と payload（手本 game-starter・tidepool-starter） |
 | Doc・アトラス・シェーダーを World に平らに持たず外に出す | App の w を `Resources.With[res, w]`・`Resources.system` / `view` / `read`・読み直しは `Resources.reloadRow` |
 | Doc が壊れたら既定値で続けて知らせる | `DocJson.loadOr` + `Log.fellBackThen` / `warnThen` |
+| 知らせ（`Log.warnThen` など）を出す経路をテストで通す・知らせの文面を確かめる | `let (value, lines) = LogCapture.capture(() -> 式)`（stderr に出るとテストの実行器が FAIL にする。テストで System.setErr を自分で差し替えない） |
 | 直した後に絵を確かめる | `make render SHOT=<場面>` → 仕上げ `make reference-check` |
 | 描き出しの字の被り・z の外れを止める | `make render-lint`（許す物は `text-audit.local.json`） |
 | 依存の向き（規則 → View → 入力の逆を呼ばない・ファイルの輪）・View に World を渡さない・テストの分岐を止める | `make lint-flixlint`（決まりは <ゲーム>/lint/rules.flix の冒頭。View の入口が World から In を組み、部品は In を受ける） |

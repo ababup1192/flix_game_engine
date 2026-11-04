@@ -67,11 +67,28 @@ pub mod Ray3d {
         ) yield span
 
     /// 箱 b に外から当たる所（maxDistance まで）。始まりが箱の中（面の上を含まない）なら None（Unity の Raycast・Godot の intersect_ray と同じ）。
+    /// 厚さ 0 の向きがある箱（床・壁の板）は中を持たないので、始まりが板の面の上（flatSkin の幅の中）で、レイが板を横切る向きなら距離 0 で当たる。
     pub def hitBox(r: Ray3d, maxDistance: Float64, b: CollisionShape3d.Box3d): Option[RayHit] =
         boxSpan(r, b) |> Option.flatMap(span -> {
-            let (tmin, _, normal) = span;
-            if (tmin >= 0.0 and tmin <= maxDistance) Some({ distance = tmin, point = pointAt(r, tmin), normal = normal }) else None
+            let (tmin, tmax, normal) = span;
+            // WhyNot: 板の上から始まるレイを「中から」として捨てない — 板の上に合わせた足元は丸めで板の 1e-16 m 下に来うるので、下向きのレイが板を素通りする。
+            // WhyNot: 板と平行なレイには効かせない — 床の高さで打つ横向きのレイが全部床に当たり、見通しと壁の判定が壊れる。
+            let start = if (tmin >= 0.0) Some(tmin) else if (tmax >= 0.0 - flatSkin() and startsOnBoard(r, b)) Some(0.0) else None;
+            start |> Option.filter(t -> t <= maxDistance) |> Option.map(t -> { distance = t, point = pointAt(r, t), normal = normal })
         })
+
+    /// 厚さ 0 とみなす半分の長さの上限（m）。
+    def flatHalfLimit(): Float64 = 1.0e-9
+
+    /// 板の面の上とみなす、面からの距離の幅（m）。
+    def flatSkin(): Float64 = 1.0e-9
+
+    /// 厚さ 0 の向き（板の法線）のどれかについて、始まりが板の面の上にあり、レイがその向きに進む（板を横切る）か。
+    def startsOnBoard(r: Ray3d, b: CollisionShape3d.Box3d): Bool =
+        let rel = Vec3.sub(origin(r), b#center);
+        let crosses = (a: Vec3.Vec3, h: Float64) ->
+            h <= flatHalfLimit() and Float64.abs(Vec3.dot(direction(r), a)) > 1.0e-12 and Float64.abs(Vec3.dot(rel, a)) <= flatSkin();
+        crosses(b#ax, b#half#x) or crosses(b#ay, b#half#y) or crosses(b#az, b#half#z)
 
     /// 0 から maxDistance までのレイの区間が箱 b に触れるか（始まりが中でも真）。
     def touchesBox(r: Ray3d, maxDistance: Float64, b: CollisionShape3d.Box3d): Bool =

@@ -78,7 +78,7 @@
 - **~~`ShaderEval.envOf`~~ の画素ごとの `Map` 作り直しをやめる（適用 F）** — **打ち切り**
   （2026-08-13 に測って判断）。トリガー: **`shared`（bindings）を実際に使う shader Doc が
   出てきて、その面がルートの `make render-all`（全テンプレ）の中で目に見える時間を占めたとき**。
-  `envOf`（`engine/src/ShaderEval.flix:46-51`）は 1 画素ごとに `Map.empty()` から
+  `envOf`（`engine/src/shader/ShaderEval.flix:46-51`）は 1 画素ごとに `Map.empty()` から
   binding の表を作り直す。値は `uv` と `t` に依存するので面ごとに 1 回へ持ち上げることは
   できず（持ち上げると絵が変わる）、残る余地は入れ物の作り直しという係数だけ、という
   見立てだった。**測った結果、届かない。**

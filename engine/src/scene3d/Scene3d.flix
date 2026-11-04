@@ -12,7 +12,6 @@
 // 描き手は 3D の中だけそれを線形の量へ戻してから光を足し掛けし、3D の色を作った直後に 1 回だけ画面の値へ戻す
 // （半透明の混ぜ・MSAA・後処理・2D は画面の値のまま）。光の intensity・range・hemisphere・lightmap の intensity・
 // emissionIntensity は線形の量。法線マップ・影の地図・Output.Depth の灰色・background は変換しない。
-// 0.83 までは、作業場の project.json の "scene3dLinearColor": false で画素の値のまま計算する式に戻せる（0.84.0 で消える）。
 
 /// 3D の場面 1 つの中身（光・環境・置いた物・ビルボード）と、Shader 効果へ渡す命令。
 pub mod Scene3d {
@@ -521,6 +520,15 @@ pub mod Scene3d {
     pub def droppedLightsOf(cmd: Scene3dCmd): { points = Int32, spots = Int32 } =
         { points = Int32.max(0, List.length(cmd#pointLights) - maxPointLights()),
           spots = Int32.max(0, List.length(cmd#spotLights) - maxSpotLights()) }
+
+    /// 1 コマに描く 3D の場面の列で pickLights が落とす光の数の合計（points = 点光源・spots = スポット）。
+    /// GL の描き手が F3 の診断（FrameDiagnostics の droppedPointLights・droppedSpotLights）に足す数と、CPU の描き出しが落とす数に同じ。
+    /// 画面なしで確かめる時は `Scene3d.droppedLightsOfScenes(Render.drawScenes3d(items))`（描き出しの SoftScene なら `soft#scenes`）。
+    pub def droppedLightsOfScenes(scenes: List[RenderCmd]): { points = Int32, spots = Int32 } =
+        scenes |> List.foldLeft((acc, c) -> {
+            let d = droppedLightsOf(c#scene);
+            { points = acc#points + d#points, spots = acc#spots + d#spots }
+        }, { points = 0, spots = 0 })
 
     /// 落とす光があれば、種類ごとに (鍵, 知らせる 1 行)。毎コマ通るので、呼ぶ側が鍵ごとに初回 1 回だけ出す（GL と CPU で同じ文面）。
     pub def droppedLightsWarnings(cmd: Scene3dCmd): List[(String, String)] =

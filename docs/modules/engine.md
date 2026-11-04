@@ -11,10 +11,10 @@
 - **PlacedItem 経路**（`engine_world` の `Render.Item` + `App.withView`）。**新しく作るゲームは
   必ずこちら**を使う。位置つきの絵を値として返すだけの宣言的な組み方で、CameraRig・
   DualGrid・Fx など engine_world の道具はすべてこの経路の上に乗る。
-- **Drawable 経路**（`engine/src/render/drawable/Camera.flix` と `Projection.flix`、および
+- **Drawable 経路**（`engine/src/render2d/drawable/Camera.flix` と `Projection.flix`、および
   `view = None` で `GameEngine.Drawable` を自分で組むゲーム）。**一部のゲームだけが
   使う古い経路**で、新規のゲームでは使わない。Sprite / Rect / Polygon / Arc / Text /
-  TileLayer / Tileset / Transform / Visual といった `render/` 配下の描画物の型も、
+  TileLayer / Tileset / Transform / Visual といった `render2d/` 配下の描画物の型も、
   もともとはこの経路のノード型（Godot のノードに近い作り）で、PlacedItem 経路は
   これらを直接は使わず `core/DrawCmd` を土台に `Render.Item` を組む。
   例外は **Text** だけで、PlacedItem 経路の文字描画も内部で `Text.toDrawables` に
@@ -124,7 +124,6 @@
 - **PostProcess** — 画面の仕上げの面を ShaderDoc の Spec で組む部品（Unity URP / Unreal の Post Process と同じ並び）。`PostProcess.tonemapped` / `tonemappedWith`（AcesFitted・Reinhard。既定は `defaultExposure()` = 0.4 stop・`defaultWhitePoint()` = 4.0）・`PostProcess.fxaaSpec`（FXAA 3.11 の PC の簡単な版）・`PostProcess.luma709`。今の場と bindings だけで組むので GPU と CPU が同じ木を評価する。
 - **FrameDiagnostics** — 1 コマぶんの描く側の診断（作ったシェーダーと理由・GPU にあるシェーダーの数・足した字・塗りと swap の時間・GPU の時間と描き先ごとの時間・3D の数）。2D と 3D で共通。`Platform.Diagnostics.consumeDiagnostics` が返し、App が 1 コマに 1 回引き取ってヒッチの記録とゲーム（`App.withDiagnostics` → `frame#diagnostics`）へ配る。`setDiagnosticsEnabled(true)` の間だけ数える。画面に出す字は `summaryLines`。
 - **Platform** — 機種（ウィンドウ・入力・GPU・時計）に触る effect を役割ごとに分けた所。関数の型に触る effect だけが出て、op を足しても止まるのはその役割の handler だけ。`Draw2d.drawSurface` と `Draw3d.drawScene3d` は積むだけで `Draw2d.renderCommands` が出すので、`Draw2d`・`Draw3d`・`GpuResources` は同じ handler の組から張る。
-- **ShaderEffect** — 面の描画命令の古い型の名前 `ShaderEffect.ShaderRenderCmd` だけ（0.84.0 で消える。中身は `DrawCmd.SurfaceRenderCmd`）。
 
 ## レンダーターゲット（RenderTarget）
 

@@ -295,4 +295,20 @@ mod TestCharacterBody3d {
     def testRoomWalksNeverPenetrate(): Unit \ Assert =
         let w = worldOf(room());
         Assert.assertEq(expected = Nil, List.append(edges(), randomCases(300)) |> List.filterMap(failure(w)))
+
+    // ════════════════════════════════════════════════════════════════════
+    // 読む口
+    // ════════════════════════════════════════════════════════════════════
+
+    /// 足元 (1, 0, 2) の体（半径 0.25・高さ 1.6）の範囲は、x 0.75〜1.25・y 0〜1.6・z 1.75〜2.25（段の高さより下も含む）。
+    @Test
+    def testAabbOfCoversWholeBody(): Unit \ Assert =
+        let a = CharacterBody3d.aabbOf(s(), CharacterBody3d.bodyAt(Vec3.v3(1.0, 0.0, 2.0)));
+        Assert.assertEq(expected = ((750, 0, 1750), (1250, 1600, 2250)),
+            ((mm(a#min#x), mm(a#min#y), mm(a#min#z)), (mm(a#max#x), mm(a#max#y), mm(a#max#z))))
+
+    /// 平らな床の箱と Z まわりに 30° 回した坂の箱: 坂だけが傾いている。
+    @Test
+    def testIsTiltedSeparatesSlopeFromFlat(): Unit \ Assert =
+        Assert.assertEq(expected = (false, true), (CharacterBody3d.isTilted(floor()), CharacterBody3d.isTilted(ramp(30.0))))
 }

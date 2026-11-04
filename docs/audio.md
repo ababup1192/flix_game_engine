@@ -3,8 +3,8 @@
 ゲームに音を付けるための一枚。BGM・効果音（sfx）を「鳴らす」までの最短手順と、
 迷いやすい「どっちのやり方で鳴らすか」「音そのものはどう作るか」をまとめる。
 
-- 実体: `GameEngine.Audio`（engine/src/GameEngine.flix。再生・停止・音量・ループの effect）・
-  `AudioStreamPlayer`（engine/src/render/AudioStreamPlayer.flix。上の薄いラッパ）・
+- 実体: `GameEngine.Audio`（engine/src/platform/GameEngine.flix。再生・停止・音量・ループの effect）・
+  `AudioStreamPlayer`（engine/src/render2d/AudioStreamPlayer.flix。上の薄いラッパ）・
   `AudioFade`（engine_world/src/AudioFade.flix。フェードの音量カーブを作る純関数）・
   `SfxSynth`（engine_tools/src/SfxSynth.flix。素材ファイル無しで効果音を合成する）
 - `AudioMixer`（engine_world/src/AudioMixer.flix。バス・ダッキング・ローパス・クールダウン・スナップショット）・
