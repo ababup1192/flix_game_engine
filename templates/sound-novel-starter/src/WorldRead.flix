@@ -100,6 +100,9 @@ mod WorldRead {
             case Ok(Stage.Cue.ToMode(mode)) =>
                 let page = if (mode == r#stage#mode) r#page else Page.clear(r#page);
                 { stage = Stage.applyCue(World.now(w), Stage.Cue.ToMode(mode), r#stage), page = page | r }
+            // WhyNot: NVL の頁を背景の切り替えでめくらない — NVL の頁の切れ目はシナリオの <<clear>> と行の数が決める（横の NVL の頁を変えない）。
+            case Ok(Stage.Cue.Backdrop(shot, seconds)) if r#stage#mode == Stage.Mode.Adv =>
+                { stage = Stage.applyCue(World.now(w), Stage.Cue.Backdrop(shot, seconds), r#stage), page = Page.turn(r#page) | r }
             case Ok(c)                      => { stage = Stage.applyCue(World.now(w), c, r#stage) | r }
             case Err(message)               => Log.warnThen("[stage] ${message}", r)
         }

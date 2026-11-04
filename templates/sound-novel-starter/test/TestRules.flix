@@ -82,11 +82,39 @@ mod TestRules {
         Assert.assertEq(expected = (0, Some("c")), (List.length(page#lines), page#current |> Option.map(l -> l#text)))
 
     @Test
-    def testAdvGoesOneLineAtATime(): Unit \ {Assert, Fs.FileRead} =
-        // ADV は下のウィンドウに今の 1 行だけ（頁に積まない）。
+    def testAdvStacksLinesOnThePage(): Unit \ {Assert, Fs.FileRead} =
+        // ADV の台詞も頁に積む（横の ADV のウィンドウは今の 1 行だけを描き、縦の画面は頁に積んで描く）。
         let res = TestKit.res();
         let w = readTo(res, "Paddy", Nil, begun(res)) |> advance(res) |> settle(res);
-        Assert.assertEq(expected = (Stage.Mode.Adv, 0), (World.stageOf(res, w)#mode, List.length(World.pageOf(w)#lines)))
+        Assert.assertEq(expected = (Stage.Mode.Adv, 1), (World.stageOf(res, w)#mode, List.length(World.pageOf(w)#lines)))
+
+    @Test
+    def testAdvDropsOldestLinesWhenThePageIsFull(): Unit \ Assert =
+        // ADV は頁に入り切らない時、頁をめくらずに古い行から落として積み続ける。
+        let fits = lines -> List.length(lines) <= 2;
+        let line = text -> { speaker = "", text = text, rubies = Nil, source = text };
+        let page = Page.empty() |> Page.show(Stage.Mode.Adv, fits, line("a")) |> Page.show(Stage.Mode.Adv, fits, line("b"))
+                                |> Page.show(Stage.Mode.Adv, fits, line("c"));
+        Assert.assertEq(expected = ("b" :: Nil, Some("c")), (page#lines |> List.map(l -> l#text), page#current |> Option.map(l -> l#text)))
+
+    @Test
+    def testAdvBackdropCueStartsANewPage(): Unit \ {Assert, Fs.FileRead} =
+        // ADV のまま次の場面（背景を替える）へ進むと、前の場面の台詞は頁に残らない。
+        let res = TestKit.res();
+        let lane = readTo(res, "Lane", 0 :: Nil, begun(res)) |> advance(res) |> settle(res) |> advance(res) |> settle(res);
+        let texts = World.pageOf(lane)#lines |> List.map(l -> l#text);
+        Assert.assertEq(expected = (Stage.Mode.Adv, false), (World.stageOf(res, lane)#mode, texts |> List.exists(t -> String.contains(substr = "やっぱり", t))))
+
+    @Test
+    def testAdvPageTurnsWhenTheBackdropChanges(): Unit \ Assert =
+        // ADV で場面が変わる（背景を替える）と、次の行から新しい頁になる。今の行は次の行まで出したまま。
+        let fits = _ -> true;
+        let line = text -> { speaker = "", text = text, rubies = Nil, source = text };
+        let turned = Page.empty() |> Page.show(Stage.Mode.Adv, fits, line("a")) |> Page.show(Stage.Mode.Adv, fits, line("b")) |> Page.turn;
+        let next = turned |> Page.show(Stage.Mode.Adv, fits, line("c"));
+        Assert.assertEq(expected = ((0, Some("b")), (0, Some("c"))),
+                        ((List.length(turned#lines), turned#current |> Option.map(l -> l#text)),
+                         (List.length(next#lines), next#current |> Option.map(l -> l#text))))
 
     // ══ 選択肢と変数 ══
 

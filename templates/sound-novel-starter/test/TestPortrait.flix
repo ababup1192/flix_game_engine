@@ -62,7 +62,56 @@ mod TestPortrait {
         let rows = List.range(0, List.length(WorldSettings.settings())) |> List.flatMap(i ->
             Layout.settingRow(fit, i) :: (Layout.sides() |> List.map(Layout.settingSide(fit, i))));
         let choices = List.range(0, 3) |> List.map(i -> Layout.choice(fit, i, 3));
-        List.flatten(buttons :: titles :: asks :: tabs :: slots :: rows :: choices :: (Layout.back(fit) :: Nil) :: Nil)
+        let menu = List.range(0, List.length(WorldMenu.menuItems())) |> List.map(i ->
+            Layout.menuItem(fit, i, List.length(WorldMenu.menuItems()), List.length(WorldMenu.buttonsOf(fit))));
+        List.flatten(buttons :: titles :: asks :: tabs :: slots :: rows :: choices :: menu :: (Layout.back(fit) :: Nil) :: Nil)
+
+    def menuRect(fit: Layout.Fit, item: World.Button): { position = { x = Float64, y = Float64 }, size = { x = Float64, y = Float64 } } =
+        let all = WorldMenu.menuItems();
+        let i = all |> List.zipWithIndex |> List.find(match (_, b) -> b == item) |> Option.map(fst) |> Option.getWithDefault(0);
+        Layout.menuItem(fit, i, List.length(all), List.length(WorldMenu.buttonsOf(fit)))
+
+    def isMenuOpen(w: World.World): Bool = match w#panel {
+        case World.Panel.Menu(_) => true
+        case _                   => false
+    }
+
+    def isLoadOpen(w: World.World): Bool = match w#panel {
+        case World.Panel.LoadSlots(_, _) => true
+        case _                           => false
+    }
+
+    @Test
+    def testGearOpensMenuAndLoadItemOpensLoad(): Unit \ {Assert, Fs.FileRead} =
+        // 縦の画面の歯車でメニューが開き、メニューの「ロード」でロードの画面が開く。
+        let res = TestKit.res();
+        let fit = portrait(res, tall());
+        let opened = press(res, tall(), center(buttonRect(fit, World.Button.Menu)), begun(res));
+        let loading = press(res, tall(), center(menuRect(fit, World.Button.Load)), opened);
+        Assert.assertEq(expected = (true, true), (isMenuOpen(opened), isLoadOpen(loading)))
+
+    @Test
+    def testMenuSkipItemStartsSkipAndCloses(): Unit \ {Assert, Fs.FileRead} =
+        // メニューの「スキップ」でメニューが閉じてスキップになる。
+        let res = TestKit.res();
+        let fit = portrait(res, tall());
+        let opened = press(res, tall(), center(buttonRect(fit, World.Button.Menu)), begun(res));
+        let skipping = press(res, tall(), center(menuRect(fit, World.Button.Skip)), opened);
+        Assert.assertEq(expected = ("Closed", World.Playback.Skip), (World.panelName(skipping), World.playbackOf(skipping)))
+
+    @Test
+    def testTapOutsideMenuClosesIt(): Unit \ {Assert, Fs.FileRead} =
+        // メニューの外（頁の上の方）を押すとメニューが閉じる。
+        let res = TestKit.res();
+        let opened = press(res, tall(), center(buttonRect(portrait(res, tall()), World.Button.Menu)), begun(res));
+        Assert.assertTrue(press(res, tall(), { x = 270.0, y = 200.0 }, opened)#panel == World.Panel.Closed)
+
+    @Test
+    def testAutoIconStartsAuto(): Unit \ {Assert, Fs.FileRead} =
+        // 縦の画面のオートのアイコンを押すとオートになる。
+        let res = TestKit.res();
+        let w = press(res, tall(), center(buttonRect(portrait(res, tall()), World.Button.Auto)), begun(res));
+        Assert.assertEq(expected = World.Playback.Auto, World.playbackOf(w))
 
     /// 押せる物の短い辺が、画面の幅 width CSS px の端末で何 CSS px になるかの最小。
     def smallestCss(fit: Layout.Fit, width: Float64): Float64 =
@@ -165,8 +214,8 @@ mod TestPortrait {
 
     @Test
     def testKeepLatestDropsOldestWholeLines(): Unit \ Assert =
-        // 頁に入り切らない時は、古い行から行ごと落として新しい 2 行を残す（100 + 空き 16 + 100 = 216 ≤ 220）。
-        let kept = View.keepLatest(220.0, block("a", 100.0, false) :: block("b", 100.0, false) :: block("c", 100.0, true) :: Nil);
+        // 頁に入り切らない時は、古い行から行ごと落として新しい 2 行を残す（100 + 段落の空き 26 + 100 = 226 ≤ 230）。
+        let kept = View.keepLatest(230.0, block("a", 100.0, false) :: block("b", 100.0, false) :: block("c", 100.0, true) :: Nil);
         Assert.assertEq(expected = "b" :: "c" :: Nil, kept |> List.map(b -> b#line#text))
 
     @Test

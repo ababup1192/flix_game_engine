@@ -69,7 +69,7 @@ Flix コンパイラはエンジンリポの `bin/flix` ラッパ経由で呼ぶ
 | 設定 | スライダーの範囲は `novel.kind.json` の `*Slider` | `WorldSettings.adjust` / `activate` / `withLevel` / `withSide`・`View.settingsPanel` |
 | タイトル画面・クレジット | `assets/novel.story.json`・`assets/novel.credits.json` | `View.title` / `View.credits` |
 | スマホ（横持ち）の字とボタンの大きさ | `assets/novel.small.json` | `Layout.Fit.Small` |
-| スマホを縦に持った時の縦の画面（沈めた写真の上に画面いっぱいの頁・下に操作の列） | `project.json` の `web.portraitDesign`・字とボタンの大きさは `assets/novel.portrait.json` | `Layout.Fit.Portrait`・`View.portraitPage` / `portraitButtons`。確かめ方: 描き出しの `portrait-<場面>`（`make render SHOT=portrait-nvl`）・`FLIX_GE_PORTRAIT=1 make run`・ブラウザ版の頁の `?orientation=portrait` |
+| スマホを縦に持った時の縦の画面（沈めた写真の上に画面いっぱいの頁・下にアイコンの操作 4 つ・歯車のメニュー） | `project.json` の `web.portraitDesign`・字とボタンの大きさは `assets/novel.portrait.json` | `Layout.Fit.Portrait`・`View.portraitPage` / `portraitButtons` / `menuPanel`・`WorldMenu.menuItems`。確かめ方: 描き出しの `portrait-<場面>`（`make render SHOT=portrait-nvl`）・`FLIX_GE_PORTRAIT=1 make run`・ブラウザ版の頁の `?orientation=portrait` |
 
 ## 読む順
 

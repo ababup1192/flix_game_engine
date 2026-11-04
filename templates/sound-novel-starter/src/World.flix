@@ -64,9 +64,11 @@ mod World {
     }
 
     /// 場面の上に開いている画面と、その画面だけの値（Closed 以外は物語の時計が止まる）。
-    ///   Log(遡った量 px) / SaveSlots・LoadSlots(ページ, 枠のカーソル) / Settings(カーソルの行) / Hidden = 文章のウィンドウを隠して背景だけを見る。
+    ///   Log(遡った量 px) / SaveSlots・LoadSlots(ページ, 枠のカーソル) / Settings(カーソルの行) / Hidden = 文章のウィンドウを隠して背景だけを見る /
+    ///   Menu(カーソルの項目の番号) = 縦の画面の歯車から開く小さなメニュー（WorldMenu.menuItems）。
     pub enum Panel with Eq {
         case Closed
+        case Menu(Int32)
         case Log(Float64)
         case SaveSlots(Saves.Tab, Int32)
         case LoadSlots(Saves.Tab, Int32)
@@ -110,6 +112,7 @@ mod World {
         case Settings
         case Hide
         case ToTitle
+        case Menu
     }
 
     /// 設定の行。操作の形ごとに分けてある: Slider = スライダーで数を選ぶ、Pair = 2 つから選ぶ、Reset = 押すと確認のウィンドウ。
@@ -270,6 +273,7 @@ mod World {
         case Panel.LoadSlots(_, _) => "LoadSlots"
         case Panel.Settings(_)     => "Settings"
         case Panel.Hidden          => "Hidden"
+        case Panel.Menu(_)         => "Menu"
     }
 
     /// 開いているセーブ・ロードの画面のページと枠のカーソル。

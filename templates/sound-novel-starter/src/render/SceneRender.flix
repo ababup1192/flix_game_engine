@@ -88,7 +88,7 @@ mod SceneRender {
         ("small-title", "title") :: ("small-nvl", "nvl") :: ("small-adv", "adv") :: ("small-choice", "choice")
             :: ("small-save", "save") :: ("small-settings", "settings") :: ("small-ask", "ask") :: Nil
 
-    /// 縦の画面で描く場面: (描き出しの名前, Shots の場面の名前, 画面の大きさ)。World は同じ場面の物をそのまま使う。
+    /// 縦の画面で描く場面: (描き出しの名前, 場面の名前, 画面の大きさ)。World は Shots の同じ場面の物をそのまま使う（menu だけは worldOf）。
     /// 太い縦の画面（360×640）は縦の design の下限の高さで、並べ方がいちばん窮屈になる所を見る。
     def portraitShots(): List[(String, String, Vec2.Vec2)] =
         let tall = Display.defaultPortraitView();
@@ -96,8 +96,17 @@ mod SceneRender {
         ("portrait-title", "title", tall) :: ("portrait-nvl", "nvl", tall) :: ("portrait-adv", "adv", tall)
             :: ("portrait-choice", "choice", tall) :: ("portrait-log", "log", tall) :: ("portrait-save", "save", tall)
             :: ("portrait-settings", "settings", tall) :: ("portrait-ask", "ask", tall)
+            :: ("portrait-lane", "lane", tall) :: ("portrait-menu", "menu", tall)
             :: ("portrait-short-nvl", "nvl", short) :: ("portrait-short-save", "save", short)
             :: ("portrait-short-settings", "settings", short) :: Nil
+
+    /// 場面の名前 → World。menu = 縦の画面だけの場面（ADV の台詞の上で、オートを点けて歯車のメニューを開いた所）。
+    // WhyNot: menu を Shots.names に入れない — 歯車のメニューは縦の画面にしか無く、Shots.names は横の描き出しと実機の START=shot: の口でもある。
+    def worldOf(scene: String, res: Res.Res): Option[World.World] =
+        if (scene == "menu")
+            Shots.worldOf("adv", res) |> Option.map(w ->
+                World.mapRead(r -> { playback = World.Playback.Auto | r }, { panel = World.Panel.Menu(0) | w }))
+        else Shots.worldOf(scene, res)
 
     /// 描き出せる名前の全部（Shots の場面と、小さい画面と縦の画面の場面）。
     def allNames(): List[String] =
@@ -111,7 +120,7 @@ mod SceneRender {
         let small = smallShots() |> List.map(match (name, scene) -> (name, scene, Look.Landscape(Display.SizeClass.Small)));
         let portrait = portraitShots() |> List.map(match (name, scene, view) -> (name, scene, Look.Portrait(view)));
         List.flatten(regular :: small :: portrait :: Nil) |> List.filter(match (name, _, _) -> keep(name)) |> List.filterMap(match (name, scene, look) ->
-            Shots.worldOf(scene, res) |> Option.map(w -> {
+            worldOf(scene, res) |> Option.map(w -> {
                 let path = shootAs(look, res, cfg, w, name);
                 App.Headless.writeShotRecord(outDir, name, Some(E2e.fingerprint(res, w)));
                 path

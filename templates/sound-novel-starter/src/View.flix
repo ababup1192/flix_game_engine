@@ -71,6 +71,7 @@ mod View {
         let covered = match w#panel {
             case World.Panel.Closed => false
             case World.Panel.Hidden => false
+            case World.Panel.Menu(_) => false
             case _                  => true
         };
         let screen = if (covered) Nil else match w#scene {
@@ -179,7 +180,7 @@ mod View {
     /// 読んでいる間の 1 画面。サムネも同じ関数で描く。
     def reading(atlas: FontAtlas, env: Env, r: World.Read): List[Render.PlacedItem] =
         if (Layout.isPortrait(env#fit))
-            List.flatten(portraitPage(atlas, env, r) :: choices(atlas, env, r) :: portraitButtons(atlas, env, r) :: Nil)
+            List.flatten(portraitPage(atlas, env, r) :: choices(atlas, env, r) :: portraitButtons(env, r) :: Nil)
         else List.flatten(textLayer(atlas, env, r) :: choices(atlas, env, r) :: quickMenu(atlas, env, r) :: Nil)
 
     def textLayer(atlas: FontAtlas, env: Env, r: World.Read): List[Render.PlacedItem] =
@@ -261,37 +262,32 @@ mod View {
 
     // ── 縦の画面の頁 ──
 
-    /// 縦の画面: 写真を上から下へ濃くなる覆いで沈め、画面いっぱいの頁に文を上から積む（NVL）。前の行は少し薄く、今の行ははっきり。
-    /// ADV は World の頁が今の 1 行だけなので、写真を上に見せたまま頁の下へ寄せて置く。
-    /// 頁の切れ目は World のまま（横の幅で数える）。縦の頁に入り切らない時は、古い行から行ごと上へ流して今の行を必ず見せる。
+    /// 縦の画面: 写真を上から下へ濃くなる覆いで沈め、画面いっぱいの頁に文を上から積む（NVL も ADV も同じ頁）。前の行は少し薄く、今の行ははっきり。
+    /// 頁の切れ目は World のまま（NVL の <<clear>> と行の数・ADV の場面の切れ目）。縦の頁に入り切らない時は、古い行から行ごと上へ流して今の行を必ず見せる。
     def portraitPage(atlas: FontAtlas, env: Env, r: World.Read): List[Render.PlacedItem] =
         let t = theme(env);
         let sizes = Layout.advTextSizes(env#fit, kindOf(env));
         let area = Layout.page(env#fit, List.length(r#choices));
-        let adv = r#stage#mode == Stage.Mode.Adv;
         let blockOf = (line, visible, isCurrent) ->
             { line = line, visible = visible, isCurrent = isCurrent, height = blockHeight(env, sizes, area#size#x, line) };
         let older = r#page#lines |> List.map(line -> blockOf(line, String.length(line#text), false));
         let current = r#page#current |> Option.map(line -> blockOf(line, Page.visibleCount(r#page), true)) |> Option.toList;
         let shown = keepLatest(area#size#y, List.append(older, current));
-        let total = shown |> List.foldLeft((sum, b) -> sum + b#height + Layout.paragraphGap(), 0.0);
-        let top = if (adv) area#position#y + area#size#y - Float64.max(0.0, total - Layout.paragraphGap()) else area#position#y;
         let (items, endY) = shown |> List.foldLeft((acc, b) -> {
             let (done, y) = acc;
-            let ink = if (b#isCurrent) inkOf(b#line, env, r) else Color.mix(t#ink, t#panel, 0.28);
-            (portraitBlock(atlas, env, sizes, { x = area#position#x, y = y }, area#size#x, ink, b#visible, b#line) :: done,
+            let ink = if (b#isCurrent) inkOf(b#line, env, r) else Color.mix(t#ink, t#panel, 0.12);
+            let nameInk = if (b#isCurrent) t#name else Color.mix(t#name, t#panel, 0.45);
+            (portraitBlock(atlas, sizes, { x = area#position#x, y = y }, area#size#x, { body = ink, name = nameInk }, b#visible, b#line, env) :: done,
              y + b#height + Layout.paragraphGap())
-        }, (Nil, top));
+        }, (Nil, area#position#y));
         let mark = waitMark(atlas, { x = area#position#x + area#size#x - 12.0, y = endY - Layout.paragraphGap() - 4.0 }, env, r);
-        List.flatten(portraitVeil(env, adv) :: List.flatten(List.reverse(items)) :: mark :: Nil)
+        List.flatten(portraitVeil(env) :: List.flatten(List.reverse(items)) :: mark :: Nil)
 
-    /// 縦の頁の覆い（上から下へ濃くなる）。NVL は全体を沈め、ADV は上の写真を見せて下だけを沈める。
-    /// 濃さは設定の「ウィンドウの濃さ」に比べる。
-    def portraitVeil(env: Env, adv: Bool): List[Render.PlacedItem] =
+    /// 縦の頁の覆い（上から下へ濃くなる）。濃さは設定の「ウィンドウの濃さ」に比べる。
+    def portraitVeil(env: Env): List[Render.PlacedItem] =
         let t = theme(env);
         let a = windowAlpha(env);
-        let stops = if (adv) (0.0, 0.1) :: (0.4, 0.3) :: (0.72, 1.1 * a) :: (1.0, 1.2 * a) :: Nil
-                    else (0.0, 0.6 * a) :: (0.3, 1.1 * a) :: (1.0, 1.2 * a) :: Nil;
+        let stops = (0.0, 0.6 * a) :: (0.3, 1.1 * a) :: (1.0, 1.2 * a) :: Nil;
         let size = Layout.size(env#fit);
         List.zip(stops, List.drop(1, stops)) |> List.map(match ((y0, a0), (y1, a1)) -> {
             let top = size#y * y0;
@@ -326,37 +322,93 @@ mod View {
         }, (Nil, 0.0, true));
         kept
 
-    /// 縦の頁の 1 行（台詞は名前を小さく上に添える）。
-    def portraitBlock(atlas: FontAtlas, env: Env, sizes: { body = Float64, ruby = Float64, name = Float64 }, pos: Vec2.Vec2, width: Float64,
-                      ink: Color, visible: Int32, line: Page.Line): List[Render.PlacedItem] =
+    /// 縦の頁の 1 行（台詞は台詞の頭に名前を小さく添える）。ink = 本文と名前の色（前の行は薄く）。
+    def portraitBlock(atlas: FontAtlas, sizes: { body = Float64, ruby = Float64, name = Float64 }, pos: Vec2.Vec2, width: Float64,
+                      ink: { body = Color, name = Color }, visible: Int32, line: Page.Line, env: Env): List[Render.PlacedItem] =
         let nameRow = nameRowOf(sizes, line);
-        let name = if (nameRow > 0.0) textAt(pos#x, pos#y, line#speaker, atlas, sizes#name, theme(env)#name, zText() + 1) :: Nil else Nil;
+        let name = if (nameRow > 0.0) textAt(pos#x, pos#y, line#speaker, atlas, sizes#name, ink#name, zText() + 1) :: Nil else Nil;
         let body = placeLine(atlas, { x = pos#x, y = pos#y + nameRow }, width,
-                             { body = sizes#body, ruby = sizes#ruby }, ink, visible, line, env);
+                             { body = sizes#body, ruby = sizes#ruby }, ink#body, visible, line, env);
         List.append(name, body)
 
-    /// 縦の画面の操作の列: 頁の下に横一列の小さなボタン。押せる所は Layout.button の矩形（44 CSS px 以上）で、見た目のボタンはその内側に小さく置く。
-    def portraitButtons(atlas: FontAtlas, env: Env, r: World.Read): List[Render.PlacedItem] =
+    /// 縦の画面の操作の列: 頁の下の中央に、字の無い丸いアイコンを横一列。押せる所は Layout.button の矩形（44 CSS px 以上）で、
+    /// 丸はその真ん中に小さく置く。オートが動いている間は丸を差し色で塗り、線を暗くする。
+    def portraitButtons(env: Env, r: World.Read): List[Render.PlacedItem] =
         let t = theme(env);
         let all = WorldMenu.buttonsOf(env#fit);
         let n = List.length(all);
         all |> List.zipWithIndex |> List.flatMap(match (i, button) -> {
             let hit = Layout.button(env#fit, i, n);
-            let chip = { position = { x = hit#position#x + 2.0, y = hit#position#y + 12.0 },
-                         size = { x = hit#size#x - 4.0, y = hit#size#y - 24.0 } };
-            let lit = (button == World.Button.Auto and r#playback == World.Playback.Auto) or (button == World.Button.Skip and r#playback == World.Playback.Skip);
+            let icon = Layout.icon(env#fit, i, n);
+            let lit = button == World.Button.Auto and r#playback == World.Playback.Auto;
+            // WhyNot: スキップ中を何も出さないままにしない — 縦の列にスキップは無く、歯車のメニューの中から止めるので、歯車の縁で見せる。
+            let skipping = button == World.Button.Menu and r#playback == World.Playback.Skip;
             let over = isOver(hit, env);
-            let fill = if (lit) Color.mix(t#panel, t#accent, 0.35) else Color.lighten(t#panel, 0.04);
-            let color = if (not isButtonOpen(button, env, r)) Color.mix(t#ink, t#panel, 0.7)
-                        else if (lit) t#accent
-                        else if (over) t#ink
-                        else Color.mix(t#ink, t#panel, 0.2);
-            at(chip#position#x, chip#position#y,
-               RawDraw.box(chip#size, fill, zButtons() - 1) |> Render.fade(0.7)
-                   |> Render.outlineA({ color = if (lit or over) t#accent else Color.mix(t#ink, t#panel, 0.6), alpha = if (lit) 0.8 else 0.45, width = 1.0 })
-                   |> Render.rounded(chip#size#y / 2.0))
-            :: textIn(chip, label(buttonLabel(button), env), atlas, Layout.buttonTextSize(env#fit), color, zButtons()) :: Nil
+            let fill = if (lit) t#accent else if (over) Color.lighten(t#panel, 0.12) else t#panel;
+            let line = if (lit) Color.darken(t#panel, 0.2) else t#ink;
+            let d = icon#radius * 2.0;
+            let disc = at(icon#center#x - icon#radius, icon#center#y - icon#radius,
+                          RawDraw.box({ x = d, y = d }, fill, zButtons() - 1) |> Render.fade(if (lit) 1.0 else 0.62)
+                              |> Render.outlineA({ color = if (lit or skipping) t#accent else t#ink, alpha = if (skipping) 0.95 else if (over or lit) 0.5 else 0.18, width = if (skipping) 2.0 else 1.0 })
+                              |> Render.rounded(icon#radius));
+            disc :: iconStrokes(button, icon#center, d, line, zButtons())
         })
+
+    /// アイコンの線（24 × 24 の升目で描いた線を、丸の直径 diameter に合わせて置く。線の太さは升目で 1.8）。
+    /// 線の継ぎ目と端には線の太さの丸を置き、角を丸くする。
+    def iconStrokes(button: World.Button, center: Vec2.Vec2, diameter: Float64, color: Color, z: Int32): List[Render.PlacedItem] =
+        let unit = diameter * 18.0 / 34.0 / 24.0;
+        let width = 1.8 * unit;
+        let toScreen = (p: (Float64, Float64)) -> { let (x, y) = p; { x = center#x + (x - 12.0) * unit, y = center#y + (y - 12.0) * unit } };
+        let stroke = (points: List[(Float64, Float64)]) -> {
+            let pts = points |> List.map(toScreen);
+            let segs = List.zip(pts, List.drop(1, pts)) |> List.map(match (a, b) -> RawDraw.lineSeg(a, b, width, color, z));
+            List.append(segs, pts |> List.map(p -> RawDraw.circleAt(p, width / 2.0, color, z)))
+        };
+        iconPaths(button) |> List.flatMap(stroke)
+
+    /// アイコンの形（24 × 24 の升目の折れ線の束）。オート = 三角・ログ = 3 本の横線・セーブ = フロッピー・メニュー = 歯車。
+    def iconPaths(button: World.Button): List[List[(Float64, Float64)]] = match button {
+        case World.Button.Auto => ((7.0, 5.0) :: (18.0, 12.0) :: (7.0, 19.0) :: (7.0, 5.0) :: Nil) :: Nil
+        case World.Button.Log  =>
+            ((5.0, 6.0) :: (19.0, 6.0) :: Nil) :: ((5.0, 11.0) :: (19.0, 11.0) :: Nil) :: ((5.0, 16.0) :: (14.0, 16.0) :: Nil) :: Nil
+        case World.Button.Save =>
+            ((6.0, 4.0) :: (16.0, 4.0) :: (19.0, 7.0) :: (19.0, 20.0) :: (6.0, 20.0) :: (6.0, 4.0) :: Nil)
+            :: ((9.0, 4.0) :: (9.0, 9.0) :: (15.0, 9.0) :: (15.0, 4.0) :: Nil)
+            :: ((9.0, 20.0) :: (9.0, 14.0) :: (16.0, 14.0) :: (16.0, 20.0) :: Nil) :: Nil
+        case World.Button.Menu =>
+            let ring = List.range(0, 13) |> List.map(k -> {
+                let a = Int32.toFloat64(k) * 2.0 * Num.pi() / 12.0;
+                (12.0 + 3.0 * Num.cos(a), 12.0 + 3.0 * Num.sin(a))
+            });
+            ring :: ((12.0, 3.0) :: (12.0, 6.0) :: Nil) :: ((12.0, 18.0) :: (12.0, 21.0) :: Nil)
+                 :: ((3.0, 12.0) :: (6.0, 12.0) :: Nil) :: ((18.0, 12.0) :: (21.0, 12.0) :: Nil)
+                 :: ((5.6, 5.6) :: (7.7, 7.7) :: Nil) :: ((16.3, 16.3) :: (18.4, 18.4) :: Nil)
+                 :: ((5.6, 18.4) :: (7.7, 16.3) :: Nil) :: ((16.3, 7.7) :: (18.4, 5.6) :: Nil) :: Nil
+        case _ => Nil
+    }
+
+    // ── 縦の画面の歯車のメニュー ──
+
+    /// 歯車から開く小さなメニュー: 頁を薄く沈め、操作の列の上に項目を縦に並べる。カーソル（または触れている）項目を明るくする。
+    def menuPanel(atlas: FontAtlas, env: Env, cursor: Int32): List[Render.PlacedItem] =
+        let t = theme(env);
+        let items = WorldMenu.menuItems();
+        let count = List.length(items);
+        let buttons = List.length(WorldMenu.buttonsOf(env#fit));
+        let box = Layout.menuBox(env#fit, count, buttons);
+        let shade = at(0.0, 0.0, RawDraw.box(Layout.size(env#fit), Color.darken(t#panel, 0.4), zPanel()) |> Render.fade(0.35));
+        let ground = at(box#position#x, box#position#y,
+                        Render.vgrad(box#size, { top = Color.lighten(t#panel, 0.05), bottom = t#panel }, zPanel() + 1) |> Render.fade(0.94)
+                            |> Render.outlineA({ color = t#accent, alpha = 0.45, width = 1.0 }) |> Render.rounded(10.0));
+        let rows = items |> List.zipWithIndex |> List.flatMap(match (i, item) -> {
+            let r = Layout.menuItem(env#fit, i, count, buttons);
+            let lit = i == cursor or isOver(r, env);
+            let inset = { position = { x = r#position#x + 4.0, y = r#position#y + 4.0 }, size = { x = r#size#x - 8.0, y = r#size#y - 8.0 } };
+            let mark = if (lit) plate(inset, true, env, zPanel() + 2) :: Nil else Nil;
+            textIn(r, label(buttonLabel(item), env), atlas, Layout.menuItemTextSize(env#fit), if (lit) t#accent else t#ink, zPanelText()) :: mark
+        });
+        shade :: ground :: rows
 
     // ── 選択肢 ──
 
@@ -415,6 +467,7 @@ mod View {
         case World.Button.Settings  => StoryDoc.Label.Config
         case World.Button.Hide      => StoryDoc.Label.Hide
         case World.Button.ToTitle   => StoryDoc.Label.ToTitle
+        case World.Button.Menu      => StoryDoc.Label.Menu
     }
 
     // ── タイトル ──
@@ -490,6 +543,7 @@ mod View {
             case World.Panel.LoadSlots(tab, i) =>
                 slotsPanel(atlas, env, StoryDoc.Label.LoadTitle, { tabs = Saves.tabs(), tab = tab, cursor = i }, screenOf)
             case World.Panel.Settings(at)      => settingsPanel(atlas, env, at)
+            case World.Panel.Menu(cursor)      => menuPanel(atlas, env, cursor)
         }
 
     /// 画面の地・左上の見出しと下の線・右上の「戻る」・下の案内（空なら出さない）。

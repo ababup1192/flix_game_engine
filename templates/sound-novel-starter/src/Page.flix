@@ -11,10 +11,18 @@ mod Page {
     /// 1 行。speaker = 話し手の呼び名（地の文は空）、text = 出す字（台詞は「」込み）、source = .yarn の「ファイル:行」。
     pub type alias Line = { speaker = String, text = String, rubies = List[RichText.Ruby], source = String }
 
-    /// lines = 頁に積んだ読み終えた行（古い順。ADV では空）、current = 文字送り中か読み終えた今の行、reveal = 今の行の文字送り。
-    pub type alias Page = { lines = List[Line], current = Option[Line], reveal = UiTypewriter.Reveal }
+    /// lines = 頁に積んだ読み終えた行（古い順）、current = 文字送り中か読み終えた今の行、reveal = 今の行の文字送り、
+    /// next = 次の行を出す時に今の行を頁に積むか（場面が変わった後の最初の行は積まない）。
+    /// ADV も行を積む（横の画面は今の 1 行だけを描き、縦の画面は NVL と同じ頁に積んで描く）。
+    pub type alias Page = { lines = List[Line], current = Option[Line], reveal = UiTypewriter.Reveal, next = NextLine }
 
-    pub def empty(): Page = { lines = Nil, current = None, reveal = UiTypewriter.done("") }
+    /// 次の行を出す時に、今の行を頁に積むか。Append = 積む・NewPage = 積まずに新しい頁から始める（ADV で場面が変わった後）。
+    pub enum NextLine with Eq, ToString {
+        case Append
+        case NewPage
+    }
+
+    pub def empty(): Page = { lines = Nil, current = None, reveal = UiTypewriter.done(""), next = NextLine.Append }
 
     /// シナリオの台詞を 1 行に（name = 話し手の呼び名。地の文は空）。
     pub def lineOf(name: String, line: Yarn.Line): Line =
@@ -28,15 +36,28 @@ mod Page {
     /// 選んだ選択肢をログに残す形（「→ 選んだ字」）。
     pub def choiceLine(text: String): Line = { speaker = "", text = "→ ${text}", rubies = Nil, source = "" }
 
-    /// 次の行を出す。NVL は今の行を頁に積んでから（入り切らなければ頁をめくってから）、ADV は入れ替える。
+    /// 次の行を出す。今の行を頁に積んでから出す。場面が変わった後（next が NewPage）は積まない。
+    /// 入り切らない時、NVL は頁をめくり（積んだ行を捨てる）、ADV は古い行から落として積み続ける。
     /// fits = 頁に積んだ行と新しい行が入り切るか（World が rowsOf と novel.kind.json の nvlRows で決める）。
+    // WhyNot: ADV の行を捨てずに積む — 縦の画面は ADV の台詞も頁に積んで読ませる。横の ADV のウィンドウは今の 1 行だけを描くので見た目は変わらない。
     pub def show(mode: Stage.Mode, fits: List[Line] -> Bool, line: Line, page: Page): Page =
-        let kept = match (mode, page#current) {
-            case (Stage.Mode.Nvl, Some(prev)) => List.append(page#lines, prev :: Nil)
-            case _                           => Nil
+        let kept = match (page#next, page#current) {
+            case (NextLine.Append, Some(prev)) => List.append(page#lines, prev :: Nil)
+            case _                        => Nil
         };
-        let lines = if (fits(List.append(kept, line :: Nil))) kept else Nil;
-        { lines = lines, current = Some(line), reveal = UiTypewriter.start(line#text) }
+        let lines = match mode {
+            case Stage.Mode.Nvl => if (fits(List.append(kept, line :: Nil))) kept else Nil
+            case Stage.Mode.Adv => latestFitting(fits, line, kept)
+        };
+        { lines = lines, current = Some(line), reveal = UiTypewriter.start(line#text), next = NextLine.Append }
+
+    /// 積んだ行 kept のうち、新しい行 line と一緒に入り切る新しい方の行（入り切るまで古い行から落とす）。
+    def latestFitting(fits: List[Line] -> Bool, line: Line, kept: List[Line]): List[Line] =
+        if (List.isEmpty(kept) or fits(List.append(kept, line :: Nil))) kept
+        else latestFitting(fits, line, List.drop(1, kept))
+
+    /// 場面が変わった（背景を替えた）: 次の行から新しい頁にする。今の行は出したまま（横の ADV のウィンドウは次の行まで今の行を見せる）。
+    pub def turn(page: Page): Page = { lines = Nil, next = NextLine.NewPage | page }
 
     /// 頁をめくる（<<clear>>・ADV と NVL の切り替え）。今の行も消す。
     pub def clear(_page: Page): Page = empty()

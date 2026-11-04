@@ -7,7 +7,8 @@ mod PortraitDoc {
 
     /// どれも design px（幅 540 の中の px）。*TextSize = 字の大きさ、*Height = 押せる高さ。
     /// bodySize / rubySize / nameSize = 頁の本文・ルビ・台詞に添える名前の字、logTextSize = バックログの本文の字、
-    /// button* = 頁の下の操作の列、choice* = 選択肢、titleItem* = タイトル画面のメニューの 1 項目、
+    /// iconSize = 頁の下の操作の丸いアイコンの直径、buttonHeight = その押せる高さ（幅も同じ）、
+    /// menuItem* = 歯車から開くメニューの 1 項目、choice* = 選択肢、titleItem* = タイトル画面のメニューの 1 項目、
     /// back* = 画面の右上の「戻る」、tab* = セーブ・ロードのページのタブ、settingTextSize / settingRowHeight = 設定の行の字と高さ、
     /// askButton* = 確認のウィンドウのはい・いいえ。
     pub type alias Rec = {
@@ -16,8 +17,10 @@ mod PortraitDoc {
         rubySize = Float64,
         nameSize = Float64,
         logTextSize = Float64,
-        buttonTextSize = Float64,
+        iconSize = Float64,
         buttonHeight = Float64,
+        menuItemTextSize = Float64,
+        menuItemHeight = Float64,
         choiceTextSize = Float64,
         choiceHeight = Float64,
         titleItemTextSize = Float64,
@@ -42,7 +45,7 @@ mod PortraitDoc {
     /// コード側の既定値（assets/novel.portrait.json と同じ値から出発する）。
     pub def defaults(): Doc =
         Doc.Doc({ version = 1, bodySize = 25.0, rubySize = 12.0, nameSize = 16.0, logTextSize = 21.0,
-                  buttonTextSize = 15.0, buttonHeight = 66.0, choiceTextSize = 23.0, choiceHeight = 76.0,
+                  iconSize = 49.0, buttonHeight = 72.0, menuItemTextSize = 22.0, menuItemHeight = 66.0, choiceTextSize = 23.0, choiceHeight = 76.0,
                   titleItemTextSize = 28.0, titleItemHeight = 68.0, backTextSize = 20.0, backHeight = 66.0,
                   tabTextSize = 20.0, tabHeight = 66.0, settingTextSize = 20.0, settingRowHeight = 66.0,
                   askButtonTextSize = 22.0, askButtonHeight = 66.0 })
@@ -56,7 +59,8 @@ mod PortraitDoc {
         Doc.Doc({ version = JsonCodec.intOr("version", d#version, root),
                   bodySize = num("bodySize", d#bodySize), rubySize = num("rubySize", d#rubySize),
                   nameSize = num("nameSize", d#nameSize), logTextSize = num("logTextSize", d#logTextSize),
-                  buttonTextSize = num("buttonTextSize", d#buttonTextSize), buttonHeight = num("buttonHeight", d#buttonHeight),
+                  iconSize = num("iconSize", d#iconSize), buttonHeight = num("buttonHeight", d#buttonHeight),
+                  menuItemTextSize = num("menuItemTextSize", d#menuItemTextSize), menuItemHeight = num("menuItemHeight", d#menuItemHeight),
                   choiceTextSize = num("choiceTextSize", d#choiceTextSize), choiceHeight = num("choiceHeight", d#choiceHeight),
                   titleItemTextSize = num("titleItemTextSize", d#titleItemTextSize), titleItemHeight = num("titleItemHeight", d#titleItemHeight),
                   backTextSize = num("backTextSize", d#backTextSize), backHeight = num("backHeight", d#backHeight),

@@ -129,6 +129,28 @@ mod Controls {
             case World.Panel.SaveSlots(_, _) => slotsInput(res, frame, back, w)
             case World.Panel.LoadSlots(_, _) => slotsInput(res, frame, back, w)
             case World.Panel.Settings(at)    => settingsInput(res, frame, back, at, w)
+            case World.Panel.Menu(at)        => menuInput(res, frame, back, at, w)
+        }
+
+    /// 歯車のメニュー: 項目を押すとその項目へ、メニューの外を押すか戻るで閉じる。キーは ↑↓ と決定。
+    def menuInput(res: Res.Res, frame: App.Frame, back: Bool, cursor: Int32, w: World.World): World.World \ Emit[World.Event] =
+        let k = keysOf(res);
+        let fit = fitOf(res, frame);
+        let items = WorldMenu.menuItems();
+        let count = List.length(items);
+        let buttons = List.length(WorldMenu.buttonsOf(fit));
+        let hovered = Layout.hitOf(count, i -> Layout.menuItem(fit, i, count, buttons), frame#cursor);
+        let outside = frame#mouseClicked and not Layout.contains(Layout.menuBox(fit, count, buttons), frame#cursor);
+        let pickItem = i -> List.nth(i, items) |> Option.map(item -> WorldMenu.chooseMenu(res, item, w)) |> Option.getWithDefault(w);
+        match hovered {
+            case Some(i) if frame#mouseClicked => pickItem(i)
+            case Some(i) if frame#mouseMoved   => WorldMenu.pointMenu(i, w)
+            case _ =>
+                if (back or outside or tapped(k#hide, frame)) World.closePanel(w)
+                else if (tapped(k#prev, frame)) WorldMenu.moveMenu(-1, w)
+                else if (tapped(k#next, frame)) WorldMenu.moveMenu(1, w)
+                else if (tapped(k#confirm, frame)) pickItem(cursor)
+                else w
         }
 
     /// バックログ: ホイールと ↑↓ で遡る（一番下でホイールを下へ回すと閉じる）。戻れる行をクリックすると、その場面へ戻るか尋ねる。
