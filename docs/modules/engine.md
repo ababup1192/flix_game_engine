@@ -123,6 +123,7 @@
 - **ShaderJson** — シェーダー面の宣言（ShaderDoc.Spec）を JSON と相互変換する codec。engine を触らず `*.shader.json` の保存だけで調整できる（App.watchFile によるホットリロードの受け皿）。
 - **PostProcess** — 画面の仕上げの面を ShaderDoc の Spec で組む部品（Unity URP / Unreal の Post Process と同じ並び）。`PostProcess.tonemapped` / `tonemappedWith`（AcesFitted・Reinhard。既定は `defaultExposure()` = 0.4 stop・`defaultWhitePoint()` = 4.0）・`PostProcess.fxaaSpec`（FXAA 3.11 の PC の簡単な版）・`PostProcess.luma709`。今の場と bindings だけで組むので GPU と CPU が同じ木を評価する。
 - **FrameDiagnostics** — 1 コマぶんの描く側の診断（作ったシェーダーと理由・GPU にあるシェーダーの数・足した字・塗りと swap の時間・GPU の時間と描き先ごとの時間・3D の数）。2D と 3D で共通。`Platform.Diagnostics.consumeDiagnostics` が返し、App が 1 コマに 1 回引き取ってヒッチの記録とゲーム（`App.withDiagnostics` → `frame#diagnostics`）へ配る。`setDiagnosticsEnabled(true)` の間だけ数える。画面に出す字は `summaryLines`。
+- **Display** — 描き先の画面の情報（端末の区分 `SizeClass` の Small / Medium / Large・入力の種類・論理 px の大きさ・倍率）。起動の時に固定し、ゲームは `ViewCtx#display`・`Frame#sizeClass` で区分を見て、機種は見ない。
 - **Platform** — 機種（ウィンドウ・入力・GPU・時計）に触る effect を役割ごとに分けた所。関数の型に触る effect だけが出て、op を足しても止まるのはその役割の handler だけ。`Draw2d.drawSurface` と `Draw3d.drawScene3d` は積むだけで `Draw2d.renderCommands` が出すので、`Draw2d`・`Draw3d`・`GpuResources` は同じ handler の組から張る。
 
 ## レンダーターゲット（RenderTarget）

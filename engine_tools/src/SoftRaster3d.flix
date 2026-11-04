@@ -509,40 +509,10 @@ pub mod SoftRaster3d {
             case Scene3d.Output.Color    => None
             case Scene3d.Output.Depth(d) => Some((d#near, d#range))
         });
-        forEachRow(lh, y -> region rr {
-            let depth: Array[Float64, rr] = Array.repeat(rr, lw, 2.0);
-            let winner: Array[Int32, rr] = Array.repeat(rr, lw, -1);
-            let w0: Array[Float64, rr] = Array.repeat(rr, lw, 0.0);
-            let w1: Array[Float64, rr] = Array.repeat(rr, lw, 0.0);
-            let py = Int32.toFloat64(y) + 0.5;
-            Vector.get(y, bins) |> List.forEach(ti -> coverRow(lw, py, tris, inkTable, mats, time, ti, depth, winner, w0, w1));
-            let blendedRow = Vector.get(y, blendedBins);
-            let shadeAt = (x: Int32) -> {
-                let ti = Array.get(x, winner);
-                if (ti < 0) fillAt(x, y)
-                else shadePixel(Vector.get(ti, tris), inkTable, mats, bakes, shadeEnv, lights, fog, eye, lut, depthBand, (x, y),
-                                Array.get(x, w0), Array.get(x, w1))
-            };
-            if (List.isEmpty(blendedRow))
-                List.range(0, lw) |> List.forEach(x -> {
-                    let (r, g, b, a) = shadeAt(x);
-                    putLayer(out, y * lw + x, r, g, b, a)
-                })
-            else {
-                let rgba: Array[Float64, rr] = Array.repeat(rr, lw * 4, 0.0);
-                List.range(0, lw) |> List.forEach(x -> {
-                    let (r, g, b, a) = shadeAt(x);
-                    Array.put(r, x * 4, rgba);
-                    Array.put(g, x * 4 + 1, rgba);
-                    Array.put(b, x * 4 + 2, rgba);
-                    Array.put(a, x * 4 + 3, rgba)
-                });
-                let blended = { tris = blendedTris, mats = mats, bakes = bakes, env = shadeEnv };
-                blendedRow |> List.forEach(ti -> blendRow(lw, y, blended, ti, depth, rgba));
-                List.range(0, lw) |> List.forEach(x ->
-                    putLayer(out, y * lw + x, Array.get(x * 4, rgba), Array.get(x * 4 + 1, rgba), Array.get(x * 4 + 2, rgba), Array.get(x * 4 + 3, rgba)))
-            }
-        })
+        let rows = hoist(rc, { lw = lw, tris = tris, bins = bins, inks = inkTable,
+                               blended = { tris = blendedTris, mats = mats, bakes = bakes, env = shadeEnv },
+                               blendedBins = blendedBins, fill = fillAt, depthBand = depthBand });
+        forEachRow(lh, renderRow(rows, out))
     }
 
     /// 置いた物の材質が両面（doubleSided）か。
@@ -585,6 +555,62 @@ pub mod SoftRaster3d {
 
     /// 半透明の物を塗る時に要る、場面ごとに 1 回だけ組んだ物（半透明の三角形・材質・lightmap・塗りの材料）。
     type alias BlendedShading = { tris = Vector[Tri], mats = Vector[Mat], bakes = Vector[Option[Baked]], env = ShadeEnv }
+
+    /// 1 行を塗る時に要る、場面ごとに 1 回だけ組んだ物（lw = 層の幅・不透明の三角形と行ごとの番号・半透明の物と行ごとの番号・
+    /// 何も覆わない画素の色・深さの帯）。材質・lightmap・塗りの材料は blended と同じ物を使う。
+    type alias RowShading = { lw = Int32, tris = Vector[Tri], bins = Vector[List[Int32]], inks = Vector[Ink],
+                              blended = BlendedShading, blendedBins = Vector[List[Int32]],
+                              fill = Int32 -> Int32 -> (Float64, Float64, Float64, Float64), depthBand = Option[(Float64, Float64)] }
+
+    /// 行 y を塗って out へ書く。1 段目で画素ごとに一番手前の不透明の三角形を選んで塗り、その行に半透明の物があれば上に重ねる。
+    // WhyNot: renderLayer のラムダの中に書かない — 場面の値と行の配列を 1 つのラムダで閉じると、型推論の式が新しい Flix の上限
+    // （E7352）を超える。欄は行ごとに 1 回だけ引き、画素のループには取り出した値を渡す（shadePixel の WhyNot）。
+    def renderRow(rows: RowShading, out: LayerOut, y: Int32): Unit \ IO = region rr {
+        let lw = rows#lw;
+        let tris = rows#tris;
+        let inks = rows#inks;
+        let blended = rows#blended;
+        let mats = blended#mats;
+        let bakes = blended#bakes;
+        let env = blended#env;
+        let lights = env#lights;
+        let fog = env#fog;
+        let eye = env#eye;
+        let lut = env#lut;
+        let depthBand = rows#depthBand;
+        let fill = rows#fill;
+        let depth: Array[Float64, rr] = Array.repeat(rr, lw, 2.0);
+        let winner: Array[Int32, rr] = Array.repeat(rr, lw, -1);
+        let w0: Array[Float64, rr] = Array.repeat(rr, lw, 0.0);
+        let w1: Array[Float64, rr] = Array.repeat(rr, lw, 0.0);
+        let py = Int32.toFloat64(y) + 0.5;
+        Vector.get(y, rows#bins) |> List.forEach(ti -> coverRow(lw, py, tris, inks, mats, env#time, ti, depth, winner, w0, w1));
+        let blendedRow = Vector.get(y, rows#blendedBins);
+        let shadeAt = (x: Int32) -> {
+            let ti = Array.get(x, winner);
+            if (ti < 0) fill(x, y)
+            else shadePixel(Vector.get(ti, tris), inks, mats, bakes, env, lights, fog, eye, lut, depthBand, (x, y),
+                            Array.get(x, w0), Array.get(x, w1))
+        };
+        if (List.isEmpty(blendedRow))
+            List.range(0, lw) |> List.forEach(x -> {
+                let (r, g, b, a) = shadeAt(x);
+                putLayer(out, y * lw + x, r, g, b, a)
+            })
+        else {
+            let rgba: Array[Float64, rr] = Array.repeat(rr, lw * 4, 0.0);
+            List.range(0, lw) |> List.forEach(x -> {
+                let (r, g, b, a) = shadeAt(x);
+                Array.put(r, x * 4, rgba);
+                Array.put(g, x * 4 + 1, rgba);
+                Array.put(b, x * 4 + 2, rgba);
+                Array.put(a, x * 4 + 3, rgba)
+            });
+            blendedRow |> List.forEach(ti -> blendRow(lw, y, blended, ti, depth, rgba));
+            List.range(0, lw) |> List.forEach(x ->
+                putLayer(out, y * lw + x, Array.get(x * 4, rgba), Array.get(x * 4 + 1, rgba), Array.get(x * 4 + 2, rgba), Array.get(x * 4 + 3, rgba)))
+        }
+    }
 
     /// 半透明の三角形 ti が行 y で覆い、1 段目の深度 depth より手前の画素に、その色を重ねる（rgba = その行の r, g, b, α。深度は書かない）。
     /// 2 枚の三角形が分け合う縁の上の画素は、左か上の縁を持つ方だけが塗る（同じ物の 2 枚で 2 回重ねない。GL のラスタライズの決まりと同じ考え）。
