@@ -270,8 +270,15 @@ window.addEventListener("unhandledrejection", function (e) { fgeError("止まり
 
 // ── 起動 ──
 var fgeGameId = "game";
+// WhyNot: 素材と wasm を版なしの URL で取らない — 置き先のキャッシュで、古い wasm と新しい素材が混ざる。版は index.html が付けた ?v= を使う。
+var fgeVersion = (function () {
+  var src = document.currentScript ? document.currentScript.src : "";
+  var m = /[?&]v=([^&]+)/.exec(src);
+  return m ? m[1] : "";
+})();
+function fgeVersioned(path) { return fgeVersion ? path + "?v=" + fgeVersion : path; }
 async function fgeFetchBytes(path) {
-  var res = await fetch(encodeURI(path));
+  var res = await fetch(fgeVersioned(encodeURI(path)));
   if (!res.ok) throw new Error(path + " を取れない（" + res.status + "）");
   return new Uint8Array(await res.arrayBuffer());
 }
@@ -332,7 +339,7 @@ async function fgeBoot() {
   fgeGl.pixelStorei(fgeGl.UNPACK_COLORSPACE_CONVERSION_WEBGL, fgeGl.NONE);
   fgeWireInput();
   fgeProgress("starting", 0, 0);
-  var teavm = await TeaVM.wasmGC.load("classes.wasm");
+  var teavm = await TeaVM.wasmGC.load(fgeVersioned("classes.wasm"));
   try {
     teavm.exports.main([]);
   } catch (e) {
