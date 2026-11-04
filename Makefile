@@ -626,6 +626,40 @@ clean-font-cache:
 	@rm -rf "$${FLIX_GE_CACHE_DIR:-$$HOME/.cache/flix_game_engine/font}"
 	@echo "[clean-font-cache] キャッシュを捨てました"
 
+# GL の層の jar（render_gl/java の GlContext と LWJGL 版・録る版）を組み、使う所の lib/external へ置く。
+# flix.toml の [jar-dependencies] は同じ名前の jar を Release から取る形で書いてあるが、Flix は lib/external に同じ名前の
+# ファイルがあると取りに行かないので、作業コピーではここで置いた物が使われる。java/ を直したら make sync で置き直す。
+# WhyNot: Flix のソースに書かない — Java の interface と実装は Flix で書けず（Flix の new は WASM で 1.5 倍遅い）、jar で運ぶしかない。
+# WhyNot: LWJGL を Flix の lib/cache から借りない — 空の作業コピーでは jar を組む前に Flix の依存の解決が要り、その解決がこの jar を要る。
+GL_JAR_NAME := fge-gl-$(VERSION).jar
+GL_JAR      := build/gl-jar/$(GL_JAR_NAME)
+GL_JAR_SRC  := $(shell find $(RENDER_GL_DIR)/java -name '*.java' 2>/dev/null)
+GL_JAR_LWJGL := 3.4.1
+GL_JAR_DEPS := build/gl-jar/deps/lwjgl-$(GL_JAR_LWJGL).jar build/gl-jar/deps/lwjgl-opengl-$(GL_JAR_LWJGL).jar
+JAVAC := $(shell if javac -version >/dev/null 2>&1; then echo javac; else echo $(CURDIR)/.devbox/nix/profile/default/bin/javac; fi)
+JAR_TOOL := $(dir $(JAVAC))jar
+GL_JAR_USERS = $(LAYER_ROOT)/$(RENDER_GL_DIR) . $(ENGINE_FULL_DIR) \
+	$(shell for d in templates/*/ bench/*/; do grep -qs 'ababup1192/flix_game_engine"' "$$d/flix.toml" && echo "$${d%/}"; done)
+
+build/gl-jar/deps/lwjgl-%-$(GL_JAR_LWJGL).jar:
+	@mkdir -p $(dir $@)
+	curl -fsSL -o $@ https://repo1.maven.org/maven2/org/lwjgl/lwjgl-$*/$(GL_JAR_LWJGL)/lwjgl-$*-$(GL_JAR_LWJGL).jar
+
+build/gl-jar/deps/lwjgl-$(GL_JAR_LWJGL).jar:
+	@mkdir -p $(dir $@)
+	curl -fsSL -o $@ https://repo1.maven.org/maven2/org/lwjgl/lwjgl/$(GL_JAR_LWJGL)/lwjgl-$(GL_JAR_LWJGL).jar
+
+$(GL_JAR): $(GL_JAR_SRC) $(GL_JAR_DEPS)
+	@rm -rf build/gl-jar/classes && mkdir -p build/gl-jar/classes
+	$(if $(filter javac,$(JAVAC)),javac,"$(JAVAC)") --release 17 -encoding UTF-8 -d build/gl-jar/classes \
+		-cp "$(subst $(eval) ,:,$(GL_JAR_DEPS))" $(GL_JAR_SRC)
+	$(if $(filter javac,$(JAVAC)),jar,"$(JAR_TOOL)") --create --file $@ --date=2000-01-01T00:00:00Z -C build/gl-jar/classes .
+
+.PHONY: gl-jar
+gl-jar: $(GL_JAR)
+	@for d in $(GL_JAR_USERS); do mkdir -p "$$d/lib/external"; cp -p $(GL_JAR) "$$d/lib/external/$(GL_JAR_NAME)"; done
+	@echo "[gl-jar] $(GL_JAR) を $(words $(GL_JAR_USERS)) か所の lib/external へ置いた"
+
 # WhyNot: 配り先の packages.lock は配るたびに消す。fpkg は手元の作り直しで毎回中身が変わるので、
 # 残すと Flix 0.77 以降は「packages.lock の記録と違う」で check ごと止まる。
 sync: clean-locks sync-layers sync-engine-full sync-root-src
@@ -635,7 +669,7 @@ sync: clean-locks sync-layers sync-engine-full sync-root-src
 # .flix を engine_full/src/ に集約してから build-pkg し、最後に full を使う templates / bench へ配る。
 # ディレクトリ symlink は Flix のソース走査に追従されないため、必ずファイル単位で張る。
 # エンジンに .flix を追加/削除/改名したら再実行して集約を更新する (sync-root-src と同じ運用)。
-sync-engine-full:
+sync-engine-full: gl-jar
 	@for pkg in $(ROOT_SRC_PKGS); do rm -rf "$(ENGINE_FULL_DIR)/src/$$pkg"; done; \
 	for pkg in $(ROOT_SRC_PKGS); do \
 		(cd "$$pkg/src" && find . -name '*.flix') | sed 's|^\./||' | while read -r f; do \
@@ -846,6 +880,10 @@ bump:
 	@for f in $(ENGINE_DIR)/flix.toml $(RENDER_GL_DIR)/flix.toml $(ENGINE_WORLD_DIR)/flix.toml $(ENGINE_TOOLS_DIR)/flix.toml $(ENGINE_FULL_DIR)/flix.toml templates/*/flix.toml bench/*/flix.toml flix_ge_shapes/flix.toml; do \
 		[ -f "$$f" ] && perl -pi -e 's|(ababup1192/flix_[a-z_]*"[^"]*version = )"[0-9]+\.[0-9]+\.[0-9]+"|$${1}"$(TO)"|g' "$$f" || true; \
 	done
+	@# GL の層の jar の名前と置き場（Release の版のフォルダ）も版に付いて動く。
+	@for f in flix.toml $(RENDER_GL_DIR)/flix.toml $(ENGINE_FULL_DIR)/flix.toml; do \
+		perl -pi -e 's|/download/v\Q$(FROM)\E/fge-gl-\Q$(FROM)\E\.jar|/download/v$(TO)/fge-gl-$(TO).jar|g; s|"fge-gl-\Q$(FROM)\E\.jar"|"fge-gl-$(TO).jar"|g' "$$f"; \
+	done
 	@perl -pi -e 's/^(VERSION := ).*/$${1}$(TO)/' Makefile
 	@$(MAKE) --no-print-directory api-digest VERSION=$(TO)
 	@# WhyNot: リリースの中でなく bump で作るのは、release の途中で作ると未コミットの
@@ -899,7 +937,7 @@ sync-root-src-missing:
 # ここでのコンパイルが止める。symlink なので、ソースを直したら張り直さずにそのまま組める
 # (.flix を足した・消した・改名したときだけ張り直す。make test は毎回張り直す)。
 # .layers/templates は engine_tools のテストが ../templates/ のフォントを読むための道。
-sync-layers:
+sync-layers: gl-jar
 	@for pkg in $(LAYER_PKGS); do \
 		dir="$(LAYER_ROOT)/$$pkg"; \
 		rm -rf "$$dir/src" "$$dir/test"; \
