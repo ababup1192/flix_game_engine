@@ -1,0 +1,243 @@
+{
+  "version": 1,
+  "title": "窓と文字の部品",
+  "note": "窓（9 スライスの角・辺・中）・カーソル ▶・続き ▼・題字「ルーネの泉」。窓は墨の地に白い縁 2px・角は斜め 1 段で丸める。窓は 8px 単位で角と辺を並べて伸ばす（中は墨の板 1 枚）。",
+  "paletteFile": "assets/rpg.palette.json",
+  "entityId": "rpg.ui",
+  "legend": {
+    "k": "ink",
+    "w": "fc30",
+    "y": "fc38",
+    "o": "fc28",
+    "r": "fc27",
+    "g": "fc2D"
+  },
+  "sprites": {
+    "window": {
+      "note": "窓の部品 8×8。tl/t/tr/l/c/r/bl/b/br を 8px 単位で並べる。外周 1px は墨（地図の上に置いても縁が地へ溶けない）。",
+      "kind": "ui",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "tl": [
+          ".kkkkkkk",
+          "kkkwwwww",
+          "kkwwwwww",
+          "kwwkkkkk",
+          "kwwkkkkk",
+          "kwwkkkkk",
+          "kwwkkkkk",
+          "kwwkkkkk"
+        ],
+        "tr": [
+          "kkkkkkk.",
+          "wwwwwkkk",
+          "wwwwwwkk",
+          "kkkkkwwk",
+          "kkkkkwwk",
+          "kkkkkwwk",
+          "kkkkkwwk",
+          "kkkkkwwk"
+        ],
+        "bl": [
+          "kwwkkkkk",
+          "kwwkkkkk",
+          "kwwkkkkk",
+          "kwwkkkkk",
+          "kwwkkkkk",
+          "kkwwwwww",
+          "kkkwwwww",
+          ".kkkkkkk"
+        ],
+        "br": [
+          "kkkkkwwk",
+          "kkkkkwwk",
+          "kkkkkwwk",
+          "kkkkkwwk",
+          "kkkkkwwk",
+          "wwwwwwkk",
+          "wwwwwkkk",
+          "kkkkkkk."
+        ],
+        "t": [
+          "kkkkkkkk",
+          "wwwwwwww",
+          "wwwwwwww",
+          "kkkkkkkk",
+          "kkkkkkkk",
+          "kkkkkkkk",
+          "kkkkkkkk",
+          "kkkkkkkk"
+        ],
+        "b": [
+          "kkkkkkkk",
+          "kkkkkkkk",
+          "kkkkkkkk",
+          "kkkkkkkk",
+          "kkkkkkkk",
+          "wwwwwwww",
+          "wwwwwwww",
+          "kkkkkkkk"
+        ],
+        "l": [
+          "kwwkkkkk",
+          "kwwkkkkk",
+          "kwwkkkkk",
+          "kwwkkkkk",
+          "kwwkkkkk",
+          "kwwkkkkk",
+          "kwwkkkkk",
+          "kwwkkkkk"
+        ],
+        "r": [
+          "kkkkkwwk",
+          "kkkkkwwk",
+          "kkkkkwwk",
+          "kkkkkwwk",
+          "kkkkkwwk",
+          "kkkkkwwk",
+          "kkkkkwwk",
+          "kkkkkwwk"
+        ],
+        "c": [
+          "kkkkkkkk",
+          "kkkkkkkk",
+          "kkkkkkkk",
+          "kkkkkkkk",
+          "kkkkkkkk",
+          "kkkkkkkk",
+          "kkkkkkkk",
+          "kkkkkkkk"
+        ]
+      }
+    },
+    "cursor": {
+      "note": "選んでいる行の ▶。blink_0（白）と blink_1（墨に沈む灰）を交互に出して点滅させる。",
+      "kind": "icon",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "blink_0": [
+          "w.......",
+          "ww......",
+          "www.....",
+          "wwww....",
+          "www.....",
+          "ww......",
+          "w.......",
+          "........"
+        ],
+        "blink_1": [
+          "g.......",
+          "gg......",
+          "ggg.....",
+          "gggg....",
+          "ggg.....",
+          "gg......",
+          "g.......",
+          "........"
+        ]
+      },
+      "clips": {
+        "blink": {
+          "frames": [
+            "blink_0",
+            "blink_1"
+          ],
+          "fps": 2.0,
+          "loop": "Forward"
+        }
+      },
+      "lint-anim": "対象外(pop、palette) — カーソルの点滅（消えるコマと点くコマを交互に出す）の意図"
+    },
+    "more": {
+      "note": "文の続きがある時の ▼。1px 上下に揺らす。",
+      "kind": "icon",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "bob_0": [
+          "........",
+          "wwwwwww.",
+          ".wwwww..",
+          "..www...",
+          "...w....",
+          "........",
+          "........",
+          "........"
+        ],
+        "bob_1": [
+          "........",
+          "........",
+          "wwwwwww.",
+          ".wwwww..",
+          "..www...",
+          "...w....",
+          "........",
+          "........"
+        ]
+      },
+      "clips": {
+        "bob": {
+          "frames": [
+            "bob_0",
+            "bob_1"
+          ],
+          "fps": 2.0,
+          "loop": "Forward"
+        }
+      }
+    },
+    "logo": {
+      "note": "題字「ルーネの泉」。字は 2 倍の粗さで打ち、上から 淡い黄 → 金 → 橙 の 3 段。縁と右下の落ち影は墨。",
+      "kind": "ui",
+      "anchor": {
+        "x": 0.0,
+        "y": 0.0
+      },
+      "frames": {
+        "base": [
+          ".........kkkkkk....kkkkkk................................................kkkkkk......................................................kkkkkk.............",
+          ".........kyyyyk....kyyyyk................................................kyyyyk......................................................kyyyyk.............",
+          ".........kyyyykk...kyyyykk...............................................kyyyykk.....................kkkkkkkkkkkkkk................kkkyyyykk............",
+          ".........kyyyykk...kyyyykk...............................................kyyyykk.....................kyyyyyyyyyyyyk................kyyyykkkk............",
+          ".........kyyyykk...kyyyykk.....................................kkkkkkkkkkkyyyykkkkkkkkkkk........kkkkkyyyyyyyyyyyykkkkk......kkkkkkkyyyykkkkkkkkkkk.....",
+          ".........kyyyykk...kyyyykk.....................................kyyyyyyyyyyyyyyyyyyyyyyyyk........kyyyykkyyyykkkkkkyyyyk......kyyyyyyyyyyyyyyyyyyyyk.....",
+          ".........kyyyykk...kyyyykk.....................................kyyyyyyyyyyyyyyyyyyyyyyyykk.....kkkyyyykkyyyykkkkkkyyyykkk....kyyyyyyyyyyyyyyyyyyyykk....",
+          ".........kyyyykk...kyyyykk.....................................kyyyyyyyyyyyyyyyyyyyyyyyykk.....kyyyykkkkyyyykk...kkkyyyyk....kyyyykkkkkkkkkkkkyyyykk....",
+          ".........kyyyykk...kyyyykk.....................................kyyyyyyyyyyyyyyyyyyyyyyyykk...kkkyyyykkkkyyyykk.....kyyyykk...kyyyykkkkkkkkkkkkyyyykk....",
+          ".........kyyyykk...kyyyykk.....................................kkkkkkkkkkkkkkkkkyyyyyykkkk...kyyyykkkk.kyyyykk.....kyyyykk...kyyyyyyyyyyyyyyyyyyyykk....",
+          ".........kyyyykk...kyyyykk.......................................kkkkkkkkkkkkkkkyyyyyykkkk...kyyyykkkkkkyyyykk.....kyyyykk...kyyyyyyyyyyyyyyyyyyyykk....",
+          ".........kyyyykk...kyyyykk...................................................kyyyyyykkkk.....kyyyykk.kyyyykkkk.....kyyyykk...kyyyykkkkkkkkkkkkyyyykk....",
+          ".........kooookk...kooookk.......kkkkkkkkkkkkkkkkkkkkkkkkkk..............kkkkkooooookkkk...kkkooookk.kooookkkk.....kooookk...kooookkkkkkkkkkkkooookk....",
+          ".........kooookk...kooookk.......kooooooooooooooooooooooook..............kooooookkkkkk.....kooookkkk.kooookk.......kooookk...kooooooooooooooooooookk....",
+          ".........kooookk...kooookk.kkkk..kooooooooooooooooooooooookk.........kkkkkooooookkkkkk.....kooookkkkkkooookk.......kooookk...kooooooooooooooooooookk....",
+          ".........kooookk...kooookk.kook..kooooooooooooooooooooooookk.........kooooooookkkk.........kooookk.kooookkkk.......kooookk...kkkkkkkkkooookkkkkkkkkk....",
+          ".......kkkooookk...kooookkkkookk.kooooooooooooooooooooooookk.....kkkkkooooooookkkkkkkkk....kooookk.kooookkkk.....kkkooookk.....kkkkkkkooookkkkkkkkkkk...",
+          ".......kooookkkk...kooookkooookk.kkkkkkkkkkkkkkkkkkkkkkkkkkk.....kooooooookkooookkooook....kooookk.kooookk.......kooookkkk...........kooookk...kooook...",
+          ".......kooookkkk...kooookkooookk...kkkkkkkkkkkkkkkkkkkkkkkkk...kkkooooooookkooookkooookkk..kooookkkkooookk.....kkkooookkkk.kkkkkkkkkkkooookk.kkkooookk..",
+          ".......kooookk.....kooooooookkkk...............................kooookkkkkkkkooookkkkooook..kooookkooookkkk.....kooookkkk...kooooooookkooookk.kooookkkk..",
+          ".....kkkooookk.....kooooooookkkk.............................kkkooookkkkkkkkooookk.kooookkkkooookkooookkkk...kkkooookkkk...kooooooookkooookkkkooookkkk..",
+          ".....kooookkkk.....kooooookkkk...............................kooookkkk.....kooookk.kkkooookkkkooooookkkk.....kooookkkk.....kkkkkooookkooooookkkkkkkk....",
+          "...kkkrrrrkkkk.....krrrrrrkkkk...............................krrrrkkkk.....krrrrkk...krrrrkk.krrrrrrkkkk...kkkrrrrkkkk.......kkkrrrrkkrrrrrrkkkkkkkk....",
+          "...krrrrkkkk.......krrrrkkkk.................................kkkkkkk.......krrrrkk...kkkkkkk.kkkkkkkkk.....krrrrkkkk.........krrrrkkkkrrrrkkrrrrk.......",
+          ".kkkrrrrkkkk.......krrrrkkkk...................................kkkkk.......krrrrkk.....kkkkk...kkkkkkkkkkkkkrrrrkkkk.......kkkrrrrkkkkrrrrkkrrrrkkk.....",
+          ".krrrrkkkk.........kkkkkkk.................................................krrrrkk...................krrrrrrkkkkkk.........krrrrkkkk.krrrrkkkkrrrrk.....",
+          ".krrrrkkkk...........kkkkk.................................................krrrrkk...................krrrrrrkkkkkk.......kkkrrrrkkkkkkrrrrkk.krrrrkkkkk.",
+          ".krrkkkk...................................................................krrrrkk...................kkkkkkkkk...........krrrrkkkkrrrrrrrrkk.kkkrrrrrrk.",
+          ".krrkkkk...................................................................krrrrkk.....................kkkkkkk...........krrrrkkkkrrrrrrrrkk...krrrrrrkk",
+          ".kkkkk.....................................................................kkkkkkk.......................................kkkkkkk.krrrrrrkkkk...kkkkkkkkk",
+          "...kkk.......................................................................kkkkk.........................................kkkkk.krrrrrrkkkk.....kkkkkkk",
+          ".................................................................................................................................kkkkkkkkk..............",
+          "...................................................................................................................................kkkkkkk.............."
+        ]
+      }
+    }
+  }
+}

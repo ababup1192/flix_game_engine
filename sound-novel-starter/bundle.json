@@ -1,0 +1,89 @@
+{
+ "id": "sound-novel-starter",
+ "title": "夏草の駅",
+ "files": [
+  "assets/OFL.txt",
+  "assets/backdrops.schema.json",
+  "assets/credits.schema.json",
+  "assets/keys.schema.json",
+  "assets/kind.schema.json",
+  "assets/novel.backdrops.json",
+  "assets/novel.credits.json",
+  "assets/novel.keys.json",
+  "assets/novel.kind.json",
+  "assets/novel.mixer.json",
+  "assets/novel.story.json",
+  "assets/novel.theme.json",
+  "assets/story.schema.json",
+  "assets/talk/dialogue.json",
+  "assets/talk/natsukusa.yarn",
+  "assets/talk/vocab.json",
+  "assets/theme.schema.json",
+  "font-atlas/default.fontatlas",
+  "project.json"
+ ],
+ "images": [
+  "assets/bg/station.jpg",
+  "assets/bg/paddy.jpg",
+  "assets/bg/lane.jpg",
+  "assets/bg/engawa.jpg",
+  "assets/bg/river.jpg"
+ ],
+ "sounds": [
+  {
+   "name": "amb_evening",
+   "path": "assets/sfx/amb_evening.wav",
+   "looping": true
+  },
+  {
+   "name": "amb_night",
+   "path": "assets/sfx/amb_night.wav",
+   "looping": true
+  },
+  {
+   "name": "amb_river",
+   "path": "assets/sfx/amb_river.wav",
+   "looping": true
+  },
+  {
+   "name": "amb_morning",
+   "path": "assets/sfx/amb_morning.wav",
+   "looping": true
+  },
+  {
+   "name": "se_slap",
+   "path": "assets/sfx/se_slap.wav",
+   "looping": false
+  },
+  {
+   "name": "se_furin",
+   "path": "assets/sfx/se_furin.wav",
+   "looping": false
+  },
+  {
+   "name": "ui_page",
+   "path": "assets/sfx/ui_page.wav",
+   "looping": false
+  },
+  {
+   "name": "ui_cursor",
+   "path": "assets/sfx/ui_cursor.wav",
+   "looping": false
+  },
+  {
+   "name": "ui_choice",
+   "path": "assets/sfx/ui_choice.wav",
+   "looping": false
+  },
+  {
+   "name": "ui_open",
+   "path": "assets/sfx/ui_open.wav",
+   "looping": false
+  },
+  {
+   "name": "ui_save",
+   "path": "assets/sfx/ui_save.wav",
+   "looping": false
+  }
+ ]
+}

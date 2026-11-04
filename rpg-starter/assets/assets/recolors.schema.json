@@ -1,0 +1,61 @@
+{
+  "//": "rpg.recolors.json の形の宣言（Studio の sections 方言）。",
+  "version": 1,
+  "sections": {
+    "recolors": {
+      "kind": "catalog",
+      "label": "色違い（鍵 = rpg.foes.json の recolor が指す名前）",
+      "order": 1,
+      "fields": {
+        "from1": {
+          "type": "text",
+          "label": "差し替える色 1（色票の鍵）",
+          "order": 1,
+          "default": ""
+        },
+        "to1": {
+          "type": "text",
+          "label": "差し替えた後の色 1（色票の鍵）",
+          "order": 2,
+          "default": ""
+        },
+        "from2": {
+          "type": "text",
+          "label": "差し替える色 2（色票の鍵）",
+          "order": 3,
+          "default": ""
+        },
+        "to2": {
+          "type": "text",
+          "label": "差し替えた後の色 2（色票の鍵）",
+          "order": 4,
+          "default": ""
+        },
+        "from3": {
+          "type": "text",
+          "label": "差し替える色 3（色票の鍵）",
+          "order": 5,
+          "default": ""
+        },
+        "to3": {
+          "type": "text",
+          "label": "差し替えた後の色 3（色票の鍵）",
+          "order": 6,
+          "default": ""
+        },
+        "from4": {
+          "type": "text",
+          "label": "差し替える色 4（色票の鍵）",
+          "order": 7,
+          "default": ""
+        },
+        "to4": {
+          "type": "text",
+          "label": "差し替えた後の色 4（色票の鍵）",
+          "order": 8,
+          "default": ""
+        }
+      }
+    }
+  }
+}

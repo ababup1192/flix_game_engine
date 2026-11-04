@@ -1,0 +1,189 @@
+{
+  "//": "rpg.party.json の形の宣言（Studio の sections 方言）。顔ぶれはコードの Member.Member、ここは仲間ごとの値だけ。",
+  "version": 1,
+  "sections": {
+    "members": {
+      "kind": "catalog",
+      "label": "仲間（鍵 = luka / mina / toto）",
+      "order": 1,
+      "fields": {
+        "name": {
+          "type": "text",
+          "label": "画面に出す名前",
+          "order": 1,
+          "default": ""
+        },
+        "sprite": {
+          "type": "text",
+          "label": "フィールドで描く絵（rpg.chars.sprite.json の名前）",
+          "order": 2,
+          "required": true,
+          "default": "hero"
+        },
+        "placeholder": {
+          "type": "text",
+          "label": "絵が無い時の仮の四角の色（色票の鍵）",
+          "order": 3,
+          "default": "fc12"
+        },
+        "hp": {
+          "type": "int",
+          "label": "Lv1 の最大 HP",
+          "order": 4,
+          "min": 0,
+          "max": 999,
+          "default": 0
+        },
+        "mp": {
+          "type": "int",
+          "label": "Lv1 の最大 MP",
+          "order": 5,
+          "min": 0,
+          "max": 999,
+          "default": 0
+        },
+        "atk": {
+          "type": "int",
+          "label": "Lv1 の ちから（装備を除く）",
+          "order": 6,
+          "min": 0,
+          "max": 255,
+          "default": 0
+        },
+        "def": {
+          "type": "int",
+          "label": "Lv1 の みのまもり（装備を除く）",
+          "order": 7,
+          "min": 0,
+          "max": 255,
+          "default": 0
+        },
+        "agi": {
+          "type": "int",
+          "label": "Lv1 の すばやさ",
+          "order": 8,
+          "min": 0,
+          "max": 255,
+          "default": 0
+        },
+        "weapon": {
+          "type": "text",
+          "label": "加わった時のぶき（rpg.items.json の鍵）",
+          "order": 9,
+          "default": ""
+        },
+        "armor": {
+          "type": "text",
+          "label": "加わった時のよろい（rpg.items.json の鍵）",
+          "order": 10,
+          "default": ""
+        },
+        "joinLv": {
+          "type": "int",
+          "label": "加わった時の Lv",
+          "order": 11,
+          "min": 1,
+          "max": 10,
+          "default": 1
+        },
+        "hpUp": {
+          "type": "int",
+          "label": "1 Lv ごとの最大 HP の伸び",
+          "order": 12,
+          "default": 0,
+          "min": 0,
+          "max": 99
+        },
+        "mpUp": {
+          "type": "int",
+          "label": "1 Lv ごとの最大 MP の伸び",
+          "order": 13,
+          "default": 0,
+          "min": 0,
+          "max": 99
+        },
+        "atkUp": {
+          "type": "int",
+          "label": "1 Lv ごとの ちから の伸び",
+          "order": 14,
+          "default": 0,
+          "min": 0,
+          "max": 99
+        },
+        "defUp": {
+          "type": "int",
+          "label": "1 Lv ごとの みのまもり の伸び",
+          "order": 15,
+          "default": 0,
+          "min": 0,
+          "max": 99
+        },
+        "agiUp": {
+          "type": "int",
+          "label": "1 Lv ごとの すばやさ の伸び",
+          "order": 16,
+          "default": 0,
+          "min": 0,
+          "max": 99
+        }
+      }
+    },
+    "exp": {
+      "kind": "list",
+      "label": "経験値の表（Lv ごとの累計）",
+      "order": 2,
+      "fields": {
+        "lv": {
+          "type": "int",
+          "label": "Lv",
+          "order": 1,
+          "default": 2,
+          "min": 2,
+          "max": 99
+        },
+        "total": {
+          "type": "int",
+          "label": "その Lv に要る経験値の累計",
+          "order": 2,
+          "default": 0,
+          "min": 0,
+          "max": 99999
+        }
+      }
+    },
+    "learns": {
+      "kind": "list",
+      "label": "呪文を覚える Lv（仲間・呪文・Lv）",
+      "order": 3,
+      "fields": {
+        "member": {
+          "type": {
+            "enum": [
+              "luka",
+              "mina",
+              "toto"
+            ]
+          },
+          "label": "仲間",
+          "order": 1,
+          "default": "luka"
+        },
+        "spell": {
+          "type": "text",
+          "label": "呪文（rpg.spells.json の鍵）",
+          "order": 2,
+          "default": "",
+          "required": true
+        },
+        "lv": {
+          "type": "int",
+          "label": "覚える Lv",
+          "order": 3,
+          "default": 1,
+          "min": 1,
+          "max": 99
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,255 @@
+{
+ "id": "rpg-starter",
+ "title": "ルーネの泉",
+ "files": [
+  "assets/foe_moves.schema.json",
+  "assets/foes.schema.json",
+  "assets/items.schema.json",
+  "assets/keys.schema.json",
+  "assets/map.schema.json",
+  "assets/maps/chief_house.map.json",
+  "assets/maps/inn.map.json",
+  "assets/maps/mine_b1.map.json",
+  "assets/maps/mine_b2.map.json",
+  "assets/maps/mine_b3.map.json",
+  "assets/maps/shop.map.json",
+  "assets/maps/smithy.map.json",
+  "assets/maps/toto_cave.map.json",
+  "assets/maps/village.map.json",
+  "assets/maps/world.map.json",
+  "assets/party.schema.json",
+  "assets/recolors.schema.json",
+  "assets/rpg.battlefx.sprite.json",
+  "assets/rpg.chars.sprite.json",
+  "assets/rpg.foe_moves.json",
+  "assets/rpg.foes.json",
+  "assets/rpg.items.json",
+  "assets/rpg.keys.json",
+  "assets/rpg.mine.sprite.json",
+  "assets/rpg.mixer.json",
+  "assets/rpg.monsters.sprite.json",
+  "assets/rpg.palette.json",
+  "assets/rpg.party.json",
+  "assets/rpg.recolors.json",
+  "assets/rpg.rules.json",
+  "assets/rpg.shops.json",
+  "assets/rpg.spells.json",
+  "assets/rpg.text.json",
+  "assets/rpg.town.sprite.json",
+  "assets/rpg.ui.sprite.json",
+  "assets/rpg.world.sprite.json",
+  "assets/rules.schema.json",
+  "assets/shops.schema.json",
+  "assets/spells.schema.json",
+  "assets/sprite.schema.json",
+  "assets/talk/dialogue.json",
+  "assets/talk/rune.yarn",
+  "assets/talk/vocab.json",
+  "assets/text.schema.json",
+  "font-atlas/default.fontatlas",
+  "project.json"
+ ],
+ "images": [],
+ "sounds": [
+  {
+   "name": "cursor",
+   "path": "assets/sfx/cursor.wav",
+   "looping": false
+  },
+  {
+   "name": "confirm",
+   "path": "assets/sfx/confirm.wav",
+   "looping": false
+  },
+  {
+   "name": "cancel",
+   "path": "assets/sfx/cancel.wav",
+   "looping": false
+  },
+  {
+   "name": "bump",
+   "path": "assets/sfx/bump.wav",
+   "looping": false
+  },
+  {
+   "name": "door",
+   "path": "assets/sfx/door.wav",
+   "looping": false
+  },
+  {
+   "name": "talk_open",
+   "path": "assets/sfx/talk_open.wav",
+   "looping": false
+  },
+  {
+   "name": "talk_next",
+   "path": "assets/sfx/talk_next.wav",
+   "looping": false
+  },
+  {
+   "name": "talk_low",
+   "path": "assets/sfx/talk_low.wav",
+   "looping": false
+  },
+  {
+   "name": "talk_mid",
+   "path": "assets/sfx/talk_mid.wav",
+   "looping": false
+  },
+  {
+   "name": "talk_high",
+   "path": "assets/sfx/talk_high.wav",
+   "looping": false
+  },
+  {
+   "name": "lever",
+   "path": "assets/sfx/lever.wav",
+   "looping": false
+  },
+  {
+   "name": "rock",
+   "path": "assets/sfx/rock.wav",
+   "looping": false
+  },
+  {
+   "name": "cart",
+   "path": "assets/sfx/cart.wav",
+   "looping": false
+  },
+  {
+   "name": "chime",
+   "path": "assets/sfx/chime.wav",
+   "looping": false
+  },
+  {
+   "name": "fizzle",
+   "path": "assets/sfx/fizzle.wav",
+   "looping": false
+  },
+  {
+   "name": "attack",
+   "path": "assets/sfx/attack.wav",
+   "looping": false
+  },
+  {
+   "name": "boss",
+   "path": "assets/sfx/boss.wav",
+   "looping": false
+  },
+  {
+   "name": "chest",
+   "path": "assets/sfx/chest.wav",
+   "looping": false
+  },
+  {
+   "name": "critical",
+   "path": "assets/sfx/critical.wav",
+   "looping": false
+  },
+  {
+   "name": "encounter",
+   "path": "assets/sfx/encounter.wav",
+   "looping": false
+  },
+  {
+   "name": "fanfare",
+   "path": "assets/sfx/fanfare.wav",
+   "looping": false
+  },
+  {
+   "name": "flee",
+   "path": "assets/sfx/flee.wav",
+   "looping": false
+  },
+  {
+   "name": "foe_down",
+   "path": "assets/sfx/foe_down.wav",
+   "looping": false
+  },
+  {
+   "name": "gold",
+   "path": "assets/sfx/gold.wav",
+   "looping": false
+  },
+  {
+   "name": "heal",
+   "path": "assets/sfx/heal.wav",
+   "looping": false
+  },
+  {
+   "name": "hurt",
+   "path": "assets/sfx/hurt.wav",
+   "looping": false
+  },
+  {
+   "name": "inn",
+   "path": "assets/sfx/inn.wav",
+   "looping": false
+  },
+  {
+   "name": "level_up",
+   "path": "assets/sfx/level_up.wav",
+   "looping": false
+  },
+  {
+   "name": "plate",
+   "path": "assets/sfx/plate.wav",
+   "looping": false
+  },
+  {
+   "name": "sleep",
+   "path": "assets/sfx/sleep.wav",
+   "looping": false
+  },
+  {
+   "name": "spell_fire",
+   "path": "assets/sfx/spell_fire.wav",
+   "looping": false
+  },
+  {
+   "name": "spell_ice",
+   "path": "assets/sfx/spell_ice.wav",
+   "looping": false
+  },
+  {
+   "name": "stairs",
+   "path": "assets/sfx/stairs.wav",
+   "looping": false
+  },
+  {
+   "name": "wiped",
+   "path": "assets/sfx/wiped.wav",
+   "looping": false
+  },
+  {
+   "name": "bgm_battle",
+   "path": "assets/bgm/bgm_battle.wav",
+   "looping": false
+  },
+  {
+   "name": "bgm_boss",
+   "path": "assets/bgm/bgm_boss.wav",
+   "looping": false
+  },
+  {
+   "name": "bgm_mine",
+   "path": "assets/bgm/bgm_mine.wav",
+   "looping": false
+  },
+  {
+   "name": "bgm_title",
+   "path": "assets/bgm/bgm_title.wav",
+   "looping": false
+  },
+  {
+   "name": "bgm_village",
+   "path": "assets/bgm/bgm_village.wav",
+   "looping": false
+  },
+  {
+   "name": "bgm_world",
+   "path": "assets/bgm/bgm_world.wav",
+   "looping": false
+  }
+ ]
+}

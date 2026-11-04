@@ -1,0 +1,328 @@
+{
+  "version": 1,
+  "title": "ルーネの泉",
+  "designWidth": 256,
+  "designHeight": 240,
+  "windowWidth": 768,
+  "windowHeight": 720,
+  "windowScale": 3,
+  "clearColor": {
+    "r": 0.0470588,
+    "g": 0.0392157,
+    "b": 0.1176471
+  },
+  "maxDeltaTime": 0.05,
+  "textures": [],
+  "// glyphs": "起動時に焼く字。auto=出た字から順に焼く / used=ソースとアセットにある字を先に焼く / all=フォントの全字",
+  "glyphs": "auto",
+  "fonts": [
+    {
+      "name": "default",
+      "path": "assets/PixelMplus10-Regular.ttf",
+      "fontSize": 10.0
+    }
+  ],
+  "sounds": [
+    {
+      "name": "cursor",
+      "path": "assets/sfx/cursor.wav",
+      "looping": false
+    },
+    {
+      "name": "confirm",
+      "path": "assets/sfx/confirm.wav",
+      "looping": false
+    },
+    {
+      "name": "cancel",
+      "path": "assets/sfx/cancel.wav",
+      "looping": false
+    },
+    {
+      "name": "bump",
+      "path": "assets/sfx/bump.wav",
+      "looping": false
+    },
+    {
+      "name": "door",
+      "path": "assets/sfx/door.wav",
+      "looping": false
+    },
+    {
+      "name": "talk_open",
+      "path": "assets/sfx/talk_open.wav",
+      "looping": false
+    },
+    {
+      "name": "talk_next",
+      "path": "assets/sfx/talk_next.wav",
+      "looping": false
+    },
+    {
+      "name": "talk_low",
+      "path": "assets/sfx/talk_low.wav",
+      "looping": false
+    },
+    {
+      "name": "talk_mid",
+      "path": "assets/sfx/talk_mid.wav",
+      "looping": false
+    },
+    {
+      "name": "talk_high",
+      "path": "assets/sfx/talk_high.wav",
+      "looping": false
+    },
+    {
+      "name": "lever",
+      "path": "assets/sfx/lever.wav",
+      "looping": false
+    },
+    {
+      "name": "rock",
+      "path": "assets/sfx/rock.wav",
+      "looping": false
+    },
+    {
+      "name": "cart",
+      "path": "assets/sfx/cart.wav",
+      "looping": false
+    },
+    {
+      "name": "chime",
+      "path": "assets/sfx/chime.wav",
+      "looping": false
+    },
+    {
+      "name": "fizzle",
+      "path": "assets/sfx/fizzle.wav",
+      "looping": false
+    },
+    {
+      "name": "attack",
+      "path": "assets/sfx/attack.wav",
+      "looping": false
+    },
+    {
+      "name": "boss",
+      "path": "assets/sfx/boss.wav",
+      "looping": false
+    },
+    {
+      "name": "chest",
+      "path": "assets/sfx/chest.wav",
+      "looping": false
+    },
+    {
+      "name": "critical",
+      "path": "assets/sfx/critical.wav",
+      "looping": false
+    },
+    {
+      "name": "encounter",
+      "path": "assets/sfx/encounter.wav",
+      "looping": false
+    },
+    {
+      "name": "fanfare",
+      "path": "assets/sfx/fanfare.wav",
+      "looping": false
+    },
+    {
+      "name": "flee",
+      "path": "assets/sfx/flee.wav",
+      "looping": false
+    },
+    {
+      "name": "foe_down",
+      "path": "assets/sfx/foe_down.wav",
+      "looping": false
+    },
+    {
+      "name": "gold",
+      "path": "assets/sfx/gold.wav",
+      "looping": false
+    },
+    {
+      "name": "heal",
+      "path": "assets/sfx/heal.wav",
+      "looping": false
+    },
+    {
+      "name": "hurt",
+      "path": "assets/sfx/hurt.wav",
+      "looping": false
+    },
+    {
+      "name": "inn",
+      "path": "assets/sfx/inn.wav",
+      "looping": false
+    },
+    {
+      "name": "level_up",
+      "path": "assets/sfx/level_up.wav",
+      "looping": false
+    },
+    {
+      "name": "plate",
+      "path": "assets/sfx/plate.wav",
+      "looping": false
+    },
+    {
+      "name": "sleep",
+      "path": "assets/sfx/sleep.wav",
+      "looping": false
+    },
+    {
+      "name": "spell_fire",
+      "path": "assets/sfx/spell_fire.wav",
+      "looping": false
+    },
+    {
+      "name": "spell_ice",
+      "path": "assets/sfx/spell_ice.wav",
+      "looping": false
+    },
+    {
+      "name": "stairs",
+      "path": "assets/sfx/stairs.wav",
+      "looping": false
+    },
+    {
+      "name": "wiped",
+      "path": "assets/sfx/wiped.wav",
+      "looping": false
+    },
+    {
+      "name": "bgm_battle",
+      "path": "assets/bgm/bgm_battle.wav",
+      "looping": false
+    },
+    {
+      "name": "bgm_boss",
+      "path": "assets/bgm/bgm_boss.wav",
+      "looping": false
+    },
+    {
+      "name": "bgm_mine",
+      "path": "assets/bgm/bgm_mine.wav",
+      "looping": false
+    },
+    {
+      "name": "bgm_title",
+      "path": "assets/bgm/bgm_title.wav",
+      "looping": false
+    },
+    {
+      "name": "bgm_village",
+      "path": "assets/bgm/bgm_village.wav",
+      "looping": false
+    },
+    {
+      "name": "bgm_world",
+      "path": "assets/bgm/bgm_world.wav",
+      "looping": false
+    }
+  ],
+  "editor": {
+    "resources": [
+      {
+        "id": "rules",
+        "pattern": "assets/rpg.rules.json",
+        "title": "遊びの決まり（歩く・文字送り・暗転・始まり）",
+        "schema": "assets/rules.schema.json",
+        "role": "tuning"
+      },
+      {
+        "id": "map",
+        "pattern": "assets/maps/*.map.json",
+        "title": "マップ（地図・出入口・人・小物）",
+        "schema": "assets/map.schema.json",
+        "role": "content"
+      },
+      {
+        "id": "text",
+        "pattern": "assets/rpg.text.json",
+        "title": "言葉（話し手の呼び名・メニュー）",
+        "schema": "assets/text.schema.json",
+        "role": "content"
+      },
+      {
+        "id": "party",
+        "pattern": "assets/rpg.party.json",
+        "title": "仲間（仲間ごとの値）",
+        "schema": "assets/party.schema.json",
+        "role": "content"
+      },
+      {
+        "id": "items",
+        "pattern": "assets/rpg.items.json",
+        "title": "道具",
+        "schema": "assets/items.schema.json",
+        "role": "content"
+      },
+      {
+        "id": "shops",
+        "pattern": "assets/rpg.shops.json",
+        "title": "店と宿（品・宿代）",
+        "schema": "assets/shops.schema.json",
+        "role": "tuning"
+      },
+      {
+        "id": "keys",
+        "pattern": "assets/rpg.keys.json",
+        "title": "操作（キーの割り当て）",
+        "schema": "assets/keys.schema.json",
+        "role": "tuning"
+      },
+      {
+        "id": "foes",
+        "pattern": "assets/rpg.foes.json",
+        "title": "敵（敵ごとの数と絵）",
+        "schema": "assets/foes.schema.json",
+        "role": "content"
+      },
+      {
+        "id": "foe_moves",
+        "pattern": "assets/rpg.foe_moves.json",
+        "title": "敵の技（選ぶ重み）",
+        "schema": "assets/foe_moves.schema.json",
+        "role": "tuning"
+      },
+      {
+        "id": "spells",
+        "pattern": "assets/rpg.spells.json",
+        "title": "呪文（呪文ごとの数と的）",
+        "schema": "assets/spells.schema.json",
+        "role": "tuning"
+      },
+      {
+        "id": "mixer",
+        "pattern": "assets/rpg.mixer.json",
+        "title": "音の通り道（曲・効果音・UI のバスの音量とダッキング）",
+        "role": "tuning"
+      },
+      {
+        "id": "recolors",
+        "pattern": "assets/rpg.recolors.json",
+        "title": "色違い（色票の鍵の差し替え）",
+        "schema": "assets/recolors.schema.json",
+        "role": "material"
+      },
+      {
+        "id": "sprite",
+        "pattern": "assets/*.sprite.json",
+        "title": "ドット絵（タイル・人・敵・窓）",
+        "schema": "assets/sprite.schema.json",
+        "role": "material"
+      },
+      {
+        "id": "project",
+        "pattern": "project.json",
+        "schema": "project.schema.json",
+        "title": "ゲームの題・画面",
+        "role": "tuning"
+      }
+    ]
+  }
+}

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>game</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; color: #ddd; overflow: hidden; overscroll-behavior: none;
+               touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+               font: 14px/1.5 system-ui, sans-serif; }
+  #fge-canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; outline: none; }
+  .fge-layer { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; }
+  #fge-boot { background: #000; }
+  #fge-track { width: min(60vw, 360px); height: 6px; background: #333; border-radius: 3px; overflow: hidden; }
+  #fge-bar { width: 0; height: 100%; background: #ddd; }
+  #fge-start { font-size: 18px; }
+  #fge-end { background: rgba(0, 0, 0, .85); }
+  #fge-end button { font: inherit; font-size: 16px; padding: 8px 20px; }
+  #fge-error { position: fixed; left: 8px; right: 8px; bottom: 8px; padding: 8px; background: #400; color: #fdd;
+               white-space: pre-wrap; font: 12px/1.4 monospace; max-height: 40vh; overflow: auto; }
+</style>
+</head>
+<body>
+<canvas id="fge-canvas" tabindex="0"></canvas>
+<div id="fge-boot" class="fge-layer">
+  <div id="fge-phase">loading</div>
+  <div id="fge-track"><div id="fge-bar"></div></div>
+  <div id="fge-start" style="display: none">クリックかキーで始める</div>
+</div>
+<div id="fge-end" class="fge-layer" style="display: none">
+  <div>おわり</div>
+  <button type="button" onclick="location.reload()">もう一度遊ぶ</button>
+</div>
+<div id="fge-error" style="display: none"></div>
+<script src="wasm-gc-runtime.js?v=ed355edec3d7"></script>
+<script src="fge-web.js?v=ed355edec3d7"></script>
+</body>
+</html>
