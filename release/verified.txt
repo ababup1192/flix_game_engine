@@ -1,4 +1,4 @@
-version 0.84.0
-sha e4de8e00b32c027a814269760beec4914ba0418f
+version 0.84.1
+sha f1f4bb744b1f55b4758b07f6d6afd10b2f44a45a
 gates release-guard studio-parity sync test-par-all gl-parity
-at 2026-11-04T01:04:15Z
+at 2026-11-04T01:41:39Z
