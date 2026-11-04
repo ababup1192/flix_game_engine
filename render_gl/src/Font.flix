@@ -5,7 +5,7 @@
 // smoothstep で再構成するため、16px ベイクのアトラスでも任意サイズで輪郭がくっきりする。
 //
 // 出力フォーマット:
-//   - 単一チャンネルアトラス (GL_R8)。辺長は必要面積から 4096/8192 を自動選択。
+//   - 単一チャンネルアトラス (GL_R8)。辺長は必要面積から 4096/8192 を自動選択（Tight は収まる最小の 4 の倍数）。
 //   - Swizzle で R=1, G=1, B=1, A=red にして「白色 + 距離場を alpha」テクスチャ化
 //   - LINEAR フィルタ (距離場を滑らかに補間 → SDF のエッジが綺麗に出る)
 
@@ -220,16 +220,85 @@ mod RenderFont {
             case None       => 8192
         }
 
+    /// シェルフパッキングのカーソル。ここから tightAtlasSide までは、アトラスの詰め方の決め事（ゲームからは使わない）。
+    ///   cx/cy = 次に置く左上 (px)
+    ///   rowH  = 現在の行の最大グリフ高 (px)
+    pub type alias Shelf = { cx = Int32, cy = Int32, rowH = Int32 }
+
+    /// 空のアトラスの左上から詰め始めるカーソル。
+    pub def emptyShelf(): Shelf = { cx = 0, cy = 0, rowH = 0 }
+
+    /// gw × gh の 1 字を辺 side のアトラスへ置く。行に収まらなければ次の行へ折り返す。
+    /// 置けたら (左上 x, 左上 y, 次のカーソル)、アトラスの外へ出るなら None。
+    // WhyNot: 実際の焼きと Tight の辺選びで別々に書かない — 片方だけ直すと、選んだ辺に焼きが収まらず溢れる。
+    pub def shelfPlace(side: Int32, shelf: Shelf, gw: Int32, gh: Int32): Option[(Int32, Int32, Shelf)] =
+        let (cx0, cy0, rowH0) =
+            if (shelf#cx + gw > side) (0, shelf#cy + shelf#rowH + 1, 0)
+            else (shelf#cx, shelf#cy, shelf#rowH);
+        if (cx0 + gw > side or cy0 + gh > side) None
+        else Some((cx0, cy0, { cx = cx0 + gw + 1, cy = cy0, rowH = Int32.max(rowH0, gh) }))
+
+    /// 字のセル（gw × gh）を cps の順に詰めて、辺 side に全部収まるか。
+    pub def shelfFits(side: Int32, cells: List[(Int32, Int32)]): Bool =
+        let step = (acc, cell) -> {
+            let (gw, gh) = cell;
+            Option.flatMap(shelf -> shelfPlace(side, shelf, gw, gh) |> Option.map(placed -> { let (_, _, next) = placed; next }), acc)
+        };
+        List.foldLeft(step, Some(emptyShelf()), cells) |> Option.nonEmpty
+
+    /// セルが全部収まる最小の正方形の辺（4 の倍数・4 以上）。8192 でも収まらなければ 8192。
+    /// 辺を 4 の倍数にするのは、1 画素 1 バイトの行を UNPACK_ALIGNMENT の既定（4）のまま上げられるようにするため。
+    pub def tightAtlasSide(cells: List[(Int32, Int32)]): Int32 =
+        let area = List.foldLeft((acc, cell) -> { let (gw, gh) = cell; acc + Int32.toInt64((gw + 1) * (gh + 1)) }, 0i64, cells);
+        let widest = List.foldLeft((acc, cell) -> Int32.max(acc, fst(cell)), 0, cells);
+        let start = roundUpTo4(Int32.max(4, Int32.max(sqrtCeil(area, 0, maxAtlasSize()), widest)));
+        firstFittingSide(start, cells)
+
+    def roundUpTo4(n: Int32): Int32 = ((n + 3) / 4) * 4
+
+    /// lo 以上 hi 以下で s × s ≥ n になる最小の s（無ければ hi）。
+    def sqrtCeil(n: Int64, lo: Int32, hi: Int32): Int32 =
+        if (lo >= hi) hi
+        else {
+            let mid = (lo + hi) / 2;
+            if (Int32.toInt64(mid) * Int32.toInt64(mid) >= n) sqrtCeil(n, lo, mid) else sqrtCeil(n, mid + 1, hi)
+        }
+
+    def firstFittingSide(side: Int32, cells: List[(Int32, Int32)]): Int32 =
+        if (side >= maxAtlasSize() or shelfFits(side, cells)) Int32.min(side, maxAtlasSize())
+        else firstFittingSide(side + 4, cells)
+
+    /// 字ごとの距離場のセルの寸法（stb の GetGlyphSDF と同じ: 箱 + 両側 padding）。箱が空の字は場所を取らないので含めない。
+    def sdfCellsOf(fontInfo: STBTTFontinfo, scale: Float32, padding: Int32, cps: List[Int32]): List[(Int32, Int32)] \ IO =
+        let cellOf = cp -> {
+            let stack = MemoryStack.stackPush();
+            let x0Buf = stack.mallocInt(1);
+            let y0Buf = stack.mallocInt(1);
+            let x1Buf = stack.mallocInt(1);
+            let y1Buf = stack.mallocInt(1);
+            STBTruetype.stbtt_GetCodepointBitmapBox(fontInfo, cp, scale, scale, x0Buf, y0Buf, x1Buf, y1Buf);
+            let w = x1Buf.get(0) - x0Buf.get(0);
+            let h = y1Buf.get(0) - y0Buf.get(0);
+            discard MemoryStack.stackPop();
+            if (w == 0 or h == 0) None else Some((w + 2 * padding, h + 2 * padding))
+        };
+        List.filterMap(cellOf, cps)
+
+    /// アトラスの辺の選び方。
+    pub enum AtlasSizing {
+        /// 4096 か 8192。実行中に字を足す（RenderGlyphGrow）空きを残す。
+        case Growable,
+        /// 用意した字だけが収まる最小の辺。字を足せない機種（ブラウザ）へ配る物。
+        case Tight
+    }
+
     /// シェルフパッキングの進行状態。
     ///   glyphs   = 確定したグリフメトリクス (cp → GlyphMetrics)
-    ///   cx/cy    = 次に置く左上カーソル (px)
-    ///   rowH     = 現在の行の最大グリフ高 (px)
+    ///   shelf    = 次に置く場所
     ///   overflow = アトラスに収まらず空白（advance のみ）になった字数
     type alias PackState = {
         glyphs   = Map[Int32, TextLayout.GlyphMetrics],
-        cx       = Int32,
-        cy       = Int32,
-        rowH     = Int32,
+        shelf    = Shelf,
         overflow = Int32
     }
 
@@ -289,6 +358,12 @@ mod RenderFont {
     pub def bakeFontCpu(entry: RenderAsset.FontEntry, fontBytes: Array[Int8, Static],
                         wanted: Option[Set[Int32]],
                         onGlyph: (Int32, Int32) -> Unit \ IO): BakedFont \ IO =
+        bakeFontCpuSized(AtlasSizing.Growable, entry, fontBytes, wanted, onGlyph)
+
+    /// bakeFontCpu の辺の選び方を名指しする版。
+    pub def bakeFontCpuSized(sizing: AtlasSizing, entry: RenderAsset.FontEntry, fontBytes: Array[Int8, Static],
+                            wanted: Option[Set[Int32]],
+                            onGlyph: (Int32, Int32) -> Unit \ IO): BakedFont \ IO =
         let f32 = RenderUtil.f32;
         let startNanos = System.nanoTime();
 
@@ -343,7 +418,10 @@ mod RenderFont {
         // 焼きサイズが決まったので、それが収まる最小のアトラス辺長を選ぶ。
         // 日本語フルフォントでも自動で 8192 に広がり、それでも足りなければ上で縮んでいるので、
         // ゲーム側は fontSize を品質だけで選べばよい（容量の心配をしない）。
-        let bitmapSize  = chooseAtlasSize(fontInfo, scale, padding, cps);
+        let bitmapSize = match sizing {
+            case AtlasSizing.Growable => chooseAtlasSize(fontInfo, scale, padding, cps)
+            case AtlasSizing.Tight    => tightAtlasSide(sdfCellsOf(fontInfo, scale, padding, cps))
+        };
         let bitmapSizeF = Int32.toFloat64(bitmapSize);
         println("[RenderFont] '${entry#name}': ${List.length(cps)} グリフ → ${bitmapSize}x${bitmapSize} アトラス");
 
@@ -369,16 +447,13 @@ mod RenderFont {
                     else {
                         let gw = wBuf.get(0);
                         let gh = hBuf.get(0);
-                        // 行に収まらなければ次の行へ折り返す。
-                        let (cx0, cy0, rowH0) =
-                            if (st#cx + gw > bitmapSize) (0, st#cy + st#rowH + 1, 0)
-                            else (st#cx, st#cy, st#rowH);
-                        if (cx0 + gw > bitmapSize or cy0 + gh > bitmapSize) {
+                        match shelfPlace(bitmapSize, st#shelf, gw, gh) {
+                        case None =>
                             // アトラス溢れ。描けないが advance は活かし、末尾で警告を出す。
                             STBTruetype.stbtt_FreeSDF(sdf);
                             { glyphs = Map.insert(cp, advanceOnlyGlyph(advance), st#glyphs),
-                              cx = cx0, cy = cy0, rowH = rowH0, overflow = st#overflow + 1 }
-                        } else {
+                              shelf = st#shelf, overflow = st#overflow + 1 }
+                        case Some((cx0, cy0, nextShelf)) =>
                             // SDF ビットマップ (gw×gh) をアトラスの (cx0,cy0) に書き込む。
                             // 行ごとにまとめて写す。1 画素ずつ運ぶ書き方と焼き時間は変わらない
                             // （実測で差は出ない — 時間は距離場を作る側に入っている）。
@@ -397,14 +472,13 @@ mod RenderFont {
                                 { xoff = xoffBuf.get(0), yoff = yoffBuf.get(0), advance = advance },
                                 bitmapSizeF);
                             { glyphs = Map.insert(cp, gm, st#glyphs),
-                              cx = cx0 + gw + 1, cy = cy0, rowH = Int32.max(rowH0, gh),
-                              overflow = st#overflow }
+                              shelf = nextShelf, overflow = st#overflow }
                         }
                     };
                 discard MemoryStack.stackPop();
                 next
         };
-        let initSt: PackState = { glyphs = Map.empty(), cx = 0, cy = 0, rowH = 0, overflow = 0 };
+        let initSt: PackState = { glyphs = Map.empty(), shelf = emptyShelf(), overflow = 0 };
         // 焼けた字数の数え上げは PackState に載せず、報告のためだけの数として外に置く
         // （詰め方の状態と、進み具合の見せ方を混ぜない）。
         let bakedCount = Array#{0} @ Static;

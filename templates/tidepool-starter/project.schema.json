@@ -54,6 +54,28 @@
         "path":    { "type": "text", "label": "音ファイルの場所（assets/ からの相対）", "order": 2, "required": true },
         "looping": { "type": "bool", "label": "繰り返し鳴らすか（BGM は true）", "order": 3, "default": false }
       }
+    },
+
+    "web": {
+      "kind": "record",
+      "label": "ブラウザ版の書き出し（bin/fge export-web だけが読む。デスクトップ版は変わらない）",
+      "order": 40,
+      "fields": {
+        "compress": {
+          "type": { "record": {
+            "audio":             { "type": "bool", "label": "音（wav）を Opus にして小さくする", "order": 1, "default": true },
+            "audioBitrateKbps":  { "type": "int",  "label": "音の強さ（kbps・ステレオの値。モノラルはその半分）", "order": 2, "min": 16, "max": 320, "default": 96 },
+            "uncompressedAudio": { "type": { "list": "text" }, "label": "wav のまま配る音（ゲームの根からの glob。** は何段でも）", "order": 3 },
+            "images":            { "type": "bool", "label": "絵（png）を劣化しない WebP にして小さくする", "order": 4, "default": true },
+            "lossyImages":       { "type": { "list": { "record": {
+              "glob":    { "type": "text", "label": "劣化ありにする絵（ゲームの根からの glob。先に書いた方が勝つ）", "order": 1, "required": true },
+              "quality": { "type": "int",  "label": "WebP の画質（1〜100）", "order": 2, "min": 1, "max": 100, "default": 80 }
+            } } }, "label": "劣化ありの WebP にする絵（写真の背景など。ドット絵には使わない）", "order": 5 }
+          } },
+          "label": "書き出しの時だけ素材を小さくする（書かなければ音は Opus・絵は劣化しない WebP）",
+          "order": 1
+        }
+      }
     }
   }
 }

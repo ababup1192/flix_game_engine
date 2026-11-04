@@ -5,7 +5,8 @@
     "gnumake@latest",
     "path:./nix/flix#flix_0_78_0",
     "ffmpeg@latest",
-    "go@1.26"
+    "go@1.26",
+    "libwebp@latest"
   ],
   "shell": {
     "init_hook": [

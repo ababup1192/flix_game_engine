@@ -7,22 +7,35 @@ import (
 	"math"
 )
 
-// Decode は PCM の WAV（8bit か 16bit・モノラルかステレオ）をチャンネルごとの -1.0 〜 1.0 の列へ開く
-// （ステレオは左・右の順）。返すのはサンプルレートと列。
+// Header は PCM の WAV の形（中身の波形を開かずに読める所）。
+type Header struct {
+	Channels   int
+	SampleRate int
+	Bits       int
+	Frames     int
+	// Loop は smpl の最初のループ [頭, 終わり)（フレームの番号）。無い・使えない時は nil。
+	Loop *Loop
+	body []byte
+}
+
+// Loop はループ点。End は含まない。
+type Loop struct{ Start, End int }
+
+// ReadHeader は PCM の WAV（8bit か 16bit・モノラルかステレオ）の形とループ点を読む。
+// ループ点はデスクトップ（engine の AudioUtil.loopPointsOf と Audio の読み込み）と同じ条件で採る:
+// smpl が 60 バイト以上・ループが 1 本以上・0 ≤ 頭 ≤ 最後・最後 + 1 ≤ フレーム数。
 //
 // WhyNot: 読めない形式を無音として通さない。黙って白紙の絵が出ると、
 // 音が壊れているのか道具が壊れているのか呼ぶ側から見分けられない。
-func Decode(data []byte) (int, [][]float64, error) {
+func ReadHeader(data []byte) (Header, error) {
+	var h Header
 	if len(data) < 12 || string(data[0:4]) != "RIFF" || string(data[8:12]) != "WAVE" {
-		return 0, nil, fmt.Errorf("RIFF/WAVE ではありません")
+		return h, fmt.Errorf("RIFF/WAVE ではありません")
 	}
 	var (
-		format     uint16
-		channels   int
-		sampleRate int
-		bits       int
-		body       []byte
-		haveFmt    bool
+		format  uint16
+		smpl    []byte
+		haveFmt bool
 	)
 	pos := 12
 	for pos+8 <= len(data) {
@@ -30,21 +43,27 @@ func Decode(data []byte) (int, [][]float64, error) {
 		size := int(binary.LittleEndian.Uint32(data[pos+4 : pos+8]))
 		start := pos + 8
 		end := start + size
-		if end > len(data) {
+		if end > len(data) || end < start {
 			end = len(data)
 		}
 		switch tag {
 		case "fmt ":
 			if end-start < 16 {
-				return 0, nil, fmt.Errorf("fmt チャンクが短すぎます")
+				return h, fmt.Errorf("fmt チャンクが短すぎます")
 			}
 			format = binary.LittleEndian.Uint16(data[start : start+2])
-			channels = int(binary.LittleEndian.Uint16(data[start+2 : start+4]))
-			sampleRate = int(binary.LittleEndian.Uint32(data[start+4 : start+8]))
-			bits = int(binary.LittleEndian.Uint16(data[start+14 : start+16]))
+			h.Channels = int(binary.LittleEndian.Uint16(data[start+2 : start+4]))
+			h.SampleRate = int(binary.LittleEndian.Uint32(data[start+4 : start+8]))
+			h.Bits = int(binary.LittleEndian.Uint16(data[start+14 : start+16]))
+			// WAVE_FORMAT_EXTENSIBLE は中身の形をサブフォーマットの GUID の頭 2 バイトに持つ。
+			if format == 0xFFFE && end-start >= 26 {
+				format = binary.LittleEndian.Uint16(data[start+24 : start+26])
+			}
 			haveFmt = true
 		case "data":
-			body = data[start:end]
+			h.body = data[start:end]
+		case "smpl":
+			smpl = data[start:end]
 		}
 		pos = start + size
 		if size%2 == 1 {
@@ -52,42 +71,58 @@ func Decode(data []byte) (int, [][]float64, error) {
 		}
 	}
 	if !haveFmt {
-		return 0, nil, fmt.Errorf("fmt チャンクがありません")
+		return h, fmt.Errorf("fmt チャンクがありません")
 	}
 	if format != 1 {
-		return 0, nil, fmt.Errorf("PCM (format 1) ではありません: format %d", format)
+		return h, fmt.Errorf("PCM (format 1) ではありません: format %d", format)
 	}
-	if bits != 8 && bits != 16 {
-		return 0, nil, fmt.Errorf("対応していないビット数です: %d bit (8 か 16 だけ)", bits)
+	if h.Bits != 8 && h.Bits != 16 {
+		return h, fmt.Errorf("対応していないビット数です: %d bit (8 か 16 だけ)", h.Bits)
 	}
-	if channels < 1 || channels > 2 {
-		return 0, nil, fmt.Errorf("対応していないチャンネル数です: %d (モノラルかステレオだけ)", channels)
+	if h.Channels < 1 || h.Channels > 2 {
+		return h, fmt.Errorf("対応していないチャンネル数です: %d (モノラルかステレオだけ)", h.Channels)
 	}
-	if sampleRate <= 0 {
-		return 0, nil, fmt.Errorf("サンプルレートが読めません: %d", sampleRate)
+	if h.SampleRate <= 0 {
+		return h, fmt.Errorf("サンプルレートが読めません: %d", h.SampleRate)
 	}
-	if body == nil {
-		return 0, nil, fmt.Errorf("data チャンクがありません")
+	if h.body == nil {
+		return h, fmt.Errorf("data チャンクがありません")
 	}
-
-	bytesPerSample := bits / 8
-	frameSize := bytesPerSample * channels
-	frames := len(body) / frameSize
-	out := make([][]float64, channels)
-	for ch := range out {
-		out[ch] = make([]float64, frames)
-	}
-	for i := 0; i < frames; i++ {
-		for ch := 0; ch < channels; ch++ {
-			at := i*frameSize + ch*bytesPerSample
-			if bits == 8 {
-				out[ch][i] = (float64(body[at]) - 128.0) / 128.0
-				continue
-			}
-			out[ch][i] = float64(int16(binary.LittleEndian.Uint16(body[at:at+2]))) / 32768.0
+	h.Frames = len(h.body) / (h.Bits / 8 * h.Channels)
+	if len(smpl) >= 60 && int32(binary.LittleEndian.Uint32(smpl[28:])) >= 1 {
+		start := int(int32(binary.LittleEndian.Uint32(smpl[36+8:])))
+		last := int(int32(binary.LittleEndian.Uint32(smpl[36+12:])))
+		if start >= 0 && last >= start && last+1 <= h.Frames {
+			h.Loop = &Loop{Start: start, End: last + 1}
 		}
 	}
-	return sampleRate, out, nil
+	return h, nil
+}
+
+// Decode は PCM の WAV（8bit か 16bit・モノラルかステレオ）をチャンネルごとの -1.0 〜 1.0 の列へ開く
+// （ステレオは左・右の順）。返すのはサンプルレートと列。
+func Decode(data []byte) (int, [][]float64, error) {
+	h, err := ReadHeader(data)
+	if err != nil {
+		return 0, nil, err
+	}
+	bytesPerSample := h.Bits / 8
+	frameSize := bytesPerSample * h.Channels
+	out := make([][]float64, h.Channels)
+	for ch := range out {
+		out[ch] = make([]float64, h.Frames)
+	}
+	for i := 0; i < h.Frames; i++ {
+		for ch := 0; ch < h.Channels; ch++ {
+			at := i*frameSize + ch*bytesPerSample
+			if h.Bits == 8 {
+				out[ch][i] = (float64(h.body[at]) - 128.0) / 128.0
+				continue
+			}
+			out[ch][i] = float64(int16(binary.LittleEndian.Uint16(h.body[at:at+2]))) / 32768.0
+		}
+	}
+	return h.SampleRate, out, nil
 }
 
 // Summary は比べるときに並べる形と大きさ。

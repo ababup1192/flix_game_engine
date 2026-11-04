@@ -299,6 +299,54 @@
           "store_path": "/nix/store/l5z1hqq6l223379w6f25fibniz16g2s9-openjdk-21.0.9+8"
         }
       }
+    },
+    "libwebp@latest": {
+      "last_modified": "2026-11-03T03:15:56Z",
+      "resolved": "github:NixOS/nixpkgs/9a6cbf4722bdbbef65f9e0400452ca088e31dc4b#libwebp",
+      "source": "devbox-search",
+      "version": "1.6.0",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/i0n314xrw0vldv9baa34dyddis1hlvsg-libwebp-1.6.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/i0n314xrw0vldv9baa34dyddis1hlvsg-libwebp-1.6.0"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/8h1n8kmckscf1hi4vmzgwf45qrawq2l9-libwebp-1.6.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/8h1n8kmckscf1hi4vmzgwf45qrawq2l9-libwebp-1.6.0"
+        },
+        "x86_64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/fc9p9gichj64pw1k31drlyrlfbivcmrx-libwebp-1.6.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/fc9p9gichj64pw1k31drlyrlfbivcmrx-libwebp-1.6.0"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/xg48dl68ar4ivqlid9rbdi3wz1q33fv6-libwebp-1.6.0",
+              "default": true
+            }
+          ],
+          "store_path": "/nix/store/xg48dl68ar4ivqlid9rbdi3wz1q33fv6-libwebp-1.6.0"
+        }
+      }
     }
   }
 }

@@ -1,8 +1,9 @@
 // FontAtlasBake — 窓も GL も無しに、project.json のフォントをデスクトップの起動時と同じ距離場のアトラスに生成し、
 // RenderFontCache.encode の形のファイルへ書き出す。stb の無い機種（ブラウザ）へ同梱するための入口。
 //
-// 生成するのはデスクトップと同じ RenderFont.bakeFontCpu・書くのは同じ RenderFontCache.encode なので、
-// 同じフォントと同じ字の集合なら、デスクトップがキャッシュするファイルとバイトまで同じになる。
+// 距離場はデスクトップと同じ RenderFont.bakeFontCpuSized・書くのは同じ RenderFontCache.encode。辺だけは
+// AtlasSizing.Tight（用意した字が収まる最小）で、字ごとの距離場の画素はデスクトップのアトラスと同じになる。
+// WhyNot: デスクトップと同じ 4096 の辺にしない — ブラウザは実行中に字を足さないので空きは配る量が増えるだけ。
 pub mod FontAtlasBake {
     import java.io.File
     import java.lang.System
@@ -48,7 +49,7 @@ pub mod FontAtlasBake {
     /// 1 本を生成して書く。返す前にファイルの中身を読み戻して、decode が通ることまで確かめる。
     def bakeEntryOrBug(entry: RenderAsset.FontEntry, wanted: Option[Set[Int32]], outDir: String): Written \ IO =
         let fontBytes = Files.readAllBytes(new File(entry#path).toPath());
-        let baked = RenderFont.bakeFontCpu(entry, fontBytes, wanted, (_, _) -> checked_ecast(()));
+        let baked = RenderFont.bakeFontCpuSized(RenderFont.AtlasSizing.Tight, entry, fontBytes, wanted, (_, _) -> checked_ecast(()));
         let bytes = RenderFontCache.encode(baked);
         let path = "${outDir}/${entry#name}.fontatlas";
         RenderFontCache.writeFile(path, bytes);

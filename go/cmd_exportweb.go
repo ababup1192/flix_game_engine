@@ -145,6 +145,11 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
 		return 1
 	}
+	compress, err := resolveWebCompress(proj.Web)
+	if err != nil {
+		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
+		return 1
+	}
 
 	ewLogf("① ゲームを %s へ写す（engine_full_web %s）", p.Project, p.Version)
 	if err := prepareExportProject(p); err != nil {
@@ -255,7 +260,10 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 	b.Files = append(b.Files, atlases...)
 	sort.Strings(b.Files)
 
-	ewLogf("⑥ 頁")
+	ewLogf("⑥ 素材を小さくする（絵は WebP・音は Opus・アトラスは gzip）")
+	report := transcodeWebAssets(p.Out, &b, atlases, compress, findWebEncoders(p.Engine, compress))
+
+	ewLogf("⑦ 頁")
 	hash, err := writeWebPage(p, b, wasm, core)
 	if err != nil {
 		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
@@ -264,7 +272,7 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 	cleanupExportWork(p, o.KeepWork)
 
 	fmt.Fprintf(out, "export-web: %s（版 %s）\n", p.Out, hash)
-	writeExportSizes(out, p.Out, b, atlases)
+	writeExportSizes(out, p.Out, b, atlases, report)
 	return 0
 }
 
@@ -626,6 +634,10 @@ type webSound struct {
 	Name    string `json:"name"`
 	Path    string `json:"path"`
 	Looping bool   `json:"looping"`
+	// 以下は書き出しが wav から読んで束に書く（秒）。Seconds は元の長さ・LoopStart と LoopEnd は smpl のループ（終わりを含まない）。
+	Seconds   float64 `json:"seconds,omitempty"`
+	LoopStart float64 `json:"loopStart,omitempty"`
+	LoopEnd   float64 `json:"loopEnd,omitempty"`
 }
 
 // webBundle は bundle.json の形。道は全部ゲームの根から見た `/` 区切り。
@@ -639,6 +651,8 @@ type webBundle struct {
 	VirtualPad    *webVirtualPad    `json:"virtualPad,omitempty"`
 	TouchGestures map[string]string `json:"touchGestures,omitempty"`
 	Orientation   string            `json:"orientation,omitempty"`
+	// Transcoded は論理の道 → 配る道（WebP・Opus・gzip に替えた物だけ）。頁は配る道で取り、論理の道で素材の表へ入れる。
+	Transcoded map[string]string `json:"transcoded,omitempty"`
 }
 
 // withTouch は頁が起動の前に要る物（design の縦横比・パッド・ジェスチャー・向き）を束に足す。
@@ -903,53 +917,52 @@ func cleanupExportWork(p exportWebPaths, keep bool) {
 	os.RemoveAll(filepath.Join(p.Work, "wasm"))
 }
 
-// writeExportSizes は出力の大きさの内訳を 1 行ずつ出す。
-func writeExportSizes(out *strings.Builder, dir string, b webBundle, atlases []string) {
-	size := func(p string) int64 {
-		info, err := os.Stat(p)
-		if err != nil {
-			return 0
-		}
-		return info.Size()
-	}
+// writeExportSizes は配る大きさの内訳を 1 行ずつ出す（変換した種類は「前 → 後」）と、変換の知らせ。
+func writeExportSizes(out *strings.Builder, dir string, b webBundle, atlases []string, r webTranscodeReport) {
 	isAtlas := map[string]bool{}
-	var atlasSum int64
 	for _, a := range atlases {
 		isAtlas[a] = true
-		atlasSum += size(exportAssetPath(dir, a))
 	}
-	var docs, images, sounds int64
+	var docs int64
 	for _, f := range b.Files {
 		if !isAtlas[f] {
-			docs += size(exportAssetPath(dir, f))
+			docs += fileSize(exportAssetPath(dir, f))
 		}
 	}
-	for _, f := range b.Images {
-		images += size(exportAssetPath(dir, f))
+	page := fileSize(filepath.Join(dir, "index.html")) + fileSize(filepath.Join(dir, "fge-web.js")) +
+		fileSize(filepath.Join(dir, "wasm-gc-runtime.js")) + fileSize(filepath.Join(dir, "bundle.json"))
+	wasm := fileSize(filepath.Join(dir, "classes.wasm"))
+	pair := func(p webSizePair) string {
+		if p.Before == p.After {
+			return humanBytes(p.After)
+		}
+		return fmt.Sprintf("%s → %s", humanBytes(p.Before), humanBytes(p.After))
 	}
-	for _, s := range b.Sounds {
-		sounds += size(exportAssetPath(dir, s.Path))
-	}
-	page := size(filepath.Join(dir, "index.html")) + size(filepath.Join(dir, "fge-web.js")) +
-		size(filepath.Join(dir, "wasm-gc-runtime.js")) + size(filepath.Join(dir, "bundle.json"))
-	wasm := size(filepath.Join(dir, "classes.wasm"))
 	rows := []struct {
-		name string
-		n    int64
-		note string
+		name, size, note string
 	}{
-		{"wasm", wasm, "classes.wasm"},
-		{"素材", docs, fmt.Sprintf("Doc など %d 本", len(b.Files)-len(atlases))},
-		{"絵", images, fmt.Sprintf("%d 枚", len(b.Images))},
-		{"アトラス", atlasSum, fmt.Sprintf("%d 本", len(atlases))},
-		{"音", sounds, fmt.Sprintf("%d 本", len(b.Sounds))},
-		{"頁", page, "index.html・js・bundle.json"},
+		{"wasm", humanBytes(wasm), "classes.wasm"},
+		{"素材", humanBytes(docs), fmt.Sprintf("Doc など %d 本", len(b.Files)-len(atlases))},
+		{"絵", pair(r.Images), fmt.Sprintf("%d 枚", len(b.Images))},
+		{"アトラス", pair(r.Atlases), fmt.Sprintf("%d 本", len(atlases))},
+		{"音", pair(r.Sounds), fmt.Sprintf("%d 本", len(b.Sounds))},
+		{"頁", humanBytes(page), "index.html・js・bundle.json"},
 	}
 	w := bufio.NewWriter(out)
-	for _, r := range rows {
-		fmt.Fprintf(w, "  %-8s %10s  %s\n", r.name, humanBytes(r.n), r.note)
+	for _, row := range rows {
+		fmt.Fprintf(w, "  %-8s %22s  %s\n", row.name, row.size, row.note)
 	}
-	fmt.Fprintf(w, "  %-8s %10s\n", "合計", humanBytes(wasm+docs+images+atlasSum+sounds+page))
+	total := webSizePair{
+		Before: wasm + docs + page + r.Images.Before + r.Atlases.Before + r.Sounds.Before,
+		After:  wasm + docs + page + r.Images.After + r.Atlases.After + r.Sounds.After,
+	}
+	fmt.Fprintf(w, "  %-8s %22s  ブラウザが取る量\n", "合計", pair(total))
+	if r.FallbackBytes > 0 {
+		fmt.Fprintf(w, "  置き場には元の wav（%s）も残す — Opus を解けないブラウザだけが取る\n", humanBytes(r.FallbackBytes))
+	}
+	for _, n := range r.Notes {
+		fmt.Fprintf(w, "  知らせ: %s\n", n)
+	}
 	// WhyNot: 運ばない物を言わずに終えない — assets/ の外の Doc や readBytes で読む素材は束に入らず、ブラウザで初めて「無い」になる。
 	fmt.Fprintln(w, "  束に入れたのは project.json と assets/ の下だけ（assets/ の外を読むゲームはブラウザで読めない）")
 	w.Flush()
