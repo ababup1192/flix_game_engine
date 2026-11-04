@@ -8,10 +8,11 @@ mod Render3d.Material {
     import org.lwjgl.system.MemoryUtil
     use Render3d.Shadow.{putShadow}
     use Render3dGlsl.{materialFragmentSource, materialVertexSource}
+    use Render3d.Light.{putLights}
     use Render3d.{materialKey, ProgramKind, BoundTexture, CameraData, MaterialDraw, MaterialEntry, MaterialLocs,
                   MaterialPass, MeshDraw, State, Texture3dEntry, TextureSource, bindJointsBlock, drawPosedMesh, hasUv, isSkinned,
                   lightLocsOf, lightmapTextureUnit, loc, meshDrawOf, meshIdleFrames, meshLocsOf, normalMapTextureUnit, putLinearizedColor,
-                  putDepthRange, putLights, shadowLocsOf, useMeshProgram, warnSceneOnce}
+                  putDepthRange, shadowLocsOf, useMeshProgram, warnSceneOnce}
     use Scene3dRenderer.{RegisteredTexture}
 
     // ── 材質のある置いた物 ──

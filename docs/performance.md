@@ -251,7 +251,7 @@ List.reverse(List.reverse(folded#current) :: folded#rows)
 let eval = ShaderEval.compileSpec(s#spec);
 shadeAll(n, i -> eval(uvOf(i), time))
 
-// 手本（SoftRaster.drawSurface）: 組み立てはデータで返し、Ref を通してループの外に留める
+// 手本（SoftRaster.Internal.Surface.drawSurface）: 組み立てはデータで返し、Ref を通してループの外に留める
 let compiled = onceOutsideLoop(rc, ShaderEval.compile(s#spec, texEnv));
 shadeAll(n, i -> ShaderEval.evalCompiled(compiled, u, v, time))
 ```
@@ -388,7 +388,7 @@ N が定数なので実害は無いと判断している。**N を決めるの�
   **計算そのものが違う**ので、`UiRender` と共有すると絵が変わる
 - `Terrain.surfaceItems:75` — 二乗ではなく線形。カリングは呼び側の仕事
 - `ShaderEval.neighborCells:368` — `envOf` と同じ経路・同じ性質・同じ分母で、そちらは打ち切り済み
-- `SoftRaster.drawGlyph` の `deriveFont` — JDK が font strike をキャッシュしている
+- `SoftRaster.Internal.Text.drawGlyph` の `deriveFont` — JDK が font strike をキャッシュしている
 - `RenderLint.pairsOf:193` — 全ペアが仕様で、出力自体が N²/2 要素ある
 - `TileLayer.sourceIdAt:117` — 形は正しいが**呼び出し元がゼロ**（`isWall` / `isFloor` にも無い）。
   生死の門により、直す前に「消すか」を問う対象
