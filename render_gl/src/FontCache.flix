@@ -8,7 +8,7 @@
 mod RenderFontCache {
     import java.io.File
     import java.io.FileInputStream
-    import java.io.RandomAccessFile
+    import java.io.FileOutputStream
     import java.io.ByteArrayOutputStream
     import java.io.ByteArrayInputStream
     import java.io.DataOutputStream
@@ -17,7 +17,6 @@ mod RenderFontCache {
     import java.lang.Exception
     import java.nio.ByteBuffer
     import java.nio.ByteOrder
-    import java.nio.channels.FileChannel
     import java.security.MessageDigest
     import java.util.zip.CRC32
 
@@ -151,20 +150,7 @@ mod RenderFontCache {
         try {
             discard new File(dir()).mkdirs();
             let tmp = "${pathOf(key)}.${System.nanoTime()}.tmp";
-            let raf = new RandomAccessFile(tmp, "rw");
-            let head = headerBytes(baked);
-            let table = glyphTableBytes(baked);
-            raf.write(head);
-            raf.write(table);
-            discard baked#pixels.position(0);
-            writeFully(raf.getChannel(), baked#pixels);
-            discard baked#pixels.position(0);
-            let crc = new CRC32();
-            crc.update(baked#pixels);
-            discard baked#pixels.position(0);
-            raf.writeLong(checksumOf(table));
-            raf.writeLong(crc.getValue());
-            raf.close();
+            writeFile(tmp, encode(baked));
             // 書き終えてから名前を付け替える。途中まで書いたファイルを誰かが読むことが無い。
             let target = new File(pathOf(key));
             let tmpFile = new File(tmp);
@@ -176,6 +162,34 @@ mod RenderFontCache {
         } catch {
             case _: Exception => ()
         }
+
+    /// 生成したアトラスをファイルの中身（decode と対の形）にする: 頭・字の表・画素・字の表の検算・画素の検算。
+    /// キャッシュのファイルも書き出しに同梱するファイルもこれ 1 つで作る（書き方が 2 つあると、ずれた片方だけ読めなくなる）。
+    pub def encode(baked: RenderFont.BakedFont): Array[Int8, Static] \ IO =
+        let head = headerBytes(baked);
+        let table = glyphTableBytes(baked);
+        let pixelBytes = baked#side * baked#side;
+        let pixels: Array[Int8, Static] = Array.empty(Static, pixelBytes);
+        discard baked#pixels.position(0);
+        discard baked#pixels.get(pixels);
+        discard baked#pixels.position(0);
+        let crc = new CRC32();
+        crc.update(pixels);
+        let bos = new ByteArrayOutputStream(Array.length(head) + Array.length(table) + pixelBytes + 16);
+        let out = new DataOutputStream(bos);
+        out.write(head);
+        out.write(table);
+        out.write(pixels);
+        out.writeLong(checksumOf(table));
+        out.writeLong(crc.getValue());
+        out.flush();
+        bos.toByteArray()
+
+    /// 中身を path へそのまま書く。書けなければ例外のまま返す（諦め方は呼び手が決める）。
+    pub def writeFile(path: String, bytes: Array[Int8, Static]): Unit \ IO =
+        let fos = new FileOutputStream(path);
+        fos.write(bytes);
+        fos.close()
 
     // ── 内部 ──────────────────────────────────────────────────
 
@@ -263,9 +277,4 @@ mod RenderFontCache {
             };
             Map.insert(cp, gm, acc)
         }, Map.empty())
-
-    /// 1 回の write では全部運びきれないことがあるので、残りが無くなるまで繰り返す。
-    def writeFully(channel: FileChannel, buf: ByteBuffer): Unit \ IO =
-        if (not buf.hasRemaining()) ()
-        else { discard channel.write(buf); writeFully(channel, buf) }
 }
