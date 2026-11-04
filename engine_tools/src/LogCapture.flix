@@ -7,8 +7,8 @@ pub mod LogCapture {
     /// テストで知らせを出す経路を通す時と、知らせが出たことを確かめる時に使う
     /// （Flix のテストの実行器は stderr に 1 字でも出たテストを FAIL にする）。
     /// `let (box, lines) = LogCapture.capture(() -> CollisionShape3d.boxOfNode(node));`
-    // WhyNot: ゲームや描き出しの中で使わない — System.err をまるごと差し替えるので、その間に他の糸が出した行も集めてしまう
-    // （テストの実行器はテストを 1 本ずつ同じ糸で回すので、テストの中では混ざらない）。
+    // WhyNot: ゲームや描き出しの中で使わない — System.err をまるごと差し替えるので、その間に他のスレッドが出した行も集めてしまう
+    // （テストの実行器はテストを 1 本ずつ同じスレッドで回すので、テストの中では混ざらない）。
     pub def capture(f: Unit -> a \ ef): (a, List[String]) \ ef + IO = region rc {
         let saved = System.err;
         let buffer = new ByteArrayOutputStream();
@@ -16,7 +16,8 @@ pub mod LogCapture {
         System.setErr(new PrintStream(buffer, true, "UTF-8"));
         // WhyNot: `let value = f();` と置いて後で使わない — f が純粋に見えると、Flix は値を使う所（stderr を戻した後）まで呼び出しを遅らせうる。
         // Ref へ入れる所は効果があるので、そこで呼び終わる。
-        Ref.put(Some(f()), result);
+        // WhyNot: f() を差し替えた後に読んだ値（buffer.size()）の分かれ道の外に置かない — 純粋に見える f は差し替えより前へ動かされうる。
+        Ref.put(if (buffer.size() >= 0) Some(f()) else None, result);
         System.setErr(saved);
         let lines = String.lines(buffer.toString("UTF-8")) |> List.filter(line -> not String.isEmpty(line));
         match Ref.get(result) {

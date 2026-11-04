@@ -13,8 +13,9 @@ pub mod FrameDiagnostics {
     /// - drawItems: renderCommands へ渡った sprite・多角形・タイル層の数
     /// - glyphsAdded: フォントのアトラスへ足した字の数
     /// - textureUploads: 画素を上げ直したテクスチャの名前
-    /// - gpuNs: GPU がコマ全体（Pass の始まりから画面の描き終わりまで）にかけた時間。GPU を待たずに読むので 1〜2 コマ前の値。
-    ///   測れない描き手（CPU の描き出し・timer query を作れない GL）と、まだ結果が出ていないコマは None
+    /// - gpuNs: GPU がコマの描き先（Pass と画面）を描くのにかけた時間の合計（描き先の間の GPU の空きは含まない）。
+    ///   GPU を待たずに読むので 1〜2 コマ前の値。測れない描き手（CPU の描き出し・時間の query を作れない GL）と、
+    ///   まだ結果が出ていないコマは None
     /// - gpuPasses: 描き先ごとの GPU の時間（Pass の名前・画面は "screen"。描いた順）。gpuNs と同じコマの値
     /// - scene3dCounts: 3D の場面（Render.scene3d）の数。instances = 置いた物・drawn = そのうち描いた物・
     ///   drawCalls = 3D の draw call（影の地図とビルボードを含む）・droppedPointLights / droppedSpotLights = 上限を超えて
@@ -56,24 +57,25 @@ pub mod FrameDiagnostics {
           scene3dCounts = emptyScene3dCounts() }
 
     /// 画面の隅に出す数行（ms は小数 2 桁）。描くのはゲームの字の部品（出す所と見た目はゲームが決める）。
-    /// 1 行目 CPU（送る・swap）・2 行目 GPU（全体と描き先ごと）・3 行目 3D の数（落とした光があれば末尾に）・4 行目 2D の描く物とシェーダー。
+    /// 1 行目 CPU（submit・swap）・2 行目 GPU（全体と描き先ごと）・3 行目 3D の数（落とした光があれば末尾に）・4 行目 2D の描く物とシェーダー。
+    /// WhyNot: 字は ASCII だけ — ゲームは欧文だけのフォントで描くことがあり、日本語の字は □ に化ける。
     pub def summaryLines(d: Diagnostics): List[String] =
         let gpu = match d#gpuNs {
             case Some(ns) => "GPU ${msText(ns)} ms"
             case None     => "GPU -"
         };
-        let passes = d#gpuPasses |> List.map(p -> "${fst(p)} ${msText(snd(p))}") |> String.intercalate("・");
+        let passes = d#gpuPasses |> List.map(p -> "${fst(p)} ${msText(snd(p))}") |> String.intercalate(", ");
         let c = d#scene3dCounts;
-        ("CPU 送る ${msText(d#submitNs)} ms・swap ${msText(d#swapNs)} ms") ::
-        (if (passes == "") gpu else "${gpu}（${passes}）") ::
-        ("3D 置いた物 ${Int32.toString(c#instances)}・描いた ${Int32.toString(c#drawn)}・draw call ${Int32.toString(c#drawCalls)}"
+        ("CPU submit ${msText(d#submitNs)} ms / swap ${msText(d#swapNs)} ms") ::
+        (if (passes == "") gpu else "${gpu} (${passes})") ::
+        ("3D placed ${Int32.toString(c#instances)} / drawn ${Int32.toString(c#drawn)} / draw calls ${Int32.toString(c#drawCalls)}"
             + droppedLightsText(c)) ::
-        ("描く物 ${Int32.toString(d#drawItems)}・シェーダー ${Int32.toString(d#liveShaders)}") :: Nil
+        ("2D draw items ${Int32.toString(d#drawItems)} / shaders ${Int32.toString(d#liveShaders)}") :: Nil
 
     /// 落とした光の数の字（落としていなければ空）。
     def droppedLightsText(c: Scene3dCounts): String =
         if (c#droppedPointLights == 0 and c#droppedSpotLights == 0) ""
-        else "・落とした光 点 ${Int32.toString(c#droppedPointLights)}・スポット ${Int32.toString(c#droppedSpotLights)}"
+        else " / dropped lights point ${Int32.toString(c#droppedPointLights)} / spot ${Int32.toString(c#droppedSpotLights)}"
 
     /// ナノ秒を ms の小数 2 桁の字に（四捨五入）。
     def msText(ns: Int64): String =

@@ -7,8 +7,8 @@
   "pureGetPrefixes": ["get"],
   "hint": "動詞は大手の命名規則: get 取り出すだけ・load/fetch 外から・build/make/compute 計算して作る・is/has/can は Bool・with は新しい値を返す。1 つの動詞に 2 つの意味を持たせない（呼ぶ側が値段を読み違える）。",
   "exempt": {
-    "engine/src/core/AllocMeter.flix::getBean": "Java の ManagementFactory の getter を包むだけ（安い・失敗しない読み取り）。IO は Java を呼ぶため",
-    "engine/src/core/AllocMeter.flix::getAllocatedBytes": "Java の ThreadMXBean の getter を包むだけ（安い・失敗しない読み取り）。IO は Java を呼ぶため",
+    "engine_world/src/AllocMeter.flix::getBean": "Java の ManagementFactory の getter を包むだけ（安い・失敗しない読み取り）。IO は Java を呼ぶため",
+    "engine_world/src/AllocMeter.flix::getAllocatedBytes": "Java の ThreadMXBean の getter を包むだけ（安い・失敗しない読み取り）。IO は Java を呼ぶため",
     "engine_tools/src/GifEncoder.flix::getOrCreateChild": "XML の DOM の getOrCreate（無ければ作って返す）。Java の DOM を触るので IO。外には出ない private の def"
   }
 }

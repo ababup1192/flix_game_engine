@@ -14,7 +14,7 @@
 - **Drawable 経路**（`engine/src/render2d/drawable/Camera.flix` と `Projection.flix`、および
   `view = None` で `GameEngine.Drawable` を自分で組むゲーム）。**一部のゲームだけが
   使う古い経路**で、新規のゲームでは使わない。Sprite / Rect / Polygon / Arc / Text /
-  TileLayer / Tileset / Transform / Visual といった `render/` 配下の描画物の型も、
+  TileLayer / Tileset / Transform / Visual といった `render2d/` 配下の描画物の型も、
   もともとはこの経路のノード型（Godot のノードに近い作り）で、PlacedItem 経路は
   これらを直接は使わず `core/DrawCmd` を土台に `Render.Item` を組む。
   例外は **Text** だけで、PlacedItem 経路の文字描画も内部で `Text.toDrawables` に

@@ -4,8 +4,7 @@
 pub mod SoftRaster.Internal.Blend {
     import java.awt.image.BufferedImage
     import java.awt.Graphics2D
-    use SoftRaster.{QualityHints, blendPixel, channelOf}
-    use SoftRaster.Internal.Sprite.{applyQualityHints, withClip}
+    use SoftRaster.{QualityHints, applyQualityHints, blendPixel, channelOf, withClip}
 
     // ════════════════════════════════════════════════════════
     // ブレンド合成（Add / Multiply — Java2D 標準 Composite に無い重ね方）

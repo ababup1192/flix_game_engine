@@ -199,7 +199,7 @@ World に Doc・アトラス・シェーダーの Spec・音の Mixer を平ら�
 |---|---|---|
 | 機種の handler 一式: `Platform.Services`（`Input`・`Window`・`FrameClock`・`Draw2d`・`Draw3d`・`GpuResources`・`Diagnostics`・`RenderTarget.Target`・`GameEngine.Audio`）と `Fs.FileRead`・`Fs.FileWrite`・`LoadProgress` | ゲームとエンジンの論理 ／ 機種 | 実機（`LwjglLayer`）・画面なしとテスト（`GlOffscreen`・`HeadlessLoad`・偽物の handler）。後でブラウザとコンシューマ |
 | `Scene3dRenderer.Renderer`（値） | 2D の描き手 ／ 3D の描き手 | `Render3d.makeRenderer`・`Scene3dRenderer.none()` |
-| `GlContext`（値・C8 と C9 で作る予定） | GL を使う描き手の本体 ／ GL の API | LWJGL の GL 3.3（デスクトップ）・WebGL2（ブラウザ）。この 2 つのためだけの層 |
+| `GlContext`（値・GL の層を作る時に足す予定） | GL を使う描き手の本体 ／ GL の API | LWJGL の GL 3.3（デスクトップ）・WebGL2（ブラウザ）。この 2 つのためだけの層 |
 
 - **新しい機種（コンシューマなど）の切れ目は、上の 1 行目の handler 一式の高さ**。その機種は `Platform.Services` と Fs と `LoadProgress` の
   handler を自分の描き手と自分のファイルの読み書きで書き、render_gl も `GlContext` も使わない。GL の無い機種のために `GlContext` を広げない。
@@ -210,7 +210,7 @@ World に Doc・アトラス・シェーダーの Spec・音の Mixer を平ら�
 - 名前は 2D 専用に `2d`・3D 専用に `3d`・共通は付けない（`Draw2d`・`Draw3d`・`Scene3d`・`Input`・`Window`）。Bevy と同じ小文字の `d`。
   今ある `CollisionShape2D`・`Physics2D` は改名しない（ゲームが使う pub が多く、改名の得が小さい）。新しく作る物から従う。
 - 大きくなったモジュールは、ゲームが呼ぶ pub を元のモジュールに残し、中身を `<元>.Internal.<役>` へ移す（`App.Internal.*`・`Render.Internal.*`・
-  `SoftRaster.Internal.*`）。Flix には pub の名前を別の mod の名前で見せ直す口が無いため。ゲームから `<元>.Internal` を書くと lint-forbid の
+  `SoftRaster.Internal.*`）。Flix には pub の名前を別の mod の名前で見せ直す口が無いため。ゲームから engine の `<元>.Internal`（App・Render・SoftRaster）を書くと lint-forbid の
   `app-internal` が止める。engine の 4 パッケージの src の 1 ファイルは 1,200 行まで（`make lint-max-lines`・例外は `bin/lint-rules/max-lines.json`）。
 
 ## 二乗を書かない

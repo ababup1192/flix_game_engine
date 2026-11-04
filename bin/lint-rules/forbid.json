@@ -316,8 +316,8 @@
       "suffixes": [".flix"],
       "skip": ["engine/", "engine_world/", "engine_tools/", "engine_full/", "render_gl/", "bench/", "src/engine/", "src/engine_world/", "src/engine_tools/", "src/render_gl/", "lib/", "build/"],
       "skipDirs": ["build", "lib"],
-      "pattern": "\\b[A-Z][A-Za-z0-9]*\\.Internal\\b",
-      "hint": "<モジュール>.Internal.*（App.Internal・Render.Internal・SoftRaster.Internal など）はそのモジュールの中身でゲームからは呼ばない（版を上げると名前も形も黙って変わる）。ゲームが使う関数は親のモジュールにある（App.launch・App.trace・App.traceFrame・App.frameOf・App.composeScene など。make api Q=App.）。足りない関数があれば engine に足すよう相談する"
+      "pattern": "\\b(?:App|Render|SoftRaster)\\.Internal\\b",
+      "hint": "App.Internal・Render.Internal・SoftRaster.Internal は engine のそのモジュールの中身でゲームからは呼ばない（版を上げると名前も形も黙って変わる）。ゲームが使う関数は親のモジュールにある（App.launch・App.trace・App.traceFrame・App.frameOf・App.composeScene など。make api Q=App.）。足りない関数があれば engine に足すよう相談する"
     },
     {
       "id": "dev-request-outside-main",

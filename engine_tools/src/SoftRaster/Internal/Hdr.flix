@@ -4,8 +4,7 @@
 pub mod SoftRaster.Internal.Hdr {
     import java.awt.image.BufferedImage
     import java.awt.Graphics2D
-    use SoftRaster.{HdrCanvas, PassImage, QualityHints, blendPixelF, channelOf, forEachPixel, passImageSize, putHdr}
-    use SoftRaster.Internal.Sprite.{applyQualityHints, withClip}
+    use SoftRaster.{HdrCanvas, PassImage, QualityHints, applyQualityHints, blendPixelF, channelOf, forEachPixel, passImageSize, putHdr, withClip}
 
     pub def blankHdrCanvas(w: Int32, h: Int32): HdrCanvas \ IO =
         { width = w, height = h, rgba = Array.repeat(Static, Int32.max(1, w * h) * 4, 0.0) }

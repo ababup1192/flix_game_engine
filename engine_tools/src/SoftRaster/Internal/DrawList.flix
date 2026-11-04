@@ -5,10 +5,10 @@ pub mod SoftRaster.Internal.DrawList {
     import java.awt.image.BufferedImage
     import java.awt.Graphics2D
     import java.lang.System
-    use SoftRaster.{FontAntialias, FontEntry, FontTable, HdrCanvas, PassImage, RItem, RasterReq, SurfaceCmd, TexWarnLog, TextureCache, hintsOf, texDataOf, texelsName, toArgbImage}
+    use SoftRaster.{FontAntialias, FontEntry, FontTable, HdrCanvas, PassImage, RItem, RasterReq, SurfaceCmd, TexWarnLog, TextureCache, applyQualityHints, hintsOf, texDataOf, texelsName, toArgbImage, withClip}
     use SoftRaster.Internal.Texture.{builtinRadialImages, loadTextures, loadTexturesCached, sceneTexturesOf}
     use SoftRaster.Internal.Text.{buildFontTable}
-    use SoftRaster.Internal.Sprite.{applyQualityHints, drawDrawable, drawPolygon, withClip}
+    use SoftRaster.Internal.Sprite.{drawDrawable, drawPolygon}
     use SoftRaster.Internal.Blend.{blendedDraw, drawableAabb, polygonAabb}
     use SoftRaster.Internal.Hdr.{blendedDrawHdr}
     use SoftRaster.Internal.Surface.{drawSurface, drawSurfaceHdr}

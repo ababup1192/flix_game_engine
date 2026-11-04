@@ -1,6 +1,6 @@
 // HeadlessLoad — 画面なしの道（e2e・動画・gallery・テスト）で読み込みを流す LoadProgress の handler。
 // 仕事をスレッドの pool で回し、javax.imageio のデコーダーを返す（実機の LwjglLayer と同じ決まり。知らせは捨てるか onReport へ）。
-// 絵を解く読み込みの関数を画面なしで流すなら LoadProgress.runNoop ではなく HeadlessLoad.handle で包む（runNoop は順に回し、絵のデコードは 0.84.0 で止まる）。
+// 絵を解く読み込みの関数を画面なしで流すなら LoadProgress.runNoop ではなく HeadlessLoad.handle で包む（runNoop は順に回し、絵を解こうとすると bug! で止まる）。
 // 決まり（知らせの並び・50 ms ごとの知らせ・例外で抜ける）は LoadProgress.Conformance で確かめる。
 // WhyNot: render_gl の LwjglLoad と 1 つにしない — 層は engine と自分のソースしか見ないので、engine_tools から
 // render_gl は見えない。engine に置くと契約層へ java.util.concurrent と javax.imageio が戻る。

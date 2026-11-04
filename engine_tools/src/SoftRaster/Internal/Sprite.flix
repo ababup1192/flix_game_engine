@@ -12,38 +12,8 @@ pub mod SoftRaster.Internal.Sprite {
     import java.awt.geom.{RoundRectangle2D$Double => RoundRect}
     import java.awt.geom.{Line2D$Double => Line2D}
     import java.awt.geom.{Rectangle2D$Double => Rect2D}
-    use SoftRaster.{FontTable, QualityHints, TexWarnLog, awtColor, clampI, f32, ri, warnMissingTexture}
+    use SoftRaster.{FontTable, TexWarnLog, awtColor, clampI, f32, ri, warnMissingTexture}
     use SoftRaster.Internal.Text.{drawGlyph, fontFor, withTextHints}
-
-    /// 本体と下書き（blendedDraw）が同じ見た目で描くための描画品質ヒント一式。
-    ///
-    /// 面と文字を別のつまみにしてあるのは、**2 つが別の理由で効く**から。
-    /// 面の縁は「宣言していない中間色を画素に湧かせない」ため（色の予算）、
-    /// 文字の縁は「小さい字を読めるようにする」ため（可読性）。
-    /// ドット絵のキャラと 7px の TTF が同居する画面では、この 2 つは逆を向く。
-    ///
-    /// 送り幅（FRACTIONALMETRICS）は文字の側に付ける。効くのは字の置き場所と進み幅だけで、
-    /// 面には一切触らない — 面の縁を画素の格子に乗せたいという要求とは関係が無い。
-    /// 文字の縁をならさない（text = false）と決めた画面では、字も整数の画素位置に
-    /// 揃ってほしいので、2 つが同じつまみで動くのが正しい。
-    ///
-    /// スプライト拡大の補間だけはどちらにも載せない。あれは実機（GPU）の見え方に
-    /// そろえるための固定で、選ぶ余地が無い。
-    pub def applyQualityHints(g: Graphics2D, hints: QualityHints): Unit \ IO =
-        // 面の縁（fillRoundRect/fillPolygon）。切ると縁が画素の格子に乗る。
-        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
-            if (hints#shapes) RenderingHints.VALUE_ANTIALIAS_ON else RenderingHints.VALUE_ANTIALIAS_OFF);
-        // スプライト拡大（drawTextured の drawImage）は最近傍固定。実機の GPU 描画はドット絵を
-        // 補間せず拡大するため、ここで補間すると実機と見え方がずれる（にじみ・輪郭ボケ）。
-        g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
-        // 出力解像度で小サイズ文字をくっきり描くためのテキスト品質ヒント（drawString は INTERPOLATION の対象外）。
-        g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
-            if (hints#text) RenderingHints.VALUE_TEXT_ANTIALIAS_ON
-            else RenderingHints.VALUE_TEXT_ANTIALIAS_OFF);
-        // 字の送り幅。ON だと字が小数の位置に置ける（詰めが揃う）。OFF だと整数の画素に丸まる。
-        g.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS,
-            if (hints#text) RenderingHints.VALUE_FRACTIONALMETRICS_ON
-            else RenderingHints.VALUE_FRACTIONALMETRICS_OFF)
 
     /// 1 つの Drawable を描く。texture が空なら box、`font_` ならグリフを直接 drawString、
     /// それ以外はテクスチャ画像。
@@ -286,21 +256,6 @@ pub mod SoftRaster.Internal.Sprite {
         let dy2 = ri((posY + displayH) * sf);
         discard g.drawImage(tinted, dx1, dy1, dx2, dy2, 0i32, 0i32, sw, sh,
                             unchecked_cast(null as ImageObserver))
-
-    /// clip 矩形(design px)を出力ピクセルへ floor 量子化して張り、draw を実行してから元へ戻す。
-    /// 量子化は GL の glScissor と同じ DrawCmd.clipPixels — 同じ画素集合になるのがスナップショットの前提。
-    /// 退避・復元で行うので、draw の内側の g.clip(交差)とも安全に入れ子になる。
-    pub def withClip(g: Graphics2D, sf: Float64, clip: Option[Rect2.Rect2], draw: Unit -> Unit \ ef): Unit \ IO + ef =
-        match clip {
-            case None    => draw()
-            case Some(r) => {
-                let saved = g.getClip();
-                let (x0, y0, x1, y1) = DrawCmd.clipPixels({ scaleX = sf, scaleY = sf }, r);
-                g.setClip(x0, y0, Int32.max(0, x1 - x0), Int32.max(0, y1 - y0));
-                draw();
-                g.setClip(saved)
-            }
-        }
 
     /// 多角形塗り。頂点は design px。
     pub def drawPolygon(rc: Region[r], g: Graphics2D, sf: Float64, p: GameEngine.PolygonRenderCmd): Unit \ IO + r =

@@ -544,17 +544,21 @@ lint-f32:
 lint-z-table:
 	@bin/fge z-table --all
 
-# ── ゲート: 古い書き方 (1 行の正規表現 + 代わりの物) ─────────────
 # ── lint をまとめて流す ─────────────────────────────────────
 # engine の作業場の lint のうち、今 0 件の物を 1 回で流す（コミット時のフックは触ったファイルだけを見るので、全量はここで見る）。
 # WhyNot: lint-quadratic・lint-fallback・lint-jargon をまだ入れない — 全量では前からの当たりが残っていて、ここが毎回赤になる。
 # WhyNot: 依存に並べず順に make を呼ぶ — make -j で並べると出力が混ざり、どの lint が落ちたか読めない。
+# WhyNot: 最初に落ちた所で止めない — 後ろの lint の当たりも 1 回で見たい。
 .PHONY: lint
 lint:
-	@for t in lint-forbid lint-max-lines lint-value-discard lint-hoist lint-record-wrap lint-state-shape lint-doc-refs lint-z-table lint-f32; do \
-		$(MAKE) --no-print-directory $$t || exit 1; \
-	done
+	@failed=""; \
+	for t in lint-forbid lint-max-lines lint-value-discard lint-hoist lint-record-wrap lint-state-shape lint-doc-refs lint-z-table lint-f32; do \
+		$(MAKE) --no-print-directory $$t || failed="$$failed $$t"; \
+	done; \
+	if [ -n "$$failed" ]; then echo "[lint] 落ちた物:$$failed"; exit 1; fi; \
+	echo "[lint] OK"
 
+# ── ゲート: 古い書き方 (1 行の正規表現 + 代わりの物) ─────────────
 .PHONY: lint-forbid
 lint-forbid:
 	@bin/fge forbid --all

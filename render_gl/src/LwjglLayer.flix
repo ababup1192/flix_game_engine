@@ -244,7 +244,6 @@ pub mod LwjglLayer {
             discard pb.inheritIO();
             let code = pb.start().waitFor();
             // WhyNot: 終了コードを返して呼び元に終えさせない — 子が 0 で終わっても親はここで必ず終わる（戻ると呼び元が窓を開きにいく）。
-            // WhyNot: Bool を返す形をやめない — 古い GameEngine.ensureMainThread と同じ形なら、ゲームの Main を 1 語の置き換えで直せる。
             System.exit(code);
             true
         }
