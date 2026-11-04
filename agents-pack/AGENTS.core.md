@@ -68,6 +68,7 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | テストで系に渡す 1 コマ（押したキー・dt・カーソル）を組む | `{ down = Set#{Key.Space}, justPressed = Set#{Key.Space}, dt = 0.016 \| App.emptyFrame() }`（字で `App.Frame` の全部の欄を書かない。前のコマとの差から作るなら `App.frameOf`） |
 | どう遊んでも崩れない決まりを確かめる（性質テスト） | `PropertyTest.forAll`（画面なしで `App.trace` と同じ道） |
 | テストで実機と同じ 1 コマ（時計・固定刻み・押した瞬間の持ち越し・系・音）を進める | `App.traceFrame`（`App.freshStepState()` から持ち回す）か列ごと `App.trace`（`App.Internal.*` は App の中身で、ゲームの src と test に書くと lint-forbid の app-internal が止める） |
+| 画面なしで描く物を作る・Item を描く命令にする所を自分で呼びたい（`SoftRaster` や `Render` の中の関数） | 親のモジュールの関数（`SoftRaster.renderToImage`・`Render.toDrawables`・`Render.softSceneOf` など。`make api Q=Render.`）。`<モジュール>.Internal.*`（`Render.Internal`・`SoftRaster.Internal`）は中身で、ゲームの src と test に書くと lint-forbid の app-internal が止める。足りなければ engine に足すよう相談する |
 | e2e・動画の手順を書いて画面なしで流す（失敗は行番号つき） | `e2e/<名前>.flow` + `App.withFlow`・`bin/fge flow check`・`make flow` |
 | 好きな場面から起動・テスト・遊んだ通りに再生 | `App.withStarts`（`START=`・`startOrBug`）・記録は `make flow` で再生 |
 | ギャラリーの 1 枚の World から実機で開く・実機の記録が再生と同じか | `App.withShots`（`<ゲーム>/src/Shots.flix`）+ `SHOT=<場面> make run`・engine で `make determinism`（台本 `FLIX_GE_INPUT_SCRIPT`） |
