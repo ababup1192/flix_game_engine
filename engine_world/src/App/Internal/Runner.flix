@@ -281,7 +281,7 @@ pub mod App.Internal.Runner {
         let resumed = App.resumePoint(st#anno, st#history, st#world);
         hooks#recordJump(if (st#anno#scrub > 0) Some("rewind ${Int32.toString(st#anno#scrub)}") else None,
                          resumed#world, st#tools);
-        let (cache1, seen1, warned1) = App.Internal.Paint.renderFrame(app, st#warnOnce, st#design, resumed#world, App.Internal.Paint.plainLook(App.Internal.Paint.fpsOverlayOf(r, st#design, resumed#anno)), st#tileCache, st#glyphSeen, st#budgetWarned);
+        let (cache1, seen1, warned1) = App.Internal.Paint.renderFrame(app, st#warnOnce, st#lastDiagnostics, st#design, resumed#world, App.Internal.Paint.plainLook(App.Internal.Paint.fpsOverlayOf(r, st#design, resumed#anno)), st#tileCache, st#glyphSeen, st#budgetWarned);
         { world = resumed#world, anno = resumed#anno, history = resumed#history,
           tileCache = cache1, glyphSeen = seen1, budgetWarned = warned1,
           outputKeys = App.Internal.Output.keysAfterJump(app, resumed#world, st#outputKeys) | st }
@@ -305,13 +305,13 @@ pub mod App.Internal.Runner {
         let measuredAnno = if (r#debug) Annotate.recordDt(frame#dt, st#anno) else st#anno;
         // Doc の読み直しが起きたフレームはタイル層の世代を進め、同じ key でも作り直す。
         let renderStart = System.nanoTime();
-        let (cache1, seen1, warned1) = App.Internal.Paint.renderFrame(app, st#warnOnce, st#design, advanced, App.Internal.Paint.plainLook(App.Internal.Paint.fpsOverlayOf(r, st#design, measuredAnno)),
+        let (cache1, seen1, warned1) = App.Internal.Paint.renderFrame(app, st#warnOnce, frame#diagnostics, st#design, advanced, App.Internal.Paint.plainLook(App.Internal.Paint.fpsOverlayOf(r, st#design, measuredAnno)),
                                           App.Internal.Paint.bumpTileGen(watchFired or reloadFired, st#tileCache),
                                           st#glyphSeen, st#budgetWarned);
         // WhyNot: 画面へ出すのをループ（止めた画面・再開のコマと同じ所）へ回さない — ヒッチの記録の描く時間は swap まで含めて測ってきた。
         Platform.Window.presentFrame();
         let renderNs = System.nanoTime() - renderStart;
-        // 診断はここで 1 回だけ引き取り、ヒッチの記録と次のフレームの Frame#diagnostics へ配る。
+        // 診断はここで 1 回だけ引き取り、ヒッチの記録と次のフレームの Frame#diagnostics・ViewCtx#diagnostics へ配る。
         let diag = if (collecting) Some(Platform.Diagnostics.consumeDiagnostics()) else None;
         let nextTools = hooks#endFrame(watchedTools,
             { frame = measuredAnno#frame, start = frameStart, updateNs = updatedAt - frameStart,

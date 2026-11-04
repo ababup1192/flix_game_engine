@@ -131,7 +131,7 @@
 - 負方向・正方向のキーの押し下げを -1 / 0 / +1 にまとめる（両押しは打ち消して 0）。
   `pub def axis(negative: {negative = GameEngine.Key}, positive: {positive = GameEngine.Key}, frame: Frame): Float64`
 - view / hudView が受け取る「この 1 フレームの見え方」。atlas は文字描画用の既定フォント、
-  `pub type alias ViewCtx = { atlas = FontAtlas, fontOf = String -> FontAtlas, visible = Rect2.Rect2, warnOnce = String -> Unit }`
+  `pub type alias ViewCtx = { atlas = FontAtlas, fontOf = String -> FontAtlas, visible = Rect2.Rect2, warnOnce = String -> Unit, diagnostics = Option[FrameDiagnostics.Diagnostics] }`
 - ヘッドレス描き出しから view を呼ぶときの ViewCtx。画面全体が見えている扱いにする。
   `pub def viewCtxOf(atlas: FontAtlas, design: Vec2.Vec2): ViewCtx`
 - viewCtxOf の複数フォント版。fontOf には実機と同じ名前で引ける関数を渡す
@@ -228,7 +228,7 @@
   `pub def withFullscreen(f: w -> Bool, app: App[w, ef]): App[w, ef]`
 - 毎フレーム「マウスを窓にキャプチャしたいか」を World から宣言する（一人称の視点。Godot の MOUSE_MODE_CAPTURED・
   `pub def withMouseCapture(f: w -> Bool, app: App[w, ef]): App[w, ef]`
-- 描く側の診断（CPU・GPU の 1 コマの時間・3D の数）を集め、次のフレームの Frame#diagnostics に渡す。
+- 描く側の診断（CPU・GPU の 1 コマの時間・3D の数）を集め、次のフレームの Frame#diagnostics と ViewCtx#diagnostics に渡す。
   `pub def withDiagnostics(app: App[w, ef]): App[w, ef]`
 - 跳んだ拍（起動・START・/start・/step・/flow?apply・F8 の巻き戻しからの再開）に、出力をどう扱うか。
   `pub enum OnJump with Eq, ToString { case Skip case Write }`
@@ -300,6 +300,8 @@
   `pub def composeScene(center: Option[Vec2.Vec2], zoom: Float64, design: Vec2.Vec2, items: { world = List[Render.PlacedItem], hud = List[Render.PlacedItem] }): List[Render.PlacedItem]`
 - camera 中心と zoom から、画面に見えている world の矩形を出す（大きさ design/zoom。
   `pub def visibleOf(center: Option[Vec2.Vec2], zoom: Float64, design: Vec2.Vec2): Rect2.Rect2`
+- ViewCtx を 1 つ受けて、view・hudView・視差レイヤの絵に camera を掛けて 1 コマぶん並べる（窓なしで呼べる）。
+  `pub def buildSceneItems(app: App[w, ef], design: Vec2.Vec2, base: ViewCtx, world: w, toItems: (ViewCtx, w) -> List[Render.PlacedItem] \ ef): List[Render.PlacedItem] \ ef`
 - 時間スクラブ用に持ち回す直近の World の数（60fps で約 30 秒）。
   `pub def historyLimit(): Int32`
 - 開発の道具（リモートデバッグの命令口・ゲームの名簿・flow の記録・ヒッチの見張り・Doc の保存検知・F8 の注釈の書き出し・

@@ -28,7 +28,7 @@ mod TestZStack {
           fontOf = _ -> { textureName = "", fontSize = 1.0, textureSize = 1.0, ascent = 0.0, descent = 0.0,
                           lineGap = 0.0, glyphs = Map.empty() },
           visible = { position = { x = 0.0, y = 0.0 }, size = { x = 1.0, y = 1.0 } },
-          warnOnce = warnOnce }
+          warnOnce = warnOnce, diagnostics = None }
 
     def quiet(): App.ViewCtx = ctxWith(_ -> ())
 

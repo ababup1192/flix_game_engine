@@ -57,7 +57,7 @@ pub mod App.Internal.Halt {
                 // 止めている間も本編と同じ renderFrame で 1 コマ全部を描く（シェーダー面・レンダーターゲット・
                 // 字の用意も同じ規則）。ズーム・パンは描く前の絵に掛ける（pausedLook）。
                 let paint = (look, p) -> {
-                    let (cache, seen, warned) = App.Internal.Paint.renderFrame(app, warnOnce, design, displayed, look,
+                    let (cache, seen, warned) = App.Internal.Paint.renderFrame(app, warnOnce, frame#diagnostics, design, displayed, look,
                                                             p#tileCache, p#glyphSeen, p#budgetWarned);
                     { tileCache = cache, glyphSeen = seen, budgetWarned = warned }
                 };
@@ -68,7 +68,7 @@ pub mod App.Internal.Halt {
                         let shotPainted = paint(App.Internal.Paint.plainLook(Nil), painted);
                         let atlas = Platform.GpuResources.getFontAtlas("default");
                         let items = List.append(App.Internal.Paint.tilePausedItems(app, design, displayed),
-                                    List.append(App.sceneItems(app, design, atlas, warnOnce, displayed, toItems),
+                                    List.append(App.sceneItems(app, design, atlas, warnOnce, frame#diagnostics, displayed, toItems),
                                                 App.Internal.Paint.staticPausedItems(app, design, displayed)));
                         let hitList = Annotate.hits(name -> Platform.GpuResources.getTextureInfo(name), rect, items);
                         (saveAnnotation(buildAnnotationRequest(design, rect, shownFrame, dump, hitList)), shotPainted)

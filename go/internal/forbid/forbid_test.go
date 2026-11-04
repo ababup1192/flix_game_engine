@@ -178,3 +178,34 @@ func TestEngineExemptForAbsentFileIsNotStale(t *testing.T) {
 		t.Fatalf("code=%d msg=%s", code, msg)
 	}
 }
+
+// frame-diagnostics-in-system（engine の本物の規則）: frame・viewCtx・c の #diagnostics は止め、View の ctx#diagnostics は止めない。
+func TestFrameDiagnosticsRuleStopsFrameButNotViewCtx(t *testing.T) {
+	rules, err := LoadRules(filepath.Join("..", "..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rule *Rule
+	for i := range rules.List {
+		if rules.List[i].ID == "frame-diagnostics-in-system" {
+			rule = &rules.List[i]
+		}
+	}
+	if rule == nil {
+		t.Fatal("frame-diagnostics-in-system が無い")
+	}
+	only := &Rules{List: []Rule{*rule}}
+	src := "    let w1 = World.withDiagnostics(frame#diagnostics, w)\n" +
+		"    let lines = ctx#diagnostics |> Option.map(FrameDiagnostics.summaryLines)\n" +
+		"    let d = viewCtx#diagnostics\n" +
+		"    f(ctx#diagnostics)\n" +
+		"    let e = c#diagnostics\n"
+	hits := only.TextHits("src/Update.flix", src)
+	lines := []int{}
+	for _, h := range hits {
+		lines = append(lines, h.Line)
+	}
+	if len(lines) != 3 || lines[0] != 1 || lines[1] != 3 || lines[2] != 5 {
+		t.Fatalf("1・3・5 行目だけ当たるはず: %+v", hits)
+	}
+}

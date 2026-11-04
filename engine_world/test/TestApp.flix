@@ -279,6 +279,49 @@ mod TestApp {
             ((visible#position#x, visible#position#y), (visible#size#x, visible#size#y)))
 
     // ========================================================================
+    // ViewCtx#diagnostics: 実機の道は前のフレームの診断を view と hudView へ渡し、画面なしの ctx は None
+    // ========================================================================
+
+    /// ctx#diagnostics の drawItems を x に置いた箱 1 つ（診断が無ければ x = -1）。
+    def diagnosticsMarker(ctx: App.ViewCtx): List[Render.PlacedItem] =
+        let x = match ctx#diagnostics {
+            case Some(d) => Int32.toFloat64(d#drawItems)
+            case None    => -1.0
+        };
+        { at = { x = x, y = 0.0 } | boxAtOrigin() } :: Nil
+
+    def markerApp(): App.App[Int32, {}] =
+        App.game({ init = 0, update = (_, w) -> w, view = (ctx, _) -> diagnosticsMarker(ctx), reloads = Nil })
+            |> App.withHudView((ctx, _) -> diagnosticsMarker(ctx))
+            |> App.addParallaxLayer(0.5, (ctx, _) -> diagnosticsMarker(ctx))
+
+    // 前のフレームの診断（drawItems 7）を持つ ctx から組むと、視差レイヤ・view・hudView のどれもがその診断を受け取る。
+    @Test
+    def testBuildSceneItemsPassesDiagnosticsToEveryLayer(): Unit \ Assert =
+        let diag = { drawItems = 7 | FrameDiagnostics.empty() };
+        let base = { diagnostics = Some(diag) | App.viewCtxOf(App.pickCtx(sceneDesign())#atlas, sceneDesign()) };
+        let items = App.buildSceneItems(markerApp(), sceneDesign(), base, 0, (ctx, _) -> diagnosticsMarker(ctx));
+        Assert.assertEq(expected = (7.0, 0.0) :: (7.0, 0.0) :: (7.0, 0.0) :: Nil, List.map(p -> (p#at#x, p#at#y), items))
+
+    // 診断を持たない ctx から組むと、視差レイヤ・view・hudView のどれもが None を受け取る。
+    @Test
+    def testBuildSceneItemsPassesNoneWithoutDiagnostics(): Unit \ Assert =
+        let base = App.pickCtx(sceneDesign());
+        let items = App.buildSceneItems(markerApp(), sceneDesign(), base, 0, (ctx, _) -> diagnosticsMarker(ctx));
+        Assert.assertEq(expected = (-1.0, 0.0) :: (-1.0, 0.0) :: (-1.0, 0.0) :: Nil, List.map(p -> (p#at#x, p#at#y), items))
+
+    // 画面なしの描き出しの ctx（viewCtxOfFonts）は診断を持たない。
+    @Test
+    def testViewCtxOfFontsHasNoDiagnostics(): Unit \ Assert =
+        let atlas = App.pickCtx(sceneDesign())#atlas;
+        Assert.assertEq(expected = true, Option.isEmpty(App.viewCtxOfFonts(atlas, _ -> atlas, sceneDesign())#diagnostics))
+
+    // 入力の側の当たり用の ctx（pickCtx）は診断を持たない。
+    @Test
+    def testPickCtxHasNoDiagnostics(): Unit \ Assert =
+        Assert.assertEq(expected = true, Option.isEmpty(App.pickCtx(sceneDesign())#diagnostics))
+
+    // ========================================================================
     // visibleOf: ViewCtx の visible（見えている world 矩形）の源
     // ========================================================================
 

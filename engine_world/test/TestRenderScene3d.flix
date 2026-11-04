@@ -21,7 +21,7 @@ mod TestRenderScene3d {
                       lineGap = 0.0, glyphs = Map.empty() };
         { atlas = atlas, fontOf = _ -> atlas,
           visible = { position = { x = 0.0, y = 0.0 }, size = { x = 1.0, y = 1.0 } },
-          warnOnce = _ -> () }
+          warnOnce = _ -> (), diagnostics = None }
 
     def camera(): Camera3d.Camera3d =
         { eye = Vec3.zero(), yaw = 0.0, pitch = 0.0, fovY = 1.0, near = 1.0, far = 100.0 }

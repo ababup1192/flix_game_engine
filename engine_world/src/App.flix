@@ -48,7 +48,7 @@ pub mod App {
                                            // キャプチャを切り替えた拍・フォーカスが戻った拍は 0
         windowFocused = Bool,              // 窓にフォーカスがあるか（外れている間にキャプチャの宣言を出し続けても OS はキャプチャしない）
         diagnostics = Option[FrameDiagnostics.Diagnostics] // 前のフレームを描いた診断（CPU・GPU の時間・3D の数）。withDiagnostics の
-                                           // 間だけ Some（F8 で止めていた拍の後は止める前の値）。表示は FrameDiagnostics.summaryLines。
+                                           // 間だけ Some（F8 で止めていた拍の後は止める前の値）。画面に出すなら View・HUD で ViewCtx#diagnostics から。
                                            // 系で読んで World を変えない（遊んだ記録に残らず、再生では None。lint-forbid の frame-diagnostics-in-system）
     }
 
@@ -81,8 +81,11 @@ pub mod App {
     /// warnOnce は、毎フレーム通る組み立て（SortingLayer.compose など）が既定値で続けたことを知らせる口。
     /// 同じ文面は 1 回だけ出る（実機は App がゲームの間ずっと 1 つの集合で覚える。描き出しはゲームが
     /// 差し替えて、集まった文面で止める）。文面は docs/error-handling.md の決まり 3 の定型にそろえる。
+    /// diagnostics は前のフレームを描いた診断（CPU・GPU の時間・3D の数）。実機で withDiagnostics を宣言した間だけ Some で、
+    /// 画面なしの描き出し（viewCtxOf / viewCtxOfFonts）と pickCtx では None。F3 の行は FrameDiagnostics.summaryLines(d) を
+    /// ゲームの字の部品で描く。View の中で読むだけなので、遊んだ記録と再生は食い違わない。
     pub type alias ViewCtx = { atlas = FontAtlas, fontOf = String -> FontAtlas, visible = Rect2.Rect2,
-                               warnOnce = String -> Unit }
+                               warnOnce = String -> Unit, diagnostics = Option[FrameDiagnostics.Diagnostics] }
 
     /// ヘッドレス描き出しから view を呼ぶときの ViewCtx。画面全体が見えている扱いにする。
     /// フォント 1 本だけの版 — どの名前で引いても同じ本が返る。
@@ -96,7 +99,7 @@ pub mod App {
     pub def viewCtxOfFonts(atlas: FontAtlas, fontOf: String -> FontAtlas, design: Vec2.Vec2): ViewCtx =
         { atlas = atlas, fontOf = fontOf,
           visible = { position = { x = 0.0, y = 0.0 }, size = design },
-          warnOnce = Log.warn }
+          warnOnce = Log.warn, diagnostics = None }
 
     /// 入力の側（update・テスト）で、押せる物の当たりを出すために View の木を組むときの ViewCtx
     /// （`SortingLayer.pickFrom(点, View.layers(App.pickCtx(design), w))`）。字の形を持たないフォントで、
@@ -106,7 +109,7 @@ pub mod App {
                       lineGap = 0.0, glyphs = Map.empty() };
         { atlas = blank, fontOf = _ -> blank,
           visible = { position = { x = 0.0, y = 0.0 }, size = design },
-          warnOnce = _ -> () }
+          warnOnce = _ -> (), diagnostics = None }
 
     /// 見た文面を seen に覚え、初めての文面だけ Log.warn する口（ViewCtx#warnOnce の実機の形）。
     /// View は純粋なので、効果は Log.warn と同じく `unsafe IO` で隠す。
@@ -648,8 +651,10 @@ pub mod App {
     pub def withMouseCapture(f: w -> Bool, app: App[w, ef]): App[w, ef] =
         App.App({ mouseCapture = Some(f) | rec(app) })
 
-    /// 描く側の診断（CPU・GPU の 1 コマの時間・3D の数）を集め、次のフレームの Frame#diagnostics に渡す。
-    /// 画面に出すなら FrameDiagnostics.summaryLines をゲームの字の部品で描く（出す所と見た目はゲームが決める）。
+    /// 描く側の診断（CPU・GPU の 1 コマの時間・3D の数）を集め、次のフレームの Frame#diagnostics と ViewCtx#diagnostics に渡す。
+    /// 画面に出すなら view か hudView で ctx#diagnostics を FrameDiagnostics.summaryLines に通し、ゲームの字の部品で描く
+    /// （出す所と見た目はゲームが決める。出すかどうかの切り替えだけを World に置く）。
+    /// WhyNot: 系で Frame#diagnostics を World へ写さない — 遊んだ記録に残らず、再生と食い違う（lint-forbid の frame-diagnostics-in-system）。
     /// GPU の時間は 1〜2 コマ遅れの値で、測れない描き手（窓なしの描き出し）では None。自前で nanoTime を測らない。
     pub def withDiagnostics(app: App[w, ef]): App[w, ef] =
         App.App({ diagnostics = true | rec(app) })
@@ -1054,28 +1059,35 @@ pub mod App {
             (Map.empty(): Map[String, FontAtlas]));
         name -> Map.get(name, table) |> Option.getWithDefault(dflt)
 
-    /// world から画面に出す絵一式を組む: view の絵に camera を掛け、hud を合流する（純粋な芯は
-    /// composeScene）。F8 スクラブ中は「表示中の瞬間」の World を渡すこと — 現在の world を
+    /// world から画面に出す絵一式を組む（実機の字のフォントで buildSceneItems）。diagnostics は前のフレームの診断で、
+    /// view・hudView・視差レイヤの ViewCtx#diagnostics に入る。F8 スクラブ中は「表示中の瞬間」の World を渡すこと — 現在の world を
     /// 渡すと絵は過去・カメラは現在のズレた画面になり、注釈の当たり判定も全部ずれる。
-    def sceneItems(app: App[w, ef], design: Vec2.Vec2, atlas: FontAtlas, warnOnce: String -> Unit, world: w,
+    def sceneItems(app: App[w, ef], design: Vec2.Vec2, atlas: FontAtlas, warnOnce: String -> Unit,
+                   diagnostics: Option[FrameDiagnostics.Diagnostics], world: w,
                    toItems: (ViewCtx, w) -> List[Render.PlacedItem] \ ef):
             List[Render.PlacedItem] \ (ef + Platform.GpuResources) =
+        let base = { atlas = atlas, fontOf = fontResolver(rec(app), atlas),
+                     visible = visibleOf(None, 1.0, design), warnOnce = warnOnce, diagnostics = diagnostics };
+        buildSceneItems(app, design, base, world, toItems)
+
+    /// ViewCtx を 1 つ受けて、view・hudView・視差レイヤの絵に camera を掛けて 1 コマぶん並べる（窓なしで呼べる）。
+    /// base の visible は層ごとに見えている矩形へ置き換わり、ほかの欄（字・知らせ・診断）はどの層にも同じ値で渡る。
+    pub def buildSceneItems(app: App[w, ef], design: Vec2.Vec2, base: ViewCtx, world: w,
+                            toItems: (ViewCtx, w) -> List[Render.PlacedItem] \ ef): List[Render.PlacedItem] \ ef =
         let r = rec(app);
-        let fontOf = fontResolver(r, atlas);
         let (center, z) = resolvedCamera(r, world, design);
         let hud = match r#hudView {
             case None    => Nil
             // HUD は画面固定なので、見えている矩形は常に design 全体（原点起点）で zoom も掛けない。
-            case Some(h) => h({ atlas = atlas, fontOf = fontOf, visible = visibleOf(None, 1.0, design), warnOnce = warnOnce }, world)
+            case Some(h) => h({ visible = visibleOf(None, 1.0, design) | base }, world)
         };
         // 視差レイヤ: 見かけの center（parallaxCenter）で culling も合成も行う。hud は混ぜない。
         let layers = r#parallaxLayers |> List.flatMap(fl -> {
             let (factor, lview) = fl;
             let lcenter = Option.map(c -> CameraRig.parallaxCenter(factor, c, design = design), center);
-            let lctx = { atlas = atlas, fontOf = fontOf, visible = visibleOf(lcenter, z, design), warnOnce = warnOnce };
-            composeScene(lcenter, z, design, { world = lview(lctx, world), hud = Nil })
+            composeScene(lcenter, z, design, { world = lview({ visible = visibleOf(lcenter, z, design) | base }, world), hud = Nil })
         });
-        let ctx = { atlas = atlas, fontOf = fontOf, visible = visibleOf(center, z, design), warnOnce = warnOnce };
+        let ctx = { visible = visibleOf(center, z, design) | base };
         List.append(layers, composeScene(center, z, design, { world = toItems(ctx, world), hud = hud }))
 
     /// 一時停止を抜ける地点: スクラブで表示していた瞬間の World を現在とし、

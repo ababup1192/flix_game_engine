@@ -1,6 +1,6 @@
 // FrameDiagnostics — 1 コマぶんの、描く側の診断（Platform.Diagnostics.consumeDiagnostics が返す）。2D と 3D で共通。
 // 描く側（render_gl）が集め、App が 1 コマに 1 回引き取って、ヒッチの記録（App.HitchDetector）と
-// ゲーム（App.withDiagnostics → Frame#diagnostics）へ配る。
+// ゲーム（App.withDiagnostics → Frame#diagnostics と ViewCtx#diagnostics）へ配る。
 // 集めるのは setDiagnosticsEnabled(true) の間だけ。切っている間は数えない（本番の負担を作らない）。
 pub mod FrameDiagnostics {
 
@@ -57,6 +57,8 @@ pub mod FrameDiagnostics {
           scene3dCounts = emptyScene3dCounts() }
 
     /// 画面の隅に出す数行（ms は小数 2 桁）。描くのはゲームの字の部品（出す所と見た目はゲームが決める）。
+    /// 診断は view か hudView の ctx#diagnostics から取る。
+    /// World へ写さない — 系で Frame#diagnostics を読むと遊んだ記録と再生が食い違う。出すかどうかの切り替えだけを World に置く。
     /// 1 行目 CPU（submit・swap）・2 行目 GPU（全体と描き先ごと）・3 行目 3D の数（落とした光があれば末尾に）・4 行目 2D の描く物とシェーダー。
     /// WhyNot: 字は ASCII だけ — ゲームは欧文だけのフォントで描くことがあり、日本語の字は □ に化ける。
     pub def summaryLines(d: Diagnostics): List[String] =

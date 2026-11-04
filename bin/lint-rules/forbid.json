@@ -236,8 +236,8 @@
         "test",
         "render"
       ],
-      "pattern": "#diagnostics\\b",
-      "hint": "Frame#diagnostics（前のフレームを描いた時間）を系で読んで World を変えない。遊んだ記録に残らないので、再生（make flow・make determinism）と食い違う。1 コマの時間を見るなら F8・POST /perf・FLIX_GE_FRAME_STATS で外から見る（engine の docs/migrations/0.83.0.md）"
+      "pattern": "(?:^|[^x]|(?:^|[^t])x|(?:^|[^c])tx|\\wctx)#diagnostics\\b",
+      "hint": "Frame#diagnostics（前のフレームを描いた時間）を系で読んで World へ写さない。遊んだ記録に残らないので、再生（make flow・make determinism）と食い違う。F3 の行は View か HUD で ctx#diagnostics から描く（FrameDiagnostics.summaryLines）。表示するかどうかの切り替えだけを World に置く。ViewCtx の引数の名前は ctx にし、Frame を ctx と名付けない（ほかの名前の #diagnostics は止まる）（engine の docs/migrations/0.84.1.md）"
     },
     {
       "id": "game-unchecked-pure",
