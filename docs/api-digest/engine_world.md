@@ -807,6 +807,10 @@
   `pub def overlapDepth(world: CollisionWorld3d.CollisionWorld3d, moving: List[CollisionShape3d.Box3d], s: Settings, b: Body): Float64`
 - 押し出しに使う体の形（足元の段の高さより上の、縦のカプセル）。扉を回す前と後で `CollisionShape3d.penetration` を比べる時に使う。
   `pub def capsuleOf(s: Settings, b: Body): CollisionShape3d.Capsule3d`
+- 体の範囲を囲む軸にそろった箱（足元から height まで・水平は ±radius。Bevy の Collider の aabb・Godot の get_aabb に当たる）。
+  `pub def aabbOf(s: Settings, b: Body): Mesh3d.Bounds`
+- 箱が傾いているか（3 本の向きのどれも、真上から 11.5° より離れている）。Floor の sloped と同じ判定。
+  `pub def isTilted(b: CollisionShape3d.Box3d): Bool`
 
 ## Clock — `engine_world/src/Clock.flix`
 - 反復タイマー: acc に dt を足し、interval に達したら（== も含む）1回 fire（rest に余りを残す）。

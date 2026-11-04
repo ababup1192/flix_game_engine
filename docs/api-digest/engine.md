@@ -681,6 +681,7 @@
   `pub def fellBackThen(domain: String, subject: String, fallback: String, reason: String, value: a): a`
 - lines を 1 行ずつ知らせてから value を返す（空なら何も出さない）。
   `pub def warnAllThen(lines: List[String], value: a): a`
+- `pub def capture(f: Unit -> a \ ef): (a, List[String]) \ ef + IO`
 - fellBack の定型文の 1 行（出さない）。行を集めて warnAllThen へ渡すときに使う。
   `pub def fellBackLine(domain: String, subject: String, fallback: String, reason: String): String`
 
@@ -1307,6 +1308,8 @@
   `pub def pickLights(eye: Vec3.Vec3, cmd: Scene3dCmd): Scene3dCmd`
 - pickLights が上限を超えて落とす光の数（points = 点光源・spots = スポット）。落とす物が無ければ 0。
   `pub def droppedLightsOf(cmd: Scene3dCmd): { points = Int32, spots = Int32 }`
+- 1 コマに描く 3D の場面の列で pickLights が落とす光の数の合計（points = 点光源・spots = スポット）。
+  `pub def droppedLightsOfScenes(scenes: List[RenderCmd]): { points = Int32, spots = Int32 }`
 - 落とす光があれば、種類ごとに (鍵, 知らせる 1 行)。毎コマ通るので、呼ぶ側が鍵ごとに初回 1 回だけ出す（GL と CPU で同じ文面）。
   `pub def droppedLightsWarnings(cmd: Scene3dCmd): List[(String, String)]`
 - `pub type alias RenderCmd = { at = Vec2.Vec2, clip = Option[Rect2.Rect2], scene = Scene3dCmd }`

@@ -67,11 +67,21 @@ pub mod Ray3d {
         ) yield span
 
     /// 箱 b に外から当たる所（maxDistance まで）。始まりが箱の中（面の上を含まない）なら None（Unity の Raycast・Godot の intersect_ray と同じ）。
+    /// 厚さ 0 の向きがある箱（床の板）は中を持たないので、始まりが板の上（丸めの差 flatSkin の中）なら距離 0 で当たる。
     pub def hitBox(r: Ray3d, maxDistance: Float64, b: CollisionShape3d.Box3d): Option[RayHit] =
         boxSpan(r, b) |> Option.flatMap(span -> {
-            let (tmin, _, normal) = span;
-            if (tmin >= 0.0 and tmin <= maxDistance) Some({ distance = tmin, point = pointAt(r, tmin), normal = normal }) else None
+            let (tmin, tmax, normal) = span;
+            // WhyNot: 板の上から始まるレイを「中から」として捨てない — 板の上に合わせた足元は丸めで板の 1e-16 m 下に来うるので、下向きのレイが板を素通りする。
+            let start = if (tmin >= 0.0) Some(tmin) else if (isFlat(b) and tmax >= 0.0 - flatSkin()) Some(0.0) else None;
+            start |> Option.filter(t -> t <= maxDistance) |> Option.map(t -> { distance = t, point = pointAt(r, t), normal = normal })
         })
+
+    /// 厚さ 0 とみなす半分の長さの上限と、板の上とみなす距離の幅（m）。
+    def flatSkin(): Float64 = 1.0e-9
+
+    /// 箱のどれかの向きの厚さが 0 か（床・壁の板）。
+    def isFlat(b: CollisionShape3d.Box3d): Bool =
+        b#half#x <= flatSkin() or b#half#y <= flatSkin() or b#half#z <= flatSkin()
 
     /// 0 から maxDistance までのレイの区間が箱 b に触れるか（始まりが中でも真）。
     def touchesBox(r: Ray3d, maxDistance: Float64, b: CollisionShape3d.Box3d): Bool =

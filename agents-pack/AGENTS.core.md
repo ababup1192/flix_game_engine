@@ -43,7 +43,7 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | Blender でベイクした光（lightmap と 2 本目の UV）を 3D の部屋に貼る | glb は `Gltf.loadTexturedUsing(dec, Gltf.noTextureLimits(), path)`（TEXCOORD_1 → part の uvs2・`dec` は読み込みの頭で `LoadProgress.imageDecoder()`）→ lightmap の PNG は `Texture3d.decodeUsing(dec, bytes)` で場面の textures へ → `Scene3d.meshInstance(..) \|> Scene3d.withLightmap({ intensity = .. \| Scene3d.lightmap(Texture3d.name(t)) })`（光を材質の絵に混ぜ込まない・ベイクに入れた光は pointLights に入れない・骨つきには付かない・engine の `docs/lightmap.md`） |
 | 3D の絵が多く「場面の絵が 256 MB を超えて使われている」と出る | `Gltf.loadTexturedUsing(dec, { normal = 1024 \| Gltf.noTextureLimits() }, path)`・`Texture3d.limitSize(1024)` で縮める → それでも足りなければ project.json の `scene3dTextureBudgetMB`・枚数は `scene3dTextureBudgetCount` |
 | 懐中電灯（縁のぼけたスポット）を目から照らす | `Scene3d.spotLight(p, t, fov)` に `innerFovY = Some(..)`（縁を広くぼかす）を `spotLights` へ（点光源で代わりにしない・円錐を広げて range で縁を消さない・engine の `docs/scene3d.md`） |
-| 3D の点光源が 8 本を超える | 光は全部 `pointLights` に入れる（engine が `Scene3d.pickLights` で目に近い 8 本を選ぶ。ゲームで近い順に選び直さない）。落とした数は `frame#diagnostics` の `scene3dCounts#droppedPointLights` / `droppedSpotLights`（初めて落とした時に 1 回知らせる） |
+| 3D の点光源が 8 本を超える | 光は全部 `pointLights` に入れる（engine が `Scene3d.pickLights` で目に近い 8 本を選ぶ。ゲームで近い順に選び直さない）。落とした数は `frame#diagnostics` の `scene3dCounts#droppedPointLights` / `droppedSpotLights`（初めて落とした時に 1 回知らせる）・画面なしのテストでは `Scene3d.droppedLightsOfScenes(Render.drawScenes3d(items))`（GL と CPU で同じ数） |
 | 一人称でマウスで視点を回す（カーソルを窓にキャプチャする） | `App.withMouseCapture(w -> ..)` + `frame#mouseDelta`（design px）で yaw・pitch を回す。クリックでキャプチャ・Esc で放す（ドラッグの差で代わりにしない・engine の `docs/modules/input.md` の「一人称の視点」） |
 | テストで入力・窓・描く op を偽物にする・機種の handler を自分で書く | 触る役の effect だけを張る: `Platform.Input`・`Platform.Window`・`Platform.FrameClock`・`Platform.Draw2d`・`Platform.Draw3d`・`Platform.GpuResources`・`Platform.Diagnostics`・`Platform.Annotation`（handler は effect ごとに 1 つずつ書く・`Input` は必ず `Platform.Input` と書く） |
 | 自分で `renderCommands` を呼んで窓へ出す（bench・自前のループ） | `Platform.Draw2d.renderCommands` の後に `Platform.Window.presentFrame()`（1 フレームの終わりに 1 回・`renderCommands` は swap しない）。イベントの取り込みは 1 フレームに 1 回 `Platform.Window.pollEvents()`（`shouldClose` は問うだけ） |
@@ -53,6 +53,7 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | 3D の家具・壁に木目や石の絵と凹凸（法線マップ）を貼る | 絵つきの .glb は `Gltf.loadTexturedUsing(dec, Gltf.noTextureLimits(), path)`（`dec` は読み込みの頭で `LoadProgress.imageDecoder()`）→ 部品は `model#parts`・絵は場面の `{ textures = model#textures | 場面 }` に渡す（渡さないと黒い）・コードの形は `Mesh3d.withBoxUvs` + `Scene3d.texturedMaterial` + `withNormalMap`・glb の emissive（`KHR_materials_emissive_strength` つき）も読んで光る（止めるなら `Scene3d.withoutEmission`・emission を差し替えても名前は替えなくてよい・差し替えても glb の強さ `emissionIntensity` は残る）・材質の情報は `part#gltfMaterial` |
 | Blender で名前を付けた物（扉・調べる物・当たり判定の箱・印の点）を glb から名前で引く | `Model3d.findNode(name, model)` / `nodesWithPrefix("COL_", model)`（たくさん引くなら `nodesByName`）→ `node#world`・`node#localBounds`・`Model3d.nodeOrigin`（位置や大きさで探さない・座標を手で写さない。engine の `docs/scene3d.md`） |
 | 3D の部屋を一人称で歩く（壁で止まる・段差を上る・坂・落ちる・扉に押される） | 箱は `Model3d.nodesWithPrefix("COL_", m) \|> CollisionShape3d.boxesOfNodes`（glb の `COL_*` のノード）→ `CollisionWorld3d.build(2.0, boxes)` → 毎コマ `CharacterBody3d.moveAndSlide(world, 扉の板, settings, 速さ, dt, body)`（自前で押し出し・床探しを書かない・地面と歩ける範囲も箱で入れる。engine の `docs/scene3d.md`） |
+| 一人称で歩く体の範囲を見る・描く（体の箱・床の箱が坂か） | `CharacterBody3d.aabbOf(settings, body)`（`Mesh3d.Bounds`。箱にするなら `CollisionShape3d.boxOfBounds(Mat4.identity(), ..)` → `debugMesh`）・床の箱が坂かは `CharacterBody3d.isTilted(box)`（半径と高さから手で箱を組まない） |
 | 一人称で見ている物を調べる（照準の先の物の名前・E で調べる・E で扉） | `Camera3d.forwardRay(cam)` → `Ray3d.pickNearest(ray, 距離, 的)`（的は `Ray3d.boxTargetsOf(n -> 鍵, nodes)`。壁も「壁」の鍵で入れて遮る。距離と向きの内積で代わりにしない） |
 | 3D の場面の背景を空のグラデーション（天頂・地平・地面）にする | `{ sky = Some(Scene3d.gradientSky(天頂, 地平, 地面)) \| Scene3d.scene(..) }`（寄り方は `Scene3d.withSkyCurve`。2D の面を下に敷いて地平の高さを手で計算しない・地平の色をかすみの色にそろえると継ぎ目が消える） |
 | 3D の窓ガラス・網・水面（向こうが透ける物） | 材質に `Scene3d.withAlphaBlend(true, m)`（裏から見えるなら `withDoubleSided(true, ..)`）・glb の `alphaMode: BLEND` / `MASK` は `Gltf.loadTexturedUsing` がそのまま当てる（cutout で代わりにしない・doubleSided は当てないので `part#gltfMaterial#doubleSided` を見てゲームが当てる） |
@@ -86,6 +87,7 @@ grep は別の mod の同じ名前を拾い、`use` で入れた素の名前を�
 | 画面（表紙・遊ぶ・クリア）を足す・その画面だけの値を持つ | World の `screen` の enum に case と payload（手本 game-starter・tidepool-starter） |
 | Doc・アトラス・シェーダーを World に平らに持たず外に出す | App の w を `Resources.With[res, w]`・`Resources.system` / `view` / `read`・読み直しは `Resources.reloadRow` |
 | Doc が壊れたら既定値で続けて知らせる | `DocJson.loadOr` + `Log.fellBackThen` / `warnThen` |
+| 知らせ（`Log.warnThen` など）を出す経路をテストで通す・知らせの文面を確かめる | `let (value, lines) = Log.capture(() -> 式)`（stderr に出るとテストの実行器が FAIL にする。テストで System.setErr を自分で差し替えない） |
 | 直した後に絵を確かめる | `make render SHOT=<場面>` → 仕上げ `make reference-check` |
 | 描き出しの字の被り・z の外れを止める | `make render-lint`（許す物は `text-audit.local.json`） |
 | 依存の向き（規則 → View → 入力の逆を呼ばない・ファイルの輪）・View に World を渡さない・テストの分岐を止める | `make lint-flixlint`（決まりは <ゲーム>/lint/rules.flix の冒頭。View の入口が World から In を組み、部品は In を受ける） |

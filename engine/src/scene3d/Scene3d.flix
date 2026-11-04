@@ -521,6 +521,15 @@ pub mod Scene3d {
         { points = Int32.max(0, List.length(cmd#pointLights) - maxPointLights()),
           spots = Int32.max(0, List.length(cmd#spotLights) - maxSpotLights()) }
 
+    /// 1 コマに描く 3D の場面の列で pickLights が落とす光の数の合計（points = 点光源・spots = スポット）。
+    /// GL の描き手が F3 の診断（FrameDiagnostics の droppedPointLights・droppedSpotLights）に足す数と、CPU の描き出しが落とす数に同じ。
+    /// 画面なしで確かめる時は `Scene3d.droppedLightsOfScenes(Render.drawScenes3d(items))`（描き出しの SoftScene なら `soft#scenes`）。
+    pub def droppedLightsOfScenes(scenes: List[RenderCmd]): { points = Int32, spots = Int32 } =
+        scenes |> List.foldLeft((acc, c) -> {
+            let d = droppedLightsOf(c#scene);
+            { points = acc#points + d#points, spots = acc#spots + d#spots }
+        }, { points = 0, spots = 0 })
+
     /// 落とす光があれば、種類ごとに (鍵, 知らせる 1 行)。毎コマ通るので、呼ぶ側が鍵ごとに初回 1 回だけ出す（GL と CPU で同じ文面）。
     pub def droppedLightsWarnings(cmd: Scene3dCmd): List[(String, String)] =
         let d = droppedLightsOf(cmd);
