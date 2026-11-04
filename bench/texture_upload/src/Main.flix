@@ -21,6 +21,8 @@ mod BenchTextureUpload {
     import org.lwjgl.opengl.GL12
     import org.lwjgl.BufferUtils
     import org.lwjgl.system.MemoryUtil
+    import fge.gl.GlContext
+    import fge.gl.LwjglGl
 
     pub type alias World = {
         t = Float64,
@@ -88,19 +90,22 @@ mod BenchTextureUpload {
                           GL12.GL_BGRA, GL12.GL_UNSIGNED_INT_8_8_8_8_REV, buf);
         MemoryUtil.memFree(buf)
 
+    /// エンジンの GL の値（LWJGL 版）。状態を持たないので呼ぶたびに作ってよい。
+    def lwjglGl(): GlContext \ IO = checked_cast(new LwjglGl())
+
     def uploadAll(mode: String, w: World): Unit \ IO =
         match mode {
             case "old"  => List.forEach(t -> uploadOld(t, w#pixels), w#textures)
             case "bulk" => List.forEach(t -> uploadBulk(t, w#pixels), w#textures)
             case "new" => List.forEach(t ->
-                RenderTexture.updateTexturePixels(t, texWidth(), texHeight(), w#pixels), w#textures)
+                RenderTexture.updateTexturePixels(lwjglGl(), t, texWidth(), texHeight(), w#pixels), w#textures)
             case _     => ()
         }
 
     def ensureTextures(w: World): World \ IO =
         if (List.isEmpty(w#textures))
             { textures = List.range(0, texCount())
-                |> List.map(_ -> RenderTexture.loadTextureFromPixels(
+                |> List.map(_ -> RenderTexture.loadTextureFromPixels(lwjglGl(),
                     texWidth(), texHeight(), w#pixels)) | w }
         else w
 

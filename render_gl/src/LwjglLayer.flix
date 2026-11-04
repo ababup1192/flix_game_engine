@@ -8,6 +8,7 @@
 //   `withLwjgl` の第1引数 EngineConfig と戻り値の effect 制約は公開 API として固定（ゲーム側を変えずに済む）。
 
 pub mod LwjglLayer {
+    import fge.gl.GlContext
     import org.lwjgl.glfw.GLFW
     import org.lwjgl.glfw.Callbacks
     import org.lwjgl.glfw.GLFWFramebufferSizeCallbackI
@@ -380,9 +381,11 @@ pub mod LwjglLayer {
 
         // 塗りのコア（シェーダー・VAO・テクスチャ・シェーダー面・レンダーターゲット・静的レイヤーの登録簿）。
         // 窓なしで動画を塗る GlOffscreen も同じ RenderPaint で塗る（窓・入力・音・swap はここが持つ）。
-        let paint = RenderPaint.create({ designWidth = config#designWidth, designHeight = config#designHeight,
+        let opened = GlCallLog.open();
+        let gl = opened#gl;
+        let paint = RenderPaint.create(gl, { designWidth = config#designWidth, designHeight = config#designHeight,
                                          clearColor = config#clearColor, screenFramebuffer = 0,
-                                         scene3d = Render3d.makeRenderer(config) });
+                                         scene3d = Render3d.makeRenderer(gl, config), gpuTimer = GpuTimer.frameTimer() });
 
         // macOS ではリサイズ中に glfwPollEvents がブロックされるため、
         // フレームバッファサイズ変更コールバックで再描画を行う。
@@ -395,7 +398,7 @@ pub mod LwjglLayer {
                 if (hidden) ()
                 else {
                     Array.put((width, height), 0, framebufferSizeHolder);
-                    RenderPaint.paintFrame(paint, width, height, RenderPaint.lastFrame(paint));
+                    RenderPaint.paintFrame(gl, paint, width, height, RenderPaint.lastFrame(paint));
                     GLFW.glfwSwapBuffers(cbWindow)
                 }
             }
@@ -404,7 +407,7 @@ pub mod LwjglLayer {
         // ===== 起動画面 =====
         // ここから下は読み込みで数秒〜十数秒止まる。ウィンドウは既に出ているので、何も描かないと
         // 固まったように見える。組み込みの絵だけで進み具合を出し続ける。
-        RenderPaint.addTextures(RenderSplash.install(), paint);
+        RenderPaint.addTextures(RenderSplash.install(gl), paint);
         let splashState = RenderSplash.newState();
         let splashShotTaken = Array#{0} @ Static;
         let splashShotAt = Array#{0i64} @ Static;
@@ -419,7 +422,7 @@ pub mod LwjglLayer {
             let splashFrame = { sprites = ds | RenderPaint.emptyFrame() };
             RenderPaint.rememberFrame(paint, splashFrame);
             let (splashW, splashH) = Array.get(0, framebufferSizeHolder);
-            RenderPaint.paintFrame(paint, splashW, splashH, splashFrame);
+            RenderPaint.paintFrame(gl, paint, splashW, splashH, splashFrame);
             Option.forEach(path -> splashShot(path, splashW, splashH, splashShotTaken, splashShotAt), env#splashShotPath);
             GLFW.glfwSwapBuffers(window);
             GLFW.glfwPollEvents();
@@ -432,7 +435,7 @@ pub mod LwjglLayer {
         RenderSplash.show(splashState, drawSplash, design, "starting up...", 0, 0);
 
         // テクスチャ・フォント・組み込みの放射テクスチャを読み、塗りのコアの登録簿へ載せる（起動画面に進み具合を出しながら）。
-        let fonts = RenderPaint.loadAssets(paint, config, splash);
+        let fonts = RenderPaint.loadAssets(gl, paint, config, splash);
 
         RenderSplash.show(splashState, drawSplash, design, "starting audio...", 0, 0);
         let audio = openAudio(config, muted, splash);
@@ -484,7 +487,7 @@ pub mod LwjglLayer {
             fullscreen = fullscreenHolder, originalWindowRect = originalWindowRectHolder, present = present
         };
         let framebufferSize = () -> Array.get(0, framebufferSizeHolder);
-        let annotation = { window = window, config = config, paint = paint, design = design,
+        let annotation = { window = window, config = config, gl = gl, paint = paint, design = design,
                            shutterSource = audio#shutterSource };
 
         // WhyNot 並びを変えない: op は内側の handler から順にたどるので、sprite ごとに呼ぶ GpuResources と
@@ -492,15 +495,15 @@ pub mod LwjglLayer {
         let result =
             handleLoadProgress({ looping = looping, splash = splash, polledAt = polledAt, devices = devices }, () ->
             handleAudio(audio#state, () ->
-            RenderPaintHandlers.handleTarget(paint, framebufferSize, () ->
+            RenderPaintHandlers.handleTarget(gl, paint, framebufferSize, () ->
             handleAnnotation(annotation, () ->
             RenderPaintHandlers.handleDiagnostics(paint, () ->
             RenderPaintHandlers.handleDraw3d(paint, () ->
             handleFrameClock({ fixedDt = env#fixedDt, maxDeltaTime = config#maxDeltaTime, last = timeHolder }, () ->
             handleWindow(windowState, () ->
-            RenderPaintHandlers.handleDraw2d(paint, framebufferSize, (paintFrom, paintTo) -> Ref.put(Some((paintFrom, paintTo)), present#screenPainted), () ->
+            RenderPaintHandlers.handleDraw2d(gl, paint, framebufferSize, (paintFrom, paintTo) -> { Ref.put(Some((paintFrom, paintTo)), present#screenPainted); opened#onScreenFrame() }, () ->
             LwjglInput.handleInput(devices, () ->
-            RenderPaintHandlers.handleGpuResources(paint, fonts, f)))))))))));
+            RenderPaintHandlers.handleGpuResources(gl, paint, fonts, f)))))))))));
 
         List.forEach(c -> GLFW.glfwDestroyCursor(c), cursors#handles);
         closeAudio(audio);
@@ -669,7 +672,7 @@ pub mod LwjglLayer {
 
     /// Platform.Annotation の handler の状態。
     type alias AnnotationState = {
-        window = Int64, config = GameEngine.EngineConfig, paint = RenderPaint.Paint, design = Vec2.Vec2, shutterSource = Int32
+        window = Int64, config = GameEngine.EngineConfig, gl = GlContext, paint = RenderPaint.Paint, design = Vec2.Vec2, shutterSource = Int32
     }
 
     /// Platform.Annotation を、直前に塗ったコマの読み戻しとファイルへの書き出しで受ける。
@@ -677,6 +680,7 @@ pub mod LwjglLayer {
         let window = anno#window;
         let config = anno#config;
         let paint = anno#paint;
+        let gl = anno#gl;
         let (screenW, screenH) = (anno#design#x, anno#design#y);
         let shutterSource = anno#shutterSource;
         run f() with handler Platform.Annotation {
@@ -698,7 +702,7 @@ pub mod LwjglLayer {
                     discard MemoryStack.stackPop();
                     // WhyNot: 依頼に入れた描画命令から組み直さない — シェーダー面・レンダーターゲット・静的層を
                     // 運べず、スクリーンショットだけが画面と違う規則で描かれる。塗ったコマをそのまま塗り直す。
-                    RenderPaint.paintFrame(paint, fbW, fbH, RenderPaint.lastFrame(paint));
+                    RenderPaint.paintFrame(gl, paint, fbW, fbH, RenderPaint.lastFrame(paint));
                     let image = framebufferImage(fbW, fbH);
                     writePngFile(image, "${dirPath}/screenshot.png");
                     burnHighlight(image, designRectToImage(req#rect, fbW, fbH, screenW, screenH));

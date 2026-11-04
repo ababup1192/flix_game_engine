@@ -56,6 +56,7 @@ pub mod GlOffscreen {
             depthStencil = Int32,
             width = Int32,
             height = Int32,
+            gl = GlCallLog.Opened,
             paint = RenderPaint.Paint,
             fonts = RenderPaint.Fonts,
             design = Vec2.Vec2,
@@ -76,6 +77,7 @@ pub mod GlOffscreen {
         case PreparedData({
             context = Context,
             caps = GLCapabilities,
+            gl = GlCallLog.Opened,
             paint = RenderPaint.Paint,
             fonts = RenderPaint.Fonts,
             config = GameEngine.EngineConfig,
@@ -98,17 +100,20 @@ pub mod GlOffscreen {
             case Ok(context) =>
                 try {
                     let caps = GL.createCapabilities();
+                    // WhyNot: 用意の糸と塗る糸で GL の値を作り直さない — LwjglGl は状態を持たず、文脈は GL.setCapabilities が糸ごとに付け直す。
+                    let opened = GlCallLog.open();
+                    let gl = opened#gl;
                     GL11.glEnable(GL11.GL_BLEND);
                     GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-                    let paint = RenderPaint.create({ designWidth = config#designWidth, designHeight = config#designHeight,
+                    let paint = RenderPaint.create(gl, { designWidth = config#designWidth, designHeight = config#designHeight,
                                                      clearColor = config#clearColor, screenFramebuffer = 0,
-                                                     scene3d = Render3d.makeRenderer(config) });
+                                                     scene3d = Render3d.makeRenderer(gl, config), gpuTimer = GpuTimer.frameTimer() });
                     // 組み込みのフォント（受け皿）とロゴを先に載せる（窓の起動画面と同じ並び）。
-                    RenderPaint.addTextures(RenderSplash.install(), paint);
-                    let fonts = RenderPaint.loadAssets(paint, config, (_, _, _) -> checked_ecast(()));
+                    RenderPaint.addTextures(RenderSplash.install(gl), paint);
+                    let fonts = RenderPaint.loadAssets(gl, paint, config, (_, _, _) -> checked_ecast(()));
                     let stamps = config#textureManifest
                         |> List.foldLeft((acc, entry) -> Map.insert(entry#name, stampOf(entry#path), acc), Map.empty());
-                    Ok(PreparedData.PreparedData({ context = context, caps = caps, paint = paint, fonts = fonts,
+                    Ok(PreparedData.PreparedData({ context = context, caps = caps, gl = opened, paint = paint, fonts = fonts,
                                                    config = config, stamps = stamps }))
                 } catch {
                     case e: Throwable =>
@@ -137,7 +142,7 @@ pub mod GlOffscreen {
                 let paint = { screenFramebuffer = fbo, keepHistory = false,
                               frameArgsBase = { clearColor = cfg#background | paint0#frameArgsBase } | paint0 };
                 Ok(SessionData.SessionData({
-                    context = p#context, fbo = fbo, colorTex = colorTex, depthStencil = depthStencil,
+                    context = p#context, gl = p#gl, fbo = fbo, colorTex = colorTex, depthStencil = depthStencil,
                     width = width, height = height, paint = paint, fonts = p#fonts,
                     design = { x = Int32.toFloat64(config#designWidth), y = Int32.toFloat64(config#designHeight) },
                     stamps = Ref.fresh(Static, p#stamps)
@@ -336,8 +341,8 @@ pub mod GlOffscreen {
                 let (_, size, _) = now;
                 if (size < 0i64) count
                 else {
-                    Option.forEach(RenderTexture.deleteTexture, RenderPaint.textureInfo(s#paint, entry#name));
-                    RenderPaint.putTexture(entry#name, RenderTexture.loadTexture(entry#path, entry#hasAlpha), s#paint);
+                    Option.forEach(info -> RenderTexture.deleteTexture(s#gl#gl, info), RenderPaint.textureInfo(s#paint, entry#name));
+                    RenderPaint.putTexture(entry#name, RenderTexture.loadTexture(s#gl#gl, entry#path, entry#hasAlpha), s#paint);
                     count + 1
                 }
             }
@@ -353,13 +358,13 @@ pub mod GlOffscreen {
     /// textureName のフォントに字を足す（Platform.GpuResources.ensureGlyphs と同じ）。
     pub def ensureGlyphs(session: Session, textureName: String, codepoints: Set[Int32]): Unit \ IO =
         let SessionData.SessionData(s) = session;
-        RenderPaint.ensureGlyphs(s#fonts, textureName, codepoints)
+        RenderPaint.ensureGlyphs(s#gl#gl, s#fonts, textureName, codepoints)
 
     /// ファイルの無い絵（ドット絵のアトラスなど）を名前で載せる。同じ名前・同じ key なら何もしない。
     /// argb = width × height の行優先の ARGB。
     pub def uploadImage(session: Session, name: String, key: String, width: Int32, height: Int32, argb: Vector[Int32]): Unit \ IO =
         let SessionData.SessionData(s) = session;
-        RenderPaint.ensureTexture(s#paint, name, key, width, height, argb)
+        RenderPaint.ensureTexture(s#gl#gl, s#paint, name, key, width, height, argb)
 
     // ── 塗る ──
 
@@ -373,15 +378,16 @@ pub mod GlOffscreen {
     pub def handle(session: Session, f: Unit -> a \ ef): a \ (ef - HandledEffects) + IO =
         let SessionData.SessionData(s) = session;
         let paint = s#paint;
-        let size = () -> (s#width, s#height);
+        let gl = s#gl#gl;
+        let size = () -> checked_ecast((s#width, s#height));
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, s#fbo);
         // WhyNot 並びを変えない: op は内側の handler から順にたどるので、sprite ごとに呼ぶ GpuResources を一番内側に置く。
-        RenderPaintHandlers.handleTarget(paint, size, () ->
+        RenderPaintHandlers.handleTarget(gl, paint, size, () ->
         handleWindowless(s#design, () ->
         RenderPaintHandlers.handleDiagnostics(paint, () ->
         RenderPaintHandlers.handleDraw3d(paint, () ->
-        RenderPaintHandlers.handleDraw2d(paint, size, (_, _) -> (), () ->
-        RenderPaintHandlers.handleGpuResources(paint, s#fonts, f))))))
+        RenderPaintHandlers.handleDraw2d(gl, paint, size, (_, _) -> s#gl#onScreenFrame(), () ->
+        RenderPaintHandlers.handleGpuResources(gl, paint, s#fonts, f))))))
 
     /// 窓の無い所の入力・窓・時計・注釈: 何も押されていない・閉じない・1/60 秒ずつ進む・注釈は書かない。
     def handleWindowless(design: Vec2.Vec2, f: Unit -> a \ ef): a \ ef - Platform.Input - Platform.Window - Platform.FrameClock - Platform.Annotation =
@@ -484,7 +490,7 @@ pub mod GlOffscreen {
     /// viewport（width × 1）と、切った blend・深度の判定・scissor・面の裏の間引きは塗る前の物へ戻さない（呼ぶ側が置き直す）。
     pub def drawFloatRows(fragment: String, width: Int32, textures: List[RowTexture],
                           uniformSets: List[List[(String, RowUniform)]]): Result[String, List[Vector[Float32]]] \ IO =
-        match RenderShader.tryCreateProgram(rowVertexSource(), fragment, "gl-parity:row") {
+        match RenderShader.tryCreateProgram(GlCallLog.plain(), rowVertexSource(), fragment, "gl-parity:row") {
             case None          => Err("1 行の塗りのプログラムが組めない（GLSL のエラーは上の行）")
             case Some(program) =>
                 let target = createRowTarget(width);

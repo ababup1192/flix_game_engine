@@ -3,6 +3,9 @@
 // 絵そのものは Splash（engine 側・純粋）が組む。ここが持つのは GLFW の都合だけ —
 // 間引き・画面交換の待ち・イベントの汲み上げ。
 mod RenderSplash {
+    import fge.gl.GlContext
+    import fge.gl.GlContext
+    import fge.gl.GlContext
     import org.lwjgl.glfw.GLFW
     import java.lang.System
 
@@ -17,11 +20,11 @@ mod RenderSplash {
 
     /// 組み込みフォントとロゴを GPU へ載せ、名前で引ける表にして返す。
     /// ゲームのテクスチャを 1 枚も読む前に呼べる（画素はソースに埋め込んである）。
-    pub def install(): RenderAsset.TextureRegistry \ IO =
+    pub def install(gl: GlContext): RenderAsset.TextureRegistry \ IO =
         let side = BootFontData.side();
-        let fontTex = RenderTexture.loadTextureFromPixels(side, side, BootFont.pixelsArgb());
+        let fontTex = RenderTexture.loadTextureFromPixels(gl, side, side, BootFont.pixelsArgb());
         let logoSide = BootFont.logoSide();
-        let logoTex = RenderTexture.loadTextureFromPixels(logoSide, logoSide, BootFont.logoArgb());
+        let logoTex = RenderTexture.loadTextureFromPixels(gl, logoSide, logoSide, BootFont.logoArgb());
         Map.empty()
             |> Map.insert(BootFont.textureName(), fontTex)
             |> Map.insert(BootFont.logoTextureName(), logoTex)

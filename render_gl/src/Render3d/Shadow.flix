@@ -1,5 +1,6 @@
 // Render3d.Shadow — 3D の描き手（Render3d）の影の地図（描く・置き場・塗りへ渡す）。約束は Render3d.flix の頭と Scene3d.shadowMatrix の doc。
 mod Render3d.Shadow {
+    import fge.gl.GlContext
     import org.lwjgl.opengl.GL11
     import org.lwjgl.opengl.GL12
     import org.lwjgl.opengl.GL13
@@ -15,7 +16,7 @@ mod Render3d.Shadow {
     /// 描き終えたら深度と scissor を切り、program と VAO を外す。描き先は呼ぶ側が戻す。
     // WhyNot: viewport をここで戻さない — glGet で前の値を読まない決まりで、この後に描く Design の場面と
     //   2D の並び（RenderFrame.renderFrameMixed）が、どちらも描き始めに自分の viewport を置く。
-    pub def renderShadows(state: State, gen: Int64, cmds: List[Scene3d.RenderCmd]): List[Option[ShadowUse]] \ IO =
+    pub def renderShadows(gl: GlContext, state: State, gen: Int64, cmds: List[Scene3d.RenderCmd]): List[Option[ShadowUse]] \ IO =
         let usedPerSize = Ref.fresh(Static, (Map.empty(): Map[Int32, Int32]));
         let shadows = cmds |> List.map(cmd -> shadowCasterOf(state, cmd#scene) |> Option.map(caster -> {
             let size = shadowMapSizeOf(state, caster#shadowMap);
@@ -23,7 +24,7 @@ mod Render3d.Shadow {
             let ordinal = Map.getWithDefault(size, 0, Ref.get(usedPerSize));
             Ref.put(Map.insert(size, ordinal + 1, Ref.get(usedPerSize)), usedPerSize);
             let target = shadowTarget(state, gen, size, ordinal);
-            renderShadowMap(state, gen, target, caster, cmd#scene);
+            renderShadowMap(gl, state, gen, target, caster, cmd#scene);
             shadowUseOf(state, target, caster)
         }));
         if (List.exists(Option.nonEmpty, shadows)) endShadowPass() else ();
@@ -93,8 +94,8 @@ mod Render3d.Shadow {
         else ()
 
     /// 影の地図を描く: 光から見た置いた物の一番近い面の深度。ビルボードは影を落とさない。
-    def renderShadowMap(state: State, gen: Int64, target: ShadowTarget, caster: ShadowCaster, scene: Scene3d.Scene3dCmd): Unit \ IO =
-        let locs = programsOf(state)#depth;
+    def renderShadowMap(gl: GlContext, state: State, gen: Int64, target: ShadowTarget, caster: ShadowCaster, scene: Scene3d.Scene3dCmd): Unit \ IO =
+        let locs = programsOf(gl, state)#depth;
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, target#fbo);
         GL11.glViewport(0, 0, target#size, target#size);
         GL11.glDisable(GL11.GL_SCISSOR_TEST);
@@ -115,15 +116,15 @@ mod Render3d.Shadow {
             let (skinned, plain) = scene#instances |> List.filter(i -> not Scene3d.isBlendedFields(Scene3d.instanceFieldsOf(i)))
                 |> List.map(meshDrawOf(state, outside)) |> List.partition(isSkinned);
             useMeshProgram(locs#mesh, lightView, identity);
-            plain |> List.forEach(drawPosedMesh(state, gen, locs#mesh));
+            plain |> List.forEach(drawPosedMesh(gl, state, gen, locs#mesh));
             // 骨つきの物は曲がった形で影を落とす（深度だけの骨つきの版を Output.Depth と共用）。
             if (List.isEmpty(skinned)) ()
             else {
-                let skinnedDepth = skinnedProgramsOf(state)#depth;
+                let skinnedDepth = skinnedProgramsOf(gl, state)#depth;
                 if (skinnedDepth#mesh#program == 0) ()
                 else {
                     useMeshProgram(skinnedDepth#mesh, lightView, identity);
-                    skinned |> List.forEach(drawPosedMesh(state, gen, skinnedDepth#mesh))
+                    skinned |> List.forEach(drawPosedMesh(gl, state, gen, skinnedDepth#mesh))
                 }
             }
         }

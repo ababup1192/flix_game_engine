@@ -10,9 +10,10 @@
 //   - LINEAR フィルタ (距離場を滑らかに補間 → SDF のエッジが綺麗に出る)
 
 mod RenderFont {
-    import org.lwjgl.opengl.GL11
-    import org.lwjgl.opengl.GL30
-    import org.lwjgl.opengl.GL33
+    import fge.gl.GlContext
+    import fge.gl.GlContext
+    import fge.gl.GlConst
+    import fge.gl.GlContext
     import org.lwjgl.stb.STBTruetype
     import org.lwjgl.stb.STBTTFontinfo
     import org.lwjgl.BufferUtils
@@ -278,26 +279,21 @@ mod RenderFont {
     /// 戻り値: (FontAtlas, TextureInfo) — TextureInfo は registry に登録する用。
     /// onGlyph には「焼き終えた字数 / 全字数」を渡す。日本語フォントは 1 本で数千字あり
     /// 起動時間の大半を占めるので、起動画面はここまで細かく進み具合を見せる。
-    pub def bakeFontAtlas(entry: RenderAsset.FontEntry, wanted: Option[Set[Int32]],
+    pub def bakeFontAtlas(gl: GlContext, entry: RenderAsset.FontEntry, wanted: Option[Set[Int32]],
                           onGlyph: (Int32, Int32) -> Unit \ IO): (FontAtlas, RenderAsset.TextureInfo) \ IO =
         let baked = RenderFontCache.loadOrBake(entry, wanted, onGlyph);
-        (baked#atlas, uploadFont(baked))
+        (baked#atlas, uploadFont(gl, baked))
 
     /// 焼き上がりを GPU へ載せる。距離場は滑らかに補間して読ませる — 拡大しても輪郭が
     /// 階段にならず、1 枚のアトラスからどの大きさの字もくっきり出せる。
-    pub def uploadFont(baked: BakedFont): RenderAsset.TextureInfo \ IO =
+    pub def uploadFont(gl: GlContext, baked: BakedFont): RenderAsset.TextureInfo \ IO =
         let side = baked#side;
         discard baked#pixels.position(0);
-        let texId = GL11.glGenTextures();
-        GL11.glBindTexture(GL11.GL_TEXTURE_2D, texId);
-        GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL30.GL_R8, side, side, 0, GL11.GL_RED, GL11.GL_UNSIGNED_BYTE, baked#pixels);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
-        // Swizzle: (ONE, ONE, ONE, RED) → 白色 + 距離場を alpha に載せる
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL33.GL_TEXTURE_SWIZZLE_R, GL11.GL_ONE);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL33.GL_TEXTURE_SWIZZLE_G, GL11.GL_ONE);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL33.GL_TEXTURE_SWIZZLE_B, GL11.GL_ONE);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL33.GL_TEXTURE_SWIZZLE_A, GL11.GL_RED);
+        let texId = gl.createTexture();
+        gl.bindTexture(GlConst.TEXTURE_2D, texId);
+        gl.texImageAlphaMask(side, side, baked#pixels);
+        gl.texParameteri(GlConst.TEXTURE_2D, GlConst.TEXTURE_MIN_FILTER, GlConst.LINEAR);
+        gl.texParameteri(GlConst.TEXTURE_2D, GlConst.TEXTURE_MAG_FILTER, GlConst.LINEAR);
         let sideF = Int32.toFloat64(side);
         { id = GpuHandle.wrapTextureId(texId), width = sideF, height = sideF }
 
@@ -463,7 +459,7 @@ mod RenderFont {
     /// 全 FontEntry をベイクし、(名前→FontAtlas) と更新済み TextureRegistry を返す。
     /// onProgress には「フォント名・焼き終えた字数・全字数」を渡す。
     /// wanted は「このゲームが出しうる字」。None なら各フォントが持つ字を全部用意する。
-    pub def bakeFontAtlases(manifest: List[RenderAsset.FontEntry],
+    pub def bakeFontAtlases(gl: GlContext, manifest: List[RenderAsset.FontEntry],
                             registry: RenderAsset.TextureRegistry,
                             wanted: Option[Set[Int32]],
                             onProgress: (String, Int32, Int32) -> Unit \ IO): (Map[String, FontAtlas], RenderAsset.TextureRegistry) \ IO =
@@ -471,7 +467,7 @@ mod RenderFont {
             let (atlases, reg) = acc;
             // 文言の組み立ては字ごとでなくフォントごとに 1 回。進捗は数千回呼ばれる。
             let report = (done, total) -> onProgress(entry#name, done, total);
-            let (atlas, texInfo) = bakeFontAtlas(entry, wanted, report);
+            let (atlas, texInfo) = bakeFontAtlas(gl, entry, wanted, report);
             println("  Font '${entry#name}' baked (${atlas#textureName})");
             let newAtlases = Map.insert(entry#name, atlas, atlases);
             let newReg = Map.insert(atlas#textureName, texInfo, reg);

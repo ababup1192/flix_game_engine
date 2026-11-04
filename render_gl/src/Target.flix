@@ -3,10 +3,10 @@
 // スプライトとして貼られる。GL は行 0 が下なのでターゲットの中身は上下逆に格納される —
 // 反転は貼るとき（RenderFrame.emitSprite の uv 反転）に吸収し、ここでは何もしない。
 mod RenderTargetGl {
-    import org.lwjgl.opengl.GL11
-    import org.lwjgl.opengl.GL12
-    import org.lwjgl.opengl.GL30
-    import org.lwjgl.BufferUtils
+    import fge.gl.GlContext
+    import fge.gl.GlContext
+    import fge.gl.GlConst
+    import fge.gl.GlContext
 
     /// レンダーターゲット 1 枚の GL 実体。tex が registry へ TextureInfo として渡る。
     /// depthStencil = mask 付きの面・sprite を抜くためのステンシル（テクセル寸法の renderbuffer）。
@@ -24,62 +24,62 @@ mod RenderTargetGl {
     /// 回り込まないように（REPEAT だと v=0/1 ちょうどで滲む）。フィルタは他のテクスチャと
     /// 同じ NEAREST（ドット絵前提）。
     /// Rgba16Float の FBO が完成しない描き先では Rgba8Unorm で作り直す（storedFormat に残る。知らせるのは呼び手）。
-    pub def create(width: Int32, height: Int32, format: RenderTarget.Format): Entry \ IO =
-        let (made, status) = createStored(width, height, format);
-        if (status == GL30.GL_FRAMEBUFFER_COMPLETE) made
+    pub def create(gl: GlContext, width: Int32, height: Int32, format: RenderTarget.Format): Entry \ IO =
+        let (made, status) = createStored(gl, width, height, format);
+        if (status == GlConst.FRAMEBUFFER_COMPLETE) made
         else if (format == RenderTarget.Format.Rgba8Unorm) { warnIncomplete(status); made }
         else {
-            destroy(made);
-            let (fallback, fallbackStatus) = createStored(width, height, RenderTarget.Format.Rgba8Unorm);
-            if (fallbackStatus == GL30.GL_FRAMEBUFFER_COMPLETE) () else warnIncomplete(fallbackStatus);
+            destroy(gl, made);
+            let (fallback, fallbackStatus) = createStored(gl, width, height, RenderTarget.Format.Rgba8Unorm);
+            if (fallbackStatus == GlConst.FRAMEBUFFER_COMPLETE) () else warnIncomplete(fallbackStatus);
             { format = format | fallback }
         }
 
     /// create に、samples（RenderTarget.samplesOf の答え）が 1 より大きければ標本を持つ描き先を足した物。
     /// 標本の数は GPU の上限（GL_MAX_SAMPLES）で頭打ちにする。標本つきの FBO が完成しない時は MSAA なしで続け、
     /// msaa が None のまま返す（知らせるのは呼び手 — isMsaaFallback）。
-    pub def createWithSamples(width: Int32, height: Int32, format: RenderTarget.Format, samples: Int32): Entry \ IO =
-        let made = create(width, height, format);
+    pub def createWithSamples(gl: GlContext, width: Int32, height: Int32, format: RenderTarget.Format, samples: Int32): Entry \ IO =
+        let made = create(gl, width, height, format);
         if (samples <= 1) { samples = samples | made }
         else {
-            let wanted = Int32.min(samples, RenderTarget.samplesAtMost(GL11.glGetInteger(GL30.GL_MAX_SAMPLES)));
+            let wanted = Int32.min(samples, RenderTarget.samplesAtMost(gl.getInteger(GlConst.MAX_SAMPLES)));
             if (wanted <= 1) { samples = samples | made }
-            else { samples = samples, msaa = createMsaa(width, height, made#storedFormat, wanted) | made }
+            else { samples = samples, msaa = createMsaa(gl, width, height, made#storedFormat, wanted) | made }
         }
 
     /// 頼まれたのに標本を持つ描き先を作れなかったか（GPU が 1 標本しか持てない・FBO が完成しない）。
     pub def isMsaaFallback(e: Entry): Bool = e#samples > 1 and Option.isEmpty(e#msaa)
 
     /// 標本 samples 個の色（stored の形式）と深度・ステンシルの renderbuffer を付けた FBO。完成しなければ消して None（bind は 0 に戻す）。
-    def createMsaa(width: Int32, height: Int32, stored: RenderTarget.Format, samples: Int32): Option[Msaa] \ IO =
+    def createMsaa(gl: GlContext, width: Int32, height: Int32, stored: RenderTarget.Format, samples: Int32): Option[Msaa] \ IO =
         let internal = match stored {
-            case RenderTarget.Format.Rgba8Unorm  => GL11.GL_RGBA8
-            case RenderTarget.Format.Rgba16Float => GL30.GL_RGBA16F
+            case RenderTarget.Format.Rgba8Unorm  => GlConst.RGBA8
+            case RenderTarget.Format.Rgba16Float => GlConst.RGBA16F
         };
-        let color = GL30.glGenRenderbuffers();
-        GL30.glBindRenderbuffer(GL30.GL_RENDERBUFFER, color);
-        GL30.glRenderbufferStorageMultisample(GL30.GL_RENDERBUFFER, samples, internal, width, height);
-        let depthStencil = GL30.glGenRenderbuffers();
-        GL30.glBindRenderbuffer(GL30.GL_RENDERBUFFER, depthStencil);
-        GL30.glRenderbufferStorageMultisample(GL30.GL_RENDERBUFFER, samples, GL30.GL_DEPTH24_STENCIL8, width, height);
-        GL30.glBindRenderbuffer(GL30.GL_RENDERBUFFER, 0);
-        let fbo = GL30.glGenFramebuffers();
-        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, fbo);
-        GL30.glFramebufferRenderbuffer(GL30.GL_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0, GL30.GL_RENDERBUFFER, color);
-        GL30.glFramebufferRenderbuffer(GL30.GL_FRAMEBUFFER, GL30.GL_DEPTH_STENCIL_ATTACHMENT, GL30.GL_RENDERBUFFER, depthStencil);
-        let status = GL30.glCheckFramebufferStatus(GL30.GL_FRAMEBUFFER);
+        let color = gl.createRenderbuffer();
+        gl.bindRenderbuffer(GlConst.RENDERBUFFER, color);
+        gl.renderbufferStorageMultisample(GlConst.RENDERBUFFER, samples, internal, width, height);
+        let depthStencil = gl.createRenderbuffer();
+        gl.bindRenderbuffer(GlConst.RENDERBUFFER, depthStencil);
+        gl.renderbufferStorageMultisample(GlConst.RENDERBUFFER, samples, GlConst.DEPTH24_STENCIL8, width, height);
+        gl.bindRenderbuffer(GlConst.RENDERBUFFER, 0);
+        let fbo = gl.createFramebuffer();
+        gl.bindFramebuffer(GlConst.FRAMEBUFFER, fbo);
+        gl.framebufferRenderbuffer(GlConst.FRAMEBUFFER, GlConst.COLOR_ATTACHMENT0, GlConst.RENDERBUFFER, color);
+        gl.framebufferRenderbuffer(GlConst.FRAMEBUFFER, GlConst.DEPTH_STENCIL_ATTACHMENT, GlConst.RENDERBUFFER, depthStencil);
+        let status = gl.checkFramebufferStatus(GlConst.FRAMEBUFFER);
         // 作った直後の中身は決まっていないので、透明で塗っておく（Keep の 1 コマ目にゴミが出ない）。
-        if (status == GL30.GL_FRAMEBUFFER_COMPLETE) {
-            GL11.glDisable(GL11.GL_SCISSOR_TEST);
-            GL11.glClearColor(0.0f32, 0.0f32, 0.0f32, 0.0f32);
-            GL11.glClear(GL11.GL_COLOR_BUFFER_BIT)
+        if (status == GlConst.FRAMEBUFFER_COMPLETE) {
+            gl.disable(GlConst.SCISSOR_TEST);
+            gl.clearColor(0.0f32, 0.0f32, 0.0f32, 0.0f32);
+            gl.clear(GlConst.COLOR_BUFFER_BIT)
         } else ();
-        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, 0);
-        if (status == GL30.GL_FRAMEBUFFER_COMPLETE) Some({ fbo = fbo, color = color, depthStencil = depthStencil, samples = samples })
+        gl.bindFramebuffer(GlConst.FRAMEBUFFER, 0);
+        if (status == GlConst.FRAMEBUFFER_COMPLETE) Some({ fbo = fbo, color = color, depthStencil = depthStencil, samples = samples })
         else {
-            GL30.glDeleteFramebuffers(fbo);
-            GL30.glDeleteRenderbuffers(color);
-            GL30.glDeleteRenderbuffers(depthStencil);
+            gl.deleteFramebuffer(fbo);
+            gl.deleteRenderbuffer(color);
+            gl.deleteRenderbuffer(depthStencil);
             None
         }
 
@@ -94,89 +94,84 @@ mod RenderTargetGl {
     /// 標本を持つ描き先の中身を tex へ写す（標本の平均。読む前に 1 回）。MSAA の無いターゲットは何もしない。
     /// 描き先は画面へは戻さず、tex の FBO を bind したまま返す（呼び手が描き先を決め直す）。
     // WhyNot: scissor を残したまま写さない — glBlitFramebuffer は scissor に切られ、絵が四角く欠ける。
-    pub def resolve(e: Entry): Unit \ IO =
+    pub def resolve(gl: GlContext, e: Entry): Unit \ IO =
         e#msaa |> Option.forEach(m -> {
-            GL11.glDisable(GL11.GL_SCISSOR_TEST);
-            GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, m#fbo);
-            GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, e#fbo);
-            GL30.glBlitFramebuffer(0, 0, e#width, e#height, 0, 0, e#width, e#height, GL11.GL_COLOR_BUFFER_BIT, GL11.GL_NEAREST);
-            GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, e#fbo)
+            gl.disable(GlConst.SCISSOR_TEST);
+            gl.bindFramebuffer(GlConst.READ_FRAMEBUFFER, m#fbo);
+            gl.bindFramebuffer(GlConst.DRAW_FRAMEBUFFER, e#fbo);
+            gl.blitFramebuffer(0, 0, e#width, e#height, 0, 0, e#width, e#height, GlConst.COLOR_BUFFER_BIT, GlConst.NEAREST);
+            gl.bindFramebuffer(GlConst.FRAMEBUFFER, e#fbo)
         })
 
     /// 実際に作れた形式が頼まれた形式と違うか（Rgba16Float に対応しない描き先で作り直した時）。
     pub def isFallback(e: Entry): Bool = e#format != e#storedFormat
 
     /// stored の形式で 1 枚作り、FBO の status（glCheckFramebufferStatus・完成なら GL_FRAMEBUFFER_COMPLETE）と一緒に返す（bind は 0 に戻す）。
-    def createStored(width: Int32, height: Int32, stored: RenderTarget.Format): (Entry, Int32) \ IO =
-        let tex = GL11.glGenTextures();
-        GL11.glBindTexture(GL11.GL_TEXTURE_2D, tex);
-        uploadZeros(width, height, stored);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL12.GL_CLAMP_TO_EDGE);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL12.GL_CLAMP_TO_EDGE);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_NEAREST);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_NEAREST);
-        let depthStencil = GL30.glGenRenderbuffers();
-        GL30.glBindRenderbuffer(GL30.GL_RENDERBUFFER, depthStencil);
-        GL30.glRenderbufferStorage(GL30.GL_RENDERBUFFER, GL30.GL_DEPTH24_STENCIL8, width, height);
-        GL30.glBindRenderbuffer(GL30.GL_RENDERBUFFER, 0);
-        let fbo = GL30.glGenFramebuffers();
-        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, fbo);
-        GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0,
-                                    GL11.GL_TEXTURE_2D, tex, 0);
-        GL30.glFramebufferRenderbuffer(GL30.GL_FRAMEBUFFER, GL30.GL_DEPTH_STENCIL_ATTACHMENT,
-                                       GL30.GL_RENDERBUFFER, depthStencil);
-        let status = GL30.glCheckFramebufferStatus(GL30.GL_FRAMEBUFFER);
-        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, 0);
+    def createStored(gl: GlContext, width: Int32, height: Int32, stored: RenderTarget.Format): (Entry, Int32) \ IO =
+        let tex = gl.createTexture();
+        gl.bindTexture(GlConst.TEXTURE_2D, tex);
+        uploadZeros(gl, width, height, stored);
+        gl.texParameteri(GlConst.TEXTURE_2D, GlConst.TEXTURE_WRAP_S, GlConst.CLAMP_TO_EDGE);
+        gl.texParameteri(GlConst.TEXTURE_2D, GlConst.TEXTURE_WRAP_T, GlConst.CLAMP_TO_EDGE);
+        gl.texParameteri(GlConst.TEXTURE_2D, GlConst.TEXTURE_MIN_FILTER, GlConst.NEAREST);
+        gl.texParameteri(GlConst.TEXTURE_2D, GlConst.TEXTURE_MAG_FILTER, GlConst.NEAREST);
+        let depthStencil = gl.createRenderbuffer();
+        gl.bindRenderbuffer(GlConst.RENDERBUFFER, depthStencil);
+        gl.renderbufferStorage(GlConst.RENDERBUFFER, GlConst.DEPTH24_STENCIL8, width, height);
+        gl.bindRenderbuffer(GlConst.RENDERBUFFER, 0);
+        let fbo = gl.createFramebuffer();
+        gl.bindFramebuffer(GlConst.FRAMEBUFFER, fbo);
+        gl.framebufferTexture2D(GlConst.FRAMEBUFFER, GlConst.COLOR_ATTACHMENT0,
+                                    GlConst.TEXTURE_2D, tex, 0);
+        gl.framebufferRenderbuffer(GlConst.FRAMEBUFFER, GlConst.DEPTH_STENCIL_ATTACHMENT,
+                                       GlConst.RENDERBUFFER, depthStencil);
+        let status = gl.checkFramebufferStatus(GlConst.FRAMEBUFFER);
+        gl.bindFramebuffer(GlConst.FRAMEBUFFER, 0);
         ({ fbo = fbo, tex = tex, depthStencil = depthStencil, width = width, height = height,
            format = stored, storedFormat = stored, samples = 1, msaa = None }, status)
 
-    /// bind 中のテクスチャへ全画素 0（透明黒）の画素を stored の形式で載せる。直接確保のバッファはゼロ初期化。
-    def uploadZeros(width: Int32, height: Int32, stored: RenderTarget.Format): Unit \ IO =
-        let n = Int32.max(1, width * height);
+    /// bind 中のテクスチャへ全画素 0（透明黒）の画素を stored の形式で載せる。
+    def uploadZeros(gl: GlContext, width: Int32, height: Int32, stored: RenderTarget.Format): Unit \ IO =
         match stored {
-            case RenderTarget.Format.Rgba8Unorm =>
-                GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA, width, height, 0,
-                                  GL12.GL_BGRA, GL12.GL_UNSIGNED_INT_8_8_8_8_REV, BufferUtils.createIntBuffer(n))
-            case RenderTarget.Format.Rgba16Float =>
-                GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL30.GL_RGBA16F, width, height, 0,
-                                  GL11.GL_RGBA, GL30.GL_HALF_FLOAT, BufferUtils.createShortBuffer(n * 4))
+            case RenderTarget.Format.Rgba8Unorm  => gl.texImageArgbZero(width, height)
+            case RenderTarget.Format.Rgba16Float => gl.texImageRgba16fZero(width, height)
         }
 
     def warnIncomplete(status: Int32): Unit \ IO =
         println("[RenderTargetGl] レンダーターゲット (FBO) が完成しない status=${status} — ここへの描画は出ない")
 
     /// 以降の描画をこのターゲットに向ける（標本を持つ描き先があればそちら）。
-    pub def bind(e: Entry): Unit \ IO =
-        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, drawFramebuffer(e))
+    pub def bind(gl: GlContext, e: Entry): Unit \ IO =
+        gl.bindFramebuffer(GlConst.FRAMEBUFFER, drawFramebuffer(e))
 
     /// 描画先を画面へ戻す。screen = 画面のフレームバッファ（窓なら既定の 0、GlOffscreen なら動画のコマの FBO）。
-    pub def unbind(screen: Int32): Unit \ IO =
-        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, screen)
+    pub def unbind(gl: GlContext, screen: Int32): Unit \ IO =
+        gl.bindFramebuffer(GlConst.FRAMEBUFFER, screen)
 
     /// source の中身（resolve の後の tex）を dest へ等倍で写す（同じ寸法の前提・NEAREST）。描き先は source の描く FBO に戻す。
-    pub def copyTo(source: Entry, dest: Entry): Unit \ IO =
-        GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER, source#fbo);
-        GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER, dest#fbo);
-        GL30.glBlitFramebuffer(0, 0, source#width, source#height, 0, 0, dest#width, dest#height,
-                               GL11.GL_COLOR_BUFFER_BIT, GL11.GL_NEAREST);
-        bind(source)
+    pub def copyTo(gl: GlContext, source: Entry, dest: Entry): Unit \ IO =
+        gl.bindFramebuffer(GlConst.READ_FRAMEBUFFER, source#fbo);
+        gl.bindFramebuffer(GlConst.DRAW_FRAMEBUFFER, dest#fbo);
+        gl.blitFramebuffer(0, 0, source#width, source#height, 0, 0, dest#width, dest#height,
+                               GlConst.COLOR_BUFFER_BIT, GlConst.NEAREST);
+        bind(gl, source)
 
     /// e を全画素透明で塗る。描き先は back の描く FBO に戻す。
-    pub def clearTransparent(e: Entry, back: Entry): Unit \ IO =
-        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, e#fbo);
-        GL11.glDisable(GL11.GL_SCISSOR_TEST);
-        GL11.glClearColor(0.0f32, 0.0f32, 0.0f32, 0.0f32);
-        GL11.glClear(GL11.GL_COLOR_BUFFER_BIT);
-        bind(back)
+    pub def clearTransparent(gl: GlContext, e: Entry, back: Entry): Unit \ IO =
+        gl.bindFramebuffer(GlConst.FRAMEBUFFER, e#fbo);
+        gl.disable(GlConst.SCISSOR_TEST);
+        gl.clearColor(0.0f32, 0.0f32, 0.0f32, 0.0f32);
+        gl.clear(GlConst.COLOR_BUFFER_BIT);
+        bind(gl, back)
 
     /// ターゲットを捨てる（寸法が変わって作り直すとき用。捨て忘れると GPU メモリが増え続ける）。
-    pub def destroy(e: Entry): Unit \ IO =
-        GL30.glDeleteFramebuffers(e#fbo);
-        GL30.glDeleteRenderbuffers(e#depthStencil);
-        GL11.glDeleteTextures(e#tex);
+    pub def destroy(gl: GlContext, e: Entry): Unit \ IO =
+        gl.deleteFramebuffer(e#fbo);
+        gl.deleteRenderbuffer(e#depthStencil);
+        gl.deleteTexture(e#tex);
         e#msaa |> Option.forEach(m -> {
-            GL30.glDeleteFramebuffers(m#fbo);
-            GL30.glDeleteRenderbuffers(m#color);
-            GL30.glDeleteRenderbuffers(m#depthStencil)
+            gl.deleteFramebuffer(m#fbo);
+            gl.deleteRenderbuffer(m#color);
+            gl.deleteRenderbuffer(m#depthStencil)
         })
 }

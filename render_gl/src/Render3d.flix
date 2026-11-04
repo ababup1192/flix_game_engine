@@ -17,6 +17,7 @@
 //   両面の材質は GL_CULL_FACE をその物だけ切り、裏の面（!gl_FrontFacing）は光の計算の法線を裏返す。
 //   空は深度を消した後、深度を書かずに場面の矩形いっぱいの四角で塗る（向きは Scene3d.skyBasisOf・式は LightModel3d.skyModel）。
 mod Render3d {
+    import fge.gl.GlContext
     import java.lang.{Float => JFloat}
     import org.lwjgl.opengl.GL11
     import org.lwjgl.opengl.GL13
@@ -276,9 +277,9 @@ mod Render3d {
           sceneWarnedRef = Ref.fresh(Static, Set.empty()), countsHolder = Array#{0, 0, 0, 0, 0} @ Static }
 
     /// 2D の描き手へ渡す 3D の描き手を、空の置き場で作る。場面の絵の置き場の上限は config（project.json）から読む。
-    pub def makeRenderer(config: GameEngine.EngineConfig): Scene3dRenderer.Renderer \ IO =
+    pub def makeRenderer(gl: GlContext, config: GameEngine.EngineConfig): Scene3dRenderer.Renderer \ IO =
         let state = fresh(textureBudgetOf(config));
-        { prepare = (gen, textureOf, dest, cmds) -> prepareNumbered(state, gen, textureOf, dest, cmds),
+        { prepare = (gen, textureOf, dest, cmds) -> prepareNumbered(gl, state, gen, textureOf, dest, cmds),
           endFrame = gen -> endFrame(state, gen),
           takeCounts = () -> takeCounts(state),
           readsTexture = readsTexture }
@@ -288,13 +289,13 @@ mod Render3d {
         List.exists(cmd -> List.exists(b -> Scene3d.billboardFieldsOf(b)#texture == name, cmd#scene#billboards), scenes)
 
     /// 場面を先に描いておき、番号で引いて描く形にする。
-    def prepareNumbered(state: State, gen: Int64, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO,
+    def prepareNumbered(gl: GlContext, state: State, gen: Int64, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO,
                         dest: Scene3dRenderer.Dest, cmds: List[Scene3d.RenderCmd]): Scene3dRenderer.Prepared \ IO =
         if (List.isEmpty(cmds)) Scene3dRenderer.noScenes()
         else {
-            let items = List.toVector(prepareScenes(state, gen, textureOf, dest, cmds));
+            let items = List.toVector(prepareScenes(gl, state, gen, textureOf, dest, cmds));
             { zIndexes = Vector.map(item -> item#cmd#scene#zIndex, items),
-              draw = (vp, index) -> drawItem(state, gen, textureOf, vp, Vector.get(index, items)) }
+              draw = (vp, index) -> drawItem(gl, state, gen, textureOf, vp, Vector.get(index, items)) }
         }
 
     /// 前に呼んでからの 3D の数（置いた物・描いた物・draw call・落とした点光源とスポット）を返し、0 に戻す。
@@ -329,10 +330,10 @@ mod Render3d {
     /// dest#framebuffer = 描き終えた後に戻す描き先（今開いているレンダーターゲットか画面）・dest#format = その形式
     /// （Design の中継の描き先も同じ形式で作る — HDR の Pass の中で、中継だけ 0..1 に切られないように）。
     // WhyNot: 2D の並びの途中で FBO を替えて描かない — タイル型の GPU で描き先の出し入れが重く、viewport と scissor の戻し漏れも増える。
-    def prepareScenes(state: State, gen: Int64, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO,
+    def prepareScenes(gl: GlContext, state: State, gen: Int64, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO,
                       dest: Scene3dRenderer.Dest, cmds: List[Scene3d.RenderCmd]): List[SceneItem] \ IO =
         // 影の地図は Design の場面より先に描く — Design の場面の塗りがその地図を読む。
-        let shadows = renderShadows(state, gen, cmds);
+        let shadows = renderShadows(gl, state, gen, cmds);
         let designCount = Array#{0} @ Static;
         let items = List.zip(cmds, shadows) |> List.map(cs -> {
             let (cmd, shadow) = cs;
@@ -342,7 +343,7 @@ mod Render3d {
                     let index = Array.get(0, designCount);
                     Array.put(index + 1, 0, designCount);
                     // WhyNot: Design の解像度の描き先に標本を持たせない — ドット絵と画素をそろえる場面に縁のならしは要らない。
-                    { cmd = cmd, designTarget = renderDesign(state, gen, textureOf, (index, dest#format), shadow, cmd), shadow = shadow,
+                    { cmd = cmd, designTarget = renderDesign(gl, state, gen, textureOf, (index, dest#format), shadow, cmd), shadow = shadow,
                       multisampled = false }
             }
         });
@@ -351,21 +352,21 @@ mod Render3d {
         items
 
     /// 場面 1 つを 2D の並びの中で描く。描き終えたら viewport を vp へ、scissor を切り、blend を Normal へ戻す。
-    def drawItem(state: State, gen: Int64, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO,
+    def drawItem(gl: GlContext, state: State, gen: Int64, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO,
                  vp: Scene3dRenderer.Viewport, item: SceneItem): Unit \ IO =
         let scene = item#cmd#scene;
         let rect = sceneRect(vp, item#cmd);
         let scissor = clipBox(vp, rect, item#cmd#clip);
         if (rect#width <= 0 or rect#height <= 0 or scissor#width <= 0 or scissor#height <= 0) ()
         else match item#designTarget {
-            case None         => drawScene(state, gen, textureOf, { viewport = rect, scissor = scissor, fillBackground = true, coverage = item#multisampled },
+            case None         => drawScene(gl, state, gen, textureOf, { viewport = rect, scissor = scissor, fillBackground = true, coverage = item#multisampled },
                                            item#shadow, scene)
-            case Some(target) => blitDesign(state, rect, scissor, target)
+            case Some(target) => blitDesign(gl, state, rect, scissor, target)
         };
         GL11.glViewport(vp#x, vp#y, vp#width, vp#height);
         GL11.glDisable(GL11.GL_SCISSOR_TEST);
         GL11.glEnable(GL11.GL_BLEND);
-        RenderSprite.applyBlend(DrawCmd.BlendMode.Normal)
+        RenderSprite.applyBlend(gl, DrawCmd.BlendMode.Normal)
 
     /// 場面の矩形（at・size）を描き先の画素へ写す（量子化は 2D の clip と同じ DrawCmd.clipPixels）。
     def sceneRect(vp: Scene3dRenderer.Viewport, cmd: Scene3d.RenderCmd): PixelBox =
@@ -394,20 +395,20 @@ mod Render3d {
     // ── Design の解像度 ──
 
     /// Design の場面を design px の FBO に透明から描く。大きさが 0 なら None。
-    def renderDesign(state: State, gen: Int64, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO,
+    def renderDesign(gl: GlContext, state: State, gen: Int64, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO,
                      slot: (Int32, RenderTarget.Format), shadow: Option[ShadowUse], cmd: Scene3d.RenderCmd): Option[RenderTargetGl.Entry] \ IO =
         let w = Num.floorInt(cmd#scene#size#x + 0.5);
         let h = Num.floorInt(cmd#scene#size#y + 0.5);
         if (w <= 0 or h <= 0) None
         else {
-            let target = designTarget(state, slot, w, h);
-            RenderTargetGl.bind(target);
+            let target = designTarget(gl, state, slot, w, h);
+            RenderTargetGl.bind(gl, target);
             let full = { x = 0, y = 0, width = w, height = h };
             GL11.glViewport(0, 0, w, h);
             GL11.glDisable(GL11.GL_SCISSOR_TEST);
             GL11.glClearColor(0.0f32, 0.0f32, 0.0f32, 0.0f32);
             GL11.glClear(GL11.GL_COLOR_BUFFER_BIT);
-            drawScene(state, gen, textureOf, { viewport = full, scissor = full, fillBackground = true, coverage = false }, shadow, cmd#scene);
+            drawScene(gl, state, gen, textureOf, { viewport = full, scissor = full, fillBackground = true, coverage = false }, shadow, cmd#scene);
             GL11.glDisable(GL11.GL_SCISSOR_TEST);
             Some(target)
         }
@@ -415,15 +416,15 @@ mod Render3d {
     /// (番号, 形式) の Design の描き先。大きさが変わったら作り直し、古い方は捨てる。
     /// WhyNot: 鍵を番号だけにしない — 画面（Rgba8Unorm）と HDR の Pass で同じ番号の場面を描くと、コマごとに作り直しが続く。
     /// 鍵の形式は Format の名前（Map の鍵には Order が要り、Format は Eq と ToString だけを持つ）。
-    def designTarget(state: State, slot: (Int32, RenderTarget.Format), w: Int32, h: Int32): RenderTargetGl.Entry \ IO =
+    def designTarget(gl: GlContext, state: State, slot: (Int32, RenderTarget.Format), w: Int32, h: Int32): RenderTargetGl.Entry \ IO =
         let (index, format) = slot;
         let key = (index, ToString.toString(format));
         let targets = Ref.get(state#designTargetsRef);
         match Map.get(key, targets) {
             case Some(e) if e#width == w and e#height == h => e
             case old =>
-                Option.forEach(RenderTargetGl.destroy, old);
-                let made = RenderTargetGl.create(w, h, format);
+                Option.forEach(e -> RenderTargetGl.destroy(gl, e), old);
+                let made = RenderTargetGl.create(gl, w, h, format);
                 Ref.put(Map.insert(key, made, targets), state#designTargetsRef);
                 made
         }
@@ -431,8 +432,8 @@ mod Render3d {
     /// Design の FBO のテクスチャを、場面の矩形へ最も近い画素で α で重ねる。FBO の色は α を掛けた後の値として重ねる
     /// （GL_ONE, GL_ONE_MINUS_SRC_ALPHA）: 透明から描いた FBO に半透明を重ねると、色は src × α・α は α になるため。
     /// 半透明の無い場面の FBO の画素は α が 0（色も 0）か 1 なので、Normal で重ねた時と 1 bit も同じ。
-    def blitDesign(state: State, rect: PixelBox, scissor: PixelBox, target: RenderTargetGl.Entry): Unit \ IO =
-        let programs = programsOf(state);
+    def blitDesign(gl: GlContext, state: State, rect: PixelBox, scissor: PixelBox, target: RenderTargetGl.Entry): Unit \ IO =
+        let programs = programsOf(gl, state);
         if (programs#blit == 0) ()
         else {
             GL11.glViewport(rect#x, rect#y, rect#width, rect#height);
@@ -454,16 +455,16 @@ mod Render3d {
 
     /// 場面 1 つを、今 bind されている描き先の area へ描く。描き終えたら深度・カリングを切り、blend・program・VAO を戻す。
     /// viewport と scissor は呼ぶ側が戻す。stencil には触らない（mask 付きの Shader 面が使う）。
-    def drawScene(state: State, gen: Int64, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO,
+    def drawScene(gl: GlContext, state: State, gen: Int64, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO,
                   area: { viewport = PixelBox, scissor = PixelBox, fillBackground = Bool, coverage = Bool }, shadow: Option[ShadowUse],
                   scene: Scene3d.Scene3dCmd): Unit \ IO =
         Array.put(scene#time, 0, state#timeHolder);
         let frustum = Scene3d.frustumOf(scene);
         let outside = Scene3d.isOutsideFrustum(frustum);
-        let programs = programsOf(state);
+        let programs = programsOf(gl, state);
         let background = if (area#fillBackground and Option.isEmpty(scene#sky)) scene#environment#background else None;
         beginScene(area#viewport, area#scissor, background);
-        if (area#fillBackground) drawSky(state, area#viewport, scene) else ();
+        if (area#fillBackground) drawSky(gl, state, area#viewport, scene) else ();
         let picked = Scene3d.pickLights(scene#camera#eye, scene);
         noteDroppedLights(state, scene);
         let lights = lightDataOf(picked);
@@ -473,37 +474,37 @@ mod Render3d {
         let source = { textureOf = textureOf, own = scene#textures |> List.map(t -> (Texture3d.name(t), t)) |> List.toMap };
         match scene#output {
             case Scene3d.Output.Color =>
-                let (plain, materials) = splitByMaterial(state, gen, outside, _ -> true, area#coverage, scene#instances);
-                noteCulled(state, gen, source, List.length(scene#instances), plain, materials);
+                let (plain, materials) = splitByMaterial(gl, state, gen, outside, _ -> true, area#coverage, scene#instances);
+                noteCulled(gl, state, gen, source, List.length(scene#instances), plain, materials);
                 let (blended, solid) = List.partition(d -> d#material#blend, materials);
                 bindShadowMap(shadow);
-                drawInstancesLit(state, gen, programs#lit, camera, plain);
+                drawInstancesLit(gl, state, gen, programs#lit, camera, plain);
                 // WhyNot: 不透明の材質をプログラムの番号で並べたまま描く順を保つ — 深度で前後が決まるので順は絵を変えない（同じ深さの面だけが並びで決まる）。
-                drawMaterials(state, gen, camera, MaterialPass.Color, source, solid |> List.sortBy(d -> d#entry#locs#mesh#program));
-                drawBillboards(state, textureOf, programs#billboard, camera, scene);
-                drawBlended(state, gen, camera, source, scene#camera#eye, blended);
+                drawMaterials(gl, state, gen, camera, MaterialPass.Color, source, solid |> List.sortBy(d -> d#entry#locs#mesh#program));
+                drawBillboards(gl, state, textureOf, programs#billboard, camera, scene);
+                drawBlended(gl, state, gen, camera, source, scene#camera#eye, blended);
                 unbindShadowMap(shadow)
             case Scene3d.Output.Depth(dr) =>
                 // WhyNot: cutout でも両面でもない材質に材質のプログラムを組まない — 奥行きは形だけで決まり、色の計算は捨てられる
                 //   （両面の物は材質の道でカリングを切る。頂点の色の道へ回すと裏の面が捨てられ、CPU の奥行きと食い違う）。
                 // WhyNot: 半透明の物を描かない — 奥行きを書くと、ピントの Pass がガラスの手前に合う。
                 let solidInstances = List.filter(i -> not Scene3d.isBlendedFields(Scene3d.instanceFieldsOf(i)), scene#instances);
-                let (plain, cutouts) = splitByMaterial(state, gen, outside, m -> m#cutout or m#doubleSided, false, solidInstances);
-                noteCulled(state, gen, source, List.length(scene#instances), plain, cutouts);
-                drawInstancesDepth(state, gen, programs#depth, camera, scene#camera#eye, dr, plain);
-                drawMaterials(state, gen, camera, MaterialPass.Depth(dr), source, cutouts |> List.sortBy(d -> d#entry#locs#mesh#program));
-                drawBillboards(state, textureOf, programs#billboard, camera, scene)
+                let (plain, cutouts) = splitByMaterial(gl, state, gen, outside, m -> m#cutout or m#doubleSided, false, solidInstances);
+                noteCulled(gl, state, gen, source, List.length(scene#instances), plain, cutouts);
+                drawInstancesDepth(gl, state, gen, programs#depth, camera, scene#camera#eye, dr, plain);
+                drawMaterials(gl, state, gen, camera, MaterialPass.Depth(dr), source, cutouts |> List.sortBy(d -> d#entry#locs#mesh#program));
+                drawBillboards(gl, state, textureOf, programs#billboard, camera, scene)
         };
-        endScene()
+        endScene(gl)
 
     /// 半透明の材質の物を Scene3d.blendOrderOf の順（遠い物から）に、深度を読むが書かずに重ねる。無ければ何もしない。
-    def drawBlended(state: State, gen: Int64, camera: CameraData, source: TextureSource, eye: Vec3.Vec3, draws: List[MaterialDraw]): Unit \ IO =
+    def drawBlended(gl: GlContext, state: State, gen: Int64, camera: CameraData, source: TextureSource, eye: Vec3.Vec3, draws: List[MaterialDraw]): Unit \ IO =
         if (List.isEmpty(draws)) ()
         else {
             GL11.glDepthMask(false);
             GL11.glEnable(GL11.GL_BLEND);
             GL14.glBlendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA, GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA);
-            drawMaterials(state, gen, camera, MaterialPass.Color, source, Scene3d.blendOrderOf(eye, d -> d#draw#fields, draws));
+            drawMaterials(gl, state, gen, camera, MaterialPass.Color, source, Scene3d.blendOrderOf(eye, d -> d#draw#fields, draws));
             GL11.glDisable(GL11.GL_BLEND);
             GL11.glDepthMask(true)
         }
@@ -512,11 +513,11 @@ mod Render3d {
     /// 描き始める前に済ませ、unit 0 へ戻す（初めての絵を上げる時に今の unit へ貼るので、描いている途中では呼ばない）。
     /// 間引いた物の形は drawPosedMesh が置き場に数える（描く段で culled の物も通す）。
     // WhyNot: 間引いた物を置き場で古いままにしない — 振り向くたびに形と絵を上げ直して止まり、毎コマ作り直しの知らせも鳴る。
-    def noteCulled(state: State, gen: Int64, source: TextureSource, total: Int32,
+    def noteCulled(gl: GlContext, state: State, gen: Int64, source: TextureSource, total: Int32,
                    plain: List[MeshDraw], materials: List[MaterialDraw]): Unit \ IO =
         let culledMaterials = List.filter(d -> d#draw#culled, materials);
         culledMaterials |> List.forEach(d ->
-            materialTextureNames(d) |> List.forEach(lt -> { let (label, name, textureUse) = lt; discard resolveTextureAs(state, gen, source, label, name, textureUse) }));
+            materialTextureNames(d) |> List.forEach(lt -> { let (label, name, textureUse) = lt; discard resolveTextureAs(gl, state, gen, source, label, name, textureUse) }));
         if (List.isEmpty(culledMaterials)) () else GL13.glActiveTexture(GL13.GL_TEXTURE0);
         countInstances(state, total, List.count(d -> not d#culled, plain) + List.count(d -> not d#draw#culled, materials))
 
@@ -551,10 +552,10 @@ mod Render3d {
 
     /// 場面の sky が Some なら、今の scissor の中を空で塗る（深度は書かない・深度の判定もしない）。beginScene の後に呼ぶ。
     /// Output.Depth では白（一番奥）。sky と background が両方 Some なら 1 回だけ知らせる（background は beginScene に渡さない）。
-    def drawSky(state: State, viewport: PixelBox, scene: Scene3d.Scene3dCmd): Unit \ IO =
+    def drawSky(gl: GlContext, state: State, viewport: PixelBox, scene: Scene3d.Scene3dCmd): Unit \ IO =
         Scene3d.skyWarning(scene) |> Option.forEach(line -> warnSceneOnce(state, "@sky+background", line));
         scene#sky |> Option.forEach(sky -> {
-            let locs = skyProgramOf(state);
+            let locs = skyProgramOf(gl, state);
             if (locs#program == 0) ()
             else {
                 let f = Scene3d.skyFieldsOf(sky);
@@ -575,7 +576,7 @@ mod Render3d {
                     case Scene3d.Output.Color    => 0
                     case Scene3d.Output.Depth(_) => 1
                 });
-                GL30.glBindVertexArray(programsOf(state)#quadVao);
+                GL30.glBindVertexArray(programsOf(gl, state)#quadVao);
                 GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 6);
                 countDrawCall(state);
                 GL30.glBindVertexArray(0);
@@ -586,12 +587,12 @@ mod Render3d {
         })
 
     /// 深度とカリングを切り、blend を 2D の既定（Normal）へ、program と VAO を外す。
-    def endScene(): Unit \ IO =
+    def endScene(gl: GlContext): Unit \ IO =
         GL11.glDisable(GL11.GL_DEPTH_TEST);
         GL11.glDisable(GL11.GL_CULL_FACE);
         GL11.glDepthMask(true);
         GL11.glEnable(GL11.GL_BLEND);
-        RenderSprite.applyBlend(DrawCmd.BlendMode.Normal);
+        RenderSprite.applyBlend(gl, DrawCmd.BlendMode.Normal);
         GL20.glUseProgram(0);
         GL30.glBindVertexArray(0)
 
@@ -606,12 +607,12 @@ mod Render3d {
     // ── 置いた物 ──
 
     /// 骨の無い物を locs で、骨つきの物を骨つきの版で描く（骨つきの版は骨つきの物がある時だけ組む）。
-    def drawInstancesLit(state: State, gen: Int64, locs: LitLocs, camera: CameraData, instances: List[MeshDraw]): Unit \ IO =
+    def drawInstancesLit(gl: GlContext, state: State, gen: Int64, locs: LitLocs, camera: CameraData, instances: List[MeshDraw]): Unit \ IO =
         let (skinned, plain) = List.partition(isSkinned, instances);
-        drawLitWith(state, gen, locs, camera, plain);
-        if (List.isEmpty(skinned)) () else drawLitWith(state, gen, skinnedProgramsOf(state)#lit, camera, skinned)
+        drawLitWith(gl, state, gen, locs, camera, plain);
+        if (List.isEmpty(skinned)) () else drawLitWith(gl, state, gen, skinnedProgramsOf(gl, state)#lit, camera, skinned)
 
-    def drawLitWith(state: State, gen: Int64, locs: LitLocs, camera: CameraData, instances: List[MeshDraw]): Unit \ IO =
+    def drawLitWith(gl: GlContext, state: State, gen: Int64, locs: LitLocs, camera: CameraData, instances: List[MeshDraw]): Unit \ IO =
         if (List.isEmpty(instances) or locs#mesh#program == 0) ()
         else {
             useMeshProgram(locs#mesh, camera#view, camera#proj);
@@ -619,19 +620,19 @@ mod Render3d {
             putShadow(locs#shadow, camera#shadow);
             instances |> List.forEach(d -> {
                 if (d#culled) () else putLinearizedColor(locs#tint, d#fields#tint);
-                drawPosedMesh(state, gen, locs#mesh, d)
+                drawPosedMesh(gl, state, gen, locs#mesh, d)
             })
         }
 
     /// Output.Depth の灰色で描く。骨の分け方は drawInstancesLit と同じ。
-    def drawInstancesDepth(state: State, gen: Int64, locs: DepthLocs, camera: CameraData, eye: Vec3.Vec3,
+    def drawInstancesDepth(gl: GlContext, state: State, gen: Int64, locs: DepthLocs, camera: CameraData, eye: Vec3.Vec3,
                            depthRange: { near = Float64, range = Float64 }, instances: List[MeshDraw]): Unit \ IO =
         let (skinned, plain) = List.partition(isSkinned, instances);
         let pass = { camera = camera, eye = eye, depthRange = depthRange };
-        drawDepthWith(state, gen, locs, pass, plain);
-        if (List.isEmpty(skinned)) () else drawDepthWith(state, gen, skinnedProgramsOf(state)#depth, pass, skinned)
+        drawDepthWith(gl, state, gen, locs, pass, plain);
+        if (List.isEmpty(skinned)) () else drawDepthWith(gl, state, gen, skinnedProgramsOf(gl, state)#depth, pass, skinned)
 
-    def drawDepthWith(state: State, gen: Int64, locs: DepthLocs,
+    def drawDepthWith(gl: GlContext, state: State, gen: Int64, locs: DepthLocs,
                       pass: { camera = CameraData, eye = Vec3.Vec3, depthRange = { near = Float64, range = Float64 } },
                       instances: List[MeshDraw]): Unit \ IO =
         if (List.isEmpty(instances) or locs#mesh#program == 0) ()
@@ -639,7 +640,7 @@ mod Render3d {
             useMeshProgram(locs#mesh, pass#camera#view, pass#camera#proj);
             GL20.glUniform3f(locs#eye, RenderUtil.f32(pass#eye#x), RenderUtil.f32(pass#eye#y), RenderUtil.f32(pass#eye#z));
             putDepthRange(locs#depthRange, pass#depthRange);
-            instances |> List.forEach(drawPosedMesh(state, gen, locs#mesh))
+            instances |> List.forEach(drawPosedMesh(gl, state, gen, locs#mesh))
         }
 
     def putColor(loc: Int32, c: Color): Unit \ IO =
@@ -672,10 +673,10 @@ mod Render3d {
     /// 骨つきの物は joint 行列を UBO へ置いてから描く（locs は骨つきの版のプログラム）。pose が None なら drawMesh と同じ。
     /// 間引いた物（culled）は描かず、形を今のコマで使った物として置き場に数えるだけ。
     // WhyNot: 間引いた物を meshEntry に通さずに飛ばさない — endFrame は 128 コマ使わなかった形を捨てるので、振り向くたびに頂点を上げ直す。
-    def drawPosedMesh(state: State, gen: Int64, locs: MeshLocs, d: MeshDraw): Unit \ IO =
+    def drawPosedMesh(gl: GlContext, state: State, gen: Int64, locs: MeshLocs, d: MeshDraw): Unit \ IO =
         if (d#culled) discard meshEntry(state, gen, d#fields#mesh)
         else {
-            d#pose |> Option.forEach(putJoints(skinnedProgramsOf(state)));
+            d#pose |> Option.forEach(putJoints(skinnedProgramsOf(gl, state)));
             drawMesh(state, gen, locs, d#fields#mesh, d#fields#world)
         }
 
@@ -916,7 +917,7 @@ mod Render3d {
     // ── ビルボード ──
 
     /// 場面のビルボードを描く。視錐台の外のビルボード（外接球で見る）は描かない（見つからない絵の知らせは描く物と同じに出す）。
-    def drawBillboards(state: State, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO, locs: BillboardLocs,
+    def drawBillboards(gl: GlContext, state: State, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO, locs: BillboardLocs,
                        camera: CameraData, scene: Scene3d.Scene3dCmd): Unit \ IO =
         if (List.isEmpty(scene#billboards) or locs#program == 0) ()
         else {
@@ -931,7 +932,7 @@ mod Render3d {
             putVec3(locs#facing, Vec3.mul(Camera3d.forward(scene#camera), -1.0));
             putBillboardOutput(locs, scene#output);
             GL13.glActiveTexture(GL13.GL_TEXTURE0);
-            GL30.glBindVertexArray(programsOf(state)#quadVao);
+            GL30.glBindVertexArray(programsOf(gl, state)#quadVao);
             scene#billboards |> List.forEach(b ->
                 drawBillboard(state, textureOf, locs, Scene3d.isBillboardOutsideFrustum(camera#frustum, b), Scene3d.billboardFieldsOf(b)));
             GL30.glBindVertexArray(0);
@@ -991,30 +992,30 @@ mod Render3d {
     // ── プログラム ──
 
     /// プログラムを初めて要る時に組む。組めなかったプログラムは 0 になり、その描き物は描かない（ゲームは止めない）。
-    def programsOf(state: State): Programs \ IO =
+    def programsOf(gl: GlContext, state: State): Programs \ IO =
         match Ref.get(state#programsRef) {
             case Some(p) => p
             case None =>
-                let made = buildPrograms();
+                let made = buildPrograms(gl);
                 Ref.put(Some(made), state#programsRef);
                 made
         }
 
-    def buildPrograms(): Programs \ IO =
-        let lit = compile(litVertexSource(false), litFragmentSource(), "scene3d:lit");
-        let depth = compile(meshVertexSource(), depthFragmentSource(), "scene3d:depth");
-        let billboard = compile(billboardVertexSource(), billboardFragmentSource(), "scene3d:billboard");
-        let blit = compile(blitVertexSource(), blitFragmentSource(), "scene3d:blit");
+    def buildPrograms(gl: GlContext): Programs \ IO =
+        let lit = compile(gl, litVertexSource(false), litFragmentSource(), "scene3d:lit");
+        let depth = compile(gl, meshVertexSource(), depthFragmentSource(), "scene3d:depth");
+        let billboard = compile(gl, billboardVertexSource(), billboardFragmentSource(), "scene3d:billboard");
+        let blit = compile(gl, blitVertexSource(), blitFragmentSource(), "scene3d:blit");
         let (quadVao, quadVbo) = buildQuad();
         { lit = litLocsOf(lit), depth = depthLocsOf(depth),
           billboard = billboardLocsOf(billboard), blit = blit, quadVao = quadVao, quadVbo = quadVbo }
 
     /// 空のプログラムを初めて要る時に組む。組めなかったプログラムは 0（空を描かず、地の色も塗らない）。
-    def skyProgramOf(state: State): SkyLocs \ IO =
+    def skyProgramOf(gl: GlContext, state: State): SkyLocs \ IO =
         match Ref.get(state#skyRef) {
             case Some(p) => p
             case None =>
-                let program = compile(blitVertexSource(), skyFragmentSource(), "scene3d:sky");
+                let program = compile(gl, blitVertexSource(), skyFragmentSource(), "scene3d:sky");
                 let made = { program = program, viewport = loc(program, "uViewport"), forward = loc(program, "uForward"),
                              right = loc(program, "uRight"), up = loc(program, "uUp"), zenith = loc(program, "uZenith"),
                              horizon = loc(program, "uHorizon"), ground = loc(program, "uGround"), curve = loc(program, "uCurve"),
@@ -1024,18 +1025,18 @@ mod Render3d {
         }
 
     /// 骨つきの版を初めて要る時に組む。組めなかったプログラムは 0（骨つきの物はその種類だけ描かない）。
-    def skinnedProgramsOf(state: State): SkinnedPrograms \ IO =
+    def skinnedProgramsOf(gl: GlContext, state: State): SkinnedPrograms \ IO =
         match Ref.get(state#skinnedRef) {
             case Some(p) => p
             case None =>
-                let made = buildSkinnedPrograms();
+                let made = buildSkinnedPrograms(gl);
                 Ref.put(Some(made), state#skinnedRef);
                 made
         }
 
-    def buildSkinnedPrograms(): SkinnedPrograms \ IO =
-        let lit = compile(litVertexSource(true), litFragmentSource(), "scene3d:lit:skin");
-        let depth = compile(skinnedMeshVertexSource(), depthFragmentSource(), "scene3d:depth:skin");
+    def buildSkinnedPrograms(gl: GlContext): SkinnedPrograms \ IO =
+        let lit = compile(gl, litVertexSource(true), litFragmentSource(), "scene3d:lit:skin");
+        let depth = compile(gl, skinnedMeshVertexSource(), depthFragmentSource(), "scene3d:depth:skin");
         bindJointsBlock(lit);
         bindJointsBlock(depth);
         { lit = litLocsOf(lit), depth = depthLocsOf(depth), jointsUbo = createJointsBuffer(),
@@ -1063,8 +1064,8 @@ mod Render3d {
     def depthLocsOf(program: Int32): DepthLocs \ IO =
         { mesh = meshLocsOf(program), eye = loc(program, "uEye"), depthRange = loc(program, "uDepthRange") }
 
-    def compile(vertex: String, fragment: String, label: String): Int32 \ IO =
-        match RenderShader.tryCreateProgram(vertex, fragment, label) {
+    def compile(gl: GlContext, vertex: String, fragment: String, label: String): Int32 \ IO =
+        match RenderShader.tryCreateProgram(gl, vertex, fragment, label) {
             case Some(p) => p
             case None =>
                 Log.warnThen("scene3d: プログラム '${label}' が組めなかった — この種類の 3D の描き物は描かない", 0)

@@ -10,7 +10,10 @@
 //
 // 作るのは 1 字 1 ミリ秒弱。漏れるのは多くて数字なので、1 コマの中で片付く。
 mod RenderGlyphGrow {
-    import org.lwjgl.opengl.GL11
+    import fge.gl.GlContext
+    import fge.gl.GlContext
+    import fge.gl.GlConst
+    import fge.gl.GlContext
     import org.lwjgl.stb.STBTruetype
     import org.lwjgl.stb.STBTTFontinfo
     import org.lwjgl.BufferUtils
@@ -64,33 +67,33 @@ mod RenderGlyphGrow {
     /// cps のうちアトラスに無い字を作って足し、増えた分を載せたアトラスを返す。
     /// 足せなかった字（フォントが持っていない・アトラスが満杯）は黙って諦める —
     /// その字が出ないだけで、ゲームは動き続ける。
-    pub def ensure(table: Ref[Table, Static], atlas: FontAtlas,
+    pub def ensure(gl: GlContext, table: Ref[Table, Static], atlas: FontAtlas,
                    cps: Set[Int32]): FontAtlas \ IO =
         let missing = cps |> Set.filter(cp -> Option.isEmpty(Map.get(cp, atlas#glyphs)));
         if (Set.isEmpty(missing)) atlas
         else match Map.get(atlas#textureName, Ref.get(table)) {
             case None       => atlas
-            case Some(font) => growAll(table, atlas, font, Set.toList(missing))
+            case Some(font) => growAll(gl, table, atlas, font, Set.toList(missing))
         }
 
     // ── 内部 ──────────────────────────────────────────────────
 
-    def growAll(table: Ref[Table, Static], atlas: FontAtlas, font0: Font,
+    def growAll(gl: GlContext, table: Ref[Table, Static], atlas: FontAtlas, font0: Font,
                 cps: List[Int32]): FontAtlas \ IO =
         try {
             let font1 = ensureInfo(font0);
             // 上げ直す区画は幅が 4 の倍数とは限らない。既定の詰め方のままだと
             // GL が行の先頭を 4 バイト境界へ揃えようとして絵がずれる。
-            GL11.glPixelStorei(GL11.GL_UNPACK_ALIGNMENT, 1);
-            GL11.glBindTexture(GL11.GL_TEXTURE_2D, font1#texId);
+            gl.pixelStorei(GlConst.UNPACK_ALIGNMENT, 1);
+            gl.bindTexture(GlConst.TEXTURE_2D, font1#texId);
             let result = List.foldLeft((acc, cp) -> {
                 let (glyphs, font) = acc;
-                match growOne(font, cp) {
+                match growOne(gl, font, cp) {
                     case None            => (glyphs, font)
                     case Some((gm, next)) => (Map.insert(cp, gm, glyphs), next)
                 }
             }, (atlas#glyphs, font1), cps);
-            GL11.glPixelStorei(GL11.GL_UNPACK_ALIGNMENT, 4);
+            gl.pixelStorei(GlConst.UNPACK_ALIGNMENT, 4);
             let (glyphs, font) = result;
             Ref.put(Map.insert(atlas#textureName, font, Ref.get(table)), table);
             { glyphs = glyphs | atlas }
@@ -115,7 +118,7 @@ mod RenderGlyphGrow {
                 { info = Some(info), source = Some(buf) | font }
         }
 
-    def growOne(font: Font, cp: Int32): Option[(TextLayout.GlyphMetrics, Font)] \ IO =
+    def growOne(gl: GlContext, font: Font, cp: Int32): Option[(TextLayout.GlyphMetrics, Font)] \ IO =
         match font#info {
             case None       => None
             case Some(info) =>
@@ -153,8 +156,7 @@ mod RenderGlyphGrow {
                             STBTruetype.stbtt_FreeSDF(sdf);
                             None
                         } else {
-                            GL11.glTexSubImage2D(GL11.GL_TEXTURE_2D, 0, px, py, gw, gh,
-                                                 GL11.GL_RED, GL11.GL_UNSIGNED_BYTE, sdf);
+                            gl.texSubImageAlphaMask(px, py, gw, gh, sdf);
                             STBTruetype.stbtt_FreeSDF(sdf);
                             let gm = RenderFont.glyphMetricsOf(
                                 { px = px, py = py, gw = gw, gh = gh },

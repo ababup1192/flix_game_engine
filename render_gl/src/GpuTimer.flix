@@ -51,6 +51,11 @@ mod GpuTimer {
     // ── GL を呼ぶ部分 ──
 
     /// 描き先 name を描く f を query で囲み、今のコマに足す（query を使えなければ f だけ呼ぶ）。
+    /// 塗りのコアへ渡す GPU の時間を測る口（輪を 1 つ持つ）。
+    pub def frameTimer(): RenderPaint.FrameTimer \ IO =
+        let ringRef = Ref.fresh(Static, emptyRing());
+        { measure = (name, f) -> measure(ringRef, name, f), endFrame = () -> endFrame(ringRef) }
+
     pub def measure(ringRef: Ref[Ring, Static], name: String, f: Unit -> Unit \ IO): Unit \ IO =
         match takeQuery(ringRef) {
             case None => f()

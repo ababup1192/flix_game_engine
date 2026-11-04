@@ -7,8 +7,11 @@
 // 範囲番号で 2 段階に分けて並べ替える（並び順の決まりは変わらない — 速さのための内部の形）。
 
 mod RenderFrame {
+    import fge.gl.GlContext
+    import fge.gl.GlContext
+    import fge.gl.GlConst
     import java.nio.FloatBuffer
-    import org.lwjgl.opengl.GL11
+    import fge.gl.GlContext
 
     /// z 安定ソート列に混ぜる 6 種の描画物。MTile=タイルマップ 1 層（1 draw call）、
     /// MSprite=スプライト/箱、MPoly=動的多角形、MStatic=永続 VBO のレンジ（頂点は運ばず
@@ -274,7 +277,7 @@ mod RenderFrame {
         surfaces = List[DrawCmd.SurfaceRenderCmd],
         // シェーダー面 1 枚を実際に GL へ描くクロージャ（program の uniform location を知る
         // バックエンド側が提供する）。renderFrameMixed は z の合流だけを受け持つ。
-        drawSurface = DrawCmd.SurfaceRenderCmd -> Unit \ IO,
+        drawSurface = (GlContext, DrawCmd.SurfaceRenderCmd) -> Unit \ IO,
         // 先に準備した 3D の場面の並び。番号ごとの z で 2D の並びに混ぜ、同じ z の中では surfaces の後に描く。
         scenes = Scene3dRenderer.Prepared,
         // None = 画面へのフレーム（黒帯 + design 領域の 2 段階の clear）。Some(op) = レンダー
@@ -429,9 +432,9 @@ mod RenderFrame {
     /// （clip が画面外へ食み出しても letterbox の黒帯を侵さない）。
     /// 幅か高さが 0 以下の矩形は glScissor(…, 0, 0) になり、その run は何も描かない。
     /// clipFlag = 0 は「clip 矩形なし」（scissor 無効化）。
-    def setScissorAt(st: Array[Int32, Static], clipFlag: Int32,
+    def setScissorAt(gl: GlContext, st: Array[Int32, Static], clipFlag: Int32,
                      x0: Int32, y0: Int32, x1: Int32, y1: Int32): Unit \ IO =
-        if (clipFlag == 0) GL11.glDisable(GL11.GL_SCISSOR_TEST)
+        if (clipFlag == 0) gl.disable(GlConst.SCISSOR_TEST)
         else {
             let vpX = Array.get(7, st);
             let vpY = Array.get(8, st);
@@ -441,19 +444,19 @@ mod RenderFrame {
             let cx1 = Int32.min(vpW, x1);
             let cy0 = Int32.max(0, y0);
             let cy1 = Int32.min(vpH, y1);
-            GL11.glEnable(GL11.GL_SCISSOR_TEST);
-            GL11.glScissor(vpX + cx0, vpY + vpH - cy1,
+            gl.enable(GlConst.SCISSOR_TEST);
+            gl.scissor(vpX + cx0, vpY + vpH - cy1,
                            Int32.max(0, cx1 - cx0), Int32.max(0, cy1 - cy0))
         }
 
     /// 溜まったスプライト run を 1 回の instanced draw で吐く。空 run では
     /// scissor / blend を触らない — GL 状態を無駄に往復させない。
-    def flushSprites(st: Array[Int32, Static], instData: FloatBuffer): Unit \ IO =
+    def flushSprites(gl: GlContext, st: Array[Int32, Static], instData: FloatBuffer): Unit \ IO =
         let count = Array.get(18, st);
         if (count == 0) () else {
-            setScissorAt(st, Array.get(12, st), Array.get(13, st), Array.get(14, st),
+            setScissorAt(gl, st, Array.get(12, st), Array.get(13, st), Array.get(14, st),
                          Array.get(15, st), Array.get(16, st));
-            RenderSprite.drawSpriteInstancedBuf(Array.get(0, st), Array.get(1, st),
+            RenderSprite.drawSpriteInstancedBuf(gl, Array.get(0, st), Array.get(1, st),
                                                 Array.get(2, st), Array.get(11, st),
                                                 Array.get(3, st), blendOf(Array.get(17, st)),
                                                 instData, count);
@@ -461,13 +464,13 @@ mod RenderFrame {
         }
 
     /// 溜まった多角形 run を 1 回の draw call で吐く（空 run は no-op）。
-    def flushPolys(st: Array[Int32, Static], polyData: FloatBuffer,
+    def flushPolys(gl: GlContext, st: Array[Int32, Static], polyData: FloatBuffer,
                    uniforms: RenderShader.PolyBatchUniforms): Unit \ IO =
         let count = Array.get(25, st);
         if (count == 0) () else {
-            setScissorAt(st, Array.get(19, st), Array.get(20, st), Array.get(21, st),
+            setScissorAt(gl, st, Array.get(19, st), Array.get(20, st), Array.get(21, st),
                          Array.get(22, st), Array.get(23, st));
-            RenderSprite.drawPolygonBatchBuf(Array.get(4, st), Array.get(5, st),
+            RenderSprite.drawPolygonBatchBuf(gl, Array.get(4, st), Array.get(5, st),
                                              Array.get(6, st), uniforms,
                                              blendOf(Array.get(24, st)), polyData, count);
             Array.put(0, 25, st)
@@ -478,7 +481,7 @@ mod RenderFrame {
     /// 書いてから吐くと新しい 1 体が前の run に混ざって出てしまう。
     /// clip の一致は clip有無 + 矩形 4 値の Int32 比較で見る（clip 矩形なしどうしは矩形を見ない —
     /// 前の run の古い矩形が残っていても None == None と同じ判定になるように）。
-    def pushSpriteKeyed(st: Array[Int32, Static], instData: FloatBuffer,
+    def pushSpriteKeyed(gl: GlContext, st: Array[Int32, Static], instData: FloatBuffer,
                         texId: Int32, clipFlag: Int32,
                         x0: Int32, y0: Int32, x1: Int32, y1: Int32, blendC: Int32,
                         posX: Float64, posY: Float64, sizeX: Float64, sizeY: Float64,
@@ -494,7 +497,7 @@ mod RenderFrame {
             writeInstAt(instData, count, posX, posY, sizeX, sizeY, drawable, useTex, sdf);
             Array.put(count + 1, 18, st)
         } else {
-            flushSprites(st, instData);
+            flushSprites(gl, st, instData);
             writeInstAt(instData, 0, posX, posY, sizeX, sizeY, drawable, useTex, sdf);
             Array.put(texId, 11, st);
             Array.put(clipFlag, 12, st);
@@ -508,7 +511,7 @@ mod RenderFrame {
 
     /// 1 多角形を三角形化して入れ物へ直に書く（clip 矩形か重ね方が変わるところでは先に吐く）。
     /// 頂点数が 3 未満（退化）なら何も積まない（run の鍵も進めない — 空 run のまま）。
-    def pushPolyKeyed(st: Array[Int32, Static], polyData: FloatBuffer,
+    def pushPolyKeyed(gl: GlContext, st: Array[Int32, Static], polyData: FloatBuffer,
                       uniforms: RenderShader.PolyBatchUniforms, clipFlag: Int32,
                       x0: Int32, y0: Int32, x1: Int32, y1: Int32, blendC: Int32,
                       pc: RenderType.PolygonCmd): Unit \ IO =
@@ -522,7 +525,7 @@ mod RenderFrame {
             let n = RenderSprite.writePolyVerts(polyData, count, pc);
             if (n < 3) () else Array.put(count + n, 25, st)
         } else {
-            flushPolys(st, polyData, uniforms);
+            flushPolys(gl, st, polyData, uniforms);
             let n = RenderSprite.writePolyVerts(polyData, 0, pc);
             if (n < 3) () else {
                 Array.put(clipFlag, 19, st);
@@ -539,17 +542,17 @@ mod RenderFrame {
     /// 作って等価比較する形にしないのは、その作り直しと多相比較が詰め込みループの
     /// 大きな取り分だったため（プロファイル実測）。矩形の量子化は DrawCmd.clipPixels の
     /// 1 本にまとめたまま（GL と SoftRaster が同じ画素集合を見る保証を崩さない）。
-    def pushSpriteItem(st: Array[Int32, Static], instData: FloatBuffer,
+    def pushSpriteItem(gl: GlContext, st: Array[Int32, Static], instData: FloatBuffer,
                        scaleX: Float64, scaleY: Float64, texId: Int32,
                        posX: Float64, posY: Float64, sizeX: Float64, sizeY: Float64,
                        drawable: RenderType.Drawable, useTex: Bool, sdf: Bool): Unit \ IO =
         let blendC = blendCode(DrawCmd.blendOf(drawable));
         match DrawCmd.clipOf(drawable) {
-            case None    => pushSpriteKeyed(st, instData, texId, 0, 0, 0, 0, 0, blendC,
+            case None    => pushSpriteKeyed(gl, st, instData, texId, 0, 0, 0, 0, 0, blendC,
                                             posX, posY, sizeX, sizeY, drawable, useTex, sdf)
             case Some(r) =>
                 let (x0, y0, x1, y1) = DrawCmd.clipPixels({ scaleX = scaleX, scaleY = scaleY }, r);
-                pushSpriteKeyed(st, instData, texId, 1, x0, y0, x1, y1, blendC,
+                pushSpriteKeyed(gl, st, instData, texId, 1, x0, y0, x1, y1, blendC,
                                 posX, posY, sizeX, sizeY, drawable, useTex, sdf)
         }
 
@@ -576,7 +579,7 @@ mod RenderFrame {
         else position
 
     /// スプライト 1 体を run へ積む（テクスチャ解決と centered の平行移動込み）。
-    def emitSprite(st: Array[Int32, Static], instData: FloatBuffer,
+    def emitSprite(gl: GlContext, st: Array[Int32, Static], instData: FloatBuffer,
                    scaleX: Float64, scaleY: Float64,
                    registry: RenderAsset.TextureRegistry,
                    targetNames: Set[String],
@@ -587,7 +590,7 @@ mod RenderFrame {
                                       _uox, _uoy, _usx, _usy, _z,
                                       _style, _clip, _blend, _mask) = drawable;
         if (String.isEmpty(tex)) {
-            pushSpriteItem(st, instData, scaleX, scaleY, 0,
+            pushSpriteItem(gl, st, instData, scaleX, scaleY, 0,
                            px, py, sx, sy, drawable, false, false)
         } else {
             match Map.get(tex, registry) {
@@ -599,7 +602,7 @@ mod RenderFrame {
                     // フォントアトラス (font_*) は SDF テキストとして描く。
                     let isFont = String.startsWith({prefix = "font_"}, tex);
                     let d = targetUvFlipped(targetNames, drawable);
-                    pushSpriteItem(st, instData, scaleX, scaleY,
+                    pushSpriteItem(gl, st, instData, scaleX, scaleY,
                                    GpuHandle.textureIdInt(texInfo#id),
                                    posX, posY, displayW, displayH, d, true, isFont)
                 // texture 未登録は描かない。描かないだけなので run は途切れさせない。
@@ -611,7 +614,7 @@ mod RenderFrame {
     /// emitSprite と同じ式）。run の一括化から外れるのは、ステンシルの書き込み・解除を
     /// 1 体の draw の前後に挟む口が一括 draw に無いため — mask 付きは少数枚の前提。
     /// 呼び側（emitMerged）が両 run を吐いてから呼ぶ。
-    def emitSpriteMasked(st: Array[Int32, Static], instData: FloatBuffer,
+    def emitSpriteMasked(gl: GlContext, st: Array[Int32, Static], instData: FloatBuffer,
                          scaleX: Float64, scaleY: Float64,
                          registry: RenderAsset.TextureRegistry,
                          targetNames: Set[String],
@@ -623,7 +626,7 @@ mod RenderFrame {
                                       _uox, _uoy, _usx, _usy, _z,
                                       _style, _clip, _blend, _mask) = drawable;
         if (String.isEmpty(tex)) {
-            drawMaskedOne(st, instData, scaleX, scaleY, polyUniforms, 0,
+            drawMaskedOne(gl, st, instData, scaleX, scaleY, polyUniforms, 0,
                           px, py, sx, sy, drawable, false, false)
         } else {
             match Map.get(tex, registry) {
@@ -635,7 +638,7 @@ mod RenderFrame {
                     let isFont = String.startsWith({prefix = "font_"}, tex);
                     // uv 反転は emitSprite と同じ（mask は形の変換なので uv には触らない）。
                     let d = targetUvFlipped(targetNames, drawable);
-                    drawMaskedOne(st, instData, scaleX, scaleY, polyUniforms,
+                    drawMaskedOne(gl, st, instData, scaleX, scaleY, polyUniforms,
                                   GpuHandle.textureIdInt(texInfo#id),
                                   posX, posY, displayW, displayH, d, true, isFont)
                 case None => warnMissingTexture(warnLog, tex)
@@ -644,7 +647,7 @@ mod RenderFrame {
 
     /// mask 付き 1 体の実描画: scissor を張り、instance を slot 0 へ書き、mask を
     /// スクリーン座標へ写してステンシル付きの単発 draw に渡す。
-    def drawMaskedOne(st: Array[Int32, Static], instData: FloatBuffer,
+    def drawMaskedOne(gl: GlContext, st: Array[Int32, Static], instData: FloatBuffer,
                       scaleX: Float64, scaleY: Float64,
                       polyUniforms: RenderShader.PolyBatchUniforms, texId: Int32,
                       posX: Float64, posY: Float64, sizeX: Float64, sizeY: Float64,
@@ -654,13 +657,13 @@ mod RenderFrame {
                                       _uox, _uoy, _usx, _usy, _z,
                                       _style, clip, blend, mask) = drawable;
         match clip {
-            case None    => setScissorAt(st, 0, 0, 0, 0, 0)
+            case None    => setScissorAt(gl, st, 0, 0, 0, 0, 0)
             case Some(r) =>
                 let (x0, y0, x1, y1) = DrawCmd.clipPixels({ scaleX = scaleX, scaleY = scaleY }, r);
-                setScissorAt(st, 1, x0, y0, x1, y1)
+                setScissorAt(gl, st, 1, x0, y0, x1, y1)
         };
         writeInstAt(instData, 0, posX, posY, sizeX, sizeY, drawable, useTex, sdf);
-        RenderSprite.drawSpriteMasked(Array.get(0, st), Array.get(1, st), Array.get(2, st), texId,
+        RenderSprite.drawSpriteMasked(gl, Array.get(0, st), Array.get(1, st), Array.get(2, st), texId,
                                       Array.get(3, st), blend, instData,
                                       Array.get(4, st), Array.get(5, st), Array.get(6, st),
                                       polyUniforms,
@@ -689,29 +692,29 @@ mod RenderFrame {
         }
 
     /// 多角形 1 個を run へ積む（clip 矩形を Int32 鍵へほどく）。
-    def emitPoly(st: Array[Int32, Static], polyData: FloatBuffer,
+    def emitPoly(gl: GlContext, st: Array[Int32, Static], polyData: FloatBuffer,
                  uniforms: RenderShader.PolyBatchUniforms,
                  scaleX: Float64, scaleY: Float64, pc: RenderType.PolygonCmd): Unit \ IO =
         match pc#clip {
-            case None    => pushPolyKeyed(st, polyData, uniforms, 0, 0, 0, 0, 0,
+            case None    => pushPolyKeyed(gl, st, polyData, uniforms, 0, 0, 0, 0, 0,
                                           blendCode(pc#blend), pc)
             case Some(r) =>
                 let (x0, y0, x1, y1) = DrawCmd.clipPixels({ scaleX = scaleX, scaleY = scaleY }, r);
-                pushPolyKeyed(st, polyData, uniforms, 1, x0, y0, x1, y1, blendCode(pc#blend), pc)
+                pushPolyKeyed(gl, st, polyData, uniforms, 1, x0, y0, x1, y1, blendCode(pc#blend), pc)
         }
 
     /// 静的レンジ 1 本を描く: 溜まっている両 run は呼び側で吐き終えている前提。
     /// scissor をレンジの clip に合わせ、永続 VBO の範囲を 1 draw call で塗る
     /// （アップロードも三角形化もしない）。
-    def emitStatic(st: Array[Int32, Static], scaleX: Float64, scaleY: Float64,
+    def emitStatic(gl: GlContext, st: Array[Int32, Static], scaleX: Float64, scaleY: Float64,
                    uniforms: RenderShader.PolyBatchUniforms, r: RenderStatic.Range): Unit \ IO =
         match r#clip {
-            case None    => setScissorAt(st, 0, 0, 0, 0, 0)
+            case None    => setScissorAt(gl, st, 0, 0, 0, 0, 0)
             case Some(c) =>
                 let (x0, y0, x1, y1) = DrawCmd.clipPixels({ scaleX = scaleX, scaleY = scaleY }, c);
-                setScissorAt(st, 1, x0, y0, x1, y1)
+                setScissorAt(gl, st, 1, x0, y0, x1, y1)
         };
-        RenderSprite.drawStaticRange(Array.get(4, st), r#vao, uniforms, r#blend,
+        RenderSprite.drawStaticRange(gl, Array.get(4, st), r#vao, uniforms, r#blend,
                                      r#viewOffset, r#viewScale, r#halfDesign, r#first, r#count)
 
     /// 安定ソート済みの列を先頭から 1 本ずつ処理する（末尾再帰）。
@@ -724,14 +727,14 @@ mod RenderFrame {
     /// run をまたいでテクスチャごとに再グループ化するのは禁止: アルファブレンドは
     /// 描画順に依存するので、同 zIndex の bg 矩形とテキスト最後の文字が入れ替わって
     /// 文字が消える実バグが過去に起きた。
-    def emitMerged(st: Array[Int32, Static], instData: FloatBuffer, polyData: FloatBuffer,
+    def emitMerged(gl: GlContext, st: Array[Int32, Static], instData: FloatBuffer, polyData: FloatBuffer,
                    scaleX: Float64, scaleY: Float64,
                    registry: RenderAsset.TextureRegistry,
                    targetNames: Set[String],
                    warnLog: Ref[Set[String], Static],
                    tileUniforms: RenderShader.TileUniforms,
                    polyBatchUniforms: RenderShader.PolyBatchUniforms,
-                   drawSurface: DrawCmd.SurfaceRenderCmd -> Unit \ IO,
+                   drawSurface: (GlContext, DrawCmd.SurfaceRenderCmd) -> Unit \ IO,
                    drawScene: (Scene3dRenderer.Viewport, Int32) -> Unit \ IO,
                    items: List[Merged]): Unit \ IO =
         match items {
@@ -743,13 +746,13 @@ mod RenderFrame {
                         // 層は画面全体に敷くので scissor は viewport 全体へ戻し、blend は
                         // TileMapRenderCmd が blend を持たない（常に Normal）ため明示的に戻す
                         // （前 run の Add/Multiply を持ち越さない）。
-                        flushSprites(st, instData);
-                        flushPolys(st, polyData, polyBatchUniforms);
-                        setScissorAt(st, 0, 0, 0, 0, 0);
-                        RenderSprite.applyBlend(DrawCmd.BlendMode.Normal);
+                        flushSprites(gl, st, instData);
+                        flushPolys(gl, st, polyData, polyBatchUniforms);
+                        setScissorAt(gl, st, 0, 0, 0, 0, 0);
+                        RenderSprite.applyBlend(gl, DrawCmd.BlendMode.Normal);
                         match Map.get(tm#textureName, registry) {
                             case Some(texInfo) =>
-                                RenderSprite.drawTileMapInstanced(Array.get(26, st),
+                                RenderSprite.drawTileMapInstanced(gl, Array.get(26, st),
                                                      GpuHandle.textureIdInt(texInfo#id),
                                                      GpuHandle.tileVaoInt(tm#tileVaoId),
                                                      tileUniforms,
@@ -760,42 +763,42 @@ mod RenderFrame {
                         }
                     case Merged.MSprite(drawable) =>
                         // スプライトが来たら溜まっている多角形 run を先に吐く（列順を守る）。
-                        flushPolys(st, polyData, polyBatchUniforms);
+                        flushPolys(gl, st, polyData, polyBatchUniforms);
                         if (List.isEmpty(DrawCmd.maskOf(drawable)))
-                            emitSprite(st, instData, scaleX, scaleY, registry, targetNames,
+                            emitSprite(gl, st, instData, scaleX, scaleY, registry, targetNames,
                                        warnLog, drawable)
                         else {
                             // mask 付きはステンシルへの描き込みが draw の前後に要るため、
                             // 一括 run に混ぜられない — 自分の run も吐いてから単発で描く。
-                            flushSprites(st, instData);
-                            emitSpriteMasked(st, instData, scaleX, scaleY, registry, targetNames,
+                            flushSprites(gl, st, instData);
+                            emitSpriteMasked(gl, st, instData, scaleX, scaleY, registry, targetNames,
                                              warnLog, polyBatchUniforms, drawable)
                         }
                     case Merged.MPoly(pc) =>
                         // 多角形が来たら溜まっているスプライト run を先に吐く（列順を守る）。
-                        flushSprites(st, instData);
-                        emitPoly(st, polyData, polyBatchUniforms, scaleX, scaleY, pc)
+                        flushSprites(gl, st, instData);
+                        emitPoly(gl, st, polyData, polyBatchUniforms, scaleX, scaleY, pc)
                     case Merged.MStatic(r) =>
                         // 静的レンジが来たら両 run を吐いてから 1 draw call で描く（列順を守る）。
-                        flushSprites(st, instData);
-                        flushPolys(st, polyData, polyBatchUniforms);
-                        emitStatic(st, scaleX, scaleY, polyBatchUniforms, r)
+                        flushSprites(gl, st, instData);
+                        flushPolys(gl, st, polyData, polyBatchUniforms);
+                        emitStatic(gl, st, scaleX, scaleY, polyBatchUniforms, r)
                     case Merged.MSurface(s) =>
                         // シェーダー面が来たら両 run を吐いてから 1 枚描く（列順＝重なり順を守る）。
                         // 面は矩形全体を塗るので scissor は viewport 全体に戻す
                         // （前 run の clip 矩形を持ち越さない）。
-                        flushSprites(st, instData);
-                        flushPolys(st, polyData, polyBatchUniforms);
-                        setScissorAt(st, 0, 0, 0, 0, 0);
-                        drawSurface(s)
+                        flushSprites(gl, st, instData);
+                        flushPolys(gl, st, polyData, polyBatchUniforms);
+                        setScissorAt(gl, st, 0, 0, 0, 0, 0);
+                        drawSurface(gl, s)
                     case Merged.MScene3d(i) =>
                         // 場面も両 run を吐いてから描く（深度で前後を決めるのは場面の中だけ）。
-                        flushSprites(st, instData);
-                        flushPolys(st, polyData, polyBatchUniforms);
+                        flushSprites(gl, st, instData);
+                        flushPolys(gl, st, polyData, polyBatchUniforms);
                         drawScene({ x = Array.get(7, st), y = Array.get(8, st), width = Array.get(9, st),
                                     height = Array.get(10, st), scaleX = scaleX, scaleY = scaleY }, i)
                 };
-                emitMerged(st, instData, polyData, scaleX, scaleY, registry, targetNames,
+                emitMerged(gl, st, instData, polyData, scaleX, scaleY, registry, targetNames,
                            warnLog, tileUniforms, polyBatchUniforms, drawSurface, drawScene, rest)
         }
 
@@ -808,7 +811,7 @@ mod RenderFrame {
     /// 1 フレーム描画: タイル層・sprites・polygons・静的レンジ・シェーダー面を
     /// 1 本の安定ソート列に混ぜ、共有の zIndex どおりの重なり順で描く。
     /// 黒帯部分は scissor で clear する。
-    pub def renderFrameMixed(args: FrameArgs): Unit \ IO =
+    pub def renderFrameMixed(gl: GlContext, args: FrameArgs): Unit \ IO =
         let tileShader   = args#tileShader;
         let registry     = args#registry;
         let clearColor   = args#clearColor;
@@ -842,27 +845,27 @@ mod RenderFrame {
             match args#targetClear {
                 case None =>
                     // 画面: 黒帯を含む全面を黒 → design 領域だけ clearColor の 2 段階の clear。
-                    GL11.glViewport(0, 0, fbW, fbH);
-                    GL11.glClearColor(0.0f32, 0.0f32, 0.0f32, 1.0f32);
-                    GL11.glClear(GL11.GL_COLOR_BUFFER_BIT);
-                    GL11.glViewport(vpX, vpY, vpW, vpH);
-                    GL11.glEnable(GL11.GL_SCISSOR_TEST);
-                    GL11.glScissor(vpX, vpY, vpW, vpH);
-                    GL11.glClearColor(RenderUtil.f32(clearColor#r), RenderUtil.f32(clearColor#g),
+                    gl.viewport(0, 0, fbW, fbH);
+                    gl.clearColor(0.0f32, 0.0f32, 0.0f32, 1.0f32);
+                    gl.clear(GlConst.COLOR_BUFFER_BIT);
+                    gl.viewport(vpX, vpY, vpW, vpH);
+                    gl.enable(GlConst.SCISSOR_TEST);
+                    gl.scissor(vpX, vpY, vpW, vpH);
+                    gl.clearColor(RenderUtil.f32(clearColor#r), RenderUtil.f32(clearColor#g),
                                       RenderUtil.f32(clearColor#b), 1.0f32);
-                    GL11.glClear(GL11.GL_COLOR_BUFFER_BIT);
-                    GL11.glDisable(GL11.GL_SCISSOR_TEST)
+                    gl.clear(GlConst.COLOR_BUFFER_BIT);
+                    gl.disable(GlConst.SCISSOR_TEST)
                 case Some(op) =>
                     // レンダーターゲット: 全面に写すので黒帯は無い。前の中身の始末は
                     // op の 3 択（RenderTarget.LoadOp の doc を参照）。
-                    GL11.glViewport(vpX, vpY, vpW, vpH);
+                    gl.viewport(vpX, vpY, vpW, vpH);
                     match op {
                         case RenderTarget.LoadOp.Clear(c) =>
-                            GL11.glClearColor(RenderUtil.f32(c#r), RenderUtil.f32(c#g), RenderUtil.f32(c#b), 1.0f32);
-                            GL11.glClear(GL11.GL_COLOR_BUFFER_BIT)
+                            gl.clearColor(RenderUtil.f32(c#r), RenderUtil.f32(c#g), RenderUtil.f32(c#b), 1.0f32);
+                            gl.clear(GlConst.COLOR_BUFFER_BIT)
                         case RenderTarget.LoadOp.ClearTransparent =>
-                            GL11.glClearColor(0.0f32, 0.0f32, 0.0f32, 0.0f32);
-                            GL11.glClear(GL11.GL_COLOR_BUFFER_BIT)
+                            gl.clearColor(0.0f32, 0.0f32, 0.0f32, 0.0f32);
+                            gl.clear(GlConst.COLOR_BUFFER_BIT)
                         case RenderTarget.LoadOp.Keep => ()
                     }
             };
@@ -890,8 +893,8 @@ mod RenderFrame {
             // 固定費が積み上がり、数千体で描画時間のほとんどを占めてしまうため。
             // 書き溜める先は 1 フレーム 1 本の使い回し。溜まった run を吐くたびに
             // 先頭へ戻すので、要る大きさは「一番大きい run」ぶんで足りる。
-            RenderBuf.ensure(instBuf, Int32.max(1, List.length(sprites)) * 38);
-            RenderBuf.ensure(polyBuf, Int32.max(3, polyVertCap(polygons)) * 6);
+            RenderBuf.ensure(gl, instBuf, Int32.max(1, List.length(sprites)) * 38);
+            RenderBuf.ensure(gl, polyBuf, Int32.max(3, polyVertCap(polygons)) * 6);
             let instData = RenderBuf.buffer(instBuf);
             let polyData = RenderBuf.buffer(polyBuf);
             // run 状態と GL ハンドル定数を Int32 配列 1 本へ詰める（スロット順は stateSize 上のコメント）。
@@ -910,17 +913,17 @@ mod RenderFrame {
             Array.put(vpW, 9, st);
             Array.put(vpH, 10, st);
             Array.put(tileShader, 26, st);
-            emitMerged(st, instData, polyData, scaleX, scaleY, registry, args#targetNames,
+            emitMerged(gl, st, instData, polyData, scaleX, scaleY, registry, args#targetNames,
                        args#texWarnLog, tileUniforms, polyBatchUniforms, drawSurface, args#scenes#draw, sortedMerged);
             // どちらか片方だけが非空（切替時に相手を吐いているため）。空 flush は no-op。
-            flushSprites(st, instData);
-            flushPolys(st, polyData, polyBatchUniforms);
+            flushSprites(gl, st, instData);
+            flushPolys(gl, st, polyData, polyBatchUniforms);
             // フレーム末尾で必ず scissor を解除する — 有効なまま持ち越すと、次フレームの
             // 全画面 clear や F8 注釈のスクリーンショット再描画が小矩形に切られる。
-            GL11.glDisable(GL11.GL_SCISSOR_TEST);
+            gl.disable(GlConst.SCISSOR_TEST);
             // blend も Normal に戻す — Add/Multiply のまま持ち越すと、次フレーム冒頭の
             // タイルマップや F8 注釈の再描画が違う重ね方で合成される。
-            RenderSprite.applyBlend(DrawCmd.BlendMode.Normal)
+            RenderSprite.applyBlend(gl, DrawCmd.BlendMode.Normal)
         } else ()
 
 }

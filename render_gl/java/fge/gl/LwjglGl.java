@@ -31,12 +31,12 @@ public final class LwjglGl implements GlContext {
     public void pixelStorei(int pname, int param) { GL11.glPixelStorei(pname, param); }
     public int getInteger(int pname) { return GL11.glGetInteger(pname); }
 
-    public int genBuffer() { return GL15.glGenBuffers(); }
+    public int createBuffer() { return GL15.glGenBuffers(); }
     public void deleteBuffer(int buffer) { GL15.glDeleteBuffers(buffer); }
     public void bindBuffer(int target, int buffer) { GL15.glBindBuffer(target, buffer); }
     public void bufferData(int target, float[] data, int usage) { GL15.glBufferData(target, data, usage); }
     public void bufferData(int target, FloatBuffer data, int usage) { GL15.glBufferData(target, data, usage); }
-    public int genVertexArray() { return GL30.glGenVertexArrays(); }
+    public int createVertexArray() { return GL30.glGenVertexArrays(); }
     public void deleteVertexArray(int array) { GL30.glDeleteVertexArrays(array); }
     public void bindVertexArray(int array) { GL30.glBindVertexArray(array); }
     public void enableVertexAttribArray(int index) { GL20.glEnableVertexAttribArray(index); }
@@ -49,7 +49,7 @@ public final class LwjglGl implements GlContext {
         GL31.glDrawArraysInstanced(mode, first, count, instanceCount);
     }
 
-    public int genTexture() { return GL11.glGenTextures(); }
+    public int createTexture() { return GL11.glGenTextures(); }
     public void deleteTexture(int texture) { GL11.glDeleteTextures(texture); }
     public void bindTexture(int target, int texture) { GL11.glBindTexture(target, texture); }
     public void activeTexture(int unit) { GL13.glActiveTexture(unit); }
@@ -58,7 +58,7 @@ public final class LwjglGl implements GlContext {
         GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA, width, height, 0, GL12.GL_BGRA, GL12.GL_UNSIGNED_INT_8_8_8_8_REV, argb);
     }
     public void texImageArgbZero(int width, int height) {
-        texImageArgb(width, height, BufferUtils.createIntBuffer(width * height));
+        texImageArgb(width, height, BufferUtils.createIntBuffer(Math.max(1, width * height)));
     }
     public void texImageAlphaMask(int width, int height, ByteBuffer alpha) {
         GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL30.GL_R8, width, height, 0, GL11.GL_RED, GL11.GL_UNSIGNED_BYTE, alpha);
@@ -75,13 +75,13 @@ public final class LwjglGl implements GlContext {
     }
     public void texImageRgba16fZero(int width, int height) {
         GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL30.GL_RGBA16F, width, height, 0, GL11.GL_RGBA, GL30.GL_HALF_FLOAT,
-                          BufferUtils.createShortBuffer(width * height * 4));
+                          BufferUtils.createShortBuffer(Math.max(1, width * height) * 4));
     }
-    public int genSampler() { return GL33.glGenSamplers(); }
+    public int createSampler() { return GL33.glGenSamplers(); }
     public void bindSampler(int unit, int sampler) { GL33.glBindSampler(unit, sampler); }
     public void samplerParameteri(int sampler, int pname, int param) { GL33.glSamplerParameteri(sampler, pname, param); }
 
-    public int genFramebuffer() { return GL30.glGenFramebuffers(); }
+    public int createFramebuffer() { return GL30.glGenFramebuffers(); }
     public void deleteFramebuffer(int framebuffer) { GL30.glDeleteFramebuffers(framebuffer); }
     public void bindFramebuffer(int target, int framebuffer) { GL30.glBindFramebuffer(target, framebuffer); }
     public int checkFramebufferStatus(int target) { return GL30.glCheckFramebufferStatus(target); }
@@ -94,7 +94,7 @@ public final class LwjglGl implements GlContext {
     public void blitFramebuffer(int srcX0, int srcY0, int srcX1, int srcY1, int dstX0, int dstY0, int dstX1, int dstY1, int mask, int filter) {
         GL30.glBlitFramebuffer(srcX0, srcY0, srcX1, srcY1, dstX0, dstY0, dstX1, dstY1, mask, filter);
     }
-    public int genRenderbuffer() { return GL30.glGenRenderbuffers(); }
+    public int createRenderbuffer() { return GL30.glGenRenderbuffers(); }
     public void deleteRenderbuffer(int renderbuffer) { GL30.glDeleteRenderbuffers(renderbuffer); }
     public void bindRenderbuffer(int target, int renderbuffer) { GL30.glBindRenderbuffer(target, renderbuffer); }
     public void renderbufferStorage(int target, int internalformat, int width, int height) {
@@ -108,13 +108,13 @@ public final class LwjglGl implements GlContext {
     public void shaderSource(int shader, String source) { GL20.glShaderSource(shader, source); }
     public void compileShader(int shader) { GL20.glCompileShader(shader); }
     public int getShaderi(int shader, int pname) { return GL20.glGetShaderi(shader, pname); }
-    public String getShaderInfoLog(int shader) { return GL20.glGetShaderInfoLog(shader); }
+    public String getShaderInfoLog(int shader) { return GL20.glGetShaderInfoLog(shader, 1024); }
     public void deleteShader(int shader) { GL20.glDeleteShader(shader); }
     public int createProgram() { return GL20.glCreateProgram(); }
     public void attachShader(int program, int shader) { GL20.glAttachShader(program, shader); }
     public void linkProgram(int program) { GL20.glLinkProgram(program); }
     public int getProgrami(int program, int pname) { return GL20.glGetProgrami(program, pname); }
-    public String getProgramInfoLog(int program) { return GL20.glGetProgramInfoLog(program); }
+    public String getProgramInfoLog(int program) { return GL20.glGetProgramInfoLog(program, 1024); }
     public void deleteProgram(int program) { GL20.glDeleteProgram(program); }
     public void useProgram(int program) { GL20.glUseProgram(program); }
     public int getUniformLocation(int program, String name) { return GL20.glGetUniformLocation(program, name); }

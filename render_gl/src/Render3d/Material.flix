@@ -1,5 +1,6 @@
 // Render3d.Material — 3D の描き手（Render3d）の材質のある置いた物（材質のプログラムと鍵・場面の絵の置き場・描き方）。約束は Render3d.flix の頭。
 mod Render3d.Material {
+    import fge.gl.GlContext
     import org.lwjgl.opengl.GL11
     import org.lwjgl.opengl.GL12
     import org.lwjgl.opengl.GL13
@@ -22,7 +23,7 @@ mod Render3d.Material {
     /// outside = 描かずに済ませる物か（視錐台の外。MeshDraw の culled になる）。間引く物の材質も組む（間引くのは描く段の手前）。
     // WhyNot: 間引いた物を材質の組み立ての前に除かない — 初めて振り向いたコマで GLSL を組んで止まる（読み込み中に先に組ませる作りが効かない）。
     /// coverage = 描き先が標本を持ち、色の段で描く（cutout の材質を alpha to coverage の版で組む）。
-    pub def splitByMaterial(state: State, gen: Int64, outside: Scene3d.Instance3d -> Bool, wants: Scene3d.MaterialFields -> Bool, coverage: Bool,
+    pub def splitByMaterial(gl: GlContext, state: State, gen: Int64, outside: Scene3d.Instance3d -> Bool, wants: Scene3d.MaterialFields -> Bool, coverage: Bool,
                         instances: List[Scene3d.Instance3d]): (List[MeshDraw], List[MaterialDraw]) \ IO =
         let classified = instances |> List.map(placed -> {
             Scene3d.lightmapWarning(placed) |> Option.forEach(line ->
@@ -31,7 +32,7 @@ mod Render3d.Material {
             let material = draw#fields#material
                 |> Option.map(Scene3d.materialFieldsOf)
                 |> Option.filter(wants)
-                |> Option.flatMap(m -> materialEntry(state, gen, m, vertexKindOf(state, coverage, draw, m))
+                |> Option.flatMap(m -> materialEntry(gl, state, gen, m, vertexKindOf(state, coverage, draw, m))
                     |> Option.map(e -> { entry = e, material = m, draw = draw }));
             (draw, material)
         });
@@ -55,17 +56,17 @@ mod Render3d.Material {
     // WhyNot: 間引いた物を並べる前に除かない — sortBy は安定ソートではなく、減らした列を並べると同じプログラムの物どうしの順が変わり、
     //   同じ平面に重なった面の画素が入れ替わる。呼び手は間引く前の全部で並べ、ここで飛ばす（半透明を外した列は、半透明の無い場面では
     //   前と同じ列。半透明の有る場面の同じ深さの不透明の面の勝ち方は、CPU と揃うことを約束しない）。
-    pub def drawMaterials(state: State, gen: Int64, camera: CameraData, pass: MaterialPass, source: TextureSource,
+    pub def drawMaterials(gl: GlContext, state: State, gen: Int64, camera: CameraData, pass: MaterialPass, source: TextureSource,
                       draws: List[MaterialDraw]): Unit \ IO =
         let bound = Array#{0, 0, 0, 0} @ Static;
-        draws |> List.forEach(d -> if (d#draw#culled) drawPosedMesh(state, gen, d#entry#locs#mesh, d#draw) else {
+        draws |> List.forEach(d -> if (d#draw#culled) drawPosedMesh(gl, state, gen, d#entry#locs#mesh, d#draw) else {
             let locs = d#entry#locs;
             if (locs#mesh#program == Array.get(0, bound)) ()
             else {
                 Array.put(locs#mesh#program, 0, bound);
                 useMaterialProgram(state, camera, pass, locs)
             };
-            let units = drawMaterialInstance(state, gen, source, d#entry#coverage, d);
+            let units = drawMaterialInstance(gl, state, gen, source, d#entry#coverage, d);
             Array.put(Int32.max(units, Array.get(1, bound)), 1, bound);
             if (d#entry#normalMapped) Array.put(1, 2, bound) else ();
             if (d#entry#lightmapped) Array.put(1, 3, bound) else ()
@@ -102,7 +103,7 @@ mod Render3d.Material {
 
     /// 材質のある物 1 つを描き、絵を貼った unit の数を返す。coverage = cutout を discard でなく alpha to coverage で抜く
     /// （出す α を標本の数に使い、書く α は 1。GL_SAMPLE_ALPHA_TO_ONE）。
-    def drawMaterialInstance(state: State, gen: Int64, source: TextureSource, coverage: Bool, d: MaterialDraw): Int32 \ IO =
+    def drawMaterialInstance(gl: GlContext, state: State, gen: Int64, source: TextureSource, coverage: Bool, d: MaterialDraw): Int32 \ IO =
         let locs = d#entry#locs;
         putLinearizedColor(locs#tint, d#draw#fields#tint);
         GL20.glUniform1f(locs#emissionIntensity, RenderUtil.f32(d#material#emissionIntensity));
@@ -113,18 +114,18 @@ mod Render3d.Material {
             let (paramLoc, name) = ln;
             GL20.glUniform1f(paramLoc, RenderUtil.f32(Map.getWithDefault(name, 0.0, d#material#params)))
         });
-        let units = bindMaterialTextures(state, gen, source, d);
-        bindNormalMap(state, gen, source, d);
-        bindLightmap(state, gen, source, d);
+        let units = bindMaterialTextures(gl, state, gen, source, d);
+        bindNormalMap(gl, state, gen, source, d);
+        bindLightmap(gl, state, gen, source, d);
         if (coverage) {
             GL11.glEnable(GL13.GL_SAMPLE_ALPHA_TO_COVERAGE);
             GL11.glEnable(GL13.GL_SAMPLE_ALPHA_TO_ONE)
         } else ();
         if (d#material#doubleSided) {
             GL11.glDisable(GL11.GL_CULL_FACE);
-            drawPosedMesh(state, gen, locs#mesh, d#draw);
+            drawPosedMesh(gl, state, gen, locs#mesh, d#draw);
             GL11.glEnable(GL11.GL_CULL_FACE)
-        } else drawPosedMesh(state, gen, locs#mesh, d#draw);
+        } else drawPosedMesh(gl, state, gen, locs#mesh, d#draw);
         if (coverage) {
             GL11.glDisable(GL13.GL_SAMPLE_ALPHA_TO_COVERAGE);
             GL11.glDisable(GL13.GL_SAMPLE_ALPHA_TO_ONE)
@@ -134,12 +135,12 @@ mod Render3d.Material {
     /// lightmap を lightmap の unit に貼り、段の数・色空間・強さを入れる（Clamp・段つきの Linear で読む）。lightmap を読まないプログラムは何もしない。
     /// 名前が場面の textures に無い絵は 0（黒）で読み、名前ごとに 1 回知らせる（材質の絵と同じ道）。
     // WhyNot: プログラムごとに 1 回だけ入れない — 同じ形と材質で lightmap だけ違う物は同じプログラムで続けて描かれ、前の物の絵と強さを引き継ぐ。
-    def bindLightmap(state: State, gen: Int64, source: TextureSource, d: MaterialDraw): Unit \ IO =
+    def bindLightmap(gl: GlContext, state: State, gen: Int64, source: TextureSource, d: MaterialDraw): Unit \ IO =
         if (not d#entry#lightmapped) ()
         else Scene3d.lightmapOfFields(d#draw#fields) |> Option.forEach(lm -> {
             let unit = lightmapTextureUnit();
             GL13.glActiveTexture(GL13.GL_TEXTURE0 + unit);
-            let bound = resolveTextureAs(state, gen, source, "lightmap の絵", lm#texture, Texture3d.TextureUse.Lightmap(lm#colorSpace));
+            let bound = resolveTextureAs(gl, state, gen, source, "lightmap の絵", lm#texture, Texture3d.TextureUse.Lightmap(lm#colorSpace));
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, bound#texId);
             GL33.glBindSampler(unit, materialSampler(state, Scene3d.Wrap.Clamp, ShaderDoc.FilterMode.Linear, bound#levels > 1));
             GL20.glUniform1f(d#entry#locs#lightmapLevels, RenderUtil.f32(Int32.toFloat64(Int32.min(bound#levels, lm#maxLevels))));
@@ -148,12 +149,12 @@ mod Render3d.Material {
         })
 
     /// 法線マップを法線マップの unit に貼る（材質の wrap・Linear で読む）。法線マップを当てないプログラムは何もしない。
-    def bindNormalMap(state: State, gen: Int64, source: TextureSource, d: MaterialDraw): Unit \ IO =
+    def bindNormalMap(gl: GlContext, state: State, gen: Int64, source: TextureSource, d: MaterialDraw): Unit \ IO =
         match (d#entry#normalMapped, d#material#normalMap) {
             case (true, Some(n)) =>
                 let unit = normalMapTextureUnit();
                 GL13.glActiveTexture(GL13.GL_TEXTURE0 + unit);
-                let bound = resolveMaterialTexture(state, gen, source, n#texture, Texture3d.TextureUse.NormalMap);
+                let bound = resolveMaterialTexture(gl, state, gen, source, n#texture, Texture3d.TextureUse.NormalMap);
                 GL11.glBindTexture(GL11.GL_TEXTURE_2D, bound#texId);
                 GL33.glBindSampler(unit, materialSampler(state, d#material#wrap, ShaderDoc.FilterMode.Linear, bound#levels > 1));
                 GL20.glUniform1f(d#entry#locs#normalStrength, RenderUtil.f32(n#strength));
@@ -164,7 +165,7 @@ mod Render3d.Material {
 
     /// 材質の絵を unit 0〜 に貼り、読み方（wrap と補間）の sampler を付けて、貼った数を返す。
     /// 名前は描く材質から引き直す（eqSpec は tex の名前を並びの番号で比べるので、名前だけ違う材質が同じプログラムを使う）。
-    def bindMaterialTextures(state: State, gen: Int64, source: TextureSource, d: MaterialDraw): Int32 \ IO =
+    def bindMaterialTextures(gl: GlContext, state: State, gen: Int64, source: TextureSource, d: MaterialDraw): Int32 \ IO =
         if (List.isEmpty(d#entry#texReads)) 0
         else {
             let reads = ShaderDoc.materialTexReads(d#material#spec, d#material#emission) |> List.take(Scene3d.maxMaterialTextures());
@@ -172,7 +173,7 @@ mod Render3d.Material {
                 let ((name, filter), (flipLoc, levelsLoc)) = pair;
                 // WhyNot: 引いてから unit を選ばない — 初めての絵は引く時に上げて今の unit に貼るので、前の unit に貼った絵を外してしまう。
                 GL13.glActiveTexture(GL13.GL_TEXTURE0 + unit);
-                let bound = resolveMaterialTexture(state, gen, source, name, Texture3d.TextureUse.MaterialTexture);
+                let bound = resolveMaterialTexture(gl, state, gen, source, name, Texture3d.TextureUse.MaterialTexture);
                 GL11.glBindTexture(GL11.GL_TEXTURE_2D, bound#texId);
                 GL33.glBindSampler(unit, materialSampler(state, d#material#wrap, filter, bound#levels > 1));
                 GL20.glUniform1f(flipLoc, if (bound#flipped) 1.0f32 else 0.0f32);
@@ -184,14 +185,14 @@ mod Render3d.Material {
     /// 材質の Tex の名前を、貼る GPU のテクスチャ・上下を反転して読むか（レンダーターゲット）・段の数へ引く。
     /// "tex3d:" は場面の textures（置き場に無ければ段ごと上げる）・ほかは全体の登録（段つきの写しを作る。レンダーターゲットは
     /// 毎コマ書き換わるので段を作らず、そのまま読む）・どちらにも無ければ透明な黒（名前ごとに 1 回知らせる）。
-    def resolveMaterialTexture(state: State, gen: Int64, source: TextureSource, name: String, textureUse: Texture3d.TextureUse): BoundTexture \ IO =
-        resolveTextureAs(state, gen, source, "材質の絵", name, textureUse)
+    def resolveMaterialTexture(gl: GlContext, state: State, gen: Int64, source: TextureSource, name: String, textureUse: Texture3d.TextureUse): BoundTexture \ IO =
+        resolveTextureAs(gl, state, gen, source, "材質の絵", name, textureUse)
 
     /// resolveMaterialTexture の、見つからない時の知らせで何の絵かを label で言う版（知らせの鍵は名前ごとに共有）。
     /// textureUse = 貼る使い方（段の平均の仕方を決める）。
     // WhyNot: 同じ絵を色と法線の両方に貼った時に 1 枚にまとめない — 段の平均の仕方が違うので 2 枚上がり、置き場の上限にも 2 回数える。
     //   その使い方は今の使い手に無い。
-    pub def resolveTextureAs(state: State, gen: Int64, source: TextureSource, label: String, name: String,
+    pub def resolveTextureAs(gl: GlContext, state: State, gen: Int64, source: TextureSource, label: String, name: String,
                              textureUse: Texture3d.TextureUse): BoundTexture \ IO =
         let average = Texture3d.mipAverageOf(Texture3d.mipSpaceOf(textureUse));
         let found = if (String.startsWith(prefix = Texture3d.namePrefix(), name))
@@ -203,7 +204,7 @@ mod Render3d.Material {
             case None =>
                 warnSceneOnce(state, "missing:" + name, "scene3d: ${label} '${name}' が見つからない — 0（黒・透明）で読む"
                     + "（tex3d: の名前は場面の textures に、ほかは project.json の textures に同名の宣言があるか確認）");
-                { texId = blankTextureId(state), flipped = false, levels = 1 }
+                { texId = blankTextureId(gl, state), flipped = false, levels = 1 }
         }
 
     /// 全体の登録の絵 t の段つきの写し（average で平均した段。置き場の鍵は名前と平均の仕方。
@@ -245,11 +246,11 @@ mod Render3d.Material {
 
     /// 見つからない絵の代わりに貼る 1 × 1 の透明な黒（初めて要る時に作る）。
     // WhyNot: テクスチャ 0 を貼らない — 完全でないテクスチャの読みはドライバ次第で α が 1 になり、CPU の 0 と食い違う。
-    def blankTextureId(state: State): Int32 \ IO =
+    def blankTextureId(gl: GlContext, state: State): Int32 \ IO =
         let held = Array.get(0, state#blankTexture);
         if (held != 0) held
         else {
-            let made = GpuHandle.textureIdInt(RenderTexture.loadTextureFromPixels(1, 1, Vector#{0})#id);
+            let made = GpuHandle.textureIdInt(RenderTexture.loadTextureFromPixels(gl, 1, 1, Vector#{0})#id);
             Array.put(made, 0, state#blankTexture);
             made
         }
@@ -322,13 +323,13 @@ mod Render3d.Material {
 
 
     /// 材質のプログラムを引く。無いか、同じ鍵で中身が違えば組み直す。組めなかった材質は None（頂点の色で描く）。
-    def materialEntry(state: State, gen: Int64, m: Scene3d.MaterialFields, kind: ProgramKind): Option[MaterialEntry] \ IO =
+    def materialEntry(gl: GlContext, state: State, gen: Int64, m: Scene3d.MaterialFields, kind: ProgramKind): Option[MaterialEntry] \ IO =
         let key = materialKey(m, kind);
         let cache = Ref.get(state#materialsRef);
         let entry = match Map.get(key, cache) {
             // 来た方の spec を持ち直す — 古い方を持ち続けると、次のコマも参照の一致で抜けられず毎回木を比べる。
             case Some(found) if sameMaterial(found, m) => { spec = m#spec, emission = m#emission, lastUsed = gen | found }
-            case old                                   => rebuildMaterial(state, gen, { key = key, kind = kind }, old, m)
+            case old                                   => rebuildMaterial(gl, state, gen, { key = key, kind = kind }, old, m)
         };
         Ref.put(Map.insert(key, entry, Ref.get(state#materialsRef)), state#materialsRef);
         if (entry#locs#mesh#program == 0) None else Some(entry)
@@ -337,16 +338,16 @@ mod Render3d.Material {
         ShaderGen.eqMaterial(entry#spec, entry#emission, m#spec, m#emission)
 
     /// 鍵 key の材質を組み直す。古いプログラムはすぐ消さず引退させる（同じコマの先の物がまだ使う）。
-    def rebuildMaterial(state: State, gen: Int64, slot: { key = String, kind = ProgramKind }, old: Option[MaterialEntry],
+    def rebuildMaterial(gl: GlContext, state: State, gen: Int64, slot: { key = String, kind = ProgramKind }, old: Option[MaterialEntry],
                         m: Scene3d.MaterialFields): MaterialEntry \ IO =
         old |> Option.forEach(e -> {
             if (e#lastUsed == gen) warnMaterialThrash(state, slot#key, m#spec#name) else ();
             retireMaterial(state, e)
         });
-        buildMaterial(state, gen, m, slot#kind)
+        buildMaterial(gl, state, gen, m, slot#kind)
 
     /// 材質のプログラムを組む。読む絵の組が Scene3d.maxMaterialTextures() を超える材質は、後ろの組を 0 にして組み、1 回知らせる。
-    def buildMaterial(state: State, gen: Int64, m: Scene3d.MaterialFields, kind: ProgramKind): MaterialEntry \ IO =
+    def buildMaterial(gl: GlContext, state: State, gen: Int64, m: Scene3d.MaterialFields, kind: ProgramKind): MaterialEntry \ IO =
         Array.put(1, 2, state#materialStreak);
         let readCount = List.length(ShaderDoc.materialTexReads(m#spec, m#emission));
         if (readCount > Scene3d.maxMaterialTextures())
@@ -360,7 +361,7 @@ mod Render3d.Material {
             + (if (kind#doubleSided) ":ds" else "") + (if (kind#coverage) ":cov" else "") + ":${m#spec#name}";
         let vertex = materialVertexSource({ skinned = kind#skinned, uv = kind#uv, lightmap = kind#lightmap });
         let fragment = materialFragmentSource(glsl, kind);
-        let program = match RenderShader.tryCreateProgram(vertex, fragment, label) {
+        let program = match RenderShader.tryCreateProgram(gl, vertex, fragment, label) {
             case Some(p) => p
             case None    =>
                 Log.warnThen("scene3d: 材質 '${m#spec#name}' のプログラムが組めなかった — この材質の物は頂点の色で描く", 0)

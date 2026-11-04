@@ -7,6 +7,7 @@
 //   RenderFrame へ渡す（頂点は運ばない）。
 
 mod RenderStatic {
+    import fge.gl.GlContext
 
     /// 毎フレーム RenderFrame へ渡す 1 レンジの描画情報（頂点は運ばない）。
     /// vao は解決済みの実ハンドル、first/count は永続 VBO 内の頂点範囲、
@@ -35,8 +36,8 @@ mod RenderStatic {
     /// 一致しなければ古い VBO を free してから polys を評価・三角形化・アップロードし、
     /// キャッシュを差し替える。cell の更新はこの関数が行う（呼び側は cell を渡すだけ）。
     /// 戻り値の Range 列は依頼の viewOffset/viewScale を各レンジに載せた物。
-    pub def resolve(cell: Array[Option[Entry], Static], layer: DrawCmd.StaticLayerCmd): List[Range] \ IO =
-        let entry = ensureBaked(cell, layer);
+    pub def resolve(gl: GlContext, cell: Array[Option[Entry], Static], layer: DrawCmd.StaticLayerCmd): List[Range] \ IO =
+        let entry = ensureBaked(gl, cell, layer);
         let vaoInt = GpuHandle.staticVaoInt(entry#vao);
         entry#metas |> List.map(m -> {
             vao = vaoInt, first = m#first, count = m#count,
@@ -46,15 +47,15 @@ mod RenderStatic {
         })
 
     /// キャッシュがキー一致ならそのまま、違えば作り直して返す（cell を更新する副作用つき）。
-    def ensureBaked(cell: Array[Option[Entry], Static], layer: DrawCmd.StaticLayerCmd): Entry \ IO =
+    def ensureBaked(gl: GlContext, cell: Array[Option[Entry], Static], layer: DrawCmd.StaticLayerCmd): Entry \ IO =
         match Array.get(0, cell) {
             case Some(e) if e#key == layer#key => e
             case old =>
                 // 古い世代があれば必ず free（フロア往復で VBO が増え続けないように）。
                 Option.forEach(e -> {
-                    RenderSprite.freeStaticPolyVBO(GpuHandle.staticVaoInt(e#vao), GpuHandle.staticVboInt(e#vao))
+                    RenderSprite.freeStaticPolyVBO(gl, GpuHandle.staticVaoInt(e#vao), GpuHandle.staticVboInt(e#vao))
                 }, old);
-                let fresh = bake(layer#key, layer#polys());
+                let fresh = bake(gl, layer#key, layer#polys());
                 Array.put(Some(fresh), 0, cell);
                 fresh
         }
@@ -62,7 +63,7 @@ mod RenderStatic {
     /// 多角形列を z 昇順に並べ、blend / 切り抜き clip 矩形ごとにまとめて三角形化し、1 本の VBO へ
     /// 連続配置する。レンジ目次（z / blend / clip ごとの開始頂点・頂点数）も同時に作る。
     /// 同 z 内は入力順を保つ（動的側の stableByZ と同じ安定性）。
-    def bake(key: DrawCmd.StaticKey, polys: List[DrawCmd.PolygonRenderCmd]): Entry \ IO =
+    def bake(gl: GlContext, key: DrawCmd.StaticKey, polys: List[DrawCmd.PolygonRenderCmd]): Entry \ IO =
         // z 昇順・同 z は入力順（安定）に並べ替える。
         let sorted = stableByZ(pc -> pc#zIndex, polys);
         // 各多角形を三角形化して 6 floats/頂点の配列にし、(頂点配列列, レンジ目次) にまとめる。
@@ -110,7 +111,7 @@ mod RenderStatic {
             Array.forEachWithIndex((j, x) -> Array.put(x, base + j, data), v);
             endIdx - 1
         }, folded#total, folded#vertsRev);
-        let (vao, vbo) = RenderSprite.buildStaticPolyVBO(data, folded#total);
+        let (vao, vbo) = RenderSprite.buildStaticPolyVBO(gl, data, folded#total);
         { key = key, vao = GpuHandle.wrapStaticVao(vao, vbo), metas = metas }
 
     /// 2 つの切り抜き clip 矩形が同じか（Rect2 に Eq が無いので座標 4 つを直接比べる）。

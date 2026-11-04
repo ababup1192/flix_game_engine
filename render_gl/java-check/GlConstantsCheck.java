@@ -1,0 +1,75 @@
+import fge.gl.GlConst;
+import org.lwjgl.opengl.GL33;
+
+// make gl-jar が組んだ後に流す: GlConst の定数を LWJGL の GL_<名前> と突き合わせ、違えば exit 1。
+// WhyNot: reflection で GL33 を読まない — GL の類は読み込むと文脈の無い所で初期化に失敗しうる。javac が定数を畳むので類は読まれない。
+public final class GlConstantsCheck {
+    private static int bad = 0;
+    private static void c(String name, int mine, int lwjgl) {
+        if (mine != lwjgl) { System.err.println("GlConst." + name + " = " + mine + " だが GL_" + name + " = " + lwjgl); bad++; }
+    }
+    public static void main(String[] args) {
+        c("FALSE", GlConst.FALSE, GL33.GL_FALSE);
+        c("TRUE", GlConst.TRUE, GL33.GL_TRUE);
+        c("ONE", GlConst.ONE, GL33.GL_ONE);
+        c("TRIANGLES", GlConst.TRIANGLES, GL33.GL_TRIANGLES);
+        c("NEVER", GlConst.NEVER, GL33.GL_NEVER);
+        c("LESS", GlConst.LESS, GL33.GL_LESS);
+        c("EQUAL", GlConst.EQUAL, GL33.GL_EQUAL);
+        c("ALWAYS", GlConst.ALWAYS, GL33.GL_ALWAYS);
+        c("SRC_ALPHA", GlConst.SRC_ALPHA, GL33.GL_SRC_ALPHA);
+        c("ONE_MINUS_SRC_ALPHA", GlConst.ONE_MINUS_SRC_ALPHA, GL33.GL_ONE_MINUS_SRC_ALPHA);
+        c("DST_COLOR", GlConst.DST_COLOR, GL33.GL_DST_COLOR);
+        c("KEEP", GlConst.KEEP, GL33.GL_KEEP);
+        c("REPLACE", GlConst.REPLACE, GL33.GL_REPLACE);
+        c("DEPTH_BUFFER_BIT", GlConst.DEPTH_BUFFER_BIT, GL33.GL_DEPTH_BUFFER_BIT);
+        c("STENCIL_BUFFER_BIT", GlConst.STENCIL_BUFFER_BIT, GL33.GL_STENCIL_BUFFER_BIT);
+        c("COLOR_BUFFER_BIT", GlConst.COLOR_BUFFER_BIT, GL33.GL_COLOR_BUFFER_BIT);
+        c("CULL_FACE", GlConst.CULL_FACE, GL33.GL_CULL_FACE);
+        c("DEPTH_TEST", GlConst.DEPTH_TEST, GL33.GL_DEPTH_TEST);
+        c("STENCIL_TEST", GlConst.STENCIL_TEST, GL33.GL_STENCIL_TEST);
+        c("BLEND", GlConst.BLEND, GL33.GL_BLEND);
+        c("SCISSOR_TEST", GlConst.SCISSOR_TEST, GL33.GL_SCISSOR_TEST);
+        c("UNPACK_ALIGNMENT", GlConst.UNPACK_ALIGNMENT, GL33.GL_UNPACK_ALIGNMENT);
+        c("PACK_ALIGNMENT", GlConst.PACK_ALIGNMENT, GL33.GL_PACK_ALIGNMENT);
+        c("MAX_TEXTURE_SIZE", GlConst.MAX_TEXTURE_SIZE, GL33.GL_MAX_TEXTURE_SIZE);
+        c("TEXTURE_2D", GlConst.TEXTURE_2D, GL33.GL_TEXTURE_2D);
+        c("UNSIGNED_BYTE", GlConst.UNSIGNED_BYTE, GL33.GL_UNSIGNED_BYTE);
+        c("INT", GlConst.INT, GL33.GL_INT);
+        c("UNSIGNED_INT", GlConst.UNSIGNED_INT, GL33.GL_UNSIGNED_INT);
+        c("FLOAT", GlConst.FLOAT, GL33.GL_FLOAT);
+        c("HALF_FLOAT", GlConst.HALF_FLOAT, GL33.GL_HALF_FLOAT);
+        c("RED", GlConst.RED, GL33.GL_RED);
+        c("RGB", GlConst.RGB, GL33.GL_RGB);
+        c("RGBA", GlConst.RGBA, GL33.GL_RGBA);
+        c("NEAREST", GlConst.NEAREST, GL33.GL_NEAREST);
+        c("LINEAR", GlConst.LINEAR, GL33.GL_LINEAR);
+        c("TEXTURE_MAG_FILTER", GlConst.TEXTURE_MAG_FILTER, GL33.GL_TEXTURE_MAG_FILTER);
+        c("TEXTURE_MIN_FILTER", GlConst.TEXTURE_MIN_FILTER, GL33.GL_TEXTURE_MIN_FILTER);
+        c("TEXTURE_WRAP_S", GlConst.TEXTURE_WRAP_S, GL33.GL_TEXTURE_WRAP_S);
+        c("TEXTURE_WRAP_T", GlConst.TEXTURE_WRAP_T, GL33.GL_TEXTURE_WRAP_T);
+        c("REPEAT", GlConst.REPEAT, GL33.GL_REPEAT);
+        c("CLAMP_TO_EDGE", GlConst.CLAMP_TO_EDGE, GL33.GL_CLAMP_TO_EDGE);
+        c("RGBA8", GlConst.RGBA8, GL33.GL_RGBA8);
+        c("TEXTURE0", GlConst.TEXTURE0, GL33.GL_TEXTURE0);
+        c("ARRAY_BUFFER", GlConst.ARRAY_BUFFER, GL33.GL_ARRAY_BUFFER);
+        c("STATIC_DRAW", GlConst.STATIC_DRAW, GL33.GL_STATIC_DRAW);
+        c("DYNAMIC_DRAW", GlConst.DYNAMIC_DRAW, GL33.GL_DYNAMIC_DRAW);
+        c("FRAGMENT_SHADER", GlConst.FRAGMENT_SHADER, GL33.GL_FRAGMENT_SHADER);
+        c("VERTEX_SHADER", GlConst.VERTEX_SHADER, GL33.GL_VERTEX_SHADER);
+        c("COMPILE_STATUS", GlConst.COMPILE_STATUS, GL33.GL_COMPILE_STATUS);
+        c("LINK_STATUS", GlConst.LINK_STATUS, GL33.GL_LINK_STATUS);
+        c("READ_FRAMEBUFFER", GlConst.READ_FRAMEBUFFER, GL33.GL_READ_FRAMEBUFFER);
+        c("DRAW_FRAMEBUFFER", GlConst.DRAW_FRAMEBUFFER, GL33.GL_DRAW_FRAMEBUFFER);
+        c("FRAMEBUFFER_COMPLETE", GlConst.FRAMEBUFFER_COMPLETE, GL33.GL_FRAMEBUFFER_COMPLETE);
+        c("COLOR_ATTACHMENT0", GlConst.COLOR_ATTACHMENT0, GL33.GL_COLOR_ATTACHMENT0);
+        c("DEPTH_STENCIL_ATTACHMENT", GlConst.DEPTH_STENCIL_ATTACHMENT, GL33.GL_DEPTH_STENCIL_ATTACHMENT);
+        c("FRAMEBUFFER", GlConst.FRAMEBUFFER, GL33.GL_FRAMEBUFFER);
+        c("RENDERBUFFER", GlConst.RENDERBUFFER, GL33.GL_RENDERBUFFER);
+        c("DEPTH24_STENCIL8", GlConst.DEPTH24_STENCIL8, GL33.GL_DEPTH24_STENCIL8);
+        c("RGBA16F", GlConst.RGBA16F, GL33.GL_RGBA16F);
+        c("MAX_SAMPLES", GlConst.MAX_SAMPLES, GL33.GL_MAX_SAMPLES);
+        if (bad > 0) System.exit(1);
+        System.out.println("[gl-jar] GlConst の定数 60 個が LWJGL と一致");
+    }
+}

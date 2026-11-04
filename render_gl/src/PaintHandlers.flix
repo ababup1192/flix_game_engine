@@ -6,37 +6,39 @@
 // 3 つには同じ paint を渡す（Platform の頭の「同じ handler の組から張る」）。
 
 mod RenderPaintHandlers {
+    import fge.gl.GlContext
+    import fge.gl.GlContext
     import java.lang.System
 
     /// GPU の資源（タイルのバッファ・テクスチャ・字・シェーダーのプログラム）を paint の登録簿で受ける。
-    pub def handleGpuResources(paint: RenderPaint.Paint, fonts: RenderPaint.Fonts, f: Unit -> a \ ef): a \ (ef - Platform.GpuResources) + IO =
+    pub def handleGpuResources(gl: GlContext, paint: RenderPaint.Paint, fonts: RenderPaint.Fonts, f: Unit -> a \ ef): a \ (ef - Platform.GpuResources) + IO =
         run f() with handler Platform.GpuResources {
-            def initTileBuffer(instances, k) = k(RenderPaint.initTileBuffer(paint, instances))
-            def updateTileBuffer(vaoId, instances, k) = k(RenderPaint.updateTileBuffer(paint, vaoId, instances))
+            def initTileBuffer(instances, k) = k(RenderPaint.initTileBuffer(gl, paint, instances))
+            def updateTileBuffer(vaoId, instances, k) = k(RenderPaint.updateTileBuffer(gl, paint, vaoId, instances))
             def ensureTexture(name, key, width, height, argb, k) = {
-                RenderPaint.ensureTexture(paint, name, key, width, height, argb);
+                RenderPaint.ensureTexture(gl, paint, name, key, width, height, argb);
                 k(())
             }
             def ensureGlyphs(textureName, codepoints, k) = {
-                RenderPaint.ensureGlyphs(fonts, textureName, codepoints);
+                RenderPaint.ensureGlyphs(gl, fonts, textureName, codepoints);
                 if (Set.isEmpty(codepoints)) ()
                 else RenderPaint.noteDiagnostics(paint, d -> { glyphsAdded = d#glyphsAdded + Set.size(codepoints) | d });
                 k(())
             }
             def getFontAtlas(name, k) = k(RenderPaint.fontAtlas(fonts, name))
             def getTextureInfo(name, k) = k(RenderPaint.textureInfo(paint, name))
-            def buildProgram(spec, k) = k(RenderPaint.buildProgram(paint, spec))
+            def buildProgram(spec, k) = k(RenderPaint.buildProgram(gl, paint, spec))
         }
 
     /// 2D の描き物の列を paint で塗る。framebufferSize = 今の描き先の画素の大きさ。
     /// onScreen = 画面（レンダーターゲットの外）へ塗った時に、塗りの始まりと終わりの時刻（System.nanoTime）を受け取る。
-    pub def handleDraw2d(paint: RenderPaint.Paint, framebufferSize: Unit -> (Int32, Int32) \ fx,
+    pub def handleDraw2d(gl: GlContext, paint: RenderPaint.Paint, framebufferSize: Unit -> (Int32, Int32) \ fx,
                          onScreen: (Int64, Int64) -> Unit \ fx, f: Unit -> a \ ef): a \ (ef - Platform.Draw2d) + fx + IO =
         run f() with handler Platform.Draw2d {
             def renderCommands(sprites, tileMaps, polygons, staticLayer, k) = {
                 let (fbW, fbH) = framebufferSize();
                 let paintFrom = System.nanoTime();
-                let toScreen = RenderPaint.submitFrame(paint, fbW, fbH, sprites, tileMaps, polygons, staticLayer);
+                let toScreen = RenderPaint.submitFrame(gl, paint, fbW, fbH, sprites, tileMaps, polygons, staticLayer);
                 let paintTo = System.nanoTime();
                 RenderPaint.noteFrame(paint, paintTo - paintFrom, 0i64,
                     () -> List.length(sprites) + List.length(polygons) + List.length(tileMaps));
@@ -69,15 +71,15 @@ mod RenderPaintHandlers {
         }
 
     /// レンダーターゲットの切り替えを paint で受ける。framebufferSize は handleDraw2d と同じ（画素の倍率を出す元）。
-    pub def handleTarget(paint: RenderPaint.Paint, framebufferSize: Unit -> (Int32, Int32) \ fx,
+    pub def handleTarget(gl: GlContext, paint: RenderPaint.Paint, framebufferSize: Unit -> (Int32, Int32) \ fx,
                          f: Unit -> a \ ef): a \ (ef - RenderTarget.Target) + fx + IO =
         run f() with handler RenderTarget.Target {
             def beginTarget(spec, k) = {
-                RenderPaint.beginTarget(paint, spec);
+                RenderPaint.beginTarget(gl, paint, spec);
                 k(())
             }
             def endTarget(k) = {
-                RenderPaint.endTarget(paint);
+                RenderPaint.endTarget(gl, paint);
                 k(())
             }
             def pixelScale(k) = {

@@ -3,8 +3,10 @@
 // 利用例: 起動時にシェーダを用意する / 画面の解像度に合わせて座標変換を設定する。
 
 mod RenderShader {
-    import org.lwjgl.opengl.GL11
-    import org.lwjgl.opengl.GL20
+    import fge.gl.GlContext
+    import fge.gl.GlContext
+    import fge.gl.GlConst
+    import fge.gl.GlContext
 
     // ========================================================================
     // Shader Sources
@@ -329,33 +331,33 @@ mod RenderShader {
     // Shader Compilation
     // ========================================================================
 
-    pub def compileShader(source: String, shaderType: Int32): Int32 \ IO =
-        let shader = GL20.glCreateShader(shaderType);
-        GL20.glShaderSource(shader, source);
-        GL20.glCompileShader(shader);
-        let success = GL20.glGetShaderi(shader, GL20.GL_COMPILE_STATUS);
-        if (success == GL11.GL_FALSE) {
-            let log = GL20.glGetShaderInfoLog(shader, 1024);
+    pub def compileShader(gl: GlContext, source: String, shaderType: Int32): Int32 \ IO =
+        let shader = gl.createShader(shaderType);
+        gl.shaderSource(shader, source);
+        gl.compileShader(shader);
+        let success = gl.getShaderi(shader, GlConst.COMPILE_STATUS);
+        if (success == GlConst.FALSE) {
+            let log = gl.getShaderInfoLog(shader);
             println("Shader compilation error: ${log}");
             bug!("Shader failed")
         } else ();
         shader
 
-    pub def createShaderProgram(vertexSrc: String, fragmentSrc: String): Int32 \ IO =
-        let vs = compileShader(vertexSrc, GL20.GL_VERTEX_SHADER);
-        let fs = compileShader(fragmentSrc, GL20.GL_FRAGMENT_SHADER);
-        let program = GL20.glCreateProgram();
-        GL20.glAttachShader(program, vs);
-        GL20.glAttachShader(program, fs);
-        GL20.glLinkProgram(program);
-        let success = GL20.glGetProgrami(program, GL20.GL_LINK_STATUS);
-        if (success == GL11.GL_FALSE) {
-            let log = GL20.glGetProgramInfoLog(program, 1024);
+    pub def createShaderProgram(gl: GlContext, vertexSrc: String, fragmentSrc: String): Int32 \ IO =
+        let vs = compileShader(gl, vertexSrc, GlConst.VERTEX_SHADER);
+        let fs = compileShader(gl, fragmentSrc, GlConst.FRAGMENT_SHADER);
+        let program = gl.createProgram();
+        gl.attachShader(program, vs);
+        gl.attachShader(program, fs);
+        gl.linkProgram(program);
+        let success = gl.getProgrami(program, GlConst.LINK_STATUS);
+        if (success == GlConst.FALSE) {
+            let log = gl.getProgramInfoLog(program);
             println("Shader linking error: ${log}");
             bug!("Linking failed")
         } else ();
-        GL20.glDeleteShader(vs);
-        GL20.glDeleteShader(fs);
+        gl.deleteShader(vs);
+        gl.deleteShader(fs);
         program
 
     // ========================================================================
@@ -365,37 +367,37 @@ mod RenderShader {
     /// GLSL をコンパイルする（fail-open 版）。失敗時は bug! で落とさず、log をパス付きで
     /// println して None を返す（呼び側が単色フォールバックへ切り替える）。
     /// theme 由来の codegen ミスで全体クラッシュを避けるための「落ちない版」。
-    pub def tryCompileShader(source: String, shaderType: Int32, label: String): Option[Int32] \ IO =
-        let shader = GL20.glCreateShader(shaderType);
-        GL20.glShaderSource(shader, source);
-        GL20.glCompileShader(shader);
-        let success = GL20.glGetShaderi(shader, GL20.GL_COMPILE_STATUS);
-        if (success == GL11.GL_FALSE) {
-            let log = GL20.glGetShaderInfoLog(shader, 1024);
+    pub def tryCompileShader(gl: GlContext, source: String, shaderType: Int32, label: String): Option[Int32] \ IO =
+        let shader = gl.createShader(shaderType);
+        gl.shaderSource(shader, source);
+        gl.compileShader(shader);
+        let success = gl.getShaderi(shader, GlConst.COMPILE_STATUS);
+        if (success == GlConst.FALSE) {
+            let log = gl.getShaderInfoLog(shader);
             println("[shader ${label}] compile failed (単色フォールバックへ): ${log}");
-            GL20.glDeleteShader(shader);
+            gl.deleteShader(shader);
             None
         } else Some(shader)
 
     /// vertex/fragment ソースからプログラムを作る（fail-open 版）。コンパイル/リンク
     /// いずれかが失敗したら None を返す（呼び側が単色フォールバックへ切り替える）。
-    pub def tryCreateProgram(vertexSrc: String, fragmentSrc: String, label: String): Option[Int32] \ IO =
-        match tryCompileShader(vertexSrc, GL20.GL_VERTEX_SHADER, "${label}.vs") {
+    pub def tryCreateProgram(gl: GlContext, vertexSrc: String, fragmentSrc: String, label: String): Option[Int32] \ IO =
+        match tryCompileShader(gl, vertexSrc, GlConst.VERTEX_SHADER, "${label}.vs") {
             case None     => None
-            case Some(vs) => match tryCompileShader(fragmentSrc, GL20.GL_FRAGMENT_SHADER, "${label}.fs") {
-                case None     => GL20.glDeleteShader(vs); None
+            case Some(vs) => match tryCompileShader(gl, fragmentSrc, GlConst.FRAGMENT_SHADER, "${label}.fs") {
+                case None     => gl.deleteShader(vs); None
                 case Some(fs) =>
-                    let program = GL20.glCreateProgram();
-                    GL20.glAttachShader(program, vs);
-                    GL20.glAttachShader(program, fs);
-                    GL20.glLinkProgram(program);
-                    let ok = GL20.glGetProgrami(program, GL20.GL_LINK_STATUS);
-                    GL20.glDeleteShader(vs);
-                    GL20.glDeleteShader(fs);
-                    if (ok == GL11.GL_FALSE) {
-                        let log = GL20.glGetProgramInfoLog(program, 1024);
+                    let program = gl.createProgram();
+                    gl.attachShader(program, vs);
+                    gl.attachShader(program, fs);
+                    gl.linkProgram(program);
+                    let ok = gl.getProgrami(program, GlConst.LINK_STATUS);
+                    gl.deleteShader(vs);
+                    gl.deleteShader(fs);
+                    if (ok == GlConst.FALSE) {
+                        let log = gl.getProgramInfoLog(program);
                         println("[shader ${label}] link failed (単色フォールバックへ): ${log}");
-                        GL20.glDeleteProgram(program);
+                        gl.deleteProgram(program);
                         None
                     } else Some(program)
             }
@@ -403,8 +405,8 @@ mod RenderShader {
 
     /// プログラムを GPU から捨てる。キャッシュから追い出したら必ずこれで捨てる —
     /// 捨て忘れると、シェーダーの数値を触って作り直すたびに GPU のメモリが増え続ける。
-    pub def deleteProgram(program: Int32): Unit \ IO =
-        GL20.glDeleteProgram(program)
+    pub def deleteProgram(gl: GlContext, program: Int32): Unit \ IO =
+        gl.deleteProgram(program)
 
     /// 宣言シェーダー面の代表色ベタ塗りフォールバック用フラグメントシェーダー。
     /// codegen が壊れた GLSL を吐いた面をこれで塗る（黒画面でなく色は出る）。
@@ -467,55 +469,55 @@ mod RenderShader {
         halfDesign = Int32
     }
 
-    pub def spriteUniformsOf(shader: Int32): SpriteUniforms \ IO =
+    pub def spriteUniformsOf(gl: GlContext, shader: Int32): SpriteUniforms \ IO =
         {
-            model = GL20.glGetUniformLocation(shader, "model"),
-            spriteColor = GL20.glGetUniformLocation(shader, "spriteColor"),
-            spriteAlpha = GL20.glGetUniformLocation(shader, "spriteAlpha"),
-            uvOffset = GL20.glGetUniformLocation(shader, "uvOffset"),
-            uvScale = GL20.glGetUniformLocation(shader, "uvScale"),
-            useTexture = GL20.glGetUniformLocation(shader, "useTexture"),
-            sdfText = GL20.glGetUniformLocation(shader, "sdfText"),
-            styleEnabled = GL20.glGetUniformLocation(shader, "styleEnabled"),
-            rectSize = GL20.glGetUniformLocation(shader, "rectSize"),
-            cornerRadius = GL20.glGetUniformLocation(shader, "cornerRadius"),
-            borderWidth = GL20.glGetUniformLocation(shader, "borderWidth"),
-            borderColor = GL20.glGetUniformLocation(shader, "borderColor"),
-            borderAlpha = GL20.glGetUniformLocation(shader, "borderAlpha"),
-            hatchEnabled = GL20.glGetUniformLocation(shader, "hatchEnabled"),
-            hatchColor = GL20.glGetUniformLocation(shader, "hatchColor"),
-            hatchAlpha = GL20.glGetUniformLocation(shader, "hatchAlpha"),
-            hatchWidth = GL20.glGetUniformLocation(shader, "hatchWidth"),
-            hatchPeriod = GL20.glGetUniformLocation(shader, "hatchPeriod"),
-            hatchDir = GL20.glGetUniformLocation(shader, "hatchDir"),
-            checkerColor = GL20.glGetUniformLocation(shader, "checkerColor"),
-            checkerAlpha = GL20.glGetUniformLocation(shader, "checkerAlpha"),
-            checkerCell = GL20.glGetUniformLocation(shader, "checkerCell"),
-            multiplyBlend = GL20.glGetUniformLocation(shader, "multiplyBlend")
+            model = gl.getUniformLocation(shader, "model"),
+            spriteColor = gl.getUniformLocation(shader, "spriteColor"),
+            spriteAlpha = gl.getUniformLocation(shader, "spriteAlpha"),
+            uvOffset = gl.getUniformLocation(shader, "uvOffset"),
+            uvScale = gl.getUniformLocation(shader, "uvScale"),
+            useTexture = gl.getUniformLocation(shader, "useTexture"),
+            sdfText = gl.getUniformLocation(shader, "sdfText"),
+            styleEnabled = gl.getUniformLocation(shader, "styleEnabled"),
+            rectSize = gl.getUniformLocation(shader, "rectSize"),
+            cornerRadius = gl.getUniformLocation(shader, "cornerRadius"),
+            borderWidth = gl.getUniformLocation(shader, "borderWidth"),
+            borderColor = gl.getUniformLocation(shader, "borderColor"),
+            borderAlpha = gl.getUniformLocation(shader, "borderAlpha"),
+            hatchEnabled = gl.getUniformLocation(shader, "hatchEnabled"),
+            hatchColor = gl.getUniformLocation(shader, "hatchColor"),
+            hatchAlpha = gl.getUniformLocation(shader, "hatchAlpha"),
+            hatchWidth = gl.getUniformLocation(shader, "hatchWidth"),
+            hatchPeriod = gl.getUniformLocation(shader, "hatchPeriod"),
+            hatchDir = gl.getUniformLocation(shader, "hatchDir"),
+            checkerColor = gl.getUniformLocation(shader, "checkerColor"),
+            checkerAlpha = gl.getUniformLocation(shader, "checkerAlpha"),
+            checkerCell = gl.getUniformLocation(shader, "checkerCell"),
+            multiplyBlend = gl.getUniformLocation(shader, "multiplyBlend")
         }
 
-    pub def tileUniformsOf(shader: Int32): TileUniforms \ IO =
+    pub def tileUniformsOf(gl: GlContext, shader: Int32): TileUniforms \ IO =
         {
-            layerPos = GL20.glGetUniformLocation(shader, "layerPos"),
-            tileSize = GL20.glGetUniformLocation(shader, "tileSize"),
-            tileScale = GL20.glGetUniformLocation(shader, "tileScale"),
-            layerColor = GL20.glGetUniformLocation(shader, "layerColor")
+            layerPos = gl.getUniformLocation(shader, "layerPos"),
+            tileSize = gl.getUniformLocation(shader, "tileSize"),
+            tileScale = gl.getUniformLocation(shader, "tileScale"),
+            layerColor = gl.getUniformLocation(shader, "layerColor")
         }
 
-    pub def polyBatchUniformsOf(shader: Int32): PolyBatchUniforms \ IO =
+    pub def polyBatchUniformsOf(gl: GlContext, shader: Int32): PolyBatchUniforms \ IO =
         {
-            multiplyBlend = GL20.glGetUniformLocation(shader, "multiplyBlend"),
-            viewOffset = GL20.glGetUniformLocation(shader, "viewOffset"),
-            viewScale = GL20.glGetUniformLocation(shader, "viewScale"),
-            halfDesign = GL20.glGetUniformLocation(shader, "halfDesign")
+            multiplyBlend = gl.getUniformLocation(shader, "multiplyBlend"),
+            viewOffset = gl.getUniformLocation(shader, "viewOffset"),
+            viewScale = gl.getUniformLocation(shader, "viewScale"),
+            halfDesign = gl.getUniformLocation(shader, "halfDesign")
         }
 
     // ========================================================================
     // Projection Matrix
     // ========================================================================
 
-    pub def setProjectionMatrix(shader: Int32, width: Float64, height: Float64): Unit \ IO =
-        GL20.glUseProgram(shader);
+    pub def setProjectionMatrix(gl: GlContext, shader: Int32, width: Float64, height: Float64): Unit \ IO =
+        gl.useProgram(shader);
         let left = 0.0;
         let right = width;
         let bottom = height;
@@ -528,7 +530,7 @@ mod RenderShader {
             RenderUtil.f32(-1.0 * (top + bottom) / (top - bottom)),
             0.0f32, 1.0f32
         } @ Static;
-        let loc = GL20.glGetUniformLocation(shader, "projection");
-        GL20.glUniformMatrix4fv(loc, false, proj)
+        let loc = gl.getUniformLocation(shader, "projection");
+        gl.uniformMatrix4fv(loc, false, proj)
 
 }

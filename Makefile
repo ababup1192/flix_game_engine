@@ -634,6 +634,7 @@ clean-font-cache:
 GL_JAR_NAME := fge-gl-$(VERSION).jar
 GL_JAR      := build/gl-jar/$(GL_JAR_NAME)
 GL_JAR_SRC  := $(shell find $(RENDER_GL_DIR)/java -name '*.java' 2>/dev/null)
+GL_JAR_CHECK := $(RENDER_GL_DIR)/java-check/GlConstantsCheck.java
 GL_JAR_LWJGL := 3.4.1
 GL_JAR_DEPS := build/gl-jar/deps/lwjgl-$(GL_JAR_LWJGL).jar build/gl-jar/deps/lwjgl-opengl-$(GL_JAR_LWJGL).jar
 JAVAC := $(shell if javac -version >/dev/null 2>&1; then echo javac; else echo $(CURDIR)/.devbox/nix/profile/default/bin/javac; fi)
@@ -649,10 +650,15 @@ build/gl-jar/deps/lwjgl-$(GL_JAR_LWJGL).jar:
 	@mkdir -p $(dir $@)
 	curl -fsSL -o $@ https://repo1.maven.org/maven2/org/lwjgl/lwjgl/$(GL_JAR_LWJGL)/lwjgl-$(GL_JAR_LWJGL).jar
 
-$(GL_JAR): $(GL_JAR_SRC) $(GL_JAR_DEPS)
+$(GL_JAR): $(GL_JAR_SRC) $(GL_JAR_CHECK) $(GL_JAR_DEPS)
 	@rm -rf build/gl-jar/classes && mkdir -p build/gl-jar/classes
 	$(if $(filter javac,$(JAVAC)),javac,"$(JAVAC)") --release 17 -encoding UTF-8 -d build/gl-jar/classes \
 		-cp "$(subst $(eval) ,:,$(GL_JAR_DEPS))" $(GL_JAR_SRC)
+	@# 定数の打ち間違いは絵の比べでは場所が分かりにくいので、組んだ所で LWJGL の定数と突き合わせる。
+	@rm -rf build/gl-jar/check && mkdir -p build/gl-jar/check
+	$(if $(filter javac,$(JAVAC)),javac,"$(JAVAC)") --release 17 -encoding UTF-8 -d build/gl-jar/check \
+		-cp "build/gl-jar/classes:$(subst $(eval) ,:,$(GL_JAR_DEPS))" $(RENDER_GL_DIR)/java-check/GlConstantsCheck.java
+	$(if $(filter javac,$(JAVAC)),java,"$(dir $(JAVAC))java") -cp "build/gl-jar/check:build/gl-jar/classes" GlConstantsCheck
 	$(if $(filter javac,$(JAVAC)),jar,"$(JAR_TOOL)") --create --file $@ --date=2000-01-01T00:00:00Z -C build/gl-jar/classes .
 
 .PHONY: gl-jar

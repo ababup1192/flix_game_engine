@@ -3,8 +3,10 @@
 // 利用例: スプライトの一括描画 / 多角形の一括描画。
 
 mod RenderBuf {
+    import fge.gl.GlContext
+    import fge.gl.GlContext
+    import fge.gl.GlContext
     import java.nio.FloatBuffer
-    import org.lwjgl.system.MemoryUtil
 
     /// 書き込み先の入れ物。中身を差し替えられるように 1 スロットの配列で持つ。
     /// Java の配列でなく直接メモリの入れ物を使うのは、書いた範囲だけを
@@ -12,9 +14,9 @@ mod RenderBuf {
     pub type alias Buf = { cell = Array[FloatBuffer, Static], room = Array[Int32, Static] }
 
     /// 入れ物を 1 つ作る（起動時に 1 回だけ）。
-    pub def make(room: Int32): Buf \ IO =
+    pub def make(gl: GlContext, room: Int32): Buf \ IO =
         let n = Int32.max(1, room);
-        { cell = Array#{MemoryUtil.memAllocFloat(n)} @ Static, room = Array#{n} @ Static }
+        { cell = Array#{gl.allocFloats(n)} @ Static, room = Array#{n} @ Static }
 
     /// いま入る数（float 何個ぶんか）。
     pub def room(b: Buf): Int32 \ IO = Array.get(0, b#room)
@@ -26,13 +28,13 @@ mod RenderBuf {
     /// 溜めているものが無いときにだけ呼ぶこと。
     /// 倍ずつ広げるのは、少しずつ足りなくなるたびに取り直すと、
     /// 場面が重くなる途中でずっと確保し直しが続くため。
-    pub def ensure(b: Buf, need: Int32): Unit \ IO =
+    pub def ensure(gl: GlContext, b: Buf, need: Int32): Unit \ IO =
         let have = Array.get(0, b#room);
         if (have >= need) ()
         else {
             let grown = grow(have, need);
-            MemoryUtil.memFree(Array.get(0, b#cell));
-            Array.put(MemoryUtil.memAllocFloat(grown), 0, b#cell);
+            gl.freeFloats(Array.get(0, b#cell));
+            Array.put(gl.allocFloats(grown), 0, b#cell);
             Array.put(grown, 0, b#room)
         }
 
