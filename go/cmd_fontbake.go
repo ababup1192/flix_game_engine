@@ -258,13 +258,3 @@ func gzipSize(path string) int64 {
 	_ = zw.Close()
 	return int64(buf.Len())
 }
-
-func humanBytes(n int64) string {
-	switch {
-	case n >= 1<<20:
-		return fmt.Sprintf("%.1fMB", float64(n)/(1<<20))
-	case n >= 1<<10:
-		return fmt.Sprintf("%.0fKB", float64(n)/(1<<10))
-	}
-	return fmt.Sprintf("%dB", n)
-}
