@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "title": "縦の画面の字とボタンの大きさ",
+  "note": "縦の画面（縦に持ったスマホ・タブレットで、縦の design で起動した時）だけ使う大きさ（design px。幅 540 の中の px）。横の画面（PC・横持ち・デスクトップ版）はこの Doc を読まない。375 幅の画面では 1 design px が 0.694 CSS px、360 幅では 0.667 CSS px なので、押せる大きさの 44 CSS px は 66、字の 16 CSS px は 23〜24。body* = 頁の本文、name* = 台詞に添える名前、log* = バックログ、button* = 頁の下の操作の列、choice* = 選択肢、titleItem* = タイトル画面のメニュー、back* = 画面の右上の「戻る」、tab* = セーブ・ロードのタブ、setting* = 設定の行、askButton* = 確認のウィンドウのはい・いいえ。*TextSize = 字の大きさ、*Height = 押せる高さ。頁の切れ目は横と同じ（novel.kind.json の nvlRows）で、縦の頁に入り切らない時は古い行から上へ流す。",
+  "bodySize": 25.0,
+  "rubySize": 12.0,
+  "nameSize": 16.0,
+  "logTextSize": 21.0,
+  "buttonTextSize": 15.0,
+  "buttonHeight": 66.0,
+  "choiceTextSize": 23.0,
+  "choiceHeight": 76.0,
+  "titleItemTextSize": 28.0,
+  "titleItemHeight": 68.0,
+  "backTextSize": 20.0,
+  "backHeight": 66.0,
+  "tabTextSize": 20.0,
+  "tabHeight": 66.0,
+  "settingTextSize": 20.0,
+  "settingRowHeight": 66.0,
+  "askButtonTextSize": 22.0,
+  "askButtonHeight": 66.0
+}

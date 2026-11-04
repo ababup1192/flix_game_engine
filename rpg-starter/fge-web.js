@@ -140,6 +140,41 @@ var fgeSizeOverride = (function () {
   return m ? m[1] : "";
 })();
 
+// 縦の design を選ぶか（WebLayer が起動の時に 1 回だけ聞く）。?orientation=portrait|landscape があればそれ（PC で縦を確かめる時）、
+// 無ければスマホ（区分 Small と同じ: 指の端末で短い辺が 600 CSS px 未満・?size=small）で、今の画面が縦長か。
+// WhyNot: マウスの端末で窓が縦長なだけでは縦にしない — PC で開発者の道具を横に付けた窓や縦置きのモニタで、横の画面が変わってしまう。
+// WhyNot: タブレットを縦に持った時は縦にしない — 縦の design の下限（9:16）より太い 3:4 の画面で左右に帯が出て、横の design の時と見た目が大きく変わる。
+var fgeOrientationOverride = (function () {
+  var m = /[?&]orientation=(portrait|landscape)\b/.exec(location.search);
+  return m ? m[1] : "";
+})();
+function fgeWantsPortrait() {
+  if (fgeOrientationOverride) return fgeOrientationOverride === "portrait";
+  var phone = fgeSizeOverride ? fgeSizeOverride === "small" : (fgeCoarseAtBoot && fgeScreenShortSide < 600);
+  return phone && innerHeight > innerWidth;
+}
+// 縦の design の時の描き先の大きさ（CSS px）。class を付けて切り欠きの内側へ寄せてから測る（測った比と描き先の比をそろえる）。
+// WhyNot: パッドの時に canvas を測らない — 縦持ちのパッドの canvas は design の比から高さが決まるので、比を決める前の大きさにならない。
+var fgePortraitBox = { w: 0, h: 0 };
+function fgePreparePortraitView() {
+  document.body.classList.add("fge-portrait-design");
+  var r = fgeCanvas.getBoundingClientRect();
+  var w = r.width > 0 ? r.width : innerWidth;
+  var h = r.height > 0 ? r.height : innerHeight;
+  if (document.body.classList.contains("fge-pad-on")) {
+    var pad = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--fge-pad-min")) || 0;
+    h = Math.max(1, innerHeight - pad);
+  }
+  fgePortraitBox = { w: w, h: h };
+}
+// 縦の design で起動すると決めた後: 描き先の比を縦の design にし、回した時は「縦にしてください」を出す。
+function fgeUsePortraitDesign(aspect) {
+  document.documentElement.style.setProperty("--fge-aspect", String(aspect));
+  fgeWeb.orientation = "portrait";
+  fgeApplyLayout();
+  fgeResizeCanvas();
+}
+
 fgePointer.touch = fgeCoarseAtBoot;
 var fgePad = { fingers: new Map(), targets: [], dpad: null };
 function fgePadSync() {
@@ -450,6 +485,8 @@ var fgeAudio = {
     var src = this.ctx.createBufferSource();
     src.buffer = s.buffer;
     src.loop = s.loop;
+    // 頭から 1 回鳴らした後は [loopStart, loopEnd) を回す（デスクトップの smpl のループ点と同じ回り方）。
+    if (s.loopEnd > 0) { src.loopStart = s.loopStart; src.loopEnd = s.loopEnd; }
     src.playbackRate.value = s.pitch;
     src.connect(s.gain);
     src.onended = function () { if (s.source === src) s.source = null; };
@@ -562,6 +599,32 @@ async function fgeFetchBytes(path) {
   throw last;
 }
 
+// 書き出しが替えた配る道（WebP・Opus・gzip）。素材の表と画像の表には論理の道（project.json の道）で入れる。
+var fgeTranscoded = {};
+function fgeServedPath(path) { return fgeTranscoded[path] || path; }
+// WhyNot: .gz を名前だけで解かない — 置き先によっては Content-Encoding: gzip を付けて配り、fetch が既に解いた中身が届く。
+async function fgeFetchAsset(path) {
+  var served = fgeServedPath(path);
+  var bytes = await fgeFetchBytes("assets/" + served);
+  if (!/\.gz$/.test(served) || bytes.length < 2 || bytes[0] !== 0x1f || bytes[1] !== 0x8b) return bytes;
+  var stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+function fgeImageType(path) {
+  var ext = (/\.([a-z0-9]+)$/i.exec(path) || [])[1];
+  return { webp: "image/webp", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg" }[(ext || "").toLowerCase()] || "";
+}
+// WhyNot: 解けない音で起動を止めない — 古い Safari は Opus を解けない。元の wav があれば取り直し、それも駄目ならその音だけ黙らせる。
+async function fgeDecodeSound(s) {
+  try {
+    return await fgeAudio.ctx.decodeAudioData((await fgeFetchAsset(s.path)).buffer);
+  } catch (e) {
+    if (fgeServedPath(s.path) === s.path) throw e;
+    console.warn("[fge] " + fgeServedPath(s.path) + " を解けないので " + s.path + " を取り直す（" + (e && e.message || e) + "）");
+    return await fgeAudio.ctx.decodeAudioData((await fgeFetchBytes("assets/" + s.path)).buffer);
+  }
+}
+
 // WhyNot: 全部を同時に取りに行かない — 数十本を一度に投げると、スマホの回線で途中の物が切れやすくなる。
 async function fgeEachLimited(items, limit, fn) {
   var next = 0;
@@ -585,6 +648,7 @@ async function fgeBoot() {
   fgeWeb.virtualPad = bundle.virtualPad || null;
   fgeWeb.touchGestures = bundle.touchGestures || null;
   fgeWeb.orientation = bundle.orientation || "any";
+  fgeTranscoded = bundle.transcoded || {};
   if (bundle.design && bundle.design.w > 0 && bundle.design.h > 0) {
     document.documentElement.style.setProperty("--fge-aspect", String(bundle.design.w / bundle.design.h));
   }
@@ -604,19 +668,30 @@ async function fgeBoot() {
   fgeAudio.master.connect(fgeAudio.ctx.destination);
   fgeProgress("loading", 0, total);
   var jobs = files.map(function (path) {
-    return async function () { fgeAssets.set(fgeNormPath(path), await fgeFetchBytes("assets/" + path)); };
+    return async function () { fgeAssets.set(fgeNormPath(path), await fgeFetchAsset(path)); };
   }).concat(images.map(function (path) {
     return async function () {
-      var blob = new Blob([await fgeFetchBytes("assets/" + path)]);
+      // WhyNot: 型を空にしない — 中身から形式を見分けるのに頼ると、ブラウザによって WebP を絵と見なさない恐れがある。
+      var blob = new Blob([await fgeFetchAsset(path)], { type: fgeImageType(fgeServedPath(path)) });
       fgeImages.set(fgeNormPath(path), await createImageBitmap(blob, { premultiplyAlpha: "none", colorSpaceConversion: "none" }));
     };
   })).concat(sounds.map(function (s) {
     return async function () {
-      var bytes = await fgeFetchBytes("assets/" + s.path);
-      var buffer = await fgeAudio.ctx.decodeAudioData(bytes.buffer);
+      var buffer;
+      try {
+        buffer = await fgeDecodeSound(s);
+      } catch (e) {
+        console.error("[fge] 音 " + s.name + "（" + s.path + "）を解けない — この音は鳴らさない: " + (e && e.message || e));
+        return;
+      }
+      // 圧縮で頭や末尾に詰め物が残るブラウザだと、ループの継ぎ目と seconds() がデスクトップとずれる。
+      if (s.seconds > 0 && Math.abs(buffer.duration - s.seconds) > 2 / buffer.sampleRate) {
+        console.warn("[fge] 音 " + s.name + " の長さが元と違う（" + buffer.duration.toFixed(5) + " 秒・元は " + s.seconds.toFixed(5) + " 秒）");
+      }
       var gain = fgeAudio.ctx.createGain();
       gain.connect(fgeAudio.master);
-      fgeAudio.sounds.set(s.name, { buffer: buffer, gain: gain, loop: !!s.looping, pitch: 1, source: null });
+      fgeAudio.sounds.set(s.name, { buffer: buffer, gain: gain, loop: !!s.looping, pitch: 1, source: null,
+        loopStart: s.loopStart || 0, loopEnd: s.loopEnd || s.seconds || 0 });
     };
   }));
   await fgeEachLimited(jobs, 6, async function (job) {

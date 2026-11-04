@@ -54,202 +54,251 @@
   {
    "name": "cursor",
    "path": "assets/sfx/cursor.wav",
-   "looping": false
+   "looping": false,
+   "seconds": 0.03496598639455782
   },
   {
    "name": "confirm",
    "path": "assets/sfx/confirm.wav",
-   "looping": false
+   "looping": false,
+   "seconds": 0.11496598639455782
   },
   {
    "name": "cancel",
    "path": "assets/sfx/cancel.wav",
-   "looping": false
+   "looping": false,
+   "seconds": 0.12498866213151927
   },
   {
    "name": "bump",
    "path": "assets/sfx/bump.wav",
-   "looping": false
+   "looping": false,
+   "seconds": 0.06997732426303854
   },
   {
    "name": "door",
    "path": "assets/sfx/door.wav",
-   "looping": false
+   "looping": false,
+   "seconds": 0.20997732426303856
   },
   {
    "name": "talk_open",
    "path": "assets/sfx/talk_open.wav",
-   "looping": false
+   "looping": false,
+   "seconds": 0.10997732426303855
   },
   {
    "name": "talk_next",
    "path": "assets/sfx/talk_next.wav",
-   "looping": false
+   "looping": false,
+   "seconds": 0.02997732426303855
   },
   {
    "name": "talk_low",
    "path": "assets/sfx/talk_low.wav",
-   "looping": false
+   "looping": false,
+   "seconds": 0.024988662131519273
   },
   {
    "name": "talk_mid",
    "path": "assets/sfx/talk_mid.wav",
-   "looping": false
+   "looping": false,
+   "seconds": 0.024988662131519273
   },
   {
    "name": "talk_high",
    "path": "assets/sfx/talk_high.wav",
-   "looping": false
+   "looping": false,
+   "seconds": 0.02199546485260771
   },
   {
    "name": "lever",
    "path": "assets/sfx/lever.wav",
-   "looping": false
+   "looping": false,
+   "seconds": 0.14997732426303856
   },
   {
    "name": "rock",
    "path": "assets/sfx/rock.wav",
-   "looping": false
+   "looping": false,
+   "seconds": 0.18
   },
   {
    "name": "cart",
    "path": "assets/sfx/cart.wav",
-   "looping": false
+   "looping": false,
+   "seconds": 0.42
   },
   {
    "name": "chime",
    "path": "assets/sfx/chime.wav",
-   "looping": false
+   "looping": false,
+   "seconds": 0.22997732426303855
   },
   {
    "name": "fizzle",
    "path": "assets/sfx/fizzle.wav",
-   "looping": false
+   "looping": false,
+   "seconds": 0.24
   },
   {
    "name": "attack",
    "path": "assets/sfx/attack.wav",
-   "looping": false
+   "looping": false,
+   "seconds": 0.13995464852607709
   },
   {
    "name": "boss",
    "path": "assets/sfx/boss.wav",
-   "looping": false
+   "looping": false,
+   "seconds": 1
   },
   {
    "name": "chest",
    "path": "assets/sfx/chest.wav",
-   "looping": false
+   "looping": false,
+   "seconds": 0.36
   },
   {
    "name": "critical",
    "path": "assets/sfx/critical.wav",
-   "looping": false
+   "looping": false,
+   "seconds": 0.26
   },
   {
    "name": "encounter",
    "path": "assets/sfx/encounter.wav",
-   "looping": false
+   "looping": false,
+   "seconds": 0.44
   },
   {
    "name": "fanfare",
    "path": "assets/sfx/fanfare.wav",
-   "looping": false
+   "looping": false,
+   "seconds": 2.5179591836734696
   },
   {
    "name": "flee",
    "path": "assets/sfx/flee.wav",
-   "looping": false
+   "looping": false,
+   "seconds": 0.22997732426303855
   },
   {
    "name": "foe_down",
    "path": "assets/sfx/foe_down.wav",
-   "looping": false
+   "looping": false,
+   "seconds": 0.32
   },
   {
    "name": "gold",
    "path": "assets/sfx/gold.wav",
-   "looping": false
+   "looping": false,
+   "seconds": 0.24997732426303854
   },
   {
    "name": "heal",
    "path": "assets/sfx/heal.wav",
-   "looping": false
+   "looping": false,
+   "seconds": 0.46997732426303857
   },
   {
    "name": "hurt",
    "path": "assets/sfx/hurt.wav",
-   "looping": false
+   "looping": false,
+   "seconds": 0.16
   },
   {
    "name": "inn",
    "path": "assets/sfx/inn.wav",
-   "looping": false
+   "looping": false,
+   "seconds": 2.2
   },
   {
    "name": "level_up",
    "path": "assets/sfx/level_up.wav",
-   "looping": false
+   "looping": false,
+   "seconds": 0.92
   },
   {
    "name": "plate",
    "path": "assets/sfx/plate.wav",
-   "looping": false
+   "looping": false,
+   "seconds": 0.14997732426303856
   },
   {
    "name": "sleep",
    "path": "assets/sfx/sleep.wav",
-   "looping": false
+   "looping": false,
+   "seconds": 0.62
   },
   {
    "name": "spell_fire",
    "path": "assets/sfx/spell_fire.wav",
-   "looping": false
+   "looping": false,
+   "seconds": 0.44
   },
   {
    "name": "spell_ice",
    "path": "assets/sfx/spell_ice.wav",
-   "looping": false
+   "looping": false,
+   "seconds": 0.5
   },
   {
    "name": "stairs",
    "path": "assets/sfx/stairs.wav",
-   "looping": false
+   "looping": false,
+   "seconds": 0.22
   },
   {
    "name": "wiped",
    "path": "assets/sfx/wiped.wav",
-   "looping": false
+   "looping": false,
+   "seconds": 1.8
   },
   {
    "name": "bgm_battle",
    "path": "assets/bgm/bgm_battle.wav",
-   "looping": false
+   "looping": false,
+   "seconds": 14.4,
+   "loopStart": 1.6,
+   "loopEnd": 14.4
   },
   {
    "name": "bgm_boss",
    "path": "assets/bgm/bgm_boss.wav",
-   "looping": false
+   "looping": false,
+   "seconds": 15,
+   "loopStart": 3,
+   "loopEnd": 15
   },
   {
    "name": "bgm_mine",
    "path": "assets/bgm/bgm_mine.wav",
-   "looping": false
+   "looping": false,
+   "seconds": 25.263174603174605,
+   "loopEnd": 25.263174603174605
   },
   {
    "name": "bgm_title",
    "path": "assets/bgm/bgm_title.wav",
-   "looping": false
+   "looping": false,
+   "seconds": 21.6,
+   "loopStart": 2.4,
+   "loopEnd": 21.6
   },
   {
    "name": "bgm_village",
    "path": "assets/bgm/bgm_village.wav",
-   "looping": false
+   "looping": false,
+   "seconds": 21.818185941043083,
+   "loopEnd": 21.818185941043083
   },
   {
    "name": "bgm_world",
    "path": "assets/bgm/bgm_world.wav",
-   "looping": false
+   "looping": false,
+   "seconds": 16,
+   "loopEnd": 16
   }
  ],
  "design": {
@@ -273,5 +322,48 @@
     "code": "KeyX"
    }
   ]
+ },
+ "transcoded": {
+  "assets/bgm/bgm_battle.wav": "assets/bgm/bgm_battle.webm",
+  "assets/bgm/bgm_boss.wav": "assets/bgm/bgm_boss.webm",
+  "assets/bgm/bgm_mine.wav": "assets/bgm/bgm_mine.webm",
+  "assets/bgm/bgm_title.wav": "assets/bgm/bgm_title.webm",
+  "assets/bgm/bgm_village.wav": "assets/bgm/bgm_village.webm",
+  "assets/bgm/bgm_world.wav": "assets/bgm/bgm_world.webm",
+  "assets/sfx/attack.wav": "assets/sfx/attack.webm",
+  "assets/sfx/boss.wav": "assets/sfx/boss.webm",
+  "assets/sfx/bump.wav": "assets/sfx/bump.webm",
+  "assets/sfx/cancel.wav": "assets/sfx/cancel.webm",
+  "assets/sfx/cart.wav": "assets/sfx/cart.webm",
+  "assets/sfx/chest.wav": "assets/sfx/chest.webm",
+  "assets/sfx/chime.wav": "assets/sfx/chime.webm",
+  "assets/sfx/confirm.wav": "assets/sfx/confirm.webm",
+  "assets/sfx/critical.wav": "assets/sfx/critical.webm",
+  "assets/sfx/cursor.wav": "assets/sfx/cursor.webm",
+  "assets/sfx/door.wav": "assets/sfx/door.webm",
+  "assets/sfx/encounter.wav": "assets/sfx/encounter.webm",
+  "assets/sfx/fanfare.wav": "assets/sfx/fanfare.webm",
+  "assets/sfx/fizzle.wav": "assets/sfx/fizzle.webm",
+  "assets/sfx/flee.wav": "assets/sfx/flee.webm",
+  "assets/sfx/foe_down.wav": "assets/sfx/foe_down.webm",
+  "assets/sfx/gold.wav": "assets/sfx/gold.webm",
+  "assets/sfx/heal.wav": "assets/sfx/heal.webm",
+  "assets/sfx/hurt.wav": "assets/sfx/hurt.webm",
+  "assets/sfx/inn.wav": "assets/sfx/inn.webm",
+  "assets/sfx/level_up.wav": "assets/sfx/level_up.webm",
+  "assets/sfx/lever.wav": "assets/sfx/lever.webm",
+  "assets/sfx/plate.wav": "assets/sfx/plate.webm",
+  "assets/sfx/rock.wav": "assets/sfx/rock.webm",
+  "assets/sfx/sleep.wav": "assets/sfx/sleep.webm",
+  "assets/sfx/spell_fire.wav": "assets/sfx/spell_fire.webm",
+  "assets/sfx/spell_ice.wav": "assets/sfx/spell_ice.webm",
+  "assets/sfx/stairs.wav": "assets/sfx/stairs.webm",
+  "assets/sfx/talk_high.wav": "assets/sfx/talk_high.webm",
+  "assets/sfx/talk_low.wav": "assets/sfx/talk_low.webm",
+  "assets/sfx/talk_mid.wav": "assets/sfx/talk_mid.webm",
+  "assets/sfx/talk_next.wav": "assets/sfx/talk_next.webm",
+  "assets/sfx/talk_open.wav": "assets/sfx/talk_open.webm",
+  "assets/sfx/wiped.wav": "assets/sfx/wiped.webm",
+  "font-atlas/default.fontatlas": "font-atlas/default.fontatlas.gz"
  }
 }

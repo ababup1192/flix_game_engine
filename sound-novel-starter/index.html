@@ -55,6 +55,14 @@
   .fge-pad-button-3 { margin-top: 34px; }
   .fge-dpad-arm.on, .fge-pad-button.on { background: rgba(255, 255, 255, .45); }
 
+  /* ── 縦の design で起動した時（WebLayer が縦を選んだ時だけ付く class）── */
+  /* 縦の design は頁の上端と下端まで字とボタンを置くので、切り欠きとホームバーの内側に描く。横の design の縦持ちは帯の中央なので付けない。 */
+  /* WhyNot: パッドの時は上の切り欠きを引かない — 縦持ちのパッドの canvas の高さは design の比から決まり、上を引くとパッドの置き場所の式と合わなくなる（今は縦の指定を持つパッドのゲームが無い）。 */
+  @media (orientation: portrait) {
+    body.fge-portrait-design:not(.fge-pad-on) #fge-canvas {
+      top: env(safe-area-inset-top); height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
+  }
+
   @media (orientation: portrait) {
     body.fge-pad-on { --fge-game-h: min(calc(100vw / var(--fge-aspect)), calc(100dvh - var(--fge-pad-min))); }
     body.fge-pad-on #fge-canvas { height: var(--fge-game-h); }
@@ -91,7 +99,7 @@
   <button type="button" onclick="document.body.classList.add('fge-rotate-ok')">このまま遊ぶ</button>
 </div>
 <div id="fge-error" style="display: none"></div>
-<script src="wasm-gc-runtime.js?v=7d0bf895da8e"></script>
-<script src="fge-web.js?v=7d0bf895da8e"></script>
+<script src="wasm-gc-runtime.js?v=451760cee610"></script>
+<script src="fge-web.js?v=451760cee610"></script>
 </body>
 </html>

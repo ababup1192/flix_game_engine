@@ -12,9 +12,11 @@
   "assets/novel.keys.json",
   "assets/novel.kind.json",
   "assets/novel.mixer.json",
+  "assets/novel.portrait.json",
   "assets/novel.small.json",
   "assets/novel.story.json",
   "assets/novel.theme.json",
+  "assets/portrait.schema.json",
   "assets/small.schema.json",
   "assets/story.schema.json",
   "assets/talk/dialogue.json",
@@ -35,57 +37,69 @@
   {
    "name": "amb_evening",
    "path": "assets/sfx/amb_evening.wav",
-   "looping": true
+   "looping": true,
+   "seconds": 30
   },
   {
    "name": "amb_night",
    "path": "assets/sfx/amb_night.wav",
-   "looping": true
+   "looping": true,
+   "seconds": 13
   },
   {
    "name": "amb_river",
    "path": "assets/sfx/amb_river.wav",
-   "looping": true
+   "looping": true,
+   "seconds": 12,
+   "loopEnd": 12
   },
   {
    "name": "amb_morning",
    "path": "assets/sfx/amb_morning.wav",
-   "looping": true
+   "looping": true,
+   "seconds": 40
   },
   {
    "name": "se_slap",
    "path": "assets/sfx/se_slap.wav",
-   "looping": false
+   "looping": false,
+   "seconds": 0.09
   },
   {
    "name": "se_furin",
    "path": "assets/sfx/se_furin.wav",
-   "looping": false
+   "looping": false,
+   "seconds": 5.859410430839002
   },
   {
    "name": "ui_page",
    "path": "assets/sfx/ui_page.wav",
-   "looping": false
+   "looping": false,
+   "seconds": 0.14
   },
   {
    "name": "ui_cursor",
    "path": "assets/sfx/ui_cursor.wav",
-   "looping": false
+   "looping": false,
+   "seconds": 0.04
   },
   {
    "name": "ui_choice",
    "path": "assets/sfx/ui_choice.wav",
-   "looping": false
+   "looping": false,
+   "seconds": 1.6860997732426304
   },
   {
    "name": "ui_open",
    "path": "assets/sfx/ui_open.wav",
-   "looping": false
+   "looping": false,
+   "seconds": 0.9268253968253968
   },
   {
    "name": "ui_save",
    "path": "assets/sfx/ui_save.wav",
-   "looping": false
+   "looping": false,
+   "seconds": 2.4704308390022676
   }
  ],
  "design": {
@@ -96,5 +110,18 @@
   "longPress": "KeyX",
   "swipeLeft": "PageUp"
  },
- "orientation": "landscape"
+ "transcoded": {
+  "assets/sfx/amb_evening.wav": "assets/sfx/amb_evening.webm",
+  "assets/sfx/amb_morning.wav": "assets/sfx/amb_morning.webm",
+  "assets/sfx/amb_night.wav": "assets/sfx/amb_night.webm",
+  "assets/sfx/amb_river.wav": "assets/sfx/amb_river.webm",
+  "assets/sfx/se_furin.wav": "assets/sfx/se_furin.webm",
+  "assets/sfx/se_slap.wav": "assets/sfx/se_slap.webm",
+  "assets/sfx/ui_choice.wav": "assets/sfx/ui_choice.webm",
+  "assets/sfx/ui_cursor.wav": "assets/sfx/ui_cursor.webm",
+  "assets/sfx/ui_open.wav": "assets/sfx/ui_open.webm",
+  "assets/sfx/ui_page.wav": "assets/sfx/ui_page.webm",
+  "assets/sfx/ui_save.wav": "assets/sfx/ui_save.webm",
+  "font-atlas/default.fontatlas": "font-atlas/default.fontatlas.gz"
+ }
 }
