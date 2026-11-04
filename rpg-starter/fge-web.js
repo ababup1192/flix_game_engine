@@ -282,10 +282,37 @@ var fgeVersion = (function () {
   return m ? m[1] : "";
 })();
 function fgeVersioned(path) { return fgeVersion ? path + "?v=" + fgeVersion : path; }
+// WhyNot: 1 回で諦めない — スマホの回線では、大きな束を取る途中で通信が切れる（Failed to fetch）ことがあり、取り直せば通る。
 async function fgeFetchBytes(path) {
-  var res = await fetch(fgeVersioned(encodeURI(path)));
-  if (!res.ok) throw new Error(path + " を取れない（" + res.status + "）");
-  return new Uint8Array(await res.arrayBuffer());
+  var url = fgeVersioned(encodeURI(path));
+  var last = null;
+  for (var attempt = 0; attempt < 4; attempt++) {
+    if (attempt > 0) await new Promise(function (r) { setTimeout(r, 500 * attempt * attempt); });
+    try {
+      var res = await fetch(url);
+      if (res.ok) return new Uint8Array(await res.arrayBuffer());
+      last = new Error(path + " を取れない（" + res.status + "）");
+      if (res.status < 500) break;
+    } catch (e) {
+      last = new Error(path + " を取れない（" + e.message + "）");
+    }
+  }
+  throw last;
+}
+
+// WhyNot: 全部を同時に取りに行かない — 数十本を一度に投げると、スマホの回線で途中の物が切れやすくなる。
+async function fgeEachLimited(items, limit, fn) {
+  var next = 0;
+  var workers = [];
+  for (var w = 0; w < Math.min(limit, items.length); w++) {
+    workers.push((async function () {
+      while (next < items.length) {
+        var item = items[next++];
+        await fn(item);
+      }
+    })());
+  }
+  await Promise.all(workers);
 }
 
 async function fgeBoot() {
@@ -304,21 +331,26 @@ async function fgeBoot() {
   fgeAudio.master = fgeAudio.ctx.createGain();
   fgeAudio.master.connect(fgeAudio.ctx.destination);
   fgeProgress("loading", 0, total);
-  await Promise.all(files.map(async function (path) {
-    fgeAssets.set(fgeNormPath(path), await fgeFetchBytes("assets/" + path));
+  var jobs = files.map(function (path) {
+    return async function () { fgeAssets.set(fgeNormPath(path), await fgeFetchBytes("assets/" + path)); };
+  }).concat(images.map(function (path) {
+    return async function () {
+      var blob = new Blob([await fgeFetchBytes("assets/" + path)]);
+      fgeImages.set(fgeNormPath(path), await createImageBitmap(blob, { premultiplyAlpha: "none", colorSpaceConversion: "none" }));
+    };
+  })).concat(sounds.map(function (s) {
+    return async function () {
+      var bytes = await fgeFetchBytes("assets/" + s.path);
+      var buffer = await fgeAudio.ctx.decodeAudioData(bytes.buffer);
+      var gain = fgeAudio.ctx.createGain();
+      gain.connect(fgeAudio.master);
+      fgeAudio.sounds.set(s.name, { buffer: buffer, gain: gain, loop: !!s.looping, pitch: 1, source: null });
+    };
+  }));
+  await fgeEachLimited(jobs, 6, async function (job) {
+    await job();
     fgeProgress("loading", ++done, total);
-  }).concat(images.map(async function (path) {
-    var blob = new Blob([await fgeFetchBytes("assets/" + path)]);
-    fgeImages.set(fgeNormPath(path), await createImageBitmap(blob, { premultiplyAlpha: "none", colorSpaceConversion: "none" }));
-    fgeProgress("loading", ++done, total);
-  })).concat(sounds.map(async function (s) {
-    var bytes = await fgeFetchBytes("assets/" + s.path);
-    var buffer = await fgeAudio.ctx.decodeAudioData(bytes.buffer);
-    var gain = fgeAudio.ctx.createGain();
-    gain.connect(fgeAudio.master);
-    fgeAudio.sounds.set(s.name, { buffer: buffer, gain: gain, loop: !!s.looping, pitch: 1, source: null });
-    fgeProgress("loading", ++done, total);
-  })));
+  });
   fgeShow("fge-start", true);
   fgeProgress("click / tap to start", total, total);
   // WhyNot: 音を起こすのを await の後にしない — Safari は押した操作の処理の中で resume しないと断る版がある。
