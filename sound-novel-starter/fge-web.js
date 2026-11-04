@@ -89,8 +89,12 @@ function fgeApplyFullscreen() {
 var fgeKeys = Object.create(null);
 var fgeLatch = Object.create(null);
 var fgeFrameLatch = Object.create(null);
-var fgePointer = { x: 0, y: 0, dx: 0, dy: 0, wheel: 0, buttons: [false, false, false], latch: [false, false, false], frameLatch: [false, false, false] };
-function fgeKeyDown(code) { return !!(fgeKeys[code] || fgeFrameLatch[code]); }
+// パッドが押しているキー。指ごとの押しから fgePadSync が毎回作り直す。
+// WhyNot: fgeKeys に混ぜない — キーボードの keyup や blur の全部離すで、指を置いたままのボタンが離れる。
+var fgePadHeld = Object.create(null);
+var fgePointer = { x: 0, y: 0, dx: 0, dy: 0, wheel: 0, touch: false,
+                   buttons: [false, false, false], latch: [false, false, false], frameLatch: [false, false, false] };
+function fgeKeyDown(code) { return !!(fgeKeys[code] || fgePadHeld[code] || fgeFrameLatch[code]); }
 function fgePointerDown(button) { return !!(fgePointer.buttons[button] || fgePointer.frameLatch[button]); }
 function fgeBeginFrame() {
   fgeFrameLatch = fgeLatch;
@@ -107,45 +111,299 @@ function fgeReleaseAll() {
 // ページがスクロールする・ブラウザの機能（Tab の移動・Firefox のクイック検索・ヘルプ・読み直し）が動くキー。F11 と F12 は残す。
 var fgeSwallow = { ArrowUp: 1, ArrowDown: 1, ArrowLeft: 1, ArrowRight: 1, Space: 1, Tab: 1, Backspace: 1, PageUp: 1, PageDown: 1,
                    Home: 1, End: 1, Slash: 1, Quote: 1, F1: 1, F3: 1, F5: 1, F7: 1 };
+
+// ── 指の端末（パッド・タップ・ジェスチャー）──
+// 束の web の設定（bin/fge export-web が project.json の web から作る。キーは KeyboardEvent.code に解いてある）。
+var fgeWeb = { virtualPad: null, touchGestures: null, orientation: "any" };
+// 主な pointer が指の端末か。?input=touch|mouse で上書きできる（PC で指の並べ方を確かめる時）。
+var fgeCoarseQuery = window.matchMedia ? window.matchMedia("(pointer: coarse)") : null;
+var fgeInputOverride = (function () {
+  var m = /[?&]input=(touch|mouse)\b/.exec(location.search);
+  return m ? m[1] : null;
+})();
+function fgeIsCoarse() {
+  if (fgeInputOverride) return fgeInputOverride === "touch";
+  return !!(fgeCoarseQuery && fgeCoarseQuery.matches);
+}
+// 端末の区分の材料（WebLayer が Display.sizeClassOf で区分にする）。起動の時に 1 回だけ測る。
+// WhyNot: 毎コマ測らない — 区分は World の当たりの並べ方も変えるので、回す・アドレスバーが出入りするたびに変わってはいけない。
+//   pointer: coarse も同じで、遊んでいる間にマウスをつないでも区分は変えない（パッドの出し入れだけがライブ）。
+// WhyNot: 端末の画面（screen）だけで測らない — 分割画面や折りたたみを開いた時は、窓の方が小さい。
+// WhyNot: 0 を拾わない — 裏のタブや iframe で innerWidth が 0 のまま測ると、どの端末も Small になる。
+var fgeCoarseAtBoot = fgeIsCoarse();
+var fgeScreenShortSide = (function () {
+  var sides = [screen.width, screen.height, innerWidth, innerHeight].filter(function (v) { return v > 0; });
+  return sides.length ? Math.min.apply(null, sides) : 1000;
+})();
+var fgeSizeOverride = (function () {
+  var m = /[?&]size=(small|medium|large)\b/.exec(location.search);
+  return m ? m[1] : "";
+})();
+
+fgePointer.touch = fgeCoarseAtBoot;
+var fgePad = { fingers: new Map(), targets: [], dpad: null };
+function fgePadSync() {
+  var held = Object.create(null);
+  fgePad.fingers.forEach(function (f) { if (f.code) held[f.code] = true; });
+  for (var code in held) if (!fgePadHeld[code]) fgeLatch[code] = true;
+  fgePadHeld = held;
+  fgePad.targets.forEach(function (t) { t.el.classList.toggle("on", !!held[t.code]); });
+}
+function fgePadReleaseAll() { fgePad.fingers.clear(); fgePadSync(); }
+
+// 十字キーの向き。中心の不感帯の中は無し、今の向きの軸は他の軸が 1.2 倍を超えるまで保つ（斜めで向きがばたつかない）。
+function fgeDpadDir(prev, x, y) {
+  var r = fgePad.dpad.el.getBoundingClientRect();
+  var dx = x - (r.left + r.width / 2), dy = y - (r.top + r.height / 2);
+  var dead = r.width * 0.5 * 0.25;
+  if (dx * dx + dy * dy < dead * dead) return null;
+  var ax = Math.abs(dx), ay = Math.abs(dy);
+  var wasH = prev === "left" || prev === "right", wasV = prev === "up" || prev === "down";
+  var horizontal = wasH ? ax * 1.2 >= ay : wasV ? ax > ay * 1.2 : ax >= ay;
+  return horizontal ? (dx < 0 ? "left" : "right") : (dy < 0 ? "up" : "down");
+}
+function fgePadButtonAt(x, y) {
+  var best = null, bestD = Infinity;
+  fgePad.targets.forEach(function (t) {
+    if (t.dir) return;
+    var r = t.el.getBoundingClientRect();
+    var slop = 12;
+    if (x < r.left - slop || x > r.right + slop || y < r.top - slop || y > r.bottom + slop) return;
+    var cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    var d = (x - cx) * (x - cx) + (y - cy) * (y - cy);
+    if (d < bestD) { bestD = d; best = t; }
+  });
+  return best;
+}
+function fgeInDpad(x, y) {
+  if (!fgePad.dpad) return false;
+  var r = fgePad.dpad.el.getBoundingClientRect();
+  var slop = 24;
+  return x >= r.left - slop && x <= r.right + slop && y >= r.top - slop && y <= r.bottom + slop;
+}
+function fgePadAim(f, x, y) {
+  if (f.kind === "dpad") {
+    f.dir = fgeDpadDir(f.dir, x, y);
+    f.code = f.dir ? fgePad.dpad.codes[f.dir] : null;
+  } else {
+    var t = fgePadButtonAt(x, y);
+    f.code = t ? t.code : null;
+  }
+}
+
+function fgeBuildPad(cfg) {
+  var pad = document.getElementById("fge-pad");
+  var left = document.createElement("div");
+  left.className = "fge-pad-zone fge-pad-left";
+  var right = document.createElement("div");
+  right.className = "fge-pad-zone fge-pad-right";
+  if (cfg.dpad) {
+    var dpad = document.createElement("div");
+    dpad.className = "fge-dpad";
+    fgePad.dpad = { el: dpad, codes: cfg.dpad };
+    [["up", "▲"], ["left", "◀"], ["right", "▶"], ["down", "▼"]].forEach(function (d) {
+      var arm = document.createElement("div");
+      arm.className = "fge-dpad-arm fge-dpad-" + d[0];
+      arm.textContent = d[1];
+      dpad.appendChild(arm);
+      fgePad.targets.push({ el: arm, code: cfg.dpad[d[0]], dir: d[0] });
+    });
+    left.appendChild(dpad);
+  }
+  var buttons = document.createElement("div");
+  buttons.className = "fge-pad-buttons";
+  (cfg.buttons || []).forEach(function (b, i) {
+    var el = document.createElement("div");
+    el.className = "fge-pad-button fge-pad-button-" + i;
+    el.textContent = b.label;
+    buttons.appendChild(el);
+    fgePad.targets.push({ el: el, code: b.code, dir: null });
+  });
+  right.appendChild(buttons);
+  pad.appendChild(left);
+  pad.appendChild(right);
+  [left, right].forEach(function (zone) {
+    zone.addEventListener("pointerdown", function (e) {
+      e.preventDefault();
+      fgeNotePointer(e);
+      // WhyNot: 暗黙の capture を当てにしない — マウスで確かめる時は capture されず、指を滑らせた後の move が帯の外へ逃げる。
+      try { zone.setPointerCapture(e.pointerId); } catch (err) { /* 押し終えた指 */ }
+      var f = { kind: fgeInDpad(e.clientX, e.clientY) ? "dpad" : "button", dir: null, code: null };
+      fgePadAim(f, e.clientX, e.clientY);
+      fgePad.fingers.set(e.pointerId, f);
+      fgePadSync();
+    });
+    zone.addEventListener("pointermove", function (e) {
+      var f = fgePad.fingers.get(e.pointerId);
+      if (!f) return;
+      fgePadAim(f, e.clientX, e.clientY);
+      fgePadSync();
+    });
+    var lift = function (e) { if (fgePad.fingers.delete(e.pointerId)) fgePadSync(); };
+    zone.addEventListener("pointerup", lift);
+    zone.addEventListener("pointercancel", lift);
+    zone.addEventListener("lostpointercapture", lift);
+  });
+}
+
+// パッド・指の並べ方・向きの案内を、今の端末に合わせる（body の class で CSS が並べ替える）。
+var fgeLastOrientation = null;
+function fgeApplyLayout() {
+  var coarse = fgeIsCoarse();
+  var padOn = coarse && !!fgeWeb.virtualPad;
+  var body = document.body;
+  if (body.classList.contains("fge-pad-on") !== padOn) fgePadReleaseAll();
+  body.classList.toggle("fge-touch", coarse);
+  body.classList.toggle("fge-pad-on", padOn);
+  body.classList.toggle("fge-want-landscape", fgeWeb.orientation === "landscape");
+  body.classList.toggle("fge-want-portrait", fgeWeb.orientation === "portrait");
+  var start = document.getElementById("fge-start");
+  if (start) start.textContent = coarse ? "タップで始める" : "クリックかキーで始める";
+  // WhyNot: orientationchange を待たない — 発火の時にはまだ前の向きの大きさのままの端末がある。大きさの変化（resize）で見る。
+  var orientation = innerWidth >= innerHeight ? "landscape" : "portrait";
+  if (fgeLastOrientation !== null && orientation !== fgeLastOrientation) fgePadReleaseAll();
+  fgeLastOrientation = orientation;
+}
+
+// canvas の上の指: 離した時にタップ（その位置のクリック）・縦のドラッグはホイール・横に払うとスワイプ・長押し。
+// 主な指（isPrimary）だけを追う。
+var fgeTouchSlop = 16;
+var fgeWheelStep = 40;
+var fgeSwipeMin = 60;
+var fgeLongPressMs = 650;
+var fgeEdgeMargin = 24;
+var fgeGesture = null;
+function fgeGestureKey(name) {
+  var g = fgeWeb.touchGestures;
+  return g && g[name] ? g[name] : null;
+}
+function fgeTapKey(code) { fgeLatch[code] = true; }
+function fgeGestureDown(e, canvasXY) {
+  if (!e.isPrimary) return;
+  if (fgeGesture && fgeGesture.timer) clearTimeout(fgeGesture.timer);
+  var g = { id: e.pointerId, x0: e.clientX, y0: e.clientY, lastY: e.clientY, px: canvasXY.x, py: canvasXY.y,
+            mode: "tap", wheelRest: 0, wheelSign: 0, timer: 0 };
+  if (fgeGestureKey("longPress")) {
+    g.timer = setTimeout(function () {
+      if (fgeGesture === g && g.mode === "tap") { g.mode = "done"; fgeTapKey(fgeGestureKey("longPress")); }
+    }, fgeLongPressMs);
+  }
+  fgeGesture = g;
+}
+function fgeGestureMove(e) {
+  var g = fgeGesture;
+  if (!g || g.id !== e.pointerId) return;
+  var dx = e.clientX - g.x0, dy = e.clientY - g.y0;
+  if (g.mode === "tap" && dx * dx + dy * dy > fgeTouchSlop * fgeTouchSlop) {
+    g.mode = Math.abs(dy) > Math.abs(dx) ? "scroll" : "swipe";
+    if (g.timer) { clearTimeout(g.timer); g.timer = 0; }
+  }
+  if (g.mode === "scroll") {
+    // 指を下へ引くと上へ回したホイール（前の行へ）。1 回のドラッグの中で、最初に出た向きと逆の刻みは捨てる（開いた直後に閉じない）。
+    g.wheelRest += (e.clientY - g.lastY) / fgeWheelStep;
+    while (Math.abs(g.wheelRest) >= 1) {
+      var sign = g.wheelRest > 0 ? 1 : -1;
+      g.wheelRest -= sign;
+      if (g.wheelSign === 0) g.wheelSign = sign;
+      if (sign === g.wheelSign) fgePointer.wheel += sign;
+    }
+  }
+  g.lastY = e.clientY;
+}
+function fgeGestureUp(e) {
+  var g = fgeGesture;
+  if (!g || g.id !== e.pointerId) return;
+  fgeGesture = null;
+  if (g.timer) clearTimeout(g.timer);
+  if (g.mode === "tap") {
+    // WhyNot: 離した所で押さない — 指を離す時のずれで隣のボタンを押す。押した時の位置に戻してから押す。
+    fgePointer.x = g.px;
+    fgePointer.y = g.py;
+    fgePointer.latch[0] = true;
+  } else if (g.mode === "swipe") {
+    var dx = e.clientX - g.x0, dy = e.clientY - g.y0;
+    // WhyNot: 画面の端から始まった払いをスワイプにしない — Android・iOS の「戻る」のジェスチャーと同じ指の動きで、両方が起きる。
+    var fromEdge = g.x0 < fgeEdgeMargin || g.x0 > innerWidth - fgeEdgeMargin;
+    if (!fromEdge && Math.abs(dx) >= fgeSwipeMin && Math.abs(dx) >= Math.abs(dy) * 1.5) {
+      var key = fgeGestureKey(dx < 0 ? "swipeLeft" : "swipeRight");
+      if (key) fgeTapKey(key);
+    }
+  }
+}
+function fgeGestureCancel(e) {
+  var g = fgeGesture;
+  if (!g || g.id !== e.pointerId) return;
+  if (g.timer) clearTimeout(g.timer);
+  fgeGesture = null;
+}
+
+function fgeNotePointer(e) { fgePointer.touch = e.pointerType === "touch"; }
+
 function fgeWireInput() {
   window.addEventListener("keydown", function (e) {
     if (fgeSwallow[e.code]) e.preventDefault();
     fgeKeys[e.code] = true;
     if (!e.repeat) fgeLatch[e.code] = true;
     fgeApplyFullscreen();
+    fgeAudio.wake();
   });
   window.addEventListener("keyup", function (e) { fgeKeys[e.code] = false; });
-  window.addEventListener("blur", fgeReleaseAll);
+  window.addEventListener("blur", function () { fgeReleaseAll(); fgePadReleaseAll(); });
   window.addEventListener("focus", fgeReleaseAll);
-  document.addEventListener("visibilitychange", function () { if (document.hidden) fgeReleaseAll(); fgeAudio.onVisibility(); });
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) { fgeReleaseAll(); fgePadReleaseAll(); }
+    fgeAudio.onVisibility();
+  });
   var scale = function () {
     var rect = fgeCanvas.getBoundingClientRect();
     return { rect: rect, sx: fgeCanvas.width / Math.max(1, rect.width), sy: fgeCanvas.height / Math.max(1, rect.height) };
   };
-  var place = function (e) {
+  var toCanvas = function (e) {
     var s = scale();
-    fgePointer.x = (e.clientX - s.rect.left) * s.sx;
-    fgePointer.y = (e.clientY - s.rect.top) * s.sy;
-    return s;
+    return { x: (e.clientX - s.rect.left) * s.sx, y: (e.clientY - s.rect.top) * s.sy, s: s };
+  };
+  var place = function (e) {
+    var p = toCanvas(e);
+    fgePointer.x = p.x;
+    fgePointer.y = p.y;
+    return p;
   };
   fgeCanvas.addEventListener("pointermove", function (e) {
-    var s = place(e);
+    if (e.pointerType !== "touch") fgeNotePointer(e);
+    if (e.pointerType === "touch") { fgeGestureMove(e); return; }
+    var p = place(e);
     // WhyNot: 位置の差で動きを出さない — 初めの 1 回と、canvas の外から戻った時に跳ぶ。
-    if (document.hasFocus()) { fgePointer.dx += (e.movementX || 0) * s.sx; fgePointer.dy += (e.movementY || 0) * s.sy; }
+    if (document.hasFocus()) { fgePointer.dx += (e.movementX || 0) * p.s.sx; fgePointer.dy += (e.movementY || 0) * p.s.sy; }
   });
-  fgeCanvas.addEventListener("pointerenter", place);
+  fgeCanvas.addEventListener("pointerenter", function (e) { if (e.pointerType !== "touch") place(e); });
   fgeCanvas.addEventListener("pointerdown", function (e) {
+    fgeNotePointer(e);
+    if (e.pointerType === "touch") {
+      // WhyNot: 指は押した時にクリックにしない — 縦に払う（バックログ）・長押しと見分けられない。離した時に決める。
+      if (e.isPrimary) fgeGestureDown(e, place(e));
+      return;
+    }
     place(e);
     if (e.button >= 0 && e.button < 3) { fgePointer.buttons[e.button] = true; fgePointer.latch[e.button] = true; }
     fgeApplyFullscreen();
   });
-  window.addEventListener("pointerup", function (e) { if (e.button >= 0 && e.button < 3) fgePointer.buttons[e.button] = false; });
+  window.addEventListener("pointerup", function (e) {
+    fgeApplyFullscreen();
+    fgeAudio.wake();
+    if (e.pointerType === "touch") { fgeGestureUp(e); return; }
+    if (e.button >= 0 && e.button < 3) fgePointer.buttons[e.button] = false;
+  });
+  window.addEventListener("pointercancel", function (e) { if (e.pointerType === "touch") fgeGestureCancel(e); });
   fgeCanvas.addEventListener("wheel", function (e) {
     e.preventDefault();
     var unit = e.deltaMode === 1 ? 1 : e.deltaMode === 2 ? 3 : 1 / 100;
     fgePointer.wheel -= e.deltaY * unit;
   }, { passive: false });
-  fgeCanvas.addEventListener("contextmenu", function (e) { e.preventDefault(); });
+  // 長押しのメニュー・2 本指の拡大（iOS は user-scalable=no を無視する）・ダブルタップの拡大を止める。
+  // WhyNot: エラー表示の中は止めない — 右クリックでコピーできなくなる。
+  document.addEventListener("contextmenu", function (e) { if (!(e.target.closest && e.target.closest("#fge-error"))) e.preventDefault(); });
+  document.addEventListener("gesturestart", function (e) { e.preventDefault(); });
+  document.addEventListener("dblclick", function (e) { e.preventDefault(); });
   // 人の決定（コンテキストロスト）: 戻すのは頁の読み直しとセーブから。
   fgeCanvas.addEventListener("webglcontextlost", function (e) {
     e.preventDefault();
@@ -183,7 +441,7 @@ function fgeTexImageBitmap(path, alpha) {
 
 // ── 音 ──
 var fgeAudio = {
-  ctx: null, master: null, sounds: new Map(), wasRunning: false,
+  ctx: null, master: null, sounds: new Map(), wasRunning: false, started: false,
   has: function (name) { return this.sounds.has(name); },
   play: function (name) {
     var s = this.sounds.get(name);
@@ -225,6 +483,10 @@ var fgeAudio = {
     if (!this.ctx) return;
     if (document.hidden) { this.wasRunning = this.ctx.state === "running"; this.ctx.suspend(); }
     else if (this.wasRunning) this.ctx.resume();
+  },
+  // 始めた後に止まっていたら（断られた・電話などで iOS が止めた）、次の操作の中で起こし直す。
+  wake: function () {
+    if (this.ctx && this.started && !document.hidden && this.ctx.state !== "running") this.ctx.resume();
   }
 };
 
@@ -320,6 +582,16 @@ async function fgeBoot() {
   var bundle = JSON.parse(fgeDecoder.decode(await fgeFetchBytes("bundle.json")));
   document.title = bundle.title || document.title;
   fgeGameId = bundle.id || "game";
+  fgeWeb.virtualPad = bundle.virtualPad || null;
+  fgeWeb.touchGestures = bundle.touchGestures || null;
+  fgeWeb.orientation = bundle.orientation || "any";
+  if (bundle.design && bundle.design.w > 0 && bundle.design.h > 0) {
+    document.documentElement.style.setProperty("--fge-aspect", String(bundle.design.w / bundle.design.h));
+  }
+  if (fgeWeb.virtualPad) fgeBuildPad(fgeWeb.virtualPad);
+  fgeApplyLayout();
+  window.addEventListener("resize", fgeApplyLayout);
+  if (fgeCoarseQuery && fgeCoarseQuery.addEventListener) fgeCoarseQuery.addEventListener("change", fgeApplyLayout);
   var files = bundle.files || [];
   var sounds = bundle.sounds || [];
   var images = bundle.images || [];
@@ -354,16 +626,25 @@ async function fgeBoot() {
   fgeShow("fge-start", true);
   fgeProgress("click / tap to start", total, total);
   // WhyNot: 音を起こすのを await の後にしない — Safari は押した操作の処理の中で resume しないと断る版がある。
+  // WhyNot: pointerdown で待たない — 指の pointerdown はユーザーの操作に数えられず（HTML の決まり）、Chrome は resume を断る。click は指でもマウスでも数えられる。
   await new Promise(function (resolve) {
     var go = function () {
+      // iOS の消音スイッチで WebAudio が黙らないように（Safari 17 以降）。
+      try { if (navigator.audioSession) navigator.audioSession.type = "playback"; } catch (e) { /* 無い版 */ }
       fgeAudio.ctx.resume();
+      fgeAudio.started = true;
       window.removeEventListener("keydown", go);
-      window.removeEventListener("pointerdown", go);
+      window.removeEventListener("click", go);
       resolve();
     };
     window.addEventListener("keydown", go);
-    window.addEventListener("pointerdown", go);
+    window.addEventListener("click", go);
   });
+  if (navigator.storage && navigator.storage.persist) {
+    navigator.storage.persist().then(function (granted) {
+      console.log("[fge] storage.persist: " + (granted ? "granted（セーブは消されにくい）" : "denied（ブラウザが容量に困るとセーブが消えうる）"));
+    }, function () { /* 頼めない頁 */ });
+  }
   fgeShow("fge-start", false);
 
   fgeResizeCanvas();
@@ -376,7 +657,12 @@ async function fgeBoot() {
   fgeGl.pixelStorei(fgeGl.UNPACK_COLORSPACE_CONVERSION_WEBGL, fgeGl.NONE);
   fgeWireInput();
   fgeProgress("starting", 0, 0);
-  var teavm = await TeaVM.wasmGC.load(fgeVersioned("classes.wasm"));
+  var teavm;
+  try {
+    teavm = await TeaVM.wasmGC.load(fgeVersioned("classes.wasm"));
+  } catch (e) {
+    throw new Error("このブラウザは WebAssembly GC に対応していないか、wasm を読めません（Chrome 119 以降・Safari 18.2 以降で開いてください）: " + (e && e.message || e));
+  }
   try {
     teavm.exports.main([]);
   } catch (e) {

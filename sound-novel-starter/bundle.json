@@ -12,8 +12,10 @@
   "assets/novel.keys.json",
   "assets/novel.kind.json",
   "assets/novel.mixer.json",
+  "assets/novel.small.json",
   "assets/novel.story.json",
   "assets/novel.theme.json",
+  "assets/small.schema.json",
   "assets/story.schema.json",
   "assets/talk/dialogue.json",
   "assets/talk/natsukusa.yarn",
@@ -85,5 +87,14 @@
    "path": "assets/sfx/ui_save.wav",
    "looping": false
   }
- ]
+ ],
+ "design": {
+  "w": 960,
+  "h": 540
+ },
+ "touchGestures": {
+  "longPress": "KeyX",
+  "swipeLeft": "PageUp"
+ },
+ "orientation": "landscape"
 }

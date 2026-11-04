@@ -251,5 +251,27 @@
    "path": "assets/bgm/bgm_world.wav",
    "looping": false
   }
- ]
+ ],
+ "design": {
+  "w": 256,
+  "h": 240
+ },
+ "virtualPad": {
+  "dpad": {
+   "down": "ArrowDown",
+   "left": "ArrowLeft",
+   "right": "ArrowRight",
+   "up": "ArrowUp"
+  },
+  "buttons": [
+   {
+    "label": "A",
+    "code": "KeyZ"
+   },
+   {
+    "label": "B",
+    "code": "KeyX"
+   }
+  ]
+ }
 }

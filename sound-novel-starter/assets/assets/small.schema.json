@@ -1,0 +1,186 @@
+{
+  "//": "novel.small.json の形の宣言（Studio の sections 方言）。小さい画面の時だけ使う字と押せる物の大きさ。置き場所はコード（src/Layout.flix）。既定は src/SmallScreenDoc.flix の defaults() が正。",
+  "version": 1,
+  "sections": {
+    "titleItemTextSize": {
+      "kind": "field",
+      "type": "float",
+      "label": "タイトルのメニューの字（px）",
+      "group": "タイトル",
+      "order": 1,
+      "min": 14,
+      "max": 48,
+      "default": 28.0
+    },
+    "titleItemHeight": {
+      "kind": "field",
+      "type": "float",
+      "label": "タイトルのメニューの 1 つの高さ（px）",
+      "group": "タイトル",
+      "order": 2,
+      "min": 32,
+      "max": 80,
+      "default": 58.0
+    },
+    "buttonTextSize": {
+      "kind": "field",
+      "type": "float",
+      "label": "下の帯のボタンの字（px）",
+      "group": "読む間",
+      "order": 3,
+      "min": 10,
+      "max": 28,
+      "default": 18.0
+    },
+    "buttonHeight": {
+      "kind": "field",
+      "type": "float",
+      "label": "下の帯のボタンの高さ（px。幅は 11 のボタンが画面に入る幅）",
+      "group": "読む間",
+      "order": 4,
+      "min": 24,
+      "max": 80,
+      "default": 58.0
+    },
+    "choiceTextSize": {
+      "kind": "field",
+      "type": "float",
+      "label": "選択肢の字（px）",
+      "group": "読む間",
+      "order": 5,
+      "min": 14,
+      "max": 40,
+      "default": 26.0
+    },
+    "choiceHeight": {
+      "kind": "field",
+      "type": "float",
+      "label": "選択肢の高さ（px）",
+      "group": "読む間",
+      "order": 6,
+      "min": 40,
+      "max": 90,
+      "default": 60.0
+    },
+    "advBodySize": {
+      "kind": "field",
+      "type": "float",
+      "label": "ADV の本文の字（px）",
+      "group": "読む間",
+      "order": 7,
+      "min": 14,
+      "max": 40,
+      "default": 26.0
+    },
+    "advRubySize": {
+      "kind": "field",
+      "type": "float",
+      "label": "ADV のルビの字（px）",
+      "group": "読む間",
+      "order": 8,
+      "min": 6,
+      "max": 20,
+      "default": 13.0
+    },
+    "advNameSize": {
+      "kind": "field",
+      "type": "float",
+      "label": "ADV の話し手の名前の字（px）",
+      "group": "読む間",
+      "order": 9,
+      "min": 10,
+      "max": 36,
+      "default": 24.0
+    },
+    "advPanelHeight": {
+      "kind": "field",
+      "type": "float",
+      "label": "ADV のウィンドウの高さ（px。下の帯のすぐ上に置く）",
+      "group": "読む間",
+      "order": 10,
+      "min": 120,
+      "max": 260,
+      "default": 196.0
+    },
+    "backTextSize": {
+      "kind": "field",
+      "type": "float",
+      "label": "画面の右上の「戻る」の字（px）",
+      "group": "画面",
+      "order": 11,
+      "min": 10,
+      "max": 32,
+      "default": 20.0
+    },
+    "backHeight": {
+      "kind": "field",
+      "type": "float",
+      "label": "画面の右上の「戻る」の高さ（px。見出しの下の線より上に置く）",
+      "group": "画面",
+      "order": 12,
+      "min": 32,
+      "max": 62,
+      "default": 58.0
+    },
+    "tabTextSize": {
+      "kind": "field",
+      "type": "float",
+      "label": "セーブ・ロードのタブの字（px）",
+      "group": "画面",
+      "order": 13,
+      "min": 10,
+      "max": 32,
+      "default": 20.0
+    },
+    "tabHeight": {
+      "kind": "field",
+      "type": "float",
+      "label": "セーブ・ロードのタブの高さ（px）",
+      "group": "画面",
+      "order": 14,
+      "min": 30,
+      "max": 64,
+      "default": 58.0
+    },
+    "settingTextSize": {
+      "kind": "field",
+      "type": "float",
+      "label": "設定の行の字（px。2 つから選ぶボタンの字も同じ）",
+      "group": "画面",
+      "order": 15,
+      "min": 12,
+      "max": 22,
+      "default": 18.0
+    },
+    "settingRowHeight": {
+      "kind": "field",
+      "type": "float",
+      "label": "設定の 1 行の高さ（px）",
+      "group": "画面",
+      "order": 16,
+      "min": 44,
+      "max": 62,
+      "default": 58.0
+    },
+    "askButtonTextSize": {
+      "kind": "field",
+      "type": "float",
+      "label": "確認のウィンドウのはい・いいえの字（px）",
+      "group": "画面",
+      "order": 17,
+      "min": 12,
+      "max": 32,
+      "default": 22.0
+    },
+    "askButtonHeight": {
+      "kind": "field",
+      "type": "float",
+      "label": "確認のウィンドウのはい・いいえの高さ（px）",
+      "group": "画面",
+      "order": 18,
+      "min": 40,
+      "max": 62,
+      "default": 58.0
+    }
+  }
+}
