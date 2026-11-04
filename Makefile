@@ -711,6 +711,62 @@ sync-engine-full: gl-jar
 		fi \
 	done
 
+# ── ブラウザ版の束（engine_full_web）──────────────────────────
+# engine_full と同じソースの木に engine_web（WebLayer・WebFs・WebAssets）を足した 2 本目の束。書き出しの道具（bin/fge export-web）だけが使う。
+# デスクトップの engine_full・テンプレの依存は 1 バイトも変えない（描く手順の本体は pub でない mod のままで、同じ束の中の WebLayer から呼ぶ）。
+# 生成物なので build/ の下に作る。flix.toml は engine_full の物に TeaVM の JSO と fge-web の jar を足して作る（版を二重に持たない）。
+WEB_DIR          := engine_web
+WEB_FULL_DIR     := build/engine_full_web
+TEAVM_VERSION    := 0.14.1
+WEB_JAR_NAME     := fge-web-$(VERSION).jar
+WEB_JAR          := build/web-jar/$(WEB_JAR_NAME)
+WEB_JAR_SRC      := $(shell find $(WEB_DIR)/java -name '*.java' 2>/dev/null)
+WEB_JAR_DEPS     := $(foreach m,jso jso-apis interop,build/web-jar/deps/teavm-$(m)-$(TEAVM_VERSION).jar)
+
+build/web-jar/deps/teavm-%-$(TEAVM_VERSION).jar:
+	@mkdir -p $(dir $@)
+	curl -fsSL -o $@ https://repo1.maven.org/maven2/org/teavm/teavm-$*/$(TEAVM_VERSION)/teavm-$*-$(TEAVM_VERSION).jar
+
+$(WEB_JAR): $(WEB_JAR_SRC) $(WEB_JAR_DEPS) $(GL_JAR)
+	@rm -rf build/web-jar/classes && mkdir -p build/web-jar/classes
+	$(if $(filter javac,$(JAVAC)),javac,"$(JAVAC)") --release 17 -encoding UTF-8 -d build/web-jar/classes \
+		-cp "$(GL_JAR):$(subst $(eval) ,:,$(WEB_JAR_DEPS))" $(WEB_JAR_SRC)
+	$(if $(filter javac,$(JAVAC)),jar,"$(JAR_TOOL)") --create --file $@ --date=2000-01-01T00:00:00Z -C build/web-jar/classes .
+
+# TeaVM の穴の手当て（classlib に無い類の shim と、jar のバイトコードの付け替え Rewrite）。書き出しの道具が TeaVM の classpath の頭に置く。
+WEB_TOOLS_JAR      := build/web-jar/fge-web-tools-$(VERSION).jar
+WEB_TOOLS_SRC      := $(shell find $(WEB_DIR)/teavm/java -name '*.java' 2>/dev/null)
+WEB_TOOLS_DEPS     := build/web-jar/deps/teavm-relocated-libs-asm-$(TEAVM_VERSION).jar
+
+$(WEB_TOOLS_JAR): $(WEB_TOOLS_SRC) $(WEB_TOOLS_DEPS)
+	@rm -rf build/web-jar/tools-classes && mkdir -p build/web-jar/tools-classes
+	$(if $(filter javac,$(JAVAC)),javac,"$(JAVAC)") --release 17 -encoding UTF-8 -d build/web-jar/tools-classes \
+		-cp "$(WEB_TOOLS_DEPS)" $(WEB_TOOLS_SRC)
+	$(if $(filter javac,$(JAVAC)),jar,"$(JAR_TOOL)") --create --file $@ --date=2000-01-01T00:00:00Z -C build/web-jar/tools-classes .
+
+.PHONY: web-jar sync-engine-full-web
+web-jar: $(WEB_JAR) $(WEB_TOOLS_JAR)
+
+sync-engine-full-web: gl-jar web-jar
+	@rm -rf $(WEB_FULL_DIR)/src && mkdir -p $(WEB_FULL_DIR)/src $(WEB_FULL_DIR)/lib/external
+	@# engine_full にだけある物（src/full: VideoOut・GpuShot）も入れる。ゲームの src がそれを use するので、無いと型検査で止まる。
+	@for pkg in $(ROOT_SRC_PKGS) $(WEB_DIR) $(ENGINE_FULL_DIR)/src/full; do \
+		root="$$pkg/src"; [ -d "$$root" ] || root="$$pkg"; name=$$(basename "$$pkg"); \
+		(cd "$$root" && find . -name '*.flix') | sed 's|^\./||' | while read -r f; do \
+			mkdir -p "$(WEB_FULL_DIR)/src/$$name/$$(dirname "$$f")"; \
+			ln -sfn "$(CURDIR)/$$root/$$f" "$(WEB_FULL_DIR)/src/$$name/$$f"; \
+		done; \
+	done
+	@awk -v web='"$(WEB_JAR_NAME)" = "url:https://github.com/ababup1192/flix_game_engine/releases/download/v$(VERSION)/$(WEB_JAR_NAME)"' \
+	     -v jso='"org.teavm:teavm-jso" = "$(TEAVM_VERSION)"\n"org.teavm:teavm-jso-apis" = "$(TEAVM_VERSION)"\n"org.teavm:teavm-interop" = "$(TEAVM_VERSION)"' \
+	     '{ print } /^\[jar-dependencies\]/ { print web } /^\[mvn-dependencies\]/ { print jso }' \
+	     $(ENGINE_FULL_TOML_SRC) > $(WEB_FULL_DIR)/flix.toml
+	@cp -p $(GL_JAR) $(WEB_JAR) $(WEB_FULL_DIR)/lib/external/
+	@rm -f $(WEB_FULL_DIR)/packages.lock
+	@find $(WEB_FULL_DIR)/src -type l | awk 'END { print "[sync-engine-full-web] " NR " source symlink(s)" }'
+	cd $(WEB_FULL_DIR) && "$(FLIX)" check
+	cd $(WEB_FULL_DIR) && "$(FLIX)" build-pkg
+
 # ── リリース ──────────────────────────────────────────────
 # 自己完結の全部入り engine_full を build-pkg し、既存リポ flix_game_engine の GitHub Release に
 # fpkg と flix.toml を添付する。利用側は github:ababup1192/flix_game_engine の1行でこのバージョンを引く。
