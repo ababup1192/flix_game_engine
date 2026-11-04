@@ -127,13 +127,20 @@ function fgeIsCoarse() {
 }
 // 端末の区分の材料（WebLayer が Display.sizeClassOf で区分にする）。起動の時に 1 回だけ測る。
 // WhyNot: 毎コマ測らない — 区分は World の当たりの並べ方も変えるので、回す・アドレスバーが出入りするたびに変わってはいけない。
+//   pointer: coarse も同じで、遊んでいる間にマウスをつないでも区分は変えない（パッドの出し入れだけがライブ）。
 // WhyNot: 端末の画面（screen）だけで測らない — 分割画面や折りたたみを開いた時は、窓の方が小さい。
-var fgeScreenShortSide = Math.min(screen.width, screen.height, innerWidth, innerHeight);
+// WhyNot: 0 を拾わない — 裏のタブや iframe で innerWidth が 0 のまま測ると、どの端末も Small になる。
+var fgeCoarseAtBoot = fgeIsCoarse();
+var fgeScreenShortSide = (function () {
+  var sides = [screen.width, screen.height, innerWidth, innerHeight].filter(function (v) { return v > 0; });
+  return sides.length ? Math.min.apply(null, sides) : 1000;
+})();
 var fgeSizeOverride = (function () {
   var m = /[?&]size=(small|medium|large)\b/.exec(location.search);
   return m ? m[1] : "";
 })();
 
+fgePointer.touch = fgeCoarseAtBoot;
 var fgePad = { fingers: new Map(), targets: [], dpad: null };
 function fgePadSync() {
   var held = Object.create(null);
@@ -393,7 +400,8 @@ function fgeWireInput() {
     fgePointer.wheel -= e.deltaY * unit;
   }, { passive: false });
   // 長押しのメニュー・2 本指の拡大（iOS は user-scalable=no を無視する）・ダブルタップの拡大を止める。
-  document.addEventListener("contextmenu", function (e) { e.preventDefault(); });
+  // WhyNot: エラー表示の中は止めない — 右クリックでコピーできなくなる。
+  document.addEventListener("contextmenu", function (e) { if (!(e.target.closest && e.target.closest("#fge-error"))) e.preventDefault(); });
   document.addEventListener("gesturestart", function (e) { e.preventDefault(); });
   document.addEventListener("dblclick", function (e) { e.preventDefault(); });
   // 人の決定（コンテキストロスト）: 戻すのは頁の読み直しとセーブから。

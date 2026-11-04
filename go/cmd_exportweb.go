@@ -591,7 +591,7 @@ type exportProject struct {
 	DesignWidth  int             `json:"designWidth"`
 	DesignHeight int             `json:"designHeight"`
 	Web          json.RawMessage `json:"web"`
-	Textures []struct {
+	Textures     []struct {
 		Path string `json:"path"`
 	} `json:"textures"`
 	Sounds []webSound `json:"sounds"`

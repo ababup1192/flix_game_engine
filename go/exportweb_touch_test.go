@@ -51,6 +51,24 @@ func TestResolveWebTouchSkipsUnknownKeyName(t *testing.T) {
 	}
 }
 
+func TestResolveWebTouchAvoidsKeySharedWithOtherAction(t *testing.T) {
+	game := writeTouchGame(t, `{"back": ["Escape", "X"], "quit": ["Escape"]}`)
+	raw := json.RawMessage(`{"keysDoc": "assets/game.keys.json", "touchGestures": {"longPress": "back"}}`)
+	got, err := resolveWebTouch(game, raw)
+	if err != nil || got.TouchGestures["longPress"] != "KeyX" {
+		t.Errorf("quit と共有の Escape でなく X のはず: %v %v", got.TouchGestures, err)
+	}
+}
+
+func TestResolveWebTouchFallsBackToSharedKey(t *testing.T) {
+	game := writeTouchGame(t, `{"back": ["Escape"], "quit": ["Escape"]}`)
+	raw := json.RawMessage(`{"keysDoc": "assets/game.keys.json", "touchGestures": {"longPress": "back"}}`)
+	got, err := resolveWebTouch(game, raw)
+	if err != nil || got.TouchGestures["longPress"] != "Escape" {
+		t.Errorf("全部共有なら 1 本目の Escape のはず: %v %v", got.TouchGestures, err)
+	}
+}
+
 func TestResolveWebTouchRejectsUnknownAction(t *testing.T) {
 	game := writeTouchGame(t, touchKeys)
 	raw := json.RawMessage(`{"keysDoc": "assets/game.keys.json", "virtualPad": {"buttons": [{"label": "A", "action": "jump"}]}}`)

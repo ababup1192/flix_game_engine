@@ -26,8 +26,8 @@ public final class Browser {
     @JSBody(script = "return window.devicePixelRatio || 1;")
     public static native double devicePixelRatio();
 
-    /** 主な pointer が指の端末か（matchMedia の pointer: coarse。頁の ?input=touch|mouse で上書き）。 */
-    @JSBody(script = "return fgeIsCoarse();")
+    /** 起動の時に主な pointer が指の端末だったか（matchMedia の pointer: coarse。頁の ?input=touch|mouse で上書き。遊んでいる間は変わらない）。 */
+    @JSBody(script = "return fgeCoarseAtBoot;")
     public static native boolean isCoarsePointer();
 
     /** 起動の時に測った画面の短い辺（CSS px）。端末の画面と窓の短い方（分割画面・折りたたみを開いた時は窓に合わせる）。 */

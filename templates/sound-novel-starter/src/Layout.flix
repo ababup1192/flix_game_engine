@@ -14,7 +14,8 @@ mod Layout {
     }
 
     /// 端末の sizeClass から並べ方の組を選ぶ（View は ViewCtx#display#sizeClass、Controls は Frame#sizeClass を渡す）。
-    /// WhyNot: Medium（タブレット）に Small の組を使わない — 画面の縦と横の短い方が 600 CSS px 以上あれば 960×540 のままで指で押せる。
+    /// WhyNot: Medium（タブレット）に Small の組を使わない — 倍率が 1 を超える横持ちなら 960×540 のままでも押せる大きさに近い。
+    /// 縦持ちの小さいタブレットと下の帯のボタンは 44 CSS px に届かないので、足りなければ Medium の組を novel.small.json に足す。
     pub def fitOf(sizeClass: Display.SizeClass, small: SmallScreenDoc.Doc): Fit = match sizeClass {
         case Display.SizeClass.Small  => Fit.Small(SmallScreenDoc.rec(small))
         case Display.SizeClass.Medium => Fit.Regular

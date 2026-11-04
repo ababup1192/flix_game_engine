@@ -113,10 +113,23 @@ func resolveWebTouch(game string, raw json.RawMessage) (webTouch, error) {
 			return "", fmt.Errorf("project.json の %s の操作 %q が %s に無い。\n  次: %s にある操作の名前（%s）にする",
 				field, action, s.KeysDoc, s.KeysDoc, strings.Join(sortedKeys(actions), "・"))
 		}
+		// WhyNot: 1 本目をそのまま使わない — 別の操作と同じキーを先頭に置いた操作（back と quit が Escape）は、
+		// そのキーを押すともう片方の操作も一緒に動く（長押しでタイトルの終了の確認が開く）。他の操作と重ならないキーを先に選ぶ。
+		var shared string
 		for _, k := range keys {
-			if code, ok := webKeyCode(k); ok {
+			code, ok := webKeyCode(k)
+			if !ok {
+				continue
+			}
+			if webKeyUsers(actions, k) == 1 {
 				return code, nil
 			}
+			if shared == "" {
+				shared = code
+			}
+		}
+		if shared != "" {
+			return shared, nil
 		}
 		return "", fmt.Errorf("%s の操作 %q に知っているキーが無い（%v）。\n  次: GameEngine.Key の名前（Z・Up・Enter など）を 1 つ入れる",
 			s.KeysDoc, action, keys)
@@ -163,6 +176,20 @@ func resolveWebTouch(game string, raw json.RawMessage) (webTouch, error) {
 		}
 	}
 	return t, nil
+}
+
+// webKeyUsers はキー名 key を持つ操作の数。
+func webKeyUsers(actions map[string][]string, key string) int {
+	n := 0
+	for _, keys := range actions {
+		for _, k := range keys {
+			if k == key {
+				n++
+				break
+			}
+		}
+	}
+	return n
 }
 
 // webDpadActions は dpad の欄を読む。true = up・down・left・right の操作・false か無し = 十字キーを出さない・{up: …} = 名指し。
