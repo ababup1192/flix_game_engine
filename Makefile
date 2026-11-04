@@ -138,6 +138,9 @@ help:
 	@echo "  make sync-engine-full     engine_full だけ src 集約 & build-pkg & 配布 (templates / bench へ)"
 	@echo "  make release              sync→test-par→gl-parity→build-pkg→gh release を一括実行 (未コミットなら中断・tagはHEAD固定)"
 	@echo "  make bump FROM=x TO=y     全 flix.toml の version を一括更新 (lockstep)。release の前に実行する"
+	@echo "  make gl-jar-pin           render_gl/java を直した後、3 つの flix.toml の GL の層の jar の行を置き場 fge-gl-<ハッシュ> へ向ける"
+	@echo "  make gl-jar-pin-check     flix.toml の jar の行がいまの render_gl/java を指しているか (release と precommit の門)"
+	@echo "  make gl-jar-publish       置き場の Release fge-gl-<ハッシュ> を作って jar を載せる (あれば何もしない・main への push で gl-jar.yml も流す)"
 	@echo "  make hooks                git の pre-commit ゲート (bin/githooks) をこの clone に配線する"
 	@echo "  make bundle-zip           Studio に同梱する engine 一式を zip に固める (Release に添える)"
 
@@ -629,13 +632,28 @@ clean-font-cache:
 # GL の層の jar（render_gl/java の GlContext と LWJGL 版・録る版）を組み、使う所の lib/external へ置く。
 # flix.toml の [jar-dependencies] は同じ名前の jar を Release から取る形で書いてあるが、Flix は lib/external に同じ名前の
 # ファイルがあると取りに行かないので、作業コピーではここで置いた物が使われる。java/ を直したら make sync で置き直す。
+# 名前と置き場（Release のタグ fge-gl-<ハッシュ>）は render_gl/java の中身と組み方のハッシュで決まる。java/ を直したら
+# make gl-jar-pin で 3 つの flix.toml を書き換え、make gl-jar-publish（main への push で gl-jar.yml も流す）で置き場を作る。
 # WhyNot: Flix のソースに書かない — Java の interface と実装は Flix で書けず（Flix の new は WASM で 1.5 倍遅い）、jar で運ぶしかない。
 # WhyNot: LWJGL を Flix の lib/cache から借りない — 空の作業コピーでは jar を組む前に Flix の依存の解決が要り、その解決がこの jar を要る。
-GL_JAR_NAME := fge-gl-$(VERSION).jar
-GL_JAR      := build/gl-jar/$(GL_JAR_NAME)
-GL_JAR_SRC  := $(shell find $(RENDER_GL_DIR)/java -name '*.java' 2>/dev/null)
+# WhyNot: 置き場をエンジンの版のリリースにしない — 版を上げてからそのリリースを出すまで main の flix.toml が無い物を指し、
+# 外の CI と新しい clone が 404 で落ちる。
+# WhyNot: jar のバイト列でなくソースのハッシュにする — jar は組んだ JDK の版（MANIFEST の Created-By・javac の出力）で変わり、
+# 機械ごとに pin の検査が食い違う。
+# WhyNot: ハッシュの前に CR を落とす — Windows の autocrlf の clone だけ別のハッシュになり、門が誤って止まる。
+GL_JAR_SRC  := $(sort $(shell find $(RENDER_GL_DIR)/java -name '*.java' 2>/dev/null))
 GL_JAR_CHECK := $(RENDER_GL_DIR)/java-check/GlConstantsCheck.java
 GL_JAR_LWJGL := 3.4.1
+GL_JAR_JAVA_RELEASE := 17
+GL_JAR_HASH := $(if $(GL_JAR_SRC),$(shell { for f in $(GL_JAR_SRC); do echo "== $$f"; tr -d '\r' < "$$f"; done; \
+	echo "release $(GL_JAR_JAVA_RELEASE) lwjgl $(GL_JAR_LWJGL)"; } | shasum -a 256 | cut -c1-12))
+GL_JAR_TAG  := fge-gl-$(GL_JAR_HASH)
+GL_JAR_NAME := $(GL_JAR_TAG).jar
+GL_JAR      := build/gl-jar/$(GL_JAR_NAME)
+GL_JAR_REPO := ababup1192/flix_game_engine
+GL_JAR_URL  := https://github.com/$(GL_JAR_REPO)/releases/download/$(GL_JAR_TAG)/$(GL_JAR_NAME)
+GL_JAR_PIN_LINE := "$(GL_JAR_NAME)" = "url:$(GL_JAR_URL)"
+GL_JAR_TOMLS := flix.toml $(RENDER_GL_DIR)/flix.toml $(ENGINE_FULL_DIR)/flix.toml
 GL_JAR_DEPS := build/gl-jar/deps/lwjgl-$(GL_JAR_LWJGL).jar build/gl-jar/deps/lwjgl-opengl-$(GL_JAR_LWJGL).jar
 JAVAC := $(shell if javac -version >/dev/null 2>&1; then echo javac; else echo $(CURDIR)/.devbox/nix/profile/default/bin/javac; fi)
 JAR_TOOL := $(dir $(JAVAC))jar
@@ -650,21 +668,68 @@ build/gl-jar/deps/lwjgl-$(GL_JAR_LWJGL).jar:
 	@mkdir -p $(dir $@)
 	curl -fsSL -o $@ https://repo1.maven.org/maven2/org/lwjgl/lwjgl/$(GL_JAR_LWJGL)/lwjgl-$(GL_JAR_LWJGL).jar
 
-$(GL_JAR): $(GL_JAR_SRC) $(GL_JAR_CHECK) $(GL_JAR_DEPS)
+.PHONY: gl-jar gl-jar-hash-ok gl-jar-pin gl-jar-pin-check gl-jar-publish
+# WhyNot: ハッシュが空のまま進めない — fge-gl-.jar という名前で組み、pin がそれを書き込む。
+gl-jar-hash-ok:
+	@test -n "$(GL_JAR_HASH)" || { echo "[gl-jar] $(RENDER_GL_DIR)/java の *.java が見つからないか shasum が無く、ハッシュが取れません"; exit 1; }
+
+# WhyNot: --date を外さない — 外すと組むたびに中の時刻が変わり、同じソースでも別のバイトになる。
+$(GL_JAR): $(GL_JAR_SRC) $(GL_JAR_CHECK) $(GL_JAR_DEPS) | gl-jar-hash-ok
 	@rm -rf build/gl-jar/classes && mkdir -p build/gl-jar/classes
-	$(if $(filter javac,$(JAVAC)),javac,"$(JAVAC)") --release 17 -encoding UTF-8 -d build/gl-jar/classes \
+	$(if $(filter javac,$(JAVAC)),javac,"$(JAVAC)") --release $(GL_JAR_JAVA_RELEASE) -encoding UTF-8 -d build/gl-jar/classes \
 		-cp "$(subst $(eval) ,:,$(GL_JAR_DEPS))" $(GL_JAR_SRC)
 	@# 定数の打ち間違いは絵の比べでは場所が分かりにくいので、組んだ所で LWJGL の定数と突き合わせる。
 	@rm -rf build/gl-jar/check && mkdir -p build/gl-jar/check
-	$(if $(filter javac,$(JAVAC)),javac,"$(JAVAC)") --release 17 -encoding UTF-8 -d build/gl-jar/check \
+	$(if $(filter javac,$(JAVAC)),javac,"$(JAVAC)") --release $(GL_JAR_JAVA_RELEASE) -encoding UTF-8 -d build/gl-jar/check \
 		-cp "build/gl-jar/classes:$(subst $(eval) ,:,$(GL_JAR_DEPS))" $(RENDER_GL_DIR)/java-check/GlConstantsCheck.java
 	$(if $(filter javac,$(JAVAC)),java,"$(dir $(JAVAC))java") -cp "build/gl-jar/check:build/gl-jar/classes" GlConstantsCheck
 	$(if $(filter javac,$(JAVAC)),jar,"$(JAR_TOOL)") --create --file $@ --date=2000-01-01T00:00:00Z -C build/gl-jar/classes .
 
-.PHONY: gl-jar
+# WhyNot: 前の名前の jar を lib/external から消してから置く — 残すと中身の違う同じクラスが 2 つ classpath に載り、どちらが効くか読めない。
 gl-jar: $(GL_JAR)
-	@for d in $(GL_JAR_USERS); do mkdir -p "$$d/lib/external"; cp -p $(GL_JAR) "$$d/lib/external/$(GL_JAR_NAME)"; done
+	@find build/gl-jar -maxdepth 1 -name 'fge-gl-*.jar' ! -name '$(GL_JAR_NAME)' -exec rm -f {} +
+	@for d in $(GL_JAR_USERS); do mkdir -p "$$d/lib/external"; rm -f "$$d/lib/external"/fge-gl-*.jar; cp -p $(GL_JAR) "$$d/lib/external/$(GL_JAR_NAME)"; done
 	@echo "[gl-jar] $(GL_JAR) を $(words $(GL_JAR_USERS)) か所の lib/external へ置いた"
+	@$(MAKE) --no-print-directory -s gl-jar-pin-check >/dev/null 2>&1 \
+	  || echo "[gl-jar] flix.toml の jar の行が $(GL_JAR_NAME) を指していません。コミットの前に make gl-jar-pin"
+
+gl-jar-pin: gl-jar-hash-ok
+	@for f in $(GL_JAR_TOMLS); do \
+		grep -q '^"fge-gl-[^"]*\.jar" *= *"url:' "$$f" || { echo "[gl-jar-pin] $$f に fge-gl の行がありません"; exit 1; }; \
+		GL_JAR_PIN_LINE='$(GL_JAR_PIN_LINE)' perl -pi -e 's|^"fge-gl-[^"]*\.jar" *= *"url:[^"]*"|$$ENV{GL_JAR_PIN_LINE}|' "$$f"; \
+	done
+	@echo "[gl-jar-pin] $(words $(GL_JAR_TOMLS)) つの flix.toml を $(GL_JAR_TAG) へ向けた"
+
+gl-jar-pin-check: gl-jar-hash-ok
+	@bad=; for f in $(GL_JAR_TOMLS); do grep -qxF '$(GL_JAR_PIN_LINE)' "$$f" || bad="$$bad $$f"; done; \
+	 [ -z "$$bad" ] || { echo "[gl-jar-pin-check] render_gl/java の中身 ($(GL_JAR_TAG)) と違う jar を指しています:$$bad"; \
+	   echo "  make gl-jar-pin で書き換え、make gl-jar-publish で置き場を作ってください"; exit 1; }
+
+# 手で流すときは GL_JAR_TARGET の commit を先に push し、render_gl/java をその commit と同じにしておく。
+# WhyNot: --prerelease と --latest=false — 付けないとこれが「最新のリリース」になり、bin/fge fetch-engine が
+# releases/latest でエンジンの版でなくこれを拾う。
+# WhyNot: create が落ちても見直す — gl-jar.yml と release-publish が同時に作りに来ると片方が already exists で落ち、
+# 版の公開が途中で止まる。
+GL_JAR_TARGET ?= $(RELEASE_SHA)
+gl-jar-publish: gl-jar-pin-check $(GL_JAR)
+	@has_jar() { gh release view $(GL_JAR_TAG) --repo $(GL_JAR_REPO) --json assets -q '.assets[].name' 2>/dev/null | grep -qxF '$(GL_JAR_NAME)'; }; \
+	 if has_jar; then echo "[gl-jar-publish] $(GL_JAR_TAG) に $(GL_JAR_NAME) はもうあります"; exit 0; fi; \
+	 if gh release view $(GL_JAR_TAG) --repo $(GL_JAR_REPO) >/dev/null 2>&1; then \
+	   gh release upload $(GL_JAR_TAG) --repo $(GL_JAR_REPO) "$(GL_JAR)" || has_jar || exit 1; \
+	 else \
+	   gh release create $(GL_JAR_TAG) --repo $(GL_JAR_REPO) --target $(GL_JAR_TARGET) \
+	     --title "$(GL_JAR_TAG)" --prerelease --latest=false \
+	     --notes "GL の層の jar（render_gl/java）。名前のハッシュは render_gl/java の中身と組み方から make が出す。flix.toml の [jar-dependencies] がここを指す。" \
+	     "$(GL_JAR)" || { sleep 5; has_jar; } || exit 1; \
+	 fi; \
+	 echo "[gl-jar-publish] $(GL_JAR_TAG) に $(GL_JAR_NAME) を載せた"
+
+# bin/fge precommit の localGate が呼ぶ。
+# WhyNot: ステージした一覧で絞らない — 一覧は消したファイルを含まず、java を消しただけのコミットを見逃す。検査は 1 秒もかからない。
+# WhyNot: レシピで $(MAKE) を呼ばない — precommit は make -q で口の有無を見るが、$(MAKE) の行は -q でも走り、
+# pin のずれが「口が壊れている」と読まれて門が黙って開く。
+.PHONY: precommit-local
+precommit-local: gl-jar-pin-check
 
 # WhyNot: 配り先の packages.lock は配るたびに消す。fpkg は手元の作り直しで毎回中身が変わるので、
 # 残すと Flix 0.77 以降は「packages.lock の記録と違う」で check ごと止まる。
@@ -761,6 +826,7 @@ sync-engine-full-web: gl-jar web-jar
 	     -v jso='"org.teavm:teavm-jso" = "$(TEAVM_VERSION)"\n"org.teavm:teavm-jso-apis" = "$(TEAVM_VERSION)"\n"org.teavm:teavm-interop" = "$(TEAVM_VERSION)"' \
 	     '{ print } /^\[jar-dependencies\]/ { print web } /^\[mvn-dependencies\]/ { print jso }' \
 	     $(ENGINE_FULL_TOML_SRC) > $(WEB_FULL_DIR)/flix.toml
+	@rm -f $(WEB_FULL_DIR)/lib/external/fge-gl-*.jar
 	@cp -p $(GL_JAR) $(WEB_JAR) $(WEB_FULL_DIR)/lib/external/
 	@rm -f $(WEB_FULL_DIR)/packages.lock
 	@find $(WEB_FULL_DIR)/src -type l | awk 'END { print "[sync-engine-full-web] " NR " source symlink(s)" }'
@@ -812,6 +878,8 @@ release-guard:
 	@$(MAKE) --no-print-directory check-bundle-flix
 	@# 追随の材料が bump のときのままか。API を触るコミットが bump の後に入ると古くなる。
 	@bin/fge migration-notes --check
+	@# render_gl/java を直したのに flix.toml の jar の行を書き換え忘れると、lib/ の無い所は古い jar で組まれる。
+	@$(MAKE) --no-print-directory gl-jar-pin-check
 	@echo "[release] v$(VERSION) を $(RELEASE_SHA) で公開します"
 # Studio の NewGame.flix は AGENTS.md の組み立て（bin/fge sync-agents）を Flix で持ち直している。
 # sync-agents の出力の形を変えた版を出すと、Studio の CI（check-agents-parity）がその版の同梱で落ちる。
@@ -835,8 +903,7 @@ RELEASE_GATES := release-guard studio-parity sync $(TEST) gl-parity
 release: release-verify
 
 # release-publish の後半 (配る物を組んで Release に付ける)。CI だけが流す。
-# WhyNot: GL の層の jar を Release に添えずに出さない — flix.toml の [jar-dependencies] がこの Release から取りに行き、
-# lib/ の無いゲームが組めなくなる。
+# GL の層の jar は版の Release に添えない。flix.toml は版でなく置き場 fge-gl-<ハッシュ> を指す (make gl-jar-publish)。
 release-assets:
 	cd $(ENGINE_FULL_DIR) && "$(FLIX)" build-pkg
 	@# WhyNot: build-pkg の後に置くのは、zip の中身に engine_full.fpkg が入るため。
@@ -846,7 +913,6 @@ release-assets:
 	  --title "v$(VERSION)" --generate-notes \
 	  "$(ENGINE_FULL_FPKG_SRC)#$(ENGINE_FULL_FPKG_NAME)" \
 	  "$(ENGINE_FULL_TOML_SRC)#$(ENGINE_FULL_TOML_NAME)" \
-  "$(GL_JAR)#$(GL_JAR_NAME)" \
 	  "$(BUNDLE_ZIP)" "$(BUNDLE_SUMS)"
 
 # 手元で門を通し、通した commit を印に書く。公開は CI の release-publish がする。
@@ -880,6 +946,8 @@ release-publish: release-marker-check
 	@$(MAKE) --no-print-directory go-build
 	@$(MAKE) --no-print-directory release-guard
 	@$(MAKE) --no-print-directory sync
+	@# WhyNot: gl-jar.yml に任せきらない — あちらが落ちていても、版を出す時に flix.toml が指す jar の置き場は必ず埋まる。
+	@$(MAKE) --no-print-directory gl-jar-publish
 	@$(MAKE) --no-print-directory release-assets
 	@echo "[release] v$(VERSION) を CI から公開しました。外部 fetch 検証: lib/ を消したサンプルで github:ababup1192/flix_game_engine v$(VERSION) を引けるか確認してください"
 	@echo "[release] 任意: ゲームを追随させた後に make agent-eval-release で道具の選び方を測り、前の版と比べる（約 20 分・下がったお題が出る。docs/agent-eval.md）"
@@ -939,16 +1007,16 @@ bundle-zip: go-build
 # sed でなく perl なのは BSD/GNU の -i の非互換を踏まないため (toml は ASCII なので byte 処理で安全)。
 bump:
 	@test -n "$(FROM)" && test -n "$(TO)" || { echo "usage: make bump FROM=0.1.0 TO=0.1.1"; exit 1; }
+	@# WhyNot: 書き換える前にも見る — 後でだけ見ると、pin の忘れで止まった時に版の字だけ書き換わった途中の形が残る。
+	@$(MAKE) --no-print-directory gl-jar-pin-check
 	@for f in $(ENGINE_DIR) $(RENDER_GL_DIR) $(ENGINE_WORLD_DIR) $(ENGINE_TOOLS_DIR) $(ENGINE_FULL_DIR); do \
 		perl -pi -e 's/^(version\s*=\s*)"\Q$(FROM)\E"/$${1}"$(TO)"/' "$$f/flix.toml"; \
 	done
 	@for f in $(ENGINE_DIR)/flix.toml $(RENDER_GL_DIR)/flix.toml $(ENGINE_WORLD_DIR)/flix.toml $(ENGINE_TOOLS_DIR)/flix.toml $(ENGINE_FULL_DIR)/flix.toml templates/*/flix.toml bench/*/flix.toml flix_ge_shapes/flix.toml; do \
 		[ -f "$$f" ] && perl -pi -e 's|(ababup1192/flix_[a-z_]*"[^"]*version = )"[0-9]+\.[0-9]+\.[0-9]+"|$${1}"$(TO)"|g' "$$f" || true; \
 	done
-	@# GL の層の jar の名前と置き場（Release の版のフォルダ）も版に付いて動く。
-	@for f in flix.toml $(RENDER_GL_DIR)/flix.toml $(ENGINE_FULL_DIR)/flix.toml; do \
-		perl -pi -e 's|/download/v\Q$(FROM)\E/fge-gl-\Q$(FROM)\E\.jar|/download/v$(TO)/fge-gl-$(TO).jar|g; s|"fge-gl-\Q$(FROM)\E\.jar"|"fge-gl-$(TO).jar"|g' "$$f"; \
-	done
+	@# GL の層の jar の行は版を持たない（置き場は render_gl/java のハッシュ）。上の置き換えが触っていないかだけ見る。
+	@$(MAKE) --no-print-directory gl-jar-pin-check
 	@perl -pi -e 's/^(VERSION := ).*/$${1}$(TO)/' Makefile
 	@$(MAKE) --no-print-directory api-digest VERSION=$(TO)
 	@# WhyNot: リリースの中でなく bump で作るのは、release の途中で作ると未コミットの

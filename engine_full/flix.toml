@@ -23,7 +23,7 @@ repository  = "github:ababup1192/flix_game_engine"
 # Windows / macOS(Intel, ARM) / Linux(x64, ARM) を全部宣言しておけば、
 # どの OS でビルドしても追加設定なしでそのまま動く。
 [jar-dependencies]
-"fge-gl-0.84.1.jar" = "url:https://github.com/ababup1192/flix_game_engine/releases/download/v0.84.1/fge-gl-0.84.1.jar"
+"fge-gl-804005f4518b.jar" = "url:https://github.com/ababup1192/flix_game_engine/releases/download/fge-gl-804005f4518b/fge-gl-804005f4518b.jar"
 "lwjgl-3.4.1-natives-macos-arm64.jar"        = "url:https://repo1.maven.org/maven2/org/lwjgl/lwjgl/3.4.1/lwjgl-3.4.1-natives-macos-arm64.jar"
 "lwjgl-opengl-3.4.1-natives-macos-arm64.jar" = "url:https://repo1.maven.org/maven2/org/lwjgl/lwjgl-opengl/3.4.1/lwjgl-opengl-3.4.1-natives-macos-arm64.jar"
 "lwjgl-stb-3.4.1-natives-macos-arm64.jar"    = "url:https://repo1.maven.org/maven2/org/lwjgl/lwjgl-stb/3.4.1/lwjgl-stb-3.4.1-natives-macos-arm64.jar"

@@ -312,7 +312,7 @@ func resolveExportWebPaths(o exportWebOptions) (exportWebPaths, int, error) {
 	v := p.Version
 	p.FullWebFpkg = filepath.Join(p.Engine, "build", "engine_full_web", "artifact", "package.fpkg")
 	p.FullWebToml = filepath.Join(p.Engine, "build", "engine_full_web", "flix.toml")
-	p.GlJar = filepath.Join(p.Engine, "build", "gl-jar", "fge-gl-"+v+".jar")
+	p.GlJar = filepath.Join(p.Engine, "build", "gl-jar", glJarNameOf(p.FullWebToml, v))
 	p.WebJar = filepath.Join(p.Engine, "build", "web-jar", "fge-web-"+v+".jar")
 	p.WebToolsJar = filepath.Join(p.Engine, "build", "web-jar", "fge-web-tools-"+v+".jar")
 	p.WebJS = filepath.Join(p.Engine, "engine_web", "js", "fge-web.js")
@@ -981,6 +981,23 @@ func humanBytes(n int64) string {
 func fileExists(p string) bool {
 	info, err := os.Stat(p)
 	return err == nil && !info.IsDir()
+}
+
+var glJarDepRe = regexp.MustCompile(`^\s*"(fge-gl-[^"]+\.jar)"\s*=`)
+
+// glJarNameOf は、組む flix.toml の [jar-dependencies] が宣言する GL の層の jar の名前を返す。
+// WhyNot: 名前を版から組み立てない — jar の置き場は render_gl/java の中身のハッシュで名付け、版とは別に変わる。
+// 宣言と違う名前で lib/external に置くと、Flix が置き場のリリースへ取りに行く。
+func glJarNameOf(toml, version string) string {
+	b, err := os.ReadFile(toml)
+	if err == nil {
+		for _, line := range strings.Split(string(b), "\n") {
+			if m := glJarDepRe.FindStringSubmatch(line); m != nil {
+				return m[1]
+			}
+		}
+	}
+	return "fge-gl-" + version + ".jar"
 }
 
 func dirExists(p string) bool {

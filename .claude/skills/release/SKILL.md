@@ -42,12 +42,12 @@ allowed-tools: Read, Grep, Glob, Bash
 - [ ] 2. 手元で make release（= make release-verify。通した commit を release/verified.txt に書く）
 - [ ] 3. release/verified.txt をコミット / main へ push（2 と 3 の間に main へほかを入れない）
 - [ ] 4. Actions の release を main で起動（CI が make release-publish）
-- [ ] 5. lib/ を消したコピーで外部 fetch 検証（fpkg と toml に加え、GL の層の jar `fge-gl-<版>.jar` も Release から取れて build と run が通るか）
+- [ ] 5. lib/ を消したコピーで外部 fetch 検証（fpkg と toml に加え、GL の層の jar `fge-gl-<ハッシュ>.jar` も置き場の Release から取れて build と run が通るか）
 ```
 
 手元の `make release` は release-guard → studio-parity → `sync` → `test-par-all`（全量ゲート）→ `gl-parity` を通して
 印を書くだけで、公開はしない。CI は、印の版が `VERSION` と同じか・印の commit から HEAD までの差が印だけか・
-タグがまだ無いかを見て（`make release-marker-check`）、`sync` → build-pkg → `bundle-zip` → `gh release create` を
+タグがまだ無いかを見て（`make release-marker-check`）、`sync` → `gl-jar-publish` → build-pkg → `bundle-zip` → `gh release create` を
 流す。tag は印を載せた commit に付く。2 の後に 1 行でも変えたら止まるので、2 からやり直す。
 CI ではテストを流し直さない（スナップショットが OS と JRE のフォントの差でずれる。`release-gate.yml` と同じ）。
 窓を開く門（`make determinism`・`make gl-capture-check`・`make smoke-devtools`）は `make release` に入っていないので、
@@ -61,6 +61,29 @@ CI ではテストを流し直さない（スナップショットが OS と JRE
 `flix_game_engine-engine-v<バージョン>.zip` に固める。中身の一覧は
 `bin/lint-rules/stage-engine.json` が source of truth で、組み立てた後に `check-refs --bundle` 相当の
 照合まで通る。lwjgl（Maven）の種は入っていない（Studio 側が自分の `server/lib` から渡す）。
+
+## GL の層の jar の置き場（版とは別）
+
+`flix.toml`（ルート）・`render_gl/flix.toml`・`engine_full/flix.toml` の `[jar-dependencies]` は、GL の層の jar を
+**版のリリースでなく** Release `fge-gl-<ハッシュ>` の `fge-gl-<ハッシュ>.jar` から取る。ハッシュは `render_gl/java` の
+`*.java` の中身と組み方（`--release` と LWJGL の版）から make が出す 12 桁で、Java を直した時だけ変わる。
+版を上げても jar の行は変わらない（`make bump` は触らず、前後で `make gl-jar-pin-check` を通す）。
+
+`render_gl/java` を直したら:
+
+1. `make gl-jar-pin` … 3 つの flix.toml の jar の行を新しいハッシュへ書き換える（Java の変更と同じコミットに入れる）
+2. 置き場を作る … 次のどちらか（どちらも、その Release と jar がもうあれば何もしない）
+   - main へ push する → `.github/workflows/gl-jar.yml` が `make gl-jar-publish` を流す
+   - main より先に作るなら手で `make gl-jar-publish GL_JAR_TARGET=<push 済みの commit か枝>`（`gh` の認証が要る。jar は作業ツリーから組むので、`render_gl/java` をその commit と同じにしておく）
+
+忘れた時の門: コミットでは `bin/fge precommit` の localGate（ルートの `make precommit-local`）が、毎回
+`make gl-jar-pin-check` を流す（1 秒かからない）。`make bump` も前後で流す。`make release` の release-guard も同じ検査を通し、
+CI の `make release-publish` は版を出す前に `make gl-jar-publish` で置き場を埋める。
+
+置き場の Release は `--prerelease --latest=false` で作る（「最新のリリース」は版のリリースのままにする。`bin/fge fetch-engine` が
+`releases/latest` でそれを見る）。`make gl-jar` は同じ機械・同じ JDK なら同じソースから同じバイトの jar を作る（中の時刻は `--date` で固定。JDK や機械が違えばバイトはずれうるが、pin はソースのハッシュなので門は変わらない）。
+
+`bin/fge export-web` は、書き出しの flix.toml（engine_full_web）が宣言する名前で `build/gl-jar` の jar を拾い、ゲームの `lib/external` へ置く。手元の書き出しは置き場の Release へ取りに行かない。
 
 ## こけやすいゲート（特にエンジン拡張のあと）
 
