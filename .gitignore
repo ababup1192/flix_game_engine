@@ -76,3 +76,6 @@ go/go.exe
 # engine リポの中のテンプレートが lint の時に張る、engine の規約へのリンク（mk/game.mk の lint-rules-link）。ゲーム固有の .local.json は追跡する。
 templates/*/bin/lint-rules/*.json
 !templates/*/bin/lint-rules/*.local.json
+
+# devbox が作る手元の錠。テンプレは devbox.json だけを配る
+templates/*/devbox.lock
