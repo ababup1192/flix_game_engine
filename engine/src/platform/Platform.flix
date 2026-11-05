@@ -12,6 +12,7 @@
 // マウスの押したフラグを分け合うので同じ組から張る。
 
 pub mod Platform {
+    import java.lang.{Object => JObject}
 
     /// キー・マウス・ゲームパッドの今の状態を読む。
     pub eff Input {
@@ -105,6 +106,27 @@ pub mod Platform {
         def drawScene3d(cmd: Scene3d.RenderCmd): Unit
     }
 
+    /// 描くのと重ねて進める仕事を 1 つずつ預ける口。
+    /// startTask で預けた仕事の値は、次の finishTask の答えになる（預けたまま次を預けない）。仕事の中で投げた物は finishTask が投げ直す。
+    // WhyNot: スレッドを App の側で立てない — ブラウザ版の書き出し（TeaVM）は呼ばれない道もたどるので、使わないゲームにまでスレッドの class が入る。
+    pub eff Tasks {
+        def startTask(task: Unit -> JObject \ IO): Unit
+        def finishTask(): JObject
+    }
+
+    /// 仕事を重ねない handler（ブラウザ版・窓の無い描き手）: 預けた仕事を finishTask の時にその場で走らせる。
+    pub def runTasksInPlace(f: Unit -> a \ ef): a \ (ef - Tasks) + IO =
+        let held = Ref.fresh(Static, None);
+        run f() with handler Tasks {
+            def startTask(task, k) =
+                if (Option.nonEmpty(Ref.get(held))) bug!("Platform.Tasks: 前に預けた仕事を finishTask で受け取る前に、次を預けた")
+                else { Ref.put(Some(task), held); k(()) }
+            def finishTask(k) = match Ref.get(held) {
+                case Some(task) => { Ref.put(None, held); k(task()) }
+                case None       => bug!("Platform.Tasks: finishTask の前に startTask で預けていない")
+            }
+        }
+
     /// 3D を描かない handler の組（ブラウザ版・テストの偽物）が張る、3D の場面を捨てる handler。
     pub def runNoopDraw3d(f: Unit -> a \ ef): a \ ef - Draw3d =
         run f() with handler Draw3d {
@@ -165,5 +187,5 @@ pub mod Platform {
     pub type alias Rendering = Draw2d + Draw3d + GpuResources
 
     /// App.launch が要る機種の effect の束。
-    pub type alias Services = Input + Window + FrameClock + Rendering + RenderTarget.Target + GameEngine.Audio + Diagnostics
+    pub type alias Services = Input + Window + FrameClock + Rendering + RenderTarget.Target + GameEngine.Audio + Diagnostics + Tasks
 }

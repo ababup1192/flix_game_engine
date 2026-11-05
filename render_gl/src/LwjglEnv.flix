@@ -6,6 +6,7 @@ mod LwjglEnv {
 
     /// 実機の窓の起動を変える環境変数の値。
     /// hidden: FLIX_GE_HIDDEN を置いた（値は問わない）。隠しウィンドウで framebuffer を design の大きさに固定し、垂直同期を待たない。
+    /// noVsync: FLIX_GE_NO_VSYNC を置いた（値は問わない）。見える窓のまま垂直同期を待たない（60 fps より上の 1 コマの時間を測る）。
     /// muted: FLIX_GE_MUTE が空でも "0" でもない。全体の音量を 0 にする。
     /// frameStats: FLIX_GE_FRAME_STATS が空でない。1 コマの時間を数える（RenderFrameStats）。
     /// frameShotDir: FLIX_GE_FRAME_SHOT のフォルダ（空なら無し）。swap の直前の絵を frame-N.png へ書く。
@@ -15,6 +16,7 @@ mod LwjglEnv {
     /// 縦の指定（web.portraitDesign）を持つゲームを、縦に持ったスマホの design で起動する（LwjglLayer.withProject）。
     pub type alias Settings = {
         hidden = Bool,
+        noVsync = Bool,
         muted = Bool,
         frameStats = Bool,
         frameShotDir = Option[String],
@@ -43,6 +45,7 @@ mod LwjglEnv {
     pub def fromMap(env: Map[String, String]): Settings =
         let filled = name -> Map.get(name, env) |> Option.filter(value -> value != "");
         { hidden = Map.memberOf("FLIX_GE_HIDDEN", env),
+          noVsync = Map.memberOf("FLIX_GE_NO_VSYNC", env),
           muted = filled("FLIX_GE_MUTE") |> Option.exists(value -> value != "0"),
           frameStats = Option.nonEmpty(filled("FLIX_GE_FRAME_STATS")),
           frameShotDir = filled("FLIX_GE_FRAME_SHOT"),

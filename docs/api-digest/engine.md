@@ -918,6 +918,11 @@
   `pub eff Draw3d`
 - 3D の場面 1 つを、次の Draw2d.renderCommands の列へ積む（深度で前後を決め、2D の並びの中では cmd#scene#zIndex の 1 点に入る）。
   `pub eff Draw3d { def drawScene3d(cmd: Scene3d.RenderCmd): Unit }`
+- `pub eff Tasks`
+- `pub eff Tasks { def startTask(task: Unit -> JObject \ IO): Unit }`
+- `pub eff Tasks { def finishTask(): JObject }`
+- 仕事を重ねない handler（ブラウザ版・窓の無い描き手）: 預けた仕事を finishTask の時にその場で走らせる。
+  `pub def runTasksInPlace(f: Unit -> a \ ef): a \ (ef - Tasks) + IO`
 - 3D を描かない handler の組（ブラウザ版・テストの偽物）が張る、3D の場面を捨てる handler。
   `pub def runNoopDraw3d(f: Unit -> a \ ef): a \ ef - Draw3d`
 - GPU に置く資源（タイルのバッファ・テクスチャ・字・シェーダーのプログラム）を用意し、寸法を引く。
@@ -948,7 +953,7 @@
 - 描く effect の束（同じ handler の組から張る 3 つ。上の「積む op と出す op」）。
   `pub type alias Rendering = Draw2d + Draw3d + GpuResources`
 - App.launch が要る機種の effect の束。
-  `pub type alias Services = Input + Window + FrameClock + Rendering + RenderTarget.Target + GameEngine.Audio + Diagnostics`
+  `pub type alias Services = Input + Window + FrameClock + Rendering + RenderTarget.Target + GameEngine.Audio + Diagnostics + Tasks`
 
 ## Polygon — `engine/src/render2d/Polygon.flix`
 - 任意の頂点列から Polygon を生成する（alpha=1.0 不透明）。

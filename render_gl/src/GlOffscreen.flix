@@ -370,7 +370,7 @@ pub mod GlOffscreen {
 
     /// handle が受け持つ effect の束（GpuShot の型の差に使う）。音は持たない。
     pub type alias HandledEffects = Platform.Input + Platform.Window + Platform.FrameClock + Platform.Rendering
-                             + Platform.Diagnostics + Platform.Annotation + RenderTarget.Target
+                             + Platform.Diagnostics + Platform.Annotation + RenderTarget.Target + Platform.Tasks
 
     /// f の中の Platform の effect と Target を、このセッションの FBO へ塗る形で受ける（App の 1 コマを描く口をそのまま呼べる）。
     /// 入力・カーソル・窓の問いには「何も起きていない」で答える。画面のコマは最後の 1 枚が FBO に残る（readImage・readRgba で読む）ので、
@@ -385,9 +385,10 @@ pub mod GlOffscreen {
         RenderPaintHandlers.handleTarget(gl, paint, size, () ->
         handleWindowless(s#design, () ->
         RenderPaintHandlers.handleDiagnostics(paint, () ->
+        Platform.runTasksInPlace(() ->
         RenderPaintHandlers.handleDraw3d(paint, () ->
         RenderPaintHandlers.handleDraw2d(gl, paint, size, (_, _) -> s#glLog#onScreenFrame(), () ->
-        RenderPaintHandlers.handleGpuResources(gl, paint, s#fonts, f))))))
+        RenderPaintHandlers.handleGpuResources(gl, paint, s#fonts, f)))))))
 
     /// 窓の無い所の入力・窓・時計・注釈: 何も押されていない・閉じない・1/60 秒ずつ進む・注釈は書かない。
     def handleWindowless(design: Vec2.Vec2, f: Unit -> a \ ef): a \ ef - Platform.Input - Platform.Window - Platform.FrameClock - Platform.Annotation =

@@ -536,3 +536,12 @@ mip copy（登録の絵の読み戻し）はこのゲームでは一度も起き
 
 - 材質のプログラムの置き場の追い出し（上限 = 今使っている数の 2 倍・16 以上）が、たまにしか出ない物のプログラムを消す。ゲームの先上げで逃げたが、形と絵と同じく「上限を超えた時だけ」にそろえるかは engine の相談。
 - 骨つきの物は視錐台の外でも描く（`Scene3d.isOutsideFrustumFields`）。300 体のうち画面の外の敵も毎コマ描いている。境界を姿勢で広げて間引くかは B・A の前に測る価値がある。
+
+### 測って分かったこと（2026-11-05）
+
+- 骨つきの物の視錐台の間引きは、conduit_hive ではゲームが区画と球で先に間引いているので効かない（描いた数が 553 のまま）。
+- A（インスタンシング）の上限は draw call 566 → 100 で submit −2.6 ms（1 コマの 1 割）。8〜10 日に対して小さいので後回し。
+- 1 コマの CPU の約 3 分の 1 が Flix のレコードの欄の読み取り（RecordExtend.lookupField）。熱い所は配列とタプルで回すと効く（押し合い）。
+- 規則と描くのを重ねる `App.withPipelinedRendering`（`Platform.Tasks` の handler）で horde1000 は 17.3 → 12.0 ms。
+- 次の版の migrations に書く: `Platform.Services` に `Platform.Tasks` が入った。Services の handler の組を自前で重ねている所は `Platform.runTasksInPlace(…)` を 1 段足す。計測で垂直同期を切るのは `FLIX_GE_NO_VSYNC=1`。
+- まだ無いテスト: Runner の重ねる道（描くのは reloaded・音と出力と履歴は advanced・updateNs は待った時間）を固定する物。

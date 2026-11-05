@@ -69,11 +69,12 @@ pub mod WebLayer {
             RenderPaintHandlers.handleTarget(gl, paint, framebufferSize, () ->
             RenderPaintHandlers.handleDiagnostics(paint, () ->
             Platform.runNoopDraw3d(() ->
+            Platform.runTasksInPlace(() ->
             handleFrameClock(state, () ->
             handleWindow(state, () ->
             RenderPaintHandlers.handleDraw2d(gl, paint, framebufferSize, (_, _) -> checked_ecast(()), () ->
             handleInput(state, () ->
-            RenderPaintHandlers.handleGpuResources(gl, paint, fonts, f))))))))));
+            RenderPaintHandlers.handleGpuResources(gl, paint, fonts, f)))))))))));
         Browser.ended();
         result
 

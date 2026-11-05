@@ -501,6 +501,14 @@ World に写し、`FrameDiagnostics.summaryLines(d)` をゲームの字の部品
 `FLIX_GE_FRAME_STATS=1` の println は窓ごとの平均を標準出力へ書くだけで GPU を含まない。こちらはゲームの画面に出せて、GPU を含む。
 自前で `System.nanoTime` を測って出さない（GPU の仕事は CPU の時計では swap の待ちに混ざって見えない）。
 
+### 規則と描くのを重ねる（App.withPipelinedRendering）
+
+規則（系）の 1 コマと描く 1 コマが直列だと、群れの多い場面で 60 fps を割る。効果の無い App（`App[w, {}]`）は
+`app |> App.withPipelinedRendering` で、次のコマの World を別のスレッドで進めながら 1 つ前の World を描ける（Bevy の pipelined rendering）。
+進める時間が描く時間と GPU を待つ時間の陰に隠れる（conduit_hive の 1000 体で 1 コマ 17 ms → 12 ms）。代わりに入力が画面に出るまでが 1 コマ遅れ、
+音は絵より 1 コマ早い。重ねるのは機種の `Platform.Tasks` の handler で、デスクトップは別のスレッド 1 本・ブラウザ版はその場で順に進める。
+60 fps より上を測る時は `FLIX_GE_NO_VSYNC=1`（見える窓のまま垂直同期を待たない。隠し窓の `FLIX_GE_HIDDEN` は描き先が design に縮む）。
+
 ### 3D の場面の描く量（視錐台の外を間引く）
 
 GL と CPU の描き手は、カメラの視錐台の外の置いた物とビルボードを描かない（`Scene3d.isOutsideFrustum`・1 物あたり角 8 つ × 面 6 つの判定）。

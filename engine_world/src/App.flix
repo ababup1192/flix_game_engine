@@ -229,6 +229,8 @@ pub mod App {
         // 物理・当たり判定を実時間でなく固定量子で進めたいゲームの刻み幅（秒）。None = 可変 dt
         // のまま（既定・全既存ゲームはこちら）。withFixedStep で有効化する（詳細は同関数を参照）。
         fixedStep = Option[Float64],
+        // 次のコマの World を別のスレッドで進めながら、1 つ前の World を描くか（withPipelinedRendering）。
+        pipelinedRendering = Bool,
         // 遊びの時計（addClock で宣言）を 1 フレームぶん進める関数の列・追加順。引数は実時間の dt。
         clocks = List[(Float64, w) -> w],
         // 毎フレームの「マウスの矢印をどう見せたいか」の宣言（withCursor）。None = App は触らない（F8 の十字だけ）。
@@ -295,6 +297,7 @@ pub mod App {
           shot = None,
           remoteHandlers = Nil,
           fixedStep = None,
+          pipelinedRendering = false,
           clocks = Nil,
           cursor = None,
           fullscreen = None,
@@ -616,6 +619,15 @@ pub mod App {
     /// 呼ばなければ現行の可変 dt のまま挙動は変わらない。
     pub def withFixedStep(dtSeconds: Float64, app: App[w, ef]): App[w, ef] =
         App.App({ fixedStep = Some(dtSeconds) | rec(app) })
+
+    /// 実機のループで、次のコマの World を別のスレッドで進めながら、1 つ前の World を描いて画面へ出す（Bevy の pipelined rendering と同じ考え）。
+    /// 進める時間が描く時間（と GPU を待つ時間）の陰に隠れる。代わりに、入力が画面に出るまでが 1 コマ遅れ、
+    /// 音は進めた World から鳴るので絵より 1 コマ早い。World の並びは変わらない（trace・台本・/step・描き出しは今まで通り 1 本で進める）。
+    /// 効果の無い App だけが使える（別のスレッドには handler が無いので、効果のある系を持ち込めない）。
+    /// F8 で止めた画面とリモートの撮影（/shot）は、その時の World（画面より 1 コマ先）を描く。
+    /// 重ねるのは機種の Platform.Tasks の handler（デスクトップは描く手と別のスレッド 1 本・ブラウザ版と窓の無い描き手はその場で順に）。
+    pub def withPipelinedRendering(app: App[w, {}]): App[w, {}] =
+        App.App({ pipelinedRendering = true | rec(app) })
 
     /// World の欄にある遊びの時計（Clock.Clock[c]）を、App が毎フレーム 1 回だけ進めるよう宣言する。
     /// clockOf / withClock は欄の読み書き、paceOf はこのフレームの進み方（止める理由 Run と

@@ -11,6 +11,13 @@ mod TestLwjglEnv {
         Assert.assertEq(expected = (false, false, false, None, None, None),
                         (s#hidden, s#muted, s#frameStats, s#frameShotDir, s#splashShotPath, s#fixedDt))
 
+    /// FLIX_GE_NO_VSYNC は置けば値を問わず入り、置かなければ切れている。
+    @Test
+    def testNoVsyncIsSetByPresence(): Unit \ Assert =
+        Assert.assertEq(expected = (true, true, false),
+                        (LwjglEnv.fromMap(Map#{"FLIX_GE_NO_VSYNC" => "1"})#noVsync, LwjglEnv.fromMap(Map#{"FLIX_GE_NO_VSYNC" => ""})#noVsync,
+                         LwjglEnv.fromMap(Map.empty())#noVsync))
+
     /// 旗ごとの値の読み方: HIDDEN は置けば値を問わず入る・MUTE は "0" と空で切れる・FRAME_STATS は空だけで切れる。
     @Test
     def testFlagsReadTheirOwnOffValues(): Unit \ Assert =

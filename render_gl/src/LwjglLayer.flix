@@ -28,6 +28,8 @@ pub mod LwjglLayer {
     import java.util.ArrayList
     import java.lang.Exception
     import java.lang.Math
+    import java.lang.{Object => JObject, Runnable, Runtime, Thread, Throwable}
+    import java.util.concurrent.{Callable, ExecutionException, Executors, Future, ThreadFactory}
     import java.awt.BasicStroke
     import java.awt.{Color => AwtColor}
     import java.awt.image.BufferedImage
@@ -336,7 +338,7 @@ pub mod LwjglLayer {
         GLFW.glfwMakeContextCurrent(window);
         // 隠しウィンドウでは垂直同期を待たない — 見えないウィンドウ・画面ロック中は swap 1 回が
         // 1 秒級に落ちることがあり、harness の実行時間と安定性を壊す。
-        GLFW.glfwSwapInterval(if (hidden) 0 else 1);
+        GLFW.glfwSwapInterval(if (hidden or env#noVsync) 0 else 1);
         // Sticky mouse buttons: 1 フレーム未満の press→release（macOS の
         // トラックパッド「タップでクリック」など）が polling で取りこぼされる
         // のを防ぐ。次回 `glfwGetMouseButton` 呼び出し時に PRESS を 1 度返してから
@@ -506,7 +508,7 @@ pub mod LwjglLayer {
                         frameShotDir = env#frameShotDir, frameShotTaken = frameShotTaken, finishAfterSwap = finishAfterSwap,
                         screenPainted = Ref.fresh(Static, None) };
         let windowState = {
-            window = window, config = config, hidden = hidden, looping = looping, devices = devices,
+            window = window, config = config, hidden = hidden, noVsync = env#noVsync, looping = looping, devices = devices,
             design = design, cursors = cursors#lookup, lastCursor = lastCursorHolder,
             mouseCaptured = Array#{false} @ Static, cursorVisible = Array#{true} @ Static,
             fullscreen = fullscreenHolder, originalWindowRect = originalWindowRectHolder, present = present
@@ -523,12 +525,13 @@ pub mod LwjglLayer {
             RenderPaintHandlers.handleTarget(gl, paint, framebufferSize, () ->
             handleAnnotation(annotation, () ->
             RenderPaintHandlers.handleDiagnostics(paint, () ->
+            handleTasks(() ->
             RenderPaintHandlers.handleDraw3d(paint, () ->
             handleFrameClock({ fixedDt = env#fixedDt, maxDeltaTime = config#maxDeltaTime, last = timeHolder }, () ->
             handleWindow(windowState, () ->
             RenderPaintHandlers.handleDraw2d(gl, paint, framebufferSize, (paintFrom, paintTo) -> { Ref.put(Some((paintFrom, paintTo)), present#screenPainted); opened#onScreenFrame() }, () ->
             LwjglInput.handleInput(devices, () ->
-            RenderPaintHandlers.handleGpuResources(gl, paint, fonts, f)))))))))));
+            RenderPaintHandlers.handleGpuResources(gl, paint, fonts, f))))))))))));
 
         List.forEach(c -> GLFW.glfwDestroyCursor(c), cursors#handles);
         closeAudio(audio);
@@ -544,9 +547,50 @@ pub mod LwjglLayer {
     // effect ごとの handler（withLwjgl が重ねる）
     // ========================================================================
 
+    /// 仕事を重ねる handler: 預けた仕事を描く手と別のスレッド 1 本で走らせ、finishTask で待って受け取る（仕事の例外は包みを外して投げ直す）。
+    /// CPU が 1 つの機械はその場で順に走らせる。
+    // WhyNot: 共有のスレッドの組（ForkJoinPool.commonPool）に預けない — ゲームや同じ JVM の道具の仕事と取り合い、1 コマの時間が揺れる。
+    pub def handleTasks(f: Unit -> a \ ef): a \ (ef - Platform.Tasks) + IO =
+        if (Runtime.getRuntime().availableProcessors() < 2) Platform.runTasksInPlace(f)
+        else {
+            let pool = Executors.newSingleThreadExecutor(taskThreads());
+            let held = Ref.fresh(Static, None);
+            let result = try {
+                run f() with handler Platform.Tasks {
+                    def startTask(task, k) = if (Option.nonEmpty(Ref.get(held))) bug!("Platform.Tasks: 前に預けた仕事を finishTask で受け取る前に、次を預けた") else {
+                        Ref.put(Some(pool.submit(new Callable[JObject] { def call(_this: Callable[JObject]): JObject \ IO = task() })), held);
+                        k(())
+                    }
+                    def finishTask(k) = match Ref.get(held) {
+                        case Some(future) => { Ref.put(None, held); k(valueOrThrow(future)) }
+                        case None         => bug!("Platform.Tasks: finishTask の前に startTask で預けていない")
+                    }
+                }
+            } catch {
+                case e: Throwable => { discard pool.shutdownNow(); throw e }
+            };
+            discard pool.shutdownNow();
+            result
+        }
+
+    /// 終わった仕事の値（仕事が例外で終わっていたら、包みを外した元の例外を投げる）。
+    def valueOrThrow(future: Future[JObject]): JObject \ IO =
+        try { future.get() } catch {
+            case e: ExecutionException => { let cause = e.getCause(); if (Object.isNull(cause)) throw e else throw cause }
+        }
+
+    /// 仕事のスレッドを作る factory（daemon・名前つき。窓を閉じた時にプロセスの終わりを止めない）。
+    def taskThreads(): ThreadFactory \ IO =
+        new ThreadFactory {
+            def newThread(_this: ThreadFactory, task: Runnable): Thread \ IO =
+                let thread = new Thread(task, "fge-pipelined-step");
+                thread.setDaemon(true);
+                thread
+        }
+
     /// Platform.Window の handler の状態。mouseCaptured = キャプチャしているか・cursorVisible = キャプチャを放した時に戻す矢印の見せ方（setCursorVisible の宣言）。
     type alias WindowState = {
-        window = Int64, config = GameEngine.EngineConfig, hidden = Bool, looping = Array[Bool, Static],
+        window = Int64, config = GameEngine.EngineConfig, hidden = Bool, noVsync = Bool, looping = Array[Bool, Static],
         devices = LwjglInput.Devices, design = Vec2.Vec2,
         cursors = GameEngine.Cursor -> Int64, lastCursor = Array[GameEngine.Cursor, Static],
         mouseCaptured = Array[Bool, Static], cursorVisible = Array[Bool, Static],
@@ -573,7 +617,7 @@ pub mod LwjglLayer {
                 // WhyNot: 隠しウィンドウでは 1 に戻さない — 見えないウィンドウの swap は 1 回が 1 秒級に落ちる（ウィンドウを作る所と同じ理由）。
                 if (not Array.get(0, ws#looping)) {
                     Array.put(true, 0, ws#looping);
-                    GLFW.glfwSwapInterval(if (ws#hidden) 0 else 1)
+                    GLFW.glfwSwapInterval(if (ws#hidden or ws#noVsync) 0 else 1)
                 } else ();
                 LwjglInput.poll(ws#devices);
                 k(())

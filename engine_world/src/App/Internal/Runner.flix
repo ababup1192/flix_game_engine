@@ -2,6 +2,7 @@
 // ループの状態（LoopState）はここだけが持つ。ゲームからは呼ばない（App の中身。ゲームの src・test で App.Internal. を書くと lint が止める）。
 pub mod App.Internal.Runner {
     import java.lang.System
+    import java.lang.{Object => JObject}
 
     /// 起動の World: 登録簿が無ければ init + 起動時の系、あれば START（無ければ先頭の始まり）。
     /// 始まりの下地は、reread なら freshWorld（Doc を全部読み直す）、そうでなければ init + 起動時の系。
@@ -288,15 +289,19 @@ pub mod App.Internal.Runner {
           outputKeys = App.Internal.Output.keysAfterJump(app, resumed#world, st#outputKeys) | st }
 
     /// ふつうのフレーム: World を進めて（traceFrame）、音を鳴らし、描き、見張り・履歴・出力・窓の宣言を済ませた次の状態。
-    def runningStep(app: App[w, ef], hooks: App.Internal.DevTools.Hooks[w, ef, efTools], frame: App.Frame, frameStart: Int64, st: LoopState[w]): LoopState[w] \ (ef + Platform.Window + Platform.Rendering + RenderTarget.Target + GameEngine.Audio + Platform.Diagnostics + Fs.FileRead + Fs.FileWrite + IO) =
+    def runningStep(app: App[w, ef], hooks: App.Internal.DevTools.Hooks[w, ef, efTools], frame: App.Frame, frameStart: Int64, st: LoopState[w]): LoopState[w] \ (ef + Platform.Window + Platform.Rendering + RenderTarget.Target + GameEngine.Audio + Platform.Diagnostics + Platform.Tasks + Fs.FileRead + Fs.FileWrite + IO) =
         let r = App.rec(app);
         // 止めていた間・リモートのコマで塗った分は、このコマの診断に混ぜない。
         let collecting = r#diagnostics or hooks#wantsDiagnostics(st#tools);
         if (collecting) discard Platform.Diagnostics.consumeDiagnostics() else ();
         let (watched, watchedTools, watchFired) = hooks#beginFrame(frame#dt, st#world, st#tools);
         let (reloaded, reloadFired) = applyReload(r, frame, watched, f -> hooks#runReload(watchedTools, "key", f));
+        // WhyNot: 重ねる App で進めた後の World（advanced）を描かない — 進め終わるのを待ってからでないと描けず、重ねる分が無くなる。
+        if (r#pipelinedRendering) submitTraceFrame(app, frame, st#stepState, reloaded) else ();
+        let paintedEarly = if (r#pipelinedRendering) Some(paintAndPresent(app, st, frame, reloaded, watchFired or reloadFired)) else None;
+        let waitStart = System.nanoTime();
         // 1 フレームの中身は trace・台本・/step と同じ traceFrame の 1 本（音の名前もここで導く）。
-        let (traced, nextStepState) = App.traceFrame(app, frame, st#stepState, reloaded);
+        let (traced, nextStepState) = if (r#pipelinedRendering) joinTraceFrame() else App.traceFrame(app, frame, st#stepState, reloaded);
         let updatedAt = System.nanoTime();
         let advanced = traced#after;
         hooks#recordFrame(watchedTools, frame, advanced);
@@ -304,18 +309,14 @@ pub mod App.Internal.Runner {
                                                    st#sustaining, st#mixState, st#soundUses, st#warnOnce);
         // fps は debug 有効時だけ計測する（本番ビルドは履歴を積まず無負荷）。
         let measuredAnno = if (r#debug) Annotate.recordDt(frame#dt, st#anno) else st#anno;
-        // Doc の読み直しが起きたフレームはタイル層の世代を進め、同じ key でも作り直す。
-        let renderStart = System.nanoTime();
-        let (cache1, seen1, warned1) = App.Internal.Paint.renderFrame(app, st#warnOnce, frame#diagnostics, st#design, Platform.Window.getDisplay(), advanced, App.Internal.Paint.plainLook(App.Internal.Paint.fpsOverlayOf(r, st#design, measuredAnno)),
-                                          App.Internal.Paint.bumpTileGen(watchFired or reloadFired, st#tileCache),
-                                          st#glyphSeen, st#budgetWarned);
-        // WhyNot: 画面へ出すのをループ（止めた画面・再開のコマと同じ所）へ回さない — ヒッチの記録の描く時間は swap まで含めて測ってきた。
-        Platform.Window.presentFrame();
-        let renderNs = System.nanoTime() - renderStart;
+        let ((cache1, seen1, warned1), renderNs) = match paintedEarly {
+            case Some(done) => done
+            case None       => paintAndPresent(app, { anno = measuredAnno | st }, frame, advanced, watchFired or reloadFired)
+        };
         // 診断はここで 1 回だけ引き取り、ヒッチの記録と次のフレームの Frame#diagnostics・ViewCtx#diagnostics へ配る。
         let diag = if (collecting) Some(Platform.Diagnostics.consumeDiagnostics()) else None;
         let nextTools = hooks#endFrame(watchedTools,
-            { frame = measuredAnno#frame, start = frameStart, updateNs = updatedAt - frameStart,
+            { frame = measuredAnno#frame, start = frameStart, updateNs = if (r#pipelinedRendering) updatedAt - waitStart else updatedAt - frameStart,
               renderNs = renderNs,
               pressed = frame#justPressed, reloaded = watchFired or reloadFired }, diag, advanced);
         // 時間スクラブ用の履歴（debug が無効なら一切持たない = 本番ビルドは無負荷）
@@ -332,6 +333,28 @@ pub mod App.Internal.Runner {
           stepState = nextStepState, tools = nextTools,
           sustaining = nextSustaining, mixState = nextMix, soundUses = nextUses, tileCache = cache1,
           glyphSeen = seen1, budgetWarned = warned1 | st }
+
+    /// world を描いて画面へ出し、塗りの持ち回しと、描いて出すまでの時間（ns）を返す。fps の重ね書きは st#anno から。
+    /// bump = Doc の読み直しが起きたコマ（タイル層の世代を進め、同じ key でも作り直す）。
+    // WhyNot: 画面へ出すのをループ（止めた画面・再開のコマと同じ所）へ回さない — ヒッチの記録の描く時間は swap まで含めて測ってきた。
+    def paintAndPresent(app: App[w, ef], st: LoopState[w], frame: App.Frame, world: w, bump: Bool):
+            ((App.Internal.Paint.TileCache, Option[Int64], Bool), Int64) \ (ef + Platform.Window + Platform.Rendering + RenderTarget.Target + IO) =
+        let r = App.rec(app);
+        let start = System.nanoTime();
+        let painted = App.Internal.Paint.renderFrame(app, st#warnOnce, frame#diagnostics, st#design, Platform.Window.getDisplay(), world,
+                          App.Internal.Paint.plainLook(App.Internal.Paint.fpsOverlayOf(r, st#design, st#anno)),
+                          App.Internal.Paint.bumpTileGen(bump, st#tileCache), st#glyphSeen, st#budgetWarned);
+        Platform.Window.presentFrame();
+        (painted, System.nanoTime() - start)
+
+    /// world から 1 コマ進める traceFrame を Platform.Tasks へ預ける（受け取るのは joinTraceFrame）。
+    // WhyNot: traceFrame の効果を型のまま預けない — 預けた先のスレッドには handler が無い。呼ぶのは withPipelinedRendering の App（効果が無いと型で決まった物）だけ。
+    def submitTraceFrame(app: App[w, ef], frame: App.Frame, stepState: App.StepState, world: w): Unit \ Platform.Tasks =
+        let detached = unchecked_cast((() -> App.traceFrame(app, frame, stepState, world)) as Unit -> (App.TraceStep[w], App.StepState) \ IO);
+        Platform.Tasks.startTask(() -> unchecked_cast(detached() as JObject))
+
+    /// submitTraceFrame で預けた traceFrame の結果を受け取る。
+    def joinTraceFrame(): (App.TraceStep[w], App.StepState) \ Platform.Tasks = unchecked_cast(Platform.Tasks.finishTask() as (App.TraceStep[w], App.StepState))
 
     /// World から宣言された窓の見た目（withCursor の矢印・withMouseCapture のキャプチャ・withFullscreen の窓）をまとめて当てる。
     /// 返すのは当てた後の矢印とキャプチャの状態（次のフレームの比べる元）。
