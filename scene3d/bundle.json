@@ -1,0 +1,29 @@
+{
+ "id": "sc3-src",
+ "title": "Scene3d Bench",
+ "files": [
+  "assets/models/barrel.mtl",
+  "assets/models/barrel.obj",
+  "assets/models/bench.mtl",
+  "assets/models/bench.obj",
+  "assets/models/bookshelf.mtl",
+  "assets/models/bookshelf.obj",
+  "assets/models/chair.mtl",
+  "assets/models/chair.obj",
+  "assets/models/chest.mtl",
+  "assets/models/chest.obj",
+  "assets/models/desk.mtl",
+  "assets/models/desk.obj",
+  "assets/models/rug.mtl",
+  "assets/models/rug.obj",
+  "assets/models/table.mtl",
+  "assets/models/table.obj",
+  "project.json"
+ ],
+ "images": [],
+ "sounds": [],
+ "design": {
+  "w": 320,
+  "h": 180
+ }
+}
