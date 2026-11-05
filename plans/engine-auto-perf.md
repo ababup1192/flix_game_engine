@@ -152,7 +152,7 @@ pub def withPreload3d(plan: { key = w -> GameEngine.StaticKey, instances = w -> 
 
 手書きとの比べの結果はビット単位で同じ。1 コマの時間は約 12 ms で変わらない（`withPipelinedRendering` が規則の時間を描く時間の裏へ隠すため）。conduit_hive は手で直した fpkg で動かしていて、エンジンの次のリリースまで push できない。
 
-G はブラウザ 3D の段 1 で済んだ。次は段 3（4a）→ 4b。
+G はブラウザ 3D の段 1 で済んだ。段 3（4a）も済んだ（効果は未測定）。次は 4b。
 
 ## 門（どの段も）
 

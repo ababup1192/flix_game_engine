@@ -127,7 +127,7 @@ pub mod Platform {
             }
         }
 
-    /// 3D を描かない handler の組（ブラウザ版・テストの偽物）が張る、3D の場面を捨てる handler。
+    /// 3D を描かない handler の組（テストの偽物）が張る、3D の場面を捨てる handler。
     pub def runNoopDraw3d(f: Unit -> a \ ef): a \ ef - Draw3d =
         run f() with handler Draw3d {
             def drawScene3d(_cmd, k) = k(())

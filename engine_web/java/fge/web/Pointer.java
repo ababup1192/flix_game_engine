@@ -28,6 +28,10 @@ public final class Pointer {
     @JSBody(script = "var v = fgePointer.dy; fgePointer.dy = 0; return v;")
     public static native double consumeDy();
 
+    /** canvas の pointer lock を掛けるか。掛けている間の動きは consumeDx と consumeDy にだけ出る。ブラウザが断ったら次の操作で頼み直す。 */
+    @JSBody(params = {"on"}, script = "fgeSetMouseCaptured(on);")
+    public static native void setCaptured(boolean on);
+
     /** 最後に来た pointer の入力が指（pointerType が touch）か。マウス・ペンが来たら偽。 */
     @JSBody(script = "return fgePointer.touch;")
     public static native boolean isTouch();

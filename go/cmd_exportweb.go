@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path"
@@ -53,6 +54,12 @@ var exportWebMediaExts = map[string]bool{
 	".ttf": true, ".otf": true, ".png": true, ".jpg": true, ".jpeg": true, ".webp": true,
 	".wav": true, ".ogg": true, ".mp3": true,
 }
+
+// exportWebDecodedImageExts は 3D の入口のゲームが readBytes で読み、imageDecoder で解く拡張子。project.json の textures の物も files へ入れる。
+// textures の物を web.compress が WebP に替えたら readBytes にも WebP が届く（imageDecoder は解ける）。
+// WhyNot: textures の物の元の png を別に配らない — 同じ絵を 2 回運び、配る量が増える。
+// WhyNot: 2D の入口のゲームでは入れない — 画面に使わない元絵まで束に入り、配る量が増える。
+var exportWebDecodedImageExts = map[string]bool{".png": true, ".jpg": true, ".jpeg": true}
 
 func cmdExportWeb(out, errOut *strings.Builder, rest []string, _ bool) int {
 	opts, err := parseExportWebArgs(rest)
@@ -151,6 +158,11 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 		return 1
 	}
 
+	entry := readWebEntry(p.Game)
+	if line := scene3dEntryWarning(p.Game, entry); line != "" {
+		ewLogf("%s", line)
+	}
+
 	ewLogf("① ゲームを %s へ写す（engine_full_web %s）", p.Project, p.Version)
 	if err := prepareExportProject(p); err != nil {
 		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
@@ -238,7 +250,7 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 	if id == "" {
 		id = filepath.Base(p.Game)
 	}
-	b, err := buildWebBundle(p.Game, id, proj)
+	b, err := buildWebBundle(p.Game, id, proj, usesScene3dEntry(entry))
 	if err != nil {
 		fmt.Fprintf(errOut, "fge export-web: %v\n", err)
 		return 1
@@ -274,6 +286,41 @@ func runExportWeb(out, errOut *strings.Builder, o exportWebOptions) int {
 	fmt.Fprintf(out, "export-web: %s（版 %s）\n", p.Out, hash)
 	writeExportSizes(out, p.Out, b, atlases, report)
 	return 0
+}
+
+// readWebEntry は web/WebMain.flix の字（読めなければ空）。
+func readWebEntry(game string) string {
+	entry, err := os.ReadFile(filepath.Join(game, "web", "WebMain.flix"))
+	if err != nil {
+		return ""
+	}
+	return string(entry)
+}
+
+// usesScene3dEntry は入口の字 entry が 3D の入口を使うか。
+func usesScene3dEntry(entry string) bool {
+	return strings.Contains(entry, "WebLayer.withProject3d(")
+}
+
+// scene3dEntryWarning は、src が Scene3d を使うのに web/WebMain.flix が 2D の入口のままなら知らせる 1 行を返す（無ければ空）。
+// WhyNot: 止めない — 3D の場面を持たない画面だけを書き出すゲームもあり、走らせれば初回に警告も出る。
+func scene3dEntryWarning(game, entry string) string {
+	if !strings.Contains(entry, "WebLayer.withProject(") {
+		return ""
+	}
+	found := false
+	_ = filepath.WalkDir(filepath.Join(game, "src"), func(path string, d fs.DirEntry, err error) error {
+		if err != nil || found || d.IsDir() || filepath.Ext(path) != ".flix" {
+			return nil
+		}
+		text, readErr := os.ReadFile(path)
+		found = readErr == nil && strings.Contains(string(text), "Scene3d.")
+		return nil
+	})
+	if !found {
+		return ""
+	}
+	return "src が Scene3d を使っていますが web/WebMain.flix は WebLayer.withProject のままです。3D を描くなら WebLayer.withProject3d へ替えてください"
 }
 
 // resolveExportWebPaths は道を決め、要る物が揃っているかを見る。足りなければ終わりの番号 2 と次の 1 手。
@@ -425,7 +472,45 @@ func prepareExportProject(p exportWebPaths) error {
 			return err
 		}
 	}
+	linkSharedMavenCache(p.Project)
+	return copyLocalNativeJars(p, ext)
+}
+
+// copyLocalNativeJars は手元にある LWJGL の natives の jar を写す。
+// WhyNot: 無ければ Flix が 30 本を Maven Central へ取りに行き、続けて書き出すと 429 で止まる。
+// WhyNot: 無い時に誤りにしないのは、同梱の engine には render_gl が無く、取りに行けば通るため。
+func copyLocalNativeJars(p exportWebPaths, ext string) error {
+	for _, dir := range []string{filepath.Join(p.Game, "lib", "external"), filepath.Join(p.Engine, "render_gl", "lib", "external")} {
+		jars, err := filepath.Glob(filepath.Join(dir, "lwjgl-*-natives-*.jar"))
+		if err != nil {
+			return err
+		}
+		for _, jar := range jars {
+			dst := filepath.Join(ext, filepath.Base(jar))
+			if _, err := os.Stat(dst); err == nil {
+				continue
+			}
+			if err := copyFile(jar, dst); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
+}
+
+// linkSharedMavenCache は Flix が Maven の取り物を置く lib/cache を、ゲームをまたいで共有する置き場へ向ける。
+// WhyNot: project は毎回作り直すので、中に置くと書き出しのたびに取り直しになり Maven Central が 429 を返す。
+// WhyNot: 失敗を返さないのは、symlink を張れない環境でも取り直すだけで書き出しは通るため。
+func linkSharedMavenCache(project string) {
+	base, err := os.UserCacheDir()
+	if err != nil {
+		return
+	}
+	shared := filepath.Join(base, "flix_game_engine", "mvn-cache")
+	if err := os.MkdirAll(shared, 0o755); err != nil {
+		return
+	}
+	_ = os.Symlink(shared, filepath.Join(project, "lib", "cache"))
 }
 
 // copyGameTree はゲームの根の直下の exportWebCopyExcludes を除いて全部写す（symlink は中身を写す）。
@@ -668,16 +753,28 @@ func (b *webBundle) withTouch(pr exportProject, t webTouch) {
 }
 
 func (b webBundle) copyList() []string {
-	list := append([]string{}, b.Files...)
-	list = append(list, b.Images...)
+	seen := map[string]bool{}
+	var list []string
+	add := func(rel string) {
+		if !seen[rel] {
+			seen[rel] = true
+			list = append(list, rel)
+		}
+	}
+	for _, rel := range b.Files {
+		add(rel)
+	}
+	for _, rel := range b.Images {
+		add(rel)
+	}
 	for _, s := range b.Sounds {
-		list = append(list, s.Path)
+		add(s.Path)
 	}
 	return list
 }
 
 // buildWebBundle は project.json と assets/ の下から bundle.json の中身を作る（アトラスは後で足す）。
-func buildWebBundle(game, id string, pr exportProject) (webBundle, error) {
+func buildWebBundle(game, id string, pr exportProject, readsImages bool) (webBundle, error) {
 	b := webBundle{ID: id, Title: pr.Title, Files: []string{"project.json"}, Images: []string{}, Sounds: []webSound{}}
 	named := map[string]bool{}
 	for _, t := range pr.Textures {
@@ -687,6 +784,9 @@ func buildWebBundle(game, id string, pr exportProject) (webBundle, error) {
 		}
 		b.Images = append(b.Images, rel)
 		named[rel] = true
+		if readsImages && exportWebDecodedImageExts[strings.ToLower(path.Ext(rel))] {
+			b.Files = append(b.Files, rel)
+		}
 	}
 	for _, s := range pr.Sounds {
 		rel, err := checkAssetPath(game, s.Path, "sounds[].path")
@@ -719,7 +819,8 @@ func buildWebBundle(game, id string, pr exportProject) (webBundle, error) {
 				return err
 			}
 			rel = filepath.ToSlash(rel)
-			if named[rel] || exportWebMediaExts[strings.ToLower(path.Ext(rel))] {
+			ext := strings.ToLower(path.Ext(rel))
+			if named[rel] || (exportWebMediaExts[ext] && !(readsImages && exportWebDecodedImageExts[ext])) {
 				return nil
 			}
 			b.Files = append(b.Files, rel)
@@ -918,16 +1019,30 @@ func cleanupExportWork(p exportWebPaths, keep bool) {
 }
 
 // writeExportSizes は配る大きさの内訳を 1 行ずつ出す（変換した種類は「前 → 後」）と、変換の知らせ。
+// exportDocFiles は files のうち素材の行に数える物。アトラスと、絵の行で数える images の道を除く。
+func exportDocFiles(b webBundle, isAtlas map[string]bool) []string {
+	isImage := map[string]bool{}
+	for _, f := range b.Images {
+		isImage[f] = true
+	}
+	var docs []string
+	for _, f := range b.Files {
+		if !isAtlas[f] && !isImage[f] {
+			docs = append(docs, f)
+		}
+	}
+	return docs
+}
+
 func writeExportSizes(out *strings.Builder, dir string, b webBundle, atlases []string, r webTranscodeReport) {
 	isAtlas := map[string]bool{}
 	for _, a := range atlases {
 		isAtlas[a] = true
 	}
+	docFiles := exportDocFiles(b, isAtlas)
 	var docs int64
-	for _, f := range b.Files {
-		if !isAtlas[f] {
-			docs += fileSize(exportAssetPath(dir, f))
-		}
+	for _, f := range docFiles {
+		docs += fileSize(exportAssetPath(dir, f))
 	}
 	page := fileSize(filepath.Join(dir, "index.html")) + fileSize(filepath.Join(dir, "fge-web.js")) +
 		fileSize(filepath.Join(dir, "wasm-gc-runtime.js")) + fileSize(filepath.Join(dir, "bundle.json"))
@@ -942,7 +1057,7 @@ func writeExportSizes(out *strings.Builder, dir string, b webBundle, atlases []s
 		name, size, note string
 	}{
 		{"wasm", humanBytes(wasm), "classes.wasm"},
-		{"素材", humanBytes(docs), fmt.Sprintf("Doc など %d 本", len(b.Files)-len(atlases))},
+		{"素材", humanBytes(docs), fmt.Sprintf("Doc など %d 本", len(docFiles))},
 		{"絵", pair(r.Images), fmt.Sprintf("%d 枚", len(b.Images))},
 		{"アトラス", pair(r.Atlases), fmt.Sprintf("%d 本", len(atlases))},
 		{"音", pair(r.Sounds), fmt.Sprintf("%d 本", len(b.Sounds))},

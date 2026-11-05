@@ -197,9 +197,9 @@ World に Doc・アトラス・シェーダーの Spec・音の Mixer を平ら�
 
 | 境目 | 何と何を分けるか | 今ある実装 |
 |---|---|---|
-| 機種の handler 一式: `Platform.Services`（`Input`・`Window`・`FrameClock`・`Draw2d`・`Draw3d`・`GpuResources`・`Diagnostics`・`RenderTarget.Target`・`GameEngine.Audio`）と `Fs.FileRead`・`Fs.FileWrite`・`LoadProgress` | ゲームとエンジンの論理 ／ 機種 | 実機（`LwjglLayer`）・画面なしとテスト（`GlOffscreen`・`HeadlessLoad`・偽物の handler）。後でブラウザとコンシューマ |
-| `Scene3dRenderer.Renderer`（値） | 2D の描き手 ／ 3D の描き手 | `Render3d.makeRenderer`・`Scene3dRenderer.none()` |
-| `GlContext`（値・GL の層を作る時に足す予定） | GL を使う描き手の本体 ／ GL の API | LWJGL の GL 3.3（デスクトップ）・WebGL2（ブラウザ）。この 2 つのためだけの層 |
+| 機種の handler 一式: `Platform.Services`（`Input`・`Window`・`FrameClock`・`Draw2d`・`Draw3d`・`GpuResources`・`Diagnostics`・`RenderTarget.Target`・`GameEngine.Audio`・`Tasks`）と `Fs.FileRead`・`Fs.FileWrite`・`LoadProgress` | ゲームとエンジンの論理 ／ 機種 | 実機（`LwjglLayer`）・ブラウザ（`WebLayer`）・画面なしとテスト（`GlOffscreen`・`HeadlessLoad`・偽物の handler）。後でコンシューマ |
+| `Scene3dRenderer.Renderer`（値） | 2D の描き手 ／ 3D の描き手 | `Render3d.makeRenderer`・`Scene3dRenderer.none()`（ブラウザは `WebLayer.withProject3d` が前者・`withProject` が場面を描かず知らせる物を渡す） |
+| `GlContext`（値・`render_gl/java/fge/gl`） | GL を使う描き手の本体（2D と 3D） ／ GL の API | `LwjglGl`（デスクトップの GL 3.3）・`WebGl2`（ブラウザ）・`RecordingGl`（呼び出しを控える包み）。この 2 つの機種のためだけの層 |
 
 - **新しい機種（コンシューマなど）の切れ目は、上の 1 行目の handler 一式の高さ**。その機種は `Platform.Services` と Fs と `LoadProgress` の
   handler を自分の描き手と自分のファイルの読み書きで書き、render_gl も `GlContext` も使わない。GL の無い機種のために `GlContext` を広げない。

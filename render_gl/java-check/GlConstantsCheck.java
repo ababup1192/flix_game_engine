@@ -5,7 +5,9 @@ import org.lwjgl.opengl.GL33;
 // WhyNot: reflection で GL33 を読まない — GL の類は読み込むと文脈の無い所で初期化に失敗しうる。javac が定数を畳むので類は読まれない。
 public final class GlConstantsCheck {
     private static int bad = 0;
+    private static int checked = 0;
     private static void c(String name, int mine, int lwjgl) {
+        checked++;
         if (mine != lwjgl) { System.err.println("GlConst." + name + " = " + mine + " だが GL_" + name + " = " + lwjgl); bad++; }
     }
     public static void main(String[] args) {
@@ -69,7 +71,21 @@ public final class GlConstantsCheck {
         c("DEPTH24_STENCIL8", GlConst.DEPTH24_STENCIL8, GL33.GL_DEPTH24_STENCIL8);
         c("RGBA16F", GlConst.RGBA16F, GL33.GL_RGBA16F);
         c("MAX_SAMPLES", GlConst.MAX_SAMPLES, GL33.GL_MAX_SAMPLES);
+        c("NONE", GlConst.NONE, GL33.GL_NONE);
+        c("BACK", GlConst.BACK, GL33.GL_BACK);
+        c("CW", GlConst.CW, GL33.GL_CW);
+        c("LINEAR_MIPMAP_LINEAR", GlConst.LINEAR_MIPMAP_LINEAR, GL33.GL_LINEAR_MIPMAP_LINEAR);
+        c("NEAREST_MIPMAP_LINEAR", GlConst.NEAREST_MIPMAP_LINEAR, GL33.GL_NEAREST_MIPMAP_LINEAR);
+        c("SAMPLE_ALPHA_TO_COVERAGE", GlConst.SAMPLE_ALPHA_TO_COVERAGE, GL33.GL_SAMPLE_ALPHA_TO_COVERAGE);
+        c("TEXTURE_BASE_LEVEL", GlConst.TEXTURE_BASE_LEVEL, GL33.GL_TEXTURE_BASE_LEVEL);
+        c("TEXTURE_MAX_LEVEL", GlConst.TEXTURE_MAX_LEVEL, GL33.GL_TEXTURE_MAX_LEVEL);
+        c("TEXTURE_COMPARE_MODE", GlConst.TEXTURE_COMPARE_MODE, GL33.GL_TEXTURE_COMPARE_MODE);
+        c("ELEMENT_ARRAY_BUFFER", GlConst.ELEMENT_ARRAY_BUFFER, GL33.GL_ELEMENT_ARRAY_BUFFER);
+        c("UNIFORM_BUFFER", GlConst.UNIFORM_BUFFER, GL33.GL_UNIFORM_BUFFER);
+        c("DEPTH_ATTACHMENT", GlConst.DEPTH_ATTACHMENT, GL33.GL_DEPTH_ATTACHMENT);
+        c("SAMPLE_ALPHA_TO_ONE", GlConst.SAMPLE_ALPHA_TO_ONE, GL33.GL_SAMPLE_ALPHA_TO_ONE);
+        c("INVALID_INDEX", GlConst.INVALID_INDEX, GL33.GL_INVALID_INDEX);
         if (bad > 0) System.exit(1);
-        System.out.println("[gl-jar] GlConst の定数 60 個が LWJGL と一致");
+        System.out.println("[gl-jar] GlConst の定数 " + checked + " 個が LWJGL と一致");
     }
 }

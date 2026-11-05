@@ -2,6 +2,7 @@
 // キー・マウス・音・時計を fge.web（JS を閉じ込めた Java）から受ける。ゲームのループは止まる形のまま回り、
 // presentFrame でブラウザの描き替え（requestAnimationFrame）まで待つ間だけブラウザへ手を返す。
 // 利用例（web/WebMain.flix）: `run { ... App.launchWithDevTools(App.DevTools.none(), app) } with WebLayer.withProject(".") with WebFs.runFileRead with WebFs.runFileWrite`
+// Scene3d を描くゲームは withProject の代わりに withProject3d を使う。
 // WhyNot: 開発の道具（注釈・RemoteDebug・Doc の監視）の handler を持たない — ブラウザ版は配る出力先の 1 つで、開発はデスクトップでする。
 pub mod WebLayer {
     import fge.gl.GlConst
@@ -11,17 +12,40 @@ pub mod WebLayer {
     import fge.web.Keys
     import fge.web.Pointer
     import fge.web.WebAudio
+    import fge.web.WebImages
     import fge.web.WebGl2
 
     /// 1 秒に進めるコマの上限。速い画面（120Hz・165Hz）では描き替えを間引いてこの数に近づける（遊びの速さは dt で同じ・電池のため）。
     pub def tickRate(): Float64 = 60.0
 
-    /// `rootDir` 直下の project.json を読んで withWeb を起動する。読めなければ止める（LwjglLayer.withProject と同じ）。
+    /// 2D のゲームの入口。3D の描き手を持たないので、Scene3d の場面は描かず初回に 1 回知らせる。
+    // WhyNot: 2D の入口を withProject3d に寄せて 1 本にしない — ここから Render3d へ届くと、3D を使わないゲームの wasm まで太る。
     pub def withProject(rootDir: String, f: Unit -> a \ ef): a \ ef - Platform.Services - LoadProgress + IO + Fs.FileRead =
+        withProjectUsing(rootDir, (_, _) -> makeWarningRenderer(), f)
+
+    /// Scene3d を描くゲームの入口。
+    pub def withProject3d(rootDir: String, f: Unit -> a \ ef): a \ ef - Platform.Services - LoadProgress + IO + Fs.FileRead =
+        withProjectUsing(rootDir, Render3d.makeRenderer, f)
+
+    /// `rootDir` 直下の project.json を読んで withWeb を起動する。読めなければ止める（LwjglLayer.withProject と同じ）。
+    def withProjectUsing(rootDir: String, makeRenderer: (GlContext, GameEngine.EngineConfig) -> Scene3dRenderer.Renderer \ IO,
+                         f: Unit -> a \ ef): a \ ef - Platform.Services - LoadProgress + IO + Fs.FileRead =
         match ProjectLoader.loadProject(rootDir) {
-            case Ok(proj) => withWeb(bootConfigOf(proj), f)
+            case Ok(proj) => withWeb(makeRenderer, bootConfigOf(proj), f)
             case Err(msg) => bug!("Failed to load project.json: ${msg}")
         }
+
+    /// 場面を描かない描き手。場面が来たら初回に 1 回だけ、withProject3d へ替えるよう知らせる。
+    def makeWarningRenderer(): Scene3dRenderer.Renderer \ IO =
+        let warned = Ref.fresh(Static, false);
+        { prepare = (_, _, _, cmds) -> {
+              if (List.isEmpty(cmds) or Ref.get(warned)) ()
+              else {
+                  Ref.put(true, warned);
+                  Log.warn("scene3d: WebLayer.withProject は 3D を描かない — web/WebMain.flix を WebLayer.withProject3d へ替える")
+              };
+              Scene3dRenderer.noScenes()
+          } | Scene3dRenderer.none() }
 
     // WhyNot: 頁を開いた時（素材を取る前）に測らない — 読み込みの間に回した端末で、古い向きのまま起動する。押して始めた後の main で測る。
     /// 起動に使う設定。縦の design を選ぶ時（スマホを縦に持って開いた・頁の ?orientation=portrait）で、project.json に
@@ -42,7 +66,9 @@ pub mod WebLayer {
         { designWidth = w, designHeight = h | proj#config }
 
     /// canvas の WebGL2 で塗りのコアを作り、素材を上げ、handler を重ねて f を流す。f を抜けたら頁に「おわり」を出す。
-    pub def withWeb(config: GameEngine.EngineConfig, f: Unit -> a \ ef): a \ ef - Platform.Services - LoadProgress + IO =
+    /// makeRenderer = 3D の描き手の作り方。
+    def withWeb(makeRenderer: (GlContext, GameEngine.EngineConfig) -> Scene3dRenderer.Renderer \ IO, config: GameEngine.EngineConfig,
+                f: Unit -> a \ ef): a \ ef - Platform.Services - LoadProgress + IO =
         Browser.setTitle(config#title);
         let gl: GlContext = checked_cast(new WebGl2());
         // 塗りのコアは混ぜ方が普通（SRC_ALPHA, ONE_MINUS_SRC_ALPHA）で始まっている前提で描く（LwjglLayer と同じ始め方）。
@@ -50,7 +76,7 @@ pub mod WebLayer {
         gl.blendFunc(GlConst.SRC_ALPHA, GlConst.ONE_MINUS_SRC_ALPHA);
         let paint = RenderPaint.create(gl, { designWidth = config#designWidth, designHeight = config#designHeight,
                                              clearColor = config#clearColor, screenFramebuffer = 0,
-                                             scene3d = Scene3dRenderer.none(), gpuTimer = RenderPaint.noFrameTimer() });
+                                             scene3d = makeRenderer(gl, config), gpuTimer = RenderPaint.noFrameTimer() });
         // 組み込みフォント（fps の表示・名前が合わないフォントの受け皿）とロゴも登録簿へ。
         RenderPaint.addTextures(RenderSplash.install(gl), paint);
         let design = { x = Int32.toFloat64(config#designWidth), y = Int32.toFloat64(config#designHeight) };
@@ -68,7 +94,7 @@ pub mod WebLayer {
             handleAudio(state, () ->
             RenderPaintHandlers.handleTarget(gl, paint, framebufferSize, () ->
             RenderPaintHandlers.handleDiagnostics(paint, () ->
-            Platform.runNoopDraw3d(() ->
+            RenderPaintHandlers.handleDraw3d(paint, () ->
             Platform.runTasksInPlace(() ->
             handleFrameClock(state, () ->
             handleWindow(state, () ->
@@ -111,12 +137,14 @@ pub mod WebLayer {
             def getViewportRect(k) = k({ position = Vec2.zero(), size = st#design })
             def getDisplay(k) = k(display(st#design))
             def presentFrame(k) = {
-                Ref.put(AnimationFrame.waitTick(tickRate()), st#lastDt);
+                Browser.frameDrawn();
+                let dt = AnimationFrame.waitTick(tickRate());
+                Ref.put(if (Browser.isFrameCapture()) 1.0 / tickRate() else dt, st#lastDt);
                 k(())
             }
             def setCursor(cursor, k) = { Ref.put(cursor, st#cursor); applyCursor(st); k(()) }
             def setCursorVisible(visible, k) = { Ref.put(visible, st#cursorVisible); applyCursor(st); k(()) }
-            def setMouseCaptured(_captured, k) = k(())
+            def setMouseCaptured(captured, k) = { Pointer.setCaptured(captured); k(()) }
             def setFullscreen(on, k) = {
                 // WhyNot: 同じ値を毎コマ頼み直さない — Esc でブラウザが全画面を抜けた後、次のキーでまた入ってしまう。
                 let asked = if (on) FullscreenAsk.Fullscreen else FullscreenAsk.Windowed;
@@ -304,12 +332,19 @@ pub mod WebLayer {
         }
 
     /// LoadProgress を頁の進み具合のバーで受ける。仕事は順に流す（ブラウザの wasm は 1 本の糸）。
-    /// 画像は起動の前に fge-web.js が解いておくので、ここで解く API は持たない（project.json の textures に載せる）。
+    /// project.json の textures の画像は起動の前に fge-web.js が解いておく。imageDecoder はゲームの中で読んだバイト（glb の中の絵など）を解く。
     def handleLoadProgress(st: State, f: Unit -> a \ ef): a \ (ef - LoadProgress) + IO =
         let report = showProgress(st);
         run f() with handler LoadProgress {
             def report(phase, done, total, k) = { report(phase, done, total); k(()) }
             def runTasks(phase, tasks, k) = { LoadProgress.runTasksInOrder(report, phase, tasks); k(()) }
-            def imageDecoder(k) = k({ decode = _ -> checked_ecast(Err("ブラウザ版はゲームの中で画像を解けない（project.json の textures に載せる）")) })
+            def imageDecoder(k) = k({ decode = decodeImage })
         }
+
+    /// PNG か JPEG か WebP のバイトを画素へ解く（WebP は書き出しが替えた絵）。解き終わるまでゲームのループごと止まる。
+    def decodeImage(bytes: Vector[Int8]): Result[String, ImageData.ImageData] \ IO =
+        let image = WebImages.decode(unchecked_cast(bytes as Array[Int8, Static]));
+        let error = image.error();
+        if (String.isEmpty(error)) Ok({ width = image.width(), height = image.height(), argb = Array.toVector(image.argb()) })
+        else Err(error)
 }

@@ -11,7 +11,7 @@ mod Render3d.Counts {
 
     /// CPU の区間。並びは phaseNsHolder の添え字（phaseSlotOf）。
     pub enum Phase {
-        case Shadows, Split, Draw, EndFrame
+        case Shadows, Split, Draw, EndFrame, Mip
     }
 
     def slotOf(c: Counter): Int32 = match c {
@@ -36,6 +36,7 @@ mod Render3d.Counts {
         case Phase.Split    => 1
         case Phase.Draw     => 2
         case Phase.EndFrame => 3
+        case Phase.Mip      => 4
     }
 
     def phaseName(p: Phase): String = match p {
@@ -43,12 +44,13 @@ mod Render3d.Counts {
         case Phase.Split    => "split"
         case Phase.Draw     => "draw"
         case Phase.EndFrame => "endFrame"
+        case Phase.Mip      => "mip"
     }
 
-    def phases(): List[Phase] = Phase.Shadows :: Phase.Split :: Phase.Draw :: Phase.EndFrame :: Nil
+    def phases(): List[Phase] = Phase.Shadows :: Phase.Split :: Phase.Draw :: Phase.EndFrame :: Phase.Mip :: Nil
 
     /// phaseNsHolder の長さ。
-    pub def phaseSlots(): Int32 = 4
+    pub def phaseSlots(): Int32 = 5
 
     /// c を n 足す。
     pub def count(state: State, c: Counter, n: Int32): Unit \ IO =

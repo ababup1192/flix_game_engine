@@ -64,6 +64,10 @@ pub mod RenderTexture {
         gl.deleteTexture(GpuHandle.textureIdInt(info#id))
 
     /// テクスチャの置き場を確保しつつ画素を送る。
+    /// ARGB の画素を、今 bind している TEXTURE_2D の段 level へ上げる。
+    pub def uploadArgbLevel(gl: GlContext, level: Int32, width: Int32, height: Int32, argb: Vector[Int32]): Unit \ IO =
+        withArgbBuffer(gl, argb, buf -> gl.texImageArgbLevel(level, width, height, buf))
+
     def texImage(gl: GlContext, width: Int32, height: Int32, buf: IntBuffer): Unit \ IO =
         gl.texImageArgb(width, height, buf)
 

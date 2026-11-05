@@ -50,6 +50,8 @@ mod RenderPaint {
         pendingScene3dHolder = Array[List[Scene3d.RenderCmd], Static],
         // 3D の場面の描き手（作る側が渡す）。
         scene3d = Scene3dRenderer.Renderer,
+        // Pass の頭で unit 0 に貼っておく 1 × 1 の透明な黒。
+        blankTexture = Int32,
         // program → (uRectPos, uRectSize, uTime, uAlpha, texLocs, paramLocs)。
         shaderUniformCache = Ref[Map[Int32, (Int32, Int32, Int32, Int32, List[(Int32, Int32)], List[Int32])], Static],
         // レンダーターゲットの名前 → GL 実体。
@@ -277,6 +279,7 @@ mod RenderPaint {
           frameGenHolder = frameGenHolder, programUsedAtRef = programUsedAtRef,
           pendingShaderHolder = pendingShaderHolder, shaderUniformCache = shaderUniformCache,
           pendingScene3dHolder = Array#{(Nil: List[Scene3d.RenderCmd])} @ Static, scene3d = cfg#scene3d,
+          blankTexture = GpuHandle.textureIdInt(RenderTexture.loadTextureFromPixels(gl, 1, 1, Vector#{0})#id),
           targetsRef = targetsRef, activeTargetHolder = activeTargetHolder,
           historyRef = Ref.fresh(Static, Map.empty()), targetWarnedRef = Ref.fresh(Static, Set.empty()), keepHistory = true,
           registryRef = registryRef, textureKeyRef = textureKeyRef,
@@ -316,6 +319,10 @@ mod RenderPaint {
             or List.exists(d -> DrawCmd.textureOf(d) == history, sprites)
             or paint#scene3d#readsTexture(history, scenes);
         if (readsHistory) prepareHistory(gl, paint, target) else ();
+        // WhyNot: 前の Pass が貼った絵を unit 0 に残さない — 形だけの描き物は絵を貼り直さず、残った絵が今の描き先だと、読まない枝でも WebGL2 が feedback loop と見て draw を止める。
+        // WhyNot: テクスチャ 0 を貼らない — 完全でないテクスチャの読みはドライバ次第になる。
+        gl.activeTexture(GlConst.TEXTURE0);
+        gl.bindTexture(GlConst.TEXTURE_2D, paint#blankTexture);
         let entry = Map.get(name, Ref.get(paint#targetsRef));
         let framebuffer = entry |> Option.map(RenderTargetGl.drawFramebuffer) |> Option.getWithDefault(paint#screenFramebuffer);
         let samples = entry |> Option.map(RenderTargetGl.drawSamples) |> Option.getWithDefault(1);

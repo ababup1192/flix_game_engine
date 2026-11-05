@@ -17,21 +17,15 @@
 //   両面の材質は GL_CULL_FACE をその物だけ切り、裏の面（!gl_FrontFacing）は光の計算の法線を裏返す。
 //   空は深度を消した後、深度を書かずに場面の矩形いっぱいの四角で塗る（向きは Scene3d.skyBasisOf・式は LightModel3d.skyModel）。
 mod Render3d {
+    import fge.gl.GlConst
     import fge.gl.GlContext
     import java.lang.{Float => JFloat}
     import java.util.Objects
-    import org.lwjgl.opengl.GL11
-    import org.lwjgl.opengl.GL13
-    import org.lwjgl.opengl.GL14
-    import org.lwjgl.opengl.GL15
-    import org.lwjgl.opengl.GL20
-    import org.lwjgl.opengl.GL30
-    import org.lwjgl.opengl.GL31
     use Render3dGlsl.{meshVertexSource, skinnedMeshVertexSource, litVertexSource, litFragmentSource,
                        depthFragmentSource, billboardVertexSource, billboardFragmentSource, skyFragmentSource, blitVertexSource, blitFragmentSource}
     use Render3d.Light.{lightDataOf, putLights}
     use Render3d.Shadow.{bindShadowMap, putShadow, renderShadows, sweepShadowTargets, unbindShadowMap}
-    use Render3d.Material.{drawMaterials, resolveTextureAs, splitByMaterial, sweepMaterials, sweepTextures3d}
+    use Render3d.Material.{blankTextureId, drawMaterials, resolveTextureAs, splitByMaterial, sweepMaterials, sweepTextures3d}
     use Render3d.Counts.{Counter, Phase, count, countDrawCall, countInstances, noteDroppedLights, takeCounts, timed}
 
     // ── 型 ──
@@ -256,6 +250,9 @@ mod Render3d {
     /// ベイクした光（lightmap）を貼るテクスチャの unit（0〜5 は材質の絵・6 は法線マップ・7 は影の地図）。
     def lightmapTextureUnit(): Int32 = 8
 
+    /// 影の無い場面で影の地図の代わりに使う unit（1 × 1 の透明な黒を貼ったままにする）。
+    def blankTextureUnit(): Int32 = 9
+
     /// joint 行列の UBO を付ける binding の番号（GL の文脈で他に UBO を使う所は無い）。
     def jointsBinding(): Int32 = 1
 
@@ -293,7 +290,7 @@ mod Render3d {
     pub def makeRenderer(gl: GlContext, config: GameEngine.EngineConfig): Scene3dRenderer.Renderer \ IO =
         let state = fresh(textureBudgetOf(config));
         { prepare = (gen, textureOf, dest, cmds) -> prepareNumbered(gl, state, gen, textureOf, dest, cmds),
-          endFrame = gen -> endFrame(state, gen),
+          endFrame = gen -> endFrame(gl, state, gen),
           takeCounts = () -> takeCounts(state),
           readsTexture = readsTexture }
 
@@ -325,7 +322,7 @@ mod Render3d {
         let items = List.zip(cmds, shadows) |> List.map(cs -> {
             let (cmd, shadow) = cs;
             match cmd#scene#resolution {
-                case Scene3d.Resolution.Native => { cmd = cmd, designTarget = None, shadow = shadow, multisampled = dest#samples > 1 }
+                case Scene3d.Resolution.Native => { cmd = cmd, designTarget = None, shadow = shadow, multisampled = dest#samples > 1 and gl.hasAlphaToOne() }
                 case Scene3d.Resolution.Design =>
                     let index = Array.get(0, designCount);
                     Array.put(index + 1, 0, designCount);
@@ -335,7 +332,7 @@ mod Render3d {
             }
         });
         let movedTarget = Array.get(0, designCount) > 0 or List.exists(Option.nonEmpty, shadows);
-        if (movedTarget) GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER, dest#framebuffer) else ();
+        if (movedTarget) gl.bindFramebuffer(GlConst.FRAMEBUFFER, dest#framebuffer) else ();
         items
 
     /// 場面 1 つを 2D の並びの中で描く。描き終えたら viewport を vp へ、scissor を切り、blend を Normal へ戻す。
@@ -350,9 +347,9 @@ mod Render3d {
                                            { viewport = rect, scissor = scissor, fillBackground = true, coverage = item#multisampled }, item#shadow, scene))
             case Some(target) => blitDesign(gl, state, rect, scissor, target)
         };
-        GL11.glViewport(vp#x, vp#y, vp#width, vp#height);
-        GL11.glDisable(GL11.GL_SCISSOR_TEST);
-        GL11.glEnable(GL11.GL_BLEND);
+        gl.viewport(vp#x, vp#y, vp#width, vp#height);
+        gl.disable(GlConst.SCISSOR_TEST);
+        gl.enable(GlConst.BLEND);
         RenderSprite.applyBlend(gl, DrawCmd.BlendMode.Normal)
 
     /// 場面の矩形（at・size）を描き先の画素へ写す（量子化は 2D の clip と同じ DrawCmd.clipPixels）。
@@ -391,12 +388,12 @@ mod Render3d {
             let target = designTarget(gl, state, slot, w, h);
             RenderTargetGl.bind(gl, target);
             let full = { x = 0, y = 0, width = w, height = h };
-            GL11.glViewport(0, 0, w, h);
-            GL11.glDisable(GL11.GL_SCISSOR_TEST);
-            GL11.glClearColor(0.0f32, 0.0f32, 0.0f32, 0.0f32);
-            GL11.glClear(GL11.GL_COLOR_BUFFER_BIT);
+            gl.viewport(0, 0, w, h);
+            gl.disable(GlConst.SCISSOR_TEST);
+            gl.clearColor(0.0f32, 0.0f32, 0.0f32, 0.0f32);
+            gl.clear(GlConst.COLOR_BUFFER_BIT);
             timed(state, Phase.Draw, () -> drawScene(gl, state, gen, textureOf, { viewport = full, scissor = full, fillBackground = true, coverage = false }, shadow, cmd#scene));
-            GL11.glDisable(GL11.GL_SCISSOR_TEST);
+            gl.disable(GlConst.SCISSOR_TEST);
             Some(target)
         }
 
@@ -424,19 +421,19 @@ mod Render3d {
         let programs = programsOf(gl, state);
         if (programs#blit == 0) ()
         else {
-            GL11.glViewport(rect#x, rect#y, rect#width, rect#height);
-            GL11.glEnable(GL11.GL_SCISSOR_TEST);
-            GL11.glScissor(scissor#x, scissor#y, scissor#width, scissor#height);
-            GL11.glEnable(GL11.GL_BLEND);
-            GL11.glBlendFunc(GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA);
-            GL20.glUseProgram(programs#blit);
-            GL13.glActiveTexture(GL13.GL_TEXTURE0);
-            GL11.glBindTexture(GL11.GL_TEXTURE_2D, target#tex);
-            GL30.glBindVertexArray(programs#quadVao);
-            GL20.glUniform1i(GL20.glGetUniformLocation(programs#blit, "uImage"), 0);
-            GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 6);
-            GL30.glBindVertexArray(0);
-            GL20.glUseProgram(0)
+            gl.viewport(rect#x, rect#y, rect#width, rect#height);
+            gl.enable(GlConst.SCISSOR_TEST);
+            gl.scissor(scissor#x, scissor#y, scissor#width, scissor#height);
+            gl.enable(GlConst.BLEND);
+            gl.blendFunc(GlConst.ONE, GlConst.ONE_MINUS_SRC_ALPHA);
+            gl.useProgram(programs#blit);
+            gl.activeTexture(GlConst.TEXTURE0);
+            gl.bindTexture(GlConst.TEXTURE_2D, target#tex);
+            gl.bindVertexArray(programs#quadVao);
+            gl.uniform1i(gl.getUniformLocation(programs#blit, "uImage"), 0);
+            gl.drawArrays(GlConst.TRIANGLES, 0, 6);
+            gl.bindVertexArray(0);
+            gl.useProgram(0)
         }
 
     // ── 1 つの場面 ──
@@ -451,7 +448,7 @@ mod Render3d {
         let outside = Scene3d.isOutsideFrustum(frustum);
         let programs = programsOf(gl, state);
         let background = if (area#fillBackground and Option.isEmpty(scene#sky)) scene#environment#background else None;
-        beginScene(area#viewport, area#scissor, background);
+        beginScene(gl, area#viewport, area#scissor, background);
         if (area#fillBackground) drawSky(gl, state, area#viewport, scene) else ();
         let picked = Scene3d.pickLights(scene#camera#eye, scene);
         noteDroppedLights(state, scene);
@@ -465,14 +462,14 @@ mod Render3d {
                 let (plain, materials) = splitByMaterial(gl, state, gen, outside, _ -> true, area#coverage, scene#instances);
                 noteCulled(gl, state, gen, source, List.length(scene#instances), plain, materials);
                 let (blended, solid) = List.partition(d -> d#material#blend, materials);
-                bindShadowMap(shadow);
+                bindShadowMap(gl, shadow);
                 drawInstancesLit(gl, state, gen, programs#lit, camera, plain);
                 // WhyNot: 不透明の材質を来た順のまま描かない — 深度で前後が決まるので順は絵を変えず（同じ深さの面だけが並びで決まる）、
                 //   プログラムと姿勢で並べると切り替えと骨の UBO の書き直しが減る。
                 drawMaterials(gl, state, gen, camera, MaterialPass.Color, source, inDrawOrder(materialOrderOf, solid));
                 drawBillboards(gl, state, textureOf, programs#billboard, camera, scene);
                 drawBlended(gl, state, gen, camera, source, scene#camera#eye, blended);
-                unbindShadowMap(shadow)
+                unbindShadowMap(gl, shadow)
             case Scene3d.Output.Depth(dr) =>
                 // WhyNot: cutout でも両面でもない材質に材質のプログラムを組まない — 奥行きは形だけで決まり、色の計算は捨てられる
                 //   （両面の物は材質の道でカリングを切る。頂点の色の道へ回すと裏の面が捨てられ、CPU の奥行きと食い違う）。
@@ -490,12 +487,12 @@ mod Render3d {
     def drawBlended(gl: GlContext, state: State, gen: Int64, camera: CameraData, source: TextureSource, eye: Vec3.Vec3, draws: List[MaterialDraw]): Unit \ IO =
         if (List.isEmpty(draws)) ()
         else {
-            GL11.glDepthMask(false);
-            GL11.glEnable(GL11.GL_BLEND);
-            GL14.glBlendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA, GL11.GL_ONE, GL11.GL_ONE_MINUS_SRC_ALPHA);
+            gl.depthMask(false);
+            gl.enable(GlConst.BLEND);
+            gl.blendFuncSeparate(GlConst.SRC_ALPHA, GlConst.ONE_MINUS_SRC_ALPHA, GlConst.ONE, GlConst.ONE_MINUS_SRC_ALPHA);
             drawMaterials(gl, state, gen, camera, MaterialPass.Color, source, Scene3d.blendOrderOf(eye, d -> d#draw#fields, draws));
-            GL11.glDisable(GL11.GL_BLEND);
-            GL11.glDepthMask(true)
+            gl.disable(GlConst.BLEND);
+            gl.depthMask(true)
         }
 
     /// 視錐台の外で間引いた材質の物の絵を、今のコマで使った物として置き場に数え（上げていなければ上げる）、置いた物と描いた物の数を足す。
@@ -507,7 +504,7 @@ mod Render3d {
         let culledMaterials = List.filter(d -> d#draw#culled, materials);
         culledMaterials |> List.forEach(d ->
             materialTextureNames(d) |> List.forEach(lt -> { let (label, name, textureUse) = lt; discard resolveTextureAs(gl, state, gen, source, label, name, textureUse) }));
-        if (List.isEmpty(culledMaterials)) () else GL13.glActiveTexture(GL13.GL_TEXTURE0);
+        if (List.isEmpty(culledMaterials)) () else gl.activeTexture(GlConst.TEXTURE0);
         countInstances(state, total, List.count(d -> not d#culled, plain) + List.count(d -> not d#draw#culled, materials))
 
     /// 材質のある物 d を描く時に貼る絵の (知らせの中の呼び名, 名前, 使い方)（材質の絵・法線マップ・lightmap。描く時の知らせと同じ呼び名・同じ段の鍵）。
@@ -521,23 +518,23 @@ mod Render3d {
         List.flatten(reads :: normal :: baked :: Nil)
 
     /// 深度を使い始める: viewport と scissor を合わせ、地の色と深度を scissor の中だけ消し、深度とカリングを有効にする。
-    def beginScene(viewport: PixelBox, scissor: PixelBox, background: Option[Color]): Unit \ IO =
-        GL11.glViewport(viewport#x, viewport#y, viewport#width, viewport#height);
-        GL11.glEnable(GL11.GL_SCISSOR_TEST);
-        GL11.glScissor(scissor#x, scissor#y, scissor#width, scissor#height);
+    def beginScene(gl: GlContext, viewport: PixelBox, scissor: PixelBox, background: Option[Color]): Unit \ IO =
+        gl.viewport(viewport#x, viewport#y, viewport#width, viewport#height);
+        gl.enable(GlConst.SCISSOR_TEST);
+        gl.scissor(scissor#x, scissor#y, scissor#width, scissor#height);
         background |> Option.forEach(c -> {
-            GL11.glClearColor(RenderUtil.f32(c#r), RenderUtil.f32(c#g), RenderUtil.f32(c#b), 1.0f32);
-            GL11.glClear(GL11.GL_COLOR_BUFFER_BIT)
+            gl.clearColor(RenderUtil.f32(c#r), RenderUtil.f32(c#g), RenderUtil.f32(c#b), 1.0f32);
+            gl.clear(GlConst.COLOR_BUFFER_BIT)
         });
-        GL11.glDepthMask(true);
-        GL11.glClearDepth(1.0);
-        GL11.glClear(GL11.GL_DEPTH_BUFFER_BIT);
-        GL11.glEnable(GL11.GL_DEPTH_TEST);
-        GL11.glDepthFunc(GL11.GL_LESS);
-        GL11.glEnable(GL11.GL_CULL_FACE);
-        GL11.glFrontFace(GL11.GL_CW);
-        GL11.glCullFace(GL11.GL_BACK);
-        GL11.glDisable(GL11.GL_BLEND)
+        gl.depthMask(true);
+        gl.clearDepth(1.0);
+        gl.clear(GlConst.DEPTH_BUFFER_BIT);
+        gl.enable(GlConst.DEPTH_TEST);
+        gl.depthFunc(GlConst.LESS);
+        gl.enable(GlConst.CULL_FACE);
+        gl.frontFace(GlConst.CW);
+        gl.cullFace(GlConst.BACK);
+        gl.disable(GlConst.BLEND)
 
     /// 場面の sky が Some なら、今の scissor の中を空で塗る（深度は書かない・深度の判定もしない）。beginScene の後に呼ぶ。
     /// Output.Depth では白（一番奥）。sky と background が両方 Some なら 1 回だけ知らせる（background は beginScene に渡さない）。
@@ -549,41 +546,41 @@ mod Render3d {
             else {
                 let f = Scene3d.skyFieldsOf(sky);
                 let basis = Scene3d.skyBasisOf(scene);
-                GL11.glDisable(GL11.GL_DEPTH_TEST);
-                GL11.glDisable(GL11.GL_CULL_FACE);
-                GL20.glUseProgram(locs#program);
-                GL20.glUniform4f(locs#viewport, Int32.toFloat32(viewport#x), Int32.toFloat32(viewport#y),
+                gl.disable(GlConst.DEPTH_TEST);
+                gl.disable(GlConst.CULL_FACE);
+                gl.useProgram(locs#program);
+                gl.uniform4f(locs#viewport, Int32.toFloat32(viewport#x), Int32.toFloat32(viewport#y),
                                  Int32.toFloat32(viewport#width), Int32.toFloat32(viewport#height));
-                putVec3(locs#forward, basis#forward);
-                putVec3(locs#right, basis#right);
-                putVec3(locs#up, basis#up);
-                putLinearizedColor(locs#zenith, f#zenith);
-                putLinearizedColor(locs#horizon, f#horizon);
-                putLinearizedColor(locs#ground, f#ground);
-                GL20.glUniform1f(locs#curve, RenderUtil.f32(Scene3d.skyCurveOf(sky)));
-                GL20.glUniform1i(locs#depthOut, match scene#output {
+                putVec3(gl, locs#forward, basis#forward);
+                putVec3(gl, locs#right, basis#right);
+                putVec3(gl, locs#up, basis#up);
+                putLinearizedColor(gl, locs#zenith, f#zenith);
+                putLinearizedColor(gl, locs#horizon, f#horizon);
+                putLinearizedColor(gl, locs#ground, f#ground);
+                gl.uniform1f(locs#curve, RenderUtil.f32(Scene3d.skyCurveOf(sky)));
+                gl.uniform1i(locs#depthOut, match scene#output {
                     case Scene3d.Output.Color    => 0
                     case Scene3d.Output.Depth(_) => 1
                 });
-                GL30.glBindVertexArray(programsOf(gl, state)#quadVao);
-                GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 6);
+                gl.bindVertexArray(programsOf(gl, state)#quadVao);
+                gl.drawArrays(GlConst.TRIANGLES, 0, 6);
                 countDrawCall(state);
-                GL30.glBindVertexArray(0);
-                GL20.glUseProgram(0);
-                GL11.glEnable(GL11.GL_CULL_FACE);
-                GL11.glEnable(GL11.GL_DEPTH_TEST)
+                gl.bindVertexArray(0);
+                gl.useProgram(0);
+                gl.enable(GlConst.CULL_FACE);
+                gl.enable(GlConst.DEPTH_TEST)
             }
         })
 
     /// 深度とカリングを切り、blend を 2D の既定（Normal）へ、program と VAO を外す。
     def endScene(gl: GlContext): Unit \ IO =
-        GL11.glDisable(GL11.GL_DEPTH_TEST);
-        GL11.glDisable(GL11.GL_CULL_FACE);
-        GL11.glDepthMask(true);
-        GL11.glEnable(GL11.GL_BLEND);
+        gl.disable(GlConst.DEPTH_TEST);
+        gl.disable(GlConst.CULL_FACE);
+        gl.depthMask(true);
+        gl.enable(GlConst.BLEND);
         RenderSprite.applyBlend(gl, DrawCmd.BlendMode.Normal);
-        GL20.glUseProgram(0);
-        GL30.glBindVertexArray(0)
+        gl.useProgram(0);
+        gl.bindVertexArray(0)
 
     def warnSceneOnce(state: State, key: String, message: String): Unit \ IO =
         let warned = Ref.get(state#sceneWarnedRef);
@@ -604,11 +601,11 @@ mod Render3d {
     def drawLitWith(gl: GlContext, state: State, gen: Int64, locs: LitLocs, camera: CameraData, instances: List[MeshDraw]): Unit \ IO =
         if (List.isEmpty(instances) or locs#mesh#program == 0) ()
         else {
-            useMeshProgram(locs#mesh, camera#view, camera#proj);
-            putLights(locs#light, camera#lights);
-            putShadow(locs#shadow, camera#shadow);
+            useMeshProgram(gl, locs#mesh, camera#view, camera#proj);
+            putLights(gl, locs#light, camera#lights);
+            putShadow(gl, locs#shadow, camera#shadow);
             instances |> List.forEach(d -> {
-                if (d#culled) () else putLinearizedColor(locs#tint, d#fields#tint);
+                if (d#culled) () else putLinearizedColor(gl, locs#tint, d#fields#tint);
                 drawPosedMesh(gl, state, gen, locs#mesh, d)
             })
         }
@@ -626,36 +623,36 @@ mod Render3d {
                       instances: List[MeshDraw]): Unit \ IO =
         if (List.isEmpty(instances) or locs#mesh#program == 0) ()
         else {
-            useMeshProgram(locs#mesh, pass#camera#view, pass#camera#proj);
-            GL20.glUniform3f(locs#eye, RenderUtil.f32(pass#eye#x), RenderUtil.f32(pass#eye#y), RenderUtil.f32(pass#eye#z));
-            putDepthRange(locs#depthRange, pass#depthRange);
+            useMeshProgram(gl, locs#mesh, pass#camera#view, pass#camera#proj);
+            gl.uniform3f(locs#eye, RenderUtil.f32(pass#eye#x), RenderUtil.f32(pass#eye#y), RenderUtil.f32(pass#eye#z));
+            putDepthRange(gl, locs#depthRange, pass#depthRange);
             instances |> List.forEach(drawPosedMesh(gl, state, gen, locs#mesh))
         }
 
-    def putColor(loc: Int32, c: Color): Unit \ IO =
-        GL20.glUniform3f(loc, RenderUtil.f32(c#r), RenderUtil.f32(c#g), RenderUtil.f32(c#b))
+    def putColor(gl: GlContext, loc: Int32, c: Color): Unit \ IO =
+        gl.uniform3f(loc, RenderUtil.f32(c#r), RenderUtil.f32(c#g), RenderUtil.f32(c#b))
 
     /// 場面の色（tint・空の色）を線形へ戻してから入れる（光の色・ambient・かすみは lightDataOf）。
-    def putLinearizedColor(loc: Int32, c: Color): Unit \ IO =
-        putColor(loc, Texture3d.srgbToLinearColor(c))
+    def putLinearizedColor(gl: GlContext, loc: Int32, c: Color): Unit \ IO =
+        putColor(gl, loc, Texture3d.srgbToLinearColor(c))
 
-    def putDepthRange(loc: Int32, depthRange: { near = Float64, range = Float64 }): Unit \ IO =
-        GL20.glUniform2f(loc, RenderUtil.f32(depthRange#near), RenderUtil.f32(Float64.max(0.000001, depthRange#range)))
+    def putDepthRange(gl: GlContext, loc: Int32, depthRange: { near = Float64, range = Float64 }): Unit \ IO =
+        gl.uniform2f(loc, RenderUtil.f32(depthRange#near), RenderUtil.f32(Float64.max(0.000001, depthRange#range)))
 
-    def useMeshProgram(locs: MeshLocs, view: Array[Float32, Static], proj: Array[Float32, Static]): Unit \ IO =
-        GL20.glUseProgram(locs#program);
-        GL20.glUniformMatrix4fv(locs#view, false, view);
-        GL20.glUniformMatrix4fv(locs#proj, false, proj)
+    def useMeshProgram(gl: GlContext, locs: MeshLocs, view: Array[Float32, Static], proj: Array[Float32, Static]): Unit \ IO =
+        gl.useProgram(locs#program);
+        gl.uniformMatrix4fv(locs#view, false, view);
+        gl.uniformMatrix4fv(locs#proj, false, proj)
 
     /// 1 つの形を world の行列で描く（置き場に無ければ上げる）。
-    def drawMesh(state: State, gen: Int64, locs: MeshLocs, mesh: Mesh3d.Mesh3d, world: Mat4.Mat4): Unit \ IO =
-        let entry = meshEntry(state, gen, mesh);
+    def drawMesh(gl: GlContext, state: State, gen: Int64, locs: MeshLocs, mesh: Mesh3d.Mesh3d, world: Mat4.Mat4): Unit \ IO =
+        let entry = meshEntry(gl, state, gen, mesh);
         if (entry#indexCount <= 0) ()
         else {
-            putMatrix(state, locs#model, world);
-            putMatrix(state, locs#normal, Mat4.normalMatrix(world));
-            GL30.glBindVertexArray(entry#vao);
-            GL11.glDrawElements(GL11.GL_TRIANGLES, entry#indexCount, GL11.GL_UNSIGNED_INT, 0i64);
+            putMatrix(gl, state, locs#model, world);
+            putMatrix(gl, state, locs#normal, Mat4.normalMatrix(world));
+            gl.bindVertexArray(entry#vao);
+            gl.drawElements(GlConst.TRIANGLES, entry#indexCount, GlConst.UNSIGNED_INT, 0);
             countDrawCall(state)
         }
 
@@ -663,10 +660,10 @@ mod Render3d {
     /// 間引いた物（culled）は描かず、形を今のコマで使った物として置き場に数えるだけ。
     // WhyNot: 間引いた物を meshEntry に通さずに飛ばさない — 置き場があふれると最後に使ったのが古い形から捨てるので、間引いた物から消え、振り向くたびに頂点を上げ直す。
     def drawPosedMesh(gl: GlContext, state: State, gen: Int64, locs: MeshLocs, d: MeshDraw): Unit \ IO =
-        if (d#culled) discard meshEntry(state, gen, d#fields#mesh)
+        if (d#culled) discard meshEntry(gl, state, gen, d#fields#mesh)
         else {
-            d#pose |> Option.forEach(putJoints(state, skinnedProgramsOf(gl, state)));
-            drawMesh(state, gen, locs, d#fields#mesh, d#fields#world)
+            d#pose |> Option.forEach(putJoints(gl, state, skinnedProgramsOf(gl, state)));
+            drawMesh(gl, state, gen, locs, d#fields#mesh, d#fields#world)
         }
 
     def isSkinned(d: MeshDraw): Bool = Option.nonEmpty(d#pose)
@@ -706,22 +703,22 @@ mod Render3d {
     //   同じ中身を書き直さないだけで書くのは 1 コマに体の数だけになる。
     // WhyNot: 前と同じ姿勢の値でも中身を作って比べない — 共有した姿勢の物は並べ替えで隣り合うので、値そのものが同じなら中身も同じ。
     //   姿勢の鍵が同じだけの時は比べる（違う姿勢が同じ鍵になりうる）。
-    def putJoints(state: State, skinned: SkinnedPrograms, pose: Pose3d.Pose3d): Unit \ IO =
+    def putJoints(gl: GlContext, state: State, skinned: SkinnedPrograms, pose: Pose3d.Pose3d): Unit \ IO =
         if (Ref.get(skinned#uploadedPose) |> Option.exists(isSameValue(pose))) ()
-        else writeJoints(state, skinned, pose);
-        GL30.glBindBufferBase(GL31.GL_UNIFORM_BUFFER, jointsBinding(), skinned#jointsUbo)
+        else writeJoints(gl, state, skinned, pose);
+        gl.bindBufferBase(GlConst.UNIFORM_BUFFER, jointsBinding(), skinned#jointsUbo)
 
-    def writeJoints(state: State, skinned: SkinnedPrograms, pose: Pose3d.Pose3d): Unit \ IO =
+    def writeJoints(gl: GlContext, state: State, skinned: SkinnedPrograms, pose: Pose3d.Pose3d): Unit \ IO =
         let matrices = Pose3d.jointMatrices(pose) |> Vector.take(Skin3d.maxJoints());
         let data = Array.repeat(Static, Int32.max(1, Vector.length(matrices) * 16), 0.0f32);
         matrices |> Vector.forEachWithIndex((j, m) ->
             Mat4.toColumns(m) |> Vector.forEachWithIndex((k, v) -> Array.put(RenderUtil.f32(v), j * 16 + k, data)));
         if (needsUpload(Ref.get(skinned#uploadedJoints), data)) {
             count(state, Counter.JointUploads, 1);
-            GL15.glBindBuffer(GL31.GL_UNIFORM_BUFFER, skinned#jointsUbo);
-            GL15.glBufferData(GL31.GL_UNIFORM_BUFFER, Int32.toInt64(Skin3d.maxJoints() * 64), GL15.GL_DYNAMIC_DRAW);
-            GL15.glBufferSubData(GL31.GL_UNIFORM_BUFFER, 0i64, data);
-            GL15.glBindBuffer(GL31.GL_UNIFORM_BUFFER, 0);
+            gl.bindBuffer(GlConst.UNIFORM_BUFFER, skinned#jointsUbo);
+            gl.bufferData(GlConst.UNIFORM_BUFFER, Skin3d.maxJoints() * 64, GlConst.DYNAMIC_DRAW);
+            gl.bufferSubData(GlConst.UNIFORM_BUFFER, 0, data);
+            gl.bindBuffer(GlConst.UNIFORM_BUFFER, 0);
             Ref.put(data, skinned#uploadedJoints)
         } else ();
         Ref.put(Some(pose), skinned#uploadedPose)
@@ -747,10 +744,10 @@ mod Render3d {
         JFloat.floatToRawIntBits(a) == JFloat.floatToRawIntBits(b)
 
     /// 行列 m を uniform の loc へ入れる（state の置き場を使い回す）。
-    def putMatrix(state: State, loc: Int32, m: Mat4.Mat4): Unit \ IO =
+    def putMatrix(gl: GlContext, state: State, loc: Int32, m: Mat4.Mat4): Unit \ IO =
         let out = state#matrixScratch;
         Mat4.toColumns(m) |> Vector.forEachWithIndex((i, v) -> Array.put(RenderUtil.f32(v), i, out));
-        GL20.glUniformMatrix4fv(loc, false, out)
+        gl.uniformMatrix4fv(loc, false, out)
 
     /// 列優先 16 個の float の並び（glUniformMatrix4fv に transpose = false で渡す形）。
     def matrixArray(m: Mat4.Mat4): Array[Float32, Static] \ IO =
@@ -761,7 +758,7 @@ mod Render3d {
     // ── メッシュの置き場 ──
 
     /// contentHash で引き、無ければ上げる。どちらでも lastUsed を今の世代にする。
-    def meshEntry(state: State, gen: Int64, mesh: Mesh3d.Mesh3d): MeshEntry \ IO =
+    def meshEntry(gl: GlContext, state: State, gen: Int64, mesh: Mesh3d.Mesh3d): MeshEntry \ IO =
         let key = Mesh3d.contentHash(mesh);
         let meshes = Ref.get(state#meshesRef);
         let entry = match Map.get(key, meshes) {
@@ -769,7 +766,7 @@ mod Render3d {
             case None =>
                 Array.put(1, 2, state#uploadStreak);
                 count(state, Counter.MeshUploads, 1);
-                let made = uploadMesh(gen, mesh);
+                let made = uploadMesh(gl, gen, mesh);
                 Array.put(Array.get(0, state#vertexTotal) + made#vertexCount, 0, state#vertexTotal);
                 made
         };
@@ -777,87 +774,87 @@ mod Render3d {
         entry
 
     /// 形を GPU へ上げる（位置・法線・色を 9 個ずつ交互に並べた vbo と、添え字の ibo）。
-    def uploadMesh(gen: Int64, mesh: Mesh3d.Mesh3d): MeshEntry \ IO =
+    def uploadMesh(gl: GlContext, gen: Int64, mesh: Mesh3d.Mesh3d): MeshEntry \ IO =
         let n = Mesh3d.vertexCount(mesh);
         let vertices = interleave(mesh, n);
         let indices = Mesh3d.indices(mesh);
         let indexArray = Array.repeat(Static, Int32.max(1, Vector.length(indices)), 0);
         indices |> Vector.forEachWithIndex((i, v) -> Array.put(v, i, indexArray));
-        let vao = GL30.glGenVertexArrays();
-        let vbo = GL15.glGenBuffers();
-        let ibo = GL15.glGenBuffers();
-        GL30.glBindVertexArray(vao);
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vbo);
-        GL15.glBufferData(GL15.GL_ARRAY_BUFFER, vertices, GL15.GL_STATIC_DRAW);
-        GL20.glEnableVertexAttribArray(0);
-        GL20.glVertexAttribPointer(0, 3, GL11.GL_FLOAT, false, 36, 0i64);
-        GL20.glEnableVertexAttribArray(1);
-        GL20.glVertexAttribPointer(1, 3, GL11.GL_FLOAT, false, 36, 12i64);
-        GL20.glEnableVertexAttribArray(2);
-        GL20.glVertexAttribPointer(2, 3, GL11.GL_FLOAT, false, 36, 24i64);
-        let skin = uploadSkin(mesh);
-        let surface = uploadSurface(mesh);
-        let uv2 = uploadUv2(mesh);
-        GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, ibo);
-        GL15.glBufferData(GL15.GL_ELEMENT_ARRAY_BUFFER, indexArray, GL15.GL_STATIC_DRAW);
-        GL30.glBindVertexArray(0);
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
-        GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, 0);
+        let vao = gl.createVertexArray();
+        let vbo = gl.createBuffer();
+        let ibo = gl.createBuffer();
+        gl.bindVertexArray(vao);
+        gl.bindBuffer(GlConst.ARRAY_BUFFER, vbo);
+        gl.bufferData(GlConst.ARRAY_BUFFER, vertices, GlConst.STATIC_DRAW);
+        gl.enableVertexAttribArray(0);
+        gl.vertexAttribPointer(0, 3, GlConst.FLOAT, false, 36, 0);
+        gl.enableVertexAttribArray(1);
+        gl.vertexAttribPointer(1, 3, GlConst.FLOAT, false, 36, 12);
+        gl.enableVertexAttribArray(2);
+        gl.vertexAttribPointer(2, 3, GlConst.FLOAT, false, 36, 24);
+        let skin = uploadSkin(gl, mesh);
+        let surface = uploadSurface(gl, mesh);
+        let uv2 = uploadUv2(gl, mesh);
+        gl.bindBuffer(GlConst.ELEMENT_ARRAY_BUFFER, ibo);
+        gl.bufferData(GlConst.ELEMENT_ARRAY_BUFFER, indexArray, GlConst.STATIC_DRAW);
+        gl.bindVertexArray(0);
+        gl.bindBuffer(GlConst.ARRAY_BUFFER, 0);
+        gl.bindBuffer(GlConst.ELEMENT_ARRAY_BUFFER, 0);
         { vao = vao, vbo = vbo, ibo = ibo, skin = skin, surface = surface, uv2 = uv2, indexCount = Vector.length(indices), vertexCount = n, lastUsed = gen }
 
     /// ジョイントの番号と重みを、bind 中の VAO の location 3・4 へ上げる（ジョイントの無い形は None・何もしない）。
     /// 骨の無い版のプログラムはこの 2 つを宣言しないので、同じ VAO のまま曲げずに描ける。
-    def uploadSkin(mesh: Mesh3d.Mesh3d): Option[SkinBuffers] \ IO =
+    def uploadSkin(gl: GlContext, mesh: Mesh3d.Mesh3d): Option[SkinBuffers] \ IO =
         Mesh3d.skinJoints(mesh) |> Option.flatMap(joints ->
-            Mesh3d.skinWeights(mesh) |> Option.map(weights -> uploadSkinArrays(joints, weights)))
+            Mesh3d.skinWeights(mesh) |> Option.map(weights -> uploadSkinArrays(gl, joints, weights)))
 
-    def uploadSkinArrays(joints: Vector[Int32], weights: Vector[Float64]): SkinBuffers \ IO =
+    def uploadSkinArrays(gl: GlContext, joints: Vector[Int32], weights: Vector[Float64]): SkinBuffers \ IO =
         let jointArray = Array.repeat(Static, Int32.max(1, Vector.length(joints)), 0);
         joints |> Vector.forEachWithIndex((i, j) -> Array.put(j, i, jointArray));
         let weightArray = Array.repeat(Static, Int32.max(1, Vector.length(weights)), 0.0f32);
         weights |> Vector.forEachWithIndex((i, w) -> Array.put(RenderUtil.f32(w), i, weightArray));
-        let jointVbo = GL15.glGenBuffers();
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, jointVbo);
-        GL15.glBufferData(GL15.GL_ARRAY_BUFFER, jointArray, GL15.GL_STATIC_DRAW);
-        GL20.glEnableVertexAttribArray(3);
+        let jointVbo = gl.createBuffer();
+        gl.bindBuffer(GlConst.ARRAY_BUFFER, jointVbo);
+        gl.bufferData(GlConst.ARRAY_BUFFER, jointArray, GlConst.STATIC_DRAW);
+        gl.enableVertexAttribArray(3);
         // WhyNot: glVertexAttribPointer で渡さない — float に直されて、シェーダーの ivec4 では番号として読めない。
-        GL30.glVertexAttribIPointer(3, 4, GL11.GL_INT, 16, 0i64);
-        let weightVbo = GL15.glGenBuffers();
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, weightVbo);
-        GL15.glBufferData(GL15.GL_ARRAY_BUFFER, weightArray, GL15.GL_STATIC_DRAW);
-        GL20.glEnableVertexAttribArray(4);
-        GL20.glVertexAttribPointer(4, 4, GL11.GL_FLOAT, false, 16, 0i64);
+        gl.vertexAttribIPointer(3, 4, GlConst.INT, 16, 0);
+        let weightVbo = gl.createBuffer();
+        gl.bindBuffer(GlConst.ARRAY_BUFFER, weightVbo);
+        gl.bufferData(GlConst.ARRAY_BUFFER, weightArray, GlConst.STATIC_DRAW);
+        gl.enableVertexAttribArray(4);
+        gl.vertexAttribPointer(4, 4, GlConst.FLOAT, false, 16, 0);
         { joints = jointVbo, weights = weightVbo }
 
     /// 2 本目の uv（lightmap を読む UV）を、bind 中の VAO の location 7 へ別の vbo で上げる（2 本目の uv の無い形は None・何もしない）。
     // WhyNot: 位置・法線・色や uv とタンジェントの vbo に混ぜない — 2 本目の uv の無い形の頂点バッファの中身を変えない。
-    def uploadUv2(mesh: Mesh3d.Mesh3d): Option[Int32] \ IO =
+    def uploadUv2(gl: GlContext, mesh: Mesh3d.Mesh3d): Option[Int32] \ IO =
         Mesh3d.uvs2(mesh) |> Option.map(uvs -> {
             let data = Array.repeat(Static, Int32.max(1, Vector.length(uvs)), 0.0f32);
             uvs |> Vector.forEachWithIndex((i, v) -> Array.put(RenderUtil.f32(v), i, data));
-            let vbo = GL15.glGenBuffers();
-            GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vbo);
-            GL15.glBufferData(GL15.GL_ARRAY_BUFFER, data, GL15.GL_STATIC_DRAW);
-            GL20.glEnableVertexAttribArray(7);
-            GL20.glVertexAttribPointer(7, 2, GL11.GL_FLOAT, false, 8, 0i64);
+            let vbo = gl.createBuffer();
+            gl.bindBuffer(GlConst.ARRAY_BUFFER, vbo);
+            gl.bufferData(GlConst.ARRAY_BUFFER, data, GlConst.STATIC_DRAW);
+            gl.enableVertexAttribArray(7);
+            gl.vertexAttribPointer(7, 2, GlConst.FLOAT, false, 8, 0);
             vbo
         })
 
     /// uv とタンジェントを、bind 中の VAO の location 5・6 へ上げる（uv の無い形は None・何もしない）。
     /// 頂点の色と骨の無い版のプログラムはこの 2 つを宣言しないので、同じ VAO のまま描ける。
-    def uploadSurface(mesh: Mesh3d.Mesh3d): Option[Int32] \ IO =
+    def uploadSurface(gl: GlContext, mesh: Mesh3d.Mesh3d): Option[Int32] \ IO =
         Mesh3d.uvs(mesh) |> Option.flatMap(uvs -> Mesh3d.tangents(mesh) |> Option.map(tangents -> {
             let n = Vector.length(uvs) / 2;
             let data = Array.repeat(Static, Int32.max(1, n * 6), 0.0f32);
             uvs |> Vector.forEachWithIndex((i, v) -> Array.put(RenderUtil.f32(v), (i / 2) * 6 + Int32.remainder(i, 2), data));
             tangents |> Vector.forEachWithIndex((i, v) -> Array.put(RenderUtil.f32(v), (i / 4) * 6 + 2 + Int32.remainder(i, 4), data));
-            let vbo = GL15.glGenBuffers();
-            GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vbo);
-            GL15.glBufferData(GL15.GL_ARRAY_BUFFER, data, GL15.GL_STATIC_DRAW);
-            GL20.glEnableVertexAttribArray(5);
-            GL20.glVertexAttribPointer(5, 2, GL11.GL_FLOAT, false, 24, 0i64);
-            GL20.glEnableVertexAttribArray(6);
-            GL20.glVertexAttribPointer(6, 4, GL11.GL_FLOAT, false, 24, 8i64);
+            let vbo = gl.createBuffer();
+            gl.bindBuffer(GlConst.ARRAY_BUFFER, vbo);
+            gl.bufferData(GlConst.ARRAY_BUFFER, data, GlConst.STATIC_DRAW);
+            gl.enableVertexAttribArray(5);
+            gl.vertexAttribPointer(5, 2, GlConst.FLOAT, false, 24, 0);
+            gl.enableVertexAttribArray(6);
+            gl.vertexAttribPointer(6, 4, GlConst.FLOAT, false, 24, 8);
             vbo
         }))
 
@@ -870,38 +867,38 @@ mod Render3d {
         put(6, Mesh3d.colors(mesh));
         out
 
-    def deleteMesh(entry: MeshEntry): Unit \ IO =
-        GL30.glDeleteVertexArrays(entry#vao);
-        GL15.glDeleteBuffers(entry#vbo);
-        GL15.glDeleteBuffers(entry#ibo);
+    def deleteMesh(gl: GlContext, entry: MeshEntry): Unit \ IO =
+        gl.deleteVertexArray(entry#vao);
+        gl.deleteBuffer(entry#vbo);
+        gl.deleteBuffer(entry#ibo);
         entry#skin |> Option.forEach(s -> {
-            GL15.glDeleteBuffers(s#joints);
-            GL15.glDeleteBuffers(s#weights)
+            gl.deleteBuffer(s#joints);
+            gl.deleteBuffer(s#weights)
         });
-        entry#surface |> Option.forEach(vbo -> GL15.glDeleteBuffers(vbo));
-        entry#uv2 |> Option.forEach(vbo -> GL15.glDeleteBuffers(vbo))
+        entry#surface |> Option.forEach(vbo -> gl.deleteBuffer(vbo));
+        entry#uv2 |> Option.forEach(vbo -> gl.deleteBuffer(vbo))
 
     /// 画面のコマを描き終えた後に 1 回呼ぶ。上限を超えた分のメッシュを捨て、毎コマの作り直しを知らせる。
     // WhyNot: しばらく使わなかった形を捨てない — たまにしか出ない物（蹴りの脚・手榴弾）を出すたびに上げ直し、そのコマが跳ねる。
     //   毎コマ新しい形を作るゲームは、上限で古い物から押し出される。
-    def endFrame(state: State, gen: Int64): Unit \ IO = timed(state, Phase.EndFrame, () -> {
+    def endFrame(gl: GlContext, state: State, gen: Int64): Unit \ IO = timed(state, Phase.EndFrame, () -> {
         noteUploadStreak(state);
         noteMaterialStreak(state);
-        sweepMaterials(state, gen);
-        sweepShadowTargets(state, gen);
-        sweepTextures3d(state, gen);
-        if (Array.get(0, state#vertexTotal) > vertexBudget()) trimToBudget(state, gen) else ()
+        sweepMaterials(gl, state, gen);
+        sweepShadowTargets(gl, state, gen);
+        sweepTextures3d(gl, state, gen);
+        if (Array.get(0, state#vertexTotal) > vertexBudget()) trimToBudget(gl, state, gen) else ()
     })
 
-    def dropMeshes(state: State, dropped: Map[String, MeshEntry], kept: Map[String, MeshEntry]): Unit \ IO =
-        Map.forEach((_key, e) -> deleteMesh(e), dropped);
+    def dropMeshes(gl: GlContext, state: State, dropped: Map[String, MeshEntry], kept: Map[String, MeshEntry]): Unit \ IO =
+        Map.forEach((_key, e) -> deleteMesh(gl, e), dropped);
         count(state, Counter.MeshEvictions, Map.size(dropped));
         let freed = Map.foldLeft((acc, e) -> acc + e#vertexCount, 0, dropped);
         Array.put(Array.get(0, state#vertexTotal) - freed, 0, state#vertexTotal);
         Ref.put(kept, state#meshesRef)
 
     /// 頂点の合計が上限に収まるまで、最後に使ったのが古い物から捨てる（今のコマで使った物は捨てない）。
-    def trimToBudget(state: State, gen: Int64): Unit \ IO =
+    def trimToBudget(gl: GlContext, state: State, gen: Int64): Unit \ IO =
         let oldestFirst = Map.toList(Ref.get(state#meshesRef))
             |> List.filter(ke -> snd(ke)#lastUsed < gen)
             |> List.sortBy(ke -> snd(ke)#lastUsed);
@@ -915,7 +912,7 @@ mod Render3d {
         // WhyNot: 捨てる物が無いコマで知らせない — 今のコマで使う形だけで上限を超えていると、毎コマ同じ知らせが出る。
         if (Map.isEmpty(dropped)) ()
         else {
-            dropMeshes(state, dropped, kept);
+            dropMeshes(gl, state, dropped, kept);
             Log.warn("scene3d: メッシュの置き場が頂点 ${vertexBudget()} を超えたので、古い形を ${Map.size(dropped)} 個捨てた")
         }
 
@@ -947,50 +944,50 @@ mod Render3d {
         if (List.isEmpty(scene#billboards) or locs#program == 0) ()
         else {
             // WhyNot: ビルボードに裏の面の間引き（GL_CULL_FACE）を掛けない — 四角はいつもカメラを向くので裏は来ず、頂点の巻き方を合わせる手間だけが増える。
-            GL11.glDisable(GL11.GL_CULL_FACE);
-            GL20.glUseProgram(locs#program);
-            GL20.glUniformMatrix4fv(locs#view, false, camera#view);
-            GL20.glUniformMatrix4fv(locs#proj, false, camera#proj);
-            putLights(locs#light, camera#lights);
-            putVec3(locs#right, Camera3d.right(scene#camera));
-            putVec3(locs#up, Camera3d.up(scene#camera));
-            putVec3(locs#facing, Vec3.mul(Camera3d.forward(scene#camera), -1.0));
-            putBillboardOutput(locs, scene#output);
-            GL13.glActiveTexture(GL13.GL_TEXTURE0);
-            GL30.glBindVertexArray(programsOf(gl, state)#quadVao);
+            gl.disable(GlConst.CULL_FACE);
+            gl.useProgram(locs#program);
+            gl.uniformMatrix4fv(locs#view, false, camera#view);
+            gl.uniformMatrix4fv(locs#proj, false, camera#proj);
+            putLights(gl, locs#light, camera#lights);
+            putVec3(gl, locs#right, Camera3d.right(scene#camera));
+            putVec3(gl, locs#up, Camera3d.up(scene#camera));
+            putVec3(gl, locs#facing, Vec3.mul(Camera3d.forward(scene#camera), -1.0));
+            putBillboardOutput(gl, locs, scene#output);
+            gl.activeTexture(GlConst.TEXTURE0);
+            gl.bindVertexArray(programsOf(gl, state)#quadVao);
             scene#billboards |> List.forEach(b ->
-                drawBillboard(state, textureOf, locs, Scene3d.isBillboardOutsideFrustum(camera#frustum, b), Scene3d.billboardFieldsOf(b)));
-            GL30.glBindVertexArray(0);
-            GL11.glEnable(GL11.GL_CULL_FACE)
+                drawBillboard(gl, state, textureOf, locs, Scene3d.isBillboardOutsideFrustum(camera#frustum, b), Scene3d.billboardFieldsOf(b)));
+            gl.bindVertexArray(0);
+            gl.enable(GlConst.CULL_FACE)
         }
 
-    def putBillboardOutput(locs: BillboardLocs, output: Scene3d.Output): Unit \ IO =
+    def putBillboardOutput(gl: GlContext, locs: BillboardLocs, output: Scene3d.Output): Unit \ IO =
         match output {
-            case Scene3d.Output.Color => GL20.glUniform1i(locs#depthOut, 0)
+            case Scene3d.Output.Color => gl.uniform1i(locs#depthOut, 0)
             case Scene3d.Output.Depth(dr) =>
-                GL20.glUniform1i(locs#depthOut, 1);
-                GL20.glUniform2f(locs#depthRange, RenderUtil.f32(dr#near), RenderUtil.f32(Float64.max(0.000001, dr#range)))
+                gl.uniform1i(locs#depthOut, 1);
+                putDepthRange(gl, locs#depthRange, dr)
         }
 
-    def drawBillboard(state: State, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO, locs: BillboardLocs,
+    def drawBillboard(gl: GlContext, state: State, textureOf: String -> Option[Scene3dRenderer.RegisteredTexture] \ IO, locs: BillboardLocs,
                       culled: Bool, b: Scene3d.BillboardFields): Unit \ IO =
         match textureOf(b#texture) {
             case None          => warnMissingTexture(state, b#texture)
             case Some(_) if culled => ()
             case Some(texture) =>
-                GL11.glBindTexture(GL11.GL_TEXTURE_2D, texture#texId);
-                putVec3(locs#center, b#position);
-                GL20.glUniform2f(locs#anchor, RenderUtil.f32(b#anchor#x), RenderUtil.f32(b#anchor#y));
-                GL20.glUniform2f(locs#size, RenderUtil.f32(b#size#x), RenderUtil.f32(b#size#y));
-                putUvRect(locs#uvRect, texture, b#regionRect);
-                putLinearizedColor(locs#tint, b#tint);
-                GL20.glUniform1i(locs#lit, if (b#lit) 1 else 0);
-                GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 6);
+                gl.bindTexture(GlConst.TEXTURE_2D, texture#texId);
+                putVec3(gl, locs#center, b#position);
+                gl.uniform2f(locs#anchor, RenderUtil.f32(b#anchor#x), RenderUtil.f32(b#anchor#y));
+                gl.uniform2f(locs#size, RenderUtil.f32(b#size#x), RenderUtil.f32(b#size#y));
+                putUvRect(gl, locs#uvRect, texture, b#regionRect);
+                putLinearizedColor(gl, locs#tint, b#tint);
+                gl.uniform1i(locs#lit, if (b#lit) 1 else 0);
+                gl.drawArrays(GlConst.TRIANGLES, 0, 6);
                 countDrawCall(state)
         }
 
     /// 貼る範囲の uv（左上 u・v と幅・高さ）。レンダーターゲットは行 0 が下なので v を反転する。
-    def putUvRect(loc: Int32, texture: Scene3dRenderer.RegisteredTexture, source: Rect2.Rect2): Unit \ IO =
+    def putUvRect(gl: GlContext, loc: Int32, texture: Scene3dRenderer.RegisteredTexture, source: Rect2.Rect2): Unit \ IO =
         let w = Float64.max(1.0, texture#width);
         let h = Float64.max(1.0, texture#height);
         let u0 = source#position#x / w;
@@ -998,9 +995,9 @@ mod Render3d {
         let du = source#size#x / w;
         let dv = source#size#y / h;
         if (texture#flipped)
-            GL20.glUniform4f(loc, RenderUtil.f32(u0), RenderUtil.f32(1.0 - v0), RenderUtil.f32(du), RenderUtil.f32(0.0 - dv))
+            gl.uniform4f(loc, RenderUtil.f32(u0), RenderUtil.f32(1.0 - v0), RenderUtil.f32(du), RenderUtil.f32(0.0 - dv))
         else
-            GL20.glUniform4f(loc, RenderUtil.f32(u0), RenderUtil.f32(v0), RenderUtil.f32(du), RenderUtil.f32(dv))
+            gl.uniform4f(loc, RenderUtil.f32(u0), RenderUtil.f32(v0), RenderUtil.f32(du), RenderUtil.f32(dv))
 
     def warnMissingTexture(state: State, name: String): Unit \ IO =
         let warned = Ref.get(state#missingTexturesRef);
@@ -1011,8 +1008,8 @@ mod Render3d {
                 + "（project.json の textures に同名の宣言があるか確認）")
         }
 
-    def putVec3(loc: Int32, v: Vec3.Vec3): Unit \ IO =
-        GL20.glUniform3f(loc, RenderUtil.f32(v#x), RenderUtil.f32(v#y), RenderUtil.f32(v#z))
+    def putVec3(gl: GlContext, loc: Int32, v: Vec3.Vec3): Unit \ IO =
+        gl.uniform3f(loc, RenderUtil.f32(v#x), RenderUtil.f32(v#y), RenderUtil.f32(v#z))
 
     // ── プログラム ──
 
@@ -1022,6 +1019,9 @@ mod Render3d {
             case Some(p) => p
             case None =>
                 let made = buildPrograms(gl);
+                gl.activeTexture(GlConst.TEXTURE0 + blankTextureUnit());
+                gl.bindTexture(GlConst.TEXTURE_2D, blankTextureId(gl, state));
+                gl.activeTexture(GlConst.TEXTURE0);
                 Ref.put(Some(made), state#programsRef);
                 made
         }
@@ -1031,9 +1031,9 @@ mod Render3d {
         let depth = compile(gl, meshVertexSource(), depthFragmentSource(), "scene3d:depth");
         let billboard = compile(gl, billboardVertexSource(), billboardFragmentSource(), "scene3d:billboard");
         let blit = compile(gl, blitVertexSource(), blitFragmentSource(), "scene3d:blit");
-        let (quadVao, quadVbo) = buildQuad();
-        { lit = litLocsOf(lit), depth = depthLocsOf(depth),
-          billboard = billboardLocsOf(billboard), blit = blit, quadVao = quadVao, quadVbo = quadVbo }
+        let (quadVao, quadVbo) = buildQuad(gl);
+        { lit = litLocsOf(gl, lit), depth = depthLocsOf(gl, depth),
+          billboard = billboardLocsOf(gl, billboard), blit = blit, quadVao = quadVao, quadVbo = quadVbo }
 
     /// 空のプログラムを初めて要る時に組む。組めなかったプログラムは 0（空を描かず、地の色も塗らない）。
     def skyProgramOf(gl: GlContext, state: State): SkyLocs \ IO =
@@ -1041,10 +1041,10 @@ mod Render3d {
             case Some(p) => p
             case None =>
                 let program = compile(gl, blitVertexSource(), skyFragmentSource(), "scene3d:sky");
-                let made = { program = program, viewport = loc(program, "uViewport"), forward = loc(program, "uForward"),
-                             right = loc(program, "uRight"), up = loc(program, "uUp"), zenith = loc(program, "uZenith"),
-                             horizon = loc(program, "uHorizon"), ground = loc(program, "uGround"), curve = loc(program, "uCurve"),
-                             depthOut = loc(program, "uDepthOut") };
+                let made = { program = program, viewport = loc(gl, program, "uViewport"), forward = loc(gl, program, "uForward"),
+                             right = loc(gl, program, "uRight"), up = loc(gl, program, "uUp"), zenith = loc(gl, program, "uZenith"),
+                             horizon = loc(gl, program, "uHorizon"), ground = loc(gl, program, "uGround"), curve = loc(gl, program, "uCurve"),
+                             depthOut = loc(gl, program, "uDepthOut") };
                 Ref.put(Some(made), state#skyRef);
                 made
         }
@@ -1062,32 +1062,32 @@ mod Render3d {
     def buildSkinnedPrograms(gl: GlContext): SkinnedPrograms \ IO =
         let lit = compile(gl, litVertexSource(true), litFragmentSource(), "scene3d:lit:skin");
         let depth = compile(gl, skinnedMeshVertexSource(), depthFragmentSource(), "scene3d:depth:skin");
-        bindJointsBlock(lit);
-        bindJointsBlock(depth);
-        { lit = litLocsOf(lit), depth = depthLocsOf(depth), jointsUbo = createJointsBuffer(),
+        bindJointsBlock(gl, lit);
+        bindJointsBlock(gl, depth);
+        { lit = litLocsOf(gl, lit), depth = depthLocsOf(gl, depth), jointsUbo = createJointsBuffer(gl),
           uploadedJoints = Ref.fresh(Static, Array.empty(Static, 0)), uploadedPose = Ref.fresh(Static, None) }
 
     /// プログラムの Joints の uniform block を jointsBinding() へ向ける（block の無いプログラムと 0 は何もしない）。
-    def bindJointsBlock(program: Int32): Unit \ IO =
+    def bindJointsBlock(gl: GlContext, program: Int32): Unit \ IO =
         if (program == 0) ()
         else {
-            let index = GL31.glGetUniformBlockIndex(program, "Joints");
-            if (index == GL31.GL_INVALID_INDEX) () else GL31.glUniformBlockBinding(program, index, jointsBinding())
+            let index = gl.getUniformBlockIndex(program, "Joints");
+            if (index == GlConst.INVALID_INDEX) () else gl.uniformBlockBinding(program, index, jointsBinding())
         }
 
     /// mat4 × Skin3d.maxJoints() の UBO（std140 の mat4 の配列は 1 本 64 バイトで詰まる）。
-    def createJointsBuffer(): Int32 \ IO =
-        let ubo = GL15.glGenBuffers();
-        GL15.glBindBuffer(GL31.GL_UNIFORM_BUFFER, ubo);
-        GL15.glBufferData(GL31.GL_UNIFORM_BUFFER, Int32.toInt64(Skin3d.maxJoints() * 64), GL15.GL_DYNAMIC_DRAW);
-        GL15.glBindBuffer(GL31.GL_UNIFORM_BUFFER, 0);
+    def createJointsBuffer(gl: GlContext): Int32 \ IO =
+        let ubo = gl.createBuffer();
+        gl.bindBuffer(GlConst.UNIFORM_BUFFER, ubo);
+        gl.bufferData(GlConst.UNIFORM_BUFFER, Skin3d.maxJoints() * 64, GlConst.DYNAMIC_DRAW);
+        gl.bindBuffer(GlConst.UNIFORM_BUFFER, 0);
         ubo
 
-    def litLocsOf(program: Int32): LitLocs \ IO =
-        { mesh = meshLocsOf(program), tint = loc(program, "uTint"), light = lightLocsOf(program), shadow = shadowLocsOf(program) }
+    def litLocsOf(gl: GlContext, program: Int32): LitLocs \ IO =
+        { mesh = meshLocsOf(gl, program), tint = loc(gl, program, "uTint"), light = lightLocsOf(gl, program), shadow = shadowLocsOf(gl, program) }
 
-    def depthLocsOf(program: Int32): DepthLocs \ IO =
-        { mesh = meshLocsOf(program), eye = loc(program, "uEye"), depthRange = loc(program, "uDepthRange") }
+    def depthLocsOf(gl: GlContext, program: Int32): DepthLocs \ IO =
+        { mesh = meshLocsOf(gl, program), eye = loc(gl, program, "uEye"), depthRange = loc(gl, program, "uDepthRange") }
 
     def compile(gl: GlContext, vertex: String, fragment: String, label: String): Int32 \ IO =
         match RenderShader.tryCreateProgram(gl, vertex, fragment, label) {
@@ -1096,54 +1096,54 @@ mod Render3d {
                 Log.warnThen("scene3d: プログラム '${label}' が組めなかった — この種類の 3D の描き物は描かない", 0)
         }
 
-    def loc(program: Int32, name: String): Int32 \ IO =
-        if (program == 0) -1 else GL20.glGetUniformLocation(program, name)
+    def loc(gl: GlContext, program: Int32, name: String): Int32 \ IO =
+        if (program == 0) -1 else gl.getUniformLocation(program, name)
 
-    def meshLocsOf(program: Int32): MeshLocs \ IO =
-        { program = program, model = loc(program, "uModel"), view = loc(program, "uView"),
-          proj = loc(program, "uProj"), normal = loc(program, "uNormal") }
+    def meshLocsOf(gl: GlContext, program: Int32): MeshLocs \ IO =
+        { program = program, model = loc(gl, program, "uModel"), view = loc(gl, program, "uView"),
+          proj = loc(gl, program, "uProj"), normal = loc(gl, program, "uNormal") }
 
-    def lightLocsOf(program: Int32): LightLocs \ IO =
-        { ambient = loc(program, "uAmbient"), hemisphere = loc(program, "uHemisphere"), toonSteps = loc(program, "uToonSteps"),
-          pointCount = loc(program, "uPointCount"), pointPos = loc(program, "uPointPos"),
-          pointColor = loc(program, "uPointColor"), pointRange = loc(program, "uPointRange"),
-          spotCount = loc(program, "uSpotCount"), spotPos = loc(program, "uSpotPos"), spotDir = loc(program, "uSpotDir"),
-          spotColor = loc(program, "uSpotColor"), spotRange = loc(program, "uSpotRange"), spotCone = loc(program, "uSpotCone"),
-          fogOn = loc(program, "uFogOn"), fogColor = loc(program, "uFogColor"), fogRange = loc(program, "uFogRange"),
-          eye = loc(program, "uEye") }
+    def lightLocsOf(gl: GlContext, program: Int32): LightLocs \ IO =
+        { ambient = loc(gl, program, "uAmbient"), hemisphere = loc(gl, program, "uHemisphere"), toonSteps = loc(gl, program, "uToonSteps"),
+          pointCount = loc(gl, program, "uPointCount"), pointPos = loc(gl, program, "uPointPos"),
+          pointColor = loc(gl, program, "uPointColor"), pointRange = loc(gl, program, "uPointRange"),
+          spotCount = loc(gl, program, "uSpotCount"), spotPos = loc(gl, program, "uSpotPos"), spotDir = loc(gl, program, "uSpotDir"),
+          spotColor = loc(gl, program, "uSpotColor"), spotRange = loc(gl, program, "uSpotRange"), spotCone = loc(gl, program, "uSpotCone"),
+          fogOn = loc(gl, program, "uFogOn"), fogColor = loc(gl, program, "uFogColor"), fogRange = loc(gl, program, "uFogRange"),
+          eye = loc(gl, program, "uEye") }
 
-    def shadowLocsOf(program: Int32): ShadowLocs \ IO =
-        { on = loc(program, "uShadowOn"), spot = loc(program, "uShadowSpot"), matrix = loc(program, "uShadowMatrix"),
-          map = loc(program, "uShadowMap"), bias = loc(program, "uShadowBias"), pcf = loc(program, "uShadowPcf"),
-          strength = loc(program, "uShadowStrength") }
+    def shadowLocsOf(gl: GlContext, program: Int32): ShadowLocs \ IO =
+        { on = loc(gl, program, "uShadowOn"), spot = loc(gl, program, "uShadowSpot"), matrix = loc(gl, program, "uShadowMatrix"),
+          map = loc(gl, program, "uShadowMap"), bias = loc(gl, program, "uShadowBias"), pcf = loc(gl, program, "uShadowPcf"),
+          strength = loc(gl, program, "uShadowStrength") }
 
-    def billboardLocsOf(program: Int32): BillboardLocs \ IO =
+    def billboardLocsOf(gl: GlContext, program: Int32): BillboardLocs \ IO =
         if (program == 0) () else {
-            GL20.glUseProgram(program);
-            GL20.glUniform1i(loc(program, "uImage"), 0);
-            GL20.glUseProgram(0)
+            gl.useProgram(program);
+            gl.uniform1i(loc(gl, program, "uImage"), 0);
+            gl.useProgram(0)
         };
-        { program = program, view = loc(program, "uView"), proj = loc(program, "uProj"),
-          center = loc(program, "uCenter"), right = loc(program, "uRight"), up = loc(program, "uUp"),
-          anchor = loc(program, "uAnchor"), size = loc(program, "uSize"), uvRect = loc(program, "uUvRect"),
-          tint = loc(program, "uTint"), lit = loc(program, "uLit"), facing = loc(program, "uFacing"),
-          depthOut = loc(program, "uDepthOut"), depthRange = loc(program, "uDepthRange"), light = lightLocsOf(program) }
+        { program = program, view = loc(gl, program, "uView"), proj = loc(gl, program, "uProj"),
+          center = loc(gl, program, "uCenter"), right = loc(gl, program, "uRight"), up = loc(gl, program, "uUp"),
+          anchor = loc(gl, program, "uAnchor"), size = loc(gl, program, "uSize"), uvRect = loc(gl, program, "uUvRect"),
+          tint = loc(gl, program, "uTint"), lit = loc(gl, program, "uLit"), facing = loc(gl, program, "uFacing"),
+          depthOut = loc(gl, program, "uDepthOut"), depthRange = loc(gl, program, "uDepthRange"), light = lightLocsOf(gl, program) }
 
     /// 四角の 6 頂点（角の 0〜1。y は下向き = 絵の上が 0）。ビルボードと Design の重ねで共有する。
-    def buildQuad(): (Int32, Int32) \ IO =
-        let vao = GL30.glGenVertexArrays();
-        let vbo = GL15.glGenBuffers();
+    def buildQuad(gl: GlContext): (Int32, Int32) \ IO =
+        let vao = gl.createVertexArray();
+        let vbo = gl.createBuffer();
         let corners = Array#{
             0.0f32, 0.0f32,  1.0f32, 0.0f32,  1.0f32, 1.0f32,
             0.0f32, 0.0f32,  1.0f32, 1.0f32,  0.0f32, 1.0f32
         } @ Static;
-        GL30.glBindVertexArray(vao);
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vbo);
-        GL15.glBufferData(GL15.GL_ARRAY_BUFFER, corners, GL15.GL_STATIC_DRAW);
-        GL20.glEnableVertexAttribArray(0);
-        GL20.glVertexAttribPointer(0, 2, GL11.GL_FLOAT, false, 8, 0i64);
-        GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
-        GL30.glBindVertexArray(0);
+        gl.bindVertexArray(vao);
+        gl.bindBuffer(GlConst.ARRAY_BUFFER, vbo);
+        gl.bufferData(GlConst.ARRAY_BUFFER, corners, GlConst.STATIC_DRAW);
+        gl.enableVertexAttribArray(0);
+        gl.vertexAttribPointer(0, 2, GlConst.FLOAT, false, 8, 0);
+        gl.bindBuffer(GlConst.ARRAY_BUFFER, 0);
+        gl.bindVertexArray(0);
         (vao, vbo)
 
 }

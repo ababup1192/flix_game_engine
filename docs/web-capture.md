@@ -56,6 +56,22 @@ requestAnimationFrame(() => {
   `visibilityState` が `hidden` で rAF が回らないため（Chrome 156・macOS で確かめた）。頁の側で visibility を見て止める
   作りでも撮れる。
 
+## 書き出した頁のコマを撮る（?capture=<n>）
+
+`bin/fge export-web` の頁は URL の `?capture=<n>` で上の約束を守る。canvas を design の大きさにし、dt を 1/60 に固定し、
+「押して始める」を飛ばし、n コマ目を描き終えた所（`presentFrame` の頭・`Browser.frameDrawn`）で読む。
+デスクトップの `FLIX_GE_HIDDEN=1 FLIX_GE_FRAME_SHOT=<フォルダ> FLIX_GE_FIXED_DT=1/60`（`bin/gl-capture.sh`）の `frame-<n>.png` と同じコマになる。
+
+```
+bin/gl-capture.sh <控え> bench/scene3d:
+bin/fge export-web bench/scene3d --out <出力>            # 静的なサーバーで配る
+bin/fge web-capture "http://127.0.0.1:<port>/index.html?capture=6" <出力.png> --size 640x360 --wait 60
+```
+
+同じ `?` に `glcheck=1`（GL の呼び出しごとに `getError` を見て、組ごとに 1 回 console へ言う・`fgeGlCheck` に回数）と
+`loadtime=1`（絵の解読を 1 枚ごとに `console.time`・枚数と合計を `fgeDecodeTimes` へ）を足せる。Mip の時間はデスクトップの F3 と hitch の 3D の区間 `mip` で読む（ブラウザの頁には出ない）。
+実測の結果は [backend-parity.md](backend-parity.md) の「ブラウザ（WebGL2）とデスクトップの絵」。
+
 ## gl_parity とのつなぎ（案）
 
 今の物差し（[backend-parity.md](backend-parity.md) の「機械での突き合わせ」）: `make gl-parity` が A 段階の scene を

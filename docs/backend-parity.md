@@ -14,6 +14,32 @@
 | **GL**（`render_gl`） | 実機。`make run` で見える絵 |
 | **SoftRaster**（`engine_tools`） | 生成・スナップショット・F8 注釈・エディタのプレビュー |
 
+## ブラウザ（WebGL2）とデスクトップの絵
+
+ブラウザは GL の 3 本目の実装で、同じ `render_gl` の本体を `GlContext` の `WebGl2` で動かす。比べ方は `docs/web-capture.md` の `?capture=<n>`。
+合格の線は、同じ場面・同じカメラ・同じ大きさで、RGB の差が 2/255 以下の画素が 99.9% 以上（cutout の縁は除く）。
+
+| 場面 | 大きさ | 差 2/255 以下 | 差 0 | 一番大きい差 |
+|---|---|---|---|---|
+| `bench/scene3d` 1・2・3・6 コマ目 | 320×180 | 100.000% | 99.997〜100.000% | 1/255 |
+| fps3d_lab の部屋 45・55・63 コマ目（msaa 4・Rgba16Float の Pass） | 480×270 | 99.938〜99.942% | 99.846〜99.863% | 45/255 |
+
+2026-11-05・Chrome 156・ANGLE Metal（Apple M4 Pro）。同じ機械のデスクトップの GL の絵と比べた。ほかの機械と Safari・Windows・Android は未測定。
+
+| 確かめた事 | 結果 |
+|---|---|
+| 骨つきの物（skin の UBO・`vertexAttribIPointer`） | fps3d_lab の部屋の鎧の人物で動いた。`?glcheck=1` で `vertexAttribIPointer` 14 回・`bindBufferBase` 1,806 回・`bufferSubData` 32 回、getError 0 件。上の表の 3 コマに映っている |
+| glb の絵（`LoadProgress.imageDecoder`） | fps3d_lab で 46 枚を解いた（合計約 210 ms・1 枚 4〜7 ms） |
+| wasm の 1 コマの CPU の中央値 | `bench/scene3d` 1.3 ms・fps3d_lab の部屋 16.6 ms（隠れた内蔵ブラウザの 7 コマ。`requestAnimationFrame` の回数は測れない） |
+| デスクトップの 1 コマの時間（`bench/scene3d`・GlContext へ移す前と後の p50 の中央値） | 前 0.955 ms・後 0.925 ms（同じ測り方で ±10% 揺れる） |
+| `classes.wasm` の大きさ | 2D のテンプレは 3D の前と比べて +0.09〜0.12%。`bench/scene3d` は 2D の入口 3.8 MB・`withProject3d` 5.3 MB |
+
+| 指定 | デスクトップ | ブラウザ | 備考 |
+|---|---|---|---|
+| 標本を持つ描き先の cutout | alpha to coverage | discard | **近似**。WebGL2 に `SAMPLE_ALPHA_TO_ONE` が無い（`GlContext.hasAlphaToOne`）。縁のなめらかさが違う |
+| `project.json` の textures の絵 | png のまま | 書き出しの時に WebP | 既定は無劣化。`web.compress` で荒らした絵はその分だけ違う |
+| 字 | 起動の時に作ったアトラス | `font-bake` のアトラス | フォントに無い字は出ない |
+
 ## なぜ表が要るか
 
 この開発の流儀は 3 つとも「SoftRaster が実機と同じ絵を写している」前提に乗っている:

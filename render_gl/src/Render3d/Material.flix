@@ -1,12 +1,7 @@
 // Render3d.Material — 3D の描き手（Render3d）の材質のある置いた物（材質のプログラムと鍵・場面の絵の置き場・描き方）。約束は Render3d.flix の頭。
 mod Render3d.Material {
+    import fge.gl.GlConst
     import fge.gl.GlContext
-    import org.lwjgl.opengl.GL11
-    import org.lwjgl.opengl.GL12
-    import org.lwjgl.opengl.GL13
-    import org.lwjgl.opengl.GL20
-    import org.lwjgl.opengl.GL33
-    import org.lwjgl.system.MemoryUtil
     use Render3d.Shadow.{putShadow}
     use Render3dGlsl.{materialFragmentSource, materialVertexSource}
     use Render3d.Light.{putLights}
@@ -66,36 +61,36 @@ mod Render3d.Material {
             if (locs#mesh#program == Array.get(0, bound)) ()
             else {
                 Array.put(locs#mesh#program, 0, bound);
-                useMaterialProgram(state, camera, pass, locs)
+                useMaterialProgram(gl, state, camera, pass, locs)
             };
             let units = drawMaterialInstance(gl, state, gen, source, d#entry#coverage, d);
             Array.put(Int32.max(units, Array.get(1, bound)), 1, bound);
             if (d#entry#normalMapped) Array.put(1, 2, bound) else ();
             if (d#entry#lightmapped) Array.put(1, 3, bound) else ()
         });
-        releaseMaterialUnits(Array.get(1, bound), Array.get(2, bound) == 1, Array.get(3, bound) == 1)
+        releaseMaterialUnits(gl, Array.get(1, bound), Array.get(2, bound) == 1, Array.get(3, bound) == 1)
 
     /// unit 0〜count−1（と、normalMap が真なら法線マップの unit・lightmap が真なら lightmap の unit）の sampler を外して unit 0 へ戻す。どれも貼っていなければ何もしない。
     // WhyNot: 貼ったテクスチャまでは外さない — ビルボードと 2D の面は描く前に自分のテクスチャを貼り直すが、sampler は貼り直さず unit の物を読む。
-    def releaseMaterialUnits(count: Int32, normalMap: Bool, lightmap: Bool): Unit \ IO =
+    def releaseMaterialUnits(gl: GlContext, count: Int32, normalMap: Bool, lightmap: Bool): Unit \ IO =
         if (count <= 0 and not normalMap and not lightmap) ()
         else {
-            List.range(0, count) |> List.forEach(unit -> GL33.glBindSampler(unit, 0));
-            if (normalMap) GL33.glBindSampler(normalMapTextureUnit(), 0) else ();
-            if (lightmap) GL33.glBindSampler(lightmapTextureUnit(), 0) else ();
-            GL13.glActiveTexture(GL13.GL_TEXTURE0)
+            List.range(0, count) |> List.forEach(unit -> gl.bindSampler(unit, 0));
+            if (normalMap) gl.bindSampler(normalMapTextureUnit(), 0) else ();
+            if (lightmap) gl.bindSampler(lightmapTextureUnit(), 0) else ();
+            gl.activeTexture(GlConst.TEXTURE0)
         }
 
-    def useMaterialProgram(state: State, camera: CameraData, pass: MaterialPass, locs: MaterialLocs): Unit \ IO =
-        useMeshProgram(locs#mesh, camera#view, camera#proj);
-        putLights(locs#light, camera#lights);
-        putShadow(locs#shadow, camera#shadow);
-        GL20.glUniform1f(locs#time, RenderUtil.f32(Array.get(0, state#timeHolder)));
+    def useMaterialProgram(gl: GlContext, state: State, camera: CameraData, pass: MaterialPass, locs: MaterialLocs): Unit \ IO =
+        useMeshProgram(gl, locs#mesh, camera#view, camera#proj);
+        putLights(gl, locs#light, camera#lights);
+        putShadow(gl, locs#shadow, camera#shadow);
+        gl.uniform1f(locs#time, RenderUtil.f32(Array.get(0, state#timeHolder)));
         match pass {
-            case MaterialPass.Color     => GL20.glUniform1i(locs#depthOut, 0)
+            case MaterialPass.Color     => gl.uniform1i(locs#depthOut, 0)
             case MaterialPass.Depth(dr) =>
-                GL20.glUniform1i(locs#depthOut, 1);
-                putDepthRange(locs#depthRange, dr)
+                gl.uniform1i(locs#depthOut, 1);
+                putDepthRange(gl, locs#depthRange, dr)
         }
 
     /// 材質 m の cutout を alpha to coverage で描くか。coverage = 描き先が標本を持ち、色の段で描く（Output.Depth は偽で渡す）。
@@ -107,30 +102,30 @@ mod Render3d.Material {
     /// （出す α を標本の数に使い、書く α は 1。GL_SAMPLE_ALPHA_TO_ONE）。
     def drawMaterialInstance(gl: GlContext, state: State, gen: Int64, source: TextureSource, coverage: Bool, d: MaterialDraw): Int32 \ IO =
         let locs = d#entry#locs;
-        putLinearizedColor(locs#tint, d#draw#fields#tint);
-        GL20.glUniform1f(locs#emissionIntensity, RenderUtil.f32(d#material#emissionIntensity));
-        GL20.glUniform1i(locs#cutout, if (d#material#cutout) 1 else 0);
+        putLinearizedColor(gl, locs#tint, d#draw#fields#tint);
+        gl.uniform1f(locs#emissionIntensity, RenderUtil.f32(d#material#emissionIntensity));
+        gl.uniform1i(locs#cutout, if (d#material#cutout) 1 else 0);
         // WhyNot: ShaderDoc.materialParamValues で並べない — あちらは上限を超えた tex を 0 にする前の Spec から名前を拾い、
         //   compile3d が uParamN に割り当てた並び（0 にした後）と食い違う余地がある。uniform を宣言した側の並びで引く。
         List.zip(locs#params, d#entry#paramNames) |> List.forEach(ln -> {
             let (paramLoc, name) = ln;
-            GL20.glUniform1f(paramLoc, RenderUtil.f32(Map.getWithDefault(name, 0.0, d#material#params)))
+            gl.uniform1f(paramLoc, RenderUtil.f32(Map.getWithDefault(name, 0.0, d#material#params)))
         });
         let units = bindMaterialTextures(gl, state, gen, source, d);
         bindNormalMap(gl, state, gen, source, d);
         bindLightmap(gl, state, gen, source, d);
         if (coverage) {
-            GL11.glEnable(GL13.GL_SAMPLE_ALPHA_TO_COVERAGE);
-            GL11.glEnable(GL13.GL_SAMPLE_ALPHA_TO_ONE)
+            gl.enable(GlConst.SAMPLE_ALPHA_TO_COVERAGE);
+            gl.enable(GlConst.SAMPLE_ALPHA_TO_ONE)
         } else ();
         if (d#material#doubleSided) {
-            GL11.glDisable(GL11.GL_CULL_FACE);
+            gl.disable(GlConst.CULL_FACE);
             drawPosedMesh(gl, state, gen, locs#mesh, d#draw);
-            GL11.glEnable(GL11.GL_CULL_FACE)
+            gl.enable(GlConst.CULL_FACE)
         } else drawPosedMesh(gl, state, gen, locs#mesh, d#draw);
         if (coverage) {
-            GL11.glDisable(GL13.GL_SAMPLE_ALPHA_TO_COVERAGE);
-            GL11.glDisable(GL13.GL_SAMPLE_ALPHA_TO_ONE)
+            gl.disable(GlConst.SAMPLE_ALPHA_TO_COVERAGE);
+            gl.disable(GlConst.SAMPLE_ALPHA_TO_ONE)
         } else ();
         units
 
@@ -141,13 +136,13 @@ mod Render3d.Material {
         if (not d#entry#lightmapped) ()
         else Scene3d.lightmapOfFields(d#draw#fields) |> Option.forEach(lm -> {
             let unit = lightmapTextureUnit();
-            GL13.glActiveTexture(GL13.GL_TEXTURE0 + unit);
+            gl.activeTexture(GlConst.TEXTURE0 + unit);
             let bound = resolveTextureAs(gl, state, gen, source, "lightmap の絵", lm#texture, Texture3d.TextureUse.Lightmap(lm#colorSpace));
-            GL11.glBindTexture(GL11.GL_TEXTURE_2D, bound#texId);
-            GL33.glBindSampler(unit, materialSampler(state, Scene3d.Wrap.Clamp, ShaderDoc.FilterMode.Linear, bound#levels > 1));
-            GL20.glUniform1f(d#entry#locs#lightmapLevels, RenderUtil.f32(Int32.toFloat64(Int32.min(bound#levels, lm#maxLevels))));
-            GL20.glUniform1i(d#entry#locs#lightmapSrgb, if (lm#colorSpace == Texture3d.ColorSpace.Srgb) 1 else 0);
-            GL20.glUniform1f(d#entry#locs#lightmapIntensity, RenderUtil.f32(lm#intensity))
+            gl.bindTexture(GlConst.TEXTURE_2D, bound#texId);
+            gl.bindSampler(unit, materialSampler(gl, state, Scene3d.Wrap.Clamp, ShaderDoc.FilterMode.Linear, bound#levels > 1));
+            gl.uniform1f(d#entry#locs#lightmapLevels, RenderUtil.f32(Int32.toFloat64(Int32.min(bound#levels, lm#maxLevels))));
+            gl.uniform1i(d#entry#locs#lightmapSrgb, if (lm#colorSpace == Texture3d.ColorSpace.Srgb) 1 else 0);
+            gl.uniform1f(d#entry#locs#lightmapIntensity, RenderUtil.f32(lm#intensity))
         })
 
     /// 法線マップを法線マップの unit に貼る（材質の wrap・Linear で読む）。法線マップを当てないプログラムは何もしない。
@@ -155,13 +150,13 @@ mod Render3d.Material {
         match (d#entry#normalMapped, d#material#normalMap) {
             case (true, Some(n)) =>
                 let unit = normalMapTextureUnit();
-                GL13.glActiveTexture(GL13.GL_TEXTURE0 + unit);
+                gl.activeTexture(GlConst.TEXTURE0 + unit);
                 let bound = resolveMaterialTexture(gl, state, gen, source, n#texture, Texture3d.TextureUse.NormalMap);
-                GL11.glBindTexture(GL11.GL_TEXTURE_2D, bound#texId);
-                GL33.glBindSampler(unit, materialSampler(state, d#material#wrap, ShaderDoc.FilterMode.Linear, bound#levels > 1));
-                GL20.glUniform1f(d#entry#locs#normalStrength, RenderUtil.f32(n#strength));
-                GL20.glUniform1f(d#entry#locs#normalFlip, if (bound#flipped) 1.0f32 else 0.0f32);
-                GL20.glUniform1f(d#entry#locs#normalLevels, RenderUtil.f32(Int32.toFloat64(bound#levels)))
+                gl.bindTexture(GlConst.TEXTURE_2D, bound#texId);
+                gl.bindSampler(unit, materialSampler(gl, state, d#material#wrap, ShaderDoc.FilterMode.Linear, bound#levels > 1));
+                gl.uniform1f(d#entry#locs#normalStrength, RenderUtil.f32(n#strength));
+                gl.uniform1f(d#entry#locs#normalFlip, if (bound#flipped) 1.0f32 else 0.0f32);
+                gl.uniform1f(d#entry#locs#normalLevels, RenderUtil.f32(Int32.toFloat64(bound#levels)))
             case _ => ()
         }
 
@@ -174,12 +169,12 @@ mod Render3d.Material {
             List.zip(reads, List.zip(d#entry#locs#texFlips, d#entry#locs#texLevels)) |> List.forEachWithIndex((unit, pair) -> {
                 let ((name, filter), (flipLoc, levelsLoc)) = pair;
                 // WhyNot: 引いてから unit を選ばない — 初めての絵は引く時に上げて今の unit に貼るので、前の unit に貼った絵を外してしまう。
-                GL13.glActiveTexture(GL13.GL_TEXTURE0 + unit);
+                gl.activeTexture(GlConst.TEXTURE0 + unit);
                 let bound = resolveMaterialTexture(gl, state, gen, source, name, Texture3d.TextureUse.MaterialTexture);
-                GL11.glBindTexture(GL11.GL_TEXTURE_2D, bound#texId);
-                GL33.glBindSampler(unit, materialSampler(state, d#material#wrap, filter, bound#levels > 1));
-                GL20.glUniform1f(flipLoc, if (bound#flipped) 1.0f32 else 0.0f32);
-                GL20.glUniform1f(levelsLoc, RenderUtil.f32(Int32.toFloat64(bound#levels)))
+                gl.bindTexture(GlConst.TEXTURE_2D, bound#texId);
+                gl.bindSampler(unit, materialSampler(gl, state, d#material#wrap, filter, bound#levels > 1));
+                gl.uniform1f(flipLoc, if (bound#flipped) 1.0f32 else 0.0f32);
+                gl.uniform1f(levelsLoc, RenderUtil.f32(Int32.toFloat64(bound#levels)))
             });
             List.length(reads)
         }
@@ -198,9 +193,9 @@ mod Render3d.Material {
                              textureUse: Texture3d.TextureUse): BoundTexture \ IO =
         let average = Texture3d.mipAverageOf(Texture3d.mipSpaceOf(textureUse));
         let found = if (String.startsWith(prefix = Texture3d.namePrefix(), name))
-            Map.get(name, source#own) |> Option.map(t -> texture3dBound(state, gen, average, t))
+            Map.get(name, source#own) |> Option.map(t -> texture3dBound(gl, state, gen, average, t))
         else (source#textureOf)(name) |> Option.map(t ->
-            if (t#flipped) { texId = t#texId, flipped = true, levels = 1 } else mipCopyOf(state, gen, name, average, t));
+            if (t#flipped) { texId = t#texId, flipped = true, levels = 1 } else mipCopyOf(gl, state, gen, name, average, t));
         match found {
             case Some(hit) => hit
             case None =>
@@ -212,44 +207,36 @@ mod Render3d.Material {
     /// 全体の登録の絵 t の段つきの写し（average で平均した段。置き場の鍵は名前と平均の仕方。
     /// 無いか、元の絵が作り直されていたら、元の段 0 を読み戻して段を作り、上げ直す）。
     // WhyNot: 登録の絵の画素を Java の側に持ち続けない — STB で直に上げているので持っておらず、全部の絵をヒープに二重に持つことになる。
-    def mipCopyOf(state: State, gen: Int64, name: String, average: Mip.Average, t: RegisteredTexture): BoundTexture \ IO =
+    def mipCopyOf(gl: GlContext, state: State, gen: Int64, name: String, average: Mip.Average, t: RegisteredTexture): BoundTexture \ IO =
         let copies = Ref.get(state#mipCopiesRef);
         let key = name + ":" + ToString.toString(average);
         let copy = match Map.get(key, copies) {
             case Some(c) if c#sourceId == t#texId and c#version == t#version => { lastUsed = gen | c }
             case old =>
-                old |> Option.forEach(c -> GL11.glDeleteTextures(c#texId));
+                old |> Option.forEach(c -> gl.deleteTexture(c#texId));
                 count(state, Counter.MipCopies, 1);
                 let w = Float64.tryToInt32(Float64.round(t#width)) |> Option.getWithDefault(1);
                 let h = Float64.tryToInt32(Float64.round(t#height)) |> Option.getWithDefault(1);
                 let pixels = Array.repeat(Static, Int32.max(1, w * h), 0);
-                GL11.glBindTexture(GL11.GL_TEXTURE_2D, t#texId);
-                GL11.glGetTexImage(GL11.GL_TEXTURE_2D, 0, GL12.GL_BGRA, GL12.GL_UNSIGNED_INT_8_8_8_8_REV, pixels);
-                let chain = Mip.build(average, { width = w, height = h, pixels = Array.toVector(pixels) });
-                { sourceId = t#texId, version = t#version, texId = uploadMipChain(chain), levels = List.length(chain), bytes = chainBytes(chain), lastUsed = gen }
+                gl.readTextureArgb(t#texId, w, h, pixels);
+                let chain = timed(state, Phase.Mip, () -> Mip.build(average, { width = w, height = h, pixels = Array.toVector(pixels) }));
+                { sourceId = t#texId, version = t#version, texId = uploadMipChain(gl, chain), levels = List.length(chain), bytes = chainBytes(chain), lastUsed = gen }
         };
         Ref.put(Map.insert(key, copy, copies), state#mipCopiesRef);
         { texId = copy#texId, flipped = false, levels = copy#levels }
 
     /// 段の列を 1 枚のテクスチャの段 0〜 に上げる（行 0 が絵の上・ARGB）。
-    def uploadMipChain(chain: List[ShaderEval.TexData]): Int32 \ IO =
-        let texId = GL11.glGenTextures();
-        GL11.glBindTexture(GL11.GL_TEXTURE_2D, texId);
-        chain |> List.forEachWithIndex((level, td) -> {
-            let buf = MemoryUtil.memAllocInt(Int32.max(1, Vector.length(td#pixels)));
-            discard buf.put(unchecked_cast(td#pixels as Array[Int32, Static]));
-            discard buf.flip();
-            GL11.glTexImage2D(GL11.GL_TEXTURE_2D, level, GL11.GL_RGBA, td#width, td#height, 0,
-                              GL12.GL_BGRA, GL12.GL_UNSIGNED_INT_8_8_8_8_REV, buf);
-            MemoryUtil.memFree(buf)
-        });
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL12.GL_TEXTURE_BASE_LEVEL, 0);
-        GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL12.GL_TEXTURE_MAX_LEVEL, Int32.max(0, List.length(chain) - 1));
+    def uploadMipChain(gl: GlContext, chain: List[ShaderEval.TexData]): Int32 \ IO =
+        let texId = gl.createTexture();
+        gl.bindTexture(GlConst.TEXTURE_2D, texId);
+        chain |> List.forEachWithIndex((level, td) -> RenderTexture.uploadArgbLevel(gl, level, td#width, td#height, td#pixels));
+        gl.texParameteri(GlConst.TEXTURE_2D, GlConst.TEXTURE_BASE_LEVEL, 0);
+        gl.texParameteri(GlConst.TEXTURE_2D, GlConst.TEXTURE_MAX_LEVEL, Int32.max(0, List.length(chain) - 1));
         texId
 
     /// 見つからない絵の代わりに貼る 1 × 1 の透明な黒（初めて要る時に作る）。
     // WhyNot: テクスチャ 0 を貼らない — 完全でないテクスチャの読みはドライバ次第で α が 1 になり、CPU の 0 と食い違う。
-    def blankTextureId(gl: GlContext, state: State): Int32 \ IO =
+    pub def blankTextureId(gl: GlContext, state: State): Int32 \ IO =
         let held = Array.get(0, state#blankTexture);
         if (held != 0) held
         else {
@@ -260,24 +247,24 @@ mod Render3d.Material {
 
     /// wrap と補間と段の有無の組の sampler（初めて要る時に作る）。段つきの Nearest は NEAREST_MIPMAP_LINEAR（段の切り替わりの筋を出さない）・
     /// Linear は LINEAR_MIPMAP_LINEAR（CPU の Mip の読み方と同じ）。段の無い絵（レンダーターゲット・代わりの絵）は段なしで読む。
-    def materialSampler(state: State, wrap: Scene3d.Wrap, filter: ShaderDoc.FilterMode, mipped: Bool): Int32 \ IO =
+    def materialSampler(gl: GlContext, state: State, wrap: Scene3d.Wrap, filter: ShaderDoc.FilterMode, mipped: Bool): Int32 \ IO =
         let linear = filter == ShaderDoc.FilterMode.Linear;
         let index = (if (mipped) 4 else 0) + (if (wrap == Scene3d.Wrap.Clamp) 2 else 0) + (if (linear) 1 else 0);
         let held = Array.get(index, state#materialSamplers);
         if (held != 0) held
         else {
-            let sampler = GL33.glGenSamplers();
-            let glFilter = if (linear) GL11.GL_LINEAR else GL11.GL_NEAREST;
+            let sampler = gl.createSampler();
+            let glFilter = if (linear) GlConst.LINEAR else GlConst.NEAREST;
             let minFilter = match (mipped, linear) {
-                case (true, true)  => GL11.GL_LINEAR_MIPMAP_LINEAR
-                case (true, false) => GL11.GL_NEAREST_MIPMAP_LINEAR
+                case (true, true)  => GlConst.LINEAR_MIPMAP_LINEAR
+                case (true, false) => GlConst.NEAREST_MIPMAP_LINEAR
                 case (false, _)    => glFilter
             };
-            let glWrap = if (wrap == Scene3d.Wrap.Clamp) GL12.GL_CLAMP_TO_EDGE else GL11.GL_REPEAT;
-            GL33.glSamplerParameteri(sampler, GL11.GL_TEXTURE_MIN_FILTER, minFilter);
-            GL33.glSamplerParameteri(sampler, GL11.GL_TEXTURE_MAG_FILTER, glFilter);
-            GL33.glSamplerParameteri(sampler, GL11.GL_TEXTURE_WRAP_S, glWrap);
-            GL33.glSamplerParameteri(sampler, GL11.GL_TEXTURE_WRAP_T, glWrap);
+            let glWrap = if (wrap == Scene3d.Wrap.Clamp) GlConst.CLAMP_TO_EDGE else GlConst.REPEAT;
+            gl.samplerParameteri(sampler, GlConst.TEXTURE_MIN_FILTER, minFilter);
+            gl.samplerParameteri(sampler, GlConst.TEXTURE_MAG_FILTER, glFilter);
+            gl.samplerParameteri(sampler, GlConst.TEXTURE_WRAP_S, glWrap);
+            gl.samplerParameteri(sampler, GlConst.TEXTURE_WRAP_T, glWrap);
             Array.put(sampler, index, state#materialSamplers);
             sampler
         }
@@ -285,15 +272,15 @@ mod Render3d.Material {
     // ── 場面の絵の置き場 ──
 
     /// 場面の絵を contentHash と段の平均の仕方 average で引き、無ければ段を作って段ごと上げる。どちらでも lastUsed を今の世代にする。
-    def texture3dBound(state: State, gen: Int64, average: Mip.Average, t: Texture3d.Texture3d): BoundTexture \ IO =
+    def texture3dBound(gl: GlContext, state: State, gen: Int64, average: Mip.Average, t: Texture3d.Texture3d): BoundTexture \ IO =
         let key = Texture3d.contentHash(t) + ":" + ToString.toString(average);
         let held = Ref.get(state#textures3dRef);
         let entry = match Map.get(key, held) {
             case Some(found) => { lastUsed = gen | found }
             case None =>
                 count(state, Counter.Texture3dUploads, 1);
-                let chain = Mip.build(average, { width = Texture3d.width(t), height = Texture3d.height(t), pixels = Texture3d.argb(t) });
-                { texId = uploadMipChain(chain), levels = List.length(chain), bytes = chainBytes(chain), lastUsed = gen }
+                let chain = timed(state, Phase.Mip, () -> Mip.build(average, { width = Texture3d.width(t), height = Texture3d.height(t), pixels = Texture3d.argb(t) }));
+                { texId = uploadMipChain(gl, chain), levels = List.length(chain), bytes = chainBytes(chain), lastUsed = gen }
         };
         Ref.put(Map.insert(key, entry, held), state#textures3dRef);
         { texId = entry#texId, flipped = false, levels = entry#levels }
@@ -341,7 +328,7 @@ mod Render3d.Material {
     /// 場面の絵と段つきの写しを、置き場の上限を超えた時だけ、今と前のコマで使っていない古い物から捨てる（画面のコマの終わりに 1 回）。
     /// 今と前のコマで使う物だけで上限を超えていたら 1 回だけ知らせる（Pass の場面は画面のコマの 1 つ前の世代で描かれる）。
     // WhyNot: しばらく使わなかった絵を捨てない — たまにしか出ない物の絵を出すたびに CPU で段を作り直し、そのコマが跳ねる。
-    pub def sweepTextures3d(state: State, gen: Int64): Unit \ IO =
+    pub def sweepTextures3d(gl: GlContext, state: State, gen: Int64): Unit \ IO =
         let held = Ref.get(state#textures3dRef);
         let copies = Ref.get(state#mipCopiesRef);
         let entries = List.append(
@@ -349,7 +336,7 @@ mod Render3d.Material {
             Map.toList(copies) |> List.map(ke -> (TextureSlot.Copy(fst(ke)), { lastUsed = snd(ke)#lastUsed, bytes = snd(ke)#bytes, counted = false })));
         let budget = { count = state#textureCountBudget, bytes = state#textureByteBudget };
         let victims = budgetEvictions(budget, gen - 1i64, entries);
-        if (List.isEmpty(victims)) () else dropTextures(state, victims);
+        if (List.isEmpty(victims)) () else dropTextures(gl, state, victims);
         let victimSet = List.toSet(victims);
         // WhyNot: 捨てる物を選べたかで知らせを決めない — 今と前のコマで使う物だけで超えている時は、捨てる物が無くても超えたまま。
         if (isOverBudget(budget, List.filter(ke -> not Set.memberOf(fst(ke), victimSet), entries)))
@@ -358,15 +345,15 @@ mod Render3d.Material {
         else ()
 
     /// 置き場から victims の絵を GPU ごと捨てる。
-    def dropTextures(state: State, victims: List[TextureSlot]): Unit \ IO =
+    def dropTextures(gl: GlContext, state: State, victims: List[TextureSlot]): Unit \ IO =
         let (held, copies) = victims |> List.foldLeft((acc, slot) -> {
             let (h, c) = acc;
             match slot {
                 case TextureSlot.Scene(key) =>
-                    Map.get(key, h) |> Option.forEach(e -> GL11.glDeleteTextures(e#texId));
+                    Map.get(key, h) |> Option.forEach(e -> gl.deleteTexture(e#texId));
                     (Map.remove(key, h), c)
                 case TextureSlot.Copy(key) =>
-                    Map.get(key, c) |> Option.forEach(e -> GL11.glDeleteTextures(e#texId));
+                    Map.get(key, c) |> Option.forEach(e -> gl.deleteTexture(e#texId));
                     (h, Map.remove(key, c))
             }
         }, (Ref.get(state#textures3dRef), Ref.get(state#mipCopiesRef)));
@@ -455,22 +442,22 @@ mod Render3d.Material {
             case None    =>
                 Log.warnThen("scene3d: 材質 '${m#spec#name}' のプログラムが組めなかった — この材質の物は頂点の色で描く", 0)
         };
-        if (kind#skinned) bindJointsBlock(program) else ();
-        bindTextureUnits(program, List.length(glsl#texReads), kind#normalMap, kind#lightmap);
+        if (kind#skinned) bindJointsBlock(gl, program) else ();
+        bindTextureUnits(gl, program, List.length(glsl#texReads), kind#normalMap, kind#lightmap);
         { spec = m#spec, emission = m#emission, known = (m#spec, m#emission) :: Nil, paramNames = glsl#paramNames, texReads = glsl#texReads, normalMapped = kind#normalMap,
           lightmapped = kind#lightmap, coverage = kind#coverage,
-          locs = materialLocsOf(program, glsl#paramNames, List.length(glsl#texReads)), lastUsed = gen }
+          locs = materialLocsOf(gl, program, glsl#paramNames, List.length(glsl#texReads)), lastUsed = gen }
 
     /// uTexN を unit N へ、uNormalMap を法線マップの unit へ向ける（プログラムごとに 1 回。組めなかったプログラムと、
     /// 絵も法線マップも無い材質は何もしない）。
-    def bindTextureUnits(program: Int32, count: Int32, normalMap: Bool, lightmap: Bool): Unit \ IO =
+    def bindTextureUnits(gl: GlContext, program: Int32, count: Int32, normalMap: Bool, lightmap: Bool): Unit \ IO =
         if (program == 0 or (count == 0 and not normalMap and not lightmap)) ()
         else {
-            GL20.glUseProgram(program);
-            List.range(0, count) |> List.forEach(unit -> GL20.glUniform1i(loc(program, "uTex${unit}"), unit));
-            if (normalMap) GL20.glUniform1i(loc(program, "uNormalMap"), normalMapTextureUnit()) else ();
-            if (lightmap) GL20.glUniform1i(loc(program, "uLightmap"), lightmapTextureUnit()) else ();
-            GL20.glUseProgram(0)
+            gl.useProgram(program);
+            List.range(0, count) |> List.forEach(unit -> gl.uniform1i(loc(gl, program, "uTex${unit}"), unit));
+            if (normalMap) gl.uniform1i(loc(gl, program, "uNormalMap"), normalMapTextureUnit()) else ();
+            if (lightmap) gl.uniform1i(loc(gl, program, "uLightmap"), lightmapTextureUnit()) else ();
+            gl.useProgram(0)
         }
 
     def retireMaterial(state: State, e: MaterialEntry): Unit \ IO =
@@ -486,34 +473,34 @@ mod Render3d.Material {
                 + " — 毎コマ組み直している。spec か emission の数に NaN があれば直す（NaN は自分とも等しくない）。無ければ engine の不具合")
         }
 
-    def materialLocsOf(program: Int32, paramNames: List[String], texCount: Int32): MaterialLocs \ IO =
-        { mesh = meshLocsOf(program), tint = loc(program, "uTint"), light = lightLocsOf(program), shadow = shadowLocsOf(program),
-          time = loc(program, "uTime"), cutout = loc(program, "uCutout"),
-          depthOut = loc(program, "uDepthOut"), depthRange = loc(program, "uDepthRange"),
-          params = paramNames |> List.mapWithIndex((i, _) -> loc(program, "uParam${i}")),
-          texFlips = List.range(0, texCount) |> List.map(i -> loc(program, "uTexFlip${i}")),
-          normalStrength = loc(program, "uNormalStrength"), normalFlip = loc(program, "uNormalFlip"),
-          texLevels = List.range(0, texCount) |> List.map(i -> loc(program, "uTexLevels${i}")), normalLevels = loc(program, "uNormalLevels"),
-          lightmapLevels = loc(program, "uLightmapLevels"), lightmapSrgb = loc(program, "uLightmapSrgb"),
-          lightmapIntensity = loc(program, "uLightmapIntensity"), emissionIntensity = loc(program, "uEmissionIntensity") }
+    def materialLocsOf(gl: GlContext, program: Int32, paramNames: List[String], texCount: Int32): MaterialLocs \ IO =
+        { mesh = meshLocsOf(gl, program), tint = loc(gl, program, "uTint"), light = lightLocsOf(gl, program), shadow = shadowLocsOf(gl, program),
+          time = loc(gl, program, "uTime"), cutout = loc(gl, program, "uCutout"),
+          depthOut = loc(gl, program, "uDepthOut"), depthRange = loc(gl, program, "uDepthRange"),
+          params = paramNames |> List.mapWithIndex((i, _) -> loc(gl, program, "uParam${i}")),
+          texFlips = List.range(0, texCount) |> List.map(i -> loc(gl, program, "uTexFlip${i}")),
+          normalStrength = loc(gl, program, "uNormalStrength"), normalFlip = loc(gl, program, "uNormalFlip"),
+          texLevels = List.range(0, texCount) |> List.map(i -> loc(gl, program, "uTexLevels${i}")), normalLevels = loc(gl, program, "uNormalLevels"),
+          lightmapLevels = loc(gl, program, "uLightmapLevels"), lightmapSrgb = loc(gl, program, "uLightmapSrgb"),
+          lightmapIntensity = loc(gl, program, "uLightmapIntensity"), emissionIntensity = loc(gl, program, "uEmissionIntensity") }
 
     /// 引退した材質のプログラムを消し、使われない材質を LRU で追い出す（画面のコマの終わりに 1 回）。
     /// 今と前のコマで使った材質は捨てない（Pass の場面は画面のコマの 1 つ前の世代で描かれる）。
-    pub def sweepMaterials(state: State, gen: Int64): Unit \ IO =
-        Ref.get(state#retiredMaterialsRef) |> List.forEach(program -> GL20.glDeleteProgram(program));
+    pub def sweepMaterials(gl: GlContext, state: State, gen: Int64): Unit \ IO =
+        Ref.get(state#retiredMaterialsRef) |> List.forEach(program -> gl.deleteProgram(program));
         Ref.put(Nil, state#retiredMaterialsRef);
         let cache = Ref.get(state#materialsRef);
         let isLive = (e: MaterialEntry) -> e#lastUsed >= gen - 1i64;
         let pinned = Map.valuesOf(cache) |> List.filter(isLive) |> List.map(e -> e#locs#mesh#program) |> List.toSet;
         // WhyNot: 上限を固定の数にしない — 材質の数はゲームが決めるので、多いゲームで毎コマ作っては捨てるだけになる。
-        let cap = Int32.max(16, Set.size(pinned) * 2);
+        let cap = Int32.max(64, Set.size(pinned) * 2);
         let victims = RenderShaderCache.computeEvictions({
             entries = Map.toList(cache) |> List.map(ke -> (fst(ke), snd(ke)#locs#mesh#program, snd(ke)#lastUsed)),
             pinned = pinned, cap = cap });
         if (List.isEmpty(victims)) ()
         else {
             victims |> List.forEach(key -> Map.get(key, cache) |> Option.forEach(e ->
-                if (e#locs#mesh#program == 0) () else GL20.glDeleteProgram(e#locs#mesh#program)));
+                if (e#locs#mesh#program == 0) () else gl.deleteProgram(e#locs#mesh#program)));
             Ref.put(List.foldLeft((acc, key) -> Map.remove(key, acc), cache, victims), state#materialsRef)
         }
 }

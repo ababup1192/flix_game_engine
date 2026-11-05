@@ -10,6 +10,14 @@ public final class Browser {
     @JSBody(script = "return performance.now();")
     public static native double now();
 
+    /** 頁の URL に ?capture=<n> があるか（dt を固定して撮る時）。 */
+    @JSBody(script = "return fgeCaptureFrame > 0;")
+    public static native boolean isFrameCapture();
+
+    /** 1 コマを描き終えた。?capture=<n> の n コマ目なら読んでおく。 */
+    @JSBody(script = "fgeFrameDrawn();")
+    public static native void frameDrawn();
+
     /** 開発者の道具の console へ 1 行。 */
     @JSBody(params = {"line"}, script = "console.log(line);")
     public static native void log(String line);

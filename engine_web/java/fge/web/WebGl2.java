@@ -66,6 +66,25 @@ public final class WebGl2 implements GlContext {
     @JSBody(params = {"p"}, script = "var v = fgeGl.getParameter(p); return (typeof v === 'number') ? v : 0;")
     private static native int jsGetInteger(int pname);
     public int getInteger(int pname) { return jsGetInteger(pname); }
+    @JSBody(params = {"f"}, script = "fgeGl.depthMask(f);")
+    private static native void jsDepthMask(boolean flag);
+    public void depthMask(boolean flag) { jsDepthMask(flag); }
+    @JSBody(params = {"f"}, script = "fgeGl.depthFunc(f);")
+    private static native void jsDepthFunc(int func);
+    public void depthFunc(int func) { jsDepthFunc(func); }
+    @JSBody(params = {"d"}, script = "fgeGl.clearDepth(d);")
+    private static native void jsClearDepth(double depth);
+    public void clearDepth(double depth) { jsClearDepth(depth); }
+    @JSBody(params = {"m"}, script = "fgeGl.cullFace(m);")
+    private static native void jsCullFace(int mode);
+    public void cullFace(int mode) { jsCullFace(mode); }
+    @JSBody(params = {"m"}, script = "fgeGl.frontFace(m);")
+    private static native void jsFrontFace(int mode);
+    public void frontFace(int mode) { jsFrontFace(mode); }
+    @JSBody(params = {"a", "b", "c", "d"}, script = "fgeGl.blendFuncSeparate(a, b, c, d);")
+    private static native void jsBlendFuncSeparate(int srcRgb, int dstRgb, int srcAlpha, int dstAlpha);
+    public void blendFuncSeparate(int srcRgb, int dstRgb, int srcAlpha, int dstAlpha) { jsBlendFuncSeparate(srcRgb, dstRgb, srcAlpha, dstAlpha); }
+    public boolean hasAlphaToOne() { return false; }
 
     // ── バッファと頂点の配列 ──
     @JSBody(script = "return fgeNew(fgeGl.createBuffer());")
@@ -99,6 +118,23 @@ public final class WebGl2 implements GlContext {
         bufferDataRange(target, Float32Array.fromJavaBuffer(whole(direct)), usage, from, count);
     }
 
+    public void bufferData(int target, int[] data, int usage) {
+        bufferDataView(target, Int32Array.copyFromJavaArray(data), usage);
+    }
+
+    public void bufferData(int target, int size, int usage) { bufferDataSize(target, size, usage); }
+
+    @JSBody(params = {"t", "offset", "data"}, script = "fgeGl.bufferSubData(t, offset, data);")
+    private static native void bufferSubDataView(int target, int offset, JSObject data);
+
+    public void bufferSubData(int target, int offset, float[] data) {
+        bufferSubDataView(target, offset, Float32Array.copyFromJavaArray(data));
+    }
+
+    @JSBody(params = {"t", "i", "id"}, script = "fgeGl.bindBufferBase(t, i, fgeH[id]);")
+    private static native void jsBindBufferBase(int target, int index, int buffer);
+    public void bindBufferBase(int target, int index, int buffer) { jsBindBufferBase(target, index, buffer); }
+
     @JSBody(script = "return fgeNew(fgeGl.createVertexArray());")
     private static native int jsCreateVertexArray();
     public int createVertexArray() { return jsCreateVertexArray(); }
@@ -114,6 +150,9 @@ public final class WebGl2 implements GlContext {
     @JSBody(params = {"i", "size", "type", "norm", "stride", "offset"}, script = "fgeGl.vertexAttribPointer(i, size, type, norm, stride, offset);")
     private static native void jsVertexAttribPointer(int index, int size, int type, boolean normalized, int stride, int offset);
     public void vertexAttribPointer(int index, int size, int type, boolean normalized, int stride, int offset) { jsVertexAttribPointer(index, size, type, normalized, stride, offset); }
+    @JSBody(params = {"i", "size", "type", "stride", "offset"}, script = "fgeGl.vertexAttribIPointer(i, size, type, stride, offset);")
+    private static native void jsVertexAttribIPointer(int index, int size, int type, int stride, int offset);
+    public void vertexAttribIPointer(int index, int size, int type, int stride, int offset) { jsVertexAttribIPointer(index, size, type, stride, offset); }
     @JSBody(params = {"i", "d"}, script = "fgeGl.vertexAttribDivisor(i, d);")
     private static native void jsVertexAttribDivisor(int index, int divisor);
     public void vertexAttribDivisor(int index, int divisor) { jsVertexAttribDivisor(index, divisor); }
@@ -123,6 +162,9 @@ public final class WebGl2 implements GlContext {
     @JSBody(params = {"m", "f", "c", "n"}, script = "fgeGl.drawArraysInstanced(m, f, c, n);")
     private static native void jsDrawArraysInstanced(int mode, int first, int count, int instanceCount);
     public void drawArraysInstanced(int mode, int first, int count, int instanceCount) { jsDrawArraysInstanced(mode, first, count, instanceCount); }
+    @JSBody(params = {"m", "c", "t", "o"}, script = "fgeGl.drawElements(m, c, t, o);")
+    private static native void jsDrawElements(int mode, int count, int type, int offset);
+    public void drawElements(int mode, int count, int type, int offset) { jsDrawElements(mode, count, type, offset); }
 
     // ── テクスチャと sampler ──
     @JSBody(script = "return fgeNew(fgeGl.createTexture());")
@@ -142,12 +184,24 @@ public final class WebGl2 implements GlContext {
     public void texParameteri(int target, int pname, int param) { jsTexParameteri(target, pname, param); }
 
     /** ARGB の int 列を RGBA のバイトへ並べ替えて RGBA8 で上げる（WebGL2 に BGRA と 8_8_8_8_REV が無い）。 */
-    @JSBody(params = {"w", "h", "argb", "from"}, script = "fgeTexImageArgb(w, h, argb, from);")
-    private static native void texImageArgbView(int width, int height, JSObject argb, int from);
+    @JSBody(params = {"level", "w", "h", "argb", "from"}, script = "fgeTexImageArgbLevel(level, w, h, argb, from);")
+    private static native void texImageArgbView(int level, int width, int height, JSObject argb, int from);
 
-    public void texImageArgb(int width, int height, IntBuffer argb) {
+    public void texImageArgb(int width, int height, IntBuffer argb) { texImageArgbLevel(0, width, height, argb); }
+
+    public void texImageArgbLevel(int level, int width, int height, IntBuffer argb) {
         IntBuffer direct = argb.isDirect() ? argb : copyInts(argb);
-        texImageArgbView(width, height, Int32Array.fromJavaBuffer(whole(direct)), direct.position());
+        texImageArgbView(level, width, height, Int32Array.fromJavaBuffer(whole(direct)), direct.position());
+    }
+
+    @JSBody(params = {"id", "w", "h", "argb"}, script = "fgeReadTextureArgb(id, w, h, argb);")
+    private static native void readTextureArgbView(int texture, int width, int height, JSObject argb);
+
+    public void readTextureArgb(int texture, int width, int height, int[] argb) {
+        int count = width * height;
+        IntBuffer direct = directInts(count);
+        readTextureArgbView(texture, width, height, Int32Array.fromJavaBuffer(whole(direct)));
+        direct.get(argb, 0, count);
     }
 
     @JSBody(params = {"w", "h"}, script = "fgeGl.texImage2D(fgeGl.TEXTURE_2D, 0, fgeGl.RGBA8, w, h, 0, fgeGl.RGBA, fgeGl.UNSIGNED_BYTE, null);")
@@ -182,6 +236,11 @@ public final class WebGl2 implements GlContext {
     private static native void jsTexImageRgba16fZero(int width, int height);
     public void texImageRgba16fZero(int width, int height) { jsTexImageRgba16fZero(width, height); }
 
+    /** WebGL2 の DEPTH_COMPONENT24 は UNSIGNED_INT とだけ組める（デスクトップの FLOAT は通らない）。 */
+    @JSBody(params = {"w", "h"}, script = "fgeGl.texImage2D(fgeGl.TEXTURE_2D, 0, fgeGl.DEPTH_COMPONENT24, w, h, 0, fgeGl.DEPTH_COMPONENT, fgeGl.UNSIGNED_INT, null);")
+    private static native void jsTexImageDepth24(int width, int height);
+    public void texImageDepth24(int width, int height) { jsTexImageDepth24(width, height); }
+
     @JSBody(script = "return fgeNew(fgeGl.createSampler());")
     private static native int jsCreateSampler();
     public int createSampler() { return jsCreateSampler(); }
@@ -211,6 +270,9 @@ public final class WebGl2 implements GlContext {
     @JSBody(params = {"t", "a", "rt", "id"}, script = "fgeGl.framebufferRenderbuffer(t, a, rt, fgeH[id]);")
     private static native void jsFramebufferRenderbuffer(int target, int attachment, int renderbuffertarget, int renderbuffer);
     public void framebufferRenderbuffer(int target, int attachment, int renderbuffertarget, int renderbuffer) { jsFramebufferRenderbuffer(target, attachment, renderbuffertarget, renderbuffer); }
+    @JSBody(script = "fgeGl.drawBuffers([fgeGl.NONE]); fgeGl.readBuffer(fgeGl.NONE);")
+    private static native void jsUseNoColorBuffer();
+    public void useNoColorBuffer() { jsUseNoColorBuffer(); }
     @JSBody(params = {"a", "b", "c", "d", "e", "f", "g", "h", "m", "fl"}, script = "fgeGl.blitFramebuffer(a, b, c, d, e, f, g, h, m, fl);")
     private static native void jsBlitFramebuffer(int srcX0, int srcY0, int srcX1, int srcY1, int dstX0, int dstY0, int dstX1, int dstY1, int mask, int filter);
     public void blitFramebuffer(int srcX0, int srcY0, int srcX1, int srcY1, int dstX0, int dstY0, int dstX1, int dstY1, int mask, int filter) { jsBlitFramebuffer(srcX0, srcY0, srcX1, srcY1, dstX0, dstY0, dstX1, dstY1, mask, filter); }
@@ -287,6 +349,24 @@ public final class WebGl2 implements GlContext {
     @JSBody(params = {"l", "a", "b", "c"}, script = "if (l >= 0) fgeGl.uniform3f(fgeU[l], a, b, c);")
     private static native void jsUniform3f(int location, float v0, float v1, float v2);
     public void uniform3f(int location, float v0, float v1, float v2) { jsUniform3f(location, v0, v1, v2); }
+    @JSBody(params = {"l", "a", "b", "c", "d"}, script = "if (l >= 0) fgeGl.uniform4f(fgeU[l], a, b, c, d);")
+    private static native void jsUniform4f(int location, float v0, float v1, float v2, float v3);
+    public void uniform4f(int location, float v0, float v1, float v2, float v3) { jsUniform4f(location, v0, v1, v2, v3); }
+    @JSBody(params = {"l", "v"}, script = "fgeGl.uniform1fv(fgeU[l], v);")
+    private static native void uniform1fvView(int location, JSObject value);
+    public void uniform1fv(int location, float[] value) {
+        if (location >= 0) uniform1fvView(location, Float32Array.copyFromJavaArray(value));
+    }
+    @JSBody(params = {"l", "v"}, script = "fgeGl.uniform2fv(fgeU[l], v);")
+    private static native void uniform2fvView(int location, JSObject value);
+    public void uniform2fv(int location, float[] value) {
+        if (location >= 0) uniform2fvView(location, Float32Array.copyFromJavaArray(value));
+    }
+    @JSBody(params = {"l", "v"}, script = "fgeGl.uniform3fv(fgeU[l], v);")
+    private static native void uniform3fvView(int location, JSObject value);
+    public void uniform3fv(int location, float[] value) {
+        if (location >= 0) uniform3fvView(location, Float32Array.copyFromJavaArray(value));
+    }
     @JSBody(params = {"l", "t", "v"}, script = "if (l >= 0) fgeGl.uniformMatrix4fv(fgeU[l], t, v);")
     private static native void uniformMatrix4fvView(int location, boolean transpose, JSObject value);
 
@@ -294,15 +374,28 @@ public final class WebGl2 implements GlContext {
         if (location >= 0) uniformMatrix4fvView(location, transpose, Float32Array.copyFromJavaArray(value));
     }
 
+    /** WebGL2 の INVALID_INDEX は 4294967295 で、int の -1 にはならない。 */
+    @JSBody(params = {"id", "name"}, script = "var i = fgeGl.getUniformBlockIndex(fgeH[id], name); return (i === fgeGl.INVALID_INDEX) ? -1 : i;")
+    private static native int jsGetUniformBlockIndex(int program, String name);
+    public int getUniformBlockIndex(int program, String name) { return jsGetUniformBlockIndex(program, name); }
+    @JSBody(params = {"id", "i", "b"}, script = "fgeGl.uniformBlockBinding(fgeH[id], i, b);")
+    private static native void jsUniformBlockBinding(int program, int index, int binding);
+    public void uniformBlockBinding(int program, int index, int binding) { jsUniformBlockBinding(program, index, binding); }
+
     // ── GPU へ渡す直接バッファ（GC に任せるので返す所は何もしない）──
     public FloatBuffer allocFloats(int count) { return ByteBuffer.allocateDirect(count * 4).order(ByteOrder.nativeOrder()).asFloatBuffer(); }
     public void freeFloats(FloatBuffer buffer) { }
-    public IntBuffer allocInts(int count) { return ByteBuffer.allocateDirect(count * 4).order(ByteOrder.nativeOrder()).asIntBuffer(); }
+    public IntBuffer allocInts(int count) { return directInts(count); }
     public void freeInts(IntBuffer buffer) { }
     public ByteBuffer allocBytes(int count) { return ByteBuffer.allocateDirect(count).order(ByteOrder.nativeOrder()); }
     public void freeBytes(ByteBuffer buffer) { }
 
     // ── 下請け ──
+
+    /** 最低でも 1 個ぶんの直接バッファ（0 個の view を JS へ渡さない）。 */
+    static IntBuffer directInts(int count) {
+        return ByteBuffer.allocateDirect(Math.max(1, count) * 4).order(ByteOrder.nativeOrder()).asIntBuffer();
+    }
 
     /** 頭から容量の終わりまでを見る複製（元の position と limit は変えない）。 */
     private static <B extends Buffer> B whole(B buffer) {
@@ -331,7 +424,7 @@ public final class WebGl2 implements GlContext {
     }
 
     private static IntBuffer copyInts(IntBuffer src) {
-        IntBuffer dst = ByteBuffer.allocateDirect(src.capacity() * 4).order(ByteOrder.nativeOrder()).asIntBuffer();
+        IntBuffer dst = directInts(src.capacity());
         IntBuffer from = src.duplicate();
         from.position(0);
         from.limit(from.capacity());

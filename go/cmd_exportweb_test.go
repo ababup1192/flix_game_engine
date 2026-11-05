@@ -107,7 +107,7 @@ func bundleFixtureProject() exportProject {
 
 func TestBuildWebBundleFilesSkipMediaAndDotFiles(t *testing.T) {
 	game := bundleFixture(t)
-	b, err := buildWebBundle(game, "g", bundleFixtureProject())
+	b, err := buildWebBundle(game, "g", bundleFixtureProject(), false)
 	want := []string{"assets/a.json", "assets/maps/m.map.json", "project.json"}
 	if err != nil || !reflect.DeepEqual(b.Files, want) {
 		t.Errorf("files は絵・音・フォント・点で始まる物を除くはず: %v %v", b.Files, err)
@@ -115,7 +115,7 @@ func TestBuildWebBundleFilesSkipMediaAndDotFiles(t *testing.T) {
 }
 
 func TestBuildWebBundleImagesComeFromTextures(t *testing.T) {
-	b, err := buildWebBundle(bundleFixture(t), "g", bundleFixtureProject())
+	b, err := buildWebBundle(bundleFixture(t), "g", bundleFixtureProject(), false)
 	if err != nil || !reflect.DeepEqual(b.Images, []string{"assets/tex.png"}) {
 		t.Errorf("images は textures[].path のはず: %v %v", b.Images, err)
 	}
@@ -124,7 +124,7 @@ func TestBuildWebBundleImagesComeFromTextures(t *testing.T) {
 func TestBuildWebBundleRejectsMissingSound(t *testing.T) {
 	pr := bundleFixtureProject()
 	pr.Sounds[0].Path = "assets/sfx/none.wav"
-	if _, err := buildWebBundle(bundleFixture(t), "g", pr); err == nil {
+	if _, err := buildWebBundle(bundleFixture(t), "g", pr, false); err == nil {
 		t.Error("無い音を名指ししたら誤りのはず")
 	}
 }
@@ -132,7 +132,7 @@ func TestBuildWebBundleRejectsMissingSound(t *testing.T) {
 func TestBuildWebBundleRejectsPathOutsideGame(t *testing.T) {
 	pr := bundleFixtureProject()
 	pr.Sounds[0].Path = "../x.wav"
-	if _, err := buildWebBundle(bundleFixture(t), "g", pr); err == nil {
+	if _, err := buildWebBundle(bundleFixture(t), "g", pr, false); err == nil {
 		t.Error("ゲームの外を指す道は誤りのはず")
 	}
 }
@@ -172,5 +172,88 @@ func TestFindTeavmJarMatchesBothNamings(t *testing.T) {
 	jars := []string{"/a/teavm-core-0.14.1.jar", "/b/teavm-relocated-libs-asm.jar", "/b/teavm-relocated-libs-asm-tree.jar"}
 	if findTeavmJar(jars, "teavm-core") != jars[0] || findTeavmJar(jars, "teavm-relocated-libs-asm") != jars[1] {
 		t.Error("版のある名前と版の無い名前の両方を引けるはず（asm-tree と取り違えない）")
+	}
+}
+
+func writeScene3dEntryGame(t *testing.T, entry, source string) string {
+	t.Helper()
+	game := t.TempDir()
+	for path, text := range map[string]string{"web/WebMain.flix": entry, "src/Room.flix": source} {
+		full := filepath.Join(game, path)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return game
+}
+
+func TestScene3dEntryWarningFires2dEntryWithScene3dSource(t *testing.T) {
+	game := writeScene3dEntryGame(t, `with WebLayer.withProject(".")`, "Scene3d.make()")
+	if scene3dEntryWarning(game, readWebEntry(game)) == "" {
+		t.Error("Scene3d を使うのに 2D の入口なら知らせるはず")
+	}
+}
+
+func TestScene3dEntryWarningSilentWith3dEntry(t *testing.T) {
+	game := writeScene3dEntryGame(t, `with WebLayer.withProject3d(".")`, "Scene3d.make()")
+	if got := scene3dEntryWarning(game, readWebEntry(game)); got != "" {
+		t.Errorf("3D の入口なら黙るはず: %q", got)
+	}
+}
+
+func TestScene3dEntryWarningSilentWithoutScene3d(t *testing.T) {
+	game := writeScene3dEntryGame(t, `with WebLayer.withProject(".")`, "Render.sprite()")
+	if got := scene3dEntryWarning(game, readWebEntry(game)); got != "" {
+		t.Errorf("Scene3d を使わないなら黙るはず: %q", got)
+	}
+}
+
+func TestUsesScene3dEntrySeesOnly3dEntry(t *testing.T) {
+	if !usesScene3dEntry(`with WebLayer.withProject3d(".")`) {
+		t.Error("withProject3d の入口なら真のはず")
+	}
+	if usesScene3dEntry(`with WebLayer.withProject(".")`) {
+		t.Error("withProject の入口なら偽のはず")
+	}
+}
+
+func bundleFixtureWithLooseImage(t *testing.T) string {
+	t.Helper()
+	game := bundleFixture(t)
+	writeTestFile(t, game, "assets/loose.jpg", "x")
+	return game
+}
+
+func TestBuildWebBundle3dEntryPutsTexturesAndLooseImagesInFiles(t *testing.T) {
+	b, err := buildWebBundle(bundleFixtureWithLooseImage(t), "g", bundleFixtureProject(), true)
+	want := []string{"assets/a.json", "assets/loose.jpg", "assets/maps/m.map.json", "assets/pic.png", "assets/tex.png", "project.json"}
+	if err != nil || !reflect.DeepEqual(b.Files, want) {
+		t.Errorf("3D の入口は絵も files へ入れるはず: %v %v", b.Files, err)
+	}
+}
+
+func TestBuildWebBundle2dEntryKeepsImagesOutOfFiles(t *testing.T) {
+	b, err := buildWebBundle(bundleFixtureWithLooseImage(t), "g", bundleFixtureProject(), false)
+	want := []string{"assets/a.json", "assets/maps/m.map.json", "project.json"}
+	if err != nil || !reflect.DeepEqual(b.Files, want) {
+		t.Errorf("2D の入口は絵を files へ入れないはず: %v %v", b.Files, err)
+	}
+}
+
+func TestCopyListCountsSharedPathOnce(t *testing.T) {
+	b := webBundle{Files: []string{"assets/tex.png"}, Images: []string{"assets/tex.png"}}
+	if got := b.copyList(); !reflect.DeepEqual(got, []string{"assets/tex.png"}) {
+		t.Errorf("files と images の同じ道は 1 回だけのはず: %v", got)
+	}
+}
+
+func TestExportDocFilesLeavesOutImagesAndAtlases(t *testing.T) {
+	b := webBundle{Files: []string{"assets/a.json", "assets/f.fontatlas", "assets/tex.png"}, Images: []string{"assets/tex.png"}}
+	got := exportDocFiles(b, map[string]bool{"assets/f.fontatlas": true})
+	if !reflect.DeepEqual(got, []string{"assets/a.json"}) {
+		t.Errorf("絵とアトラスは素材の行に数えないはず: %v", got)
 	}
 }

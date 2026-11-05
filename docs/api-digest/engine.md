@@ -923,7 +923,7 @@
 - `pub eff Tasks { def finishTask(): JObject }`
 - 仕事を重ねない handler（ブラウザ版・窓の無い描き手）: 預けた仕事を finishTask の時にその場で走らせる。
   `pub def runTasksInPlace(f: Unit -> a \ ef): a \ (ef - Tasks) + IO`
-- 3D を描かない handler の組（ブラウザ版・テストの偽物）が張る、3D の場面を捨てる handler。
+- 3D を描かない handler の組（テストの偽物）が張る、3D の場面を捨てる handler。
   `pub def runNoopDraw3d(f: Unit -> a \ ef): a \ ef - Draw3d`
 - GPU に置く資源（タイルのバッファ・テクスチャ・字・シェーダーのプログラム）を用意し、寸法を引く。
   `pub eff GpuResources`

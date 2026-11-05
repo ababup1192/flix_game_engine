@@ -1,6 +1,6 @@
 // Render3d.Light — 3D の描き手（Render3d）の光の uniform（場面の光を並びへ詰める・プログラムへ渡す）。式の約束は Render3d.flix の頭。
 mod Render3d.Light {
-    import org.lwjgl.opengl.GL20
+    import fge.gl.GlContext
     use Render3d.{LightData, LightLocs}
 
     /// 光を uniform の並びへ詰める（点光源・スポットは選んだ後の物）。光の color・ambient・かすみの色は線形の量へ戻してから詰める
@@ -65,22 +65,22 @@ mod Render3d.Light {
         Array.put(RenderUtil.f32(v#y), 3 * i + 1, out);
         Array.put(RenderUtil.f32(v#z), 3 * i + 2, out)
 
-    pub def putLights(locs: LightLocs, d: LightData): Unit \ IO =
-        GL20.glUniform3fv(locs#ambient, d#ambient);
-        GL20.glUniform1f(locs#hemisphere, d#hemisphere);
-        GL20.glUniform1i(locs#toonSteps, d#toonSteps);
-        GL20.glUniform1i(locs#pointCount, d#pointCount);
-        GL20.glUniform3fv(locs#pointPos, d#pointPos);
-        GL20.glUniform3fv(locs#pointColor, d#pointColor);
-        GL20.glUniform1fv(locs#pointRange, d#pointRange);
-        GL20.glUniform1i(locs#spotCount, d#spotCount);
-        GL20.glUniform3fv(locs#spotPos, d#spotPos);
-        GL20.glUniform3fv(locs#spotDir, d#spotDir);
-        GL20.glUniform3fv(locs#spotColor, d#spotColor);
-        GL20.glUniform1fv(locs#spotRange, d#spotRange);
-        GL20.glUniform2fv(locs#spotCone, d#spotCone);
-        GL20.glUniform1i(locs#fogOn, d#fogOn);
-        GL20.glUniform3fv(locs#fogColor, d#fogColor);
-        GL20.glUniform2fv(locs#fogRange, d#fogRange);
-        GL20.glUniform3fv(locs#eye, d#eye)
+    pub def putLights(gl: GlContext, locs: LightLocs, d: LightData): Unit \ IO =
+        gl.uniform3fv(locs#ambient, d#ambient);
+        gl.uniform1f(locs#hemisphere, d#hemisphere);
+        gl.uniform1i(locs#toonSteps, d#toonSteps);
+        gl.uniform1i(locs#pointCount, d#pointCount);
+        gl.uniform3fv(locs#pointPos, d#pointPos);
+        gl.uniform3fv(locs#pointColor, d#pointColor);
+        gl.uniform1fv(locs#pointRange, d#pointRange);
+        gl.uniform1i(locs#spotCount, d#spotCount);
+        gl.uniform3fv(locs#spotPos, d#spotPos);
+        gl.uniform3fv(locs#spotDir, d#spotDir);
+        gl.uniform3fv(locs#spotColor, d#spotColor);
+        gl.uniform1fv(locs#spotRange, d#spotRange);
+        gl.uniform2fv(locs#spotCone, d#spotCone);
+        gl.uniform1i(locs#fogOn, d#fogOn);
+        gl.uniform3fv(locs#fogColor, d#fogColor);
+        gl.uniform2fv(locs#fogRange, d#fogRange);
+        gl.uniform3fv(locs#eye, d#eye)
 }

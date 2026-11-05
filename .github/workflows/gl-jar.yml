@@ -1,0 +1,40 @@
+name: GL jar
+
+# flix.toml の [jar-dependencies] が指す GL の層の jar の置き場（Release fge-gl-<ハッシュ>）を作る。
+# 置き場とその jar がもうあれば何もしない（make gl-jar-publish）。
+# WhyNot: 版のリリース（release.yml）だけで作らない — main の flix.toml が新しい置き場を指してから次の版を出すまで、
+# 外の CI と新しい clone が 404 で落ちる。
+on:
+  push:
+    branches: [main]
+    paths:
+      - "render_gl/java/**"
+      - "flix.toml"
+      - "render_gl/flix.toml"
+      - "engine_full/flix.toml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# WhyNot: release.yml と concurrency の group を共有しない — 待ちが 2 本たまると古い方は取り消され、版の公開が消える。
+# 同時に作りに来た時の already exists は make gl-jar-publish が見直して通す。
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # WhyNot: devbox を入れない — 要るのは javac と ubuntu に元からある make・curl・gh・shasum だけで、
+      # nix で flix や go まで入れる数分の間、main の flix.toml は無い置き場を指したままになる。
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: make gl-jar-publish
+        run: make gl-jar-publish GL_JAR_TARGET="${GITHUB_SHA}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

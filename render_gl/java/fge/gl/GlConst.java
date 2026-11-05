@@ -1,7 +1,7 @@
 package fge.gl;
 
 /**
- * GlContext に渡す GL の定数（名前は glow にそろえ、頭の GL_ を外す）。2D の描き手と、後で 3D（C9）と画面なしの描き手が使う物まで持つ。
+ * GlContext に渡す GL の定数（名前は glow にそろえ、頭の GL_ を外す）。2D と 3D の描き手と、画面なしの描き手が使う物まで持つ。
  * WhyNot: interface の中に置かない — Flix 0.78 は interface の static の欄を名前で引けない（類の static の欄は引ける）。
  */
 public final class GlConst {
@@ -67,4 +67,20 @@ public final class GlConst {
     public static final int DEPTH24_STENCIL8 = 0x88F0;
     public static final int RGBA16F = 0x881A;
     public static final int MAX_SAMPLES = 0x8D57;
+    public static final int NONE = 0;
+    public static final int BACK = 0x0405;
+    public static final int CW = 0x0900;
+    public static final int LINEAR_MIPMAP_LINEAR = 0x2703;
+    public static final int NEAREST_MIPMAP_LINEAR = 0x2702;
+    public static final int SAMPLE_ALPHA_TO_COVERAGE = 0x809E;
+    public static final int TEXTURE_BASE_LEVEL = 0x813C;
+    public static final int TEXTURE_MAX_LEVEL = 0x813D;
+    public static final int TEXTURE_COMPARE_MODE = 0x884C;
+    public static final int ELEMENT_ARRAY_BUFFER = 0x8893;
+    public static final int UNIFORM_BUFFER = 0x8A11;
+    public static final int DEPTH_ATTACHMENT = 0x8D00;
+    /** WebGL2 には無い。enable するのは GlContext.hasAlphaToOne() が真の時だけ。 */
+    public static final int SAMPLE_ALPHA_TO_ONE = 0x809F;
+    /** glGetUniformBlockIndex の無い名前。GlContext は int の -1 で返す。 */
+    public static final int INVALID_INDEX = -1;
 }
