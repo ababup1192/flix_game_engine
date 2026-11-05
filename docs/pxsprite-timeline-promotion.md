@@ -96,7 +96,7 @@ PxSprite の Doc と Journey(村の `Prologue.routeAt` の一般化)の2つだ�
       `Render.draw` → `Render.drawWith(getTextureInfo)` に差し替え(regionRect 無しは
       同一 Drawable = 挙動不変)。検証: SoftRaster で両モードを生成して全画素バイト一致
       (editor_server/test/TestPxSpriteRaster — 非反転/flipX とも diff 0)。
-    - **PreviewSprite**: `editor_server/src/PreviewSprite.flix` + POST /preview/sprite。
+    - **PreviewSprite**: 別リポの editor_server の PreviewSprite と POST /preview/sprite。
       mode="frame"(1 コマ拡大)/"sheet"(全スプライト×全コマ×themes — sprite 指定で
       1 体に絞る = クリップ再生は静止コマ列で代替)。themes は [{name?, colors:{key:"#rrggbb"}}]、
       無いキーは決定的フォールバック色(fail-open)。返り値は既存 Preview の流儀

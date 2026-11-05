@@ -90,7 +90,7 @@ pub mod App {
     /// 画面なしの描き出し（viewCtxOf / viewCtxOfFonts）と pickCtx では None。F3 の行は FrameDiagnostics.summaryLines(d) を
     /// ゲームの字の部品で描く。View の中で読むだけなので、遊んだ記録と再生は食い違わない。
     /// display は今の画面の情報（大きさ・倍率・最後の pointer・端末の区分）。小さい画面（sizeClass が Small）だけ字とボタンを
-    /// 大きくする・指の時だけ案内を「タップ」にする、のように View が読む。当たりの並べ方を替えるなら、入力の側は Frame#sizeClass で
+    /// 大きくする・指の時だけ案内を「タップ」にする、のように使う。当たりの並べ方を替えるなら、入力の側は Frame#sizeClass で
     /// 同じ並べ方を引く。画面なしの描き出しと pickCtx では Display.desktop(design)（Large・Mouse）で、小さい画面を描き出すなら
     /// `{ display = { sizeClass = Display.SizeClass.Small | ctx#display } | ctx }` で差し替える。
     pub type alias ViewCtx = { atlas = FontAtlas, fontOf = String -> FontAtlas, visible = Rect2.Rect2,
