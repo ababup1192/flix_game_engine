@@ -701,19 +701,21 @@ async function fgeBoot() {
   fgeShow("fge-start", true);
   fgeProgress("click / tap to start", total, total);
   // WhyNot: 音を起こすのを await の後にしない — Safari は押した操作の処理の中で resume しないと断る版がある。
-  // WhyNot: pointerdown で待たない — 指の pointerdown はユーザーの操作に数えられず（HTML の決まり）、Chrome は resume を断る。click は指でもマウスでも数えられる。
+  // WhyNot: pointerdown で待たない — 指の pointerdown はユーザーの操作に数えられず（HTML の決まり）、Chrome は resume を断る。
+  // WhyNot: click だけで待たない — iOS の Safari は押せる要素（ボタン・リンク・cursor: pointer）の上でしか指のタップを click にしないので、最初のタップが届かない。
+  // 指の pointerup と touchend は操作に数えられる。
+  var events = ["keydown", "click", "pointerup", "touchend"];
   await new Promise(function (resolve) {
-    var go = function () {
+    var go = function (e) {
+      if (e.type === "pointerup" && e.pointerType === "mouse") return;
       // iOS の消音スイッチで WebAudio が黙らないように（Safari 17 以降）。
       try { if (navigator.audioSession) navigator.audioSession.type = "playback"; } catch (e) { /* 無い版 */ }
       fgeAudio.ctx.resume();
       fgeAudio.started = true;
-      window.removeEventListener("keydown", go);
-      window.removeEventListener("click", go);
+      events.forEach(function (name) { window.removeEventListener(name, go); });
       resolve();
     };
-    window.addEventListener("keydown", go);
-    window.addEventListener("click", go);
+    events.forEach(function (name) { window.addEventListener(name, go); });
   });
   if (navigator.storage && navigator.storage.persist) {
     navigator.storage.persist().then(function (granted) {
