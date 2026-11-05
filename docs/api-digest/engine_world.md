@@ -1287,6 +1287,22 @@
 - 記録を閉じる（まとめている行を書き出す）。
   `pub def close(rec: Recorder): Unit \ IO`
 
+## FlowField — `engine_world/src/FlowField.flix`
+- 下るマスの選び方。歩数はどちらでも 4 方向で塗る。
+  `pub enum Neighbors with Eq, ToString { case Four, case Eight }`
+- 歩数の地図。`build` で塗る。
+  `pub type alias FlowField = FieldData`
+- まだ塗っていない地図（どのマスも届かない）。
+  `pub def empty(): FlowField`
+- `empty` のままの地図か。`build` で塗った地図は、届くマスが無くても false。
+  `pub def isEmpty(field: FlowField): Bool`
+- `goals` を 0 歩として、`isOpen` のマスだけを上下左右に通って塗った地図。塗るのは width × height の中だけで、
+  `pub def build(width: Int32, height: Int32, isOpen: (Int32, Int32) -> Bool, goals: List[(Int32, Int32)], opts: { neighbors = Neighbors, maxSteps = Int32 }): FlowField`
+- マス `cell` から目的までの歩数（届かないマス・地図の外は None）。
+  `pub def stepsAt(field: FlowField, cell: (Int32, Int32)): Option[Int32]`
+- `cell` から 1 歩下るマス（今より歩数が小さい隣のうち、一番小さい物）。目的のマス・届かないマス・地図の外は None。
+  `pub def downhill(field: FlowField, cell: (Int32, Int32)): Option[(Int32, Int32)]`
+
 ## Fx — `engine_world/src/Fx.flix`
 - `count` 個の粒を作り、各粒 `i` に個性の蛇口 `rand`（`rand(k)` = 番号 i・チャンネル k の
   `pub def derive(count: Int32, t: Float64, piece: (Int32, Int32 -> Float64, Float64) -> a): List[a]`
@@ -2298,6 +2314,16 @@
   `pub def isStacked(layers: List[t]): Bool with SortingLayer[t]`
 - 表の決まりをテストで確かめる用: どの層も outer（底, 天井）の中に収まるか。
   `pub def isWithin(outer: (Int32, Int32), layers: List[t]): Bool with SortingLayer[t]`
+
+## SpatialGrid — `engine_world/src/SpatialGrid.flix`
+- 近くの物を引く格子。`build` か `buildBy` で作る。
+  `pub type alias SpatialGrid = GridData`
+- 位置の列から作る。番号は `xs`・`ys` の並びの位置。`minCellSize` は升の一辺の下限で、
+  `pub def build(minCellSize: Float64, xs: Vector[Float64], ys: Vector[Float64]): SpatialGrid`
+- 物の列から作る。番号は `items` の並びの位置。`posOf` は 1 つにつき 1 回だけ呼ぶ。
+  `pub def buildBy(minCellSize: Float64, items: List[a], posOf: a -> (Float64, Float64)): SpatialGrid`
+- (x, y) から `radius` 以内（ちょうど `radius` の物も入る）の物を畳む。`f` は (蓄積, 番号, その物の x, その物の y) を受ける。
+  `pub def foldNearIndex(grid: SpatialGrid, x: Float64, y: Float64, radius: Float64, init: b, f: (b, Int32, Float64, Float64) -> b \ ef): b \ ef`
 
 ## Steering — `engine_world/src/Steering.flix`
 - target から流した距離場を 1 歩下る = target へ最短で近づく隣のマス。

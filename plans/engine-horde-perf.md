@@ -283,7 +283,7 @@ A と同じく版は 1 本。テスト: gl-parity の既存の billboard と par
 
 並べ方はパッケージ単位（1 節の表）:
 - E-world（engine_world だけの行: FirstPersonController3d・AnimationSharing3d・Fx を Billboard3d へ写す関数と FxDoc の 3D の欄・CameraRig の shakeRotation・
-  Separation・Steering.downhillOf・Projectile3d）は E-engine の後なら G・B・A・A2（render_gl）と並べてよい。
+  Separation・FlowField・Projectile3d）は E-engine の後なら G・B・A・A2（render_gl）と並べてよい。
 - E-engine（CollisionWorld3d.raycast・engine）は C1 の直後に、ほかと並べずに済ませる（engine が赤いと render_gl と engine_world の両方が赤い）。Projectile3d（engine_world）は raycast の後で E-world に入る。
 - E-full（VideoOut・engine_full）は、render_gl が緑の区切り（フェーズとフェーズの間）か別の worktree で（engine_full/src は symlink の木）。
 
@@ -320,7 +320,7 @@ A と同じく版は 1 本。テスト: gl-parity の既存の billboard と par
 | HordeBench の測り方 | FrameBench は作らない | /perf の答え（`perfSummary`）に Scene3dCounts と submit の分布を足す（C0 の 5）。統計は App.HitchDetector・engine_tools の CpuTiming | — | 組・場面・timeline の中身 | C0 に含む |
 | FpViewmodel の jointAttachment | 削除 | engine に既にある `Pose3d.jointTransform`（Pose3d.flix:41-44）を使う | — | 武器・揺れ・Doc・銃口の行列の式 | ゲームの直しだけ 0.5 日 |
 | Separation | 昇格候補（中） | engine_world Separation | 升の大きさ・動かない円・壁の注入 | 敵の型・攻撃 | 1.5 日 |
-| FlowField | 昇格しない（GridSearch.distances と重なる） | 代わりに engine_world の Steering に downhillOf を新設（今の engine には無い） | 距離場の上で 1 歩ずつ下る | Maze | 0.5 日 |
+| FlowField | ~~昇格しない~~ 昇格する（2026-11-05 の人の決定。`plans/engine-auto-perf.md`）。以下は前の案: 昇格しない（GridSearch.distances と重なる） | 代わりに engine_world の Steering に downhillOf を新設（今の engine には無い） | 距離場の上で 1 歩ずつ下る | Maze | 0.5 日 |
 | Spawner.placeOf | 保留（2 本目待ち） | SpawnPoints | — | Waves | — |
 | Tracers | 保留（小さい） | — | — | — | — |
 | hit stop | しない（既に TimeScale・Clock.withSlow） | — | — | hitStopPlan | — |
@@ -367,7 +367,7 @@ plans/engine-core-polish.md:77 の「3D のシューティングを先に作る�
 | パッケージ | 新しい pub |
 |---|---|
 | engine | `FrameDiagnostics.Scene3dCounts` の 7 欄（meshUploads・meshEvictions・texture3dUploads・mipCopies・materialBuilds・jointUploads・targetRebuilds）・`CollisionWorld3d.raycast` |
-| engine_world | `FirstPersonController3d`・`AnimationSharing3d`・Fx の結果を `Scene3d.Billboard3d` へ写す関数（と FxDoc の 3D の欄）・`CameraRig.shakeRotation`・`Separation`・`Steering.downhillOf`・`Projectile3d` |
+| engine_world | `FirstPersonController3d`・`AnimationSharing3d`・Fx の結果を `Scene3d.Billboard3d` へ写す関数（と FxDoc の 3D の欄）・`CameraRig.shakeRotation`・`Separation`・`FlowField`・`Projectile3d` |
 | engine_full | `VideoOut` に flow を撮るつなぎの関数 1 つ |
 
 | 案 | 中身 | 代金 | リスク |

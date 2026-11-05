@@ -9,6 +9,8 @@
 |---|---|
 | タイルのマス目と移動範囲 | Grid / GridSearch |
 | 敵を追わせる・逃がす・ふらつかせる(距離場の 1 歩) | Steering |
+| 群れが同じ相手を追う(共有の歩数の地図・塗り直しは数コマに 1 回) | FlowField |
+| たくさんの物から近くの物だけを引く(群れの押し合い・範囲の当たり) | SpatialGrid |
 | チップ絵タイル（タイルマップ・tilemap）を 1 draw call で敷く(事前に生成・マスごとの照明色 tint・屋根や庇は zIndex で手前にも) | App.withTileLayers / TileScene（実例: `templates/rpg-starter/src/Game.flix`） |
 | チップ絵なしでマップ地形(壁・水)を多角形で描く（タイルマップを絵なしで） | DualGrid / Material（repo 内に見本なし。[dual-grid.md](../dual-grid.md)） |
 | rows の文字格子から地形の見た目を作る(*.terrain.json) | Terrain / TerrainDoc（repo 内に見本なし。[dual-grid.md](../dual-grid.md)） |
@@ -24,6 +26,8 @@
 - **Grid** — 正方タイルの「何列目・何行目」と画面上のピクセル位置を相互に変換する。セル座標の規約は 2 つ: 左上原点・tileSize 割りの系（cellAt）と、セル中心が整数・境界 ±0.5 の系（cellAtCentered — GridRay / WallFaces が使う）。
 - **TileState** — マス目の「いま」を持つ疎な表（耕した・濡れた・置いた）。日ごとの一斉更新とセーブの往復を持つ。地図の形（読むだけの設計図）とは置き場所を分ける。
 - **GridSearch** — マス目の上で「どこまで行けるか・何歩かかるか・どこが射程か」を求める。
+- **FlowField** — 目的のマスまでの歩数の地図を 1 回塗り、群れの全員が同じ地図を読んで進む。歩数は 4 方向で塗り、下るマスは 4 方向か 8 方向を選ぶ。同じ歩数の時の選び方は固定順。
+- **SpatialGrid** — 位置の列を升へ 1 回振り分け、ある点の近くの物だけを `foldNearIndex` で畳む。持つのは位置と番号だけで、半径や押し合いの規則は呼ぶ側に残す。毎コマ作る格子は World に置かない。
 - **Steering** — 距離場（GridSearch）の 1 歩 chase / flee / wander。「入れるか」は canEnter で注入。敵 AI とイベントシーンが同じ 1 歩を使う。乱数を持たず同着は固定順 — 何度描き出しても毎回同じ。
 - **GridRay** — マス目の世界で「start から goal の間に壁が挟まるか」（視線の遮蔽）。壁の向こうの松明を消す・敵から主人公が見えるか、の見通し判定。solid の判定は関数で注入する。
 - **Dir4** — 上下左右の 4 方向を 1 つの値としてまとめて表す。

@@ -27,6 +27,7 @@
     "render_gl/src/RenderTexture.flix::loadTexture": "正当 C: 同梱の画像が読めないのはビルドの誤り。リリース前に確実に気づける方を選ぶ",
     "engine/src/render2d/drawable/Sprite.flix::toDrawable": "正当 C: 未登録テクスチャは配線漏れ。黙って透明になるより止める方が気づける",
     "engine/src/platform/LoadProgress.flix::parMapWithProgress": "正当 B: 待つ回数の上限は Int32.maxValue × 50 ms（約 3 年）で、届くのはスレッドの待ち方の誤り",
-    "render_gl/src/LwjglLayer.flix::withProject": "正当 C: project.json は起動時の必須入力 (決まり 1 の loadOrBug 相当。名前が *OrBug でないのが宿題)"
+    "render_gl/src/LwjglLayer.flix::withProject": "正当 C: project.json は起動時の必須入力 (決まり 1 の loadOrBug 相当。名前が *OrBug でないのが宿題)",
+    "engine_world/src/SpatialGrid.flix::build": "正当 C: xs と ys の長さ違いは呼び手のプログラムの誤り。短い方に合わせて続けると、一部の物が黙って探索から漏れる"
   }
 }

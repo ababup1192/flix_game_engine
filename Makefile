@@ -101,7 +101,7 @@ help:
 	@echo "  make lint                 engine の lint のうち 0 件の物をまとめて (forbid・max-lines・value-discard・hoist・record-wrap・state-shape・doc-refs・z-table・f32)"
 	@echo "  make lint-forbid          古い書き方を止める (bin/lint-rules/forbid.json。代わりの物を出す)"
 	@echo "  make lint-max-lines       engine の src の .flix の行数の上限 (bin/lint-rules/max-lines.json。超えた物は除外の一覧)"
-	@echo "  make lint-quadratic       fold の中で蓄積を作り直す二乗の形が無いか検査 (全量)"
+	@echo "  make lint-quadratic       fold の中で蓄積を作り直す二乗の形が無いか検査 (全量)・ループの中の List 探しを知らせる (perf-near-scan)"
 	@echo "  make lint-hoist           ループの外に置いた式がループの中へ書き写される形が無いか検査 (全量)"
 	@echo "  make lint-record-wrap     World が直接持つ大きな record を enum で包んでいるか検査"
 	@echo "  make lint-state-shape     状態の持ち方 (Bool の欄の数・Option[Bool]・名指しの enum への case _・View の効果) を検査"

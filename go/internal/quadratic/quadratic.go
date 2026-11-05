@@ -10,6 +10,8 @@ package quadratic
 //
 // ステージした差分だけを見るのは、今ある二乗 (docs/performance.md の残りの一覧) で
 // 触ったファイルのコミットを毎回止めないため。新しく書いた行だけを裁く。
+//
+// 同じ道で perf-near-scan (near.go) も見る。こちらは知らせるだけで止めない。
 
 import (
 	"encoding/json"
@@ -163,10 +165,10 @@ var hunkLine = regexp.MustCompile(`\+(\d+)`)
 
 // stagedHits は新しく書いた行だけを見る。ラムダの仮引数を知るためにステージ後の全文を読み、
 // 差分で足された行番号と突き合わせる (差分の + 行だけでは、どのfoldの中かが見えない)。
-func (r *Rules) stagedHits(root string) ([]Hit, error) {
+func (r *Rules) stagedHits(root string) ([]Hit, []NearHit, error) {
 	diff, err := git(root, "diff", "--cached", "-U0", "--diff-filter=ACMR")
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var order []string
 	added := map[string]map[int]bool{}
@@ -190,6 +192,7 @@ func (r *Rules) stagedHits(root string) ([]Hit, error) {
 		}
 	}
 	var hits []Hit
+	var near []NearHit
 	for _, p := range order {
 		body, err := git(root, "show", ":"+p)
 		if err != nil {
@@ -200,8 +203,13 @@ func (r *Rules) stagedHits(root string) ([]Hit, error) {
 				hits = append(hits, h)
 			}
 		}
+		for _, h := range ScanNear(p, body) {
+			if added[p][h.Line] || added[p][h.LoopLine] {
+				near = append(near, h)
+			}
+		}
 	}
-	return hits, nil
+	return hits, near, nil
 }
 
 func (r *Rules) allFiles(root string) ([]string, error) {
@@ -263,6 +271,7 @@ func Run(out, errOut *strings.Builder, root string, args []string) (int, error) 
 		}
 	}
 	var hits []Hit
+	var near []NearHit
 	switch {
 	case all || len(named) > 0:
 		files := named
@@ -282,18 +291,23 @@ func Run(out, errOut *strings.Builder, root string, args []string) (int, error) 
 			}
 			rel, _ := filepath.Rel(root, abs)
 			hits = append(hits, Scan(filepath.ToSlash(rel), string(body))...)
+			near = append(near, ScanNear(filepath.ToSlash(rel), string(body))...)
 		}
 	default:
-		if hits, err = rules.stagedHits(root); err != nil {
+		if hits, near, err = rules.stagedHits(root); err != nil {
 			return 2, err
 		}
 	}
-	return report(out, errOut, root, rules, hits, all, warn), nil
+	reportNear(out, rules, near)
+	return report(out, errOut, root, rules, hits, near, all, warn), nil
 }
 
-func report(out, errOut *strings.Builder, root string, rules *Rules, hits []Hit, all, warn bool) int {
+func report(out, errOut *strings.Builder, root string, rules *Rules, hits []Hit, near []NearHit, all, warn bool) int {
 	var bad []Hit
 	live := map[string]bool{}
+	for _, h := range near {
+		live[h.key()] = true
+	}
 	for _, h := range hits {
 		live[h.key()] = true
 		if _, ok := rules.Exempt[h.key()]; !ok {

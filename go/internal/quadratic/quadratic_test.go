@@ -158,3 +158,70 @@ func TestExemptForAbsentFileIsNotStale(t *testing.T) {
 		t.Fatalf("code=%d\n%s", code, errOut.String())
 	}
 }
+
+func nearLines(src string) string {
+	var out []string
+	for _, h := range ScanNear("a.flix", src) {
+		out = append(out, h.Loop+">"+h.Scan+"@"+h.Def)
+	}
+	return strings.Join(out, " ")
+}
+
+func TestNearScanFiresInsideLoopLambda(t *testing.T) {
+	for _, tc := range []struct{ src, want string }{
+		{"def f(xs: List[Int32]): List[Int32] =\n    xs |> List.map(x -> xs |> List.filter(y -> y != x) |> List.length)", "List.map>List.filter@f"},
+		{"def f(): Bool = List.forAll(a -> List.exists(b -> a == b, bs), as)", "List.forAll>List.exists@f"},
+		{"def f(): Int32 = List.foldLeft((acc, e) -> acc + List.length(List.filter(o -> o == e, es)), 0, es)", "List.foldLeft>List.filter@f"},
+		{"def f(): Unit = Vector.map(v -> List.find(o -> o == v, os), vs)", "Vector.map>List.find@f"},
+	} {
+		if got := nearLines(tc.src); got != tc.want {
+			t.Fatalf("%q: got %q want %q", tc.src, got, tc.want)
+		}
+	}
+}
+
+// 回すラムダが呼ぶ同じファイルの def の中も 1 段だけ見る (押し合いの近所を毎回作る形がこれ)。
+func TestNearScanFollowsOneCallInTheSameFile(t *testing.T) {
+	src := "def separate(ds: List[Disc]): List[Disc] =\n    ds |> List.map(d -> apart(ds, d))\n" +
+		"def apart(ds: List[Disc], d: Disc): Disc =\n    let others = ds |> List.filter(o -> o#id != d#id);\n    push(others, d)\n"
+	hits := ScanNear("a.flix", src)
+	if len(hits) != 1 || hits[0].Def != "apart" || hits[0].Line != 4 || hits[0].LoopLine != 2 {
+		t.Fatalf("%+v", hits)
+	}
+}
+
+func TestNearScanQuietOnTheRightShapes(t *testing.T) {
+	for _, src := range []string{
+		"def f(): List[Int32] = xs |> List.filter(x -> x > 0) |> List.map(x -> x + 1)",
+		"def f(): List[Int32] = List.map(lookup, xs)",
+		"def f(): Unit =\n    let far = xs |> List.filter(x -> x > 0);\n    ys |> List.map(y -> y + 1)",
+		"def f(): Unit = xs |> List.map(x -> x + 1) // List.map(x -> List.filter(p, xs))",
+		"def f(): Unit = xs |> List.map(x -> Other.apart(x))\ndef apart(x: Int32): Bool = List.exists(p, xs)",
+	} {
+		if got := nearLines(src); got != "" {
+			t.Fatalf("%q で鳴った: %s", src, got)
+		}
+	}
+}
+
+// 知らせるだけで、終了コードは変えない。除外に載せれば黙り、古い除外とも言わない。
+func TestNearScanOnlyNotifies(t *testing.T) {
+	root := writeRepo(t, `{"src/Old.flix::old":"N は 3"}`)
+	body := "mod Near {\n    def near(xs: List[Int32]): List[Int32] =\n        xs |> List.map(x -> List.length(List.filter(y -> y == x, xs)))\n}\n"
+	if err := os.WriteFile(filepath.Join(root, "src/Near.flix"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out, errOut strings.Builder
+	code, err := Run(&out, &errOut, root, []string{"--all"})
+	if err != nil || code != 0 || !strings.Contains(out.String(), "src/Near.flix:3 (near)") || !strings.Contains(out.String(), "SpatialGrid") {
+		t.Fatalf("code=%d err=%v\n%s\n%s", code, err, out.String(), errOut.String())
+	}
+	root2 := writeRepo(t, `{"src/Old.flix::old":"N は 3","src/Near.flix::near":"N は 4 で決まっている"}`)
+	if err := os.WriteFile(filepath.Join(root2, "src/Near.flix"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out2, errOut2 strings.Builder
+	if code, _ := Run(&out2, &errOut2, root2, []string{"--all"}); code != 0 || strings.Contains(out2.String(), "(near)") {
+		t.Fatalf("code=%d\n%s\n%s", code, out2.String(), errOut2.String())
+	}
+}

@@ -10,7 +10,7 @@ func init() {
 	// WhyNot: engineOnly にしないのは、N を決めるのはゲームで、二乗が効いてくるのも
 	// 配った先のゲームの側だから。
 	register("quadratic",
-		"fold の中で蓄積を作り直す二乗の形 (List.append(acc, …) / 文字列を 1 回ごとに足す) が無いか",
+		"fold の中で蓄積を作り直す二乗の形 (List.append(acc, …) / 文字列を 1 回ごとに足す) が無いか。ループの中の List 探し (perf-near-scan) は知らせるだけ",
 		cmdQuadratic)
 }
 
