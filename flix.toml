@@ -23,4 +23,4 @@ repository  = "github:ababup1192/flix_game_engine"
 
 # GL の層の jar（render_gl/java・make gl-jar が lib/external に置く）。行は make gl-jar-pin が書く（名前は render_gl/java のハッシュ）。
 [jar-dependencies]
-"fge-gl-fde801c534d0.jar" = "url:https://github.com/ababup1192/flix_game_engine/releases/download/fge-gl-fde801c534d0/fge-gl-fde801c534d0.jar"
+"fge-gl-ee3d5cb6be16.jar" = "url:https://github.com/ababup1192/flix_game_engine/releases/download/fge-gl-ee3d5cb6be16/fge-gl-ee3d5cb6be16.jar"

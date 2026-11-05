@@ -49,10 +49,6 @@ public interface GlContext {
     /** data の position から limit までを送る（WebGL2 版は subarray）。 */
     void bufferData(int target, FloatBuffer data, int usage);
     void bufferData(int target, int[] data, int usage);
-    /** size バイトの置き場だけを確保する（中身は bufferSubData で書く）。 */
-    void bufferData(int target, int size, int usage);
-    void bufferSubData(int target, int offset, float[] data);
-    void bindBufferBase(int target, int index, int buffer);
     int createVertexArray();
     void deleteVertexArray(int array);
     void bindVertexArray(int array);
@@ -97,6 +93,13 @@ public interface GlContext {
     void texImageRgba16fZero(int width, int height);
     /** 今 bind している TEXTURE_2D の置き場を 24 ビットの深度で確保する（中身は描いて決める）。 */
     void texImageDepth24(int width, int height);
+    /**
+     * 今 bind している TEXTURE_2D の置き場を RGBA32F で確保する（中身は texSubImageRgba32f で書く。書いていない所の値は決まらない）。
+     * 読む時の filter は NEAREST にする。WebGL2 の RGBA32F は LINEAR で読むと不完全なテクスチャになり、読むと 0 が返る。
+     */
+    void texImageRgba32f(int width, int height);
+    /** texImageRgba32f で作ったテクスチャの (x, y) から width × height を、pixels の position から差し替える（1 画素 4 個の float）。 */
+    void texSubImageRgba32f(int x, int y, int width, int height, FloatBuffer pixels);
     int createSampler();
     void bindSampler(int unit, int sampler);
     void samplerParameteri(int sampler, int pname, int param);
@@ -141,9 +144,6 @@ public interface GlContext {
     void uniform2fv(int location, float[] value);
     void uniform3fv(int location, float[] value);
     void uniformMatrix4fv(int location, boolean transpose, float[] value);
-    /** 無い名前は GlConst.INVALID_INDEX（-1）。 */
-    int getUniformBlockIndex(int program, String name);
-    void uniformBlockBinding(int program, int index, int binding);
 
     // ── GPU へ渡す直接バッファ（取ったら必ず返す）──
     // 使うのは毎コマか 1 回ずつ取って返す物と、持ち回す RenderBuf だけ。長く持って GC に任せる物は java.nio の allocateDirect で取る

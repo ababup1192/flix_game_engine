@@ -15,7 +15,7 @@ pub mod Skin3d {
 
     def recOf(s: Skin3d): SkinRec = let SkinData.SkinData(r) = s; r
 
-    /// 1 体のジョイントの上限。GL のジョイントの行列の UBO（64 × mat4）と CPU が同じ値を使う。
+    /// 1 体のジョイントの上限。GL の joint texture の 1 行（64 × mat4）と CPU が同じ値を使う。
     pub def maxJoints(): Int32 = 64
 
     /// names・parents（-1 が根。親の番号は自分より小さい）・レストポーズ・逆バインド行列から作る。

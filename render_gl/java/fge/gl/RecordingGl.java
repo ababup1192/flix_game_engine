@@ -90,9 +90,6 @@ public final class RecordingGl implements GlContext {
     public void bufferData(int target, float[] data, int usage) { if (enabled) log.append("bufferData").append(' ').append(target).append(' ').append(arr(data)).append(' ').append(usage).append('\n'); inner.bufferData(target, data, usage); }
     public void bufferData(int target, FloatBuffer data, int usage) { if (enabled) log.append("bufferData").append(' ').append(target).append(' ').append(buf(data)).append(' ').append(usage).append('\n'); inner.bufferData(target, data, usage); }
     public void bufferData(int target, int[] data, int usage) { if (enabled) log.append("bufferData").append(' ').append(target).append(' ').append(arrInts(data)).append(' ').append(usage).append('\n'); inner.bufferData(target, data, usage); }
-    public void bufferData(int target, int size, int usage) { if (enabled) log.append("bufferData").append(' ').append(target).append(' ').append(size).append(' ').append(usage).append('\n'); inner.bufferData(target, size, usage); }
-    public void bufferSubData(int target, int offset, float[] data) { if (enabled) log.append("bufferSubData").append(' ').append(target).append(' ').append(offset).append(' ').append(arr(data)).append('\n'); inner.bufferSubData(target, offset, data); }
-    public void bindBufferBase(int target, int index, int buffer) { if (enabled) log.append("bindBufferBase").append(' ').append(target).append(' ').append(index).append(' ').append(buffer).append('\n'); inner.bindBufferBase(target, index, buffer); }
     public int createVertexArray() { int r = inner.createVertexArray(); if (enabled) log.append("createVertexArray").append(" -> ").append(r).append('\n'); return r; }
     public void deleteVertexArray(int array) { if (enabled) log.append("deleteVertexArray").append(' ').append(array).append('\n'); inner.deleteVertexArray(array); }
     public void bindVertexArray(int array) { if (enabled) log.append("bindVertexArray").append(' ').append(array).append('\n'); inner.bindVertexArray(array); }
@@ -117,6 +114,8 @@ public final class RecordingGl implements GlContext {
     public void texImageBytes(int format, int width, int height, ByteBuffer pixels) { if (enabled) log.append("texImageBytes").append(' ').append(format).append(' ').append(width).append(' ').append(height).append(' ').append(buf(pixels)).append('\n'); inner.texImageBytes(format, width, height, pixels); }
     public void texImageRgba16fZero(int width, int height) { if (enabled) log.append("texImageRgba16fZero").append(' ').append(width).append(' ').append(height).append('\n'); inner.texImageRgba16fZero(width, height); }
     public void texImageDepth24(int width, int height) { if (enabled) log.append("texImageDepth24").append(' ').append(width).append(' ').append(height).append('\n'); inner.texImageDepth24(width, height); }
+    public void texImageRgba32f(int width, int height) { if (enabled) log.append("texImageRgba32f").append(' ').append(width).append(' ').append(height).append('\n'); inner.texImageRgba32f(width, height); }
+    public void texSubImageRgba32f(int x, int y, int width, int height, FloatBuffer pixels) { if (enabled) log.append("texSubImageRgba32f").append(' ').append(x).append(' ').append(y).append(' ').append(width).append(' ').append(height).append(' ').append(buf(pixels)).append('\n'); inner.texSubImageRgba32f(x, y, width, height, pixels); }
     public int createSampler() { int r = inner.createSampler(); if (enabled) log.append("createSampler").append(" -> ").append(r).append('\n'); return r; }
     public void bindSampler(int unit, int sampler) { if (enabled) log.append("bindSampler").append(' ').append(unit).append(' ').append(sampler).append('\n'); inner.bindSampler(unit, sampler); }
     public void samplerParameteri(int sampler, int pname, int param) { if (enabled) log.append("samplerParameteri").append(' ').append(sampler).append(' ').append(pname).append(' ').append(param).append('\n'); inner.samplerParameteri(sampler, pname, param); }
@@ -156,8 +155,6 @@ public final class RecordingGl implements GlContext {
     public void uniform2fv(int location, float[] value) { if (enabled) log.append("uniform2fv").append(' ').append(location).append(' ').append(arr(value)).append('\n'); inner.uniform2fv(location, value); }
     public void uniform3fv(int location, float[] value) { if (enabled) log.append("uniform3fv").append(' ').append(location).append(' ').append(arr(value)).append('\n'); inner.uniform3fv(location, value); }
     public void uniformMatrix4fv(int location, boolean transpose, float[] value) { if (enabled) log.append("uniformMatrix4fv").append(' ').append(location).append(' ').append(transpose).append(' ').append(arr(value)).append('\n'); inner.uniformMatrix4fv(location, transpose, value); }
-    public int getUniformBlockIndex(int program, String name) { int r = inner.getUniformBlockIndex(program, name); if (enabled) log.append("getUniformBlockIndex").append(' ').append(program).append(' ').append(name).append(" -> ").append(r).append('\n'); return r; }
-    public void uniformBlockBinding(int program, int index, int binding) { if (enabled) log.append("uniformBlockBinding").append(' ').append(program).append(' ').append(index).append(' ').append(binding).append('\n'); inner.uniformBlockBinding(program, index, binding); }
     public FloatBuffer allocFloats(int count) { return inner.allocFloats(count); }
     public void freeFloats(FloatBuffer buffer) { inner.freeFloats(buffer); }
     public IntBuffer allocInts(int count) { return inner.allocInts(count); }

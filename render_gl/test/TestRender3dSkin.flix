@@ -1,25 +1,25 @@
 // Render3d の骨つきの頂点シェーダーの約束（位置と法線を joint 行列の重みつきの和で曲げてから world を掛ける・
-// ジョイントの番号は整数の属性・UBO の大きさは Skin3d.maxJoints()）を固定するテスト。GL は呼ばず、GLSL の字だけを見る。
+// ジョイントの番号は整数の属性・joint 行列は texelFetch で joint texture から読む）を固定するテスト。GL は呼ばず、GLSL の字だけを見る。
 
 mod TestRender3dSkin {
 
     def indexOf(part: String, s: String): Int32 =
         String.indexOf(substr = part, s) |> Option.getWithDefault(-1)
 
-    /// 骨の無い版は Joints の block を宣言しない。
+    /// 骨の無い版は joint texture を宣言しない。
     @Test
-    def testPlainSourceHasNoJointsBlock(): Unit \ Assert =
-        Assert.assertEq(expected = -1, indexOf("uniform Joints", Render3dGlsl.meshVertexSource()))
+    def testPlainSourceHasNoJointTexture(): Unit \ Assert =
+        Assert.assertEq(expected = -1, indexOf("uJointTexture", Render3dGlsl.meshVertexSource()))
 
     /// 骨の無い版の位置は形の座標にそのまま uModel を掛ける。
     @Test
     def testPlainPositionIsModelTimesPos(): Unit \ Assert =
         Assert.assertTrue(indexOf("vec4 world = uModel * vec4(aPos, 1.0);", Render3dGlsl.meshVertexSource()) >= 0)
 
-    /// 骨つきの版は joint 行列を Skin3d.maxJoints() 本の std140 の block で受ける。
+    /// 骨つきの版は joint 行列を uPoseRow の行の 4 texel（joint × 4 から）を列にした mat4 として読む。
     @Test
-    def testSkinnedDeclaresMaxJointsBlock(): Unit \ Assert =
-        Assert.assertTrue(indexOf("mat4 uJoints[${Skin3d.maxJoints()}];", Render3dGlsl.skinnedMeshVertexSource()) >= 0)
+    def testSkinnedReadsJointMatrixFromTexels(): Unit \ Assert =
+        Assert.assertTrue(indexOf("texelFetch(uJointTexture, ivec2(x + 3, uPoseRow), 0)", Render3dGlsl.skinnedMeshVertexSource()) >= 0)
 
     /// ジョイントの番号は整数の属性（location 3）。
     @Test
@@ -39,6 +39,6 @@ mod TestRender3dSkin {
     /// skin は 4 つの重みと 4 つのジョイントの番号の組の和。
     @Test
     def testSkinSumsFourWeightedJoints(): Unit \ Assert =
-        Assert.assertTrue(indexOf("aWeights.w * uJoints[aJoints.w]", Render3dGlsl.skinnedMeshVertexSource()) >= 0)
+        Assert.assertTrue(indexOf("aWeights.w * jointMatrix(aJoints.w)", Render3dGlsl.skinnedMeshVertexSource()) >= 0)
 
 }

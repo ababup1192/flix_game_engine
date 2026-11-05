@@ -67,13 +67,17 @@ pub mod Render3dGlsl {
     def skinDeclarations(): String =
         "layout (location = 3) in ivec4 aJoints;\n" +
         "layout (location = 4) in vec4 aWeights;\n" +
-        "layout (std140) uniform Joints {\n" +
-        "    mat4 uJoints[${Skin3d.maxJoints()}];\n" +
-        "};\n"
+        "uniform sampler2D uJointTexture;\n" +
+        "uniform int uPoseRow;\n" +
+        "mat4 jointMatrix(int joint) {\n" +
+        "    int x = joint * 4;\n" +
+        "    return mat4(texelFetch(uJointTexture, ivec2(x, uPoseRow), 0), texelFetch(uJointTexture, ivec2(x + 1, uPoseRow), 0),\n" +
+        "                texelFetch(uJointTexture, ivec2(x + 2, uPoseRow), 0), texelFetch(uJointTexture, ivec2(x + 3, uPoseRow), 0));\n" +
+        "}\n"
 
     def skinPrelude(): String =
-        "    mat4 skin = aWeights.x * uJoints[aJoints.x] + aWeights.y * uJoints[aJoints.y]\n" +
-        "              + aWeights.z * uJoints[aJoints.z] + aWeights.w * uJoints[aJoints.w];\n"
+        "    mat4 skin = aWeights.x * jointMatrix(aJoints.x) + aWeights.y * jointMatrix(aJoints.y)\n" +
+        "              + aWeights.z * jointMatrix(aJoints.z) + aWeights.w * jointMatrix(aJoints.w);\n"
 
     def surfaceDeclarations(): String =
         "layout (location = 5) in vec2 aUv;\n" +

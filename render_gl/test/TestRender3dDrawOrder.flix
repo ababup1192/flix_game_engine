@@ -1,4 +1,4 @@
-// 3D の描き手の、描く順（Render3d.inDrawOrder・姿勢の鍵）と、同じ姿勢の値か（Render3d.isSameValue）と、
+// 3D の描き手の、描く順（Render3d.inDrawOrder・姿勢の鍵）と、
 // 場面の絵と段つきの写しの置き場を上限に収める時に捨てる物（Render3d.Material.budgetEvictions）。GL を呼ばずに決まる所。
 mod Render3d.TestDrawOrder {
 
@@ -30,24 +30,13 @@ mod Render3d.TestDrawOrder {
         }
 
     def drawOf(pose: Option[Pose3d.Pose3d]): Render3d.MeshDraw =
-        { fields = Scene3d.instanceFieldsOf(Scene3d.meshInstance(Mesh3d.fromPolygons(Nil), Mat4.identity())), pose = pose, culled = false }
+        { fields = Scene3d.instanceFieldsOf(Scene3d.meshInstance(Mesh3d.fromPolygons(Nil), Mat4.identity())), pose = pose, poseRow = 0, culled = false }
 
     /// 骨の無い物の姿勢の鍵は 0・骨つきの物は Pose3d.keyOf。
     @Test
     def testPoseKeyOfDraw(): Unit \ Assert =
         let p = poseAt(1.0);
         Assert.assertEq(expected = (0i64, Pose3d.keyOf(p)), (Render3d.poseKeyOf(drawOf(None)), Render3d.poseKeyOf(drawOf(Some(p)))))
-
-    /// 同じ姿勢の値は同じ値と見なす。
-    @Test
-    def testSamePoseValueIsSame(): Unit \ Assert =
-        let p = poseAt(1.0);
-        Assert.assertTrue(Render3d.isSameValue(p, p))
-
-    /// 中身の同じ別々の姿勢は同じ値と見なさない（骨の UBO の書き直しは中身を比べて決める）。
-    @Test
-    def testEqualContentPosesAreNotSameValue(): Unit \ Assert =
-        Assert.assertFalse(Render3d.isSameValue(poseAt(1.0), poseAt(1.0)))
 
     // ── 置き場の上限 ──
 

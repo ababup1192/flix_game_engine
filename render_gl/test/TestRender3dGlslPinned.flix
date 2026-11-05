@@ -35,7 +35,7 @@ mod Render3d.TestGlslPinned {
 
     @Test
     def testMaterialVertexSourcesAreUnchanged(): Unit \ Assert =
-        Assert.assertEq(expected = "a5a28ff25b65c8f6ffdfc85e52c79f70310fd9835d0d36210a0329df4cc3adca" :: "c441d0e276dc7aa5856de8919b70095ef7732b79b2ff8b051c7cd2d726fb4df5" :: "394f4f81d4b8544c79cc32faf02bc11446e005a511184afc383c81b4286012cf" :: "fdbc4f8adbe60381c4b0f6a3a10df874d970d320e134313b7a77feeb58f2ed19" :: Nil,
+        Assert.assertEq(expected = "a5a28ff25b65c8f6ffdfc85e52c79f70310fd9835d0d36210a0329df4cc3adca" :: "9ec186a735502f4e6b192360243cd82e24b6e8da43fe2d00e5ffdd554dd98941" :: "394f4f81d4b8544c79cc32faf02bc11446e005a511184afc383c81b4286012cf" :: "492e0bcfe8d6d304723b3c103b7388bafbb74a112120cf4d757307cc84f22d22" :: Nil,
             ((false, false) :: (true, false) :: (false, true) :: (true, true) :: Nil)
                 |> List.map(k -> { let (skinned, uv) = k; sha256(Render3dGlsl.materialVertexSource({ skinned = skinned, uv = uv, lightmap = false })) }))
 

@@ -48,7 +48,7 @@ pub mod Pose3d {
             Mat4.toColumns(m) |> Vector.foldLeft((a, v) -> Int64.bitwiseXor(a, Double.doubleToLongBits(v)) * 1099511628211i64, acc),
             -3750763034362895579i64)
 
-    /// ジョイントの番号の順の joint 行列（GL の UBO・CPU のスキニングが読む）。
+    /// ジョイントの番号の順の joint 行列（GL の joint texture・CPU のスキニングが読む）。
     pub def jointMatrices(p: Pose3d): Vector[Mat4.Mat4] = recOf(p)#matrices
 
     /// ジョイントの変換（rootTransform × world。形の座標で、インスタンスの world 行列はまだ掛かっていない）。

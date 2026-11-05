@@ -45,9 +45,6 @@ public final class LwjglGl implements GlContext {
     public void bufferData(int target, float[] data, int usage) { GL15.glBufferData(target, data, usage); }
     public void bufferData(int target, FloatBuffer data, int usage) { GL15.glBufferData(target, data, usage); }
     public void bufferData(int target, int[] data, int usage) { GL15.glBufferData(target, data, usage); }
-    public void bufferData(int target, int size, int usage) { GL15.glBufferData(target, (long) size, usage); }
-    public void bufferSubData(int target, int offset, float[] data) { GL15.glBufferSubData(target, (long) offset, data); }
-    public void bindBufferBase(int target, int index, int buffer) { GL30.glBindBufferBase(target, index, buffer); }
     public int createVertexArray() { return GL30.glGenVertexArrays(); }
     public void deleteVertexArray(int array) { GL30.glDeleteVertexArrays(array); }
     public void bindVertexArray(int array) { GL30.glBindVertexArray(array); }
@@ -100,6 +97,12 @@ public final class LwjglGl implements GlContext {
     }
     public void texImageDepth24(int width, int height) {
         GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL14.GL_DEPTH_COMPONENT24, width, height, 0, GL11.GL_DEPTH_COMPONENT, GL11.GL_FLOAT, 0L);
+    }
+    public void texImageRgba32f(int width, int height) {
+        GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL30.GL_RGBA32F, width, height, 0, GL11.GL_RGBA, GL11.GL_FLOAT, 0L);
+    }
+    public void texSubImageRgba32f(int x, int y, int width, int height, FloatBuffer pixels) {
+        GL11.glTexSubImage2D(GL11.GL_TEXTURE_2D, 0, x, y, width, height, GL11.GL_RGBA, GL11.GL_FLOAT, pixels);
     }
     public int createSampler() { return GL33.glGenSamplers(); }
     public void bindSampler(int unit, int sampler) { GL33.glBindSampler(unit, sampler); }
@@ -155,8 +158,6 @@ public final class LwjglGl implements GlContext {
     public void uniform2fv(int location, float[] value) { GL20.glUniform2fv(location, value); }
     public void uniform3fv(int location, float[] value) { GL20.glUniform3fv(location, value); }
     public void uniformMatrix4fv(int location, boolean transpose, float[] value) { GL20.glUniformMatrix4fv(location, transpose, value); }
-    public int getUniformBlockIndex(int program, String name) { return GL31.glGetUniformBlockIndex(program, name); }
-    public void uniformBlockBinding(int program, int index, int binding) { GL31.glUniformBlockBinding(program, index, binding); }
 
     public FloatBuffer allocFloats(int count) { return MemoryUtil.memAllocFloat(count); }
     public void freeFloats(FloatBuffer buffer) { MemoryUtil.memFree(buffer); }

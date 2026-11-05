@@ -984,7 +984,7 @@
   `pub def blend(a: Vector[Skin3d.JointPose], b: Vector[Skin3d.JointPose], t: Float64): Vector[Skin3d.JointPose]`
 - 姿勢の鍵: joint 行列の並びの全部の数のビットから作る 64 bit（初めて読んだ時に求める）。同じ並びは必ず同じ鍵になり、
   `pub def keyOf(p: Pose3d): Int64`
-- ジョイントの番号の順の joint 行列（GL の UBO・CPU のスキニングが読む）。
+- ジョイントの番号の順の joint 行列（GL の joint texture・CPU のスキニングが読む）。
   `pub def jointMatrices(p: Pose3d): Vector[Mat4.Mat4]`
 - ジョイントの変換（rootTransform × world。形の座標で、インスタンスの world 行列はまだ掛かっていない）。
   `pub def jointTransform(p: Pose3d, joint: Int32): Mat4.Mat4`
@@ -1532,7 +1532,7 @@
 - ジョイント 1 本の局所の姿勢（親のジョイントの座標で。根は rootTransform の座標で）。
   `pub type alias JointPose = { translation = Vec3.Vec3, rotation = Quat.Quat, scale = Vec3.Vec3 }`
 - `pub type alias Skin3d = SkinData`
-- 1 体のジョイントの上限。GL のジョイントの行列の UBO（64 × mat4）と CPU が同じ値を使う。
+- 1 体のジョイントの上限。GL の joint texture の 1 行（64 × mat4）と CPU が同じ値を使う。
   `pub def maxJoints(): Int32`
 - names・parents（-1 が根。親の番号は自分より小さい）・レストポーズ・逆バインド行列から作る。
   `pub def make(spec: { names = Vector[String], parents = Vector[Int32], rest = Vector[JointPose], inverseBinds = Option[Vector[Mat4.Mat4]], rootTransform = Mat4.Mat4 }): Result[String, Skin3d]`

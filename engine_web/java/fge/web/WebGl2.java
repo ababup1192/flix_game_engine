@@ -122,19 +122,6 @@ public final class WebGl2 implements GlContext {
         bufferDataView(target, Int32Array.copyFromJavaArray(data), usage);
     }
 
-    public void bufferData(int target, int size, int usage) { bufferDataSize(target, size, usage); }
-
-    @JSBody(params = {"t", "offset", "data"}, script = "fgeGl.bufferSubData(t, offset, data);")
-    private static native void bufferSubDataView(int target, int offset, JSObject data);
-
-    public void bufferSubData(int target, int offset, float[] data) {
-        bufferSubDataView(target, offset, Float32Array.copyFromJavaArray(data));
-    }
-
-    @JSBody(params = {"t", "i", "id"}, script = "fgeGl.bindBufferBase(t, i, fgeH[id]);")
-    private static native void jsBindBufferBase(int target, int index, int buffer);
-    public void bindBufferBase(int target, int index, int buffer) { jsBindBufferBase(target, index, buffer); }
-
     @JSBody(script = "return fgeNew(fgeGl.createVertexArray());")
     private static native int jsCreateVertexArray();
     public int createVertexArray() { return jsCreateVertexArray(); }
@@ -240,6 +227,17 @@ public final class WebGl2 implements GlContext {
     @JSBody(params = {"w", "h"}, script = "fgeGl.texImage2D(fgeGl.TEXTURE_2D, 0, fgeGl.DEPTH_COMPONENT24, w, h, 0, fgeGl.DEPTH_COMPONENT, fgeGl.UNSIGNED_INT, null);")
     private static native void jsTexImageDepth24(int width, int height);
     public void texImageDepth24(int width, int height) { jsTexImageDepth24(width, height); }
+
+    @JSBody(params = {"w", "h"}, script = "fgeGl.texImage2D(fgeGl.TEXTURE_2D, 0, fgeGl.RGBA32F, w, h, 0, fgeGl.RGBA, fgeGl.FLOAT, null);")
+    private static native void jsTexImageRgba32f(int width, int height);
+    public void texImageRgba32f(int width, int height) { jsTexImageRgba32f(width, height); }
+
+    @JSBody(params = {"x", "y", "w", "h", "px", "from"}, script = "fgeGl.texSubImage2D(fgeGl.TEXTURE_2D, 0, x, y, w, h, fgeGl.RGBA, fgeGl.FLOAT, px, from);")
+    private static native void texSubImageRgba32fView(int x, int y, int width, int height, JSObject pixels, int from);
+    public void texSubImageRgba32f(int x, int y, int width, int height, FloatBuffer pixels) {
+        FloatBuffer direct = pixels.isDirect() ? pixels : copyFloats(pixels);
+        texSubImageRgba32fView(x, y, width, height, Float32Array.fromJavaBuffer(whole(direct)), direct.position());
+    }
 
     @JSBody(script = "return fgeNew(fgeGl.createSampler());")
     private static native int jsCreateSampler();
@@ -373,14 +371,6 @@ public final class WebGl2 implements GlContext {
     public void uniformMatrix4fv(int location, boolean transpose, float[] value) {
         if (location >= 0) uniformMatrix4fvView(location, transpose, Float32Array.copyFromJavaArray(value));
     }
-
-    /** WebGL2 の INVALID_INDEX は 4294967295 で、int の -1 にはならない。 */
-    @JSBody(params = {"id", "name"}, script = "var i = fgeGl.getUniformBlockIndex(fgeH[id], name); return (i === fgeGl.INVALID_INDEX) ? -1 : i;")
-    private static native int jsGetUniformBlockIndex(int program, String name);
-    public int getUniformBlockIndex(int program, String name) { return jsGetUniformBlockIndex(program, name); }
-    @JSBody(params = {"id", "i", "b"}, script = "fgeGl.uniformBlockBinding(fgeH[id], i, b);")
-    private static native void jsUniformBlockBinding(int program, int index, int binding);
-    public void uniformBlockBinding(int program, int index, int binding) { jsUniformBlockBinding(program, index, binding); }
 
     // ── GPU へ渡す直接バッファ（GC に任せるので返す所は何もしない）──
     public FloatBuffer allocFloats(int count) { return ByteBuffer.allocateDirect(count * 4).order(ByteOrder.nativeOrder()).asFloatBuffer(); }

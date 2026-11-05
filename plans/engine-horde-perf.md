@@ -545,3 +545,12 @@ mip copy（登録の絵の読み戻し）はこのゲームでは一度も起き
 - 規則と描くのを重ねる `App.withPipelinedRendering`（`Platform.Tasks` の handler）で horde1000 は 17.3 → 12.0 ms。
 - 次の版の migrations に書く: `Platform.Services` に `Platform.Tasks` が入った。Services の handler の組を自前で重ねている所は `Platform.runTasksInPlace(…)` を 1 段足す。計測で垂直同期を切るのは `FLIX_GE_NO_VSYNC=1`。
 - まだ無いテスト: Runner の重ねる道（描くのは reloaded・音と出力と履歴は advanced・updateNs は待った時間）を固定する物。
+
+## 11. B の結果（2026-11-06）
+
+- 入れた物: 場面の分けと描く順を prepare へ移した（`Render3d.ScenePlan`・`SceneDraws`・`Render3d.ShadowPlan`）。`Render3d.JointTexture`（行の割り当て・RGBA32F・幅 256 texel・高さは 16 から倍・`(prepare の順, コマの順 % 3)` でテクスチャを回す）。UBO と `bindJointsBlock`、GlContext の `bufferSubData`・`bindBufferBase`・`getUniformBlockIndex`・`uniformBlockBinding`・`bufferData(int, int, int)` は消した。
+- 計画との違い: texture unit は 10（9 は `blankTextureUnit`）。高さの最低は 16。上げる幅はその prepare で一番多いジョイントの数まで（1 行全部は上げない）。違う姿勢が `MAX_TEXTURE_SIZE` を超えたら、超えた分は最後の行を読み、1 回知らせる。endFrame を通らない塗り直しのため、prepare の順は 16 で頭へ戻る。行を配るのは間引いていない骨つきの物だけ。
+- ゲート: `make baseline-check` は基準と同じ（GL の絵の SHA の差 0 枚）・`make gl-parity` exit 0。ブラウザは fps3d_lab の部屋の 45・55・63 コマ目で getError 0 件・2/255 以下 99.9% の線の上（docs/backend-parity.md）。`bench/scene3d` の p50 は 0.87.0 と交互に 6 回ずつで 1.17 と 1.17 ms。
+- conduit_hive の写しの測り（前 / 後）: horde-waves300 の submit 4.65 / 4.67 ms・horde1000 の submit 7.15 / 6.91 ms・1 コマ 12.38 / 12.19 ms。悪化は無い。jointUploads の実数はまだ無い。
+- 目標の submit ≤ 4.5 ms は B の時点で届いていない。A で見る。
+- A へ: 行は `MeshDraw#poseRow` に入っている（`uPoseRow` へ入れるのは `drawPosedMesh` の 1 か所）。batch は `Render3d.ScenePlan.planScene` と `Render3d.Shadow.shadowPlanOf` の出口で組める（骨つきの物は `SceneDraws#skinned`。draw の中に残る並べは半透明だけ（A の batch の外）。骨つきの物は今は間引かれない（`isOutsideFrustumFields`）ので、画面の外の敵も描く）。`materialOrderOf` と `SceneDraws#skinned` の姿勢の鍵は、同じ深さの面の勝ち方を変えないためだけに残っている。

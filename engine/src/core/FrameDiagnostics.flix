@@ -40,7 +40,7 @@ pub mod FrameDiagnostics {
     /// - texture3dUploads: 場面の絵（Texture3d）を mip を作って上げた数
     /// - mipCopies: 登録の絵を GPU から読み戻して mip つきの写しを作った数（読み戻しは GPU を待つ）
     /// - materialBuilds: 組んだ材質のプログラム（名前と理由。描き手は Diagnostics#shaderBuilds にも足す）
-    /// - jointUploads: 骨の行列の UBO を書き直した数
+    /// - jointUploads: 骨の行列を joint texture へ上げた数（3D の場面を準備する 1 回につき 1 回まで）
     /// - targetRebuilds: Design の解像度の描き先と影の地図の描き先を作った数
     /// - cpuPhases: 3D の描き手の CPU の区間ごとの時間（名前, ns）。区間は入れ子を引いた残り（split の時間は draw に入れない）
     pub type alias Scene3dCounts = {

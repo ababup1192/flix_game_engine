@@ -77,10 +77,7 @@ public final class GlConst {
     public static final int TEXTURE_MAX_LEVEL = 0x813D;
     public static final int TEXTURE_COMPARE_MODE = 0x884C;
     public static final int ELEMENT_ARRAY_BUFFER = 0x8893;
-    public static final int UNIFORM_BUFFER = 0x8A11;
     public static final int DEPTH_ATTACHMENT = 0x8D00;
     /** WebGL2 には無い。enable するのは GlContext.hasAlphaToOne() が真の時だけ。 */
     public static final int SAMPLE_ALPHA_TO_ONE = 0x809F;
-    /** glGetUniformBlockIndex の無い名前。GlContext は int の -1 で返す。 */
-    public static final int INVALID_INDEX = -1;
 }

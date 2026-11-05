@@ -2,25 +2,37 @@
 mod Render3d.Shadow {
     import fge.gl.GlConst
     import fge.gl.GlContext
-    use Render3d.{ShadowCaster, inDrawOrder, isSkinned, poseKeyOf, ShadowLocs, ShadowTarget, ShadowUse, State, drawPosedMesh, matrixArray, maxShadowMapSize,
+    use Render3d.{ShadowCaster, ShadowPlan, isSkinned, ShadowLocs, ShadowTarget, ShadowUse, State, drawPosedMesh, matrixArray, maxShadowMapSize,
                   maxShadowPcfRadius, meshDrawOf, idleTargetFrames, programsOf, blankTextureUnit, shadowTextureUnit, skinnedProgramsOf, useMeshProgram}
+    use Render3d.JointTexture.{PoseRows, withPoseRow}
     use Render3d.Counts.{Counter, count}
 
     // ── 影の地図 ──
 
-    /// 場面ごとに、影を落とすスポットがあれば影の地図を描き、塗りへ渡す物を返す（cmds と同じ並び）。
+    /// 影を落とすスポットがあれば、影の地図を描く材料を分ける（影だけに映る物の姿勢の行もここで rows へ割り当てる）。無ければ None。
+    // WhyNot: 半透明の物に影を落とさせない — 影の地図は 0 か 1 の奥行きで、薄い色ガラスが真っ黒な影を落とす。
+    pub def shadowPlanOf(state: State, rows: Ref[PoseRows, Static], scene: Scene3d.Scene3dCmd): Option[ShadowPlan] \ IO =
+        shadowCasterOf(state, scene) |> Option.map(caster -> {
+            let outside = Scene3d.isOutsideFrustum(Scene3d.shadowFrustumOf(caster#spot));
+            let (skinned, plain) = scene#instances |> List.filter(i -> not Scene3d.isBlendedFields(Scene3d.instanceFieldsOf(i)))
+                |> List.map(meshDrawOf(state, outside)) |> List.partition(isSkinned);
+            { caster = caster, plain = plain, skinned = List.map(withPoseRow(rows), skinned) }
+        })
+
+    /// 場面ごとに、plans（場面と同じ並び）の影の地図を描き、塗りへ渡す物を返す。骨つきの物は今 joint の unit に貼ってある joint texture を読む。
     /// 描き終えたら深度と scissor を切り、program と VAO を外す。描き先は呼ぶ側が戻す。
     // WhyNot: viewport をここで戻さない — glGet で前の値を読まない決まりで、この後に描く Design の場面と
     //   2D の並び（RenderFrame.renderFrameMixed）が、どちらも描き始めに自分の viewport を置く。
-    pub def renderShadows(gl: GlContext, state: State, gen: Int64, cmds: List[Scene3d.RenderCmd]): List[Option[ShadowUse]] \ IO =
+    pub def renderShadows(gl: GlContext, state: State, gen: Int64, plans: List[Option[ShadowPlan]]): List[Option[ShadowUse]] \ IO =
         let usedPerSize = Ref.fresh(Static, (Map.empty(): Map[Int32, Int32]));
-        let shadows = cmds |> List.map(cmd -> shadowCasterOf(state, cmd#scene) |> Option.map(caster -> {
+        let shadows = plans |> List.map(Option.map(plan -> {
+            let caster = plan#caster;
             let size = shadowMapSizeOf(state, caster#shadowMap);
             // 同じ mapSize の場面が 1 コマに 2 つあっても地図を分ける — 塗るのは全部の地図を描き終えた後。
             let ordinal = Map.getWithDefault(size, 0, Ref.get(usedPerSize));
             Ref.put(Map.insert(size, ordinal + 1, Ref.get(usedPerSize)), usedPerSize);
             let target = shadowTarget(gl, state, gen, size, ordinal);
-            renderShadowMap(gl, state, gen, target, caster, cmd#scene);
+            renderShadowMap(gl, state, gen, target, plan);
             shadowUseOf(state, target, caster)
         }));
         if (List.exists(Option.nonEmpty, shadows)) endShadowPass(gl) else ();
@@ -90,7 +102,7 @@ mod Render3d.Shadow {
         else ()
 
     /// 影の地図を描く: 光から見た置いた物の一番近い面の深度。ビルボードは影を落とさない。
-    def renderShadowMap(gl: GlContext, state: State, gen: Int64, target: ShadowTarget, caster: ShadowCaster, scene: Scene3d.Scene3dCmd): Unit \ IO =
+    def renderShadowMap(gl: GlContext, state: State, gen: Int64, target: ShadowTarget, plan: ShadowPlan): Unit \ IO =
         let locs = programsOf(gl, state)#depth;
         gl.bindFramebuffer(GlConst.FRAMEBUFFER, target#fbo);
         gl.viewport(0, 0, target#size, target#size);
@@ -105,22 +117,18 @@ mod Render3d.Shadow {
             // WhyNot: 背面を捨てない — 厚みの無い板を裏から照らすと面が全部捨てられ、影が抜ける。
             gl.disable(GlConst.CULL_FACE);
             // WhyNot: 深度だけのプログラムを影のために別に組まない — 色の出力は描き先が無いので捨てられる。
-            let lightView = matrixArray(Scene3d.shadowMatrix(caster#spot));
+            let lightView = matrixArray(Scene3d.shadowMatrix(plan#caster#spot));
             let identity = matrixArray(Mat4.identity());
-            let outside = Scene3d.isOutsideFrustum(Scene3d.shadowFrustumOf(caster#spot));
-            // WhyNot: 半透明の物に影を落とさせない — 影の地図は 0 か 1 の奥行きで、薄い色ガラスが真っ黒な影を落とす。
-            let (skinned, plain) = scene#instances |> List.filter(i -> not Scene3d.isBlendedFields(Scene3d.instanceFieldsOf(i)))
-                |> List.map(meshDrawOf(state, outside)) |> List.partition(isSkinned);
             useMeshProgram(gl, locs#mesh, lightView, identity);
-            plain |> List.forEach(drawPosedMesh(gl, state, gen, locs#mesh));
+            plan#plain |> List.forEach(drawPosedMesh(gl, state, gen, locs#mesh));
             // 骨つきの物は曲がった形で影を落とす（深度だけの骨つきの版を Output.Depth と共用）。
-            if (List.isEmpty(skinned)) ()
+            if (List.isEmpty(plan#skinned)) ()
             else {
                 let skinnedDepth = skinnedProgramsOf(gl, state)#depth;
                 if (skinnedDepth#mesh#program == 0) ()
                 else {
                     useMeshProgram(gl, skinnedDepth#mesh, lightView, identity);
-                    inDrawOrder(d -> (0, poseKeyOf(d)), skinned) |> List.forEach(drawPosedMesh(gl, state, gen, skinnedDepth#mesh))
+                    plan#skinned |> List.forEach(drawPosedMesh(gl, state, gen, skinnedDepth#mesh))
                 }
             }
         }
@@ -169,7 +177,6 @@ mod Render3d.Shadow {
     pub def putShadow(gl: GlContext, locs: ShadowLocs, shadow: Option[ShadowUse]): Unit \ IO =
         // WhyNot: 影のある場面でだけ uShadowMap を入れない — 影の無い場面で unit 0 のままになり、描き先の色テクスチャが unit 0 に残ると、
         //   読まない枝でも WebGL2 が feedback loop と見て draw を止める。
-        // WhyNot: プログラムを組む時に 1 回だけ入れない — 骨つきの版は drawPosedMesh の中（use したプログラムで描いている途中）で組まれるので、入れるために use を替えると続きの draw が program 0 になる。
         // WhyNot: 影の無い場面で影の unit を指さない — 何も貼っていない unit になり、macOS の GL が起動のたびにログへ書く。
         gl.uniform1i(locs#map, if (Option.isEmpty(shadow)) blankTextureUnit() else shadowTextureUnit());
         match shadow {

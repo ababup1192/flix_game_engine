@@ -6,7 +6,7 @@ mod Render3d.Material {
     use Render3dGlsl.{materialFragmentSource, materialVertexSource}
     use Render3d.Light.{putLights}
     use Render3d.{materialKey, ProgramKind, BoundTexture, CameraData, MaterialDraw, MaterialEntry, MaterialLocs,
-                  MaterialPass, MeshDraw, State, Texture3dEntry, TextureSlot, TextureSource, bindJointsBlock, drawPosedMesh, hasUv, isSkinned,
+                  MaterialPass, MeshDraw, State, Texture3dEntry, TextureSlot, TextureSource, bindJointTextureUnit, drawPosedMesh, hasUv, isSkinned,
                   lightLocsOf, lightmapTextureUnit, loc, meshDrawOf, meshLocsOf, normalMapTextureUnit, putLinearizedColor,
                   putDepthRange, shadowLocsOf, useMeshProgram, warnDroppedTextures, warnSceneOnce}
     use Scene3dRenderer.{RegisteredTexture}
@@ -461,7 +461,7 @@ mod Render3d.Material {
             case None    =>
                 Log.warnThen("scene3d: 材質 '${m#spec#name}' のプログラムが組めなかった — この材質の物は頂点の色で描く", 0)
         };
-        if (kind#skinned) bindJointsBlock(gl, program) else ();
+        if (kind#skinned) bindJointTextureUnit(gl, program) else ();
         bindTextureUnits(gl, program, List.length(glsl#texReads), kind#normalMap, kind#lightmap);
         { spec = m#spec, emission = m#emission, known = (m#spec, m#emission) :: Nil, paramNames = glsl#paramNames, texReads = glsl#texReads, normalMapped = kind#normalMap,
           lightmapped = kind#lightmap, coverage = kind#coverage,

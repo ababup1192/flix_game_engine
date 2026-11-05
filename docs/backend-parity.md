@@ -28,7 +28,7 @@
 
 | 確かめた事 | 結果 |
 |---|---|
-| 骨つきの物（skin の UBO・`vertexAttribIPointer`） | fps3d_lab の部屋の鎧の人物で動いた。`?glcheck=1` で `vertexAttribIPointer` 14 回・`bindBufferBase` 1,806 回・`bufferSubData` 32 回、getError 0 件。上の表の 3 コマに映っている |
+| 骨つきの物（RGBA32F の joint texture・`texelFetch`・`vertexAttribIPointer`） | fps3d_lab の部屋の鎧の人物で動いた。`?glcheck=1` の 63 コマ目まで `texSubImage2D` 100 回（字の分を含む）、getError 0 件。上の表の 3 コマに映っている（2026-11-06 に撮り直して同じ数） |
 | glb の絵（`LoadProgress.imageDecoder`） | fps3d_lab で 46 枚を解いた（合計約 210 ms・1 枚 4〜7 ms） |
 | wasm の 1 コマの CPU の中央値 | `bench/scene3d` 1.3 ms・fps3d_lab の部屋 16.6 ms（隠れた内蔵ブラウザの 7 コマ。`requestAnimationFrame` の回数は測れない） |
 | デスクトップの 1 コマの時間（`bench/scene3d`・GlContext へ移す前と後の p50 の中央値） | 前 0.955 ms・後 0.925 ms（同じ測り方で ±10% 揺れる） |
