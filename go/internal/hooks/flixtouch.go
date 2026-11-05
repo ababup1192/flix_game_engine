@@ -60,10 +60,10 @@ func RunFlixTouch(errOut io.Writer, root string, in io.Reader) int {
 		now := time.Now()
 		_ = os.Chtimes(marker, now, now)
 		sweepOldMarkers(r, sd)
-		if !DaemonAlive(r, pkg) {
+		if dir := CheckDir(root, pkg); !DaemonAlive(r, dir) {
 			// 温め直しの数秒を作業の区切りまで持ち越さない。増やしすぎの歯止めは
 			// ReserveDaemon → tooBusy が持つ。
-			ReserveDaemon(r, root, pkg)
+			ReserveDaemon(r, root, dir)
 		}
 		ReserveDecls(pkg)
 	}

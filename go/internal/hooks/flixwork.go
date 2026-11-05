@@ -101,16 +101,17 @@ func RunFlixWork(errOut io.Writer, root string, in io.Reader) int {
 // checkPkg は check の常駐（flixlint）が居る時だけ `fge checkd <pkg>` を流して (終了コード, 出力) を返す。居なければ
 // 起動予約をして ok=false（温まっていない常駐を作業の区切りで待たない）。時間切れも ok=false。
 func checkPkg(r *Rules, root, pkg string) (int, string, bool) {
-	if !DaemonAlive(r, pkg) {
-		ReserveDaemon(r, root, pkg)
+	dir := CheckDir(root, pkg)
+	if !DaemonAlive(r, dir) {
+		ReserveDaemon(r, root, dir)
 		return 0, "", false
 	}
 	self, err := os.Executable()
 	if err != nil {
 		return 0, "", false
 	}
-	cmd := exec.Command(self, "checkd", pkg)
-	cmd.Dir = pkg
+	cmd := exec.Command(self, "checkd", dir)
+	cmd.Dir = dir
 	var out strings.Builder
 	cmd.Stdout, cmd.Stderr = &out, &out
 	if err := cmd.Start(); err != nil {

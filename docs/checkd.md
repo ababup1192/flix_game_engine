@@ -14,6 +14,8 @@ bin/fge checkd --stop [dir]     # そのパッケージの常駐を止める
 bin/fge checkd --stop-all       # 記録のある常駐を全部止める (make checkd-stop と同じ)
 ```
 
+作業の区切りのフックは、engine の層（`render_gl`・`engine_world`・`engine_tools`）を `.layers/<名前>` で検査する。元のフォルダには土台の engine の src が無く、必ず「名前が無い」で赤くなるため。足した・消したファイルのリンクはフックが直す。
+
 examples の `make check` は自動でこれを通る。**素の check に戻したい時は `CHECKD=0 make check`**（`CHECKD_BACKEND=cli` でも同じ）。
 `make test` はいつも素の `flix test`（下の「test は素の CLI」）。
 
